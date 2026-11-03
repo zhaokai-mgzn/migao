@@ -3695,6 +3695,25 @@ _CASE_MC_157 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── MC-161 [NORMAL] 「先查后插」的两处 TOCTOU 写面（收款码 / 角色）必须由唯一键兜底 + 幂等收敛：摘掉唯一键或退回裸 insert 必红（issue #7255）（源: cases/misc.yml）──
+_CASE_MC_161 = EvalCase(
+    id='MC-161',
+    legacy_id='',
+    title='「先查后插」的两处 TOCTOU 写面（收款码 / 角色）必须由唯一键兜底 + 幂等收敛：摘掉唯一键或退回裸 insert 必红（issue #7255）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['同一张收款码，两个人几乎同时点保存，一个人看到 200、另一个看到「服务器内部错误」—— 明明是个保存动作，凭什么有时会 500？', '两个管理员同时建同一个角色代码，接口有时候回「角色代码已存在」，有时候直接 500，到底哪个才是对的？'],
+    expectations=['direct_reply'],
+    data_checks=['🔴 **判据 ①（唯一键真的存在，含迁移能修漂移库）**：建库脚本 + V206 之后，`tenant_payment_qrcodes` 有 `(tenant_id, payment_type) WHERE deleted = 0` 的部分唯一索引、`roles` 有 `(tenant_id, code)` 的唯一索引（`pg_indexes` 现取）；把两处索引**摘掉**再跑 V206 ⇒ 都必须建回来；连跑第二次不报错（可重复执行）。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/PaymentQrcodeAndRoleUniqueWriteRealDbTest.java::uniqueKeysExistAndTheMigrationHealsADriftedDatabase', '🔴 **判据 ②（并发两次写 ⇒ 只有一行，且都不抛错）**：两线程同起跑线并发 upsert 同一 `(tenant, type)` ⇒ 恰 1 行、零异常；并发建同一 code 的角色 ⇒ 恰 1 行、零异常，且两次条件插入的返回值必须是 `{1, 0}`（有一次真的收敛了）。执行点 = 同文件::concurrentQrcodeUpsertsLeaveExactlyOneRow / ::concurrentRoleCreatesLeaveExactlyOneRow', '🔴 **判据 ③（已存在时再写 ⇒ 幂等）**：已存在时再 upsert ⇒ 不报错、行数仍是 1、**行身份（id）不变**、字段被更新（返回既有那一行）；角色已存在时再建 ⇒ 影响 0 行、不报错、不产生第二行、既有行的 `name` 不被第二次请求覆盖。执行点 = 同文件::upsertIsIdempotentAndReturnsTheExistingRow / ::roleInsertIfAbsentIsIdempotent', '🔴 **判据 ④（负控：唯一键没做太宽）**：不同 tenant、不同 `payment_type`、不同 `code` 各自都能插（3×3 组合里的合法组合全部成功）—— 证明唯一键钉的是业务键、不是把正常数据挡在外面。执行点 = 同文件::theUniqueKeysDoNotBlockLegitimateRows', '🔴 **判据 ⑤-a（红证：摘掉唯一键 ⇒ ② 必红）**：摘掉两处唯一键后用**修法前的裸 insert** 连写两次 ⇒ **真的**写出两行（「先查后插」的并发结果就是静默重复）；紧接着验证 V206 在**存量已重复**时不阻断部署（WARNING + 跳过建索引），清理重复行后**重跑**才建索引 —— 这条同时把「存量重复行处置口径」变成行为级判据。执行点 = 同文件::withoutTheUniqueKeyTheNaiveWriteSilentlyDuplicates', '🔴 **判据 ⑤-b（红证：退回裸 insert ⇒ ③ 必红）**：唯一键在时裸 insert 第二条 ⇒ `SQLState=23505`（说明幂等收敛不是白写的；退回裸 insert 就是把 500 还回来）。执行点 = 同文件::theNaiveWriteHitsTheUniqueKeyWhenItExists', '🔴 **判据 ⑥（类级元守卫，会红）**：`unique_write_ledger.json` 必须认**表内 `UNIQUE(...)`** 这一族（`roles` 的唯一性只在表内 UNIQUE ⇒ 旧扫面下写它的代码整张隐形）；归因顺序必须 **mapper 原子写优先**（否则同文件里别的方法的 `DuplicateKeyException` 会给写入点盖假章 ⇒ 摘掉修复判据照样绿）。注入式自证：表内 UNIQUE 的语料必须扫出写入点、两种建法结论等价、带无关 catch 的语料必须归到 mapper。执行点 = tests/unit_ci_workflows/test_idempotent_unique_write_guard.py::test_inline_unique_and_attribution_order_are_discriminating / ::test_every_unique_write_site_is_registered', '**边界（照实登记，§19.1）**：① 判据跑**真 PG**（`PgCluster`：initdb/pg_ctl 一次性集群），本机无 PG 二进制时按 `MIGAO_REQUIRE_REALDB` 二态处理（未设 ⇒ 显式 skip；CI 设了 ⇒ 判红）；② 判据只覆盖「写面 = 本次两条 SQL 路径」，**不覆盖**端点级回执（MockMvc 并发 ⇒ 200 的契约面）；③ 元守卫的残余：服务文件级 `DuplicateKeyException` 仍是**文件级**判定（不是写入点级），已在判据 docstring 的边界段登记并给出重启条件；④ 不改任何门禁的通过条件、不新增豁免。'],
+    skip_reason='[backend-contract] 真库确定性判据（真 PG + 并发两线程 + 迁移文件真跑），零网络、零 LLM，不进入 agent-eval 冒烟',
+    tags=['concurrency', 'unique-key', 'idempotency', 'migration', 'red-proof', 'false-green'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [backend-contract]：前置 = V206 迁移文件在场、`TenantPaymentQrcodeMapper#upsertActive` 与 `RoleMapper#insertIfAbsent` 是两条写面的唯一入口；真库夹具由 `PgCluster` 现起（随机端口、跑完即停）。',
+)
+
 # ── MC-160 [NORMAL] H5 输入面字体族跟随全局 + 占位符收口共享层（内层原生控件 inherit / 裸 font-family 只在字体定义处 / 例外台账只许缩短）（源: cases/misc.yml）──
 _CASE_MC_160 = EvalCase(
     id='MC-160',
@@ -3933,6 +3952,7 @@ CASES = (
     _CASE_MC_155,
     _CASE_MC_156,
     _CASE_MC_157,
+    _CASE_MC_161,
     _CASE_MC_160,
     _CASE_MC_170,
 )

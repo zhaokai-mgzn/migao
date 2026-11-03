@@ -616,17 +616,29 @@ class SettingsControllerTest {
         }
 
         @Test
-        @DisplayName("PUT 保存微信收款码（新建）-> 200 返回实体")
+        @DisplayName("PUT 保存微信收款码 -> 200 返回**落库那一行**（写面是一条原子 upsert，不是 insert + updateById）")
         void upsertCreates() throws Exception {
-            when(paymentQrcodeMapper.selectOne(any())).thenReturn(null);
-            when(paymentQrcodeMapper.insert(any(com.migao.admin.entity.TenantPaymentQrcode.class))).thenReturn(1);
+            var saved = com.migao.admin.entity.TenantPaymentQrcode.builder()
+                    .id("qr-1").tenantId(1L).paymentType("wechat")
+                    .imageUrl("https://img/wechat.png").payeeName("亿家纺织").status("active").deleted(0)
+                    .build();
+            when(paymentQrcodeMapper.upsertActive(any(com.migao.admin.entity.TenantPaymentQrcode.class)))
+                    .thenReturn(1);
+            when(paymentQrcodeMapper.selectOne(any())).thenReturn(saved);
 
             mockMvc.perform(put("/api/admin/settings/payment-qrcodes/wechat")
                             .contentType("application/json")
                             .content("{\"imageUrl\":\"https://img/wechat.png\",\"payeeName\":\"亿家纺织\"}"))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.success").value(true))
+                    .andExpect(jsonPath("$.data.id").value("qr-1"))
                     .andExpect(jsonPath("$.data.paymentType").value("wechat"));
+
+            // issue #7255：写面只允许**一条**原子 upsert —— 回退成「selectOne 判空 → insert / updateById」
+            // 就是把并发下的 500 还回来（真库判据见 PaymentQrcodeAndRoleUniqueWriteRealDbTest）。
+            verify(paymentQrcodeMapper).upsertActive(any(com.migao.admin.entity.TenantPaymentQrcode.class));
+            verify(paymentQrcodeMapper, never()).insert(any(com.migao.admin.entity.TenantPaymentQrcode.class));
+            verify(paymentQrcodeMapper, never()).updateById(any(com.migao.admin.entity.TenantPaymentQrcode.class));
         }
 
         @Test

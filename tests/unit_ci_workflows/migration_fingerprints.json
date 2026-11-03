@@ -199,7 +199,8 @@
     "V202__quality_piece_key_and_rework_piece.sql": "sha256:1c3d6f5aaca74335ff9a1089b3e9031f6d249a7df2ab34e45df561fffa3e160b",
     "V203__split_inbound_view_into_three.sql": "sha256:28703d8abaa23cc5a4b20ec4b1129c1eea0b485120c089e00a0e193b2f1f0bbc",
     "V204__create_briefing_actions.sql": "sha256:91d6747b60db37907fb43ce7ce007b18b333ff179e91c5c7f139b9f22811fad5",
-    "schema.sql": "sha256:90939cf0887317ee674d7116e13bc1d7f4a55b17c86e3b65352fcaa835a565a0",
-    "V205__add_customer_external_id.sql": "sha256:9c804a0ea18a1fc5f73b59c43c5463a371c515a03f64bd28e2fcb265b98f9894"
+    "V205__add_customer_external_id.sql": "sha256:9c804a0ea18a1fc5f73b59c43c5463a371c515a03f64bd28e2fcb265b98f9894",
+    "V206__ensure_unique_keys_payment_qrcodes_and_roles.sql": "sha256:63d2cf40e246e085b5f6b32bc948184f7621542eab58ce4d5cefc65703c03c73",
+    "schema.sql": "sha256:90939cf0887317ee674d7116e13bc1d7f4a55b17c86e3b65352fcaa835a565a0"
   }
 }

@@ -628,6 +628,7 @@ public class RoleService {
         }
 
         Role role = Role.builder()
+                .id(java.util.UUID.randomUUID().toString().replace("-", ""))
                 .tenantId(tenantId)
                 .name(name)
                 .code(code)
@@ -635,7 +636,13 @@ public class RoleService {
                 .status("active")
                 .build();
 
-        roleMapper.insert(role);
+        // issue #7255：唯一性的**守门人**是数据库（roles 的 UNIQUE(tenant_id, code)），上面两次
+        // selectOne 只是「给出可读提示」的快路径 —— 并发下两个请求可能都通过快路径。此时由
+        // insertIfAbsent（ON CONFLICT (tenant_id, code) DO NOTHING）挡第二次：影响 0 行 ⇒ 与快路径
+        // **同一句**业务错误（422），而不是 DuplicateKeyException 冒泡成 500。
+        if (roleMapper.insertIfAbsent(role) == 0) {
+            throw BusinessException.validationError("角色代码已存在: " + code);
+        }
 
         // 角色权限真实落库（此前为占位实现，勾选权限不生效）
         replaceRolePermissions(role.getId(), permissionIds, tenantId);

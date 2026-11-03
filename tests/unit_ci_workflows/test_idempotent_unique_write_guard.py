@@ -34,7 +34,18 @@
 
 ## 边界（照实登记，§19.1）
 
-- 判据只认**仓内文本形态**：`<mapper 字段>.insert(` 与「该字段类型（`XxxMapper`）的 mapper 接口
+- **唯一性的两种建法都认**（issue #7255 修的正是这一处）：`CREATE UNIQUE INDEX … ON <t>` **与**
+  `CREATE TABLE <t> (…, UNIQUE(a, b))`。旧口径只认前者 ⇒ `roles`（唯一性只在表内 UNIQUE）整张隐形，
+  写它的代码**既不登记也不判红** = 元守卫在那一族上完全空转；
+- **归因顺序 = 精度顺序**（issue #7255）：先认 mapper 里的原子写（可**逐方法**判），再退到服务文件级的
+  冲突映射。反过来会让「同一文件里**别的方法** catch 了 `DuplicateKeyException`」给写入点盖假章
+  （实测：收款码写入点长期显示「有处理」，而那个 catch 在另一个端点里）；
+- ⚠️ **残余（未固化，照实登记）**：服务文件级的 `DuplicateKeyException` 判定仍是**文件级**、不是
+  写入点级 —— 一个文件里只要出现过这个类名，该文件里**所有**未由 mapper 原子写兜住的写入点都会显示
+  「有处理」。要收紧成「catch 必须包住这次调用」需要方法体级解析（本仓解析面只到词法，见
+  `_source_parsing.py` 的残余 ②），本单不做；重启条件 = 出现第二例「假章导致摘掉修复仍绿」时，
+  把判定改成方法体级并在本判据里补一条注入式自证；
+- 判据只认**仓内文本形态**：`<mapper 字段>.insert(` / `.upsert*(` 与「该字段类型（`XxxMapper`）的 mapper 接口
   经 `extends BaseMapper<实体>` → 实体的 `@TableName` → 唯一约束表」这条**静态链**。
   用**裸 SQL / JdbcTemplate / 反射**写这些表、或 mapper 不经 `BaseMapper` 泛型声明的代码
   **不在射程内**（本仓没有这种写法，出现时也不会有东西提醒）；
@@ -67,9 +78,11 @@ _TABLE_NAME = re.compile(r'@TableName\(\s*(?:value\s*=\s*)?"([^"]+)"')
 _BASE_MAPPER = re.compile(r"extends\s+\w*BaseMapper\s*<\s*(\w+)\s*>")
 #: 服务类里的 mapper 字段声明（`StockBatchConsumptionMapper consumptionMapper;`）
 _MAPPER_FIELD = re.compile(r"\b([A-Za-z_]\w*Mapper)\s+([A-Za-z_]\w*)\s*[;,)=]")
-#: mapper 的插入调用：`field.insert(` 与 `field.insertIgnoreConflict(` 这类**带前后缀的插入**都算
-#: （「写入点」是行为面的事实，不因方法名里有 IgnoreConflict 就变成不是写入点）
-_INSERT_CALL = r"\b{field}\s*\.\s*(insert\w*)\s*\("
+#: mapper 的写入调用：`field.insert(` / `field.insertIgnoreConflict(` / `field.upsertActive(` 都算
+#: （「写入点」是行为面的事实，不因方法名里有 IgnoreConflict / upsert 就变成不是写入点 ——
+#:  issue #7255 的收款码写面正是收敛成 `upsertActive`，若只认 `insert` 前缀，这个写入点会
+#:  **从扫描面消失**，「未登记即红」对它就不再成立）
+_INSERT_CALL = r"\b{field}\s*\.\s*((?:insert|upsert)\w*)\s*\("
 
 #: 冲突处理的**形态学**标记（服务侧 / mapper 侧各一条）
 _SERVICE_HANDLING = "DuplicateKeyException"
@@ -77,6 +90,12 @@ _MAPPER_HANDLING = "ON CONFLICT"   # 形态学标记：mapper 里的原子写（
 
 #: 台账里表示「未处理」的取值（= 已登记的缺口）
 NONE = "none"
+
+#: **表内**唯一约束（`CREATE TABLE t (…, UNIQUE(a, b))`）—— 与 `CREATE UNIQUE INDEX` 是**两种**建法。
+#: 漏掉这一族是 issue #7255 的直接成因：`roles (tenant_id, code)` 只以表内 UNIQUE 的形式存在，
+#: 于是「写 roles 的代码」在旧扫描口径里**根本不存在** ⇒ 元守卫看不见它，缺口也没被登记。
+_CREATE_TABLE = re.compile(r"(?m)^CREATE TABLE(?: IF NOT EXISTS)?\s+(\w+)\s*\(")
+_INLINE_UNIQUE = re.compile(r"(?m)^\s+UNIQUE\s*\(")
 
 
 def java_code(text: str) -> str:
@@ -89,11 +108,24 @@ def java_code(text: str) -> str:
 # ══════════════════════════════════════════════════════════════════════════════
 
 
-def unique_tables_by_index(schema_text: str) -> dict[str, str]:
-    """`表名 → 唯一索引名`（同一表多条时取第一条；只用于「这张表有没有唯一约束」）。"""
+def unique_tables(schema_text: str) -> dict[str, str]:
+    """`表名 → 唯一键载体`（同一表多条时取第一条；只用于「这张表有没有唯一约束」）。
+
+    **两种建法都要认**（issue #7255 的教训）：
+    ① `CREATE UNIQUE INDEX [IF NOT EXISTS] <name> ON <table>`（含部分索引）；
+    ② `CREATE TABLE <table> (…, UNIQUE(a, b))` —— **表内**约束。
+    只认 ① 会让「唯一性只由表内 UNIQUE 承担」的表整张隐形（`roles` 就是这种），
+    于是写它的代码既不登记、也不判红 —— 元守卫在那一族上**完全空转**。
+    """
     out: dict[str, str] = {}
     for match in _UNIQUE_INDEX.finditer(schema_text):
         out.setdefault(match.group(2), match.group(1))
+    for match in _CREATE_TABLE.finditer(schema_text):
+        table = match.group(1)
+        end = schema_text.find("\n)", match.end())
+        body = schema_text[match.end(): end if end != -1 else len(schema_text)]
+        if _INLINE_UNIQUE.search(body):
+            out.setdefault(table, "表内 UNIQUE(...)")
     return out
 
 
@@ -153,10 +185,14 @@ def unique_write_sites(sources: dict[str, str], mappers: dict[str, str],
                 continue
             mapper_file = f"backend/admin-api/src/main/java/com/migao/admin/mapper/{mapper}.java"
             mapper_text = mapper_sources.get(mapper_file, "")
-            if _SERVICE_HANDLING in code:
-                handling = path
-            elif _mapper_handles_conflict(mapper_text, calls):
+            # 归因**顺序即精度顺序**：先认 mapper 里的原子写（可**逐方法**判），再退到服务文件级的
+            # 冲突映射。反过来（文件级优先）会让「同一文件里**别的方法** catch 了 DuplicateKeyException」
+            # 给这个写入点**盖假章** —— 实测 issue #7255：收款码写入点长期显示「有处理」，而那个 catch
+            # 在另一个端点（改租户编码）里，与本写入点无关 ⇒ 摘掉收款码的原子写**判据照样绿**。
+            if _mapper_handles_conflict(mapper_text, calls):
                 handling = mapper_file
+            elif _SERVICE_HANDLING in code:
+                handling = path
             else:
                 handling = NONE
             sites[f"{path}::{field}"] = {"table": table, "handling": handling}
@@ -237,7 +273,7 @@ def read_ledger() -> dict[str, dict[str, str]]:
 
 def test_every_unique_write_site_is_registered() -> None:
     """未登记即红 + 登记即须属实（双向）+ fail-closed。"""
-    unique = unique_tables_by_index(SCHEMA.read_text(encoding="utf8"))
+    unique = unique_tables(SCHEMA.read_text(encoding="utf8"))
     assert len(unique) >= 20, (
         f"schema 里解析到 {len(unique)} 张带唯一约束的表 —— 解析口径坏了（fail-closed）")
     mappers = mapper_tables(read_mappers(), read_entities())
@@ -258,7 +294,7 @@ def test_the_stocktake_write_point_uses_an_atomic_conflict_handler() -> None:
     的具体形态（原子闸）—— 有人把它改回 `try/catch` 或删掉处理时，这里会**具名**报出来。
     """
     sites = unique_write_sites(read_sources(MAIN_JAVA), mapper_tables(read_mappers(), read_entities()),
-                              read_mappers(), unique_tables_by_index(SCHEMA.read_text(encoding="utf8")))
+                              read_mappers(), unique_tables(SCHEMA.read_text(encoding="utf8")))
     key = "backend/admin-api/src/main/java/com/migao/admin/service/StockBatchConsumptionService.java::consumptionMapper"
     assert key in sites, f"盘点落账的写入点不见了（改名？）：现取 = {sorted(sites)}"
     assert sites[key]["handling"] != NONE, "盘点落账的唯一冲突**没有**处理 ⇒ 并发同 run id 会 500（#6301 复发）"
@@ -302,7 +338,82 @@ def _good_sources() -> tuple[dict[str, str], dict[str, str], dict[str, str], dic
 def _sites(schema: str, entities: dict[str, str], mappers: dict[str, str],
            sources: dict[str, str]) -> dict[str, dict[str, str]]:
     return unique_write_sites(sources, mapper_tables(mappers, entities), mappers,
-                              unique_tables_by_index(schema))
+                              unique_tables(schema))
+
+
+def test_inline_unique_and_attribution_order_are_discriminating() -> None:
+    """issue #7255 的两处口径变更各自**会红**（注入式，内存语料，不碰工作树）。
+
+    ① **表内 `UNIQUE(...)` 必须被解析出来**：题面里那张表**没有** `CREATE UNIQUE INDEX`，
+       唯一性只写在 `CREATE TABLE … UNIQUE(tid, code)` 里 —— 旧口径下 `unique_tables()` 空集 ⇒
+       写入点零命中 ⇒ 判据静默绿（这正是 `roles` 那一族的形态）；
+    ② **归因顺序**：同一文件里既有「与本次写入无关的 `DuplicateKeyException`」、mapper 又提供了
+       原子写 ⇒ 必须归到 **mapper**（否则摘掉原子写后依然显示「有处理」= 假绿）。
+    """
+    # ① 表内 UNIQUE 可见
+    inline_only = (
+        "CREATE TABLE widgets (\n"
+        "    id VARCHAR(64) PRIMARY KEY,\n"
+        "    tenant_id BIGINT NOT NULL,\n"
+        "    code VARCHAR(64) NOT NULL,\n"
+        "    UNIQUE(tenant_id, code)\n"
+        ");\n")
+    entities = {"Widget": '@TableName("widgets")\npublic class Widget {}\n'}
+    mappers = {
+        "backend/admin-api/src/main/java/com/migao/admin/mapper/WidgetMapper.java":
+            "public interface WidgetMapper extends BaseMapper<Widget> {\n"
+            "  @Insert(\"INSERT INTO widgets (tenant_id, code) VALUES (#{t}, #{c}) "
+            "ON CONFLICT (tenant_id, code) DO NOTHING\")\n"
+            "  int insertIgnoreConflict(String t, String c);\n}\n",
+    }
+    sources = {
+        "backend/admin-api/src/main/java/com/migao/admin/service/WidgetService.java":
+            "class WidgetService {\n"
+            "  private final WidgetMapper widgetMapper;\n"
+            "  int write() { return widgetMapper.insertIgnoreConflict(\"t\", \"c\"); }\n}\n",
+    }
+    assert "widgets" in unique_tables(inline_only), (
+        "表内 UNIQUE(...) 必须算唯一约束 —— 否则 `roles` 那一族永远隐形（issue #7255 的成因）")
+    inline_sites = _sites(inline_only, entities, mappers, sources)
+    assert len(inline_sites) == 1, f"表内 UNIQUE 的表上必须扫出写入点，现取 {sorted(inline_sites)}"
+    key = next(iter(inline_sites))
+    assert inline_sites[key]["handling"].endswith("WidgetMapper.java"), inline_sites[key]
+    # 同样的语料只把 UNIQUE 换成 CREATE UNIQUE INDEX ⇒ 结论**不变**（两种建法等价）
+    by_index = (
+        "CREATE TABLE widgets (\n"
+        "    id VARCHAR(64) PRIMARY KEY,\n"
+        "    tenant_id BIGINT NOT NULL,\n"
+        "    code VARCHAR(64) NOT NULL\n"
+        ");\n"
+        "CREATE UNIQUE INDEX IF NOT EXISTS uk_widgets_code ON widgets (tenant_id, code);\n")
+    assert _sites(by_index, entities, mappers, sources).keys() == inline_sites.keys()
+
+    # ② 归因顺序：无关的 catch 不许给写入点盖章
+    noisy_service = {
+        "backend/admin-api/src/main/java/com/migao/admin/service/WidgetService.java":
+            "class WidgetService {\n"
+            "  private final WidgetMapper widgetMapper;\n"
+            "  void unrelated() {\n"
+            "    try { /* 别的端点 */ } catch (DuplicatedKeyExceptionNot e) { }\n"
+            "  }\n"
+            "  int write() { return widgetMapper.insertIgnoreConflict(\"t\", \"c\"); }\n}\n",
+    }
+    noisy_service["backend/admin-api/src/main/java/com/migao/admin/service/WidgetService.java"] = (
+        noisy_service["backend/admin-api/src/main/java/com/migao/admin/service/WidgetService.java"]
+        .replace("DuplicatedKeyExceptionNot", "org.springframework.dao.DuplicateKeyException"))
+    with_atomic = _sites(inline_only, entities, mappers, noisy_service)
+    assert next(iter(with_atomic.values()))["handling"].endswith("WidgetMapper.java"), (
+        "mapper 有原子写时必须归到 mapper（文件级的 catch 是假章）")
+
+    # ②-b 摘掉原子写 ⇒ 只剩那个**无关的** catch，此时归到服务文件 = 已知残余（上面边界段登记的形态）。
+    #     这条断言的意义：把残余**钉住**，将来收紧成方法体级判定时这里会红（提醒同步边界段）。
+    naive_mappers = dict(mappers)
+    naive_mappers["backend/admin-api/src/main/java/com/migao/admin/mapper/WidgetMapper.java"] = (
+        "public interface WidgetMapper extends BaseMapper<Widget> {\n"
+        "  int insertIgnoreConflict(String t, String c);\n}\n")
+    naive = _sites(inline_only, entities, naive_mappers, noisy_service)
+    assert next(iter(naive.values()))["handling"].endswith("WidgetService.java"), (
+        "残余口径变了 ⇒ 同步边界段（服务文件级判定不是写入点级）")
 
 
 def test_injected_bad_corpora_are_named() -> None:
