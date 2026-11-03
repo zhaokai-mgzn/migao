@@ -4186,7 +4186,7 @@
 ```
 溯源: 2026-10-31 新增（issue #8295）：两步确认，避免误写 ｜ tags: ui, preview
 
-## 杂项域（202 case）
+## 杂项域（203 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -7254,6 +7254,20 @@
 跳过: [backend-contract] 零 LLM 的确定性读数（读配置 + Node 求值配置 + tsconfig/.gitignore 对账 + `git check-ignore` 真跑 + 代码行扫面/台账逐条对账 + 7 条注入式红证），零网络、零 DB、不跑 `next build`、不进 agent-eval 冒烟
 ```
 溯源: 2026-11-03 新增（issue #6692：本地 `next dev` 与 `next build` 共用 `.next` 会互相写坏；dev 侧已存在路由 404 可复现、build 侧读半写生成物报 9 条 TS 错误）。取号（**三次让号，记实**）：`python3 scripts/next_case_id.py MC` 首取 **MC-145**（工具按「最小空闲号、含历史空档」口径返回；历史空档 MC-099 按裁定**不回填**）；按本轮约束「避开 MC-139~MC-153」让号到 MC-154；merge `origin/main` 时 main 已占 148~154 ⇒ 顺延 **MC-155**；随后批合工具（#8565）把原 MC-154 重编号成 **MC-155**、#7992 又占了 **MC-156**（`git show origin/main:.github/cases/misc.yml` 现取末段 = 150/151/152/153/155/156）⇒ 再撞一次，按「后合入者让号」顺延终态 **MC-157**（157 归本包，158 留给 #8561）。修法 = **A `distDir` 隔离**（根因：物理隔离 > 每次清理）：`frontend/admin-web/next.config.mjs` 按 `NODE_ENV` 切两个输出根（dev → `.next-dev`、build/start → `.next`；`next` CLI 缺省 dev=development、其余=production 且尊重外部已设值 ⇒ `npx next dev` 等任何形态都自动分派）。牵连面**逐处核对**（台账 17 条）：`.gitignore` 两条新规则、`tsconfig.json` include/exclude、dev 锁路径改为现取配置、冒烟脚本陈旧缓存处置文案 + 其判据 7b 断言收紧（并加「不得指向 build 侧 `.next`」负控）、4 处全仓/包内走盘扫描器跳过新目录；**已核对无需改**：Dockerfile（构建/运行都在 production）、`pr-check.yml`（只缓存 npm、不缓存 `.next`）、`playwright.config.ts`（`npx next dev` 自动落 dev 目录）、`package.json`（脚本不覆盖 NODE_ENV）、`deploy/**`（现取 0 处 `.next` 引用）。**红证（注入式，实跑，读数见 PR body）**：7 条各自判红并具名，还原后文件指纹一致。 ｜ tags: dev-experience, dist-dir-isolation, static-config, ledger, red-proof
+
+### MC-160. H5 输入面字体族跟随全局 + 占位符收口共享层（内层原生控件 inherit / 裸 font-family 只在字体定义处 / 例外台账只许缩短） 🔵
+```
+你: 商家在手机浏览器里打开后台（登录 / 表单 / 报工 / 入库 / 售后 / 坐席）：输入框里打字与占位提示，字体应当与这一页其它文字一致，不该忽然变成另一种字体。
+数据: 🔴 **判据 ①·内层原生控件继承字体族**：共享层 `frontend/bmini-app/src/styles/input-center.scss` 必须给 `.weui-input` 与 `.taro-textarea` **两个**内层选择器都写 `font-family: inherit`，`.taro-textarea` 另写 `font-size: inherit`（UA 默认 13.33px monospace）。执行点 = frontend/bmini-app/tests/input-typography-guard.test.ts::inheritProblems。红证：删掉任一条声明 ⇒ 红并具名那个内层控件
+数据: 🔴 **判据 ②·裸的 font-family 收口**：全 app 的 `font-family: <具体字体>` 只许出现在**字体定义处**（`src/app.scss` 的 `page, body`）或台账 frontend/bmini-app/tests/input-font-ledger.json；**未登记即红**、**死条目即红**（只许缩短）、**条数现取**（同文件多一处就红）。执行点 = 同文件::bareFontFamilyProblems。红证：往任一页面 scss 加 `font-family: Arial` ⇒ 红并具名文件与声明
+数据: 🔴 **判据 ③·占位符唯一来源**：`::placeholder` 只许出现在共享层；两个内层选择器同色 `$text-secondary`（与 issue #6476 的输入条同 token）；占位符**不写** `font-size`（继承控件自身，避免第二个口径）。执行点 = 同文件::placeholderProblems。红证：往页面 scss 加 `&::placeholder { color: #999 }` ⇒ 红并具名文件
+数据: 🔴 **判据 ④·射程完整**：`src` 的 `.tsx` 里不许裸写原生 `<input>` / `<textarea>`（它们拿不到内层 class ⇒ 共享层规则一条都不生效）；同时反空跑：真扫到 `<Textarea>` 面。执行点 = 同文件::rawControlProblems。红证：注入 `<input className='x'/>` ⇒ 红并具名文件
+数据: 🔴 **反空跑 / 接线**：共享层必须被 `src/app.scss` 真的 `@use` 引入（写在文件里但没接线 ⇒ 判据空转）；台账非空（空台账 fail-closed）。红证：删掉 `@use './styles/input-center.scss'` ⇒ 红
+数据: 🔴 **共享层只许 inherit**：共享层给内层写具体字体族 / 字号 ⇒ 红（那是「顺手改了全站输入面视觉」，本单的口径是**观感逐字不变**）。红证：把 `inherit` 换成 `-apple-system, …` ⇒ 红
+数据: 🔴 **红证总表（注入式，实跑）**：在 `frontend/bmini-app` 下执行 `npx jest input-typography-guard` ⇒ 15 passed / 0 failed；11 条内存注入各自报出**具名**对象（删 inherit / 改具体字体 / 摘 `@use` / 页面加裸字体族 / 摘台账例外 / 同值追加 / 页面加占位符 / 改占位符色 / 给占位符加字号 / 注入原生 `<input>` / 清空台账）。
+跳过: [frontend-contract] 纯静态形态守卫（jest + fs 读 scss / tsx，零 DOM 渲染、零网络、零 LLM）由 frontend/bmini-app/tests/input-typography-guard.test.ts 验证，不进入 agent-eval 冒烟
+```
+溯源: 2026-11-03 新增（issue #6480）。取号：`python3 scripts/next_case_id.py MC` 现取返回历史空档 **MC-099** —— 按裁定**刻意空档不回填**；当时 main 最大 **MC-157**、**MC-158** 已被在飞 PR #8568 的 claim（`8568-MC-158.json`）占用 ⇒ 取 **MC-160**（并先 push claim `8574-MC-160.json`）。病（issue #6480 实测，真栈 + 真 Chromium）：登录页内层 `input.weui-input` 的 `font-family` = **Arial**（浏览器默认）、输入条内层 `textarea.taro-textarea` = **monospace** + 13.33px、两者 `::placeholder` = **rgb(117,117,117)**（默认灰）；全 app 修前只有 2 处 `font-family`、1 处 `::placeholder`。修 = **一处收口**到共享层 `frontend/bmini-app/src/styles/input-center.scss`：内层两控件 `font-family: inherit`、textarea 另 `font-size: inherit`、占位符色 `$text-secondary`（唯一来源、字号继承控件自身）；同时删掉 `MessageInput.scss` 里重复的那三条（值不变，删的是第二份口径）。覆盖：H5 下 **39 × `<Input>` + 2 × `<Textarea>` = 41 处**全部渲染成这两个内层控件 ⇒ 一条共享规则全罩住；小程序端这两个选择器一个元素都匹配不到 ⇒ 零影响。**有意不改并登记**：`src/pages/auth/login/index.scss` 的 `Menlo, Consolas, monospace`（登录诊断面板的原始登录态行，等宽是为逐字符核对）进台账；`src/app.scss` 的 `page, body` 不追加字体栈（加了就会改变全站观感，那不在本单射程）。**未做（如实登记）**：C 端 `frontend/mini-app` 同一根因（现取 `font-family` 0 处、`MessageInput.scss` 无内层 `.taro-textarea`）本轮未改，另开承接单；运行期 `getComputedStyle` 逐面读数未跑（派单口径不跑浏览器腿）。 ｜ tags: bmini, h5, input, typography, single-source, red-proof
 
 ### MC-161. 数字输入精度面（issue #8004）：涉钱 / 涉数量格不许再用 `type="number"`（中间态 `12.` 与千分位 `1,234.56` 会被浏览器吞掉）—— 共用 `DecimalInput` 一处解析/校验/话术 + 类级台账守卫 🔵
 ```
@@ -14779,8 +14793,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：1000（活跃 153，跳过 847）
-- tier 分布：smoke 15 / normal 923 / adversarial 33
+- 用例总数：1001（活跃 153，跳过 848）
+- tier 分布：smoke 15 / normal 924 / adversarial 33
 - 售后域：16
 - Agent 核心域：13
 - API 层域：21
@@ -14796,7 +14810,7 @@
 - 人事域：13
 - 知识问答域：9
 - 客户主数据迁移域：10
-- 杂项域：202
+- 杂项域：203
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：76
@@ -15064,6 +15078,7 @@
 - MC-155: 终端壳打印能力三态（issue #8310）：桥在 ≠ 打印机在 —— printerMode 负向 / 读不到都不许说「由本机打印机直接出纸」，且「判不了」与「确知没有」分开说
 - MC-156: 机台页详情屏补「报返工」入口（复用既有 reportRework / 不新建第二套返工实现 / 次要动作不抢主位）
 - MC-157: **本地 dev / build 输出目录物理隔离**：`next dev` 写 `.next-dev`、`next build` / `next start` 仍写 `.next`（共用 `.next` 时 dev 侧已存在路由 404 可复现 + build 侧读到半写生成物报 9 条 TS 错误）
+- MC-160: H5 输入面字体族跟随全局 + 占位符收口共享层（内层原生控件 inherit / 裸 font-family 只在字体定义处 / 例外台账只许缩短）
 - MC-161: 数字输入精度面（issue #8004）：涉钱 / 涉数量格不许再用 `type="number"`（中间态 `12.` 与千分位 `1,234.56` 会被浏览器吞掉）—— 共用 `DecimalInput` 一处解析/校验/话术 + 类级台账守卫
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）

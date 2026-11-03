@@ -2,7 +2,7 @@
 # 本文件由 render_cases.py 生成，勿手改（改了也留不住：下次重渲染会覆盖）
 # 源: cases/*.yml（case-contract 单一源）
 # 重新生成: python3 render_cases.py --cases <dir> --out-eval <包目录> --out-md <md>
-# 域: misc（源: cases/misc.yml，202 条）
+# 域: misc（源: cases/misc.yml，203 条）
 
 from ._schema import Difficulty, EvalCase, Skill
 
@@ -3695,6 +3695,24 @@ _CASE_MC_157 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── MC-160 [NORMAL] H5 输入面字体族跟随全局 + 占位符收口共享层（内层原生控件 inherit / 裸 font-family 只在字体定义处 / 例外台账只许缩短）（源: cases/misc.yml）──
+_CASE_MC_160 = EvalCase(
+    id='MC-160',
+    legacy_id='',
+    title='H5 输入面字体族跟随全局 + 占位符收口共享层（内层原生控件 inherit / 裸 font-family 只在字体定义处 / 例外台账只许缩短）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['商家在手机浏览器里打开后台（登录 / 表单 / 报工 / 入库 / 售后 / 坐席）：输入框里打字与占位提示，字体应当与这一页其它文字一致，不该忽然变成另一种字体。'],
+    expectations=[],
+    data_checks=['🔴 **判据 ①·内层原生控件继承字体族**：共享层 `frontend/bmini-app/src/styles/input-center.scss` 必须给 `.weui-input` 与 `.taro-textarea` **两个**内层选择器都写 `font-family: inherit`，`.taro-textarea` 另写 `font-size: inherit`（UA 默认 13.33px monospace）。执行点 = frontend/bmini-app/tests/input-typography-guard.test.ts::inheritProblems。红证：删掉任一条声明 ⇒ 红并具名那个内层控件', '🔴 **判据 ②·裸的 font-family 收口**：全 app 的 `font-family: <具体字体>` 只许出现在**字体定义处**（`src/app.scss` 的 `page, body`）或台账 frontend/bmini-app/tests/input-font-ledger.json；**未登记即红**、**死条目即红**（只许缩短）、**条数现取**（同文件多一处就红）。执行点 = 同文件::bareFontFamilyProblems。红证：往任一页面 scss 加 `font-family: Arial` ⇒ 红并具名文件与声明', '🔴 **判据 ③·占位符唯一来源**：`::placeholder` 只许出现在共享层；两个内层选择器同色 `$text-secondary`（与 issue #6476 的输入条同 token）；占位符**不写** `font-size`（继承控件自身，避免第二个口径）。执行点 = 同文件::placeholderProblems。红证：往页面 scss 加 `&::placeholder { color: #999 }` ⇒ 红并具名文件', "🔴 **判据 ④·射程完整**：`src` 的 `.tsx` 里不许裸写原生 `<input>` / `<textarea>`（它们拿不到内层 class ⇒ 共享层规则一条都不生效）；同时反空跑：真扫到 `<Textarea>` 面。执行点 = 同文件::rawControlProblems。红证：注入 `<input className='x'/>` ⇒ 红并具名文件", "🔴 **反空跑 / 接线**：共享层必须被 `src/app.scss` 真的 `@use` 引入（写在文件里但没接线 ⇒ 判据空转）；台账非空（空台账 fail-closed）。红证：删掉 `@use './styles/input-center.scss'` ⇒ 红", '🔴 **共享层只许 inherit**：共享层给内层写具体字体族 / 字号 ⇒ 红（那是「顺手改了全站输入面视觉」，本单的口径是**观感逐字不变**）。红证：把 `inherit` 换成 `-apple-system, …` ⇒ 红', '🔴 **红证总表（注入式，实跑）**：在 `frontend/bmini-app` 下执行 `npx jest input-typography-guard` ⇒ 15 passed / 0 failed；11 条内存注入各自报出**具名**对象（删 inherit / 改具体字体 / 摘 `@use` / 页面加裸字体族 / 摘台账例外 / 同值追加 / 页面加占位符 / 改占位符色 / 给占位符加字号 / 注入原生 `<input>` / 清空台账）。'],
+    skip_reason='[frontend-contract] 纯静态形态守卫（jest + fs 读 scss / tsx，零 DOM 渲染、零网络、零 LLM）由 frontend/bmini-app/tests/input-typography-guard.test.ts 验证，不进入 agent-eval 冒烟',
+    tags=['bmini', 'h5', 'input', 'typography', 'single-source', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── MC-161 [NORMAL] 数字输入精度面（issue #8004）：涉钱 / 涉数量格不许再用 `type="number"`（中间态 `12.` 与千分位 `1,234.56` 会被浏览器吞掉）—— 共用 `DecimalInput` 一处解析/校验/话术 + 类级台账守卫（源: cases/misc.yml）──
 _CASE_MC_161 = EvalCase(
     id='MC-161',
@@ -3916,5 +3934,6 @@ CASES = (
     _CASE_MC_155,
     _CASE_MC_156,
     _CASE_MC_157,
+    _CASE_MC_160,
     _CASE_MC_161,
 )
