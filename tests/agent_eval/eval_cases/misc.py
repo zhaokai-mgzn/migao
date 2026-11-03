@@ -3640,9 +3640,9 @@ _CASE_MC_147 = EvalCase(
     forbidden_card_text=[],
 )
 
-# ── MC-154 [NORMAL] 终端壳打印能力三态（issue #8310）：桥在 ≠ 打印机在 —— printerMode 负向 / 读不到都不许说「由本机打印机直接出纸」，且「判不了」与「确知没有」分开说（源: cases/misc.yml）──
-_CASE_MC_154 = EvalCase(
-    id='MC-154',
+# ── MC-156 [NORMAL] 终端壳打印能力三态（issue #8310）：桥在 ≠ 打印机在 —— printerMode 负向 / 读不到都不许说「由本机打印机直接出纸」，且「判不了」与「确知没有」分开说（源: cases/misc.yml）──
+_CASE_MC_156 = EvalCase(
+    id='MC-156',
     legacy_id='',
     title='终端壳打印能力三态（issue #8310）：桥在 ≠ 打印机在 —— printerMode 负向 / 读不到都不许说「由本机打印机直接出纸」，且「判不了」与「确知没有」分开说',
     skill=Skill.GENERAL,
@@ -3858,5 +3858,5 @@ CASES = (
     _CASE_MC_152,
     _CASE_MC_153,
     _CASE_MC_147,
-    _CASE_MC_154,
+    _CASE_MC_156,
 )

@@ -7252,7 +7252,7 @@ cases:
         - pr-check.yml
       verifies: []
 
-  - id: MC-154
+  - id: MC-156
     legacy_id: ""
     title: "终端壳打印能力三态（issue #8310）：桥在 ≠ 打印机在 —— printerMode 负向 / 读不到都不许说「由本机打印机直接出纸」，且「判不了」与「确知没有」分开说"
     domains:
@@ -7278,7 +7278,7 @@ cases:
       - "**边界（照实登记，§19.1）**：① 判据只钉**本仓这一侧**（判定 + 文案 + 取值接线），**不覆盖**原生侧是否真的按 `PrinterLink.mode()` 赋值（仓外，终端仓另单）；② 不判「这台机器该不该配打印机」（硬件选型不在本单）；③ 不改任何门禁的通过条件、不新增豁免；④ `terminalBridge` 的既有定义（`chrome.webview`）**未动** —— 本轮只让「能力」由原生上报的事实说话。"
     precondition: "本用例是 [backend-contract]：前置 = frontend/bmini-app/src/utils/inbound/printCapability.ts 的终端分支在场、`PrintEnv.printerMode` 可注入、`readPrintEnv()` 读 `window.__CFG__`；能力探测是纯函数（零网络、零硬件），页面侧已有的 `capability.ok` 门禁（打印按钮 disabled）不变。"
     skip_reason: "[backend-contract] 纯前端确定性判据（能力探测 = 纯函数 + 取值接线 + 源码结构守卫），由 frontend/bmini-app/tests/inbound-print-capability-terminal.test.ts 验证，非 LLM 行为，不进入 agent-eval 冒烟"
-    merge_log: "2026-11-03 新增（issue #8310）。病 = 终端壳**打印能力误报**：页面说「由本机打印机直接出纸」，本机 `PrinterLink.mode()` = **-1**；根因 = `probePrintCapability()` 的终端分支**只看壳**（有 `chrome.webview` 就 `ok:true`）、`PrintEnv` 里没有能力字段。修 = 三态判定 `terminalPrintState(printerMode)`（`>0` available / `<0` unavailable / `0`·缺省·非有限 unknown），新增两条缺口文案（`terminal-printer-unavailable` / `terminal-print-unknown`）并登记进 `INBOUND_PRINT_GAP_WIRING`；`readPrintEnv()` 从 `window.__CFG__.printerMode` 取数（非数字按读不到）。取号 = MC-154（`python3 scripts/next_case_id.py MC` 现取 main 001-098/100-144/146-147 ⇒ 工具返回历史空档 MC-099，按裁定**不回填**；MC-139~MC-153 属并行包保留带，**避开** ⇒ 顺延 MC-154）。🔴 **仓外事实（如实登记，不假造）**：原生侧本轮**还没有**送 `printerMode` ⇒ 真机一律落 `unknown`（fail-closed：不许说能打）；**原生侧要补送 `printerMode`**（值域口径：负 = 不可用 / 正 = 可用 / 0 与缺省 = 判不了），补送后本仓代码**无需再改**。边界 = 不覆盖原生赋值、不判硬件选型。"
+    merge_log: "2026-11-03 新增（issue #8310）。病 = 终端壳**打印能力误报**：页面说「由本机打印机直接出纸」，本机 `PrinterLink.mode()` = **-1**；根因 = `probePrintCapability()` 的终端分支**只看壳**（有 `chrome.webview` 就 `ok:true`）、`PrintEnv` 里没有能力字段。修 = 三态判定 `terminalPrintState(printerMode)`（`>0` available / `<0` unavailable / `0`·缺省·非有限 unknown），新增两条缺口文案（`terminal-printer-unavailable` / `terminal-print-unknown`）并登记进 `INBOUND_PRINT_GAP_WIRING`；`readPrintEnv()` 从 `window.__CFG__.printerMode` 取数（非数字按读不到）。取号 = **MC-156（让号后的终态）**：本包首取 MC-154 并随 PR #8559 于 2026-11-03 14:44 (+08) 合并，而 PR #8561（issue #7050）的 claim `.github/cases/claims/8561-MC-154.json` 于同日 **14:41** 先行登记（早 3 分钟）⇒ 按「后合入者让号」顺延；MC-155 已由 PR #8560（issue #7992）登记 ⇒ 终态 **MC-156**，本仓 claim = `.github/cases/claims/8559-MC-156.json`。更早的取号口径（留档）：`python3 scripts/next_case_id.py MC` 现取 main 001-098/100-144/146-147 时返回历史空档 MC-099，按裁定**不回填**；MC-139~MC-153 属并行包保留带，避开。⚠️ **教训（照实登记）**：取号工具的候选集只扫 `.github/cases/*.yml`，**不扫** `.github/cases/claims/*.json` ⇒ 在飞 claim 看不见；取号时应另跑一次 `gh api repos/zhaokai-mgzn/migao/contents/.github/cases/claims` 核对。🔴 **仓外事实（如实登记，不假造）**：原生侧本轮**还没有**送 `printerMode` ⇒ 真机一律落 `unknown`（fail-closed：不许说能打）；**原生侧要补送 `printerMode`**（值域口径：负 = 不可用 / 正 = 可用 / 0 与缺省 = 判不了），补送后本仓代码**无需再改**。边界 = 不覆盖原生赋值、不判硬件选型。"
     traces:
       tests:
         - "frontend/bmini-app/tests/inbound-print-capability-terminal.test.ts"
