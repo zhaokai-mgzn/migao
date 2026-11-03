@@ -10,23 +10,26 @@
 既有判据 `growth_gate.case_trace_check` **只看变更集** ⇒ 一个**只改 YAML** 的批次提交不触发它，
 悬空引用可以**潜伏**，直到下一个碰那个文件的 PR 才爆 —— 而那时判红会指向**那个无辜的 PR**。
 
-## 两条腿（分工是本节的核心，别混）
+## 三条腿（分工是本节的核心，别混）
 
 | 腿 | 判据 | 行为 | 本文件怎么测 |
 |---|---|---|---|
 | 变更集 | `growth_gate.case_trace_check`（`QA Growth Gate`，required） | 悬空 ⇒ **阻塞** | D1 用**合成 git 仓库**直连真函数（红/绿双向） |
-| 全库 | `.github/case_ids_dangling.py` + `docs/testing/case-ids-dangling.md` | 悬空 ⇒ **只列出、不阻塞** | D2 合成语料具名（文件:行 / 悬空 id / 最近改动 commit）+ D3 判别力自证 + D4 现网读数（**只报不拦**） |
+| 全库 · 报告 | `.github/case_ids_dangling.py` + `docs/testing/case-ids-dangling.md` | 悬空 ⇒ **只列出、不阻塞**（全貌） | D2 合成语料具名 + D3 判别力自证 + D4 现网读数（**只报不拦**） |
+| 全库 · 基线 | `.github/case-ids-dangling-baseline.json` + `baseline_violations()`（唯一实现） | **新增即红** / 少于基线 ⇒ 要求同批下沉 / `history` 回升 ⇒ 红 | D7（阻塞面，含「调大基线 ⇒ 报不得放宽」） |
 
-🔴 **报告腿不许变成隐形门禁**（父裁定：历史遗留不阻塞）⇒ D4 **不断言** `findings == []`，
+🔴 **报告腿不许变成隐形门禁**（裁定：历史遗留不阻塞）⇒ D4 **不断言** `findings == []`，
 只在**非空**时 `warnings.warn` 具名（出现在 CI 的 warnings summary 里），并断言扫描器**没有失明**。
-🔴 **不复制解析实现**：两条腿都调 `growth_gate` 的 `extract_case_ids` / `load_case_index` / `_is_test_file`。
+🔴 **但「新增」必须拦住**（裁定 2026-11-03）：只改 YAML 的批合让号不碰测试文件 ⇒ 变更集腿看不见，
+只 warn = 没人看 = 等于没有 ⇒ 由 **D7 的基线台账**承担阻塞（`entries` + `history` 读数链，只许缩短）。
+🔴 **不复制解析实现**：三条腿都调 `growth_gate` 的 `extract_case_ids` / `load_case_index` / `_is_test_file`。
 
 ## 边界（照实登记，§19.1）
 
 - 扫描面 = `growth_gate._is_test_file` 的同一口径（`.py` / `.java` / `.ts` / `.tsx` 且文件名含 test/spec）
   ⇒ `.mjs` / `.js` 判据不在面内；
 - 「最近一次改动该文件的 commit」是**文件级**读数（不是行级 blame），只作归因入口；
-- 全库腿**不阻塞** ⇒ 本文件**不设**「新增即红」的 baseline 台账（要让新增即红成立需要另建台账，未做）；
+- 报告腿**不阻塞**（全貌）；「新增即红」由基线台账 + D7 承担（台账只许缩短，不得放宽）；
 - 本判据不改任何门禁的通过条件、不新增豁免。
 """
 import json
@@ -224,3 +227,31 @@ def test_d6_exit_codes_are_three_state():
         assert dangling.main(["x"]) == 3, "不可判定 ⇒ 3（不得当 0 读）"
     finally:
         dangling.scan = original
+
+
+def test_d7_baseline_ledger_new_dangling_blocks_and_cannot_widen():
+    """D7（**基线面，阻塞**）：新增即红 / 只许缩短 / 基线不得放宽 / 未登记不得当 0 读。
+
+    为什么这条必须**阻塞**（裁定 2026-11-03）：批合工具会把 main 上**已合入**的号也改掉 ⇒
+    悬空引用会**继续产生**，而它**只改 YAML**（变更集腿看不见）⇒ 只 warn 的报告腿 = 没人看 = 等于没有。
+    """
+    baseline = dangling.load_baseline()
+    assert baseline, "基线台账缺失 / 不可解析 ⇒ 不得当「0 条」读"
+    problems = dangling.baseline_violations(baseline, len(dangling.scan()["findings"]))
+    assert problems == [], (
+        "实测与基线台账不一致（这是**阻塞面**）：\n  " + "\n  ".join(problems)
+    )
+
+    good = {"entries": {"dangling_total": 0}, "history": [{"date": "2026-11-03", "dangling_total": 0}]}
+    # ① 新增即红：多出 1 条 ⇒ 判红，且要求「先修，不许调大基线」
+    added = dangling.baseline_violations(good, 1)
+    assert any("新增即红" in p for p in added), added
+    # ② 只许缩短：实测比基线少 ⇒ 要求同批下沉
+    shrunk = dangling.baseline_violations({"entries": {"dangling_total": 2}, "history": [{"dangling_total": 2}]}, 0)
+    assert any("只许缩短" in p for p in shrunk), shrunk
+    # ③ 基线不得放宽：history 出现回升 ⇒ 判红
+    widened = {"entries": {"dangling_total": 2}, "history": [{"dangling_total": 0}, {"dangling_total": 2}]}
+    assert any("基线不得放宽" in p for p in dangling.baseline_violations(widened, 2)), widened
+    # ④ 台账链断开 / 未登记 ⇒ 判红（不得当 0 读）
+    assert dangling.baseline_violations({}, 0), "空台账必须判红（否则删掉台账就绕过阻塞）"
+    assert dangling.baseline_violations({"entries": {"dangling_total": 1}, "history": [{"dangling_total": 0}]}, 0)

@@ -28,9 +28,19 @@
 
 | 退出码 | 含义 |
 |---|---|
-| `0` | 全库**无**悬空引用 |
-| `1` | **有**悬空引用（报告型 —— 调用方**不得**当成失败门禁） |
+| `0` | 全库**无**悬空引用，且与基线台账（`.github/case-ids-dangling-baseline.json`）**相等** |
+| `1` | **有**悬空引用 / 基线判据不满足（**报告面**照列全貌；**阻塞面** = `tests/unit_ci_workflows/test_case_ids_dangling_report.py` 的 D7） |
 | `3` | 无法判定（用例库读不到 / git 不可用 / 扫描面为空）—— **不得当 0 读** |
+
+## 两面：报告（不阻塞）+ 基线（**新增即红，只许缩短**）
+
+| 面 | 谁承担 | 行为 |
+|---|---|---|
+| 报告 | 本工具输出 + `docs/testing/case-ids-dangling.md` | 列出全貌，**不拦** |
+| 基线 | `.github/case-ids-dangling-baseline.json` + `baseline_violations()`（**唯一实现**） | 实测 **>** 基线 ⇒ **红**（新增即红）；实测 **<** 基线 ⇒ **红**（要求同批下沉）；`history` 出现回升 ⇒ **红**（基线不得放宽） |
+
+🔴 **为什么必须有基线这一面**（裁定 2026-11-03）：批合工具会把 main 上**已合入**的号也改掉 ⇒
+悬空引用会**继续产生**；只 warn 的报告面 = 没人看 = 等于没有。「新增即红」才是唯一能拦住下一次的机制。
 
 ## 边界（照实登记，§19.1）
 
@@ -51,6 +61,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 REPO_ROOT = HERE.parent
 CASES_DIR = REPO_ROOT / ".github" / "cases"
+BASELINE_PATH = REPO_ROOT / ".github" / "case-ids-dangling-baseline.json"
 DEFAULT_OUT = REPO_ROOT / "docs" / "testing" / "case-ids-dangling.md"
 EXIT_CLEAN, EXIT_FOUND, EXIT_UNDECIDABLE = 0, 1, 3
 
@@ -156,12 +167,64 @@ def scan(repo_root: Path = REPO_ROOT, cases_dir: Path = CASES_DIR) -> dict:
     }
 
 
-def render_markdown(report: dict, *, generated_on: str) -> str:
+def load_baseline(path: Path = BASELINE_PATH) -> dict:
+    """读基线台账；缺失 / 不可解析 ⇒ `{}`（调用方**判红**，不得当 0 读）。"""
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def baseline_violations(baseline: dict, actual: int) -> list[str]:
+    """基线台账的**唯一判定实现**（阻塞面 = `test_case_ids_dangling_report.py` 的 D7）。
+
+    三条规则（凡是条数**现取**，不写死）：
+    1. **新增即红**：`actual > entries.dangling_total`；
+    2. **只许缩短**：`actual < entries.dangling_total` ⇒ 要求同批下沉基线（`entries` + `history` 各追加一条）；
+    3. **台账不得放宽 / 不得断链**：`history` 单调非增；`entries` 必须等于 `history` 末行。
+    """
+    problems: list[str] = []
+    entries = baseline.get("entries") if isinstance(baseline, dict) else None
+    history = baseline.get("history") if isinstance(baseline, dict) else None
+    if not isinstance(entries, dict) or "dangling_total" not in entries:
+        return ["基线台账未登记（缺 `entries.dangling_total`）⇒ **不得当 0 读**"]
+    if not isinstance(history, list) or not history:
+        return ["基线台账缺 `history` 读数链 ⇒ **不得当 0 读**（无法判断有没有放宽过）"]
+    last = history[-1] if isinstance(history[-1], dict) else {}
+    if "dangling_total" not in last:
+        return ["`history` 末行缺 `dangling_total`"]
+    if entries["dangling_total"] != last["dangling_total"]:
+        problems.append(
+            f"台账链断开：`entries.dangling_total` = {entries['dangling_total']}，"
+            f"而 `history` 末行 = {last['dangling_total']}（两者必须相等）"
+        )
+    values = [row.get("dangling_total") for row in history if isinstance(row, dict)]
+    for prev, cur in zip(values, values[1:]):
+        if isinstance(prev, int) and isinstance(cur, int) and cur > prev:
+            problems.append(f"**基线不得放宽**：`history` 出现 {prev} → {cur}（只许缩短）")
+    expected = entries["dangling_total"]
+    if isinstance(expected, int):
+        if actual > expected:
+            problems.append(
+                f"**新增即红**：实测 {actual} 条 > 基线 {expected} 条 ⇒ "
+                f"先修悬空引用（改测试文件头 / 补回用例块），不要调大基线"
+            )
+        elif actual < expected:
+            problems.append(
+                f"**只许缩短**：实测 {actual} 条 < 基线 {expected} 条 ⇒ 请**同批下沉**基线"
+                f"（`entries.dangling_total` 改 {actual}，并在 `history` 追加一行带 note）"
+            )
+    return problems
+
+
+def render_markdown(report: dict, *, generated_on: str, baseline_total: int | None = None) -> str:
     lines = [
         "# 用例 id 悬空引用清单（全库，报告型）",
         "",
         "> 🔴 **本文件是读数快照，不是门禁**：悬空引用**不阻塞合并**（可能是历史遗留）。"
-        "变更集里的悬空引用由 `growth_gate.case_trace_check` **阻塞**（`QA Growth Gate` 腿）。",
+        "变更集里的悬空引用由 `growth_gate.case_trace_check` **阻塞**（`QA Growth Gate` 腿）；"
+        "**新增**的悬空引用由基线台账阻塞（新增即红，见下表）。",
         "> 工具 = `.github/case_ids_dangling.py`（单一实现，解析规则全部复用 `growth_gate`）。",
         "",
         "## 本次读数",
@@ -200,11 +263,14 @@ def render_markdown(report: dict, *, generated_on: str) -> str:
         "| 面 | 判据 | 行为 |",
         "|---|---|---|",
         "| 变更集 | `growth_gate.case_trace_check`（`QA Growth Gate`，required） | 悬空 ⇒ **阻塞** |",
-        "| 全库 | 本文件 + `.github/case_ids_dangling.py` | 悬空 ⇒ **只列出、不阻塞** |",
+        "| 全库 · 报告 | 本文件 + `.github/case_ids_dangling.py` | 悬空 ⇒ **只列出、不阻塞**（全貌） |",
+        "| 全库 · 基线 | `.github/case-ids-dangling-baseline.json` + `baseline_violations()`（D7 断言） | **新增即红**；少于基线 ⇒ 要求同批下沉；`history` 回升 ⇒ **红**（不得放宽） |",
         "",
-        "缺口（照实登记）：**只改 YAML 的批次提交**（让号）可能在不碰测试文件的前提下新增悬空引用 ⇒ "
-        "变更集判据看不见；本清单是它的**可读承接面**（跑一次即现形），但**不自动**判红 —— "
-        "要让「新增即红」成立需要一条 baseline 台账（未建，等裁定）。",
+        f"基线台账现值：**{baseline_total if baseline_total is not None else '读不到'}** 条"
+        "（实测必须与它相等 —— 多一条要修、少一条要同批下沉）。",
+        "",
+        "为什么需要它：**只改 YAML 的批次提交**（让号）可能在不碰测试文件的前提下新增悬空引用 ⇒ "
+        "变更集判据看不见；报告面是**全貌**、基线面是**唯一的拦截机制**（只 warn = 没人看 = 等于没有）。",
         "",
     ]
     return "\n".join(lines)
@@ -223,8 +289,11 @@ def main(argv: list[str]) -> int:
         print(f"❓ 无法判定：{report['reason']}（不得当 0 读）", file=sys.stderr)
         return EXIT_UNDECIDABLE
 
+    baseline = load_baseline()
+    problems = baseline_violations(baseline, len(report["findings"]))
+
     if as_json:
-        print(json.dumps(report, ensure_ascii=False, indent=2))
+        print(json.dumps({**report, "baseline_violations": problems}, ensure_ascii=False, indent=2))
     else:
         print(
             f"扫描 {report['scanned']} 个测试文件 / 用例库 {report['corpus']} 条 ⇒ "
@@ -232,18 +301,30 @@ def main(argv: list[str]) -> int:
         )
         for f in report["findings"]:
             print(f"  · {f['file']}:{f['line']} 声明了不存在的用例 id {f['case_id']}（{f['last_commit']}）")
+        for p in problems:
+            print(f"  ❌ {p}")
         if report["findings"]:
-            print("ℹ️ 报告型 —— 不阻塞合并；变更集里的悬空由 QA Growth Gate 阻塞。")
+            print("ℹ️ 报告面：全貌已列出（不阻塞合并）；变更集里的悬空由 QA Growth Gate 阻塞。")
+        if not problems and not report["findings"]:
+            print("✅ 与基线台账一致（新增即红 / 只许缩短两条规则都满足）。")
 
     if write_to is not None:
         from datetime import date
 
         target = write_to if write_to.is_absolute() else REPO_ROOT / write_to
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(render_markdown(report, generated_on=date.today().isoformat()), encoding="utf-8")
+        entries = (baseline.get("entries") or {}) if isinstance(baseline, dict) else {}
+        target.write_text(
+            render_markdown(
+                report,
+                generated_on=date.today().isoformat(),
+                baseline_total=entries.get("dangling_total"),
+            ),
+            encoding="utf-8",
+        )
         print(f"✅ 已写 {target.relative_to(REPO_ROOT) if target.is_relative_to(REPO_ROOT) else target}")
 
-    return EXIT_FOUND if report["findings"] else EXIT_CLEAN
+    return EXIT_FOUND if (report["findings"] or problems) else EXIT_CLEAN
 
 
 if __name__ == "__main__":
