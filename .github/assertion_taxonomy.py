@@ -174,6 +174,11 @@ WRITE_TOOL_ACTIONS: dict[str, frozenset[str]] = {
     # 值必须与该工具源码的 `read_only_actions` 互补（不变式见
     # `tests/unit_ci_workflows/test_case_trust_gate.py` 的 `test_write_tool_actions_table_matches_sources`）。
     "notification_manage": frozenset({"mark_read", "read_all"}),
+    # 🔴 issue #7050（2026-11-03，员工域 #5247 退役的回填）：`create` / `update` 接回 B 端，
+    # `read_only_actions = {"list","detail"}`（读）⇒ 写 action = 余下两个 ⇒ 它重新是
+    # 「部分写」工具（上面 #5247 那段把 `employee_manage（{"list","detail"}）` 记为已移出本表，
+    # 现在前提反向成立）。不登记 ⇒ 含它的用例不会被分类为写用例（效果层/自清理判据静默空壳）。
+    "employee_manage": frozenset({"create", "update"}),
 }
 
 # 安全护栏：写工具的判据面不得为空（空集合 = 所有写用例都判成读用例 = 门禁静默变空壳）。
