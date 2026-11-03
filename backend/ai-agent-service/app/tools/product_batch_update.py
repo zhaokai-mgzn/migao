@@ -130,7 +130,7 @@ BATCH_LEDGER_KEY = "product_batch_ledger"
 BATCH_LEDGER_LIMIT = 8
 #: 台账记录的种类：`executed` = **执行成功**的批次（撤销的唯一合法来源）。
 LEDGER_EXECUTED = "executed"
-#: **允许**从会话上下文兜底 `batch_id` 的 action（现取：只有 `revert`）。
+#: **允许**从会话上下文**定位** `batch_id` 的 action（现取：只有 `revert`；定位到也只点名、不代执行）。
 CONTEXT_FALLBACK_ACTIONS = frozenset({"revert"})
 #: action → 台账里可用的记录种类（新增批量路径必须在这里表态，不许各写一份候选口径）。
 _CANDIDATE_KIND_OF_ACTION = {"revert": LEDGER_EXECUTED}
