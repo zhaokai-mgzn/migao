@@ -99,11 +99,21 @@ SUCCESSOR_TOKENS = ("+ 1", "+1", "+= 1", "+=1", "max(", "min(")
 #: （双向：多一个 ⇒ 红、少一个 ⇒ 红）。登记面 = `declaration_gate_registry.json::same_source_claims`。
 ALLOCATION_IMPLEMENTATIONS_FROZEN = (
     "scripts/next_case_id.py",
-    # `scripts/batch_merge_lib.py::allocate_free_id`：**批次合并**（issue #8323）里的「后合入者让号」。
-    # 为什么不是「改调 next_case_id.py」：那个工具**要联网**（列 open PR 取在飞面），而合批工具
-    # 必须在**离线夹具 / 无 gh 的环境**里也能跑完（判据 = tests/unit_ci_workflows/test_batch_merge_tool.py）。
-    # 取舍（已在模块 docstring 的「覆盖面」登记）：只用**批次内** `max+1`，看不见批次**之外**的在飞 PR
-    # ⇒ 仍可能与外部在飞包撞号，靠下一次合入的「后合入者让号」收口（重启条件：出现两次以上批次外撞号）。
+    # `scripts/batch_merge_lib.py::allocate_free_id` —— **批次合并**（issue #8323）里的「后合入者让号」。
+    # 为什么**不是**「删掉它并改调 `scripts/next_case_id.py`」（两条理由；② 是现取实测，不是推断）：
+    # ① **口径不同，委托会退化**：工具的口径是「main ∪ 全部 open PR ∪ 本工作区」上的**最小空闲号**
+    #    （会**填历史空档**）；而合批工具只在**本地集成分支**上跑，**看不见在飞面**（对在飞面的可见性
+    #    正是工具那套口径能成立的前提）。直接接手「最小空闲号」恰好会落进「用官方工具的在飞包也正占着」
+    #    的空档区 ⇒ **撞号概率上升**，正是本判据要治的那个缺陷。合批的保守口径（批次内 `max+1`、
+    #    **不填空档**）写在 `allocate_free_id` 的 docstring 与模块 docstring 的「覆盖面」里；
+    #    且工具在看不到在飞面时是 `exit 3`（**不许取号**）⇒ 合批一旦依赖它，「让号」在 `--dry-run` /
+    #    离线夹具里会直接不可用（判据 = tests/unit_ci_workflows/test_batch_merge_tool.py）。
+    # ② **就算全量委托也过不了这条判据**（现取实测，非推断）：本文件命中指纹的另一半来自**下标算术**
+    #    （`starts[i + 1]` / `at + 1`）与散文里的 `max+1`，与「算号」无关 ⇒ 把 `max(nums) + 1` 换成
+    #    调工具后，`unregistered_allocators` 仍判「命中指纹但未登记」。⇒ 登记 + 在此写透理由，是这条
+    #    判据自己给出的合法出口（不是豁免：判据仍双向核验，多/少一个照样红）。
+    # 风险照实登记（不粉饰）：与批次**之外**的在飞包仍可能撞号，靠下一次合入的「后合入者让号」收口
+    # —— 重启条件 = 出现两次以上批次外撞号 ⇒ 那就该改成「批次也读在飞面」（届时本登记项消失）。
     "scripts/batch_merge_lib.py",
 )
 
