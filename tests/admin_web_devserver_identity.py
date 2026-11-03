@@ -42,9 +42,12 @@ Playwright **直接复用它**、一条命令都不执行 ⇒ **断言与截图�
 
 ## Next 16「按目录单例」—— 第二种必红形态（issue #5121，Next 16.3.5 实测）
 
-Next 16 起 `next dev` 在 `<projectDir>/.next/dev/lock` 上取一把 `flock`
+Next 16 起 `next dev` 在 `<projectDir>/<distDir>/dev/lock` 上取一把 `flock`
 （`node_modules/next/dist/server/lib/router-utils/setup-dev-bundler.js` 的
 `Lockfile.acquireWithRetriesOrExit(path.join(distDir, 'lock'), 'next dev', ...)`）。
+⚠️ 目录名**不再硬编码**（issue #6692）：dev 与 build 的输出目录已物理隔离（dev → `.next-dev`），
+`distDir` 的唯一真值源 = `frontend/admin-web/next.config.mjs` 的 `DEV_DIST_DIR`，本文件**现取**它
+（取不到 ⇒ fail-closed；写死第二份 ⇒ 配置一改就静默退化成「没探测到」）。
 ⇒ 同检出里第二个 `next dev` **哪怕换了端口**也会取锁失败，打印
 `⨯ Another next dev server is already running.` 并 exit 1。
 
@@ -74,6 +77,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import socket
 import subprocess
@@ -91,8 +95,43 @@ EXIT_RED = 1
 EXIT_UNDECIDABLE = 3
 
 DEFAULT_PORT = 3001
+
+
+def _resolve_dev_dist_dir() -> str:
+    """dev 输出根**现取** `frontend/admin-web/next.config.mjs` 的 `DEV_DIST_DIR`（issue #6692）。
+
+    为什么不再硬编码：dev 与 build 物理隔离后，dev 的中间态（含 dev 锁）在 `<DEV_DIST_DIR>/dev/`
+    —— 目录名只有 `next.config.mjs` 一个真值源。硬编码第二份 ⇒ 配置一改，本判据会**静默
+    退化成「没探测到」**（假绿方向：同检出已有 dev server 也不再被拒）。取不到 ⇒ fail-closed。
+
+    定位方式：先按**本文件所在位置**向上找仓库根（真跑形态），再按 **cwd** 向上找（红证会把本文件
+    复制到 tmp 当变异体跑，那时 `__file__` 不在仓库里）。两路都找不到 ⇒ 抛错（不是静默用缺省目录）。
+    """
+    relative = Path("frontend") / "admin-web" / "next.config.mjs"
+    searched = []
+    for anchor in (Path(__file__).resolve(), Path.cwd().resolve()):
+        for parent in (anchor, *anchor.parents):
+            candidate = parent / relative
+            searched.append(str(candidate))
+            if candidate.is_file():
+                text = candidate.read_text(encoding="utf-8")
+                match = re.search(r"^\s*const\s+DEV_DIST_DIR\s*=\s*['\"]([^'\"]+)['\"]", text, re.MULTILINE)
+                if not match:
+                    raise RuntimeError(
+                        f"{candidate} 里取不到 `const DEV_DIST_DIR = '<dir>'` —— dev 锁路径没有真值源，"
+                        "判据必须 fail-closed（改配置时同批改这里，见 issue #6692）"
+                    )
+                return match.group(1)
+    raise RuntimeError(
+        "找不到 `frontend/admin-web/next.config.mjs`（dev 锁路径的唯一真值源）⇒ 判据 fail-closed；"
+        f"找过：{searched[:6]} …（共 {len(searched)} 处）"
+    )
+
+
+DEV_DIST_DIR = _resolve_dev_dist_dir()
 # Next 16 的 dev server 锁（相对 admin-web 根）：`next dev` 在它上面取 flock ⇒ 按目录单例。
-DEV_LOCK_RELATIVE = os.path.join(".next", "dev", "lock")
+# dev 阶段的 distDir 会被 Next 再追加一层 `dev`（`server/config.js`）⇒ 锁在 `<DEV_DIST_DIR>/dev/lock`。
+DEV_LOCK_RELATIVE = os.path.join(DEV_DIST_DIR, "dev", "lock")
 # 占用者身份（cwd）只能从进程表拿；拿不到 ⇒ 未判定（不是通过）
 LSOF = "lsof"
 
@@ -166,7 +205,7 @@ def _same_dir(a, b) -> bool:
 
 
 def dev_lock_path(project):
-    """本检出里 Next 16 dev server 的锁文件路径（`<project>/.next/dev/lock`）。"""
+    """本检出里 Next 16 dev server 的锁文件路径（`<project>/<DEV_DIST_DIR>/dev/lock`，目录现取配置）。"""
     return Path(project) / DEV_LOCK_RELATIVE
 
 

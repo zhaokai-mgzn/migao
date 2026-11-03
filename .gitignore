@@ -37,6 +37,9 @@ node_modules/
 node_modules
 .next/
 frontend/admin-web/.next/
+# issue #6692：本地 `next dev` 的输出根与 build 物理隔离（dev → `.next-dev`，build 仍是 `.next`）
+.next-dev/
+frontend/admin-web/.next-dev/
 out/
 # acceptance/** = **验收证据产物面**，已迁出公开仓（issue #8424 / PR #8425，证据去私有仓 migao-internal）。
 # 整体忽略 ⇒ 新证据默认**进不来**（`git add acceptance/` 会当场提示需要 `-f`），
