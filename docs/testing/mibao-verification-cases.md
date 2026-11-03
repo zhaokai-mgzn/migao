@@ -4186,7 +4186,7 @@
 ```
 溯源: 2026-10-31 新增（issue #8295）：两步确认，避免误写 ｜ tags: ui, preview
 
-## 杂项域（194 case）
+## 杂项域（197 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -7111,7 +7111,7 @@
 ```
 溯源: 2026-11-03 新增（issue #7034，假绿：`deploy-reconcile` 的「无代码漂移 ⇒ 已上线」判据看不见构建输入）。取号 MC-144（`python3 scripts/next_case_id.py MC` 现取；按「MC-099 刻意空档不回填」与 139~143 的在飞/已合占用避开，改取现取最大号之后的 144）。落码 = ① `.github/scripts/reconcile_build_inputs.py`（构建输入面的**唯一**取值源：登记册逐条带理由 + 纯函数 `pathspec()` + 三态 CLI）② `.github/workflows/deploy-reconcile.yml` 的 `reconcile_one` 追加构建输入（正文顶到 13.25K 硬限 ⇒ 同批压缩历史注释，实测 12,919 → 11,873 字符）③ 判据 tests/unit_ci_workflows/test_reconcile_build_inputs.py（逐条执行式 + 三条负控 + 注入式红证 + 类级元守卫 + 豁免不陈旧 + 登记册不腐烂）④ `test_config_change_triggers_deploy.py` 的判定面改为「调用行 + 构建输入」，stray 只豁免已登记项 ⑤ 台账 frozen_max 13 → 4。 ｜ tags: ci, deploy, reconcile, false-green
 
-### MC-147. **状态列写面全族统一元守卫 SW-100**：53 张有 `status` 列的表 × 134 个写入口逐条登记（未登记即红 / 台账陈旧即红 / 裸字符串写状态列即红 / 每张状态表的合法集合必须有来源） 🔵
+### MC-148. **状态列写面全族统一元守卫 SW-100**：53 张有 `status` 列的表 × 134 个写入口逐条登记（未登记即红 / 台账陈旧即红 / 裸字符串写状态列即红 / 每张状态表的合法集合必须有来源） 🔵
 ```
 你: 入库单与工序那两处状态写缺陷各建了一颗单表守卫 —— 下一个人在**别的表**上、或用**那两颗看不见的写法**再加一条状态写面，凭什么会有东西红？
 数据: 🔴 **判据 1·未登记即红（具名）**：现取「写 `status` 列」的 Java 写点（`setStatus` / `wrapper.set(Entity::getStatus, …)` / `set("status", …)` / `setSql` / `Entity.builder()…status(…)`）+ mapper `@Update` 的 **SET 侧**写 `status`，逐个与台账 `state_write_face_ledger.json` 的 `write_points` 对账；缺一条 ⇒ 判红并报出 `表 / 写点 / 文件:行`。执行点 = tests/unit_ci_workflows/test_state_write_face_metaguard.py::test_every_status_write_is_registered
@@ -7127,7 +7127,7 @@
 ```
 溯源: 2026-11-03 新增（issue #6953 的族级元守卫 SW-100；与 MC-100 / MC-104 / PG-075 等单表守卫**有意不重叠** —— 它们裁谓词完整性，本表裁「写面有没有人认领 / 状态值是不是单一口径」）。取号（**两次让号，记实**）= `python3 scripts/next_case_id.py MC` 首取 **MC-143**；merge `origin/main` 时与 main 新增的 **MC-143**（issue #6997 / PR #8535）撞号 ⇒ 按「后合入者让号」顺延 **MC-144**；再次 merge 又与 main 新增的 **MC-144**（issue #7034 / PR #8537）撞号 ⇒ 顺延 **MC-145**；随后 CI 的取号判据（issue #6245）抓到 **MC-145 与在飞 PR #8538 同时占着** ⇒ 再按「后合入者让号」顺延终态 **MC-147**（工具每次都返回历史空档 MC-099 —— 按裁定**刻意空档不回填**）。**现取读数**：53 张有 `status` 列的表（`_sql_schema` 唯一解析点）、134 条写点（Java 108 / SQL 26）、覆盖 49 张表；合法集合权威：实体常量 10 / schema CHECK 14 / **无机器口径 36（冻结上限）**；裸字符串存量 56（冻结上限）。**红证（注入式，实跑）**：① 往真实 Service 里加一条未登记写面 ⇒ 判据 1 判红并具名；② 把常量改成裸字符串 ⇒ 判据 3 判红并具名；③ 把台账条目删掉 ⇒ 判据 2 判红（写点无主）；④ 把 `unregistered()` 的登记对账摘掉 / 把 `bare_literal_sites()` 摘掉 ⇒ 判据 1 / 判据 3 必红（判据 7 内建这两条内存变异体作常驻证）。**如实登记的既有缺陷（本包不修，不扩射程）**：`ProductionOperationCommandService#update` 的无条件状态写（见判据 8 的盲洞 ②）、`InboundOrderService` 的 builder 写形（盲洞 ①）、36 张表没有机器可读的合法状态集合、56 处裸字面量 —— 均为存量债，压测口径 = 台账基线**只许缩短**。 ｜ tags: state-transition, meta-guard, ledger, single-source, red-proof
 
-### MC-148. 本地 E2E 认证链的复用判据：只复用「token 自己还没过期」的 admin.json，mtime 降为解不出 exp 时的兜底并出声（issue #6411） 🔵
+### MC-149. 本地 E2E 认证链的复用判据：只复用「token 自己还没过期」的 admin.json，mtime 降为解不出 exp 时的兜底并出声（issue #6411） 🔵
 ```
 你: 本机跑 Playwright E2E（常态不起 admin-api）时，会话稍长就「上一轮绿、这一轮全红」，且红因指向当次的无关改动 —— 到底哪一步不对？
 期望: direct_reply
@@ -7141,7 +7141,7 @@
 ```
 溯源: 2026-11-03 新增（issue #6411，2026-10-06 撞见：本地 E2E 的 `admin.json` 复用窗口 1h > 登录态真实有效期 ~30min ⇒ 复用失效 token，所有 spec 连带红且无一句话指向「登录态过期」）。取号 MC-148（`python3 scripts/next_case_id.py MC` 现取 main 001-098,100-144；按在飞占用避开 139~147、按「MC-099 刻意空档不回填」不顺延）⇒ 取 148。落码 = ① `tests/e2e/helpers/auth-state-freshness.mjs`（无依赖判定器：JWT `exp` 权威 + mtime 兜底且出声，`now` 可注入）② `tests/e2e/fixtures/auth.setup.ts` 的复用块改为调它并把结论打印（原 `age < 3600_000` 直返删除；需重登 ⇒ 继续走真登录 = 自愈）③ 判据 tests/unit_ci_workflows/test_e2e_auth_reuse_freshness.py（5 条判据 + 注入式红证；用真 node 跑，同 `tests/e2e/helpers/api-base-url.mjs` 范式）。 ｜ tags: e2e, auth, jwt-exp, mtime-fallback, red-proof
 
-### MC-149. tests/e2e 的相对 import 必须解析得到（收集期判据）：少一层 `../` 的 POM 引用会让整套 spec「跑都跑不到」（issue #6411 链内顺带修） 🔵
+### MC-150. tests/e2e 的相对 import 必须解析得到（收集期判据）：少一层 `../` 的 POM 引用会让整套 spec「跑都跑不到」（issue #6411 链内顺带修） 🔵
 ```
 你: 本地跑 E2E 时 `npx playwright test --list` 直接报 `Cannot find module './base.page'` 并列出 `Total: 0 tests in 0 files` —— 而单跑某个 spec 时又「看着没事」，这类少一层 `../` 的引用怎么在仓内拦住？
 期望: direct_reply
@@ -7152,6 +7152,49 @@
 跳过: [backend-contract] 纯静态解析判据（真语料 + tmp 树红证），零网络、零浏览器，非 LLM 行为，不进入 agent-eval 冒烟
 ```
 溯源: 2026-11-03 新增（issue #6411 链内顺带修）：`tests/e2e/pages/auth/login.page.ts` 的 `import { BasePage } from './base.page'` 少一层 `../` ⇒ 收集期 `Cannot find module`，任何 import 该 POM 的 spec 连跑都跑不到（实测 `tests/e2e/specs/auth/login-sms.spec.ts` 触发；`--list` 在 origin/main 上是 `Total: 0 tests in 0 files`）。与本 PR 同源（本地 E2E 链不可用）故同批修：改 `../base.page` + 新增本判据。取号 MC-149（`python3 scripts/next_case_id.py MC` 现取；本包已占 MC-148，按「避开 139~147 在飞占用 / 不回填 MC-099」顺延取 149）。 ｜ tags: e2e, import-resolution, collection-phase, red-proof
+
+### MC-151. 单据列表「行内动作」的链接规格只许有一处定义：副本必须走共享原语 `RowActionLink`，未登记即红 / 台账只许缩短（issue #7082） 🔵
+```
+你: 同一件事（跳到该行详情）在售后列表是一段主题色文字链接、在入库单是描边按钮、在员工列表是另一段链接串 —— 过两周到底哪个才算「对的」？我把这几处各自改好看一点，行不行？
+数据: 🔴 **判据 ①（未登记即红，执行式）**：`frontend/admin-web/src/**` 里「链接规格」= **同一个类名串同时含** `text-primary-600` + `hover:text-primary-700` + `hover:underline`；除共享原语 `src/components/ui/RowActionLink.tsx` 外零副本（4 处已迁移 + 1 条带理由豁免）。执行点 = frontend/admin-web/tests/unit/row-action-link-single-source-guard.test.ts 的「③ 未登记即红」
+数据: 🔴 **判据 ②（负控：射程准）**：原语**自身**里的同一串**不被扫**（它是比对基准，扫它 = 恒红）；反向自证 = 原语真的含这三个 token（删掉 ⇒ 扫描面为空 ⇒ 先在这里红）。执行点 = 同文件「① 扫描面非空 + 原语自证」+「② 负控」
+数据: 🔴 **判据 ③（接线在）**：四个迁移点各自必须逐字含 `<RowActionLink` 且含登记的变体 prop（`size="sm"` / `size="xs"` / `emphasis` / `disabledStyle="keep"` / `tone="danger"`）—— 「把整段行内动作删掉」也能让副本消失，这条堵掉那种假绿。执行点 = 同文件「⑤ 接线在」
+数据: 🔴 **判据 ④（迁移回退即红）**：已迁移文件里**又**出现裸规格串（= 迁回手抄）⇒ 具名点名该文件。执行点 = 同文件「④ 迁移回退即红」（在真语料的内存副本上逐字还原售后页改前形态取证）
+数据: 🔴 **判据 ⑤（台账只许缩短 + 不撒谎）**：`exempt` 条数 > `frozen_exempt_count` ⇒ 红；条目已不再命中 ⇒ 僵尸红；`conformant`（入库单 / 商品**有意**不走本原语）要求锚在、禁止锚不在 ⇒ 悄悄改成 `RowActionLink` 却不改台账当场红。执行点 = 同文件「⑥ 台账只许缩短」+「⑦ 形态台账不撒谎」
+数据: 🔴 **判据 ⑥（外观逐字不变）**：迁移点的字号 / 字重 / 禁用态观感 / 色族由**原语变体**表达，逐条钉 + 反向自证：`size="sm"`⇒`text-sm`、`size="xs"`⇒`text-xs`、`emphasis`⇒`font-medium`、`disabledStyle="keep"`⇒保持字色+`cursor-default`（**不得**变灰占位）、`tone="danger"`⇒`text-red-500 hover:text-red-600`。执行点 = frontend/admin-web/tests/unit/components/RowActionLink.test.tsx 的「issue #7082：变体」五条
+数据: 🔴 **红证（注入式，PR body 逐条给读数）**：把售后页行内动作**改回**裸 `className="text-primary-600 hover:text-primary-700 hover:underline transition-colors text-sm"` ⇒ 判据 ①/④ 具名红；恢复 ⇒ 绿。把员工页的 `<RowActionLink` 换成 `<button` ⇒ 判据 ③ 红。
+数据: **边界（照实登记，§19.1）**：① 只裁「与原语**同规格**」的副本 —— 缺 `hover:text-primary-700` 的**漂移副本**（`purchase-orders` / `suppliers` / 各处页面级链接）不在面内（已不是同一份规格，收口要先逐页裁定形态）；② 静态文本判据判不了「渲染是否同色同字号」（由原语变体断言 + 真机读图承担）；③ 判不了「新页面用 `Button` 手拼行内动作」（意图判不了，由 `row-action-density-scan.mjs` 与评审承担）；④ `mini-app` / H5 各自一套 token，不在面内。
+跳过: [frontend-contract] 源码扫描 + jsdom 组件渲染判据（vitest），零网络、零真实 LLM 调用，不进入 agent-eval 冒烟；计分通道 = traces.tests 里的两个前端判据文件
+```
+溯源: 2026-11-03 新增（issue #7082：单据列表行内动作样式的其余副本收口到共享原语）。取号 **MC-150**（`python3 scripts/next_case_id.py MC` 现取；工具返回历史空档 MC-099 而按裁定**不回填**。⚠️ **撞号顺延两次**：首取 MC-146 ⇒ 合入 main 后发现 main 上 MC-146（issue #7600）/ MC-147 已占用 ⇒ 取 MC-148；随后 **跨在飞 PR 的取号判据（#6245 的面）** 报 PR #8542 已 claim MC-148 / MC-149 ⇒ 按「后合入者让号」再顺延到 **MC-150**。判据文件、扫描器 `case_ids`、claim 文件（`8544-MC-150.json`）同批改号）。落码 = ① 原语扩展 4 个**真实**消费点变体（`size` / `emphasis` / `tone` / `disabledStyle`，故意不暴露 `className` —— 绕过变体 = 没收口）② 4 处迁移（售后「查看」、员工「姓名」、工人档案「默认页面」、加工项「编辑/删除」）③ 判据本体 `frontend/admin-web/scripts/row-action-link-scan.mjs`（纯函数 + CLI，三态口径；token **集合**比对而非逐字节比对 —— issue 原文那条逐字节判据实测只命中 1 处，是空断言）+ 台账 `frontend/admin-web/tests/unit/row-action-link-ledger.json` + 守卫 `frontend/admin-web/tests/unit/row-action-link-single-source-guard.test.ts`（9 条，含负控与内存注入红证）。**issue 两处前提已漂移**（如实登记，不假装做了）：入库单在 #8011 之后**正是**订单列表当前形态（ghost `Button` 主行动），商品在 #8038 之后已走 `RowActions` ⇒ 两者**没有**链接规格副本，台账 `conformant` 锚定其形态。 ｜ tags: design-system, row-action, single-source, false-green
+
+### MC-152. B 端会话卡的「来源组」不许把服务端内部标签摆上屏：唯一映射表（机器键 → 商家话术）+ 枚举全集覆盖 + 认不出的键走兜底（issue #6461） 🔵
+```
+你: 在米宝会话里问「这个月省了多少布」，卡片上的来源组写着「切换后（采购入库）」「存量导入（切换前历史包袱）」—— 这两个词是什么意思？
+数据: 🔴 **判据 ①（已知值 ⇒ 商家话术）**：`purchase` / `opening` / `unknown` 三个服务端来源组各自映射出一句商家话术，且文案**不含**英文、下划线（内部标识形态）与内部口径词（切换后 / 存量导入 / 来源未知），三句互不相同。执行点 = frontend/admin-web/tests/unit/lib/cohort-groups.test.ts::① 已知服务端值
+数据: 🔴 **判据 ②（负控：枚举全集覆盖）**：映射表键集 == 服务端枚举全集，**现取** `backend/admin-api/src/main/java/com/migao/admin/dto/SavingMetricViews.java` 的 `COHORT_*` 常量（服务端新增一组而前端没跟上 ⇒ 红；反向删键 ⇒ 也红）。同一判据先断言抽到的枚举 ≥3（防「空 vs 空」的假绿）。红证：在 Java 里加 `COHORT_RETURN = "return"` 而不补文案 ⇒ 该条红。执行点 = 同文件::② 映射表键集 == 服务端枚举全集
+数据: 🔴 **判据 ③（未知值 ⇒ 兜底，不回显原始值）**：`switched` / `legacy_import` / `return` / `COHORT_NEW` / 空串 / 缺值一律落兜底话术，且结果**不包含**输入原文；对照组 = 已知键仍走表（防「恒回兜底」的假绿）。红证：把 `COHORT_GROUP_FALLBACK` 从 `cohortGroupTitle()` 里摘掉 ⇒ 该条红（屏上会是空/原值）。执行点 = 同文件::③ 认不出的键 / 空值
+数据: 🔴 **判据 ④（源码面：渲染表达式里零 `cohortLabel`）**：B 端两端会话卡（桌面 `frontend/admin-web/src/components/chat/BatchStockCard.tsx` + 移动 `frontend/bmini-app/src/components/cards/BatchStockCard.tsx`）去注释后**零**出现 `cohortLabel`，且都真的在调 `cohortGroupTitle(`（反向判别力：没接线时「没标签可渲染」会假绿）。红证：把渲染改回 `{cohort.cohortLabel}` ⇒ 红。执行点 = 同文件::④ 两个会话卡的渲染代码
+数据: 🔴 **判据 ⑤（两端同源）**：bmini 是独立 npm 工程（不许 import admin-web 的 TS）⇒ 那边的副本 `frontend/bmini-app/src/utils/cohort-groups.ts` 必须与本站单一真值**逐项相等**（键值 + 兜底文案）。红证：只改一侧的任一词 ⇒ 红。执行点 = 同文件::⑤ 同源
+数据: 🔴 **判据 ⑥（工具输出面，issue #6461 / #8547）**：服务端分组文案（`SavingMetricViews.cohortLabel`）本身改成同一批商家话术 —— 工具文本摘要（`batch_stock_query` 的 `message`）与卡片载荷都吃它 ⇒ **工具回给模型的字符串（message + summary + data）里零出现**「切换后 / 存量导入 / 来源未知」，且**说的是商家的话**（不是把标签删掉）：`backend/ai-agent-service/tests/test_batch_stock_query.py::test_saving_board_output_has_no_internal_cohort_words`；判别力自证 = 同文件 `test_internal_word_check_has_discriminating_power`（服务端回退成内部标签时同一判定抓得住）。红证：把夹具的 `cohortLabel` 改回内部标签 ⇒ 该条红（实测 1 failed）。
+数据: **三处文案同源（防分叉）**：服务端 `cohortLabel()` 的 case 文案 + `default` 兜底 ⇄ 前端映射表 ⇄ bmini 副本，由判据 ② **逐值**现取比对（只改任一侧一个词 ⇒ 红；实测注入 `采购入库的布料` ⇒ 1 failed）。
+数据: **bmini 侧例外面（同一纪律的另一半）**：移动端会话卡的渲染面与「内部口径词零上屏」由 frontend/bmini-app/tests/cohort-groups-no-jargon.test.tsx 判（MC-149）—— 两文件分工：本站判「表的质量 + 枚举覆盖 + 两端同源」，bmini 判「本端渲染与源码面」。
+数据: **边界（照实登记）**：① 判据只机械覆盖「会话卡的来源组标题」这一面 —— 工具侧文本（`batch_stock_query` 的 `message` 里仍用服务端标签拼摘要，会进模型上下文）**本单未改**，见 PR body 的未固化项；② 「哪句话最像商家的话」判不了（散文级，靠评审）；③ 判据 ② 的语料是 Java **源码**而不是运行期接口：**本地**门禁的 `admin_web_face_paths` 已含该 Java 文件（改了 DTO 就触发本腿）；**CI 侧** admin-web 腿的触发面仍只有 `frontend/admin-web/**` ⇒ 服务端单独改这个 DTO 的 PR 在 CI 上**不会**跑本条判据（已登记为 `declaration_gate_registry.json` 的未覆盖面，带 reason/issue/owner）。
+跳过: [backend-contract] 纯前端文案 + 源码结构判据（vitest；只读 Java 源码做枚举比对），零网络、零真实 LLM，非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-11-03 新增（issue #6461 = #6459 的同类形态：会话卡把服务端内部标签逐字上屏）。取号 MC-148（`python3 scripts/next_case_id.py MC` 现取返回 MC-145；按集成侧在飞占用避开 139~145、且「MC-099 刻意空档不回填」⇒ 先取 146，又实测在飞 PR #8541 已用 claim 占 147 ⇒ 最终让号到 148）。落码 = ① 唯一映射表 frontend/admin-web/src/lib/cohort-groups.ts（+ bmini 副本 src/utils/cohort-groups.ts，独立 npm 工程不许跨包 import）② 两端会话卡的来源组标题改走映射表（服务端 `cohortLabel` 不再渲染）③ 判据 frontend/admin-web/tests/unit/lib/cohort-groups.test.ts（①~⑤）④ bmini 侧判据见 MC-149。**同批扩面（集成侧裁定 2026-11-03）**：工具文本摘要也吃服务端分组文案 ⇒ `SavingMetricViews.cohortLabel()` 一并改成同一批商家话术（工具 `message` 会进模型上下文，是最容易被模型复述的一条通道），判据 = `test_batch_stock_query.py::test_saving_board_output_has_no_internal_cohort_words` + 判别力自证；原先为此开的跟踪单 #8547 由本单吸收（不另派包）。 ｜ tags: ui, frontend, copy, no-internal-identifier, batch-ledger, same-source, red-proof
+
+### MC-153. B 端移动会话卡：来源组说商家的话、内部口径词零上屏（bmini 侧的零内部口径词判据 + 认不出的来源走兜底，issue #6461） 🔵
+```
+你: 工人/商家在手机上打开米宝会话卡，来源组那一行写着「存量导入（切换前历史包袱）」—— 他看不懂这是什么。
+数据: 🔴 **判据 1（渲染：说商家的话）**：三个已知来源组在移动端会话卡上分别显示映射文案，且屏上**零出现**「切换后 / 存量导入 / 来源未知」—— 夹具里 `cohortLabel` **故意**保留内部标签，证明页面拿到却不渲染。红证：卡片改回渲染 `cohortLabel` ⇒ 红。执行点 = frontend/bmini-app/tests/cohort-groups-no-jargon.test.tsx::判据 1
+数据: 🔴 **判据 2（认不出的键 ⇒ 兜底）**：`cohort: 'switched'` / 空串 ⇒ 屏上落兜底话术，且英文原值不上屏；对照组 = 已知键仍走表。红证：删掉兜底 ⇒ 红。执行点 = 同文件::判据 2
+数据: 🔴 **判据 3（源码面：bmini 会话卡零内部口径词）**：`src/components/cards/**`（去注释）里不出现那三个词 —— 这是 issue #6461 要求补的「bmini-app 侧的零内部口径词判据」（admin-web 的 `user-copy-jargon-guard` 只扫自己的包，且判不了服务端下发的字符串）。红证：在任一张卡里写一句「存量导入…」⇒ 红。执行点 = 同文件::判据 3
+数据: **同源（不各写一份会漂的文案）**：本端文案是副本，单一真值在 `frontend/admin-web/src/lib/cohort-groups.ts`，两端逐项相等由 MC-148 的判据 ⑤ 现取比对（改一侧不改另一侧 ⇒ 红）；复算（仓库根执行）：`npx jest --config frontend/bmini-app/jest.config.js frontend/bmini-app/tests/cohort-groups-no-jargon.test.tsx`。
+数据: **边界（照实登记）**：① 只覆盖会话卡（`saving_board` 分支）的来源组标题与卡内源码；其它页面（如省料看板的图表/表格）不在本判据射程；② 判据判不了「这句话商家到底能不能懂」，那要靠评审与真机走查。
+跳过: [backend-contract] bmini 确定性渲染 + 源码扫描判据（jest + jsdom），零网络、零真实 LLM，非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-11-03 新增（issue #6461 的「落地后补：bmini-app 侧的零内部口径词判据」）。取号 MC-149（`python3 scripts/next_case_id.py MC` 现取 145、避开 139~145 的在飞占用后顺延）。落码 = frontend/bmini-app/tests/cohort-groups-no-jargon.test.tsx（判据 1~3）+ src/utils/cohort-groups.ts 副本 + 会话卡接线（来源组标题与「老库存单列」行文案）。 ｜ tags: ui, frontend, copy, bmini, no-internal-identifier, red-proof
 
 ## 商家入驻域（7 case）
 
@@ -14660,8 +14703,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：992（活跃 153，跳过 839）
-- tier 分布：smoke 15 / normal 915 / adversarial 33
+- 用例总数：995（活跃 153，跳过 842）
+- tier 分布：smoke 15 / normal 918 / adversarial 33
 - 售后域：16
 - Agent 核心域：13
 - API 层域：21
@@ -14677,7 +14720,7 @@
 - 人事域：13
 - 知识问答域：9
 - 客户主数据迁移域：10
-- 杂项域：194
+- 杂项域：197
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：76
@@ -14935,9 +14978,12 @@
 - MC-139: 商家看到的失败编号 = 服务端日志里那条记录：requestId 唯一来源 + 前端可复制上屏（issue #6957）
 - MC-143: 悬空 PR 扫描器把「未解决评审线程」计入**需要处置**（issue #6997）：`isResolved=false ∧ isOutdated=false` ⇒ 判红并报出 `path` + 首行摘要；`isOutdated=true` 单独一类**不算阻塞**；读不到 ⇒ 退 `3`（不得当 0）
 - MC-144: deploy-reconcile 的漂移判据必须覆盖**构建输入面**（部署腿 workflow / 构建配方 / 线上自证脚本）：只改 CI 或部署脚本的修复合入后不得判「已上线」，更不得自动关值守单（issue #7034）
-- MC-147: **状态列写面全族统一元守卫 SW-100**：53 张有 `status` 列的表 × 134 个写入口逐条登记（未登记即红 / 台账陈旧即红 / 裸字符串写状态列即红 / 每张状态表的合法集合必须有来源）
-- MC-148: 本地 E2E 认证链的复用判据：只复用「token 自己还没过期」的 admin.json，mtime 降为解不出 exp 时的兜底并出声（issue #6411）
-- MC-149: tests/e2e 的相对 import 必须解析得到（收集期判据）：少一层 `../` 的 POM 引用会让整套 spec「跑都跑不到」（issue #6411 链内顺带修）
+- MC-148: **状态列写面全族统一元守卫 SW-100**：53 张有 `status` 列的表 × 134 个写入口逐条登记（未登记即红 / 台账陈旧即红 / 裸字符串写状态列即红 / 每张状态表的合法集合必须有来源）
+- MC-149: 本地 E2E 认证链的复用判据：只复用「token 自己还没过期」的 admin.json，mtime 降为解不出 exp 时的兜底并出声（issue #6411）
+- MC-150: tests/e2e 的相对 import 必须解析得到（收集期判据）：少一层 `../` 的 POM 引用会让整套 spec「跑都跑不到」（issue #6411 链内顺带修）
+- MC-151: 单据列表「行内动作」的链接规格只许有一处定义：副本必须走共享原语 `RowActionLink`，未登记即红 / 台账只许缩短（issue #7082）
+- MC-152: B 端会话卡的「来源组」不许把服务端内部标签摆上屏：唯一映射表（机器键 → 商家话术）+ 枚举全集覆盖 + 认不出的键走兜底（issue #6461）
+- MC-153: B 端移动会话卡：来源组说商家的话、内部口径词零上屏（bmini 侧的零内部口径词判据 + 认不出的来源走兜底，issue #6461）
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）
