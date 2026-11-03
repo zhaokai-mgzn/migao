@@ -3659,9 +3659,9 @@ _CASE_MC_154 = EvalCase(
     precondition='本用例是 [backend-contract]：前置 = frontend/bmini-app/src/utils/inbound/printCapability.ts 的终端分支在场、`PrintEnv.printerMode` 可注入、`readPrintEnv()` 读 `window.__CFG__`；能力探测是纯函数（零网络、零硬件），页面侧已有的 `capability.ok` 门禁（打印按钮 disabled）不变。',
 )
 
-# ── MC-155 [NORMAL] 机台页详情屏补「报返工」入口（复用既有 reportRework / 不新建第二套返工实现 / 次要动作不抢主位）（源: cases/misc.yml）──
-_CASE_MC_155 = EvalCase(
-    id='MC-155',
+# ── MC-157 [NORMAL] 机台页详情屏补「报返工」入口（复用既有 reportRework / 不新建第二套返工实现 / 次要动作不抢主位）（源: cases/misc.yml）──
+_CASE_MC_157 = EvalCase(
+    id='MC-157',
     legacy_id='',
     title='机台页详情屏补「报返工」入口（复用既有 reportRework / 不新建第二套返工实现 / 次要动作不抢主位）',
     skill=Skill.GENERAL,
@@ -3877,5 +3877,5 @@ CASES = (
     _CASE_MC_153,
     _CASE_MC_147,
     _CASE_MC_154,
-    _CASE_MC_155,
+    _CASE_MC_157,
 )

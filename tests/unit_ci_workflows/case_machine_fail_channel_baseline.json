@@ -1311,7 +1311,7 @@
       "date": "2026-11-03",
       "no_channel_total": 0,
       "backend_contract_scoring_zero": 295,
-      "note": "issue #7992（机台页补「报返工」入口，复用既有 `reportRework`）新增 1 条 `[backend-contract]` 用例 **MC-155**（取号**两次让号，记实**：`next_case_id.py MC` 现取返回历史空档 MC-099 —— 按裁定**刻意空档不回填**；MC-139~MC-153 在飞/已合占用密集 ⇒ 按派单口径避开先取 MC-154；merge `origin/main` 时与 main 新增的 MC-154（#8559）且同号被在飞 PR #8561 的 claim 占着 ⇒ 按「后合入者让号」顺延终态 155；claim = `.github/cases/claims/8560-MC-155.json`）—— 按设计**不进 agent-eval**（`expectations: []`），机器判红通道 = `frontend/worker-h5/tests/worker-h5-machine-rework.test.mjs`（`node --test` 10 条：入口不抢主位 / 收起态零 DOM / 走既有端点 / 请求体白名单 / 返工对象上屏 / 失败大字显式 / 成功后防重复开单 / 负控【完成】仍走 scan/complete；含注入式红证：删入口 ⇒ 4 pass / 6 fail）。锚点取 **main 版**（294）后按**实测**重锚至 295；真债务 `no_channel_total` 仍为 **0**（不变）。"
+      "note": "issue #7992（机台页补「报返工」入口，复用既有 `reportRework`）新增 1 条 `[backend-contract]` 用例 **MC-157**（取号**三次让号，记实**：`next_case_id.py MC` 现取返回历史空档 MC-099 —— 按裁定**刻意空档不回填**；MC-139~MC-153 在飞/已合占用密集 ⇒ 按派单口径避开先取 MC-154；merge `origin/main` 时与 main 新增的 MC-154（#8559）且同号被在飞 PR #8561 的 claim 占着 ⇒ 按「后合入者让号」顺延 155；再与在飞 PR #8563 撞号 ⇒ 终态 157；claim = `.github/cases/claims/8560-MC-155.json`）—— 按设计**不进 agent-eval**（`expectations: []`），机器判红通道 = `frontend/worker-h5/tests/worker-h5-machine-rework.test.mjs`（`node --test` 10 条：入口不抢主位 / 收起态零 DOM / 走既有端点 / 请求体白名单 / 返工对象上屏 / 失败大字显式 / 成功后防重复开单 / 负控【完成】仍走 scan/complete；含注入式红证：删入口 ⇒ 4 pass / 6 fail）。锚点取 **main 版**（294）后按**实测**重锚至 295；真债务 `no_channel_total` 仍为 **0**（不变）。"
     }
   ]
 }
