@@ -1,5 +1,35 @@
+/**
+ * ── 本地 dev / build 的**输出目录物理隔离**（issue #6692）─────────────────────────────
+ * 病：`next dev` 与 `next build` 共用 `.next` ⇒ 互相写坏。两个实测形态：
+ *   ① dev 侧**已存在的路由 404**（可复现：先 `npm run build` 再起 dev；`rm -rf .next` 即恢复）；
+ *   ② build 侧读到 dev 的**半写**生成物 `.next/dev/types/routes.d.ts`，报 9 条 TS 错误。
+ * 机制（Next 16.4.3 源码现取，不是推断）：
+ *   · dev 阶段的 distDir 被追加 `/dev`（`server/config.js`：`if (phase === PHASE_DEVELOPMENT_SERVER)
+ *     result.distDir = join(result.distDir, 'dev')`）；
+ *   · build 起手清 distDir 但**保留** `cache|dev|lock|trace`（`build/index.js`）⇒ 两个模式仍共用
+ *     `.next` 根与其下的 `cache`；
+ *   · build 的类型检查走**项目本地 tsc**（`experimental.useTypeScriptCli` 默认 true）⇒ 查的是
+ *     **tsconfig 选中的整个项目**，`.next/dev/types` 在读面上**没有**豁免（Next 源码注释原话：
+ *     "including test files and `.next/dev/types` when included"）。
+ * 修法：**两个模式用两个目录**（物理隔离 > 每次清理 —— 清理只治一次，隔离治形态）。
+ *   · build 保持 `.next`（部署契约不动：Dockerfile `npm run build` → `next start`、CI、`.gitignore`）；
+ *   · dev 改到 `.next-dev`（Next 会再追加 `/dev` ⇒ dev 的中间态实际落在 `.next-dev/dev/`）。
+ * 选择依据 = `NODE_ENV`：`next` CLI 的 `preAction` 里 `dev → development`、其余 `→ production`，
+ * 且**尊重外部已设值** ⇒ `next build` / `next start` / Docker 一律 `.next`，任何形态的 `next dev`
+ * （含 Playwright webServer 的 `npx next dev`、`scripts/ui_smoke_merchant.sh` 的 `npm run dev`）都是 `.next-dev`。
+ * 牵连面**逐处核对**（漏一处就是新的假绿）：判据 = `tests/unit_ci_workflows/test_next_dev_build_isolation.py`，
+ * 台账 = `tests/unit_ci_workflows/next_dev_build_isolation_ledger.json`。
+ * ⚠️ 边界：显式 `NODE_ENV=production next dev` 会落到 build 目录（Next 自己也告警）——这是有意保留的
+ *    逃生口，不为它再加一层命令嗅探（那等于第二份「当前是哪个模式」的口径）。
+ */
+const DEV_DIST_DIR = '.next-dev'
+const BUILD_DIST_DIR = '.next'
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // issue #6692：dev 与 build 各写各的目录（整段理由见上方注释）。
+  distDir: process.env.NODE_ENV === 'development' ? DEV_DIST_DIR : BUILD_DIST_DIR,
+
   // 标准 Next.js SSR 模式，托管于 SWAS 容器 (next start)
   // 动态路由由服务端渲染直接处理，不再需要 generateStaticParams + SPA fallback
 

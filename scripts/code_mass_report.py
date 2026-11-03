@@ -65,7 +65,8 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 SOURCE_SUFFIXES = (".java", ".py", ".ts", ".tsx")
-EXCLUDED_DIRS = frozenset({"node_modules", ".venv", "target", "__pycache__", ".next", ".git"})
+# `.next-dev` = 本地 `next dev` 的输出根（issue #6692：dev 与 build 物理隔离）⇒ 生成物不进代码量读数。
+EXCLUDED_DIRS = frozenset({"node_modules", ".venv", "target", "__pycache__", ".next", ".next-dev", ".git"})
 
 EXIT_OK = 0
 EXIT_FLAGGED = 1

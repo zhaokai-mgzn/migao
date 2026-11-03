@@ -160,7 +160,8 @@ _TEXT_SUFFIXES = (
     ".env", ".md", ".sql", ".properties", ".xml", ".txt",
 )
 _SKIP_DIRS = frozenset({
-    ".git", "node_modules", ".venv", "venv", "dist", "build", ".next",
+    # `.next-dev` = 本地 `next dev` 的输出根（issue #6692：dev/build 物理隔离）⇒ 与 `.next` 同口径跳过。
+    ".git", "node_modules", ".venv", "venv", "dist", "build", ".next", ".next-dev",
     "__pycache__", ".mypy_cache", ".pytest_cache", "target", ".turbo",
     ".idea", ".vscode", "coverage", "htmlcov", ".ruff_cache", ".gradle",
 })
