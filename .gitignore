@@ -38,11 +38,14 @@ node_modules
 .next/
 frontend/admin-web/.next/
 out/
-!acceptance/**/out/
-!acceptance/**/out/**
-# ⚠️ 上面两条 `!` 把 acceptance 的 out/ 重新纳入 ⇒ 运行态**会话存储**必须在它们**之后**再排除
-#    （issue #6303：harness 的登录态就落在这两个文件里，一条 `git add acceptance/` 即泄）。
-#    判据 = `.github/plaintext_credential_guard.py` 的 R3 第 ② 条入口（被跟踪 + 未被忽略 ⇒ 红）。
+# acceptance/** = **验收证据产物面**，已迁出公开仓（issue #8424 / PR #8425，证据去私有仓 migao-internal）。
+# 整体忽略 ⇒ 新证据默认**进不来**（`git add acceptance/` 会当场提示需要 `-f`），
+# 也堵住 `git add -A` 把活凭据扫进公开仓的那条路（issue #6303 实测过真 JWT 落在 out/fixtures.json）。
+# ⚠️ 已跟踪的文件**不受影响**（gitignore 管不了已入库文件）—— 它们是**被判据/台账引用**的最小集合，
+#    照常可改；新增证据一律投 migao-internal（见 docs/wiki/internal-assets-migration.md）。
+# 判据 = tests/unit_ci_workflows/test_plaintext_credential_guard.py::test_gitignore_layer_excludes_runtime_session_state
+acceptance/
+# 运行态会话存储（harness 登录态）—— 与上面同因，另按名字兜一层（issue #6303）
 .session.json
 .store.json
 frontend/admin-web/out/

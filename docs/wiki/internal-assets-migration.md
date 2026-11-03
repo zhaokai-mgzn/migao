@@ -40,6 +40,31 @@
 - 能 ⇒ 公开仓（`docs/**` 的规范与设计、代码、测试、CI）；
 - 不能（客户名单、合同报价、现场照片、账号凭据、内部缺陷清单）⇒ `migao-internal`。
 
+## 机械约束（issue #8543：堵住回流路径）
+
+迁出只是**一次性动作**，若不加约束会回流 —— 实测 #8527（2026-11-02 合入）在迁移之后
+又往公开仓新增了 3 个验收产物（`acceptance/2026-10-03/finance-stock-time-sweep/harness/`）。
+现在由两层挡住：
+
+1. **`.gitignore` 默认拒绝**：`acceptance/` 整体忽略 ⇒ 新增证据**默认进不来**
+   （`git add acceptance/` 会当场提示需要 `-f`），`git add -A` / `git add acceptance/` 都不再收走；
+   顺带也堵住 #6303 实测过的那条路（`out/fixtures.json` 里落着登录后的真 JWT）。
+   ⚠️ 已跟踪的文件**不受影响**（gitignore 管不了已入库文件）—— 它们是**被判据/台账引用**的最小集合
+   （38 条在 `tests/unit_ci_workflows/product_status_write_sites.json` 里当可执行语料），照常可改。
+2. **判据**：`tests/unit_ci_workflows/test_plaintext_credential_guard.py::test_gitignore_layer_excludes_runtime_session_state`
+   —— 除两个叙名会话存储外，对**任意**新 acceptance 路径断言 `git check-ignore` rc=0（类级，
+   不钉具体目录）⇒ 有人把 `!acceptance/**` 再纳入规则加回来时当场红。
+
+**逃生口（有意保留）**：`git add -f` 仍能强推。这是给「必须先落公开仓才能被 CI/评审看到」的极端情形
+留的人工闸，靠 review 兜，**不是**默认路径；本仓不新增 required check。
+
+**复算命令**（零成本）：
+
+```bash
+git check-ignore -q acceptance/_probe/out/x.json && echo "已忽略（期望）"
+git ls-files acceptance | wc -l        # 已跟踪集合（2026-11-03 现取 257，只许缩短；新增需 -f + 评审）
+```
+
 ## 相关
 
 - 拆分方案与判据全文：`research/repo-topology-2026-11-02.md`（本机工作区，非本仓）。
