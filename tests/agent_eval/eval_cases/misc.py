@@ -2,7 +2,7 @@
 # 本文件由 render_cases.py 生成，勿手改（改了也留不住：下次重渲染会覆盖）
 # 源: cases/*.yml（case-contract 单一源）
 # 重新生成: python3 render_cases.py --cases <dir> --out-eval <包目录> --out-md <md>
-# 域: misc（源: cases/misc.yml，184 条）
+# 域: misc（源: cases/misc.yml，185 条）
 
 from ._schema import Difficulty, EvalCase, Skill
 
@@ -3388,6 +3388,24 @@ _CASE_MC_138 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── MC-139 [NORMAL] 部位规格的数值口径：纯空白串 = 「没填」（—），不再编成 0 / 0.000（issue #7002）（源: cases/misc.yml）──
+_CASE_MC_139 = EvalCase(
+    id='MC-139',
+    legacy_id='',
+    title='部位规格的数值口径：纯空白串 = 「没填」（—），不再编成 0 / 0.000（issue #7002）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['商家没填的部位规格，为什么工人屏上会印出「宽 0.000米」「安装工艺 0」？没填就是没填，不能编一个数给我。'],
+    expectations=[],
+    data_checks=["🔴 **判据 ①·纯空白串 ⇒ 缺值（会红）**：`formatSpecValue('   ', f)` ⇒ `—`，`f ∈ {undefined, m, int, number, bool}` 逐个钉；并与同模块 `dataOr` 同口径（本病的形态正是两者自相矛盾：`dataOr` 早就是 `—`）。执行点 = frontend/worker-h5/tests/worker-h5-position-spec-whitespace.test.mjs（判据 ①）", '🔴 **判据 ②·负控（方向也要钉）**：`0` / `"0"` / `"0.0"` / `" 0 "` 仍渲染 **0**（`m` ⇒ `0.000`），`"2.5"` / `" 2.5 "` / 非数文本 `定高买宽` 的既有读数逐字不变 —— 不许把合法 0 当缺值吞掉（0.000 米与「没填」是两件事）。执行点 = 同文件（判据 ②）', '🔴 **判据 ③·trim 不是「见空白就吞」**：`" 12 "` / 制表符换行包住的 `12.5` ⇒ `12` / `12.500`（各口径）。执行点 = 同文件（判据 ③）', '🔴 **判据 ④·报工屏整行不渲染**：`specRows({craft: \'   \', width: \'   \'})` ⇒ `[]`（修前是 `[宽: 0米, 安装工艺: 0]`）；空白与真值混排时空白行消失、`" 0 "` 那一行照旧渲染。执行点 = 同文件（判据 ④）', '🔴 **判据 ⑤·机台屏同源同口径**：`detailRows` → `kvRows` 对同一份空白输入渲染 `—`（不是 `0.000米` / `0`），且 `" 0 "` 的格仍是 0（负控）。执行点 = 同文件（判据 ⑤）', '🔴 **判据 ⑥·类级守卫（§23）**：`POSITION_SPEC_KEYS` **每一个键**（不论什么 format）对纯空白都给 `—`；新增规格键 / 新增数值口径自动进这条判据（不需要再加一行）。执行点 = 同文件（判据 ⑥）', "🔴 **红证（注入式，双向对照）**：注入 A = 把判数前的 `const text = typeof value === 'string' ? value.trim() : value` 改成 `const text = value` ⇒ 判据 ①④⑤⑥ 红（实测 4 failed / 2 passed）；注入 B = 在 trim 后加 `if (Number(text) === 0) return EMPTY` ⇒ 判据 ② 红（证明「缺值」与「0」是两条独立断言）。注入方式与逐字读数见 PR body。", '**边界（照实登记，§19.1）**：本用例钉**展示口径**（`position-spec.mjs::formatSpecValue` 一族），不判服务端为何存进纯空白（数据面 / 录入侧）；同类「不 trim 直接 parse」的其它点只登记不扩射程（清单见 PR body），不在本用例重复。'],
+    skip_reason='[backend-contract] 零 LLM 的确定性纯函数判据（`node --test` + 真实渲染产物，零依赖、零网络），不进 agent-eval 冒烟',
+    tags=['worker-h5', 'display-format', 'whitespace', 'missing-value', 'negative-control', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 CASES = (
     _CASE_MC_001,
     _CASE_MC_002,
@@ -3573,4 +3591,5 @@ CASES = (
     _CASE_MC_136,
     _CASE_MC_133,
     _CASE_MC_138,
+    _CASE_MC_139,
 )

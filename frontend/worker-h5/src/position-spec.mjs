@@ -133,6 +133,11 @@ const SELLING_METHOD_LABELS = { bulk_cut: '散剪', full_roll: '整卷' }
  *
  * <p>数值路径**先判数值再格式化**（同机台屏 `kvRows` 的判据）：`"2.5"` 这类字符串照旧按数字显示，
  * `'定高买宽'` 这类非数文本原样显示（不折成 `NaN`）。</p>
+ *
+ * <p>🔴 <b>纯空白串 = 缺值，不是 0</b>（issue #7002）：`Number('   ') === 0` ⇒ 只看 `value !== ''`
+ * 会把商家**没填**的 `'   '` 编成 `0` / `0.000`（给机器的值偏小 = 裁短方向），且与同模块
+ * {@link dataOr}（`'   '` ⇒ {@link EMPTY}）自相矛盾。⇒ 判数**前**先 trim；
+ * 「没填」（空 / 全空白）与「填了 0」（`'0'` / `0` ⇒ `0`）是**两件事**，负控见 MC-139 判据 ②。</p>
  */
 export function formatSpecValue(value, format) {
   if (value === null || value === undefined) return EMPTY
@@ -144,11 +149,14 @@ export function formatSpecValue(value, format) {
     const raw = dataOr(value)
     return SELLING_METHOD_LABELS[raw] ?? raw
   }
-  if (value !== '' && Number.isFinite(Number(value))) {
-    if (format === 'int') return String(Math.trunc(Number(value)))
-    if (format === 'm') return fmtNumber(value, DEFAULT_DIGITS)
-    if (format === 'number') return String(Number(value))
-    return String(Number(value))
+  // 🔴 判数**前**先 trim（issue #7002）：只 trim **字符串** ⇒ 非字符串的既有读数（含真 0）逐字不变。
+  //    突变 / 判据 = tests/worker-h5-position-spec-whitespace.test.mjs（MC-139）。
+  const text = typeof value === 'string' ? value.trim() : value
+  if (text !== '' && Number.isFinite(Number(text))) {
+    if (format === 'int') return String(Math.trunc(Number(text)))
+    if (format === 'm') return fmtNumber(text, DEFAULT_DIGITS)
+    if (format === 'number') return String(Number(text))
+    return String(Number(text))
   }
   return dataOr(value)
 }
