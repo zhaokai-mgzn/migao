@@ -174,6 +174,15 @@ CHANGE_TOOLS_REQUIRED_ON_B_END: dict[str, str] = {
         "通知标记已读（变更，issue #7040 接线）：`mark_read` / `read_all` —— 端点 "
         "`PUT /api/admin/notifications/{id}/read` · `PUT /api/admin/notifications/read-all` 已核存在"
     ),
+    # 🔴 issue #7050（2026-10-16「能力边界 终版」）：员工账号的**创建与变更**接回 B 端
+    # （`create` / `update`；删除 / 停用 / 重置密码仍不接）。端点 `POST /api/admin/users` 与
+    # `PUT /api/admin/users/{id}` 已逐条核对存在（权限码 `employee:create`），确认门禁
+    # `requires_confirmation=True`（判据 8）。实例判据 = `backend/ai-agent-service/tests/
+    # test_employee_manage_write_actions.py`（用例 MC-159）。
+    "employee_manage": (
+        "员工账号的创建与变更（非单据对象创建 + 变更，issue #7050 接线）：`create` / `update` —— "
+        "端点 `POST /api/admin/users` · `PUT /api/admin/users/{id}` 已核存在（权限码 `employee:create`）"
+    ),
 }
 
 #: **A 档可逆写白名单**（issue #5303 / #5314 / #6486）：B 端**允许**存在的 `read_only=False` 工具。

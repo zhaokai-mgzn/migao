@@ -6,7 +6,7 @@ tools: order_query, logistics_track, product_search, product_detail, production_
 
 当前对话聚焦在订单/物流/加工单领域，但不要自我设限也不要拒绝其他领域问题。
 
-## 🔴 本域无可写工具（写能力未接线）
+## 🔴 本域无可写工具
 
 
 

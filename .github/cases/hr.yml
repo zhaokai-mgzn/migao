@@ -465,7 +465,7 @@ cases:
 
   - id: HR-009
     legacy_id: ""
-    title: "黄金策无创建员工能力——须如实说明并给后台开通路径（不得自旋重试 / 不得谎称已开）"
+    title: "黄金策能开员工账号、但该身份缺 employee:create——须如实说明权限不足并给后台开通路径（不得谎称能力不存在 / 不得自旋重试 / 不得谎称已开）"
     domains:
       - hr
       - chat
@@ -600,6 +600,17 @@ cases:
       # 判别力**不在此处承重**：承重的是 `forbidden_text`（不得编造/敷衍）+ `forbidden_tools`
       # （全程不得碰订单/商品写路径）+ `db_verify[employee_absent]`（李四不得落库）+ 下面的
       # `want_text`（必须给出打开路径）—— 对「零工具直接答」与「调 nav_guide 定位入口」两条路径都鲁棒。
+      # 🔴 2026-11-03（issue #7050）：员工账号 create/update 接回 B 端 ⇒ 「先尝试一次越权写、
+      # 被工具层按 `employee:create` 拒绝，再如实说明」重新是**可达且正确**的路径 ⇒ 把该分支
+      # 加回 OR 串（**加分支不是放宽断言**：判别力仍全部承重在 must_fail / db_verify /
+      # forbidden_text / want_text 上，它们对「零工具直接答」与「真去尝试」两条路径都成立）。
+      # 保留 `direct_reply or nav_guide`：模型合理地在**没有**尝试的情况下先说权限不足 +
+      # 给后台入口，也是合格回答（#7048 P4 的实测形态）。
+      # ⚠️ OR 组形态受 `test_eval_expectation_or_group` 约束：**不得**把「具名写规则」与
+      # `direct_reply` 并列（纯文本分支可顶替写落地形态 = 假绿通道），未登记的新裸分支也不许用。
+      # ⇒ 期望面**保持** main 的 `direct_reply or nav_guide`；写侧的判别力**全部**由
+      # `must_fail[employee_manage(create)]`（越权写不得成功）+ `db_verify[employee_absent]`
+      # （李四不得落库）+ `forbidden_text`（不得谎称能力不存在 / 不得敷衍）承担。
       - tool: direct_reply or nav_guide
     # 业务**不得发生**（跨轮机器判定）：本用例的身份没有 employee:create ⇒
     # 任何一次 create **成功**都是越权落库（最坏形态）。
@@ -607,6 +618,13 @@ cases:
     # ── 2026-09-24（issue #5247，B 端只读化）：`must_fail[employee_manage(action=create)]` **整格移除**
     # —— `create` 已从源码删除 ⇒ 该断言在新事实下**永不失败**（恒真空断言 + 悬空声明；硬规则禁残留
     # 已删除的写 action）。负效果断言由 `db_verify[employee_absent]`（李四不得落库）继续承担。
+    # 🔴 2026-11-03（issue #7050）：`create` **已接回** B 端（`VALID_ACTIONS` 含 create/update，
+    # 走确认门禁 + action 级权限复检）⇒ 上一段的删除前提被证伪，**整格恢复** —— 本用例的身份
+    # 只有 `employee:list`（无 `employee:create`）⇒ 任何一次 create **成功**都是越权落库，这条
+    # 断言重新有真实对象（不再是死引用）。另配 `db_verify[employee_absent]` 作负效果真身。
+    must_fail:
+      - tool: employee_manage
+        action: create
     # 全程禁用其它领域的写工具（issue #3544 收口批：写进 data_checks 的「未被调用」
     # 是「本轮没调用」+ 计分任一轮满足即过 ⇒ 多轮恒真；本字段是跨轮判定）。
     forbidden_tools:
@@ -626,10 +644,16 @@ cases:
     # 只是权限不够」；新裁定下「黄金策做不到这件事、请去后台」才是**正确**回答 ⇒ 保留属**编造/敷衍**
     # 的两条（`系统不支持` / `请稍后重试`），**删掉**会误伤如实说明的 `暂不支持` / `功能暂未开放` /
     # `还没有这个功能`（那三条「功能不存在」禁词要拦的场景已随能力下线消失，留着只会把合格回答判红）。
+    # 🔴 2026-11-03（issue #7050）：写能力**已接回** ⇒ 上一段「那三条禁词要拦的场景已随能力下线
+    # 消失」的前提反向成立：把**权限不足**说成「功能还没有/暂未开放」重新是假话（本仓复发 4 次的
+    # 那族缺陷，#3389/#3477/#3443/#3476）⇒ **恢复其中两条最明确的功能类禁词**（`暂不支持` 仍不
+    # 入表：它常被用作「你这个账号不支持」的合规措辞，与「系统不支持」重叠）。
     forbidden_text:
       - any_of:
           - "系统不支持"
           - "请稍后重试"
+          - "功能暂未开放"
+          - "还没有这个功能"
     # 正向关键词（§3.4 双轨的另一轨）：只说"做不了"不够，必须给**开通路径**。
     # ⚠️ 库里已用的正向词是「管理员」「权限」，此处用 `开通`（同一语义族但不重复用词），
     # 并诚实标注它的效力边界：它证明"给了路径"，**不**证明官方措辞。
@@ -660,7 +684,7 @@ cases:
       - "同一失败的调用不得跨轮重复（自旋）：本仓库 runner 目前**没有**跨轮重复调用断言，故该条只能靠 LLM 层人工/盲审读报告 —— 如实登记，不假装已机器判定"
       # ── 2026-09-24（issue #5247，B 端只读化）：原第 2 条的**前提**（黄金策有创建员工能力、只是权限
       # 不够）已随写能力下线消失 ⇒ 改判为「如实说明黄金策不做这件事 + 给出后台路径」。
-      - "如实说明黄金策不提供创建员工/开账号能力（B 端只读化 #5247：写能力与对应 tools 已从 B 端整体移除），并给出后台「员工管理」页面开通路径（正向判据 want_text 要求全程出现「后台」）"
+      - "如实说明**该账号**缺 `employee:create` 权限（不是「黄金策没有这个能力」——#7050 已接回写能力），并给出后台「组织管理 → 员工管理」或「岗位权限」页面的开通路径（正向判据 want_text 要求全程出现「后台」/「开通」/「入口」/「管理员」之一）"
       - "不得出现「请稍后重试」/「系统不支持」这类编造或敷衍话术（如实说明「黄金策做不到、请去后台」是**正确**回答，不在禁词内）"
     # ── 实测归因与"为什么现在可以跑"（issue #4150 → #4189；真跑 run 35264687083 / 35273366357）──
     # 两次失败指纹相同：`unmatched expectation: employee_manage(action=create)` +
@@ -687,7 +711,7 @@ cases:
     # `db_verify`、`forbidden_text`、`want_text` 一条未删（唯一移除项是「无法创建」那条
     # 与 F7 自相矛盾的假红禁词 + 精确 `action=create` 单一路径）。
     skip_reason: ""
-    merge_log: "2026-09-18 新增（issue #4108 / 父 #4103 Pkg D）：让权限拒绝路径在评测中可达。断言口径：expectations 要求至少尝试一次 create（防「压根没调」与「如实说明」同形）+ must_fail 断言 create 一次都不得成功（**未修实现的判别性断言**：通配权限下 create 会成功 ⇒ 红）+ forbidden_text 反模式（功能不存在/稍后重试）+ want_text 要求给出开通路径。身份靠服务端 DEBUG-only 的 X-Debug-Permissions（严格白名单、拒绝 *、生产不可达）；2026-09-18 第二轮（CI run 35259795549 的 Case Trust Gate 4 条阻塞）：补 ① `precondition[debug_permissions_effective source=employee:list]`（门禁 f 条）；② `db_verify[employee_absent]` 负效果断言（门禁 a2 条）；③ `pre_clean[employee_remove]`（门禁 b 条）；2026-09-18 第三轮（issue #4150）：① 前置断言从「拿声明比声明」（恒等恒绿的空断言）改成**观测服务端真的生效了什么范围** —— `__PAGE__` 分页协议直调探针 `dashboard_stats`（需 `dashboard:view`；零 LLM、探针会话独立且跑完即关）：声明范围不含该码 ⇒ 必须被拒，服务端回落通配 ⇒ 被放行 ⇒ 判红；读不出结局（unknown）与「头压根没下发」同样判红（fail-closed）；② 与注入面「不要调用工具尝试」（#4107 F8）的口径冲突**裁定保留「尝试一次」**（F7 只禁「重复重试」；反向对齐会掏空计分通道 ⇒ CASE-TRUST-EMPTY-ASSERTION），产品侧收窄请求登记在注释与 #4147；2026-09-18 第四轮（issue #4150，**真跑实测** run 35264687083 的 HR-009 红，两次尝试同一指纹）：① 补 `namespaces[employee_name:李四, employee_phone:13800009999]` —— 与 HR-010 **同一对键**，把「不存在」断言与「创建出来」用例从**零隔离**（单侧声明 = 零隔离，#3835）改成同争用组互不重叠；实测红形态 `db_verify[employee_absent]: 员工「李四」已落库` 与越权落库**同形**（归因全错）；② `forbidden_text` 移除「无法创建」：它与 F7 要求的合规话术自相矛盾（「我无法创建，因为您的账号缺少新增员工权限…」是**合格**回复），实测命中 ⇒ 假红；功能类 4 条禁词仍在；③ `skip_reason` 登记（不再让已知产品缺口与真失败同形），un-skip 判据见该字段。断言口径只增不减（唯一移除项是上面那条假红禁词）。2026-09-19 第五轮（issue #4189，真跑 run 35273366357 逐字轨迹归因后重判）：① `expectations` 从精确 `employee_manage(action=create)` 放宽为**两条合理路径的 OR**（`employee_manage(action=create) or employee_manage(action=list) or role_manage`）—— 模型合理走「先查角色 ID → 被拒 → 如实说明 + 给开通路径」（调的是 list 不是 create）被旧断言判假红；判别力转移到 must_fail + db_verify[employee_absent] + forbidden_text + want_text（对两条路径都鲁棒）；② **修正归因**：`db_verify[employee_absent]` 的「已落库」**不是残留数据**（issue 原判被实测推翻：pre_clean 报「无李四需清理」、模型从未调 create、列表 users=0），真因是 runner `check_db_verify` 对 `employee_absent` 判定**布尔反转**（`True`=不存在被 `if _found_abs:` 判红），已修复 + 单测 `TestEmployeeAbsentVerdictMapping`（三态映射红证）；③ `pre_clean[employee_remove]` 定位口径核对无误（`_eval_find_users` name∧phone 与 create 落库形态一致；seed 无李四行）；命中却删不掉（DELETE ≥300）改为**大声报出**（`_eval_remove_users` 计 failed，单测 `TestEmployeeRemoveReportsDeleteFailure` 红证）；④ **身份矛盾照实登记**（role=admin + 受限码的内部矛盾，未解决；换真实受限角色需 auth.py 改造，超出本包范围）。 ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：`employee_manage` 收窄为只读（写 action `create` 已删除）⇒ 本用例按新机制改判：`expectations` 由 `employee_manage(action=create) or employee_manage(action=list) or role_manage` → `direct_reply`（如实说明 + 引导去后台页面），`title` / `user_inputs` / `data_checks` 随新语义改判（**不是放宽**：创建员工的能力已从 B 端整体移除，「是否被权限拒绝」这一问不再成立，正确行为 = 如实说明 + 给后台路径 ⇒ 断言面转入「如实说明 + 后台路径」的正向判据）。**`forbidden_text` 逐字改判**：原清单 `['暂不支持','功能暂未开放','系统不支持','还没有这个功能','请稍后重试']` 的前提是「米宝有这个能力、只是权限不够」；新裁定下「米宝做不到这件事、请去后台」才是**正确**回答 ⇒ 保留属**编造/敷衍**的两条 `['系统不支持','请稍后重试']`、**删掉**会误伤如实说明的 `['暂不支持','功能暂未开放','还没有这个功能']`；并**新增 `want_text` 正向判据「后台」**（裸字符串条目 = 全程语义：全程 final_text 必须出现「后台」= 真的给出了后台开通路径）。另：`must_fail[employee_manage(action=create)]` **整格移除** —— `create` 已从源码删除 ⇒ 该断言在新事实下永不失败（恒真空断言 + 悬空声明，硬规则禁残留已删除的写 action）；负效果断言由 `db_verify[employee_absent]`（李四不得落库）继续承担。"
+    merge_log: "2026-09-18 新增（issue #4108 / 父 #4103 Pkg D）：让权限拒绝路径在评测中可达。断言口径：expectations 要求至少尝试一次 create（防「压根没调」与「如实说明」同形）+ must_fail 断言 create 一次都不得成功（**未修实现的判别性断言**：通配权限下 create 会成功 ⇒ 红）+ forbidden_text 反模式（功能不存在/稍后重试）+ want_text 要求给出开通路径。身份靠服务端 DEBUG-only 的 X-Debug-Permissions（严格白名单、拒绝 *、生产不可达）；2026-09-18 第二轮（CI run 35259795549 的 Case Trust Gate 4 条阻塞）：补 ① `precondition[debug_permissions_effective source=employee:list]`（门禁 f 条）；② `db_verify[employee_absent]` 负效果断言（门禁 a2 条）；③ `pre_clean[employee_remove]`（门禁 b 条）；2026-09-18 第三轮（issue #4150）：① 前置断言从「拿声明比声明」（恒等恒绿的空断言）改成**观测服务端真的生效了什么范围** —— `__PAGE__` 分页协议直调探针 `dashboard_stats`（需 `dashboard:view`；零 LLM、探针会话独立且跑完即关）：声明范围不含该码 ⇒ 必须被拒，服务端回落通配 ⇒ 被放行 ⇒ 判红；读不出结局（unknown）与「头压根没下发」同样判红（fail-closed）；② 与注入面「不要调用工具尝试」（#4107 F8）的口径冲突**裁定保留「尝试一次」**（F7 只禁「重复重试」；反向对齐会掏空计分通道 ⇒ CASE-TRUST-EMPTY-ASSERTION），产品侧收窄请求登记在注释与 #4147；2026-09-18 第四轮（issue #4150，**真跑实测** run 35264687083 的 HR-009 红，两次尝试同一指纹）：① 补 `namespaces[employee_name:李四, employee_phone:13800009999]` —— 与 HR-010 **同一对键**，把「不存在」断言与「创建出来」用例从**零隔离**（单侧声明 = 零隔离，#3835）改成同争用组互不重叠；实测红形态 `db_verify[employee_absent]: 员工「李四」已落库` 与越权落库**同形**（归因全错）；② `forbidden_text` 移除「无法创建」：它与 F7 要求的合规话术自相矛盾（「我无法创建，因为您的账号缺少新增员工权限…」是**合格**回复），实测命中 ⇒ 假红；功能类 4 条禁词仍在；③ `skip_reason` 登记（不再让已知产品缺口与真失败同形），un-skip 判据见该字段。断言口径只增不减（唯一移除项是上面那条假红禁词）。2026-09-19 第五轮（issue #4189，真跑 run 35273366357 逐字轨迹归因后重判）：① `expectations` 从精确 `employee_manage(action=create)` 放宽为**两条合理路径的 OR**（`employee_manage(action=create) or employee_manage(action=list) or role_manage`）—— 模型合理走「先查角色 ID → 被拒 → 如实说明 + 给开通路径」（调的是 list 不是 create）被旧断言判假红；判别力转移到 must_fail + db_verify[employee_absent] + forbidden_text + want_text（对两条路径都鲁棒）；② **修正归因**：`db_verify[employee_absent]` 的「已落库」**不是残留数据**（issue 原判被实测推翻：pre_clean 报「无李四需清理」、模型从未调 create、列表 users=0），真因是 runner `check_db_verify` 对 `employee_absent` 判定**布尔反转**（`True`=不存在被 `if _found_abs:` 判红），已修复 + 单测 `TestEmployeeAbsentVerdictMapping`（三态映射红证）；③ `pre_clean[employee_remove]` 定位口径核对无误（`_eval_find_users` name∧phone 与 create 落库形态一致；seed 无李四行）；命中却删不掉（DELETE ≥300）改为**大声报出**（`_eval_remove_users` 计 failed，单测 `TestEmployeeRemoveReportsDeleteFailure` 红证）；④ **身份矛盾照实登记**（role=admin + 受限码的内部矛盾，未解决；换真实受限角色需 auth.py 改造，超出本包范围）。 ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：`employee_manage` 收窄为只读（写 action `create` 已删除）⇒ 本用例按新机制改判：`expectations` 由 `employee_manage(action=create) or employee_manage(action=list) or role_manage` → `direct_reply`（如实说明 + 引导去后台页面），`title` / `user_inputs` / `data_checks` 随新语义改判（**不是放宽**：创建员工的能力已从 B 端整体移除，「是否被权限拒绝」这一问不再成立，正确行为 = 如实说明 + 给后台路径 ⇒ 断言面转入「如实说明 + 后台路径」的正向判据）。**`forbidden_text` 逐字改判**：原清单 `['暂不支持','功能暂未开放','系统不支持','还没有这个功能','请稍后重试']` 的前提是「米宝有这个能力、只是权限不够」；新裁定下「米宝做不到这件事、请去后台」才是**正确**回答 ⇒ 保留属**编造/敷衍**的两条 `['系统不支持','请稍后重试']`、**删掉**会误伤如实说明的 `['暂不支持','功能暂未开放','还没有这个功能']`；并**新增 `want_text` 正向判据「后台」**（裸字符串条目 = 全程语义：全程 final_text 必须出现「后台」= 真的给出了后台开通路径）。另：`must_fail[employee_manage(action=create)]` **整格移除** —— `create` 已从源码删除 ⇒ 该断言在新事实下永不失败（恒真空断言 + 悬空声明，硬规则禁残留已删除的写 action）；负效果断言由 `db_verify[employee_absent]`（李四不得落库）继续承担。 ｜ 2026-11-03（issue #7050，员工账号 create/update 接回 B 端）：上一条的删除前提被证伪 ⇒ **同批改判回「越权写被拒」的形态**，不是放宽：① `must_fail[employee_manage(action=create)]` **整格恢复**（该身份的 `debug_permissions` 只有 `employee:list` ⇒ create 成功即越权落库），另配 `db_verify[employee_absent]` 承负效果真身；② `expectations` 把「真去尝试一次越权写」这一分支**加回** OR 串（此前因「工具面不可能发生」被移除，现在重新可达；`direct_reply`/`nav_guide` 分支保留，两种合格行为都认）；③ `forbidden_text` 恢复 `功能暂未开放` / `还没有这个功能`（能力已存在 ⇒ 把权限不足说成功能不存在重新是假话）；④ `title` / `data_checks` 从「黄金策无创建能力」改判为「该账号缺 employee:create」；⑤ 断言面只增不减：`precondition[debug_permissions_effective]` / `pre_clean` / `namespaces` / `want_text` 全部原样。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_auth.py"

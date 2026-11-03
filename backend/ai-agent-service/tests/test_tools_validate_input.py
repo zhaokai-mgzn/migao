@@ -743,11 +743,12 @@ RETIRED_RULE_KEYS_B_END_READONLY: frozenset = frozenset({
     ("customer_manage", "update"),
     ("customer_manage", "update_tag"),
     # [RETIRED #5247] employee_manage：收窄为 list/detail（写 action 全删）
-    ("employee_manage", "create"),
+    # 🔴 issue #7050 销账（5 → 3）：`create` / `update` 已**接回**（不再是死键 —— 规则块
+    # 见 `_VALIDATION_RULES` 的 `employee_manage` 段）；`delete` / `reset_password` /
+    # `toggle_status` 按终版边界**仍不接** ⇒ 继续记账。
     ("employee_manage", "delete"),
     ("employee_manage", "reset_password"),
     ("employee_manage", "toggle_status"),
-    ("employee_manage", "update"),
     # [RETIRED #5247] finance_api：收窄为三个 get_*（写 action create_transaction 删除）
     #   → [销账 #4025 F8] 该规则块已从 `_VALIDATION_RULES` 删除 ⇒ 不再计入本台账
     # [RETIRED #5247] inventory_manage：收窄为 query/low_stock_alert（写 action adjust 删除）

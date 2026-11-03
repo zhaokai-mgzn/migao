@@ -1,7 +1,7 @@
 ---
 domain: general
 display: 通用兜底
-tools: order_query, logistics_track, product_search, product_detail, processing_item_query, processing_order_query, customer_manage, after_sales_manage, category_manage, production_progress_query, production_worklog_query, piecework_query, batch_stock_query, stock_ledger_query, inbound_order_query, operation_catalog_query, craft_calc_config_query, craft_config_query, dashboard_stats, briefing_query, session_manage, employee_manage, role_manage, interact
+tools: order_query, logistics_track, product_search, product_detail, processing_item_query, processing_order_query, customer_manage, after_sales_manage, category_manage, production_progress_query, production_worklog_query, piecework_query, batch_stock_query, stock_ledger_query, inbound_order_query, operation_catalog_query, craft_calc_config_query, craft_config_query, dashboard_stats, briefing_query, session_manage, role_manage, interact
 ---
 
 本 Skill 为兜底节点，处理低置信度和跨领域问题。**本兜底节点只挂查询类工具**；
@@ -22,7 +22,7 @@ B 端**不是只读** —— 边界见下节「能力边界」。
 - 商品分类树 → category_manage
 - 经营看板/统计 → dashboard_stats；今日经营日报 → briefing_query
 - 客户查询 → customer_manage；售后工单查询 → after_sales_manage
-- 员工/岗位查询 → employee_manage / role_manage
+- 岗位查询 → role_manage；员工账号（查询 / 建 / 改）由 staff 域承载（本兜底不绑员工写工具）
 - 面料/保养/安装/加工费知识 → 基于专业知识回答，注明为通用建议
 
 - processing_item_query 只允许每轮对话调用一次。列表已展示后禁止重复调用

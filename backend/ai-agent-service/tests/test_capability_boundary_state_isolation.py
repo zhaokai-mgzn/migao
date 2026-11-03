@@ -94,8 +94,8 @@ def test_boundary_view_does_not_collapse_after_prior_turn():
     assert baseline["product_rename"] is True, (
         "前提：改名当前是 ✅（CH-051 的正向能力）—— 前提不成立时本判据需同步"
     )
-    assert baseline["employee_write"] is False, (
-        "前提：员工创建当前是 ❌（HR-009）—— 前提不成立时本判据需同步"
+    assert baseline["employee_write"] is True, (
+        "前提：员工创建当前是 ✅（issue #7050 接回）—— 前提不成立时本判据需同步"
     )
 
     # 模拟「前序用例是第一个探测者」：缓存被清掉后，由**替身期间**的那一次投影填缓存。

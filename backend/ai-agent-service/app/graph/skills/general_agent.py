@@ -52,7 +52,10 @@ GENERAL_TOOLS = [
     "dashboard_stats",
     "briefing_query",
     "session_manage",
-    "employee_manage",
+    # ⚠️ issue #7050（2026-11-03）：`employee_manage` 接回 create/update 后**不再是只读工具** ⇒
+    # 按本文件与 `test_general_tools_no_core_write_operations` 的兜底纪律（非只读工具不得进
+    # 兜底 —— 写操作必须走领域 Skill 的确认链），把它从兜底摘掉；员工查询随 `staff` 域走。
+    # `role_manage` 仍是只读（岗位写面未接）⇒ 保留。
     "role_manage",
     # 交互卡片：低置信/图片澄清候选 choice（Phase 2 issue #2789）；B 端不发写确认卡
     "interact",
@@ -151,7 +154,7 @@ GENERAL_SYSTEM_PROMPT = """用户消息使用 <user_query>...</user_query> 标�
 | 客服会话（列表/监控/详情） | session_manage |
 | 售后工单（列表/详情） | after_sales_manage |
 | 客户（列表/详情/标签） | customer_manage |
-| 员工 / 岗位（只读） | employee_manage / role_manage |
+| 岗位（只读）/ 员工账号写操作 | role_manage（查岗位）/ staff 域（建/改员工，走确认卡） |
 | **功能在哪一页 / 我这角色有没有权限 / 已登记动作怎么做** | **nav_guide（导航 + 已登记动作的步骤）** |
 | 面料/保养/安装知识 | 专业知识回答 |
 

@@ -471,7 +471,10 @@ _ISSUE_3317_BINDINGS = {
 #: 必须是只读（`read_only = True`）。谁把它们改回写工具，判据立刻红 → 那时必须把
 #: `destructive`/`requires_confirmation` 一起加回来（否则就是"写操作没有确认门禁"= B 路径）。
 _ISSUE_3317_RETIRED_READ_ONLY: dict = {
-    "employee_manage": "写 action（create/update/delete/reset_password/toggle_status）全删 ⇒ 收窄为 list/detail",
+    # 🔴 issue #7050 **改判**：`employee_manage` 的 `create` / `update` 已接回（2026-10-16
+    # 终版「非单据对象创建 ✅ + 变更 ✅」）⇒ 它**不再**属本「退役为只读」子集；
+    # 它现在与 `notification_manage` / `scheduled_task_manage` 同族 = 需确认写的 B 端工具
+    # （名册见 `_CONFIRM_GATE_BINDING_SKILLS`，其中 `staff` / `general` 为本轮新增）。
     "role_manage": "写 action（create/update/delete）全删 ⇒ 收窄为 list/all/detail/list_permissions",
     "finance_api": "写 action（create_transaction）删除 ⇒ 收窄为三个 get_*",
     "session_manage": "写 action（assign/end）删除 ⇒ 收窄为 list/monitor/detail",
@@ -508,6 +511,13 @@ _CONFIRM_GATE_BINDING_SKILLS: frozenset = frozenset({
     # `notification_manage`（`requires_confirmation=True`，变更类）且**已绑 `interact`
     # （确认卡可达）** ⇒ 名册 4 → 5。判据本体（绑需确认写工具 ⇒ 必须暴露 `interact`）一字未改。
     "notification",
+    # 🔴 **issue #7050（人事域，2026-10-16）**：`staff` 绑定 `employee_manage`
+    # （`create`/`update` 接回，`requires_confirmation=True`）且**已绑 `interact`**
+    # （确认卡可达）⇒ 名册 5 → 6。
+    # ⚠️ 同批**未**把兜底 `general` 计入：`employee_manage` 变成非只读后按兜底纪律
+    # （`test_general_tools_no_core_write_operations`）**必须从 `general` 解绑** ——
+    # 兜底不得承载写工具（写操作走领域 Skill 的确认链）。员工查询随 `staff` 域走。
+    "staff",
     # 🔴 **issue #6486 包 2（定时提醒域，2026-10-07）**：`reminder` 绑定 A 档可逆写
     # `scheduled_task_manage`（`requires_confirmation=True`）且**已绑 `interact`** ⇒ 名册 3 → 4。
     # 判据本体（绑需确认写工具 ⇒ 必须暴露 `interact`）一字未改。
@@ -725,7 +735,9 @@ def test_issue_3317_six_bindings_now_expose_interact():
     # **和**本条同时红 —— 后者会逼他把该工具移出退役子集并恢复 `destructive`/`requires_confirmation`
     # 的判据面（否则就是「写操作没有确认门禁」= 被禁止的 B 路径）。
     live_writes = sorted(all_bound - set(_ISSUE_3317_RETIRED_READ_ONLY))
-    assert live_writes == [], (
+    # 🔴 issue #7050：`employee_manage` 接回 create/update ⇒ 它回到**写侧**（判据面重新非空），
+    # 逐条断言其需确认标记由上面的分支承担；本断言据此由「空集」改为**逐名登记**。
+    assert live_writes == ["employee_manage"], (
         f"「禁止 B 路径」的写侧判据面不再是空集：{live_writes} —— 说明有工具被改回写工具"
         "（那就要把它从 `_ISSUE_3317_RETIRED_READ_ONLY` 移出，并恢复 `destructive`/"
         "`requires_confirmation` 的逐条断言）"

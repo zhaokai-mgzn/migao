@@ -350,7 +350,7 @@
     "data=dict(result)",
     "data=response.get('data', {})"
    ],
-   "source_sha256": "1c8204ba7ed375e6dd75f8c04bcab6e7772132941762859a8a21fde446b34d43"
+   "source_sha256": "319cfaa9523bbcb078a7095d4ed6ad02e9b0cd9f7c5cd0122265a764dc369a83"
   },
   "customer_order_query": {
    "actions": null,
@@ -512,6 +512,10 @@
   },
   "employee_manage": {
    "actions": {
+    "create": {
+     "dynamic": true,
+     "keys": []
+    },
     "detail": {
      "dynamic": true,
      "keys": [
@@ -526,6 +530,12 @@
       "total",
       "users"
      ]
+    },
+    "update": {
+     "dynamic": false,
+     "keys": [
+      "user_id"
+     ]
     }
    },
    "dynamic": true,
@@ -535,19 +545,21 @@
     "page",
     "size",
     "total",
+    "user_id",
     "users"
    ],
    "literal_keys": [
     "page",
     "size",
     "total",
+    "user_id",
     "users"
    ],
    "shape_notes": [
     "data ← response.get('data', {})",
     "data=response.get('data', {})"
    ],
-   "source_sha256": "6c3145254d419f7bf97e0ba278be5b70e37ff9bf740bdecdc68942805b3cdbe1"
+   "source_sha256": "d7a8fcf9c42b90b44e1b8210270f5f4361538272ce3c6885fb1ed83e62105552"
   },
   "finance_api": {
    "actions": {
@@ -1468,7 +1480,7 @@
    "shape_notes": [
     "data=response.get('data', {})"
    ],
-   "source_sha256": "e78f7d9cbeef0148f1619c902ef7c85f49a6e46e7c8edfbefb8ba64636fe116e"
+   "source_sha256": "5920e012691b8f9dcff66bac518cda8ab728ee13ccb5d3a9ced3ff7f641aebf9"
   },
   "settings_manage": {
    "actions": {

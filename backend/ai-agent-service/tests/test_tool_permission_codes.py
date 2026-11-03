@@ -292,7 +292,8 @@ TOOL_PERMISSION_CODES: dict[str, tuple[str, ...]] = {
     # issue #5247 改判：写 action（create/update/delete/reset_password/toggle_status）已删除
     # ⇒ 写码 `employee:create` 退场（`idempotent = False` 也随之移除，见
     # `tests/test_tool_idempotent_retry_guard.py` 的抽样改判）。
-    "employee_manage": ("employee:list",),
+    # issue #7050：create/update 接回 ⇒ 粗筛码与 `AdminUserController` 的写端点注解对齐
+    "employee_manage": ("employee:list", "employee:create"),
     # issue #5247 改判：写 action（create_transaction）已删除 ⇒ 写码 `finance:create` 退场。
     "finance_api": ("finance:view",),
     # issue #5247 进场：入库单读面（V111，issue #5034 的 `inbound:view`）—— 与
