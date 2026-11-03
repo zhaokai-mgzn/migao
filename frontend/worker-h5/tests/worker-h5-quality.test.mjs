@@ -1,4 +1,4 @@
-// case_ids: PG-082, PG-086, PG-099
+// case_ids: PG-082, PG-086, PG-099, MC-181
 //
 // 工人端**质检记录 + 待复检闭环**（issue #7162 起；2026-10-28 issue #7973 改判）。
 //
@@ -59,6 +59,20 @@ const REWORK_RECORD = {
   inspected_at: '2026-10-28T09:20:00+08:00',
 }
 
+/**
+ * 服务端下发的不合格**原因字典**（issue #7197 ①；`GET /api/worker/quality/latest` 的 `reasons`）。
+ *
+ * 🔴 来源是服务端：前端不另造一份会漂的表（那张表迟早与校验面漂开 —— 界面能点的项被服务端拒）。
+ */
+const DICTIONARY = [
+  { code: 'fabric_stain', label: '布面污渍' },
+  { code: 'fabric_hole', label: '布料破洞' },
+  { code: 'color_diff', label: '色差' },
+  { code: 'size_mismatch', label: '尺寸不符' },
+  { code: 'stitching_defect', label: '走线不良' },
+  { code: 'other', label: '其它' },
+]
+
 /** 登录 + 页面集 + 解析结果。 */
 function open(pages = [PAGE_REPORT, PAGE_INSPECT], view = VIEW) {
   let s = reduce(initialState(), { type: 'worker', worker: WORKER })
@@ -66,9 +80,9 @@ function open(pages = [PAGE_REPORT, PAGE_INSPECT], view = VIEW) {
   return reduce(s, { type: 'resolved', view })
 }
 
-/** 读面返回（`records` 缺省为空）。 */
-function loaded(latest = null, records = [], pages = [PAGE_REPORT, PAGE_INSPECT]) {
-  return reduce(open(pages), { type: 'qualityLoaded', latest, records })
+/** 读面返回（`records` 缺省为空；原因字典随读面一起回来 —— issue #7197 ①）。 */
+function loaded(latest = null, records = [], pages = [PAGE_REPORT, PAGE_INSPECT], reasons = DICTIONARY) {
+  return reduce(open(pages), { type: 'qualityLoaded', latest, records, reasons })
 }
 
 test('① 没开「质检」页 ⇒ 质检区块 / 入口一个字节都不出现（默认页不含 inspect）', () => {
@@ -133,14 +147,19 @@ test('④ 复检通过：提交中两个按钮禁用；成功后状态回「正�
   assert.match(html, /id="wh5-quality-entry"/)
 })
 
-test('⑤ 表单只有「返工 + 问题说明」；提交中禁用；成功 ⇒ 质检已登记 + 表单收起', () => {
-  const formOpen = reduce(open(), { type: 'qualityFormOpen' })
+test('⑤ 表单只有「返工 + 问题类型 + 补充说明」；提交中禁用；成功 ⇒ 质检已登记 + 表单收起', () => {
+  const formOpen = reduce(loaded(), { type: 'qualityFormOpen' })
   const html = renderPage(formOpen)
   assert.match(html, /id="wh5-quality-form"/)
   // 🔴 只提供一个返工选项：不再有 pass / scrap 的判定按钮
   assert.equal(html.includes('data-quality-result'), false)
   assert.match(html, /id="wh5-quality-hint"[^>]*>这次记为「做工返工」/)
-  assert.match(html, /问题说明（必填）/)
+  // issue #7197 ①：原因 = **必选的字典项**（短语按钮）+ **可选的**自由补充
+  assert.match(html, /问题类型（必选）/)
+  assert.match(html, /补充说明（可不填）/)
+  for (const item of DICTIONARY) {
+    assert.match(html, new RegExp(`data-quality-reason="${item.code}"[^>]*>${item.label}<`))
+  }
   assert.match(html, /id="wh5-quality-submit"[^>]*>提交质检</)
 
   const submitting = renderPage(reduce(formOpen, { type: 'qualitySubmitting' }))
@@ -154,12 +173,12 @@ test('⑤ 表单只有「返工 + 问题说明」；提交中禁用；成功 ⇒
 })
 
 test('⑥ 复检仍有问题：同一个表单带 recheck 语义（文案「复检」、提交「提交复检」）', () => {
-  const html = renderPage(reduce(open(), { type: 'qualityFormOpen', recheck: true }))
+  const html = renderPage(reduce(loaded(), { type: 'qualityFormOpen', recheck: true }))
   assert.match(html, /id="wh5-quality-hint"[^>]*>这次复检记为「仍有问题」/)
   assert.match(html, /id="wh5-quality-submit"[^>]*>提交复检</)
-  // 仍然只有一个动作 + 必填说明
+  // 仍然只有一个动作 + 必选的问题类型
   assert.equal(html.includes('data-quality-result'), false)
-  assert.match(html, /问题说明（必填）/)
+  assert.match(html, /问题类型（必选）/)
 })
 
 test('⑦ 读面失败 ⇒ 「未读到」+ 人话错误；不冒充「正常」，也不冒充「没有质检记录」', () => {
@@ -241,4 +260,50 @@ test('质检记录不再与块头结论重复同一句话（真机：「正常�
   const occurrences = (block.match(/>正常</g) ?? []).length
   assert.equal(occurrences, 1, `块头与记录行只该有一句「正常」，实测 ${occurrences} 句`)
   assert.match(block, /检验人 李质检/, '检验人照旧要印（去掉的是重复的结论标签，不是记录本身）')
+})
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 不合格原因字典（issue #7197 ①）—— 车间戴手套：点一项，少打字
+// ══════════════════════════════════════════════════════════════════════════════
+
+test('⑫ 原因项点选是**纯状态动作**：选中态 aria-pressed + 只选中一项（再点不取消）', () => {
+  let s = reduce(loaded(), { type: 'qualityFormOpen' })
+  let html = renderPage(s)
+  // 默认不替人猜：一项都没选中（"默认选第一个"会把统计悄悄带偏）
+  assert.match(html, /data-quality-reason="fabric_stain"[^>]*aria-pressed="false"/)
+
+  s = reduce(s, { type: 'qualityReasonSelected', code: 'fabric_stain' })
+  html = renderPage(s)
+  assert.match(html, /class="wh5-q-reason-chip is-on" data-quality-reason="fabric_stain"[^>]*aria-pressed="true"/)
+  // 其它项仍未被选中（单选语义）
+  assert.match(html, /data-quality-reason="color_diff"[^>]*aria-pressed="false"/)
+
+  // 再点同一项 ⇒ 仍是选中（不出现"点第二次反而清空"的坑：那要多点一次才能重选）
+  s = reduce(s, { type: 'qualityReasonSelected', code: 'fabric_stain' })
+  assert.match(renderPage(s), /data-quality-reason="fabric_stain"[^>]*aria-pressed="true"/)
+})
+
+test('⑬ 记录行原因 = 字典项中文名 + 补充；存量自由文本原样显示（未归类**不猜**）', () => {
+  const withLabel = {
+    ...REWORK_RECORD,
+    reason_code: 'stitching_defect',
+    reason_label: '走线不良',
+    reason: '右帘下摆',
+  }
+  // 存量行：reason_code / reason_label 都是 null（老记录不清洗）
+  const legacy = { ...REWORK_RECORD, reason_code: null, reason_label: null, reason: '脏 污渍' }
+  const html = renderPage(loaded(withLabel, [withLabel, legacy]))
+
+  assert.match(html, /走线不良（右帘下摆）/, '字典项 + 补充一并显示')
+  assert.match(html, /脏 污渍/, '存量自由文本原样显示')
+  // 存量行不得被凭空挂上某个字典项标签（把「脏」归成「布面污渍」= 静默失真）
+  assert.equal(html.includes('布面污渍（脏'), false)
+})
+
+test('⑭ 字典没读到（读面没带 reasons）⇒ 不出任何原因项、不编假表，只说「读取中」', () => {
+  const html = renderPage(reduce(open(), { type: 'qualityFormOpen' }))
+  assert.equal(html.includes('data-quality-reason='), false, '没读到字典就不许凭空造项')
+  assert.match(html, /id="wh5-quality-reasons-empty"[^>]*>问题类型读取中/)
+  // 读面回来自带字典 ⇒ 占位消失、短语按钮出现（同一条渲染路径，不是第二份实现）
+  assert.equal(renderPage(reduce(loaded(), { type: 'qualityFormOpen' })).includes('wh5-quality-reasons-empty'), false)
 })

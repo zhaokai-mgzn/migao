@@ -479,6 +479,10 @@ a.wh5-machine__back:active { color: var(--wh5-machine-ink); }
 .wh5-q-choice.is-on { border-color: var(--wh5-brand); background: var(--wh5-brand-soft); color: var(--wh5-brand-strong); }
 .wh5-q-actions { display: flex; gap: 10px; }
 .wh5-q-actions .wh5-primary { flex: 1 1 auto; }
+/* 问题类型短语（issue #7197 ①）：车间戴手套点一下就好 —— 触控目标 ≥44px、一行放不下就换行 */
+.wh5-q-reasons { display: flex; flex-wrap: wrap; gap: 8px; }
+.wh5-q-reason-chip { min-height: 44px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--wh5-line-strong); background: #fff; color: var(--wh5-ink-soft); font-size: 16px; font-weight: 600; touch-action: manipulation; }
+.wh5-q-reason-chip.is-on { border-color: var(--wh5-brand); background: var(--wh5-brand-soft); color: var(--wh5-brand-strong); }
 
 /* ════════════════════════════════════════════════════════════════════════════
    「我的计件」（issue #6767，**样式补齐** = issue #7232）
@@ -887,6 +891,7 @@ a.wh5-machine__back:active { color: var(--wh5-machine-ink); }
 .no-flex-gap .wh5-batch-cands > * + *,
 .no-flex-gap .wh5-spec-row > * + *,
 .no-flex-gap .wh5-q-choices > * + *,
+.no-flex-gap .wh5-q-reasons > * + *,
 .no-flex-gap .wh5-q-head > * + *,
 .no-flex-gap .wh5-record-top > * + *,
 .no-flex-gap .wh5-piecework-nav > * + * {

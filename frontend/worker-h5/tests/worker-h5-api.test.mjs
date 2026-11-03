@@ -1,4 +1,4 @@
-// case_ids: PG-018, BM-006, DF-017, BM-045
+// case_ids: PG-018, BM-006, DF-017, BM-045, MC-181
 //
 // 工人端 H5 报工页 —— **API 客户端 + 登录态**（issue #4716 §2.1 / §3.1~§3.3）。
 //
@@ -301,4 +301,35 @@ test('🔴 红线：页面只读 unit_price 用于显示（未定价 ≠ 0），
   assert.ok(!/unit_price\s*:/.test(code), '前端不得构造 unit_price 字段（服务端在报工那一刻固化的快照）')
   assert.ok(!/\bfactor\b/.test(code), '前端不得触碰 factor')
   assert.match(src, /unit_price/, '但**读**面必须保留 unit_price（未定价 ≠ 0 的显示判据要用它）')
+})
+
+test('🔴 质检判定写面带 reason_code（issue #7197 ①：字典项才是可统计的原因键）', async () => {
+  const f = stubFetch([
+    LOGIN_OK,
+    { status: 200, body: { success: true, data: { id: 'qi-1' } } },
+    { status: 200, body: { success: true, data: { id: 'qi-pass' } } },
+  ])
+  const api = createApi({ fetchImpl: f, storage: memStorage(), baseUrl: 'https://app.migaozn.com' })
+  await api.login({ workerNo: 'A017', pin: '1234' })
+
+  // 返工：字典项必带，自由补充可选
+  await api.createQuality({
+    orderItemId: 'item-1',
+    result: 'rework',
+    reasonCode: 'stitching_defect',
+    reason: '右帘下摆',
+    setNo: 'JG-001',
+  })
+  assert.equal(f.calls[1].url, 'https://app.migaozn.com/api/worker/quality/inspections')
+  assert.deepEqual(f.calls[1].body, {
+    order_item_id: 'item-1',
+    result: 'rework',
+    set_no: 'JG-001',
+    reason_code: 'stitching_defect',
+    reason: '右帘下摆',
+  })
+
+  // 合格（复检通过）：不带任何原因键 —— 服务端判定「合格不需要字典项」，前端也不塞空串
+  await api.createQuality({ orderItemId: 'item-1', result: 'pass' })
+  assert.deepEqual(f.calls[2].body, { order_item_id: 'item-1', result: 'pass' })
 })

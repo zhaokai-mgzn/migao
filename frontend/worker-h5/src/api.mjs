@@ -516,7 +516,7 @@ export function createApi(opts = {}) {
      * 闭环（issue #7973）：同一件最新判定 = 返工且未复检 ⇒ 普通「记返工」被服务端 409 拒；
      * 复检【仍有问题】必须带 `recheck:true`（显式的新一轮判定）。
      */
-    async createQuality({ orderItemId, result, reason, setNo, recheck } = {}) {
+    async createQuality({ orderItemId, result, reason, reasonCode, setNo, recheck } = {}) {
       if (!session?.sessionId) {
         const err = new Error('尚未登录工人身份，请先用工号 + PIN 登录')
         err.code = SESSION_EXPIRED
@@ -525,6 +525,8 @@ export function createApi(opts = {}) {
       const body = { order_item_id: orderItemId, result }
       // 件键（issue #7945）：套号 × 部位 = 一张水洗唛码；扫码面已知套号，直接带上（多套单不猜第 1 套）
       if (setNo) body.set_no = setNo
+      // 原因字典项（issue #7197 ①）：判定 ≠ 合格时的**必填**键；自由补充另走 `reason`
+      if (reasonCode) body.reason_code = reasonCode
       if (reason) body.reason = reason
       // 复检回路（issue #7973）：只有从「待复检」点的【复检仍有问题】才带 true ——
       // 普通「记返工」在待复检状态下会被服务端 409 拒（不靠前端自觉）。

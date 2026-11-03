@@ -2,7 +2,7 @@
 # 本文件由 render_cases.py 生成，勿手改（改了也留不住：下次重渲染会覆盖）
 # 源: cases/*.yml（case-contract 单一源）
 # 重新生成: python3 render_cases.py --cases <dir> --out-eval <包目录> --out-md <md>
-# 域: misc（源: cases/misc.yml，209 条）
+# 域: misc（源: cases/misc.yml，211 条）
 
 from ._schema import Difficulty, EvalCase, Skill
 
@@ -3640,9 +3640,9 @@ _CASE_MC_147 = EvalCase(
     forbidden_card_text=[],
 )
 
-# ── MC-155 [NORMAL] 终端壳打印能力三态（issue #8310）：桥在 ≠ 打印机在 —— printerMode 负向 / 读不到都不许说「由本机打印机直接出纸」，且「判不了」与「确知没有」分开说（源: cases/misc.yml）──
-_CASE_MC_155 = EvalCase(
-    id='MC-155',
+# ── MC-181 [NORMAL] 终端壳打印能力三态（issue #8310）：桥在 ≠ 打印机在 —— printerMode 负向 / 读不到都不许说「由本机打印机直接出纸」，且「判不了」与「确知没有」分开说（源: cases/misc.yml）──
+_CASE_MC_181 = EvalCase(
+    id='MC-181',
     legacy_id='',
     title='终端壳打印能力三态（issue #8310）：桥在 ≠ 打印机在 —— printerMode 负向 / 读不到都不许说「由本机打印机直接出纸」，且「判不了」与「确知没有」分开说',
     skill=Skill.GENERAL,
@@ -3839,6 +3839,43 @@ _CASE_MC_180 = EvalCase(
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
+)
+
+# ── MC-183 [NORMAL] 红证档准入（issue #5707 · FM-E10 残余）：9 条实跑腿全部 ⏭️ 时该档必须 exit 4 —— 汇总按「实质真跑」判（无条件跑的辅助项不计数），并按 probe_ready 的原文具名报出每条被 skip 的腿缺什么工具链（源: cases/misc.yml）──
+_CASE_MC_183 = EvalCase(
+    id='MC-183',
+    legacy_id='',
+    title='红证档准入（issue #5707 · FM-E10 残余）：9 条实跑腿全部 ⏭️ 时该档必须 exit 4 —— 汇总按「实质真跑」判（无条件跑的辅助项不计数），并按 probe_ready 的原文具名报出每条被 skip 的腿缺什么工具链',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['本机没有 JDK/PG/node_modules，跑 ./verify-all.sh redproof 时 9 条实跑腿全打 ⏭️、只剩两条无条件项 ✅，汇总说「真跑 2 项」并退出 0 —— 于是「没跑 = 通过」成立；希望「一条能证明本档目标的腿都没跑」时这个档不许判绿，而且报文要说清是哪几条腿被 skip、各缺什么工具链。'],
+    expectations=[],
+    data_checks=['**判据 1（会红）**：全部实跑腿被 skip + 那 2 项无条件项 ✅ ⇒ 该档 **exit 4**（修前退 0）。执行点 = tests/unit_ci_workflows/test_verify_all_redproof_meaningful_executed.py::TestPureNoopOnAllRealRunLegsSkipped::test_all_real_run_legs_skipped_exits_pure_noop。', '**判据 2·负控（会红）**：只让一条实跑腿的就绪条件成立（伪造 node_modules/.bin/vitest）⇒ **不** exit 4、且汇总显示「实质真跑 1 项」。红证 = 把准入判据改成恒 0（辅助也计入）⇒ 同夹具变 exit 4。执行点 = ::TestNegativeControl 与 ::TestRedProofs::test_counting_auxiliary_as_meaningful_would_break_the_negative_control。', '**判据 3（会红）**：那 2 项无条件腿（红证机具前提自检 / 红证实跑巡检）**仍然存在、仍然无条件派发、仍然会跑**（不许为修空跑把它们删掉或塞进 if）。执行点 = ::TestPureNoopOnAllRealRunLegsSkipped::test_the_two_unconditional_legs_still_run_and_are_counted 与 ::TestClassLevelRegistry::test_wrapping_an_unconditional_leg_in_if_is_red。', '**判据 4·归因（会红）**：exit 4 报文逐条具名「腿名 + 缺什么工具链」，且那句缺什么**取自 probe_ready() 的原文**（不另写第二套文案）。红证 = 删掉 report_env() 里的 NOT_READY_WHY 拼装 ⇒ 具名行整段消失。执行点 = ::TestPureNoopOnAllRealRunLegsSkipped::test_every_skipped_leg_is_named_with_the_toolchain_probe_reason 与 ::TestRedProofs::test_dropping_the_attribution_removes_the_named_lines。', '**判据 5·红证注入**：把汇总块的 `MEANINGFUL_EXECUTED=$((EXECUTED - AUX_EXECUTED))` 改回 `MEANINGFUL_EXECUTED=$EXECUTED` ⇒ 判据 1 的同夹具**变绿**（证明判据 1 不是空断言）。执行点 = ::TestRedProofs::test_reverting_the_verdict_to_executed_turns_criterion_1_green。', '**判据 6·类级元守卫（会红）**：辅助登记（aux_step_name()）⇄ redproof 档实际的无条件派发**双向相等**（未登记即红 / 陈旧即红）、上限冻结 2 条只许缩短、实跑腿不得被登记成辅助、汇总块的纯空跑判定必须引用 MEANINGFUL_EXECUTED 且 exit 4 唯一；只改注释 ⇒ 不红（对照）。分类方向 fail-closed = 未登记一律算实质真跑。执行点 = ::TestClassLevelRegistry。'],
+    skip_reason='[backend-contract] 纯静态 + 抽出的 shell 行为判据（真 report()/report_env()/汇总块，腿命令替换成 true；零网络、零 JDK/npm/PG），由 tests/unit_ci_workflows/test_verify_all_redproof_meaningful_executed.py 验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ci', 'gate', 'pure-noop', 'false-green', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-155 [NORMAL] 终端壳打印能力三态（issue #8310）：桥在 ≠ 打印机在 —— printerMode 负向 / 读不到都不许说「由本机打印机直接出纸」，且「判不了」与「确知没有」分开说（源: cases/misc.yml）──
+_CASE_MC_155 = EvalCase(
+    id='MC-155',
+    legacy_id='',
+    title='终端壳打印能力三态（issue #8310）：桥在 ≠ 打印机在 —— printerMode 负向 / 读不到都不许说「由本机打印机直接出纸」，且「判不了」与「确知没有」分开说',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户（2026-11-01 真机取证，商米 V2s `Qbao_h2` / Android 11 / 终端壳 1.0.19）：拍照入库页第一行写「点「打印标签」，由本机打印机直接出纸。」，而同一台机器点「打印测试页」⇒「打印失败 / 打印机未连接（需商米内置打印服务）」（`PrinterLink.mode()` = -1，设备上只有 `com.sunmi.printer.firmware`）'],
+    expectations=['direct_reply'],
+    data_checks=['🔴 **判据 1（实例，会红）**：`printerMode = -1`（真机读数：没有商米打印服务）⇒ 能力探测必须 `ok:false`、`reason = terminal-printer-unavailable`，且**不出现**「由本机打印机直接出纸」（`readyHint` 为空）。执行点 = frontend/bmini-app/tests/inbound-print-capability-terminal.test.ts::T1', '🔴 **判据 2（负控，防「修坏了」）**：`printerMode > 0`（原生报正向）⇒ **仍**报能打 + 机身内置打印机文案（`PRINT_READY_HINT_TERMINAL`），与 #8089 的终端通道形态一致。执行点 = 同文件::T2', '🔴 **判据 3（三态，最容易被写成 `|| true`）**：`printerMode` **读不到**（缺省 / 0 / NaN / Infinity）⇒ `unknown` ⇒ `ok:false` 且**不说**能打；「判不了」与「确知没有」是**两条不同文案**（出口相同 = 电脑端补打 / 找管理员）。执行点 = 同文件::T3', '🔴 **判据 4（类级固化）**：终端分支必须消费 `printerMode`（`terminalPrintState(env.printerMode)`），旧形态 `if (env.terminalBridge) { return { ok: true … } }` 必须不复存在；`PRINT_READY_HINT_TERMINAL` 只许由 frontend/bmini-app/src/utils/inbound/printCapability.ts 的 `available` 分支产出，`src/**` 里别的文件不许自己写死这句话。执行点 = 同文件::T4', '🔴 **判据 5（取值接线）**：`readPrintEnv()` 从原生注入的 `window.__CFG__.printerMode` 取数，非数字 / 非有限值一律按「读不到」处理（fail-closed）；端到端：`__CFG__ = { printerMode: -1 }` ⇒ 探针（读真环境）也不说能打。执行点 = 同文件::T5', '**边界（照实登记，§19.1）**：① 判据只钉**本仓这一侧**（判定 + 文案 + 取值接线），**不覆盖**原生侧是否真的按 `PrinterLink.mode()` 赋值（仓外，终端仓另单）；② 不判「这台机器该不该配打印机」（硬件选型不在本单）；③ 不改任何门禁的通过条件、不新增豁免；④ `terminalBridge` 的既有定义（`chrome.webview`）**未动** —— 本轮只让「能力」由原生上报的事实说话。'],
+    skip_reason='[backend-contract] 纯前端确定性判据（能力探测 = 纯函数 + 取值接线 + 源码结构守卫），由 frontend/bmini-app/tests/inbound-print-capability-terminal.test.ts 验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['backend-contract', 'bmini', 'print-capability', 'fail-closed', 'three-state', 'no-overclaim', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [backend-contract]：前置 = frontend/bmini-app/src/utils/inbound/printCapability.ts 的终端分支在场、`PrintEnv.printerMode` 可注入、`readPrintEnv()` 读 `window.__CFG__`；能力探测是纯函数（零网络、零硬件），页面侧已有的 `capability.ok` 门禁（打印按钮 disabled）不变。',
 )
 
 CASES = (
@@ -4040,7 +4077,7 @@ CASES = (
     _CASE_MC_152,
     _CASE_MC_153,
     _CASE_MC_147,
-    _CASE_MC_155,
+    _CASE_MC_181,
     _CASE_MC_159,
     _CASE_MC_156,
     _CASE_MC_157,
@@ -4051,4 +4088,6 @@ CASES = (
     _CASE_MC_162,
     _CASE_MC_163,
     _CASE_MC_180,
+    _CASE_MC_183,
+    _CASE_MC_155,
 )

@@ -1240,8 +1240,16 @@ export const qualityInspectionApi = {
     return request.get<ApiResponse<QualityInspectionRecord[]>>('/api/admin/quality-inspections' + suffix)
   },
 
-  /** 录入一条判定；判定 ≠ 合格 ⇒ `reason` 必填（缺 ⇒ 服务端 422，不静默存） */
-  create: (data: { order_item_id: string; result: QualityInspectionResult; reason?: string }) =>
+  /**
+   * 录入一条判定；判定 ≠ 合格 ⇒ `reason_code` 必填（取字典项；缺 / 字典外 ⇒ 服务端 422，不静默存），
+   * `reason` 是**自由补充**（可空，issue #7197 ①）。
+   */
+  create: (data: {
+    order_item_id: string
+    result: QualityInspectionResult
+    reason_code?: string
+    reason?: string
+  }) =>
     request.post<ApiResponse<QualityInspectionRecord>>('/api/admin/quality-inspections', data),
 }
 

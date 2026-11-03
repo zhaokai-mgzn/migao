@@ -93,9 +93,14 @@ public class QualityCheckService {
      * 只有「返工」这一个选择）⇒ 由本前缀 + 工序逻辑名合成一句人话，让质检单上看得懂「为什么有这条」。</p>
      */
 
-    /** 判为合格时允许原因为空后的文案锚（供报错文案复用）。 */
-    private static final String REASON_REQUIRED =
-            "质检判定为「%s」时必须填写不合格原因（判定 ≠ 合格 ⇒ 原因必填）";
+    /**
+     * 判定 ≠ 合格时**必须从原因字典里选一项**（issue #7197 ①）：自由补充不能代替字典项。
+     *
+     * <p>文案要点（每条都是判据的一部分）：① 说出是哪一档判定；② **列全**可选项 ——
+     * 录入者当场就知道该点哪一个，不用去问人；③ 说清「补充说明」是什么角色（不能顶替）。</p>
+     */
+    private static final String REASON_CODE_REQUIRED =
+            "质检判定为「%s」时必须从「不合格原因字典」里选一项（%s）——「原因补充」只用于补充说明，不能代替字典项";
 
     /** 参与质检的加工单状态（与 {@link #create} 的「活跃加工单」同一集合 —— 已取消的单不质检）。 */
     private static final List<String> TARGET_PROCESSING_STATUSES =
@@ -154,7 +159,7 @@ public class QualityCheckService {
      * @param tenantId   当前租户（调用方从 {@code TenantContext} 取，**不**从 body 取）
      * @param orderItemId 一件成品帘（{@code order_items.id}）—— 质检的**唯一**颗粒度
      * @param result     质检三态之一（{@code pass}/{@code rework}/{@code scrap}）
-     * @param reason     不合格原因：判定 ≠ {@code pass} 时必填
+     * @param reason     不合格原因的**自由补充**（可空；issue #7197 ①：它不再能顶替字典项）
      * @param inspectorId   检验人 id（服务端从 {@code SecurityContext} 解）
      * @param inspectorName 检验人展示名
      * @param inspectedAt   检验时刻（调用方取业务时钟单点 {@code BusinessClock}）
@@ -162,8 +167,8 @@ public class QualityCheckService {
      */
     public Map<String, Object> create(Long tenantId, String orderItemId, String result, String reason,
                                       String inspectorId, String inspectorName, OffsetDateTime inspectedAt) {
-        return create(tenantId, orderItemId, result, reason, inspectorId, inspectorName,
-                INSPECTOR_EMPLOYEE, inspectedAt);
+        return create(tenantId, orderItemId, result, reason, null, inspectorId, inspectorName,
+                INSPECTOR_EMPLOYEE, inspectedAt, null, null);
     }
 
     /**
@@ -174,8 +179,8 @@ public class QualityCheckService {
     public Map<String, Object> create(Long tenantId, String orderItemId, String result, String reason,
                                       String inspectorId, String inspectorName, String inspectorKind,
                                       OffsetDateTime inspectedAt) {
-        return create(tenantId, orderItemId, result, reason, inspectorId, inspectorName, inspectorKind,
-                inspectedAt, null);
+        return create(tenantId, orderItemId, result, reason, null, inspectorId, inspectorName, inspectorKind,
+                inspectedAt, null, null);
     }
 
     /**
@@ -189,7 +194,7 @@ public class QualityCheckService {
     public Map<String, Object> create(Long tenantId, String orderItemId, String result, String reason,
                                       String inspectorId, String inspectorName, String inspectorKind,
                                       OffsetDateTime inspectedAt, WorkerIdentity actor) {
-        return create(tenantId, orderItemId, result, reason, inspectorId, inspectorName, inspectorKind,
+        return create(tenantId, orderItemId, result, reason, null, inspectorId, inspectorName, inspectorKind,
                 inspectedAt, actor, null);
     }
 
@@ -203,6 +208,25 @@ public class QualityCheckService {
     public Map<String, Object> create(Long tenantId, String orderItemId, String result, String reason,
                                       String inspectorId, String inspectorName, String inspectorKind,
                                       OffsetDateTime inspectedAt, WorkerIdentity actor, String setNoArg) {
+        return create(tenantId, orderItemId, result, reason, null, inspectorId, inspectorName, inspectorKind,
+                inspectedAt, actor, setNoArg);
+    }
+
+    /**
+     * **唯一**写入实现（issue #7197 ① 在其上加了 {@code reasonCode}）。
+     *
+     * <p>🔴 口径：判定 ≠ {@code pass} ⇒ 必须从 {@link QualityReasonDictionary} 里选**一项**
+     * （缺 / 空 / 字典外的值 ⇒ 422 具名报错，零写入）；{@code reason} 降级为**自由补充**（可空），
+     * 不再能顶替字典项 —— 自由文本（「脏」「污渍」「布面污渍」）会让缺陷分布算成三个原因。</p>
+     *
+     * <p>存量行（{@code reason_code} 为 {@code null}）**不清洗**：读面如实区分「字典项」与「未归类」，
+     * 本方法只作用于**新写入**。</p>
+     */
+    @org.springframework.transaction.annotation.Transactional(rollbackFor = Exception.class)
+    public Map<String, Object> create(Long tenantId, String orderItemId, String result, String reason,
+                                      String reasonCode, String inspectorId, String inspectorName,
+                                      String inspectorKind, OffsetDateTime inspectedAt, WorkerIdentity actor,
+                                      String setNoArg) {
         String kind = inspectorKind == null ? INSPECTOR_EMPLOYEE : inspectorKind.trim();
         if (!INSPECTOR_KINDS.contains(kind)) {
             throw BusinessException.validationError(
@@ -217,13 +241,25 @@ public class QualityCheckService {
                     "inspection_result 仅支持 pass/rework/scrap（合格/返工/报废），收到："
                             + (result == null ? "null" : result));
         }
-        // 🔴 判定 ≠ 合格 ⇒ 原因必填（本单判据 4：缺原因必须**具名报错**，不许静默存）
+        // 🔴 判定 ≠ 合格 ⇒ **必须从原因字典里选一项**（issue #7197 ①：自由文本不是原因键）
         String trimmedReason = reason == null ? null : reason.trim();
-        if (!"pass".equals(normalized) && !StringUtils.hasText(trimmedReason)) {
+        String trimmedCode = reasonCode == null ? null : reasonCode.trim();
+        if (trimmedCode != null && trimmedCode.isEmpty()) {
+            trimmedCode = null;
+        }
+        if (!"pass".equals(normalized) && trimmedCode == null) {
             throw BusinessException.validationError(
-                    String.format(REASON_REQUIRED, label(normalized)),
-                    List.of(BusinessException.detail("reason", "判定为「" + label(normalized) + "」时必须说明原因")),
-                    "请填写不合格原因（如：布面污渍 / 尺寸偏差 / 缝线开裂）后再提交");
+                    String.format(REASON_CODE_REQUIRED, label(normalized), QualityReasonDictionary.labels()),
+                    List.of(BusinessException.detail("reason_code",
+                            "判定为「" + label(normalized) + "」时必须选一项不合格原因")),
+                    "请先点选一项不合格原因（" + QualityReasonDictionary.labels()
+                            + "）；要补充细节写在「原因补充」里");
+        }
+        if (trimmedCode != null && !QualityReasonDictionary.contains(trimmedCode)) {
+            throw BusinessException.validationError(
+                    "不合格原因字典里没有「" + trimmedCode + "」，可选：" + QualityReasonDictionary.labels(),
+                    List.of(BusinessException.detail("reason_code", "取值不在不合格原因字典内")),
+                    "请从上面这几项里选一项（判定为合格时不需要选原因）");
         }
 
         OrderItem item = resolveOrderItem(tenantId, orderItemId);
@@ -247,6 +283,7 @@ public class QualityCheckService {
                 .inspectorKind(kind)
                 .inspectionResult(normalized)
                 .reason(trimmedReason)
+                .reasonCode(trimmedCode)
                 .inspectedAt(inspectedAt)
                 .deleted(0)
                 .build();
@@ -1094,6 +1131,10 @@ public class QualityCheckService {
         v.put("result", row.getInspectionResult());
         v.put("result_label", label(row.getInspectionResult()));
         v.put("reason", row.getReason());
+        // issue #7197 ①：字典项 + 它的中文名（商家面文案，不把 code 上屏）。
+        // 存量行（reason_code = null）⇒ 两者都是 null：读面**如实**表示「未归类」，不猜、不回填。
+        v.put("reason_code", row.getReasonCode());
+        v.put("reason_label", QualityReasonDictionary.label(row.getReasonCode()));
         v.put("inspector_id", row.getInspectorId());
         v.put("inspector_name", row.getInspectorName());
         // issue #7162：一条只加不改 —— 读面能区分「观星台员工录的」与「工人端录的」
