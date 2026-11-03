@@ -1,4 +1,4 @@
-# case_ids: CH-051, HR-009
+# case_ids: CH-051, HR-014
 """**进程级缓存不得经测试替身接缝取值**的类级元守卫（issue #8125）。
 
 ## 病（origin/main 已复现）

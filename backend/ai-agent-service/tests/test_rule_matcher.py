@@ -1,4 +1,4 @@
-# case_ids: MC-010, MC-011, AS-003, AS-004, AS-005, HR-002, DA-004, PR-013, DA-003, PP-002, OR-014, CH-010, PG-017, PG-064, DA-025, CU-008, CU-001, CU-002, ST-002, ST-001, HR-009
+# case_ids: MC-010, MC-011, AS-003, AS-004, AS-005, HR-002, DA-004, PR-013, DA-003, PP-002, OR-014, CH-010, PG-017, PG-064, DA-025, CU-008, CU-001, CU-002, ST-002, ST-001, HR-014
 """规则匹配器单元测试（app/router/rule_matcher.py）
 
 覆盖：_extract_text / RuleMatcher.match 关键词优先级 / 正则规则 / 未命中。
@@ -666,7 +666,7 @@ class TestScheduledTaskRouting:
 
 
 class TestStaffAccountRouting:
-    """HR-009：「帮我开个客服账号…」在 L1 一个词都不命中。
+    """HR-014：「帮我开个客服账号…」在 L1 一个词都不命中。
 
     词表里有「开个账号 / 开通账号 / 员工账号」，但输入是「开个**客服**账号」—— **子串不含「开个账号」**
     ⇒ 该句落 L2 兜底。本次真实 LLM 评测（`persona=mibao`）该用例确定性红：实况 agent 调了
@@ -681,7 +681,7 @@ class TestStaffAccountRouting:
         return r.intent if r else None
 
     def test_staff_account_phrase(self):
-        """HR-009 输入原文：必须落 STAFF_MANAGE（= 真去开账号，而不是回一句"我不能"）。"""
+        """HR-014 输入原文：必须落 STAFF_MANAGE（= 真去开账号，而不是回一句"我不能"）。"""
         msg = "帮我开个客服账号，姓名李四，手机号 13800009999，密码 Test123456"
         assert self._intent(msg) == IntentType.STAFF_MANAGE
 
