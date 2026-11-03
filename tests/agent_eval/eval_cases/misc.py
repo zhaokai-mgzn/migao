@@ -3424,9 +3424,9 @@ _CASE_MC_140 = EvalCase(
     forbidden_card_text=[],
 )
 
-# ── MC-143 [NORMAL] 冒烟夹具的库存改由公开 API（入库单建单即过账）产生，种子夹具的直写点进台账并由判据双向对账（issue #7600）（源: cases/misc.yml）──
-_CASE_MC_143 = EvalCase(
-    id='MC-143',
+# ── MC-145 [NORMAL] 冒烟夹具的库存改由公开 API（入库单建单即过账）产生，种子夹具的直写点进台账并由判据双向对账（issue #7600）（源: cases/misc.yml）──
+_CASE_MC_145 = EvalCase(
+    id='MC-145',
     legacy_id='',
     title='冒烟夹具的库存改由公开 API（入库单建单即过账）产生，种子夹具的直写点进台账并由判据双向对账（issue #7600）',
     skill=Skill.GENERAL,
@@ -3719,7 +3719,7 @@ CASES = (
     _CASE_MC_138,
     _CASE_MC_141,
     _CASE_MC_140,
-    _CASE_MC_143,
+    _CASE_MC_145,
     _CASE_MC_142,
     _CASE_MC_139,
     _CASE_MC_143,

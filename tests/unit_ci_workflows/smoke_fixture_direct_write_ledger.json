@@ -1,7 +1,7 @@
 {
   "_comment": [
     "冒烟 / 种子夹具的**库存直写点**台账（issue #7600；SDQS §33「绿证明的是页面，不是数据」）。",
-    "判据本体 = tests/unit_ci_workflows/test_smoke_fixture_stock_chain.py（用例 MC-143）。",
+    "判据本体 = tests/unit_ci_workflows/test_smoke_fixture_stock_chain.py（用例 MC-145）。",
     "纪律（与 §23 G 系列同口径）：① **未登记即红** —— 夹具面出现 `product_skus` 的 `stock` 直写而台账无条目 ⇒ 红，并具名 `文件:行`；② **登记点消失也红** —— 台账陈旧 / 站点数两个方向不符都红（台账只许缩短：删点必须同批改本文件）。",
     "为什么这几条是 B 类（确实只能直写，不是懒）：它们是 **psql 部署 / 评测种子**，经 `psql -f` 打库，没有 HTTP 会话、没有 tenant 上下文 ⇒ 系统**没有**可从 SQL 侧调用的「入库过账」写面。要在 SQL 里补 `inbound_orders` + `stock_batches` 就得手工写批次号 `PC-yyyyMMdd-NNNN`，而 V111 明令批次号只由服务端生成（旧系统号只进 `legacy_batch_no`）⇒ 那是养第二份号格式，比原缺陷更难治。每条都写明**重启条件**。",
     "A 类（能走公开 API 的）已在 `scripts/ui-smoke-merchant/spec.mjs` 改完：建品**不带**库存 + 入库单建单即过账（`seedSkuStockViaInbound` ⇒ `POST /api/admin/inbound-orders`）⇒ 该文件现在是**零直写点**，故本台账**不登记** spec.mjs；它若回潮 ⇒ 判据① 当场红（这是有意的不对称：A 类不许退回 B 类）。",
@@ -24,7 +24,7 @@
       "kind": "sql_insert_with_stock_column",
       "why": "psql 部署夹具（`psql -f`）无 HTTP 写面；演示库一次性。后果如实登记：这批 SKU 是台账外存量，批次对账 `unbatchedMeters` 非 0。",
       "reopen": "演示环境要求批次对账 diff==0，或部署夹具改为调用管理端 API（期初建账 POST /api/admin/inbound-orders + source=opening）。",
-      "case_ids": ["MC-143"]
+      "case_ids": ["MC-145"]
     },
     {
       "id": "DFW-EVAL-SEED-XIAOBU-001",
@@ -36,7 +36,7 @@
       "kind": "sql_insert_with_stock_column",
       "why": "评测栈种子由 scripts/eval_stack_seed.sh 用 `psql -f` 打库（无 HTTP 会话）；一次性容器库，跑完即弃 ⇒ 台账外存量不进入任何对账面。",
       "reopen": "评测栈改为复用长期库，或任一评测用例开始断言批次对账 diff==0。",
-      "case_ids": ["MC-143"]
+      "case_ids": ["MC-145"]
     },
     {
       "id": "DFW-EVAL-SEED-MIBAO-001",
@@ -48,7 +48,7 @@
       "kind": "sql_insert_with_stock_column",
       "why": "同 DFW-EVAL-SEED-XIAOBU-001：psql 一次性评测栈种子，无入库过账写面。",
       "reopen": "同 DFW-EVAL-SEED-XIAOBU-001。",
-      "case_ids": ["MC-143"]
+      "case_ids": ["MC-145"]
     }
   ]
 }
