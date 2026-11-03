@@ -10,6 +10,7 @@
 //   ③ 冻结核对（会红的正对照）：报工金额 = 独立 SQL 重算 ⇒ 证明「能算」这一半**真的在工作**
 //      （反假绿：不能因为收尾段缺失，就说「钱的链路全废」）。
 import { loginApi, api, psql, one, judge, log, OUT, TENANT_ID, money2, fmt, S2, nowCST, tsBoth } from './lib.mjs'
+import { judgePiecework } from './piecework-recon.mjs'
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
@@ -60,17 +61,10 @@ export async function familyA(R, { token }) {
       ],
     })
 
-    // A0b 逐人比对（不止总额 —— 总额对而分摊错也要红）
-    const perWorker = new Map((got?.per_worker || []).map((x) => [x.worker_name, money2(String(x.amount))]))
-    const mism = expectRows.filter((e) => perWorker.get(e.worker_name) !== money2(String(e.amount)))
-    judge(R, {
-      id: 'A0b',
-      name: '计件工资逐人金额 = 独立 SQL 重算（逐行比对）',
-      expect: `逐人一致（${expectRows.length} 人）`, actual: mism.length === 0 ? '逐人一致' : `${mism.length} 人不一致`,
-      pass: mism.length === 0,
-      expectSource: '同 A0a 的独立 SQL，按 worker_name 分组逐行比对接口 per_worker。',
-      evidence: [`不一致行: ${JSON.stringify(mism)}`],
-    })
+    // A0b 逐人比对 + A0c 无署名归集勾稽（issue #7030）：
+    //   归集那一行的**文案不进判定面** —— 类的身份来自结构（独立 SQL 里 worker_name 无文本的那一组；
+    //   接口侧由「不属于任何真实工人的残余行」匹配得到），文案只进证据。见 piecework-recon.mjs。
+    for (const v of judgePiecework({ expectRows, perWorker: got?.per_worker, total: gotTotal })) judge(R, v)
   }
 
   // ── A1 结算单面枚举（结构性：面是否存在）─────────────────────────

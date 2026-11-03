@@ -2,7 +2,7 @@
 # 本文件由 render_cases.py 生成，勿手改（改了也留不住：下次重渲染会覆盖）
 # 源: cases/*.yml（case-contract 单一源）
 # 重新生成: python3 render_cases.py --cases <dir> --out-eval <包目录> --out-md <md>
-# 域: misc（源: cases/misc.yml，186 条）
+# 域: misc（源: cases/misc.yml，187 条）
 
 from ._schema import Difficulty, EvalCase, Skill
 
@@ -3424,6 +3424,24 @@ _CASE_MC_140 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── MC-142 [NORMAL] 计件 sweep 的 A0b 不再按原始 `worker_name` 分组比对：无署名归集是**显式的一类**（结构判身份、文案只进证据），并由独立的 A0c 勾稽「总额 − 逐人 = 无署名 且 = 独立 SQL 的无名组」（issue #7030）（源: cases/misc.yml）──
+_CASE_MC_142 = EvalCase(
+    id='MC-142',
+    legacy_id='',
+    title='计件 sweep 的 A0b 不再按原始 `worker_name` 分组比对：无署名归集是**显式的一类**（结构判身份、文案只进证据），并由独立的 A0c 勾稽「总额 − 逐人 = 无署名 且 = 独立 SQL 的无名组」（issue #7030）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['财务 sweep 报 A0b「1 人不一致」，行是 `{"worker_name":null,"amount":0.8,"qty":2}` —— 是不是接口把这笔钱漏了？'],
+    expectations=[],
+    data_checks=['🔴 **判据 ①（假红消失，会红）**：夹具逐字取 issue #7030 的实测读数（独立 SQL 逐人 甲 20.70/乙 5.00/冒烟工人 0.80/**null** 0.80；接口 per_worker 甲/乙/**未分配** 0.80/冒烟工人；total 27.30）⇒ A0b **pass**，且逐人比只含 3 个真实工人（归集行不进逐人比）。执行点 = acceptance/2026-10-03/finance-stock-time-sweep/harness/piecework-recon.test.mjs 的「判据① 夹具含无署名归集行 ⇒ A0b 不判红（当前假红消失）」', '🔴 **判据 ②（判别力没被削弱，会红；本单最重要）**：同一夹具把真实工人「工资验收工人甲」的金额 20.70 改成 20.71 ⇒ A0b **必红**、`1 人不一致`、差异行具名该工人（`amount-mismatch`），且差异行里**不含**归集行。执行点 = 同文件「判据② 同夹具把真实工人的金额改错 ⇒ A0b 必红（判别力没被削弱）」', '🔴 **判据 ③（勾稽被断言，不是"跳过"）**：A0c 断言 ① `Σ per_worker = total`；② 无署名归集（接口残余行）金额 = 独立 SQL 的无名组金额；③ `总额 − 逐人合计 = 无署名金额`（26.50 + 0.80 = 27.30，读数逐字进证据）。执行点 = 同文件「判据③ 无署名金额与总额的勾稽被断言（不是跳过）」+「判据③-补 勾稽不成立 ⇒ A0c 必红（漏掉 / 算错 / 接口内部不自洽）」', '🔴 **判据 ④（注入式红证）**：把 `piecework-recon.mjs` 的 `isUnassignedWorker` 函数体改成 `return false`（= 删掉「无署名」特殊处理）⇒ 判据① 当场 `not ok`；与归集无关的「接口漏掉一个真实工人 ⇒ A0b 必红」仍绿（红可归因）。执行点 = tests/unit_ci_workflows/test_piecework_unnamed_recon_guard.py::test_red_proof_removing_unassigned_special_case_turns_case_one_red', '🔴 **接线判据（§28.2：判据本体绿 ≠ 接线在）**：`famA-money.mjs` 必须真的从 `piecework-recon.mjs` 导入并调用 `judgePiecework(...)`、结论送进 `judge(R, v)`；旧的 `perWorker.get(...)` / `new Map((got?.per_worker` 逐字比对形态**不许回潮**（三种坏形态各自的判别力自证）。执行点 = 同文件::test_famA_wiring_uses_the_structural_judgement / ::test_wiring_guard_has_discriminating_power', '🔴 **单一来源（文案不许写死）**：判定模块的**代码行**里不得出现服务端文案（本仓今天两个读面各叫一个：`未分配` / `未署名`）—— 文案只许进证据与注释；夹具另有「换文案（未署名 / — / 任意串 / 空串）⇒ 判定逐值不变」一条。执行点 = 同文件::test_judgement_never_hardcodes_the_server_label + piecework-recon.test.mjs「归集标签换文案 ⇒ 判定逐值不变」', '**边界（照实登记，§19.1）**：① 判的是**工装判据**，不判产品行为（接口把归集文案改成语义错误的词，本判据不会红 —— 那属文案面）；② 「服务端将来换成第三个文案」判不了（守卫只认已知两个文案；与文案无关这一半由换文案夹具承担）；③ 若**恰好**存在一个真名叫归集文案的工人，结构匹配仍按 SQL 侧空白判定处理（不为这个角落加复杂度）；④ 只跑夹具/接线面，**不跑真实 API + DB**（那是 `famA-money.mjs` 在真环境里的运行，本用例不含）。'],
+    skip_reason='[backend-contract] 纯函数夹具判据（node --test，零网络 / 零 DB / 零时钟）+ 静态接线守卫 + 注入式红证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['backend-contract', 'acceptance', 'harness', 'false-red', 'single-source'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 CASES = (
     _CASE_MC_001,
     _CASE_MC_002,
@@ -3611,4 +3629,5 @@ CASES = (
     _CASE_MC_138,
     _CASE_MC_141,
     _CASE_MC_140,
+    _CASE_MC_142,
 )

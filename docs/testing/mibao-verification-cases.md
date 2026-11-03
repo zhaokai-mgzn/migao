@@ -4186,7 +4186,7 @@
 ```
 溯源: 2026-10-31 新增（issue #8295）：两步确认，避免误写 ｜ tags: ui, preview
 
-## 杂项域（186 case）
+## 杂项域（187 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -7040,6 +7040,20 @@
 跳过: [backend-contract] 研发工具面判据（临时 git 仓库 + worktree，零网络、不碰真仓库）由 tests/unit_ci_workflows/test_batch_merge_tool.py 验证，非 LLM 行为，不进入 agent-eval 冒烟
 ```
 溯源: 2026-11-03 新增（issue #8523）：把「多 PR 集中合」做成可复用工具。背景 = 今晚人工做过一次（PR #8519）踩了四个坑：① 冲突全在追加型台账上（`cases/*.yml` / 生成物 / 锚点 JSON）且 `--ours/--theirs` 解冲突会把冲突标记留成嵌套垃圾（实测写坏过 baseline JSON）② 堆叠 PR 同占用例号 ③ `--no-commit` 后不提交就合下一支 ⇒ 全线 rc=128（worktree 里 `.git` 是**文件**，判「在合并中」必须 `MERGE_HEAD`）④ 批量 body 不能带关闭词。交付 = `scripts/batch-merge.sh`（入口）+ `scripts/batch_merge_lib.py`（实现体，从 origin/main 重建 + 重放，六步顺序即安全顺序）+ 判据 6 条（各带可执行红证）+ docs/wiki/Development.md 的「批次合并（默认路径）」。取号 MC-140（`python3 scripts/next_case_id.py MC` 现取：main 001-098,100-132,134,137 + 在飞 PR #8519 的 133,135-136,138 + #8508 的 139 + #8509 的 133 ⇒ 最小空闲 140；MC-099 是刻意空档，**不回填**）。 ｜ tags: ci, batch-merge, pr-batching, case-id-collision, anchor-rebaseline, merge-head, red-proof
+
+### MC-142. 计件 sweep 的 A0b 不再按原始 `worker_name` 分组比对：无署名归集是**显式的一类**（结构判身份、文案只进证据），并由独立的 A0c 勾稽「总额 − 逐人 = 无署名 且 = 独立 SQL 的无名组」（issue #7030） 🔵
+```
+你: 财务 sweep 报 A0b「1 人不一致」，行是 `{"worker_name":null,"amount":0.8,"qty":2}` —— 是不是接口把这笔钱漏了？
+数据: 🔴 **判据 ①（假红消失，会红）**：夹具逐字取 issue #7030 的实测读数（独立 SQL 逐人 甲 20.70/乙 5.00/冒烟工人 0.80/**null** 0.80；接口 per_worker 甲/乙/**未分配** 0.80/冒烟工人；total 27.30）⇒ A0b **pass**，且逐人比只含 3 个真实工人（归集行不进逐人比）。执行点 = acceptance/2026-10-03/finance-stock-time-sweep/harness/piecework-recon.test.mjs 的「判据① 夹具含无署名归集行 ⇒ A0b 不判红（当前假红消失）」
+数据: 🔴 **判据 ②（判别力没被削弱，会红；本单最重要）**：同一夹具把真实工人「工资验收工人甲」的金额 20.70 改成 20.71 ⇒ A0b **必红**、`1 人不一致`、差异行具名该工人（`amount-mismatch`），且差异行里**不含**归集行。执行点 = 同文件「判据② 同夹具把真实工人的金额改错 ⇒ A0b 必红（判别力没被削弱）」
+数据: 🔴 **判据 ③（勾稽被断言，不是"跳过"）**：A0c 断言 ① `Σ per_worker = total`；② 无署名归集（接口残余行）金额 = 独立 SQL 的无名组金额；③ `总额 − 逐人合计 = 无署名金额`（26.50 + 0.80 = 27.30，读数逐字进证据）。执行点 = 同文件「判据③ 无署名金额与总额的勾稽被断言（不是跳过）」+「判据③-补 勾稽不成立 ⇒ A0c 必红（漏掉 / 算错 / 接口内部不自洽）」
+数据: 🔴 **判据 ④（注入式红证）**：把 `piecework-recon.mjs` 的 `isUnassignedWorker` 函数体改成 `return false`（= 删掉「无署名」特殊处理）⇒ 判据① 当场 `not ok`；与归集无关的「接口漏掉一个真实工人 ⇒ A0b 必红」仍绿（红可归因）。执行点 = tests/unit_ci_workflows/test_piecework_unnamed_recon_guard.py::test_red_proof_removing_unassigned_special_case_turns_case_one_red
+数据: 🔴 **接线判据（§28.2：判据本体绿 ≠ 接线在）**：`famA-money.mjs` 必须真的从 `piecework-recon.mjs` 导入并调用 `judgePiecework(...)`、结论送进 `judge(R, v)`；旧的 `perWorker.get(...)` / `new Map((got?.per_worker` 逐字比对形态**不许回潮**（三种坏形态各自的判别力自证）。执行点 = 同文件::test_famA_wiring_uses_the_structural_judgement / ::test_wiring_guard_has_discriminating_power
+数据: 🔴 **单一来源（文案不许写死）**：判定模块的**代码行**里不得出现服务端文案（本仓今天两个读面各叫一个：`未分配` / `未署名`）—— 文案只许进证据与注释；夹具另有「换文案（未署名 / — / 任意串 / 空串）⇒ 判定逐值不变」一条。执行点 = 同文件::test_judgement_never_hardcodes_the_server_label + piecework-recon.test.mjs「归集标签换文案 ⇒ 判定逐值不变」
+数据: **边界（照实登记，§19.1）**：① 判的是**工装判据**，不判产品行为（接口把归集文案改成语义错误的词，本判据不会红 —— 那属文案面）；② 「服务端将来换成第三个文案」判不了（守卫只认已知两个文案；与文案无关这一半由换文案夹具承担）；③ 若**恰好**存在一个真名叫归集文案的工人，结构匹配仍按 SQL 侧空白判定处理（不为这个角落加复杂度）；④ 只跑夹具/接线面，**不跑真实 API + DB**（那是 `famA-money.mjs` 在真环境里的运行，本用例不含）。
+跳过: [backend-contract] 纯函数夹具判据（node --test，零网络 / 零 DB / 零时钟）+ 静态接线守卫 + 注入式红证，非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-11-03 新增（issue #7030，承接 #7028 的更正：那条「钱面缺陷」单是**判据假红**误导出来的）。取号 = `python3 scripts/next_case_id.py MC` 现取；**撞号顺延**：首取 139，随后 open PR #8526 / #8529 也各自取到 139（并行取号的已知盲区，见 #6245）⇒ 按「后合入者让号」改取 **MC-142**。⚠️ 重取时工具会返回历史空档 **MC-099**（#8383 revert 留下）—— 按裁定**刻意空档不回填** ⇒ 跳过 099 取 142。病：A0b 把独立 SQL 的 `worker_name` 分组（无署名 = NULL）与接口 `per_worker` **逐字**比 ⇒ 接口把无署名那笔钱归进服务端下发的展示文案（ProductionService 的 `未分配`；同概念另一读面 `UNSIGNED_WORKER` 叫 `未署名`，见 issue #4309）⇒「名不同、钱相同」⇒ 稳定报「1 人不一致」，失败文案（`{"worker_name":null,...}`）天然指向「接口漏了这笔钱」。修法 = 判定移到 `harness/piecework-recon.mjs`（纯函数）：归集是**显式一类**（`UNASSIGNED` 常量 + `isUnassignedWorker` 唯一判定点），身份来自结构（SQL 空白组 + 接口残余行 ≤ 1），文案只进证据；A0b 只比真实工人，新增 A0c 判勾稽（Σ per_worker = total、归集 = 无名组、总额 − 逐人 = 无署名）。全部通过：8 条 node 夹具 + 5 条 pytest 守卫。红证 = 注入 `return false` ⇒ 判据① 红（4 passed / 4 failed，红在与归集直接相关的 4 条上），恢复后 8 passed。 ｜ tags: backend-contract, acceptance, harness, false-red, single-source
 
 ## 商家入驻域（7 case）
 
@@ -14548,8 +14562,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：984（活跃 153，跳过 831）
-- tier 分布：smoke 15 / normal 907 / adversarial 33
+- 用例总数：985（活跃 153，跳过 832）
+- tier 分布：smoke 15 / normal 908 / adversarial 33
 - 售后域：16
 - Agent 核心域：13
 - API 层域：21
@@ -14565,7 +14579,7 @@
 - 人事域：13
 - 知识问答域：9
 - 客户主数据迁移域：10
-- 杂项域：186
+- 杂项域：187
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：76
@@ -14818,6 +14832,7 @@
 - MC-138: 删 worktree 前必须判「活进程占用 / 未提交未推送 / 持有重活锁」：自动收尾不再删掉正在被用的检出（issue #7008）
 - MC-141: 部位规格的数值口径：纯空白串 = 「没填」（—），不再编成 0 / 0.000（issue #7002）
 - MC-140: 多 PR **集中合**（batch merge）工具：从 origin/main 重建 + 重放（不 --ours 解冲突）/ 用例号「后合入者让号」/ 锚点按**实测**重锚 / 批次 body 零关闭词
+- MC-142: 计件 sweep 的 A0b 不再按原始 `worker_name` 分组比对：无署名归集是**显式的一类**（结构判身份、文案只进证据），并由独立的 A0c 勾稽「总额 − 逐人 = 无署名 且 = 独立 SQL 的无名组」（issue #7030）
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）
