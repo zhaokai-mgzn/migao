@@ -3713,9 +3713,9 @@ _CASE_MC_160 = EvalCase(
     forbidden_card_text=[],
 )
 
-# ── MC-161 [NORMAL] 数字输入精度面（issue #8004）：涉钱 / 涉数量格不许再用 `type="number"`（中间态 `12.` 与千分位 `1,234.56` 会被浏览器吞掉）—— 共用 `DecimalInput` 一处解析/校验/话术 + 类级台账守卫（源: cases/misc.yml）──
-_CASE_MC_161 = EvalCase(
-    id='MC-161',
+# ── MC-162 [NORMAL] 数字输入精度面（issue #8004）：涉钱 / 涉数量格不许再用 `type="number"`（中间态 `12.` 与千分位 `1,234.56` 会被浏览器吞掉）—— 共用 `DecimalInput` 一处解析/校验/话术 + 类级台账守卫（源: cases/misc.yml）──
+_CASE_MC_162 = EvalCase(
+    id='MC-162',
     legacy_id='',
     title='数字输入精度面（issue #8004）：涉钱 / 涉数量格不许再用 `type="number"`（中间态 `12.` 与千分位 `1,234.56` 会被浏览器吞掉）—— 共用 `DecimalInput` 一处解析/校验/话术 + 类级台账守卫',
     skill=Skill.GENERAL,
@@ -3935,5 +3935,5 @@ CASES = (
     _CASE_MC_156,
     _CASE_MC_157,
     _CASE_MC_160,
-    _CASE_MC_161,
+    _CASE_MC_162,
 )
