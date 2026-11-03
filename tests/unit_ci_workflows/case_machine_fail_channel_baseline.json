@@ -7,7 +7,7 @@
   "_anchor_note": "读数取自该 sha 的 `origin/main`（本判据首次落地时的基线）。它只是**出处留档**，不是判据 —— 判据只比对实测值与 `entries`。",
   "entries": {
     "no_channel_total": 0,
-    "backend_contract_scoring_zero": 295
+    "backend_contract_scoring_zero": 291
   },
   "history": [
     {
@@ -1291,8 +1291,8 @@
       "sha": "pending-pr-8542",
       "date": "2026-11-03",
       "no_channel_total": 0,
-      "backend_contract_scoring_zero": 295,
-      "note": "issue #6461（cohortLabel 内部标签不再逐字上屏，前端唯一映射 + 未知值兜底）新增 1 条 [backend-contract] 用例 ⇒ 读数按合并当时的 main 现值重锚。机器判红通道 = cohort 映射表覆盖判据 + 未知识兜底判据。真债务 no_channel_total 仍为 0。"
+      "backend_contract_scoring_zero": 291,
+      "note": "issue #6461（米宝会话卡「来源组」不再逐字渲染服务端内部标签）新增 **2** 条 `[backend-contract]` 用例：MC-148（唯一映射表 / 枚举全集覆盖 / 兜底 / 两端渲染面零 cohortLabel / 两端同源）+ MC-149（bmini 侧渲染与源码面）。取值链：main 侧 289（#8541 的 MC-147 已合入）+ 本单 2 = **291**。⚠️ 修正留档：本行早前被写成 295 —— 那是 rebase 时 `.github/cases/misc.yml` 里本单的两块用例被**重复展开成 3 份**后算出的读数（重复块已在本 PR 去重，同一判据复算 = 291；判据 tests/unit_ci_workflows/test_cases_yaml_strictness.py 的 id 唯一性也一并复绿）。"
     }
   ]
 }
