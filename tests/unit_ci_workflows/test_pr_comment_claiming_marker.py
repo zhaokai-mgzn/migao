@@ -221,10 +221,14 @@ const fs = {
   },
 };
 const core = { setFailed: (m) => { console.log('core.setFailed: ' + m); } };
+const __realRequire = (name) => module.require(name);
 const require = (name) => {
   if (name === 'fs') return fs;
   if (name === '@actions/github') return { getOctokit: () => github, context };
-  throw new Error('unexpected require: ' + name);
+  // 其余（`path` / 仓内共享模块）走**真的** Node 解析 —— 与 `actions/github-script` 口径一致
+  // （它本来就能 `require` 仓内文件；issue #7549 起评论步靠它加载共享退避原语）。
+  // 不在白名单、也解析不出来的名字仍然**抛**（不静默放行）。
+  return __realRequire(name);
 };
 async function __run() {
 """

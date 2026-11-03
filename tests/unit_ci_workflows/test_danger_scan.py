@@ -1368,19 +1368,27 @@ class TestCommentStepRetriesRateLimit:
 
     def test_all_three_api_calls_are_wrapped(self):
         script = self._comment_step_script()
-        assert script.count("await withRetry(") == 3, (
-            "三个 GitHub API 调用（列评论 / 更新评论 / 创建评论）必须**逐个**包在 withRetry 里，"
+        assert script.count("await withRateLimitRetry(") == 3, (
+            "三个 GitHub API 调用（列评论 / 更新评论 / 创建评论）必须**逐个**包在**共享**退避原语里，"
             "否则任一次 403 限流仍会把评论步判红（issue #7549）")
 
-    def test_retry_is_bounded_and_only_for_rate_limit(self):
+    def test_retry_delegates_to_the_shared_primitive(self):
+        """退避的**判定与边界**只有一份实现（`.github/rate_limit_backoff.py`）—— 本步只做循环。"""
         script = self._comment_step_script()
-        assert "attempt >= 3" in script, "重试必须有界（次数上限写死在代码里，判据可读）"
-        assert "Math.min(Math.max(retryAfter, 0), 2)" in script, (
-            "退避必须**封顶 2s**（CI 不许被限流等待拖死）")
-        assert "throw e" in script, "非限流的 403 必须立刻抛（重试也不会好）"
+        assert ".github/scripts/rate-limit-backoff.js" in script, "退避必须走共享原语（唯一判定点）"
+        assert "await withRetry(" not in script, "不许再自带一份内联退避（两份策略必然漂移）"
+        assert "Math.min(Math.max(retryAfter, 0), 2)" not in script, (
+            "旧形态把 `retry-after` 封顶 2s ⇒ 安装令牌限流（reset 常是几十秒~1 小时）里「退不动」："
+            "看着加了退避，实则必然还是 403（本单实测形态，issue #7549）")
 
     def test_failure_text_names_the_rate_limit_readouts(self):
-        script = self._comment_step_script()
+        """失败文本必须带限流读数 —— 否则读红的人分不清「限流」与「真没权限」（#7549 的一半就是归因）。
+
+        文本落在共享原语里（本步只传 label），所以判据读的是那个模块。
+        """
+        bridge = (Path(__file__).resolve().parents[2]
+                  / ".github" / "scripts" / "rate-limit-backoff.js")
+        text = bridge.read_text(encoding="utf-8")
         for needle in ("x-ratelimit-remaining", "retry-after", "限流"):
-            assert needle in script, (
+            assert needle in text, (
                 f"失败文本缺 `{needle}` ⇒ 读到红的人分不清「限流」与「真没权限」（#7549 的一半就是归因）")

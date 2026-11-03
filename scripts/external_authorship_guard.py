@@ -40,6 +40,10 @@ import subprocess
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / ".github"))
+
+import rate_limit_backoff  # noqa: E402  （限流判定 / 退避的唯一实现，issue #7549）
+
 EXIT_OK = 0
 EXIT_VIOLATION = 1
 EXIT_USAGE = 2
@@ -117,7 +121,19 @@ def classify(commits: list[dict], logins: set[str], emails: set[str]) -> list[di
 
 
 def _gh(args: list[str]) -> subprocess.CompletedProcess:
-    return subprocess.run(["gh", *args], capture_output=True, text=True, check=False)
+    """调 `gh`，**只对限流**做有界退避 —— 判定点 = `.github/rate_limit_backoff.py`（issue #7549）。
+
+    为什么：本守卫原先**完全没有**退避 ⇒ 安装令牌打满时一次 403 就 `exit 3`，而 `exit 3` 与
+    「真有陌生作者」在 PR 页面上**同形**（实测 PR #8551 就是这么红的）。真没权限 / 其它失败
+    仍**不重试**，原样返回给调用方（其既有三态：读不到 ⇒ exit 3）。
+    """
+    try:
+        return rate_limit_backoff.call_command(["gh", *args], label="gh api 取数")
+    except rate_limit_backoff.RetryExhausted as exc:
+        print(f"⏳ {exc}", file=sys.stderr)
+        return subprocess.CompletedProcess(["gh", *args], 1, "", str(exc))
+    except rate_limit_backoff.GithubError as exc:
+        return subprocess.CompletedProcess(["gh", *args], 1, "", str(exc))
 
 
 def fetch_head_repo(repo: str, pr: int) -> str:
