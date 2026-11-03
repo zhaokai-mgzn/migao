@@ -4186,7 +4186,7 @@
 ```
 溯源: 2026-10-31 新增（issue #8295）：两步确认，避免误写 ｜ tags: ui, preview
 
-## 杂项域（185 case）
+## 杂项域（186 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -7027,6 +7027,19 @@
 跳过: [backend-contract] 零 LLM 的确定性纯函数判据（`node --test` + 真实渲染产物，零依赖、零网络），不进 agent-eval 冒烟
 ```
 溯源: 2026-11-03 新增（issue #7002）。病（`origin/main` 实测）：`formatSpecValue` 的数值路径只挡空串（`value !== ''`）而 `Number('   ') === 0` ⇒ 商家没填的部位规格 `'   '` 被编成 `0`（`format: 'm'` ⇒ `0.000`），与同模块 `dataOr`（`'   '` ⇒ `—`）自相矛盾；`format: 'm'` 的键（宽 / 高 / 米数）渲染成 0.000 是**给机器的值偏小**（裁短方向）。修法 = 判数前只对**字符串** trim，空 ⇒ 走既有缺值口径；非字符串（含真 0）既有读数逐字不变。取号 = **MC-141**（让号记实：`scripts/next_case_id.py MC` 首次现取给 **MC-139**，随后 CI 的 `test_case_id_claims.py` 判「本 PR #8526 与在飞 PR #8527 / #8529 同时占着 MC-139」⇒ 按 `docs/wiki/Change-Blast-Radius.md` 陷阱 3「后合入者让号」让到现取最大号 + 1 = **MC-141**（#8524 占 140）；工具给的历史空档 MC-099 **不回填**）。红证 = 注入 A（删 trim）4 failed / 2 passed、注入 B（把 0 当缺值）② 红；恢复后 6 passed。 ｜ tags: worker-h5, display-format, whitespace, missing-value, negative-control, red-proof
+
+### MC-140. 多 PR **集中合**（batch merge）工具：从 origin/main 重建 + 重放（不 --ours 解冲突）/ 用例号「后合入者让号」/ 锚点按**实测**重锚 / 批次 body 零关闭词 🔵
+```
+你: 5 个 PR 同时要合：逐个合 = 5×28 个 required job（strict=true 下每个 PR 各跑一轮全量）；换成一次「集中合」后 = 1×28，且用例号互撞 / 追加型台账冲突 / 锚点漂移要能被工具自动收口
+数据: **合入不丢内容（会红）**：两个 PR 各向 `.github/cases/misc.yml` 追加一条用例 ⇒ 合批后**两条都在**（只追加型台账取 main 版 + 并上各支新增块，**不用** `--ours/--theirs` 解冲突 —— 实测那会把冲突标记留成嵌套垃圾、把锚点 JSON 写坏）。判据 = tests/unit_ci_workflows/test_batch_merge_tool.py::test_batch_lands_both_prs_and_renumbers_the_later_one。
+数据: **用例号「后合入者让号」（会红）**：两个 PR 同占一个号 ⇒ 后合入者改 `id`，且 **claim 文件名/内容**（`<PR>-<ID>.json` 的 `id` 字段）、**声明该号的测试文件头** `# case_ids:`、**渲染物**三处同步；「谁让给谁」必须打印。红证 = 把让号逻辑删掉（`plan_renames → []`）⇒ 重复 id 当场留下。
+数据: **锚点「从 main 重建 + 实测重锚」（会红）**：锚点取 main 版 → 跑判据拿**实测读数** → 追加一行 `history`（带 `note`）+ `entries` 对齐实测；产出必须能过**真**判据 tests/unit_ci_workflows/test_case_machine_fail_channel.py。红证 = 换成 main 版锚点（=`--ours` 解冲突的产物）⇒ 真判据必红（实测与 entries 不一致）。
+数据: **「是否在合并中」只认 MERGE_HEAD（会红）**：worktree 里 `.git` 是**文件** ⇒ `Path(repo)/'.git'/'MERGE_HEAD'` **恒不存在**；判据必须用 `git rev-parse -q --verify MERGE_HEAD`。每支合并都以「提交前必须为真 / 提交后必须为假」收口（否则下一支必然 rc=128）。夹具本身就是 worktree 形态，红证 = 同一现场 naive 路径实测为 False。
+数据: **批次 PR body 零关闭词（会红）**：生成后**当场**用 `scripts/pr_body_guard.py` 的 `find_close_keywords()`（同一实现）断言 0 条，非 0 即 fail-closed 不建 PR；负控 = body 里确实带 `#NNNN` 引用（所以「0 命中」不是空断言）。原 PR / issue 由值守面在合并后按证据关闭。
+数据: **`--dry-run` 零落盘（会红）**：不建分支、不提交、不动远端（分支表 / 提交数 / `git status` 前后逐字节比对），正控 = 去掉 `--dry-run` 后同一夹具的读数**确实**变了（否则「没变」是空断言）。
+跳过: [backend-contract] 研发工具面判据（临时 git 仓库 + worktree，零网络、不碰真仓库）由 tests/unit_ci_workflows/test_batch_merge_tool.py 验证，非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-11-03 新增（issue #8321）：把「多 PR 集中合」做成可复用工具。背景 = 今晚人工做过一次（PR #8519）踩了四个坑：① 冲突全在追加型台账上（`cases/*.yml` / 生成物 / 锚点 JSON）且 `--ours/--theirs` 解冲突会把冲突标记留成嵌套垃圾（实测写坏过 baseline JSON）② 堆叠 PR 同占用例号 ③ `--no-commit` 后不提交就合下一支 ⇒ 全线 rc=128（worktree 里 `.git` 是**文件**，判「在合并中」必须 `MERGE_HEAD`）④ 批量 body 不能带关闭词。交付 = `scripts/batch-merge.sh`（入口）+ `scripts/batch_merge_lib.py`（实现体，从 origin/main 重建 + 重放，六步顺序即安全顺序）+ 判据 6 条（各带可执行红证）+ docs/wiki/Development.md 的「批次合并（默认路径）」。取号 MC-140（`python3 scripts/next_case_id.py MC` 现取：main 001-098,100-132,134,137 + 在飞 PR #8519 的 133,135-136,138 + #8508 的 139 + #8509 的 133 ⇒ 最小空闲 140；MC-099 是刻意空档，**不回填**）。 ｜ tags: ci, batch-merge, pr-batching, case-id-collision, anchor-rebaseline, merge-head, red-proof
 
 ## 商家入驻域（7 case）
 
@@ -14535,8 +14548,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：983（活跃 153，跳过 830）
-- tier 分布：smoke 15 / normal 906 / adversarial 33
+- 用例总数：984（活跃 153，跳过 831）
+- tier 分布：smoke 15 / normal 907 / adversarial 33
 - 售后域：16
 - Agent 核心域：13
 - API 层域：21
@@ -14552,7 +14565,7 @@
 - 人事域：13
 - 知识问答域：9
 - 客户主数据迁移域：10
-- 杂项域：185
+- 杂项域：186
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：76
@@ -14804,6 +14817,7 @@
 - MC-133: issue_lifecycle 自证不得读进程内快照（issue #6617）：远程面强制现取 / 读不到 ⇒ 三态 3 / 批量路径只许一次现取（NS-3）
 - MC-138: 删 worktree 前必须判「活进程占用 / 未提交未推送 / 持有重活锁」：自动收尾不再删掉正在被用的检出（issue #7008）
 - MC-141: 部位规格的数值口径：纯空白串 = 「没填」（—），不再编成 0 / 0.000（issue #7002）
+- MC-140: 多 PR **集中合**（batch merge）工具：从 origin/main 重建 + 重放（不 --ours 解冲突）/ 用例号「后合入者让号」/ 锚点按**实测**重锚 / 批次 body 零关闭词
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）
