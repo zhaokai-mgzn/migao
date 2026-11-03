@@ -332,7 +332,11 @@ class TestPersonaBoundaryIsHard:
             "dashboard_stats", "logistics_track", "order_query", "piecework_query",
             "processing_order_query", "production_worklog_query",
             # ── #5247 ① 收窄为只读的 8 把（写 action 已删除，见各工具文件的 #5247 注释）──
-            "after_sales_manage", "category_manage", "customer_manage", "employee_manage",
+            # issue #7050 **退场 1 把**：`employee_manage` 的 create/update 已接回 ⇒ `read_only`
+            # 由 True 变回 False ⇒ 按本见证既有口径自然退场（不再是只读工具）。
+            # 退场 ≠ 放宽：它的 C 端零绑定由 xiaobu 侧 skill 集合现算（不含它），写面边界由
+            # `tests/unit_ci_workflows/test_mibao_b_end_readonly.py` 的判据 1/3/6b/8 承担。
+            "after_sales_manage", "category_manage", "customer_manage",
             "finance_api", "inventory_manage", "role_manage", "session_manage",
             # ── #5247 ② 新增的 6 把只读工具 ────────────────────────────────────────
             "briefing_query", "craft_calc_config_query", "inbound_order_query",

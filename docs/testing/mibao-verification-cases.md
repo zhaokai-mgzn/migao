@@ -4186,7 +4186,7 @@
 ```
 溯源: 2026-10-31 新增（issue #8295）：两步确认，避免误写 ｜ tags: ui, preview
 
-## 杂项域（192 case）
+## 杂项域（193 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -7126,6 +7126,23 @@
 跳过: [backend-contract] 零 LLM 的确定性读数（词法扫 admin-api Java 源码 + `_sql_schema` 解析建库脚本/@TableName + 台账双向对账 + 合成语料判别力自证），零网络、零 DB、不进 agent-eval 冒烟
 ```
 溯源: 2026-11-03 新增（issue #6953 的族级元守卫 SW-100；与 MC-100 / MC-104 / PG-075 等单表守卫**有意不重叠** —— 它们裁谓词完整性，本表裁「写面有没有人认领 / 状态值是不是单一口径」）。取号（**两次让号，记实**）= `python3 scripts/next_case_id.py MC` 首取 **MC-143**；merge `origin/main` 时与 main 新增的 **MC-143**（issue #6997 / PR #8535）撞号 ⇒ 按「后合入者让号」顺延 **MC-144**；再次 merge 又与 main 新增的 **MC-144**（issue #7034 / PR #8537）撞号 ⇒ 顺延 **MC-145**；随后 CI 的取号判据（issue #6245）抓到 **MC-145 与在飞 PR #8538 同时占着** ⇒ 再按「后合入者让号」顺延终态 **MC-147**（工具每次都返回历史空档 MC-099 —— 按裁定**刻意空档不回填**）。**现取读数**：53 张有 `status` 列的表（`_sql_schema` 唯一解析点）、134 条写点（Java 108 / SQL 26）、覆盖 49 张表；合法集合权威：实体常量 10 / schema CHECK 14 / **无机器口径 36（冻结上限）**；裸字符串存量 56（冻结上限）。**红证（注入式，实跑）**：① 往真实 Service 里加一条未登记写面 ⇒ 判据 1 判红并具名；② 把常量改成裸字符串 ⇒ 判据 3 判红并具名；③ 把台账条目删掉 ⇒ 判据 2 判红（写点无主）；④ 把 `unregistered()` 的登记对账摘掉 / 把 `bare_literal_sites()` 摘掉 ⇒ 判据 1 / 判据 3 必红（判据 7 内建这两条内存变异体作常驻证）。**如实登记的既有缺陷（本包不修，不扩射程）**：`ProductionOperationCommandService#update` 的无条件状态写（见判据 8 的盲洞 ②）、`InboundOrderService` 的 builder 写形（盲洞 ①）、36 张表没有机器可读的合法状态集合、56 处裸字面量 —— 均为存量债，压测口径 = 台账基线**只许缩短**。 ｜ tags: state-transition, meta-guard, ledger, single-source, red-proof
+
+### MC-154. **员工账号的 create / update 接回 B 端**（issue #7050，2026-10-16「能力边界 终版」）：action 枚举与 schema 同时可见（漏参数即不可调用）+ 权限走既有 required_permissions 粗筛与 action 级复检（码取 AdminUserController 注解，不自己判角色）+ 确认走既有 base_skill._requires_confirmation（react_turn 用同一函数对象；未确认 ⇒ 不执行）+ 端点逐字对齐（POST /api/admin/users · PUT /api/admin/users/{id}）+ 删除/停用/重置密码仍不接线 🔵
+```
+你: 新来了一个客服叫王五，帮他开个账号
+你: 把张三的岗位改成仓管
+你: 把李四删了
+数据: 判据 1·🔴 action 面可见且参数完整：`VALID_ACTIONS` == {list, detail, create, update} 且与 `get_schema()` 的 `action.enum` 同一集合；`execute` 的每个业务参数都在 schema properties 里（漏参数 ⇒ 模型无法调用）；工具在注册表且 `read_only is False`；`staff` skill 绑定它（否则物理不可达）。执行点 = backend/ai-agent-service/tests/test_employee_manage_write_actions.py::TestActionSurfaceIsVisibleToTheModel。
+数据: 判据 2·🔴 权限不是自己判：`required_permissions == [employee:list, employee:create]`；只持 `employee:list` 调 create ⇒ 拒绝且文案具名 `employee:create`（且未发出 POST）；只持 `employee:create` 调 list ⇒ 拒绝并具名 `employee:list`。执行点 = 同文件 ::TestPermissionUsesTheExistingDeclaration。
+数据: 判据 3·🔴 走既有确认门禁（不是自己写一套）：`react_turn._requires_confirmation is base_skill._requires_confirmation`（按 `is` 判同一函数对象）；工具源码里没有自建判定；`read_only=False` + `requires_confirmation=True` + `read_only_actions == {list, detail}`；未确认 ⇒ 门禁判拦截，确认卡回复（以「确认」开头）⇒ 放行。执行点 = 同文件 ::TestConfirmationGateIsTheSharedOne。
+数据: 判据 4·🔴 未确认不执行（负控）：同一 args、同一工具，只换用户消息（『帮他开个账号』 vs 『确认创建员工王五』）⇒ 前者 `blocked=True` 且 `client.post` 零调用，后者落库一次。执行点 = 同文件 ::TestUnconfirmedWriteDoesNotExecute。
+数据: 判据 5·🔴 校验失败具名：create 缺 name/phone/password/岗位（role 与 role_ids 皆无）⇒ 错误点名该字段且 suggestion 给出要补的字段名；update 缺 user_id / 无任何可改字段 ⇒ 同样具名；上述路径零网络调用。执行点 = 同文件 ::TestValidationErrorsAreNamed。
+数据: 判据 6·🔴 端点与零越界：create ⇒ `POST /api/admin/users`（payload 的 name/phone/password/roleIds/role 与 admin-api 契约逐字一致）；update ⇒ `PUT /api/admin/users/{id}`；`delete` / `toggle_status` / `reset_password` 在入口即拒并给出去哪办。执行点 = 同文件 ::TestEndpointsAreReal。
+数据: 判据 7·🔴 判别力自证（红证）：把 `requires_confirmation` 置 False（内存注入）⇒ 门禁判据必红；把 `read_only` 置 True ⇒ 同；枚举注入删掉 create ⇒ 写面判据必红。执行点 = 同文件 ::TestJudgementIsNotVacuous。
+跳过: [backend-contract] 只读源码 + 工具对象（零 LLM / 零网络 / 零 DB）：写路径的**行为面**（模型是否真的先发确认卡）按 migao-dev-flow §13 默认不派发真实评测（#4262 用户裁定「不要自动验证」），需要时由人工集中跑一次。
+```
+真值: ⚠️ 缺口（见对应模板 ⚠️ 注释）
+溯源: 2026-11-03 新增（issue #7050）。取号 = `python3 scripts/next_case_id.py MC` 现取（main 已到 153；本包按协调口径避开 139~153，且 MC-099 空档不回填）⇒ **MC-154**。接线面 = backend/ai-agent-service/app/tools/employee_manage.py（VALID_ACTIONS + requires_confirmation=True + create/update 实现）· app/graph/skills/staff_skill.py（STAFF_TOOLS 与口径）· references/prompts/staff.md + EXAMPLES-staff.md（#7040 同款「prompt 仍在教拒绝」坑，同批改判）· 能力边界投影自动跟随（test_capability_boundary 快照 employee_write ❌→✅）。**红证（注入式）**：摘掉 requires_confirmation ⇒ 未确认即执行那条判据红（实跑读数在 PR body）。**其余域**（角色 / 客户 / 标签 / 分类 / 加工项）本单未做，缺口留在 issue #7050。 ｜ tags: agent-capability, write-action, confirm-gate, permission, red-proof, backend-contract
 
 ## 商家入驻域（7 case）
 
@@ -14634,8 +14651,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：990（活跃 153，跳过 837）
-- tier 分布：smoke 15 / normal 913 / adversarial 33
+- 用例总数：991（活跃 153，跳过 838）
+- tier 分布：smoke 15 / normal 914 / adversarial 33
 - 售后域：16
 - Agent 核心域：13
 - API 层域：21
@@ -14651,7 +14668,7 @@
 - 人事域：13
 - 知识问答域：9
 - 客户主数据迁移域：10
-- 杂项域：192
+- 杂项域：193
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：76
@@ -14910,6 +14927,7 @@
 - MC-143: 悬空 PR 扫描器把「未解决评审线程」计入**需要处置**（issue #6997）：`isResolved=false ∧ isOutdated=false` ⇒ 判红并报出 `path` + 首行摘要；`isOutdated=true` 单独一类**不算阻塞**；读不到 ⇒ 退 `3`（不得当 0）
 - MC-144: deploy-reconcile 的漂移判据必须覆盖**构建输入面**（部署腿 workflow / 构建配方 / 线上自证脚本）：只改 CI 或部署脚本的修复合入后不得判「已上线」，更不得自动关值守单（issue #7034）
 - MC-147: **状态列写面全族统一元守卫 SW-100**：53 张有 `status` 列的表 × 134 个写入口逐条登记（未登记即红 / 台账陈旧即红 / 裸字符串写状态列即红 / 每张状态表的合法集合必须有来源）
+- MC-154: **员工账号的 create / update 接回 B 端**（issue #7050，2026-10-16「能力边界 终版」）：action 枚举与 schema 同时可见（漏参数即不可调用）+ 权限走既有 required_permissions 粗筛与 action 级复检（码取 AdminUserController 注解，不自己判角色）+ 确认走既有 base_skill._requires_confirmation（react_turn 用同一函数对象；未确认 ⇒ 不执行）+ 端点逐字对齐（POST /api/admin/users · PUT /api/admin/users/{id}）+ 删除/停用/重置密码仍不接线
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）

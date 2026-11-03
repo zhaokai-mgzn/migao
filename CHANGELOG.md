@@ -5,6 +5,20 @@
 > 原因 = 单文件涨到 512KB 越过扫描上限，详见存档文件头与 issue #6404。
 > **后续条目继续在本文件 `## [Unreleased]
 
+### 黄金策能办员工账号的创建与变更了（删除 / 停用 / 重置密码仍不办）（2026-11-03，issue #7050）
+
+- **改前**：`employee_manage` 只剩 `list` / `detail`（#5247 的 B 端只读化把写 action 全删）⇒
+  用户 2026-10-16「能力边界 终版」要求的「创建非单据对象 ✅」在员工域**物理做不到**：
+  「新来一个客服，帮他开个账号」只能被推回后台。
+- **改后**：`create`（姓名 + 手机号 + 初始密码 + 岗位）与 `update`（姓名 / 手机号 / 头像 / 岗位）接回，
+  走**既有**确认门禁（先发确认卡，用户点卡后才执行；未确认的调用被 `base_skill._requires_confirmation` 拦下）；
+  权限沿用 admin-api `AdminUserController` 的注解（读 `employee:list`、写 `employee:create`，工具内按 action 复检）。
+  **删除 / 停用（离职）/ 重置密码仍不在能力内**（不可逆 / 登录凭据面）⇒ 如实说明并引导到后台
+  「组织管理 → 员工管理」。其余域（岗位 / 客户 / 标签 / 分类 / 加工项 / 供应商）**本单未做**，缺口留在 issue #7050。
+- 判据：`backend/ai-agent-service/tests/test_employee_manage_write_actions.py`（MC-154：action 面可见 + 参数完整 /
+  权限按 action 复检 / 与 `react_turn` 同一确认门禁函数对象 / **未确认不执行**（负控）/ 端点与 payload 逐字对齐 /
+  校验失败具名 / 判别力自证）+ `tests/unit_ci_workflows/test_mibao_b_end_readonly.py`（写能力登记 + prompt 口径）。
+
 ### 撤销批量改价不再要求模型「记得」批次号：本会话只有一批就点名让你带上，认不准就拒绝（2026-11-03，issue #6998）
 
 - **改前**：真 LLM 重放（`PR-108`）里模型执行成功、真实批次号就在上下文里，撤销那一步却把它丢了
