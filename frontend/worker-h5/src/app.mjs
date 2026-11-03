@@ -293,7 +293,7 @@ export function createApp({ doc, api, location = globalThis.location, storage = 
       const d = await api.qualityLatest(itemId, state.view?.set_no ?? null)
       // 读回来时屏已经换了一件 / 一套 ⇒ 丢弃（避免把上一件的判定画到这一件上）
       if (qualityItemId() !== itemId || qualityPieceKey() !== pieceKey) return
-      dispatch({ type: 'qualityLoaded', latest: d.latest, records: d.records })
+      dispatch({ type: 'qualityLoaded', latest: d.latest, records: d.records, reasons: d.reasons })
     } catch (e) {
       dispatch({ type: 'qualityFailed', error: e?.message ?? String(e) })
     }
@@ -303,12 +303,13 @@ export function createApp({ doc, api, location = globalThis.location, storage = 
     const form = state.qualityForm
     const itemId = qualityItemId()
     if (!form || !itemId) return
-    // 原因由**提交那一刻**从 DOM 读（不在 input 事件里重绘，否则每敲一个字就丢焦点）
+    // 补充说明由**提交那一刻**从 DOM 读（不在 input 事件里重绘，否则每敲一个字就丢焦点）
     const reason = (doc.getElementById('wh5-quality-reason')?.value ?? '').trim()
     // 🔴 工人端只有一个判定 = 返工（issue #7749：合格是默认态，屏上不给这个动作）
-    //    ⇒ 说明必填；这里先拦一次只为不白跑网络，服务端 422 才是真判据。
-    if (!reason) {
-      dispatch({ type: 'qualityFormError', error: '记返工要写明问题（例如：布面污渍 / 尺寸偏差 / 缝线开裂）。' })
+    //    ⇒ 问题类型**必选**（issue #7197 ①：字典项才是可统计的原因键，自由文本顶替不了）；
+    //    这里先拦一次只为不白跑网络，服务端 422 具名报错才是真判据。
+    if (!form.reasonCode) {
+      dispatch({ type: 'qualityFormError', error: '记返工要先点一项问题类型（例如：布面污渍 / 走线不良）。' })
       return
     }
     dispatch({ type: 'qualitySubmitting' })
@@ -316,6 +317,7 @@ export function createApp({ doc, api, location = globalThis.location, storage = 
       const latest = await api.createQuality({
         orderItemId: itemId,
         result: 'rework',
+        reasonCode: form.reasonCode,
         reason,
         // 件键（issue #7945）：套号 × 部位；本屏扫码已定位到这一件，套号随判定一起提交
         setNo: state.view?.set_no ?? null,
@@ -546,13 +548,24 @@ export function createApp({ doc, api, location = globalThis.location, storage = 
     on('wh5-quality-entry', () => {
       dispatch({ type: 'qualityFormOpen' })
       revealForm('wh5-quality-form')
-      if (!state.quality?.latest) void loadQuality()
+      // 判定与**原因字典**都来自同一个读面（issue #7197 ①）⇒ 任一缺失就补读
+      if (!state.quality?.latest || !(state.quality?.reasons?.length > 0)) void loadQuality()
     })
     // 待复检（issue #7973）：通过 = 关闭；仍有问题 = 新的一轮判定（表单带 recheck）
     on('wh5-quality-recheck-pass', () => { void recheckQualityPass() })
-    on('wh5-quality-recheck-open', () => { dispatch({ type: 'qualityFormOpen', recheck: true }); revealForm('wh5-quality-form') })
+    on('wh5-quality-recheck-open', () => {
+      dispatch({ type: 'qualityFormOpen', recheck: true })
+      revealForm('wh5-quality-form')
+      if (!(state.quality?.reasons?.length > 0)) void loadQuality()
+    })
     on('wh5-quality-cancel', () => dispatch({ type: 'qualityFormClose' }))
     on('wh5-quality-submit', () => { void submitQuality() })
+
+    // 问题类型短语（issue #7197 ①）：点一下就选中（纯状态动作、**不发请求**）。
+    // 形态与报工三态选择器同一把（`data-*` 委派 + `is-on` 标记当前选中）。
+    for (const el of doc.querySelectorAll('[data-quality-reason]')) {
+      el.addEventListener('click', () => dispatch({ type: 'qualityReasonSelected', code: el.dataset.qualityReason }))
+    }
 
     // 报工三态（issue #5652 第二刀）：选择只落在 `state.view.work_type`（纯状态动作、**不发请求**）。
     // 🔴 放在 in-flight 闸**之前**：正在提交时也能改选 —— 那一笔的 `workType` 在点【报工】那一刻

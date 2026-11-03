@@ -3918,7 +3918,7 @@
 真值: employee-role.users-endpoint, employee-role.write-require-admin, employee-role.update-field-consumption
 溯源: 2026-09-14 新增（issue #3593）：员工更新（改手机号）落库断言缺失 —— HR-001~007 无任何 update 覆盖，是 #3550（phone/roleIds 被 admin-api 静默忽略 → 200 假成功，PR #3561 已修）潜伏至今的用例层根因。断言口径：expectations.args 值级（action=update + 目标=种子员工 debug_employee_wangwu + 新值逐字 13900139111）+ must_succeed[update]（写真的成功）+ required_args[user_id, phone]（下发参数完整）。⚠️ 仍缺的能力：仓库 db_verify 只有 order_phone / order_items / product_by_name / after_sales_ticket（末项为 #3580 同批新增），**没有员工/用户核对器** ⇒ 接收侧静默忽略这一精确类尚不能机器判定。需要的 runner 规格（归属 runner 包，本包不碰 local_runner.py）：db_verify: [{fetch: employee, name: 「王五」, expect_fields: {phone: 「13900139111」}}] —— 取数走 GET /api/admin/users?keyword=<name>（或 /api/admin/users/{id}）→ 在 items 里按 name/phone 定位 → 逐条比对 expect_fields（值不等即失败，取不到记录也判失败而非跳过）；expect_fields.role_code 可同时覆盖角色侧（roleIds）同源缺陷。本条选「改手机号」而非「改角色」的理由：role 的**合法下发形态有两种**（role_ids=[角色表主键] 或 role=角色 code，见 AdminUserController.updateUser 与 employee_manage._update_user 的 if role_ids / elif role 分支），在 required_args / expectations 无 OR 分支能力时对任一形态做值级断言都会造成另一半假红；手机号只有 phone 一种形态，可做值级断言。角色侧（roleIds ↔ role code）的落库断言由同一 db_verify[employee].expect_fields.role_code 承担，建议 runner 包一并实现。；2026-09-19（issue #4419 的 burn-down 缴费 —— 本用例命中的**唯一**一条存量违规是 CASE-TRUST-NO-PRECONDITION-ASSERTION）：补 `precondition[employee_count_for_phone: 13700137000, expect: 1, max_growth: 0]` —— 改号前提 = 该号码名下确实有那位种子员工（前置不成立时红的表现像「agent 不会改号」，归因全错）；`max_growth: 0` 因本用例只让该号码名下减少一个（改走）、不新增。断言（user_inputs / expectations / must_succeed / required_args / namespaces）原样未动、无放宽 ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：`employee_manage` 的写 action `update` 已删除（工具收窄为只读 `{list, detail}`）⇒ 本用例退役（理由写在 `skip_reason`，条目不删除）；`expectations` 由 `employee_manage(action=update, user_id=debug_employee_wangwu, phone=13900139111)` 改判为存活的只读路径 `employee_manage(action=detail)`，`must_succeed` / `required_args` 里的写声明同步移除（否则成为永不满足的悬空声明，会阻塞 CI 的 action 绑定判据）。 ｜ tags: update, write, confirm
 
-### HR-009. 黄金策能开员工账号、但该身份缺 employee:create——须如实说明权限不足并给后台开通路径（不得谎称能力不存在 / 不得自旋重试 / 不得谎称已开） 🔵
+### HR-014. 黄金策能开员工账号、但该身份缺 employee:create——须如实说明权限不足并给后台开通路径（不得谎称能力不存在 / 不得自旋重试 / 不得谎称已开） 🔵
 ```
 你: 帮我开个客服账号，姓名李四，手机号 13800009999，密码 Test123456
 你: 那我要怎么才能给员工开账号？
@@ -4187,7 +4187,7 @@
 ```
 溯源: 2026-10-31 新增（issue #8295）：两步确认，避免误写 ｜ tags: ui, preview
 
-## 杂项域（209 case）
+## 杂项域（211 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -7213,7 +7213,7 @@
 ```
 溯源: 2026-11-03 新增（issue #6953 的族级元守卫 SW-100；与 MC-100 / MC-104 / PG-075 等单表守卫**有意不重叠** —— 它们裁谓词完整性，本表裁「写面有没有人认领 / 状态值是不是单一口径」）。取号（**两次让号，记实**）= `python3 scripts/next_case_id.py MC` 首取 **MC-143**；merge `origin/main` 时与 main 新增的 **MC-143**（issue #6997 / PR #8535）撞号 ⇒ 按「后合入者让号」顺延 **MC-144**；再次 merge 又与 main 新增的 **MC-144**（issue #7034 / PR #8537）撞号 ⇒ 顺延 **MC-145**；随后 CI 的取号判据（issue #6245）抓到 **MC-145 与在飞 PR #8538 同时占着** ⇒ 再按「后合入者让号」顺延终态 **MC-147**（工具每次都返回历史空档 MC-099 —— 按裁定**刻意空档不回填**）。**现取读数**：53 张有 `status` 列的表（`_sql_schema` 唯一解析点）、134 条写点（Java 108 / SQL 26）、覆盖 49 张表；合法集合权威：实体常量 10 / schema CHECK 14 / **无机器口径 36（冻结上限）**；裸字符串存量 56（冻结上限）。**红证（注入式，实跑）**：① 往真实 Service 里加一条未登记写面 ⇒ 判据 1 判红并具名；② 把常量改成裸字符串 ⇒ 判据 3 判红并具名；③ 把台账条目删掉 ⇒ 判据 2 判红（写点无主）；④ 把 `unregistered()` 的登记对账摘掉 / 把 `bare_literal_sites()` 摘掉 ⇒ 判据 1 / 判据 3 必红（判据 7 内建这两条内存变异体作常驻证）。**如实登记的既有缺陷（本包不修，不扩射程）**：`ProductionOperationCommandService#update` 的无条件状态写（见判据 8 的盲洞 ②）、`InboundOrderService` 的 builder 写形（盲洞 ①）、36 张表没有机器可读的合法状态集合、56 处裸字面量 —— 均为存量债，压测口径 = 台账基线**只许缩短**。 ｜ tags: state-transition, meta-guard, ledger, single-source, red-proof
 
-### MC-155. 终端壳打印能力三态（issue #8310）：桥在 ≠ 打印机在 —— printerMode 负向 / 读不到都不许说「由本机打印机直接出纸」，且「判不了」与「确知没有」分开说 🔵
+### MC-181. 终端壳打印能力三态（issue #8310）：桥在 ≠ 打印机在 —— printerMode 负向 / 读不到都不许说「由本机打印机直接出纸」，且「判不了」与「确知没有」分开说 🔵
 ```
 你: 用户（2026-11-01 真机取证，商米 V2s `Qbao_h2` / Android 11 / 终端壳 1.0.19）：拍照入库页第一行写「点「打印标签」，由本机打印机直接出纸。」，而同一台机器点「打印测试页」⇒「打印失败 / 打印机未连接（需商米内置打印服务）」（`PrinterLink.mode()` = -1，设备上只有 `com.sunmi.printer.firmware`）
 期望: direct_reply
@@ -7379,6 +7379,35 @@
 跳过: [backend-contract] RBAC 单一源的纯静态解析判据（Python 读 Java 源码文本 + 内存注入，零网络、零真实 LLM），由 tests/unit_ci_workflows/test_rbac_imperative_permission.py 验证，不进入 agent-eval 冒烟
 ```
 溯源: 2026-11-03 新增（issue #6378，来源 #6367 包 P2 的显式放宽）。取号：`python3 scripts/next_case_id.py MC` 现取（main 已占 001-098/100-144/146-153/155-157/160-161/170）返回**历史空档 MC-145** —— 按裁定**刻意空档不回填**；本轮撞号带密集（当晚同类撞号 8 次）⇒ 按派单口径**直接取 MC-180** 跳过一段（先 push claim `<PR>-MC-180.json`，再改码）。落码 = ① `backend/ai-agent-service/tests/tool_http_attribution.py`：`_REQUIRE_PERMISSION_RE` 收成 `_PERMISSION_CODE_RE`（注解式 + 命令式共用）＋ `permission_codes(text, form)` 唯一提取口 ＋ `_method_definitions` / `_imperative_check`（同文件校验载体传递闭包、深度上限 3、控制流与匿名类不算载体）＋ `JavaEndpoint.imperative_permissions` / `imperative_check` / `checked`；② `tests/unit_ci_workflows/test_agent_permission_parity.py` 判据 8 取值口改 `ep.checked`，删除图片识别两条台账条目（26 → 24）；③ 上限同批下调：`LEDGER_CEILINGS.UNANNOTATED_ENDPOINTS` 26 → 24、`ADMIN_SCOPE_UNANNOTATED_CEILING` 14 → 12、`rbac/manifest.json` + 重新生成的 `rbac/readings.json`、`admin_role_read_surface_ledger.json` 对照读数 14 → 12；④ 判据 `tests/unit_ci_workflows/test_rbac_imperative_permission.py`（11 条，含注入式红证、上限承重证明、第三形态负控）；⑤ 文档 `docs/wiki/RBAC.md` 两处口径同步。**第三种形态结论（判据 ⑥ 钉住）**：仓内另有 ① 角色级闸（`RegistrationController.checkSuperAdminPermission()` 的 `roles.contains("super_admin")`，守 `/api/super-admin/**`）与 ② 工人身份 / 页面级闸（`requireWorker(...)` / `requireWorkerPage(...)`，守 `/api/worker/**`）—— 两者**都不是权限码校验**，**有意不认**：认了会让这两族端点静默退出台账（那是放宽）；它们继续逐条登记在 `UNANNOTATED_ENDPOINTS` 并带理由。 ｜ tags: rbac, permission, imperative-check, single-source, ledger-only-shrinks, red-proof
+
+### MC-183. 红证档准入（issue #5707 · FM-E10 残余）：9 条实跑腿全部 ⏭️ 时该档必须 exit 4 —— 汇总按「实质真跑」判（无条件跑的辅助项不计数），并按 probe_ready 的原文具名报出每条被 skip 的腿缺什么工具链 🔵
+```
+你: 本机没有 JDK/PG/node_modules，跑 ./verify-all.sh redproof 时 9 条实跑腿全打 ⏭️、只剩两条无条件项 ✅，汇总说「真跑 2 项」并退出 0 —— 于是「没跑 = 通过」成立；希望「一条能证明本档目标的腿都没跑」时这个档不许判绿，而且报文要说清是哪几条腿被 skip、各缺什么工具链。
+数据: **判据 1（会红）**：全部实跑腿被 skip + 那 2 项无条件项 ✅ ⇒ 该档 **exit 4**（修前退 0）。执行点 = tests/unit_ci_workflows/test_verify_all_redproof_meaningful_executed.py::TestPureNoopOnAllRealRunLegsSkipped::test_all_real_run_legs_skipped_exits_pure_noop。
+数据: **判据 2·负控（会红）**：只让一条实跑腿的就绪条件成立（伪造 node_modules/.bin/vitest）⇒ **不** exit 4、且汇总显示「实质真跑 1 项」。红证 = 把准入判据改成恒 0（辅助也计入）⇒ 同夹具变 exit 4。执行点 = ::TestNegativeControl 与 ::TestRedProofs::test_counting_auxiliary_as_meaningful_would_break_the_negative_control。
+数据: **判据 3（会红）**：那 2 项无条件腿（红证机具前提自检 / 红证实跑巡检）**仍然存在、仍然无条件派发、仍然会跑**（不许为修空跑把它们删掉或塞进 if）。执行点 = ::TestPureNoopOnAllRealRunLegsSkipped::test_the_two_unconditional_legs_still_run_and_are_counted 与 ::TestClassLevelRegistry::test_wrapping_an_unconditional_leg_in_if_is_red。
+数据: **判据 4·归因（会红）**：exit 4 报文逐条具名「腿名 + 缺什么工具链」，且那句缺什么**取自 probe_ready() 的原文**（不另写第二套文案）。红证 = 删掉 report_env() 里的 NOT_READY_WHY 拼装 ⇒ 具名行整段消失。执行点 = ::TestPureNoopOnAllRealRunLegsSkipped::test_every_skipped_leg_is_named_with_the_toolchain_probe_reason 与 ::TestRedProofs::test_dropping_the_attribution_removes_the_named_lines。
+数据: **判据 5·红证注入**：把汇总块的 `MEANINGFUL_EXECUTED=$((EXECUTED - AUX_EXECUTED))` 改回 `MEANINGFUL_EXECUTED=$EXECUTED` ⇒ 判据 1 的同夹具**变绿**（证明判据 1 不是空断言）。执行点 = ::TestRedProofs::test_reverting_the_verdict_to_executed_turns_criterion_1_green。
+数据: **判据 6·类级元守卫（会红）**：辅助登记（aux_step_name()）⇄ redproof 档实际的无条件派发**双向相等**（未登记即红 / 陈旧即红）、上限冻结 2 条只许缩短、实跑腿不得被登记成辅助、汇总块的纯空跑判定必须引用 MEANINGFUL_EXECUTED 且 exit 4 唯一；只改注释 ⇒ 不红（对照）。分类方向 fail-closed = 未登记一律算实质真跑。执行点 = ::TestClassLevelRegistry。
+跳过: [backend-contract] 纯静态 + 抽出的 shell 行为判据（真 report()/report_env()/汇总块，腿命令替换成 true；零网络、零 JDK/npm/PG），由 tests/unit_ci_workflows/test_verify_all_redproof_meaningful_executed.py 验证，非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-11-03 新增（issue #5707 的 FM-E10 残余收口，PR #8581）：verify-all.sh 汇总新增辅助真跑计数（AUX_EXECUTED）+ 准入判据改按 MEANINGFUL_EXECUTED；redproof 档 9 条实跑腿全部 ⏭️ 时 exit 4，报文按 probe_ready 原文具名列出被 skip 的腿与缺失工具链；那 2 项无条件项照旧真跑（登记在 aux_step_name()）。取号 MC-183（集成侧指定）。 ｜ tags: ci, gate, pure-noop, false-green, red-proof
+
+### MC-155. 终端壳打印能力三态（issue #8310）：桥在 ≠ 打印机在 —— printerMode 负向 / 读不到都不许说「由本机打印机直接出纸」，且「判不了」与「确知没有」分开说 🔵
+```
+你: 用户（2026-11-01 真机取证，商米 V2s `Qbao_h2` / Android 11 / 终端壳 1.0.19）：拍照入库页第一行写「点「打印标签」，由本机打印机直接出纸。」，而同一台机器点「打印测试页」⇒「打印失败 / 打印机未连接（需商米内置打印服务）」（`PrinterLink.mode()` = -1，设备上只有 `com.sunmi.printer.firmware`）
+期望: direct_reply
+数据: 🔴 **判据 1（实例，会红）**：`printerMode = -1`（真机读数：没有商米打印服务）⇒ 能力探测必须 `ok:false`、`reason = terminal-printer-unavailable`，且**不出现**「由本机打印机直接出纸」（`readyHint` 为空）。执行点 = frontend/bmini-app/tests/inbound-print-capability-terminal.test.ts::T1
+数据: 🔴 **判据 2（负控，防「修坏了」）**：`printerMode > 0`（原生报正向）⇒ **仍**报能打 + 机身内置打印机文案（`PRINT_READY_HINT_TERMINAL`），与 #8089 的终端通道形态一致。执行点 = 同文件::T2
+数据: 🔴 **判据 3（三态，最容易被写成 `|| true`）**：`printerMode` **读不到**（缺省 / 0 / NaN / Infinity）⇒ `unknown` ⇒ `ok:false` 且**不说**能打；「判不了」与「确知没有」是**两条不同文案**（出口相同 = 电脑端补打 / 找管理员）。执行点 = 同文件::T3
+数据: 🔴 **判据 4（类级固化）**：终端分支必须消费 `printerMode`（`terminalPrintState(env.printerMode)`），旧形态 `if (env.terminalBridge) { return { ok: true … } }` 必须不复存在；`PRINT_READY_HINT_TERMINAL` 只许由 frontend/bmini-app/src/utils/inbound/printCapability.ts 的 `available` 分支产出，`src/**` 里别的文件不许自己写死这句话。执行点 = 同文件::T4
+数据: 🔴 **判据 5（取值接线）**：`readPrintEnv()` 从原生注入的 `window.__CFG__.printerMode` 取数，非数字 / 非有限值一律按「读不到」处理（fail-closed）；端到端：`__CFG__ = { printerMode: -1 }` ⇒ 探针（读真环境）也不说能打。执行点 = 同文件::T5
+数据: **边界（照实登记，§19.1）**：① 判据只钉**本仓这一侧**（判定 + 文案 + 取值接线），**不覆盖**原生侧是否真的按 `PrinterLink.mode()` 赋值（仓外，终端仓另单）；② 不判「这台机器该不该配打印机」（硬件选型不在本单）；③ 不改任何门禁的通过条件、不新增豁免；④ `terminalBridge` 的既有定义（`chrome.webview`）**未动** —— 本轮只让「能力」由原生上报的事实说话。
+前置: 本用例是 [backend-contract]：前置 = frontend/bmini-app/src/utils/inbound/printCapability.ts 的终端分支在场、`PrintEnv.printerMode` 可注入、`readPrintEnv()` 读 `window.__CFG__`；能力探测是纯函数（零网络、零硬件），页面侧已有的 `capability.ok` 门禁（打印按钮 disabled）不变。
+跳过: [backend-contract] 纯前端确定性判据（能力探测 = 纯函数 + 取值接线 + 源码结构守卫），由 frontend/bmini-app/tests/inbound-print-capability-terminal.test.ts 验证，非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: ⚠️ 缺口（见对应模板 ⚠️ 注释）
+溯源: 2026-11-03 新增（issue #8310）。病 = 终端壳**打印能力误报**：页面说「由本机打印机直接出纸」，本机 `PrinterLink.mode()` = **-1**；根因 = `probePrintCapability()` 的终端分支**只看壳**（有 `chrome.webview` 就 `ok:true`）、`PrintEnv` 里没有能力字段。修 = 三态判定 `terminalPrintState(printerMode)`（`>0` available / `<0` unavailable / `0`·缺省·非有限 unknown），新增两条缺口文案（`terminal-printer-unavailable` / `terminal-print-unknown`）并登记进 `INBOUND_PRINT_GAP_WIRING`；`readPrintEnv()` 从 `window.__CFG__.printerMode` 取数（非数字按读不到）。取号 = MC-154（`python3 scripts/next_case_id.py MC` 现取 main 001-098/100-144/146-147 ⇒ 工具返回历史空档 MC-099，按裁定**不回填**；MC-139~MC-153 属并行包保留带，**避开** ⇒ 顺延 MC-154）。🔴 **仓外事实（如实登记，不假造）**：原生侧本轮**还没有**送 `printerMode` ⇒ 真机一律落 `unknown`（fail-closed：不许说能打）；**原生侧要补送 `printerMode`**（值域口径：负 = 不可用 / 正 = 可用 / 0 与缺省 = 判不了），补送后本仓代码**无需再改**。边界 = 不覆盖原生赋值、不判硬件选型。 ｜ tags: backend-contract, bmini, print-capability, fail-closed, three-state, no-overclaim, red-proof
 
 ## 商家入驻域（7 case）
 
@@ -10257,7 +10286,7 @@
 数据: **判据 1·落库且逐字段可读（逐值断言）**：录入一条合格判定 ⇒ 真落库的那一行**逐值**等于「谁/何时/哪件成品帘/判了什么」—— `tenant_id` / `order_item_id` / `processing_order_id` / `inspection_result='pass'` / `inspector_id` / `inspector_name` / `inspected_at`（逐字时刻）/ `deleted=0` / `position_name` 快照；返工/报废两条同款**逐值**（判定与原因，原因去首尾空白）。证据：backend/admin-api/src/test/java/com/migao/admin/service/QualityCheckServiceTest.java（passRecordIsPersistedAndReadableFieldByField / reworkAndScrapArePersistedWithReason）
 数据: **判据 2·独立质检员才有权录入（真判据，不是「前端不显示按钮」）**：质检录入与读面端点都声明 `@RequirePermission("production:inspect")`（反射读真注解）；且该码（**新目录码**，不是复用 `production:execute` —— 后者授给客服/运营/销售/财务四个岗位，复用即放宽）在 `rbac/manifest.json` 的 `roles.seed` 上**只**授给一个岗位（运行时的 `admin` 走 `["*"]` 通配，不在「被显式授予」这个读数里）—— 换岗位 / 多授 / 摘掉注解 ⇒ 判据当场红。证据：backend/admin-api/src/test/java/com/migao/admin/controller/QualityCheckControllerTest.java
 数据: **判据 3·报工人只报数量（工人面不得出现质检判定入口）**：质检录入的唯一入口是 `/api/admin/quality-inspections`（`/api/admin/**` 由 `ADMIN_API_REJECTED_ROLES` 把 `worker` 挡在外面），且工人端 H5 报工屏只出现**三态报工**（正常/返工/报废 —— 报的是数量事实），**没有**任何成品帘质检判定控件。证据：frontend/worker-h5/tests/worker-h5-report-work-type.test.mjs（屏上控件只有 `#wh5-work-type` 的 normal/rework/scrap；无质检判定面）
-数据: **判据 4·反例：判定≠合格但原因缺失 ⇒ 具名报错且零写入**：原因缺失 / 空串 / 全空白三种形态都 ⇒ `VALIDATION_ERROR` + **422** + 文案含**该档判定的中文名**（「报废」）与「必须填写不合格原因」，且 `verify(mapper, never()).insert(...)` = **零写入**（不许静默存）；未知判定（如 `ok`）⇒ 422 并逐字列出合法取值 `pass/rework/scrap`。证据：QualityCheckServiceTest.java + QualityCheckControllerTest.java
+数据: **判据 4·反例：判定≠合格但未选原因字典项 ⇒ 具名报错且零写入**：字典项缺失 / 空串 / 全空白三种形态都 ⇒ `VALIDATION_ERROR` + **422** + 文案含**该档判定的中文名**（「报废」）、「不合格原因字典」与**全部六项可选原因**（issue #7197 ① 起自由文本不再能顶替字典项：只填 `reason` 而不选 `reason_code` 同样拒），且 `verify(mapper, never()).insert(...)` = **零写入**（不许静默存）；未知判定（如 `ok`）⇒ 422 并逐字列出合法取值 `pass/rework/scrap`。证据：QualityCheckServiceTest.java + QualityCheckControllerTest.java
 数据: **判据 4b·跨租户 = 404，且与「不存在」逐字同一形态**（不泄露存在性）：`code` / `http_status` / `message`（「成品帘不存在」）三项逐字相等，零写入。证据：QualityCheckServiceTest.java
 数据: **判据 5·颗粒度 = 成品帘，且两套口径并存互不覆盖**：一条记录 = 一件成品帘（`order_item_id`），**不**逐工序（表与实体**没有** `operation_id` 面）；质检**不**读写 `production_work_logs`、**不**重算 `qty`/`qualified_qty`、**不**参与计件 —— 计件侧「返工/报废不进 per_worker/per_operation/total」的既有判据由 PG-018/PG-061 一族原样承担，本用例一格不放宽也不改写。
 数据: **判据 6·既有报工链路零回归（反向断言）**：本包不碰 `ProductionService` / `ProductionScanCompleteService` / 计件聚合的任何一行（改动面 = 新表 + 新三件 + 岗位登记）；计件侧「`rework`/`scrap` 不进 per_worker/per_operation/total」的既有机器判据（ProductionPieceworkSummaryTest 的 rework 负例）在本包下**照旧全绿**。
@@ -14887,8 +14916,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：1007（活跃 153，跳过 854）
-- tier 分布：smoke 15 / normal 930 / adversarial 33
+- 用例总数：1009（活跃 153，跳过 856）
+- tier 分布：smoke 15 / normal 932 / adversarial 33
 - 售后域：16
 - Agent 核心域：13
 - API 层域：21
@@ -14904,7 +14933,7 @@
 - 人事域：13
 - 知识问答域：9
 - 客户主数据迁移域：10
-- 杂项域：209
+- 杂项域：211
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：76
@@ -15169,7 +15198,7 @@
 - MC-152: B 端会话卡的「来源组」不许把服务端内部标签摆上屏：唯一映射表（机器键 → 商家话术）+ 枚举全集覆盖 + 认不出的键走兜底（issue #6461）
 - MC-153: B 端移动会话卡：来源组说商家的话、内部口径词零上屏（bmini 侧的零内部口径词判据 + 认不出的来源走兜底，issue #6461）
 - MC-147: **状态列写面全族统一元守卫 SW-100**：53 张有 `status` 列的表 × 134 个写入口逐条登记（未登记即红 / 台账陈旧即红 / 裸字符串写状态列即红 / 每张状态表的合法集合必须有来源）
-- MC-155: 终端壳打印能力三态（issue #8310）：桥在 ≠ 打印机在 —— printerMode 负向 / 读不到都不许说「由本机打印机直接出纸」，且「判不了」与「确知没有」分开说
+- MC-181: 终端壳打印能力三态（issue #8310）：桥在 ≠ 打印机在 —— printerMode 负向 / 读不到都不许说「由本机打印机直接出纸」，且「判不了」与「确知没有」分开说
 - MC-159: **员工账号的 create / update 接回 B 端**（issue #7050，2026-10-16「能力边界 终版」）：action 枚举与 schema 同时可见（漏参数即不可调用）+ 权限走既有 required_permissions 粗筛与 action 级复检（码取 AdminUserController 注解，不自己判角色）+ 确认走既有 base_skill._requires_confirmation（react_turn 用同一函数对象；未确认 ⇒ 不执行）+ 端点逐字对齐（POST /api/admin/users · PUT /api/admin/users/{id}）+ 删除/停用/重置密码仍不接线
 - MC-156: 机台页详情屏补「报返工」入口（复用既有 reportRework / 不新建第二套返工实现 / 次要动作不抢主位）
 - MC-157: **本地 dev / build 输出目录物理隔离**：`next dev` 写 `.next-dev`、`next build` / `next start` 仍写 `.next`（共用 `.next` 时 dev 侧已存在路由 404 可复现 + build 侧读到半写生成物报 9 条 TS 错误）
@@ -15180,6 +15209,8 @@
 - MC-162: H5 输入面字体族跟随全局 + 占位符收口共享层（内层原生控件 inherit / 裸 font-family 只在字体定义处 / 例外台账只许缩短）
 - MC-163: 数字输入精度面（issue #8004）：涉钱 / 涉数量格不许再用 `type="number"`（中间态 `12.` 与千分位 `1,234.56` 会被浏览器吞掉）—— 共用 `DecimalInput` 一处解析/校验/话术 + 类级台账守卫
 - MC-180: RBAC 判据 8 认得命令式权限校验（两种形态同一个提取函数 / 台账 26 → 24 且上限只许下降 / 注释与无关 helper 不算校验 / 角色级与工人身份级闸有意不认）
+- MC-183: 红证档准入（issue #5707 · FM-E10 残余）：9 条实跑腿全部 ⏭️ 时该档必须 exit 4 —— 汇总按「实质真跑」判（无条件跑的辅助项不计数），并按 probe_ready 的原文具名报出每条被 skip 的腿缺什么工具链
+- MC-155: 终端壳打印能力三态（issue #8310）：桥在 ≠ 打印机在 —— printerMode 负向 / 读不到都不许说「由本机打印机直接出纸」，且「判不了」与「确知没有」分开说
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）

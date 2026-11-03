@@ -125,12 +125,14 @@ class WorkerQualityControllerTest {
     @DisplayName("② 开了「质检」页 ⇒ 落库身份 = session 的工人（kind=worker），body 伪造身份无效")
     void grantedWorkerDelegatesWithSessionIdentity() {
         when(workerAdminService.findOwnedWorker(WORKER_ID)).thenReturn(worker("[\"report\",\"inspect\"]"));
-        when(qualityCheckService.create(any(), anyString(), anyString(), any(), anyString(), anyString(),
-                anyString(), any(), any())).thenReturn(Map.of("id", "qi-1"));
+        when(qualityCheckService.create(any(), anyString(), anyString(), any(), any(), anyString(), anyString(),
+                anyString(), any(), any(), any())).thenReturn(Map.of("id", "qi-1"));
 
         controller.create(SESSION, Map.of(
                 "order_item_id", "item-1",
                 "result", "rework",
+                // issue #7197 ①：原因字典项（判定 ≠ 合格时必填）+ 自由补充
+                "reason_code", "fabric_stain",
                 "reason", "布面污渍",
                 // 伪造身份：必须被忽略（身份只认 X-Worker-Session-Id）
                 "worker_id", "attacker",
@@ -141,8 +143,8 @@ class WorkerQualityControllerTest {
         ArgumentCaptor<String> kind = ArgumentCaptor.forClass(String.class);
         ArgumentCaptor<WorkerIdentity> actor = ArgumentCaptor.forClass(WorkerIdentity.class);
         verify(qualityCheckService).create(eq(TENANT), eq("item-1"), eq("rework"), eq("布面污渍"),
-                workerId.capture(), workerName.capture(), kind.capture(), eq(AT), actor.capture(),
-                org.mockito.ArgumentMatchers.isNull());
+                eq("fabric_stain"), workerId.capture(), workerName.capture(), kind.capture(), eq(AT),
+                actor.capture(), org.mockito.ArgumentMatchers.isNull());
         assertThat(workerId.getValue()).isEqualTo(WORKER_ID);
         assertThat(workerName.getValue()).isEqualTo(WORKER_NAME);
         assertThat(kind.getValue()).isEqualTo(QualityCheckService.INSPECTOR_WORKER);
@@ -172,8 +174,11 @@ class WorkerQualityControllerTest {
 
         assertThat(controller.latest(SESSION, "item-1", null).getData().get("latest")).isEqualTo(record);
         // 读面也不调写面
-        verify(qualityCheckService, never()).create(any(), anyString(), anyString(), any(), anyString(),
-                anyString(), anyString(), any(), any());
+        verify(qualityCheckService, never()).create(any(), anyString(), anyString(), any(), any(), anyString(),
+                anyString(), anyString(), any(), any(), any());
+        // 原因字典随读面一起下发（issue #7197 ①：录入界面的短语按钮由它驱动，前端不另造一份）
+        assertThat((List<?>) controller.latest(SESSION, "item-1", null).getData().get("reasons"))
+                .as("工人端读面必须带上原因字典").hasSize(6);
     }
 
     @Test
@@ -204,22 +209,24 @@ class WorkerQualityControllerTest {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("order_item_id", "item-1");
         body.put("result", "rework");
+        body.put("reason_code", "stitching_defect");
         body.put("reason", "缝线开裂");
         body.put("set_no", "JG-001");
 
         assertThatThrownBy(() -> controller.create(SESSION, body))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("正在等复检");
-        verify(qualityCheckService, never()).create(any(), anyString(), anyString(), any(), anyString(),
+        verify(qualityCheckService, never()).create(any(), anyString(), anyString(), any(), any(), anyString(),
                 anyString(), anyString(), any(), any(), anyString());
 
         // 【复检仍有问题】= 显式新的一轮判定 ⇒ 同一个写面放行（`recheck` 是显式入口，不是盲重复）
-        when(qualityCheckService.create(any(), anyString(), anyString(), any(), anyString(), anyString(),
-                anyString(), any(), any(), anyString())).thenReturn(Map.of("id", "qi-2"));
+        when(qualityCheckService.create(any(), anyString(), anyString(), any(), any(), anyString(), anyString(),
+                anyString(), any(), any(), any())).thenReturn(Map.of("id", "qi-2"));
         body.put("recheck", true);
         controller.create(SESSION, body);
         verify(qualityCheckService).create(eq(TENANT), eq("item-1"), eq("rework"), eq("缝线开裂"),
-                eq(WORKER_ID), eq(WORKER_NAME), eq(QualityCheckService.INSPECTOR_WORKER), eq(AT),
+                eq("stitching_defect"), eq(WORKER_ID), eq(WORKER_NAME),
+                eq(QualityCheckService.INSPECTOR_WORKER), eq(AT),
                 any(WorkerIdentity.class), eq("JG-001"));
     }
 
@@ -227,8 +234,8 @@ class WorkerQualityControllerTest {
     @DisplayName("④ 复检通过（result=pass）不受待复检门禁影响（闭环出口；pass 本来就能录）")
     void passIsNotGatedByPendingRework() {
         when(workerAdminService.findOwnedWorker(WORKER_ID)).thenReturn(worker("[\"inspect\"]"));
-        when(qualityCheckService.create(any(), anyString(), anyString(), any(), anyString(), anyString(),
-                anyString(), any(), any(), anyString())).thenReturn(Map.of("id", "qi-pass"));
+        when(qualityCheckService.create(any(), anyString(), anyString(), any(), any(), anyString(), anyString(),
+                anyString(), any(), any(), any())).thenReturn(Map.of("id", "qi-pass"));
 
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("order_item_id", "item-1");
@@ -237,7 +244,7 @@ class WorkerQualityControllerTest {
         controller.create(SESSION, body);
 
         verify(qualityCheckService).create(eq(TENANT), eq("item-1"), eq("pass"), isNull(),
-                eq(WORKER_ID), eq(WORKER_NAME), eq(QualityCheckService.INSPECTOR_WORKER), eq(AT),
+                isNull(), eq(WORKER_ID), eq(WORKER_NAME), eq(QualityCheckService.INSPECTOR_WORKER), eq(AT),
                 any(WorkerIdentity.class), eq("JG-001"));
         verify(qualityCheckService, never()).latestForPiece(anyLong(), anyString(), anyString());
     }

@@ -134,11 +134,12 @@ class QualityCheckServiceTest {
     }
 
     @Test
-    @DisplayName("① 返工 / 报废判定：判定与原因逐值落库（含去首尾空白），中文标签逐字")
+    @DisplayName("① 返工 / 报废判定：判定 / 字典项 / 自由补充逐值落库（含去首尾空白），中文标签逐字")
     void reworkAndScrapArePersistedWithReason() {
-        service.create(TENANT, ITEM_ID, "rework", "  缝线开裂  ", INSPECTOR_ID, INSPECTOR_NAME, AT);
-        Map<String, Object> scrapView = service.create(TENANT, ITEM_ID, "scrap", "布面污渍无法清洗",
-                INSPECTOR_ID, INSPECTOR_NAME, AT);
+        service.create(TENANT, ITEM_ID, "rework", "  缝线开裂  ", "stitching_defect",
+                INSPECTOR_ID, INSPECTOR_NAME, QualityCheckService.INSPECTOR_EMPLOYEE, AT, null, null);
+        Map<String, Object> scrapView = service.create(TENANT, ITEM_ID, "scrap", "布面污渍无法清洗", "fabric_stain",
+                INSPECTOR_ID, INSPECTOR_NAME, QualityCheckService.INSPECTOR_EMPLOYEE, AT, null, null);
 
         ArgumentCaptor<QualityCheck> captor = ArgumentCaptor.forClass(QualityCheck.class);
         verify(qualityInspectionMapper, org.mockito.Mockito.times(2)).<QualityCheck>insert(captor.capture());
@@ -146,25 +147,31 @@ class QualityCheckServiceTest {
 
         assertThat(rows.get(0).getInspectionResult()).isEqualTo("rework");
         assertThat(rows.get(0).getReason()).isEqualTo("缝线开裂");
+        assertThat(rows.get(0).getReasonCode()).isEqualTo("stitching_defect");
         assertThat(rows.get(1).getInspectionResult()).isEqualTo("scrap");
         assertThat(rows.get(1).getReason()).isEqualTo("布面污渍无法清洗");
+        assertThat(rows.get(1).getReasonCode()).isEqualTo("fabric_stain");
         assertThat(scrapView).containsEntry("result_label", "报废")
-                .containsEntry("reason", "布面污渍无法清洗");
+                .containsEntry("reason", "布面污渍无法清洗")
+                .containsEntry("reason_code", "fabric_stain")
+                .containsEntry("reason_label", "布面污渍");
     }
 
     @Test
-    @DisplayName("② 反例：判定≠合格但原因缺失/空白 ⇒ 具名 422，且**零写入**（不许静默存）")
-    void nonPassWithoutReasonIsRejectedWithNamedErrorAndZeroWrite() {
+    @DisplayName("② 反例：判定≠合格但未选字典项 ⇒ 具名 422（列全六项）、零写入；自由文本顶替不了（issue #7197 ①）")
+    void nonPassWithoutDictionaryCodeIsRejectedWithNamedErrorAndZeroWrite() {
         for (String blank : new String[]{null, "", "   "}) {
-            assertThatThrownBy(() -> service.create(TENANT, ITEM_ID, "scrap", blank,
-                    INSPECTOR_ID, INSPECTOR_NAME, AT))
+            assertThatThrownBy(() -> service.create(TENANT, ITEM_ID, "scrap", "布面污渍", blank,
+                    INSPECTOR_ID, INSPECTOR_NAME, QualityCheckService.INSPECTOR_EMPLOYEE, AT, null, null))
                     .isInstanceOf(BusinessException.class)
                     .satisfies(e -> {
                         BusinessException be = (BusinessException) e;
                         assertThat(be.getCode()).isEqualTo("VALIDATION_ERROR");
                         assertThat(be.getHttpStatus()).isEqualTo(422);
-                        // 具名：说出是哪一档判定缺原因（不是一句泛泛的「参数错误」）
-                        assertThat(be.getMessage()).contains("报废").contains("必须填写不合格原因");
+                        // 具名：说出是哪一档判定缺什么，并**列全**可选原因（不是一句泛泛的「参数错误」）
+                        assertThat(be.getMessage()).contains("报废")
+                                .contains("不合格原因字典")
+                                .contains("布面污渍 / 布料破洞 / 色差 / 尺寸不符 / 走线不良 / 其它");
                     });
         }
         verify(qualityInspectionMapper, never()).insert(any(QualityCheck.class));
@@ -263,8 +270,8 @@ class QualityCheckServiceTest {
         verify(linkage).completeQualityOperation(eq(ORDER_ID), eq(ITEM_ID), isNull(), eq(TENANT));
 
         org.mockito.Mockito.clearInvocations(linkage);
-        service.create(TENANT, ITEM_ID, "rework", "缝线开裂", INSPECTOR_ID, INSPECTOR_NAME,
-                QualityCheckService.INSPECTOR_EMPLOYEE, AT);
+        service.create(TENANT, ITEM_ID, "rework", "缝线开裂", "stitching_defect", INSPECTOR_ID, INSPECTOR_NAME,
+                QualityCheckService.INSPECTOR_EMPLOYEE, AT, null, null);
         verify(linkage, never()).completeQualityOperation(any(), anyString(), any(), any());
     }
 
