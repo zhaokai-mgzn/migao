@@ -142,10 +142,11 @@ export default function BatchStocktakeForm({ productId, batches, onApplied }: Pr
                   <td className="px-3 py-2 font-mono text-xs">{r.batch.skuCode || '-'}</td>
                   <td className="px-3 py-2 text-right tabular-nums">{formatStockQuantity(r.batch.remainingMeters)}</td>
                   <td className="px-3 py-2 text-right">
+                    {/* issue #8004：实盘米数是**带小数的数量面** —— `type="number"` 会把 `12.` 中间态
+                        归一成 `12`（浏览器层丢键）。这里改 `type="text"`：0.1 米刻度的解析/话术仍由本组件
+                        自有的 `parseActual`（同一份 `invalid` 状态）承担，不引入第二套归一化 */}
                     <input
-                      type="number"
-                      min={0}
-                      step={0.1}
+                      type="text"
                       inputMode="decimal"
                       className="w-28 rounded-md border border-neutral-300 px-2 py-1 text-right tabular-nums focus:border-primary-500 focus:outline-none"
                       data-testid={`stocktake-input-${r.batch.batchId}`}

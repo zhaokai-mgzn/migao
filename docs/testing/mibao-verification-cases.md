@@ -4187,7 +4187,7 @@
 ```
 溯源: 2026-10-31 新增（issue #8295）：两步确认，避免误写 ｜ tags: ui, preview
 
-## 杂项域（205 case）
+## 杂项域（209 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -7319,6 +7319,66 @@
 ```
 真值: ⚠️ 缺口（见对应模板 ⚠️ 注释）
 溯源: 2026-11-03 新增（issue #6684）。取号：按派单口径**直接取 MC-170**（跳过一段以降低与在飞 PR 的撞号概率；现取 `python3 scripts/next_case_id.py MC` 返回的历史空档 MC-145 按裁定**不回填**，main 侧当时最大 = MC-160）⇒ 先 push claim `6684-MC-170.json` 再写码。**病（两条独立读数，均现取）**：① `.github/workflows/pr-check.yml` 的 `admin-web-test` 腿注释里有一句**被证伪**的断言（「⇒ 不存在『改了仓内别处而本腿该跑』的形态」）；② 该腿的跨包守卫 `frontend/admin-web/tests/unit/lib/copy-no-markdown-emphasis.test.ts` 的 `SRC_DIRS` 同时扫 `../worker-h5/src`，而触发谓词只覆盖 `frontend/admin-web/` + 自身 ⇒ 纯 worker-h5 PR 整段跳过该守卫（实证 #6675：只改 `frontend/worker-h5/**` 的 PR 该腿 SUCCESS，合并后同一条守卫在 main 上红）。**修（两半都必须做）**：① 把那句断言**改写成成立的事实**并保留「当初为什么这么写 / 为什么被证伪」的痕迹（只删掉假话 = 下一个人还会照同一套推理写第二遍）；② 谓词精确补 `frontend/worker-h5/src/`（**只补跨包读取面，不扩到整个 `frontend/worker-h5/**`**：守卫只读 `src`）+ 登记册同批改 `predicate` / `must_cover`。**判据** = tests/unit_ci_workflows/test_admin_web_gate_reads_worker_h5.py（读取面现取 / 覆盖率 / 登记 / 负控 / 判别力自证 / 被证伪声明标注），另由既有 test_gate_coverage_and_same_source.py 的逐字同源 + 覆盖判据兜底。⚠️ **代价（如实登记）**：纯 worker-h5 的 PR 现在会跑一次 admin-web 全量（ci_cost_ledger 现取该 job 中位 281.5s，n=8）；这与 issue #6684 候选修法 1 的代价相同，取舍理由 = 守卫读它就必须验它，且 worker-h5 侧另有 `frontend/worker-h5/tests/worker-h5-plain-text-guard.test.mjs` 的等价面（本单**不动**它，两条腿互为冗余而非替代）。⚠️ **未闭合（照实登记）**：其它腿的 TS 断言面自动发现仍未实装（登记册 `unfixed` 已登记该缺口）；本判据只裁这一条腿。 ｜ tags: ci, gate-face, cross-package, false-green, red-proof
+
+### MC-158. 工人端菜单以岗位为源：键集补 inbound/reprint（两张已有页面）+ 岗位→默认菜单映射 + 首屏最多 3 项的具名拒错（issue #8337） 🔵
+```
+你: 用户（2026-11-01 测试账号真机）：你这个测试账号的权限太大了，不符合实际使用？通常每个工序或者每个工人只能操作 1-3 个菜单，根据工人岗位来定菜单的
+数据: 🔴 **判据 ①·键集 ⇄ 工人端真实页面（双向）**：`inbound` / `reprint`（拍照入库 / 补打入库标签）在 bmini 上**早已有页面**（frontend/bmini-app/src/pages/worker/inbound|reprint/index.tsx）却**没有页面键、恒显示** ⇒ 现纳入闭词表 + 默认集合；每个键都有人话名、写侧认得它们。执行点 = WorkerPagesTest::inboundAndReprintPagesAreKeyedNow / everyPageKeyHasAHumanLabel
+数据: 🔴 **判据 ②·每个岗位都有默认菜单且默认键全在键集内**：裁剪/车位 = 报工+计件；仓管 = 入库+补打+库存修正；发货 = 发货+待发货单；每组非空 ⊆ `WorkerPages.ALL`、项数 ≤ 3、且能通过写侧校验（默认值 = 合法值）。执行点 = WorkerPagesTest::everyPositionHasDefaultsInsideTheVocabulary / positionDefaultsMatchTheIssueCriteria
+数据: 🔴 **判据 ③·显式菜单优先于岗位默认（负控）**：建号时同时给岗位与 `workerPages` ⇒ 落库的是**显式集合**（岗位默认被覆盖），且覆盖仍受 3 项上限约束。执行点 = WorkerAdminServiceTest::explicitPagesWinOverThePositionDefaults / perWorkerOverrideStillWinsButIsCapped
+数据: 🔴 **判据 ④·首屏上限 3 项，边界两侧都钉**：正好 3 项 ⇒ 通过；第 4 项 ⇒ 422 具名拒错（说清「最多 3 项」+「你填了 4 项」+ 列出这 4 项）且**零写入**。执行点 = WorkerPagesTest::pageCapIsThreeAndTheFourthIsRejectedByName / WorkerAdminServiceTest::moreThanThePageCapIsRejectedByName
+数据: 🔴 **判据 ⑤·改岗位 ⇒ 菜单按新岗位重新带出**（岗位是源；`PUT /api/admin/workers/{id}/position` 两列一起显式 set）：仓管 ⇒ 入库+补打+库存修正；清岗位 ⇒ 回到未收窄（全部页面）。执行点 = WorkerAdminServiceTest::updateWorkerPositionReDerivesTheMenu / clearingThePositionReturnsToAllPages / AdminWorkerControllerTest::updateWorkerPositionReturnsTheDerivedMenu
+数据: 🔴 **判据 ⑥·存量数据不回退**：旧键集（无 `inbound`/`reprint`）读面原样下发、**不**被默认集合反向放宽（不做隐式补齐）、未知/已撤键照旧裁掉且不抛异常；车位工（收窄到报工+计件）在工人工作台上**取不到**「拍照入库 / 补打入库标签」两个入口。执行点 = WorkerPagesTest::legacyStoredSetsKeepWorkingAndAreNotWidened / frontend/bmini-app/tests/worker-home-page.test.tsx::「车位工看不见」
+数据: 🔴 **红证（注入式，实跑）**：① 把 `仓管` 从 `positionDefaults()` 删掉 ⇒ 判据 ② 红（`containsExactlyInAnyOrderElementsOf(positions())` 具名报缺）；② 把 `validateRestriction` 末尾的 `MAX_PAGES_PER_WORKER` 检查摘掉 ⇒ 判据 ④ 红（第 4 项静默通过）。两次注入各自单变量、恢复即绿。
+数据: **边界（照实登记，§19.1）**：① `order`（我的活）**仍是「键已登记、面待建」**（issue #6764 §6.2 待裁定）—— 判据 ① 的「双向」对本键是**具名白名单**，不是「每键都有面」；② 存量工人**不重置** `worker_pages`（and 不做迁移回填）：没有岗位的存量档案行为与今天一字不差；③ 岗位不是权限（不写 `users.permissions`、不进 `user_roles`，授权判据仍是 `/api/worker/**` 403）；④ 本批**未**改商家后台配置面板（岗位下拉的读面 = `GET /api/admin/worker-pages` 的 `positions` / `position_defaults`，面板改造另单）。
+跳过: [backend-contract] 闭词表 / 岗位映射 / 写侧上限是**确定性判据**（Java 单测 + 端侧渲染），由 backend/admin-api/src/test 的 WorkerPagesTest / WorkerAdminServiceTest / AdminWorkerControllerTest 与 frontend/bmini-app/tests/worker-home-page.test.tsx 验证，非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-11-03 新增（issue #8337；用户 2026-11-01 逐字「通常每个工序或者每个工人只能操作 1-3 个菜单，根据工人岗位来定菜单的」）。病 = ① 工人档案菜单逐人自由勾选、与企业里岗位无关；② 拍照入库 / 补打入库标签**无页面键、恒显示**（任何岗位都看得见）；③ 默认 = 全开（8 项）。修 = ① `WorkerPages` 新增 `INBOUND` / `REPRINT` 键（进 ALL + 默认集合，存量「未收窄」工人零变化）；② 新增岗位闭词表（裁剪/车位/仓管/发货）+ `positionDefaults()` 映射 + `defaultPagesFor()`（未设/未知岗位 ⇒ 回落全部默认页，fail-open）；③ `MAX_PAGES_PER_WORKER = 3` 落在写侧 `validateRestriction`（超出 ⇒ 具名 422：上限 / 你填了几项 / 这四项）；④ `WorkerAdminService.createWorker(…, workerPosition)` 建号按岗位带出默认菜单（显式 `workerPages` 优先）+ `updateWorkerPosition`（改岗位重带菜单、清岗位回到未收窄）；岗位落 `users.position`（纯展示字段，**零迁移**）；⑤ 闭词表/岗位/上限经 `GET /api/admin/worker-pages` 下发（配置面唯一来源）；⑥ bmini 工人工作台按 `inbound` / `reprint` 门控两个入口（此前 `ALWAYS_VISIBLE`），`/w/` 侧只镜像闭词表。取号 **MC-158**：现取 `origin/main` 的 `.github/cases/claims/` 最大 = MC-156、两个 open PR（#8561 / #8563）逐个核其 heads 的 claim（MC-155 / MC-156）⇒ MC-157 起安全，按派单口径自 MC-158 起取（main 随后被 #8563 占 MC-157，选 158 因此是对的），并同 PR 加 claim `.github/cases/claims/8568-MC-158.json`。🔴 **存量口径裁定（2026-11-03，集成侧明确否决回填迁移）**：不做 `V206` 回填 —— 理由 ① 把两个键追加回**所有**收窄集会**反向打穿判据 ③**（车位工重新看得见入库/补打）；② 靠「他以前看得见 ⇒ 他大概是仓管」猜岗位 = 第二份会漂的真值。现行口径 = 「未收窄（NULL）= 零回退（`defaultPages()` 已含两键）+ 收窄集 = 真值（缺键即隐藏）+ 改岗位按新岗位重带」；残余面 = 收窄只有管理员显式设过才发生，处置是**两次点击**（设岗位「仓管」自带三项），不是数据损坏。该裁定由**类级守卫**钉住：`tests/unit_ci_workflows/test_worker_pages_no_legacy_backfill.py`（迁移/服务层出现「对存量 worker_pages 非空且缺键者追加键」即红；白名单为空；红证实跑：塞一个 `V206__tmp_backfill_probe.sql` ⇒ **2 failed** 并具名报出该文件与该 UPDATE 语句；删掉 ⇒ 2 passed）。 ｜ tags: backend-contract, worker, page-keys, position, single-source, fail-open, red-proof
+
+### MC-162. H5 输入面字体族跟随全局 + 占位符收口共享层（内层原生控件 inherit / 裸 font-family 只在字体定义处 / 例外台账只许缩短） 🔵
+```
+你: 商家在手机浏览器里打开后台（登录 / 表单 / 报工 / 入库 / 售后 / 坐席）：输入框里打字与占位提示，字体应当与这一页其它文字一致，不该忽然变成另一种字体。
+数据: 🔴 **判据 ①·内层原生控件继承字体族**：共享层 `frontend/bmini-app/src/styles/input-center.scss` 必须给 `.weui-input` 与 `.taro-textarea` **两个**内层选择器都写 `font-family: inherit`，`.taro-textarea` 另写 `font-size: inherit`（UA 默认 13.33px monospace）。执行点 = frontend/bmini-app/tests/input-typography-guard.test.ts::inheritProblems。红证：删掉任一条声明 ⇒ 红并具名那个内层控件
+数据: 🔴 **判据 ②·裸的 font-family 收口**：全 app 的 `font-family: <具体字体>` 只许出现在**字体定义处**（`src/app.scss` 的 `page, body`）或台账 frontend/bmini-app/tests/input-font-ledger.json；**未登记即红**、**死条目即红**（只许缩短）、**条数现取**（同文件多一处就红）。执行点 = 同文件::bareFontFamilyProblems。红证：往任一页面 scss 加 `font-family: Arial` ⇒ 红并具名文件与声明
+数据: 🔴 **判据 ③·占位符唯一来源**：`::placeholder` 只许出现在共享层；两个内层选择器同色 `$text-secondary`（与 issue #6476 的输入条同 token）；占位符**不写** `font-size`（继承控件自身，避免第二个口径）。执行点 = 同文件::placeholderProblems。红证：往页面 scss 加 `&::placeholder { color: #999 }` ⇒ 红并具名文件
+数据: 🔴 **判据 ④·射程完整**：`src` 的 `.tsx` 里不许裸写原生 `<input>` / `<textarea>`（它们拿不到内层 class ⇒ 共享层规则一条都不生效）；同时反空跑：真扫到 `<Textarea>` 面。执行点 = 同文件::rawControlProblems。红证：注入 `<input className='x'/>` ⇒ 红并具名文件
+数据: 🔴 **反空跑 / 接线**：共享层必须被 `src/app.scss` 真的 `@use` 引入（写在文件里但没接线 ⇒ 判据空转）；台账非空（空台账 fail-closed）。红证：删掉 `@use './styles/input-center.scss'` ⇒ 红
+数据: 🔴 **共享层只许 inherit**：共享层给内层写具体字体族 / 字号 ⇒ 红（那是「顺手改了全站输入面视觉」，本单的口径是**观感逐字不变**）。红证：把 `inherit` 换成 `-apple-system, …` ⇒ 红
+数据: 🔴 **红证总表（注入式，实跑）**：在 `frontend/bmini-app` 下执行 `npx jest input-typography-guard` ⇒ 15 passed / 0 failed；11 条内存注入各自报出**具名**对象（删 inherit / 改具体字体 / 摘 `@use` / 页面加裸字体族 / 摘台账例外 / 同值追加 / 页面加占位符 / 改占位符色 / 给占位符加字号 / 注入原生 `<input>` / 清空台账）。
+跳过: [frontend-contract] 纯静态形态守卫（jest + fs 读 scss / tsx，零 DOM 渲染、零网络、零 LLM）由 frontend/bmini-app/tests/input-typography-guard.test.ts 验证，不进入 agent-eval 冒烟
+```
+溯源: 2026-11-03 新增（issue #6480）。取号：`python3 scripts/next_case_id.py MC` 现取返回历史空档 **MC-099** —— 按裁定**刻意空档不回填**；当时 main 最大 **MC-157**、**MC-158** 已被在飞 PR #8568 的 claim（`8568-MC-158.json`）占用 ⇒ 取 **MC-160**（并先 push claim `8574-MC-160.json`）。病（issue #6480 实测，真栈 + 真 Chromium）：登录页内层 `input.weui-input` 的 `font-family` = **Arial**（浏览器默认）、输入条内层 `textarea.taro-textarea` = **monospace** + 13.33px、两者 `::placeholder` = **rgb(117,117,117)**（默认灰）；全 app 修前只有 2 处 `font-family`、1 处 `::placeholder`。修 = **一处收口**到共享层 `frontend/bmini-app/src/styles/input-center.scss`：内层两控件 `font-family: inherit`、textarea 另 `font-size: inherit`、占位符色 `$text-secondary`（唯一来源、字号继承控件自身）；同时删掉 `MessageInput.scss` 里重复的那三条（值不变，删的是第二份口径）。覆盖：H5 下 **39 × `<Input>` + 2 × `<Textarea>` = 41 处**全部渲染成这两个内层控件 ⇒ 一条共享规则全罩住；小程序端这两个选择器一个元素都匹配不到 ⇒ 零影响。**有意不改并登记**：`src/pages/auth/login/index.scss` 的 `Menlo, Consolas, monospace`（登录诊断面板的原始登录态行，等宽是为逐字符核对）进台账；`src/app.scss` 的 `page, body` 不追加字体栈（加了就会改变全站观感，那不在本单射程）。**未做（如实登记）**：C 端 `frontend/mini-app` 同一根因（现取 `font-family` 0 处、`MessageInput.scss` 无内层 `.taro-textarea`）本轮未改，另开承接单；运行期 `getComputedStyle` 逐面读数未跑（派单口径不跑浏览器腿）。 ｜ tags: bmini, h5, input, typography, single-source, red-proof
+
+### MC-163. 数字输入精度面（issue #8004）：涉钱 / 涉数量格不许再用 `type="number"`（中间态 `12.` 与千分位 `1,234.56` 会被浏览器吞掉）—— 共用 `DecimalInput` 一处解析/校验/话术 + 类级台账守卫 🔵
+```
+你: issue #8004（施工单口径）：存量 `<input type="number">` 在**涉钱 / 涉数量**面会吞精度（中文输入法 / 千分位 / 尾随小数点下有已知丢值行为）。这类输入一旦丢值，商家会按错价下单 —— 涉钱面吞一次就是钱错了
+期望: direct_reply
+数据: 🔴 **判据 1·涉钱面零 `type="number"`（具名，未迁即红）**：11 个涉钱字段 + 9 个涉数量字段按**锚点**（`data-testid` / `id` / `aria-label` 的唯一片段）定位它的 JSX 开标签 —— 涉钱面**必须**是共享原语 `<DecimalInput>` 且不带 `type="number"`；未迁 / 迁回 / 换成普通 `<Input>` / 锚点被改名（判据失明）**各自判红并点名**。涉数量面允许保留各页既有的精确口径（0.1 米粒度 / 正整数 / 库存上限），但控件必须是 **text 形态**（`type="text"` + `inputMode`）。执行点 = frontend/admin-web/tests/unit/money-input-guard.test.ts::份 '判据 ①…'（真语料零违规 + 4 条注入式红证）
+数据: 🔴 **判据 2·精度不丢（本单核心，逐值钉死）**：`12.345` ⇒ `invalid: too-many-decimals`（**拒绝，不许静默四舍五入成 12.35 / 截断成 12.34**）；`0.10` ⇒ 0.1；`1,234.56` ⇒ 1234.56（千分位接受并去掉）；尾随小数点 `12.` ⇒ 打字中是 `draft`（原样留在框里、不回调）、失焦收尾成 12；`.5` / `0` / `12.30` 各有确定读法。执行点 = frontend/admin-web/tests/unit/lib/decimal-input.test.ts::判据 ② 组
+数据: 🔴 **判据 3·解析失败必须出声（不许静默变 0 / 变 NaN 后提交）**：四态 `empty` / `draft` / `invalid` / `ok` 分清（`-` / `.` 是打字中间态，不是错；空串是「还没填」，不是 0）⇒ 非法时框下出现 `role="alert"` 的**具名话术**、`onChange` **一次都不回调**、`onValidityChange(false)`；**接线判据**：真页面（退款弹窗）敲 `12.345` ⇒ 话术出现 + 「确定」`disabled`，改成 `12.5` ⇒ 可提交且回调精确值。执行点 = frontend/admin-web/tests/unit/components/DecimalInput.test.tsx::契约 ② 组 + 末条接线判据
+数据: 🔴 **判据 4·负数 / 零 / 超上限按业务口径拒绝**：`min = 0` 拒负数（below-min）；`min = 0.01` 的格（退款金额 / 财务金额）拒零；`max` 判上限，**不传就不判**（涉钱上限不自造）；五种原因各有具名话术（含口径名与边界数字，最短一条是「请填写退款金额」）。执行点 = decimal-input.test.ts::判据 ③/④ 两组 + DecimalInput.test.tsx::负数与零两条
+数据: 🔴 **判据 5·类级台账双向相等（未登记即红 / 虚报即红）**：现取只剩 **4** 处 `type="number"`（账期天数 ×2 / 批量新建仓位编号 ×2），每处必须在本台账里写明「非金额非数量 + 值域是整数 + 无 `Number()` 往返」；台账与现取**逐文件条数相等**、条数变化也判红（只许缩短）。执行点 = money-input-guard.test.ts::判据 ② 组 + frontend/admin-web/tests/unit/lib/number-input-ledger.ts
+数据: 🔴 **判据 6·负控（判据不许变成假红机器）**：`type="text"` / `inputMode="decimal"` / 注释里的 `type="number"` 都**不算**命中；`suppliers/page.tsx` 的账期天数**不被**当成涉钱面；扫描面非空自证（≥80 源文件 / ≥200 JSX 开标签）。执行点 = money-input-guard.test.ts::判据 ③ 组 + 负控组
+数据: **红证（注入式，全部实跑）**：① 把退款金额改回 `type="number"` ⇒ 判据 1 具名报「仍是 type=number」；② 换成普通 `<Input>`（不带 number）⇒ 判据 1 报「不是共享原语」；③ 改掉锚点 ⇒ 判据 1 报「锚点找不到」；④ 台账删一行 ⇒ unregistered / 加一行 ⇒ stale；⑤ 摘掉「非法 ⇒ 出声」（`setError` 分支）⇒ 判据 3 的 `role="alert"` 与 `onValidityChange(false)` 断言必红。
+数据: **边界（照实登记，§19.1）**：① 扫描器 = 剥注释 + JSX 开标签配平 + 字面量 `type=` 判定，**不做 AST、不追数据流** ⇒ 经变量 / `{...props}` 传 `type` 的形态不在射程；② 涉数量面**有意不接** `DecimalInput` 的校验/话术（各页已有精确口径与话术：0.1 米粒度 / 正整数 / 1~999 容量），本轮只去掉 `type="number"` 并补 `inputMode` ⇒ **不产生第二套话术**；③ 既有 `NumberInput`（issue #5198/#5210，number 口径，供算料参数 / 工艺字段）**未动**；④ 非金额非数量的 4 处仍留 `type="number"`（整数口数字段，见台账与理由）；⑤ 不改任何门禁的通过条件、不新增豁免。
+前置: 本用例是 [backend-contract]：纯前端确定性判据（jsdom 渲染 + 源码结构扫描 + 台账双向对账），零网络、零 DB、不进 agent-eval 冒烟。前置 = frontend/admin-web/src/lib/decimal-input.ts（解析/校验/话术单一口径）与 frontend/admin-web/src/components/ui/DecimalInput.tsx（唯一原语）在场，11 个涉钱站点已迁。
+跳过: [backend-contract] 纯前端确定性判据（组件行为 + 生产源码结构扫描 + 台账双向对账），由 frontend/admin-web/tests/unit/money-input-guard.test.ts、tests/unit/lib/decimal-input.test.ts、tests/unit/components/DecimalInput.test.tsx 验证；零 LLM 环节，不进入 agent-eval 冒烟
+```
+溯源: 2026-11-03 新增（issue #8004）。病 = 存量 `<input type="number">` 在涉钱 / 涉数量面吞精度（浏览器对 `12.` / `0.` / `1,234.56` 的 `el.value` 会失真），而这类缺陷**不会让任何既有判据变红**。修 = ① 抽**一处**解析/校验/话术（frontend/admin-web/src/lib/decimal-input.ts）+ **一个**原语（frontend/admin-web/src/components/ui/DecimalInput.tsx：text + inputMode=decimal + 字符串草稿 + 只回调合法值 + 具名话术 + 离线合法性）；② 11 个涉钱站点迁该原语并**把提交按钮绑到 `hasInvalid`**（否则「敲错 → 保存」会按上一个有效值提交 = 静默改价）；③ 9 个涉数量站点只去掉 `type="number"` 并补 `inputMode`（保留各页既有的 0.1 米粒度 / 正整数口径，不造第二套话术）；④ 类级元守卫 = money-input-guard.test.ts + number-input-ledger.ts（未登记即红、台账只许缩短）。取号 = MC-162（`python3 scripts/next_case_id.py MC` 现取返回历史空档 MC-099，按裁定**不回填**；**五轮让号记实**：MC-156 ⇒ open PR #8560；MC-157 ⇒ PR #8563；MC-158 ⇒ 在飞 #8568/#8571；MC-159/MC-160 ⇒ 在飞 PR #8574（其合并后 main 落 MC-160）；MC-161 ⇒ 又被 #8571 同时 claim（CI 跨在飞 PR 判据，issue #6245） ⇒ 终态取**当前全部 claim 的最大号 + 1 = MC-162**。`next_case_id.py` 按设计看不到未 push 的 claim，这就是它连续给出被占号的机制）；MC-160 亦被 #8574 占 ⇒ 终态 MC-161。`next_case_id.py` 按设计**看不到未 push 的本地 claim**，这就是它连续给出已被占用的号的原因）。**未接 `max` 的如实登记**：现有涉钱站点没有一个有既有业务上限口径（授信额度 / 退款额 / 优惠额都没有），涉钱面**不自造**上限 ⇒ `max` 能力由判据 4 的单元断言钉住，等业务给口径再接。 ｜ tags: backend-contract, frontend, money-surface, input-precision, fail-closed, ledger, red-proof
+
+### MC-180. RBAC 判据 8 认得命令式权限校验（两种形态同一个提取函数 / 台账 26 → 24 且上限只许下降 / 注释与无关 helper 不算校验 / 角色级与工人身份级闸有意不认） 🔵
+```
+你: 安全审计看 RBAC 台账：图片识别的两个端点被登记成「没有任何权限校验」，可它们的代码里明明调用了 requirePermission 做按 target 的动态校验 —— 台账到底在量什么？
+数据: 🔴 **判据 ①（负控）**：注解式端点仍被认出 —— `@RequirePermission("order:list")` ⇒ 生效码 `order:list` 且 `checked` 为真、命令式码集合为空。执行点 = tests/unit_ci_workflows/test_rbac_imperative_permission.py::test_annotation_form_is_still_recognized
+数据: 🔴 **判据 ②（两种形态同一套提取）**：命令式端点 `requirePermission("order:refund")` ⇒ `checked` 为真且码 = `order:refund`；同一字面量在两种写法下逐字相等，打错一个字母则不等（正反例）。执行点 = 同文件::test_imperative_form_is_recognized / ::test_both_forms_extract_the_same_code_literal_identically / ::test_annotation_and_imperative_forms_land_in_the_same_normalized_value
+数据: 🔴 **判据 ③（混合归因 + 三类假阳负控）**：同一文件里注解 / 命令式 / 都没有 / 注释里提到 / 无关 helper / 另一个端点的 `if` 块 ⇒ 逐端点归因正确，后四类**不得**被当成校验。执行点 = 同文件::test_mixed_file_attributes_each_endpoint_separately / ::test_real_repo_endpoints_are_attributed_by_form
+数据: 🔴 **判据 ④（台账真读得出来）**：把真实命令式校验从 ImageRecognitionController 摘掉 ⇒ 判据 8 当场报这两条端点「未登记」（台账条目已删、上限已降）——证明台账不是写死的。执行点 = 同文件::test_ledger_is_derived_not_hardcoded
+数据: 🔴 **判据 ⑤（上限真的收紧了）**：台账现值 24（原 26）；命令式识别一旦失效 ⇒ 需回涨 2 条 ⇒ 现上限 24 报「只许缩短」，旧上限 26 **兜不住**（该回归会静默通过）。执行点 = 同文件::test_red_proof_ceiling_is_pinned_to_the_lowered_reading / ::test_red_proof_without_imperative_recognition_the_check_disappears
+数据: 🔴 **判据 ⑥（第三形态有意不认）**：**角色级**（`roles.contains("super_admin")`，真实载体 `RegistrationController.checkSuperAdminPermission()`）与**工人身份 / 页面级**（`requireWorker` / `requireWorkerPage`）闸**不得**被算成「权限码校验」；实盘 `/api/super-admin/**` 仍须逐条登记在 `UNANNOTATED_ENDPOINTS`（认了 = 那批端点静默退出台账 = 放宽）。执行点 = 同文件::test_role_and_identity_checks_are_not_counted_as_permission_checks
+数据: 🔴 **红证（注入式，实跑）**：① 把 `_IMPERATIVE_ANCHOR_RE` 换成永不匹配的模式 ⇒ 命令式端点 `checked` 变假（判据 ② 必红），11 条判据仍全绿说明只有那一条依赖它；② 摘掉真实源码里 `permissionInterceptor.requirePermission(permission);` 一行 ⇒ 判据 8 报两条未登记；③ 把上限改回 26 ⇒ 判据 ⑤ 红（`LEDGER_CEILINGS` 断言的现值）。
+跳过: [backend-contract] RBAC 单一源的纯静态解析判据（Python 读 Java 源码文本 + 内存注入，零网络、零真实 LLM），由 tests/unit_ci_workflows/test_rbac_imperative_permission.py 验证，不进入 agent-eval 冒烟
+```
+溯源: 2026-11-03 新增（issue #6378，来源 #6367 包 P2 的显式放宽）。取号：`python3 scripts/next_case_id.py MC` 现取（main 已占 001-098/100-144/146-153/155-157/160-161/170）返回**历史空档 MC-145** —— 按裁定**刻意空档不回填**；本轮撞号带密集（当晚同类撞号 8 次）⇒ 按派单口径**直接取 MC-180** 跳过一段（先 push claim `<PR>-MC-180.json`，再改码）。落码 = ① `backend/ai-agent-service/tests/tool_http_attribution.py`：`_REQUIRE_PERMISSION_RE` 收成 `_PERMISSION_CODE_RE`（注解式 + 命令式共用）＋ `permission_codes(text, form)` 唯一提取口 ＋ `_method_definitions` / `_imperative_check`（同文件校验载体传递闭包、深度上限 3、控制流与匿名类不算载体）＋ `JavaEndpoint.imperative_permissions` / `imperative_check` / `checked`；② `tests/unit_ci_workflows/test_agent_permission_parity.py` 判据 8 取值口改 `ep.checked`，删除图片识别两条台账条目（26 → 24）；③ 上限同批下调：`LEDGER_CEILINGS.UNANNOTATED_ENDPOINTS` 26 → 24、`ADMIN_SCOPE_UNANNOTATED_CEILING` 14 → 12、`rbac/manifest.json` + 重新生成的 `rbac/readings.json`、`admin_role_read_surface_ledger.json` 对照读数 14 → 12；④ 判据 `tests/unit_ci_workflows/test_rbac_imperative_permission.py`（11 条，含注入式红证、上限承重证明、第三形态负控）；⑤ 文档 `docs/wiki/RBAC.md` 两处口径同步。**第三种形态结论（判据 ⑥ 钉住）**：仓内另有 ① 角色级闸（`RegistrationController.checkSuperAdminPermission()` 的 `roles.contains("super_admin")`，守 `/api/super-admin/**`）与 ② 工人身份 / 页面级闸（`requireWorker(...)` / `requireWorkerPage(...)`，守 `/api/worker/**`）—— 两者**都不是权限码校验**，**有意不认**：认了会让这两族端点静默退出台账（那是放宽）；它们继续逐条登记在 `UNANNOTATED_ENDPOINTS` 并带理由。 ｜ tags: rbac, permission, imperative-check, single-source, ledger-only-shrinks, red-proof
 
 ## 商家入驻域（7 case）
 
@@ -14827,8 +14887,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：1003（活跃 153，跳过 850）
-- tier 分布：smoke 15 / normal 926 / adversarial 33
+- 用例总数：1007（活跃 153，跳过 854）
+- tier 分布：smoke 15 / normal 930 / adversarial 33
 - 售后域：16
 - Agent 核心域：13
 - API 层域：21
@@ -14844,7 +14904,7 @@
 - 人事域：13
 - 知识问答域：9
 - 客户主数据迁移域：10
-- 杂项域：205
+- 杂项域：209
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：76
@@ -15116,6 +15176,10 @@
 - MC-161: 「先查后插」的两处 TOCTOU 写面（收款码 / 角色）必须由唯一键兜底 + 幂等收敛：摘掉唯一键或退回裸 insert 必红（issue #7255）
 - MC-160: H5 输入面字体族跟随全局 + 占位符收口共享层（内层原生控件 inherit / 裸 font-family 只在字体定义处 / 例外台账只许缩短）
 - MC-170: 门禁触发面必须覆盖本腿断言真读的跨包面（issue #6684）：admin-web 腿的跨包断言真读 frontend/worker-h5/src，而门控只看 frontend/admin-web ⇒ 纯 worker-h5 PR 静默跳过该守卫（假绿）
+- MC-158: 工人端菜单以岗位为源：键集补 inbound/reprint（两张已有页面）+ 岗位→默认菜单映射 + 首屏最多 3 项的具名拒错（issue #8337）
+- MC-162: H5 输入面字体族跟随全局 + 占位符收口共享层（内层原生控件 inherit / 裸 font-family 只在字体定义处 / 例外台账只许缩短）
+- MC-163: 数字输入精度面（issue #8004）：涉钱 / 涉数量格不许再用 `type="number"`（中间态 `12.` 与千分位 `1,234.56` 会被浏览器吞掉）—— 共用 `DecimalInput` 一处解析/校验/话术 + 类级台账守卫
+- MC-180: RBAC 判据 8 认得命令式权限校验（两种形态同一个提取函数 / 台账 26 → 24 且上限只许下降 / 注释与无关 helper 不算校验 / 角色级与工人身份级闸有意不认）
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）

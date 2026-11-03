@@ -36,6 +36,7 @@ import { X, Plus, Trash2, Info } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import Button from '@/components/ui/Button'
+import DecimalInput, { useDecimalValidity } from '@/components/ui/DecimalInput'
 import { orderApi, processingItemApi } from '@/lib/api'
 import { toastRequestError } from '@/lib/api-error'
 import type { Order, OrderContentUpdateItem, ProcessingItem } from '@/types'
@@ -187,6 +188,8 @@ export default function EditOrderContentModal({ open, order, onClose, onSaved }:
   const [installCommunity, setInstallCommunity] = useState('')
   const [discount, setDiscount] = useState('')
   const [actual, setActual] = useState('')
+  /** 涉钱 / 数量格是否都合法：`DecimalInput` 不回调非法值 ⇒ 保存必须一起禁用（否则提交的是上一个有效值） */
+  const { track: trackValidity, hasInvalid } = useDecimalValidity()
   const [lines, setLines] = useState<EditableLine[]>([])
   const [catalog, setCatalog] = useState<ProcessingItem[]>([])
   const [catalogFailed, setCatalogFailed] = useState(false)
@@ -445,10 +448,12 @@ export default function EditOrderContentModal({ open, order, onClose, onSaved }:
                       </label>
                       <label className="text-xs text-neutral-600 col-span-2">
                         数量
+                        {/* issue #8004：整数数量面 —— `type="number"` 会吞中间态；口径与话术仍由本页
+                            `validate()`（「数量不能小于 1」）承担，不另造第二套 */}
                         <input
                           data-testid={`edit-line-quantity-${index}`}
-                          type="number"
-                          min={1}
+                          type="text"
+                          inputMode="numeric"
                           value={line.quantity}
                           onChange={(e) => patchLine(line.key, { quantity: e.target.value })}
                           className={inputClass}
@@ -456,12 +461,13 @@ export default function EditOrderContentModal({ open, order, onClose, onSaved }:
                       </label>
                       <label className="text-xs text-neutral-600 col-span-2">
                         单价（元）
-                        <input
+                        <DecimalInput
                           data-testid={`edit-line-price-${index}`}
-                          type="number"
-                          min={0}
+                          field="单价"
+                          min={0.01}
                           value={line.unitPrice}
-                          onChange={(e) => patchLine(line.key, { unitPrice: e.target.value })}
+                          onChange={(unitPrice) => patchLine(line.key, { unitPrice })}
+                          onValidityChange={trackValidity}
                           className={inputClass}
                         />
                       </label>
@@ -572,23 +578,25 @@ export default function EditOrderContentModal({ open, order, onClose, onSaved }:
               <div className="grid grid-cols-3 gap-3">
                 <label className="text-sm text-neutral-700">
                   优惠金额（元）
-                  <input
+                  <DecimalInput
                     data-testid="edit-discount"
-                    type="number"
+                    field="优惠金额"
                     min={0}
                     value={discount}
-                    onChange={(e) => setDiscount(e.target.value)}
+                    onChange={setDiscount}
+                    onValidityChange={trackValidity}
                     className={inputClass}
                   />
                 </label>
                 <label className="text-sm text-neutral-700">
                   实收款（元）
-                  <input
+                  <DecimalInput
                     data-testid="edit-actual"
-                    type="number"
+                    field="实收款"
                     min={0}
                     value={actual}
-                    onChange={(e) => setActual(e.target.value)}
+                    onChange={setActual}
+                    onValidityChange={trackValidity}
                     className={inputClass}
                   />
                 </label>
@@ -614,7 +622,7 @@ export default function EditOrderContentModal({ open, order, onClose, onSaved }:
             <Button variant="secondary" onClick={onClose} disabled={saving}>
               取消
             </Button>
-            <Button data-testid="edit-submit" onClick={handleSubmit} loading={saving}>
+            <Button data-testid="edit-submit" onClick={handleSubmit} loading={saving} disabled={hasInvalid}>
               保存
             </Button>
           </div>

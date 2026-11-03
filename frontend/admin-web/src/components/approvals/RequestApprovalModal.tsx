@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
-import { Button, Input, Modal } from '@/components/ui'
+import { Button, DecimalInput, Input, Modal } from '@/components/ui'
+import { useDecimalValidity } from '@/components/ui/DecimalInput'
 import { loadErrorMessage } from '@/lib/api-error'
 import { approvalApi } from '@/lib/api'
 import type { ApprovalDraft } from '@/lib/approval-request'
@@ -40,6 +41,9 @@ export default function RequestApprovalModal({
   const [reason, setReason] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  /** 审批金额（涉钱）是否合法：`DecimalInput` 不回调非法值 ⇒ 提交必须一起禁用，
+   *  否则「敲错 → 提交」会把金额**整个丢掉**（报文里没有 amount 键）而没人拦 */
+  const { track: trackValidity, hasInvalid } = useDecimalValidity()
 
   // 每次打开都按 draft 重置（不把上一次的对象带过来）
   useEffect(() => {
@@ -96,7 +100,7 @@ export default function RequestApprovalModal({
           <Button variant="secondary" onClick={onClose}>
             取消
           </Button>
-          <Button loading={busy} onClick={() => void submit()} data-testid="approval-request-submit">
+          <Button loading={busy} onClick={() => void submit()} disabled={hasInvalid} data-testid="approval-request-submit">
             提交申请
           </Button>
         </div>
@@ -109,13 +113,14 @@ export default function RequestApprovalModal({
         <div className="rounded bg-neutral-50 px-3 py-2 text-xs text-neutral-600" data-testid="approval-request-target">
           申请对象：<span className="font-mono">{draft?.objectLabel || draft?.objectRef || '—'}</span>
         </div>
-        <Input
+        <DecimalInput
           label="审批金额"
+          field="审批金额"
           data-testid="approval-request-amount"
           value={amount}
-          onChange={(e) => setAmount(e.target.value)}
+          onChange={setAmount}
+          onValidityChange={trackValidity}
           placeholder="留空也可提交"
-          type="number"
         />
         <p className="text-xs text-neutral-500" data-testid="approval-request-amount-hint">
           {draft?.amountHint}

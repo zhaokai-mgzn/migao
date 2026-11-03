@@ -72,9 +72,17 @@ def _norm_path(path: str) -> str:
     return path.rstrip("/")
 
 
-#: `@RequirePermission("x")` / `@RequirePermission(value = "x")` —— 生效权限码的唯一来源。
-_REQUIRE_PERMISSION_RE = re.compile(
-    r"@RequirePermission\s*\(\s*(?:value\s*=\s*)?[\"']([^\"']+)[\"']"
+#: 权限校验的**两种形态**（issue #6378）：注解式 `@RequirePermission("x")` 与命令式
+#: `permissionInterceptor.requirePermission("x")`（issue #4148 的既有机制，与 AOP 拦截**同一份**判定）。
+FORM_ANNOTATION = "annotation"
+FORM_IMPERATIVE = "imperative"
+
+#: 权限码的**唯一**提取口：两种形态共用这一个正则 + 同一个规范化函数（`permission_codes`）。
+#: 🔴 各写一套必然漂 —— 同一把码在两种写法下被解析成两个值，而两边都"看起来对"
+#: （这正是 issue #6378 要治的：判据 8 只认注解，命令式校验被当成「没有校验」）。
+_PERMISSION_CODE_RE = re.compile(
+    r"(?P<form>@RequirePermission|(?<![A-Za-z0-9_@$])requirePermission)"
+    r"\s*\(\s*(?:value\s*=\s*)?[\"'](?P<code>[^\"']+)[\"']"
 )
 _CLASS_DECL_RE = re.compile(r"\bclass\s+\w+")
 
@@ -115,6 +123,21 @@ def _annotations_before(src: str, idx: int) -> str:
     return window[cut + 1:]
 
 
+def permission_codes(text: str, form: str | None = None) -> list[str]:
+    """从**已剥注释**的 Java 文本里取权限码（`form` 缺省 = 两种形态都要）。
+
+    唯一的规范化实现：注解式与命令式**走同一段代码**，所以同一个码字面量在两种写法下
+    必然得到**逐字相同**的返回值（判据见 `tests/unit_ci_workflows/test_rbac_imperative_permission.py`）。
+    """
+    assert form in (None, FORM_ANNOTATION, FORM_IMPERATIVE), f"未知的权限校验形态：{form!r}"
+    out: list[str] = []
+    for m in _PERMISSION_CODE_RE.finditer(text):
+        hit_form = FORM_ANNOTATION if m.group("form").startswith("@") else FORM_IMPERATIVE
+        if form is None or hit_form == form:
+            out.append(m.group("code").strip())
+    return out
+
+
 def _class_permission(src: str) -> str | None:
     """controller 的**类级** `@RequirePermission`（= 第一个类声明的注解区里的那一个）。
 
@@ -124,7 +147,7 @@ def _class_permission(src: str) -> str | None:
     m = _CLASS_DECL_RE.search(src)
     if not m:
         return None
-    hits = _REQUIRE_PERMISSION_RE.findall(_strip_java_comments(src[: m.start()]))
+    hits = permission_codes(_strip_java_comments(src[: m.start()]), form=FORM_ANNOTATION)
     return hits[-1] if hits else None
 
 
@@ -270,6 +293,76 @@ def _balanced_block(src: str, open_idx: int) -> str:
     return src[open_idx:]
 
 
+#: 命令式校验的**唯一锚**（= `PermissionInterceptor.requirePermission(String)`，issue #4148 的既有机制）。
+_IMPERATIVE_ANCHOR_RE = re.compile(r"(?<![A-Za-z0-9_@$])requirePermission\s*\(")
+
+#: 跟着「同文件内的校验载体」往下的深度上限（helper → helper 一层够用；上限只为防递归）。
+_IMPERATIVE_DEPTH = 3
+
+#: 形如 `name(...) {` 但**不是方法定义**的 Java 关键字（控制流 / 匿名类）—— 不登记成载体。
+#: 🔴 不排掉它们会**假阳**：`if (...) { permissionInterceptor.requirePermission(...) }` 会让
+#: 全文件每个带 `if (` 的端点都被读成「有校验」（本仓 `AgentOrderController` 正是这个形状）。
+_NOT_A_DEFINITION = frozenset(
+    {"if", "for", "while", "switch", "catch", "synchronized", "try", "do", "else", "return",
+     "new", "throw", "assert", "case", "yield"}
+)
+
+
+def _method_definitions(masked: str) -> dict[str, int]:
+    """本文件里的方法定义 → 方法体 `{` 的下标（`masked` = 已剥注释的等长掩码串）。
+
+    只认**参数里不含嵌套括号**的签名。认不出的签名**不猜**：那个方法不算校验载体
+    ⇒ 端点仍按「没有任何校验」处理（保守方向 = 宁可判红，也不静默放行）。
+    """
+    out: dict[str, int] = {}
+    for m in re.finditer(r"\b([A-Za-z_]\w*)\s*\([^()]*\)\s*(?:throws\b[^{]*)?\{", masked):
+        name = m.group(1)
+        if name in _NOT_A_DEFINITION:
+            continue
+        if re.search(r"\bnew\s+$", masked[max(0, m.start() - 16) : m.start()]):
+            continue  # 匿名类 `new Foo(...) { ... }`，不是命名方法
+        out.setdefault(name, m.end() - 1)
+    return out
+
+
+def _imperative_check(
+    masked: str,
+    body: str,
+    defs: dict[str, int],
+    bodies: dict[str, str],
+    depth: int = _IMPERATIVE_DEPTH,
+) -> tuple[frozenset[str], bool]:
+    """方法体（含**同文件内**校验载体的传递闭包）里的命令式校验 = (码字面量集, 是否有校验)。
+
+    两件事**分开报**，因为它们能判到的东西不同：
+    · 码：`requirePermission("order:refund")` 这种**字面量实参**才判得出（同一个 `permission_codes`）；
+    · 有校验：`requirePermission(permission)` 这种动态实参判不出码，但「这里确实做了一次校验」
+      是能判的（`checked=True`）。把两者揉成一个值 = 猜 —— 码判不出就如实记「校验存在、码不可静态判定」。
+
+    载体识别（issue #6378 的真实形态）：端点体调用本文件的私有判定
+    （`ImageRecognitionController.requireTargetPermission(targetType)` 内部才是
+    `permissionInterceptor.requirePermission(permission)`）⇒ 只扫端点体本体会把它读成「没有校验」，
+    台账因此虚高两条。顺带一条负控：**注释里的提法不算**（`masked` 已剥注释）。
+    """
+    codes: set[str] = set()
+    checked = bool(_IMPERATIVE_ANCHOR_RE.search(body))
+    if checked:
+        codes |= set(permission_codes(body, form=FORM_IMPERATIVE))
+    if depth <= 0:
+        return frozenset(codes), checked
+    for name in {m.group(1) for m in re.finditer(r"(?<![\w.])([A-Za-z_]\w*)\s*\(", body)}:
+        brace = defs.get(name)
+        if brace is None or name == "requirePermission":
+            continue
+        sub = bodies.get(name)
+        if sub is None:
+            sub = bodies[name] = _balanced_block(masked, brace)
+        sub_codes, sub_checked = _imperative_check(masked, sub, defs, bodies, depth - 1)
+        codes |= set(sub_codes)
+        checked = checked or sub_checked
+    return frozenset(codes), checked
+
+
 _NON_POJO_TYPES = frozenset(
     {
         "String", "Integer", "Long", "Boolean", "Double", "Float", "BigDecimal",
@@ -294,6 +387,9 @@ class JavaEndpoint:
     query_fields: frozenset[str]  # 非注解 POJO 形参（Spring 按 query param 绑定）字段
     class_permission: str | None = None   # 类级 @RequirePermission（无注解 ⇒ None）
     method_permission: str | None = None  # 方法级 @RequirePermission（覆盖类级；无 ⇒ None）
+    # 命令式校验（issue #6378）：方法体（含同文件校验载体的传递闭包）里的 `requirePermission(...)`
+    imperative_permissions: frozenset[str] = frozenset()  # 静态取得到的码字面量（可能为空）
+    imperative_check: bool = False                        # 存在命令式校验（**哪怕码判不出**）
 
     @property
     def permission(self) -> str | None:
@@ -301,8 +397,18 @@ class JavaEndpoint:
 
         与 `PermissionInterceptor` 的解析顺序同口径（`docs/wiki/RBAC.md`
         「方法级注解优先、其次类级」）—— 本属性是权限对账（issue #5246）的唯一取值口。
+        ⚠️ 它**只**反映注解（静态码）；命令式校验见 `checked`（issue #6378）。
         """
         return self.method_permission or self.class_permission
+
+    @property
+    def checked(self) -> bool:
+        """端点**有没有**权限校验（注解式**或**命令式）—— 判据 8 的唯一取值口。
+
+        与 `permission` 分开的理由：命令式校验的码可能是动态实参（`requirePermission(permission)`），
+        静态判不出码，但「做了校验」是能判的。判据要的是「有没有沉默放行」⇒ 用本属性。
+        """
+        return self.permission is not None or self.imperative_check
 
 @lru_cache(maxsize=1)
 def _java_sources() -> dict[str, str]:
@@ -337,6 +443,9 @@ def java_endpoints(
         # `{@code @PostMapping}` ⇒ `/api/admin/**` 无码端点现取 9 → 11，把「只许缩短」的台账顶红）。
         # 与 `_annotations_before` / `_class_permission` 同源：那两处早就剥了，这里此前漏了。
         masked = _strip_java_comments(src)
+        # 命令式校验的载体表（本文件内）；`bodies` 是**惰性**缓存 —— 只有真被调用到的载体才切块。
+        defs = _method_definitions(masked)
+        helper_bodies: dict[str, str] = {}
         cm = _JavaParse._CLASS_MAPPING_RE.search(masked)
         if cm and cm.start() < masked.find("class "):
             class_base = cm.group(1)
@@ -361,7 +470,7 @@ def java_endpoints(
             # 方法级生效码：**映射注解之前**的注解区 + 之后的紧邻注解区里那一个
             # （两种书写顺序都覆盖；方法级覆盖类级 —— 同 `PermissionInterceptor.resolveRequirePermission`）
             ann_region = _annotations_before(src, mm.start()) + ann_head
-            method_permission = (_REQUIRE_PERMISSION_RE.findall(ann_region) or [None])[-1]
+            method_permission = (permission_codes(ann_region, form=FORM_ANNOTATION) or [None])[-1]
             params_src = (
                 sig_head[sig_head.find("(") + 1 : sig_head.rfind(")")]
                 if "(" in sig_head
@@ -408,6 +517,11 @@ def java_endpoints(
                     rf"\b{re.escape(body_var)}\.containsKey\s*\(\s*[\"']([^\"']+)[\"']",
                 ):
                     map_reads |= set(re.findall(pat, body))
+            # 命令式校验（issue #6378）：在**掩码串**上扫（注释里的提法不算校验 —— 本仓大量 javadoc
+            # 逐字写着 `{@link PermissionInterceptor#requirePermission(String)}` 当说明）。
+            imperative_permissions, imperative_check = _imperative_check(
+                masked, _balanced_block(masked, brace), defs, helper_bodies
+            )
             # Spring：方法级 path 一律**相对**类级 base 拼接（不以 "/" 覆盖 base），
             # 但类级 base 缺失时（部分 controller 直接写全路径）方法级即全路径。
             ep_base = dict(
@@ -422,6 +536,8 @@ def java_endpoints(
                 query_fields=frozenset(query_fields),
                 class_permission=class_permission,
                 method_permission=method_permission,
+                imperative_permissions=imperative_permissions,
+                imperative_check=imperative_check,
             )
             for sub in subs or [""]:
                 seg = sub.strip()

@@ -1,9 +1,11 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useDecimalValidity } from '@/components/ui/DecimalInput'
 import { X, AlertTriangle } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import Button from '@/components/ui/Button'
+import DecimalInput from '@/components/ui/DecimalInput'
 import type { OrderBrief } from '@/types'
 
 export interface RefundOrderModalProps {
@@ -24,6 +26,12 @@ const OTHER_KEY = '其它原因'
  */
 export default function RefundOrderModal({ open, onClose, onConfirm, loading, order }: RefundOrderModalProps) {
   const [amountText, setAmountText] = useState<string>('')
+  /**
+   * 退款金额（涉钱）的离线合法性：`DecimalInput` 不回调非法值 ⇒ `amountText` 只会停在
+   * **上一个有效值**（默认 = 实收）—— 只看 `parseFloat` 会把这个旧值当成这次输入提交出去。
+   * 所以「确定」必须同时受 `hasInvalid` 约束。
+   */
+  const { track: trackValidity, hasInvalid } = useDecimalValidity()
   const [selected, setSelected] = useState<string>(PRESET_REASONS[0])
   const [otherText, setOtherText] = useState('')
 
@@ -112,17 +120,21 @@ export default function RefundOrderModal({ open, onClose, onConfirm, loading, or
                 退款金额
               </label>
               <div className="relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400 text-sm">¥</span>
-                <input
+                {/* `top-5` = h-10 输入框的垂直中线（不用 `top-1/2`：下方出现错误话术时容器会长高，¥ 会跟着掉下去） */}
+                <span className="absolute left-3 top-5 -translate-y-1/2 text-neutral-400 text-sm">¥</span>
+                {/* issue #8004：退款金额是**涉钱面** —— `type="number"` 会吞 `12.` 中间态与千分位，
+                    改用共享 `DecimalInput`（text + inputMode=decimal + 只回调合法值 + 具名话术） */}
+                <DecimalInput
                   id="refund-amount"
-                  type="number"
-                  min="0.01"
-                  step="0.01"
+                  data-testid="refund-amount"
+                  field="退款金额"
+                  min={0.01}
                   value={amountText}
-                  onChange={(e) => setAmountText(e.target.value)}
+                  onChange={setAmountText}
+                  onValidityChange={trackValidity}
                   placeholder="请输入退款金额"
                   className={cn(
-                    'w-full pl-7 pr-3 h-10 text-sm rounded border border-neutral-300 bg-white',
+                    'pl-7 pr-3 h-10 text-sm rounded border border-neutral-300 bg-white',
                     'focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15'
                   )}
                 />
@@ -185,7 +197,7 @@ export default function RefundOrderModal({ open, onClose, onConfirm, loading, or
             <Button variant="secondary" onClick={onClose} disabled={loading}>
               取消
             </Button>
-            <Button onClick={handleConfirm} loading={loading} disabled={!amountValid}>
+            <Button onClick={handleConfirm} loading={loading} disabled={!amountValid || hasInvalid}>
               确定
             </Button>
           </div>

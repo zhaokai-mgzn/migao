@@ -4,7 +4,8 @@
 import { useMemo, useRef, useState, useEffect } from 'react'
 import { Plus, Trash2, GripVertical, Check, AlertCircle } from 'lucide-react'
 import { toast } from 'sonner'
-import { Button, NumberInput, Select } from '@/components/ui'
+import { Button, DecimalInput, NumberInput, Select } from '@/components/ui'
+import { useDecimalValidity } from '@/components/ui/DecimalInput'
 import type { ProductColor, ProductSku } from '@/types'
 import { RecognizedBadge } from '@/components/image-recognize/ImageRecognizeButton'
 import { rebuildSkus, nextTempId, DOOR_WIDTH_OPTIONS, doorWidthSelectOptions, normalizeDoorWidth, formatDoorWidth, sameDoorWidth } from '@/lib/sku-utils'
@@ -296,6 +297,10 @@ export default function SkuMatrix({ value, onChange, errors, recognizedFields }:
   const [batchTarget, setBatchTarget] = useState<string>('')
   const [batchPrice, setBatchPrice] = useState('')
 
+  /** 批量单价（涉钱）是否合法：`DecimalInput` 不回调非法值 ⇒ 批量填写必须一起禁用，
+   *  否则「敲错 → 批量填写」会按上一个有效价把整批 SKU 的价格改掉 */
+  const { track: trackValidity, hasInvalid } = useDecimalValidity()
+
   const handleBatchFill = () => {
     if (skus.length === 0) {
       toast.warning('请先完善颜色 / 规格尺寸')
@@ -541,17 +546,19 @@ export default function SkuMatrix({ value, onChange, errors, recognizedFields }:
               />
             </div>
           )}
-          <div className="relative">
-            <input
-              type="number"
+          <div className="relative w-28">
+            {/* issue #8004：批量单价是**涉钱面** —— 共用 `DecimalInput`（`type="number"` 会吞 `12.` 与千分位） */}
+            <DecimalInput
+              data-testid="sku-batch-price"
+              field="价格"
+              min={0}
               placeholder="价格"
-              min="0"
-              step="0.01"
               value={batchPrice}
-              onChange={(e) => setBatchPrice(e.target.value)}
-              className="h-9 w-28 pl-2 pr-8 text-sm rounded border border-neutral-300 bg-white focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
+              onChange={setBatchPrice}
+              onValidityChange={trackValidity}
+              className="pl-2 pr-8"
             />
-            <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-neutral-400">
+            <span className="absolute right-2 top-[18px] -translate-y-1/2 text-xs text-neutral-400">
               元
             </span>
           </div>
@@ -560,6 +567,7 @@ export default function SkuMatrix({ value, onChange, errors, recognizedFields }:
             size="sm"
             variant="secondary"
             onClick={handleBatchFill}
+            disabled={hasInvalid}
           >
             批量填写
           </Button>

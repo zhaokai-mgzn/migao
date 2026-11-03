@@ -538,11 +538,12 @@ export default function WarehouseLocationPanel({
               htmlFor="warehouse-capacity"
               hint={`同一区域统一；改这里会同步 ${form.zoneCode || 'A'} 区所有仓位`}
             >
+              {/* issue #8004：每仓容量是**件数**（整数数量面）—— 去掉 `type="number"`（会吞中间态）；
+                  口径仍由本页 `capacityNumber()`（1~999 整数）承担 */}
               <Input
                 id="warehouse-capacity"
-                type="number"
-                min={1}
-                max={999}
+                type="text"
+                inputMode="numeric"
                 value={form.capacity}
                 disabled={saving}
                 onChange={(e) => setForm((prev) => ({ ...prev, capacity: e.target.value }))}
@@ -640,9 +641,8 @@ export default function WarehouseLocationPanel({
             >
               <Input
                 id="warehouse-batch-capacity"
-                type="number"
-                min={1}
-                max={999}
+                type="text"
+                inputMode="numeric"
                 value={batch.capacity}
                 disabled={batching}
                 onChange={(e) => setBatch((prev) => ({ ...prev, capacity: e.target.value }))}
