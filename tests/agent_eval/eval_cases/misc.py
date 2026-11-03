@@ -2,7 +2,7 @@
 # 本文件由 render_cases.py 生成，勿手改（改了也留不住：下次重渲染会覆盖）
 # 源: cases/*.yml（case-contract 单一源）
 # 重新生成: python3 render_cases.py --cases <dir> --out-eval <包目录> --out-md <md>
-# 域: misc（源: cases/misc.yml，206 条）
+# 域: misc（源: cases/misc.yml，207 条）
 
 from ._schema import Difficulty, EvalCase, Skill
 
@@ -3714,6 +3714,60 @@ _CASE_MC_161 = EvalCase(
     precondition='本用例是 [backend-contract]：前置 = V206 迁移文件在场、`TenantPaymentQrcodeMapper#upsertActive` 与 `RoleMapper#insertIfAbsent` 是两条写面的唯一入口；真库夹具由 `PgCluster` 现起（随机端口、跑完即停）。',
 )
 
+# ── MC-160 [NORMAL] H5 输入面字体族跟随全局 + 占位符收口共享层（内层原生控件 inherit / 裸 font-family 只在字体定义处 / 例外台账只许缩短）（源: cases/misc.yml）──
+_CASE_MC_160 = EvalCase(
+    id='MC-160',
+    legacy_id='',
+    title='H5 输入面字体族跟随全局 + 占位符收口共享层（内层原生控件 inherit / 裸 font-family 只在字体定义处 / 例外台账只许缩短）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['商家在手机浏览器里打开后台（登录 / 表单 / 报工 / 入库 / 售后 / 坐席）：输入框里打字与占位提示，字体应当与这一页其它文字一致，不该忽然变成另一种字体。'],
+    expectations=[],
+    data_checks=['🔴 **判据 ①·内层原生控件继承字体族**：共享层 `frontend/bmini-app/src/styles/input-center.scss` 必须给 `.weui-input` 与 `.taro-textarea` **两个**内层选择器都写 `font-family: inherit`，`.taro-textarea` 另写 `font-size: inherit`（UA 默认 13.33px monospace）。执行点 = frontend/bmini-app/tests/input-typography-guard.test.ts::inheritProblems。红证：删掉任一条声明 ⇒ 红并具名那个内层控件', '🔴 **判据 ②·裸的 font-family 收口**：全 app 的 `font-family: <具体字体>` 只许出现在**字体定义处**（`src/app.scss` 的 `page, body`）或台账 frontend/bmini-app/tests/input-font-ledger.json；**未登记即红**、**死条目即红**（只许缩短）、**条数现取**（同文件多一处就红）。执行点 = 同文件::bareFontFamilyProblems。红证：往任一页面 scss 加 `font-family: Arial` ⇒ 红并具名文件与声明', '🔴 **判据 ③·占位符唯一来源**：`::placeholder` 只许出现在共享层；两个内层选择器同色 `$text-secondary`（与 issue #6476 的输入条同 token）；占位符**不写** `font-size`（继承控件自身，避免第二个口径）。执行点 = 同文件::placeholderProblems。红证：往页面 scss 加 `&::placeholder { color: #999 }` ⇒ 红并具名文件', "🔴 **判据 ④·射程完整**：`src` 的 `.tsx` 里不许裸写原生 `<input>` / `<textarea>`（它们拿不到内层 class ⇒ 共享层规则一条都不生效）；同时反空跑：真扫到 `<Textarea>` 面。执行点 = 同文件::rawControlProblems。红证：注入 `<input className='x'/>` ⇒ 红并具名文件", "🔴 **反空跑 / 接线**：共享层必须被 `src/app.scss` 真的 `@use` 引入（写在文件里但没接线 ⇒ 判据空转）；台账非空（空台账 fail-closed）。红证：删掉 `@use './styles/input-center.scss'` ⇒ 红", '🔴 **共享层只许 inherit**：共享层给内层写具体字体族 / 字号 ⇒ 红（那是「顺手改了全站输入面视觉」，本单的口径是**观感逐字不变**）。红证：把 `inherit` 换成 `-apple-system, …` ⇒ 红', '🔴 **红证总表（注入式，实跑）**：在 `frontend/bmini-app` 下执行 `npx jest input-typography-guard` ⇒ 15 passed / 0 failed；11 条内存注入各自报出**具名**对象（删 inherit / 改具体字体 / 摘 `@use` / 页面加裸字体族 / 摘台账例外 / 同值追加 / 页面加占位符 / 改占位符色 / 给占位符加字号 / 注入原生 `<input>` / 清空台账）。'],
+    skip_reason='[frontend-contract] 纯静态形态守卫（jest + fs 读 scss / tsx，零 DOM 渲染、零网络、零 LLM）由 frontend/bmini-app/tests/input-typography-guard.test.ts 验证，不进入 agent-eval 冒烟',
+    tags=['bmini', 'h5', 'input', 'typography', 'single-source', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-170 [NORMAL] 门禁触发面必须覆盖本腿断言真读的跨包面（issue #6684）：admin-web 腿的跨包断言真读 frontend/worker-h5/src，而门控只看 frontend/admin-web ⇒ 纯 worker-h5 PR 静默跳过该守卫（假绿）（源: cases/misc.yml）──
+_CASE_MC_170 = EvalCase(
+    id='MC-170',
+    legacy_id='',
+    title='门禁触发面必须覆盖本腿断言真读的跨包面（issue #6684）：admin-web 腿的跨包断言真读 frontend/worker-h5/src，而门控只看 frontend/admin-web ⇒ 纯 worker-h5 PR 静默跳过该守卫（假绿）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['PR 检查里那条 admin-web 腿的门控声明说「只有改 admin-web 才会漏跑」，可下一条只改 worker-h5 的 PR 却带着违规进了 main —— 说明「守卫在什么条件下跑」和「守卫到底读哪些文件」对不上；希望这种不一致以后由机器报出来，而不是靠下一个人读注释推理。'],
+    expectations=[],
+    data_checks=["🔴 **判据 ①·读取面现取（会红）**：从守卫源码 `frontend/admin-web/tests/unit/lib/copy-no-markdown-emphasis.test.ts` 的 `const SRC_DIRS = [...]` **现取**扫描面（按 `join(process.cwd(), '…')` 解析，cwd = `frontend/admin-web`）⇒ 必须解析出 ≥1 个目录、每个目录在仓内**真实存在**、且**至少一条在 `frontend/admin-web` 之外**。红证：把 `SRC_DIRS` 改名/删掉 ⇒ 红（口径漂移不许静默空跑）；跨包面被删 ⇒ 红并要求在同一提交里显式撤销门禁面。执行点 = tests/unit_ci_workflows/test_admin_web_gate_reads_worker_h5.py::test_scan_face_is_parsed_from_the_guard_source。", "🔴 **判据 ②·触发面覆盖（#6684 的实例判据，会红）**：每条跨包读取面都必须被 `.github/workflows/pr-check.yml` 的 `Detect admin-web changes` 步**现取谓词**（从 YAML 结构读 `run` 原文里的 `grep -E '<谓词>'`，**不**从登记册读）命中 ⇒ `frontend/worker-h5/src` 必须命中。红证（内存变异）：把谓词换成只覆盖本包的 `^(frontend/admin-web/)` ⇒ 必红并**具名**报出漏掉的面。执行点 = 同文件::test_live_trigger_covers_cross_package_scan_face 与 TestDiscriminatingPower::test_dropping_the_cross_package_face_turns_the_coverage_judgement_red。", '🔴 **判据 ③·登记（会红）**：每条跨包读取面必须登记进 tests/unit_ci_workflows/declaration_gate_registry.json 的 `pr-check-admin-web-tests.must_cover`（登记册是「门控真的覆盖它」的唯一声明面）。红证：删掉 `frontend/worker-h5/src` 那条登记 ⇒ 红并具名。执行点 = 同文件::test_cross_package_scan_face_is_registered。', '🔴 **判据 ④·负控（原有的面一条都不许丢，会红）**：本腿仍必须被 `frontend/admin-web` 与自身定义 `.github/workflows/pr-check.yml` 触发。红证（内存变异）：谓词换成只覆盖 worker-h5 ⇒ 负控必红（整条腿在自己的模块上永不运行＝假绿，比红更糟）。执行点 = 同文件::test_leg_still_triggers_on_its_own_module 与 TestDiscriminatingPower::test_dropping_the_own_module_face_turns_the_negative_control_red。', '🔴 **判据 ⑤·被证伪的声明不得冒充事实（会红）**：`.github/workflows/pr-check.yml` 里那句已被证伪的断言若仍出现，其所在注释块必须带「已被证伪」+ `#6684` 标注（保留「当初为什么这么写」的痕迹，但不许以未标注形态继续误导）。红证：去掉标注 ⇒ 红并打印行号；带标注 ⇒ 不红（对照读数）。执行点 = 同文件::test_refuted_claim_is_not_left_unannotated 与 TestDiscriminatingPower::test_unannotated_refutation_is_detectable_in_memory。', '🔴 **判据 ⑥·既有同源判据必须同批绿（不带病合并）**：tests/unit_ci_workflows/test_gate_coverage_and_same_source.py 的判据 3/4（谓词**逐字**存在于 workflow、触发面**覆盖** `must_cover`）必须同时通过 —— 谓词与登记册单边改都会在那里红。复算：`python3 -m pytest tests/unit_ci_workflows/test_gate_coverage_and_same_source.py tests/unit_ci_workflows/test_admin_web_gate_reads_worker_h5.py -q`。'],
+    skip_reason='[backend-contract] 纯静态结构判据（读 pr-check.yml 的 YAML 结构 + 守卫源码的 SRC_DIRS + 登记册 JSON；零网络、零 LLM、不跑该腿），由 tests/unit_ci_workflows/test_admin_web_gate_reads_worker_h5.py 验证，不进入 agent-eval 冒烟',
+    tags=['ci', 'gate-face', 'cross-package', 'false-green', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-158 [NORMAL] 工人端菜单以岗位为源：键集补 inbound/reprint（两张已有页面）+ 岗位→默认菜单映射 + 首屏最多 3 项的具名拒错（issue #8337）（源: cases/misc.yml）──
+_CASE_MC_158 = EvalCase(
+    id='MC-158',
+    legacy_id='',
+    title='工人端菜单以岗位为源：键集补 inbound/reprint（两张已有页面）+ 岗位→默认菜单映射 + 首屏最多 3 项的具名拒错（issue #8337）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户（2026-11-01 测试账号真机）：你这个测试账号的权限太大了，不符合实际使用？通常每个工序或者每个工人只能操作 1-3 个菜单，根据工人岗位来定菜单的'],
+    expectations=[],
+    data_checks=['🔴 **判据 ①·键集 ⇄ 工人端真实页面（双向）**：`inbound` / `reprint`（拍照入库 / 补打入库标签）在 bmini 上**早已有页面**（frontend/bmini-app/src/pages/worker/inbound|reprint/index.tsx）却**没有页面键、恒显示** ⇒ 现纳入闭词表 + 默认集合；每个键都有人话名、写侧认得它们。执行点 = WorkerPagesTest::inboundAndReprintPagesAreKeyedNow / everyPageKeyHasAHumanLabel', '🔴 **判据 ②·每个岗位都有默认菜单且默认键全在键集内**：裁剪/车位 = 报工+计件；仓管 = 入库+补打+库存修正；发货 = 发货+待发货单；每组非空 ⊆ `WorkerPages.ALL`、项数 ≤ 3、且能通过写侧校验（默认值 = 合法值）。执行点 = WorkerPagesTest::everyPositionHasDefaultsInsideTheVocabulary / positionDefaultsMatchTheIssueCriteria', '🔴 **判据 ③·显式菜单优先于岗位默认（负控）**：建号时同时给岗位与 `workerPages` ⇒ 落库的是**显式集合**（岗位默认被覆盖），且覆盖仍受 3 项上限约束。执行点 = WorkerAdminServiceTest::explicitPagesWinOverThePositionDefaults / perWorkerOverrideStillWinsButIsCapped', '🔴 **判据 ④·首屏上限 3 项，边界两侧都钉**：正好 3 项 ⇒ 通过；第 4 项 ⇒ 422 具名拒错（说清「最多 3 项」+「你填了 4 项」+ 列出这 4 项）且**零写入**。执行点 = WorkerPagesTest::pageCapIsThreeAndTheFourthIsRejectedByName / WorkerAdminServiceTest::moreThanThePageCapIsRejectedByName', '🔴 **判据 ⑤·改岗位 ⇒ 菜单按新岗位重新带出**（岗位是源；`PUT /api/admin/workers/{id}/position` 两列一起显式 set）：仓管 ⇒ 入库+补打+库存修正；清岗位 ⇒ 回到未收窄（全部页面）。执行点 = WorkerAdminServiceTest::updateWorkerPositionReDerivesTheMenu / clearingThePositionReturnsToAllPages / AdminWorkerControllerTest::updateWorkerPositionReturnsTheDerivedMenu', '🔴 **判据 ⑥·存量数据不回退**：旧键集（无 `inbound`/`reprint`）读面原样下发、**不**被默认集合反向放宽（不做隐式补齐）、未知/已撤键照旧裁掉且不抛异常；车位工（收窄到报工+计件）在工人工作台上**取不到**「拍照入库 / 补打入库标签」两个入口。执行点 = WorkerPagesTest::legacyStoredSetsKeepWorkingAndAreNotWidened / frontend/bmini-app/tests/worker-home-page.test.tsx::「车位工看不见」', '🔴 **红证（注入式，实跑）**：① 把 `仓管` 从 `positionDefaults()` 删掉 ⇒ 判据 ② 红（`containsExactlyInAnyOrderElementsOf(positions())` 具名报缺）；② 把 `validateRestriction` 末尾的 `MAX_PAGES_PER_WORKER` 检查摘掉 ⇒ 判据 ④ 红（第 4 项静默通过）。两次注入各自单变量、恢复即绿。', '**边界（照实登记，§19.1）**：① `order`（我的活）**仍是「键已登记、面待建」**（issue #6764 §6.2 待裁定）—— 判据 ① 的「双向」对本键是**具名白名单**，不是「每键都有面」；② 存量工人**不重置** `worker_pages`（and 不做迁移回填）：没有岗位的存量档案行为与今天一字不差；③ 岗位不是权限（不写 `users.permissions`、不进 `user_roles`，授权判据仍是 `/api/worker/**` 403）；④ 本批**未**改商家后台配置面板（岗位下拉的读面 = `GET /api/admin/worker-pages` 的 `positions` / `position_defaults`，面板改造另单）。'],
+    skip_reason='[backend-contract] 闭词表 / 岗位映射 / 写侧上限是**确定性判据**（Java 单测 + 端侧渲染），由 backend/admin-api/src/test 的 WorkerPagesTest / WorkerAdminServiceTest / AdminWorkerControllerTest 与 frontend/bmini-app/tests/worker-home-page.test.tsx 验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['backend-contract', 'worker', 'page-keys', 'position', 'single-source', 'fail-open', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── MC-162 [NORMAL] H5 输入面字体族跟随全局 + 占位符收口共享层（内层原生控件 inherit / 裸 font-family 只在字体定义处 / 例外台账只许缩短）（源: cases/misc.yml）──
 _CASE_MC_162 = EvalCase(
     id='MC-162',
@@ -3749,42 +3803,6 @@ _CASE_MC_163 = EvalCase(
     form_prefill=[],
     forbidden_card_text=[],
     precondition='本用例是 [backend-contract]：纯前端确定性判据（jsdom 渲染 + 源码结构扫描 + 台账双向对账），零网络、零 DB、不进 agent-eval 冒烟。前置 = frontend/admin-web/src/lib/decimal-input.ts（解析/校验/话术单一口径）与 frontend/admin-web/src/components/ui/DecimalInput.tsx（唯一原语）在场，11 个涉钱站点已迁。',
-)
-
-# ── MC-160 [NORMAL] H5 输入面字体族跟随全局 + 占位符收口共享层（内层原生控件 inherit / 裸 font-family 只在字体定义处 / 例外台账只许缩短）（源: cases/misc.yml）──
-_CASE_MC_160 = EvalCase(
-    id='MC-160',
-    legacy_id='',
-    title='H5 输入面字体族跟随全局 + 占位符收口共享层（内层原生控件 inherit / 裸 font-family 只在字体定义处 / 例外台账只许缩短）',
-    skill=Skill.GENERAL,
-    difficulty=Difficulty.NORMAL,
-    user_inputs=['商家在手机浏览器里打开后台（登录 / 表单 / 报工 / 入库 / 售后 / 坐席）：输入框里打字与占位提示，字体应当与这一页其它文字一致，不该忽然变成另一种字体。'],
-    expectations=[],
-    data_checks=['🔴 **判据 ①·内层原生控件继承字体族**：共享层 `frontend/bmini-app/src/styles/input-center.scss` 必须给 `.weui-input` 与 `.taro-textarea` **两个**内层选择器都写 `font-family: inherit`，`.taro-textarea` 另写 `font-size: inherit`（UA 默认 13.33px monospace）。执行点 = frontend/bmini-app/tests/input-typography-guard.test.ts::inheritProblems。红证：删掉任一条声明 ⇒ 红并具名那个内层控件', '🔴 **判据 ②·裸的 font-family 收口**：全 app 的 `font-family: <具体字体>` 只许出现在**字体定义处**（`src/app.scss` 的 `page, body`）或台账 frontend/bmini-app/tests/input-font-ledger.json；**未登记即红**、**死条目即红**（只许缩短）、**条数现取**（同文件多一处就红）。执行点 = 同文件::bareFontFamilyProblems。红证：往任一页面 scss 加 `font-family: Arial` ⇒ 红并具名文件与声明', '🔴 **判据 ③·占位符唯一来源**：`::placeholder` 只许出现在共享层；两个内层选择器同色 `$text-secondary`（与 issue #6476 的输入条同 token）；占位符**不写** `font-size`（继承控件自身，避免第二个口径）。执行点 = 同文件::placeholderProblems。红证：往页面 scss 加 `&::placeholder { color: #999 }` ⇒ 红并具名文件', "🔴 **判据 ④·射程完整**：`src` 的 `.tsx` 里不许裸写原生 `<input>` / `<textarea>`（它们拿不到内层 class ⇒ 共享层规则一条都不生效）；同时反空跑：真扫到 `<Textarea>` 面。执行点 = 同文件::rawControlProblems。红证：注入 `<input className='x'/>` ⇒ 红并具名文件", "🔴 **反空跑 / 接线**：共享层必须被 `src/app.scss` 真的 `@use` 引入（写在文件里但没接线 ⇒ 判据空转）；台账非空（空台账 fail-closed）。红证：删掉 `@use './styles/input-center.scss'` ⇒ 红", '🔴 **共享层只许 inherit**：共享层给内层写具体字体族 / 字号 ⇒ 红（那是「顺手改了全站输入面视觉」，本单的口径是**观感逐字不变**）。红证：把 `inherit` 换成 `-apple-system, …` ⇒ 红', '🔴 **红证总表（注入式，实跑）**：在 `frontend/bmini-app` 下执行 `npx jest input-typography-guard` ⇒ 15 passed / 0 failed；11 条内存注入各自报出**具名**对象（删 inherit / 改具体字体 / 摘 `@use` / 页面加裸字体族 / 摘台账例外 / 同值追加 / 页面加占位符 / 改占位符色 / 给占位符加字号 / 注入原生 `<input>` / 清空台账）。'],
-    skip_reason='[frontend-contract] 纯静态形态守卫（jest + fs 读 scss / tsx，零 DOM 渲染、零网络、零 LLM）由 frontend/bmini-app/tests/input-typography-guard.test.ts 验证，不进入 agent-eval 冒烟',
-    tags=['bmini', 'h5', 'input', 'typography', 'single-source', 'red-proof'],
-    persona='',
-    debug_user='',
-    form_prefill=[],
-    forbidden_card_text=[],
-)
-
-# ── MC-158 [NORMAL] 工人端菜单以岗位为源：键集补 inbound/reprint（两张已有页面）+ 岗位→默认菜单映射 + 首屏最多 3 项的具名拒错（issue #8337）（源: cases/misc.yml）──
-_CASE_MC_158 = EvalCase(
-    id='MC-158',
-    legacy_id='',
-    title='工人端菜单以岗位为源：键集补 inbound/reprint（两张已有页面）+ 岗位→默认菜单映射 + 首屏最多 3 项的具名拒错（issue #8337）',
-    skill=Skill.GENERAL,
-    difficulty=Difficulty.NORMAL,
-    user_inputs=['用户（2026-11-01 测试账号真机）：你这个测试账号的权限太大了，不符合实际使用？通常每个工序或者每个工人只能操作 1-3 个菜单，根据工人岗位来定菜单的'],
-    expectations=[],
-    data_checks=['🔴 **判据 ①·键集 ⇄ 工人端真实页面（双向）**：`inbound` / `reprint`（拍照入库 / 补打入库标签）在 bmini 上**早已有页面**（frontend/bmini-app/src/pages/worker/inbound|reprint/index.tsx）却**没有页面键、恒显示** ⇒ 现纳入闭词表 + 默认集合；每个键都有人话名、写侧认得它们。执行点 = WorkerPagesTest::inboundAndReprintPagesAreKeyedNow / everyPageKeyHasAHumanLabel', '🔴 **判据 ②·每个岗位都有默认菜单且默认键全在键集内**：裁剪/车位 = 报工+计件；仓管 = 入库+补打+库存修正；发货 = 发货+待发货单；每组非空 ⊆ `WorkerPages.ALL`、项数 ≤ 3、且能通过写侧校验（默认值 = 合法值）。执行点 = WorkerPagesTest::everyPositionHasDefaultsInsideTheVocabulary / positionDefaultsMatchTheIssueCriteria', '🔴 **判据 ③·显式菜单优先于岗位默认（负控）**：建号时同时给岗位与 `workerPages` ⇒ 落库的是**显式集合**（岗位默认被覆盖），且覆盖仍受 3 项上限约束。执行点 = WorkerAdminServiceTest::explicitPagesWinOverThePositionDefaults / perWorkerOverrideStillWinsButIsCapped', '🔴 **判据 ④·首屏上限 3 项，边界两侧都钉**：正好 3 项 ⇒ 通过；第 4 项 ⇒ 422 具名拒错（说清「最多 3 项」+「你填了 4 项」+ 列出这 4 项）且**零写入**。执行点 = WorkerPagesTest::pageCapIsThreeAndTheFourthIsRejectedByName / WorkerAdminServiceTest::moreThanThePageCapIsRejectedByName', '🔴 **判据 ⑤·改岗位 ⇒ 菜单按新岗位重新带出**（岗位是源；`PUT /api/admin/workers/{id}/position` 两列一起显式 set）：仓管 ⇒ 入库+补打+库存修正；清岗位 ⇒ 回到未收窄（全部页面）。执行点 = WorkerAdminServiceTest::updateWorkerPositionReDerivesTheMenu / clearingThePositionReturnsToAllPages / AdminWorkerControllerTest::updateWorkerPositionReturnsTheDerivedMenu', '🔴 **判据 ⑥·存量数据不回退**：旧键集（无 `inbound`/`reprint`）读面原样下发、**不**被默认集合反向放宽（不做隐式补齐）、未知/已撤键照旧裁掉且不抛异常；车位工（收窄到报工+计件）在工人工作台上**取不到**「拍照入库 / 补打入库标签」两个入口。执行点 = WorkerPagesTest::legacyStoredSetsKeepWorkingAndAreNotWidened / frontend/bmini-app/tests/worker-home-page.test.tsx::「车位工看不见」', '🔴 **红证（注入式，实跑）**：① 把 `仓管` 从 `positionDefaults()` 删掉 ⇒ 判据 ② 红（`containsExactlyInAnyOrderElementsOf(positions())` 具名报缺）；② 把 `validateRestriction` 末尾的 `MAX_PAGES_PER_WORKER` 检查摘掉 ⇒ 判据 ④ 红（第 4 项静默通过）。两次注入各自单变量、恢复即绿。', '**边界（照实登记，§19.1）**：① `order`（我的活）**仍是「键已登记、面待建」**（issue #6764 §6.2 待裁定）—— 判据 ① 的「双向」对本键是**具名白名单**，不是「每键都有面」；② 存量工人**不重置** `worker_pages`（and 不做迁移回填）：没有岗位的存量档案行为与今天一字不差；③ 岗位不是权限（不写 `users.permissions`、不进 `user_roles`，授权判据仍是 `/api/worker/**` 403）；④ 本批**未**改商家后台配置面板（岗位下拉的读面 = `GET /api/admin/worker-pages` 的 `positions` / `position_defaults`，面板改造另单）。'],
-    skip_reason='[backend-contract] 闭词表 / 岗位映射 / 写侧上限是**确定性判据**（Java 单测 + 端侧渲染），由 backend/admin-api/src/test 的 WorkerPagesTest / WorkerAdminServiceTest / AdminWorkerControllerTest 与 frontend/bmini-app/tests/worker-home-page.test.tsx 验证，非 LLM 行为，不进入 agent-eval 冒烟',
-    tags=['backend-contract', 'worker', 'page-keys', 'position', 'single-source', 'fail-open', 'red-proof'],
-    persona='',
-    debug_user='',
-    form_prefill=[],
-    forbidden_card_text=[],
 )
 
 CASES = (
@@ -3990,8 +4008,9 @@ CASES = (
     _CASE_MC_156,
     _CASE_MC_157,
     _CASE_MC_161,
+    _CASE_MC_160,
+    _CASE_MC_170,
+    _CASE_MC_158,
     _CASE_MC_162,
     _CASE_MC_163,
-    _CASE_MC_160,
-    _CASE_MC_158,
 )

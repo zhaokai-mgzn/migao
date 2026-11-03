@@ -214,12 +214,16 @@
         "kind": "step-detect-regex",
         "step": "Detect admin-web changes",
         "emit_id": "detect_aw",
-        "predicate": "^(frontend/admin-web/|\\.github/workflows/pr-check\\.yml$)"
+        "predicate": "^(frontend/admin-web/|frontend/worker-h5/src/|\\.github/workflows/pr-check\\.yml$)"
       },
       "must_cover": [
         {
           "path": "frontend/admin-web",
           "reason": "本腿的 `npm ci` / `tsc --noEmit` / `eslint` / `next build` / `vitest` **全部**以 `frontend/admin-web` 为根（vitest root = 该目录，`setupFiles: ./tests/setup.ts` 亦在其内；依赖全是 npm 公共包，无仓内 workspace 依赖）"
+        },
+        {
+          "path": "frontend/worker-h5/src",
+          "reason": "本腿有**跨包断言**读它：`frontend/admin-web/tests/unit/lib/copy-no-markdown-emphasis.test.ts` 的 `SRC_DIRS` 同时扫 `../worker-h5/src`（商家可见文案的 markdown 强调必须经渲染器上屏，issue #5194）。**原谓词只覆盖本包**（issue #6684 实测：#6675 只改 `frontend/worker-h5/**` ⇒ 本腿整段跳过 ⇒ 该守卫在 PR 上绿、合并后 main 上红，红只交给下一个碰 admin-web 的 PR）。覆盖判据 = tests/unit_ci_workflows/test_admin_web_gate_reads_worker_h5.py（从守卫源码现取 `SRC_DIRS` ⇄ 谓词覆盖率，漏一条即红；面变窄/解析变形也红）"
         }
       ],
       "uncovered": [
