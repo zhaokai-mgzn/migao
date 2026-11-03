@@ -4187,7 +4187,7 @@
 ```
 溯源: 2026-10-31 新增（issue #8295）：两步确认，避免误写 ｜ tags: ui, preview
 
-## 杂项域（212 case）
+## 杂项域（213 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -7424,6 +7424,18 @@
 ```
 真值: ⚠️ 缺口（见对应模板 ⚠️ 注释）
 溯源: 2026-11-03 新增（issue #6282，承接 #6280 的显式延后项）：缺料风险页落地。页面是 `material_shortage` 视图的**唯一商家宿主**（此前只有 agent 对话结论，用户看完不知道该干嘛）。四条口径按 §31：常驻面只列缺口 > 0（P1）、缺口数字只在「缺口」列出现一次（P2）、`productId` 不上屏（P3）、空态为事实陈述（P4）。三处「未知 ≠ 0」：单位不可比（缺键）/ 交期未知（`daysToDeadline` 缺键）/ 预测层未启用（`historyDepth.sufficient == false` 时明示）。取号 MC-182（本仓 cases 面现取最大 MC = MC-125 + 在飞 claims MC-113 ⇒ 号段空档，取上级指派号）。⚠️ 未闭合（如实登记）：侧边栏**菜单入口**未在本包落地 —— 菜单节点牵动前端 C1/C3/C4 三列清单 + 服务端两处菜单源（`MenuController` / `AuthService`）+ RBAC 派生页 manifest + 页面上文登记，属独立变更面；本包以 `ROUTE_WITHOUT_MENU_NODE` / `ROUTE_PREFIX_EXCEPTIONS` 具名登记守卫前缀（见 PR body 的「有意不做」）。 ｜ tags: ui, material-shortage, inventory, no-fake-green, unknown-not-zero, red-proof
+
+### MC-184. C 端 H5 输入面字体族 / 占位符收口（issue #8575）：共享层给内层原生控件继承字体、textarea 补 font-size: inherit、::placeholder 唯一来源且不写字号 🔵
+```
+你: C 端 H5（app.migaozn.com 根）的聊天输入框里，字不是页面正文那套字体（输入框跑的是浏览器默认），占位符也是默认灰；希望输入面的字体 / 字号 / 占位符色与页面正文一致，而且以后新增输入面不用逐页再写一遍。
+数据: **判据 1（会红）**：共享层 `frontend/mini-app/src/styles/input-center.scss` 在位、被 `src/app.scss` 真的 `@use`，且 `.weui-input, .taro-textarea` 块里写了 `font-family: inherit`。执行点 = frontend/mini-app/tests/input-typography-guard.test.ts::①。
+数据: **判据 2（会红）**：共享层**不许**写具体字体族（把 `inherit` 改成 `Arial` ⇒ 红）—— 具体字体族属 `src/app.scss`，本层只跟随。执行点 = ::②。
+数据: **判据 3（会红）**：`.taro-textarea` 必须有 `font-size: inherit`（UA 默认 13.33px monospace，外层字号到不了内层）。执行点 = ::③。
+数据: **判据 4（会红）**：`::placeholder` 只在共享层、同时覆盖 `.weui-input::placeholder` 与 `.taro-textarea::placeholder`、色值取 `$text-secondary`、**不写** `font-size`（继承控件自身，一处口径）。执行点 = ::④。
+数据: **判据 5（会红·类级）**：共享层**之外**任何 scss 出现 `.taro-textarea` / `.weui-input` ⇒ 具名报红（防逐页各写一份、改了这页忘那页）。执行点 = ::⑤。
+跳过: [backend-contract] 纯静态样式面判据（读 scss 文本 + 剥注释的引号感知扫描，零浏览器、零真实构建），由 frontend/mini-app/tests/input-typography-guard.test.ts 验证，非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-11-03 新增（issue #8575，承 #6480 的同一根因：brother 客户端 bmini 已在 PR #8574 落地）。取号 MC-184（集成侧指定，避开当晚 8 次撞号）。 ｜ tags: h5, typography, taro, false-green
 
 ## 商家入驻域（7 case）
 
@@ -14932,8 +14944,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：1010（活跃 153，跳过 857）
-- tier 分布：smoke 15 / normal 933 / adversarial 33
+- 用例总数：1011（活跃 153，跳过 858）
+- tier 分布：smoke 15 / normal 934 / adversarial 33
 - 售后域：16
 - Agent 核心域：13
 - API 层域：21
@@ -14949,7 +14961,7 @@
 - 人事域：13
 - 知识问答域：9
 - 客户主数据迁移域：10
-- 杂项域：212
+- 杂项域：213
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：76
@@ -15228,6 +15240,7 @@
 - MC-183: 红证档准入（issue #5707 · FM-E10 残余）：9 条实跑腿全部 ⏭️ 时该档必须 exit 4 —— 汇总按「实质真跑」判（无条件跑的辅助项不计数），并按 probe_ready 的原文具名报出每条被 skip 的腿缺什么工具链
 - MC-155: 终端壳打印能力三态（issue #8310）：桥在 ≠ 打印机在 —— printerMode 负向 / 读不到都不许说「由本机打印机直接出纸」，且「判不了」与「确知没有」分开说
 - MC-182: 缺料风险页（admin-web `/production/material-shortage`，issue #6282）：默认只列缺口 > 0（常驻面克制）；行序 = 服务端分层降序 → 缺口降序（前端不重排）；未知 ≠ 0；空态是事实陈述；读失败不印空态
+- MC-184: C 端 H5 输入面字体族 / 占位符收口（issue #8575）：共享层给内层原生控件继承字体、textarea 补 font-size: inherit、::placeholder 唯一来源且不写字号
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）

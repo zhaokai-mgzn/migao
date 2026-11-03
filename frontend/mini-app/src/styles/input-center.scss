@@ -1,0 +1,65 @@
+@use './variables.scss' as *;
+
+// ══════════════════════════════════════════════════════════════════════════
+// C 端（`frontend/mini-app`）H5 输入面的**唯一收口处**（issue #8575，承 #6480 的同一根因）
+//
+// ## 病灶
+//
+// Taro H5 把 `<Input>` / `<Textarea>` 的 `className` 挂在**外层包裹元素**上
+// （`taro-input-core` / `taro-textarea-core`），真正绘字的是**内层原生控件**
+// （`input.weui-input` / `textarea.taro-textarea`）。浏览器给这两个控件自己的 UA 默认样式
+// （`Arial` / `monospace` 13.33px）且**不继承**父级 ⇒ 只要样式只写在外层 class 上，
+// 输入面的字体 / 字号 / 占位符色就落在浏览器默认上（`placeholderClass` 只在 weapp 生效）。
+//
+// 实测读数（`origin/main`，2026-11-03）：`git grep font-family -- frontend/mini-app/src` ⇒ **0 处**；
+// 聊天输入框 `MessageInput.scss` 的 `&__textarea` 块没有内层 `.taro-textarea` 选择器。
+//
+// ## 修法（一处收口，逐页**不许**再写一遍）
+//
+//   ① 内层两个原生控件 `font-family: inherit` ⇒ 跟随各页正文。本文件**不指定任何具体字体族**
+//      （那属于 `src/app.scss`）；本单有意不动它 ⇒ 全站视觉逐字不变。
+//   ② `textarea` 另需 `font-size: inherit`：`input` 实测已继承，而 `textarea` 的 UA 默认是
+//      **13.33px monospace**（`taro-textarea-core` 上的 28px 到不了内层）。
+//   ③ `::placeholder` 的**唯一**来源：色值取 `$text-secondary`（与 #6476 输入条同 token）；
+//      字号**不写** —— 占位符继承控件自身字号，一处口径、不会两处漂。
+//
+// ## 为什么这些选择器对小程序端**零影响**（逐字不变）
+//
+//   `weui-input` / `taro-textarea` 只存在于 **Taro h5 产物**的 DOM 里；
+//   小程序编译产物里 `<Input>` / `<Textarea>` 就是原生控件，这些选择器**一个元素都匹配不到**。
+//
+// ## 为什么写在 app 级、且必须由 `src/app.scss` 引入
+//
+//   这些规则是**全局**的（对 h5 上**所有**输入面生效）—— 逐页打补丁 = 下一个人漏一处、
+//   而没有任何东西会红。故：本文件是这一族规则的**唯一落点**
+//   （`src/styles/**` 之外任何 scss 出现 `.taro-textarea` / `.weui-input` ⇒ 判红，
+//   判据 = `frontend/mini-app/tests/input-typography-guard.test.ts`）。
+//
+// ## 构建注意（与 bmini 的 `styles/tabbar.scss` 同款教训）
+//
+//   本文件不引用任何 `var(--…)`：`postcss-pxtransform` 会改写 `var()` 里的兜底值
+//   （#5755 发布后线上实测的构建陷阱）⇒ 只用纯属性 / 百分比，不引入单位字面量。
+// ══════════════════════════════════════════════════════════════════════════
+
+// ① 内层原生控件的字体族只跟随各页正文 —— 这里**不许**出现任何具体字体族。
+.weui-input,
+.taro-textarea {
+  font-family: inherit;
+}
+
+// ② textarea 的字号也必须显式继承：UA 默认 13.33px monospace，外层 `&__textarea` 的 28px 到不了内层。
+.taro-textarea {
+  font-size: inherit;
+}
+
+// ④ `textarea` 关掉原生 resize 手柄（右下那条斜线不是我们的控件语言；实测截图见 #8575 的 diff）。
+//    只对 textarea 生效，`input` 本来就没有这个手柄。
+.taro-textarea {
+  resize: none;
+}
+
+// ③ 占位符样式的唯一来源：字号不写（继承控件自身），色值取 `$text-secondary`。
+.weui-input::placeholder,
+.taro-textarea::placeholder {
+  color: $text-secondary;
+}

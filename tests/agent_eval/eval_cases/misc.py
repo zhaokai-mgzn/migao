@@ -2,7 +2,7 @@
 # 本文件由 render_cases.py 生成，勿手改（改了也留不住：下次重渲染会覆盖）
 # 源: cases/*.yml（case-contract 单一源）
 # 重新生成: python3 render_cases.py --cases <dir> --out-eval <包目录> --out-md <md>
-# 域: misc（源: cases/misc.yml，212 条）
+# 域: misc（源: cases/misc.yml，213 条）
 
 from ._schema import Difficulty, EvalCase, Skill
 
@@ -3896,6 +3896,24 @@ _CASE_MC_182 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── MC-184 [NORMAL] C 端 H5 输入面字体族 / 占位符收口（issue #8575）：共享层给内层原生控件继承字体、textarea 补 font-size: inherit、::placeholder 唯一来源且不写字号（源: cases/misc.yml）──
+_CASE_MC_184 = EvalCase(
+    id='MC-184',
+    legacy_id='',
+    title='C 端 H5 输入面字体族 / 占位符收口（issue #8575）：共享层给内层原生控件继承字体、textarea 补 font-size: inherit、::placeholder 唯一来源且不写字号',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['C 端 H5（app.migaozn.com 根）的聊天输入框里，字不是页面正文那套字体（输入框跑的是浏览器默认），占位符也是默认灰；希望输入面的字体 / 字号 / 占位符色与页面正文一致，而且以后新增输入面不用逐页再写一遍。'],
+    expectations=[],
+    data_checks=['**判据 1（会红）**：共享层 `frontend/mini-app/src/styles/input-center.scss` 在位、被 `src/app.scss` 真的 `@use`，且 `.weui-input, .taro-textarea` 块里写了 `font-family: inherit`。执行点 = frontend/mini-app/tests/input-typography-guard.test.ts::①。', '**判据 2（会红）**：共享层**不许**写具体字体族（把 `inherit` 改成 `Arial` ⇒ 红）—— 具体字体族属 `src/app.scss`，本层只跟随。执行点 = ::②。', '**判据 3（会红）**：`.taro-textarea` 必须有 `font-size: inherit`（UA 默认 13.33px monospace，外层字号到不了内层）。执行点 = ::③。', '**判据 4（会红）**：`::placeholder` 只在共享层、同时覆盖 `.weui-input::placeholder` 与 `.taro-textarea::placeholder`、色值取 `$text-secondary`、**不写** `font-size`（继承控件自身，一处口径）。执行点 = ::④。', '**判据 5（会红·类级）**：共享层**之外**任何 scss 出现 `.taro-textarea` / `.weui-input` ⇒ 具名报红（防逐页各写一份、改了这页忘那页）。执行点 = ::⑤。'],
+    skip_reason='[backend-contract] 纯静态样式面判据（读 scss 文本 + 剥注释的引号感知扫描，零浏览器、零真实构建），由 frontend/mini-app/tests/input-typography-guard.test.ts 验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['h5', 'typography', 'taro', 'false-green'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 CASES = (
     _CASE_MC_001,
     _CASE_MC_002,
@@ -4109,4 +4127,5 @@ CASES = (
     _CASE_MC_183,
     _CASE_MC_155,
     _CASE_MC_182,
+    _CASE_MC_184,
 )
