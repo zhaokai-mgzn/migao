@@ -1,0 +1,13 @@
+{
+  "_why": "issue #6480：全 app 的字体族只许在 `src/app.scss` 的 `page, body` 定义一处，其余任何具体 `font-family` 都必须登记在这里（未登记即红）。台账**只许缩短**：每条都必须仍能被扫到，且 `count` 是**现取**条数（多一处 = 又开了一个口子）。",
+  "_recompute": "grep -rn \"font-family\" frontend/bmini-app/src --include=*.scss   # 期望读数：1 处具体字体族（本台账那一条）+ 共享层的 inherit",
+  "exceptions": [
+    {
+      "file": "src/pages/auth/login/index.scss",
+      "declaration": "font-family: Menlo, Consolas, monospace",
+      "count": 1,
+      "label": "登录页「登录诊断」面板的原始登录态行（token / 报文片段）：等宽字体是为了逐字符核对，属于**有意为之**（不是漏改的输入面），故保留并登记",
+      "case_ids": ["MC-160"]
+    }
+  ]
+}
