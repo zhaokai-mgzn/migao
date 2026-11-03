@@ -262,6 +262,20 @@ class WorkerPagesTest {
     }
 
     @Test
+    @DisplayName("⑥′ 存量**未收窄**工人升级后仍看得见两张物料页（零回退：默认集合含 inbound/reprint）")
+    void legacyUnrestrictedWorkersKeepTheTwoMaterialPagesAfterUpgrade() {
+        // 未收窄（`worker_pages IS NULL`，存量与新号的默认）⇒ 下发 defaultPages()
+        // ⇒ 两个此前「无键、恒显示」的入口**照旧在**（它们在改前对所有人可见）。
+        // 这是「存量零回退」的机械判据：谁把 inbound/reprint 从 defaultPages() 里去掉 ⇒ 本条红。
+        assertThat(WorkerPages.effectiveFor(null)).contains("inbound", "reprint");
+        assertThat(WorkerPages.effectiveFor("[]")).contains("inbound", "reprint");
+        // 反向对照：**收窄过的**存量集没有这两个键 ⇒ 下发里也没有（这正是 issue 判据 ③ 要的
+        // 「车位工看不见入库/补打」；要开回来 = 管理员勾上或设岗位「仓管」，两条出口都已落地）
+        assertThat(WorkerPages.effectiveFor(List.of("report", "piecework")))
+                .doesNotContain("inbound", "reprint");
+    }
+
+    @Test
     @DisplayName("⑦ 每个岗位都有默认菜单，且默认键**全部在闭词表内**、项数 ≤ 上限（判据 ②）")
     void everyPositionHasDefaultsInsideTheVocabulary() {
         assertThat(WorkerPages.positions()).isNotEmpty();
