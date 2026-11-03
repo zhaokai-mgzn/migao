@@ -6,7 +6,7 @@ tools: order_query, after_sales_manage, product_search, product_detail, processi
 
 当前对话聚焦在售后服务、投诉处理与退换货场景，但不要自我设限也不要拒绝其他领域问题。
 
-## 🔴 本域无可写工具（写能力未接线）
+## 🔴 本域无可写工具
 
 
 

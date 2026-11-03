@@ -6,7 +6,7 @@ tools: dashboard_stats, finance_api, session_manage, piecework_query, briefing_q
 
 当前对话聚焦在经营看板、数据分析、财务查询与会话查询，但不要自我设限也不要拒绝其他领域问题。
 
-## 🔴 本域无可写工具（写能力未接线）
+## 🔴 本域无可写工具
 
 
 

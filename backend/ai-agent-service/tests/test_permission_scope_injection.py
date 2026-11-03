@@ -1,4 +1,4 @@
-# case_ids: CH-001, HR-005, HR-006, HR-009, HR-010
+# case_ids: CH-001, HR-005, HR-006, HR-014, HR-010
 """B 端权限范围注入 + `principles.md` 权限归因规则两半（issue #4107 / 父单 #4103 的 F8+F7）。
 
 被测契约（本包 = F7/F8，仅 `app/graph/skills/**`）：
@@ -408,30 +408,22 @@ class TestTheActionLevelClaimIsBackedByTheMechanism:
             "order_manage 的粗筛码变了 ⇒ 上面的 action 级差异不再是「同一工具不同 action」"
         )
 
-    def test_employee_manage_no_longer_splits_codes_by_action(self):
-        """`# [RETIRED #5247]` 原「employee_manage 按 action 分读/写码」的判据 —— 前提消失。
+    def test_employee_manage_splits_read_and_write_codes_by_action(self):
+        """`employee_manage`：读 action 要 `employee:list`、写 action（create/update）要 `employee:create`。
 
-        退役形态（**不是删用例、也不是把断言放松**）：把"前提的消失"本身钉成三条判据，
-        任何一条被反向改动（把写 action/写码加回来）都会红：
-          ① 工具确实是只读（收窄落地）；
-          ② 声明里只剩读码 `employee:list`，写码 `employee:create` **不再出现在源码任何位置**；
-          ③ 它**不再**按 action 分权（`_splits_codes_by_action` 为假）。
-        并附**红证夹具**：同一判据在改前（#5247 之前）的源码形态上必须为真 ——
-        证明 ③ 不是恒假断言。
+        issue #7050（用户 2026-10-16「能力边界 终版」把「员工账号的创建与变更」接回 B 端）⇒
+        #5247 退役时钉住的「前提消失」判据**前提回来了**，按其当时的处置说明恢复原形态
+        （原文逐字：「请恢复 `test_employee_manage_splits_read_and_write_codes_by_action`
+        并重跑 HR-009/HR-010」）。判据本体（按 action 分权这个形态）一字未改。
         """
         src = self._src("app/tools/employee_manage.py")
-        assert "read_only = True" in src, (
-            "employee_manage 重新变回写工具 ⇒ #5247 的收窄被回退（本用例的前提也就回来了："
-            "请恢复 `test_employee_manage_splits_read_and_write_codes_by_action` 并重跑 HR-009/HR-010）")
-        assert 'required_permissions = ["employee:list"]' in src, (
-            "employee_manage 的权限码变了（本次收窄后应为**单一读码** `employee:list`）")
-        assert "employee:create" not in _code_only(src), (
-            "写码 `employee:create` 又出现在 employee_manage 的**代码面**（注释里说明「已移除」不算）"
-            "—— 写 action 已被删除，只读工具挂写码会让「权限即差异」的对照重新自相矛盾")
-        assert _splits_codes_by_action(src) is False, (
-            "employee_manage 又开始按 action 分权 —— 请把本用例改回 `test_…_splits_read_and_write_codes_by_action`"
-            "（前提回来了，判据必须回到原形态），并同步 `_ACTION_LEVEL_CODE_TOOLS` 台账")
-        # 红证（判据自身不恒假）：改前形态夹具必须被判为「按 action 分权」
+        assert "read_only = False" in src, (
+            "employee_manage 又变回只读 ⇒ 接回的写 action 会绕过确认门禁（本判据也失去对象）")
+        assert 'required_permissions = ["employee:list", "employee:create"]' in src, (
+            "粗筛码必须与 `AdminUserController` 的端点注解对齐（读 employee:list / 写 employee:create）")
+        assert _splits_codes_by_action(src) is True, (
+            "employee_manage 的 action 级分权消失了 ⇒ 只持读码的员工可以借黄金策建号/改号")
+        # 红证（判据自身不恒假）：改前形态夹具仍必须被判为「按 action 分权」
         assert _splits_codes_by_action(_PRE_5247_EMPLOYEE_MANAGE_SNIPPET) is True, (
             "红证夹具失效：改前形态没被 `_splits_codes_by_action` 认出来 ⇒ 上面那条是空断言")
 

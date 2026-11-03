@@ -1,4 +1,4 @@
-# case_ids: HR-009, DF-003, HR-002, AG-008
+# case_ids: HR-014, DF-003, HR-002, AG-008
 """B 端能力边界的**投影判据**（issue #7291；#7334 二次审计收口）。
 
 为什么需要它：能力边界原先靠人工抄写在 10 个 prompt 文件里，其中 9 处与工具真值相反
@@ -61,7 +61,8 @@ AVAILABILITY_SNAPSHOT = {
     "notification_read_all": True,
     "reminder": True,
     "craft_calc_config_update": True,  # issue #7514：A 档可逆写（product 域）
-    "employee_write": False,
+    # issue #7050（2026-10-16「能力边界 终版」）：员工账号的 create/update 已接回 B 端
+    "employee_write": True,
     "role_write": False,
     "customer_write": False,
     "category_write": False,
@@ -295,7 +296,9 @@ UNIT_PROSE = {
     "reminder": {"deny": ("定时提醒不在能力内", "不支持定时提醒")},
     "employee_write": {
         "support": ("可以创建员工", "支持创建员工", "能创建员工", "可以建员工", "能建员工"),
-        "deny": ("写能力未接线", "创建员工账号不在黄金策能力内", "创建/更新/删除员工"),
+        # 「写能力未接线」是**跨域通用**标题（order/customer 等域仍只读，那句话对它们成立）
+        # ⇒ 不列为本单元的拒绝话术（列了会把别的域的正确标题判成员工域的谎报）。
+        "deny": ("创建员工账号不在黄金策能力内", "创建/更新/删除员工"),
     },
     "role_write": {
         "support": ("可以创建岗位", "支持创建岗位", "可以创建角色", "支持创建角色"),
@@ -402,7 +405,7 @@ def test_capability_prose_matches_registry_state():
 
 def test_prose_guard_has_red_power():
     """判别力自证：注入「支持创建员工」（当前 ❌）/「改名不在能力内」（当前 ✅）都红。"""
-    assert any("employee_write" in x for x in _prose_offenders({"fake.md": "支持创建员工"}))
+    assert any("customer_write" in x for x in _prose_offenders({"fake.md": "可以给客户打标签"}))
     assert any("product_rename" in x for x in _prose_offenders({"fake.md": "改名不在能力内"}))
     assert not _prose_offenders({"fake.md": "改名可以做；上下架不在能力内；不能创建员工"})
 
@@ -591,7 +594,10 @@ def test_zero_write_skills_never_claim_direct_capability():
     assert "商品改名" in _segment(render_capability_boundary(), DIRECT_PREFIX)
 
     zero_write = [s for s in _mibao_skill_names() if not _declared_write_tool_names(s)]
-    assert len(zero_write) >= 7, f"零写 skill 现取集合异常（应含 order 等 7 个）：{zero_write}"
+    # issue #7050：`staff` 绑回 employee_manage（写）⇒ 零写 skill 7 → 6（staff 退场）。
+    # 反向控制：staff 若又变成零写，说明写能力被悄悄摘掉 ⇒ 下面的断言会红。
+    assert "staff" not in zero_write, f"staff 已绑 employee_manage(写) 却仍被判零写 skill：{zero_write}"
+    assert len(zero_write) >= 6, f"零写 skill 现取集合异常（应含 order 等 6 个）：{zero_write}"
 
     states = resolve_units()
     available = [u.label for u in UNITS if states[u.key] and not u.decided_off]

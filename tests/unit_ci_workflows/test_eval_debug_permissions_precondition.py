@@ -1,4 +1,4 @@
-# case_ids: HR-002, HR-009, HR-010
+# case_ids: HR-002, HR-014, HR-010
 """评测可控权限（`X-Debug-Permissions`）的**前置自断言**：判据 = **服务端探针**（issue #4150）。
 
 ## 病灶（issue #4150，验证于 `origin/main`）
@@ -92,6 +92,17 @@ def _dead_must_fail_declarations(case: dict, source_actions: set) -> list:
     """`must_fail` 里声明了、但**工具源码 action 枚举里不存在**的 action（= 恒真空的死引用）。"""
     return [f"{s.get('tool')}({s.get('action')})" for s in (case.get("must_fail") or [])
             if isinstance(s, dict) and str(s.get("action")) not in source_actions]
+
+
+def _missing_declared_write_action(case: dict, tool: str, action: str) -> bool:
+    """`must_fail` 是否**缺**这条（存活）写 action 的声明 —— 判据本体，红证与常驻断言共用。
+
+    issue #7050：`create` 接回 B 端后，`must_fail` 必须重新声明它（该身份无 `employee:create`
+    ⇒ 任何一次成功的 create 都是越权落库）。判据只读一处事实（用例声明面），不另列清单。
+    """
+    declared = {f"{s.get('tool')}({s.get('action')})"
+                for s in (case.get("must_fail") or []) if isinstance(s, dict)}
+    return f"{tool}({action})" not in declared
 
 # ── 探针事件的**夹具**（形状取自服务端真实发点，产品锚点见 TestProductAnchors）──
 # 通配回落：`check_permission` 放行 ⇒ `_page_stream` 的成功分支发 tool_call + tool_result。
@@ -881,33 +892,34 @@ class TestHR009AttemptRequirementIsNotDropped:
             f"HR-009 不再要求给出后台开通路径（#5247：如实说明 + 引导后台是唯一正确回答）："
             f"{c.get('want_text')!r}")
 
-    def test_hr009_must_fail_never_declares_a_deleted_write_action(self):
-        """原断言（留档）：`must_fail` 必须声明 `employee_manage(action=create)`。
+    def test_hr009_must_fail_declares_the_live_write_action(self):
+        """`must_fail` 必须声明 `employee_manage(action=create)`（issue #7050 改判回原形态）。
 
-        前提被 #5247 证伪：`create` 已从 `employee_manage` 源码的 action 枚举删除 ⇒
-        那条 `must_fail` **恒真空**（永远不可能有一次成功的 `create` 可被否证）——
-        它不是"更强的判据"，而是「不会红的判据」（`migao-acceptance` 的空断言形态）。
-
-        改判成 **fail-closed** 形态（比原断言更强，不是放宽）：
-        · 「越权写不得成功」的机器可判否证改由 `db_verify[employee_absent]` 承担
-          （见本文件 `test_hr009_has_negative_effect_assertion`：它仍是跨轮的效果层断言，
-          且被 Case Trust 的效果层判据认账）；
-        · `must_fail` 里**每一条**声明的 action 都必须**在工具源码的当前枚举里真的存在**
-          —— 若将来有人把 `must_fail: employee_manage(action=create)` 加回来，本断言立刻红
-          （除非同时把 `create` 从源码恢复，那时它才重新是一条有对象的判据）。
+        沿革（判据自己的**重启条件**被满足了，不是"让红变绿"）：
+        · 原断言（#4108）：`must_fail` 必须声明 `employee_manage(action=create)` —— 越权写
+          必须被否证。
+        · #5247（B 端只读化）把该判据改写成 fail-closed 形态并写明：`create` 从源码删除 ⇒
+          原断言**恒真空**；「若将来有人把 `must_fail: employee_manage(action=create)` 加回来，
+          本断言立刻红（**除非同时把 `create` 从源码恢复，那时它才重新是一条有对象的判据**）」。
+        · issue #7050 正是那次恢复（`VALID_ACTIONS` 含 `create`/`update`，走确认门禁 + action 级
+          权限复检）⇒ 按上述重启条件**改判回原判据**：声明面必须含这条**存活**的写 action，
+          且不得有死引用；负效果真身仍是 `db_verify[employee_absent]`（李四不得落库）。
         —— 判据面（源码 action 枚举）不在这里另列一份清单，直接解析工具源码。
         """
         c = _cases()["HR-009"]
         actions = _tool_action_enum(EMPLOYEE_TOOL_SRC)
-        assert actions and "create" not in actions, (
-            f"HR-009 的改判前提已变：employee_manage 源码的 action 枚举含 create：{sorted(actions)}")
-        dead = _dead_must_fail_declarations(c, actions)
-        assert dead == [], (
-            f"HR-009 的 `must_fail` 声明了工具源码里已被删除的 action（死引用 ⇒ 恒真空）：{dead}")
-        # 注入式红证：把已删的 `create` 写回 must_fail ⇒ 同一判据必须报出（证明它不是恒真断言）
-        injected = dict(c, must_fail=[{"tool": "employee_manage", "action": "create"}])
-        assert _dead_must_fail_declarations(injected, actions) == ["employee_manage(create)"], (
-            "注入改前形态后判据仍不报 ⇒ 新判据无判别力（空断言）")
+        assert actions and "create" in actions, (
+            f"改判前提不成立：employee_manage 源码的 action 枚举不含 create：{sorted(actions)}"
+            "（若写能力再次下线，按 #5247 的形态重新改判本判据 —— 不要静默删掉断言）")
+        assert _dead_must_fail_declarations(c, actions) == [], (
+            f"HR-009 的 `must_fail` 声明了工具源码里不存在的 action（死引用 ⇒ 恒真空）："
+            f"{_dead_must_fail_declarations(c, actions)}")
+        assert not _missing_declared_write_action(c, "employee_manage", "create"), (
+            f"HR-009 的 `must_fail` 没有声明 `employee_manage(create)` ⇒ 越权写不再被否证"
+            f"（写能力已接回 B 端，#7050）：{c.get('must_fail')!r}")
+        # 注入式红证：把 must_fail 清空 ⇒ **同一个**判据函数必须报出（证明它不是恒真断言）
+        assert _missing_declared_write_action(dict(c, must_fail=[]), "employee_manage", "create"), (
+            "注入「清空 must_fail」后判据仍认它已声明 ⇒ 该判据无判别力（空断言）")
 
     def test_case_records_the_product_side_channel(self):
         """用例必须**登记**冲突的产品侧归属（否则下一个人只看到一条"莫名红"的用例）。"""

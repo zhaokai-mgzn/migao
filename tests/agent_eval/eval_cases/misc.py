@@ -2,7 +2,7 @@
 # 本文件由 render_cases.py 生成，勿手改（改了也留不住：下次重渲染会覆盖）
 # 源: cases/*.yml（case-contract 单一源）
 # 重新生成: python3 render_cases.py --cases <dir> --out-eval <包目录> --out-md <md>
-# 域: misc（源: cases/misc.yml，208 条）
+# 域: misc（源: cases/misc.yml，209 条）
 
 from ._schema import Difficulty, EvalCase, Skill
 
@@ -3659,6 +3659,24 @@ _CASE_MC_155 = EvalCase(
     precondition='本用例是 [backend-contract]：前置 = frontend/bmini-app/src/utils/inbound/printCapability.ts 的终端分支在场、`PrintEnv.printerMode` 可注入、`readPrintEnv()` 读 `window.__CFG__`；能力探测是纯函数（零网络、零硬件），页面侧已有的 `capability.ok` 门禁（打印按钮 disabled）不变。',
 )
 
+# ── MC-159 [NORMAL] **员工账号的 create / update 接回 B 端**（issue #7050，2026-10-16「能力边界 终版」）：action 枚举与 schema 同时可见（漏参数即不可调用）+ 权限走既有 required_permissions 粗筛与 action 级复检（码取 AdminUserController 注解，不自己判角色）+ 确认走既有 base_skill._requires_confirmation（react_turn 用同一函数对象；未确认 ⇒ 不执行）+ 端点逐字对齐（POST /api/admin/users · PUT /api/admin/users/{id}）+ 删除/停用/重置密码仍不接线（源: cases/misc.yml）──
+_CASE_MC_159 = EvalCase(
+    id='MC-159',
+    legacy_id='',
+    title='**员工账号的 create / update 接回 B 端**（issue #7050，2026-10-16「能力边界 终版」）：action 枚举与 schema 同时可见（漏参数即不可调用）+ 权限走既有 required_permissions 粗筛与 action 级复检（码取 AdminUserController 注解，不自己判角色）+ 确认走既有 base_skill._requires_confirmation（react_turn 用同一函数对象；未确认 ⇒ 不执行）+ 端点逐字对齐（POST /api/admin/users · PUT /api/admin/users/{id}）+ 删除/停用/重置密码仍不接线',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['新来了一个客服叫王五，帮他开个账号', '把张三的岗位改成仓管', '把李四删了'],
+    expectations=[],
+    data_checks=['判据 0·🔴 前置自断言（机器计分型）：前置 = ① `employee_manage` 已在工具注册表 ② `staff` skill 已绑定它 ③ `read_only=False` 且 `requires_confirmation=True` —— 三条由 `TestActionSurfaceIsVisibleToTheModel::test_registry_returns_a_write_tool` / `::test_tool_is_reachable_from_the_staff_skill` / `TestConfirmationGateIsTheSharedOne::test_gate_declaration_is_exactly_the_read_actions` 逐条断言（前置不成立即红，不会退化成「agent 不干活」）。前置成立后的正向效果断言 = `create` 在 mock 端点下返回 `success=true`（`update` 同，`TestEndpointsAreReal`）；负控路径 = 未确认时 `POST` 未被调用（`TestUnconfirmedWriteDoesNotExecute`）。', '判据 1·🔴 action 面可见且参数完整：`VALID_ACTIONS` == {list, detail, create, update} 且与 `get_schema()` 的 `action.enum` 同一集合；`execute` 的每个业务参数都在 schema properties 里（漏参数 ⇒ 模型无法调用）；工具在注册表且 `read_only is False`；`staff` skill 绑定它（否则物理不可达）。执行点 = backend/ai-agent-service/tests/test_employee_manage_write_actions.py::TestActionSurfaceIsVisibleToTheModel。', '判据 2·🔴 权限不是自己判：`required_permissions == [employee:list, employee:create]`；只持 `employee:list` 调 create ⇒ 拒绝且文案具名 `employee:create`（且未发出 POST）；只持 `employee:create` 调 list ⇒ 拒绝并具名 `employee:list`。执行点 = 同文件 ::TestPermissionUsesTheExistingDeclaration。', '判据 3·🔴 走既有确认门禁（不是自己写一套）：`react_turn._requires_confirmation is base_skill._requires_confirmation`（按 `is` 判同一函数对象）；工具源码里没有自建判定；`read_only=False` + `requires_confirmation=True` + `read_only_actions == {list, detail}`；未确认 ⇒ 门禁判拦截，确认卡回复（以「确认」开头）⇒ 放行。执行点 = 同文件 ::TestConfirmationGateIsTheSharedOne。', '判据 4·🔴 未确认不执行（负控）：同一 args、同一工具，只换用户消息（『帮他开个账号』 vs 『确认创建员工王五』）⇒ 前者 `blocked=True` 且 `client.post` 零调用，后者落库一次。执行点 = 同文件 ::TestUnconfirmedWriteDoesNotExecute。', '判据 5·🔴 校验失败具名：create 缺 name/phone/password/岗位（role 与 role_ids 皆无）⇒ 错误点名该字段且 suggestion 给出要补的字段名；update 缺 user_id / 无任何可改字段 ⇒ 同样具名；上述路径零网络调用。执行点 = 同文件 ::TestValidationErrorsAreNamed。', '判据 6·🔴 端点与零越界：create ⇒ `POST /api/admin/users`（payload 的 name/phone/password/roleIds/role 与 admin-api 契约逐字一致）；update ⇒ `PUT /api/admin/users/{id}`；`delete` / `toggle_status` / `reset_password` 在入口即拒并给出去哪办。执行点 = 同文件 ::TestEndpointsAreReal。', '判据 7·🔴 判别力自证（红证）：把 `requires_confirmation` 置 False（内存注入）⇒ 门禁判据必红；把 `read_only` 置 True ⇒ 同；枚举注入删掉 create ⇒ 写面判据必红。执行点 = 同文件 ::TestJudgementIsNotVacuous。'],
+    skip_reason='[backend-contract] 只读源码 + 工具对象（零 LLM / 零网络 / 零 DB）：写路径的**行为面**（模型是否真的先发确认卡）按 migao-dev-flow §13 默认不派发真实评测（#4262 用户裁定「不要自动验证」），需要时由人工集中跑一次。',
+    tags=['agent-capability', 'write-action', 'confirm-gate', 'permission', 'red-proof', 'backend-contract'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── MC-156 [NORMAL] 机台页详情屏补「报返工」入口（复用既有 reportRework / 不新建第二套返工实现 / 次要动作不抢主位）（源: cases/misc.yml）──
 _CASE_MC_156 = EvalCase(
     id='MC-156',
@@ -4023,6 +4041,7 @@ CASES = (
     _CASE_MC_153,
     _CASE_MC_147,
     _CASE_MC_155,
+    _CASE_MC_159,
     _CASE_MC_156,
     _CASE_MC_157,
     _CASE_MC_161,
