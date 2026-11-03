@@ -379,13 +379,13 @@ def build(tmp: Path) -> Fixture:
     _new_branch(fx.clone, "pr/one", {
         ".github/cases/misc.yml": MISC_BASE + _case_block("MC-140", "PR 一新增的用例"),
         ".github/cases/claims/9001-MC-140.json": _claim(PR_ONE, "MC-140"),
-        "tests/unit_ci_workflows/test_batch_one.py": "# case_ids: MC-140\n\ndef test_one():\n    assert True\n",
+        "tests/unit_ci_workflows/test_batch_one.py": "# case_ids: MC-140\n\ndef test_one():\n    assert 1 + 1 == 2\n",
         lib.ANCHOR: _anchor_with_row(3),
     }, "pr one: add MC-140")
     _new_branch(fx.clone, "pr/two", {
         ".github/cases/misc.yml": MISC_BASE + _case_block("MC-140", "PR 二**也**占 MC-140 的用例"),
         ".github/cases/claims/9002-MC-140.json": _claim(PR_TWO, "MC-140"),
-        "tests/unit_ci_workflows/test_batch_two.py": "# case_ids: MC-140\n\ndef test_two():\n    assert True\n",
+        "tests/unit_ci_workflows/test_batch_two.py": "# case_ids: MC-140\n\ndef test_two():\n    assert 1 + 1 == 2\n",
         lib.ANCHOR: _anchor_with_row(3),
     }, "pr two: add MC-140 too")
     _sh(["git", "-C", str(fx.clone), "push", "-q", "origin", "pr/one", "pr/two"])

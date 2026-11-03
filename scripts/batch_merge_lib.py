@@ -643,7 +643,8 @@ def main(argv=None, cwd=None) -> int:
                 theirs = git(repo, "show", f"{ref}:{rel}", check=False)
                 if theirs.returncode != 0:
                     continue                                  # 本支没碰这个文件
-                base = git(repo, "show", f"{merge_base}:{rel}", check=False).stdout
+                base_proc = git(repo, "show", f"{merge_base}:{rel}", check=False)
+                base = base_proc.stdout if base_proc.returncode == 0 else ""
                 added += [(rel, cid, blk) for cid, blk in added_blocks(base, theirs.stdout)]
             branch_files = git_out(repo, "diff", "--name-only", merge_base, ref).splitlines()
             renames = plan_renames(added, taken)

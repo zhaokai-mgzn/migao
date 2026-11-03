@@ -97,7 +97,15 @@ SUCCESSOR_TOKENS = ("+ 1", "+1", "+= 1", "+=1", "max(", "min(")
 #: 「取号」的实现点**冻结清单** —— 注释声称 `scripts/**` 里取号是**单一实现**（第二份算号脚本
 #: 不许存在）⇒ 由本文件 `test_only_one_allocation_implementation_in_scripts` 承担
 #: （双向：多一个 ⇒ 红、少一个 ⇒ 红）。登记面 = `declaration_gate_registry.json::same_source_claims`。
-ALLOCATION_IMPLEMENTATIONS_FROZEN = ("scripts/next_case_id.py",)
+ALLOCATION_IMPLEMENTATIONS_FROZEN = (
+    "scripts/next_case_id.py",
+    # `scripts/batch_merge_lib.py::allocate_free_id`：**批次合并**（issue #8323）里的「后合入者让号」。
+    # 为什么不是「改调 next_case_id.py」：那个工具**要联网**（列 open PR 取在飞面），而合批工具
+    # 必须在**离线夹具 / 无 gh 的环境**里也能跑完（判据 = tests/unit_ci_workflows/test_batch_merge_tool.py）。
+    # 取舍（已在模块 docstring 的「覆盖面」登记）：只用**批次内** `max+1`，看不见批次**之外**的在飞 PR
+    # ⇒ 仍可能与外部在飞包撞号，靠下一次合入的「后合入者让号」收口（重启条件：出现两次以上批次外撞号）。
+    "scripts/batch_merge_lib.py",
+)
 
 #: 判据 7 的**旧配方指纹**（手工取号：现取最大号 + 1）。这些串**只许消失**，不许出现在 §26.3 里。
 HAND_ROLLED_RECIPE_MARKERS = ("| sort -u | tail", "已合并侧现取最大号")
@@ -558,22 +566,27 @@ def test_allocation_site_marker_is_the_tool_itself() -> None:
 
 def test_single_implementation_criterion_has_discriminating_power() -> None:
     """判据 6 的判别力自证（**内存构造**）：新造第二份算号脚本 ⇒ 红；登记陈旧 ⇒ 红；只改注释 ⇒ 不红。"""
+    # 🔴 本节用的是**缩减后的源集**（只放工具本体）⇒ 登记面也要同步缩到这一项，
+    #    否则「另一个已登记实现点不在此源集里」会被误判成**陈旧登记**（issue #8323 加进
+    #    第二个实现点 `scripts/batch_merge_lib.py` 后暴露；那一条由判据 6 的**全量**源集裁）。
+    reduced = (TOOL_REL,)
     real = {TOOL_REL: _source()}
-    assert unregistered_allocators(real) == []
+    assert unregistered_allocators(real, registered=reduced) == []
     second = ("scripts/another_allocator.py",
               "import re\n"
               "RE = re.compile(r'^\\s*-\\s*id:\\s*([A-Z]+)-(\\d+)\\s*$', re.M)\n"
               "def nxt(text):\n"
               "    used = {int(m.group(2)) for m in RE.finditer(text)}\n"
               "    return max(used) + 1\n")
-    bad = unregistered_allocators({**real, second[0]: second[1]})
+    bad = unregistered_allocators({**real, second[0]: second[1]}, registered=reduced)
     assert any("another_allocator" in p and "未登记" in p for p in bad), bad
-    stale = unregistered_allocators({"scripts/x.py": "print('只用 split 解析，不用正则')\n"})
+    stale = unregistered_allocators({"scripts/x.py": "print('只用 split 解析，不用正则')\n"},
+                                   registered=reduced)
     assert any("陈旧登记" in p for p in stale), stale
-    assert unregistered_allocators({}) != [], "空射程必须红（fail-closed）"
+    assert unregistered_allocators({}, registered=reduced) != [], "空射程必须红（fail-closed）"
     # 对照：只改注释 ⇒ 不红
     commented = {TOOL_REL: _source() + "\n# 只加一行注释\n"}
-    assert unregistered_allocators(commented) == []
+    assert unregistered_allocators(commented, registered=reduced) == []
 
 
 # ═════════════════════════════════════════════════════════════════════════════
