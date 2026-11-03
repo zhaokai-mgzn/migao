@@ -1,0 +1,163 @@
+{
+  "_why": "issue #6692 的**牵连面台账**：本地 `next dev` 的输出根从 `.next` 挪到 `.next-dev` 之后，凡是读过/清过/跳过 admin-web 产物目录的地方都必须**逐处核对**（改过 = changed，核对后无需改 = unaffected，新路径的承载体 = current）。判据 = tests/unit_ci_workflows/test_next_dev_build_isolation.py::test_downstream_consumers_are_updated_or_registered（未登记即红 / 登记成无关但仍有旧路径 ⇒ 红 / 锚点失效 ⇒ 红）。",
+  "_boundary": "扫面 = `.github` / `scripts` / `tests` / `deploy` / `frontend/admin-web` 的**代码行** + `.gitignore`；说明文档（`docs/**`）、历史用例正文（`.github/cases/**`）与生成物（`tests/agent_eval/eval_cases/**`）不在面内 —— 旧路径写在说明里不算消费方。",
+  "_scanner_family": "`frontend/admin-web/scripts/*.mjs` 这一族**有意不入册**：现取它们的扫面根全部落在 `src/…`（`SCOPES = ['src/app/(dashboard)', 'src/components']` / `join(APP_ROOT, 'src', …)` / 读具体 `src/**` 文件），包根的 `.next-dev` 不在其语料内 ⇒ 它们的 `SKIP_DIRS` 里的 `.next` 无需跟着改名（改了反而多一处会漂的口径）。",
+  "_deploy_dir": "`deploy/**` 现取 **0** 处 `.next` 引用（`git grep -n '\\.next' deploy`）⇒ 部署面无需登记条目；若将来有人往里写 dev 清理命令，扫面会当场判「未登记」。",
+  "entries": [
+    {
+      "path": "frontend/admin-web/next.config.mjs",
+      "status": "current",
+      "why": "新路径的**唯一真值源**：`DEV_DIST_DIR` / `BUILD_DIST_DIR` 两个具名常量 + 按 `NODE_ENV` 的 `distDir` 选择式。",
+      "anchors": [
+        "const DEV_DIST_DIR = '.next-dev'",
+        "const BUILD_DIST_DIR = '.next'",
+        "distDir: process.env.NODE_ENV === 'development' ? DEV_DIST_DIR : BUILD_DIST_DIR,"
+      ]
+    },
+    {
+      "path": "frontend/admin-web/tsconfig.json",
+      "status": "current",
+      "why": "include 覆盖 dev 目录的两个形态（避免 `next dev` 每次把 glob 追加进配置 = churn）；exclude 把 **dev 中间态**（新 `.next-dev` 与修前残留 `.next/dev`）挡出类型检查面 —— `next build` 的本地 tsc 查的是整个 tsconfig 项目，`.next/dev/types` 是形态 ② 的原发地。include 里保留 `.next/dev/types` 是**有意**：Next 每次 build 会把它追加回来（不保留就每次脏工作区），而 exclude 已让它不成为类型检查根。",
+      "anchors": [
+        "\".next/types/**/*.ts\"",
+        "\".next/dev/types/**/*.ts\"",
+        "\".next-dev/types/**/*.ts\"",
+        "\".next-dev/dev/types/**/*.ts\"",
+        "\".next-dev\""
+      ]
+    },
+    {
+      "path": ".gitignore",
+      "status": "current",
+      "why": "新目录的产物必须被忽略（否则 dev 产物会被 `git add` 进来）。",
+      "anchors": [
+        ".next-dev/",
+        "frontend/admin-web/.next-dev/"
+      ]
+    },
+    {
+      "path": "frontend/admin-web/package.json",
+      "status": "unaffected",
+      "why": "`dev` / `build` / `start` 脚本都**不覆盖** `NODE_ENV` ⇒ `next` CLI 的 `preAction` 缺省值（dev → development、其余 production）生效，选择式按预期分派；脚本本身没有产物路径。",
+      "anchors": [
+        "\"dev\": \"next dev -p 3001\"",
+        "\"build\": \"next build\"",
+        "\"start\": \"next start -p 3001\""
+      ]
+    },
+    {
+      "path": "frontend/admin-web/Dockerfile",
+      "status": "unaffected",
+      "why": "构建/运行都在 `NODE_ENV=production`（Dockerfile 显式 `ENV NODE_ENV=production`，`next build`/`next start` 也缺省 production）⇒ 产物仍在 `.next`，部署契约零改动。",
+      "anchors": [
+        "ENV NODE_ENV=production",
+        "RUN npm run build",
+        "CMD [\"npx\", \"next\", \"start\", \"-p\", \"3001\"]"
+      ]
+    },
+    {
+      "path": ".github/workflows/pr-check.yml",
+      "status": "unaffected",
+      "why": "CI 只缓存 npm（`cache: npm` + `cache-dependency-path: package-lock.json`），**不缓存** `.next`；`npx tsc --noEmit` 与 `npm run build` 都在干净检出（无 dev 产物）里跑 ⇒ 无绑定 dev 目录的路径。",
+      "anchors": [
+        "cache-dependency-path: frontend/admin-web/package-lock.json",
+        "run: npm run build"
+      ]
+    },
+    {
+      "path": "tests/playwright.config.ts",
+      "status": "unaffected",
+      "why": "webServer 直接跑 `npx next dev`（不经 npm script）⇒ `NODE_ENV=development` 由 Next CLI 缺省给出 ⇒ 自动落到 `.next-dev`；dev 锁/身份守卫的路径来自判据实现（已改为现取配置），本文件无产物路径。",
+      "anchors": [
+        "npx next dev"
+      ]
+    },
+    {
+      "path": "tests/admin_web_devserver_identity.py",
+      "status": "changed",
+      "why": "dev 锁路径不再硬编码：`_resolve_dev_dist_dir()` 现取 `next.config.mjs` 的 `DEV_DIST_DIR`（取不到 fail-closed），锁 = `<DEV_DIST_DIR>/dev/lock`。这是本单最危险的一处**假绿**：硬编码旧目录时，配置一改判据会静默「没探测到 dev server」。",
+      "anchors": [
+        "def _resolve_dev_dist_dir() -> str:",
+        "DEV_DIST_DIR = _resolve_dev_dist_dir()",
+        "DEV_LOCK_RELATIVE = os.path.join(DEV_DIST_DIR, \"dev\", \"lock\")"
+      ]
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_admin_web_devserver_identity.py",
+      "status": "changed",
+      "why": "造锁夹具复用判据实现的同一读数（`identity_guard.DEV_LOCK_RELATIVE`），不再自造 `<project>/.next/dev/lock`。",
+      "anchors": [
+        "import admin_web_devserver_identity as identity_guard",
+        "DEV_LOCK_RELATIVE = Path(identity_guard.DEV_LOCK_RELATIVE)",
+        "lock = project / DEV_LOCK_RELATIVE"
+      ]
+    },
+    {
+      "path": "scripts/ui_smoke_merchant.sh",
+      "status": "changed",
+      "why": "业务路由 404 的**陈旧 dev 缓存**处置命令指向 dev 侧目录（`.next-dev`）；清 build 侧 `.next` 既救不回 dev，又会毁掉本地生产产物。",
+      "anchors": [
+        "rm -rf $REPO_ROOT/frontend/admin-web/.next-dev",
+        "陈旧 dev 缓存"
+      ]
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_dev_db_whitelist_one_command.py",
+      "status": "changed",
+      "why": "判据 7b 的断言跟着收口到 `.next-dev`，并加负控（处置命令**不得**指向 build 侧 `.next`）—— 原断言只比对 `frontend/admin-web/.next` 前缀，改成 `.next-dev` 后仍会通过（前缀可满足）⇒ 必须显式收紧，否则是空断言。",
+      "anchors": [
+        "\"rm -rf frontend/admin-web/.next-dev\" in block",
+        "build_dir_rm = re.findall",
+        "assert build_dir_rm == []"
+      ]
+    },
+    {
+      "path": "scripts/code_mass_report.py",
+      "status": "changed",
+      "why": "全仓走盘的代码量读数必须跳过 dev 产物根（否则生成物进了代码量口径）。",
+      "anchors": [
+        "\".next\", \".next-dev\", \".git\""
+      ]
+    },
+    {
+      "path": ".github/growth_gate.py",
+      "status": "changed",
+      "why": "全仓测试文件走盘必须跳过 dev 产物根（生成物里的 `.ts` 不是测试语料）。",
+      "anchors": [
+        "\".next\", \".next-dev\", \"dist\""
+      ]
+    },
+    {
+      "path": ".github/plaintext_credential_guard.py",
+      "status": "changed",
+      "why": "全仓凭据扫描必须跳过 dev 产物根（生成物会被当源码读 ⇒ 耗时与误报）。",
+      "anchors": [
+        "\".next\", \".next-dev\""
+      ]
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_admin_web_next_build_gate.py",
+      "status": "changed",
+      "why": "该判据以**包根**为扫面（`_CONTEXT_ROOT = frontend/admin-web`）走 `rglob` ⇒ 不跳过 `.next-dev` 就会把生成物当源码判「包外 import 逃逸」。",
+      "anchors": [
+        "\".next\", \".next-dev\", \"node_modules\""
+      ]
+    },
+    {
+      "path": "scripts/red_proof.py",
+      "status": "unaffected",
+      "why": "它清的是**构建/转换缓存**（`.next/cache`、`node_modules/.cache` …）以做红证注入；红证跑的是单元/契约判据，不起 `next dev` ⇒ dev 目录搬到哪里都不影响它的清理面。",
+      "anchors": [
+        "CACHE_NESTED_DIRS = (\".next/cache\""
+      ]
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_loc_ratchet.py",
+      "status": "unaffected",
+      "why": "LOC 棘轮的扫面是**白名单**（`frontend/*/src` 等三处），包根的 dev 产物不在面内 ⇒ 不需要额外的跳过目录。",
+      "anchors": [
+        "(\"frontend/*/src\", (\".ts\", \".tsx\")),"
+      ]
+    }
+  ]
+}

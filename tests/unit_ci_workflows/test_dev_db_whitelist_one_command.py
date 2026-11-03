@@ -22,7 +22,7 @@ r"""云 dev DB 白名单：**一条命令**（幂等 / 只追加 / fail-closed /
 | 4 | **fail-closed**：`aliyun` 缺失 / Describe 失败 / Modify 失败 / 追加后回读读不到 / TCP 复测不可达 ⇒ **各自**非零退出 | 任一形态 exit 0 ⇒ 红 |
 | 5 | **不泄漏**：桩 `.env` 里放**哨兵密码**，脚本全部输出（stdout+stderr，含失败路径）不得含它 | 打印凭据 ⇒ 红 |
 | 6 | **`--check` 只读**：任何形态下都**不产生** Modify 调用；在列且可达 ⇒ exit 0、不在列 ⇒ 非零 | `--check` 偷偷写 / 恒 0 ⇒ 红 |
-| 7b | **业务路由自检（起栈后）**：桩 dev 对 `(dashboard)` 组路由回 **404** ⇒ 输出含「`.next`」+ 可行动命令、非零退出、**没开始跑 spec**；可达 ⇒ 正常继续 | 泛化「产品大面积挂」⇒ 红 |
+| 7b | **业务路由自检（起栈后）**：桩 dev 对 `(dashboard)` 组路由回 **404** ⇒ 输出含「`.next-dev`」（dev 侧输出目录，issue #6692）+ 可行动命令、非零退出、**没开始跑 spec**；可达 ⇒ 正常继续 | 泛化「产品大面积挂」/ 处置命令指向 build 侧 `.next` ⇒ 红 |
 | 7 | **起栈入口预检（接线 + 时序）**：`scripts/ui_smoke_merchant.sh` 在启动 admin-api **之前** TCP 探 RDS；桩 `nc` 不可达 ⇒ wrapper **非零退出**、输出含 `dev-db-whitelist.sh`、**不含** `PSQLException`、且**没走到**起栈 | 预检被摘掉 / 挪到起栈之后 ⇒ 红 |
 | 7c | **顺序判据的锚是「结构锚」**（issue #6802）：启动行 = `backend/admin-api` + `mvnw spring-boot:run` 的**代码行**（`LAUNCH_LINE_RE`），注释行不算；定位不到 ⇒ fail-closed 且**具名**（`ordering_verdict`）。负控：预检块**之前**插含「启动 admin-api」的注释 ⇒ **不变**；块后插代码 ⇒ 仍绿；正控：块整块移到启动行**之后** ⇒ 红且报「之后」；启动行被注释掉 ⇒ 红 | 退回 `text.find("启动 admin-api")`（文本首现）⇒ 注释负控红 |
 | 8 | **判别力自证（注入式，实跑）**：`Append`→`Overwrite` / 删掉整段 `--ModifyMode` 参数 / 摘掉预检块 ⇒ 同名判据**当场红**；还原 ⇒ 绿；**只改注释** ⇒ 不红 | 判据恒绿（空断言）⇒ 红 |
@@ -174,7 +174,7 @@ def preflight_ordering_ok(text: str) -> bool:
 
 
 def route_check_block(text: str) -> str:
-    """`ui_smoke_merchant.sh` 的业务路由自检块（防「陈旧 `.next`」被读成产品故障）。"""
+    """`ui_smoke_merchant.sh` 的业务路由自检块（防「陈旧 dev 缓存（`.next-dev`）」被读成产品故障）。"""
     start = text.find("# ── 2.5 业务路由自检")
     if start < 0:
         return ""
@@ -522,16 +522,16 @@ def test_smoke_preflight_passes_through_when_reachable(tmp_path):
     assert "业务路由 404" not in combined, f"路由可达时不得打缓存失败文案：\n{combined[-800:]}"
 
 
-# ── 判据 7b：业务路由自检（防「陈旧 .next」被读成产品大面积故障） ──────────────
+# ── 判据 7b：业务路由自检（防「陈旧 dev 缓存」被读成产品大面积故障） ──────────────
 
 def test_smoke_route_check_catches_stale_next_cache(tmp_path):
-    """桩 dev 对业务路由回 404 ⇒ 输出含「.next」+ 可行动命令、非零退出、**没开始跑 spec**。"""
+    """桩 dev 对业务路由回 404 ⇒ 输出含「.next-dev」+ 可行动命令、非零退出、**没开始跑 spec**。"""
     root = _fake_worktree(tmp_path)
     proc = _run_smoke(root, nc_rc="0", route_rc="404")
     assert proc.returncode != 0, f"404 必须挡住跑 spec：\n{proc.stdout}\n{proc.stderr}"
     combined = proc.stdout + proc.stderr
-    assert ".next" in combined, "提示必须点名陈旧 .next 缓存"
-    assert "rm -rf" in combined and "frontend/admin-web/.next" in combined, "必须给可行动命令"
+    assert ".next-dev" in combined, "提示必须点名陈旧 **dev** 缓存目录（.next-dev；issue #6692 起 dev 写这里）"
+    assert "rm -rf" in combined and "frontend/admin-web/.next-dev" in combined, "必须给可行动命令"
     assert combined.count("执行冒烟 spec") == 0, "不许继续跑 34 旅程（那会产出 34 条假故障读数）"
 
 
@@ -541,7 +541,11 @@ def test_smoke_route_check_absent_before_web_and_spec(tmp_path):
     assert route_check_ordering_ok(text), "业务路由自检必须接线在 admin-web ready 与 spec 之间"
     block = route_check_block(text)
     assert "ROUTE_CHECK_404" in block
-    assert "rm -rf frontend/admin-web/.next" in block, "提示必须给出可行动命令（含要清哪个缓存）"
+    assert "rm -rf frontend/admin-web/.next-dev" in block, "提示必须给出可行动命令（含要清哪个缓存）"
+    # 负控：处置命令**不许**指向 build 侧目录 —— dev 的陈旧缓存搬走后再清 `.next` 既救不回 dev，
+    # 又毁掉本地生产产物（issue #6692 的形态：两模式共用目录时两个目录名看起来都能"清干净"）。
+    build_dir_rm = re.findall(r"rm -rf [^\n]*frontend/admin-web/\.next(?![\w-])", block)
+    assert build_dir_rm == [], f"处置命令不得指向 build 侧 .next：{build_dir_rm}"
     # 只报不动手：`rm` 只许出现在**引号里的输出文案**中，不得作为命令执行
     exec_rm = [ln for ln in code_lines(block).split("\n")
                if re.match(r'\s*rm\s', ln) or re.search(r'(^|[;&|]\s*)rm\s+-', ln)]

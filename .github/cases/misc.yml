@@ -7325,7 +7325,44 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
-
+  # ==========================================================================
+  # MC-157（issue #6692）：本地 `next dev` 与 `next build` 共用 `.next` ⇒ 互相写坏
+  # ==========================================================================
+  - id: MC-157
+    legacy_id: ""
+    title: "**本地 dev / build 输出目录物理隔离**：`next dev` 写 `.next-dev`、`next build` / `next start` 仍写 `.next`（共用 `.next` 时 dev 侧已存在路由 404 可复现 + build 侧读到半写生成物报 9 条 TS 错误）"
+    domains:
+      - misc
+    tier: normal
+    tags:
+      - dev-experience
+      - dist-dir-isolation
+      - static-config
+      - ledger
+      - red-proof
+    truths_ref: []
+    user_inputs:
+      - "本地起 `next dev` 后，/production/remnants、/production/pool、/production/piecework、/production/routings 全部 404（Next 默认英文页），而 /production 本身 200、/products 200 —— `rm -rf .next` 重起 dev 就全恢复；另一次是 `npm run build` 被 `.next/dev/types/routes.d.ts`（被写成两段首尾拼接的坏 TS）打断、9 条 TS 错误全指向生成物。本机没有任何东西会把这两件事连起来，只能靠人猜「是不是缓存」。"
+    expectations: []
+    data_checks:
+      - '🔴 **判据 ①（dev 与 build 的输出根不同，两路读数）**：静态读数 = `next.config.mjs` 的具名常量 `DEV_DIST_DIR` / `BUILD_DIST_DIR` + 按 `NODE_ENV` 的 `distDir` 选择式；真读数 = 用 Node `import()` 求值同一份配置，在 `NODE_ENV=development` / `production` / **未设**三种形态下各取一次 `distDir`，必须分别等于 `.next-dev` / `.next` / `.next`。隔离契约还要求两个根**互不为前缀**（`.next/dev-build` 这种嵌套会继续被 build 的清理面牵到 ⇒ 判红）。执行点 = tests/unit_ci_workflows/test_next_dev_build_isolation.py::test_dev_and_build_dist_dirs_are_different'
+      - '🔴 **判据 ②（tsconfig 与新目录一致，且 dev 中间态被挡出类型检查面）**：`include` 必须覆盖 `.next-dev/types/**/*.ts` 与 `.next-dev/dev/types/**/*.ts`（Next 每次 dev 会把缺的 glob 自动追加 ⇒ 缺了就是每次脏配置），且只许出现两个输出根下的四种已知形态；`exclude` 必须含 `.next-dev` 与 `.next/dev`（**修前机器上的残留也要挡**）—— 现取 `include − exclude` 的根集合里不得出现 dev 目录。这条是形态 ② 的根：Next 16 的 `next build` 用**项目本地 tsc** 查**整个 tsconfig 项目**（源码注释原话：including test files and `.next/dev/types` when included）。执行点 = 同文件::test_tsconfig_include_and_exclude_agree_with_dist_dirs（+ 提交面的 `next-env.d.ts` 不许钉 dev 目录：::test_committed_next_env_does_not_pin_dev_dir）'
+      - '🔴 **判据 ③（`.gitignore` 覆盖新目录，正负控）**：文本在册 + `git check-ignore` **真跑**：正控 = `frontend/admin-web/.next-dev/dev/types/routes.d.ts` 必须被忽略；负控 = `next.config.mjs` / `src/app/layout.tsx` **不**被忽略（规则过宽 = 另一种假绿），`.next` 的既有忽略规则不得被删。执行点 = 同文件::test_gitignore_covers_dev_dist_dir'
+      - '🔴 **判据 ④（旧路径的下游消费者：已改 / 已登记）**：现取 `.github` / `scripts` / `tests` / `deploy` / `frontend/admin-web` 的**代码行**（注释与 `docs/**`、历史用例正文、生成物不在面内），命中「旧 dev 路径」的两条形态（`.next/dev…`、`rm -rf …/frontend/admin-web/.next`）必须逐条登记在 `tests/unit_ci_workflows/next_dev_build_isolation_ledger.json`：**未登记即红**；登记成 `unaffected` 但文件仍有旧路径 ⇒ 红；`changed` 但文件里没有新目录 ⇒ 红；锚点失效 ⇒ 红（台账不得盖章了事）。现取 17 条（`current` 3 / `changed` 8 / `unaffected` 6，含 Dockerfile、pr-check.yml、playwright 配置、package.json 的「已核对无需改」）。执行点 = 同文件::test_downstream_consumers_are_updated_or_registered + ::test_scan_face_is_not_blind'
+      - '🔴 **判据 ⑤（判别力自证：注入式实跑，逐条记读数）**：① 把 `DEV_DIST_DIR` 改成 `.next`（两个根坍缩）⇒ 判据 ① 红（`dev 与 build 仍共用输出根 '' .next ''`）；② 摘掉整行 `distDir:` 选择式 ⇒ 判据 ① 红（结构契约缺失）；③ `include` 摘掉 `.next-dev/dev/types/**/*.ts`（保持 JSON 合法）⇒ 判据 ② 红（点名缺的 glob）；④ `exclude` 摘掉 `.next-dev` ⇒ 判据 ② 红（点明 build 的 tsc 会读到 dev 半写生成物）；⑤ `.gitignore` 回到修前形态 ⇒ 判据 ③ 红；⑥ 冒烟脚本的处置命令回退成清 `.next` ⇒ 判据 ④ 红（既报锚点失效、又报 changed 仍命中旧路径）；⑦ dev 锁路径硬编码回 `.next` ⇒ 判据 ⑥ 红。每轮注入都先自证文件指纹变化、还原后复验指纹一致。执行点 = 同文件::test_red_proof_collapsing_dist_dirs_is_caught + PR body 的逐条读数'
+      - '🔴 **判据 ⑥（类级联动：dev 锁路径与配置单一真值源）**：`tests/admin_web_devserver_identity.py` 的 `DEV_LOCK_RELATIVE` 必须等于 `<DEV_DIST_DIR>/dev/lock`（同一份配置现取）。这是本单最危险的假绿面：硬编码旧目录时，配置一改判据会**静默**变成「本检出没有 dev server」⇒ Playwright 的加载期拒绝失效。执行点 = 同文件::test_dev_lock_probe_follows_config'
+      - '**边界（照实登记，§19.1）**：① ⛔ 不真跑 `next build` / `next dev` —— ①的「真读数」是**配置求值**（Node `import()` 两模式各一次），不是「跑一次构建看它写哪里」；② 判不了 Next 内部是否还有别的共享面（只钉「输出根不同 + 类型检查面不交」两条可机械判定的契约）；③ 扫面只覆盖代码行（说明文档 / 历史用例正文里的旧路径不算消费方）；④ 显式 `NODE_ENV=production next dev` 会落到 build 目录（Next 自带告警）——逃生口有意保留，不为它再加一层命令嗅探；⑤ `frontend/admin-web/scripts/*.mjs` 这一族**有意不入册**：现取扫面根全在 `src/…`，包根的 `.next-dev` 不在其语料内。'
+    skip_reason: "[backend-contract] 零 LLM 的确定性读数（读配置 + Node 求值配置 + tsconfig/.gitignore 对账 + `git check-ignore` 真跑 + 代码行扫面/台账逐条对账 + 7 条注入式红证），零网络、零 DB、不跑 `next build`、不进 agent-eval 冒烟"
+    merge_log: "2026-11-03 新增（issue #6692：本地 `next dev` 与 `next build` 共用 `.next` 会互相写坏；dev 侧已存在路由 404 可复现、build 侧读半写生成物报 9 条 TS 错误）。取号（**三次让号，记实**）：`python3 scripts/next_case_id.py MC` 首取 **MC-145**（工具按「最小空闲号、含历史空档」口径返回；历史空档 MC-099 按裁定**不回填**）；按本轮约束「避开 MC-139~MC-153」让号到 MC-154；merge `origin/main` 时 main 已占 148~154 ⇒ 顺延 **MC-155**；随后批合工具（#8565）把原 MC-154 重编号成 **MC-155**、#7992 又占了 **MC-156**（`git show origin/main:.github/cases/misc.yml` 现取末段 = 150/151/152/153/155/156）⇒ 再撞一次，按「后合入者让号」顺延终态 **MC-157**（157 归本包，158 留给 #8561）。修法 = **A `distDir` 隔离**（根因：物理隔离 > 每次清理）：`frontend/admin-web/next.config.mjs` 按 `NODE_ENV` 切两个输出根（dev → `.next-dev`、build/start → `.next`；`next` CLI 缺省 dev=development、其余=production 且尊重外部已设值 ⇒ `npx next dev` 等任何形态都自动分派）。牵连面**逐处核对**（台账 17 条）：`.gitignore` 两条新规则、`tsconfig.json` include/exclude、dev 锁路径改为现取配置、冒烟脚本陈旧缓存处置文案 + 其判据 7b 断言收紧（并加「不得指向 build 侧 `.next`」负控）、4 处全仓/包内走盘扫描器跳过新目录；**已核对无需改**：Dockerfile（构建/运行都在 production）、`pr-check.yml`（只缓存 npm、不缓存 `.next`）、`playwright.config.ts`（`npx next dev` 自动落 dev 目录）、`package.json`（脚本不覆盖 NODE_ENV）、`deploy/**`（现取 0 处 `.next` 引用）。**红证（注入式，实跑，读数见 PR body）**：7 条各自判红并具名，还原后文件指纹一致。"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_next_dev_build_isolation.py"
+        - "tests/unit_ci_workflows/test_admin_web_devserver_identity.py"
+        - "tests/unit_ci_workflows/test_dev_db_whitelist_one_command.py"
+        - "tests/unit_ci_workflows/test_admin_web_next_build_gate.py"
+      ci:
+        - pr-check.yml
+      verifies: []
   # ==========================================================================
   # MC-158（issue #8337）：工人端菜单**没有「岗位 → 菜单」映射**，且「拍照入库 / 补打入库标签」
   # 两个已有页面**没有页面键、恒显示** ⇒ 「每岗位 1~3 个菜单」在任何工人身上都不成立。
