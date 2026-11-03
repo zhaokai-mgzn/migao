@@ -402,12 +402,14 @@ def test_red_proof_collapsing_dist_dirs_is_caught():
     # ③ 删掉整个选择式（两个常量还在）⇒ 配置结构契约必须红
     without_select = re.sub(r"^\s*distDir:.*\n", "", text, count=1, flags=re.MULTILINE)
     assert without_select != text, "变异未生效：distDir 行没被删掉"
+    rejected = False
     try:
         parse_dist_dirs(without_select)
-    except AssertionError:
-        pass
-    else:
-        raise AssertionError("摘掉 `distDir:` 选择式后仍被判通过 —— 判据 ① 是空断言")
+    except AssertionError as exc:
+        rejected = "-- 选择式缺失" in str(exc) or "distDir" in str(exc)
+    assert rejected, (
+        "摘掉 `distDir:` 选择式后仍被判通过（或报的不是这条契约）—— 判据 ① 是空断言"
+    )
 
     # ④ tsconfig 变异：摘掉 dev glob / 摘掉 dev 的 exclude ⇒ 判据 ② 的**同一条规则**必须各自红
     tsconfig = json.loads(TSCONFIG.read_text(encoding="utf-8"))
