@@ -4186,7 +4186,7 @@
 ```
 溯源: 2026-10-31 新增（issue #8295）：两步确认，避免误写 ｜ tags: ui, preview
 
-## 杂项域（191 case）
+## 杂项域（192 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -7040,6 +7040,19 @@
 跳过: [backend-contract] 研发工具面判据（临时 git 仓库 + worktree，零网络、不碰真仓库）由 tests/unit_ci_workflows/test_batch_merge_tool.py 验证，非 LLM 行为，不进入 agent-eval 冒烟
 ```
 溯源: 2026-11-03 新增（issue #8523）：把「多 PR 集中合」做成可复用工具。背景 = 今晚人工做过一次（PR #8519）踩了四个坑：① 冲突全在追加型台账上（`cases/*.yml` / 生成物 / 锚点 JSON）且 `--ours/--theirs` 解冲突会把冲突标记留成嵌套垃圾（实测写坏过 baseline JSON）② 堆叠 PR 同占用例号 ③ `--no-commit` 后不提交就合下一支 ⇒ 全线 rc=128（worktree 里 `.git` 是**文件**，判「在合并中」必须 `MERGE_HEAD`）④ 批量 body 不能带关闭词。交付 = `scripts/batch-merge.sh`（入口）+ `scripts/batch_merge_lib.py`（实现体，从 origin/main 重建 + 重放，六步顺序即安全顺序）+ 判据 6 条（各带可执行红证）+ docs/wiki/Development.md 的「批次合并（默认路径）」。取号 MC-140（`python3 scripts/next_case_id.py MC` 现取：main 001-098,100-132,134,137 + 在飞 PR #8519 的 133,135-136,138 + #8508 的 139 + #8509 的 133 ⇒ 最小空闲 140；MC-099 是刻意空档，**不回填**）。 ｜ tags: ci, batch-merge, pr-batching, case-id-collision, anchor-rebaseline, merge-head, red-proof
+
+### MC-146. 冒烟夹具的库存改由公开 API（入库单建单即过账）产生，种子夹具的直写点进台账并由判据双向对账（issue #7600） 🔵
+```
+你: 冒烟又是全绿，可这批自造商品的 SKU 库存到底从哪来的？扣减对不对，这条链路冒烟碰过吗？
+数据: 🔴 **判据 ①·未登记即红（会红）**：扫冒烟 / 种子夹具面（`scripts/ui-smoke-merchant/`、`docs/deployment/demo-seed.sql`、`tests/agent_eval/fixtures/`）里的 `product_skus` + `stock` 直写；每一处必须落在台账 `tests/unit_ci_workflows/smoke_fixture_direct_write_ledger.json` 已声明的 scope 内，否则判红并具名「`<仓库相对路径>` + 行号」。执行点 = `tests/unit_ci_workflows/test_smoke_fixture_stock_chain.py::test_no_unregistered_direct_write_on_the_real_corpus` 与 `::test_red_proof_new_unregistered_write_turns_red`
+数据: 🔴 **判据 ②·登记点消失也红（会红，台账不许陈旧）**：台账每条必须仍成立 —— 登记标记在文件里、scope 锚可解析、**站点数两个方向**都对得上（多一条 = 新直写未登记；少一条 = 台账陈旧）。执行点 = 同文件 `::test_registered_sites_are_all_still_there` / `::test_scan_is_not_dead` / `::test_red_proof_removing_a_registered_site_turns_red`
+数据: 🔴 **判据 ③·负控（射程准确）**：产品代码 `backend/admin-api/src/main/java/com/migao/admin/mapper/ProductSkuMapper.java` 里的 `product_skus` **不被扫**（先断言它确实存在 = 负控非空断言），且同一正则对夹具面确实命中（证明空结果不是正则失灵）。执行点 = 同文件 `::test_product_code_is_out_of_scan_scope`
+数据: 🔴 **判据 ④·红证（注入式）**：① 删掉 `docs/deployment/demo-seed.sql` 里一条已登记直写点、台账不动 ⇒ 判据 ② 红且归因 `DFW-DEMO-SEED-001`（实跑 4 failed / 4 passed，报「登记 14 条，现场 13 条」），恢复 ⇒ 绿；② 把 `stock: 120` 写回冒烟 spec 的 SKU payload ⇒ 判据 ① 红并具名 `scripts/ui-smoke-merchant/spec.mjs`（实跑 5 failed / 3 passed）。
+数据: 🔴 **判据 ⑤·A 类不许退回 B 类**：`createProductFixture` 的 SKU payload 不带 `stock`、必须调 `seedSkuStockViaInbound`（`POST /api/admin/inbound-orders`，建单即过账 = `posted`），建品旅程断言「建完库存全 0 → 过账后全 120」。执行点 = 同文件 `::test_smoke_fixture_stock_comes_from_the_inbound_api` / `::test_smoke_spec_judge_has_discriminating_power`
+数据: **边界（照实登记，§19.1）**：① `docs/deployment/demo-seed.sql` 与两处评测种子是 **B 类**（psql 夹具无 HTTP 写面）⇒ 只登记 + 标注重启条件，**演示环境的批次对账 `diff == 0` 仍未达成**（本包不在 demo 库重放）；② 判据是**静态文本**判据，判不了「冒烟那次真跑有没有写进生产库」—— 真的链路验证靠冒烟自身在测试池跑（本包按约束**未**对生产/演示环境跑冒烟）；③ 扫描面按台账声明，住在别的目录的夹具不会被扫（射程外）。
+跳过: [backend-contract] 纯静态契约判据（零网络 / 零 DB / 零时钟，只读仓内 spec 与 seed 文本）+ 注入式红证，计分通道 = traces.tests（test_smoke_fixture_stock_chain.py），非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-11-03 新增（issue #7600，承接 #7597 / PR #7599：建品接口不再受理库存）。**取号 MC-146（让号三次，记实）**：`python3 scripts/next_case_id.py MC` 现取（候选 = main 986 号 ∪ open PR #8535 的分支 ∪ 本工作区；main 现取最大 MC-142）；工具给出历史空档 **MC-099**（按裁定刻意空档不回填，跳过）⇒ 首取 **MC-143**，但并行 PR #8535（issue #6997 悬空 PR 扫描器）先合入并占用了 MC-143、在飞 PR #8537 / #8541 又各自占用 MC-144 ⇒ 按取号台账「后合入者让号」改取 **MC-145**；**随后在飞 PR #8541 又占用了 MC-145**（同日第二次撞号，由 `tests/unit_ci_workflows/test_case_id_claims.py` 在**合并前**抓到并判红）⇒ 再让至 **MC-146**。同 PR 带 claim 文件 `.github/cases/claims/8538-MC-146.json`。病（SDQS §33「绿证明的是页面，不是数据」）：冒烟夹具 `createProductFixture` 在 SKU payload 里写 `stock: 120`、演示种子 `docs/deployment/demo-seed.sql` 直写 `INSERT INTO product_skus (…, stock, …)` ⇒ #7597 之后建品接口**忽略**该字段，于是「夹具以为有 120、库里是 0」，而旅程判据只看列表有行 ⇒ 页面绿、数据空、扣减链路一次都没走过。分档处置（逐条）：**A 类**（能走公开 API）= 冒烟夹具 ⇒ 改走 `POST /api/admin/inbound-orders`（`InboundOrderService.createAndPost`：建单即过账 → 加 SKU 库存 + 生成 `stock_batches` 批次行），建品旅程另加「建完全 0 → 过账后全 120」判据，链路真走通；**B 类**（psql 部署 / 评测种子无 HTTP 写面）= `docs/deployment/demo-seed.sql`（14 处）+ `tests/agent_eval/fixtures/xiaobu_eval_seed.sql`（2 处）+ `mibao_eval_seed.sql`（1 处）⇒ 显式标注（`SDQS-WAIVER:` 标记 + 后果 + 重启条件）并登记台账；**C 类**（产品代码 `product_skus`）= 不动，判据 ③ 负控证明射程。读数：8 passed；红证 = 删一条已登记直写点 ⇒ 4 failed / 4 passed（报「登记 14 条，现场 13 条」，归因 DFW-DEMO-SEED-001）；写回 `stock: 120` ⇒ 5 failed / 3 passed（具名 `scripts/ui-smoke-merchant/spec.mjs` 的 `createProductFixture`（SKU payload 那一行））；两次注入均逐字节恢复。 ｜ tags: backend-contract, smoke-data-quality, fixture-drift, ledger, negative-control, red-proof
 
 ### MC-142. 计件 sweep 的 A0b 不再按原始 `worker_name` 分组比对：无署名归集是**显式的一类**（结构判身份、文案只进证据），并由独立的 A0c 勾稽「总额 − 逐人 = 无署名 且 = 独立 SQL 的无名组」（issue #7030） 🔵
 ```
@@ -14621,8 +14634,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：989（活跃 153，跳过 836）
-- tier 分布：smoke 15 / normal 912 / adversarial 33
+- 用例总数：990（活跃 153，跳过 837）
+- tier 分布：smoke 15 / normal 913 / adversarial 33
 - 售后域：16
 - Agent 核心域：13
 - API 层域：21
@@ -14638,7 +14651,7 @@
 - 人事域：13
 - 知识问答域：9
 - 客户主数据迁移域：10
-- 杂项域：191
+- 杂项域：192
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：76
@@ -14891,6 +14904,7 @@
 - MC-138: 删 worktree 前必须判「活进程占用 / 未提交未推送 / 持有重活锁」：自动收尾不再删掉正在被用的检出（issue #7008）
 - MC-141: 部位规格的数值口径：纯空白串 = 「没填」（—），不再编成 0 / 0.000（issue #7002）
 - MC-140: 多 PR **集中合**（batch merge）工具：从 origin/main 重建 + 重放（不 --ours 解冲突）/ 用例号「后合入者让号」/ 锚点按**实测**重锚 / 批次 body 零关闭词
+- MC-146: 冒烟夹具的库存改由公开 API（入库单建单即过账）产生，种子夹具的直写点进台账并由判据双向对账（issue #7600）
 - MC-142: 计件 sweep 的 A0b 不再按原始 `worker_name` 分组比对：无署名归集是**显式的一类**（结构判身份、文案只进证据），并由独立的 A0c 勾稽「总额 − 逐人 = 无署名 且 = 独立 SQL 的无名组」（issue #7030）
 - MC-139: 商家看到的失败编号 = 服务端日志里那条记录：requestId 唯一来源 + 前端可复制上屏（issue #6957）
 - MC-143: 悬空 PR 扫描器把「未解决评审线程」计入**需要处置**（issue #6997）：`isResolved=false ∧ isOutdated=false` ⇒ 判红并报出 `path` + 首行摘要；`isOutdated=true` 单独一类**不算阻塞**；读不到 ⇒ 退 `3`（不得当 0）
