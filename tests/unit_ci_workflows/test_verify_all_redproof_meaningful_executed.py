@@ -45,6 +45,8 @@ from __future__ import annotations
 
 import os
 import re
+
+from unit_ci_workflows.injection import inject
 import shlex
 import subprocess
 from pathlib import Path
@@ -74,6 +76,41 @@ def _extract(text: str, name: str) -> str:
     return m.group(0)
 
 
+def _cut_trailing_comment(ln: str) -> str:
+    """剥**行尾注释**，引号感知（`"缺料 #3 已补"` 里的 `#` 不是注释起点）。
+
+    口径见 issue #5325 类别 1：判据面按 `#` 截断前**必须先清空字符串**，
+    否则字符串里的 `#` 会吃掉行尾 ⇒ 假绿。
+    """
+    out = []
+    quote: str | None = None
+    i = 0
+    while i < len(ln):
+        ch = ln[i]
+        if quote:
+            out.append(ch)
+            if ch == "\\" and i + 1 < len(ln):
+                out.append(ln[i + 1])
+                i += 2
+                continue
+            if ch == quote:
+                quote = None
+            i += 1
+            continue
+        if ch in ("'", '"'):
+            quote = ch
+            out.append(ch)
+            i += 1
+            continue
+        if ch == "#":
+            # 只有「行首或前面是空白」才算注释起点（`a#b` 不是 shell 注释）
+            if not out or out[-1].isspace():
+                break
+        out.append(ch)
+        i += 1
+    return "".join(out).rstrip()
+
+
 def _code_of(text: str) -> str:
     """剥掉**整行注释**与行尾注释 —— 注释里会写 `report "…"` 之类的字样，裸 grep 会假绿/假红。"""
     out = []
@@ -81,7 +118,7 @@ def _code_of(text: str) -> str:
         if ln.lstrip().startswith("#"):
             out.append("")
             continue
-        out.append(re.sub(r"\s+#.*$", "", ln))
+        out.append(_cut_trailing_comment(ln))
     return "\n".join(out)
 
 
@@ -333,7 +370,7 @@ class TestRedProofs:
         assert needle in summary, (
             "汇总块的准入判据形态变了（红证锚点失配）—— 同步本守卫：期望一行 "
             f"`{needle}`")
-        return summary, summary.replace(needle, "MEANINGFUL_EXECUTED=$EXECUTED")
+        return summary, inject(summary, needle, "MEANINGFUL_EXECUTED=$EXECUTED", where="_noop_injection")
 
     def test_reverting_the_verdict_to_executed_turns_criterion_1_green(self, tmp_path):
         """**判据 5（红证）**：把准入判据改回 `EXECUTED` ⇒ 判据 1 的同夹具**变绿** ⇒ 它不是空断言。"""
@@ -352,8 +389,11 @@ class TestRedProofs:
     def test_counting_auxiliary_as_meaningful_would_break_the_negative_control(self, tmp_path):
         """**判据 2 的红证**：把准入判据改成恒 `0`（= 辅助也算实质）⇒ 负控的同夹具**变红**。"""
         real_summary, _ = self._noop_injection()
-        mutated = real_summary.replace(
-            "MEANINGFUL_EXECUTED=$((EXECUTED - AUX_EXECUTED))", "MEANINGFUL_EXECUTED=0")
+        mutated = inject(
+            real_summary,
+            "MEANINGFUL_EXECUTED=$((EXECUTED - AUX_EXECUTED))",
+            "MEANINGFUL_EXECUTED=0",
+            where="test_counting_auxiliary_as_meaningful_would_break_the_negative_control")
         assert mutated != real_summary, "注入没生效（锚点失配）"
         root = tmp_path / "root"
         root.mkdir()
@@ -370,7 +410,7 @@ class TestRedProofs:
             '    NOT_READY_WHY="${NOT_READY_WHY:-}  · ${name} —— ${READY_MISSING}\n"\n')
         assert needle in _SCRIPT, (
             "`report_env()` 的具名归因拼装形态变了（红证锚点失配）—— 同步本守卫")
-        mutated = _SCRIPT.replace(needle, "")
+        mutated = inject(_SCRIPT, needle, "", where="test_dropping_the_attribution_removes_the_named_lines")
         assert mutated != _SCRIPT, "注入没生效"
         root = tmp_path / "root"
         root.mkdir()
@@ -398,7 +438,7 @@ class TestClassLevelRegistry:
         anchor = f'\n    report "{redproof_unconditional_names()[0]}" redproof_preflight\n'
         assert anchor in _SCRIPT, "锚点失配（前提自检的派发行形态变了）—— 同步本守卫"
         new_leg = "红证机具新加的无条件腿"
-        mutated = _SCRIPT.replace(anchor, anchor + f'    report "{new_leg}" true\n', 1)
+        mutated = inject(_SCRIPT, anchor, anchor + f'    report "{new_leg}" true\n', where="test_unregistered_unconditional_leg_is_named_red")
         assert mutated != _SCRIPT, "注入没生效"
         problems = class_problems(mutated)
         assert any(new_leg in p for p in problems), (
@@ -409,8 +449,9 @@ class TestClassLevelRegistry:
         anchor = '\n    "红证机具前提自检（前提能否成立）") return 0 ;;\n'
         assert anchor in _SCRIPT, "锚点失配（aux_step_name 的登记形态变了）"
         stale = "红证机具早已删掉的腿"
-        mutated = _SCRIPT.replace(
-            anchor, anchor + f'    "{stale}") return 0 ;;\n', 1)
+        mutated = inject(
+            _SCRIPT, anchor, anchor + f'    "{stale}") return 0 ;;\n',
+            where="test_stale_registration_is_named_red")
         assert mutated != _SCRIPT, "注入没生效"
         problems = class_problems(mutated)
         assert any(stale in p for p in problems), f"陈旧登记没有被具名判红：{problems}"
@@ -419,8 +460,10 @@ class TestClassLevelRegistry:
         """那 2 项必须**无条件**派发：缩进到 `if` 里（变成条件派发）⇒ 判红。"""
         anchor = f'\n    report "{redproof_unconditional_names()[0]}" redproof_preflight\n'
         assert anchor in _SCRIPT
-        mutated = _SCRIPT.replace(
-            anchor, f'\n      report "{redproof_unconditional_names()[0]}" redproof_preflight\n', 1)
+        mutated = inject(
+            _SCRIPT, anchor,
+            f'\n      report "{redproof_unconditional_names()[0]}" redproof_preflight\n',
+            where="test_wrapping_an_unconditional_leg_in_if_is_red")
         assert mutated != _SCRIPT, "注入没生效"
         problems = class_problems(mutated)
         assert any("陈旧项" in p for p in problems), (
@@ -430,8 +473,9 @@ class TestClassLevelRegistry:
         """**对照读数**：只改注释 ⇒ 一条都不报（守卫不该被自己的说明文字喂红）。"""
         anchor = "# ── 汇总（把「真跑了几项」摆到台面上）"
         assert anchor in _SCRIPT
-        mutated = _SCRIPT.replace(
-            anchor, "# ── 汇总（本判据只看代码行：改这里的注释不该变红）", 1)
+        mutated = inject(
+            _SCRIPT, anchor, "# ── 汇总（本判据只看代码行：改这里的注释不该变红）",
+            where="test_comment_only_change_does_not_turn_red")
         assert mutated != _SCRIPT, "注入没生效"
         assert class_problems(mutated) == [], (
             "只改注释就判红 ⇒ 守卫在用散文判定：" + repr(class_problems(mutated)))
