@@ -136,6 +136,16 @@ export const PAGE_STOCK = 'stock'
 export const PAGE_REWORK = 'rework'
 
 /**
+ * 页面键：**拍照入库** / **补打入库标签**（issue #8337）—— 手机端（`/b/`）的两张物料页。
+ *
+ * 🔴 `/w/` **没有**这两个面（2026-10-10 用户裁定「移除拍照入库和补打入库标签」，issue #6635 已把
+ * 入口移出 `/w/`）⇒ 本文件只镜像**闭词表 + 默认集合**（后端 `WorkerPages.ALL` / `defaultPages()`），
+ * 不据此渲染任何入口。镜像的唯一防线是 `tests/worker-h5-pages.test.mjs` 的逐值比对。
+ */
+export const PAGE_INBOUND = 'inbound'
+export const PAGE_REPRINT = 'reprint'
+
+/**
  * 默认页面集合 = 后端 `WorkerPages.defaultPages()` 的**逐字镜像**（缺行 ⇒ 默认全开）。
  *
  * ⚠️ 这是**第二份**默认值（真值在后端；前端不可能 import Java）⇒ 唯一防线是判据：
@@ -151,6 +161,10 @@ export const DEFAULT_PAGES = [
   // issue #8104：`stock`（库存修正）默认开（操作工具，与 shipment 同档）—— 与后端
   // `WorkerPages.defaultPages()` 逐值相同；本页没有对应面（新面在 bmini），仅镜像闭词表与默认集合。
   PAGE_STOCK,
+  // issue #8337：`inbound` / `reprint` 进了后端闭词表**且**默认集合（此前它们无键、恒显示
+  // ⇒ 只加键不加默认会让「未收窄」的存量工人在升级那一刻丢掉这两个入口）。`/w/` 同样没有面。
+  PAGE_INBOUND,
+  PAGE_REPRINT,
 ]
 
 /** 裁高计算入口（同源静态页；`/w/` 与 `/w/machine.html` 同一静态根 ⇒ 相对路径、不写死域名）。

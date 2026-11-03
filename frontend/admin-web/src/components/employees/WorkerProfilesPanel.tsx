@@ -5,6 +5,7 @@ import { Plus, Search } from 'lucide-react'
 import { toast } from 'sonner'
 import { workerApi, workerPageCatalogApi } from '@/lib/api'
 import { toastRequestError } from '@/lib/api-error'
+import { displayEnum } from '@/lib/enum-display'
 import ListLoadError from '@/components/common/ListLoadError'
 import { Button, Input, Select, Modal, Table, Badge, Pagination, RowActions, RowActionLink } from '@/components/ui'
 import type { TableColumn, RowActionItem } from '@/components/ui'
@@ -191,10 +192,12 @@ export default function WorkerProfilesPanel({ canWrite }: WorkerProfilesPanelPro
     pin: string
     /** 绑定的逻辑工序（issue #7749）：'' = 不设工序（出入库/仓库等岗位；生产工人留空则扫码后自己选） */
     workerOperation: string
+    /** 岗位（issue #8337）：'' = 不设岗位；选了 ⇒ 服务端按岗位带出默认菜单 */
+    workerPosition: string
     pages: string[] | null
     /** 逐人开放的能力页键（issue #7162；与 `pages` 分开 ⇒ 默认集合的语义不受影响） */
     optional: string[]
-  }>({ workerNo: '', name: '', pin: '', workerOperation: '', pages: null, optional: [] })
+  }>({ workerNo: '', name: '', pin: '', workerOperation: '', workerPosition: '', pages: null, optional: [] })
   const [creating, setCreating] = useState(false)
   const [togglingId, setTogglingId] = useState<string | null>(null)
 
@@ -205,6 +208,10 @@ export default function WorkerProfilesPanel({ canWrite }: WorkerProfilesPanelPro
    * 页面清单；读不到（如当前岗位没有生产域读码）⇒ 留空 = 这一节不显示（**不**自己编一份默认页集）。
    */
   const [menuPages, setMenuPages] = useState<{ key: string; label: string }[]>([])
+  /** 岗位闭词表 + 默认菜单 + 首屏上限（issue #8337）：全部取服务端，前端不另抄一份映射。 */
+  const [positionOptions, setPositionOptions] = useState<string[]>([])
+  const [positionLabels, setPositionLabels] = useState<Record<string, string>>({})
+  const [positionDefaults, setPositionDefaults] = useState<Record<string, string[]>>({})
   /** 默认页面键（未收窄时的勾选态；issue #7162：「未收窄」= 默认页，不含逐人开放的能力页）。 */
   const [defaultPageKeys, setDefaultPageKeys] = useState<string[]>([])
   /** 非默认、逐人开放的能力页（issue #7162：质检 —— 同时是服务端写准入）。 */
@@ -227,6 +234,10 @@ export default function WorkerProfilesPanel({ canWrite }: WorkerProfilesPanelPro
   const [opTarget, setOpTarget] = useState<WorkerProfile | null>(null)
   const [opValue, setOpValue] = useState('')
   const [savingOp, setSavingOp] = useState(false)
+  /** 设岗位（issue #8337）。 */
+  const [posTarget, setPosTarget] = useState<WorkerProfile | null>(null)
+  const [posValue, setPosValue] = useState('')
+  const [savingPos, setSavingPos] = useState(false)
 
   // 重置 PIN（issue #6432）：弹窗两态 —— ① 输入 / 随机生成新 PIN ② 明文展示新 PIN（只显示这一次）
   const [pinTarget, setPinTarget] = useState<WorkerProfile | null>(null)
@@ -278,6 +289,10 @@ export default function WorkerProfilesPanel({ canWrite }: WorkerProfilesPanelPro
             .filter((key) => defaults.includes(key))
             .map((key) => ({ key, label: data.labels?.[key] || key })),
         )
+        // 岗位 → 默认菜单（issue #8337）：下拉与「带出哪几项」的说明都取服务端（单一真值）
+        setPositionOptions(data.positions ?? [])
+        setPositionLabels(data.position_labels ?? {})
+        setPositionDefaults(data.position_defaults ?? {})
       })
       .catch(() => { if (alive) setMenuPages([]) })
     return () => { alive = false }
@@ -311,7 +326,7 @@ export default function WorkerProfilesPanel({ canWrite }: WorkerProfilesPanelPro
   const handleOpenCreate = () => {
     // 默认**未收窄**（= 不限制，看全部页面）。存 null 而不是 menuPages 的快照 ⇒ 目录还没拉回来、
     // 或目录在弹窗打开后到达，都不会把「不限制」误判成「一页都没勾」。
-    setForm({ workerNo: '', name: '', pin: '', workerOperation: '', pages: null, optional: [] })
+    setForm({ workerNo: '', name: '', pin: '', workerOperation: '', workerPosition: '', pages: null, optional: [] })
     setFormOpen(true)
   }
 
@@ -429,10 +444,13 @@ export default function WorkerProfilesPanel({ canWrite }: WorkerProfilesPanelPro
         workerPages: pagesPayload(form.pages, form.optional),
         // 绑定工序（issue #7749）：空 = 不绑定（扫码后自己选工序的旧行为）
         workerOperation: form.workerOperation.trim() || null,
+        // 岗位（issue #8337）：空 = 不设岗位；选了 ⇒ 服务端按岗位带出默认菜单
+        // （`workerPages` 仍传 null 表示「不逐人微调」，由岗位决定）
+        workerPosition: form.workerPosition || null,
       })
       toast.success('工人档案已创建，请把工号与 PIN 告知本人')
       setFormOpen(false)
-      setForm({ workerNo: '', name: '', pin: '', workerOperation: '', pages: null, optional: [] })
+      setForm({ workerNo: '', name: '', pin: '', workerOperation: '', workerPosition: '', pages: null, optional: [] })
       loadWorkers()
     } catch (e) {
       // 失败**不关弹窗**：工号冲突是可修正的错误；文案由拦截器统一展示服务端原文（UI-024 去重口径）
@@ -454,6 +472,33 @@ export default function WorkerProfilesPanel({ canWrite }: WorkerProfilesPanelPro
       toastRequestError(e, '操作失败')
     } finally {
       setTogglingId(null)
+    }
+  }
+
+  /** 打开「设岗位」弹窗（issue #8337）：初值 = 当前岗位（'' = 未设岗位）。 */
+  const handleOpenPosition = (worker: WorkerProfile) => {
+    setPosTarget(worker)
+    setPosValue(worker.workerPosition ?? '')
+  }
+
+  /** 保存岗位：服务端**按岗位重新带出默认菜单**（岗位是菜单的源）；空 ⇒ 清岗位（菜单回到全部页面）。 */
+  const handleSavePosition = async () => {
+    if (!posTarget) return
+    setSavingPos(true)
+    try {
+      const res = await workerApi.updateWorkerPosition(posTarget.id, posValue.trim() || null)
+      const derived = res.data?.data?.workerPages
+      toast.success(
+        posValue.trim()
+          ? `已设岗位：${posValue.trim()}${derived?.length ? `（菜单 ${derived.length} 项）` : ''}`
+          : '已清除岗位（菜单回到全部页面）',
+      )
+      setPosTarget(null)
+      loadWorkers()
+    } catch (e) {
+      toastRequestError(e, '设置工人岗位失败')
+    } finally {
+      setSavingPos(false)
     }
   }
 
@@ -519,6 +564,15 @@ export default function WorkerProfilesPanel({ canWrite }: WorkerProfilesPanelPro
    */
   const rowActionsFor = (record: WorkerProfile): RowActionItem[] => {
     const items: RowActionItem[] = []
+    if (positionOptions.length > 0) {
+      items.push({
+        key: 'position',
+        label: '设岗位',
+        testId: `worker-set-position-${record.id}`,
+        onClick: () => handleOpenPosition(record),
+        disabled: !canWrite,
+      })
+    }
     if (menuPages.length > 0) {
       items.push({
         key: 'pages',
@@ -754,6 +808,42 @@ export default function WorkerProfilesPanel({ canWrite }: WorkerProfilesPanelPro
             工人不会进入管理后台，也拿不到任何菜单权限。
           </p>
 
+          {/* 岗位（issue #8337）：菜单**以岗位为源** —— 选岗位即带出默认菜单（最多 3 项） */}
+          {positionOptions.length > 0 && (
+            <div className="pt-3 border-t border-neutral-100" data-testid="worker-position-picker">
+              <Select
+                label="岗位"
+                data-testid="worker-position-select"
+                options={[
+                  { value: '', label: '不设岗位（菜单按下面逐人勾选）' },
+                  ...positionOptions.map((pos) => ({
+                    value: pos,
+                    label: displayEnum(positionLabels, pos),
+                  })),
+                ]}
+                value={form.workerPosition}
+                onChange={(e) => {
+                  const next = e.target.value
+                  // 选岗位 ⇒ 预览按岗位带出的菜单（仍可再改；保存由服务端按岗位带出）
+                  const derived = positionDefaults[next]
+                  setForm({
+                    ...form,
+                    workerPosition: next,
+                    pages: derived ? derived : form.pages,
+                    optional: derived ? [] : form.optional,
+                  })
+                }}
+              />
+              <p className="text-xs text-neutral-400 mt-1.5">
+                {form.workerPosition && positionDefaults[form.workerPosition]
+                  ? `该岗位默认菜单：${positionDefaults[form.workerPosition]
+                      .map((key) => menuPages.find((p) => p.key === key)?.label || key)
+                      .join(' + ')}（最多 3 项，可再微调）`
+                  : '按岗位带出默认菜单（裁剪 / 车位 / 仓管 / 发货），工人首屏最多 3 项；不设岗位则按下面逐人勾选。'}
+              </p>
+            </div>
+          )}
+
           {/* 绑定工序（issue #7749）：一个工人对应一道工序；不绑 = 扫码后自己选（旧行为） */}
           <div className="pt-3 border-t border-neutral-100" data-testid="worker-operation-picker">
             <Select
@@ -820,6 +910,49 @@ export default function WorkerProfilesPanel({ canWrite }: WorkerProfilesPanelPro
           <p className="text-xs text-neutral-400">
             生产工人：绑定后扫码自动选中这道工序、直接报工。出入库/仓库等岗位：选「不设工序」即可
             （他们用入库/出库功能，不参与报工）。本件没有这道 / 已做完时，工人屏会如实说明，不会改报别的工序。
+          </p>
+        </div>
+      </Modal>
+
+      <Modal
+        open={posTarget !== null}
+        onClose={() => setPosTarget(null)}
+        title="设置工人岗位"
+        width={520}
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setPosTarget(null)} disabled={savingPos}>
+              取消
+            </Button>
+            <Button onClick={handleSavePosition} loading={savingPos}>
+              保存
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-4" data-testid="worker-position-modal">
+          <p className="text-sm text-neutral-600">
+            工人：
+            <span className="font-medium text-neutral-900">
+              {posTarget?.workerNo} {posTarget?.name}
+            </span>
+          </p>
+          <Select
+            label="岗位"
+            data-testid="worker-position-modal-select"
+            options={[
+              { value: '', label: '不设岗位（菜单沿用逐人勾选 / 全部页面）' },
+              ...positionOptions.map((pos) => ({ value: pos, label: displayEnum(positionLabels, pos) })),
+            ]}
+            value={posValue}
+            onChange={(e) => setPosValue(e.target.value)}
+          />
+          <p className="text-xs text-neutral-400">
+            {posValue && positionDefaults[posValue]
+              ? `保存后按该岗位带出默认菜单：${positionDefaults[posValue]
+                  .map((key) => menuPages.find((p) => p.key === key)?.label || key)
+                  .join(' + ')}（最多 ${String(positionDefaults[posValue].length)} 项；之后仍可用「改菜单」逐人微调）。`
+              : '岗位决定默认菜单（裁剪 / 车位 / 仓管 / 发货），工人首屏最多 3 项；清空 = 菜单回到全部页面。'}
           </p>
         </div>
       </Modal>

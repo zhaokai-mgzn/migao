@@ -1,4 +1,4 @@
-// case_ids: BM-014, BM-015, BM-025
+// case_ids: BM-014, BM-015, BM-025, MC-158
 /**
  * 工人工作台**入口显隐**判据（issue #7812）—— 商家反馈「后台勾了菜单，工人端没变」。
  *
@@ -6,7 +6,7 @@
  *
  * | # | 判据 | 红证 |
  * |---|---|---|
- * | ① | 只开 `rework` ⇒ 出现「返工记录」、**不出现**「拍照发货」；拍照入库 / 补打入库标签（无键）恒在 | 把入口写成无条件渲染 ⇒ 红 |
+ * | ① | 只开 `rework` ⇒ 出现「返工记录」、**不出现**「拍照发货」；拍照入库 / 补打入库标签（issue #8337 起**有键**）未勾 ⇒ **不出现**；勾上才出现 | 把入口写成无条件渲染（恒显示）⇒ 红 |
  * | ② | `pages` 空数组 ⇒ **fail-open 全开** | 空数组按「全关」⇒ 红 |
  * | ③ | 读不到（`unread`）⇒ 全开 + **一句显式提示** | 静默全开 / 静默全关 ⇒ 红 |
  * | ④ | 401 ⇒ 回未登录态、**不渲染任何功能卡** | 把 401 当「读不到」⇒ 卡片照旧出现 ⇒ 红 |
@@ -110,14 +110,25 @@ describe('工人工作台入口按「工人端菜单」显隐（issue #7812）',
     mockReworkOrders.mockResolvedValue({ success: true, data: { orders: [] }, message: '' })
   })
 
-  it('① 只开 rework ⇒ 有「返工记录」，没有「拍照发货」；无键的两条恒在', async () => {
+  it('① 只开 rework ⇒ 有「返工记录」，没有「拍照发货」；两个入库入口（issue #8337 起有键）未勾 ⇒ **不出现**', async () => {
     await renderWithPages(['rework'])
 
     expect(screen.getByText('返工记录')).toBeTruthy()
     expect(screen.queryByText('拍照发货')).toBeNull()
-    // 工人面固有（后端无页面键）⇒ 不受开关影响
+    // 🔴 issue #8337：`inbound` / `reprint` 已进闭词表，未勾 ⇒ 入口不渲染（改前是「无键、恒显示」，
+    //    那正是车位工也看得见入库的原因）。把这两条写回无条件渲染 ⇒ 本断言当场红。
+    expect(screen.queryByText('拍照入库')).toBeNull()
+    expect(screen.queryByText('补打入库标签')).toBeNull()
+  })
+
+  it('①′ 勾上 `inbound` / `reprint` ⇒ 两个入库入口出现（判据 ① 的正面；仓管岗位默认就带这两项 + 库存修正）', async () => {
+    await renderWithPages(['inbound', 'reprint', 'stock'])
+
     expect(screen.getByText('拍照入库')).toBeTruthy()
     expect(screen.getByText('补打入库标签')).toBeTruthy()
+    // 没勾的仍不出现（不是「勾一条 ⇒ 全开」）
+    expect(screen.queryByText('拍照发货')).toBeNull()
+    expect(screen.queryByText('返工记录')).toBeNull()
   })
 
   it('①反向 全开（默认集合）⇒ 返工记录与拍照发货都在', async () => {
@@ -130,9 +141,9 @@ describe('工人工作台入口按「工人端菜单」显隐（issue #7812）',
     await renderWithPages(['report'])
 
     expect(screen.queryByText('扫码报工')).toBeNull()
-    // 无键的两条照旧（固有能力）
-    expect(screen.getByText('拍照入库')).toBeTruthy()
-    expect(screen.getByText('补打入库标签')).toBeTruthy()
+    // issue #8337：`inbound` / `reprint` 已是页面键 ⇒ 未勾就不出现（不再「无键恒显示」）
+    expect(screen.queryByText('拍照入库')).toBeNull()
+    expect(screen.queryByText('补打入库标签')).toBeNull()
     // 也不许退回成「全部入口」：受键控制的那几条都不在
     expect(screen.queryByText('拍照发货')).toBeNull()
     expect(screen.queryByText('待发货单')).toBeNull()
@@ -159,9 +170,9 @@ describe('工人工作台入口按「工人端菜单」显隐（issue #7812）',
     expect(screen.queryByText('返工记录')).toBeNull()
     expect(screen.queryByText('拍照发货')).toBeNull()
     expect(screen.queryByText('待发货单')).toBeNull()
-    // 无键的两条恒在
-    expect(screen.getByText('拍照入库')).toBeTruthy()
-    expect(screen.getByText('补打入库标签')).toBeTruthy()
+    // issue #8337：两个入库入口同样由页面键门控（未勾 ⇒ 不出现）
+    expect(screen.queryByText('拍照入库')).toBeNull()
+    expect(screen.queryByText('补打入库标签')).toBeNull()
   })
 
   it('② 空数组 ⇒ fail-open 全开（不能因为「一份空配置」把活挡掉）', async () => {

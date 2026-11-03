@@ -3356,6 +3356,12 @@ export interface WorkerProfile {
    * 绑定后工人扫码即自动选中这道工序、直接报工（工人屏不再出选择器）。
    */
   workerOperation?: string | null
+  /**
+   * 工人**岗位**（issue #8337）：裁剪 / 车位 / 仓管 / 发货；`null` / 缺省 = 未设岗位
+   * （菜单沿用逐人勾选 / 全部页面）。岗位**不是权限码** —— 只决定默认菜单取哪一组；
+   * 改岗位 ⇒ 服务端按岗位重新带出默认菜单（管理员之后仍可逐人微调，最多 3 项）。
+   */
+  workerPosition?: string | null
   createdAt?: string
 }
 
@@ -3368,6 +3374,11 @@ export interface WorkerFormData {
   workerPages?: string[] | null
   /** 绑定的逻辑工序（issue #7749）：`null` / 缺省 = 不设工序（出入库/仓库等岗位；生产工人留空则扫码后自己选）。 */
   workerOperation?: string | null
+  /**
+   * 工人**岗位**（issue #8337）：给了岗位又没给 `workerPages` ⇒ 服务端按岗位带出默认菜单；
+   * 同时给了 `workerPages` ⇒ 以显式集合为准（管理员可覆盖，仍受 3 项上限）。
+   */
+  workerPosition?: string | null
 }
 
 /** 可绑定的逻辑工序目录项（`GET /api/admin/workers/operations`，issue #7749）。 */
@@ -4646,6 +4657,14 @@ export interface WorkerPageCatalogResponse {
   optional_pages?: string[]
   /** 页面键 → 商家面人话名（同上，服务端一处给出）。 */
   labels: Record<string, string>
+  /** 岗位闭词表（issue #8337）：配置面岗位下拉的唯一来源（前端不另抄一份）。 */
+  positions?: string[]
+  /** 岗位 → 一句说明（「仓管：拍照入库 + 补打入库标签 + 库存修正」）。 */
+  position_labels?: Record<string, string>
+  /** 岗位 → 默认菜单（键在闭词表内；每组 ≤ `max_pages_per_worker`）。 */
+  position_defaults?: Record<string, string[]>
+  /** 每工人首屏最多几项（issue #8337；写侧超限 ⇒ 422 具名拒错）。 */
+  max_pages_per_worker?: number
 }
 
 // ══════════════════════════════════════════════════════════════════════════════

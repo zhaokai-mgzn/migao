@@ -2017,6 +2017,14 @@ export const workerApi = {
    */
   updateWorkerOperation: (id: string, workerOperation: string | null) =>
     request.put<ApiResponse<WorkerProfile>>(`/api/admin/workers/${id}/operation`, { workerOperation }),
+
+  /**
+   * 设/清这位工人的**岗位**（issue #8337）：服务端按岗位**重新带出默认菜单**
+   * （`workerPosition` 传 `null` / 空串 ⇒ 清岗位，菜单回到「未收窄」= 全部页面）。
+   * 岗位不是权限码 —— 只决定默认菜单取哪一组；非法岗位名由服务端 422 拒绝。
+   */
+  updateWorkerPosition: (id: string, workerPosition: string | null) =>
+    request.put<ApiResponse<WorkerProfile>>(`/api/admin/workers/${id}/position`, { workerPosition }),
 }
 
 // 角色管理 API

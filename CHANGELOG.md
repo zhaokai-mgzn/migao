@@ -18,6 +18,23 @@
   必选 / 字典外拒 / 六项全可用 / 存量不清洗负控）；前端 `QualityCheckForm.test.tsx`、
   `worker-h5-quality.test.mjs`、`worker-h5-api.test.mjs`（短语按钮 + 写面带 `reason_code`）。
 
+### 涉钱数字输入不再吞精度：金额 / 单价 / 退款额统一走共享原语，敲错当场说清楚且不许带着错误提交（2026-11-03，issue #8004）
+
+- **改前**：`<input type="number">` 在涉钱面会吞精度 —— 浏览器对 `12.` / `0.` 这类中间态按「非法浮点数」处理
+  （`el.value` 对 `12.` 返回 `12`），千分位 `1,234.56` 直接不认，受控回写即吞掉小数点或整段值
+  ⇒ **商家按错的价下单**。
+- **改后**：11 个涉钱格（退款金额 / 明细单价 / 优惠金额 / 实收款 / 财务登记金额 / 采购单价 / 入库单价 /
+  授信额度 / SKU 行内改价 / 审批金额 / SKU 批量单价）统一改 `type="text"` + `inputMode="decimal"` + 共享原语
+  `DecimalInput`：只回调合法值（`12.345` 被**拒绝**且不替你四舍五入；`1,234.56` ⇒ `1234.56`；`12.` 失焦收成 `12`），
+  非法时**框下当场出具名话术**并**禁用提交按钮**（不再出现「敲错了也照旧把上一个有效值提交上去」）。
+- **涉数量面**：9 个数量格（卷数 / 卷长 / 数量（米）/ 采购数量 / 明细数量 / 出库数量 / 实盘米数 / 每仓容量）
+  只去掉 `type="number"` 并补 `inputMode`，口径与话术仍由各页既有校验承担（不产生第二套说法）。
+- **没改的（如实登记）**：4 处非金额非数量的整数格（客户 / 供应商账期天数、批量新建仓位编号）仍是
+  `type="number"`，已逐条登记在台账里（理由 = 值域是整数、无小数位可丢、状态是字符串原文）。
+- 判据：`frontend/admin-web/tests/unit/money-input-guard.test.ts`（MC-157：涉钱面零 `type="number"` +
+  台账双向对账 + 4 条注入式红证）、`frontend/admin-web/tests/unit/lib/decimal-input.test.ts`（精度逐值钉死）、
+  `frontend/admin-web/tests/unit/components/DecimalInput.test.tsx`（出声 / 禁用提交 / 失焦只收尾）。
+
 ### 商家端 H5 的输入框字体跟随页面正文：不再落回浏览器默认字体（2026-11-03，issue #6480）
 
 - **改前**：Taro H5 把样式挂在**外层**包裹元素上，真正绘字的是**内层**原生控件
@@ -34,6 +51,23 @@
   例外（登录页「登录诊断」面板的等宽 token 行）登记在台账，只许缩短。
 - 判据：`frontend/bmini-app/tests/input-typography-guard.test.ts`（MC-160：内层继承 / 裸
   `font-family` 只许在字体定义处 / 占位符唯一来源 / 不许裸写原生 `<input>` 标签，含注入式红证）。
+
+### 工人端菜单改为「以岗位为源」：建号选岗位即带出默认菜单（裁剪/车位 2 项、仓管 3 项、发货 2 项），工人首屏最多 3 项（2026-11-03，issue #8337）
+
+- **改前**：工人端菜单是**逐人自由勾选**的 `workerPages`，与企业里的岗位无关 —— 新招一个人要手工勾一遍，
+  勾错就多给权限；默认还是全开（8 项）。「拍照入库」「补打入库标签」两张已有页面**根本没有页面键**、
+  在工人工作台上**恒显示** ⇒ 哪怕车位工也看得见，用户口中的「每岗位 1~3 个菜单」直接破功。
+- **改后**：① 两张物料页有了页面键（`inbound` / `reprint`），参与逐人显隐；
+  ② 工人档案新增**岗位**（裁剪 / 车位 / 仓管 / 发货）—— 建号选岗位即按岗位带出默认菜单，
+  管理员仍可逐人微调，**改岗位会按新岗位重新带出**（清岗位 ⇒ 回到全部页面）；
+  ③ 工人端菜单**最多 3 项**（车间手机屏一屏读完）：超过就在保存时**具名拒错**
+  （说清上限 3、你填了几项、这四项是哪几项），不再静默放行。
+- 边界：菜单只决定**显不显示**，不是授权（工人可达面仍恒为 `/api/worker/**`）；
+  存量工人的 `workerPages` **不重置、不迁移**（没有岗位的档案行为与改前一致）。
+- 判据：`backend/admin-api/src/test/java/com/migao/admin/worker/WorkerPagesTest.java`、
+  `.../service/WorkerAdminServiceTest.java`、`.../controller/AdminWorkerControllerTest.java`、
+  `frontend/bmini-app/tests/worker-home-page.test.tsx`（车位工看不见两个入库入口）、
+  `frontend/admin-web/tests/unit/components/WorkerProfilesPanel.test.tsx`（岗位下拉 / 按岗位带出 / 改岗位）。
 
 ### 机台页详情屏补「报返工」入口：扫完唛就地报返工，不必退出机台页重扫（2026-11-03，issue #7992）
 
