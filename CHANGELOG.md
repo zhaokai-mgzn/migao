@@ -5,6 +5,21 @@
 > 原因 = 单文件涨到 512KB 越过扫描上限，详见存档文件头与 issue #6404。
 > **后续条目继续在本文件 `## [Unreleased]
 
+### 商家可见提示里不再摆内部端点路径：8 处服务端文案改成「事实 + 该做什么」（2026-11-03，issue #6841）
+
+- **改前**：服务端 `suggestion` / `message` 里夹着 `GET /api/admin/...`（§31 P3「不摆内部标识」）——
+  商家既点不动也读不懂：缺图提示、首登强制改密、批次执行/撤销准入 3 条、算料配置整份拒绝、
+  加工费组合撞既有行、工序重名，共 8 处（另 1 处开租套用的 `reason` 只进运营日志，且它指的端点
+  已在 issue #5874 下线）。
+- **改后**：8 处改成「事实 + 该做什么」（如「请刷新该批次的状态与结果后再判断」「请先执行该批次，
+  执行完成后才能撤销」「同名工序只能有一条：改它的单价/状态，或换一个工序名」）；能指现存域的按
+  `企业基础设置 → <域>` 指（算料口径 / 加工费组合），没有可指页面的**不指路**；开租那条改说
+  「仍缺则由运营人工补套」。泄漏台账 `restricted_literal_leaks_ledger.json` **9 条 → 0 条**（只许缩短）。
+- 判据：`tests/unit_ci_workflows/test_removed_page_pointer_targets.py`（`LEAK_LEDGER_BASELINE = 0`、
+  ::test_dev_log_and_off_face_endpoint_shapes_are_not_red 射程负控、注入式红证）、
+  `backend/admin-api/src/test/java/com/migao/admin/security/PasswordChangeEnforcementTest.java`、
+  `frontend/admin-web/tests/unit/lib/request.test.ts`。
+
 ### 生图转圈两分钟的三个病一起收口：文案按实测说、三层超时只有一个权威、转圈时看得见进度（2026-11-03，issue #7731）
 
 - **改前**：建品页写「共 8 张，约 2~4 分钟」（更早的文案是「约 40 秒」），而生产两次独立实测单张

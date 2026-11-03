@@ -21,7 +21,9 @@
 | 3 | **两处假出口**改写后**不再含**该页名、且给出的是**真边界**（工艺词的写面不存在 ⇒ 不许出现新的页面坐标） |
 | 4 | 台账 = **2 条 / 2 处**（只剩能力名，issue #7111 起）且 `FROZEN_MAX_*` 与台账**逐值一致**（常量与台账不许各说一套） |
 | 5 | 域 label 真值源现取非空（fail-closed；域被改名 ⇒ 红而不是静默空集） |
-| 6 | **§31 P3 类级**：admin-api 字面量里「商家答复型提示 + 内部端点」的命中必须逐条在 `restricted_literal_leaks_ledger.json` 里（未登记即红 / 幽灵条目即红 / 条数 ≤ 冻结基线） |
+| 6 | **§31 P3 类级**：admin-api 字面量里「商家答复型提示 + 内部端点」的命中必须逐条在 `restricted_literal_leaks_ledger.json` 里（未登记即红 / 幽灵条目即红 / 条数 == 冻结基线；**只许缩短**，2026-11-03 起 = **0**） |
+| 6e | **射程负控**（issue #6841 本单验收判据②）：**研发日志出口**（`log.*`）、**纯 ASCII 端点常量**、**注释 / javadoc** 里的端点**不判红** —— 射程准、不误伤研发面 |
+| 6f | **射程正控（红证，判据③）**：往**真语料**的商家可见 suggestion 里塞 `/api/admin/...` ⇒ 判据 6 当场判「未登记」；同一句话只写进注释 / 日志 ⇒ 仍绿（对照读数） |
 | 6b | **键不许含行号**（issue #6977 的类级元守卫）：台账键 = `文件::字面量::#出现序号`，纯数字段即红；只插空行（行号漂移）⇒ 判据 6 仍绿，真删已登记端点 ⇒ 判据 6 红 |
 | 7 | `REMOVED_NAMES` 与 MC-096 守卫的 `REMOVED_PAGE_NAMES` **逐值相等**（本文件是镜像 ⇒ 镜像漂了要红，不许静默用旧集合） |
 | 8 | **跨包指针消费者 ⇄ 后端下发面**双向核对（issue #6853）：登记的消费者文件代码区里必须逐字带着后端下发的域指针，且该指针**仍在下发**（删任一侧 ⇒ 在**本 Python 腿**就红，不必等前端腿） |
@@ -31,9 +33,27 @@
 ① 判**文本**不判**上屏**（真机截图那一半要 §15.7）；② 判不了「假出口真的不可达」——
 那需要遍历商家面写能力的**语义**判断，本文件只判「不再给出那个不存在的坐标」；
 ③ 能力名 3 处（`PermissionService` / `RegistrationService`）**有意不改** ⇒ 不在正控里，也不进判据 1 的必改集；
-④ 判据 6 的判据面是「**商家答复型**提示里的端点」（`GET/POST/PUT/DELETE/PATCH /api/...` 或「查看入口 / 读面 + 路径」）——
-**不是**「所有字面量里的端点」（端点注释 / 开发者面 / 无操作动词的裸路径**不在面内**），
-故它**判不了**「某个 hit 到底会不会上屏给商家」；⑤ 台账里剩的条目是**跨单债务**（跟踪 issue #6841），本文件不为它们背书。
+④ 判据 6 的判据面只能是**商家可见出口**（见下「§31 P3 判定射程」）：`GET/POST/PUT/DELETE/PATCH /api/...`
+**且含中文**、**且不在日志调用内**的字面量 —— **不是**「所有字面量里的端点」（端点常量 / 注释 / 路由声明 /
+worker 文档串**不在面内**），故它**判不了**「某个 hit 到底会不会上屏给商家」（那要 §15.7 真机截图）；
+⑤ 台账 2026-11-03 起 **0 条**：9 条冻结债务逐条判定后**全部**改写销账（issue #6841），本文件不为它们背书；
+⑥ **射程外（具名登记）**：`docs/` / `README` 与前端字面量（前端侧另由
+`frontend/admin-web/tests/unit/user-copy-jargon-guard.test.ts` 一族守）；**工具结果面**的 Python 字面量
+（`backend/ai-agent-service/app/tools/base.py` 的 `admin_api_failure` 把服务端 `suggestion` 原样透传进 B 端会话）
+是**本判据的输入端、不是扫描面** —— 该面现取 0 处**商家可见**端点提示（唯一命中是
+`backend/ai-agent-service/app/tools/registry.py` 的 `logger.warning` = 研发日志出口），
+重启条件 = agent 侧出现**不来自 admin-api** 的商家可见端点提示。
+
+## §31 P3 判定射程（**哪个出口算「商家可见」**；issue #6841 的裁定）
+
+| 出口 | 算不算商家可见 | 为什么 / 承载体 |
+|---|---|---|
+| B 端页面（toast / 表单错误 / 详情）上渲染的服务端 `message` / `suggestion` | **算** | `GlobalExceptionHandler` 把 `BusinessException.suggestion` 透传到 `ApiResponse.suggestion`，前端 `frontend/admin-web/src/lib/api.ts` 读同一字段 |
+| **B 端会话（AI 转述的工具结果）** | **算** | `ai-agent-service` 的 `admin_api_failure` 对非权限类失败取 `payload["suggestion"]`（服务端非空即**原样**进 `ToolResult.suggestion`）⇒ 进 LLM 上下文、会被转述给商家 |
+| 前端页面文案字面量（admin-web / bmini / mini-app） | 算（**另守**） | `frontend/admin-web/tests/unit/user-copy-jargon-guard.test.ts` 一族 + `docs/design/user-facing-copy-standard.md` |
+| **研发日志 / 调试出口**（`log.*` / `logger.*`）、`ENDPOINT_*` 常量、javadoc / 注释、worker 端点文档串 | **不算** | 判据 6 的扫描**已排除**（`LOG_CALL_RE` + 纯 ASCII 判据 + `java_literals` 不取注释）⇒ 判据 6e 是它的负控 |
+
+⇒ 本判据只扫「admin-api 的 Java 字面量里、**不在日志调用内**的人话提示」这一路；射程外的形态在判据 6e 具名负控。
 """
 
 from __future__ import annotations
@@ -92,13 +112,34 @@ EXPECTED_LEDGER_ENTRIES = 2
 EXPECTED_LEDGER_HITS = 2
 
 #: 内部端点泄漏台账的冻结基线（**只许缩短**；跟踪单 issue #6841）。
-LEAK_LEDGER_BASELINE = 9
+#: 🔻 2026-11-03（issue #6841 本单）：**9 条 / 9 处 ⇒ 0 条 / 0 处** —— 9 条逐条判定后**全部**改写销账：
+#: 8 条是**商家可见** suggestion（页面 toast / 表单错误 / AI 转述），按「事实 + 该做什么」改写、删掉端点从句；
+#: 1 条（`ProductionSeedTemplateService` 的开租套用 `reason`）受众 = **研发 / 运营日志面**，
+#: 但它指的端点已于 #5874 下线（phantom 指针）⇒ 同样按「不指路」改写。
+#: 台账保留为**只许缩短**的机制：加条目必须同 PR 改大基线 + PR body 说明它是跨单债务；现为 0 = 零容忍起点。
+LEAK_LEDGER_BASELINE = 0
 
-#: §31 P3 判据面（**收紧**，见文件头「边界 ④」）：字面量里出现「HTTP 动词 + `/api/` 路径」**且**含中文字符
-#: —— 即**人话提示里夹着端点**。端点常量 / worker 端点文档串 / 路由声明字面量**有意不在面内**
-#: （台账 `_doc` 里具名登记了这三类）。
+#: §31 P3 判据面（**射程**，见文件头「§31 P3 判定射程」）：字面量里出现「HTTP 动词 + `/api/` 路径」
+#: **且**含中文字符 —— 即**人话提示里夹着端点**。以下三类**不在面内**（都不是「商家可见出口」）：
+#: ① 纯 ASCII 端点常量（`ENDPOINT_*`）/ worker 端点文档串（给研发与日志用）；
+#: ② **研发日志出口**：`log.*` / `logger.*` 调用里的字面量（判据 6e 的负控）；
+#: ③ javadoc / 注释 / 路由声明（`java_literals` 本来就不取注释）。
 API_CALL_RE = re.compile(r"\b(GET|POST|PUT|DELETE|PATCH)\s+/api/")
 CJK_RE = re.compile(r"[\u4e00-\u9fff]")
+
+#: **研发日志出口**的机械识别（Lombok `@Slf4j` 的 `log` 与自建 `logger` / `LOGGER` 都算）。
+LOG_CALL_RE = re.compile(r"\b(?:log|logger|LOGGER|LOG)\s*\.\s*(?:trace|debug|info|warn|error)\s*\(")
+
+
+def _enclosing_statement_prefix(source: str, pos: int) -> str:
+    """该字面量**所在语句**里、从语句起点到字面量之前的那段文本（用于判「是不是在日志调用里」）。
+
+    语句边界 = 最近的 `;` / `{` / `}`（都在 `pos` 之前）：`log.warn("…" + x)` 的多行 / 字符串拼接仍落在
+    同一段前缀里；而「先拼好字符串、再分别交给 log 与 throw」的形态（字面量在变量赋值里）**不会**
+    被误判成日志面 —— 那正是判据 6e 的对照读数要钉住的差别。
+    """
+    boundary = max(source.rfind(";", 0, pos), source.rfind("{", 0, pos), source.rfind("}", 0, pos))
+    return source[boundary + 1: pos]
 
 
 def sources() -> dict[str, str]:
@@ -240,7 +281,10 @@ def leak_scan_face() -> dict[str, str]:
 
 
 def scan_endpoint_leaks(sources: Mapping[str, str]) -> list[dict]:
-    """在给定语料上现取「商家答复型提示 + 内部端点」的命中（纯函数 ⇒ 可注入式自证）。
+    """在给定语料上现取「商家可见提示 + 内部端点」的命中（纯函数 ⇒ 可注入式自证）。
+
+    **射程**（见文件头「§31 P3 判定射程」）：只判**商家可见出口**的人话提示 —— 字面量含「HTTP 动词 + `/api/`」
+    且含中文，**且不在日志调用内**（`LOG_CALL_RE`）。研发日志 / `ENDPOINT_*` 常量 / 注释**不判**（判据 6e 负控）。
 
     `line` **只用于报错定位**，不进台账键（issue #6977）；键的身份 = `路径 + 字面量 + 出现序号`。
     """
@@ -250,6 +294,8 @@ def scan_endpoint_leaks(sources: Mapping[str, str]) -> list[dict]:
         for pos, literal in java_literals(source):
             if not (API_CALL_RE.search(literal) and CJK_RE.search(literal)):
                 continue
+            if LOG_CALL_RE.search(_enclosing_statement_prefix(source, pos)):
+                continue  # 研发日志出口（不面向商家）⇒ 不在 §31 P3 射程
             seen[literal] = seen.get(literal, 0) + 1
             out.append({
                 "path": rel,
@@ -393,14 +439,15 @@ def migrate_legacy_ledger(path: Path = LEAK_LEDGER_PATH) -> bool:
 
 
 def test_merchant_hint_endpoint_leaks_are_all_registered():
-    """判据 6：未登记即红 + 幽灵条目即红 + 条数 ≤ 冻结基线（**只许缩短**）。
+    """判据 6：未登记即红 + 幽灵条目即红 + 条数 == 冻结基线（**只许缩短**）。
 
     键 = `文件::字面量::#出现序号`（**不含行号**，issue #6977）⇒ 只重排文件（插空行 / 移方法）
     不会红；真加 / 真删泄漏照旧红（判别力由 ::test_injection_* 逐条自证）。
 
-    改前实测（本包修 6 处**之前**）命中 16 处；修掉 `ProductionOrderService` 4 处 +
-    `ProductionRoutingCommandService` 5 处 + `ProcessingFeeCombinationCommandService` 1 处后，
-    仍剩本台账登记的条目（跟踪 issue #6841）。
+    冻结读数沿革：改前 16 处 ⇒ `ProcessingOrderService` 4 处 + `ProductionRoutingCommandService` 5 处 +
+    `ProcessingFeeCombinationCommandService` 1 处销账后 **9 条**（issue #6839）⇒ 2026-11-03 **0 条**
+    （issue #6841 逐条判定：8 条商家可见 + 1 条研发/运营日志面**全部**改写销账，见台账 `_doc` 的判定表）。
+    射程 = **商家可见出口**（文件头「§31 P3 判定射程」）；研发日志 / 端点常量 / 注释由判据 6e 负控。
     """
     hits = leak_hits()
     entries = list(leak_ledger().get("entries", []))
@@ -425,17 +472,28 @@ def test_leak_ledger_keys_carry_no_line_number():
     assert problems == [], "泄漏台账键形态不合规：\n" + "\n".join(problems)
 
 
+#: 注入用的「商家可见端点提示」（**只在测试内存里拼进来**，绝不写进仓）：形态 = 真语料里出现过的
+#: 「人话 + HTTP 动词 + `/api/` 路径」。用于 6c / 6d / 迁移自证 —— **不依赖台账内容**（台账现为 0 条）。
+_INJECTED_MERCHANT_HINT = (
+    "\n// 注入（内存）：商家可见 suggestion 里夹端点\n"
+    'class Injected { void f() { throw new RuntimeException("查看入口 GET /api/admin/production/routings"); } }\n'
+)
+
+
 def test_injection_line_numbered_key_is_red():
-    """判别力自证（判据 6b）：把键退回旧形态 `文件::行::字面量` ⇒ **元守卫必须红**。"""
-    entries = list(leak_ledger().get("entries", []))
-    assert entries, "台账为空 ⇒ 注入失去对象（fail-closed）"
-    legacy_key = entries[0]["path"] + "::252::" + entries[0]["literal"]
+    """判别力自证（判据 6b）：把键退回旧形态 `文件::行::字面量` ⇒ **元守卫必须红**。
+
+    ⚠️ 只用**真语料里的一个真字面量**做锚（不复用台账条目）：台账 2026-11-03 起为 0 条（issue #6841）
+    ⇒ 若把自证对象挂在台账上，这条判据会随台账清零一起**失去判别力**。
+    """
+    rel = f"{SERVICE_REL}/AgentBatchService.java"
+    literal = next(text for _pos, text in java_literals((REPO_ROOT / rel).read_text(encoding="utf8")))
+    entry = {"path": rel, "literal": literal, "index": 1}
+    legacy_key = f"{rel}::252::{literal}"
     assert key_shape_problems(legacy_key) != [], f"旧形态键没被判红 ⇒ 元守卫退化成空断言：{legacy_key}"
     # 对照组：合规键（含出现序号）必须**不**红 —— 否则「不许纯数字段」被写成了「不许有任何数字」。
-    assert key_shape_problems(leak_key(entries[0])) == [], "合规键被判红 ⇒ 元守卫口径写错"
-    legacy_entries = [
-        {"path": entry["path"], "literal": entry["literal"], "line": 252} for entry in entries[:1]
-    ]
+    assert key_shape_problems(leak_key(entry)) == [], "合规键被判红 ⇒ 元守卫口径写错"
+    legacy_entries = [{"path": rel, "literal": literal, "line": 252}]
     assert leak_key_shape_problems(legacy_entries) != [], "条目级旧形态（`line` 当锚）没被判红"
 
 
@@ -444,17 +502,20 @@ def test_injection_blank_line_shift_keeps_endpoint_ledger_green():
 
     修前形态（issue #6977 的实测红证，PR #6973）：键含行号 ⇒ 同一批改动同时报
     「未登记 5 处」+「台账未被兑现 3 处」。这条把那个形态钉死。
+    语料 = **真文件 + 内存注入的一条商家可见端点提示**（不依赖台账里是否还剩债务）。
     """
     rel = f"{SERVICE_REL}/AgentBatchService.java"
     source = (REPO_ROOT / rel).read_text(encoding="utf8")
-    shifted = source.replace("\n", "\n\n\n")  # 每个换行后再插两个空行 ⇒ 行号整体放大
-    assert shifted.count("\n") > source.count("\n") * 2, "注入没生效（行号没漂）⇒ 这条自证会假绿"
-    before = [hit for hit in leak_hits() if hit["path"] == rel]
+    assert scan_endpoint_leaks({rel: source}) == [], "真语料里仍有端点泄漏 ⇒ 先修干净再做这条注入自证"
+    injected = source + _INJECTED_MERCHANT_HINT
+    before = scan_endpoint_leaks({rel: injected})
+    assert len(before) == 1, f"注入没生效（应恰好 1 处命中）：{before}"
+    entries = [{"path": rel, "literal": before[0]["literal"], "index": 1}]
+    shifted = injected.replace("\n", "\n\n\n")  # 每个换行后再插两个空行 ⇒ 行号整体放大
+    assert shifted.count("\n") > injected.count("\n") * 2, "注入没生效（行号没漂）⇒ 这条自证会假绿"
     after = scan_endpoint_leaks({rel: shifted})
-    entries = [entry for entry in leak_ledger().get("entries", []) if entry["path"] == rel]
-    assert entries, f"台账里没有 {rel} 的条目 ⇒ 这条自证失去对象（fail-closed）"
-    assert leak_key_problems(entries, before) == [], "修前就先红 ⇒ 台账与语料已漂，先对账"
     assert [hit["line"] for hit in before] != [hit["line"] for hit in after], "行号没漂 ⇒ 注入无效"
+    assert leak_key_problems(entries, before) == [], "修前就先红 ⇒ 注入语料与条目已漂，先对账"
     assert leak_key_problems(entries, after) == [], (
         "插入空行后判据 6 变红 ⇒ 键仍按行锚（issue #6977 未修净）："
         f"{leak_key_problems(entries, after)}"
@@ -462,20 +523,64 @@ def test_injection_blank_line_shift_keeps_endpoint_ledger_green():
 
 
 def test_injection_deleting_a_registered_endpoint_turns_red():
-    """判据 6d（**本单验收判据②**）：真的删掉一处已登记端点 ⇒ 判据 6 **必红**（陈旧条目）。"""
+    """判据 6d（**本单验收判据②**）：真的删掉一处**已登记**端点 ⇒ 判据 6 **必红**（陈旧条目）。
+
+    语料 = 真文件 + 内存注入（同 6c）：先按注入结果登记，再把端点从句删掉 ⇒ 必判「台账未被兑现」。
+    """
     rel = f"{SERVICE_REL}/ProductionOperationCommandService.java"
-    source = (REPO_ROOT / rel).read_text(encoding="utf8")
-    entries = [entry for entry in leak_ledger().get("entries", []) if entry["path"] == rel]
-    assert len(entries) == 1, f"台账里 {rel} 应恰有 1 条（现取 {len(entries)}）⇒ 自证对象漂了，先对账"
-    entry = entries[0]
-    assert entry["literal"] in source, "台账字面量在源码里找不到 ⇒ 台账已陈旧，先对账"
-    stripped = API_CALL_RE.sub("", entry["literal"]).strip()
-    mutated = source.replace(entry["literal"], stripped)
-    assert mutated != source, "变异没生效（正控锚找不到）⇒ 判据会假绿"
+    injected = (REPO_ROOT / rel).read_text(encoding="utf8") + _INJECTED_MERCHANT_HINT
+    hits = scan_endpoint_leaks({rel: injected})
+    assert len(hits) == 1, f"注入没生效（应恰好 1 处命中）：{hits}"
+    entries = [{"path": rel, "literal": hits[0]["literal"], "index": 1}]
+    stripped = API_CALL_RE.sub("", hits[0]["literal"]).strip()
+    mutated = injected.replace(hits[0]["literal"], stripped)
+    assert mutated != injected, "变异没生效（正控锚找不到）⇒ 判据会假绿"
     problems = leak_key_problems(entries, scan_endpoint_leaks({rel: mutated}))
     assert problems and all("台账未被兑现" in problem for problem in problems), (
         f"删掉已登记端点后判据 6 没红 ⇒ 判据被改宽成永远绿：{problems}"
     )
+
+
+def test_dev_log_and_off_face_endpoint_shapes_are_not_red():
+    """判据 6e（**射程负控**，本单验收判据②）：**研发面**里的端点**不**判红 —— 射程准、不误伤。
+
+    三组负控全在**真语料**上做内存注入（不是「没有对象所以不绿」的空断言）：
+    ① **研发日志出口**：`log.warn("… POST /api/admin/x …")`（`@Slf4j` 标准用法）+ **对照读数**（同样的话
+       挪进 `RuntimeException` ⇒ 必红，证明上面那条绿不是「判据根本没扫」）；
+    ② **纯 ASCII 端点常量**（`ENDPOINT_*`，仓里真有，给研发/日志用）；
+    ③ **注释 / javadoc**：含中文 + 端点 ⇒ 仍绿（与 MC-096 的「只加注释不红」同口径）。
+    """
+    rel = "backend/admin-api/src/main/java/com/migao/admin/controller/ImageRecognitionController.java"
+    source = (REPO_ROOT / rel).read_text(encoding="utf8")
+    hint = "上传图片失败（POST /api/admin/upload/image 返回错误）"
+    log_injected = source + (
+        "\n// 注入（内存）：研发日志出口\n"
+        f'class Injected {{ void f() {{ log.warn("{hint} status={{}}", 500); }} }}\n'
+    )
+    assert scan_endpoint_leaks({rel: log_injected}) == [], (
+        "**研发日志出口**被当成商家可见泄漏判红 ⇒ 射程过宽（日志/运维提示不该进面）"
+    )
+    merchant_injected = source + (
+        "\n// 注入（内存）：同一句话放在商家可见出口\n"
+        f'class Injected {{ void f() {{ throw new RuntimeException("{hint}"); }} }}\n'
+    )
+    assert scan_endpoint_leaks({rel: merchant_injected}) != [], (
+        "对照读数失败：商家可见面里同一句话没判红 ⇒ 上面那条负控是空断言"
+    )
+
+    const_rel = f"{SERVICE_REL}/OrderShipmentService.java"
+    const_source = (REPO_ROOT / const_rel).read_text(encoding="utf8")
+    constants = [
+        text for _pos, text in java_literals(const_source)
+        if API_CALL_RE.search(text) and not CJK_RE.search(text)
+    ]
+    assert constants, f"{const_rel} 里读不到纯 ASCII 端点常量 ⇒ 这条负控失去对象（fail-closed）"
+    assert scan_endpoint_leaks({const_rel: const_source}) == [], "纯 ASCII 端点常量被判红 ⇒ 射程过宽"
+
+    comment_injected = source + (
+        '\n/** 沿革注记：这里曾写「查看入口 GET /api/admin/production/routings」（issue #6841 已删）*/\n'
+    )
+    assert scan_endpoint_leaks({rel: comment_injected}) == [], "只加注释却判红 ⇒ 与 MC-096 的对照读数不一致"
 
 
 def test_legacy_ledger_reader_fails_closed_with_regenerate_hint(tmp_path, monkeypatch):
@@ -488,41 +593,43 @@ def test_legacy_ledger_reader_fails_closed_with_regenerate_hint(tmp_path, monkey
         leak_ledger()
 
 
-def test_legacy_ledger_migration_is_idempotent_and_semantics_preserving(tmp_path):
+def test_legacy_ledger_migration_is_idempotent_and_semantics_preserving(tmp_path, monkeypatch):
     """一次性迁移的**幂等 + 语义等价**判据（issue #6977）。
 
     - 幂等：第二次跑 = **零写入**，台账逐字节不变；
-    - 等价：迁移后的 `(路径, 字面量, 出现序号)` 与现取台账**逐值相等**（债务认定一字未改，
-      只把锚从「行号」换成「字面量 + 出现序号」）。
+    - 等价：迁移后的 `(路径, 字面量, 出现序号)` 与迁移前**逐值相等**（债务认定一字未改，只换锚）。
+
+    语料用**内存注入**构造（台账 2026-11-03 起为 0 条，issue #6841 ⇒ 不再依赖仓内债务）：
+    注入一条商家可见端点提示 ⇒ 取它的 `line` 造旧形态台账 ⇒ 迁移 ⇒ 逐值等价 + 幂等。
     """
-    ledger = json.loads(LEAK_LEDGER_PATH.read_text(encoding="utf8"))
-    by_key = {leak_key(hit): hit for hit in leak_hits()}
-    legacy_entries = [
-        {
-            "path": entry["path"],
-            "literal": entry["literal"],
-            "line": by_key[leak_key(entry)]["line"],
-            "hits": entry["hits"],
-            "issue": entry["issue"],
-            "kind": entry["kind"],
-            "reason": entry["reason"],
-        }
-        for entry in ledger["entries"]
-    ]
+    rel = f"{SERVICE_REL}/CraftCalcConfigService.java"
+    hits = scan_endpoint_leaks({rel: (REPO_ROOT / rel).read_text(encoding="utf8") + _INJECTED_MERCHANT_HINT})
+    assert len(hits) == 1, f"注入没生效（应恰好 1 处命中）：{hits}"
+    monkeypatch.setattr(sys.modules[__name__], "leak_hits", lambda: hits)
+    ledger = {
+        "entries": [{
+            "path": rel,
+            "literal": hits[0]["literal"],
+            "line": hits[0]["line"],
+            "hits": 1,
+            "issue": "#6841",
+            "kind": "注入自证（内存注入，不入库）",
+            "reason": "迁移自证用：旧形态 = 键含行号",
+        }]
+    }
     target = tmp_path / "ledger.json"
-    target.write_text(
-        json.dumps({**ledger, "entries": legacy_entries}, ensure_ascii=False, indent=2) + "\n",
-        encoding="utf8",
-    )
+    target.write_text(json.dumps(ledger, ensure_ascii=False, indent=2) + "\n", encoding="utf8")
     assert migrate_legacy_ledger(target) is True, "旧形态没有迁移（迁移器失效）"
     first = target.read_bytes()
     assert migrate_legacy_ledger(target) is False, "第二次迁移仍写盘 ⇒ 不幂等"
     assert target.read_bytes() == first, "第二次迁移不是逐字节零 diff ⇒ 不幂等"
     migrated = json.loads(first)["entries"]
     assert [(e["path"], e["literal"], e["index"]) for e in migrated] == [
-        (e["path"], e["literal"], e["index"]) for e in ledger["entries"]
-    ], "迁移结果与现取台账不逐值相等（语义漂了）"
-    assert leak_key_problems(migrated, leak_hits()) == [], "迁移后台账与现取命中对不上"
+        (rel, hits[0]["literal"], 1)
+    ], "迁移结果与被迁移的旧台账不逐值相等（语义漂了）"
+    assert leak_key_problems(migrated, hits) == [], "迁移后台账与现取命中对不上"
+    # 对照读数：**现取台账（0 条 / 已是新形态）⇒ 迁移器零写入**（不误改空台账）
+    assert migrate_legacy_ledger() is False, "现取台账（0 条）被迁移器写盘 ⇒ 不幂等"
 
 
 # ── 判据 7：镜像一致性（本文件 vs MC-096 守卫）────────────────────────────────────
