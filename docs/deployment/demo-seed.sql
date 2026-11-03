@@ -86,6 +86,20 @@ INSERT INTO product_colors (tenant_id, product_id, color_name, main_color_hex, s
 SELECT :tenant_id, 'p-sl-001', '米白', '#F5EFE0', 2
 WHERE NOT EXISTS (SELECT 1 FROM product_colors WHERE tenant_id = :tenant_id AND product_id = 'p-sl-001' AND color_name = '米白');
 
+-- SDQS-WAIVER: DFW-DEMO-SEED-001 —— 本段**直写 `product_skus.stock`**（B 类，issue #7600）
+-- 为什么只能直写（B 类，不是懒）：本文件是 **psql 部署夹具**（`psql -f` 打库，没有 HTTP 会话 /
+--   没有 tenant 上下文）⇒ 系统**没有**可从 SQL 侧调用的「入库过账」写面。要在 SQL 里补
+--   `inbound_orders` + `stock_batches`，就得手工写批次号 `PC-yyyyMMdd-NNNN`，而 V111 明令批次号
+--   只能由服务端生成（旧系统号只进 `legacy_batch_no`）⇒ 那等于在部署夹具里养**第二份号格式**，
+--   比本缺陷更难治。
+-- 后果（如实登记，不粉饰）：演示环境里这批 SKU 是**台账外存量** ⇒ 批次对账的 `unbatchedMeters`
+--   非 0，`diff = batchRemaining − skuStock` 恒等式解释不了这一段；演示库是一次性库，且本文件
+--   **不是**运行期校验面（不进 CI 数据面）。
+-- 重启条件（何时必须改掉）：① 演示环境要求批次对账 `diff == 0`；或 ② 部署夹具改为**调用管理端
+--   API**（期初建账 = `POST /api/admin/inbound-orders` + `source=opening`，见
+--   `docs/design/old-system-migration-and-opening-balance.md`）。
+-- 判据：tests/unit_ci_workflows/test_smoke_fixture_stock_chain.py（本段直写点**未登记即红**；
+--   登记点消失而台账不改 ⇒ 也红）。
 -- SKU 矩阵（issue #7583 缺陷 2）：**每个颜色至少一行**，主销两档门幅（2.8 / 3.2）；
 -- 星空白/云朵 3 色 × 2 门幅，雾霭柔光纱（2.8 超宽幅）2 色 × 1 门幅。
 -- 为什么**逐行显式**（不写成 JOIN product_colors 的生成式）：判据要能**逐行静态读**

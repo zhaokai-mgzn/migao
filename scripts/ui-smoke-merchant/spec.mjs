@@ -480,6 +480,10 @@ async function createProductFixture(page, { name, skuCode }) {
   //    （颜色 × 门幅 × 价格 × 库存 × 货号）。旧形态只 POST 商品级字段 ⇒ `product_skus` 零行
   //    ⇒「SKU 选择 / 价格本 / 采购单 / 库存」全链没有数据可测，而页面照样渲染、冒烟照样绿。
   //    2026-10-23 用户投诉的「冒烟数据商品 SKU 都没有」就是这条。
+  // 🔴 issue #7600（SDQS §33「绿证明的是页面，不是数据」）：**库存不由夹具直写**。
+  //    建品接口自 #7597 起**忽略** `stock` / `skus[].stock`（库存只由真实单据产生）⇒ 旧形态写
+  //    `stock: 120` 的实际效果是「夹具以为有库存、库里是 0」的假绿。现在改为建品后由
+  //    `seedSkuStockViaInbound()` 走**公开 API**（入库单建单即过账）造库存 —— 链路真走一遍。
   const colors = [{ colorName: '米白', mainColorHex: '#F5EFE0' }, { colorName: '浅灰', mainColorHex: '#C9C9C9' }]
   const doorWidths = ['2.8', '3.2']
   const basePrice = 30.8
@@ -487,7 +491,6 @@ async function createProductFixture(page, { name, skuCode }) {
     colorName: c.colorName,
     doorWidth: w,
     price: basePrice,
-    stock: 120,
     skuCode: `${skuCode}-${c.colorName}-${w}`,
   })))
   const created = await api.post('/api/admin/products', {
@@ -497,7 +500,16 @@ async function createProductFixture(page, { name, skuCode }) {
   })
   const id = created?.data?.id || created?.id || ''
   if (!id) throw new Error(`前置建品失败（未返回 id）：${JSON.stringify(created).slice(0, 200)}`)
-  recordFixture('products', { id, name, withSkus: skus.length, cleaned: false })
+  // 库存 = 真实单据产生（issue #7600）：读回 SKU 行（要 skuId）→ 建入库单并过账 → 再读回自证
+  const skuRows = await readProductSkus(page, id)
+  const inbound = await seedSkuStockViaInbound(page, { productId: id, skus: skuRows, meters: 120 })
+  const stocked = await readProductSkus(page, id)
+  const unstoked = stocked.filter((s) => !(Number(s.stock) > 0))
+  if (stocked.length === 0 || unstoked.length > 0) {
+    throw new Error(`前置商品 ${id} 的库存未由入库单产生（${unstoked.length}/${stocked.length} 条 SKU 库存 ≤0）`
+      + `：入库单 ${inbound.id} —— 库存必须来自单据，不许夹具直写（issue #7600）`)
+  }
+  recordFixture('products', { id, name, withSkus: stocked.length, inboundOrder: inbound.id, cleaned: false })
   return id
 }
 
@@ -515,6 +527,45 @@ async function readProductSkus(page, id) {
   const res = await api.get(`/api/admin/products/${id}`)
   const detail = res?.data ?? res
   return Array.isArray(detail?.skus) ? detail.skus : []
+}
+
+/**
+ * 通过**公开 API** 给已有 SKU 造库存（issue #7600；SDQS §33「绿证明的是页面，不是数据」）。
+ *
+ * 病灶：`skus[].stock` 自 #7597 起被建品接口**忽略**（库存只由真实单据产生），而夹具旧形态仍
+ * `stock: 120` 直写 ⇒ 商品与 SKU 都在、`product_skus.stock` 却是 0，页面照样渲染、冒烟照样绿
+ * —— 绿证明的是页面，不是数据，更不是「库存从哪来、扣减对不对」这条链路。
+ *
+ * 修法（根因）：库存走**入库单建单即过账**（`POST /api/admin/inbound-orders` ⇒
+ * `InboundOrderService.createAndPost`：加 SKU 库存 + 生成 `stock_batches` 批次行）——
+ * 冒烟因此顺带把「入库 → 库存 → 批次」这条业务链路真走一遍，而不是绕过它写库。
+ *
+ * 判据（静态、零网络）：`tests/unit_ci_workflows/test_smoke_fixture_stock_chain.py`
+ * —— spec 里再出现 SKU 级 `stock:` 直写、或本函数被摘掉而回到「建品直接写库存」⇒ 红。
+ */
+async function seedSkuStockViaInbound(page, { productId, skus, meters = 120 }) {
+  const api = await adminApi(page)
+  const items = skus.map((s) => ({ productId, skuId: Number(s.id), quantity: meters }))
+  const missing = items.filter((it) => !Number.isInteger(it.skuId) || it.skuId <= 0)
+  if (missing.length) {
+    throw new Error(`入库前置失败：${missing.length} 条 SKU 缺 id（读回 SKU 行不带 id ⇒ 无法按 SKU 造库存）：`
+      + `${JSON.stringify(skus).slice(0, 240)}`)
+  }
+  const created = await api.post('/api/admin/inbound-orders', {
+    supplier: '冒烟夹具',
+    source: 'purchase',
+    remark: '冒烟：库存由入库单过账产生（issue #7600，不许夹具直写）',
+    items,
+  })
+  const order = created?.data ?? created
+  const orderId = order?.id
+  if (!orderId) throw new Error(`入库单未建出（未返回 id）：${JSON.stringify(created).slice(0, 200)}`)
+  // 建单即过账：只有 `posted` 才是库存的真值来源（draft ⇒ 一张库存都没加）
+  const status = String(order?.status ?? '').toLowerCase()
+  if (status !== 'posted') {
+    throw new Error(`入库单 ${orderId} 应为 posted（建单即过账），现取 status=${order?.status ?? '<空>'}`)
+  }
+  return { id: orderId, no: order?.inboundNo || order?.no || '', status }
 }
 
 /**
@@ -1092,8 +1143,24 @@ async function productsNew(page) {
     if (badPrice.length || badDoor.length) {
       throw new Error(`SKU 数据不合格：价格≤0 ${badPrice.length} 条 / 门幅非 canonical ${badDoor.length} 条：${JSON.stringify(skus).slice(0, 240)}`)
     }
+    // ── SDQS D2 + issue #7600：库存**不得**来自商品档案，只能来自单据 ──
+    // 两半判据：① 刚建完 ⇒ 每条 SKU 库存 == 0（档案不产生库存；夹具也没偷偷直写）；
+    //          ② 走**公开 API** 建一张入库单（建单即过账）⇒ 读回库存 == 120（「库存从哪来」这条链路真走通）。
+    // 旧形态（夹具 `stock: 120`）卡在 ①：库存被绕过业务链路写入 ⇒ 页面绿、扣减链路没被走过。
+    const stockBefore = skus.map((s) => Number(s.stock))
+    if (stockBefore.some((v) => v !== 0)) {
+      throw new Error(`建品后 SKU 库存应全为 0（库存只由单据产生，issue #7600/#7597），现取 ${JSON.stringify(stockBefore)}`)
+    }
+    const inbound = await seedSkuStockViaInbound(page, { productId: rec.id, skus, meters: 120 })
+    fixture.inboundOrder = inbound.id
+    const stocked = await readProductSkus(page, rec.id)
+    const stockAfter = stocked.map((s) => Number(s.stock))
+    if (stockAfter.length !== skus.length || stockAfter.some((v) => v !== 120)) {
+      throw new Error(`入库单 ${inbound.id} 过账后 SKU 库存应全为 120（${skus.length} 条），现取 ${JSON.stringify(stockAfter)}`)
+    }
     await h.done(true, '', `门幅 值/显示分离 ✓(${JSON.stringify(optInfo)}→'${storedValue}') + 建品可见 ✓(${pname})`
-      + ` + 读回 SKU ${skus.length} 条 ✓(${skus.map((s) => `${s.colorName}/${s.doorWidth}/¥${s.price}/${s.stock}`).join('; ')})`)
+      + ` + 读回 SKU ${skus.length} 条 ✓(${skus.map((s) => `${s.colorName}/${s.doorWidth}/¥${s.price}`).join('; ')})`
+      + ` + 库存来自入库单 ✓(${inbound.no || inbound.id}：0 → 120 × ${stockAfter.length} 条，非夹具直写)`)
   } catch (e) {
     await h.done(false, `新建商品页失败: ${String(e).slice(0, 300)}`)
   } finally {
