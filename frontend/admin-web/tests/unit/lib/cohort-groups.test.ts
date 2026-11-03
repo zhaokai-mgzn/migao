@@ -15,7 +15,7 @@
  * | # | 判据 | 红证（怎么让它**单独**红） |
  * |---|---|---|
  * | ① | 每个**已知**服务端枚举都映射出**商家话术**：非空、不含英文/下划线（内部标识形态）、不含内部口径词、互不相同 | 把 `purchase` 的文案改回 `purchase` / 改回 `切换后（采购入库）` ⇒ 红 |
- * | ② | 映射表键集 == 服务端枚举全集（**现取** `SavingMetricViews.java` 的 `COHORT_*` 常量） | 在 Java 里加一个 `COHORT_RETURN = "return"` 而不补文案 ⇒ 红（反向：删掉表里一个键 ⇒ 也红） |
+ * | ② | 映射表**键集与文案**都 == 服务端（**现取** `SavingMetricViews.java` 的 `COHORT_*` 常量与 `cohortLabel()` 的 case 文案 + `default` 兜底） | 在 Java 里加一个 `COHORT_RETURN = "return"` 而不补文案 ⇒ 红；只改任一侧**一个词**（文案分叉）⇒ 也红 |
  * | ③ | 认不出的键 / 空值 ⇒ **兜底话术**，且**不回显原始值** | 把 `COHORT_GROUP_FALLBACK` 从 `cohortGroupTitle` 里摘掉 ⇒ 红 |
  * | ④ | 源码面：两个会话卡的**渲染代码**里 `cohortLabel` 零出现（只许经映射表 → 文案），且两端都真的在调映射函数 | 把 `{cohortGroupTitle(cohort.cohort)}` 换回 `{cohort.cohortLabel}` ⇒ 红 |
  * | ⑤ | **同源**：bmini 的副本与本站单一真值逐项相等（bmini 是独立 npm 工程、不许 import 本站 TS） | 只改一侧的任一词 ⇒ 红 |
@@ -58,6 +58,27 @@ function serverCohortValues(): string[] {
   return [...src.matchAll(/public static final String COHORT_[A-Z_]+\s*=\s*"([^"]+)"/g)].map((m) => m[1])
 }
 
+/** 现取 Java `cohortLabel()` 的「分组键 → 商家文案」与 `default` 兜底（与服务端**逐字**比对） */
+function javaCohortTitles(): { titles: Record<string, string>; fallback: string } {
+  const src = readFileSync(JAVA_SRC, 'utf8')
+  const start = src.indexOf('public static String cohortLabel')
+  expect(start, 'Java 里找不到 cohortLabel()（写法漂了？）').toBeGreaterThan(-1)
+  const body = src.slice(start, start + 1600)
+  const constToCode: Record<string, string> = {}
+  for (const m of src.matchAll(/public static final String (COHORT_[A-Z_]+)\s*=\s*"([^"]+)"/g)) {
+    constToCode[m[1]] = m[2]
+  }
+  const titles: Record<string, string> = {}
+  for (const m of body.matchAll(/case (COHORT_[A-Z_]+) -> "([^"]+)"/g)) {
+    const code = constToCode[m[1]]
+    expect(code, `Java 里的 ${m[1]} 没解析出枚举值`).toBeTruthy()
+    titles[code] = m[2]
+  }
+  const fallback = body.match(/default -> "([^"]+)"/)
+  expect(fallback, 'Java cohortLabel() 缺 default 兜底（新增枚举会静默落到「无文案」）').toBeTruthy()
+  return { titles, fallback: fallback![1] }
+}
+
 /** 从 TS 源码里取一份 `Record<string, string>` 字面量的键值对（口径同 `selling-method-same-source`） */
 function recordEntries(src: string, name: string): Record<string, string> {
   const start = src.indexOf(name)
@@ -97,6 +118,11 @@ describe('会话卡来源组：服务端内部标签不上屏（issue #6461）',
     expect(serverValues.length, '从 SavingMetricViews.java 抽不到 COHORT_* 枚举（写法漂了？）').toBeGreaterThanOrEqual(3)
     expect(serverValues.length).toBe(new Set(serverValues).size)
     expect(Object.keys(COHORT_GROUP_TITLES).sort()).toEqual([...serverValues].sort())
+    // 🔴 键集一致还不够：**文案**也必须逐字一致（服务端改一句而前端没跟 ⇒ 两端说两种话）
+    const java = javaCohortTitles()
+    expect(Object.keys(java.titles).length, 'Java cohortLabel() 的 case 分支没解析出来').toBeGreaterThanOrEqual(3)
+    expect(COHORT_GROUP_TITLES).toEqual(java.titles)
+    expect(COHORT_GROUP_FALLBACK).toBe(java.fallback)
   })
 
   it('③ 认不出的键 / 空值 ⇒ 兜底话术，**不回显原始值**', () => {

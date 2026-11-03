@@ -16,9 +16,13 @@
   （与省料看板同一说法）；没记来源的 ⇒「还没记清来源的布」；**认不出的来源一律说
   「其它来源的布」**（服务端将来加一组不会白屏、也不会漏出内部标识）。手机端那一行改说
   「开业时导入的老库存（单列）」。
-- 判据：`frontend/admin-web/tests/unit/lib/cohort-groups.test.ts`（MC-148：文案规范 / 枚举全集覆盖 /
+- **服务端与工具侧一起收口**：服务端分组文案（`SavingMetricViews.cohortLabel`）本身改成同一批商家话术
+  ⇒ 米宝**文字摘要**（`batch_stock_query` 的 `message`，会进模型上下文被复述）与卡片载荷一起说人话；
+  前端映射表、bmini 副本、服务端三处**逐字相等**由判据现取比对（只改一侧一个词即红）。
+- 判据：`frontend/admin-web/tests/unit/lib/cohort-groups.test.ts`（MC-148：文案规范 / 枚举全集与文案覆盖 /
   兜底 / 两端渲染面零 `cohortLabel` / 两端同源）、`frontend/bmini-app/tests/cohort-groups-no-jargon.test.tsx`
-  （MC-149：手机端渲染与源码面零内部口径词）；每条都带注入式红证。
+  （MC-149：手机端渲染与源码面零内部口径词）、`backend/ai-agent-service/tests/test_batch_stock_query.py`
+  （工具输出零内部口径词 + 判别力自证）；每条都带注入式红证。
 - 未固化（照实登记）：工具侧文本摘要（`batch_stock_query` 的 `message`）仍用服务端标签拼句，
   会进模型上下文 —— 本单只收口**卡片**这一面，另单跟踪。
 
