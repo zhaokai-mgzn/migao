@@ -27,7 +27,8 @@ import { ArrowLeft, FileText, Package } from 'lucide-react'
 import { toast } from 'sonner'
 import { inboundOrderApi, warehouseApi } from '@/lib/api'
 import type { Warehouse } from '@/types/stocktake'
-import { Button, PageCard, PageHeader, Input, Select } from '@/components/ui'
+import { Button, DecimalInput, PageCard, PageHeader, Input, Select } from '@/components/ui'
+import { useDecimalValidity } from '@/components/ui/DecimalInput'
 import SkuPicker, { type SkuPickerChoice, skuLineLabel } from '@/components/products/SkuPicker'
 import { cn } from '@/lib/utils'
 import { checkStockQuantity } from '@/lib/stock-quantity'
@@ -229,6 +230,9 @@ export default function NewInboundOrderPage() {
       }, 0),
     [draftLines],
   )
+
+  /** 涉钱 / 涉数量格是否都合法：`DecimalInput` 不回调非法值 ⇒ 过账按钮必须一起禁用（否则提交的是上一个有效值） */
+  const { track: trackValidity, hasInvalid } = useDecimalValidity()
 
   const submitCreate = async () => {
     if (draftLines.length === 0) {
@@ -466,9 +470,8 @@ export default function NewInboundOrderPage() {
                         <td className="px-3 py-2">
                           {/* 卷数（issue #7644）：填了它 + 卷长 ⇒ 数量（米）自动换算并只读 */}
                           <Input
-                            type="number"
-                            min={1}
-                            step={1}
+                            type="text"
+                            inputMode="numeric"
                             aria-label={`${l.label} 卷数`}
                             placeholder="按卷填"
                             value={l.rollCount}
@@ -478,9 +481,8 @@ export default function NewInboundOrderPage() {
                         </td>
                         <td className="px-3 py-2">
                           <Input
-                            type="number"
-                            min={0}
-                            step="0.01"
+                            type="text"
+                            inputMode="decimal"
                             aria-label={`${l.label} 卷长`}
                             placeholder="每卷米数"
                             value={l.rollLengthM}
@@ -490,9 +492,8 @@ export default function NewInboundOrderPage() {
                         </td>
                         <td className="px-3 py-2">
                           <Input
-                            type="number"
-                            min={0.1}
-                            step={0.1}
+                            type="text"
+                            inputMode="decimal"
                             aria-label={`${l.label} 数量（米）`}
                             value={l.quantity}
                             readOnly={l.rollCount.trim() !== ''}
@@ -510,13 +511,13 @@ export default function NewInboundOrderPage() {
                           )}
                         </td>
                         <td className="px-3 py-2">
-                          <Input
-                            type="number"
+                          <DecimalInput
+                            field={`${l.label} 单价`}
                             min={0}
-                            step="0.01"
                             aria-label={`${l.label} 单价`}
                             value={l.unitCost}
-                            onChange={(e) => patchLine(l.skuId, { unitCost: e.target.value })}
+                            onChange={(unitCost) => patchLine(l.skuId, { unitCost })}
+                            onValidityChange={trackValidity}
                             className={cn(CELL_INPUT, 'text-right')}
                           />
                         </td>
@@ -597,7 +598,7 @@ export default function NewInboundOrderPage() {
             <Button variant="secondary" onClick={() => router.push('/inbound-orders')}>
               取消
             </Button>
-            <Button onClick={() => void submitCreate()} loading={submitting}>
+            <Button onClick={() => void submitCreate()} loading={submitting} disabled={hasInvalid}>
               确认入库
             </Button>
           </div>
