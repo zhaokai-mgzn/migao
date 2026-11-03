@@ -1,0 +1,2066 @@
+{
+  "schema": "state-write-face/1.0",
+  "_what": "**状态列写面**台账（issue #6953 的统一元守卫 SW-100）：每张有 `status` 列的表 × 每个写它的入口（Service 成员 / mapper 手写 SQL）逐条登记；未登记即红、登记而写点已消失亦红（只许缩短）。判据 = tests/unit_ci_workflows/test_state_write_face_metaguard.py。",
+  "_why": "族级跟踪单 #6953 的冻结读数：状态写缺陷一晚两例（#6928 入库单过账×作废、#6936 工序设不做并删除），两例各建了一颗**单表**元守卫（MC-100 / PG-075），合计只覆盖 2 张表 / 6 个写点，而全仓有 53 张带 status 列的表。只手修那两处 = 没修：下一个人在别的表、或用两颗守卫现取形态之外的写法加一条状态写面，没有任何东西会红。",
+  "_how_to_register": "新增 / 改写状态写面时：① 跑 `python3 -m pytest tests/unit_ci_workflows/test_state_write_face_metaguard.py -q` 拿到具名的「未登记」清单；② 按 (table, file, symbol, form, params, anchor) 追加条目 —— `anchor` 必须是该文件里**逐字存在**的写形片段；③ 若新写面用了裸字符串，先改成实体 `STATUS_*` 常量 / 枚举（否则判据 3 红）；④ 新表请一并补 `status_value_sources`（实体常量或 schema CHECK）。",
+  "scan": {
+    "root": "backend/admin-api/src/main/java",
+    "tables": "backend/admin-api/src/main/resources/db/init/schema.sql（有 status 列的表 = 53）",
+    "entities": "entity/*.java 的 @TableName（表 ↔ 实体唯一真值；解析实现 = tests/unit_ci_workflows/_sql_schema.py）",
+    "forms": [
+      "setStatus",
+      "lambda_set",
+      "string_set",
+      "set_sql",
+      "builder",
+      "sql"
+    ],
+    "note": "写形六条全部具名化；**新写形不是随便加** —— 加之前先问「它会不会让某条既有写点从现取集里消失」（那条会以「陈旧」判红）。"
+  },
+  "write_points": [
+    {
+      "table": "after_sales_tickets",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/AfterSalesTicketService.java",
+      "symbol": "createTicket",
+      "form": "setStatus",
+      "params": "AfterSalesCreateRequest request, Long tenantId, String operator, String source",
+      "anchor": ".setStatus(\"pending\"); ticket.setDescription(request.getDescription()); ticket.setSource(resolveSource(s"
+    },
+    {
+      "table": "after_sales_tickets",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/AfterSalesTicketService.java",
+      "symbol": "updateTicketStatus",
+      "form": "setStatus",
+      "params": "String id, AfterSalesStatusUpdateRequest request",
+      "anchor": ".setStatus(newStatus); if (StringUtils.hasText(request.getRemark())) { String tim"
+    },
+    {
+      "table": "after_sales_tickets",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/ReworkOrderService.java",
+      "symbol": "complete",
+      "form": "lambda_set",
+      "params": "String reworkId",
+      "anchor": ".set(AfterSalesTicket::getStatus, next)); log.info(\"[rework] 完成并回写售后 | rework={} ticket={} {} -> {}\","
+    },
+    {
+      "table": "agent_batch_items",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/AgentBatchService.java",
+      "symbol": "create",
+      "form": "builder",
+      "params": "Long tenantId, String createdBy, AgentBatchCreateRequest request",
+      "anchor": "AgentBatchItem.builder() .batchId(batchId) .tenantId(tenantId)"
+    },
+    {
+      "table": "agent_batches",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/mapper/AgentBatchMapper.java",
+      "symbol": "markExecutedDone",
+      "form": "sql",
+      "params": "",
+      "anchor": "\"UPDATE agent_batches SET status = 'done', success_count = #{successCount}, \" + \"fail_count = #{failCount}, executed_at = #{executedAt} \" + \"WHERE id = #{id} AN"
+    },
+    {
+      "table": "agent_batches",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/mapper/AgentBatchMapper.java",
+      "symbol": "markExecutedPartial",
+      "form": "sql",
+      "params": "",
+      "anchor": "\"UPDATE agent_batches SET status = 'partial', success_count = #{successCount}, \" + \"fail_count = #{failCount}, executed_at = #{executedAt} \" + \"WHERE id = #{id}"
+    },
+    {
+      "table": "agent_batches",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/mapper/AgentBatchMapper.java",
+      "symbol": "markExecuting",
+      "form": "sql",
+      "params": "",
+      "anchor": "\"UPDATE agent_batches SET status = 'executing' \" + \"WHERE id = #{id} AND tenant_id = #{tenantId} AND status = 'preview'\""
+    },
+    {
+      "table": "agent_batches",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/mapper/AgentBatchMapper.java",
+      "symbol": "markRevertPartial",
+      "form": "sql",
+      "params": "",
+      "anchor": "\"UPDATE agent_batches SET status = 'revert_partial', reverted_at = #{revertedAt} \" + \"WHERE id = #{id} AND tenant_id = #{tenantId} AND status = 'executing'\""
+    },
+    {
+      "table": "agent_batches",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/mapper/AgentBatchMapper.java",
+      "symbol": "markReverted",
+      "form": "sql",
+      "params": "",
+      "anchor": "\"UPDATE agent_batches SET status = 'reverted', reverted_at = #{revertedAt} \" + \"WHERE id = #{id} AND tenant_id = #{tenantId} AND status = 'executing'\""
+    },
+    {
+      "table": "agent_batches",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/mapper/AgentBatchMapper.java",
+      "symbol": "markReverting",
+      "form": "sql",
+      "params": "",
+      "anchor": "\"UPDATE agent_batches SET status = 'executing' \" + \"WHERE id = #{id} AND tenant_id = #{tenantId} \" + \"AND status IN (#{revertableA}, #{revertableB})\""
+    },
+    {
+      "table": "agent_batches",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/AgentBatchService.java",
+      "symbol": "claimForExecute",
+      "form": "setStatus",
+      "params": "Long tenantId, String batchId",
+      "anchor": ".setStatus(STATUS_EXECUTING); return batch; } private List<AgentBatchViews.Result> runBatch(Long t"
+    },
+    {
+      "table": "agent_batches",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/AgentBatchService.java",
+      "symbol": "claimForRevert",
+      "form": "setStatus",
+      "params": "Long tenantId, String batchId",
+      "anchor": ".setStatus(STATUS_EXECUTING); return batch; } private List<AgentBatchViews.Result> runRevert(Long"
+    },
+    {
+      "table": "agent_batches",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/AgentBatchService.java",
+      "symbol": "create",
+      "form": "builder",
+      "params": "Long tenantId, String createdBy, AgentBatchCreateRequest request",
+      "anchor": "AgentBatch.builder() .id(batchId) .tenantId(tenantId) .batchType(batchTy"
+    },
+    {
+      "table": "agent_batches",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/AgentBatchService.java",
+      "symbol": "runBatch",
+      "form": "setStatus",
+      "params": "Long tenantId, AgentBatch batch",
+      "anchor": ".setStatus(STATUS_PARTIAL); batch.setFailCount(batch.getItemCount() == null ? 0 : batch.getItemCount());"
+    },
+    {
+      "table": "agent_batches",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/AgentBatchService.java",
+      "symbol": "runRevert",
+      "form": "setStatus",
+      "params": "Long tenantId, AgentBatch batch",
+      "anchor": ".setStatus(STATUS_REVERT_PARTIAL); batch.setRevertedAt(OffsetDateTime.now()); int finalized = ba"
+    },
+    {
+      "table": "agent_employees",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/AgentEmployeeService.java",
+      "symbol": "updateEmployeeStatus",
+      "form": "setStatus",
+      "params": "String employeeId, String status",
+      "anchor": ".setStatus(status); agentEmployeeMapper.updateById(employee); log.info(\"更新员工状态: employeeId={}, status={}"
+    },
+    {
+      "table": "agent_sessions",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/mapper/AgentSessionMapper.java",
+      "symbol": "markAssignedIfWaiting",
+      "form": "sql",
+      "params": "",
+      "anchor": "\"UPDATE agent_sessions SET employee_id = #{employeeId}, status = 'active', \" + \"started_at = #{startedAt}, updated_at = #{startedAt} \" + \"WHERE id = #{id} AND t"
+    },
+    {
+      "table": "agent_sessions",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/AgentSessionService.java",
+      "symbol": "createSessionForHandoff",
+      "form": "builder",
+      "params": "String aiSessionId, String customerId, Long tenantId, String reason, String aiContextSummary, List<AgentAiContextMessage> aiContextMessages",
+      "anchor": "AgentSession.builder() .tenantId(tenantId) .customerId(customerId) .aiSe"
+    },
+    {
+      "table": "agent_sessions",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/AgentSessionService.java",
+      "symbol": "endSession",
+      "form": "setStatus",
+      "params": "String sessionId",
+      "anchor": ".setStatus(\"ended\"); session.setEndedAt(OffsetDateTime.now()); agentSessionMapper.updateById(session);"
+    },
+    {
+      "table": "agent_sessions",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/AgentSessionService.java",
+      "symbol": "sendMessage",
+      "form": "setStatus",
+      "params": "String sessionId, String senderType, String senderId, String content, Boolean isInternal",
+      "anchor": ".setStatus(\"active\"); agentSessionMapper.updateById(update); log.info(\"[agent-session] 客服接待，会话 a"
+    },
+    {
+      "table": "approvals",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/ApprovalService.java",
+      "symbol": "decide",
+      "form": "lambda_set",
+      "params": "String approvalId, boolean approve, String note, Operator operator",
+      "anchor": ".set(Approval::getStatus, status) .set(Approval::getDecidedBy, operator == null ? null : operator.userId"
+    },
+    {
+      "table": "approvals",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/ApprovalService.java",
+      "symbol": "submit",
+      "form": "builder",
+      "params": "ApprovalRequest request, Operator operator",
+      "anchor": "Approval.builder() .tenantId(request.getTenantId()) .objectType(request.getObjectType())"
+    },
+    {
+      "table": "approvals",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/ApprovalService.java",
+      "symbol": "withdraw",
+      "form": "lambda_set",
+      "params": "String approvalId, Operator operator",
+      "anchor": ".set(Approval::getStatus, ApprovalState.WITHDRAWN) .set(Approval::getUpdatedAt, OffsetDateTime.now()));"
+    },
+    {
+      "table": "categories",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/ProductCategorySeedService.java",
+      "symbol": "seedDefaultCategory",
+      "form": "builder",
+      "params": "Long tenantId",
+      "anchor": "Category.builder() .tenantId(tenantId) .name(OnboardingInitialData.DEFA"
+    },
+    {
+      "table": "craft_calc_configs",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/CraftCalcConfigService.java",
+      "symbol": "put",
+      "form": "builder",
+      "params": "Long tenantId, Map<String, Object> body",
+      "anchor": "CraftCalcConfig.builder() .id(\"ccc-\" + tenantId) .tenantId(tenantId)"
+    },
+    {
+      "table": "cutting_height_configs",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/CuttingHeightConfigService.java",
+      "symbol": "put",
+      "form": "builder",
+      "params": "Long tenantId, Map<String, Object> body",
+      "anchor": "CuttingHeightConfig.builder() .id(\"chc-\" + tenantId) .tenantId(tenantId)"
+    },
+    {
+      "table": "fabric_remnants",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/mapper/FabricRemnantMapper.java",
+      "symbol": "markRecovered",
+      "form": "sql",
+      "params": "",
+      "anchor": "\"UPDATE fabric_remnants SET status = 'used', used_by_order_no = #{orderNo}, \" + \"used_by_order_item_id = #{orderItemId}, used_by_item_key = #{itemKey}, \" + \"rec"
+    },
+    {
+      "table": "fabric_remnants",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/mapper/FabricRemnantMapper.java",
+      "symbol": "markScrapped",
+      "form": "sql",
+      "params": "",
+      "anchor": "\"UPDATE fabric_remnants SET status = 'scrapped', scrap_reason = #{reason}, \" + \"scrapped_at = #{scrappedAt}, scrapped_by = #{operator} \" + \"WHERE id = #{id} AND"
+    },
+    {
+      "table": "fabric_remnants",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/RemnantService.java",
+      "symbol": "accrue",
+      "form": "builder",
+      "params": "Long tenantId, String processingOrderNo, String orderNo, Source source, List<Draft> drafts",
+      "anchor": "FabricRemnant.builder() .tenantId(tenantId) .pieceSeq(draft.pieceSeq())"
+    },
+    {
+      "table": "finance_transactions",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/FinanceService.java",
+      "symbol": "createTransaction",
+      "form": "builder",
+      "params": "FinanceTransactionCreateRequest request, Long tenantId, String operator",
+      "anchor": "FinanceTransaction.builder() .tenantId(tenantId) .transactionNo(generateTransactionNo(te"
+    },
+    {
+      "table": "finance_transactions",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/FinanceService.java",
+      "symbol": "recordRefund",
+      "form": "builder",
+      "params": "Order order, BigDecimal amount, String remark",
+      "anchor": "FinanceTransaction.builder() .tenantId(order.getTenantId()) .transactionNo(generateTrans"
+    },
+    {
+      "table": "finance_transactions",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/OrderService.java",
+      "symbol": "recordFinanceTransaction",
+      "form": "builder",
+      "params": "Order order, BigDecimal amount, String type, String remark",
+      "anchor": "FinanceTransaction.builder() .tenantId(order.getTenantId()) .transactionNo(gener"
+    },
+    {
+      "table": "finished_goods_stock",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/mapper/FinishedGoodsStockMapper.java",
+      "symbol": "markShippedById",
+      "form": "sql",
+      "params": "",
+      "anchor": "\"UPDATE finished_goods_stock SET status = 'shipped', outbound_order_id = #{outboundOrderId}, \" + \"updated_at = NOW() WHERE tenant_id = #{tenantId} AND id = #{id"
+    },
+    {
+      "table": "finished_goods_stock",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/mapper/FinishedGoodsStockMapper.java",
+      "symbol": "markShippedByOrder",
+      "form": "sql",
+      "params": "",
+      "anchor": "\"UPDATE finished_goods_stock SET status = 'shipped', outbound_order_id = #{outboundOrderId}, \" + \"updated_at = NOW() WHERE tenant_id = #{tenantId} AND order_id "
+    },
+    {
+      "table": "finished_goods_stock",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/mapper/FinishedGoodsStockMapper.java",
+      "symbol": "markUnpackedByOrder",
+      "form": "sql",
+      "params": "",
+      "anchor": "\"UPDATE finished_goods_stock SET status = 'unpacked', updated_at = NOW() \" + \"WHERE tenant_id = #{tenantId} AND order_id = #{orderId} \" + \"AND status = 'in_stoc"
+    },
+    {
+      "table": "inbound_orders",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/mapper/InboundOrderMapper.java",
+      "symbol": "markCancelled",
+      "form": "sql",
+      "params": "",
+      "anchor": "\"UPDATE inbound_orders SET status = 'cancelled', cancelled_at = #{cancelledAt}, \" + \"cancelled_by = #{operator}, cancelled_reason = #{reason}, updated_at = NOW("
+    },
+    {
+      "table": "inbound_orders",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/mapper/InboundOrderMapper.java",
+      "symbol": "markFinishedCancelled",
+      "form": "sql",
+      "params": "",
+      "anchor": "\"UPDATE inbound_orders SET status = 'cancelled', cancelled_at = #{cancelledAt}, \" + \"cancelled_by = #{operator}, cancelled_reason = #{reason}, updated_at = NOW("
+    },
+    {
+      "table": "inbound_orders",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/mapper/InboundOrderMapper.java",
+      "symbol": "markPosted",
+      "form": "sql",
+      "params": "",
+      "anchor": "\"UPDATE inbound_orders SET status = 'posted', posted_at = #{postedAt}, posted_by = #{operator}, \" + \"updated_at = NOW() WHERE id = #{id} AND tenant_id = #{tenan"
+    },
+    {
+      "table": "inbound_orders",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/FinishedGoodsService.java",
+      "symbol": "toOrder",
+      "form": "builder",
+      "params": "com.migao.admin.dto.InboundOrderResponse response",
+      "anchor": "InboundOrder.builder() .id(response.getId()) .inboundNo(response.getInboundNo())"
+    },
+    {
+      "table": "inbound_orders",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/InboundOrderService.java",
+      "symbol": "cancel",
+      "form": "setStatus",
+      "params": "String rawId, String reason, Long tenantId, String operator",
+      "anchor": ".setStatus(InboundOrder.STATUS_CANCELLED); order.setCancelledAt(now); order.setCancelledBy(operator);"
+    },
+    {
+      "table": "inbound_orders",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/InboundOrderService.java",
+      "symbol": "create",
+      "form": "builder",
+      "params": "InboundOrderCreateRequest req, Long tenantId, String operator, String forcedSource",
+      "anchor": "InboundOrder.builder() .tenantId(tenantId) .supplier(supplierText) .supp"
+    },
+    {
+      "table": "inbound_orders",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/InboundOrderService.java",
+      "symbol": "post",
+      "form": "setStatus",
+      "params": "String rawId, Long tenantId, String operator",
+      "anchor": ".setStatus(InboundOrder.STATUS_POSTED); order.setPostedAt(now); order.setPostedBy(operator);"
+    },
+    {
+      "table": "inbound_orders",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/InboundOrderService.java",
+      "symbol": "receiveFinishedGoodsLines",
+      "form": "builder",
+      "params": "Long tenantId, Order order, List<InboundOrderItem> lines, Long warehouseId, String warehouseText, String operator",
+      "anchor": "InboundOrder.builder() .tenantId(tenantId) .warehouse(warehouseText) .wa"
+    },
+    {
+      "table": "knowledge_candidates",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/mapper/KnowledgeCandidateMapper.java",
+      "symbol": "markReviewedIfPending",
+      "form": "sql",
+      "params": "",
+      "anchor": "\"<script>UPDATE knowledge_candidates SET status = #{status}, \" + \"status_note = <choose><when test='note != null'>#{note}</when>\" + \"<otherwise>status_note</oth"
+    },
+    {
+      "table": "knowledge_candidates",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/KnowledgeDistillService.java",
+      "symbol": "distillDocument",
+      "form": "builder",
+      "params": "Long tenantId, String title, String content",
+      "anchor": "KnowledgeCandidate.builder() .tenantId(tenantId) .sourceType(\"document\")"
+    },
+    {
+      "table": "knowledge_candidates",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/KnowledgeDistillService.java",
+      "symbol": "distillSessionWith",
+      "form": "builder",
+      "params": "AgentSession session",
+      "anchor": "KnowledgeCandidate.builder() .tenantId(tenantId) .sourceType(\"conversation\")"
+    },
+    {
+      "table": "knowledge_cards",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/KnowledgeCandidateService.java",
+      "symbol": "adoptInternal",
+      "form": "builder",
+      "params": "String id, KnowledgeCandidate patch",
+      "anchor": "KnowledgeCard.builder() .tenantId(candidate.getTenantId()) .title(title)"
+    },
+    {
+      "table": "knowledge_cards",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/KnowledgeCardService.java",
+      "symbol": "archive",
+      "form": "setStatus",
+      "params": "String id",
+      "anchor": ".setStatus(STATUS_ARCHIVED); knowledgeCardMapper.updateById(entry); log.info(\"归档知识卡片: id={}, tenantId={}"
+    },
+    {
+      "table": "knowledge_cards",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/KnowledgeCardService.java",
+      "symbol": "create",
+      "form": "builder",
+      "params": "KnowledgeCard input",
+      "anchor": "KnowledgeCard.builder() .tenantId(TenantContext.getTenantId()) .title(input.getTitle().t"
+    },
+    {
+      "table": "knowledge_cards",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/KnowledgeCardService.java",
+      "symbol": "publish",
+      "form": "setStatus",
+      "params": "String id",
+      "anchor": ".setStatus(STATUS_PUBLISHED); entry.setReviewedBy(\"admin\"); entry.setReviewedAt(OffsetDateTime.now());"
+    },
+    {
+      "table": "knowledge_cards",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/KnowledgeTemplateService.java",
+      "symbol": "applyTemplate",
+      "form": "builder",
+      "params": "String templateId",
+      "anchor": "KnowledgeCard.builder() .tenantId(tenantId) .title(title) .c"
+    },
+    {
+      "table": "notification_templates",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/NotificationTemplateService.java",
+      "symbol": "createTemplate",
+      "form": "builder",
+      "params": "Long tenantId, SaveNotificationTemplateRequest request",
+      "anchor": "NotificationTemplate.builder() .tenantId(tenantId) .name(request.getName().trim())"
+    },
+    {
+      "table": "notification_templates",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/NotificationTemplateService.java",
+      "symbol": "updateTemplate",
+      "form": "setStatus",
+      "params": "Long tenantId, String id, SaveNotificationTemplateRequest request",
+      "anchor": ".setStatus(StringUtils.hasText(request.getStatus()) ? request.getStatus().trim() : \"active\"); existing.setUpdate"
+    },
+    {
+      "table": "notifications",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/NotificationService.java",
+      "symbol": "createFromTemplate",
+      "form": "builder",
+      "params": "Long tenantId, String templateName, String recipientId, String recipientType, Map<String, String> variables",
+      "anchor": "Notification.builder() .tenantId(tenantId) .templateId(template.getId())"
+    },
+    {
+      "table": "notifications",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/NotificationService.java",
+      "symbol": "createNotification",
+      "form": "builder",
+      "params": "Long tenantId, CreateNotificationRequest request",
+      "anchor": "Notification.builder() .tenantId(tenantId) .recipientId(request.getRecipientId())"
+    },
+    {
+      "table": "notifications",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/NotificationService.java",
+      "symbol": "markAllAsRead",
+      "form": "lambda_set",
+      "params": "Long tenantId, String recipientId",
+      "anchor": ".set(Notification::getStatus, \"read\") .set(Notification::getReadAt, OffsetDateTime.now()); noti"
+    },
+    {
+      "table": "notifications",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/NotificationService.java",
+      "symbol": "markAsRead",
+      "form": "setStatus",
+      "params": "Long tenantId, String recipientId, String notificationId",
+      "anchor": ".setStatus(\"read\"); notification.setReadAt(OffsetDateTime.now()); notificationMapper.updateById(notifica"
+    },
+    {
+      "table": "notifications",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/NotificationService.java",
+      "symbol": "triggerByEvent",
+      "form": "builder",
+      "params": "Long tenantId, String eventType, Map<String, String> contextData, NotificationEvent event",
+      "anchor": "Notification.builder() .tenantId(tenantId) .ruleId(rule.getId())"
+    },
+    {
+      "table": "order_logistics",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/mapper/OrderLogisticsMapper.java",
+      "symbol": "updateShippingDetails",
+      "form": "sql",
+      "params": "",
+      "anchor": "\"UPDATE order_logistics SET \" + \"logistics_company = #{logisticsCompany}, tracking_no = #{trackingNo}, \" + \"shipper_name = COALESCE(NULLIF(#{shipperName}, ''), "
+    },
+    {
+      "table": "order_logistics",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/OrderLogisticsService.java",
+      "symbol": "updateLogistics",
+      "form": "setStatus",
+      "params": "String id, String logisticsCompany, String trackingNo, String status",
+      "anchor": ".setStatus(status); if (\"delivered\".equals(status)) { logistics.setDeliveredAt(OffsetDateTim"
+    },
+    {
+      "table": "order_logistics",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/OrderLogisticsWriter.java",
+      "symbol": "upsert",
+      "form": "builder",
+      "params": "OrderLogisticsMapper orderLogisticsMapper, Long tenantId, String orderId, String logisticsCompany, String trackingNo, ShippingDetails details, Supplier<String> currentUserDisplayName",
+      "anchor": "OrderLogistics.builder() .tenantId(tenantId) .orderId(orderId) .logistic"
+    },
+    {
+      "table": "orders",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/OrderCreationService.java",
+      "symbol": "createOrder",
+      "form": "setStatus",
+      "params": "OrderCreateRequest request, Long tenantId, OrderService orderService",
+      "anchor": ".setStatus(\"pending\"); order.setRemark(request.getRemark()); order.setUserId(request.getUserId("
+    },
+    {
+      "table": "orders",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/OrderService.java",
+      "symbol": "transitionStatusAtomic",
+      "form": "lambda_set",
+      "params": "String id, String expectedStatus, String newStatus, String closeReason",
+      "anchor": ".set(Order::getStatus, newStatus); if (\"shipped\".equals(newStatus)) { wrapper.set(Order::getShippedA"
+    },
+    {
+      "table": "orders",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/OrderShipmentService.java",
+      "symbol": "transition",
+      "form": "lambda_set",
+      "params": "String orderId, String expected, String target",
+      "anchor": ".set(Order::getStatus, target); if (\"shipped\".equals(target)) { wrapper.set(Order::getShippedAt, bus"
+    },
+    {
+      "table": "outbound_orders",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/OutboundOrderService.java",
+      "symbol": "createAndPost",
+      "form": "builder",
+      "params": "OutboundOrderCreateRequest req, Long tenantId, String operator",
+      "anchor": "OutboundOrder.builder() .tenantId(tenantId) .bizCategory(OutboundOrder.BIZ_FABRIC)"
+    },
+    {
+      "table": "outbound_orders",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/OutboundOrderService.java",
+      "symbol": "createFinishedOutbound",
+      "form": "builder",
+      "params": "Order order, List<FinishedGoodsStock> rows, Warehouse warehouse, Long tenantId, String operator",
+      "anchor": "OutboundOrder.builder() .tenantId(tenantId) .bizCategory(OutboundOrder.BIZ_FINISHED)"
+    },
+    {
+      "table": "outbound_orders",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/OutboundOrderService.java",
+      "symbol": "createScanOutbound",
+      "form": "builder",
+      "params": "String orderNo, FinishedGoodsStock row, Warehouse warehouse, Long tenantId, String operator",
+      "anchor": "OutboundOrder.builder() .tenantId(tenantId) .bizCategory(OutboundOrder.BIZ_FINISHED)"
+    },
+    {
+      "table": "permissions",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/PermissionService.java",
+      "symbol": "ensureFullPermissionCatalog",
+      "form": "builder",
+      "params": "Long tenantId",
+      "anchor": "Permission.builder() .tenantId(tenantId) .name(row[0]) .code"
+    },
+    {
+      "table": "permissions",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/RegistrationService.java",
+      "symbol": "initializeDefaultRolesAndPermissions",
+      "form": "builder",
+      "params": "Long tenantId",
+      "anchor": "Permission.builder() .tenantId(tenantId) .name(perm[0]) .cod"
+    },
+    {
+      "table": "platform_admins",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/config/PlatformAdminInitializer.java",
+      "symbol": "run",
+      "form": "builder",
+      "params": "String... args",
+      "anchor": "PlatformAdmin.builder() .id(\"super-admin-001\") .phone(adminPhone)"
+    },
+    {
+      "table": "print_logs",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/PrintLogService.java",
+      "symbol": "buildRow",
+      "form": "builder",
+      "params": "Order order, PrintLogItemRequest doc, int index, int batchSize, String batchId, OffsetDateTime printedAt, Long tenantId, String operatorId, String operatorName, String clientIp, String userAgent",
+      "anchor": "PrintLog.builder() .tenantId(tenantId) .orderId(order.getId()) .orderNo("
+    },
+    {
+      "table": "processing_categories",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/ProcessingItemSeedService.java",
+      "symbol": "ensureCategory",
+      "form": "builder",
+      "params": "Long tenantId",
+      "anchor": "ProcessingCategory.builder() .tenantId(tenantId) .name(OnboardingInitialData.DEFAULT_PRO"
+    },
+    {
+      "table": "processing_fee_combination_versions",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/ProcessingFeeCombinationCommandService.java",
+      "symbol": "appendVersion",
+      "form": "builder",
+      "params": "ProcessingFeeCombination row, Long tenantId",
+      "anchor": "ProcessingFeeCombinationVersion.builder() .tenantId(tenantId) .combinationId(row.getId()"
+    },
+    {
+      "table": "processing_fee_combinations",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/ProcessingFeeCombinationCommandService.java",
+      "symbol": "createCombination",
+      "form": "builder",
+      "params": "Map<String, Object> body, Long tenantId",
+      "anchor": "ProcessingFeeCombination.builder() .tenantId(tenantId) .compositionKey(key)"
+    },
+    {
+      "table": "processing_fee_combinations",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/ProcessingFeeCombinationCommandService.java",
+      "symbol": "disableCombination",
+      "form": "setStatus",
+      "params": "String id, Long tenantId",
+      "anchor": ".setStatus(\"disabled\"); row.setUpdatedAt(OffsetDateTime.now()); combinationMapper.updateById(row"
+    },
+    {
+      "table": "processing_fee_combinations",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/ProcessingFeeCombinationCommandService.java",
+      "symbol": "updateCombination",
+      "form": "setStatus",
+      "params": "String id, Map<String, Object> body, Long tenantId",
+      "anchor": ".setStatus(newStatus); if (body != null && body.containsKey(\"sort_order\")) { row.setSortOrder(option"
+    },
+    {
+      "table": "processing_fee_combinations",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/ProcessingFeeCombinationCommandService.java",
+      "symbol": "upsertFromOrderOverride",
+      "form": "builder",
+      "params": "String compositionKey, List<String> items, BigDecimal unitPrice, Long tenantId",
+      "anchor": "ProcessingFeeCombination.builder() .tenantId(tenantId) .compositionKey(compositionKey)"
+    },
+    {
+      "table": "processing_fee_combinations",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/ProcessingFeeCombinationCommandService.java",
+      "symbol": "upsertFromOrderOverride",
+      "form": "setStatus",
+      "params": "String compositionKey, List<String> items, BigDecimal unitPrice, Long tenantId",
+      "anchor": ".setStatus(\"active\"); existing.setUnitPrice(unitPrice); existing.setItems(items); ex"
+    },
+    {
+      "table": "processing_items",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/ProcessingItemSeedService.java",
+      "symbol": "seedDefaultCatalog",
+      "form": "builder",
+      "params": "Long tenantId",
+      "anchor": "ProcessingItem.builder() .tenantId(tenantId) .name(item.name())"
+    },
+    {
+      "table": "processing_orders",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/mapper/ProcessingOrderMapper.java",
+      "symbol": "markCompletedIfActive",
+      "form": "sql",
+      "params": "",
+      "anchor": "\"UPDATE processing_orders SET status = 'completed', \" + \"completed_at = COALESCE(completed_at, #{completedAt}), updated_at = #{completedAt} \" + \"WHERE id = #{id"
+    },
+    {
+      "table": "processing_orders",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/mapper/ProcessingOrderMapper.java",
+      "symbol": "markInProcessingIfFrom",
+      "form": "sql",
+      "params": "",
+      "anchor": "\"UPDATE processing_orders SET status = 'in_processing', \" + \"in_processing_at = COALESCE(in_processing_at, #{inProcessingAt}), \" + \"updated_at = #{inProcessingA"
+    },
+    {
+      "table": "processing_orders",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/mapper/ProcessingOrderMapper.java",
+      "symbol": "markStatusIfFrom",
+      "form": "sql",
+      "params": "",
+      "anchor": "\"<script>UPDATE processing_orders SET status = #{targetStatus}, updated_at = #{now}\" + \"<if test='issuedAt != null'>, issued_at = #{issuedAt}</if>\" + \"<if test="
+    },
+    {
+      "table": "processing_orders",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/mapper/ProcessingOrderMapper.java",
+      "symbol": "reopenCompletedIfAny",
+      "form": "sql",
+      "params": "",
+      "anchor": "\"UPDATE processing_orders SET status = 'in_processing', completed_at = NULL, \" + \"updated_at = #{updatedAt} \" + \"WHERE id = #{id} AND tenant_id = #{tenantId} AN"
+    },
+    {
+      "table": "processing_orders",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/ProcessingOrderService.java",
+      "symbol": "prepare",
+      "form": "builder",
+      "params": "String rawId, List<BatchAssignment> assignments, Long tenantId, String operator, String rule, Consignee consignee",
+      "anchor": "ProcessingOrder.builder() .tenantId(tenantId) .orderId(order.getId()) .p"
+    },
+    {
+      "table": "processing_position_operations",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/mapper/ProcessingPositionOperationMapper.java",
+      "symbol": "advanceDoneQtyIfUnchanged",
+      "form": "sql",
+      "params": "",
+      "anchor": "\"UPDATE processing_position_operations SET done_qty = #{doneQty}, status = 'done', \" + \"updated_at = #{updatedAt} \" + \"WHERE id = #{id} AND tenant_id = #{tenant"
+    },
+    {
+      "table": "processing_position_operations",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/mapper/ProcessingPositionOperationMapper.java",
+      "symbol": "revertDoneQtyIfUnchanged",
+      "form": "sql",
+      "params": "",
+      "anchor": "\"UPDATE processing_position_operations SET done_qty = #{doneQty}, status = #{status}, \" + \"done_at = NULL, updated_at = #{updatedAt} \" + \"WHERE id = #{id} AND t"
+    },
+    {
+      "table": "processing_position_operations",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/ProductionService.java",
+      "symbol": "instantiate",
+      "form": "builder",
+      "params": "String orderId, Map<String, Object> body, Long tenantId",
+      "anchor": "ProcessingPositionOperation.builder() .tenantId(tenantId) .processingOrderId(po."
+    },
+    {
+      "table": "production_crafts",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/ProductionSeedTemplateService.java",
+      "symbol": "planCrafts",
+      "form": "builder",
+      "params": "Long tenantId, JsonNode template",
+      "anchor": "ProductionCraft.builder() .tenantId(tenantId) .name(name) .isDefault(tru"
+    },
+    {
+      "table": "production_operation_positions",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/ProductionOperationCommandService.java",
+      "symbol": "attachPositions",
+      "form": "builder",
+      "params": "Long tenantId, ProductionOperation op, List<String> positions, List<ProductionOperationPosition> existingRows, List<ProductionOperationPosition> priceSourceRows",
+      "anchor": "ProductionOperationPosition.builder() .tenantId(tenantId) .logicalName(logicalNa"
+    },
+    {
+      "table": "production_operation_positions",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/ProductionSeedTemplateService.java",
+      "symbol": "planPositions",
+      "form": "builder",
+      "params": "Long tenantId",
+      "anchor": "ProductionOperationPosition.builder() .tenantId(tenantId) .logicalName(logical)"
+    },
+    {
+      "table": "production_operations",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/ProductionOperationCommandService.java",
+      "symbol": "create",
+      "form": "builder",
+      "params": "Map<String, Object> body, Long tenantId",
+      "anchor": "ProductionOperation.builder() .tenantId(tenantId) .name(name) .groupName"
+    },
+    {
+      "table": "production_operations",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/ProductionOperationCommandService.java",
+      "symbol": "update",
+      "form": "setStatus",
+      "params": "String id, Map<String, Object> body, Long tenantId",
+      "anchor": ".setStatus(status); op.setStatus(status); } if (body.containsKey(\"scope\")) {"
+    },
+    {
+      "table": "production_operations",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/ProductionSeedTemplateService.java",
+      "symbol": "planOperations",
+      "form": "builder",
+      "params": "Long tenantId, JsonNode nodes",
+      "anchor": "ProductionOperation.builder() .tenantId(tenantId) .name(name)"
+    },
+    {
+      "table": "production_route_rules",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/ProductionRoutingCommandService.java",
+      "symbol": "createRouteRule",
+      "form": "builder",
+      "params": "Map<String, Object> body, Long tenantId",
+      "anchor": "ProductionRouteRule.builder() .tenantId(tenantId) .triggerKind(triggerKind)"
+    },
+    {
+      "table": "production_route_rules",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/ProductionSeedTemplateService.java",
+      "symbol": "addRule",
+      "form": "builder",
+      "params": "List<ProductionRouteRule> plan, Set<String> existing, Set<String> available, Long tenantId, String kind, String trigger, String position, String action, String operation, String after, int priority, BigDecimal factor",
+      "anchor": "ProductionRouteRule.builder() .tenantId(tenantId) .triggerKind(kind) .tr"
+    },
+    {
+      "table": "production_route_templates",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/ProductionRoutingCommandService.java",
+      "symbol": "createRouting",
+      "form": "builder",
+      "params": "Map<String, Object> body, Long tenantId",
+      "anchor": "ProductionRouteTemplate.builder() .tenantId(tenantId) .name(name) .isDef"
+    },
+    {
+      "table": "production_route_templates",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/ProductionRoutingCommandService.java",
+      "symbol": "updateRouting",
+      "form": "setStatus",
+      "params": "String id, Map<String, Object> body, Long tenantId",
+      "anchor": ".setStatus(status); } if (body.containsKey(\"mainline\")) { template.setMainline(mainline);"
+    },
+    {
+      "table": "production_route_templates",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/ProductionSeedTemplateService.java",
+      "symbol": "planRouteTemplates",
+      "form": "builder",
+      "params": "Long tenantId, JsonNode template",
+      "anchor": "ProductionRouteTemplate.builder() .tenantId(tenantId) .name(ROUTE_TEMPLATE_NAME_"
+    },
+    {
+      "table": "products",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/mapper/ProductMapper.java",
+      "symbol": "updateStatusIfFrom",
+      "form": "sql",
+      "params": "",
+      "anchor": "\"UPDATE products SET status = #{targetStatus}, edited_by = #{editedBy}, edited_at = #{editedAt}, \" + \"updated_at = #{editedAt} WHERE id = #{id} AND tenant_id = "
+    },
+    {
+      "table": "products",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/ProductService.java",
+      "symbol": "doCreateProduct",
+      "form": "setStatus",
+      "params": "ProductCreateRequest request, Long tenantId",
+      "anchor": ".setStatus(\"draft\"); } product.setEditedBy(getCurrentUsername()); product.setEditedAt("
+    },
+    {
+      "table": "products",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/ProductService.java",
+      "symbol": "updateProduct",
+      "form": "setStatus",
+      "params": "String id, ProductUpdateRequest request, Long tenantId",
+      "anchor": ".setStatus(originalStatus); } else { product.setStatus(null); } if (reques"
+    },
+    {
+      "table": "products",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/ProductService.java",
+      "symbol": "updateProductRecommended",
+      "form": "setStatus",
+      "params": "String id, Boolean recommended, Long tenantId",
+      "anchor": ".setStatus(null); productMapper.updateById(product); log.info(\"更新商品推荐标记成功: id={}, recommended={}, tenant"
+    },
+    {
+      "table": "products",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/ProductService.java",
+      "symbol": "upsertImportedProduct",
+      "form": "setStatus",
+      "params": "List<ImportedRow> group, Long tenantId, ProductImportResult result",
+      "anchor": ".setStatus(\"draft\"); product.setEditedBy(getCurrentUsername()); product.setEditedAt(OffsetDateTi"
+    },
+    {
+      "table": "purchase_orders",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/PurchaseOrderService.java",
+      "symbol": "close",
+      "form": "setStatus",
+      "params": "String id, String reason, Long tenantId, String operator",
+      "anchor": ".setStatus(PurchaseOrder.STATUS_CLOSED); order.setClosedAt(OffsetDateTime.now()); order.setClosedBy(oper"
+    },
+    {
+      "table": "purchase_orders",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/PurchaseOrderService.java",
+      "symbol": "create",
+      "form": "builder",
+      "params": "PurchaseOrderCreateRequest req, Long tenantId, String operator",
+      "anchor": "PurchaseOrder.builder() .tenantId(tenantId) .poNo(null) .supplierId(supp"
+    },
+    {
+      "table": "purchase_orders",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/PurchaseOrderService.java",
+      "symbol": "recalcStatusAndView",
+      "form": "setStatus",
+      "params": "PurchaseOrder order, Set<String> itemIds, Long tenantId",
+      "anchor": ".setStatus(nextStatus); orderMapper.updateById(order); } return detail(order.getId(), tenant"
+    },
+    {
+      "table": "rework_orders",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/ReworkOrderService.java",
+      "symbol": "casStatus",
+      "form": "lambda_set",
+      "params": "String reworkId, String from, String to, java.util.function.Consumer<LambdaUpdateWrapper<ReworkOrder>> extras",
+      "anchor": ".set(ReworkOrder::getStatus, to) .set(ReworkOrder::getUpdatedAt, OffsetDateTime.now()); extras.a"
+    },
+    {
+      "table": "rework_orders",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/ReworkOrderService.java",
+      "symbol": "create",
+      "form": "builder",
+      "params": "String afterSalesTicketId, String reason, String processingOrderId, ApprovalService.Operator operator",
+      "anchor": "ReworkOrder.builder() .tenantId(ticket.getTenantId()) .reworkNo(nextReworkNo())"
+    },
+    {
+      "table": "rework_orders",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/ReworkOrderService.java",
+      "symbol": "createWorkerRework",
+      "form": "builder",
+      "params": "Long tenantId, String orderId, String processingOrderId, String operationId, String operationName, java.math.BigDecimal qty, String reason, String workerId, String workerName, String workLogId, String orderItemId, String setId, String setNo, String positionName",
+      "anchor": "ReworkOrder.builder() .tenantId(tenantId) .reworkNo(nextReworkNo()) .sou"
+    },
+    {
+      "table": "roles",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/RegistrationService.java",
+      "symbol": "initializeDefaultRolesAndPermissions",
+      "form": "builder",
+      "params": "Long tenantId",
+      "anchor": "Role.builder() .tenantId(tenantId) .name(\"管理员\") .code(\"admin\")"
+    },
+    {
+      "table": "roles",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/RoleService.java",
+      "symbol": "createRole",
+      "form": "builder",
+      "params": "String name, String code, String description, Long tenantId, List<String> permissionIds",
+      "anchor": "Role.builder() .tenantId(tenantId) .name(name) .code(code)"
+    },
+    {
+      "table": "scheduled_tasks",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/ScheduledTaskService.java",
+      "symbol": "create",
+      "form": "builder",
+      "params": "Long tenantId, String recipientId, AgentScheduledTaskRequest request",
+      "anchor": "ScheduledTask.builder() .tenantId(tenantId) .taskType(request.getTaskType())"
+    },
+    {
+      "table": "stock_transfers",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/StockTransferService.java",
+      "symbol": "transfer",
+      "form": "builder",
+      "params": "StockTransferRequest request, Long tenantId",
+      "anchor": "StockTransfer.builder() .tenantId(tenantId) .transferNo(nextTransferNo())"
+    },
+    {
+      "table": "stocktakes",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/StocktakeService.java",
+      "symbol": "cancel",
+      "form": "lambda_set",
+      "params": "String stocktakeId",
+      "anchor": ".set(Stocktake::getStatus, Stocktake.STATUS_CANCELLED) .set(Stocktake::getUpdatedAt, OffsetDateTime.now("
+    },
+    {
+      "table": "stocktakes",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/StocktakeService.java",
+      "symbol": "complete",
+      "form": "lambda_set",
+      "params": "String stocktakeId",
+      "anchor": ".set(Stocktake::getStatus, Stocktake.STATUS_COMPLETED) .set(Stocktake::getCompletedAt, OffsetDateTime.no"
+    },
+    {
+      "table": "stocktakes",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/StocktakeService.java",
+      "symbol": "open",
+      "form": "builder",
+      "params": "Long warehouseId, String note, ApprovalService.Operator operator",
+      "anchor": "Stocktake.builder() .tenantId(warehouse.getTenantId()) .stocktakeNo(nextStocktakeNo())"
+    },
+    {
+      "table": "supplier_payments",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/SupplierPaymentService.java",
+      "symbol": "create",
+      "form": "builder",
+      "params": "SupplierPaymentRequest req, Long tenantId, String operator",
+      "anchor": "SupplierPayment.builder() .tenantId(tenantId) .supplierId(supplierId) .p"
+    },
+    {
+      "table": "supplier_payments",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/SupplierPaymentService.java",
+      "symbol": "voidPayment",
+      "form": "setStatus",
+      "params": "String id, String reason, Long tenantId, String operator",
+      "anchor": ".setStatus(SupplierPayment.STATUS_VOIDED); payment.setVoidedAt(OffsetDateTime.now()); payment.setVoidedB"
+    },
+    {
+      "table": "suppliers",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/SupplierService.java",
+      "symbol": "create",
+      "form": "builder",
+      "params": "Long tenantId, Supplier input",
+      "anchor": "Supplier.builder() .tenantId(tenantId) .name(name) .contactName(trimToNu"
+    },
+    {
+      "table": "suppliers",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/SupplierService.java",
+      "symbol": "update",
+      "form": "setStatus",
+      "params": "String id, Long tenantId, Supplier input",
+      "anchor": ".setStatus(normalizeStatus(input.getStatus())); if (input.getType() != null) { exi"
+    },
+    {
+      "table": "tenant_applications",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/mapper/TenantApplicationMapper.java",
+      "symbol": "approveIfPending",
+      "form": "sql",
+      "params": "",
+      "anchor": "\"UPDATE tenant_applications SET status = 'approved', reviewed_by = #{reviewerId}, \" + \"reviewed_at = #{reviewedAt}, reject_reason = NULL, review_source = #{revi"
+    },
+    {
+      "table": "tenant_applications",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/mapper/TenantApplicationMapper.java",
+      "symbol": "rejectIfPending",
+      "form": "sql",
+      "params": "",
+      "anchor": "\"UPDATE tenant_applications SET status = 'rejected', reviewed_by = #{reviewerId}, \" + \"reviewed_at = #{reviewedAt}, reject_reason = #{reason}, review_source = #"
+    },
+    {
+      "table": "tenant_applications",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/RegistrationService.java",
+      "symbol": "submitApplication",
+      "form": "builder",
+      "params": "RegistrationRequest dto, String clientIp",
+      "anchor": "TenantApplication.builder() .companyName(dto.getCompanyName().trim()) .companyNameNorm(n"
+    },
+    {
+      "table": "tenant_payment_qrcodes",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/controller/SettingsController.java",
+      "symbol": "upsertPaymentQrcode",
+      "form": "builder",
+      "params": "@PathVariable String type, @RequestBody java.util.Map<String, String> body",
+      "anchor": "TenantPaymentQrcode.builder() .tenantId(tenantId) .paymentType(type)"
+    },
+    {
+      "table": "tenants",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/RegistrationService.java",
+      "symbol": "approveApplication",
+      "form": "builder",
+      "params": "Long id, String reviewerId, ApplicationReview review",
+      "anchor": "Tenant.builder() .name(application.getCompanyName()) .code(tenantCode)"
+    },
+    {
+      "table": "users",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/AuthService.java",
+      "symbol": "findOrCreateMiniProgramUser",
+      "form": "builder",
+      "params": "String openid, Long tenantId",
+      "anchor": "User.builder() .tenantId(tenantId) .nickname(\"微信用户\") .role(\"customer\")"
+    },
+    {
+      "table": "users",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/UserService.java",
+      "symbol": "createUser",
+      "form": "builder",
+      "params": "String phone, String password, String nickname, String role, String position, String permissions, Long tenantId, String username, boolean forceChangePassword",
+      "anchor": "User.builder() .tenantId(tenantId) .phone(phone) .username(normalizedUse"
+    },
+    {
+      "table": "users",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/UserService.java",
+      "symbol": "disableUser",
+      "form": "setStatus",
+      "params": "String userId",
+      "anchor": ".setStatus(\"disabled\"); userMapper.updateById(user); log.info(\"禁用用户成功: id={}\", userId); }"
+    },
+    {
+      "table": "users",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/UserService.java",
+      "symbol": "enableUser",
+      "form": "setStatus",
+      "params": "String userId",
+      "anchor": ".setStatus(\"active\"); userMapper.updateById(user); log.info(\"启用用户成功: id={}\", userId); } @T"
+    },
+    {
+      "table": "users",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/WorkerAdminService.java",
+      "symbol": "createWorker",
+      "form": "builder",
+      "params": "String workerNo, String name, String pin, Object workerPages, String workerOperation",
+      "anchor": "User.builder() .tenantId(tenantId) .workerNo(no) .nickname(workerName)"
+    },
+    {
+      "table": "warehouse_locations",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/WarehouseLocationService.java",
+      "symbol": "create",
+      "form": "setStatus",
+      "params": "WarehouseLocationCreateRequest request, Long tenantId",
+      "anchor": ".setStatus(STATUS_ACTIVE); location.setCapacity(capacity); location.setRemark(remark); OffsetDat"
+    },
+    {
+      "table": "warehouse_locations",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/WarehouseLocationService.java",
+      "symbol": "update",
+      "form": "setStatus",
+      "params": "Long id, WarehouseLocationUpdateRequest request, Long tenantId",
+      "anchor": ".setStatus(normalizeStatus(request.getStatus())); } Integer requested = request.getCapacity() == null ?"
+    },
+    {
+      "table": "warehouses",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/WarehouseSeedService.java",
+      "symbol": "seedDefaultWarehouse",
+      "form": "setStatus",
+      "params": "Long tenantId",
+      "anchor": ".setStatus(\"active\"); try { warehouseMapper.insert(warehouse); } catch (DuplicateKeyExceptio"
+    },
+    {
+      "table": "warehouses",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/WarehouseService.java",
+      "symbol": "create",
+      "form": "setStatus",
+      "params": "WarehouseCreateRequest request, Long tenantId",
+      "anchor": ".setStatus(\"active\"); warehouse.setRemark(request.getRemark()); try { warehouseMapper.insert"
+    }
+  ],
+  "bare_literal_baseline": {
+    "count": 56,
+    "note": "**存量债**：这些写点用裸字符串写状态列（合法状态集合因此有第二个来源）。条数与条目都**只许缩短**（上限冻结在判据里）。修一条 ⇒ 同时删掉对应条目（否则判「基线不燃尽」红）。",
+    "sites": [
+      {
+        "table": "after_sales_tickets",
+        "file": "backend/admin-api/src/main/java/com/migao/admin/service/AfterSalesTicketService.java",
+        "symbol": "createTicket",
+        "form": "setStatus",
+        "values": [
+          "pending"
+        ]
+      },
+      {
+        "table": "agent_sessions",
+        "file": "backend/admin-api/src/main/java/com/migao/admin/service/AgentSessionService.java",
+        "symbol": "createSessionForHandoff",
+        "form": "builder",
+        "values": [
+          "waiting"
+        ]
+      },
+      {
+        "table": "agent_sessions",
+        "file": "backend/admin-api/src/main/java/com/migao/admin/service/AgentSessionService.java",
+        "symbol": "endSession",
+        "form": "setStatus",
+        "values": [
+          "ended"
+        ]
+      },
+      {
+        "table": "agent_sessions",
+        "file": "backend/admin-api/src/main/java/com/migao/admin/service/AgentSessionService.java",
+        "symbol": "sendMessage",
+        "form": "setStatus",
+        "values": [
+          "active"
+        ]
+      },
+      {
+        "table": "categories",
+        "file": "backend/admin-api/src/main/java/com/migao/admin/service/ProductCategorySeedService.java",
+        "symbol": "seedDefaultCategory",
+        "form": "builder",
+        "values": [
+          "active"
+        ]
+      },
+      {
+        "table": "craft_calc_configs",
+        "file": "backend/admin-api/src/main/java/com/migao/admin/service/CraftCalcConfigService.java",
+        "symbol": "put",
+        "form": "builder",
+        "values": [
+          "active"
+        ]
+      },
+      {
+        "table": "cutting_height_configs",
+        "file": "backend/admin-api/src/main/java/com/migao/admin/service/CuttingHeightConfigService.java",
+        "symbol": "put",
+        "form": "builder",
+        "values": [
+          "active"
+        ]
+      },
+      {
+        "table": "finance_transactions",
+        "file": "backend/admin-api/src/main/java/com/migao/admin/service/FinanceService.java",
+        "symbol": "createTransaction",
+        "form": "builder",
+        "values": [
+          "success"
+        ]
+      },
+      {
+        "table": "finance_transactions",
+        "file": "backend/admin-api/src/main/java/com/migao/admin/service/FinanceService.java",
+        "symbol": "recordRefund",
+        "form": "builder",
+        "values": [
+          "success"
+        ]
+      },
+      {
+        "table": "finance_transactions",
+        "file": "backend/admin-api/src/main/java/com/migao/admin/service/OrderService.java",
+        "symbol": "recordFinanceTransaction",
+        "form": "builder",
+        "values": [
+          "success"
+        ]
+      },
+      {
+        "table": "knowledge_candidates",
+        "file": "backend/admin-api/src/main/java/com/migao/admin/service/KnowledgeDistillService.java",
+        "symbol": "distillDocument",
+        "form": "builder",
+        "values": [
+          "pending"
+        ]
+      },
+      {
+        "table": "knowledge_candidates",
+        "file": "backend/admin-api/src/main/java/com/migao/admin/service/KnowledgeDistillService.java",
+        "symbol": "distillSessionWith",
+        "form": "builder",
+        "values": [
+          "pending"
+        ]
+      },
+      {
+        "table": "knowledge_cards",
+        "file": "backend/admin-api/src/main/java/com/migao/admin/service/KnowledgeCandidateService.java",
+        "symbol": "adoptInternal",
+        "form": "builder",
+        "values": [
+          "published"
+        ]
+      },
+      {
+        "table": "knowledge_cards",
+        "file": "backend/admin-api/src/main/java/com/migao/admin/service/KnowledgeTemplateService.java",
+        "symbol": "applyTemplate",
+        "form": "builder",
+        "values": [
+          "published"
+        ]
+      },
+      {
+        "table": "notification_templates",
+        "file": "backend/admin-api/src/main/java/com/migao/admin/service/NotificationTemplateService.java",
+        "symbol": "createTemplate",
+        "form": "builder",
+        "values": [
+          "active"
+        ]
+      },
+      {
+        "table": "notification_templates",
+        "file": "backend/admin-api/src/main/java/com/migao/admin/service/NotificationTemplateService.java",
+        "symbol": "updateTemplate",
+        "form": "setStatus",
+        "values": [
+          "active"
+        ]
+      },
+      {
+        "table": "notifications",
+        "file": "backend/admin-api/src/main/java/com/migao/admin/service/NotificationService.java",
+        "symbol": "createFromTemplate",
+        "form": "builder",
+        "values": [
+          "sent"
+        ]
+      },
+      {
+        "table": "notifications",
+        "file": "backend/admin-api/src/main/java/com/migao/admin/service/NotificationService.java",
+        "symbol": "createNotification",
+        "form": "builder",
+        "values": [
+          "sent"
+        ]
+      },
+      {
+        "table": "notifications",
+        "file": "backend/admin-api/src/main/java/com/migao/admin/service/NotificationService.java",
+        "symbol": "markAllAsRead",
+        "form": "lambda_set",
+        "values": [
+          "read"
+        ]
+      },
+      {
+        "table": "notifications",
+        "file": "backend/admin-api/src/main/java/com/migao/admin/service/NotificationService.java",
+        "symbol": "markAsRead",
+        "form": "setStatus",
+        "values": [
+          "read"
+        ]
+      },
+      {
+        "table": "notifications",
+        "file": "backend/admin-api/src/main/java/com/migao/admin/service/NotificationService.java",
+        "symbol": "triggerByEvent",
+        "form": "builder",
+        "values": [
+          "sent"
+        ]
+      },
+      {
+        "table": "order_logistics",
+        "file": "backend/admin-api/src/main/java/com/migao/admin/service/OrderLogisticsWriter.java",
+        "symbol": "upsert",
+        "form": "builder",
+        "values": [
+          "in_transit"
+        ]
+      },
+      {
+        "table": "orders",
+        "file": "backend/admin-api/src/main/java/com/migao/admin/service/OrderCreationService.java",
+        "symbol": "createOrder",
+        "form": "setStatus",
+        "values": [
+          "pending"
+        ]
+      },
+      {
+        "table": "permissions",
+        "file": "backend/admin-api/src/main/java/com/migao/admin/service/PermissionService.java",
+        "symbol": "ensureFullPermissionCatalog",
+        "form": "builder",
+        "values": [
+          "active"
+        ]
+      },
+      {
+        "table": "permissions",
+        "file": "backend/admin-api/src/main/java/com/migao/admin/service/RegistrationService.java",
+        "symbol": "initializeDefaultRolesAndPermissions",
+        "form": "builder",
+        "values": [
+          "active"
+        ]
+      },
+      {
+        "table": "platform_admins",
+        "file": "backend/admin-api/src/main/java/com/migao/admin/config/PlatformAdminInitializer.java",
+        "symbol": "run",
+        "form": "builder",
+        "values": [
+          "active"
+        ]
+      },
+      {
+        "table": "processing_categories",
+        "file": "backend/admin-api/src/main/java/com/migao/admin/service/ProcessingItemSeedService.java",
+        "symbol": "ensureCategory",
+        "form": "builder",
+        "values": [
+          "active"
+        ]
+      },
+      {
+        "table": "processing_fee_combinations",
+        "file": "backend/admin-api/src/main/java/com/migao/admin/service/ProcessingFeeCombinationCommandService.java",
+        "symbol": "createCombination",
+        "form": "builder",
+        "values": [
+          "active",
+          "status"
+        ]
+      },
+      {
+        "table": "processing_fee_combinations",
+        "file": "backend/admin-api/src/main/java/com/migao/admin/service/ProcessingFeeCombinationCommandService.java",
+        "symbol": "disableCombination",
+        "form": "setStatus",
+        "values": [
+          "disabled"
+        ]
+      },
+      {
+        "table": "processing_fee_combinations",
+        "file": "backend/admin-api/src/main/java/com/migao/admin/service/ProcessingFeeCombinationCommandService.java",
+        "symbol": "upsertFromOrderOverride",
+        "form": "setStatus",
+        "values": [
+          "active"
+        ]
+      },
+      {
+        "table": "processing_fee_combinations",
+        "file": "backend/admin-api/src/main/java/com/migao/admin/service/ProcessingFeeCombinationCommandService.java",
+        "symbol": "upsertFromOrderOverride",
+        "form": "builder",
+        "values": [
+          "active"
+        ]
+      },
+      {
+        "table": "processing_items",
+        "file": "backend/admin-api/src/main/java/com/migao/admin/service/ProcessingItemSeedService.java",
+        "symbol": "seedDefaultCatalog",
+        "form": "builder",
+        "values": [
+          "active"
+        ]
+      },
+      {
+        "table": "processing_orders",
+        "file": "backend/admin-api/src/main/java/com/migao/admin/service/ProcessingOrderService.java",
+        "symbol": "prepare",
+        "form": "builder",
+        "values": [
+          "generated"
+        ]
+      },
+      {
+        "table": "processing_position_operations",
+        "file": "backend/admin-api/src/main/java/com/migao/admin/service/ProductionService.java",
+        "symbol": "instantiate",
+        "form": "builder",
+        "values": [
+          "pending"
+        ]
+      },
+      {
+        "table": "production_crafts",
+        "file": "backend/admin-api/src/main/java/com/migao/admin/service/ProductionSeedTemplateService.java",
+        "symbol": "planCrafts",
+        "form": "builder",
+        "values": [
+          "active"
+        ]
+      },
+      {
+        "table": "production_operation_positions",
+        "file": "backend/admin-api/src/main/java/com/migao/admin/service/ProductionOperationCommandService.java",
+        "symbol": "attachPositions",
+        "form": "builder",
+        "values": [
+          "active"
+        ]
+      },
+      {
+        "table": "production_operation_positions",
+        "file": "backend/admin-api/src/main/java/com/migao/admin/service/ProductionSeedTemplateService.java",
+        "symbol": "planPositions",
+        "form": "builder",
+        "values": [
+          "active"
+        ]
+      },
+      {
+        "table": "production_operations",
+        "file": "backend/admin-api/src/main/java/com/migao/admin/service/ProductionSeedTemplateService.java",
+        "symbol": "planOperations",
+        "form": "builder",
+        "values": [
+          "active",
+          "status"
+        ]
+      },
+      {
+        "table": "production_route_rules",
+        "file": "backend/admin-api/src/main/java/com/migao/admin/service/ProductionRoutingCommandService.java",
+        "symbol": "createRouteRule",
+        "form": "builder",
+        "values": [
+          "active"
+        ]
+      },
+      {
+        "table": "production_route_rules",
+        "file": "backend/admin-api/src/main/java/com/migao/admin/service/ProductionSeedTemplateService.java",
+        "symbol": "addRule",
+        "form": "builder",
+        "values": [
+          "active"
+        ]
+      },
+      {
+        "table": "production_route_templates",
+        "file": "backend/admin-api/src/main/java/com/migao/admin/service/ProductionRoutingCommandService.java",
+        "symbol": "createRouting",
+        "form": "builder",
+        "values": [
+          "active",
+          "status"
+        ]
+      },
+      {
+        "table": "production_route_templates",
+        "file": "backend/admin-api/src/main/java/com/migao/admin/service/ProductionSeedTemplateService.java",
+        "symbol": "planRouteTemplates",
+        "form": "builder",
+        "values": [
+          "active"
+        ]
+      },
+      {
+        "table": "products",
+        "file": "backend/admin-api/src/main/java/com/migao/admin/service/ProductService.java",
+        "symbol": "doCreateProduct",
+        "form": "setStatus",
+        "values": [
+          "draft"
+        ]
+      },
+      {
+        "table": "products",
+        "file": "backend/admin-api/src/main/java/com/migao/admin/service/ProductService.java",
+        "symbol": "upsertImportedProduct",
+        "form": "setStatus",
+        "values": [
+          "draft"
+        ]
+      },
+      {
+        "table": "roles",
+        "file": "backend/admin-api/src/main/java/com/migao/admin/service/RegistrationService.java",
+        "symbol": "initializeDefaultRolesAndPermissions",
+        "form": "builder",
+        "values": [
+          "active"
+        ]
+      },
+      {
+        "table": "roles",
+        "file": "backend/admin-api/src/main/java/com/migao/admin/service/RoleService.java",
+        "symbol": "createRole",
+        "form": "builder",
+        "values": [
+          "active"
+        ]
+      },
+      {
+        "table": "tenant_applications",
+        "file": "backend/admin-api/src/main/java/com/migao/admin/service/RegistrationService.java",
+        "symbol": "submitApplication",
+        "form": "builder",
+        "values": [
+          "pending"
+        ]
+      },
+      {
+        "table": "tenant_payment_qrcodes",
+        "file": "backend/admin-api/src/main/java/com/migao/admin/controller/SettingsController.java",
+        "symbol": "upsertPaymentQrcode",
+        "form": "builder",
+        "values": [
+          "active"
+        ]
+      },
+      {
+        "table": "tenants",
+        "file": "backend/admin-api/src/main/java/com/migao/admin/service/RegistrationService.java",
+        "symbol": "approveApplication",
+        "form": "builder",
+        "values": [
+          "active"
+        ]
+      },
+      {
+        "table": "users",
+        "file": "backend/admin-api/src/main/java/com/migao/admin/service/AuthService.java",
+        "symbol": "findOrCreateMiniProgramUser",
+        "form": "builder",
+        "values": [
+          "active"
+        ]
+      },
+      {
+        "table": "users",
+        "file": "backend/admin-api/src/main/java/com/migao/admin/service/UserService.java",
+        "symbol": "createUser",
+        "form": "builder",
+        "values": [
+          "active"
+        ]
+      },
+      {
+        "table": "users",
+        "file": "backend/admin-api/src/main/java/com/migao/admin/service/UserService.java",
+        "symbol": "disableUser",
+        "form": "setStatus",
+        "values": [
+          "disabled"
+        ]
+      },
+      {
+        "table": "users",
+        "file": "backend/admin-api/src/main/java/com/migao/admin/service/UserService.java",
+        "symbol": "enableUser",
+        "form": "setStatus",
+        "values": [
+          "active"
+        ]
+      },
+      {
+        "table": "users",
+        "file": "backend/admin-api/src/main/java/com/migao/admin/service/WorkerAdminService.java",
+        "symbol": "createWorker",
+        "form": "builder",
+        "values": [
+          "active"
+        ]
+      },
+      {
+        "table": "warehouses",
+        "file": "backend/admin-api/src/main/java/com/migao/admin/service/WarehouseSeedService.java",
+        "symbol": "seedDefaultWarehouse",
+        "form": "setStatus",
+        "values": [
+          "active"
+        ]
+      },
+      {
+        "table": "warehouses",
+        "file": "backend/admin-api/src/main/java/com/migao/admin/service/WarehouseService.java",
+        "symbol": "create",
+        "form": "setStatus",
+        "values": [
+          "active"
+        ]
+      }
+    ]
+  },
+  "status_value_sources": {
+    "after_sales_tickets": {
+      "authority": "none",
+      "file": "",
+      "symbol": "",
+      "values": []
+    },
+    "agent_batch_items": {
+      "authority": "schema_check",
+      "file": "backend/admin-api/src/main/resources/db/init/schema.sql",
+      "symbol": "CHECK (status IN (…))",
+      "values": [
+        "failed",
+        "pending",
+        "revert_failed",
+        "reverted",
+        "skipped",
+        "success"
+      ]
+    },
+    "agent_batches": {
+      "authority": "schema_check",
+      "file": "backend/admin-api/src/main/resources/db/init/schema.sql",
+      "symbol": "CHECK (status IN (…))",
+      "values": [
+        "done",
+        "executing",
+        "partial",
+        "preview",
+        "revert_partial",
+        "reverted"
+      ]
+    },
+    "agent_employees": {
+      "authority": "none",
+      "file": "",
+      "symbol": "",
+      "values": []
+    },
+    "agent_sessions": {
+      "authority": "none",
+      "file": "",
+      "symbol": "",
+      "values": []
+    },
+    "approvals": {
+      "authority": "schema_check",
+      "file": "backend/admin-api/src/main/resources/db/init/schema.sql",
+      "symbol": "CHECK (status IN (…))",
+      "values": [
+        "approved",
+        "pending",
+        "rejected",
+        "withdrawn"
+      ]
+    },
+    "categories": {
+      "authority": "none",
+      "file": "",
+      "symbol": "",
+      "values": []
+    },
+    "craft_calc_configs": {
+      "authority": "none",
+      "file": "",
+      "symbol": "",
+      "values": []
+    },
+    "cutting_height_configs": {
+      "authority": "none",
+      "file": "",
+      "symbol": "",
+      "values": []
+    },
+    "fabric_remnants": {
+      "authority": "entity_constants+schema_check",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/entity/FabricRemnant.java",
+      "symbol": "STATUS_* / CHECK (status IN …)",
+      "values": [
+        "available",
+        "customer_taken",
+        "scrapped",
+        "used"
+      ]
+    },
+    "finance_transactions": {
+      "authority": "none",
+      "file": "",
+      "symbol": "",
+      "values": []
+    },
+    "finished_goods_stock": {
+      "authority": "entity_constants+schema_check",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/entity/FinishedGoodsStock.java",
+      "symbol": "STATUS_* / CHECK (status IN …)",
+      "values": [
+        "in_stock",
+        "shipped",
+        "unpacked"
+      ]
+    },
+    "inbound_orders": {
+      "authority": "entity_constants",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/entity/InboundOrder.java",
+      "symbol": "STATUS_*",
+      "values": [
+        "cancelled",
+        "draft",
+        "posted"
+      ]
+    },
+    "knowledge_candidates": {
+      "authority": "none",
+      "file": "",
+      "symbol": "",
+      "values": []
+    },
+    "knowledge_cards": {
+      "authority": "none",
+      "file": "",
+      "symbol": "",
+      "values": []
+    },
+    "notification_templates": {
+      "authority": "none",
+      "file": "",
+      "symbol": "",
+      "values": []
+    },
+    "notifications": {
+      "authority": "none",
+      "file": "",
+      "symbol": "",
+      "values": []
+    },
+    "order_logistics": {
+      "authority": "none",
+      "file": "",
+      "symbol": "",
+      "values": []
+    },
+    "orders": {
+      "authority": "none",
+      "file": "",
+      "symbol": "",
+      "values": []
+    },
+    "outbound_orders": {
+      "authority": "entity_constants",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/entity/OutboundOrder.java",
+      "symbol": "STATUS_*",
+      "values": [
+        "posted"
+      ]
+    },
+    "permissions": {
+      "authority": "none",
+      "file": "",
+      "symbol": "",
+      "values": []
+    },
+    "platform_admins": {
+      "authority": "none",
+      "file": "",
+      "symbol": "",
+      "values": []
+    },
+    "print_logs": {
+      "authority": "entity_constants+schema_check",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/entity/PrintLog.java",
+      "symbol": "STATUS_* / CHECK (status IN …)",
+      "values": [
+        "failed",
+        "fired"
+      ]
+    },
+    "processing_categories": {
+      "authority": "none",
+      "file": "",
+      "symbol": "",
+      "values": []
+    },
+    "processing_fee_combination_versions": {
+      "authority": "none",
+      "file": "",
+      "symbol": "",
+      "values": []
+    },
+    "processing_fee_combinations": {
+      "authority": "none",
+      "file": "",
+      "symbol": "",
+      "values": []
+    },
+    "processing_items": {
+      "authority": "none",
+      "file": "",
+      "symbol": "",
+      "values": []
+    },
+    "processing_orders": {
+      "authority": "none",
+      "file": "",
+      "symbol": "",
+      "values": []
+    },
+    "processing_position_operations": {
+      "authority": "none",
+      "file": "",
+      "symbol": "",
+      "values": []
+    },
+    "production_crafts": {
+      "authority": "none",
+      "file": "",
+      "symbol": "",
+      "values": []
+    },
+    "production_operation_positions": {
+      "authority": "none",
+      "file": "",
+      "symbol": "",
+      "values": []
+    },
+    "production_operations": {
+      "authority": "none",
+      "file": "",
+      "symbol": "",
+      "values": []
+    },
+    "production_route_rules": {
+      "authority": "none",
+      "file": "",
+      "symbol": "",
+      "values": []
+    },
+    "production_route_signals": {
+      "authority": "none",
+      "file": "",
+      "symbol": "",
+      "values": []
+    },
+    "production_route_templates": {
+      "authority": "none",
+      "file": "",
+      "symbol": "",
+      "values": []
+    },
+    "production_routings": {
+      "authority": "none",
+      "file": "",
+      "symbol": "",
+      "values": []
+    },
+    "products": {
+      "authority": "none",
+      "file": "",
+      "symbol": "",
+      "values": []
+    },
+    "purchase_orders": {
+      "authority": "entity_constants+schema_check",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/entity/PurchaseOrder.java",
+      "symbol": "STATUS_* / CHECK (status IN …)",
+      "values": [
+        "closed",
+        "ordered",
+        "partially_received",
+        "received"
+      ]
+    },
+    "rework_orders": {
+      "authority": "schema_check",
+      "file": "backend/admin-api/src/main/resources/db/init/schema.sql",
+      "symbol": "CHECK (status IN (…))",
+      "values": [
+        "cancelled",
+        "done",
+        "draft",
+        "in_progress"
+      ]
+    },
+    "roles": {
+      "authority": "none",
+      "file": "",
+      "symbol": "",
+      "values": []
+    },
+    "scheduled_tasks": {
+      "authority": "entity_constants",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/entity/ScheduledTask.java",
+      "symbol": "STATUS_*",
+      "values": [
+        "cancelled",
+        "dismissed",
+        "failed",
+        "fired",
+        "pending"
+      ]
+    },
+    "sessions": {
+      "authority": "none",
+      "file": "",
+      "symbol": "",
+      "values": []
+    },
+    "stock_transfers": {
+      "authority": "entity_constants+schema_check",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/entity/StockTransfer.java",
+      "symbol": "STATUS_* / CHECK (status IN …)",
+      "values": [
+        "cancelled",
+        "completed",
+        "draft",
+        "in_transit"
+      ]
+    },
+    "stocktakes": {
+      "authority": "entity_constants+schema_check",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/entity/Stocktake.java",
+      "symbol": "STATUS_* / CHECK (status IN …)",
+      "values": [
+        "cancelled",
+        "completed",
+        "counting"
+      ]
+    },
+    "supplier_payments": {
+      "authority": "entity_constants+schema_check",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/entity/SupplierPayment.java",
+      "symbol": "STATUS_* / CHECK (status IN …)",
+      "values": [
+        "posted",
+        "voided"
+      ]
+    },
+    "suppliers": {
+      "authority": "schema_check",
+      "file": "backend/admin-api/src/main/resources/db/init/schema.sql",
+      "symbol": "CHECK (status IN (…))",
+      "values": [
+        "active",
+        "inactive"
+      ]
+    },
+    "tenant_applications": {
+      "authority": "none",
+      "file": "",
+      "symbol": "",
+      "values": []
+    },
+    "tenant_apps": {
+      "authority": "none",
+      "file": "",
+      "symbol": "",
+      "values": []
+    },
+    "tenant_payment_qrcodes": {
+      "authority": "none",
+      "file": "",
+      "symbol": "",
+      "values": []
+    },
+    "tenants": {
+      "authority": "none",
+      "file": "",
+      "symbol": "",
+      "values": []
+    },
+    "users": {
+      "authority": "none",
+      "file": "",
+      "symbol": "",
+      "values": []
+    },
+    "warehouse_locations": {
+      "authority": "schema_check",
+      "file": "backend/admin-api/src/main/resources/db/init/schema.sql",
+      "symbol": "CHECK (status IN (…))",
+      "values": [
+        "active",
+        "inactive"
+      ]
+    },
+    "warehouses": {
+      "authority": "schema_check",
+      "file": "backend/admin-api/src/main/resources/db/init/schema.sql",
+      "symbol": "CHECK (status IN (…))",
+      "values": [
+        "active",
+        "inactive"
+      ]
+    }
+  },
+  "no_authority_baseline": {
+    "count": 36,
+    "note": "有 status 列但**没有机器可读的合法状态集合**（既无实体 STATUS_* 常量、也无 schema CHECK）。条数**只许缩短**：新表请给常量或 CHECK。",
+    "tables": [
+      "after_sales_tickets",
+      "agent_employees",
+      "agent_sessions",
+      "categories",
+      "craft_calc_configs",
+      "cutting_height_configs",
+      "finance_transactions",
+      "knowledge_candidates",
+      "knowledge_cards",
+      "notification_templates",
+      "notifications",
+      "order_logistics",
+      "orders",
+      "permissions",
+      "platform_admins",
+      "processing_categories",
+      "processing_fee_combination_versions",
+      "processing_fee_combinations",
+      "processing_items",
+      "processing_orders",
+      "processing_position_operations",
+      "production_crafts",
+      "production_operation_positions",
+      "production_operations",
+      "production_route_rules",
+      "production_route_signals",
+      "production_route_templates",
+      "production_routings",
+      "products",
+      "roles",
+      "sessions",
+      "tenant_applications",
+      "tenant_apps",
+      "tenant_payment_qrcodes",
+      "tenants",
+      "users"
+    ]
+  },
+  "out_of_scope": [
+    {
+      "face": "`deleted`（@TableLogic 逻辑删除族）",
+      "reason": "已有 PG-075 / T3（T3LogicalDeleteRowCountMetaGuardTest）与 #6953 的 P6 包承接；本守卫只冻结读数（wrapper 写 deleted 的站点数），不重复登记。",
+      "owner": "PG-075 / T3 / #6953 P6"
+    },
+    {
+      "face": "全实体回写（selectById → 改字段 → updateById 把旧 status 一起写回，T2b）",
+      "reason": "本守卫只认**显式状态赋值**；回写形态没有赋值语句可锚。清单在 #6953 的 T2b。",
+      "owner": "#6953 T2b"
+    },
+    {
+      "face": "XML mapper 的动态 SQL / 反射写入 / 变量拼接的 wrapper",
+      "reason": "本仓 mapper 是注解式、无 XML；拼接形态静态不可判（假绿方向，不会误伤）。",
+      "owner": "无（形态边界）"
+    }
+  ],
+  "coverage_boundary": [
+    "判据只保证「写面有人认领 + 状态值单一口径」：**不为任何写路径的并发语义（CAS / tenant 谓词 / 影响行数）背书** —— 那是各表元守卫与实例判据的事。",
+    "形态判据不做 AST：匿名类 / lambda 里的写点归到其外层成员（保守方向）。",
+    "成员归属 = 类体顶层签名切块（跨行签名也取到）；注释 / 字符串里的写形不算（`_source_parsing.java_code` 剥注释、字面量另行取证）。",
+    "现取到 0 写点的 4 张表（production_route_signals / production_routings / sessions / tenant_apps）—— 只说明**本仓 Java 写面**里没有显式状态赋值，不等于「这张表不会被写」（DB 默认值 / 迁移脚本不在射程）。"
+  ]
+}
