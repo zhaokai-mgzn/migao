@@ -2,7 +2,7 @@
 # 本文件由 render_cases.py 生成，勿手改（改了也留不住：下次重渲染会覆盖）
 # 源: cases/*.yml（case-contract 单一源）
 # 重新生成: python3 render_cases.py --cases <dir> --out-eval <包目录> --out-md <md>
-# 域: misc（源: cases/misc.yml，202 条）
+# 域: misc（源: cases/misc.yml，203 条）
 
 from ._schema import Difficulty, EvalCase, Skill
 
@@ -3713,6 +3713,24 @@ _CASE_MC_160 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── MC-170 [NORMAL] 门禁触发面必须覆盖本腿断言真读的跨包面（issue #6684）：admin-web 腿的跨包断言真读 frontend/worker-h5/src，而门控只看 frontend/admin-web ⇒ 纯 worker-h5 PR 静默跳过该守卫（假绿）（源: cases/misc.yml）──
+_CASE_MC_170 = EvalCase(
+    id='MC-170',
+    legacy_id='',
+    title='门禁触发面必须覆盖本腿断言真读的跨包面（issue #6684）：admin-web 腿的跨包断言真读 frontend/worker-h5/src，而门控只看 frontend/admin-web ⇒ 纯 worker-h5 PR 静默跳过该守卫（假绿）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['PR 检查里那条 admin-web 腿的门控声明说「只有改 admin-web 才会漏跑」，可下一条只改 worker-h5 的 PR 却带着违规进了 main —— 说明「守卫在什么条件下跑」和「守卫到底读哪些文件」对不上；希望这种不一致以后由机器报出来，而不是靠下一个人读注释推理。'],
+    expectations=[],
+    data_checks=["🔴 **判据 ①·读取面现取（会红）**：从守卫源码 `frontend/admin-web/tests/unit/lib/copy-no-markdown-emphasis.test.ts` 的 `const SRC_DIRS = [...]` **现取**扫描面（按 `join(process.cwd(), '…')` 解析，cwd = `frontend/admin-web`）⇒ 必须解析出 ≥1 个目录、每个目录在仓内**真实存在**、且**至少一条在 `frontend/admin-web` 之外**。红证：把 `SRC_DIRS` 改名/删掉 ⇒ 红（口径漂移不许静默空跑）；跨包面被删 ⇒ 红并要求在同一提交里显式撤销门禁面。执行点 = tests/unit_ci_workflows/test_admin_web_gate_reads_worker_h5.py::test_scan_face_is_parsed_from_the_guard_source。", "🔴 **判据 ②·触发面覆盖（#6684 的实例判据，会红）**：每条跨包读取面都必须被 `.github/workflows/pr-check.yml` 的 `Detect admin-web changes` 步**现取谓词**（从 YAML 结构读 `run` 原文里的 `grep -E '<谓词>'`，**不**从登记册读）命中 ⇒ `frontend/worker-h5/src` 必须命中。红证（内存变异）：把谓词换成只覆盖本包的 `^(frontend/admin-web/)` ⇒ 必红并**具名**报出漏掉的面。执行点 = 同文件::test_live_trigger_covers_cross_package_scan_face 与 TestDiscriminatingPower::test_dropping_the_cross_package_face_turns_the_coverage_judgement_red。", '🔴 **判据 ③·登记（会红）**：每条跨包读取面必须登记进 tests/unit_ci_workflows/declaration_gate_registry.json 的 `pr-check-admin-web-tests.must_cover`（登记册是「门控真的覆盖它」的唯一声明面）。红证：删掉 `frontend/worker-h5/src` 那条登记 ⇒ 红并具名。执行点 = 同文件::test_cross_package_scan_face_is_registered。', '🔴 **判据 ④·负控（原有的面一条都不许丢，会红）**：本腿仍必须被 `frontend/admin-web` 与自身定义 `.github/workflows/pr-check.yml` 触发。红证（内存变异）：谓词换成只覆盖 worker-h5 ⇒ 负控必红（整条腿在自己的模块上永不运行＝假绿，比红更糟）。执行点 = 同文件::test_leg_still_triggers_on_its_own_module 与 TestDiscriminatingPower::test_dropping_the_own_module_face_turns_the_negative_control_red。', '🔴 **判据 ⑤·被证伪的声明不得冒充事实（会红）**：`.github/workflows/pr-check.yml` 里那句已被证伪的断言若仍出现，其所在注释块必须带「已被证伪」+ `#6684` 标注（保留「当初为什么这么写」的痕迹，但不许以未标注形态继续误导）。红证：去掉标注 ⇒ 红并打印行号；带标注 ⇒ 不红（对照读数）。执行点 = 同文件::test_refuted_claim_is_not_left_unannotated 与 TestDiscriminatingPower::test_unannotated_refutation_is_detectable_in_memory。', '🔴 **判据 ⑥·既有同源判据必须同批绿（不带病合并）**：tests/unit_ci_workflows/test_gate_coverage_and_same_source.py 的判据 3/4（谓词**逐字**存在于 workflow、触发面**覆盖** `must_cover`）必须同时通过 —— 谓词与登记册单边改都会在那里红。复算：`python3 -m pytest tests/unit_ci_workflows/test_gate_coverage_and_same_source.py tests/unit_ci_workflows/test_admin_web_gate_reads_worker_h5.py -q`。'],
+    skip_reason='[backend-contract] 纯静态结构判据（读 pr-check.yml 的 YAML 结构 + 守卫源码的 SRC_DIRS + 登记册 JSON；零网络、零 LLM、不跑该腿），由 tests/unit_ci_workflows/test_admin_web_gate_reads_worker_h5.py 验证，不进入 agent-eval 冒烟',
+    tags=['ci', 'gate-face', 'cross-package', 'false-green', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 CASES = (
     _CASE_MC_001,
     _CASE_MC_002,
@@ -3916,4 +3934,5 @@ CASES = (
     _CASE_MC_156,
     _CASE_MC_157,
     _CASE_MC_160,
+    _CASE_MC_170,
 )
