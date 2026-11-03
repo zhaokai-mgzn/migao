@@ -1,5 +1,5 @@
 # case_ids: MC-012
-"""门禁陷阱入册 + 常驻判据：**源码文件名**含 `test` / `spec` 会被 `QA Growth Gate` 判成测试文件（issue #4376）。
+r"""门禁陷阱入册 + 常驻判据：**源码文件名**含 `test` / `spec` 会被 `QA Growth Gate` 判成测试文件（issue #4376）。
 
 ## 病灶（实测，不是理论）
 

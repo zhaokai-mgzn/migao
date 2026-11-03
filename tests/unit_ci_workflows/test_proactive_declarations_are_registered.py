@@ -199,7 +199,7 @@ def parse_rules(source: str) -> dict[str, dict]:
 
 
 def parse_assembly(source: str) -> tuple[dict[str, list[str]], set[str]]:
-    """装配层现取读数：`{行数组: [字段…]}` + 下发的**租户级事实**键集。
+    r"""装配层现取读数：`{行数组: [字段…]}` + 下发的**租户级事实**键集。
 
     **取值靠词法、不靠「按引号扫原文」的正则**（`#5323` 收敛）：字面量由
     `_source_parsing.java_literals` 按**位置**交付（注释里的字面量不算），

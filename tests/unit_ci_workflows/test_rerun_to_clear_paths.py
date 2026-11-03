@@ -567,7 +567,7 @@ class TestWorkflowStructure:
             raise AssertionError(f"给 mark_suspect 步加上 flaky 标签后守卫仍判绿 ⇒ 空断言（bad={bad!r}）")
 
     def test_removing_tracking_step_turns_red(self):
-        """🔴 **红证 G**：摘掉 `triage-follow-up` 调用 ⇒ 「强制跟踪」没有实体动作 ⇒ 必红。
+        r"""🔴 **红证 G**：摘掉 `triage-follow-up` 调用 ⇒ 「强制跟踪」没有实体动作 ⇒ 必红。
 
         **命中的分支** = `if not re.search(r"flaky_ledger\.py\s+triage-follow-up\b", text)`。
         """

@@ -340,7 +340,7 @@ class TestSweepItselfCannotDieSilently:
         logging.getLogger(__name__).info("入口 = ./verify-all.sh redproof")
 
 def test_red_form_matching_strips_ansi_escapes():
-    """红形态匹配**必须先剥 ANSI**（巡检首发日 2026-09-24 实测的误报根因）。
+    r"""红形态匹配**必须先剥 ANSI**（巡检首发日 2026-09-24 实测的误报根因）。
 
     `npx vitest` 的输出**带颜色码**：转义序列把 `Tests\s+\d+ failed \(\d+\)` 这类**精确**
     期望形态打散 ⇒ 判据**其实红了**却被判成 `red_form_mismatch`（误报"红证不成立"）。
