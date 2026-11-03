@@ -93,6 +93,30 @@ def _load_module(path: Path, name: str):
 
 HARNESS = _load_module(HARNESS_PATH, "reconcile_exec_harness")   # 执行式桩跑（#4827 的范式）
 GUARD = _load_module(GUARD_PATH, "reconcile_call_parser_guard")  # 调用点解析 + 腿登记册
+# 构建输入面（issue #7034）的**唯一取值源**：对账腿实际判定的路径不止调用行给出的那几条 ——
+# 改部署腿自己的 workflow / 构建配方 / 线上自证脚本同样必须判「有漂移」。**不在这里另写一份清单**。
+BI = _load_module(REPO_ROOT / ".github" / "scripts" / "reconcile_build_inputs.py", "reconcile_build_inputs")
+
+
+def build_input_paths(svc: str) -> list[str]:
+    """该腿的**构建输入**面（逐条理由登记在 `.github/scripts/reconcile_build_inputs.py` 里）。"""
+    return [str(p) for p in BI.build_inputs(svc)]
+
+
+def effective_paths(svc: str, call: dict) -> tuple[list[str], list[str]]:
+    """该腿**实际**参与 `git log … --` 的（正向, 排除）pathspec。
+
+    = 调用行给出的（应用代码 + 附加项）+ 构建输入面（issue #7034）。去重口径与
+    `reconcile_build_inputs.pathspec` 同源（被前面条目覆盖的不再重复）。
+    """
+    includes, excludes = leg_paths(call)
+    out = list(includes)
+    for entry in build_input_paths(svc):
+        if any(entry == kept or entry.startswith(kept.rstrip("/") + "/") for kept in out):
+            continue
+        out.append(entry)
+    return out, excludes
+
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -223,15 +247,22 @@ def check_trigger_paths_are_in_sync(calls: dict, wf_paths: dict, ledger: dict) -
         raw = [str(p) for p in wf_paths[wf]]
         positives = [norm(p) for p in raw if not p.startswith("!")]
         negatives = [norm(p.lstrip("!")) for p in raw if p.startswith("!")]
-        includes, excludes = leg_paths(call)
+        includes, excludes = effective_paths(svc, call)
         assert includes, f"{svc} 的对账腿没有正向 pathspec"
+        # 两侧同口径比较（`deploy/x/**` 与 `deploy/x` 在触发面里是同一个前缀，见 `norm`）
+        includes_n = [norm(p) for p in includes]
 
-        stray = sorted(set(includes) - set(positives))
+        # 构建输入面（issue #7034）**允许**落在触发面之外：它们不需要一次 push 触发的部署
+        # （对账腿每 20min 跑一次 = 有保证的兜底），而 c-end-h5 那条腿的发布链路文件**永远不许**
+        # 进触发面（用户裁定 B）。除此之外的路径仍必须来自触发面（防空转）。
+        build_inputs_set = {norm(p) for p in build_input_paths(svc)}
+        stray = sorted(set(includes_n) - set(positives) - build_inputs_set)
         assert not stray, (
             f"{svc} 的对账腿判了 {wf} 的 `on.push.paths` **里没有**的路径 {stray}"
             f"（触发面 {positives}）⇒ 每次对账都会为不该部署的改动空转 dispatch"
+            f"（唯一例外 = `.github/scripts/reconcile_build_inputs.py` 里登记的构建输入面）"
         )
-        missing = sorted(set(positives) - set(includes))
+        missing = sorted(set(positives) - set(includes_n))
         unregistered = sorted(p for p in missing if (svc, p) not in entries)
         assert not unregistered, (
             f"🔴 {svc}：`{wf}` 的 `on.push.paths` 里有这些路径**没落在对账腿上**：{unregistered}\n"
@@ -330,6 +361,12 @@ def repo_with_single_change(tmp_path: Path, probe: str, name: str) -> dict:
     _st = repo / "scripts" / "deploy_reconcile_state.sh"
     _st.parent.mkdir(parents=True, exist_ok=True)
     _st.write_text((REPO_ROOT / "scripts" / "deploy_reconcile_state.sh").read_text(encoding="utf-8"),
+                   encoding="utf-8")
+    # 构建输入面（issue #7034）的取值源必须**同批**放进测试仓库：缺了它，对账步会走
+    # 「取不到 ⇒ 按旧口径判定」的弃权分支 ⇒ 本文件里所有依赖新面的场景都会静默退化成改前形态（假绿）。
+    _bi = repo / ".github" / "scripts" / "reconcile_build_inputs.py"
+    _bi.parent.mkdir(parents=True, exist_ok=True)
+    _bi.write_text((REPO_ROOT / ".github" / "scripts" / "reconcile_build_inputs.py").read_text(encoding="utf-8"),
                    encoding="utf-8")
     target = repo / probe
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -479,8 +516,12 @@ def test_every_deploy_trigger_path_reaches_its_reconcile_leg(tmp_path):
     """类级（执行式）：逐服务、**逐条**正向触发路径造「只改它」的 commit ⇒ 必须 dispatch 自己的腿。
 
     这是「两处路径集合一致」的**功能形态**：静态比对能对上、而执行上收不到（写成不覆盖的 glob、
-    或判据把路径读错）的形态在这里必红。台账里的**存量缺口**（另 4 条腿，本单按裁定不动）逐条跳过
-    —— 它们由 `check_trigger_paths_are_in_sync` 的台账判据点名，不许匿名存在。
+    或判据把路径读错）的形态在这里必红。台账里仍存在的缺口逐条跳过 —— 它们由
+    `check_trigger_paths_are_in_sync` 的台账判据点名，不许匿名存在。
+
+    ⚠️ `dispatches` 不仅可能**多于**一条腿：同一个路径可以落在**多条**腿的判定面上
+    （例：`deploy/swas/bmini-h5-publish-remote.sh` 既在 bmini 的发布链路里，也在 admin-api 的
+    `deploy/swas` 配置应用面里）⇒ 期望值由**现取判定面**算出，不写死「恰好一条」。
     """
     calls = parse_calls()
     wf_paths = all_push_paths()
@@ -493,9 +534,15 @@ def test_every_deploy_trigger_path_reaches_its_reconcile_leg(tmp_path):
         fx = repo_with_single_change(tmp_path, probe, f"probe-{len(checked)}")
         proc, _summary, dispatches = run_reconcile_on(tmp_path, fx, f"probe-{len(checked)}-run")
         assert proc.returncode == 0, f"[{svc} · {pattern}] 对账正文非零退出 → {proc.stderr}\n{proc.stdout}"
-        assert dispatches == [wf], (
-            f"[{svc}] 触发面 `{pattern}` 上的改动没有落到自己的对账腿：期望 [{wf}]，实得 {dispatches}\n"
+        assert wf in dispatches, (
+            f"[{svc}] 触发面 `{pattern}` 上的改动没有落到自己的对账腿（期望含 [{wf}]，实得 {dispatches}）\n"
             f"⇒ 该路径的 push 触发被吞时会静默不部署（本单的病）\n{proc.stdout}"
+        )
+        want = sorted({str(c["wf"]) for s, c in calls.items()
+                       if any(leg_covers(p, probe) for p in effective_paths(s, c)[0])})
+        assert sorted(dispatches) == want, (
+            f"[{svc} · {pattern}] 实际 dispatch 的腿集合与现取判定面不符：期望 {want}，实得 {sorted(dispatches)}\n"
+            f"（多出来的腿 = 也判了这条路径的腿；少了 = 该路径的改动会静默不上线）\n{proc.stdout}"
         )
         checked.append(f"{svc}:{pattern}")
     assert checked == [f"{svc}:{p}" for svc, _wf, p in todo], (

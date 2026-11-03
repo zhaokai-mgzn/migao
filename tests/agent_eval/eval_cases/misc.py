@@ -2,7 +2,7 @@
 # 本文件由 render_cases.py 生成，勿手改（改了也留不住：下次重渲染会覆盖）
 # 源: cases/*.yml（case-contract 单一源）
 # 重新生成: python3 render_cases.py --cases <dir> --out-eval <包目录> --out-md <md>
-# 域: misc（源: cases/misc.yml，187 条）
+# 域: misc（源: cases/misc.yml，188 条）
 
 from ._schema import Difficulty, EvalCase, Skill
 
@@ -3442,6 +3442,24 @@ _CASE_MC_142 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── MC-144 [NORMAL] deploy-reconcile 的漂移判据必须覆盖**构建输入面**（部署腿 workflow / 构建配方 / 线上自证脚本）：只改 CI 或部署脚本的修复合入后不得判「已上线」，更不得自动关值守单（issue #7034）（源: cases/misc.yml）──
+_CASE_MC_144 = EvalCase(
+    id='MC-144',
+    legacy_id='',
+    title='deploy-reconcile 的漂移判据必须覆盖**构建输入面**（部署腿 workflow / 构建配方 / 线上自证脚本）：只改 CI 或部署脚本的修复合入后不得判「已上线」，更不得自动关值守单（issue #7034）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['只改了 `.github/**` + `deploy/scripts/**` 的修复（issue #7029）合入 main 后，`deploy-reconcile` 判「✅ 无漂移：自 fbbb798（上次成功部署）起 backend/admin-api 无代码改动」并自动关闭值守单，而同一时刻线上 `GET /api/version` 的 builtAt 仍是空串 —— 修复到底上线没有？'],
+    expectations=[],
+    data_checks=['🔴 **判据 ①（实例，执行式）**：只改 `deploy/**` 里的一个部署脚本（如 `deploy/scripts/swas-deploy-ci.sh`）⇒ 必须判「有漂移」并 dispatch 对应腿；改前形态（pathspec 只有 `${svc_path}`）判「无漂移」。执行点 = tests/unit_ci_workflows/test_reconcile_build_inputs.py::test_registered_build_input_is_judged_as_drift', '🔴 **判据 ②（实例，执行式）**：只改 `.github/workflows/deploy-admin-api.yml` ⇒ 必须判「有漂移」并 dispatch `deploy-admin-api.yml`（`builtAt` 的取值源就在那份 workflow 的 `Resolve build identity` 步）。执行点 = 同文件同名判据（逐条派生自登记册）', '🔴 **负控 ③（证明没扩成全仓）**：只改 `docs/wiki/About.md` ⇒ **零 dispatch** 且每条腿在 summary 里明写「无漂移」。执行点 = 同文件::test_unrelated_docs_change_is_not_drift', '🔴 **负控 ④（既有行为不回归）**：只改应用代码（`backend/admin-api/**`）⇒ 仍判「有漂移」并 dispatch 自己的腿。执行点 = 同文件::test_app_code_change_still_counts_as_drift', '🔴 **红证 ⑤（判别力自证）**：把追加构建输入的那一句注入成空串（= 改前形态）⇒ 判据 ①② 的两条具名探针**零 dispatch**；不注入则绿。执行点 = 同文件::test_pre_fix_shape_has_no_build_inputs', '**类级元守卫（未登记即红）**：现取每条腿 workflow 里**真被调用**的仓内路径（`bash` / `source` / `python3` / `uses: ./.github/workflows/*.yml`）—— 每条都必须被该腿的 pathspec 覆盖，或在 `NOT_BUILD_INPUTS` 里逐条带理由登记；新加一句 `bash deploy/scripts/foo.sh` 而没登记 ⇒ 当场红。执行点 = 同文件::test_every_script_a_leg_runs_is_a_build_input_or_exempted + ::test_meta_guard_has_discriminating_power', '**台账卫生**：`reconcile_trigger_paths_ledger.json` 的 frozen_max 由 13 降到 4（构建输入面真的覆盖了 worker-h5 的 4 条与 bmini 的 5 条缺口 ⇒ 按「只许缩短」删除）；`deploy/swas/nginx.conf`（bmini 腿）仍为缺口（由 admin-api 腿应用，bmini 不需重发）；c-end-h5 的 3 条保留为 `never_in_trigger`（禁令，不是缺口）。判据 = test_config_change_triggers_deploy.py::test_trigger_paths_and_reconcile_legs_are_in_sync_for_every_service', '**边界（照实登记，§19.1）**：① 判据不联网、`gh`/`docker` 是桩 ⇒ 证的是「判定逻辑在给定 diff 下会 dispatch」，不是「GitHub 真的 dispatch 了」；② 本单**只**改判定面，**不**把构建输入加进各腿的 `on.push.paths`（`c-end-h5` 的触发面按用户裁定 B 永不扩）⇒ 构建输入改动的补部署由对账腿（cron 20min）兜底，不是 push 触发；③ 「线上真的跑上了」仍需 served 探针（`deploy/scripts/served-version-verify.sh` 等）在真环境跑一次 —— 本单不兑现任何线上读数。'],
+    skip_reason='[backend-contract] CI 判定逻辑（真 YAML + 真 git 仓库 + 桩 gh/docker 的执行式判据），零网络、零真实部署、不烧 token，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ci', 'deploy', 'reconcile', 'false-green'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 CASES = (
     _CASE_MC_001,
     _CASE_MC_002,
@@ -3630,4 +3648,5 @@ CASES = (
     _CASE_MC_141,
     _CASE_MC_140,
     _CASE_MC_142,
+    _CASE_MC_144,
 )
