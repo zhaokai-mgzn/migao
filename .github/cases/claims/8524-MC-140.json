@@ -1,0 +1,6 @@
+{
+  "id": "MC-140",
+  "pr": 8524,
+  "title": "多 PR 集中合（batch merge）工具：从 origin/main 重建 + 重放 / 用例号后合入者让号 / 锚点实测重锚 / 批次 body 零关闭词",
+  "claimed_at": "2026-11-03"
+}
