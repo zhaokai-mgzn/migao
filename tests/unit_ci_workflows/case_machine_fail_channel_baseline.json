@@ -1293,14 +1293,13 @@
       "no_channel_total": 0,
       "backend_contract_scoring_zero": 290,
       "note": "issue #7600（冒烟库存改走入库单公开 API + 种子直写点台账双向对账）新增 1 条 [backend-contract] 用例 ⇒ 读数按合并当时的 main 现值重锚。机器判红通道 = 直写点台账双向对账判据。真债务 no_channel_total 仍为 0。"
-    }
-,
+    },
     {
       "sha": "pending-pr-8544",
       "date": "2026-11-03",
       "no_channel_total": 0,
       "backend_contract_scoring_zero": 291,
-      "note": "issue #7082（单据列表行内动作样式收口到共享原语 `RowActionLink` + 类级单一源守卫）新增 1 条 `[frontend-contract]` 用例 **MC-148** —— 按设计**不进 agent-eval**（`expectations: []` ⇒ `scoring_assertion_count == 0` ⇒ 本读数 +1，290 → 291）。⚠️ 取号让号留档：首取 MC-146，同步最新 main 后发现 main 上 MC-146（issue #7600）与 MC-147 已被占用 ⇒ 按「后合入者让号」改取 **MC-148**（判据文件与扫描器的 `case_ids` 同批改号，`scripts/next_case_id.py MC` 现取的最大号之后 +1）。机器判红通道 = `traces.tests` 的两个真测试文件，均非空且真实存在：`frontend/admin-web/tests/unit/row-action-link-single-source-guard.test.ts`（9 条：未登记即红 / 原语负控 / 迁移回退 / 接线在（按**同一个开标签**认人）/ 台账只许缩短 / 形态台账双读 / 注释不误伤 / 台账自洽；含真语料内存注入的判别力自证）与 `frontend/admin-web/tests/unit/components/RowActionLink.test.tsx`（变体 ⇒ 观感逐字不变 5 条，各带反向自证）；`traces.ci` = `pr-check.yml` 的 `admin-web typecheck + unit tests`（真跑这两个 vitest 文件）。真债务 `no_channel_total` 仍为 **0**（不变）。本行按 `_how_to_regen` 在同一 PR 内**实测重锚**（合并 main@b2ac5868 后本机实跑 `test_i3_anchor_matches_reality_and_is_only_shrinking` 报 `{'no_channel_total': 0, 'backend_contract_scoring_zero': 291}` vs 锚点 290 —— **不是**按号推算）。"
+      "note": "issue #7082（单据列表行内动作样式收口到共享原语 `RowActionLink` + 类级单一源守卫）新增 1 条 `[frontend-contract]` 用例 **MC-150** —— 按设计**不进 agent-eval**（`expectations: []` ⇒ `scoring_assertion_count == 0` ⇒ 本读数 +1，290 → 291）。⚠️ 取号让号留档：首取 MC-146，同步最新 main 后发现 main 上 MC-146（issue #7600）与 MC-147 已被占用 ⇒ 按「后合入者让号」改取 **MC-150**（判据文件与扫描器的 `case_ids` 同批改号，`scripts/next_case_id.py MC` 现取的最大号之后 +1）。机器判红通道 = `traces.tests` 的两个真测试文件，均非空且真实存在：`frontend/admin-web/tests/unit/row-action-link-single-source-guard.test.ts`（9 条：未登记即红 / 原语负控 / 迁移回退 / 接线在（按**同一个开标签**认人）/ 台账只许缩短 / 形态台账双读 / 注释不误伤 / 台账自洽；含真语料内存注入的判别力自证）与 `frontend/admin-web/tests/unit/components/RowActionLink.test.tsx`（变体 ⇒ 观感逐字不变 5 条，各带反向自证）；`traces.ci` = `pr-check.yml` 的 `admin-web typecheck + unit tests`（真跑这两个 vitest 文件）。真债务 `no_channel_total` 仍为 **0**（不变）。本行按 `_how_to_regen` 在同一 PR 内**实测重锚**（合并 main@b2ac5868 后本机实跑 `test_i3_anchor_matches_reality_and_is_only_shrinking` 报 `{'no_channel_total': 0, 'backend_contract_scoring_zero': 291}` vs 锚点 290 —— **不是**按号推算）。"
     }
   ]
 }

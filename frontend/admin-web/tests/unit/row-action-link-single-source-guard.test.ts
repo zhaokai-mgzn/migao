@@ -1,4 +1,4 @@
-// case_ids: MC-148
+// case_ids: MC-150
 /**
  * 类级元守卫：**行内动作的链接规格只有一处定义**（issue #7082）。
  *
@@ -93,7 +93,7 @@ const copiesIn = (sources: Record<string, string>): Record<string, SpecCopy[]> =
   specCopiesIn(sources) as Record<string, SpecCopy[]>
 const reportOf = (): AuditReport => audit(ROOT) as AuditReport
 
-describe('行内动作链接规格只有一处定义（issue #7082 / MC-148）', () => {
+describe('行内动作链接规格只有一处定义（issue #7082 / MC-150）', () => {
   it('① 扫描面非空 + 原语自证：原语真的含规格 token（否则扫描面为空 ⇒ 恒绿假绿）', () => {
     const sources = sourcesOf()
     expect(Object.keys(sources).length).toBeGreaterThanOrEqual(MIN_SCOPE_FILES)

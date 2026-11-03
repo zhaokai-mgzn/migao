@@ -7127,7 +7127,7 @@
 ```
 溯源: 2026-11-03 新增（issue #6953 的族级元守卫 SW-100；与 MC-100 / MC-104 / PG-075 等单表守卫**有意不重叠** —— 它们裁谓词完整性，本表裁「写面有没有人认领 / 状态值是不是单一口径」）。取号（**两次让号，记实**）= `python3 scripts/next_case_id.py MC` 首取 **MC-143**；merge `origin/main` 时与 main 新增的 **MC-143**（issue #6997 / PR #8535）撞号 ⇒ 按「后合入者让号」顺延 **MC-144**；再次 merge 又与 main 新增的 **MC-144**（issue #7034 / PR #8537）撞号 ⇒ 顺延 **MC-145**；随后 CI 的取号判据（issue #6245）抓到 **MC-145 与在飞 PR #8538 同时占着** ⇒ 再按「后合入者让号」顺延终态 **MC-147**（工具每次都返回历史空档 MC-099 —— 按裁定**刻意空档不回填**）。**现取读数**：53 张有 `status` 列的表（`_sql_schema` 唯一解析点）、134 条写点（Java 108 / SQL 26）、覆盖 49 张表；合法集合权威：实体常量 10 / schema CHECK 14 / **无机器口径 36（冻结上限）**；裸字符串存量 56（冻结上限）。**红证（注入式，实跑）**：① 往真实 Service 里加一条未登记写面 ⇒ 判据 1 判红并具名；② 把常量改成裸字符串 ⇒ 判据 3 判红并具名；③ 把台账条目删掉 ⇒ 判据 2 判红（写点无主）；④ 把 `unregistered()` 的登记对账摘掉 / 把 `bare_literal_sites()` 摘掉 ⇒ 判据 1 / 判据 3 必红（判据 7 内建这两条内存变异体作常驻证）。**如实登记的既有缺陷（本包不修，不扩射程）**：`ProductionOperationCommandService#update` 的无条件状态写（见判据 8 的盲洞 ②）、`InboundOrderService` 的 builder 写形（盲洞 ①）、36 张表没有机器可读的合法状态集合、56 处裸字面量 —— 均为存量债，压测口径 = 台账基线**只许缩短**。 ｜ tags: state-transition, meta-guard, ledger, single-source, red-proof
 
-### MC-148. 单据列表「行内动作」的链接规格只许有一处定义：副本必须走共享原语 `RowActionLink`，未登记即红 / 台账只许缩短（issue #7082） 🔵
+### MC-150. 单据列表「行内动作」的链接规格只许有一处定义：副本必须走共享原语 `RowActionLink`，未登记即红 / 台账只许缩短（issue #7082） 🔵
 ```
 你: 同一件事（跳到该行详情）在售后列表是一段主题色文字链接、在入库单是描边按钮、在员工列表是另一段链接串 —— 过两周到底哪个才算「对的」？我把这几处各自改好看一点，行不行？
 数据: 🔴 **判据 ①（未登记即红，执行式）**：`frontend/admin-web/src/**` 里「链接规格」= **同一个类名串同时含** `text-primary-600` + `hover:text-primary-700` + `hover:underline`；除共享原语 `src/components/ui/RowActionLink.tsx` 外零副本（4 处已迁移 + 1 条带理由豁免）。执行点 = frontend/admin-web/tests/unit/row-action-link-single-source-guard.test.ts 的「③ 未登记即红」
@@ -7140,7 +7140,7 @@
 数据: **边界（照实登记，§19.1）**：① 只裁「与原语**同规格**」的副本 —— 缺 `hover:text-primary-700` 的**漂移副本**（`purchase-orders` / `suppliers` / 各处页面级链接）不在面内（已不是同一份规格，收口要先逐页裁定形态）；② 静态文本判据判不了「渲染是否同色同字号」（由原语变体断言 + 真机读图承担）；③ 判不了「新页面用 `Button` 手拼行内动作」（意图判不了，由 `row-action-density-scan.mjs` 与评审承担）；④ `mini-app` / H5 各自一套 token，不在面内。
 跳过: [frontend-contract] 源码扫描 + jsdom 组件渲染判据（vitest），零网络、零真实 LLM 调用，不进入 agent-eval 冒烟；计分通道 = traces.tests 里的两个前端判据文件
 ```
-溯源: 2026-11-03 新增（issue #7082：单据列表行内动作样式的其余副本收口到共享原语）。取号 **MC-148**（`python3 scripts/next_case_id.py MC` 现取；工具返回历史空档 MC-099 而按裁定**不回填**。⚠️ **撞号顺延**：首取 MC-146，合入最新 main 后发现 main 上 MC-146（issue #7600）与 MC-147 已被占用 ⇒ 按「后合入者让号」改取现取最大号之后 + 1 = **MC-148**，判据文件与扫描器的 `case_ids` 同批改号）。落码 = ① 原语扩展 4 个**真实**消费点变体（`size` / `emphasis` / `tone` / `disabledStyle`，故意不暴露 `className` —— 绕过变体 = 没收口）② 4 处迁移（售后「查看」、员工「姓名」、工人档案「默认页面」、加工项「编辑/删除」）③ 判据本体 `frontend/admin-web/scripts/row-action-link-scan.mjs`（纯函数 + CLI，三态口径；token **集合**比对而非逐字节比对 —— issue 原文那条逐字节判据实测只命中 1 处，是空断言）+ 台账 `frontend/admin-web/tests/unit/row-action-link-ledger.json` + 守卫 `frontend/admin-web/tests/unit/row-action-link-single-source-guard.test.ts`（9 条，含负控与内存注入红证）。**issue 两处前提已漂移**（如实登记，不假装做了）：入库单在 #8011 之后**正是**订单列表当前形态（ghost `Button` 主行动），商品在 #8038 之后已走 `RowActions` ⇒ 两者**没有**链接规格副本，台账 `conformant` 锚定其形态。 ｜ tags: design-system, row-action, single-source, false-green
+溯源: 2026-11-03 新增（issue #7082：单据列表行内动作样式的其余副本收口到共享原语）。取号 **MC-150**（`python3 scripts/next_case_id.py MC` 现取；工具返回历史空档 MC-099 而按裁定**不回填**。⚠️ **撞号顺延两次**：首取 MC-146 ⇒ 合入 main 后发现 main 上 MC-146（issue #7600）/ MC-147 已占用 ⇒ 取 MC-148；随后 **跨在飞 PR 的取号判据（#6245 的面）** 报 PR #8542 已 claim MC-148 / MC-149 ⇒ 按「后合入者让号」再顺延到 **MC-150**。判据文件、扫描器 `case_ids`、claim 文件（`8544-MC-150.json`）同批改号）。落码 = ① 原语扩展 4 个**真实**消费点变体（`size` / `emphasis` / `tone` / `disabledStyle`，故意不暴露 `className` —— 绕过变体 = 没收口）② 4 处迁移（售后「查看」、员工「姓名」、工人档案「默认页面」、加工项「编辑/删除」）③ 判据本体 `frontend/admin-web/scripts/row-action-link-scan.mjs`（纯函数 + CLI，三态口径；token **集合**比对而非逐字节比对 —— issue 原文那条逐字节判据实测只命中 1 处，是空断言）+ 台账 `frontend/admin-web/tests/unit/row-action-link-ledger.json` + 守卫 `frontend/admin-web/tests/unit/row-action-link-single-source-guard.test.ts`（9 条，含负控与内存注入红证）。**issue 两处前提已漂移**（如实登记，不假装做了）：入库单在 #8011 之后**正是**订单列表当前形态（ghost `Button` 主行动），商品在 #8038 之后已走 `RowActions` ⇒ 两者**没有**链接规格副本，台账 `conformant` 锚定其形态。 ｜ tags: design-system, row-action, single-source, false-green
 
 ## 商家入驻域（7 case）
 
@@ -14925,7 +14925,7 @@
 - MC-143: 悬空 PR 扫描器把「未解决评审线程」计入**需要处置**（issue #6997）：`isResolved=false ∧ isOutdated=false` ⇒ 判红并报出 `path` + 首行摘要；`isOutdated=true` 单独一类**不算阻塞**；读不到 ⇒ 退 `3`（不得当 0）
 - MC-144: deploy-reconcile 的漂移判据必须覆盖**构建输入面**（部署腿 workflow / 构建配方 / 线上自证脚本）：只改 CI 或部署脚本的修复合入后不得判「已上线」，更不得自动关值守单（issue #7034）
 - MC-147: **状态列写面全族统一元守卫 SW-100**：53 张有 `status` 列的表 × 134 个写入口逐条登记（未登记即红 / 台账陈旧即红 / 裸字符串写状态列即红 / 每张状态表的合法集合必须有来源）
-- MC-148: 单据列表「行内动作」的链接规格只许有一处定义：副本必须走共享原语 `RowActionLink`，未登记即红 / 台账只许缩短（issue #7082）
+- MC-150: 单据列表「行内动作」的链接规格只许有一处定义：副本必须走共享原语 `RowActionLink`，未登记即红 / 台账只许缩短（issue #7082）
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）

@@ -3532,9 +3532,9 @@ _CASE_MC_147 = EvalCase(
     forbidden_card_text=[],
 )
 
-# ── MC-148 [NORMAL] 单据列表「行内动作」的链接规格只许有一处定义：副本必须走共享原语 `RowActionLink`，未登记即红 / 台账只许缩短（issue #7082）（源: cases/misc.yml）──
-_CASE_MC_148 = EvalCase(
-    id='MC-148',
+# ── MC-150 [NORMAL] 单据列表「行内动作」的链接规格只许有一处定义：副本必须走共享原语 `RowActionLink`，未登记即红 / 台账只许缩短（issue #7082）（源: cases/misc.yml）──
+_CASE_MC_150 = EvalCase(
+    id='MC-150',
     legacy_id='',
     title='单据列表「行内动作」的链接规格只许有一处定义：副本必须走共享原语 `RowActionLink`，未登记即红 / 台账只许缩短（issue #7082）',
     skill=Skill.GENERAL,
@@ -3743,5 +3743,5 @@ CASES = (
     _CASE_MC_143,
     _CASE_MC_144,
     _CASE_MC_147,
-    _CASE_MC_148,
+    _CASE_MC_150,
 )

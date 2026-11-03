@@ -23,6 +23,21 @@
   台账 = `frontend/admin-web/tests/unit/row-action-link-ledger.json`，未登记即红、只许缩短）、
   `frontend/admin-web/tests/unit/row-action-link-single-source-guard.test.ts`（MC-146）、
   `frontend/admin-web/tests/unit/components/RowActionLink.test.tsx`（变体 ⇒ 观感逐字不变）。
+### 撤销批量改价不再要求模型「记得」批次号：本会话只有一批就点名让你带上，认不准就拒绝（2026-11-03，issue #6998）
+
+- **改前**：真 LLM 重放（`PR-108`）里模型执行成功、真实批次号就在上下文里，撤销那一步却把它丢了
+  （`product_batch_update{"action":"revert"}` 无参，只回一句「没有批次号」）；另一种形态是**编造**批次号
+  （`batch_20260923_155` ⇒ 服务端 `NOT_FOUND`）⇒ 撤销要么永不成功，要么打到**错的批次**上
+  （把另一批商品的价格/库存还原成改前值，说不清）。
+- **改后**：`execute` / `revert` 共用**同一个** `batch_id` 解析点（`ProductBatchUpdateTool.resolve_batch_id`）：
+  显式给了就原样用；撤销没给时从「本会话**执行成功**的批次」里定位 —— 恰好一批 ⇒ 拒绝话术里**点名**
+  那个批次号（`batch_id_required`，逐字带上重试即可）；两批以上 ⇒ `batch_id_ambiguous`（要求向商家确认）；
+  一批都没有 ⇒ `batch_preview_required`。三种情形都**不发任何请求**，且**工具从不替模型填批次号去执行**
+  —— `batch_id` 正是确认门禁的卡值比对对象，代执行会让那次比对空跑（#5414 的口径被绕开）。
+  执行段的**结构锁不变**：批次号只能来自 `preview`。
+- 判据：`backend/ai-agent-service/tests/test_product_batch_update.py` 的 `TestRevertBatchIdFallback`
+  （① 缺参三种情形 + 不发请求 / ② 显式值原样用 / ③ 多候选 ⇒ 拒绝 / 写侧台账只记可撤销批次）
+  + `TestSharedBatchIdResolver`（execute 与 revert 同一个解析函数；把 `batch_id` 写进 schema 的工具未登记即红）。
 
 ### 工人屏不再把「没填」的部位规格编成 0：纯空白一律按缺值处理（2026-11-03，issue #7002）
 

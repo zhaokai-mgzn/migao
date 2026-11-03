@@ -7036,7 +7036,7 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
-  - id: MC-148
+  - id: MC-150
     legacy_id: ""
     title: "单据列表「行内动作」的链接规格只许有一处定义：副本必须走共享原语 `RowActionLink`，未登记即红 / 台账只许缩短（issue #7082）"
     domains:
@@ -7062,7 +7062,7 @@ cases:
       - "🔴 **红证（注入式，PR body 逐条给读数）**：把售后页行内动作**改回**裸 `className=\"text-primary-600 hover:text-primary-700 hover:underline transition-colors text-sm\"` ⇒ 判据 ①/④ 具名红；恢复 ⇒ 绿。把员工页的 `<RowActionLink` 换成 `<button` ⇒ 判据 ③ 红。"
       - "**边界（照实登记，§19.1）**：① 只裁「与原语**同规格**」的副本 —— 缺 `hover:text-primary-700` 的**漂移副本**（`purchase-orders` / `suppliers` / 各处页面级链接）不在面内（已不是同一份规格，收口要先逐页裁定形态）；② 静态文本判据判不了「渲染是否同色同字号」（由原语变体断言 + 真机读图承担）；③ 判不了「新页面用 `Button` 手拼行内动作」（意图判不了，由 `row-action-density-scan.mjs` 与评审承担）；④ `mini-app` / H5 各自一套 token，不在面内。"
     skip_reason: "[frontend-contract] 源码扫描 + jsdom 组件渲染判据（vitest），零网络、零真实 LLM 调用，不进入 agent-eval 冒烟；计分通道 = traces.tests 里的两个前端判据文件"
-    merge_log: "2026-11-03 新增（issue #7082：单据列表行内动作样式的其余副本收口到共享原语）。取号 **MC-148**（`python3 scripts/next_case_id.py MC` 现取；工具返回历史空档 MC-099 而按裁定**不回填**。⚠️ **撞号顺延**：首取 MC-146，合入最新 main 后发现 main 上 MC-146（issue #7600）与 MC-147 已被占用 ⇒ 按「后合入者让号」改取现取最大号之后 + 1 = **MC-148**，判据文件与扫描器的 `case_ids` 同批改号）。落码 = ① 原语扩展 4 个**真实**消费点变体（`size` / `emphasis` / `tone` / `disabledStyle`，故意不暴露 `className` —— 绕过变体 = 没收口）② 4 处迁移（售后「查看」、员工「姓名」、工人档案「默认页面」、加工项「编辑/删除」）③ 判据本体 `frontend/admin-web/scripts/row-action-link-scan.mjs`（纯函数 + CLI，三态口径；token **集合**比对而非逐字节比对 —— issue 原文那条逐字节判据实测只命中 1 处，是空断言）+ 台账 `frontend/admin-web/tests/unit/row-action-link-ledger.json` + 守卫 `frontend/admin-web/tests/unit/row-action-link-single-source-guard.test.ts`（9 条，含负控与内存注入红证）。**issue 两处前提已漂移**（如实登记，不假装做了）：入库单在 #8011 之后**正是**订单列表当前形态（ghost `Button` 主行动），商品在 #8038 之后已走 `RowActions` ⇒ 两者**没有**链接规格副本，台账 `conformant` 锚定其形态。"
+    merge_log: "2026-11-03 新增（issue #7082：单据列表行内动作样式的其余副本收口到共享原语）。取号 **MC-150**（`python3 scripts/next_case_id.py MC` 现取；工具返回历史空档 MC-099 而按裁定**不回填**。⚠️ **撞号顺延两次**：首取 MC-146 ⇒ 合入 main 后发现 main 上 MC-146（issue #7600）/ MC-147 已占用 ⇒ 取 MC-148；随后 **跨在飞 PR 的取号判据（#6245 的面）** 报 PR #8542 已 claim MC-148 / MC-149 ⇒ 按「后合入者让号」再顺延到 **MC-150**。判据文件、扫描器 `case_ids`、claim 文件（`8544-MC-150.json`）同批改号）。落码 = ① 原语扩展 4 个**真实**消费点变体（`size` / `emphasis` / `tone` / `disabledStyle`，故意不暴露 `className` —— 绕过变体 = 没收口）② 4 处迁移（售后「查看」、员工「姓名」、工人档案「默认页面」、加工项「编辑/删除」）③ 判据本体 `frontend/admin-web/scripts/row-action-link-scan.mjs`（纯函数 + CLI，三态口径；token **集合**比对而非逐字节比对 —— issue 原文那条逐字节判据实测只命中 1 处，是空断言）+ 台账 `frontend/admin-web/tests/unit/row-action-link-ledger.json` + 守卫 `frontend/admin-web/tests/unit/row-action-link-single-source-guard.test.ts`（9 条，含负控与内存注入红证）。**issue 两处前提已漂移**（如实登记，不假装做了）：入库单在 #8011 之后**正是**订单列表当前形态（ghost `Button` 主行动），商品在 #8038 之后已走 `RowActions` ⇒ 两者**没有**链接规格副本，台账 `conformant` 锚定其形态。"
     traces:
       tests:
         - "frontend/admin-web/tests/unit/row-action-link-single-source-guard.test.ts"
