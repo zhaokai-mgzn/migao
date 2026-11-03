@@ -449,18 +449,27 @@ jobs:
           # 触发面 = 本 job 断言**真读**的对象面 ∪ 本 job 自身。
           # ① `frontend/admin-web/**`：本腿的 `npm ci` / `tsc --noEmit` / `eslint` /
           #    `next build` / `vitest` **全部**以 `frontend/admin-web` 为根（vitest root=该目录、
-          #    `setupFiles: ./tests/setup.ts` 也在其内；包依赖全是 npm 公共包，无仓内 workspace 依赖）
-          #    ⇒ 不存在「改了仓内别处而本腿该跑」的形态。
-          # ② `\.github/workflows/pr-check\.yml$` = 本 job 自己的定义（改这条腿的 PR 必须能验证它自己）。
+          #    `setupFiles: ./tests/setup.ts` 也在其内；包依赖全是 npm 公共包，无仓内 workspace 依赖）。
+          # ② `frontend/worker-h5/src/**`：本腿**有**跨包断言 ——
+          #    `frontend/admin-web/tests/unit/lib/copy-no-markdown-emphasis.test.ts` 的 `SRC_DIRS`
+          #    同时扫 `../worker-h5/src`（商家可见文案的 markdown 强调必须经渲染器上屏，issue #5194）。
+          #    ⚠️ 原文本行写的是「⇒ 不存在『改了仓内别处而本腿该跑』的形态」——那句话**已被证伪**
+          #    （issue #6684）：`#6675` 只改 `frontend/worker-h5/**` ⇒ 本腿整段跳过 ⇒ 那条守卫在 PR 上是
+          #    绿的、合并后在 main 上红（`machine.mjs` 的模板串带字面 markdown 强调），红只交给**下一个**
+          #    碰 admin-web 的 PR。当初的推理只看了**执行根**（cwd），漏了**读取面**（`SRC_DIRS` 里的
+          #    `../worker-h5/src`）—— 保留这段是为了让下一个人看到「为什么会写错」，别再照它推理。
+          #    常驻判据 = tests/unit_ci_workflows/test_admin_web_gate_reads_worker_h5.py
+          #    （从守卫源码现取 `SRC_DIRS` ⇄ 本谓词的覆盖率：漏一条即红；负控 = 本包面丢了也红）。
+          # ③ `\.github/workflows/pr-check\.yml$` = 本 job 自己的定义（改这条腿的 PR 必须能验证它自己）。
           # 登记册（谓词逐字 + must_cover 覆盖 + 未登记即红）=
           #   tests/unit_ci_workflows/declaration_gate_registry.json
-          HITS=$(echo "$CHANGED" | grep -E '^(frontend/admin-web/|\.github/workflows/pr-check\.yml$)' || true)
+          HITS=$(echo "$CHANGED" | grep -E '^(frontend/admin-web/|frontend/worker-h5/src/|\.github/workflows/pr-check\.yml$)' || true)
           if [ -n "$HITS" ]; then
             echo "run_web=true" >> "$GITHUB_OUTPUT"
-            echo "✅ 检测到 admin-web 变更，执行 typecheck / lint / build / 单测"
+            echo "✅ 检测到本腿触发面变更（admin-web / worker-h5/src / 本腿定义），执行 typecheck / lint / build / 单测"
           else
             echo "run_web=false" >> "$GITHUB_OUTPUT"
-            echo "⏭️ 无 admin-web 变更 —— typecheck/lint/build/单测**未跑**（「没跑」不是「通过」）"
+            echo "⏭️ 无本腿触发面变更（admin-web / worker-h5/src / 本腿定义）—— typecheck/lint/build/单测**未跑**（「没跑」不是「通过」）"
           fi
 
       # 🔴 Node 必须是 **≥22.22.2**（不能是 20）：本腿的 `npx vitest run` 跑在 jsdom 30 上，

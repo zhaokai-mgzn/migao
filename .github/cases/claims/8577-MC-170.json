@@ -1,0 +1,6 @@
+{
+  "id": "MC-170",
+  "pr": 8577,
+  "title": "门禁触发面必须覆盖本腿断言真读的跨包面（issue #6684）：admin-web 腿的跨包断言真读 frontend/worker-h5/src，而门控只看 frontend/admin-web ⇒ 纯 worker-h5 PR 静默跳过该守卫（假绿）",
+  "claimed_at": "2026-11-03"
+}

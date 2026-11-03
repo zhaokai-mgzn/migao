@@ -7,7 +7,7 @@
   "_anchor_note": "读数取自该 sha 的 `origin/main`（本判据首次落地时的基线）。它只是**出处留档**，不是判据 —— 判据只比对实测值与 `entries`。",
   "entries": {
     "no_channel_total": 0,
-    "backend_contract_scoring_zero": 297
+    "backend_contract_scoring_zero": 298
   },
   "history": [
     {
@@ -1327,6 +1327,13 @@
       "no_channel_total": 0,
       "backend_contract_scoring_zero": 297,
       "note": "PR #8574（issue #6480）新增 **MC-160**（H5 输入面字体族跟随全局 + 占位符收口共享层；取号时 MC-159 与在飞 PR #8570 撞号 ⇒ 按「后合入者让号」顺延到 MC-160）。该用例的 data_checks 是**散文形态 + 逐条执行点**（判据本体在 tests 文件里，不在 case 里写 tool 断言）⇒ `scoring_assertion_count == 0`，读数 296 → 297 是**合法新增**；真债务 `no_channel_total` 仍为 **0**：它的机器判红通道 = `traces.tests` 指向 frontend/bmini-app/tests/input-typography-guard.test.ts（CI = bmini-app.yml 的 `bmini-app typecheck + unit tests` job）。按 `_how_to_regen` 在**同一 PR** 内重锚，未放宽任何门禁。"
+    },
+    {
+      "sha": "087daeb17",
+      "date": "2026-11-03",
+      "no_channel_total": 0,
+      "backend_contract_scoring_zero": 298,
+      "note": "PR #8577（issue #6684）新增 **MC-170**（门禁触发面必须覆盖本腿断言真读的跨包面；取号按派单口径直接取 MC-170 —— main 侧当时最大 = MC-160、`next_case_id.py MC` 返回的历史空档 MC-145 按裁定不回填）。该用例的 data_checks 是**散文形态 + 逐条执行点**（判据本体在 tests 文件里，case 里不写 tool 断言）⇒ `scoring_assertion_count == 0`，读数 297 → 298 是**合法新增**；真债务 `no_channel_total` 仍为 **0**：它的机器判红通道 = `traces.tests` 指向 tests/unit_ci_workflows/test_admin_web_gate_reads_worker_h5.py（CI = pr-check.yml 的 `ci workflow helper unit tests` job）。按 `_how_to_regen` 在**同一 PR** 内重锚，未放宽任何门禁。"
     }
   ]
 }

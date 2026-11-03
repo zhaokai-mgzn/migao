@@ -4186,7 +4186,7 @@
 ```
 溯源: 2026-10-31 新增（issue #8295）：两步确认，避免误写 ｜ tags: ui, preview
 
-## 杂项域（203 case）
+## 杂项域（204 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -7286,6 +7286,20 @@
 跳过: [frontend-contract] 纯静态形态守卫（jest + fs 读 scss / tsx，零 DOM 渲染、零网络、零 LLM）由 frontend/bmini-app/tests/input-typography-guard.test.ts 验证，不进入 agent-eval 冒烟
 ```
 溯源: 2026-11-03 新增（issue #6480）。取号：`python3 scripts/next_case_id.py MC` 现取返回历史空档 **MC-099** —— 按裁定**刻意空档不回填**；当时 main 最大 **MC-157**、**MC-158** 已被在飞 PR #8568 的 claim（`8568-MC-158.json`）占用 ⇒ 取 **MC-160**（并先 push claim `8574-MC-160.json`）。病（issue #6480 实测，真栈 + 真 Chromium）：登录页内层 `input.weui-input` 的 `font-family` = **Arial**（浏览器默认）、输入条内层 `textarea.taro-textarea` = **monospace** + 13.33px、两者 `::placeholder` = **rgb(117,117,117)**（默认灰）；全 app 修前只有 2 处 `font-family`、1 处 `::placeholder`。修 = **一处收口**到共享层 `frontend/bmini-app/src/styles/input-center.scss`：内层两控件 `font-family: inherit`、textarea 另 `font-size: inherit`、占位符色 `$text-secondary`（唯一来源、字号继承控件自身）；同时删掉 `MessageInput.scss` 里重复的那三条（值不变，删的是第二份口径）。覆盖：H5 下 **39 × `<Input>` + 2 × `<Textarea>` = 41 处**全部渲染成这两个内层控件 ⇒ 一条共享规则全罩住；小程序端这两个选择器一个元素都匹配不到 ⇒ 零影响。**有意不改并登记**：`src/pages/auth/login/index.scss` 的 `Menlo, Consolas, monospace`（登录诊断面板的原始登录态行，等宽是为逐字符核对）进台账；`src/app.scss` 的 `page, body` 不追加字体栈（加了就会改变全站观感，那不在本单射程）。**未做（如实登记）**：C 端 `frontend/mini-app` 同一根因（现取 `font-family` 0 处、`MessageInput.scss` 无内层 `.taro-textarea`）本轮未改，另开承接单；运行期 `getComputedStyle` 逐面读数未跑（派单口径不跑浏览器腿）。 ｜ tags: bmini, h5, input, typography, single-source, red-proof
+
+### MC-170. 门禁触发面必须覆盖本腿断言真读的跨包面（issue #6684）：admin-web 腿的跨包断言真读 frontend/worker-h5/src，而门控只看 frontend/admin-web ⇒ 纯 worker-h5 PR 静默跳过该守卫（假绿） 🔵
+```
+你: PR 检查里那条 admin-web 腿的门控声明说「只有改 admin-web 才会漏跑」，可下一条只改 worker-h5 的 PR 却带着违规进了 main —— 说明「守卫在什么条件下跑」和「守卫到底读哪些文件」对不上；希望这种不一致以后由机器报出来，而不是靠下一个人读注释推理。
+数据: 🔴 **判据 ①·读取面现取（会红）**：从守卫源码 `frontend/admin-web/tests/unit/lib/copy-no-markdown-emphasis.test.ts` 的 `const SRC_DIRS = [...]` **现取**扫描面（按 `join(process.cwd(), '…')` 解析，cwd = `frontend/admin-web`）⇒ 必须解析出 ≥1 个目录、每个目录在仓内**真实存在**、且**至少一条在 `frontend/admin-web` 之外**。红证：把 `SRC_DIRS` 改名/删掉 ⇒ 红（口径漂移不许静默空跑）；跨包面被删 ⇒ 红并要求在同一提交里显式撤销门禁面。执行点 = tests/unit_ci_workflows/test_admin_web_gate_reads_worker_h5.py::test_scan_face_is_parsed_from_the_guard_source。
+数据: 🔴 **判据 ②·触发面覆盖（#6684 的实例判据，会红）**：每条跨包读取面都必须被 `.github/workflows/pr-check.yml` 的 `Detect admin-web changes` 步**现取谓词**（从 YAML 结构读 `run` 原文里的 `grep -E '<谓词>'`，**不**从登记册读）命中 ⇒ `frontend/worker-h5/src` 必须命中。红证（内存变异）：把谓词换成只覆盖本包的 `^(frontend/admin-web/)` ⇒ 必红并**具名**报出漏掉的面。执行点 = 同文件::test_live_trigger_covers_cross_package_scan_face 与 TestDiscriminatingPower::test_dropping_the_cross_package_face_turns_the_coverage_judgement_red。
+数据: 🔴 **判据 ③·登记（会红）**：每条跨包读取面必须登记进 tests/unit_ci_workflows/declaration_gate_registry.json 的 `pr-check-admin-web-tests.must_cover`（登记册是「门控真的覆盖它」的唯一声明面）。红证：删掉 `frontend/worker-h5/src` 那条登记 ⇒ 红并具名。执行点 = 同文件::test_cross_package_scan_face_is_registered。
+数据: 🔴 **判据 ④·负控（原有的面一条都不许丢，会红）**：本腿仍必须被 `frontend/admin-web` 与自身定义 `.github/workflows/pr-check.yml` 触发。红证（内存变异）：谓词换成只覆盖 worker-h5 ⇒ 负控必红（整条腿在自己的模块上永不运行＝假绿，比红更糟）。执行点 = 同文件::test_leg_still_triggers_on_its_own_module 与 TestDiscriminatingPower::test_dropping_the_own_module_face_turns_the_negative_control_red。
+数据: 🔴 **判据 ⑤·被证伪的声明不得冒充事实（会红）**：`.github/workflows/pr-check.yml` 里那句已被证伪的断言若仍出现，其所在注释块必须带「已被证伪」+ `#6684` 标注（保留「当初为什么这么写」的痕迹，但不许以未标注形态继续误导）。红证：去掉标注 ⇒ 红并打印行号；带标注 ⇒ 不红（对照读数）。执行点 = 同文件::test_refuted_claim_is_not_left_unannotated 与 TestDiscriminatingPower::test_unannotated_refutation_is_detectable_in_memory。
+数据: 🔴 **判据 ⑥·既有同源判据必须同批绿（不带病合并）**：tests/unit_ci_workflows/test_gate_coverage_and_same_source.py 的判据 3/4（谓词**逐字**存在于 workflow、触发面**覆盖** `must_cover`）必须同时通过 —— 谓词与登记册单边改都会在那里红。复算：`python3 -m pytest tests/unit_ci_workflows/test_gate_coverage_and_same_source.py tests/unit_ci_workflows/test_admin_web_gate_reads_worker_h5.py -q`。
+跳过: [backend-contract] 纯静态结构判据（读 pr-check.yml 的 YAML 结构 + 守卫源码的 SRC_DIRS + 登记册 JSON；零网络、零 LLM、不跑该腿），由 tests/unit_ci_workflows/test_admin_web_gate_reads_worker_h5.py 验证，不进入 agent-eval 冒烟
+```
+真值: ⚠️ 缺口（见对应模板 ⚠️ 注释）
+溯源: 2026-11-03 新增（issue #6684）。取号：按派单口径**直接取 MC-170**（跳过一段以降低与在飞 PR 的撞号概率；现取 `python3 scripts/next_case_id.py MC` 返回的历史空档 MC-145 按裁定**不回填**，main 侧当时最大 = MC-160）⇒ 先 push claim `6684-MC-170.json` 再写码。**病（两条独立读数，均现取）**：① `.github/workflows/pr-check.yml` 的 `admin-web-test` 腿注释里有一句**被证伪**的断言（「⇒ 不存在『改了仓内别处而本腿该跑』的形态」）；② 该腿的跨包守卫 `frontend/admin-web/tests/unit/lib/copy-no-markdown-emphasis.test.ts` 的 `SRC_DIRS` 同时扫 `../worker-h5/src`，而触发谓词只覆盖 `frontend/admin-web/` + 自身 ⇒ 纯 worker-h5 PR 整段跳过该守卫（实证 #6675：只改 `frontend/worker-h5/**` 的 PR 该腿 SUCCESS，合并后同一条守卫在 main 上红）。**修（两半都必须做）**：① 把那句断言**改写成成立的事实**并保留「当初为什么这么写 / 为什么被证伪」的痕迹（只删掉假话 = 下一个人还会照同一套推理写第二遍）；② 谓词精确补 `frontend/worker-h5/src/`（**只补跨包读取面，不扩到整个 `frontend/worker-h5/**`**：守卫只读 `src`）+ 登记册同批改 `predicate` / `must_cover`。**判据** = tests/unit_ci_workflows/test_admin_web_gate_reads_worker_h5.py（读取面现取 / 覆盖率 / 登记 / 负控 / 判别力自证 / 被证伪声明标注），另由既有 test_gate_coverage_and_same_source.py 的逐字同源 + 覆盖判据兜底。⚠️ **代价（如实登记）**：纯 worker-h5 的 PR 现在会跑一次 admin-web 全量（ci_cost_ledger 现取该 job 中位 281.5s，n=8）；这与 issue #6684 候选修法 1 的代价相同，取舍理由 = 守卫读它就必须验它，且 worker-h5 侧另有 `frontend/worker-h5/tests/worker-h5-plain-text-guard.test.mjs` 的等价面（本单**不动**它，两条腿互为冗余而非替代）。⚠️ **未闭合（照实登记）**：其它腿的 TS 断言面自动发现仍未实装（登记册 `unfixed` 已登记该缺口）；本判据只裁这一条腿。 ｜ tags: ci, gate-face, cross-package, false-green, red-proof
 
 ## 商家入驻域（7 case）
 
@@ -14794,8 +14808,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：1001（活跃 153，跳过 848）
-- tier 分布：smoke 15 / normal 924 / adversarial 33
+- 用例总数：1002（活跃 153，跳过 849）
+- tier 分布：smoke 15 / normal 925 / adversarial 33
 - 售后域：16
 - Agent 核心域：13
 - API 层域：21
@@ -14811,7 +14825,7 @@
 - 人事域：13
 - 知识问答域：9
 - 客户主数据迁移域：10
-- 杂项域：203
+- 杂项域：204
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：76
@@ -15081,6 +15095,7 @@
 - MC-157: **本地 dev / build 输出目录物理隔离**：`next dev` 写 `.next-dev`、`next build` / `next start` 仍写 `.next`（共用 `.next` 时 dev 侧已存在路由 404 可复现 + build 侧读到半写生成物报 9 条 TS 错误）
 - MC-161: 「先查后插」的两处 TOCTOU 写面（收款码 / 角色）必须由唯一键兜底 + 幂等收敛：摘掉唯一键或退回裸 insert 必红（issue #7255）
 - MC-160: H5 输入面字体族跟随全局 + 占位符收口共享层（内层原生控件 inherit / 裸 font-family 只在字体定义处 / 例外台账只许缩短）
+- MC-170: 门禁触发面必须覆盖本腿断言真读的跨包面（issue #6684）：admin-web 腿的跨包断言真读 frontend/worker-h5/src，而门控只看 frontend/admin-web ⇒ 纯 worker-h5 PR 静默跳过该守卫（假绿）
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）
