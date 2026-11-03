@@ -78,8 +78,11 @@ def _make_repo(tmp_path: Path, *, bad_header: bool) -> Path:
     )
     tests = tmp_path / "tests"
     tests.mkdir()
-    (tests / "test_good_thing.py").write_text("# case_ids: ZZ-001\n\ndef test_ok():\n    assert True\n", encoding="utf-8")
-    bad = "# case_ids: ZZ-999\n\ndef test_bad():\n    assert True\n" if bad_header else "# case_ids: ZZ-001\n\ndef test_bad():\n    assert True\n"
+    # ⚠️ 夹具正文里**不能**出现弱断言形态（`assert True` 之类）：弱断言扫描器读的是**本文件源码文本**，
+    # 会把字符串字面量里的形态当成真断言（实跑红了 `test_weak_assert_blindspots` 的「新增文件一律 fail-closed」）。
+    body = "\n\ndef test_body():\n    return 1\n"
+    (tests / "test_good_thing.py").write_text("# case_ids: ZZ-001" + body, encoding="utf-8")
+    bad = ("# case_ids: ZZ-999" if bad_header else "# case_ids: ZZ-001") + body
     (tests / "test_bad_thing.py").write_text(bad, encoding="utf-8")
     for cmd in (
         ["git", "init", "-q"],
