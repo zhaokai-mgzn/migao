@@ -1,12 +1,12 @@
 package com.migao.admin.dto;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.migao.admin.config.RequestId;
 import lombok.Data;
 
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.UUID;
 
 /**
  * 统一 API 响应信封
@@ -58,15 +58,10 @@ public class ApiResponse<T> {
      * 私有构造方法，使用工厂方法创建实例
      */
     private ApiResponse() {
-        this.requestId = generateRequestId();
+        // 追踪 id 的**唯一来源** = RequestId（issue #6957）：本请求的信封、日志行、响应头三处逐字同值。
+        // 改前这里是现生成（每构造一个响应体一个新 id），且从不进日志 ⇒ 商家截图里的 id 反查不到 incident。
+        this.requestId = RequestId.current();
         this.timestamp = Instant.now().getEpochSecond();
-    }
-
-    /**
-     * 生成请求 ID
-     */
-    private static String generateRequestId() {
-        return "req_" + UUID.randomUUID().toString().replace("-", "").substring(0, 16);
     }
 
     /**

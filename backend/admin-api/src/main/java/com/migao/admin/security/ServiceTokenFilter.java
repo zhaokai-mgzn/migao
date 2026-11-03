@@ -1,5 +1,6 @@
 package com.migao.admin.security;
 
+import com.migao.admin.config.RequestId;
 import com.migao.admin.config.TenantContext;
 import com.migao.admin.entity.User;
 import com.migao.admin.mapper.UserMapper;
@@ -125,7 +126,8 @@ public class ServiceTokenFilter extends OncePerRequestFilter {
                             response.setStatus(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
                             response.setContentType("application/json;charset=UTF-8");
                             response.getWriter().write(
-                                    "{\"code\":503,\"message\":\"商户员工身份判定失败，已拒绝请求\"}");
+                                    "{\"code\":503,\"requestId\":\"" + RequestId.current()
+                                            + "\",\"message\":\"商户员工身份判定失败，已拒绝请求\"}");
                             return;
                         }
                     }
@@ -165,7 +167,8 @@ public class ServiceTokenFilter extends OncePerRequestFilter {
             log.warn("Service Token 认证参数错误: {}", e.getMessage());
             response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
             response.setContentType("application/json;charset=UTF-8");
-            response.getWriter().write("{\"code\":400,\"message\":\"" + e.getMessage() + "\"}");
+            response.getWriter().write("{\"code\":400,\"requestId\":\"" + RequestId.current()
+                    + "\",\"message\":\"" + e.getMessage() + "\"}");
             return;
         } catch (Exception e) {
             log.error("Service Token 认证失败: {}", e.getMessage());

@@ -194,7 +194,9 @@ logging:
     com.migao.admin: INFO
     com.migao.admin.mapper: DEBUG
   pattern:
-    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"
+    # %X{requestId:-} = 每请求追踪 id（issue #6957）：有请求时**每一行**日志都带 ⇒
+    # `grep <编号> 日志` 就能捞到这次失败及其 incident 上下文；无请求（定时任务）打空串。
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - [%X{requestId:-}] %msg%n"
 
 # SpringDoc / OpenAPI 配置
 springdoc:

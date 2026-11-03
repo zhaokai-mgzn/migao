@@ -2,7 +2,7 @@
 # 本文件由 render_cases.py 生成，勿手改（改了也留不住：下次重渲染会覆盖）
 # 源: cases/*.yml（case-contract 单一源）
 # 重新生成: python3 render_cases.py --cases <dir> --out-eval <包目录> --out-md <md>
-# 域: misc（源: cases/misc.yml，187 条）
+# 域: misc（源: cases/misc.yml，188 条）
 
 from ._schema import Difficulty, EvalCase, Skill
 
@@ -3442,6 +3442,24 @@ _CASE_MC_142 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── MC-139 [NORMAL] 商家看到的失败编号 = 服务端日志里那条记录：requestId 唯一来源 + 前端可复制上屏（issue #6957）（源: cases/misc.yml）──
+_CASE_MC_139 = EvalCase(
+    id='MC-139',
+    legacy_id='',
+    title='商家看到的失败编号 = 服务端日志里那条记录：requestId 唯一来源 + 前端可复制上屏（issue #6957）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['商家点了一下没反应，截图里只有一句「服务器内部错误」——客服拿什么去反查服务端那条 incident？'],
+    expectations=[],
+    data_checks=['🔴 **判据 1·三处同值（5xx，会红）**：MockMvc 打一个抛未预期异常的端点 ⇒ 响应体 `requestId` 非空、等于响应头 `X-Request-Id`、并等于 `GlobalExceptionHandler` 那行 error 日志里的 `requestId=`。执行点 = backend/admin-api/src/test/java/com/migao/admin/config/RequestIdTraceabilityTest.java::fiveXxCarriesTheSameRequestIdInBodyHeaderAndLog', '🔴 **判据 2·可预期 4xx 同样三处同值**：`BusinessException.validationError` ⇒ 422 信封带同一个 `requestId`。执行点 = 同文件::expectedBusinessErrorCarriesTheSameRequestId', '🔴 **判据 3·上游 id 复用 / 非法 id 不采信**：合法 `X-Request-Id` 原样复用（跨服务串联）；含空格等非法值 ⇒ 换新号且不写进响应与日志。执行点 = 同文件::generatedRequestIdIsStableAcrossBodyHeaderAndLog / ::invalidIncomingRequestIdIsReplaced', '🔴 **判据 4·类级元守卫（会红）**：① 反射 —— 每个 `@ExceptionHandler` 必须返回 `ResponseEntity<ApiResponse<...>>`；② 源码扫描 —— `src/main/java` 里手写响应体的出口（`getWriter().write(` / `sendError(`）必须引用 `RequestId` 或 `ApiResponse`，例外台账为空（只许缩短）。执行点 = backend/admin-api/src/test/java/com/migao/admin/config/ErrorResponseRequestIdMetaGuardTest.java::everyExceptionHandlerReturnsTheEnvelope / ::rawResponseWritersMustCarryARequestId', '🔴 **判据 5·判别力自证**：同一扫描器对「裸 JSON 不带 id」的合成源码判红、对带 `RequestId.` 的判绿；非信封返回的 handler 夹具判红。执行点 = 同文件::scannerDiscriminates', '🔴 **判据 6·前端确实带出编号（会红）**：拦截器失败提示的 description 含服务端 `requestId`、且不含 `{` 与机读错误码；「复制编号」把编号写进剪贴板；无编号时与改前逐字相同（一个参数）。执行点 = frontend/admin-web/tests/unit/lib/error-reference.test.ts 与 request.test.ts 的「失败提示里的追踪编号」组', '**边界（照实登记，§19.1）**：① 判不了「客服真去查了日志」；② 只认 `getWriter().write(` / `sendError(` 两种手写出口形态，`getOutputStream()` 之类新写法不在面内；③ 容器级 `/error`（Spring Boot 默认错误体）仍不带编号 —— 本仓 `throw-exception-if-no-handler-found: true` + 全路径走 MVC，未固化；④ 不改任何门禁的通过条件、不新增豁免。'],
+    skip_reason='[backend-contract] 零 LLM 的确定性判据（MockMvc + Logback ListAppender + 源码扫描 + vitest），真跑、零网络，不进 agent-eval 冒烟',
+    tags=['request-id', 'error-envelope', 'observability', 'meta-guard', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 CASES = (
     _CASE_MC_001,
     _CASE_MC_002,
@@ -3630,4 +3648,5 @@ CASES = (
     _CASE_MC_141,
     _CASE_MC_140,
     _CASE_MC_142,
+    _CASE_MC_139,
 )

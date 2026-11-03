@@ -1,5 +1,6 @@
 package com.migao.admin.security;
 
+import com.migao.admin.config.RequestId;
 import com.migao.admin.config.TenantContext;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -60,9 +61,16 @@ public class PasswordChangeRequiredFilter extends OncePerRequestFilter {
             "/api/auth/me",
             "/api/auth/refresh");
 
-    /** 403 响应体（与 {@code SecurityConfig} 的 entryPoint / accessDeniedHandler 同一信封形状）。 */
-    static final String FORBIDDEN_BODY =
-            "{\"success\":false,\"error\":{\"code\":\"" + ERROR_CODE + "\",\"message\":\"" + MESSAGE + "\"}}";
+    /**
+     * 403 响应体（与 {@code SecurityConfig} 的 entryPoint / accessDeniedHandler 同一信封形状）。
+     *
+     * <p>issue #6957：必须带 {@code requestId}，且它与响应头 / 服务端日志同值 —— 否则商家截图里的
+     * 编号在服务端反查不到这次拒绝（改成方法而不是常量：id 是**每请求**的，常量会把它冻结成空值）。</p>
+     */
+    public static String forbiddenBody() {
+        return "{\"success\":false,\"requestId\":\"" + RequestId.current()
+                + "\",\"error\":{\"code\":\"" + ERROR_CODE + "\",\"message\":\"" + MESSAGE + "\"}}";
+    }
 
     @Override
     protected void doFilterInternal(HttpServletRequest request,
@@ -74,7 +82,7 @@ public class PasswordChangeRequiredFilter extends OncePerRequestFilter {
                     request.getRequestURI());
             response.setStatus(HttpServletResponse.SC_FORBIDDEN);
             response.setContentType("application/json;charset=UTF-8");
-            response.getWriter().write(FORBIDDEN_BODY);
+            response.getWriter().write(forbiddenBody());
             return;
         }
         filterChain.doFilter(request, response);
