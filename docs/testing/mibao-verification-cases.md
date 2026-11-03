@@ -4186,7 +4186,7 @@
 ```
 溯源: 2026-10-31 新增（issue #8295）：两步确认，避免误写 ｜ tags: ui, preview
 
-## 杂项域（208 case）
+## 杂项域（209 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -7346,6 +7346,20 @@
 跳过: [backend-contract] 纯前端确定性判据（组件行为 + 生产源码结构扫描 + 台账双向对账），由 frontend/admin-web/tests/unit/money-input-guard.test.ts、tests/unit/lib/decimal-input.test.ts、tests/unit/components/DecimalInput.test.tsx 验证；零 LLM 环节，不进入 agent-eval 冒烟
 ```
 溯源: 2026-11-03 新增（issue #8004）。病 = 存量 `<input type="number">` 在涉钱 / 涉数量面吞精度（浏览器对 `12.` / `0.` / `1,234.56` 的 `el.value` 会失真），而这类缺陷**不会让任何既有判据变红**。修 = ① 抽**一处**解析/校验/话术（frontend/admin-web/src/lib/decimal-input.ts）+ **一个**原语（frontend/admin-web/src/components/ui/DecimalInput.tsx：text + inputMode=decimal + 字符串草稿 + 只回调合法值 + 具名话术 + 离线合法性）；② 11 个涉钱站点迁该原语并**把提交按钮绑到 `hasInvalid`**（否则「敲错 → 保存」会按上一个有效值提交 = 静默改价）；③ 9 个涉数量站点只去掉 `type="number"` 并补 `inputMode`（保留各页既有的 0.1 米粒度 / 正整数口径，不造第二套话术）；④ 类级元守卫 = money-input-guard.test.ts + number-input-ledger.ts（未登记即红、台账只许缩短）。取号 = MC-162（`python3 scripts/next_case_id.py MC` 现取返回历史空档 MC-099，按裁定**不回填**；**五轮让号记实**：MC-156 ⇒ open PR #8560；MC-157 ⇒ PR #8563；MC-158 ⇒ 在飞 #8568/#8571；MC-159/MC-160 ⇒ 在飞 PR #8574（其合并后 main 落 MC-160）；MC-161 ⇒ 又被 #8571 同时 claim（CI 跨在飞 PR 判据，issue #6245） ⇒ 终态取**当前全部 claim 的最大号 + 1 = MC-162**。`next_case_id.py` 按设计看不到未 push 的 claim，这就是它连续给出被占号的机制）；MC-160 亦被 #8574 占 ⇒ 终态 MC-161。`next_case_id.py` 按设计**看不到未 push 的本地 claim**，这就是它连续给出已被占用的号的原因）。**未接 `max` 的如实登记**：现有涉钱站点没有一个有既有业务上限口径（授信额度 / 退款额 / 优惠额都没有），涉钱面**不自造**上限 ⇒ `max` 能力由判据 4 的单元断言钉住，等业务给口径再接。 ｜ tags: backend-contract, frontend, money-surface, input-precision, fail-closed, ledger, red-proof
+
+### MC-180. RBAC 判据 8 认得命令式权限校验（两种形态同一个提取函数 / 台账 26 → 24 且上限只许下降 / 注释与无关 helper 不算校验 / 角色级与工人身份级闸有意不认） 🔵
+```
+你: 安全审计看 RBAC 台账：图片识别的两个端点被登记成「没有任何权限校验」，可它们的代码里明明调用了 requirePermission 做按 target 的动态校验 —— 台账到底在量什么？
+数据: 🔴 **判据 ①（负控）**：注解式端点仍被认出 —— `@RequirePermission("order:list")` ⇒ 生效码 `order:list` 且 `checked` 为真、命令式码集合为空。执行点 = tests/unit_ci_workflows/test_rbac_imperative_permission.py::test_annotation_form_is_still_recognized
+数据: 🔴 **判据 ②（两种形态同一套提取）**：命令式端点 `requirePermission("order:refund")` ⇒ `checked` 为真且码 = `order:refund`；同一字面量在两种写法下逐字相等，打错一个字母则不等（正反例）。执行点 = 同文件::test_imperative_form_is_recognized / ::test_both_forms_extract_the_same_code_literal_identically / ::test_annotation_and_imperative_forms_land_in_the_same_normalized_value
+数据: 🔴 **判据 ③（混合归因 + 三类假阳负控）**：同一文件里注解 / 命令式 / 都没有 / 注释里提到 / 无关 helper / 另一个端点的 `if` 块 ⇒ 逐端点归因正确，后四类**不得**被当成校验。执行点 = 同文件::test_mixed_file_attributes_each_endpoint_separately / ::test_real_repo_endpoints_are_attributed_by_form
+数据: 🔴 **判据 ④（台账真读得出来）**：把真实命令式校验从 ImageRecognitionController 摘掉 ⇒ 判据 8 当场报这两条端点「未登记」（台账条目已删、上限已降）——证明台账不是写死的。执行点 = 同文件::test_ledger_is_derived_not_hardcoded
+数据: 🔴 **判据 ⑤（上限真的收紧了）**：台账现值 24（原 26）；命令式识别一旦失效 ⇒ 需回涨 2 条 ⇒ 现上限 24 报「只许缩短」，旧上限 26 **兜不住**（该回归会静默通过）。执行点 = 同文件::test_red_proof_ceiling_is_pinned_to_the_lowered_reading / ::test_red_proof_without_imperative_recognition_the_check_disappears
+数据: 🔴 **判据 ⑥（第三形态有意不认）**：**角色级**（`roles.contains("super_admin")`，真实载体 `RegistrationController.checkSuperAdminPermission()`）与**工人身份 / 页面级**（`requireWorker` / `requireWorkerPage`）闸**不得**被算成「权限码校验」；实盘 `/api/super-admin/**` 仍须逐条登记在 `UNANNOTATED_ENDPOINTS`（认了 = 那批端点静默退出台账 = 放宽）。执行点 = 同文件::test_role_and_identity_checks_are_not_counted_as_permission_checks
+数据: 🔴 **红证（注入式，实跑）**：① 把 `_IMPERATIVE_ANCHOR_RE` 换成永不匹配的模式 ⇒ 命令式端点 `checked` 变假（判据 ② 必红），11 条判据仍全绿说明只有那一条依赖它；② 摘掉真实源码里 `permissionInterceptor.requirePermission(permission);` 一行 ⇒ 判据 8 报两条未登记；③ 把上限改回 26 ⇒ 判据 ⑤ 红（`LEDGER_CEILINGS` 断言的现值）。
+跳过: [backend-contract] RBAC 单一源的纯静态解析判据（Python 读 Java 源码文本 + 内存注入，零网络、零真实 LLM），由 tests/unit_ci_workflows/test_rbac_imperative_permission.py 验证，不进入 agent-eval 冒烟
+```
+溯源: 2026-11-03 新增（issue #6378，来源 #6367 包 P2 的显式放宽）。取号：`python3 scripts/next_case_id.py MC` 现取（main 已占 001-098/100-144/146-153/155-157/160-161/170）返回**历史空档 MC-145** —— 按裁定**刻意空档不回填**；本轮撞号带密集（当晚同类撞号 8 次）⇒ 按派单口径**直接取 MC-180** 跳过一段（先 push claim `<PR>-MC-180.json`，再改码）。落码 = ① `backend/ai-agent-service/tests/tool_http_attribution.py`：`_REQUIRE_PERMISSION_RE` 收成 `_PERMISSION_CODE_RE`（注解式 + 命令式共用）＋ `permission_codes(text, form)` 唯一提取口 ＋ `_method_definitions` / `_imperative_check`（同文件校验载体传递闭包、深度上限 3、控制流与匿名类不算载体）＋ `JavaEndpoint.imperative_permissions` / `imperative_check` / `checked`；② `tests/unit_ci_workflows/test_agent_permission_parity.py` 判据 8 取值口改 `ep.checked`，删除图片识别两条台账条目（26 → 24）；③ 上限同批下调：`LEDGER_CEILINGS.UNANNOTATED_ENDPOINTS` 26 → 24、`ADMIN_SCOPE_UNANNOTATED_CEILING` 14 → 12、`rbac/manifest.json` + 重新生成的 `rbac/readings.json`、`admin_role_read_surface_ledger.json` 对照读数 14 → 12；④ 判据 `tests/unit_ci_workflows/test_rbac_imperative_permission.py`（11 条，含注入式红证、上限承重证明、第三形态负控）；⑤ 文档 `docs/wiki/RBAC.md` 两处口径同步。**第三种形态结论（判据 ⑥ 钉住）**：仓内另有 ① 角色级闸（`RegistrationController.checkSuperAdminPermission()` 的 `roles.contains("super_admin")`，守 `/api/super-admin/**`）与 ② 工人身份 / 页面级闸（`requireWorker(...)` / `requireWorkerPage(...)`，守 `/api/worker/**`）—— 两者**都不是权限码校验**，**有意不认**：认了会让这两族端点静默退出台账（那是放宽）；它们继续逐条登记在 `UNANNOTATED_ENDPOINTS` 并带理由。 ｜ tags: rbac, permission, imperative-check, single-source, ledger-only-shrinks, red-proof
 
 ### MC-180. RBAC 判据 8 认得命令式权限校验（两种形态同一个提取函数 / 台账 26 → 24 且上限只许下降 / 注释与无关 helper 不算校验 / 角色级与工人身份级闸有意不认） 🔵
 ```
@@ -14868,8 +14882,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：1006（活跃 153，跳过 853）
-- tier 分布：smoke 15 / normal 929 / adversarial 33
+- 用例总数：1007（活跃 153，跳过 854）
+- tier 分布：smoke 15 / normal 930 / adversarial 33
 - 售后域：16
 - Agent 核心域：13
 - API 层域：21
@@ -14885,7 +14899,7 @@
 - 人事域：13
 - 知识问答域：9
 - 客户主数据迁移域：10
-- 杂项域：208
+- 杂项域：209
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：76
@@ -15159,6 +15173,7 @@
 - MC-158: 工人端菜单以岗位为源：键集补 inbound/reprint（两张已有页面）+ 岗位→默认菜单映射 + 首屏最多 3 项的具名拒错（issue #8337）
 - MC-162: H5 输入面字体族跟随全局 + 占位符收口共享层（内层原生控件 inherit / 裸 font-family 只在字体定义处 / 例外台账只许缩短）
 - MC-163: 数字输入精度面（issue #8004）：涉钱 / 涉数量格不许再用 `type="number"`（中间态 `12.` 与千分位 `1,234.56` 会被浏览器吞掉）—— 共用 `DecimalInput` 一处解析/校验/话术 + 类级台账守卫
+- MC-180: RBAC 判据 8 认得命令式权限校验（两种形态同一个提取函数 / 台账 26 → 24 且上限只许下降 / 注释与无关 helper 不算校验 / 角色级与工人身份级闸有意不认）
 - MC-180: RBAC 判据 8 认得命令式权限校验（两种形态同一个提取函数 / 台账 26 → 24 且上限只许下降 / 注释与无关 helper 不算校验 / 角色级与工人身份级闸有意不认）
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）

@@ -1,4 +1,4 @@
-# case_ids: MC-158
+# case_ids: MC-180
 """判据 8 认得**命令式**权限校验（issue #6378）。
 
 ## 病（现取，不是假说）
@@ -20,6 +20,7 @@ RBAC 单一源判据的判据 8（`test_agent_permission_parity.py::problems_reg
 | ③ | 同一文件里两种形态**混合**也能逐端点正确归因（含「注释里提到不算」「无关 helper 不算」） | 归因串味（把 `if` 块 / 无关 helper / 注释当成校验）⇒ 该红的那几条必红 |
 | ④ | 台账**真读得出来**（不是写死）：把真实命令式校验从源码里摘掉 ⇒ 判据 8 当场报「未登记」 | 台账若写死/绕过解析 ⇒ 摘掉校验后不报 |
 | ⑤ | 台账上限**真的收紧了**：现值 24（原 26）；命令式识别一旦失效 ⇒ 需回涨 2 条 ⇒ 现上限红、旧上限 26 兜不住 | 上限改回旧值 ⇒ 该回归不再必红（本判据当场红） |
+| ⑥ | **第三种形态有意不认**：**角色级**（`super_admin` 角色闸，如 `RegistrationController.checkSuperAdminPermission`）与**工人身份 / 页面级**（`requireWorker` / `requireWorkerPage`）校验**不算**权限码校验 | 把它们认成「已校验」⇒ 超管 / 工人端点会**静默退出**台账（那是放宽）⇒ 当场红 |
 
 ## 边界（照实登记，不粉饰）
 
@@ -30,6 +31,17 @@ RBAC 单一源判据的判据 8（`test_agent_permission_parity.py::problems_reg
 - 载体识别只跟「**同一文件**内的方法定义」且签名参数里不含嵌套括号；认不出的签名**不猜**（保守方向）；
 - 判据 2（工具码 ≡ 端点码）仍按 `ep.permission`（注解）取码：工具若调用一个**只有**命令式校验的
   端点，仍会要求它登记进 `UNANNOTATED_ENDPOINTS`（**已知未覆盖面**，现取无工具命中该形态）。
+- 🔴 **第三种形态（有意不认，判据 ⑥ 钉住）**：仓内另有两类授权闸，它们**不是权限码校验**，
+  本判据**刻意不把它们算成「已校验」**——
+  ① **角色级**：`backend/admin-api/src/main/java/com/migao/admin/controller/RegistrationController.java`
+     的 `checkSuperAdminPermission()`（`roles.contains("super_admin")`）守着 `/api/super-admin/**`；
+  ② **工人身份 / 页面级**：`requireWorker(...)` / `requireWorkerPage(...)`（工人会话 + 工人页面键）
+     守着 `/api/worker/**`。
+  **为什么不认**：判据 8 量的是「权限**码**面有没有沉默放行」，把粗粒度角色闸 / 身份闸算成「已校验」
+  会让那批端点**静默退出**台账 —— 那是**放宽**（正是 issue #6378 要避免的方向）。它们继续留在
+  `UNANNOTATED_ENDPOINTS` 并**逐条带理由**（`GET|PUT /api/super-admin/*` 条目里写明由
+  `checkSuperAdminPermission()` 角色闸把关；`/api/worker/*` 条目写明工人端不进 `/api/admin/**` 门禁）。
+  ⇒ 本判据只把「**权限码**校验的另一种写法」收回台账，**不扩大**「已校验」的定义域。
 """
 from __future__ import annotations
 
@@ -155,6 +167,34 @@ _IF_WITHOUT_CHECK = """
             return null;
         }
         return null;
+    }
+"""
+
+#: 第三形态（**有意不认**，见「边界」最后一条 + 判据 ⑥）：角色级闸 —— 粗粒度角色，不是权限码。
+_ROLE_LEVEL = """
+    @GetMapping("/role-gated")
+    public Object roleGated() {
+        checkSuperAdminRole();
+        return null;
+    }
+
+    private void checkSuperAdminRole() {
+        if (!SecurityUser.current().getRoles().contains("super_admin")) {
+            throw new RuntimeException("denied");
+        }
+    }
+"""
+
+#: 第三形态之二：工人身份 / 页面级闸（`requireWorker` / `requireWorkerPage` 同形）。
+_WORKER_IDENTITY = """
+    @PostMapping("/worker-gated")
+    public Object workerGated(String sessionId) {
+        requireWorker(sessionId);
+        return null;
+    }
+
+    private Object requireWorker(String sessionId) {
+        return sessionId;
     }
 """
 
@@ -411,3 +451,31 @@ def test_red_proof_ceiling_is_pinned_to_the_lowered_reading():
     assert MANIFEST.ledger_growth_problems(regressed, old_ceilings) == [], (
         "旧的 26 竟然也能拦住同一次回涨 ⇒ 本红证没有判别力（上限收紧是假的）"
     )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 判据 ⑥：第三种形态（角色级 / 工人身份级）**有意不认** —— 认了就是放宽
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+def test_role_and_identity_checks_are_not_counted_as_permission_checks():
+    """角色闸 / 工人身份闸 ≠ 权限**码**校验 ⇒ `checked` 必须为假。
+
+    反面（本判据要拦的放宽形态）：把它们算成「已校验」⇒ `/api/super-admin/**` 与 `/api/worker/**`
+    会**静默退出**台账 —— 看上去台账变短了，实际是「粗粒度角色闸冒充细粒度码校验」。
+    """
+    eps = _parse(_ROLE_LEVEL, _WORKER_IDENTITY)
+    for key in (("GET", "/api/admin/probe/role-gated"), ("POST", "/api/admin/probe/worker-gated")):
+        assert eps[key].checked is False, (
+            f"`{key}` 的角色级 / 身份级闸被认成了「权限码校验」⇒ 超管 / 工人端点会静默退出台账（放宽）"
+        )
+        assert eps[key].permission is None
+
+    # 实盘：这一族**仍在**台账里（逐条带理由 —— 角色闸不在本判据的「已校验」定义域内）
+    real = ATTR.JavaEndpointIndex(java_sources=_real_controller_sources()).endpoints()
+    super_admin = [key for key, group in real.items() if key[1].startswith("/api/super-admin") and not group[0].checked]
+    assert super_admin, "超管端点不再是「无权限码校验」⇒ 台账口径变了（同批改本判据与台账）"
+    for key in super_admin:
+        assert f"{key[0]} /api/super-admin/*" in PARITY.UNANNOTATED_ENDPOINTS, (
+            f"`{key}` 没有登记（角色闸不算「已校验」⇒ 必须逐条登记理由）"
+        )
