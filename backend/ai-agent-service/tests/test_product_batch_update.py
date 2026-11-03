@@ -30,7 +30,6 @@ import ast
 import inspect
 import textwrap
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -720,18 +719,20 @@ def _ledger_state(*batch_ids, kind="executed"):
 
 
 @pytest.fixture(autouse=True)
-def _session_state_seam(monkeypatch):
-    """单测**不连库**：会话工作状态（PG `session_states`）的两处接缝换成替身。
+def _session_state_store(monkeypatch):
+    """单测**不连库**：把会话工作状态（PG `session_states`）的**存储层**换成替身。
 
-    为什么是 autouse：issue #6998 让 `revert` 的缺省批次号来自会话台账 ⇒ 本文件**全部**
-    用例在「执行成功」这条路径上都会经过一次台账写入；真连库既慢又会把单测绑到云 dev 库。
-    需要用台账的用例在用例体里改 `load.return_value`（替身共享，逐用例独立）。
+    为什么替的是存储层、而不是本模块那两个包装函数（issue #6998）：包装函数必须被**真的**
+    执行，否则「台账确实落在会话工作状态里」这条**接线判据**就测不到（§28.2：判据本体绿 ≠ 接线在）。
+    为什么 autouse：`revert` 的缺省批次号来自会话台账 ⇒ 本文件**全部**用例在「执行成功」这条
+    路径上都会经过一次台账写入；真连库既慢又会把单测绑到云 dev 库。
     """
-    load = AsyncMock(return_value=None)
-    commit = AsyncMock(return_value=None)
-    monkeypatch.setattr(product_batch_update, "_load_session_state", load)
-    monkeypatch.setattr(product_batch_update, "_commit_session_state", commit)
-    return SimpleNamespace(load=load, commit=commit)
+    store = MagicMock()
+    store.load = AsyncMock(return_value=None)
+    store.commit = AsyncMock(return_value=True)
+    monkeypatch.setattr("app.memory.session_state_store.SessionStateStore",
+                        lambda *a, **k: store)
+    return store
 
 
 class TestRevertBatchIdFallback:
@@ -739,7 +740,7 @@ class TestRevertBatchIdFallback:
 
     @pytest.mark.asyncio
     async def test_revert_without_batch_id_is_governed_by_the_context_candidate(
-            self, tool, _session_state_seam):
+            self, tool, _session_state_store):
         """① 缺 `batch_id` 时**只由上下文候选决定**：取不到 ⇒ 拒绝 + 可行动提示；唯一 ⇒ 采用那一批。
 
         两半必须在**同一个用例**里（本单的红证口径）：把兜底整段摘掉 ⇒ 下半段必红；
@@ -761,7 +762,7 @@ class TestRevertBatchIdFallback:
         client.post.assert_not_awaited()
 
         # ── 下半：本会话**恰好一个**执行成功的批次 ⇒ 撤销它（`PR-108` R5 无参 revert 的正解）──
-        _session_state_seam.load.return_value = _ledger_state("b-real")
+        _session_state_store.load.return_value = _ledger_state("b-real")
         client = _client(_ok({"batchId": "b-real", "status": "reverted",
                               "results": [{"resourceId": "p1", "success": True}]}))
         with patch("app.tools.product_batch_update.get_admin_api_client", return_value=client):
@@ -774,9 +775,9 @@ class TestRevertBatchIdFallback:
         assert "上下文" in (result.message or "")
 
     @pytest.mark.asyncio
-    async def test_revert_refuses_to_pick_among_multiple_candidates(self, tool, _session_state_seam):
+    async def test_revert_refuses_to_pick_among_multiple_candidates(self, tool, _session_state_store):
         """③ 有**多个**候选批次 ⇒ 拒绝，而不是挑「最近的那一个」（本单最容易写错的地方）。"""
-        _session_state_seam.load.return_value = _ledger_state("b-late", "b-earlier")
+        _session_state_store.load.return_value = _ledger_state("b-late", "b-earlier")
         # 终止态替身：万一将来退化成"挑一个"，本用例要**立刻**红，而不是等轮询超时（60s）
         client = _client(_ok({"status": "reverted"}))
         with patch("app.tools.product_batch_update.get_admin_api_client", return_value=client):
@@ -790,9 +791,9 @@ class TestRevertBatchIdFallback:
         client.post.assert_not_awaited()                 # 🔴 一个请求都不发
 
     @pytest.mark.asyncio
-    async def test_revert_with_explicit_batch_id_wins_over_context(self, tool, _session_state_seam):
+    async def test_revert_with_explicit_batch_id_wins_over_context(self, tool, _session_state_store):
         """② 负控：显式 `batch_id` **原样**使用（上下文里有别的候选也不改写、不拒绝）。"""
-        _session_state_seam.load.return_value = _ledger_state("b-other")
+        _session_state_store.load.return_value = _ledger_state("b-other")
         client = _client(_ok({"batchId": "b-explicit", "status": "reverted",
                               "results": [{"resourceId": "p1", "success": True}]}))
         with patch("app.tools.product_batch_update.get_admin_api_client", return_value=client):
@@ -801,41 +802,46 @@ class TestRevertBatchIdFallback:
         assert client.post.call_args.args[0] == "/api/admin/agent/batches/b-explicit/revert-async"
         # 显式值不触发兜底 ⇒ 话术里不出现「取自上下文」的说明
         assert "上下文" not in (result.message or "")
-        _session_state_seam.load.assert_not_awaited()
+        _session_state_store.load.assert_not_awaited()
 
     @pytest.mark.asyncio
-    async def test_execute_still_requires_an_explicit_batch_id(self, tool, _session_state_seam):
+    async def test_execute_still_requires_an_explicit_batch_id(self, tool, _session_state_store):
         """执行**不吃**上下文兜底：`batch_id` 只能来自 preview（两段确认的结构锁不变）。"""
-        _session_state_seam.load.return_value = _ledger_state("b-executed")
+        _session_state_store.load.return_value = _ledger_state("b-executed")
         client = _client(_ok({}))
         with patch("app.tools.product_batch_update.get_admin_api_client", return_value=client):
             result = await tool.execute(_ctx(), action="execute")
         assert result.success is False and result.error == "batch_preview_required"
         assert "preview" in (result.suggestion or "")
         client.post.assert_not_awaited()
-        _session_state_seam.load.assert_not_awaited()
+        _session_state_store.load.assert_not_awaited()
 
     @pytest.mark.asyncio
-    async def test_execute_records_the_batch_for_the_later_revert(self, tool, _session_state_seam):
+    async def test_execute_records_the_batch_for_the_later_revert(self, tool, _session_state_store):
         """写侧：执行成功后**记下真实批次号**（撤销兜底的唯一来源）。"""
         client = _client(_ok({"batchId": "b1", "status": "done", "revertible": True,
                               "results": [{"resourceId": "p1", "success": True}]}))
+        # 会话里**已有**别的字段：台账写入必须是**增量**，不许把状态覆盖成只剩台账
+        _session_state_store.load.return_value = {"last_confirm_value": "确认批量改价"}
         with patch("app.tools.product_batch_update.get_admin_api_client", return_value=client):
             result = await tool.execute(_ctx(), action="execute", batch_id="b1")
         assert result.success, result.message
-        state = _session_state_seam.commit.await_args.args[1]
+        # 接线判据：真的写进**会话工作状态**（`session_states`）—— 会话键正确、别的字段原样保留
+        session_id, state = _session_state_store.commit.await_args.args
+        assert session_id == "s1"
         assert state[product_batch_update.BATCH_LEDGER_KEY] == [
             {"batch_id": "b1", "kind": "executed"}]
+        assert state["last_confirm_value"] == "确认批量改价"
 
     @pytest.mark.asyncio
     async def test_execute_does_not_record_a_batch_the_server_says_is_not_revertible(
-            self, tool, _session_state_seam):
+            self, tool, _session_state_store):
         """`revertible=false` 的批次**不进**撤销候选（否则「撤销」会去打一个撤不了的批次）。"""
         client = _client(_ok({"batchId": "b1", "status": "done", "revertible": False,
                               "results": [{"resourceId": "p1", "success": True}]}))
         with patch("app.tools.product_batch_update.get_admin_api_client", return_value=client):
             await tool.execute(_ctx(), action="execute", batch_id="b1")
-        _session_state_seam.commit.assert_not_awaited()
+        _session_state_store.commit.assert_not_awaited()
 
 
 class TestSharedBatchIdResolver:
