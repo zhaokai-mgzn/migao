@@ -52,6 +52,12 @@
   font-size: inherit;
 }
 
+// ④ `textarea` 关掉原生 resize 手柄（右下那条斜线不是我们的控件语言；实测截图见 #8575 的 diff）。
+//    只对 textarea 生效，`input` 本来就没有这个手柄。
+.taro-textarea {
+  resize: none;
+}
+
 // ③ 占位符样式的唯一来源：字号不写（继承控件自身），色值取 `$text-secondary`。
 .weui-input::placeholder,
 .taro-textarea::placeholder {

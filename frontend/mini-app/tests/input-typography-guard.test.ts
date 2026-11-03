@@ -129,7 +129,12 @@ describe('C 端 H5 输入面字体族 / 占位符收口（issue #8575）', () =>
     expect(ph).not.toMatch(/font-size:/)
   })
 
-  it('⑤ 共享层之外任何 scss 出现 `.taro-textarea` / `.weui-input` ⇒ 红（防逐页各写一份）', () => {
+  it('⑤ textarea 关掉原生 resize 手柄（右下斜线不是我们的控件语言）', () => {
+    const blocks = [...sharedCode().matchAll(/\.taro-textarea\s*\{([^}]*)\}/g)].map((m) => m[1])
+    expect(blocks.some((b) => /resize:\s*none/.test(b))).toBe(true)
+  })
+
+  it('⑥ 共享层之外任何 scss 出现 `.taro-textarea` / `.weui-input` ⇒ 红（防逐页各写一份）', () => {
     const leaks = walk(SRC)
       .filter((p) => p !== SHARED)
       .flatMap((p) => {
