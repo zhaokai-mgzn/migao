@@ -1,4 +1,4 @@
-# case_ids: MC-150
+# case_ids: MC-149
 """本地 E2E 认证链的**复用判据**：只复用「token 自己还没过期」的 `admin.json`（issue #6411）。
 
 ## 病灶（issue #6411 逐字读数，2026-10-06）
