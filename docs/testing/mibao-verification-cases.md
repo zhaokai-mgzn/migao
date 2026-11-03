@@ -4187,7 +4187,7 @@
 ```
 溯源: 2026-10-31 新增（issue #8295）：两步确认，避免误写 ｜ tags: ui, preview
 
-## 杂项域（211 case）
+## 杂项域（212 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -7408,6 +7408,22 @@
 ```
 真值: ⚠️ 缺口（见对应模板 ⚠️ 注释）
 溯源: 2026-11-03 新增（issue #8310）。病 = 终端壳**打印能力误报**：页面说「由本机打印机直接出纸」，本机 `PrinterLink.mode()` = **-1**；根因 = `probePrintCapability()` 的终端分支**只看壳**（有 `chrome.webview` 就 `ok:true`）、`PrintEnv` 里没有能力字段。修 = 三态判定 `terminalPrintState(printerMode)`（`>0` available / `<0` unavailable / `0`·缺省·非有限 unknown），新增两条缺口文案（`terminal-printer-unavailable` / `terminal-print-unknown`）并登记进 `INBOUND_PRINT_GAP_WIRING`；`readPrintEnv()` 从 `window.__CFG__.printerMode` 取数（非数字按读不到）。取号 = MC-154（`python3 scripts/next_case_id.py MC` 现取 main 001-098/100-144/146-147 ⇒ 工具返回历史空档 MC-099，按裁定**不回填**；MC-139~MC-153 属并行包保留带，**避开** ⇒ 顺延 MC-154）。🔴 **仓外事实（如实登记，不假造）**：原生侧本轮**还没有**送 `printerMode` ⇒ 真机一律落 `unknown`（fail-closed：不许说能打）；**原生侧要补送 `printerMode`**（值域口径：负 = 不可用 / 正 = 可用 / 0 与缺省 = 判不了），补送后本仓代码**无需再改**。边界 = 不覆盖原生赋值、不判硬件选型。 ｜ tags: backend-contract, bmini, print-capability, fail-closed, three-state, no-overclaim, red-proof
+
+### MC-182. 缺料风险页（admin-web `/production/material-shortage`，issue #6282）：默认只列缺口 > 0（常驻面克制）；行序 = 服务端分层降序 → 缺口降序（前端不重排）；未知 ≠ 0；空态是事实陈述；读失败不印空态 🔵
+```
+你: 缺料风险页面（PC）：哪些成品会因为用料不够交不了货？默认只看真正缺料的，按紧迫程度排；读不出的要写「未知」而不是 0；没有缺料时别印「暂无数据」
+数据: **判据 1·真调后端（会红）**：页面只调一条读面 `GET /api/admin/materials/shortage`（`materialShortageApi.shortage`，`limit = 50`），需求 / 库存 / 缺口 / 影响订单四列逐值等于桩返回（前端不自算、不求和）。执行点 = 单测 ①。**红证**：任一列改成页面自算或硬编码 ⇒ ① 红。
+数据: **判据 2·默认只列真正缺的（会红，负控）**：默认列表 = `gapMeters > 0` 的行；缺口 0（刚好够）、负（有余量）、缺键（单位不可比）**都不进**常驻列表；勾选「显示全部」后三行都出现，且缺口照实印 `0 米` / `-40 米` / `未知`（不夹到 0）。执行点 = 单测 ②。**红证（注入式）**：把页面的 `shortageRows(rows)` 换成 `rows` ⇒ ② 红（实测读数：4 failed / 3 passed，还原后 7 passed）。
+数据: **判据 3·行序 = 服务端行序（会红）**：桩数据三条缺口 120 / 30 / 5（`blocked` / `critical` / `short`，按冻结契约序给出）⇒ DOM 序逐值等于该序、缺口逐值递减；前端**不重排**（页内无 sort）。执行点 = 单测 ③。**红证**：页面按商品名或缺口升序重排 ⇒ ③ 红。
+数据: **判据 4·空态是事实陈述（会红）**：只有「有余量」行时（默认面无缺料）⇒ 逐字「当前没有缺料」，且屏上**不出现**「暂无数据」、不渲染表格；摘要位同样说事实、不印「共 0 个成品缺料」。执行点 = 单测 ④。**红证**：空态改回「暂无数据」⇒ ④ 红。
+数据: **判据 5·未知 ≠ 0（会红）**：单位不可比的行（`demandQty` / `gapMeters` / `orderCount` 缺键 = 服务端 `default-property-inclusion: non_null`）三列渲染「未知」；`daysToDeadline` 缺键 ⇒「紧迫性未知」，屏上不出现「0 天」。执行点 = 单测 ⑤。**红证**：缺键回落成 0 ⇒ ⑤ 红。
+数据: **判据 6·披露与内部标识（会红）**：`nonComparable` 与 `historyDepth.sufficient == false` 两段披露**看得见**（含真实周数与要求周数）；`productId`（UUID）与字段名（`product_id` / `gap_meters`）**不上屏**（只进 href，§31 P3）；三个处置入口指向仓内真实路由 `/products/<id>` / `/stock-ledger` / `/inbound-orders/new`。执行点 = 单测 ⑥。**红证**：把 `productId` 渲染进「成品」列 ⇒ ⑥ 红；披露块删掉 ⇒ ⑥ 红。
+数据: **判据 7·读失败不印空态（会红）**：读面 reject ⇒ 只显示失败原因，**不**出现「当前没有缺料」、不渲染摘要（读不到 ≠ 没有缺料）。执行点 = 单测 ⑦。**红证**：失败分支沿用空态渲染 ⇒ ⑦ 红。
+数据: **判据 8·口径单点（纯函数面，会红）**：`lib/material-shortage.ts` 的 `shortageRows` 只留 `gapMeters > 0`（0 / 负数 / **缺键** 都不算缺料）；`formatMeters(undefined)` = 「未知」而 `formatMeters(0)` = 「0 米」（两者必须可区分）；`deadlineText` 缺键 ⇒「紧迫性未知」、`days === 0` 才是「今天到期」；`nonComparableNote` / `historyDepthNote` 在「没有 / 已达标」时返回 `null`（不许乱披露，也不许把未知读成达标）；`shortageCount` = 四档之和（`safe` / `unknown` 不计入）；未知档位 ⇒「未知」（不把内部键上屏）。执行点 = `frontend/admin-web/tests/unit/lib/material-shortage.test.ts`（11 条）。**红证**：`shortageRows` 条件改 `>= 0` ⇒ 红；缺键回落成 0 ⇒ 红。
+跳过: [backend-contract] 页面取值与口径的**确定性契约**（桩数据 = 服务端冻结契约 v1；jsdom + 打桩 api，零网络、零 LLM）：计分通道 = `traces.tests`（下面两条 vitest 文件真实存在且各自会红），不进 agent-eval 冒烟
+```
+真值: ⚠️ 缺口（见对应模板 ⚠️ 注释）
+溯源: 2026-11-03 新增（issue #6282，承接 #6280 的显式延后项）：缺料风险页落地。页面是 `material_shortage` 视图的**唯一商家宿主**（此前只有 agent 对话结论，用户看完不知道该干嘛）。四条口径按 §31：常驻面只列缺口 > 0（P1）、缺口数字只在「缺口」列出现一次（P2）、`productId` 不上屏（P3）、空态为事实陈述（P4）。三处「未知 ≠ 0」：单位不可比（缺键）/ 交期未知（`daysToDeadline` 缺键）/ 预测层未启用（`historyDepth.sufficient == false` 时明示）。取号 MC-182（本仓 cases 面现取最大 MC = MC-125 + 在飞 claims MC-113 ⇒ 号段空档，取上级指派号）。⚠️ 未闭合（如实登记）：侧边栏**菜单入口**未在本包落地 —— 菜单节点牵动前端 C1/C3/C4 三列清单 + 服务端两处菜单源（`MenuController` / `AuthService`）+ RBAC 派生页 manifest + 页面上文登记，属独立变更面；本包以 `ROUTE_WITHOUT_MENU_NODE` / `ROUTE_PREFIX_EXCEPTIONS` 具名登记守卫前缀（见 PR body 的「有意不做」）。 ｜ tags: ui, material-shortage, inventory, no-fake-green, unknown-not-zero, red-proof
 
 ## 商家入驻域（7 case）
 
@@ -14916,8 +14932,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：1009（活跃 153，跳过 856）
-- tier 分布：smoke 15 / normal 932 / adversarial 33
+- 用例总数：1010（活跃 153，跳过 857）
+- tier 分布：smoke 15 / normal 933 / adversarial 33
 - 售后域：16
 - Agent 核心域：13
 - API 层域：21
@@ -14933,7 +14949,7 @@
 - 人事域：13
 - 知识问答域：9
 - 客户主数据迁移域：10
-- 杂项域：211
+- 杂项域：212
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：76
@@ -15211,6 +15227,7 @@
 - MC-180: RBAC 判据 8 认得命令式权限校验（两种形态同一个提取函数 / 台账 26 → 24 且上限只许下降 / 注释与无关 helper 不算校验 / 角色级与工人身份级闸有意不认）
 - MC-183: 红证档准入（issue #5707 · FM-E10 残余）：9 条实跑腿全部 ⏭️ 时该档必须 exit 4 —— 汇总按「实质真跑」判（无条件跑的辅助项不计数），并按 probe_ready 的原文具名报出每条被 skip 的腿缺什么工具链
 - MC-155: 终端壳打印能力三态（issue #8310）：桥在 ≠ 打印机在 —— printerMode 负向 / 读不到都不许说「由本机打印机直接出纸」，且「判不了」与「确知没有」分开说
+- MC-182: 缺料风险页（admin-web `/production/material-shortage`，issue #6282）：默认只列缺口 > 0（常驻面克制）；行序 = 服务端分层降序 → 缺口降序（前端不重排）；未知 ≠ 0；空态是事实陈述；读失败不印空态
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）
