@@ -103,6 +103,21 @@ if args[:2] == ["run", "list"]:
     runs = json.load(open(os.environ["STUB_RUNS"], encoding="utf-8"))
     sys.stdout.write(json.dumps(runs.get(sha, [])))
     sys.exit(0)
+if args[:2] == ["api", "graphql"]:
+    # issue #6997：评审线程面。本文件的夹具**都不挂线程**（缺省 = 空）⇒ 既有断言逐条不变；
+    # 线程面的判据在 tests/unit_ci_workflows/test_dangling_review_threads.py（自己带夹具）。
+    number = ""
+    for index, arg in enumerate(args):
+        if arg in ("-F", "--field") and index + 1 < len(args) \\
+                and args[index + 1].startswith("number="):
+            number = args[index + 1].split("=", 1)[1]
+    threads = {}
+    if os.environ.get("STUB_THREADS"):
+        threads = json.load(open(os.environ["STUB_THREADS"], encoding="utf-8"))
+    nodes = threads.get(number, [])
+    sys.stdout.write(json.dumps({"data": {"repository": {"pullRequest": {"reviewThreads": {
+        "totalCount": len(nodes), "nodes": nodes}}}}}))
+    sys.exit(0)
 sys.stderr.write("stub: unhandled argv=%r\\n" % (args,))
 sys.exit(9)
 '''
