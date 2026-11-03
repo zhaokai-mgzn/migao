@@ -26,12 +26,17 @@ const mockCreate = vi.fn()
 const mockReasons = vi.fn()
 
 vi.mock('@/lib/api', () => ({
+  default: {},
   qualityInspectionApi: {
     list: (...args: unknown[]) => mockList(...args),
     create: (...args: unknown[]) => mockCreate(...args),
-    // 原因字典（issue #7197 ①）：表单挂载时读一次，表单里的短语按钮由它驱动
-    reasons: (...args: unknown[]) => mockReasons(...args),
   },
+}))
+
+// 原因字典（issue #7197 ①）：表单挂载时读一次，短语按钮由它驱动。
+// 接口面在独立模块里（`src/lib/api.ts` 属 LOC 冻结面，新增接口面下沉）。
+vi.mock('@/lib/api-quality-reasons', () => ({
+  qualityReasonApi: { list: (...args: unknown[]) => mockReasons(...args) },
 }))
 
 import QualityCheckPanel from '@/components/production/QualityCheckPanel'
