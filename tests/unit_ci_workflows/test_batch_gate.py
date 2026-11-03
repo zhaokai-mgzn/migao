@@ -48,6 +48,11 @@ auto-merge。⇒ 把「**已 arm**」并入**同一个**就绪判定（三态 `0
 | 18 | `autoMergeRequest` **读不到**（空 stdout / 非 JSON / 字段缺失 / gh 调用失败）⇒ **fail-closed**（exit 3）+ ❓ + 具名 | 把「读不到」当「未 arm」（fail-open）⇒ 红 |
 | 19 | 出口**可复制且含本次 PR 号**：解除 `gh pr merge <PR> --disable-auto` + **回读** `--check-arm <PR>` | 出口缺一条 / 印了别的 PR 号 ⇒ 红 |
 | 20 | `--check-arm` 回读三态（仍 arm ⇒ **1** / 未 arm ⇒ **0** / 读不到 ⇒ **3**）且**幂等**（连跑两次逐字节一致） | 回读静默放行 / 把读不到当已解除 / 非幂等 ⇒ 红 |
+| 21 | **集成工作区缺 `node_modules` 且本批命中前端面** ⇒ **具名「环境缺失」+ exit 3**（无法判定，**不是**红）且**没跑** gate | 缺依赖也照跑 ⇒ 前端腿 fail-closed 一片 ❌、面级归因把矛头指向某个包（issue #6834 的**假红**）⇒ 红 |
+| 22 | **负控**：缺 `node_modules` 但本批**不**命中那两个面 ⇒ **不拦**、那一次全量照跑（且只跑一次） | 把「缺依赖」做成无条件拒绝 ⇒ 本来能跑的批次被拦（新的假红）⇒ 红 |
+| 23 | `--install-deps` ⇒ 在**集成工作区**的模块目录里真跑 `npm ci`，备妥后再跑**一次** gate；**备妥失败仍 fail-closed**（具名 + exit 3 + 没跑 gate） | 装失败静默继续（把环境问题记成代码问题）/ 装失败被当成通过 / 装到主检出上 ⇒ 红 |
+| 24 | **类级元守卫**：依赖表的模块集合必须 **==** `verify-all.sh` 里探 `node_modules` 的模块集合；表内每个探针名都必须在 `verify-all.sh` 里出现 | 任一侧新增/改名（gate 多探一个模块、或表里少一个探针）⇒ 备妥判定与 gate 不再同源 ⇒ 红 |
+| 25 | **注入式红证**：把 `deps_missing()` 的探针循环删掉 ⇒ 判据 21 必红 | 删掉检测后判据 21 仍绿 ⇒ 那是空断言 ⇒ 红 |
 
 ## 注入式红证（`test_mutations_turn_the_suite_red`，§28.1 出口①）
 
@@ -55,6 +60,11 @@ auto-merge。⇒ 把「**已 arm**」并入**同一个**就绪判定（三态 `0
 把真脚本复制进临时沙箱 → 做 9 处**定向变异**（存量 5 处 + #6212 的 4 处；每处断言唯一命中，
 命中数 0 或 >1 即判红 = 变异没生效）→ 各自跑一次 → **必须命中具名断言读数**。
 ⇒ 判据不是空断言：变异体真红。本单新增的 4 处见 `MUTATIONS` 的第 6~9 项（逐条对应判据 16 / 18 / 20 / 19）。
+
+判据 21~23（集成工作区的**依赖备妥**，issue #6834）走**同一套注入式红证**，载体是单独的一条判据 25
+（`test_removing_the_deps_probe_turns_criterion_21_red`）：把 `deps_missing()` 的探针循环删掉 ⇒ 缺依赖
+却「判不出缺口」⇒ 照跑那一次全量并 exit 0 ⇒ 判据 21 的三条读数（exit 3 / 没跑 gate / 具名「环境缺失」）
+同时落空。注入方式与两段读数**写进 PR body**（§28.1 出口①）。
 
 ## 隔离（为什么这些判据是安全的）
 
@@ -162,6 +172,23 @@ echo "gh stub: 未支持的调用：$*" >&2
 exit 1
 """
 
+#: 桩 `npm`（issue #6834 判据 23）：只判「脚本有没有把**真装**委派给集成工作区的 `npm ci`」——
+#: 真下载不在本判据的射程内（CI 上也不该为判据拉几百 MB）。失败形态由 `BATCH_GATE_NPM_MODE=fail` 驱动。
+#: 成功形态会**造出探针可执行文件**（否则备妥后仍缺 ⇒ 脚本 fail-closed 拒绝，判据就变成在测「装不上」）。
+NPM_STUB = """#!/usr/bin/env bash
+echo "npm $* @ $(pwd)" >> "${BATCH_GATE_NPM_LOG:?}"
+if [ "${BATCH_GATE_NPM_MODE:-ok}" = "fail" ]; then
+  echo "npm ERR! 桩：装不上（判据 23 的失败形态）" >&2
+  exit 1
+fi
+mkdir -p "$(pwd)/node_modules/.bin"
+for t in tsc jest taro; do
+  printf '#!/usr/bin/env bash\\nexit 0\\n' > "$(pwd)/node_modules/.bin/${t}"
+  chmod +x "$(pwd)/node_modules/.bin/${t}"
+done
+exit 0
+"""
+
 CI_FAIL = (
     'echo "❌ ci workflow helper 判据集（本地跑 CI 同名 job） (exit 1)";'
     'echo "失败项: ci workflow helper 判据集（本地跑 CI 同名 job）"'
@@ -173,7 +200,7 @@ def _script_text() -> str:
 
 
 def _build_repo(root: pathlib.Path, script_text: str) -> pathlib.Path:
-    """造一个自足临时仓库（`main` + 三个包分支 + 一对冲突分支 + 可计数桩）。
+    """造一个自足临时仓库（`main` + 四个包分支 + 一对冲突分支 + 可计数桩）。
 
     `script_text` 参数 = **注入点**：红证用变异后的脚本文本走同一条构建路径（真对象、真运行）。
     """
@@ -191,13 +218,21 @@ def _build_repo(root: pathlib.Path, script_text: str) -> pathlib.Path:
     _write(root, "backend/admin-api/A.java", "base\n")
     _write(root, "backend/ai-agent-service/c.py", "base\n")
     _write(root, "frontend/admin-web/b.ts", "base\n")
+    _write(root, "frontend/bmini-app/app.tsx", "base\n")
     _write(root, "tests/unit_ci_workflows/guard_a.py", "base\n")
+    # admin-web 的依赖探针**提交进 base**（issue #6834 的夹具口径）：沙箱里没有 .gitignore ⇒
+    # 「提交了」= 集成 worktree 检出后**有**这些文件 = 该模块依赖已就绪。真实仓库里 node_modules
+    # 是未跟踪目录（**不随 worktree 复制**，这正是本单的病根）—— 沙箱只能这样表达「已就绪」。
+    # bmini-app **故意不建探针** ⇒ 它在本夹具里代表「缺依赖的前端面」（判据 21~23 / 25 用它）。
+    _write_exe(root, "frontend/admin-web/node_modules/.bin/tsc")
     _commit(root, "base")
 
     # pkg-a 碰 ci-helper 面（tests/unit_ci_workflows/**）与 admin-api 面
     _branch_with(root, "pkg-a", "tests/unit_ci_workflows/guard_a.py", "a\n")
     _branch_with(root, "pkg-b", "frontend/admin-web/b.ts", "b\n")
     _branch_with(root, "pkg-c", "backend/ai-agent-service/c.py", "c\n")
+    # pkg-bmini 碰**缺依赖**的前端面（bmini-app）⇒ 判据 21 / 23 的目标分支
+    _branch_with(root, "pkg-bmini", "frontend/bmini-app/app.tsx", "bmini\n")
     # 一对必然冲突的分支（同一文件同一行两侧都改）
     _branch_with(root, "conf-a", "shared.txt", "A\n")
     _branch_with(root, "conf-b", "shared.txt", "B\n")
@@ -218,6 +253,12 @@ def _write(root: pathlib.Path, rel: str, text: str) -> None:
     path = root / rel
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text, encoding="utf-8")
+
+
+def _write_exe(root: pathlib.Path, rel: str) -> None:
+    """写一个**可执行**的探针桩（`deps_missing()` 用 `-x` 判就绪，不可执行的文件不算就绪）。"""
+    _write(root, rel, "#!/usr/bin/env bash\nexit 0\n")
+    os.chmod(root / rel, 0o755)
 
 
 def _commit(root: pathlib.Path, msg: str) -> None:
@@ -258,6 +299,7 @@ def run_batch(
     gh_mode: str | None = None,
     gh_pr: str = "6801",
     path: str | None = None,
+    extra_env: dict | None = None,
 ):
     """跑真脚本；返回 (CompletedProcess, 桩被调用的次数, gh 桩被调用的行)。
 
@@ -285,6 +327,8 @@ def run_batch(
         env["PATH"] = f"{_link_tools(root)}{os.pathsep}{env.get('PATH', '')}"
     if path is not None:
         env["PATH"] = path
+    if extra_env:            # 判据 23：挂桩 `npm` / 注入它的读数落点（其余一律不注入）
+        env.update(extra_env)
     proc = subprocess.run(
         [str(root / SCRIPT_REL), "--base", "main", *args],
         cwd=str(root), capture_output=True, text=True, env=env, timeout=180,
@@ -376,7 +420,10 @@ def test_help_and_usage_are_actionable(sandbox):
     # ⚠️ `--help` 必须是**整个文件头**，不许写死行数区间 —— 实测：本包给头部加了「就绪判定」段后，
     # 写死的 `sed -n '1,58p'` 把「## 退出码」**从三态正文处截断**（标题在、0/1/3 看不见），
     # 而上面只断言「退出码」三个字 ⇒ 截断**不会红**。这三条锁住「三态正文 + 新逃生口」真的可见。
-    for needle in ("0 = 那一次 gate 全绿", "1 = 红", "3 = 无法判定", "--no-require-ready"):
+    for needle in ("0 = 那一次 gate 全绿", "1 = 红", "3 = 无法判定", "--no-require-ready",
+                   # 判据 21 / 23 的归因分层必须**在 --help 里可见**（issue #6834）：三态 + 具名子类 +
+                   # 备妥入口。缺任一项 ⇒ 上面那条截断教训就复发了（标题在、语义看不见）。
+                   "环境缺失", "代码问题", "--install-deps"):
         assert needle in hel.stdout, f"--help 被截断了（缺 {needle!r}）：{hel.stdout}"
 
 
@@ -670,6 +717,151 @@ def test_check_arm_readback_is_tri_state_and_idempotent(sandbox):
     out3 = blind.stdout + blind.stderr
     assert blind.returncode == 3, f"读不到 ⇒ 3（不许当 0/1 读）：{out3}"
     assert "无法判定" in out3, f"没有印出「无法判定」：{out3}"
+
+
+# ── 判据 21~25：集成工作区的**依赖备妥**（issue #6834）─────────────────────────────
+#
+# 病灶（issue #6834 现场读数）：集成工作区 = `git worktree add` 出来的**新检出** ⇒ 没有 `node_modules`
+# ⇒ 变更集命中 admin-web / bmini-app 时，`verify-all.sh gate` 的那条腿走 report_strict ⇒ fail-closed ❌
+# ⇒ 整批 exit 1。**归因错**：看起来像「这批包里有人把代码改坏了」，真因是工作区没装依赖。
+#
+# ⚠️ 这一组**一律显式** `--no-require-ready`（`run_batch` 的默认形态）：沙箱里没有 gh，就绪判定会先
+# fail-closed（exit 3）⇒ 不隔开的话「exit 3 / 没跑 gate」会**因为别的原因**成立 = 空断言（判据 21 的
+# 三条读数就全部失去判别力）。故每条都另断**依赖段独有的具名读数**（「依赖备妥判定」/「环境缺失」）。
+
+_TABLE_ROW = re.compile(r"printf '([a-z0-9-]+)\\t(frontend/([a-z0-9-]+))\\t([a-z ]+)\\n'")
+
+#: 判据 25 的**注入点**：把探针循环换成空循环（= 「检测被删掉」的最小形态）。
+_DEPS_PROBE_OLD = '  for t in $2; do [ -x "${nd}/${t}" ] || miss="${miss} ${t}"; done'
+_DEPS_PROBE_NEW = '  for t in $2; do :; done  # 变异：删掉探针（判据 25 的注入点）'
+
+
+def _npm_stub(workdir: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path]:
+    """挂**可计数的 `npm` 桩**，返回 (桩目录, 读数日志)。调用方把桩目录前置进 PATH。"""
+    bindir = workdir / f"npmbin-{uuid.uuid4().hex}"
+    bindir.mkdir()
+    log = workdir / f"npm-{uuid.uuid4().hex}.log"
+    npm = bindir / "npm"
+    npm.write_text(NPM_STUB, encoding="utf-8")
+    os.chmod(npm, 0o755)
+    return bindir, log
+
+
+def _npm_env(bindir: pathlib.Path, log: pathlib.Path, mode: str = "ok") -> dict:
+    return {"PATH": f"{bindir}{os.pathsep}{os.environ.get('PATH', '')}",
+            "BATCH_GATE_NPM_LOG": str(log), "BATCH_GATE_NPM_MODE": mode}
+
+
+def test_missing_deps_on_a_frontend_face_is_named_environment_gap(sandbox):
+    """判据 21（issue #6834 ①）：缺 `node_modules` + 本批命中前端面 ⇒ **具名「环境缺失」+ exit 3**、没跑 gate。
+
+    「不是失败」必须能被**读出来**：退出码 3（不是 1）+ 输出里没有「本批未通过」这类红结论。
+    """
+    proc, calls, _ = run_batch(sandbox, "pkg-bmini")
+    out = proc.stdout + proc.stderr
+    assert proc.returncode == 3, out
+    assert calls == [], f"环境缺失时**一次全量都不该跑**（跑了就是把环境问题记成判据红），实得 {calls}"
+    assert "依赖备妥判定" in out, f"没有走到依赖备妥判定（下面三条就成了空断言）：{out}"
+    assert "环境缺失" in out, f"没有具名「环境缺失」：{out}"
+    assert "无法判定" in out, f"没有说清这是「无法判定」而不是「失败」：{out}"
+    assert "bmini-app" in out and "tsc" in out, f"没有具名缺的是哪个模块 / 哪个探针：{out}"
+    assert "本批未通过" not in out, f"环境缺失被打成了「红」（就还是 issue #6834 的归因错）：{out}"
+    assert "--install-deps" in out, f"出口没给可行动的备妥入口：{out}"
+    assert "没跑" in out, f"「没跑」必须长得像「没跑」：{out}"
+
+
+def test_missing_deps_without_a_frontend_face_runs_normally(sandbox):
+    """判据 22（**负控**）：缺 `node_modules` 但本批**不**命中前端面 ⇒ 不拦、那一次全量照跑。
+
+    夹具形态即现场形态：`bmini-app` 一直缺依赖（本夹具不建探针），而 `pkg-c` 只碰后端。
+    ⚠️ 这条防的是「修成无条件拒绝」——那会把本来能跑的批次拦下来（**新的假红**）。
+    """
+    proc, calls, _ = run_batch(sandbox, "pkg-c")
+    out = proc.stdout + proc.stderr
+    assert proc.returncode == 0, out
+    assert len(calls) == 1, f"不命中前端面时 gate 必须照跑（且只跑一次），实得 {calls}"
+    assert "无需备妥" in out, f"「本次不需要备妥」必须打出来（「没判」要长得像「没判」）：{out}"
+    assert "环境缺失" not in out, f"不命中前端面却被拦了（新的假红）：{out}"
+
+
+def test_install_deps_runs_npm_ci_inside_the_integration_worktree(sandbox):
+    """判据 23：`--install-deps` ⇒ 在**集成工作区**的模块目录里真跑 `npm ci`，备妥后再跑**一次** gate。
+
+    读数钉三件事（任何一条不成立就说明备妥跑错了地方/跑错了命令）：
+      ① 只调用一次 `npm`，argv 含 `ci` 与 `--prefer-offline`（锁文件决定内容 + 复用全局缓存）；
+      ② cwd 是**集成 worktree**（路径含 `/batch-`）的 `frontend/bmini-app` —— 不是主检出
+         （软链 / 在主检出上装 = issue #5930 的形态）；
+      ③ 备妥后 gate 照跑一次（依赖就绪**不改变**门禁语义）。
+    """
+    bindir, log = _npm_stub(sandbox.parent)
+    proc, calls, _ = run_batch(sandbox, "--install-deps", "pkg-bmini",
+                               extra_env=_npm_env(bindir, log))
+    out = proc.stdout + proc.stderr
+    assert proc.returncode == 0, out
+    assert len(calls) == 1, f"备妥成功 ⇒ 那一次全量照跑（且只跑一次），实得 {calls}"
+    lines = log.read_text(encoding="utf-8").splitlines() if log.exists() else []
+    assert len(lines) == 1, f"`npm` 调用读数：{lines}"
+    assert " ci " in f" {lines[0]} " and "--prefer-offline" in lines[0], f"没走 npm ci：{lines[0]}"
+    assert "/batch-" in lines[0], f"装到了**主检出**上（集成工作区才该装）：{lines[0]}"
+    assert lines[0].rstrip().endswith("frontend/bmini-app"), f"cwd 不是缺依赖的那个模块：{lines[0]}"
+    assert "依赖已备妥" in out, f"备妥结论没打印：{out}"
+
+
+def test_install_deps_failure_stays_fail_closed(sandbox):
+    """判据 23'（fail-closed）：`npm ci` 失败 ⇒ **具名**「环境缺失（备妥失败）」+ exit 3 + 没跑 gate。
+
+    ⚠️ 这一条防的是最危险的退化：装不上就「照样跑」——那会把环境问题继续记成 ❌（回到本单修前的形态），
+    或者更糟：把它读成通过（假绿）。
+    """
+    bindir, log = _npm_stub(sandbox.parent)
+    proc, calls, _ = run_batch(sandbox, "--install-deps", "pkg-bmini",
+                               extra_env=_npm_env(bindir, log, mode="fail"))
+    out = proc.stdout + proc.stderr
+    assert proc.returncode == 3, out
+    assert calls == [], f"备妥失败时不该跑 gate（fail-closed），实得 {calls}"
+    assert "环境缺失" in out and "备妥失败" in out, f"没有具名「备妥失败」：{out}"
+    assert "本批未通过" not in out, f"备妥失败被打成了红（归因错）：{out}"
+
+
+def test_deps_table_stays_in_sync_with_the_gate_legs_probes():
+    """判据 24（**类级元守卫**）：依赖表的模块集合 ⇄ `verify-all.sh` 里探 `node_modules` 的模块集合。
+
+    为什么必须有这条：`batch-gate.sh` 的依赖表是 `verify-all.sh` 那两条 report_strict 腿的**镜像**。
+    任一侧漂移都不会自己变红 ——
+      · gate 多了一条要 node_modules 的腿（例如将来给 mini-app 加腿）而表没跟上 ⇒ 那一面**继续假红**；
+      · 表里多一个模块而 gate 根本不探它 ⇒ **误拦**本来能跑的批次。
+    两向都由本判据现取核对（不写死数字、不复制一份清单）。
+    """
+    rows = _TABLE_ROW.findall(_script_text())
+    assert rows, "依赖表取不到（表被删 / 改了形态）⇒ 本元守卫会退化成空断言"
+    table_modules = {mod for _name, _dir, mod, _tools in rows}
+    verify_text = (REPO / "verify-all.sh").read_text(encoding="utf-8")
+    probed = set(re.findall(r"frontend/([a-z0-9-]+)/node_modules", verify_text))
+    assert table_modules == probed, (
+        "依赖表与 verify-all.sh 的探针面不一致："
+        f"表={sorted(table_modules)} / verify-all={sorted(probed)}"
+        "（少一个 ⇒ 该面继续假红；多一个 ⇒ 误拦）")
+    for name, _dir, _mod, tools in rows:
+        for tool in tools.split():
+            assert tool in verify_text, (
+                f"{name} 的探针 {tool!r} 在 verify-all.sh 里找不到 ⇒ 两处已漂（备妥判定与 gate 不再同源）")
+    assert "worker-h5" not in table_modules, (
+        "worker-h5 零依赖（只探 node）⇒ 列进依赖表会误拦本来能跑的批次（判据 22 的反面）")
+
+
+def test_removing_the_deps_probe_turns_criterion_21_red(tmp_path):
+    """判据 25（**注入式红证**，§28.1 出口① / 本单判据 ④）：把探针删掉 ⇒ 判据 21 必红。
+
+    变异体上「缺依赖」判不出来 ⇒ 照跑一次全量并 exit 0 ⇒ 判据 21 的三条读数（exit 3 / 没跑 gate /
+    具名「环境缺失」）**同时落空**。⇒ 判据 21 不是空断言：删掉检测它真的会红。
+    """
+    assert _DEPS_PROBE_NEW not in _script_text(), "真脚本里已含变异文本（红证会变成自证）"
+    mutant = _mutated_repo(tmp_path, _DEPS_PROBE_OLD, _DEPS_PROBE_NEW)
+    proc, calls, _ = run_batch(mutant, "pkg-bmini")
+    out = proc.stdout + proc.stderr
+    assert proc.returncode == 0, f"变异体应放行（这正是判据 21 要拦的形态）：{out}"
+    assert len(calls) == 1, f"变异体应照跑那一次全量，实得 {calls}：{out}"
+    assert "环境缺失" not in out, f"变异体仍报「环境缺失」⇒ 注入点没生效：{out}"
 
 
 # ── 注入式红证（§28.1 出口①）：变异体必须真红 ────────────────────────────────

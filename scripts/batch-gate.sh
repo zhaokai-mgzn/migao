@@ -56,6 +56,7 @@
 #   ./scripts/batch-gate.sh <branch> [<branch> ...]   # 建临时集成 worktree → 串行 merge → **一次** gate → 逐包归因
 #   ./scripts/batch-gate.sh --in <worktree> <branch> ...   # 在**既有**集成 worktree 里只跑那一次（环境已备时用）
 #   ./scripts/batch-gate.sh --keep <branch> ...       # 保留集成 worktree（默认结束即删）
+#   ./scripts/batch-gate.sh --install-deps <branch> ...  # 集成工作区缺前端依赖 ⇒ **先 npm ci 备妥**再跑（默认只判不装）
 #   ./scripts/batch-gate.sh --base <ref> <branch> ... # 换基准（默认 origin/main）
 #   ./scripts/batch-gate.sh --no-require-ready <branch> ...  # 逃生口：跳过就绪判定（人类明知故犯时用）
 #   ./scripts/batch-gate.sh --check-arm <PR> [<PR> ...]  # **回读** auto-merge 解除结果（幂等只读；disarm 后当场核对）
@@ -81,11 +82,49 @@
 #
 #   0 = 那一次 gate 全绿
 #   1 = 红（**整合冲突** / gate 非零）—— 冲突时**不跑** gate：「没跑」必须长得像「没跑」
-#   3 = 无法判定（分支不存在 / 包不就绪 / 就绪判定无法判定 / 建不出 worktree / gate 自己 exit 3）
+#   3 = 无法判定（分支不存在 / 包不就绪 / 就绪判定无法判定 / 建不出 worktree / gate 自己 exit 3 /
+#       **环境缺失**：集成工作区缺前端依赖且本批命中该面 —— 见下节「归因分层」）
 #       —— **不得当 0 读**
 #
 #   `--check-arm` **不复用**上面三态（它是回读，不是批次结论）：
 #     0 = 未 arm（可进批次）｜1 = **仍 arm**（解除没生效）｜3 = 无法判定（读不到 ≠ 未 arm）
+#
+# ## 归因分层（**环境缺失 / 代码问题 / 无法判定 —— 三者不许混**；issue #6834）
+#
+#   批次结论必须一眼分清「谁的锅」，否则人会去查错对象（本单就是这么白烧了一次全量）：
+#
+#   | 归因 | 含义 | 退出码 | 承载体 |
+#   |---|---|---|---|
+#   | **环境缺失** | 集成工作区缺**依赖**（新检出没有 `node_modules`；不是任何包的代码问题） | **3** | 第 2.5 段的依赖备妥判定（具名「环境缺失」） |
+#   | **代码问题** | 判据**真跑**且真红（整合冲突 / gate 非零） | **1** | 第 2 段的 merge / 第 3 段的 gate |
+#   | **无法判定** | 读不到分支 / 就绪判定跑不动 / 建不出 worktree / gate 自己 exit 3 | **3** | `die`、就绪判定、第 3 段 |
+#
+#   ⚠️ 环境缺失**不**落到 1：落到 1 就等于对读者宣布「这批包里有代码问题」，而归因段会把矛头指向
+#   「碰了那个面的包」（issue #6834 的现场读数正是如此）。它也不落到 0 —— 「没判定」不是「通过」。
+#   两种「3」靠**输出里的具名词**区分（`环境缺失` vs `无法判定`），故本命令的每一条 3 都必须带具名理由。
+#
+# ## 集成工作区的依赖备妥（issue #6834）
+#
+#   病（2026-10-13 实测读数）：集成工作区是 `git worktree add` 出来的**新检出** ⇒ 没有 `node_modules`
+#   （未跟踪目录不随 worktree 复制）⇒ 变更集命中 `frontend/admin-web/**` / `frontend/bmini-app/**` 时，
+#   `verify-all.sh gate` 的那两条腿走 report_strict ⇒ **fail-closed 记 ❌** ⇒ 整批 exit 1。
+#   那是**假红**：看起来像「这批包里有人把代码改坏了」，真因是**工作区没装依赖**。
+#
+#   所以 merge 之后、跑 gate 之前先判一次（**判决点在任何判据之前** = 不烧那一次全量）：
+#     · 变更集**命中**需要 `node_modules` 的面（`admin-web` / `bmini-app`；探针与 gate 档 report_strict
+#       **同源**：`admin-web-tsc` 探 `.bin/tsc`，`bmini-app` 探 `.bin/{tsc,jest,taro}`）且缺 ⇒
+#       **具名「环境缺失」+ exit 3**（默认**不装**：装是写盘动作、首次几分钟，不该藏在「跑一下」里）；
+#     · 变更集**不命中**这两个面 ⇒ **不拦**（负控：不该拦的别拦 —— 那两条腿本来就不派发）；
+#     · 显式 `--install-deps` ⇒ 在**集成工作区**里 `npm ci` 备妥后继续；备妥失败仍 **fail-closed**
+#       （具名「环境缺失」+ exit 3）—— 「装不上」不许退化成「那就跳过这条腿」。
+#
+#   ⛔ **禁止**把主检出的 `node_modules` 软链进来。issue #6834 的正文把它列为「最便宜」的选项，但本仓
+#   已两次实测它是**陷阱**：① issue #5930 —— `npm ci` 的第一步就是删 `node_modules`，穿过软链会把
+#   **主检出**的依赖清空（仓外发生、git 看不见、没有任何判据会红）；② issue #5241 —— Turbopack 拒绝
+#   指向项目根之外的 `node_modules`（`next dev` 先 ✓ Ready 再 FATAL）。故本命令一律**真装**
+#   （`npm ci --prefer-offline`：锁文件决定内容，npm 全局缓存让重复安装变快），并**先摘掉**存量软链
+#   （自愈；`rm -f` 只摘链接本身、不跟随目标）。同一口径见 `scripts/ui_smoke_merchant.sh` 的依赖准备段
+#   与 `docs/wiki/Development.md` 的「worktree 依赖准备」。
 #
 # ## 边界（照实登记）
 #
@@ -100,6 +139,14 @@
 #     面内多于一个包时**不许**指认唯一真凶，具名打印 `无法唯独归因`。
 #   - 集成 worktree 里 merge ≠ GitHub squash 合并后的 main，是**起飞前**的近似（冲突照实报）。
 #   - 本脚本**不自己拿锁**：那一次全量由 `verify-all.sh gate` 自己 acquire/release（#5814 接线）。
+#   - **依赖备妥只覆盖两个模块目录**（照实登记）：判定按 `frontend/admin-web/**` / `frontend/bmini-app/**`
+#     前缀匹配，而 `verify-all.sh` 的 `admin_web_face_paths()` / `bmini_face_paths()` 还含**跨目录输入**
+#     （如 `backend/ai-agent-service/app/api/chat.py` 是 bmini 测试现取的真值）⇒ 只碰这些跨目录输入的
+#     批次**仍会**撞上 gate 的 fail-closed 红。这是**有意**的窄面：宁可漏报一次（后果 = 回到本单修前的
+#     形态，人看得到 fail-closed 文案），也不把面判宽后**误拦**本来能跑的批次。
+#     重启条件 = 这类跨目录输入再被实测撞上（届时把该路径加进依赖表并同步 `verify-all.sh`）。
+#   - 依赖备妥**不判**「装得对不对」：`npm ci` 成不成由 npm 决定（锁文件决定内容）；备妥后仍缺可执行
+#     文件 ⇒ 照样**具名拒绝**（fail-closed），不许记成通过。
 #   - 本脚本**不改**任何门禁的通过条件、不新增豁免；CI 仍是权威。
 set -uo pipefail
 
@@ -110,12 +157,14 @@ IN_WT=""
 BRANCHES=()
 CHECK_ARMS=()
 READY=1
+INSTALL_DEPS=0
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --in)   IN_WT="${2:-}"; [ -n "$IN_WT" ] || { echo "用法: $0 --in <worktree>" >&2; exit 2; }; shift 2 ;;
     --base) BASE="${2:-}"; [ -n "$BASE" ] || { echo "用法: $0 --base <ref>" >&2; exit 2; }; shift 2 ;;
     --keep) KEEP=1; shift ;;
+    --install-deps) INSTALL_DEPS=1; shift ;;
     --require-ready)    READY=1; shift ;;
     --no-require-ready) READY=0; shift ;;
     --check-arm) CHECK_ARM=1; shift ;;
@@ -497,6 +546,101 @@ if [ -n "$merge_failed" ]; then
   echo "   出口：解冲突（./scripts/sync-main.sh --rebase 或人工）后重跑本条命令"
   [ "$OWNS_WT" = 1 ] && echo "   集成工作区：${WT}（加 --keep 可保留现场）"
   exit 1
+fi
+
+# ── 2.5) 集成工作区的**依赖备妥**判定（issue #6834；判在**任何判据之前** ⇒ 不烧那一次全量）────
+#
+# 归因分层（文件头同款，三者不许混）：本段只产**两种**结论 —— 依赖就绪（继续）与 **环境缺失**
+# （具名 + exit 3）。⚠️ 判据真红（exit 1）**必须**来自第 4 段的面级归因；环境问题不许冒充代码问题，
+# 反过来也不许把「没装依赖」这一态记成通过（那就是假绿）。
+
+#: 需要 `node_modules` 的模块（**单一实现**）。探针与 `verify-all.sh` `gate` 档的两条 report_strict
+#: 腿**同源**：`admin-web-tsc` 探 `node_modules/.bin/tsc`；`bmini-app` 探 `.bin/{tsc,jest,taro}`。
+#: 输出 `名称<TAB>目录<TAB>工具…`。⚠️ `worker-h5` **不在表内**：它零依赖（只探 node），列进来会误拦；
+#: 两处的一致性由 `tests/unit_ci_workflows/test_batch_gate.py` 的类级元守卫现取核对（漂移即红）。
+deps_modules() {
+  printf 'admin-web\tfrontend/admin-web\ttsc\n'
+  printf 'bmini-app\tfrontend/bmini-app\ttsc jest taro\n'
+}
+
+#: 缺哪些可执行文件（stdout = 空格分隔；空 = 就绪）。探**工具**而不是探目录：目录在、工具不在
+#: （装不全）是真实形态，而 gate 的 report_strict 探的也正是这些可执行文件。
+deps_missing() {
+  local nd="${1}/node_modules/.bin" t miss=""
+  for t in $2; do [ -x "${nd}/${t}" ] || miss="${miss} ${t}"; done
+  printf '%s' "${miss# }"
+}
+
+echo "── 依赖备妥判定（集成工作区的 node_modules；issue #6834）──"
+CHANGE_FILES="$(git -C "$WT" diff --name-only "${BASE}...HEAD" 2>/dev/null)"
+_cs_rc=$?
+if [ "$_cs_rc" -ne 0 ]; then
+  # 读不出来 ⇒ 无法判定（⛔ 不许把「读不到」当成「不需要依赖」：那是本单同族的假绿方向）。
+  # 注：变更集**真的为空**（本批没有净改动）不是错误 —— 那时没有任何面被判据覆盖，依赖也不需要，
+  #     那一次 gate 自己会按「零变更」走它的三态（exit 3），本段不替它下结论。
+  die "取不到集成工作区的变更集（git diff --name-only ${BASE}...HEAD 退出码 ${_cs_rc}）—— 缺不缺依赖**判不了**（读不到 ≠ 不需要）"
+fi
+
+deps_hit=()    # 本批命中、需要 node_modules 的模块名
+deps_gaps=()   # 缺依赖的模块：名称|目录|工具…|缺哪些
+while IFS=$'\t' read -r _name _dir _tools; do
+  _hit="$(printf '%s\n' "$CHANGE_FILES" | grep -E "^${_dir}/" || true)"
+  [ -n "$_hit" ] || continue
+  deps_hit+=("${_name}")
+  _miss="$(deps_missing "${WT}/${_dir}" "${_tools}")"
+  [ -n "$_miss" ] && deps_gaps+=("${_name}|${_dir}|${_tools}|${_miss}")
+done < <(deps_modules)
+
+if [ "${#deps_hit[@]}" -eq 0 ]; then
+  # 负控：缺依赖但本批不命中这两个面 ⇒ **不拦**（那两条腿本来就不派发；拦了就是新的假红）。
+  echo "  ⏭️ 无需备妥：本次变更集未命中需要 node_modules 的面（admin-web / bmini-app）—— 这不是「跳过判据」"
+elif [ "${#deps_gaps[@]}" -eq 0 ]; then
+  echo "  ✅ 依赖就绪：${deps_hit[*]}"
+elif [ "$INSTALL_DEPS" != 1 ]; then
+  echo "⛔ **环境缺失**（不是「代码问题」，也不是「这批判据红」）⇒ 无法判定（exit=3）—— 那一次全量**没有跑**。"
+  echo "   缺什么（集成工作区 = git worktree add 出来的新检出 ⇒ node_modules 不随 worktree 复制）："
+  for _g in "${deps_gaps[@]}"; do
+    IFS='|' read -r _n _d _t _m <<< "$_g"
+    echo "     • ${_n}：${WT}/${_d}/node_modules/.bin/ 缺 ${_m// /、}"
+  done
+  echo "   为什么不跑：本批变更集命中上面这些面 ⇒ gate 的那条腿会 fail-closed 判 ❌，"
+  echo "     而那是**环境**问题 ⇒ 面级归因会把矛头指向「碰了那个面的包」（issue #6834 的形态）。"
+  echo "   出口（三选一）："
+  echo "     ① 加 --install-deps 重跑：本命令在集成工作区里 npm ci 备妥后再跑那一次全量（首次几分钟，之后命中 npm 缓存）；"
+  echo "     ② 手动备妥后复用同一工作区：cd '<工作区>/<模块目录>' && npm ci，再 ./scripts/batch-gate.sh --in '<工作区>' <branch>...；"
+  echo "     ③ 把这一批推到 CI 上判（每 PR 并行；CI 仍是权威）—— 别把「本机没装依赖」读成「这批有问题」。"
+  echo "   ⚠️ 别软链主检出的 node_modules（issue #5930：npm ci 会穿过软链清空主检出依赖；issue #5241：Turbopack 拒绝根外软链）。"
+  echo "   ⚠️ 「没跑」≠「通过」：本批**代码有没有问题，本次没有判定**。"
+  exit 3
+else
+  echo "  🔧 --install-deps：在集成工作区**真装**（npm ci；禁止软链主检出，#5930 / #5241）"
+  _still=()
+  for _g in "${deps_gaps[@]}"; do
+    IFS='|' read -r _n _d _t _m <<< "$_g"
+    _target="${WT}/${_d}"
+    if [ -L "${_target}/node_modules" ]; then
+      echo "     • ${_n}：摘除 node_modules 软链（-> $(readlink "${_target}/node_modules")）—— npm ci 会穿过软链清空目标（#5930）"
+      rm -f "${_target}/node_modules" || die "环境缺失（备妥失败）：摘不掉软链 ${_target}/node_modules"
+    fi
+    echo "     • ${_n}：cd '${_d}' && npm ci --no-audit --no-fund --prefer-offline（缺 ${_m// /、}）"
+    if ! ( cd "$_target" && npm ci --no-audit --no-fund --prefer-offline ); then
+      _still+=("${_n}|${_d}|npm ci 退出非 0")
+      continue
+    fi
+    _miss2="$(deps_missing "$_target" "$_t")"
+    [ -n "$_miss2" ] && _still+=("${_n}|${_d}|npm ci 完成但仍缺 ${_miss2// /、}")
+  done
+  if [ "${#_still[@]}" -gt 0 ]; then
+    # ⚠️ 空值护栏 `${_still[@]+"${_still[@]}"}` 不能省：macOS 自带 bash 3.2 在 `set -u` 下展开
+    # 空数组会 `unbound variable`（整脚本当场死）—— 类级判据 = test_ui_smoke_worktree_deps.py 的
+    # `test_no_unguarded_empty_array_expansion_in_scripts`（issue #6777）。
+    for _g in ${_still[@]+"${_still[@]}"}; do
+      IFS='|' read -r _n _d _why <<< "$_g"
+      echo "  ❌ ${_n}（${_d}）：${_why}"
+    done
+    die "环境缺失（--install-deps 备妥失败）—— 装不上就**不能**跑那一次全量：缺依赖时 gate 会把环境问题记成 ❌（issue #6834）"
+  fi
+  echo "  ✅ 依赖已备妥：${deps_hit[*]}"
 fi
 
 # ── 3) **那一次**全量（本命令的全部意义；锁由 verify-all.sh gate 自己拿）────────
