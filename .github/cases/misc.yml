@@ -7526,11 +7526,13 @@ cases:
       - "**判据 5·未知 ≠ 0（会红）**：单位不可比的行（`demandQty` / `gapMeters` / `orderCount` 缺键 = 服务端 `default-property-inclusion: non_null`）三列渲染「未知」；`daysToDeadline` 缺键 ⇒「紧迫性未知」，屏上不出现「0 天」。执行点 = 单测 ⑤。**红证**：缺键回落成 0 ⇒ ⑤ 红。"
       - "**判据 6·披露与内部标识（会红）**：`nonComparable` 与 `historyDepth.sufficient == false` 两段披露**看得见**（含真实周数与要求周数）；`productId`（UUID）与字段名（`product_id` / `gap_meters`）**不上屏**（只进 href，§31 P3）；三个处置入口指向仓内真实路由 `/products/<id>` / `/stock-ledger` / `/inbound-orders/new`。执行点 = 单测 ⑥。**红证**：把 `productId` 渲染进「成品」列 ⇒ ⑥ 红；披露块删掉 ⇒ ⑥ 红。"
       - "**判据 7·读失败不印空态（会红）**：读面 reject ⇒ 只显示失败原因，**不**出现「当前没有缺料」、不渲染摘要（读不到 ≠ 没有缺料）。执行点 = 单测 ⑦。**红证**：失败分支沿用空态渲染 ⇒ ⑦ 红。"
-    skip_reason: "[ui-page] 页面取值的确定性判据（桩数据 = 服务端冻结契约 v1；jsdom + 打桩 api，零网络、零 LLM）：断言由 frontend/admin-web/tests/unit/pages/material-shortage.test.tsx 执行，不进 agent-eval 冒烟"
+      - "**判据 8·口径单点（纯函数面，会红）**：`lib/material-shortage.ts` 的 `shortageRows` 只留 `gapMeters > 0`（0 / 负数 / **缺键** 都不算缺料）；`formatMeters(undefined)` = 「未知」而 `formatMeters(0)` = 「0 米」（两者必须可区分）；`deadlineText` 缺键 ⇒「紧迫性未知」、`days === 0` 才是「今天到期」；`nonComparableNote` / `historyDepthNote` 在「没有 / 已达标」时返回 `null`（不许乱披露，也不许把未知读成达标）；`shortageCount` = 四档之和（`safe` / `unknown` 不计入）；未知档位 ⇒「未知」（不把内部键上屏）。执行点 = `frontend/admin-web/tests/unit/lib/material-shortage.test.ts`（11 条）。**红证**：`shortageRows` 条件改 `>= 0` ⇒ 红；缺键回落成 0 ⇒ 红。"
+    skip_reason: "[backend-contract] 页面取值与口径的**确定性契约**（桩数据 = 服务端冻结契约 v1；jsdom + 打桩 api，零网络、零 LLM）：计分通道 = `traces.tests`（下面两条 vitest 文件真实存在且各自会红），不进 agent-eval 冒烟"
     merge_log: "2026-11-03 新增（issue #6282，承接 #6280 的显式延后项）：缺料风险页落地。页面是 `material_shortage` 视图的**唯一商家宿主**（此前只有 agent 对话结论，用户看完不知道该干嘛）。四条口径按 §31：常驻面只列缺口 > 0（P1）、缺口数字只在「缺口」列出现一次（P2）、`productId` 不上屏（P3）、空态为事实陈述（P4）。三处「未知 ≠ 0」：单位不可比（缺键）/ 交期未知（`daysToDeadline` 缺键）/ 预测层未启用（`historyDepth.sufficient == false` 时明示）。取号 MC-182（本仓 cases 面现取最大 MC = MC-125 + 在飞 claims MC-113 ⇒ 号段空档，取上级指派号）。⚠️ 未闭合（如实登记）：侧边栏**菜单入口**未在本包落地 —— 菜单节点牵动前端 C1/C3/C4 三列清单 + 服务端两处菜单源（`MenuController` / `AuthService`）+ RBAC 派生页 manifest + 页面上文登记，属独立变更面；本包以 `ROUTE_WITHOUT_MENU_NODE` / `ROUTE_PREFIX_EXCEPTIONS` 具名登记守卫前缀（见 PR body 的「有意不做」）。"
     traces:
       tests:
         - "frontend/admin-web/tests/unit/pages/material-shortage.test.tsx"
+        - "frontend/admin-web/tests/unit/lib/material-shortage.test.ts"
         - "tests/unit_ci_workflows/test_agent_permission_parity.py"
         - "tests/unit_ci_workflows/test_rbac_derived_pages.py"
       ci:
