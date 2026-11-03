@@ -3,7 +3,7 @@
 import { Fragment, useCallback, useEffect, useState } from 'react'
 import { AlertCircle, FolderTree, Plus } from 'lucide-react'
 import { toast } from 'sonner'
-import { Button, Modal, SELECT_CONTROL } from '@/components/ui'
+import { Button, Modal, RowActionLink, SELECT_CONTROL } from '@/components/ui'
 import { processingCategoryApi, processingItemApi } from '@/lib/api'
 import type { ProcessingCategory, ProcessingItem } from '@/types'
 import { DISCOUNT_OPTIONS, EMPTY_FORM, ItemForm, QTY_OPTIONS } from './processing-shared'
@@ -318,18 +318,15 @@ export default function ProcessingItemsPanel({
                         <td className="px-4 py-3 text-sm text-neutral-600">{categoryNameOf(item)}</td>
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-3 whitespace-nowrap">
-                            <button
-                              onClick={() => openEdit(item)}
-                              className="text-sm text-primary-600 transition-colors hover:text-primary-700 hover:underline"
-                            >
+                            {/* 行内动作 = 共享原语（issue #7082 链内一并收口）：
+                                改前两处都是手抄的链接规格（`编辑` 主题色 / `删除` 红色）。
+                                外观不变：`size="sm"`（原 `text-sm`）+ `tone="danger"`（原红字）。 */}
+                            <RowActionLink size="sm" onClick={() => openEdit(item)}>
                               编辑
-                            </button>
-                            <button
-                              onClick={() => requestDelete(item.id)}
-                              className="text-sm text-red-500 transition-colors hover:text-red-600 hover:underline"
-                            >
+                            </RowActionLink>
+                            <RowActionLink size="sm" tone="danger" onClick={() => requestDelete(item.id)}>
                               删除
-                            </button>
+                            </RowActionLink>
                           </div>
                         </td>
                       </tr>

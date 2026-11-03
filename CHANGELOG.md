@@ -5,6 +5,24 @@
 > 原因 = 单文件涨到 512KB 越过扫描上限，详见存档文件头与 issue #6404。
 > **后续条目继续在本文件 `## [Unreleased]
 
+### 单据列表的行内文字动作收口到一处定义：售后 / 员工 / 工人档案 / 加工项四处不再各抄一份样式（2026-11-03，issue #7082）
+
+- **改前**：同一件事（跳到该行详情 / 编辑）在不同列表里各抄了一份链接样式
+  （`text-primary-600 hover:text-primary-700 hover:underline`），字号 / 字重 / 禁用态 / 红字各带一个变体
+  ⇒ 样式改一次要改四处，而两轮之后没人说得清哪个才算「对的」（用户 2026-10-17 逐字：
+  「行内按钮样式让全部单据统一向订单保持一致，不要有多种风格设计」）。
+- **改后**：四处全部走共享原语 `RowActionLink`；原语按**真实消费点**扩了 4 个受控变体
+  （`size` / `emphasis` / `tone="danger"` / `disabledStyle="keep"`，**故意不暴露 `className`** ——
+  在调用点覆盖 class 就等于没收口）。**观感逐字不变**：售后「查看」仍是 `text-sm`；
+  员工姓名仍是 `font-medium`，且无写权限时**姓名照旧是姓名**（不变成灰色占位）；
+  加工项「编辑 / 删除」仍是 `text-sm` 与红字。
+- **没动的两处（如实登记，不假装做了）**：入库单在 issue #8011 之后**正是**订单列表现在的形态
+  （`RowActions` + ghost `Button` 主行动），商品在 issue #8038 之后已走 `RowActions`
+  ⇒ 两者本来就没有这份字面量副本，改成链接式反而背离订单列表。
+- 判据：`frontend/admin-web/scripts/row-action-link-scan.mjs`（链接规格只许出现在原语里；
+  台账 = `frontend/admin-web/tests/unit/row-action-link-ledger.json`，未登记即红、只许缩短）、
+  `frontend/admin-web/tests/unit/row-action-link-single-source-guard.test.ts`（MC-146）、
+  `frontend/admin-web/tests/unit/components/RowActionLink.test.tsx`（变体 ⇒ 观感逐字不变）。
 ### 撤销批量改价不再要求模型「记得」批次号：本会话只有一批就点名让你带上，认不准就拒绝（2026-11-03，issue #6998）
 
 - **改前**：真 LLM 重放（`PR-108`）里模型执行成功、真实批次号就在上下文里，撤销那一步却把它丢了

@@ -375,13 +375,19 @@ export default function EmployeesPage() {
       title: '姓名',
       width: '140px',
       render: (record) => (
-        <button
-          onClick={() => canWrite && handleEdit(record)}
+        // 行标识列的行内动作 = 共享原语（issue #7082）：改前是手抄的一份 class 串。
+        // 外观逐字不变：`size="sm"`（原 `text-sm`）+ `emphasis`（原 `font-medium`）+
+        // `disabledStyle="keep"`（原 `disabled:cursor-default` —— 无写权限时**姓名照旧是姓名**，
+        // 不能变成灰色占位；`faint` 是别的消费点的形态）。
+        <RowActionLink
+          size="sm"
+          emphasis
+          disabledStyle="keep"
           disabled={!canWrite}
-          className="text-primary-600 hover:text-primary-700 hover:underline text-sm font-medium disabled:cursor-default"
+          onClick={() => handleEdit(record)}
         >
           {record.name}
-        </button>
+        </RowActionLink>
       ),
     },
     { key: 'phone', title: '手机号', dataIndex: 'phone', width: '140px' },
