@@ -4186,7 +4186,7 @@
 ```
 溯源: 2026-10-31 新增（issue #8295）：两步确认，避免误写 ｜ tags: ui, preview
 
-## 杂项域（190 case）
+## 杂项域（191 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -7097,6 +7097,21 @@
 跳过: [backend-contract] CI 判定逻辑（真 YAML + 真 git 仓库 + 桩 gh/docker 的执行式判据），零网络、零真实部署、不烧 token，非 LLM 行为，不进入 agent-eval 冒烟
 ```
 溯源: 2026-11-03 新增（issue #7034，假绿：`deploy-reconcile` 的「无代码漂移 ⇒ 已上线」判据看不见构建输入）。取号 MC-144（`python3 scripts/next_case_id.py MC` 现取；按「MC-099 刻意空档不回填」与 139~143 的在飞/已合占用避开，改取现取最大号之后的 144）。落码 = ① `.github/scripts/reconcile_build_inputs.py`（构建输入面的**唯一**取值源：登记册逐条带理由 + 纯函数 `pathspec()` + 三态 CLI）② `.github/workflows/deploy-reconcile.yml` 的 `reconcile_one` 追加构建输入（正文顶到 13.25K 硬限 ⇒ 同批压缩历史注释，实测 12,919 → 11,873 字符）③ 判据 tests/unit_ci_workflows/test_reconcile_build_inputs.py（逐条执行式 + 三条负控 + 注入式红证 + 类级元守卫 + 豁免不陈旧 + 登记册不腐烂）④ `test_config_change_triggers_deploy.py` 的判定面改为「调用行 + 构建输入」，stray 只豁免已登记项 ⑤ 台账 frozen_max 13 → 4。 ｜ tags: ci, deploy, reconcile, false-green
+
+### MC-146. 单据列表「行内动作」的链接规格只许有一处定义：副本必须走共享原语 `RowActionLink`，未登记即红 / 台账只许缩短（issue #7082） 🔵
+```
+你: 同一件事（跳到该行详情）在售后列表是一段主题色文字链接、在入库单是描边按钮、在员工列表是另一段链接串 —— 过两周到底哪个才算「对的」？我把这几处各自改好看一点，行不行？
+数据: 🔴 **判据 ①（未登记即红，执行式）**：`frontend/admin-web/src/**` 里「链接规格」= **同一个类名串同时含** `text-primary-600` + `hover:text-primary-700` + `hover:underline`；除共享原语 `src/components/ui/RowActionLink.tsx` 外零副本（4 处已迁移 + 1 条带理由豁免）。执行点 = frontend/admin-web/tests/unit/row-action-link-single-source-guard.test.ts 的「③ 未登记即红」
+数据: 🔴 **判据 ②（负控：射程准）**：原语**自身**里的同一串**不被扫**（它是比对基准，扫它 = 恒红）；反向自证 = 原语真的含这三个 token（删掉 ⇒ 扫描面为空 ⇒ 先在这里红）。执行点 = 同文件「① 扫描面非空 + 原语自证」+「② 负控」
+数据: 🔴 **判据 ③（接线在）**：四个迁移点各自必须逐字含 `<RowActionLink` 且含登记的变体 prop（`size="sm"` / `size="xs"` / `emphasis` / `disabledStyle="keep"` / `tone="danger"`）—— 「把整段行内动作删掉」也能让副本消失，这条堵掉那种假绿。执行点 = 同文件「⑤ 接线在」
+数据: 🔴 **判据 ④（迁移回退即红）**：已迁移文件里**又**出现裸规格串（= 迁回手抄）⇒ 具名点名该文件。执行点 = 同文件「④ 迁移回退即红」（在真语料的内存副本上逐字还原售后页改前形态取证）
+数据: 🔴 **判据 ⑤（台账只许缩短 + 不撒谎）**：`exempt` 条数 > `frozen_exempt_count` ⇒ 红；条目已不再命中 ⇒ 僵尸红；`conformant`（入库单 / 商品**有意**不走本原语）要求锚在、禁止锚不在 ⇒ 悄悄改成 `RowActionLink` 却不改台账当场红。执行点 = 同文件「⑥ 台账只许缩短」+「⑦ 形态台账不撒谎」
+数据: 🔴 **判据 ⑥（外观逐字不变）**：迁移点的字号 / 字重 / 禁用态观感 / 色族由**原语变体**表达，逐条钉 + 反向自证：`size="sm"`⇒`text-sm`、`size="xs"`⇒`text-xs`、`emphasis`⇒`font-medium`、`disabledStyle="keep"`⇒保持字色+`cursor-default`（**不得**变灰占位）、`tone="danger"`⇒`text-red-500 hover:text-red-600`。执行点 = frontend/admin-web/tests/unit/components/RowActionLink.test.tsx 的「issue #7082：变体」五条
+数据: 🔴 **红证（注入式，PR body 逐条给读数）**：把售后页行内动作**改回**裸 `className="text-primary-600 hover:text-primary-700 hover:underline transition-colors text-sm"` ⇒ 判据 ①/④ 具名红；恢复 ⇒ 绿。把员工页的 `<RowActionLink` 换成 `<button` ⇒ 判据 ③ 红。
+数据: **边界（照实登记，§19.1）**：① 只裁「与原语**同规格**」的副本 —— 缺 `hover:text-primary-700` 的**漂移副本**（`purchase-orders` / `suppliers` / 各处页面级链接）不在面内（已不是同一份规格，收口要先逐页裁定形态）；② 静态文本判据判不了「渲染是否同色同字号」（由原语变体断言 + 真机读图承担）；③ 判不了「新页面用 `Button` 手拼行内动作」（意图判不了，由 `row-action-density-scan.mjs` 与评审承担）；④ `mini-app` / H5 各自一套 token，不在面内。
+跳过: [frontend-contract] 源码扫描 + jsdom 组件渲染判据（vitest），零网络、零真实 LLM 调用，不进入 agent-eval 冒烟；计分通道 = traces.tests 里的两个前端判据文件
+```
+溯源: 2026-11-03 新增（issue #7082：单据列表行内动作样式的其余副本收口到共享原语）。取号 MC-146（`python3 scripts/next_case_id.py MC` 现取；工具返回历史空档 MC-099 而按裁定**不回填**，且 139~145 属在飞/已合占用区间 ⇒ 按「现取最大号之后 + 避开该区间」取 146）。落码 = ① 原语扩展 4 个**真实**消费点变体（`size` / `emphasis` / `tone` / `disabledStyle`，故意不暴露 `className` —— 绕过变体 = 没收口）② 4 处迁移（售后「查看」、员工「姓名」、工人档案「默认页面」、加工项「编辑/删除」）③ 判据本体 `frontend/admin-web/scripts/row-action-link-scan.mjs`（纯函数 + CLI，三态口径；token **集合**比对而非逐字节比对 —— issue 原文那条逐字节判据实测只命中 1 处，是空断言）+ 台账 `frontend/admin-web/tests/unit/row-action-link-ledger.json` + 守卫 `frontend/admin-web/tests/unit/row-action-link-single-source-guard.test.ts`（9 条，含负控与内存注入红证）。**issue 两处前提已漂移**（如实登记，不假装做了）：入库单在 #8011 之后**正是**订单列表当前形态（ghost `Button` 主行动），商品在 #8038 之后已走 `RowActions` ⇒ 两者**没有**链接规格副本，台账 `conformant` 锚定其形态。 ｜ tags: design-system, row-action, single-source, false-green
 
 ## 商家入驻域（7 case）
 
@@ -14605,8 +14620,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：988（活跃 153，跳过 835）
-- tier 分布：smoke 15 / normal 911 / adversarial 33
+- 用例总数：989（活跃 153，跳过 836）
+- tier 分布：smoke 15 / normal 912 / adversarial 33
 - 售后域：16
 - Agent 核心域：13
 - API 层域：21
@@ -14622,7 +14637,7 @@
 - 人事域：13
 - 知识问答域：9
 - 客户主数据迁移域：10
-- 杂项域：190
+- 杂项域：191
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：76
@@ -14879,6 +14894,7 @@
 - MC-139: 商家看到的失败编号 = 服务端日志里那条记录：requestId 唯一来源 + 前端可复制上屏（issue #6957）
 - MC-143: 悬空 PR 扫描器把「未解决评审线程」计入**需要处置**（issue #6997）：`isResolved=false ∧ isOutdated=false` ⇒ 判红并报出 `path` + 首行摘要；`isOutdated=true` 单独一类**不算阻塞**；读不到 ⇒ 退 `3`（不得当 0）
 - MC-144: deploy-reconcile 的漂移判据必须覆盖**构建输入面**（部署腿 workflow / 构建配方 / 线上自证脚本）：只改 CI 或部署脚本的修复合入后不得判「已上线」，更不得自动关值守单（issue #7034）
+- MC-146: 单据列表「行内动作」的链接规格只许有一处定义：副本必须走共享原语 `RowActionLink`，未登记即红 / 台账只许缩短（issue #7082）
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）

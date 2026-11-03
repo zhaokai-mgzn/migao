@@ -50,4 +50,87 @@ describe('RowActionLink（UI-112：单据列表行内动作的唯一形态）', 
     fireEvent.click(el)
     expect(onClick).not.toHaveBeenCalled()
   })
+
+  // ==================== issue #7082：变体 = 迁移点"外观逐字不变"的承载体 ====================
+  //
+  // 每个变体都对应一个**真实**消费点（不留投机 API）。这四条的读数是「迁移前那一串 class」
+  // 的**冻结记录**：变体映射被改（字号 / 字重 / 禁用态观感 / 色族）⇒ 迁移点的观感就变了 ⇒ 红。
+
+  it('`size="sm"` = `text-sm`（售后列表行内「查看」改前的那一串：token 集合逐字相同）', () => {
+    render(
+      <RowActionLink size="sm" onClick={() => {}}>
+        查看
+      </RowActionLink>,
+    )
+    const el = screen.getByRole('button', { name: '查看' })
+    // 改前 = `text-primary-600 hover:text-primary-700 hover:underline transition-colors text-sm`
+    for (const token of ['text-primary-600', 'hover:text-primary-700', 'hover:underline', 'transition-colors', 'text-sm']) {
+      expect(el.className).toContain(token)
+    }
+    // 反向自证：`xs` / `md` 不得带 `text-sm`（否则「字号由 prop 决定」是空断言）
+    expect(el.className).not.toContain('text-xs')
+  })
+
+  it('`size="xs"` = `text-xs`（工人档案面板「默认页面」改前的 `text-xs`）', () => {
+    render(
+      <RowActionLink size="xs" onClick={() => {}}>
+        默认页面
+      </RowActionLink>,
+    )
+    const el = screen.getByRole('button', { name: '默认页面' })
+    expect(el.className).toContain('text-xs')
+    expect(el.className).not.toContain('text-sm')
+  })
+
+  it('`emphasis` = `font-medium`（员工列表「姓名」那一格改前的字重）', () => {
+    render(
+      <RowActionLink size="sm" emphasis onClick={() => {}}>
+        张三
+      </RowActionLink>,
+    )
+    const el = screen.getByRole('button', { name: '张三' })
+    expect(el.className).toContain('font-medium')
+    // 反向自证：不传 emphasis ⇒ 不得有 font-medium（否则强调是空断言）
+    render(
+      <RowActionLink size="sm" onClick={() => {}}>
+        李四
+      </RowActionLink>,
+    )
+    expect(screen.getByRole('button', { name: '李四' }).className).not.toContain('font-medium')
+  })
+
+  it('`disabledStyle="keep"` = 保持字色 + `cursor-default`（员工姓名无写权限时**不得**变灰占位）', () => {
+    render(
+      <RowActionLink size="sm" emphasis disabledStyle="keep" disabled onClick={() => {}}>
+        张三
+      </RowActionLink>,
+    )
+    const el = screen.getByRole('button', { name: '张三' })
+    expect(el).toBeDisabled()
+    // 改前 = `text-primary-600 … text-sm font-medium disabled:cursor-default`
+    expect(el.className).toContain('text-primary-600')
+    expect(el.className).toContain('cursor-default')
+    expect(el.className).toContain('font-medium')
+    expect(el.className).not.toContain('text-neutral-400')
+    expect(el.className).not.toContain('cursor-not-allowed')
+  })
+
+  it('`tone="danger"` = 红字（加工项面板行内「删除」改前的 `text-red-500 hover:text-red-600`）', () => {
+    render(
+      <RowActionLink size="sm" tone="danger" onClick={() => {}}>
+        删除
+      </RowActionLink>,
+    )
+    const el = screen.getByRole('button', { name: '删除' })
+    expect(el.className).toContain('text-red-500')
+    expect(el.className).toContain('hover:text-red-600')
+    expect(el.className).not.toContain('text-primary-600')
+    // 反向自证：默认 tone 仍是主题色（不然 danger 会把所有行内动作染红）
+    render(
+      <RowActionLink size="sm" onClick={() => {}}>
+        编辑
+      </RowActionLink>,
+    )
+    expect(screen.getByRole('button', { name: '编辑' }).className).toContain('text-primary-600')
+  })
 })

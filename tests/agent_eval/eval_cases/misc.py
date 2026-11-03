@@ -2,7 +2,7 @@
 # 本文件由 render_cases.py 生成，勿手改（改了也留不住：下次重渲染会覆盖）
 # 源: cases/*.yml（case-contract 单一源）
 # 重新生成: python3 render_cases.py --cases <dir> --out-eval <包目录> --out-md <md>
-# 域: misc（源: cases/misc.yml，190 条）
+# 域: misc（源: cases/misc.yml，191 条）
 
 from ._schema import Difficulty, EvalCase, Skill
 
@@ -3496,6 +3496,24 @@ _CASE_MC_144 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── MC-146 [NORMAL] 单据列表「行内动作」的链接规格只许有一处定义：副本必须走共享原语 `RowActionLink`，未登记即红 / 台账只许缩短（issue #7082）（源: cases/misc.yml）──
+_CASE_MC_146 = EvalCase(
+    id='MC-146',
+    legacy_id='',
+    title='单据列表「行内动作」的链接规格只许有一处定义：副本必须走共享原语 `RowActionLink`，未登记即红 / 台账只许缩短（issue #7082）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['同一件事（跳到该行详情）在售后列表是一段主题色文字链接、在入库单是描边按钮、在员工列表是另一段链接串 —— 过两周到底哪个才算「对的」？我把这几处各自改好看一点，行不行？'],
+    expectations=[],
+    data_checks=['🔴 **判据 ①（未登记即红，执行式）**：`frontend/admin-web/src/**` 里「链接规格」= **同一个类名串同时含** `text-primary-600` + `hover:text-primary-700` + `hover:underline`；除共享原语 `src/components/ui/RowActionLink.tsx` 外零副本（4 处已迁移 + 1 条带理由豁免）。执行点 = frontend/admin-web/tests/unit/row-action-link-single-source-guard.test.ts 的「③ 未登记即红」', '🔴 **判据 ②（负控：射程准）**：原语**自身**里的同一串**不被扫**（它是比对基准，扫它 = 恒红）；反向自证 = 原语真的含这三个 token（删掉 ⇒ 扫描面为空 ⇒ 先在这里红）。执行点 = 同文件「① 扫描面非空 + 原语自证」+「② 负控」', '🔴 **判据 ③（接线在）**：四个迁移点各自必须逐字含 `<RowActionLink` 且含登记的变体 prop（`size="sm"` / `size="xs"` / `emphasis` / `disabledStyle="keep"` / `tone="danger"`）—— 「把整段行内动作删掉」也能让副本消失，这条堵掉那种假绿。执行点 = 同文件「⑤ 接线在」', '🔴 **判据 ④（迁移回退即红）**：已迁移文件里**又**出现裸规格串（= 迁回手抄）⇒ 具名点名该文件。执行点 = 同文件「④ 迁移回退即红」（在真语料的内存副本上逐字还原售后页改前形态取证）', '🔴 **判据 ⑤（台账只许缩短 + 不撒谎）**：`exempt` 条数 > `frozen_exempt_count` ⇒ 红；条目已不再命中 ⇒ 僵尸红；`conformant`（入库单 / 商品**有意**不走本原语）要求锚在、禁止锚不在 ⇒ 悄悄改成 `RowActionLink` 却不改台账当场红。执行点 = 同文件「⑥ 台账只许缩短」+「⑦ 形态台账不撒谎」', '🔴 **判据 ⑥（外观逐字不变）**：迁移点的字号 / 字重 / 禁用态观感 / 色族由**原语变体**表达，逐条钉 + 反向自证：`size="sm"`⇒`text-sm`、`size="xs"`⇒`text-xs`、`emphasis`⇒`font-medium`、`disabledStyle="keep"`⇒保持字色+`cursor-default`（**不得**变灰占位）、`tone="danger"`⇒`text-red-500 hover:text-red-600`。执行点 = frontend/admin-web/tests/unit/components/RowActionLink.test.tsx 的「issue #7082：变体」五条', '🔴 **红证（注入式，PR body 逐条给读数）**：把售后页行内动作**改回**裸 `className="text-primary-600 hover:text-primary-700 hover:underline transition-colors text-sm"` ⇒ 判据 ①/④ 具名红；恢复 ⇒ 绿。把员工页的 `<RowActionLink` 换成 `<button` ⇒ 判据 ③ 红。', '**边界（照实登记，§19.1）**：① 只裁「与原语**同规格**」的副本 —— 缺 `hover:text-primary-700` 的**漂移副本**（`purchase-orders` / `suppliers` / 各处页面级链接）不在面内（已不是同一份规格，收口要先逐页裁定形态）；② 静态文本判据判不了「渲染是否同色同字号」（由原语变体断言 + 真机读图承担）；③ 判不了「新页面用 `Button` 手拼行内动作」（意图判不了，由 `row-action-density-scan.mjs` 与评审承担）；④ `mini-app` / H5 各自一套 token，不在面内。'],
+    skip_reason='[frontend-contract] 源码扫描 + jsdom 组件渲染判据（vitest），零网络、零真实 LLM 调用，不进入 agent-eval 冒烟；计分通道 = traces.tests 里的两个前端判据文件',
+    tags=['design-system', 'row-action', 'single-source', 'false-green'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 CASES = (
     _CASE_MC_001,
     _CASE_MC_002,
@@ -3687,4 +3705,5 @@ CASES = (
     _CASE_MC_139,
     _CASE_MC_143,
     _CASE_MC_144,
+    _CASE_MC_146,
 )
