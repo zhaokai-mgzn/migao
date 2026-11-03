@@ -7,7 +7,7 @@
   "_anchor_note": "读数取自该 sha 的 `origin/main`（本判据首次落地时的基线）。它只是**出处留档**，不是判据 —— 判据只比对实测值与 `entries`。",
   "entries": {
     "no_channel_total": 0,
-    "backend_contract_scoring_zero": 295
+    "backend_contract_scoring_zero": 296
   },
   "history": [
     {
@@ -1313,6 +1313,13 @@
       "no_channel_total": 0,
       "backend_contract_scoring_zero": 295,
       "note": "批次合并（1 个 PR：#8560）：合并前从 `origin/main` 重建集成分支，锚点取 main 版后**按实测重锚**（不抄任何单支 PR 里写的数字）。实测 `no_channel_total` = 0、`backend_contract_scoring_zero` = 295。复核 = `python3 -m pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py -q`。"
+    },
+    {
+      "sha": "b39950daa5efef3f1e59f33bdde2b344046257dc",
+      "date": "2026-11-03",
+      "no_channel_total": 0,
+      "backend_contract_scoring_zero": 296,
+      "note": "issue #6692 / PR #8563 新增 **MC-157**（本地 dev / build 输出目录物理隔离）—— 该用例的 data_checks 是**散文形态**（逐条判据的现取读数写在正文），`scoring_assertion_count == 0` ⇒ 读数 295 → 296 是**合法新增**（真债务 `no_channel_total` 仍为 **0**：MC-157 的机器判红通道 = `traces.tests` 指向 `tests/unit_ci_workflows/test_next_dev_build_isolation.py`，由 CI 的 `ci workflow helper unit tests` job 执行）。按 `_how_to_regen` 在**同一 PR** 内重锚，未放宽任何门禁。"
     }
   ]
 }

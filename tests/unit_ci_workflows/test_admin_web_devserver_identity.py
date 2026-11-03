@@ -94,7 +94,8 @@ CI 侧 `CI=true` ⇒ 本来就是 false ⇒ 不受影响。
   故按「最少代码」不引入第二套机制（缺 `lsof` 时判据退化为「未判定 + 告警」，硬拦面 `reuseExistingServer: false`
   不受影响）。
 - #5121 本包（**取 B：宣告该隔离在本检出内不再成立**）：Next 16 起 `next dev` **按目录单例** ——
-  它在 `<admin-web>/.next/dev/lock` 上取 flock，同检出里第二个 `next dev` **换端口也起不来**
+  它在 `<admin-web>/<DEV_DIST_DIR>/dev/lock` 上取 flock（目录名**现取** `next.config.mjs`，issue #6692），
+  同检出里第二个 `next dev` **换端口也起不来**
   （Next 16.3.5 实测：`⨯ Another next dev server is already running.` + exit 1）。
   ⇒ `ADMIN_WEB_PORT` 的端口隔离**只在「占用者属于别的检出」时有效**。落码 = 在既有判据里新增
   **第二种必红形态**（同检出已有活着的 dev server ⇒ 加载期显式拒绝 + 可执行命令），
@@ -123,6 +124,14 @@ CONFIG = TESTS_DIR / "playwright.config.ts"
 GUARD = TESTS_DIR / "admin_web_devserver_identity.py"
 GUARD_BASENAME = GUARD.name
 ADMIN_WEB_DIR = "frontend/admin-web"
+
+# dev 输出目录（含 dev 锁）的**唯一真值源** = `frontend/admin-web/next.config.mjs` 的 `DEV_DIST_DIR`
+# （issue #6692：dev → `.next-dev`，build 仍是 `.next`；dev 的中间态在 `<DEV_DIST_DIR>/dev/`）。判据实现
+# `tests/admin_web_devserver_identity.py` 现取它；本文件**复用同一个读数**造锁 —— 复制第二份目录名
+# 就等于允许两处漂移，而漂移方向恰恰是「造出的锁在错的目录 ⇒ 判据静默不再探测到 dev server」。
+sys.path.insert(0, str(TESTS_DIR))
+import admin_web_devserver_identity as identity_guard  # noqa: E402
+DEV_LOCK_RELATIVE = Path(identity_guard.DEV_LOCK_RELATIVE)
 
 # 复用 #4249 的判据实现（`_slice_block` / `find_reuse_setting`），**不复制第二份**
 # —— 同族文件同口径，避免两套解析各自漂移。
@@ -496,8 +505,8 @@ LOCK_PROBE_CALL = "info = read_locked_dev_server(lock_path)"
 
 
 def make_dev_lock(project: Path, pid: int = 4242, port: int = 3001) -> Path:
-    """造出 Next 16 的 dev 锁文件 `<project>/.next/dev/lock`（内容形态照 Next 16.3.5 实测）。"""
-    lock = project / ".next" / "dev" / "lock"
+    """造出 Next 16 的 dev 锁文件 `<project>/<DEV_DIST_DIR>/dev/lock`（内容形态照 Next 16.3.5 实测）。"""
+    lock = project / DEV_LOCK_RELATIVE
     lock.parent.mkdir(parents=True, exist_ok=True)
     lock.write_text(
         json.dumps({

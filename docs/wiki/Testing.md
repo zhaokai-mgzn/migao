@@ -197,7 +197,9 @@ cd tests/smoke && SMOKE_ENV=local pytest -m p0
 
 > 🔴 **本地跑 admin-web E2E 的端口隔离有个 Next 16 边界（issue #5121）**：`tests/playwright.config.ts`
 > 支持用 `ADMIN_WEB_PORT=<空闲端口>` 换端口，避开「3001 被**别的检出**的服务占用」。
-> 但 Next 16 起 `next dev` 在 `frontend/admin-web/.next/dev/lock` 上取 flock ⇒ **按目录单例**：
+> 但 Next 16 起 `next dev` 在 `frontend/admin-web/.next-dev/dev/lock` 上取 flock ⇒ **按目录单例**：
+> （目录名 = `next.config.mjs` 的 `DEV_DIST_DIR`，issue #6692 起 dev 与 build 的输出目录物理隔离：
+> dev → `.next-dev`、build → `.next`。）
 > 同一检出里第二个 `next dev` **哪怕换了端口**也会被拒（`⨯ Another next dev server is already running.`）。
 > ⇒ 想同时留着一个手工 dev server 再跑 E2E，请改用**独立 worktree**（独立 checkout 有自己的锁文件）：
 > `./scripts/dev-worktree.sh add <branch>`；否则先停掉本检出里那个 dev server。
