@@ -767,6 +767,9 @@ def test_missing_deps_on_a_frontend_face_is_named_environment_gap(sandbox):
     assert "bmini-app" in out and "tsc" in out, f"没有具名缺的是哪个模块 / 哪个探针：{out}"
     assert "本批未通过" not in out, f"环境缺失被打成了「红」（就还是 issue #6834 的归因错）：{out}"
     assert "--install-deps" in out, f"出口没给可行动的备妥入口：{out}"
+    # 出口必须**真可行动**：本命令默认结束即删工作区 ⇒ 「手动 cd 进去装」那条出口必须带 --keep，
+    # 否则照抄的人 cd 到一个已被删掉（或即将被删）的目录（那是「出口不可执行」）。
+    assert "--keep" in out, f"手动备妥那条出口没带 --keep（集成工作区默认结束即删）：{out}"
     assert "没跑" in out, f"「没跑」必须长得像「没跑」：{out}"
 
 
