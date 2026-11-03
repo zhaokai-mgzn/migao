@@ -4186,7 +4186,7 @@
 ```
 溯源: 2026-10-31 新增（issue #8295）：两步确认，避免误写 ｜ tags: ui, preview
 
-## 杂项域（192 case）
+## 杂项域（193 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -7127,6 +7127,18 @@
 跳过: [backend-contract] 确定性判据（判定器用**真 node** 执行 + setup 的静态接线），零后端、零 LLM，不进入 agent-eval 冒烟
 ```
 溯源: 2026-11-03 新增（issue #6411，2026-10-06 撞见：本地 E2E 的 `admin.json` 复用窗口 1h > 登录态真实有效期 ~30min ⇒ 复用失效 token，所有 spec 连带红且无一句话指向「登录态过期」）。取号 MC-148（`python3 scripts/next_case_id.py MC` 现取 main 001-098,100-144；按在飞占用避开 139~147、按「MC-099 刻意空档不回填」不顺延）⇒ 取 148。落码 = ① `tests/e2e/helpers/auth-state-freshness.mjs`（无依赖判定器：JWT `exp` 权威 + mtime 兜底且出声，`now` 可注入）② `tests/e2e/fixtures/auth.setup.ts` 的复用块改为调它并把结论打印（原 `age < 3600_000` 直返删除；需重登 ⇒ 继续走真登录 = 自愈）③ 判据 tests/unit_ci_workflows/test_e2e_auth_reuse_freshness.py（5 条判据 + 注入式红证；用真 node 跑，同 `tests/e2e/helpers/api-base-url.mjs` 范式）。 ｜ tags: e2e, auth, jwt-exp, mtime-fallback, red-proof
+
+### MC-149. tests/e2e 的相对 import 必须解析得到（收集期判据）：少一层 `../` 的 POM 引用会让整套 spec「跑都跑不到」（issue #6411 链内顺带修） 🔵
+```
+你: 本地跑 E2E 时 `npx playwright test --list` 直接报 `Cannot find module './base.page'` 并列出 `Total: 0 tests in 0 files` —— 而单跑某个 spec 时又「看着没事」，这类少一层 `../` 的引用怎么在仓内拦住？
+期望: direct_reply
+数据: 🔴 **判据 1（实例，真语料，会红）**：`tests/e2e/**` 里每一处**相对** import（`from './x'` / `from '../x'`）都必须在本仓真实文件里解析得到（后缀顺序含无扩展名 / `.ts` / `.tsx` / `.js` / `.mjs` / `.cjs` / `index.*`）。修复前它点名 `tests/e2e/pages/auth/login.page.ts -> './base.page'`（`base.page.ts` 在 `tests/e2e/pages/` 下，少一层 `../`）；修后零问题。执行点 = tests/unit_ci_workflows/test_e2e_relative_imports_resolve.py::test_every_relative_import_in_the_e2e_tree_resolves
+数据: 🔴 **判据 2（红证 / 判别力自证）**：同一解析器跑在一棵**造出来的**树上复刻历史形态 ⇒ 必须具名判红；把说明符改成 `../base.page` ⇒ 零问题（负控，证明它不是恒红）。另：本仓现有写法（无扩展名 / 显式 `.mjs`）必须判可解析，且真不存在的说明符必须判不可解析（防假红 + 防恒真）。执行点 = 同文件::test_guard_discriminates_the_missing_parent_segment / ::test_resolver_accepts_the_extensionless_and_index_forms
+数据: **实测读数（收集期，真跑）**：修前 `CI=1 npx playwright test --list` ⇒ `Error: Cannot find module './base.page'` + `Total: 0 tests in 0 files`（退出码非 0）；修后 ⇒ `Total: 482 tests in 47 files`，退出码 **0**。⚠️ 本判据不执行 Playwright（判据 job 不装 `tests/node_modules`），只判**静态可解析性**；「收集期真的过得去」由这条实跑读数承担。
+数据: **边界（照实登记）**：① 只判**相对**说明符，绝对包名 / `@playwright/test` 不在面内（node_modules 解析规则不归本判据）；② 只判 `tests/e2e/**`；③ 判据不联网、不烧 token、不跑浏览器。
+跳过: [backend-contract] 纯静态解析判据（真语料 + tmp 树红证），零网络、零浏览器，非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-11-03 新增（issue #6411 链内顺带修）：`tests/e2e/pages/auth/login.page.ts` 的 `import { BasePage } from './base.page'` 少一层 `../` ⇒ 收集期 `Cannot find module`，任何 import 该 POM 的 spec 连跑都跑不到（实测 `tests/e2e/specs/auth/login-sms.spec.ts` 触发；`--list` 在 origin/main 上是 `Total: 0 tests in 0 files`）。与本 PR 同源（本地 E2E 链不可用）故同批修：改 `../base.page` + 新增本判据。取号 MC-149（`python3 scripts/next_case_id.py MC` 现取；本包已占 MC-148，按「避开 139~147 在飞占用 / 不回填 MC-099」顺延取 149）。 ｜ tags: e2e, import-resolution, collection-phase, red-proof
 
 ## 商家入驻域（7 case）
 
@@ -14635,8 +14647,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：990（活跃 153，跳过 837）
-- tier 分布：smoke 15 / normal 913 / adversarial 33
+- 用例总数：991（活跃 153，跳过 838）
+- tier 分布：smoke 15 / normal 914 / adversarial 33
 - 售后域：16
 - Agent 核心域：13
 - API 层域：21
@@ -14652,7 +14664,7 @@
 - 人事域：13
 - 知识问答域：9
 - 客户主数据迁移域：10
-- 杂项域：192
+- 杂项域：193
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：76
@@ -14911,6 +14923,7 @@
 - MC-144: deploy-reconcile 的漂移判据必须覆盖**构建输入面**（部署腿 workflow / 构建配方 / 线上自证脚本）：只改 CI 或部署脚本的修复合入后不得判「已上线」，更不得自动关值守单（issue #7034）
 - MC-147: **状态列写面全族统一元守卫 SW-100**：53 张有 `status` 列的表 × 134 个写入口逐条登记（未登记即红 / 台账陈旧即红 / 裸字符串写状态列即红 / 每张状态表的合法集合必须有来源）
 - MC-148: 本地 E2E 认证链的复用判据：只复用「token 自己还没过期」的 admin.json，mtime 降为解不出 exp 时的兜底并出声（issue #6411）
+- MC-149: tests/e2e 的相对 import 必须解析得到（收集期判据）：少一层 `../` 的 POM 引用会让整套 spec「跑都跑不到」（issue #6411 链内顺带修）
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）

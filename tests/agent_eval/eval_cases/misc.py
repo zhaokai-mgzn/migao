@@ -2,7 +2,7 @@
 # 本文件由 render_cases.py 生成，勿手改（改了也留不住：下次重渲染会覆盖）
 # 源: cases/*.yml（case-contract 单一源）
 # 重新生成: python3 render_cases.py --cases <dir> --out-eval <包目录> --out-md <md>
-# 域: misc（源: cases/misc.yml，192 条）
+# 域: misc（源: cases/misc.yml，193 条）
 
 from ._schema import Difficulty, EvalCase, Skill
 
@@ -3532,6 +3532,24 @@ _CASE_MC_148 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── MC-149 [NORMAL] tests/e2e 的相对 import 必须解析得到（收集期判据）：少一层 `../` 的 POM 引用会让整套 spec「跑都跑不到」（issue #6411 链内顺带修）（源: cases/misc.yml）──
+_CASE_MC_149 = EvalCase(
+    id='MC-149',
+    legacy_id='',
+    title='tests/e2e 的相对 import 必须解析得到（收集期判据）：少一层 `../` 的 POM 引用会让整套 spec「跑都跑不到」（issue #6411 链内顺带修）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=["本地跑 E2E 时 `npx playwright test --list` 直接报 `Cannot find module './base.page'` 并列出 `Total: 0 tests in 0 files` —— 而单跑某个 spec 时又「看着没事」，这类少一层 `../` 的引用怎么在仓内拦住？"],
+    expectations=['direct_reply'],
+    data_checks=["🔴 **判据 1（实例，真语料，会红）**：`tests/e2e/**` 里每一处**相对** import（`from './x'` / `from '../x'`）都必须在本仓真实文件里解析得到（后缀顺序含无扩展名 / `.ts` / `.tsx` / `.js` / `.mjs` / `.cjs` / `index.*`）。修复前它点名 `tests/e2e/pages/auth/login.page.ts -> './base.page'`（`base.page.ts` 在 `tests/e2e/pages/` 下，少一层 `../`）；修后零问题。执行点 = tests/unit_ci_workflows/test_e2e_relative_imports_resolve.py::test_every_relative_import_in_the_e2e_tree_resolves", '🔴 **判据 2（红证 / 判别力自证）**：同一解析器跑在一棵**造出来的**树上复刻历史形态 ⇒ 必须具名判红；把说明符改成 `../base.page` ⇒ 零问题（负控，证明它不是恒红）。另：本仓现有写法（无扩展名 / 显式 `.mjs`）必须判可解析，且真不存在的说明符必须判不可解析（防假红 + 防恒真）。执行点 = 同文件::test_guard_discriminates_the_missing_parent_segment / ::test_resolver_accepts_the_extensionless_and_index_forms', "**实测读数（收集期，真跑）**：修前 `CI=1 npx playwright test --list` ⇒ `Error: Cannot find module './base.page'` + `Total: 0 tests in 0 files`（退出码非 0）；修后 ⇒ `Total: 482 tests in 47 files`，退出码 **0**。⚠️ 本判据不执行 Playwright（判据 job 不装 `tests/node_modules`），只判**静态可解析性**；「收集期真的过得去」由这条实跑读数承担。", '**边界（照实登记）**：① 只判**相对**说明符，绝对包名 / `@playwright/test` 不在面内（node_modules 解析规则不归本判据）；② 只判 `tests/e2e/**`；③ 判据不联网、不烧 token、不跑浏览器。'],
+    skip_reason='[backend-contract] 纯静态解析判据（真语料 + tmp 树红证），零网络、零浏览器，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['e2e', 'import-resolution', 'collection-phase', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 CASES = (
     _CASE_MC_001,
     _CASE_MC_002,
@@ -3725,4 +3743,5 @@ CASES = (
     _CASE_MC_144,
     _CASE_MC_147,
     _CASE_MC_148,
+    _CASE_MC_149,
 )
