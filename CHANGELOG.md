@@ -5,6 +5,22 @@
 > 原因 = 单文件涨到 512KB 越过扫描上限，详见存档文件头与 issue #6404。
 > **后续条目继续在本文件 `## [Unreleased]
 
+### 撤销批量改价不再要求模型「记得」批次号：本会话只有一批就点名让你带上，认不准就拒绝（2026-11-03，issue #6998）
+
+- **改前**：真 LLM 重放（`PR-108`）里模型执行成功、真实批次号就在上下文里，撤销那一步却把它丢了
+  （`product_batch_update{"action":"revert"}` 无参，只回一句「没有批次号」）；另一种形态是**编造**批次号
+  （`batch_20260923_155` ⇒ 服务端 `NOT_FOUND`）⇒ 撤销要么永不成功，要么打到**错的批次**上
+  （把另一批商品的价格/库存还原成改前值，说不清）。
+- **改后**：`execute` / `revert` 共用**同一个** `batch_id` 解析点（`ProductBatchUpdateTool.resolve_batch_id`）：
+  显式给了就原样用；撤销没给时从「本会话**执行成功**的批次」里定位 —— 恰好一批 ⇒ 拒绝话术里**点名**
+  那个批次号（`batch_id_required`，逐字带上重试即可）；两批以上 ⇒ `batch_id_ambiguous`（要求向商家确认）；
+  一批都没有 ⇒ `batch_preview_required`。三种情形都**不发任何请求**，且**工具从不替模型填批次号去执行**
+  —— `batch_id` 正是确认门禁的卡值比对对象，代执行会让那次比对空跑（#5414 的口径被绕开）。
+  执行段的**结构锁不变**：批次号只能来自 `preview`。
+- 判据：`backend/ai-agent-service/tests/test_product_batch_update.py` 的 `TestRevertBatchIdFallback`
+  （① 缺参三种情形 + 不发请求 / ② 显式值原样用 / ③ 多候选 ⇒ 拒绝 / 写侧台账只记可撤销批次）
+  + `TestSharedBatchIdResolver`（execute 与 revert 同一个解析函数；把 `batch_id` 写进 schema 的工具未登记即红）。
+
 ### 米宝会话卡的「来源组」改成商家的话：不再出现「切换后 / 存量导入 / 来源未知」（2026-11-03，issue #6461）
 
 - **改前**：B 端两端会话卡（桌面 + 手机）把服务端分组标签**逐字渲染**上屏 ——
@@ -23,8 +39,6 @@
   兜底 / 两端渲染面零 `cohortLabel` / 两端同源）、`frontend/bmini-app/tests/cohort-groups-no-jargon.test.tsx`
   （MC-149：手机端渲染与源码面零内部口径词）、`backend/ai-agent-service/tests/test_batch_stock_query.py`
   （工具输出零内部口径词 + 判别力自证）；每条都带注入式红证。
-- 未固化（照实登记）：工具侧文本摘要（`batch_stock_query` 的 `message`）仍用服务端标签拼句，
-  会进模型上下文 —— 本单只收口**卡片**这一面，另单跟踪。
 
 ### 工人屏不再把「没填」的部位规格编成 0：纯空白一律按缺值处理（2026-11-03，issue #7002）
 
