@@ -137,6 +137,30 @@ public class WorkerAdminService {
     @Transactional(rollbackFor = Exception.class)
     public User createWorker(String workerNo, String name, String pin, Object workerPages,
                              String workerOperation) {
+        return createWorker(workerNo, name, pin, workerPages, workerOperation, null);
+    }
+
+    /**
+     * 建一个工人档案（含**岗位**，issue #8337）—— 菜单**以岗位为源**。
+     *
+     * <p>口径（用户 2026-11-01 逐字「通常每个工序或者每个工人只能操作 1-3 个菜单，根据工人岗位来定菜单的」）：</p>
+     * <ul>
+     *   <li>给了岗位、**没给** {@code workerPages} ⇒ 按 {@link WorkerPages#defaultPagesFor} 带出
+     *       该岗位的默认菜单（建号即可用，管理员不必手工勾一遍）；</li>
+     *   <li>给了岗位、**也给了** {@code workerPages} ⇒ <b>显式集合优先</b>（管理员可覆盖默认，
+     *       仍受 {@link WorkerPages#MAX_PAGES_PER_WORKER} 约束）—— 「可再微调」那半句就是这条；</li>
+     *   <li>没给岗位 ⇒ 与今天一字不差（{@code null} = 未收窄 = 全部页面，存量兼容）。</li>
+     * </ul>
+     *
+     * <p>岗位落 {@code users.position}（那张表的「纯展示字段」；工人档案此前从不写它）。
+     * 🔴 它**不是权限**：只决定默认菜单取哪一组；授权判据仍是 {@code /api/worker/**} 的 403。</p>
+     *
+     * @param workerPosition 岗位码（{@link WorkerPages#positions()} 闭词表；{@code null} / 空白 = 未设岗位）
+     * @throws BusinessException 422 岗位不在闭词表（**不静默存**，否则菜单会「按岗位带出」成默认集）
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public User createWorker(String workerNo, String name, String pin, Object workerPages,
+                             String workerOperation, String workerPosition) {
         Long tenantId = TenantContext.getTenantId();
         if (tenantId == null) {
             throw BusinessException.tenantInvalid();
@@ -164,16 +188,23 @@ public class WorkerAdminService {
 
         assertWorkerNoAvailable(no);
 
+        // 岗位（issue #8337）：闭词表校验；空白 = 未设岗位（存量/零回归）
+        String normalizedPosition = validateWorkerPosition(workerPosition);
         // 工人端页面收窄（issue #6788）：null = 未收窄（= 全部页面）。与 `users.permissions`
         // **不是同一格** —— 那是商家 RBAC 权限快照，工人页面码永不写进去（V141/V152 红线）。
-        List<String> restrictedPages = validateWorkerPages(workerPages);
+        // 岗位给了、页面没给 ⇒ 按岗位带出默认菜单（issue #8337 的「建号即可用」）
+        Object effectivePages = workerPages != null || normalizedPosition == null
+                ? workerPages
+                : WorkerPages.defaultPagesFor(normalizedPosition);
+        List<String> restrictedPages = validateWorkerPages(effectivePages);
         // 绑定的工序（issue #7749 / #7766）：null = 不设工序（出入库/仓库等岗位本来就无工序；
         // 生产工人留空则保持「系统推断 + 工序选择器」的旧行为）
         String normalizedOperation = validateWorkerOperation(tenantId, workerOperation);
 
         // 刻意**不**设：phone（工人不用手机号登录）／username（那是员工登录名，V128）／
-        // permissions（工人零菜单权限）／position／mustChangePassword（工人没有可改的密码语义，
+        // permissions（工人零菜单权限）／mustChangePassword（工人没有可改的密码语义，
         // 置 true 会让这个账号被强制改密流程永久锁死）。
+        // `position` **不是**授权字段（见上面 updateWorkerPosition 的说明）：只承载岗位 → 默认菜单。
         User worker = User.builder()
                 .tenantId(tenantId)
                 .workerNo(no)
@@ -183,6 +214,7 @@ public class WorkerAdminService {
                 .status("active")
                 .workerPages(WorkerPages.storedJson(restrictedPages))
                 .workerOperation(normalizedOperation)
+                .position(normalizedPosition)
                 .build();
 
         try {
@@ -192,7 +224,8 @@ public class WorkerAdminService {
             throw duplicateWorkerNo(no);
         }
 
-        log.info("[工人档案] 建号成功：tenantId={}, workerNo={}, workerId={}", tenantId, no, worker.getId());
+        log.info("[工人档案] 建号成功：tenantId={}, workerNo={}, workerId={}, position={}",
+                tenantId, no, worker.getId(), normalizedPosition);
         worker.setPasswordHash(null);
         return worker;
     }
@@ -298,6 +331,86 @@ public class WorkerAdminService {
     }
 
     /**
+     * 设/清这位工人的**岗位**，并按岗位重新带出默认菜单（issue #8337）。
+     *
+     * <p>用户 2026-11-01 逐字「通常每个工序或者每个工人只能操作 1-3 个菜单，根据工人岗位来定菜单的」
+     * ⇒ 岗位是**默认菜单的源**：改了岗位，菜单跟着变（这正是 issue 里「岗位一调整，历史工人菜单
+     * 不会跟着变」的反面）。管理员之后仍可逐人微调（{@link #updateWorkerPages}，受 3 项上限约束）。</p>
+     *
+     * <p>三态：</p>
+     * <ul>
+     *   <li>合法岗位码 ⇒ 落 {@code users.position} + {@code users.worker_pages} = 该岗位默认集；</li>
+     *   <li>{@code null} / 空白 ⇒ <b>清岗位</b>，菜单同时回到「未收窄」（= 全部页面，与建号不传岗位一致）；</li>
+     *   <li>不在闭词表 ⇒ 422 + 可行动出口（**不静默存**：存了个拼错的岗位，默认菜单会静默回落全部）。</li>
+     * </ul>
+     *
+     * <p>🔴 岗位**不是权限**：它只决定默认菜单取哪一组。工人 session 的 {@code permissions} 恒为
+     * {@code []}、可达面恒为 {@code /api/worker/**} —— 本方法**一字不动**授权面（不写
+     * {@code users.permissions}、不写 {@code user_roles}）。</p>
+     *
+     * @return 落库后的档案视图（{@code passwordHash} 已清空）
+     * @throws BusinessException 422 岗位非法 · 404 目标不是本租户的工人档案
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public User updateWorkerPosition(String workerId, String workerPosition) {
+        Long tenantId = TenantContext.getTenantId();
+        if (tenantId == null) {
+            throw BusinessException.tenantInvalid();
+        }
+        String normalizedPosition = validateWorkerPosition(workerPosition);
+        // 岗位 → 默认菜单（issue #8337）；清岗位 ⇒ 回到「未收窄」（全部页面）
+        List<String> derivedPages = normalizedPosition == null
+                ? null
+                : WorkerPages.defaultPagesFor(normalizedPosition);
+
+        // 目标限定工人档案（fail-closed）：查不到 / 不是工人 / 不是本租户 ⇒ 一律拒绝，且零写入
+        User worker = findOwnedWorker(workerId);
+        if (worker == null) {
+            throw BusinessException.notFound("工人档案",
+                    "请在「工人档案」列表里按工号找到这位工人，再设置他的岗位");
+        }
+
+        // 两列一起显式 set（岗位 + 按岗位带出的菜单）。**必须走显式 set**：MyBatis-Plus 的默认
+        // 更新策略是 NOT_NULL ⇒ 「把 null 塞进实体再 updateById」的 SQL 里根本没有这一列
+        // （清岗位 / 清菜单都会静默不生效，接口却回 200）。
+        String stored = WorkerPages.storedJson(derivedPages);
+        userMapper.update(null, new LambdaUpdateWrapper<User>()
+                .eq(User::getId, worker.getId())
+                .eq(User::getTenantId, tenantId)
+                .set(User::getPosition, normalizedPosition)
+                .set(User::getWorkerPages, stored));
+        log.info("[工人档案] 岗位已更新：tenantId={}, workerNo={}, position={}, pages={}",
+                tenantId, worker.getWorkerNo(),
+                normalizedPosition == null ? "未设岗位" : normalizedPosition, derivedPages);
+        worker.setPosition(normalizedPosition);
+        worker.setWorkerPages(stored);
+        worker.setPasswordHash(null);
+        return worker;
+    }
+
+    /**
+     * 校验岗位码（issue #8337 的闭词表在 {@link WorkerPages#positions()}）。
+     *
+     * @return 归一后的岗位码；{@code null} = 未设岗位（合法终态：存量工人与「不按岗位配」的新工人都走这条）
+     */
+    private static String validateWorkerPosition(String workerPosition) {
+        String normalized = workerPosition == null ? "" : workerPosition.trim();
+        if (normalized.isEmpty()) {
+            return null;
+        }
+        if (!WorkerPages.isPosition(normalized)) {
+            throw BusinessException.validationError(
+                    "没有这个工人岗位：" + normalized,
+                    List.of(BusinessException.detail("workerPosition",
+                            "可选岗位：" + WorkerPages.positions() + "（每个岗位带一组默认菜单，"
+                                    + "选好岗位后菜单会自动带出）")),
+                    "选一个岗位（裁剪 / 车位 / 仓管 / 发货）后重试：菜单会按岗位带出默认项；"
+                            + "不想按岗位配就留空（= 不设岗位，菜单沿用逐人勾选）");
+        }
+        return normalized;
+    }
+
+    /**
      * 设/清这位工人**绑定的工序**（issue #7749）—— 用户 2026-10-25 裁定「一个工人对应一个工序」。
      *
      * <p>绑定后，工人扫码报工时由 {@code ProductionScanService} 按本列**自动选中**该工人的工序
@@ -382,7 +495,9 @@ public class WorkerAdminService {
             }
             throw BusinessException.validationError(
                     "工人端菜单有 " + details.size() + " 处不合法", details,
-                    "按逐条理由修正后重试；留空 = 不限制（工人端看到全部页面）");
+                    "按逐条理由修正后重试；首屏最多 " + WorkerPages.MAX_PAGES_PER_WORKER
+                            + " 项（车间手机屏一屏读完），按这位工人的岗位留常用的几项（建号时选岗位即可带出）；"
+                            + "留空 = 不限制（工人端看到全部页面）");
         }
         return check.pages();
     }

@@ -1,4 +1,4 @@
-// case_ids: PG-072, PG-096, HR-002, HR-001, HR-007, UI-091
+// case_ids: PG-072, PG-096, HR-002, HR-001, HR-007, UI-091, MC-158
 package com.migao.admin.service;
 
 import com.baomidou.mybatisplus.core.conditions.Wrapper;
@@ -12,6 +12,7 @@ import com.migao.admin.exception.BusinessException;
 import com.migao.admin.mapper.UserMapper;
 import com.migao.admin.mapper.WorkerSessionMapper;
 import com.migao.admin.security.LoginFailureGuard;
+import com.migao.admin.worker.WorkerPages;
 import com.migao.admin.worker.WorkerSessionService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -646,6 +647,144 @@ class WorkerAdminServiceTest {
                 .hasFieldOrPropertyWithValue("code", "NOT_FOUND");
 
         verify(userMapper, never()).update(isNull(), any());
+    }
+
+    // ============ ⑦ 岗位 → 默认菜单（issue #8337；用户 2026-11-01「根据工人岗位来定菜单的」）============
+
+    @Test
+    @DisplayName("⑦ 建号带岗位、不带菜单 ⇒ 按岗位带出默认菜单（仓管 = 入库 + 补打 + 库存修正 3 项）")
+    void createWorkerWithPositionDerivesTheDefaultMenu() {
+        User created = service.createWorker(WORKER_NO, NAME, PIN, null, null, "仓管");
+
+        assertThat(created.getPosition()).isEqualTo("仓管");
+        assertThat(created.getWorkerPages()).isEqualTo("[\"inbound\",\"reprint\",\"stock\"]");
+        ArgumentCaptor<User> inserted = ArgumentCaptor.forClass(User.class);
+        verify(userMapper).insert(inserted.capture());
+        assertThat(inserted.getValue().getPosition()).isEqualTo("仓管");
+        assertThat(inserted.getValue().getWorkerPages()).isEqualTo("[\"inbound\",\"reprint\",\"stock\"]");
+        // 🔴 岗位不是权限：授权面一格不动
+        assertThat(inserted.getValue().getPermissions()).isNull();
+        assertThat(inserted.getValue().getRole()).isEqualTo("worker");
+    }
+
+    @Test
+    @DisplayName("⑦ 岗位 + 显式菜单 ⇒ **显式集合优先**（管理员可覆盖岗位默认，判据 ③ 的正向）")
+    void explicitPagesWinOverThePositionDefaults() {
+        User created = service.createWorker(WORKER_NO, NAME, PIN, List.of("report"), null, "仓管");
+
+        assertThat(created.getPosition()).isEqualTo("仓管");
+        assertThat(created.getWorkerPages()).isEqualTo("[\"report\"]");
+        assertThat(WorkerPages.defaultPagesFor("仓管")).doesNotContain("report");
+    }
+
+    @Test
+    @DisplayName("⑦ 未设岗位 ⇒ 与今天一字不差（null = 未收窄 = 全部页面，存量零回归）")
+    void withoutPositionTheBehaviourIsUnchanged() {
+        User created = service.createWorker(WORKER_NO, NAME, PIN, null, null, null);
+
+        assertThat(created.getPosition()).isNull();
+        assertThat(created.getWorkerPages()).isNull();
+    }
+
+    @Test
+    @DisplayName("⑦ 未知岗位 ⇒ 422（点名 + 可选岗位）且**不建号**（不静默落回全部页面）")
+    void unknownPositionIsRejectedWithoutCreatingAnything() {
+        assertThatThrownBy(() -> service.createWorker(WORKER_NO, NAME, PIN, null, null, "仓储"))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("code", "VALIDATION_ERROR")
+                .hasMessageContaining("仓储")
+                .satisfies(e -> assertThat(((BusinessException) e).getDetails())
+                        .extracting("field").containsExactly("workerPosition"));
+        verify(userMapper, never()).insert(any(User.class));
+    }
+
+    @Test
+    @DisplayName("⑦ 超过首屏上限（4 项）⇒ 422 **具名**（最多 3 项 / 你填了 4 项）且零写入（判据 ④ 外侧）")
+    void moreThanThePageCapIsRejectedByName() {
+        assertThatThrownBy(() -> service.createWorker(WORKER_NO, NAME, PIN,
+                List.of("inbound", "reprint", "stock", "report")))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("code", "VALIDATION_ERROR")
+                .hasMessageContaining("不合法")
+                .satisfies(e -> assertThat(((BusinessException) e).getDetails())
+                        .extracting("message")
+                        .anySatisfy(text -> assertThat(String.valueOf(text))
+                                .contains("最多 3 项")
+                                .contains("你填了 4 项")));
+        verify(userMapper, never()).insert(any(User.class));
+
+        // 边界内侧：正好 3 项 ⇒ 建号成功（两侧都钉）
+        User created = service.createWorker(WORKER_NO, NAME, PIN,
+                List.of("inbound", "reprint", "stock"));
+        assertThat(created.getWorkerPages()).isEqualTo("[\"inbound\",\"reprint\",\"stock\"]");
+    }
+
+    @Test
+    @DisplayName("⑦ 改岗位 ⇒ 菜单按新岗位重新带出（两列一起显式 set，别的列不动）")
+    void updateWorkerPositionReDerivesTheMenu() {
+        service.createWorker(WORKER_NO, NAME, PIN);
+        stubWorkerRowById();
+
+        User updated = service.updateWorkerPosition("worker-1", "发货");
+
+        assertThat(updated.getPosition()).isEqualTo("发货");
+        assertThat(updated.getWorkerPages()).isEqualTo("[\"shipment\",\"to_ship\"]");
+        LambdaUpdateWrapper<User> wrapper = capturedPagesWrapper();
+        assertThat(storedColumnOf(wrapper, "position")).isEqualTo("发货");
+        assertThat(storedPagesOf(wrapper)).isEqualTo("[\"shipment\",\"to_ship\"]");
+        // 部分更新：SET 子句只有 岗位 + 菜单 两列
+        assertThat(wrapper.getSqlSet().split(",")).hasSize(2);
+        // 授权面一格未动
+        assertThat(workersTable.get().getPermissions()).isNull();
+    }
+
+    @Test
+    @DisplayName("⑦ 清岗位（null）⇒ 菜单回到「未收窄」（全部页面）—— 两列都真的写成 NULL")
+    void clearingThePositionReturnsToAllPages() {
+        service.createWorker(WORKER_NO, NAME, PIN, null, null, "仓管");
+        stubWorkerRowById();
+
+        User updated = service.updateWorkerPosition("worker-1", null);
+
+        assertThat(updated.getPosition()).isNull();
+        assertThat(updated.getWorkerPages()).isNull();
+        LambdaUpdateWrapper<User> wrapper = capturedPagesWrapper();
+        assertThat(wrapper.getSqlSet()).contains("position").contains("worker_pages");
+        assertThat(storedColumnOf(wrapper, "position")).isNull();
+        assertThat(storedPagesOf(wrapper)).isNull();
+    }
+
+    @Test
+    @DisplayName("⑦ 改岗位用未登记岗位名 ⇒ 422 + 零写入（岗位拼错不许静默落回全部页面）")
+    void updateWorkerPositionRejectsAnUnknownPosition() {
+        service.createWorker(WORKER_NO, NAME, PIN);
+        stubWorkerRowById();
+
+        assertThatThrownBy(() -> service.updateWorkerPosition("worker-1", "车位工"))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("code", "VALIDATION_ERROR")
+                .hasMessageContaining("没有这个工人岗位");
+        verify(userMapper, never()).update(isNull(), any());
+    }
+
+    @Test
+    @DisplayName("⑦ 岗位默认之上仍可逐人微调（显式菜单优先），但微调超过 3 项 ⇒ 422 + 零写入")
+    void perWorkerOverrideStillWinsButIsCapped() {
+        service.createWorker(WORKER_NO, NAME, PIN, null, null, "仓管");
+        stubWorkerRowById();
+
+        User overridden = service.updateWorkerPages("worker-1", List.of("report"));
+        assertThat(overridden.getWorkerPages()).isEqualTo("[\"report\"]");
+
+        assertThatThrownBy(() -> service.updateWorkerPages("worker-1",
+                List.of("report", "piecework", "inbound", "reprint")))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("code", "VALIDATION_ERROR")
+                .satisfies(e -> assertThat(((BusinessException) e).getDetails())
+                        .extracting("message")
+                        .anySatisfy(text -> assertThat(String.valueOf(text))
+                                .contains("最多 3 项")
+                                .contains("你填了 4 项")));
     }
 
     // ============ ⑥ 绑定逻辑工序（issue #7749）：一个工人对应一个工序 ============

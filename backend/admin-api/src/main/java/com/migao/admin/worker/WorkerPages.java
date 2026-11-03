@@ -96,6 +96,27 @@ public final class WorkerPages {
     public static final String STOCK = "stock";
 
     /**
+     * 页面键：**拍照入库**（issue #8337）—— 手机端「拍上游标签 ⇒ 过账 ⇒ 打标签」
+     * （{@code frontend/bmini-app/src/pages/worker/inbound/index}）。
+     *
+     * <p>🔴 它此前**没有页面键**、在工人工作台上**恒显示**（{@code workerMenu.ALWAYS_VISIBLE}）⇒
+     * 任何工人（哪怕车位工）都会看见「拍照入库」，把「每岗位 1~3 个菜单」直接破功
+     * （issue #8337 的用户读数：验收工人一屏 8 个入口 + 这两个恒显示项）。</p>
+     *
+     * <p>纳入闭词表后它参与逐人显隐；**默认集合里保留它**（存量「未收窄」工人零变化），
+     * 由**岗位默认菜单**把仓管之外的人收掉（见 {@link #positionDefaults()}）。</p>
+     */
+    public static final String INBOUND = "inbound";
+
+    /**
+     * 页面键：**补打入库标签**（issue #8337）—— 标签丢了 / 磨花了，重打一张
+     * （{@code frontend/bmini-app/src/pages/worker/reprint/index}）。
+     *
+     * <p>与 {@link #INBOUND} 同族（工人面固有的物料动作），此前的形态同为「无键、恒显示」。</p>
+     */
+    public static final String REPRINT = "reprint";
+
+    /**
      * 页面键：**返工记录**（issue #7860）—— 手机端「报返工的加工单列表」（`/w/rework.html`）。
      *
      * <p>🔴 用户 2026-10-26 裁定「在工人档案中设置过可见权限的工人」能看到：不在默认集合里、
@@ -110,7 +131,8 @@ public final class WorkerPages {
      * <p>顺序 = 工人端默认的页面顺序（读面原样回给前端，前端不再自己排一遍）。</p>
      */
     public static final Set<String> ALL = Collections.unmodifiableSet(new LinkedHashSet<>(List.of(
-            REPORT, PIECEWORK, ORDER, CUT_CALC, SHIPMENT, TO_SHIP, STOCK, INSPECT, REWORK)));
+            REPORT, PIECEWORK, ORDER, CUT_CALC, SHIPMENT, TO_SHIP, STOCK, INBOUND, REPRINT,
+            INSPECT, REWORK)));
 
     private WorkerPages() {
     }
@@ -125,7 +147,12 @@ public final class WorkerPages {
      * —— 配置面据此把「未收窄」渲染成默认勾选态，前端不另抄一份默认值。可选页全集 = {@link #ALL}。</p>
      */
     public static List<String> defaultPages() {
-        return List.of(REPORT, PIECEWORK, ORDER, CUT_CALC, SHIPMENT, TO_SHIP, STOCK);
+        // issue #8337：`inbound` / `reprint` 纳入闭词表时**必须**同时进默认集合 —— 它们此前在工人
+        // 工作台是「无键、恒显示」，若只加键不加默认，那么「未收窄」（`null`）的存量工人会在升级
+        // 那一刻**丢掉**这两个入口（fail-open 的默认集变小 = 静默收窄）。
+        // 「每工人 1~3 项」靠**岗位默认菜单**（{@link #positionDefaults()}）+ 写侧上限收口，
+        // **不是**靠砍默认集。
+        return List.of(REPORT, PIECEWORK, ORDER, CUT_CALC, SHIPMENT, TO_SHIP, STOCK, INBOUND, REPRINT);
     }
 
     /**
@@ -146,8 +173,97 @@ public final class WorkerPages {
         labels.put(SHIPMENT, "发货");
         labels.put(TO_SHIP, "待发货单");
         labels.put(STOCK, "库存修正");
+        labels.put(INBOUND, "拍照入库");
+        labels.put(REPRINT, "补打入库标签");
         labels.put(INSPECT, "质检");
         labels.put(REWORK, "返工记录");
+        return labels;
+    }
+
+    // ════════════════════════════════════════════════════════════════════════════
+    // 岗位 → 默认菜单（issue #8337；用户 2026-11-01 逐字「通常每个工序或者每个工人只能操作
+    // 1-3 个菜单，根据工人岗位来定菜单的」）
+    // ════════════════════════════════════════════════════════════════════════════
+
+    /**
+     * 岗位码：**裁剪**（报工 + 计件；裁高计算器由管理员按需加）。
+     *
+     * <p>🔴 岗位码是**人话**（与 {@code workerOperation} 的「韩褶」同款口径），落 {@code users.position}
+     * —— 那是「纯展示字段」。岗位**不是权限**：它只决定**默认菜单**取哪一组，写库的仍是
+     * {@code users.worker_pages}；授权的唯一判据仍是 {@code /api/worker/**} + 服务端 403。</p>
+     */
+    public static final String POSITION_CUTTING = "裁剪";
+
+    /** 岗位码：**车位**（缝纫车位；报工 + 计件）。 */
+    public static final String POSITION_SEWING = "车位";
+
+    /** 岗位码：**仓管**（拍照入库 + 补打入库标签 + 库存修正）。 */
+    public static final String POSITION_WAREHOUSE = "仓管";
+
+    /** 岗位码：**发货**（拍照发货 + 待发货单）。 */
+    public static final String POSITION_SHIPPING = "发货";
+
+    /**
+     * 每工人**首屏最多几项**（issue #8337）。
+     *
+     * <p>取值 3（issue 期望 2 逐字「每工人 1~3 个菜单」；用户原话「只能操作 1-3 个菜单」）：
+     * ① 车间手机屏 390×844 上，身份条 + 主按钮之外**一屏读完** ≤ 3 条入口（{@code migao-dev-flow}
+     * §31 P1「常驻面克制」）；② 真机读数（issue #8337）：一个车位工在企业里只用 1~3 项，
+     * 8 项是「权限太大」的直接成因；③ 岗位默认菜单的最大项数（仓管 = 3）必须 ≤ 本上限 ——
+     * 「默认合法」与「手改有上限」是同一个数，否则默认值自己就违规。</p>
+     */
+    public static final int MAX_PAGES_PER_WORKER = 3;
+
+    /** 全部岗位码（配置面下拉的唯一来源；顺序 = 车间工序链）。 */
+    public static List<String> positions() {
+        return List.of(POSITION_CUTTING, POSITION_SEWING, POSITION_WAREHOUSE, POSITION_SHIPPING);
+    }
+
+    /**
+     * 岗位 → **默认菜单**（issue #8337 的核心诉求：菜单以岗位为源，而不是逐人自由勾选）。
+     *
+     * <p>管理员仍可覆盖（{@code PUT /api/admin/workers/{id}/pages} 的显式集合优先于本表）；
+     * 覆盖受 {@link #MAX_PAGES_PER_WORKER} 约束。岗位变更时由
+     * {@code WorkerAdminService#updateWorkerPosition} 重新按本表带出。</p>
+     *
+     * <p>🔴 {@code inspect} / {@code rework} **不进任何岗位默认**（issue #7162 / #7860 的既有裁定：
+     * 质检逐人开、且 inspect 同时是服务端写准入；返工记录同样逐人开）。</p>
+     *
+     * @return 岗位码 → 默认页面集（顺序按 {@link #ALL} 的次序；每组 ≤ {@link #MAX_PAGES_PER_WORKER}）
+     */
+    public static Map<String, List<String>> positionDefaults() {
+        Map<String, List<String>> defaults = new LinkedHashMap<>();
+        defaults.put(POSITION_CUTTING, List.of(REPORT, PIECEWORK));
+        defaults.put(POSITION_SEWING, List.of(REPORT, PIECEWORK));
+        defaults.put(POSITION_WAREHOUSE, List.of(INBOUND, REPRINT, STOCK));
+        defaults.put(POSITION_SHIPPING, List.of(SHIPMENT, TO_SHIP));
+        return defaults;
+    }
+
+    /**
+     * 这位岗位的默认菜单：{@code null} / 空白 / 未登记的岗位 ⇒ {@link #defaultPages()}。
+     *
+     * <p>读侧**宽容**（与 {@link #restrictedOrNull} 同一条 fail-open 方向）：存量工人没有岗位
+     * （{@code users.position IS NULL}）是**合法终态**，不是「配置没填完」⇒ 行为与今天一字不差。</p>
+     */
+    public static List<String> defaultPagesFor(String position) {
+        String key = position == null ? "" : position.trim();
+        List<String> defaults = key.isEmpty() ? null : positionDefaults().get(key);
+        return defaults == null ? defaultPages() : defaults;
+    }
+
+    /** 岗位码是否合法（写侧闭词表；空白 ⇒ {@code false}，由调用方单独裁「清空」）。 */
+    public static boolean isPosition(String position) {
+        return position != null && positionDefaults().containsKey(position.trim());
+    }
+
+    /** 岗位 → 人话说明（配置面下拉的副标；说明「这个岗位默认带出哪几项」）。 */
+    public static Map<String, String> positionLabels() {
+        Map<String, String> labels = new LinkedHashMap<>();
+        labels.put(POSITION_CUTTING, "裁剪：报工 + 计件工资报表");
+        labels.put(POSITION_SEWING, "车位：报工 + 计件工资报表");
+        labels.put(POSITION_WAREHOUSE, "仓管：拍照入库 + 补打入库标签 + 库存修正");
+        labels.put(POSITION_SHIPPING, "发货：发货 + 待发货单");
         return labels;
     }
 
@@ -330,6 +446,15 @@ public final class WorkerPages {
             errors.add(Map.entry("workerPages",
                     "至少要留一个页面：一页都不留时工人端会按「没读到权限」全开运行（与意图相反）。"
                             + "要让这位工人不干活，请用「停用」而不是清空菜单"));
+        }
+        // 首屏最多几项（issue #8337）：超出 ⇒ **具名拒错**（说清上限 / 你填了几项 / 该删哪几项）。
+        // 放在最后是为了让「未知键 / 重复键」先被点名 —— 修一个错的键比数项的条数更紧急。
+        if (errors.isEmpty() && pages.size() > MAX_PAGES_PER_WORKER) {
+            errors.add(Map.entry("workerPages",
+                    "工人端菜单最多 " + MAX_PAGES_PER_WORKER + " 项（车间手机屏一屏读完；用户口径「每个工人"
+                            + "只能操作 1-3 个菜单」），你填了 " + pages.size() + " 项：" + pages
+                            + "。请按这位工人的岗位只留常用的几项（每个岗位带一组默认菜单），"
+                            + "其余用「关」逐个收掉"));
         }
         return new Validation(pages, errors);
     }

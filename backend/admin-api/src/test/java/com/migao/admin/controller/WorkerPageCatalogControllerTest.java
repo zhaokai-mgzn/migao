@@ -1,6 +1,6 @@
 package com.migao.admin.controller;
 
-// case_ids: PG-072, PG-065, BM-056, HR-001, HR-002
+// case_ids: PG-072, PG-065, BM-056, HR-001, HR-002, MC-158
 
 import com.migao.admin.security.RequirePermission;
 import com.migao.admin.worker.WorkerPages;
@@ -53,8 +53,25 @@ class WorkerPageCatalogControllerTest extends BaseControllerTest {
                 .andExpect(jsonPath("$.data.pages[5]").value("to_ship"))
                 // issue #8104：`stock`（库存修正）默认开（操作工具，与 shipment 同档）
                 .andExpect(jsonPath("$.data.pages[6]").value("stock"))
+                // issue #8337：`inbound` / `reprint`（拍照入库 / 补打入库标签）进闭词表 + 默认集合
+                .andExpect(jsonPath("$.data.pages[7]").value("inbound"))
+                .andExpect(jsonPath("$.data.pages[8]").value("reprint"))
                 // issue #7162：质检在闭词表里、但**不在默认集合**（逐人开；同时是服务端写准入）
-                .andExpect(jsonPath("$.data.pages[7]").value("inspect"))
+                .andExpect(jsonPath("$.data.pages[9]").value("inspect"))
+                .andExpect(jsonPath("$.data.pages[10]").value("rework"))
+                // issue #8337：岗位 → 默认菜单（配置面下拉的唯一来源；前端不另抄一份映射）
+                .andExpect(jsonPath("$.data.positions.length()").value(WorkerPages.positions().size()))
+                .andExpect(jsonPath("$.data.positions[3]").value("发货"))
+                .andExpect(jsonPath("$.data.position_labels.仓管").exists())
+                .andExpect(jsonPath("$.data.position_defaults.仓管[0]").value("inbound"))
+                .andExpect(jsonPath("$.data.position_defaults.仓管[1]").value("reprint"))
+                .andExpect(jsonPath("$.data.position_defaults.仓管[2]").value("stock"))
+                .andExpect(jsonPath("$.data.position_defaults.裁剪[0]").value("report"))
+                .andExpect(jsonPath("$.data.position_defaults.裁剪[1]").value("piecework"))
+                .andExpect(jsonPath("$.data.max_pages_per_worker").value(3))
+                // 默认集合里必须有这两个新键（只加键不加默认 = 存量「未收窄」工人升级即丢入口）
+                .andExpect(jsonPath("$.data.default_pages").value(
+                        org.hamcrest.Matchers.hasItems("inbound", "reprint")))
                 .andExpect(jsonPath("$.data.default_pages.length()").value(WorkerPages.defaultPages().size()))
                 .andExpect(jsonPath("$.data.default_pages").value(
                         org.hamcrest.Matchers.not(org.hamcrest.Matchers.hasItem("inspect"))))

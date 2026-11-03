@@ -1,6 +1,6 @@
 package com.migao.admin.worker;
 
-// case_ids: PG-072, PG-065, BM-006, BM-056, HR-001, HR-002, UI-091
+// case_ids: PG-072, PG-065, BM-006, BM-056, HR-001, HR-002, UI-091, MC-158
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -37,14 +37,16 @@ class WorkerPagesTest {
         // —— 键与商家面人话名同批登记（WorkerPages.labels），默认与可选页同源 ⇒ 本条即闭词表守卫。
         assertThat(WorkerPages.defaultPages())
                 .containsExactly("report", "piecework", "order", "cut_calc", "shipment", "to_ship",
-                        "stock");
+                        "stock", "inbound", "reprint");
         // issue #7814（用户 2026-10-26「新增的工人菜单在这里也要能设置」）：`to_ship`（待发货单）
         // 与 `shipment`（拍照发货）是**两个能力** —— 读面 / 写面。合并成一个键 ⇒ 商家想关掉其中一个
         // 就得两个都关（菜单开关 = 显隐，关错了现场就没入口）。默认集合里两者都在。
         // issue #7162：`inspect`（质检）在闭词表里，但**不在默认集合**（逐人开、且是服务端写准入）
+        // issue #8337：`inbound` / `reprint`（拍照入库 / 补打入库标签）此前**无键、恒显示**，现进闭词表；
+        // 它们同时在默认集合里 —— 只加键不加默认 = 让「未收窄」的存量工人在升级那一刻丢掉这两个入口。
         assertThat(WorkerPages.ALL).containsExactly(
-                "report", "piecework", "order", "cut_calc", "shipment", "to_ship", "stock", "inspect",
-                "rework");
+                "report", "piecework", "order", "cut_calc", "shipment", "to_ship", "stock",
+                "inbound", "reprint", "inspect", "rework");
         // issue #7860：`rework`（手机端「报返工的加工单列表」）也不在默认集合 —— 用户裁定
         // 「在工人档案中设置过可见权限的工人」才看得到；报返工的**写**准入与此无关。
         assertThat(WorkerPages.defaultPages()).doesNotContain("inspect", "rework");
@@ -236,5 +238,131 @@ class WorkerPagesTest {
                 .filteredOn(m -> m.getName().equals("effectiveFor"))
                 .singleElement()
                 .satisfies(m -> assertThat(m.getParameterCount()).isEqualTo(1));
+    }
+
+    // ════════════════════════════════════════════════════════════════════════════
+    // 岗位 → 默认菜单 + 首屏最多 3 项（issue #8337）
+    // 用户 2026-11-01 逐字「通常每个工序或者每个工人只能操作 1-3 个菜单，根据工人岗位来定菜单的」
+    // ════════════════════════════════════════════════════════════════════════════
+
+    @Test
+    @DisplayName("⑥ 键集补齐：拍照入库 / 补打入库标签这两张**已存在的**工人端页面有了页面键（此前无键、恒显示）")
+    void inboundAndReprintPagesAreKeyedNow() {
+        // 判据 ①（双向）：键集 ⊇ 工人端真实页面（两张物料页在 bmini 上早已存在：
+        // frontend/bmini-app/src/pages/worker/inbound|reprint/index.tsx）
+        assertThat(WorkerPages.ALL).contains("inbound", "reprint");
+        assertThat(WorkerPages.labels()).containsEntry("inbound", "拍照入库")
+                .containsEntry("reprint", "补打入库标签");
+        // 写侧认得这两个键（否则商家配不出来 = 「少」的那一半）
+        assertThat(WorkerPages.validateRestriction(List.of("inbound")).errors()).isEmpty();
+        assertThat(WorkerPages.validateRestriction(List.of("reprint")).errors()).isEmpty();
+        // 读侧按闭词表顺序下发
+        assertThat(WorkerPages.effectiveFor(List.of("reprint", "inbound")))
+                .containsExactly("inbound", "reprint");
+    }
+
+    @Test
+    @DisplayName("⑥′ 存量**未收窄**工人升级后仍看得见两张物料页（零回退：默认集合含 inbound/reprint）")
+    void legacyUnrestrictedWorkersKeepTheTwoMaterialPagesAfterUpgrade() {
+        // 未收窄（`worker_pages IS NULL`，存量与新号的默认）⇒ 下发 defaultPages()
+        // ⇒ 两个此前「无键、恒显示」的入口**照旧在**（它们在改前对所有人可见）。
+        // 这是「存量零回退」的机械判据：谁把 inbound/reprint 从 defaultPages() 里去掉 ⇒ 本条红。
+        assertThat(WorkerPages.effectiveFor(null)).contains("inbound", "reprint");
+        assertThat(WorkerPages.effectiveFor("[]")).contains("inbound", "reprint");
+        // 反向对照：**收窄过的**存量集没有这两个键 ⇒ 下发里也没有（这正是 issue 判据 ③ 要的
+        // 「车位工看不见入库/补打」；要开回来 = 管理员勾上或设岗位「仓管」，两条出口都已落地）
+        assertThat(WorkerPages.effectiveFor(List.of("report", "piecework")))
+                .doesNotContain("inbound", "reprint");
+    }
+
+    @Test
+    @DisplayName("⑦ 每个岗位都有默认菜单，且默认键**全部在闭词表内**、项数 ≤ 上限（判据 ②）")
+    void everyPositionHasDefaultsInsideTheVocabulary() {
+        assertThat(WorkerPages.positions()).isNotEmpty();
+        assertThat(WorkerPages.positionDefaults().keySet())
+                .as("每个岗位都必须有默认菜单（少一个 ⇒ 建号时该岗位静默落回全部页面）")
+                .containsExactlyInAnyOrderElementsOf(WorkerPages.positions());
+        for (Map.Entry<String, List<String>> entry : WorkerPages.positionDefaults().entrySet()) {
+            assertThat(entry.getValue())
+                    .as("岗位 %s 的默认菜单里出现了闭词表以外的键（配了也点不进去）", entry.getKey())
+                    .isNotEmpty()
+                    .allSatisfy(key -> assertThat(WorkerPages.ALL).contains(key))
+                    .as("岗位 %s 的默认菜单超过首屏上限（默认值自己就违规）", entry.getKey())
+                    .hasSizeLessThanOrEqualTo(WorkerPages.MAX_PAGES_PER_WORKER);
+            // 默认菜单必须能通过写侧校验（默认值 = 合法值，不是「默认就 422」）
+            assertThat(WorkerPages.validateRestriction(entry.getValue()).errors())
+                    .as("岗位 %s 的默认菜单过不了写侧校验", entry.getKey())
+                    .isEmpty();
+        }
+        // 每个岗位都有人话说明（配置面下拉副标）
+        assertThat(WorkerPages.positionLabels().keySet())
+                .containsExactlyInAnyOrderElementsOf(WorkerPages.positions());
+    }
+
+    @Test
+    @DisplayName("⑧ 岗位默认菜单 == issue 判据的读数（裁剪=报工+计件 2 项 / 仓管=入库+补打+库存 3 项 / 发货=发货+待发货）")
+    void positionDefaultsMatchTheIssueCriteria() {
+        assertThat(WorkerPages.positionDefaults().get("裁剪"))
+                .containsExactly("report", "piecework");
+        assertThat(WorkerPages.positionDefaults().get("车位"))
+                .containsExactly("report", "piecework");
+        assertThat(WorkerPages.positionDefaults().get("仓管"))
+                .containsExactly("inbound", "reprint", "stock");
+        assertThat(WorkerPages.positionDefaults().get("发货"))
+                .containsExactly("shipment", "to_ship");
+        // 能力页（质检 / 返工）**不**进任何岗位默认（issue #7162 / #7860 的既有裁定）
+        for (List<String> defaults : WorkerPages.positionDefaults().values()) {
+            assertThat(defaults).doesNotContain("inspect", "rework");
+        }
+    }
+
+    @Test
+    @DisplayName("⑨ 未设岗位 / 未登记的岗位 ⇒ 回落全部默认页（存量工人零变化、读侧 fail-open）")
+    void blankOrDefaultUnknownPositionFallsBackToAllDefaults() {
+        assertThat(WorkerPages.defaultPagesFor(null)).containsExactlyElementsOf(WorkerPages.defaultPages());
+        assertThat(WorkerPages.defaultPagesFor("  ")).containsExactlyElementsOf(WorkerPages.defaultPages());
+        assertThat(WorkerPages.defaultPagesFor("不存在的岗位"))
+                .containsExactlyElementsOf(WorkerPages.defaultPages());
+        assertThat(WorkerPages.isPosition("仓管")).isTrue();
+        assertThat(WorkerPages.isPosition(" 仓管 ")).isTrue();
+        assertThat(WorkerPages.isPosition(null)).isFalse();
+        assertThat(WorkerPages.isPosition("仓储")).isFalse();
+    }
+
+    @Test
+    @DisplayName("⑩ 首屏最多 3 项：3 项通过、4 项**具名**拒错（说清上限 + 你填了几项）（判据 ④ 边界两侧）")
+    void pageCapIsThreeAndTheFourthIsRejectedByName() {
+        assertThat(WorkerPages.MAX_PAGES_PER_WORKER).isEqualTo(3);
+        // 边界内侧：正好 3 项 ⇒ 通过
+        WorkerPages.Validation three = WorkerPages.validateRestriction(
+                List.of("inbound", "reprint", "stock"));
+        assertThat(three.errors()).isEmpty();
+        assertThat(three.pages()).containsExactly("inbound", "reprint", "stock");
+        // 边界外侧：第 4 项 ⇒ 拒且**具名**（上限 3 / 你填了 4 / 列出这 4 项）
+        WorkerPages.Validation four = WorkerPages.validateRestriction(
+                List.of("inbound", "reprint", "stock", "report"));
+        assertThat(four.ok()).isFalse();
+        assertThat(four.errors()).hasSize(1);
+        assertThat(four.errors().get(0).getKey()).isEqualTo("workerPages");
+        assertThat(four.errors().get(0).getValue())
+                .contains("最多 3 项")
+                .contains("你填了 4 项");
+        // 超出时**不**返回可落库的集合（调用方不能「部分写入」）
+        assertThat(four.pages()).hasSize(4);
+    }
+
+    @Test
+    @DisplayName("⑪ 存量数据：旧键集（不含新键）读面不炸、**不**被默认集合反向放宽（判据 ⑥ 负控）")
+    void legacyStoredSetsKeepWorkingAndAreNotWidened() {
+        // 真机读数（issue #8337）：租户 46 的验收工人原 workerPages = 8 项 —— 原样读出来
+        String legacy = "[\"report\",\"piecework\",\"order\",\"shipment\",\"to_ship\",\"stock\","
+                + "\"inspect\",\"rework\"]";
+        assertThat(WorkerPages.effectiveFor(legacy)).containsExactly(
+                "report", "piecework", "order", "shipment", "to_ship", "stock", "inspect", "rework");
+        // 旧集合里**没有** inbound / reprint ⇒ 下发就没有它们（不做隐式补齐：那会放宽）
+        assertThat(WorkerPages.effectiveFor(legacy)).doesNotContain("inbound", "reprint");
+        // 已撤 / 未知键照旧被裁掉，不抛异常（读写两侧都不炸）
+        assertThat(WorkerPages.effectiveFor("[\"report\",\"legacy_page\"]")).containsExactly("report");
+        assertThat(WorkerPages.effectiveFor("[oops]")).containsExactlyElementsOf(WorkerPages.defaultPages());
     }
 }

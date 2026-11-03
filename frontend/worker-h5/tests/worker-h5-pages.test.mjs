@@ -1,4 +1,4 @@
-// case_ids: PG-065, PG-082, BM-056
+// case_ids: PG-065, PG-082, BM-056, MC-158
 //
 // 工人端**页面开关**的前端消费面（V141，母单 #5161）。
 //
@@ -36,6 +36,8 @@ import {
   PAGE_PIECEWORK,
   PAGE_REWORK,
   PAGE_SHIPMENT,
+  PAGE_INBOUND,
+  PAGE_REPRINT,
   PAGE_STOCK,
   PAGE_TO_SHIP,
   permUnreadNotice,
@@ -44,7 +46,7 @@ import {
 } from '../src/render.mjs'
 
 /** 后端 `WorkerPages.ALL` 的逐字镜像（改后端闭词表 ⇒ 本文件红）。 */
-const BACKEND_PAGE_KEYS = [PAGE_REPORT, PAGE_PIECEWORK, PAGE_ORDER, PAGE_CUT_CALC, PAGE_SHIPMENT, PAGE_TO_SHIP, PAGE_STOCK, PAGE_INSPECT, PAGE_REWORK]
+const BACKEND_PAGE_KEYS = [PAGE_REPORT, PAGE_PIECEWORK, PAGE_ORDER, PAGE_CUT_CALC, PAGE_SHIPMENT, PAGE_TO_SHIP, PAGE_STOCK, PAGE_INBOUND, PAGE_REPRINT, PAGE_INSPECT, PAGE_REWORK]
 
 /** 裁高计算入口（本页唯一的入口；文案 2026-10-10 起用「裁高计算（一体机）」）。 */
 const MACHINE_ENTRY = './machine.html'
@@ -111,7 +113,7 @@ function memStorage(seed = {}) {
 
 // ── 上游契约：页面键闭词表 + 默认全开（两处各一份，必须逐值相同）────────────────────────────
 
-test('页面键闭词表 = 后端 WorkerPages.ALL 的逐字镜像（7 键 + 顺序；改一边不改另一边 ⇒ 红）', () => {
+test('页面键闭词表 = 后端 WorkerPages.ALL 的逐字镜像（11 键 + 顺序；改一边不改另一边 ⇒ 红）', () => {
   assert.equal(new Set(BACKEND_PAGE_KEYS).size, BACKEND_PAGE_KEYS.length, '闭词表有重复键（后端是 Set，重复 = 两套口径）')
   assert.deepEqual(
     BACKEND_PAGE_KEYS,
@@ -120,7 +122,10 @@ test('页面键闭词表 = 后端 WorkerPages.ALL 的逐字镜像（7 键 + 顺�
     // issue #7814：`to_ship`（待发货单）—— 与 `shipment`（拍照发货，写面）分开，商家可分别勾选
     // issue #7860：`rework`（手机端「返工记录」）逐人开 —— 报返工的**写**准入与它无关
     // issue #8104：`stock`（库存修正）默认开（`/w/` 侧无对应面，仅镜像闭词表）
-    ['report', 'piecework', 'order', 'cut_calc', 'shipment', 'to_ship', 'stock', 'inspect', 'rework'],
+    // issue #8337：`inbound` / `reprint`（拍照入库 / 补打入库标签）进闭词表 + 默认集合
+    // （此前它们无键、恒显示；`/w/` 侧没有这两个面，仅镜像）
+    ['report', 'piecework', 'order', 'cut_calc', 'shipment', 'to_ship', 'stock', 'inbound', 'reprint',
+      'inspect', 'rework'],
     '页面键是**冻结契约**（后端闭词表逐字）：拼错一个字母 ⇒ 商家的开关静默失效',
   )
   // 默认集合 = 闭词表去掉**逐人开放**的能力页（与后端 `WorkerPages.optionalPages()` 同集）

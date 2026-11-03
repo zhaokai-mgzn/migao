@@ -98,8 +98,9 @@ describe('EditOrderContentModal（修改订单 · 待付款内容编辑）', () 
     expect(screen.getByTestId('edit-customer-name')).toHaveValue('张三')
     expect(screen.getByTestId('edit-customer-phone')).toHaveValue('13800138000')
     expect(screen.getByTestId('edit-customer-address')).toHaveValue('北京市朝阳区xx小区')
-    expect(screen.getByTestId('edit-line-quantity-0')).toHaveValue(2)
-    expect(screen.getByTestId('edit-line-price-0')).toHaveValue(299.5)
+    // issue #8004：数量格与单价格都是 **text 形态**（`type="number"` 会吞 `12.` / 千分位）⇒ DOM 值是字符串
+    expect(screen.getByTestId('edit-line-quantity-0')).toHaveValue('2')
+    expect(screen.getByTestId('edit-line-price-0')).toHaveValue('299.5')
     // 已选的加工项呈勾选态（不是"看起来没选"）
     await waitFor(() => {
       expect(screen.getByTestId('edit-line-0-processing-韩褶')).toBeChecked()

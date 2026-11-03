@@ -20,8 +20,9 @@
  *
  * ## 无键的入口
  *
- * 「拍照入库」「补打入库标签」是工人面**固有**能力（后端没有对应的页面键）⇒ **恒显示**，
- * 不参与本判据（`ALWAYS_VISIBLE` 只作登记，不参与计算）。
+ * 2026-11-03（issue #8337）：**已无**。此前「拍照入库」「补打入库标签」是「工人面固有、后端没有
+ * 页面键 ⇒ 恒显示」的两个入口 —— 后果是任何岗位的工人都会看见它们，把「每岗位 1~3 个菜单」
+ * 直接破功。现在后端闭词表里有 `inbound` / `reprint` 两个键，本文件按它们门控（与其它入口同款）。
  */
 
 /** 后端 `WorkerPages` 的闭词表（本文件只**消费**；新增键以后端为准）。 */
@@ -44,6 +45,10 @@ export const WORKER_MENU_KEYS = {
   rework: 'rework',
   /** 库存修正（issue #8104 —— 后端键见 `WorkerPages.STOCK`，默认开、可逐人关） */
   stock: 'stock',
+  /** 拍照入库（issue #8337 —— 后端键见 `WorkerPages.INBOUND`；以前无键、恒显示） */
+  inbound: 'inbound',
+  /** 补打入库标签（issue #8337 —— 后端键见 `WorkerPages.REPRINT`；以前无键、恒显示） */
+  reprint: 'reprint',
 } as const
 
 /**
@@ -70,8 +75,14 @@ export const REWORK_PAGE_KEY = 'rework'
  */
 export const STOCK_PAGE_KEY = 'stock'
 
-/** 工人面固有入口（后端无页面键 ⇒ 恒显示；仅登记，不参与计算）。 */
-export const ALWAYS_VISIBLE = ['拍照入库', '补打入库标签'] as const
+/** 拍照入库 / 补打入库标签的页面键（issue #8337；此前它们「无键、恒显示」）。 */
+export const INBOUND_PAGE_KEY = 'inbound'
+export const REPRINT_PAGE_KEY = 'reprint'
+/*
+ * 这里原本有 `ALWAYS_VISIBLE = ['拍照入库','补打入库标签']`（「后端无键 ⇒ 恒显示」的登记表）。
+ * issue #8337 把两张物料页纳入闭词表后，**整条常量已删除**：工人工作台上不再存在任何
+ * 「后台关不掉」的入口 —— 两个入口与其它菜单同款，由 `inbound` / `reprint` 页面键门控。
+ */
 
 /**
  * 本机可显示的菜单键集合。
