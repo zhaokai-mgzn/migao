@@ -4186,7 +4186,7 @@
 ```
 溯源: 2026-10-31 新增（issue #8295）：两步确认，避免误写 ｜ tags: ui, preview
 
-## 杂项域（190 case）
+## 杂项域（191 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -7097,6 +7097,20 @@
 跳过: [backend-contract] CI 判定逻辑（真 YAML + 真 git 仓库 + 桩 gh/docker 的执行式判据），零网络、零真实部署、不烧 token，非 LLM 行为，不进入 agent-eval 冒烟
 ```
 溯源: 2026-11-03 新增（issue #7034，假绿：`deploy-reconcile` 的「无代码漂移 ⇒ 已上线」判据看不见构建输入）。取号 MC-144（`python3 scripts/next_case_id.py MC` 现取；按「MC-099 刻意空档不回填」与 139~143 的在飞/已合占用避开，改取现取最大号之后的 144）。落码 = ① `.github/scripts/reconcile_build_inputs.py`（构建输入面的**唯一**取值源：登记册逐条带理由 + 纯函数 `pathspec()` + 三态 CLI）② `.github/workflows/deploy-reconcile.yml` 的 `reconcile_one` 追加构建输入（正文顶到 13.25K 硬限 ⇒ 同批压缩历史注释，实测 12,919 → 11,873 字符）③ 判据 tests/unit_ci_workflows/test_reconcile_build_inputs.py（逐条执行式 + 三条负控 + 注入式红证 + 类级元守卫 + 豁免不陈旧 + 登记册不腐烂）④ `test_config_change_triggers_deploy.py` 的判定面改为「调用行 + 构建输入」，stray 只豁免已登记项 ⑤ 台账 frozen_max 13 → 4。 ｜ tags: ci, deploy, reconcile, false-green
+
+### MC-148. 本地 E2E 认证链的复用判据：只复用「token 自己还没过期」的 admin.json，mtime 降为解不出 exp 时的兜底并出声（issue #6411） 🔵
+```
+你: 本机跑 Playwright E2E（常态不起 admin-api）时，会话稍长就「上一轮绿、这一轮全红」，且红因指向当次的无关改动 —— 到底哪一步不对？
+期望: direct_reply
+数据: 🔴 **判据 1（行为面，会红）**：token 的 `exp` 已过 10 分钟、而 `admin.json` 的 mtime 只有 1 分钟（旧判据的 1h 窗口内）⇒ 判定必须是 `reuse=false` / `reason=token-expired` / `source=jwt-exp`。修前只看 mtime 的窗口会判「可复用」⇒ 复用一个已失效的登录态，所有 spec 连带红而**没有任何一句话指向「登录态过期」**。执行点 = tests/unit_ci_workflows/test_e2e_auth_reuse_freshness.py::test_expired_token_is_not_reused_even_when_the_file_is_fresh
+数据: 🔴 **判据 2（负控，证明不是「把窗口从 1h 调成 30min」）**：`exp` 还有 30 分钟 ⇒ `reuse=true` / `reason=token-fresh`；并且**即使 mtime 已 2 小时**（超出旧窗口）仍判可复用 ⇒ 判定由 `exp` 主导。另：距 `exp` 只剩 2 分钟（< 5 分钟安全余量）⇒ `reuse=false` / `token-expiring`（避免跑到一半在 spec 里过期）。执行点 = 同文件::test_token_with_thirty_minutes_left_is_reused / ::test_fresh_token_is_reused_even_when_mtime_exceeds_the_old_window / ::test_token_expiring_inside_the_safety_margin_forces_relogin
+数据: 🔴 **判据 3（兜底必须出声）**：token 不是合法 JWT（`E2E_MOCK_AUTH=true` 的占位 token）⇒ 回落 mtime，且 `message` 必须**明写**「按 mtime 兜底」（mtime 1 分钟 ⇒ `mtime-fallback-fresh` 可复用；mtime 2 小时 ⇒ `mtime-fallback-stale` 需重登）。静默兜底会把本缺陷重新藏起来。另：cookie 缺失时仍能从 `auth-storage` 解出 token（否则会静默回落 mtime）。执行点 = 同文件::test_unparseable_token_falls_back_to_mtime_and_says_so / ::test_token_is_read_from_zustand_state_when_the_cookie_is_absent
+数据: 🔴 **判据 4（红证 / 判别力自证）**：把 `decodeJwtExpMs` 注入成恒返回 `null`（= 历史形态「只看 mtime」）⇒ 判据 1 的断言**全部不成立**（同一输入变成 `reuse=true` / `source=mtime`），而「`exp` 未过期 ⇒ 可复用」这一结论仍成立 —— 这正是「只把窗口从 1h 调成 30min」抓不到本缺陷的原因（能抓住它的只有 `exp` 已过的那一侧）；注入只落在 tmp，仓内模块逐字节未变（判据内自证）。实测读数（注入后）：**5 failed / 3 passed**；恢复后 **8 passed**。执行点 = 同文件::test_guard_discriminates_the_mtime_only_criterion
+数据: 🔴 **判据 5（静态面·接线 + 自愈）**：tests/e2e/fixtures/auth.setup.ts 必须用共享判定器（`../helpers/auth-state-freshness.mjs`）、把 `decision.message` **打印出来**（不许静默）、不再有裸 `age < 3600_000` 直接 `return`，且判定为「需重登」时**继续走真登录**（自愈，不是报错退出）。执行点 = 同文件::test_setup_uses_the_shared_decision_logs_it_and_falls_through_to_login
+数据: **边界（照实登记）**：① 判据不跑真 Playwright / 真后端：`exp` 解析与复用判定是纯函数（`now` 可注入 ⇒ 不受挂钟影响），「真起 admin-api 后 auth.setup 能否自愈」由环境事实决定（本机常态不起 admin-api ⇒ 那条出路是 fixture 模式 `E2E_MOCK_AUTH=true` + `--no-deps`），见 issue #6411 的「剩下那一半在仓外」；② 只看 `exp`：token 被提前吊销 / 服务端换密钥时 `exp` 仍可能未到，本判据不判、也不声称判。
+跳过: [backend-contract] 确定性判据（判定器用**真 node** 执行 + setup 的静态接线），零后端、零 LLM，不进入 agent-eval 冒烟
+```
+溯源: 2026-11-03 新增（issue #6411，2026-10-06 撞见：本地 E2E 的 `admin.json` 复用窗口 1h > 登录态真实有效期 ~30min ⇒ 复用失效 token，所有 spec 连带红且无一句话指向「登录态过期」）。取号 MC-148（`python3 scripts/next_case_id.py MC` 现取 main 001-098,100-144；按在飞占用避开 139~147、按「MC-099 刻意空档不回填」不顺延）⇒ 取 148。落码 = ① `tests/e2e/helpers/auth-state-freshness.mjs`（无依赖判定器：JWT `exp` 权威 + mtime 兜底且出声，`now` 可注入）② `tests/e2e/fixtures/auth.setup.ts` 的复用块改为调它并把结论打印（原 `age < 3600_000` 直返删除；需重登 ⇒ 继续走真登录 = 自愈）③ 判据 tests/unit_ci_workflows/test_e2e_auth_reuse_freshness.py（5 条判据 + 注入式红证；用真 node 跑，同 `tests/e2e/helpers/api-base-url.mjs` 范式）。 ｜ tags: e2e, auth, jwt-exp, mtime-fallback, red-proof
 
 ## 商家入驻域（7 case）
 
@@ -14605,8 +14619,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：988（活跃 153，跳过 835）
-- tier 分布：smoke 15 / normal 911 / adversarial 33
+- 用例总数：989（活跃 153，跳过 836）
+- tier 分布：smoke 15 / normal 912 / adversarial 33
 - 售后域：16
 - Agent 核心域：13
 - API 层域：21
@@ -14622,7 +14636,7 @@
 - 人事域：13
 - 知识问答域：9
 - 客户主数据迁移域：10
-- 杂项域：190
+- 杂项域：191
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：76
@@ -14879,6 +14893,7 @@
 - MC-139: 商家看到的失败编号 = 服务端日志里那条记录：requestId 唯一来源 + 前端可复制上屏（issue #6957）
 - MC-143: 悬空 PR 扫描器把「未解决评审线程」计入**需要处置**（issue #6997）：`isResolved=false ∧ isOutdated=false` ⇒ 判红并报出 `path` + 首行摘要；`isOutdated=true` 单独一类**不算阻塞**；读不到 ⇒ 退 `3`（不得当 0）
 - MC-144: deploy-reconcile 的漂移判据必须覆盖**构建输入面**（部署腿 workflow / 构建配方 / 线上自证脚本）：只改 CI 或部署脚本的修复合入后不得判「已上线」，更不得自动关值守单（issue #7034）
+- MC-148: 本地 E2E 认证链的复用判据：只复用「token 自己还没过期」的 admin.json，mtime 降为解不出 exp 时的兜底并出声（issue #6411）
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）
