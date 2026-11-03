@@ -115,7 +115,8 @@ class TestActionSurfaceIsVisibleToTheModel:
 
     def test_registry_returns_a_write_tool(self):
         registered = get_tool_registry().get_tool("employee_manage")
-        assert registered is not None, "注册表里没有 employee_manage ⇒ 任何 skill 都调不到它"
+        assert "employee_manage" in {t.name for t in get_tool_registry().get_all_tools()}, (
+            "注册表里没有 employee_manage ⇒ 任何 skill 都调不到它")
         assert getattr(registered, "read_only", True) is False, (
             "注册表里的 employee_manage 仍是只读 ⇒ 写 action 即使存在也会被 `_requires_confirmation` "
             "跳过（只读工具永不要求确认）"
