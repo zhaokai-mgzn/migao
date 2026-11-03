@@ -4186,7 +4186,7 @@
 ```
 溯源: 2026-10-31 新增（issue #8295）：两步确认，避免误写 ｜ tags: ui, preview
 
-## 杂项域（200 case）
+## 杂项域（202 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -7212,7 +7212,7 @@
 ```
 溯源: 2026-11-03 新增（issue #6953 的族级元守卫 SW-100；与 MC-100 / MC-104 / PG-075 等单表守卫**有意不重叠** —— 它们裁谓词完整性，本表裁「写面有没有人认领 / 状态值是不是单一口径」）。取号（**两次让号，记实**）= `python3 scripts/next_case_id.py MC` 首取 **MC-143**；merge `origin/main` 时与 main 新增的 **MC-143**（issue #6997 / PR #8535）撞号 ⇒ 按「后合入者让号」顺延 **MC-144**；再次 merge 又与 main 新增的 **MC-144**（issue #7034 / PR #8537）撞号 ⇒ 顺延 **MC-145**；随后 CI 的取号判据（issue #6245）抓到 **MC-145 与在飞 PR #8538 同时占着** ⇒ 再按「后合入者让号」顺延终态 **MC-147**（工具每次都返回历史空档 MC-099 —— 按裁定**刻意空档不回填**）。**现取读数**：53 张有 `status` 列的表（`_sql_schema` 唯一解析点）、134 条写点（Java 108 / SQL 26）、覆盖 49 张表；合法集合权威：实体常量 10 / schema CHECK 14 / **无机器口径 36（冻结上限）**；裸字符串存量 56（冻结上限）。**红证（注入式，实跑）**：① 往真实 Service 里加一条未登记写面 ⇒ 判据 1 判红并具名；② 把常量改成裸字符串 ⇒ 判据 3 判红并具名；③ 把台账条目删掉 ⇒ 判据 2 判红（写点无主）；④ 把 `unregistered()` 的登记对账摘掉 / 把 `bare_literal_sites()` 摘掉 ⇒ 判据 1 / 判据 3 必红（判据 7 内建这两条内存变异体作常驻证）。**如实登记的既有缺陷（本包不修，不扩射程）**：`ProductionOperationCommandService#update` 的无条件状态写（见判据 8 的盲洞 ②）、`InboundOrderService` 的 builder 写形（盲洞 ①）、36 张表没有机器可读的合法状态集合、56 处裸字面量 —— 均为存量债，压测口径 = 台账基线**只许缩短**。 ｜ tags: state-transition, meta-guard, ledger, single-source, red-proof
 
-### MC-154. 终端壳打印能力三态（issue #8310）：桥在 ≠ 打印机在 —— printerMode 负向 / 读不到都不许说「由本机打印机直接出纸」，且「判不了」与「确知没有」分开说 🔵
+### MC-155. 终端壳打印能力三态（issue #8310）：桥在 ≠ 打印机在 —— printerMode 负向 / 读不到都不许说「由本机打印机直接出纸」，且「判不了」与「确知没有」分开说 🔵
 ```
 你: 用户（2026-11-01 真机取证，商米 V2s `Qbao_h2` / Android 11 / 终端壳 1.0.19）：拍照入库页第一行写「点「打印标签」，由本机打印机直接出纸。」，而同一台机器点「打印测试页」⇒「打印失败 / 打印机未连接（需商米内置打印服务）」（`PrinterLink.mode()` = -1，设备上只有 `com.sunmi.printer.firmware`）
 期望: direct_reply
@@ -7228,7 +7228,34 @@
 真值: ⚠️ 缺口（见对应模板 ⚠️ 注释）
 溯源: 2026-11-03 新增（issue #8310）。病 = 终端壳**打印能力误报**：页面说「由本机打印机直接出纸」，本机 `PrinterLink.mode()` = **-1**；根因 = `probePrintCapability()` 的终端分支**只看壳**（有 `chrome.webview` 就 `ok:true`）、`PrintEnv` 里没有能力字段。修 = 三态判定 `terminalPrintState(printerMode)`（`>0` available / `<0` unavailable / `0`·缺省·非有限 unknown），新增两条缺口文案（`terminal-printer-unavailable` / `terminal-print-unknown`）并登记进 `INBOUND_PRINT_GAP_WIRING`；`readPrintEnv()` 从 `window.__CFG__.printerMode` 取数（非数字按读不到）。取号 = MC-154（`python3 scripts/next_case_id.py MC` 现取 main 001-098/100-144/146-147 ⇒ 工具返回历史空档 MC-099，按裁定**不回填**；MC-139~MC-153 属并行包保留带，**避开** ⇒ 顺延 MC-154）。🔴 **仓外事实（如实登记，不假造）**：原生侧本轮**还没有**送 `printerMode` ⇒ 真机一律落 `unknown`（fail-closed：不许说能打）；**原生侧要补送 `printerMode`**（值域口径：负 = 不可用 / 正 = 可用 / 0 与缺省 = 判不了），补送后本仓代码**无需再改**。边界 = 不覆盖原生赋值、不判硬件选型。 ｜ tags: backend-contract, bmini, print-capability, fail-closed, three-state, no-overclaim, red-proof
 
-### MC-155. 「先查后插」的两处 TOCTOU 写面（收款码 / 角色）必须由唯一键兜底 + 幂等收敛：摘掉唯一键或退回裸 insert 必红（issue #7255） 🔵
+### MC-156. 机台页详情屏补「报返工」入口（复用既有 reportRework / 不新建第二套返工实现 / 次要动作不抢主位） 🔵
+```
+你: 裁床在一体机屏上扫完唛、发现这道活做坏了：屏上只有【完成】，想报返工得退出机台页、回工人工作台、再找返工页 —— 扫过的这张唛还要重扫一遍。
+数据: 🔴 **判据 ①·入口在且不抢主位（§31 P1）**：扫码后的详情屏出现「报返工」；主按钮**仍然是**唯一一个 `.wh5-machine__cta` 的【完成】（报返工走次要档 `.wh5-machine__back`）；收起态原因按钮**零 DOM**（不是 CSS 隐藏）。执行点 = frontend/worker-h5/tests/worker-h5-machine-rework.test.mjs::① / ::①′
+数据: 🔴 **判据 ②·走既有写面（不新造端点）**：点原因 ⇒ 恰好一次 `POST /api/worker/production/rework`；装配层调 `api.reportRework(`，端点字面量只留在 `frontend/worker-h5/src/api.mjs` 一处。执行点 = 同文件::② / ::②′
+数据: 🔴 **判据 ③·上下文随码带出**：请求体 = 刚扫到的那张码 + 原因（白名单，无 `worker_id` / 无 `operation_id`，身份只由 `X-Worker-Session-Id` 解）；展开态摆出「返工对象：<加工单号> · <部位>」；换一张码不跨码携带返工态。执行点 = 同文件::③ / ::③′ / ::③″
+数据: 🔴 **负控 ⑤·主动作没被挤掉/接错线**：点【完成】仍走 `scan/complete`，且不连带发返工请求。执行点 = 同文件::⑤
+数据: 🔴 **失败/成功两态**：服务端 422 ⇒ 大字显式 + 原因条保持展开（换一个原因是合法动作）；成功 ⇒ 摆**服务端给的**返工单号且入口变「返工已登记」（防重复开单）。执行点 = 同文件::④ / ::④′
+数据: 🔴 **红证 ④（注入式，实跑）**：把 `reportBlock` 动作行里的 `${reworkEntry}` 删掉 ⇒ ① 必红（实测 4 pass / 6 fail）；恢复 ⇒ 10 pass / 0 fail。
+跳过: [backend-contract] 工人端 H5 的纯前端判据（`node --test` + 手写假 doc / 假 fetch，零 DOM 库、零网络、零 LLM）由 frontend/worker-h5/tests/worker-h5-machine-rework.test.mjs 验证，不进入 agent-eval 冒烟
+```
+溯源: 2026-11-03 新增（issue #7992；壁达现场屏「工序返修」的对位功能，用户逐字「工序返修需要，等同于我们的报返工的功能」）。取号（**两次让号，记实**）：`python3 scripts/next_case_id.py MC` 现取返回历史空档 **MC-099** —— 按裁定**刻意空档不回填**；MC-139~MC-153 在飞/已合占用密集 ⇒ 按派单口径避开，先取 **MC-154**；merge `origin/main` 时与 main 新增的 **MC-154**（#8559 / issue #8310，且同号还被在飞 PR #8561 的 claim `8561-MC-154.json` 占着）撞号 ⇒ 按「**后合入者让号**」顺延终态 **MC-155**。落码 = ① `frontend/worker-h5/src/machine.mjs`：`MACHINE_REWORK_REASONS`（原因短语，与报工页表单 placeholder 同源）+ `reworkTargetLine()`（返工对象 = 加工单号 · 部位）+ `reworkBlock()`（收起态零 DOM / 展开 = 对象 + 原因按钮 + 取消）+ 状态机 `reworkOpen/Close/Start/Done/Failed`（换码清态）；② `frontend/worker-h5/src/machine-app.mjs`：`reportRework(reason)` 调**既有** `api.reportRework`；③ 判据 frontend/worker-h5/tests/worker-h5-machine-rework.test.mjs（10 条，含负控与红证）。形式选择 = 原因走**短语按钮**而不是文本框：机台页刻意零文本输入元素（`frontend/worker-h5/machine.html` 头注释 = IME 兜底那道保险，扫码枪是唯一输入面）。 ｜ tags: worker-h5, machine-screen, rework, entry-point, single-source, red-proof
+
+### MC-157. **本地 dev / build 输出目录物理隔离**：`next dev` 写 `.next-dev`、`next build` / `next start` 仍写 `.next`（共用 `.next` 时 dev 侧已存在路由 404 可复现 + build 侧读到半写生成物报 9 条 TS 错误） 🔵
+```
+你: 本地起 `next dev` 后，/production/remnants、/production/pool、/production/piecework、/production/routings 全部 404（Next 默认英文页），而 /production 本身 200、/products 200 —— `rm -rf .next` 重起 dev 就全恢复；另一次是 `npm run build` 被 `.next/dev/types/routes.d.ts`（被写成两段首尾拼接的坏 TS）打断、9 条 TS 错误全指向生成物。本机没有任何东西会把这两件事连起来，只能靠人猜「是不是缓存」。
+数据: 🔴 **判据 ①（dev 与 build 的输出根不同，两路读数）**：静态读数 = `next.config.mjs` 的具名常量 `DEV_DIST_DIR` / `BUILD_DIST_DIR` + 按 `NODE_ENV` 的 `distDir` 选择式；真读数 = 用 Node `import()` 求值同一份配置，在 `NODE_ENV=development` / `production` / **未设**三种形态下各取一次 `distDir`，必须分别等于 `.next-dev` / `.next` / `.next`。隔离契约还要求两个根**互不为前缀**（`.next/dev-build` 这种嵌套会继续被 build 的清理面牵到 ⇒ 判红）。执行点 = tests/unit_ci_workflows/test_next_dev_build_isolation.py::test_dev_and_build_dist_dirs_are_different
+数据: 🔴 **判据 ②（tsconfig 与新目录一致，且 dev 中间态被挡出类型检查面）**：`include` 必须覆盖 `.next-dev/types/**/*.ts` 与 `.next-dev/dev/types/**/*.ts`（Next 每次 dev 会把缺的 glob 自动追加 ⇒ 缺了就是每次脏配置），且只许出现两个输出根下的四种已知形态；`exclude` 必须含 `.next-dev` 与 `.next/dev`（**修前机器上的残留也要挡**）—— 现取 `include − exclude` 的根集合里不得出现 dev 目录。这条是形态 ② 的根：Next 16 的 `next build` 用**项目本地 tsc** 查**整个 tsconfig 项目**（源码注释原话：including test files and `.next/dev/types` when included）。执行点 = 同文件::test_tsconfig_include_and_exclude_agree_with_dist_dirs（+ 提交面的 `next-env.d.ts` 不许钉 dev 目录：::test_committed_next_env_does_not_pin_dev_dir）
+数据: 🔴 **判据 ③（`.gitignore` 覆盖新目录，正负控）**：文本在册 + `git check-ignore` **真跑**：正控 = `frontend/admin-web/.next-dev/dev/types/routes.d.ts` 必须被忽略；负控 = `next.config.mjs` / `src/app/layout.tsx` **不**被忽略（规则过宽 = 另一种假绿），`.next` 的既有忽略规则不得被删。执行点 = 同文件::test_gitignore_covers_dev_dist_dir
+数据: 🔴 **判据 ④（旧路径的下游消费者：已改 / 已登记）**：现取 `.github` / `scripts` / `tests` / `deploy` / `frontend/admin-web` 的**代码行**（注释与 `docs/**`、历史用例正文、生成物不在面内），命中「旧 dev 路径」的两条形态（`.next/dev…`、`rm -rf …/frontend/admin-web/.next`）必须逐条登记在 `tests/unit_ci_workflows/next_dev_build_isolation_ledger.json`：**未登记即红**；登记成 `unaffected` 但文件仍有旧路径 ⇒ 红；`changed` 但文件里没有新目录 ⇒ 红；锚点失效 ⇒ 红（台账不得盖章了事）。现取 17 条（`current` 3 / `changed` 8 / `unaffected` 6，含 Dockerfile、pr-check.yml、playwright 配置、package.json 的「已核对无需改」）。执行点 = 同文件::test_downstream_consumers_are_updated_or_registered + ::test_scan_face_is_not_blind
+数据: 🔴 **判据 ⑤（判别力自证：注入式实跑，逐条记读数）**：① 把 `DEV_DIST_DIR` 改成 `.next`（两个根坍缩）⇒ 判据 ① 红（`dev 与 build 仍共用输出根 ' .next '`）；② 摘掉整行 `distDir:` 选择式 ⇒ 判据 ① 红（结构契约缺失）；③ `include` 摘掉 `.next-dev/dev/types/**/*.ts`（保持 JSON 合法）⇒ 判据 ② 红（点名缺的 glob）；④ `exclude` 摘掉 `.next-dev` ⇒ 判据 ② 红（点明 build 的 tsc 会读到 dev 半写生成物）；⑤ `.gitignore` 回到修前形态 ⇒ 判据 ③ 红；⑥ 冒烟脚本的处置命令回退成清 `.next` ⇒ 判据 ④ 红（既报锚点失效、又报 changed 仍命中旧路径）；⑦ dev 锁路径硬编码回 `.next` ⇒ 判据 ⑥ 红。每轮注入都先自证文件指纹变化、还原后复验指纹一致。执行点 = 同文件::test_red_proof_collapsing_dist_dirs_is_caught + PR body 的逐条读数
+数据: 🔴 **判据 ⑥（类级联动：dev 锁路径与配置单一真值源）**：`tests/admin_web_devserver_identity.py` 的 `DEV_LOCK_RELATIVE` 必须等于 `<DEV_DIST_DIR>/dev/lock`（同一份配置现取）。这是本单最危险的假绿面：硬编码旧目录时，配置一改判据会**静默**变成「本检出没有 dev server」⇒ Playwright 的加载期拒绝失效。执行点 = 同文件::test_dev_lock_probe_follows_config
+数据: **边界（照实登记，§19.1）**：① ⛔ 不真跑 `next build` / `next dev` —— ①的「真读数」是**配置求值**（Node `import()` 两模式各一次），不是「跑一次构建看它写哪里」；② 判不了 Next 内部是否还有别的共享面（只钉「输出根不同 + 类型检查面不交」两条可机械判定的契约）；③ 扫面只覆盖代码行（说明文档 / 历史用例正文里的旧路径不算消费方）；④ 显式 `NODE_ENV=production next dev` 会落到 build 目录（Next 自带告警）——逃生口有意保留，不为它再加一层命令嗅探；⑤ `frontend/admin-web/scripts/*.mjs` 这一族**有意不入册**：现取扫面根全在 `src/…`，包根的 `.next-dev` 不在其语料内。
+跳过: [backend-contract] 零 LLM 的确定性读数（读配置 + Node 求值配置 + tsconfig/.gitignore 对账 + `git check-ignore` 真跑 + 代码行扫面/台账逐条对账 + 7 条注入式红证），零网络、零 DB、不跑 `next build`、不进 agent-eval 冒烟
+```
+溯源: 2026-11-03 新增（issue #6692：本地 `next dev` 与 `next build` 共用 `.next` 会互相写坏；dev 侧已存在路由 404 可复现、build 侧读半写生成物报 9 条 TS 错误）。取号（**三次让号，记实**）：`python3 scripts/next_case_id.py MC` 首取 **MC-145**（工具按「最小空闲号、含历史空档」口径返回；历史空档 MC-099 按裁定**不回填**）；按本轮约束「避开 MC-139~MC-153」让号到 MC-154；merge `origin/main` 时 main 已占 148~154 ⇒ 顺延 **MC-155**；随后批合工具（#8565）把原 MC-154 重编号成 **MC-155**、#7992 又占了 **MC-156**（`git show origin/main:.github/cases/misc.yml` 现取末段 = 150/151/152/153/155/156）⇒ 再撞一次，按「后合入者让号」顺延终态 **MC-157**（157 归本包，158 留给 #8561）。修法 = **A `distDir` 隔离**（根因：物理隔离 > 每次清理）：`frontend/admin-web/next.config.mjs` 按 `NODE_ENV` 切两个输出根（dev → `.next-dev`、build/start → `.next`；`next` CLI 缺省 dev=development、其余=production 且尊重外部已设值 ⇒ `npx next dev` 等任何形态都自动分派）。牵连面**逐处核对**（台账 17 条）：`.gitignore` 两条新规则、`tsconfig.json` include/exclude、dev 锁路径改为现取配置、冒烟脚本陈旧缓存处置文案 + 其判据 7b 断言收紧（并加「不得指向 build 侧 `.next`」负控）、4 处全仓/包内走盘扫描器跳过新目录；**已核对无需改**：Dockerfile（构建/运行都在 production）、`pr-check.yml`（只缓存 npm、不缓存 `.next`）、`playwright.config.ts`（`npx next dev` 自动落 dev 目录）、`package.json`（脚本不覆盖 NODE_ENV）、`deploy/**`（现取 0 处 `.next` 引用）。**红证（注入式，实跑，读数见 PR body）**：7 条各自判红并具名，还原后文件指纹一致。 ｜ tags: dev-experience, dist-dir-isolation, static-config, ledger, red-proof
+
+### MC-158. 「先查后插」的两处 TOCTOU 写面（收款码 / 角色）必须由唯一键兜底 + 幂等收敛：摘掉唯一键或退回裸 insert 必红（issue #7255） 🔵
 ```
 你: 同一张收款码，两个人几乎同时点保存，一个人看到 200、另一个看到「服务器内部错误」—— 明明是个保存动作，凭什么有时会 500？
 你: 两个管理员同时建同一个角色代码，接口有时候回「角色代码已存在」，有时候直接 500，到底哪个才是对的？
@@ -7244,7 +7271,7 @@
 前置: 本用例是 [backend-contract]：前置 = V206 迁移文件在场、`TenantPaymentQrcodeMapper#upsertActive` 与 `RoleMapper#insertIfAbsent` 是两条写面的唯一入口；真库夹具由 `PgCluster` 现起（随机端口、跑完即停）。
 跳过: [backend-contract] 真库确定性判据（真 PG + 并发两线程 + 迁移文件真跑），零网络、零 LLM，不进入 agent-eval 冒烟
 ```
-溯源: 2026-11-03 新增（issue #7255 台账第 3、4 行）。病 = 两处「selectOne 判空 → insert」的 TOCTOU 写面：并发下都判「不存在」⇒ 都写；有唯一键时第二个 500，没唯一键时静默第二行（读侧 selectOne 又 500）。**先纠正 issue 的一个事实**：`tenant_payment_qrcodes` 的部分唯一索引早在归档链 V48 里（存量库已有）、`roles (tenant_id, code)` 的 UNIQUE 也在建库脚本的表定义里 —— 缺的不是「表上没有唯一键」，而是 ① 应用层靠「先查后插」而不是幂等写、② `roles` 的唯一性**没有任何迁移承载**（存量库有没有它，仓内无法证明）、③ 元守卫的扫面**不认表内 UNIQUE**，于是 `roles` 那一族整张隐形。修 = ① V206 幂等 ensure 两处唯一键（存量重复行 ⇒ WARNING + 跳过，不阻断部署；清理后重跑即建）+ ② 写面收敛成 `ON CONFLICT`（收款码 upsert / 角色 insertIfAbsent + 具名 422）+ ③ 元守卫认表内 UNIQUE、归因改 mapper 优先。取号 MC-155（`python3 scripts/next_case_id.py MC` 现取 main 001-098/100-144/146-154 ⇒ 工具返回历史空档 MC-099，按裁定**不回填** ⇒ 顺延到 155）。 ｜ tags: concurrency, unique-key, idempotency, migration, red-proof, false-green
+溯源: 2026-11-03 新增（issue #7255 台账第 3、4 行）。病 = 两处「selectOne 判空 → insert」的 TOCTOU 写面：并发下都判「不存在」⇒ 都写；有唯一键时第二个 500，没唯一键时静默第二行（读侧 selectOne 又 500）。**先纠正 issue 的一个事实**：`tenant_payment_qrcodes` 的部分唯一索引早在归档链 V48 里（存量库已有）、`roles (tenant_id, code)` 的 UNIQUE 也在建库脚本的表定义里 —— 缺的不是「表上没有唯一键」，而是 ① 应用层靠「先查后插」而不是幂等写、② `roles` 的唯一性**没有任何迁移承载**（存量库有没有它，仓内无法证明）、③ 元守卫的扫面**不认表内 UNIQUE**，于是 `roles` 那一族整张隐形。修 = ① V206 幂等 ensure 两处唯一键（存量重复行 ⇒ WARNING + 跳过，不阻断部署；清理后重跑即建）+ ② 写面收敛成 `ON CONFLICT`（收款码 upsert / 角色 insertIfAbsent + 具名 422）+ ③ 元守卫认表内 UNIQUE、归因改 mapper 优先。取号 **MC-158**（`python3 scripts/next_case_id.py MC` 现取 ⇒ 工具返回历史空档 MC-099，按裁定**不回填**；原定 155，rebase 时发现 main 已在同期占用 MC-155/156/157 ⇒ 顺延 158）。 ｜ tags: concurrency, unique-key, idempotency, migration, red-proof, false-green
 
 ## 商家入驻域（7 case）
 
@@ -14753,8 +14780,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：998（活跃 153，跳过 845）
-- tier 分布：smoke 15 / normal 921 / adversarial 33
+- 用例总数：1000（活跃 153，跳过 847）
+- tier 分布：smoke 15 / normal 923 / adversarial 33
 - 售后域：16
 - Agent 核心域：13
 - API 层域：21
@@ -14770,7 +14797,7 @@
 - 人事域：13
 - 知识问答域：9
 - 客户主数据迁移域：10
-- 杂项域：200
+- 杂项域：202
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：76
@@ -15035,8 +15062,10 @@
 - MC-152: B 端会话卡的「来源组」不许把服务端内部标签摆上屏：唯一映射表（机器键 → 商家话术）+ 枚举全集覆盖 + 认不出的键走兜底（issue #6461）
 - MC-153: B 端移动会话卡：来源组说商家的话、内部口径词零上屏（bmini 侧的零内部口径词判据 + 认不出的来源走兜底，issue #6461）
 - MC-147: **状态列写面全族统一元守卫 SW-100**：53 张有 `status` 列的表 × 134 个写入口逐条登记（未登记即红 / 台账陈旧即红 / 裸字符串写状态列即红 / 每张状态表的合法集合必须有来源）
-- MC-154: 终端壳打印能力三态（issue #8310）：桥在 ≠ 打印机在 —— printerMode 负向 / 读不到都不许说「由本机打印机直接出纸」，且「判不了」与「确知没有」分开说
-- MC-155: 「先查后插」的两处 TOCTOU 写面（收款码 / 角色）必须由唯一键兜底 + 幂等收敛：摘掉唯一键或退回裸 insert 必红（issue #7255）
+- MC-155: 终端壳打印能力三态（issue #8310）：桥在 ≠ 打印机在 —— printerMode 负向 / 读不到都不许说「由本机打印机直接出纸」，且「判不了」与「确知没有」分开说
+- MC-156: 机台页详情屏补「报返工」入口（复用既有 reportRework / 不新建第二套返工实现 / 次要动作不抢主位）
+- MC-157: **本地 dev / build 输出目录物理隔离**：`next dev` 写 `.next-dev`、`next build` / `next start` 仍写 `.next`（共用 `.next` 时 dev 侧已存在路由 404 可复现 + build 侧读到半写生成物报 9 条 TS 错误）
+- MC-158: 「先查后插」的两处 TOCTOU 写面（收款码 / 角色）必须由唯一键兜底 + 幂等收敛：摘掉唯一键或退回裸 insert 必红（issue #7255）
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）

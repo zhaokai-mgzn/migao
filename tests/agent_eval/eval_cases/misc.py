@@ -2,7 +2,7 @@
 # 本文件由 render_cases.py 生成，勿手改（改了也留不住：下次重渲染会覆盖）
 # 源: cases/*.yml（case-contract 单一源）
 # 重新生成: python3 render_cases.py --cases <dir> --out-eval <包目录> --out-md <md>
-# 域: misc（源: cases/misc.yml，200 条）
+# 域: misc（源: cases/misc.yml，202 条）
 
 from ._schema import Difficulty, EvalCase, Skill
 
@@ -3640,9 +3640,9 @@ _CASE_MC_147 = EvalCase(
     forbidden_card_text=[],
 )
 
-# ── MC-154 [NORMAL] 终端壳打印能力三态（issue #8310）：桥在 ≠ 打印机在 —— printerMode 负向 / 读不到都不许说「由本机打印机直接出纸」，且「判不了」与「确知没有」分开说（源: cases/misc.yml）──
-_CASE_MC_154 = EvalCase(
-    id='MC-154',
+# ── MC-155 [NORMAL] 终端壳打印能力三态（issue #8310）：桥在 ≠ 打印机在 —— printerMode 负向 / 读不到都不许说「由本机打印机直接出纸」，且「判不了」与「确知没有」分开说（源: cases/misc.yml）──
+_CASE_MC_155 = EvalCase(
+    id='MC-155',
     legacy_id='',
     title='终端壳打印能力三态（issue #8310）：桥在 ≠ 打印机在 —— printerMode 负向 / 读不到都不许说「由本机打印机直接出纸」，且「判不了」与「确知没有」分开说',
     skill=Skill.GENERAL,
@@ -3659,9 +3659,45 @@ _CASE_MC_154 = EvalCase(
     precondition='本用例是 [backend-contract]：前置 = frontend/bmini-app/src/utils/inbound/printCapability.ts 的终端分支在场、`PrintEnv.printerMode` 可注入、`readPrintEnv()` 读 `window.__CFG__`；能力探测是纯函数（零网络、零硬件），页面侧已有的 `capability.ok` 门禁（打印按钮 disabled）不变。',
 )
 
-# ── MC-155 [NORMAL] 「先查后插」的两处 TOCTOU 写面（收款码 / 角色）必须由唯一键兜底 + 幂等收敛：摘掉唯一键或退回裸 insert 必红（issue #7255）（源: cases/misc.yml）──
-_CASE_MC_155 = EvalCase(
-    id='MC-155',
+# ── MC-156 [NORMAL] 机台页详情屏补「报返工」入口（复用既有 reportRework / 不新建第二套返工实现 / 次要动作不抢主位）（源: cases/misc.yml）──
+_CASE_MC_156 = EvalCase(
+    id='MC-156',
+    legacy_id='',
+    title='机台页详情屏补「报返工」入口（复用既有 reportRework / 不新建第二套返工实现 / 次要动作不抢主位）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['裁床在一体机屏上扫完唛、发现这道活做坏了：屏上只有【完成】，想报返工得退出机台页、回工人工作台、再找返工页 —— 扫过的这张唛还要重扫一遍。'],
+    expectations=[],
+    data_checks=['🔴 **判据 ①·入口在且不抢主位（§31 P1）**：扫码后的详情屏出现「报返工」；主按钮**仍然是**唯一一个 `.wh5-machine__cta` 的【完成】（报返工走次要档 `.wh5-machine__back`）；收起态原因按钮**零 DOM**（不是 CSS 隐藏）。执行点 = frontend/worker-h5/tests/worker-h5-machine-rework.test.mjs::① / ::①′', '🔴 **判据 ②·走既有写面（不新造端点）**：点原因 ⇒ 恰好一次 `POST /api/worker/production/rework`；装配层调 `api.reportRework(`，端点字面量只留在 `frontend/worker-h5/src/api.mjs` 一处。执行点 = 同文件::② / ::②′', '🔴 **判据 ③·上下文随码带出**：请求体 = 刚扫到的那张码 + 原因（白名单，无 `worker_id` / 无 `operation_id`，身份只由 `X-Worker-Session-Id` 解）；展开态摆出「返工对象：<加工单号> · <部位>」；换一张码不跨码携带返工态。执行点 = 同文件::③ / ::③′ / ::③″', '🔴 **负控 ⑤·主动作没被挤掉/接错线**：点【完成】仍走 `scan/complete`，且不连带发返工请求。执行点 = 同文件::⑤', '🔴 **失败/成功两态**：服务端 422 ⇒ 大字显式 + 原因条保持展开（换一个原因是合法动作）；成功 ⇒ 摆**服务端给的**返工单号且入口变「返工已登记」（防重复开单）。执行点 = 同文件::④ / ::④′', '🔴 **红证 ④（注入式，实跑）**：把 `reportBlock` 动作行里的 `${reworkEntry}` 删掉 ⇒ ① 必红（实测 4 pass / 6 fail）；恢复 ⇒ 10 pass / 0 fail。'],
+    skip_reason='[backend-contract] 工人端 H5 的纯前端判据（`node --test` + 手写假 doc / 假 fetch，零 DOM 库、零网络、零 LLM）由 frontend/worker-h5/tests/worker-h5-machine-rework.test.mjs 验证，不进入 agent-eval 冒烟',
+    tags=['worker-h5', 'machine-screen', 'rework', 'entry-point', 'single-source', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-157 [NORMAL] **本地 dev / build 输出目录物理隔离**：`next dev` 写 `.next-dev`、`next build` / `next start` 仍写 `.next`（共用 `.next` 时 dev 侧已存在路由 404 可复现 + build 侧读到半写生成物报 9 条 TS 错误）（源: cases/misc.yml）──
+_CASE_MC_157 = EvalCase(
+    id='MC-157',
+    legacy_id='',
+    title='**本地 dev / build 输出目录物理隔离**：`next dev` 写 `.next-dev`、`next build` / `next start` 仍写 `.next`（共用 `.next` 时 dev 侧已存在路由 404 可复现 + build 侧读到半写生成物报 9 条 TS 错误）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['本地起 `next dev` 后，/production/remnants、/production/pool、/production/piecework、/production/routings 全部 404（Next 默认英文页），而 /production 本身 200、/products 200 —— `rm -rf .next` 重起 dev 就全恢复；另一次是 `npm run build` 被 `.next/dev/types/routes.d.ts`（被写成两段首尾拼接的坏 TS）打断、9 条 TS 错误全指向生成物。本机没有任何东西会把这两件事连起来，只能靠人猜「是不是缓存」。'],
+    expectations=[],
+    data_checks=['🔴 **判据 ①（dev 与 build 的输出根不同，两路读数）**：静态读数 = `next.config.mjs` 的具名常量 `DEV_DIST_DIR` / `BUILD_DIST_DIR` + 按 `NODE_ENV` 的 `distDir` 选择式；真读数 = 用 Node `import()` 求值同一份配置，在 `NODE_ENV=development` / `production` / **未设**三种形态下各取一次 `distDir`，必须分别等于 `.next-dev` / `.next` / `.next`。隔离契约还要求两个根**互不为前缀**（`.next/dev-build` 这种嵌套会继续被 build 的清理面牵到 ⇒ 判红）。执行点 = tests/unit_ci_workflows/test_next_dev_build_isolation.py::test_dev_and_build_dist_dirs_are_different', '🔴 **判据 ②（tsconfig 与新目录一致，且 dev 中间态被挡出类型检查面）**：`include` 必须覆盖 `.next-dev/types/**/*.ts` 与 `.next-dev/dev/types/**/*.ts`（Next 每次 dev 会把缺的 glob 自动追加 ⇒ 缺了就是每次脏配置），且只许出现两个输出根下的四种已知形态；`exclude` 必须含 `.next-dev` 与 `.next/dev`（**修前机器上的残留也要挡**）—— 现取 `include − exclude` 的根集合里不得出现 dev 目录。这条是形态 ② 的根：Next 16 的 `next build` 用**项目本地 tsc** 查**整个 tsconfig 项目**（源码注释原话：including test files and `.next/dev/types` when included）。执行点 = 同文件::test_tsconfig_include_and_exclude_agree_with_dist_dirs（+ 提交面的 `next-env.d.ts` 不许钉 dev 目录：::test_committed_next_env_does_not_pin_dev_dir）', '🔴 **判据 ③（`.gitignore` 覆盖新目录，正负控）**：文本在册 + `git check-ignore` **真跑**：正控 = `frontend/admin-web/.next-dev/dev/types/routes.d.ts` 必须被忽略；负控 = `next.config.mjs` / `src/app/layout.tsx` **不**被忽略（规则过宽 = 另一种假绿），`.next` 的既有忽略规则不得被删。执行点 = 同文件::test_gitignore_covers_dev_dist_dir', '🔴 **判据 ④（旧路径的下游消费者：已改 / 已登记）**：现取 `.github` / `scripts` / `tests` / `deploy` / `frontend/admin-web` 的**代码行**（注释与 `docs/**`、历史用例正文、生成物不在面内），命中「旧 dev 路径」的两条形态（`.next/dev…`、`rm -rf …/frontend/admin-web/.next`）必须逐条登记在 `tests/unit_ci_workflows/next_dev_build_isolation_ledger.json`：**未登记即红**；登记成 `unaffected` 但文件仍有旧路径 ⇒ 红；`changed` 但文件里没有新目录 ⇒ 红；锚点失效 ⇒ 红（台账不得盖章了事）。现取 17 条（`current` 3 / `changed` 8 / `unaffected` 6，含 Dockerfile、pr-check.yml、playwright 配置、package.json 的「已核对无需改」）。执行点 = 同文件::test_downstream_consumers_are_updated_or_registered + ::test_scan_face_is_not_blind', "🔴 **判据 ⑤（判别力自证：注入式实跑，逐条记读数）**：① 把 `DEV_DIST_DIR` 改成 `.next`（两个根坍缩）⇒ 判据 ① 红（`dev 与 build 仍共用输出根 ' .next '`）；② 摘掉整行 `distDir:` 选择式 ⇒ 判据 ① 红（结构契约缺失）；③ `include` 摘掉 `.next-dev/dev/types/**/*.ts`（保持 JSON 合法）⇒ 判据 ② 红（点名缺的 glob）；④ `exclude` 摘掉 `.next-dev` ⇒ 判据 ② 红（点明 build 的 tsc 会读到 dev 半写生成物）；⑤ `.gitignore` 回到修前形态 ⇒ 判据 ③ 红；⑥ 冒烟脚本的处置命令回退成清 `.next` ⇒ 判据 ④ 红（既报锚点失效、又报 changed 仍命中旧路径）；⑦ dev 锁路径硬编码回 `.next` ⇒ 判据 ⑥ 红。每轮注入都先自证文件指纹变化、还原后复验指纹一致。执行点 = 同文件::test_red_proof_collapsing_dist_dirs_is_caught + PR body 的逐条读数", '🔴 **判据 ⑥（类级联动：dev 锁路径与配置单一真值源）**：`tests/admin_web_devserver_identity.py` 的 `DEV_LOCK_RELATIVE` 必须等于 `<DEV_DIST_DIR>/dev/lock`（同一份配置现取）。这是本单最危险的假绿面：硬编码旧目录时，配置一改判据会**静默**变成「本检出没有 dev server」⇒ Playwright 的加载期拒绝失效。执行点 = 同文件::test_dev_lock_probe_follows_config', '**边界（照实登记，§19.1）**：① ⛔ 不真跑 `next build` / `next dev` —— ①的「真读数」是**配置求值**（Node `import()` 两模式各一次），不是「跑一次构建看它写哪里」；② 判不了 Next 内部是否还有别的共享面（只钉「输出根不同 + 类型检查面不交」两条可机械判定的契约）；③ 扫面只覆盖代码行（说明文档 / 历史用例正文里的旧路径不算消费方）；④ 显式 `NODE_ENV=production next dev` 会落到 build 目录（Next 自带告警）——逃生口有意保留，不为它再加一层命令嗅探；⑤ `frontend/admin-web/scripts/*.mjs` 这一族**有意不入册**：现取扫面根全在 `src/…`，包根的 `.next-dev` 不在其语料内。'],
+    skip_reason='[backend-contract] 零 LLM 的确定性读数（读配置 + Node 求值配置 + tsconfig/.gitignore 对账 + `git check-ignore` 真跑 + 代码行扫面/台账逐条对账 + 7 条注入式红证），零网络、零 DB、不跑 `next build`、不进 agent-eval 冒烟',
+    tags=['dev-experience', 'dist-dir-isolation', 'static-config', 'ledger', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-158 [NORMAL] 「先查后插」的两处 TOCTOU 写面（收款码 / 角色）必须由唯一键兜底 + 幂等收敛：摘掉唯一键或退回裸 insert 必红（issue #7255）（源: cases/misc.yml）──
+_CASE_MC_158 = EvalCase(
+    id='MC-158',
     legacy_id='',
     title='「先查后插」的两处 TOCTOU 写面（收款码 / 角色）必须由唯一键兜底 + 幂等收敛：摘掉唯一键或退回裸 insert 必红（issue #7255）',
     skill=Skill.GENERAL,
@@ -3877,6 +3913,8 @@ CASES = (
     _CASE_MC_152,
     _CASE_MC_153,
     _CASE_MC_147,
-    _CASE_MC_154,
     _CASE_MC_155,
+    _CASE_MC_156,
+    _CASE_MC_157,
+    _CASE_MC_158,
 )
