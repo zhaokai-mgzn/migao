@@ -32,7 +32,7 @@ class SessionManageTool(BaseTool):
     description = (
         "【触发】用户说'会话列表''排队多少人''在线客服''客服情况''分配会话''结束会话'时调用。"
         "【参数】action 必填：**只有 list / monitor / detail 三个只读 action**（B 端已只读化，issue #5247）。"
-        "【反例】经营概况/活跃会话统计用 dashboard_stats；查客服员工账号用 employee_manage。"
+        "【反例】经营概况/活跃会话统计用 dashboard_stats；客服员工账号属人事域，不在本工具射程内。"
         "【反例】分配/结束会话**不在本工具能力内**——引导用户到后台「在线接待」页操作。"
         "【标注】READONLY — 纯查询，不含任何写 action"
     )
