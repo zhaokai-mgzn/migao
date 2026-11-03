@@ -2,7 +2,7 @@
 # 本文件由 render_cases.py 生成，勿手改（改了也留不住：下次重渲染会覆盖）
 # 源: cases/*.yml（case-contract 单一源）
 # 重新生成: python3 render_cases.py --cases <dir> --out-eval <包目录> --out-md <md>
-# 域: misc（源: cases/misc.yml，209 条）
+# 域: misc（源: cases/misc.yml，208 条）
 
 from ._schema import Difficulty, EvalCase, Skill
 
@@ -3823,24 +3823,6 @@ _CASE_MC_180 = EvalCase(
     forbidden_card_text=[],
 )
 
-# ── MC-180 [NORMAL] RBAC 判据 8 认得命令式权限校验（两种形态同一个提取函数 / 台账 26 → 24 且上限只许下降 / 注释与无关 helper 不算校验 / 角色级与工人身份级闸有意不认）（源: cases/misc.yml）──
-_CASE_MC_180 = EvalCase(
-    id='MC-180',
-    legacy_id='',
-    title='RBAC 判据 8 认得命令式权限校验（两种形态同一个提取函数 / 台账 26 → 24 且上限只许下降 / 注释与无关 helper 不算校验 / 角色级与工人身份级闸有意不认）',
-    skill=Skill.GENERAL,
-    difficulty=Difficulty.NORMAL,
-    user_inputs=['安全审计看 RBAC 台账：图片识别的两个端点被登记成「没有任何权限校验」，可它们的代码里明明调用了 requirePermission 做按 target 的动态校验 —— 台账到底在量什么？'],
-    expectations=[],
-    data_checks=['🔴 **判据 ①（负控）**：注解式端点仍被认出 —— `@RequirePermission("order:list")` ⇒ 生效码 `order:list` 且 `checked` 为真、命令式码集合为空。执行点 = tests/unit_ci_workflows/test_rbac_imperative_permission.py::test_annotation_form_is_still_recognized', '🔴 **判据 ②（两种形态同一套提取）**：命令式端点 `requirePermission("order:refund")` ⇒ `checked` 为真且码 = `order:refund`；同一字面量在两种写法下逐字相等，打错一个字母则不等（正反例）。执行点 = 同文件::test_imperative_form_is_recognized / ::test_both_forms_extract_the_same_code_literal_identically / ::test_annotation_and_imperative_forms_land_in_the_same_normalized_value', '🔴 **判据 ③（混合归因 + 三类假阳负控）**：同一文件里注解 / 命令式 / 都没有 / 注释里提到 / 无关 helper / 另一个端点的 `if` 块 ⇒ 逐端点归因正确，后四类**不得**被当成校验。执行点 = 同文件::test_mixed_file_attributes_each_endpoint_separately / ::test_real_repo_endpoints_are_attributed_by_form', '🔴 **判据 ④（台账真读得出来）**：把真实命令式校验从 ImageRecognitionController 摘掉 ⇒ 判据 8 当场报这两条端点「未登记」（台账条目已删、上限已降）——证明台账不是写死的。执行点 = 同文件::test_ledger_is_derived_not_hardcoded', '🔴 **判据 ⑤（上限真的收紧了）**：台账现值 24（原 26）；命令式识别一旦失效 ⇒ 需回涨 2 条 ⇒ 现上限 24 报「只许缩短」，旧上限 26 **兜不住**（该回归会静默通过）。执行点 = 同文件::test_red_proof_ceiling_is_pinned_to_the_lowered_reading / ::test_red_proof_without_imperative_recognition_the_check_disappears', '🔴 **判据 ⑥（第三形态有意不认）**：**角色级**（`roles.contains("super_admin")`，真实载体 `RegistrationController.checkSuperAdminPermission()`）与**工人身份 / 页面级**（`requireWorker` / `requireWorkerPage`）闸**不得**被算成「权限码校验」；实盘 `/api/super-admin/**` 仍须逐条登记在 `UNANNOTATED_ENDPOINTS`（认了 = 那批端点静默退出台账 = 放宽）。执行点 = 同文件::test_role_and_identity_checks_are_not_counted_as_permission_checks', '🔴 **红证（注入式，实跑）**：① 把 `_IMPERATIVE_ANCHOR_RE` 换成永不匹配的模式 ⇒ 命令式端点 `checked` 变假（判据 ② 必红），11 条判据仍全绿说明只有那一条依赖它；② 摘掉真实源码里 `permissionInterceptor.requirePermission(permission);` 一行 ⇒ 判据 8 报两条未登记；③ 把上限改回 26 ⇒ 判据 ⑤ 红（`LEDGER_CEILINGS` 断言的现值）。'],
-    skip_reason='[backend-contract] RBAC 单一源的纯静态解析判据（Python 读 Java 源码文本 + 内存注入，零网络、零真实 LLM），由 tests/unit_ci_workflows/test_rbac_imperative_permission.py 验证，不进入 agent-eval 冒烟',
-    tags=['rbac', 'permission', 'imperative-check', 'single-source', 'ledger-only-shrinks', 'red-proof'],
-    persona='',
-    debug_user='',
-    form_prefill=[],
-    forbidden_card_text=[],
-)
-
 CASES = (
     _CASE_MC_001,
     _CASE_MC_002,
@@ -4049,6 +4031,5 @@ CASES = (
     _CASE_MC_158,
     _CASE_MC_162,
     _CASE_MC_163,
-    _CASE_MC_180,
     _CASE_MC_180,
 )
