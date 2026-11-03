@@ -33,6 +33,7 @@ const mockGetWorkerPageCatalog = vi.fn()
 const mockUpdateWorkerPages = vi.fn()
 const mockListWorkerOperations = vi.fn()
 const mockUpdateWorkerOperation = vi.fn()
+const mockUpdateWorkerPosition = vi.fn()
 
 vi.mock('@/lib/api', () => ({
   workerApi: {
@@ -43,6 +44,7 @@ vi.mock('@/lib/api', () => ({
     updateWorkerPages: (...a: unknown[]) => mockUpdateWorkerPages(...a),
     listWorkerOperations: (...a: unknown[]) => mockListWorkerOperations(...a),
     updateWorkerOperation: (...a: unknown[]) => mockUpdateWorkerOperation(...a),
+    updateWorkerPosition: (...a: unknown[]) => mockUpdateWorkerPosition(...a),
   },
   workerPageCatalogApi: {
     get: (...a: unknown[]) => mockGetWorkerPageCatalog(...a),
@@ -98,6 +100,7 @@ describe('WorkerProfilesPanel（issue #4869）', () => {
   beforeEach(() => {
     mockListWorkers.mockReset()
     mockCreateWorker.mockReset()
+    mockUpdateWorkerPosition.mockReset()
     mockSetWorkerStatus.mockReset()
     mockResetWorkerPin.mockReset()
     mockGetWorkerPageCatalog.mockReset()
@@ -147,6 +150,8 @@ describe('WorkerProfilesPanel（issue #4869）', () => {
         workerNo: 'W-1002', name: '李四', pin: '135791', workerPages: null,
         // 没选工序 = 不绑定（扫码后自己选工序的旧行为）
         workerOperation: null,
+        // issue #8337：岗位（默认未设 ⇒ null；选了 ⇒ 服务端按岗位带出默认菜单）
+        workerPosition: null,
       })
     })
     // 建号成功后回到列表并刷新（新工人必须立刻可见，否则管理员会重复建号）
@@ -275,6 +280,8 @@ describe('WorkerProfilesPanel（issue #4869）', () => {
       expect(mockCreateWorker).toHaveBeenCalledWith({
         workerNo: 'W-1003', name: '赵六', pin: '246810', workerPages: ['cut_calc'],
         workerOperation: null,
+        // issue #8337：岗位（默认未设 ⇒ null；选了 ⇒ 服务端按岗位带出默认菜单）
+        workerPosition: null,
       })
     })
   })
@@ -295,6 +302,8 @@ describe('WorkerProfilesPanel（issue #4869）', () => {
       expect(mockCreateWorker).toHaveBeenCalledWith({
         workerNo: 'W-1004', name: '钱七', pin: '246810', workerPages: null,
         workerOperation: null,
+        // issue #8337：岗位（默认未设 ⇒ null；选了 ⇒ 服务端按岗位带出默认菜单）
+        workerPosition: null,
       })
     })
   })
@@ -371,6 +380,8 @@ describe('WorkerProfilesPanel（issue #4869）', () => {
         // 默认四页（目录给的 default_pages）+ 单独开的质检 = 收窄列表（不是 null）
         workerPages: ['report', 'order', 'cut_calc', 'shipment', 'inspect'],
         workerOperation: null,
+        // issue #8337：岗位（默认未设 ⇒ null；选了 ⇒ 服务端按岗位带出默认菜单）
+        workerPosition: null,
       })
     })
   })
@@ -512,6 +523,8 @@ describe('WorkerProfilesPanel（issue #4869）', () => {
       expect(mockCreateWorker).toHaveBeenCalledWith({
         workerNo: 'W-1005', name: '孙八', pin: '246810', workerPages: null,
         workerOperation: null,
+        // issue #8337：岗位（默认未设 ⇒ null；选了 ⇒ 服务端按岗位带出默认菜单）
+        workerPosition: null,
       })
     })
   })
@@ -554,6 +567,8 @@ describe('WorkerProfilesPanel（issue #4869）', () => {
       expect(mockCreateWorker).toHaveBeenCalledWith({
         workerNo: 'W-1007', name: '吴十', pin: '246810', workerPages: null,
         workerOperation: null,
+        // issue #8337：岗位（默认未设 ⇒ null；选了 ⇒ 服务端按岗位带出默认菜单）
+        workerPosition: null,
       })
     })
   })
@@ -644,6 +659,85 @@ describe('WorkerProfilesPanel（issue #4869）', () => {
     await waitFor(() => expect(mockListWorkers).toHaveBeenCalledTimes(2))
     expect(await screen.findByText('W-1001')).toBeInTheDocument()
     await waitFor(() => expect(screen.queryByTestId('worker-profiles-load-failed')).not.toBeInTheDocument())
+  })
+
+  it('⑫ #8337 岗位 → 默认菜单：选岗位即带出该岗位默认菜单（建号 payload 带 workerPosition）', async () => {
+    mockGetWorkerPageCatalog.mockResolvedValue({
+      data: {
+        data: {
+          pages: ['report', 'piecework', 'order', 'cut_calc', 'shipment', 'to_ship', 'stock',
+            'inbound', 'reprint', 'inspect', 'rework'],
+          default_pages: ['report', 'piecework', 'order', 'cut_calc', 'shipment', 'to_ship', 'stock',
+            'inbound', 'reprint'],
+          optional_pages: ['inspect', 'rework'],
+          labels: {
+            report: '报工', piecework: '计件工资报表', inbound: '拍照入库',
+            reprint: '补打入库标签', stock: '库存修正',
+          },
+          positions: ['裁剪', '车位', '仓管', '发货'],
+          position_labels: { 仓管: '仓管：拍照入库 + 补打入库标签 + 库存修正' },
+          position_defaults: {
+            裁剪: ['report', 'piecework'],
+            仓管: ['inbound', 'reprint', 'stock'],
+          },
+          max_pages_per_worker: 3,
+        },
+      },
+    })
+    mockCreateWorker.mockResolvedValue({ data: { data: worker({ id: 'w-8' }) } })
+    render(<WorkerProfilesPanel canWrite />)
+
+    fireEvent.click(await screen.findByText('新建工人档案'))
+    fireEvent.change(screen.getByPlaceholderText(/W-1002/), { target: { value: 'W-2005' } })
+    fireEvent.change(screen.getByPlaceholderText(/李四/), { target: { value: '王建国' } })
+    fireEvent.change(screen.getByPlaceholderText(/位数字/), { target: { value: '246810' } })
+    // 选「仓管」⇒ 提示按岗位带出三项（人话名，不摆页面键）
+    fireEvent.change(screen.getByTestId('worker-position-select'), { target: { value: '仓管' } })
+    expect(await screen.findByText(/该岗位默认菜单：拍照入库/)).toBeInTheDocument()
+    fireEvent.click(screen.getByText('创建'))
+
+    await waitFor(() => {
+      expect(mockCreateWorker).toHaveBeenCalledWith(expect.objectContaining({
+        workerNo: 'W-2005',
+        workerPosition: '仓管',
+        // 岗位带出的默认菜单（3 项 = 上限），不是全勾
+        workerPages: ['inbound', 'reprint', 'stock'],
+      }))
+    })
+  })
+
+  it('⑬ #8337 改岗位：行内「设岗位」⇒ PUT /position（服务端按岗位重带菜单）', async () => {
+    mockListWorkers.mockResolvedValue(okPage([
+      worker({ id: 'w-1', workerNo: 'W-1001', name: '张三', workerPages: ['report', 'piecework'] }),
+    ]))
+    mockGetWorkerPageCatalog.mockResolvedValue({
+      data: {
+        data: {
+          pages: ['report', 'piecework', 'inbound', 'reprint', 'stock'],
+          default_pages: ['report', 'piecework', 'inbound', 'reprint', 'stock'],
+          optional_pages: [],
+          labels: {
+            report: '报工', piecework: '计件工资报表', inbound: '拍照入库',
+            reprint: '补打入库标签', stock: '库存修正',
+          },
+          positions: ['裁剪', '车位', '仓管', '发货'],
+          position_labels: { 仓管: '仓管：拍照入库 + 补打入库标签 + 库存修正' },
+          position_defaults: { 仓管: ['inbound', 'reprint', 'stock'] },
+          max_pages_per_worker: 3,
+        },
+      },
+    })
+    mockUpdateWorkerPosition.mockResolvedValue({
+      data: { data: worker({ id: 'w-1', workerPosition: '仓管', workerPages: ['inbound', 'reprint', 'stock'] }) },
+    })
+    render(<WorkerProfilesPanel canWrite />)
+
+    await openMenu('w-1')
+    fireEvent.click(await screen.findByText('设岗位'))
+    fireEvent.change(screen.getByTestId('worker-position-modal-select'), { target: { value: '仓管' } })
+    fireEvent.click(screen.getByText('保存'))
+
+    await waitFor(() => expect(mockUpdateWorkerPosition).toHaveBeenCalledWith('w-1', '仓管'))
   })
 
   it('⑪ 反向对照：读成功且真为空 ⇒ 「还没有工人档案」照旧上屏（空态不许被判红）', async () => {

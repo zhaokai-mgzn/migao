@@ -39,6 +39,23 @@
 - 判据：`frontend/bmini-app/tests/input-typography-guard.test.ts`（MC-160：内层继承 / 裸
   `font-family` 只许在字体定义处 / 占位符唯一来源 / 不许裸写原生 `<input>` 标签，含注入式红证）。
 
+### 工人端菜单改为「以岗位为源」：建号选岗位即带出默认菜单（裁剪/车位 2 项、仓管 3 项、发货 2 项），工人首屏最多 3 项（2026-11-03，issue #8337）
+
+- **改前**：工人端菜单是**逐人自由勾选**的 `workerPages`，与企业里的岗位无关 —— 新招一个人要手工勾一遍，
+  勾错就多给权限；默认还是全开（8 项）。「拍照入库」「补打入库标签」两张已有页面**根本没有页面键**、
+  在工人工作台上**恒显示** ⇒ 哪怕车位工也看得见，用户口中的「每岗位 1~3 个菜单」直接破功。
+- **改后**：① 两张物料页有了页面键（`inbound` / `reprint`），参与逐人显隐；
+  ② 工人档案新增**岗位**（裁剪 / 车位 / 仓管 / 发货）—— 建号选岗位即按岗位带出默认菜单，
+  管理员仍可逐人微调，**改岗位会按新岗位重新带出**（清岗位 ⇒ 回到全部页面）；
+  ③ 工人端菜单**最多 3 项**（车间手机屏一屏读完）：超过就在保存时**具名拒错**
+  （说清上限 3、你填了几项、这四项是哪几项），不再静默放行。
+- 边界：菜单只决定**显不显示**，不是授权（工人可达面仍恒为 `/api/worker/**`）；
+  存量工人的 `workerPages` **不重置、不迁移**（没有岗位的档案行为与改前一致）。
+- 判据：`backend/admin-api/src/test/java/com/migao/admin/worker/WorkerPagesTest.java`、
+  `.../service/WorkerAdminServiceTest.java`、`.../controller/AdminWorkerControllerTest.java`、
+  `frontend/bmini-app/tests/worker-home-page.test.tsx`（车位工看不见两个入库入口）、
+  `frontend/admin-web/tests/unit/components/WorkerProfilesPanel.test.tsx`（岗位下拉 / 按岗位带出 / 改岗位）。
+
 ### 机台页详情屏补「报返工」入口：扫完唛就地报返工，不必退出机台页重扫（2026-11-03，issue #7992）
 
 - **改前**：一体机机台页扫完水洗唛，详情屏**只有【完成】一个动作** —— 裁床发现这道活做坏了，

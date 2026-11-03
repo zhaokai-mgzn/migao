@@ -101,12 +101,15 @@ public class AdminWorkerController {
 
     /**
      * 建工人档案：Body {@code {"workerNo":"W-1001","name":"张三","pin":"246810",
-     * "workerOperation":"韩褶"}}。
+     * "workerOperation":"韩褶","workerPosition":"车位"}}。
      *
      * <p>权限：{@code employee:create}。工号租户内唯一，冲突 ⇒ 409 + 明确文案（不是 500）；
      * PIN 由服务端 BCrypt 编码后落 {@code users.password_hash}，与工人登录侧同一套比对。
      * {@code workerOperation} 可省 ⇒ 不绑定（= 扫码后自己选工序的旧行为）；填了但不在本租户工序库
      * ⇒ 422 + 可行动出口。</p>
+     *
+     * <p>{@code workerPosition}（issue #8337）可省 ⇒ 不设岗位（菜单沿用逐人勾选 / 全部页面）；
+     * 给了 ⇒ 菜单按岗位带出默认项（{@code workerPages} 同时给了则以显式集合为准）。</p>
      */
     @PostMapping
     @RequirePermission("employee:create")
@@ -114,7 +117,28 @@ public class AdminWorkerController {
         User worker = workerAdminService.createWorker(
                 text(body, "workerNo"), text(body, "name"), text(body, "pin"),
                 body == null ? null : body.get("workerPages"),
-                text(body, "workerOperation"));
+                text(body, "workerOperation"),
+                text(body, "workerPosition"));
+        return ApiResponse.success(toWorkerView(worker));
+    }
+
+    /**
+     * 设/清这位工人的**岗位**并按岗位重新带出默认菜单（issue #8337）：
+     * Body {@code {"workerPosition":"仓管"}}。
+     *
+     * <p>{@code workerPosition} 可省 / 为 {@code null} / 空白 ⇒ <b>清岗位</b>（菜单同时回到
+     * 「未收窄」= 全部页面）。不在闭词表 ⇒ 422 + 可行动出口，零写入。
+     * 权限：{@code employee:create}（与建号／页面收窄同档写权限）。</p>
+     *
+     * <p>🔴 岗位**不是权限**：只决定默认菜单取哪一组；授权判据仍是 {@code /api/worker/**} 的 403。</p>
+     */
+    @PutMapping("/{id}/position")
+    @RequirePermission("employee:create")
+    @TenantOwnedResource("worker")
+    public ApiResponse<Map<String, Object>> updateWorkerPosition(@PathVariable String id,
+                                                                 @RequestBody(required = false) Map<String, Object> body) {
+        User worker = workerAdminService.updateWorkerPosition(
+                id, body == null ? null : text(body, "workerPosition"));
         return ApiResponse.success(toWorkerView(worker));
     }
 
@@ -192,6 +216,9 @@ public class AdminWorkerController {
         view.put("workerPages", restricted == null ? null : List.copyOf(restricted));
         // 绑定的逻辑工序（issue #7749 / #7766）：null = 不设工序（出入库/仓库等岗位）⇒ 前端显示「不设工序」。
         view.put("workerOperation", worker.getWorkerOperation());
+        // 岗位（issue #8337）：null = 未设岗位（菜单沿用逐人勾选）。岗位不是权限码 ——
+        // 它只承载「默认菜单取哪一组」，工人可达面仍恒为 /api/worker/**。
+        view.put("workerPosition", worker.getPosition());
         view.put("createdAt", worker.getCreatedAt() == null ? null : worker.getCreatedAt().toString());
         return view;
     }
