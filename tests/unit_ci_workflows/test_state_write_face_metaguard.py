@@ -529,6 +529,22 @@ def illegal_sql_values(current: list[dict], ledger: dict) -> list[str]:
     return out
 
 
+def scanner_lower_bound_problems(table_count: int, java_count: int, sql_count: int) -> list[str]:
+    """判据 8 的本体：现取条数**低于冻结下界** ⇒ 具名清单（空集 = 判据失明，不是通过）。
+
+    抽成纯函数是为了让判据 7 能**真的**证明它「会红」（喂 0 ⇒ 必须报），
+    而不是写一句 `assert len([]) >= N` 那种自问自答的空断言。
+    """
+    out = []
+    if table_count < MIN_STATUS_TABLES:
+        out.append(f"有 status 列的表只剩 {table_count} 张（下界 {MIN_STATUS_TABLES}）")
+    if java_count < MIN_SERVICE_WRITE_POINTS:
+        out.append(f"Java 状态写点只剩 {java_count} 个（下界 {MIN_SERVICE_WRITE_POINTS}）")
+    if sql_count < MIN_SQL_WRITE_POINTS:
+        out.append(f"SQL 状态写点只剩 {sql_count} 个（下界 {MIN_SQL_WRITE_POINTS}）")
+    return out
+
+
 def _ledger() -> dict:
     if not LEDGER_PATH.exists():
         raise AssertionError(
@@ -545,9 +561,10 @@ def test_scanner_is_not_blind():
     svc, sql, tables = java_write_points(), sql_write_points(), status_tables()
     print(f"[READING SW-100 现取] 状态表={len(tables)} java 写点={len(svc)} SQL 写点={len(sql)} "
           f"裸字面量站点={len(bare_literal_sites(svc))}")
-    assert len(tables) >= MIN_STATUS_TABLES, f"有 status 列的表只剩 {len(tables)} 张（下界 {MIN_STATUS_TABLES}）"
-    assert len(svc) >= MIN_SERVICE_WRITE_POINTS, f"Java 状态写点只剩 {len(svc)}（下界 {MIN_SERVICE_WRITE_POINTS}）"
-    assert len(sql) >= MIN_SQL_WRITE_POINTS, f"SQL 状态写点只剩 {len(sql)}（下界 {MIN_SQL_WRITE_POINTS}）"
+    problems = scanner_lower_bound_problems(len(tables), len(svc), len(sql))
+    assert not problems, "现取面塌了（判据会因此恒绿）—— " + "；".join(problems)
+    # 读数（**不是**硬判据）：同成员内没有持久化证据的写点 —— 实测 3 条，形态 = builder 由调用方落库
+    print("[READING SW-100 无持久化证据] " + str([_fmt(p) for p in svc if not p.get("persisted")]))
     names = {f"{p['table']}::{p['symbol']}" for p in svc + sql}
     for anchor in (
         "inbound_orders::post",                     # MC-100 的 CAS 写面（本守卫必须看见它）
@@ -722,9 +739,10 @@ def test_detector_has_teeth():
                 "        customerProfileMapper.updateById(p);",
                 "    }") == []
 
-    # ⑦ **空扫描面**（源文件不存在）⇒ 由现取下界判红（不许把「没扫到」读成「没问题」）
-    with pytest.raises(AssertionError):
-        assert len([]) >= MIN_SERVICE_WRITE_POINTS, "空集当绿"
+    # ⑦ **空扫描面** ⇒ 现取下界必须判红（喂 0；反过来喂下界本身 ⇒ 不报）
+    assert scanner_lower_bound_problems(0, 0, 0), "空集被当成了通过（下界规则恒绿）"
+    assert scanner_lower_bound_problems(
+        MIN_STATUS_TABLES, MIN_SERVICE_WRITE_POINTS, MIN_SQL_WRITE_POINTS) == []
 
     # ⑧ 规则本身的**注入式红证**：摘掉「未登记即红」/「裸字面量」⇒ 对应判据必红
     ledger = {"write_points": []}
