@@ -460,7 +460,7 @@
     {
       "path": "backend/ai-agent-service/tests/test_briefing_verdict_direction_guard.py",
       "guards": "指标判定的**方向**：`_verdict(metric, ...)` 的方向从 `METRIC_DIRECTIONS` 查，不由调用方传（缺陷 #8280：毛利方向反了而那条单测也一起写反，CI 全绿）。三层：① 未登记指标 ⇒ KeyError 点名；② 调用点 AST 扫描（第一实参必须是字面量且在表里，不许再用 higher_is_better= 关键字）；③ 极值双向断言（改表里的方向 ⇒ 立刻红）",
-      "red_proof": "① 把 `app/briefing/product_health.py` 的 `METRIC_DIRECTIONS[\"gross_margin\"]` 从 True 改成 False ⇒ `test_gross_margin_is_higher_is_better` + `test_positive_margin_uses_the_peer_baseline` 双红（本机实测 2 failed / 21）；② 把调用点改成 `_m = \"gross_margin\"; _verdict(_m, ...)` ⇒ `test_every_call_site_passes_a_string_literal` + `test_every_literal_metric_is_registered` 双红（实测 2 failed / 6）",
+      "red_proof": "① 把 `backend/ai-agent-service/app/briefing/product_judgement.py` 的 `METRIC_DIRECTIONS[\"gross_margin\"]` 从 True 改成 False ⇒ `test_gross_margin_is_higher_is_better` + `test_positive_margin_uses_the_peer_baseline` 双红（本机实测 2 failed / 21）；② 把调用点改成 `_m = \"gross_margin\"; _verdict(_m, ...)` ⇒ `test_every_call_site_passes_a_string_literal` + `test_every_literal_metric_is_registered` 双红（实测 2 failed / 6）",
       "owner": "#8293"
     },
     {
