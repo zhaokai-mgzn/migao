@@ -73,11 +73,15 @@ BEGIN
             HAVING COUNT(*) > 1
         ) d;
         IF dup_pairs > 0 THEN
-            RAISE WARNING 'roles 存在 % 组重复的 (tenant_id, code) ⇒ 本次**不建**唯一索引；'
+            RAISE WARNING 'roles 存在 % 组重复的 (tenant_id, code) ⇒ 本次**不建**唯一约束；'
                           ' 请先清理重复行再重跑本迁移（issue #7255）', dup_pairs;
         ELSE
-            CREATE UNIQUE INDEX IF NOT EXISTS uk_roles_tenant_code ON roles (tenant_id, code);
-            RAISE NOTICE 'roles (tenant_id, code) 唯一索引已就绪（issue #7255）';
+            -- 载体必须与建库脚本**同形**（表内 UNIQUE = 约束，不是一条独立命名的索引）：
+            -- 两份真相若长得不一样，`test_db_hot_path_indexes.py` 的「迁移 → 脚本」对账会把这条
+            -- 判红（实测踩过），而且全新环境与存量库会各背一种载体。`ADD CONSTRAINT` 无 IF NOT EXISTS
+            -- ⇒ 幂等由上面对 `covered` 的**现取**判定负责（已覆盖就整段跳过）。
+            EXECUTE 'ALTER TABLE roles ADD CONSTRAINT roles_tenant_id_code_key UNIQUE (tenant_id, code)';
+            RAISE NOTICE 'roles (tenant_id, code) 唯一约束已就绪（issue #7255）';
         END IF;
     END IF;
 END $$;
