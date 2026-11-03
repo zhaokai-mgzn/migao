@@ -1,0 +1,6 @@
+{
+  "id": "MC-137",
+  "pr": 8517,
+  "title": "gate 的 bmini 打印口径守卫读**git 索引**而不是工作树：被 `.gitignore` 命中的旧产物不再让本机假红（issue #6594）",
+  "claimed_at": "2026-11-03"
+}

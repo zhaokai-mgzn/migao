@@ -4186,7 +4186,7 @@
 ```
 溯源: 2026-10-31 新增（issue #8295）：两步确认，避免误写 ｜ tags: ui, preview
 
-## 杂项域（180 case）
+## 杂项域（181 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -6942,6 +6942,19 @@
 跳过: [backend-contract] 零 LLM 的确定性静态判据（Python AST + 正则扫仓内 durable 面 + 现取 Java 测试源码索引），pytest 真跑、零网络、零 Maven、零真库，不进 agent-eval 冒烟
 ```
 溯源: 2026-11-03 新增（issue #6495，AI 裁定按**实测**改判病灶）。原始单的读数（`head -6 target/surefire-reports/<fqn>.txt` 得 `Tests run: 0` 且 exit 0）复现了，但归因错了一半：实测 `-Dtest=OssConfigTest`（3 外层 + 12 嵌套）= **15/15 真跑**、`-Dtest=AgentBatchServiceTest`（38 条全在 @Nested）= **38/38 真跑**、`-Dtest=OssConfigTest*` 同为 15（**通配符没有额外收益**）⇒「类里含 @Nested ⇒ 一条都不跑」**不成立**，原单那条是**误诊**，误诊源 = `.txt` 摘要在 @Nested 类上恒报 0（同一次运行 XML/console 15，摘要 0）。真·空跑另有一条：`-Dtest=AgentBatchServiceTest#persistsPreviewWithOldValueCollectedFromDb`（该方法声明在 @Nested class Create 内）⇒ `Tests run: 0` / `BUILD SUCCESS` / exit=0 / 无 XML；加 `$` 限定 `-Dtest=AgentBatchServiceTest$Create#persistsPreviewWithOldValueCollectedFromDb` ⇒ **1/1 真跑**。交付 = 入口 scripts/java-test.sh（+ scripts/java_pointed_readings.py）把选择器自动纠正 + **只信 XML** + 断言读数大于 0（0 即红，exit 1）；守卫 = tests/unit_ci_workflows/test_java_nested_pointed_run_guard.py J1~J7 + 台账 java_pointed_run_ledger.json（读 `.txt` 的两个红证机具**已登记**并钉住「定点类保持扁平」这个前提）；同时改掉两处在仓内传播错读数的文案（ScheduledTaskServiceTest 的类注释、docs/wiki/Development.md 新增「Java 定点判据」节）。取号 = **MC-134**（`scripts/next_case_id.py MC` 给的是历史空档 MC-099 —— 仓库内已有两次明文说明 MC-099 是 PR #6924 随 #8383 整包撤回被删、**不回填**；本轮 **5 个在飞 PR（#8503 / #8506 / #8508 / #8509 / #8510）同时占了 MC-133**（CI 的 `test_case_id_claims.py` 在合并前就判红）⇒ 按「后合入者让号」让到现取最小空闲号 MC-134）。 ｜ tags: backend-contract, java-test, surefire, nested, readings, guard, red-proof
+
+### MC-137. gate 的 bmini 打印口径守卫读**git 索引**而不是工作树：被 `.gitignore` 命中的旧产物不再让本机假红（issue #6594） 🔵
+```
+你: 我只在本机跑过一次 ai-agent-service 的覆盖率，为什么 gate 的 bmini 腿就说我在打印口径里写死了 384？CI 明明是绿的。
+数据: 🔴 **判据 ①·被 ignore 的旧产物不进判决语料（与 CI 同口径）**：临时 git 仓里「索引干净 + 工作树有一份被 .gitignore 命中的 coverage.json（含 384）」⇒ 语料**不含**它，而真值源与源码仍在语料里（反空跑）。执行点 = tests/unit_ci_workflows/test_bmini_corpus_read_face.py::test_ignored_stale_artifact_is_outside_the_verdict_corpus
+数据: 🔴 **判据 ③·单变量对照（红证）**：**同一夹具**只把读面换成 `worktree` ⇒ 那份产物**必须**进语料（否则上一条的绿不证明任何事）。执行点 = 同文件::test_same_fixture_read_from_the_worktree_turns_red
+数据: 🔴 **判据 ②·判别力不降**：产物 `git add -f` 入库（= CI 里也会有它）⇒ 语料**必须**含它。执行点 = 同文件::test_tracked_violation_still_enters_the_corpus
+数据: **判据 ④~⑧**：默认读面 = index（行为面）/ 守卫接线到共享读面且不留 `readdirSync` / **真仓库**上语料 ⊆ `git ls-files` / 读不到 ⇒ 非零退出 / 未跟踪且未被 ignore 的文件必须**出声**（不静默漏扫、也不判红）。执行点 = 同文件::test_default_read_face_is_the_index + ::test_guard_is_wired_to_the_shared_read_face + ::test_real_repo_corpus_is_a_subset_of_tracked_files + ::test_unreadable_corpus_fails_closed + ::test_untracked_but_not_ignored_files_are_surfaced
+数据: 🔴 **类级元守卫**：`frontend/**` 里**定义** `readCorpus` 只许一处（台账 `single_implementation`）、`frontend/**/tests/**` 里引用共享读面的文件必须登记、已登记消费者**不许**出现 `readdirSync`、例外只许缩短（冻结 0）、台账空 ⇒ 红；六种坏形态内存注入各自判红 + 只改注释不红。执行点 = tests/unit_ci_workflows/test_repo_corpus_read_face_ledger.py（8 条）
+数据: **边界（照实登记，§19.1）**：① 换了名字的第二份读面判不了；② `tests/unit_ci_workflows/**` 的 Python 语料读工作树**不在射程**（CI 上那一侧跑的就是同一份工作树，不存在第二个口径）；③ 谓词判别力不归本单（谓词**一字未改**，红证在 jest 判据的 C2/C2b）；④ 不改任何门禁的通过条件、不新增豁免。
+跳过: [backend-contract] 零 LLM 的确定性读数（真 git 临时仓 + 真跑 node 读面 CLI + 真仓库 git ls-files 对账 + 内存注入自证），pytest 真跑、零网络，不进 agent-eval 冒烟
+```
+溯源: 2026-11-03 新增（issue #6594）。病（本机实测，issue 原文）：bmini 打印口径守卫的 C2b 用 readCorpus(['frontend','backend']) **遍历工作树** ⇒ 扫到被 .gitignore 命中的旧覆盖率产物（backend/ai-agent-service/coverage.json，python coverage 输出、496KB、天然含打印头宽的像素口径）⇒ ./verify-all.sh gate 的 bmini 腿在本机判红（Array [] vs Array ['…coverage.json: 自带像素口径字面量 384…']），而 CI（干净检出）判绿 ⇒ **本机红 / CI 绿的分裂**。修法 = **A（读 git 索引）**：语料 = git ls-files 的跟踪集合；同口径是**构造出来的**（CI 检出里只有跟踪文件），不是靠一张必然漏的排除清单。落码 = frontend/bmini-app/tests/helpers/trackedCorpus.js（唯一读面，默认 index；worktree 只给判据做单变量对照）+ 守卫改为调用它 + 未跟踪且未被 ignore 的文件**出声**（不静默漏扫、也不判红）。**红证（实跑，双向对照）**：同一份被 ignore 的产物存在时 —— 修前（读面 = 工作树）**1 failed / 7 passed**，报错与 issue 逐字相同；修后（读面 = 索引）**8 passed**。🔴 **取号出过一次事故（照实登记，本 PR 是补丁）**：本用例**首次**以 MC-134 起草并随修复 PR #8511 提交，合入前该分支被更新到含 #8510 的 main —— **#8510 的 Java 定点判据用例先占了 MC-134**（.github/cases/claims/8510-MC-134.json），两条都以 `- id:` 追加在 misc.yml 末尾 ⇒ 分支更新时**本条目被静默吞掉**（main 上 grep `语料读面` = **0**），而 CI 全绿（判据只查「声明的 id 存在」，不查「它指的还是不是自己那条」）。本 PR 补回该条目并改用例号 **MC-137**（现取最大 136 + 1；`next_case_id.py` 的最小空闲号是刻意的历史空档 MC-099，**按纪律不回填**），并补 `.github/cases/claims/<本 PR>-MC-137.json` 取号登记。 ｜ tags: ci-process, corpus-read-face, git-index, false-positive, red-proof, single-source
 
 ### MC-136. 生图等待上限只有一个权威（ai-agent 的 IMAGE_GEN_TIMEOUT）：admin-api 读超时与前端等待/文案都从它派生；文案按实测区间说、超 30 秒给「还在生成」（issue #7731） 🔵
 ```
@@ -14465,8 +14478,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：978（活跃 153，跳过 825）
-- tier 分布：smoke 15 / normal 901 / adversarial 33
+- 用例总数：979（活跃 153，跳过 826）
+- tier 分布：smoke 15 / normal 902 / adversarial 33
 - 售后域：16
 - Agent 核心域：13
 - API 层域：21
@@ -14482,7 +14495,7 @@
 - 人事域：13
 - 知识问答域：9
 - 客户主数据迁移域：10
-- 杂项域：180
+- 杂项域：181
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：76
@@ -14728,6 +14741,7 @@
 - MC-128: **端点泄漏台账的键不许含行号**：只插空行（行号漂移）判据仍绿，真删/真加泄漏照旧红（issue #6977）
 - MC-132: 批次就绪判定把「已 arm 的原生 auto-merge」也算作不就绪（issue #6212）：跑那一次全量期间不许存在被秒合的窗口
 - MC-134: Java 定点判据的读数与空跑（issue #6495 的类级固化）：`.txt` 摘要对 @Nested 类恒报 0（误诊源）+ `外层类#嵌套方法` 真·空跑（exit 0）⇒ 读数只信 XML 且必须大于 0
+- MC-137: gate 的 bmini 打印口径守卫读**git 索引**而不是工作树：被 `.gitignore` 命中的旧产物不再让本机假红（issue #6594）
 - MC-136: 生图等待上限只有一个权威（ai-agent 的 IMAGE_GEN_TIMEOUT）：admin-api 读超时与前端等待/文案都从它派生；文案按实测区间说、超 30 秒给「还在生成」（issue #7731）
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
