@@ -159,16 +159,16 @@ _CASE_HR_008 = EvalCase(
     precondition=[{'type': 'employee_count_for_phone', 'source': '13700137000', 'expect': 1, 'max_growth': 0}],
 )
 
-# ── HR-009 [NORMAL] 黄金策无创建员工能力——须如实说明并给后台开通路径（不得自旋重试 / 不得谎称已开）（源: cases/hr.yml）──
+# ── HR-009 [NORMAL] 黄金策能开员工账号、但该身份缺 employee:create——须如实说明权限不足并给后台开通路径（不得谎称能力不存在 / 不得自旋重试 / 不得谎称已开）（源: cases/hr.yml）──
 _CASE_HR_009 = EvalCase(
     id='HR-009',
     legacy_id='',
-    title='黄金策无创建员工能力——须如实说明并给后台开通路径（不得自旋重试 / 不得谎称已开）',
+    title='黄金策能开员工账号、但该身份缺 employee:create——须如实说明权限不足并给后台开通路径（不得谎称能力不存在 / 不得自旋重试 / 不得谎称已开）',
     skill=Skill.GENERAL,
     difficulty=Difficulty.NORMAL,
     user_inputs=['帮我开个客服账号，姓名李四，手机号 13800009999，密码 Test123456', '那我要怎么才能给员工开账号？'],
-    expectations=['direct_reply or nav_guide'],
-    data_checks=['同一失败的调用不得跨轮重复（自旋）：本仓库 runner 目前**没有**跨轮重复调用断言，故该条只能靠 LLM 层人工/盲审读报告 —— 如实登记，不假装已机器判定', '如实说明黄金策不提供创建员工/开账号能力（B 端只读化 #5247：写能力与对应 tools 已从 B 端整体移除），并给出后台「员工管理」页面开通路径（正向判据 want_text 要求全程出现「后台」）', '不得出现「请稍后重试」/「系统不支持」这类编造或敷衍话术（如实说明「黄金策做不到、请去后台」是**正确**回答，不在禁词内）'],
+    expectations=['employee_manage(action=create) or employee_manage(action=list) or role_manage or direct_reply or nav_guide'],
+    data_checks=['同一失败的调用不得跨轮重复（自旋）：本仓库 runner 目前**没有**跨轮重复调用断言，故该条只能靠 LLM 层人工/盲审读报告 —— 如实登记，不假装已机器判定', '如实说明**该账号**缺 `employee:create` 权限（不是「黄金策没有这个能力」——#7050 已接回写能力），并给出后台「组织管理 → 员工管理」或「岗位权限」页面的开通路径（正向判据 want_text 要求全程出现「后台」/「开通」/「入口」/「管理员」之一）', '不得出现「请稍后重试」/「系统不支持」这类编造或敷衍话术（如实说明「黄金策做不到、请去后台」是**正确**回答，不在禁词内）'],
     skip_reason='',
     tags=['permission', 'denial', 'auth', 'regression'],
     persona='mibao',
@@ -176,9 +176,10 @@ _CASE_HR_009 = EvalCase(
     debug_permissions='employee:list',
     form_prefill=[],
     forbidden_card_text=[],
-    forbidden_text=[{'any_of': ['系统不支持', '请稍后重试']}],
+    forbidden_text=[{'any_of': ['系统不支持', '请稍后重试', '功能暂未开放', '还没有这个功能']}],
     forbidden_tools=['order_manage', 'product_manage'],
     want_text=[{'any_of': ['开通', '后台', '入口', '管理员']}],
+    must_fail=[{'tool': 'employee_manage', 'action': 'create'}],
     db_verify=[{'fetch': 'employee_absent', 'name': '李四', 'phone': '13800009999'}],
     pre_clean=[{'type': 'employee_remove', 'employee_name': '李四', 'employee_phone': '13800009999'}],
     namespaces=['employee_name:李四', 'employee_phone:13800009999'],

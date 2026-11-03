@@ -512,6 +512,10 @@
   },
   "employee_manage": {
    "actions": {
+    "create": {
+     "dynamic": true,
+     "keys": []
+    },
     "detail": {
      "dynamic": true,
      "keys": [
@@ -526,6 +530,12 @@
       "total",
       "users"
      ]
+    },
+    "update": {
+     "dynamic": false,
+     "keys": [
+      "user_id"
+     ]
     }
    },
    "dynamic": true,
@@ -535,19 +545,21 @@
     "page",
     "size",
     "total",
+    "user_id",
     "users"
    ],
    "literal_keys": [
     "page",
     "size",
     "total",
+    "user_id",
     "users"
    ],
    "shape_notes": [
     "data ← response.get('data', {})",
     "data=response.get('data', {})"
    ],
-   "source_sha256": "6c3145254d419f7bf97e0ba278be5b70e37ff9bf740bdecdc68942805b3cdbe1"
+   "source_sha256": "dce6aa7f7c70a5bfb366287f7dba74d72f6671ccb8e6c21b52055e74a57449d9"
   },
   "finance_api": {
    "actions": {

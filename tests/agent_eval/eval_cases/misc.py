@@ -2,7 +2,7 @@
 # 本文件由 render_cases.py 生成，勿手改（改了也留不住：下次重渲染会覆盖）
 # 源: cases/*.yml（case-contract 单一源）
 # 重新生成: python3 render_cases.py --cases <dir> --out-eval <包目录> --out-md <md>
-# 域: misc（源: cases/misc.yml，200 条）
+# 域: misc（源: cases/misc.yml，201 条）
 
 from ._schema import Difficulty, EvalCase, Skill
 
@@ -3640,9 +3640,9 @@ _CASE_MC_147 = EvalCase(
     forbidden_card_text=[],
 )
 
-# ── MC-154 [NORMAL] 终端壳打印能力三态（issue #8310）：桥在 ≠ 打印机在 —— printerMode 负向 / 读不到都不许说「由本机打印机直接出纸」，且「判不了」与「确知没有」分开说（源: cases/misc.yml）──
-_CASE_MC_154 = EvalCase(
-    id='MC-154',
+# ── MC-155 [NORMAL] 终端壳打印能力三态（issue #8310）：桥在 ≠ 打印机在 —— printerMode 负向 / 读不到都不许说「由本机打印机直接出纸」，且「判不了」与「确知没有」分开说（源: cases/misc.yml）──
+_CASE_MC_155 = EvalCase(
+    id='MC-155',
     legacy_id='',
     title='终端壳打印能力三态（issue #8310）：桥在 ≠ 打印机在 —— printerMode 负向 / 读不到都不许说「由本机打印机直接出纸」，且「判不了」与「确知没有」分开说',
     skill=Skill.GENERAL,
@@ -3659,18 +3659,36 @@ _CASE_MC_154 = EvalCase(
     precondition='本用例是 [backend-contract]：前置 = frontend/bmini-app/src/utils/inbound/printCapability.ts 的终端分支在场、`PrintEnv.printerMode` 可注入、`readPrintEnv()` 读 `window.__CFG__`；能力探测是纯函数（零网络、零硬件），页面侧已有的 `capability.ok` 门禁（打印按钮 disabled）不变。',
 )
 
-# ── MC-156 [NORMAL] **员工账号的 create / update 接回 B 端**（issue #7050，2026-10-16「能力边界 终版」）：action 枚举与 schema 同时可见（漏参数即不可调用）+ 权限走既有 required_permissions 粗筛与 action 级复检（码取 AdminUserController 注解，不自己判角色）+ 确认走既有 base_skill._requires_confirmation（react_turn 用同一函数对象；未确认 ⇒ 不执行）+ 端点逐字对齐（POST /api/admin/users · PUT /api/admin/users/{id}）+ 删除/停用/重置密码仍不接线（源: cases/misc.yml）──
-_CASE_MC_156 = EvalCase(
-    id='MC-156',
+# ── MC-158 [NORMAL] **员工账号的 create / update 接回 B 端**（issue #7050，2026-10-16「能力边界 终版」）：action 枚举与 schema 同时可见（漏参数即不可调用）+ 权限走既有 required_permissions 粗筛与 action 级复检（码取 AdminUserController 注解，不自己判角色）+ 确认走既有 base_skill._requires_confirmation（react_turn 用同一函数对象；未确认 ⇒ 不执行）+ 端点逐字对齐（POST /api/admin/users · PUT /api/admin/users/{id}）+ 删除/停用/重置密码仍不接线（源: cases/misc.yml）──
+_CASE_MC_158 = EvalCase(
+    id='MC-158',
     legacy_id='',
     title='**员工账号的 create / update 接回 B 端**（issue #7050，2026-10-16「能力边界 终版」）：action 枚举与 schema 同时可见（漏参数即不可调用）+ 权限走既有 required_permissions 粗筛与 action 级复检（码取 AdminUserController 注解，不自己判角色）+ 确认走既有 base_skill._requires_confirmation（react_turn 用同一函数对象；未确认 ⇒ 不执行）+ 端点逐字对齐（POST /api/admin/users · PUT /api/admin/users/{id}）+ 删除/停用/重置密码仍不接线',
     skill=Skill.GENERAL,
     difficulty=Difficulty.NORMAL,
     user_inputs=['新来了一个客服叫王五，帮他开个账号', '把张三的岗位改成仓管', '把李四删了'],
     expectations=[],
-    data_checks=['判据 1·🔴 action 面可见且参数完整：`VALID_ACTIONS` == {list, detail, create, update} 且与 `get_schema()` 的 `action.enum` 同一集合；`execute` 的每个业务参数都在 schema properties 里（漏参数 ⇒ 模型无法调用）；工具在注册表且 `read_only is False`；`staff` skill 绑定它（否则物理不可达）。执行点 = backend/ai-agent-service/tests/test_employee_manage_write_actions.py::TestActionSurfaceIsVisibleToTheModel。', '判据 2·🔴 权限不是自己判：`required_permissions == [employee:list, employee:create]`；只持 `employee:list` 调 create ⇒ 拒绝且文案具名 `employee:create`（且未发出 POST）；只持 `employee:create` 调 list ⇒ 拒绝并具名 `employee:list`。执行点 = 同文件 ::TestPermissionUsesTheExistingDeclaration。', '判据 3·🔴 走既有确认门禁（不是自己写一套）：`react_turn._requires_confirmation is base_skill._requires_confirmation`（按 `is` 判同一函数对象）；工具源码里没有自建判定；`read_only=False` + `requires_confirmation=True` + `read_only_actions == {list, detail}`；未确认 ⇒ 门禁判拦截，确认卡回复（以「确认」开头）⇒ 放行。执行点 = 同文件 ::TestConfirmationGateIsTheSharedOne。', '判据 4·🔴 未确认不执行（负控）：同一 args、同一工具，只换用户消息（『帮他开个账号』 vs 『确认创建员工王五』）⇒ 前者 `blocked=True` 且 `client.post` 零调用，后者落库一次。执行点 = 同文件 ::TestUnconfirmedWriteDoesNotExecute。', '判据 5·🔴 校验失败具名：create 缺 name/phone/password/岗位（role 与 role_ids 皆无）⇒ 错误点名该字段且 suggestion 给出要补的字段名；update 缺 user_id / 无任何可改字段 ⇒ 同样具名；上述路径零网络调用。执行点 = 同文件 ::TestValidationErrorsAreNamed。', '判据 6·🔴 端点与零越界：create ⇒ `POST /api/admin/users`（payload 的 name/phone/password/roleIds/role 与 admin-api 契约逐字一致）；update ⇒ `PUT /api/admin/users/{id}`；`delete` / `toggle_status` / `reset_password` 在入口即拒并给出去哪办。执行点 = 同文件 ::TestEndpointsAreReal。', '判据 7·🔴 判别力自证（红证）：把 `requires_confirmation` 置 False（内存注入）⇒ 门禁判据必红；把 `read_only` 置 True ⇒ 同；枚举注入删掉 create ⇒ 写面判据必红。执行点 = 同文件 ::TestJudgementIsNotVacuous。'],
+    data_checks=['判据 0·🔴 前置自断言（机器计分型）：前置 = ① `employee_manage` 已在工具注册表 ② `staff` skill 已绑定它 ③ `read_only=False` 且 `requires_confirmation=True` —— 三条由 `TestActionSurfaceIsVisibleToTheModel::test_registry_returns_a_write_tool` / `::test_tool_is_reachable_from_the_staff_skill` / `TestConfirmationGateIsTheSharedOne::test_gate_declaration_is_exactly_the_read_actions` 逐条断言（前置不成立即红，不会退化成「agent 不干活」）。前置成立后的正向效果断言 = `create` 在 mock 端点下返回 `success=true`（`update` 同，`TestEndpointsAreReal`）；负控路径 = 未确认时 `POST` 未被调用（`TestUnconfirmedWriteDoesNotExecute`）。', '判据 1·🔴 action 面可见且参数完整：`VALID_ACTIONS` == {list, detail, create, update} 且与 `get_schema()` 的 `action.enum` 同一集合；`execute` 的每个业务参数都在 schema properties 里（漏参数 ⇒ 模型无法调用）；工具在注册表且 `read_only is False`；`staff` skill 绑定它（否则物理不可达）。执行点 = backend/ai-agent-service/tests/test_employee_manage_write_actions.py::TestActionSurfaceIsVisibleToTheModel。', '判据 2·🔴 权限不是自己判：`required_permissions == [employee:list, employee:create]`；只持 `employee:list` 调 create ⇒ 拒绝且文案具名 `employee:create`（且未发出 POST）；只持 `employee:create` 调 list ⇒ 拒绝并具名 `employee:list`。执行点 = 同文件 ::TestPermissionUsesTheExistingDeclaration。', '判据 3·🔴 走既有确认门禁（不是自己写一套）：`react_turn._requires_confirmation is base_skill._requires_confirmation`（按 `is` 判同一函数对象）；工具源码里没有自建判定；`read_only=False` + `requires_confirmation=True` + `read_only_actions == {list, detail}`；未确认 ⇒ 门禁判拦截，确认卡回复（以「确认」开头）⇒ 放行。执行点 = 同文件 ::TestConfirmationGateIsTheSharedOne。', '判据 4·🔴 未确认不执行（负控）：同一 args、同一工具，只换用户消息（『帮他开个账号』 vs 『确认创建员工王五』）⇒ 前者 `blocked=True` 且 `client.post` 零调用，后者落库一次。执行点 = 同文件 ::TestUnconfirmedWriteDoesNotExecute。', '判据 5·🔴 校验失败具名：create 缺 name/phone/password/岗位（role 与 role_ids 皆无）⇒ 错误点名该字段且 suggestion 给出要补的字段名；update 缺 user_id / 无任何可改字段 ⇒ 同样具名；上述路径零网络调用。执行点 = 同文件 ::TestValidationErrorsAreNamed。', '判据 6·🔴 端点与零越界：create ⇒ `POST /api/admin/users`（payload 的 name/phone/password/roleIds/role 与 admin-api 契约逐字一致）；update ⇒ `PUT /api/admin/users/{id}`；`delete` / `toggle_status` / `reset_password` 在入口即拒并给出去哪办。执行点 = 同文件 ::TestEndpointsAreReal。', '判据 7·🔴 判别力自证（红证）：把 `requires_confirmation` 置 False（内存注入）⇒ 门禁判据必红；把 `read_only` 置 True ⇒ 同；枚举注入删掉 create ⇒ 写面判据必红。执行点 = 同文件 ::TestJudgementIsNotVacuous。'],
     skip_reason='[backend-contract] 只读源码 + 工具对象（零 LLM / 零网络 / 零 DB）：写路径的**行为面**（模型是否真的先发确认卡）按 migao-dev-flow §13 默认不派发真实评测（#4262 用户裁定「不要自动验证」），需要时由人工集中跑一次。',
     tags=['agent-capability', 'write-action', 'confirm-gate', 'permission', 'red-proof', 'backend-contract'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-156 [NORMAL] 机台页详情屏补「报返工」入口（复用既有 reportRework / 不新建第二套返工实现 / 次要动作不抢主位）（源: cases/misc.yml）──
+_CASE_MC_156 = EvalCase(
+    id='MC-156',
+    legacy_id='',
+    title='机台页详情屏补「报返工」入口（复用既有 reportRework / 不新建第二套返工实现 / 次要动作不抢主位）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['裁床在一体机屏上扫完唛、发现这道活做坏了：屏上只有【完成】，想报返工得退出机台页、回工人工作台、再找返工页 —— 扫过的这张唛还要重扫一遍。'],
+    expectations=[],
+    data_checks=['🔴 **判据 ①·入口在且不抢主位（§31 P1）**：扫码后的详情屏出现「报返工」；主按钮**仍然是**唯一一个 `.wh5-machine__cta` 的【完成】（报返工走次要档 `.wh5-machine__back`）；收起态原因按钮**零 DOM**（不是 CSS 隐藏）。执行点 = frontend/worker-h5/tests/worker-h5-machine-rework.test.mjs::① / ::①′', '🔴 **判据 ②·走既有写面（不新造端点）**：点原因 ⇒ 恰好一次 `POST /api/worker/production/rework`；装配层调 `api.reportRework(`，端点字面量只留在 `frontend/worker-h5/src/api.mjs` 一处。执行点 = 同文件::② / ::②′', '🔴 **判据 ③·上下文随码带出**：请求体 = 刚扫到的那张码 + 原因（白名单，无 `worker_id` / 无 `operation_id`，身份只由 `X-Worker-Session-Id` 解）；展开态摆出「返工对象：<加工单号> · <部位>」；换一张码不跨码携带返工态。执行点 = 同文件::③ / ::③′ / ::③″', '🔴 **负控 ⑤·主动作没被挤掉/接错线**：点【完成】仍走 `scan/complete`，且不连带发返工请求。执行点 = 同文件::⑤', '🔴 **失败/成功两态**：服务端 422 ⇒ 大字显式 + 原因条保持展开（换一个原因是合法动作）；成功 ⇒ 摆**服务端给的**返工单号且入口变「返工已登记」（防重复开单）。执行点 = 同文件::④ / ::④′', '🔴 **红证 ④（注入式，实跑）**：把 `reportBlock` 动作行里的 `${reworkEntry}` 删掉 ⇒ ① 必红（实测 4 pass / 6 fail）；恢复 ⇒ 10 pass / 0 fail。'],
+    skip_reason='[backend-contract] 工人端 H5 的纯前端判据（`node --test` + 手写假 doc / 假 fetch，零 DOM 库、零网络、零 LLM）由 frontend/worker-h5/tests/worker-h5-machine-rework.test.mjs 验证，不进入 agent-eval 冒烟',
+    tags=['worker-h5', 'machine-screen', 'rework', 'entry-point', 'single-source', 'red-proof'],
     persona='',
     debug_user='',
     form_prefill=[],
@@ -3876,6 +3894,7 @@ CASES = (
     _CASE_MC_152,
     _CASE_MC_153,
     _CASE_MC_147,
-    _CASE_MC_154,
+    _CASE_MC_155,
+    _CASE_MC_158,
     _CASE_MC_156,
 )
