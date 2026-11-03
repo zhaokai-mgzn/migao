@@ -6862,12 +6862,42 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+  - id: MC-139
+    legacy_id: ""
+    title: "商家看到的失败编号 = 服务端日志里那条记录：requestId 唯一来源 + 前端可复制上屏（issue #6957）"
+    domains:
+      - misc
+      - api
+    tier: normal
+    tags:
+      - request-id
+      - error-envelope
+      - observability
+      - meta-guard
+      - red-proof
+    truths_ref: []
+    user_inputs:
+      - "商家点了一下没反应，截图里只有一句「服务器内部错误」——客服拿什么去反查服务端那条 incident？"
+    data_checks:
+      - '🔴 **判据 1·三处同值（5xx，会红）**：MockMvc 打一个抛未预期异常的端点 ⇒ 响应体 `requestId` 非空、等于响应头 `X-Request-Id`、并等于 `GlobalExceptionHandler` 那行 error 日志里的 `requestId=`。执行点 = backend/admin-api/src/test/java/com/migao/admin/config/RequestIdTraceabilityTest.java::fiveXxCarriesTheSameRequestIdInBodyHeaderAndLog'
+      - '🔴 **判据 2·可预期 4xx 同样三处同值**：`BusinessException.validationError` ⇒ 422 信封带同一个 `requestId`。执行点 = 同文件::expectedBusinessErrorCarriesTheSameRequestId'
+      - '🔴 **判据 3·上游 id 复用 / 非法 id 不采信**：合法 `X-Request-Id` 原样复用（跨服务串联）；含空格等非法值 ⇒ 换新号且不写进响应与日志。执行点 = 同文件::generatedRequestIdIsStableAcrossBodyHeaderAndLog / ::invalidIncomingRequestIdIsReplaced'
+      - '🔴 **判据 4·类级元守卫（会红）**：① 反射 —— 每个 `@ExceptionHandler` 必须返回 `ResponseEntity<ApiResponse<...>>`；② 源码扫描 —— `src/main/java` 里手写响应体的出口（`getWriter().write(` / `sendError(`）必须引用 `RequestId` 或 `ApiResponse`，例外台账为空（只许缩短）。执行点 = backend/admin-api/src/test/java/com/migao/admin/config/ErrorResponseRequestIdMetaGuardTest.java::everyExceptionHandlerReturnsTheEnvelope / ::rawResponseWritersMustCarryARequestId'
+      - '🔴 **判据 5·判别力自证**：同一扫描器对「裸 JSON 不带 id」的合成源码判红、对带 `RequestId.` 的判绿；非信封返回的 handler 夹具判红。执行点 = 同文件::scannerDiscriminates'
+      - '🔴 **判据 6·前端确实带出编号（会红）**：拦截器失败提示的 description 含服务端 `requestId`、且不含 `{` 与机读错误码；「复制编号」把编号写进剪贴板；无编号时与改前逐字相同（一个参数）。执行点 = frontend/admin-web/tests/unit/lib/error-reference.test.ts 与 request.test.ts 的「失败提示里的追踪编号」组'
+      - '**边界（照实登记，§19.1）**：① 判不了「客服真去查了日志」；② 只认 `getWriter().write(` / `sendError(` 两种手写出口形态，`getOutputStream()` 之类新写法不在面内；③ 容器级 `/error`（Spring Boot 默认错误体）仍不带编号 —— 本仓 `throw-exception-if-no-handler-found: true` + 全路径走 MVC，未固化；④ 不改任何门禁的通过条件、不新增豁免。'
+    skip_reason: "[backend-contract] 零 LLM 的确定性判据（MockMvc + Logback ListAppender + 源码扫描 + vitest），真跑、零网络，不进 agent-eval 冒烟"
+    merge_log: '2026-11-03 新增（issue #6957）。取号 = MC-139（`python3 scripts/next_case_id.py MC` 现取：main 的 MC-001~098 · 100~138、在飞 PR 的 MC-140 ⇒ 最小空闲是 099，而 **MC-099 是刻意空档不回填** ⇒ 顺延取 MC-139）。病：响应里的 `requestId` 由 `ApiResponse` 构造时现生成、从不进日志，前端只 toast `message` ⇒ 商家截图与服务端 incident 之间没有同一条串。落码 = `RequestId`（请求属性 + MDC + 响应头三处同值）+ `RequestIdFilter`（HIGHEST_PRECEDENCE）+ `ApiResponse` 统一取值 + 四个手写 JSON 出口补编号 + 日志模式 `%X{requestId:-}`；前端 `lib/error-reference.ts` 只在信封真有编号时多给一行可复制引用。红证 = 摘掉 `RequestId.bind(...)` ⇒ 三处同值判据具名红；把 `ApiResponse` 构造改回现生成 ⇒ 同红；把前端 `showRequestErrorToast` 改回 `toast.error` ⇒ 前端判据红。'
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/config/RequestIdTraceabilityTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/config/ErrorResponseRequestIdMetaGuardTest.java"
+        - "frontend/admin-web/tests/unit/lib/error-reference.test.ts"
+        - "frontend/admin-web/tests/unit/lib/request.test.ts"
+      ci:
+        - pr-check.yml
+      verifies: []
 
-  # ==========================================================================
-  # MC-144（issue #7034）：`deploy-reconcile` 的漂移判据必须看得见**构建输入**
-  # （部署腿自己的 workflow / 构建配方 / 线上自证脚本）。
-  # 病：只改 `.github/**` + `deploy/scripts/**` 的修复合入后，对账判「无漂移 ⇒ HEAD 的代码已在线上」，
-  #     而同一时刻线上 builtAt 仍是空串 —— 假绿，且它会**自动关闭**值守单。
   # ==========================================================================
   - id: MC-144
     legacy_id: ""

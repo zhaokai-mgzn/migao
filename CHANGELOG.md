@@ -32,6 +32,23 @@
   `backend/admin-api/src/test/java/com/migao/admin/security/PasswordChangeEnforcementTest.java`、
   `frontend/admin-web/tests/unit/lib/request.test.ts`。
 
+### 失败提示带上一串可复制的编号：商家截图能直接对上客服要查的那条服务端记录（2026-11-03，issue #6957）
+
+- **改前**：商家点了一下没反应，弹的只有一句「服务器内部错误」；而服务端的 `requestId` 是**构造响应体时
+  现生成**的、**从不进日志**，且前端 `src/lib/request.ts` 只 toast `message` ⇒ 截图里没有任何可反查的串，
+  客服要翻全量日志按时间猜。手写裸 JSON 的出口（未登录 401、首登强制改密 403、内部服务令牌 400/503）
+  更是连 `requestId` 字段都没有。
+- **改后**：每请求**一个**追踪编号（`RequestId`：接受上游 `X-Request-Id` 或新生成），
+  绑到请求属性 + 日志 MDC（日志模式新增 `%X{requestId:-}`，同请求每行都带）+ 响应头 `X-Request-Id`；
+  `ApiResponse` 统一取它 ⇒ 5xx 与可预期 4xx 的信封、那行 `系统异常` 日志、响应头三处**逐字同值**。
+  四个手写 JSON 出口同批补上编号。前端失败提示保持第一行说事实，第二行给可复制的编号
+  （「联系客服时提供这串编号，可据此查到这次失败」+「复制编号」）—— 不上屏机读错误码、不打印响应体 JSON、
+  不新增常驻横幅。
+- 判据：`backend/admin-api/src/test/java/com/migao/admin/config/RequestIdTraceabilityTest.java`（三处同值 /
+  上游 id 复用 / 非法 id 不采信 / 反向对照）、`ErrorResponseRequestIdMetaGuardTest`（类级元守卫：
+  新出口漏编号即具名红）、`frontend/admin-web/tests/unit/lib/error-reference.test.ts` +
+  `request.test.ts`（提示里确实带出编号且不是整段 JSON）。
+
 ### 生图转圈两分钟的三个病一起收口：文案按实测说、三层超时只有一个权威、转圈时看得见进度（2026-11-03，issue #7731）
 
 - **改前**：建品页写「共 8 张，约 2~4 分钟」（更早的文案是「约 40 秒」），而生产两次独立实测单张

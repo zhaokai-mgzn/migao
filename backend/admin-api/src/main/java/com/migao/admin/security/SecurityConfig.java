@@ -1,6 +1,7 @@
 package com.migao.admin.security;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.migao.admin.dto.ApiResponse;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
@@ -276,8 +277,10 @@ public class SecurityConfig {
                         .authenticationEntryPoint((request, response, authException) -> {
                             response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
                             response.setContentType("application/json;charset=UTF-8");
-                            response.getWriter().write(
-                                    "{\"success\":false,\"error\":{\"code\":\"UNAUTHORIZED\",\"message\":\"未认证，请先登录\"}}");
+                            // 手写裸 JSON 会漏掉 requestId（issue #6957：商家截图里的编号反查不到日志）
+                            // ⇒ 与 MVC 面共用同一个信封（ApiResponse 的 requestId 来自 RequestId.current()）。
+                            objectMapper.writeValue(response.getWriter(),
+                                    ApiResponse.error("UNAUTHORIZED", "未认证，请先登录"));
                         })
                         // 已认证但角色不足时返回统一的 403 JSON（与 401 结构一致）
                         // 响应体走 PermissionDeniedResponse（issue #4105 F1）：与 @RequirePermission
