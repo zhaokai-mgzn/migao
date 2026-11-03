@@ -5,7 +5,6 @@
 > 原因 = 单文件涨到 512KB 越过扫描上限，详见存档文件头与 issue #6404。
 > **后续条目继续在本文件 `## [Unreleased]
 
-<<<<<<< HEAD
 ### 黄金策能办员工账号的创建与变更了（删除 / 停用 / 重置密码仍不办）（2026-11-03，issue #7050）
 
 - **改前**：`employee_manage` 只剩 `list` / `detail`（#5247 的 B 端只读化把写 action 全删）⇒
@@ -19,7 +18,7 @@
 - 判据：`backend/ai-agent-service/tests/test_employee_manage_write_actions.py`（MC-154：action 面可见 + 参数完整 /
   权限按 action 复检 / 与 `react_turn` 同一确认门禁函数对象 / **未确认不执行**（负控）/ 端点与 payload 逐字对齐 /
   校验失败具名 / 判别力自证）+ `tests/unit_ci_workflows/test_mibao_b_end_readonly.py`（写能力登记 + prompt 口径）。
-=======
+
 ### 质检的不合格原因改成「先点一项、再补充」：同一种问题不再被写成三种（2026-11-03，issue #7197）
 
 - **改前**：不合格原因是**随手打的自由文本**（「布面污渍」/「脏」/「污渍」会被算成三个不同原因）⇒
@@ -32,7 +31,6 @@
 - 判据：`backend/admin-api/src/test/java/com/migao/admin/service/QualityReasonDictionaryTest.java`（MC-181：
   必选 / 字典外拒 / 六项全可用 / 存量不清洗负控）；前端 `QualityCheckForm.test.tsx`、
   `worker-h5-quality.test.mjs`、`worker-h5-api.test.mjs`（短语按钮 + 写面带 `reason_code`）。
->>>>>>> origin/fix/7197-quality-check-reason
 
 ### 涉钱数字输入不再吞精度：金额 / 单价 / 退款额统一走共享原语，敲错当场说清楚且不许带着错误提交（2026-11-03，issue #8004）
 
