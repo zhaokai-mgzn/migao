@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { Button, Modal } from '@/components/ui'
 import { qualityInspectionApi } from '@/lib/api'
+import { qualityReasonApi } from '@/lib/api-quality-reasons'
 import type { QualityInspectionResult, QualityReasonOption } from '@/types'
 
 /**
@@ -82,7 +83,7 @@ export default function QualityCheckForm({
     let alive = true
     void (async () => {
       try {
-        const response = await qualityInspectionApi.reasons()
+        const response = await qualityReasonApi.list()
         if (alive) setReasons(response.data?.data?.items ?? [])
       } catch {
         if (alive) setReasonsError('不合格原因读不到 —— 请关掉重开；一直读不到请联系管理员。')

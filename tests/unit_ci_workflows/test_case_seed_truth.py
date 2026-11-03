@@ -808,8 +808,8 @@ class TestSlotAnchors:
         return next(c for c in _all_cases() if c["id"] == cid)
 
     def test_employee_db_verify_names_are_not_products(self):
-        """真实用例：`HR-009/HR-010` 的 `db_verify.name='李四'` 不得被当成商品名。"""
-        for cid in ("HR-009", "HR-010"):
+        """真实用例：`HR-014/HR-010` 的 `db_verify.name='李四'` 不得被当成商品名。"""
+        for cid in ("HR-014", "HR-010"):
             case = self._case(cid)
             declared = [m for m in declared_mentions(case)
                         if m[0] in ("product", "processing_item", "color")]
@@ -821,7 +821,7 @@ class TestSlotAnchors:
 
         这条证明上一测试不是"恒绿"：锚点一旦退回"凭键名判类"，同一判据立刻产出假红。
         """
-        case = self._case("HR-009")
+        case = self._case("HR-014")
         unanchored = [("product", s.get("name"), "db_verify.name", "identity")
                       for s in case["db_verify"]]
         truth = truth_for_case(case)["product"]

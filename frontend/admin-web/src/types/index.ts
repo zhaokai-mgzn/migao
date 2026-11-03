@@ -1126,11 +1126,9 @@ export interface QualityInspectionRecord {
   result: QualityInspectionResult
   /** 判定中文标签（服务端给：合格 / 返工 / 报废）；未知值如实 `null` */
   result_label?: string | null
-  /** 不合格原因的**字典项** code（issue #7197 ①）；`null` = 存量自由文本记录（未归类） */
+  /** 不合格原因字典项（issue #7197 ①）：`code`/`label` 由服务端给；`reason` 是自由补充（可空） */
   reason_code?: string | null
-  /** 字典项的中文名（服务端给：布面污渍 / 布料破洞 / …）；未归类 ⇒ `null` */
   reason_label?: string | null
-  /** 不合格原因的**自由补充**（可空；不再能顶替字典项） */
   reason?: string | null
   inspector_name?: string | null
   inspected_at?: string | null
