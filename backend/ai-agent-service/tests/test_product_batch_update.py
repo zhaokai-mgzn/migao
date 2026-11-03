@@ -741,10 +741,11 @@ class TestRevertBatchIdFallback:
     @pytest.mark.asyncio
     async def test_revert_without_batch_id_is_governed_by_the_context_candidate(
             self, tool, _session_state_store):
-        """① 缺 `batch_id` 时**只由上下文候选决定**：取不到 ⇒ 拒绝 + 可行动提示；唯一 ⇒ 采用那一批。
+        """① 缺 `batch_id` ⇒ 拒绝 + 可行动提示（**不发请求**）：取不到就说明怎么取；
+        本会话**恰好一个**可撤销批次时**点名**它让模型带上重试（工具**不代执行**，见下）。
 
-        两半必须在**同一个用例**里（本单的红证口径）：把兜底整段摘掉 ⇒ 下半段必红；
-        把「唯一」放宽成「取第一个」⇒ ③ 必红 —— 只留任何一半都证明不了这条口径。
+        两半必须在**同一个用例**里（本单的红证口径）：把「从会话台账定位」整段摘掉 ⇒ 下半段必红；
+        把「多个候选」放宽成「挑一个」⇒ ③ 必红 —— 只留任何一半都证明不了这条口径。
         """
         # ── 上半：上下文里什么都没有 ⇒ fail-closed 拒绝，且**不发任何请求** ──
         client = _client(_ok({}))
@@ -761,18 +762,19 @@ class TestRevertBatchIdFallback:
         assert "确认" in suggestion                          # 取不到时的真出口 = 问商家
         client.post.assert_not_awaited()
 
-        # ── 下半：本会话**恰好一个**执行成功的批次 ⇒ 撤销它（`PR-108` R5 无参 revert 的正解）──
+        # ── 下半：本会话**恰好一个**执行成功的批次 ⇒ 仍拒绝，但**点名**它（带上即可重试）──
         _session_state_store.load.return_value = _ledger_state("b-real")
-        client = _client(_ok({"batchId": "b-real", "status": "reverted",
-                              "results": [{"resourceId": "p1", "success": True}]}))
+        client = _client(_ok({"status": "reverted"}))
         with patch("app.tools.product_batch_update.get_admin_api_client", return_value=client):
-            result = await tool.execute(_ctx(), action="revert")
-        assert result.success, result.message
-        # 撤回的是**真实执行过的那一批**，不是模型自报的号
-        assert client.post.call_args.args[0] == "/api/admin/agent/batches/b-real/revert-async"
-        assert result.data["batchId"] == "b-real"
-        # 话术要点明批次号**来自本会话上下文**（下一轮模型就知道该带什么）
-        assert "上下文" in (result.message or "")
+            resolved = await tool.execute(_ctx(), action="revert")
+        assert resolved.success is False
+        # 🔴 定位 ≠ 代执行：工具**从不**替模型补批次号去执行 —— 参数里没有 batch_id 时，
+        # 确认门禁的卡值比对是空跑（#5414），代执行就成了「点卡确认 A、实际写 B」。
+        assert resolved.error == "batch_id_required"
+        assert "b-real" in (resolved.message or "")
+        assert "batch_id=b-real" in (resolved.suggestion or "")   # 可行动：逐字带上重试
+        assert resolved.missing_params == ["batch_id"]
+        client.post.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_revert_refuses_to_pick_among_multiple_candidates(self, tool, _session_state_store):
@@ -800,8 +802,7 @@ class TestRevertBatchIdFallback:
             result = await tool.execute(_ctx(), action="revert", batch_id=" b-explicit ")
         assert result.success, result.message
         assert client.post.call_args.args[0] == "/api/admin/agent/batches/b-explicit/revert-async"
-        # 显式值不触发兜底 ⇒ 话术里不出现「取自上下文」的说明
-        assert "上下文" not in (result.message or "")
+        # 显式值直接短路：**不读**会话台账（读它就是"先看看有没有别的候选" = 多一处判断面）
         _session_state_store.load.assert_not_awaited()
 
     @pytest.mark.asyncio

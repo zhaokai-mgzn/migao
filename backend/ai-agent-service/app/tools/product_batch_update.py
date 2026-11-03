@@ -23,8 +23,9 @@
 1. **两段确认不可跳过**：`execute` / `revert` **必须**带 `batch_id`，而它只能来自
    `preview` ⇒ 「没给商家看过逐条预览就执行」在**结构上不可达**（fail-closed，
    与 `product_update` 的 `price_preview_required` 同族）。
-   撤销段的批次号另有**会话台账兜底**（issue #6998）：缺省只认「本会话**唯一一个**执行成功的
-   批次」，取不到 / 有多个候选**一律拒绝**（不猜）—— 「认哪一批」只由
+   撤销段的批次号另有**会话台账定位**（issue #6998）：缺省时从「本会话**执行成功**的批次」里定位 ——
+   恰好一个 ⇒ **点名**它让模型带上重试（`batch_id_required`，**不代执行**，见「定位 ≠ 代执行」）；
+   多个或没有 ⇒ 拒绝（`batch_id_ambiguous` / `batch_preview_required`）。认哪一批只由
    `ProductBatchUpdateTool.resolve_batch_id` 一处判定，`execute` 与 `revert` 共用它。
    第一段（`interact(multiSelect=true)` 勾选集合）的载体是 `interact` 工具，见 description。
 2. **`old_value` 必须在预览阶段采集**（契约 §三：它是撤销的唯一依据，必须持久化）
@@ -108,8 +109,15 @@ def _present(value: Any) -> bool:
 #
 # 口径（`execute` / `revert` 走**同一个**函数 `ProductBatchUpdateTool.resolve_batch_id`）：
 #   ① 显式给了 `batch_id` ⇒ 原样使用（不改写、不校验格式 —— 格式归服务端）；
-#   ② 没给 ⇒ **只**从本会话的批次台账里取，且**只有恰好一个候选**时采用；
-#   ③ 取不到 / 有多个候选 ⇒ **fail-closed 拒绝**。「猜一个最近的批次」在本文件**不可达**。
+#   ② 没给 ⇒ **只**从本会话的批次台账里**定位**，且**只有恰好一个候选**时才点名它；
+#   ③ 定位不到 / 有多个候选 ⇒ **fail-closed 拒绝**。「猜一个最近的批次」在本文件**不可达**。
+#
+# 🔴 **定位 ≠ 代执行**（这一条是本单的设计核心，别改成"自动回填"）：
+# 工具**从不**替模型补 `batch_id` 去执行一个它没点名的批次 —— 它把定位结果**写回拒绝话术**
+# 让模型逐字带上重试。理由 = 涉钱护栏（#5317 / #5414）：确认门禁按**本次调用参数**核对卡值
+# （`confirm_value.write_value_facts` 只取 args 里在场的字段），参数里没有 `batch_id` 时
+# 那次核对是**空跑**；若工具在门禁之后自己补一个批次执行，就等于「点卡确认了 A、实际写了 B」
+# —— 正是 #5414 要治的形态。让模型带参重试，卡值比对才有东西可比。
 #
 # 为什么 `execute` **不**吃上下文兜底（`CONTEXT_FALLBACK_ACTIONS` 里只有 `revert`）：
 # 它的批次号只能来自 `preview` 的返回 —— 少了这道结构锁，「没给商家看过逐条预览就执行」
@@ -216,6 +224,19 @@ def _batch_id_denial(action: str, candidates: List[str]) -> ToolResult:
                         "商家选定后**逐字带上** batch_id 再调 action=revert。"
                         "**不要替商家挑一个** —— 撤错批次会把另一批商品的价格/库存还原成改前值，"
                         "这件事没有「大概是最近那批」的推断空间。"),
+            missing_params=["batch_id"],
+        )
+    if action == "revert" and len(candidates) == 1:
+        # 定位到了**唯一**可撤销批次：点名它，让模型逐字带上重试 —— 工具不代执行（见本文件说明段）
+        only = candidates[0]
+        return ToolResult(
+            success=False,
+            error="batch_id_required",
+            message=(f"批量{verb}被拒：没带批次号 —— 本会话唯一可撤销的批次是 {only}，"
+                     f"请带 batch_id={only} 重试"),
+            suggestion=(f"把 batch_id={only} **逐字**带上再调 action=revert（这个批次号取自本会话"
+                        "**执行成功**的那次批量，不是猜的）；不要改用别的批次号，也不要重新 preview。"
+                        f"若商家要撤的**不是** {only} 这一次批量改价，先向商家确认是哪一批。"),
             missing_params=["batch_id"],
         )
     if action == "revert":
@@ -347,8 +368,9 @@ class ProductBatchUpdateTool(BaseTool):
         "③ 商家点卡后，再调 action=execute 并带上 preview 返回的 batch_id（会提交后台 job 并轮询到终态，"
         "最长约 60 秒；超时只报「尚未完成」，不得声称做完）。"
         "**禁止跳过任一段直接执行**：不带 batch_id 调 execute 一律被拒（batch_preview_required）；"
-        "revert 缺 batch_id 时只认**本会话唯一一个执行成功的批次**，取不到（或有两个以上候选）"
-        "一律拒绝（batch_preview_required / batch_id_ambiguous）—— **不许猜批次号**。"
+        "revert 缺 batch_id **一律被拒**，本会话只有**一个**可撤销批次时会点名它（batch_id_required，"
+        "带上重试即可）；多个候选 ⇒ batch_id_ambiguous（先问商家）；一个都没有 ⇒ batch_preview_required"
+        "—— **不许猜批次号**，工具也不会替你填。"
         "【参数】action=preview / execute / revert；preview 必填 batch_type + items（batch_id 由它产生）；"
         "execute / revert 只需 batch_id。items 每项 {resourceId, field, oldValue, newValue}："
         "resourceId 用 product_search / product_detail 返回的真实商品标识（禁止自造）；"
@@ -607,14 +629,13 @@ class ProductBatchUpdateTool(BaseTool):
         if explicit:
             return explicit, None
         if action not in CONTEXT_FALLBACK_ACTIONS:
-            # 结构锁：`execute` 的批次号只能来自 `preview`，上下文兜底刻意不开放
+            # 结构锁：`execute` 的批次号只能来自 `preview`，上下文定位刻意不开放
             return None, _batch_id_denial(action, [])
-        state = await _load_session_state(context) or {}
-        candidates = _batch_candidates(_batch_ledger_of(state), action)
-        if len(candidates) == 1:
-            logger.info(f"[product_batch_update] {action} 的 batch_id 取自本会话台账 "
-                        f"batch_id={candidates[0]} tenant={context.tenant_id}")
-            return candidates[0], None
+        candidates = _batch_candidates(_batch_ledger_of(await _load_session_state(context) or {}),
+                                       action)
+        logger.info(f"[product_batch_update] {action} 缺 batch_id：本会话候选 "
+                    f"{candidates or '（无）'} tenant={context.tenant_id}")
+        # 🔴 **只拒绝、不代执行**：定位到的候选交给模型点名重试（说明段「定位 ≠ 代执行」）
         return None, _batch_id_denial(action, candidates)
 
     # ── action=execute：执行批次（必须带 preview 产生的 batch_id）─────────────
@@ -698,8 +719,7 @@ class ProductBatchUpdateTool(BaseTool):
 
     # ── action=revert：撤销批次（逐条还原 old_value）─────────────────────────
     async def _revert_batch(self, context: ToolContext, batch_id: Optional[str]) -> ToolResult:
-        explicit = _present(batch_id)
-        # 与 `_execute_batch` **同一个**解析函数（issue #6998）：缺省只认本会话唯一的可撤销批次
+        # 与 `_execute_batch` **同一个**解析函数（issue #6998）：缺省时只**定位**、不代执行
         batch_id, denial = await self.resolve_batch_id(context, batch_id, action="revert")
         if denial is not None:
             return denial
@@ -751,18 +771,12 @@ class ProductBatchUpdateTool(BaseTool):
             )
         logger.info(f"[product_batch_update] revert batch_id={batch_id} ok={ok} fail={len(failed)} "
                     f"tenant={context.tenant_id}")
-        # 批次号若是**从本会话台账兜底**来的，必须说出来（issue #6998）—— 不许悄悄替模型补参数：
-        # 模型下一轮才知道该带什么，商家也看得见撤的是哪一批。
-        source_line = ("" if explicit else
-                       "（批次号取自本会话上下文里**执行成功**的那一批，不是猜的；"
-                       "要撤别的批次请带 batch_id 重试。）")
         return ToolResult(
             success=True,
             data=data,
             message=(f"已撤销批次 {batch_id}：逐条**还原**为改前值（old_value）—— "
                      f"成功 {ok} 条 / 失败 {len(failed)} 条"
                      + (f"（其中 {skipped} 条是执行时本来就失败的条目，撤销时跳过）。" if skipped else "。")
-                     + source_line
                      + "逐条结果见 results。"),
             summary=f"批量撤销 {len(results)} 条：成功 {ok} / 失败 {len(failed)}",
         )
