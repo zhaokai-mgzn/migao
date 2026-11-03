@@ -40,7 +40,7 @@
 | 码 | 含义 |
 |---|---|
 | `0` | 成功（`--dry-run` 时 = 计划已打印，**零落盘**） |
-| `1` | 判红（校验不过 / 未知冲突 / 判据复核失败 …）—— 已 `git merge --abort`，不留下合并中的现场 |
+| `1` | 判红（校验不过 / 未知冲突 / 判据复核失败 …）—— 冲突面已 `git merge --abort`；**不推送、不建 PR**（本地分支可能停在集成分支上，人工核对后重跑） |
 | `2` | 用法错误 |
 
 ## 可注入点（判据用；沿用 `MG_GH_BIN` / `NCI_GH_BIN` / `SBT_GH_BIN` 先例）
@@ -580,10 +580,12 @@ def _branch_exists(repo, branch: str) -> "str | None":
     return None
 
 
-def dry_run(infos, branch: str) -> int:
+def dry_run(infos, branch: str, repo) -> int:
     print("── 批次合并计划（--dry-run：**只打印，零落盘**）──")
     print(pr_table(infos))
-    print(f"\n集成分支: {branch}  ← 从 origin/main 重建")
+    existed = _branch_exists(repo, branch)
+    warn = (f"  ⚠️ 已存在（{existed}）⇒ 真跑会被拒（除非 --force-branch）" if existed else "  ✅ 尚不存在")
+    print(f"\n集成分支: {branch}  ← 从 origin/main 重建{warn}")
     for i, info in enumerate(infos, 1):
         print(f"  {i}. 合 #{info['number']} → merge --no-ff --no-commit → 冲突按「重建重放」处置 → "
               f"提交（每支都必须成功提交）")
@@ -612,7 +614,7 @@ def main(argv=None, cwd=None) -> int:
             raise BatchError("校验不过（先修好再合批）：\n  " + "\n  ".join(errs))
         repo = repo_root(cwd)
         if args.dry_run:
-            return dry_run(infos, branch)
+            return dry_run(infos, branch, repo)
 
         _ensure_clean(repo)
         existed = _branch_exists(repo, branch)
