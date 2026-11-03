@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// case_ids: MC-146
+// case_ids: MC-148
 /**
  * 「单据列表行内动作的链接规格**只有一处定义**」判据**单一源**（issue #7082）。
  *

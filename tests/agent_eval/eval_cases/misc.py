@@ -2,7 +2,7 @@
 # 本文件由 render_cases.py 生成，勿手改（改了也留不住：下次重渲染会覆盖）
 # 源: cases/*.yml（case-contract 单一源）
 # 重新生成: python3 render_cases.py --cases <dir> --out-eval <包目录> --out-md <md>
-# 域: misc（源: cases/misc.yml，192 条）
+# 域: misc（源: cases/misc.yml，193 条）
 
 from ._schema import Difficulty, EvalCase, Skill
 
@@ -3424,6 +3424,24 @@ _CASE_MC_140 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── MC-146 [NORMAL] 冒烟夹具的库存改由公开 API（入库单建单即过账）产生，种子夹具的直写点进台账并由判据双向对账（issue #7600）（源: cases/misc.yml）──
+_CASE_MC_146 = EvalCase(
+    id='MC-146',
+    legacy_id='',
+    title='冒烟夹具的库存改由公开 API（入库单建单即过账）产生，种子夹具的直写点进台账并由判据双向对账（issue #7600）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['冒烟又是全绿，可这批自造商品的 SKU 库存到底从哪来的？扣减对不对，这条链路冒烟碰过吗？'],
+    expectations=[],
+    data_checks=['🔴 **判据 ①·未登记即红（会红）**：扫冒烟 / 种子夹具面（`scripts/ui-smoke-merchant/`、`docs/deployment/demo-seed.sql`、`tests/agent_eval/fixtures/`）里的 `product_skus` + `stock` 直写；每一处必须落在台账 `tests/unit_ci_workflows/smoke_fixture_direct_write_ledger.json` 已声明的 scope 内，否则判红并具名「`<仓库相对路径>` + 行号」。执行点 = `tests/unit_ci_workflows/test_smoke_fixture_stock_chain.py::test_no_unregistered_direct_write_on_the_real_corpus` 与 `::test_red_proof_new_unregistered_write_turns_red`', '🔴 **判据 ②·登记点消失也红（会红，台账不许陈旧）**：台账每条必须仍成立 —— 登记标记在文件里、scope 锚可解析、**站点数两个方向**都对得上（多一条 = 新直写未登记；少一条 = 台账陈旧）。执行点 = 同文件 `::test_registered_sites_are_all_still_there` / `::test_scan_is_not_dead` / `::test_red_proof_removing_a_registered_site_turns_red`', '🔴 **判据 ③·负控（射程准确）**：产品代码 `backend/admin-api/src/main/java/com/migao/admin/mapper/ProductSkuMapper.java` 里的 `product_skus` **不被扫**（先断言它确实存在 = 负控非空断言），且同一正则对夹具面确实命中（证明空结果不是正则失灵）。执行点 = 同文件 `::test_product_code_is_out_of_scan_scope`', '🔴 **判据 ④·红证（注入式）**：① 删掉 `docs/deployment/demo-seed.sql` 里一条已登记直写点、台账不动 ⇒ 判据 ② 红且归因 `DFW-DEMO-SEED-001`（实跑 4 failed / 4 passed，报「登记 14 条，现场 13 条」），恢复 ⇒ 绿；② 把 `stock: 120` 写回冒烟 spec 的 SKU payload ⇒ 判据 ① 红并具名 `scripts/ui-smoke-merchant/spec.mjs`（实跑 5 failed / 3 passed）。', '🔴 **判据 ⑤·A 类不许退回 B 类**：`createProductFixture` 的 SKU payload 不带 `stock`、必须调 `seedSkuStockViaInbound`（`POST /api/admin/inbound-orders`，建单即过账 = `posted`），建品旅程断言「建完库存全 0 → 过账后全 120」。执行点 = 同文件 `::test_smoke_fixture_stock_comes_from_the_inbound_api` / `::test_smoke_spec_judge_has_discriminating_power`', '**边界（照实登记，§19.1）**：① `docs/deployment/demo-seed.sql` 与两处评测种子是 **B 类**（psql 夹具无 HTTP 写面）⇒ 只登记 + 标注重启条件，**演示环境的批次对账 `diff == 0` 仍未达成**（本包不在 demo 库重放）；② 判据是**静态文本**判据，判不了「冒烟那次真跑有没有写进生产库」—— 真的链路验证靠冒烟自身在测试池跑（本包按约束**未**对生产/演示环境跑冒烟）；③ 扫描面按台账声明，住在别的目录的夹具不会被扫（射程外）。'],
+    skip_reason='[backend-contract] 纯静态契约判据（零网络 / 零 DB / 零时钟，只读仓内 spec 与 seed 文本）+ 注入式红证，计分通道 = traces.tests（test_smoke_fixture_stock_chain.py），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['backend-contract', 'smoke-data-quality', 'fixture-drift', 'ledger', 'negative-control', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── MC-142 [NORMAL] 计件 sweep 的 A0b 不再按原始 `worker_name` 分组比对：无署名归集是**显式的一类**（结构判身份、文案只进证据），并由独立的 A0c 勾稽「总额 − 逐人 = 无署名 且 = 独立 SQL 的无名组」（issue #7030）（源: cases/misc.yml）──
 _CASE_MC_142 = EvalCase(
     id='MC-142',
@@ -3514,9 +3532,9 @@ _CASE_MC_147 = EvalCase(
     forbidden_card_text=[],
 )
 
-# ── MC-146 [NORMAL] 单据列表「行内动作」的链接规格只许有一处定义：副本必须走共享原语 `RowActionLink`，未登记即红 / 台账只许缩短（issue #7082）（源: cases/misc.yml）──
-_CASE_MC_146 = EvalCase(
-    id='MC-146',
+# ── MC-148 [NORMAL] 单据列表「行内动作」的链接规格只许有一处定义：副本必须走共享原语 `RowActionLink`，未登记即红 / 台账只许缩短（issue #7082）（源: cases/misc.yml）──
+_CASE_MC_148 = EvalCase(
+    id='MC-148',
     legacy_id='',
     title='单据列表「行内动作」的链接规格只许有一处定义：副本必须走共享原语 `RowActionLink`，未登记即红 / 台账只许缩短（issue #7082）',
     skill=Skill.GENERAL,
@@ -3719,10 +3737,11 @@ CASES = (
     _CASE_MC_138,
     _CASE_MC_141,
     _CASE_MC_140,
+    _CASE_MC_146,
     _CASE_MC_142,
     _CASE_MC_139,
     _CASE_MC_143,
     _CASE_MC_144,
     _CASE_MC_147,
-    _CASE_MC_146,
+    _CASE_MC_148,
 )
