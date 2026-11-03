@@ -7406,6 +7406,4 @@ cases:
         # 两份 Java 判据跑在 `admin-api unit tests` 腿（真库族：CI 注入 MIGAO_REQUIRE_REALDB=1，
         # 缺 PG 二进制 ⇒ 判红不是 skip）；元守卫跑在 ci-helper 腿。
         - pr-check.yml
-      ci:
-        - pr-check.yml
       verifies: []
