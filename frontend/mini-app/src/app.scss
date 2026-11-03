@@ -1,5 +1,6 @@
 // 全局样式入口：引入设计变量（@use 而非 @import，兼容 sass 1.99）
 @use './styles/variables.scss' as *;
+@use './styles/input-center.scss';
 
 // 全局基础样式
 page {
