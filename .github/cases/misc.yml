@@ -7320,6 +7320,7 @@ cases:
     traces:
       tests:
         - "backend/admin-api/src/test/java/com/migao/admin/service/PaymentQrcodeAndRoleUniqueWriteRealDbTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/RoleMapperTest.java"
         - "tests/unit_ci_workflows/test_idempotent_unique_write_guard.py"
       ci:
         - pr-check.yml
