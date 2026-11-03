@@ -249,7 +249,7 @@ public class AgentBatchService {
         if (!STATUS_PREVIEW.equals(batch.getStatus())) {
             throw BusinessException.conflict("批次当前状态为 " + batch.getStatus()
                             + "，只有 preview 的批次可以执行（不可重复执行）",
-                    "请刷新该批次的状态与结果后再判断（只有 preview 的批次可以执行）");
+                    "请刷新该批次的状态与结果后重试（只有还没执行过的批次可以执行）");
         }
         // 测试探针（issue #6960）：放大「读-判」与「抢执行权」之间的窗口（生产恒为 0，无分支成本）。
         // 与 RemnantService#recover 的探针同款 —— 窗口只有微秒级，不注入判据会退化成 flake。
