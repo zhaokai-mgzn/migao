@@ -3388,9 +3388,9 @@ _CASE_MC_138 = EvalCase(
     forbidden_card_text=[],
 )
 
-# ── MC-139 [NORMAL] 部位规格的数值口径：纯空白串 = 「没填」（—），不再编成 0 / 0.000（issue #7002）（源: cases/misc.yml）──
-_CASE_MC_139 = EvalCase(
-    id='MC-139',
+# ── MC-141 [NORMAL] 部位规格的数值口径：纯空白串 = 「没填」（—），不再编成 0 / 0.000（issue #7002）（源: cases/misc.yml）──
+_CASE_MC_141 = EvalCase(
+    id='MC-141',
     legacy_id='',
     title='部位规格的数值口径：纯空白串 = 「没填」（—），不再编成 0 / 0.000（issue #7002）',
     skill=Skill.GENERAL,
@@ -3591,5 +3591,5 @@ CASES = (
     _CASE_MC_136,
     _CASE_MC_133,
     _CASE_MC_138,
-    _CASE_MC_139,
+    _CASE_MC_141,
 )

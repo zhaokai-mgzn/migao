@@ -6756,7 +6756,7 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
-  - id: MC-139
+  - id: MC-141
     legacy_id: ""
     title: "部位规格的数值口径：纯空白串 = 「没填」（—），不再编成 0 / 0.000（issue #7002）"
     domains:
@@ -6784,7 +6784,7 @@ cases:
       - '🔴 **红证（注入式，双向对照）**：注入 A = 把判数前的 `const text = typeof value === ''string'' ? value.trim() : value` 改成 `const text = value` ⇒ 判据 ①④⑤⑥ 红（实测 4 failed / 2 passed）；注入 B = 在 trim 后加 `if (Number(text) === 0) return EMPTY` ⇒ 判据 ② 红（证明「缺值」与「0」是两条独立断言）。注入方式与逐字读数见 PR body。'
       - '**边界（照实登记，§19.1）**：本用例钉**展示口径**（`position-spec.mjs::formatSpecValue` 一族），不判服务端为何存进纯空白（数据面 / 录入侧）；同类「不 trim 直接 parse」的其它点只登记不扩射程（清单见 PR body），不在本用例重复。'
     skip_reason: "[backend-contract] 零 LLM 的确定性纯函数判据（`node --test` + 真实渲染产物，零依赖、零网络），不进 agent-eval 冒烟"
-    merge_log: '2026-11-03 新增（issue #7002）。病（`origin/main` 实测）：`formatSpecValue` 的数值路径只挡空串（`value !== ''''`）而 `Number(''   '') === 0` ⇒ 商家没填的部位规格 `''   ''` 被编成 `0`（`format: ''m''` ⇒ `0.000`），与同模块 `dataOr`（`''   ''` ⇒ `—`）自相矛盾；`format: ''m''` 的键（宽 / 高 / 米数）渲染成 0.000 是**给机器的值偏小**（裁短方向）。修法 = 判数前只对**字符串** trim，空 ⇒ 走既有缺值口径；非字符串（含真 0）既有读数逐字不变。取号 = MC-139（`scripts/next_case_id.py MC` 现取：main 001-098,100-138 + 在飞 PR #8524:140 + 工作区:099 ⇒ 取 MC-139；MC-099 历史空档不回填）。红证 = 注入 A（删 trim）4 failed / 2 passed、注入 B（把 0 当缺值）② 红；恢复后 6 passed。'
+    merge_log: '2026-11-03 新增（issue #7002）。病（`origin/main` 实测）：`formatSpecValue` 的数值路径只挡空串（`value !== ''''`）而 `Number(''   '') === 0` ⇒ 商家没填的部位规格 `''   ''` 被编成 `0`（`format: ''m''` ⇒ `0.000`），与同模块 `dataOr`（`''   ''` ⇒ `—`）自相矛盾；`format: ''m''` 的键（宽 / 高 / 米数）渲染成 0.000 是**给机器的值偏小**（裁短方向）。修法 = 判数前只对**字符串** trim，空 ⇒ 走既有缺值口径；非字符串（含真 0）既有读数逐字不变。取号 = **MC-141**（让号记实：`scripts/next_case_id.py MC` 首次现取给 **MC-139**，随后 CI 的 `test_case_id_claims.py` 判「本 PR #8526 与在飞 PR #8527 / #8529 同时占着 MC-139」⇒ 按 `docs/wiki/Change-Blast-Radius.md` 陷阱 3「后合入者让号」让到现取最大号 + 1 = **MC-141**（#8524 占 140）；工具给的历史空档 MC-099 **不回填**）。红证 = 注入 A（删 trim）4 failed / 2 passed、注入 B（把 0 当缺值）② 红；恢复后 6 passed。'
     traces:
       tests:
         - "frontend/worker-h5/tests/worker-h5-position-spec-whitespace.test.mjs"
