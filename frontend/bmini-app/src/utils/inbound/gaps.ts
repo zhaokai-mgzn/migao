@@ -320,6 +320,10 @@ export const INBOUND_PRINT_GAP_WIRING: { reason: PrintFailureReason; wiredBy: st
   { reason: 'connect-failed', wiredBy: 'src/utils/inbound/labelPrint.ts' },
   { reason: 'print-failed', wiredBy: 'src/utils/inbound/labelPrint.ts' },
   { reason: 'render-failed', wiredBy: 'src/utils/inbound/labelPrint.ts' },
+  // issue #8310：终端壳**能力在原生侧**（`PrinterLink.mode()`），两条都是页面动手前就要说的话
+  // （一条确知没打印机、一条判不了）—— 由能力探测本体给出（`printCapability.ts`）。
+  { reason: 'terminal-printer-unavailable', wiredBy: 'src/utils/inbound/printCapability.ts' },
+  { reason: 'terminal-print-unknown', wiredBy: 'src/utils/inbound/printCapability.ts' },
 ]
 
 /** 供页面/判据读取（不复制文案，只转发键集） */

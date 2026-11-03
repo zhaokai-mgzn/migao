@@ -178,7 +178,7 @@ CHANGE_TOOLS_REQUIRED_ON_B_END: dict[str, str] = {
     # （`create` / `update`；删除 / 停用 / 重置密码仍不接）。端点 `POST /api/admin/users` 与
     # `PUT /api/admin/users/{id}` 已逐条核对存在（权限码 `employee:create`），确认门禁
     # `requires_confirmation=True`（判据 8）。实例判据 = `backend/ai-agent-service/tests/
-    # test_employee_manage_write_actions.py`（用例 MC-154）。
+    # test_employee_manage_write_actions.py`（用例 MC-155）。
     "employee_manage": (
         "员工账号的创建与变更（非单据对象创建 + 变更，issue #7050 接线）：`create` / `update` —— "
         "端点 `POST /api/admin/users` · `PUT /api/admin/users/{id}` 已核存在（权限码 `employee:create`）"

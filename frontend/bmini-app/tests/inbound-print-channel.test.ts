@@ -880,12 +880,16 @@ describe('terminal print bridge（手持标签机）', () => {
     delete (window as any).migaoTerminal
   })
 
-  test('T1 能力探测：终端桥 ⇒ 可打印 + 机身内置打印机文案', () => {
+  test('T1 能力探测：终端桥 + 原生报「打印服务可用」⇒ 可打印 + 机身内置打印机文案', () => {
+    // 判据改钉（issue #8310）：桥只证明**壳在**，不证明**打印机在** ⇒ 入参必须带上能力事实。
+    // 「桥在但没有打印服务（`printerMode` = -1）/ 读不到」的两条判据见
+    // `tests/inbound-print-capability-terminal.test.ts`（T1 / T3）。
     const cap = probePrintCapability({
       platform: 'h5',
       secureContext: true,
       hasBluetoothApi: false,
       terminalBridge: true,
+      printerMode: 1,
     })
     expect(cap.ok).toBe(true)
     expect(cap.readyHint).toBe(PRINT_READY_HINT_TERMINAL)
