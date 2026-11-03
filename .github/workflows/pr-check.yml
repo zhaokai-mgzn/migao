@@ -873,12 +873,17 @@ jobs:
             }
             if (!body.includes(MARKER)) body = MARKER + '\n' + body;
 
+            // 🔴 限流 ≠ 真无权限（issue #7549，2026-11-03 现场：`listComments - 403`，`x-ratelimit-remaining: 0`）：
+            //    `listComments` 原先**裸调** ⇒ 安装令牌打满时 403 直接把这个 required job 判红，与
+            //    「本 PR 有问题」同形。判定/退避只有一份实现（`.github/rate_limit_backoff.py`），本步只做循环。
+            const { withRateLimitRetry } = require(
+              require('path').join(process.env.GITHUB_WORKSPACE || process.cwd(), '.github/scripts/rate-limit-backoff.js'));
             // 查找已有 QA Gate 评论 → 更新；否则创建
-            const { data: comments } = await github.rest.issues.listComments({
+            const { data: comments } = await withRateLimitRetry('列评论', () => github.rest.issues.listComments({
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: context.issue.number,
-            });
+            }));
 
             // 只认领**自己的**报告（marker），取最新一条；没有 marker 评论（含旧版无 marker 报告）⇒ **新建**
             // —— 宁可多一条，绝不按散文标题认领去覆盖人类评论（issue #6423）。
@@ -1094,6 +1099,19 @@ jobs:
       #   ① `continue-on-error` ⇒ 后续归因步骤一定跑得到（否则失败即收尾，永远看不到报告）
       #   ② 报告一律上传（`always()`）⇒ 失败也能事后取证据
       #   ③ 归因步骤把两种形态**分开**打印：有 findings（真扫到）/ 无报告（未判定，附常见原因）
+
+      # 🔴 限流退避（issue #7549，2026-11-03 实测）：本 action 内部会调 `GET /users/<owner>` 判账号
+      #    类型；安装令牌打满时那次调用 403 ⇒ 判不出「个人账号」（本仓 owner 实为 `User`）⇒ action
+      #    转而要求 license ⇒ **1 秒内早退、无报告**。⇒ 扫描前把**同一个调用**在限流下等一等（有界）：
+      #    等到了，action 那次同样的调用就能过；等不到也只是回到原形态（`--best-effort` **不额外判红**，
+      #    红仍由下面的归因步骤按三态判）。
+      - name: Preflight gitleaks license check (限流退避，issue #7549)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python3 .github/rate_limit_backoff.py exec --best-effort \
+            --label "gitleaks license 校验预检" -- gh api "users/${{ github.repository_owner }}" > /dev/null
+
       - name: Run gitleaks secret scan
         id: gitleaks
         uses: gitleaks/gitleaks-action@v3
@@ -1122,10 +1140,10 @@ jobs:
             [ -s "$f" ] && { report="$f"; echo "📄 报告已生成：$f（$(wc -c <"$f" | tr -d ' ') 字节）"; break; }
           done
           if [ -z "$report" ]; then
-            echo "::error::GITLEAKS_NO_REPORT —— 扫描步骤失败，但**没有产出任何报告** ⇒ 这是**未判定**，不是「没有密钥」。"
-            echo "::error::已知原因（按怀疑度）：① action 早退（输入/版本不符）② GitHub API 限流（本仓 2026-10-18 实测 403 rate limit）③ 组织许可缺失（GITLEAKS_LICENSE）。"
+            echo "::error::GITLEAKS_NO_REPORT —— 扫描步骤失败，但**没有产出任何报告** ⇒ 这是**未判定**（三态 exit 3），不是「没有密钥」、也不是「扫到密钥」。"
+            echo "::error::已知原因（按怀疑度）：① GitHub API 限流（本仓 2026-10-18 / 2026-11-03 两次实测 403 rate limit ⇒ action 判不出账号类型即早退）② action 早退（输入/版本不符）③ 组织许可缺失（GITLEAKS_LICENSE）。"
             echo "::error::复核：重跑本 job；若反复出现，改用官方二进制 gitleaks detect --report-format json --exit-code 1。"
-            exit 1
+            exit 3
           fi
           python3 - "$report" <<'PY'
           import json, sys
@@ -1151,8 +1169,8 @@ jobs:
               print(f"::error::GITLEAKS_FINDINGS —— 扫到 {len(findings)} 处疑似凭据（清单见上）。")
               print("::error::处置：删掉凭据 → **不要只删文件**（历史里仍在：需 force-push 或轮换凭据）→ 再重跑本腿。")
               sys.exit(1)
-          print("::error::GITLEAKS_FAILED_NO_FINDINGS —— 有报告但 report 里 **0 条 findings** ⇒ 失败原因不在密钥（动作/限流/许可），属未判定。")
-          sys.exit(1)
+          print("::error::GITLEAKS_FAILED_NO_FINDINGS —— 有报告但 report 里 **0 条 findings** ⇒ 失败原因不在密钥（动作/限流/许可），属**未判定**（三态 exit 3）。")
+          sys.exit(3)
           PY
 
   # ============ Danger Scan — PR 破坏性变更检测（workflow/批量删除/部署文件）============
@@ -1195,11 +1213,23 @@ jobs:
           #    「token 读不到评论 ⇒ 永远不放行」—— fail-closed 的反面是红得无声无息，
           #    直到有人要删 workflow 才发现。故心跳必须恒可见（§18.6「环境静默即缺陷」）：
           #    下面的 --resolve-acks 每次都会打一行「owner 评论数=N」。
-          if ! gh api "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments" \
-                 --paginate --slurp > /tmp/pr-comments.json 2>/dev/null; then
-            echo "⛔ 评论 API 读取失败 ⇒ fail-closed（本次不放行任何删除）——"
+          # 🔴 限流 ≠ 真无权限（issue #7549，2026-11-03 现场）：安装令牌打满时本步的 403 是**瞬时**态，
+          #    而这里原先「读失败 ⇒ exit 0」= **红得无声无息**（job 日志里只剩一行 ⛔，PR 红在别处，
+          #    没人知道确认通道已经死了）。⇒ 统一走 `.github/rate_limit_backoff.py`（**唯一判定点**）：
+          #    限流 ⇒ 有界退避（3 次 / 指数 / 总预算 120s）；**真无权限**（403 但 remaining>0 且报文
+          #    不是限流）⇒ **不重试、立刻红**（不吞真红）。
+          python3 .github/rate_limit_backoff.py exec \
+            --label "取 PR 评论" --output /tmp/pr-comments.json -- \
+            gh api "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments" --paginate --slurp
+          rc=$?
+          if [ "$rc" -eq 3 ]; then
+            echo "⛔ 评论 API 读取失败：**限流退避已耗尽 ⇒ 未判定**（exit 3）—— fail-closed（本次不放行任何删除）"
+            echo "   读数：安装令牌打满（瞬时态），不是本 PR 的问题；重跑本 job 即可。"
+            exit 3
+          elif [ "$rc" -ne 0 ]; then
+            echo "⛔ 评论 API 读取失败：**真无权限**（非限流）—— fail-closed（本次不放行任何删除）"
             echo "   若这是 token 权限问题，本确认通道将**永久失效**（需给本 job 补 issues: read）"
-            exit 0
+            exit "$rc"
           fi
           DELETED=$(git diff --diff-filter=D --name-only origin/main...HEAD -- .github/workflows \
             | grep -E '\.(yml|yaml)$' | paste -sd, - || true)
@@ -1242,40 +1272,24 @@ jobs:
             // 🔴 限流也是**瞬时**态（issue #7549 现场：安装令牌打满 ⇒ 本步「扫描步 success、**评论步** 403」，
             //    外观跟真失败一样）。⇒ 只对**限流**做有界退避（≤2s × 2 次），非限流立刻报错，
             //    且失败文本带 `x-ratelimit-remaining` / `retry-after` ⇒ 读到红的人不用先怀疑自己的 diff。
-            const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-            async function withRetry(label, fn) {
-              for (let attempt = 1; ; attempt += 1) {
-                try { return await fn(); } catch (e) {
-                  const status = e?.status;
-                  const headers = e?.response?.headers || {};
-                  const remaining = headers['x-ratelimit-remaining'];
-                  const retryAfter = Number(headers['retry-after'] || 1);
-                  const rateLimited = status === 429
-                    || (status === 403 && (String(remaining) === '0'
-                      || String(e?.message || '').toLowerCase().includes('rate limit')));
-                  if (!rateLimited || attempt >= 3) {
-                    core.setFailed(`${label} 失败：HTTP ${status ?? '?'}`
-                      + (rateLimited
-                        ? `（**限流** x-ratelimit-remaining=${remaining ?? '?'} retry-after=${retryAfter}s）`
-                        : '（非限流）'));
-                    throw e;
-                  }
-                  await sleep(Math.min(Math.max(retryAfter, 0), 2) * 1000);
-                }
-              }
-            }
-            const { data: comments } = await withRetry('列评论', () => github.rest.issues.listComments({
+            // 🔴 判定/退避只有一份实现（issue #7549）：原先这份**内联** `withRetry` 的病是
+            //    `Math.min(retryAfter, 2)` —— 安装令牌限流的 `retry-after` 常是几十秒，睡 2s 后立刻
+            //    重试必然还是 403 ⇒「加了退避」但**退不动**。改为调共享原语
+            //    （`.github/rate_limit_backoff.py` 的指数退避 + 总预算 + `remaining>0 ⇒ 不重试`）。
+            const { withRateLimitRetry } = require(
+              require('path').join(process.env.GITHUB_WORKSPACE || process.cwd(), '.github/scripts/rate-limit-backoff.js'));
+            const { data: comments } = await withRateLimitRetry('列评论', () => github.rest.issues.listComments({
               owner: context.repo.owner, repo: context.repo.repo, issue_number: context.issue.number,
             }));
             // 只认领**自己的**报告（marker），取最新一条；没有 marker 评论（含旧版无 marker 报告）⇒ **新建**
             // —— 宁可多一条，绝不按散文标题认领去覆盖人类评论（issue #6423）。
             const prev = [...comments].reverse().find(c => c.body.includes(MARKER));
             if (prev) {
-              await withRetry('更新评论', () => github.rest.issues.updateComment({
+              await withRateLimitRetry('更新评论', () => github.rest.issues.updateComment({
                 owner: context.repo.owner, repo: context.repo.repo, comment_id: prev.id, body,
               }));
             } else {
-              await withRetry('创建评论', () => github.rest.issues.createComment({
+              await withRateLimitRetry('创建评论', () => github.rest.issues.createComment({
                 owner: context.repo.owner, repo: context.repo.repo, issue_number: context.issue.number, body,
               }));
             }
