@@ -2,7 +2,7 @@
 # 本文件由 render_cases.py 生成，勿手改（改了也留不住：下次重渲染会覆盖）
 # 源: cases/*.yml（case-contract 单一源）
 # 重新生成: python3 render_cases.py --cases <dir> --out-eval <包目录> --out-md <md>
-# 域: misc（源: cases/misc.yml，180 条）
+# 域: misc（源: cases/misc.yml，181 条）
 
 from ._schema import Difficulty, EvalCase, Skill
 
@@ -3315,6 +3315,24 @@ _CASE_MC_137 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── MC-139 [NORMAL] issue_lifecycle 自证不得读进程内快照（issue #6617）：远程面强制现取 / 读不到 ⇒ 三态 3 / 批量路径只许一次现取（NS-3）（源: cases/misc.yml）──
+_CASE_MC_139 = EvalCase(
+    id='MC-139',
+    legacy_id='',
+    title='issue_lifecycle 自证不得读进程内快照（issue #6617）：远程面强制现取 / 读不到 ⇒ 三态 3 / 批量路径只许一次现取（NS-3）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['收尾自证读的是进程内快照 `_REMOTE_HEADS` ⇒「快照先被读过、远程才被删」时，自证拿删除前的值判「还在不在」，会报出与最终态**相反**的结论 —— 凭什么相信「自证干净」这四个字？'],
+    expectations=[],
+    data_checks=['🔴 **判据 1·自证读真值（实例，会红）**：夹具 = 真 bare origin + 真仓库；顺序 = 先读快照（分支在）→ 再删远程（快照不刷新）⇒ `verify_clean` 必须判 `True`；读快照的实现必报 `False`。执行点 = tests/unit_ci_workflows/test_issue_lifecycle_selfproof.py::test_selfproof_reads_the_truth_not_the_snapshot', '🔴 **判据 2·读不到 ⇒ 无法判定（三态）**：origin **真不可达**（不是 mock）⇒ 模块级自证给 `None`（既非 True 也非 False）；CLI `finish` 出口 `exit 3` 且**不**打印「✅ 收尾完成」（`3` 不得当 `0` 读）。执行点 = 同文件::test_unreadable_remote_is_undecidable_not_success + ::test_finish_exits_3_when_the_selfproof_cannot_read', '🔴 **判据 3·红证（注入式）**：把 `verify_clean` 的现取那一行变异成 `remote_heads`（读快照）⇒ 判据 1 的同一夹具**必红**（True → False），变异副本带语法自检。执行点 = 同文件::test_reverting_the_selfproof_to_the_snapshot_turns_it_red', '🔴 **判据 4·类级元守卫（AST，防「下一个删除路径又漏」）**：① `verify_clean` 必须调 `remote_heads_refresh` 且不得调 `remote_heads` / `remote_branch_gone`；② 传给它的 `heads=` 只许来自现取（直接调用或同函数绑定）；③ 任何调 `delete_remote_branch` / `batch_delete_remote_branches` 的函数必须同时调 `verify_clean` —— **新增删除路径忘了自证即红**。含判别力自证：四种坏形态在合成语料上各自判红。执行点 = 同文件::test_class_guard_holds_on_the_real_module + ::test_class_guard_has_discriminating_power', '🔴 **判据 5·审计面**：`close` 的 dry-run 必须显示「这一条会用什么依据关」= 判定 → `gh issue close --reason` 映射（delivered→completed / superseded→not planned）+ **证据原文（不再截断 110 字）** + 未实装登记闸门读数，且**零 gh 调用**。执行点 = 同文件::test_close_dry_run_shows_the_basis_for_each_close', '🔴 **判据 6·往返不变式（NS-3 不许退化）**：批量调用方传现取读数 ⇒ 自证 **0 次** `ls-remote`；默认自证 **恰好 1 次**。执行点 = 同文件::test_selfproof_round_trips_are_constant', '**边界（照实登记，§19.1）**：① 判据判不了「调用方在生产环境真的跑过」——它只保证接线锚在；行为面由实例判据 + 真 CLI 出口承担；② AST 守卫射程 = 本文件内的函数调用形态（`getattr` / 变量拼接不在面内）；③ 不改任何门禁的通过条件、不新增豁免。'],
+    skip_reason='[backend-contract] 零 LLM 的确定性脚本判据（自足临时 git 仓库 + 真 bare origin + 真不可达 origin + AST 守卫），pytest 真跑、零网络（gh 由替换函数顶替），不进 agent-eval 冒烟',
+    tags=['dev-tooling', 'self-proof', 'stale-snapshot', 'tri-state', 'ast-meta-guard', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 CASES = (
     _CASE_MC_001,
     _CASE_MC_002,
@@ -3496,4 +3514,5 @@ CASES = (
     _CASE_MC_132,
     _CASE_MC_134,
     _CASE_MC_137,
+    _CASE_MC_139,
 )

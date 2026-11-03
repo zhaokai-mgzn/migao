@@ -77,7 +77,7 @@
       "covers": "收尾自证（`verify_clean`）的**消费点**：远程面必须经 `remote_heads_refresh()` **强制现取**（不读进程内快照 `_REMOTE_HEADS`），且批量调用方传给它的 `heads=` 只许来自现取 —— 本条目声明的是**接线这一半**：把该调用换回 `remote_heads` / `remote_branch_gone`（或把 `remote_heads_refresh` 改名）时，守卫必须具名报出 `scripts/issue_lifecycle.py::verify_clean`。类级判据 = `tests/unit_ci_workflows/test_issue_lifecycle_selfproof.py::test_class_guard_holds_on_the_real_module`（AST）；实例判据 = `::test_selfproof_reads_the_truth_not_the_snapshot`。",
       "red_proof": "`tests/unit_ci_workflows/test_issue_lifecycle_selfproof.py::test_reverting_the_selfproof_to_the_snapshot_turns_it_red`（把现取那一行变异成读快照 ⇒ 同一夹具从 True 变 False）+ `::test_class_guard_has_discriminating_power`（四种坏形态在合成语料上各自判红）+ 本台账守卫判据 3（摘掉 / 改名 `verify_clean` 锚 ⇒ 具名报出）。",
       "case_ids": [
-        "MC-137"
+        "MC-139"
       ]
     }
   ],
