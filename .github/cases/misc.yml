@@ -6928,9 +6928,47 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
-  # MC-144（issue #6953 · SW-100）：状态列写面的**族级**统一元守卫（写面台账 + 常量单一来源）
+
   # ==========================================================================
   - id: MC-144
+    legacy_id: ""
+    title: "deploy-reconcile 的漂移判据必须覆盖**构建输入面**（部署腿 workflow / 构建配方 / 线上自证脚本）：只改 CI 或部署脚本的修复合入后不得判「已上线」，更不得自动关值守单（issue #7034）"
+    domains:
+      - misc
+      - ci
+    tier: normal
+    tags:
+      - ci
+      - deploy
+      - reconcile
+      - false-green
+    truths_ref: []
+    user_inputs:
+      - "只改了 `.github/**` + `deploy/scripts/**` 的修复（issue #7029）合入 main 后，`deploy-reconcile` 判「✅ 无漂移：自 fbbb798（上次成功部署）起 backend/admin-api 无代码改动」并自动关闭值守单，而同一时刻线上 `GET /api/version` 的 builtAt 仍是空串 —— 修复到底上线没有？"
+    expectations: []
+    data_checks:
+      - "🔴 **判据 ①（实例，执行式）**：只改 `deploy/**` 里的一个部署脚本（如 `deploy/scripts/swas-deploy-ci.sh`）⇒ 必须判「有漂移」并 dispatch 对应腿；改前形态（pathspec 只有 `${svc_path}`）判「无漂移」。执行点 = tests/unit_ci_workflows/test_reconcile_build_inputs.py::test_registered_build_input_is_judged_as_drift"
+      - "🔴 **判据 ②（实例，执行式）**：只改 `.github/workflows/deploy-admin-api.yml` ⇒ 必须判「有漂移」并 dispatch `deploy-admin-api.yml`（`builtAt` 的取值源就在那份 workflow 的 `Resolve build identity` 步）。执行点 = 同文件同名判据（逐条派生自登记册）"
+      - "🔴 **负控 ③（证明没扩成全仓）**：只改 `docs/wiki/About.md` ⇒ **零 dispatch** 且每条腿在 summary 里明写「无漂移」。执行点 = 同文件::test_unrelated_docs_change_is_not_drift"
+      - "🔴 **负控 ④（既有行为不回归）**：只改应用代码（`backend/admin-api/**`）⇒ 仍判「有漂移」并 dispatch 自己的腿。执行点 = 同文件::test_app_code_change_still_counts_as_drift"
+      - "🔴 **红证 ⑤（判别力自证）**：把追加构建输入的那一句注入成空串（= 改前形态）⇒ 判据 ①② 的两条具名探针**零 dispatch**；不注入则绿。执行点 = 同文件::test_pre_fix_shape_has_no_build_inputs"
+      - "**类级元守卫（未登记即红）**：现取每条腿 workflow 里**真被调用**的仓内路径（`bash` / `source` / `python3` / `uses: ./.github/workflows/*.yml`）—— 每条都必须被该腿的 pathspec 覆盖，或在 `NOT_BUILD_INPUTS` 里逐条带理由登记；给某条腿新加一句对某个**尚未登记**的 `deploy/scripts/` 脚本的 `bash` 调用 ⇒ 当场红。执行点 = 同文件::test_every_script_a_leg_runs_is_a_build_input_or_exempted + ::test_meta_guard_has_discriminating_power"
+      - "**台账卫生**：`reconcile_trigger_paths_ledger.json` 的 frozen_max 由 13 降到 4（构建输入面真的覆盖了 worker-h5 的 4 条与 bmini 的 5 条缺口 ⇒ 按「只许缩短」删除）；`deploy/swas/nginx.conf`（bmini 腿）仍为缺口（由 admin-api 腿应用，bmini 不需重发）；c-end-h5 的 3 条保留为 `never_in_trigger`（禁令，不是缺口）。判据 = test_config_change_triggers_deploy.py::test_trigger_paths_and_reconcile_legs_are_in_sync_for_every_service"
+      - "**边界（照实登记，§19.1）**：① 判据不联网、`gh`/`docker` 是桩 ⇒ 证的是「判定逻辑在给定 diff 下会 dispatch」，不是「GitHub 真的 dispatch 了」；② 本单**只**改判定面，**不**把构建输入加进各腿的 `on.push.paths`（`c-end-h5` 的触发面按用户裁定 B 永不扩）⇒ 构建输入改动的补部署由对账腿（cron 20min）兜底，不是 push 触发；③ 「线上真的跑上了」仍需 served 探针（`deploy/scripts/served-version-verify.sh` 等）在真环境跑一次 —— 本单不兑现任何线上读数。"
+    skip_reason: "[backend-contract] CI 判定逻辑（真 YAML + 真 git 仓库 + 桩 gh/docker 的执行式判据），零网络、零真实部署、不烧 token，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-11-03 新增（issue #7034，假绿：`deploy-reconcile` 的「无代码漂移 ⇒ 已上线」判据看不见构建输入）。取号 MC-144（`python3 scripts/next_case_id.py MC` 现取；按「MC-099 刻意空档不回填」与 139~143 的在飞/已合占用避开，改取现取最大号之后的 144）。落码 = ① `.github/scripts/reconcile_build_inputs.py`（构建输入面的**唯一**取值源：登记册逐条带理由 + 纯函数 `pathspec()` + 三态 CLI）② `.github/workflows/deploy-reconcile.yml` 的 `reconcile_one` 追加构建输入（正文顶到 13.25K 硬限 ⇒ 同批压缩历史注释，实测 12,919 → 11,873 字符）③ 判据 tests/unit_ci_workflows/test_reconcile_build_inputs.py（逐条执行式 + 三条负控 + 注入式红证 + 类级元守卫 + 豁免不陈旧 + 登记册不腐烂）④ `test_config_change_triggers_deploy.py` 的判定面改为「调用行 + 构建输入」，stray 只豁免已登记项 ⑤ 台账 frozen_max 13 → 4。"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_reconcile_build_inputs.py"
+        - "tests/unit_ci_workflows/test_config_change_triggers_deploy.py"
+        - "tests/unit_ci_workflows/test_reconcile_no_silent_skip.py"
+      ci:
+        - pr-check.yml
+        - deploy-reconcile.yml
+      verifies: []
+  # MC-145（issue #6953 · SW-100）：状态列写面的**族级**统一元守卫（写面台账 + 常量单一来源）
+  # ==========================================================================
+  - id: MC-145
     legacy_id: ""
     title: "**状态列写面全族统一元守卫 SW-100**：53 张有 `status` 列的表 × 134 个写入口逐条登记（未登记即红 / 台账陈旧即红 / 裸字符串写状态列即红 / 每张状态表的合法集合必须有来源）"
     domains:
@@ -6958,7 +6996,7 @@ cases:
       - '🔴 **两颗旧守卫的射程盲洞（本守卫补上的，各一例真实读数）**：① **MC-100**（`InboundOrderStatusCasMetaGuardTest`）的候选集只认 `inboundOrderMapper.updateById(` / `inboundOrderMapper.mark*(`，状态写判定只认 `setStatus(` / `.set(InboundOrder…::getStatus` ⇒ **builder 写形（`InboundOrder.builder()…status(…)` + `inboundOrderMapper.insert(…)`）完全不在射程**：`InboundOrderService#receiveFinishedGoods` / `#receiveFinishedGoodsLines` 就是这样真实写 `inbound_orders.status`、却**根本不是候选方法**（方法体里既无 `updateById(` 也无 `mark*(`）；同文件 `#create` 虽在 `non_status_writers`，其 `why` 逐字写「它**不写 status 列**」，紧接着又注明「草稿态来自 builder 里的 `status(InboundOrder.STATUS_DRAFT)`」—— 这条判断**没有任何判据在读**（该字段 `status_write_forbidden` 在整份台账里 0 处使用）。② **PG-075**（`ProductionOperationDeleteCasMetaGuardTest`）只认 `.set(Production…::getDeleted, 1)` / `…Mapper.softDelete(` ⇒ `ProductionOperationCommandService#update` 的 `partial.setStatus(status)` + `productionOperationMapper.updateById(partial)`（**同表、同文件、无条件、无谓词**）完全不可见 —— 这正是 #6928 的 F1 形态还活在 main 上的一个具名实例（本包**只登记不修**，见 PR body 与 issue）'
       - '**边界（照实登记，§19.1）**：① 形态判据不做 AST（词法走查 + 签名切块），反射 / 动态 SQL / XML mapper / 变量拼接的 wrapper 不在射程（假绿方向，不误伤）；② 匿名类 / lambda 里的写点归到其外层成员（保守）；③ `deleted`（`@TableLogic` 逻辑删除族）**有意不入本表**（PG-075 / T3 / #6953 的 P6 承接）；④ **判不了并发语义**（登记 ≠ 有 CAS / 有 tenant 谓词 / 判了影响行数），也判不了 T2b「`updateById` 把内存里的旧 status 一起写回」；⑤ 4 张表（`production_route_signals` / `production_routings` / `sessions` / `tenant_apps`）现取 0 写点，只说明**本仓 Java 写面**没有显式赋值，不等于「不会被写」。'
     skip_reason: "[backend-contract] 零 LLM 的确定性读数（词法扫 admin-api Java 源码 + `_sql_schema` 解析建库脚本/@TableName + 台账双向对账 + 合成语料判别力自证），零网络、零 DB、不进 agent-eval 冒烟"
-    merge_log: "2026-11-03 新增（issue #6953 的族级元守卫 SW-100；与 MC-100 / MC-104 / PG-075 等单表守卫**有意不重叠** —— 它们裁谓词完整性，本表裁「写面有没有人认领 / 状态值是不是单一口径」）。取号 = `python3 scripts/next_case_id.py MC` **首取 MC-143**（当时 main 最大 142），merge `origin/main` 时与 main 新增的 **MC-143**（issue #6997 / PR #8535）撞号 ⇒ 按「后合入者让号」**顺延为 MC-144**（工具另会返回历史空档 MC-099 —— 按裁定**刻意空档不回填**）。**现取读数**：53 张有 `status` 列的表（`_sql_schema` 唯一解析点）、134 条写点（Java 108 / SQL 26）、覆盖 49 张表；合法集合权威：实体常量 10 / schema CHECK 14 / **无机器口径 36（冻结上限）**；裸字符串存量 56（冻结上限）。**红证（注入式，实跑）**：① 往真实 Service 里加一条未登记写面 ⇒ 判据 1 判红并具名；② 把常量改成裸字符串 ⇒ 判据 3 判红并具名；③ 把台账条目删掉 ⇒ 判据 2 判红（写点无主）；④ 把 `unregistered()` 的登记对账摘掉 / 把 `bare_literal_sites()` 摘掉 ⇒ 判据 1 / 判据 3 必红（判据 7 内建这两条内存变异体作常驻证）。**如实登记的既有缺陷（本包不修，不扩射程）**：`ProductionOperationCommandService#update` 的无条件状态写（见判据 8 的盲洞 ②）、`InboundOrderService` 的 builder 写形（盲洞 ①）、36 张表没有机器可读的合法状态集合、56 处裸字面量 —— 均为存量债，压测口径 = 台账基线**只许缩短**。"
+    merge_log: "2026-11-03 新增（issue #6953 的族级元守卫 SW-100；与 MC-100 / MC-104 / PG-075 等单表守卫**有意不重叠** —— 它们裁谓词完整性，本表裁「写面有没有人认领 / 状态值是不是单一口径」）。取号（**两次让号，记实**）= `python3 scripts/next_case_id.py MC` 首取 **MC-143**；merge `origin/main` 时与 main 新增的 **MC-143**（issue #6997 / PR #8535）撞号 ⇒ 按「后合入者让号」顺延 **MC-144**；再次 merge 又与 main 新增的 **MC-144**（issue #7034 / PR #8537）撞号 ⇒ 顺延 **MC-145**（工具每次都返回历史空档 MC-099 —— 按裁定**刻意空档不回填**）。**现取读数**：53 张有 `status` 列的表（`_sql_schema` 唯一解析点）、134 条写点（Java 108 / SQL 26）、覆盖 49 张表；合法集合权威：实体常量 10 / schema CHECK 14 / **无机器口径 36（冻结上限）**；裸字符串存量 56（冻结上限）。**红证（注入式，实跑）**：① 往真实 Service 里加一条未登记写面 ⇒ 判据 1 判红并具名；② 把常量改成裸字符串 ⇒ 判据 3 判红并具名；③ 把台账条目删掉 ⇒ 判据 2 判红（写点无主）；④ 把 `unregistered()` 的登记对账摘掉 / 把 `bare_literal_sites()` 摘掉 ⇒ 判据 1 / 判据 3 必红（判据 7 内建这两条内存变异体作常驻证）。**如实登记的既有缺陷（本包不修，不扩射程）**：`ProductionOperationCommandService#update` 的无条件状态写（见判据 8 的盲洞 ②）、`InboundOrderService` 的 builder 写形（盲洞 ①）、36 张表没有机器可读的合法状态集合、56 处裸字面量 —— 均为存量债，压测口径 = 台账基线**只许缩短**。"
     traces:
       tests:
         - "tests/unit_ci_workflows/test_state_write_face_metaguard.py"

@@ -73,6 +73,9 @@ WORKFLOW = REPO_ROOT / ".github" / "workflows" / "deploy-reconcile.yml"
 RECONCILE_STEP = "Reconcile deploys"
 # 外置的状态机脚本（issue #5935）：对账步 `source` 它 ⇒ harness 的执行式仓库里必须有同一份
 STATE_SCRIPT = REPO_ROOT / "scripts" / "deploy_reconcile_state.sh"
+# 构建输入面（issue #7034）：对账步 `python3` 它 ⇒ 同理必须同批放进执行式仓库（否则每个场景都走
+# 「取不到 ⇒ 按旧口径判定」的弃权分支，断言仍过 = 假绿）
+BUILD_INPUTS_SCRIPT = REPO_ROOT / ".github" / "scripts" / "reconcile_build_inputs.py"
 
 ACR_REGISTRY = "acr.example.com"
 ACR_NAMESPACE = "ns"
@@ -241,6 +244,9 @@ def commit_repos(tmp_path: Path, drift_paths=("backend/admin-api/b.py",),
     (repo / "scripts").mkdir(exist_ok=True)
     (repo / "scripts" / STATE_SCRIPT.name).write_text(STATE_SCRIPT.read_text(encoding="utf-8"),
                                                       encoding="utf-8")
+    (repo / ".github" / "scripts").mkdir(parents=True, exist_ok=True)
+    (repo / ".github" / "scripts" / BUILD_INPUTS_SCRIPT.name).write_text(
+        BUILD_INPUTS_SCRIPT.read_text(encoding="utf-8"), encoding="utf-8")
     git(repo, "add", "-A")
     git(repo, "commit", "-qm", "code C1")
     c1 = git(repo, "rev-parse", "HEAD")
