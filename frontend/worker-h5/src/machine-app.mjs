@@ -10,7 +10,9 @@
 //   ③ 🔴 **不写机器**：与「给机器输值」这件事本文件一个字节都不碰（没有串口 / Modbus / 下发面）；
 //   ④ 【完成】= 报工（`POST /api/worker/production/scan/complete`，**既有**入口）—— 前端只发
 //      token + 幂等键，工序/数量/身份全由服务端定；失败大字显式，不假装成功；
-//   ⑤ 401 ⇒ 大字回落「请先登录」（绝不静默重试、绝不按上一个人的身份读写）。
+//   ⑤ 401 ⇒ 大字回落「请先登录」（绝不静默重试、绝不按上一个人的身份读写）；
+//   ⑥ 报返工（issue #7992）= **既有** `reportRework`（`POST /api/worker/production/rework`）——
+//      与【完成】同屏但**次要**档；上下文 = 刚扫的那张码（工人不再选一次机器）。
 
 import { createApi, SESSION_EXPIRED } from './api.mjs'
 import { installFlexGapFallback } from './flex-gap.mjs'
@@ -115,6 +117,14 @@ export function createMachineApp({ doc, api, location = globalThis.location, sto
     if (back) back.addEventListener('click', () => dispatch({ type: 'back' }))
     const report = doc.querySelector('[data-machine-report]')
     if (report) report.addEventListener('click', () => { void reportWork() })
+    // 报返工（issue #7992）：次要动作 —— 先展开原因条，点一个原因即提交（本页没有文本输入元素）
+    const rework = doc.querySelector('[data-machine-rework]')
+    if (rework) rework.addEventListener('click', () => dispatch({ type: 'reworkOpen' }))
+    const reworkCancel = doc.querySelector('[data-machine-rework-cancel]')
+    if (reworkCancel) reworkCancel.addEventListener('click', () => dispatch({ type: 'reworkClose' }))
+    for (const el of doc.querySelectorAll('[data-machine-rework-reason]')) {
+      el.addEventListener('click', () => { void reportRework(el.dataset?.machineReworkReason) })
+    }
     const login = doc.querySelector('#wh5-machine-login')
     if (login) login.addEventListener('click', () => { replaceToLogin() }) // 真链接：这行只是兜底（鼠标中键 / 键盘）
     const switchWorker = doc.querySelector('#wh5-machine-switch-worker')
@@ -192,6 +202,35 @@ export function createMachineApp({ doc, api, location = globalThis.location, sto
         return
       }
       dispatch({ type: 'reportFailed', error: e?.message ?? String(e) })
+    }
+  }
+
+  /**
+   * 报返工（issue #7992）：壁达「工序返修」的对位功能 —— 裁床发现这道做坏了，**不必退出机台页重扫**。
+   *
+   * 🔴 **复用既有写面**：`api.reportRework` = `POST /api/worker/production/rework`（issue #7860 落的那一条
+   *    「唯一写入口」）—— 本页**不新造端点、不新造流程**（口径单一源：判定 / 改记 / 回退 / 开单全在服务端）。
+   * 🔴 **上下文 = 当前这张码**（`state.token`）：服务端据此定位工单 / 部位 / 套号 ⇒ 工人**不**再选一次机器。
+   *    身份只由 `X-Worker-Session-Id` 解，body 里一个 `worker_id` 都不带（`api.reportRework` 的白名单）。
+   * 🔴 失败**不假装成功**：大字显式 + 原因条保持展开（换一个原因重试是合法动作）。
+   */
+  async function reportRework(reason) {
+    const token = state.token
+    if (!token) {
+      dispatch({ type: 'reworkFailed', error: '没有扫码记录：请先扫一次水洗唛' })
+      return
+    }
+    if (!reason || state.reworkSubmitting) return
+    dispatch({ type: 'reworkStart' })
+    try {
+      const receipt = await api.reportRework({ token, reason })
+      dispatch({ type: 'reworkDone', receipt })
+    } catch (e) {
+      if (e?.code === SESSION_EXPIRED) {
+        dispatch({ type: 'failed', error: '登录已失效：请先用工号 + PIN 登录本台设备，再扫码报返工' })
+        return
+      }
+      dispatch({ type: 'reworkFailed', error: e?.message ?? String(e) })
     }
   }
 

@@ -230,6 +230,12 @@ export function initialMachineState() {
     reporting: false,
     receipt: null,
     reportError: null,
+    // 报返工（issue #7992）：与报工同屏，但它是**次要**动作 —— 原因条默认**收起**，
+    // 常驻面不随条数增长（§31 P1）；收起态下原因按钮**一个都不渲染**（不是 CSS 隐藏）。
+    reworkOpen: false,
+    reworkSubmitting: false,
+    reworkReceipt: null,
+    reworkError: null,
   }
 }
 
@@ -252,10 +258,14 @@ export function reduceMachine(state, action) {
         unchecked: [],
         notice: action.notice ?? null,
         error: null,
-        // 新的一张码 = 新的一次报工：回执/报错不能跨码携带
+        // 新的一张码 = 新的一次报工：回执/报错不能跨码携带（返工同理 —— 返的是**这一件**）
         reporting: false,
         receipt: null,
         reportError: null,
+        reworkOpen: false,
+        reworkSubmitting: false,
+        reworkReceipt: null,
+        reworkError: null,
       }
     case 'openCalc':
       return { ...state, mode: 'calc', notice: null, error: null }
@@ -288,6 +298,25 @@ export function reduceMachine(state, action) {
     case 'reportFailed':
       // 🔴 失败**显式**：屏上大字报错，并且**绝不**留下一个看起来像成功的回执
       return { ...state, reporting: false, receipt: null, reportError: action.error ?? '报工失败' }
+    // ── 报返工（issue #7992）─────────────────────────────────────────────────
+    case 'reworkOpen':
+      return { ...state, reworkOpen: true, reworkError: null }
+    case 'reworkClose':
+      return { ...state, reworkOpen: false, reworkSubmitting: false, reworkError: null }
+    case 'reworkStart':
+      return { ...state, reworkSubmitting: true, reworkError: null }
+    case 'reworkDone':
+      // 成功 ⇒ 收起原因条、把返工单号摆出来（收据由**服务端**给，前端不拼单号）
+      return {
+        ...state,
+        reworkOpen: false,
+        reworkSubmitting: false,
+        reworkReceipt: action.receipt ?? {},
+        reworkError: null,
+      }
+    case 'reworkFailed':
+      // 🔴 与报工同口径：失败**大字显式**，原因条保持展开（人可以换一个原因重试）
+      return { ...state, reworkSubmitting: false, reworkError: action.error ?? '报返工失败' }
     case 'failed':
       return { ...state, mode: 'error', error: action.error ?? '未知错误', data: null, unchecked: [] }
     case 'notice':
@@ -477,6 +506,52 @@ export function machineBatchBlocked(data) {
 const MACHINE_BATCH_BLOCKED_HINT = '本单未指派批次：请到报工页填写批次后再报工'
 
 /**
+ * 报返工的原因短语（issue #7992，壁达「工序返修」的对位功能）。
+ *
+ * 🔴 **为什么是短语按钮而不是文本框**：本页刻意**没有任何文本输入元素**
+ * （`machine.html` 头注释 = IME 兜底那道保险；扫码枪是唯一输入面）—— 搬一个 textarea 进来
+ * 等于把那条护栏拆掉。⇒ 一点即中，工人戴着手套也能按。
+ * 🔴 短语与报工页表单的 placeholder **同源**（`render.mjs` 的「例如：布面污渍 / 布料破洞 / 色差」），
+ * 不另造一套问题 vocabular；服务端只要求「写明原因」，不枚举。
+ */
+export const MACHINE_REWORK_REASONS = ['布面污渍', '布料破洞', '色差']
+
+/**
+ * 返工对象（「哪一单的哪一件」）—— 屏上**没有**印订单号（issue #7990 一屏只放 16 格），
+ * 而返工必须让人先确认对象 ⇒ 原因条上补这一行。
+ *
+ * 🔴 这**不是** §31 P2 的重复：本屏没有第二处承载单号（`MACHINE_MAIN_ROWS` 里没有它）。
+ * 🔴 上下文即当前这张码（`state.token`）：写请求由 token 定位工单/部位/套号 —— 工人**不**再选一次机器。
+ */
+export function reworkTargetLine(state) {
+  const position = selectedPosition(state)
+  const order = state?.data?.order ?? {}
+  const no = dataOr(order.processing_order_no) === EMPTY ? order.order_no : order.processing_order_no
+  const what = dataOr(position?.position_name ?? position?.position_kind)
+  const parts = [no, what].map((x) => dataOr(x)).filter((x) => x !== EMPTY)
+  return parts.length ? `返工对象：${parts.join(' · ')}` : null
+}
+
+/** 报返工区：收起时**零 DOM**；展开 = 一行对象 + 原因按钮 + 取消；成功 = 服务端给的返工单号。 */
+function reworkBlock(state) {
+  const done = state.reworkReceipt
+  if (done) {
+    const no = dataOr(done.reworkNo)
+    return `<p class="wh5-machine__done" data-machine-rework-done>✅ 返工已登记${no === EMPTY ? '' : ` · 返工单 ${esc(no)}`}</p>`
+  }
+  if (!state.reworkOpen) return ''
+  const target = reworkTargetLine(state)
+  const disabled = state.reworkSubmitting ? ' disabled' : ''
+  const reasons = MACHINE_REWORK_REASONS.map((reason) => `<button type="button" class="wh5-machine__back" data-machine-rework-reason="${esc(reason)}"${disabled}>${esc(reason)}</button>`).join('')
+  return `<div data-machine-rework-open>
+      ${target ? `<p class="wh5-machine__hint" id="wh5-machine-rework-target">${esc(target)}</p>` : ''}
+      <div class="wh5-machine__actions">${reasons}<button type="button" class="wh5-machine__back" data-machine-rework-cancel${disabled}>取消</button></div>
+      ${state.reworkError ? `<p class="wh5-machine__big wh5-machine__big--error">报返工失败：${esc(dataOr(state.reworkError))}</p>` : ''}
+      <p class="wh5-machine__hint">点原因即提交（本页只有扫码枪，不弹输入框）</p>
+    </div>`
+}
+
+/**
  * 报工区（**与裁高值同屏**，但两件事）：
  *   ① 大字「请在机器屏输入 X.XXX 米」（值 = 调用方给的显示值：屏一 = 服务端规则值；屏二 = 本次合计）
  *   ② 【完成】= 报工（`POST /api/worker/production/scan/complete`）：**工序由服务端推断**，
@@ -499,13 +574,19 @@ function reportBlock(state, { value, digits, missingNote }) {
   const button = state.receipt
     ? '<button type="button" class="wh5-machine__cta" disabled>已报工</button>'
     : `<button type="button" class="wh5-machine__cta" data-machine-report${state.reporting || batchBlocked ? ' disabled' : ''}>${state.reporting ? '报工中…' : '完成'}</button>`
+  // 报返工（issue #7992）：**次要**动作 —— 与【完成】**同一行但不抢主位**：
+  // 它是 `.wh5-machine__back`（浅底描边那一档），主按钮仍然是**唯一**的 `.wh5-machine__cta`。
+  const reworkEntry = state.reworkReceipt
+    ? '<button type="button" class="wh5-machine__back" data-machine-rework disabled>返工已登记</button>'
+    : '<button type="button" class="wh5-machine__back" data-machine-rework>报返工</button>'
   return `
     <div class="wh5-machine__report">
       ${big}
       ${state.reportError ? `<p class="wh5-machine__big wh5-machine__big--error">报工失败：${esc(dataOr(state.reportError))}</p>` : ''}
       ${state.receipt ? `<p class="wh5-machine__done">✅ ${esc(dataOr(reportNotice(state.receipt)))}</p>` : ''}
       ${batchNote}
-      <div class="wh5-machine__actions">${button}</div>
+      <div class="wh5-machine__actions">${button}${reworkEntry}</div>
+      ${reworkBlock(state)}
       ${state.receipt ? '<p class="wh5-machine__hint">继续下一件请再扫一次水洗唛（同一张码再扫 = 领下一道）</p>' : ''}
     </div>`
 }

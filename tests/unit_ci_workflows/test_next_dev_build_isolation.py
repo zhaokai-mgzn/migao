@@ -1,4 +1,4 @@
-# case_ids: MC-155
+# case_ids: MC-157
 r"""本地 `next dev` 与 `next build` 的**输出目录物理隔离**（issue #6692）。
 
 ## 病（两个实测形态，同一根因：两个模式共用 `.next`）
