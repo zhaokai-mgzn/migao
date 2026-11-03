@@ -5,6 +5,7 @@ import { Plus, Search } from 'lucide-react'
 import { toast } from 'sonner'
 import { workerApi, workerPageCatalogApi } from '@/lib/api'
 import { toastRequestError } from '@/lib/api-error'
+import { displayEnum } from '@/lib/enum-display'
 import ListLoadError from '@/components/common/ListLoadError'
 import { Button, Input, Select, Modal, Table, Badge, Pagination, RowActions, RowActionLink } from '@/components/ui'
 import type { TableColumn, RowActionItem } from '@/components/ui'
@@ -817,7 +818,7 @@ export default function WorkerProfilesPanel({ canWrite }: WorkerProfilesPanelPro
                   { value: '', label: '不设岗位（菜单按下面逐人勾选）' },
                   ...positionOptions.map((pos) => ({
                     value: pos,
-                    label: positionLabels[pos] || pos,
+                    label: displayEnum(positionLabels, pos),
                   })),
                 ]}
                 value={form.workerPosition}
@@ -941,7 +942,7 @@ export default function WorkerProfilesPanel({ canWrite }: WorkerProfilesPanelPro
             data-testid="worker-position-modal-select"
             options={[
               { value: '', label: '不设岗位（菜单沿用逐人勾选 / 全部页面）' },
-              ...positionOptions.map((pos) => ({ value: pos, label: positionLabels[pos] || pos })),
+              ...positionOptions.map((pos) => ({ value: pos, label: displayEnum(positionLabels, pos) })),
             ]}
             value={posValue}
             onChange={(e) => setPosValue(e.target.value)}
