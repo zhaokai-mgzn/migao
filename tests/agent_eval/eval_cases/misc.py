@@ -3496,9 +3496,9 @@ _CASE_MC_144 = EvalCase(
     forbidden_card_text=[],
 )
 
-# ── MC-145 [NORMAL] **状态列写面全族统一元守卫 SW-100**：53 张有 `status` 列的表 × 134 个写入口逐条登记（未登记即红 / 台账陈旧即红 / 裸字符串写状态列即红 / 每张状态表的合法集合必须有来源）（源: cases/misc.yml）──
-_CASE_MC_145 = EvalCase(
-    id='MC-145',
+# ── MC-147 [NORMAL] **状态列写面全族统一元守卫 SW-100**：53 张有 `status` 列的表 × 134 个写入口逐条登记（未登记即红 / 台账陈旧即红 / 裸字符串写状态列即红 / 每张状态表的合法集合必须有来源）（源: cases/misc.yml）──
+_CASE_MC_147 = EvalCase(
+    id='MC-147',
     legacy_id='',
     title='**状态列写面全族统一元守卫 SW-100**：53 张有 `status` 列的表 × 134 个写入口逐条登记（未登记即红 / 台账陈旧即红 / 裸字符串写状态列即红 / 每张状态表的合法集合必须有来源）',
     skill=Skill.GENERAL,
@@ -3705,5 +3705,5 @@ CASES = (
     _CASE_MC_139,
     _CASE_MC_143,
     _CASE_MC_144,
-    _CASE_MC_145,
+    _CASE_MC_147,
 )

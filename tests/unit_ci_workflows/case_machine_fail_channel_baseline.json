@@ -1285,7 +1285,7 @@
       "date": "2026-11-03",
       "no_channel_total": 0,
       "backend_contract_scoring_zero": 289,
-      "note": "issue #6953（状态列写面族级元守卫 SW-100）新增 1 条 `[backend-contract]` 用例 **MC-145**（取号两次让号：143 → 144 → 145，分别撞 main 的 #8535 / #8537）—— 按设计**不进 agent-eval**（`expectations: []` ⇒ `scoring_assertion_count == 0`；判据是零 LLM 的确定性读数：词法扫 admin-api Java 源码 + `_sql_schema` 解析建库脚本/@TableName + 台账双向对账 + 合成语料判别力自证），机器判红通道 = `traces.tests` 的 `tests/unit_ci_workflows/test_state_write_face_metaguard.py`（8 条，真实存在且本机 `8 passed`）⇒ 读数 288（main 上 #8537 的 MC-144）→ 289 是**合法新增**（#5079 已裁定：`[backend-contract]` 用例本就不进 agent-eval），真债务 `no_channel_total` 仍为 **0**。按本文件 `_how_to_regen` 在同一 PR 内实测重锚（本机实跑：`{'no_channel_total': 0, 'backend_contract_scoring_zero': 289}`）。"
+      "note": "issue #6953（状态列写面族级元守卫 SW-100）新增 1 条 `[backend-contract]` 用例 **MC-147**（取号三次让号：143 → 144 → 145 → 147；143/144 撞 main 的 #8535 / #8537，145 与在飞 PR #8538 撞号——issue #6245 的判据抓到）—— 按设计**不进 agent-eval**（`expectations: []` ⇒ `scoring_assertion_count == 0`；判据是零 LLM 的确定性读数：词法扫 admin-api Java 源码 + `_sql_schema` 解析建库脚本/@TableName + 台账双向对账 + 合成语料判别力自证），机器判红通道 = `traces.tests` 的 `tests/unit_ci_workflows/test_state_write_face_metaguard.py`（8 条，真实存在且本机 `8 passed`）⇒ 读数 288（main 上 #8537 的 MC-144）→ 289 是**合法新增**（#5079 已裁定：`[backend-contract]` 用例本就不进 agent-eval），真债务 `no_channel_total` 仍为 **0**。按本文件 `_how_to_regen` 在同一 PR 内实测重锚（本机实跑：`{'no_channel_total': 0, 'backend_contract_scoring_zero': 289}`）。"
     }
   ]
 }

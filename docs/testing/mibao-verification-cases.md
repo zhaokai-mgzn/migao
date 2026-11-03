@@ -7098,7 +7098,7 @@
 ```
 溯源: 2026-11-03 新增（issue #7034，假绿：`deploy-reconcile` 的「无代码漂移 ⇒ 已上线」判据看不见构建输入）。取号 MC-144（`python3 scripts/next_case_id.py MC` 现取；按「MC-099 刻意空档不回填」与 139~143 的在飞/已合占用避开，改取现取最大号之后的 144）。落码 = ① `.github/scripts/reconcile_build_inputs.py`（构建输入面的**唯一**取值源：登记册逐条带理由 + 纯函数 `pathspec()` + 三态 CLI）② `.github/workflows/deploy-reconcile.yml` 的 `reconcile_one` 追加构建输入（正文顶到 13.25K 硬限 ⇒ 同批压缩历史注释，实测 12,919 → 11,873 字符）③ 判据 tests/unit_ci_workflows/test_reconcile_build_inputs.py（逐条执行式 + 三条负控 + 注入式红证 + 类级元守卫 + 豁免不陈旧 + 登记册不腐烂）④ `test_config_change_triggers_deploy.py` 的判定面改为「调用行 + 构建输入」，stray 只豁免已登记项 ⑤ 台账 frozen_max 13 → 4。 ｜ tags: ci, deploy, reconcile, false-green
 
-### MC-145. **状态列写面全族统一元守卫 SW-100**：53 张有 `status` 列的表 × 134 个写入口逐条登记（未登记即红 / 台账陈旧即红 / 裸字符串写状态列即红 / 每张状态表的合法集合必须有来源） 🔵
+### MC-147. **状态列写面全族统一元守卫 SW-100**：53 张有 `status` 列的表 × 134 个写入口逐条登记（未登记即红 / 台账陈旧即红 / 裸字符串写状态列即红 / 每张状态表的合法集合必须有来源） 🔵
 ```
 你: 入库单与工序那两处状态写缺陷各建了一颗单表守卫 —— 下一个人在**别的表**上、或用**那两颗看不见的写法**再加一条状态写面，凭什么会有东西红？
 数据: 🔴 **判据 1·未登记即红（具名）**：现取「写 `status` 列」的 Java 写点（`setStatus` / `wrapper.set(Entity::getStatus, …)` / `set("status", …)` / `setSql` / `Entity.builder()…status(…)`）+ mapper `@Update` 的 **SET 侧**写 `status`，逐个与台账 `state_write_face_ledger.json` 的 `write_points` 对账；缺一条 ⇒ 判红并报出 `表 / 写点 / 文件:行`。执行点 = tests/unit_ci_workflows/test_state_write_face_metaguard.py::test_every_status_write_is_registered
@@ -7112,7 +7112,7 @@
 数据: **边界（照实登记，§19.1）**：① 形态判据不做 AST（词法走查 + 签名切块），反射 / 动态 SQL / XML mapper / 变量拼接的 wrapper 不在射程（假绿方向，不误伤）；② 匿名类 / lambda 里的写点归到其外层成员（保守）；③ `deleted`（`@TableLogic` 逻辑删除族）**有意不入本表**（PG-075 / T3 / #6953 的 P6 承接）；④ **判不了并发语义**（登记 ≠ 有 CAS / 有 tenant 谓词 / 判了影响行数），也判不了 T2b「`updateById` 把内存里的旧 status 一起写回」；⑤ 4 张表（`production_route_signals` / `production_routings` / `sessions` / `tenant_apps`）现取 0 写点，只说明**本仓 Java 写面**没有显式赋值，不等于「不会被写」。
 跳过: [backend-contract] 零 LLM 的确定性读数（词法扫 admin-api Java 源码 + `_sql_schema` 解析建库脚本/@TableName + 台账双向对账 + 合成语料判别力自证），零网络、零 DB、不进 agent-eval 冒烟
 ```
-溯源: 2026-11-03 新增（issue #6953 的族级元守卫 SW-100；与 MC-100 / MC-104 / PG-075 等单表守卫**有意不重叠** —— 它们裁谓词完整性，本表裁「写面有没有人认领 / 状态值是不是单一口径」）。取号（**两次让号，记实**）= `python3 scripts/next_case_id.py MC` 首取 **MC-143**；merge `origin/main` 时与 main 新增的 **MC-143**（issue #6997 / PR #8535）撞号 ⇒ 按「后合入者让号」顺延 **MC-144**；再次 merge 又与 main 新增的 **MC-144**（issue #7034 / PR #8537）撞号 ⇒ 顺延 **MC-145**（工具每次都返回历史空档 MC-099 —— 按裁定**刻意空档不回填**）。**现取读数**：53 张有 `status` 列的表（`_sql_schema` 唯一解析点）、134 条写点（Java 108 / SQL 26）、覆盖 49 张表；合法集合权威：实体常量 10 / schema CHECK 14 / **无机器口径 36（冻结上限）**；裸字符串存量 56（冻结上限）。**红证（注入式，实跑）**：① 往真实 Service 里加一条未登记写面 ⇒ 判据 1 判红并具名；② 把常量改成裸字符串 ⇒ 判据 3 判红并具名；③ 把台账条目删掉 ⇒ 判据 2 判红（写点无主）；④ 把 `unregistered()` 的登记对账摘掉 / 把 `bare_literal_sites()` 摘掉 ⇒ 判据 1 / 判据 3 必红（判据 7 内建这两条内存变异体作常驻证）。**如实登记的既有缺陷（本包不修，不扩射程）**：`ProductionOperationCommandService#update` 的无条件状态写（见判据 8 的盲洞 ②）、`InboundOrderService` 的 builder 写形（盲洞 ①）、36 张表没有机器可读的合法状态集合、56 处裸字面量 —— 均为存量债，压测口径 = 台账基线**只许缩短**。 ｜ tags: state-transition, meta-guard, ledger, single-source, red-proof
+溯源: 2026-11-03 新增（issue #6953 的族级元守卫 SW-100；与 MC-100 / MC-104 / PG-075 等单表守卫**有意不重叠** —— 它们裁谓词完整性，本表裁「写面有没有人认领 / 状态值是不是单一口径」）。取号（**两次让号，记实**）= `python3 scripts/next_case_id.py MC` 首取 **MC-143**；merge `origin/main` 时与 main 新增的 **MC-143**（issue #6997 / PR #8535）撞号 ⇒ 按「后合入者让号」顺延 **MC-144**；再次 merge 又与 main 新增的 **MC-144**（issue #7034 / PR #8537）撞号 ⇒ 顺延 **MC-145**；随后 CI 的取号判据（issue #6245）抓到 **MC-145 与在飞 PR #8538 同时占着** ⇒ 再按「后合入者让号」顺延终态 **MC-147**（工具每次都返回历史空档 MC-099 —— 按裁定**刻意空档不回填**）。**现取读数**：53 张有 `status` 列的表（`_sql_schema` 唯一解析点）、134 条写点（Java 108 / SQL 26）、覆盖 49 张表；合法集合权威：实体常量 10 / schema CHECK 14 / **无机器口径 36（冻结上限）**；裸字符串存量 56（冻结上限）。**红证（注入式，实跑）**：① 往真实 Service 里加一条未登记写面 ⇒ 判据 1 判红并具名；② 把常量改成裸字符串 ⇒ 判据 3 判红并具名；③ 把台账条目删掉 ⇒ 判据 2 判红（写点无主）；④ 把 `unregistered()` 的登记对账摘掉 / 把 `bare_literal_sites()` 摘掉 ⇒ 判据 1 / 判据 3 必红（判据 7 内建这两条内存变异体作常驻证）。**如实登记的既有缺陷（本包不修，不扩射程）**：`ProductionOperationCommandService#update` 的无条件状态写（见判据 8 的盲洞 ②）、`InboundOrderService` 的 builder 写形（盲洞 ①）、36 张表没有机器可读的合法状态集合、56 处裸字面量 —— 均为存量债，压测口径 = 台账基线**只许缩短**。 ｜ tags: state-transition, meta-guard, ledger, single-source, red-proof
 
 ## 商家入驻域（7 case）
 
@@ -14895,7 +14895,7 @@
 - MC-139: 商家看到的失败编号 = 服务端日志里那条记录：requestId 唯一来源 + 前端可复制上屏（issue #6957）
 - MC-143: 悬空 PR 扫描器把「未解决评审线程」计入**需要处置**（issue #6997）：`isResolved=false ∧ isOutdated=false` ⇒ 判红并报出 `path` + 首行摘要；`isOutdated=true` 单独一类**不算阻塞**；读不到 ⇒ 退 `3`（不得当 0）
 - MC-144: deploy-reconcile 的漂移判据必须覆盖**构建输入面**（部署腿 workflow / 构建配方 / 线上自证脚本）：只改 CI 或部署脚本的修复合入后不得判「已上线」，更不得自动关值守单（issue #7034）
-- MC-145: **状态列写面全族统一元守卫 SW-100**：53 张有 `status` 列的表 × 134 个写入口逐条登记（未登记即红 / 台账陈旧即红 / 裸字符串写状态列即红 / 每张状态表的合法集合必须有来源）
+- MC-147: **状态列写面全族统一元守卫 SW-100**：53 张有 `status` 列的表 × 134 个写入口逐条登记（未登记即红 / 台账陈旧即红 / 裸字符串写状态列即红 / 每张状态表的合法集合必须有来源）
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）
