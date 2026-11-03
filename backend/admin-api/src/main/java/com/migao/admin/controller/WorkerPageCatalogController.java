@@ -37,7 +37,7 @@ import java.util.Map;
 @RequirePermission("production:view")
 public class WorkerPageCatalogController {
 
-    /** 全部工人端页面键 + 商家面人话名（{@code data = {pages, labels}}）。 */
+    /** 全部工人端页面键 + 商家面人话名 + 岗位默认菜单（{@code data = {pages, labels, positions…}}）。 */
     @GetMapping
     public ApiResponse<Map<String, Object>> catalog() {
         Map<String, Object> data = new LinkedHashMap<>();
@@ -47,6 +47,11 @@ public class WorkerPageCatalogController {
         // 非默认、逐人开放的能力页（issue #7162：inspect 同时是服务端写准入）
         data.put("optional_pages", WorkerPages.optionalPages());
         data.put("labels", WorkerPages.labels());
+        // 岗位 → 默认菜单（issue #8337）：配置面「岗位」下拉的唯一来源（前端不另抄一份映射）
+        data.put("positions", WorkerPages.positions());
+        data.put("position_labels", WorkerPages.positionLabels());
+        data.put("position_defaults", WorkerPages.positionDefaults());
+        data.put("max_pages_per_worker", WorkerPages.MAX_PAGES_PER_WORKER);
         return ApiResponse.success(data);
     }
 }

@@ -4186,7 +4186,7 @@
 ```
 溯源: 2026-10-31 新增（issue #8295）：两步确认，避免误写 ｜ tags: ui, preview
 
-## 杂项域（200 case）
+## 杂项域（201 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -7240,6 +7240,21 @@
 跳过: [backend-contract] 工人端 H5 的纯前端判据（`node --test` + 手写假 doc / 假 fetch，零 DOM 库、零网络、零 LLM）由 frontend/worker-h5/tests/worker-h5-machine-rework.test.mjs 验证，不进入 agent-eval 冒烟
 ```
 溯源: 2026-11-03 新增（issue #7992；壁达现场屏「工序返修」的对位功能，用户逐字「工序返修需要，等同于我们的报返工的功能」）。取号（**两次让号，记实**）：`python3 scripts/next_case_id.py MC` 现取返回历史空档 **MC-099** —— 按裁定**刻意空档不回填**；MC-139~MC-153 在飞/已合占用密集 ⇒ 按派单口径避开，先取 **MC-154**；merge `origin/main` 时与 main 新增的 **MC-154**（#8559 / issue #8310，且同号还被在飞 PR #8561 的 claim `8561-MC-154.json` 占着）撞号 ⇒ 按「**后合入者让号**」顺延终态 **MC-155**。落码 = ① `frontend/worker-h5/src/machine.mjs`：`MACHINE_REWORK_REASONS`（原因短语，与报工页表单 placeholder 同源）+ `reworkTargetLine()`（返工对象 = 加工单号 · 部位）+ `reworkBlock()`（收起态零 DOM / 展开 = 对象 + 原因按钮 + 取消）+ 状态机 `reworkOpen/Close/Start/Done/Failed`（换码清态）；② `frontend/worker-h5/src/machine-app.mjs`：`reportRework(reason)` 调**既有** `api.reportRework`；③ 判据 frontend/worker-h5/tests/worker-h5-machine-rework.test.mjs（10 条，含负控与红证）。形式选择 = 原因走**短语按钮**而不是文本框：机台页刻意零文本输入元素（`frontend/worker-h5/machine.html` 头注释 = IME 兜底那道保险，扫码枪是唯一输入面）。 ｜ tags: worker-h5, machine-screen, rework, entry-point, single-source, red-proof
+
+### MC-158. 工人端菜单以岗位为源：键集补 inbound/reprint（两张已有页面）+ 岗位→默认菜单映射 + 首屏最多 3 项的具名拒错（issue #8337） 🔵
+```
+你: 用户（2026-11-01 测试账号真机）：你这个测试账号的权限太大了，不符合实际使用？通常每个工序或者每个工人只能操作 1-3 个菜单，根据工人岗位来定菜单的
+数据: 🔴 **判据 ①·键集 ⇄ 工人端真实页面（双向）**：`inbound` / `reprint`（拍照入库 / 补打入库标签）在 bmini 上**早已有页面**（frontend/bmini-app/src/pages/worker/inbound|reprint/index.tsx）却**没有页面键、恒显示** ⇒ 现纳入闭词表 + 默认集合；每个键都有人话名、写侧认得它们。执行点 = WorkerPagesTest::inboundAndReprintPagesAreKeyedNow / everyPageKeyHasAHumanLabel
+数据: 🔴 **判据 ②·每个岗位都有默认菜单且默认键全在键集内**：裁剪/车位 = 报工+计件；仓管 = 入库+补打+库存修正；发货 = 发货+待发货单；每组非空 ⊆ `WorkerPages.ALL`、项数 ≤ 3、且能通过写侧校验（默认值 = 合法值）。执行点 = WorkerPagesTest::everyPositionHasDefaultsInsideTheVocabulary / positionDefaultsMatchTheIssueCriteria
+数据: 🔴 **判据 ③·显式菜单优先于岗位默认（负控）**：建号时同时给岗位与 `workerPages` ⇒ 落库的是**显式集合**（岗位默认被覆盖），且覆盖仍受 3 项上限约束。执行点 = WorkerAdminServiceTest::explicitPagesWinOverThePositionDefaults / perWorkerOverrideStillWinsButIsCapped
+数据: 🔴 **判据 ④·首屏上限 3 项，边界两侧都钉**：正好 3 项 ⇒ 通过；第 4 项 ⇒ 422 具名拒错（说清「最多 3 项」+「你填了 4 项」+ 列出这 4 项）且**零写入**。执行点 = WorkerPagesTest::pageCapIsThreeAndTheFourthIsRejectedByName / WorkerAdminServiceTest::moreThanThePageCapIsRejectedByName
+数据: 🔴 **判据 ⑤·改岗位 ⇒ 菜单按新岗位重新带出**（岗位是源；`PUT /api/admin/workers/{id}/position` 两列一起显式 set）：仓管 ⇒ 入库+补打+库存修正；清岗位 ⇒ 回到未收窄（全部页面）。执行点 = WorkerAdminServiceTest::updateWorkerPositionReDerivesTheMenu / clearingThePositionReturnsToAllPages / AdminWorkerControllerTest::updateWorkerPositionReturnsTheDerivedMenu
+数据: 🔴 **判据 ⑥·存量数据不回退**：旧键集（无 `inbound`/`reprint`）读面原样下发、**不**被默认集合反向放宽（不做隐式补齐）、未知/已撤键照旧裁掉且不抛异常；车位工（收窄到报工+计件）在工人工作台上**取不到**「拍照入库 / 补打入库标签」两个入口。执行点 = WorkerPagesTest::legacyStoredSetsKeepWorkingAndAreNotWidened / frontend/bmini-app/tests/worker-home-page.test.tsx::「车位工看不见」
+数据: 🔴 **红证（注入式，实跑）**：① 把 `仓管` 从 `positionDefaults()` 删掉 ⇒ 判据 ② 红（`containsExactlyInAnyOrderElementsOf(positions())` 具名报缺）；② 把 `validateRestriction` 末尾的 `MAX_PAGES_PER_WORKER` 检查摘掉 ⇒ 判据 ④ 红（第 4 项静默通过）。两次注入各自单变量、恢复即绿。
+数据: **边界（照实登记，§19.1）**：① `order`（我的活）**仍是「键已登记、面待建」**（issue #6764 §6.2 待裁定）—— 判据 ① 的「双向」对本键是**具名白名单**，不是「每键都有面」；② 存量工人**不重置** `worker_pages`（and 不做迁移回填）：没有岗位的存量档案行为与今天一字不差；③ 岗位不是权限（不写 `users.permissions`、不进 `user_roles`，授权判据仍是 `/api/worker/**` 403）；④ 本批**未**改商家后台配置面板（岗位下拉的读面 = `GET /api/admin/worker-pages` 的 `positions` / `position_defaults`，面板改造另单）。
+跳过: [backend-contract] 闭词表 / 岗位映射 / 写侧上限是**确定性判据**（Java 单测 + 端侧渲染），由 backend/admin-api/src/test 的 WorkerPagesTest / WorkerAdminServiceTest / AdminWorkerControllerTest 与 frontend/bmini-app/tests/worker-home-page.test.tsx 验证，非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-11-03 新增（issue #8337；用户 2026-11-01 逐字「通常每个工序或者每个工人只能操作 1-3 个菜单，根据工人岗位来定菜单的」）。病 = ① 工人档案菜单逐人自由勾选、与企业里岗位无关；② 拍照入库 / 补打入库标签**无页面键、恒显示**（任何岗位都看得见）；③ 默认 = 全开（8 项）。修 = ① `WorkerPages` 新增 `INBOUND` / `REPRINT` 键（进 ALL + 默认集合，存量「未收窄」工人零变化）；② 新增岗位闭词表（裁剪/车位/仓管/发货）+ `positionDefaults()` 映射 + `defaultPagesFor()`（未设/未知岗位 ⇒ 回落全部默认页，fail-open）；③ `MAX_PAGES_PER_WORKER = 3` 落在写侧 `validateRestriction`（超出 ⇒ 具名 422：上限 / 你填了几项 / 这四项）；④ `WorkerAdminService.createWorker(…, workerPosition)` 建号按岗位带出默认菜单（显式 `workerPages` 优先）+ `updateWorkerPosition`（改岗位重带菜单、清岗位回到未收窄）；岗位落 `users.position`（纯展示字段，**零迁移**）；⑤ 闭词表/岗位/上限经 `GET /api/admin/worker-pages` 下发（配置面唯一来源）；⑥ bmini 工人工作台按 `inbound` / `reprint` 门控两个入口（此前 `ALWAYS_VISIBLE`），`/w/` 侧只镜像闭词表。取号 **MC-158**：现取 `origin/main` 的 `.github/cases/claims/` 最大 = MC-156、两个 open PR（#8561 / #8563）逐个核其 heads 的 claim（MC-155 / MC-156）⇒ MC-157 起安全，按派单口径自 MC-158 起取，并同 PR 加 claim `.github/cases/claims/8568-MC-158.json`。 ｜ tags: backend-contract, worker, page-keys, position, single-source, fail-open, red-proof
 
 ## 商家入驻域（7 case）
 
@@ -14748,8 +14763,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：998（活跃 153，跳过 845）
-- tier 分布：smoke 15 / normal 921 / adversarial 33
+- 用例总数：999（活跃 153，跳过 846）
+- tier 分布：smoke 15 / normal 922 / adversarial 33
 - 售后域：16
 - Agent 核心域：13
 - API 层域：21
@@ -14765,7 +14780,7 @@
 - 人事域：13
 - 知识问答域：9
 - 客户主数据迁移域：10
-- 杂项域：200
+- 杂项域：201
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：76
@@ -15032,6 +15047,7 @@
 - MC-147: **状态列写面全族统一元守卫 SW-100**：53 张有 `status` 列的表 × 134 个写入口逐条登记（未登记即红 / 台账陈旧即红 / 裸字符串写状态列即红 / 每张状态表的合法集合必须有来源）
 - MC-155: 终端壳打印能力三态（issue #8310）：桥在 ≠ 打印机在 —— printerMode 负向 / 读不到都不许说「由本机打印机直接出纸」，且「判不了」与「确知没有」分开说
 - MC-156: 机台页详情屏补「报返工」入口（复用既有 reportRework / 不新建第二套返工实现 / 次要动作不抢主位）
+- MC-158: 工人端菜单以岗位为源：键集补 inbound/reprint（两张已有页面）+ 岗位→默认菜单映射 + 首屏最多 3 项的具名拒错（issue #8337）
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）

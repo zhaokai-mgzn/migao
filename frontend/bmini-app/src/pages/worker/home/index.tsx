@@ -62,6 +62,8 @@ import { listReadyShipmentOrders } from '../../../services/workerShipmentOrdersS
 import { listWorkerReworkOrders } from '../../../services/workerReworkService'
 import {
   WORKER_MENU_KEYS,
+  INBOUND_PAGE_KEY,
+  REPRINT_PAGE_KEY,
   menuVisible,
   REWORK_PAGE_KEY,
   STOCK_PAGE_KEY,
@@ -122,6 +124,10 @@ export default function WorkerHomePage() {
   const showRework = menuVisible(pages, pagesUnread, REWORK_PAGE_KEY)
   // 库存修正（issue #8104）：物料组的一张行卡 —— 这一批实际还剩多少，工人当场改。
   const showStock = menuVisible(pages, pagesUnread, STOCK_PAGE_KEY)
+  // 拍照入库 / 补打入库标签（issue #8337）：此前**无页面键、恒显示**（任何岗位都看得见，
+  // 把「每岗位 1~3 个菜单」破功）⇒ 现在由工人档案的 `inbound` / `reprint` 门控。
+  const showInbound = menuVisible(pages, pagesUnread, INBOUND_PAGE_KEY)
+  const showReprint = menuVisible(pages, pagesUnread, REPRINT_PAGE_KEY)
   // 我的计件（issue #7934）：显隐键 = 工人档案的 `piecework`（后端 `WorkerPages` 闭词表里**本来就有**
   // 这个键 —— 此前只有 H5 `/w/piecework.html` 消费它）。本卡把它归位到工人菜单页。
   const showPiecework = menuVisible(pages, pagesUnread, WORKER_MENU_KEYS.piecework)
@@ -227,7 +233,9 @@ export default function WorkerHomePage() {
               ⇒ 服务端 302 到 `/b/?t=<token>` ⇒ 启动器 redirectTo 报工页。这里再放一个入口，
               只会把工人带进一个「没有码可解」的页面（此前落地只剩手输框，正是本单的现场）。 */}
 
-          {/* 拍照入库 / 补打入库标签 = 工人面**固有**能力（后端没有页面键）⇒ 恒显示 */}
+          {/* 拍照入库 / 补打入库标签（issue #8337）：由 `inbound` / `reprint` 页面键门控 ——
+              仓管之外的人看不见（用户 2026-11-01「根据工人岗位来定菜单的」）。 */}
+          {showInbound ? (
           <View
             className='worker-home__entry'
             onClick={() => Taro.navigateTo({ url: INBOUND_PAGE_ROUTE })}
@@ -239,7 +247,9 @@ export default function WorkerHomePage() {
             </View>
             <Text className='worker-home__entry-go'>›</Text>
           </View>
+          ) : null}
 
+          {showReprint ? (
           <View
             className='worker-home__entry'
             onClick={() => Taro.navigateTo({ url: REPRINT_PAGE_ROUTE })}
@@ -251,6 +261,7 @@ export default function WorkerHomePage() {
             </View>
             <Text className='worker-home__entry-go'>›</Text>
           </View>
+          ) : null}
 
           {/* 库存修正（issue #8104；用户 2026-10-29：「手机端还要增加一个库存修正的功能……
               允许工人对某个批次的布匹进行修正」）。显隐键 = 工人档案的 `stock`（默认开、可逐人关）。
