@@ -25,10 +25,15 @@ const mockCreate = vi.fn()
 const mockReasons = vi.fn()
 
 vi.mock('@/lib/api', () => ({
+  default: {},
   qualityInspectionApi: {
     create: (...args: unknown[]) => mockCreate(...args),
-    reasons: (...args: unknown[]) => mockReasons(...args),
   },
+}))
+
+// 原因字典的接口面在独立模块里（`src/lib/api.ts` 属 LOC 冻结面，新增接口面下沉）
+vi.mock('@/lib/api-quality-reasons', () => ({
+  qualityReasonApi: { list: (...args: unknown[]) => mockReasons(...args) },
 }))
 
 import QualityCheckForm from '@/components/production/QualityCheckForm'
@@ -43,7 +48,7 @@ const DICTIONARY = [
   { code: 'other', label: '其它' },
 ]
 
-/** 与 `qualityInspectionApi.reasons()` 的返回形状一致（axios 风格外壳 + ApiResponse）。 */
+/** 与 `qualityReasonApi.list()` 的返回形状一致（axios 风格外壳 + ApiResponse）。 */
 const reasonsOk = () => ({ data: { success: true, data: { items: DICTIONARY } } })
 
 describe('质检判定录入表单', () => {
