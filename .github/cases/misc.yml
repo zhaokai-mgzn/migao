@@ -6835,6 +6835,7 @@ cases:
       - misc
     tier: normal
     tags:
+      - backend-contract
       - smoke-data-quality
       - fixture-drift
       - ledger
@@ -6851,7 +6852,7 @@ cases:
       - '🔴 **判据 ④·红证（注入式）**：① 删掉 `docs/deployment/demo-seed.sql` 里一条已登记直写点、台账不动 ⇒ 判据 ② 红且归因 `DFW-DEMO-SEED-001`（实跑 4 failed / 4 passed，报「登记 14 条，现场 13 条」），恢复 ⇒ 绿；② 把 `stock: 120` 写回冒烟 spec 的 SKU payload ⇒ 判据 ① 红并具名 `scripts/ui-smoke-merchant/spec.mjs`（实跑 5 failed / 3 passed）。'
       - '🔴 **判据 ⑤·A 类不许退回 B 类**：`createProductFixture` 的 SKU payload 不带 `stock`、必须调 `seedSkuStockViaInbound`（`POST /api/admin/inbound-orders`，建单即过账 = `posted`），建品旅程断言「建完库存全 0 → 过账后全 120」。执行点 = 同文件 `::test_smoke_fixture_stock_comes_from_the_inbound_api` / `::test_smoke_spec_judge_has_discriminating_power`'
       - '**边界（照实登记，§19.1）**：① `docs/deployment/demo-seed.sql` 与两处评测种子是 **B 类**（psql 夹具无 HTTP 写面）⇒ 只登记 + 标注重启条件，**演示环境的批次对账 `diff == 0` 仍未达成**（本包不在 demo 库重放）；② 判据是**静态文本**判据，判不了「冒烟那次真跑有没有写进生产库」—— 真的链路验证靠冒烟自身在测试池跑（本包按约束**未**对生产/演示环境跑冒烟）；③ 扫描面按台账声明，住在别的目录的夹具不会被扫（射程外）。'
-    skip_reason: "[smoke-data-quality] 纯静态判据（零网络 / 零 DB / 零时钟，只读仓内 spec 与 seed 文本）+ 注入式红证，非 LLM 行为，不进入 agent-eval 冒烟"
+    skip_reason: "[backend-contract] 纯静态契约判据（零网络 / 零 DB / 零时钟，只读仓内 spec 与 seed 文本）+ 注入式红证，计分通道 = traces.tests（test_smoke_fixture_stock_chain.py），非 LLM 行为，不进入 agent-eval 冒烟"
     merge_log: "2026-11-03 新增（issue #7600，承接 #7597 / PR #7599：建品接口不再受理库存）。**取号 MC-143**：`python3 scripts/next_case_id.py MC` 现取（候选 = main 986 号 ∪ open PR #8535 的分支 ∪ 本工作区；main 现取最大 MC-142）；工具给出历史空档 **MC-099**（按裁定刻意空档不回填，跳过）⇒ 取 **MC-143**，同 PR 带 claim 文件 `.github/cases/claims/<PR号>-MC-143.json`。病（SDQS §33「绿证明的是页面，不是数据」）：冒烟夹具 `createProductFixture` 在 SKU payload 里写 `stock: 120`、演示种子 `docs/deployment/demo-seed.sql` 直写 `INSERT INTO product_skus (…, stock, …)` ⇒ #7597 之后建品接口**忽略**该字段，于是「夹具以为有 120、库里是 0」，而旅程判据只看列表有行 ⇒ 页面绿、数据空、扣减链路一次都没走过。分档处置（逐条）：**A 类**（能走公开 API）= 冒烟夹具 ⇒ 改走 `POST /api/admin/inbound-orders`（`InboundOrderService.createAndPost`：建单即过账 → 加 SKU 库存 + 生成 `stock_batches` 批次行），建品旅程另加「建完全 0 → 过账后全 120」判据，链路真走通；**B 类**（psql 部署 / 评测种子无 HTTP 写面）= `docs/deployment/demo-seed.sql`（14 处）+ `tests/agent_eval/fixtures/xiaobu_eval_seed.sql`（2 处）+ `mibao_eval_seed.sql`（1 处）⇒ 显式标注（`SDQS-WAIVER:` 标记 + 后果 + 重启条件）并登记台账；**C 类**（产品代码 `product_skus`）= 不动，判据 ③ 负控证明射程。读数：8 passed；红证 = 删一条已登记直写点 ⇒ 4 failed / 4 passed（报「登记 14 条，现场 13 条」，归因 DFW-DEMO-SEED-001）；写回 `stock: 120` ⇒ 5 failed / 3 passed（具名 `scripts/ui-smoke-merchant/spec.mjs` 第 494 行）；两次注入均逐字节恢复。"
     traces:
       tests:
