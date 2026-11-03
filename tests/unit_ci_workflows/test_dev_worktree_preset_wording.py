@@ -64,7 +64,7 @@ def preset_guard_block(src: str) -> str:
 
 
 def code_lines(src: str) -> str:
-    """剥掉**整行注释**后剩下的代码（判据 1 只看代码）。
+    r"""剥掉**整行注释**后剩下的代码（判据 1 只看代码）。
 
     为什么剥离：脚本头部的「S4 删掉了 `refresh_presets()` / `discard_preset_snapshot()`」这类
     **沿革说明**必须能写（否则等于把「删了什么、为什么删」从脚本里抹掉）；而旧的**动作**

@@ -1160,7 +1160,7 @@ _FACE_CASE_RE = re.compile(r'case\s+"\$(?:f|rest|head|file|rest_gh|rest_fe)"\s+i
 
 
 def _face_prefixes(script: str) -> set[str]:
-    """把一份面判定归一到**路径面集合**（两种等价书写形态 + 登记册 predicate 都认）。
+    r"""把一份面判定归一到**路径面集合**（两种等价书写形态 + 登记册 predicate 都认）。
 
     `^(a/x/|b/|\.github/)` → {"a/x","b",".github"}；`case "$f" in a)` / `case "$rest_fe" in a/x/*)`
     → "a" / "a/x"。取不到 ⇒ **空集**（调用点据此 fail-closed 判红）。

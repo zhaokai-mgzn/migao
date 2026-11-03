@@ -269,7 +269,7 @@ def _entry_branches(src: str) -> dict:
 
 
 def _inject_secret_ref(workflow: str) -> str:
-    """在部署调用行**之后**追加一行未登记的 `secrets.<公开地址>` 引用，并**断言变异真生效**。
+    r"""在部署调用行**之后**追加一行未登记的 `secrets.<公开地址>` 引用，并**断言变异真生效**。
 
     🔴 为什么不再用「逐字替换 `            admin-web\n`」那种锚（issue #6611 实测踩到）：
     该锚**只在服务键独占一行**时命中；`deploy-frontend.yml` 的调用改成

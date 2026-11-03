@@ -1,5 +1,5 @@
 # case_ids: MC-012
-"""全仓受控 `*.sh` 里 `$VAR` 紧跟非 ASCII 字符必须写成 `${VAR}`（issue #5260 → **#5284**；承 #5241 的类级锁）。
+r"""全仓受控 `*.sh` 里 `$VAR` 紧跟非 ASCII 字符必须写成 `${VAR}`（issue #5260 → **#5284**；承 #5241 的类级锁）。
 
 ## 病灶（本机 macOS bash 3.2.57 实测原文，可复算）
 
@@ -201,7 +201,7 @@ def _without_heredoc_bodies(src: str) -> str:
 
 
 def find_bare_backtick_inside_double_quotes(src: str) -> list[str]:
-    """→ `["第 N 行 …", …]`：**双引号串内**的裸反引号（bash 会把它当**命令替换**执行）。
+    r"""→ `["第 N 行 …", …]`：**双引号串内**的裸反引号（bash 会把它当**命令替换**执行）。
 
     病灶（本包实测，issue #6095 第四层同批扫出）：报错文案里想打**行内代码**标记，写成
     `die "…（`refs/heads/*`、`main`）…"` ⇒ bash 去执行 `refs/heads/*` / `main` ⇒ 真正走到那个

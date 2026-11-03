@@ -100,7 +100,7 @@ def _all_tool_constants() -> set:
 
 
 def _asserted_tools(case: dict) -> set:
-    """用例断言到的工具名（expectations / must_succeed / order_before）。
+    r"""用例断言到的工具名（expectations / must_succeed / order_before）。
 
     **按已知工具全集做词匹配**，而不是解析 YAML 结构 —— 首版用
     `re.match(r"\s*([a-z_]+)", entry)` 取首词，结果 `yaml_light` 把 `expectations`

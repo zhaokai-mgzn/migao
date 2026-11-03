@@ -330,7 +330,7 @@ def problems_abort_marker(text: str) -> list:
 
 
 def problems_abort_does_not_touch_env(text: str) -> list:
-    """判据 6：闸门中止**不许动环境**（不 build / 不 pull / 不 up / 不删镜像）。
+    r"""判据 6：闸门中止**不许动环境**（不 build / 不 pull / 不 up / 不删镜像）。
 
     🔴 只认**行首就是命令**的形态（`^\s*(timeout N )?docker …`）：出口说明里**故意**逐字写了
     `docker builder prune …`（教人怎么回收）⇒ 用 `docker\s+build` 这种松形态会把**说明文字**判红。

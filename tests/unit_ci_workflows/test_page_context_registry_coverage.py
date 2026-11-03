@@ -304,7 +304,7 @@ def menu_item_names() -> List[str]:
 
 
 def _ts_array_labels(source: str, declaration: str) -> List[str]:
-    """`export const <declaration> … = [ … ]` 里**每个对象**的 `label` 值（现取用）。
+    r"""`export const <declaration> … = [ … ]` 里**每个对象**的 `label` 值（现取用）。
 
     切块口径与 `parse_menu_ts_nodes` 切 `menu.ts` **同式**（按 `{ key: '` 起头切；
     `\s*` 同时覆盖**单行**（`CONFIG_ZONES` 写成 `{ key: 'quote', label: … }`）与
@@ -1019,7 +1019,7 @@ def test_red_proof_empty_on_screen_corpus_goes_red() -> None:
 
 
 def test_domain_labels_ignore_commented_out_entries() -> None:
-    """🔴 真值源读法自证：**注释掉的** `label:` / `name:` **不得**进「现存名」集合。
+    r"""🔴 真值源读法自证：**注释掉的** `label:` / `name:` **不得**进「现存名」集合。
 
     为什么单列一条：真值源读法**变宽 = 判据变松**（把已移除的页名当「现存名」⇒ 判据 10 反而**放行**旧名）。
     三个面各自自证：
