@@ -1,0 +1,7 @@
+{
+  "id": "MC-154",
+  "pr": 8561,
+  "title": "员工账号 create/update 接回 B 端（issue #7050）：action/schema 可见 + 参数完整 + 权限走既有声明（action 级复检）+ 确认走 base_skill._requires_confirmation（同一函数对象）+ 未确认不执行（负控）+ 端点逐字对齐 + 删除/停用/重置密码仍不接线",
+  "claimed_at": "2026-11-03",
+  "closes_issue": 7050
+}
