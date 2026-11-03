@@ -247,12 +247,23 @@ public final class SavingMetricViews {
         return COHORT_PURCHASE.equals(source) ? COHORT_PURCHASE : COHORT_UNKNOWN;
     }
 
-    /** 分组键 → 给人看的标签（页面上「存量单列」那张卡就靠它，不是前端各写一份文案）。 */
+    /**
+     * 分组键 → **商家看得懂的话**（会话卡 / 工具文本摘要 / 省料读面共用；内部口径词不上屏）。
+     *
+     * <p>🔴 文案与 `frontend/admin-web/src/lib/cohort-groups.ts`、`frontend/bmini-app/src/utils/cohort-groups.ts`
+     * **逐字相同**，判据 = `frontend/admin-web/tests/unit/lib/cohort-groups.test.ts` 判据 ②（**逐值**比对
+     * 三个 case 文案 + `default` 兜底）⇒ 任一侧改一个词就红。</p>
+     *
+     * <p>为什么由服务端给而不是各端各写一份：工具文本摘要（`batch_stock_query` 的 `message`）与卡片载荷
+     * 都直接吃这个字段 —— 只在服务端放一份，三条消费方（工具文本 / 桌面卡 / 手机卡）才不会分叉；
+     * 且工具摘要会**进模型上下文**，那是「内部口径词」最容易被复述给商家的一条通道（issue #6461 / #8547）。</p>
+     */
     public static String cohortLabel(String cohort) {
         return switch (cohort) {
-            case COHORT_PURCHASE -> "切换后（采购入库）";
-            case COHORT_OPENING -> "存量导入（切换前历史包袱）";
-            default -> "来源未知";
+            case COHORT_PURCHASE -> "采购入库的布";
+            case COHORT_OPENING -> "开业时导入的老库存";
+            case COHORT_UNKNOWN -> "还没记清来源的布";
+            default -> "其它来源的布";
         };
     }
 

@@ -6,7 +6,7 @@ import { toast } from 'sonner'
 import { workerApi, workerPageCatalogApi } from '@/lib/api'
 import { toastRequestError } from '@/lib/api-error'
 import ListLoadError from '@/components/common/ListLoadError'
-import { Button, Input, Select, Modal, Table, Badge, Pagination, RowActions } from '@/components/ui'
+import { Button, Input, Select, Modal, Table, Badge, Pagination, RowActions, RowActionLink } from '@/components/ui'
 import type { TableColumn, RowActionItem } from '@/components/ui'
 import type { EmployeeStatus, WorkerOperationOption, WorkerProfile } from '@/types'
 
@@ -74,14 +74,15 @@ function WorkerPagesPicker({
     <>
       <div className="flex items-center justify-between mb-1.5">
         <span className="text-sm font-medium text-neutral-700">工人端菜单</span>
-        <button
-          type="button"
+        {/* 行内文字动作 = 共享原语（issue #7082）：改前是手抄的一份 class 串（`text-xs` + 链接规格）。
+            外观不变：原语 token 串 + `size="xs"`（原 `text-xs`）。 */}
+        <RowActionLink
+          size="xs"
           data-testid="worker-pages-select-all"
           onClick={() => onChange({ ...value, pages: null })}
-          className="text-xs text-primary-600 hover:text-primary-700 hover:underline"
         >
           默认页面
-        </button>
+        </RowActionLink>
       </div>
       <div className="space-y-1">
         {menuPages.map((page) => (

@@ -107,22 +107,22 @@ BOARD = {
     "granularity": "month",
     "timezone": "Asia/Shanghai",
     "cohorts": [
-        {"cohort": "purchase", "cohortLabel": "切换后（采购入库）", "opening": False,
+        {"cohort": "purchase", "cohortLabel": "采购入库的布", "opening": False,
          "batchCount": 7, "le0_2Count": 3, "le0_2Share": 0.4286, "remainingMeters": 4.8,
          "savedMeters": 24.68, "savedAmount": 113.45, "lineCount": 2, "unknownCostLines": 0,
          "buckets": DISTRIBUTION["buckets"]},
-        {"cohort": "opening", "cohortLabel": "存量导入（切换前历史包袱）", "opening": True,
+        {"cohort": "opening", "cohortLabel": "开业时导入的老库存", "opening": True,
          "batchCount": 2, "le0_2Count": 0, "le0_2Share": None, "remainingMeters": None,
          "savedMeters": None, "savedAmount": None, "lineCount": 0, "unknownCostLines": 0,
          "buckets": []},
-        {"cohort": "unknown", "cohortLabel": "来源未知", "opening": False,
+        {"cohort": "unknown", "cohortLabel": "还没记清来源的布", "opening": False,
          "batchCount": 0, "le0_2Count": 0, "le0_2Share": None, "remainingMeters": None,
          "savedMeters": None, "savedAmount": None, "lineCount": 0, "unknownCostLines": 0,
          "buckets": []},
     ],
     "batchGroups": [],
     "savedGroups": [
-        {"period": "2026-09", "cohort": "purchase", "cohortLabel": "切换后（采购入库）",
+        {"period": "2026-09", "cohort": "purchase", "cohortLabel": "采购入库的布",
          "opening": False, "materialKey": "prod-1|C-01", "productId": "prod-1",
          "skuCode": "C-01", "formulaMeters": 40.00, "plannedMeters": 15.33,
          "savedMeters": 24.68, "savedAmount": 113.45, "lineCount": 2, "unknownCostLines": 0},
@@ -153,9 +153,9 @@ BOARD_EMPTY = {
         {"cohort": c, "cohortLabel": lbl, "opening": c == "opening", "batchCount": 0,
          "le0_2Count": 0, "le0_2Share": None, "remainingMeters": None, "savedMeters": None,
          "savedAmount": None, "lineCount": 0, "unknownCostLines": 0, "buckets": []}
-        for c, lbl in (("purchase", "切换后（采购入库）"),
-                       ("opening", "存量导入（切换前历史包袱）"),
-                       ("unknown", "来源未知"))
+        for c, lbl in (("purchase", "采购入库的布"),
+                       ("opening", "开业时导入的老库存"),
+                       ("unknown", "还没记清来源的布"))
     ],
     "batchGroups": [],
     "savedGroups": [],
@@ -353,8 +353,37 @@ class TestReadings:
             result = await tool.execute(context=seller_context, action="saving_board")
         assert result.data["cohorts"] == BOARD["cohorts"]
         assert result.data["total"] == BOARD["total"]
-        # 来源组标签取自服务端（存量单列）；合计逐值回述
-        assert "存量导入" in result.message and "24.68" in result.message
+        # 来源组标签取自服务端（**商家的话**，issue #6461）；合计逐值回述
+        assert "开业时导入的老库存" in result.message and "24.68" in result.message
+
+    # ── issue #6461 / #8547：工具**回给模型的字符串**里也不许出现内部口径词 ─────────
+    @staticmethod
+    def _tool_strings(result) -> str:
+        """工具对外暴露的全部字符串面：摘要 message + summary + 载荷 data（三者都会进模型上下文）。"""
+        return " ".join([
+            result.message or "",
+            getattr(result, "summary", "") or "",
+            json.dumps(result.data, ensure_ascii=False, default=str),
+        ])
+
+    async def test_saving_board_output_has_no_internal_cohort_words(self, tool, seller_context):
+        """判据：工具输出（摘要 + 载荷）里零出现内部口径词 —— 否则模型会拿它当信源复述给商家。"""
+        with _stub(json.loads(json.dumps(BOARD))):
+            result = await tool.execute(context=seller_context, action="saving_board")
+        text = self._tool_strings(result)
+        for word in ("切换后", "存量导入", "来源未知"):
+            assert word not in text, (
+                f"工具输出里仍出现内部口径词「{word}」（会进模型上下文）—— 服务端分组文案必须说商家的话")
+        # 不是「删掉标签」，而是「说商家的话」
+        assert "开业时导入的老库存" in text
+
+    async def test_internal_word_check_has_discriminating_power(self, tool, seller_context):
+        """判别力自证：服务端**回退**成内部标签时，同一个判定必须抓得住（否则上一条是空断言）。"""
+        poisoned = json.loads(json.dumps(BOARD))
+        poisoned["cohorts"][1]["cohortLabel"] = "存量导入（切换前历史包袱）"
+        with _stub(poisoned):
+            result = await tool.execute(context=seller_context, action="saving_board")
+        assert "存量导入" in self._tool_strings(result)
 
     async def test_saving_trend_verbatim(self, tool, seller_context):
         captured: list = []

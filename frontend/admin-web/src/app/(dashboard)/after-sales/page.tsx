@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { Plus, Search, FileText, ExternalLink } from 'lucide-react'
 import { toast } from 'sonner'
 import { afterSalesApi, orderApi } from '@/lib/api'
-import { Pagination, Modal, Button, Badge, StatusBadge, PageHeader, PageCard, SearchPanel, SELECT_CONTROL, TableSkeleton } from '@/components/ui'
+import { Pagination, Modal, Button, Badge, StatusBadge, PageHeader, PageCard, SearchPanel, SELECT_CONTROL, RowActionLink, TableSkeleton } from '@/components/ui'
 import type { SearchFieldSpec } from '@/components/ui'
 import type {
   AfterSalesTicket,
@@ -411,15 +411,16 @@ export default function AfterSalesPage() {
                       <DateTimeCell value={ticket.updatedAt} />
                     </td>
                     <td className="px-4 py-3 text-left">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          router.push(`/after-sales/${ticket.id}`)
-                        }}
-                        className="text-primary-600 hover:text-primary-700 hover:underline transition-colors text-sm"
+                      {/* 行内动作 = 共享原语（issue #7082）：本处改前是**手抄的一份 class 串**
+                          （`text-primary-600 … transition-colors text-sm`）⇒ 第二份会漂的口径。
+                          外观逐字不变：原语的 token 串 + `size="sm"`（= 原 `text-sm`）；
+                          `stopPropagation` 也由原语负责（行点击不误触）。 */}
+                      <RowActionLink
+                        size="sm"
+                        onClick={() => router.push(`/after-sales/${ticket.id}`)}
                       >
                         查看
-                      </button>
+                      </RowActionLink>
                     </td>
                   </tr>
                 ))
