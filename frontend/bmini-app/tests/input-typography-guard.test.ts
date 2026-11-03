@@ -1,4 +1,4 @@
-// case_ids: MC-159
+// case_ids: MC-160
 /**
  * 「H5 输入面字体族继承 + 占位符收口」的守卫（issue #6480；AGENTS.md 铁律 8 / `migao-dev-flow` §23）
  *

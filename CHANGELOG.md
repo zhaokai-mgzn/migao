@@ -19,7 +19,7 @@
   textarea 的字号 = 外层包裹元素原本就该作用到它的字号。
 - 为什么一处收口：逐页各写一份 = 下一个人漏一处，而**没有任何东西会红**；现在共享层是唯一落点，
   例外（登录页「登录诊断」面板的等宽 token 行）登记在台账，只许缩短。
-- 判据：`frontend/bmini-app/tests/input-typography-guard.test.ts`（MC-159：内层继承 / 裸
+- 判据：`frontend/bmini-app/tests/input-typography-guard.test.ts`（MC-160：内层继承 / 裸
   `font-family` 只许在字体定义处 / 占位符唯一来源 / 不许裸写原生 `<input>` 标签，含注入式红证）。
 
 ### 机台页详情屏补「报返工」入口：扫完唛就地报返工，不必退出机台页重扫（2026-11-03，issue #7992）

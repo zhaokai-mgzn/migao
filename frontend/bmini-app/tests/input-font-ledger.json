@@ -7,7 +7,7 @@
       "declaration": "font-family: Menlo, Consolas, monospace",
       "count": 1,
       "label": "登录页「登录诊断」面板的原始登录态行（token / 报文片段）：等宽字体是为了逐字符核对，属于**有意为之**（不是漏改的输入面），故保留并登记",
-      "case_ids": ["MC-159"]
+      "case_ids": ["MC-160"]
     }
   ]
 }
