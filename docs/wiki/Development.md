@@ -403,6 +403,61 @@ pytest -q --durations=20    # 单用例 >2s 即可疑
 `TestSuiteInternalEntries` 单独裁）+ `tests/unit_ci_workflows/test_suite_self_lock.py`
 （**直连整目录**自己拿锁：接线真跑 / 拦在收集之前 / 纯函数触发面与三类豁免 / fail-closed / 释放面）。
 
+## 批次合并（默认路径）：多 PR 一次进 main（2026-11-03 固化，issue #8321）
+
+**为什么**：分支保护 `strict=true` ⇒ 每个 PR **各跑一轮** 28 个 required job（`PR Check` 全量腿 +
+Case Trust / Growth / Coverage / Contract / UI 回归 / 三模块单测 …）。**5 个 PR 逐个合 = 5×28 job**，
+而**合成 1 个 PR = 1×28**。⇒ 多个互不依赖的 PR 同时就绪时，**批次合并是默认路径**，不是"省事的野路子"。
+今晚（2026-11-03）人工做过一次 = PR #8519，一次合入 5 支。
+
+**怎么做（一条命令）**：
+
+```bash
+./scripts/batch-merge.sh <PR号> [<PR号> ...] [--branch batch/<日期>] [--dry-run] [--no-push] [--force-branch]
+# 例：./scripts/batch-merge.sh 8506 8508 8509 --dry-run   # 先看计划（零落盘）
+#     ./scripts/batch-merge.sh 8506 8508 8509             # 真跑：开出 draft PR
+```
+
+它按**顺序即安全顺序**做六件事（顺序错一步就是今晚那四个坑）：
+
+1. **校验**：每个 PR 必须 `state=OPEN` 且**非 draft**（draft 会被拒并说明原因），并打印 base 分支与 head sha；
+   base ≠ `main` 的**堆叠 PR** 直接拒绝（见下面「什么时候不该用」）。
+2. **从 `origin/main` 重建**集成分支（已存在则拒绝，除非 `--force-branch`）—— 不在旧集成分支上叠。
+3. **逐支 `git merge --no-ff --no-commit`**；**每支都必须成功提交**（提交前 `MERGE_HEAD` 必须为真、
+   提交后必须为假 —— worktree 里 `.git` 是**文件**，判「在合并中」**只能**用
+   `git rev-parse -q --verify MERGE_HEAD`，用路径判据会一路 rc=128）。
+4. **冲突按「重建 + 重放」处置，不解冲突**：
+   - 只追加型台账（`.github/cases/*.yml`）= 取 main 版 + 按序并上各支相对 merge-base 的**新增块**；
+   - 两个生成物（`tests/agent_eval/eval_cases/**`、`docs/testing/mibao-verification-cases.md`）= **一律重渲染**；
+   - 锚点 `tests/unit_ci_workflows/case_machine_fail_channel_baseline.json` = **取 main 版**，
+     跑判据拿**实测读数**，追加一行 `history`（带 `note`）+ 把 `entries` 对齐实测；
+   - **其它任何冲突 ⇒ fail-closed**（不做语义合并 —— 那需要人判断业务）。
+
+   🔴 为什么不 `git checkout --ours/--theirs`：实测它会把冲突标记留成**嵌套垃圾**，把锚点 JSON 写坏；
+   而且 `--theirs` 会丢掉 main 后来加的条目、`--ours` 会丢掉本 PR 的条目。
+5. **用例号去重**：检测重复 `id`，对**后合入者让号**（改 `id` + claim 文件名/内容 +
+   声明该号的测试文件头 `# case_ids:` + 重渲染），并打印「谁让给谁」。
+6. **收尾**：重渲染 → 锚点实测重锚 → 跑锚点判据复核 → push → **`gh pr create --draft`**。
+   ⚠️ 生成的批次 body **零关闭词**（`pr_body_guard` 口径：命中数须等于本意条数，多关闭词会被拒）；
+   **原 PR 与 issue 不自动关闭**，由值守面在合并后按证据逐个关闭。绿了再 `gh pr ready`。
+
+**什么时候不该用（三条，别硬凑）**：
+
+- **单 PR**：没有节省，只有额外的重建/重放成本 ⇒ 直接走普通 PR；
+- **有强依赖链**：B 的 diff 基于 A 的分支（堆叠 PR）⇒ 先合底座，再单合或按依赖顺序**分批**；
+  工具也会因为 `base ≠ main` 直接拒；
+- **需要精确归因**：批次里某个判据变红/变绿**不指向单个 PR**（批次合并后要用
+  `git log --oneline` 找 `merge: #<PR> …` 提交再回原 PR 讨论线）⇒ 正在排查某个具体回归时，别合批。
+
+**判据**：`tests/unit_ci_workflows/test_batch_merge_tool.py`（6 条，各带**可执行**红证：
+让号删掉 ⇒ 重复 id 留下 / 锚点换成 main 版 ⇒ 真判据必红 / worktree 里 `.git` 是文件 ⇒ 路径判据恒 False /
+dry-run 前后分支表与提交数逐字节相同 + 正控）。夹具 = `tmp_path` 里现造的**临时 git 仓库 + worktree**
+（不碰真仓库），渲染器 / 锚点判据 / body 守卫都拷**生产同一份实现**进去跑，只有 `gh` 用桩。
+
+**边界（照实登记）**：不关单（只打印提醒）；不做冲突的语义合并（未知冲突面 fail-closed）；
+让号只用批次内 `max+1`（看不见批次**之外**的在飞 PR ⇒ 仍可能撞号，靠「后合入者让号」下一次收口）；
+只跑定点判据（锚点 + 渲染器自检），**全量仍由集成分支的 CI 承担**；`--no-push` 连 `gh pr create` 一起跳过。
+
 ## 子包 worktree **不许**直跑全量（2026-10-03 固化，issue #6084）
 
 上一节把「一批只跑一次全量」做成了**入口**（`scripts/batch-gate.sh`），但**纪律不是机制**：
