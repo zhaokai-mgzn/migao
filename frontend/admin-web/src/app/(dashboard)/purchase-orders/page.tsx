@@ -1,8 +1,9 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { Button, Input, Modal, PageCard, PageHeader, TableSkeleton } from '@/components/ui'
+import { Button, DecimalInput, Input, Modal, PageCard, PageHeader, TableSkeleton } from '@/components/ui'
 import SkuPicker, { type SkuPickerChoice, skuLineLabel } from '@/components/products/SkuPicker'
+import { useDecimalValidity } from '@/components/ui/DecimalInput'
 import ListLoadError from '@/components/common/ListLoadError'
 import { loadErrorMessage } from '@/lib/api-error'
 import { SELECT_CONTROL_FIELD } from '@/components/ui/Select'
@@ -188,6 +189,9 @@ export default function PurchaseOrdersPage() {
       prev ? { ...prev, lines: prev.lines.map((l) => (l.skuId === skuId ? { ...l, ...patch } : l)) } : prev,
     )
   }
+
+  /** 涉数量 / 涉钱格是否都合法：`DecimalInput` 不回调非法值 ⇒ 保存必须一起禁用（否则提交的是上一个有效值） */
+  const { track: trackValidity, hasInvalid } = useDecimalValidity()
 
   const submitCreate = async () => {
     if (!form) return
@@ -420,7 +424,7 @@ export default function PurchaseOrdersPage() {
             <Button variant="secondary" onClick={() => setForm(null)}>
               取消
             </Button>
-            <Button onClick={() => void submitCreate()} loading={saving} data-testid="purchase-form-submit">
+            <Button onClick={() => void submitCreate()} loading={saving} disabled={hasInvalid} data-testid="purchase-form-submit">
               {saving ? '提交中…' : '确认下单'}
             </Button>
           </>
@@ -509,9 +513,8 @@ export default function PurchaseOrdersPage() {
                           <td className="px-3 py-2 text-neutral-700">{l.label}</td>
                           <td className="px-3 py-2">
                             <Input
-                              type="number"
-                              min={0}
-                              step={0.01}
+                              type="text"
+                              inputMode="decimal"
                               aria-label={`${l.label} 数量`}
                               data-testid={`purchase-form-qty-${idx}`}
                               value={l.quantity}
@@ -520,14 +523,14 @@ export default function PurchaseOrdersPage() {
                             />
                           </td>
                           <td className="px-3 py-2">
-                            <Input
-                              type="number"
+                            <DecimalInput
+                              field={`${l.label} 单价`}
                               min={0}
-                              step="0.01"
                               aria-label={`${l.label} 单价`}
                               data-testid={`purchase-form-price-${idx}`}
                               value={l.unitPrice}
-                              onChange={(e) => patchLine(l.skuId, { unitPrice: e.target.value })}
+                              onChange={(unitPrice) => patchLine(l.skuId, { unitPrice })}
+                              onValidityChange={trackValidity}
                               className="h-9 px-2 text-sm text-right"
                             />
                           </td>

@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { ArrowLeft, Edit, ArrowUpCircle, ArrowDownCircle } from 'lucide-react'
 import Image from 'next/image'
-import { Button, Badge, Loading } from '@/components/ui'
+import { Button, Badge, DecimalInput, Loading } from '@/components/ui'
 import ListLoadError from '@/components/common/ListLoadError'
 import BatchStockPanel from '@/components/products/BatchStockPanel'
 import { productApi } from '@/lib/api'
@@ -24,6 +24,8 @@ function SkuPriceCell({ productId, sku, onUpdated }: {
   // 保存路径**有且只有一条**（`save`）：Enter 与失焦都走它 —— 退出口不落库是这条缺陷的形态
   // （issue #6662 判据 ①）。`savingRef` 防「Enter 触发卸载 → unmount 再触发一次 blur」的重复提交。
   const savingRef = useRef(false)
+  /** 价格格的离线合法性（`DecimalInput` 不回调非法值）：非法时**不落库**、保持编辑态 */
+  const priceOkRef = useRef(true)
 
   const startEdit = () => {
     setValue(sku.price?.toString() || '')
@@ -34,6 +36,9 @@ function SkuPriceCell({ productId, sku, onUpdated }: {
 
   const save = async () => {
     if (savingRef.current) return
+    // 框里是非法值（3 位小数 / 负数 / 乱码）⇒ 拒绝落库并**保持编辑态**：
+    // 话术已由 `DecimalInput` 显示在框下；此处不发请求、也不猜测商家想填什么
+    if (!priceOkRef.current) return
     const raw = value.trim()
     // 原样不动 ⇒ 不是改动，直接收起（不为「点开又点走」发一次请求）。
     // ⚠️ 必须与「清空」分开判：`parseFloat('')` 是 NaN，拿值比较会把『清空』也当成「原样」。
@@ -60,13 +65,16 @@ function SkuPriceCell({ productId, sku, onUpdated }: {
   if (editing) {
     return (
       <div className="flex items-center gap-1 justify-end">
-        <input
+        {/* issue #8004：行内改价是**涉钱面** —— 共用 `DecimalInput`（`type="number"` 会吞 `12.` 与千分位） */}
+        <DecimalInput
           autoFocus
-          type="number"
-          step="0.01"
+          id="sku-price-editor"
+          field="单价"
+          min={0}
+          onValidityChange={(ok) => { priceOkRef.current = ok }}
           className="w-20 h-7 px-1.5 text-xs border border-primary-300 rounded focus:outline-none focus:ring-1 focus:ring-primary-400 text-right"
           value={value}
-          onChange={e => setValue(e.target.value)}
+          onChange={setValue}
           onKeyDown={e => { if (e.key === 'Enter') save(); if (e.key === 'Escape') closeEditor() }}
           // issue #6662 判据 ①：**失焦 = 落库**（或坏值显式拒绝并保留编辑态），不再无声丢弃改动
           onBlur={save}

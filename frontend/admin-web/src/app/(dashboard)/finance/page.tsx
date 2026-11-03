@@ -5,7 +5,8 @@ import { toast } from 'sonner'
 import { Plus, Search, RotateCcw, Wallet, ArrowDownCircle, ArrowUpCircle, TrendingUp } from 'lucide-react'
 import { financeApi } from '@/lib/api'
 import { usePermission } from '@/lib/permission'
-import { Button, Input, Select, Pagination, Modal, Badge, PageCard, PageHeader, TableSkeleton } from '@/components/ui'
+import { Button, DecimalInput, Input, Select, Pagination, Modal, Badge, PageCard, PageHeader, TableSkeleton } from '@/components/ui'
+import { useDecimalValidity } from '@/components/ui/DecimalInput'
 import type {
   FinanceTransaction,
   FinanceTransactionType,
@@ -212,6 +213,9 @@ export default function FinancePage() {
     setRecPage(1)
     setRecSearch(recKeyword)
   }
+
+  /** 金额格（涉钱）是否合法：`DecimalInput` 不回调非法值 ⇒ 提交必须一起禁用（否则提交的是上一个有效值） */
+  const { track: trackValidity, hasInvalid } = useDecimalValidity()
 
   const handleCreate = async () => {
     const amount = Number(form.amount)
@@ -679,7 +683,7 @@ export default function FinancePage() {
         footer={
           <>
             <Button variant="secondary" onClick={() => setCreateOpen(false)}>取消</Button>
-            <Button onClick={handleCreate} loading={creating}>提交</Button>
+            <Button onClick={handleCreate} loading={creating} disabled={hasInvalid}>提交</Button>
           </>
         }
       >
@@ -706,13 +710,15 @@ export default function FinancePage() {
 
           <div>
             <label className="block text-sm font-medium text-neutral-700 mb-1.5">金额 *</label>
-            <Input
-              type="number"
-              min="0.01"
-              step="0.01"
+            {/* issue #8004：涉钱面 —— 共享 `DecimalInput`（`type="number"` 会吞 `12.` 中间态与千分位） */}
+            <DecimalInput
+              data-testid="finance-form-amount"
+              field="金额"
+              min={0.01}
               placeholder="0.00"
               value={form.amount}
-              onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))}
+              onChange={(amount) => setForm((f) => ({ ...f, amount }))}
+              onValidityChange={trackValidity}
             />
           </div>
 

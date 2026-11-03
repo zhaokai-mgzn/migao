@@ -4186,7 +4186,7 @@
 ```
 溯源: 2026-10-31 新增（issue #8295）：两步确认，避免误写 ｜ tags: ui, preview
 
-## 杂项域（200 case）
+## 杂项域（201 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -7240,6 +7240,23 @@
 跳过: [backend-contract] 工人端 H5 的纯前端判据（`node --test` + 手写假 doc / 假 fetch，零 DOM 库、零网络、零 LLM）由 frontend/worker-h5/tests/worker-h5-machine-rework.test.mjs 验证，不进入 agent-eval 冒烟
 ```
 溯源: 2026-11-03 新增（issue #7992；壁达现场屏「工序返修」的对位功能，用户逐字「工序返修需要，等同于我们的报返工的功能」）。取号（**两次让号，记实**）：`python3 scripts/next_case_id.py MC` 现取返回历史空档 **MC-099** —— 按裁定**刻意空档不回填**；MC-139~MC-153 在飞/已合占用密集 ⇒ 按派单口径避开，先取 **MC-154**；merge `origin/main` 时与 main 新增的 **MC-154**（#8559 / issue #8310，且同号还被在飞 PR #8561 的 claim `8561-MC-154.json` 占着）撞号 ⇒ 按「**后合入者让号**」顺延终态 **MC-155**。落码 = ① `frontend/worker-h5/src/machine.mjs`：`MACHINE_REWORK_REASONS`（原因短语，与报工页表单 placeholder 同源）+ `reworkTargetLine()`（返工对象 = 加工单号 · 部位）+ `reworkBlock()`（收起态零 DOM / 展开 = 对象 + 原因按钮 + 取消）+ 状态机 `reworkOpen/Close/Start/Done/Failed`（换码清态）；② `frontend/worker-h5/src/machine-app.mjs`：`reportRework(reason)` 调**既有** `api.reportRework`；③ 判据 frontend/worker-h5/tests/worker-h5-machine-rework.test.mjs（10 条，含负控与红证）。形式选择 = 原因走**短语按钮**而不是文本框：机台页刻意零文本输入元素（`frontend/worker-h5/machine.html` 头注释 = IME 兜底那道保险，扫码枪是唯一输入面）。 ｜ tags: worker-h5, machine-screen, rework, entry-point, single-source, red-proof
+
+### MC-157. 数字输入精度面（issue #8004）：涉钱 / 涉数量格不许再用 `type="number"`（中间态 `12.` 与千分位 `1,234.56` 会被浏览器吞掉）—— 共用 `DecimalInput` 一处解析/校验/话术 + 类级台账守卫 🔵
+```
+你: issue #8004（施工单口径）：存量 `<input type="number">` 在**涉钱 / 涉数量**面会吞精度（中文输入法 / 千分位 / 尾随小数点下有已知丢值行为）。这类输入一旦丢值，商家会按错价下单 —— 涉钱面吞一次就是钱错了
+期望: direct_reply
+数据: 🔴 **判据 1·涉钱面零 `type="number"`（具名，未迁即红）**：11 个涉钱字段 + 9 个涉数量字段按**锚点**（`data-testid` / `id` / `aria-label` 的唯一片段）定位它的 JSX 开标签 —— 涉钱面**必须**是共享原语 `<DecimalInput>` 且不带 `type="number"`；未迁 / 迁回 / 换成普通 `<Input>` / 锚点被改名（判据失明）**各自判红并点名**。涉数量面允许保留各页既有的精确口径（0.1 米粒度 / 正整数 / 库存上限），但控件必须是 **text 形态**（`type="text"` + `inputMode`）。执行点 = frontend/admin-web/tests/unit/money-input-guard.test.ts::份 '判据 ①…'（真语料零违规 + 4 条注入式红证）
+数据: 🔴 **判据 2·精度不丢（本单核心，逐值钉死）**：`12.345` ⇒ `invalid: too-many-decimals`（**拒绝，不许静默四舍五入成 12.35 / 截断成 12.34**）；`0.10` ⇒ 0.1；`1,234.56` ⇒ 1234.56（千分位接受并去掉）；尾随小数点 `12.` ⇒ 打字中是 `draft`（原样留在框里、不回调）、失焦收尾成 12；`.5` / `0` / `12.30` 各有确定读法。执行点 = frontend/admin-web/tests/unit/lib/decimal-input.test.ts::判据 ② 组
+数据: 🔴 **判据 3·解析失败必须出声（不许静默变 0 / 变 NaN 后提交）**：四态 `empty` / `draft` / `invalid` / `ok` 分清（`-` / `.` 是打字中间态，不是错；空串是「还没填」，不是 0）⇒ 非法时框下出现 `role="alert"` 的**具名话术**、`onChange` **一次都不回调**、`onValidityChange(false)`；**接线判据**：真页面（退款弹窗）敲 `12.345` ⇒ 话术出现 + 「确定」`disabled`，改成 `12.5` ⇒ 可提交且回调精确值。执行点 = frontend/admin-web/tests/unit/components/DecimalInput.test.tsx::契约 ② 组 + 末条接线判据
+数据: 🔴 **判据 4·负数 / 零 / 超上限按业务口径拒绝**：`min = 0` 拒负数（below-min）；`min = 0.01` 的格（退款金额 / 财务金额）拒零；`max` 判上限，**不传就不判**（涉钱上限不自造）；五种原因各有具名话术（含口径名与边界数字，最短一条是「请填写退款金额」）。执行点 = decimal-input.test.ts::判据 ③/④ 两组 + DecimalInput.test.tsx::负数与零两条
+数据: 🔴 **判据 5·类级台账双向相等（未登记即红 / 虚报即红）**：现取只剩 **4** 处 `type="number"`（账期天数 ×2 / 批量新建仓位编号 ×2），每处必须在本台账里写明「非金额非数量 + 值域是整数 + 无 `Number()` 往返」；台账与现取**逐文件条数相等**、条数变化也判红（只许缩短）。执行点 = money-input-guard.test.ts::判据 ② 组 + frontend/admin-web/tests/unit/lib/number-input-ledger.ts
+数据: 🔴 **判据 6·负控（判据不许变成假红机器）**：`type="text"` / `inputMode="decimal"` / 注释里的 `type="number"` 都**不算**命中；`suppliers/page.tsx` 的账期天数**不被**当成涉钱面；扫描面非空自证（≥80 源文件 / ≥200 JSX 开标签）。执行点 = money-input-guard.test.ts::判据 ③ 组 + 负控组
+数据: **红证（注入式，全部实跑）**：① 把退款金额改回 `type="number"` ⇒ 判据 1 具名报「仍是 type=number」；② 换成普通 `<Input>`（不带 number）⇒ 判据 1 报「不是共享原语」；③ 改掉锚点 ⇒ 判据 1 报「锚点找不到」；④ 台账删一行 ⇒ unregistered / 加一行 ⇒ stale；⑤ 摘掉「非法 ⇒ 出声」（`setError` 分支）⇒ 判据 3 的 `role="alert"` 与 `onValidityChange(false)` 断言必红。
+数据: **边界（照实登记，§19.1）**：① 扫描器 = 剥注释 + JSX 开标签配平 + 字面量 `type=` 判定，**不做 AST、不追数据流** ⇒ 经变量 / `{...props}` 传 `type` 的形态不在射程；② 涉数量面**有意不接** `DecimalInput` 的校验/话术（各页已有精确口径与话术：0.1 米粒度 / 正整数 / 1~999 容量），本轮只去掉 `type="number"` 并补 `inputMode` ⇒ **不产生第二套话术**；③ 既有 `NumberInput`（issue #5198/#5210，number 口径，供算料参数 / 工艺字段）**未动**；④ 非金额非数量的 4 处仍留 `type="number"`（整数口数字段，见台账与理由）；⑤ 不改任何门禁的通过条件、不新增豁免。
+前置: 本用例是 [backend-contract]：纯前端确定性判据（jsdom 渲染 + 源码结构扫描 + 台账双向对账），零网络、零 DB、不进 agent-eval 冒烟。前置 = frontend/admin-web/src/lib/decimal-input.ts（解析/校验/话术单一口径）与 frontend/admin-web/src/components/ui/DecimalInput.tsx（唯一原语）在场，11 个涉钱站点已迁。
+跳过: [backend-contract] 纯前端确定性判据（组件行为 + 生产源码结构扫描 + 台账双向对账），由 frontend/admin-web/tests/unit/money-input-guard.test.ts、tests/unit/lib/decimal-input.test.ts、tests/unit/components/DecimalInput.test.tsx 验证；零 LLM 环节，不进入 agent-eval 冒烟
+```
+溯源: 2026-11-03 新增（issue #8004）。病 = 存量 `<input type="number">` 在涉钱 / 涉数量面吞精度（浏览器对 `12.` / `0.` / `1,234.56` 的 `el.value` 会失真），而这类缺陷**不会让任何既有判据变红**。修 = ① 抽**一处**解析/校验/话术（frontend/admin-web/src/lib/decimal-input.ts）+ **一个**原语（frontend/admin-web/src/components/ui/DecimalInput.tsx：text + inputMode=decimal + 字符串草稿 + 只回调合法值 + 具名话术 + 离线合法性）；② 11 个涉钱站点迁该原语并**把提交按钮绑到 `hasInvalid`**（否则「敲错 → 保存」会按上一个有效值提交 = 静默改价）；③ 9 个涉数量站点只去掉 `type="number"` 并补 `inputMode`（保留各页既有的 0.1 米粒度 / 正整数口径，不造第二套话术）；④ 类级元守卫 = money-input-guard.test.ts + number-input-ledger.ts（未登记即红、台账只许缩短）。取号 = MC-157（`python3 scripts/next_case_id.py MC` 现取返回历史空档 MC-099，按裁定**不回填**；**两次让号记实**：先取 MC-156，扑空前核对发现 open PR #8560 已 claim 8560-MC-156 并已进 main ⇒ 顺延 MC-157）。**未接 `max` 的如实登记**：现有涉钱站点没有一个有既有业务上限口径（授信额度 / 退款额 / 优惠额都没有），涉钱面**不自造**上限 ⇒ `max` 能力由判据 4 的单元断言钉住，等业务给口径再接。 ｜ tags: backend-contract, frontend, money-surface, input-precision, fail-closed, ledger, red-proof
 
 ## 商家入驻域（7 case）
 
@@ -14748,8 +14765,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：998（活跃 153，跳过 845）
-- tier 分布：smoke 15 / normal 921 / adversarial 33
+- 用例总数：999（活跃 153，跳过 846）
+- tier 分布：smoke 15 / normal 922 / adversarial 33
 - 售后域：16
 - Agent 核心域：13
 - API 层域：21
@@ -14765,7 +14782,7 @@
 - 人事域：13
 - 知识问答域：9
 - 客户主数据迁移域：10
-- 杂项域：200
+- 杂项域：201
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：76
@@ -15032,6 +15049,7 @@
 - MC-147: **状态列写面全族统一元守卫 SW-100**：53 张有 `status` 列的表 × 134 个写入口逐条登记（未登记即红 / 台账陈旧即红 / 裸字符串写状态列即红 / 每张状态表的合法集合必须有来源）
 - MC-155: 终端壳打印能力三态（issue #8310）：桥在 ≠ 打印机在 —— printerMode 负向 / 读不到都不许说「由本机打印机直接出纸」，且「判不了」与「确知没有」分开说
 - MC-156: 机台页详情屏补「报返工」入口（复用既有 reportRework / 不新建第二套返工实现 / 次要动作不抢主位）
+- MC-157: 数字输入精度面（issue #8004）：涉钱 / 涉数量格不许再用 `type="number"`（中间态 `12.` 与千分位 `1,234.56` 会被浏览器吞掉）—— 共用 `DecimalInput` 一处解析/校验/话术 + 类级台账守卫
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）

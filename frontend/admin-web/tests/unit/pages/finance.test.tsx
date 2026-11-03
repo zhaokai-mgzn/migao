@@ -423,11 +423,12 @@ describe('FinancePage', () => {
 
   it('金额 `0` ⇒ 显式拒绝（不是静默按 0 提交、也不是被当空吞掉）', async () => {
     await openCreateWithAmount('0')
-    const { toast } = await import('sonner')
-    const errSpy = vi.spyOn(toast, 'error')
-    await user.click(screen.getByText('提交'))
 
-    await waitFor(() => expect(errSpy).toHaveBeenCalledWith('请输入正确的金额'))
+    // issue #8004 起这条缺陷**提前一层**被拦住：涉钱格非法 ⇒ 框下当场出具名话术 + 「提交」禁用，
+    // 不再等到点下按钮才 toast（旧的 toast 分支仍在 `handleCreate` 里作为第二道闸）。
+    expect(screen.getByTestId('finance-form-amount-error')).toHaveTextContent('金额不能小于 0.01')
+    expect(screen.getByText('提交')).toBeDisabled()
+    await user.click(screen.getByText('提交'))
     expect(mockCreateTransaction).not.toHaveBeenCalled()
   })
 })
