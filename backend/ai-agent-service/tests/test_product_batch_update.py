@@ -26,10 +26,16 @@
 7. **部分失败逐条报告，不做整体回滚**（回滚会掩盖真问题）。
 8. 权限码与逐条写**同码**（`product:create`，= `product_update` 的写码）。
 """
+import ast
+import inspect
+import textwrap
+from pathlib import Path
+from types import SimpleNamespace
+
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from app.tools import confirm_value
+from app.tools import confirm_value, product_batch_update
 from app.tools.base import ToolContext
 from app.tools.product_batch_update import (
     BATCH_TYPE_PRICE,
@@ -683,3 +689,208 @@ class TestWiring:
         assert "上下架" in PRODUCT_SYSTEM_PROMPT
         assert "撤销" in PRODUCT_SYSTEM_PROMPT
         assert "50" in PRODUCT_SYSTEM_PROMPT
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 六、issue #6998：撤销段的 `batch_id` 兜底 —— execute / revert **同一个**解析函数
+# ══════════════════════════════════════════════════════════════════════════════
+# 病（真 LLM 重放 `PR-108`）：R3 执行成功、批次号就在上下文里，R5 撤销却**丢了**
+# `batch_id`（`product_batch_update{"action":"revert"}`）；修前那一次则**编造**批次号
+# （`batch_20260923_155` ⇒ 服务端 NOT_FOUND）。两条路都通向「撤销要么永不成功、
+# 要么打到错的批次」。修法 = 把「这一批是哪个」抽成**一处**解析：
+#   ① 显式给了 ⇒ 原样用；② 没给 ⇒ 只认本会话台账里**恰好一个**候选；③ 否则 fail-closed。
+
+#: `app/tools/` 目录（类级登记册的扫描面 —— 现取，不写死清单）。
+TOOLS_DIR = Path(product_batch_update.__file__).resolve().parent
+
+#: 类级登记册：`app/tools/**` 里 `parameters` 字面量声明了 `batch_id` 的工具文件 →
+#: 它的 `batch_id` 解析入口。**未登记即红**（第三条批量路径不许各写一份解析）。
+BATCH_ID_SCHEMA_OWNERS = {
+    "product_batch_update.py": "ProductBatchUpdateTool.resolve_batch_id",
+}
+
+#: 共享解析器的**全仓唯一**锚（新增批量路径只能复用这一处）。
+SHARED_BATCH_ID_RESOLVER = "ProductBatchUpdateTool.resolve_batch_id"
+
+
+def _ledger_state(*batch_ids, kind="executed"):
+    """会话状态替身：批次台账里有这几条记录（最近写入在前 = 参数顺序）。"""
+    return {product_batch_update.BATCH_LEDGER_KEY:
+            [{"batch_id": b, "kind": kind} for b in batch_ids]}
+
+
+@pytest.fixture(autouse=True)
+def _session_state_seam(monkeypatch):
+    """单测**不连库**：会话工作状态（PG `session_states`）的两处接缝换成替身。
+
+    为什么是 autouse：issue #6998 让 `revert` 的缺省批次号来自会话台账 ⇒ 本文件**全部**
+    用例在「执行成功」这条路径上都会经过一次台账写入；真连库既慢又会把单测绑到云 dev 库。
+    需要用台账的用例在用例体里改 `load.return_value`（替身共享，逐用例独立）。
+    """
+    load = AsyncMock(return_value=None)
+    commit = AsyncMock(return_value=None)
+    monkeypatch.setattr(product_batch_update, "_load_session_state", load)
+    monkeypatch.setattr(product_batch_update, "_commit_session_state", commit)
+    return SimpleNamespace(load=load, commit=commit)
+
+
+class TestRevertBatchIdFallback:
+    """issue #6998 的实例判据：撤销**不许猜批次**。"""
+
+    @pytest.mark.asyncio
+    async def test_revert_without_batch_id_is_governed_by_the_context_candidate(
+            self, tool, _session_state_seam):
+        """① 缺 `batch_id` 时**只由上下文候选决定**：取不到 ⇒ 拒绝 + 可行动提示；唯一 ⇒ 采用那一批。
+
+        两半必须在**同一个用例**里（本单的红证口径）：把兜底整段摘掉 ⇒ 下半段必红；
+        把「唯一」放宽成「取第一个」⇒ ③ 必红 —— 只留任何一半都证明不了这条口径。
+        """
+        # ── 上半：上下文里什么都没有 ⇒ fail-closed 拒绝，且**不发任何请求** ──
+        client = _client(_ok({}))
+        with patch("app.tools.product_batch_update.get_admin_api_client", return_value=client):
+            denied = await tool.execute(_ctx(), action="revert")
+        assert denied.success is False
+        # 沿用既有契约码（`.github/cases` 判据③ 的同一读数），语义收窄成「也没有可用的唯一批次」
+        assert denied.error == "batch_preview_required"
+        assert denied.missing_params == ["batch_id"]        # 结构化缺参（#4080 T3）
+        assert "本会话" in (denied.message or "") and "唯一" in (denied.message or "")
+        suggestion = denied.suggestion or ""
+        assert "batch_id" in suggestion                     # 说出「缺什么」
+        assert "不要凭空编造" in suggestion                   # 明确禁止猜
+        assert "确认" in suggestion                          # 取不到时的真出口 = 问商家
+        client.post.assert_not_awaited()
+
+        # ── 下半：本会话**恰好一个**执行成功的批次 ⇒ 撤销它（`PR-108` R5 无参 revert 的正解）──
+        _session_state_seam.load.return_value = _ledger_state("b-real")
+        client = _client(_ok({"batchId": "b-real", "status": "reverted",
+                              "results": [{"resourceId": "p1", "success": True}]}))
+        with patch("app.tools.product_batch_update.get_admin_api_client", return_value=client):
+            result = await tool.execute(_ctx(), action="revert")
+        assert result.success, result.message
+        # 撤回的是**真实执行过的那一批**，不是模型自报的号
+        assert client.post.call_args.args[0] == "/api/admin/agent/batches/b-real/revert-async"
+        assert result.data["batchId"] == "b-real"
+        # 话术要点明批次号**来自本会话上下文**（下一轮模型就知道该带什么）
+        assert "上下文" in (result.message or "")
+
+    @pytest.mark.asyncio
+    async def test_revert_refuses_to_pick_among_multiple_candidates(self, tool, _session_state_seam):
+        """③ 有**多个**候选批次 ⇒ 拒绝，而不是挑「最近的那一个」（本单最容易写错的地方）。"""
+        _session_state_seam.load.return_value = _ledger_state("b-late", "b-earlier")
+        # 终止态替身：万一将来退化成"挑一个"，本用例要**立刻**红，而不是等轮询超时（60s）
+        client = _client(_ok({"status": "reverted"}))
+        with patch("app.tools.product_batch_update.get_admin_api_client", return_value=client):
+            result = await tool.execute(_ctx(), action="revert")
+        assert result.success is False
+        assert result.error == "batch_id_ambiguous"
+        assert "b-late" in (result.message or "") and "b-earlier" in (result.message or "")
+        assert "2" in (result.message or "")            # 候选条数要报出来
+        assert result.missing_params == ["batch_id"]
+        assert "不要替商家挑" in (result.suggestion or "")
+        client.post.assert_not_awaited()                 # 🔴 一个请求都不发
+
+    @pytest.mark.asyncio
+    async def test_revert_with_explicit_batch_id_wins_over_context(self, tool, _session_state_seam):
+        """② 负控：显式 `batch_id` **原样**使用（上下文里有别的候选也不改写、不拒绝）。"""
+        _session_state_seam.load.return_value = _ledger_state("b-other")
+        client = _client(_ok({"batchId": "b-explicit", "status": "reverted",
+                              "results": [{"resourceId": "p1", "success": True}]}))
+        with patch("app.tools.product_batch_update.get_admin_api_client", return_value=client):
+            result = await tool.execute(_ctx(), action="revert", batch_id=" b-explicit ")
+        assert result.success, result.message
+        assert client.post.call_args.args[0] == "/api/admin/agent/batches/b-explicit/revert-async"
+        # 显式值不触发兜底 ⇒ 话术里不出现「取自上下文」的说明
+        assert "上下文" not in (result.message or "")
+        _session_state_seam.load.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_execute_still_requires_an_explicit_batch_id(self, tool, _session_state_seam):
+        """执行**不吃**上下文兜底：`batch_id` 只能来自 preview（两段确认的结构锁不变）。"""
+        _session_state_seam.load.return_value = _ledger_state("b-executed")
+        client = _client(_ok({}))
+        with patch("app.tools.product_batch_update.get_admin_api_client", return_value=client):
+            result = await tool.execute(_ctx(), action="execute")
+        assert result.success is False and result.error == "batch_preview_required"
+        assert "preview" in (result.suggestion or "")
+        client.post.assert_not_awaited()
+        _session_state_seam.load.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_execute_records_the_batch_for_the_later_revert(self, tool, _session_state_seam):
+        """写侧：执行成功后**记下真实批次号**（撤销兜底的唯一来源）。"""
+        client = _client(_ok({"batchId": "b1", "status": "done", "revertible": True,
+                              "results": [{"resourceId": "p1", "success": True}]}))
+        with patch("app.tools.product_batch_update.get_admin_api_client", return_value=client):
+            result = await tool.execute(_ctx(), action="execute", batch_id="b1")
+        assert result.success, result.message
+        state = _session_state_seam.commit.await_args.args[1]
+        assert state[product_batch_update.BATCH_LEDGER_KEY] == [
+            {"batch_id": "b1", "kind": "executed"}]
+
+    @pytest.mark.asyncio
+    async def test_execute_does_not_record_a_batch_the_server_says_is_not_revertible(
+            self, tool, _session_state_seam):
+        """`revertible=false` 的批次**不进**撤销候选（否则「撤销」会去打一个撤不了的批次）。"""
+        client = _client(_ok({"batchId": "b1", "status": "done", "revertible": False,
+                              "results": [{"resourceId": "p1", "success": True}]}))
+        with patch("app.tools.product_batch_update.get_admin_api_client", return_value=client):
+            await tool.execute(_ctx(), action="execute", batch_id="b1")
+        _session_state_seam.commit.assert_not_awaited()
+
+
+class TestSharedBatchIdResolver:
+    """④ 类级固化：`execute` 与 `revert` 必须调**同一个**解析函数，且第三条路进不来。"""
+
+    def test_execute_and_revert_call_the_same_resolver(self):
+        for method in ("_execute_batch", "_revert_batch"):
+            assert "resolve_batch_id" in _called_attribute_names(ProductBatchUpdateTool, method), (
+                f"{method} 没有走共享的 batch_id 解析器（各写一份 = 下一个撤销路径又会漏）")
+        # 全模块只许有**一处**定义（第二份实现 ⇒ 红）
+        source = (TOOLS_DIR / "product_batch_update.py").read_text(encoding="utf-8")
+        assert source.count("async def resolve_batch_id(") == 1
+
+    def test_resolver_is_the_declared_single_anchor(self):
+        assert SHARED_BATCH_ID_RESOLVER == "ProductBatchUpdateTool.resolve_batch_id"
+        assert inspect.iscoroutinefunction(ProductBatchUpdateTool.resolve_batch_id)
+        # 兜底只许发生在 `revert` 一侧：`execute` 的结构锁不许被兜底打穿
+        assert set(product_batch_update.CONTEXT_FALLBACK_ACTIONS) == {"revert"}
+
+    def test_every_tool_declaring_batch_id_is_registered(self):
+        """**未登记即红**：新工具把 `batch_id` 写进 `parameters` 而没登记 ⇒ 第三条路又漏了。"""
+        scanned = _tools_declaring_batch_id()
+        unregistered = sorted(set(scanned) - set(BATCH_ID_SCHEMA_OWNERS))
+        assert not unregistered, (
+            f"这些工具声明了 `batch_id` 但没登记到 BATCH_ID_SCHEMA_OWNERS：{unregistered}"
+            " —— 请复用 `ProductBatchUpdateTool.resolve_batch_id`（同一套口径）后再登记")
+        for filename, resolver in BATCH_ID_SCHEMA_OWNERS.items():
+            assert resolver == SHARED_BATCH_ID_RESOLVER
+            assert "resolve_batch_id" in (TOOLS_DIR / filename).read_text(encoding="utf-8")
+
+
+def _called_attribute_names(cls, method):
+    """某方法体里**实际调用**过的属性名集合（AST 判据 —— 不是"文本里出现过"）。"""
+    tree = ast.parse(textwrap.dedent(inspect.getsource(getattr(cls, method))))
+    return {node.func.attr for node in ast.walk(tree)
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)}
+
+
+def _tools_declaring_batch_id():
+    """现取：`app/tools/*.py` 里 `parameters` 字面量含 `batch_id` 的 `{文件名: 类名}`。"""
+    found = {}
+    for path in sorted(TOOLS_DIR.glob("*.py")):
+        source = path.read_text(encoding="utf-8")
+        try:
+            tree = ast.parse(source)
+        except SyntaxError:      # 语法坏掉的模块由别的判据负责，这里不重复报
+            continue
+        for node in tree.body:
+            if not isinstance(node, ast.ClassDef):
+                continue
+            for item in node.body:
+                if not isinstance(item, ast.Assign):
+                    continue
+                if not any(isinstance(t, ast.Name) and t.id == "parameters" for t in item.targets):
+                    continue
+                if "batch_id" in (ast.get_source_segment(source, item.value) or ""):
+                    found[path.name] = node.name
+    return found
