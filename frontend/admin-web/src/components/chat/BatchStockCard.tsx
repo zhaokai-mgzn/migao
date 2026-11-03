@@ -28,6 +28,7 @@
  * C 端 `mini-app` **有意不加**分支（加了就是永不命中的死 UI，反向契约判据专门拦这种）。
  */
 import { NO_DATA, formatMeters, formatMetric, formatShare } from '@/lib/saving-board'
+import { cohortGroupTitle } from '@/lib/cohort-groups'
 
 interface BatchStockBucket {
   key?: string
@@ -47,8 +48,8 @@ interface BatchStockRow {
 }
 
 interface BatchStockCohort {
+  /** 机器键（`purchase` / `opening` / `unknown`）—— 来源组标题按它映射，**不上屏** */
   cohort?: string
-  cohortLabel?: string
   opening?: boolean
   batchCount?: number
   le0_2Count?: number
@@ -178,7 +179,10 @@ export default function BatchStockCard({ data }: { data: BatchStockCardData }) {
           const bucketLabel = cohort.buckets?.[0]?.label
           return (
             <div key={cohort.cohort || index} className="space-y-0.5">
-              <p className="text-xs text-neutral-700">{cohort.cohortLabel || cohort.cohort || NO_DATA}</p>
+              {/* 🔴 来源组标题 = `lib/cohort-groups` 的**唯一映射表**按机器键映射出的商家话术；
+                  服务端下发的分组标签是**内部口径词**（商家读不懂），一个都不许上屏
+                  （issue #6461 / #6459）。认不出的键 ⇒ 兜底话术，绝不回显原值。 */}
+              <p className="text-xs text-neutral-700">{cohortGroupTitle(cohort.cohort)}</p>
               <div className={ROW_CLASS}>
                 <span className="text-neutral-500">省料</span>
                 <span className="font-medium text-neutral-900">
@@ -220,8 +224,8 @@ export default function BatchStockCard({ data }: { data: BatchStockCardData }) {
           <span className="text-neutral-900">{formatMeters(data.consumedTotalMeters)}</span>
         </div>
         <div className={ROW_CLASS}>
-          {/* 老库存单列（口径：它不是「这个月的采购」）。**不上屏**服务端分组标签 `cohortLabel`
-              —— 那三个词商家读不懂，见 issue #6459 与 `user-copy-jargon-guard` 的形态③ */}
+          {/* 老库存单列（口径：它不是「这个月的采购」）。**不上屏**服务端分组标签
+              —— 那几个词商家读不懂，见 issue #6459 与 `user-copy-jargon-guard` 的形态③ */}
           <span className="text-neutral-500">开业时导入的老库存（单列）</span>
           <span className="text-neutral-900">{formatMeters(data.openingTotalMeters)}</span>
         </div>

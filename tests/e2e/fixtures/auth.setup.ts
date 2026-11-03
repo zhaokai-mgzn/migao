@@ -18,6 +18,10 @@
  */
 import { test as setup, expect } from '@playwright/test'
 import { loginViaApi, type AuthTokens } from '../helpers/auth.helper'
+// 复用判据（issue #6411）：登录态是否还有效由 token 自己的 `exp` 决定，不是文件 mtime。
+// 无依赖 `.mjs` 是刻意的（与 helpers/api-base-url.mjs 同一范式）—— 判定要能被
+// tests/unit_ci_workflows/ 的判据用**真 node** 跑一次（行为面），那边不装 tests/node_modules。
+import { decideAuthStateReuse } from '../helpers/auth-state-freshness.mjs'
 import * as path from 'path'
 import * as fs from 'fs'
 
@@ -50,20 +54,37 @@ setup('authenticate as admin', async ({ page, baseURL }) => {
     fs.mkdirSync(AUTH_DIR, { recursive: true })
   }
 
-  // admin.json 已存在且 1h 内有效 → 跳过登录
+  // 复用判据（issue #6411）：**先看登录态自己的有效期（JWT `exp`）**，mtime 只在解不出 `exp` 时兜底
+  // （且出声）。原实现只看 mtime 的 1h 窗口 ⇒ 复用窗口（1h）> 登录态真实有效期（实测约 30min）
+  // ⇒ 复用一个已失效的 token，所有 spec 连带红，而没有任何一句话指向「登录态过期」。
+  // 判定为「需重登」时**直接走下面的真登录**（自愈），不报错退出。
   if (fs.existsSync(AUTH_FILE)) {
-    const age = Date.now() - fs.statSync(AUTH_FILE).mtimeMs
-    if (age < 3600_000) {
-      console.log('[auth-setup] 复用已有 admin.json')
-      return
+    let storageState: unknown = null
+    try {
+      storageState = JSON.parse(fs.readFileSync(AUTH_FILE, 'utf8'))
+    } catch (e) {
+      console.warn(`[auth-setup] admin.json 解析失败（${e}）⇒ 不复用，重新登录`)
     }
+    const decision = decideAuthStateReuse({
+      storageState,
+      mtimeMs: fs.statSync(AUTH_FILE).mtimeMs,
+    })
+    // 结论一行出声：好让「莫名全红」的第一句话就是「是登录态过期」，而不是某个无关断言
+    console.log(`[auth-setup] admin.json 复用判定 ${decision.reason}：${decision.message}`)
+    if (decision.reuse) return
   }
 
   let tokens: AuthTokens
   try {
     tokens = await loginViaApi(TEST_PHONE, TEST_SMS_CODE)
   } catch (e) {
-    console.warn(`SMS login failed: ${e}. Using fallback token.`)
+    // 仍保留占位 token 继续（CI / fixture 模式的既有容错），但**必须出声**：本机没有 admin-api 时，
+    // 「重新登录也拿不到真 token」就是 issue #6411 的另一半，出路是 fixture 模式，不是删文件碰运气。
+    console.warn(
+      `[auth-setup] SMS login failed: ${e}. Using fallback token. ` +
+        '（本机无 admin-api 时改用 fixture 模式：E2E_MOCK_AUTH=true 且 ' +
+        'npx playwright test --no-deps <spec>，见 issue #6411）',
+    )
     tokens = {
       accessToken: 'e2e-fallback-token',
       refreshToken: 'e2e-fallback-refresh',

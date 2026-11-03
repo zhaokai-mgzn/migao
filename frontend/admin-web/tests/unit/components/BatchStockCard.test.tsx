@@ -102,7 +102,10 @@ describe('BatchStockCard（B 端桌面会话卡）', () => {
     expect(screen.queryByText(/24\.67/)).not.toBeInTheDocument()
     expect(screen.getByTestId('batch-stock-total')).toHaveTextContent('24.68 米')
     // 来源组标签取自服务端（存量单列）
-    expect(screen.getByText('存量导入（切换前历史包袱）')).toBeInTheDocument()
+    // 🔴 来源组标题走 `lib/cohort-groups` 映射（issue #6461）：夹具里**仍然**带着服务端内部标签，
+    // 页面必须说商家的话 —— 标签一个字都不许上屏
+    expect(screen.getByText('开业时导入的老库存')).toBeInTheDocument()
+    expect(screen.queryByText(/切换后|存量导入|来源未知/)).toBeNull()
     // 未记均价的行数显式说明（否则「读不出」会被读成「只省了这么点」）
     expect(screen.getByText(/其中 1 行没有均价/)).toBeInTheDocument()
   })

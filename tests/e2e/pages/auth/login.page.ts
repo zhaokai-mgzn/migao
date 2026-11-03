@@ -1,5 +1,8 @@
 import { type Page, type Locator, expect } from '@playwright/test'
-import { BasePage } from './base.page'
+// issue #6411（链内顺带修）：`base.page.ts` 在 `tests/e2e/pages/` 下（上一级），原写成 `./base.page`
+// ⇒ 收集期就 `Cannot find module './base.page'`，任何 import 本 POM 的 spec 连**跑都跑不到**
+// （`npx playwright test --list` 在 origin/main 上即失败）。判据 = tests/unit_ci_workflows/test_e2e_relative_imports_resolve.py。
+import { BasePage } from '../base.page'
 
 /**
  * LoginPage POM — src/app/login/page.tsx

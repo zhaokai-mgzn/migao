@@ -1,4 +1,5 @@
 import { View, Text } from '@tarojs/components'
+import { cohortGroupTitle } from '../../utils/cohort-groups'
 import './BatchStockCard.scss'
 
 /**
@@ -125,8 +126,10 @@ export default function BatchStockCard({ data }: BatchStockCardProps) {
           const saved = cohort?.savedMeters
           return (
             <View key={cohort.cohort || index} className='batch-stock-card__group'>
+              {/* 🔴 来源组标题 = `utils/cohort-groups` 的唯一映射表（与 admin-web 同源，判据锁死）；
+                  服务端下发的分组标签是内部口径词，不上屏（issue #6461）。兜底话术不回显原值。 */}
               <Text className='batch-stock-card__group-title'>
-                {cohort.cohortLabel || cohort.cohort || NO_DATA}
+                {cohortGroupTitle(cohort.cohort)}
               </Text>
               <View className='batch-stock-card__row'>
                 <Text className='batch-stock-card__label'>省料</Text>
@@ -170,8 +173,8 @@ export default function BatchStockCard({ data }: BatchStockCardProps) {
           <Text className='batch-stock-card__value'>{fmtMeters(data?.consumedTotalMeters)}</Text>
         </View>
         <View className='batch-stock-card__row'>
-          {/* 存量导入单列（它不是「这个月的采购」） */}
-          <Text className='batch-stock-card__label'>存量导入入库（单列）</Text>
+          {/* 老库存单列（它不是「这个月的采购」） */}
+          <Text className='batch-stock-card__label'>开业时导入的老库存（单列）</Text>
           <Text className='batch-stock-card__value'>{fmtMeters(data?.openingTotalMeters)}</Text>
         </View>
       </View>
