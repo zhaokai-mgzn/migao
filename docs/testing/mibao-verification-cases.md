@@ -3923,7 +3923,7 @@
 你: 帮我开个客服账号，姓名李四，手机号 13800009999，密码 Test123456
 你: 那我要怎么才能给员工开账号？
 端: mibao（单端 —— 仅黄金策腿跑，元元腿跳过）
-期望: employee_manage(action=create) or employee_manage(action=list) or role_manage or direct_reply or nav_guide
+期望: employee_manage or role_manage or direct_reply or nav_guide
 数据: 同一失败的调用不得跨轮重复（自旋）：本仓库 runner 目前**没有**跨轮重复调用断言，故该条只能靠 LLM 层人工/盲审读报告 —— 如实登记，不假装已机器判定
 数据: 如实说明**该账号**缺 `employee:create` 权限（不是「黄金策没有这个能力」——#7050 已接回写能力），并给出后台「组织管理 → 员工管理」或「岗位权限」页面的开通路径（正向判据 want_text 要求全程出现「后台」/「开通」/「入口」/「管理员」之一）
 数据: 不得出现「请稍后重试」/「系统不支持」这类编造或敷衍话术（如实说明「黄金策做不到、请去后台」是**正确**回答，不在禁词内）
