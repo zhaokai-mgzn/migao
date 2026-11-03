@@ -3695,9 +3695,9 @@ _CASE_MC_157 = EvalCase(
     forbidden_card_text=[],
 )
 
-# ── MC-158 [NORMAL] 「先查后插」的两处 TOCTOU 写面（收款码 / 角色）必须由唯一键兜底 + 幂等收敛：摘掉唯一键或退回裸 insert 必红（issue #7255）（源: cases/misc.yml）──
-_CASE_MC_158 = EvalCase(
-    id='MC-158',
+# ── MC-161 [NORMAL] 「先查后插」的两处 TOCTOU 写面（收款码 / 角色）必须由唯一键兜底 + 幂等收敛：摘掉唯一键或退回裸 insert 必红（issue #7255）（源: cases/misc.yml）──
+_CASE_MC_161 = EvalCase(
+    id='MC-161',
     legacy_id='',
     title='「先查后插」的两处 TOCTOU 写面（收款码 / 角色）必须由唯一键兜底 + 幂等收敛：摘掉唯一键或退回裸 insert 必红（issue #7255）',
     skill=Skill.GENERAL,
@@ -3916,5 +3916,5 @@ CASES = (
     _CASE_MC_155,
     _CASE_MC_156,
     _CASE_MC_157,
-    _CASE_MC_158,
+    _CASE_MC_161,
 )

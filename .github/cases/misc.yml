@@ -7360,7 +7360,12 @@ cases:
         - "tests/unit_ci_workflows/test_admin_web_devserver_identity.py"
         - "tests/unit_ci_workflows/test_dev_db_whitelist_one_command.py"
         - "tests/unit_ci_workflows/test_admin_web_next_build_gate.py"
-  - id: MC-158
+      ci:
+        # issue #7255 链内顺带修（main 侧存量红，铁律 9：main 上没有守护会报）：MC-157 走了
+        # 「[backend-contract] 豁免通道」却没声明 traces.ci ⇒ test_case_machine_fail_channel 判红
+        # （「豁免通道不健全 ⇒ I1 的『已豁免』是假绿」）。它的四条判据都跑在 ci-helper 腿（本 job）里。
+        - pr-check.yml
+  - id: MC-161
     legacy_id: ""
     title: "「先查后插」的两处 TOCTOU 写面（收款码 / 角色）必须由唯一键兜底 + 幂等收敛：摘掉唯一键或退回裸 insert 必红（issue #7255）"
     domains:
@@ -7391,12 +7396,16 @@ cases:
       - "**边界（照实登记，§19.1）**：① 判据跑**真 PG**（`PgCluster`：initdb/pg_ctl 一次性集群），本机无 PG 二进制时按 `MIGAO_REQUIRE_REALDB` 二态处理（未设 ⇒ 显式 skip；CI 设了 ⇒ 判红）；② 判据只覆盖「写面 = 本次两条 SQL 路径」，**不覆盖**端点级回执（MockMvc 并发 ⇒ 200 的契约面）；③ 元守卫的残余：服务文件级 `DuplicateKeyException` 仍是**文件级**判定（不是写入点级），已在判据 docstring 的边界段登记并给出重启条件；④ 不改任何门禁的通过条件、不新增豁免。"
     precondition: "本用例是 [backend-contract]：前置 = V206 迁移文件在场、`TenantPaymentQrcodeMapper#upsertActive` 与 `RoleMapper#insertIfAbsent` 是两条写面的唯一入口；真库夹具由 `PgCluster` 现起（随机端口、跑完即停）。"
     skip_reason: "[backend-contract] 真库确定性判据（真 PG + 并发两线程 + 迁移文件真跑），零网络、零 LLM，不进入 agent-eval 冒烟"
-    merge_log: "2026-11-03 新增（issue #7255 台账第 3、4 行）。病 = 两处「selectOne 判空 → insert」的 TOCTOU 写面：并发下都判「不存在」⇒ 都写；有唯一键时第二个 500，没唯一键时静默第二行（读侧 selectOne 又 500）。**先纠正 issue 的一个事实**：`tenant_payment_qrcodes` 的部分唯一索引早在归档链 V48 里（存量库已有）、`roles (tenant_id, code)` 的 UNIQUE 也在建库脚本的表定义里 —— 缺的不是「表上没有唯一键」，而是 ① 应用层靠「先查后插」而不是幂等写、② `roles` 的唯一性**没有任何迁移承载**（存量库有没有它，仓内无法证明）、③ 元守卫的扫面**不认表内 UNIQUE**，于是 `roles` 那一族整张隐形。修 = ① V206 幂等 ensure 两处唯一键（存量重复行 ⇒ WARNING + 跳过，不阻断部署；清理后重跑即建）+ ② 写面收敛成 `ON CONFLICT`（收款码 upsert / 角色 insertIfAbsent + 具名 422）+ ③ 元守卫认表内 UNIQUE、归因改 mapper 优先。取号 **MC-158**（`python3 scripts/next_case_id.py MC` 现取 ⇒ 工具返回历史空档 MC-099，按裁定**不回填**；原定 155，rebase 时发现 main 已在同期占用 MC-155/156/157 ⇒ 顺延 158）。"
+    merge_log: "2026-11-03 新增（issue #7255 台账第 3、4 行）。病 = 两处「selectOne 判空 → insert」的 TOCTOU 写面：并发下都判「不存在」⇒ 都写；有唯一键时第二个 500，没唯一键时静默第二行（读侧 selectOne 又 500）。**先纠正 issue 的一个事实**：`tenant_payment_qrcodes` 的部分唯一索引早在归档链 V48 里（存量库已有）、`roles (tenant_id, code)` 的 UNIQUE 也在建库脚本的表定义里 —— 缺的不是「表上没有唯一键」，而是 ① 应用层靠「先查后插」而不是幂等写、② `roles` 的唯一性**没有任何迁移承载**（存量库有没有它，仓内无法证明）、③ 元守卫的扫面**不认表内 UNIQUE**，于是 `roles` 那一族整张隐形。修 = ① V206 幂等 ensure 两处唯一键（存量重复行 ⇒ WARNING + 跳过，不阻断部署；清理后重跑即建）+ ② 写面收敛成 `ON CONFLICT`（收款码 upsert / 角色 insertIfAbsent + 具名 422）+ ③ 元守卫认表内 UNIQUE、归因改 mapper 优先。取号 **MC-161**（`python3 scripts/next_case_id.py MC` 现取 ⇒ 工具返回历史空档 MC-099，按裁定**不回填**。**三次让号、记实**：原定 155 ⇒ 合并 main 时 main 已占 155/156/157 ⇒ 顺延 158 ⇒ CI 的跨 PR 取号判据报「158 与在飞 #8561/#8568 同时占」（159=#8570、160=#8574）⇒ 按「后合入者让号」终态 **161**）。"
     traces:
       tests:
         - "backend/admin-api/src/test/java/com/migao/admin/service/PaymentQrcodeAndRoleUniqueWriteRealDbTest.java"
         - "backend/admin-api/src/test/java/com/migao/admin/service/RoleMapperTest.java"
         - "tests/unit_ci_workflows/test_idempotent_unique_write_guard.py"
+      ci:
+        # 两份 Java 判据跑在 `admin-api unit tests` 腿（真库族：CI 注入 MIGAO_REQUIRE_REALDB=1，
+        # 缺 PG 二进制 ⇒ 判红不是 skip）；元守卫跑在 ci-helper 腿。
+        - pr-check.yml
       ci:
         - pr-check.yml
       verifies: []

@@ -7255,7 +7255,7 @@
 ```
 溯源: 2026-11-03 新增（issue #6692：本地 `next dev` 与 `next build` 共用 `.next` 会互相写坏；dev 侧已存在路由 404 可复现、build 侧读半写生成物报 9 条 TS 错误）。取号（**三次让号，记实**）：`python3 scripts/next_case_id.py MC` 首取 **MC-145**（工具按「最小空闲号、含历史空档」口径返回；历史空档 MC-099 按裁定**不回填**）；按本轮约束「避开 MC-139~MC-153」让号到 MC-154；merge `origin/main` 时 main 已占 148~154 ⇒ 顺延 **MC-155**；随后批合工具（#8565）把原 MC-154 重编号成 **MC-155**、#7992 又占了 **MC-156**（`git show origin/main:.github/cases/misc.yml` 现取末段 = 150/151/152/153/155/156）⇒ 再撞一次，按「后合入者让号」顺延终态 **MC-157**（157 归本包，158 留给 #8561）。修法 = **A `distDir` 隔离**（根因：物理隔离 > 每次清理）：`frontend/admin-web/next.config.mjs` 按 `NODE_ENV` 切两个输出根（dev → `.next-dev`、build/start → `.next`；`next` CLI 缺省 dev=development、其余=production 且尊重外部已设值 ⇒ `npx next dev` 等任何形态都自动分派）。牵连面**逐处核对**（台账 17 条）：`.gitignore` 两条新规则、`tsconfig.json` include/exclude、dev 锁路径改为现取配置、冒烟脚本陈旧缓存处置文案 + 其判据 7b 断言收紧（并加「不得指向 build 侧 `.next`」负控）、4 处全仓/包内走盘扫描器跳过新目录；**已核对无需改**：Dockerfile（构建/运行都在 production）、`pr-check.yml`（只缓存 npm、不缓存 `.next`）、`playwright.config.ts`（`npx next dev` 自动落 dev 目录）、`package.json`（脚本不覆盖 NODE_ENV）、`deploy/**`（现取 0 处 `.next` 引用）。**红证（注入式，实跑，读数见 PR body）**：7 条各自判红并具名，还原后文件指纹一致。 ｜ tags: dev-experience, dist-dir-isolation, static-config, ledger, red-proof
 
-### MC-158. 「先查后插」的两处 TOCTOU 写面（收款码 / 角色）必须由唯一键兜底 + 幂等收敛：摘掉唯一键或退回裸 insert 必红（issue #7255） 🔵
+### MC-161. 「先查后插」的两处 TOCTOU 写面（收款码 / 角色）必须由唯一键兜底 + 幂等收敛：摘掉唯一键或退回裸 insert 必红（issue #7255） 🔵
 ```
 你: 同一张收款码，两个人几乎同时点保存，一个人看到 200、另一个看到「服务器内部错误」—— 明明是个保存动作，凭什么有时会 500？
 你: 两个管理员同时建同一个角色代码，接口有时候回「角色代码已存在」，有时候直接 500，到底哪个才是对的？
@@ -7271,7 +7271,7 @@
 前置: 本用例是 [backend-contract]：前置 = V206 迁移文件在场、`TenantPaymentQrcodeMapper#upsertActive` 与 `RoleMapper#insertIfAbsent` 是两条写面的唯一入口；真库夹具由 `PgCluster` 现起（随机端口、跑完即停）。
 跳过: [backend-contract] 真库确定性判据（真 PG + 并发两线程 + 迁移文件真跑），零网络、零 LLM，不进入 agent-eval 冒烟
 ```
-溯源: 2026-11-03 新增（issue #7255 台账第 3、4 行）。病 = 两处「selectOne 判空 → insert」的 TOCTOU 写面：并发下都判「不存在」⇒ 都写；有唯一键时第二个 500，没唯一键时静默第二行（读侧 selectOne 又 500）。**先纠正 issue 的一个事实**：`tenant_payment_qrcodes` 的部分唯一索引早在归档链 V48 里（存量库已有）、`roles (tenant_id, code)` 的 UNIQUE 也在建库脚本的表定义里 —— 缺的不是「表上没有唯一键」，而是 ① 应用层靠「先查后插」而不是幂等写、② `roles` 的唯一性**没有任何迁移承载**（存量库有没有它，仓内无法证明）、③ 元守卫的扫面**不认表内 UNIQUE**，于是 `roles` 那一族整张隐形。修 = ① V206 幂等 ensure 两处唯一键（存量重复行 ⇒ WARNING + 跳过，不阻断部署；清理后重跑即建）+ ② 写面收敛成 `ON CONFLICT`（收款码 upsert / 角色 insertIfAbsent + 具名 422）+ ③ 元守卫认表内 UNIQUE、归因改 mapper 优先。取号 **MC-158**（`python3 scripts/next_case_id.py MC` 现取 ⇒ 工具返回历史空档 MC-099，按裁定**不回填**；原定 155，rebase 时发现 main 已在同期占用 MC-155/156/157 ⇒ 顺延 158）。 ｜ tags: concurrency, unique-key, idempotency, migration, red-proof, false-green
+溯源: 2026-11-03 新增（issue #7255 台账第 3、4 行）。病 = 两处「selectOne 判空 → insert」的 TOCTOU 写面：并发下都判「不存在」⇒ 都写；有唯一键时第二个 500，没唯一键时静默第二行（读侧 selectOne 又 500）。**先纠正 issue 的一个事实**：`tenant_payment_qrcodes` 的部分唯一索引早在归档链 V48 里（存量库已有）、`roles (tenant_id, code)` 的 UNIQUE 也在建库脚本的表定义里 —— 缺的不是「表上没有唯一键」，而是 ① 应用层靠「先查后插」而不是幂等写、② `roles` 的唯一性**没有任何迁移承载**（存量库有没有它，仓内无法证明）、③ 元守卫的扫面**不认表内 UNIQUE**，于是 `roles` 那一族整张隐形。修 = ① V206 幂等 ensure 两处唯一键（存量重复行 ⇒ WARNING + 跳过，不阻断部署；清理后重跑即建）+ ② 写面收敛成 `ON CONFLICT`（收款码 upsert / 角色 insertIfAbsent + 具名 422）+ ③ 元守卫认表内 UNIQUE、归因改 mapper 优先。取号 **MC-161**（`python3 scripts/next_case_id.py MC` 现取 ⇒ 工具返回历史空档 MC-099，按裁定**不回填**。**三次让号、记实**：原定 155 ⇒ 合并 main 时 main 已占 155/156/157 ⇒ 顺延 158 ⇒ CI 的跨 PR 取号判据报「158 与在飞 #8561/#8568 同时占」（159=#8570、160=#8574）⇒ 按「后合入者让号」终态 **161**）。 ｜ tags: concurrency, unique-key, idempotency, migration, red-proof, false-green
 
 ## 商家入驻域（7 case）
 
@@ -15065,7 +15065,7 @@
 - MC-155: 终端壳打印能力三态（issue #8310）：桥在 ≠ 打印机在 —— printerMode 负向 / 读不到都不许说「由本机打印机直接出纸」，且「判不了」与「确知没有」分开说
 - MC-156: 机台页详情屏补「报返工」入口（复用既有 reportRework / 不新建第二套返工实现 / 次要动作不抢主位）
 - MC-157: **本地 dev / build 输出目录物理隔离**：`next dev` 写 `.next-dev`、`next build` / `next start` 仍写 `.next`（共用 `.next` 时 dev 侧已存在路由 404 可复现 + build 侧读到半写生成物报 9 条 TS 错误）
-- MC-158: 「先查后插」的两处 TOCTOU 写面（收款码 / 角色）必须由唯一键兜底 + 幂等收敛：摘掉唯一键或退回裸 insert 必红（issue #7255）
+- MC-161: 「先查后插」的两处 TOCTOU 写面（收款码 / 角色）必须由唯一键兜底 + 幂等收敛：摘掉唯一键或退回裸 insert 必红（issue #7255）
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）
