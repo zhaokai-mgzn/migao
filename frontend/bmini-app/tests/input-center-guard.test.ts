@@ -1,4 +1,4 @@
-// case_ids: BM-042, BM-043
+// case_ids: BM-042, BM-043, MC-159
 /**
  * 「H5 输入框文字竖向居中」的**共享层 + 输入面台账**元守卫（issue #6478；AGENTS.md 铁律 8 / `migao-dev-flow` §23）
  *
@@ -81,6 +81,15 @@ function stripScssComments(text: string): string {
     .join('\n')
 }
 
+/**
+ * 去掉顶层 at-rule 语句（`@use …;` 等）：它们不是规则块，但会被朴素配对吞进**下一个**选择器里
+ * ⇒ 选择器从 `taro-input-core` 变成 `@use …; taro-input-core`，三条居中判据当场假红
+ * （issue #6480 给共享层补 `@use './variables.scss'` 时实测命中）。
+ */
+function stripAtRules(text: string): string {
+  return text.replace(/^[ \t]*@[a-z-]+[^;{]*;/gm, '')
+}
+
 /** 抽出 `selector { body }` 块（朴素配对：射程内只有顶层规则，无 scss 嵌套） */
 function ruleBlocks(text: string): { selector: string; body: string }[] {
   const blocks: { selector: string; body: string }[] = []
@@ -112,7 +121,7 @@ export function sharedLayerProblems(input: SharedLayerInput): string[] {
     return problems
   }
 
-  const layer = stripScssComments(input.sharedLayer)
+  const layer = stripAtRules(stripScssComments(input.sharedLayer))
   const blocks = ruleBlocks(layer)
   const outer = blocks.filter((block) => block.selector === 'taro-input-core')
   if (outer.length === 0) {

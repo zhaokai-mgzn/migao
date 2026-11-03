@@ -33,6 +33,27 @@
 //   · 文本级 + 台账 + 注入式红证 = `frontend/bmini-app/tests/input-center-guard.test.ts`；
 //   · **真几何**（内层高 / 外层高 / 上下留白对称）= `tests/e2e/specs/bmini/bmini-input-center.spec.ts`。
 //
+// ══════════════════════════════════════════════════════════════════════════
+// 本文件同时是 **H5 输入面字体族 / 占位符的唯一收口处**（issue #6480）
+//
+// 病：Taro h5 的两层结构下，样式只落在**外层**包裹元素上（各页的 `&__input`），而真正绘字的
+// **内层**原生控件 `<input class="weui-input">` / `<textarea class="taro-textarea">` 有浏览器 UA
+// 默认样式（`Arial` / `monospace`）且**不继承**父级 ⇒ 输入框里的字与页面正文不是同一套字体；
+// `::placeholder` 也只能逐页各写一份（东一块西一块，改了这页忘那页）。
+// `placeholderClass` **只在 weapp 生效** ⇒ H5 那行小字必须**真规则**才有效。
+//
+// 修法（一处收口，逐页**不许**再写一遍）：
+//   ③ 内层两个原生控件 `font-family: inherit` ⇒ 跟随各页正文。本文件**不指定任何具体字体族**：
+//      全局字体族的位置 = `src/app.scss` 的 `page, body`，本单**有意不动**它 ⇒ 全站视觉逐字不变。
+//   ③b `textarea` 另需 `font-size: inherit`：`input` 实测已继承，而 `textarea` 的 UA 默认是
+//      **13.33px monospace**（`taro-textarea-core` 上的 26 / 28px 到不了内层）。
+//   ④ `::placeholder` 的**唯一**来源：色值取 `$text-secondary`（与 issue #6476 的输入条同 token，
+//      故像素级不变）；字号**不写** —— 占位符继承控件自身字号，一处口径、不会两处漂。
+// 判据 = `frontend/bmini-app/tests/input-typography-guard.test.ts`（含注入式红证）。
+// ══════════════════════════════════════════════════════════════════════════
+
+@use './variables.scss' as *;
+//
 // ## 构建注意（与 `src/styles/tabbar.scss` 同款教训）
 //   本文件不引用任何 `var(--…)`：`postcss-pxtransform` 会改写 `var()` 里的兜底值
 //   （#5755 发布后线上实测的构建陷阱）⇒ 只用纯属性 / 百分比，不引入单位字面量。
@@ -48,4 +69,22 @@ taro-input-core {
 //    （外框没有显式高度时，百分比高度按 CSS 规范回落成 auto ⇒ 尺寸与改前逐字一致。）
 taro-input-core .weui-input {
   height: 100%;
+}
+
+// ③ 内层原生控件的字体族只跟随各页正文（issue #6480）—— 这里**不许**出现任何具体字体族。
+.weui-input,
+.taro-textarea {
+  font-family: inherit;
+}
+
+// ③b textarea 的字号也必须显式继承：UA 默认 13.33px monospace，外层 `&__input` 的字号到不了内层。
+.taro-textarea {
+  font-size: inherit;
+}
+
+// ④ 占位符样式的唯一来源（issue #6480）：全 app 的 `::placeholder` 只许出现在本文件。
+//    字号不写（继承控件自身），色值与 #6476 的输入条同一 token ⇒ 视觉逐字不变。
+.weui-input::placeholder,
+.taro-textarea::placeholder {
+  color: $text-secondary;
 }

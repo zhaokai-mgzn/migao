@@ -1,4 +1,4 @@
-// case_ids: BM-044
+// case_ids: BM-044, MC-159
 /**
  * B 端「问黄金策」输入条的 **H5 形态**判据（issue #6476 建；**issue #6596 改判**）
  *
@@ -20,7 +20,7 @@
  * | 1 | H5 **无** `MediaRecorder` ⇒ 键盘措辞 placeholder、且**不出现**「按住说话」 | 摆出按不动的按钮 ⇒ 具名红 |
  * | 2 | H5 **有** `MediaRecorder` ⇒ `isVoiceSupported()` 为真、按住走浏览器录音链路 | 能力探测漏了 H5 / 假绿（探测恒真）⇒ 红 |
  * | 3 | 小程序（录音可用）placeholder 保留「两种输入方式」的双语义 | 一刀切成键盘措辞 ⇒ 红 |
- * | 4 | 源码层：输入态样式必须落到**内层原生控件**（含 `resize` / `::placeholder` / 单行行盒） | 删掉内层规则（H5 又回浏览器默认）⇒ 红 |
+ * | 4 | 源码层：输入态样式必须落到**内层原生控件**（`resize` / 单行行盒）；字体族 / 字号 / 占位符色自 issue #6480 起**收口到共享层**，本块不许再各写一份 | 删掉内层规则（H5 又回浏览器默认）⇒ 红；把 `font-family` 写回本块 ⇒ 红 |
  *
  * ## 边界（照实登记）
  *
@@ -128,7 +128,7 @@ describe('B 端输入条 — 语音可达性按**浏览器能力**分流（issue
 })
 
 describe('B 端输入条 — 样式必须落到真控件（类级元守卫，issue #6476）', () => {
-  it('`MessageInput.scss` 的输入态规则覆盖内层原生 textarea（字号/字体/占位符色/缩放手柄/行盒）', () => {
+  it('`MessageInput.scss` 的输入态规则覆盖内层原生 textarea（缩放手柄/行盒；字体族/字号/占位符色走共享层）', () => {
     const code = scssCode()
     // 从 `&__textarea` 一直切到 `&__attach`（`&__placeholder` 是这一段的最后一块）
     const block = code.slice(code.indexOf('&__textarea'), code.indexOf('&__attach'))
@@ -139,12 +139,18 @@ describe('B 端输入条 — 样式必须落到真控件（类级元守卫，iss
     //    这条反陷阱断言是初版漏掉的 —— 初版写 `textarea {` 也能过，而实测内层仍是浏览器默认。
     expect(block).toContain('.taro-textarea {')
     expect(block).not.toMatch(/^\s*textarea\s*\{/m)
-    expect(block).toContain('font-family: inherit')
-    expect(block).toContain('font-size: inherit')
     expect(block).toContain('resize: none')
-    expect(block).toContain('::placeholder')
-    expect(block).toContain('color: $text-secondary')
     // 单行行盒（> 40px：原值小于行盒 ⇒ 单行时与动作行对不齐）
     expect(block).toContain('min-height: 42px')
+
+    // 🔴 issue #6480：字体族 / 字号 / 占位符色**收口到共享层** `src/styles/input-center.scss`
+    //    （全 app 唯一来源）⇒ 本块**不许**再各写一份（第二份口径会漂：改了共享层、这一份不动 ⇒
+    //    这一面又回到浏览器默认，而没有任何东西会红）。正例（共享层两个内层都继承 + 占位符同色）
+    //    由 `frontend/bmini-app/tests/input-typography-guard.test.ts` 判。
+    const inner = code.slice(code.indexOf('.taro-textarea {'), code.indexOf('&__placeholder'))
+    expect(inner.length).toBeGreaterThan(50) // 反空跑：真的切到了内层块
+    expect(inner).not.toContain('font-family')
+    expect(inner).not.toContain('font-size')
+    expect(inner).not.toContain('::placeholder')
   })
 })
