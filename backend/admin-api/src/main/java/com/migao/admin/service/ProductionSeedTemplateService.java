@@ -375,8 +375,8 @@ public class ProductionSeedTemplateService {
         if (template == null) {
             String reason = "行业「" + (industry == null ? "" : industry) + "」归一为受控 code「" + code
                     + "」，平台没有该行业的预置生产模板 ⇒ 未套用任何工序/路线（不是套用失败，是"
-                    + "本来就没有；如需布艺窗帘模板，请把行业改成「布艺」或「窗帘」，或经 "
-                    + "POST /api/admin/production/seed-templates/{templateId}/apply 手动补套）";
+                    + "本来就没有；如需布艺窗帘模板，请把行业改成「布艺」或「窗帘」；仍缺则由运营人工补套"
+                    + "（模板套用端点是服务方内部动作，商家面无需操作））";
             log.warn("生产种子模板未套用: tenantId={}, industry={}, code={}, reason={}",
                     tenantId, industry, code, reason);
             return result(templateIdOrNull(code), false, reason, 0, 0, 0, 0);

@@ -130,7 +130,7 @@ def mutation_drop_revert_guards(src: str) -> str:
     return splice(
         src,
         "        if (STATUS_REVERTED.equals(batch.getStatus())",
-        "                    \"请先执行该批次（POST /api/admin/agent/batches/\" + batchId + \"/execute）\");\n        }",
+        "                    \"请先执行该批次，执行完成后才能撤销\");\n        }",
         "        // [RED-PROOF] 不可撤销的两道闸被摘掉\n")
 
 

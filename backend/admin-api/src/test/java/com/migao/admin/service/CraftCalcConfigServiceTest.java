@@ -302,7 +302,10 @@ class CraftCalcConfigServiceTest {
                     assertThat(fieldsOf(details))
                             .contains("min_fullness", "default_formula", "per_fold_single");
                     assertThat(details).hasSize(3);
-                    assertThat(((BusinessException) e).getSuggestion()).contains("craft-calc-config");
+                    // §31 P3（issue #6841）：suggestion 只说商家能做的事（现存域），**不摆内部端点**
+                    assertThat(((BusinessException) e).getSuggestion())
+                            .contains("企业基础设置 → 算料口径")
+                            .doesNotContain("/api/");
                 });
     }
 
