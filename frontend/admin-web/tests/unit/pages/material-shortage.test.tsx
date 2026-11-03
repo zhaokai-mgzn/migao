@@ -28,7 +28,8 @@ import { render, screen, fireEvent, waitFor, within } from '@testing-library/rea
 
 const mockShortage = vi.fn()
 
-vi.mock('@/lib/api', () => ({
+// 接口面在独立模块里（`src/lib/api.ts` 属 LOC 冻结面，新增接口面下沉）
+vi.mock('@/lib/api-material-shortage', () => ({
   materialShortageApi: {
     shortage: (...a: unknown[]) => mockShortage(...a),
   },
@@ -48,7 +49,7 @@ vi.mock('lucide-react', async (importOriginal) => {
 })
 
 import MaterialShortagePage from '@/app/(dashboard)/production/material-shortage/page'
-import type { MaterialShortageRow, MaterialShortageView } from '@/types'
+import type { MaterialShortageRow, MaterialShortageView } from '@/types/material-shortage'
 
 const ok = (data: unknown) => ({ data: { data } })
 

@@ -76,8 +76,22 @@ public class QualityCheck {
     /** 质检三态：{@code pass} 合格 / {@code rework} 返工 / {@code scrap} 报废 */
     private String inspectionResult;
 
-    /** 不合格原因：判定 ≠ {@code pass} 时必填（缺 ⇒ 服务层 422 具名报错） */
+    /**
+     * 不合格原因**补充说明**（自由文本，可空）—— issue #7197 ① 把它的角色降级了：
+     * 可统计的原因键是 {@link #reasonCode}，本列只用来补充「到底是什么」。
+     */
     private String reason;
+
+    /**
+     * 不合格原因**字典项**（issue #7197 ①，V207）：{@code fabric_stain} 布面污渍 /
+     * {@code fabric_hole} 布料破洞 / {@code color_diff} 色差 / {@code size_mismatch} 尺寸不符 /
+     * {@code stitching_defect} 走线不良 / {@code other} 其它。
+     *
+     * <p>判定 ≠ {@code pass} 时必填（服务层校验，缺 ⇒ 422 具名报错）。
+     * 🔴 {@code null} = **存量**自由文本记录（不清洗、不回填、不猜归类）：读面据此如实显示「未归类」，
+     * 绝不把自由文本静默并入某个原因（issue #7197 的前置口径）。</p>
+     */
+    private String reasonCode;
 
     /** 检验时刻（业务时钟单点 {@code BusinessClock}，Asia/Shanghai） */
     private OffsetDateTime inspectedAt;

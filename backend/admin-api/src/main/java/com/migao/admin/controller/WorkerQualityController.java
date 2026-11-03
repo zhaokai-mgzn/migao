@@ -5,6 +5,7 @@ import com.migao.admin.dto.ApiResponse;
 import com.migao.admin.entity.User;
 import com.migao.admin.exception.BusinessException;
 import com.migao.admin.service.QualityCheckService;
+import com.migao.admin.service.QualityReasonDictionary;
 import com.migao.admin.service.WorkerAdminService;
 import com.migao.admin.time.BusinessClock;
 import com.migao.admin.worker.WorkerIdentity;
@@ -89,14 +90,18 @@ public class WorkerQualityController {
                 : qualityCheckService.latest(tenantId, orderItemId));
         // 记录列表（最新在前）：页面「质检记录（做工）」块 + 待复检门禁的**唯一**数据源
         data.put("records", records);
+        // 不合格**原因字典**（issue #7197 ①）：随读面一起下发，录入界面据它摆短语按钮 ——
+        // 车间戴手套，点一下比打字省事；字典只有服务端一份（前端不另造会漂的第二张表）。
+        data.put("reasons", QualityReasonDictionary.options());
         return ApiResponse.success(data);
     }
 
     /**
      * 录入一条质检判定 ⇒ 生成一张**质检单**（= {@code quality_inspections} 的一行）。
      *
-     * <p>body = {@code {order_item_id, set_no?, result ∈ pass|rework|scrap, reason?, recheck?}}；
-     * 判定 ≠ 合格 ⇒ 原因必填（缺 ⇒ 422 具名报错、零写入 —— 与观星台同一份服务层校验，不重造第二份）。</p>
+     * <p>body = {@code {order_item_id, set_no?, result ∈ pass|rework|scrap, reason_code?, reason?, recheck?}}；
+     * 判定 ≠ 合格 ⇒ {@code reason_code} 必填（取值域 = {@link QualityReasonDictionary}；缺 ⇒ 422 具名报错、
+     * 零写入 —— 与观星台同一份服务层校验，不重造第二份）；{@code reason} 是自由补充（可空）。</p>
      *
      * <p>🔴 件级闭环（issue #7973）：这一件最新判定 = {@code rework} 且 {@code recheck != true}
      * ⇒ 409（「正在等复检」），不给盲重复提交；【复检通过】用 {@code result=pass}，
@@ -118,6 +123,8 @@ public class WorkerQualityController {
                 orderItemId,
                 result,
                 str(body, "reason"),
+                // issue #7197 ①：原因字典项（判定 ≠ 合格时必填）
+                str(body, "reason_code"),
                 me.workerId(),
                 me.workerName(),
                 QualityCheckService.INSPECTOR_WORKER,

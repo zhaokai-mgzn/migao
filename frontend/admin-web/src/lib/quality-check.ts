@@ -73,6 +73,23 @@ export function latestInspectionOf(
   return null
 }
 
+/**
+ * 不合格原因的**展示文本**（issue #7197 ①）：字典项中文名 + 自由补充。
+ *
+ * - 字典项有 + 补充有 ⇒ `布面污渍（右帘下摆 10cm）`；
+ * - 只有字典项 ⇒ `布面污渍`；
+ * - **存量自由文本**（`reason_code` 为空）⇒ 原样显示那段文本 —— **不猜**它属于哪个字典项
+ *   （「脏」不等于「布面污渍」，归错类比不归类更糟：缺陷分布会静默失真）；
+ * - 都没有 ⇒ `—`（**不编原因**）。
+ */
+export function qualityReasonText(record?: QualityInspectionRecord | null): string {
+  const label = (record?.reason_label ?? '').trim()
+  const note = (record?.reason ?? '').trim()
+  if (label && note) return `${label}（${note}）`
+  if (label) return label
+  return note || '—'
+}
+
 /** 记录表里「每件成品帘的最新判定」（同一份取法，不另写一份）。 */
 export function latestByItem(
   records: QualityInspectionRecord[] | null | undefined,

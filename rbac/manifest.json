@@ -691,6 +691,10 @@
       "product:list"
     ],
     [
+      "/production/material-shortage",
+      "product:list"
+    ],
+    [
       "/production/processing",
       "production:view"
     ],

@@ -1,9 +1,10 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Button, Modal } from '@/components/ui'
 import { qualityInspectionApi } from '@/lib/api'
-import type { QualityInspectionResult } from '@/types'
+import { qualityReasonApi } from '@/lib/api-quality-reasons'
+import type { QualityInspectionResult, QualityReasonOption } from '@/types'
 
 /**
  * 质检判定录入表单（**成品帘级**；issue #7140 = #5652 的商家面）。
@@ -14,6 +15,13 @@ import type { QualityInspectionResult } from '@/types'
  * - 判定 = **合格 / 返工 / 报废**三态；判定 ≠ 合格 ⇒ **原因必填**；
  * - 检验人与检验时刻**由服务端定**（不在这里收，也不显示输入框）—— 前端可被改，责任凭证不能信前端。
  *
+ * ## 原因为什么是**短语按钮 + 可选补充**（issue #7197 ①）
+ *
+ * 旧形态是**自由文本**（「布面污渍」/「脏」/「污渍」= 三个原因）⇒ 缺陷分布 / 帕累托在结构上算不了。
+ * 现在：**必须**从服务端字典里点一项（可统计的原因键），自由文本降级为**补充说明**（可空）。
+ * 字典由 `GET /quality-inspections/reasons` 下发（服务端是唯一真值源，前端不另抄一份会漂的表）。
+ * 短语按钮而不是下拉：车间戴手套，点一下比展开下拉更省事。
+ *
  * ## 为什么是**弹窗**而不是行内展开（issue #7160）
  *
  * 旧形态把表单渲染在整张列表卡片**最底部**（分页之后）：点「录入判定」后视口内毫无变化，
@@ -21,10 +29,10 @@ import type { QualityInspectionResult } from '@/types'
  * 弹窗让「点哪一行 ⇒ 给哪一件录入」这一对应关系当场可见，也避免撑着列表高度。
  * 本组件同时被「质检记录」页与作业单质检区复用 ⇒ 两处**一次**改成弹窗。
  *
- * ## 为什么「原因必填」在前端也判一次
+ * ## 为什么「原因必选」在前端也判一次
  *
- * 服务端缺原因 ⇒ 422 具名报错（**它才是判据**）。这里判一次只是为了不白跑一趟网络、
- * 并且把「哪一格没填」当场说清；**两处文案不同源也没关系** —— 真正的拒绝权在服务端。
+ * 服务端缺字典项 ⇒ 422 具名报错（**它才是判据**）。这里判一次只是为了不白跑一趟网络、
+ * 并且把「哪一格没选」当场说清；**两处文案不同源也没关系** —— 真正的拒绝权在服务端。
  *
  * ## 边界（如实登记）
  *
@@ -44,8 +52,8 @@ interface QualityCheckFormProps {
 
 const RESULT_OPTIONS: { value: QualityInspectionResult; label: string; hint: string }[] = [
   { value: 'pass', label: '合格', hint: '这件成品帘可以直接进入下一环节' },
-  { value: 'rework', label: '返工', hint: '需要返工后重新检验，必须写明原因' },
-  { value: 'scrap', label: '报废', hint: '这件不投入使用，必须写明原因' },
+  { value: 'rework', label: '返工', hint: '需要返工后重新检验，必须选一项不合格原因' },
+  { value: 'scrap', label: '报废', hint: '这件不投入使用，必须选一项不合格原因' },
 ]
 
 /** 服务端下发的业务文案优先（缺它才用兜底句）；不把 HTTP 状态码当商家文案。 */
@@ -62,13 +70,38 @@ export default function QualityCheckForm({
   onCancel,
 }: QualityCheckFormProps) {
   const [result, setResult] = useState<QualityInspectionResult>('pass')
+  const [reasonCode, setReasonCode] = useState('')
   const [reason, setReason] = useState('')
+  const [reasons, setReasons] = useState<QualityReasonOption[]>([])
+  const [reasonsError, setReasonsError] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
 
+  // 字典 = 服务端下发（唯一真值源）；读不到就如实说「读不到」，不拿本地假表顶上
+  // （本地表迟早与校验面漂开：界面能点的项被服务端拒，或反过来）。
+  useEffect(() => {
+    let alive = true
+    void (async () => {
+      try {
+        const response = await qualityReasonApi.list()
+        if (alive) setReasons(response.data?.data?.items ?? [])
+      } catch {
+        if (alive) setReasonsError('不合格原因读不到 —— 请关掉重开；一直读不到请联系管理员。')
+      }
+    })()
+    return () => {
+      alive = false
+    }
+  }, [])
+
   const submit = async () => {
-    if (result !== 'pass' && !reason.trim()) {
-      setError('判定为「返工」或「报废」时，必须填写不合格原因。')
+    if (result !== 'pass' && !reasonCode) {
+      const options = reasons.map((item) => item.label).join(' / ')
+      setError(
+        options
+          ? `判定为「返工」或「报废」时，请先点选一项不合格原因（${options}）。`
+          : '判定为「返工」或「报废」时，请先点选一项不合格原因。',
+      )
       return
     }
     setSubmitting(true)
@@ -77,7 +110,9 @@ export default function QualityCheckForm({
       await qualityInspectionApi.create({
         order_item_id: orderItemId,
         result,
-        ...(result === 'pass' ? {} : { reason: reason.trim() }),
+        ...(result === 'pass' || !reasonCode ? {} : { reason_code: reasonCode }),
+        // 补充说明可选（不填就不带这个键 —— 不往服务端塞空串）
+        ...(result === 'pass' || !reason.trim() ? {} : { reason: reason.trim() }),
       })
       onDone()
     } catch (err) {
@@ -135,20 +170,56 @@ export default function QualityCheckForm({
           {RESULT_OPTIONS.find((option) => option.value === result)?.hint}
         </p>
 
-        <div>
-          <label htmlFor="inspection-reason" className="mb-1 block text-xs text-neutral-500">
-            不合格原因（判定为返工 / 报废时必填）
-          </label>
-          <textarea
-            id="inspection-reason"
-            data-testid="quality-inspection-reason"
-            rows={2}
-            value={reason}
-            onChange={(e) => setReason(e.target.value)}
-            placeholder="例如：布面污渍 / 尺寸偏差 / 缝线开裂"
-            className="w-full rounded border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 placeholder:text-neutral-400 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/15"
-          />
-        </div>
+        {result !== 'pass' && (
+          <div className="space-y-2">
+            <div>
+              <p className="mb-1 text-xs text-neutral-500">不合格原因（必选）</p>
+              <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="不合格原因">
+                {reasons.map((option) => {
+                  const active = reasonCode === option.code
+                  return (
+                    <button
+                      key={option.code}
+                      type="button"
+                      role="radio"
+                      aria-checked={active}
+                      data-testid={`quality-reason-${option.code}`}
+                      onClick={() => setReasonCode(option.code)}
+                      className={
+                        'inline-flex items-center rounded-md border px-3 py-1.5 text-sm ' +
+                        (active
+                          ? 'border-primary-300 bg-primary-50 text-primary-700'
+                          : 'border-neutral-300 bg-white text-neutral-600')
+                      }
+                    >
+                      {option.label}
+                    </button>
+                  )
+                })}
+              </div>
+              {reasonsError && (
+                <p role="alert" data-testid="quality-reasons-error" className="mt-1 text-xs text-red-600">
+                  {reasonsError}
+                </p>
+              )}
+            </div>
+
+            <div>
+              <label htmlFor="inspection-reason" className="mb-1 block text-xs text-neutral-500">
+                补充说明（可不填）
+              </label>
+              <textarea
+                id="inspection-reason"
+                data-testid="quality-inspection-reason"
+                rows={2}
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+                placeholder="想补充细节就写在这里，例如：右帘下摆 10cm"
+                className="w-full rounded border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 placeholder:text-neutral-400 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/15"
+              />
+            </div>
+          </div>
+        )}
 
         {error && (
           <p role="alert" data-testid="quality-inspection-form-error" className="text-sm text-red-600">

@@ -58,6 +58,21 @@
 #                     只有「依赖**缺**」这一态的判定按变更集分派（`report_gated()`，命中 ⇒ 本态 / 未命中
 #                     ⇒ ⏭️ 未就绪且不计通过）。
 #
+# 检查项**真跑**的两个子类（issue #5707 的 FM-E10 收口；本单新增，**准入按子类判**）：
+#   ✅ 实质真跑（**计入准入**）—— 这条腿**能证明本档的目标**：它红了就意味着该目标没达成。
+#                  汇总里的 `MEANINGFUL_EXECUTED` **只数这一类**，`exit 4`（纯空跑）也**按它判**。
+#   🔹 辅助真跑（**不计入准入**）—— **无条件真跑、但与被验证面无关**的检查项。先例 = `redproof` 档的
+#                  「红证机具前提自检」（只核锚点 / 方法**存在**）与「红证实跑巡检」（**另一套**登记册
+#                  机制）：两者都**不证明**「本档那 9 条实跑腿跑过」。它们**照旧真跑**（各有别的用途），
+#                  只是跑绿**不构成**「本档目标已验证」的证明。
+#                  ⚠️ 为什么必须有这一层（实测形态）：`redproof` 档 9 条实跑腿**全部** ⏭️ 时，这 2 项
+#                  仍 ✅ ⇒ 旧口径 `EXECUTED = PASS + FAIL > 0` ⇒ **进不了纯空跑判定** ⇒
+#                  「没跑 = 通过」照样成立（本单要消除的正是这个形态）。
+#                  ⚠️ 登记的**方向必须 fail-closed**：默认（**未登记**）一律算**实质真跑** ⇒ 新增腿天然
+#                  计数，不会因为漏登记而在「零实质腿」时判绿；把一条**实质腿**登记成辅助才会削弱准入。
+#                  登记处 = `aux_step_name()`（**单一实现**；由 `tests/unit_ci_workflows/`
+#                  的 MC-183 判据做「现取 ⇄ 声明」双向核对）。
+#
 # 禁空跑：跑之前先算变更集（`origin/main...HEAD` ∪ 工作区未提交改动，与 QA Growth Gate 预检
 # **同一份判据**）。变更集为空 ⇒ **不跑任何检查**并**非零退出**——在零 diff 的树上跑验证没有边际
 # 信息，把它的 ✅ 读成「验证通过」属 migao-acceptance v1.3 的「空跑」。
@@ -83,6 +98,8 @@
 #
 # 返回码：0=全部**真跑**的检查通过；1=有真跑的检查失败；2=用法错误；
 #         3=无变更（未执行任何检查）；4=有变更但零项真跑（纯空跑）；
+#           ⚠️ 4 里的「真跑」= **实质真跑**（见上「真跑的两个子类」）：全部实跑腿 ⏭️、只剩
+#           **辅助项** ✅ 时**照样判 4**（旧口径按 `EXECUTED = PASS + FAIL` 判 ⇒ 辅助项会把纯空跑顶成绿）。
 #         5=**角色守卫拒绝**（子包 worktree 直跑全量；在任何重活之前，见上）。
 #         ⚠️ 5 与 3/4 **不复用**：3/4 说的是「变更集」的读数（有没有变更 / 有没有真跑），
 #         而 5 说的是「**调用角色**」被拒 —— 此时**变更集根本没算**，用 3/4 会把它读成
@@ -97,8 +114,15 @@ cd "$ROOT"
 PASS=0
 FAIL=0
 READY=0
+#: 真跑的项里被登记为「辅助」的条数（语义见文件头「真跑的两个子类」、登记见 `aux_step_name()`）。
+#: 准入判据 = `MEANINGFUL_EXECUTED = (PASS + FAIL) - AUX_EXECUTED`（汇总块里算）。
+AUX_EXECUTED=0
 declare -a FAILED
 declare -a NOT_READY
+#: 被 skip 的腿「具名 + 缺什么工具链」逐条拼在这里（`report_env()` 追加；`exit 4` 的归因用）。
+#: ⚠️ 用**标量**而不是数组：本文件的汇总块会被外部 harness **单独抽出**执行（那里只造 `NOT_READY`），
+#:    数组缺失在 bash 3.2 + `set -u` 下会 unbound variable；标量可用 `${NOT_READY_WHY:-}` 兜底。
+NOT_READY_WHY=""
 
 # ── 变更集来源（单一实现，issue #3724 + 本次抽公共）────────────────────────────
 # 供「禁空跑」判据与 gate_check() 共用 —— ⚠️ **禁止在别处再写一套**：下面两条注释里的细节
@@ -261,6 +285,23 @@ probe_ready() {
   return 0
 }
 
+# ── 「辅助真跑」登记（**单一实现**；语义见文件头「真跑的两个子类」）──────────────────
+# 用途：把「无条件跑、但**不证明本档目标**」的检查项排除在**准入计数**之外
+# （`MEANINGFUL_EXECUTED = (PASS + FAIL) - AUX_EXECUTED`，`exit 4` 按前者判）。
+# ⚠️ **默认方向 == fail-closed**：这里**没登记**的名字一律算「实质真跑」⇒ 新腿自动计数；
+#    只有「把一条实质腿登记成辅助」才会削弱准入 ⇒ 由 MC-183 判据（`tests/unit_ci_workflows/`）
+#    做「现取 ⇄ 声明」双向核对 + 只许缩短 + 注入式红证钉住。
+# ⚠️ 为什么按**名字**判、而不是改派发函数（如新增 `report_aux`）：`report "…前提自检…" redproof_preflight`
+#    这个**派发形态本身**是既有契约（`test_redproof_harness_gate.py` 逐字锁它），而本判定要区分的是
+#    「这项算不算证明」= **登记**，不是派发语义。
+aux_step_name() {
+  case "$1" in
+    "红证机具前提自检（前提能否成立）") return 0 ;;
+    "红证实跑巡检（登记册逐条：注入 → 必红 → 还原）") return 0 ;;
+  esac
+  return 1
+}
+
 report() {
   # 用法：report "检查项名" 命令...
   # ⚠️ **签名是契约，不许改**：`test_step_exit_code_propagation.py` 的静态断言、
@@ -287,6 +328,14 @@ report() {
   local rc=0
   "$@" > "$log" 2>&1
   rc=$?
+  # 真跑的**子类**统计（文件头「真跑的两个子类」）：辅助项只进 EXECUTED（= PASS + FAIL），不进准入。
+  # ⚠️ `declare -F` 兜底 + `${AUX_EXECUTED:-0}` 默认：本函数会被外部 harness **单独抽出**执行
+  #    （test_verify_all_tri_state_noop / test_local_gate_matrix / test_gate_uncommitted_noop），
+  #    那里没有本文件的函数定义与顶层变量 ⇒ 裸调用会 `command not found`（127 ⇒ 误判成「非辅助」）。
+  #    未定义时的方向是 fail-closed（算实质真跑），因此不会把别人的守卫打红成假绿。
+  if declare -F aux_step_name >/dev/null 2>&1 && aux_step_name "$name"; then
+    AUX_EXECUTED=$(( ${AUX_EXECUTED:-0} + 1 ))
+  fi
   if [ "$rc" -eq 0 ]; then
     # 「假绿」兜底（见 FAKE_PASS_SIGNATURE 注释）：退出 0 但日志显示工具根本没跑起来 ⇒ **归入 ❌**。
     # ⚠️ 边界：这类「跑了但没生效」**绝不**归 ✅ 或 ⏭️ —— ⏭️ 只表示「**根本没跑**」（probe 未就绪）。
@@ -329,6 +378,10 @@ report_env() {
     echo "     准备：$READY_HINT"
     READY=$((READY + 1))
     NOT_READY+=("$name")
+    # 归因（issue #5707）：`exit 4` 的报文要能**具名**说清「哪几条腿被 skip、缺什么工具链」——
+    # 这里把 `probe_ready()` 给出的**同一句**缺什么逐条拼起来（不另写第二套判定）。
+    NOT_READY_WHY="${NOT_READY_WHY:-}  · ${name} —— ${READY_MISSING}
+"
     return 0
   elif [ "$probe_rc" -ne 0 ]; then
     # ⚠️ 变量必须用 `${…}` 显式包裹：macOS 自带 bash 3.2 会把**紧跟 $VAR 的非 ASCII 字节**
@@ -1200,12 +1253,26 @@ esac
 echo ""
 EXECUTED=$((PASS + FAIL))
 TOTAL=$((PASS + FAIL + READY))
-echo "========== 结果: $PASS 通过, $FAIL 失败, $READY 未就绪（真跑 $EXECUTED 项 / 共 $TOTAL 项）=========="
-if [ "$EXECUTED" -eq 0 ]; then
-  # 有变更却零项真跑 = 纯空跑：本次没有任何东西被验证过 ⇒ **不得**当成通过。
-  echo "❌ 无有效检查（纯空跑）—— 有变更，但 $TOTAL 项检查全部未就绪，本次没有验证任何东西"
+# 准入判据（issue #5707 的 FM-E10）：**实质真跑** = 真跑的项里能证明本档目标的那一部分
+# （辅助真跑见文件头「真跑的两个子类」）。旧口径 `EXECUTED == 0` 会把「全部实跑腿 ⏭️、
+# 只剩 2 项无条件辅助项 ✅」的档判绿 —— 那正是「没跑 = 通过」。
+AUX_EXECUTED="${AUX_EXECUTED:-0}"
+MEANINGFUL_EXECUTED=$((EXECUTED - AUX_EXECUTED))
+echo "========== 结果: $PASS 通过, $FAIL 失败, $READY 未就绪（真跑 $EXECUTED 项 / 共 $TOTAL 项；其中实质真跑 $MEANINGFUL_EXECUTED 项）=========="
+if [ "$MEANINGFUL_EXECUTED" -eq 0 ]; then
+  # 有变更却**零项实质真跑** = 纯空跑：本次没有验证任何能证明该档目标的东西 ⇒ **不得**当成通过。
+  if [ "$EXECUTED" -eq 0 ]; then
+    echo "❌ 无有效检查（纯空跑）—— 有变更，但 $TOTAL 项检查全部未就绪，本次没有验证任何东西"
+  else
+    echo "❌ 无有效检查（纯空跑）—— 有变更，真跑的 $EXECUTED 项**全是辅助项**（无条件跑、但不证明本档目标），实质腿一条都没跑"
+    echo "   辅助项 $AUX_EXECUTED 项：它们照旧真跑（各有别的用途），但跑绿**不构成**「本档目标已验证」"
+  fi
   if [ "$READY" -gt 0 ]; then
     printf '未就绪（跳过）: %s\n' "${NOT_READY[@]}"
+    if [ -n "${NOT_READY_WHY:-}" ]; then
+      echo "被跳过的腿（具名 · 缺什么工具链，共 $READY 条）："
+      printf '%s' "$NOT_READY_WHY"
+    fi
   fi
   exit 4
 fi

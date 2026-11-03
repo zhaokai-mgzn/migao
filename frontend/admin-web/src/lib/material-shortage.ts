@@ -17,7 +17,7 @@
  */
 
 import { displayEnum } from '@/lib/enum-display'
-import type { MaterialShortageHistoryDepth, MaterialShortageView } from '@/types'
+import type { MaterialShortageHistoryDepth, MaterialShortageView } from '@/types/material-shortage'
 
 /** 读不出 ⇒ 事实陈述「未知」（**不是** 0，也不是「暂无数据」） */
 export const UNKNOWN = '未知'

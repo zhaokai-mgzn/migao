@@ -23,12 +23,20 @@ import userEvent from '@testing-library/user-event'
 
 const mockList = vi.fn()
 const mockCreate = vi.fn()
+const mockReasons = vi.fn()
 
 vi.mock('@/lib/api', () => ({
+  default: {},
   qualityInspectionApi: {
     list: (...args: unknown[]) => mockList(...args),
     create: (...args: unknown[]) => mockCreate(...args),
   },
+}))
+
+// 原因字典（issue #7197 ①）：表单挂载时读一次，短语按钮由它驱动。
+// 接口面在独立模块里（`src/lib/api.ts` 属 LOC 冻结面，新增接口面下沉）。
+vi.mock('@/lib/api-quality-reasons', () => ({
+  qualityReasonApi: { list: (...args: unknown[]) => mockReasons(...args) },
 }))
 
 import QualityCheckPanel from '@/components/production/QualityCheckPanel'
@@ -74,6 +82,22 @@ describe('质检区（作业单生产明细内嵌）', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockCreate.mockResolvedValue({ data: { data: passRecord } })
+    // 服务端字典（顺序即界面顺序；「其它」在最后）
+    mockReasons.mockResolvedValue({
+      data: {
+        success: true,
+        data: {
+          items: [
+            { code: 'fabric_stain', label: '布面污渍' },
+            { code: 'fabric_hole', label: '布料破洞' },
+            { code: 'color_diff', label: '色差' },
+            { code: 'size_mismatch', label: '尺寸不符' },
+            { code: 'stitching_defect', label: '走线不良' },
+            { code: 'other', label: '其它' },
+          ],
+        },
+      },
+    })
   })
 
   it('① 逐件成品帘显示最新判定：有记录=判定（含原因/检验人/时刻），无记录=未检', async () => {
@@ -107,14 +131,17 @@ describe('质检区（作业单生产明细内嵌）', () => {
     // issue #7160：录入 = 弹窗（与「质检记录」页同一份表单，两处都必须是弹窗）
     expect(screen.getByRole('dialog', { name: /录入质检判定/ })).toBeInTheDocument()
     await user.click(screen.getByTestId('quality-result-scrap'))
-    await user.type(screen.getByTestId('quality-inspection-reason'), '尺寸偏差')
+    // issue #7197 ①：原因 = 必选的**字典项**（点一项）+ 可选的自由补充
+    await user.click(await screen.findByTestId('quality-reason-size_mismatch'))
+    await user.type(screen.getByTestId('quality-inspection-reason'), '下摆短 3cm')
     await user.click(screen.getByRole('button', { name: '提交判定' }))
 
     await waitFor(() =>
       expect(mockCreate).toHaveBeenCalledWith({
         order_item_id: 'item-2',
         result: 'scrap',
-        reason: '尺寸偏差',
+        reason_code: 'size_mismatch',
+        reason: '下摆短 3cm',
       }),
     )
   })

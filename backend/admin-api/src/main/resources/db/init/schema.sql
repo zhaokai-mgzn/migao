@@ -4084,7 +4084,10 @@ CREATE TABLE IF NOT EXISTS quality_inspections (
     inspector_name VARCHAR(64),
     inspector_kind VARCHAR(16) NOT NULL DEFAULT 'employee', -- issue #7162：employee 观星台 / worker 工人端
     inspection_result VARCHAR(16) NOT NULL,            -- 质检三态：pass 合格 / rework 返工 / scrap 报废
-    reason VARCHAR(500),                               -- 不合格原因：判定 ≠ pass 时**服务层必填**（缺 ⇒ 422，不静默存）
+    reason VARCHAR(500),                               -- 不合格原因**补充说明**（自由文本，可空；issue #7197 ① 起不再能顶替字典项）
+    -- issue #7197 ①（V207）：不合格原因**字典项** = 可统计的原因键；判定 ≠ pass 时**服务层必填**
+    -- （缺 / 字典外 ⇒ 422）。NULL = 存量自由文本记录（**不清洗**：不猜归类、不回填 ⇒ 读面如实显示「未归类」）
+    reason_code VARCHAR(32),
     inspected_at TIMESTAMP WITH TIME ZONE NOT NULL,    -- 检验时刻（业务时钟单点 BusinessClock）
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     deleted INTEGER NOT NULL DEFAULT 0

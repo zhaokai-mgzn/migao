@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { AlertTriangle, RefreshCw } from 'lucide-react'
 import { extractApiErrorMessage, toastRequestError } from '@/lib/api-error'
-import { materialShortageApi } from '@/lib/api'
+import { materialShortageApi } from '@/lib/api-material-shortage'
 import { Button, Card, Loading, PageHeader } from '@/components/ui'
 import {
   DEADLINE_UNKNOWN,
@@ -21,7 +21,7 @@ import {
   shortageRows,
   truncationNote,
 } from '@/lib/material-shortage'
-import type { MaterialShortageRow, MaterialShortageView } from '@/types'
+import type { MaterialShortageRow, MaterialShortageView } from '@/types/material-shortage'
 
 /** 与后端缺省一致（`MaterialShortageService.DEFAULT_LIMIT`）；非法值由服务端显式拒绝，前端不夹取 */
 const LIMIT = 50

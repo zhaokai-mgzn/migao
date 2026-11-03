@@ -36,7 +36,7 @@ import {
   shortageRows,
   truncationNote,
 } from '@/lib/material-shortage'
-import type { MaterialShortageView } from '@/types'
+import type { MaterialShortageView } from '@/types/material-shortage'
 
 const view = (over: Partial<MaterialShortageView> = {}): MaterialShortageView => ({
   view: 'material_shortage',

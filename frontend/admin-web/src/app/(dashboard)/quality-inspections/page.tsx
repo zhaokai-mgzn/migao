@@ -6,7 +6,7 @@ import { Button, EmptyState, Loading, PageCard, PageHeader, Pagination } from '@
 import ListLoadError from '@/components/common/ListLoadError'
 import QualityMetricsPanel from '@/components/production/QualityMetricsPanel'
 import { qualityInspectionApi } from '@/lib/api'
-import { formatMoment, qualityResultLabel, qualityStateChipClass } from '@/lib/quality-check'
+import { formatMoment, qualityReasonText, qualityResultLabel, qualityStateChipClass } from '@/lib/quality-check'
 import type { QualityInspectionRecord, QualityStats, QualityStatsWindow } from '@/types'
 
 /**
@@ -217,7 +217,7 @@ export default function QualityInspectionsPage() {
                         {qualityResultLabel(record.result, record.result_label)}
                       </span>
                     </td>
-                    <td className="px-4 py-2 text-neutral-600">{record.reason || '—'}</td>
+                    <td className="px-4 py-2 text-neutral-600">{qualityReasonText(record)}</td>
                     <td className="px-4 py-2 text-neutral-600">{record.inspector_name || '—'}</td>
                   </tr>
                 ))}
