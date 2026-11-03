@@ -249,7 +249,7 @@ public class AgentBatchService {
         if (!STATUS_PREVIEW.equals(batch.getStatus())) {
             throw BusinessException.conflict("批次当前状态为 " + batch.getStatus()
                             + "，只有 preview 的批次可以执行（不可重复执行）",
-                    "用 GET /api/admin/agent/batches/" + batchId + " 查看该批次的状态与结果");
+                    "请刷新该批次的状态与结果后再判断（只有 preview 的批次可以执行）");
         }
         // 测试探针（issue #6960）：放大「读-判」与「抢执行权」之间的窗口（生产恒为 0，无分支成本）。
         // 与 RemnantService#recover 的探针同款 —— 窗口只有微秒级，不注入判据会退化成 flake。
@@ -381,12 +381,12 @@ public class AgentBatchService {
         if (STATUS_REVERTED.equals(batch.getStatus()) || STATUS_REVERT_PARTIAL.equals(batch.getStatus())) {
             throw BusinessException.conflict("批次当前状态为 " + batch.getStatus()
                             + "，已撤销的批次不可重复撤销",
-                    "用 GET /api/admin/agent/batches/" + batchId + " 查看该批次的撤销结果");
+                    "请刷新该批次的状态与撤销结果后再重试（已撤销的批次不可重复撤销）");
         }
         if (!STATUS_DONE.equals(batch.getStatus()) && !STATUS_PARTIAL.equals(batch.getStatus())) {
             throw BusinessException.conflict("批次当前状态为 " + batch.getStatus()
                             + "，可撤销状态只有 " + STATUS_DONE + " / " + STATUS_PARTIAL,
-                    "请先执行该批次（POST /api/admin/agent/batches/" + batchId + "/execute）");
+                    "请先执行该批次，执行完成后才能撤销");
         }
         // 测试探针（issue #6960）：同 execute —— 放大「读-判」与「抢撤销权」之间的窗口（生产恒为 0）。
         if (BATCH_PROBE_PAUSE_MILLIS > 0) {

@@ -404,8 +404,8 @@ public class CraftCalcConfigService {
                     "算料配置有 " + details.size() + " 处不合法，已整份拒绝（**不静默回退默认值** —— "
                             + "静默 = 商家以为改了、系统按默认算 ⇒ 算错钱且无人知道）",
                     details,
-                    "请按逐条理由修正后重新提交；各键语义与默认值见 "
-                            + "GET /api/admin/production/craft-calc-config（source='default' 的那一份）。");
+                    "请按逐条理由修正后重新提交；各键语义与默认值见「企业基础设置 → 算料口径」页"
+                            + "（本店未单独配置时按默认值生效）。");
         }
         return out;
     }

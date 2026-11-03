@@ -335,9 +335,8 @@ public class ProcessingFeeCombinationCommandService {
             if (Objects.equals(other.getCompositionKey(), compositionKey)) {
                 throw BusinessException.conflict(
                         String.format("加工费组合「%s」已存在定价", compositionKey),
-                        String.format("同一组合只能有一个价（否则下单匹配到哪一行取决于扫描顺序 ⇒ 同一份选配两个价）："
-                                + "请直接编辑既有那一行（PUT /api/admin/production/processing-fee-combinations/%s），"
-                                + "或改组合内容", other.getId()));
+                        "同一组合只能有一个价（否则下单匹配到哪一行取决于扫描顺序 ⇒ 同一份选配两个价）："
+                                + "请在「企业基础设置 → 加工费组合」里直接编辑既有那一行，或改组合内容");
             }
         }
     }
