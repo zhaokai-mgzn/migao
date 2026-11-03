@@ -1182,7 +1182,7 @@
     "data=dict(response.get('data') or {})",
     "data=polled or data"
    ],
-   "source_sha256": "a995e432ecaad7e54f1ad5912c47daff44df3e95bef1b7a8781e26df581af98c"
+   "source_sha256": "46bffd5984abc9e626676d7f7f3a267a5b5317e9dddbd2ff50c31acaf1ba40d0"
   },
   "product_detail": {
    "actions": null,
