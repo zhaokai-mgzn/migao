@@ -4186,7 +4186,7 @@
 ```
 溯源: 2026-10-31 新增（issue #8295）：两步确认，避免误写 ｜ tags: ui, preview
 
-## 杂项域（199 case）
+## 杂项域（200 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -7227,6 +7227,19 @@
 ```
 真值: ⚠️ 缺口（见对应模板 ⚠️ 注释）
 溯源: 2026-11-03 新增（issue #8310）。病 = 终端壳**打印能力误报**：页面说「由本机打印机直接出纸」，本机 `PrinterLink.mode()` = **-1**；根因 = `probePrintCapability()` 的终端分支**只看壳**（有 `chrome.webview` 就 `ok:true`）、`PrintEnv` 里没有能力字段。修 = 三态判定 `terminalPrintState(printerMode)`（`>0` available / `<0` unavailable / `0`·缺省·非有限 unknown），新增两条缺口文案（`terminal-printer-unavailable` / `terminal-print-unknown`）并登记进 `INBOUND_PRINT_GAP_WIRING`；`readPrintEnv()` 从 `window.__CFG__.printerMode` 取数（非数字按读不到）。取号 = MC-154（`python3 scripts/next_case_id.py MC` 现取 main 001-098/100-144/146-147 ⇒ 工具返回历史空档 MC-099，按裁定**不回填**；MC-139~MC-153 属并行包保留带，**避开** ⇒ 顺延 MC-154）。🔴 **仓外事实（如实登记，不假造）**：原生侧本轮**还没有**送 `printerMode` ⇒ 真机一律落 `unknown`（fail-closed：不许说能打）；**原生侧要补送 `printerMode`**（值域口径：负 = 不可用 / 正 = 可用 / 0 与缺省 = 判不了），补送后本仓代码**无需再改**。边界 = 不覆盖原生赋值、不判硬件选型。 ｜ tags: backend-contract, bmini, print-capability, fail-closed, three-state, no-overclaim, red-proof
+
+### MC-155. 机台页详情屏补「报返工」入口（复用既有 reportRework / 不新建第二套返工实现 / 次要动作不抢主位） 🔵
+```
+你: 裁床在一体机屏上扫完唛、发现这道活做坏了：屏上只有【完成】，想报返工得退出机台页、回工人工作台、再找返工页 —— 扫过的这张唛还要重扫一遍。
+数据: 🔴 **判据 ①·入口在且不抢主位（§31 P1）**：扫码后的详情屏出现「报返工」；主按钮**仍然是**唯一一个 `.wh5-machine__cta` 的【完成】（报返工走次要档 `.wh5-machine__back`）；收起态原因按钮**零 DOM**（不是 CSS 隐藏）。执行点 = frontend/worker-h5/tests/worker-h5-machine-rework.test.mjs::① / ::①′
+数据: 🔴 **判据 ②·走既有写面（不新造端点）**：点原因 ⇒ 恰好一次 `POST /api/worker/production/rework`；装配层调 `api.reportRework(`，端点字面量只留在 `frontend/worker-h5/src/api.mjs` 一处。执行点 = 同文件::② / ::②′
+数据: 🔴 **判据 ③·上下文随码带出**：请求体 = 刚扫到的那张码 + 原因（白名单，无 `worker_id` / 无 `operation_id`，身份只由 `X-Worker-Session-Id` 解）；展开态摆出「返工对象：<加工单号> · <部位>」；换一张码不跨码携带返工态。执行点 = 同文件::③ / ::③′ / ::③″
+数据: 🔴 **负控 ⑤·主动作没被挤掉/接错线**：点【完成】仍走 `scan/complete`，且不连带发返工请求。执行点 = 同文件::⑤
+数据: 🔴 **失败/成功两态**：服务端 422 ⇒ 大字显式 + 原因条保持展开（换一个原因是合法动作）；成功 ⇒ 摆**服务端给的**返工单号且入口变「返工已登记」（防重复开单）。执行点 = 同文件::④ / ::④′
+数据: 🔴 **红证 ④（注入式，实跑）**：把 `reportBlock` 动作行里的 `${reworkEntry}` 删掉 ⇒ ① 必红（实测 4 pass / 6 fail）；恢复 ⇒ 10 pass / 0 fail。
+跳过: [backend-contract] 工人端 H5 的纯前端判据（`node --test` + 手写假 doc / 假 fetch，零 DOM 库、零网络、零 LLM）由 frontend/worker-h5/tests/worker-h5-machine-rework.test.mjs 验证，不进入 agent-eval 冒烟
+```
+溯源: 2026-11-03 新增（issue #7992；壁达现场屏「工序返修」的对位功能，用户逐字「工序返修需要，等同于我们的报返工的功能」）。取号（**两次让号，记实**）：`python3 scripts/next_case_id.py MC` 现取返回历史空档 **MC-099** —— 按裁定**刻意空档不回填**；MC-139~MC-153 在飞/已合占用密集 ⇒ 按派单口径避开，先取 **MC-154**；merge `origin/main` 时与 main 新增的 **MC-154**（#8559 / issue #8310，且同号还被在飞 PR #8561 的 claim `8561-MC-154.json` 占着）撞号 ⇒ 按「**后合入者让号**」顺延终态 **MC-155**。落码 = ① `frontend/worker-h5/src/machine.mjs`：`MACHINE_REWORK_REASONS`（原因短语，与报工页表单 placeholder 同源）+ `reworkTargetLine()`（返工对象 = 加工单号 · 部位）+ `reworkBlock()`（收起态零 DOM / 展开 = 对象 + 原因按钮 + 取消）+ 状态机 `reworkOpen/Close/Start/Done/Failed`（换码清态）；② `frontend/worker-h5/src/machine-app.mjs`：`reportRework(reason)` 调**既有** `api.reportRework`；③ 判据 frontend/worker-h5/tests/worker-h5-machine-rework.test.mjs（10 条，含负控与红证）。形式选择 = 原因走**短语按钮**而不是文本框：机台页刻意零文本输入元素（`frontend/worker-h5/machine.html` 头注释 = IME 兜底那道保险，扫码枪是唯一输入面）。 ｜ tags: worker-h5, machine-screen, rework, entry-point, single-source, red-proof
 
 ## 商家入驻域（7 case）
 
@@ -14735,8 +14748,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：997（活跃 153，跳过 844）
-- tier 分布：smoke 15 / normal 920 / adversarial 33
+- 用例总数：998（活跃 153，跳过 845）
+- tier 分布：smoke 15 / normal 921 / adversarial 33
 - 售后域：16
 - Agent 核心域：13
 - API 层域：21
@@ -14752,7 +14765,7 @@
 - 人事域：13
 - 知识问答域：9
 - 客户主数据迁移域：10
-- 杂项域：199
+- 杂项域：200
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：76
@@ -15018,6 +15031,7 @@
 - MC-153: B 端移动会话卡：来源组说商家的话、内部口径词零上屏（bmini 侧的零内部口径词判据 + 认不出的来源走兜底，issue #6461）
 - MC-147: **状态列写面全族统一元守卫 SW-100**：53 张有 `status` 列的表 × 134 个写入口逐条登记（未登记即红 / 台账陈旧即红 / 裸字符串写状态列即红 / 每张状态表的合法集合必须有来源）
 - MC-154: 终端壳打印能力三态（issue #8310）：桥在 ≠ 打印机在 —— printerMode 负向 / 读不到都不许说「由本机打印机直接出纸」，且「判不了」与「确知没有」分开说
+- MC-155: 机台页详情屏补「报返工」入口（复用既有 reportRework / 不新建第二套返工实现 / 次要动作不抢主位）
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）

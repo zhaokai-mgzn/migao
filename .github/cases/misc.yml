@@ -7252,7 +7252,7 @@ cases:
         - pr-check.yml
       verifies: []
 
-  - id: MC-154
+  - id: MC-155
     legacy_id: ""
     title: "终端壳打印能力三态（issue #8310）：桥在 ≠ 打印机在 —— printerMode 负向 / 读不到都不许说「由本机打印机直接出纸」，且「判不了」与「确知没有」分开说"
     domains:
@@ -7282,6 +7282,46 @@ cases:
     traces:
       tests:
         - "frontend/bmini-app/tests/inbound-print-capability-terminal.test.ts"
+      ci:
+        - pr-check.yml
+      verifies: []
+  # MC-155（issue #7992）：机台页详情屏只有【完成】一个动作 —— 裁床发现这道活做坏了，
+  # 想报返工得退出机台页、回工人工作台再找返工页，扫过的这张唛还要重扫一遍。
+  # ==========================================================================
+  - id: MC-156
+    legacy_id: ""
+    title: "机台页详情屏补「报返工」入口（复用既有 reportRework / 不新建第二套返工实现 / 次要动作不抢主位）"
+    domains:
+      - misc
+      - frontend
+      - ui
+    tier: normal
+    tags:
+      - worker-h5
+      - machine-screen
+      - rework
+      - entry-point
+      - single-source
+      - red-proof
+    truths_ref: []
+    # ⚠️ 真值暂缺：本判据是**工人端 H5 屏面结构 + 请求白名单**的事实（手写假 doc / 假 fetch 的
+    # `node --test`），由 frontend/worker-h5/tests/worker-h5-machine-rework.test.mjs 验证；
+    # 真库上的返工改记 / 回退 / 开单不在本面（服务端口径由既有 Java 单测与工人端既有用例覆盖）。
+    user_inputs:
+      - "裁床在一体机屏上扫完唛、发现这道活做坏了：屏上只有【完成】，想报返工得退出机台页、回工人工作台、再找返工页 —— 扫过的这张唛还要重扫一遍。"
+    expectations: []
+    data_checks:
+      - "🔴 **判据 ①·入口在且不抢主位（§31 P1）**：扫码后的详情屏出现「报返工」；主按钮**仍然是**唯一一个 `.wh5-machine__cta` 的【完成】（报返工走次要档 `.wh5-machine__back`）；收起态原因按钮**零 DOM**（不是 CSS 隐藏）。执行点 = frontend/worker-h5/tests/worker-h5-machine-rework.test.mjs::① / ::①′"
+      - "🔴 **判据 ②·走既有写面（不新造端点）**：点原因 ⇒ 恰好一次 `POST /api/worker/production/rework`；装配层调 `api.reportRework(`，端点字面量只留在 `frontend/worker-h5/src/api.mjs` 一处。执行点 = 同文件::② / ::②′"
+      - "🔴 **判据 ③·上下文随码带出**：请求体 = 刚扫到的那张码 + 原因（白名单，无 `worker_id` / 无 `operation_id`，身份只由 `X-Worker-Session-Id` 解）；展开态摆出「返工对象：<加工单号> · <部位>」；换一张码不跨码携带返工态。执行点 = 同文件::③ / ::③′ / ::③″"
+      - "🔴 **负控 ⑤·主动作没被挤掉/接错线**：点【完成】仍走 `scan/complete`，且不连带发返工请求。执行点 = 同文件::⑤"
+      - "🔴 **失败/成功两态**：服务端 422 ⇒ 大字显式 + 原因条保持展开（换一个原因是合法动作）；成功 ⇒ 摆**服务端给的**返工单号且入口变「返工已登记」（防重复开单）。执行点 = 同文件::④ / ::④′"
+      - "🔴 **红证 ④（注入式，实跑）**：把 `reportBlock` 动作行里的 `${reworkEntry}` 删掉 ⇒ ① 必红（实测 4 pass / 6 fail）；恢复 ⇒ 10 pass / 0 fail。"
+    skip_reason: "[backend-contract] 工人端 H5 的纯前端判据（`node --test` + 手写假 doc / 假 fetch，零 DOM 库、零网络、零 LLM）由 frontend/worker-h5/tests/worker-h5-machine-rework.test.mjs 验证，不进入 agent-eval 冒烟"
+    merge_log: "2026-11-03 新增（issue #7992；壁达现场屏「工序返修」的对位功能，用户逐字「工序返修需要，等同于我们的报返工的功能」）。取号（**两次让号，记实**）：`python3 scripts/next_case_id.py MC` 现取返回历史空档 **MC-099** —— 按裁定**刻意空档不回填**；MC-139~MC-153 在飞/已合占用密集 ⇒ 按派单口径避开，先取 **MC-154**；merge `origin/main` 时与 main 新增的 **MC-154**（#8559 / issue #8310，且同号还被在飞 PR #8561 的 claim `8561-MC-154.json` 占着）撞号 ⇒ 按「**后合入者让号**」顺延终态 **MC-155**。落码 = ① `frontend/worker-h5/src/machine.mjs`：`MACHINE_REWORK_REASONS`（原因短语，与报工页表单 placeholder 同源）+ `reworkTargetLine()`（返工对象 = 加工单号 · 部位）+ `reworkBlock()`（收起态零 DOM / 展开 = 对象 + 原因按钮 + 取消）+ 状态机 `reworkOpen/Close/Start/Done/Failed`（换码清态）；② `frontend/worker-h5/src/machine-app.mjs`：`reportRework(reason)` 调**既有** `api.reportRework`；③ 判据 frontend/worker-h5/tests/worker-h5-machine-rework.test.mjs（10 条，含负控与红证）。形式选择 = 原因走**短语按钮**而不是文本框：机台页刻意零文本输入元素（`frontend/worker-h5/machine.html` 头注释 = IME 兜底那道保险，扫码枪是唯一输入面）。"
+    traces:
+      tests:
+        - "frontend/worker-h5/tests/worker-h5-machine-rework.test.mjs"
       ci:
         - pr-check.yml
       verifies: []
