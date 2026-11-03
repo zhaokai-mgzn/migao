@@ -4186,7 +4186,7 @@
 ```
 溯源: 2026-10-31 新增（issue #8295）：两步确认，避免误写 ｜ tags: ui, preview
 
-## 杂项域（195 case）
+## 杂项域（197 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -7113,6 +7113,32 @@
 跳过: [backend-contract] 零 LLM 的确定性读数（词法扫 admin-api Java 源码 + `_sql_schema` 解析建库脚本/@TableName + 台账双向对账 + 合成语料判别力自证），零网络、零 DB、不进 agent-eval 冒烟
 ```
 溯源: 2026-11-03 新增（issue #6953 的族级元守卫 SW-100；与 MC-100 / MC-104 / PG-075 等单表守卫**有意不重叠** —— 它们裁谓词完整性，本表裁「写面有没有人认领 / 状态值是不是单一口径」）。取号（**两次让号，记实**）= `python3 scripts/next_case_id.py MC` 首取 **MC-143**；merge `origin/main` 时与 main 新增的 **MC-143**（issue #6997 / PR #8535）撞号 ⇒ 按「后合入者让号」顺延 **MC-144**；再次 merge 又与 main 新增的 **MC-144**（issue #7034 / PR #8537）撞号 ⇒ 顺延 **MC-145**；随后 CI 的取号判据（issue #6245）抓到 **MC-145 与在飞 PR #8538 同时占着** ⇒ 再按「后合入者让号」顺延终态 **MC-147**（工具每次都返回历史空档 MC-099 —— 按裁定**刻意空档不回填**）。**现取读数**：53 张有 `status` 列的表（`_sql_schema` 唯一解析点）、134 条写点（Java 108 / SQL 26）、覆盖 49 张表；合法集合权威：实体常量 10 / schema CHECK 14 / **无机器口径 36（冻结上限）**；裸字符串存量 56（冻结上限）。**红证（注入式，实跑）**：① 往真实 Service 里加一条未登记写面 ⇒ 判据 1 判红并具名；② 把常量改成裸字符串 ⇒ 判据 3 判红并具名；③ 把台账条目删掉 ⇒ 判据 2 判红（写点无主）；④ 把 `unregistered()` 的登记对账摘掉 / 把 `bare_literal_sites()` 摘掉 ⇒ 判据 1 / 判据 3 必红（判据 7 内建这两条内存变异体作常驻证）。**如实登记的既有缺陷（本包不修，不扩射程）**：`ProductionOperationCommandService#update` 的无条件状态写（见判据 8 的盲洞 ②）、`InboundOrderService` 的 builder 写形（盲洞 ①）、36 张表没有机器可读的合法状态集合、56 处裸字面量 —— 均为存量债，压测口径 = 台账基线**只许缩短**。 ｜ tags: state-transition, meta-guard, ledger, single-source, red-proof
+
+### MC-148. B 端会话卡的「来源组」不许把服务端内部标签摆上屏：唯一映射表（机器键 → 商家话术）+ 枚举全集覆盖 + 认不出的键走兜底（issue #6461） 🔵
+```
+你: 在米宝会话里问「这个月省了多少布」，卡片上的来源组写着「切换后（采购入库）」「存量导入（切换前历史包袱）」—— 这两个词是什么意思？
+数据: 🔴 **判据 ①（已知值 ⇒ 商家话术）**：`purchase` / `opening` / `unknown` 三个服务端来源组各自映射出一句商家话术，且文案**不含**英文、下划线（内部标识形态）与内部口径词（切换后 / 存量导入 / 来源未知），三句互不相同。执行点 = frontend/admin-web/tests/unit/lib/cohort-groups.test.ts::① 已知服务端值
+数据: 🔴 **判据 ②（负控：枚举全集覆盖）**：映射表键集 == 服务端枚举全集，**现取** `backend/admin-api/src/main/java/com/migao/admin/dto/SavingMetricViews.java` 的 `COHORT_*` 常量（服务端新增一组而前端没跟上 ⇒ 红；反向删键 ⇒ 也红）。同一判据先断言抽到的枚举 ≥3（防「空 vs 空」的假绿）。红证：在 Java 里加 `COHORT_RETURN = "return"` 而不补文案 ⇒ 该条红。执行点 = 同文件::② 映射表键集 == 服务端枚举全集
+数据: 🔴 **判据 ③（未知值 ⇒ 兜底，不回显原始值）**：`switched` / `legacy_import` / `return` / `COHORT_NEW` / 空串 / 缺值一律落兜底话术，且结果**不包含**输入原文；对照组 = 已知键仍走表（防「恒回兜底」的假绿）。红证：把 `COHORT_GROUP_FALLBACK` 从 `cohortGroupTitle()` 里摘掉 ⇒ 该条红（屏上会是空/原值）。执行点 = 同文件::③ 认不出的键 / 空值
+数据: 🔴 **判据 ④（源码面：渲染表达式里零 `cohortLabel`）**：B 端两端会话卡（桌面 `frontend/admin-web/src/components/chat/BatchStockCard.tsx` + 移动 `frontend/bmini-app/src/components/cards/BatchStockCard.tsx`）去注释后**零**出现 `cohortLabel`，且都真的在调 `cohortGroupTitle(`（反向判别力：没接线时「没标签可渲染」会假绿）。红证：把渲染改回 `{cohort.cohortLabel}` ⇒ 红。执行点 = 同文件::④ 两个会话卡的渲染代码
+数据: 🔴 **判据 ⑤（两端同源）**：bmini 是独立 npm 工程（不许 import admin-web 的 TS）⇒ 那边的副本 `frontend/bmini-app/src/utils/cohort-groups.ts` 必须与本站单一真值**逐项相等**（键值 + 兜底文案）。红证：只改一侧的任一词 ⇒ 红。执行点 = 同文件::⑤ 同源
+数据: **bmini 侧例外面（同一纪律的另一半）**：移动端会话卡的渲染面与「内部口径词零上屏」由 frontend/bmini-app/tests/cohort-groups-no-jargon.test.tsx 判（MC-149）—— 两文件分工：本站判「表的质量 + 枚举覆盖 + 两端同源」，bmini 判「本端渲染与源码面」。
+数据: **边界（照实登记）**：① 判据只机械覆盖「会话卡的来源组标题」这一面 —— 工具侧文本（`batch_stock_query` 的 `message` 里仍用服务端标签拼摘要，会进模型上下文）**本单未改**，见 PR body 的未固化项；② 「哪句话最像商家的话」判不了（散文级，靠评审）；③ 判据 ② 的语料是 Java **源码**而不是运行期接口：**本地**门禁的 `admin_web_face_paths` 已含该 Java 文件（改了 DTO 就触发本腿）；**CI 侧** admin-web 腿的触发面仍只有 `frontend/admin-web/**` ⇒ 服务端单独改这个 DTO 的 PR 在 CI 上**不会**跑本条判据（已登记为 `declaration_gate_registry.json` 的未覆盖面，带 reason/issue/owner）。
+跳过: [backend-contract] 纯前端文案 + 源码结构判据（vitest；只读 Java 源码做枚举比对），零网络、零真实 LLM，非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-11-03 新增（issue #6461 = #6459 的同类形态：会话卡把服务端内部标签逐字上屏）。取号 MC-148（`python3 scripts/next_case_id.py MC` 现取返回 MC-145；按集成侧在飞占用避开 139~145、且「MC-099 刻意空档不回填」⇒ 顺延取 146）。落码 = ① 唯一映射表 frontend/admin-web/src/lib/cohort-groups.ts（+ bmini 副本 src/utils/cohort-groups.ts，独立 npm 工程不许跨包 import）② 两端会话卡的来源组标题改走映射表（服务端 `cohortLabel` 不再渲染）③ 判据 frontend/admin-web/tests/unit/lib/cohort-groups.test.ts（①~⑤）④ bmini 侧判据见 MC-149。 ｜ tags: ui, frontend, copy, no-internal-identifier, batch-ledger, same-source, red-proof
+
+### MC-149. B 端移动会话卡：来源组说商家的话、内部口径词零上屏（bmini 侧的零内部口径词判据 + 认不出的来源走兜底，issue #6461） 🔵
+```
+你: 工人/商家在手机上打开米宝会话卡，来源组那一行写着「存量导入（切换前历史包袱）」—— 他看不懂这是什么。
+数据: 🔴 **判据 1（渲染：说商家的话）**：三个已知来源组在移动端会话卡上分别显示映射文案，且屏上**零出现**「切换后 / 存量导入 / 来源未知」—— 夹具里 `cohortLabel` **故意**保留内部标签，证明页面拿到却不渲染。红证：卡片改回渲染 `cohortLabel` ⇒ 红。执行点 = frontend/bmini-app/tests/cohort-groups-no-jargon.test.tsx::判据 1
+数据: 🔴 **判据 2（认不出的键 ⇒ 兜底）**：`cohort: 'switched'` / 空串 ⇒ 屏上落兜底话术，且英文原值不上屏；对照组 = 已知键仍走表。红证：删掉兜底 ⇒ 红。执行点 = 同文件::判据 2
+数据: 🔴 **判据 3（源码面：bmini 会话卡零内部口径词）**：`src/components/cards/**`（去注释）里不出现那三个词 —— 这是 issue #6461 要求补的「bmini-app 侧的零内部口径词判据」（admin-web 的 `user-copy-jargon-guard` 只扫自己的包，且判不了服务端下发的字符串）。红证：在任一张卡里写一句「存量导入…」⇒ 红。执行点 = 同文件::判据 3
+数据: **同源（不各写一份会漂的文案）**：本端文案是副本，单一真值在 `frontend/admin-web/src/lib/cohort-groups.ts`，两端逐项相等由 MC-148 的判据 ⑤ 现取比对（改一侧不改另一侧 ⇒ 红）；控制台命令 `cd frontend/bmini-app && npx jest tests/cohort-groups-no-jargon.test.tsx`。
+数据: **边界（照实登记）**：① 只覆盖会话卡（`saving_board` 分支）的来源组标题与卡内源码；其它页面（如省料看板的图表/表格）不在本判据射程；② 判据判不了「这句话商家到底能不能懂」，那要靠评审与真机走查。
+跳过: [backend-contract] bmini 确定性渲染 + 源码扫描判据（jest + jsdom），零网络、零真实 LLM，非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-11-03 新增（issue #6461 的「落地后补：bmini-app 侧的零内部口径词判据」）。取号 MC-149（`python3 scripts/next_case_id.py MC` 现取 145、避开 139~145 的在飞占用后顺延）。落码 = frontend/bmini-app/tests/cohort-groups-no-jargon.test.tsx（判据 1~3）+ src/utils/cohort-groups.ts 副本 + 会话卡接线（来源组标题与「老库存单列」行文案）。 ｜ tags: ui, frontend, copy, bmini, no-internal-identifier, red-proof
 
 ### MC-148. B 端会话卡的「来源组」不许把服务端内部标签摆上屏：唯一映射表（机器键 → 商家话术）+ 枚举全集覆盖 + 认不出的键走兜底（issue #6461） 🔵
 ```
@@ -14673,8 +14699,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：993（活跃 153，跳过 840）
-- tier 分布：smoke 15 / normal 916 / adversarial 33
+- 用例总数：995（活跃 153，跳过 842）
+- tier 分布：smoke 15 / normal 918 / adversarial 33
 - 售后域：16
 - Agent 核心域：13
 - API 层域：21
@@ -14690,7 +14716,7 @@
 - 人事域：13
 - 知识问答域：9
 - 客户主数据迁移域：10
-- 杂项域：195
+- 杂项域：197
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：76
@@ -14948,6 +14974,8 @@
 - MC-143: 悬空 PR 扫描器把「未解决评审线程」计入**需要处置**（issue #6997）：`isResolved=false ∧ isOutdated=false` ⇒ 判红并报出 `path` + 首行摘要；`isOutdated=true` 单独一类**不算阻塞**；读不到 ⇒ 退 `3`（不得当 0）
 - MC-144: deploy-reconcile 的漂移判据必须覆盖**构建输入面**（部署腿 workflow / 构建配方 / 线上自证脚本）：只改 CI 或部署脚本的修复合入后不得判「已上线」，更不得自动关值守单（issue #7034）
 - MC-147: **状态列写面全族统一元守卫 SW-100**：53 张有 `status` 列的表 × 134 个写入口逐条登记（未登记即红 / 台账陈旧即红 / 裸字符串写状态列即红 / 每张状态表的合法集合必须有来源）
+- MC-148: B 端会话卡的「来源组」不许把服务端内部标签摆上屏：唯一映射表（机器键 → 商家话术）+ 枚举全集覆盖 + 认不出的键走兜底（issue #6461）
+- MC-149: B 端移动会话卡：来源组说商家的话、内部口径词零上屏（bmini 侧的零内部口径词判据 + 认不出的来源走兜底，issue #6461）
 - MC-148: B 端会话卡的「来源组」不许把服务端内部标签摆上屏：唯一映射表（机器键 → 商家话术）+ 枚举全集覆盖 + 认不出的键走兜底（issue #6461）
 - MC-149: B 端移动会话卡：来源组说商家的话、内部口径词零上屏（bmini 侧的零内部口径词判据 + 认不出的来源走兜底，issue #6461）
 - MC-148: B 端会话卡的「来源组」不许把服务端内部标签摆上屏：唯一映射表（机器键 → 商家话术）+ 枚举全集覆盖 + 认不出的键走兜底（issue #6461）

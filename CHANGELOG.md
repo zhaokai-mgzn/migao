@@ -16,9 +16,9 @@
   （与省料看板同一说法）；没记来源的 ⇒「还没记清来源的布」；**认不出的来源一律说
   「其它来源的布」**（服务端将来加一组不会白屏、也不会漏出内部标识）。手机端那一行改说
   「开业时导入的老库存（单列）」。
-- 判据：`frontend/admin-web/tests/unit/lib/cohort-groups.test.ts`（MC-146：文案规范 / 枚举全集覆盖 /
+- 判据：`frontend/admin-web/tests/unit/lib/cohort-groups.test.ts`（MC-148：文案规范 / 枚举全集覆盖 /
   兜底 / 两端渲染面零 `cohortLabel` / 两端同源）、`frontend/bmini-app/tests/cohort-groups-no-jargon.test.tsx`
-  （MC-147：手机端渲染与源码面零内部口径词）；每条都带注入式红证。
+  （MC-149：手机端渲染与源码面零内部口径词）；每条都带注入式红证。
 - 未固化（照实登记）：工具侧文本摘要（`batch_stock_query` 的 `message`）仍用服务端标签拼句，
   会进模型上下文 —— 本单只收口**卡片**这一面，另单跟踪。
 
