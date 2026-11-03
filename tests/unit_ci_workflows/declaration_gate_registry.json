@@ -222,7 +222,26 @@
           "reason": "本腿的 `npm ci` / `tsc --noEmit` / `eslint` / `next build` / `vitest` **全部**以 `frontend/admin-web` 为根（vitest root = 该目录，`setupFiles: ./tests/setup.ts` 亦在其内；依赖全是 npm 公共包，无仓内 workspace 依赖）"
         }
       ],
-      "uncovered": [],
+      "uncovered": [
+        {
+          "path": "backend/admin-api/src/main/java/com/migao/admin/dto/SavingMetricViews.java",
+          "issue": "#6461",
+          "owner": "CI 门禁 owner（pr-check 面）",
+          "reason": "本腿的 `tests/unit/lib/cohort-groups.test.ts` 读它的 `COHORT_*` 枚举做「来源组映射表覆盖全集」比对（服务端加一组而前端没跟上 ⇒ 该判据红）。**未纳入 CI 触发面**：扩到 backend 会让每个后端 PR 都跑本腿约 250s 全量（同 #4177 对 ai-agent 腿的成本裁定）；改由**本地** `./verify-all.sh` 的 `admin_web_face_paths` 兜（已含该 Java 文件，实测 C5 闭包绿）+ 评审。服务端单独改这个 DTO 的 PR 在 CI 上**不会**跑本条判据 —— 照实登记，不静默。"
+        },
+        {
+          "path": "frontend/bmini-app/src/utils/cohort-groups.ts",
+          "issue": "#6461",
+          "owner": "CI 门禁 owner（pr-check 面）",
+          "reason": "bmini 是独立 npm 工程（不许 import admin-web 的 TS）⇒ 来源组文案是副本，本腿的判据 ⑤ 读它做**两端同源**逐项比对（只改一侧 ⇒ 红）。未纳入 CI 触发面同上（成本裁定）；本地 `admin_web_face_paths` 已含该文件。"
+        },
+        {
+          "path": "frontend/bmini-app/src/components/cards/BatchStockCard.tsx",
+          "issue": "#6461",
+          "owner": "CI 门禁 owner（pr-check 面）",
+          "reason": "本腿判据 ④ 读**两端会话卡的渲染面**（去注释后 `cohortLabel` 必须零出现）—— 只改 bmini 把内部标签渲染回来也必须红。未纳入 CI 触发面同上；本地 `admin_web_face_paths` 已含该文件。"
+        }
+      ],
       "auto_discover_root": null,
       "check_name": "admin-web typecheck + unit tests",
       "gated_steps": [
