@@ -21,7 +21,10 @@
 
 1. **工具层** `BaseTool.check_permission`（Python，友好错误 + 纵深防御）；
 2. **端点层** `@RequirePermission` + `PermissionInterceptor`（**权威闸**：`ServiceTokenFilter` 在
-   `X-User-Id` 命中本租户商户员工时挂**真实角色**，故工具调用同样受端点细粒度校验）；
+   `X-User-Id` 命中本租户商户员工时挂**真实角色**，故工具调用同样受端点细粒度校验）。
+   ⚠️ 端点侧有**两种**校验形态（issue #6378）：注解式 `@RequirePermission("码")` 与**命令式**
+   `PermissionInterceptor.requirePermission("码")` —— 两者由 `JavaEndpointIndex` 一并解析
+   （`JavaEndpoint.checked`；码由同一个 `permission_codes` 提取，见 `tool_http_attribution.py`）；
 3. **菜单层** 前端侧边栏 `/api/auth/me` 的 `permissions`/`menus` 过滤。
 
 ## 判据（每条都有**注入式红证**，见文件末尾 `test_every_judgement_can_go_red`）
@@ -50,8 +53,9 @@
    admin-api 里没有角色行/权限映射）—— 除非该工具**确实**是 C 端可达的（`c_end_reachable`）。
 7. **`c_end_reachable` 不得手写**：必须逐字等于「该工具是否被**小布（C 端）**的 skill 绑定」
    （从 `app/agents/agents/xiaobu.py` 的 `skill_names` + `app/graph/skills/*.py` 的 `*_TOOLS` 推导）。
-8. **未注解端点 = 显式登记的决定**（不是沉默）：每个生效码为 `None` 的端点必须命中
-   `UNANNOTATED_ENDPOINTS` 的某条已登记口径；登记项不得陈旧。同理 `REGISTERED_RESIDUALS`
+8. **无权限校验的端点 = 显式登记的决定**（不是沉默）：每个**既没有注解式也没有命令式**校验
+   （`ep.checked` 为假 —— 命令式 = `PermissionInterceptor.requirePermission(...)`，issue #6378）的端点
+   必须命中 `UNANNOTATED_ENDPOINTS` 的某条已登记口径；登记项不得陈旧。同理 `REGISTERED_RESIDUALS`
    逐条登记**已知但本单不修**的残留（带理由 + 去向）。
 9. **解析器自检（防恒绿空跑）**：注解条数守恒 / 两处权限目录逐值相等 / 回退里的角色必须是种子岗位
    或已登记的历史角色 / 菜单码 ∈ 权限目录 / 各集合非空。⚠️ **岗位默认权限的值级判据已迁到判据 14**
@@ -1128,34 +1132,13 @@ UNANNOTATED_ENDPOINTS: dict[str, str] = {
     "DELETE /api/admin/agent/scheduled-tasks*": "同上（只取消自己的待办）",
     "POST /api/admin/agent/audit-logs": "内部服务**取证上报**面：加码会让受限岗位的写操作审计被 403（#4727 第 11 行，"
                                         "取证缺口不可接受 —— 这是审计明说该放行的一条）",
-    "POST /api/admin/image-recognition": "图片识别（issue #5321 包 1）—— ⚠️ **本条不是「有意放行」**："
-                                        "权限**有**，只是取不到静态注解上。语义 = 一个入口覆盖两个模块、"
-                                        "两种写码（建品页 `product:create` / 建单页 `order:create`），"
-                                        "`@RequirePermission` 只能声明**端点级静态码**，表达不了这种分叉 "
-                                        "⇒ 控制器内用 `PermissionInterceptor.requirePermission(...)` "
-                                        "**命令式断言**动态校验（issue #4148 的既有机制，与 AOP 拦截走**同一份**判定："
-                                        "未认证拒绝 / 旁路角色 / `*` 通配 / 细粒度查询）；**未知 target ⇒ 400 且不发起远端调用**"
-                                        "（fail-closed，没有可用码就不放行）。"
-                                        "⚠️ **本守卫看不到动态调用**（它只读注解）⇒ 登记项与被登记端点之间的"
-                                        "「动态校验真的存在」由 `backend/admin-api/src/test/java/com/migao/admin/"
-                                        "controller/ImageRecognitionControllerTest.java` 机械兜住："
-                                        "逐 target 断言 `requirePermission(\"product:create\")` / "
-                                        "`requirePermission(\"order:create\")`，并断言未知 target 时"
-                                        "`never()` 调客户端与权限判定。同族形态见 `AgentOrderController` "
-                                        "的退款 action 复检（类级读码 + 命令式 `order:refund`）。",
-    "POST /api/admin/image-recognition/interpret": "图片识别 + 黄金策推理（issue #6367 包 P2）—— "
-                                        "与上面的 `POST /api/admin/image-recognition` **同族、同一处判定**："
-                                        "权限**有**，只是同样取不到静态注解上（一个入口覆盖两个模块、"
-                                        "两种写码，`@RequirePermission` 表达不了分叉）⇒ 控制器内"
-                                        "`PermissionInterceptor.requirePermission(...)` 命令式断言，"
-                                        "两个方法共用同一个私有判定 `requireTargetPermission`"
-                                        "（`backend/admin-api/src/main/java/com/migao/admin/controller/"
-                                        "ImageRecognitionController.java`）⇒ **不可能**只有新端点悄悄放宽。"
-                                        "机械兜底 = `backend/admin-api/src/test/java/com/migao/admin/controller/"
-                                        "ImageRecognitionInterpretControllerTest.java`：逐 target 断言 "
-                                        "`requirePermission(\"product:create\")` / `requirePermission(\"order:create\")`、"
-                                        "未知 target ⇒ 400 且 `never()` 调客户端与权限判定、权限拒绝 ⇒ 403；"
-                                        "另有注解形态一致性判据（方法级注解组成与 `recognize` 相同、路径 = 它 + `/interpret`）。",
+    # issue #6378（2026-11-03）：`POST /api/admin/image-recognition` 与 `.../interpret` **两条已从本表删除**。
+    # 它们**不是**「有意放行」：权限一直**有**，只是命令式（`PermissionInterceptor.requirePermission(...)`，
+    # 一个入口覆盖 `product:create` / `order:create` 两个写码，`@RequirePermission` 表达不了分叉）
+    # ⇒ 判据 8 现在认这种形态（`JavaEndpoint.checked`），两条端点不再是「没有任何校验」的端点。
+    # 逐 target 的机械兜底仍在 `backend/admin-api/src/test/java/com/migao/admin/controller/`
+    # 的 `ImageRecognitionControllerTest.java` / `ImageRecognitionInterpretControllerTest.java`；
+    # 本守卫认的是「这里确实做了一次命令式校验」，**不判**它的码选得对不对（那是上述 Java 判据的活）。
     "GET /api/customer/*": "C 端人工会话面：不走 `/api/admin/**` 门禁，隔离靠业务层 `X-User-Id` 过滤",
     "POST /api/customer/*": "同上",
     "GET /api/worker/*": "工人端身份（#4716 设计 C11 预留）：`ADMIN_API_REJECTED_ROLES` 已把 worker 挡在 `/api/admin/**` 之外",
@@ -1787,12 +1770,17 @@ def problems_c_end_flag(w: World) -> list[str]:
 
 
 def problems_registered_decisions(w: World) -> list[str]:
-    """判据 8：未注解端点 = 显式登记的决定（登记不得陈旧）；残留必须带理由与去向。"""
+    """判据 8：**没有任何校验的端点** = 显式登记的决定（登记不得陈旧）；残留必须带理由与去向。
+
+    issue #6378：取值口从 `ep.permission is None`（只认注解）换成 `not ep.checked`
+    （注解式**或**命令式 `requirePermission(...)`）—— 命令式校验此前被读成「没有校验」，
+    台账因此虚高（两条图片识别端点被登记成「未注解」，实际有校验）。
+    """
     out: list[str] = []
     hit: set[str] = set()
     for (verb, path), eps in sorted(w.all_eps.items()):
         for ep in eps:
-            if ep.permission is not None:
+            if ep.checked:
                 continue
             key = f"{verb} {path}"
             matched = [p for p in UNANNOTATED_ENDPOINTS if _matches_registered(key, {p: ""})]
@@ -1841,7 +1829,7 @@ def problems_self_checks(w: World) -> list[str]:
         if not rel.startswith("java:controller/"):
             continue
         stripped = ATTR._strip_java_comments(src)  # noqa: SLF001
-        total = len(ATTR._REQUIRE_PERMISSION_RE.findall(stripped))  # noqa: SLF001
+        total = len(ATTR.permission_codes(stripped, form=ATTR.FORM_ANNOTATION))  # noqa: SLF001
         parsed = len(sites.get(f"com/migao/admin/controller/{rel.split('/', 1)[1]}", set()))
         if total != parsed:
             out.append(

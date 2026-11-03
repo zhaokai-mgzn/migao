@@ -74,7 +74,12 @@ ROLE_READ_ENDPOINTS: dict[str, str] = {
     "GET /api/admin/roles/{}": "system:view",
 }
 
-#: `/api/admin/**` 面上「无任何生效码」的端点**总数**现取上限（只许缩短；对照读数写进台账）。
+#: `/api/admin/**` 面上「**没有任何权限校验**（注解式**或**命令式）」的端点**总数**现取上限
+#: （只许缩短；对照读数写进台账）。
+#: 🔴 口径已于 issue #6378（2026-11-03）收窄：**命令式**校验（`PermissionInterceptor.requirePermission(...)`）
+#: 也算校验（`JavaEndpoint.checked`）。早先只认注解 ⇒ 图片识别的两条命令式端点被读成「无码」，
+#: 读数因此虚高两条（14 → 12）。**这是收紧读数口径、不是放宽**：照旧超出上限即红，
+#: 且新增的「既无注解又无命令式」端点仍会把它顶高。
 #:
 #: 10 → 11（issue #6367 包 P2，2026-10-05）：新增 `POST /api/admin/image-recognition/interpret`，
 #: 与既有 `POST /api/admin/image-recognition` **同族**（一个入口覆盖 `product:create` / `order:create`
@@ -82,9 +87,6 @@ ROLE_READ_ENDPOINTS: dict[str, str] = {
 #: 在「按注解统计」的口径下**本条是实打实 +1** —— 已按本判据报错提示登记进既有台账
 #: `test_agent_permission_parity.py::UNANNOTATED_ENDPOINTS`（逐条带理由 + 机械兜底
 #: `ImageRecognitionInterpretControllerTest`），此处只把**读数上限**跟到现值。
-#: 🔴 这是**显式放宽**（diff 里看得见）、不是放宽判定：超出上限照旧红；
-#: 修法（让本判据认得命令式动态校验 ⇒ 这两个端点连同同类能一起从「无码」面里摘出去，
-#: 上限随之退回 10 甚至更低）见 issue #6378；未落地前**不得再涨**。
 #: 11 → 14（issue #6486 包 1，2026-10-07）：新增 `AgentScheduledTaskController` 的
 #: `POST/GET/DELETE /api/admin/agent/scheduled-tasks` —— 黄金策**定时提醒**的**自助**端点
 #: （商家给自己建/查/取消待办；收件人取自认证上下文，读写都只碰自己的行）⇒ 与既有
@@ -93,8 +95,10 @@ ROLE_READ_ENDPOINTS: dict[str, str] = {
 #: `test_agent_permission_parity.py::UNANNOTATED_ENDPOINTS`（逐条带理由）。
 #: 🔴 与 #6367 同款的**显式放宽**（diff 里看得见）、不是放宽判定：超出上限照旧红。
 #: 退回路径：这 3 条若能表达成注解式（例如引入「自助」语义码、或把自助面移出 `/api/admin/**`），
-#: 读数应随之退回 11；在此之前**不得再涨**。
-ADMIN_SCOPE_UNANNOTATED_CEILING = 14
+#: 读数应随之退回；在此之前**不得再涨**。
+#: 14 → 12（issue #6378，2026-11-03）：口径换到 `ep.checked`（命令式也算校验）⇒ 图片识别两条摘出
+#: 「无校验」面。**这不是放宽**：读数口径收紧，上限跟着降到**现值 12**（回涨即红）。
+ADMIN_SCOPE_UNANNOTATED_CEILING = 12
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 一、共用的静态归属机具（**不造第二套解析器**：issue #3570 的教训）
@@ -154,12 +158,16 @@ def _role_endpoints(index) -> dict[str, object]:
 
 
 def _control_admin_unannotated(index) -> int:
-    """对照读数：`/api/admin/**` 面上「无任何生效码」的端点总数（只报告，不判对错）。"""
+    """对照读数：`/api/admin/**` 面上「**没有任何权限校验**」的端点总数（只报告，不判对错）。
+
+    issue #6378：取值口 = `ep.checked`（注解式**或**命令式 `requirePermission(...)`）——
+    早先用 `ep.permission is None`（只认注解）⇒ 命令式校验的端点被读成「无码」，读数虚高。
+    """
     return sum(
         1
         for eps in index.endpoints().values()
         for ep in eps
-        if ep.permission is None and ep.path.startswith("/api/admin")
+        if not ep.checked and ep.path.startswith("/api/admin")
     )
 
 
