@@ -271,22 +271,6 @@ def _field_types(code: str) -> dict[str, str]:
     return types
 
 
-def _type_index(code: str, start: int = 0, end: int | None = None,
-                params: str = "") -> dict[str, str]:
-    """变量名 → 声明的类型（**本文件字段 + 本成员形参 + 本成员局部变量**）。
-
-    ⚠️ 作用域限定在成员内，不用「全文件首个声明」：同名变量在别的成员里可能是另一种实体
-    ⇒ 归属会串表（台账会替**错的表**盖章）。
-    """
-    types: dict[str, str] = _field_types(code)
-    for m in re.finditer(r"([A-Z]\w*)\s+(\w+)", params):
-        types.setdefault(m.group(2), m.group(1))
-    limit = len(code) if end is None else end
-    for m in _DECL.finditer(code, start, limit):
-        types.setdefault(m.group(2), m.group(1))
-    return types
-
-
 def _stmt_end(code: str, start: int, limit: int) -> int:
     """从 `start` 起到语句结束（`;`）—— 括号内的 `;` 不算（lambda / for 头）。"""
     depth = 0
@@ -682,7 +666,7 @@ def test_writing_a_table_without_status_column_is_not_in_scope():
         "    }",
         "}",
     )
-    assert _scan_corpus(corpus, entities={"Order": "orders"}, tables={"orders"}) == [], (
+    assert _scan_corpus(corpus, entity_tables={"Order": "orders"}, status_table_set={"orders"}) == [], (
         "写**没有 status 列**的表 / 非实体 DTO 被算成了状态写面")
 
 
@@ -693,7 +677,8 @@ def test_detector_has_teeth():
     base_tables = {"orders", "production_operations"}          # ⇒ customer_profiles 不在射程（负控 ⑥）
 
     def scan(*body: str, ents=base_ents, tbls=base_tables) -> list[dict]:
-        return _scan_corpus("\n".join(("class Svc {",) + body + ("}",)), entities=ents, tables=tbls)
+        return _scan_corpus("\n".join(("class Svc {",) + body + ("}",)),
+                            entity_tables=ents, status_table_set=tbls)
 
     # ① 常规常量写 ⇒ 恰好 1 条、无裸字面量
     ok = scan("    void cancel(Order order) {",
@@ -758,10 +743,14 @@ def _corpus(*lines: str) -> str:
     return "\n".join(lines)
 
 
-def _scan_corpus(text: str, *, entities=None, tables=None) -> list[dict]:
-    """在**内存语料**上跑与真实扫描**同一份**检测本体（不复制判定逻辑）。"""
-    ent = entities if entities is not None else entities_global()
-    tbls = tables if tables is not None else status_tables()
+def _scan_corpus(text: str, *, entity_tables=None, status_table_set=None) -> list[dict]:
+    """在**内存语料**上跑与真实扫描**同一份**检测本体（不复制判定逻辑）。
+
+    ⚠️ 形参不能叫 `entities` / `tables`：那会**遮蔽**同名模块函数 ⇒ 默认臂一调就
+    `TypeError: 'NoneType' object is not callable`（本包实测踩到一次）。
+    """
+    ent = entity_tables if entity_tables is not None else entities()
+    tbls = status_table_set if status_table_set is not None else status_tables()
     code = java_code(text)
     masked = mask_strings(code)
     lits = java_literals(code)
@@ -812,6 +801,3 @@ def _scan_corpus(text: str, *, entities=None, tables=None) -> list[dict]:
             cur["literals"] = sorted(set(cur["literals"] + bare))
     return sorted(out.values(), key=lambda x: (x["table"], x["symbol"]))
 
-
-def entities_global() -> dict[str, str]:
-    return entities()
