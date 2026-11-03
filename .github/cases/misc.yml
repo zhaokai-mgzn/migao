@@ -6928,3 +6928,41 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+
+  # ==========================================================================
+  - id: MC-144
+    legacy_id: ""
+    title: "deploy-reconcile 的漂移判据必须覆盖**构建输入面**（部署腿 workflow / 构建配方 / 线上自证脚本）：只改 CI 或部署脚本的修复合入后不得判「已上线」，更不得自动关值守单（issue #7034）"
+    domains:
+      - misc
+      - ci
+    tier: normal
+    tags:
+      - ci
+      - deploy
+      - reconcile
+      - false-green
+    truths_ref: []
+    user_inputs:
+      - "只改了 `.github/**` + `deploy/scripts/**` 的修复（issue #7029）合入 main 后，`deploy-reconcile` 判「✅ 无漂移：自 fbbb798（上次成功部署）起 backend/admin-api 无代码改动」并自动关闭值守单，而同一时刻线上 `GET /api/version` 的 builtAt 仍是空串 —— 修复到底上线没有？"
+    expectations: []
+    data_checks:
+      - "🔴 **判据 ①（实例，执行式）**：只改 `deploy/**` 里的一个部署脚本（如 `deploy/scripts/swas-deploy-ci.sh`）⇒ 必须判「有漂移」并 dispatch 对应腿；改前形态（pathspec 只有 `${svc_path}`）判「无漂移」。执行点 = tests/unit_ci_workflows/test_reconcile_build_inputs.py::test_registered_build_input_is_judged_as_drift"
+      - "🔴 **判据 ②（实例，执行式）**：只改 `.github/workflows/deploy-admin-api.yml` ⇒ 必须判「有漂移」并 dispatch `deploy-admin-api.yml`（`builtAt` 的取值源就在那份 workflow 的 `Resolve build identity` 步）。执行点 = 同文件同名判据（逐条派生自登记册）"
+      - "🔴 **负控 ③（证明没扩成全仓）**：只改 `docs/wiki/About.md` ⇒ **零 dispatch** 且每条腿在 summary 里明写「无漂移」。执行点 = 同文件::test_unrelated_docs_change_is_not_drift"
+      - "🔴 **负控 ④（既有行为不回归）**：只改应用代码（`backend/admin-api/**`）⇒ 仍判「有漂移」并 dispatch 自己的腿。执行点 = 同文件::test_app_code_change_still_counts_as_drift"
+      - "🔴 **红证 ⑤（判别力自证）**：把追加构建输入的那一句注入成空串（= 改前形态）⇒ 判据 ①② 的两条具名探针**零 dispatch**；不注入则绿。执行点 = 同文件::test_pre_fix_shape_has_no_build_inputs"
+      - "**类级元守卫（未登记即红）**：现取每条腿 workflow 里**真被调用**的仓内路径（`bash` / `source` / `python3` / `uses: ./.github/workflows/*.yml`）—— 每条都必须被该腿的 pathspec 覆盖，或在 `NOT_BUILD_INPUTS` 里逐条带理由登记；给某条腿新加一句对某个**尚未登记**的 `deploy/scripts/` 脚本的 `bash` 调用 ⇒ 当场红。执行点 = 同文件::test_every_script_a_leg_runs_is_a_build_input_or_exempted + ::test_meta_guard_has_discriminating_power"
+      - "**台账卫生**：`reconcile_trigger_paths_ledger.json` 的 frozen_max 由 13 降到 4（构建输入面真的覆盖了 worker-h5 的 4 条与 bmini 的 5 条缺口 ⇒ 按「只许缩短」删除）；`deploy/swas/nginx.conf`（bmini 腿）仍为缺口（由 admin-api 腿应用，bmini 不需重发）；c-end-h5 的 3 条保留为 `never_in_trigger`（禁令，不是缺口）。判据 = test_config_change_triggers_deploy.py::test_trigger_paths_and_reconcile_legs_are_in_sync_for_every_service"
+      - "**边界（照实登记，§19.1）**：① 判据不联网、`gh`/`docker` 是桩 ⇒ 证的是「判定逻辑在给定 diff 下会 dispatch」，不是「GitHub 真的 dispatch 了」；② 本单**只**改判定面，**不**把构建输入加进各腿的 `on.push.paths`（`c-end-h5` 的触发面按用户裁定 B 永不扩）⇒ 构建输入改动的补部署由对账腿（cron 20min）兜底，不是 push 触发；③ 「线上真的跑上了」仍需 served 探针（`deploy/scripts/served-version-verify.sh` 等）在真环境跑一次 —— 本单不兑现任何线上读数。"
+    skip_reason: "[backend-contract] CI 判定逻辑（真 YAML + 真 git 仓库 + 桩 gh/docker 的执行式判据），零网络、零真实部署、不烧 token，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-11-03 新增（issue #7034，假绿：`deploy-reconcile` 的「无代码漂移 ⇒ 已上线」判据看不见构建输入）。取号 MC-144（`python3 scripts/next_case_id.py MC` 现取；按「MC-099 刻意空档不回填」与 139~143 的在飞/已合占用避开，改取现取最大号之后的 144）。落码 = ① `.github/scripts/reconcile_build_inputs.py`（构建输入面的**唯一**取值源：登记册逐条带理由 + 纯函数 `pathspec()` + 三态 CLI）② `.github/workflows/deploy-reconcile.yml` 的 `reconcile_one` 追加构建输入（正文顶到 13.25K 硬限 ⇒ 同批压缩历史注释，实测 12,919 → 11,873 字符）③ 判据 tests/unit_ci_workflows/test_reconcile_build_inputs.py（逐条执行式 + 三条负控 + 注入式红证 + 类级元守卫 + 豁免不陈旧 + 登记册不腐烂）④ `test_config_change_triggers_deploy.py` 的判定面改为「调用行 + 构建输入」，stray 只豁免已登记项 ⑤ 台账 frozen_max 13 → 4。"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_reconcile_build_inputs.py"
+        - "tests/unit_ci_workflows/test_config_change_triggers_deploy.py"
+        - "tests/unit_ci_workflows/test_reconcile_no_silent_skip.py"
+      ci:
+        - pr-check.yml
+        - deploy-reconcile.yml
+      verifies: []

@@ -4186,7 +4186,7 @@
 ```
 溯源: 2026-10-31 新增（issue #8295）：两步确认，避免误写 ｜ tags: ui, preview
 
-## 杂项域（189 case）
+## 杂项域（190 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -7082,6 +7082,21 @@
 跳过: [backend-contract] 零 LLM 的确定性读数（真脚本 + `gh` 替身 + 注入式变异），pytest 子进程真跑，零网络
 ```
 溯源: 2026-11-03 新增（issue #6997，CI 可见性面）。取号 = `python3 scripts/next_case_id.py MC` 现取；**撞号顺延**：工具返回历史空档 139，但 139 已被在飞 PR #8526 / #8529 认领（并行取号盲区，见 #6245），main 已有 140~142 ⇒ 按「后合入者让号」取 **MC-143**（刻意空档 099 不回填）。病：`scripts/dangling_pr_scan.py` 只把未解决评审线程当**提示文本**打印（`dangling_reason` 里的一句「见 resolve_stale_bot_threads.py」），不计入需要处置 ⇒ #6987「全绿 + 已 arm 却永不合并」无声（`required_conversation_resolution=true` + 一条 `isOutdated=true` 的 Gitleaks 线程）。修法 = 新增评审线程面：GraphQL `reviewThreads` → 三分类（未解决∧未过期 ⇒ 需要处置；未解决∧已过期 ⇒ 单独一类不算阻塞；已解决 ⇒ 只计数）+ 读不到退 3 + summary 分类计数；脚本头补「判什么 / 不判什么」清单。判据 = tests/unit_ci_workflows/test_dangling_review_threads.py（7 条）+ tests/unit_ci_workflows/test_dangling_pr_scan.py（逐条不变）。⚠️ 不入 CHANGELOG（铁律 7 豁免：纯 CI / `scripts/` 判据面改动，对用户无可观察影响）。 ｜ tags: ci, dangling-pr, review-threads, graphql, tri-state, fail-closed, red-proof
+
+### MC-144. deploy-reconcile 的漂移判据必须覆盖**构建输入面**（部署腿 workflow / 构建配方 / 线上自证脚本）：只改 CI 或部署脚本的修复合入后不得判「已上线」，更不得自动关值守单（issue #7034） 🔵
+```
+你: 只改了 `.github/**` + `deploy/scripts/**` 的修复（issue #7029）合入 main 后，`deploy-reconcile` 判「✅ 无漂移：自 fbbb798（上次成功部署）起 backend/admin-api 无代码改动」并自动关闭值守单，而同一时刻线上 `GET /api/version` 的 builtAt 仍是空串 —— 修复到底上线没有？
+数据: 🔴 **判据 ①（实例，执行式）**：只改 `deploy/**` 里的一个部署脚本（如 `deploy/scripts/swas-deploy-ci.sh`）⇒ 必须判「有漂移」并 dispatch 对应腿；改前形态（pathspec 只有 `${svc_path}`）判「无漂移」。执行点 = tests/unit_ci_workflows/test_reconcile_build_inputs.py::test_registered_build_input_is_judged_as_drift
+数据: 🔴 **判据 ②（实例，执行式）**：只改 `.github/workflows/deploy-admin-api.yml` ⇒ 必须判「有漂移」并 dispatch `deploy-admin-api.yml`（`builtAt` 的取值源就在那份 workflow 的 `Resolve build identity` 步）。执行点 = 同文件同名判据（逐条派生自登记册）
+数据: 🔴 **负控 ③（证明没扩成全仓）**：只改 `docs/wiki/About.md` ⇒ **零 dispatch** 且每条腿在 summary 里明写「无漂移」。执行点 = 同文件::test_unrelated_docs_change_is_not_drift
+数据: 🔴 **负控 ④（既有行为不回归）**：只改应用代码（`backend/admin-api/**`）⇒ 仍判「有漂移」并 dispatch 自己的腿。执行点 = 同文件::test_app_code_change_still_counts_as_drift
+数据: 🔴 **红证 ⑤（判别力自证）**：把追加构建输入的那一句注入成空串（= 改前形态）⇒ 判据 ①② 的两条具名探针**零 dispatch**；不注入则绿。执行点 = 同文件::test_pre_fix_shape_has_no_build_inputs
+数据: **类级元守卫（未登记即红）**：现取每条腿 workflow 里**真被调用**的仓内路径（`bash` / `source` / `python3` / `uses: ./.github/workflows/*.yml`）—— 每条都必须被该腿的 pathspec 覆盖，或在 `NOT_BUILD_INPUTS` 里逐条带理由登记；给某条腿新加一句对某个**尚未登记**的 `deploy/scripts/` 脚本的 `bash` 调用 ⇒ 当场红。执行点 = 同文件::test_every_script_a_leg_runs_is_a_build_input_or_exempted + ::test_meta_guard_has_discriminating_power
+数据: **台账卫生**：`reconcile_trigger_paths_ledger.json` 的 frozen_max 由 13 降到 4（构建输入面真的覆盖了 worker-h5 的 4 条与 bmini 的 5 条缺口 ⇒ 按「只许缩短」删除）；`deploy/swas/nginx.conf`（bmini 腿）仍为缺口（由 admin-api 腿应用，bmini 不需重发）；c-end-h5 的 3 条保留为 `never_in_trigger`（禁令，不是缺口）。判据 = test_config_change_triggers_deploy.py::test_trigger_paths_and_reconcile_legs_are_in_sync_for_every_service
+数据: **边界（照实登记，§19.1）**：① 判据不联网、`gh`/`docker` 是桩 ⇒ 证的是「判定逻辑在给定 diff 下会 dispatch」，不是「GitHub 真的 dispatch 了」；② 本单**只**改判定面，**不**把构建输入加进各腿的 `on.push.paths`（`c-end-h5` 的触发面按用户裁定 B 永不扩）⇒ 构建输入改动的补部署由对账腿（cron 20min）兜底，不是 push 触发；③ 「线上真的跑上了」仍需 served 探针（`deploy/scripts/served-version-verify.sh` 等）在真环境跑一次 —— 本单不兑现任何线上读数。
+跳过: [backend-contract] CI 判定逻辑（真 YAML + 真 git 仓库 + 桩 gh/docker 的执行式判据），零网络、零真实部署、不烧 token，非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-11-03 新增（issue #7034，假绿：`deploy-reconcile` 的「无代码漂移 ⇒ 已上线」判据看不见构建输入）。取号 MC-144（`python3 scripts/next_case_id.py MC` 现取；按「MC-099 刻意空档不回填」与 139~143 的在飞/已合占用避开，改取现取最大号之后的 144）。落码 = ① `.github/scripts/reconcile_build_inputs.py`（构建输入面的**唯一**取值源：登记册逐条带理由 + 纯函数 `pathspec()` + 三态 CLI）② `.github/workflows/deploy-reconcile.yml` 的 `reconcile_one` 追加构建输入（正文顶到 13.25K 硬限 ⇒ 同批压缩历史注释，实测 12,919 → 11,873 字符）③ 判据 tests/unit_ci_workflows/test_reconcile_build_inputs.py（逐条执行式 + 三条负控 + 注入式红证 + 类级元守卫 + 豁免不陈旧 + 登记册不腐烂）④ `test_config_change_triggers_deploy.py` 的判定面改为「调用行 + 构建输入」，stray 只豁免已登记项 ⑤ 台账 frozen_max 13 → 4。 ｜ tags: ci, deploy, reconcile, false-green
 
 ## 商家入驻域（7 case）
 
@@ -14590,8 +14605,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：987（活跃 153，跳过 834）
-- tier 分布：smoke 15 / normal 910 / adversarial 33
+- 用例总数：988（活跃 153，跳过 835）
+- tier 分布：smoke 15 / normal 911 / adversarial 33
 - 售后域：16
 - Agent 核心域：13
 - API 层域：21
@@ -14607,7 +14622,7 @@
 - 人事域：13
 - 知识问答域：9
 - 客户主数据迁移域：10
-- 杂项域：189
+- 杂项域：190
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：76
@@ -14863,6 +14878,7 @@
 - MC-142: 计件 sweep 的 A0b 不再按原始 `worker_name` 分组比对：无署名归集是**显式的一类**（结构判身份、文案只进证据），并由独立的 A0c 勾稽「总额 − 逐人 = 无署名 且 = 独立 SQL 的无名组」（issue #7030）
 - MC-139: 商家看到的失败编号 = 服务端日志里那条记录：requestId 唯一来源 + 前端可复制上屏（issue #6957）
 - MC-143: 悬空 PR 扫描器把「未解决评审线程」计入**需要处置**（issue #6997）：`isResolved=false ∧ isOutdated=false` ⇒ 判红并报出 `path` + 首行摘要；`isOutdated=true` 单独一类**不算阻塞**；读不到 ⇒ 退 `3`（不得当 0）
+- MC-144: deploy-reconcile 的漂移判据必须覆盖**构建输入面**（部署腿 workflow / 构建配方 / 线上自证脚本）：只改 CI 或部署脚本的修复合入后不得判「已上线」，更不得自动关值守单（issue #7034）
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）

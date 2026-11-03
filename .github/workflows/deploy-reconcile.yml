@@ -304,6 +304,11 @@ jobs:
             if [ -n "$p" ]; then
               pathspec=( "$svc_path" )
               if [ -n "$extra" ]; then pathspec+=( "$extra" ); fi
+              # 构建输入面（issue #7034）：改部署腿 workflow / 构建配方 / 线上自证脚本**也必须**重建。
+              # 取值源唯一 = `.github/scripts/reconcile_build_inputs.py`（纯函数；逐条理由写在那份的
+              # 登记册里）⇒ 判据 tests/unit_ci_workflows/test_reconcile_build_inputs.py。
+              bi=$(python3 .github/scripts/reconcile_build_inputs.py "$svc" 2>/dev/null) || bi=""
+              if [ -n "${bi:-}" ]; then pathspec+=( $bi ); else echo "::warning::${svc}：构建输入面取不到（多为「这份文件还没上 main」）⇒ 本轮按旧口径判定（issue #7034）"; fi
               drift=$(git log --oneline -1 "${p}..HEAD" -- "${pathspec[@]}" 2>/dev/null) || drift="?git-failed"
             fi
             if [ -n "$p" ] && [ -z "$drift" ]; then
@@ -352,49 +357,24 @@ jobs:
           reconcile_one admin-api deploy-admin-api.yml backend/admin-api "deploy/swas"
           reconcile_one ai-agent-service deploy-ai-agent-service.yml backend/ai-agent-service ":(exclude)backend/ai-agent-service/tests"
           reconcile_one admin-web deploy-frontend.yml frontend/admin-web ""
-          # worker-h5（issue #5001）—— **静态落地面腿**：发布到 `app.migaozn.com` 静态根的 `w/`，
-          # **没有镜像** ⇒ 判据 ①（镜像已存在）对它恒不成立，判定来自漂移判据 ②（自
-          # `worker-h5-publish.yml` 上次**成功**发布起 `frontend/worker-h5/**` 有无改动）。
-          # 为什么必须有这条腿：该 workflow 的触发面只有 `push: main` + `workflow_dispatch`，而
-          # auto-merge 用 `GITHUB_TOKEN` 合并 ⇒ 它触发的 `push` **不会**再触发 workflow
-          # （#3113 已登记的同族抑制）⇒ 改了 `frontend/worker-h5/**` 的 PR 合并后工人端
-          # **静默不发布**（实测：#4973 合并后线上 `frontend/worker-h5/src/render.mjs` 仍 0 命中
-          # 「开工」，无红无告警）。本对账由 `schedule` 触发 ⇒ 不受该抑制影响，正是免疫的兜底腿。
-          # 代码路径 = `worker-h5-publish.yml` 的 `on.push.paths` 正向项（有动态对齐守卫）。
+          # worker-h5（issue #5001）—— **静态落地面腿**：发布到 `app.migaozn.com` 静态根的 `w/`，**没有镜像**
+          # ⇒ 判据 ① 对它恒不成立，判定只来自漂移判据 ②。必有的理由：该 workflow 的 `push: main` 触发会被
+          # auto-merge 的 `GITHUB_TOKEN` 抑制（#3113）⇒ 改了 `frontend/worker-h5/**` 合并后**静默不发布**
+          # （实测 #4973）。本对账走 `schedule` ⇒ 免疫该抑制。该腿的构建输入逐条见
+          # `.github/scripts/reconcile_build_inputs.py`。
           reconcile_one worker-h5 worker-h5-publish.yml frontend/worker-h5 ""
-          # bmini-h5-hosting（issue #5668）—— **第二条静态落地面腿**：把 `frontend/bmini-app/**`
-          # 的 h5 产物发布到 `app.migaozn.com` 静态根下的 `b/`。与 worker-h5 同形（无镜像 ⇒
-          # 判据 ① 对它恒不成立，判定来自漂移判据 ② = 自 `bmini-h5-publish.yml` 上次**成功**发布起
-          # `frontend/bmini-app/**` 有无改动）。
-          # 为什么必须有这条腿：#5001 的同族抑制 —— 该 workflow 的自动触发面只有 `push: main`，
-          # 而 auto-merge 用 `GITHUB_TOKEN` 合并 ⇒ 那个 `push` **不再触发 workflow** ⇒ 改了 B 端 h5
-          # 合并后 `/b/` 会**静默停在旧产物**（无红无告警，正是本单要治的「功能做完浏览器里打不开」
-          # 的近亲）。本对账由 `schedule` 触发 ⇒ 不受该抑制影响。
-          # ⚠️ 腿名**有意**不叫 `bmini-h5`：发布腿的传输镜像正好叫 `<ACR>/<NS>/bmini-h5:sha-<build>`
-          #    ⇒ 若同名，判据 ①（`docker manifest inspect`）会在**发布失败**（镜像已推、`b/` 未更新）
-          #    时命中并返回「已构建 ⇒ 无漂移」⇒ **静默不补发布**。腿名与传输镜像名不同 ⇒
-          #    判据 ① 恒不成立，判定只能来自漂移判据 ②（这条就是「对账不能凭空相信中间产物」的落点）。
+          # bmini-h5-hosting（issue #5668）—— 第二条静态落地面腿（`frontend/bmini-app/**` → 静态根下的 `b/`），
+          # 与 worker-h5 同形：同一条 `GITHUB_TOKEN` 抑制 ⇒ 不补发布就**静默停在旧产物**。
+          # ⚠️ 腿名**有意**不叫 `bmini-h5`：同名会让判据 ① 在「镜像已推、`b/` 未更新」时命中 ⇒ 静默不补发布。
           reconcile_one bmini-h5-hosting bmini-h5-publish.yml frontend/bmini-app ""
-          # c-end-h5（issue #4184）—— **第三条静态落地面腿**：把 `frontend/mini-app/**` 的 h5 产物发布到
-          # `app.migaozn.com` 的**静态根本身**（此前这条腿**不存在** ⇒ 线上 `/js/app.js` 的
-          # `Last-Modified`=08-30，落后源码 **28 天**而无人知道）。与 worker-h5 / bmini 同形：
-          # 全程无镜像 ⇒ 判据 ①（镜像已存在）对它恒不成立，判定来自漂移判据 ②（自
-          # `c-end-h5-publish.yml` 上次**成功**发布起 `frontend/mini-app/**` 有无改动）。
-          # 🔴 **本腿的方向是安全的（#4184 用户裁定 B：首次发布由人手动触发）**：`c-end-h5-publish.yml`
-          #    的**发布步骤**只在 `workflow_dispatch` **且** `inputs.publish == 'true'` 时执行 ⇒
-          #    本对账 dispatch 出去的 run 会走「Manual gate」判红并说明「没有发布任何东西」，
-          #    **不会发布**。也就是说：对账面**只报告、不发布**（这一条是本单唯一允许的「dispatch 了但
-          #    什么都不会发生」形态，已在 PR body 显式论证）。
-          # ⚠️ 第 4 个参数**显式纳入发布链路自身的两个文件**（而不像 worker-h5 / bmini 那样登记为缺口）：
-          #    本腿是**手动发布**腿 —— 对账面 dispatch 出去的 run 只会在「Manual gate」判红并说明
-          #    「没有发布任何东西」，**不会**误发布；反过来，把这两个文件登记成缺口等于承认
-          #    「改了发布链路而 push 被吞 ⇒ 静默」—— 而本单的判据要求是**触发面 ≡ 对账面**（未登记即红）。
-          #    代价（如实登记）：改这两个文件时对账会 dispatch 一次「必然判红说明」的 run —— 这是**可归因**
-          #    的红（文案直接给出「要发布请手动 -f publish=true」），不是静默。
-          # ⚠️ 第 4 个参数**有意为空**（与 worker-h5 / bmini 两条腿同形）：本腿的触发面只允许
-          #    `frontend/mini-app/**` ⇒ 发布链路自身的两个文件**永远不进触发面**，也就**不能**写进
-          #    本腿的 pathspec（写了会被判「对账腿判了触发面里没有的路径」）。它们按同一口径逐条登记在
-          #    `tests/unit_ci_workflows/reconcile_trigger_paths_ledger.json`（且标 `never_in_trigger`）。
+          # c-end-h5（issue #4184）—— 第三条静态落地面腿：`frontend/mini-app/**` 的 h5 产物 → 静态根**本身**。
+          # 🔴 本腿的方向是安全的（#4184 用户裁定 B：首次发布由人手动触发）：发布步骤只在
+          #    `workflow_dispatch` + `inputs.publish == 'true'` 时执行 ⇒ 本对账 dispatch 出去的 run
+          #    只会走「Manual gate」判红并说明「没有发布任何东西」，**不会发布**（本仓唯一允许的
+          #    「dispatch 了但什么都不会发生」形态）。
+          # 发布链路自身的路径（本 workflow / `deploy/scripts/c-end-h5-*`）由**构建输入面**覆盖，
+          # 而**永不进**触发面（见 `reconcile_trigger_paths_ledger.json` 的 `never_in_trigger`）
+          # ⇒ 改链路会 dispatch 一次**可归因**的红（文案直接给出「要发布请手动 -f publish=true」）。
           # ⚠️ 必须**单行**：`test_swas_deploy_ci_hardening.py::parse_reconcile_calls` 按行解析。
           reconcile_one c-end-h5 c-end-h5-publish.yml frontend/mini-app ""
 

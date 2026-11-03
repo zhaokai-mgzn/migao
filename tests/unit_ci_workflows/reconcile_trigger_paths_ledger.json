@@ -1,91 +1,38 @@
 {
   "schema": "reconcile-trigger-paths-ledger/v1",
-  "what": "「触发面有、对账面没有」的**存量缺口台账**（关联 #5001）。触发面 = 各 deploy/发布 workflow 的 `on.push.paths` 正向项；对账面 = `deploy-reconcile.yml` 里该服务那条 `reconcile_one` 腿的 pathspec。落在触发面却没落在对账面上的路径 ⇒ 该路径的改动一旦 push 触发被吞，就**静默不部署/不发布**（本台账把存量逐条点名，新出现的缺口**未登记即红**）。",
-  "why_not_fixed": "本单（用户逐字裁定 A）只把 `deploy/swas/**` 接进 `deploy-admin-api` 一处；另 4 条腿的判定语义按裁定**原样不动** ⇒ 它们已有的缺口如实登记在此，不静默、不粉饰。",
-  "frozen_max": 13,
-  "_frozen_max_note": "只许缩短：新增缺口必须先登记（改这个数 + 加条目），而**任何**新增都会被逐条比对(条目必须逐字等于现取缺口) ⇒ 涨跌都红。｜2026-09-27 由 issue #4184 从 10 抬到 12：新增第三条静态落地面腿 `c-end-h5`，其发布链路自身的两个文件落在触发面之外（**有意**：该腿的 `on.push.paths` 只允许命中 `frontend/mini-app/**`，首次发布由人手动触发）⇒ 逐条标 `never_in_trigger`。｜2026-10-03 由 issue #6095 从 12 抬到 13：第三层修复新增链路面文件 `deploy/scripts/c-end-h5-dist-push.sh`（把 CI 构建的 dist 推成不可变 sha），同因标 `never_in_trigger`。",
+  "what": "「触发面有、对账面没有」的台账（关联 #5001 / #7034）。触发面 = 各 deploy/发布 workflow 的 `on.push.paths` 正向项；对账面 = `deploy-reconcile.yml` 里该服务那条 `reconcile_one` 腿的判定面（调用行 pathspec **+** `.github/scripts/reconcile_build_inputs.py` 登记的构建输入面）。落在触发面却没落在对账面上的路径 ⇒ 该路径的改动一旦 push 触发被吞，就**静默不部署/不发布**。本台账把仍存在的缺口逐条点名（**未登记即红**）。",
+  "why_not_fixed": "① 常规缺口 = 仍**没有**被对账腿覆盖的触发面路径（当前只剩 1 条）；② `never_in_trigger` = 覆盖**已由构建输入面兑现**、但**禁止**靠把路径加进 `on.push.paths` 来消账的条目（用户裁定 B：C 端发布腿的 `on.push.paths` 只允许命中 `frontend/mini-app/**`）⇒ 保留它们只为把那条禁令写成台账，不是为了记缺口。",
+  "frozen_max": 4,
+  "_frozen_max_note": "只许缩短：新增缺口必须先登记（改这个数 + 加条目），而**任何**新增都会被逐条比对(条目必须逐字等于现取缺口) ⇒ 涨跌都红。｜2026-09-27 由 issue #4184 从 10 抬到 12：新增第三条静态落地面腿 `c-end-h5`，其发布链路自身的两个文件落在触发面之外（**有意**：该腿的 `on.push.paths` 只允许命中 `frontend/mini-app/**`，首次发布由人手动触发）⇒ 逐条标 `never_in_trigger`。｜2026-10-03 由 issue #6095 从 12 抬到 13：第三层修复新增链路面文件 `deploy/scripts/c-end-h5-dist-push.sh`（把 CI 构建的 dist 推成不可变 sha），同因标 `never_in_trigger`。｜2026-11-03 由 issue #7034 从 13 **降到 4**：漂移判据接进**构建输入面**后，worker-h5 的 4 条与 bmini-h5-hosting 的 5 条缺口**真的**被覆盖了（改发布链路 / 自身 workflow 现在会判「有漂移」并补发布）⇒ 按「只许缩短」删掉；`deploy/swas/nginx.conf`（bmini 腿）仍是缺口（它由 admin-api 腿的 `deploy.sh` 应用，bmini 不需要重发产物）；c-end-h5 的 3 条保留（`never_in_trigger` = 禁令，不是缺口）。",
   "entries": [
-    {
-      "svc": "worker-h5",
-      "wf": "worker-h5-publish.yml",
-      "path": "deploy/swas/h5-publish-remote.sh",
-      "why": "发布链路自身（远端执行体）。对账腿的判据口径是「发布物是否落后」，不含发布链路文件 ⇒ 改链路脚本而 push 被吞时不自动补发布（存量缺口）。"
-    },
-    {
-      "svc": "worker-h5",
-      "wf": "worker-h5-publish.yml",
-      "path": "deploy/scripts/swas-h5-publish-ci.sh",
-      "why": "同 `deploy/swas/h5-publish-remote.sh`（发布链路自身）。"
-    },
-    {
-      "svc": "worker-h5",
-      "wf": "worker-h5-publish.yml",
-      "path": "deploy/scripts/worker-h5-verify-served.sh",
-      "why": "同 `deploy/swas/h5-publish-remote.sh`（发布链路自身：线上产物核对脚本）。"
-    },
-    {
-      "svc": "worker-h5",
-      "wf": "worker-h5-publish.yml",
-      "path": ".github/workflows/worker-h5-publish.yml",
-      "why": "同 `deploy/swas/h5-publish-remote.sh`（发布链路自身的定义文件）。"
-    },
-    {
-      "svc": "bmini-h5-hosting",
-      "wf": "bmini-h5-publish.yml",
-      "path": "deploy/bmini-h5/**",
-      "why": "h5 传输载体（Dockerfile 等）。同 worker-h5：对账腿只判「发布物是否落后」。"
-    },
-    {
-      "svc": "bmini-h5-hosting",
-      "wf": "bmini-h5-publish.yml",
-      "path": "deploy/swas/bmini-h5-publish-remote.sh",
-      "why": "同 worker-h5（发布链路自身）。"
-    },
     {
       "svc": "bmini-h5-hosting",
       "wf": "bmini-h5-publish.yml",
       "path": "deploy/swas/nginx.conf",
-      "why": "**与 admin-api 同一个文件**：本单把 `deploy/swas/**` 接进 admin-api 腿 ⇒ 改它**会**触发部署并**应用**配置（`deploy.sh` 的 cp + nginx up/reload）。剩下这一角是「bmini 发布腿的重新自证不串端」在 push 被吞时仍不自动补 ⇒ 存量缺口，如实登记（本单不动另外 4 条腿的语义）。"
-    },
-    {
-      "svc": "bmini-h5-hosting",
-      "wf": "bmini-h5-publish.yml",
-      "path": "deploy/scripts/bmini-h5-publish-ci.sh",
-      "why": "同 worker-h5（发布链路自身）。"
-    },
-    {
-      "svc": "bmini-h5-hosting",
-      "wf": "bmini-h5-publish.yml",
-      "path": "deploy/scripts/bmini-h5-verify-served.sh",
-      "why": "同 worker-h5（发布链路自身：线上产物核对脚本）。"
-    },
-    {
-      "svc": "bmini-h5-hosting",
-      "wf": "bmini-h5-publish.yml",
-      "path": ".github/workflows/bmini-h5-publish.yml",
-      "why": "同 worker-h5（发布链路自身的定义文件）。"
+      "why": "**与 admin-api 同一个文件**：`deploy/swas/**` 已接进 admin-api 腿 ⇒ 改它**会**触发部署并**应用**配置（`deploy.sh` 的 cp + nginx up/reload）。bmini 腿不需要为它重发产物（`/b/` 的产物没变）⇒ 这一角是「bmini 发布腿的重新自证不串端」在 push 被吞时仍不自动补，属存量缺口，如实登记（**有意**不把它算进 bmini 的构建输入面：算了会让每次改 nginx.conf 都白跑一次发布腿）。"
     },
     {
       "svc": "c-end-h5",
       "wf": "c-end-h5-publish.yml",
       "path": "deploy/scripts/c-end-h5-publish-ci.sh",
       "never_in_trigger": true,
-      "why": "发布链路自身（CI→SWAS 的 CLI 包装）。对账腿的判据口径是「发布物是否落后」，不含发布链路文件 ⇒ 改它而 push 被吞时不自动补发布。**不能**靠加进触发面消账：本腿的 `on.push.paths` 只允许 `frontend/mini-app/**`（用户裁定 B：合并建通路的那个 PR 不许触发发布）⇒ 标 `never_in_trigger`。"
+      "why": "发布链路自身（CI→SWAS 的 CLI 包装）。issue #7034 起它**已被对账腿的构建输入面覆盖**（改它会判「有漂移」并 dispatch 一次「只报告、不发布」的 run）⇒ **不再是对账缺口**；保留本条只为把禁令写死：本腿的 `on.push.paths` 只允许 `frontend/mini-app/**`（用户裁定 B）⇒ **不许**靠加进触发面消账。"
     },
     {
       "svc": "c-end-h5",
       "wf": "c-end-h5-publish.yml",
       "path": ".github/workflows/c-end-h5-publish.yml",
       "never_in_trigger": true,
-      "why": "同 `deploy/scripts/c-end-h5-publish-ci.sh`（发布链路自身的定义文件）。同因标 `never_in_trigger`。"
+      "why": "同 `deploy/scripts/c-end-h5-publish-ci.sh`：**已由构建输入面覆盖**（改它会判「有漂移」），保留本条只为禁止把它加进触发面（用户裁定 B）。"
     },
     {
       "svc": "c-end-h5",
       "wf": "c-end-h5-publish.yml",
       "path": "deploy/scripts/c-end-h5-dist-push.sh",
       "never_in_trigger": true,
-      "why": "发布链路自身（CI 侧把 Build H5 的 dist 推成 h5-dist 上的孤儿单提交 ⇒ 远端按不可变 sha 取回；issue #6095 第三层）。改它而 push 被吞时不自动补发布；**不能**靠加进触发面消账：本腿的 `on.push.paths` 只允许 `frontend/mini-app/**`（用户裁定 B）⇒ 标 `never_in_trigger`。"
+      "why": "同 `deploy/scripts/c-end-h5-publish-ci.sh`：**已由构建输入面覆盖**（发布链路第一层：CI 侧把 Build H5 的 dist 推成 h5-dist 上的孤儿单提交，issue #6095 第三层），保留本条只为禁止把它加进触发面（用户裁定 B）。"
     }
   ],
-  "_never_in_trigger": "`never_in_trigger: true` = 「这条缺口**永远不许**靠把路径加进 `on.push.paths` 来消账」（出口被明文禁止，而不是被忘掉）。判据：标了却出现在触发面里 ⇒ 红。"
+  "_never_in_trigger": "`never_in_trigger: true` = 「这条缺口**永远不许**靠把路径加进 `on.push.paths` 来消账」（出口被明文禁止，而不是被忘掉）。判据：标了却出现在触发面里 ⇒ 红。",
+  "_covered_by_build_inputs": "issue #7034 起，**构建输入面**（`.github/scripts/reconcile_build_inputs.py`）是「发布链路自身也要判漂移」的**唯一**出口：它在触发面之外，但会真的让对账腿判「有漂移」并补部署/补发布 ⇒ 原先记为缺口的发布链路文件在这里被消账（判据 = `test_reconcile_build_inputs.py` 的逐条执行式探针）。"
 }
