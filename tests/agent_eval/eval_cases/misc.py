@@ -2,7 +2,7 @@
 # 本文件由 render_cases.py 生成，勿手改（改了也留不住：下次重渲染会覆盖）
 # 源: cases/*.yml（case-contract 单一源）
 # 重新生成: python3 render_cases.py --cases <dir> --out-eval <包目录> --out-md <md>
-# 域: misc（源: cases/misc.yml，188 条）
+# 域: misc（源: cases/misc.yml，189 条）
 
 from ._schema import Difficulty, EvalCase, Skill
 
@@ -3460,6 +3460,24 @@ _CASE_MC_139 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── MC-143 [NORMAL] **状态列写面全族统一元守卫 SW-100**：53 张有 `status` 列的表 × 134 个写入口逐条登记（未登记即红 / 台账陈旧即红 / 裸字符串写状态列即红 / 每张状态表的合法集合必须有来源）（源: cases/misc.yml）──
+_CASE_MC_143 = EvalCase(
+    id='MC-143',
+    legacy_id='',
+    title='**状态列写面全族统一元守卫 SW-100**：53 张有 `status` 列的表 × 134 个写入口逐条登记（未登记即红 / 台账陈旧即红 / 裸字符串写状态列即红 / 每张状态表的合法集合必须有来源）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['入库单与工序那两处状态写缺陷各建了一颗单表守卫 —— 下一个人在**别的表**上、或用**那两颗看不见的写法**再加一条状态写面，凭什么会有东西红？'],
+    expectations=[],
+    data_checks=['🔴 **判据 1·未登记即红（具名）**：现取「写 `status` 列」的 Java 写点（`setStatus` / `wrapper.set(Entity::getStatus, …)` / `set("status", …)` / `setSql` / `Entity.builder()…status(…)`）+ mapper `@Update` 的 **SET 侧**写 `status`，逐个与台账 `state_write_face_ledger.json` 的 `write_points` 对账；缺一条 ⇒ 判红并报出 `表 / 写点 / 文件:行`。执行点 = tests/unit_ci_workflows/test_state_write_face_metaguard.py::test_every_status_write_is_registered', '🔴 **判据 2·台账陈旧即红（只许缩短）**：台账登记了、而现取集里已没有该写点（改名 / 删掉 / 换写法）⇒ 判红并列出条目；每条 `anchor` 必须在该文件里**逐字出现**（给不存在的写面盖章 ⇒ 红）。执行点 = 同文件::test_ledger_is_not_stale', '🔴 **判据 3·状态字面量单一来源**：Java 写面用**裸字符串**写状态列（`setStatus("pending")` 这类）⇒ 判红（合法状态集合会因此有第二个来源）；存量 56 条按**只许缩短**的基线登记（新增 ⇒ 红，修好不销账 ⇒ 也红）；SQL 写面的 SET 侧字面量必须落在该表**已声明**的合法集合里。执行点 = 同文件::test_status_literals_have_a_single_source', '🔴 **判据 4·每张状态表都要有权威声明**：53 张有 `status` 列的表必须在台账 `status_value_sources` 里登记合法集合来源（实体 `STATUS_*` 常量 10 张 / schema `CHECK` 14 张 / **无机器口径 36 张冻结上限只许缩短**）⇒ 未登记即红、给不存在的表盖章即红。执行点 = 同文件::test_every_status_table_declares_its_legal_source', '🔴 **判据 5/6·两条负控**：① **读**状态（`getStatus()` / 比较 / 装配 DTO 响应）不产生写点（真实语料 + 合成语料两路）；② 写**没有 `status` 列**的表（`customer_profiles` 只有 `customer_status`）与非实体 DTO 不算写面。执行点 = 同文件::test_reading_status_is_not_a_write_point / ::test_writing_a_table_without_status_column_is_not_in_scope', '🔴 **判据 7·判别力自证（八格）**：常量写 ⇒ 恰 1 条且无字面量；裸字符串 ⇒ 同一条但字面量被检出；**换写法（builder）** ⇒ 仍被看见；注释 / 字符串里「提到」写面 ⇒ 不算；只读 ⇒ 不算；无状态列表 / 非实体 ⇒ 不算；空扫描面 ⇒ 由现取下界判红；把「未登记即红」「裸字面量」两条规则摘掉 ⇒ 对应判据当场报出（注入式红证）。执行点 = 同文件::test_detector_has_teeth', '🔴 **判据 8·扫描器非空跑**：现取 `53` 张状态表 / `108` 个 Java 写点 / `26` 个 SQL 写点，且点名锚点（`inbound_orders::post`、`inbound_orders::markPosted`、`production_operations::update`、`orders::transitionStatusAtomic`）必须在册 —— 形态被改名不是「通过」，是「判据失明」。执行点 = 同文件::test_scanner_is_not_blind', '🔴 **两颗旧守卫的射程盲洞（本守卫补上的，各一例真实读数）**：① **MC-100**（`InboundOrderStatusCasMetaGuardTest`）的现取集只认 `inboundOrderMapper.updateById(` / `inboundOrderMapper.mark*(` ⇒ `InboundOrderService#receiveFinishedGoods` / `#receiveFinishedGoodsLines` 里 `InboundOrder.builder()…status(InboundOrder.STATUS_DRAFT)` + `inboundOrderMapper.insert(…)` 这条**真实写 `inbound_orders.status`** 的写形完全在射程外；同文件 `#create` 更被登记成 `non_status_writers`（「不写 status 列」），而它的 builder 就在写 status（`status_write_forbidden` 只钉 `order.setStatus(`，恰好钉了一个看不见该写的形态）。② **PG-075**（`ProductionOperationDeleteCasMetaGuardTest`）只认 `.set(Production…::getDeleted, 1)` / `…Mapper.softDelete(` ⇒ `ProductionOperationCommandService#update` 的 `partial.setStatus(status)` + `productionOperationMapper.updateById(partial)`（**同表、同文件、无条件、无谓词**）完全不可见 —— 这正是 #6928 的 F1 形态还活在 main 上的一个具名实例（本包**只登记不修**，见 PR body 与 issue）', '**边界（照实登记，§19.1）**：① 形态判据不做 AST（词法走查 + 签名切块），反射 / 动态 SQL / XML mapper / 变量拼接的 wrapper 不在射程（假绿方向，不误伤）；② 匿名类 / lambda 里的写点归到其外层成员（保守）；③ `deleted`（`@TableLogic` 逻辑删除族）**有意不入本表**（PG-075 / T3 / #6953 的 P6 承接）；④ **判不了并发语义**（登记 ≠ 有 CAS / 有 tenant 谓词 / 判了影响行数），也判不了 T2b「`updateById` 把内存里的旧 status 一起写回」；⑤ 4 张表（`production_route_signals` / `production_routings` / `sessions` / `tenant_apps`）现取 0 写点，只说明**本仓 Java 写面**没有显式赋值，不等于「不会被写」。'],
+    skip_reason='[backend-contract] 零 LLM 的确定性读数（词法扫 admin-api Java 源码 + `_sql_schema` 解析建库脚本/@TableName + 台账双向对账 + 合成语料判别力自证），零网络、零 DB、不进 agent-eval 冒烟',
+    tags=['state-transition', 'meta-guard', 'ledger', 'single-source', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 CASES = (
     _CASE_MC_001,
     _CASE_MC_002,
@@ -3649,4 +3667,5 @@ CASES = (
     _CASE_MC_140,
     _CASE_MC_142,
     _CASE_MC_139,
+    _CASE_MC_143,
 )

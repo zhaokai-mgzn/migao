@@ -4186,7 +4186,7 @@
 ```
 溯源: 2026-10-31 新增（issue #8295）：两步确认，避免误写 ｜ tags: ui, preview
 
-## 杂项域（188 case）
+## 杂项域（189 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -7068,6 +7068,22 @@
 跳过: [backend-contract] 零 LLM 的确定性判据（MockMvc + Logback ListAppender + 源码扫描 + vitest），真跑、零网络，不进 agent-eval 冒烟
 ```
 溯源: 2026-11-03 新增（issue #6957）。取号 = MC-139（`python3 scripts/next_case_id.py MC` 现取：main 的 MC-001~098 · 100~138、在飞 PR 的 MC-140 ⇒ 最小空闲是 099，而 **MC-099 是刻意空档不回填** ⇒ 顺延取 MC-139）。病：响应里的 `requestId` 由 `ApiResponse` 构造时现生成、从不进日志，前端只 toast `message` ⇒ 商家截图与服务端 incident 之间没有同一条串。落码 = `RequestId`（请求属性 + MDC + 响应头三处同值）+ `RequestIdFilter`（HIGHEST_PRECEDENCE）+ `ApiResponse` 统一取值 + 四个手写 JSON 出口补编号 + 日志模式 `%X{requestId:-}`；前端 `lib/error-reference.ts` 只在信封真有编号时多给一行可复制引用。红证 = 摘掉 `RequestId.bind(...)` ⇒ 三处同值判据具名红；把 `ApiResponse` 构造改回现生成 ⇒ 同红；把前端 `showRequestErrorToast` 改回 `toast.error` ⇒ 前端判据红。 ｜ tags: request-id, error-envelope, observability, meta-guard, red-proof
+
+### MC-143. **状态列写面全族统一元守卫 SW-100**：53 张有 `status` 列的表 × 134 个写入口逐条登记（未登记即红 / 台账陈旧即红 / 裸字符串写状态列即红 / 每张状态表的合法集合必须有来源） 🔵
+```
+你: 入库单与工序那两处状态写缺陷各建了一颗单表守卫 —— 下一个人在**别的表**上、或用**那两颗看不见的写法**再加一条状态写面，凭什么会有东西红？
+数据: 🔴 **判据 1·未登记即红（具名）**：现取「写 `status` 列」的 Java 写点（`setStatus` / `wrapper.set(Entity::getStatus, …)` / `set("status", …)` / `setSql` / `Entity.builder()…status(…)`）+ mapper `@Update` 的 **SET 侧**写 `status`，逐个与台账 `state_write_face_ledger.json` 的 `write_points` 对账；缺一条 ⇒ 判红并报出 `表 / 写点 / 文件:行`。执行点 = tests/unit_ci_workflows/test_state_write_face_metaguard.py::test_every_status_write_is_registered
+数据: 🔴 **判据 2·台账陈旧即红（只许缩短）**：台账登记了、而现取集里已没有该写点（改名 / 删掉 / 换写法）⇒ 判红并列出条目；每条 `anchor` 必须在该文件里**逐字出现**（给不存在的写面盖章 ⇒ 红）。执行点 = 同文件::test_ledger_is_not_stale
+数据: 🔴 **判据 3·状态字面量单一来源**：Java 写面用**裸字符串**写状态列（`setStatus("pending")` 这类）⇒ 判红（合法状态集合会因此有第二个来源）；存量 56 条按**只许缩短**的基线登记（新增 ⇒ 红，修好不销账 ⇒ 也红）；SQL 写面的 SET 侧字面量必须落在该表**已声明**的合法集合里。执行点 = 同文件::test_status_literals_have_a_single_source
+数据: 🔴 **判据 4·每张状态表都要有权威声明**：53 张有 `status` 列的表必须在台账 `status_value_sources` 里登记合法集合来源（实体 `STATUS_*` 常量 10 张 / schema `CHECK` 14 张 / **无机器口径 36 张冻结上限只许缩短**）⇒ 未登记即红、给不存在的表盖章即红。执行点 = 同文件::test_every_status_table_declares_its_legal_source
+数据: 🔴 **判据 5/6·两条负控**：① **读**状态（`getStatus()` / 比较 / 装配 DTO 响应）不产生写点（真实语料 + 合成语料两路）；② 写**没有 `status` 列**的表（`customer_profiles` 只有 `customer_status`）与非实体 DTO 不算写面。执行点 = 同文件::test_reading_status_is_not_a_write_point / ::test_writing_a_table_without_status_column_is_not_in_scope
+数据: 🔴 **判据 7·判别力自证（八格）**：常量写 ⇒ 恰 1 条且无字面量；裸字符串 ⇒ 同一条但字面量被检出；**换写法（builder）** ⇒ 仍被看见；注释 / 字符串里「提到」写面 ⇒ 不算；只读 ⇒ 不算；无状态列表 / 非实体 ⇒ 不算；空扫描面 ⇒ 由现取下界判红；把「未登记即红」「裸字面量」两条规则摘掉 ⇒ 对应判据当场报出（注入式红证）。执行点 = 同文件::test_detector_has_teeth
+数据: 🔴 **判据 8·扫描器非空跑**：现取 `53` 张状态表 / `108` 个 Java 写点 / `26` 个 SQL 写点，且点名锚点（`inbound_orders::post`、`inbound_orders::markPosted`、`production_operations::update`、`orders::transitionStatusAtomic`）必须在册 —— 形态被改名不是「通过」，是「判据失明」。执行点 = 同文件::test_scanner_is_not_blind
+数据: 🔴 **两颗旧守卫的射程盲洞（本守卫补上的，各一例真实读数）**：① **MC-100**（`InboundOrderStatusCasMetaGuardTest`）的现取集只认 `inboundOrderMapper.updateById(` / `inboundOrderMapper.mark*(` ⇒ `InboundOrderService#receiveFinishedGoods` / `#receiveFinishedGoodsLines` 里 `InboundOrder.builder()…status(InboundOrder.STATUS_DRAFT)` + `inboundOrderMapper.insert(…)` 这条**真实写 `inbound_orders.status`** 的写形完全在射程外；同文件 `#create` 更被登记成 `non_status_writers`（「不写 status 列」），而它的 builder 就在写 status（`status_write_forbidden` 只钉 `order.setStatus(`，恰好钉了一个看不见该写的形态）。② **PG-075**（`ProductionOperationDeleteCasMetaGuardTest`）只认 `.set(Production…::getDeleted, 1)` / `…Mapper.softDelete(` ⇒ `ProductionOperationCommandService#update` 的 `partial.setStatus(status)` + `productionOperationMapper.updateById(partial)`（**同表、同文件、无条件、无谓词**）完全不可见 —— 这正是 #6928 的 F1 形态还活在 main 上的一个具名实例（本包**只登记不修**，见 PR body 与 issue）
+数据: **边界（照实登记，§19.1）**：① 形态判据不做 AST（词法走查 + 签名切块），反射 / 动态 SQL / XML mapper / 变量拼接的 wrapper 不在射程（假绿方向，不误伤）；② 匿名类 / lambda 里的写点归到其外层成员（保守）；③ `deleted`（`@TableLogic` 逻辑删除族）**有意不入本表**（PG-075 / T3 / #6953 的 P6 承接）；④ **判不了并发语义**（登记 ≠ 有 CAS / 有 tenant 谓词 / 判了影响行数），也判不了 T2b「`updateById` 把内存里的旧 status 一起写回」；⑤ 4 张表（`production_route_signals` / `production_routings` / `sessions` / `tenant_apps`）现取 0 写点，只说明**本仓 Java 写面**没有显式赋值，不等于「不会被写」。
+跳过: [backend-contract] 零 LLM 的确定性读数（词法扫 admin-api Java 源码 + `_sql_schema` 解析建库脚本/@TableName + 台账双向对账 + 合成语料判别力自证），零网络、零 DB、不进 agent-eval 冒烟
+```
+溯源: 2026-11-03 新增（issue #6953 的族级元守卫 SW-100；与 MC-100 / MC-104 / PG-075 等单表守卫**有意不重叠** —— 它们裁谓词完整性，本表裁「写面有没有人认领 / 状态值是不是单一口径」）。取号 = `python3 scripts/next_case_id.py MC` 现取 **MC-143**（main 的 MC 号最大 142；**MC-099 刻意空档不回填**）。**现取读数**：53 张有 `status` 列的表（`_sql_schema` 唯一解析点）、134 条写点（Java 108 / SQL 26）、覆盖 49 张表；合法集合权威：实体常量 10 / schema CHECK 14 / **无机器口径 36（冻结上限）**；裸字符串存量 56（冻结上限）。**红证（注入式，实跑）**：① 往真实 Service 里加一条未登记写面 ⇒ 判据 1 判红并具名；② 把常量改成裸字符串 ⇒ 判据 3 判红并具名；③ 把台账条目删掉 ⇒ 判据 2 判红（写点无主）；④ 把 `unregistered()` 的登记对账摘掉 / 把 `bare_literal_sites()` 摘掉 ⇒ 判据 1 / 判据 3 必红（判据 7 内建这两条内存变异体作常驻证）。**如实登记的既有缺陷（本包不修，不扩射程）**：`ProductionOperationCommandService#update` 的无条件状态写（见判据 8 的盲洞 ②）、`InboundOrderService` 的 builder 写形（盲洞 ①）、36 张表没有机器可读的合法状态集合、56 处裸字面量 —— 均为存量债，压测口径 = 台账基线**只许缩短**。 ｜ tags: state-transition, meta-guard, ledger, single-source, red-proof
 
 ## 商家入驻域（7 case）
 
@@ -14576,8 +14592,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：986（活跃 153，跳过 833）
-- tier 分布：smoke 15 / normal 909 / adversarial 33
+- 用例总数：987（活跃 153，跳过 834）
+- tier 分布：smoke 15 / normal 910 / adversarial 33
 - 售后域：16
 - Agent 核心域：13
 - API 层域：21
@@ -14593,7 +14609,7 @@
 - 人事域：13
 - 知识问答域：9
 - 客户主数据迁移域：10
-- 杂项域：188
+- 杂项域：189
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：76
@@ -14848,6 +14864,7 @@
 - MC-140: 多 PR **集中合**（batch merge）工具：从 origin/main 重建 + 重放（不 --ours 解冲突）/ 用例号「后合入者让号」/ 锚点按**实测**重锚 / 批次 body 零关闭词
 - MC-142: 计件 sweep 的 A0b 不再按原始 `worker_name` 分组比对：无署名归集是**显式的一类**（结构判身份、文案只进证据），并由独立的 A0c 勾稽「总额 − 逐人 = 无署名 且 = 独立 SQL 的无名组」（issue #7030）
 - MC-139: 商家看到的失败编号 = 服务端日志里那条记录：requestId 唯一来源 + 前端可复制上屏（issue #6957）
+- MC-143: **状态列写面全族统一元守卫 SW-100**：53 张有 `status` 列的表 × 134 个写入口逐条登记（未登记即红 / 台账陈旧即红 / 裸字符串写状态列即红 / 每张状态表的合法集合必须有来源）
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）
