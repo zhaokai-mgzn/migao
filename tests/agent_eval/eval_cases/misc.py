@@ -3659,9 +3659,9 @@ _CASE_MC_154 = EvalCase(
     precondition='本用例是 [backend-contract]：前置 = frontend/bmini-app/src/utils/inbound/printCapability.ts 的终端分支在场、`PrintEnv.printerMode` 可注入、`readPrintEnv()` 读 `window.__CFG__`；能力探测是纯函数（零网络、零硬件），页面侧已有的 `capability.ok` 门禁（打印按钮 disabled）不变。',
 )
 
-# ── MC-155 [NORMAL] **员工账号的 create / update 接回 B 端**（issue #7050，2026-10-16「能力边界 终版」）：action 枚举与 schema 同时可见（漏参数即不可调用）+ 权限走既有 required_permissions 粗筛与 action 级复检（码取 AdminUserController 注解，不自己判角色）+ 确认走既有 base_skill._requires_confirmation（react_turn 用同一函数对象；未确认 ⇒ 不执行）+ 端点逐字对齐（POST /api/admin/users · PUT /api/admin/users/{id}）+ 删除/停用/重置密码仍不接线（源: cases/misc.yml）──
-_CASE_MC_155 = EvalCase(
-    id='MC-155',
+# ── MC-156 [NORMAL] **员工账号的 create / update 接回 B 端**（issue #7050，2026-10-16「能力边界 终版」）：action 枚举与 schema 同时可见（漏参数即不可调用）+ 权限走既有 required_permissions 粗筛与 action 级复检（码取 AdminUserController 注解，不自己判角色）+ 确认走既有 base_skill._requires_confirmation（react_turn 用同一函数对象；未确认 ⇒ 不执行）+ 端点逐字对齐（POST /api/admin/users · PUT /api/admin/users/{id}）+ 删除/停用/重置密码仍不接线（源: cases/misc.yml）──
+_CASE_MC_156 = EvalCase(
+    id='MC-156',
     legacy_id='',
     title='**员工账号的 create / update 接回 B 端**（issue #7050，2026-10-16「能力边界 终版」）：action 枚举与 schema 同时可见（漏参数即不可调用）+ 权限走既有 required_permissions 粗筛与 action 级复检（码取 AdminUserController 注解，不自己判角色）+ 确认走既有 base_skill._requires_confirmation（react_turn 用同一函数对象；未确认 ⇒ 不执行）+ 端点逐字对齐（POST /api/admin/users · PUT /api/admin/users/{id}）+ 删除/停用/重置密码仍不接线',
     skill=Skill.GENERAL,
@@ -3877,5 +3877,5 @@ CASES = (
     _CASE_MC_153,
     _CASE_MC_147,
     _CASE_MC_154,
-    _CASE_MC_155,
+    _CASE_MC_156,
 )
