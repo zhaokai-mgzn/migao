@@ -170,7 +170,7 @@ class RoleServiceTest {
     void createRole_Success() {
         // given
         when(roleMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(null); // code 不重复
-        when(roleMapper.insert(any(Role.class))).thenAnswer(invocation -> {
+        when(roleMapper.insertIfAbsent(any(Role.class))).thenAnswer(invocation -> {
             Role r = invocation.getArgument(0);
             r.setId("role-new");
             return 1;
@@ -185,7 +185,23 @@ class RoleServiceTest {
         assertThat(result.getName()).isEqualTo("运营");
         assertThat(result.getCode()).isEqualTo("operator");
         assertThat(result.getStatus()).isEqualTo("active");
-        verify(roleMapper).insert(any(Role.class));
+        verify(roleMapper).insertIfAbsent(any(Role.class));
+        // issue #7255：建行只许走条件插入（裸 insert 在并发下会撞唯一键抛 500）
+        verify(roleMapper, never()).insert(any(Role.class));
+    }
+
+    @Test
+    @DisplayName("创建角色：并发败者（条件插入 0 行）⇒ 具名 422，不裸抛 500")
+    void createRole_ConcurrentlyLostRaceBecomesValidationError() {
+        // given：两条 selectOne 都没查到（并发窗口：判空时对手还没提交）……
+        when(roleMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(null);
+        // ……而条件插入被数据库的唯一键挡下（0 行）
+        when(roleMapper.insertIfAbsent(any(Role.class))).thenReturn(0);
+
+        // when / then：与串行路径**同一句**业务错误，用户看到的是可读 422 而不是 500
+        assertThatThrownBy(() -> roleService.createRole("运营", "operator", "运营人员", 1L, List.of()))
+                .isInstanceOf(com.migao.admin.exception.BusinessException.class)
+                .hasMessageContaining("角色代码已存在");
     }
 
     @Test

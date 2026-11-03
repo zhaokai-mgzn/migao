@@ -4186,7 +4186,7 @@
 ```
 溯源: 2026-10-31 新增（issue #8295）：两步确认，避免误写 ｜ tags: ui, preview
 
-## 杂项域（199 case）
+## 杂项域（200 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -7227,6 +7227,24 @@
 ```
 真值: ⚠️ 缺口（见对应模板 ⚠️ 注释）
 溯源: 2026-11-03 新增（issue #8310）。病 = 终端壳**打印能力误报**：页面说「由本机打印机直接出纸」，本机 `PrinterLink.mode()` = **-1**；根因 = `probePrintCapability()` 的终端分支**只看壳**（有 `chrome.webview` 就 `ok:true`）、`PrintEnv` 里没有能力字段。修 = 三态判定 `terminalPrintState(printerMode)`（`>0` available / `<0` unavailable / `0`·缺省·非有限 unknown），新增两条缺口文案（`terminal-printer-unavailable` / `terminal-print-unknown`）并登记进 `INBOUND_PRINT_GAP_WIRING`；`readPrintEnv()` 从 `window.__CFG__.printerMode` 取数（非数字按读不到）。取号 = MC-154（`python3 scripts/next_case_id.py MC` 现取 main 001-098/100-144/146-147 ⇒ 工具返回历史空档 MC-099，按裁定**不回填**；MC-139~MC-153 属并行包保留带，**避开** ⇒ 顺延 MC-154）。🔴 **仓外事实（如实登记，不假造）**：原生侧本轮**还没有**送 `printerMode` ⇒ 真机一律落 `unknown`（fail-closed：不许说能打）；**原生侧要补送 `printerMode`**（值域口径：负 = 不可用 / 正 = 可用 / 0 与缺省 = 判不了），补送后本仓代码**无需再改**。边界 = 不覆盖原生赋值、不判硬件选型。 ｜ tags: backend-contract, bmini, print-capability, fail-closed, three-state, no-overclaim, red-proof
+
+### MC-155. 「先查后插」的两处 TOCTOU 写面（收款码 / 角色）必须由唯一键兜底 + 幂等收敛：摘掉唯一键或退回裸 insert 必红（issue #7255） 🔵
+```
+你: 同一张收款码，两个人几乎同时点保存，一个人看到 200、另一个看到「服务器内部错误」—— 明明是个保存动作，凭什么有时会 500？
+你: 两个管理员同时建同一个角色代码，接口有时候回「角色代码已存在」，有时候直接 500，到底哪个才是对的？
+期望: direct_reply
+数据: 🔴 **判据 ①（唯一键真的存在，含迁移能修漂移库）**：建库脚本 + V206 之后，`tenant_payment_qrcodes` 有 `(tenant_id, payment_type) WHERE deleted = 0` 的部分唯一索引、`roles` 有 `(tenant_id, code)` 的唯一索引（`pg_indexes` 现取）；把两处索引**摘掉**再跑 V206 ⇒ 都必须建回来；连跑第二次不报错（可重复执行）。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/PaymentQrcodeAndRoleUniqueWriteRealDbTest.java::uniqueKeysExistAndTheMigrationHealsADriftedDatabase
+数据: 🔴 **判据 ②（并发两次写 ⇒ 只有一行，且都不抛错）**：两线程同起跑线并发 upsert 同一 `(tenant, type)` ⇒ 恰 1 行、零异常；并发建同一 code 的角色 ⇒ 恰 1 行、零异常，且两次条件插入的返回值必须是 `{1, 0}`（有一次真的收敛了）。执行点 = 同文件::concurrentQrcodeUpsertsLeaveExactlyOneRow / ::concurrentRoleCreatesLeaveExactlyOneRow
+数据: 🔴 **判据 ③（已存在时再写 ⇒ 幂等）**：已存在时再 upsert ⇒ 不报错、行数仍是 1、**行身份（id）不变**、字段被更新（返回既有那一行）；角色已存在时再建 ⇒ 影响 0 行、不报错、不产生第二行、既有行的 `name` 不被第二次请求覆盖。执行点 = 同文件::upsertIsIdempotentAndReturnsTheExistingRow / ::roleInsertIfAbsentIsIdempotent
+数据: 🔴 **判据 ④（负控：唯一键没做太宽）**：不同 tenant、不同 `payment_type`、不同 `code` 各自都能插（3×3 组合里的合法组合全部成功）—— 证明唯一键钉的是业务键、不是把正常数据挡在外面。执行点 = 同文件::theUniqueKeysDoNotBlockLegitimateRows
+数据: 🔴 **判据 ⑤-a（红证：摘掉唯一键 ⇒ ② 必红）**：摘掉两处唯一键后用**修法前的裸 insert** 连写两次 ⇒ **真的**写出两行（「先查后插」的并发结果就是静默重复）；紧接着验证 V206 在**存量已重复**时不阻断部署（WARNING + 跳过建索引），清理重复行后**重跑**才建索引 —— 这条同时把「存量重复行处置口径」变成行为级判据。执行点 = 同文件::withoutTheUniqueKeyTheNaiveWriteSilentlyDuplicates
+数据: 🔴 **判据 ⑤-b（红证：退回裸 insert ⇒ ③ 必红）**：唯一键在时裸 insert 第二条 ⇒ `SQLState=23505`（说明幂等收敛不是白写的；退回裸 insert 就是把 500 还回来）。执行点 = 同文件::theNaiveWriteHitsTheUniqueKeyWhenItExists
+数据: 🔴 **判据 ⑥（类级元守卫，会红）**：`unique_write_ledger.json` 必须认**表内 `UNIQUE(...)`** 这一族（`roles` 的唯一性只在表内 UNIQUE ⇒ 旧扫面下写它的代码整张隐形）；归因顺序必须 **mapper 原子写优先**（否则同文件里别的方法的 `DuplicateKeyException` 会给写入点盖假章 ⇒ 摘掉修复判据照样绿）。注入式自证：表内 UNIQUE 的语料必须扫出写入点、两种建法结论等价、带无关 catch 的语料必须归到 mapper。执行点 = tests/unit_ci_workflows/test_idempotent_unique_write_guard.py::test_inline_unique_and_attribution_order_are_discriminating / ::test_every_unique_write_site_is_registered
+数据: **边界（照实登记，§19.1）**：① 判据跑**真 PG**（`PgCluster`：initdb/pg_ctl 一次性集群），本机无 PG 二进制时按 `MIGAO_REQUIRE_REALDB` 二态处理（未设 ⇒ 显式 skip；CI 设了 ⇒ 判红）；② 判据只覆盖「写面 = 本次两条 SQL 路径」，**不覆盖**端点级回执（MockMvc 并发 ⇒ 200 的契约面）；③ 元守卫的残余：服务文件级 `DuplicateKeyException` 仍是**文件级**判定（不是写入点级），已在判据 docstring 的边界段登记并给出重启条件；④ 不改任何门禁的通过条件、不新增豁免。
+前置: 本用例是 [backend-contract]：前置 = V206 迁移文件在场、`TenantPaymentQrcodeMapper#upsertActive` 与 `RoleMapper#insertIfAbsent` 是两条写面的唯一入口；真库夹具由 `PgCluster` 现起（随机端口、跑完即停）。
+跳过: [backend-contract] 真库确定性判据（真 PG + 并发两线程 + 迁移文件真跑），零网络、零 LLM，不进入 agent-eval 冒烟
+```
+溯源: 2026-11-03 新增（issue #7255 台账第 3、4 行）。病 = 两处「selectOne 判空 → insert」的 TOCTOU 写面：并发下都判「不存在」⇒ 都写；有唯一键时第二个 500，没唯一键时静默第二行（读侧 selectOne 又 500）。**先纠正 issue 的一个事实**：`tenant_payment_qrcodes` 的部分唯一索引早在归档链 V48 里（存量库已有）、`roles (tenant_id, code)` 的 UNIQUE 也在建库脚本的表定义里 —— 缺的不是「表上没有唯一键」，而是 ① 应用层靠「先查后插」而不是幂等写、② `roles` 的唯一性**没有任何迁移承载**（存量库有没有它，仓内无法证明）、③ 元守卫的扫面**不认表内 UNIQUE**，于是 `roles` 那一族整张隐形。修 = ① V206 幂等 ensure 两处唯一键（存量重复行 ⇒ WARNING + 跳过，不阻断部署；清理后重跑即建）+ ② 写面收敛成 `ON CONFLICT`（收款码 upsert / 角色 insertIfAbsent + 具名 422）+ ③ 元守卫认表内 UNIQUE、归因改 mapper 优先。取号 MC-155（`python3 scripts/next_case_id.py MC` 现取 main 001-098/100-144/146-154 ⇒ 工具返回历史空档 MC-099，按裁定**不回填** ⇒ 顺延到 155）。 ｜ tags: concurrency, unique-key, idempotency, migration, red-proof, false-green
 
 ## 商家入驻域（7 case）
 
@@ -14735,8 +14753,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：997（活跃 153，跳过 844）
-- tier 分布：smoke 15 / normal 920 / adversarial 33
+- 用例总数：998（活跃 153，跳过 845）
+- tier 分布：smoke 15 / normal 921 / adversarial 33
 - 售后域：16
 - Agent 核心域：13
 - API 层域：21
@@ -14752,7 +14770,7 @@
 - 人事域：13
 - 知识问答域：9
 - 客户主数据迁移域：10
-- 杂项域：199
+- 杂项域：200
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：76
@@ -15018,6 +15036,7 @@
 - MC-153: B 端移动会话卡：来源组说商家的话、内部口径词零上屏（bmini 侧的零内部口径词判据 + 认不出的来源走兜底，issue #6461）
 - MC-147: **状态列写面全族统一元守卫 SW-100**：53 张有 `status` 列的表 × 134 个写入口逐条登记（未登记即红 / 台账陈旧即红 / 裸字符串写状态列即红 / 每张状态表的合法集合必须有来源）
 - MC-154: 终端壳打印能力三态（issue #8310）：桥在 ≠ 打印机在 —— printerMode 负向 / 读不到都不许说「由本机打印机直接出纸」，且「判不了」与「确知没有」分开说
+- MC-155: 「先查后插」的两处 TOCTOU 写面（收款码 / 角色）必须由唯一键兜底 + 幂等收敛：摘掉唯一键或退回裸 insert 必红（issue #7255）
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）
