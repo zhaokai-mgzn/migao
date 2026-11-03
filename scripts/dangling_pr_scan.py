@@ -30,6 +30,12 @@
    ⚠️ 这里必须看 `status`（run 是否在跑）而**不是** `conclusion`：族 B 的 run 全是
    `completed` + `action_required`（**从未执行**，0s）⇒ 它们**不是**"还在跑"，正是要被抓到的形态。
 
+6. **未解决的评审线程**不是「提示文本」，而是一个**独立判定面**（issue #6997）：分支保护开了
+   `required_conversation_resolution` ⇒ 一条 `isResolved=false` 的线程把 PR 钉在 `BLOCKED`，
+   而 `statusCheckRollup` / `gh pr checks` **完全不含**这一项（#6987 实证：required **全绿**、
+   auto-merge **已 arm**，却长期 `BLOCKED`、永不合并）⇒ 只能走 GraphQL 的 `reviewThreads` 单独判。
+   口径与负控见下面 §⑤（**outdated 不算阻塞** —— 否则每个被密钥扫描命中过的 PR 会永远红）。
+
 ## ④ 冲突态：**事件投递 ≠ 检查存在**（issue #6815；本脚本的**第二个**判据族）
 
 **病根（现场实证，issue #6815）**：PR 与 base **冲突**时，GitHub **造不出合并提交**
@@ -73,17 +79,40 @@ $ gh pr view 6809 --json mergeable,mergeStateStatus ⇒ CONFLICTING / DIRTY
 （判红看的是 `event=pull_request` 的 run 有没有，与名字无关），影响的只是"具名清单少列两条"——
 同一条 HEAD 上 `pr-check.yml` 的 run 本来就会出现在清单里，可行动性不受损。
 
+## ⑤ 评审线程面（issue #6997）：本扫描器**判**什么 / **不判**什么
+
+| 形态 | 本扫描器 |
+|---|---|
+| `isResolved == false ∧ isOutdated == false`（有人留了意见、代码也没改过） | **判**：计入「需要处置」（`::error::` + summary），报出 `path` + **首行摘要** + 分类计数 ⇒ 退出码 `1` |
+| `isResolved == false ∧ isOutdated == true`（代码已改过、线程没人 resolve） | **不判**（**单独一类、不算阻塞**，只出声）—— 否则会**永远红**；处置面 = `scripts/resolve_stale_bot_threads.py`（**只**自动 resolve「bot ∧ 已过期」，人类线程永不自动 resolve） |
+| `isResolved == true` | **不判**（已处置），只进计数读数 |
+| 读不到（API 限流 / 权限 / PR 不存在 / 返回 `errors`） | **无法判定** ⇒ 整轮退 `3`（**不得当 `0` 读**），summary 明写「未判定」 |
+
+⚠️ **命中悬空面时**（判据 ①/②）也要把线程面拼进 `::error::` 读数（issue #6997 的要求 2）——
+否则就是「**报了警但说不清为什么**」（#6987 的真因正是靠这一步才落地的）；读不到时明写
+「评审线程面**未判定**」，**不**静默。
+⚠️ **为什么 outdated 不算阻塞**：`outdated ≠ resolved` —— 线程内容已被后续提交改掉，但它**仍然**把 PR
+钉在 `BLOCKED`（#6987 的真因就是这一族）；把它当阻塞会让每个被 Gitleaks / 评审工具命中过的 PR **永久判红**。
+本扫描器只做「可见 + 指名」，**不**自动 resolve 任何线程 —— 那会把「真存在且未修的密钥」一起静音
+（issue #6997 的明确口径）。
+⚠️ **边界（照实登记）**：① 只对浅判据已判 `ok` 的 PR 查线程面（draft / `block/merge` / 年龄 < `--minutes`
+一律**不查、也不发**这次 API 调用 —— 异步窗口内留意见是正常工作，报它才是假红）；② 每 PR 一次 GraphQL
+调用（`reviewThreads(first:100)`）⇒ 线程数 > 100 的 PR 只读前 100 条（计数即「本轮读到」）；③ 本扫描器
+**不**读 `required_conversation_resolution` 这个开关（读不到保护配置时也能判）—— 线程面报的是
+「有人留了意见、没人处置」这个**事实**，与该开关是否打开无关。
+
 ## 三态退出码（与 `scripts/merge_gate.py` 同口径）
 
 | 码 | 含义 |
 |---|---|
-| `0` | 扫到了、**没有**悬空 PR（脚本自印「扫描 N 条」⇒「扫了 0 条」也看得见） |
-| `1` | 扫到了、**有**悬空 PR（逐条 `::error::` + step summary） |
-| `3` | **无法判定**（读不到 open PR 列表 / gh 不可用 / 输出不是 JSON）—— **不得当 `0` 读** |
+| `0` | 扫到了、**没有**悬空 PR，也**没有**「未解决且未过期」的评审线程（脚本自印「扫描 N 条」⇒「扫了 0 条」也看得见） |
+| `1` | 扫到了、**有**悬空 PR **或**有「需要处置」的评审线程（逐条 `::error::` + step summary） |
+| `3` | **无法判定**（读不到 open PR 列表 / **读不到评审线程面** / gh 不可用 / 输出不是 JSON）—— **不得当 `0` 读** |
 
 单条 PR 读不到深判所需数据（`gh run list` 失败 / `mergeable` 未算完）⇒ 记 `未判定` 并
 `::warning::`，**不**把整轮扫描判红（避免瞬时 API 抖动刷红），但 summary 明写
 「未判定 N 条（**不得当通过**）」——「没跑成」必须长得像「没跑成」。
+⚠️ **评审线程面的读失败是例外**（§⑤）：它是**判定所必需**的一维 ⇒ 退 `3`，不降级成 `0`。
 
 ## 注入点
 
@@ -122,6 +151,27 @@ CONFLICT_STATES = frozenset({"DIRTY"})
 MERGE_REF_EVENT = "pull_request"
 #: required 名单的两条腿：attended 现取 API；CI 退到此快照（与 merge_gate 同一读法）。
 REQUIRED_SNAPSHOT = ("tests", "unit_ci_workflows", "required_status_snapshot.json")
+
+#: ── issue #6997：评审线程面（`reviewThreads`）───────────────────────────────────
+#: 「未解决会话线程」**只在 GraphQL 的 `reviewThreads` 里**（REST / `statusCheckRollup` /
+#: `gh pr checks` 都不含）⇒ 这一维只能自己取。`isOutdated` 一并取（它是本面的负控口径）。
+REVIEW_THREADS_QUERY = """
+query($owner:String!,$name:String!,$number:Int!){
+  repository(owner:$owner,name:$name){
+    pullRequest(number:$number){
+      reviewThreads(first:100){
+        totalCount
+        nodes{
+          id isResolved isOutdated path
+          comments(first:1){nodes{author{login} bodyText}}
+        }
+      }
+    }
+  }
+}
+"""
+#: 首行摘要的截断宽度（读数要能一眼读出线程在说什么，又不把 summary 撑爆）
+THREAD_SUMMARY_WIDTH = 96
 
 EXIT_CLEAN = 0
 EXIT_DANGLING = 1
@@ -166,6 +216,91 @@ def head_runs(repo, sha):
     if repo:
         args += ["--repo", repo]
     return _gh(args)
+
+
+# ── issue #6997：评审线程面（**提示文本 ≠ 判定**）────────────────────────────────
+# 只有 GraphQL 的 `reviewThreads` 带 `isResolved` / `isOutdated`（REST / rollup 都不含）。
+# 口径见脚本头 §⑤：未解决 ∧ 未过期 ⇒ 需要处置；未解决 ∧ 已过期 ⇒ 单独一类、**不算阻塞**。
+
+def fetch_review_threads(repo, number):
+    """一个 PR 的 `reviewThreads`（GraphQL 原件）。读不到 ⇒ `GhError`（= 未判定，**不准**当 0）。"""
+    owner, _, name = str(repo or "").partition("/")
+    if not owner or not name:
+        raise GhError("读不到 owner/name（repo=%r）⇒ 无法查 reviewThreads" % (repo,))
+    payload = _gh(["api", "graphql", "-f", "query=" + REVIEW_THREADS_QUERY,
+                   "-f", "owner=" + owner, "-f", "name=" + name,
+                   "-F", "number=%d" % int(number)])
+    if not isinstance(payload, dict):
+        raise GhError("gh api graphql 输出不是对象 ⇒ 未判定")
+    if payload.get("errors"):
+        raise GhError("gh api graphql 返回 errors（限流 / 权限 / 字段）：%s"
+                      % json.dumps(payload["errors"], ensure_ascii=False)[:300])
+    pull_request = ((payload.get("data") or {}).get("repository") or {}).get("pullRequest") or {}
+    threads = pull_request.get("reviewThreads")
+    if not isinstance(threads, dict):
+        raise GhError("reviewThreads 读不到（限流 / 权限 / PR 不存在）⇒ 未判定，**不**当 0 读")
+    return threads
+
+
+def thread_first_line(body):
+    """线程首条评论的**首行摘要**（空 ⇒ `<空首行>`；超宽截断并留 `…`）。"""
+    for raw in str(body or "").splitlines():
+        line = raw.strip().lstrip("#>*-").strip() or raw.strip()
+        if line:
+            return (line[:THREAD_SUMMARY_WIDTH] + "…") if len(line) > THREAD_SUMMARY_WIDTH else line
+    return "<空首行>"
+
+
+def normalize_threads(review_threads):
+    """GraphQL `reviewThreads` → 归一化线程列表（判定只吃 `isResolved` / `isOutdated`）。"""
+    threads = []
+    for node in (review_threads or {}).get("nodes") or []:
+        if not isinstance(node, dict):
+            continue
+        comments = ((node.get("comments") or {}).get("nodes") or [])
+        first = comments[0] if comments and isinstance(comments[0], dict) else {}
+        threads.append({
+            "path": node.get("path") or "(未知路径)",
+            "is_resolved": bool(node.get("isResolved")),
+            "is_outdated": bool(node.get("isOutdated")),
+            "author": ((first.get("author") or {}).get("login") or "(未知作者)"),
+            "summary": thread_first_line(first.get("bodyText")),
+        })
+    return threads
+
+
+def classify_threads(threads):
+    """三分类 + 计数（**取数与判定分离**）：口径逐字见脚本头 §⑤。"""
+    needs_disposition = [t for t in threads if not t["is_resolved"] and not t["is_outdated"]]
+    outdated = [t for t in threads if not t["is_resolved"] and t["is_outdated"]]
+    resolved = [t for t in threads if t["is_resolved"]]
+    return {"needs_disposition": needs_disposition, "outdated": outdated,
+            "resolved": resolved, "total": len(threads)}
+
+
+def review_thread_reason(pr, classified):
+    """线程面的**可行动读数**：分类与计数 + 每条的 `path` + 首行摘要 + 处置入口。"""
+    number = pr.get("number")
+    bits = ["评审线程面：**未解决且未过期 %d 条（需要处置）**/ 未解决但已过期 %d 条"
+            "（**单独一类、不算阻塞**）/ 已解决 %d 条（共读到 %d 条）"
+            % (len(classified["needs_disposition"]), len(classified["outdated"]),
+               len(classified["resolved"]), classified["total"])]
+    for thread in classified["needs_disposition"][:5]:
+        bits.append("`%s`「%s」（%s）" % (thread["path"], thread["summary"], thread["author"]))
+    rest = len(classified["needs_disposition"]) - 5
+    if rest > 0:
+        bits.append("……另有 %d 条（同上，`reviewThreads(first:100)` 已读到）" % rest)
+    for thread in classified["outdated"][:5]:
+        bits.append("（已过期）`%s`「%s」（%s）"
+                    % (thread["path"], thread["summary"], thread["author"]))
+    if classified["outdated"]:
+        bits.append("已过期那 %d 条**代码已改过、但 `outdated ≠ resolved`**（仍会把 PR 钉在 `BLOCKED`）"
+                    "⇒ 处置：`python3 scripts/resolve_stale_bot_threads.py %s`"
+                    "（默认只读；人类线程永不自动 resolve）"
+                    % (len(classified["outdated"]), number))
+    bits.append("处置：按上面每个 `path` 处理意见后 resolve 该线程（本扫描器**不**自动 resolve —— "
+                "那会把「真存在且未修的密钥」一起静音）")
+    return "；".join(bits)
 
 
 # ── issue #6815：冲突态判据（**事件投递 ≠ 检查存在**）──────────────────────────
@@ -517,6 +652,38 @@ def _required_from_file(path):
         return [], "none"
 
 
+def _classify_pr_threads(repo, number):
+    """取 + 归一化 + 分类（悬空面归因 / 干净面判定**共用**；失败抛 `GhError` ⇒ 调用方按未判定处置）。"""
+    return classify_threads(normalize_threads(fetch_review_threads(repo, number)))
+
+
+def _account_threads(classified, stats):
+    """把一次分类累加进 summary 计数（线程**条数** + 涉及「需要处置」的 **PR 数**）。"""
+    if not classified:
+        return
+    stats["queried"] += 1
+    stats["needs_disposition"] += len(classified["needs_disposition"])
+    stats["outdated"] += len(classified["outdated"])
+    stats["resolved"] += len(classified["resolved"])
+    stats["prs_needing"] += bool(classified["needs_disposition"])  # PR 数（不是线程条数）
+
+
+def review_thread_scope(pr, now, minutes):
+    """该 PR 要不要查线程面 —— 与 `judge()` 的浅口径**同一组门**（draft / `block/merge` / 年龄）。
+
+    只对「浅判据已判 `ok`」的 PR 调用（见 `main`）；返回 `False` ⇒ **不发**这次 API 调用
+    （异步窗口内留意见是正常工作，报它才是假红）。`createdAt` 不可解析 ⇒ `False`
+    （它已被 `judge()` 记成未判定，不在这里重复判定）。
+    """
+    if pr.get("isDraft"):
+        return False
+    labels = {(l or {}).get("name") for l in (pr.get("labels") or []) if isinstance(l, dict)}
+    if labels & BLOCK_LABELS:
+        return False
+    age = age_minutes(pr.get("createdAt"), now)
+    return age is not None and age >= minutes
+
+
 def report(
     *,
     scanned,
@@ -526,6 +693,10 @@ def report(
     conflict_ok,
     skipped,
     unjudged,
+    needs_disposition,
+    thread_outdated,
+    threads_unjudged,
+    threads_stats,
     required_count,
     required_source,
     summary_path,
@@ -534,25 +705,39 @@ def report(
 
     `skipped` = 「跳过但**值得出声**」的条目（现取口径 = `DIRTY` ∧ draft）——
     "跳过"必须长得像"跳过"（§18.6「环境静默即缺陷」同族），否则它会被读成"没问题"。
+
+    `needs_disposition` / `thread_outdated` / `threads_unjudged` = 评审线程面（issue #6997）的
+    **三个互斥读数**：需要处置（判红）/ 已过期（单独一类、不算阻塞）/ 读不到（未判定）；
+    `threads_stats` = 分类与计数（`needs_disposition` / `outdated` / `resolved` 是**线程条数**）。
     """
     source = {"api": "现取 `gh api …/branches/main/protection`", "snapshot": "仓内快照",
               "file": "`--required-file` 注入", "none": "**读不到**（api 需 admin + 快照缺失）"}.get(
                   required_source, required_source)
     for line in dangling:
         print("::error::悬空 PR：%s" % line)
+    for line in needs_disposition:
+        print("::error::需要处置（评审线程：未解决且未过期）：%s" % line)
     for line in conflict_ok:
         print("::notice::冲突态但检查**已创建**（态 ②/③，不判红）：%s" % line)
+    for line in thread_outdated:
+        print("::notice::评审线程**已过期**（单独一类、**不算阻塞**；处置见 "
+              "`resolve_stale_bot_threads.py`）：%s" % line)
     for line in skipped:
         print("::warning::已跳过（**不是「没问题」**）：%s" % line)
     for line in unjudged:
         print("::warning::未判定（不得当通过）：%s" % line)
-    if not dangling:
+    for line in threads_unjudged:
+        print("::warning::评审线程面**未判定**（不得当通过）：%s" % line)
+    if not dangling and not needs_disposition and not threads_unjudged:
         print("::notice::✅ 悬空 PR 扫描：扫了 %d 条 open PR（base=main，阈值 %g 分钟），"
-              "无「既没变红也没合入且 required 未达可合」的悬空项；"
+              "无「既没变红也没合入且 required 未达可合」的悬空项，也无「未解决且未过期」的评审线程；"
               "冲突态但检查已创建（态 ②/③）%d 条；已跳过（可见）%d 条；未判定 %d 条"
-              % (scanned, minutes, len(conflict_ok), len(skipped), len(unjudged)))
+              "（评审线程面：查了 %d 个 PR —— 未解决且未过期 %d 条 / 已过期 %d 条 / 已解决 %d 条）"
+              % (scanned, minutes, len(conflict_ok), len(skipped), len(unjudged),
+                 threads_stats.get("queried", 0), threads_stats.get("needs_disposition", 0),
+                 threads_stats.get("outdated", 0), threads_stats.get("resolved", 0)))
     _write_summary(summary_path, [
-        "### 🔎 悬空 PR 扫描（issue #5235 可见性面 + issue #6815 冲突态面）",
+        "### 🔎 悬空 PR 扫描（issue #5235 可见性面 + #6815 冲突态面 + #6997 评审线程面）",
         "",
         "- 扫描范围：`base=main` 的 open PR **%d** 条（`--limit %d`）；阈值：**%g 分钟**"
         % (scanned, limit, minutes),
@@ -560,23 +745,41 @@ def report(
         "⇒ 必须报出（异步窗口 / 已变红 / draft / `block/merge` 均不报，防假红）",
         "- 判据 ②（issue #6815）：`mergeStateStatus=DIRTY`（冲突）∧ 该 HEAD 上**没有** "
         "`event=pull_request` 的 run ⇒ **态 ①「run 未创建」** ⇒ 必须报出（读数点名「不存在，不是 pending」）",
+        "- 判据 ③（issue #6997）：`reviewThreads` 里 **`isResolved=false ∧ isOutdated=false`** ⇒ "
+        "**需要处置**（报出 `path` + 首行摘要）；`isOutdated=true` ⇒ **单独一类、不算阻塞**；"
+        "读不到（限流 / 权限）⇒ 退 `3`（**不得当 0**）",
         "- **required 名单来源**：%s（%d 条）—— 读不到**不**改变判定，只少一段具名读数" % (source, required_count),
         "- **悬空 %d 条**（其中**态 ①「run 未创建」**的全部计入此数）/ "
+        "**需要处置的评审线程 %d 个 PR** / "
         "**冲突态但检查已创建（态 ②/③）%d 条** / **已跳过（可见）%d 条** / 未判定 %d 条"
-        % (len(dangling), len(conflict_ok), len(skipped), len(unjudged)),
+        % (len(dangling), threads_stats.get("prs_needing", 0), len(conflict_ok), len(skipped),
+           len(unjudged)),
+        "- **评审线程面**：查了 **%d** 个 PR —— 未解决且未过期 **%d** 条（需要处置）/ "
+        "已过期 **%d** 条（**单独一类、不算阻塞**）/ 已解决 **%d** 条 / 线程面未判定 **%d** 个 PR"
+        % (threads_stats.get("queried", 0), threads_stats.get("needs_disposition", 0),
+           threads_stats.get("outdated", 0), threads_stats.get("resolved", 0),
+           len(threads_unjudged)),
         "",
     ] + (["| PR | 读数 |", "|---|---|"] + ["| %s |" % l.split(" —— ", 1)[0] for l in dangling]
          if dangling else ["无悬空项（态 ①）。"])
+      + (["", "**需要处置（评审线程：未解决且未过期）**："] + ["- %s" % l for l in needs_disposition]
+         if needs_disposition else [])
+      + (["", "**评审线程已过期（单独一类、不算阻塞：`outdated ≠ resolved`，处置见 "
+              "`resolve_stale_bot_threads.py`）**："] + ["- %s" % l for l in thread_outdated]
+         if thread_outdated else [])
       + (["", "**态 ②/③（冲突但检查已创建，不判红）**："] + ["- %s" % l for l in conflict_ok]
          if conflict_ok else [])
       + (["", "**已跳过（`draft ∧ 冲突` 这一组合会永久静默 ⇒ 出声；跳过 ≠ 没问题）**："]
          + ["- %s" % l for l in skipped] if skipped else [])
-      + (["", "未判定（**不得当通过**）："] + ["- %s" % l for l in unjudged] if unjudged else []))
+      + (["", "未判定（**不得当通过**）："] + ["- %s" % l for l in unjudged] if unjudged else [])
+      + (["", "评审线程面未判定（**不得当通过**）："] + ["- %s" % l for l in threads_unjudged]
+         if threads_unjudged else []))
 
 
 def main(argv=None):
     parser = argparse.ArgumentParser(
-        description="悬空 PR 扫描（issue #5235 可见性面 + issue #6815 冲突态「run 未创建」面）")
+        description="悬空 PR 扫描（issue #5235 可见性面 + issue #6815 冲突态「run 未创建」面 "
+                    "+ issue #6997 评审线程面）")
     parser.add_argument("--repo", default=os.environ.get("GITHUB_REPOSITORY", ""),
                         help="owner/name（默认取 GITHUB_REPOSITORY）")
     parser.add_argument("--minutes", type=float,
@@ -606,6 +809,11 @@ def main(argv=None):
         required, required_source = load_required_contexts(args.repo)
 
     dangling, conflict_ok, skipped, unjudged, scanned = [], [], [], [], 0
+    # issue #6997：评审线程面的三个**互斥**读数（口径见脚本头 §⑤）
+    needs_disposition, thread_outdated, threads_unjudged = [], [], []
+    threads_stats = {"queried": 0, "prs_needing": 0, "needs_disposition": 0,
+                     "outdated": 0, "resolved": 0}
+    thread_repo = args.repo or gh_repo()  # 只取一次（`--repo` 缺省时才现取）
     for pr in prs:
         if not isinstance(pr, dict):
             continue
@@ -624,21 +832,59 @@ def main(argv=None):
                                                      (pr.get("title") or "")[:60], reason))
                 continue
         if verdict == "dangling":
-            dangling.append("#%s %s —— %s" % (pr.get("number"), (pr.get("title") or "")[:60], reason))
+            headline = "#%s %s" % (pr.get("number"), (pr.get("title") or "")[:60])
+            # issue #6997 的要求 2：**命中后必须输出线程面**（`path` / 首行摘要 / 已过期与否）——
+            # 否则就是「报了警但说不清为什么」（#6987 的真因正是靠这一步才落地的）。
+            try:
+                classified = _classify_pr_threads(thread_repo, pr.get("number"))
+            except GhError as exc:
+                threads_unjudged.append("%s —— 读不到 `reviewThreads`（限流 / 权限）⇒ "
+                                        "**未判定，不得当 0 读**：%s" % (headline, exc))
+                reason = "%s；评审线程面**未判定**（限流 / 权限）：%s" % (reason, exc)
+            else:
+                _account_threads(classified, threads_stats)
+                if classified["total"]:
+                    reason = "%s；%s" % (reason, review_thread_reason(pr, classified))
+            dangling.append("%s —— %s" % (headline, reason))
         elif verdict == "unjudged":
             unjudged.append(reason)
+        elif review_thread_scope(pr, now, args.minutes):
+            # 浅判据已判「没问题」⇒ **只有这一维**还能把它翻成「需要处置」（issue #6997）
+            headline = "#%s %s" % (pr.get("number"), (pr.get("title") or "")[:60])
+            try:
+                classified = _classify_pr_threads(thread_repo, pr.get("number"))
+            except GhError as exc:
+                # 读不到 ⇒ **未判定**（不得当 0 读）⇒ 整轮退 3（见脚本头 §⑤ / 三态退出码）
+                threads_unjudged.append("%s —— 读不到 `reviewThreads`（限流 / 权限）⇒ "
+                                        "**未判定，不得当 0 读**：%s" % (headline, exc))
+            else:
+                _account_threads(classified, threads_stats)
+                if classified["needs_disposition"]:
+                    needs_disposition.append(
+                        "%s —— %s" % (headline, review_thread_reason(pr, classified)))
+                elif classified["outdated"]:
+                    # **单独一类、不算阻塞**（否则每个被密钥扫描命中过的 PR 会永远红）⇒ 只出声
+                    thread_outdated.append(
+                        "%s —— %s" % (headline, review_thread_reason(pr, classified)))
         if note:
             skipped.append("#%s %s —— %s" % (pr.get("number"), (pr.get("title") or "")[:60], note))
 
     report(scanned=scanned, limit=args.limit, minutes=args.minutes, dangling=dangling,
            conflict_ok=conflict_ok, skipped=skipped, unjudged=unjudged,
+           needs_disposition=needs_disposition, thread_outdated=thread_outdated,
+           threads_unjudged=threads_unjudged, threads_stats=threads_stats,
            required_count=len(required), required_source=required_source,
            summary_path=args.summary)
 
-    if dangling:
-        print("::error::悬空 PR 扫描：%d 条 open PR 既没变红也没合入且 required 未达可合状态"
-              "（#5235：这一族**不许静默**）" % len(dangling))
+    if dangling or needs_disposition:
+        print("::error::悬空 PR 扫描：悬空 %d 条（既没变红也没合入且 required 未达可合）"
+              " + 需要处置的评审线程 %d 个 PR（#5235 / #6997：这两族**不许静默**）"
+              % (len(dangling), threads_stats.get("prs_needing", 0)))
         return EXIT_DANGLING
+    if threads_unjudged:
+        print("::error::悬空 PR 扫描**无法判定**：%d 个 PR 的评审线程面读不到（限流 / 权限）"
+              "⇒ 不得当 0 读" % len(threads_unjudged))
+        return EXIT_UNJUDGEABLE
     return EXIT_CLEAN
 
 

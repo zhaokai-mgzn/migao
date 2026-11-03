@@ -4186,7 +4186,7 @@
 ```
 溯源: 2026-10-31 新增（issue #8295）：两步确认，避免误写 ｜ tags: ui, preview
 
-## 杂项域（189 case）
+## 杂项域（190 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -7069,7 +7069,21 @@
 ```
 溯源: 2026-11-03 新增（issue #6957）。取号 = MC-139（`python3 scripts/next_case_id.py MC` 现取：main 的 MC-001~098 · 100~138、在飞 PR 的 MC-140 ⇒ 最小空闲是 099，而 **MC-099 是刻意空档不回填** ⇒ 顺延取 MC-139）。病：响应里的 `requestId` 由 `ApiResponse` 构造时现生成、从不进日志，前端只 toast `message` ⇒ 商家截图与服务端 incident 之间没有同一条串。落码 = `RequestId`（请求属性 + MDC + 响应头三处同值）+ `RequestIdFilter`（HIGHEST_PRECEDENCE）+ `ApiResponse` 统一取值 + 四个手写 JSON 出口补编号 + 日志模式 `%X{requestId:-}`；前端 `lib/error-reference.ts` 只在信封真有编号时多给一行可复制引用。红证 = 摘掉 `RequestId.bind(...)` ⇒ 三处同值判据具名红；把 `ApiResponse` 构造改回现生成 ⇒ 同红；把前端 `showRequestErrorToast` 改回 `toast.error` ⇒ 前端判据红。 ｜ tags: request-id, error-envelope, observability, meta-guard, red-proof
 
-### MC-143. **状态列写面全族统一元守卫 SW-100**：53 张有 `status` 列的表 × 134 个写入口逐条登记（未登记即红 / 台账陈旧即红 / 裸字符串写状态列即红 / 每张状态表的合法集合必须有来源） 🔵
+### MC-143. 悬空 PR 扫描器把「未解决评审线程」计入**需要处置**（issue #6997）：`isResolved=false ∧ isOutdated=false` ⇒ 判红并报出 `path` + 首行摘要；`isOutdated=true` 单独一类**不算阻塞**；读不到 ⇒ 退 `3`（不得当 0） 🔵
+```
+你: PR 全绿（27 pass / 0 fail、16 条 required 全 SUCCESS、auto-merge 已 arm），却长期 `BLOCKED`、永不合并；手动合被拒「base branch policy prohibits the merge」。真因是一条未解决的 review thread —— 而 `gh pr checks` 里**完全看不见**它。我要扫描器**当场说出**：哪条线程、在哪个文件、说了什么。
+数据: 🔴 **判据 1（判据本体，会红）**：1 条 `isResolved=false ∧ isOutdated=false` 的线程 ⇒ 该 PR 被计入「需要处置」，退出码 1 + `::error::`，读数报出 thread 的 `path` + **首行摘要**（不是整段 body）+ 作者 + 分类计数（`未解决且未过期 1 条（需要处置）`），并落进 step summary。执行点 = tests/unit_ci_workflows/test_dangling_review_threads.py::test_unresolved_fresh_thread_counts_as_needs_disposition
+数据: **判据 2（负控：outdated 不算阻塞）**：只有 `isOutdated=true` 的未解决线程 ⇒ **不判红**（`outdated ≠ resolved`，代码已改过；把它当阻塞会让每个被 Gitleaks 命中过的 PR 永远红），但必须作为**单独一类**出声并给出处置入口（`scripts/resolve_stale_bot_threads.py`，只自动 resolve「bot ∧ 已过期」）。执行点 = 同文件::test_outdated_thread_is_a_separate_class_not_blocking
+数据: **判据 3（负控：已解决不计入）**：全部 `isResolved=true` ⇒ 不判红、不进「需要处置」面，只进计数读数。执行点 = 同文件::test_all_resolved_threads_are_not_counted
+数据: 🔴 **判据 4（三态：读不到 ≠ 0）**：线程面 API 返回错误 / 限流 ⇒ 退出码 **3** + `::error::`，且**不许**再说「✅ 无悬空项」。执行点 = 同文件::test_thread_api_failure_is_exit_3_not_zero
+数据: **判据 5（分类计数 + 范围闸）**：fresh / outdated / resolved 混在一起时三栏计数各自正确；draft / `block/merge` / 年龄 < `--minutes` 的 PR **不查线程面**（判据用「同时注入 API 失败」证明它真的没发那次调用）。执行点 = 同文件::test_mixed_threads_are_classified_into_three_readings / ::test_thread_face_is_not_queried_for_out_of_scope_prs
+数据: 🔴 **判据 6（注入式红证）**：把 `if classified["needs_disposition"]:` 改成 `if False:`（= 摘掉 reviewThreads 判定）⇒ 判据 1 的夹具不再判红、`path` 从读数消失；未变异的真脚本在同一夹具上必须红（反向对照）。执行点 = 同文件::test_removing_thread_judgement_turns_the_primary_case_red
+数据: **边界（照实登记，§19.1）**：① 只对浅判据已判 `ok` 的 PR 查线程面（draft / `block/merge` / 年龄 < N 分钟一律不查）；② 每 PR 一次 GraphQL 调用（`reviewThreads(first:100)`）⇒ 线程数 > 100 只读前 100 条；③ 不读 `required_conversation_resolution` 开关本身；④ 本扫描器**不**自动 resolve 任何线程（那会把「真存在且未修的密钥」一起静音 —— issue #6997 的明确口径）。
+跳过: [backend-contract] 零 LLM 的确定性读数（真脚本 + `gh` 替身 + 注入式变异），pytest 子进程真跑，零网络
+```
+溯源: 2026-11-03 新增（issue #6997，CI 可见性面）。取号 = `python3 scripts/next_case_id.py MC` 现取；**撞号顺延**：工具返回历史空档 139，但 139 已被在飞 PR #8526 / #8529 认领（并行取号盲区，见 #6245），main 已有 140~142 ⇒ 按「后合入者让号」取 **MC-143**（刻意空档 099 不回填）。病：`scripts/dangling_pr_scan.py` 只把未解决评审线程当**提示文本**打印（`dangling_reason` 里的一句「见 resolve_stale_bot_threads.py」），不计入需要处置 ⇒ #6987「全绿 + 已 arm 却永不合并」无声（`required_conversation_resolution=true` + 一条 `isOutdated=true` 的 Gitleaks 线程）。修法 = 新增评审线程面：GraphQL `reviewThreads` → 三分类（未解决∧未过期 ⇒ 需要处置；未解决∧已过期 ⇒ 单独一类不算阻塞；已解决 ⇒ 只计数）+ 读不到退 3 + summary 分类计数；脚本头补「判什么 / 不判什么」清单。判据 = tests/unit_ci_workflows/test_dangling_review_threads.py（7 条）+ tests/unit_ci_workflows/test_dangling_pr_scan.py（逐条不变）。⚠️ 不入 CHANGELOG（铁律 7 豁免：纯 CI / `scripts/` 判据面改动，对用户无可观察影响）。 ｜ tags: ci, dangling-pr, review-threads, graphql, tri-state, fail-closed, red-proof
+
+### MC-144. **状态列写面全族统一元守卫 SW-100**：53 张有 `status` 列的表 × 134 个写入口逐条登记（未登记即红 / 台账陈旧即红 / 裸字符串写状态列即红 / 每张状态表的合法集合必须有来源） 🔵
 ```
 你: 入库单与工序那两处状态写缺陷各建了一颗单表守卫 —— 下一个人在**别的表**上、或用**那两颗看不见的写法**再加一条状态写面，凭什么会有东西红？
 数据: 🔴 **判据 1·未登记即红（具名）**：现取「写 `status` 列」的 Java 写点（`setStatus` / `wrapper.set(Entity::getStatus, …)` / `set("status", …)` / `setSql` / `Entity.builder()…status(…)`）+ mapper `@Update` 的 **SET 侧**写 `status`，逐个与台账 `state_write_face_ledger.json` 的 `write_points` 对账；缺一条 ⇒ 判红并报出 `表 / 写点 / 文件:行`。执行点 = tests/unit_ci_workflows/test_state_write_face_metaguard.py::test_every_status_write_is_registered
@@ -7083,7 +7097,7 @@
 数据: **边界（照实登记，§19.1）**：① 形态判据不做 AST（词法走查 + 签名切块），反射 / 动态 SQL / XML mapper / 变量拼接的 wrapper 不在射程（假绿方向，不误伤）；② 匿名类 / lambda 里的写点归到其外层成员（保守）；③ `deleted`（`@TableLogic` 逻辑删除族）**有意不入本表**（PG-075 / T3 / #6953 的 P6 承接）；④ **判不了并发语义**（登记 ≠ 有 CAS / 有 tenant 谓词 / 判了影响行数），也判不了 T2b「`updateById` 把内存里的旧 status 一起写回」；⑤ 4 张表（`production_route_signals` / `production_routings` / `sessions` / `tenant_apps`）现取 0 写点，只说明**本仓 Java 写面**没有显式赋值，不等于「不会被写」。
 跳过: [backend-contract] 零 LLM 的确定性读数（词法扫 admin-api Java 源码 + `_sql_schema` 解析建库脚本/@TableName + 台账双向对账 + 合成语料判别力自证），零网络、零 DB、不进 agent-eval 冒烟
 ```
-溯源: 2026-11-03 新增（issue #6953 的族级元守卫 SW-100；与 MC-100 / MC-104 / PG-075 等单表守卫**有意不重叠** —— 它们裁谓词完整性，本表裁「写面有没有人认领 / 状态值是不是单一口径」）。取号 = `python3 scripts/next_case_id.py MC` 现取 **MC-143**（main 的 MC 号最大 142；**MC-099 刻意空档不回填**）。**现取读数**：53 张有 `status` 列的表（`_sql_schema` 唯一解析点）、134 条写点（Java 108 / SQL 26）、覆盖 49 张表；合法集合权威：实体常量 10 / schema CHECK 14 / **无机器口径 36（冻结上限）**；裸字符串存量 56（冻结上限）。**红证（注入式，实跑）**：① 往真实 Service 里加一条未登记写面 ⇒ 判据 1 判红并具名；② 把常量改成裸字符串 ⇒ 判据 3 判红并具名；③ 把台账条目删掉 ⇒ 判据 2 判红（写点无主）；④ 把 `unregistered()` 的登记对账摘掉 / 把 `bare_literal_sites()` 摘掉 ⇒ 判据 1 / 判据 3 必红（判据 7 内建这两条内存变异体作常驻证）。**如实登记的既有缺陷（本包不修，不扩射程）**：`ProductionOperationCommandService#update` 的无条件状态写（见判据 8 的盲洞 ②）、`InboundOrderService` 的 builder 写形（盲洞 ①）、36 张表没有机器可读的合法状态集合、56 处裸字面量 —— 均为存量债，压测口径 = 台账基线**只许缩短**。 ｜ tags: state-transition, meta-guard, ledger, single-source, red-proof
+溯源: 2026-11-03 新增（issue #6953 的族级元守卫 SW-100；与 MC-100 / MC-104 / PG-075 等单表守卫**有意不重叠** —— 它们裁谓词完整性，本表裁「写面有没有人认领 / 状态值是不是单一口径」）。取号 = `python3 scripts/next_case_id.py MC` **首取 MC-143**（当时 main 最大 142），merge `origin/main` 时与 main 新增的 **MC-143**（issue #6997 / PR #8535）撞号 ⇒ 按「后合入者让号」**顺延为 MC-144**（工具另会返回历史空档 MC-099 —— 按裁定**刻意空档不回填**）。**现取读数**：53 张有 `status` 列的表（`_sql_schema` 唯一解析点）、134 条写点（Java 108 / SQL 26）、覆盖 49 张表；合法集合权威：实体常量 10 / schema CHECK 14 / **无机器口径 36（冻结上限）**；裸字符串存量 56（冻结上限）。**红证（注入式，实跑）**：① 往真实 Service 里加一条未登记写面 ⇒ 判据 1 判红并具名；② 把常量改成裸字符串 ⇒ 判据 3 判红并具名；③ 把台账条目删掉 ⇒ 判据 2 判红（写点无主）；④ 把 `unregistered()` 的登记对账摘掉 / 把 `bare_literal_sites()` 摘掉 ⇒ 判据 1 / 判据 3 必红（判据 7 内建这两条内存变异体作常驻证）。**如实登记的既有缺陷（本包不修，不扩射程）**：`ProductionOperationCommandService#update` 的无条件状态写（见判据 8 的盲洞 ②）、`InboundOrderService` 的 builder 写形（盲洞 ①）、36 张表没有机器可读的合法状态集合、56 处裸字面量 —— 均为存量债，压测口径 = 台账基线**只许缩短**。 ｜ tags: state-transition, meta-guard, ledger, single-source, red-proof
 
 ## 商家入驻域（7 case）
 
@@ -14592,8 +14606,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：987（活跃 153，跳过 834）
-- tier 分布：smoke 15 / normal 910 / adversarial 33
+- 用例总数：988（活跃 153，跳过 835）
+- tier 分布：smoke 15 / normal 911 / adversarial 33
 - 售后域：16
 - Agent 核心域：13
 - API 层域：21
@@ -14609,7 +14623,7 @@
 - 人事域：13
 - 知识问答域：9
 - 客户主数据迁移域：10
-- 杂项域：189
+- 杂项域：190
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：76
@@ -14864,7 +14878,8 @@
 - MC-140: 多 PR **集中合**（batch merge）工具：从 origin/main 重建 + 重放（不 --ours 解冲突）/ 用例号「后合入者让号」/ 锚点按**实测**重锚 / 批次 body 零关闭词
 - MC-142: 计件 sweep 的 A0b 不再按原始 `worker_name` 分组比对：无署名归集是**显式的一类**（结构判身份、文案只进证据），并由独立的 A0c 勾稽「总额 − 逐人 = 无署名 且 = 独立 SQL 的无名组」（issue #7030）
 - MC-139: 商家看到的失败编号 = 服务端日志里那条记录：requestId 唯一来源 + 前端可复制上屏（issue #6957）
-- MC-143: **状态列写面全族统一元守卫 SW-100**：53 张有 `status` 列的表 × 134 个写入口逐条登记（未登记即红 / 台账陈旧即红 / 裸字符串写状态列即红 / 每张状态表的合法集合必须有来源）
+- MC-143: 悬空 PR 扫描器把「未解决评审线程」计入**需要处置**（issue #6997）：`isResolved=false ∧ isOutdated=false` ⇒ 判红并报出 `path` + 首行摘要；`isOutdated=true` 单独一类**不算阻塞**；读不到 ⇒ 退 `3`（不得当 0）
+- MC-144: **状态列写面全族统一元守卫 SW-100**：53 张有 `status` 列的表 × 134 个写入口逐条登记（未登记即红 / 台账陈旧即红 / 裸字符串写状态列即红 / 每张状态表的合法集合必须有来源）
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）

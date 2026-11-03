@@ -2,7 +2,7 @@
 # 本文件由 render_cases.py 生成，勿手改（改了也留不住：下次重渲染会覆盖）
 # 源: cases/*.yml（case-contract 单一源）
 # 重新生成: python3 render_cases.py --cases <dir> --out-eval <包目录> --out-md <md>
-# 域: misc（源: cases/misc.yml，189 条）
+# 域: misc（源: cases/misc.yml，190 条）
 
 from ._schema import Difficulty, EvalCase, Skill
 
@@ -3460,9 +3460,27 @@ _CASE_MC_139 = EvalCase(
     forbidden_card_text=[],
 )
 
-# ── MC-143 [NORMAL] **状态列写面全族统一元守卫 SW-100**：53 张有 `status` 列的表 × 134 个写入口逐条登记（未登记即红 / 台账陈旧即红 / 裸字符串写状态列即红 / 每张状态表的合法集合必须有来源）（源: cases/misc.yml）──
+# ── MC-143 [NORMAL] 悬空 PR 扫描器把「未解决评审线程」计入**需要处置**（issue #6997）：`isResolved=false ∧ isOutdated=false` ⇒ 判红并报出 `path` + 首行摘要；`isOutdated=true` 单独一类**不算阻塞**；读不到 ⇒ 退 `3`（不得当 0）（源: cases/misc.yml）──
 _CASE_MC_143 = EvalCase(
     id='MC-143',
+    legacy_id='',
+    title='悬空 PR 扫描器把「未解决评审线程」计入**需要处置**（issue #6997）：`isResolved=false ∧ isOutdated=false` ⇒ 判红并报出 `path` + 首行摘要；`isOutdated=true` 单独一类**不算阻塞**；读不到 ⇒ 退 `3`（不得当 0）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['PR 全绿（27 pass / 0 fail、16 条 required 全 SUCCESS、auto-merge 已 arm），却长期 `BLOCKED`、永不合并；手动合被拒「base branch policy prohibits the merge」。真因是一条未解决的 review thread —— 而 `gh pr checks` 里**完全看不见**它。我要扫描器**当场说出**：哪条线程、在哪个文件、说了什么。'],
+    expectations=[],
+    data_checks=['🔴 **判据 1（判据本体，会红）**：1 条 `isResolved=false ∧ isOutdated=false` 的线程 ⇒ 该 PR 被计入「需要处置」，退出码 1 + `::error::`，读数报出 thread 的 `path` + **首行摘要**（不是整段 body）+ 作者 + 分类计数（`未解决且未过期 1 条（需要处置）`），并落进 step summary。执行点 = tests/unit_ci_workflows/test_dangling_review_threads.py::test_unresolved_fresh_thread_counts_as_needs_disposition', '**判据 2（负控：outdated 不算阻塞）**：只有 `isOutdated=true` 的未解决线程 ⇒ **不判红**（`outdated ≠ resolved`，代码已改过；把它当阻塞会让每个被 Gitleaks 命中过的 PR 永远红），但必须作为**单独一类**出声并给出处置入口（`scripts/resolve_stale_bot_threads.py`，只自动 resolve「bot ∧ 已过期」）。执行点 = 同文件::test_outdated_thread_is_a_separate_class_not_blocking', '**判据 3（负控：已解决不计入）**：全部 `isResolved=true` ⇒ 不判红、不进「需要处置」面，只进计数读数。执行点 = 同文件::test_all_resolved_threads_are_not_counted', '🔴 **判据 4（三态：读不到 ≠ 0）**：线程面 API 返回错误 / 限流 ⇒ 退出码 **3** + `::error::`，且**不许**再说「✅ 无悬空项」。执行点 = 同文件::test_thread_api_failure_is_exit_3_not_zero', '**判据 5（分类计数 + 范围闸）**：fresh / outdated / resolved 混在一起时三栏计数各自正确；draft / `block/merge` / 年龄 < `--minutes` 的 PR **不查线程面**（判据用「同时注入 API 失败」证明它真的没发那次调用）。执行点 = 同文件::test_mixed_threads_are_classified_into_three_readings / ::test_thread_face_is_not_queried_for_out_of_scope_prs', '🔴 **判据 6（注入式红证）**：把 `if classified["needs_disposition"]:` 改成 `if False:`（= 摘掉 reviewThreads 判定）⇒ 判据 1 的夹具不再判红、`path` 从读数消失；未变异的真脚本在同一夹具上必须红（反向对照）。执行点 = 同文件::test_removing_thread_judgement_turns_the_primary_case_red', '**边界（照实登记，§19.1）**：① 只对浅判据已判 `ok` 的 PR 查线程面（draft / `block/merge` / 年龄 < N 分钟一律不查）；② 每 PR 一次 GraphQL 调用（`reviewThreads(first:100)`）⇒ 线程数 > 100 只读前 100 条；③ 不读 `required_conversation_resolution` 开关本身；④ 本扫描器**不**自动 resolve 任何线程（那会把「真存在且未修的密钥」一起静音 —— issue #6997 的明确口径）。'],
+    skip_reason='[backend-contract] 零 LLM 的确定性读数（真脚本 + `gh` 替身 + 注入式变异），pytest 子进程真跑，零网络',
+    tags=['ci', 'dangling-pr', 'review-threads', 'graphql', 'tri-state', 'fail-closed', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-144 [NORMAL] **状态列写面全族统一元守卫 SW-100**：53 张有 `status` 列的表 × 134 个写入口逐条登记（未登记即红 / 台账陈旧即红 / 裸字符串写状态列即红 / 每张状态表的合法集合必须有来源）（源: cases/misc.yml）──
+_CASE_MC_144 = EvalCase(
+    id='MC-144',
     legacy_id='',
     title='**状态列写面全族统一元守卫 SW-100**：53 张有 `status` 列的表 × 134 个写入口逐条登记（未登记即红 / 台账陈旧即红 / 裸字符串写状态列即红 / 每张状态表的合法集合必须有来源）',
     skill=Skill.GENERAL,
@@ -3668,4 +3686,5 @@ CASES = (
     _CASE_MC_142,
     _CASE_MC_139,
     _CASE_MC_143,
+    _CASE_MC_144,
 )
