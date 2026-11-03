@@ -21,8 +21,9 @@
  * （`SavingMetricViews.cohortLabel`）一个都不许出现在本文件与页面里 ——
  * 新用户读不懂（issue #6459 用户逐字「让新用户如何理解」）。
  * 类级元守卫 = `frontend/admin-web/tests/unit/user-copy-jargon-guard.test.ts` 的形态③。
- * ⚠️ 边界（照实登记）：元守卫扫的是**源码字面量**，服务端**下发的字符串**（例如黄金策会话卡
- * `BatchStockCard` 直接渲染 `cohortLabel`）不在它的射程内 —— 那一面另单登记，本单**有意不做**。
+ * ⚠️ 边界（照实登记）：元守卫扫的是**源码字面量**，服务端**下发的字符串**不在它的射程内。
+ * 会话卡那一面（两端 `BatchStockCard` 曾逐字渲染 `cohortLabel`）已由 issue #6461 收口：
+ * 改走 `lib/cohort-groups.ts` 的映射表，判据 = `tests/unit/lib/cohort-groups.test.ts`。
  */
 
 /** 无数据的统一文案（判据 4：不得用 `0` 冒充 —— 0 会被读成「没有浪费」） */
