@@ -4186,7 +4186,7 @@
 ```
 溯源: 2026-10-31 新增（issue #8295）：两步确认，避免误写 ｜ tags: ui, preview
 
-## 杂项域（203 case）
+## 杂项域（206 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -7273,7 +7273,7 @@
 ```
 溯源: 2026-11-03 新增（issue #7255 台账第 3、4 行）。病 = 两处「selectOne 判空 → insert」的 TOCTOU 写面：并发下都判「不存在」⇒ 都写；有唯一键时第二个 500，没唯一键时静默第二行（读侧 selectOne 又 500）。**先纠正 issue 的一个事实**：`tenant_payment_qrcodes` 的部分唯一索引早在归档链 V48 里（存量库已有）、`roles (tenant_id, code)` 的 UNIQUE 也在建库脚本的表定义里 —— 缺的不是「表上没有唯一键」，而是 ① 应用层靠「先查后插」而不是幂等写、② `roles` 的唯一性**没有任何迁移承载**（存量库有没有它，仓内无法证明）、③ 元守卫的扫面**不认表内 UNIQUE**，于是 `roles` 那一族整张隐形。修 = ① V206 幂等 ensure 两处唯一键（存量重复行 ⇒ WARNING + 跳过，不阻断部署；清理后重跑即建）+ ② 写面收敛成 `ON CONFLICT`（收款码 upsert / 角色 insertIfAbsent + 具名 422）+ ③ 元守卫认表内 UNIQUE、归因改 mapper 优先。取号 **MC-161**（`python3 scripts/next_case_id.py MC` 现取 ⇒ 工具返回历史空档 MC-099，按裁定**不回填**。**三次让号、记实**：原定 155 ⇒ 合并 main 时 main 已占 155/156/157 ⇒ 顺延 158 ⇒ CI 的跨 PR 取号判据报「158 与在飞 #8561/#8568 同时占」（159=#8570、160=#8574）⇒ 按「后合入者让号」终态 **161**）。 ｜ tags: concurrency, unique-key, idempotency, migration, red-proof, false-green
 
-### MC-160. H5 输入面字体族跟随全局 + 占位符收口共享层（内层原生控件 inherit / 裸 font-family 只在字体定义处 / 例外台账只许缩短） 🔵
+### MC-162. H5 输入面字体族跟随全局 + 占位符收口共享层（内层原生控件 inherit / 裸 font-family 只在字体定义处 / 例外台账只许缩短） 🔵
 ```
 你: 商家在手机浏览器里打开后台（登录 / 表单 / 报工 / 入库 / 售后 / 坐席）：输入框里打字与占位提示，字体应当与这一页其它文字一致，不该忽然变成另一种字体。
 数据: 🔴 **判据 ①·内层原生控件继承字体族**：共享层 `frontend/bmini-app/src/styles/input-center.scss` 必须给 `.weui-input` 与 `.taro-textarea` **两个**内层选择器都写 `font-family: inherit`，`.taro-textarea` 另写 `font-size: inherit`（UA 默认 13.33px monospace）。执行点 = frontend/bmini-app/tests/input-typography-guard.test.ts::inheritProblems。红证：删掉任一条声明 ⇒ 红并具名那个内层控件
@@ -7287,7 +7287,7 @@
 ```
 溯源: 2026-11-03 新增（issue #6480）。取号：`python3 scripts/next_case_id.py MC` 现取返回历史空档 **MC-099** —— 按裁定**刻意空档不回填**；当时 main 最大 **MC-157**、**MC-158** 已被在飞 PR #8568 的 claim（`8568-MC-158.json`）占用 ⇒ 取 **MC-160**（并先 push claim `8574-MC-160.json`）。病（issue #6480 实测，真栈 + 真 Chromium）：登录页内层 `input.weui-input` 的 `font-family` = **Arial**（浏览器默认）、输入条内层 `textarea.taro-textarea` = **monospace** + 13.33px、两者 `::placeholder` = **rgb(117,117,117)**（默认灰）；全 app 修前只有 2 处 `font-family`、1 处 `::placeholder`。修 = **一处收口**到共享层 `frontend/bmini-app/src/styles/input-center.scss`：内层两控件 `font-family: inherit`、textarea 另 `font-size: inherit`、占位符色 `$text-secondary`（唯一来源、字号继承控件自身）；同时删掉 `MessageInput.scss` 里重复的那三条（值不变，删的是第二份口径）。覆盖：H5 下 **39 × `<Input>` + 2 × `<Textarea>` = 41 处**全部渲染成这两个内层控件 ⇒ 一条共享规则全罩住；小程序端这两个选择器一个元素都匹配不到 ⇒ 零影响。**有意不改并登记**：`src/pages/auth/login/index.scss` 的 `Menlo, Consolas, monospace`（登录诊断面板的原始登录态行，等宽是为逐字符核对）进台账；`src/app.scss` 的 `page, body` 不追加字体栈（加了就会改变全站观感，那不在本单射程）。**未做（如实登记）**：C 端 `frontend/mini-app` 同一根因（现取 `font-family` 0 处、`MessageInput.scss` 无内层 `.taro-textarea`）本轮未改，另开承接单；运行期 `getComputedStyle` 逐面读数未跑（派单口径不跑浏览器腿）。 ｜ tags: bmini, h5, input, typography, single-source, red-proof
 
-### MC-162. 数字输入精度面（issue #8004）：涉钱 / 涉数量格不许再用 `type="number"`（中间态 `12.` 与千分位 `1,234.56` 会被浏览器吞掉）—— 共用 `DecimalInput` 一处解析/校验/话术 + 类级台账守卫 🔵
+### MC-163. 数字输入精度面（issue #8004）：涉钱 / 涉数量格不许再用 `type="number"`（中间态 `12.` 与千分位 `1,234.56` 会被浏览器吞掉）—— 共用 `DecimalInput` 一处解析/校验/话术 + 类级台账守卫 🔵
 ```
 你: issue #8004（施工单口径）：存量 `<input type="number">` 在**涉钱 / 涉数量**面会吞精度（中文输入法 / 千分位 / 尾随小数点下有已知丢值行为）。这类输入一旦丢值，商家会按错价下单 —— 涉钱面吞一次就是钱错了
 期望: direct_reply
@@ -7303,6 +7303,35 @@
 跳过: [backend-contract] 纯前端确定性判据（组件行为 + 生产源码结构扫描 + 台账双向对账），由 frontend/admin-web/tests/unit/money-input-guard.test.ts、tests/unit/lib/decimal-input.test.ts、tests/unit/components/DecimalInput.test.tsx 验证；零 LLM 环节，不进入 agent-eval 冒烟
 ```
 溯源: 2026-11-03 新增（issue #8004）。病 = 存量 `<input type="number">` 在涉钱 / 涉数量面吞精度（浏览器对 `12.` / `0.` / `1,234.56` 的 `el.value` 会失真），而这类缺陷**不会让任何既有判据变红**。修 = ① 抽**一处**解析/校验/话术（frontend/admin-web/src/lib/decimal-input.ts）+ **一个**原语（frontend/admin-web/src/components/ui/DecimalInput.tsx：text + inputMode=decimal + 字符串草稿 + 只回调合法值 + 具名话术 + 离线合法性）；② 11 个涉钱站点迁该原语并**把提交按钮绑到 `hasInvalid`**（否则「敲错 → 保存」会按上一个有效值提交 = 静默改价）；③ 9 个涉数量站点只去掉 `type="number"` 并补 `inputMode`（保留各页既有的 0.1 米粒度 / 正整数口径，不造第二套话术）；④ 类级元守卫 = money-input-guard.test.ts + number-input-ledger.ts（未登记即红、台账只许缩短）。取号 = MC-162（`python3 scripts/next_case_id.py MC` 现取返回历史空档 MC-099，按裁定**不回填**；**五轮让号记实**：MC-156 ⇒ open PR #8560；MC-157 ⇒ PR #8563；MC-158 ⇒ 在飞 #8568/#8571；MC-159/MC-160 ⇒ 在飞 PR #8574（其合并后 main 落 MC-160）；MC-161 ⇒ 又被 #8571 同时 claim（CI 跨在飞 PR 判据，issue #6245） ⇒ 终态取**当前全部 claim 的最大号 + 1 = MC-162**。`next_case_id.py` 按设计看不到未 push 的 claim，这就是它连续给出被占号的机制）；MC-160 亦被 #8574 占 ⇒ 终态 MC-161。`next_case_id.py` 按设计**看不到未 push 的本地 claim**，这就是它连续给出已被占用的号的原因）。**未接 `max` 的如实登记**：现有涉钱站点没有一个有既有业务上限口径（授信额度 / 退款额 / 优惠额都没有），涉钱面**不自造**上限 ⇒ `max` 能力由判据 4 的单元断言钉住，等业务给口径再接。 ｜ tags: backend-contract, frontend, money-surface, input-precision, fail-closed, ledger, red-proof
+
+### MC-160. H5 输入面字体族跟随全局 + 占位符收口共享层（内层原生控件 inherit / 裸 font-family 只在字体定义处 / 例外台账只许缩短） 🔵
+```
+你: 商家在手机浏览器里打开后台（登录 / 表单 / 报工 / 入库 / 售后 / 坐席）：输入框里打字与占位提示，字体应当与这一页其它文字一致，不该忽然变成另一种字体。
+数据: 🔴 **判据 ①·内层原生控件继承字体族**：共享层 `frontend/bmini-app/src/styles/input-center.scss` 必须给 `.weui-input` 与 `.taro-textarea` **两个**内层选择器都写 `font-family: inherit`，`.taro-textarea` 另写 `font-size: inherit`（UA 默认 13.33px monospace）。执行点 = frontend/bmini-app/tests/input-typography-guard.test.ts::inheritProblems。红证：删掉任一条声明 ⇒ 红并具名那个内层控件
+数据: 🔴 **判据 ②·裸的 font-family 收口**：全 app 的 `font-family: <具体字体>` 只许出现在**字体定义处**（`src/app.scss` 的 `page, body`）或台账 frontend/bmini-app/tests/input-font-ledger.json；**未登记即红**、**死条目即红**（只许缩短）、**条数现取**（同文件多一处就红）。执行点 = 同文件::bareFontFamilyProblems。红证：往任一页面 scss 加 `font-family: Arial` ⇒ 红并具名文件与声明
+数据: 🔴 **判据 ③·占位符唯一来源**：`::placeholder` 只许出现在共享层；两个内层选择器同色 `$text-secondary`（与 issue #6476 的输入条同 token）；占位符**不写** `font-size`（继承控件自身，避免第二个口径）。执行点 = 同文件::placeholderProblems。红证：往页面 scss 加 `&::placeholder { color: #999 }` ⇒ 红并具名文件
+数据: 🔴 **判据 ④·射程完整**：`src` 的 `.tsx` 里不许裸写原生 `<input>` / `<textarea>`（它们拿不到内层 class ⇒ 共享层规则一条都不生效）；同时反空跑：真扫到 `<Textarea>` 面。执行点 = 同文件::rawControlProblems。红证：注入 `<input className='x'/>` ⇒ 红并具名文件
+数据: 🔴 **反空跑 / 接线**：共享层必须被 `src/app.scss` 真的 `@use` 引入（写在文件里但没接线 ⇒ 判据空转）；台账非空（空台账 fail-closed）。红证：删掉 `@use './styles/input-center.scss'` ⇒ 红
+数据: 🔴 **共享层只许 inherit**：共享层给内层写具体字体族 / 字号 ⇒ 红（那是「顺手改了全站输入面视觉」，本单的口径是**观感逐字不变**）。红证：把 `inherit` 换成 `-apple-system, …` ⇒ 红
+数据: 🔴 **红证总表（注入式，实跑）**：在 `frontend/bmini-app` 下执行 `npx jest input-typography-guard` ⇒ 15 passed / 0 failed；11 条内存注入各自报出**具名**对象（删 inherit / 改具体字体 / 摘 `@use` / 页面加裸字体族 / 摘台账例外 / 同值追加 / 页面加占位符 / 改占位符色 / 给占位符加字号 / 注入原生 `<input>` / 清空台账）。
+跳过: [frontend-contract] 纯静态形态守卫（jest + fs 读 scss / tsx，零 DOM 渲染、零网络、零 LLM）由 frontend/bmini-app/tests/input-typography-guard.test.ts 验证，不进入 agent-eval 冒烟
+```
+溯源: 2026-11-03 新增（issue #6480）。取号：`python3 scripts/next_case_id.py MC` 现取返回历史空档 **MC-099** —— 按裁定**刻意空档不回填**；当时 main 最大 **MC-157**、**MC-158** 已被在飞 PR #8568 的 claim（`8568-MC-158.json`）占用 ⇒ 取 **MC-160**（并先 push claim `8574-MC-160.json`）。病（issue #6480 实测，真栈 + 真 Chromium）：登录页内层 `input.weui-input` 的 `font-family` = **Arial**（浏览器默认）、输入条内层 `textarea.taro-textarea` = **monospace** + 13.33px、两者 `::placeholder` = **rgb(117,117,117)**（默认灰）；全 app 修前只有 2 处 `font-family`、1 处 `::placeholder`。修 = **一处收口**到共享层 `frontend/bmini-app/src/styles/input-center.scss`：内层两控件 `font-family: inherit`、textarea 另 `font-size: inherit`、占位符色 `$text-secondary`（唯一来源、字号继承控件自身）；同时删掉 `MessageInput.scss` 里重复的那三条（值不变，删的是第二份口径）。覆盖：H5 下 **39 × `<Input>` + 2 × `<Textarea>` = 41 处**全部渲染成这两个内层控件 ⇒ 一条共享规则全罩住；小程序端这两个选择器一个元素都匹配不到 ⇒ 零影响。**有意不改并登记**：`src/pages/auth/login/index.scss` 的 `Menlo, Consolas, monospace`（登录诊断面板的原始登录态行，等宽是为逐字符核对）进台账；`src/app.scss` 的 `page, body` 不追加字体栈（加了就会改变全站观感，那不在本单射程）。**未做（如实登记）**：C 端 `frontend/mini-app` 同一根因（现取 `font-family` 0 处、`MessageInput.scss` 无内层 `.taro-textarea`）本轮未改，另开承接单；运行期 `getComputedStyle` 逐面读数未跑（派单口径不跑浏览器腿）。 ｜ tags: bmini, h5, input, typography, single-source, red-proof
+
+### MC-158. 工人端菜单以岗位为源：键集补 inbound/reprint（两张已有页面）+ 岗位→默认菜单映射 + 首屏最多 3 项的具名拒错（issue #8337） 🔵
+```
+你: 用户（2026-11-01 测试账号真机）：你这个测试账号的权限太大了，不符合实际使用？通常每个工序或者每个工人只能操作 1-3 个菜单，根据工人岗位来定菜单的
+数据: 🔴 **判据 ①·键集 ⇄ 工人端真实页面（双向）**：`inbound` / `reprint`（拍照入库 / 补打入库标签）在 bmini 上**早已有页面**（frontend/bmini-app/src/pages/worker/inbound|reprint/index.tsx）却**没有页面键、恒显示** ⇒ 现纳入闭词表 + 默认集合；每个键都有人话名、写侧认得它们。执行点 = WorkerPagesTest::inboundAndReprintPagesAreKeyedNow / everyPageKeyHasAHumanLabel
+数据: 🔴 **判据 ②·每个岗位都有默认菜单且默认键全在键集内**：裁剪/车位 = 报工+计件；仓管 = 入库+补打+库存修正；发货 = 发货+待发货单；每组非空 ⊆ `WorkerPages.ALL`、项数 ≤ 3、且能通过写侧校验（默认值 = 合法值）。执行点 = WorkerPagesTest::everyPositionHasDefaultsInsideTheVocabulary / positionDefaultsMatchTheIssueCriteria
+数据: 🔴 **判据 ③·显式菜单优先于岗位默认（负控）**：建号时同时给岗位与 `workerPages` ⇒ 落库的是**显式集合**（岗位默认被覆盖），且覆盖仍受 3 项上限约束。执行点 = WorkerAdminServiceTest::explicitPagesWinOverThePositionDefaults / perWorkerOverrideStillWinsButIsCapped
+数据: 🔴 **判据 ④·首屏上限 3 项，边界两侧都钉**：正好 3 项 ⇒ 通过；第 4 项 ⇒ 422 具名拒错（说清「最多 3 项」+「你填了 4 项」+ 列出这 4 项）且**零写入**。执行点 = WorkerPagesTest::pageCapIsThreeAndTheFourthIsRejectedByName / WorkerAdminServiceTest::moreThanThePageCapIsRejectedByName
+数据: 🔴 **判据 ⑤·改岗位 ⇒ 菜单按新岗位重新带出**（岗位是源；`PUT /api/admin/workers/{id}/position` 两列一起显式 set）：仓管 ⇒ 入库+补打+库存修正；清岗位 ⇒ 回到未收窄（全部页面）。执行点 = WorkerAdminServiceTest::updateWorkerPositionReDerivesTheMenu / clearingThePositionReturnsToAllPages / AdminWorkerControllerTest::updateWorkerPositionReturnsTheDerivedMenu
+数据: 🔴 **判据 ⑥·存量数据不回退**：旧键集（无 `inbound`/`reprint`）读面原样下发、**不**被默认集合反向放宽（不做隐式补齐）、未知/已撤键照旧裁掉且不抛异常；车位工（收窄到报工+计件）在工人工作台上**取不到**「拍照入库 / 补打入库标签」两个入口。执行点 = WorkerPagesTest::legacyStoredSetsKeepWorkingAndAreNotWidened / frontend/bmini-app/tests/worker-home-page.test.tsx::「车位工看不见」
+数据: 🔴 **红证（注入式，实跑）**：① 把 `仓管` 从 `positionDefaults()` 删掉 ⇒ 判据 ② 红（`containsExactlyInAnyOrderElementsOf(positions())` 具名报缺）；② 把 `validateRestriction` 末尾的 `MAX_PAGES_PER_WORKER` 检查摘掉 ⇒ 判据 ④ 红（第 4 项静默通过）。两次注入各自单变量、恢复即绿。
+数据: **边界（照实登记，§19.1）**：① `order`（我的活）**仍是「键已登记、面待建」**（issue #6764 §6.2 待裁定）—— 判据 ① 的「双向」对本键是**具名白名单**，不是「每键都有面」；② 存量工人**不重置** `worker_pages`（and 不做迁移回填）：没有岗位的存量档案行为与今天一字不差；③ 岗位不是权限（不写 `users.permissions`、不进 `user_roles`，授权判据仍是 `/api/worker/**` 403）；④ 本批**未**改商家后台配置面板（岗位下拉的读面 = `GET /api/admin/worker-pages` 的 `positions` / `position_defaults`，面板改造另单）。
+跳过: [backend-contract] 闭词表 / 岗位映射 / 写侧上限是**确定性判据**（Java 单测 + 端侧渲染），由 backend/admin-api/src/test 的 WorkerPagesTest / WorkerAdminServiceTest / AdminWorkerControllerTest 与 frontend/bmini-app/tests/worker-home-page.test.tsx 验证，非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-11-03 新增（issue #8337；用户 2026-11-01 逐字「通常每个工序或者每个工人只能操作 1-3 个菜单，根据工人岗位来定菜单的」）。病 = ① 工人档案菜单逐人自由勾选、与企业里岗位无关；② 拍照入库 / 补打入库标签**无页面键、恒显示**（任何岗位都看得见）；③ 默认 = 全开（8 项）。修 = ① `WorkerPages` 新增 `INBOUND` / `REPRINT` 键（进 ALL + 默认集合，存量「未收窄」工人零变化）；② 新增岗位闭词表（裁剪/车位/仓管/发货）+ `positionDefaults()` 映射 + `defaultPagesFor()`（未设/未知岗位 ⇒ 回落全部默认页，fail-open）；③ `MAX_PAGES_PER_WORKER = 3` 落在写侧 `validateRestriction`（超出 ⇒ 具名 422：上限 / 你填了几项 / 这四项）；④ `WorkerAdminService.createWorker(…, workerPosition)` 建号按岗位带出默认菜单（显式 `workerPages` 优先）+ `updateWorkerPosition`（改岗位重带菜单、清岗位回到未收窄）；岗位落 `users.position`（纯展示字段，**零迁移**）；⑤ 闭词表/岗位/上限经 `GET /api/admin/worker-pages` 下发（配置面唯一来源）；⑥ bmini 工人工作台按 `inbound` / `reprint` 门控两个入口（此前 `ALWAYS_VISIBLE`），`/w/` 侧只镜像闭词表。取号 **MC-158**：现取 `origin/main` 的 `.github/cases/claims/` 最大 = MC-156、两个 open PR（#8561 / #8563）逐个核其 heads 的 claim（MC-155 / MC-156）⇒ MC-157 起安全，按派单口径自 MC-158 起取（main 随后被 #8563 占 MC-157，选 158 因此是对的），并同 PR 加 claim `.github/cases/claims/8568-MC-158.json`。🔴 **存量口径裁定（2026-11-03，集成侧明确否决回填迁移）**：不做 `V206` 回填 —— 理由 ① 把两个键追加回**所有**收窄集会**反向打穿判据 ③**（车位工重新看得见入库/补打）；② 靠「他以前看得见 ⇒ 他大概是仓管」猜岗位 = 第二份会漂的真值。现行口径 = 「未收窄（NULL）= 零回退（`defaultPages()` 已含两键）+ 收窄集 = 真值（缺键即隐藏）+ 改岗位按新岗位重带」；残余面 = 收窄只有管理员显式设过才发生，处置是**两次点击**（设岗位「仓管」自带三项），不是数据损坏。该裁定由**类级守卫**钉住：`tests/unit_ci_workflows/test_worker_pages_no_legacy_backfill.py`（迁移/服务层出现「对存量 worker_pages 非空且缺键者追加键」即红；白名单为空；红证实跑：塞一个 `V206__tmp_backfill_probe.sql` ⇒ **2 failed** 并具名报出该文件与该 UPDATE 语句；删掉 ⇒ 2 passed）。 ｜ tags: backend-contract, worker, page-keys, position, single-source, fail-open, red-proof
 
 ## 商家入驻域（7 case）
 
@@ -14811,8 +14840,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：1001（活跃 153，跳过 848）
-- tier 分布：smoke 15 / normal 924 / adversarial 33
+- 用例总数：1004（活跃 153，跳过 851）
+- tier 分布：smoke 15 / normal 927 / adversarial 33
 - 售后域：16
 - Agent 核心域：13
 - API 层域：21
@@ -14828,7 +14857,7 @@
 - 人事域：13
 - 知识问答域：9
 - 客户主数据迁移域：10
-- 杂项域：203
+- 杂项域：206
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：76
@@ -15097,8 +15126,10 @@
 - MC-156: 机台页详情屏补「报返工」入口（复用既有 reportRework / 不新建第二套返工实现 / 次要动作不抢主位）
 - MC-157: **本地 dev / build 输出目录物理隔离**：`next dev` 写 `.next-dev`、`next build` / `next start` 仍写 `.next`（共用 `.next` 时 dev 侧已存在路由 404 可复现 + build 侧读到半写生成物报 9 条 TS 错误）
 - MC-161: 「先查后插」的两处 TOCTOU 写面（收款码 / 角色）必须由唯一键兜底 + 幂等收敛：摘掉唯一键或退回裸 insert 必红（issue #7255）
+- MC-162: H5 输入面字体族跟随全局 + 占位符收口共享层（内层原生控件 inherit / 裸 font-family 只在字体定义处 / 例外台账只许缩短）
+- MC-163: 数字输入精度面（issue #8004）：涉钱 / 涉数量格不许再用 `type="number"`（中间态 `12.` 与千分位 `1,234.56` 会被浏览器吞掉）—— 共用 `DecimalInput` 一处解析/校验/话术 + 类级台账守卫
 - MC-160: H5 输入面字体族跟随全局 + 占位符收口共享层（内层原生控件 inherit / 裸 font-family 只在字体定义处 / 例外台账只许缩短）
-- MC-162: 数字输入精度面（issue #8004）：涉钱 / 涉数量格不许再用 `type="number"`（中间态 `12.` 与千分位 `1,234.56` 会被浏览器吞掉）—— 共用 `DecimalInput` 一处解析/校验/话术 + 类级台账守卫
+- MC-158: 工人端菜单以岗位为源：键集补 inbound/reprint（两张已有页面）+ 岗位→默认菜单映射 + 首屏最多 3 项的具名拒错（issue #8337）
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）
