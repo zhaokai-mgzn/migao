@@ -486,6 +486,12 @@
       "guards": "计件 A0b「逐人比对」的假红形态（issue #7030）：验收工装按**原始 worker_name** 与接口 per_worker 逐字比对，而接口把无署名那笔钱归进**服务端下发的展示文案** ⇒「名不同、钱相同」稳定假红（实测误导出一张错的钱面单）。守卫三面：① 夹具判据（有未分配行 ⇒ 不判红 / 真实工人错 1 分 ⇒ 必红 / 勾稽被断言）必须**真跑**；② 注入式红证（删掉无署名特殊处理 ⇒ 夹具判据① 必红）；③ 接线（famA-money.mjs 必须用 judgePiecework，旧的 perWorker.get 逐字比对回潮即红）+ 判定模块**代码**里不许写死服务端文案",
       "red_proof": "把 acceptance/2026-10-03/finance-stock-time-sweep/harness/piecework-recon.mjs 的 isUnassignedWorker 函数体改成 return false ⇒ tests/unit_ci_workflows/test_piecework_unnamed_recon_guard.py::test_red_proof_removing_unassigned_special_case_turns_case_one_red 判红（注入副本上 node --test 报 not ok 1 - 判据①；本机实测 # pass 4 / # fail 4）；把 famA-money.mjs 的 import 摘掉 / 把 perWorker.get(...) 写回 ⇒ ::test_famA_wiring_uses_the_structural_judgement 与 ::test_wiring_guard_has_discriminating_power 判红；把 `未分配` 写成一行代码 ⇒ ::test_judgement_never_hardcodes_the_server_label 判红",
       "owner": "#7030"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_state_write_face_metaguard.py",
+      "guards": "**状态列写面**的族级元守卫（issue #6953 的 SW-100）：每张有 `status` 列的表 × 每个写它的入口（Service 成员 / mapper 手写 SQL / builder）必须登记在 `state_write_face_ledger.json`；违者判红（未登记即红 / 台账陈旧即红 / 裸字符串写状态列即红 / 每张状态表须声明合法集合来源）。现取 = 53 张表 / 134 条写点（Java 108 + SQL 26），不靠手抄清单。",
+      "red_proof": "① 往真实 Service 里加一条未登记的状态写（例：`InboundOrderService` 加 `sw100InjectedWrite(InboundOrder)`）⇒ tests/unit_ci_workflows/test_state_write_face_metaguard.py::test_every_status_write_is_registered 红并具名该写点与文件:行；② 把 `order.setStatus(InboundOrder.STATUS_POSTED)` 改成裸字符串 ⇒ ::test_status_literals_have_a_single_source 红并具名；③ 把 `unregistered()` / `bare_literal_sites()` 摘掉 ⇒ ::test_detector_has_teeth 当场红（内建内存变异体）。",
+      "owner": "#6953"
     }
   ]
 }
