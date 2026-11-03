@@ -16,6 +16,7 @@
  *    `basis` 的内部键**不上屏**（它们是给判据和 agent 看的）。
  */
 
+import { displayEnum } from '@/lib/enum-display'
 import type { MaterialShortageHistoryDepth, MaterialShortageView } from '@/types'
 
 /** 读不出 ⇒ 事实陈述「未知」（**不是** 0，也不是「暂无数据」） */
@@ -39,8 +40,7 @@ export const BAND_LABELS: Record<string, string> = {
 
 /** 档位标签：未知档位**不猜**（渲染「未知」而不是原样回显内部键） */
 export function bandLabel(band: string | null | undefined): string {
-  if (!band) return UNKNOWN
-  return BAND_LABELS[band] ?? UNKNOWN
+  return displayEnum(BAND_LABELS, band, UNKNOWN)
 }
 
 /** 缺口（米）：缺键 / null ⇒ `null` = **未知**（不是 0） */

@@ -156,7 +156,11 @@ users.permissions (JSON 权限码)               （员工权限快照：员工�
 >   **同批**给 ai-agent 的 `notification_manage` 声明同一码（单边改动会砍掉运营经黄金策发通知的能力）。
 > · **该放行的登记为「有意放行」**：第 4/6/7/8/9/10/11 行 + 部分覆盖表的读面，逐条登记在守卫
 >   `tests/unit_ci_workflows/test_agent_permission_parity.py` 的 `UNANNOTATED_ENDPOINTS`（每条含理由）；
->   判据 8 会因「新增了未登记的无码端点」或「登记项已陈旧」而变红 ⇒ 沉默放行不再可能。
+>   判据 8 会因「新增了**没有任何校验**（注解式或命令式）的端点」或「登记项已陈旧」而变红 ⇒ 沉默放行不再可能。
+>   🔴 **两种校验形态都算「有校验」**（issue #6378，2026-11-03）：注解式 `@RequirePermission("码")`
+>   与**命令式** `PermissionInterceptor.requirePermission("码")`（issue #4148 的既有机制，与 AOP 拦截
+>   走同一份判定）。判据 8 的取值口 = `JavaEndpoint.checked` —— 码判不出时也算（例如实参是变量，
+>   只认「这里确实做了一次校验」，**不猜码**）。
 > · **读写拆分（同批）**：`AfterSalesController` / `agent/AgentAfterSalesController` 的类级
 >   `order:refund` 拆成方法级 —— 读（GET 列表/详情、`/agent/after-sales/mine`）→ **新码 `after_sales:view`**，
 >   写（建单/改状态）→ 保留 `order:refund`；`KnowledgeCard` / `KnowledgeCandidate` / `KnowledgeTemplate`
@@ -241,7 +245,9 @@ users.permissions (JSON 权限码)               （员工权限快照：员工�
 > `tests/unit_ci_workflows/admin_role_read_surface_ledger.json`，`exempt` 面只许缩短）。
 > 未注解端点的**全局**台账仍是 `tests/unit_ci_workflows/test_agent_permission_parity.py` 的
 > `UNANNOTATED_ENDPOINTS`（判据 8；`rbac/manifest.json` 的 `ledger_counts.UNANNOTATED_ENDPOINTS`
-> 由 21 缩到 **18**，只许缩短）。
+> 现取 **24**，只许缩短）。⚠️ 口径（issue #6378）：台账量的是「**没有任何权限校验**」的端点 ——
+> 命令式 `requirePermission(...)` 也算校验，图片识别的两条命令式端点因此退出台账（26 → 24），
+> 判据 = `tests/unit_ci_workflows/test_rbac_imperative_permission.py`。
 
 ## 员工授权面的 ⊆ 门禁（issue #4104，用户 2026-09-26 裁定）
 

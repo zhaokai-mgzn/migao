@@ -445,6 +445,26 @@ CARD_DB_CONSISTENCY_LEDGER: dict = {
         "reason": "参数面（id/action/processor/expected_delivery_date/reason）无金额字段"
                   "⇒ 无值可比对",
     },
+    "employee_manage": {
+        "stance": UNDECIDABLE,
+        "anchor": "#7050",
+        "issue": "#7050",
+        "owner": "人事域写路径 owner（employee_manage，issue #7050 接回 create/update）",
+        "reason": "参数面 `name` / `phone` / `password` / `role_ids` / `avatar` **不在** "
+                  "CARD_ONLY_VALUE_FIELDS（price / before_price / batch_id）里 ⇒ 现有「卡值 ↔ 本次调用值」"
+                  "比对（`confirmed_write_release` → `values_match`）对它**没有比对对象** —— 是「结构上"
+                  "无从比对」，不是「对得上」（与 order_manage 的 `refund_amount` 同一族）。"
+                  "⚠️ 与 order_create **本质不同**的点已核：订单卡的金额会被**服务端重算**（两条独立事实，"
+                  "故必须比对）；员工的姓名 / 手机号 / 岗位**不经服务端重算** —— `_create_user` / "
+                  "`_update_user` 把同一份 args 逐字段送进 `POST /api/admin/users` / `PUT …/{id}`，"
+                  "不补默认值、不做二次计算 ⇒ 「卡上显示什么」与「落库写什么」不是两条会分叉的事实；"
+                  "真正缺的那条判据是「卡面是否照抄了这几个值」= **行为面**（真实 LLM 评测，"
+                  "按 migao-dev-flow §13 默认不跑）。当下由 prompt 强约束 + schema description 承担"
+                  "（`references/prompts/staff.md` 规则 2 / `EXAMPLES-staff.md` 例 2 逐字要求卡面含"
+                  "姓名 + 手机号 + 岗位）。后续项（已登记在 issue #7050）：若要机器强制，需把 "
+                  "`name` / `phone` 纳入卡值比对口径 —— 那会动共享的 `CARD_ONLY_VALUE_FIELDS`"
+                  "（product 面也带 `name`），超出本包射程。",
+    },
     "human_handoff": {
         "stance": UNDECIDABLE,
         "anchor": "#5247",

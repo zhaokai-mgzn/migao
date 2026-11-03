@@ -23,6 +23,20 @@
   （`MenuController` / `AuthService`）与 RBAC 派生页 manifest，属独立变更面；本包的路由守卫（`product:list`，
   与端点方法级码逐字同码）已就位，并在 `ROUTE_WITHOUT_MENU_NODE` 与 `ROUTE_PREFIX_EXCEPTIONS` 两处具名登记。
 
+### 黄金策能办员工账号的创建与变更了（删除 / 停用 / 重置密码仍不办）（2026-11-03，issue #7050）
+
+- **改前**：`employee_manage` 只剩 `list` / `detail`（#5247 的 B 端只读化把写 action 全删）⇒
+  用户 2026-10-16「能力边界 终版」要求的「创建非单据对象 ✅」在员工域**物理做不到**：
+  「新来一个客服，帮他开个账号」只能被推回后台。
+- **改后**：`create`（姓名 + 手机号 + 初始密码 + 岗位）与 `update`（姓名 / 手机号 / 头像 / 岗位）接回，
+  走**既有**确认门禁（先发确认卡，用户点卡后才执行；未确认的调用被 `base_skill._requires_confirmation` 拦下）；
+  权限沿用 admin-api `AdminUserController` 的注解（读 `employee:list`、写 `employee:create`，工具内按 action 复检）。
+  **删除 / 停用（离职）/ 重置密码仍不在能力内**（不可逆 / 登录凭据面）⇒ 如实说明并引导到后台
+  「组织管理 → 员工管理」。其余域（岗位 / 客户 / 标签 / 分类 / 加工项 / 供应商）**本单未做**，缺口留在 issue #7050。
+- 判据：`backend/ai-agent-service/tests/test_employee_manage_write_actions.py`（MC-154：action 面可见 + 参数完整 /
+  权限按 action 复检 / 与 `react_turn` 同一确认门禁函数对象 / **未确认不执行**（负控）/ 端点与 payload 逐字对齐 /
+  校验失败具名 / 判别力自证）+ `tests/unit_ci_workflows/test_mibao_b_end_readonly.py`（写能力登记 + prompt 口径）。
+
 ### 涉钱数字输入不再吞精度：金额 / 单价 / 退款额统一走共享原语，敲错当场说清楚且不许带着错误提交（2026-11-03，issue #8004）
 
 - **改前**：`<input type="number">` 在涉钱面会吞精度 —— 浏览器对 `12.` / `0.` 这类中间态按「非法浮点数」处理
@@ -39,7 +53,6 @@
 - 判据：`frontend/admin-web/tests/unit/money-input-guard.test.ts`（MC-157：涉钱面零 `type="number"` +
   台账双向对账 + 4 条注入式红证）、`frontend/admin-web/tests/unit/lib/decimal-input.test.ts`（精度逐值钉死）、
   `frontend/admin-web/tests/unit/components/DecimalInput.test.tsx`（出声 / 禁用提交 / 失焦只收尾）。
-
 ### 商家端 H5 的输入框字体跟随页面正文：不再落回浏览器默认字体（2026-11-03，issue #6480）
 
 - **改前**：Taro H5 把样式挂在**外层**包裹元素上，真正绘字的是**内层**原生控件

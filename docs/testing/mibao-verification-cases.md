@@ -3918,26 +3918,27 @@
 真值: employee-role.users-endpoint, employee-role.write-require-admin, employee-role.update-field-consumption
 溯源: 2026-09-14 新增（issue #3593）：员工更新（改手机号）落库断言缺失 —— HR-001~007 无任何 update 覆盖，是 #3550（phone/roleIds 被 admin-api 静默忽略 → 200 假成功，PR #3561 已修）潜伏至今的用例层根因。断言口径：expectations.args 值级（action=update + 目标=种子员工 debug_employee_wangwu + 新值逐字 13900139111）+ must_succeed[update]（写真的成功）+ required_args[user_id, phone]（下发参数完整）。⚠️ 仍缺的能力：仓库 db_verify 只有 order_phone / order_items / product_by_name / after_sales_ticket（末项为 #3580 同批新增），**没有员工/用户核对器** ⇒ 接收侧静默忽略这一精确类尚不能机器判定。需要的 runner 规格（归属 runner 包，本包不碰 local_runner.py）：db_verify: [{fetch: employee, name: 「王五」, expect_fields: {phone: 「13900139111」}}] —— 取数走 GET /api/admin/users?keyword=<name>（或 /api/admin/users/{id}）→ 在 items 里按 name/phone 定位 → 逐条比对 expect_fields（值不等即失败，取不到记录也判失败而非跳过）；expect_fields.role_code 可同时覆盖角色侧（roleIds）同源缺陷。本条选「改手机号」而非「改角色」的理由：role 的**合法下发形态有两种**（role_ids=[角色表主键] 或 role=角色 code，见 AdminUserController.updateUser 与 employee_manage._update_user 的 if role_ids / elif role 分支），在 required_args / expectations 无 OR 分支能力时对任一形态做值级断言都会造成另一半假红；手机号只有 phone 一种形态，可做值级断言。角色侧（roleIds ↔ role code）的落库断言由同一 db_verify[employee].expect_fields.role_code 承担，建议 runner 包一并实现。；2026-09-19（issue #4419 的 burn-down 缴费 —— 本用例命中的**唯一**一条存量违规是 CASE-TRUST-NO-PRECONDITION-ASSERTION）：补 `precondition[employee_count_for_phone: 13700137000, expect: 1, max_growth: 0]` —— 改号前提 = 该号码名下确实有那位种子员工（前置不成立时红的表现像「agent 不会改号」，归因全错）；`max_growth: 0` 因本用例只让该号码名下减少一个（改走）、不新增。断言（user_inputs / expectations / must_succeed / required_args / namespaces）原样未动、无放宽 ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：`employee_manage` 的写 action `update` 已删除（工具收窄为只读 `{list, detail}`）⇒ 本用例退役（理由写在 `skip_reason`，条目不删除）；`expectations` 由 `employee_manage(action=update, user_id=debug_employee_wangwu, phone=13900139111)` 改判为存活的只读路径 `employee_manage(action=detail)`，`must_succeed` / `required_args` 里的写声明同步移除（否则成为永不满足的悬空声明，会阻塞 CI 的 action 绑定判据）。 ｜ tags: update, write, confirm
 
-### HR-009. 黄金策无创建员工能力——须如实说明并给后台开通路径（不得自旋重试 / 不得谎称已开） 🔵
+### HR-009. 黄金策能开员工账号、但该身份缺 employee:create——须如实说明权限不足并给后台开通路径（不得谎称能力不存在 / 不得自旋重试 / 不得谎称已开） 🔵
 ```
 你: 帮我开个客服账号，姓名李四，手机号 13800009999，密码 Test123456
 你: 那我要怎么才能给员工开账号？
 端: mibao（单端 —— 仅黄金策腿跑，元元腿跳过）
 期望: direct_reply or nav_guide
 数据: 同一失败的调用不得跨轮重复（自旋）：本仓库 runner 目前**没有**跨轮重复调用断言，故该条只能靠 LLM 层人工/盲审读报告 —— 如实登记，不假装已机器判定
-数据: 如实说明黄金策不提供创建员工/开账号能力（B 端只读化 #5247：写能力与对应 tools 已从 B 端整体移除），并给出后台「员工管理」页面开通路径（正向判据 want_text 要求全程出现「后台」）
+数据: 如实说明**该账号**缺 `employee:create` 权限（不是「黄金策没有这个能力」——#7050 已接回写能力），并给出后台「组织管理 → 员工管理」或「岗位权限」页面的开通路径（正向判据 want_text 要求全程出现「后台」/「开通」/「入口」/「管理员」之一）
 数据: 不得出现「请稍后重试」/「系统不支持」这类编造或敷衍话术（如实说明「黄金策做不到、请去后台」是**正确**回答，不在禁词内）
 清理: employee_remove(employee_name=李四、employee_phone=13800009999)
 前置: debug_permissions_effective(source=employee:list)
 命名空间(同键互斥·自动串行): employee_name:李四、employee_phone:13800009999
-禁词（全程）: 系统不支持、请稍后重试
+禁词（全程）: 系统不支持、请稍后重试、功能暂未开放、还没有这个功能
 全程禁用: order_manage
 全程禁用: product_manage
 必须: {'any_of': ['开通', '后台', '入口', '管理员']}
+必须失败: employee_manage(create)
 落库: employee_absent 李四 → name=李四; phone=13800009999
 ```
 真值: ai-chat.permission-layers, employee-role.write-require-admin
-溯源: 2026-09-18 新增（issue #4108 / 父 #4103 Pkg D）：让权限拒绝路径在评测中可达。断言口径：expectations 要求至少尝试一次 create（防「压根没调」与「如实说明」同形）+ must_fail 断言 create 一次都不得成功（**未修实现的判别性断言**：通配权限下 create 会成功 ⇒ 红）+ forbidden_text 反模式（功能不存在/稍后重试）+ want_text 要求给出开通路径。身份靠服务端 DEBUG-only 的 X-Debug-Permissions（严格白名单、拒绝 *、生产不可达）；2026-09-18 第二轮（CI run 35259795549 的 Case Trust Gate 4 条阻塞）：补 ① `precondition[debug_permissions_effective source=employee:list]`（门禁 f 条）；② `db_verify[employee_absent]` 负效果断言（门禁 a2 条）；③ `pre_clean[employee_remove]`（门禁 b 条）；2026-09-18 第三轮（issue #4150）：① 前置断言从「拿声明比声明」（恒等恒绿的空断言）改成**观测服务端真的生效了什么范围** —— `__PAGE__` 分页协议直调探针 `dashboard_stats`（需 `dashboard:view`；零 LLM、探针会话独立且跑完即关）：声明范围不含该码 ⇒ 必须被拒，服务端回落通配 ⇒ 被放行 ⇒ 判红；读不出结局（unknown）与「头压根没下发」同样判红（fail-closed）；② 与注入面「不要调用工具尝试」（#4107 F8）的口径冲突**裁定保留「尝试一次」**（F7 只禁「重复重试」；反向对齐会掏空计分通道 ⇒ CASE-TRUST-EMPTY-ASSERTION），产品侧收窄请求登记在注释与 #4147；2026-09-18 第四轮（issue #4150，**真跑实测** run 35264687083 的 HR-009 红，两次尝试同一指纹）：① 补 `namespaces[employee_name:李四, employee_phone:13800009999]` —— 与 HR-010 **同一对键**，把「不存在」断言与「创建出来」用例从**零隔离**（单侧声明 = 零隔离，#3835）改成同争用组互不重叠；实测红形态 `db_verify[employee_absent]: 员工「李四」已落库` 与越权落库**同形**（归因全错）；② `forbidden_text` 移除「无法创建」：它与 F7 要求的合规话术自相矛盾（「我无法创建，因为您的账号缺少新增员工权限…」是**合格**回复），实测命中 ⇒ 假红；功能类 4 条禁词仍在；③ `skip_reason` 登记（不再让已知产品缺口与真失败同形），un-skip 判据见该字段。断言口径只增不减（唯一移除项是上面那条假红禁词）。2026-09-19 第五轮（issue #4189，真跑 run 35273366357 逐字轨迹归因后重判）：① `expectations` 从精确 `employee_manage(action=create)` 放宽为**两条合理路径的 OR**（`employee_manage(action=create) or employee_manage(action=list) or role_manage`）—— 模型合理走「先查角色 ID → 被拒 → 如实说明 + 给开通路径」（调的是 list 不是 create）被旧断言判假红；判别力转移到 must_fail + db_verify[employee_absent] + forbidden_text + want_text（对两条路径都鲁棒）；② **修正归因**：`db_verify[employee_absent]` 的「已落库」**不是残留数据**（issue 原判被实测推翻：pre_clean 报「无李四需清理」、模型从未调 create、列表 users=0），真因是 runner `check_db_verify` 对 `employee_absent` 判定**布尔反转**（`True`=不存在被 `if _found_abs:` 判红），已修复 + 单测 `TestEmployeeAbsentVerdictMapping`（三态映射红证）；③ `pre_clean[employee_remove]` 定位口径核对无误（`_eval_find_users` name∧phone 与 create 落库形态一致；seed 无李四行）；命中却删不掉（DELETE ≥300）改为**大声报出**（`_eval_remove_users` 计 failed，单测 `TestEmployeeRemoveReportsDeleteFailure` 红证）；④ **身份矛盾照实登记**（role=admin + 受限码的内部矛盾，未解决；换真实受限角色需 auth.py 改造，超出本包范围）。 ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：`employee_manage` 收窄为只读（写 action `create` 已删除）⇒ 本用例按新机制改判：`expectations` 由 `employee_manage(action=create) or employee_manage(action=list) or role_manage` → `direct_reply`（如实说明 + 引导去后台页面），`title` / `user_inputs` / `data_checks` 随新语义改判（**不是放宽**：创建员工的能力已从 B 端整体移除，「是否被权限拒绝」这一问不再成立，正确行为 = 如实说明 + 给后台路径 ⇒ 断言面转入「如实说明 + 后台路径」的正向判据）。**`forbidden_text` 逐字改判**：原清单 `['暂不支持','功能暂未开放','系统不支持','还没有这个功能','请稍后重试']` 的前提是「米宝有这个能力、只是权限不够」；新裁定下「米宝做不到这件事、请去后台」才是**正确**回答 ⇒ 保留属**编造/敷衍**的两条 `['系统不支持','请稍后重试']`、**删掉**会误伤如实说明的 `['暂不支持','功能暂未开放','还没有这个功能']`；并**新增 `want_text` 正向判据「后台」**（裸字符串条目 = 全程语义：全程 final_text 必须出现「后台」= 真的给出了后台开通路径）。另：`must_fail[employee_manage(action=create)]` **整格移除** —— `create` 已从源码删除 ⇒ 该断言在新事实下永不失败（恒真空断言 + 悬空声明，硬规则禁残留已删除的写 action）；负效果断言由 `db_verify[employee_absent]`（李四不得落库）继续承担。 ｜ tags: permission, denial, auth, regression
+溯源: 2026-09-18 新增（issue #4108 / 父 #4103 Pkg D）：让权限拒绝路径在评测中可达。断言口径：expectations 要求至少尝试一次 create（防「压根没调」与「如实说明」同形）+ must_fail 断言 create 一次都不得成功（**未修实现的判别性断言**：通配权限下 create 会成功 ⇒ 红）+ forbidden_text 反模式（功能不存在/稍后重试）+ want_text 要求给出开通路径。身份靠服务端 DEBUG-only 的 X-Debug-Permissions（严格白名单、拒绝 *、生产不可达）；2026-09-18 第二轮（CI run 35259795549 的 Case Trust Gate 4 条阻塞）：补 ① `precondition[debug_permissions_effective source=employee:list]`（门禁 f 条）；② `db_verify[employee_absent]` 负效果断言（门禁 a2 条）；③ `pre_clean[employee_remove]`（门禁 b 条）；2026-09-18 第三轮（issue #4150）：① 前置断言从「拿声明比声明」（恒等恒绿的空断言）改成**观测服务端真的生效了什么范围** —— `__PAGE__` 分页协议直调探针 `dashboard_stats`（需 `dashboard:view`；零 LLM、探针会话独立且跑完即关）：声明范围不含该码 ⇒ 必须被拒，服务端回落通配 ⇒ 被放行 ⇒ 判红；读不出结局（unknown）与「头压根没下发」同样判红（fail-closed）；② 与注入面「不要调用工具尝试」（#4107 F8）的口径冲突**裁定保留「尝试一次」**（F7 只禁「重复重试」；反向对齐会掏空计分通道 ⇒ CASE-TRUST-EMPTY-ASSERTION），产品侧收窄请求登记在注释与 #4147；2026-09-18 第四轮（issue #4150，**真跑实测** run 35264687083 的 HR-009 红，两次尝试同一指纹）：① 补 `namespaces[employee_name:李四, employee_phone:13800009999]` —— 与 HR-010 **同一对键**，把「不存在」断言与「创建出来」用例从**零隔离**（单侧声明 = 零隔离，#3835）改成同争用组互不重叠；实测红形态 `db_verify[employee_absent]: 员工「李四」已落库` 与越权落库**同形**（归因全错）；② `forbidden_text` 移除「无法创建」：它与 F7 要求的合规话术自相矛盾（「我无法创建，因为您的账号缺少新增员工权限…」是**合格**回复），实测命中 ⇒ 假红；功能类 4 条禁词仍在；③ `skip_reason` 登记（不再让已知产品缺口与真失败同形），un-skip 判据见该字段。断言口径只增不减（唯一移除项是上面那条假红禁词）。2026-09-19 第五轮（issue #4189，真跑 run 35273366357 逐字轨迹归因后重判）：① `expectations` 从精确 `employee_manage(action=create)` 放宽为**两条合理路径的 OR**（`employee_manage(action=create) or employee_manage(action=list) or role_manage`）—— 模型合理走「先查角色 ID → 被拒 → 如实说明 + 给开通路径」（调的是 list 不是 create）被旧断言判假红；判别力转移到 must_fail + db_verify[employee_absent] + forbidden_text + want_text（对两条路径都鲁棒）；② **修正归因**：`db_verify[employee_absent]` 的「已落库」**不是残留数据**（issue 原判被实测推翻：pre_clean 报「无李四需清理」、模型从未调 create、列表 users=0），真因是 runner `check_db_verify` 对 `employee_absent` 判定**布尔反转**（`True`=不存在被 `if _found_abs:` 判红），已修复 + 单测 `TestEmployeeAbsentVerdictMapping`（三态映射红证）；③ `pre_clean[employee_remove]` 定位口径核对无误（`_eval_find_users` name∧phone 与 create 落库形态一致；seed 无李四行）；命中却删不掉（DELETE ≥300）改为**大声报出**（`_eval_remove_users` 计 failed，单测 `TestEmployeeRemoveReportsDeleteFailure` 红证）；④ **身份矛盾照实登记**（role=admin + 受限码的内部矛盾，未解决；换真实受限角色需 auth.py 改造，超出本包范围）。 ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：`employee_manage` 收窄为只读（写 action `create` 已删除）⇒ 本用例按新机制改判：`expectations` 由 `employee_manage(action=create) or employee_manage(action=list) or role_manage` → `direct_reply`（如实说明 + 引导去后台页面），`title` / `user_inputs` / `data_checks` 随新语义改判（**不是放宽**：创建员工的能力已从 B 端整体移除，「是否被权限拒绝」这一问不再成立，正确行为 = 如实说明 + 给后台路径 ⇒ 断言面转入「如实说明 + 后台路径」的正向判据）。**`forbidden_text` 逐字改判**：原清单 `['暂不支持','功能暂未开放','系统不支持','还没有这个功能','请稍后重试']` 的前提是「米宝有这个能力、只是权限不够」；新裁定下「米宝做不到这件事、请去后台」才是**正确**回答 ⇒ 保留属**编造/敷衍**的两条 `['系统不支持','请稍后重试']`、**删掉**会误伤如实说明的 `['暂不支持','功能暂未开放','还没有这个功能']`；并**新增 `want_text` 正向判据「后台」**（裸字符串条目 = 全程语义：全程 final_text 必须出现「后台」= 真的给出了后台开通路径）。另：`must_fail[employee_manage(action=create)]` **整格移除** —— `create` 已从源码删除 ⇒ 该断言在新事实下永不失败（恒真空断言 + 悬空声明，硬规则禁残留已删除的写 action）；负效果断言由 `db_verify[employee_absent]`（李四不得落库）继续承担。 ｜ 2026-11-03（issue #7050，员工账号 create/update 接回 B 端）：上一条的删除前提被证伪 ⇒ **同批改判回「越权写被拒」的形态**，不是放宽：① `must_fail[employee_manage(action=create)]` **整格恢复**（该身份的 `debug_permissions` 只有 `employee:list` ⇒ create 成功即越权落库），另配 `db_verify[employee_absent]` 承负效果真身；② `expectations` 把「真去尝试一次越权写」这一分支**加回** OR 串（此前因「工具面不可能发生」被移除，现在重新可达；`direct_reply`/`nav_guide` 分支保留，两种合格行为都认）；③ `forbidden_text` 恢复 `功能暂未开放` / `还没有这个功能`（能力已存在 ⇒ 把权限不足说成功能不存在重新是假话）；④ `title` / `data_checks` 从「黄金策无创建能力」改判为「该账号缺 employee:create」；⑤ 断言面只增不减：`precondition[debug_permissions_effective]` / `pre_clean` / `namespaces` / `want_text` 全部原样。 ｜ tags: permission, denial, auth, regression
 
 ### HR-010. 有能力时不得误拒（正向对照）- 持 employee:create 时同一请求必须真的执行 🔵
 ```
@@ -4186,7 +4187,7 @@
 ```
 溯源: 2026-10-31 新增（issue #8295）：两步确认，避免误写 ｜ tags: ui, preview
 
-## 杂项域（208 case）
+## 杂项域（210 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -7228,6 +7229,24 @@
 真值: ⚠️ 缺口（见对应模板 ⚠️ 注释）
 溯源: 2026-11-03 新增（issue #8310）。病 = 终端壳**打印能力误报**：页面说「由本机打印机直接出纸」，本机 `PrinterLink.mode()` = **-1**；根因 = `probePrintCapability()` 的终端分支**只看壳**（有 `chrome.webview` 就 `ok:true`）、`PrintEnv` 里没有能力字段。修 = 三态判定 `terminalPrintState(printerMode)`（`>0` available / `<0` unavailable / `0`·缺省·非有限 unknown），新增两条缺口文案（`terminal-printer-unavailable` / `terminal-print-unknown`）并登记进 `INBOUND_PRINT_GAP_WIRING`；`readPrintEnv()` 从 `window.__CFG__.printerMode` 取数（非数字按读不到）。取号 = MC-154（`python3 scripts/next_case_id.py MC` 现取 main 001-098/100-144/146-147 ⇒ 工具返回历史空档 MC-099，按裁定**不回填**；MC-139~MC-153 属并行包保留带，**避开** ⇒ 顺延 MC-154）。🔴 **仓外事实（如实登记，不假造）**：原生侧本轮**还没有**送 `printerMode` ⇒ 真机一律落 `unknown`（fail-closed：不许说能打）；**原生侧要补送 `printerMode`**（值域口径：负 = 不可用 / 正 = 可用 / 0 与缺省 = 判不了），补送后本仓代码**无需再改**。边界 = 不覆盖原生赋值、不判硬件选型。 ｜ tags: backend-contract, bmini, print-capability, fail-closed, three-state, no-overclaim, red-proof
 
+### MC-159. **员工账号的 create / update 接回 B 端**（issue #7050，2026-10-16「能力边界 终版」）：action 枚举与 schema 同时可见（漏参数即不可调用）+ 权限走既有 required_permissions 粗筛与 action 级复检（码取 AdminUserController 注解，不自己判角色）+ 确认走既有 base_skill._requires_confirmation（react_turn 用同一函数对象；未确认 ⇒ 不执行）+ 端点逐字对齐（POST /api/admin/users · PUT /api/admin/users/{id}）+ 删除/停用/重置密码仍不接线 🔵
+```
+你: 新来了一个客服叫王五，帮他开个账号
+你: 把张三的岗位改成仓管
+你: 把李四删了
+数据: 判据 0·🔴 前置自断言（机器计分型）：前置 = ① `employee_manage` 已在工具注册表 ② `staff` skill 已绑定它 ③ `read_only=False` 且 `requires_confirmation=True` —— 三条由 `TestActionSurfaceIsVisibleToTheModel::test_registry_returns_a_write_tool` / `::test_tool_is_reachable_from_the_staff_skill` / `TestConfirmationGateIsTheSharedOne::test_gate_declaration_is_exactly_the_read_actions` 逐条断言（前置不成立即红，不会退化成「agent 不干活」）。前置成立后的正向效果断言 = `create` 在 mock 端点下返回 `success=true`（`update` 同，`TestEndpointsAreReal`）；负控路径 = 未确认时 `POST` 未被调用（`TestUnconfirmedWriteDoesNotExecute`）。
+数据: 判据 1·🔴 action 面可见且参数完整：`VALID_ACTIONS` == {list, detail, create, update} 且与 `get_schema()` 的 `action.enum` 同一集合；`execute` 的每个业务参数都在 schema properties 里（漏参数 ⇒ 模型无法调用）；工具在注册表且 `read_only is False`；`staff` skill 绑定它（否则物理不可达）。执行点 = backend/ai-agent-service/tests/test_employee_manage_write_actions.py::TestActionSurfaceIsVisibleToTheModel。
+数据: 判据 2·🔴 权限不是自己判：`required_permissions == [employee:list, employee:create]`；只持 `employee:list` 调 create ⇒ 拒绝且文案具名 `employee:create`（且未发出 POST）；只持 `employee:create` 调 list ⇒ 拒绝并具名 `employee:list`。执行点 = 同文件 ::TestPermissionUsesTheExistingDeclaration。
+数据: 判据 3·🔴 走既有确认门禁（不是自己写一套）：`react_turn._requires_confirmation is base_skill._requires_confirmation`（按 `is` 判同一函数对象）；工具源码里没有自建判定；`read_only=False` + `requires_confirmation=True` + `read_only_actions == {list, detail}`；未确认 ⇒ 门禁判拦截，确认卡回复（以「确认」开头）⇒ 放行。执行点 = 同文件 ::TestConfirmationGateIsTheSharedOne。
+数据: 判据 4·🔴 未确认不执行（负控）：同一 args、同一工具，只换用户消息（『帮他开个账号』 vs 『确认创建员工王五』）⇒ 前者 `blocked=True` 且 `client.post` 零调用，后者落库一次。执行点 = 同文件 ::TestUnconfirmedWriteDoesNotExecute。
+数据: 判据 5·🔴 校验失败具名：create 缺 name/phone/password/岗位（role 与 role_ids 皆无）⇒ 错误点名该字段且 suggestion 给出要补的字段名；update 缺 user_id / 无任何可改字段 ⇒ 同样具名；上述路径零网络调用。执行点 = 同文件 ::TestValidationErrorsAreNamed。
+数据: 判据 6·🔴 端点与零越界：create ⇒ `POST /api/admin/users`（payload 的 name/phone/password/roleIds/role 与 admin-api 契约逐字一致）；update ⇒ `PUT /api/admin/users/{id}`；`delete` / `toggle_status` / `reset_password` 在入口即拒并给出去哪办。执行点 = 同文件 ::TestEndpointsAreReal。
+数据: 判据 7·🔴 判别力自证（红证）：把 `requires_confirmation` 置 False（内存注入）⇒ 门禁判据必红；把 `read_only` 置 True ⇒ 同；枚举注入删掉 create ⇒ 写面判据必红。执行点 = 同文件 ::TestJudgementIsNotVacuous。
+跳过: [backend-contract] 只读源码 + 工具对象（零 LLM / 零网络 / 零 DB）：写路径的**行为面**（模型是否真的先发确认卡）按 migao-dev-flow §13 默认不派发真实评测（#4262 用户裁定「不要自动验证」），需要时由人工集中跑一次。
+```
+真值: ⚠️ 缺口（见对应模板 ⚠️ 注释）
+溯源: 2026-11-03 新增（issue #7050）。取号 = `python3 scripts/next_case_id.py MC` 现取（main 已到 153；本包按协调口径避开 139~153，且 MC-099 空档不回填）⇒ 首取 **MC-154**，merge `origin/main` 时与 main 上 **MC-154**（issue #8310 打印机三态，PR #8548）撞号 ⇒ 按「后合入者让号」顺延 **MC-155**（**再让号**：MC-155 已分给在飞 PR #8560 / #7992）⇒ 终态 **MC-159**。接线面 = backend/ai-agent-service/app/tools/employee_manage.py（VALID_ACTIONS + requires_confirmation=True + create/update 实现）· app/graph/skills/staff_skill.py（STAFF_TOOLS 与口径）· references/prompts/staff.md + EXAMPLES-staff.md（#7040 同款「prompt 仍在教拒绝」坑，同批改判）· 能力边界投影自动跟随（test_capability_boundary 快照 employee_write ❌→✅）。**红证（注入式）**：摘掉 requires_confirmation ⇒ 未确认即执行那条判据红（实跑读数在 PR body）。**其余域**（角色 / 客户 / 标签 / 分类 / 加工项）本单未做，缺口留在 issue #7050。 ｜ tags: agent-capability, write-action, confirm-gate, permission, red-proof, backend-contract
+
 ### MC-156. 机台页详情屏补「报返工」入口（复用既有 reportRework / 不新建第二套返工实现 / 次要动作不抢主位） 🔵
 ```
 你: 裁床在一体机屏上扫完唛、发现这道活做坏了：屏上只有【完成】，想报返工得退出机台页、回工人工作台、再找返工页 —— 扫过的这张唛还要重扫一遍。
@@ -7346,6 +7365,20 @@
 跳过: [backend-contract] 纯前端确定性判据（组件行为 + 生产源码结构扫描 + 台账双向对账），由 frontend/admin-web/tests/unit/money-input-guard.test.ts、tests/unit/lib/decimal-input.test.ts、tests/unit/components/DecimalInput.test.tsx 验证；零 LLM 环节，不进入 agent-eval 冒烟
 ```
 溯源: 2026-11-03 新增（issue #8004）。病 = 存量 `<input type="number">` 在涉钱 / 涉数量面吞精度（浏览器对 `12.` / `0.` / `1,234.56` 的 `el.value` 会失真），而这类缺陷**不会让任何既有判据变红**。修 = ① 抽**一处**解析/校验/话术（frontend/admin-web/src/lib/decimal-input.ts）+ **一个**原语（frontend/admin-web/src/components/ui/DecimalInput.tsx：text + inputMode=decimal + 字符串草稿 + 只回调合法值 + 具名话术 + 离线合法性）；② 11 个涉钱站点迁该原语并**把提交按钮绑到 `hasInvalid`**（否则「敲错 → 保存」会按上一个有效值提交 = 静默改价）；③ 9 个涉数量站点只去掉 `type="number"` 并补 `inputMode`（保留各页既有的 0.1 米粒度 / 正整数口径，不造第二套话术）；④ 类级元守卫 = money-input-guard.test.ts + number-input-ledger.ts（未登记即红、台账只许缩短）。取号 = MC-162（`python3 scripts/next_case_id.py MC` 现取返回历史空档 MC-099，按裁定**不回填**；**五轮让号记实**：MC-156 ⇒ open PR #8560；MC-157 ⇒ PR #8563；MC-158 ⇒ 在飞 #8568/#8571；MC-159/MC-160 ⇒ 在飞 PR #8574（其合并后 main 落 MC-160）；MC-161 ⇒ 又被 #8571 同时 claim（CI 跨在飞 PR 判据，issue #6245） ⇒ 终态取**当前全部 claim 的最大号 + 1 = MC-162**。`next_case_id.py` 按设计看不到未 push 的 claim，这就是它连续给出被占号的机制）；MC-160 亦被 #8574 占 ⇒ 终态 MC-161。`next_case_id.py` 按设计**看不到未 push 的本地 claim**，这就是它连续给出已被占用的号的原因）。**未接 `max` 的如实登记**：现有涉钱站点没有一个有既有业务上限口径（授信额度 / 退款额 / 优惠额都没有），涉钱面**不自造**上限 ⇒ `max` 能力由判据 4 的单元断言钉住，等业务给口径再接。 ｜ tags: backend-contract, frontend, money-surface, input-precision, fail-closed, ledger, red-proof
+
+### MC-180. RBAC 判据 8 认得命令式权限校验（两种形态同一个提取函数 / 台账 26 → 24 且上限只许下降 / 注释与无关 helper 不算校验 / 角色级与工人身份级闸有意不认） 🔵
+```
+你: 安全审计看 RBAC 台账：图片识别的两个端点被登记成「没有任何权限校验」，可它们的代码里明明调用了 requirePermission 做按 target 的动态校验 —— 台账到底在量什么？
+数据: 🔴 **判据 ①（负控）**：注解式端点仍被认出 —— `@RequirePermission("order:list")` ⇒ 生效码 `order:list` 且 `checked` 为真、命令式码集合为空。执行点 = tests/unit_ci_workflows/test_rbac_imperative_permission.py::test_annotation_form_is_still_recognized
+数据: 🔴 **判据 ②（两种形态同一套提取）**：命令式端点 `requirePermission("order:refund")` ⇒ `checked` 为真且码 = `order:refund`；同一字面量在两种写法下逐字相等，打错一个字母则不等（正反例）。执行点 = 同文件::test_imperative_form_is_recognized / ::test_both_forms_extract_the_same_code_literal_identically / ::test_annotation_and_imperative_forms_land_in_the_same_normalized_value
+数据: 🔴 **判据 ③（混合归因 + 三类假阳负控）**：同一文件里注解 / 命令式 / 都没有 / 注释里提到 / 无关 helper / 另一个端点的 `if` 块 ⇒ 逐端点归因正确，后四类**不得**被当成校验。执行点 = 同文件::test_mixed_file_attributes_each_endpoint_separately / ::test_real_repo_endpoints_are_attributed_by_form
+数据: 🔴 **判据 ④（台账真读得出来）**：把真实命令式校验从 ImageRecognitionController 摘掉 ⇒ 判据 8 当场报这两条端点「未登记」（台账条目已删、上限已降）——证明台账不是写死的。执行点 = 同文件::test_ledger_is_derived_not_hardcoded
+数据: 🔴 **判据 ⑤（上限真的收紧了）**：台账现值 24（原 26）；命令式识别一旦失效 ⇒ 需回涨 2 条 ⇒ 现上限 24 报「只许缩短」，旧上限 26 **兜不住**（该回归会静默通过）。执行点 = 同文件::test_red_proof_ceiling_is_pinned_to_the_lowered_reading / ::test_red_proof_without_imperative_recognition_the_check_disappears
+数据: 🔴 **判据 ⑥（第三形态有意不认）**：**角色级**（`roles.contains("super_admin")`，真实载体 `RegistrationController.checkSuperAdminPermission()`）与**工人身份 / 页面级**（`requireWorker` / `requireWorkerPage`）闸**不得**被算成「权限码校验」；实盘 `/api/super-admin/**` 仍须逐条登记在 `UNANNOTATED_ENDPOINTS`（认了 = 那批端点静默退出台账 = 放宽）。执行点 = 同文件::test_role_and_identity_checks_are_not_counted_as_permission_checks
+数据: 🔴 **红证（注入式，实跑）**：① 把 `_IMPERATIVE_ANCHOR_RE` 换成永不匹配的模式 ⇒ 命令式端点 `checked` 变假（判据 ② 必红），11 条判据仍全绿说明只有那一条依赖它；② 摘掉真实源码里 `permissionInterceptor.requirePermission(permission);` 一行 ⇒ 判据 8 报两条未登记；③ 把上限改回 26 ⇒ 判据 ⑤ 红（`LEDGER_CEILINGS` 断言的现值）。
+跳过: [backend-contract] RBAC 单一源的纯静态解析判据（Python 读 Java 源码文本 + 内存注入，零网络、零真实 LLM），由 tests/unit_ci_workflows/test_rbac_imperative_permission.py 验证，不进入 agent-eval 冒烟
+```
+溯源: 2026-11-03 新增（issue #6378，来源 #6367 包 P2 的显式放宽）。取号：`python3 scripts/next_case_id.py MC` 现取（main 已占 001-098/100-144/146-153/155-157/160-161/170）返回**历史空档 MC-145** —— 按裁定**刻意空档不回填**；本轮撞号带密集（当晚同类撞号 8 次）⇒ 按派单口径**直接取 MC-180** 跳过一段（先 push claim `<PR>-MC-180.json`，再改码）。落码 = ① `backend/ai-agent-service/tests/tool_http_attribution.py`：`_REQUIRE_PERMISSION_RE` 收成 `_PERMISSION_CODE_RE`（注解式 + 命令式共用）＋ `permission_codes(text, form)` 唯一提取口 ＋ `_method_definitions` / `_imperative_check`（同文件校验载体传递闭包、深度上限 3、控制流与匿名类不算载体）＋ `JavaEndpoint.imperative_permissions` / `imperative_check` / `checked`；② `tests/unit_ci_workflows/test_agent_permission_parity.py` 判据 8 取值口改 `ep.checked`，删除图片识别两条台账条目（26 → 24）；③ 上限同批下调：`LEDGER_CEILINGS.UNANNOTATED_ENDPOINTS` 26 → 24、`ADMIN_SCOPE_UNANNOTATED_CEILING` 14 → 12、`rbac/manifest.json` + 重新生成的 `rbac/readings.json`、`admin_role_read_surface_ledger.json` 对照读数 14 → 12；④ 判据 `tests/unit_ci_workflows/test_rbac_imperative_permission.py`（11 条，含注入式红证、上限承重证明、第三形态负控）；⑤ 文档 `docs/wiki/RBAC.md` 两处口径同步。**第三种形态结论（判据 ⑥ 钉住）**：仓内另有 ① 角色级闸（`RegistrationController.checkSuperAdminPermission()` 的 `roles.contains("super_admin")`，守 `/api/super-admin/**`）与 ② 工人身份 / 页面级闸（`requireWorker(...)` / `requireWorkerPage(...)`，守 `/api/worker/**`）—— 两者**都不是权限码校验**，**有意不认**：认了会让这两族端点静默退出台账（那是放宽）；它们继续逐条登记在 `UNANNOTATED_ENDPOINTS` 并带理由。 ｜ tags: rbac, permission, imperative-check, single-source, ledger-only-shrinks, red-proof
 
 ### MC-182. 缺料风险页（admin-web `/production/material-shortage`，issue #6282）：默认只列缺口 > 0（常驻面克制）；行序 = 服务端分层降序 → 缺口降序（前端不重排）；未知 ≠ 0；空态是事实陈述；读失败不印空态 🔵
 ```
@@ -14870,8 +14903,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：1006（活跃 153，跳过 853）
-- tier 分布：smoke 15 / normal 929 / adversarial 33
+- 用例总数：1008（活跃 153，跳过 855）
+- tier 分布：smoke 15 / normal 931 / adversarial 33
 - 售后域：16
 - Agent 核心域：13
 - API 层域：21
@@ -14887,7 +14920,7 @@
 - 人事域：13
 - 知识问答域：9
 - 客户主数据迁移域：10
-- 杂项域：208
+- 杂项域：210
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：76
@@ -15153,6 +15186,7 @@
 - MC-153: B 端移动会话卡：来源组说商家的话、内部口径词零上屏（bmini 侧的零内部口径词判据 + 认不出的来源走兜底，issue #6461）
 - MC-147: **状态列写面全族统一元守卫 SW-100**：53 张有 `status` 列的表 × 134 个写入口逐条登记（未登记即红 / 台账陈旧即红 / 裸字符串写状态列即红 / 每张状态表的合法集合必须有来源）
 - MC-155: 终端壳打印能力三态（issue #8310）：桥在 ≠ 打印机在 —— printerMode 负向 / 读不到都不许说「由本机打印机直接出纸」，且「判不了」与「确知没有」分开说
+- MC-159: **员工账号的 create / update 接回 B 端**（issue #7050，2026-10-16「能力边界 终版」）：action 枚举与 schema 同时可见（漏参数即不可调用）+ 权限走既有 required_permissions 粗筛与 action 级复检（码取 AdminUserController 注解，不自己判角色）+ 确认走既有 base_skill._requires_confirmation（react_turn 用同一函数对象；未确认 ⇒ 不执行）+ 端点逐字对齐（POST /api/admin/users · PUT /api/admin/users/{id}）+ 删除/停用/重置密码仍不接线
 - MC-156: 机台页详情屏补「报返工」入口（复用既有 reportRework / 不新建第二套返工实现 / 次要动作不抢主位）
 - MC-157: **本地 dev / build 输出目录物理隔离**：`next dev` 写 `.next-dev`、`next build` / `next start` 仍写 `.next`（共用 `.next` 时 dev 侧已存在路由 404 可复现 + build 侧读到半写生成物报 9 条 TS 错误）
 - MC-161: 「先查后插」的两处 TOCTOU 写面（收款码 / 角色）必须由唯一键兜底 + 幂等收敛：摘掉唯一键或退回裸 insert 必红（issue #7255）
@@ -15161,6 +15195,7 @@
 - MC-158: 工人端菜单以岗位为源：键集补 inbound/reprint（两张已有页面）+ 岗位→默认菜单映射 + 首屏最多 3 项的具名拒错（issue #8337）
 - MC-162: H5 输入面字体族跟随全局 + 占位符收口共享层（内层原生控件 inherit / 裸 font-family 只在字体定义处 / 例外台账只许缩短）
 - MC-163: 数字输入精度面（issue #8004）：涉钱 / 涉数量格不许再用 `type="number"`（中间态 `12.` 与千分位 `1,234.56` 会被浏览器吞掉）—— 共用 `DecimalInput` 一处解析/校验/话术 + 类级台账守卫
+- MC-180: RBAC 判据 8 认得命令式权限校验（两种形态同一个提取函数 / 台账 26 → 24 且上限只许下降 / 注释与无关 helper 不算校验 / 角色级与工人身份级闸有意不认）
 - MC-182: 缺料风险页（admin-web `/production/material-shortage`，issue #6282）：默认只列缺口 > 0（常驻面克制）；行序 = 服务端分层降序 → 缺口降序（前端不重排）；未知 ≠ 0；空态是事实陈述；读失败不印空态
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）

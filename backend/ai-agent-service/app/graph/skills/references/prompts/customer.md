@@ -6,7 +6,7 @@ tools: customer_manage, order_query, product_search, interact
 
 当前对话聚焦在客户档案查询、标签查询与历史订单查询，但不要自我设限也不要拒绝其他领域问题。
 
-## 🔴 本域无可写工具（写能力未接线）
+## 🔴 本域无可写工具
 
 
 

@@ -148,7 +148,11 @@ LEDGER_CEILINGS = {
     # issue #8203（P0-03，2026-10-31）：新增 `POST /api/client-errors`（浏览器错误上报，`permitAll` ——
     # 登录页崩了也要能上报，故障态没有凭据）⇒ 台账新增一条已登记的「有意放行」（只落一行去敏日志）。
     # **显式放宽**（diff 里看得见）：增长的原因是「确实新增了一条刻意公开的上报面」，不是放宽台账。
-    "UNANNOTATED_ENDPOINTS": 26,
+    # issue #6378（2026-11-03）：判据 8 现在**同时认两种校验形态**（注解式 + 命令式
+    # `PermissionInterceptor.requirePermission(...)`）⇒ 图片识别的两条命令式端点不再是「无校验端点」，
+    # 从 `UNANNOTATED_ENDPOINTS` 删除 ⇒ **26 → 24**。🔴 这是**收窄**（读数口径收紧 + 台账条目减少），
+    # 不是放宽：上限跟着降到现值 24，回涨即红；新增「既无注解又无命令式」的端点照旧把它顶高。
+    "UNANNOTATED_ENDPOINTS": 24,
 
     # issue #4923（2026-10-02）：`craft_config_query` 是**跨码工具**（6 个读端点分属三档生效码，
     # 工具声明生产域读码 `production:view`）⇒ 判据 2 的具名出口 `CODE_DIVERGENCE_EXCEPTIONS`

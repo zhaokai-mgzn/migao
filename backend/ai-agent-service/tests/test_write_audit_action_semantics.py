@@ -78,6 +78,9 @@ WRITE_TOOL_INVENTORY: frozenset = frozenset({
     # 🔴 issue #7040（2026-10-16 裁定「变更 ✅ 必须支持」）：通知标记已读接回 B 端 ⇒
     # 该工具重新成为**写工具**（自带 action 参数：mark_read / read_all）。
     "notification_manage",
+    # 🔴 issue #7050（2026-10-16 终版「非单据对象创建 ✅」）：员工账号创建/变更接回 B 端
+    # ⇒ 它重新成为**写工具**（自带 action 参数：create / update）。
+    "employee_manage",
     # issue #7514（2026-10-23）：算料配置变更接回 B 端（A 档可逆写）——
     # 无 `action` 参数 ⇒ 动作动词登记在 `registry._NO_ACTION_PARAM_TOOL_ACTION`（"update"）。
     "craft_calc_config_update",

@@ -163,7 +163,9 @@ class TestSkillToolSubsets:
             "category_manage",
             "interact",
             # ── issue #5247（B 端只读）新增：收窄为只读的既有模块 ──
-            "employee_manage",            # 员工只读（list/detail）
+            # 🔴 issue #7050（2026-11-03）：`employee_manage` 接回 create/update ⇒ **不再是只读
+            # 工具** ⇒ 按兜底纪律（非只读工具不得进 `general`，写操作必须走领域 Skill 的确认链）
+            # **移出本清单**；员工账号查询/写操作随 `staff` 域走。
             "role_manage",                # 岗位只读（list/all/detail/list_permissions）
             # ── issue #5247（B 端只读）新增：只读模块覆盖工具 ──
             "inbound_order_query",        # 入库单/批次查询

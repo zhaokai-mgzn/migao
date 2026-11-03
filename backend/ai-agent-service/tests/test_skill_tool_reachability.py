@@ -297,6 +297,14 @@ A5_GAP_BASELINE: dict[str, frozenset[str]] = {
         # ⇒ **域无关**的校验目标表新增一项 ⇒ 未绑它的 skill 各 +1 死角
         # （运行时由 #4079 的 `cross_skill_target` 逐条拦下，见 test_every_registered_gap_is_rejected_at_runtime）。
         "craft_calc_config_update",
+        # 🔴 issue #7050（2026-10-16 终版「非单据对象创建 ✅」）：员工账号 `create` / `update`
+        # 接回 B 端 ⇒ `employee_manage` 重新成为**写工具** ⇒ 按 F6 它必须有
+        # `_VALIDATION_RULES` 规则 ⇒ **域无关**的校验目标表新增一项 ⇒ 仍绑 `validate_input`
+        # 的三个 skill（customer_aftersales / customer_order / settings）各 +1 死角；
+        # 三条正当性（`test_reanchored_additions_trace_to_a_real_product_change` 逐条核）：
+        # ① 已注册 ② 写工具（`read_only=False`）③ 被 `staff` / `general` 绑定。
+        # 计数对账：账本与增量**同批** +3 ⇒ 差值不变（`A5_BASELINE_COUNT_PRE_5247` 仍 29）。
+        "employee_manage",
     }),
     # customer_order：自己工具集 11 个（含 validate_input）→ 死角 10 个（#5247 复算）
     "customer_order": frozenset({
@@ -314,6 +322,14 @@ A5_GAP_BASELINE: dict[str, frozenset[str]] = {
         # ⇒ **域无关**的校验目标表新增一项 ⇒ 未绑它的 skill 各 +1 死角
         # （运行时由 #4079 的 `cross_skill_target` 逐条拦下，见 test_every_registered_gap_is_rejected_at_runtime）。
         "craft_calc_config_update",
+        # 🔴 issue #7050（2026-10-16 终版「非单据对象创建 ✅」）：员工账号 `create` / `update`
+        # 接回 B 端 ⇒ `employee_manage` 重新成为**写工具** ⇒ 按 F6 它必须有
+        # `_VALIDATION_RULES` 规则 ⇒ **域无关**的校验目标表新增一项 ⇒ 仍绑 `validate_input`
+        # 的三个 skill（customer_aftersales / customer_order / settings）各 +1 死角；
+        # 三条正当性（`test_reanchored_additions_trace_to_a_real_product_change` 逐条核）：
+        # ① 已注册 ② 写工具（`read_only=False`）③ 被 `staff` / `general` 绑定。
+        # 计数对账：账本与增量**同批** +3 ⇒ 差值不变（`A5_BASELINE_COUNT_PRE_5247` 仍 29）。
+        "employee_manage",
     }),
     # settings：自己工具集 4 个（含 validate_input）→ 死角 9 个（#5247 复算）
     # ⚠️ 该 skill 仍**注册在全局 registry**（#5247 只把它从黄金策的 `skill_names` 移出，文件与
@@ -337,6 +353,14 @@ A5_GAP_BASELINE: dict[str, frozenset[str]] = {
         # ⇒ **域无关**的校验目标表新增一项 ⇒ 未绑它的 skill 各 +1 死角
         # （运行时由 #4079 的 `cross_skill_target` 逐条拦下，见 test_every_registered_gap_is_rejected_at_runtime）。
         "craft_calc_config_update",
+        # 🔴 issue #7050（2026-10-16 终版「非单据对象创建 ✅」）：员工账号 `create` / `update`
+        # 接回 B 端 ⇒ `employee_manage` 重新成为**写工具** ⇒ 按 F6 它必须有
+        # `_VALIDATION_RULES` 规则 ⇒ **域无关**的校验目标表新增一项 ⇒ 仍绑 `validate_input`
+        # 的三个 skill（customer_aftersales / customer_order / settings）各 +1 死角；
+        # 三条正当性（`test_reanchored_additions_trace_to_a_real_product_change` 逐条核）：
+        # ① 已注册 ② 写工具（`read_only=False`）③ 被 `staff` / `general` 绑定。
+        # 计数对账：账本与增量**同批** +3 ⇒ 差值不变（`A5_BASELINE_COUNT_PRE_5247` 仍 29）。
+        "employee_manage",
     }),
 }
 
@@ -365,11 +389,27 @@ A5_REANCHOR_ADDITIONS: dict[str, frozenset[str]] = {
         "product_batch_update", "scheduled_task_manage",
         # issue #7514：算料口径变更（新 A 档写工具，被 `product` skill 绑定）⇒ 同 #5314 形态。
         "craft_calc_config_update",
+        # 🔴 issue #7050（2026-10-16 终版「非单据对象创建 ✅」）：员工账号 `create` / `update`
+        # 接回 B 端 ⇒ `employee_manage` 重新成为**写工具** ⇒ 按 F6 它必须有
+        # `_VALIDATION_RULES` 规则 ⇒ **域无关**的校验目标表新增一项 ⇒ 仍绑 `validate_input`
+        # 的三个 skill（customer_aftersales / customer_order / settings）各 +1 死角；
+        # 三条正当性（`test_reanchored_additions_trace_to_a_real_product_change` 逐条核）：
+        # ① 已注册 ② 写工具（`read_only=False`）③ 被 `staff` / `general` 绑定。
+        # 计数对账：账本与增量**同批** +3 ⇒ 差值不变（`A5_BASELINE_COUNT_PRE_5247` 仍 29）。
+        "employee_manage",
     }),
     "customer_order": frozenset({
         "product_batch_update", "scheduled_task_manage",
         # issue #7514：同上（各 +1）。
         "craft_calc_config_update",
+        # 🔴 issue #7050（2026-10-16 终版「非单据对象创建 ✅」）：员工账号 `create` / `update`
+        # 接回 B 端 ⇒ `employee_manage` 重新成为**写工具** ⇒ 按 F6 它必须有
+        # `_VALIDATION_RULES` 规则 ⇒ **域无关**的校验目标表新增一项 ⇒ 仍绑 `validate_input`
+        # 的三个 skill（customer_aftersales / customer_order / settings）各 +1 死角；
+        # 三条正当性（`test_reanchored_additions_trace_to_a_real_product_change` 逐条核）：
+        # ① 已注册 ② 写工具（`read_only=False`）③ 被 `staff` / `general` 绑定。
+        # 计数对账：账本与增量**同批** +3 ⇒ 差值不变（`A5_BASELINE_COUNT_PRE_5247` 仍 29）。
+        "employee_manage",
     }),
     # 🔴 issue #7040（2026-10-16 通知域独立 + 变更接回）：`notification_manage` 重新成为
     # **写工具**（`mark_read` / `read_all` 接回）⇒ 按 F6 它必须有 `_VALIDATION_RULES` 规则
@@ -382,6 +422,14 @@ A5_REANCHOR_ADDITIONS: dict[str, frozenset[str]] = {
         # issue #7514：同上（各 +1）。计数对账：账本 **39** − 增量 **10**
         # == `A5_BASELINE_COUNT_PRE_5247`（**29**）—— 锚点常量不变。
         "craft_calc_config_update",
+        # 🔴 issue #7050（2026-10-16 终版「非单据对象创建 ✅」）：员工账号 `create` / `update`
+        # 接回 B 端 ⇒ `employee_manage` 重新成为**写工具** ⇒ 按 F6 它必须有
+        # `_VALIDATION_RULES` 规则 ⇒ **域无关**的校验目标表新增一项 ⇒ 仍绑 `validate_input`
+        # 的三个 skill（customer_aftersales / customer_order / settings）各 +1 死角；
+        # 三条正当性（`test_reanchored_additions_trace_to_a_real_product_change` 逐条核）：
+        # ① 已注册 ② 写工具（`read_only=False`）③ 被 `staff` / `general` 绑定。
+        # 计数对账：账本与增量**同批** +3 ⇒ 差值不变（`A5_BASELINE_COUNT_PRE_5247` 仍 29）。
+        "employee_manage",
     }),
 }
 
