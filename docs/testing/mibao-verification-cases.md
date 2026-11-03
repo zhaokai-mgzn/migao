@@ -4186,7 +4186,7 @@
 ```
 溯源: 2026-10-31 新增（issue #8295）：两步确认，避免误写 ｜ tags: ui, preview
 
-## 杂项域（187 case）
+## 杂项域（188 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -7054,6 +7054,20 @@
 跳过: [backend-contract] 纯函数夹具判据（node --test，零网络 / 零 DB / 零时钟）+ 静态接线守卫 + 注入式红证，非 LLM 行为，不进入 agent-eval 冒烟
 ```
 溯源: 2026-11-03 新增（issue #7030，承接 #7028 的更正：那条「钱面缺陷」单是**判据假红**误导出来的）。取号 = `python3 scripts/next_case_id.py MC` 现取；**撞号顺延**：首取 139，随后 open PR #8526 / #8529 也各自取到 139（并行取号的已知盲区，见 #6245）⇒ 按「后合入者让号」改取 **MC-142**。⚠️ 重取时工具会返回历史空档 **MC-099**（#8383 revert 留下）—— 按裁定**刻意空档不回填** ⇒ 跳过 099 取 142。病：A0b 把独立 SQL 的 `worker_name` 分组（无署名 = NULL）与接口 `per_worker` **逐字**比 ⇒ 接口把无署名那笔钱归进服务端下发的展示文案（ProductionService 的 `未分配`；同概念另一读面 `UNSIGNED_WORKER` 叫 `未署名`，见 issue #4309）⇒「名不同、钱相同」⇒ 稳定报「1 人不一致」，失败文案（`{"worker_name":null,...}`）天然指向「接口漏了这笔钱」。修法 = 判定移到 `harness/piecework-recon.mjs`（纯函数）：归集是**显式一类**（`UNASSIGNED` 常量 + `isUnassignedWorker` 唯一判定点），身份来自结构（SQL 空白组 + 接口残余行 ≤ 1），文案只进证据；A0b 只比真实工人，新增 A0c 判勾稽（Σ per_worker = total、归集 = 无名组、总额 − 逐人 = 无署名）。全部通过：8 条 node 夹具 + 5 条 pytest 守卫。红证 = 注入 `return false` ⇒ 判据① 红（4 passed / 4 failed，红在与归集直接相关的 4 条上），恢复后 8 passed。 ｜ tags: backend-contract, acceptance, harness, false-red, single-source
+
+### MC-139. 商家看到的失败编号 = 服务端日志里那条记录：requestId 唯一来源 + 前端可复制上屏（issue #6957） 🔵
+```
+你: 商家点了一下没反应，截图里只有一句「服务器内部错误」——客服拿什么去反查服务端那条 incident？
+数据: 🔴 **判据 1·三处同值（5xx，会红）**：MockMvc 打一个抛未预期异常的端点 ⇒ 响应体 `requestId` 非空、等于响应头 `X-Request-Id`、并等于 `GlobalExceptionHandler` 那行 error 日志里的 `requestId=`。执行点 = backend/admin-api/src/test/java/com/migao/admin/config/RequestIdTraceabilityTest.java::fiveXxCarriesTheSameRequestIdInBodyHeaderAndLog
+数据: 🔴 **判据 2·可预期 4xx 同样三处同值**：`BusinessException.validationError` ⇒ 422 信封带同一个 `requestId`。执行点 = 同文件::expectedBusinessErrorCarriesTheSameRequestId
+数据: 🔴 **判据 3·上游 id 复用 / 非法 id 不采信**：合法 `X-Request-Id` 原样复用（跨服务串联）；含空格等非法值 ⇒ 换新号且不写进响应与日志。执行点 = 同文件::generatedRequestIdIsStableAcrossBodyHeaderAndLog / ::invalidIncomingRequestIdIsReplaced
+数据: 🔴 **判据 4·类级元守卫（会红）**：① 反射 —— 每个 `@ExceptionHandler` 必须返回 `ResponseEntity<ApiResponse<...>>`；② 源码扫描 —— `src/main/java` 里手写响应体的出口（`getWriter().write(` / `sendError(`）必须引用 `RequestId` 或 `ApiResponse`，例外台账为空（只许缩短）。执行点 = backend/admin-api/src/test/java/com/migao/admin/config/ErrorResponseRequestIdMetaGuardTest.java::everyExceptionHandlerReturnsTheEnvelope / ::rawResponseWritersMustCarryARequestId
+数据: 🔴 **判据 5·判别力自证**：同一扫描器对「裸 JSON 不带 id」的合成源码判红、对带 `RequestId.` 的判绿；非信封返回的 handler 夹具判红。执行点 = 同文件::scannerDiscriminates
+数据: 🔴 **判据 6·前端确实带出编号（会红）**：拦截器失败提示的 description 含服务端 `requestId`、且不含 `{` 与机读错误码；「复制编号」把编号写进剪贴板；无编号时与改前逐字相同（一个参数）。执行点 = frontend/admin-web/tests/unit/lib/error-reference.test.ts 与 request.test.ts 的「失败提示里的追踪编号」组
+数据: **边界（照实登记，§19.1）**：① 判不了「客服真去查了日志」；② 只认 `getWriter().write(` / `sendError(` 两种手写出口形态，`getOutputStream()` 之类新写法不在面内；③ 容器级 `/error`（Spring Boot 默认错误体）仍不带编号 —— 本仓 `throw-exception-if-no-handler-found: true` + 全路径走 MVC，未固化；④ 不改任何门禁的通过条件、不新增豁免。
+跳过: [backend-contract] 零 LLM 的确定性判据（MockMvc + Logback ListAppender + 源码扫描 + vitest），真跑、零网络，不进 agent-eval 冒烟
+```
+溯源: 2026-11-03 新增（issue #6957）。取号 = MC-139（`python3 scripts/next_case_id.py MC` 现取：main 的 MC-001~098 · 100~138、在飞 PR 的 MC-140 ⇒ 最小空闲是 099，而 **MC-099 是刻意空档不回填** ⇒ 顺延取 MC-139）。病：响应里的 `requestId` 由 `ApiResponse` 构造时现生成、从不进日志，前端只 toast `message` ⇒ 商家截图与服务端 incident 之间没有同一条串。落码 = `RequestId`（请求属性 + MDC + 响应头三处同值）+ `RequestIdFilter`（HIGHEST_PRECEDENCE）+ `ApiResponse` 统一取值 + 四个手写 JSON 出口补编号 + 日志模式 `%X{requestId:-}`；前端 `lib/error-reference.ts` 只在信封真有编号时多给一行可复制引用。红证 = 摘掉 `RequestId.bind(...)` ⇒ 三处同值判据具名红；把 `ApiResponse` 构造改回现生成 ⇒ 同红；把前端 `showRequestErrorToast` 改回 `toast.error` ⇒ 前端判据红。 ｜ tags: request-id, error-envelope, observability, meta-guard, red-proof
 
 ## 商家入驻域（7 case）
 
@@ -14562,8 +14576,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：985（活跃 153，跳过 832）
-- tier 分布：smoke 15 / normal 908 / adversarial 33
+- 用例总数：986（活跃 153，跳过 833）
+- tier 分布：smoke 15 / normal 909 / adversarial 33
 - 售后域：16
 - Agent 核心域：13
 - API 层域：21
@@ -14579,7 +14593,7 @@
 - 人事域：13
 - 知识问答域：9
 - 客户主数据迁移域：10
-- 杂项域：187
+- 杂项域：188
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：76
@@ -14833,6 +14847,7 @@
 - MC-141: 部位规格的数值口径：纯空白串 = 「没填」（—），不再编成 0 / 0.000（issue #7002）
 - MC-140: 多 PR **集中合**（batch merge）工具：从 origin/main 重建 + 重放（不 --ours 解冲突）/ 用例号「后合入者让号」/ 锚点按**实测**重锚 / 批次 body 零关闭词
 - MC-142: 计件 sweep 的 A0b 不再按原始 `worker_name` 分组比对：无署名归集是**显式的一类**（结构判身份、文案只进证据），并由独立的 A0c 勾稽「总额 − 逐人 = 无署名 且 = 独立 SQL 的无名组」（issue #7030）
+- MC-139: 商家看到的失败编号 = 服务端日志里那条记录：requestId 唯一来源 + 前端可复制上屏（issue #6957）
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）

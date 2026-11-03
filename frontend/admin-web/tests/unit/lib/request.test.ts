@@ -703,6 +703,85 @@ describe('response interceptor - 错误 toast 去重标记（issue #2923）', ()
   })
 })
 
+// ============ issue #6957：失败提示带出服务端追踪编号（商家截图 → 客服反查 incident）============
+describe('response interceptor - 失败提示里的追踪编号（issue #6957）', () => {
+  const REQUEST_ID = 'req_1a2b3c4d5e6f7a8b'
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockGetState.mockReturnValue({
+      accessToken: 'test-token',
+      refreshToken: null,
+      clearAuth: vi.fn(),
+      refreshAccessToken: vi.fn(),
+    })
+  })
+
+  it('5xx：提示描述里带出 requestId（不是整个响应体 JSON）', async () => {
+    const mockAdapter = vi.fn().mockRejectedValue(
+      createAxiosError(500, {
+        success: false,
+        requestId: REQUEST_ID,
+        error: { code: 'INTERNAL_ERROR', message: '服务器内部错误' },
+      })
+    )
+    const originalAdapter = request.defaults.adapter
+    request.defaults.adapter = mockAdapter
+
+    await expect(request.get('/api/admin/orders')).rejects.toBeDefined()
+
+    const call = vi.mocked(toast.error).mock.calls.at(-1)!
+    expect(call[0]).toBe('服务器内部错误')
+    const description = String((call[1] as { description?: unknown } | undefined)?.description)
+    expect(description).toContain(REQUEST_ID)
+    expect(description).not.toContain('{')
+    expect(description).not.toContain('INTERNAL_ERROR')
+
+    request.defaults.adapter = originalAdapter
+  })
+
+  it('业务错（HTTP 200 + success:false）同样带出 requestId', async () => {
+    const mockAdapter = vi.fn().mockResolvedValue({
+      status: 200,
+      data: {
+        success: false,
+        requestId: REQUEST_ID,
+        error: { code: 'VALIDATION_ERROR', message: '参数错误' },
+      },
+      headers: {},
+      config: {} as InternalAxiosRequestConfig,
+      statusText: 'OK',
+    })
+    const originalAdapter = request.defaults.adapter
+    request.defaults.adapter = mockAdapter
+
+    await expect(request.get('/test')).rejects.toThrow('参数错误')
+
+    const call = vi.mocked(toast.error).mock.calls.at(-1)!
+    expect(call[0]).toBe('参数错误')
+    expect(String((call[1] as { description?: unknown } | undefined)?.description)).toContain(
+      REQUEST_ID
+    )
+
+    request.defaults.adapter = originalAdapter
+  })
+
+  it('没有 requestId 的响应 ⇒ 与改前逐字相同（一个参数）', async () => {
+    const mockAdapter = vi.fn().mockRejectedValue(
+      createAxiosError(500, { message: 'Internal Server Error' })
+    )
+    const originalAdapter = request.defaults.adapter
+    request.defaults.adapter = mockAdapter
+
+    await expect(request.get('/test')).rejects.toBeDefined()
+
+    expect(toast.error).toHaveBeenCalledWith('服务器内部错误')
+    expect(vi.mocked(toast.error).mock.calls.at(-1)).toHaveLength(1)
+
+    request.defaults.adapter = originalAdapter
+  })
+})
+
 // Helper to create AxiosError-like objects
 function createAxiosError(status: number, data: any, config?: any): AxiosError {
   const error = new Error(`Request failed with status code ${status}`) as AxiosError

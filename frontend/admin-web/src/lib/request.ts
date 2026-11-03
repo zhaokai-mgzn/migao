@@ -3,6 +3,7 @@ import { toast } from 'sonner'
 import { useAuthStore } from '@/store/auth'
 import { shouldRedirectToLogin } from '@/lib/auth-redirect'
 import { markErrorToastShown } from '@/lib/api-error'
+import { showRequestErrorToast } from '@/lib/error-reference'
 
 // 创建 Axios 实例
 const request: AxiosInstance = axios.create({
@@ -92,7 +93,8 @@ request.interceptors.response.use(
     // success === false 视为业务错误
     if (data.success === false) {
       const errorMessage = data.error?.message || '请求失败'
-      toast.error(errorMessage)
+      // issue #6957：失败提示带出服务端追踪编号（客服据此反查 incident），见 lib/error-reference.ts
+      showRequestErrorToast(errorMessage, data)
       const error = new Error(errorMessage)
       markErrorToastShown(error)
       return Promise.reject(error)
@@ -176,16 +178,17 @@ request.interceptors.response.use(
             redirectToChangePassword()
             return Promise.reject(error)
           }
-          toast.error('没有权限执行此操作')
+          showRequestErrorToast('没有权限执行此操作', data)
           break
         case 404:
-          toast.error('请求的资源不存在')
+          showRequestErrorToast('请求的资源不存在', data)
           break
         case 500:
-          toast.error('服务器内部错误')
+          // issue #6957：5xx 带上服务端追踪编号（商家截图 → 客服反查 incident）
+          showRequestErrorToast('服务器内部错误', data)
           break
         default:
-          toast.error(data?.error?.message || data?.message || `请求失败 (${status})`)
+          showRequestErrorToast(data?.error?.message || data?.message || `请求失败 (${status})`, data)
       }
     } else if (error.request) {
       toast.error('网络连接失败，请检查网络设置')

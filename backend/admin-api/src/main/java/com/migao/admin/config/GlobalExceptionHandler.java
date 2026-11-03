@@ -300,10 +300,12 @@ public class GlobalExceptionHandler {
      */
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiResponse<Void>> handleException(Exception e, HttpServletRequest request) {
-        log.error("系统异常: method={}, uri={}, tenant={}, type={}, msg={}",
+        // issue #6957：这一行里的 requestId 必须与响应体 / 响应头**逐字相同** —— 商家把截图里的
+        // 编号交给客服，客服就能在这一行（及其上下文）反查到这条 incident。
+        log.error("系统异常: method={}, uri={}, tenant={}, type={}, requestId={}, msg={}",
                 request == null ? "?" : request.getMethod(),
                 request == null ? "?" : request.getRequestURI(),
-                TenantContext.getTenantId(), e.getClass().getName(), e.getMessage(), e);
+                TenantContext.getTenantId(), e.getClass().getName(), RequestId.current(), e.getMessage(), e);
         ApiResponse<Void> response = ApiResponse.error("INTERNAL_ERROR", "服务器内部错误");
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(response);
     }
