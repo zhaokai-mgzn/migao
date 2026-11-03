@@ -466,10 +466,10 @@ jobs:
           HITS=$(echo "$CHANGED" | grep -E '^(frontend/admin-web/|frontend/worker-h5/src/|\.github/workflows/pr-check\.yml$)' || true)
           if [ -n "$HITS" ]; then
             echo "run_web=true" >> "$GITHUB_OUTPUT"
-            echo "✅ 检测到 admin-web 变更，执行 typecheck / lint / build / 单测"
+            echo "✅ 检测到本腿触发面变更（admin-web / worker-h5/src / 本腿定义），执行 typecheck / lint / build / 单测"
           else
             echo "run_web=false" >> "$GITHUB_OUTPUT"
-            echo "⏭️ 无 admin-web 变更 —— typecheck/lint/build/单测**未跑**（「没跑」不是「通过」）"
+            echo "⏭️ 无本腿触发面变更（admin-web / worker-h5/src / 本腿定义）—— typecheck/lint/build/单测**未跑**（「没跑」不是「通过」）"
           fi
 
       # 🔴 Node 必须是 **≥22.22.2**（不能是 20）：本腿的 `npx vitest run` 跑在 jsdom 30 上，
