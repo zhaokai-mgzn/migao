@@ -97,8 +97,10 @@ def test_classification_distinguishes_both_cases(job):
     body = str(step.get("run", ""))
     assert "GITLEAKS_NO_REPORT" in body, "必须区分「无报告 ⇒ 未判定」这一形态（本次误判的根因）"
     assert "GITLEAKS_FINDINGS" in body, "必须打印「真扫到 N 处」的具名清单（可归因）"
-    assert "exit 1" in body, "两种形态都必须判红（fail-closed）—— 未判定不得当绿"
+    assert "sys.exit(1)" in body, "真 findings 必须判红（fail-closed）"
+    assert "exit 3" in body, "未判定走三态 `exit 3`（**也是非零**）—— 判不了不得当绿（issue #7549）"
     # 反修过头：不许把「无报告」当绿
     no_report_block = body.split("GITLEAKS_NO_REPORT", 1)[1]
-    assert "exit 1" in no_report_block.split("GITLEAKS_FINDINGS", 1)[0], (
-        "「无报告」分支必须 exit 1（若改成 exit 0 = 把未判定读成通过，比误判更危险）")
+    assert "exit 3" in no_report_block.split("GITLEAKS_FINDINGS", 1)[0], (
+        "「无报告」分支必须非零退出（`exit 3` = 未判定）。**不许**改成 `exit 0`（把未判定读成通过，"
+        "比误判更危险），也不许与「真 findings」同形（issue #7549：两种红的行动完全不同）")
