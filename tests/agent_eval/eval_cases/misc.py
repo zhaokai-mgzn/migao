@@ -2,7 +2,7 @@
 # 本文件由 render_cases.py 生成，勿手改（改了也留不住：下次重渲染会覆盖）
 # 源: cases/*.yml（case-contract 单一源）
 # 重新生成: python3 render_cases.py --cases <dir> --out-eval <包目录> --out-md <md>
-# 域: misc（源: cases/misc.yml，192 条）
+# 域: misc（源: cases/misc.yml，194 条）
 
 from ._schema import Difficulty, EvalCase, Skill
 
@@ -3532,6 +3532,42 @@ _CASE_MC_147 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── MC-148 [NORMAL] 本地 E2E 认证链的复用判据：只复用「token 自己还没过期」的 admin.json，mtime 降为解不出 exp 时的兜底并出声（issue #6411）（源: cases/misc.yml）──
+_CASE_MC_148 = EvalCase(
+    id='MC-148',
+    legacy_id='',
+    title='本地 E2E 认证链的复用判据：只复用「token 自己还没过期」的 admin.json，mtime 降为解不出 exp 时的兜底并出声（issue #6411）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['本机跑 Playwright E2E（常态不起 admin-api）时，会话稍长就「上一轮绿、这一轮全红」，且红因指向当次的无关改动 —— 到底哪一步不对？'],
+    expectations=['direct_reply'],
+    data_checks=['🔴 **判据 1（行为面，会红）**：token 的 `exp` 已过 10 分钟、而 `admin.json` 的 mtime 只有 1 分钟（旧判据的 1h 窗口内）⇒ 判定必须是 `reuse=false` / `reason=token-expired` / `source=jwt-exp`。修前只看 mtime 的窗口会判「可复用」⇒ 复用一个已失效的登录态，所有 spec 连带红而**没有任何一句话指向「登录态过期」**。执行点 = tests/unit_ci_workflows/test_e2e_auth_reuse_freshness.py::test_expired_token_is_not_reused_even_when_the_file_is_fresh', '🔴 **判据 2（负控，证明不是「把窗口从 1h 调成 30min」）**：`exp` 还有 30 分钟 ⇒ `reuse=true` / `reason=token-fresh`；并且**即使 mtime 已 2 小时**（超出旧窗口）仍判可复用 ⇒ 判定由 `exp` 主导。另：距 `exp` 只剩 2 分钟（< 5 分钟安全余量）⇒ `reuse=false` / `token-expiring`（避免跑到一半在 spec 里过期）。执行点 = 同文件::test_token_with_thirty_minutes_left_is_reused / ::test_fresh_token_is_reused_even_when_mtime_exceeds_the_old_window / ::test_token_expiring_inside_the_safety_margin_forces_relogin', '🔴 **判据 3（兜底必须出声）**：token 不是合法 JWT（`E2E_MOCK_AUTH=true` 的占位 token）⇒ 回落 mtime，且 `message` 必须**明写**「按 mtime 兜底」（mtime 1 分钟 ⇒ `mtime-fallback-fresh` 可复用；mtime 2 小时 ⇒ `mtime-fallback-stale` 需重登）。静默兜底会把本缺陷重新藏起来。另：cookie 缺失时仍能从 `auth-storage` 解出 token（否则会静默回落 mtime）。执行点 = 同文件::test_unparseable_token_falls_back_to_mtime_and_says_so / ::test_token_is_read_from_zustand_state_when_the_cookie_is_absent', '🔴 **判据 4（红证 / 判别力自证）**：把 `decodeJwtExpMs` 注入成恒返回 `null`（= 历史形态「只看 mtime」）⇒ 判据 1 的断言**全部不成立**（同一输入变成 `reuse=true` / `source=mtime`），而「`exp` 未过期 ⇒ 可复用」这一结论仍成立 —— 这正是「只把窗口从 1h 调成 30min」抓不到本缺陷的原因（能抓住它的只有 `exp` 已过的那一侧）；注入只落在 tmp，仓内模块逐字节未变（判据内自证）。实测读数（注入后）：**5 failed / 3 passed**；恢复后 **8 passed**。执行点 = 同文件::test_guard_discriminates_the_mtime_only_criterion', '🔴 **判据 5（静态面·接线 + 自愈）**：tests/e2e/fixtures/auth.setup.ts 必须用共享判定器（`../helpers/auth-state-freshness.mjs`）、把 `decision.message` **打印出来**（不许静默）、不再有裸 `age < 3600_000` 直接 `return`，且判定为「需重登」时**继续走真登录**（自愈，不是报错退出）。执行点 = 同文件::test_setup_uses_the_shared_decision_logs_it_and_falls_through_to_login', '**边界（照实登记）**：① 判据不跑真 Playwright / 真后端：`exp` 解析与复用判定是纯函数（`now` 可注入 ⇒ 不受挂钟影响），「真起 admin-api 后 auth.setup 能否自愈」由环境事实决定（本机常态不起 admin-api ⇒ 那条出路是 fixture 模式 `E2E_MOCK_AUTH=true` + `--no-deps`），见 issue #6411 的「剩下那一半在仓外」；② 只看 `exp`：token 被提前吊销 / 服务端换密钥时 `exp` 仍可能未到，本判据不判、也不声称判。'],
+    skip_reason='[backend-contract] 确定性判据（判定器用**真 node** 执行 + setup 的静态接线），零后端、零 LLM，不进入 agent-eval 冒烟',
+    tags=['e2e', 'auth', 'jwt-exp', 'mtime-fallback', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-149 [NORMAL] tests/e2e 的相对 import 必须解析得到（收集期判据）：少一层 `../` 的 POM 引用会让整套 spec「跑都跑不到」（issue #6411 链内顺带修）（源: cases/misc.yml）──
+_CASE_MC_149 = EvalCase(
+    id='MC-149',
+    legacy_id='',
+    title='tests/e2e 的相对 import 必须解析得到（收集期判据）：少一层 `../` 的 POM 引用会让整套 spec「跑都跑不到」（issue #6411 链内顺带修）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=["本地跑 E2E 时 `npx playwright test --list` 直接报 `Cannot find module './base.page'` 并列出 `Total: 0 tests in 0 files` —— 而单跑某个 spec 时又「看着没事」，这类少一层 `../` 的引用怎么在仓内拦住？"],
+    expectations=['direct_reply'],
+    data_checks=["🔴 **判据 1（实例，真语料，会红）**：`tests/e2e/**` 里每一处**相对** import（`from './x'` / `from '../x'`）都必须在本仓真实文件里解析得到（后缀顺序含无扩展名 / `.ts` / `.tsx` / `.js` / `.mjs` / `.cjs` / `index.*`）。修复前它点名 `tests/e2e/pages/auth/login.page.ts -> './base.page'`（`base.page.ts` 在 `tests/e2e/pages/` 下，少一层 `../`）；修后零问题。执行点 = tests/unit_ci_workflows/test_e2e_relative_imports_resolve.py::test_every_relative_import_in_the_e2e_tree_resolves", '🔴 **判据 2（红证 / 判别力自证）**：同一解析器跑在一棵**造出来的**树上复刻历史形态 ⇒ 必须具名判红；把说明符改成 `../base.page` ⇒ 零问题（负控，证明它不是恒红）。另：本仓现有写法（无扩展名 / 显式 `.mjs`）必须判可解析，且真不存在的说明符必须判不可解析（防假红 + 防恒真）。执行点 = 同文件::test_guard_discriminates_the_missing_parent_segment / ::test_resolver_accepts_the_extensionless_and_index_forms', "**实测读数（收集期，真跑）**：修前 `CI=1 npx playwright test --list` ⇒ `Error: Cannot find module './base.page'` + `Total: 0 tests in 0 files`（退出码非 0）；修后 ⇒ `Total: 482 tests in 47 files`，退出码 **0**。⚠️ 本判据不执行 Playwright（判据 job 不装 `tests/node_modules`），只判**静态可解析性**；「收集期真的过得去」由这条实跑读数承担。", '**边界（照实登记）**：① 只判**相对**说明符，绝对包名 / `@playwright/test` 不在面内（node_modules 解析规则不归本判据）；② 只判 `tests/e2e/**`；③ 判据不联网、不烧 token、不跑浏览器。'],
+    skip_reason='[backend-contract] 纯静态解析判据（真语料 + tmp 树红证），零网络、零浏览器，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['e2e', 'import-resolution', 'collection-phase', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 CASES = (
     _CASE_MC_001,
     _CASE_MC_002,
@@ -3725,4 +3761,6 @@ CASES = (
     _CASE_MC_143,
     _CASE_MC_144,
     _CASE_MC_147,
+    _CASE_MC_148,
+    _CASE_MC_149,
 )
