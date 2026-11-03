@@ -133,6 +133,14 @@ WHERE NOT EXISTS (
 -- （schema.sql/V41 已补列；不写则返回 null，前端色号显示为空）。
 -- V111：`product_skus.selling_method` 列已删除（售卖方式上移为 products.selling_methods），
 -- 唯一键 = (product_id, color_id, door_width) ⇒ 本 INSERT 不得再写该列。
+-- SDQS-WAIVER: DFW-EVAL-SEED-XIAOBU-001 —— 直写 `product_skus.stock`（B 类，issue #7600）
+-- 为什么只能直写：评测栈种子由 `scripts/eval_stack_seed.sh` 用 `psql -f` 打库（无 HTTP 会话 /
+--   无 tenant 上下文）⇒ 没有可调用的「入库过账」写面；手写 `stock_batches` 批次号会与 V111
+--   的「批次号由服务端生成」相冲（第二份号格式 = 漂移源）。
+-- 后果（如实登记）：评测栈是**一次性**容器库（跑完即弃），这批库存是台账外存量，不进入任何
+--   对账面、也不参与批次 `diff` 断言。
+-- 重启条件：评测栈改为复用长期库，或任一评测用例开始断言批次对账 `diff == 0`。
+-- 判据：tests/unit_ci_workflows/test_smoke_fixture_stock_chain.py。
 INSERT INTO product_skus (tenant_id, product_id, color_id, color_name, door_width, price, stock, sku_code)
 SELECT 1, pc.product_id, pc.id, pc.color_name, '2.8', p.base_price, 500,
        p.sku_code || '-' || pc.color_name
