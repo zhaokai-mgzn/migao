@@ -7212,7 +7212,7 @@
 ```
 溯源: 2026-11-03 新增（issue #6953 的族级元守卫 SW-100；与 MC-100 / MC-104 / PG-075 等单表守卫**有意不重叠** —— 它们裁谓词完整性，本表裁「写面有没有人认领 / 状态值是不是单一口径」）。取号（**两次让号，记实**）= `python3 scripts/next_case_id.py MC` 首取 **MC-143**；merge `origin/main` 时与 main 新增的 **MC-143**（issue #6997 / PR #8535）撞号 ⇒ 按「后合入者让号」顺延 **MC-144**；再次 merge 又与 main 新增的 **MC-144**（issue #7034 / PR #8537）撞号 ⇒ 顺延 **MC-145**；随后 CI 的取号判据（issue #6245）抓到 **MC-145 与在飞 PR #8538 同时占着** ⇒ 再按「后合入者让号」顺延终态 **MC-147**（工具每次都返回历史空档 MC-099 —— 按裁定**刻意空档不回填**）。**现取读数**：53 张有 `status` 列的表（`_sql_schema` 唯一解析点）、134 条写点（Java 108 / SQL 26）、覆盖 49 张表；合法集合权威：实体常量 10 / schema CHECK 14 / **无机器口径 36（冻结上限）**；裸字符串存量 56（冻结上限）。**红证（注入式，实跑）**：① 往真实 Service 里加一条未登记写面 ⇒ 判据 1 判红并具名；② 把常量改成裸字符串 ⇒ 判据 3 判红并具名；③ 把台账条目删掉 ⇒ 判据 2 判红（写点无主）；④ 把 `unregistered()` 的登记对账摘掉 / 把 `bare_literal_sites()` 摘掉 ⇒ 判据 1 / 判据 3 必红（判据 7 内建这两条内存变异体作常驻证）。**如实登记的既有缺陷（本包不修，不扩射程）**：`ProductionOperationCommandService#update` 的无条件状态写（见判据 8 的盲洞 ②）、`InboundOrderService` 的 builder 写形（盲洞 ①）、36 张表没有机器可读的合法状态集合、56 处裸字面量 —— 均为存量债，压测口径 = 台账基线**只许缩短**。 ｜ tags: state-transition, meta-guard, ledger, single-source, red-proof
 
-### MC-154. 终端壳打印能力三态（issue #8310）：桥在 ≠ 打印机在 —— printerMode 负向 / 读不到都不许说「由本机打印机直接出纸」，且「判不了」与「确知没有」分开说 🔵
+### MC-155. 终端壳打印能力三态（issue #8310）：桥在 ≠ 打印机在 —— printerMode 负向 / 读不到都不许说「由本机打印机直接出纸」，且「判不了」与「确知没有」分开说 🔵
 ```
 你: 用户（2026-11-01 真机取证，商米 V2s `Qbao_h2` / Android 11 / 终端壳 1.0.19）：拍照入库页第一行写「点「打印标签」，由本机打印机直接出纸。」，而同一台机器点「打印测试页」⇒「打印失败 / 打印机未连接（需商米内置打印服务）」（`PrinterLink.mode()` = -1，设备上只有 `com.sunmi.printer.firmware`）
 期望: direct_reply
@@ -7228,7 +7228,7 @@
 真值: ⚠️ 缺口（见对应模板 ⚠️ 注释）
 溯源: 2026-11-03 新增（issue #8310）。病 = 终端壳**打印能力误报**：页面说「由本机打印机直接出纸」，本机 `PrinterLink.mode()` = **-1**；根因 = `probePrintCapability()` 的终端分支**只看壳**（有 `chrome.webview` 就 `ok:true`）、`PrintEnv` 里没有能力字段。修 = 三态判定 `terminalPrintState(printerMode)`（`>0` available / `<0` unavailable / `0`·缺省·非有限 unknown），新增两条缺口文案（`terminal-printer-unavailable` / `terminal-print-unknown`）并登记进 `INBOUND_PRINT_GAP_WIRING`；`readPrintEnv()` 从 `window.__CFG__.printerMode` 取数（非数字按读不到）。取号 = MC-154（`python3 scripts/next_case_id.py MC` 现取 main 001-098/100-144/146-147 ⇒ 工具返回历史空档 MC-099，按裁定**不回填**；MC-139~MC-153 属并行包保留带，**避开** ⇒ 顺延 MC-154）。🔴 **仓外事实（如实登记，不假造）**：原生侧本轮**还没有**送 `printerMode` ⇒ 真机一律落 `unknown`（fail-closed：不许说能打）；**原生侧要补送 `printerMode`**（值域口径：负 = 不可用 / 正 = 可用 / 0 与缺省 = 判不了），补送后本仓代码**无需再改**。边界 = 不覆盖原生赋值、不判硬件选型。 ｜ tags: backend-contract, bmini, print-capability, fail-closed, three-state, no-overclaim, red-proof
 
-### MC-155. 机台页详情屏补「报返工」入口（复用既有 reportRework / 不新建第二套返工实现 / 次要动作不抢主位） 🔵
+### MC-156. 机台页详情屏补「报返工」入口（复用既有 reportRework / 不新建第二套返工实现 / 次要动作不抢主位） 🔵
 ```
 你: 裁床在一体机屏上扫完唛、发现这道活做坏了：屏上只有【完成】，想报返工得退出机台页、回工人工作台、再找返工页 —— 扫过的这张唛还要重扫一遍。
 数据: 🔴 **判据 ①·入口在且不抢主位（§31 P1）**：扫码后的详情屏出现「报返工」；主按钮**仍然是**唯一一个 `.wh5-machine__cta` 的【完成】（报返工走次要档 `.wh5-machine__back`）；收起态原因按钮**零 DOM**（不是 CSS 隐藏）。执行点 = frontend/worker-h5/tests/worker-h5-machine-rework.test.mjs::① / ::①′
@@ -15030,8 +15030,8 @@
 - MC-152: B 端会话卡的「来源组」不许把服务端内部标签摆上屏：唯一映射表（机器键 → 商家话术）+ 枚举全集覆盖 + 认不出的键走兜底（issue #6461）
 - MC-153: B 端移动会话卡：来源组说商家的话、内部口径词零上屏（bmini 侧的零内部口径词判据 + 认不出的来源走兜底，issue #6461）
 - MC-147: **状态列写面全族统一元守卫 SW-100**：53 张有 `status` 列的表 × 134 个写入口逐条登记（未登记即红 / 台账陈旧即红 / 裸字符串写状态列即红 / 每张状态表的合法集合必须有来源）
-- MC-154: 终端壳打印能力三态（issue #8310）：桥在 ≠ 打印机在 —— printerMode 负向 / 读不到都不许说「由本机打印机直接出纸」，且「判不了」与「确知没有」分开说
-- MC-155: 机台页详情屏补「报返工」入口（复用既有 reportRework / 不新建第二套返工实现 / 次要动作不抢主位）
+- MC-155: 终端壳打印能力三态（issue #8310）：桥在 ≠ 打印机在 —— printerMode 负向 / 读不到都不许说「由本机打印机直接出纸」，且「判不了」与「确知没有」分开说
+- MC-156: 机台页详情屏补「报返工」入口（复用既有 reportRework / 不新建第二套返工实现 / 次要动作不抢主位）
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）
