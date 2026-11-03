@@ -54,6 +54,21 @@
       "table": "outbound_orders",
       "reason": "issue #8490：原子闸 = OutboundOrderMapper#insertIgnoreOutboundNoConflict（ON CONFLICT (tenant_id, outbound_no) WHERE deleted = 0 DO NOTHING）。端点级判据**已交付**（backend/admin-api/src/test/java/com/migao/admin/controller/OutboundOrderEndpointReceiptTest.java：真 MockMvc + GlobalExceptionHandler —— 200 + 最终单号 / 409 OUTBOUND_NO_EXHAUSTED / 改前裸 insert ⇒ 500 INTERNAL_ERROR 的红证），但**登记面**受限：本元守卫的端点解析（`_METHOD_MAPPING`）只认**单字符串**写法，而该端点是**无参** `@PostMapping`（`POST /api/admin/outbound-orders`）⇒ 现取端点集合里没有它，登记进 `sites` 会反判「端点不存在」。故留 deferred，判据本体已在场。",
       "restart_condition": "本元守卫的端点解析支持无参 `@PostMapping`（以类级前缀即端点），或该控制器写上显式单字符串路径时，把本条从 deferred 移入 sites：`endpoint` = `POST /api/admin/outbound-orders`，`criterion` = `backend/admin-api/src/test/java/com/migao/admin/controller/OutboundOrderEndpointReceiptTest.java::exhaustedNumbersSurfaceAsNamed409Not500`，`log_criterion` / `red_proof` = 同文件 `naiveInsertWouldTurnTheEndpointIntoFiveHundreds`。"
+    },
+    "backend/admin-api/src/main/java/com/migao/admin/controller/SettingsController.java::paymentQrcodeMapper": {
+      "table": "tenant_payment_qrcodes",
+      "reason": "issue #7255：闸已在 mapper 内（TenantPaymentQrcodeMapper#upsertActive：ON CONFLICT (tenant_id, payment_type) WHERE deleted = 0 DO UPDATE）。本包落的是**服务级真库判据**（backend/admin-api/src/test/java/com/migao/admin/service/PaymentQrcodeAndRoleUniqueWriteRealDbTest.java，MC-155：并发两次 upsert ⇒ 恰一行、零异常）；端点级判据（并发两次 PUT /api/admin/settings/payment-qrcodes/{type} ⇒ 200 + 恰一行、回执体是同一行）需要真 MockMvc + 真 PG，属独立包。",
+      "restart_condition": "补端点级并发判据时（真 MockMvc 两个并发 PUT ⇒ 200 且回执的 id 相同 / 表里恰一行）从 deferred 移入 sites。"
+    },
+    "backend/admin-api/src/main/java/com/migao/admin/service/RoleService.java::roleMapper": {
+      "table": "roles",
+      "reason": "issue #7255：闸已在 mapper 内（RoleMapper#insertIfAbsent：ON CONFLICT (tenant_id, code) DO NOTHING），影响 0 行由服务层收敛成**具名 422**（「角色代码已存在」，与串行路径逐字一致）—— 回执口径**已定**，缺的只是端点级并发判据（真 MockMvc 两个并发建同 code ⇒ 一个成功、一个 422，绝不 500）。本包落的是服务级真库判据（MC-155）。",
+      "restart_condition": "补端点级并发判据时（并发两次 POST 建同 code 角色 ⇒ 201/422 且表里恰一行）从 deferred 移入 sites。"
+    },
+    "backend/admin-api/src/main/java/com/migao/admin/service/InboundOrderService.java::inboundOrderMapper": {
+      "table": "inbound_orders",
+      "reason": "issue #7255 顺带暴露（**不是本单引入的缺口**）：归因顺序改成「mapper 原子写优先」之后，本写入点首次被认成原子闸族 —— 它的闸其实一直在（InboundOrderMapper#insertIgnoreInboundNoConflict：ON CONFLICT (tenant_id, inbound_no) WHERE deleted = 0 DO NOTHING，创建路径把它 catch 成 409）。缺的是**端点级**并发判据：现有承载体是服务级真库竞态判据（backend/admin-api/src/test/java/com/migao/admin/service/InboundNoTakeRaceRealDbTest.java），它跑的是服务方法而不是 MockMvc 端点回执。本单不扩射程，按机制如实登记 deferred。",
+      "restart_condition": "补入库单端点级并发判据时（并发两次建单 ⇒ 一方 201 / 一方 409，绝不 500）从 deferred 移入 sites。"
     }
   }
 }

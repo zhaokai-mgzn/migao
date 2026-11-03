@@ -1,12 +1,13 @@
 {
   "_why": "唯一键 / 幂等键写入点的**冻结登记台账**（issue #6301，铁律 8 的类级元守卫）。判据 = tests/unit_ci_workflows/test_idempotent_unique_write_guard.py —— 未登记即红、登记即须属实（双向）、台账为空 / 扫描零命中即红。**只许缩短**：补上原子写（ON CONFLICT DO NOTHING）或冲突映射（DuplicateKeyException）后销账。本表**不替** handling=none 的存量缺口背书，只保证新的同类写入点进不去、缺口静默消失也进不去。",
-  "_gap_issue": "handling=none 的 17 条 = 已登记的观测缺口：这些写入点会写**带唯一约束的表**，而代码里没有任何冲突处理 ⇒ 并发/重复请求撞唯一索引时异常冒泡成 5xx（与 #6301 同族）。它们各自需要独立的包（补原子写或冲突映射），不在本单射程 —— 本单把形态钉住、把「#6301 这一处」从缺口里销账。",
+  "_gap_issue": "handling=none 的条目 = 已登记的观测缺口：这些写入点会写**带唯一约束的表**，而代码里没有任何冲突处理 ⇒ 并发/重复请求撞唯一键时异常冒泡成 5xx（与 #6301 同族）。它们各自需要独立的包（补原子写或冲突映射），不在本单射程 —— 本单把形态钉住、把「#6301 / #7255 这两处」从缺口里销账。⚠️ 条数**不写死**（`test_every_unique_write_site_is_registered` 现取并打印）：2026-11-03 起扫面额外认**表内 UNIQUE(...)** 约束，因此暴露了 4 条此前**根本看不见**的同族缺口（详见各条 note）——那是扫面变准、不是缺口变多。",
   "_handling_values": "有处理 ⇒ 写「处理所在文件的仓库相对路径」（服务侧 catch DuplicateKeyException，或该 mapper 接口里有 ON CONFLICT 的 @Insert）；没有 ⇒ 写 \"none\"。",
   "_scan": "写入点 = 服务/控制层里 `<XxxMapper 字段>.insert*(`（含 insertIgnoreConflict 这类带前后缀的插入 —— 方法名里有 IgnoreConflict 不改变「它是写入点」这个事实），且该 mapper 经 `extends BaseMapper<实体>` → 实体的 @TableName 指向 backend/admin-api/src/main/resources/db/init/schema.sql 里带 CREATE UNIQUE INDEX 的表（注释 / 字符串不算写入点）。",
   "sites": {
     "backend/admin-api/src/main/java/com/migao/admin/controller/SettingsController.java::paymentQrcodeMapper": {
       "table": "tenant_payment_qrcodes",
-      "handling": "backend/admin-api/src/main/java/com/migao/admin/controller/SettingsController.java"
+      "handling": "backend/admin-api/src/main/java/com/migao/admin/mapper/TenantPaymentQrcodeMapper.java",
+      "note": "issue #7255：写面从「selectOne 判空 → insert / updateById」收敛成一条原子 upsert （TenantPaymentQrcodeMapper#upsertActive，ON CONFLICT (tenant_id, payment_type) WHERE deleted = 0 DO UPDATE）。原登记的处理位置是控制器文件 —— 那是个**假章**：该文件里确有 DuplicateKeyException，但在另一个端点（改租户编码）里，与本写入点无关。归因顺序改成「mapper 原子写优先」之后，摘掉 upsertActive 的 ON CONFLICT ⇒ 本行具名判红。"
     },
     "backend/admin-api/src/main/java/com/migao/admin/service/AuthService.java::userMapper": {
       "table": "users",
@@ -34,7 +35,7 @@
     },
     "backend/admin-api/src/main/java/com/migao/admin/service/InboundOrderService.java::inboundOrderMapper": {
       "table": "inbound_orders",
-      "handling": "backend/admin-api/src/main/java/com/migao/admin/service/InboundOrderService.java"
+      "handling": "backend/admin-api/src/main/java/com/migao/admin/mapper/InboundOrderMapper.java"
     },
     "backend/admin-api/src/main/java/com/migao/admin/service/OrderLogisticsWriter.java::orderLogisticsMapper": {
       "table": "order_logistics",
@@ -184,6 +185,31 @@
       "table": "warehouse_locations",
       "handling": "backend/admin-api/src/main/java/com/migao/admin/service/WarehouseLocationService.java",
       "note": "仓位号租户内唯一（uk_warehouse_locations_bin WHERE deleted=0）：新建走 insert，唯一冲突由服务端 catch DuplicateKeyException 映射成可读 422（「仓位号已存在」）；自动分配另一条路径走 mapper 的 ON CONFLICT DO NOTHING（claimBin）+ count+1 顺延"
+    },
+    "backend/admin-api/src/main/java/com/migao/admin/service/RoleService.java::roleMapper": {
+      "table": "roles",
+      "handling": "backend/admin-api/src/main/java/com/migao/admin/mapper/RoleMapper.java",
+      "note": "issue #7255：createRole 的建行从裸 insert 收敛成 RoleMapper#insertIfAbsent（ON CONFLICT (tenant_id, code) DO NOTHING），影响 0 行 ⇒ 服务层收敛成**具名 422**（不是 DuplicateKeyException 冒泡成 500）。"
+    },
+    "backend/admin-api/src/main/java/com/migao/admin/service/CustomerService.java::customerTagMapper": {
+      "table": "customer_tags",
+      "handling": "none",
+      "note": "customer_tags 的唯一性只由表内 UNIQUE(tenant_id, name) 承担 ⇒ 旧扫描看不见本写入点。本单只把「扫面必须认表内 UNIQUE」这条修好并如实登记；本写入点的冲突收敛属独立包（重启条件：, 补客户标签写面的并发判据时一并改成 ON CONFLICT DO NOTHING）"
+    },
+    "backend/admin-api/src/main/java/com/migao/admin/service/PermissionService.java::permissionMapper": {
+      "table": "permissions",
+      "handling": "none",
+      "note": "permissions 的唯一性只由表内 UNIQUE(tenant_id, code) 承担 ⇒ 旧扫描看不见本写入点。权限定义写入面的重复请求回执口径未定（422 还是幂等返回既有行），属**权限面口径** ⇒ 本单不猜，只如实登记缺口（重启条件：定下口径后补原子写 + 端点级判据）"
+    },
+    "backend/admin-api/src/main/java/com/migao/admin/service/RegistrationService.java::permissionMapper": {
+      "table": "permissions",
+      "handling": "none",
+      "note": "同上（注册流程的权限种子写入）。注册是**新租户**流程，实际不会撞既有行的唯一键，但静态形态同族 ⇒ 登记为缺口而不是声称已处理（重启条件：权限面口径落地后同批收口）"
+    },
+    "backend/admin-api/src/main/java/com/migao/admin/service/RegistrationService.java::roleMapper": {
+      "table": "roles",
+      "handling": "none",
+      "note": "同上（注册流程的内置角色种子写入，8 处）。冲突出现在「新租户不该有同名 code」的前提下，但形态与 createRole 同族 ⇒ 如实登记（重启条件：注册流程并发判据落地时一并收口）"
     }
   }
 }

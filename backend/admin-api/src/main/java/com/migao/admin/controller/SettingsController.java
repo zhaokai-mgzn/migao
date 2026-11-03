@@ -417,26 +417,22 @@ public class SettingsController {
                 .eq(com.migao.admin.entity.TenantPaymentQrcode::getTenantId, tenantId)
                 .eq(com.migao.admin.entity.TenantPaymentQrcode::getPaymentType, type)
                 .eq(com.migao.admin.entity.TenantPaymentQrcode::getDeleted, 0);
-        com.migao.admin.entity.TenantPaymentQrcode q = paymentQrcodeMapper.selectOne(wrapper);
-        if (q == null) {
-            q = com.migao.admin.entity.TenantPaymentQrcode.builder()
-                    .tenantId(tenantId)
-                    .paymentType(type)
-                    .imageUrl(imageUrl)
-                    .payeeName(body.get("payeeName"))
-                    .remark(body.get("remark"))
-                    .status("active")
-                    .deleted(0)
-                    .build();
-            paymentQrcodeMapper.insert(q);
-        } else {
-            q.setImageUrl(imageUrl);
-            if (body.get("payeeName") != null) q.setPayeeName(body.get("payeeName"));
-            if (body.get("remark") != null) q.setRemark(body.get("remark"));
-            paymentQrcodeMapper.updateById(q);
-        }
+        // issue #7255：本端点是 PUT（按 (tenant, type) 幂等），写面必须是**一条原子 upsert**。
+        // 原先是「selectOne 判空 → insert / updateById」：并发下两个请求都判「不存在」⇒ 都 insert
+        // ⇒ 第二个撞部分唯一索引 uk_payment_qrcode_tenant_type ⇒ DuplicateKeyException 冒泡成 500。
+        // 现在冲突在语句内部消解（ON CONFLICT … DO UPDATE），两个并发请求都收敛到同一行。
+        paymentQrcodeMapper.upsertActive(com.migao.admin.entity.TenantPaymentQrcode.builder()
+                .id(java.util.UUID.randomUUID().toString().replace("-", ""))
+                .tenantId(tenantId)
+                .paymentType(type)
+                .imageUrl(imageUrl)
+                .payeeName(body.get("payeeName"))
+                .remark(body.get("remark"))
+                .status("active")
+                .deleted(0)
+                .build());
         log.info("保存收款二维码: tenantId={} type={}", tenantId, type);
-        return ApiResponse.success(q);
+        return ApiResponse.success(paymentQrcodeMapper.selectOne(wrapper));
     }
 
     // ==================== 请求 DTO ====================

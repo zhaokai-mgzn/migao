@@ -2,7 +2,7 @@
 # 本文件由 render_cases.py 生成，勿手改（改了也留不住：下次重渲染会覆盖）
 # 源: cases/*.yml（case-contract 单一源）
 # 重新生成: python3 render_cases.py --cases <dir> --out-eval <包目录> --out-md <md>
-# 域: misc（源: cases/misc.yml，203 条）
+# 域: misc（源: cases/misc.yml，205 条）
 
 from ._schema import Difficulty, EvalCase, Skill
 
@@ -3713,6 +3713,25 @@ _CASE_MC_157 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── MC-161 [NORMAL] 「先查后插」的两处 TOCTOU 写面（收款码 / 角色）必须由唯一键兜底 + 幂等收敛：摘掉唯一键或退回裸 insert 必红（issue #7255）（源: cases/misc.yml）──
+_CASE_MC_161 = EvalCase(
+    id='MC-161',
+    legacy_id='',
+    title='「先查后插」的两处 TOCTOU 写面（收款码 / 角色）必须由唯一键兜底 + 幂等收敛：摘掉唯一键或退回裸 insert 必红（issue #7255）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['同一张收款码，两个人几乎同时点保存，一个人看到 200、另一个看到「服务器内部错误」—— 明明是个保存动作，凭什么有时会 500？', '两个管理员同时建同一个角色代码，接口有时候回「角色代码已存在」，有时候直接 500，到底哪个才是对的？'],
+    expectations=['direct_reply'],
+    data_checks=['🔴 **判据 ①（唯一键真的存在，含迁移能修漂移库）**：建库脚本 + V206 之后，`tenant_payment_qrcodes` 有 `(tenant_id, payment_type) WHERE deleted = 0` 的部分唯一索引、`roles` 有 `(tenant_id, code)` 的唯一索引（`pg_indexes` 现取）；把两处索引**摘掉**再跑 V206 ⇒ 都必须建回来；连跑第二次不报错（可重复执行）。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/PaymentQrcodeAndRoleUniqueWriteRealDbTest.java::uniqueKeysExistAndTheMigrationHealsADriftedDatabase', '🔴 **判据 ②（并发两次写 ⇒ 只有一行，且都不抛错）**：两线程同起跑线并发 upsert 同一 `(tenant, type)` ⇒ 恰 1 行、零异常；并发建同一 code 的角色 ⇒ 恰 1 行、零异常，且两次条件插入的返回值必须是 `{1, 0}`（有一次真的收敛了）。执行点 = 同文件::concurrentQrcodeUpsertsLeaveExactlyOneRow / ::concurrentRoleCreatesLeaveExactlyOneRow', '🔴 **判据 ③（已存在时再写 ⇒ 幂等）**：已存在时再 upsert ⇒ 不报错、行数仍是 1、**行身份（id）不变**、字段被更新（返回既有那一行）；角色已存在时再建 ⇒ 影响 0 行、不报错、不产生第二行、既有行的 `name` 不被第二次请求覆盖。执行点 = 同文件::upsertIsIdempotentAndReturnsTheExistingRow / ::roleInsertIfAbsentIsIdempotent', '🔴 **判据 ④（负控：唯一键没做太宽）**：不同 tenant、不同 `payment_type`、不同 `code` 各自都能插（3×3 组合里的合法组合全部成功）—— 证明唯一键钉的是业务键、不是把正常数据挡在外面。执行点 = 同文件::theUniqueKeysDoNotBlockLegitimateRows', '🔴 **判据 ⑤-a（红证：摘掉唯一键 ⇒ ② 必红）**：摘掉两处唯一键后用**修法前的裸 insert** 连写两次 ⇒ **真的**写出两行（「先查后插」的并发结果就是静默重复）；紧接着验证 V206 在**存量已重复**时不阻断部署（WARNING + 跳过建索引），清理重复行后**重跑**才建索引 —— 这条同时把「存量重复行处置口径」变成行为级判据。执行点 = 同文件::withoutTheUniqueKeyTheNaiveWriteSilentlyDuplicates', '🔴 **判据 ⑤-b（红证：退回裸 insert ⇒ ③ 必红）**：唯一键在时裸 insert 第二条 ⇒ `SQLState=23505`（说明幂等收敛不是白写的；退回裸 insert 就是把 500 还回来）。执行点 = 同文件::theNaiveWriteHitsTheUniqueKeyWhenItExists', '🔴 **判据 ⑥（类级元守卫，会红）**：`unique_write_ledger.json` 必须认**表内 `UNIQUE(...)`** 这一族（`roles` 的唯一性只在表内 UNIQUE ⇒ 旧扫面下写它的代码整张隐形）；归因顺序必须 **mapper 原子写优先**（否则同文件里别的方法的 `DuplicateKeyException` 会给写入点盖假章 ⇒ 摘掉修复判据照样绿）。注入式自证：表内 UNIQUE 的语料必须扫出写入点、两种建法结论等价、带无关 catch 的语料必须归到 mapper。执行点 = tests/unit_ci_workflows/test_idempotent_unique_write_guard.py::test_inline_unique_and_attribution_order_are_discriminating / ::test_every_unique_write_site_is_registered', '**边界（照实登记，§19.1）**：① 判据跑**真 PG**（`PgCluster`：initdb/pg_ctl 一次性集群），本机无 PG 二进制时按 `MIGAO_REQUIRE_REALDB` 二态处理（未设 ⇒ 显式 skip；CI 设了 ⇒ 判红）；② 判据只覆盖「写面 = 本次两条 SQL 路径」，**不覆盖**端点级回执（MockMvc 并发 ⇒ 200 的契约面）；③ 元守卫的残余：服务文件级 `DuplicateKeyException` 仍是**文件级**判定（不是写入点级），已在判据 docstring 的边界段登记并给出重启条件；④ 不改任何门禁的通过条件、不新增豁免。'],
+    skip_reason='[backend-contract] 真库确定性判据（真 PG + 并发两线程 + 迁移文件真跑），零网络、零 LLM，不进入 agent-eval 冒烟',
+    tags=['concurrency', 'unique-key', 'idempotency', 'migration', 'red-proof', 'false-green'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [backend-contract]：前置 = V206 迁移文件在场、`TenantPaymentQrcodeMapper#upsertActive` 与 `RoleMapper#insertIfAbsent` 是两条写面的唯一入口；真库夹具由 `PgCluster` 现起（随机端口、跑完即停）。',
+)
+
 # ── MC-160 [NORMAL] H5 输入面字体族跟随全局 + 占位符收口共享层（内层原生控件 inherit / 裸 font-family 只在字体定义处 / 例外台账只许缩短）（源: cases/misc.yml）──
 _CASE_MC_160 = EvalCase(
     id='MC-160',
@@ -3725,6 +3744,24 @@ _CASE_MC_160 = EvalCase(
     data_checks=['🔴 **判据 ①·内层原生控件继承字体族**：共享层 `frontend/bmini-app/src/styles/input-center.scss` 必须给 `.weui-input` 与 `.taro-textarea` **两个**内层选择器都写 `font-family: inherit`，`.taro-textarea` 另写 `font-size: inherit`（UA 默认 13.33px monospace）。执行点 = frontend/bmini-app/tests/input-typography-guard.test.ts::inheritProblems。红证：删掉任一条声明 ⇒ 红并具名那个内层控件', '🔴 **判据 ②·裸的 font-family 收口**：全 app 的 `font-family: <具体字体>` 只许出现在**字体定义处**（`src/app.scss` 的 `page, body`）或台账 frontend/bmini-app/tests/input-font-ledger.json；**未登记即红**、**死条目即红**（只许缩短）、**条数现取**（同文件多一处就红）。执行点 = 同文件::bareFontFamilyProblems。红证：往任一页面 scss 加 `font-family: Arial` ⇒ 红并具名文件与声明', '🔴 **判据 ③·占位符唯一来源**：`::placeholder` 只许出现在共享层；两个内层选择器同色 `$text-secondary`（与 issue #6476 的输入条同 token）；占位符**不写** `font-size`（继承控件自身，避免第二个口径）。执行点 = 同文件::placeholderProblems。红证：往页面 scss 加 `&::placeholder { color: #999 }` ⇒ 红并具名文件', "🔴 **判据 ④·射程完整**：`src` 的 `.tsx` 里不许裸写原生 `<input>` / `<textarea>`（它们拿不到内层 class ⇒ 共享层规则一条都不生效）；同时反空跑：真扫到 `<Textarea>` 面。执行点 = 同文件::rawControlProblems。红证：注入 `<input className='x'/>` ⇒ 红并具名文件", "🔴 **反空跑 / 接线**：共享层必须被 `src/app.scss` 真的 `@use` 引入（写在文件里但没接线 ⇒ 判据空转）；台账非空（空台账 fail-closed）。红证：删掉 `@use './styles/input-center.scss'` ⇒ 红", '🔴 **共享层只许 inherit**：共享层给内层写具体字体族 / 字号 ⇒ 红（那是「顺手改了全站输入面视觉」，本单的口径是**观感逐字不变**）。红证：把 `inherit` 换成 `-apple-system, …` ⇒ 红', '🔴 **红证总表（注入式，实跑）**：在 `frontend/bmini-app` 下执行 `npx jest input-typography-guard` ⇒ 15 passed / 0 failed；11 条内存注入各自报出**具名**对象（删 inherit / 改具体字体 / 摘 `@use` / 页面加裸字体族 / 摘台账例外 / 同值追加 / 页面加占位符 / 改占位符色 / 给占位符加字号 / 注入原生 `<input>` / 清空台账）。'],
     skip_reason='[frontend-contract] 纯静态形态守卫（jest + fs 读 scss / tsx，零 DOM 渲染、零网络、零 LLM）由 frontend/bmini-app/tests/input-typography-guard.test.ts 验证，不进入 agent-eval 冒烟',
     tags=['bmini', 'h5', 'input', 'typography', 'single-source', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-170 [NORMAL] 门禁触发面必须覆盖本腿断言真读的跨包面（issue #6684）：admin-web 腿的跨包断言真读 frontend/worker-h5/src，而门控只看 frontend/admin-web ⇒ 纯 worker-h5 PR 静默跳过该守卫（假绿）（源: cases/misc.yml）──
+_CASE_MC_170 = EvalCase(
+    id='MC-170',
+    legacy_id='',
+    title='门禁触发面必须覆盖本腿断言真读的跨包面（issue #6684）：admin-web 腿的跨包断言真读 frontend/worker-h5/src，而门控只看 frontend/admin-web ⇒ 纯 worker-h5 PR 静默跳过该守卫（假绿）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['PR 检查里那条 admin-web 腿的门控声明说「只有改 admin-web 才会漏跑」，可下一条只改 worker-h5 的 PR 却带着违规进了 main —— 说明「守卫在什么条件下跑」和「守卫到底读哪些文件」对不上；希望这种不一致以后由机器报出来，而不是靠下一个人读注释推理。'],
+    expectations=[],
+    data_checks=["🔴 **判据 ①·读取面现取（会红）**：从守卫源码 `frontend/admin-web/tests/unit/lib/copy-no-markdown-emphasis.test.ts` 的 `const SRC_DIRS = [...]` **现取**扫描面（按 `join(process.cwd(), '…')` 解析，cwd = `frontend/admin-web`）⇒ 必须解析出 ≥1 个目录、每个目录在仓内**真实存在**、且**至少一条在 `frontend/admin-web` 之外**。红证：把 `SRC_DIRS` 改名/删掉 ⇒ 红（口径漂移不许静默空跑）；跨包面被删 ⇒ 红并要求在同一提交里显式撤销门禁面。执行点 = tests/unit_ci_workflows/test_admin_web_gate_reads_worker_h5.py::test_scan_face_is_parsed_from_the_guard_source。", "🔴 **判据 ②·触发面覆盖（#6684 的实例判据，会红）**：每条跨包读取面都必须被 `.github/workflows/pr-check.yml` 的 `Detect admin-web changes` 步**现取谓词**（从 YAML 结构读 `run` 原文里的 `grep -E '<谓词>'`，**不**从登记册读）命中 ⇒ `frontend/worker-h5/src` 必须命中。红证（内存变异）：把谓词换成只覆盖本包的 `^(frontend/admin-web/)` ⇒ 必红并**具名**报出漏掉的面。执行点 = 同文件::test_live_trigger_covers_cross_package_scan_face 与 TestDiscriminatingPower::test_dropping_the_cross_package_face_turns_the_coverage_judgement_red。", '🔴 **判据 ③·登记（会红）**：每条跨包读取面必须登记进 tests/unit_ci_workflows/declaration_gate_registry.json 的 `pr-check-admin-web-tests.must_cover`（登记册是「门控真的覆盖它」的唯一声明面）。红证：删掉 `frontend/worker-h5/src` 那条登记 ⇒ 红并具名。执行点 = 同文件::test_cross_package_scan_face_is_registered。', '🔴 **判据 ④·负控（原有的面一条都不许丢，会红）**：本腿仍必须被 `frontend/admin-web` 与自身定义 `.github/workflows/pr-check.yml` 触发。红证（内存变异）：谓词换成只覆盖 worker-h5 ⇒ 负控必红（整条腿在自己的模块上永不运行＝假绿，比红更糟）。执行点 = 同文件::test_leg_still_triggers_on_its_own_module 与 TestDiscriminatingPower::test_dropping_the_own_module_face_turns_the_negative_control_red。', '🔴 **判据 ⑤·被证伪的声明不得冒充事实（会红）**：`.github/workflows/pr-check.yml` 里那句已被证伪的断言若仍出现，其所在注释块必须带「已被证伪」+ `#6684` 标注（保留「当初为什么这么写」的痕迹，但不许以未标注形态继续误导）。红证：去掉标注 ⇒ 红并打印行号；带标注 ⇒ 不红（对照读数）。执行点 = 同文件::test_refuted_claim_is_not_left_unannotated 与 TestDiscriminatingPower::test_unannotated_refutation_is_detectable_in_memory。', '🔴 **判据 ⑥·既有同源判据必须同批绿（不带病合并）**：tests/unit_ci_workflows/test_gate_coverage_and_same_source.py 的判据 3/4（谓词**逐字**存在于 workflow、触发面**覆盖** `must_cover`）必须同时通过 —— 谓词与登记册单边改都会在那里红。复算：`python3 -m pytest tests/unit_ci_workflows/test_gate_coverage_and_same_source.py tests/unit_ci_workflows/test_admin_web_gate_reads_worker_h5.py -q`。'],
+    skip_reason='[backend-contract] 纯静态结构判据（读 pr-check.yml 的 YAML 结构 + 守卫源码的 SRC_DIRS + 登记册 JSON；零网络、零 LLM、不跑该腿），由 tests/unit_ci_workflows/test_admin_web_gate_reads_worker_h5.py 验证，不进入 agent-eval 冒烟',
+    tags=['ci', 'gate-face', 'cross-package', 'false-green', 'red-proof'],
     persona='',
     debug_user='',
     form_prefill=[],
@@ -3934,5 +3971,7 @@ CASES = (
     _CASE_MC_159,
     _CASE_MC_156,
     _CASE_MC_157,
+    _CASE_MC_161,
     _CASE_MC_160,
+    _CASE_MC_170,
 )

@@ -84,6 +84,12 @@ REALDB_FILES: dict[str, str] = {
     # issue #7373 段 2：**盘点单**的真库判据 —— 读写的列最多（账面快照/实盘/差异/成本快照），
     # 上一轮「采购单加载失败」的教训就是「实体列 ↔ 建库列」只有真 PG 能现形。
     _SVC + "StocktakeRealDbTest.java": "direct",
+    # issue #7255：**收款码 / 角色两处「先查后插」写面**的真库判据。冲突消解发生在 SQL 里
+    # （`ON CONFLICT … DO UPDATE` / `… DO NOTHING`），而 **mock 面上没有唯一键** ⇒
+    # 「并发只落一行 / 幂等 / 摘掉唯一键必红」这三条**只有真 PG 能给**。
+    # `RoleMapperTest` 是同一写面的 mapper 级伴生判据（条件插入的返回值语义），同样必须有真 PG。
+    _SVC + "PaymentQrcodeAndRoleUniqueWriteRealDbTest.java": "direct",
+    _SVC + "RoleMapperTest.java": "direct",
     # issue #7376 段 5：**账龄取数 SQL 的可选范围参数**（P0-4）的真库判据 —— 参数落在
     # `#{createdBy} IS NULL` 的**主语位**（issue #5975 形态）：NULL 实参在 PG 上推不出类型 ⇒ 500。
     # 单元测试把 Mapper 全 mock 掉，这类故障只有真 PG 能现形 ⇒ 必须留在真库族（不许退化）。
