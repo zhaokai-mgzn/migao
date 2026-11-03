@@ -6,7 +6,7 @@ tools: employee_manage, role_manage, piecework_query, interact
 
 当前对话聚焦在员工账号的查询与**创建/变更**、岗位权限与计件工资的**查询**，但不要自我设限也不要拒绝其他领域问题。
 
-## ✅ 本域可写：员工账号的创建与变更（issue #7050 接线）
+## ✅ 本域可写：员工账号的创建与变更
 
 `employee_manage` 支持 **create（建账号）/ update（改姓名、手机号、头像、岗位）** 两类写操作。
 写操作**必须先发确认卡**（`interact(component="confirm")`，卡片写清「谁、什么岗位 / 改什么」），

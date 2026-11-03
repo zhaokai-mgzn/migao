@@ -1,6 +1,6 @@
 # Staff Skill — Few-shot 示例
 
-> ✅ 员工账号**可建可改**（`employee_manage` 的 create/update，走确认卡；issue #7050）。
+> ✅ 员工账号**可建可改**（`employee_manage` 的 create/update，走确认卡）。
 > ❌ 删除/停用（离职）/重置密码、建/改/删角色（岗位）、分配权限不在能力内（`role_manage` 只读）。
 
 ## ✅ 正确示例

@@ -7283,7 +7283,7 @@ cases:
       tests:
         - "frontend/bmini-app/tests/inbound-print-capability-terminal.test.ts"
   # ── MC-155（issue #7050）：员工账号「创建 / 变更」接回 B 端 —— 实例判据 ──────────────
-  - id: MC-158
+  - id: MC-159
     legacy_id: ""
     title: "**员工账号的 create / update 接回 B 端**（issue #7050，2026-10-16「能力边界 终版」）：action 枚举与 schema 同时可见（漏参数即不可调用）+ 权限走既有 required_permissions 粗筛与 action 级复检（码取 AdminUserController 注解，不自己判角色）+ 确认走既有 base_skill._requires_confirmation（react_turn 用同一函数对象；未确认 ⇒ 不执行）+ 端点逐字对齐（POST /api/admin/users · PUT /api/admin/users/{id}）+ 删除/停用/重置密码仍不接线"
     domains:
@@ -7317,7 +7317,7 @@ cases:
       - "判据 6·🔴 端点与零越界：create ⇒ `POST /api/admin/users`（payload 的 name/phone/password/roleIds/role 与 admin-api 契约逐字一致）；update ⇒ `PUT /api/admin/users/{id}`；`delete` / `toggle_status` / `reset_password` 在入口即拒并给出去哪办。执行点 = 同文件 ::TestEndpointsAreReal。"
       - "判据 7·🔴 判别力自证（红证）：把 `requires_confirmation` 置 False（内存注入）⇒ 门禁判据必红；把 `read_only` 置 True ⇒ 同；枚举注入删掉 create ⇒ 写面判据必红。执行点 = 同文件 ::TestJudgementIsNotVacuous。"
     skip_reason: "[backend-contract] 只读源码 + 工具对象（零 LLM / 零网络 / 零 DB）：写路径的**行为面**（模型是否真的先发确认卡）按 migao-dev-flow §13 默认不派发真实评测（#4262 用户裁定「不要自动验证」），需要时由人工集中跑一次。"
-    merge_log: "2026-11-03 新增（issue #7050）。取号 = `python3 scripts/next_case_id.py MC` 现取（main 已到 153；本包按协调口径避开 139~153，且 MC-099 空档不回填）⇒ 首取 **MC-154**，merge `origin/main` 时与 main 上 **MC-154**（issue #8310 打印机三态，PR #8548）撞号 ⇒ 按「后合入者让号」顺延 **MC-155**（**再让号**：MC-155 已分给在飞 PR #8560 / #7992）⇒ 终态 **MC-158**。接线面 = backend/ai-agent-service/app/tools/employee_manage.py（VALID_ACTIONS + requires_confirmation=True + create/update 实现）· app/graph/skills/staff_skill.py（STAFF_TOOLS 与口径）· references/prompts/staff.md + EXAMPLES-staff.md（#7040 同款「prompt 仍在教拒绝」坑，同批改判）· 能力边界投影自动跟随（test_capability_boundary 快照 employee_write ❌→✅）。**红证（注入式）**：摘掉 requires_confirmation ⇒ 未确认即执行那条判据红（实跑读数在 PR body）。**其余域**（角色 / 客户 / 标签 / 分类 / 加工项）本单未做，缺口留在 issue #7050。"
+    merge_log: "2026-11-03 新增（issue #7050）。取号 = `python3 scripts/next_case_id.py MC` 现取（main 已到 153；本包按协调口径避开 139~153，且 MC-099 空档不回填）⇒ 首取 **MC-154**，merge `origin/main` 时与 main 上 **MC-154**（issue #8310 打印机三态，PR #8548）撞号 ⇒ 按「后合入者让号」顺延 **MC-155**（**再让号**：MC-155 已分给在飞 PR #8560 / #7992）⇒ 终态 **MC-159**。接线面 = backend/ai-agent-service/app/tools/employee_manage.py（VALID_ACTIONS + requires_confirmation=True + create/update 实现）· app/graph/skills/staff_skill.py（STAFF_TOOLS 与口径）· references/prompts/staff.md + EXAMPLES-staff.md（#7040 同款「prompt 仍在教拒绝」坑，同批改判）· 能力边界投影自动跟随（test_capability_boundary 快照 employee_write ❌→✅）。**红证（注入式）**：摘掉 requires_confirmation ⇒ 未确认即执行那条判据红（实跑读数在 PR body）。**其余域**（角色 / 客户 / 标签 / 分类 / 加工项）本单未做，缺口留在 issue #7050。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_employee_manage_write_actions.py"

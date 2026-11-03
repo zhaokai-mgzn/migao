@@ -606,10 +606,12 @@ cases:
       # forbidden_text / want_text 上，它们对「零工具直接答」与「真去尝试」两条路径都成立）。
       # 保留 `direct_reply or nav_guide`：模型合理地在**没有**尝试的情况下先说权限不足 +
       # 给后台入口，也是合格回答（#7048 P4 的实测形态）。
-      # 形态必须是**裸工具名**（runner 按「 or 」拆分支；`(action=…)` 不是工具名 —— 会被
-      # `test_b_end_case_tool_reachability` 判成引用不可达工具 = 空断言）。action 精度由
-      # `must_fail[employee_manage(create)]` 承担。
-      - tool: employee_manage or role_manage or direct_reply or nav_guide
+      # ⚠️ OR 组形态受 `test_eval_expectation_or_group` 约束：**不得**把「具名写规则」与
+      # `direct_reply` 并列（纯文本分支可顶替写落地形态 = 假绿通道），未登记的新裸分支也不许用。
+      # ⇒ 期望面**保持** main 的 `direct_reply or nav_guide`；写侧的判别力**全部**由
+      # `must_fail[employee_manage(create)]`（越权写不得成功）+ `db_verify[employee_absent]`
+      # （李四不得落库）+ `forbidden_text`（不得谎称能力不存在 / 不得敷衍）承担。
+      - tool: direct_reply or nav_guide
     # 业务**不得发生**（跨轮机器判定）：本用例的身份没有 employee:create ⇒
     # 任何一次 create **成功**都是越权落库（最坏形态）。
     # ⚠️ 这一条是「未修实现」的判别性断言：未修时服务端给通配 `*` ⇒ create 成功 ⇒ 本用例红。

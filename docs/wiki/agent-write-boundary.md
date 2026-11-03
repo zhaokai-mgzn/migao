@@ -98,7 +98,7 @@
 | 工具 | 移除理由 |
 |---|---|
 | `role_manage` | 权限变更，最严重的越权面 |
-| `employee_manage`（**部分改判**）| 原判：人事账号，越权 + 不可逆。**2026-10-16 用户「能力边界 终版」后改判**：员工账号的**创建与变更**（`create` / `update`）接回 B 端（issue #7050），走确认门禁 + action 级权限复检、不接删除 / 停用 / 重置密码 —— 后者仍按本档移除。能力真值以 `app/agents/capability_boundary.py` 投影为准（用例 MC-158）。 |
+| `employee_manage`（**部分改判**）| 原判：人事账号，越权 + 不可逆。**2026-10-16 用户「能力边界 终版」后改判**：员工账号的**创建与变更**（`create` / `update`）接回 B 端（issue #7050），走确认门禁 + action 级权限复检、不接删除 / 停用 / 重置密码 —— 后者仍按本档移除。能力真值以 `app/agents/capability_boundary.py` 投影为准（用例 MC-159）。 |
 | `settings_manage` | 全局配置，影响面不可控 |
 | `finance_api`（写动作） | 涉钱，不可逆 + 合规 |
 | `notification_manage`（群发） | 对外不可撤回 |

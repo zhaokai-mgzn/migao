@@ -513,9 +513,11 @@ _CONFIRM_GATE_BINDING_SKILLS: frozenset = frozenset({
     "notification",
     # 🔴 **issue #7050（人事域，2026-10-16）**：`staff` 绑定 `employee_manage`
     # （`create`/`update` 接回，`requires_confirmation=True`）且**已绑 `interact`**
-    # （确认卡可达）⇒ 名册 5 → 7（同批还有兜底 `general` —— 它也绑 employee_manage 且绑 interact）。
+    # （确认卡可达）⇒ 名册 5 → 6。
+    # ⚠️ 同批**未**把兜底 `general` 计入：`employee_manage` 变成非只读后按兜底纪律
+    # （`test_general_tools_no_core_write_operations`）**必须从 `general` 解绑** ——
+    # 兜底不得承载写工具（写操作走领域 Skill 的确认链）。员工查询随 `staff` 域走。
     "staff",
-    "general",
     # 🔴 **issue #6486 包 2（定时提醒域，2026-10-07）**：`reminder` 绑定 A 档可逆写
     # `scheduled_task_manage`（`requires_confirmation=True`）且**已绑 `interact`** ⇒ 名册 3 → 4。
     # 判据本体（绑需确认写工具 ⇒ 必须暴露 `interact`）一字未改。

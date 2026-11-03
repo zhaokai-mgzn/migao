@@ -3923,7 +3923,7 @@
 你: 帮我开个客服账号，姓名李四，手机号 13800009999，密码 Test123456
 你: 那我要怎么才能给员工开账号？
 端: mibao（单端 —— 仅黄金策腿跑，元元腿跳过）
-期望: employee_manage or role_manage or direct_reply or nav_guide
+期望: direct_reply or nav_guide
 数据: 同一失败的调用不得跨轮重复（自旋）：本仓库 runner 目前**没有**跨轮重复调用断言，故该条只能靠 LLM 层人工/盲审读报告 —— 如实登记，不假装已机器判定
 数据: 如实说明**该账号**缺 `employee:create` 权限（不是「黄金策没有这个能力」——#7050 已接回写能力），并给出后台「组织管理 → 员工管理」或「岗位权限」页面的开通路径（正向判据 want_text 要求全程出现「后台」/「开通」/「入口」/「管理员」之一）
 数据: 不得出现「请稍后重试」/「系统不支持」这类编造或敷衍话术（如实说明「黄金策做不到、请去后台」是**正确**回答，不在禁词内）
@@ -7229,7 +7229,7 @@
 真值: ⚠️ 缺口（见对应模板 ⚠️ 注释）
 溯源: 2026-11-03 新增（issue #8310）。病 = 终端壳**打印能力误报**：页面说「由本机打印机直接出纸」，本机 `PrinterLink.mode()` = **-1**；根因 = `probePrintCapability()` 的终端分支**只看壳**（有 `chrome.webview` 就 `ok:true`）、`PrintEnv` 里没有能力字段。修 = 三态判定 `terminalPrintState(printerMode)`（`>0` available / `<0` unavailable / `0`·缺省·非有限 unknown），新增两条缺口文案（`terminal-printer-unavailable` / `terminal-print-unknown`）并登记进 `INBOUND_PRINT_GAP_WIRING`；`readPrintEnv()` 从 `window.__CFG__.printerMode` 取数（非数字按读不到）。取号 = MC-154（`python3 scripts/next_case_id.py MC` 现取 main 001-098/100-144/146-147 ⇒ 工具返回历史空档 MC-099，按裁定**不回填**；MC-139~MC-153 属并行包保留带，**避开** ⇒ 顺延 MC-154）。🔴 **仓外事实（如实登记，不假造）**：原生侧本轮**还没有**送 `printerMode` ⇒ 真机一律落 `unknown`（fail-closed：不许说能打）；**原生侧要补送 `printerMode`**（值域口径：负 = 不可用 / 正 = 可用 / 0 与缺省 = 判不了），补送后本仓代码**无需再改**。边界 = 不覆盖原生赋值、不判硬件选型。 ｜ tags: backend-contract, bmini, print-capability, fail-closed, three-state, no-overclaim, red-proof
 
-### MC-158. **员工账号的 create / update 接回 B 端**（issue #7050，2026-10-16「能力边界 终版」）：action 枚举与 schema 同时可见（漏参数即不可调用）+ 权限走既有 required_permissions 粗筛与 action 级复检（码取 AdminUserController 注解，不自己判角色）+ 确认走既有 base_skill._requires_confirmation（react_turn 用同一函数对象；未确认 ⇒ 不执行）+ 端点逐字对齐（POST /api/admin/users · PUT /api/admin/users/{id}）+ 删除/停用/重置密码仍不接线 🔵
+### MC-159. **员工账号的 create / update 接回 B 端**（issue #7050，2026-10-16「能力边界 终版」）：action 枚举与 schema 同时可见（漏参数即不可调用）+ 权限走既有 required_permissions 粗筛与 action 级复检（码取 AdminUserController 注解，不自己判角色）+ 确认走既有 base_skill._requires_confirmation（react_turn 用同一函数对象；未确认 ⇒ 不执行）+ 端点逐字对齐（POST /api/admin/users · PUT /api/admin/users/{id}）+ 删除/停用/重置密码仍不接线 🔵
 ```
 你: 新来了一个客服叫王五，帮他开个账号
 你: 把张三的岗位改成仓管
@@ -7245,7 +7245,7 @@
 跳过: [backend-contract] 只读源码 + 工具对象（零 LLM / 零网络 / 零 DB）：写路径的**行为面**（模型是否真的先发确认卡）按 migao-dev-flow §13 默认不派发真实评测（#4262 用户裁定「不要自动验证」），需要时由人工集中跑一次。
 ```
 真值: ⚠️ 缺口（见对应模板 ⚠️ 注释）
-溯源: 2026-11-03 新增（issue #7050）。取号 = `python3 scripts/next_case_id.py MC` 现取（main 已到 153；本包按协调口径避开 139~153，且 MC-099 空档不回填）⇒ 首取 **MC-154**，merge `origin/main` 时与 main 上 **MC-154**（issue #8310 打印机三态，PR #8548）撞号 ⇒ 按「后合入者让号」顺延 **MC-155**（**再让号**：MC-155 已分给在飞 PR #8560 / #7992）⇒ 终态 **MC-158**。接线面 = backend/ai-agent-service/app/tools/employee_manage.py（VALID_ACTIONS + requires_confirmation=True + create/update 实现）· app/graph/skills/staff_skill.py（STAFF_TOOLS 与口径）· references/prompts/staff.md + EXAMPLES-staff.md（#7040 同款「prompt 仍在教拒绝」坑，同批改判）· 能力边界投影自动跟随（test_capability_boundary 快照 employee_write ❌→✅）。**红证（注入式）**：摘掉 requires_confirmation ⇒ 未确认即执行那条判据红（实跑读数在 PR body）。**其余域**（角色 / 客户 / 标签 / 分类 / 加工项）本单未做，缺口留在 issue #7050。 ｜ tags: agent-capability, write-action, confirm-gate, permission, red-proof, backend-contract
+溯源: 2026-11-03 新增（issue #7050）。取号 = `python3 scripts/next_case_id.py MC` 现取（main 已到 153；本包按协调口径避开 139~153，且 MC-099 空档不回填）⇒ 首取 **MC-154**，merge `origin/main` 时与 main 上 **MC-154**（issue #8310 打印机三态，PR #8548）撞号 ⇒ 按「后合入者让号」顺延 **MC-155**（**再让号**：MC-155 已分给在飞 PR #8560 / #7992）⇒ 终态 **MC-159**。接线面 = backend/ai-agent-service/app/tools/employee_manage.py（VALID_ACTIONS + requires_confirmation=True + create/update 实现）· app/graph/skills/staff_skill.py（STAFF_TOOLS 与口径）· references/prompts/staff.md + EXAMPLES-staff.md（#7040 同款「prompt 仍在教拒绝」坑，同批改判）· 能力边界投影自动跟随（test_capability_boundary 快照 employee_write ❌→✅）。**红证（注入式）**：摘掉 requires_confirmation ⇒ 未确认即执行那条判据红（实跑读数在 PR body）。**其余域**（角色 / 客户 / 标签 / 分类 / 加工项）本单未做，缺口留在 issue #7050。 ｜ tags: agent-capability, write-action, confirm-gate, permission, red-proof, backend-contract
 
 ### MC-156. 机台页详情屏补「报返工」入口（复用既有 reportRework / 不新建第二套返工实现 / 次要动作不抢主位） 🔵
 ```
@@ -15064,7 +15064,7 @@
 - MC-153: B 端移动会话卡：来源组说商家的话、内部口径词零上屏（bmini 侧的零内部口径词判据 + 认不出的来源走兜底，issue #6461）
 - MC-147: **状态列写面全族统一元守卫 SW-100**：53 张有 `status` 列的表 × 134 个写入口逐条登记（未登记即红 / 台账陈旧即红 / 裸字符串写状态列即红 / 每张状态表的合法集合必须有来源）
 - MC-155: 终端壳打印能力三态（issue #8310）：桥在 ≠ 打印机在 —— printerMode 负向 / 读不到都不许说「由本机打印机直接出纸」，且「判不了」与「确知没有」分开说
-- MC-158: **员工账号的 create / update 接回 B 端**（issue #7050，2026-10-16「能力边界 终版」）：action 枚举与 schema 同时可见（漏参数即不可调用）+ 权限走既有 required_permissions 粗筛与 action 级复检（码取 AdminUserController 注解，不自己判角色）+ 确认走既有 base_skill._requires_confirmation（react_turn 用同一函数对象；未确认 ⇒ 不执行）+ 端点逐字对齐（POST /api/admin/users · PUT /api/admin/users/{id}）+ 删除/停用/重置密码仍不接线
+- MC-159: **员工账号的 create / update 接回 B 端**（issue #7050，2026-10-16「能力边界 终版」）：action 枚举与 schema 同时可见（漏参数即不可调用）+ 权限走既有 required_permissions 粗筛与 action 级复检（码取 AdminUserController 注解，不自己判角色）+ 确认走既有 base_skill._requires_confirmation（react_turn 用同一函数对象；未确认 ⇒ 不执行）+ 端点逐字对齐（POST /api/admin/users · PUT /api/admin/users/{id}）+ 删除/停用/重置密码仍不接线
 - MC-156: 机台页详情屏补「报返工」入口（复用既有 reportRework / 不新建第二套返工实现 / 次要动作不抢主位）
 - MC-157: **本地 dev / build 输出目录物理隔离**：`next dev` 写 `.next-dev`、`next build` / `next start` 仍写 `.next`（共用 `.next` 时 dev 侧已存在路由 404 可复现 + build 侧读到半写生成物报 9 条 TS 错误）
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
