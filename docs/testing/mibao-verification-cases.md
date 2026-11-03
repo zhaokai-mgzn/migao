@@ -4186,7 +4186,7 @@
 ```
 溯源: 2026-10-31 新增（issue #8295）：两步确认，避免误写 ｜ tags: ui, preview
 
-## 杂项域（185 case）
+## 杂项域（187 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -7012,6 +7012,34 @@
 跳过: [backend-contract] 零 LLM 的确定性脚本判据（真 git 仓库 + 真 bare origin + 真 worktree + 真子进程 + 注入式红证），pytest 真跑、零网络，不进 agent-eval 冒烟
 ```
 溯源: 2026-11-03 新增（issue #7008）。病（2026-10-16 实测）：`:8101` 的 ai-agent 评测实例 `/health` 200，而 `lsof -p <pid> | grep cwd` 指向**已被自动收尾删掉**的 worktree（`migao-wt/6985-confirm-execute/backend/ai-agent-service`）⇒ 创建会话 HTTP 500（惰性 import 在已删 cwd 上失败），症状把人引向产品代码。根因 = 自动收尾只判 GitHub 侧（有已合并 PR 且无 open PR），**从不问本机有没有进程在用**。落码 = scripts/issue_lifecycle.py 的 `classify_candidate` 新增三条 fail-closed 拒绝条件（活占用 / 未提交或未推送 / 持有中的机器级重活锁；**读不到读数 = 无法判定 = 不删**）＋ `cmd_reap_merged` 一次取数并打印读数与逐条拒绝原因；scripts/dev-worktree.sh 的自动收尾改为「**先 dry-run 打印、再真删**」（`--force` 只跳过打印，**不**跳过拒绝条件）。取号 = MC-133（`python3 scripts/next_case_id.py MC` 现取：main 001-098 · 100-132 + 本工作区 099 ⇒ 返回 MC-133）。红证 = 把 `live_occupants` 调用物理摘掉 ⇒ 同一夹具变「可收尾」（判据 1 必红）；恢复后全绿。类级元守卫（§23）= 扫 `scripts/*.py` + `scripts/*.sh` 的全部删 worktree 入口 ⇄ 登记表**双向相等**（未登记即红），自动面必须含三条保护调用 —— 注入式红证见判据 6。 ｜ tags: worktree, reap, liveness, fail-closed, tooling, red-proof
+
+### MC-141. 部位规格的数值口径：纯空白串 = 「没填」（—），不再编成 0 / 0.000（issue #7002） 🔵
+```
+你: 商家没填的部位规格，为什么工人屏上会印出「宽 0.000米」「安装工艺 0」？没填就是没填，不能编一个数给我。
+数据: 🔴 **判据 ①·纯空白串 ⇒ 缺值（会红）**：`formatSpecValue('   ', f)` ⇒ `—`，`f ∈ {undefined, m, int, number, bool}` 逐个钉；并与同模块 `dataOr` 同口径（本病的形态正是两者自相矛盾：`dataOr` 早就是 `—`）。执行点 = frontend/worker-h5/tests/worker-h5-position-spec-whitespace.test.mjs（判据 ①）
+数据: 🔴 **判据 ②·负控（方向也要钉）**：`0` / `"0"` / `"0.0"` / `" 0 "` 仍渲染 **0**（`m` ⇒ `0.000`），`"2.5"` / `" 2.5 "` / 非数文本 `定高买宽` 的既有读数逐字不变 —— 不许把合法 0 当缺值吞掉（0.000 米与「没填」是两件事）。执行点 = 同文件（判据 ②）
+数据: 🔴 **判据 ③·trim 不是「见空白就吞」**：`" 12 "` / 制表符换行包住的 `12.5` ⇒ `12` / `12.500`（各口径）。执行点 = 同文件（判据 ③）
+数据: 🔴 **判据 ④·报工屏整行不渲染**：`specRows({craft: '   ', width: '   '})` ⇒ `[]`（修前是 `[宽: 0米, 安装工艺: 0]`）；空白与真值混排时空白行消失、`" 0 "` 那一行照旧渲染。执行点 = 同文件（判据 ④）
+数据: 🔴 **判据 ⑤·机台屏同源同口径**：`detailRows` → `kvRows` 对同一份空白输入渲染 `—`（不是 `0.000米` / `0`），且 `" 0 "` 的格仍是 0（负控）。执行点 = 同文件（判据 ⑤）
+数据: 🔴 **判据 ⑥·类级守卫（§23）**：`POSITION_SPEC_KEYS` **每一个键**（不论什么 format）对纯空白都给 `—`；新增规格键 / 新增数值口径自动进这条判据（不需要再加一行）。执行点 = 同文件（判据 ⑥）
+数据: 🔴 **红证（注入式，双向对照）**：注入 A = 把判数前的 `const text = typeof value === 'string' ? value.trim() : value` 改成 `const text = value` ⇒ 判据 ①④⑤⑥ 红（实测 4 failed / 2 passed）；注入 B = 在 trim 后加 `if (Number(text) === 0) return EMPTY` ⇒ 判据 ② 红（证明「缺值」与「0」是两条独立断言）。注入方式与逐字读数见 PR body。
+数据: **边界（照实登记，§19.1）**：本用例钉**展示口径**（`position-spec.mjs::formatSpecValue` 一族），不判服务端为何存进纯空白（数据面 / 录入侧）；同类「不 trim 直接 parse」的其它点只登记不扩射程（清单见 PR body），不在本用例重复。
+跳过: [backend-contract] 零 LLM 的确定性纯函数判据（`node --test` + 真实渲染产物，零依赖、零网络），不进 agent-eval 冒烟
+```
+溯源: 2026-11-03 新增（issue #7002）。病（`origin/main` 实测）：`formatSpecValue` 的数值路径只挡空串（`value !== ''`）而 `Number('   ') === 0` ⇒ 商家没填的部位规格 `'   '` 被编成 `0`（`format: 'm'` ⇒ `0.000`），与同模块 `dataOr`（`'   '` ⇒ `—`）自相矛盾；`format: 'm'` 的键（宽 / 高 / 米数）渲染成 0.000 是**给机器的值偏小**（裁短方向）。修法 = 判数前只对**字符串** trim，空 ⇒ 走既有缺值口径；非字符串（含真 0）既有读数逐字不变。取号 = **MC-141**（让号记实：`scripts/next_case_id.py MC` 首次现取给 **MC-139**，随后 CI 的 `test_case_id_claims.py` 判「本 PR #8526 与在飞 PR #8527 / #8529 同时占着 MC-139」⇒ 按 `docs/wiki/Change-Blast-Radius.md` 陷阱 3「后合入者让号」让到现取最大号 + 1 = **MC-141**（#8524 占 140）；工具给的历史空档 MC-099 **不回填**）。红证 = 注入 A（删 trim）4 failed / 2 passed、注入 B（把 0 当缺值）② 红；恢复后 6 passed。 ｜ tags: worker-h5, display-format, whitespace, missing-value, negative-control, red-proof
+
+### MC-140. 多 PR **集中合**（batch merge）工具：从 origin/main 重建 + 重放（不 --ours 解冲突）/ 用例号「后合入者让号」/ 锚点按**实测**重锚 / 批次 body 零关闭词 🔵
+```
+你: 5 个 PR 同时要合：逐个合 = 5×28 个 required job（strict=true 下每个 PR 各跑一轮全量）；换成一次「集中合」后 = 1×28，且用例号互撞 / 追加型台账冲突 / 锚点漂移要能被工具自动收口
+数据: **合入不丢内容（会红）**：两个 PR 各向 `.github/cases/misc.yml` 追加一条用例 ⇒ 合批后**两条都在**（只追加型台账取 main 版 + 并上各支新增块，**不用** `--ours/--theirs` 解冲突 —— 实测那会把冲突标记留成嵌套垃圾、把锚点 JSON 写坏）。判据 = tests/unit_ci_workflows/test_batch_merge_tool.py::test_batch_lands_both_prs_and_renumbers_the_later_one。
+数据: **用例号「后合入者让号」（会红）**：两个 PR 同占一个号 ⇒ 后合入者改 `id`，且 **claim 文件名/内容**（`<PR>-<ID>.json` 的 `id` 字段）、**声明该号的测试文件头** `# case_ids:`、**渲染物**三处同步；「谁让给谁」必须打印。红证 = 把让号逻辑删掉（`plan_renames → []`）⇒ 重复 id 当场留下。
+数据: **锚点「从 main 重建 + 实测重锚」（会红）**：锚点取 main 版 → 跑判据拿**实测读数** → 追加一行 `history`（带 `note`）+ `entries` 对齐实测；产出必须能过**真**判据 tests/unit_ci_workflows/test_case_machine_fail_channel.py。红证 = 换成 main 版锚点（=`--ours` 解冲突的产物）⇒ 真判据必红（实测与 entries 不一致）。
+数据: **「是否在合并中」只认 MERGE_HEAD（会红）**：worktree 里 `.git` 是**文件** ⇒ `Path(repo)/'.git'/'MERGE_HEAD'` **恒不存在**；判据必须用 `git rev-parse -q --verify MERGE_HEAD`。每支合并都以「提交前必须为真 / 提交后必须为假」收口（否则下一支必然 rc=128）。夹具本身就是 worktree 形态，红证 = 同一现场 naive 路径实测为 False。
+数据: **批次 PR body 零关闭词（会红）**：生成后**当场**用 `scripts/pr_body_guard.py` 的 `find_close_keywords()`（同一实现）断言 0 条，非 0 即 fail-closed 不建 PR；负控 = body 里确实带 `#NNNN` 引用（所以「0 命中」不是空断言）。原 PR / issue 由值守面在合并后按证据关闭。
+数据: **`--dry-run` 零落盘（会红）**：不建分支、不提交、不动远端（分支表 / 提交数 / `git status` 前后逐字节比对），正控 = 去掉 `--dry-run` 后同一夹具的读数**确实**变了（否则「没变」是空断言）。
+跳过: [backend-contract] 研发工具面判据（临时 git 仓库 + worktree，零网络、不碰真仓库）由 tests/unit_ci_workflows/test_batch_merge_tool.py 验证，非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-11-03 新增（issue #8523）：把「多 PR 集中合」做成可复用工具。背景 = 今晚人工做过一次（PR #8519）踩了四个坑：① 冲突全在追加型台账上（`cases/*.yml` / 生成物 / 锚点 JSON）且 `--ours/--theirs` 解冲突会把冲突标记留成嵌套垃圾（实测写坏过 baseline JSON）② 堆叠 PR 同占用例号 ③ `--no-commit` 后不提交就合下一支 ⇒ 全线 rc=128（worktree 里 `.git` 是**文件**，判「在合并中」必须 `MERGE_HEAD`）④ 批量 body 不能带关闭词。交付 = `scripts/batch-merge.sh`（入口）+ `scripts/batch_merge_lib.py`（实现体，从 origin/main 重建 + 重放，六步顺序即安全顺序）+ 判据 6 条（各带可执行红证）+ docs/wiki/Development.md 的「批次合并（默认路径）」。取号 MC-140（`python3 scripts/next_case_id.py MC` 现取：main 001-098,100-132,134,137 + 在飞 PR #8519 的 133,135-136,138 + #8508 的 139 + #8509 的 133 ⇒ 最小空闲 140；MC-099 是刻意空档，**不回填**）。 ｜ tags: ci, batch-merge, pr-batching, case-id-collision, anchor-rebaseline, merge-head, red-proof
 
 ### MC-142. 计件 sweep 的 A0b 不再按原始 `worker_name` 分组比对：无署名归集是**显式的一类**（结构判身份、文案只进证据），并由独立的 A0c 勾稽「总额 − 逐人 = 无署名 且 = 独立 SQL 的无名组」（issue #7030） 🔵
 ```
@@ -14534,8 +14562,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：983（活跃 153，跳过 830）
-- tier 分布：smoke 15 / normal 906 / adversarial 33
+- 用例总数：985（活跃 153，跳过 832）
+- tier 分布：smoke 15 / normal 908 / adversarial 33
 - 售后域：16
 - Agent 核心域：13
 - API 层域：21
@@ -14551,7 +14579,7 @@
 - 人事域：13
 - 知识问答域：9
 - 客户主数据迁移域：10
-- 杂项域：185
+- 杂项域：187
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：76
@@ -14802,6 +14830,8 @@
 - MC-136: 生图等待上限只有一个权威（ai-agent 的 IMAGE_GEN_TIMEOUT）：admin-api 读超时与前端等待/文案都从它派生；文案按实测区间说、超 30 秒给「还在生成」（issue #7731）
 - MC-133: issue_lifecycle 自证不得读进程内快照（issue #6617）：远程面强制现取 / 读不到 ⇒ 三态 3 / 批量路径只许一次现取（NS-3）
 - MC-138: 删 worktree 前必须判「活进程占用 / 未提交未推送 / 持有重活锁」：自动收尾不再删掉正在被用的检出（issue #7008）
+- MC-141: 部位规格的数值口径：纯空白串 = 「没填」（—），不再编成 0 / 0.000（issue #7002）
+- MC-140: 多 PR **集中合**（batch merge）工具：从 origin/main 重建 + 重放（不 --ours 解冲突）/ 用例号「后合入者让号」/ 锚点按**实测**重锚 / 批次 body 零关闭词
 - MC-142: 计件 sweep 的 A0b 不再按原始 `worker_name` 分组比对：无署名归集是**显式的一类**（结构判身份、文案只进证据），并由独立的 A0c 勾稽「总额 − 逐人 = 无署名 且 = 独立 SQL 的无名组」（issue #7030）
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）

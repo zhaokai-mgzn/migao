@@ -170,7 +170,7 @@ public class ImageRecognitionController {
         if (images == null || images.isEmpty()) {
             throw new BusinessException(ERR_INVALID_IMAGES,
                     "缺少图片：images 为空", 400,
-                    "请先上传图片（POST /api/admin/upload/image 拿 url），再把 url 列表传给 images。"
+                    "请先上传图片（在页面上选图上传后拿到的图片地址），再把地址列表传给 images。"
                             + "系统不会拿空列表去问模型（那只会浪费一次 vision 调用）。");
         }
     }

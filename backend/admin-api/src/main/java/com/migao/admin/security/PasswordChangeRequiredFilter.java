@@ -41,8 +41,8 @@ public class PasswordChangeRequiredFilter extends OncePerRequestFilter {
     /** 403 错误码：客户端据此跳「首登强制改密」页（与既有 UNAUTHORIZED / PERMISSION_DENIED 同族）。 */
     public static final String ERROR_CODE = "PASSWORD_CHANGE_REQUIRED";
 
-    /** 用户可见文案（明确「下一步做什么」）。 */
-    public static final String MESSAGE = "首次登录需先修改密码，请调用 POST /api/auth/password/change";
+    /** 用户可见文案（明确「下一步做什么」）。**不摆内部标识**（§31 P3）：只说动作，不给端点。 */
+    public static final String MESSAGE = "首次登录需先修改密码：请在「修改密码」页设置新密码后继续";
 
     /**
      * 白名单（最小化，见类 javadoc）。

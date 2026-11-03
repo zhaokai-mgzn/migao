@@ -2,7 +2,7 @@
 # 本文件由 render_cases.py 生成，勿手改（改了也留不住：下次重渲染会覆盖）
 # 源: cases/*.yml（case-contract 单一源）
 # 重新生成: python3 render_cases.py --cases <dir> --out-eval <包目录> --out-md <md>
-# 域: misc（源: cases/misc.yml，185 条）
+# 域: misc（源: cases/misc.yml，187 条）
 
 from ._schema import Difficulty, EvalCase, Skill
 
@@ -3388,6 +3388,42 @@ _CASE_MC_138 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── MC-141 [NORMAL] 部位规格的数值口径：纯空白串 = 「没填」（—），不再编成 0 / 0.000（issue #7002）（源: cases/misc.yml）──
+_CASE_MC_141 = EvalCase(
+    id='MC-141',
+    legacy_id='',
+    title='部位规格的数值口径：纯空白串 = 「没填」（—），不再编成 0 / 0.000（issue #7002）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['商家没填的部位规格，为什么工人屏上会印出「宽 0.000米」「安装工艺 0」？没填就是没填，不能编一个数给我。'],
+    expectations=[],
+    data_checks=["🔴 **判据 ①·纯空白串 ⇒ 缺值（会红）**：`formatSpecValue('   ', f)` ⇒ `—`，`f ∈ {undefined, m, int, number, bool}` 逐个钉；并与同模块 `dataOr` 同口径（本病的形态正是两者自相矛盾：`dataOr` 早就是 `—`）。执行点 = frontend/worker-h5/tests/worker-h5-position-spec-whitespace.test.mjs（判据 ①）", '🔴 **判据 ②·负控（方向也要钉）**：`0` / `"0"` / `"0.0"` / `" 0 "` 仍渲染 **0**（`m` ⇒ `0.000`），`"2.5"` / `" 2.5 "` / 非数文本 `定高买宽` 的既有读数逐字不变 —— 不许把合法 0 当缺值吞掉（0.000 米与「没填」是两件事）。执行点 = 同文件（判据 ②）', '🔴 **判据 ③·trim 不是「见空白就吞」**：`" 12 "` / 制表符换行包住的 `12.5` ⇒ `12` / `12.500`（各口径）。执行点 = 同文件（判据 ③）', '🔴 **判据 ④·报工屏整行不渲染**：`specRows({craft: \'   \', width: \'   \'})` ⇒ `[]`（修前是 `[宽: 0米, 安装工艺: 0]`）；空白与真值混排时空白行消失、`" 0 "` 那一行照旧渲染。执行点 = 同文件（判据 ④）', '🔴 **判据 ⑤·机台屏同源同口径**：`detailRows` → `kvRows` 对同一份空白输入渲染 `—`（不是 `0.000米` / `0`），且 `" 0 "` 的格仍是 0（负控）。执行点 = 同文件（判据 ⑤）', '🔴 **判据 ⑥·类级守卫（§23）**：`POSITION_SPEC_KEYS` **每一个键**（不论什么 format）对纯空白都给 `—`；新增规格键 / 新增数值口径自动进这条判据（不需要再加一行）。执行点 = 同文件（判据 ⑥）', "🔴 **红证（注入式，双向对照）**：注入 A = 把判数前的 `const text = typeof value === 'string' ? value.trim() : value` 改成 `const text = value` ⇒ 判据 ①④⑤⑥ 红（实测 4 failed / 2 passed）；注入 B = 在 trim 后加 `if (Number(text) === 0) return EMPTY` ⇒ 判据 ② 红（证明「缺值」与「0」是两条独立断言）。注入方式与逐字读数见 PR body。", '**边界（照实登记，§19.1）**：本用例钉**展示口径**（`position-spec.mjs::formatSpecValue` 一族），不判服务端为何存进纯空白（数据面 / 录入侧）；同类「不 trim 直接 parse」的其它点只登记不扩射程（清单见 PR body），不在本用例重复。'],
+    skip_reason='[backend-contract] 零 LLM 的确定性纯函数判据（`node --test` + 真实渲染产物，零依赖、零网络），不进 agent-eval 冒烟',
+    tags=['worker-h5', 'display-format', 'whitespace', 'missing-value', 'negative-control', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-140 [NORMAL] 多 PR **集中合**（batch merge）工具：从 origin/main 重建 + 重放（不 --ours 解冲突）/ 用例号「后合入者让号」/ 锚点按**实测**重锚 / 批次 body 零关闭词（源: cases/misc.yml）──
+_CASE_MC_140 = EvalCase(
+    id='MC-140',
+    legacy_id='',
+    title='多 PR **集中合**（batch merge）工具：从 origin/main 重建 + 重放（不 --ours 解冲突）/ 用例号「后合入者让号」/ 锚点按**实测**重锚 / 批次 body 零关闭词',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['5 个 PR 同时要合：逐个合 = 5×28 个 required job（strict=true 下每个 PR 各跑一轮全量）；换成一次「集中合」后 = 1×28，且用例号互撞 / 追加型台账冲突 / 锚点漂移要能被工具自动收口'],
+    expectations=[],
+    data_checks=['**合入不丢内容（会红）**：两个 PR 各向 `.github/cases/misc.yml` 追加一条用例 ⇒ 合批后**两条都在**（只追加型台账取 main 版 + 并上各支新增块，**不用** `--ours/--theirs` 解冲突 —— 实测那会把冲突标记留成嵌套垃圾、把锚点 JSON 写坏）。判据 = tests/unit_ci_workflows/test_batch_merge_tool.py::test_batch_lands_both_prs_and_renumbers_the_later_one。', '**用例号「后合入者让号」（会红）**：两个 PR 同占一个号 ⇒ 后合入者改 `id`，且 **claim 文件名/内容**（`<PR>-<ID>.json` 的 `id` 字段）、**声明该号的测试文件头** `# case_ids:`、**渲染物**三处同步；「谁让给谁」必须打印。红证 = 把让号逻辑删掉（`plan_renames → []`）⇒ 重复 id 当场留下。', '**锚点「从 main 重建 + 实测重锚」（会红）**：锚点取 main 版 → 跑判据拿**实测读数** → 追加一行 `history`（带 `note`）+ `entries` 对齐实测；产出必须能过**真**判据 tests/unit_ci_workflows/test_case_machine_fail_channel.py。红证 = 换成 main 版锚点（=`--ours` 解冲突的产物）⇒ 真判据必红（实测与 entries 不一致）。', "**「是否在合并中」只认 MERGE_HEAD（会红）**：worktree 里 `.git` 是**文件** ⇒ `Path(repo)/'.git'/'MERGE_HEAD'` **恒不存在**；判据必须用 `git rev-parse -q --verify MERGE_HEAD`。每支合并都以「提交前必须为真 / 提交后必须为假」收口（否则下一支必然 rc=128）。夹具本身就是 worktree 形态，红证 = 同一现场 naive 路径实测为 False。", '**批次 PR body 零关闭词（会红）**：生成后**当场**用 `scripts/pr_body_guard.py` 的 `find_close_keywords()`（同一实现）断言 0 条，非 0 即 fail-closed 不建 PR；负控 = body 里确实带 `#NNNN` 引用（所以「0 命中」不是空断言）。原 PR / issue 由值守面在合并后按证据关闭。', '**`--dry-run` 零落盘（会红）**：不建分支、不提交、不动远端（分支表 / 提交数 / `git status` 前后逐字节比对），正控 = 去掉 `--dry-run` 后同一夹具的读数**确实**变了（否则「没变」是空断言）。'],
+    skip_reason='[backend-contract] 研发工具面判据（临时 git 仓库 + worktree，零网络、不碰真仓库）由 tests/unit_ci_workflows/test_batch_merge_tool.py 验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ci', 'batch-merge', 'pr-batching', 'case-id-collision', 'anchor-rebaseline', 'merge-head', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── MC-142 [NORMAL] 计件 sweep 的 A0b 不再按原始 `worker_name` 分组比对：无署名归集是**显式的一类**（结构判身份、文案只进证据），并由独立的 A0c 勾稽「总额 − 逐人 = 无署名 且 = 独立 SQL 的无名组」（issue #7030）（源: cases/misc.yml）──
 _CASE_MC_142 = EvalCase(
     id='MC-142',
@@ -3591,5 +3627,7 @@ CASES = (
     _CASE_MC_136,
     _CASE_MC_133,
     _CASE_MC_138,
+    _CASE_MC_141,
+    _CASE_MC_140,
     _CASE_MC_142,
 )

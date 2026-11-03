@@ -591,7 +591,7 @@ describe('response interceptor - 错误 toast 去重标记（issue #2923）', ()
         success: false,
         error: {
           code: 'PASSWORD_CHANGE_REQUIRED',
-          message: '首次登录需先修改密码，请调用 POST /api/auth/password/change',
+          message: '首次登录需先修改密码：请在「修改密码」页设置新密码后继续',
         },
       })
 

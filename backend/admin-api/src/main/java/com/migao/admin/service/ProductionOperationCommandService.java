@@ -285,7 +285,7 @@ public class ProductionOperationCommandService {
                 .eq(ProductionOperation::getName, name));
         if (sameName != null && sameName > 0) {
             throw BusinessException.conflict("工序「" + name + "」已存在",
-                    "同名工序只能有一条：改它的单价/状态，或换一个工序名（目录查看入口 GET /api/admin/production/operations-catalog）");
+                    "同名工序只能有一条：改它的单价/状态，或换一个工序名");
         }
         String status = body.containsKey("status") ? requiredText(body.get("status"), "status") : "active";
         if (!STATUSES.contains(status)) {
