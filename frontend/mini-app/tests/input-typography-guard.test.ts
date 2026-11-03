@@ -29,7 +29,6 @@
  */
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join, relative } from 'node:path'
-import { describe, expect, it } from 'vitest'
 
 const ROOT = process.cwd()
 const SRC = join(ROOT, 'src')
@@ -95,13 +94,14 @@ function block(code: string, selector: string): string | null {
 }
 
 describe('C 端 H5 输入面字体族 / 占位符收口（issue #8575）', () => {
-  it('① 共享层在位、被 app.scss 真的引入，且两个内层控件都继承字体族', () => {
+  it('① 共享层在位、被 app.scss 真的引入，且 `.weui-input, .taro-textarea` 都 `font-family: inherit`', () => {
     const app = stripComments(read(APP_SCSS))
     expect(app).toContain("styles/input-center.scss")
 
     const code = sharedCode()
     const inner = block(code, '.weui-input,')
-    expect(inner, '共享层缺 `.weui-input, .taro-textarea { font-family: inherit }`').not.toBeNull()
+    // 缺了就以「null」失败，报错里能看到是哪一个断言（jest 的 expect 不收第二参数）
+    expect(inner).not.toBeNull()
     expect(inner).toMatch(/font-family:\s*inherit/)
     expect(inner).toContain('.taro-textarea')
   })
@@ -111,7 +111,7 @@ describe('C 端 H5 输入面字体族 / 占位符收口（issue #8575）', () =>
     const concrete = [...code.matchAll(/font-family:\s*([^;}]+)/g)]
       .map((m) => m[1].trim())
       .filter((v) => v !== 'inherit')
-    expect(concrete, `共享层出现了具体字体族：${concrete.join(', ')}`).toEqual([])
+    expect(concrete).toEqual([])
   })
 
   it('③ textarea 必须有 font-size: inherit（UA 默认 13.33px monospace 到不了内层）', () => {
@@ -119,23 +119,20 @@ describe('C 端 H5 输入面字体族 / 占位符收口（issue #8575）', () =>
     // `.taro-textarea` 出现在两个块里（字体族那条是 `.weui-input, .taro-textarea {`），
     // 这里要的是**带 font-size: inherit 的**那一条 ⇒ 逐块找，不能只看第一次出现。
     const blocks = [...code.matchAll(/\.taro-textarea\s*\{([^}]*)\}/g)].map((m) => m[1])
-    expect(blocks.length, '共享层缺 `.taro-textarea { … }` 块').toBeGreaterThan(0)
-    expect(
-      blocks.some((b) => /font-size:\s*inherit/.test(b)),
-      '共享层缺 `.taro-textarea { font-size: inherit }`',
-    ).toBe(true)
+    expect(blocks.length).toBeGreaterThan(0)
+    expect(blocks.some((b) => /font-size:\s*inherit/.test(b))).toBe(true)
   })
 
-  it('④ ::placeholder 只在共享层，覆盖两个内层选择器，且不写 font-size', () => {
+  it('④ `::placeholder` 覆盖两个内层选择器、取 `$text-secondary`、不写 font-size', () => {
     const code = sharedCode()
     const ph = block(code, '.weui-input::placeholder')
-    expect(ph, '共享层缺 `.weui-input::placeholder, .taro-textarea::placeholder`').not.toBeNull()
+    expect(ph).not.toBeNull()
     expect(ph).toContain('.taro-textarea::placeholder')
     expect(ph).toContain('$text-secondary')
-    expect(ph, '占位符不许写 font-size（继承控件自身，一处口径）').not.toMatch(/font-size:/)
+    expect(ph).not.toMatch(/font-size:/)
   })
 
-  it('⑤ 共享层之外任何 scss 出现内层选择器 ⇒ 红（防逐页各写一份）', () => {
+  it('⑤ 共享层之外任何 scss 出现 `.taro-textarea` / `.weui-input` ⇒ 红（防逐页各写一份）', () => {
     const leaks = walk(SRC)
       .filter((p) => p !== SHARED)
       .flatMap((p) => {
@@ -144,6 +141,6 @@ describe('C 端 H5 输入面字体族 / 占位符收口（issue #8575）', () =>
           ? [`${relative(ROOT, p)}`]
           : []
       })
-    expect(leaks, `内层选择器只许出现在共享层，这些文件又写了一份：${leaks.join(', ')}`).toEqual([])
+    expect(leaks).toEqual([])
   })
 })
