@@ -189,38 +189,54 @@ def test_dev_and_build_dist_dirs_are_different():
 
 # ── 判据 ②：tsconfig 的 include / exclude 与新目录一致 ─────────────────────────────
 
-def test_tsconfig_include_and_exclude_agree_with_dist_dirs():
-    dev, build = read_dist_dirs()
-    tsconfig = json.loads(TSCONFIG.read_text(encoding="utf-8"))
+def tsconfig_problems(dev: str, build: str, tsconfig: dict) -> "list[str]":
+    """`tsconfig` 与新目录的一致性契约（纯函数；返回问题清单，空 = 通过）。
+
+    真配置与**内存变异体**共用这一条规则（红证才有判别力：判红必须是「这条规则看见的」）。
+    """
+    problems = []
     include = list(tsconfig.get("include") or ())
     exclude = list(tsconfig.get("exclude") or ())
 
     # ① include 必须**覆盖新 dev 目录的两个形态**：Next 每次 dev 会把缺的 glob 自动追加，
     #    缺了 ⇒ 每次起 dev 都把 tsconfig.json 弄脏（churn 本身会掩盖真改动）。
     for glob in (f"{dev}/types/**/*.ts", f"{dev}/dev/types/**/*.ts"):
-        assert glob in include, (
-            f"tsconfig.include 缺 {glob!r}：`next dev` 每次会把 './{glob}' 追加进 include（配置脏）"
-        )
+        if glob not in include:
+            problems.append(f"include 缺 {glob!r}（`next dev` 每次会把 './{glob}' 追加进 include ⇒ 配置脏）")
+
     # ② 只许出现两个输出根下的**已知形态**（来路不明的 `.next*` glob = 又一个共享面）
     allowed = {
         f"{build}/types/**/*.ts", f"{build}/dev/types/**/*.ts",
         f"{dev}/types/**/*.ts", f"{dev}/dev/types/**/*.ts",
     }
     stray = [e for e in include if e.startswith(".next") and e not in allowed]
-    assert stray == [], f"include 里有未知的 next 产物 glob：{stray}"
+    if stray:
+        problems.append(f"include 里有未知的 next 产物 glob：{stray}")
 
     # ③ exclude 必须把 dev 中间态挡在类型检查面外（`next build` 的 CLI tsc 查的是**整个 tsconfig 项目**）
     for dull in (dev, f"{build}/dev"):
-        assert dull in exclude, (
-            f"tsconfig.exclude 缺 {dull!r}：build 的本地 tsc 会读到 dev 的半写生成物"
-            "（= issue #6692 形态 ② 复发；`.next/dev` 还要挡住修前机器上的陈旧残留）"
-        )
+        if dull not in exclude:
+            problems.append(
+                f"exclude 缺 {dull!r}（build 的本地 tsc 会读到 dev 的半写生成物 = 形态 ② 复发；"
+                "`.next/dev` 还要挡住修前机器上的陈旧残留）"
+            )
+
+    # ④ 现取的**类型检查根集合**里不得出现 dev 目录（exclude 只过滤 include 的根，语义就是这个集合）
     roots = typecheck_roots(tsconfig)
     dev_roots = [r for r in roots if r == dev or r.startswith(dev + "/")]
-    assert dev_roots == [], f"dev 目录仍在类型检查根集合里：{dev_roots}"
-    assert any(r == build or r.startswith(build + "/") for r in roots), (
-        "build 产物的类型面必须仍在检查范围内（include 全被 exclude 掉 = 把类型检查也一起关掉了）"
-    )
+    if dev_roots:
+        problems.append(f"dev 目录仍在类型检查根集合里：{dev_roots}")
+    # ⑤ 负控：build 的类型面必须仍在（include 全被 exclude 掉 = 把类型检查也一起关掉了）
+    if not any(r == build or r.startswith(build + "/") for r in roots):
+        problems.append("build 产物的类型面不在检查范围内（等于把类型检查关掉了）")
+    return problems
+
+
+def test_tsconfig_include_and_exclude_agree_with_dist_dirs():
+    dev, build = read_dist_dirs()
+    tsconfig = json.loads(TSCONFIG.read_text(encoding="utf-8"))
+    problems = tsconfig_problems(dev, build, tsconfig)
+    assert problems == [], "\n".join(problems)
 
 
 def test_committed_next_env_does_not_pin_dev_dir():
@@ -393,24 +409,29 @@ def test_red_proof_collapsing_dist_dirs_is_caught():
     else:
         raise AssertionError("摘掉 `distDir:` 选择式后仍被判通过 —— 判据 ① 是空断言")
 
-    # ④ tsconfig 变异：摘掉 dev glob / 摘掉 dev 的 exclude ⇒ 判据 ② 必须各自红
+    # ④ tsconfig 变异：摘掉 dev glob / 摘掉 dev 的 exclude ⇒ 判据 ② 的**同一条规则**必须各自红
     tsconfig = json.loads(TSCONFIG.read_text(encoding="utf-8"))
-    for mutate, label in (
-        (lambda cfg: cfg.update({"include": [e for e in cfg["include"] if not e.startswith(dev + "/")]}), "摘 dev include"),
-        (lambda cfg: cfg.update({"exclude": [e for e in cfg["exclude"] if e != dev]}), "摘 dev exclude"),
-    ):
-        broken = json.loads(json.dumps(tsconfig))
-        mutate(broken)
-        roots = typecheck_roots(broken)
-        still_dev_free = broken != tsconfig and not any(r.startswith(dev + "/") for r in roots)
-        assert not still_dev_free or broken["include"] != tsconfig["include"], f"{label}：变异没生效"
-        if label == "摘 dev include":
-            assert [e for e in broken["include"] if e.startswith(dev + "/")] == [], "include 变异未生效"
-        else:
-            assert dev not in broken["exclude"], "exclude 变异未生效"
-            assert any(r.startswith(dev + "/") for r in typecheck_roots(broken)), (
-                f"摘掉 exclude 后 dev 目录必须重新进入类型检查根集合（{roots}）"
-            )
+    assert tsconfig_problems(dev, build, tsconfig) == [], "变异基线必须是绿的（否则红证读不出因果）"
+
+    no_dev_include = json.loads(json.dumps(tsconfig))
+    no_dev_include["include"] = [e for e in no_dev_include["include"] if not e.startswith(dev + "/")]
+    assert [e for e in no_dev_include["include"] if e.startswith(dev + "/")] == [], "include 变异未生效"
+    include_problems = tsconfig_problems(dev, build, no_dev_include)
+    assert any("include 缺" in p for p in include_problems), (
+        f"摘掉 dev include 后判据 ② 没报「include 缺」：{include_problems}"
+    )
+
+    no_dev_exclude = json.loads(json.dumps(tsconfig))
+    no_dev_exclude["exclude"] = [e for e in no_dev_exclude["exclude"] if e != dev]
+    assert dev not in no_dev_exclude["exclude"], "exclude 变异未生效"
+    roots = typecheck_roots(no_dev_exclude)
+    assert any(r == dev or r.startswith(dev + "/") for r in roots), (
+        f"摘掉 exclude 后 dev 目录必须重新进入类型检查根集合（{roots}）"
+    )
+    exclude_problems = tsconfig_problems(dev, build, no_dev_exclude)
+    assert any("exclude 缺" in p or "类型检查根集合" in p for p in exclude_problems), (
+        f"摘掉 dev exclude 后判据 ② 没报：{exclude_problems}"
+    )
 
 
 # ── 判据 ⑥：dev 锁路径与配置的**单一真值源**联动 ────────────────────────────────
@@ -420,7 +441,7 @@ def test_dev_lock_probe_follows_config():
     import importlib.util
 
     guard_path = REPO_ROOT / "tests" / "admin_web_devserver_identity.py"
-    spec = importlib.util.spec_from_file_location("_admin_web_devserver_identity_mc154", guard_path)
+    spec = importlib.util.spec_from_file_location("_admin_web_devserver_identity_mc155", guard_path)
     guard = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(guard)  # type: ignore[union-attr]
     expected = os.path.join(dev, "dev", "lock")
