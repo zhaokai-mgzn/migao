@@ -208,12 +208,22 @@ export function audit(root = defaultRoot()) {
     // ④ 僵尸豁免 / 超基线
     staleExempt: exempt.filter((e) => !copies[e.file]),
     exemptOverBaseline: exempt.length - (ledger.frozen_exempt_count ?? 0),
-    // ⑤ 形态台账不撒谎
+    // ⑤ 形态台账不撒谎（**双读**：禁止锚不在 + 要求形态在）
+    //    - 禁止锚（`forbidden_anchors`）：出现即红 —— 悄悄改成原语形态却不改台账；
+    //    - 要求形态（`forms`）：每个形态都要能在**同一个开标签**里同时找到 marker 与 requires。
+    //      只判「某个字符串在文件里」是不够的：同一文件里往往还有别的同名组件（实测）。
     conformantBroken: conformant.filter((c) => {
       const text = sources[c.file]
       if (!text) return true
-      if (!text.includes(c.required_anchor)) return true
-      return c.forbidden_anchor ? text.includes(c.forbidden_anchor) : false
+      const code = stripComments(text)
+      if ((c.forbidden_anchors ?? []).some((needle) => code.includes(needle))) return true
+      return (c.forms ?? []).some(
+        (f) =>
+          !openingTags(code, f.component).some(
+            (tag) =>
+              tag.includes(f.marker) && (f.requires ?? []).every((needle) => tag.includes(needle)),
+          ),
+      )
     }),
     // ⑥ 原语自证
     primitiveBlind: !sources[PRIMITIVE] || !SPEC_TOKENS.every((t) => sources[PRIMITIVE].includes(t)),

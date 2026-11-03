@@ -2,46 +2,94 @@
   "why": "issue #7082 的类级台账：「单据列表行内动作」的链接视觉规格（`text-primary-600` + `hover:text-primary-700` + `hover:underline`，同一类名串里同时出现）在 `frontend/admin-web/src/**` 里**只许出现在原语自己身上**（`src/components/ui/RowActionLink.tsx`）。判据 = `frontend/admin-web/tests/unit/row-action-link-single-source-guard.test.ts`；扫描器 = `frontend/admin-web/scripts/row-action-link-scan.mjs`（命令行 `node scripts/row-action-link-scan.mjs`，同一份实现）。未登记即红；已迁移文件里再出现副本 ⇒ 回退红；`exempt` 条数只许缩短（`frozen_exempt_count`）。",
   "scope": "frontend/admin-web/src/**/*.{ts,tsx}（`mini-app` / H5 不在面内：各自一套 token）",
   "primitive": "src/components/ui/RowActionLink.tsx",
-  "spec_tokens": ["text-primary-600", "hover:text-primary-700", "hover:underline"],
+  "spec_tokens": [
+    "text-primary-600",
+    "hover:text-primary-700",
+    "hover:underline"
+  ],
   "migrated": [
     {
       "file": "src/app/(dashboard)/after-sales/page.tsx",
       "site": "售后工单列表「操作」列的行内「查看」",
       "marker": "after-sales/",
-      "requires": ["size=\"sm\""],
-      "pre_migration_tokens": ["text-primary-600", "hover:text-primary-700", "hover:underline", "transition-colors", "text-sm"],
+      "requires": [
+        "size=\"sm\""
+      ],
+      "pre_migration_tokens": [
+        "text-primary-600",
+        "hover:text-primary-700",
+        "hover:underline",
+        "transition-colors",
+        "text-sm"
+      ],
       "note": "改前 = `<button className=\"text-primary-600 hover:text-primary-700 hover:underline transition-colors text-sm\">`；迁移后 token 集合**逐字相同**（原语 + `size=\"sm\"`），`stopPropagation` 由原语负责。"
     },
     {
       "file": "src/app/(dashboard)/employees/page.tsx",
       "site": "员工列表「姓名」列（行标识列的行内动作）",
       "marker": "handleEdit(record)",
-      "requires": ["size=\"sm\"", "emphasis", "disabledStyle=\"keep\"", "disabled={!canWrite}"],
-      "pre_migration_tokens": ["text-primary-600", "hover:text-primary-700", "hover:underline", "text-sm", "font-medium", "disabled:cursor-default"],
+      "requires": [
+        "size=\"sm\"",
+        "emphasis",
+        "disabledStyle=\"keep\"",
+        "disabled={!canWrite}"
+      ],
+      "pre_migration_tokens": [
+        "text-primary-600",
+        "hover:text-primary-700",
+        "hover:underline",
+        "text-sm",
+        "font-medium",
+        "disabled:cursor-default"
+      ],
       "note": "改前 = `<button className=\"text-primary-600 hover:text-primary-700 hover:underline text-sm font-medium disabled:cursor-default\">`；`size=\"sm\"`=原 text-sm、`emphasis`=原 font-medium、`disabledStyle=\"keep\"`=原 disabled:cursor-default（无写权限时姓名照旧是姓名）。唯一增量 = 原语规格自带的 `transition-colors`。⚠️ 本文件**另有**一处原语接线（操作列的「编辑」，issue #8039）⇒ 判据必须按**同一个开标签**认人（marker + props），文件级「有 `<RowActionLink`」会假绿。"
     },
     {
       "file": "src/components/employees/WorkerProfilesPanel.tsx",
       "site": "工人档案面板「工人端菜单」行的「默认页面」",
       "marker": "pages: null",
-      "requires": ["size=\"xs\""],
-      "pre_migration_tokens": ["text-xs", "text-primary-600", "hover:text-primary-700", "hover:underline"],
+      "requires": [
+        "size=\"xs\""
+      ],
+      "pre_migration_tokens": [
+        "text-xs",
+        "text-primary-600",
+        "hover:text-primary-700",
+        "hover:underline"
+      ],
       "note": "改前 = `<button className=\"text-xs text-primary-600 hover:text-primary-700 hover:underline\">`；`size=\"xs\"` = 原 text-xs；`data-testid` 原样保留。唯一增量 = `transition-colors`。"
     },
     {
       "file": "src/components/production-config/ProcessingItemsPanel.tsx",
       "site": "加工项面板表格行内「编辑」（本单链内一并收口 —— 同一份规格的第四份副本）",
       "marker": "openEdit(item)",
-      "requires": ["size=\"sm\""],
-      "pre_migration_tokens": ["text-sm", "text-primary-600", "transition-colors", "hover:text-primary-700", "hover:underline"],
+      "requires": [
+        "size=\"sm\""
+      ],
+      "pre_migration_tokens": [
+        "text-sm",
+        "text-primary-600",
+        "transition-colors",
+        "hover:text-primary-700",
+        "hover:underline"
+      ],
       "note": "改前 = 手抄 `<button className=\"text-sm text-primary-600 transition-colors hover:text-primary-700 hover:underline\">`；`size=\"sm\"`=原 text-sm。"
     },
     {
       "file": "src/components/production-config/ProcessingItemsPanel.tsx",
       "site": "加工项面板表格行内「删除」（红色行内动作）",
       "marker": "requestDelete(item.id)",
-      "requires": ["size=\"sm\"", "tone=\"danger\""],
-      "pre_migration_tokens": ["text-sm", "text-red-500", "transition-colors", "hover:text-red-600", "hover:underline"],
+      "requires": [
+        "size=\"sm\"",
+        "tone=\"danger\""
+      ],
+      "pre_migration_tokens": [
+        "text-sm",
+        "text-red-500",
+        "transition-colors",
+        "hover:text-red-600",
+        "hover:underline"
+      ],
       "note": "改前 = 手抄 `<button className=\"text-sm text-red-500 transition-colors hover:text-red-600 hover:underline\">`；`tone=\"danger\"` 就是为它扩的（红字族），`size=\"sm\"`=原 text-sm。"
     }
   ],
@@ -55,16 +103,43 @@
   "conformant": [
     {
       "file": "src/app/(dashboard)/inbound-orders/page.tsx",
-      "required_anchor": "openDetail(row.id)",
-      "forbidden_anchor": "<RowActionLink",
-      "reason": "issue #7082 把入库单列为「按钮形态，需先裁定要不要跟订单列表一样」。**裁定已由事件给出**：订单列表自己在 issue #8011（2026-10-28）改成了「1 主行动（`Button variant=\"ghost\" size=\"sm\"`）+ ⋯ 菜单」⇒ 入库单的 `Button variant=\"ghost\" size=\"sm\"` **正是**订单列表现在的形态；且本文件从来没有链接规格副本（扫描面零命中）。把它改成 `RowActionLink` 反而会**背离**订单列表并改动观感 ⇒ 有意保持。"
+      "reason": "issue #7082 把入库单列为「按钮形态，需先裁定要不要跟订单列表一样」。**裁定已由事件给出**：订单列表自己在 issue #8011（2026-10-28）改成了「1 主行动（`Button variant=\"ghost\" size=\"sm\"`）+ ⋯ 菜单」⇒ 入库单的行内「详情」**正是**订单列表现在的形态；且本文件从来没有链接规格副本（扫描面零命中）。把它改成 `RowActionLink` 反而会**背离**订单列表并改动观感 ⇒ 有意保持。",
+      "forbidden_anchors": [
+        "<RowActionLink"
+      ],
+      "forms": [
+        {
+          "component": "Button",
+          "marker": "openDetail(row.id)",
+          "requires": [
+            "variant=\"ghost\"",
+            "size=\"sm\""
+          ]
+        }
+      ]
     },
     {
       "file": "src/components/products/ProductTable.tsx",
-      "required_anchor": "<RowActions",
-      "forbidden_anchor": "<RowActionLink",
-      "reason": "issue #7082 列的「商品」那一处（`linkBase` + 链接字面量）已由 issue #8038（2026-10-28）改为共享原语 `RowActions`（主行动 = `Button variant=\"ghost\" size=\"sm\"`）⇒ 本文件**没有**链接规格副本（扫描面零命中），无需再动。"
+      "reason": "issue #7082 列的「商品」那一处（`linkBase` + 链接字面量）已由 issue #8038（2026-10-28）改为共享原语 `RowActions`（主行动 = `Button variant=\"ghost\" size=\"sm\"`）⇒ 本文件**没有**链接规格副本（扫描面零命中），无需再动。",
+      "forbidden_anchors": [
+        "<RowActionLink"
+      ],
+      "forms": [
+        {
+          "component": "RowActions",
+          "marker": "product-actions-",
+          "requires": []
+        },
+        {
+          "component": "Button",
+          "marker": "action.primary.onClick()",
+          "requires": [
+            "variant=\"ghost\"",
+            "size=\"sm\""
+          ]
+        }
+      ]
     }
   ],
-  "boundary": "① 只裁「与原语**同规格**」的副本（三个 token 同时出现）；缺 `hover:text-primary-700` 的**漂移副本**（`purchase-orders` / `suppliers` / 各处页面级链接）不在面内 —— 它们已不是同一份规格，收口要先逐页裁定形态，如实登记为残余。② 静态文本判据：判不了渲染是否同色同字号（原语变体断言 + 真机读图承担）。③ 判不了「新页面用 `Button` 手拼行内动作」（意图判不了）：那一半由 `row-action-density-scan.mjs` + 评审承担。④ `mini-app` / H5 各自一套 token，不在面内。"
+  "boundary": "① 只裁「与原语**同规格**」的副本（三个 token 同时出现）；缺 `hover:text-primary-700` 的**漂移副本**（`purchase-orders` / `suppliers` / 各处页面级链接）不在面内 —— 它们已不是同一份规格，收口要先逐页裁定形态，如实登记为残余。② 静态文本判据：判不了渲染是否同色同字号（原语变体断言 + 真机读图承担）。③ 判不了「新页面用 `Button` 手拼行内动作」（意图判不了）：那一半由 `row-action-density-scan.mjs` + 评审承担。④ `mini-app` / H5 各自一套 token，不在面内。 ⑤ `conformant` 是**双读**台账：`forbidden_anchors` 出现即红（= 悄悄改成原语形态却没改台账），`forms` 要求「同一个开标签里」同时有 marker 与该形态的 props（文件级字符串匹配会假绿 —— 实测入库单还有别的 ghost Button、商品表格里还有别的 Button）。"
 }

@@ -44,6 +44,7 @@ import { describe, it, expect } from 'vitest'
 
 import {
   LEDGER_PATH,
+  openingTags,
   MIN_SCOPE_FILES,
   PRIMITIVE,
   SPEC_TOKENS,
@@ -68,8 +69,8 @@ interface LedgerEntry {
   requires?: string[]
   pre_migration_tokens?: string[]
   reason?: string
-  required_anchor?: string
-  forbidden_anchor?: string
+  forbidden_anchors?: string[]
+  forms?: { component: string; marker: string; requires?: string[] }[]
 }
 interface AuditReport {
   scopeFiles: number
@@ -175,18 +176,43 @@ describe('行内动作链接规格只有一处定义（issue #7082 / MC-146）',
     expect(copiesIn({ [clean]: sourcesOf()[clean] })[clean]).toBeUndefined()
   })
 
-  it('⑦ 形态台账不撒谎：入库单 / 商品**有意**不走原语（锚在、禁止锚不在）', () => {
+  it('⑦ 形态台账不撒谎（**双读**）：入库单 / 商品有意不走原语 —— 禁止锚不在 + 要求形态在', () => {
     const report = reportOf()
-    // 注入：把入库单的「详情」改成 `<RowActionLink>` 而不改台账 ⇒ 这条红（逼着把台账条目挪到 migrated）
+    // 注入口 A：把入库单的「详情」改成 `<RowActionLink>` 而不改台账 ⇒ 禁止锚命中 ⇒ 红
+    // 注入口 B：把入库单行内「详情」的 `variant="ghost"` 改成 `variant="secondary"` ⇒ 形态锚失效 ⇒ 红
     expect(report.conformantBroken.map((c) => c.file)).toEqual([])
     const conformantFiles = report.conformant.map((c) => c.file)
     expect(conformantFiles).toContain('src/app/(dashboard)/inbound-orders/page.tsx')
     expect(conformantFiles).toContain('src/components/products/ProductTable.tsx')
+
     const sources = sourcesOf()
     for (const entry of report.conformant) {
-      expect(sources[entry.file], `${entry.file} 缺形态锚`).toContain(entry.required_anchor)
-      if (entry.forbidden_anchor) expect(sources[entry.file]).not.toContain(entry.forbidden_anchor)
+      const code = stripComments(sources[entry.file])
+      expect(entry.forms?.length, `${entry.file} 缺形态要求`).toBeGreaterThan(0)
+      // ① 禁止锚：一个都不许出现（否则「悄悄改成原语形态」照样绿）
+      for (const needle of entry.forbidden_anchors ?? []) {
+        expect(code, `${entry.file} 出现了禁止锚 ${needle}`).not.toContain(needle)
+      }
+      // ② 要求形态：每个形态都要在**同一个开标签**里成立（文件级字符串匹配会假绿）
+      for (const form of entry.forms ?? []) {
+        const tags = openingTags(code, form.component) as string[]
+        expect(
+          tags.some((tag) => tag.includes(form.marker) && (form.requires ?? []).every((n) => tag.includes(n))),
+          `${entry.file} 的 ${form.component}[${form.marker}] 形态要求不成立`,
+        ).toBe(true)
+      }
     }
+
+    // 判别力自证（内存）：把入库单行内动作改成 RowActionLink ⇒ 禁止锚命中
+    const inbound = 'src/app/(dashboard)/inbound-orders/page.tsx'
+    const mutated = sources[inbound].replace(
+      /<Button variant="ghost" size="sm" onClick=\{\(\) => void openDetail\(row\.id\)\}>/,
+      '<RowActionLink onClick={() => void openDetail(row.id)}>',
+    )
+    expect(mutated).not.toBe(sources[inbound])
+    expect(mutated).toContain('<RowActionLink')
+    // 反向对照：真语料里该禁止锚不存在（否则上面那条是空断言）
+    expect(stripComments(sources[inbound])).not.toContain('<RowActionLink')
   })
 
   it('⑧ 注释里的同款串不误伤（迁移说明必须能写字）：strip 生效', () => {
