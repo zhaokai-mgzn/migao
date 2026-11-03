@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""batch_merge_lib.py — 多 PR **集中合**（batch merge）的单一实现（issue #8321）。
+"""batch_merge_lib.py — 多 PR **集中合**（batch merge）的单一实现（issue #8523）。
 
 ## 为什么（读数，不是推断）
 

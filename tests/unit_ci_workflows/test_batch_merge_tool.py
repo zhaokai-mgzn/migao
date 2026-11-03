@@ -1,5 +1,5 @@
 # case_ids: MC-140
-"""批次合并工具判据（`scripts/batch_merge_lib.py` / `scripts/batch-merge.sh`，issue #8321）。
+"""批次合并工具判据（`scripts/batch_merge_lib.py` / `scripts/batch-merge.sh`，issue #8523）。
 
 ## 为什么单列这一条
 

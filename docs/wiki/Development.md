@@ -403,7 +403,7 @@ pytest -q --durations=20    # 单用例 >2s 即可疑
 `TestSuiteInternalEntries` 单独裁）+ `tests/unit_ci_workflows/test_suite_self_lock.py`
 （**直连整目录**自己拿锁：接线真跑 / 拦在收集之前 / 纯函数触发面与三类豁免 / fail-closed / 释放面）。
 
-## 批次合并（默认路径）：多 PR 一次进 main（2026-11-03 固化，issue #8321）
+## 批次合并（默认路径）：多 PR 一次进 main（2026-11-03 固化，issue #8523）
 
 **为什么**：分支保护 `strict=true` ⇒ 每个 PR **各跑一轮** 28 个 required job（`PR Check` 全量腿 +
 Case Trust / Growth / Coverage / Contract / UI 回归 / 三模块单测 …）。**5 个 PR 逐个合 = 5×28 job**，
