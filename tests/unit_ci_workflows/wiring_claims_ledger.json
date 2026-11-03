@@ -79,6 +79,16 @@
       "case_ids": [
         "MC-133"
       ]
+    },
+    {
+      "declared_in": "tests/unit_ci_workflows/test_pg_orphan_sweep_wiring.py",
+      "wiring": "verify-all.sh::orphan_sweep_step",
+      "registered_at": "2026-11-03（issue #6751）",
+      "covers": "孤儿 PG 集群清点器的**消费点**：`scripts/pg_orphan_sweep.py` 本身早已达标（恒打印计数 / 有孤儿退 1 / 读不到退 3），但**全仓零调用方** ⇒ 孤儿临时 postgres 实测活了 23.5 小时无人喊（issue #6751）。本条目声明的是**接线这一半**：`verify-all.sh` 的 `gate` 档必须真的调用 `orphan_sweep_step`（完整检出 ⇒ 每次都跑；桩 / 部分检出 ⇒ 显式「未跑」），该函数必须真的执行清点器且**不吞退出码**（`|| true` = 读不到也变绿）。行为面（三态真跑）由同文件 `::test_fake_orphan_turns_the_gate_step_red_with_pid_age_and_cleanup` / `::test_no_orphans_is_green_with_a_zero_count_line` / `::test_unreadable_ps_is_unjudgeable_and_never_green` 承担（逐字抽出真 `report()` + 真步骤函数，替身 `ps` 走清点器已登记的 `PG_SWEEP_PS_BIN`）。",
+      "red_proof": "`tests/unit_ci_workflows/test_pg_orphan_sweep_wiring.py::test_wiring_removal_and_silencing_are_caught`（五种内存变异：摘派发 / 注释掉 / 函数改名 / 完整检出判据改成永不成立 / 吞退出码 ⇒ **各自**判红；只加注释 ⇒ 不红）+ `::test_mapping_unjudgeable_to_zero_is_caught`（把 3 吞成 0 ⇒ 变异体转绿 ⇒ ④ 的「不许判绿」当场有判别力）+ 本台账守卫判据 3（摘掉 / 改名 `orphan_sweep_step` 锚 ⇒ 具名报出）。",
+      "case_ids": [
+        "MC-012"
+      ]
     }
   ],
   "coverage_boundary": [

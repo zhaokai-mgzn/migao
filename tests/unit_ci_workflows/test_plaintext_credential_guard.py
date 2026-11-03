@@ -13,7 +13,8 @@
 3. **R3 = 产物面的「裸 JWT」（issue #6303）**：`acceptance/**` / `tests/**` 的 `.json`/`.log`/`.md`
    里出现三段点分、**去固定头后仍够长**的 JWT ⇒ 红；**文档截断举例**（固定头 + `…`）⇒ **不红**
    （这条负例是本单最容易做错的地方：朴素形态判据会**误报真语料**）；另加**射程**与
-   **`.gitignore` 层**两条判据（运行态会话存储不该在被跟踪集合里）。
+   **`.gitignore` 层**两条判据（运行态会话存储不该在被跟踪集合里 + **acceptance 产物面整体默认忽略**，
+   后者治 #8424 迁出后的回流：#8527 曾把 3 个验收产物加回公开仓，见 issue #8543）。
    ⚠️ 本文件也是 R3 的扫描样本之一 ⇒ **被判形态一律拆开拼**（`"ey" + "J"`），绝不写连续固定头
    （`test_this_file_carries_no_literal_token` 正向核这一点 —— 否则本包会被**自己的守卫**喂红）。
 
@@ -321,6 +322,20 @@ def test_gitignore_layer_excludes_runtime_session_state():
         ig = subprocess.run(["git", "check-ignore", "-q", "--", rel],
                             cwd=str(REPO_ROOT), capture_output=True)
         assert ig.returncode == 0, f"{rel} 未被 .gitignore 覆盖（check-ignore 现取 rc={ig.returncode}）"
+
+    # ③ **类级**（issue #8543）：acceptance 产物面**整体**默认忽略 —— 不只那两个叙名文件。
+    # 病：#8424/#8425 把 `acceptance/**` 迁去私有仓后，`.gitignore` 仍留着 #6303 的两条 `!` 再纳入规则
+    # （`!acceptance/**/out/` + `!acceptance/**/out/**`）⇒ 新证据照样能被 `git add acceptance/` 收走
+    # —— 实测 #8527（2026-11-02 合入）就往公开仓新增了 3 个验收产物。
+    # 判据只看**任意**新路径是否被忽略（不钉具体目录）⇒ 有人把 `!` 加回来时当场红。
+    for rel in ("acceptance/_probe_issue8543/out/smoke.json",
+                "acceptance/_probe_issue8543/screenshots/shot.png",
+                "acceptance/_probe_issue8543/REPORT.md"):
+        ig = subprocess.run(["git", "check-ignore", "-q", "--", rel],
+                            cwd=str(REPO_ROOT), capture_output=True)
+        assert ig.returncode == 0, (
+            f"{rel} 未被忽略（check-ignore rc={ig.returncode}）⇒ acceptance 产物面可被 `git add` 收走；"
+            "证据面已迁私有仓（issue #8424），新增产物必须落 migao-internal（判据见 issue #8543）")
     tracked = subprocess.run(["git", "ls-files", "-z"], cwd=str(REPO_ROOT),
                              capture_output=True, text=True).stdout.split("\0")
     left = [p for p in tracked if p.endswith((".session.json", ".store.json"))]

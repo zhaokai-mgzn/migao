@@ -23,6 +23,10 @@
 1. **两段确认不可跳过**：`execute` / `revert` **必须**带 `batch_id`，而它只能来自
    `preview` ⇒ 「没给商家看过逐条预览就执行」在**结构上不可达**（fail-closed，
    与 `product_update` 的 `price_preview_required` 同族）。
+   撤销段的批次号另有**会话台账定位**（issue #6998）：缺省时从「本会话**执行成功**的批次」里定位 ——
+   恰好一个 ⇒ **点名**它让模型带上重试（`batch_id_required`，**不代执行**，见「定位 ≠ 代执行」）；
+   多个或没有 ⇒ 拒绝（`batch_id_ambiguous` / `batch_preview_required`）。认哪一批只由
+   `ProductBatchUpdateTool.resolve_batch_id` 一处判定，`execute` 与 `revert` 共用它。
    第一段（`interact(multiSelect=true)` 勾选集合）的载体是 `interact` 工具，见 description。
 2. **`old_value` 必须在预览阶段采集**（契约 §三：它是撤销的唯一依据，必须持久化）
    ⇒ 任一条目缺改前值一律拒；改价类型的判据复用 `confirm_value.price_preview_missing`
@@ -92,6 +96,169 @@ _ACTIONS = ("preview", "execute", "revert")
 def _present(value: Any) -> bool:
     """非空取值：`None` / 空串 / 纯空白一律视为「没给」。"""
     return value is not None and str(value).strip() != ""
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 「这一批是哪个」—— `batch_id` 的**单一解析点**（issue #6998）
+# ══════════════════════════════════════════════════════════════════════════════
+# 病（真 LLM 重放 `PR-108`）：R3 执行成功、真实批次号就在上下文里，R5 撤销却**丢了**
+# `batch_id`（`product_batch_update{"action":"revert"}`）；修前那一次是另一形态、同族病灶：
+# 模型**编造**批次号（`batch_20260923_155` ⇒ 服务端 `NOT_FOUND`）。两条路都通向
+# 「撤销要么永不成功，要么打到**错的批次**上」—— 而撤错批次会把另一批商品的价格/库存
+# 还原成改前值，是一次说不清的账面后果。
+#
+# 口径（`execute` / `revert` 走**同一个**函数 `ProductBatchUpdateTool.resolve_batch_id`）：
+#   ① 显式给了 `batch_id` ⇒ 原样使用（不改写、不校验格式 —— 格式归服务端）；
+#   ② 没给 ⇒ **只**从本会话的批次台账里**定位**，且**只有恰好一个候选**时才点名它；
+#   ③ 定位不到 / 有多个候选 ⇒ **fail-closed 拒绝**。「猜一个最近的批次」在本文件**不可达**。
+#
+# 🔴 **定位 ≠ 代执行**（这一条是本单的设计核心，别改成"自动回填"）：
+# 工具**从不**替模型补 `batch_id` 去执行一个它没点名的批次 —— 它把定位结果**写回拒绝话术**
+# 让模型逐字带上重试。理由 = 涉钱护栏（#5317 / #5414）：确认门禁按**本次调用参数**核对卡值
+# （`confirm_value.write_value_facts` 只取 args 里在场的字段），参数里没有 `batch_id` 时
+# 那次核对是**空跑**；若工具在门禁之后自己补一个批次执行，就等于「点卡确认了 A、实际写了 B」
+# —— 正是 #5414 要治的形态。让模型带参重试，卡值比对才有东西可比。
+#
+# 为什么 `execute` **不**吃上下文兜底（`CONTEXT_FALLBACK_ACTIONS` 里只有 `revert`）：
+# 它的批次号只能来自 `preview` 的返回 —— 少了这道结构锁，「没给商家看过逐条预览就执行」
+# 立刻重新可达（本文件的三条机器判据之一，issue #5314）。`revert` 不同：它的目标批次
+# 产生在**上一轮**（执行成功），没有本轮 preview 的返回值可拿 —— 这正是它丢号的地方。
+
+#: 会话工作状态里存批次台账的键（值是 `[{batch_id, kind}]`，最近写入在前）。
+BATCH_LEDGER_KEY = "product_batch_ledger"
+#: 台账上限（撤销只需要"最近若干批"；无界增长只会让会话状态越来越重）。
+BATCH_LEDGER_LIMIT = 8
+#: 台账记录的种类：`executed` = **执行成功**的批次（撤销的唯一合法来源）。
+LEDGER_EXECUTED = "executed"
+#: **允许**从会话上下文**定位** `batch_id` 的 action（现取：只有 `revert`；定位到也只点名、不代执行）。
+CONTEXT_FALLBACK_ACTIONS = frozenset({"revert"})
+#: action → 台账里可用的记录种类（新增批量路径必须在这里表态，不许各写一份候选口径）。
+_CANDIDATE_KIND_OF_ACTION = {"revert": LEDGER_EXECUTED}
+#: 拒绝提示里最多点名几个候选批次（够商家指认）。
+CANDIDATE_HINT_LIMIT = 5
+
+
+def _batch_ledger_of(state: Any) -> List[Dict[str, Any]]:
+    """会话状态 → 批次台账（脏数据逐条丢弃：不是 dict / 没有 batch_id 的一律不认）。"""
+    raw = (state or {}).get(BATCH_LEDGER_KEY) if isinstance(state, dict) else None
+    if not isinstance(raw, list):
+        return []
+    return [entry for entry in raw
+            if isinstance(entry, dict) and _present(entry.get("batch_id"))]
+
+
+async def _load_session_state(context: ToolContext) -> Optional[Dict[str, Any]]:
+    """读本会话的工作状态（无 session / 读失败 ⇒ None —— 调用方按「取不到」fail-closed）。
+
+    函数内 import：`app.memory` 与工具层互为上下游，模块级 import 会成环（同
+    `app.tools.human_handoff` 的 SessionMemory 取法）。
+    """
+    session_id = getattr(context, "session_id", None)
+    if not session_id:
+        return None
+    try:
+        from app.memory.session_state_store import SessionStateStore
+        state = await SessionStateStore().load(session_id)
+        return state if isinstance(state, dict) else None
+    except Exception as e:      # pragma: no cover - 纯防御：读不到不等于崩溃
+        logger.warning(f"[product_batch_update] 会话状态读取失败（按取不到处理）: {e}")
+        return None
+
+
+async def _commit_session_state(context: ToolContext, state: Dict[str, Any]) -> None:
+    """写回会话工作状态（失败只告警 —— 台账是**兜底**，不许反过来把主流程打挂）。"""
+    session_id = getattr(context, "session_id", None)
+    if not session_id:
+        return
+    try:
+        from app.memory.session_state_store import SessionStateStore
+        await SessionStateStore().commit(session_id, state)
+    except Exception as e:      # pragma: no cover - 同上
+        logger.warning(f"[product_batch_update] 会话状态写入失败（非致命）: {e}")
+
+
+async def _record_batch(context: ToolContext, batch_id: str, kind: str) -> None:
+    """把批次号记进本会话台账（**撤销兜底的唯一来源**，issue #6998）。
+
+    读不到就 `or {}` 起步（与 `base_skill` 的写会话态同款口径）—— 台账失败不该让
+    「执行成功」这件事变成失败，所以全程 best-effort。
+    """
+    if not _present(batch_id):
+        return
+    state = await _load_session_state(context) or {}
+    ledger = [entry for entry in _batch_ledger_of(state)
+              if str(entry.get("batch_id")) != str(batch_id)]
+    ledger.insert(0, {"batch_id": str(batch_id), "kind": kind})
+    state[BATCH_LEDGER_KEY] = ledger[:BATCH_LEDGER_LIMIT]
+    await _commit_session_state(context, state)
+
+
+def _batch_candidates(ledger: List[Dict[str, Any]], action: str) -> List[str]:
+    """该 action 的候选批次号（去重、保序）：**只认**台账里对应那种记录。"""
+    kind = _CANDIDATE_KIND_OF_ACTION.get(str(action or ""), "")
+    if not kind:
+        return []
+    seen: set = set()
+    candidates: List[str] = []
+    for entry in ledger:
+        if str(entry.get("kind") or "") != kind:
+            continue
+        batch_id = str(entry.get("batch_id"))
+        if batch_id not in seen:
+            seen.add(batch_id)
+            candidates.append(batch_id)
+    return candidates
+
+
+def _batch_id_denial(action: str, candidates: List[str]) -> ToolResult:
+    """缺 `batch_id` 的统一拒绝（**fail-closed**）：不猜、不带病下发请求。"""
+    verb = "撤销" if action == "revert" else "执行"
+    if len(candidates) > 1:
+        listed = "、".join(candidates[:CANDIDATE_HINT_LIMIT])
+        return ToolResult(
+            success=False,
+            error="batch_id_ambiguous",
+            message=(f"批量{verb}被拒：没带批次号，而本会话有 {len(candidates)} 个可撤销批次"
+                     f"（{listed}），无法确定是哪一批"),
+            suggestion=("必须由商家点名批次：把候选批次（各自改了什么、什么时候改的）逐条摆给商家选，"
+                        "商家选定后**逐字带上** batch_id 再调 action=revert。"
+                        "**不要替商家挑一个** —— 撤错批次会把另一批商品的价格/库存还原成改前值，"
+                        "这件事没有「大概是最近那批」的推断空间。"),
+            missing_params=["batch_id"],
+        )
+    if action == "revert" and len(candidates) == 1:
+        # 定位到了**唯一**可撤销批次：点名它，让模型逐字带上重试 —— 工具不代执行（见本文件说明段）
+        only = candidates[0]
+        return ToolResult(
+            success=False,
+            error="batch_id_required",
+            message=(f"批量{verb}被拒：没带批次号 —— 本会话唯一可撤销的批次是 {only}，"
+                     f"请带 batch_id={only} 重试"),
+            suggestion=(f"把 batch_id={only} **逐字**带上再调 action=revert（这个批次号取自本会话"
+                        "**执行成功**的那次批量，不是猜的）；不要改用别的批次号，也不要重新 preview。"
+                        f"若商家要撤的**不是** {only} 这一次批量改价，先向商家确认是哪一批。"),
+            missing_params=["batch_id"],
+        )
+    if action == "revert":
+        return ToolResult(
+            success=False,
+            error="batch_preview_required",
+            message=f"批量{verb}被拒：没有批次号（batch_id），本会话上下文里也没有可撤销的唯一批次",
+            suggestion=("撤销必须点名批次：本会话此前**执行成功**的那次批量，批次号就在执行结果的 "
+                        "batch_id=… 里 —— 逐字带上它再调 action=revert。若本会话没有执行成功的批次、"
+                        "或你不确定要撤的是哪一次批量改价，**先向商家确认**是哪一批"
+                        "（不要凭空编造批次号，也不要拿别的会话、别的批次的号试）。"),
+            missing_params=["batch_id"],
+        )
+    return ToolResult(
+        success=False,
+        error="batch_preview_required",
+        message=f"批量{verb}被拒：没有批次号（batch_id）",
+        suggestion=("禁止跳过预览直接执行：先调 action=preview 生成批次（返回 batch_id 与逐条"
+                    "「改前 → 改后」），把预览用 interact(component=confirm, fields=…) 给商家看过、"
+                    "商家点卡之后，再带 batch_id 调 action=execute。"),
+        missing_params=["batch_id"],
+    )
 
 
 def _missing_before_value_reason(batch_type: str, item: Dict[str, Any]) -> str:
@@ -200,7 +367,10 @@ class ProductBatchUpdateTool(BaseTool):
         "把返回的 fields 交给 `interact(component=confirm, fields=…)` 展示给商家并等其点卡；"
         "③ 商家点卡后，再调 action=execute 并带上 preview 返回的 batch_id（会提交后台 job 并轮询到终态，"
         "最长约 60 秒；超时只报「尚未完成」，不得声称做完）。"
-        "**禁止跳过任一段直接执行**：不带 batch_id 调 execute/revert 一律被拒（batch_preview_required）。"
+        "**禁止跳过任一段直接执行**：不带 batch_id 调 execute 一律被拒（batch_preview_required）；"
+        "revert 缺 batch_id **一律被拒**，本会话只有**一个**可撤销批次时会点名它（batch_id_required，"
+        "带上重试即可）；多个候选 ⇒ batch_id_ambiguous（先问商家）；一个都没有 ⇒ batch_preview_required"
+        "—— **不许猜批次号**，工具也不会替你填。"
         "【参数】action=preview / execute / revert；preview 必填 batch_type + items（batch_id 由它产生）；"
         "execute / revert 只需 batch_id。items 每项 {resourceId, field, oldValue, newValue}："
         "resourceId 用 product_search / product_detail 返回的真实商品标识（禁止自造）；"
@@ -444,17 +614,36 @@ class ProductBatchUpdateTool(BaseTool):
             summary=f"批量预览 {len(normalized)} 条（{batch_type}），等待商家确认",
         )
 
+    async def resolve_batch_id(self, context: ToolContext, batch_id: Optional[str], *,
+                               action: str) -> Tuple[Optional[str], Optional[ToolResult]]:
+        """`batch_id` 的**单一解析点**（`execute` / `revert` 共用，issue #6998）。
+
+        返回 `(resolved, denial)`：`denial is None` ⇒ `resolved` 可用；否则把它直接交回去
+        （调用方**一个请求都不发**）。口径见本文件「`batch_id` 的单一解析点」一节的 ①②③。
+
+        ⚠️ 兜底只**回填参数**，**不构成确认**（issue #5317 / #5414 的入面口径一字未动）：
+        写门禁仍在 `base_skill` 一侧 —— `execute` / `revert` 声明 `card_only_actions` ⇒
+        商家必须真的点过确认卡；这里补的只是「哪一批」，不是「已确认」。
+        """
+        explicit = str(batch_id).strip() if _present(batch_id) else ""
+        if explicit:
+            return explicit, None
+        if action not in CONTEXT_FALLBACK_ACTIONS:
+            # 结构锁：`execute` 的批次号只能来自 `preview`，上下文定位刻意不开放
+            return None, _batch_id_denial(action, [])
+        candidates = _batch_candidates(_batch_ledger_of(await _load_session_state(context) or {}),
+                                       action)
+        logger.info(f"[product_batch_update] {action} 缺 batch_id：本会话候选 "
+                    f"{candidates or '（无）'} tenant={context.tenant_id}")
+        # 🔴 **只拒绝、不代执行**：定位到的候选交给模型点名重试（说明段「定位 ≠ 代执行」）
+        return None, _batch_id_denial(action, candidates)
+
     # ── action=execute：执行批次（必须带 preview 产生的 batch_id）─────────────
     async def _execute_batch(self, context: ToolContext, batch_id: Optional[str]) -> ToolResult:
-        if not _present(batch_id):
-            return ToolResult(
-                success=False,
-                error="batch_preview_required",
-                message="批量执行被拒：没有批次号（batch_id）",
-                suggestion=("禁止跳过预览直接执行：先调 action=preview 生成批次（返回 batch_id 与逐条"
-                            "「改前 → 改后」），把预览用 interact(component=confirm, fields=…) 给商家看过、"
-                            "商家点卡之后，再带 batch_id 调 action=execute。"),
-            )
+        # `batch_id` 的解析**只走这一处**（issue #6998：execute / revert 同一个函数）
+        batch_id, denial = await self.resolve_batch_id(context, batch_id, action="execute")
+        if denial is not None:
+            return denial
         client = get_admin_api_client()
         response = await client.post(
             f"/api/admin/agent/batches/{batch_id}/execute-async",
@@ -501,6 +690,10 @@ class ProductBatchUpdateTool(BaseTool):
                 summary=f"批量执行中：已成功 {ok} 条（未完成）",
             )
 
+        # 撤销兜底的**唯一写入点**（issue #6998）：只有**真执行成功**的批次才进可撤销台账；
+        # 服务端说 `revertible=false` 的批次记了也撤不了（还会让「撤销」去打一个撤不了的号）。
+        if data.get("revertible") is not False:
+            await _record_batch(context, batch_id, LEDGER_EXECUTED)
         logger.info(f"[product_batch_update] execute batch_id={batch_id} ok={ok} fail={len(failed)} "
                     f"tenant={context.tenant_id}")
         # 部分失败**逐条报告、不做整体回滚**（契约 §五 判据 3）：回滚会掩盖真问题。
@@ -526,15 +719,10 @@ class ProductBatchUpdateTool(BaseTool):
 
     # ── action=revert：撤销批次（逐条还原 old_value）─────────────────────────
     async def _revert_batch(self, context: ToolContext, batch_id: Optional[str]) -> ToolResult:
-        if not _present(batch_id):
-            return ToolResult(
-                success=False,
-                error="batch_preview_required",
-                message="批量撤销被拒：没有批次号（batch_id）",
-                suggestion=("撤销必须点名批次：先调 action=preview 生成批次拿到 batch_id"
-                            "（或从本会话此前执行成功的批次里取），再调 action=revert, batch_id=…；"
-                            "不要凭空编造批次号。"),
-            )
+        # 与 `_execute_batch` **同一个**解析函数（issue #6998）：缺省时只**定位**、不代执行
+        batch_id, denial = await self.resolve_batch_id(context, batch_id, action="revert")
+        if denial is not None:
+            return denial
         client = get_admin_api_client()
         response = await client.post(
             f"/api/admin/agent/batches/{batch_id}/revert-async",

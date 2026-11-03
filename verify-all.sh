@@ -411,6 +411,24 @@ case_coverage_check() {
   done
 }
 
+# ── 孤儿 PG 集群清点（issue #6751）：清点器早已达标，缺的是**接线** ─────────────────────
+# 病（现取读数）：`scripts/pg_orphan_sweep.py` 恒打印计数、有孤儿则非零退出，但**全仓零调用方**
+# ⇒ 孤儿临时 postgres 实测活了 23.5 小时没人喊。
+# 本步是**轻量档**：只读 `ps`（不建 venv / 不起库 / 不联网 / 不写盘）⇒ 合并门禁每次都跑，
+# **不**拿机器级重活锁（那把锁包的是「会拉起全量套件的档」，见 scripts/machine-heavy-lock.sh）。
+# 三态**原样传递**（判定逻辑不在这里重写，清点器是唯一实现）：
+#   0 = 无孤儿（✅）；1 = 有孤儿（❌，日志里具名 pid / 存活时长 / 清场命令）；
+#   3 = 读不到进程表（❌ **无法判定** —— 不许当 0；写成 `|| true` 正是本单要治的形态）。
+orphan_sweep_step() {
+  local sweep="$ROOT/scripts/pg_orphan_sweep.py"
+  if [ ! -f "$sweep" ]; then
+    # 完整检出里没有清点器 = 接线断了（桩 / 部分检出由 gate 档调用点的「未跑」分支先接住）。
+    echo "❌ 接线断了：完整检出里找不到 scripts/pg_orphan_sweep.py（本检查项的唯一实现）"
+    return 2
+  fi
+  python3 "$sweep"
+}
+
 # ── 红证面命中判定（**单一实现**，#5193）────────────────────────────────────
 # 红证面的**被守卫对象** = ① 六个机具自身 + 它们的共享登记表；② 机具注入变异的被测源码 /
 # 判据源码（admin-api 的 com/migao/admin 树、admin-web 的 src 与 tests、schema.sql）。
@@ -1094,6 +1112,17 @@ case "$MODE" in
     report_gated ai-agent ai_agent_face_paths "ai-agent 全量"        bash -c "cd '$ROOT/backend/ai-agent-service' && .venv/bin/python -m pytest $AI_AGENT_TESTS"
     ;;
   gate)
+    # 孤儿 PG 集群清点（issue #6751）—— gate 档**第 1 步**：清点器此前**零调用方** ⇒ 孤儿临时
+    # postgres 活了 23.5 小时无人喊。轻量档（只读 ps，不建 venv / 不起库 / 不联网）⇒ 每次都跑。
+    # 三态原样传递：0 = 无孤儿 / 1 = 有孤儿（日志具名 pid + 存活时长 + 清场命令）/ 3 = 读不到 ⇒ 红。
+    # 桩 / 部分检出没有判据目录（判据沙箱只带 verify-all.sh + 少量脚本）⇒ 显式「未跑」，不当通过。
+    # ⚠️ 用 `${ROOT:-}` 取默认值：本分支会被外部 harness **单独抽出**执行（没有顶层变量），
+    #    裸引用 `$ROOT` 在 `set -u` 下会 unbound variable 崩溃、把别人的守卫打红（同 report() 的写法）。
+    if [ -d "${ROOT:-}/tests/unit_ci_workflows" ]; then
+      report "孤儿 PG 集群清点（ppid==1 且在临时区）" orphan_sweep_step
+    else
+      echo "— 孤儿 PG 集群清点**未跑**：本检出不含完整判据目录（桩 / 部分检出）—— 这不是「通过」"
+    fi
     report "QA Growth Gate 预检"  gate_check
     # cases 面门禁（issue #4221）：命中受管面才作为**独立检查项**真跑；未命中 ⇒ 控制台显式声明「未跑」。
     # ⚠️ 本分支的**字符串里不得出现 `#`**（L0 守卫按「剥注释后的代码行」解析本分支）与「未提交」三字
