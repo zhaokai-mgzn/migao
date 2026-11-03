@@ -182,11 +182,13 @@ else
   echo "  [stack] admin-web 已在运行，复用"
 fi
 
-# ── 2.5 业务路由自检：防「陈旧 .next 缓存」被读成产品大面积故障 ──
+# ── 2.5 业务路由自检：防「陈旧 dev 缓存」被读成产品大面积故障 ──
 # 实测（2026-10-13，worktree 形态）：admin-api / admin-web 都 ready，`curl :3001/login` = 200，
 # 而 `(dashboard)` 组每个路由 **404**（dev 日志 `GET /dashboard 404` / `/products 404`）⇒ 34 条旅程全灭，
-# 看着像产品挂了；真因 = **worktree 里的 `.next` 是别处/旧上下文留下的**（Turbopack 拿着陈旧路由清单）
-# ⇒ `rm -rf frontend/admin-web/.next` 后重启 dev，全部恢复（/dashboard /products /employees = 200）。
+# 看着像产品挂了；真因 = **worktree 里的 dev 产物目录是别处/旧上下文留下的**（Turbopack 拿着陈旧路由清单）
+# ⇒ `rm -rf frontend/admin-web/.next-dev` 后重启 dev，全部恢复（/dashboard /products /employees = 200）。
+# ⚠️ 目录名 = **dev 侧**输出根（issue #6692：`next dev` 写 `.next-dev`，`next build` 仍写 `.next`）
+#    ⇒ 这里清 dev 的，**不要**去清 build 的 `.next`（清了 dev 也不会恢复，还会毁掉本地生产产物）。
 # ⚠️ `/login` 不在那一组里 ⇒ **健康检查看不出来**，所以这里必须探**业务组**路由。
 # 只报不动手：删缓存是有副作用的动作（默认交给人/上层决定），本脚本**不自动**清。
 ROUTE_CHECK_404=""
@@ -195,8 +197,8 @@ for route in /employees /dashboard; do
   if [ "$code" = "404" ]; then ROUTE_CHECK_404="$route"; break; fi
 done
 if [ -n "$ROUTE_CHECK_404" ]; then
-  echo "✗ admin-web 业务路由 404（${ROUTE_CHECK_404}）：疑似 **陈旧 .next 缓存**（非产品故障 —— /login 仍 200）"
-  echo "  ⇒ 处置：rm -rf $REPO_ROOT/frontend/admin-web/.next 后重启 admin-web dev，再跑本脚本"
+  echo "✗ admin-web 业务路由 404（${ROUTE_CHECK_404}）：疑似 **陈旧 dev 缓存（.next-dev）**（非产品故障 —— /login 仍 200）"
+  echo "  ⇒ 处置：rm -rf $REPO_ROOT/frontend/admin-web/.next-dev 后重启 admin-web dev，再跑本脚本"
   echo "     —— 不修缓存就跑 spec，只会产出 N 条假故障读数（每旅程一条）"
   exit 1
 fi

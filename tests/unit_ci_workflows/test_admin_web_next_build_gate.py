@@ -125,7 +125,7 @@ _CONTEXT_ROOT = "frontend/admin-web"
 _ESCAPE_LEDGER = []
 _ESCAPE_LEDGER_FLOOR = 0
 _IMPORT_FROM_RE = re.compile(r"""(?:^|\n)\s*(?:import|export)\b[^;\n]*?from\s*['"]([^'"]+)['"]""")
-_SKIP_DIRS = {".next", "node_modules", ".turbo", "coverage", "dist"}
+_SKIP_DIRS = {".next", ".next-dev", "node_modules", ".turbo", "coverage", "dist"}
 
 
 def _escape_target(rel_file, spec):

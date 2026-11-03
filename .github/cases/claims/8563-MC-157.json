@@ -1,0 +1,6 @@
+{
+  "id": "MC-157",
+  "pr": 8563,
+  "claimed_at": "2026-11-03",
+  "title": "本地 dev / build 输出目录物理隔离：next dev 写 .next-dev、next build / next start 仍写 .next（issue #6692）"
+}

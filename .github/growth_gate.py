@@ -695,7 +695,8 @@ WEAK_BASELINE_DEFAULT = os.path.join(os.path.dirname(os.path.abspath(__file__)),
 
 # 全仓扫描跳过的目录（依赖/构建产物）。只决定「扫哪些路径」，不改「是不是测试文件」的判定
 # —— 那句判定仍走 `_is_test_file` 单一事实源（issue #4077）。
-_WEAK_SCAN_SKIP_DIRS = {".git", "node_modules", ".next", "dist", "build", "coverage",
+# `.next-dev` = 本地 `next dev` 的输出根（issue #6692：dev 与 build 物理隔离后不再是 `.next`）。
+_WEAK_SCAN_SKIP_DIRS = {".git", "node_modules", ".next", ".next-dev", "dist", "build", "coverage",
                         "htmlcov", ".venv", "venv", "__pycache__", ".pytest_cache",
                         "out", ".turbo"}
 
