@@ -2,7 +2,7 @@
 # 本文件由 render_cases.py 生成，勿手改（改了也留不住：下次重渲染会覆盖）
 # 源: cases/*.yml（case-contract 单一源）
 # 重新生成: python3 render_cases.py --cases <dir> --out-eval <包目录> --out-md <md>
-# 域: misc（源: cases/misc.yml，207 条）
+# 域: misc（源: cases/misc.yml，208 条）
 
 from ._schema import Difficulty, EvalCase, Skill
 
@@ -3805,6 +3805,24 @@ _CASE_MC_163 = EvalCase(
     precondition='本用例是 [backend-contract]：纯前端确定性判据（jsdom 渲染 + 源码结构扫描 + 台账双向对账），零网络、零 DB、不进 agent-eval 冒烟。前置 = frontend/admin-web/src/lib/decimal-input.ts（解析/校验/话术单一口径）与 frontend/admin-web/src/components/ui/DecimalInput.tsx（唯一原语）在场，11 个涉钱站点已迁。',
 )
 
+# ── MC-183 [NORMAL] 红证档准入（issue #5707 · FM-E10 残余）：9 条实跑腿全部 ⏭️ 时该档必须 exit 4 —— 汇总按「实质真跑」判（无条件跑的辅助项不计数），并按 probe_ready 的原文具名报出每条被 skip 的腿缺什么工具链（源: cases/misc.yml）──
+_CASE_MC_183 = EvalCase(
+    id='MC-183',
+    legacy_id='',
+    title='红证档准入（issue #5707 · FM-E10 残余）：9 条实跑腿全部 ⏭️ 时该档必须 exit 4 —— 汇总按「实质真跑」判（无条件跑的辅助项不计数），并按 probe_ready 的原文具名报出每条被 skip 的腿缺什么工具链',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['本机没有 JDK/PG/node_modules，跑 ./verify-all.sh redproof 时 9 条实跑腿全打 ⏭️、只剩两条无条件项 ✅，汇总说「真跑 2 项」并退出 0 —— 于是「没跑 = 通过」成立；希望「一条能证明本档目标的腿都没跑」时这个档不许判绿，而且报文要说清是哪几条腿被 skip、各缺什么工具链。'],
+    expectations=[],
+    data_checks=['**判据 1（会红）**：全部实跑腿被 skip + 那 2 项无条件项 ✅ ⇒ 该档 **exit 4**（修前退 0）。执行点 = tests/unit_ci_workflows/test_verify_all_redproof_meaningful_executed.py::TestPureNoopOnAllRealRunLegsSkipped::test_all_real_run_legs_skipped_exits_pure_noop。', '**判据 2·负控（会红）**：只让一条实跑腿的就绪条件成立（伪造 node_modules/.bin/vitest）⇒ **不** exit 4、且汇总显示「实质真跑 1 项」。红证 = 把准入判据改成恒 0（辅助也计入）⇒ 同夹具变 exit 4。执行点 = ::TestNegativeControl 与 ::TestRedProofs::test_counting_auxiliary_as_meaningful_would_break_the_negative_control。', '**判据 3（会红）**：那 2 项无条件腿（红证机具前提自检 / 红证实跑巡检）**仍然存在、仍然无条件派发、仍然会跑**（不许为修空跑把它们删掉或塞进 if）。执行点 = ::TestPureNoopOnAllRealRunLegsSkipped::test_the_two_unconditional_legs_still_run_and_are_counted 与 ::TestClassLevelRegistry::test_wrapping_an_unconditional_leg_in_if_is_red。', '**判据 4·归因（会红）**：exit 4 报文逐条具名「腿名 + 缺什么工具链」，且那句缺什么**取自 probe_ready() 的原文**（不另写第二套文案）。红证 = 删掉 report_env() 里的 NOT_READY_WHY 拼装 ⇒ 具名行整段消失。执行点 = ::TestPureNoopOnAllRealRunLegsSkipped::test_every_skipped_leg_is_named_with_the_toolchain_probe_reason 与 ::TestRedProofs::test_dropping_the_attribution_removes_the_named_lines。', '**判据 5·红证注入**：把汇总块的 `MEANINGFUL_EXECUTED=$((EXECUTED - AUX_EXECUTED))` 改回 `MEANINGFUL_EXECUTED=$EXECUTED` ⇒ 判据 1 的同夹具**变绿**（证明判据 1 不是空断言）。执行点 = ::TestRedProofs::test_reverting_the_verdict_to_executed_turns_criterion_1_green。', '**判据 6·类级元守卫（会红）**：辅助登记（aux_step_name()）⇄ redproof 档实际的无条件派发**双向相等**（未登记即红 / 陈旧即红）、上限冻结 2 条只许缩短、实跑腿不得被登记成辅助、汇总块的纯空跑判定必须引用 MEANINGFUL_EXECUTED 且 exit 4 唯一；只改注释 ⇒ 不红（对照）。分类方向 fail-closed = 未登记一律算实质真跑。执行点 = ::TestClassLevelRegistry。'],
+    skip_reason='[backend-contract] 纯静态 + 抽出的 shell 行为判据（真 report()/report_env()/汇总块，腿命令替换成 true；零网络、零 JDK/npm/PG），由 tests/unit_ci_workflows/test_verify_all_redproof_meaningful_executed.py 验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ci', 'gate', 'pure-noop', 'false-green', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 CASES = (
     _CASE_MC_001,
     _CASE_MC_002,
@@ -4013,4 +4031,5 @@ CASES = (
     _CASE_MC_158,
     _CASE_MC_162,
     _CASE_MC_163,
+    _CASE_MC_183,
 )

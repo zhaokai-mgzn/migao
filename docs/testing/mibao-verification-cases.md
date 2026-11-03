@@ -4186,7 +4186,7 @@
 ```
 溯源: 2026-10-31 新增（issue #8295）：两步确认，避免误写 ｜ tags: ui, preview
 
-## 杂项域（207 case）
+## 杂项域（208 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -7346,6 +7346,19 @@
 跳过: [backend-contract] 纯前端确定性判据（组件行为 + 生产源码结构扫描 + 台账双向对账），由 frontend/admin-web/tests/unit/money-input-guard.test.ts、tests/unit/lib/decimal-input.test.ts、tests/unit/components/DecimalInput.test.tsx 验证；零 LLM 环节，不进入 agent-eval 冒烟
 ```
 溯源: 2026-11-03 新增（issue #8004）。病 = 存量 `<input type="number">` 在涉钱 / 涉数量面吞精度（浏览器对 `12.` / `0.` / `1,234.56` 的 `el.value` 会失真），而这类缺陷**不会让任何既有判据变红**。修 = ① 抽**一处**解析/校验/话术（frontend/admin-web/src/lib/decimal-input.ts）+ **一个**原语（frontend/admin-web/src/components/ui/DecimalInput.tsx：text + inputMode=decimal + 字符串草稿 + 只回调合法值 + 具名话术 + 离线合法性）；② 11 个涉钱站点迁该原语并**把提交按钮绑到 `hasInvalid`**（否则「敲错 → 保存」会按上一个有效值提交 = 静默改价）；③ 9 个涉数量站点只去掉 `type="number"` 并补 `inputMode`（保留各页既有的 0.1 米粒度 / 正整数口径，不造第二套话术）；④ 类级元守卫 = money-input-guard.test.ts + number-input-ledger.ts（未登记即红、台账只许缩短）。取号 = MC-162（`python3 scripts/next_case_id.py MC` 现取返回历史空档 MC-099，按裁定**不回填**；**五轮让号记实**：MC-156 ⇒ open PR #8560；MC-157 ⇒ PR #8563；MC-158 ⇒ 在飞 #8568/#8571；MC-159/MC-160 ⇒ 在飞 PR #8574（其合并后 main 落 MC-160）；MC-161 ⇒ 又被 #8571 同时 claim（CI 跨在飞 PR 判据，issue #6245） ⇒ 终态取**当前全部 claim 的最大号 + 1 = MC-162**。`next_case_id.py` 按设计看不到未 push 的 claim，这就是它连续给出被占号的机制）；MC-160 亦被 #8574 占 ⇒ 终态 MC-161。`next_case_id.py` 按设计**看不到未 push 的本地 claim**，这就是它连续给出已被占用的号的原因）。**未接 `max` 的如实登记**：现有涉钱站点没有一个有既有业务上限口径（授信额度 / 退款额 / 优惠额都没有），涉钱面**不自造**上限 ⇒ `max` 能力由判据 4 的单元断言钉住，等业务给口径再接。 ｜ tags: backend-contract, frontend, money-surface, input-precision, fail-closed, ledger, red-proof
+
+### MC-183. 红证档准入（issue #5707 · FM-E10 残余）：9 条实跑腿全部 ⏭️ 时该档必须 exit 4 —— 汇总按「实质真跑」判（无条件跑的辅助项不计数），并按 probe_ready 的原文具名报出每条被 skip 的腿缺什么工具链 🔵
+```
+你: 本机没有 JDK/PG/node_modules，跑 ./verify-all.sh redproof 时 9 条实跑腿全打 ⏭️、只剩两条无条件项 ✅，汇总说「真跑 2 项」并退出 0 —— 于是「没跑 = 通过」成立；希望「一条能证明本档目标的腿都没跑」时这个档不许判绿，而且报文要说清是哪几条腿被 skip、各缺什么工具链。
+数据: **判据 1（会红）**：全部实跑腿被 skip + 那 2 项无条件项 ✅ ⇒ 该档 **exit 4**（修前退 0）。执行点 = tests/unit_ci_workflows/test_verify_all_redproof_meaningful_executed.py::TestPureNoopOnAllRealRunLegsSkipped::test_all_real_run_legs_skipped_exits_pure_noop。
+数据: **判据 2·负控（会红）**：只让一条实跑腿的就绪条件成立（伪造 node_modules/.bin/vitest）⇒ **不** exit 4、且汇总显示「实质真跑 1 项」。红证 = 把准入判据改成恒 0（辅助也计入）⇒ 同夹具变 exit 4。执行点 = ::TestNegativeControl 与 ::TestRedProofs::test_counting_auxiliary_as_meaningful_would_break_the_negative_control。
+数据: **判据 3（会红）**：那 2 项无条件腿（红证机具前提自检 / 红证实跑巡检）**仍然存在、仍然无条件派发、仍然会跑**（不许为修空跑把它们删掉或塞进 if）。执行点 = ::TestPureNoopOnAllRealRunLegsSkipped::test_the_two_unconditional_legs_still_run_and_are_counted 与 ::TestClassLevelRegistry::test_wrapping_an_unconditional_leg_in_if_is_red。
+数据: **判据 4·归因（会红）**：exit 4 报文逐条具名「腿名 + 缺什么工具链」，且那句缺什么**取自 probe_ready() 的原文**（不另写第二套文案）。红证 = 删掉 report_env() 里的 NOT_READY_WHY 拼装 ⇒ 具名行整段消失。执行点 = ::TestPureNoopOnAllRealRunLegsSkipped::test_every_skipped_leg_is_named_with_the_toolchain_probe_reason 与 ::TestRedProofs::test_dropping_the_attribution_removes_the_named_lines。
+数据: **判据 5·红证注入**：把汇总块的 `MEANINGFUL_EXECUTED=$((EXECUTED - AUX_EXECUTED))` 改回 `MEANINGFUL_EXECUTED=$EXECUTED` ⇒ 判据 1 的同夹具**变绿**（证明判据 1 不是空断言）。执行点 = ::TestRedProofs::test_reverting_the_verdict_to_executed_turns_criterion_1_green。
+数据: **判据 6·类级元守卫（会红）**：辅助登记（aux_step_name()）⇄ redproof 档实际的无条件派发**双向相等**（未登记即红 / 陈旧即红）、上限冻结 2 条只许缩短、实跑腿不得被登记成辅助、汇总块的纯空跑判定必须引用 MEANINGFUL_EXECUTED 且 exit 4 唯一；只改注释 ⇒ 不红（对照）。分类方向 fail-closed = 未登记一律算实质真跑。执行点 = ::TestClassLevelRegistry。
+跳过: [backend-contract] 纯静态 + 抽出的 shell 行为判据（真 report()/report_env()/汇总块，腿命令替换成 true；零网络、零 JDK/npm/PG），由 tests/unit_ci_workflows/test_verify_all_redproof_meaningful_executed.py 验证，非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-11-03 新增（issue #5707 的 FM-E10 残余收口，PR #8581）：verify-all.sh 汇总新增辅助真跑计数（AUX_EXECUTED）+ 准入判据改按 MEANINGFUL_EXECUTED；redproof 档 9 条实跑腿全部 ⏭️ 时 exit 4，报文按 probe_ready 原文具名列出被 skip 的腿与缺失工具链；那 2 项无条件项照旧真跑（登记在 aux_step_name()）。取号 MC-183（集成侧指定）。 ｜ tags: ci, gate, pure-noop, false-green, red-proof
 
 ## 商家入驻域（7 case）
 
@@ -14854,8 +14867,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：1005（活跃 153，跳过 852）
-- tier 分布：smoke 15 / normal 928 / adversarial 33
+- 用例总数：1006（活跃 153，跳过 853）
+- tier 分布：smoke 15 / normal 929 / adversarial 33
 - 售后域：16
 - Agent 核心域：13
 - API 层域：21
@@ -14871,7 +14884,7 @@
 - 人事域：13
 - 知识问答域：9
 - 客户主数据迁移域：10
-- 杂项域：207
+- 杂项域：208
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：76
@@ -15145,6 +15158,7 @@
 - MC-158: 工人端菜单以岗位为源：键集补 inbound/reprint（两张已有页面）+ 岗位→默认菜单映射 + 首屏最多 3 项的具名拒错（issue #8337）
 - MC-162: H5 输入面字体族跟随全局 + 占位符收口共享层（内层原生控件 inherit / 裸 font-family 只在字体定义处 / 例外台账只许缩短）
 - MC-163: 数字输入精度面（issue #8004）：涉钱 / 涉数量格不许再用 `type="number"`（中间态 `12.` 与千分位 `1,234.56` 会被浏览器吞掉）—— 共用 `DecimalInput` 一处解析/校验/话术 + 类级台账守卫
+- MC-183: 红证档准入（issue #5707 · FM-E10 残余）：9 条实跑腿全部 ⏭️ 时该档必须 exit 4 —— 汇总按「实质真跑」判（无条件跑的辅助项不计数），并按 probe_ready 的原文具名报出每条被 skip 的腿缺什么工具链
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）
