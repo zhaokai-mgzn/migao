@@ -453,8 +453,8 @@ public final class WorkerPages {
             errors.add(Map.entry("workerPages",
                     "工人端菜单最多 " + MAX_PAGES_PER_WORKER + " 项（车间手机屏一屏读完；用户口径「每个工人"
                             + "只能操作 1-3 个菜单」），你填了 " + pages.size() + " 项：" + pages
-                            + "。请按这位工人的岗位只留常用的几项（岗位默认菜单见 GET /api/admin/worker-pages"
-                            + " 的 position_defaults），其余用「关」逐个收掉"));
+                            + "。请按这位工人的岗位只留常用的几项（每个岗位带一组默认菜单），"
+                            + "其余用「关」逐个收掉"));
         }
         return new Validation(pages, errors);
     }

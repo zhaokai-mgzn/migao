@@ -402,8 +402,8 @@ public class WorkerAdminService {
             throw BusinessException.validationError(
                     "没有这个工人岗位：" + normalized,
                     List.of(BusinessException.detail("workerPosition",
-                            "可选岗位：" + WorkerPages.positions() + "（每个岗位带一组默认菜单，见 "
-                                    + "GET /api/admin/worker-pages 的 position_defaults）")),
+                            "可选岗位：" + WorkerPages.positions() + "（每个岗位带一组默认菜单，"
+                                    + "选好岗位后菜单会自动带出）")),
                     "选一个岗位（裁剪 / 车位 / 仓管 / 发货）后重试：菜单会按岗位带出默认项；"
                             + "不想按岗位配就留空（= 不设岗位，菜单沿用逐人勾选）");
         }
