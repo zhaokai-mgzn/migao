@@ -1,6 +1,5 @@
-import { request } from '@/lib/api'
-import type { ApiResponse } from '@/types'
-import type { QualityReasonOption } from '@/types'
+import request from './request'
+import type { ApiResponse, QualityReasonOption } from '@/types'
 
 /**
  * 不合格**原因字典**（issue #7197 ①）：录入界面据此摆短语按钮。
