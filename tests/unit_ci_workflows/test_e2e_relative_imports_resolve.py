@@ -7,8 +7,8 @@
 $ npx playwright test --list
 Error: Cannot find module './base.page'
 Require stack:
-- tests/e2e/pages/auth/login.page.ts:2
-- tests/e2e/specs/auth/login-sms.spec.ts:3
+- tests/e2e/pages/auth/login.page.ts 的 import 行
+- tests/e2e/specs/auth/login-sms.spec.ts 里 import LoginPage 的那一行
 Listing tests:
 Total: 0 tests in 0 files
 ```
