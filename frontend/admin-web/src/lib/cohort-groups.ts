@@ -22,6 +22,8 @@
  *    —— 新增枚举不会白屏、也不会把 `switched` 这种东西摆到商家面前。
  */
 
+import { displayEnum } from '@/lib/enum-display'
+
 /** 服务端来源组枚举 → 上屏文案（键 = `SavingMetricViews#cohortOf` 的可能取值）。 */
 export const COHORT_GROUP_TITLES: Record<string, string> = {
   // 系统里正常走「入库单过账」进来的批次。
@@ -41,8 +43,13 @@ export const COHORT_GROUP_TITLES: Record<string, string> = {
  */
 export const COHORT_GROUP_FALLBACK = '其它来源的布'
 
-/** 来源组机器键 → 上屏文案（缺失 / 认不出 ⇒ 兜底，不回显原值）。 */
+/**
+ * 来源组机器键 → 上屏文案（缺失 / 认不出 ⇒ 兜底，不回显原值）。
+ *
+ * 🔴 出口统一走 `displayEnum`（issue #6668 盲区① 的**唯一**安全出口）：它保证「未知值 ⇒ 人话兜底」，
+ * 调用方**拿不到入参本身**。手写 `表[key] || 兜底` 会被类级守卫 `design-baseline-expression-fallback`
+ * 判成「查表兜底 = 原始值」的形态（那正是把 `purchase` / `legacy_import` 印上屏的那条路）。
+ */
 export function cohortGroupTitle(cohort: string | null | undefined): string {
-  const key = (cohort ?? '').trim()
-  return COHORT_GROUP_TITLES[key] || COHORT_GROUP_FALLBACK
+  return displayEnum(COHORT_GROUP_TITLES, cohort, COHORT_GROUP_FALLBACK, COHORT_GROUP_FALLBACK)
 }
