@@ -8,6 +8,7 @@ import { qualityInspectionApi } from '@/lib/api'
 import {
   formatMoment,
   latestByItem,
+  qualityReasonText,
   qualityStateChipClass,
   qualityStateLabel,
 } from '@/lib/quality-check'
@@ -136,7 +137,7 @@ export default function QualityCheckPanel({
                         {qualityStateLabel(state)}
                       </span>
                     </td>
-                    <td className="px-3 py-2 text-neutral-600">{record?.reason || '—'}</td>
+                    <td className="px-3 py-2 text-neutral-600">{qualityReasonText(record)}</td>
                     <td className="px-3 py-2 text-neutral-600">{record?.inspector_name || '—'}</td>
                     <td className="px-3 py-2 whitespace-nowrap text-neutral-600">
                       {formatMoment(record?.inspected_at)}

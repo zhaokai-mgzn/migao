@@ -4186,7 +4186,7 @@
 ```
 溯源: 2026-10-31 新增（issue #8295）：两步确认，避免误写 ｜ tags: ui, preview
 
-## 杂项域（204 case）
+## 杂项域（205 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -7301,6 +7301,20 @@
 真值: ⚠️ 缺口（见对应模板 ⚠️ 注释）
 溯源: 2026-11-03 新增（issue #6684）。取号：按派单口径**直接取 MC-170**（跳过一段以降低与在飞 PR 的撞号概率；现取 `python3 scripts/next_case_id.py MC` 返回的历史空档 MC-145 按裁定**不回填**，main 侧当时最大 = MC-160）⇒ 先 push claim `6684-MC-170.json` 再写码。**病（两条独立读数，均现取）**：① `.github/workflows/pr-check.yml` 的 `admin-web-test` 腿注释里有一句**被证伪**的断言（「⇒ 不存在『改了仓内别处而本腿该跑』的形态」）；② 该腿的跨包守卫 `frontend/admin-web/tests/unit/lib/copy-no-markdown-emphasis.test.ts` 的 `SRC_DIRS` 同时扫 `../worker-h5/src`，而触发谓词只覆盖 `frontend/admin-web/` + 自身 ⇒ 纯 worker-h5 PR 整段跳过该守卫（实证 #6675：只改 `frontend/worker-h5/**` 的 PR 该腿 SUCCESS，合并后同一条守卫在 main 上红）。**修（两半都必须做）**：① 把那句断言**改写成成立的事实**并保留「当初为什么这么写 / 为什么被证伪」的痕迹（只删掉假话 = 下一个人还会照同一套推理写第二遍）；② 谓词精确补 `frontend/worker-h5/src/`（**只补跨包读取面，不扩到整个 `frontend/worker-h5/**`**：守卫只读 `src`）+ 登记册同批改 `predicate` / `must_cover`。**判据** = tests/unit_ci_workflows/test_admin_web_gate_reads_worker_h5.py（读取面现取 / 覆盖率 / 登记 / 负控 / 判别力自证 / 被证伪声明标注），另由既有 test_gate_coverage_and_same_source.py 的逐字同源 + 覆盖判据兜底。⚠️ **代价（如实登记）**：纯 worker-h5 的 PR 现在会跑一次 admin-web 全量（ci_cost_ledger 现取该 job 中位 281.5s，n=8）；这与 issue #6684 候选修法 1 的代价相同，取舍理由 = 守卫读它就必须验它，且 worker-h5 侧另有 `frontend/worker-h5/tests/worker-h5-plain-text-guard.test.mjs` 的等价面（本单**不动**它，两条腿互为冗余而非替代）。⚠️ **未闭合（照实登记）**：其它腿的 TS 断言面自动发现仍未实装（登记册 `unfixed` 已登记该缺口）；本判据只裁这一条腿。 ｜ tags: ci, gate-face, cross-package, false-green, red-proof
 
+### MC-181. 不合格原因必须从字典选一项（自由文本降级为补充）：字典全集可用 + 存量老记录不清洗（issue #7197 ①） 🔵
+```
+你: 质检的不合格原因现在是随手打的字：同一种问题，三个人写出三种写法，于是「缺陷 Top 分布」根本算不出来。希望录入时点一项就完事（车间戴着手套，少打字），想补充再写一句；老记录别动。
+数据: 🔴 **①-a 新记录没选字典项 ⇒ 拒（会红）**：判定 ≠ 合格且 `reason_code` 缺失 / 空串 / 全空白 ⇒ `VALIDATION_ERROR` + **422**，文案含该档判定中文名（「返工」/「报废」）、「不合格原因字典」与**全部六项**可选原因，且 `verify(mapper, never()).insert(...)` = **零写入**。**重点负控**：只填了自由文本（`reason='缝线开裂'`，`reason_code=null`）**同样拒** —— 自由文本顶替字典项正是这条修法要堵的口子。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/QualityReasonDictionaryTest.java::newRecordWithoutDictionaryCodeIsRejected + QualityCheckServiceTest.java::nonPassWithoutDictionaryCodeIsRejectedWithNamedErrorAndZeroWrite。
+数据: 🔴 **①-a' 字典外的 code ⇒ 拒（会红）**：`reason_code='dirty'` ⇒ 422 具名（回显收到的值 + 列出可选项），不静默降级成自由文本、不猜「最接近的一项」。执行点 = 同文件::unknownDictionaryCodeIsRejected。
+数据: 🔴 **①-b 字典全集覆盖（会红）**：每一项都有真实用处 —— 中文名非空 / 不是占位或调试词（`占位|TODO|TBD|待定|示例|xxx`）/ 不与 code 同形 / 两两不同；且**每一项都能真的落库并读回**（`reason_code` 落库 + 读面 `reason_code`/`reason_label` 逐值同源），「其它」必须是最后一项（界面按钮顺序 = 本表顺序），录入面 `QualityReasonDictionary.options()` 与校验面读**同一份**（不另造会漂的第二张表）。执行点 = 同文件::everyDictionaryItemIsRealAndUsable。
+数据: 🔴 **①-c 存量老记录不被清洗（负控，会红）**：`reason_code` 为 `null` 的老行，读面 `reason` **逐字原样**（含首尾空格）、`reason_code`/`reason_label` 都是 `null`，且读面**零写入**（`never()` `insert` / `updateById`）—— 不猜归类、不回填、不归一化。执行点 = 同文件::legacyFreeTextReasonIsNotCleaned。
+数据: **①-d 红证（注入式，会红）**：把 `QualityCheckService` 里「判定 ≠ pass 必须有字典项」那段校验摘掉 ⇒ ①-a 当场转红（实跑读数与注入命令写在 PR body；本判据不常驻注入）。
+数据: **前端面（会红）**：录入面把字典做成**短语按钮**（车间戴手套少打字），文案只用服务端下发的中文名（不摆 code —— §31 P3）；admin-web 与工人端两侧都判「没点项 ⇒ 当场提示 + 零网络」「点了项 ⇒ 提交体带 `reason_code`」「字典读不到 ⇒ 如实说读不到、不编假表」。执行点 = frontend/admin-web/tests/unit/components/QualityCheckForm.test.tsx（②③④⑤⑩⑪）、frontend/worker-h5/tests/worker-h5-quality.test.mjs（⑤⑫⑬⑭）、frontend/worker-h5/tests/worker-h5-api.test.mjs（`createQuality` 写面 `reason_code` 一条）。
+前置: 前置 = ① 一件属于当前租户的成品帘（`order_items` 行，`deleted=0`）+ 它所属订单有一张活跃加工单（Mockito 桩，`QualityReasonDictionaryTest.setUp`）；② 原因字典类 `backend/admin-api/src/main/java/com/migao/admin/service/QualityReasonDictionary.java` 在场（缺失 ⇒ 判据编译不过 = 硬红）；③ 迁移 `backend/admin-api/src/main/resources/db/migration/V207__add_quality_reason_code.sql` 已在链上（幂等：`ADD COLUMN IF NOT EXISTS` + 终态对账）。缺任一 ⇒ 判据当场红，不会伪装成「没数据」。
+跳过: [backend-contract] 后端契约 + 前端渲染判据（Java 单测 + Vitest + node:test），零网络、零 LLM、不起真库；不进入 agent-eval 冒烟
+```
+溯源: 2026-11-03 新增（issue #7197 ①；用户 2026-10-18 的 P2 单里「原因字典化」这一项）。**病（坐标现取）**：`backend/admin-api/src/main/java/com/migao/admin/entity/QualityCheck.java` 的 `reason` 是自由文本（「布面污渍」/「脏」/「污渍」= 三个原因）⇒ 缺陷 Top 分布 / 帕累托在结构上算不了。**修**：新增 `reason_code`（V207，幂等：`ADD COLUMN IF NOT EXISTS` + 终态对账 `DO $$`），字典 = `QualityReasonDictionary`（六项，服务端唯一真值源），判定 ≠ 合格时**必选**字典项、`reason` 降级为**自由补充**（可空）；读面多给 `reason_code` / `reason_label`；`GET /api/admin/quality-inspections/reasons` 下发字典，工人端 `/api/worker/quality/latest` 随读面一起下发（不再多发一次请求）。**存量不清洗**：老行 `reason_code` 保持 NULL、`reason` 一字不动，读面如实显示原文（不猜归类）。取号：按派单口径直接取 MC-181。⚠️ **未做（如实登记，后续切片）**：① issue 正文的「按租户可配」（要一张字典表 + 配置面）、「缺陷分布 / 帕累托读面」、「存量自由文本的人工映射入口」不在本 PR 射程。 ｜ tags: quality-inspection, reason-dictionary, legacy-data, backend-contract, red-proof
+
 ## 商家入驻域（7 case）
 
 ### OB-001. 商家入驻 - AI 自动甄别通过 → 秒级开通租户+管理员 🔵
@@ -10178,7 +10192,7 @@
 数据: **判据 1·落库且逐字段可读（逐值断言）**：录入一条合格判定 ⇒ 真落库的那一行**逐值**等于「谁/何时/哪件成品帘/判了什么」—— `tenant_id` / `order_item_id` / `processing_order_id` / `inspection_result='pass'` / `inspector_id` / `inspector_name` / `inspected_at`（逐字时刻）/ `deleted=0` / `position_name` 快照；返工/报废两条同款**逐值**（判定与原因，原因去首尾空白）。证据：backend/admin-api/src/test/java/com/migao/admin/service/QualityCheckServiceTest.java（passRecordIsPersistedAndReadableFieldByField / reworkAndScrapArePersistedWithReason）
 数据: **判据 2·独立质检员才有权录入（真判据，不是「前端不显示按钮」）**：质检录入与读面端点都声明 `@RequirePermission("production:inspect")`（反射读真注解）；且该码（**新目录码**，不是复用 `production:execute` —— 后者授给客服/运营/销售/财务四个岗位，复用即放宽）在 `rbac/manifest.json` 的 `roles.seed` 上**只**授给一个岗位（运行时的 `admin` 走 `["*"]` 通配，不在「被显式授予」这个读数里）—— 换岗位 / 多授 / 摘掉注解 ⇒ 判据当场红。证据：backend/admin-api/src/test/java/com/migao/admin/controller/QualityCheckControllerTest.java
 数据: **判据 3·报工人只报数量（工人面不得出现质检判定入口）**：质检录入的唯一入口是 `/api/admin/quality-inspections`（`/api/admin/**` 由 `ADMIN_API_REJECTED_ROLES` 把 `worker` 挡在外面），且工人端 H5 报工屏只出现**三态报工**（正常/返工/报废 —— 报的是数量事实），**没有**任何成品帘质检判定控件。证据：frontend/worker-h5/tests/worker-h5-report-work-type.test.mjs（屏上控件只有 `#wh5-work-type` 的 normal/rework/scrap；无质检判定面）
-数据: **判据 4·反例：判定≠合格但原因缺失 ⇒ 具名报错且零写入**：原因缺失 / 空串 / 全空白三种形态都 ⇒ `VALIDATION_ERROR` + **422** + 文案含**该档判定的中文名**（「报废」）与「必须填写不合格原因」，且 `verify(mapper, never()).insert(...)` = **零写入**（不许静默存）；未知判定（如 `ok`）⇒ 422 并逐字列出合法取值 `pass/rework/scrap`。证据：QualityCheckServiceTest.java + QualityCheckControllerTest.java
+数据: **判据 4·反例：判定≠合格但未选原因字典项 ⇒ 具名报错且零写入**：字典项缺失 / 空串 / 全空白三种形态都 ⇒ `VALIDATION_ERROR` + **422** + 文案含**该档判定的中文名**（「报废」）、「不合格原因字典」与**全部六项可选原因**（issue #7197 ① 起自由文本不再能顶替字典项：只填 `reason` 而不选 `reason_code` 同样拒），且 `verify(mapper, never()).insert(...)` = **零写入**（不许静默存）；未知判定（如 `ok`）⇒ 422 并逐字列出合法取值 `pass/rework/scrap`。证据：QualityCheckServiceTest.java + QualityCheckControllerTest.java
 数据: **判据 4b·跨租户 = 404，且与「不存在」逐字同一形态**（不泄露存在性）：`code` / `http_status` / `message`（「成品帘不存在」）三项逐字相等，零写入。证据：QualityCheckServiceTest.java
 数据: **判据 5·颗粒度 = 成品帘，且两套口径并存互不覆盖**：一条记录 = 一件成品帘（`order_item_id`），**不**逐工序（表与实体**没有** `operation_id` 面）；质检**不**读写 `production_work_logs`、**不**重算 `qty`/`qualified_qty`、**不**参与计件 —— 计件侧「返工/报废不进 per_worker/per_operation/total」的既有判据由 PG-018/PG-061 一族原样承担，本用例一格不放宽也不改写。
 数据: **判据 6·既有报工链路零回归（反向断言）**：本包不碰 `ProductionService` / `ProductionScanCompleteService` / 计件聚合的任何一行（改动面 = 新表 + 新三件 + 岗位登记）；计件侧「`rework`/`scrap` 不进 per_worker/per_operation/total」的既有机器判据（ProductionPieceworkSummaryTest 的 rework 负例）在本包下**照旧全绿**。
@@ -14808,8 +14822,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：1002（活跃 153，跳过 849）
-- tier 分布：smoke 15 / normal 925 / adversarial 33
+- 用例总数：1003（活跃 153，跳过 850）
+- tier 分布：smoke 15 / normal 926 / adversarial 33
 - 售后域：16
 - Agent 核心域：13
 - API 层域：21
@@ -14825,7 +14839,7 @@
 - 人事域：13
 - 知识问答域：9
 - 客户主数据迁移域：10
-- 杂项域：204
+- 杂项域：205
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：76
@@ -15096,6 +15110,7 @@
 - MC-161: 「先查后插」的两处 TOCTOU 写面（收款码 / 角色）必须由唯一键兜底 + 幂等收敛：摘掉唯一键或退回裸 insert 必红（issue #7255）
 - MC-160: H5 输入面字体族跟随全局 + 占位符收口共享层（内层原生控件 inherit / 裸 font-family 只在字体定义处 / 例外台账只许缩短）
 - MC-170: 门禁触发面必须覆盖本腿断言真读的跨包面（issue #6684）：admin-web 腿的跨包断言真读 frontend/worker-h5/src，而门控只看 frontend/admin-web ⇒ 纯 worker-h5 PR 静默跳过该守卫（假绿）
+- MC-181: 不合格原因必须从字典选一项（自由文本降级为补充）：字典全集可用 + 存量老记录不清洗（issue #7197 ①）
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）

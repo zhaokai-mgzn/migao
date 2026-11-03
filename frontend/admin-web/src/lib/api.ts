@@ -202,6 +202,7 @@ import type { OrderContentUpdateParams } from '@/types'
 import type {
   QualityInspectionRecord,
   QualityInspectionResult,
+  QualityReasonOption,
   QualityStats,
   QualityTargetsResponse,
 } from '@/types'
@@ -1240,8 +1241,23 @@ export const qualityInspectionApi = {
     return request.get<ApiResponse<QualityInspectionRecord[]>>('/api/admin/quality-inspections' + suffix)
   },
 
-  /** 录入一条判定；判定 ≠ 合格 ⇒ `reason` 必填（缺 ⇒ 服务端 422，不静默存） */
-  create: (data: { order_item_id: string; result: QualityInspectionResult; reason?: string }) =>
+  /**
+   * 不合格**原因字典**（issue #7197 ①）：录入界面据此摆短语按钮。
+   * 服务端是唯一真值源（校验面读同一份），前端不另造一份会漂的表。
+   */
+  reasons: () =>
+    request.get<ApiResponse<{ items: QualityReasonOption[] }>>('/api/admin/quality-inspections/reasons'),
+
+  /**
+   * 录入一条判定；判定 ≠ 合格 ⇒ `reason_code` 必填（取字典项；缺 / 字典外 ⇒ 服务端 422，不静默存），
+   * `reason` 是**自由补充**（可空，issue #7197 ①）。
+   */
+  create: (data: {
+    order_item_id: string
+    result: QualityInspectionResult
+    reason_code?: string
+    reason?: string
+  }) =>
     request.post<ApiResponse<QualityInspectionRecord>>('/api/admin/quality-inspections', data),
 }
 

@@ -6,6 +6,7 @@ import com.migao.admin.exception.BusinessException;
 import com.migao.admin.security.RequirePermission;
 import com.migao.admin.security.SecurityUser;
 import com.migao.admin.service.QualityCheckService;
+import com.migao.admin.service.QualityReasonDictionary;
 import com.migao.admin.time.BusinessClock;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.Authentication;
@@ -55,8 +56,9 @@ public class QualityCheckController {
     /**
      * 录入一条质检记录（成品帘级）。
      *
-     * <p>body = {@code {order_item_id, set_no?, result, reason?}}；{@code result ∈ pass|rework|scrap}；
-     * 判定 ≠ 合格时 {@code reason} 必填（缺 ⇒ 422 具名报错，不静默存）。</p>
+     * <p>body = {@code {order_item_id, set_no?, result, reason_code?, reason?}}；{@code result ∈ pass|rework|scrap}；
+     * 判定 ≠ 合格时 {@code reason_code} 必填（取值域 = {@link QualityReasonDictionary}；缺 / 字典外 ⇒ 422 具名报错，
+     * 不静默存）；{@code reason} 是**自由补充**（可空，issue #7197 ①）。</p>
      *
      * <p>{@code set_no}（issue #7945）：件 = 套号 × 部位。多套加工单必须给；只一套可省略（服务端取唯一套）；
      * 多套未给 ⇒ 422 列候选（<b>不猜第 1 套</b>）。</p>
@@ -71,6 +73,8 @@ public class QualityCheckController {
                 str(body, "order_item_id"),
                 str(body, "result"),
                 str(body, "reason"),
+                // issue #7197 ①：原因**字典项**（判定 ≠ 合格时必填）；reason 降级为自由补充
+                str(body, "reason_code"),
                 me.getUserId(),
                 inspectorDisplayName(me),
                 // 🔴 业务时钟单点（issue #3802 / BusinessClockSourceGuardTest）：不在本类写时区字面量、不调无参 now()
@@ -118,6 +122,23 @@ public class QualityCheckController {
             @RequestParam(name = "size", required = false) Integer size) {
         return ApiResponse.success(qualityInspectionService.targets(
                 TenantContext.getTenantId(), keyword, status, page, size));
+    }
+
+    /**
+     * 不合格**原因字典**（录入面唯一真值源，issue #7197 ①）。
+     *
+     * <p>为什么要一个端点而不是前端硬编码：字典是「可统计的原因键」的**唯一**定义处 ——
+     * 前端另抄一份迟早与校验面漂开（那时录入界面能选的项被服务端拒，或反之静默多出占位项）。
+     * 校验（{@link QualityCheckService#create}）与本端点读的是**同一份**
+     * {@link QualityReasonDictionary#items()}。</p>
+     *
+     * <p>返回 {@code {items: [{code, label}]}}（**有序**：界面按此顺序摆短语按钮，「其它」在最后）。
+     * 权限与录入面同码（{@code production:inspect}）：能录判定的人才知道有哪些原因可录。</p>
+     */
+    @GetMapping("/reasons")
+    @RequirePermission("production:inspect")
+    public ApiResponse<Map<String, Object>> reasons() {
+        return ApiResponse.success(Map.of("items", QualityReasonDictionary.options()));
     }
 
     /** 质检记录读面（按加工单 / 成品帘过滤，时间倒序；同件可多条 = 返工后重检）。 */

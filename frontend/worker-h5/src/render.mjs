@@ -331,15 +331,19 @@ export function reduce(state, action) {
     // ── 质检（issue #7162）：读最新判定 / 录判定（生成质检单） ──
     // 🔴 「未检 ≠ 合格」：无记录 ⇒ latest=null，界面写「未检」，不折成「合格」。
     case 'qualityLoading':
-      return { ...state, quality: { loading: true, latest: state.quality?.latest ?? null, records: state.quality?.records ?? [], error: null } }
+      return { ...state, quality: { loading: true, latest: state.quality?.latest ?? null, records: state.quality?.records ?? [], reasons: state.quality?.reasons ?? [], error: null } }
     case 'qualityLoaded':
-      return { ...state, quality: { loading: false, latest: action.latest ?? null, records: Array.isArray(action.records) ? action.records : [], error: null } }
+      // 原因字典（issue #7197 ①）随读面一起回来 —— 录入手据它摆短语按钮（服务端是唯一真值源）。
+      return { ...state, quality: { loading: false, latest: action.latest ?? null, records: Array.isArray(action.records) ? action.records : [], reasons: Array.isArray(action.reasons) ? action.reasons : (state.quality?.reasons ?? []), error: null } }
     case 'qualityFailed':
-      return { ...state, quality: { loading: false, latest: null, records: [], error: action.error ?? '质检状态读不到' } }
+      return { ...state, quality: { loading: false, latest: null, records: [], reasons: state.quality?.reasons ?? [], error: action.error ?? '质检状态读不到' } }
     case 'qualityFormOpen':
       // 唯一可录的判定 = 返工（issue #7749；合格是默认态，屏上不给这个按钮）。
       // issue #7973：`recheck=true` = 从「待复检」点的【复检仍有问题】（新的一轮判定，服务端放行）。
-      return { ...state, qualityForm: { result: 'rework', recheck: action.recheck === true, submitting: false, error: null } }
+      // issue #7197 ①：`reasonCode` = 点选的字典项（默认不选 —— 逼着人看一眼，不替人猜）。
+      return { ...state, qualityForm: { result: 'rework', recheck: action.recheck === true, reasonCode: null, submitting: false, error: null } }
+    case 'qualityReasonSelected':
+      return { ...state, qualityForm: { ...(state.qualityForm ?? {}), reasonCode: action.code ?? null, error: null } }
     case 'qualityFormClose':
       return { ...state, qualityForm: null }
     case 'qualitySubmitting':
@@ -1049,13 +1053,25 @@ function qualityBlock(state, view) {
 function qualityFormView(state) {
   const f = state.qualityForm ?? {}
   const recheck = f.recheck === true
+  const reasons = Array.isArray(state.quality?.reasons) ? state.quality.reasons : []
+  const selected = f.reasonCode ?? null
+  // 原因字典项（issue #7197 ①）：**点一下就选中**（车间戴手套，少打字）；再点同一项不取消 ——
+  // 「没选」与「选了又反悔」是两种状态，取消等于让人多点一次，只会更费事。
+  const chips = reasons.length > 0
+    ? `<div class="wh5-q-reasons" id="wh5-quality-reasons">${reasons.map((r) => {
+      const on = selected === r.code
+      return `<button type="button" class="wh5-q-reason-chip${on ? ' is-on' : ''}" data-quality-reason="${esc(r.code)}" aria-pressed="${on ? 'true' : 'false'}">${esc(r.label)}</button>`
+    }).join('')}</div>`
+    : '<p class="wh5-sub" id="wh5-quality-reasons-empty">问题类型读取中…</p>'
   return `<div class="wh5-q-form" id="wh5-quality-form">
       <p class="wh5-sub" id="wh5-quality-hint">${recheck
-        ? '这次复检记为「仍有问题」：写明问题，提交后追加一条质检记录。'
-        : '这次记为「做工返工」：写明问题，提交后生成质检单。'}</p>
-      <label class="wh5-label">问题说明（必填）
+        ? '这次复检记为「仍有问题」：点一项问题类型，提交后追加一条质检记录。'
+        : '这次记为「做工返工」：点一项问题类型，提交后生成质检单。'}</p>
+      <p class="wh5-label">问题类型（必选）</p>
+      ${chips}
+      <label class="wh5-label">补充说明（可不填）
         <textarea id="wh5-quality-reason" class="wh5-input" rows="2"
-          placeholder="例如：缝线开裂 / 走线歪 / 拼缝不齐"></textarea>
+          placeholder="想补充细节就写在这里，例如：右帘下摆 10cm"></textarea>
       </label>
       ${f.error ? `<p class="wh5-error" id="wh5-quality-form-error">${esc(f.error)}</p>` : ''}
       <div class="wh5-q-actions">
@@ -1190,7 +1206,12 @@ function qualityRecordView(r, latestLabel) {
   // 历史里与当前结论**不同**的行（返工 → 合格）照旧带标签，否则看不出这条是什么。
   const showLabel = label !== '' && label !== latestLabel
   const time = recordTime(r?.inspected_at)
-  const reason = typeof r?.reason === 'string' ? r.reason.trim() : ''
+  // 原因（issue #7197 ①）：字典项中文名 + 自由补充；**存量自由文本**原样显示，不猜它属于哪个字典项
+  const reasonLabel = typeof r?.reason_label === 'string' ? r.reason_label.trim() : ''
+  const reasonNote = typeof r?.reason === 'string' ? r.reason.trim() : ''
+  const reason = reasonLabel && reasonNote
+    ? `${reasonLabel}（${reasonNote}）`
+    : (reasonLabel || reasonNote)
   const who = typeof r?.inspector_name === 'string' ? r.inspector_name.trim() : ''
   return `<li class="wh5-record">
       <div class="wh5-record-top">

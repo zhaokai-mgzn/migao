@@ -2,7 +2,7 @@
 # 本文件由 render_cases.py 生成，勿手改（改了也留不住：下次重渲染会覆盖）
 # 源: cases/*.yml（case-contract 单一源）
 # 重新生成: python3 render_cases.py --cases <dir> --out-eval <包目录> --out-md <md>
-# 域: misc（源: cases/misc.yml，204 条）
+# 域: misc（源: cases/misc.yml，205 条）
 
 from ._schema import Difficulty, EvalCase, Skill
 
@@ -3750,6 +3750,25 @@ _CASE_MC_170 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── MC-181 [NORMAL] 不合格原因必须从字典选一项（自由文本降级为补充）：字典全集可用 + 存量老记录不清洗（issue #7197 ①）（源: cases/misc.yml）──
+_CASE_MC_181 = EvalCase(
+    id='MC-181',
+    legacy_id='',
+    title='不合格原因必须从字典选一项（自由文本降级为补充）：字典全集可用 + 存量老记录不清洗（issue #7197 ①）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['质检的不合格原因现在是随手打的字：同一种问题，三个人写出三种写法，于是「缺陷 Top 分布」根本算不出来。希望录入时点一项就完事（车间戴着手套，少打字），想补充再写一句；老记录别动。'],
+    expectations=[],
+    data_checks=["🔴 **①-a 新记录没选字典项 ⇒ 拒（会红）**：判定 ≠ 合格且 `reason_code` 缺失 / 空串 / 全空白 ⇒ `VALIDATION_ERROR` + **422**，文案含该档判定中文名（「返工」/「报废」）、「不合格原因字典」与**全部六项**可选原因，且 `verify(mapper, never()).insert(...)` = **零写入**。**重点负控**：只填了自由文本（`reason='缝线开裂'`，`reason_code=null`）**同样拒** —— 自由文本顶替字典项正是这条修法要堵的口子。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/QualityReasonDictionaryTest.java::newRecordWithoutDictionaryCodeIsRejected + QualityCheckServiceTest.java::nonPassWithoutDictionaryCodeIsRejectedWithNamedErrorAndZeroWrite。", "🔴 **①-a' 字典外的 code ⇒ 拒（会红）**：`reason_code='dirty'` ⇒ 422 具名（回显收到的值 + 列出可选项），不静默降级成自由文本、不猜「最接近的一项」。执行点 = 同文件::unknownDictionaryCodeIsRejected。", '🔴 **①-b 字典全集覆盖（会红）**：每一项都有真实用处 —— 中文名非空 / 不是占位或调试词（`占位|TODO|TBD|待定|示例|xxx`）/ 不与 code 同形 / 两两不同；且**每一项都能真的落库并读回**（`reason_code` 落库 + 读面 `reason_code`/`reason_label` 逐值同源），「其它」必须是最后一项（界面按钮顺序 = 本表顺序），录入面 `QualityReasonDictionary.options()` 与校验面读**同一份**（不另造会漂的第二张表）。执行点 = 同文件::everyDictionaryItemIsRealAndUsable。', '🔴 **①-c 存量老记录不被清洗（负控，会红）**：`reason_code` 为 `null` 的老行，读面 `reason` **逐字原样**（含首尾空格）、`reason_code`/`reason_label` 都是 `null`，且读面**零写入**（`never()` `insert` / `updateById`）—— 不猜归类、不回填、不归一化。执行点 = 同文件::legacyFreeTextReasonIsNotCleaned。', '**①-d 红证（注入式，会红）**：把 `QualityCheckService` 里「判定 ≠ pass 必须有字典项」那段校验摘掉 ⇒ ①-a 当场转红（实跑读数与注入命令写在 PR body；本判据不常驻注入）。', '**前端面（会红）**：录入面把字典做成**短语按钮**（车间戴手套少打字），文案只用服务端下发的中文名（不摆 code —— §31 P3）；admin-web 与工人端两侧都判「没点项 ⇒ 当场提示 + 零网络」「点了项 ⇒ 提交体带 `reason_code`」「字典读不到 ⇒ 如实说读不到、不编假表」。执行点 = frontend/admin-web/tests/unit/components/QualityCheckForm.test.tsx（②③④⑤⑩⑪）、frontend/worker-h5/tests/worker-h5-quality.test.mjs（⑤⑫⑬⑭）、frontend/worker-h5/tests/worker-h5-api.test.mjs（`createQuality` 写面 `reason_code` 一条）。'],
+    skip_reason='[backend-contract] 后端契约 + 前端渲染判据（Java 单测 + Vitest + node:test），零网络、零 LLM、不起真库；不进入 agent-eval 冒烟',
+    tags=['quality-inspection', 'reason-dictionary', 'legacy-data', 'backend-contract', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='前置 = ① 一件属于当前租户的成品帘（`order_items` 行，`deleted=0`）+ 它所属订单有一张活跃加工单（Mockito 桩，`QualityReasonDictionaryTest.setUp`）；② 原因字典类 `backend/admin-api/src/main/java/com/migao/admin/service/QualityReasonDictionary.java` 在场（缺失 ⇒ 判据编译不过 = 硬红）；③ 迁移 `backend/admin-api/src/main/resources/db/migration/V207__add_quality_reason_code.sql` 已在链上（幂等：`ADD COLUMN IF NOT EXISTS` + 终态对账）。缺任一 ⇒ 判据当场红，不会伪装成「没数据」。',
+)
+
 CASES = (
     _CASE_MC_001,
     _CASE_MC_002,
@@ -3955,4 +3974,5 @@ CASES = (
     _CASE_MC_161,
     _CASE_MC_160,
     _CASE_MC_170,
+    _CASE_MC_181,
 )

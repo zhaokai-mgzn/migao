@@ -1126,9 +1126,20 @@ export interface QualityInspectionRecord {
   result: QualityInspectionResult
   /** 判定中文标签（服务端给：合格 / 返工 / 报废）；未知值如实 `null` */
   result_label?: string | null
+  /** 不合格原因的**字典项** code（issue #7197 ①）；`null` = 存量自由文本记录（未归类） */
+  reason_code?: string | null
+  /** 字典项的中文名（服务端给：布面污渍 / 布料破洞 / …）；未归类 ⇒ `null` */
+  reason_label?: string | null
+  /** 不合格原因的**自由补充**（可空；不再能顶替字典项） */
   reason?: string | null
   inspector_name?: string | null
   inspected_at?: string | null
+}
+
+/** 不合格原因字典的一项（`GET /api/admin/quality-inspections/reasons`，issue #7197 ①）。 */
+export interface QualityReasonOption {
+  code: string
+  label: string
 }
 
 /** 待检清单一行 = **一件成品帘**（`order_item_id` 级，与录入的颗粒度同一份）。 */
