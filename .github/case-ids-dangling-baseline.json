@@ -1,0 +1,13 @@
+{
+  "_note": "用例 id **悬空引用**的基线台账（issue #8310 收尾）。只许缩短：实测必须等于 entries.dangling_total；多一条（新增即红）或少一条（要求同批下沉）都判红，history 出现回升判「基线不得放宽」。判定实现 = .github/case_ids_dangling.py::baseline_violations（唯一实现），阻塞面 = tests/unit_ci_workflows/test_case_ids_dangling_report.py::D7。背景：批合工具替在飞 PR 让号时只改 .github/cases/*.yml 的用例块 id，改不到源码侧的 // case_ids: 头 ⇒ 会持续产生悬空引用（今晚实测一次：#8565 把 MC-154 改成 MC-155，而判据载体头仍是 MC-154，已随 #8567 修）。只 warn 的报告面 = 没人看 = 等于没有，故设本基线。",
+  "entries": {
+    "dangling_total": 0
+  },
+  "history": [
+    {
+      "date": "2026-11-03",
+      "dangling_total": 0,
+      "note": "现取基线（python3 .github/case_ids_dangling.py ⇒ 扫描 2149 个声明了 case_ids 的测试文件 / 用例库 999 条 / 悬空 0 条）。此前全库唯一一条悬空 = frontend/bmini-app/tests/inbound-print-capability-terminal.test.ts:1 的 MC-154（批次合并 #8565 把该用例块重编号为 MC-155），已随 PR #8567 修正 ⇒ 基线锁 0。"
+    }
+  ]
+}
