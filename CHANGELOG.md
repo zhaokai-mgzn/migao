@@ -5,6 +5,23 @@
 > 原因 = 单文件涨到 512KB 越过扫描上限，详见存档文件头与 issue #6404。
 > **后续条目继续在本文件 `## [Unreleased]
 
+### 商家端 H5 的输入框字体跟随页面正文：不再落回浏览器默认字体（2026-11-03，issue #6480）
+
+- **改前**：Taro H5 把样式挂在**外层**包裹元素上，真正绘字的是**内层**原生控件
+  （`input.weui-input` / `textarea.taro-textarea`），而浏览器给这两个控件自己的默认样式且**不继承**父级
+  ⇒ 登录 / 表单 / 报工 / 入库 / 售后 / 坐席等输入面里，**输入的字与页面其它文字不是同一套字体**
+  （实测 `input` 落 `Arial`、`textarea` 落 `monospace` 且只有 13.33px）；
+  H5 的占位符只能逐页各写一份（`placeholderClass` 只在微信小程序生效），常常停在浏览器默认灰。
+- **改后**：这一族规则收口到共享样式层 `frontend/bmini-app/src/styles/input-center.scss`
+  —— 两个内层原生控件 `font-family: inherit`（跟随各页正文）、textarea 另加 `font-size: inherit`、
+  `::placeholder` 色值取 `$text-secondary`（与问米宝输入条同 token）。**全站观感逐字不变**：
+  共享层只写 `inherit`、不指定任何具体字体族（全局字体族的位置仍是 `src/app.scss` 的 `page, body`，本单有意不动），
+  textarea 的字号 = 外层包裹元素原本就该作用到它的字号。
+- 为什么一处收口：逐页各写一份 = 下一个人漏一处，而**没有任何东西会红**；现在共享层是唯一落点，
+  例外（登录页「登录诊断」面板的等宽 token 行）登记在台账，只许缩短。
+- 判据：`frontend/bmini-app/tests/input-typography-guard.test.ts`（MC-160：内层继承 / 裸
+  `font-family` 只许在字体定义处 / 占位符唯一来源 / 不许裸写原生 `<input>` 标签，含注入式红证）。
+
 ### 工人端菜单改为「以岗位为源」：建号选岗位即带出默认菜单（裁剪/车位 2 项、仓管 3 项、发货 2 项），工人首屏最多 3 项（2026-11-03，issue #8337）
 
 - **改前**：工人端菜单是**逐人自由勾选**的 `workerPages`，与企业里的岗位无关 —— 新招一个人要手工勾一遍，
