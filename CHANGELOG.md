@@ -5,6 +5,24 @@
 > 原因 = 单文件涨到 512KB 越过扫描上限，详见存档文件头与 issue #6404。
 > **后续条目继续在本文件 `## [Unreleased]
 
+### 单据列表的行内文字动作收口到一处定义：售后 / 员工 / 工人档案 / 加工项四处不再各抄一份样式（2026-11-03，issue #7082）
+
+- **改前**：同一件事（跳到该行详情 / 编辑）在不同列表里各抄了一份链接样式
+  （`text-primary-600 hover:text-primary-700 hover:underline`），字号 / 字重 / 禁用态 / 红字各带一个变体
+  ⇒ 样式改一次要改四处，而两轮之后没人说得清哪个才算「对的」（用户 2026-10-17 逐字：
+  「行内按钮样式让全部单据统一向订单保持一致，不要有多种风格设计」）。
+- **改后**：四处全部走共享原语 `RowActionLink`；原语按**真实消费点**扩了 4 个受控变体
+  （`size` / `emphasis` / `tone="danger"` / `disabledStyle="keep"`，**故意不暴露 `className`** ——
+  在调用点覆盖 class 就等于没收口）。**观感逐字不变**：售后「查看」仍是 `text-sm`；
+  员工姓名仍是 `font-medium`，且无写权限时**姓名照旧是姓名**（不变成灰色占位）；
+  加工项「编辑 / 删除」仍是 `text-sm` 与红字。
+- **没动的两处（如实登记，不假装做了）**：入库单在 issue #8011 之后**正是**订单列表现在的形态
+  （`RowActions` + ghost `Button` 主行动），商品在 issue #8038 之后已走 `RowActions`
+  ⇒ 两者本来就没有这份字面量副本，改成链接式反而背离订单列表。
+- 判据：`frontend/admin-web/scripts/row-action-link-scan.mjs`（链接规格只许出现在原语里；
+  台账 = `frontend/admin-web/tests/unit/row-action-link-ledger.json`，未登记即红、只许缩短）、
+  `frontend/admin-web/tests/unit/row-action-link-single-source-guard.test.ts`（MC-146）、
+  `frontend/admin-web/tests/unit/components/RowActionLink.test.tsx`（变体 ⇒ 观感逐字不变）。
 ### 手持标签机打不出来时不再说「由本机打印机直接出纸」：能不能打由终端上报的打印服务说话，判不了就明说判不了（2026-11-03，issue #8310）
 
 - **改前**：拍照入库页第一行固定写「点「打印标签」，由本机打印机直接出纸。」—— 判定只看**壳在不在**
@@ -20,7 +38,6 @@
 - 判据：`frontend/bmini-app/tests/inbound-print-capability-terminal.test.ts`（T1 负向不说能打 /
   T2 正向仍能打（负控）/ T3 读不到 = 判不了 / T4 终端分支必须消费 `printerMode` 且这句话只许本模块产出 /
   T5 取值接线 `__CFG__.printerMode`）。
-
 ### 撤销批量改价不再要求模型「记得」批次号：本会话只有一批就点名让你带上，认不准就拒绝（2026-11-03，issue #6998）
 
 - **改前**：真 LLM 重放（`PR-108`）里模型执行成功、真实批次号就在上下文里，撤销那一步却把它丢了
@@ -36,6 +53,25 @@
 - 判据：`backend/ai-agent-service/tests/test_product_batch_update.py` 的 `TestRevertBatchIdFallback`
   （① 缺参三种情形 + 不发请求 / ② 显式值原样用 / ③ 多候选 ⇒ 拒绝 / 写侧台账只记可撤销批次）
   + `TestSharedBatchIdResolver`（execute 与 revert 同一个解析函数；把 `batch_id` 写进 schema 的工具未登记即红）。
+
+### 米宝会话卡的「来源组」改成商家的话：不再出现「切换后 / 存量导入 / 来源未知」（2026-11-03，issue #6461）
+
+- **改前**：B 端两端会话卡（桌面 + 手机）把服务端分组标签**逐字渲染**上屏 ——
+  卡片上写着「切换后（采购入库）」「存量导入（切换前历史包袱）」「来源未知」，新用户读不懂
+  （#6459 同类形态）；手机端趋势行还写着「存量导入入库（单列）」。另外缺标签时会**回落渲染
+  英文枚举**（`purchase` / `opening` / `unknown`）= 内部标识直接摆给商家。
+- **改后**：来源组标题按**机器键**走一张映射表（一处文案，两端同源、由判据锁死）：
+  正常采购进来的批次 ⇒「采购入库的布」；启用系统前就有的库存 ⇒「开业时导入的老库存」
+  （与省料看板同一说法）；没记来源的 ⇒「还没记清来源的布」；**认不出的来源一律说
+  「其它来源的布」**（服务端将来加一组不会白屏、也不会漏出内部标识）。手机端那一行改说
+  「开业时导入的老库存（单列）」。
+- **服务端与工具侧一起收口**：服务端分组文案（`SavingMetricViews.cohortLabel`）本身改成同一批商家话术
+  ⇒ 米宝**文字摘要**（`batch_stock_query` 的 `message`，会进模型上下文被复述）与卡片载荷一起说人话；
+  前端映射表、bmini 副本、服务端三处**逐字相等**由判据现取比对（只改一侧一个词即红）。
+- 判据：`frontend/admin-web/tests/unit/lib/cohort-groups.test.ts`（MC-148：文案规范 / 枚举全集与文案覆盖 /
+  兜底 / 两端渲染面零 `cohortLabel` / 两端同源）、`frontend/bmini-app/tests/cohort-groups-no-jargon.test.tsx`
+  （MC-149：手机端渲染与源码面零内部口径词）、`backend/ai-agent-service/tests/test_batch_stock_query.py`
+  （工具输出零内部口径词 + 判别力自证）；每条都带注入式红证。
 
 ### 工人屏不再把「没填」的部位规格编成 0：纯空白一律按缺值处理（2026-11-03，issue #7002）
 

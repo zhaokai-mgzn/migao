@@ -17,30 +17,77 @@
  * ## 与 `Button` 的分工（写新页面时的取值口径）
  *
  * - **页面级动作**（保存 / 查询 / 新建 / 刷新）⇒ `Button`；
- * - **行内动作**（跳到该行的详情 / 明细）⇒ 本组件。
+ * - **行内动作**（跳到该行的详情 / 明细）⇒ 本组件（`RowActions` 的**主行动**也用它）。
  *
  * ⚠️ **销售订单列表的行内动作已不再是本组件**（issue #8011，2026-10-28）：那张表的行内收成
- * 「1 个主行动按钮 + 1 个「⋯」菜单」，菜单项另用菜单语义（`role="menuitem"`）。本组件仍是
- * 「行内**文字**动作」的单一形态 —— 现有消费点 = 作业看板（`src/app/(dashboard)/production/page.tsx`）。
- * ⚠️ 库位面板（`src/components/stock/WarehouseLocationPanel.tsx`）在 issue #8038 已改走
- * `RowActions`（1 主行动 + ⋯ 菜单），**不再是**本组件的消费点。
+ * 「1 个主行动 + 1 个「⋯」菜单」，主行动走 `Button variant="ghost" size="sm"`（`RowActions` 的
+ * `children`）。本组件仍是「行内**文字**动作」的单一形态。
  *
- * ⚠️ **边界（照实登记）**：全仓还有几处**同款字面量**的链接（员工 / 售后等，各自带 `text-sm`
- * 或 `disabled:` 变体）。`ProductTable` 与库位面板已在 issue #8038 改走 `RowActions`；
- * 余下几处仍是「行内文字动作」的**待迁移项**（另单跟踪），本组件暂不改它们。
+ * ## 变体（issue #7082 收口时扩展：每个变体都对应一个**真实**消费点，不留投机 API）
+ *
+ * | prop | 取值 | 为什么需要（消费点） |
+ * |---|---|---|
+ * | `size` | `xs` / `sm` / `md`(默认) | 行内常见 `text-sm`（售后列表）、`text-xs`（员工资料面板）—— 硬并会改字号 |
+ * | `emphasis` | `true` | 行**标识列**（员工「姓名」那一格）改前是 `font-medium` |
+ * | `tone` | `primary`(默认) / `danger` | 加工项面板的行内「删除」是红字（改前 `text-red-500 hover:text-red-600`） |
+ * | `disabledStyle` | `faint`(默认) / `keep` | 员工「姓名」在无写权限时改前**保持字色**、只是不响应（`disabled:cursor-default`）；`faint` = 淡色 + 禁止光标 |
+ *
+ * 🔴 **不许在调用点写 `className` 覆盖**（本组件故意**不暴露** `className`）：绕过变体就等于没收口，
+ * 第二份会漂的口径又回来了。
+ *
+ * ## 类级判据（issue #7082）
+ *
+ * 本组件的视觉规格（`text-primary-600` + `hover:text-primary-700` + `hover:underline`）在
+ * `frontend/admin-web/src/**` 里**只许出现这一处**，副本（带 `text-sm` / `text-xs` / 禁用态变体都算）
+ * ⇒ 具名判红。判据本体 = `frontend/admin-web/scripts/row-action-link-scan.mjs`，
+ * 台账 = `frontend/admin-web/tests/unit/row-action-link-ledger.json`，
+ * 守卫 = `frontend/admin-web/tests/unit/row-action-link-single-source-guard.test.ts`。
  */
+
+/** 字号变体：`md` = 跟随容器（表格自带 `text-sm`），`sm` / `xs` = 显式覆盖 */
+export type RowActionLinkSize = 'xs' | 'sm' | 'md'
+
 export default function RowActionLink({
   children,
   onClick,
   disabled,
+  size = 'md',
+  emphasis = false,
+  tone = 'primary',
+  disabledStyle = 'faint',
   'data-testid': testId,
 }: {
   children: React.ReactNode
   onClick: () => void
-  /** 不可用时的形态（淡色 + 不响应；默认可用） */
+  /** 不可用时不响应（观感见 `disabledStyle`） */
   disabled?: boolean
+  /** 字号：`sm` = `text-sm`（表格行内）、`xs` = `text-xs`（面板小动作）、`md` = 跟随容器 */
+  size?: RowActionLinkSize
+  /** 行标识列（如员工姓名）用强调字重（`font-medium`） */
+  emphasis?: boolean
+  /** 色族：`primary`（默认）/ `danger`（行内删除这类破坏性动作，红字） */
+  tone?: 'primary' | 'danger'
+  /**
+   * 禁用态观感（只影响**已被禁用**时；不影响可用态）：
+   * - `faint`（默认）= 淡色 + 禁止光标 —— 表达「这个动作现在不可用」；
+   * - `keep` = 保持可用态字色、仅不响应 + 默认光标 —— 用于**行标识**（员工姓名）：
+   *   无写权限时姓名照旧是姓名，不能变成灰色占位。
+   */
+  disabledStyle?: 'faint' | 'keep'
   'data-testid'?: string
 }) {
+  const sizes: Record<RowActionLinkSize, string> = { xs: 'text-xs', sm: 'text-sm', md: '' }
+  const tones = {
+    primary: 'text-primary-600 hover:text-primary-700',
+    danger: 'text-red-500 hover:text-red-600',
+  } as const
+  // ⚠️ 下面这一串是本组件的**视觉规格**，也是类级扫描判据比对的那一串（见头注释）
+  const enabled = `${tones[tone]} hover:underline transition-colors ${sizes[size]}`.trim()
+  const disabledClass =
+    disabledStyle === 'keep'
+      ? `${tones[tone]} hover:underline transition-colors cursor-default ${sizes[size]}`.trim()
+      : 'text-neutral-400 cursor-not-allowed'
+
   return (
     <button
       type="button"
@@ -51,11 +98,9 @@ export default function RowActionLink({
         e.stopPropagation()
         onClick()
       }}
-      className={
-        disabled
-          ? 'text-neutral-400 cursor-not-allowed'
-          : 'text-primary-600 hover:text-primary-700 hover:underline transition-colors'
-      }
+      className={[disabled ? disabledClass : enabled, emphasis ? 'font-medium' : '']
+        .filter(Boolean)
+        .join(' ')}
     >
       {children}
     </button>
