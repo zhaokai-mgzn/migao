@@ -44,6 +44,8 @@ const ROUTE_PERMISSION_MAP: Array<{ prefix: string; code: string }> = [
   { prefix: '/production/remnants', code: 'processing:manage' },
   // issue #5699（P4）：同上 —— 省料看板页面码 = product:list。
   { prefix: '/production/saving-board', code: 'product:list' },
+  // issue #6282：缺料风险页守卫码 = 菜单节点码 = `MaterialShortageController` 的 `product:list`。
+  { prefix: '/production/material-shortage', code: 'product:list' },
   // 🔴 2026-10-09（issue #6580）：下面两条是**旧入口兼容**前缀（对应菜单项已移除）——
   // 「加工项管理」`/production/processing`、「工艺配置」`/production/routings` 的功能体已并入
   // `/settings` 企业基础设置页 ⇒ 路由保留（旧深链不 404）、守卫码取新入口的页面码 `production:view`。

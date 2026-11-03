@@ -19,7 +19,7 @@ P3 做三件事，**都不改行为**（零 delta）：
 |---|---|---|
 | `pages[]`（**新进清单**） | 28 页：`gate` 菜单可见码 + `units` 第一屏读码 → 端点 + 逐页 `visibility_rule` | 四跳现取（菜单节点 → 页面锚点 → `lib/api.ts` → Java 生效码） |
 | C1 / C3 码列 | `menu_node_codes`（36 节点）/ `auth_menu_codes`（27 条） | `parse_menu_ts_nodes` / `parse_menus()['auth']` |
-| C4 守卫码列 | `route_guard_codes`（每页 `path → gate`） | `parse_route_guard`（35 条前缀） |
+| C4 守卫码列 | `route_guard_codes`（每页 `path → gate`） | `parse_route_guard`（36 条前缀） |
 | 页面面两张台账 | `multi_code_pages`（一页多码）/ `parity_residual_pages`（节点码 ≠ 页面读码） | `MULTI_READ_ENDPOINT_PAGES`（0）/ `MENU_READ_PARITY_RESIDUALS`（0） |
 | 可见性 | `visibility`（按 `visibility_rule` 把 units 投影成「看得见该菜单的岗位集」） | 现值岗位集（`seed` ∪ `fallback` 的持码者） |
 
@@ -128,6 +128,15 @@ ROUTE_PREFIX_ALIASES = {
     "/processing": "企业基础设置",
 }
 ROUTE_PREFIX_EXCEPTIONS = {
+    # 缺料风险（issue #6282）：本包只落**页面本体**，尚无侧边栏节点 ⇒ 该前缀不属「页面 → 码」面
+    # （与判据 11③ 的 `ROUTE_WITHOUT_MENU_NODE['/production/material-shortage']` 同一条理由）。
+    # 守卫码 = `product:list`（该页第一屏读端点 `GET /api/admin/materials/shortage` 的**方法级**码，
+    # 零授权 delta）。⚠️ 入口（菜单节点）随后续包落地时，本条目**必须销账**并把该页并进
+    # `rbac/manifest.json` 的 `pages[]`（派生面才能覆盖它）—— 销不掉即红（台账只许缩短）。
+    "/production/material-shortage": (
+        "缺料风险页**尚无侧边栏节点**（issue #6282 本包 = 页面本体；菜单节点牵动前端 C1/C3/C4 三列"
+        " + 服务端两处菜单源 + 页面上文登记，属独立变更面）⇒ 不属「页面 → 码」面"
+    ),
     "/chat": (
         "会话页没有侧边栏节点（「在线接待」的 `path` 是 `/agent-workspace/human-sessions`）"
         "⇒ 该前缀不属「页面 → 码」面（判据 11③ 的 `ROUTE_WITHOUT_MENU_NODE` 同款理由）"
@@ -442,7 +451,11 @@ FROZEN_CEILINGS: tuple[dict, ...] = (
     {
         "id": "ROUTE_PREFIX_EXCEPTIONS",
         "count": lambda: len(ROUTE_PREFIX_EXCEPTIONS),
-        "ceiling": 9,
+        # 🔴 2026-11-03（issue #6282）9 → 10：新增 `/production/material-shortage` —— 缺料风险页
+        # **首次落地时没有侧边栏节点**（本包 = 页面本体；菜单节点牵动前端 C1/C3/C4 三列清单 +
+        # 服务端两处菜单源 + 页面上文登记，属独立变更面）⇒ 它不是任何在册页面的 `path`，
+        # 只能走例外台账。**同样是具名、不是放宽**：不登记就会变成「地址栏直达不被拦」的静默形态。
+        "ceiling": 10,
         "grew_by": "`route_guard_problems`（『既不是某页 `path`、也没有别名 / 例外登记 ⇒ 新增页面守卫必须先登记』具名报出）",
         "reason": (
             "C4 面里**不以页面 `path` 出现**的前缀（入口在别的页面里 / 旧深链兼容 / 子树父前缀）："

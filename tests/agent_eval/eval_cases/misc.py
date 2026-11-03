@@ -2,7 +2,7 @@
 # 本文件由 render_cases.py 生成，勿手改（改了也留不住：下次重渲染会覆盖）
 # 源: cases/*.yml（case-contract 单一源）
 # 重新生成: python3 render_cases.py --cases <dir> --out-eval <包目录> --out-md <md>
-# 域: misc（源: cases/misc.yml，204 条）
+# 域: misc（源: cases/misc.yml，205 条）
 
 from ._schema import Difficulty, EvalCase, Skill
 
@@ -3750,6 +3750,24 @@ _CASE_MC_170 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── MC-182 [NORMAL] 缺料风险页（admin-web `/production/material-shortage`，issue #6282）：默认只列缺口 > 0（常驻面克制）；行序 = 服务端分层降序 → 缺口降序（前端不重排）；未知 ≠ 0；空态是事实陈述；读失败不印空态（源: cases/misc.yml）──
+_CASE_MC_182 = EvalCase(
+    id='MC-182',
+    legacy_id='',
+    title='缺料风险页（admin-web `/production/material-shortage`，issue #6282）：默认只列缺口 > 0（常驻面克制）；行序 = 服务端分层降序 → 缺口降序（前端不重排）；未知 ≠ 0；空态是事实陈述；读失败不印空态',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['缺料风险页面（PC）：哪些成品会因为用料不够交不了货？默认只看真正缺料的，按紧迫程度排；读不出的要写「未知」而不是 0；没有缺料时别印「暂无数据」'],
+    expectations=[],
+    data_checks=['**判据 1·真调后端（会红）**：页面只调一条读面 `GET /api/admin/materials/shortage`（`materialShortageApi.shortage`，`limit = 50`），需求 / 库存 / 缺口 / 影响订单四列逐值等于桩返回（前端不自算、不求和）。执行点 = 单测 ①。**红证**：任一列改成页面自算或硬编码 ⇒ ① 红。', '**判据 2·默认只列真正缺的（会红，负控）**：默认列表 = `gapMeters > 0` 的行；缺口 0（刚好够）、负（有余量）、缺键（单位不可比）**都不进**常驻列表；勾选「显示全部」后三行都出现，且缺口照实印 `0 米` / `-40 米` / `未知`（不夹到 0）。执行点 = 单测 ②。**红证（注入式）**：把页面的 `shortageRows(rows)` 换成 `rows` ⇒ ② 红（实测读数：4 failed / 3 passed，还原后 7 passed）。', '**判据 3·行序 = 服务端行序（会红）**：桩数据三条缺口 120 / 30 / 5（`blocked` / `critical` / `short`，按冻结契约序给出）⇒ DOM 序逐值等于该序、缺口逐值递减；前端**不重排**（页内无 sort）。执行点 = 单测 ③。**红证**：页面按商品名或缺口升序重排 ⇒ ③ 红。', '**判据 4·空态是事实陈述（会红）**：只有「有余量」行时（默认面无缺料）⇒ 逐字「当前没有缺料」，且屏上**不出现**「暂无数据」、不渲染表格；摘要位同样说事实、不印「共 0 个成品缺料」。执行点 = 单测 ④。**红证**：空态改回「暂无数据」⇒ ④ 红。', '**判据 5·未知 ≠ 0（会红）**：单位不可比的行（`demandQty` / `gapMeters` / `orderCount` 缺键 = 服务端 `default-property-inclusion: non_null`）三列渲染「未知」；`daysToDeadline` 缺键 ⇒「紧迫性未知」，屏上不出现「0 天」。执行点 = 单测 ⑤。**红证**：缺键回落成 0 ⇒ ⑤ 红。', '**判据 6·披露与内部标识（会红）**：`nonComparable` 与 `historyDepth.sufficient == false` 两段披露**看得见**（含真实周数与要求周数）；`productId`（UUID）与字段名（`product_id` / `gap_meters`）**不上屏**（只进 href，§31 P3）；三个处置入口指向仓内真实路由 `/products/<id>` / `/stock-ledger` / `/inbound-orders/new`。执行点 = 单测 ⑥。**红证**：把 `productId` 渲染进「成品」列 ⇒ ⑥ 红；披露块删掉 ⇒ ⑥ 红。', '**判据 7·读失败不印空态（会红）**：读面 reject ⇒ 只显示失败原因，**不**出现「当前没有缺料」、不渲染摘要（读不到 ≠ 没有缺料）。执行点 = 单测 ⑦。**红证**：失败分支沿用空态渲染 ⇒ ⑦ 红。'],
+    skip_reason='[ui-page] 页面取值的确定性判据（桩数据 = 服务端冻结契约 v1；jsdom + 打桩 api，零网络、零 LLM）：断言由 frontend/admin-web/tests/unit/pages/material-shortage.test.tsx 执行，不进 agent-eval 冒烟',
+    tags=['ui', 'material-shortage', 'inventory', 'no-fake-green', 'unknown-not-zero', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 CASES = (
     _CASE_MC_001,
     _CASE_MC_002,
@@ -3955,4 +3973,5 @@ CASES = (
     _CASE_MC_161,
     _CASE_MC_160,
     _CASE_MC_170,
+    _CASE_MC_182,
 )

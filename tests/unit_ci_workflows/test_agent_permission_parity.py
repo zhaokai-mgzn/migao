@@ -2193,6 +2193,12 @@ ROUTE_WITHOUT_MENU_NODE: dict[str, str] = {
     # 该页第一屏读端点（`approvalApi.list`，类级 `finance:view`）的码一致性由 `ApprovalController`
     # 的类级注解 + `approvals.test.tsx` 承担（菜单节点已不存在 ⇒ 判据 12 的命题在此页不适定）。
     "/approvals": "「审批中心」菜单项已移除（issue #7593：入口改为**顶栏待办入口** `ApprovalBell`）⇒ 页面与守卫保留、**无菜单节点可钉**；码仍为 `finance:view`（与「财务对账」同码，零授权 delta）",
+    # 缺料风险（issue #6282）：**新页面、暂无侧边栏节点**（本包 = 页面本体；入口随之）。
+    # 守卫码 = 该页第一屏读端点（`GET /api/admin/materials/shortage`，`MaterialShortageController`
+    # 方法级）的 `product:list` —— 与「省料分析 / 库存明细」同一把尺子，零授权 delta。
+    # ⚠️ 菜单节点落地时**必须**把本条目销账并改登记进 `ROUTE_MENU_ANCHORS` + `MENU_READ_ENDPOINT_ANCHORS`
+    # （判据 12 的覆盖段：菜单节点 ⇄ 第一屏读端点锚点**双向相等**）。
+    "/production/material-shortage": "缺料风险页**尚无菜单节点**（issue #6282 本包只落页面本体；侧边栏节点牵动前端三列清单 + 服务端两处菜单源，属独立变更面）⇒ 页面与守卫保留、**无菜单节点可钉**",
 }
 
 
