@@ -158,6 +158,12 @@
    "owner": "#3571"
   },
   {
+   "path": "tests/unit_ci_workflows/test_dev_worktree_reap_guard.py",
+   "guards": "`dev-worktree.sh add` / `issue-lifecycle.sh reap-merged` 的自动收尾必须判**活占用**：真进程 cwd / 打开文件落在候选 worktree 内、有未提交或未推送内容、持有中的机器级重活锁 ⇒ 拒删并具名；读数取不到 = 无法判定 = 一个都不删（fail-closed）；并钉住「先 dry-run 预演、再真删」的顺序，另加类级元守卫（仓内所有删 worktree 入口 ⇄ 登记表双向相等，自动面必须含三条保护调用）",
+   "red_proof": "从 scripts/issue_lifecycle.py 的 classify_candidate 摘掉 `occupants = live_occupants(c.path, occupancy)` ⇒ tests/unit_ci_workflows/test_dev_worktree_reap_guard.py::test_red_proof_removing_live_occupancy_detection_makes_it_reapable 红（同一夹具变「可收尾」）；注入一个未登记的删 worktree 入口 ⇒ ::test_class_guard_goes_red_when_a_new_delete_entry_appears_unregistered 红",
+   "owner": "#7008"
+  },
+  {
    "path": "tests/unit_ci_workflows/test_doc_present_value_guard.py",
    "guards": "文档里的易变现值（写死计数 / 写死版本）必须由真值源派生：登记站点不得写字面量、必须点名真值源、每条 claim 要有隔离注入红证、历史叙述不误判",
    "red_proof": "在登记的文档站点里把「N 个」写成当前真实数字 ⇒ violations_C1 命中 ⇒ test_C1_registered_site_writes_no_literal_present_value 红",

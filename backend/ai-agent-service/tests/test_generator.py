@@ -6,13 +6,15 @@
 - 配额类错误（429 / AllocationQuota）自动切下一个模型；全部用尽 ⇒ 明确错误；
 - 非配额错误不静默换模型；
 - 全链都「接不了这类请求」⇒ 报不可用而非「额度用尽」（2026-10-23 起的默认链即此形态）；
+- 供应商 400 的**正文分流**（issue #7719）：样图读不到 ⇒ 输入侧（不切模型、不报模型不支持），
+  真·模型不接这类载荷仍走回落链；
 - 默认链 = 用户 2026-10-24 的裁定（qwen-image-3.0-pro，issue #7661 切到 MaaS token-plan）；
 - 缺 key 不回落 PRIMARY（DeepSeek key）；端点主机 = MaaS（旧 dashscope 痕迹退场）；
 - 内部端点只回 `image_url` / `model`（不落库、不返回临时凭据）；
 - 503 响应体带稳定机器可读 `code`（issue #7552）：四类失败各回不同码，`detail` 仍可读，
   状态码语义不变（其它供应商失败仍是 502）。
 """
-# case_ids: UI-129
+# case_ids: UI-129, MC-136
 
 import asyncio
 import json
@@ -180,6 +182,110 @@ def test_content_moderation_error_does_not_switch_model(monkeypatch):
     assert len(calls) == 1
 
 
+# =============================================================================
+# 失败归因：**输入素材** vs **模型能力**（issue #7719）—— 同 400 同 code，只能读 message 正文
+# =============================================================================
+
+_UNRESOLVABLE_URL_MESSAGE = "URL hostname cannot be resolved: https://example.invalid/x.png"
+
+
+def test_unresolvable_sample_url_is_input_side_not_model_unsupported(monkeypatch):
+    """① 供应商 400 InvalidParameter + 「URL 解析不了」⇒ 素材不可达，**不**归「模型不支持」。
+
+    形态来源 = 2026-10-25 线上实测（issue #7719，直连 MaaS）：
+    `HTTP 400 {"code":"InvalidParameter","message":"URL hostname cannot be resolved: …"}`。
+    改前只看 `code` ⇒ 归成「模型接不了这类请求」⇒ admin-api 映射成「找平台换模型」，
+    而正确动作是「换一张能访问的样图」。
+    判据：① 异常类 = `ImageGenerationInputUnreachable`、对外 code = `IMAGE_GEN_INPUT_UNREACHABLE`；
+    ② **不切模型**（默认链两个模型 ⇒ 恰好一次调用）；③ 理由里不许说成「模型不接」。
+    """
+    _settings(monkeypatch)
+    calls = []
+
+    def handler(request):
+        calls.append(1)
+        return httpx.Response(
+            400, json={"code": "InvalidParameter", "message": _UNRESOLVABLE_URL_MESSAGE})
+
+    with pytest.raises(gen.ImageGenerationInputUnreachable) as excinfo:
+        asyncio.run(gen.generate_product_image(
+            "https://example.invalid/x.png", "某商品", "main", client=_client(handler)))
+
+    assert excinfo.value.code == "IMAGE_GEN_INPUT_UNREACHABLE"
+    assert len(calls) == 1, f"输入素材问题不得逐模型重试，实调 {len(calls)} 次"
+    assert "hostname cannot be resolved" in str(excinfo.value)  # 原因如实透传到日志
+    assert "不接" not in str(excinfo.value)
+
+
+def test_other_invalid_parameter_messages_still_switch_models(monkeypatch):
+    """② 同码但正文是**真·模型不接这类载荷** ⇒ 仍切下一个模型（#7341 的回落链不许回退）。
+
+    与 ① 是同状态码、同 `code`、只差 message 正文 ⇒ 分流必须真读正文，不许把 400 一律改判。
+    """
+    _settings(monkeypatch)
+    calls = []
+
+    def handler(request):
+        calls.append(1)
+        if len(calls) == 1:
+            return httpx.Response(400, json={
+                "code": "InvalidParameter", "message": "model does not support messages"})
+        return _ok()
+
+    data = asyncio.run(gen.generate_product_image(
+        "https://oss/sample.png", "某商品", "main", client=_client(handler)))
+    assert data["model"] == "model-b"
+    assert len(calls) == 2
+
+
+def test_quota_429_is_still_quota_not_input_side(monkeypatch):
+    """③ 429 / 配额仍是配额（既有行为不回归），不被输入侧分类吃掉。"""
+    _settings(monkeypatch, IMAGE_GEN_MODELS="model-a")
+
+    def handler(request):
+        return httpx.Response(429, json={"code": "Throttling.RateQuota", "message": "quota"})
+
+    with pytest.raises(gen.ImageGenerationQuotaExceeded) as excinfo:
+        asyncio.run(gen.generate_product_image(
+            "https://oss/sample.png", "某商品", "main", client=_client(handler)))
+    assert excinfo.value.code == "IMAGE_GEN_QUOTA_EXCEEDED"
+
+
+def test_input_side_classifier_reads_message_body_not_just_code():
+    """④ 红证（常驻）：把 message 解析删掉、只看 `code` ⇒ 本判据必红。
+
+    两条同状态码（400）、同 `code`（InvalidParameter）、**只有 message 不同** ⇒ 分类必须相反。
+    实现改回 `return status == 400 and "InvalidParameter" in code` ⇒ 第二条断言变红
+    （那正是 issue #7719 的病：输入错误被改判成模型能力问题）。
+    """
+    unreachable = {"code": "InvalidParameter", "message": _UNRESOLVABLE_URL_MESSAGE}
+    structural = {"code": "InvalidParameter", "message": "model does not support messages"}
+
+    assert gen._is_input_unreachable(unreachable, 400) is True
+    assert gen._is_input_unreachable(structural, 400) is False
+    # 对照：两条都命中「模型不可用」的 code 级规则 ⇒ 只有「正文分类 + 判定顺序」能把它们分开
+    assert gen._is_model_unavailable(unreachable, 400) is True
+    assert gen._is_model_unavailable(structural, 400) is True
+
+
+def test_endpoint_reports_input_unreachable_with_its_own_code(monkeypatch):
+    """端到端：内核异常 → 内部端点 503 响应体 `{code, detail}` 带新码（形状与 #7552 一致）。"""
+    failure = _failure_of(
+        monkeypatch,
+        response=lambda: httpx.Response(
+            400, json={"code": "InvalidParameter", "message": _UNRESOLVABLE_URL_MESSAGE}))
+    assert failure.code == "IMAGE_GEN_INPUT_UNREACHABLE"
+
+    exc = _raised_failure(failure)
+    assert exc.status_code == 503
+    assert exc.code == "IMAGE_GEN_INPUT_UNREACHABLE"
+
+    resp = _failure_body(exc)
+    assert resp.status_code == 503
+    assert json.loads(resp.body) == {
+        "code": "IMAGE_GEN_INPUT_UNREACHABLE", "detail": str(failure)}
+
+
 def test_default_chain_is_the_2026_10_24_user_decision():
     """默认链 = qwen-image-3.0-pro（用户 2026-10-24 裁定，issue #7661：生图切到 MaaS token-plan）。
 
@@ -282,6 +388,21 @@ def test_internal_endpoint_returns_only_preview_fields(monkeypatch):
     assert resp["data"] == {"image_url": "https://dashscope.oss/out.png", "model": "model-a"}
 
 
+def test_deadline_endpoint_reads_the_single_authority(monkeypatch):
+    """生图等待上限只认 `settings.IMAGE_GEN_TIMEOUT`（issue #7731 的单一来源）。
+
+    admin-api 的读超时与前端文案都经本端点派生 ⇒ 它必须**现取** settings（不能再写一个常量）。
+    注入 240/300 ⇒ 240000/300000，证明「改一处，其它两层跟着走」。
+    """
+    from app.api.internal import image_deadline
+
+    for seconds, expected in ((240, 240_000), (300, 300_000)):
+        monkeypatch.setattr(gen.settings, "IMAGE_GEN_TIMEOUT", seconds)
+        resp = asyncio.run(image_deadline(authorized=True))
+        assert resp["success"] is True
+        assert resp["data"] == {"deadline_ms": expected}
+
+
 def test_internal_endpoint_credential_failure_is_503_not_502(monkeypatch):
     """内部端点：**凭证失效必须 503**（能力不可用），不能是 502（供应商偶发故障）。
 
@@ -320,9 +441,10 @@ def test_internal_endpoint_credential_failure_is_503_not_502(monkeypatch):
 # =============================================================================
 # 失败码合同（issue #7552）：503 响应体必须带稳定机器可读 `code`，`detail` 并存
 #
-# 判据：四类失败（开关关闭 / 未配 Key / 额度用尽 / 模型接不了这类请求）各回**不同** code，
-# 且 `detail` 仍是原来那句人类可读理由 —— admin-api 据此分叉话术，不再靠正则猜。
-# 凭证失效（401/403，issue #7680）复用 `IMAGE_GEN_NO_KEY`：同属平台侧凭证问题、动作一致。
+# 判据：五类失败（开关关闭 / 未配 Key / 额度用尽 / 模型接不了这类请求 / 样图读不到）
+# 各回**不同** code，且 `detail` 仍是原来那句人类可读理由 —— admin-api 据此分叉话术，不再靠正则猜。
+# 凭证失效（401/403，issue #7680）复用 `IMAGE_GEN_NO_KEY`：同属平台侧凭证问题、动作一致；
+# 样图读不到（issue #7719）单独一格：与「模型不支持」同状态码同供应商 code，只有正文能分开。
 # =============================================================================
 
 def _image_request():

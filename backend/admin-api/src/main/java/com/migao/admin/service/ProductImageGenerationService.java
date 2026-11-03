@@ -113,6 +113,14 @@ public class ProductImageGenerationService {
         return Map.of("url", info.getUrl(), "model", generated.model());
     }
 
+    /**
+     * 生图等待上限（毫秒，0 = 未知）：**唯一真值在 ai-agent**（`IMAGE_GEN_TIMEOUT`，issue #7731），
+     * 本层只转发给前端（「最长约 N 分钟」与前端等待上限都从它派生）。
+     */
+    public long estimatedDeadlineMs() {
+        return client.estimatedDeadlineMs();
+    }
+
     /** 只允许从百炼 OSS 下载（临时 URL 由 ai-agent 原样转回，仍按不可信输入处理）。 */
     private byte[] download(String url) {
         URI uri;

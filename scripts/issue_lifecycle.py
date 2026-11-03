@@ -82,6 +82,16 @@
 worktree 必须在工作区根（`MIGAO_WT_BASE`，默认 `<主仓库根>/../migao-wt`）之下 ⇒ 半径外的检出
 （别人的手工检出）**一律不动**。
 
+🔴 **活占用保护（issue #7008，2026-10-16 实测）**：只判「GitHub 侧状态」**不足以**说明「没人正在用」——
+该 worktree 可能正被**活进程**当 cwd 用着（评测栈就是这么起的）：实测进程的 `cwd` 被删后
+`/health` 仍是 **200**，而创建会话变成 **HTTP 500**（惰性 import 在已删目录上失败）⇒ 症状把人引向产品代码。
+⇒ 另加三条**本机** fail-closed 保护（任一命中即**不删**，且**具名**说明是哪条）：
+⑤ 有进程的 cwd / 打开文件落在该 worktree 内（macOS `lsof`；Linux `/proc`；**取不到读数 = 无法判定 = 不删**）；
+⑥ 有**未提交改动**或**未推送提交**（删了会丢工作）；
+⑦ **持有中的机器级重活锁**（`$HOME/.migao-heavy.lock` 的 `worktree`/`cwd` 落在该 worktree 内）。
+`dev-worktree.sh add` 的**自动**收尾因此改为「**先 dry-run 打印、再真删**」（`--force` 只跳过打印，
+**不**跳过任何拒绝条件）。
+
 **零动作也要出声**（G6）：没有可收尾的 ⇒ 打印「本轮零动作 + 逐类原因计数」——
 「我判了、都不该动」必须与「我没跑」长得不一样。
 
@@ -99,6 +109,7 @@ worktree 必须在工作区根（`MIGAO_WT_BASE`，默认 `<主仓库根>/../mig
     MIGAO_PRESET_REFRESH_BIN=...  # preset-anchor-refresh.sh
     MIGAO_WT_BASE=...             # 工作区根（同 dev-worktree.sh）
     MIGAO_ANCHOR=...              # 活锚路径（默认 $HOME/.dsh/.agent-presets/migao）
+    MIGAO_HEAVY_LOCK_FILE=...     # 机器级重活锁文件（默认 $HOME/.migao-heavy.lock；issue #7008 的活占用面）
 
 退出码：0 = 成功（含幂等空转与「零动作」）；1 = 用法/找不到目标；2 = fail-closed（判红 / 未合并 /
 有目标被拒）—— 该删的照删、不该删的一个不删；3 = **无法判定**（gh 不可用 / 离线 / CI 未跑完）——
@@ -135,6 +146,8 @@ DEVTREE_ENV = "MIGAO_DEVTREE_BIN"
 VERIFY_ENV = "MIGAO_VERIFY_BIN"
 PRESET_REFRESH_ENV = "MIGAO_PRESET_REFRESH_BIN"
 WT_BASE_ENV = "MIGAO_WT_BASE"
+#: 机器级重活锁文件（与 `scripts/machine-heavy-lock.sh` 的默认路径**同一处**；测试注入点）
+HEAVY_LOCK_ENV = "MIGAO_HEAVY_LOCK_FILE"
 DEFAULT_CI_TIMEOUT = 1800
 PR_LIMIT = 500  # 一次取数的上限（与 GUARD._pr_merged_branches 同量级；截断后果见 read_pr_rows 调用点）
 #: 临时（点号）worktree 的出声阈值（issue #5480 漏洞 1）：**只报不删**（无人值守删除不安全）
@@ -896,6 +909,204 @@ def _land_summary(branch: str, pr: PrReading, results: list[StepResult], ctx: di
     return rc
 
 
+# ── 活占用面（issue #7008）：删 worktree 之前必须判「有没有活进程在用」────────────────
+#
+# 病灶（2026-10-16 实测）：评测栈进程的 `/health` 200，而创建会话 **HTTP 500** ——
+# 因为它的 cwd 正是被自动收尾删掉的那个 worktree（`lsof -p <pid> | grep cwd` 指向已不存在的目录）。
+# ⇒ 「PR 已合并 + 无 open PR」判的是 **GitHub 侧**，与**本机进程**毫无关系。
+#   三条 fail-closed 保护（任一命中即不删，且**具名**）：活占用 / 未提交或未推送 / 持有重活锁。
+#   取不到读数 ⇒ **无法判定** ⇒ 不删（**不得**把「读不到」读成「没人用」）。
+
+class Occupant:
+    """一条占用证据：谁（pid）· 以什么方式（cwd / 打开文件）· 落在哪个路径。"""
+
+    def __init__(self, pid: int, kind: str, path: str):
+        self.pid, self.kind, self.path = pid, kind, path
+
+    def line(self) -> str:
+        return f"pid {self.pid}（{self.kind}）{self.path}"
+
+
+class HeavyLock:
+    """机器级重活锁的读数：`fields` 为空 = 无锁；`error` 非空 = **无法判定**（读不到 ≠ 无锁）。"""
+
+    def __init__(self, fields: dict[str, str] | None = None, error: str = ""):
+        self.fields, self.error = fields or {}, error
+
+
+def heavy_lock_path() -> Path:
+    return Path(os.environ.get(HEAVY_LOCK_ENV) or (Path.home() / ".migao-heavy.lock"))
+
+
+def read_heavy_lock() -> HeavyLock:
+    """读机器级重活锁（与 `machine-heavy-lock.sh` **同一路径**，不另写第二份锁机制）。"""
+    path = heavy_lock_path()
+    if not path.exists():
+        return HeavyLock()
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError as exc:
+        return HeavyLock(error=f"读不到 {path}（{type(exc).__name__}）")
+    fields: dict[str, str] = {}
+    for line in text.splitlines():
+        key, sep, value = line.partition("=")
+        if sep and key.strip():
+            fields[key.strip()] = value.strip()
+    return HeavyLock(fields)
+
+
+def _pid_alive(pid: str) -> bool:
+    if not pid.isdigit():
+        return False
+    try:
+        os.kill(int(pid), 0)
+    except (OSError, ValueError):
+        return False
+    return True
+
+
+def _path_within(candidate: str, root: Path) -> bool:
+    """`candidate` 是否落在 `root` 之下（含 root 本身）。纯字符串前缀 —— 快照条目很多，不做 IO。"""
+    text = candidate.rstrip("/")
+    base = str(root).rstrip("/")
+    return text == base or text.startswith(base + "/")
+
+
+def heavy_lock_holder(path: Path, lock: HeavyLock) -> str | None:
+    """该 worktree 是否被**持有中的**机器级重活锁占着 ⇒ 具名原因；否则 None。"""
+    if lock.error:
+        return f"锁面**无法判定**（{lock.error}）⇒ fail-closed，不删"
+    if not lock.fields:
+        return None
+    pid = lock.fields.get("pid", "")
+    if pid and not _pid_alive(pid):
+        return None  # 持有者已退出 ⇒ 陈旧锁（下一次 acquire 会回收），不构成占用
+    root = path.resolve()
+    for key in ("worktree", "cwd"):
+        value = lock.fields.get(key, "")
+        if value and _path_within(value, root):
+            return (f"机器级重活锁（name={lock.fields.get('name') or '未知'} · pid {pid or '未知'} · "
+                    f"{key}={value}）")
+    return None
+
+
+def _proc_occupants() -> list[Occupant] | None:
+    """Linux：`/proc/<pid>/cwd` 与 `/proc/<pid>/fd/*` 的软链目标；取不到 `/proc` ⇒ None（无法判定）。"""
+    proc_root = Path("/proc")
+    if not proc_root.is_dir():
+        return None
+    out: list[Occupant] = []
+    for entry in proc_root.iterdir():
+        if not entry.name.isdigit():
+            continue
+        pid = int(entry.name)
+        try:
+            out.append(Occupant(pid, "cwd", os.readlink(entry / "cwd")))
+        except OSError:
+            pass
+        try:
+            fds = list((entry / "fd").iterdir())
+        except OSError:
+            continue
+        for fd in fds:
+            try:
+                target = os.readlink(fd)
+            except OSError:
+                continue
+            if target.startswith("/"):  # socket:/pipe:/anon_inode: 不是文件路径，跳过
+                out.append(Occupant(pid, "打开文件", target))
+    return out
+
+
+def _lsof_occupants() -> list[Occupant] | None:
+    """macOS：`lsof -n -P -Fpn`（cwd + 打开文件，**一次**取数）；取不到 / 超时 ⇒ None（无法判定）。"""
+    exe = shutil.which("lsof") or "/usr/sbin/lsof"
+    if not Path(exe).is_file():
+        return None
+    try:
+        proc = subprocess.run([exe, "-n", "-P", "-Fpn"], capture_output=True, text=True, timeout=180)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if not proc.stdout.strip():
+        return None
+    out: list[Occupant] = []
+    pid, fd = 0, ""
+    for line in proc.stdout.splitlines():
+        if line.startswith("p"):
+            pid = int(line[1:]) if line[1:].strip().isdigit() else 0
+        elif line.startswith("f"):
+            fd = line[1:].strip()
+        elif line.startswith("n"):
+            target = line[1:]
+            if target.startswith("/"):
+                out.append(Occupant(pid, "cwd" if fd == "cwd" else "打开文件", target))
+    return out
+
+
+def occupancy_snapshot() -> list[Occupant] | None:
+    """全机进程的 cwd / 打开文件快照 —— **一次**取数（reap 一轮只取一次）。`None` = 无法判定。"""
+    return _lsof_occupants() if sys.platform == "darwin" else _proc_occupants()
+
+
+def live_occupants(path: Path, snapshot: list[Occupant] | None = None) -> list[Occupant] | None:
+    """占用该 worktree 的活进程证据；`None` = **无法判定**（不得当「没有占用」读）。"""
+    if snapshot is None:
+        snapshot = occupancy_snapshot()
+    if snapshot is None:
+        return None
+    root = path.resolve()
+    hits = sorted((o for o in snapshot if _path_within(o.path, root)),
+                  key=lambda o: (o.pid, o.kind, o.path))
+    seen: set[tuple[int, str, str]] = set()
+    uniq: list[Occupant] = []
+    for o in hits:
+        key = (o.pid, o.kind, o.path)
+        if key not in seen:
+            seen.add(key)
+            uniq.append(o)
+    return uniq
+
+
+def worktree_git_hygiene(path: Path) -> str | None:
+    """该 worktree 是否有**未提交改动**或**未推送提交** ⇒ 具名原因；干净且已推送 ⇒ None。
+
+    「未推送」口径：有 upstream ⇒ `@{u}..HEAD`；**无 upstream**（远端分支已被删 / 已 prune）⇒
+    `HEAD --not --remotes`：只要还有提交不在**任何**远端引用上，就按未推送处置（fail-closed ——
+    squash 合并下「内容已合入」与「提交已在远端」不是同一件事；宁可漏收，也不丢别人的工作）。
+    """
+    status = git("status", "--porcelain", cwd=path, check=False)
+    if status.returncode != 0:
+        return f"**无法判定**未提交改动（git status 退出 {status.returncode}）⇒ fail-closed"
+    dirty = [line for line in status.stdout.splitlines() if line.strip()]
+    if dirty:
+        return f"{len(dirty)} 个**未提交改动**（首个：{dirty[0].strip()}）"
+    upstream = git("rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}", cwd=path, check=False)
+    if upstream.returncode == 0 and upstream.stdout.strip():
+        ref = upstream.stdout.strip()
+        count = git("rev-list", "--count", f"{ref}..HEAD", cwd=path, check=False)
+        if count.returncode != 0:
+            return f"**无法判定**未推送提交（rev-list {ref}..HEAD 退出 {count.returncode}）⇒ fail-closed"
+        try:
+            ahead = int(count.stdout.strip() or "0")
+        except ValueError:
+            return "**无法判定**未推送提交（rev-list 读数非数字）⇒ fail-closed"
+        if ahead:
+            tip_proc = git("log", "-1", "--format=%h %s", f"{ref}..HEAD", cwd=path, check=False)
+            # 判 rc 再采信 stdout（`check=False` 时 stdout 可能是 git 的**回显**而不是数据 —— #5430 同族；
+            # 取不到就当「取不到」，不把进程对象的 stdout 直接当证据）。
+            tip = tip_proc.stdout.strip() if tip_proc.returncode == 0 else ""
+            return f"{ahead} 个**未推送提交**（{ref}..HEAD；最新：{tip or '取不到'}）"
+        return None
+    loose = git("log", "--oneline", "HEAD", "--not", "--remotes", cwd=path, check=False)
+    if loose.returncode != 0:
+        return "**无法判定**未推送提交（无 upstream，且 git log 失败）⇒ fail-closed"
+    rows = [line for line in loose.stdout.splitlines() if line.strip()]
+    if rows:
+        return (f"{len(rows)} 个提交**不在任何 origin/* 引用上**（无 upstream；最新：{rows[0].strip()}）"
+                " ⇒ 按未推送处置")
+    return None
+
+
 # ── reap-merged：新工作前把「已合并但没人收尾」的自动收掉 ──────────────────────────
 
 class Candidate:
@@ -1008,7 +1219,8 @@ def reap_candidates(cwd: Path, root: Path) -> list[Candidate]:
 
 def classify_candidate(c: Candidate, merged: set[str], open_nums: dict[str, int], open_bases: set[str],
                        protected: list[Path], locked: set[str], self_branches: set[str],
-                       wt_base: Path) -> tuple[bool, str, str]:
+                       wt_base: Path, *, occupancy: list[Occupant] | None = None,
+                       heavy_lock: HeavyLock | None = None) -> tuple[bool, str, str]:
     """⇒ (可否收尾, 原因分类键, 可读原因)。**任一保护命中即不删**（fail-closed，顺序即处置优先级）。"""
     if c.branch in PROTECTED_BRANCHES:
         return False, "主干分支", "主干分支，永不判可移除"
@@ -1028,6 +1240,21 @@ def classify_candidate(c: Candidate, merged: set[str], open_nums: dict[str, int]
         return False, "是 open PR 的 base", "是某个 open PR 的 base（stacked PR）⇒ 删了会连带影响它"
     if c.branch in locked:
         return False, "活跃会话锁", "有**活跃会话锁**（PID 存活）⇒ 可能正在用"
+    if c.path is not None:
+        # issue #7008：GitHub 侧状态 ≠ 本机没人用 —— 三条活占用保护（命中即具名拒删）
+        occupants = live_occupants(c.path, occupancy)
+        if occupants is None:
+            return False, "占用面无法判定", (
+                "占用面**无法判定**（取不到 /proc 或 lsof）⇒ fail-closed，不删（读不到 ≠ 没人用）")
+        if occupants:
+            extra = f"（另有 {len(occupants) - 1} 条同类读数）" if len(occupants) > 1 else ""
+            return False, "活占用", f"**有活进程正在使用**：{occupants[0].line()}{extra} ⇒ 不删"
+        hygiene = worktree_git_hygiene(c.path)
+        if hygiene:
+            return False, "有未提交/未推送内容", f"{hygiene} ⇒ 不删（删了会丢工作）"
+        holder = heavy_lock_holder(c.path, heavy_lock if heavy_lock is not None else read_heavy_lock())
+        if holder:
+            return False, "持有重活锁", f"{holder} ⇒ 不删"
     if c.branch not in merged:
         return False, "无已合并 PR", "GitHub 上没有已合并 PR（从未有 PR / 未合并）⇒ fail-closed"
     return True, "可收尾", "有已合并 PR 且无 open PR ⇒ 可收尾"
@@ -1061,6 +1288,21 @@ def cmd_reap_merged(args: argparse.Namespace) -> int:
 
     merged, open_nums, open_bases = classify_rows(rows)
     protected = anchor_protected_paths()
+    # issue #7008：活占用面**一次**取数（全机进程 cwd/打开文件 + 重活锁），
+    # 逐候选只做前缀过滤 —— 每候选各扫一次会让 reap 从秒级变成分钟级。
+    occupancy = occupancy_snapshot()
+    heavy = read_heavy_lock()
+    if occupancy is None:
+        print("⚠️  占用面**无法判定**（取不到 /proc 或 lsof）⇒ 每个 worktree 候选都按 fail-closed 跳过"
+              "（**读不到 ≠ 没人用**）。", file=sys.stderr)
+    else:
+        print(f"   活占用读数：{len(occupancy)} 条进程 cwd / 打开文件（**一次**取数；命中候选 worktree 即拒删）")
+    if heavy.error:
+        print(f"⚠️  锁面**无法判定**（{heavy.error}）⇒ 每个 worktree 候选都按 fail-closed 跳过。",
+              file=sys.stderr)
+    elif heavy.fields:
+        print(f"   机器级重活锁：持有中（name={heavy.fields.get('name') or '未知'} · "
+              f"pid {heavy.fields.get('pid') or '未知'} · worktree={heavy.fields.get('worktree') or '未知'}）")
     locked = GUARD._locked_branches(cwd)
     if locked is None:
         # `_locked_branches` 的 `None` = **无法判定**（#5430 同族：取不到 common git dir）。
@@ -1075,8 +1317,10 @@ def cmd_reap_merged(args: argparse.Namespace) -> int:
     # 但没 prune）⇒ 它不是「远程还在」：把它当远程目标会**每轮都尝试删一个不存在的分支**，并让
     # 「可收尾」清单里常驻一堆幻影（实测 2026-09-28：55 个「可收尾」里绝大多数是这种）。
     # 出口是 `git fetch --prune origin`（一次），**不是**「删除」⇒ 这里只把 `remote` 标志清掉，
-    # 候选**只靠 stale ref 存在**的会被下面的 `exists` 过滤掉（零额外网络：读的是同一份批量读数）。
-    heads = remote_heads(cwd)
+    # 候选**只靠 stale ref 存在**的会被下面的 `exists` 过滤掉。
+    # 🔴 这是一条**写决策**（要不要进删除面）⇒ 读「此刻真值」而不是进程内快照（issue #6617）；
+    # 冷启动时 refresh 与惰性读**同样是 1 次往返**，故不增加成本。
+    heads = remote_heads_refresh(cwd)
     if heads is not None:
         stale_refs = [c.branch for c in candidates if c.remote and c.branch not in heads]
         for c in candidates:
@@ -1093,7 +1337,8 @@ def cmd_reap_merged(args: argparse.Namespace) -> int:
     skipped: list[tuple[Candidate, str, str]] = []
     for c in candidates:
         ok, key, why = classify_candidate(c, merged, open_nums, open_bases,
-                                         protected, locked, self_branches, wt_base)
+                                         protected, locked, self_branches, wt_base,
+                                         occupancy=occupancy, heavy_lock=heavy)
         if ok:
             reapable.append(c)
         else:
@@ -1154,12 +1399,18 @@ def cmd_reap_merged(args: argparse.Namespace) -> int:
             if results.get(c.branch) == "deleted":
                 print(f"✅ 已删除远程分支：origin/{c.branch}")
 
+    # 自证读「此刻」真值：删除段已结束 ⇒ **现取一次**、循环内复用（`NS-3`：逐目标现取 = N 次往返）
+    heads_after = remote_heads_refresh(cwd)
+    undecided = 0
     for c in reapable:
         if c.branch in local_failed:
             continue
         ledger_add(c.branch, cwd)
         target = Target(c.branch, str(c.path) if c.path else None, c.path is not None, c.local, c.remote)
-        if not verify_clean(target, cwd, root):
+        verdict = verify_clean(target, cwd, root, heads=heads_after)
+        if verdict is None:
+            undecided += 1
+        elif not verdict:
             failures += 1
 
     removed = clean_artifacts(root, apply=True) if not args.no_artifacts else []
@@ -1170,7 +1421,13 @@ def cmd_reap_merged(args: argparse.Namespace) -> int:
         print(f"\n🧽 已清过程产物 {len(removed)} 项")
     print(f"✅ 自动收尾完成：{len(reapable) - failures}/{len(reapable)} 个目标已清。"
           if not failures else f"⚠️  {failures} 个目标自证有未清项（见上）。")
-    return EXIT_UNMERGED if (failures or anchor_hits) else EXIT_OK
+    if undecided:
+        print(f"⏭️  {undecided} 个目标的自证**无法判定**（远程读数取不到）—— 不得当「已清」读（exit 3）。")
+    if failures:
+        return EXIT_UNMERGED
+    if undecided:
+        return EXIT_UNKNOWN
+    return EXIT_UNMERGED if anchor_hits else EXIT_OK
 
 
 # ── 过程产物清理 ──────────────────────────────────────────────────────────────
@@ -1297,21 +1554,19 @@ def delete_remote_branch(branch: str, cwd: Path) -> bool:
 #   ② 写：一次 `git push origin --delete <b1> <b2> …`，每个分支的真值来自**删除后的一次批量读数**。
 
 #: `origin` 远程分支名的**进程内缓存**（`None` = **无法判定** ⇒ 调用方退回逐分支探测，语义不变）。
+#: 🔴 **不得用于自证**（`verify_clean` / 任何「证明状态真的变了」的判定）—— 见 `remote_heads_refresh`。
 _REMOTE_HEADS: dict[str, set[str] | None] = {}
 
 
 def remote_heads(cwd: Path, *, refresh: bool = False) -> set[str] | None:
     """`origin` 的全部远程分支名 —— **一次** `git ls-remote --heads origin`（进程内缓存）。
 
-    返回 `None` = 无法判定（git 抖动 / 离线）⇒ 调用方**退回逐分支探测**（判定语义逐字不变，只是慢）。
+    🔴 **这是快照，不是真值**：只用于**纯展示 / 批量循环内省往返**（issue #6617）。**自证必须**走
+    `remote_heads_refresh()` —— 拿快照去证明「状态真的变了」，就是拿**旧读数证明新状态**
+    （自证的全部意义是**最后读一次真值**）。
 
-    ⚠️ 缓存是**进程内快照** ⇒ **谁改了远程、谁就在自证前让它失效**：`verify_clean` 拿这份快照
-    判「远程分支还在不在」，于是「**缓存先被读过 → 远程才被删**」这个顺序会让自证读到
-    **删除前**的值、报出与最终态相反的结论（自证的全部意义就是**最后读一次真值**）。
-    只走 `batch_delete_remote_branches`（它自己 refresh）**不够**：`cmd_prune` 的**逐分支**
-    `delete_remote_branch` 不走它（issue #6261 里该路径的自证一度与最终态相反）。⇒ 每条删除路径
-    删完各自刷一次；刷在**自证之前 / 循环之外**，**不是**每个目标刷一次（那会把 `NS-3` 的
-    「常数次读数」退化成 N 次往返）。
+    返回 `None` = 无法判定（git 抖动 / 离线 / 限流）⇒ 调用方**不得**当「分支已不在」：先退回逐分支探测，
+    逐分支也读不出 ⇒ 三态里的「无法判定」（`3` 不得当 `0` 读）。
     """
     key = str(cwd)
     if refresh or key not in _REMOTE_HEADS:
@@ -1324,9 +1579,26 @@ def remote_heads(cwd: Path, *, refresh: bool = False) -> set[str] | None:
     return _REMOTE_HEADS[key]
 
 
-def remote_branch_gone(branch: str, cwd: Path) -> bool | None:
-    """该远程分支是否已不存在。`None` = 无法判定（批量读数取不到 ⇒ 调用方逐分支探测）。"""
-    heads = remote_heads(cwd)
+def remote_heads_refresh(cwd: Path) -> set[str] | None:
+    """**强制现取**的 `origin` 远程分支读数 —— **自证路径唯一允许的远程真值入口**（issue #6617）。
+
+    每次调用都真跑一次 `git ls-remote --heads origin`（**不读缓存**，并让缓存失效）⇒ 返回的就是
+    「此刻」的真值。为什么要一个**具名入口**而不是各处写 `remote_heads(refresh=True)`：
+    自证的正确性不能靠调用点「记得加参数」—— 具名入口是机械判据的**锚点**
+    （`tests/unit_ci_workflows/test_issue_lifecycle_selfproof.py` 判「`verify_clean` 必须走它、
+    且不得读快照」，改名 / 改回缓存即红）。
+
+    `None` = 读不到（网络 / 限流 / 离线）⇒ **无法判定**（三态），**不得当成功**（`3` 不得当 `0` 读）。
+    """
+    return remote_heads(cwd, refresh=True)
+
+
+def remote_branch_gone(branch: str, cwd: Path, *, refresh: bool = False) -> bool | None:
+    """该远程分支是否已不存在。`None` = 无法判定（批量读数取不到 ⇒ 调用方逐分支探测）。
+
+    ⚠️ 默认读**进程内快照**（省往返）⇒ **自证**请用 `refresh=True`（或直接用 `remote_heads_refresh`）。
+    """
+    heads = remote_heads(cwd, refresh=refresh)
     return None if heads is None else branch not in heads
 
 
@@ -1356,9 +1628,11 @@ def batch_delete_remote_branches(branches: list[str], cwd: Path) -> dict[str, st
     """
     if not branches:
         return {}
-    before = remote_heads(cwd)
+    # 删前读数**必须现取**（issue #6617 的同一病根）：快照既可能与「此刻」不符，也会让
+    # 「本次真删掉」与「别人先删了」分不开（`deleted` 就成了假陈述）。
+    before = remote_heads_refresh(cwd)
     proc = git("push", "origin", "--delete", *branches, cwd=cwd, check=False)
-    after = remote_heads(cwd, refresh=True)
+    after = remote_heads_refresh(cwd)
     if after is None:
         # 删后读数取不到 ⇒ 逐分支探测：只判「此刻在不在」，**判不了**「是不是我删的」
         results: dict[str, str] = {}
@@ -1392,7 +1666,7 @@ def batch_delete_remote_branches(branches: list[str], cwd: Path) -> dict[str, st
             print(f"ℹ️  批量删除后有 {len(still)} 个仍在远程 ⇒ **逐个补删**（一个坏 ref 不该拖累整批）")
             for b in still:
                 git("push", "origin", "--delete", b, cwd=cwd, check=False)
-            after2 = remote_heads(cwd, refresh=True)
+            after2 = remote_heads_refresh(cwd)
             if after2 is not None:
                 for b in still:
                     if b not in after2:
@@ -1412,8 +1686,25 @@ def batch_delete_remote_branches(branches: list[str], cwd: Path) -> dict[str, st
     return results
 
 
-def verify_clean(target: Target, cwd: Path, root: Path) -> bool:
-    """收尾后**自证**：worktree / 本地分支 / 远程分支 三项都为空或不存在。"""
+#: 「调用方**没有**预先给读数」的哨兵 —— 必须与 `None`（**读了但读不到**）区分开：
+#: 前者 ⇒ 自证自己现取；后者 ⇒ **无法判定**（三态，`3` 不得当 `0` 读）。
+_UNREAD = object()
+
+
+def verify_clean(target: Target, cwd: Path, root: Path, *,
+                 heads: set[str] | None | object = _UNREAD) -> bool | None:
+    """收尾后**自证**：worktree / 本地分支 / 远程分支 三项都为空或不存在 —— **三态**返回值。
+
+    - `True` = 三项**都确定**干净；
+    - `False` = 有**确定**的未清项；
+    - `None` = **无法判定**（远程真值读不到）⇒ 调用方必须走 `EXIT_UNKNOWN`：自证**不得**
+      在读数取不到时判成功（`3` 不得当 `0`/`1` 读）。
+
+    🔴 远程面**读真值、不读快照**（issue #6617）：默认每次 `remote_heads_refresh()` 现取。
+    批量调用方可以传一份**刚现取**的读数（`heads=`）保住「常数次往返」（`NS-3`）——那份读数**必须**
+    由 `remote_heads_refresh()` 产出（机械判据 = `tests/unit_ci_workflows/test_issue_lifecycle_selfproof.py`：
+    传快照 ⇒ 判红）。
+    """
     print("\n── 自证干净 ──")
     ok = True
     registered = {Path(e["path"]).resolve() for e in GUARD._worktrees(cwd)}
@@ -1427,13 +1718,23 @@ def verify_clean(target: Target, cwd: Path, root: Path) -> bool:
     print(f"  {'✅' if gone_local else '❌'} 本地分支不存在：{target.branch}")
     ok = ok and gone_local
 
-    gone_remote = remote_branch_gone(target.branch, cwd)
-    if gone_remote is None:
-        # 批量读数不可用 ⇒ **退回逐分支探测**（判定语义不变，只是慢）
+    # 远程面之前的**确定项**（worktree / 本地分支）—— 无法判定时要把两者分开报，否则
+    # 「读不到」会被读成「未清」（`False`），与「自证通过」一样都是假陈述。
+    ok_before_remote = ok
+    heads_reading = remote_heads_refresh(cwd) if heads is _UNREAD else heads
+    if heads_reading is None:
+        # 批量读数不可用 ⇒ **退回逐分支探测**（只判「此刻在不在」）；逐分支也读不出 ⇒ 无法判定
         ls_remote = git("ls-remote", "--heads", "origin", target.branch, cwd=cwd, check=False)
-        gone_remote = not ls_remote.stdout.strip()
-    print(f"  {'✅' if gone_remote else '❌'} 远程分支不存在：origin/{target.branch}")
-    ok = ok and gone_remote
+        gone_remote = None if ls_remote.returncode != 0 else not ls_remote.stdout.strip()
+    else:
+        gone_remote = target.branch not in heads_reading
+
+    if gone_remote is None:
+        print(f"  ⏭️  远程分支存在性**无法判定**：origin/{target.branch}"
+              "（读数取不到 ⇒ 自证**不得**判成功：exit 3，不得当 0/1 读）")
+    else:
+        print(f"  {'✅' if gone_remote else '❌'} 远程分支不存在：origin/{target.branch}")
+    ok = ok and gone_remote is True
 
     status = git("status", "--porcelain", cwd=root, check=False).stdout.strip()
     if not status:
@@ -1442,6 +1743,9 @@ def verify_clean(target: Target, cwd: Path, root: Path) -> bool:
         print(f"  ⚠️  主工作区仍有 {len(status.splitlines())} 条**既有**产物（非本次产生，如实登记）：")
         for line in status.splitlines()[:10]:
             print(f"       {line}")
+    if gone_remote is None:
+        # 三态：**无法判定**既不并进 True（「自证通过」）也不并进 False（「未清」）
+        return None if ok_before_remote else False
     return ok
 
 
@@ -1508,6 +1812,9 @@ def cmd_finish(args: argparse.Namespace) -> int:
     ledger_add(target.branch, cwd)
 
     ok = verify_clean(target, cwd, root)
+    if ok is None:
+        print("\n⏭️  自证**无法判定**（远程分支真值读不到）—— **不得**当「已清」读（exit 3）。")
+        return EXIT_UNKNOWN
     print("\n" + ("✅ 收尾完成，工作区干净。" if ok else "⚠️  收尾完成，但自证有未清项（见上）。"))
     return EXIT_OK if ok else EXIT_UNMERGED
 
@@ -1583,19 +1890,29 @@ def cmd_prune(args: argparse.Namespace) -> int:
             print(f"✅ 已删除远程分支：origin/{t.branch}")
 
     # 本路径的远程删除**不走** batch_delete_remote_branches（那条路自己 refresh）⇒ 删除段结束后
-    # **刷一次**读缓存再自证：自证读的是 `_REMOTE_HEADS` 快照，不刷就可能读到**删除前**的值、
-    # 报出与最终态相反的自证结论（#6261 里该路径出现过「已删干净却报 ❌ 远程分支不存在」）。
-    # 刷在**循环外**：循环内刷会把「常数次读数」退化成 N 次往返（`NS-3` 的教训）。
-    remote_heads(cwd, refresh=True)
+    # **现取一次真值**，把这份读数传给每个自证：自证读快照就是拿**删除前**的值证明删除后的状态
+    # （issue #6617 的病根；#6261 里该路径出现过「已删干净却报 ❌ 远程分支不存在」）。
+    # 现取在**循环外**：循环内逐目标现取会把「常数次读数」退化成 N 次往返（`NS-3` 的教训）。
+    heads_after = remote_heads_refresh(cwd)
 
+    undecided = 0
     for t in removable:
-        if not verify_clean(t, cwd, root):
+        verdict = verify_clean(t, cwd, root, heads=heads_after)
+        if verdict is None:
+            undecided += 1
+        elif not verdict:
             failures += 1
 
     removed = clean_artifacts(root, apply=True)
     print(f"\n🧽 已清过程产物 {len(removed)} 项")
-    print("✅ 批量收尾完成。" if not failures else f"⚠️  {failures} 个目标自证有未清项。")
-    return EXIT_OK if not failures else EXIT_UNMERGED
+    if failures:
+        print(f"⚠️  {failures} 个目标自证有未清项。")
+        return EXIT_UNMERGED
+    if undecided:
+        print(f"⏭️  {undecided} 个目标的自证**无法判定**（远程读数取不到）—— 不得当「已清」读（exit 3）。")
+        return EXIT_UNKNOWN
+    print("✅ 批量收尾完成。")
+    return EXIT_OK
 
 
 # ── 「已交付却悬挂」的发现面 + 「无证据不关单」的执行面（issue #5480 漏洞 2）──────────
@@ -1917,7 +2234,12 @@ def cmd_close(args: argparse.Namespace) -> int:
     failures = 0
     for n, reason, ev in rows:
         if not args.apply:
-            print(f"  [dry] #{n} {reason} :: {ev[:110]}")
+            # dry-run 是**审计面**：要能一眼看出「这一条会用什么依据关」（不是只看 issue 号）
+            print(f"  [dry] #{n} 判定={reason} ⇒ `gh issue close --reason {CLOSE_REASON_MAP[reason]}`"
+                  f"（{CLOSE_REASON_HEAD[reason]}）")
+            print(f"        依据（内容级证据，会原样贴成关闭评论）：{ev}")
+            print(f"        闸门：未实装登记 {'命中 ' + tracked[n] if n in tracked else '未命中'}"
+                  + ("（已 --ack-unimplemented-registry）" if args.ack_unimplemented_registry else ""))
             continue
         with tempfile.NamedTemporaryFile("w", suffix=".md", delete=False, encoding="utf-8") as fh:
             fh.write(_evidence_comment(n, reason, ev))

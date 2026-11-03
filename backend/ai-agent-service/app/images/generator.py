@@ -13,8 +13,13 @@
    「是否采用」都在 admin-api / 商家页面（与 `vision` 的 `TestNoWriteBoundary` 同口径）。
 2. 🔴 **模型可轮换**：`IMAGE_GEN_MODELS` 按顺序尝试；只有**配额类**错误
    （429 / `AllocationQuota` / `Throttling` / free tier）与**模型不可用**
-   （ModelNotFound / UnsupportedModel / HTTP 400 InvalidParameter）才切下一个 —— 其它错误直接上抛，
-   不把「提示词写错了」伪装成「换个模型试试」。
+   （ModelNotFound / UnsupportedModel / HTTP 400 InvalidParameter **且正文不是输入素材问题**）才切下一个
+   —— 其它错误直接上抛，不把「提示词写错了」伪装成「换个模型试试」。
+   🔴 **供应商 400 `InvalidParameter` 的 `message` 指向样图读不到**（URL 解析不了 / 下载失败 /
+   格式尺寸非法）⇒ 归 `ImageGenerationInputUnreachable`（`IMAGE_GEN_INPUT_UNREACHABLE`），
+   **不切模型、也不报「模型不支持」**（issue #7719）：同一个读不到的 URL 换哪个模型都读不到，
+   而「找平台换模型」与「换一张能访问的样图」是**相反**的两个动作。这两种 400 **同码**，
+   只能靠正文分开 ⇒ 判据是 `message`，不是 `code`。
    🔴 **凭证 / 权限类错误（401 `InvalidApiKey` / 403 `AccessDenied`）例外：一次都不轮换**
    —— 账号级问题，同一个 Key 换模型还是 401，轮换只白烧请求与时间（2026-10-25 线上实测）。
    它归入 `ImageGenerationAuthError`（`ImageGenerationUnavailable` 的子类 ⇒ 对外 503 语义、不可重试）。
@@ -76,9 +81,25 @@ class ImageGenerationAuthError(ImageGenerationUnavailable):
     """
 
     # 对外失败码（issue #7552）复用「凭证不可用」这一格：与「未配置 Key」同属**平台侧**凭证问题，
-    # 商家的下一个动作相同（找平台换 Key，别重试）；不新增第五个码（与 #7680 的码位口径一致）。
+    # 商家的下一个动作相同（找平台换 Key，别重试）；不为凭证单独加码（与 #7680 的码位口径一致）。
     # detail 里仍如实写明「生图凭证无效（HTTP 401/403）：InvalidApiKey」。
     code = "IMAGE_GEN_NO_KEY"
+
+
+class ImageGenerationInputUnreachable(ImageGenerationUnavailable):
+    """**样图本身读不到**（供应商 400 `InvalidParameter` 且 `message` 指向输入素材）。
+
+    形态来源 = 2026-10-25 线上实测（issue #7719）：供应商对抓不到的样图回
+    `HTTP 400 {"code":"InvalidParameter","message":"URL hostname cannot be resolved: …"}`。
+    旧逻辑只看 `code` ⇒ 归成「模型接不了这类请求」⇒ 商家被引向「找平台换模型」，
+    而正确动作是「换一张能访问的样图」。
+
+    与父类的差别只有**下一个动作**：
+    * 同类里**不轮换模型**（同一个读不到的 URL 换哪个模型都读不到，轮换只白烧一次请求）；
+    * 对外复用 503 + 机器可读 `code`（issue #7552 的形状不变，只是多一格成因）。
+    """
+
+    code = "IMAGE_GEN_INPUT_UNREACHABLE"
 
 
 #: 按商品名里的品类给「主图」一个**贴近真实用途**的场景（不按名称硬编码商品，只选场景）。
@@ -195,6 +216,55 @@ def _is_quota(data: Dict, status: int) -> bool:
     ))
 
 
+#: 供应商 400 `InvalidParameter` 的 `message` 正文里出现这些短语 ⇒ 问题在**输入素材**
+#: （样图读不到 / 格式或尺寸不合法），**不在**模型能力。小写比较（供应商原文大小写不一）。
+#:
+#: 🔴 逐字读数（issue #7719，2026-10-25 直连 MaaS）：
+#:   `{"code":"InvalidParameter","message":"URL hostname cannot be resolved: https://example.invalid/x.png"}`
+#: ⇒ **必须读正文**：它与「真·模型不接这类载荷」（`model does not support messages`）
+#:   是**同状态码同 code**，只看 `code` 分不开（这正是本缺陷的根因）。
+_INPUT_UNREACHABLE_HINTS = (
+    # 域名解析不了 / 地址不可达
+    "hostname cannot be resolved",
+    "domain name cannot be resolved",
+    "cannot be resolved",
+    "invalid url",
+    "url is invalid",
+    "url is not valid",
+    "url not accessible",
+    "url is not accessible",
+    # 下载失败 / 读不到
+    "failed to download",
+    "download failed",
+    "cannot download",
+    "failed to fetch",
+    "failed to read image",
+    "cannot read image",
+    "unable to read image",
+    # 图片本身不合法（格式 / 尺寸 / 损坏）—— 换一张图能好，换模型不能
+    "invalid image",
+    "invalid image format",
+    "unsupported image format",
+    "image size exceeds",
+    "image is too large",
+    "invalid image size",
+    "corrupted image",
+)
+
+
+def _is_input_unreachable(data: Dict, status: int) -> bool:
+    """供应商 400 且 `message` 指向**输入素材** ⇒ 该让商家换样图，不是换模型（issue #7719）。
+
+    ⚠️ 只对 400 生效（其它状态码先由 `_is_auth_failure` 等承接）。
+    ⚠️ 判据是 `message` 正文、**不是** `code` —— 与「真·模型不接这类载荷」同码同状态，
+    只有正文能分开；改回只看 `code` ⇒ 本类会把输入错误全部改判成模型能力问题。
+    """
+    if status != 400:
+        return False
+    message = str(data.get("message") or "").lower()
+    return any(hint in message for hint in _INPUT_UNREACHABLE_HINTS)
+
+
 def _is_model_unavailable(data: Dict, status: int) -> bool:
     """该模型**接不了这类请求** ⇒ 切下一个（不是我们的输入错，也不是配额）。
 
@@ -264,6 +334,11 @@ async def _request_one(model: str, prompt: str, image_url: str, client: httpx.As
             raise ImageGenerationAuthError(
                 f"{model}: 生图凭证无效（HTTP {resp.status_code}）："
                 f"{data.get('code') or data.get('message')}")
+        if _is_input_unreachable(data, resp.status_code):
+            # 样图读不到 / 不合法 ⇒ **输入侧**（issue #7719）：商家该换一张图，不是平台该换模型
+            raise ImageGenerationInputUnreachable(
+                f"{model}: 样图读取失败（HTTP {resp.status_code}）："
+                f"{data.get('message') or data.get('code')}")
         if _is_quota(data, resp.status_code):
             raise ImageGenerationQuotaExceeded(f"{model}: {data.get('code') or data.get('message')}")
         if _is_model_unavailable(data, resp.status_code):
@@ -316,6 +391,9 @@ async def generate_product_image(
                 return {"image_url": url, "model": model}
             except ImageGenerationAuthError:
                 # 账号级凭证问题：换 `IMAGE_GEN_MODELS` 里下一个模型还是 401 ⇒ 不空转、立即上抛
+                raise
+            except ImageGenerationInputUnreachable:
+                # 输入素材问题与模型无关（issue #7719）：换下一个模型只会把同一张读不到的图再送一遍
                 raise
             except ImageGenerationQuotaExceeded as e:
                 quota_hit = True

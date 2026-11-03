@@ -5,6 +5,23 @@
 > 原因 = 单文件涨到 512KB 越过扫描上限，详见存档文件头与 issue #6404。
 > **后续条目继续在本文件 `## [Unreleased]
 
+### 生图转圈两分钟的三个病一起收口：文案按实测说、三层超时只有一个权威、转圈时看得见进度（2026-11-03，issue #7731）
+
+- **改前**：建品页写「共 8 张，约 2~4 分钟」（更早的文案是「约 40 秒」），而生产两次独立实测单张
+  **121s / 145s**；三层超时各写一份（前端 `210000ms` / admin-api `200_000ms` / ai-agent `180s`）——
+  最紧的一层只剩 ~20% 余量，长尾一过 180s：ai-agent 先掐、admin-api 记成「瞬时不可用」，
+  而图其实已在供应商侧生成（照计费）却拿不到；2 分钟里只有一个转圈，商家会以为卡死。
+- **改后**：**唯一权威 = ai-agent 的 `IMAGE_GEN_TIMEOUT`**（唯一真正等供应商的一层），180 → **240s**；
+  ai-agent 新增内部端点下发 `deadline_ms`，admin-api 不再写自己的读超时常量（生成前现取，
+  取不到就不设上限），新增 `GET /api/admin/products/ai-images/estimate` 把上限转发给前端，
+  前端等待上限 = 上限 + 浏览器余量。文案改成事实：单张通常 2~3 分钟、整套通常 6~8 分钟，
+  「最长约 N 分钟」由权威上限**算出来**（上限改了文案自动变）；生成中显示「已用时 N 秒」，
+  超过 30 秒补一句「还在生成，通常 …」（一行小字，不新增大块告警、不摆内部标识）。
+- 判据：`tests/unit_ci_workflows/test_image_gen_deadline_single_source.py`（单一来源 + 文案派生 + 注入式红证）、
+  `backend/ai-agent-service/tests/test_generator.py`、`ProductImageClientTest` /
+  `ProductImageControllerTest` / `ProductImageGenerationServiceTest`、
+  `frontend/admin-web/tests/unit/lib/api-product-image.test.ts` / `ProductImageAI.test.tsx`。
+
 ### 一条「把工序用到没有该部位库行的条件」的规则，保存时就被拒（不再等派单在整单上炸）（2026-11-03，issue #6428）
 
 - **改前**：`POST /api/admin/production/route-rules` 只校验「工序库里有没有这道工序」（逻辑名存在性），
@@ -22,6 +39,20 @@
   （PG-100 组 9 条 + 注入式红证）、
   `backend/admin-api/src/test/java/com/migao/admin/service/ProductionRouteRuleWriteSurfaceMetaGuardTest.java`
   （`production_route_rules` 写面台账的类级元守卫：新写面未登记即红、GATED 调用点被摘即红）。
+
+### 样图抓不到时不再说「模型不支持」：说清「这张样图读不到，换一张」（2026-11-03，issue #7719）
+
+- **改前**：供应商抓不到样图（域名解析不了 / 下载失败）时回 `400 InvalidParameter`，而生图内核只按 `code`
+  判「模型接不了这类请求」⇒ 对外 `IMAGE_GEN_MODEL_UNSUPPORTED` ⇒ 建品页「该能力暂不可用，已反馈平台」。
+  **商家被引向「找平台换模型」**，而正确动作是「换一张能访问的样图」—— 两个方向正好相反。
+- **改后**：400 时**读供应商 `message` 正文**分流 —— 正文指向输入素材（URL 解析不了 / 下载失败 /
+  格式或尺寸非法）⇒ 新错误码 `IMAGE_GEN_INPUT_UNREACHABLE`（admin-api 映射成
+  `AI_PRODUCT_IMAGE_INPUT_UNREACHABLE`），文案只说事实与下一步：「这张样图读取失败，换一张能正常打开的
+  样图再试，或直接上传图片」。**不切模型**（同一张读不到的图，换哪个模型都读不到）。
+  真·模型不接这类载荷（正文是模型侧原因）**行为逐字不变**：仍切下一个模型（#7341 的回落链），
+  全链都不接仍是 `IMAGE_GEN_MODEL_UNSUPPORTED`；429 / 配额仍归 `IMAGE_GEN_QUOTA_EXCEEDED`。
+- 判据：`backend/ai-agent-service/tests/test_generator.py`（输入侧 / 模型侧 / 配额三分流 + 常驻红证）、
+  `ProductImageClientTest#mapsUpstreamFailureCodesToDistinctActions`、`ProductImageAI.test.tsx`。
 
 ### 同时做出库不再出现 500：出库单号也改成「一条语句占号」（2026-11-03，issue #8490）
 

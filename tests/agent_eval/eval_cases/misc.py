@@ -2,7 +2,7 @@
 # 本文件由 render_cases.py 生成，勿手改（改了也留不住：下次重渲染会覆盖）
 # 源: cases/*.yml（case-contract 单一源）
 # 重新生成: python3 render_cases.py --cases <dir> --out-eval <包目录> --out-md <md>
-# 域: misc（源: cases/misc.yml，180 条）
+# 域: misc（源: cases/misc.yml，184 条）
 
 from ._schema import Difficulty, EvalCase, Skill
 
@@ -3315,6 +3315,79 @@ _CASE_MC_137 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── MC-135 [NORMAL] 生图失败归因必须读供应商 message 正文：400 InvalidParameter 的「样图读不到」与「模型不接」分成两格（issue #7719）（源: cases/misc.yml）──
+_CASE_MC_135 = EvalCase(
+    id='MC-135',
+    legacy_id='',
+    title='生图失败归因必须读供应商 message 正文：400 InvalidParameter 的「样图读不到」与「模型不接」分成两格（issue #7719）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['样图 URL 供应商抓不到（域名解析不了 / 下载失败）时，建品页说「该能力暂不可用，已反馈平台」⇒ 商家以为要找平台换模型，而真正该做的是换一张能访问的样图。'],
+    expectations=['direct_reply'],
+    data_checks=['判据 1·输入侧分流（会红）：供应商 400 + code=InvalidParameter + message 指向输入素材（URL 解析不了 / 下载失败 / 格式或尺寸非法）⇒ 归 ImageGenerationInputUnreachable（对外 code = IMAGE_GEN_INPUT_UNREACHABLE），**不**归 IMAGE_GEN_MODEL_UNSUPPORTED，且**不切模型**（默认链两个模型 ⇒ 恰好一次 HTTP 调用）。执行点 = backend/ai-agent-service/tests/test_generator.py::test_unresolvable_sample_url_is_input_side_not_model_unsupported。', '判据 2·不许一律改判（会红）：400 + InvalidParameter 但 message 是模型侧原因（model does not support messages）⇒ 仍切下一个模型（#7341 的回落链逐字保留）；全链都不接仍是 IMAGE_GEN_MODEL_UNSUPPORTED。执行点 = ::test_other_invalid_parameter_messages_still_switch_models + ::test_internal_endpoint_503_carries_stable_failure_code。', '判据 3·配额不回归（会红）：429 / Throttling / AllocationQuota 仍归 IMAGE_GEN_QUOTA_EXCEEDED，不被输入侧分类吃掉。执行点 = ::test_quota_429_is_still_quota_not_input_side + ::test_all_models_quota_raises_quota_exceeded。', '判据 4·红证（常驻）：同状态码、同 code、只有 message 不同的两条必须分类相反；把 message 解析删掉（只看 code）⇒ ::test_input_side_classifier_reads_message_body_not_just_code 必红。', '判据 5·对外话术（会红）：admin-api 把 IMAGE_GEN_INPUT_UNREACHABLE 映射成 AI_PRODUCT_IMAGE_INPUT_UNREACHABLE，话术只说「换一张能正常打开的样图」，不含「稍后重试」「已反馈平台」，也不含服务名 / 地址（§31 P3）；建品页按该码显示同一口径（与「能力不可用」两句不同的话）。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/ProductImageClientTest.java::mapsUpstreamFailureCodesToDistinctActions + frontend/admin-web/tests/unit/components/ProductImageAI.test.tsx。'],
+    skip_reason='[backend-contract] 纯确定性单测（httpx mock / MockRestTemplate / vitest mock，零生成费用、零真实供应商调用），不进入 agent-eval 冒烟',
+    tags=['image-generation', 'failure-attribution', 'input-side', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-136 [NORMAL] 生图等待上限只有一个权威（ai-agent 的 IMAGE_GEN_TIMEOUT）：admin-api 读超时与前端等待/文案都从它派生；文案按实测区间说、超 30 秒给「还在生成」（issue #7731）（源: cases/misc.yml）──
+_CASE_MC_136 = EvalCase(
+    id='MC-136',
+    legacy_id='',
+    title='生图等待上限只有一个权威（ai-agent 的 IMAGE_GEN_TIMEOUT）：admin-api 读超时与前端等待/文案都从它派生；文案按实测区间说、超 30 秒给「还在生成」（issue #7731）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['商家点「生成」后转圈 1~2 分钟，面板文案写的是「约 40 秒」，中途没有任何进度（issue #7731）', '三层超时各写一份（前端 210000ms / admin-api 200000ms / ai-agent 180s）⇒ 改一层忘一层'],
+    expectations=['direct_reply'],
+    data_checks=['**权威单一（会红）**：ai-agent `app/config.py` 的 `IMAGE_GEN_TIMEOUT` 是唯一 deadline 定义（三层里 0 处重复）；`.env.example` 不再写第二份活值；`GET /api/internal/images/deadline` 现取 `settings.IMAGE_GEN_TIMEOUT * 1000`（注入 240/300 ⇒ 240000/300000）。执行点 = tests/unit_ci_workflows/test_image_gen_deadline_single_source.py::test_ai_agent_is_the_single_authority + backend/ai-agent-service/tests/test_generator.py::test_deadline_endpoint_reads_the_single_authority。', '**admin-api 不写第二份（会红）**：ProductImageClient 无 GENERATE_READ_TIMEOUT_MS、无 deadline 量级的硬编码超时；生成前经 /images/deadline 现取并派生读超时（deadline + 传输余量；取不到 ⇒ 不设上限，不擅自给更紧的数）；GET /api/admin/products/ai-images/estimate 只转发 estimated_deadline_ms。执行点 = ProductImageClientTest::readTimeoutDerivesFromAiAgentDeadline + ProductImageControllerTest::estimate_forwardsTheAiAgentDeadline + ProductImageGenerationServiceTest::estimatedDeadlineIsForwarded。', '**前端派生（会红）**：商品图 API 模块（frontend/admin-web/src/lib/api-product-image.ts，从 loc ratchet 冻结的 api.ts 拆出）无生图超时字面量（改前 210000），等待上限 = admin-api 的 estimated_deadline_ms + 浏览器余量（imageGenTimeoutMs）；面板文案的「最长约 N 分钟」由该值算出（240000 ⇒ 4 分钟，300000 ⇒ 5 分钟）。执行点 = frontend/admin-web/tests/unit/lib/api-product-image.test.ts + ProductImageAI.test.tsx。', '**文案与进度（会红）**：不再出现与实测（121~145s）不符的等待承诺（旧口径的「约 N 秒」「约 2~4 分钟」）；文案 = 实测区间（单张 2~3 分钟 / 整套 6~8 分钟）+ 由权威上限算出的「最长约」；生成中显示「已用时 N 秒」，超过 30 秒补「还在生成，通常 …」一行（不新增告警块、不摆模型名 / 请求 id，§31 P1/P3/P4）。', '**红证（注入式，可复制）**：把 `GENERATE_READ_TIMEOUT_MS = 200_000` 写回 ProductImageClient（或把 `timeout: 210000` 写回 api-product-image.ts、把「约 2~4 分钟」写回面板）⇒ test_image_gen_deadline_single_source.py 对应用例判红并具名；恢复即绿。'],
+    skip_reason='[backend-contract] 静态单一来源 + 沙箱行为判据（零网络、零真实生图），由 tests/unit_ci_workflows 与三端单测执行，不进入 agent-eval 冒烟',
+    tags=['single-source', 'timeout', 'image-generation', 'copy-standard', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [backend-contract] 静态单一来源 + 三端单测用例：前置（ai-agent 内部端点、admin-api 端点、前端 API 模块）由各端单测自建或 mock（admin-web mock `@/lib/api`；admin-api mock RestTemplate；ai-agent 走真内核 + MockTransport），零网络、零真实生图；前置不成立时对应用例直接红，agent-eval 栈不跑它',
+)
+
+# ── MC-133 [NORMAL] issue_lifecycle 自证不得读进程内快照（issue #6617）：远程面强制现取 / 读不到 ⇒ 三态 3 / 批量路径只许一次现取（NS-3）（源: cases/misc.yml）──
+_CASE_MC_133 = EvalCase(
+    id='MC-133',
+    legacy_id='',
+    title='issue_lifecycle 自证不得读进程内快照（issue #6617）：远程面强制现取 / 读不到 ⇒ 三态 3 / 批量路径只许一次现取（NS-3）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['收尾自证读的是进程内快照 `_REMOTE_HEADS` ⇒「快照先被读过、远程才被删」时，自证拿删除前的值判「还在不在」，会报出与最终态**相反**的结论 —— 凭什么相信「自证干净」这四个字？'],
+    expectations=[],
+    data_checks=['🔴 **判据 1·自证读真值（实例，会红）**：夹具 = 真 bare origin + 真仓库；顺序 = 先读快照（分支在）→ 再删远程（快照不刷新）⇒ `verify_clean` 必须判 `True`；读快照的实现必报 `False`。执行点 = tests/unit_ci_workflows/test_issue_lifecycle_selfproof.py::test_selfproof_reads_the_truth_not_the_snapshot', '🔴 **判据 2·读不到 ⇒ 无法判定（三态）**：origin **真不可达**（不是 mock）⇒ 模块级自证给 `None`（既非 True 也非 False）；CLI `finish` 出口 `exit 3` 且**不**打印「✅ 收尾完成」（`3` 不得当 `0` 读）。执行点 = 同文件::test_unreadable_remote_is_undecidable_not_success + ::test_finish_exits_3_when_the_selfproof_cannot_read', '🔴 **判据 3·红证（注入式）**：把 `verify_clean` 的现取那一行变异成 `remote_heads`（读快照）⇒ 判据 1 的同一夹具**必红**（True → False），变异副本带语法自检。执行点 = 同文件::test_reverting_the_selfproof_to_the_snapshot_turns_it_red', '🔴 **判据 4·类级元守卫（AST，防「下一个删除路径又漏」）**：① `verify_clean` 必须调 `remote_heads_refresh` 且不得调 `remote_heads` / `remote_branch_gone`；② 传给它的 `heads=` 只许来自现取（直接调用或同函数绑定）；③ 任何调 `delete_remote_branch` / `batch_delete_remote_branches` 的函数必须同时调 `verify_clean` —— **新增删除路径忘了自证即红**。含判别力自证：四种坏形态在合成语料上各自判红。执行点 = 同文件::test_class_guard_holds_on_the_real_module + ::test_class_guard_has_discriminating_power', '🔴 **判据 5·审计面**：`close` 的 dry-run 必须显示「这一条会用什么依据关」= 判定 → `gh issue close --reason` 映射（delivered→completed / superseded→not planned）+ **证据原文（不再截断 110 字）** + 未实装登记闸门读数，且**零 gh 调用**。执行点 = 同文件::test_close_dry_run_shows_the_basis_for_each_close', '🔴 **判据 6·往返不变式（NS-3 不许退化）**：批量调用方传现取读数 ⇒ 自证 **0 次** `ls-remote`；默认自证 **恰好 1 次**。执行点 = 同文件::test_selfproof_round_trips_are_constant', '**边界（照实登记，§19.1）**：① 判据判不了「调用方在生产环境真的跑过」——它只保证接线锚在；行为面由实例判据 + 真 CLI 出口承担；② AST 守卫射程 = 本文件内的函数调用形态（`getattr` / 变量拼接不在面内）；③ 不改任何门禁的通过条件、不新增豁免。'],
+    skip_reason='[backend-contract] 零 LLM 的确定性脚本判据（自足临时 git 仓库 + 真 bare origin + 真不可达 origin + AST 守卫），pytest 真跑、零网络（gh 由替换函数顶替），不进 agent-eval 冒烟',
+    tags=['dev-tooling', 'self-proof', 'stale-snapshot', 'tri-state', 'ast-meta-guard', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-138 [NORMAL] 删 worktree 前必须判「活进程占用 / 未提交未推送 / 持有重活锁」：自动收尾不再删掉正在被用的检出（issue #7008）（源: cases/misc.yml）──
+_CASE_MC_138 = EvalCase(
+    id='MC-138',
+    legacy_id='',
+    title='删 worktree 前必须判「活进程占用 / 未提交未推送 / 持有重活锁」：自动收尾不再删掉正在被用的检出（issue #7008）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['评测栈从某个 worktree 起服务（进程的 cwd 就在里面），PR 合并后跑下一次 dev-worktree.sh add —— 凭什么保证那个还活着的 worktree 不会被自动收尾删掉？'],
+    expectations=[],
+    data_checks=['🔴 **判据 1·活进程占用 ⇒ 拒删并具名（会红）**：真子进程 `Popen(cwd=<worktree>)` ⇒ `classify_candidate` 判不可收尾、原因键 `活占用`，输出含 pid / `cwd` / 命中路径。执行点 = tests/unit_ci_workflows/test_dev_worktree_reap_guard.py::test_live_process_cwd_inside_worktree_refuses_reap', '🔴 **判据 2·有未提交改动 / 未推送提交 ⇒ 拒删（会红，单变量对照）**：写一个未跟踪文件 ⇒ `有未提交/未推送内容` 并指名该文件；本地多一次提交 ⇒ 报「未推送提交」；把它推上去 ⇒ 同一条判据放行。执行点 = 同文件::test_uncommitted_change_refuses_reap / ::test_unpushed_commit_refuses_reap_and_push_clears_it', '🔴 **判据 3·干净且无占用 ⇒ 允许（负控，会红）**：干净、已推送、无进程、无锁 ⇒ `可收尾`（防「一律拒删」的假修把自动收尾挡死）。执行点 = 同文件::test_clean_unoccupied_worktree_is_allowed', '🔴 **判据 4·持有中的机器级重活锁 ⇒ 拒删（含两条负控）**：锁的 `worktree` 落在候选内 ⇒ `持有重活锁` 并指名 name/pid/落点；锁在别的工作区 / 持有者已退出（陈旧锁）⇒ 放行。执行点 = 同文件::test_heavy_lock_held_on_worktree_refuses_reap', '🔴 **判据 5·端到端（真脚本 + 真 git 夹具 + 真进程）**：`reap-merged --apply` 与 `dev-worktree.sh add` 在占用存在时都**不删**工作区/本地分支/远程分支；去掉占用后同一命令**仍会真删**（对照臂，证明没把功能删瘫）；`add` 的输出里「dry-run（零删除）」必须先于「APPLY（真删）」。执行点 = 同文件::test_reap_apply_keeps_worktree_in_use_and_reaps_it_after / ::test_dev_worktree_add_does_not_delete_a_worktree_in_use', '🔴 **判据 6·类级元守卫（§23，会红）**：扫 `scripts/*.py` + `scripts/*.sh` 的**全部**删 worktree 入口，与登记表**双向相等**（新入口未登记 ⇒ 红；台账里有已消失的入口 ⇒ 红）；登记为**自动面**的 `scripts/issue_lifecycle.py::cmd_reap_merged` 必须真的含三条活占用保护调用。红证 = 注入一个未登记的删除入口 / 从 `classify_candidate` 摘掉 `live_occupants` ⇒ 两者各自单独红。执行点 = 同文件::test_every_worktree_delete_entry_is_registered / ::test_class_guard_goes_red_when_liveness_check_is_removed / ::test_class_guard_goes_red_when_a_new_delete_entry_appears_unregistered', '🔴 **判别力自证（注入式红证）**：把 `live_occupants` 调用从源码副本里物理摘掉 ⇒ 同一夹具变「可收尾」（判据 1 必红）；未变异的真模块在同一夹具上仍拒删（反向对照）。执行点 = 同文件::test_red_proof_removing_live_occupancy_detection_makes_it_reapable', '**边界（照实登记，§19.1）**：① 探针读不到（无 `/proc` 且无 `lsof`）⇒ 判「无法判定」并拒删；但**判不了**「有进程却因权限看不到」（macOS 上别的用户的进程默认不可见）。② 无 upstream 且提交不在任何 `origin/*` 引用上 ⇒ 按「未推送」拒删（fail-closed：远端分支已删并 prune 的 worktree 会被漏收 —— **有意收窄**，出口 = 人工 `git worktree remove`）。③ 不改任何门禁的通过条件、不新增豁免。'],
+    skip_reason='[backend-contract] 零 LLM 的确定性脚本判据（真 git 仓库 + 真 bare origin + 真 worktree + 真子进程 + 注入式红证），pytest 真跑、零网络，不进 agent-eval 冒烟',
+    tags=['worktree', 'reap', 'liveness', 'fail-closed', 'tooling', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 CASES = (
     _CASE_MC_001,
     _CASE_MC_002,
@@ -3496,4 +3569,8 @@ CASES = (
     _CASE_MC_132,
     _CASE_MC_134,
     _CASE_MC_137,
+    _CASE_MC_135,
+    _CASE_MC_136,
+    _CASE_MC_133,
+    _CASE_MC_138,
 )

@@ -54,6 +54,7 @@ from app.images.generator import (
     KINDS,
     ImageGenerationAuthError,
     ImageGenerationError,
+    ImageGenerationInputUnreachable,
     ImageGenerationQuotaExceeded,
     ImageGenerationUnavailable,
     generate_product_image,
@@ -85,6 +86,15 @@ _IMAGE_FAILURES: Dict[str, Dict[str, str]] = {
         "message": "这个商品还没有可用作样图的主图，暂时没法生成商品图",
         "suggestion": "请商家先在「商品管理」里给该商品上传一张清晰的主图（正面、整图、"
                       "无文字水印），再让我生成；不要凭空描述或编造商品图。",
+    },
+    # 样图抓不到（供应商 400 `InvalidParameter` 且正文指向输入素材，issue #7719）：
+    # 对外码复用 `IMAGE_SOURCE_MISSING`（商家的下一个动作相同 = 换一张样图；不新增补救登记），
+    # 但**话术必须换** —— 不能说成「模型接不了这类请求」，那会把商家引向「找平台换模型」。
+    "IMAGE_SAMPLE_UNREADABLE": {
+        "error": "IMAGE_SOURCE_MISSING",
+        "message": "这张样图读不到，没法基于它生成商品图",
+        "suggestion": "请商家在「商品列表」里把该商品的主图换一张能正常打开的图片"
+                      "（在列表里能看到它），再让我生成；同一张图重复尝试不会成功。",
     },
     "IMAGE_GEN_UNAVAILABLE": {
         "error": "IMAGE_GEN_UNAVAILABLE",
@@ -292,6 +302,19 @@ class ProductImageGenerateTool(BaseTool):
             # 重试永远不会成功（2026-10-25 线上实测：现役 MaaS key 回 401 InvalidApiKey）。
             logger.error(f"Product image generate credential invalid: product={product_id}, err={e}")
             failure = _IMAGE_FAILURES["IMAGE_GEN_CREDENTIAL"]
+            return ToolResult(
+                success=False,
+                error=failure["error"],
+                message=failure["message"],
+                suggestion=failure["suggestion"],
+            )
+        except ImageGenerationInputUnreachable as e:
+            # 样图本身读不到（供应商 400 InvalidParameter 的正文指向输入素材，issue #7719）：
+            # 与「模型接不了这类请求」**必须**分开 —— 正确动作是「换一张能访问的样图」，
+            # 不是「找平台换模型」，也不是「等额度」。
+            logger.warning(
+                f"Product image generate sample unreadable: product={product_id}, err={e}")
+            failure = _IMAGE_FAILURES["IMAGE_SAMPLE_UNREADABLE"]
             return ToolResult(
                 success=False,
                 error=failure["error"],

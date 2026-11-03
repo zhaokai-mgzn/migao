@@ -4186,7 +4186,7 @@
 ```
 溯源: 2026-10-31 新增（issue #8295）：两步确认，避免误写 ｜ tags: ui, preview
 
-## 杂项域（180 case）
+## 杂项域（184 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -6955,6 +6955,63 @@
 跳过: [backend-contract] 零 LLM 的确定性读数（真 git 临时仓 + 真跑 node 读面 CLI + 真仓库 git ls-files 对账 + 内存注入自证），pytest 真跑、零网络，不进 agent-eval 冒烟
 ```
 溯源: 2026-11-03 新增（issue #6594）。病（本机实测，issue 原文）：bmini 打印口径守卫的 C2b 用 readCorpus(['frontend','backend']) **遍历工作树** ⇒ 扫到被 .gitignore 命中的旧覆盖率产物（backend/ai-agent-service/coverage.json，python coverage 输出、496KB、天然含打印头宽的像素口径）⇒ ./verify-all.sh gate 的 bmini 腿在本机判红（Array [] vs Array ['…coverage.json: 自带像素口径字面量 384…']），而 CI（干净检出）判绿 ⇒ **本机红 / CI 绿的分裂**。修法 = **A（读 git 索引）**：语料 = git ls-files 的跟踪集合；同口径是**构造出来的**（CI 检出里只有跟踪文件），不是靠一张必然漏的排除清单。落码 = frontend/bmini-app/tests/helpers/trackedCorpus.js（唯一读面，默认 index；worktree 只给判据做单变量对照）+ 守卫改为调用它 + 未跟踪且未被 ignore 的文件**出声**（不静默漏扫、也不判红）。**红证（实跑，双向对照）**：同一份被 ignore 的产物存在时 —— 修前（读面 = 工作树）**1 failed / 7 passed**，报错与 issue 逐字相同；修后（读面 = 索引）**8 passed**。🔴 **取号出过一次事故（照实登记，本 PR 是补丁）**：本用例**首次**以 MC-134 起草并随修复 PR #8511 提交，合入前该分支被更新到含 #8510 的 main —— **#8510 的 Java 定点判据用例先占了 MC-134**（.github/cases/claims/8510-MC-134.json），两条都以 `- id:` 追加在 misc.yml 末尾 ⇒ 分支更新时**本条目被静默吞掉**（main 上 grep `语料读面` = **0**），而 CI 全绿（判据只查「声明的 id 存在」，不查「它指的还是不是自己那条」）。本 PR 补回该条目并改用例号 **MC-137**（现取最大 136 + 1；`next_case_id.py` 的最小空闲号是刻意的历史空档 MC-099，**按纪律不回填**），并补 `.github/cases/claims/<本 PR>-MC-137.json` 取号登记。 ｜ tags: ci-process, corpus-read-face, git-index, false-positive, red-proof, single-source
+
+### MC-135. 生图失败归因必须读供应商 message 正文：400 InvalidParameter 的「样图读不到」与「模型不接」分成两格（issue #7719） 🔵
+```
+你: 样图 URL 供应商抓不到（域名解析不了 / 下载失败）时，建品页说「该能力暂不可用，已反馈平台」⇒ 商家以为要找平台换模型，而真正该做的是换一张能访问的样图。
+期望: direct_reply
+数据: 判据 1·输入侧分流（会红）：供应商 400 + code=InvalidParameter + message 指向输入素材（URL 解析不了 / 下载失败 / 格式或尺寸非法）⇒ 归 ImageGenerationInputUnreachable（对外 code = IMAGE_GEN_INPUT_UNREACHABLE），**不**归 IMAGE_GEN_MODEL_UNSUPPORTED，且**不切模型**（默认链两个模型 ⇒ 恰好一次 HTTP 调用）。执行点 = backend/ai-agent-service/tests/test_generator.py::test_unresolvable_sample_url_is_input_side_not_model_unsupported。
+数据: 判据 2·不许一律改判（会红）：400 + InvalidParameter 但 message 是模型侧原因（model does not support messages）⇒ 仍切下一个模型（#7341 的回落链逐字保留）；全链都不接仍是 IMAGE_GEN_MODEL_UNSUPPORTED。执行点 = ::test_other_invalid_parameter_messages_still_switch_models + ::test_internal_endpoint_503_carries_stable_failure_code。
+数据: 判据 3·配额不回归（会红）：429 / Throttling / AllocationQuota 仍归 IMAGE_GEN_QUOTA_EXCEEDED，不被输入侧分类吃掉。执行点 = ::test_quota_429_is_still_quota_not_input_side + ::test_all_models_quota_raises_quota_exceeded。
+数据: 判据 4·红证（常驻）：同状态码、同 code、只有 message 不同的两条必须分类相反；把 message 解析删掉（只看 code）⇒ ::test_input_side_classifier_reads_message_body_not_just_code 必红。
+数据: 判据 5·对外话术（会红）：admin-api 把 IMAGE_GEN_INPUT_UNREACHABLE 映射成 AI_PRODUCT_IMAGE_INPUT_UNREACHABLE，话术只说「换一张能正常打开的样图」，不含「稍后重试」「已反馈平台」，也不含服务名 / 地址（§31 P3）；建品页按该码显示同一口径（与「能力不可用」两句不同的话）。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/ProductImageClientTest.java::mapsUpstreamFailureCodesToDistinctActions + frontend/admin-web/tests/unit/components/ProductImageAI.test.tsx。
+跳过: [backend-contract] 纯确定性单测（httpx mock / MockRestTemplate / vitest mock，零生成费用、零真实供应商调用），不进入 agent-eval 冒烟
+```
+溯源: 2026-11-03 新增（issue #7719）。逐字读数（2026-10-25 10:11）：对外 503 IMAGE_GEN_MODEL_UNSUPPORTED，而供应商对同一请求的原文 = HTTP 400 code=InvalidParameter message=URL hostname cannot be resolved（样图域名解析不了）。取号 = MC-135（**让号记实**：原取 MC-133，但同日在飞 PR #8506 / #8508 / #8509 都取在同一段号上 ⇒ 按 `docs/wiki/Change-Blast-Radius.md` 陷阱 3 的「后合入者让号」，在 CI 报红前主动让到现取最大号 + 1 = MC-135）。 ｜ tags: image-generation, failure-attribution, input-side, red-proof
+
+### MC-136. 生图等待上限只有一个权威（ai-agent 的 IMAGE_GEN_TIMEOUT）：admin-api 读超时与前端等待/文案都从它派生；文案按实测区间说、超 30 秒给「还在生成」（issue #7731） 🔵
+```
+你: 商家点「生成」后转圈 1~2 分钟，面板文案写的是「约 40 秒」，中途没有任何进度（issue #7731）
+你: 三层超时各写一份（前端 210000ms / admin-api 200000ms / ai-agent 180s）⇒ 改一层忘一层
+期望: direct_reply
+数据: **权威单一（会红）**：ai-agent `app/config.py` 的 `IMAGE_GEN_TIMEOUT` 是唯一 deadline 定义（三层里 0 处重复）；`.env.example` 不再写第二份活值；`GET /api/internal/images/deadline` 现取 `settings.IMAGE_GEN_TIMEOUT * 1000`（注入 240/300 ⇒ 240000/300000）。执行点 = tests/unit_ci_workflows/test_image_gen_deadline_single_source.py::test_ai_agent_is_the_single_authority + backend/ai-agent-service/tests/test_generator.py::test_deadline_endpoint_reads_the_single_authority。
+数据: **admin-api 不写第二份（会红）**：ProductImageClient 无 GENERATE_READ_TIMEOUT_MS、无 deadline 量级的硬编码超时；生成前经 /images/deadline 现取并派生读超时（deadline + 传输余量；取不到 ⇒ 不设上限，不擅自给更紧的数）；GET /api/admin/products/ai-images/estimate 只转发 estimated_deadline_ms。执行点 = ProductImageClientTest::readTimeoutDerivesFromAiAgentDeadline + ProductImageControllerTest::estimate_forwardsTheAiAgentDeadline + ProductImageGenerationServiceTest::estimatedDeadlineIsForwarded。
+数据: **前端派生（会红）**：商品图 API 模块（frontend/admin-web/src/lib/api-product-image.ts，从 loc ratchet 冻结的 api.ts 拆出）无生图超时字面量（改前 210000），等待上限 = admin-api 的 estimated_deadline_ms + 浏览器余量（imageGenTimeoutMs）；面板文案的「最长约 N 分钟」由该值算出（240000 ⇒ 4 分钟，300000 ⇒ 5 分钟）。执行点 = frontend/admin-web/tests/unit/lib/api-product-image.test.ts + ProductImageAI.test.tsx。
+数据: **文案与进度（会红）**：不再出现与实测（121~145s）不符的等待承诺（旧口径的「约 N 秒」「约 2~4 分钟」）；文案 = 实测区间（单张 2~3 分钟 / 整套 6~8 分钟）+ 由权威上限算出的「最长约」；生成中显示「已用时 N 秒」，超过 30 秒补「还在生成，通常 …」一行（不新增告警块、不摆模型名 / 请求 id，§31 P1/P3/P4）。
+数据: **红证（注入式，可复制）**：把 `GENERATE_READ_TIMEOUT_MS = 200_000` 写回 ProductImageClient（或把 `timeout: 210000` 写回 api-product-image.ts、把「约 2~4 分钟」写回面板）⇒ test_image_gen_deadline_single_source.py 对应用例判红并具名；恢复即绿。
+前置: 本用例是 [backend-contract] 静态单一来源 + 三端单测用例：前置（ai-agent 内部端点、admin-api 端点、前端 API 模块）由各端单测自建或 mock（admin-web mock `@/lib/api`；admin-api mock RestTemplate；ai-agent 走真内核 + MockTransport），零网络、零真实生图；前置不成立时对应用例直接红，agent-eval 栈不跑它
+跳过: [backend-contract] 静态单一来源 + 沙箱行为判据（零网络、零真实生图），由 tests/unit_ci_workflows 与三端单测执行，不进入 agent-eval 冒烟
+```
+溯源: 2026-11-03 新增（issue #7731）。取号 MC-136（`python3 scripts/next_case_id.py MC` 现取：main 001-098,100-132,134 + 在飞 PR #8509/#8508 占 133、#8503 占 135 ⇒ 本包让号到 136；MC-099 历史空档不回填）。权威层选择 = ai-agent（唯一真正等供应商的一层）：`IMAGE_GEN_TIMEOUT` 180→240（实测 121s/145s，旧值只余 ~20%）；新增 GET /api/internal/images/deadline 下发 deadline_ms；admin-api 删掉 GENERATE_READ_TIMEOUT_MS（200000），生成前现取并按 deadline+传输余量设读超时，取不到 ⇒ 不设上限；新增 GET /api/admin/products/ai-images/estimate 转发 estimated_deadline_ms；前端删掉 timeout: 210000，imageGenTimeoutMs(deadline) = deadline + 120s 浏览器余量；文案改成实测区间（单张 2~3 分钟 / 整套 6~8 分钟）+ 由权威上限算出的「最长约」，生成中显示已用时、超 30 秒补「还在生成」。⚠️ 未闭合（照实登记）：① 线上 `.env.ai-agent` 由运维人工维护，若它显式钉了 IMAGE_GEN_TIMEOUT=180，三层会跟着 180 走（页面文案自动显示「最长约 3 分钟」，不会说谎），但长尾余量要等运维改配置；② 本用例不跑真实生图（零生成费用），供应商真实长尾仍以线上读数为准。 ｜ tags: single-source, timeout, image-generation, copy-standard, red-proof
+
+### MC-133. issue_lifecycle 自证不得读进程内快照（issue #6617）：远程面强制现取 / 读不到 ⇒ 三态 3 / 批量路径只许一次现取（NS-3） 🔵
+```
+你: 收尾自证读的是进程内快照 `_REMOTE_HEADS` ⇒「快照先被读过、远程才被删」时，自证拿删除前的值判「还在不在」，会报出与最终态**相反**的结论 —— 凭什么相信「自证干净」这四个字？
+数据: 🔴 **判据 1·自证读真值（实例，会红）**：夹具 = 真 bare origin + 真仓库；顺序 = 先读快照（分支在）→ 再删远程（快照不刷新）⇒ `verify_clean` 必须判 `True`；读快照的实现必报 `False`。执行点 = tests/unit_ci_workflows/test_issue_lifecycle_selfproof.py::test_selfproof_reads_the_truth_not_the_snapshot
+数据: 🔴 **判据 2·读不到 ⇒ 无法判定（三态）**：origin **真不可达**（不是 mock）⇒ 模块级自证给 `None`（既非 True 也非 False）；CLI `finish` 出口 `exit 3` 且**不**打印「✅ 收尾完成」（`3` 不得当 `0` 读）。执行点 = 同文件::test_unreadable_remote_is_undecidable_not_success + ::test_finish_exits_3_when_the_selfproof_cannot_read
+数据: 🔴 **判据 3·红证（注入式）**：把 `verify_clean` 的现取那一行变异成 `remote_heads`（读快照）⇒ 判据 1 的同一夹具**必红**（True → False），变异副本带语法自检。执行点 = 同文件::test_reverting_the_selfproof_to_the_snapshot_turns_it_red
+数据: 🔴 **判据 4·类级元守卫（AST，防「下一个删除路径又漏」）**：① `verify_clean` 必须调 `remote_heads_refresh` 且不得调 `remote_heads` / `remote_branch_gone`；② 传给它的 `heads=` 只许来自现取（直接调用或同函数绑定）；③ 任何调 `delete_remote_branch` / `batch_delete_remote_branches` 的函数必须同时调 `verify_clean` —— **新增删除路径忘了自证即红**。含判别力自证：四种坏形态在合成语料上各自判红。执行点 = 同文件::test_class_guard_holds_on_the_real_module + ::test_class_guard_has_discriminating_power
+数据: 🔴 **判据 5·审计面**：`close` 的 dry-run 必须显示「这一条会用什么依据关」= 判定 → `gh issue close --reason` 映射（delivered→completed / superseded→not planned）+ **证据原文（不再截断 110 字）** + 未实装登记闸门读数，且**零 gh 调用**。执行点 = 同文件::test_close_dry_run_shows_the_basis_for_each_close
+数据: 🔴 **判据 6·往返不变式（NS-3 不许退化）**：批量调用方传现取读数 ⇒ 自证 **0 次** `ls-remote`；默认自证 **恰好 1 次**。执行点 = 同文件::test_selfproof_round_trips_are_constant
+数据: **边界（照实登记，§19.1）**：① 判据判不了「调用方在生产环境真的跑过」——它只保证接线锚在；行为面由实例判据 + 真 CLI 出口承担；② AST 守卫射程 = 本文件内的函数调用形态（`getattr` / 变量拼接不在面内）；③ 不改任何门禁的通过条件、不新增豁免。
+跳过: [backend-contract] 零 LLM 的确定性脚本判据（自足临时 git 仓库 + 真 bare origin + 真不可达 origin + AST 守卫），pytest 真跑、零网络（gh 由替换函数顶替），不进 agent-eval 冒烟
+```
+溯源: 2026-11-03 新增（issue #6617，承接 #6261 / PR #6614 登记的「未复现」形态）。取号 = `python3 scripts/next_case_id.py MC` 现取（main 001-098 · 100-132 ⇒ **MC-133**）。修复 = ① `remote_heads_refresh()` 具名现取入口（自证唯一允许的远程真值入口）；② `verify_clean` 三态（`True` / `False` / `None` → `exit 3`）且默认强制现取；③ 批量路径 `heads=` 传**一次**现取读数（`NS-3` 不退化）；④ 删前读数 / 写决策也改为现取；⑤ `close` dry-run 审计面。 ｜ tags: dev-tooling, self-proof, stale-snapshot, tri-state, ast-meta-guard, red-proof
+
+### MC-138. 删 worktree 前必须判「活进程占用 / 未提交未推送 / 持有重活锁」：自动收尾不再删掉正在被用的检出（issue #7008） 🔵
+```
+你: 评测栈从某个 worktree 起服务（进程的 cwd 就在里面），PR 合并后跑下一次 dev-worktree.sh add —— 凭什么保证那个还活着的 worktree 不会被自动收尾删掉？
+数据: 🔴 **判据 1·活进程占用 ⇒ 拒删并具名（会红）**：真子进程 `Popen(cwd=<worktree>)` ⇒ `classify_candidate` 判不可收尾、原因键 `活占用`，输出含 pid / `cwd` / 命中路径。执行点 = tests/unit_ci_workflows/test_dev_worktree_reap_guard.py::test_live_process_cwd_inside_worktree_refuses_reap
+数据: 🔴 **判据 2·有未提交改动 / 未推送提交 ⇒ 拒删（会红，单变量对照）**：写一个未跟踪文件 ⇒ `有未提交/未推送内容` 并指名该文件；本地多一次提交 ⇒ 报「未推送提交」；把它推上去 ⇒ 同一条判据放行。执行点 = 同文件::test_uncommitted_change_refuses_reap / ::test_unpushed_commit_refuses_reap_and_push_clears_it
+数据: 🔴 **判据 3·干净且无占用 ⇒ 允许（负控，会红）**：干净、已推送、无进程、无锁 ⇒ `可收尾`（防「一律拒删」的假修把自动收尾挡死）。执行点 = 同文件::test_clean_unoccupied_worktree_is_allowed
+数据: 🔴 **判据 4·持有中的机器级重活锁 ⇒ 拒删（含两条负控）**：锁的 `worktree` 落在候选内 ⇒ `持有重活锁` 并指名 name/pid/落点；锁在别的工作区 / 持有者已退出（陈旧锁）⇒ 放行。执行点 = 同文件::test_heavy_lock_held_on_worktree_refuses_reap
+数据: 🔴 **判据 5·端到端（真脚本 + 真 git 夹具 + 真进程）**：`reap-merged --apply` 与 `dev-worktree.sh add` 在占用存在时都**不删**工作区/本地分支/远程分支；去掉占用后同一命令**仍会真删**（对照臂，证明没把功能删瘫）；`add` 的输出里「dry-run（零删除）」必须先于「APPLY（真删）」。执行点 = 同文件::test_reap_apply_keeps_worktree_in_use_and_reaps_it_after / ::test_dev_worktree_add_does_not_delete_a_worktree_in_use
+数据: 🔴 **判据 6·类级元守卫（§23，会红）**：扫 `scripts/*.py` + `scripts/*.sh` 的**全部**删 worktree 入口，与登记表**双向相等**（新入口未登记 ⇒ 红；台账里有已消失的入口 ⇒ 红）；登记为**自动面**的 `scripts/issue_lifecycle.py::cmd_reap_merged` 必须真的含三条活占用保护调用。红证 = 注入一个未登记的删除入口 / 从 `classify_candidate` 摘掉 `live_occupants` ⇒ 两者各自单独红。执行点 = 同文件::test_every_worktree_delete_entry_is_registered / ::test_class_guard_goes_red_when_liveness_check_is_removed / ::test_class_guard_goes_red_when_a_new_delete_entry_appears_unregistered
+数据: 🔴 **判别力自证（注入式红证）**：把 `live_occupants` 调用从源码副本里物理摘掉 ⇒ 同一夹具变「可收尾」（判据 1 必红）；未变异的真模块在同一夹具上仍拒删（反向对照）。执行点 = 同文件::test_red_proof_removing_live_occupancy_detection_makes_it_reapable
+数据: **边界（照实登记，§19.1）**：① 探针读不到（无 `/proc` 且无 `lsof`）⇒ 判「无法判定」并拒删；但**判不了**「有进程却因权限看不到」（macOS 上别的用户的进程默认不可见）。② 无 upstream 且提交不在任何 `origin/*` 引用上 ⇒ 按「未推送」拒删（fail-closed：远端分支已删并 prune 的 worktree 会被漏收 —— **有意收窄**，出口 = 人工 `git worktree remove`）。③ 不改任何门禁的通过条件、不新增豁免。
+跳过: [backend-contract] 零 LLM 的确定性脚本判据（真 git 仓库 + 真 bare origin + 真 worktree + 真子进程 + 注入式红证），pytest 真跑、零网络，不进 agent-eval 冒烟
+```
+溯源: 2026-11-03 新增（issue #7008）。病（2026-10-16 实测）：`:8101` 的 ai-agent 评测实例 `/health` 200，而 `lsof -p <pid> | grep cwd` 指向**已被自动收尾删掉**的 worktree（`migao-wt/6985-confirm-execute/backend/ai-agent-service`）⇒ 创建会话 HTTP 500（惰性 import 在已删 cwd 上失败），症状把人引向产品代码。根因 = 自动收尾只判 GitHub 侧（有已合并 PR 且无 open PR），**从不问本机有没有进程在用**。落码 = scripts/issue_lifecycle.py 的 `classify_candidate` 新增三条 fail-closed 拒绝条件（活占用 / 未提交或未推送 / 持有中的机器级重活锁；**读不到读数 = 无法判定 = 不删**）＋ `cmd_reap_merged` 一次取数并打印读数与逐条拒绝原因；scripts/dev-worktree.sh 的自动收尾改为「**先 dry-run 打印、再真删**」（`--force` 只跳过打印，**不**跳过拒绝条件）。取号 = MC-133（`python3 scripts/next_case_id.py MC` 现取：main 001-098 · 100-132 + 本工作区 099 ⇒ 返回 MC-133）。红证 = 把 `live_occupants` 调用物理摘掉 ⇒ 同一夹具变「可收尾」（判据 1 必红）；恢复后全绿。类级元守卫（§23）= 扫 `scripts/*.py` + `scripts/*.sh` 的全部删 worktree 入口 ⇄ 登记表**双向相等**（未登记即红），自动面必须含三条保护调用 —— 注入式红证见判据 6。 ｜ tags: worktree, reap, liveness, fail-closed, tooling, red-proof
 
 ## 商家入驻域（7 case）
 
@@ -14127,11 +14184,11 @@
 期望: direct_reply
 数据: 判据 1·后端不落库（会红）：POST /api/admin/products/ai-images 只回 {url, model}（data 恰好两个键）；控制器依赖面恰好 ProductImageGenerationService（无 ProductService / Mapper）。执行点 = ProductImageControllerTest + ProductImageGenerationServiceTest。
 数据: 判据 2·链路收口（会红）：临时 URL 只允许从 *.aliyuncs.com 下载并转存 OSS（非百炼域名 ⇒ 422 且不下载）；样图必须 https；用途白名单 **main/white/texture/craft/scene** 之外 ⇒ 422 且不发起生成请求；主图构图变体 `variant` 越界（>2）⇒ 422 且不发起生成请求，缺省 = 0（老客户端不受影响）。执行点 = ProductImageGenerationServiceTest + ProductImageControllerTest。
-数据: 判据 3·ai-agent 模型轮换（会红）：配额类错误（429 / AllocationQuota）与「模型接不了该请求」（HTTP 400 InvalidParameter）自动切下一个模型；审核类 400（DataInspectionFailed）不切模型；**默认链 = qwen-image-3.0-pro、端点 = 阿里云 MaaS token-plan 的原生多模态路径（用户 2026-10-24 裁定，issue #7661）**，旧百炼模型与旧 host 不得回流（类级守卫 = tests/unit_ci_workflows/test_maas_audio_image_single_source.py 的 G1/G3）；全链不可用时报「模型不接这类请求（非配额原因）」而不是「额度用尽」；全部用尽 ⇒ 503；未配置 Key ⇒ 503 且不发外部请求（**不回落 PRIMARY 的 DeepSeek key**）。**503 响应体必须带稳定机器可读 code（四类互不相同：IMAGE_GEN_MODEL_UNSUPPORTED / IMAGE_GEN_QUOTA_EXCEEDED / IMAGE_GEN_DISABLED / IMAGE_GEN_NO_KEY，issue #7552），detail 并存、状态码语义不变（其它供应商失败仍 502）；凭证失效（401/403，issue #7680）复用 IMAGE_GEN_NO_KEY（同属平台侧凭证问题、商家的下一个动作一致，不新增第五码）**。执行点 = backend/ai-agent-service/tests/test_generator.py。
+数据: 判据 3·ai-agent 模型轮换（会红）：配额类错误（429 / AllocationQuota）与「模型接不了该请求」（HTTP 400 InvalidParameter）自动切下一个模型；审核类 400（DataInspectionFailed）不切模型；**默认链 = qwen-image-3.0-pro、端点 = 阿里云 MaaS token-plan 的原生多模态路径（用户 2026-10-24 裁定，issue #7661）**，旧百炼模型与旧 host 不得回流（类级守卫 = tests/unit_ci_workflows/test_maas_audio_image_single_source.py 的 G1/G3）；全链不可用时报「模型不接这类请求（非配额原因）」而不是「额度用尽」；全部用尽 ⇒ 503；未配置 Key ⇒ 503 且不发外部请求（**不回落 PRIMARY 的 DeepSeek key**）。**503 响应体必须带稳定机器可读 code（五类互不相同：IMAGE_GEN_MODEL_UNSUPPORTED / IMAGE_GEN_QUOTA_EXCEEDED / IMAGE_GEN_DISABLED / IMAGE_GEN_NO_KEY / IMAGE_GEN_INPUT_UNREACHABLE，issue #7552 / #7719；最后一格只在供应商 400 InvalidParameter 且 message 正文指向「样图读不到」时命中 ⇒ 输入侧、不切模型、不报模型不支持），detail 并存、状态码语义不变（其它供应商失败仍 502）；凭证失效（401/403，issue #7680）复用 IMAGE_GEN_NO_KEY（同属平台侧凭证问题、商家的下一个动作一致，不新增第五码）**。执行点 = backend/ai-agent-service/tests/test_generator.py。
 数据: 判据 4·前端（会红，issue #7533 / #7773 / #7782 改判）：无样图 ⇒ 按钮 disabled + 先上传提示；默认用第 1 张、多图可切换样图（生成携带所选样图 URL + kind + variant）；**生成成功即自动追加到图片位**（主图·白底图 ⇒ onApplyMain 追加主图末尾；细节·工艺·场景 ⇒ onApplyDetail 追加 detailImages 末尾），**不存在「用这张」按钮**（回归守卫）；**只追加不覆盖**：再生成一张 / 换用途再生成 **都不摘掉上一张**（不再有 replaceUrl；先详情后主图 ⇒ 详情那张仍在）；**一键生成整套**（用户 21:09 改判）⇒ 一次点出 8 张：`main:0 / main:1 / white:0 / texture:0 / texture:1 / craft:0 / scene:0 / scene:1`，并发 3，边生成边落位，结束时报「已生成 8/8」；个别失败 ⇒ 其余照常落位并在错误行点名未成功的用途（可单独补）；单张补生成时主图连点 ⇒ 构图 `variant` 按 0→1→2→0 轮换，面板写明「本次构图：正面棚拍/半垂坠/悬挂近景」；白底图 ⇒ kind=white 且进主图列表、面板写明「可直接放第 5 张」；列表满（主图 5 / 详情图 9）⇒ 提示先删一张、**不静默丢图**；生成中 loading；失败**不落位**且错误可见可行动。**失败话术按 admin-api 错误码分叉（issue #7552）：模型不支持 / 额度用尽 / 真·瞬时三类不同，「稍后重试」只出现在真·瞬时那一条；页面不出现服务名与内部地址（§31 P3）**。执行点 = frontend/admin-web/tests/unit/components/ProductImageAI.test.tsx。
 数据: 判据 5·落位闭环（会红，issue #7533 / #7773）：渲染真实 `ProductForm` ⇒ 生成成功**无需任何额外点击**主图位即变为 [原图, 生成图]（**追加末位**，不再抢封面）；点「提交并上架」⇒ `onSubmit` 载荷 `images` 带上该 URL（= 用户逐字「保存后也没有」的判据）；**再生成 ⇒ 追加不替换**（不摘掉上一张）；细节用途 ⇒ `detailImages` 末位**且提交载荷 `detailImages` 带上它**（= 用户逐字「生图不能保存到详情图」的判据）；**先出详情图、再出主图 ⇒ 详情图那张不得被摘掉**（改前红）；主图已满 5 张 ⇒ 提示先删一张、盘里 5 张一张不少；**生成期间（1~2min）商家改过图片列表 ⇒ 落位基于最新列表**（删掉的图不复活、新图不丢，靠函数式更新）。执行点 = frontend/admin-web/tests/unit/components/ProductFormAIImage.test.tsx + ProductFormAIImageEditPage.test.tsx（编辑页父组件再渲染不得冲掉落位）；编辑态样图候选去重 = ProductForm.test.tsx。
 数据: 判据 7·生成侧「岗位」口径（会红，issue #7782）：ai-agent 提示词按用途分叉 —— 主图三套构图（正面棚拍 / 半垂坠 / 悬挂近景）**互不相同**且都带商品名、`variant` 越界取模；`white` 白底图提示词包含平台硬要求（纯白背景 + RGB 255,255,255 + 居中 + 无水印/无 logo/无边框），且 `variant` 对它无影响；材质提示词不变。取数理由：用户 2026-10-25「主图图片生成的都一样」+ 淘宝/天猫 5 张主图岗位分工（第 5 位白底图是合规位与免费流量位）。执行点 = backend/ai-agent-service/tests/test_generator.py。
-数据: 判据 6·失败口径分叉（会红，issue #7552）：ai-agent 503 的四种 code 在 admin-api 产出**互不相同**的错误码与 suggestion（表驱动）；「稍后重试」只用于真·瞬时不可用（模型不支持 ⇒ 「该能力暂不可用，已反馈平台」+ 手工传图出路；额度 ⇒ 「今日额度已用完」）；对外 message / suggestion **不含**服务名与 URL（§31 P3）。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/ProductImageClientTest.java。
+数据: 判据 6·失败口径分叉（会红，issue #7552）：ai-agent 503 的五种 code 在 admin-api 产出**互不相同**的错误码与 suggestion（表驱动；含 issue #7719 的 IMAGE_GEN_INPUT_UNREACHABLE ⇒ AI_PRODUCT_IMAGE_INPUT_UNREACHABLE，话术是「换一张能正常打开的样图」，不是「已反馈平台」）；「稍后重试」只用于真·瞬时不可用（模型不支持 ⇒ 「该能力暂不可用，已反馈平台」+ 手工传图出路；额度 ⇒ 「今日额度已用完」）；对外 message / suggestion **不含**服务名与 URL（§31 P3）。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/ProductImageClientTest.java。
 前置: 本用例是 [backend-contract] 纯前端/接口契约用例：前置（已上传样图、admin-api 端点、ai-agent 内部端点）由三端单测自建或 mock（admin-web mock `@/lib/api`；admin-api mock ProductImageClient/FileStorageService；ai-agent mock httpx），不依赖共享夹具与真实服务 ⇒ 前置不成立时对应单测直接红；agent-eval 栈不跑它
 跳过: [backend-contract] 纯页面 AI 辅助入口（不经过 LLM 对话/工具），由 admin-api 单测 + ai-agent pytest + 前端 vitest 执行，不进入 agent-eval 冒烟
 ```
@@ -14463,8 +14520,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：978（活跃 153，跳过 825）
-- tier 分布：smoke 15 / normal 901 / adversarial 33
+- 用例总数：982（活跃 153，跳过 829）
+- tier 分布：smoke 15 / normal 905 / adversarial 33
 - 售后域：16
 - Agent 核心域：13
 - API 层域：21
@@ -14480,7 +14537,7 @@
 - 人事域：13
 - 知识问答域：9
 - 客户主数据迁移域：10
-- 杂项域：180
+- 杂项域：184
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：76
@@ -14727,6 +14784,10 @@
 - MC-132: 批次就绪判定把「已 arm 的原生 auto-merge」也算作不就绪（issue #6212）：跑那一次全量期间不许存在被秒合的窗口
 - MC-134: Java 定点判据的读数与空跑（issue #6495 的类级固化）：`.txt` 摘要对 @Nested 类恒报 0（误诊源）+ `外层类#嵌套方法` 真·空跑（exit 0）⇒ 读数只信 XML 且必须大于 0
 - MC-137: gate 的 bmini 打印口径守卫读**git 索引**而不是工作树：被 `.gitignore` 命中的旧产物不再让本机假红（issue #6594）
+- MC-135: 生图失败归因必须读供应商 message 正文：400 InvalidParameter 的「样图读不到」与「模型不接」分成两格（issue #7719）
+- MC-136: 生图等待上限只有一个权威（ai-agent 的 IMAGE_GEN_TIMEOUT）：admin-api 读超时与前端等待/文案都从它派生；文案按实测区间说、超 30 秒给「还在生成」（issue #7731）
+- MC-133: issue_lifecycle 自证不得读进程内快照（issue #6617）：远程面强制现取 / 读不到 ⇒ 三态 3 / 批量路径只许一次现取（NS-3）
+- MC-138: 删 worktree 前必须判「活进程占用 / 未提交未推送 / 持有重活锁」：自动收尾不再删掉正在被用的检出（issue #7008）
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）

@@ -21,7 +21,8 @@ import { toastRequestError } from '@/lib/api-error'
  * 仍**不落库**：结果只写进表单，提交永远是商家的动作。
  *
  * 设计口径（§31）：常驻面只有一行提示 + 一个按钮；面板按需展开，生成中禁用按钮，
- * 文案只陈述事实与该做什么（不催、不夸大）。
+ * 文案只陈述事实与该做什么（不催、不夸大）。issue #7731：文案按**实测区间**说（单张 2~3 分钟），
+ * 「最长约 N 分钟」从 ai-agent 的权威 deadline 现取；超过 30 秒补一句「还在生成」（不新增告警块）。
  */
 
 const KINDS: Array<{ value: AiProductImageKind; label: string }> = [
@@ -66,18 +67,47 @@ const SET_CONCURRENCY = 3
 const FAILURE_MESSAGE = '生成失败，请稍后重试，或直接上传图片'
 
 /**
+ * 实测单张生图耗时（issue #7731：2026-10-25 两次独立读数 121s / 145s）。
+ * 只用于「通常多久」的**事实口径** —— 上限从 ai-agent 的权威 deadline 现取，不写死。
+ */
+const MEASURED_IMAGE_SECONDS = { min: 121, max: 145 } as const
+
+/** 整套 8 张 / 并发 3 ⇒ 3 轮（与「一键出整套」同源）。 */
+const SET_WAVES = Math.ceil(SET_PLAN.length / SET_CONCURRENCY)
+
+/** 超过这么多秒还没结果 ⇒ 补一句「还在生成」（不让商家只剩一个转圈）。 */
+const SLOW_HINT_AFTER_S = 30
+
+/** 实测区间 → 「2~3 分钟」；waves = 整套的轮数。 */
+function typicalRangeText(waves = 1): string {
+  const min = Math.floor((MEASURED_IMAGE_SECONDS.min * waves) / 60)
+  const max = Math.ceil((MEASURED_IMAGE_SECONDS.max * waves) / 60)
+  return `${min}~${max} 分钟`
+}
+
+/** 权威上限（毫秒）→ 「4 分钟」：文案里的「最长约」只从它算，改一处即全变（issue #7731）。 */
+function deadlineText(deadlineMs: number, waves = 1): string {
+  return `${Math.ceil((deadlineMs * waves) / 60_000)} 分钟`
+}
+
+/**
  * 失败话术（issue #7552）：按 admin-api 的 `error.code` 分叉，**不在前端切字符串**。
  *
- * 三类不同的下一个动作：模型/能力不可用（该找平台）≠ 额度用尽（该等额度）≠ 真·瞬时（该重试）。
+ * 四类不同的下一个动作：样图读不到（该换一张图）≠ 模型/能力不可用（该找平台）≠
+ * 额度用尽（该等额度）≠ 真·瞬时（该重试）。
  * 话术里不出现服务名 / 内部地址（§31 P3）—— 那些只进日志。
  */
 const PLATFORM_UNAVAILABLE = '该能力暂不可用，已反馈平台；可先上传图片继续建品。'
+
+/** 样图读不到（issue #7719）：唯一能好起来的动作是换一张能打开的图 —— 不是找平台，也不是重试同一张。 */
+const SAMPLE_UNREADABLE = '这张样图读取失败，换一张能正常打开的样图再试，或直接上传图片。'
 
 /** 生成成功但图片位已满 ⇒ 不是失败，是「先腾个位置」。不静默丢图，也不假装已填入。 */
 const MAIN_FULL = '主图已满 5 张，先在图片列表里删一张再生成。'
 const DETAIL_FULL = '详情图已满 9 张，先在详情图列表里删一张再生成。'
 
 const FAILURE_MESSAGES: Record<string, string> = {
+  AI_PRODUCT_IMAGE_INPUT_UNREACHABLE: SAMPLE_UNREADABLE,
   AI_PRODUCT_IMAGE_MODEL_UNSUPPORTED: PLATFORM_UNAVAILABLE,
   AI_PRODUCT_IMAGE_DISABLED: PLATFORM_UNAVAILABLE,
   AI_PRODUCT_IMAGE_NOT_CONFIGURED: PLATFORM_UNAVAILABLE,
@@ -122,6 +152,10 @@ export default function ProductImageAI({
   const [setProgress, setSetProgress] = useState<{ done: number; total: number } | null>(null)
   /** 整套生成的结果小结（成功几张 / 哪几张没成功）。 */
   const [setSummary, setSetSummary] = useState('')
+  /** 生图等待上限（毫秒；0 = 暂时取不到）：真值在 ai-agent（issue #7731）。 */
+  const [deadlineMs, setDeadlineMs] = useState(0)
+  /** 本次生成的已用时（秒）—— 长任务至少让商家看见「在动」（issue #7731）。 */
+  const [elapsed, setElapsed] = useState(0)
 
   const nextVariant = mainGenerated % MAIN_COMPOSITIONS.length
 
@@ -129,6 +163,35 @@ export default function ProductImageAI({
   useEffect(() => {
     if (!sampleImages.includes(sample)) setSample(sampleImages[0] || '')
   }, [sampleImages, sample])
+
+  /** 面板打开时取一次等待上限（文案的「最长约」与等待上限同源，issue #7731）。 */
+  useEffect(() => {
+    if (!open) return
+    let alive = true
+    Promise.resolve(aiProductImageApi.estimate())
+      .then((ms) => {
+        // 取不到上限（0）就不动状态：保持「只显示实测区间」的形态，也避免无意义重渲染
+        if (alive && ms > 0) setDeadlineMs(ms)
+      })
+      .catch(() => {})
+    return () => {
+      alive = false
+    }
+  }, [open])
+
+  /** 生成中的计时：超过 30 秒补一句「还在生成」，不新增告警块（§31 P1）。 */
+  useEffect(() => {
+    if (!loading) {
+      setElapsed(0)
+      return
+    }
+    const startedAt = Date.now()
+    setElapsed(0)
+    const timer = setInterval(() => {
+      setElapsed(Math.floor((Date.now() - startedAt) / 1000))
+    }, 1000)
+    return () => clearInterval(timer)
+  }, [loading])
 
   const clearFeedback = () => {
     setResult('')
@@ -282,8 +345,18 @@ export default function ProductImageAI({
             </Button>
             <span className="text-xs text-neutral-400">
               {setProgress
-                ? `生成中 ${setProgress.done}/${setProgress.total}…`
-                : '共 8 张，约 2~4 分钟；哪张不满意可在下面单独补生成。'}
+                ? [
+                    `生成中 ${setProgress.done}/${setProgress.total}`,
+                    `已用时 ${elapsed} 秒`,
+                    elapsed >= SLOW_HINT_AFTER_S
+                      ? `还在生成，通常 ${typicalRangeText(SET_WAVES)}`
+                      : '',
+                  ]
+                    .filter(Boolean)
+                    .join(' · ')
+                : `共 ${SET_PLAN.length} 张，通常 ${typicalRangeText(SET_WAVES)}${
+                    deadlineMs > 0 ? `，最长约 ${deadlineText(deadlineMs, SET_WAVES)}` : ''
+                  }；哪张不满意可在下面单独补生成。`}
             </span>
             {setSummary && <span role="status" className="text-xs text-green-600">{setSummary}</span>}
           </div>
@@ -318,11 +391,23 @@ export default function ProductImageAI({
               {applied ? '再生成一张' : '生成'}
             </Button>
             <span className="text-xs text-neutral-400">
-              {kind === 'main'
-                ? `本次构图：${MAIN_COMPOSITIONS[nextVariant]}`
-                : kind === 'white'
-                  ? '白底图：纯白背景、无文字，可直接放第 5 张'
-                  : '细节图会加入下方「详情图」'}
+              {loading && !setProgress
+                ? [
+                    `生成中 · 已用时 ${elapsed} 秒`,
+                    elapsed >= SLOW_HINT_AFTER_S ? `还在生成，通常 ${typicalRangeText()}` : '',
+                  ]
+                    .filter(Boolean)
+                    .join(' · ')
+                : [
+                    kind === 'main'
+                      ? `本次构图：${MAIN_COMPOSITIONS[nextVariant]}`
+                      : kind === 'white'
+                        ? '白底图：纯白背景、无文字，可直接放第 5 张'
+                        : '细节图会加入下方「详情图」',
+                    `单张通常 ${typicalRangeText()}${
+                      deadlineMs > 0 ? `，最长约 ${deadlineText(deadlineMs)}` : ''
+                    }`,
+                  ].join(' · ')}
             </span>
             {error && <span className="text-xs text-red-600">{error}</span>}
             {applied && (

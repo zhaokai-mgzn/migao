@@ -15,6 +15,7 @@ from loguru import logger
 from app.utils.auth import verify_service_token
 from app.tools import ToolContext, get_tool_registry
 from app.api.response_models import make_response
+from app.config import settings
 from app.knowledge.distill import distill
 from app.briefing.generator import generate_briefing
 from app.production.routing import qty_and_source
@@ -453,14 +454,28 @@ class ImageGenerationFailure(HTTPException):
     """生图失败（对外 503）：除 `detail` 外带**稳定机器可读** `code`（issue #7552）。
 
     `code` 取值由内核给出（`IMAGE_GEN_MODEL_UNSUPPORTED` / `IMAGE_GEN_QUOTA_EXCEEDED` /
-    `IMAGE_GEN_DISABLED` / `IMAGE_GEN_NO_KEY`）—— admin-api 据此分叉话术，而不是从中文
-    detail 里猜成因。状态码语义不变（503 = 能力不可用）；响应体形状由 `app.main` 的同名
+    `IMAGE_GEN_DISABLED` / `IMAGE_GEN_NO_KEY` / `IMAGE_GEN_INPUT_UNREACHABLE`）—— admin-api
+    据此分叉话术，而不是从中文 detail 里猜成因。最后一格（issue #7719）与「模型不支持」
+    **同状态码同供应商 code**，只有供应商 `message` 正文能分开：前者该换一张能访问的样图，
+    后者才是找平台换模型。状态码语义不变（503 = 能力不可用）；响应体形状由 `app.main` 的同名
     处理器给出 `{"code": ..., "detail": ...}`（`detail` 并存、仍可读）。
     """
 
     def __init__(self, code: str, detail: str):
         super().__init__(status_code=503, detail=detail)
         self.code = code
+
+
+@router.get("/images/deadline")
+async def image_deadline(
+    authorized: bool = Depends(verify_service_token),
+):
+    """生图等待上限（**唯一权威** = `settings.IMAGE_GEN_TIMEOUT`，issue #7731）。
+
+    admin-api 据此设自己的读超时、前端据此显示「最长约 N 分钟」—— 三层同源，
+    改 `IMAGE_GEN_TIMEOUT` 一处即可。只回毫秒数：不暴露供应商、Key、端点。
+    """
+    return make_response(True, data={"deadline_ms": int(settings.IMAGE_GEN_TIMEOUT * 1000)})
 
 
 @router.post("/images/generate")
@@ -476,7 +491,8 @@ async def image_generate(
 
     错误映射（可行动、不静默）：入参非法（kind 白名单 / image_url）⇒ 400；
     未配置 Key / 开关关闭 / 全模型配额用尽 / 全链接不了这类请求 /
-    **凭证失效（401 `InvalidApiKey` / 403）** ⇒ 503
+    **凭证失效（401 `InvalidApiKey` / 403）** /
+    **样图读不到（供应商 400 `InvalidParameter` 且正文指向输入素材，issue #7719）** ⇒ 503
     （503 = 能力不可用，**不是** 502 —— 502 会被读成供应商偶发故障，引向一个不会成功的「稍后再试」），
     **响应体带稳定机器可读 `code` 且 `detail` 并存**（issue #7552：admin-api 据此分叉话术，
     不再从中文 detail 里猜）；供应商其它失败 ⇒ 502。

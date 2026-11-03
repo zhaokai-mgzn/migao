@@ -1,0 +1,6 @@
+{
+  "id": "MC-135",
+  "pr": 8503,
+  "title": "生图失败归因必须读供应商 message 正文：400 InvalidParameter 的「样图读不到」与「模型不接」分成两格（issue #7719）",
+  "claimed_at": "2026-11-03"
+}

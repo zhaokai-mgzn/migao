@@ -43,6 +43,8 @@ vi.mock('@/lib/api', () => ({
   processingItemApi: {
     getProcessingItems: vi.fn().mockResolvedValue({ data: { data: { items: [] } } }),
   },
+  // 建品页的 AI 生图入口在打开面板时会取一次等待上限（issue #7731）
+  aiProductImageApi: { generate: vi.fn(), estimate: vi.fn(() => Promise.resolve(0)) },
 }))
 
 describe('ProductForm (#1284 — 表单行对齐)', () => {

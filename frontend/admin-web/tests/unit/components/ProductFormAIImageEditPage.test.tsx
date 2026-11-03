@@ -43,7 +43,7 @@ vi.mock('@/lib/api', async (importOriginal) => {
   return {
     ...actual,
     categoryApi: { getCategories: vi.fn().mockResolvedValue({ data: { data: [] } }) },
-    aiProductImageApi: { generate: vi.fn() },
+    aiProductImageApi: { generate: vi.fn(), estimate: vi.fn(() => Promise.resolve(0)) },
     fileApi: { upload: vi.fn() },
   }
 })

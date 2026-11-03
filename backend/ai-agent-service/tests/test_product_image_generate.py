@@ -20,6 +20,7 @@ import pytest
 from app.api.chat import _detect_card_type, _should_send_card
 from app.images.generator import (
     ImageGenerationError,
+    ImageGenerationInputUnreachable,
     ImageGenerationQuotaExceeded,
     ImageGenerationUnavailable,
 )
@@ -274,6 +275,30 @@ class TestFailureSemantics:
         assert "额度" not in (result.message or "")
         assert "额度" in (result.suggestion or "")  # 明确点出「这不是额度问题」
         assert "商品管理" in (result.suggestion or "")  # 可行动出路
+
+    @pytest.mark.asyncio
+    async def test_sample_unreadable_is_not_model_unsupported(self, tool):
+        """issue #7719：样图读不到 ⇒ 「换一张能访问的样图」，**不说成**「模型接不了这类请求」。
+
+        与上一条同族但成因相反：上一条是**平台**该换模型，这一条是**商家**该换一张图。
+        合成一句（尤其说成「模型接不了」）会把商家引向「找平台换模型」这个永远不会好的动作。
+        """
+        client = _mock_client(_product())
+        get_client_patch, _ = _patch_all(client)
+        with get_client_patch, patch(
+            "app.tools.product_image_generate.generate_product_image",
+            new=AsyncMock(side_effect=ImageGenerationInputUnreachable(
+                "model-a: 样图读取失败（HTTP 400）：URL hostname cannot be resolved")),
+        ):
+            result = await tool.execute(context=_context(), product_id="prod_001")
+
+        assert result.success is False
+        assert "样图" in (result.message or "")
+        assert "换一张" in (result.suggestion or "")
+        visible = (result.message or "") + (result.suggestion or "")
+        assert "模型接不了" not in visible   # 反向动作：那会让商家去等平台换模型
+        assert "额度" not in visible         # 反向动作：那会让商家去等额度
+        assert "稍后重试" not in visible
 
     @pytest.mark.asyncio
     async def test_quota_exceeded_is_its_own_code(self, tool):
