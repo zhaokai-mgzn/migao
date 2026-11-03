@@ -44,6 +44,11 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = REPO_ROOT / "scripts" / "dangling_pr_scan.py"
 
+# 注入走共用原语（issue #7017）：`str.replace` 0 命中会**静默返回原串** ⇒ 把「锚点漂移」
+# 误报成「判据没牙」。`inject()` 0 命中抛 `AnchorDrift`、不唯一抛 `AmbiguousAnchor`。
+sys.path.append(str(REPO_ROOT / "tests"))
+from unit_ci_workflows.injection import inject  # noqa: E402
+
 
 def _load_scan():
     spec = importlib.util.spec_from_file_location("dangling_pr_scan", SCRIPT)
@@ -191,12 +196,12 @@ def run_scan(tmp_path, prs, threads=None, *, runs=None, minutes=60, fail_threads
 
 
 def mutate_script(tmp_path, old, new):
-    """对**真脚本源码**做单点变异（锚点漂移即本判据自身失败）。"""
+    """对**真脚本源码**做单点变异（锚点漂移 / 不唯一由 `inject()` **当场抛出**，不静默）。"""
     src = SCRIPT.read_text(encoding="utf-8")
-    assert old in src, f"变异锚点不存在（脚本已漂移）：{old!r}"
     tmp_path.mkdir(parents=True, exist_ok=True)
     mutated = tmp_path / "mutated_scan.py"
-    mutated.write_text(src.replace(old, new, 1), encoding="utf-8")
+    mutated.write_text(inject(src, old, new, where="scripts/dangling_pr_scan.py"),
+                       encoding="utf-8")
     return mutated
 
 
