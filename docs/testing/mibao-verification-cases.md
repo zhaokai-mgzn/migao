@@ -1306,13 +1306,13 @@
 真值: frontend-fix.no-api-change
 溯源: 2026-10-07 新增（issue #6467 切片 1）：现场（生产 app.migaozn.com，2026-10-07 08:06:57 / 08:07:48 +08，nginx 日志 `POST /api/worker/production/scan/complete 401`）用管理员账号在 H5 点「完成报工」⇒ 被清商家登录态并踢回登录页，重登再点仍然 401。根因之一是 H5 上**没有工人登录入口**（独立的 pages/worker/login/index 存在，但报工页/工人首页都不指向它）⇒ 登录页补第三 tab，并支持 `?tab=worker` 直达（给报工页/工人首页的引导用）。**零后端改动**（truths_ref = frontend-fix.no-api-change）。｜ 2026-10-08（issue #6564）：工人登录补第 4 个入参「企业编码」—— 前端不再发 `tenantId`（租户只由服务端解析），判据 2 的调用形态随之改钉；本用例其余判据一字未动。 ｜ tags: bmini, login, worker
 
-### BM-034. 工人工作台（pages/worker/home/index）- 身份卡读服务端 + 工人功能入口按工人档案菜单显隐（拍照入库 / 补打入库标签 / 拍照发货 / 待发货单 / 返工记录 / 我的计件）+ 待处理数 + 退出工人身份；不出现任何商家面入口；扫码报工入口已移除（扫码由微信 / 手机相机承担） 🔵
+### BM-034. 工人工作台（pages/worker/home/index）- 身份卡读服务端 + 工人功能入口按工人档案菜单显隐（拍照入库 / 补打入库标签 / 拍照发货 / 待出库单 / 返工记录 / 我的计件）+ 待处理数；原「发货标签」入口已并入待出库单（issue #8632） + 退出工人身份；不出现任何商家面入口；扫码报工入口已移除（扫码由微信 / 手机相机承担） 🔵
 ```
-你: 工人用「工号 + PIN」登录成功后落在**工人工作台**：页头显示当前工人（工号 + 姓名，来自服务端 `GET /api/worker/production/current-worker`）→ 工人功能：拍照入库 / 补打入库标签 / 拍照发货 / 待发货单 / 返工记录 / 我的计件（按工人档案的菜单勾选显隐；2026-10-27 用户裁定「把工人菜单页面的扫码报工菜单移除掉，直接用其他 app 的扫一扫功能替代」⇒ 扫码报工**不再是本页菜单**，工人用微信 / 手机相机扫纸上的码直接落到报工页）；底部「退出工人身份」→ 回登录页的工人入口
+你: 工人用「工号 + PIN」登录成功后落在**工人工作台**：页头显示当前工人（工号 + 姓名，来自服务端 `GET /api/worker/production/current-worker`）→ 工人功能：拍照入库 / 补打入库标签 / 拍照发货 / 待出库单 / 返工记录 / 我的计件（按工人档案的菜单勾选显隐；2026-10-27 用户裁定「把工人菜单页面的扫码报工菜单移除掉，直接用其他 app 的扫一扫功能替代」⇒ 扫码报工**不再是本页菜单**，工人用微信 / 手机相机扫纸上的码直接落到报工页）；底部「退出工人身份」→ 回登录页的工人入口
 期望: direct_reply
 数据: 判据 1·**身份卡读服务端**：工号 + 姓名来自 `fetchCurrentWorker()`（服务端工人 session，页头显示的正是「这笔活会记到谁头上」= 计件工资凭证）；服务端读不到（session 失效）⇒ 回落成「未登录工人身份」并清本机工人态，**不**静默保留上一个人的名字。红证（实跑）：把身份卡改读 `getCachedWorker()`（不调服务端）⇒ 1 failed
-数据: 判据 2·**工人功能入口各自跳对路由 + 扫码报工入口已移除**：拍照入库 → `INBOUND_PAGE_ROUTE`、补打入库标签 → `REPRINT_PAGE_ROUTE`、拍照发货 → `SHIPMENT_PAGE_ROUTE`、待发货单 → `SHIPMENT_ORDERS_PAGE_ROUTE`、返工记录 → `REWORK_PAGE_ROUTE`、**我的计件 → `PIECEWORK_PAGE_ROUTE`**（真值全在 frontend/bmini-app/src/utils/inbound/gaps.ts，页面不写第二份字面量；我的计件这条是 issue #7934 从**报工详情页**页头搬到本页的，worker-h5 侧同步反向钉住「报工页不得再渲染它」）。🔴 2026-10-27（issue #7920，用户逐字「把工人菜单页面的扫码报工菜单移除掉，直接用其他 app 的扫一扫功能替代」）：**该入口已删除**，并**反向钉住**「本页的 `Taro.navigateTo` 里不许再出现 `/pages/worker/report/index`」（报工页只由外部扫码 302 → 启动器 `redirectTo` 到达）。红证（实跑）：把「扫码报工」卡加回去 / 或把返工记录入口摘掉 ⇒ frontend/bmini-app/tests/worker-home-page.test.tsx 对应断言 red
-数据: 判据 6·**待处理红色数字**（issue #7921）：待发货单 / 返工记录两条入口标题上显示服务端列表行数（`GET /api/worker/shipment/orders` 的 `items`、`GET /api/worker/production/rework-orders` 的 `orders`）；**只在这条入口可见时才请求**；`>0` 才显示、`0` 与读失败都**不显示**（读失败绝不回落成 0 —— 那是在替服务端断言「没有待处理的活」）。红证（实跑）：把读失败的 `null` 改成 0 ⇒ 徽标出现 ⇒ 断言 red
+数据: 判据 2·**工人功能入口各自跳对路由 + 扫码报工入口已移除**：拍照入库 → `INBOUND_PAGE_ROUTE`、补打入库标签 → `REPRINT_PAGE_ROUTE`、拍照发货 → `SHIPMENT_PAGE_ROUTE`、待出库单 → `SHIPMENT_ORDERS_PAGE_ROUTE`、返工记录 → `REWORK_PAGE_ROUTE`、**我的计件 → `PIECEWORK_PAGE_ROUTE`**（真值全在 frontend/bmini-app/src/utils/inbound/gaps.ts，页面不写第二份字面量；我的计件这条是 issue #7934 从**报工详情页**页头搬到本页的，worker-h5 侧同步反向钉住「报工页不得再渲染它」）。🔴 2026-10-27（issue #7920，用户逐字「把工人菜单页面的扫码报工菜单移除掉，直接用其他 app 的扫一扫功能替代」）：**该入口已删除**，并**反向钉住**「本页的 `Taro.navigateTo` 里不许再出现 `/pages/worker/report/index`」（报工页只由外部扫码 302 → 启动器 `redirectTo` 到达）。红证（实跑）：把「扫码报工」卡加回去 / 或把返工记录入口摘掉 ⇒ frontend/bmini-app/tests/worker-home-page.test.tsx 对应断言 red
+数据: 判据 6·**待处理红色数字**（issue #7921）：待出库单 / 返工记录两条入口标题上显示服务端列表行数（`GET /api/worker/shipment/orders` 的 `items`、`GET /api/worker/production/rework-orders` 的 `orders`）；**只在这条入口可见时才请求**；`>0` 才显示、`0` 与读失败都**不显示**（读失败绝不回落成 0 —— 那是在替服务端断言「没有待处理的活」）。红证（实跑）：把读失败的 `null` 改成 0 ⇒ 徽标出现 ⇒ 断言 red
 数据: 判据 7·**返工记录页**（issue #7921，新页 pages/worker/rework/index）：数据 = `GET /api/worker/production/rework-orders`（与 H5 `/w/rework.html` 同一端点，端侧只渲染）；五态互斥 —— 读取中 / 读不到（可重试）/ 401（去登录）/ **403（工人档案没开「返工记录」页 ⇒ 可行动提示，不冒充「没有返工」）** / 读到了（空态或列表）。判据 = frontend/bmini-app/tests/worker-rework-page.test.tsx。红证（实跑）：把 403 归到 error / 把 `rework_count` 缺值补 0 ⇒ 对应断言 red
 数据: 判据 3·🔴 **不出现任何商家面入口**：问黄金策 / 数据 / 坐席 / 我的 四个 tabBar 文案与管理面 4 项（标签取自 frontend/bmini-app/src/utils/adminPermission.ts 的 `ADMIN_SURFACES`）一个都不渲染 —— 工人零商家权限（`/api/admin/**` 拒绝集合含 `worker`），点了只会 403/空页。红证（实跑）：往页面混入一行「问黄金策」⇒ 1 failed
 数据: 判据 4·**退出工人身份**：`workerLogout()`（服务端留 `end_reason=logout` 痕）+ `clearWorkerSession()` 清本机 ⇒ `redirectTo` 登录页的工人入口（共用 PAD 场景：下一个人接着用；只清本机会让下一个人记到上一个人头上）
@@ -1320,7 +1320,7 @@
 跳过: [backend-contract] 确定性页面链路判据（jest: frontend/bmini-app/tests/worker-home-page.test.tsx + tests/page-entry-reachability.test.ts），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: frontend-fix.no-api-change
-溯源: 2026-10-27 改钉（issue #7920 / #7921，用户同日逐字「把工人菜单页面的扫码报工菜单移除掉，直接用其他 app 的扫一扫功能替代」+「直接在列表上显示红色数字，方便在菜单上看到有待处理的单子」+「这两菜单要能在工人档案上设置菜单权限」）：① **「扫码报工」入口删除**（扫码由微信 / 手机相机扫纸上的码承担 ⇒ 服务端 302 → `/b/?t=` → 启动器 redirectTo 报工页），本页反向钉住「不再发射报工页」；② 新增「返工记录」入口（显隐键 = 工人档案的 `rework`，后端 `WorkerPages.optionalPages()` 早已下发，商家后台勾了才显示）+ 新页 pages/worker/rework/index（消费 `GET /api/worker/production/rework-orders`，403 = 档案没开该页 ⇒ 可行动提示）；③ 待发货单 / 返工记录两条入口加**红色待处理数**（服务端列表行数，>0 才显示、读失败不冒充 0）；④ `title` / `user_inputs` 同步改钉（旧文写的「四件功能：扫码报工 / …」已是用户裁掉的菜单，留着就是描述一个不存在的入口 —— 本用例 2026-10-14 已有同款破例先例）；判据 1 / 3 / 4 一字未动。 ｜ 2026-10-27（issue #7934）：本页**新增「我的计件」行卡**（显隐键 = 工人档案的 `piecework`，后端 `WorkerPages` 闭词表里本来就有；入口从**报工详情页**页头搬来，用户逐字「我的计件和发货…为什么做到报工详情页面？应该都作为工人菜单页面上的菜单」）⇒ 判据 2 / 5 与 `title` / `user_inputs` 同批改钉，行为面与显隐面判据 = worker-home-page / worker-home-menu（只开 `piecework` ⇒ 只多这一条），页面自身口径见 BM-054。判据 1 / 3 / 4 / 6 / 7 一字未动。 ｜ 2026-10-07 新增（issue #6467 切片 1）：工人身份此前**没有落点** —— 登录后只能落商家 tabBar（问黄金策/数据/坐席/我的），而工人零商家权限 ⇒ 看见商家菜单只会 403/空页；且 `Taro.switchTab` 只能落 tabBar 页 ⇒ 工人登录成功只能 redirectTo 一个非 tabBar 的工人页。本页 = 工人面收口（身份卡 + 工人功能 + 退出）。 ｜ 2026-10-12 扩面（issue #6761）：**三件 → 四件** —— 补第 4 条「拍照发货」（`SHIPMENT_PAGE_ROUTE`，#5648 的 UI 面收口，页面行为见 BM-050）；判据 1/3/4/5 一字未动。 ｜ tags: bmini, worker, page-flow
+溯源: 2026-10-27 改钉（issue #7920 / #7921，用户同日逐字「把工人菜单页面的扫码报工菜单移除掉，直接用其他 app 的扫一扫功能替代」+「直接在列表上显示红色数字，方便在菜单上看到有待处理的单子」+「这两菜单要能在工人档案上设置菜单权限」）：① **「扫码报工」入口删除**（扫码由微信 / 手机相机扫纸上的码承担 ⇒ 服务端 302 → `/b/?t=` → 启动器 redirectTo 报工页），本页反向钉住「不再发射报工页」；② 新增「返工记录」入口（显隐键 = 工人档案的 `rework`，后端 `WorkerPages.optionalPages()` 早已下发，商家后台勾了才显示）+ 新页 pages/worker/rework/index（消费 `GET /api/worker/production/rework-orders`，403 = 档案没开该页 ⇒ 可行动提示）；③ 待出库单 / 返工记录两条入口加**红色待处理数**（服务端列表行数，>0 才显示、读失败不冒充 0）；④ `title` / `user_inputs` 同步改钉（旧文写的「四件功能：扫码报工 / …」已是用户裁掉的菜单，留着就是描述一个不存在的入口 —— 本用例 2026-10-14 已有同款破例先例）；判据 1 / 3 / 4 一字未动。 ｜ 2026-10-27（issue #7934）：本页**新增「我的计件」行卡**（显隐键 = 工人档案的 `piecework`，后端 `WorkerPages` 闭词表里本来就有；入口从**报工详情页**页头搬来，用户逐字「我的计件和发货…为什么做到报工详情页面？应该都作为工人菜单页面上的菜单」）⇒ 判据 2 / 5 与 `title` / `user_inputs` 同批改钉，行为面与显隐面判据 = worker-home-page / worker-home-menu（只开 `piecework` ⇒ 只多这一条），页面自身口径见 BM-054。判据 1 / 3 / 4 / 6 / 7 一字未动。 ｜ 2026-11-04（issue #8632，用户逐字「发货标签和待发货单应该做成一个菜单」）：**「发货标签」入口删除**（它打开的 /w/shipment.html 与本页是同一件事的两个壳：同一端点、同一份纸面，而本页每行早就能打这张纸）⇒ `shipment` 键只发射「拍照发货」一条；同时「待发货单」改名**待出库单**（行内「发货联」→「出库单」、纸面抬头 →「成品出库单」）。判据 2 的入口名与判据 6 的标题同步改钉，另加反向断言「queryByText(发货标签) 为空」。 ｜ 2026-10-07 新增（issue #6467 切片 1）：工人身份此前**没有落点** —— 登录后只能落商家 tabBar（问黄金策/数据/坐席/我的），而工人零商家权限 ⇒ 看见商家菜单只会 403/空页；且 `Taro.switchTab` 只能落 tabBar 页 ⇒ 工人登录成功只能 redirectTo 一个非 tabBar 的工人页。本页 = 工人面收口（身份卡 + 工人功能 + 退出）。 ｜ 2026-10-12 扩面（issue #6761）：**三件 → 四件** —— 补第 4 条「拍照发货」（`SHIPMENT_PAGE_ROUTE`，#5648 的 UI 面收口，页面行为见 BM-050）；判据 1/3/4/5 一字未动。 ｜ tags: bmini, worker, page-flow
 
 ### BM-036. 请求层 401 身份分流 - 工人端点 401 不再误诊成「商家会话过期」（不清商家态 / 不跳商家登录页 / 上屏服务端文案） 🔵
 ```
@@ -1680,9 +1680,9 @@
 真值: frontend-fix.no-api-change
 溯源: 2026-10-31 新增（issue #8287：用户「打包的工人要在报工详情页面增加成品入库功能并打印入库标签」）。改动 = bmini 报工页渲染服务端随扫码 / 报工回执下发的 finished_inbound 卡（仓位 / 质检 / 入库单 / 标签行 / 短码），并接 50×70 行式标签打印；共用 rowsLabel 版面 + printRowsLabel 入口；小程序画布改走离屏画布（此前无 DOM 直接抛错 ⇒ 小程序打印实际不可用，本单一并修）。边界：这两类纸无服务端打印留痕端点（与 /w/ 一致），入库标签的必留痕红线仍只约束 printInboundLabel。 ｜ tags: bmini, inbound, print, finished-goods, weapp
 
-### BM-061. 待发货单整套出库单（发货联）50×70 预览 + 打印 —— 行清单与 /w/ 同源，仍不新增发货写路径 🔵
+### BM-061. 待出库单整套出库单（成品出库单）50×70 预览 + 打印 —— 行清单与 /w/ 同源，仍不新增发货写路径 🔵
 ```
-你: 工人在「待发货单」列表点某单「发货联」→ 屏上出现 50×70 纸面的行清单（订单号 / 收货人 / 电话 / 地址 / 帘种 / 安装小区 / 安装位置 / 物流类型 / 物流公司 / 下单日期 / 套数 / 备注）→ 点「打印发货联（50×70）」经共享行式标签通道打出整套出库单；缺值印 —、可选附注缺值整行不印；本页仍不发货。
+你: 工人在「待出库单」列表点某单「出库单」→ 屏上出现 50×70 纸面的行清单（订单号 / 收货人 / 电话 / 地址 / 帘种 / 安装小区 / 安装位置 / 物流类型 / 物流公司 / 下单日期 / 套数 / 备注）→ 点「打印成品出库单（50×70）」经共享行式标签通道打出整套出库单；缺值印 —、可选附注缺值整行不印；本页仍不发货。
 期望: direct_reply
 数据: 判据 1·🔴 行清单与 /w/ 逐行等价：bmini buildShipLabelRows 与 frontend/worker-h5/src/shipment.mjs 的 buildShipLabelRows 对同一组 fixture（全字段 / 最小 / 可选全缺 / 时区 / 缺值）逐行相等。红证：任一侧改行序 / 缺值规则 / 日期 ⇒ frontend/bmini-app/tests/ship-label-rows-parity.test.ts 红（逐字段点名）
 数据: 判据 2·🔴 日期按 Asia/Shanghai：16:30Z ⇒ 次日；不按 UTC 切。红证：改成本地 / UTC 取日 ⇒ parity P4 与 worker-shipment-orders-page.test.tsx 的 ⑧ 红
@@ -1691,7 +1691,7 @@
 跳过: [frontend-contract] 确定性页面 / 跨端行清单判据（jest: ship-label-rows-parity / worker-shipment-orders-page / rows-label-layout），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: frontend-fix.no-api-change
-溯源: 2026-10-31 新增（issue #8287：用户「整单出库功能要能做成品出库，并打印标签」）。现状：成品出库写路径已存在（拍照发货 / PC 发货 → POST /api/worker/shipment/orders/{id}/ship；服务端已过账 outbound source=ship），本单补的是手机端整套出库单纸面：待发货单列表逐单「发货联」预览 + 50×70 打印，行清单与 /w/ 的 buildShipLabelRows 同源（parity 现取两侧比对）。明确不做第二条发货写路径（PR 写明）。 ｜ tags: bmini, worker, shipment, label, print
+溯源: 2026-10-31 新增（issue #8287：用户「整单出库功能要能做成品出库，并打印标签」）。现状：成品出库写路径已存在（拍照发货 / PC 发货 → POST /api/worker/shipment/orders/{id}/ship；服务端已过账 outbound source=ship），本单补的是手机端整套出库单纸面：待出库单列表逐单「出库单」预览 + 50×70 打印（2026-11-04 / #8632 起纸面抬头 = 成品出库单），行清单与 /w/ 的 buildShipLabelRows 同源（parity 现取两侧比对）。明确不做第二条发货写路径（PR 写明）。 ｜ tags: bmini, worker, shipment, label, print
 
 ### BM-062. 拍照入库识别链三步各自封顶 + 分步进度 —— 不许把工人锁死在灰按钮上 🔵
 ```
@@ -4221,7 +4221,7 @@
 ```
 溯源: 2026-10-31 新增（issue #8295）：两步确认，避免误写 ｜ tags: ui, preview
 
-## 杂项域（221 case）
+## 杂项域（222 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -7358,7 +7358,7 @@
 ```
 你: 用户（2026-11-01 测试账号真机）：你这个测试账号的权限太大了，不符合实际使用？通常每个工序或者每个工人只能操作 1-3 个菜单，根据工人岗位来定菜单的
 数据: 🔴 **判据 ①·键集 ⇄ 工人端真实页面（双向）**：`inbound` / `reprint`（拍照入库 / 补打入库标签）在 bmini 上**早已有页面**（frontend/bmini-app/src/pages/worker/inbound|reprint/index.tsx）却**没有页面键、恒显示** ⇒ 现纳入闭词表 + 默认集合；每个键都有人话名、写侧认得它们。执行点 = WorkerPagesTest::inboundAndReprintPagesAreKeyedNow / everyPageKeyHasAHumanLabel
-数据: 🔴 **判据 ②·每个岗位都有默认菜单且默认键全在键集内**：裁剪/车位 = 报工+计件；仓管 = 入库+补打+库存修正；发货 = 发货+待发货单；每组非空 ⊆ `WorkerPages.ALL`、项数 ≤ 3、且能通过写侧校验（默认值 = 合法值）。执行点 = WorkerPagesTest::everyPositionHasDefaultsInsideTheVocabulary / positionDefaultsMatchTheIssueCriteria
+数据: 🔴 **判据 ②·每个岗位都有默认菜单且默认键全在键集内**：裁剪/车位 = 报工+计件；仓管 = 入库+补打+库存修正；发货 = 拍照发货+待出库单；每组非空 ⊆ `WorkerPages.ALL`、项数 ≤ 3、且能通过写侧校验（默认值 = 合法值）。执行点 = WorkerPagesTest::everyPositionHasDefaultsInsideTheVocabulary / positionDefaultsMatchTheIssueCriteria
 数据: 🔴 **判据 ③·显式菜单优先于岗位默认（负控）**：建号时同时给岗位与 `workerPages` ⇒ 落库的是**显式集合**（岗位默认被覆盖），且覆盖仍受 3 项上限约束。执行点 = WorkerAdminServiceTest::explicitPagesWinOverThePositionDefaults / perWorkerOverrideStillWinsButIsCapped
 数据: 🔴 **判据 ④·首屏上限 3 项，边界两侧都钉**：正好 3 项 ⇒ 通过；第 4 项 ⇒ 422 具名拒错（说清「最多 3 项」+「你填了 4 项」+ 列出这 4 项）且**零写入**。执行点 = WorkerPagesTest::pageCapIsThreeAndTheFourthIsRejectedByName / WorkerAdminServiceTest::moreThanThePageCapIsRejectedByName
 数据: 🔴 **判据 ⑤·改岗位 ⇒ 菜单按新岗位重新带出**（岗位是源；`PUT /api/admin/workers/{id}/position` 两列一起显式 set）：仓管 ⇒ 入库+补打+库存修正；清岗位 ⇒ 回到未收窄（全部页面）。执行点 = WorkerAdminServiceTest::updateWorkerPositionReDerivesTheMenu / clearingThePositionReturnsToAllPages / AdminWorkerControllerTest::updateWorkerPositionReturnsTheDerivedMenu
@@ -7553,6 +7553,18 @@
 跳过: [backend-contract] 接线形态 + Java 行为（logback 捕获）+ 文档要素，零 LLM、零真库、零网络；非 LLM 行为，不进入 agent-eval 冒烟
 ```
 溯源: 2026-11-04 新增（issue #8196 的 ① 面）。取号 MC-193（main 侧现取最大 190、claims 目录无 193）。🔴 自查改判：任务书建议在 compose 的 environment 加空值透传 —— 那会**覆盖成空**（commit 988e490f0 已为 AI_AGENT_SERVICE_TOKEN 删过同一行），故改为「只经 env_file 注入 + 判据禁止在 compose 里覆盖」；判据的值扫描先剔 `${…}` 包装，避免把变量引用误判成值。⚠️ 未闭合：服务器 .env.admin-api 里是否真有值属外部输入（用户侧提供），本单只给可复算的回读命令。 ｜ tags: deploy, env-wiring, wechat, bmini, loud-failure, red-proof
+
+### MC-195. Flaky Ledger Reconcile 自愈（issue #8628）：台账分支领先 main 却无 open PR 时**机械幂等补建**（不 arm、不 --admin、不受豁免）；ahead=0 / 已有 PR 零动作；补建失败一行可行动出口 + 非零退出 🔵
+```
+你: `Flaky Ledger Reconcile` 这条腿在 `chore/flaky-ledger` 领先 main 但没有 open PR 时对**每一个** PR 报红，只能靠人手动开 PR 压住；希望机械自愈 —— 已有一律不重复建，人只需复核
+期望: direct_reply
+数据: **建（会红）**：`ahead>0` ∧ `gh pr list --state open --head chore/flaky-ledger` 为空 ⇒ 调 `flaky_ledger.py ensure-pr` **恰好一次** `gh pr create`（base main / head 台账分支），PR body 带 `AUTOPR_MARKER`。判据 = 替换脚本唯一的 gh 出口 `_gh` 打桩并逐条记 argv（**不在测试里真建 PR**），另有 `--dry-run` 只打印不建。执行点 = `tests/unit_ci_workflows/test_flaky_ledger_reconcile.py` 的 ensure-pr 行为判据。
+数据: **幂等（双向，会红）**：已有 open PR ⇒ **零次** `gh pr create`（`action=exists`）；`ahead==0` / 分支不存在 ⇒ **零次** + 腿绿。红证 = 把「已有 PR ⇒ 零动作」的短路改成恒假 ⇒ 同一输入会多建一条，判据当场红（`test_red_proof_existing_pr_shortcut_removed`）。
+数据: **不许自开自合（会红）**：本腿自建的 PR（body 带标记 token）在后续轮次**不 arm auto-merge**（summary 写「arm：跳过」），workflow 全域不得出现 `gh pr merge --admin`，不改分支保护、不给该腿任何豁免；required 检查仍是唯一闸。红证 = 摘掉标记分支臂 ⇒ 同一输入会真的 `pr merge`；插入 `--admin` ⇒ 结构判据红。
+数据: **失败必须响（会红）**：`gh pr create` 失败 ⇒ `::error::` 一行含可复制出口（`gh pr create --base main …`）+ 退出码 1；读数面读不到 ⇒ 退出码 3（**未跑 ≠ 通过**，不得当「无需 PR」）。红证 = 把失败出口改成「echo 且 exit 0」⇒ 结构判据红；行为判据断言 rc=1 / rc=3 且文案含可行动出口。
+跳过: [backend-contract] CI 对账腿的**动作级**判据（打桩断言 gh 调用 + 真跑 workflow 步骤），零网络、零 LLM、不建真 PR、不碰真库；非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-11-04 新增（issue #8628）。病：台账分支领先 main 但无 open PR 时该腿对每个 PR 常驻红 —— 实测两次（#8604 / #8612 手工开 PR 压住），机械开单 #8628 连续 4 次真红达阈值（run 41773739654 / 41772598095 / 41765847283 / 41763430690）。修法 = 最小改动：`flaky_ledger.py` 新增 `ensure-pr`（先查 open PR、再实时算 ahead，都满足才建；**只建 PR、不 arm**），workflow 把旧「无 PR ⇒ ::error:: 判红」换成调它。取号 MC-195（`python3 scripts/next_case_id.py MC` 现取 main 到 193、claims 目录无 194/195）。⚠️ 根解方向（未在本单实现，见 PR body 分析）：让台账内容由 main 侧补回、根本不产生 ahead —— 属台账语义变更，需单独裁定。 ｜ tags: ci, flaky-ledger, self-heal, idempotent, no-self-merge, red-proof
 
 ### MC-194. **改客户资料 / 加工项增改停 / 建商品分类接回 B 端**（issue #8618）：action 枚举与 schema 同时可见（漏参数即不可调用）+ 权限走既有 required_permissions 粗筛与 action 级复检（码取控制器注解）+ 确认走既有 base_skill._requires_confirmation（react_turn 同一函数对象；未确认 ⇒ 不执行）+ 端点逐字对齐（PUT /api/admin/customers/{id} · POST /api/admin/categories · POST|PUT /api/admin/processing-items）+ 删除类 action 退场（停用改为 update_item(status=…)，可逆） 🔵
 ```
@@ -8970,7 +8982,7 @@
 数据: 判据 2·**安装位置是件级，落在该行 processingInfo.installRoom**（会红）：它不是部位 / 帘种（curtainType），也**不是** item 一级字段 —— 后端 OrderCreateRequest.OrderItemRequest / OrderContentUpdateRequest.Item 没有该字段 ⇒ 放一级会被 Jackson 静默丢掉。执行点 = 同上两文件（下单页判据 1/3、弹层 ⑦ 断言 Object.keys(items[0]) 不含 installRoom）。红证（实测）：删掉 buildLineProcessingInfo 里的 if (installRoom) info.installRoom = installRoom ⇒ 下单页判据 1/3 红（2 条）。
 数据: 判据 3·**缺值不落键**（会红）：空 / 纯空白 ⇒ 请求体里**没有** installCommunity 键、该行 processingInfo 里**没有** installRoom 键（不写空串：写空串会被下游读成「填过」，纸面会多印一行空值）；改单弹层清空安装小区时**显式**发空串（服务端口径「未传 ⇒ 沿用原值、空串 ⇒ 清空」）。执行点 = 下单页判据 2/3 · 弹层 ⑧。红证（实测）：把弹层的条件落键改成无条件写 ⇒ ⑧ 红。
 数据: 判据 4·**软限 40 / 12 由录入控件挡住**（会红）：服务端超长是 422 硬拒（OrderInstallInfo.normalizeCommunity / normalizeRoom）⇒ 两个录入面的 maxLength 必须先挡；安装位置的常用空间 chips（主卧 / 次卧 / 儿童房 / …）只是录入捷径，不构成值域校验（自由文本照旧允许）。执行点 = 下单页判据 4 · 弹层 ⑥⑨。
-数据: 判据 5·**详情页与纸面读同一份真值**：订单详情「收货信息」区在收货地址下显示安装小区（缺值 - ，与相邻行同口径）、明细区显示件级安装位置（缺值**不渲染**该行，与「部位备注」同口径）。执行点 = frontend/admin-web/tests/unit/pages/order-detail.test.tsx（#7856 四条；红证实测：删掉 InfoRow / 删掉安装位置渲染块 ⇒ 各自红）。纸面（水洗唛 / 发货标签 / 入库标签）由后端读同一份 JSONB 逐行打印，判据在后端（ProcessingOrderService 白名单 / WorkerShipmentReadyService.install_rooms）。
+数据: 判据 5·**详情页与纸面读同一份真值**：订单详情「收货信息」区在收货地址下显示安装小区（缺值 - ，与相邻行同口径）、明细区显示件级安装位置（缺值**不渲染**该行，与「部位备注」同口径）。执行点 = frontend/admin-web/tests/unit/pages/order-detail.test.tsx（#7856 四条；红证实测：删掉 InfoRow / 删掉安装位置渲染块 ⇒ 各自红）。纸面（水洗唛 / 成品出库单 / 入库标签）由后端读同一份 JSONB 逐行打印，判据在后端（ProcessingOrderService 白名单 / WorkerShipmentReadyService.install_rooms）。
 跳过: [backend-contract] 本用例是**订单安装信息**的确定性判据（前端 vitest 判录入 / 请求体 / 展示；后端 JUnit 判归一与准入 / 扇出 / 投影；**无 LLM 环节 ⇒ 不进 agent-eval 冒烟**）：计分通道 = traces.tests
 ```
 溯源: 2026-10-26 新增（issue #7856；用户当日逐字见 user_inputs）。取号 = scripts/next_case_id.py OR 现取（main 001-069 ∪ 全部 open PR ∪ 工作区空洞）⇒ OR-070。口径落点：数据库**零迁移**（用户当场裁定「不能作为订单基础字段吧？」）⇒ 两个键都住已登记的 JSONB order_items.processing_info（tests/unit_ci_workflows/schema_health_ledger.json 的 jsonb_columns）。⚠️ 未固化（照实登记）：① 真实浏览器里的纸面（水洗唛 / 发货标签）未做 Playwright 多模态验收（纸面判据在后端）；② 存量单（本功能之前落的单）没有该键 ⇒ 详情页安装小区显示 - 、安装位置整行不渲染，**不回填、不猜**。 ｜ tags: order, admin-web, install-info, print-annotation
@@ -15095,8 +15107,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：1021（活跃 160，跳过 861）
-- tier 分布：smoke 15 / normal 944 / adversarial 33
+- 用例总数：1022（活跃 160，跳过 862）
+- tier 分布：smoke 15 / normal 945 / adversarial 33
 - 售后域：16
 - Agent 核心域：13
 - API 层域：21
@@ -15112,7 +15124,7 @@
 - 人事域：13
 - 知识问答域：9
 - 客户主数据迁移域：10
-- 杂项域：221
+- 杂项域：222
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：76
@@ -15399,6 +15411,7 @@
 - MC-189: 配置就绪度端点 GET /api/admin/config-readiness（issue #6579）：服务端聚合七步事实（含孤儿工序单一真值口径）、跨码步骤按调用方权限整个省略、前端主线只发这一个请求就画出七步
 - MC-192: 工人端菜单吃本机能力（第三轴）：一个 apk 覆盖安卓一体机 + 手持标签机，缺省即隐藏（issue
 - MC-193: B 端小程序（bmini）凭据的部署接线 + 缺失显式告警（issue #8196 ①）：变量名经 admin-api 的 env_file(.env.admin-api) 进容器、compose 的 environment 不得空值覆盖、启动期任一为空（含半配）打一条 WARN 点名缺哪个/影响/补法且不阻止启动、仓库里无凭据值
+- MC-195: Flaky Ledger Reconcile 自愈（issue #8628）：台账分支领先 main 却无 open PR 时**机械幂等补建**（不 arm、不 --admin、不受豁免）；ahead=0 / 已有 PR 零动作；补建失败一行可行动出口 + 非零退出
 - MC-194: **改客户资料 / 加工项增改停 / 建商品分类接回 B 端**（issue #8618）：action 枚举与 schema 同时可见（漏参数即不可调用）+ 权限走既有 required_permissions 粗筛与 action 级复检（码取控制器注解）+ 确认走既有 base_skill._requires_confirmation（react_turn 同一函数对象；未确认 ⇒ 不执行）+ 端点逐字对齐（PUT /api/admin/customers/{id} · POST /api/admin/categories · POST|PUT /api/admin/processing-items）+ 删除类 action 退场（停用改为 update_item(status=…)，可逆）
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）

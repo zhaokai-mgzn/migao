@@ -49,7 +49,7 @@ class WorkerPageCatalogControllerTest extends BaseControllerTest {
                 .andExpect(jsonPath("$.data.pages[2]").value("order"))
                 .andExpect(jsonPath("$.data.pages[3]").value("cut_calc"))
                 .andExpect(jsonPath("$.data.pages[4]").value("shipment"))
-                // issue #7814：`to_ship`（待发货单）与 `shipment`（拍照发货）是**两个能力**，排在其后
+                // issue #7814：`to_ship`（待出库单）与 `shipment`（拍照发货）是**两个能力**，排在其后
                 .andExpect(jsonPath("$.data.pages[5]").value("to_ship"))
                 // issue #8104：`stock`（库存修正）默认开（操作工具，与 shipment 同档）
                 .andExpect(jsonPath("$.data.pages[6]").value("stock"))
@@ -78,9 +78,9 @@ class WorkerPageCatalogControllerTest extends BaseControllerTest {
                 .andExpect(jsonPath("$.data.optional_pages[0]").value("inspect"))
                 .andExpect(jsonPath("$.data.labels.report").value(WorkerPages.labels().get("report")))
                 .andExpect(jsonPath("$.data.labels.shipment").value(WorkerPages.labels().get("shipment")))
-                // issue #7814：商家后台「设置工人端菜单」里必须能看到「待发货单」这一项
+                // issue #7814：商家后台「设置工人端菜单」里必须能看到「待出库单」这一项
                 // （目录端点漏了它 ⇒ 面板里根本没有勾选项 ⇒ 用户报的那个形态）
-                .andExpect(jsonPath("$.data.labels.to_ship").value("待发货单"))
+                .andExpect(jsonPath("$.data.labels.to_ship").value("待出库单"))
                 // issue #8104：商家后台「设置工人端菜单」里必须能看到「库存修正」这一项
                 .andExpect(jsonPath("$.data.labels.stock").value("库存修正"));
     }

@@ -1,4 +1,4 @@
-# case_ids: MC-012
+# case_ids: MC-012, MC-195
 """#4825 的兜底判据与结构锁（L0，离线、零 LLM、秒级）。
 
 背景（**实测**，不是照抄 issue 文本）
@@ -17,8 +17,10 @@
 3. **复用 #4804 的实现、不复制规则**：必须调 `flaky_ledger.py ledger-drift` / `approve`
    （同脚本同参数），`--head-branch` 收敛越权面，`::error::` + `exit 1` fail-closed；
 4. **绝不静默降级**：无漂移 ⇒ 零动作；判据「无法判定」⇒ `exit 3` 且 `set -o pipefail` 必须在
-   （否则被 `tee` 吞掉 ⇒ 静默 no-op）；有漂移却**没有 open PR** ⇒ 红；兜底后仍 0 check、
-   已无待批准 run 且分支陈旧 ⇒ 红；`contents: read`（**不写**台账、**不建 PR** ⇒ 不引入第二个作者）；
+   （否则被 `tee` 吞掉 ⇒ 静默 no-op）；有漂移却**没有 open PR** ⇒ **机械补建**（#8628：幂等，
+   建不出来才红）；兜底后仍 0 check、已无待批准 run 且分支陈旧 ⇒ 红；
+   `contents: read`（**不写**台账内容 ⇒ 不引入第二个作者；#8628 的建 PR 是唯一例外，
+   且自建的 PR **不 arm**）；
 5. **既有护栏未被削弱**（逐条锚点 + 注入式红证）：`#4804` 的 approve 步骤仍在**且取 `origin/main`
    的脚本副本**（步骤④ 已把工作区切到台账分支 ⇒ 跑 `.github/scripts/…` 是**分支的旧副本**，实测
    `invalid choice: 'approve'` ⇒ 台账永远落不到 main = 死锁）；`#4717` 的「只标注不自动放行」
@@ -35,6 +37,8 @@ from pathlib import Path
 
 import pytest
 import yaml
+
+from unit_ci_workflows.injection import inject
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPTS = REPO_ROOT / ".github" / "scripts"
@@ -350,23 +354,66 @@ def audit_reconcile(src: str) -> list:
         bad.append(f"找不到「有漂移 ⇒ …」/「分叉告警」步骤（缺 {missing}）⇒ ⑥⑦ 的定位失效"
                    "（本守卫会静默空跑，先修 workflow/本测试）")
     repair = "\n".join(_step_text(s) for s in repair_steps)
+    # ⚠️ 判据读**命令行形态**（剔除整行注释）：本步骤的注释里也写着 `ensure-pr` /
+    #    `flaky-ledger-autopr`（说明用）⇒ 子串判据会被自己的说明文案骗绿（本仓「提及 ≠ 调用」）。
+    rcode = _code_lines(repair)
     if not re.search(r"gh pr list\b[^\n]*--head", repair):
         bad.append("没有 `gh pr list … --head` 找台账 PR ⇒ 无法判定「有没有路径把台账推上 main」")
-    if not re.search(r"::error::[^\n]*open PR", repair):
-        bad.append("「分支领先 main 却**没有 open PR**」没有 fail-closed 出口（红线：这正是静默停在分支上的形态）")
-    # ⑩ #5310 **类级元守卫**：**可行动出口必须真的可行动**。
-    #    类别形态 = 报错文案给的动作在该状态下**不可能改变结果**（旧文案逐字是「可行动：重跑
-    #    flaky-triage.yml（由它补建台账 PR）」，而 `flaky-triage.yml` 只在 `entry_count != '0'`
-    #    即**有新的终态事件**时才补建 PR ⇒ 本状态（没有待落仓条目、也没有 PR）下它什么也修不了）
-    #    —— 「可行动出口不可行动」比红本身更坏（本仓 §19「假读数」同族）。判据两条：
-    #      ① 报错必须给**状态改变型**出口（重建 PR / 重开 PR 这种真的改状态的动作）；
-    #      ② 必须**显式说明**旧出口为何无效（否则下一个人照旧把它当成出路贴回来）。
-    if not re.search(r"::error::[^\n]*open PR[^\n]*(gh pr create|gh pr reopen)", repair):
-        bad.append("#5310 类级元守卫（可行动出口）：no-PR 的报错必须给**真能改变结果**的出口"
-                   "（重建 `gh pr create` / 重开 `gh pr reopen`），不是「重跑某个 workflow」")
-    if "不改变结果" not in repair:
-        bad.append("#5310 类级元守卫（可行动出口）：no-PR 的报错必须**显式说明**旧出口"
-                   "（重跑 flaky-triage.yml）为何无效 —— 否则不可行动的出口会被再贴回来")
+    # ⑬ #8628：**台账领先 main 却没有任何 open PR** ⇒ **机械补建**（幂等），而不是判红。
+    #    病（实测两次）：旧口径把「没有 PR」判红（「建 PR 是 flaky-triage.yml 的职责」），而
+    #    flaky-triage.yml **只在有新的终态事件时**才补建 PR ⇒ 该状态下没有任何路径把台账推上 main
+    #    ⇒ 腿在**每一个** PR 上报红，只能靠人**手工开 PR**压住（#8604 / #8612 两次）。
+    #    ⚠️ 判据只认**调用形态**（`^\s*python3 …flaky_ledger.py ensure-pr`）：同一步骤的注释里
+    #    也写着 `ensure-pr`（说明用）—— 子串判据会被自己的说明文案喂绿（本仓「提及 ≠ 调用」）。
+    ensure_steps = [s for s in steps
+                    if re.search(r"(?m)^\s*python3\s+\S*flaky_ledger\.py\s+ensure-pr\b",
+                                 _code_lines(_step_text(s)))]
+    if not ensure_steps:
+        bad.append("#8628：没有任何步骤调 `flaky_ledger.py ensure-pr` ⇒ 台账领先却没 PR 时又回到"
+                   "「判红 / 靠人手动开 PR」= 本单要治的形态（调用形态判据）")
+    else:
+        etxt = _step_text(ensure_steps[0])
+        ecode = _code_lines(etxt)
+        # ⚠️ 作用域判据必须**只看 ensure-pr 那几行**：同一步骤里还有 `ledger-drift --branch
+        #    "$LEDGER_BRANCH"`（复核）⇒ 全步骤子串判据会把「ensure-pr 没绑分支」判绿（空断言）。
+        mcall = re.search(r"(?m)^\s*python3\s+\S*flaky_ledger\.py\s+ensure-pr\b(?:[^\n]*\n){0,2}",
+                          ecode)
+        seg = mcall.group(0) if mcall else ""
+        for flag, why in (('--repo "$GITHUB_REPOSITORY"',
+                           "未把仓库显式绑到本次 run（可能对别的仓建 PR）"),
+                          ('--branch "$LEDGER_BRANCH"',
+                           "未把 head 显式绑到台账分支（作用域越权）")):
+            if flag not in seg:
+                bad.append(f"#8628：`ensure-pr` {why}（缺 `{flag}`）")
+        # 幂等（顺序即安全顺序）：补建必须挂在「**没有** open PR」这个闸**之后**。
+        if '[ -z "$PR" ]' not in ecode:
+            bad.append("#8628：`ensure-pr` 必须挂在「没有 open PR」分支里（已有 open PR ⇒ 零动作）")
+        elif ecode.index("flaky_ledger.py ensure-pr") < ecode.index('[ -z "$PR" ]'):
+            bad.append("#8628：`ensure-pr` 出现在「没有 open PR」闸**之前** ⇒ 已有 PR 时也会建"
+                       "（幂等被破坏 = 每轮重复建 PR）")
+        # 建不出来 ⇒ 必须**响**（一行可行动出口），不许被读成「无事可做」。
+        # 两条出口**分开判**：只说「有 `::error::`」会被另一条出口骗绿（本仓已踩多次的同款空断言）。
+        fail_line = [ln for ln in ecode.splitlines() if "补建 PR 失败" in ln]
+        if not fail_line or "::error::" not in fail_line[0] or "exit 1" not in fail_line[0]:
+            bad.append("#8628：`ensure-pr` **建 PR 失败**的那条出口必须 `::error::` + `exit 1`"
+                       "（一条可行动的行；否则失败被读成「无事可做」= 静默，红线）")
+        und_line = [ln for ln in ecode.splitlines() if "ensure-pr 退 3" in ln]
+        if not und_line or "::error::" not in und_line[0]:
+            bad.append("#8628：`ensure-pr` 的**无法判定**（退 3）缺 `::error::` 出口 ⇒ 未跑会被读成通过")
+        if not re.search(r"::error::[^\n]*gh pr create --base", etxt):
+            bad.append("#8628：建 PR 失败的错误文案必须带**可复制出口**（`gh pr create --base …`）"
+                       "—— 出口必须真的可行动")
+    # ⑭ #8628：**不许自开自合** —— 本腿自己建的 PR（body 带标记）不 arm；且绝不用 `--admin`。
+    all_steps_txt = "\n".join(_step_text(s) for s in steps)
+    if re.search(r"gh\s+pr\s+merge\b[^\n]*--admin", _code_lines(all_steps_txt)):
+        bad.append("红线：workflow 里出现 `gh pr merge --admin`（绕过必需检查；#8628 明令禁止）")
+    # ⚠️ 判据认**分支臂形态**（`*flaky-ledger-autopr*)`），不是「文本里出现过这个字面量」——
+    #    后者会被 ARM_LINE 的说明文案喂绿（摘掉分支照样通过 = 空断言）。
+    if not re.search(r"(?m)^\s*\*flaky-ledger-autopr\*\)\s*$", rcode):
+        bad.append("#8628：本腿自建的 PR 必须按 `flaky-ledger-autopr` 标记**跳过 arm**"
+                   "（自己开 + 自己 arm = 自开自合；人要能看见并复核）")
+    elif not re.search(r'(?m)^\s*echo\s+"::notice::[^\n]*(不 arm|跳过)', repair):
+        bad.append("#8628：跳过 arm 时必须 `::notice::` 出声（不许静默跳过 —— 跳过 ≠ 通过）")
     # ⑪ #5307 可见性：**台账分支**的欠账必须落在某个消费面（job summary + `::error::`）。
     #    类别形态 = 「判据判红但没有任何人看」（这条 required 测试在台账分支上恒红约 40 小时，
     #    而不在 required 集合 + `flaky-triage` 按自指守卫跳过该分支 + 本兜底原先只补 approve/arm）。
@@ -431,9 +478,12 @@ def audit_reconcile(src: str) -> list:
         bad.append("陈旧判据必须同时要求「0 个 check」与「无待批准 run」（否则 approve 的异步窗口会假红）")
     if not re.search(r"::error::[^\n]*分叉", repair):
         bad.append("「main 有分支没有的条目（分叉）」没有可观测信号")
-    # ⑦ 不引入第二个作者：兜底**绝不**建 PR、绝不推分支、绝不写台账
-    if re.search(r"(?m)^\s*gh pr create\b", repair):
-        bad.append("兜底**不许**调 `gh pr create`（建 PR 是 flaky-triage.yml 的职责 ⇒ 两个作者会打架）")
+    # ⑦ 不引入第二个**台账内容**作者：兜底绝不推分支、绝不写台账；
+    #    建 PR 只许走**唯一实现**（`ensure-pr`）—— 内联 `gh pr create` 会让文案与幂等逻辑出现第二份，
+    #    且判据没法在不建真 PR 的前提下断言「到底调没调」（#8628）。
+    if re.search(r"(?m)^\s*gh pr create\b", _code_lines(repair)):
+        bad.append("#8628：建 PR 必须走唯一实现 `flaky_ledger.py ensure-pr`；"
+                   "workflow 里**不许**内联 `gh pr create`（文案/幂等规则会漂成两份）")
     if re.search(r"(?m)^\s*git push\b", "\n".join(_step_text(s) for s in steps)):
         bad.append("兜底**不许** `git push`（台账只由 flaky-triage.yml 追加 ⇒ 避免与它分叉）")
 
@@ -459,6 +509,19 @@ class TestReconcileWorkflowStructure:
             f"workflow 的 LEDGER_BRANCH={env.get('LEDGER_BRANCH')!r} 与 "
             f"flaky_ledger.LEDGER_BRANCH={FL.LEDGER_BRANCH!r} 不一致")
         assert '"$LEDGER_BRANCH"' in REAL_RECONCILE, "步骤必须引用 `$LEDGER_BRANCH`（不复制字面量）"
+
+    def test_autopr_marker_has_a_single_source(self):
+        """#8628：workflow 按标记跳过 arm，而标记常量在脚本里 —— 两处必须同值（否则永不跳过）。"""
+        bad = []
+        if FL.AUTOPR_TOKEN not in FL.AUTOPR_MARKER:
+            bad.append("AUTOPR_MARKER 必须由 AUTOPR_TOKEN 拼出（单一事实源）")
+        if f"*{FL.AUTOPR_TOKEN}*)" not in REAL_RECONCILE:
+            bad.append(f"workflow 没有按脚本的 AUTOPR_TOKEN（{FL.AUTOPR_TOKEN!r}）分支 ⇒ "
+                       f"本腿自建的 PR 仍会被 arm（自开自合）")
+        if FL.AUTOPR_TITLE not in REAL_TRIAGE:
+            bad.append(f"建 PR 的标题必须与唯一既有文案同源（flaky-triage.yml 里没有 "
+                       f"{FL.AUTOPR_TITLE!r}）⇒ 会漂成两份")
+        assert bad == []
 
     def test_trigger_faces_do_not_overlap_triage(self):
         """两个 workflow 的触发面必须**不相交** —— 否则兜底与主路径同生共死（同一个单点）。"""
@@ -508,19 +571,41 @@ class TestReconcileWorkflowRedProofs:
         assert mutated != REAL_RECONCILE, "注入锚点失效（先修本测试）"
         assert any("零动作" in v for v in audit_reconcile(mutated))
 
-    def test_inject_removing_no_open_pr_fail_closed(self):
-        """摘掉「没有 open PR ⇒ 红」的出口 ⇒ 台账静默停在分支上（本兜底要治的形态）⇒ 必红。
-
-        ⚠️ #5310 同步锚点（**判据强度未降**）：文案换成「真出口 + 显式说明旧出口无效」后，
-        这里只把 `::error::` 与 open PR 的**形态**摘掉（出口文句仍在）⇒ 命中「没有 fail-closed 出口」。
-        """
-        mutated = REAL_RECONCILE.replace(
-            'echo "::error::台账分支领先 main（${AHEAD} 条未落仓；复核 ahead=${RECHECK_AHEAD:-未知}）'
-            '却**没有 open PR**',
-            'echo "⚠️ 没有 open PR', 1)
-        assert mutated != REAL_RECONCILE, "注入锚点失效（先修本测试）"
+    def test_inject_removing_the_autopr_call(self):
+        """#8628：摘掉 `ensure-pr` 调用 ⇒ 台账领先却没 PR 时又回到「判红 / 靠人手动开」⇒ 必红。"""
+        mutated = inject(
+            REAL_RECONCILE,
+            "            python3 .github/scripts/flaky_ledger.py ensure-pr \\\n", "",
+            where=".github/workflows/flaky-ledger-reconcile.yml")
         violations = audit_reconcile(mutated)
-        assert any("open PR" in v for v in violations), violations
+        assert any("ensure-pr" in v for v in violations), violations
+
+    def test_inject_removing_the_autopr_failure_exit(self):
+        """#8628：把「建 PR 失败 ⇒ 红」的出口摘掉（改成不痛不痒的 echo）⇒ 静默通过 ⇒ 必红。"""
+        mutated = inject(
+            REAL_RECONCILE,
+            "              *) echo \"::error::台账领先 main 却**补建 PR 失败**"
+            "（ensure-pr 退 ${ENSURE_RC}）⇒ 台账仍停在分支上、main 不增长；"
+            "明细见上方 ⛔ 行。可复制出口：gh pr create --base main --head $LEDGER_BRANCH "
+            "--title 'chore(ci): flaky 台账滚动追加' --repo $GITHUB_REPOSITORY\"; exit 1 ;;",
+            '              *) echo "⚠️ 补建失败"; exit 0 ;;', where=".github/workflows/flaky-ledger-reconcile.yml")
+        violations = audit_reconcile(mutated)
+        assert any("建 PR 失败" in v for v in violations), violations
+
+    def test_inject_arming_the_autopr_pr(self):
+        """#8628 红线：摘掉「自建 PR 不 arm」的标记分支 ⇒ **自己开 + 自己 arm** = 自开自合 ⇒ 必红。"""
+        mutated = inject(REAL_RECONCILE, "            *flaky-ledger-autopr*)\n",
+                         "            *NO_SUCH_MARKER*)\n", where=".github/workflows/flaky-ledger-reconcile.yml")
+        violations = audit_reconcile(mutated)
+        assert any("flaky-ledger-autopr" in v for v in violations), violations
+
+    def test_inject_admin_merge(self):
+        """#8628 红线：出现 `gh pr merge --admin`（绕过必需检查）⇒ 必红。"""
+        mutated = inject(REAL_RECONCILE,
+                         'ARM_OUT=$(gh pr merge "$PR" --auto --squash',
+                         'ARM_OUT=$(gh pr merge "$PR" --admin --auto --squash', where=".github/workflows/flaky-ledger-reconcile.yml")
+        violations = audit_reconcile(mutated)
+        assert any("--admin" in v for v in violations), violations
 
     def test_inject_removing_stale_check_exit(self):
         """摘掉「兜底后仍 0 check 且陈旧 ⇒ 红」⇒ 兜底失败又变回静默 ⇒ 必红。"""
@@ -756,17 +841,32 @@ RECONCILE_RED_PROOFS = [
      '            --main-file .github/flaky-ledger.json --branch "$LEDGER_BRANCH" --main-live '
      '--repo "$GITHUB_REPOSITORY" \\\n            --gh-output "$GITHUB_OUTPUT"',
      "一半快照一半实时"),
-    ("actionable_exit_replaced_by_fake_one",
-     "**真实出口**（本兜底**不建 PR** —— 建 PR 是 flaky-triage.yml 的唯一职责，见文件头）："
-     "① 若该 PR 是被误关的，重开它（gh pr reopen）—— 分支内容与 PR 都在，重开后 required 检查照跑；"
-     "② 否则由**人 / agent 显式重建**台账 PR：gh pr create --base main --head $LEDGER_BRANCH "
-     "--title 'chore(flaky): 台账追加' --body '（由 flaky-triage.yml 维护）'，"
-     "随后本兜底下一轮补 approve + arm auto-merge。",
-     "可行动：重跑 flaky-triage.yml（由它补建台账 PR）",
-     "类级元守卫（可行动出口）"),
-    ("actionable_exit_invalidity_disclaimer_removed",
-     "⚠️ 旧的出口「重跑 flaky-triage.yml」在本状态下**不改变结果**",
-     "⚠️ 亦可重跑 flaky-triage.yml", "类级元守卫（可行动出口）"),
+    # ── #8628：建 PR 的唯一实现 / 幂等 / 失败要响 / 不许自开自合 ───────────────────
+    ("ensure_pr_call_removed",
+     '            python3 .github/scripts/flaky_ledger.py ensure-pr \\\n',
+     '', "#8628：没有任何步骤调 `flaky_ledger.py ensure-pr`"),
+    ("ensure_pr_head_unbound",
+     '              --repo "$GITHUB_REPOSITORY" --branch "$LEDGER_BRANCH" \\\n'
+     '              --json-out /tmp/ensure-pr.json',
+     '              --repo "$GITHUB_REPOSITORY" --branch "$GITHUB_HEAD_REF" \\\n'
+     '              --json-out /tmp/ensure-pr.json',
+     "#8628：`ensure-pr` 未把 head 显式绑到台账分支"),
+    ("ensure_pr_before_absence_gate",
+     '          PR=$(gh pr list --head "$LEDGER_BRANCH" --state open --json number \\\n',
+     '          python3 .github/scripts/flaky_ledger.py ensure-pr --repo x --branch y\n'
+     '          PR=$(gh pr list --head "$LEDGER_BRANCH" --state open --json number \\\n',
+     "#8628：`ensure-pr` 出现在「没有 open PR」闸**之前**"),
+    ("ensure_pr_failure_swallowed",
+     "明细见上方 ⛔ 行。可复制出口：gh pr create --base main --head $LEDGER_BRANCH "
+     "--title 'chore(ci): flaky 台账滚动追加' --repo $GITHUB_REPOSITORY\"; exit 1 ;;",
+     '明细见上方 ⛔ 行"; exit 1 ;;',
+     "#8628：建 PR 失败的错误文案必须带**可复制出口**"),
+    ("autopr_marker_branch_removed",
+     "            *flaky-ledger-autopr*)\n", "            *NO_SUCH_MARKER*)\n",
+     "#8628：本腿自建的 PR 必须按 `flaky-ledger-autopr` 标记"),
+    ("admin_merge_allowed",
+     'ARM_OUT=$(gh pr merge "$PR" --auto --squash',
+     'ARM_OUT=$(gh pr merge "$PR" --admin --auto --squash', "红线：workflow 里出现 `gh pr merge --admin`"),
     # ── #5307：台账分支的欠账必须有**消费面**（否则那条红没人看）────────────────────
     ("debt_visibility_removed",
      '          python3 .github/scripts/flaky_ledger.py reconcile --branch "$LEDGER_BRANCH" \\\n',
@@ -780,7 +880,9 @@ RECONCILE_RED_PROOFS = [
      '          python3 .github/scripts/flaky_ledger.py rerun-failed \\\n',
      '          true \\\n', "#5301 判据②：没有任何步骤重跑"),
     ("rerun_scope_widened",
+     '          python3 .github/scripts/flaky_ledger.py rerun-failed \\\n'
      '            --repo "$GITHUB_REPOSITORY" --branch "$LEDGER_BRANCH" \\\n',
+     '          python3 .github/scripts/flaky_ledger.py rerun-failed \\\n'
      '            --repo "$GITHUB_REPOSITORY" --branch "$GITHUB_HEAD_REF" \\\n',
      "#5301 判据④"),
     ("rerun_accounting_removed",
@@ -841,3 +943,226 @@ class TestEveryTriageGuardrailCanGoRed:
         violations = audit_triage_guardrails(_mutate(REAL_TRIAGE, old, new))
         assert any(expected in v for v in violations), (
             f"{label}：注入后期望违规含 {expected!r}，实际 {violations}")
+
+# ── #8628：`ensure-pr`（幂等补建 PR，**不 arm**）—— 行为级判据（打桩断言「到底调没调」） ──
+#
+# 为什么必须**打桩断言调用**而不是看文案：本单的判据是「建 / 不建」这个**动作** —— 文案说会建
+# 不等于真的建（本仓「提及 ≠ 调用」已踩多次）。故替换脚本里**唯一**的 `gh` 出口 `_gh`，把每次
+# argv 记下来 ⇒ 该建时**恰好一次** `pr create`、不该建时**零次**（幂等 = 这条腿的全部价值）。
+
+def _out(rc=0, stdout="", stderr=""):
+    return types.SimpleNamespace(returncode=rc, stdout=stdout, stderr=stderr)
+
+
+class GhStub:
+    """`_gh` 的桩：`pr list` 按 `open_prs` 依次返回（`None` = 空 ⇒ 没有 open PR）。"""
+
+    def __init__(self, *, open_prs=(), create_rc=0, create_stderr="", created_number=4210):
+        self.open_prs = list(open_prs)
+        self.create_rc = create_rc
+        self.create_stderr = create_stderr
+        self.created_number = created_number
+        self.calls = []
+
+    def __call__(self, *args):
+        self.calls.append([str(a) for a in args])
+        if args[:2] == ("pr", "list"):
+            nxt = self.open_prs.pop(0) if self.open_prs else None
+            return _out(0, "" if nxt is None else str(nxt))
+        if args[:2] == ("pr", "create"):
+            return _out(self.create_rc, "", self.create_stderr)
+        return _out(1, "", f"stub: unexpected gh args {args}")
+
+    def argv_for(self, *prefix):
+        return [c for c in self.calls if tuple(c[:len(prefix)]) == prefix]
+
+
+def _wire(monkeypatch, stub, *, ahead=3, branch_missing=False, module=None):
+    """把 `ensure-pr` 依赖的三处外部读数换成桩（**不联网、不建真 PR**）。
+
+    ⚠️ 走**函数全局字典**（`monkeypatch.setitem`）而不是 `setattr(module, …)`：变异体是
+    `_load_mutant()` 用 `exec` 造出来的，`setattr(SimpleNamespace, …)` **改不到**它的全局
+    （那样桩不生效、会真的去连 GitHub —— 本会话实测踩过一次）。
+    """
+    mod = module or FL
+    g = mod.ensure_ledger_pr.__globals__
+    monkeypatch.setitem(g, "_gh", stub)
+    monkeypatch.setitem(g, "read_main_ledger_live", lambda repo, rel=None: ledger())
+    if branch_missing:
+        monkeypatch.setitem(g, "read_branch_ledger", lambda branch=None: None)
+    else:
+        rows = [entry(run_id=700000 + i) for i in range(ahead)]
+        monkeypatch.setitem(g, "read_branch_ledger", lambda branch=None: ledger(*rows))
+    return mod
+
+
+def ensure_violations(info, stub, *, want_action, want_created, want_pr=None,
+                      want_create=0, want_ahead=None) -> list:
+    """判据本体（空 = 合规）：动作次数 / merged / --admin / 返回值逐项核。"""
+    bad = []
+    creates = stub.argv_for("pr", "create")
+    merges = stub.argv_for("pr", "merge")
+    if len(creates) != want_create:
+        bad.append(f"`gh pr create` 必须调用 **{want_create}** 次，实际 {len(creates)}（calls={stub.calls}）")
+    if merges:
+        bad.append(f"`ensure-pr` **不许** arm / merge（#8628 红线：自建 PR 不 arm），实际 {merges}")
+    if any("--admin" in c for c in stub.calls):
+        bad.append("出现 `--admin`（绕过必需检查，红线）")
+    if info.get("action") != want_action:
+        bad.append(f"action 必须是 {want_action!r}，实际 {info.get('action')!r}")
+    if info.get("created") is not want_created:
+        bad.append(f"created 必须是 {want_created!r}，实际 {info.get('created')!r}")
+    if want_pr is not None and info.get("pr") != want_pr:
+        bad.append(f"pr 必须是**回读**到的 {want_pr!r}，实际 {info.get('pr')!r}")
+    if want_ahead is not None and info.get("ahead") != want_ahead:
+        bad.append(f"ahead 必须**现取** = {want_ahead}，实际 {info.get('ahead')!r}")
+    return bad
+
+
+class TestEnsurePrJudge:
+    def test_ahead_and_no_open_pr_creates_exactly_once(self, monkeypatch):
+        stub = GhStub(open_prs=[None, 4210])
+        _wire(monkeypatch, stub, ahead=3)
+        info = FL.ensure_ledger_pr("owner/repo")
+        bad = ensure_violations(info, stub, want_action="created", want_created=True,
+                                want_pr=4210, want_create=1, want_ahead=3)
+        for argv in stub.argv_for("pr", "create"):
+            for flag, want in (("--base", "main"), ("--head", FL.LEDGER_BRANCH),
+                               ("--repo", "owner/repo")):
+                if flag not in argv or argv[argv.index(flag) + 1] != want:
+                    bad.append(f"`gh pr create` 的 {flag} 必须是 {want!r}（实际 {argv}）")
+            if FL.AUTOPR_MARKER not in " ".join(argv):
+                bad.append("建出来的 PR body 必须带 AUTOPR_MARKER（否则下一轮会被 arm）")
+        assert bad == []
+
+    def test_existing_open_pr_is_zero_action(self, monkeypatch):
+        stub = GhStub(open_prs=[4210])
+        _wire(monkeypatch, stub, ahead=3)
+        info = FL.ensure_ledger_pr("owner/repo")
+        assert ensure_violations(info, stub, want_action="exists", want_created=False,
+                                 want_pr=4210, want_create=0) == []
+
+    def test_ahead_zero_is_zero_action(self, monkeypatch):
+        stub = GhStub(open_prs=[None])
+        _wire(monkeypatch, stub, ahead=0)
+        info = FL.ensure_ledger_pr("owner/repo")
+        assert ensure_violations(info, stub, want_action="in-sync", want_created=False,
+                                 want_create=0, want_ahead=0) == []
+
+    def test_missing_branch_is_zero_action(self, monkeypatch):
+        stub = GhStub(open_prs=[None])
+        _wire(monkeypatch, stub, branch_missing=True)
+        info = FL.ensure_ledger_pr("owner/repo")
+        assert ensure_violations(info, stub, want_action="no-branch", want_created=False,
+                                 want_create=0, want_ahead=0) == []
+
+    def test_dry_run_never_creates(self, monkeypatch):
+        stub = GhStub(open_prs=[None])
+        _wire(monkeypatch, stub, ahead=5)
+        info = FL.ensure_ledger_pr("owner/repo", dry_run=True)
+        assert ensure_violations(info, stub, want_action="would-create", want_created=False,
+                                 want_pr=None, want_create=0, want_ahead=5) == []
+
+    def test_create_failure_is_loud_and_actionable(self, monkeypatch):
+        stub = GhStub(open_prs=[None, None], create_rc=1,
+                      create_stderr="HTTP 403: Resource not accessible by integration")
+        _wire(monkeypatch, stub, ahead=2)
+        bad = []
+        try:
+            info = FL.ensure_ledger_pr("owner/repo")
+        except FL.EnsurePrError as exc:
+            text = str(exc)
+            for want in ("HTTP 403", "gh pr create --base main", FL.LEDGER_BRANCH, "台账仍停在"):
+                if want not in text:
+                    bad.append(f"失败文案缺 {want!r} ⇒ 出口不可行动：{text}")
+        else:
+            bad.append(f"建 PR 失败必须抛 `EnsurePrError`（fail-closed），实际返回 {info!r}")
+        assert bad == []
+
+    def test_create_race_is_idempotent_success(self, monkeypatch):
+        """create 撞「已存在」但**回读**到别人刚建的 PR ⇒ 幂等成功（不判红、不重复建）。"""
+        stub = GhStub(open_prs=[None, 4321], create_rc=1, create_stderr="already exists")
+        _wire(monkeypatch, stub, ahead=2)
+        info = FL.ensure_ledger_pr("owner/repo")
+        assert ensure_violations(info, stub, want_action="race-exists", want_created=False,
+                                 want_pr=4321, want_create=1) == []
+
+    def test_gh_list_failure_is_undecidable_not_green(self, monkeypatch):
+        """读不到 ⇒ `EnsurePrUndecidable`（退 3）；**不许**当「没有 open PR」继续建。"""
+        class ListFail:
+            def __init__(self):
+                self.calls = []
+
+            def __call__(self, *args):
+                self.calls.append([str(a) for a in args])
+                return _out(1, "", "network down")
+
+        stub = ListFail()
+        monkeypatch.setattr(FL, "_gh", stub)
+        bad = []
+        try:
+            info = FL.ensure_ledger_pr("owner/repo")
+        except FL.EnsurePrUndecidable as exc:
+            if "gh pr list" not in str(exc):
+                bad.append(f"「无法判定」必须指向读数面（gh pr list），实际：{exc}")
+        else:
+            bad.append(f"读不到 open PR 必须抛 `EnsurePrUndecidable`（退 3），实际 {info!r}")
+        if any(c[:2] == ["pr", "create"] for c in stub.calls):
+            bad.append("读数失败时**不许**建 PR（会把「读不到」当「没有 PR」）")
+        assert bad == []
+
+    def test_body_has_marker_and_no_closing_keyword(self):
+        bad = []
+        body = FL.AUTOPR_BODY
+        if FL.AUTOPR_MARKER not in body:
+            bad.append("PR body 必须带 AUTOPR_MARKER（跳过 arm 的唯一事实源）")
+        if re.search(r"(?i)(close[sd]?|fix(es|ed)?|resolve[sd]?)\s*#\d+", body):
+            bad.append("PR body 出现「关闭关键词 + 号」⇒ 合并后会误关 issue（本仓朴素正则，红线）")
+        if "#8628" in body:
+            bad.append("PR body 不许出现 `#8628`（同族误判风险：关键词旁的数字形态）")
+        assert bad == []
+
+    def test_cli_exit_codes_are_three_state(self, monkeypatch):
+        """0 = 建成功 / 1 = 建失败 / 3 = 读数失败 —— **三态不许合并**（未跑 ≠ 通过）。"""
+        bad = []
+        stub = GhStub(open_prs=[None, 4210])
+        _wire(monkeypatch, stub, ahead=1)
+        rc = FL.main(["ensure-pr", "--repo", "owner/repo"])
+        if rc != 0:
+            bad.append(f"建成功必须退 0，实际 {rc}")
+        stub = GhStub(open_prs=[None, None], create_rc=1, create_stderr="boom")
+        _wire(monkeypatch, stub, ahead=1)
+        rc = FL.main(["ensure-pr", "--repo", "owner/repo"])
+        if rc != 1:
+            bad.append(f"建 PR 失败必须退 1（fail-closed），实际 {rc}")
+
+        class ListFail:
+            def __call__(self, *args):
+                return _out(1, "", "down")
+
+        monkeypatch.setattr(FL, "_gh", ListFail())
+        rc = FL.main(["ensure-pr", "--repo", "owner/repo"])
+        if rc != 3:
+            bad.append(f"读数失败必须退 3（未跑 ≠ 通过），实际 {rc}")
+        assert bad == []
+
+    def test_red_proof_existing_pr_shortcut_removed(self, monkeypatch):
+        """红证：摘掉「已有 open PR ⇒ 零动作」的短路 ⇒ 同一输入会**多建一条**（幂等被破坏）。
+
+        这条证明上面那条幂等判据是**载荷**（会红），不是空断言。
+        """
+        mutant_src = inject(
+            REAL_SCRIPT,
+            "    existing = open_ledger_pr(repo, branch)\n    if existing is not None:",
+            "    existing = open_ledger_pr(repo, branch)\n    if False:", where=".github/scripts/flaky_ledger.py")
+        mod = _load_mutant(mutant_src, "m_flaky_autopr")
+        stub = GhStub(open_prs=[4210, 4210])
+        _wire(monkeypatch, stub, ahead=1, module=mod)
+        info = mod.ensure_ledger_pr("owner/repo")
+        bad = []
+        creates = stub.argv_for("pr", "create")
+        if len(creates) != 1:
+            bad.append(f"红证不成立：摘掉幂等短路后本该**多建一次**，实际 {len(creates)} 次")
+        if info.get("action") != "created":
+            bad.append(f"红证不成立：摘掉短路后应走到 created，实际 {info.get('action')!r}")
+        assert bad == []

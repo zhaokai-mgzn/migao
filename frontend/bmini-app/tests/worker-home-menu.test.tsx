@@ -11,12 +11,16 @@
  * | ③ | 读不到（`unread`）⇒ 全开 + **一句显式提示** | 静默全开 / 静默全关 ⇒ 红 |
  * | ④ | 401 ⇒ 回未登录态、**不渲染任何功能卡** | 把 401 当「读不到」⇒ 卡片照旧出现 ⇒ 红 |
  *
- * ⑤ 「待发货单」只跟 **`to_ship`** 走（与「拍照发货」的 `shipment` **分开**，issue #7814）：
- *    只开 `shipment` ⇒ 不出现「待发货单」；开 `to_ship` ⇒ 出现。
+ * ⑤ 「待出库单」只跟 **`to_ship`** 走（与「拍照发货」的 `shipment` **分开**，issue #7814）：
+ *    只开 `shipment` ⇒ 不出现「待出库单」；开 `to_ship` ⇒ 出现。
  *
  * ⑥ 🔴 **`report` 键不再发射任何入口**（issue #7920，2026-10-27 用户裁定「把工人菜单页面的扫码报工
  *    菜单移除掉，直接用其他 app 的扫一扫功能替代」）：只开 `report` ⇒ 工人功能里**一个入口都不多**。
  *    报工页仍可达，但入口是**外部扫码**（服务端 302 → 启动器 redirectTo），不是这张菜单。
+ *
+ * ⑦ 🔴 **「发货标签」入口已退场**（issue #8632，2026-11-04 用户逐字「发货标签和待发货单应该做成一个菜单」）：
+ *    `shipment` 只发射「拍照发货」一条；打 50×70 那张纸的动作在「待出库单」每行里（`to_ship`）。
+ *    把那张卡写回工作台 ⇒ 判据 ①反向 里的 `queryByText('发货标签') === null` 当场红。
  */
 import React from 'react'
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
@@ -135,6 +139,9 @@ describe('工人工作台入口按「工人端菜单」显隐（issue #7812）',
     await renderWithPages(['rework', 'shipment'])
     expect(screen.getByText('返工记录')).toBeTruthy()
     expect(screen.getByText('拍照发货')).toBeTruthy()
+    // 🔴 issue #8632：`shipment` 只剩**一个**入口（拍照发货）—— 原「发货标签」那张卡已删除，
+    //    它的能力（打 50×70 那张纸）就在「待出库单」每一行里。把那张卡写回来 ⇒ 本断言当场红。
+    expect(screen.queryByText('发货标签')).toBeNull()
   })
 
   it('⑥ `report` 键不再发射入口（扫码报工菜单已移除，扫码由微信 / 手机相机承担）', async () => {
@@ -146,21 +153,21 @@ describe('工人工作台入口按「工人端菜单」显隐（issue #7812）',
     expect(screen.queryByText('补打入库标签')).toBeNull()
     // 也不许退回成「全部入口」：受键控制的那几条都不在
     expect(screen.queryByText('拍照发货')).toBeNull()
-    expect(screen.queryByText('待发货单')).toBeNull()
+    expect(screen.queryByText('待出库单')).toBeNull()
     expect(screen.queryByText('返工记录')).toBeNull()
     // issue #7934：我的计件由 `piecework` 键控制，`report` 开着不等于它开着
     expect(screen.queryByText('我的计件')).toBeNull()
   })
 
-  it('⑤ 待发货单只跟 `to_ship` 走：只开 shipment 时**不出现**（两个能力分开勾）', async () => {
+  it('⑤ 待出库单只跟 `to_ship` 走：只开 shipment 时**不出现**（两个能力分开勾）', async () => {
     await renderWithPages(['report', 'shipment'])
     expect(screen.getByText('拍照发货')).toBeTruthy()
-    expect(screen.queryByText('待发货单')).toBeNull()
+    expect(screen.queryByText('待出库单')).toBeNull()
   })
 
-  it('⑤反向 开 `to_ship` ⇒ 出现待发货单（默认集合里就有它）', async () => {
+  it('⑤反向 开 `to_ship` ⇒ 出现待出库单（默认集合里就有它）', async () => {
     await renderWithPages(['report', 'shipment', 'to_ship'])
-    expect(screen.getByText('待发货单')).toBeTruthy()
+    expect(screen.getByText('待出库单')).toBeTruthy()
   })
 
   it('⑦ 我的计件只跟 `piecework` 走（issue #7934：入口从报工详情页搬到本菜单）', async () => {
@@ -169,7 +176,7 @@ describe('工人工作台入口按「工人端菜单」显隐（issue #7812）',
     // 没开的照旧不出现（不是「一条开 ⇒ 全开」）
     expect(screen.queryByText('返工记录')).toBeNull()
     expect(screen.queryByText('拍照发货')).toBeNull()
-    expect(screen.queryByText('待发货单')).toBeNull()
+    expect(screen.queryByText('待出库单')).toBeNull()
     // issue #8337：两个入库入口同样由页面键门控（未勾 ⇒ 不出现）
     expect(screen.queryByText('拍照入库')).toBeNull()
     expect(screen.queryByText('补打入库标签')).toBeNull()
@@ -179,7 +186,7 @@ describe('工人工作台入口按「工人端菜单」显隐（issue #7812）',
     await renderWithPages([])
     expect(screen.getByText('返工记录')).toBeTruthy()
     expect(screen.getByText('拍照发货')).toBeTruthy()
-    expect(screen.getByText('待发货单')).toBeTruthy()
+    expect(screen.getByText('待出库单')).toBeTruthy()
     expect(screen.getByText('拍照入库')).toBeTruthy()
     // 我的计件（issue #7934）在默认集合里 ⇒ fail-open 时也在
     expect(screen.getByText('我的计件')).toBeTruthy()
@@ -241,6 +248,6 @@ describe('工人工作台入口按「工人端菜单」显隐（issue #7812）',
     })
     await waitFor(() => expect(screen.queryByText('返工记录')).toBeNull())
     expect(screen.queryByText('拍照发货')).toBeNull()
-    expect(screen.queryByText('待发货单')).toBeNull()
+    expect(screen.queryByText('待出库单')).toBeNull()
   })
 })

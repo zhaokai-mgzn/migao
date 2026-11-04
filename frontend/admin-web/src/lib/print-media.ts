@@ -60,7 +60,7 @@ export interface PrintMediaSpec {
    * **纸长按内容撑开**（连续纸卷专用，issue #7776）。
    *
    * 登记了它 ⇒ `pageBoxMm.heightMm` / `pageSize` 描述的是**最短**纸长（驱动里该登记的那档）。
-   * 消费方 = **工人端发货标签**（`frontend/worker-h5/src/shipment.mjs` 的 `shipLabelLengthMm()`，
+   * 消费方 = **工人端成品出库单**（`frontend/worker-h5/src/shipment.mjs` 的 `shipLabelLengthMm()`，
    * 纯 JS 直读本矩阵）—— admin-web 侧自 issue #7816 起**没有**读取者（水洗唛改成固定纸型
    * `label-50x140`，`printPageRuleForLength()` / `printLengthRangeMm()` 随之删除）。
    * 🔴 别因为「admin-web 没人读」就把本块删掉：工人端发货页的纸长全靠它。

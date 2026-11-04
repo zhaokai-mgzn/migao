@@ -2,7 +2,7 @@
 # 本文件由 render_cases.py 生成，勿手改（改了也留不住：下次重渲染会覆盖）
 # 源: cases/*.yml（case-contract 单一源）
 # 重新生成: python3 render_cases.py --cases <dir> --out-eval <包目录> --out-md <md>
-# 域: misc（源: cases/misc.yml，221 条）
+# 域: misc（源: cases/misc.yml，222 条）
 
 from ._schema import Difficulty, EvalCase, Skill
 
@@ -3777,7 +3777,7 @@ _CASE_MC_158 = EvalCase(
     difficulty=Difficulty.NORMAL,
     user_inputs=['用户（2026-11-01 测试账号真机）：你这个测试账号的权限太大了，不符合实际使用？通常每个工序或者每个工人只能操作 1-3 个菜单，根据工人岗位来定菜单的'],
     expectations=[],
-    data_checks=['🔴 **判据 ①·键集 ⇄ 工人端真实页面（双向）**：`inbound` / `reprint`（拍照入库 / 补打入库标签）在 bmini 上**早已有页面**（frontend/bmini-app/src/pages/worker/inbound|reprint/index.tsx）却**没有页面键、恒显示** ⇒ 现纳入闭词表 + 默认集合；每个键都有人话名、写侧认得它们。执行点 = WorkerPagesTest::inboundAndReprintPagesAreKeyedNow / everyPageKeyHasAHumanLabel', '🔴 **判据 ②·每个岗位都有默认菜单且默认键全在键集内**：裁剪/车位 = 报工+计件；仓管 = 入库+补打+库存修正；发货 = 发货+待发货单；每组非空 ⊆ `WorkerPages.ALL`、项数 ≤ 3、且能通过写侧校验（默认值 = 合法值）。执行点 = WorkerPagesTest::everyPositionHasDefaultsInsideTheVocabulary / positionDefaultsMatchTheIssueCriteria', '🔴 **判据 ③·显式菜单优先于岗位默认（负控）**：建号时同时给岗位与 `workerPages` ⇒ 落库的是**显式集合**（岗位默认被覆盖），且覆盖仍受 3 项上限约束。执行点 = WorkerAdminServiceTest::explicitPagesWinOverThePositionDefaults / perWorkerOverrideStillWinsButIsCapped', '🔴 **判据 ④·首屏上限 3 项，边界两侧都钉**：正好 3 项 ⇒ 通过；第 4 项 ⇒ 422 具名拒错（说清「最多 3 项」+「你填了 4 项」+ 列出这 4 项）且**零写入**。执行点 = WorkerPagesTest::pageCapIsThreeAndTheFourthIsRejectedByName / WorkerAdminServiceTest::moreThanThePageCapIsRejectedByName', '🔴 **判据 ⑤·改岗位 ⇒ 菜单按新岗位重新带出**（岗位是源；`PUT /api/admin/workers/{id}/position` 两列一起显式 set）：仓管 ⇒ 入库+补打+库存修正；清岗位 ⇒ 回到未收窄（全部页面）。执行点 = WorkerAdminServiceTest::updateWorkerPositionReDerivesTheMenu / clearingThePositionReturnsToAllPages / AdminWorkerControllerTest::updateWorkerPositionReturnsTheDerivedMenu', '🔴 **判据 ⑥·存量数据不回退**：旧键集（无 `inbound`/`reprint`）读面原样下发、**不**被默认集合反向放宽（不做隐式补齐）、未知/已撤键照旧裁掉且不抛异常；车位工（收窄到报工+计件）在工人工作台上**取不到**「拍照入库 / 补打入库标签」两个入口。执行点 = WorkerPagesTest::legacyStoredSetsKeepWorkingAndAreNotWidened / frontend/bmini-app/tests/worker-home-page.test.tsx::「车位工看不见」', '🔴 **红证（注入式，实跑）**：① 把 `仓管` 从 `positionDefaults()` 删掉 ⇒ 判据 ② 红（`containsExactlyInAnyOrderElementsOf(positions())` 具名报缺）；② 把 `validateRestriction` 末尾的 `MAX_PAGES_PER_WORKER` 检查摘掉 ⇒ 判据 ④ 红（第 4 项静默通过）。两次注入各自单变量、恢复即绿。', '**边界（照实登记，§19.1）**：① `order`（我的活）**仍是「键已登记、面待建」**（issue #6764 §6.2 待裁定）—— 判据 ① 的「双向」对本键是**具名白名单**，不是「每键都有面」；② 存量工人**不重置** `worker_pages`（and 不做迁移回填）：没有岗位的存量档案行为与今天一字不差；③ 岗位不是权限（不写 `users.permissions`、不进 `user_roles`，授权判据仍是 `/api/worker/**` 403）；④ 本批**未**改商家后台配置面板（岗位下拉的读面 = `GET /api/admin/worker-pages` 的 `positions` / `position_defaults`，面板改造另单）。'],
+    data_checks=['🔴 **判据 ①·键集 ⇄ 工人端真实页面（双向）**：`inbound` / `reprint`（拍照入库 / 补打入库标签）在 bmini 上**早已有页面**（frontend/bmini-app/src/pages/worker/inbound|reprint/index.tsx）却**没有页面键、恒显示** ⇒ 现纳入闭词表 + 默认集合；每个键都有人话名、写侧认得它们。执行点 = WorkerPagesTest::inboundAndReprintPagesAreKeyedNow / everyPageKeyHasAHumanLabel', '🔴 **判据 ②·每个岗位都有默认菜单且默认键全在键集内**：裁剪/车位 = 报工+计件；仓管 = 入库+补打+库存修正；发货 = 拍照发货+待出库单；每组非空 ⊆ `WorkerPages.ALL`、项数 ≤ 3、且能通过写侧校验（默认值 = 合法值）。执行点 = WorkerPagesTest::everyPositionHasDefaultsInsideTheVocabulary / positionDefaultsMatchTheIssueCriteria', '🔴 **判据 ③·显式菜单优先于岗位默认（负控）**：建号时同时给岗位与 `workerPages` ⇒ 落库的是**显式集合**（岗位默认被覆盖），且覆盖仍受 3 项上限约束。执行点 = WorkerAdminServiceTest::explicitPagesWinOverThePositionDefaults / perWorkerOverrideStillWinsButIsCapped', '🔴 **判据 ④·首屏上限 3 项，边界两侧都钉**：正好 3 项 ⇒ 通过；第 4 项 ⇒ 422 具名拒错（说清「最多 3 项」+「你填了 4 项」+ 列出这 4 项）且**零写入**。执行点 = WorkerPagesTest::pageCapIsThreeAndTheFourthIsRejectedByName / WorkerAdminServiceTest::moreThanThePageCapIsRejectedByName', '🔴 **判据 ⑤·改岗位 ⇒ 菜单按新岗位重新带出**（岗位是源；`PUT /api/admin/workers/{id}/position` 两列一起显式 set）：仓管 ⇒ 入库+补打+库存修正；清岗位 ⇒ 回到未收窄（全部页面）。执行点 = WorkerAdminServiceTest::updateWorkerPositionReDerivesTheMenu / clearingThePositionReturnsToAllPages / AdminWorkerControllerTest::updateWorkerPositionReturnsTheDerivedMenu', '🔴 **判据 ⑥·存量数据不回退**：旧键集（无 `inbound`/`reprint`）读面原样下发、**不**被默认集合反向放宽（不做隐式补齐）、未知/已撤键照旧裁掉且不抛异常；车位工（收窄到报工+计件）在工人工作台上**取不到**「拍照入库 / 补打入库标签」两个入口。执行点 = WorkerPagesTest::legacyStoredSetsKeepWorkingAndAreNotWidened / frontend/bmini-app/tests/worker-home-page.test.tsx::「车位工看不见」', '🔴 **红证（注入式，实跑）**：① 把 `仓管` 从 `positionDefaults()` 删掉 ⇒ 判据 ② 红（`containsExactlyInAnyOrderElementsOf(positions())` 具名报缺）；② 把 `validateRestriction` 末尾的 `MAX_PAGES_PER_WORKER` 检查摘掉 ⇒ 判据 ④ 红（第 4 项静默通过）。两次注入各自单变量、恢复即绿。', '**边界（照实登记，§19.1）**：① `order`（我的活）**仍是「键已登记、面待建」**（issue #6764 §6.2 待裁定）—— 判据 ① 的「双向」对本键是**具名白名单**，不是「每键都有面」；② 存量工人**不重置** `worker_pages`（and 不做迁移回填）：没有岗位的存量档案行为与今天一字不差；③ 岗位不是权限（不写 `users.permissions`、不进 `user_roles`，授权判据仍是 `/api/worker/**` 403）；④ 本批**未**改商家后台配置面板（岗位下拉的读面 = `GET /api/admin/worker-pages` 的 `positions` / `position_defaults`，面板改造另单）。'],
     skip_reason='[backend-contract] 闭词表 / 岗位映射 / 写侧上限是**确定性判据**（Java 单测 + 端侧渲染），由 backend/admin-api/src/test 的 WorkerPagesTest / WorkerAdminServiceTest / AdminWorkerControllerTest 与 frontend/bmini-app/tests/worker-home-page.test.tsx 验证，非 LLM 行为，不进入 agent-eval 冒烟',
     tags=['backend-contract', 'worker', 'page-keys', 'position', 'single-source', 'fail-open', 'red-proof'],
     persona='',
@@ -4040,6 +4040,24 @@ _CASE_MC_193 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── MC-195 [NORMAL] Flaky Ledger Reconcile 自愈（issue #8628）：台账分支领先 main 却无 open PR 时**机械幂等补建**（不 arm、不 --admin、不受豁免）；ahead=0 / 已有 PR 零动作；补建失败一行可行动出口 + 非零退出（源: cases/misc.yml）──
+_CASE_MC_195 = EvalCase(
+    id='MC-195',
+    legacy_id='',
+    title='Flaky Ledger Reconcile 自愈（issue #8628）：台账分支领先 main 却无 open PR 时**机械幂等补建**（不 arm、不 --admin、不受豁免）；ahead=0 / 已有 PR 零动作；补建失败一行可行动出口 + 非零退出',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['`Flaky Ledger Reconcile` 这条腿在 `chore/flaky-ledger` 领先 main 但没有 open PR 时对**每一个** PR 报红，只能靠人手动开 PR 压住；希望机械自愈 —— 已有一律不重复建，人只需复核'],
+    expectations=['direct_reply'],
+    data_checks=['**建（会红）**：`ahead>0` ∧ `gh pr list --state open --head chore/flaky-ledger` 为空 ⇒ 调 `flaky_ledger.py ensure-pr` **恰好一次** `gh pr create`（base main / head 台账分支），PR body 带 `AUTOPR_MARKER`。判据 = 替换脚本唯一的 gh 出口 `_gh` 打桩并逐条记 argv（**不在测试里真建 PR**），另有 `--dry-run` 只打印不建。执行点 = `tests/unit_ci_workflows/test_flaky_ledger_reconcile.py` 的 ensure-pr 行为判据。', '**幂等（双向，会红）**：已有 open PR ⇒ **零次** `gh pr create`（`action=exists`）；`ahead==0` / 分支不存在 ⇒ **零次** + 腿绿。红证 = 把「已有 PR ⇒ 零动作」的短路改成恒假 ⇒ 同一输入会多建一条，判据当场红（`test_red_proof_existing_pr_shortcut_removed`）。', '**不许自开自合（会红）**：本腿自建的 PR（body 带标记 token）在后续轮次**不 arm auto-merge**（summary 写「arm：跳过」），workflow 全域不得出现 `gh pr merge --admin`，不改分支保护、不给该腿任何豁免；required 检查仍是唯一闸。红证 = 摘掉标记分支臂 ⇒ 同一输入会真的 `pr merge`；插入 `--admin` ⇒ 结构判据红。', '**失败必须响（会红）**：`gh pr create` 失败 ⇒ `::error::` 一行含可复制出口（`gh pr create --base main …`）+ 退出码 1；读数面读不到 ⇒ 退出码 3（**未跑 ≠ 通过**，不得当「无需 PR」）。红证 = 把失败出口改成「echo 且 exit 0」⇒ 结构判据红；行为判据断言 rc=1 / rc=3 且文案含可行动出口。'],
+    skip_reason='[backend-contract] CI 对账腿的**动作级**判据（打桩断言 gh 调用 + 真跑 workflow 步骤），零网络、零 LLM、不建真 PR、不碰真库；非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ci', 'flaky-ledger', 'self-heal', 'idempotent', 'no-self-merge', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── MC-194 [NORMAL] **改客户资料 / 加工项增改停 / 建商品分类接回 B 端**（issue #8618）：action 枚举与 schema 同时可见（漏参数即不可调用）+ 权限走既有 required_permissions 粗筛与 action 级复检（码取控制器注解）+ 确认走既有 base_skill._requires_confirmation（react_turn 同一函数对象；未确认 ⇒ 不执行）+ 端点逐字对齐（PUT /api/admin/customers/{id} · POST /api/admin/categories · POST|PUT /api/admin/processing-items）+ 删除类 action 退场（停用改为 update_item(status=…)，可逆）（源: cases/misc.yml）──
 _CASE_MC_194 = EvalCase(
     id='MC-194',
@@ -4279,5 +4297,6 @@ CASES = (
     _CASE_MC_189,
     _CASE_MC_192,
     _CASE_MC_193,
+    _CASE_MC_195,
     _CASE_MC_194,
 )

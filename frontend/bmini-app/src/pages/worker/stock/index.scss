@@ -63,7 +63,7 @@
 
   &__search-button {
     flex: 0 0 auto;
-    // 🔴 Taro 的 Button 默认 `width: 100%` ⇒ 只写 flex 不够：会独占一行（同款实证见待发货单页）
+    // 🔴 Taro 的 Button 默认 `width: 100%` ⇒ 只写 flex 不够：会独占一行（同款实证见待出库单页）
     width: auto;
     white-space: nowrap;
     margin: 0 0 0 16px;

@@ -7553,7 +7553,7 @@ cases:
     expectations: []
     data_checks:
       - "🔴 **判据 ①·键集 ⇄ 工人端真实页面（双向）**：`inbound` / `reprint`（拍照入库 / 补打入库标签）在 bmini 上**早已有页面**（frontend/bmini-app/src/pages/worker/inbound|reprint/index.tsx）却**没有页面键、恒显示** ⇒ 现纳入闭词表 + 默认集合；每个键都有人话名、写侧认得它们。执行点 = WorkerPagesTest::inboundAndReprintPagesAreKeyedNow / everyPageKeyHasAHumanLabel"
-      - "🔴 **判据 ②·每个岗位都有默认菜单且默认键全在键集内**：裁剪/车位 = 报工+计件；仓管 = 入库+补打+库存修正；发货 = 发货+待发货单；每组非空 ⊆ `WorkerPages.ALL`、项数 ≤ 3、且能通过写侧校验（默认值 = 合法值）。执行点 = WorkerPagesTest::everyPositionHasDefaultsInsideTheVocabulary / positionDefaultsMatchTheIssueCriteria"
+      - "🔴 **判据 ②·每个岗位都有默认菜单且默认键全在键集内**：裁剪/车位 = 报工+计件；仓管 = 入库+补打+库存修正；发货 = 拍照发货+待出库单；每组非空 ⊆ `WorkerPages.ALL`、项数 ≤ 3、且能通过写侧校验（默认值 = 合法值）。执行点 = WorkerPagesTest::everyPositionHasDefaultsInsideTheVocabulary / positionDefaultsMatchTheIssueCriteria"
       - "🔴 **判据 ③·显式菜单优先于岗位默认（负控）**：建号时同时给岗位与 `workerPages` ⇒ 落库的是**显式集合**（岗位默认被覆盖），且覆盖仍受 3 项上限约束。执行点 = WorkerAdminServiceTest::explicitPagesWinOverThePositionDefaults / perWorkerOverrideStillWinsButIsCapped"
       - "🔴 **判据 ④·首屏上限 3 项，边界两侧都钉**：正好 3 项 ⇒ 通过；第 4 项 ⇒ 422 具名拒错（说清「最多 3 项」+「你填了 4 项」+ 列出这 4 项）且**零写入**。执行点 = WorkerPagesTest::pageCapIsThreeAndTheFourthIsRejectedByName / WorkerAdminServiceTest::moreThanThePageCapIsRejectedByName"
       - "🔴 **判据 ⑤·改岗位 ⇒ 菜单按新岗位重新带出**（岗位是源；`PUT /api/admin/workers/{id}/position` 两列一起显式 set）：仓管 ⇒ 入库+补打+库存修正；清岗位 ⇒ 回到未收窄（全部页面）。执行点 = WorkerAdminServiceTest::updateWorkerPositionReDerivesTheMenu / clearingThePositionReturnsToAllPages / AdminWorkerControllerTest::updateWorkerPositionReturnsTheDerivedMenu"
@@ -8059,6 +8059,42 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+
+  - id: MC-195
+    legacy_id: ""
+    title: "Flaky Ledger Reconcile 自愈（issue #8628）：台账分支领先 main 却无 open PR 时**机械幂等补建**（不 arm、不 --admin、不受豁免）；ahead=0 / 已有 PR 零动作；补建失败一行可行动出口 + 非零退出"
+    domains:
+      - misc
+      - ci
+    tier: normal
+    tags:
+      - ci
+      - flaky-ledger
+      - self-heal
+      - idempotent
+      - no-self-merge
+      - red-proof
+    truths_ref: []
+    # ⚠️ 真值暂缺：CI 对账腿的**动作**（建 / 不建 / 失败要响）由 tests/unit_ci_workflows/ 的
+    # pytest 打桩（替换脚本唯一的 gh 出口）与 `bash -e` 真跑 workflow 步骤验证；零网络、零 LLM。
+    user_inputs:
+      - "`Flaky Ledger Reconcile` 这条腿在 `chore/flaky-ledger` 领先 main 但没有 open PR 时对**每一个** PR 报红，只能靠人手动开 PR 压住；希望机械自愈 —— 已有一律不重复建，人只需复核"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "**建（会红）**：`ahead>0` ∧ `gh pr list --state open --head chore/flaky-ledger` 为空 ⇒ 调 `flaky_ledger.py ensure-pr` **恰好一次** `gh pr create`（base main / head 台账分支），PR body 带 `AUTOPR_MARKER`。判据 = 替换脚本唯一的 gh 出口 `_gh` 打桩并逐条记 argv（**不在测试里真建 PR**），另有 `--dry-run` 只打印不建。执行点 = `tests/unit_ci_workflows/test_flaky_ledger_reconcile.py` 的 ensure-pr 行为判据。"
+      - "**幂等（双向，会红）**：已有 open PR ⇒ **零次** `gh pr create`（`action=exists`）；`ahead==0` / 分支不存在 ⇒ **零次** + 腿绿。红证 = 把「已有 PR ⇒ 零动作」的短路改成恒假 ⇒ 同一输入会多建一条，判据当场红（`test_red_proof_existing_pr_shortcut_removed`）。"
+      - "**不许自开自合（会红）**：本腿自建的 PR（body 带标记 token）在后续轮次**不 arm auto-merge**（summary 写「arm：跳过」），workflow 全域不得出现 `gh pr merge --admin`，不改分支保护、不给该腿任何豁免；required 检查仍是唯一闸。红证 = 摘掉标记分支臂 ⇒ 同一输入会真的 `pr merge`；插入 `--admin` ⇒ 结构判据红。"
+      - "**失败必须响（会红）**：`gh pr create` 失败 ⇒ `::error::` 一行含可复制出口（`gh pr create --base main …`）+ 退出码 1；读数面读不到 ⇒ 退出码 3（**未跑 ≠ 通过**，不得当「无需 PR」）。红证 = 把失败出口改成「echo 且 exit 0」⇒ 结构判据红；行为判据断言 rc=1 / rc=3 且文案含可行动出口。"
+    skip_reason: "[backend-contract] CI 对账腿的**动作级**判据（打桩断言 gh 调用 + 真跑 workflow 步骤），零网络、零 LLM、不建真 PR、不碰真库；非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-11-04 新增（issue #8628）。病：台账分支领先 main 但无 open PR 时该腿对每个 PR 常驻红 —— 实测两次（#8604 / #8612 手工开 PR 压住），机械开单 #8628 连续 4 次真红达阈值（run 41773739654 / 41772598095 / 41765847283 / 41763430690）。修法 = 最小改动：`flaky_ledger.py` 新增 `ensure-pr`（先查 open PR、再实时算 ahead，都满足才建；**只建 PR、不 arm**），workflow 把旧「无 PR ⇒ ::error:: 判红」换成调它。取号 MC-195（`python3 scripts/next_case_id.py MC` 现取 main 到 193、claims 目录无 194/195）。⚠️ 根解方向（未在本单实现，见 PR body 分析）：让台账内容由 main 侧补回、根本不产生 ahead —— 属台账语义变更，需单独裁定。"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_flaky_ledger_reconcile.py"
+        - "tests/unit_ci_workflows/test_flaky_ledger_reconcile_conflict_split.py"
+      ci:
+        - pr-check.yml
+      verifies: []
   - id: MC-194
     legacy_id: ""
     title: "**改客户资料 / 加工项增改停 / 建商品分类接回 B 端**（issue #8618）：action 枚举与 schema 同时可见（漏参数即不可调用）+ 权限走既有 required_permissions 粗筛与 action 级复检（码取控制器注解）+ 确认走既有 base_skill._requires_confirmation（react_turn 同一函数对象；未确认 ⇒ 不执行）+ 端点逐字对齐（PUT /api/admin/customers/{id} · POST /api/admin/categories · POST|PUT /api/admin/processing-items）+ 删除类 action 退场（停用改为 update_item(status=…)，可逆）"
@@ -8110,6 +8146,3 @@ cases:
         - "backend/ai-agent-service/tests/test_tools_category_manage.py"
         - "backend/ai-agent-service/tests/test_customer_manage.py"
         - "tests/unit_ci_workflows/test_mibao_b_end_readonly.py"
-      ci:
-        - pr-check.yml
-      verifies: []

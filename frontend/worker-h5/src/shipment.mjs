@@ -167,10 +167,10 @@ export function renderShipmentSummary(view) {
 }
 
 // ════════════════════════════════════════════════════════════════════════════════
-// 发货页（issue #7761）：全完工订单列表 + 50×70 发货联（整套出库单，issue #7786）
+// 发货页（issue #7761）：全完工订单列表 + 50×70 成品出库单（整套出库单，issue #7786）
 //
 // 用户 2026-10-25 逐字：「发货工人要能看到全部完结的订单列表，即订单内的多套窗帘全完工的数据。
-// 支持工人对完工的订单进行发货标签打印，包含客户的收货信息，走哪个物流/快递方式和公司」。
+// 支持工人对完工的订单进行成品出库单打印，包含客户的收货信息，走哪个物流/快递方式和公司」。
 //
 // 四条纪律（每条都有对应断言，见 tests/worker-h5-shipment-ready.test.mjs）：
 //   ① 🔴 **筛选不在前端**：列表内容 = 服务端给的行，客户端不过滤、不排序、不补算「几套完工」
@@ -183,17 +183,17 @@ export function renderShipmentSummary(view) {
 //      守卫测试直接比对那份 JSON（这里写死第二份就等于埋一颗会漂的雷）。
 // ════════════════════════════════════════════════════════════════════════════════
 
-/** 发货标签的介质 id（= 介质矩阵 `media[].id`；DP235S 的 50mm × 70mm 卷）。 */
+/** 成品出库单的介质 id（= 介质矩阵 `media[].id`；DP235S 的 50mm × 70mm 卷）。 */
 export const SHIP_LABEL_MEDIA_ID = 'label-50x70'
 
-/** 发货标签的 `@page` 尺寸（**必须**与介质矩阵逐字相等；守卫测试比对 print-media.json）。 */
+/** 成品出库单的 `@page` 尺寸（**必须**与介质矩阵逐字相等；守卫测试比对 print-media.json）。 */
 export const SHIP_LABEL_PAGE_SIZE = '50mm 70mm'
 
 /**
  * **纸长按内容撑开**（issue #7776；用户 2026-10-25 逐字「字体太小了，可以把长度延长些，因为长度可以无限长，
  * 宁愿长点也要把字体和信息都呈现出来……打印预览的时候我就发现上下两头留白太多了」）。
  *
- * 发货标签与洗水唛是**同一卷纸**（50mm 宽连续纸卷）：宽度固定 50mm、长度按纸面内容算。
+ * 成品出库单与洗水唛是**同一卷纸**（50mm 宽连续纸卷）：宽度固定 50mm、长度按纸面内容算。
  * 取整 / 夹取口径与洗水唛 `washLabelLengthMm()` 一致：上取整到 1mm、夹在
  * `[SHIP_LABEL_MIN_LENGTH_MM, SHIP_LABEL_MAX_LENGTH_MM]`（下限 = 介质矩阵登记的**最短**纸长，也是驱动里
  * 该登记的那档；上限 = 再长说明内容该拆了）。宽 / 上下限由守卫比对介质矩阵，不写第二份真值。
@@ -277,10 +277,10 @@ function setsText(order) {
 }
 
 /**
- * 发货联（整套出库单）的**行清单**（唯一真值）：屏幕预览、打印、测试都读它。
+ * 成品出库单（整套出库单）的**行清单**（唯一真值）：屏幕预览、打印、测试都读它。
  *
  * 行序 = 拣货/贴箱的人从上到下核对的顺序：单号 → 收件人 → 电话 → 地址 → 物流类型 → 物流公司 →
- * 下单日期 → 套数 → 备注（issue #7786：抬头改「发货联」、补「下单日期」，与用户那张现场发货联对齐）。
+ * 下单日期 → 套数 → 备注（issue #7786：抬头改「成品出库单」、补「下单日期」，与用户那张现场成品出库单对齐）。
  * 🔴 **不重复印「客户」**：本系统的客户 = 收货人（`orders.customer_name`），
  * 同一个人印两遍只是白吃 50mm 版心的两行（信息不重复，`migao-dev-flow` §31 P2）。
  *
@@ -298,7 +298,7 @@ export function buildShipLabelRows(order) {
     { key: 'customer_address', label: '地址', value: labelText(order?.customer_address), multiline: true },
   ]
   /**
-   * 随货标识（issue #7856，用户 2026-10-26「发货联标签都要加上帘种，和安装信息」）。
+   * 随货标识（issue #7856，用户 2026-10-26「成品出库单标签都要加上帘种，和安装信息」）。
    *
    * 🔴 **缺值不印该行**（与水洗唛同一口径）：这三个是选填附注，印「帘种 —」/「安装小区 —」
    * 只会在 50mm 版心上白吃行高。地址是必印行，故它上面仍走 `labelText` 的 `—`。
@@ -335,8 +335,8 @@ export function renderShipLabel(order) {
     + `<dt class="wh5-label-key">${esc(row.label)}</dt>`
     + `<dd class="wh5-label-value">${esc(row.value)}</dd></div>`
   )).join('')
-  return `<section class="wh5-ship-label" id="wh5-ship-label" aria-label="发货联（整套出库单）">
-    <h2 class="wh5-label-title">发货联</h2>
+  return `<section class="wh5-ship-label" id="wh5-ship-label" aria-label="成品出库单（整套出库单）">
+    <h2 class="wh5-label-title">成品出库单</h2>
     <dl class="wh5-label-rows">${rows}</dl>
   </section>`
 }
@@ -351,11 +351,11 @@ export function renderShipLabel(order) {
 export function renderReadyOrders(payload) {
   const items = Array.isArray(payload?.items) ? payload.items : []
   const count = items.length
-  // 🔴 0 单时那句「（全部套已完工）」没有指代对象（真机读数 2026-11-01：「待发货 0 单（全部套已完工）」
+  // 🔴 0 单时那句「（全部套已完工）」没有指代对象（真机读数 2026-11-01：「待出库 0 单（全部套已完工）」
   // 自相矛盾）—— 括号是**结论**，只在有单时说。
   const countLine = count === 0
-    ? '<p class="wh5-ready-count" id="wh5-ready-count">待发货 0 单</p>'
-    : `<p class="wh5-ready-count" id="wh5-ready-count">待发货 ${count} 单（全部套已完工）</p>`
+    ? '<p class="wh5-ready-count" id="wh5-ready-count">待出库 0 单</p>'
+    : `<p class="wh5-ready-count" id="wh5-ready-count">待出库 ${count} 单（全部套已完工）</p>`
   const truncated = payload?.scan?.truncated
     ? `<p class="wh5-ready-more" id="wh5-ready-truncated">还有更多单未列出（本次最多 ${esc(payload.scan.limit)} 单），发完再来刷新</p>`
     : ''
@@ -376,7 +376,7 @@ export function renderReadyOrders(payload) {
       <p class="wh5-ready-sub">收货人：${esc(labelText(order?.customer_name))}　电话：${esc(labelText(order?.customer_phone))}</p>
       <p class="wh5-ready-sub wh5-ready-addr">地址：${esc(labelText(order?.customer_address))}</p>
       <p class="wh5-ready-sub">${esc(logistics)}　${esc(sets)}</p>
-      <button type="button" class="wh5-entry" id="wh5-label-${index}" data-label-order="${esc(order?.order_id ?? '')}">发货联</button>
+      <button type="button" class="wh5-entry" id="wh5-label-${index}" data-label-order="${esc(order?.order_id ?? '')}">出库单</button>
     </li>`
   }).join('')
   return `<section class="wh5-ready" id="wh5-ready-orders">

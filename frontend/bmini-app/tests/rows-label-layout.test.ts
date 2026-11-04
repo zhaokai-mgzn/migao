@@ -1,6 +1,6 @@
 // case_ids: BM-060, BM-061
 /**
- * **50×70 行式标签**（成品入库标签 / 发货联）的版面与渲染判据（issue #8287）。
+ * **50×70 行式标签**（成品入库标签 / 成品出库单）的版面与渲染判据（issue #8287）。
  *
  * ## 判据（每条都能单独变红）
  *
@@ -8,7 +8,7 @@
  * |---|---|---|
  * | L1 | 纸型 / 像素口径 / 纸长范围**只来自介质矩阵**（`label-50x70`），画布宽 = 有效打宽 | 把布局里的宽度换成矩阵之外的数 ⇒ 红；改矩阵里 `effectiveWidthPx` ⇒ 版面跟着变 |
  * | L2 | 成品入库标签 = **固定 70mm**；行 / 短码全来自服务端块，缺值印 `—` | 把 `fixedLengthMm` 删掉 ⇒ 纸长按内容缩到 < 70mm ⇒ 红 |
- * | L3 | 发货联 = **按内容撑开**（70~150mm），行序与 `/w/` 相同；可选附注缺值整行不印 | 把 `remark` 改成必印行 ⇒ 行数变多 / 红 |
+ * | L3 | 成品出库单 = **按内容撑开**（70~150mm），行序与 `/w/` 相同；可选附注缺值整行不印 | 把 `remark` 改成必印行 ⇒ 行数变多 / 红 |
  * | L4 | 下单日期按 **Asia/Shanghai** 取日（`16:30Z` ⇒ 次日） | 改回 `toISOString().slice(0,10)` ⇒ 红 |
  * | L5 | 预览与打印**同一份计划**；取不到位图 ⇒ **抛错**（不静默打白图） | 去掉 `requirePixels` ⇒ 红 |
  * | L6 | 多行字段（地址 / 安装位置 / 备注）按显式换行 + 宽度折行 | 把换行当普通字符 ⇒ 两行粘成一行 ⇒ 红 |
@@ -144,7 +144,7 @@ describe('L2 成品入库标签：固定 70mm + 服务端字段原样', () => {
 
 })
 
-describe('L3 发货联：行序 / 套数 / 可选附注 / 动态纸长', () => {
+describe('L3 成品出库单：行序 / 套数 / 可选附注 / 动态纸长', () => {
   it('行序与 /w/ 相同（含随货标识），物流类型**不**拼公司', () => {
     const rows = buildShipLabelRows(SHIP)
     expect(rows.map((row) => row.label)).toEqual([
@@ -188,11 +188,11 @@ describe('L3 发货联：行序 / 套数 / 可选附注 / 动态纸长', () => {
     expect(setsText({ total_sets: null, completed_sets: 1 })).toBe(ROWS_LABEL_MISSING)
   })
 
-  it('纸长按内容撑开（70~150mm 内），标题「发货联」在纸上', () => {
+  it('纸长按内容撑开（70~150mm 内），标题「成品出库单」在纸上', () => {
     const plan = layoutRowsLabel(shipLabelSpec(SHIP))
     expect(plan.heightPx).toBeGreaterThanOrEqual(Math.round(RANGE.minMm * GEOMETRY.dotsPerMm))
     expect(plan.heightPx).toBeLessThanOrEqual(Math.round(RANGE.maxMm * GEOMETRY.dotsPerMm))
-    expect(texts(shipLabelSpec(SHIP))).toContain('发货联')
+    expect(texts(shipLabelSpec(SHIP))).toContain('成品出库单')
     expect(plan.warnings).toEqual([])
   })
 })
@@ -247,7 +247,7 @@ describe('L5 渲染与预览同一份计划；取不到位图 ⇒ 抛错', () =>
 
 describe('L6 多行字段：显式换行 + 宽度折行', () => {
   it('L6b 同一列里不许有两条文字落在同一个 y（同 y = 纸上两层字叠在一起）', () => {
-    // 真机 2026-11-01（商米 V2s，发货联 50×70）：15 字的地址折成两行，两行都画在**同一个 y**
+    // 真机 2026-11-01（商米 V2s，成品出库单 50×70）：15 字的地址折成两行，两行都画在**同一个 y**
     // ⇒ 纸上就是两层字叠在一起（屏幕 DOM 预览正常，只有 canvas 出的纸面错位 —— 预览 ≠ 打印）。
     const plan = layoutRowsLabel(shipLabelSpec({
       ...SHIP,

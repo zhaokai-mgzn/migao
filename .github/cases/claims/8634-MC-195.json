@@ -1,0 +1,6 @@
+{
+  "id": "MC-195",
+  "pr": 8634,
+  "title": "Flaky Ledger Reconcile 自愈（issue #8628）：台账领先 main 却无 open PR 时机械幂等补建（不 arm / 不 --admin / 不受豁免），已有 PR 或 ahead=0 零动作，失败一行可行动出口 + 非零退出",
+  "claimed_at": "2026-11-04"
+}
