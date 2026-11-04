@@ -212,13 +212,13 @@ def test_admin_api_receives_the_credentials_through_env_file_only():
             }
         }
         found = compose_wiring_problems(overridden, names)
-        assert [item for item in found if name in item], (
+        assert len([item for item in found if name in item]) == 1, (
             f"把 {name} 加进 environment 后判据没点名它（判据没牙）：{found}"
         )
 
     missing_env_file = {"services": {"admin-api": {"environment": {"TZ": "Asia/Shanghai"}}}}
     found = compose_wiring_problems(missing_env_file, names)
-    assert [item for item in found if SERVER_ENV_FILE in item], (
+    assert len([item for item in found if SERVER_ENV_FILE in item]) == 1, (
         f"摘掉 env_file 后判据没点名它（判据没牙）：{found}"
     )
 
@@ -316,9 +316,9 @@ def test_no_bmini_credential_value_is_committed():
 
     # 判别力自证：三种「写成值」必须判红（拼接构造，免得本文件自己命中扫描）；
     # 三种占位 / 引用形态必须放行 —— 否则判据退化成恒真或恒假
-    assert credential_value_problems("WECHAT_BMINI_" + "SECRET=" + "abcd1234efgh5678")
-    assert credential_value_problems("WECHAT_BMINI_" + "APPID: " + "wx1234567890abcdef")
-    assert credential_value_problems("WECHAT_BMINI_" + "APPID=" + "wx1234567890abcdef")
+    assert len(credential_value_problems("WECHAT_BMINI_" + "SECRET=" + "abcd1234efgh5678")) == 1
+    assert len(credential_value_problems("WECHAT_BMINI_" + "APPID: " + "wx1234567890abcdef")) == 1
+    assert len(credential_value_problems("WECHAT_BMINI_" + "APPID=" + "wx1234567890abcdef")) == 1
     assert credential_value_problems("WECHAT_BMINI_APPID=") == []
     assert credential_value_problems("WECHAT_BMINI_APPID: ${WECHAT_BMINI_APPID:-}") == []
     assert credential_value_problems("grep -q '^WECHAT_BMINI_SECRET=' .env.admin-api") == []
