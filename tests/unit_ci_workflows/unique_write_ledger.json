@@ -41,7 +41,7 @@
       "table": "order_logistics",
       "handling": "backend/admin-api/src/main/java/com/migao/admin/service/OrderLogisticsWriter.java"
     },
-    "backend/admin-api/src/main/java/com/migao/admin/service/OrderService.java::financeTransactionMapper": {
+    "backend/admin-api/src/main/java/com/migao/admin/service/OrderFeeSupport.java::financeTransactionMapper": {
       "table": "finance_transactions",
       "handling": "none"
     },

@@ -1,0 +1,2685 @@
+package com.migao.admin.service;
+
+import com.migao.admin.config.TenantContext;
+import com.migao.admin.dto.*;
+import com.migao.admin.dto.agent.AgentOrderCreateRequest;
+import com.migao.admin.dto.agent.AgentOrderResolveResponse;
+import com.migao.admin.dto.agent.AgentOrderUpdateRequest;
+import com.migao.admin.entity.Order;
+import com.migao.admin.entity.OrderItem;
+import com.migao.admin.entity.OrderLogistics;
+import com.migao.admin.entity.FinanceTransaction;
+import com.migao.admin.entity.Product;
+import com.migao.admin.entity.ProductSku;
+import com.migao.admin.entity.StockLedger;
+import com.migao.admin.exception.BusinessException;
+import com.migao.admin.mapper.FinanceTransactionMapper;
+import com.migao.admin.mapper.OrderItemMapper;
+import com.migao.admin.mapper.OrderLogisticsMapper;
+import com.migao.admin.mapper.OrderMapper;
+import com.migao.admin.mapper.PrintLogMapper;
+import com.migao.admin.mapper.ProductMapper;
+import com.migao.admin.mapper.ProductSkuMapper;
+import com.migao.admin.mapper.ProcessingOrderMapper;
+import com.migao.admin.entity.ProcessingOrder;
+import com.migao.admin.time.BusinessClock;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.BeanUtils;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
+
+import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.OffsetDateTime;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.ThreadLocalRandom;
+import java.util.stream.Collectors;
+
+/**
+ * 订单服务类
+ * 处理订单的增删改查、状态更新等操作
+ *
+ * <p><b>拆分沿革（issue #8191）</b>：查询族已搬到 {@link OrderQueryService}（P2-1a）、
+ * 创建族已搬到 {@link OrderCreationService}（P2-1b）；本类保留同名<b>门面委托</b>，调用方零改动。</p>
+ *
+ * <p><b>包内可见的共享部件</b>（issue #8191，P2-1b）：建单与改单（{@code updatePendingOrderContent}）/
+ * 确认支付共用同一份明细装配、取价、总额与库存前置校验（{@code assertItemAmountsValid} /
+ * {@code priceItems} / {@code computeItemsTotal} / {@code persistOrderItems} /
+ * {@code validateStockSufficientForRequest} / {@code generateOrderNo} 等）—— 它们是<b>唯一实现点</b>
+ * （金额计算族 = P2-1c 的边界），故由 {@code private} 放宽为<b>包内可见</b>，供
+ * {@link OrderCreationService} 经门面传入的本类实例复用（不产生第二份口径）。</p>
+ */
+@Slf4j
+@Service
+@RequiredArgsConstructor
+public class OrderService extends ServiceImpl<OrderMapper, Order> {
+
+    /** 业务时钟（issue #3802）：业务「今天」的唯一来源。Spring 注入单例；**不扫描 @Component 的切片上下文**
+     * （@WebMvcTest / ApplicationContextRunner）与直接 new 构造的既有单测没有该 bean ⇒ required=false +
+     * 默认实例（同为 +08 口径，行为一致），不因引入时钟让任何既有上下文启动失败（实测 OssEmptyConfigContextTest）。 */
+    @Autowired(required = false)
+    private BusinessClock businessClock = new BusinessClock();
+
+    /**
+     * 订单列表的**默认回溯窗口**（issue #7404：用户裁定「不允许查全部」／「最多回溯近 3 年」）。
+     *
+     * <p>只在不给下单时间范围时生效（见 {@code getOrderPage}）—— 显式区间原样透传，不被截断。
+     * 取 3 年而不是 12 个月：常见诉求是「翻去年的单 / 客户查三年前的记录」，
+     * 而 3 年窗口下单租户的订单量仍是万级（月订单几千），关键词 {@code LIKE '%kw%'} 逐行匹配在毫秒级。</p>
+     */
+    static final int DEFAULT_LOOKBACK_MONTHS = 36;
+
+    /** 订单列表的生效时间窗：半开区间 {@code [start, end)}，两条边界**恒非空**（兜底在 {@link #resolveListWindow}）。 */
+    record ListDateWindow(OffsetDateTime start, OffsetDateTime end) {
+    }
+
+    /**
+     * 解析订单列表的**生效**下单时间窗（issue #7404）。
+     *
+     * <p>口径（顺序即安全顺序）：</p>
+     * <ol>
+     *   <li>显式给了 {@code startDate}/{@code endDate} ⇒ **原样**使用（要查更早的历史单，自己选日期即可）；</li>
+     *   <li>没给起点 ⇒ 起点 = 「终止日（没给就是今天）− {@value #DEFAULT_LOOKBACK_MONTHS} 个月」；</li>
+     *   <li>没给终点 ⇒ 终点 = 「今天 + 1 天」（与显式区间同口径的半开区间）。</li>
+     * </ol>
+     *
+     * <p>⇒ 「忘选 / 清空日期」不再退化成**无时间谓词**的查询。为什么必须兜底：关键词是
+     * {@code LIKE '%kw%'}（name / phone / order_no 三列 OR），B-tree 用不上 ⇒ 无时间谓词时是
+     * 「本租户全部订单逐行匹配」，且分页每次 {@code COUNT(*)} 都要再来一遍。</p>
+     *
+     * <p>为什么是「补齐」而不是 400 拒绝：AI 侧 {@code logistics_track} 工具用
+     * {@code GET /api/admin/orders?keyword=<单号>}（**不带日期**）解析订单号 —— 拒绝会让物流追踪当场坏掉。</p>
+     */
+    static ListDateWindow resolveListWindow(String startDate, String endDate, BusinessClock clock) {
+        boolean hasStart = StringUtils.hasText(startDate);
+        boolean hasEnd = StringUtils.hasText(endDate);
+        LocalDate today = clock.today();
+        LocalDate startDay = hasStart
+                ? LocalDate.parse(startDate)
+                : (hasEnd ? LocalDate.parse(endDate) : today).minusMonths(DEFAULT_LOOKBACK_MONTHS);
+        LocalDate endDayExclusive = hasEnd ? LocalDate.parse(endDate).plusDays(1) : today.plusDays(1);
+        return new ListDateWindow(clock.startOfDay(startDay), clock.startOfDay(endDayExclusive));
+    }
+
+    private final OrderMapper orderMapper;
+    private final OrderItemMapper orderItemMapper;
+    private final OrderLogisticsMapper orderLogisticsMapper;
+    private final CustomerService customerService;
+    private final ProductMapper productMapper;
+    private final ProductSkuMapper productSkuMapper;
+    private final FinanceTransactionMapper financeTransactionMapper;
+    private final ObjectMapper objectMapper;
+    private final NotificationService notificationService;
+    private final ProcessingOrderMapper processingOrderMapper;
+    /** 发货人兜底解析（issue #3768）：当前登录用户姓名 */
+    private final UserService userService;
+    /** 写请求幂等键（issue #4037）：去重 / 结果回放 / 占位释放 */
+    private final ClientRequestIdService clientRequestIdService;
+    /**
+     * 库存流水/台账（issue #4137）：订单腿（下单扣减 / 取消回补）的落账写入方。
+     * 落账唯一语义点在该服务（delta 由 after-before 算出），本类只提供「变更前快照 + 变更点」。
+     */
+    private final StockLedgerService stockLedgerService;
+    /**
+     * 加工费**取价点**（issue #4406）：选配组合 → {@code processing_fee_combinations} 单价 × 加工费米数。
+     * 加工费只有这一个算法（本类不再自己 Σ 加工项 —— 那正是「配了组合费用订单金额一分不变」的病根）。
+     */
+    private final ProcessingFeeCalculator processingFeeCalculator;
+    /**
+     * 加工费组合定价**写面**（issue #4872）：建单成功时把「人工改价」的组合同步回配置
+     * （{@code processing_fee_combinations} + 版本台账）。为什么不直接注 Mapper：版本台账
+     * ({@code appendVersion}) 是写面的既有机制，绕过去 = 改价无痕。
+     */
+    private final ProcessingFeeCombinationCommandService processingFeeCombinationCommandService;
+
+    /**
+     * 池化事件通知点（issue #5182）：**既有业务完成之后**追加的一句 fail-soft 通知。
+     *
+     * <p><b>字段注入</b>的理由同 {@code ProcessingOrderService.stockBatchConsumptionService}：
+     * 本类构造签名被多处测试显式装配，加参数会把它们全改一遍。{@code required = false}
+     * 且调用侧走 {@link PoolChangeNotifier#notifySafely}（{@code null} ⇒ 跳过并留痕）——
+     * 通知点是**优化触发**，绝不因为它未装配/抛异常让确认支付失败。</p>
+     */
+    @Autowired(required = false)
+    private PoolChangeNotifier poolChangeNotifier;
+
+    /**
+     * 单据联动工序（issue #7165）：字段注入理由同 {@code poolChangeNotifier} —— 本类构造签名被
+     * 多处测试显式装配，加参数会把它们全改一遍；{@code null}（单测切片）⇒ 跳过联动，
+     * 发货守卫行为不变。
+     */
+    @Autowired(required = false)
+    private DocumentOperationLinkage documentOperationLinkage;
+
+    /**
+     * 批次消耗台账（V116，issue #5145 阶段 1）：**订单取消自动作废加工单**这条路上的批次回补。
+     *
+     * <p>为什么这里必须有它：{@link #cancelOrder} 对 {@code generated} 态加工单是**直接
+     * {@code updateById} 置 cancelled**、<b>绕过</b> {@code ProcessingOrderService.updateStatus}
+     * —— 派工扣减的对称回补挂在后者。不在这里接同一句话，「订单取消 → 加工单自动作废」这一条路
+     * 就成了**只扣不回补**的单向账（判据「对称回补」在这条路上直接不成立）。</p>
+     *
+     * <p>字段注入而非构造参数：本类构造签名被测试显式装配（{@code OrderStockLedgerTest} /
+     * {@code StockLedgerTest}），加参数会改动既有测试装配 —— 同
+     * {@code ProductionController.processingFeeQueryService} 的先例与理由。
+     * Spring 生产装配下一定非 null；真装配不上时 {@link #batchStock()} **显式抛错**，
+     * 绝不静默跳过回补。</p>
+     */
+    @org.springframework.beans.factory.annotation.Autowired
+    private StockBatchConsumptionService stockBatchConsumptionService;
+
+    /**
+     * 打印流水（V201，issue #7902）：订单列表「是否已打印」三个读数（{@code printedAt} / {@code printCount} /
+     * {@code printedDocTypes}）的唯一数据面。
+     *
+     * <p><b>字段注入而非构造参数</b>，理由同 {@link #stockBatchConsumptionService}：本类构造签名被多处
+     * 测试显式装配（{@code new OrderService(...)}），加参数会把它们全改一遍。
+     * <b>Spring 生产装配下一定非 null</b>；单测切片里为 null ⇒ 三个读数是「未打印」的确定值
+     * （{@code null / 0 / []}，与「这单确实没打过」同形 —— 列表不会因此报错，也不会编出一个打印时间）。
+     * 判据：{@code OrderServicePrintStatusTest}（批量只查一次 / 未打印是确定值 / 空页不发查询）。</p>
+     */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private PrintLogMapper printLogMapper;
+
+    /**
+     * 审计留痕（issue #5842）：订单**内容编辑**的前后差异落 {@code audit_logs}。
+     *
+     * <p>字段注入而非构造参数：本类构造签名被测试与其它装配点显式引用，
+     * 加参数会改动既有测试装配 —— 同 {@link #stockBatchConsumptionService} 的先例与理由
+     * （{@code OrderShipGuard} 的类注释也记着同一件事：给它加一个构造依赖会波及
+     * 全部 {@code new OrderService(...)} / {@code @InjectMocks} 的既有单测）。</p>
+     *
+     * <p>{@code required} 不置 false：留痕是**必须发生**的事（不是可选的优化触发）——
+     * 装配不上应当在启动期就失败，而不是在商家改单时静默丢掉审计。</p>
+     */
+    @Autowired
+    private AuditLogService auditLogService;
+
+    /**
+     * 下单时的服务端定价（issue #7375 段 2）：价格本命中 ⇒ 以服务端为准 + 逐行留痕。
+     * 只在请求带 SKU（或能按货号定位）时生效 ⇒ 存量调用零回归。
+     */
+    @Autowired(required = false)
+    private OrderPricingService orderPricingService = OrderPricingService.NOOP;
+
+    /**
+     * 具名审批（issue #7374 段 1）：超授信下单被审批放行时，回填「这条审批用在哪」。
+     * 可空注入（切片上下文 / 直接 new 的单测没有该 bean ⇒ 仅少一次回填，不影响下单）。
+     */
+    @Autowired(required = false)
+    private ApprovalService approvalService;
+
+    /**
+     * 订单**查询族**（issue #8191，P2-1a）：列表 / 详情 / 统计 / 单号解析的唯一实现点。
+     *
+     * <p>本类只留<b>门面委托</b>（调用方零改动）。字段注入而非构造参数，理由同
+     * {@link #stockBatchConsumptionService}：本类构造签名被多处测试显式装配，加参数会把它们全改一遍。</p>
+     */
+    @Autowired(required = false)
+    private OrderQueryService orderQueryService;
+
+    /**
+     * 取查询服务：Spring 装配下 = 上面的 bean；**直接 new / {@code @InjectMocks} 的既有单测**
+     * （Mockito 只做构造注入、不注入字段）没有该 bean ⇒ 用本类已装配的协作者就地构造一个
+     * （同一份 Mapper / ObjectMapper 实例）⇒ 行为与拆分前逐字一致。
+     */
+    private OrderQueryService queryService() {
+        OrderQueryService service = this.orderQueryService;
+        if (service == null) {
+            service = new OrderQueryService(orderMapper, orderItemMapper, orderLogisticsMapper,
+                    productMapper, productSkuMapper, objectMapper, printLogMapper, businessClock);
+            this.orderQueryService = service;
+        }
+        return service;
+    }
+
+    /**
+     * 订单**创建族**（issue #8191，P2-1b）：建单编排（{@code createOrder} / {@code createOrderForAgent}）
+     * 与 Agent 取价守卫的唯一实现点。
+     *
+     * <p>本类只留<b>门面委托</b>（调用方零改动）。字段注入而非构造参数，理由同
+     * {@link #stockBatchConsumptionService}：本类构造签名被多处测试显式装配，加参数会把它们全改一遍。</p>
+     */
+    @Autowired(required = false)
+    private OrderCreationService orderCreationService;
+
+    /**
+     * 取创建服务：Spring 装配下 = 上面的 bean；**直接 new / {@code @InjectMocks} 的既有单测**
+     * （Mockito 只做构造注入、不注入字段）没有该 bean ⇒ 用本类已装配的协作者就地构造一个
+     * （同一份 Mapper / Service 实例）⇒ 行为与拆分前逐字一致。
+     */
+    private OrderCreationService creationService() {
+        OrderCreationService service = this.orderCreationService;
+        if (service == null) {
+            service = new OrderCreationService(orderMapper, productMapper, productSkuMapper,
+                    customerService, userService, notificationService, clientRequestIdService,
+                    orderPricingService, approvalService);
+            this.orderCreationService = service;
+        }
+        return service;
+    }
+
+    /**
+     * <b>测试探针</b>（issue #6955，生产恒为 {@code 0}）：在 {@link #cancelOrder} 的「读判加工单为
+     * {@code generated}」之后、「联动作废（CAS）」之前暂停指定毫秒。
+     *
+     * <p><b>为什么需要它</b>：窗口在服务方法体内，测试侧无法在「已判定加工单仍是 generated、
+     * 尚未落库」那一刻插进延时（除非 mock 掉真 mapper —— 那会把唯一的 DB 原子判据换成 mock 的恒真返回）。
+     * 与 {@code InboundOrderService#setCancelProbePauseMillisForTest}（#6928）逐字同款；
+     * 只在包内可见（{@code ProcessingOrderStatusCasRaceRealDbTest} 与生产同类同包）。</p>
+     */
+    static void setCancelOrderPoProbePauseMillisForTest(long millis) {
+        CANCEL_ORDER_PO_PROBE_PAUSE_MILLIS = millis;
+    }
+
+    /** 探针时长（默认 0 = 不暂停）；见 {@link #setCancelOrderPoProbePauseMillisForTest}。 */
+    private static volatile long CANCEL_ORDER_PO_PROBE_PAUSE_MILLIS = 0L;
+
+    /** 探针**正在**暂停窗口内的信号（测试用它把两个线程钉在确定的时序上）。 */
+    private static volatile boolean cancelOrderPoProbePaused = false;
+
+    /** 测试观察点：探针是否已进入暂停窗口；生产不读。 */
+    static boolean cancelOrderPoProbePausedForTest() {
+        return cancelOrderPoProbePaused;
+    }
+
+    /** 测试观察点：当前注入的探针时长；生产不读。 */
+    static long cancelOrderPoProbeMillisForTest() {
+        return CANCEL_ORDER_PO_PROBE_PAUSE_MILLIS;
+    }
+
+    /** 进入窗口 ⇒ 置位 → 停 → 清位。 */
+    private static void pauseCancelOrderPoForProbe(long millis) {
+        cancelOrderPoProbePaused = true;
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        } finally {
+            cancelOrderPoProbePaused = false;
+        }
+    }
+
+    /**
+     * 订单号序列号（线程安全）
+     */
+    private static final AtomicInteger ORDER_SEQ = new AtomicInteger(0);
+
+    /**
+     * 合法的状态流转定义
+     * key: 当前状态, value: 允许流转到的目标状态集合
+     */
+    private static final Map<String, Set<String>> STATUS_TRANSITIONS =
+            OrderStatusTransitions.STATUS_TRANSITIONS;
+
+    /**
+     * 订单状态 → 中文业务术语（错误消息用）。
+     * 校验/退款等报错会通过 GlobalExceptionHandler 直接展示给企业客户，
+     * 必须用中文（如「待付款」），不能用 pending/confirmed 等英文枚举。
+     */
+    private static final Map<String, String> ORDER_STATUS_LABELS =
+            OrderStatusTransitions.ORDER_STATUS_LABELS;
+
+    /**
+     * 分页查询订单列表
+     *
+     * @param page            页码
+     * @param size            每页大小
+     * @param status          订单状态
+     * @param keyword         搜索关键词（客户姓名/电话/订单号）
+     * @param followStatus    跟进状态
+     * @param hasProcessing   是否含加工项（true=只查含加工项，false=只查不含加工项，null=不过滤）
+     * @param startDate       开始日期（YYYY-MM-DD 格式）
+     * @param endDate         结束日期（YYYY-MM-DD 格式）
+     * @param tenantId        租户ID
+     * @param userId          下单用户ID（C 端数据隔离：非空时强制只查该用户的订单）
+     * @param creator         制单人姓名（issue #5835：非空时按 {@code created_by_name} **模糊**匹配）
+     * @return 分页响应
+     */
+    public PageResponse<OrderListResponse> getOrderPage(long page, long size, String status, String keyword, String followStatus, Boolean hasProcessing, String startDate, String endDate, String orderId, String receiver, String productCode, String productTitle, Long tenantId, String userId, String creator, String dataScopeOwnerId) {
+        // 门面委托（issue #8191，P2-1a）：查询族实现点在 OrderQueryService，调用方零改动。
+        return queryService().getOrderPage(page, size, status, keyword, followStatus, hasProcessing, startDate,
+                endDate, orderId, receiver, productCode, productTitle, tenantId, userId, creator,
+                dataScopeOwnerId);
+    }
+
+    /**
+     * C 端「我的订单」分页查询 — user_id 直配 + 手机号兜底。
+     *
+     * 数据隔离语义（与 V23 回填一致）：
+     * - orders.user_id = 当前用户 → 必然可见（聊天/绑定下单）
+     * - orders.user_id IS NULL AND orders.customer_phone = 当前用户已绑定手机号
+     *   → 视为「名下」订单（商户代录/历史订单），仅当本人已授权绑定手机号才可见，
+     *   且 customer_phone 必须精确等于本人手机号（不越权）
+     *
+     * @param page     页码
+     * @param size     每页大小
+     * @param status   订单状态（可选）
+     * @param tenantId 租户ID
+     * @param userId   当前用户ID（X-User-Id 透传）
+     * @param userPhone 当前用户已绑定手机号（可为空：未绑定时退化为仅 user_id 匹配）
+     * @return 分页响应
+     */
+    public PageResponse<OrderListResponse> getMyOrderPage(long page, long size, String status,
+                                                          Long tenantId, String userId, String userPhone) {
+        // 门面委托（issue #8191，P2-1a）：查询族实现点在 OrderQueryService，调用方零改动。
+        return queryService().getMyOrderPage(page, size, status, tenantId, userId, userPhone);
+    }
+
+    /**
+     * 手机号回填绑定：把「该手机号下 user_id 为空的本租户订单」绑定到指定用户。
+     *
+     * 场景：小程序客户授权绑定手机号后，商户代录/历史订单（仅存 customer_phone、
+     * user_id 为空）据此归属到本人——V23 回填 SQL 的运行时等价物。
+     * 防误绑：只更新 user_id IS NULL 的订单（已归属他人的不动）；tenant 由
+     * TenantLineInnerInterceptor 自动注入。
+     *
+     * @param tenantId 租户ID
+     * @param userId   当前用户ID
+     * @param phone    用户刚绑定（且校验过未被同租户其他用户占用）的手机号
+     * @return 受影响行数
+     */
+    public int bindOrdersToUser(Long tenantId, String userId, String phone) {
+        if (!StringUtils.hasText(phone) || phone.isBlank()) {
+            log.info("[bind-orders] 跳过：手机号为空 tenantId={}", tenantId);
+            return 0;
+        }
+        if (userId == null || userId.isBlank() || "internal-service".equals(userId)) {
+            log.info("[bind-orders] 跳过：用户标识缺失 tenantId={}", tenantId);
+            return 0;
+        }
+        LambdaUpdateWrapper<Order> wrapper = new LambdaUpdateWrapper<>();
+        wrapper.isNull(Order::getUserId)
+                .eq(Order::getCustomerPhone, phone.trim())
+                .set(Order::getUserId, userId);
+        int updated = orderMapper.update(null, wrapper);
+        log.info("[bind-orders] 手机号回填完成: tenantId={}, userId={}, phone={}****, bound={}",
+                tenantId, userId, phone.substring(0, 3), updated);
+        return updated;
+    }
+
+    /**
+     * 根据ID查询订单详情（含订单明细和物流信息）
+     *
+     * @param id 订单ID
+     * @return 订单详情响应
+     */
+    public OrderDetailResponse getOrderById(String id) {
+        // 门面委托（issue #8191，P2-1a）：查询族实现点在 OrderQueryService，调用方零改动。
+        return queryService().getOrderById(id);
+    }
+
+    /**
+     * 详情读面 + **数据范围**（issue #7372 段 1）。
+     *
+     * <p>范围外 ⇒ 与「不存在」**同一个 404**（不 403）：403 会告诉调用方「这个 id 存在，只是你看不到」，
+     * 那本身就是泄露。判据 = {@code DataScopeTest#outOfScopeIsIndistinguishableFromMissing}。</p>
+     *
+     * @param dataScopeOwnerId 非 null ⇒ 只允许读该用户创建的单据
+     */
+    public OrderDetailResponse getOrderById(String id, String dataScopeOwnerId) {
+        // 门面委托（issue #8191，P2-1a）：查询族实现点在 OrderQueryService，调用方零改动。
+        return queryService().getOrderById(id, dataScopeOwnerId);
+    }
+
+    /**
+     * 订单在**当前租户**下是否可见（issue #6158）。
+     *
+     * <p>语义 = {@link #getOrderById} 的 404 那一半（同一条 {@code orderMapper.selectById}，由
+     * MyBatis-Plus 租户拦截器按 {@link com.migao.admin.config.TenantContext} 追加
+     * {@code tenant_id} 条件）—— 本单只做归属认定，**不**顺手带状态闸门
+     * （那是 {@code OrderStatusTransitions} 在写路径上的职责，多判一次 = 第二套判定）。</p>
+     *
+     * <p>存在理由：该认定要在 {@code PUT /api/admin/orders/{id}/content} 的**参数解析之前**
+     * 执行（见 {@code TenantOwnershipInterceptor}），而写路径自己的 {@code selectById}
+     * 发生在参数解析之后。</p>
+     *
+     * @param id 订单ID
+     * @return 当前租户下可见 ⇒ true
+     */
+    public boolean existsForCurrentTenant(String id) {
+        // 门面委托（issue #8191，P2-1a）：查询族实现点在 OrderQueryService，调用方零改动。
+        return queryService().existsForCurrentTenant(id);
+    }
+
+    /**
+     * 创建订单（issue #8191，P2-1b）：实现点在 {@link OrderCreationService}，本方法只留门面委托（调用方零改动）。
+     *
+     * <p>事务注解随方法体搬到新服务（{@code @Transactional} 逐字跟随，边界不变）；本类把建单与改单共用的
+     * 明细装配 / 取价 / 库存前置（唯一实现点，见类注释）经 {@code this} 交给新服务复用。</p>
+     */
+    public OrderDetailResponse createOrder(OrderCreateRequest request, Long tenantId) {
+        return creationService().createOrder(request, tenantId, this);
+    }
+
+    // ══════════════════ 待付款订单内容编辑（issue #5842）与共用写面部件 ══════════════════
+
+    /**
+     * 明细金额闸门（数量 ≥ 1、单价 > 0）—— 建单与改单**同一份**（issue #5842 抽出）。
+     *
+     * <p>为什么必须在 Service 层显式判定（而不是只靠 DTO 注解）：① Agent 路径是**手工 new** DTO
+     * 再调用（程序化构造的 Bean 不经过 Bean Validation）；② 数量直接驱动库存/销量与金额
+     * ⇒ 判在唯一共享入口才无死角。</p>
+     */
+    void assertItemAmountsValid(List<OrderCreateRequest.OrderItemRequest> items) {
+        for (int i = 0; i < items.size(); i++) {
+            OrderCreateRequest.OrderItemRequest itemRequest = items.get(i);
+            if (itemRequest.getQuantity() == null
+                    || itemRequest.getQuantity().compareTo(BigDecimal.ONE) < 0) {
+                throw BusinessException.validationError(
+                        String.format("商品明细第 %d 项的数量不能小于 1", i + 1));
+            }
+            if (itemRequest.getUnitPrice() == null
+                    || itemRequest.getUnitPrice().compareTo(BigDecimal.ZERO) <= 0) {
+                throw BusinessException.validationError(
+                        String.format("商品明细第 %d 项的单价必须大于 0", i + 1));
+            }
+            // 金额精度准入（issue #6228）：`order_items.unit_price` 是 NUMERIC(·,2)，
+            // 超 2 位有效小数会被 PG **静默四舍五入**（接口 200、库内值与请求值不等）。
+            // 判在本方法 = 建单/改单**唯一共享入口**，且在 `persistOrderItems` 任何写之前。
+            itemRequest.setUnitPrice(MoneyScale.requireTwoDecimalsOrNull(
+                    itemRequest.getUnitPrice(), String.format("商品明细第 %d 项的单价", i + 1)));
+        }
+    }
+
+    /**
+     * 逐行加工费取价（**唯一取价点**，建单与改单共用；issue #4406 / #5842）。
+     *
+     * <p>未定价 / 缺米数 ⇒ **不静默**：金额照样成立（该半按 0 计），但日志留下可排查证据。</p>
+     */
+    List<ProcessingFeeCalculator.Fee> priceItems(List<OrderCreateRequest.OrderItemRequest> items,
+                                                         Long tenantId) {
+        List<ProcessingFeeCalculator.Fee> itemFees = processingFeeCalculator.feesFor(
+                items.stream()
+                        .map(OrderCreateRequest.OrderItemRequest::getProcessingInfo)
+                        .collect(Collectors.toList()),
+                tenantId);
+        for (int i = 0; i < items.size(); i++) {
+            if (ProcessingFeeCalculator.FEE_SOURCE_UNPRICED.equals(itemFees.get(i).feeSource())) {
+                log.warn("加工费未定价（本行按 0 计）: tenantId={}, itemIndex={}, composition={}, hint={}",
+                        tenantId, i, itemFees.get(i).compositionKey(), itemFees.get(i).hint());
+            }
+        }
+        return itemFees;
+    }
+
+    /**
+     * 订单总额 = Σ(单价 × 数量) + Σ 行加工费（**服务端独立计算**，不信客户端任何金额字段）。
+     *
+     * <p>与 issue #4406 的口径一致：行加工费 = {@code Fee#lineAmount()}
+     * （组合那半 + Σ 特殊选项 + 拼色加价）—— 不另拼第二份算式。</p>
+     */
+    BigDecimal computeItemsTotal(List<OrderCreateRequest.OrderItemRequest> items,
+                                         List<ProcessingFeeCalculator.Fee> itemFees) {
+        BigDecimal total = BigDecimal.ZERO;
+        for (int i = 0; i < items.size(); i++) {
+            OrderCreateRequest.OrderItemRequest itemRequest = items.get(i);
+            BigDecimal itemAmount = BigDecimal.ZERO;
+            if (itemRequest.getUnitPrice() != null && itemRequest.getQuantity() != null) {
+                itemAmount = itemRequest.getUnitPrice().multiply(itemRequest.getQuantity());
+            }
+            total = total.add(itemAmount).add(itemFees.get(i).lineAmount());
+        }
+        return total;
+    }
+
+    /**
+     * 建单同步回加工费组合配置（issue #4872）：只对 {@code fee_source=manual} 的行按
+     * {@code compositionKey} **同源口径** upsert 组合价 + 追加版本台账。无 manual 行 ⇒ **零调用**。
+     *
+     * <p>改单（#5842）同样走它：商家在未定价行上就地改价这件事，与「这次是新单还是改单」无关；
+     * 两条路各接一次就会分叉成「改单改的价不进组合台账」。</p>
+     *
+     * <p>🔴 #7642（用户 2026-10-24 裁定「新增订单中的加工费组合需要允许修改」= **只改本单单价**）：
+     * 组合**已配置**（{@link ProcessingFeeCalculator.Fee#configuredUnitPrice()} 非 null）⇒ 价目里
+     * 已经有这一条，本单改价**不**回写（回写会把这一单的谈定价变成租户共享价，之后所有同组合的新单
+     * 都按它算钱）。未配置 ⇒ 仍走既有 upsert —— 那是「自建价目」的唯一通路。</p>
+     */
+    void syncProcessingFeeCombinations(List<ProcessingFeeCalculator.Fee> itemFees, Long tenantId) {
+        for (ProcessingFeeCalculator.Fee fee : itemFees) {
+            if (!ProcessingFeeCalculator.FEE_SOURCE_MANUAL.equals(fee.feeSource())) {
+                continue;
+            }
+            // #7642：本单改价覆盖的是**已配置**的组合 ⇒ 价目不动（见方法注释）
+            if (fee.configuredUnitPrice() != null) {
+                continue;
+            }
+            // #7658：**0 元是本单语义**（免加工费）⇒ 绝不写进租户共享价目
+            // （写进去 = 之后所有同组合的新单都按 0 元收钱；一个免费单把整条组合价清零）。
+            if (fee.unitPrice() == null || fee.unitPrice().signum() <= 0) {
+                continue;
+            }
+            processingFeeCombinationCommandService.upsertFromOrderOverride(
+                    fee.compositionKey(), fee.items(), fee.unitPrice(), tenantId);
+        }
+    }
+
+    /**
+     * 明细落库（商品金额 + 加工项 + 工艺规格列 + 整卷分配）—— 建单与改单**同一份**（issue #5842 抽出）。
+     *
+     * <p>抽出的理由不是"好看"：改单若自己再写一遍这个循环，加工费 detail 的挂载 / V63 行要素物化 /
+     * V111 整卷分配这三件事都会出现**第二份**，而它们分叉的方向是「改单后加工费构成丢失」
+     * 「改单后整卷分配不再重算」——都是静默的（没有任何东西会变红）。</p>
+     */
+    /**
+     * 订单明细落库（建单 / 内容更新 / Agent 三条路径的**唯一共享入口**）。
+     *
+     * <h3>安装信息（issue #7856）：写侧**单点扇出**</h3>
+     * <p>订单级语义的「安装小区」（{@code processingInfo.installCommunity}）在这里写进**每一行**：
+     * 加工单快照与订单明细都是行数组、没有订单级顶层对象，而纸面（水洗唛 / 发货标签 / 入库标签）
+     * 逐行打印 ⇒ 订单级事实只能逐行落（同 {@code isUrgent} 的既有范式）。调用方只交一个订单级字符串，
+     * **不前端逐行写**（那是第二份口径）；件级「安装位置」则直接放在该行的
+     * {@code processingInfo.installRoom}（与 {@code curtainType} / {@code remark} 同一载体）。</p>
+     * <p>为什么落 JSONB 而不是给 {@code orders} / {@code order_items} 加列（用户 2026-10-26 当场裁定
+     * 「不能作为订单基础字段吧？」）：它只上纸、不参与算料 / 计价 / 派工 / 库存 / 检索；
+     * {@code order_items.processing_info} 是**已登记**的 JSONB 扩展点 ⇒ **数据库零迁移**
+     * （{@code orders} 仍 24 列、{@code order_items} 仍 32 列）。
+     * 缺值不落键（与 {@code CRAFT_SPEC_SNAPSHOT_KEYS} 的白名单键族一致）。</p>
+     *
+     * @param installCommunity 已归一 + 准入的安装小区（{@code null} = 未填 ⇒ 不落键）
+     */
+    void persistOrderItems(Order order, List<OrderCreateRequest.OrderItemRequest> items,
+                                   List<ProcessingFeeCalculator.Fee> itemFees, Long tenantId,
+                                   List<OrderPricingService.LinePricing> linePricings,
+                                   String installCommunity) {
+        for (int i = 0; i < items.size(); i++) {
+            OrderCreateRequest.OrderItemRequest itemRequest = items.get(i);
+            // ── 加工费可审计构成落库（issue #4406）──
+            // 为什么落 `processing_info.processingFeeDetail` 而不是新列：加工费是**行级一个数 +
+            // 构成**，构成（组合/命中规则/单价/来源/米数/来源/三态）与 processing_info 同生命周期
+            // （R13 快照优先：改组合价后**已生成订单一字不变** ⇒ 读面读存量、不重算）。
+            // JSON **字符串**形态先归一化成 Map 再挂（否则 `put` 无处可落、detail 静默丢失）；
+            // 且**另起一份可变副本**（`Map.of` / `List.of` 一类不可变容器 `put` 会抛
+            // UnsupportedOperationException ⇒ 下单直接 500；同时也不该就地改调用方传进来的对象）。
+            Map<String, Object> normalizedInfo = OrderLineCraftFields.normalize(
+                    itemRequest.getProcessingInfo(), objectMapper);
+            // 安装信息（issue #7856）两键在**同一处**落：订单级 `installCommunity` 扇到每行，
+            // 件级 `installRoom` 落本行（显式 API 字段 > 调用方自己塞进 processingInfo 的同名键）。
+            String installRoom = itemRequest.getInstallRoom();
+            if (normalizedInfo != null || installCommunity != null || installRoom != null) {
+                Map<String, Object> annotated = normalizedInfo == null
+                        ? new LinkedHashMap<>()
+                        : new LinkedHashMap<>(normalizedInfo);
+                if (normalizedInfo != null) {
+                    // 加工费可审计构成只在原本就有 processing_info 的行上挂（与改前逐字同语义）
+                    ProcessingFeeCalculator.attach(annotated, itemFees.get(i));
+                }
+                if (installCommunity != null) {
+                    annotated.put(OrderInstallInfo.KEY_INSTALL_COMMUNITY, installCommunity);
+                }
+                if (installRoom != null) {
+                    annotated.put(OrderInstallInfo.KEY_INSTALL_ROOM, installRoom);
+                }
+                itemRequest.setProcessingInfo(annotated);
+                normalizedInfo = annotated;
+            }
+            OrderItem item = new OrderItem();
+            item.setTenantId(tenantId);
+            item.setOrderId(order.getId());
+            item.setProductId(itemRequest.getProductId());
+            // 定价依据落列（V180，issue #7375 段 2）：SKU + 命中层级 + 被改写前的客户端价
+            applyPricingTrace(item, linePricings, i);
+            item.setProductName(itemRequest.getProductName());
+            item.setQuantity(itemRequest.getQuantity());
+            item.setUnitPrice(itemRequest.getUnitPrice());
+            item.setWidth(itemRequest.getWidth());
+            item.setHeight(itemRequest.getHeight());
+            item.setProcessingInfo(itemRequest.getProcessingInfo());
+            // 下单行要素落列（V63，issue #4362，S1）：两个采集端（C 端元元澄清清单 / B 端黄金策
+            // order_create）写入的 processing_info 顶层工艺规格键在此**物化**到 order_items 的列上。
+            // 判在本方法（表单 / Agent / 程序化三条路径的**唯一共享入口**）才无死角；
+            // 全部可空、不设必填校验（用户裁定「部位不是必填的」）⇒ 缺键就是缺。
+            OrderLineCraftFields.materialize(normalizedInfo, item);
+            // ── 售卖方式偏好 + 「优先整卷发货」分配落列（V111，用户裁定 2026-09-21）──
+            // 三列语义见 OrderItem 的字段 javadoc；判在**本方法**（表单 / Agent / 程序化三条路径
+            // 的唯一共享入口）才无死角 —— 与上面 V63 的行要素物化同一理由。
+            applyRollAllocation(itemRequest, item);
+            item.setSubtotal(resolveItemSubtotal(itemRequest));
+            orderItemMapper.insert(item);
+        }
+    }
+
+    /**
+     * 定价改写审计（issue #7375 段 2）：`action = price_server_override`，details 带逐行
+     * 「客户端价 → 服务端价 / 命中层级」。
+     *
+     * <p>只记被改写的行：审计是**证据**，不是流水账 —— 把没改的行也写进去会让真差异淹在噪音里。</p>
+     */
+    void recordPriceOverrideAudit(Order order, List<OrderPricingService.LinePricing> linePricings) {
+        if (linePricings == null || linePricings.isEmpty()) {
+            return;
+        }
+        List<Map<String, Object>> rows = new ArrayList<>();
+        for (int i = 0; i < linePricings.size(); i++) {
+            OrderPricingService.LinePricing pricing = linePricings.get(i);
+            if (pricing == null || pricing.clientPrice() == null) {
+                continue;   // 未被改写
+            }
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("line", i + 1);
+            row.put("sku_id", pricing.skuId());
+            row.put("sku_code", pricing.skuCode());
+            row.put("client_price", pricing.clientPrice().toPlainString());
+            row.put("price_source", pricing.priceSource());
+            rows.add(row);
+        }
+        if (rows.isEmpty()) {
+            return;
+        }
+        Map<String, Object> details = new LinkedHashMap<>();
+        details.put("order_no", order.getOrderNo());
+        details.put("overridden_lines", rows);
+        UserService.CurrentOperator operator = userService.resolveCurrentOperator();
+        auditLogService.recordLog(order.getTenantId(),
+                operator != null ? operator.userId() : null,
+                operator != null ? operator.displayName() : null,
+                "price_server_override", "order", null,
+                order.getId(), order.getOrderNo(), details, null, null);
+    }
+
+    /**
+     * 定价依据落列（issue #7375 段 2）：SKU + 命中层级 + **被改写前的客户端价**。
+     *
+     * <p>只写有依据的那几列：没有 SKU/没参与定价的行保持 null（缺就是缺，不猜、不填 0）。
+     * `priceClientUnitPrice` 只在**真被改写**时写 —— 否则「一样的价」会被记成「改过」。</p>
+     */
+    private void applyPricingTrace(OrderItem item, List<OrderPricingService.LinePricing> linePricings, int index) {
+        if (linePricings == null || index >= linePricings.size()) {
+            return;
+        }
+        OrderPricingService.LinePricing pricing = linePricings.get(index);
+        if (pricing == null) {
+            return;
+        }
+        item.setSkuId(pricing.skuId());
+        item.setSkuCode(pricing.skuCode());
+        item.setPriceSource(pricing.priceSource());
+        item.setPriceClientUnitPrice(pricing.clientPrice());
+    }
+
+    /**
+     * 编辑请求的明细 → 建单行类型（**共用下游所有写面部件**的前提）。
+     *
+     * <p>为什么不给编辑另造一套行类型：加工项取价 / 行要素物化 / 整卷分配 / 库存校验全部以
+     * {@code OrderCreateRequest.OrderItemRequest} 为输入 —— 另造一套就要把这些部件复制一遍
+     * （issue #5842 的口径是「加工项写侧与建单**同源**」）。</p>
+     *
+     * <p>{@code subtotal} 在此**由服务端算出**（编辑 DTO 没有该字段）⇒
+     * {@code resolveItemSubtotal} 拿到的一定是服务端值，客户端无从影响。</p>
+     */
+    private List<OrderCreateRequest.OrderItemRequest> toCreateItems(List<OrderContentUpdateRequest.Item> items) {
+        List<OrderCreateRequest.OrderItemRequest> result = new ArrayList<>(items.size());
+        for (OrderContentUpdateRequest.Item source : items) {
+            OrderCreateRequest.OrderItemRequest target = new OrderCreateRequest.OrderItemRequest();
+            target.setProductId(source.getProductId());
+            target.setProductName(source.getProductName());
+            target.setQuantity(source.getQuantity());
+            target.setUnitPrice(source.getUnitPrice());
+            target.setWidth(source.getWidth());
+            target.setHeight(source.getHeight());
+            target.setProcessingInfo(source.getProcessingInfo());
+            // 安装位置（issue #7856）：改单请求的**件级**字段同样接到建单行类型上 ——
+            // 下游写面只有一份（persistOrderItems），两处各搬一遍迟早分叉。
+            target.setInstallRoom(source.getInstallRoom());
+            target.setSellingMethod(source.getSellingMethod());
+            if (source.getUnitPrice() != null && source.getQuantity() != null) {
+                target.setSubtotal(source.getUnitPrice().multiply(source.getQuantity()));
+            }
+            result.add(target);
+        }
+        return result;
+    }
+
+    /**
+     * 编辑请求的明细 → 库存校验用的**草稿明细**（不落库；与建单的 {@code validateStockSufficientForRequest}
+     * 同一形状 —— 只带 SKU 匹配需要的三样：productId / productName / quantity / processingInfo）。
+     */
+    private List<OrderItem> draftItems(List<OrderCreateRequest.OrderItemRequest> items) {
+        List<OrderItem> draftItems = new ArrayList<>(items.size());
+        for (OrderCreateRequest.OrderItemRequest itemRequest : items) {
+            OrderItem draft = new OrderItem();
+            draft.setProductId(itemRequest.getProductId());
+            draft.setProductName(itemRequest.getProductName());
+            draft.setQuantity(itemRequest.getQuantity());
+            draft.setProcessingInfo(itemRequest.getProcessingInfo());
+            draftItems.add(draft);
+        }
+        return draftItems;
+    }
+
+    /**
+     * 订单内容快照（**审计留痕**的前后差异载体，issue #5842）。
+     *
+     * <p>只记「人可复核、且改动会影响下游」的字段：收货三件套 / 三个金额 / 逐行
+     * 商品名 + 数量 + 单价 + 宽高 + **加工项名**。刻意不整对象序列化 —— 审计读面是给人看的，
+     * 倒进整个实体只会让真正的差异被淹没。</p>
+     */
+    private Map<String, Object> contentSnapshot(Order order, List<OrderItem> items) {
+        Map<String, Object> snapshot = new LinkedHashMap<>();
+        snapshot.put("customerName", order.getCustomerName());
+        snapshot.put("customerPhone", order.getCustomerPhone());
+        snapshot.put("customerAddress", order.getCustomerAddress());
+        snapshot.put("totalAmount", order.getTotalAmount());
+        snapshot.put("discountAmount", order.getDiscountAmount());
+        snapshot.put("actualAmount", order.getActualAmount());
+        List<Map<String, Object>> lines = new ArrayList<>();
+        for (OrderItem item : items) {
+            Map<String, Object> line = new LinkedHashMap<>();
+            line.put("productName", item.getProductName());
+            line.put("quantity", item.getQuantity());
+            line.put("unitPrice", item.getUnitPrice());
+            line.put("width", item.getWidth());
+            line.put("height", item.getHeight());
+            line.put("processingItems", OrderShipGuard.extractProcessingItems(objectMapper, item.getProcessingInfo())
+                    .stream().map(OrderDetailResponse.ProcessingItemBrief::getName).collect(Collectors.toList()));
+            lines.add(line);
+        }
+        snapshot.put("items", lines);
+        return snapshot;
+    }
+
+    /**
+     * **待付款订单内容编辑**（issue #5842；用户 2026-10-01 裁定「范围 = 全改」）。
+     *
+     * <p>可改三面：收货信息 / 商品明细（商品·数量·单价·宽高）/ 加工项；金额**一律服务端重算**。</p>
+     *
+     * <h3>六道判据（缺一条都会静默出错）</h3>
+     * <ol>
+     *   <li><b>状态闸门</b>：只有 {@code pending} 可改，其余 **422** —— 判定走
+     *       {@link OrderStatusTransitions#assertContentEditable}（状态机唯一实现点）；</li>
+     *   <li><b>已有加工单 ⇒ 拒绝</b>：内容已固化进加工单快照，改订单会让快照漂移。
+     *       （发货侧还有第二道 —— {@link OrderShipGuard#hasProcessingDrift} —— 两处都留，
+     *       因为"编辑与生成不会同时发生"是一个**没有判据的时序假设**。）</li>
+     *   <li><b>金额重算</b>：{@code totalAmount} 由服务端按新明细 + 新加工项重算
+     *       （{@link #computeItemsTotal}），随后照建单同口径校验
+     *       「应收 − 优惠 ≈ 实收（容差 0.01）」；</li>
+     *   <li><b>库存前置校验按新明细重跑</b>（{@code validateStockSufficientForItems}，与确认支付同一套
+     *       SKU 匹配）：{@code pending} 单**尚未扣库存**（扣减发生在确认支付）⇒
+     *       <b>不回滚库存</b>，但必须保证「改完仍买得起」；</li>
+     *   <li><b>明细整体替换</b>：旧行软删（{@code @TableLogic}）+ 新行落库，落库走与建单**同一份**
+     *       {@link #persistOrderItems}；</li>
+     *   <li><b>审计留痕</b>：前后快照（{@link #contentSnapshot}）写 {@code audit_logs}
+     *       （{@code action=update_content} / {@code resourceType=order}）。</li>
+     * </ol>
+     *
+     * <p>⚠️ <b>不回滚库存这件事的前提**在本方法内被显式保证**</b>：状态闸门只放 {@code pending}，
+     * 而扣减只发生在 {@code pending → confirmed}（{@link #confirmPayment}）⇒ 走到这里时该单一定没扣过。
+     * 若将来放宽可编辑状态，回滚/重算库存必须同批补上（本注释就是那件事的坐标）。</p>
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public OrderDetailResponse updatePendingOrderContent(String id, OrderContentUpdateRequest request) {
+        Order order = orderMapper.selectById(id);
+        if (order == null) {
+            throw BusinessException.notFound("订单");
+        }
+        Long tenantId = order.getTenantId();
+        // ① 状态闸门（唯一实现点 = OrderStatusTransitions；其余状态一律 422 + 中文文案）
+        OrderStatusTransitions.assertContentEditable(order.getStatus());
+        // ② 已生成活跃加工单 ⇒ 内容已固化进快照，拒绝（发货侧另有漂移守卫兜底）
+        ProcessingOrder active = processingOrderMapper.selectActiveByOrderId(order.getId(), tenantId);
+        if (active != null) {
+            throw BusinessException.validationError(String.format(
+                    "订单已生成加工单（%s），内容不能再修改；如需改内容请先作废该加工单",
+                    active.getProcessingOrderNo()));
+        }
+
+        // ③ 新明细：服务端闸门 → 加工费取价 → 总额重算（**不信客户端任何金额**）
+        List<OrderCreateRequest.OrderItemRequest> items = toCreateItems(request.getItems());
+        assertItemAmountsValid(items);
+        List<ProcessingFeeCalculator.Fee> itemFees = priceItems(items, tenantId);
+        // 金额精度准入（issue #6228）：总额是计算值（"积"），合法单价×合法数量仍可出 3 位小数。
+        BigDecimal totalAmount = MoneyScale.requireTwoDecimalsOrNull(computeItemsTotal(items, itemFees), "订单总额");
+        syncProcessingFeeCombinations(itemFees, tenantId);
+
+        // ④ 优惠 / 实收：未传 ⇒ **沿用原值**（不清零、不猜）；随后照建单同口径校验
+        // 金额精度准入（issue #6228）：只有**请求带来的**值需要准入 —— 沿用值来自库列 NUMERIC(10,2) 回读。
+        BigDecimal requestedDiscount = MoneyScale.requireTwoDecimalsOrNull(request.getDiscountAmount(), "优惠金额");
+        BigDecimal discountAmount = requestedDiscount != null
+                ? requestedDiscount
+                : (order.getDiscountAmount() != null ? order.getDiscountAmount() : BigDecimal.ZERO);
+        if (discountAmount.compareTo(BigDecimal.ZERO) < 0) {
+            throw BusinessException.validationError("优惠金额不能为负数");
+        }
+        BigDecimal requestedActual = MoneyScale.requireTwoDecimalsOrNull(request.getActualAmount(), "实收金额");
+        BigDecimal actualAmount = requestedActual != null
+                ? requestedActual
+                : (order.getActualAmount() != null
+                        ? order.getActualAmount()
+                        : totalAmount.subtract(discountAmount));
+        BigDecimal expected = totalAmount.subtract(discountAmount);
+        if (expected.subtract(actualAmount).abs().compareTo(new BigDecimal("0.01")) > 0) {
+            throw BusinessException.validationError(String.format(
+                    "实收金额与应收不一致：应收 %s - 优惠 %s = %s，实收 %s（容差 0.01）",
+                    totalAmount, discountAmount, expected, actualAmount));
+        }
+
+        // ⑤ 前置库存校验**按新明细重跑**（与建单/确认支付共用 validateStockSufficientForItems）。
+        //    `pending` 未扣库存 ⇒ 无需回滚，但"改完还买得起"必须现在成立。
+        validateStockSufficientForItems(draftItems(items), "修改订单");
+
+        // ⑥ 审计留痕：改动前快照（下一行起 order 对象就被就地改写了）
+        //   明细取一次复用：「安装小区」的「未传 = 沿用原值」要靠改动前的行（见下方 ⑧）。
+        List<OrderItem> existingItems = loadOrderItems(order.getId(), tenantId);
+        Map<String, Object> before = contentSnapshot(order, existingItems);
+        // 安装信息（issue #7856）：归一 + 准入同样**在任何写之前**（⑦ 的订单更新 / ⑧ 的明细替换都不落半成品）
+        String installCommunity = resolveUpdatedInstallCommunity(request.getInstallCommunity(), existingItems);
+        normalizeInstallRooms(items);
+
+        // ⑦ 落库：收货信息 + 三金额
+        orderMapper.update(null, new LambdaUpdateWrapper<Order>()
+                .eq(Order::getId, order.getId())
+                .set(Order::getCustomerName, request.getCustomerName())
+                .set(Order::getCustomerPhone, request.getCustomerPhone())
+                .set(Order::getCustomerAddress, request.getCustomerAddress())
+                .set(Order::getTotalAmount, totalAmount)
+                .set(Order::getDiscountAmount, discountAmount)
+                .set(Order::getActualAmount, actualAmount));
+
+        // ⑧ 明细整体替换：旧行**软删**（@TableLogic）后按新明细落库（与建单同一份 persistOrderItems）
+        orderItemMapper.delete(new LambdaQueryWrapper<OrderItem>().eq(OrderItem::getOrderId, order.getId()));
+        // 改单路径不做服务端定价（改价属于 P1-2 审批面）：传 null ⇒ 不写定价依据列
+        // 安装小区（issue #7856）：**未传 ⇒ 沿用原值**（改动前明细第一条非空），传空串 ⇒ 清空；
+        // 与 discountAmount / actualAmount 的「未传 = 不改、不猜、不清零」同一口径
+        // （明细被**整体替换** ⇒ 不沿用就会在「只想改收货地址」时静默抹掉安装小区）。
+        persistOrderItems(order, items, itemFees, tenantId, null, installCommunity);
+
+        recordContentEditAudit(order, before,
+                contentSnapshot(orderMapper.selectById(order.getId()), loadOrderItems(order.getId(), tenantId)));
+        log.info("订单内容已修改: id={}, orderNo={}, totalAmount={}, 明细 {} 行",
+                order.getId(), order.getOrderNo(), totalAmount, items.size());
+        return getOrderById(order.getId());
+    }
+
+    /**
+     * 逐行归一 + 准入件级「安装位置」（issue #7856）：去空白 / 折叠内部换行 / ≤12 字，超长 422。
+     *
+     * <p>归一结果**写回请求明细**（{@code itemRequest.setInstallRoom}）⇒ {@code persistOrderItems}
+     * 只搬已归一的值，不必再判一次；判在写库之前，超长不会留下半张单。</p>
+     */
+    void normalizeInstallRooms(List<OrderCreateRequest.OrderItemRequest> items) {
+        if (items == null) {
+            return;
+        }
+        for (OrderCreateRequest.OrderItemRequest item : items) {
+            if (item != null) {
+                item.setInstallRoom(OrderInstallInfo.normalizeRoom(item.getInstallRoom()));
+            }
+        }
+    }
+
+    /**
+     * 内容更新时「安装小区」的取值（issue #7856）。
+     *
+     * <p>{@code null}（未传）⇒ **沿用原值**（改动前明细第一条非空）；空白 ⇒ **清空**；
+     * 其余 ⇒ 归一 + 准入（≤40 字，超长 422）。与 {@code discountAmount} / {@code actualAmount}
+     * 的「未传 = 不改」同一口径 —— 明细是**整体替换**，不沿用就会在「只改收货地址」时静默抹掉安装小区。</p>
+     */
+    private String resolveUpdatedInstallCommunity(String requested, List<OrderItem> existingItems) {
+        if (requested == null) {
+            return OrderInstallInfo.firstCommunity(existingItems, objectMapper);
+        }
+        return OrderInstallInfo.normalizeCommunity(requested);
+    }
+
+    /**
+     * 内容编辑的审计留痕（issue #5842）：{@code action=update_content} / {@code resourceType=order}
+     * + **前后差异**。操作者取不到（无认证 / 服务占位身份）⇒ 两个身份字段留空，
+     * 但**留痕本身照写**（审计的意义是"改过"，不是"谁改的"都有答案 —— 后者留空可见）。
+     */
+    private void recordContentEditAudit(Order order, Map<String, Object> before, Map<String, Object> after) {
+        Map<String, Object> details = new LinkedHashMap<>();
+        details.put("before", before);
+        details.put("after", after);
+        Long tenantId = order.getTenantId();
+        UserService.CurrentOperator operator = userService.resolveCurrentOperator();
+        auditLogService.recordLog(tenantId,
+                operator != null ? operator.userId() : null,
+                operator != null ? operator.displayName() : null,
+                "update_content", "order", null,
+                order.getId(), order.getOrderNo(), details, null, null);
+    }
+
+    /**
+     * 更新订单状态
+     * 遵循状态流转规则：pending -> confirmed -> producing -> shipped -> completed
+     * 支持取消订单（pending / confirmed / producing 状态下）
+     *
+     * @param id     订单ID
+     * @param status 新状态
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public void updateOrderStatus(String id, String status) {
+        Order order = orderMapper.selectById(id);
+        if (order == null) {
+            throw BusinessException.notFound("订单");
+        }
+
+        // 状态值 + 流转合法性：**唯一实现** = OrderStatusTransitions（issue #5648 抽出）。
+        // 抽出的理由不是"好看"：本单新增了**第三条**发货路（工人可达面
+        // OrderShipmentService），两条路各写一张流转表 ⇒ 迟早分叉成
+        // 「工人能走的流转商家走不了」（或反过来：非法流转在某一条路上被放过）。
+        String currentStatus = order.getStatus();
+        OrderStatusTransitions.assertTransitionAllowed(currentStatus, status);
+
+        // 加工单联动守卫（issue #3340）：含加工项订单必须完成加工单后才能发货，
+        // 防止加工环节被 confirmed→shipped 直跳绕过
+        if (OrderStatusTransitions.SHIPPED.equals(status)) {
+            // issue #7165：商家/生产端发货（无工人身份）⇒ 完成「发货」工序但不计件；再走守卫
+            if (documentOperationLinkage != null) {
+                documentOperationLinkage.completeShippingOperations(order, null, order.getTenantId());
+            }
+            assertProcessingCompletedBeforeShip(order);
+        }
+
+        // 统一走带库存/销量副作用的路径，避免与 confirmPayment/cancelOrder 逻辑不一致
+        if (OrderStatusTransitions.CONFIRMED.equals(status)) {
+            confirmPayment(id);
+        } else if (OrderStatusTransitions.CANCELLED.equals(status)) {
+            cancelOrder(id, null);
+        } else {
+            // producing/shipped/completed：无库存副作用，原子状态流转
+            int rows = transitionStatusAtomic(id, currentStatus, status, null);
+            if (rows == 0) {
+                throw BusinessException.validationError("订单状态已并发变更，请刷新后重试");
+            }
+        }
+
+        log.info("更新订单状态成功: id={}, {} -> {}", id, currentStatus, status);
+
+        // 站内信：订单状态变更，通知订单归属用户（无归属用户则跳过）
+        notifyOrderStatusChanged(order.getTenantId(), order, status);
+    }
+
+    /**
+     * 站内信：订单状态变更（order_status_changed 事件）
+     * 接收人路由（issue #2965 v2）：进度告知面向下单客户（C 端「订单归属用户」），
+     * 无归属用户（商户代录）跳过。
+     */
+    private void notifyOrderStatusChanged(Long tenantId, Order order, String newStatus) {
+        if (order.getUserId() == null || order.getUserId().isBlank()) {
+            log.debug("[notify] 订单无归属用户，跳过站内信: orderId={}", order.getId());
+            return;
+        }
+        try {
+            Map<String, String> ctx = new HashMap<>();
+            ctx.put("recipientId", order.getUserId());
+            ctx.put("recipientType", "user");
+            ctx.put("orderNo", order.getOrderNo() != null ? order.getOrderNo() : order.getId());
+            ctx.put("status", ORDER_STATUS_LABELS.getOrDefault(newStatus, newStatus));
+            notificationService.triggerByEvent(tenantId, "order_status_changed", ctx);
+        } catch (Exception e) {
+            log.warn("[notify] 订单状态变更站内信发送失败，忽略: orderId={}, error={}",
+                    order.getId(), e.getMessage());
+        }
+    }
+
+    /**
+     * 原子状态流转：仅当订单当前状态为 expectedStatus 时更新为 newStatus。
+     * 用条件 UPDATE（WHERE id=? AND status=expected）替代 select→check→update，
+     * 防止并发下重复扣减/恢复库存（TOCTOU）。
+     *
+     * <p>🔴 {@code newStatus = shipped} 时**同一条 UPDATE** 里写 {@code shipped_at}
+     * （issue #6262，V148）：它是「发货后 N 天自动完成」定时腿的判定锚点，而锚点必须
+     * <b>与状态流转同一个原子动作</b>——分两条语句写就会造出「状态是 shipped 而发货时刻为空」
+     * 的静默漏单形态（那条腿按「满 N 天」取行，NULL 不满足任何比较 ⇒ 永不完成）。
+     * 商家侧三条发货入口（{@code PUT /orders/{id}/status} / {@code order_manage(update_logistics)} /
+     * {@code shipWithLogistics}）都经本方法 ⇒ 一处写、三条路都写。</p>
+     *
+     * @return 受影响行数（0 表示订单不存在或状态已并发变更）
+     */
+    private int transitionStatusAtomic(String id, String expectedStatus, String newStatus, String closeReason) {
+        LambdaUpdateWrapper<Order> wrapper = new LambdaUpdateWrapper<>();
+        wrapper.eq(Order::getId, id)
+                .eq(Order::getStatus, expectedStatus)
+                .set(Order::getStatus, newStatus);
+        if (OrderStatusTransitions.SHIPPED.equals(newStatus)) {
+            wrapper.set(Order::getShippedAt, businessClock.nowOffset());
+        }
+        // issue #7078：paid_at 只在 **pending → confirmed**（= 确认收款）这条边上写。
+        // 🔴 用 expectedStatus 限定前驱是必须的：本方法还被 **producing → confirmed**
+        // （作废加工单退回待发货）复用 —— 那是**回退边**，在那里写会让「支付时间」被一次回退
+        // 动作顶成当天（屏幕上看不出异常）。判据 = OrderPaidAndReceivedAtWriteGuardTest
+        // （含「摘掉前驱限定 ⇒ 判红」的判别力自证）。
+        if (OrderStatusTransitions.CONFIRMED.equals(newStatus) && OrderStatusTransitions.PENDING.equals(expectedStatus)) {
+            wrapper.set(Order::getPaidAt, businessClock.nowOffset());
+        }
+        // issue #7078：received_at = 订单进入 completed 的时刻。completed 在本状态机里没有出边
+        // ⇒ 这条边只会走一次、不会覆盖。另一条完成路（发货后 N 天自动完成）**不经**本方法，
+        // 在 OrderMapper.autoCompleteShippedOrders 自己的 SQL 里同写（漏写那条腿 = 那批单永远空值）。
+        if (OrderStatusTransitions.COMPLETED.equals(newStatus)) {
+            wrapper.set(Order::getReceivedAt, businessClock.nowOffset());
+        }
+        if (closeReason != null && !closeReason.isBlank()) {
+            wrapper.set(Order::getCloseReason, closeReason);
+        }
+        return orderMapper.update(null, wrapper);
+    }
+
+    /**
+     * 删除订单（逻辑删除，仅允许待确认状态）
+     *
+     * @param id 订单ID
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public void deleteOrder(String id) {
+        Order order = orderMapper.selectById(id);
+        if (order == null) {
+            throw BusinessException.notFound("订单");
+        }
+
+        // 仅允许待确认状态的订单被删除
+        if (!OrderStatusTransitions.PENDING.equals(order.getStatus())) {
+            throw BusinessException.validationError("仅允许删除待确认状态的订单，当前状态: " + order.getStatus());
+        }
+
+        // issue #7633：已生成**活跃作业单** ⇒ 拒绝删除，否则作业单悬挂、作业看板对已删父订单扇出 404。
+        // 口径与 updatePendingOrderContent 同源（同一 selectActiveByOrderId：未软删 + 非 cancelled + 同租户）；
+        // 待付款订单自 #7626 起也能先生成作业单 ⇒ 这道闸是「删单前必须先作废作业单」。
+        // 订单**不做物理删除**（deleteById 走 @TableLogic 软删，语义未改）；本闸只给出口、不给旁路。
+        ProcessingOrder active = processingOrderMapper.selectActiveByOrderId(order.getId(), order.getTenantId());
+        if (active != null) {
+            throw BusinessException.validationError(String.format(
+                    "订单已生成作业单（%s），不能删除；请先作废该作业单", active.getProcessingOrderNo()));
+        }
+
+        // 逻辑删除订单
+        // issue #6956 · 现象 C：判影响行数（并发双删只许一次成功；0 行 = 已被别人删掉）
+        if (orderMapper.deleteById(id) == 0) {
+            throw BusinessException.notFound("订单");
+        }
+
+        // 逻辑删除订单明细
+        LambdaQueryWrapper<OrderItem> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(OrderItem::getOrderId, id);
+        List<OrderItem> items = orderItemMapper.selectList(wrapper);
+        for (OrderItem item : items) {
+            orderItemMapper.deleteById(item.getId());
+        }
+
+        log.info("删除订单成功: id={}, orderNo={}", id, order.getOrderNo());
+    }
+
+    /**
+     * 生成订单号
+     * 格式: 17位纯数字 = yyyyMMdd(8) + 9位随机数，简洁唯一
+     */
+    String generateOrderNo() {
+        String datePart = businessClock.today().format(DateTimeFormatter.ofPattern("yyyyMMdd"));
+        // 9 位后缀 = 5 位随机数 + 4 位原子序列。
+        // 原实现取 nanoTime 尾 9 位：每秒回绕一次、跨实例易碰撞。
+        // 改用随机 + 原子计数器，降低碰撞概率并启用原先闲置的 ORDER_SEQ。
+        int randomPart = ThreadLocalRandom.current().nextInt(100_000);   // 0..99999
+        int seqPart = ORDER_SEQ.incrementAndGet() % 10_000;             // 0..9999，防随机碰撞
+        return String.format("%s%05d%04d", datePart, randomPart, seqPart);
+    }
+
+    /**
+     * 售卖方式偏好校验 + 「优先整卷发货」分配落列（V111，用户裁定 2026-09-21）。
+     *
+     * <p><b>为什么分配在服务端算</b>：整卷数是 {@code quantity} 与货号卷长的函数，只能有一个
+     * 权威实现 —— 若允许调用方各算一套，「同一张单两个整卷数」无法对账。</p>
+     *
+     * <p>🔄 <b>2026-10-01（issue #5846）有意改判：<u>显式 &gt; 派生 + 缺的那半回落</u></b>。
+     * 用户裁定 A（原话：「订单中售卖整卷布料时，应该有卷数和实际米数两字段」）：
+     * 订单行可显式给出 {@code rollCount} / {@code rollLengthM}，<b>缺的那一半回落</b> ——
+     * {@code effectiveLength = 显式 rollLengthM ?? 商品 roll_length_m}；
+     * {@code rollCount = 显式 rollCount ?? floor(quantity / effectiveLength)}。
+     * 用户同日<b>二次裁定：取消「成对」契约</b>（只给一个也是合法输入，缺的那半走回落）。</p>
+     *
+     * <p>🔴 <b>不变式（改判后仍一字不动）</b>：一次分配里<b>同一个字段只有一个权威来源</b>
+     * （显式 XOR 派生）—— 不允许「同一单两个整卷数」。回落点<b>只有</b>
+     * {@link ProductRollAllocation#resolve} 一处（本方法是它唯一的调用点，见类级元守卫
+     * {@code OrderRollAllocationAuthorityTest}）。</p>
+     *
+     * <p><b>分配闸门 = 货号有没有配卷长，与售卖方式无关</b>（用户原话的例子就是按米买布）：
+     * 「客户买 100 米布，一卷=60 米 ⇒ 发 1 整卷 60 + 散剪 40 米」里顾客**没有**说「我要整卷」。
+     * ⇒ 把闸门写成「只有明说整卷才算」会让用户裁定举的例子在新单路径上**根本不生效**
+     * （独立对抗式复核实测抓到）。「优先整卷发货」是**发货方式**偏好，不是「整卷售卖单」专属。
+     * 显式分支同理：它**不改变**闸门（用户显式给了就是要，也不需要先声明售卖方式）。</p>
+     *
+     * <p><b>三条不猜的红线</b>：</p>
+     * <ol>
+     *   <li>未指定售卖方式 ⇒ 该列保持 NULL（不默认整卷、也不默认散剪）
+     *       —— 但它**不阻止**分配（见上）；</li>
+     *   <li>货号未配卷长（{@code products.roll_length_m} 为空/非正）<b>且用户没给卷长</b>、<b>也没给卷数</b> ⇒
+     *       {@code rollCount} / {@code rollLengthM} 保持 NULL，<b>不落 0</b>
+     *       —— 「不知道」不许伪装成「0 整卷」（见 {@link ProductRollAllocation}）；
+     *       🔻 <b>例外（新合法态）</b>：显式给了卷数而卷长两边都没有 ⇒ {@code rollCount = 显式值}、
+     *       {@code rollLengthM = NULL}（「客户要 N 卷」是真实意图，不是未分配）；</li>
+     *   <li>货号不存在（历史/外部商品）⇒ 同上（不因此拒绝整单），但**显式给的值照落**
+     *       —— 显式值不依赖商品查表（见 {@link #parseExplicitRollCount}）。</li>
+     * </ol>
+     *
+     * <p><b>越界售卖方式必须显式拒绝</b>：该货号 {@code products.selling_methods} 不支持顾客
+     * 要的那一档时抛 422（可行动文案）—— 静默落库会让仓库照一个本店不提供的售卖方式发货。</p>
+     *
+     * <p><b>取值来源有两处，列优先</b>：① 请求体行字段 {@code sellingMethod}；
+     * ② 回落 {@code processingInfo.sellingMethod} —— 那是 ai-agent（{@code order_create}）
+     * 一直以来的真实写入位置（该键同时被加工单快照消费，不能挪），所以**必须**认它，
+     * 否则「agent 明确说了要整卷」这条链路上分配恒为空。</p>
+     */
+    private void applyRollAllocation(OrderCreateRequest.OrderItemRequest itemRequest, OrderItem item) {
+        // ⓪ 显式值只做**边界**校验（不再要求「成对」—— 用户 2026-10-01 裁定取消成对契约）
+        Integer explicitRollCount = parseExplicitRollCount(itemRequest);
+        assertExplicitRollLengthUsable(itemRequest.getRollLengthM());
+
+        // 商品查表：`productId` 缺 ⇒ 不查（也无售卖方式口径）；查不到 ⇒ 视为「没有货号卷长可回落」
+        Product product = itemRequest.getProductId() == null
+                ? null
+                : productMapper.selectById(itemRequest.getProductId());
+
+        // ① 售卖方式偏好：未指定 ⇒ 该列保持 NULL（不默认整卷、也不默认散剪）
+        //    ⚠️ 只在**有 productId** 时处理（「没有商品 ⇒ 既无售卖方式口径也无卷长口径」的旧口径不变）；
+        //    商品存在与否都照落列，只是「支持性校验」需要商品（见 `assertSellingMethodSupported` 的调用条件）。
+        if (itemRequest.getProductId() != null) {
+            String sellingMethod = SkuNotation.normalizeSellingMethod(itemRequest.getSellingMethod());
+            if (sellingMethod == null) {
+                sellingMethod = SkuNotation.normalizeSellingMethod(
+                        readProcessingInfoSellingMethod(itemRequest.getProcessingInfo()));
+            }
+            if (sellingMethod != null) {
+                item.setSellingMethod(sellingMethod);
+                if (product != null) {
+                    assertSellingMethodSupported(itemRequest, product, sellingMethod);
+                }
+            }
+        }
+
+        // ② 一次分配的**唯一权威来源**：显式优先 + 缺的那半**回落**；回落点唯一 =
+        //    `ProductRollAllocation.resolve`（本方法是它唯一的调用点，见类级元守卫）。
+        //    ⚠️ 回落**不到**（卷长两边都没有 且 没有显式卷数）⇒ 不写分配（两列保持 NULL，不落 0、不猜）。
+        //    分配闸门仍**只看卷长**（不看售卖方式）：用户裁定原话「客户买 100 米布，一卷=60 米 ⇒
+        //    发 1 整卷 60 + 散剪 40 米」里顾客**没有**说「我要整卷」—— 把闸门写成「只有明说整卷才算」
+        //    会让该例子在新单路径上**根本不生效**（独立对抗式复核实测抓到）。
+        ProductRollAllocation.Allocation allocation = ProductRollAllocation.resolve(
+                explicitRollCount,
+                itemRequest.getRollLengthM(),
+                itemRequest.getQuantity(),
+                product == null ? null : product.getRollLengthM());
+        if (!allocation.allocated()) {
+            if (itemRequest.getProductId() != null && product == null) {
+                log.warn("applyRollAllocation: 商品不存在，无货号卷长可回落（不猜卷长）, productId={}, orderId={}",
+                        itemRequest.getProductId(), item.getOrderId());
+            } else {
+                log.info("applyRollAllocation: 卷长未知（货号未配且未显式给）且未显式给卷数 ⇒ 不写分配, productId={}, orderId={}",
+                        itemRequest.getProductId(), item.getOrderId());
+            }
+            return;
+        }
+        item.setRollCount(allocation.rollCount());
+        item.setRollLengthM(allocation.rollLengthM());
+    }
+
+    /**
+     * 解析<b>显式</b>卷数（issue #5846）—— 返回卷数；{@code null} = 客户端<b>没给</b>。
+     *
+     * <p><b>用户 2026-10-01 裁定：取消「成对」契约</b> —— 只给卷数、只给每卷米数、两个都给，
+     * 三种都是合法输入；缺的那一半由
+     * {@link ProductRollAllocation#resolve(Integer, BigDecimal, BigDecimal, BigDecimal)} <b>回落</b>
+     * （显式 &gt; 商品；回落不到 ⇒ 保持 NULL，不猜）。所以本方法**不再**对「成对」做任何校验。</p>
+     *
+     * <p><b>保留下来的只有边界（一条都不许放宽，每条都有断言）</b>：</p>
+     * <ul>
+     *   <li>卷数 &lt; 0 ⇒ 422（不落负值、不静默取整）；</li>
+     *   <li>卷数非整数 ⇒ 422 —— 🔴 Jackson 默认 {@code ACCEPT_FLOAT_AS_INT=true}，请求 DTO 若把
+     *       该字段声明成 {@code Integer}，{@code 2.5} 会被<b>静默截断成 2 卷</b>；
+     *       现在原样落到这里由 {@code intValueExact()} 拒绝。</li>
+     * </ul>
+     *
+     * @return 卷数（含合法的 {@code 0}——「全散剪」是真实结论）；未显式给 ⇒ {@code null}
+     */
+    private Integer parseExplicitRollCount(OrderCreateRequest.OrderItemRequest itemRequest) {
+        BigDecimal rolls = itemRequest.getRollCount();
+        if (rolls == null) {
+            return null; // 没给卷数 ⇒ 由 resolve 派生（与改判前逐字节相同）
+        }
+        if (rolls.signum() < 0) {
+            throw BusinessException.validationError(
+                    "卷数不能为负数（收到 " + rolls.toPlainString() + "）");
+        }
+        try {
+            return rolls.intValueExact();
+        } catch (ArithmeticException notAnInt) {
+            // 区分「非整数」与「超出 int 范围」——两者都是显式拒绝，但文案要能行动
+            boolean integral = rolls.stripTrailingZeros().scale() <= 0;
+            throw BusinessException.validationError(integral
+                    ? "卷数超出可取值范围（收到 " + rolls.toPlainString() + "）"
+                    : "卷数必须是整数（收到 " + rolls.toPlainString() + "）—— 系统不会替你取整，请确认后重填。");
+        }
+    }
+
+    /**
+     * 显式「每卷米数」的边界（issue #5846）：给了就必须 &gt; 0。
+     *
+     * <p>{@code null} = 没给（合法 —— 走回落）；{@code 0} / 负值不是「没配」而是错的输入 ⇒ 422。
+     * DTO 上也有 {@code @DecimalMin(inclusive = false)}（控制器 {@code @Valid} ⇒ 400），
+     * 这里再兜一道：**服务层被直接调用时也不许落一个荒谬的卷长**。</p>
+     */
+    private void assertExplicitRollLengthUsable(BigDecimal explicitRollLengthM) {
+        if (explicitRollLengthM != null && explicitRollLengthM.signum() <= 0) {
+            throw BusinessException.validationError(
+                    "每卷米数必须大于 0（收到 " + explicitRollLengthM.toPlainString() + "）");
+        }
+    }
+
+    /**
+     * 从 {@code processingInfo} 里读售卖方式偏好（ai-agent 的真实写入位置）。
+     *
+     * <p>{@code processingInfo} 既可能是 Map（服务端已归一化），也可能是 JSON 字符串
+     * （历史/程序化调用方直传）—— 两种形态都要认，否则 agent 路径静默读不到。</p>
+     *
+     * @return 原始字符串（未归一化）；无该键或形态不可解析 ⇒ {@code null}
+     */
+    @SuppressWarnings("unchecked")
+    private String readProcessingInfoSellingMethod(Object processingInfo) {
+        Object raw = processingInfo;
+        if (raw instanceof String text && !text.isBlank()) {
+            try {
+                raw = objectMapper.readValue(text, Map.class);
+            } catch (Exception e) {
+                log.warn("applyRollAllocation: processingInfo 是字符串但不是合法 JSON，读不到售卖方式偏好: {}",
+                        e.getMessage());
+                return null;
+            }
+        }
+        if (!(raw instanceof Map)) {
+            return null;
+        }
+        Object value = ((Map<String, Object>) raw).get("sellingMethod");
+        return value == null ? null : value.toString();
+    }
+
+    /** 该货号是否支持这个售卖方式（{@code products.selling_methods} 是权威口径）。 */
+    private void assertSellingMethodSupported(OrderCreateRequest.OrderItemRequest itemRequest,                                              Product product, String sellingMethod) {
+        List<String> supported = product.getSellingMethods();
+        if (supported == null || supported.isEmpty()) {
+            return; // 未配置 ⇒ 不误禁（存量商品可能没有该列的值）
+        }
+        boolean ok = supported.stream()
+                .anyMatch(m -> sellingMethod.equals(SkuNotation.normalizeSellingMethod(m)));
+        if (!ok) {
+            throw BusinessException.validationError(String.format(
+                    "商品「%s」不支持售卖方式「%s」（该货号支持：%s）。"
+                            + "请改用受支持的售卖方式，或先让商家在商品上配置该售卖方式。",
+                    itemRequest.getProductName() != null ? itemRequest.getProductName()
+                            : itemRequest.getProductId(),
+                    sellingMethod,
+                    String.join(" / ", supported)));
+        }
+    }
+
+    /**
+     * 该订单是否含加工项（订单明细的 {@code processing_info} 非空）。
+     *
+     * <p><b>这是「含加工项」的唯一一份判据</b>（issue #3340 的发货守卫与 issue #5641 的生产待办
+     * 都读它）—— 自己再写一份 {@code extractProcessingItems} 调用就会是两处口径。</p>
+     *
+     * <p>必须走 BaseMapper 加载（见 {@link #loadOrderItems}）：自定义 {@code @Select} 不经过
+     * {@code JacksonTypeHandler}，{@code processing_info} 会以 JSON <b>字符串</b>返回 ⇒ 加工项解析
+     * 恒为空 ⇒ 判据静默失效（issue #3340 验收实战：真实对话生成加工单被判「无加工项」）。</p>
+     */
+    public boolean hasProcessingItems(Order order) {
+        // #5648 合并后：本体在 OrderShipGuard（单一实现点），本方法只做参数搬运。
+        return OrderShipGuard.hasProcessingItems(orderItemMapper, objectMapper, order);
+    }
+
+    /**
+     * 该订单是否**有需要报工的作业**（issue #7079）= 含加工项 **或** 有卖布行。
+     *
+     * <p>卖布单（{@code processing_info.saleForm = 布料}）按米卖布、行上**没有加工项**，
+     * 但它仍要经过「裁剪 → 打包」两道工序并给工人报工计件 ⇒ 只读 {@link #hasProcessingItems}
+     * 会把它判成「无需报工」。生产待办的「待排产」/「待发货」两处过滤读本方法
+     * （与发货守卫 {@link #isProcessingReadyForShip} 同一份判据）。</p>
+     *
+     * <p>本体在 {@code OrderShipGuard.needsWork}（单一实现点），本方法只做参数搬运 ——
+     * 同 {@link #hasProcessingItems} 的范式。</p>
+     */
+    public boolean needsWork(Order order) {
+        return OrderShipGuard.needsWork(orderItemMapper, objectMapper, order);
+    }
+
+    /**
+     * 发货前置判据（**唯一一份**，issue #3340）：**有需要报工的作业**的订单（含加工项，或有卖布行 ——
+     * issue #7079）必须已有完成作业单才允许发货。
+     *
+     * <p>{@link #assertProcessingCompletedBeforeShip} 是它的抛异常外壳（发货路径用）；
+     * 生产待办的「待发货」也读它（issue #5641）—— 两处各写一份必然漂移。</p>
+     *
+     * @return {@code true} = 允许发货（无需要报工的作业，或作业单已完成）；
+     *         {@code false} = 被作业单挡住
+     */
+    public boolean isProcessingReadyForShip(Order order) {
+        // #5648 合并后：本体在 OrderShipGuard（单一实现点）—— 工人发货路与生产待办读**同一份**判定。
+        return OrderShipGuard.isProcessingReadyForShip(
+                orderItemMapper, processingOrderMapper, objectMapper, order);
+    }
+
+    /**
+     * 加工单联动守卫（issue #3340）：订单含加工项且无已完成加工单时禁止发货。
+     * 有加工项订单必须走 producing（生成加工单）→ 加工完成 → shipped，防止加工环节被绕过。
+     */
+    private void assertProcessingCompletedBeforeShip(Order order) {
+        // 判定本体在 OrderShipGuard（issue #5648 抽出，**单一实现点**）：工人可达面的发货端点
+        // 走的是同一份判定 —— 复制第二份 = 迟早分叉，而分叉方向是「绕过加工环节就发货」（涉钱）。
+        // 合并 #5641 后：`hasProcessingItems` / `isProcessingReadyForShip` 同批改为委托
+        // 同一个实现点 ⇒ 「发货前置判据只有一份」这件事在合并后仍然成立（不是两份各让一步）。
+        OrderShipGuard.assertProcessingCompletedBeforeShip(
+                orderItemMapper, processingOrderMapper, objectMapper, order);
+    }
+
+    /**
+     * 加载订单明细（走 BaseMapper，确保 processing_info 经 JacksonTypeHandler 反序列化为 Map）。
+     * 与 getOrderById 的既有约定一致（见查询明细处的注释）。
+     */
+    private List<OrderItem> loadOrderItems(String orderId, Long tenantId) {
+        return OrderShipGuard.loadOrderItems(orderItemMapper, orderId, tenantId);
+    }
+
+    /**
+     * 加工单取消联动（issue #3340）：订单 producing → confirmed 回退。
+     * 仅状态回退，无库存副作用（confirmed→producing 本身也无库存副作用）。
+     */
+    public void revertProducingToConfirmed(String orderId, String reason) {
+        int rows = transitionStatusAtomic(orderId, OrderStatusTransitions.PRODUCING, OrderStatusTransitions.CONFIRMED, reason);
+        if (rows == 0) {
+            throw new BusinessException("ORDER_STATUS_CONFLICT", "订单状态已并发变更，请刷新后重试", 409);
+        }
+    }
+
+    private BigDecimal toBigDecimal(Object value) {
+        return OrderShipGuard.toBigDecimal(value);
+    }
+
+    /**
+     * 计算/解析订单明细小计：优先使用请求中的 subtotal，若为 null 则回退 unitPrice * quantity。
+     * 避免前端未传 subtotal 时 totalAmount 被记录为 0 的问题。
+     */
+    private BigDecimal resolveItemSubtotal(OrderCreateRequest.OrderItemRequest itemRequest) {
+        if (itemRequest.getSubtotal() != null) {
+            return itemRequest.getSubtotal();
+        }
+        if (itemRequest.getUnitPrice() != null && itemRequest.getQuantity() != null) {
+            return itemRequest.getUnitPrice().multiply(itemRequest.getQuantity());
+        }
+        return BigDecimal.ZERO;
+    }
+
+    /**
+     * SKU 身份兜底（issue #7219）—— **纯函数**，判据见 {@code OrderServiceSkuBackfillTest}。
+     *
+     * <p>口径：① 两个键都有 ⇒ 原样返回（**不覆盖**既有快照）；② {@code skuId} 命中 ⇒ 用那个 SKU；
+     * ③ 没有 skuId 但商品**只有一个 SKU** ⇒ 用唯一 SKU；④ 多 SKU 且产品名以
+     * {@code -颜色-门幅} 结尾、**唯一命中**一个 SKU ⇒ 用它（历史/回归单的既有命名形态）；
+     * ⑤ 其余（无法唯一判定）⇒ 原样返回，**不猜**（猜错比空更贵：纸面会把 A 的颜色印到 B 的行上）。
+     * 只补**缺的那一半**。</p>
+     */
+    static Map<String, Object> backfillSkuIdentity(Map<String, Object> info, List<ProductSku> skus, String productName) {
+        // 口径单点在 OrderQueryService（issue #8191，P2-1a）；本留静态入口因为既有单测按 OrderService.backfillSkuIdentity 引用。
+        return OrderQueryService.backfillSkuIdentity(info, skus, productName);
+    }
+
+    // ==================== 订单统计与跟进状态 ====================
+
+    /**
+     * 获取订单统计（使用 COUNT 查询，避免全量加载到内存）
+     */
+    public OrderStatisticsResponse getOrderStatistics(Long tenantId) {
+        long total = orderMapper.selectCount(new LambdaQueryWrapper<Order>()
+                .eq(Order::getTenantId, tenantId));
+        long pending = orderMapper.selectCount(new LambdaQueryWrapper<Order>()
+                .eq(Order::getTenantId, tenantId).eq(Order::getStatus, OrderStatusTransitions.PENDING));
+        long confirmed = orderMapper.selectCount(new LambdaQueryWrapper<Order>()
+                .eq(Order::getTenantId, tenantId).eq(Order::getStatus, OrderStatusTransitions.CONFIRMED));
+        long producing = orderMapper.selectCount(new LambdaQueryWrapper<Order>()
+                .eq(Order::getTenantId, tenantId).eq(Order::getStatus, OrderStatusTransitions.PRODUCING));
+        long shipped = orderMapper.selectCount(new LambdaQueryWrapper<Order>()
+                .eq(Order::getTenantId, tenantId).eq(Order::getStatus, OrderStatusTransitions.SHIPPED));
+        long completed = orderMapper.selectCount(new LambdaQueryWrapper<Order>()
+                .eq(Order::getTenantId, tenantId).eq(Order::getStatus, OrderStatusTransitions.COMPLETED));
+        long cancelled = orderMapper.selectCount(new LambdaQueryWrapper<Order>()
+                .eq(Order::getTenantId, tenantId).eq(Order::getStatus, OrderStatusTransitions.CANCELLED));
+
+        return OrderStatisticsResponse.builder()
+                .totalCount(total)
+                .pendingCount(pending)
+                .confirmedCount(confirmed)
+                .producingCount(producing)
+                .shippedCount(shipped)
+                .completedCount(completed)
+                .cancelledCount(cancelled)
+                .unpaidCount(pending)
+                .paidCount(confirmed + producing + shipped + completed)
+                .refundedCount(cancelled) // 退款订单即已取消的订单
+                .build();
+    }
+
+    /**
+     * 获取跟进状态统计（使用 COUNT 查询，避免全量加载到内存）
+     */
+    public FollowStatusStatsResponse getFollowStatusStats(Long tenantId) {
+        long total = orderMapper.selectCount(new LambdaQueryWrapper<Order>()
+                .eq(Order::getTenantId, tenantId));
+        long following = orderMapper.selectCount(new LambdaQueryWrapper<Order>()
+                .eq(Order::getTenantId, tenantId).eq(Order::getFollowStatus, "following"));
+        long completedFollow = orderMapper.selectCount(new LambdaQueryWrapper<Order>()
+                .eq(Order::getTenantId, tenantId).eq(Order::getFollowStatus, "completed"));
+        // pending = total - following - completed（含 null 值）
+        long pendingFollow = total - following - completedFollow;
+
+        return FollowStatusStatsResponse.builder()
+                .pending(pendingFollow)
+                .following(following)
+                .completed(completedFollow)
+                .total(total)
+                .build();
+    }
+
+    /**
+     * 确认支付
+     * 状态流转：pending → confirmed，同时扣减库存、增加销量。
+     * 扣减前先校验 SKU 库存充足，不足则拒绝确认支付（而非 GREATEST 钳 0 导致超卖）。
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public void confirmPayment(String id) {
+        Order order = orderMapper.selectById(id);
+        if (order == null) {
+            throw BusinessException.notFound("订单");
+        }
+
+        // 前置库存校验：库存不足直接拒绝确认支付
+        validateStockSufficient(order);
+
+        // 原子状态流转：仅 pending → confirmed，防止并发重复扣减库存
+        int rows = transitionStatusAtomic(id, OrderStatusTransitions.PENDING, OrderStatusTransitions.CONFIRMED, null);
+        if (rows == 0) {
+            throw BusinessException.validationError("只有待确认状态的订单可以确认支付，订单状态可能已变更");
+        }
+
+        // 扣减库存 + 增加销量
+        deductStockAndIncreaseSales(id);
+
+        // 登记资金流水（收款）——失败不影响订单主流程
+        Order freshOrder = orderMapper.selectById(id);
+        recordFinanceTransaction(freshOrder != null ? freshOrder : order, "income", "订单确认收款");
+        log.info("确认支付成功: id={}", id);
+        // 🔴 事件驱动自动成批（issue #5182 挂载点 ①）：**既有业务全部完成之后**追加的
+        // fail-soft 通知点。本方法的既有行为、事务边界与异常语义**逐字不变**
+        // —— notifySafely 绝不抛，且真正的评估在提交之后（AFTER_COMMIT）。
+        PoolChangeNotifier.notifySafely(poolChangeNotifier, order.getTenantId(),
+                PoolChangeNotifier.TRIGGER_ORDER_CONFIRMED);
+    }
+
+    /**
+     * 校验订单明细对应的 SKU 库存是否充足（按 processingInfo 匹配 SKU，判据见 {@link #matchSkuId}）。
+     * 未声明 SKU 身份的明细不校验（对应无 SKU 扣减）；声明了身份却定位不到 ⇒ 显式拒绝。
+     *
+     * @param order       订单（已落库，明细从 order_item 表加载）
+     * @throws BusinessException 库存不足、或规格无法定位到 SKU 时抛出业务异常
+     */
+    private void validateStockSufficient(Order order) {
+        if (order == null || order.getId() == null) {
+            return;
+        }
+        List<OrderItem> items = orderItemMapper.selectList(
+                new LambdaQueryWrapper<OrderItem>().eq(OrderItem::getOrderId, order.getId()));
+        validateStockSufficientForItems(items, "确认支付");
+    }
+
+    /**
+     * 创建订单前的库存校验入口（issue #2922：库存不足提示前移至下单时）。
+     * 与确认支付共用 validateStockSufficientForItems 的同一套 SKU 匹配/库存口径。
+     *
+     * @param request     创建订单请求
+     * @param actionLabel 动作文案（如「下单」），用于错误提示
+     */
+    void validateStockSufficientForRequest(OrderCreateRequest request, String actionLabel) {
+        if (request.getItems() == null || request.getItems().isEmpty()) {
+            return;
+        }
+        List<OrderItem> draftItems = new ArrayList<>(request.getItems().size());
+        for (OrderCreateRequest.OrderItemRequest itemRequest : request.getItems()) {
+            OrderItem draft = new OrderItem();
+            draft.setProductId(itemRequest.getProductId());
+            draft.setProductName(itemRequest.getProductName());
+            draft.setQuantity(itemRequest.getQuantity());
+            draft.setProcessingInfo(itemRequest.getProcessingInfo());
+            draftItems.add(draft);
+        }
+        validateStockSufficientForItems(draftItems, actionLabel);
+    }
+
+    /**
+     * 核心库存校验：遍历明细，按 processingInfo 匹配 SKU（单一判据 {@link #matchSkuId}）并校验库存充足。
+     * 未声明 SKU 身份的明细不校验（对应无 SKU 扣减，与确认支付/扣减语义一致）；
+     * 声明了身份却定位不到 ⇒ 显式拒绝（fail-closed，issue #4090）。
+     *
+     * @param items      订单明细（已落库的 OrderItem 或下单请求构造的草稿明细均可）
+     * @param actionLabel 动作文案（如「下单」/「确认支付」），用于错误提示
+     * @throws BusinessException 库存不足、或规格无法定位到 SKU 时抛出业务异常
+     */
+    private void validateStockSufficientForItems(List<OrderItem> items, String actionLabel) {
+        if (items == null) {
+            return;
+        }
+        for (OrderItem item : items) {
+            // 单一判据（issue #4090）：null 的唯一含义 = 该明细未声明 SKU 身份（合法，无 SKU 级库存）；
+            // 声明了身份却定位不到 ⇒ matchSkuId 直接抛（可行动话术），不在这里静默 continue
+            Long skuId = matchSkuId(item, actionLabel);
+            if (skuId == null || item.getQuantity() == null) {
+                continue;
+            }
+            ProductSku sku = productSkuMapper.selectById(skuId);
+            BigDecimal stock = StockQuantity.orZero(sku != null ? sku.getStock() : null);
+            // issue #5063（V115）：库存列已与订单数量同为小数（NUMERIC(12,1)）⇒ 按**真实数量**比较。
+            // 改前是 `int needed = item.getQuantity().intValue()`：买 0.5 米 ⇒ needed = 0
+            // ⇒ 校验**恒通过**（超卖防线被绕过）；买 2.7 米 ⇒ 只按 2 米校验（少校验 0.7 米）。
+            // 校验值与实际扣减值必须**同源**（同一个 StockQuantity.toStockScaleByCeiling），
+            // 否则会出现「校验通过却扣不动」/「校验拦住却本来够」。见该类里对该函数的理由说明。
+            BigDecimal needed = StockQuantity.toStockScaleByCeiling(item.getQuantity());
+            if (stock.compareTo(needed) < 0) {
+                throw BusinessException.validationError(
+                        String.format("商品「%s」库存不足：需要 %s 米，当前仅剩 %s 米，请先补货后再%s",
+                                item.getProductName() != null ? item.getProductName() : skuId,
+                                needed.toPlainString(), stock.toPlainString(), actionLabel));
+            }
+        }
+    }
+
+    /**
+     * 取消/关闭订单
+     * 支持从 pending/confirmed/producing 状态取消，恢复库存和销量
+     *
+     * @param id          订单ID
+     * @param closeReason 关闭原因（可选）
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public void cancelOrder(String id, String closeReason) {
+        Order order = orderMapper.selectById(id);
+        if (order == null) {
+            throw BusinessException.notFound("订单");
+        }
+        String previousStatus = order.getStatus();
+        Set<String> cancellableStatuses = Set.of(OrderStatusTransitions.PENDING, OrderStatusTransitions.CONFIRMED, OrderStatusTransitions.PRODUCING);
+        if (!cancellableStatuses.contains(previousStatus)) {
+            throw BusinessException.validationError("当前状态不允许取消");
+        }
+        if (closeReason != null && !closeReason.isBlank() && closeReason.length() > 500) {
+            throw BusinessException.validationError("关闭原因不能超过 500 个字符");
+        }
+
+        // 加工单联动（issue #3340）：未发加工 → 自动作废加工单；已发加工及以上 → 拦截，须先处理加工单
+        ProcessingOrder activePo = processingOrderMapper.selectActiveByOrderId(order.getId(), order.getTenantId());
+        if (activePo != null) {
+            if ("generated".equals(activePo.getStatus())) {
+                // 测试探针（issue #6955）：放大**「读判（订单 + 加工单 generated）」之后、「CAS 落库」之前**
+                // 那条窗口（生产恒为 0）。位置是判据的判别力来源：放在读判**之前**时，并发对手会先把
+                // 加工单推成 issued ⇒ 本腿的读判直接兜底拒绝、那一步（CAS 只放一个赢家过去）永远测不到。
+                // 与 InboundOrderService#setCancelProbePauseMillisForTest（#6928）同款。
+                if (CANCEL_ORDER_PO_PROBE_PAUSE_MILLIS > 0) {
+                    pauseCancelOrderPoForProbe(CANCEL_ORDER_PO_PROBE_PAUSE_MILLIS);
+                }
+                // 联动作废 = **条件更新**（issue #6955）：谓词含 id + tenant_id + deleted=0 + 前驱 generated。
+                // 修前是 updateById（WHERE 仅主键）⇒ 与并发的「加工单开工」（markStatusIfFrom
+                // generated→issued）**不互斥** ⇒ 会出现「订单 cancelled + 加工单 issued」（订单已废、单还在产）。
+                // 0 行 ⇒ 加工单已被并发推进 ⇒ 409，**本事务一并回滚**（订单取消不留半成品）。
+                int poRows = processingOrderMapper.markStatusIfFrom(activePo.getId(), order.getTenantId(),
+                        "generated", "cancelled", null, null, null, null, null,
+                        OffsetDateTime.now(), "订单取消，加工单自动作废", OffsetDateTime.now());
+                if (poRows == 0) {
+                    ProcessingOrder fresh = processingOrderMapper.selectById(activePo.getId());
+                    throw BusinessException.conflict(String.format(
+                                    "订单已发加工（加工单 %s 状态：%s），请先在订单详情或让黄金策处理加工单后再取消订单",
+                                    activePo.getProcessingOrderNo(),
+                                    fresh != null ? fresh.getStatus() : activePo.getStatus()),
+                            "该加工单刚被另一个操作推进，请刷新后按当前状态重试");
+                }
+                log.info("订单取消联动作废加工单: po={}, orderId={}", activePo.getProcessingOrderNo(), order.getId());
+                // 派工扣减的**对称回补**（V116 / issue #5145 判据 3）：本分支绕过
+                // ProcessingOrderService.updateStatus（直接置 cancelled）⇒ 必须在此接同一句话，
+                // 否则这条路上批次账只扣不回补。幂等由服务层保证（已回补的行跳过 ⇒ 可重跑）。
+                batchStock().reverse(order.getTenantId(), activePo.getProcessingOrderNo(),
+                        order.getOrderNo(), "订单取消，加工单自动作废，回补批次库存");
+            } else {
+                throw BusinessException.validationError(String.format(
+                        "订单已发加工（加工单 %s 状态：%s），请先在订单详情或让黄金策处理加工单后再取消订单",
+                        activePo.getProcessingOrderNo(), activePo.getStatus()));
+            }
+        }
+
+        // 原子状态流转（以读取到的 previousStatus 为条件，防止并发重复恢复库存）
+        int rows = transitionStatusAtomic(id, previousStatus, OrderStatusTransitions.CANCELLED, closeReason);
+        if (rows == 0) {
+            throw BusinessException.validationError("订单状态已并发变更，请刷新后重试");
+        }
+
+        // 已确认/生产中的订单被取消时，恢复库存和销量，并补记退款流水（与 confirmPayment 的 income 对冲）
+        if (OrderStatusTransitions.CONFIRMED.equals(previousStatus) || OrderStatusTransitions.PRODUCING.equals(previousStatus)) {
+            restoreStockAndDecreaseSales(id);
+            BigDecimal remainingRefund = effectiveActualAmount(order).subtract(
+                    order.getRefundAmount() != null ? order.getRefundAmount() : BigDecimal.ZERO);
+            if (remainingRefund.compareTo(BigDecimal.ZERO) > 0) {
+                recordFinanceTransaction(order, remainingRefund, "refund", "订单取消退款");
+            }
+        }
+        log.info("取消订单成功: id={}, reason={}", id, closeReason);
+        // 🔴 事件驱动自动成批（issue #5182 挂载点 ③-b）：取消会改变池的候选集
+        // （作废加工单已在上面对称回补批次 ⇒ 腾出来的余量可能让别的单凑得满）。
+        PoolChangeNotifier.notifySafely(poolChangeNotifier, order.getTenantId(),
+                PoolChangeNotifier.TRIGGER_ORDER_CANCELLED);
+    }
+
+    /**
+     * 退款（财务叠加语义：不改订单状态、不恢复库存）
+     * 仅允许已确认/生产中/已发货/已完成状态的订单退款。
+     * 落 refundAmount（累计，封顶实收款）+ refundAt，并登记退款流水。
+     *
+     * @param id           订单ID
+     * @param refundAmount 退款金额（null = 全额退款）
+     * @param refundReason 退款原因（可选）
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public void refundOrder(String id, BigDecimal refundAmount, String refundReason) {
+        Order order = orderMapper.selectById(id);
+        if (order == null) {
+            throw BusinessException.notFound("订单");
+        }
+        String previousStatus = order.getStatus();
+        Set<String> refundableStatuses = Set.of(OrderStatusTransitions.CONFIRMED, OrderStatusTransitions.PRODUCING, OrderStatusTransitions.SHIPPED, OrderStatusTransitions.COMPLETED);
+        if (!refundableStatuses.contains(previousStatus)) {
+            String previousLabel = ORDER_STATUS_LABELS.getOrDefault(previousStatus, previousStatus);
+            throw BusinessException.validationError(
+                    "当前状态[" + previousLabel + "]不允许退款，仅已确认/生产中/已发货/已完成可退款");
+        }
+
+        BigDecimal actual = effectiveActualAmount(order);
+        // 金额精度准入（issue #6221）：退款金额最多 2 位小数（列 NUMERIC(12,2)）。
+        // 超位**显式拒绝**（422），不静默取整 —— 否则 `0.001` 会被 PG 舍成 `0.00`：
+        // 订单 refund_amount 与资金流水 amount 两处同时归零、refund_at 却已写入（"退了一笔 0 元"）。
+        // 口径本体在 MoneyScale（金额链路的单点准入，同 StockQuantity 的范式）；
+        // `null` 语义 = 「全额退」，由 OrNull 原样透传（**不得**归一成 0）。
+        BigDecimal refund = MoneyScale.requireTwoDecimalsOrNull(refundAmount, "退款金额");
+        if (refund == null) {
+            refund = actual;
+        }
+        if (refund.compareTo(BigDecimal.ZERO) < 0) {
+            throw BusinessException.validationError("退款金额不能为负数");
+        }
+        if (refund.compareTo(actual) > 0) {
+            throw BusinessException.validationError("退款金额不能超过实收款 " + actual);
+        }
+
+        // 累计已退金额，封顶实收款（防并发/多次退款超退）
+        BigDecimal existingRefund = order.getRefundAmount() != null ? order.getRefundAmount() : BigDecimal.ZERO;
+        BigDecimal applied = refund.min(actual.subtract(existingRefund));
+        if (applied.compareTo(BigDecimal.ZERO) <= 0) {
+            throw BusinessException.validationError("该订单已全额退款，无需重复退款");
+        }
+
+        String reason = refundReason != null && !refundReason.isBlank() ? refundReason : "退款";
+        // 保持原状态，仅落退款金额与时间（前端"已退款"徽标由 refundAmount>0 判定）
+        // 原子条件更新：refund_amount 在库内累加且不超过实收款，防并发双花（审计 07 P1-10）。
+        // 并发请求同时读到 existingRefund 时，DB 层 COALESCE 累加 + WHERE 上限保证只成功一次。
+        OffsetDateTime refundAt = OffsetDateTime.now();
+        UpdateWrapper<Order> refundWrapper = new UpdateWrapper<>();
+        refundWrapper.eq("id", order.getId())
+                .eq("tenant_id", order.getTenantId())
+                .setSql("refund_amount = COALESCE(refund_amount, 0) + " + applied.toPlainString())
+                .set("refund_at", refundAt)
+                .and(w -> w.apply("COALESCE(refund_amount, 0) + {0} <= {1}",
+                        applied, actual));
+        int updated = orderMapper.update(null, refundWrapper);
+        if (updated == 0) {
+            // 条件不满足：已被并发请求退款至上限，拒绝本次
+            throw BusinessException.validationError("该订单已全额退款，无需重复退款");
+        }
+        order.setRefundAmount(existingRefund.add(applied));
+        order.setRefundAt(refundAt);
+
+        // 登记资金流水（退款，金额=本次实际退款额）——失败不影响订单主流程
+        recordFinanceTransaction(order, applied, "refund", "订单退款: " + reason);
+        log.info("退款成功: id={}, previousStatus={}, refundAmount={}, refundReason={}",
+                id, previousStatus, applied, refundReason);
+    }
+
+    /**
+     * 获取订单跟进状态
+     */
+    public FollowStatusResponse getFollowStatus(String id) {
+        Order order = orderMapper.selectById(id);
+        if (order == null) {
+            throw BusinessException.notFound("订单");
+        }
+        return FollowStatusResponse.builder()
+                .orderId(id)
+                .followStatus(order.getFollowStatus() != null ? order.getFollowStatus() : "pending")
+                .updatedAt(order.getUpdatedAt())
+                .build();
+    }
+
+    /**
+     * 更新跟进状态
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public void updateFollowStatus(String id, String followStatus) {
+        Order order = orderMapper.selectById(id);
+        if (order == null) {
+            throw BusinessException.notFound("订单");
+        }
+        Set<String> validStatuses = Set.of("pending", "following", "completed");
+        if (!validStatuses.contains(followStatus)) {
+            throw BusinessException.validationError("无效的跟进状态: " + followStatus + "，可选值: pending/following/completed");
+        }
+        // 🔴 只写本方法负责的列（issue #6955）：修前是 orderMapper.updateById(order) —— 整实体回写会把
+        // selectById 时读到的**旧 status 一并写回** ⇒ 静默回滚并发的状态变更（F1 的类级根因）。
+        orderMapper.update(null, new LambdaUpdateWrapper<Order>()
+                .eq(Order::getId, order.getId())
+                .set(Order::getFollowStatus, followStatus));
+        log.info("更新跟进状态成功: id={}, followStatus={}", id, followStatus);
+    }
+
+    /**
+     * 更新订单级**加急标记 / 客户要求到货日**（V120，issue #5177 的「改单」半边）。
+     *
+     * <h2>三态语义（与 {@link OrderUrgencyUpdateRequest} 逐字同源，不在两处各写一份）</h2>
+     * 每个字段各自「不传 = 不改」；{@code requiredDeliveryDate} 传**空串**才表示清空
+     * （{@code null} 与 {@code ""} 必须是两件事，否则「只改加急」会把到货日静默抹掉）。
+     *
+     * <h2>为什么用 {@code LambdaUpdateWrapper} 而不是 {@code updateById(order)}</h2>
+     * 本仓既有的改单写法是「{@code selectById} → 改实体 → {@code updateById(order)}」，但
+     * MyBatis-Plus 默认字段策略是 {@code NOT_NULL} ⇒ **null 字段不进 SET** ⇒ 用那条路
+     * **永远清不掉**到货日（「清空」会静默变成「不改」，而界面显示已清空）。
+     * ⇒ 清空必须走显式 {@code set(col, null)}；{@code updatedAt} 也随之**显式**写
+     * （{@code update(entity, wrapper)} 的自动填充不在本路径上，不写它就留下陈旧时间戳）。
+     *
+     * <p>🔴 <b>只写这两列</b>：不碰金额、状态、售后工单的任何字段
+     * （判据 1 零联动 / 判据 6 不损失客户）。</p>
+     *
+     * @param isUrgent                  {@code null} = 不改；否则显式设值（{@code false} 是「取消加急」的真值）
+     * @param requiredDeliveryDateRaw   {@code null} = 不改；{@code ""} = 清空；{@code YYYY-MM-DD} = 设值；其它 ⇒ 422
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public void updateUrgency(String id, Boolean isUrgent, Boolean isOutsourced,
+                              String requiredDeliveryDateRaw) {
+        Order order = orderMapper.selectById(id);
+        if (order == null) {
+            throw BusinessException.notFound("订单");
+        }
+        LambdaUpdateWrapper<Order> update = new LambdaUpdateWrapper<Order>().eq(Order::getId, id);
+        boolean changed = false;
+        if (isUrgent != null) {
+            update.set(Order::getIsUrgent, isUrgent);
+            changed = true;
+        }
+        if (isOutsourced != null) {
+            update.set(Order::getIsOutsourced, isOutsourced);
+            changed = true;
+        }
+        if (requiredDeliveryDateRaw != null) {
+            update.set(Order::getRequiredDeliveryDate, parseRequiredDeliveryDate(requiredDeliveryDateRaw));
+            changed = true;
+        }
+        if (!changed) {
+            // 两个字段都没传 ⇒ 这次改单什么都没改。**显式拒绝**而不是静默 200：
+            // 静默成功会让调用方以为改动生效了（同族纪律：不静默）。
+            throw BusinessException.validationError(
+                    "isUrgent / isOutsourced / requiredDeliveryDate 至少要传一个（本次改单没有任何变更）");
+        }
+        update.set(Order::getUpdatedAt, OffsetDateTime.now());
+        orderMapper.update(null, update);
+        log.info("更新订单生产标记成功: id={}, isUrgent={}, isOutsourced={}, requiredDeliveryDate={}",
+                id, isUrgent, isOutsourced, requiredDeliveryDateRaw);
+        // 🔴 事件驱动自动成批（issue #5182 挂载点 ③-a）：改单会同时改两件事 ——
+        // 加急单**永不入池**（改为加急 ⇒ 立刻单派）、到货日变了 ⇒ 兜底的「最晚派单日」跟着变。
+        PoolChangeNotifier.notifySafely(poolChangeNotifier, order.getTenantId(),
+                PoolChangeNotifier.TRIGGER_ORDER_UPDATED);
+    }
+
+    /**
+     * 到货日解析（issue #5177）：{@code ""} ⇒ **清空**（返回 {@code null}）；
+     * {@code YYYY-MM-DD} ⇒ 该日期；其它形态 ⇒ **显式拒绝**（不静默回落、不当成清空）。
+     *
+     * <p>为什么空白串不按「清空」办：{@code "  "} 这种输入更像**误输入**，把它当清空
+     * 就是静默丢数据；而 {@code ""} 是调用方**明确**表达的「清空」（前端清空日期框发出的就是它）。</p>
+     */
+    private static LocalDate parseRequiredDeliveryDate(String raw) {
+        if (raw.isEmpty()) {
+            return null;
+        }
+        try {
+            return LocalDate.parse(raw.trim(), DateTimeFormatter.ISO_LOCAL_DATE);
+        } catch (DateTimeParseException e) {
+            throw BusinessException.validationError(
+                    "到货日格式不正确：" + raw + "（期望 YYYY-MM-DD，或传空串清空到货日）");
+        }
+    }
+
+    /**
+     * 添加订单备注（追加模式）
+     *
+     * @param id      订单ID
+     * @param content 备注内容
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public void addRemark(String id, String content) {
+        Order order = orderMapper.selectById(id);
+        if (order == null) {
+            throw BusinessException.notFound("订单");
+        }
+        if (content == null || content.isBlank()) {
+            throw BusinessException.validationError("备注内容不能为空");
+        }
+        if (content.length() > 2000) {
+            throw BusinessException.validationError("备注内容不能超过 2000 个字符");
+        }
+        String timestamp = businessClock.now()
+                .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"));
+        String remarkEntry = "[" + timestamp + "] " + content;
+        String existing = order.getRemark() != null ? order.getRemark() : "";
+        String merged = existing.isEmpty() ? remarkEntry : existing + "\n" + remarkEntry;
+        // 🔴 只写 remark（issue #6955）：修前是 orderMapper.updateById(order) —— 整实体回写会把
+        // selectById 时读到的**旧 status 一并写回** ⇒ 静默回滚并发的状态变更（F1 的类级根因）。
+        orderMapper.update(null, new LambdaUpdateWrapper<Order>()
+                .eq(Order::getId, order.getId())
+                .set(Order::getRemark, merged));
+        log.info("添加订单备注成功: id={}", id);
+    }
+
+    // ==================== 财务流水登记 ====================
+
+    /**
+     * 订单实际应收（实收）金额：actualAmount 兜底 totalAmount。
+     */
+    private BigDecimal effectiveActualAmount(Order order) {
+        return order.getActualAmount() != null ? order.getActualAmount() : order.getTotalAmount();
+    }
+
+    /**
+     * 登记一笔订单关联的资金流水（收款/退款），金额取订单实收款。
+     * 失败仅告警，不影响订单主流程（对账流水为辅助数据）。
+     */
+    private void recordFinanceTransaction(Order order, String type, String remark) {
+        BigDecimal amount = effectiveActualAmount(order);
+        recordFinanceTransaction(order, amount, type, remark);
+    }
+
+    /**
+     * 登记一笔订单关联的资金流水（收款/退款），金额显式指定（支持部分退款）。
+     * 失败仅告警，不影响订单主流程（对账流水为辅助数据）。
+     */
+    private void recordFinanceTransaction(Order order, BigDecimal amount, String type, String remark) {
+        try {
+            if (order == null) {
+                return;
+            }
+            if (amount == null || amount.compareTo(BigDecimal.ZERO) <= 0) {
+                return;
+            }
+            FinanceTransaction txn = FinanceTransaction.builder()
+                    .tenantId(order.getTenantId())
+                    .transactionNo(generateFinanceTransactionNo(order.getTenantId()))
+                    .orderId(order.getId())
+                    .orderNo(order.getOrderNo())
+                    .type(type)
+                    .amount(amount)
+                    .status("success")
+                    .operator("系统")
+                    .occurredAt(OffsetDateTime.now())
+                    .remark(remark)
+                    .build();
+            financeTransactionMapper.insert(txn);
+            log.info("登记资金流水: transactionNo={}, type={}, amount={}, orderNo={}",
+                    txn.getTransactionNo(), type, amount, order.getOrderNo());
+        } catch (Exception e) {
+            log.warn("登记资金流水失败（不影响订单主流程）: orderNo={}, type={}, error={}",
+                    order != null ? order.getOrderNo() : null, type, e.getMessage());
+        }
+    }
+
+    /**
+     * 生成资金流水号（防重启重复）：FIN-yyyyMMdd-XXXX，从 DB 查当天最大序号 +1
+     */
+    private String generateFinanceTransactionNo(Long tenantId) {
+        String datePart = businessClock.today().format(DateTimeFormatter.ofPattern("yyyyMMdd"));
+        String prefix = "FIN-" + datePart + "-";
+        int nextSeq = 1;
+        try {
+            FinanceTransaction latest = financeTransactionMapper.selectOne(
+                    new LambdaQueryWrapper<FinanceTransaction>()
+                            .eq(FinanceTransaction::getTenantId, tenantId)
+                            .likeRight(FinanceTransaction::getTransactionNo, prefix)
+                            .orderByDesc(FinanceTransaction::getTransactionNo)
+                            .last("LIMIT 1"));
+            if (latest != null && latest.getTransactionNo() != null) {
+                String[] parts = latest.getTransactionNo().split("-");
+                if (parts.length == 3) {
+                    nextSeq = Integer.parseInt(parts[2]) + 1;
+                }
+            }
+        } catch (Exception e) {
+            log.warn("查询最新流水号失败，使用默认序号: {}", e.getMessage());
+        }
+        return String.format("FIN-%s-%04d", datePart, nextSeq % 10000);
+    }
+
+    // ==================== 库存与销量管理 ====================
+
+    /**
+     * 确认支付后：扣减库存 + 增加销量（商品级 + SKU级）
+     */
+    private void deductStockAndIncreaseSales(String orderId) {
+        adjustStockAndSales(orderId, true, StockLedger.REASON_ORDER);
+    }
+
+    /**
+     * 取消/退款后：恢复库存 + 减少销量（商品级 + SKU级）
+     */
+    private void restoreStockAndDecreaseSales(String orderId) {
+        adjustStockAndSales(orderId, false, StockLedger.REASON_ORDER);
+    }
+
+    /**
+     * 售后退货回补库存（issue #2991）。
+     *
+     * 仅由 AfterSalesTicketService 在售后工单 refund/return 完结且订单全部商品
+     * allow_return_restock=true（允许退货回补库存）时调用；复用取消订单的库存恢复路径
+     * （恢复商品级+SKU级库存并减少销量）。窗帘行业定制退货不可再售，默认不走到本路径。
+     *
+     * <p>台账（issue #4137）：本路径的这次变更由**调用方** AfterSalesTicketService 落
+     * {@code reason=aftersales} 行（它按「调用前快照 vs 调用后实际值」比对）——故这里传
+     * {@code null} 不重复记账：同一次变更写两行会让 delta 翻倍，且两行的 before 互不相同
+     * （相邻行首尾接不上，「库存为什么从 X 变成 Y」就答错了）。</p>
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public void restoreStockForReturn(String orderId) {
+        adjustStockAndSales(orderId, false, null);
+        log.info("售后退货回补库存完成: orderId={}", orderId);
+    }
+
+    /**
+     * 批次消耗台账（V116 / issue #5145 阶段 1）—— 装配不上就**显式抛错**，绝不静默跳过回补
+     * （静默跳过 = 加工单作废了、批次余量还是扣着，而没有任何东西会变红）。
+     */
+    private StockBatchConsumptionService batchStock() {
+        if (stockBatchConsumptionService == null) {
+            throw new IllegalStateException(
+                    "StockBatchConsumptionService 未装配 —— 加工单作废的批次回补不能静默跳过（issue #5145）");
+        }
+        return stockBatchConsumptionService;
+    }
+
+    /**
+     * 统一的库存和销量调整逻辑
+     *
+     * @param orderId      订单ID
+     * @param isDeduct     true=扣库存+增销量（确认支付），false=恢复库存+减销量（取消/退款）
+     * @param ledgerReason 台账变更来源（{@link StockLedger#REASON_ORDER}）；
+     *                     {@code null} = 本次变更的落账由上游站点负责（售后回补 → aftersales）
+     */
+    @SuppressWarnings("unchecked")
+    private void adjustStockAndSales(String orderId, boolean isDeduct, String ledgerReason) {
+        List<OrderItem> items = orderItemMapper.selectList(
+                new LambdaQueryWrapper<OrderItem>().eq(OrderItem::getOrderId, orderId));
+        if (items.isEmpty()) return;
+
+        Order order = orderMapper.selectById(orderId);
+        if (order == null) return;
+
+        // 按 productId 聚合数量和金额
+        // issue #3666：数量放宽为 BigDecimal，聚合也用 BigDecimal（不引入 double/float）；
+        // issue #5063（V115）：销量列已同为 NUMERIC(12,1) ⇒ 不再取整数部分
+        // （改前 `entry.getValue().intValue()` 会把「卖 2.7 米、销量 +2」的落差静默吃掉）。
+        Map<String, BigDecimal> productQtyMap = new java.util.HashMap<>();
+        Map<String, BigDecimal> productAmountMap = new java.util.HashMap<>();
+
+        for (OrderItem item : items) {
+            if (item.getProductId() == null) continue;
+            BigDecimal qty = item.getQuantity() != null ? item.getQuantity() : BigDecimal.ZERO;
+            BigDecimal amount = item.getSubtotal() != null ? item.getSubtotal() : BigDecimal.ZERO;
+            productQtyMap.merge(item.getProductId(), qty, BigDecimal::add);
+            productAmountMap.merge(item.getProductId(), amount, BigDecimal::add);
+
+            // SKU级库存调整：从 processingInfo 中匹配 SKU
+            if (isDeduct) {
+                deductSkuStock(item, order, ledgerReason);
+            } else {
+                restoreSkuStock(item, order, ledgerReason);
+            }
+        }
+
+        // 商品级调整
+        for (Map.Entry<String, BigDecimal> entry : productQtyMap.entrySet()) {
+            String productId = entry.getKey();
+            BigDecimal totalQty = StockQuantity.toStockScaleByCeiling(entry.getValue());
+            BigDecimal totalAmount = productAmountMap.getOrDefault(productId, BigDecimal.ZERO);
+            if (isDeduct) {
+                productMapper.increaseSales(productId, totalQty, totalAmount);
+            } else {
+                productMapper.decreaseSales(productId, totalQty, totalAmount);
+            }
+        }
+    }
+
+    /**
+     * 从 OrderItem 的 processingInfo 中匹配 SKU 并扣减库存（issue #4137：并落订单腿台账行）。
+     *
+     * <p>判据见 {@link #matchSkuId}：{@code null} 只可能是「未声明 SKU 身份」；
+     * 声明了却定位不到会直接抛，不会静默跳过（issue #4090）——即「库存/销量/台账三者同生共死」。</p>
+     */
+    @SuppressWarnings("unchecked")
+    private void deductSkuStock(OrderItem item, Order order, String ledgerReason) {
+        Long skuId = matchSkuId(item, "确认支付");
+        if (skuId != null && item.getQuantity() != null) {
+            // issue #5063（V115）：库存/销量列已同为 NUMERIC(12,1) ⇒ 按**真实米数**扣减。
+            // 改前 `item.getQuantity().intValue()` 把 2.7 米扣成 2 米（0.7 米凭空消失）、
+            // 0.5 米扣成 0（成交但零变动）。口径与 §8「用料米数向上进位到 0.1」同源，
+            // 且与库存前置校验、回补侧**同一个函数**（同笔单净变化恒为 0）。
+            BigDecimal deductQty = StockQuantity.toStockScaleByCeiling(item.getQuantity());
+            // 🔴 issue #6299：扣减是**一条带下限谓词的原子条件更新**，返回 null = 库存不够
+            //（并发下另一个请求刚把库存扣走，或前置校验与扣减之间被别的事务改小）。
+            // 改前的 `GREATEST(..., 0)` 会把这种情况**静默钳到 0**：两单都「成功」、
+            // 库存 10 米只扣了 10（应扣 16）⇒ 超卖 6 米且无任何 4xx。
+            StockChange change = StockChange.from(productSkuMapper.deductStock(skuId, deductQty, order.getTenantId()));
+            if (change == null) {
+                throw BusinessException.validationError(
+                        String.format("商品「%s」库存不足：需要 %s 米，当前库存已被并发订单占用，请先补货后再确认支付",
+                                item.getProductName() != null ? item.getProductName() : skuId,
+                                deductQty.toPlainString()));
+            }
+            productSkuMapper.increaseSalesCount(skuId, deductQty);
+            // 台账读数与扣减**同源**（同一条 SQL 的 RETURNING）：并发下 before/after 仍首尾相接
+            recordAtomicStockChange(ledgerReason, order, item.getProductId(), skuId, change,
+                    "订单确认支付扣减库存");
+        }
+    }
+
+    /**
+     * 从 OrderItem 的 processingInfo 中匹配 SKU 并恢复库存（issue #4137：并落订单腿台账行）。
+     *
+     * <p>与扣减侧同一判据 {@link #matchSkuId}（issue #4090）。</p>
+     */
+    private void restoreSkuStock(OrderItem item, Order order, String ledgerReason) {
+        Long skuId = matchSkuId(item, "取消回补");
+        if (skuId != null && item.getQuantity() != null) {
+            StockChange change = restoreStockForLedger(skuId, item);
+            productSkuMapper.decreaseSalesCount(skuId, StockQuantity.toStockScaleByCeiling(item.getQuantity()));
+            if (change != null) {
+                recordAtomicStockChange(ledgerReason, order, item.getProductId(), skuId, change,
+                        "订单取消/退款回补库存");
+            }
+        }
+    }
+
+    /**
+     * 回补侧：与扣减侧**同一个函数、同一口径**（issue #5063）⇒ 扣 2.8 就回补 2.8。
+     *
+     * <p>台账读数与扣减同源（issue #6300）：回补的 before 也取<b>回补后</b>的库存减回补量，
+     * 即扣减行的 after —— 两条腿的链在并发取消/确认交错时仍能首尾相接。</p>
+     */
+    private StockChange restoreStockForLedger(Long skuId, OrderItem item) {
+        BigDecimal restoreQty = StockQuantity.toStockScaleByCeiling(item.getQuantity());
+        productSkuMapper.restoreStock(skuId, restoreQty);
+        ProductSku after = productSkuMapper.selectById(skuId);
+        if (after == null || after.getStock() == null) {
+            // 读不到 = 回补未真正发生（或库存未知）⇒ 不落行，绝不用假读数污染台账链
+            return null;
+        }
+        // before = 回补**之后**的库存减掉本次回补量 = 扣减行的 after（扣减/回补两腿共用同一张链）
+        return new StockChange(after.getStock().subtract(restoreQty), after.getStock(), after.getSkuCode());
+    }
+
+    /**
+     * 库存台账（issue #4137 / #6300）：按**原子语句给出的**变更前/变更后落一行。
+     *
+     * <p>改前走的是 {@code snapshotForLedger} → {@code recordChangesAgainstSnapshot}：
+     * 先 {@code SELECT stock} 取快照、改库、再读一次比对。并发下两个请求会读到<b>同一个 before</b>
+     * ⇒ 台账两行同基、链断裂（净增量仍对，所以只有查台账链才暴露）。现在读数直接来自
+     * 扣减/回补那条 SQL 的 {@code RETURNING}（{@link StockChange}），<b>类型上没有「从快照构造」的入口</b>。</p>
+     *
+     * <p>{@code ledgerReason == null} = 本次变更的落账由上游站点负责（售后回补 → aftersales），
+     * 这里不落行 —— 同一次变更写两行会让 delta 翻倍。</p>
+     */
+    private void recordAtomicStockChange(String ledgerReason, Order order, String productId,
+                                         Long skuId, StockChange change, String note) {
+        // atomic-ledger: true —— before/after 来自原子语句的 RETURNING（见 StockChange 的类注释）
+        if (ledgerReason == null || order == null || change == null) {
+            return;
+        }
+        stockLedgerService.record(order.getTenantId(), productId, skuId, change.skuCode(),
+                change.beforeQuantity(), change.afterQuantity(), ledgerReason, order.getOrderNo(), note);
+    }
+
+    /**
+     * 库存路径的<b>单一判据</b>（issue #4090）：该明细是否声明了 SKU 身份、能否定位到 SKU。
+     *
+     * <p>processingInfo 键族：{@code { "skuId": N, "skuCode": "...", "colorId": N,
+     * "colorName": "...", "doorWidth": "...", ... }}。
+     * <b>三种结果，只有一种允许「不做 SKU 级库存调整」</b>：</p>
+     * <ul>
+     *   <li>{@code null} —— 明细<b>没有声明 SKU 身份键</b>（{@code skuId/skuCode/colorId/colorName}
+     *       全空）：该明细没有「选了哪个 SKU」的语义（只带加工项 / 售卖方式 / 门幅也是本仓合法形态，
+     *       见 {@code OrderQuantityDecimalTest} 的真实 fixture），故不做 SKU 级库存调整
+     *       （商品级销量照记）。这是<b>唯一</b>合法的跳过 —— 库存校验 / 扣减 / 销量 / 回补四处
+     *       都只按这一条判据分支，不再各写一套「有没有规格」的判断；</li>
+     *   <li>{@code skuId} —— 唯一定位到 SKU（四处都按它走）；</li>
+     *   <li>{@link BusinessException} —— 声明了 SKU 身份却<b>定位不到</b>：显式失败 + 可行动
+     *       suggestion（声明了哪些键、该补什么），<b>不再静默跳过</b>。</li>
+     * </ul>
+     *
+     * <p><b>为什么「定位不到」必须显式失败（issue #4090 实证）</b>：库存校验 / 扣减 / 销量三处
+     * 都写成 {@code if (skuId != null)}，而匹配原先只认 <b>ID 族</b>（{@code skuId}，或
+     * {@code colorId+sellingMethod+doorWidth}）；唯一生产者 ai-agent（{@code order_create}）
+     * 只能产出<b>字符串族</b>（{@code skuCode/colorName/sellingMethod/doorWidth} ——
+     * {@code product_detail._format_skus} 既不给 {@code color_id} 也不给 {@code skuId}）
+     * ⇒ 键族不相交 ⇒ 三处同时静默跳过：顾客下单成功、SKU 库存不动、销量不涨、无任何失败
+     * （可超卖、账实不符、线上不可归因）。修法两步：① 判定**能读字符串族**
+     * （{@code product_skus.sku_code / color_name} 就是同一行上的原值）；② 仍然定位不到时
+     * **显式拒绝**而不是放行。</p>
+     *
+     * <p>口径统一（issue #3621 沿用）：带单位门幅（{@code 2.8米}）用 {@link SkuNotation}
+     * 双侧归一化比较，只归一化<b>匹配比较</b>、不回写库内值；陈旧 {@code skuId} 先校验存在性，
+     * 不存在则回退键族匹配（防主键漂移后 update 命中 0 行的静默失败）。</p>
+     *
+     * <p><b>V111（用户裁定 2026-09-21）</b>：键族由 {@code colorId+sellingMethod+doorWidth}
+     * 收窄为 {@code colorId+doorWidth} —— 售卖方式不再是 SKU 组合维度（它上移为商品级
+     * {@code products.selling_methods} 与订单行偏好 {@code order_items.selling_method}）。</p>
+     *
+     * @param actionLabel 动作文案（「下单」/「确认支付」/「取消回补」），用于错误提示
+     */
+    @SuppressWarnings("unchecked")
+    private Long matchSkuId(OrderItem item, String actionLabel) {
+        if (item.getProductId() == null) return null;
+
+        Object processingInfo = item.getProcessingInfo();
+        if (!(processingInfo instanceof Map)) return null;
+        Map<String, Object> info = (Map<String, Object>) processingInfo;
+
+        Long skuId = toSkuKey(info.get("skuId"), "skuId", item);
+        String skuCode = toSkuText(info.get("skuCode"));
+        Long colorId = toSkuKey(info.get("colorId"), "colorId", item);
+        String colorName = toSkuText(info.get("colorName"));
+        // V111：processingInfo 里历史残留的 `sellingMethod` 键**不再参与 SKU 定位** ——
+        // 售卖方式是商品级基础属性（products.selling_methods）+ 订单行偏好，
+        // SKU 组合只有 颜色 × 门幅（用户裁定 2026-09-21）。该键仍在 processingInfo 里原样保留
+        // （历史快照不回改），只是不再是键族的一维。
+        String doorWidth = toSkuText(info.get("doorWidth"));
+
+        // 未声明任何 SKU 身份键 → 无 SKU 级库存调整（唯一合法的跳过）
+        if (skuId == null && skuCode == null && colorId == null && colorName == null) {
+            return null;
+        }
+
+        // ① skuId 直查（ID 族最精确）：存在性 + 归属同商品 —— 主键漂移（agent 重建路径可能
+        //    「删旧行 + 插新行」）后拿着陈旧 id 直接返回，会让扣减/回补 update 命中 0 行且完全静默
+        if (skuId != null) {
+            ProductSku byId = productSkuMapper.selectById(skuId);
+            if (byId != null && belongsToProduct(byId, item.getProductId())) {
+                return byId.getId();
+            }
+            log.warn("matchSkuId: processingInfo.skuId 不可用（库中不存在或不属于该商品），改走键族回退, action={}, orderId={}, productId={}, skuId={}",
+                    actionLabel, item.getOrderId(), item.getProductId(), skuId);
+        }
+
+        // ② ID 族组合回退（V111：键族为 colorId + 门幅 —— 售卖方式已不是 SKU 维度）
+        if (colorId != null && doorWidth != null) {
+            ProductSku byCombination = findSkuByCombination(item.getProductId(), colorId, doorWidth);
+            if (byCombination != null) {
+                return byCombination.getId();
+            }
+        }
+
+        // ③ 字符串族（issue #4090 新增）：skuCode / colorName(+colorId) + 门幅 ——
+        //    唯一生产者 ai-agent 只能产出这一族，此前它必然落进 ④（静默跳过）
+        ProductSku byKeyFamily = findSkuByKeyFamily(item.getProductId(), skuCode, colorId, colorName,
+                doorWidth);
+        if (byKeyFamily != null) {
+            return byKeyFamily.getId();
+        }
+
+        // ④ 声明了 SKU 身份却定位不到（含命中多行无法唯一确定）⇒ 显式失败，可行动 suggestion
+        log.warn("matchSkuId: 声明了 SKU 身份但键族定位不到（未命中或多行歧义）→ 显式拒绝该动作（不静默跳过）, action={}, orderId={}, productId={}, {}",
+                actionLabel, item.getOrderId(), item.getProductId(),
+                describeDeclaredSpec(skuCode, colorId, colorName, doorWidth));
+        throw BusinessException.validationError(String.format(
+                "商品「%s」的本次规格无法定位到 SKU（%s）：已声明 %s。"
+                        + "无法确定该行对应哪个 SKU，故**拒绝**而不是放行（放行会造成「订单成交但库存不动、销量不涨」）。"
+                        + "请用 product_detail 返回的 skus[] 原值核对规格（sku_code / color_name / door_width），"
+                        + "或直接传 skuId（skus[].id）后重试。",
+                item.getProductName() != null ? item.getProductName() : item.getProductId(),
+                actionLabel,
+                describeDeclaredSpec(skuCode, colorId, colorName, doorWidth)));
+    }
+
+    /**
+     * 字符串族定位（issue #4090）：{@code skuCode} 精确匹配；{@code colorName/colorId} +
+     * 已声明的门幅（双侧归一化）组合匹配。
+     *
+     * <p>命中必须<b>唯一</b>：多行命中意味着「规格不足以唯一确定 SKU」（如只给了颜色、该颜色下
+     * 有多个门幅），此时返回 null 交由调用方显式拒绝 —— 任取一条会扣错 SKU 的库存，比拒绝更糟。</p>
+     *
+     * @return 唯一命中的 SKU；0 行或多行命中返回 null（调用方负责告警与拒绝）
+     */
+    private ProductSku findSkuByKeyFamily(String productId, String skuCode, Long colorId, String colorName,
+                                          String doorWidth) {
+        if (skuCode == null && colorId == null && colorName == null) {
+            return null;
+        }
+        LambdaQueryWrapper<ProductSku> wrapper = new LambdaQueryWrapper<ProductSku>()
+                .eq(ProductSku::getProductId, productId)
+                .eq(skuCode != null, ProductSku::getSkuCode, skuCode)
+                .eq(colorId != null, ProductSku::getColorId, colorId)
+                .eq(colorName != null, ProductSku::getColorName, colorName)
+                .orderByAsc(ProductSku::getId);
+        List<ProductSku> rows = productSkuMapper.selectList(wrapper);
+
+        ProductSku found = null;
+        int hits = 0;
+        for (ProductSku row : rows == null ? List.<ProductSku>of() : rows) {
+            // 门幅双侧归一化比较（库内 2.8 与明细 2.8米 同一物理门幅；2.8 vs 3.2 不等）
+            if (doorWidth != null && !SkuNotation.sameDoorWidth(row.getDoorWidth(), doorWidth)) {
+                continue;
+            }
+            if (found == null) {
+                found = row;
+            }
+            hits++;
+        }
+        if (hits > 1) {
+            log.warn("matchSkuId: 规格不足以唯一定位 SKU（{} 行命中）→ 交由调用方显式拒绝, productId={}, skuCode={}, colorId={}, colorName={}, doorWidth={}",
+                    hits, productId, skuCode, colorId, colorName, doorWidth);
+            return null;
+        }
+        return found;
+    }
+
+    /** 该 SKU 是否属于本明细的商品（库内 product_id 为空的历史行不据此排除）。 */
+    private boolean belongsToProduct(ProductSku sku, String productId) {
+        return sku.getProductId() == null || sku.getProductId().equals(productId);
+    }
+
+    /** 规格键取值：非空文本去首尾空白；空串/空白视为未声明。 */
+    private String toSkuText(Object raw) {
+        if (raw == null) return null;
+        String text = raw.toString().trim();
+        return text.isEmpty() ? null : text;
+    }
+
+    /** 规格键取值：数字键（skuId/colorId）解析失败时留 WARN 并视为未声明（不静默）。 */
+    private Long toSkuKey(Object raw, String key, OrderItem item) {
+        if (raw == null) return null;
+        try {
+            return Long.valueOf(raw.toString().trim());
+        } catch (NumberFormatException e) {
+            log.warn("matchSkuId: {} 格式错误（非数字，视为未声明）, orderId={}, productId={}, value={}",
+                    key, item.getOrderId(), item.getProductId(), raw);
+            return null;
+        }
+    }
+
+    /** 已声明的规格键描述（错误话术/告警用：说清「缺哪个键、该补什么」的依据）。 */
+    private String describeDeclaredSpec(String skuCode, Long colorId, String colorName,
+                                        String doorWidth) {
+        List<String> parts = new ArrayList<>();
+        if (skuCode != null) parts.add("skuCode=" + skuCode);
+        if (colorId != null) parts.add("colorId=" + colorId);
+        if (colorName != null) parts.add("colorName=" + colorName);
+        if (doorWidth != null) parts.add("doorWidth=" + doorWidth);
+        return String.join(", ", parts);
+    }
+
+    // ======================== Agent BFF 方法 ========================
+
+    /**
+     * 组合回退匹配：商品 + 颜色（+ 门幅，Java 侧按
+     * {@link SkuNotation#sameDoorWidth} 双侧归一化比较，库内 {@code 2.8} 与明细
+     * {@code 2.8米} / {@code 门幅2.8米} 视为同一物理门幅；{@code 2.8} vs {@code 3.2} 不等）。
+     *
+     * <p>V111（用户裁定 2026-09-21）：售卖方式那一维已从本匹配里删除 —— SKU 组合只有
+     * 颜色 × 门幅，售卖方式是商品级基础属性。同一组合命中多行时取第一条并告警，
+     * 便于发现历史重复行。</p>
+     *
+     * @return 命中的 SKU；未命中返回 null（调用方负责告警，不再静默跳过）
+     */
+    private ProductSku findSkuByCombination(String productId, Long colorId, String doorWidth) {
+        List<ProductSku> candidates = productSkuMapper.selectList(
+                new LambdaQueryWrapper<ProductSku>()
+                        .eq(ProductSku::getProductId, productId)
+                        .eq(ProductSku::getColorId, colorId));
+        ProductSku found = null;
+        int hits = 0;
+        for (ProductSku candidate : candidates) {
+            if (SkuNotation.sameDoorWidth(candidate.getDoorWidth(), doorWidth)) {
+                if (found == null) {
+                    found = candidate;
+                }
+                hits++;
+            }
+        }
+        if (hits > 1) {
+            log.warn("matchSkuId: 归一化后同一组合命中多行 SKU（库内可能存在同门幅重复行），取第一条: productId={}, colorId={}, doorWidth={}, hits={}",
+                    productId, colorId, doorWidth, hits);
+        }
+        return found;
+    }
+
+    /**
+     * Agent 专用创建订单（issue #8191，P2-1b）：实现点在 {@link OrderCreationService}，本方法只留门面委托。
+     *
+     * <p>幂等键 / 取价守卫 / 事务边界随方法体搬到新服务（逐字跟随）；调用方零改动。</p>
+     */
+    public OrderDetailResponse createOrderForAgent(AgentOrderCreateRequest request, Long tenantId) {
+        return creationService().createOrderForAgent(request, tenantId, this);
+    }
+
+    /**
+     * Agent 专用统一订单更新。
+     * ID 可传 UUID 或订单号（ORD-xxx），服务端自动解析。
+     * 通过 action 字段路由到具体的操作方法。
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public Object updateOrderForAgent(String rawId, AgentOrderUpdateRequest request, Long tenantId) {
+        // 解析订单 ID
+        String resolvedId = resolveOrderIdToUuid(rawId, tenantId);
+        if (resolvedId == null) {
+            throw new BusinessException("ORDER_NOT_FOUND",
+                    "无法找到订单：" + rawId + "。请使用 order_query 查询正确的订单号后重试。", 404);
+        }
+
+        String action = request.getAction();
+        if (!StringUtils.hasText(action)) {
+            throw BusinessException.validationError("action 不能为空");
+        }
+
+        return switch (action) {
+            case "update_status" -> {
+                if (!StringUtils.hasText(request.getStatus())) {
+                    throw BusinessException.validationError("status 不能为空");
+                }
+                updateOrderStatus(resolvedId, request.getStatus());
+                yield getOrderById(resolvedId);
+            }
+            case "confirm_payment" -> {
+                confirmPayment(resolvedId);
+                yield getOrderById(resolvedId);
+            }
+            case "cancel" -> {
+                cancelOrder(resolvedId, request.getCancelReason());
+                yield getOrderById(resolvedId);
+            }
+            case "refund" -> {
+                refundOrder(resolvedId, request.getRefundAmount(), request.getRefundReason());
+                yield getOrderById(resolvedId);
+            }
+            case "update_logistics" -> {
+                if (!StringUtils.hasText(request.getLogisticsCompany())) {
+                    throw BusinessException.validationError("logisticsCompany 不能为空");
+                }
+                if (!StringUtils.hasText(request.getTrackingNumber())) {
+                    throw BusinessException.validationError("trackingNumber 不能为空");
+                }
+                upsertLogistics(resolvedId, request.getLogisticsCompany().trim(),
+                        request.getTrackingNumber().trim(), null, request.getLogisticsType());
+                // 发货语义：记录物流后将订单流转为 shipped（与契约 order_manage(update_logistics) 可发货一致）
+                shipOrderIfApplicable(resolvedId);
+                yield getOrderById(resolvedId);
+            }
+            default -> throw BusinessException.validationError(
+                    "不支持的操作类型: " + action + "，可选: update_status/update_logistics/confirm_payment/cancel/refund");
+        };
+    }
+
+    /**
+     * 发货人取值（issue #3768）：显式传入优先，否则用当前登录用户姓名兜底。
+     *
+     * <p>两条发货路径共用同一口径 —— B 端 {@code PUT /api/admin/orders/{id}/logistics}
+     * （前端发货页预填当前登录人、可改成实际发货人）与 agent
+     * {@code order_manage(action=update_logistics)}（透传 {@code X-User-Id}）。
+     *
+     * @param provided 请求显式提供的发货人，可为空
+     * @return 发货人姓名；都取不到时返回 null（打印/展示显示「-」）
+     */
+    public String resolveShipperName(String provided) {
+        if (StringUtils.hasText(provided)) {
+            return provided.trim();
+        }
+        return userService.resolveCurrentUserDisplayName();
+    }
+
+    /**
+     * 更新/创建订单物流信息：存在最新物流记录则更新，否则新建（status=in_transit）。
+     *
+     * <p>发货人（issue #3768）语义：新建时取 {@code resolveShipperName(provided)}；
+     * 更新时**仅**在显式传入非空时覆盖 —— 后续改运单号/纠错不等于换发货人，
+     * 也不能因为「别人来改单号」就把经手人改成那个人，更不能为存量历史数据猜一个经手人。
+     */
+    private void upsertLogistics(String orderId, String logisticsCompany, String trackingNo, String shipperName,
+                                 String logisticsType) {
+        // 写入本体在 OrderLogisticsWriter（issue #5648 抽出，**单一实现点**）：工人可达面的发货端点
+        // 走的是同一份「存在则更新、否则新建」口径与同一条发货人规则（不复制坑）。
+        // 物流类型（issue #8080）：本路此前把这一栏写死 null ⇒ 智能体代客发货只能落列默认 express
+        // （「发物流/专线」被静默记成快递）。现在按调用方显式给的值透传；空白 = 本次没说这件事，
+        // 由 OrderLogisticsWriter 的「显式才覆盖」保留原值。
+        OrderLogisticsWriter.upsert(orderLogisticsMapper, TenantContext.getTenantId(), orderId,
+                logisticsCompany, trackingNo,
+                new OrderLogisticsWriter.ShippingDetails(shipperName, logisticsType, null),
+                userService::resolveCurrentUserDisplayName);
+    }
+
+    /**
+     * **发货**（issue #4347 §二.2，用户裁定「发货下放到工人扫码端」）：记录物流 + 原子流转 {@code shipped}。
+     *
+     * <p>与既有 {@code order_manage(update_logistics)} 路径**同一份实现**：本方法只是把
+     * 「{@link #upsertLogistics} → {@link #shipOrderIfApplicable}」这对组合**公开**出来，
+     * 供工人扫码端调用 —— <b>不复制第二份守卫</b>（守卫在 {@code shipOrderIfApplicable} 里，
+     * 与 {@code updateOrderStatus} 路径同源：含加工项订单必须有 completed 加工单）。</p>
+     *
+     * <p><b>为什么不能只调既有的两个管理端点</b>：{@code PUT /orders/{id}/logistics} 只记物流
+     * **不流转状态**，{@code PUT /orders/{id}/status} 只流转**不记单号** ⇒ 工人要发一次货得调两次，
+     * 中间失败就是「有单号但没发货」或「发货了没单号」的静默不一致。
+     * 发货是**一个动作**，就该是一个原子入口。</p>
+     *
+     * @param orderId          订单 UUID
+     * @param trackingNo       货运单号（**必填** —— 没有单号的「发货」在车间不可核对）
+     * @param logisticsCompany 承运商；为空则保留既有值（工人端只填单号，承运商来自客户常用物流档案）
+     * @return 本次发货的结果快照（{@code order_id} / {@code status} / {@code tracking_no} /
+     *         {@code logistics_company}）＋ 一个**显式**的「本次是否真的发生了 {@code →shipped} 流转」标志
+     *         —— <b>幂等回放的载体</b>（issue #6157）：端点拿 {@link OrderShipmentOutcome#result()} 当
+     *         {@code ClientRequestIdService.complete} 的快照，同键第二次到达时**逐字回放**同一份。
+     *         ⚠️ {@code result} **不含实发明细**：发货单由
+     *         {@code OrderShipmentService.recordMerchantShipment} 落，调用方按
+     *         {@link OrderShipmentOutcome#transitioned()} 决定要不要建单（issue #6181）。
+     */
+    public OrderShipmentOutcome shipWithLogistics(String orderId, String trackingNo, String logisticsCompany) {
+        return shipWithLogistics(orderId, trackingNo, logisticsCompany, null);
+    }
+
+    /**
+     * 同上，外加发货页采集的**三个可选字段**（issue #6983）：发货人 / 物流类型 / 发货方式。
+     *
+     * <p><b>为什么要有这个重载</b>：商家发货页（{@code orders/[id]/ship}）此前走的是
+     * 「{@code PUT /logistics} 再 {@code PUT /status}」两步老路 —— 那条路**不建发货单**，
+     * 于是 {@code order_shipments} 长期 0 行（issue #6983 的症状）。收敛到原子端点后，
+     * 页面本来就在采集的这三件事必须有落点，否则就是「换了端点、丢了一半字段」的静默降级。</p>
+     *
+     * <h2>「无需物流」（{@code shippingMethod=none}）在这里成立</h2>
+     * <p>发货页支持「无需物流」= 不填运单号/承运商（{@code shippingMethod=none} + 空单号）。
+     * 本路此前对空单号/空承运商**一律 422**（工人扫码端的口径：「没有单号的发货在车间不可核对」）
+     * ⇒ 商家页那个合法形态在原子端点上**结构性不成立**。本重载按 {@code shippingMethod} 分流：
+     * {@code none} ⇒ 运单号与承运商都允许为空（都落空串，而不是静默丢弃这次发货）；
+     * 其余（{@code logistics} / 缺席 = 工人路与老调用方）⇒ 逐字保留原有两条必填校验。</p>
+     *
+     * <p><b>白名单 fail-closed（与 {@code OrderController.updateLogistics} 逐字同口径）</b>：
+     * {@code shippingMethod} 非空且 ∉ {logistics, none} ⇒ 422 显式拒绝，**不静默兜底**；
+     * 缺席 / 空串不拒绝（老调用方根本不发这个键 = 「没这句话」，不是「说了个坏值」）。</p>
+     *
+     * @param details 发货页采集的可选字段（{@code null} = 一个都没采集）；取值白名单见上
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public OrderShipmentOutcome shipWithLogistics(String orderId, String trackingNo, String logisticsCompany,
+                                                  OrderLogisticsWriter.ShippingDetails details) {
+        String shippingMethod = details == null ? null : details.shippingMethod();
+        boolean noLogistics = "none".equals(shippingMethod);
+        // 发货方式白名单（issue #6239 的口径，issue #6983 落到本路）：非法值显式拒绝、不静默兜底
+        if (StringUtils.hasText(shippingMethod) && !"logistics".equals(shippingMethod) && !noLogistics) {
+            throw BusinessException.validationError(
+                    "无效的发货方式: " + shippingMethod + "（只接受 logistics 物流发货 / none 无需物流）");
+        }
+        // 运单号必填**只在物流发货时**成立（无需物流本就没有单号 —— issue #6239 同款收窄）
+        if (!noLogistics && !StringUtils.hasText(trackingNo)) {
+            throw BusinessException.validationError("货运单号不能为空");
+        }
+        Order order = orderMapper.selectById(orderId);
+        if (order == null) {
+            throw BusinessException.notFound("订单");
+        }
+        // 与工人发货路**同一份**可发货状态集合（issue #6171）：此前这里把三个字面量抄了一遍，
+        // 而两条路都会把订单置 shipped ⇒ 抄两份迟早漂移（见 OrderShipmentService.SHIPPABLE_FROM）。
+        // 本路多认 shipped：已发货后仅补记/纠正物流（不流转状态），故它是合法的记物流态。
+        String status = order.getStatus();
+        if (!OrderShipmentService.SHIPPABLE_FROM.contains(status) && !OrderStatusTransitions.SHIPPED.equals(status)) {
+            throw BusinessException.validationError("仅已确认/生产中/已发货状态可发货，当前状态: " + status);
+        }
+        String trimmedTrackingNo = StringUtils.hasText(trackingNo) ? trackingNo.trim() : "";
+        String company = StringUtils.hasText(logisticsCompany)
+                ? logisticsCompany.trim()
+                : currentLogisticsCompany(orderId);
+        if (!noLogistics && !StringUtils.hasText(company)) {
+            throw BusinessException.validationError("承运商不能为空（客户档案未带出常用物流时需显式选择）");
+        }
+        // 记物流（发货人 = 显式传入优先，否则当前登录人；工人扫码端登录的就是工人本人）
+        OrderLogisticsWriter.upsert(orderLogisticsMapper, TenantContext.getTenantId(), orderId,
+                company == null ? "" : company, trimmedTrackingNo, details,
+                userService::resolveCurrentUserDisplayName);
+        // 原子流转 shipped —— **守卫在这一步内**（含加工项订单必须有 completed 加工单）
+        boolean transitioned = shipOrderIfApplicable(orderId);
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("order_id", orderId);
+        result.put("status", OrderStatusTransitions.SHIPPED);
+        result.put("tracking_no", trimmedTrackingNo);
+        result.put("logistics_company", company);
+        // 🔴 issue #6181：把「本次是否真的流转了」**显式**交给调用方。调用方随后要调建单写面，而建单
+        // 写面**不许**再用「当前状态」重新推断这件事（那时状态已被本方法改成 shipped，谓词区分不了
+        // 「我们刚改的」与「本来就已发货」）—— 实测后果是「发货一律 422，而状态与物流已写入」。
+        return new OrderShipmentOutcome(result, transitioned);
+    }
+
+    /**
+     * 商家/工人发货路的**结果 ＋ 本次是否真的发生了流转**（issue #6181）。
+     *
+     * <p>为什么要有第二个字段（而不是让调用方读结果快照里的 {@code status}）：那里的
+     * {@code status} 是**文案常量**（本路对「补记物流」也回 {@code shipped}），它回答不了
+     * 「这一步有没有发生状态变更」；而这一步的**下游**（建发货单）必须知道答案 —— 否则就会
+     * 「订单本来就已发货」时凭空多建一张单，或用「订单状态」这个**会被自己写脏的谓词**去猜
+     * （#6181 的根因形态）。</p>
+     *
+     * @param result       结果快照（幂等回放载体，进 {@code ClientRequestIdService}）
+     * @param transitioned 本次调用是否真的把订单从 {@code confirmed|producing} 流转成 {@code shipped}；
+     *                     {@code false} = 订单本来就已是 {@code shipped}（本路只补记/纠正物流）
+     */
+    public record OrderShipmentOutcome(Map<String, Object> result, boolean transitioned) {
+    }
+
+    /** 既有物流记录的承运商（工人端只填单号时用它兜底；无既有记录 ⇒ null）。 */
+    private String currentLogisticsCompany(String orderId) {
+        List<OrderLogistics> existing =
+                orderLogisticsMapper.selectByOrderId(orderId, TenantContext.getTenantId());
+        if (existing == null || existing.isEmpty()) {
+            return null;
+        }
+        return existing.get(0).getLogisticsCompany();
+    }
+
+    /**
+     * 发货联动：confirmed/producing 状态的订单在记录物流后原子流转为 shipped。
+     * 已 shipped/completed 保持原状态（仅更新物流）；pending/cancelled 不强制流转。
+     *
+     * @return 本次是否**真的**发生了 {@code →shipped} 的流转（issue #6181：调用方据此决定要不要建
+     *         发货单 —— 见 {@link OrderShipmentOutcome#transitioned()}）。{@code rows == 0}
+     *         （并发下别人先流转了）⇒ 抛，**不**返回 {@code false}：那是「本来就已发货」的语义，
+     *         两者混同会让并发场景静默丢单。
+     */
+    private boolean shipOrderIfApplicable(String orderId) {
+        Order order = orderMapper.selectById(orderId);
+        if (order == null) {
+            return false;
+        }
+        String currentStatus = order.getStatus();
+        if (OrderStatusTransitions.CONFIRMED.equals(currentStatus) || OrderStatusTransitions.PRODUCING.equals(currentStatus)) {
+            // issue #7165：商家/生产端/agent 发货（无工人身份）⇒ 完成「发货」工序但不计件；再走守卫
+            if (documentOperationLinkage != null) {
+                documentOperationLinkage.completeShippingOperations(order, null, order.getTenantId());
+            }
+            // P1 修复（验收复核 #3345）：与 updateOrderStatus 路径同一守卫——含加工项订单
+            // 须有 completed 加工单才能发货，防止 agent 发货路径绕过加工环节
+            assertProcessingCompletedBeforeShip(order);
+            int rows = transitionStatusAtomic(orderId, currentStatus, OrderStatusTransitions.SHIPPED, null);
+            if (rows == 0) {
+                throw BusinessException.validationError("订单状态已并发变更，请刷新后重试");
+            }
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * 通过订单号/UUID/关键词解析订单 UUID。
+     * GET /api/admin/agent/orders/resolve?keyword=xxx 的核心逻辑。
+     */
+    public AgentOrderResolveResponse resolveOrderId(String keyword, Long tenantId) {
+        // 门面委托（issue #8191，P2-1a）：查询族实现点在 OrderQueryService，调用方零改动。
+        return queryService().resolveOrderId(keyword, tenantId);
+    }
+
+    /**
+     * 订单 ID 解析：UUID 精确匹配 → 订单号匹配 → UUID 前缀匹配。
+     *
+     * @return 解析出的 UUID，未找到返回 null
+     */
+    private String resolveOrderIdToUuid(String raw, Long tenantId) {
+        // 解析口径单点在 OrderQueryService（issue #8191，P2-1a）；本留私有入口给写入路径 updateOrderForAgent。
+        return queryService().resolveOrderIdToUuid(raw, tenantId);
+    }
+
+    /**
+     * 订单状态筛选：支持**逗号分隔多值**（issue #5792）。
+     *
+     * <p>为什么需要：前端「待发货」在业务上是 **`confirmed` + `producing`** 两个状态之和
+     * （`frontend/admin-web/src/types/index.ts` 的映射注释已这么写），而后端此前只收单值
+     * ⇒ 列表比计数少（看板卡说 N 条、点进去只看到其中一部分）。
+     * 现按 `in` 处理 ⇒ 与计数的口径取齐（本仓同族缺陷的修法见 issue #5792 的口径整改）。</p>
+     */
+    static void applyStatusFilter(
+            com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<com.migao.admin.entity.Order> wrapper,
+            String status) {
+        if (!StringUtils.hasText(status)) {
+            return;
+        }
+        java.util.List<String> statuses = java.util.Arrays.stream(status.split(","))
+                .map(String::trim)
+                .filter(x -> !x.isEmpty())
+                .distinct()
+                .collect(java.util.stream.Collectors.toList());
+        if (statuses.size() == 1) {
+            wrapper.eq(com.migao.admin.entity.Order::getStatus, statuses.get(0));
+        } else {
+            wrapper.in(com.migao.admin.entity.Order::getStatus, statuses);
+        }
+    }
+}

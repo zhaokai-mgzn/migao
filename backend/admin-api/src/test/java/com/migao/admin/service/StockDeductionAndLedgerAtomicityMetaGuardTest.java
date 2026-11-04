@@ -81,6 +81,12 @@ class StockDeductionAndLedgerAtomicityMetaGuardTest {
 
     private static final String PRODUCT_SKU_MAPPER = MAPPER_DIR + "/ProductSkuMapper.java";
     private static final String ORDER_SERVICE = SERVICE_DIR + "/OrderService.java";
+    /**
+     * 订单腿库存族的**现载体**（issue #8191，P2-1c）：{@code matchSkuId} / 扣减 / 回补 /
+     * 原子落账（{@code recordAtomicStockChange}）整条闭包搬到了本文件，{@code OrderService} 只留门面委托。
+     * 判据的**回归面不变**：原子取值锚、禁快照读、落台账唯一入口仍逐条钉住，只是对象跟着代码走。
+     */
+    private static final String ORDER_STOCK_SERVICE = SERVICE_DIR + "/OrderStockService.java";
     private static final String INBOUND_ORDER_SERVICE = SERVICE_DIR + "/InboundOrderService.java";
     private static final String STOCK_CHANGE = SERVICE_DIR + "/StockChange.java";
 
@@ -235,7 +241,7 @@ class StockDeductionAndLedgerAtomicityMetaGuardTest {
 
         List<String> violations = new ArrayList<>();
         Set<String> checked = new LinkedHashSet<>();
-        for (Path service : List.of(root.resolve(ORDER_SERVICE), root.resolve(INBOUND_ORDER_SERVICE))) {
+        for (Path service : List.of(root.resolve(ORDER_STOCK_SERVICE), root.resolve(INBOUND_ORDER_SERVICE))) {
             String source = read(service);
             List<String> bodies = ledgerEntryBodies(source);
             if (bodies.isEmpty()) {
@@ -252,7 +258,7 @@ class StockDeductionAndLedgerAtomicityMetaGuardTest {
 
         assertThat(checked).as("扫描器必须真的看见两个本单对象（改名/挪位置 ⇒ 判据失明要当场暴露）")
                 .anySatisfy(s -> assertThat(s).contains("InboundOrderService.java"))
-                .anySatisfy(s -> assertThat(s).contains("OrderService.java"));
+                .anySatisfy(s -> assertThat(s).contains("OrderStockService.java"));
         assertThat(violations).as("台账 before/after 必须来自原子语句（快照读 = 并发下同基、链断裂）").isEmpty();
         assertThat(atomicMappers).as("必须至少有一个写面用 RETURNING 取「变更前/变更后」（否则上面那条判据无从谈起）")
                 .isNotEmpty();
@@ -277,7 +283,7 @@ class StockDeductionAndLedgerAtomicityMetaGuardTest {
             assertThat(m.sql().toUpperCase()).as("GREATEST 钳 0 已删除（它掩盖超扣）").doesNotContain("GREATEST");
         }
 
-        String orderService = read(root.resolve(ORDER_SERVICE));
+        String orderService = read(root.resolve(ORDER_STOCK_SERVICE));
         assertThat(codeOnly(orderService)).as("订单扣减入口必须由 SQL 的返回值落台账（不再读快照）")
                 .doesNotContain("snapshotForLedger");
         assertThat(orderService).as("台账读数必须来自唯一入口 recordAtomicStockChange（它带 atomic-ledger 声明）")

@@ -45,7 +45,20 @@ from app.tools.order_create import OrderCreateTool, _CRAFT_SPEC_NUMBERS
 from tests.test_employee_field_consumption_contract import _method_body
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
-_ORDER_SERVICE = _REPO_ROOT / "backend/admin-api/src/main/java/com/migao/admin/service/OrderService.java"
+_SERVICE_DIR = _REPO_ROOT / "backend/admin-api/src/main/java/com/migao/admin/service"
+# 订单创建面的**载体集合**（issue #8191 P2-1c）：`matchSkuId` 是库存族的单一判据，已随该族搬到
+# `OrderStockService`，门面只留同名委托。判据面**不变** ——「订单创建面**任何**实现里都不许按
+# `sellingMethod` 定位 SKU」；扫的是一组载体，不是某一个文件（同 #8650 对
+# `ShipmentInvariantGuardTest` / `OrderAutoCompleteSqlGuardTest` 用的口径）。
+_ORDER_SERVICE_CARRIERS = (
+    _SERVICE_DIR / "OrderService.java",
+    _SERVICE_DIR / "OrderStockService.java",
+    _SERVICE_DIR / "OrderFeeSupport.java",
+)
+# 方法可见性随搬家可能变化（private -> 包内可见）⇒ 只认签名，不认修饰符
+_MATCH_SKU_ID_DECL = re.compile(
+    r"^[ \t]*(?:public |private |protected )?Long matchSkuId\(OrderItem item, String actionLabel\)",
+    re.MULTILINE)
 _PRODUCT_DETAIL = _REPO_ROOT / "backend/ai-agent-service/app/tools/product_detail.py"
 _ORDER_CREATE_SRC = _REPO_ROOT / "backend/ai-agent-service/app/tools/order_create.py"
 
@@ -78,10 +91,21 @@ _PRE_FIX_SERVER_KEYS = {"skuId", "colorId", "sellingMethod", "doorWidth"}
 
 
 def _match_sku_id_body() -> str:
-    """服务端库存匹配方法体（issue #4090 的单一判据所在）。"""
-    assert _ORDER_SERVICE.is_file(), f"找不到 admin-api 源码: {_ORDER_SERVICE}"
-    return _method_body(_ORDER_SERVICE.read_text(encoding="utf-8"),
-                        "private Long matchSkuId(OrderItem item, String actionLabel)")
+    """服务端库存匹配方法体（issue #4090 的单一判据所在），在**载体集合**里现取。
+
+    fail-closed：一个载体里都找不到 ⇒ 直接失败（「扫描面失明」不许静默退化成空集，
+    那会让下面三条键族判据恒绿 —— 正是「静默免检」的形态）。
+    """
+    searched: list[str] = []
+    for carrier in _ORDER_SERVICE_CARRIERS:
+        assert carrier.is_file(), f"找不到 admin-api 源码: {carrier}"
+        text = carrier.read_text(encoding="utf-8")
+        hit = _MATCH_SKU_ID_DECL.search(text)
+        if hit is not None:
+            return _method_body(text, hit.group(0).strip())
+        searched.append(carrier.name)
+    raise AssertionError(
+        f"载体集合里都没有 matchSkuId 的方法体（扫描面失明，不许当空集放行）: {searched}")
 
 
 def _server_read_spec_keys() -> set[str]:
