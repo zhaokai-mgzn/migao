@@ -358,10 +358,12 @@ function scannedIndex(data) {
 // 渲染（HTML 字符串；机台页零可编辑元素）
 // ══════════════════════════════════════════════════════════════════════════════
 
-/** 屏一 订单详情：品牌 / 收货人 / 商品 / 套数 / 宽高 / 加工类型 / 安装工艺 / 褶倍 / 用料 / 部位备注。 */
+/** 屏一 订单详情：收货人 / 商品 / 套数 / 宽高 / 加工类型 / 安装工艺 / 褶倍 / 用料 / 部位备注。
+ *
+ * <p>「品牌」已于 2026-11-04 按用户要求下线（一行 16 字里它占一格却从不参与裁床判断，
+ * 而一屏要放下 15 格 —— 让位给真正要读的东西）。</p> */
 export function detailRows(data, position) {
   return [
-    ['品牌', position?.brand, ''],
     ['收货人', data?.order?.customer_name, ''],
     // 商品行名（issue #7000 裁定，2026-11-02）：本行原标签是「款式」、装的是 `product_name` ——
     // 与共享表 `style`（工艺款式）的标签**逐字重名** ⇒ 同一屏两行「款式」装两件不同的事。
@@ -396,10 +398,10 @@ export function detailRows(data, position) {
 }
 
 /**
- * 机台屏**已单独印过**的规格键（上面那 12 行）。
+ * 机台屏**已单独印过**的规格键（上面那 11 行）。
  *
- * <p>不排除 ⇒ 同一件事实在一屏上印两遍（`米` 单位也会重复）。这是**排除**而不是改上面那 12 行：
- * 那 12 行的顺序与文案是机台屏的既有真值（`worker-h5-machine.test.mjs` 逐字断言），
+ * <p>不排除 ⇒ 同一件事实在一屏上印两遍（`米` 单位也会重复）。这是**排除**而不是改上面那 11 行：
+ * 那 11 行的顺序与文案是机台屏的既有真值（`worker-h5-machine.test.mjs` 逐字断言），
  * 共享表只**追加**它多出来的键。</p>
  */
 const MACHINE_DETAIL_COVERED = new Set([
@@ -436,16 +438,16 @@ const MACHINE_KEY_ROWS = new Set(['宽', '高', '用料'])
 /**
  * 单屏版**主屏只印这些**（issue #7990，2026-10-28 用户逐字「要一个屏幕把关键信息都放下」）。
  *
- * <p>详情面服务端给的字段有 **38 个**（母单 #6901 之后还在长），一屏装不下 —— 主屏只放裁床当下要读的 16 格；
+ * <p>详情面服务端给的字段有 **38 个**（母单 #6901 之后还在长），一屏装不下 —— 主屏只放裁床当下要读的 15 格；
  * 其余（售卖方式 / 卷数 / 数量单位 / 是否定型 / 幅数 / 是否对花 / 花距 / 算料公式 / 加工费米数 / 指派米数 /
  * 组件 …）仍由 `detailRows` 提供、在**报工页**可见，不在机台主屏铺开。</p>
  *
- * <p>顺序 = 既有 12 行原序（`worker-h5-position-spec.test.mjs` 的负控按此逐字比较）+ 4 行裁剪口径。</p>
+ * <p>顺序 = 既有 11 行原序（`worker-h5-position-spec.test.mjs` 的负控按此逐字比较）+ 4 行裁剪口径。</p>
  */
 const MACHINE_MAIN_ROWS = [
   // 🔴 第 3 格是**商品名**（`product_name`），标签「商品」—— issue #7000 裁定前它叫「款式」，
   //    而「款式」在 `detailRows` 里同时还是共享表 `style`（工艺款式）的标签 ⇒ 两行同名。
-  '品牌', '收货人', '商品', '套数', '宽', '高', '加工类型', '开数', '安装工艺', '褶倍', '用料', '部位备注',
+  '收货人', '商品', '套数', '宽', '高', '加工类型', '开数', '安装工艺', '褶倍', '用料', '部位备注',
   '总褶数', '每片褶数', '特殊选项', '加工费组合',
 ]
 
@@ -467,7 +469,9 @@ function positionTabs(state) {
   const selected = Number.isInteger(state?.positionIndex) ? state.positionIndex : 0
   return positionsOf(state.data)
     .map((position, index) => {
-      const label = `${dataOr(position?.position_name ?? position?.position_kind)}${position?.scanned ? '（扫到的）' : ''}`
+      // 不再给扫到的那一叶加「（扫到的）」后缀（2026-11-04 用户：「把（扫到的）文字移除，不要这样口语化的文案」）。
+      // 哪一叶是扫到的，靠 tab 的选中态（is-active）表达，不靠括号里的口语标注。
+      const label = dataOr(position?.position_name ?? position?.position_kind)
       return `<button type="button" class="wh5-machine__tab${index === selected ? ' is-active' : ''}" data-machine-pick="${index}">${esc(label)}</button>`
     })
     .join('')

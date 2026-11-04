@@ -128,7 +128,6 @@ const BLANK_POSITION = {
   order_item_id: 'oi-blank',
   position_name: '布帘',
   position_kind: '布帘',
-  brand: '观星台',
   width: '   ',
   height: ' ',
   craft: '\t',
@@ -142,7 +141,7 @@ test('🔴 ⑤ 机台屏 `kvRows`：同一份空白输入渲染「—」，`" 0 
   const row = (label) => kvList.match(new RegExp(`<div class="wh5-machine__kv"><dt>${label}</dt><dd[^>]*>[\\s\\S]*?</dd></div>`))?.[0] ?? ''
 
   // 前置：这一块确实渲染了（否则下面的「不含 0.000」是假绿）
-  assert.match(kvList, /<dt>品牌<\/dt>/, '前置：机台屏详情块确实渲染了')
+  assert.match(kvList, /<dt>套数<\/dt>/, '前置：机台屏详情块确实渲染了（用「套数」—— 品牌行已于 2026-11-04 下线）')
 
   for (const label of ['宽', '高', '安装工艺']) {
     assert.match(row(label), new RegExp(`</dt><dd[^>]*>${EMPTY}</dd>`), `机台屏「${label}」必须是「${EMPTY}」（缺值不编数、也不带单位）`)
