@@ -8647,3 +8647,5 @@ cases:
     traces:
       tests:
         - "tests/unit_ci_workflows/test_seed_data_quality.py"
+      ci:
+        - pr-check.yml          # required：ci workflow helper unit tests（python -m pytest tests/unit_ci_workflows）
