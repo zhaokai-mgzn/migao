@@ -2,7 +2,7 @@
 # 本文件由 render_cases.py 生成，勿手改（改了也留不住：下次重渲染会覆盖）
 # 源: cases/*.yml（case-contract 单一源）
 # 重新生成: python3 render_cases.py --cases <dir> --out-eval <包目录> --out-md <md>
-# 域: misc（源: cases/misc.yml，216 条）
+# 域: misc（源: cases/misc.yml，217 条）
 
 from ._schema import Difficulty, EvalCase, Skill
 
@@ -3968,6 +3968,24 @@ _CASE_MC_188 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── MC-190 [NORMAL] 冒烟数据面收口（#7583 剩余缺口）：自造订单清理自证 + 空态不得冒充通过 + P1 写用例 finally 清理（源: cases/misc.yml）──
+_CASE_MC_190 = EvalCase(
+    id='MC-190',
+    legacy_id='',
+    title='冒烟数据面收口（#7583 剩余缺口）：自造订单清理自证 + 空态不得冒充通过 + P1 写用例 finally 清理',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['冒烟跑完 33/33 全绿，但商品一条 SKU 都没有、客户面为空也记通过；跑完云库里还留着一堆冒烟订单，没人知道留了多少、删没删掉。'],
+    expectations=[],
+    data_checks=['**判据 I（会红）**：商家端冒烟里自造订单的清理必须**自证** —— 「删除成功」分支同时要求回读 404；被业务规则拒绝（4xx）时必须留下服务端原话且对象仍可读（可枚举）；删除成功后还要核「该订单名下活跃加工单为 0」。四类造单入口都必须登记自造台账，跑完由统一扫尾处理（不是逐旅程各写一遍）。摘掉回读 404 的合取条件 ⇒ 判据当场红。执行点 = tests/unit_ci_workflows/test_smoke_data_quality.py。', '**判据 J（会红）**：空态/缺控件不得冒充通过 —— 分类页找不到新增按钮、客户列表无详情链接都必须抛错；财务/通知/门户页除正文长度外还要有内容面读数（表格行 / 对账 tab / 待收款卡片，或显式空态文案 / 标题与链接）。恢复旧的「仅验证渲染」写法 ⇒ 红。执行点同上。', '**判据 K（会红）**：P1 冒烟里造单的写用例必须 finally 清理并自证（删除成功 ⇒ 回读 404；业务规则拒绝 ⇒ 原话 + 仍可读；5xx 一律红），不许只以删除请求的返回布尔值收尾。拿掉任一用例的清理调用 ⇒ 红。执行点同上。', '**判据 DQ-5 订单面（会红）**：数据质量体检新增自造订单的三态计数（删掉 / 业务拒绝保留 / 清理未自证）与加工单残留读数；清理未自证 > 0 ⇒ 具名红；三态之和不等于自造数、或残留读数取不到 ⇒ 不可判定（退出码 3，不得当通过）。执行点 = scripts/smoke_data_quality.py 及其守卫。'],
+    skip_reason='[backend-contract] 纯静态判据（读商家端冒烟脚本与 P1 冒烟源码，零网络、零真栈、零 LLM），不进入 agent-eval 冒烟；真栈行为面见 PR body 的「本机没验证到的」段',
+    tags=['smoke', 'sdqs', 'cleanup', 'empty-state', 'data-quality'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 CASES = (
     _CASE_MC_001,
     _CASE_MC_002,
@@ -4185,4 +4203,5 @@ CASES = (
     _CASE_MC_186,
     _CASE_MC_187,
     _CASE_MC_188,
+    _CASE_MC_190,
 )

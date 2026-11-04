@@ -143,6 +143,44 @@ def _update_order_status(client: SmokeTestClient, order_id: str, status: str):
     return client.put(f"/api/admin/orders/{order_id}/status", json={"status": status})
 
 
+def _cleanup_order(client: SmokeTestClient, order_id: Optional[str]) -> str:
+    """自造订单的清理 **自证**（SDQS Q5；issue #7583 缺陷 4）。
+
+    旧形态：本文件每条写用例各建一单、**一条都不删** ⇒ `smoke-p1` 跑在**生产**栈上，
+    残留越积越多，而且「清没清」没有任何读数。
+
+    「能不能删」是业务事实（`OrderService.deleteOrder` 只允许 `pending`，且已生成活跃作业单
+    会被拒），所以两态都必须**可自证、可枚举**：
+
+    - `DELETE` 成功 ⇒ 紧跟 `GET` 必须 **404**（删了还能读到 = 假清理 ⇒ 判红）；
+    - 服务端按**业务规则**拒绝（4xx）⇒ 必须留下原话、且对象**仍可读**（`GET 200`）
+      ⇒ 记为可枚举残留（打印在用例输出里，不进 DQ 判据的知识面）；
+    - 5xx / 其它 ⇒ 判红（清理没做成，且不是业务规则）。
+
+    返回 `cleaned` / `kept`（都是自证过的终态）；证不出来就 assert 失败。
+    """
+    if not order_id:
+        return "skipped"
+    deleted = client.delete(f"/api/admin/orders/{order_id}")
+    after = client.get(f"/api/admin/orders/{order_id}")
+    if deleted.status_code == 200:
+        assert after.status_code == 404, (
+            f"DELETE 返回 200 但 GET /api/admin/orders/{order_id} 仍 {after.status_code}"
+            f"（假清理：删了还能读到）body={after.text[:200]}"
+        )
+        return "cleaned"
+    assert 400 <= deleted.status_code < 500, (
+        f"删除自造订单失败：{deleted.status_code}（5xx/其它 = 真坏了，不是业务规则）"
+        f" body={deleted.text[:300]}"
+    )
+    assert after.status_code == 200, (
+        f"删除被业务规则拒绝（{deleted.status_code}），但对象 GET 也是 {after.status_code}"
+        f"（既没删掉也读不到 ⇒ 残留不可枚举）"
+    )
+    print(f"[DQ-5] 自造订单 {order_id} 保留（服务端逐字：{deleted.text[:160]}）")
+    return "kept"
+
+
 # ---------------------------------------------------------------------------
 # 创建订单
 # ---------------------------------------------------------------------------
@@ -161,19 +199,26 @@ class TestOrderCreation:
         order = _create_order(authed_admin_client, payload)
 
         order_id = order.get("id")
-        assert order_id, f"创建后未返回订单 id: {order}"
-        assert order.get("customerName") == payload["customerName"]
-        # 部分实现可能将 status 默认为 pending
-        if "status" in order and order["status"] is not None:
-            assert order["status"] in {
-                "pending", "confirmed", "producing", "shipped", "completed", "cancelled",
-            }
+        try:
+            assert order_id, f"创建后未返回订单 id: {order}"
+            assert order.get("customerName") == payload["customerName"]
+            # 部分实现可能将 status 默认为 pending
+            if "status" in order and order["status"] is not None:
+                assert order["status"] in {
+                    "pending", "confirmed", "producing", "shipped", "completed", "cancelled",
+                }
+        finally:
+            # SDQS Q5（issue #7583 缺陷 4）：清理是断言 —— `finally` 保证断言中途失败也清。
+            _cleanup_order(authed_admin_client, order_id)
 
     def test_create_order_minimal(self, authed_admin_client: SmokeTestClient):
         """最简订单（只带必填：customerName / customerPhone / items + 表单三项；不带 remark）"""
         payload = _build_order_payload(minimal=True)
         order = _create_order(authed_admin_client, payload)
-        assert order.get("id"), f"最简订单创建未返回 id: {order}"
+        try:
+            assert order.get("id"), f"最简订单创建未返回 id: {order}"
+        finally:
+            _cleanup_order(authed_admin_client, order.get("id"))
 
     def test_create_order_missing_form_required_fields_rejected(
         self, authed_admin_client: SmokeTestClient
@@ -239,43 +284,50 @@ class TestOrderStatusFlow:
         product = _pick_product(authed_admin_client)
         order = _create_order(authed_admin_client, _build_order_payload(product=product))
         order_id = order.get("id")
-        assert order_id, "订单 id 缺失"
+        try:
+            assert order_id, "订单 id 缺失"
 
-        for target in ("confirmed", "producing", "completed"):
-            resp = _update_order_status(authed_admin_client, order_id, target)
-            if 400 <= resp.status_code < 500:
-                pytest.skip(
-                    f"状态流转 API 不支持 {target} 转换: "
-                    f"status={resp.status_code}, body={resp.text[:200]}"
+            for target in ("confirmed", "producing", "completed"):
+                resp = _update_order_status(authed_admin_client, order_id, target)
+                if 400 <= resp.status_code < 500:
+                    pytest.skip(
+                        f"状态流转 API 不支持 {target} 转换: "
+                        f"status={resp.status_code}, body={resp.text[:200]}"
+                    )
+                assert resp.status_code == 200, (
+                    f"流转到 {target} 失败: status={resp.status_code}, body={resp.text[:300]}"
                 )
-            assert resp.status_code == 200, (
-                f"流转到 {target} 失败: status={resp.status_code}, body={resp.text[:300]}"
-            )
 
-            detail = authed_admin_client.get(f"/api/admin/orders/{order_id}")
-            assert detail.status_code == 200, f"查询订单详情失败: {detail.status_code}"
-            current = _extract_data(detail.json()).get("status")
-            # 后端可能采用大小写或异步更新；存在状态字段时应等于目标
-            if current is not None:
-                assert current == target, f"订单状态未更新为 {target}: 当前={current}"
+                detail = authed_admin_client.get(f"/api/admin/orders/{order_id}")
+                assert detail.status_code == 200, f"查询订单详情失败: {detail.status_code}"
+                current = _extract_data(detail.json()).get("status")
+                # 后端可能采用大小写或异步更新；存在状态字段时应等于目标
+                if current is not None:
+                    assert current == target, f"订单状态未更新为 {target}: 当前={current}"
+        finally:
+            # 流转后的单通常删不掉（只允许 pending）⇒ 记 `kept` + 服务端原话（可枚举残留）
+            _cleanup_order(authed_admin_client, order_id)
 
     def test_order_status_invalid_transition(self, authed_admin_client: SmokeTestClient):
         """非法状态值应被拒绝"""
         order = _create_order(authed_admin_client, _build_order_payload())
         order_id = order.get("id")
-        assert order_id, "订单 id 缺失"
+        try:
+            assert order_id, "订单 id 缺失"
 
-        resp = _update_order_status(authed_admin_client, order_id, "not_a_real_status")
-        # 校验注解 @Pattern 应返回 400；若返回 200 则需业务层报错
-        if resp.status_code == 200:
-            body = resp.json()
-            assert _is_business_error(body), (
-                f"非法状态被静默接受: status=200, body={body}"
-            )
-        else:
-            assert 400 <= resp.status_code < 500, (
-                f"非法状态期望 4xx，实际 {resp.status_code}: {resp.text[:300]}"
-            )
+            resp = _update_order_status(authed_admin_client, order_id, "not_a_real_status")
+            # 校验注解 @Pattern 应返回 400；若返回 200 则需业务层报错
+            if resp.status_code == 200:
+                body = resp.json()
+                assert _is_business_error(body), (
+                    f"非法状态被静默接受: status=200, body={body}"
+                )
+            else:
+                assert 400 <= resp.status_code < 500, (
+                    f"非法状态期望 4xx，实际 {resp.status_code}: {resp.text[:300]}"
+                )
+        finally:
+            _cleanup_order(authed_admin_client, order_id)
 
 
 # ---------------------------------------------------------------------------
@@ -290,20 +342,22 @@ class TestOrderQuery:
     def test_filter_by_status(self, authed_admin_client: SmokeTestClient):
         """按状态筛选（pending）"""
         # 先创建一笔订单确保至少存在一条 pending 数据
-        _create_order(authed_admin_client, _build_order_payload())
-
-        resp = authed_admin_client.get("/api/admin/orders", params={
-            "page": 1,
-            "size": 20,
-            "status": "pending",
-        })
-        data = assert_page_response(resp)
-        records = _extract_records(data)
-        # 仅断言返回的数据状态匹配（兼容空库情况）
-        for record in records:
-            status = record.get("status")
-            if status is not None:
-                assert status == "pending", f"过滤未生效，记录状态={status}"
+        order = _create_order(authed_admin_client, _build_order_payload())
+        try:
+            resp = authed_admin_client.get("/api/admin/orders", params={
+                "page": 1,
+                "size": 20,
+                "status": "pending",
+            })
+            data = assert_page_response(resp)
+            records = _extract_records(data)
+            # 仅断言返回的数据状态匹配（兼容空库情况）
+            for record in records:
+                status = record.get("status")
+                if status is not None:
+                    assert status == "pending", f"过滤未生效，记录状态={status}"
+        finally:
+            _cleanup_order(authed_admin_client, order.get("id"))
 
     def test_filter_by_date(self, authed_admin_client: SmokeTestClient):
         """按日期范围筛选（如支持）"""
@@ -336,45 +390,51 @@ class TestOrderQuery:
         """按客户筛选（使用自创订单的客户名作为 keyword）"""
         payload = _build_order_payload()
         order = _create_order(authed_admin_client, payload)
-        customer_name = order.get("customerName") or payload["customerName"]
+        try:
+            customer_name = order.get("customerName") or payload["customerName"]
 
-        # 后端实现以 keyword 过滤（同时覆盖客户名/手机号/订单号）
-        resp = authed_admin_client.get("/api/admin/orders", params={
-            "page": 1,
-            "size": 20,
-            "keyword": customer_name,
-        })
-        if resp.status_code != 200:
-            pytest.skip(f"按客户/关键字筛选不支持: status={resp.status_code}")
+            # 后端实现以 keyword 过滤（同时覆盖客户名/手机号/订单号）
+            resp = authed_admin_client.get("/api/admin/orders", params={
+                "page": 1,
+                "size": 20,
+                "keyword": customer_name,
+            })
+            if resp.status_code != 200:
+                pytest.skip(f"按客户/关键字筛选不支持: status={resp.status_code}")
 
-        data = assert_page_response(resp)
-        records = _extract_records(data)
-        if not records:
-            # 接口生效但库内未命中（如租户数据隔离），不视为失败
-            return
-        # 若返回结果带 customerName 字段则进行宽松校验
-        names = [r.get("customerName") for r in records if r.get("customerName")]
-        if names:
-            assert any(customer_name in n or n in customer_name for n in names), (
-                f"keyword={customer_name} 未命中任意记录: names={names[:5]}"
-            )
+            data = assert_page_response(resp)
+            records = _extract_records(data)
+            if not records:
+                # 接口生效但库内未命中（如租户数据隔离），不视为失败
+                return
+            # 若返回结果带 customerName 字段则进行宽松校验
+            names = [r.get("customerName") for r in records if r.get("customerName")]
+            if names:
+                assert any(customer_name in n or n in customer_name for n in names), (
+                    f"keyword={customer_name} 未命中任意记录: names={names[:5]}"
+                )
+        finally:
+            _cleanup_order(authed_admin_client, order.get("id"))
 
     def test_order_pagination(self, authed_admin_client: SmokeTestClient):
         """分页参数验证"""
         # 至少创建两笔订单提高分页可观测性
-        for _ in range(2):
-            _create_order(authed_admin_client, _build_order_payload())
+        created_ids = [_create_order(authed_admin_client, _build_order_payload()).get("id")
+                       for _ in range(2)]
+        try:
+            size = 1
+            first = authed_admin_client.get("/api/admin/orders", params={"page": 1, "size": size})
+            assert first.status_code == 200, f"分页查询失败: {first.status_code}"
+            first_body = assert_page_response(first)
+            first_records = _extract_records(first_body)
+            first_total = _extract_total(first_body)
 
-        size = 1
-        first = authed_admin_client.get("/api/admin/orders", params={"page": 1, "size": size})
-        assert first.status_code == 200, f"分页查询失败: {first.status_code}"
-        first_body = assert_page_response(first)
-        first_records = _extract_records(first_body)
-        first_total = _extract_total(first_body)
-
-        assert len(first_records) <= size, (
-            f"page=1 size={size} 返回数量={len(first_records)} 超过 size"
-        )
+            assert len(first_records) <= size, (
+                f"page=1 size={size} 返回数量={len(first_records)} 超过 size"
+            )
+        finally:
+            for order_id in created_ids:
+                _cleanup_order(authed_admin_client, order_id)
 
         # 若总数 > size，验证 page=2 返回不同数据
         if first_total is not None and first_total > size:
