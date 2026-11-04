@@ -181,7 +181,10 @@ public class ConfigReadinessService {
         } catch (RuntimeException e) {
             // 读不到 ≠ 没配：**空 facts** 让前端落 unknown；日志点名是哪一步、为什么（不静默）
             log.warn("配置就绪度取数失败: step={}, tenantId={}, reason={}", key, tenantId, e.getMessage());
-            return Map.of();
+            // 空集用**可变**空表，不用 `Map.of()`：后者被**空键**索引会抛 NPE（500），
+            // 而这份响应会原样交给调用方/序列化（同族先例 = `WorkerCuttingHeightService#brands`）。
+            // 类级元守卫：`WorkerCuttingHeightNullProductIdTest#everyEmptyImmutableMapProducerAndItsIndexSiteIsRegistered`。
+            return new LinkedHashMap<>();
         }
     }
 
