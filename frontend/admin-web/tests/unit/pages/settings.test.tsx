@@ -101,11 +101,14 @@ const mockUpdateAiConfig = vi.fn()
 const mockUploadImage = vi.fn()
 const mockGetPaymentQrcodes = vi.fn()
 const mockUpdatePaymentQrcode = vi.fn()
+// issue #6579：主线读数改成**一个**聚合端点；下面四个旧读面**保留桩**只为负控
+// （「页面不再直调它们」这条判据要能读出 0 次调用 —— 删掉桩就只能靠读源码，run-time 面就没了）
 const mockGetOperationPositions = vi.fn()
 const mockGetRoutings = vi.fn()
 const mockGetFeeCombinations = vi.fn()
 const mockGetFeeGaps = vi.fn()
 const mockGetCraftCalcConfig = vi.fn()
+const mockConfigReadiness = vi.fn()
 const mockUpdateCraftCalcConfig = vi.fn()
 const mockGetSmallItemSpecs = vi.fn()
 const mockBriefingGetConfig = vi.fn()
@@ -162,6 +165,13 @@ vi.mock('@/lib/api', () => ({
   briefingApi: {
     getConfig: (...args: any[]) => mockBriefingGetConfig(...args),
     updateConfig: (...args: any[]) => mockBriefingUpdateConfig(...args),
+  },
+}))
+
+// issue #6579：配置就绪度端点（单开的接口模块 —— `lib/api.ts` 有行数棘轮）
+vi.mock('@/lib/api-config-readiness', () => ({
+  configReadinessApi: {
+    get: (...args: any[]) => mockConfigReadiness(...args),
   },
 }))
 
@@ -247,29 +257,54 @@ import {
   LEGACY_DOMAIN_ALIASES,
   resolveDomainKey,
 } from '@/lib/config-center-domains'
-import { BASE_ROUTE_NAMES, MAINLINE_STEPS } from '@/lib/config-readiness'
+import { MAINLINE_STEPS } from '@/lib/config-readiness'
 
 /** `request.get` 的返回壳（子面板形状） */
 const ok = (data: unknown) => ({ data: { success: true, data } })
 
-/** 读面全绿（主线应判 5/5）——路线名取自 `BASE_ROUTE_NAMES`，不写第二份 */
+/**
+ * 服务端聚合端点的一次**事实**载荷（issue #6579）—— 七步的 `facts` + `href`。
+ *
+ * 三条与真实端点同形的纪律（替身照此实现，否则判据会在假形状上绿）：
+ * 1. **只有事实**（计数 / 取值），没有任何三态字符串；
+ * 2. 基础路线名的取值域取自 `BASE_ROUTE_NAMES`（不写第二份）；
+ * 3. `remnant-sizes` 是**跨码步骤**：调用方不持 `processing:manage` 时服务端**整个不发**这一步。
+ */
+type ReadinessStepStub = { facts?: Record<string, unknown>; href?: string }
+
+function readinessSteps(): Record<string, ReadinessStepStub> {
+  const steps: Record<string, ReadinessStepStub> = {
+    operations: { facts: { total: 2, unpriced: 0, orphans: 0 }, href: '/production/routings' },
+    routings: { facts: { missing_base_routes: [] }, href: '/production/routings' },
+    'default-route': { facts: { count: 1 }, href: '/production/routings' },
+    'processing-items': { facts: { total: 4, active: 3 }, href: '/settings?domain=processing-items' },
+    'fee-combinations': { facts: { combinations: 3, gaps: 0 }, href: '/production/processing-fees' },
+    calc: { facts: { source: 'stored' }, href: '/settings/params' },
+  }
+  if (mockCanSee('processing:manage')) {
+    steps['remnant-sizes'] = { facts: { configured: true, items: 2 }, href: '/settings?domain=remnant-sizes' }
+  }
+  return steps
+}
+
+/** 装一次聚合端点的读数（`mutate` 用来模拟「某一步读不到 / 某步缺席」）。 */
+function mockReadiness(mutate?: (steps: Record<string, ReadinessStepStub>) => void) {
+  const steps = readinessSteps()
+  mutate?.(steps)
+  mockConfigReadiness.mockResolvedValue(ok({ steps }))
+}
+
+/** 读面全绿（主线应判 7/7；不持 `processing:manage` 时 6/6） */
 function mockApiSuccess() {
   mockGetSettings.mockResolvedValue(
     ok({ companyName: '测试企业', logo: '', notificationEnabled: true, code: 'migao' }),
   )
   mockGetAiConfig.mockResolvedValue(ok({ botName: '元元', greetingTemplate: '您好' }))
   mockBriefingGetConfig.mockResolvedValue(ok({ enabled: false, generateTime: '06:00' }))
-  mockGetOperationPositions.mockResolvedValue(ok([{ unit_price: 12 }, { unit_price: 8 }]))
-  mockGetRoutings.mockResolvedValue(
-    ok({
-      routings: [
-        { name: BASE_ROUTE_NAMES[0], is_default: true },
-        { name: BASE_ROUTE_NAMES[1], is_default: false },
-      ],
-    }),
-  )
-  mockGetFeeCombinations.mockResolvedValue(ok({ total: 3, combinations: [] }))
-  mockGetFeeGaps.mockResolvedValue(ok({ unpriced_combination_total: 0 }))
+  // 🔴 用 `mockImplementation`（每次调用现算）而不是 `mockResolvedValue`（一次性冻结）：
+  // 服务端的步骤集**取决于调用方权限**（跨码步骤），一次性冻结的载荷会让「不持码」的用例
+  // 拿到持码的载荷 ⇒ 判据在假形状上红/绿（本文件实测踩过：那条用例 5s 超时）。
+  mockConfigReadiness.mockImplementation(() => Promise.resolve(ok({ steps: readinessSteps() })))
   // ⚠️ 读面**整份 13 键**（issue #6825；#7560 起含拼色单开/多开两键）：改前只回 { hem_margin } 一个键 —— 那是「后端只回一个键」
   // 的假形状，会让本页保存那一跳的「全量键」判据**恒真**（缺键是因为夹具本来就缺，不是因为代码对）。
   mockGetCraftCalcConfig.mockResolvedValue(
@@ -329,7 +364,7 @@ describe('判据 1：配置主线（G1 / §4 P1）—— 一屏只有一个就�
     const headline = screen.getByTestId('config-readiness-headline')
     // 加载期**不谎报**
     expect(headline).toHaveTextContent('配置主线读取中…')
-    await waitFor(() => expect(headline).toHaveTextContent('配置已完成 5/5'))
+    await waitFor(() => expect(headline).toHaveTextContent('配置已完成 7/7'))
     // 折叠态：逐项 DOM **不渲染**（§31 P1；CSS 隐藏不算）
     expect(screen.queryByTestId('config-readiness-list')).toBeNull()
     for (const s of MAINLINE_STEPS) {
@@ -340,31 +375,73 @@ describe('判据 1：配置主线（G1 / §4 P1）—— 一屏只有一个就�
   it('🔴 同一屏**恰好一个**就绪度（`config-readiness` 恰一个）—— 设计 §2 判死线第 2 条', async () => {
     render(<SettingsPage />)
     await waitFor(() =>
-      expect(screen.getByTestId('config-readiness-headline')).toHaveTextContent('配置已完成 5/5'),
+      expect(screen.getByTestId('config-readiness-headline')).toHaveTextContent('配置已完成 7/7'),
     )
     expect(screen.getAllByTestId('config-readiness')).toHaveLength(1)
   })
 
-  it('读失败 ⇒ 那一步是「读不到」而**不是**「待配置」（三态不互画）', async () => {
-    mockGetFeeGaps.mockRejectedValue(new Error('500'))
+  it('某一步的 facts **缺键** ⇒ 那一步是「读不到」而**不是**「待配置」（三态不互画）', async () => {
+    // 服务端取数失败时给的就是**空 facts**（不是 0 —— 0 是「真的没有」）⇒ 前端必须读成 unknown
+    mockReadiness((steps) => {
+      steps['fee-combinations'] = { href: '/production/processing-fees', facts: {} }
+    })
     render(<SettingsPage />)
     const headline = screen.getByTestId('config-readiness-headline')
-    await waitFor(() => expect(headline).toHaveTextContent('配置完成 4/5'))
+    await waitFor(() => expect(headline).toHaveTextContent('配置完成 6/7'))
     expect(headline).toHaveTextContent('1 项读不到')
     fireEvent.click(screen.getByTestId('config-readiness-toggle'))
     expect(screen.getByTestId('readiness-state-fee-combinations')).toHaveTextContent('读不到')
     expect(screen.queryAllByText('待配置')).toHaveLength(0)
+    // 请求本身成功 ⇒ **不该**出现失败锚（缺键只是那一步没读到，不是整份请求失败）
+    expect(screen.queryByTestId('config-readiness-load-error')).toBeNull()
+  })
 
-    // issue #8049：读失败还要有**常驻失败锚 + 真重发出口** —— 只把步骤画成「读不到」时，
+  it('整个读请求失败 ⇒ 七步全部「读不到」+ 常驻失败锚，重发后恢复（issue #8049）', async () => {
+    mockConfigReadiness.mockRejectedValueOnce(new Error('500'))
+    render(<SettingsPage />)
+    const headline = screen.getByTestId('config-readiness-headline')
+    await waitFor(() => expect(headline).toHaveTextContent('配置完成 0/7'))
+    expect(headline).toHaveTextContent('7 项读不到')
+    expect(screen.queryAllByText('待配置')).toHaveLength(0)
+
+    // 读失败还要有**常驻失败锚 + 真重发出口** —— 只把步骤画成「读不到」时，
     // headline 说「刷新可重试」而页面上**没有任何刷新入口**（这句承诺没有可点的对象）。
     expect(screen.getByTestId('config-readiness-load-error')).toBeInTheDocument()
-    mockGetFeeGaps.mockResolvedValue(ok({ unpriced_combination_total: 0 }))
+    mockReadiness()
     fireEvent.click(screen.getByTestId('config-readiness-load-error-retry'))
     await waitFor(() =>
-      expect(screen.getByTestId('config-readiness-headline')).toHaveTextContent('配置已完成 5/5'),
+      expect(screen.getByTestId('config-readiness-headline')).toHaveTextContent('配置已完成 7/7'),
     )
     // 读面恢复 ⇒ 失败锚退场（常驻面不残留）
     expect(screen.queryByTestId('config-readiness-load-error')).toBeNull()
+  })
+
+  it('🔴 主线**只发这一个请求**：页面不再直调那四个旧读面（否则等于没聚合）', async () => {
+    render(<SettingsPage />)
+    await waitFor(() =>
+      expect(screen.getByTestId('config-readiness-headline')).toHaveTextContent('配置已完成 7/7'),
+    )
+    expect(mockConfigReadiness).toHaveBeenCalledTimes(1)
+    // 负控：这四条读面改前各发一次；现在它们的数是聚合端点给的 ⇒ 页面**一次都不该发**
+    expect(mockGetOperationPositions).not.toHaveBeenCalled()
+    expect(mockGetRoutings).not.toHaveBeenCalled()
+    expect(mockGetFeeCombinations).not.toHaveBeenCalled()
+    expect(mockGetFeeGaps).not.toHaveBeenCalled()
+  })
+
+  it('跨码步骤（余料尺寸）：不持 `processing:manage` ⇒ 主线**只有六步**，那一步整行不画', async () => {
+    mockCanSee.mockImplementation((code?: string) => code !== 'processing:manage')
+    render(<SettingsPage />)
+    const headline = screen.getByTestId('config-readiness-headline')
+    await waitFor(() => expect(headline).toHaveTextContent('配置已完成 6/6'))
+    fireEvent.click(screen.getByTestId('config-readiness-toggle'))
+    // 服务端整个不发这一步 ⇒ 页面按 `stepKeys` 过滤 ⇒ 既不是「读不到」也不是「待配置」
+    expect(screen.queryByTestId('readiness-item-remnant-sizes')).toBeNull()
+    expect(screen.queryByTestId('readiness-state-remnant-sizes')).toBeNull()
+    // 其余六步逐项在（省略只针对跨码那一步）
+    for (const key of ['operations', 'routings', 'default-route', 'processing-items', 'fee-combinations', 'calc']) {
+      expect(screen.getByTestId(`readiness-item-${key}`)).toBeInTheDocument()
+    }
   })
 })
 
@@ -463,12 +540,12 @@ describe('判据 3：首屏只挂当前域（不把 8 个域的表单全渲染�
   it('切换域后主线的读数**不重来**（同一个就绪度，不因切域重新请求或改变）', async () => {
     render(<SettingsPage />)
     await waitFor(() =>
-      expect(screen.getByTestId('config-readiness-headline')).toHaveTextContent('配置已完成 5/5'),
+      expect(screen.getByTestId('config-readiness-headline')).toHaveTextContent('配置已完成 7/7'),
     )
     fireEvent.click(domainNav('notifications'))
-    expect(screen.getByTestId('config-readiness-headline')).toHaveTextContent('配置已完成 5/5')
-    // 五个读面各只发一次（切域不重拉第一屏）
-    expect(mockGetOperationPositions).toHaveBeenCalledTimes(1)
+    expect(screen.getByTestId('config-readiness-headline')).toHaveTextContent('配置已完成 7/7')
+    // 两个第一屏读面各只发一次（切域不重拉第一屏）：聚合端点 + 算料域的整份配置
+    expect(mockConfigReadiness).toHaveBeenCalledTimes(1)
     expect(mockGetCraftCalcConfig).toHaveBeenCalledTimes(1)
   })
 })
@@ -600,7 +677,7 @@ describe('判据 6：域状态徽标**与主线同源**（G4），且没被主�
   it('算料域徽标文字 ≡ 主线里 `calc` 步的文字（同一次读数）', async () => {
     render(<SettingsPage />)
     await waitFor(() =>
-      expect(screen.getByTestId('config-readiness-headline')).toHaveTextContent('配置已完成 5/5'),
+      expect(screen.getByTestId('config-readiness-headline')).toHaveTextContent('配置已完成 7/7'),
     )
     fireEvent.click(domainNav('calc'))
     fireEvent.click(screen.getByTestId('config-readiness-toggle'))
@@ -609,10 +686,14 @@ describe('判据 6：域状态徽标**与主线同源**（G4），且没被主�
   })
 
   it('工艺路线读面失败 ⇒ 算料域徽标仍「已配置」，主线 `calc` 步也是「已配置」（不被别步牵连）', async () => {
-    mockGetRoutings.mockRejectedValue(new Error('500'))
+    // 路线读面失败 ⇒ 服务端那两步的 facts 为空（`routings` / `default-route` 同一个读面）
+    mockReadiness((steps) => {
+      steps.routings = { href: '/production/routings', facts: {} }
+      steps['default-route'] = { href: '/production/routings', facts: {} }
+    })
     render(<SettingsPage />)
     await waitFor(() =>
-      expect(screen.getByTestId('config-readiness-headline')).toHaveTextContent('配置完成 3/5'),
+      expect(screen.getByTestId('config-readiness-headline')).toHaveTextContent('配置完成 5/7'),
     )
     fireEvent.click(domainNav('calc'))
     expect(screen.getByTestId('config-domain-state-calc')).toHaveTextContent('已配置')
@@ -773,7 +854,7 @@ describe('判据 4：主线的「去配置」跳到**本页那个域**（G3）�
   it('展开主线 ⇒ 点「加工费组合」的去配置 ⇒ 右栏换成承载它的那个域（页内切换 + URL 跟上）', async () => {
     render(<SettingsPage />)
     await waitFor(() =>
-      expect(screen.getByTestId('config-readiness-headline')).toHaveTextContent('配置已完成 5/5'),
+      expect(screen.getByTestId('config-readiness-headline')).toHaveTextContent('配置已完成 7/7'),
     )
     expect(screen.getByTestId('config-domain-panel-calc')).toBeInTheDocument()
 
@@ -791,7 +872,7 @@ describe('判据 4：主线的「去配置」跳到**本页那个域**（G3）�
   it('🔴 判别力：**多步共用一个域**时，任一步的去配置都落到同一个域（不会跳到不存在的域）', async () => {
     render(<SettingsPage />)
     await waitFor(() =>
-      expect(screen.getByTestId('config-readiness-headline')).toHaveTextContent('配置已完成 5/5'),
+      expect(screen.getByTestId('config-readiness-headline')).toHaveTextContent('配置已完成 7/7'),
     )
     fireEvent.click(screen.getByTestId('config-readiness-toggle'))
     // 「工艺与路线」这一个域承载三步（工序 / 路线 / 默认路线）—— 按 `config-center-domains` 的声明现取

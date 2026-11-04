@@ -136,8 +136,9 @@ export const CONFIG_DOMAINS: readonly ConfigDomain[] = [
     summary: '这家提供哪些加工、它们怎么分类 —— 顾客下单时能选到的就是这里启用的',
     // 加工项 / 加工分类读面（`processingItemApi` / `processingCategoryApi`）
     requiredCode: 'production:view',
-    // 主线今天没有「加工项」那一步（`config-readiness.ts` 头部「未实装」已具名登记）⇒ 不编读数、不显示徽标
-    mainlineSteps: [],
+    // 🔴 2026-11-04（issue #6579）：「加工项」进主线了 ⇒ 本域徽标**与主线同源**
+    // （`config-readiness.ts` 头部原「未实装」那条已销账）
+    mainlineSteps: ['processing-items'],
   },
   {
     key: 'fee-combinations',
@@ -183,7 +184,9 @@ export const CONFIG_DOMAINS: readonly ConfigDomain[] = [
     summary: '做一个小件需要多大一块布 —— 填了才启用该小件的余料匹配',
     // 小件用料尺寸表读面（`RemnantController` 类级码）
     requiredCode: 'processing:manage',
-    mainlineSteps: [],
+    // 🔴 2026-11-04（issue #6579）：「余料尺寸」进主线了（**跨码步骤**：不持 `processing:manage`
+    // 时服务端整个不发这一步 ⇒ 主线不画那行；本域本身也不渲染 ⇒ 徽标与渲染面同进同出）
+    mainlineSteps: ['remnant-sizes'],
   },
   {
     key: 'enterprise',
