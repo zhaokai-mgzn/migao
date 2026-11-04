@@ -8595,7 +8595,7 @@ cases:
     merge_log: >-
       2026-11-05 新增（issue #8681 的 P2-1e 第二批，**部分交付**：不写关闭关键词）。
       现取读数（`git show origin/main:backend/admin-api/src/main/java/com/migao/admin/service/OrderService.java | wc -l` = 1,725，
-      `grep -c "@Test" .../OrderServiceTest.java` = 152）。本批只做一件事的两半：① **解结构性阻塞** ——
+      `grep -c "@Test" backend/admin-api/src/test/java/com/migao/admin/service/OrderServiceTest.java` = 152）。本批只做一件事的两半：① **解结构性阻塞** ——
       OrderServiceTest 的驱动对象从门面迁到实现点（129 个调用点：查询 27 / 建单 55 / 生命周期 47）；
       三个实例取自门面自己懒构造的那一份（`queryService()` / `creationService()` / `lifecycleService()`），
       所以是**同一条调用链、同一份协作者**，断言逐字未改（152 tests / 0 failures）；② **删解锁的转发** ——
