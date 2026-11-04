@@ -59,8 +59,12 @@ TYPE_NAME = "processing_item_count_for_keyword"
 #: （不收 `create` 这类通用词 —— 它们可能是别的工具的合法 action，会造成假红）。
 RETIRED_WRITE_SURFACE: frozenset = frozenset({
     # 已解绑（B 端全部 skill 不绑定、C 端也没有它们）
+    # 🔴 issue #8618（2026-11-04）：`processing_item_manage` **移出本集合** —— 它已绑回 B 端
+    # `product` skill（删除类 action 退场，剩「增改 + 停用」= 可逆变更）⇒ 用例声明它是
+    # **活的**写面，不再算「退役写面」。（`product_update` / `sku_update` 同理，早由 #5303
+    # 回绑后移出；本集合只收**当前仍不可达**的写面。）
     "order_manage", "product_manage", "product_update", "sku_update",
-    "processing_item_manage", "processing_order_generate", "processing_order_update",
+    "processing_order_generate", "processing_order_update",
     "product_processing_item_manage",          # 更早（#4371 商品↔加工项解耦）退场
     # 已从源码删除的写 action（只可能由写路径产生）
     "toggle_item_status", "toggle_status", "update_status", "adjust", "add_tag", "remove_tag",
@@ -269,12 +273,14 @@ class TestCaseDeclarationStillThere:
         """
         fake = {"id": "FAKE-LEAK",
                 "expectations": [{"tool": "processing_item_query"}],
-                "must_succeed": [{"tool": "processing_item_manage",
-                                  "action": "toggle_item_status"}],
+                # 2026-11-04（issue #8618）：`processing_item_manage` 已回绑 ⇒ 红证样本改用
+                # 仍退役的工具名 + 已删 action（判据的判别力一字未减）。
+                "must_succeed": [{"tool": "product_manage",
+                                  "action": "toggle_status"}],
                 "db_verify": [{"tool": "after_sales_ticket", "expect_status": "closed",
                                "expect": {"closedAt": "__nonnull__", "closeReason": "客户要求"}}]}
         leaks = _retired_write_leaks(fake)
-        assert {"processing_item_manage", "toggle_item_status"} <= set(leaks), leaks
+        assert {"product_manage", "toggle_status"} <= set(leaks), leaks
         assert _retired_db_verify_tokens(fake), (
             "`db_verify` 里 `status=closed` / `closedAt` / `closeReason` 这类"
             "「只可能由已删除写 action 产生」的断言没被认出来")

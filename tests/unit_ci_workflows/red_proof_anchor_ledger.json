@@ -450,8 +450,8 @@
     },
     {
       "path": "tests/unit_ci_workflows/test_mibao_b_end_readonly.py",
-      "hits": 13,
-      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "hits": 11,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。｜2026-11-04（issue #8618）：现取 **11**（原 13）。本单重锚了两处注入（`processing_item_manage` / `category_manage` 的登记面改判）：其中 2 处站点迁到 `injection.inject()` 原语 + 2 处锚点随源码事实改写 ⇒ 裸 `str.replace` 站点净减 2。**只许缩短**：现取 = 11，若再涨必须重新裁定。",
       "issue": "#7017"
     },
     {
