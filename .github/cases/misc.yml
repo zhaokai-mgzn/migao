@@ -7827,10 +7827,10 @@ cases:
         - pr-check.yml
       verifies: []
   - id: MC-187
+    legacy_id: ''
     title: 冒烟旅程 16- 的「生成作业单」走智能派单唯一入口，不许退化成可跳过的空判据（#7743）
-    pr: 0
-    status: active
-    modules:
+    domains:
+      - misc
       - ci
     tier: normal
     tags:
