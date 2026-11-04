@@ -4187,7 +4187,7 @@
 ```
 溯源: 2026-10-31 新增（issue #8295）：两步确认，避免误写 ｜ tags: ui, preview
 
-## 杂项域（217 case）
+## 杂项域（218 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -7479,6 +7479,20 @@
 ```
 真值: ⚠️ 缺口（见对应模板 ⚠️ 注释）
 溯源: 2026-11-04 新增（issue #7583 剩余缺口 4/5/6）。取号 MC-190（派单口径指定，避开 180~189 的在飞占号）。红证：内存变异注入 —— 摘掉删除成功分支的 404 合取 / 把「未见按钮」判据换回「仅验证渲染」/ 拿掉一处订单清理调用，三条判据各自具名红；未注入 ⇒ 全绿。 ｜ tags: smoke, sdqs, cleanup, empty-state, data-quality
+
+### MC-189. 配置就绪度端点 GET /api/admin/config-readiness（issue #6579）：服务端聚合七步事实（含孤儿工序单一真值口径）、跨码步骤按调用方权限整个省略、前端主线只发这一个请求就画出七步 🔵
+```
+你: 配置主线要发五个请求才画得出来，任一失败只能显示「读不到」，而「没权限」与「网络失败」在界面上长得一样；主线第一步也看不到「孤儿工序」这一维。
+期望: direct_reply
+数据: **判据 1（会红）**：端点 `GET /api/admin/config-readiness` 的权限码 = `production:view`，且声明在**方法级**（类级声明也算违规 —— 那会让「这个端点用哪个码」失去源码证据）。执行点 = tests/unit_ci_workflows/test_config_readiness_endpoint.py::test_endpoint_declares_method_level_production_view，端点契约 = backend/admin-api/src/test/java/com/migao/admin/controller/ConfigReadinessControllerTest.java。
+数据: **判据 2（会红）**：七步的事实逐值取自**既有** service（零持久层直连、零手写查询、零三态字面量）：工序与单价 total/unpriced/orphans、工艺路线 missing_base_routes、默认路线 count、加工项 total/active、加工费组合 combinations/gaps、算料 source、余料尺寸 configured/items。执行点 = tests/unit_ci_workflows/test_config_readiness_endpoint.py::test_service_is_an_aggregator_of_existing_read_surfaces + backend/admin-api/src/test/java/com/migao/admin/service/ConfigReadinessServiceTest.java。
+数据: **判据 3（会红，负控）**：调用方不持余料尺寸读面的码时，`remnant-sizes` 那一步**整个不在 steps 里**（不返回 0、不返回 forbidden 占位 —— 两者都是谎报）；持码时该步在且 facts 逐值可读。执行点 = backend/admin-api/src/test/java/com/migao/admin/controller/ConfigReadinessControllerTest.java 与 backend/admin-api/src/test/java/com/migao/admin/service/ConfigReadinessServiceTest.java。
+数据: **判据 4（会红）**：孤儿工序按工艺配置页**同一口径**算（无价目行引用 / 按逻辑工序名去重 / 价目表里已出现的名字不算 / 空名不计），不是另写一份口径。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/ConfigReadinessServiceTest.java 的工序与单价用例。
+数据: **判据 5（会红）**：跨端同值三组 —— 余料尺寸读面码（服务常量 / 余料尺寸控制器类级声明 / 前端域目录 requiredCode）、两条基础路线名（Java / 前端判据模块 / 算料引擎）、七步 href（服务端 / 前端主线）。执行点 = tests/unit_ci_workflows/test_config_readiness_endpoint.py 的四条同值用例。
+数据: **判据 6（会红）**：前端 `/settings` 只发这一个请求画主线 —— 不再直调工序价目 / 工艺路线 / 加工费组合 / 加工费缺口四个旧读面，三态翻译只走单一真值模块（facts 缺键 ⇒ 该步读不到，**不是**待配置）；不持余料尺寸读面码时主线只有六步、那一步整行不画。执行点 = tests/unit_ci_workflows/test_config_readiness_endpoint.py::test_settings_page_draws_the_mainline_with_one_request + frontend/admin-web/tests/unit/pages/settings.test.tsx + frontend/admin-web/tests/unit/lib/config-readiness.test.ts。
+跳过: [backend-contract] 端点契约 + 跨端同值 + 前端单请求判据（Java 单测 / pytest / vitest，零 LLM、零真库、零真实浏览器），非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-11-04 新增（issue #6579）。取号 MC-189（MC-180~188 已被占用）。红证：注入式红证内建在 tests/unit_ci_workflows/test_config_readiness_endpoint.py 的六条注入用例里（改成类级声明 / 换码 / 直连持久层 / 少一处委派 / 改一处三源值 / 把旧读面调回页面 ⇒ 各自判红且点名）。 ｜ tags: config-readiness, rbac, single-source, red-proof, frontend-single-request
 
 ## 商家入驻域（7 case）
 
@@ -13495,11 +13509,14 @@
 数据: **行内不标默认态**（issue #6857，用户裁定方案 C）：`param-unset-*` / `param-is-default-*` / `param-changed-*` **一个都不在**；替代 = 域级信号（横幅 + 口径徽标）+ 「恢复为默认值」按钮（把**整份**草稿写回 `defaults`；`defaults_source !== 'engine'` ⇒ 禁用；**不自动保存**）
 数据: **类级守护：配置页数值输入必须定宽**（issue #6857 判据 5）：本域每个 `calc-caliber-*` 输入/下拉都带定宽 token（`w-28`/`w-40`/`w-64`）且**不得** `w-full`；`boundedInputCls` 的替换必须真的生效（`inputCls` 丢了 `w-full` ⇒ 自证红，防静默退化成整列宽）
 数据: 🔴 **2026-10-17 用户裁定（两条）**：① 「把算料口径里面的这行字都拿掉吧」—— 参数行内**整行**「改它会怎样：… 说明」退场（含行尾 `param-doc-*` 锚点），影响说明的唯一载体是同屏术语区块的「参数当前值」表；承载体 = `frontend/admin-web/tests/unit/components/CalcCaliberPanel.test.tsx`（逐条断言页面上取不到 `改它会怎样`、`param-doc-*` 为 `null`，并反向自证 `glossary-param-*` 目标行仍在）。② 「两个参数一行排列的布局是否更美观」⇒ 常用 / 高级参数容器改为 `grid grid-cols-1 gap-x-8 xl:grid-cols-2`（窄屏单列），判据 = 同文件的「两列排布（xl+）」用例（把 `divide-y` 单列写回 ⇒ 红）。三件套口径（人话名 / 口径提示 / 就地可改）一条不放宽。
+数据: **配置主线改判（issue #6579）**：主角读数改为**一个**服务端聚合端点（`GET /api/admin/config-readiness`，方法级 `production:view`）—— 页面 effect 驱动面上只剩它与算料域的整份配置读面（同码），改前那四个生产域读面**一次都不再发**；主线由**五步**扩到**七步**（新增加工项、余料尺寸；顺序：工序与单价 → 工艺路线 → 默认路线 → 加工项 → 加工费组合 → 余料尺寸 → 算料配置）。执行点 = frontend/admin-web/tests/unit/pages/settings.test.tsx（只发一个请求的负控 + 七步摘要）+ frontend/admin-web/tests/unit/lib/config-readiness.test.ts（七步目录与事实到三态的翻译）。
+数据: **跨码步骤整行不画（issue #6579）**：余料尺寸的读面码是 processing:manage —— 不持该码时服务端**整个不发**那一步，主线只画**六步**且 `readiness-item-remnant-sizes` 取不到（不是画成读不到、也不是待配置）；该域本身也不在左栏。执行点 = frontend/admin-web/tests/unit/pages/settings.test.tsx 的跨码步骤用例 + frontend/admin-web/tests/unit/components/ConfigReadinessBar.test.tsx 的 stepKeys 用例。
+数据: **事实缺键 ⇒ 读不到（不是待配置）**：某一步的 facts 缺键（服务端那一步取数失败）⇒ 该步判读不到；整份请求失败 ⇒ 七步全读不到 + 常驻失败锚与真重发出口。执行点 = frontend/admin-web/tests/unit/lib/config-readiness.test.ts 的事实到三态用例 + frontend/admin-web/tests/unit/pages/settings.test.tsx。
 前置: 本用例是 [backend-contract] 纯前端用例：前置（算料配置读面与 AI 配置读面）由单测 mock `@/lib/api` 自建（#6573 起算料域读面由**页面**发起、以 props 注入面板），不依赖共享夹具 ⇒ 前置不成立时单测直接红；agent-eval 栈不跑它
 跳过: [backend-contract] 纯前端页面与只读展示（无 LLM 环节，不进 agent-eval 冒烟）：断言由 frontend/admin-web/tests/unit/components/CalcCaliberPanel.test.tsx（算料口径域面板；它承接的是 #6826 删掉的那个死代码组件的面）、frontend/admin-web/tests/unit/pages/settings-params.test.tsx（新页面 + 配置主线）、frontend/admin-web/tests/unit/lib/config-readiness.test.ts（三态判据）、frontend/admin-web/tests/unit/lib/tenant-params.test.ts 执行
 ```
 真值: frontend-fix.layout
-溯源: 2026-09-22 新增（issue #5131）：用户 2026-09-22 裁定 D6′ = 方案 A（整合落在页面与信息架构，存储保持结构化列），并逐字强调「我们的配置类页面务必要考虑配置复杂度和用户体验」⇒ 按 migao-dev-flow §22 配置类页面规范落增量 1：P1 按域分组 / P2 每参数三件套 / P3 默认值可见 / **P4 阈值试算**（双列对照，服务端判定真值 —— 只覆盖超高与超宽两个阈值键，其余算料参数的服务端试算不收 config）。**未闭环（照实登记）**：P6 变更留痕登记为后续增量。 ｜ 2026-10-08（issue #6573，用户裁定方案 C）**改判**：参数总览由 `/settings` 的 tab **升为一级菜单项** `/settings/params` —— 旧形态把配置中心绑在 `system:manage` 上，持 `production:view` 的生产岗根本进不去，而缺配置的正是他们要配的东西；同批落「配置主线」（跨页就绪度：工序与单价 → 工艺路线 → 默认路线 → 加工费组合 → 算料配置）与**域级权限**（不持码的域不渲染也不请求）。判据口径同步改判：第一屏读端点由**页面**的 effect 驱动面承担（`MENU_READ_ENDPOINT_ANCHORS` 新增该页一条，5 个读面全是 `production:view` ⇒ 第一屏码集恰好一个码）。**未实装（照实登记）**：服务端聚合就绪度端点、跨页的「加工项 / 余料尺寸」两步、以及真实浏览器点击 E2E 均未做 ｜ 2026-10-09（issue #6580，用户裁定）**再改判**：「参数总览」**不再单独立菜单**（用户逐字「参数总揽不要单独搞个菜单」）——它的一级项席位由「企业基础设置」（原「企业基础信息」，同批改名）占用，内容并入 `/settings` 页内的配置域；`/settings/params` 保留为旧链兼容（重定向，不 404）。本例的**页面级判据**（四区八域 / 配置主线 / 域级权限 / 阈值试算）随页迁移继续有效， ｜ 2026-10-09（issue #6585，v2）**域拆到功能粒度**：域数 **8 → 11** —— `processing-fee`（一个域两件事：加工项 + 加工费组合）拆成 `processing-items` + `fee-combinations`，`craft-route`（一个域四件事）拆出 `operation-prices`（工序与部位单价是**同一张表** ⇒ 不拆成两域），并新增 `cutting-height`（裁高配置）；算料的**公式编辑**并入「算料口径」域（消灭与 board 内 calc tab 的重复入口）。**新增类级守卫「域内零 tab」**：遍历全部域断言 `config-domain-panel-*` 内无 `role=tablist`（ARIA 角色不得再出现），未拆域进**只许缩短**的台账（`TABS_NOT_YET_SPLIT`）+ 无幽灵断言 ⇒ 每搬完一个域必须从台账删一行。旧 `?domain=processing-fee` 由 `LEGACY_DOMAIN_ALIASES` + `resolveDomainKey` 兜住（域 key = 可分享的 URL 契约，不许落空白）。执行点 = `frontend/admin-web/tests/unit/pages/settings.test.tsx`（判据 7）+ `lib/config-center-domains.test.ts` + `tests/unit/components/{ProcessingItemsPanel,FeeCombinationsPanel,OperationPricePanel,RoutingsPanel,CuttingHeightPanel,CalcCaliberPanel}.test.tsx` ｜ 2026-10-13（issue #6825，用户裁定**方案 B**）**收口算料写面**：`/settings?domain=calc` 的「算料口径」域此前**只有读面**（标签 / 提示 / 影响面 + 只读值 + 阈值试算），真正的写面（8 标量 + 档位表 + 拼色每折吃布表 + 备用公式 + 保存）只存在于 `/production/routings?tab=calc`，而那个菜单入口早在 #6580 就被删了（登记在 `tests/unit_ci_workflows/test_agent_permission_parity.py::ROUTE_WITHOUT_MENU_NODE`）、#6585 又摘掉了「去算料配置」外链 ⇒ **商家从任何导航都到不了这些参数**（同一份配置两个入口 = 设计判死线第 1 条）。本轮把唯一写面收敛进算料口径域：就地可改 8 标量（`NumberInput`，issue #5198/#5218 口径）+ 档位表（显示名 + 满度**逐行可改**）+ 拼色每折吃布表 + `default_formula` select（复用 `CRAFT_CALC_FORMULA_LABELS`，不造第二份映射）+ **一个**保存按钮（`PUT` **全量 11 键**；422 ⇒ `details[].message` **逐条**上屏、**草稿不回滚**、不谎报已保存）；术语与口径区块（`CraftCalcGlossary`）与阈值试算随功能体一并迁入；三态纪律不变（`loading` 不画「未配置」、读失败只剩**一处**失败信号 + 重试、无参数卡）。板子那侧：`ProcessConfigBoard` 的 tab 由「工序管理 / 算料配置 / 裁高配置」收敛为**两个**（算料 tab 与它的全部 `craft-calc-config-*` DOM 整体删除），就绪度第 ④ 步的「去处理」从**页内切 tab** 改成**跨页深链** `/settings?domain=calc`（死按钮不许留）；旧深链 `?tab=calc` 由 `production/routings/page.tsx` `router.replace` 重定向（不 404、不落空白）。`frontend/admin-web/src/components/production-config/CalcFormulaPanel.tsx`（唯一消费者是 `/settings` 算料域）**删除**，其行为判据（读失败单一信号 / 全量 `PUT` 键 / 422 逐条理由）迁进 `CalcCaliberPanel.test.tsx`；`CRAFT_CALC_ENTRY` 改指 `/settings?domain=calc`，并把 `meters-formula-legend.test.ts` 里那条钉死值同批改准。**新增类级守卫**（issue #6825 冻结判据 6）：`tests/unit/lib/domain-write-surface.test.tsx` 遍历 `CONFIG_DOMAINS`（及其 `mainlineSteps`）断言每个域在 `config-domain-panel-*` 内有**可交互写面锚点**、且有**本域写出口**（`[data-write-exit]` 与锚点成对 —— 只留试算框那种形态必红），台账 = `tests/unit/lib/domain-write-surface-ledger.ts`（未登记即抛错，fail-closed）。 ｜ tags: ui, settings
+溯源: 2026-09-22 新增（issue #5131）：用户 2026-09-22 裁定 D6′ = 方案 A（整合落在页面与信息架构，存储保持结构化列），并逐字强调「我们的配置类页面务必要考虑配置复杂度和用户体验」⇒ 按 migao-dev-flow §22 配置类页面规范落增量 1：P1 按域分组 / P2 每参数三件套 / P3 默认值可见 / **P4 阈值试算**（双列对照，服务端判定真值 —— 只覆盖超高与超宽两个阈值键，其余算料参数的服务端试算不收 config）。**未闭环（照实登记）**：P6 变更留痕登记为后续增量。 ｜ 2026-10-08（issue #6573，用户裁定方案 C）**改判**：参数总览由 `/settings` 的 tab **升为一级菜单项** `/settings/params` —— 旧形态把配置中心绑在 `system:manage` 上，持 `production:view` 的生产岗根本进不去，而缺配置的正是他们要配的东西；同批落「配置主线」（跨页就绪度：工序与单价 → 工艺路线 → 默认路线 → 加工费组合 → 算料配置）与**域级权限**（不持码的域不渲染也不请求）。判据口径同步改判：第一屏读端点由**页面**的 effect 驱动面承担（`MENU_READ_ENDPOINT_ANCHORS` 新增该页一条，5 个读面全是 `production:view` ⇒ 第一屏码集恰好一个码）。**未实装（照实登记）**：服务端聚合就绪度端点、跨页的「加工项 / 余料尺寸」两步、以及真实浏览器点击 E2E 均未做 ｜ 2026-10-09（issue #6580，用户裁定）**再改判**：「参数总览」**不再单独立菜单**（用户逐字「参数总揽不要单独搞个菜单」）——它的一级项席位由「企业基础设置」（原「企业基础信息」，同批改名）占用，内容并入 `/settings` 页内的配置域；`/settings/params` 保留为旧链兼容（重定向，不 404）。本例的**页面级判据**（四区八域 / 配置主线 / 域级权限 / 阈值试算）随页迁移继续有效， ｜ 2026-10-09（issue #6585，v2）**域拆到功能粒度**：域数 **8 → 11** —— `processing-fee`（一个域两件事：加工项 + 加工费组合）拆成 `processing-items` + `fee-combinations`，`craft-route`（一个域四件事）拆出 `operation-prices`（工序与部位单价是**同一张表** ⇒ 不拆成两域），并新增 `cutting-height`（裁高配置）；算料的**公式编辑**并入「算料口径」域（消灭与 board 内 calc tab 的重复入口）。**新增类级守卫「域内零 tab」**：遍历全部域断言 `config-domain-panel-*` 内无 `role=tablist`（ARIA 角色不得再出现），未拆域进**只许缩短**的台账（`TABS_NOT_YET_SPLIT`）+ 无幽灵断言 ⇒ 每搬完一个域必须从台账删一行。旧 `?domain=processing-fee` 由 `LEGACY_DOMAIN_ALIASES` + `resolveDomainKey` 兜住（域 key = 可分享的 URL 契约，不许落空白）。执行点 = `frontend/admin-web/tests/unit/pages/settings.test.tsx`（判据 7）+ `lib/config-center-domains.test.ts` + `tests/unit/components/{ProcessingItemsPanel,FeeCombinationsPanel,OperationPricePanel,RoutingsPanel,CuttingHeightPanel,CalcCaliberPanel}.test.tsx` ｜ 2026-10-13（issue #6825，用户裁定**方案 B**）**收口算料写面**：`/settings?domain=calc` 的「算料口径」域此前**只有读面**（标签 / 提示 / 影响面 + 只读值 + 阈值试算），真正的写面（8 标量 + 档位表 + 拼色每折吃布表 + 备用公式 + 保存）只存在于 `/production/routings?tab=calc`，而那个菜单入口早在 #6580 就被删了（登记在 `tests/unit_ci_workflows/test_agent_permission_parity.py::ROUTE_WITHOUT_MENU_NODE`）、#6585 又摘掉了「去算料配置」外链 ⇒ **商家从任何导航都到不了这些参数**（同一份配置两个入口 = 设计判死线第 1 条）。本轮把唯一写面收敛进算料口径域：就地可改 8 标量（`NumberInput`，issue #5198/#5218 口径）+ 档位表（显示名 + 满度**逐行可改**）+ 拼色每折吃布表 + `default_formula` select（复用 `CRAFT_CALC_FORMULA_LABELS`，不造第二份映射）+ **一个**保存按钮（`PUT` **全量 11 键**；422 ⇒ `details[].message` **逐条**上屏、**草稿不回滚**、不谎报已保存）；术语与口径区块（`CraftCalcGlossary`）与阈值试算随功能体一并迁入；三态纪律不变（`loading` 不画「未配置」、读失败只剩**一处**失败信号 + 重试、无参数卡）。板子那侧：`ProcessConfigBoard` 的 tab 由「工序管理 / 算料配置 / 裁高配置」收敛为**两个**（算料 tab 与它的全部 `craft-calc-config-*` DOM 整体删除），就绪度第 ④ 步的「去处理」从**页内切 tab** 改成**跨页深链** `/settings?domain=calc`（死按钮不许留）；旧深链 `?tab=calc` 由 `production/routings/page.tsx` `router.replace` 重定向（不 404、不落空白）。`frontend/admin-web/src/components/production-config/CalcFormulaPanel.tsx`（唯一消费者是 `/settings` 算料域）**删除**，其行为判据（读失败单一信号 / 全量 `PUT` 键 / 422 逐条理由）迁进 `CalcCaliberPanel.test.tsx`；`CRAFT_CALC_ENTRY` 改指 `/settings?domain=calc`，并把 `meters-formula-legend.test.ts` 里那条钉死值同批改准。**新增类级守卫**（issue #6825 冻结判据 6）：`tests/unit/lib/domain-write-surface.test.tsx` 遍历 `CONFIG_DOMAINS`（及其 `mainlineSteps`）断言每个域在 `config-domain-panel-*` 内有**可交互写面锚点**、且有**本域写出口**（`[data-write-exit]` 与锚点成对 —— 只留试算框那种形态必红），台账 = `tests/unit/lib/domain-write-surface-ledger.ts`（未登记即抛错，fail-closed）。 ｜ 2026-11-04（issue #6579）**改判（只收紧不放宽）**：配置主线的读数收口到**一个**服务端聚合端点（`GET /api/admin/config-readiness`，方法级 `production:view`）—— 改前五个读面、任一失败只能落读不到，而「没权限」与「网络失败」在客户端同形；主线同批接上「加工项」「余料尺寸」两步（五步 → 七步），孤儿工序改由服务端按工艺配置页**同一口径**给数（前端不再复刻逻辑名去重，消灭第二份会漂的实现）。跨码步骤（余料尺寸，读面码 processing:manage）按调用方权限**整个省略**：不持码时那一步既不是 0 也不是占位、主线整行不画（六步）。三态语义一字未改（done / todo / unknown 仍由 `frontend/admin-web/src/lib/config-readiness.ts` 唯一判定，新增 statesFromFacts 只做事实到三态的翻译）。 ｜ tags: ui, settings
 
 ### UI-055. 数字输入框统一治理：0 打不进去 / 小数点吞键 / 中间态丢失 —— 共享 NumberInput（type=text + inputMode=decimal + 字符串草稿），站点级落地 SkuMatrix 价格库存 / 算料配置参数 / 工人端报工数量（issue #5198） 🔵
 ```
@@ -14987,8 +15004,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：1015（活跃 153，跳过 862）
-- tier 分布：smoke 15 / normal 938 / adversarial 33
+- 用例总数：1016（活跃 153，跳过 863）
+- tier 分布：smoke 15 / normal 939 / adversarial 33
 - 售后域：16
 - Agent 核心域：13
 - API 层域：21
@@ -15004,7 +15021,7 @@
 - 人事域：13
 - 知识问答域：9
 - 客户主数据迁移域：10
-- 杂项域：217
+- 杂项域：218
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：76
@@ -15288,6 +15305,7 @@
 - MC-187: 冒烟旅程 16- 的「生成作业单」走智能派单唯一入口，不许退化成可跳过的空判据（#7743）
 - MC-188: required 轻量 job 的超时上限有安全下限（#8605）
 - MC-190: 冒烟数据面收口（#7583 剩余缺口）：自造订单清理自证 + 空态不得冒充通过 + P1 写用例 finally 清理
+- MC-189: 配置就绪度端点 GET /api/admin/config-readiness（issue #6579）：服务端聚合七步事实（含孤儿工序单一真值口径）、跨码步骤按调用方权限整个省略、前端主线只发这一个请求就画出七步
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）

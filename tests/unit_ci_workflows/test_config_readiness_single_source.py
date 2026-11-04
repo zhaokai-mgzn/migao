@@ -59,12 +59,20 @@ CONSUMERS: tuple[Path, ...] = (
 )
 
 #: 必须由判据模块导出的纯判据（改名/删除 ⇒ 红，逼人来这里登记）。
+#:
+#: 🔴 2026-11-04（issue #6579）**清单随被约束对象生长**（不是放宽）：`/settings` 的主线读数改成
+#: 只发一个聚合请求（`GET /api/admin/config-readiness`）之后，「服务端事实 → 三态」的翻译
+#: 也必须有**唯一**的家 —— 那就是 `statesFromFacts`（页面只调它，不写任何判断）。
+#: 另两步（加工项 / 余料尺寸）进主线，各自的判据同批长在这里（写回页面 = 第二份口径）。
 REQUIRED_JUDGES: tuple[str, ...] = (
     "judgeOperationsStep",
     "judgeBaseRoutesStep",
     "judgeDefaultRouteStep",
     "judgeFeeCombinationsStep",
     "judgeConfigSourceStep",
+    "judgeProcessingItemsStep",
+    "judgeRemnantSizesStep",
+    "statesFromFacts",
 )
 
 #: 「第二个载体」的机械形态：就地三态定义 / 就地三元判据。

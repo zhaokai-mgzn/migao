@@ -45,15 +45,21 @@
  *    v2 = 由本页左栏**独占表达编排**、两个 board 拆成不带内部导航的域面板。
  * 2. `ProcessConfigBoard` 页内自带一块**配置就绪度**（`process-readiness`）—— 同屏于是有**两个**
  *    就绪面（设计 §2 判死线第 2 条）。v2 随上一条一起拆；v1 **不在本页另造**第三个。
- * 3. 主线今天只覆盖「工艺 / 加工费组合 / 算料」三类 → 「加工项与加工费」「工艺与路线」两域
- *    的主线步骤不是一一对应 ⇒ 这两域**不显示状态徽标**（宁缺勿滥，不编读数）。
+ * 3. 🔴 2026-11-04（issue #6579）**已销账**：主线现在覆盖七步（工序与单价 / 工艺路线 / 默认路线 /
+ *    加工项 / 加工费组合 / 余料尺寸 / 算料配置），「加工项」「工艺与路线」「余料尺寸」三个域
+ *    与主线步骤一一对应 ⇒ 它们的域徽标**与主线同源**（`config-center-domains.ts` 的 `mainlineSteps`）。
+ *    仍未覆盖：企业信息 / AI 客服 / 通知设置（这三个域不显示徽标，宁缺勿滥）。
  *
  * ## 取数为什么在**页面**（不是风格偏好）
  *
  * 仓内口径 = 「页面源码里由 `useEffect` 驱动的可执行面 = 该页第一屏读端点」
  * （`tests/unit_ci_workflows/test_agent_permission_parity.py` 的 `page_first_screen_text`，
  * 再由 `rbac/derive.py` 四跳现取端点码 ⇒ `rbac/manifest.json` 的 `pages[].units`）。
- * 五个生产域读面与三个企业级读面**全部**在本文的 effect 里发起（不藏进子组件）。
+ * 第一屏的读面**全部**在本文的 effect 里发起（不藏进子组件）：
+ *
+ * - 🔴 **配置主线 = 一个聚合端点**（`GET /api/admin/config-readiness`，issue #6579）——
+ *   改前要发五个读面、任一失败只能落 `unknown`，且主线第 ① 步缺「孤儿工序」那一维；
+ * - 算料域面板要**整份配置**（聚合端点只给 `source`）⇒ 那一个读面仍在本文（同一个码）。
  */
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { AlertCircle, Bell, Bot, Building2, Newspaper, QrCode } from 'lucide-react'
@@ -88,16 +94,13 @@ import {
 } from '@/lib/config-center-domains'
 // 🔴 主线判据的**唯一真值源**（类级守卫：tests/unit_ci_workflows/test_config_readiness_single_source.py）
 import {
-  judgeBaseRoutesStep,
-  judgeConfigSourceStep,
-  judgeDefaultRouteStep,
-  judgeFeeCombinationsStep,
-  judgeOperationsStep,
-  missingBaseRoutesOf,
+  statesFromFacts,
   type ReadinessState,
   worstState,
   MAINLINE_STEPS,
 } from '@/lib/config-readiness'
+// 主线读数 = **一个**聚合读端点（issue #6579）；接口面单开模块（`lib/api.ts` 有行数棘轮）
+import { configReadinessApi } from '@/lib/api-config-readiness'
 import type {
   SystemSettings,
   PaymentQrcodeMap,
@@ -116,10 +119,6 @@ function unwrap(res: Settled): unknown {
 
 function rec(v: unknown): Record<string, unknown> {
   return v && typeof v === 'object' ? (v as Record<string, unknown>) : {}
-}
-
-function arr(v: unknown): unknown[] | null {
-  return Array.isArray(v) ? v : null
 }
 
 /**
@@ -224,12 +223,21 @@ export default function SettingsPage() {
   const [readinessLoading, setReadinessLoading] = useState(true)
   const [states, setStates] = useState<Record<string, ReadinessState>>({})
   /**
+   * 服务端**这一次给回来的步骤键集**（issue #6579）。
+   *
+   * 为什么不能只靠 `states`：`remnant-sizes` 是**跨码步骤**（读面码 `processing:manage`）——
+   * 不持该码时服务端**整个不发这一步**，那是「与你无关」，不是「读不到」。
+   * 主线的渲染面按这个键集决定画不画那一行（见 `ConfigReadinessBar` 的 `stepKeys`）。
+   * `undefined` = 本次没拿到（请求失败）⇒ 渲染面按全量、全部「读不到」处理（不谎报成「没配」）。
+   */
+  const [serverStepKeys, setServerStepKeys] = useState<readonly string[] | undefined>(undefined)
+  /**
    * 主线读面**这次失败了吗**（issue #8049）。
    *
-   * 为什么不能只靠 `states`：五条读面各自独立（`Promise.allSettled`），失败的那一步会被画成
-   * `unknown`「读不到」—— 那句话说得对（读不到 ≠ 没配置），但它**只描述结果、不给出口**：
-   * 于是「刷新可重试」成了一句**没有按钮的话**（§31 P4：只陈述事实 + 该做什么）。
-   * ⇒ 单独记「有读面失败」，由页面给**常驻失败锚 + 真重发出口**（与 `/finance` 的汇总锚同口径）。
+   * 为什么不能只靠 `states`：失败的那一步会被画成 `unknown`「读不到」—— 那句话说得对
+   * （读不到 ≠ 没配置），但它**只描述结果、不给出口**：于是「刷新可重试」成了一句
+   * **没有按钮的话**（§31 P4：只陈述事实 + 该做什么）。
+   * ⇒ 单独记「读面失败」，由页面给**常驻失败锚 + 真重发出口**（与 `/finance` 的汇总锚同口径）。
    */
   const [readinessFailed, setReadinessFailed] = useState(false)
   const [calc, setCalc] = useState<CraftCalcConfigResponse | null>(null)
@@ -255,16 +263,20 @@ export default function SettingsPage() {
   const load = useCallback(async () => {
     setReadinessLoading(true)
     setCalcError('')
-    // 五个读面**各自独立**：一个失败不该让整块空白（失败的那步走 `unknown`，如实说「读不到」）
-    const [posRes, routingsRes, comboRes, gapRes, calcRes] = await Promise.allSettled([
-      productionApi.getOperationPositions(),
-      productionApi.getRoutings(),
-      productionApi.getFeeCombinations(),
-      productionApi.getFeeGaps(),
+    /**
+     * 两个读面，**各自独立**（一个失败不该让整块空白）：
+     *
+     * ① `config-readiness`（issue #6579）—— **主线只发这一个请求**就画出七步；
+     * ② `craft-calc-config` —— **算料域面板**要的是**整份配置**（13 键）+ 引擎默认值，
+     *    聚合端点只给 `source`（`facts`），面板画不出输入框 ⇒ 这一个读面留在本页，
+     *    它的码与主线同一个（`production:view`），不引入第二个第一屏码。
+     */
+    const [readinessRes, calcRes] = await Promise.allSettled([
+      configReadinessApi.get(),
       productionApi.getCraftCalcConfig(true),
     ])
 
-    // ── 算料域读面（面板要的值 + 主线的第 ⑤ 步判据同源于它）
+    // ── 算料域读面（面板要的值）
     if (calcRes.status === 'fulfilled') {
       const nextCalc = calcRes.value.data?.data ?? null
       setCalc(nextCalc)
@@ -292,51 +304,22 @@ export default function SettingsPage() {
       setCalcError(calcReadErrorCopy(calcRes.reason))
     }
 
-    // ── ① 工序与单价：孤儿工序跨页取不到 ⇒ 传 `null`（**不参与判定**，不是 0）
-    const positions = arr(unwrap(posRes))
-    const opsState = judgeOperationsStep({
-      readFailed: positions === null,
-      total: positions ? positions.length : 0,
-      unpriced: positions ? positions.filter((p) => rec(p).unit_price == null).length : 0,
-      orphans: null,
-    })
-
-    // ── ② 工艺路线 / ③ 默认路线：同一个读面
-    const routeList = arr(rec(unwrap(routingsRes)).routings)
-    const routesState =
-      routeList === null
-        ? 'unknown'
-        : judgeBaseRoutesStep(missingBaseRoutesOf(routeList.map((r) => String(rec(r).name ?? ''))))
-    const defaultState =
-      routeList === null
-        ? 'unknown'
-        : judgeDefaultRouteStep(routeList.filter((r) => rec(r).is_default === true).length)
-
-    // ── ④ 加工费组合：**缺口口径在服务端**（前端不重算组合命中）
-    const comboPayload = rec(unwrap(comboRes))
-    const comboCount =
-      typeof comboPayload.total === 'number'
-        ? comboPayload.total
-        : (arr(comboPayload.combinations)?.length ?? null)
-    const gapPayload = rec(unwrap(gapRes))
-    const gapCount =
-      typeof gapPayload.unpriced_combination_total === 'number'
-        ? gapPayload.unpriced_combination_total
-        : (arr(gapPayload.unpriced_combinations)?.length ?? null)
-
-    // ── ⑤ 算料配置：`source` 三态（`stored` / `default` / 其余 ⇒ unknown）
-    setStates({
-      operations: opsState,
-      routings: routesState,
-      'default-route': defaultState,
-      'fee-combinations': judgeFeeCombinationsStep(comboCount, gapCount),
-      calc: judgeConfigSourceStep(
-        calcRes.status === 'fulfilled'
-          ? (rec(unwrap(calcRes)).source as string | undefined)
-          : undefined,
-      ),
-    })
-    setReadinessFailed([posRes, routingsRes, comboRes, gapRes, calcRes].some((r) => r.status === 'rejected'))
+    /**
+     * ── 配置主线：**只把服务端给的事实翻译成三态**（issue #6579）
+     *
+     * 翻译在 `@/lib/config-readiness` 的 `statesFromFacts`（唯一真值源）——本页**不写任何判断**
+     * （「有没配」「读没读到」的取舍不许有第二个家）。请求失败 ⇒ `steps` 为 `undefined` ⇒
+     * 全步落 `unknown`（读不到 ≠ 没配），并置失败锚给真重发出口。
+     */
+    const payload = readinessRes.status === 'fulfilled' ? rec(unwrap(readinessRes)) : {}
+    const steps = payload.steps
+    const stepMap =
+      steps && typeof steps === 'object'
+        ? (steps as Record<string, { facts?: Record<string, unknown> }>)
+        : undefined
+    setServerStepKeys(stepMap ? Object.keys(stepMap) : undefined)
+    setStates(statesFromFacts(stepMap))
+    setReadinessFailed(readinessRes.status === 'rejected')
     setReadinessLoading(false)
   }, [])
 
@@ -377,6 +360,8 @@ export default function SettingsPage() {
         <ConfigReadinessBar
             states={states}
             loading={readinessLoading}
+            // 跨码步骤（余料尺寸）不持码时服务端整个不发 ⇒ 那一步**整行不画**（不是画成「读不到」）
+            stepKeys={serverStepKeys}
             // 设计 G3：「去配置」= **页内跳转**到承载这一步的那个域（不把人送出页面）
             onGoto={(stepKey) => {
               const target = domainOfMainlineStep(stepKey)
