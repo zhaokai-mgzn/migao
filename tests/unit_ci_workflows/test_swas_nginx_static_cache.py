@@ -10,13 +10,18 @@ r"""`deploy/swas/nginx.conf`：**所有承载可执行产物的静态面**必须
 原因：静态面只有 `ETag` / `Last-Modified`，**没有** `Cache-Control` ⇒ 浏览器按启发式缓存
 （通常取 age 的 ~10%）。对车间里**长期常开**的手持机，这个窗口不可控 ⇒「修好了但工人看到旧的」。
 
-## 为什么判据是**一组** location（issue #8639）
+## 为什么判据是**一组** location，且要有「未覆盖即红」的元判据（issue #8639 / #8643）
 
-#8355 只修了 `location /`（承载 `/w/`），**漏了 `location /b/`** —— 而 `/b/` 才是手机 / 手持标签机的
-主入口（APK 的 WebView 直接加载 `https://app.migaozn.com/b/#/pages/worker/home/index`）。实测
-2026-11-04：`/b/chunk/393.js` 在服务端已是新版（`待出库单` 在、`发货标签` 不在），标签机却仍显示旧菜单
-⇒ **同一个坑、同一类现场**。所以判据的口径写成「**静态 location 一律要 no-cache**」，
-而不是「`location /` 要 no-cache」—— 后者正是漏掉 `/b/` 的那种写法。
+两次同类现场，都是「修在了走不到的块上 / 只修了一个前缀」：
+
+1. **#8639**：`/b/`（手机与手持标签机的主入口）漏了 no-cache —— #8355 只修了 `location /`；
+2. **#8643**：`/w/` 本身也有 no-cache 的空缺，而且 #8355 那行虽然加在 `location /` 里、
+   注释还写着「本 location 同时承载 `/w/`」—— **nginx 前缀匹配取最长者**，`/w/…` 命中
+   `location /w/` 后**永远走不到** `location /` 的 `add_header` ⇒ 判据跟着写就全绿、现场照旧。
+
+⇒ 判据的口径是「**静态 location 一律要 no-cache**」，并且用
+`test_no_static_location_is_uncovered` 把「新加了一个静态 location 却忘了登记」变成红
+（只写一张表不够 —— 表本身会漏，这正是 #8643 的形态）。
 
 判据（删掉任一行 / 把它挪出对应 location ⇒ 红）：:data:`STATIC_LOCATIONS` 里每个块都必须有
 `add_header Cache-Control "no-cache" always;`（**no-cache**，不是 no-store —— 要保留 304 复验）。
@@ -33,30 +38,38 @@ CONF = ROOT / "deploy" / "swas" / "nginx.conf"
 
 #: 承载可执行产物的静态 location —— (前缀, 该块必须有的 SPA fallback)。
 #: fallback 用来**认领正确的那个块**（配置里有**两个** `location /`，:80 那个只 `return 301`）。
-#: 🔴 新增静态面 ⇒ 在这里加一行，判据自动覆盖（这就是「类级固化」的落点，issue #8639）。
+#: 🔴 前缀变了 / 新增静态面 ⇒ 改这张表（`test_no_static_location_is_uncovered` 会逼你改）。
 STATIC_LOCATIONS = (
     ("/", "try_files $uri $uri/ /index.html"),
+    ("/w/", "try_files $uri $uri/ /w/index.html"),
     ("/b/", "try_files $uri $uri/ /b/index.html"),
 )
 
 
-def _location_block(prefix: str, fallback: str) -> str:
-    """取 `location <prefix> { … }` 块（含花括号，块内文本原样返回）。"""
+def _iter_location_blocks() -> list[tuple[str, str]]:
+    """全部 `location <prefix> { … }` 块 ⇒ [(prefix, block)]（块含花括号）。"""
     text = CONF.read_text(encoding="utf-8")
-    pattern = r"^\s*location\s+" + re.escape(prefix) + r"\s*\{"
-    for m in re.finditer(pattern, text, re.MULTILINE):
-        depth = 0
+    out: list[tuple[str, str]] = []
+    for m in re.finditer(r"^\s*location\s+(\S+)\s*\{", text, re.MULTILINE):
+        prefix = m.group(1)
         start = m.end() - 1
+        depth = 0
         for i in range(start, len(text)):
             if text[i] == "{":
                 depth += 1
             elif text[i] == "}":
                 depth -= 1
                 if depth == 0:
-                    block = text[start : i + 1]
-                    if fallback in block:
-                        return block
+                    out.append((prefix, text[start : i + 1]))
                     break
+    return out
+
+
+def _location_block(prefix: str, fallback: str) -> str:
+    """取 `location <prefix> { … }` 块（按 fallback 认领 —— 配置里有**两个** `location /`）。"""
+    for found, block in _iter_location_blocks():
+        if found == prefix and fallback in block:
+            return block
     raise AssertionError(f"找不到 location {prefix}（配置结构变了 ⇒ 本判据要跟着改）")
 
 
@@ -65,7 +78,7 @@ def test_static_location_serves_no_cache(prefix: str, fallback: str) -> None:
     block = _location_block(prefix, fallback)
     assert re.search(r'add_header\s+Cache-Control\s+"no-cache"\s+always\s*;', block), (
         f"静态 location {prefix} 必须发 Cache-Control: no-cache —— "
-        "否则发布后手机 / 手持机会按启发式缓存继续跑旧产物（issue #8355 / #8639）"
+        "否则发布后手机 / 手持机会按启发式缓存继续跑旧产物（issue #8355 / #8639 / #8643）"
     )
     # 只反对**指令**层面的 no-store（注释里为了解释「为什么不是 no-store」会提到这个词）
     assert 'Cache-Control "no-store"' not in block, (
@@ -79,3 +92,21 @@ def test_static_location_keeps_hsts_and_nosniff(prefix: str, fallback: str) -> N
     block = _location_block(prefix, fallback)
     assert "Strict-Transport-Security" in block
     assert "X-Content-Type-Options nosniff" in block
+
+
+def test_no_static_location_is_uncovered() -> None:
+    """元判据：**每个**带 `index.html` 兜底的 location 都必须在 `STATIC_LOCATIONS` 里。
+
+    这条就是 #8643 的固化：当时的缺口不是「表里那一行写错」，而是「`/w/` 根本没人登记」
+    —— 加静态面时忘了同步判据，判据再绿也没意义。新增静态 location ⇒ 本条必红，逼你决定它要不要 no-cache。
+    """
+    covered = {prefix for prefix, _ in STATIC_LOCATIONS}
+    uncovered = [
+        prefix
+        for prefix, block in _iter_location_blocks()
+        if re.search(r"try_files\s+[^;]*index\.html", block) and prefix not in covered
+    ]
+    assert not uncovered, (
+        f"这些静态 location 带 index.html 兜底却不在 STATIC_LOCATIONS 里：{uncovered} —— "
+        "请登记（并确认它的 no-cache 口径），否则又是一次「判据全绿、现场跑旧产物」"
+    )
