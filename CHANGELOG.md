@@ -5,6 +5,13 @@
 > 原因 = 单文件涨到 512KB 越过扫描上限，详见存档文件头与 issue #6404。
 > **后续条目继续在本文件 `## [Unreleased]
 
+### 成品入库标签补印加工组合 / 特殊选项，开数改印「双开」，卡片与标签纸面不再显示短码（2026-11-04，issue #8673）
+
+- **改前**：打包扫码后的成品入库标签（50×70）只印订单 / 客户 / 套数 / 尺寸 / 开数 / 帘种 / 货号 / 仓位等；开数印数字（如 `2`）；报工页的成品入库卡还单独显示一行短码。
+- **改后**：标签补两行 —— **加工组合**（加工单快照 `processingItems[].name`，与水洗唛同源）与 **特殊选项**（同快照 `specialOptions[]`，按 `余料带回-布` → `余料带回` 的展示名归一）；开数改印行业词（1 单开 / 2 双开 / 3 三开 / 4 四开 / 表外 `N 开`）；**报工页卡片与成品入库标签纸面都不再显示短码**（水洗唛的短码/二维码不受影响，服务端 `washLabelView` 仍下发）。
+- **边界**：其他行、行序与 50×70 纸型不动；快照缺失或两项为空 ⇒ 整行不出现（不印空壳）。
+- 判据 = `FinishedGoodsServiceTest#finishedLabelCarriesCraftComboAndSpecialOptions` / `OptionFamilyNamesTest#displayNameCollapsesFamilyMembers` / `frontend/worker-h5/tests/worker-h5-finished-label.test.mjs` / `frontend/bmini-app/tests/worker-report-page.test.tsx`。
+
 ### 工人端每个子页都有「‹ 返回」了（2026-11-04，issue #8657）
 
 - **改前**：工人在**手机浏览器 / 微信 / 手持标签机**上用工人端，点进「待出库单」「拍照入库」「我的计件」这些子页后

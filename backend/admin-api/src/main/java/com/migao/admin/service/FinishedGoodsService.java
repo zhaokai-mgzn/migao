@@ -7,10 +7,13 @@ import com.migao.admin.entity.InboundOrder;
 import com.migao.admin.entity.Order;
 import com.migao.admin.entity.OrderItem;
 import com.migao.admin.entity.OutboundOrder;
+import com.migao.admin.entity.ProcessingOrder;
+import com.migao.admin.entity.ProcessingSetPartToken;
 import com.migao.admin.entity.Warehouse;
 import com.migao.admin.exception.BusinessException;
 import com.migao.admin.mapper.FinishedGoodsStockMapper;
 import com.migao.admin.mapper.OrderItemMapper;
+import com.migao.admin.mapper.ProcessingOrderMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -71,6 +74,8 @@ public class FinishedGoodsService {
     /** 本页「出库标签」的短链前缀（与 `/s/{短码}` 公开入口同一份口径） */
     private static final String SHORT_LINK_PREFIX = "/s/";
     private final OrderItemMapper orderItemMapper;
+    /** 加工单快照（issue #8673）：加工组合 / 特殊选项与水洗唛读同一份固化真相 */
+    private final ProcessingOrderMapper processingOrderMapper;
     private final WarehouseService warehouseService;
     private final InboundOrderService inboundOrderService;
     private final OutboundOrderService outboundOrderService;
@@ -406,7 +411,11 @@ public class FinishedGoodsService {
         out.put("already", already);
         out.put("bin_code", stock.getBinCode());
         out.put("inbound_no", stock.getInboundNo());
-        out.put("label", labelOf(tenantId, token, stock));
+        Map<String, Object> label = labelOf(tenantId, token, stock);
+        // issue #8673（用户 2026-11-04「短码还在？移除掉」）：成品入库标签**不印短码**。
+        // 同一份 labelOf 还服务水洗唛（washLabelView），那里必须保留短码/二维码 ⇒ 只在这里摘掉。
+        label.remove("short_code");
+        out.put("label", label);
         // 质检读不到（未接线 / 码上缺订单行 / 读面异常）⇒ null（页面写「正常」），**绝不**让一张卡片
         // 把归一屏扫码打挂（质检结论是辅助信息，不是入库的前提）。
         Object quality = null;
@@ -557,7 +566,12 @@ public class FinishedGoodsService {
         }
         addRow(rows, "尺寸", sizeOf(item));
         addRow(rows, "开数", item == null || item.getOpenCount() == null ? null
-                : String.valueOf(item.getOpenCount()));
+                : openCountText(item.getOpenCount()));
+        // 加工组合 / 特殊选项（issue #8673，用户 2026-11-04「参考水洗唛的做法」）：
+        // 与水洗唛同源读**加工单快照**（items_snapshot），不回读订单行现值；缺值整行不印。
+        Map<String, Object> snapshotRow = snapshotRowOf(token);
+        addRow(rows, "加工组合", snapshotRow == null ? null
+                : processingComboText(snapshotRow.get("processingItems")));
         // 🔴 纸面标签统一叫「帘种」（issue #7856；用户 2026-10-26「都要加上帘种」）：
         // 值仍取部位码的 `positionKind`（= 快照 `curtainType` 派生，同一条取值链）。
         addRow(rows, "帘种", token.getPositionKind() == null || token.getPositionKind().isBlank()
@@ -567,6 +581,8 @@ public class FinishedGoodsService {
         addRow(rows, "安装小区", installInfoOf(item, OrderInstallInfo.KEY_INSTALL_COMMUNITY));
         addRow(rows, "安装位置", installInfoOf(item, OrderInstallInfo.KEY_INSTALL_ROOM));
         addRow(rows, "主布货号", item == null ? null : item.getSkuCode());
+        addRow(rows, "特殊选项", snapshotRow == null ? null
+                : specialOptionsText(snapshotRow.get("specialOptions")));
         addRow(rows, "打包区域", stock == null ? null : stock.getBinCode());
 
         label.put("rows", rows);
@@ -575,6 +591,72 @@ public class FinishedGoodsService {
                 ? token.getToken() : SHORT_LINK_PREFIX + token.getShortCode());
         label.put("bin_code", stock == null ? null : stock.getBinCode());
         return label;
+    }
+
+    /** 开数行业词（与 frontend/admin-web/src/lib/craft-display.ts::openCount 同口径；纸面只做展示）。 */
+    private static String openCountText(Integer openCount) {
+        if (openCount == null) return null;
+        return switch (openCount) {
+            case 1 -> "单开";
+            case 2 -> "双开";
+            case 3 -> "三开";
+            case 4 -> "四开";
+            default -> openCount + " 开";
+        };
+    }
+
+    /**
+     * 加工单快照中这一件的行（`items_snapshot[].itemId` = token 的 `orderItemId`）。
+     *
+     * <p>与水洗唛同源：**只读快照**（加工单的固化真相），快照缺失 / 对不上 ⇒ null
+     * ⇒ 调用方不印「加工组合 / 特殊选项」两行（不拿订单行现值猜一份第二真值）。</p>
+     */
+    private Map<String, Object> snapshotRowOf(ProcessingSetPartToken token) {
+        if (token == null || token.getProcessingOrderId() == null || token.getOrderItemId() == null) {
+            return null;
+        }
+        ProcessingOrder processingOrder = processingOrderMapper.selectById(token.getProcessingOrderId());
+        if (processingOrder == null || !(processingOrder.getItemsSnapshot() instanceof List<?> items)) {
+            return null;
+        }
+        for (Object raw : items) {
+            if (!(raw instanceof Map<?, ?> row)) continue;
+            Object itemId = row.get("itemId");
+            if (itemId != null && token.getOrderItemId().equals(String.valueOf(itemId))) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> typed = (Map<String, Object>) row;
+                return typed;
+            }
+        }
+        return null;
+    }
+
+    /** 加工费组合项（快照 `processingItems[].name`）—— 去空、去重、保序，`、` 连接；空 ⇒ 整行不印。 */
+    private static String processingComboText(Object raw) {
+        if (!(raw instanceof List<?> items)) return "";
+        List<String> names = new ArrayList<>();
+        for (Object item : items) {
+            if (!(item instanceof Map<?, ?> map)) continue;
+            Object name = map.get("name");
+            if (!(name instanceof String text)) continue;
+            String trimmed = text.trim();
+            if (trimmed.isEmpty() || names.contains(trimmed)) continue;
+            names.add(trimmed);
+        }
+        return String.join("、", names);
+    }
+
+    /** 特殊选项（快照 `specialOptions[]`）—— 印展示名（`余料带回-布` ⇒ `余料带回`），去重保序；空 ⇒ 整行不印。 */
+    private static String specialOptionsText(Object raw) {
+        if (!(raw instanceof List<?> options)) return "";
+        List<String> names = new ArrayList<>();
+        for (Object option : options) {
+            if (!(option instanceof String text)) continue;
+            String display = OptionFamilyNames.displayName(text.trim());
+            if (display == null || display.isBlank() || names.contains(display)) continue;
+            names.add(display);
+        }
+        return String.join("、", names);
     }
 
     private static void addRow(List<Map<String, String>> rows, String label, String value) {
