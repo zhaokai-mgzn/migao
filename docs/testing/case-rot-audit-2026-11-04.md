@@ -72,9 +72,9 @@ PY
 
 | 项 | 读数 |
 |---|---|
-| 用例总数 | **1014**（第一版审计时 771） |
-| `persona` 分布 | 缺省（双端）**893** / `mibao` **68** / `xiaobu` **53** |
-| `skip_reason` 非空 | **859**（不进 runner 实跑面；本包重锚前为 861 —— 已 un-skip `HR-002` / `HR-010`，见 §3） |
+| 用例总数 | **1015**（主分支并入 #8613 的 MC-190 后；本包重锚前为 1014，第一版审计时 771） |
+| `persona` 分布 | 缺省（双端）**894** / `mibao` **68** / `xiaobu` **53** |
+| `skip_reason` 非空 | **860**（不进 runner 实跑面；本包重锚前为 861 —— 已 un-skip `HR-002` / `HR-010`，见 §3；并入 MC-190 后 +1） |
 | B 端（黄金策）可跑工具集 | **41** 个 |
 | C 端专属（B 端无） | **8** 个：`aftersale_create` / `aftersale_query` / `curtain_calc` / `customer_address_query` / `customer_logistics_track` / `customer_order_query` / `order_create` / `payment_qrcode_query` |
 | **A**（**射程内**：B 端用例的期望/效果层要求创建商品/订单/单据） | **0**（全库原始命中 **17** 条，**全部**是 `persona: xiaobu` ⇒ 射程外） |
@@ -234,7 +234,7 @@ PY
   效果层 ⇒ **再保持 skip = 让刚接回的能力零断言覆盖**；un-skip 本身**不触发评测跑**（只是把用例放进
   可跑集），**keep-skip 才是永久静默**；fail-closed 的方向是放进集里，红了说明产品真有问题 ⇒ 开产品单。
   与 #4262 不冲突：那条禁的是「自动派发评测 workflow 烧钱」，不是「不许把用例放进集里」。
-  **读数**：B 端（`mibao`）可跑集 **111 → 113**；`skipped` 总数 **861 → 859**。
+  **读数**：B 端（`mibao`）可跑集 **111 → 113**；`skipped` 总数 **861 → 859**（并入 main 的 MC-190 后为 **860**）。
 - `HR-008`：**夹具缺口，不是用例腐烂** —— 它把种子员工的手机号从 `13700137000` 改成
   `13900139111`，而 runner 的复位族里**没有**「把手机号改回去」的类型
   （`_CLEAN_TYPES` 只有 `employee_reactivate` / `employee_remove`）⇒ 一旦 un-skip，
