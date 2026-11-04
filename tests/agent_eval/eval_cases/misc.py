@@ -2,7 +2,7 @@
 # 本文件由 render_cases.py 生成，勿手改（改了也留不住：下次重渲染会覆盖）
 # 源: cases/*.yml（case-contract 单一源）
 # 重新生成: python3 render_cases.py --cases <dir> --out-eval <包目录> --out-md <md>
-# 域: misc（源: cases/misc.yml，232 条）
+# 域: misc（源: cases/misc.yml，233 条）
 
 from ._schema import Difficulty, EvalCase, Skill
 
@@ -4260,6 +4260,25 @@ _CASE_MC_206 = EvalCase(
     precondition='零运行期前置（纯渲染判据）：被测对象 = frontend/worker-h5 的渲染产物（页头入口栏与机台屏 h1）与静态页 title；前置 = node 可跑、worker-h5 的 src 可加载 —— 由仓本身满足。不成立时的红形态已内建：渲染不出入口 / 没有 h1 / 静态页没有 title ⇒ 判据自己红并具名是哪一面，绝不静默跳过。零网络 / 零 LLM / 零 DB。',
 )
 
+# ── MC-208 [NORMAL] demo-seed 的 SKU 插入语句必须三处一致：SELECT 行值 = WHERE 关联条件 = product_colors 已声明颜色（issue #7583 缺陷 2 的假绿出口）（源: cases/misc.yml）──
+_CASE_MC_208 = EvalCase(
+    id='MC-208',
+    legacy_id='',
+    title='demo-seed 的 SKU 插入语句必须三处一致：SELECT 行值 = WHERE 关联条件 = product_colors 已声明颜色（issue #7583 缺陷 2 的假绿出口）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['issue #7583 缺陷 2：demo-seed 的 SKU 矩阵必须每个颜色至少一条 SKU', '2026-11-05 集成侧复核：SKU 行走 INSERT … SELECT … FROM product_colors c WHERE c.color_name = <色名>，静态解析只看 SELECT 列表 ⇒ 只把 WHERE 打错一个字，真库插 0 行而判据全绿', '边界：只补判据、不改 seed 数据（数据本体已在 PR #7681 修好）；复用 tests/unit_ci_workflows/_seed_sql.py，不重写 SQL 解析器，不新写带引号捕获组的正则'],
+    expectations=[],
+    data_checks=['**判据 1（会红）·WHERE 关联的「商品 × 颜色」必须在 product_colors 里存在**：逐条 product_skus 的 INSERT 取出 c.product_id / c.color_name 关联字面量，必须命中 product_colors 声明过的组合；打错一个字 ⇒ 红并具名「商品 × 颜色 + WHERE 按什么关联」。执行点 = tests/unit_ci_workflows/test_seed_data_quality.py', '**判据 2（会红）·SELECT 行值与 WHERE 关联条件一致**：WHERE 关联到已声明颜色、但与 SELECT 列表写的行值不同 ⇒ 红并具名两侧字面量。执行点 = 同上', '**判据 3·fail-closed**：product_skus 出现本判据判不了的写入形态（元组 VALUES）或缺关联条件 ⇒ 红，不静默跳过。执行点 = 同上'],
+    skip_reason='[backend-contract] 纯静态落盘判据（零 LLM / 零网络 / 零 DB）：不进 agent-eval 冒烟；机器判红通道 = traces.tests 的 pytest（pr-check 的 ci workflow helper unit tests 全量跑 tests/unit_ci_workflows）',
+    tags=['seed', 'data-quality', 'false-green', 'static-parse', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='零运行期前置（纯静态解析）：被测对象 = docs/deployment/demo-seed.sql 的原文，判据在 tests/unit_ci_workflows/test_seed_data_quality.py 里读盘解析。零网络 / 零 LLM / 零 DB。判不了的形态（元组 VALUES / 缺关联条件）⇒ 判据自己红并具名，绝不静默跳过。',
+)
+
 CASES = (
     _CASE_MC_001,
     _CASE_MC_002,
@@ -4493,4 +4512,5 @@ CASES = (
     _CASE_MC_203,
     _CASE_MC_204,
     _CASE_MC_206,
+    _CASE_MC_208,
 )
