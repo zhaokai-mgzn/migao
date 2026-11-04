@@ -2241,7 +2241,7 @@ cases:
         - bmini-app.yml
       verifies: []
 
-  - id: BM-064
+  - id: BM-065
     legacy_id: ""
     title: "工人子页的「返回」入口：手机 / 微信 / 手持标签机 WebView 里也能回工作台"
     domains:

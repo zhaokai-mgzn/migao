@@ -1122,9 +1122,9 @@ _CASE_BM_064 = EvalCase(
     forbidden_card_text=[],
 )
 
-# ── BM-064 [NORMAL] 工人子页的「返回」入口：手机 / 微信 / 手持标签机 WebView 里也能回工作台（源: cases/bmini.yml）──
-_CASE_BM_064 = EvalCase(
-    id='BM-064',
+# ── BM-065 [NORMAL] 工人子页的「返回」入口：手机 / 微信 / 手持标签机 WebView 里也能回工作台（源: cases/bmini.yml）──
+_CASE_BM_065 = EvalCase(
+    id='BM-065',
     legacy_id='',
     title='工人子页的「返回」入口：手机 / 微信 / 手持标签机 WebView 里也能回工作台',
     skill=Skill.GENERAL,
@@ -1203,5 +1203,5 @@ CASES = (
     _CASE_BM_062,
     _CASE_BM_063,
     _CASE_BM_064,
-    _CASE_BM_064,
+    _CASE_BM_065,
 )
