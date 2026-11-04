@@ -169,15 +169,16 @@ class ConfigReadinessServiceTest {
     }
 
     @Test
-    @DisplayName("① 工序与单价：total = 价目行 + 孤儿行；unpriced 只数空价；orphans 按工艺配置页口径")
+    @DisplayName("① 工序与单价：total = 工序库工序数；unpriced 只数空价；orphans 按工艺配置页口径")
     void operationsFactsFollowTheConfigPageRule() {
         Map<String, Object> steps = steps(service.readiness(TENANT, false));
         Map<String, Object> facts = facts(steps, ConfigReadinessService.STEP_OPERATIONS);
 
-        // 价目行 2 条（已收敛到逻辑工序）+ 孤儿 1 个（花边：两行同逻辑名去重、空名不计、
-        // 三边的另一变体行虽然没被引用但逻辑名已定价 ⇒ 不算）
-        assertThat(facts.get("total")).isEqualTo(3);
+        // 🔴 total 与**板子**同输入（工序库目录的 total = 6），**不是**价目行数（2）+ 孤儿（1）
+        // —— 判据：把实现改回 `positions.size() + orphans` ⇒ 3 ≠ 6 ⇒ 红。
+        assertThat(facts.get("total")).isEqualTo(6);
         assertThat(facts.get("unpriced")).isEqualTo(1);
+        // 孤儿 1 个（花边：两行同逻辑名去重、空名不计、三边的另一变体行虽然没被引用但逻辑名已定价 ⇒ 不算）
         assertThat(facts.get("orphans")).isEqualTo(1);
     }
 

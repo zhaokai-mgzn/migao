@@ -194,13 +194,20 @@ public class ConfigReadinessService {
     // ══════════════════════════ ① 工序与单价 ══════════════════════════
 
     /**
-     * `{total, unpriced, orphans}` —— 与「工艺配置」页**同一张表**（价目行 ∪ 无价目行的库行）同源：
-     * `total` = 表里的逻辑工序数（矩阵行 + 孤儿行），`unpriced` = 收敛行里 `unit_price` 为空的个数，
-     * `orphans` = 孤儿逻辑工序数（见类注释的四条口径）。
+     * `{total, unpriced, orphans}` —— 三项都取**工艺配置页自己用的那几个输入**，不另立口径：
+     *
+     * <ul>
+     *   <li>{@code total} = 工序库目录的 {@code total}（= 板子 {@code operationsReady} 的同一个输入
+     *       「有没有工序」；取 {@code null} ⇒ 前端落「读不到」，**不回落 0**）；</li>
+     *   <li>{@code unpriced} = 价目行里 {@code unit_price} 为空的条数（与板子 {@code cellState}
+     *       的 {@code unit_price == null ⇒ unpriced} 同判据；#4951 之后每个逻辑工序只有一行）；</li>
+     *   <li>{@code orphans} = 孤儿逻辑工序数（见 {@link #orphanOperationNames} 的四条口径）。</li>
+     * </ul>
      */
     private Map<String, Object> operationsFacts(Long tenantId) {
         List<Map<String, Object>> positions =
                 productionRoutingReadService.operationPositions(tenantId);
+        Map<String, Object> catalog = productionOperationQueryService.catalog(tenantId);
         Set<String> pricedOperations = new LinkedHashSet<>();
         Set<String> referencedIds = new LinkedHashSet<>();
         int unpriced = 0;
@@ -211,22 +218,23 @@ public class ConfigReadinessService {
                 unpriced++;
             }
         }
-        int orphans = orphanOperationCount(tenantId, referencedIds, pricedOperations);
+        int orphans = orphanOperationNames(catalog, referencedIds, pricedOperations).size();
         Map<String, Object> facts = new LinkedHashMap<>();
-        facts.put("total", positions.size() + orphans);
+        facts.put("total", catalog == null ? null : catalog.get("total"));
         facts.put("unpriced", unpriced);
         facts.put("orphans", orphans);
         return facts;
     }
 
     /**
-     * 孤儿工序数（**逻辑工序**粒度）—— 与 `features.ts` 的 `orphanRows` 同口径：
-     * 库里有、没有任何价目行（{@code variant_operation_id}）引用它、且该逻辑名在价目表里也没出现过。
+     * 孤儿工序的**逻辑名**集合 —— 与 `features.ts` 的 `orphanRows` 同口径：
+     * 库里有、没有任何价目行（{@code variant_operation_id}）引用它、且该逻辑名在价目表里也没出现过；
+     * 同一逻辑名多行只算一个；空名不计（板子也呈现不了）。
      */
-    private int orphanOperationCount(Long tenantId, Set<String> referencedIds,
-                                     Set<String> pricedOperations) {
+    private Set<String> orphanOperationNames(Map<String, Object> catalog, Set<String> referencedIds,
+                                             Set<String> pricedOperations) {
         Set<String> orphanNames = new LinkedHashSet<>();
-        for (Map<String, Object> operation : libraryOperations(tenantId)) {
+        for (Map<String, Object> operation : libraryOperations(catalog)) {
             String id = stringOf(operation.get("id"));
             String name = stringOf(operation.get("name"));
             if (referencedIds.contains(id) || pricedOperations.contains(name) || name.isEmpty()) {
@@ -234,13 +242,12 @@ public class ConfigReadinessService {
             }
             orphanNames.add(name);
         }
-        return orphanNames.size();
+        return orphanNames;
     }
 
     /** 工序库目录摊平成工序项清单（`catalog` 的 `groups[].operations[]`；不另取一次库）。 */
-    private List<Map<String, Object>> libraryOperations(Long tenantId) {
+    private List<Map<String, Object>> libraryOperations(Map<String, Object> catalog) {
         List<Map<String, Object>> out = new ArrayList<>();
-        Map<String, Object> catalog = productionOperationQueryService.catalog(tenantId);
         Object groups = catalog == null ? null : catalog.get("groups");
         if (!(groups instanceof List<?> groupList)) {
             return out;
