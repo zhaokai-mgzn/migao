@@ -50,6 +50,10 @@ const markFixtureCleaned = (id) => {
   const f = FIXTURES.products.find((x) => x.id === id)
   if (f) f.cleaned = true
 }
+//: 订单清理的**三态**（SDQS Q5 / issue #7583 缺陷 6）—— 每张自造订单必须落在其中之一，
+//: 且每一态都带**机器读数**（不是「尽力而为」）：`cleaned`（GET 404 自证）/ `kept`（服务端业务规则
+//: 拒绝删除的原话 + 仍可读 = 可枚举残留）/ `failed`（假清理，`DQ-5` 判红）。
+const ORDER_CLEANUP_GRADES = ['cleaned', 'kept', 'failed']
 // 失败响应账本（本轮新增）：`console.error` 只说「401」不说是**谁**返回的 —— 没有 URL 就无法归因
 // （2026-10-14 实测：单看 console 文案分不清是 admin-api 还是 ai-agent，归因卡死）。
 const failedResponses = []
@@ -320,20 +324,102 @@ async function createOrderFixture(page, tag) {
   })
   const id = created?.data?.id
   if (!id) throw new Error(`前置建单失败（未返回 data.id）：${JSON.stringify(created).slice(0, 200)}`)
+  // 自造对象台账（SDQS D4 / Q5）：**造出来就登记**，跑完由 `sweepOrderFixtures` 统一自证清理。
+  // 不登记 ⇒ 留下的东西不可枚举（issue #7583 缺陷 6 的根：四个旅程各造一单，一条都没清）。
+  recordFixture('orders', { id, tag })
   return id
 }
 
-/** 跑完清理自造数据（删不掉不阻塞旅程，只记 note —— 清理失败 ≠ 旅程失败）。 */
+/**
+ * 自造订单的清理 **自证**（SDQS Q5；issue #7583 缺陷 6）。
+ *
+ * 旧形态 `return res.ok`：删不掉就**静默留下**（调用方 `if (ok)` 什么也不记），而 16-/17-/17b-/19-
+ * **一条都没调用** ⇒ 共享云库越跑越脏，且「脏了多少」没有任何读数。
+ *
+ * 「订单能不能删」是**业务事实**，不是这里的自由选择 —— `OrderService.deleteOrder` 只允许
+ * `pending`，且「已生成活跃作业单」会被拒 —— 所以两态都必须**可自证、可枚举**：
+ *
+ * | grade | 判据（机器读数） |
+ * |---|---|
+ * | `cleaned` | DELETE 成功 **且** `GET /api/admin/orders/{id}` = **404** |
+ * | `kept` | 服务端**业务规则**拒绝（4xx，原话入 `why`）**且** 对象仍可读（GET 200）⇒ 可枚举的残留 |
+ * | `failed` | DELETE 说成功但 GET 仍 2xx（**假清理**）/ 5xx / 异常 ⇒ 进快照后由 `DQ-5` 判红 |
+ *
+ * 删除成功后另核「无悬挂加工单」：`GET /api/admin/processing-orders?keyword={id}` 里该订单的
+ * **非 cancelled** 行为 0（`cancelled` 是历史，口径同上面那道活跃闸）；读不到记 `null`
+ * （判不了，不是 0）。
+ */
 async function cleanupOrder(page, id) {
+  const rec = FIXTURES.orders.find((x) => x.id === id) || recordFixture('orders', { id, tag: '' })
+  const raw = async (method, path) => {
+    const at = (await page.context().cookies()).find((c) => c.name === 'access_token')
+    const res = await fetch(API_BASE + path, {
+      method, headers: at?.value ? { Cookie: `access_token=${at.value}` } : {},
+    })
+    let text = ''
+    try { text = (await res.text()).slice(0, 300) } catch { /* 无 body 也是读数 */ }
+    return { status: res.status, ok: res.ok, text }
+  }
+  try {
+    const before = await raw('GET', `/api/admin/orders/${id}`)
+    if (before.status === 404) {
+      rec.grade = 'cleaned'; rec.cleaned = true; rec.gone404 = true
+      rec.why = '跑前已不存在（GET 404）'
+      return rec
+    }
+    const del = await raw('DELETE', `/api/admin/orders/${id}`)
+    const after = await raw('GET', `/api/admin/orders/${id}`)
+    rec.gone404 = after.status === 404
+    rec.readable = after.ok
+    if (del.ok && rec.gone404) {
+      rec.grade = 'cleaned'; rec.cleaned = true; rec.why = ''
+      rec.processing_residue = await processingResidue(page, id)
+      return rec
+    }
+    if (del.ok) {
+      rec.grade = 'failed'
+      rec.why = `DELETE 返回 ${del.status} 但 GET 仍 ${after.status}（假清理：删了还能读到）`
+      return rec
+    }
+    const businessRefusal = del.status >= 400 && del.status < 500
+    rec.grade = businessRefusal && after.ok ? 'kept' : 'failed'
+    rec.why = `DELETE ${del.status}：${del.text || '（无响应体）'}`
+    if (businessRefusal && !after.ok) {
+      rec.why += `；且原本应存在的订单 GET ${after.status}（既没删掉也读不到）`
+    }
+    rec.processing_residue = businessRefusal ? await processingResidue(page, id) : null
+    return rec
+  } catch (e) {
+    rec.grade = 'failed'
+    rec.why = `清理异常：${String(e.message || e).slice(0, 200)}`
+    return rec
+  }
+}
+
+/** 该订单名下**活跃**加工单条数（读不到 ⇒ `null`：判不了，不是 0）。 */
+async function processingResidue(page, orderId) {
   try {
     const api = await adminApi(page)
-    await api.get(`/api/admin/orders/${id}`)  // 存在性确认（真造出来了才谈删除）
-    const at = (await page.context().cookies()).find((c) => c.name === 'access_token')
-    const res = await fetch(`${API_BASE}/api/admin/orders/${id}`, {
-      method: 'DELETE', headers: { Cookie: `access_token=${at.value}` },
-    })
-    return res.ok
-  } catch { return false }
+    const res = await api.get(`/api/admin/processing-orders?keyword=${encodeURIComponent(orderId)}`)
+    const rows = Array.isArray(res?.data) ? res.data : (res?.data?.items || res?.data?.records || [])
+    return rows.filter((r) => String(r.orderId ?? r.order_id ?? '') === String(orderId)
+      && String(r.status ?? '') !== 'cancelled').length
+  } catch { return null }
+}
+
+/**
+ * 跑完**统一扫尾**（唯一入口；SDQS Q5 / issue #7583 缺陷 6）。
+ *
+ * 为什么收在一个入口而不是每条旅程各写一遍 `finally`：旧形态的缺口正是「四条旅程各造一单、
+ * 一条都不清」—— 逐旅程补 `finally` 只能治当下这四条，**下一条新旅程照样会漏**。收在
+ * `collectDataSnapshot` 里的**一次**扫尾，对「只要用 `createOrderFixture` /
+ * `createPlainOrderFixture` 造的单」结构性全覆盖。
+ */
+async function sweepOrderFixtures(page) {
+  for (const f of FIXTURES.orders) {
+    if (ORDER_CLEANUP_GRADES.includes(f.grade)) continue
+    await cleanupOrder(page, f.id)
+  }
 }
 
 /**
@@ -589,12 +675,26 @@ async function collectDataSnapshot(page) {
   }
   const finishFixtures = () => {
     const created = FIXTURES.products
+    const orders = FIXTURES.orders
+    const gone = orders.filter((f) => f.grade === 'cleaned')
+    const kept = orders.filter((f) => f.grade === 'kept')
+    // 未尝试 / 尝试后证不出来 ⇒ 都算 failed（fail-closed：没自证 = 没清理）
+    const failed = orders.filter((f) => f.grade !== 'cleaned' && f.grade !== 'kept')
+    const unreadable = orders.filter((f) => f.processing_residue === null)
     snap.fixtures = {
       products_created: created.length,
       products_with_skus: created.filter((f) => Number(f.withSkus) > 0).length,
       products_residue: created.filter((f) => !f.cleaned).length,
       residue_samples: created.filter((f) => !f.cleaned).map((f) => f.name || f.id).slice(0, 5),
-      orders_created: FIXTURES.orders.length,
+      // SDQS Q5 / issue #7583 缺陷 6：自造**订单**的清理自证（两态都必须可枚举）
+      orders_created: orders.length,
+      orders_gone_404: gone.length,
+      orders_kept: kept.length,
+      orders_cleanup_failed: failed.length,
+      orders_residue_samples: kept.concat(failed)
+        .map((f) => `${f.tag || '冒烟订单'}#${f.id}：${f.why || '未尝试清理'}`).slice(0, 5),
+      orders_processing_residue: orders.reduce((n, f) => n + Number(f.processing_residue || 0), 0),
+      orders_processing_unreadable: unreadable.length,
     }
   }
   const items = (res) => {
@@ -609,6 +709,11 @@ async function collectDataSnapshot(page) {
   let api
   try {
     api = await adminApi(page)
+    // 🔴 SDQS Q5（issue #7583 缺陷 6）：跑完**统一扫尾**自造订单 —— 旧形态 16-/17-/17b-/19-
+    //    各造一单、一条都不清（`cleanupOrder` 只 `return res.ok`）⇒ 共享云库越跑越脏。
+    //    收口在**一个**入口：新旅程只要走 `createOrderFixture` / `createPlainOrderFixture`，
+    //    就自动被这里覆盖（而不是靠"记得在 finally 里补一句"）。
+    await sweepOrderFixtures(page)
   } catch (e) {
     const why = `登录态不可用，数据快照无法采集：${String(e).slice(0, 160)}`
     for (const name of ['products', 'skus', 'orders', 'customers', 'after_sales']) {
@@ -1394,7 +1499,10 @@ async function categoriesJourney(page) {
       }
       await h.done(true, '', '分类 新建→可见→行内删除')
     } else {
-      await h.done(true, '未见新增按钮（可能入口不同），仅验证渲染', '')
+      // 🔴 SDQS Q1（issue #7583 缺陷 5）：**找不到入口 ≠ 通过**。旧形态在这里记 ✅（「可能入口不同」），
+      //    于是「页面没渲染出控件」与「分类页正常」在汇总里长得一模一样 —— 空态/缺控件不是有效结论。
+      throw new Error('分类管理页 12s 内未见「新增分类」按钮 —— 缺控件不是有效结论（SDQS Q1）；'
+        + '若入口形态确实变了，应改选择器，不是记通过')
     }
   } catch (e) {
     await h.done(false, `分类旅程失败: ${String(e).slice(0, 300)}`)
@@ -1909,6 +2017,8 @@ async function createPlainOrderFixture(page, tag) {
   })
   const id = created?.data?.id
   if (!id) throw new Error(`前置建单失败（未返回 data.id）：${JSON.stringify(created).slice(0, 200)}`)
+  // 登记进自造台账（与 `createOrderFixture` 同口径）：17b 造的也必须在跑完后被自证清掉。
+  recordFixture('orders', { id, tag })
   return id
 }
 
@@ -2225,7 +2335,12 @@ async function customerDetailJourney(page) {
     await page.waitForTimeout(1500)
     const firstLink = page.locator('a[href*="/customers/"]').first()
     const href = await firstLink.getAttribute('href').catch(() => null)
-    if (!href) { await h.done(true, '无客户可进详情', ''); return }
+    if (!href) {
+      // 🔴 SDQS Q1（issue #7583 缺陷 5；2026-10-23 用户投诉的原始形态之一）：
+      //    「无客户可进详情」此前记 ✅ ⇒ 客户面为空时整轮仍全绿。客户面非空由 `DQ-4` 兜住，
+      //    旅程侧也**不得**把「没数据」写成「通过」。
+      throw new Error('客户列表 15s 内没有任何可进入的详情链接 —— 缺数据不是有效结论（SDQS Q1/DQ-4）')
+    }
     await nav(page, href, '')
     await page.waitForTimeout(1500)
     const bodyLen = await page.evaluate(() => document.body.innerText.length)
@@ -2248,7 +2363,16 @@ async function financeJourney(page) {
     await page.waitForTimeout(1500)
     const bodyLen = await page.evaluate(() => document.body.innerText.length)
     if (bodyLen < 50) throw new Error('财务页空白')
-    await h.done(true, '', '财务对账页渲染')
+    // 🔴 SDQS Q1/D5（issue #7583 缺陷 5）：`bodyLen` 只证明「有字」—— **空态页面壳**同样能过。
+    //    再要一个「只在数据/区块真渲染时才存在」的读数：表格行 / 金额 / 对账区块。
+    const rows = await page.locator('tbody tr, [role="row"]').count().catch(() => 0)
+    const money = await page.getByText(/[¥￥]\s?[\d,]+(?:\.\d+)?/).count().catch(() => 0)
+    const face = await page.getByText(/对账|应收|应付|收款|结算/).count().catch(() => 0)
+    if (rows + money + face === 0) {
+      throw new Error(`财务页只有文字壳（bodyLen=${bodyLen}，表格行=${rows}、金额=${money}、区块=${face} 全 0）`
+        + ' —— 空态/加载态不是有效结论（SDQS Q1/D5）')
+    }
+    await h.done(true, '', `财务对账页渲染（bodyLen=${bodyLen}，行=${rows}、金额=${money}、区块=${face}）`)
   } catch (e) {
     await h.done(false, `财务页失败: ${String(e).slice(0, 300)}`)
   }
@@ -2438,13 +2562,22 @@ async function notificationsJourney(page) {
     await page.waitForTimeout(1500)
     const bodyLen = await page.evaluate(() => document.body.innerText.length)
     if (bodyLen < 30) throw new Error('通知页空白')
+    // 🔴 SDQS Q1/D5（issue #7583 缺陷 5）：通知面**业务上可为空**，但「没有通知」与
+    //    「页面壳没渲染」必须能分辨 ⇒ 要么有通知条目，要么有**显式**空态文案。只判 bodyLen
+    //    会把「渲染了一张壳」读成通过。
+    const items = await page.locator('tbody tr, [role="row"], [class*="list"] li').count().catch(() => 0)
+    const emptyText = await page.getByText(/暂无(通知|消息)|没有(新)?通知/).count().catch(() => 0)
+    if (items + emptyText === 0) {
+      throw new Error(`通知页既无条目也无显式空态（bodyLen=${bodyLen}）`
+        + ' —— 页面壳不是有效结论（SDQS Q1/D5：空态必须显式）')
+    }
     // 标记全部已读（主操作）
     const readAll = page.getByRole('button', { name: /全部已读|标记已读/ }).first()
     if (await readAll.isVisible().catch(() => false)) {
       await readAll.click()
       await page.waitForTimeout(1000)
     }
-    await h.done(true, '', '通知中心渲染，已读操作可用')
+    await h.done(true, '', `通知中心渲染，已读操作可用（条目=${items}、显式空态=${emptyText}）`)
   } catch (e) {
     await h.done(false, `通知页失败: ${String(e).slice(0, 300)}`)
   }
@@ -2478,7 +2611,15 @@ async function corporatePage(page, name, path) {
     await page.waitForTimeout(1200)
     const bodyLen = await page.evaluate(() => document.body.innerText.length)
     if (bodyLen < 30) throw new Error(`${path} 页面空白`)
-    await h.done(true, '', `${path} 渲染（${bodyLen} 字符）`)
+    // 🔴 SDQS Q1/D5（issue #7583 缺陷 5）：门户页旧形态也只判 `bodyLen` ⇒ 「渲染了一张错误页 /
+    //    空壳」同样通过。再要一个结构性读数：页面标题与导航/页脚链接都必须存在。
+    const heads = await page.locator('h1, h2').count().catch(() => 0)
+    const links = await page.locator('header a, nav a, footer a').count().catch(() => 0)
+    if (heads === 0 || links === 0) {
+      throw new Error(`${path} 缺少页面骨架（标题=${heads}、导航/页脚链接=${links}）`
+        + ' —— 只有文字长度不是有效结论（SDQS Q1/D5）')
+    }
+    await h.done(true, '', `${path} 渲染（${bodyLen} 字符；标题=${heads}、链接=${links}）`)
   } catch (e) {
     await h.done(false, `${path} 失败: ${String(e).slice(0, 200)}`)
   }

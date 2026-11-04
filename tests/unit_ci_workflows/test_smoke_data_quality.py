@@ -1,4 +1,4 @@
-# case_ids: MC-012
+# case_ids: MC-012, MC-190
 """冒烟数据质量判据的守卫（SDQS，issue #7580 现场；规范 = `docs/testing/smoke-data-quality.md`）。
 
 > **case 声明口径**：`.github/cases/` 目前**没有**「冒烟数据质量」域的条目；本文件与同族守卫
@@ -23,6 +23,9 @@
 | F | 规范正文存在且被研发模式索引 | 正文缺失 / `AGENTS.md` 无引用 ⇒ 红 |
 | G | **P1 冒烟不许把 5xx 当通过**（issue #7583 缺陷 4） | `tests/smoke/` 的 `status_code in (…, 5xx)` 回归 ⇒ 红 |
 | H | **失败旅程必须留现场图**（issue #7583 缺陷 8） | `jrun` 的 catch 不再拍截图 ⇒ 红 |
+| I | **自造订单的清理要自证**（issue #7583 缺陷 6） | `cleanupOrder` 不核 `GET 404` / 不核加工单残留 / 四条旅程重新变成「只造不清」 ⇒ 红 |
+| J | **空态/缺控件不许记通过**（issue #7583 缺陷 5） | 旅程把「无数据 / 未见控件」写回 `done(true)`，或只判 `bodyLen` ⇒ 红 |
+| K | **P1 写用例必须 `finally` 清理并自证**（issue #7583 缺陷 4） | 造单用例不删 / 删了不核 404 / 把 5xx 当业务拒绝 ⇒ 红 |
 """
 from __future__ import annotations
 
@@ -371,3 +374,208 @@ class TestMerchantDemoCredentials:
         assert block, "找不到 SMS 限流清理的号码列表（判据锚点失效）"
         assert "sys.argv" in block.group(1), (
             "SMS 限流清理写死了手机号（issue #7479 现场：写死 C 端顾客号 ⇒ 换号后限流键没清、登录旅程会 400）")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# DQ-5（续）：自造**订单**的清理自证（issue #7583 缺陷 6）
+#
+# 旧形态 `cleanupOrder` 只 `return res.ok`（删不掉静默留下），且 16-/17-/17b-/19- **一条都没清**
+# ⇒ 共享云库越跑越脏。订单「能不能删」是业务事实（只允许 `pending`、已生成活跃作业单会被拒），
+# 所以判据不是「必须删掉」，而是**两态都必须可自证**：删掉 ⇒ `GET 404`；删不掉 ⇒ 服务端原话
+# + 仍可读（可枚举）。三种失败形态各自具名：`order_cleanup_proven` / `order_processing_residue`
+# / `DQ-U`。
+# ══════════════════════════════════════════════════════════════════════════════
+
+ORDER_FIXTURES_GOOD = {
+    "orders_created": 3,
+    "orders_gone_404": 1,
+    "orders_kept": 2,
+    "orders_cleanup_failed": 0,
+    "orders_residue_samples": ["冒烟详情#a1：DELETE 422：仅允许删除待确认状态的订单"],
+    "orders_processing_residue": 0,
+    "orders_processing_unreadable": 0,
+}
+
+
+def test_order_fixtures_kept_with_reason_pass():
+    """`kept`（业务规则拒绝删除 + 原话 + 仍可读）是**自证过的终态**，不是失败。"""
+    checker = _load_checker()
+    violations, undecidable = checker.evaluate(_bad(fixtures={
+        "products_created": 0, "products_with_skus": 0, "products_residue": 0,
+        **ORDER_FIXTURES_GOOD}))
+    assert violations == []
+    assert undecidable == []
+
+
+def test_order_cleanup_not_proven_is_red():
+    checker = _load_checker()
+    violations, _ = checker.evaluate(_bad(fixtures={
+        "products_created": 0, "products_with_skus": 0, "products_residue": 0,
+        **{**ORDER_FIXTURES_GOOD, "orders_cleanup_failed": 1, "orders_kept": 1}}))
+    assert "DQ-5" in _codes(violations)
+    assert any(v["rule"] == "order_cleanup_proven" for v in violations), violations
+
+
+def test_order_processing_residue_is_red():
+    """删掉订单却留下**活跃**加工单 ⇒ 作业看板会对已删父订单扇出 404。"""
+    checker = _load_checker()
+    violations, _ = checker.evaluate(_bad(fixtures={
+        "products_created": 0, "products_with_skus": 0, "products_residue": 0,
+        **{**ORDER_FIXTURES_GOOD, "orders_processing_residue": 2}}))
+    assert any(v["rule"] == "order_processing_residue" for v in violations), violations
+
+
+def test_order_cleanup_counts_must_add_up():
+    """读数不自洽（gone + kept + failed ≠ created）⇒ 判不了，不许当通过。"""
+    checker = _load_checker()
+    _, undecidable = checker.evaluate(_bad(fixtures={
+        "products_created": 0, "products_with_skus": 0, "products_residue": 0,
+        **{**ORDER_FIXTURES_GOOD, "orders_kept": 0}}))
+    assert any(u["code"] == "DQ-U" and u["rule"] == "DQ-5:orders" for u in undecidable), undecidable
+
+
+def test_order_processing_unreadable_is_undecidable():
+    """加工单残留读不到 ⇒ 不可判定（读不到 ≠ 没有残留）。"""
+    checker = _load_checker()
+    violations, undecidable = checker.evaluate(_bad(fixtures={
+        "products_created": 0, "products_with_skus": 0, "products_residue": 0,
+        **{**ORDER_FIXTURES_GOOD, "orders_processing_unreadable": 1}}))
+    assert violations == []
+    assert any(u["code"] == "DQ-U" and u["rule"] == "DQ-5:orders" for u in undecidable), undecidable
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# I / J / K：缺陷 4 / 5 / 6 的**类级**收口（不是逐行字面量）
+#
+# 为什么必须落成「类」：缺陷 5 是**一族**（13/21/22/26/27~30 各自 `done(true)` 或只判 `bodyLen`），
+# 缺陷 6 是**四条旅程共用**一份 `cleanupOrder`。逐处修完一处、下一处照旧 —— 判据必须落在
+# 「函数族 / 调用点族」上，新旅程/新写用例才进不来。
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _function_body(source: str, name: str) -> str:
+    """取 `async function <name>(` 到下一个顶层 `}`（fail-closed：取不到即判不了）。"""
+    match = re.search(rf"async function {re.escape(name)}\([\s\S]*?\n\}}\n", source)
+    assert match, f"spec.mjs 里找不到 {name}（判据锚点失效 ⇒ 判不了，不得当通过）"
+    return match.group(0)
+
+
+def _order_cleanup_defects(source: str) -> list[str]:
+    """判据 I 的纯函数核心（便于注入式红证）：返回具名缺陷，空 = 通过。"""
+    bad: list[str] = []
+    body = _function_body(source, "cleanupOrder")
+    if not re.search(r"del\.ok\s*&&\s*rec\.gone404", body):
+        bad.append("cleanupOrder 的「删除成功」分支不要求 `GET 404` 自证 ⇒ 假清理也能过")
+    if "processingResidue(" not in body:
+        bad.append("cleanupOrder 不核加工单残留 ⇒ 已删订单的作业单会悬挂")
+    if "'kept'" not in body:
+        bad.append("cleanupOrder 没有 `kept` 态 ⇒ 业务规则拒绝删除时会被静默吞掉")
+    for name in ("createOrderFixture", "createPlainOrderFixture"):
+        if "recordFixture('orders'" not in _function_body(source, name):
+            bad.append(f"{name} 不登记自造台账 ⇒ 跑完不知道该清哪些（漏清无读数）")
+    if "async function sweepOrderFixtures" not in source:
+        bad.append("没有统一扫尾入口 sweepOrderFixtures")
+    if "await sweepOrderFixtures(page)" not in source:
+        bad.append("扫尾入口定义了却没被调用 ⇒ 旅程跑完不会清")
+    return bad
+
+
+def test_order_fixture_cleanup_is_self_proving():
+    """I：自造订单跑完必须**自证**清理（两态都可枚举），且**统一扫尾**覆盖全部造单入口。"""
+    source = SPEC.read_text(encoding="utf-8")
+    defects = _order_cleanup_defects(source)
+    assert defects == [], "自造订单的清理自证缺口（issue #7583 缺陷 6）：\n  " + "\n  ".join(defects)
+    # 注入式红证（内存变异，不写盘）：把「删除成功」分支的 404 自证拿掉 ⇒ 必须判红
+    mutated = source.replace("if (del.ok && rec.gone404) {", "if (del.ok) {", 1)
+    assert mutated != source, "变异注入未生效（锚点漂移）—— 判据没牙"
+    assert _order_cleanup_defects(mutated), "去掉 `GET 404` 自证后判据仍然绿 ⇒ 判据没牙"
+
+
+WEAK_PAGE_FUNCTIONS = {
+    "categoriesJourney": ("未见「新增分类」按钮", "throw new Error"),
+    "financeJourney": ('tbody tr', 'role="row"'),
+    "notificationsJourney": ("暂无", 'tbody tr'),
+    "corporatePage": ("h1, h2", "header a, nav a, footer a"),
+    "customerDetailJourney": ("缺数据不是有效结论", "throw new Error"),
+}
+
+#: 把「空态 / 缺控件 / 没数据」写成**通过**的两句原始形态（2026-10-23 用户投诉的根）。
+#: 匹配的是**记通过的那一句**（`done(true, '<说明>'`），不是提及它的注释 —— 判据不许因为
+#: 「解释这条禁忌」而变红（`migao-dev-flow` 的「引用即实例」同族坑）。
+FORBIDDEN_EMPTY_PASS = ("done(true, '无客户可进详情'",
+                        "done(true, '未见新增按钮（可能入口不同）'")
+
+
+def _weak_page_defects(source: str) -> list[str]:
+    """判据 J 的纯函数核心：返回具名缺陷，空 = 通过。"""
+    bad: list[str] = []
+    for name, markers in WEAK_PAGE_FUNCTIONS.items():
+        body = _function_body(source, name)
+        missing = [m for m in markers if m not in body]
+        if missing:
+            bad.append(f"{name} 缺内容面判据 {missing} ⇒ 只判 bodyLen / 缺控件也能记通过")
+    for phrase in FORBIDDEN_EMPTY_PASS:
+        if phrase in source:
+            bad.append(f"spec.mjs 仍把空态写成通过：{phrase}")
+    return bad
+
+
+def test_no_journey_reports_empty_state_as_pass():
+    """J：空态/加载态/缺控件**不得冒充通过**（SDQS Q1；issue #7583 缺陷 5）。"""
+    source = SPEC.read_text(encoding="utf-8")
+    defects = _weak_page_defects(source)
+    assert defects == [], "空态冒充通过的旅程（issue #7583 缺陷 5）：\n  " + "\n  ".join(defects)
+    # 注入式红证：把分类旅程的「未见按钮」判据换回旧的「仅验证渲染」⇒ 必须判红
+    mutated = source.replace("未见「新增分类」按钮", "仅验证渲染", 1)
+    assert mutated != source, "变异注入未生效（锚点漂移）—— 判据没牙"
+    assert _weak_page_defects(mutated), "缺控件记通过后判据仍然绿 ⇒ 判据没牙"
+
+
+def _test_blocks(source: str) -> list[tuple[str, str]]:
+    """按 `    def test_*` 切片（含多行签名的用例；只用行首缩进，不做引号解析）。"""
+    matches = list(re.finditer(r"^    def (test_\w+)\(", source, re.M))
+    return [(m.group(1), source[m.end(): (matches[i + 1].start() if i + 1 < len(matches)
+                                          else len(source))])
+            for i, m in enumerate(matches)]
+
+
+def _p1_write_defects(source: str, label: str) -> list[str]:
+    """判据 K 的纯函数核心：造单的用例必须 `finally` + 清理自证（空清单 = 通过）。"""
+    bad: list[str] = []
+    for name, body in _test_blocks(source):
+        if "_create_order(" not in body:
+            continue  # 负控用例（直接 POST 且断言 4xx）不落库，不需要清理
+        missing = [t for t in ("_cleanup_order(", "finally") if t not in body]
+        if missing:
+            bad.append(f"{label}::{name} 造了订单却没有 {'/'.join(missing)}")
+    return bad
+
+
+def _p1_cleanup_defects(source: str) -> list[str]:
+    """判据 K：写用例的清理入口本身也要**自证**（404 + 区分业务拒绝与 5xx）。"""
+    match = re.search(r"\ndef _cleanup_order\([\s\S]*?(?=\n\n# |\n\n@|\n\ndef |\n\nclass )", source)
+    if not match:
+        return ["tests/smoke/test_09_order_lifecycle.py 没有 `_cleanup_order` —— 写用例建单后无人清理"]
+    helper = match.group(0)
+    bad: list[str] = []
+    if "404" not in helper:
+        bad.append("_cleanup_order 的删除成功分支不核 `GET 404` ⇒ 假清理也能过")
+    if "400 <= deleted.status_code < 500" not in helper:
+        bad.append("_cleanup_order 不区分「业务规则拒绝（4xx）」与「真坏了（5xx）」")
+    bad.extend(_p1_write_defects(source, "tests/smoke/test_09_order_lifecycle.py"))
+    return bad
+
+
+def test_p1_write_cases_clean_up_with_proof():
+    """K：`tests/smoke/` 造单的 P1 用例必须 `finally` 清理并**自证**（issue #7583 缺陷 4）。"""
+    defects: list[str] = []
+    for path in sorted((REPO_ROOT / "tests" / "smoke").glob("test_*.py")):
+        defects.extend(_p1_write_defects(path.read_text(encoding="utf-8"),
+                                         path.relative_to(REPO_ROOT).as_posix()))
+    order_file = REPO_ROOT / "tests" / "smoke" / "test_09_order_lifecycle.py"
+    source = order_file.read_text(encoding="utf-8")
+    defects.extend(_p1_cleanup_defects(source))
+    assert defects == [], ("P1 写用例的清理缺口（issue #7583 缺陷 4）：\n  " + "\n  ".join(defects))
+    # 注入式红证：拿掉一处 `finally` 里的清理调用 ⇒ 必须判红
+    mutated = source.replace("_cleanup_order(authed_admin_client, order_id)", "", 1)
+    assert mutated != source, "变异注入未生效（锚点漂移）—— 判据没牙"
+    assert _p1_cleanup_defects(mutated), "拿掉清理调用后判据仍然绿 ⇒ 判据没牙"
