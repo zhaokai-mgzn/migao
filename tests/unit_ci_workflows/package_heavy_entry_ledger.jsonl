@@ -93,3 +93,4 @@
 {"id":"1793758916.1452.28718","ts":"2026-11-04T02:21:56Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/6579-readiness","why":"--allow-package-heavy（命令行显式）"}
 {"id":"1793759742.24998.25489","ts":"2026-11-04T02:35:42Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/6579-readiness","why":"--allow-package-heavy（命令行显式）"}
 {"id":"1793759975.30539.27214","ts":"2026-11-04T02:39:35Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/6579-readiness","why":"--allow-package-heavy（命令行显式）"}
+{"id":"1793760278.32757.9256","ts":"2026-11-04T02:44:38Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/6579-readiness","why":"--allow-package-heavy（命令行显式）"}
