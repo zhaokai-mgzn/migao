@@ -322,6 +322,28 @@ v2 命中：先求 scope=specific 的项；**只要有一项命中**（含「命
   `/api/admin/**` 对 `worker` 仍 403。工人可达面仍然只有 `/api/worker/**`。
 - **同构判据**：工人端页面源必须进机械判据（照 `tests/unit_ci_workflows/test_menu_three_sources_are_isomorphic.py` 的范式：**未登记即红**）。
 
+### 2.9 第三轴：本机能力（issue #8609，2026-11-04）
+
+> 用户逐字：「安卓一体机和 window 一体机功能完全一样，也有串口和下发动作」｜
+> 「手持标签机不需要裁高计算/下发」｜「接受，我也希望一个包搞定」
+> ⇒ **一份业务面 + 两个薄壳 + 一个 apk 覆盖两种安卓设备**。
+
+- **菜单三轴**：`users.worker_pages`（第一轴，§2.8）∩ 租户页面开关 ∩ **本机 capabilities**（本节的第三轴）。
+- **桥**：`window.migaoTerminal.capabilities` —— **壳注入、页面只读**：
+  `scan.hid` / `scan.camera` / `cut.link`（`serial:<port>` / `tcp:<host:port>` / `null`）/
+  `print.label`（`ble` / `null`）/ `update.channel`（`exe` / `apk`）。
+- **唯一消费方** = `frontend/worker-h5/src/render.mjs` 的 `terminalCapabilities`（纯函数，读 `state.terminal`）；
+  装配层 `frontend/worker-h5/src/app.mjs` 从全局桥读**一次**并放进 state。
+  🔴 壳**只报能力、不决定菜单**（边界三条：不把业务搬进壳 / 不新造第二份页面真值 / 不按工人账号拆菜单）。
+- **缺省 = fail-closed**：桥缺失 / 能力表缺失 / 非对象 / 空串 / 非字符串 ⇒ 一律当「没有该能力」。
+  与第一轴 `pages` 的 fail-open **故意不同**：`pages` 读不到挡的是活（报工），能力读不到挡的是
+  「这台机器上有没有那台机器」—— 藏一个入口，不挡活。
+- **收敛**：`cut.link` 缺席 ⇒ 不渲染「裁高计算（一体机）」入口；`print.label` 缺席 ⇒ 不渲染「打印入库标签」。
+  **下发**：`/w/` 侧至今**没有任何下发动作面**（本次裁定①「下发先不做」，§7.1）⇒ 本单不新增下发；
+  Android 侧串口下发属终端仓（issue #8609 的 A 包）。
+- **判据** = `frontend/worker-h5/tests/worker-h5-8609-capabilities.test.mjs`（四条判据 + 三条类级元守卫；
+  用例 = `.github/cases/misc.yml` 的 MC-192）。
+
 ---
 
 ## 3. 判据（每条必须能红 —— 不会红的断言 = 空断言）

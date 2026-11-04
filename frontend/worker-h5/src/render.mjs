@@ -47,6 +47,9 @@ export function initialState() {
     // 工人端页面权限（V141 母单 #5161）：`null` = **还没读到**（fail-open 的初值，见 `effectivePages`）
     pages: null,
     pagesUnread: false,
+    // 本机能力（**第三轴**，issue #8609）：装配层把壳注入的 `window.migaoTerminal` **原样**放这里。
+    // `null` = 没有壳 / 桥没接上 ⇒ `terminalCapabilities` 一律当「没有该能力」（fail-closed）。
+    terminal: null,
     // 质检（issue #7162 / #7973）：最新判定 + 记录列表（`records`）/ 读取中 / 读失败；
     // qualityForm = 展开中的录入表单（`recheck=true` = 从「待复检」里点的【复检仍有问题】）
     quality: null,
@@ -166,6 +169,56 @@ export const DEFAULT_PAGES = [
   PAGE_INBOUND,
   PAGE_REPRINT,
 ]
+
+// ════════════════════════════════════════════════════════════════════════════════
+// **第三轴：本机能力**（`window.migaoTerminal.capabilities`，issue #8609 B 包）—— 壳注入、页面只读。
+//
+// 为什么需要这一轴：**同一个 apk** 装在**安卓一体机**和**手持标签机**上（issue #8609 裁定 ③），
+// 而两者的菜单必须不同 —— 手持机没有裁高机链路、一体机没有标签机。**按工人账号拆菜单不行**
+// （同一工人今天一体机、明天手持机 ⇒ 写进账号 = 运维灾难，裁定「有意不做」），
+// 所以差异只能来自**本机**。菜单 = `worker_pages` ∩ 租户页面开关 ∩ 本机能力（三轴与），
+// 前两轴见 `effectivePages`（本文件**不**再写第二份），第三轴 = 本节的 `terminalCapabilities`。
+//
+// 🔴 **缺省 = fail-closed**：`undefined` / 整块桥缺失 / 缺键 / 非对象 / 空串 ⇒ 一律当
+//    「**没有该能力**」（入口**不渲染**，不是点了再报错）。**绝不默认全开。**
+//    （对照：第一轴 `pages` 的缺省是 **fail-open**，见 `effectivePages` —— 两者**故意不同**：
+//      `pages` 读不到 = 服务端的可见性开关丢了（挡的是活）；capabilities 读不到 = 本机桥没接上
+//      （这台机器上到底有没有那台机器），而报工本来就还能用 ⇒ 藏一个入口，不挡活。）
+//
+// 唯一合法来源 = `state.terminal`：装配层（`frontend/worker-h5/src/app.mjs`）从
+//   `window.migaoTerminal` 读**一次**放进 state。**本文件是纯函数层，不碰任何全局**
+//   （元守卫 = `tests/worker-h5-8609-capabilities.test.mjs` 的「桥只在装配层碰一次」）。
+//
+// 能力表的**完整契约**（壳侧 = A 包，issue #8609）：
+//   `scan.hid` / `scan.camera` / `cut.link` / `print.label` / `update.channel`
+// 本页只消费**与页面显隐有关**的两条；另外三条本页没有对应面 ⇒ **不读**
+// （读了不用 = 假轴：判据会绿，而屏幕上什么都没变）。
+// ════════════════════════════════════════════════════════════════════════════════
+
+/** 能力键：裁高机链路（`serial:<port>` / `tcp:<host:port>`；`null` = 本机没有裁高机）。 */
+export const CAP_CUT_LINK = 'cut.link'
+
+/** 能力键：标签机（`ble`；`null` = 本机没有标签机）。 */
+export const CAP_PRINT_LABEL = 'print.label'
+
+/**
+ * 本机能力（**唯一读取处**）—— 缺省 fail-closed。
+ *
+ * @param {object} state 页面状态（`state.terminal` = 壳注入的 `window.migaoTerminal`，可缺）
+ * @returns {{cut: string|null, print: string|null}} 值 = 能力凭据（串）；`null` = **本机没有该能力**
+ */
+export function terminalCapabilities(state) {
+  const bridge = state?.terminal
+  const table = bridge && typeof bridge === 'object' && !Array.isArray(bridge) ? bridge.capabilities : null
+  const caps = table && typeof table === 'object' && !Array.isArray(table) ? table : {}
+  // 只认**非空字符串**：`true` / `1` / `{}` 这类"像是开了"的值一律当没开
+  //（能力值本身就是凭据：`serial:COM3` / `ble` —— 布尔真值不携带"连哪台机器"这件事）
+  const read = (key) => {
+    const v = caps[key]
+    return typeof v === 'string' && v.trim() !== '' ? v.trim() : null
+  }
+  return { cut: read(CAP_CUT_LINK), print: read(CAP_PRINT_LABEL) }
+}
 
 /** 裁高计算入口（同源静态页；`/w/` 与 `/w/machine.html` 同一静态根 ⇒ 相对路径、不写死域名）。
  *  文案 = 「裁高计算（一体机）」（2026-10-10 用户裁定：改前的「机台模式」只有内部人懂，issue #6635）。 */
@@ -829,8 +882,11 @@ function doneNoticeBase(receipt, auto) {
  */
 function workerEntriesBar(state) {
   const { opened } = effectivePages(state)
+  // 第三轴（issue #8609）：`cut_calc` ∈ 页面集 **且本机真有裁高机链路**（`cut.link`）才出入口。
+  // 手持标签机没有裁高机 ⇒ 这一条**不渲染**（不是点了报错）；一体机照旧有。
+  const caps = terminalCapabilities(state)
   const itemId = state.view?.position?.order_item_id
-  const machine = opened.has(PAGE_CUT_CALC)
+  const machine = opened.has(PAGE_CUT_CALC) && caps.cut !== null
     ? `<a class="wh5-entry" id="wh5-machine-entry" href="${MACHINE_ENTRY_HREF}">裁高计算（一体机）</a>` : ''
   // 返工记录（issue #7860）：`rework` ∈ 页面集才出入口（用户裁定「在工人档案中设置过可见权限的工人」）；
   // 文案与后端 `WorkerPages.labels()` 同源（商家在工人档案里勾的就是「返工记录」）。
@@ -1109,6 +1165,14 @@ function qualityFormView(state) {
 function finishedInboundCard(state) {
   const w = state.finishedInbound
   if (!w) return ''
+  // 第三轴（issue #8609）：**本机有标签机**（`print.label`）才渲染「打印入库标签」。
+  // 安卓一体机没有标签机（标签机是手持机那条链路）⇒ 整条动作行不渲染（不留空壳、不留死按钮）；
+  // 卡片本身的信息面（入库单 / 仓位 / 标签行）照旧 —— 那是**数据**，与"本机能不能印"无关。
+  const printAction = terminalCapabilities(state).print !== null
+    ? `<div class="wh5-fl-actions">
+      <button id="wh5-fi-print" class="wh5-ghost" type="button">打印入库标签</button>
+    </div>`
+    : ''
   const label = w.label ?? {}
   const rows = (Array.isArray(label.rows) ? label.rows : []).map((row) => (
     `<div class="wh5-fl-row" data-label-key="${esc(row.label)}">`
@@ -1124,9 +1188,7 @@ function finishedInboundCard(state) {
     ${w.inbound_no ? `<p class="wh5-sub" id="wh5-fi-no">入库单 ${esc(w.inbound_no)}</p>` : ''}
     <div class="wh5-fl-rows" id="wh5-fl-rows">${rows}</div>
     ${label.short_code ? `<p class="wh5-fl-code" id="wh5-fl-code">${esc(label.short_code)}</p>` : ''}
-    <div class="wh5-fl-actions">
-      <button id="wh5-fi-print" class="wh5-ghost" type="button">打印入库标签</button>
-    </div>
+    ${printAction}
   </section>`
 }
 

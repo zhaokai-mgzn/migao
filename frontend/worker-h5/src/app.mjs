@@ -178,14 +178,19 @@ export function idleSlices(minutes) {
   return slices
 }
 
-export function createApp({ doc, api, location = globalThis.location, storage = null }) {
+export function createApp({ doc, api, location = globalThis.location, storage = null, terminal = undefined }) {
   const href = typeof location === 'string' ? location : location?.href ?? ''
   // 企业编码（issue #6564）：短链 302 的 `?tenant_code=` 只是**初值**（预填进输入框，可编辑）
   const urlEnterpriseCode = enterpriseCodeFromLocation(href)
   const root = doc.getElementById('worker-h5-root')
   // 打印窗口的宿主（`createApp` 只拿到 doc；`defaultView` 是同一份 window，jsdom 也有）
   const win = doc.defaultView ?? globalThis
-  let state = { ...initialState(), enterpriseCode: urlEnterpriseCode ?? '' }
+  // 壳注入的本机桥（**第三轴**，issue #8609）：`window.migaoTerminal`，**全仓只在这里读一次**。
+  // 🔴 读不到 / 晚到 ⇒ `null` ⇒ `terminalCapabilities` 一律当「没有该能力」（fail-closed，
+  // 见 render.mjs 的「第三轴」节）；晚到的桥要等**重开页面**才生效 —— 壳必须在页面脚本之前注入。
+  // `terminal` 入参只为测试注入（`undefined` = 没传，去读全局；`null` = 显式"没有桥"）。
+  const injected = terminal === undefined ? (win?.migaoTerminal ?? null) : terminal
+  let state = { ...initialState(), enterpriseCode: urlEnterpriseCode ?? '', terminal: injected }
   let idleTimer = null
   let aliveInFlight = false // 单飞：同一时刻最多一个对账在飞
   let lastAliveAt = 0 // 节流：两次对账的最小间隔（毫秒）

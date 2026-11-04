@@ -78,13 +78,22 @@ const visible = (html) => html.replace(/<!--[\s\S]*?-->/g, '')
 /**
  * 登录后的状态（`extra` 直接落在 state 上：`mode` / `view` 这类**装配层**才管的键
  * 不经 action 传 —— 那会把"装配"和"状态转移"两件事混在一起）。
+ *
+ * 🔴 第三轴（**本机能力**，issue #8609）在这里固定为「安卓一体机」（裁高机链路 + 标签机都在）：
+ * 本文件判的是**第一轴**（`pages` ⇔ 入口显隐），第三轴不能成为它的隐藏变量 —— 否则
+ * 「`cut_calc` 开了却没有入口」到底是第一轴坏了还是本机没那台机器，读数说不清。
+ * 第三轴**自己的**判据（缺省即隐藏 / 两机菜单不同 / 无硬件不阻断）= `tests/worker-h5-8609-capabilities.test.mjs`。
  */
+const ALL_IN_ONE = {
+  capabilities: { 'scan.hid': true, 'scan.camera': true, 'cut.link': 'serial:COM3', 'print.label': 'ble', 'update.channel': 'apk' },
+}
+
 const loggedIn = (pages, extra = {}) => {
   const base = reduce(
     reduce(initialState(), { type: 'worker', worker: WORKER }),
     pages === undefined ? { type: 'pages' } : { type: 'pages', pages },
   )
-  return { ...base, ...extra }
+  return { ...base, terminal: ALL_IN_ONE, ...extra }
 }
 
 /** 极简 fetch 替身：记录每次调用，按队列返回响应（与既有 api 测试同口径）。 */
@@ -396,7 +405,8 @@ test('切换工人后页面集必须重拉（`logout` 清空 ⇒ 不沿用上一
     reduce(initialState(), { type: 'worker', worker: WORKER }),
     { type: 'pages', pages: [PAGE_REPORT, PAGE_CUT_CALC] },
   )
-  assert.equal(deglue(renderPage(next, null)).includes(MACHINE_ENTRY), true, '换人后新权限没生效')
+  // 第三轴（issue #8609）显式给「一体机」能力：本判据只测"换人换 pages"，不该被本机能力挡住
+  assert.equal(deglue(renderPage({ ...next, terminal: ALL_IN_ONE }, null)).includes(MACHINE_ENTRY), true, '换人后新权限没生效')
 })
 
 test('未知页面键被**忽略**（不因为多一个字符串就冒出对应的面）', () => {
