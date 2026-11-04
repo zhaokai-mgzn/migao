@@ -4233,7 +4233,7 @@
 ```
 溯源: 2026-10-31 新增（issue #8295）：两步确认，避免误写 ｜ tags: ui, preview
 
-## 杂项域（227 case）
+## 杂项域（228 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -7665,6 +7665,17 @@
 跳过: [backend-contract] 纯 pytest 层判据（注入式真死锁 / 人为延迟 / 计数真值 / 黑洞监听者；零网络、零 LLM、不碰真库 —— 读侧取数在本文件内钉成桩），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 溯源: 2026-11-04 新增（issue #8654）。病：retry / deadlock 族 4 条用 `asyncio.wait_for(..., timeout=3.0 / 8.0)` 判会不会死锁 —— 墙钟不是死锁的判据，本机高负载（load 10+）下到点即抛 TimeoutError ⇒ `4 failed, 7939 passed, 34 skipped in 933.45s`。复算时另有现取读数：这 4 条在本机是**真挂住**而非仅仅变慢 —— `run_suite` 收尾经读侧取数真去 GET 评测服务（httpx 读超时 20 秒），而 8001 上有僵而不死的监听者（#8647 记的那个），于是每条尝试等 20 秒，本文件单跑 269 秒后只能人工中断（KeyboardInterrupt 落在 asyncio 的运行里）⇒ 单测本就不该连真服务。修法（issue 方向 A，未删未放宽）：判据从墙钟预算换成进度读数 —— 并发门的 acquire / release、用例开始 / 结束、每次尝试各 +1，判「连续零进度到窗口 = 死锁」而不是「3 秒 / 8 秒没跑完 = 红」；同批把读侧取数在本文件内钉成桩（只桩网络边界，断言一条没动），并补类级元守卫（黑洞监听者下必须绿且零连接）。取号 MC-200（`python3 scripts/next_case_id.py MC` 现取 main 到 198，180~199 段避开在飞占号）。红证 = 三次单变量注入逐条实跑并还原：① 无进展判定改成永不判死 / 去掉点名 ⇒ 真死锁那条红；② 判据改回「总量超 8 秒就红」（旧写法）⇒ 慢但前进那条红；③ 计数改成空操作 ⇒ 计数真值那条红。读数：改后同 4 条 + 新增 6 条 = 10 passed / 13.90 秒，本文件全量 459 passed / 57.11 秒。边界（照实登记）：进度窗口仍是墙钟采样 —— 它判的是「零进度持续多久」，不是「多久必须跑完」，故慢 / 高负载不会假红；但一条用例在两次进度事件之间真睡超过窗口会被判成停滞（当前套件最长单步 0.5 秒，余量 4 倍）。 ｜ tags: deadlock, flaky, progress-counter, no-wall-clock, no-live-service, red-proof
+
+### MC-202. bmini 的每一条 SCSS @use / @import 相对路径都必须解析到仓里真实文件（sass 相对路径只在构建期解析，tsc 抓不到） 🔵
+```
+你: N/A（构建期静态判据，无对话轮次）
+期望: 扫 frontend/bmini-app/src/**/*.scss 的每一条 @use / @import（跳过 sass: 内置与波浪线包名），目标在 (文件所在目录 / 目标) 下不存在 ⇒ 判红并具名给出文件与目标。
+期望: 判据自带失明检查：扫到的 @use/@import 条数为 0 也判红（防止守着一份不存在的语料）。
+数据: 注入式红证：把 WorkerBackLink.scss 的 @use 改回多退一级的路径 ⇒ 1 failed；还原 ⇒ 1 passed。
+数据: 现取全仓读数：17 条 @use/@import，解析失败 0 条。
+数据: 为什么不靠 tsc：TypeScript 的 import 由 tsc 抓，Sass 的相对路径只在构建期被解析 ⇒ 静态判据缺位时只能靠一轮 CI 发现，而 bmini 两条腿不在 required 集合里，红着也不拦合并。
+```
+溯源: ['2026-11-04 新增（PR #8671）。起因 = 同一 PR 里把颜色改走语义 token 时，照抄 src/components/cards/OrderCard.scss 的 @use ../../styles/… 多退了一级，合进 main 后红掉 bmini-app build (h5 + weapp) 与 bmini H5 tabBar geometry (e2e) 两条腿。'] ｜ tags: 类级判据, 构建期失败, 相对路径
 
 ## 商家入驻域（7 case）
 
@@ -15190,8 +15201,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：1028（活跃 160，跳过 868）
-- tier 分布：smoke 15 / normal 951 / adversarial 33
+- 用例总数：1029（活跃 161，跳过 868）
+- tier 分布：smoke 15 / normal 952 / adversarial 33
 - 售后域：16
 - Agent 核心域：13
 - API 层域：21
@@ -15207,7 +15218,7 @@
 - 人事域：13
 - 知识问答域：9
 - 客户主数据迁移域：10
-- 杂项域：227
+- 杂项域：228
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：76
@@ -15501,6 +15512,7 @@
 - MC-197: 批次后台 job 的跨实例执行租约（issue #8285）：心跳新鲜不误杀 / 心跳超时或为空 ⇒ 回收成可撤销 partial 且幂等 / 两个 executor 的活批次互不误伤 / 回收不覆盖终态（含 fencing）
 - MC-199: OrderService 切片第一批（issue #8191 的 P2-1c，纯搬运不重写）：库存与销量族 18 个方法搬到 OrderStockService、财务流水族 4 个方法搬到 OrderFeeSupport，OrderService 由 2,685 行降到 2,269 行并只留同名门面委托；公开名一个不改、调用点零改动、方法体与拆分前逐字节相同、拆分前后的行为快照逐字节一致
 - MC-200: 死锁判据改钉**进度读数**、不再用墙钟预算（issue #8654）：进度在涨 ⇒ 慢也绿；连续零进度到窗口 ⇒ 红并点名卡住的用例；单测不许连真评测服务（黑洞监听者下仍绿）
+- MC-202: bmini 的每一条 SCSS @use / @import 相对路径都必须解析到仓里真实文件（sass 相对路径只在构建期解析，tsc 抓不到）
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）

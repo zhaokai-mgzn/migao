@@ -2,8 +2,12 @@
    放在页头最左侧，不抢标题权重（设计 §31：常驻面克制）。
    ⚠️ 颜色**必须**走语义 token（issue #8600 的调色板同源判据）：手写 slate-600 冷灰是
    **冷灰**，与 bmini 的暖色中性阶 `$text-secondary`（neutral-600）不是同一个值，且不在 PC 调色板
-   白名单里 ⇒ `tests/bmini-pc-palette-parity.test.ts::②` 判红（实测 offenders = 2 处）。 */
-@use '../../styles/variables.scss' as *;
+   白名单里 ⇒ `tests/bmini-pc-palette-parity.test.ts::②` 判红（实测 offenders = 2 处）。
+   📐 `@use` 路径**相对本文件**：本文件在 `src/components/` ⇒ `../styles/variables.scss` 才是
+   `src/styles/variables.scss`；写成 `../../styles/…` 会解析到 `frontend/bmini-app/styles/…`（不存在）
+   ⇒ sass-loader `ModuleBuildError: Can't find stylesheet to import`（我在 PR #8658 里写错过一次，
+   合进 main 后红掉所有 PR 的 bmini 腿，已在此修正）。 */
+@use '../styles/variables.scss' as *;
 .worker-back {
   display: inline-flex;
   align-items: center;
