@@ -517,7 +517,12 @@ def page_present(parity, sources: Mapping[str, str] | None = None) -> dict[str, 
     src = sources if sources is not None else parity._source_map()
     world = parity.build_world(src)
     nodes = parity.parse_menu_ts_nodes(src["menu:frontend"])
-    api_calls = parity.parse_frontend_api_calls(src["frontend:api.ts"])
+    api_calls = parity.parse_frontend_api_calls(
+        src["frontend:api.ts"],
+        # 第二个 api 源（issue #6579）：新接口面单开模块（`lib/api.ts` 有行数棘轮）。
+        # 与判据 12 走**同一份**解析器 + 同一组源，派生器与判据不会各读一半。
+        src.get("frontend:api-config-readiness.ts", ""),
+    )
     tables = (
         {role: sorted(codes) for role, codes in parity.parse_role_defaults(
             src["java:service/RegistrationService.java"]).items()},

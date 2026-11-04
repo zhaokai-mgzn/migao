@@ -68,13 +68,16 @@ print('C:', len(C), '| D(key-level):', len(assertion_key_violations(cases)))
 PY
 ```
 
+> 下表读数是**某一时点**的现取（用例数随 main 演进而增）⇒ **以 §0 的脚本现取为准**；
+> 每次并入 main 后重跑一次即可，本文件不追着改数字。
+
 **今日读数（2026-11-04，`origin/main` = 起始基线 `a6d271678` 的父提交链）**：
 
 | 项 | 读数 |
 |---|---|
-| 用例总数 | **1015**（主分支并入 #8613 的 MC-190 后；本包重锚前为 1014，第一版审计时 771） |
-| `persona` 分布 | 缺省（双端）**894** / `mibao` **68** / `xiaobu` **53** |
-| `skip_reason` 非空 | **860**（不进 runner 实跑面；本包重锚前为 861 —— 已 un-skip `HR-002` / `HR-010`，见 §3；并入 MC-190 后 +1） |
+| 用例总数 | **1016**（2026-11-04 现取；本包重锚前为 1014，第一版审计时 771） |
+| `persona` 分布 | 缺省（双端）**895** / `mibao` **68** / `xiaobu` **53** |
+| `skip_reason` 非空 | **861**（不进 runner 实跑面；本包重锚前为 861 —— 已 un-skip `HR-002` / `HR-010`，见 §3） |
 | B 端（黄金策）可跑工具集 | **41** 个 |
 | C 端专属（B 端无） | **8** 个：`aftersale_create` / `aftersale_query` / `curtain_calc` / `customer_address_query` / `customer_logistics_track` / `customer_order_query` / `order_create` / `payment_qrcode_query` |
 | **A**（**射程内**：B 端用例的期望/效果层要求创建商品/订单/单据） | **0**（全库原始命中 **17** 条，**全部**是 `persona: xiaobu` ⇒ 射程外） |

@@ -25,8 +25,11 @@ import {
   judgeDefaultRouteStep,
   judgeFeeCombinationsStep,
   judgeOperationsStep,
+  judgeProcessingItemsStep,
+  judgeRemnantSizesStep,
   missingBaseRoutesOf,
   readinessHeadline,
+  statesFromFacts,
   summarizeReadiness,
   type ReadinessState,
 } from '@/lib/config-readiness'
@@ -238,28 +241,123 @@ describe('判据 7：常驻面摘要文案（readinessHeadline，§31 P1/P4）',
 })
 
 describe('判据 8：主线目录（MAINLINE_STEPS）的形态', () => {
-  it('恰好 5 步、键唯一，且顺序 = 依赖顺序（用结果的人不能排在准备输入的人前面）', () => {
+  it('恰好 7 步、键唯一，且顺序 = 依赖顺序（加工项在加工费组合之前；issue #6579 接上两步）', () => {
     expect(MAINLINE_STEPS.map((s) => s.key)).toEqual([
       'operations',
       'routings',
       'default-route',
+      'processing-items',
       'fee-combinations',
+      'remnant-sizes',
       'calc',
     ])
     expect(new Set(MAINLINE_STEPS.map((s) => s.key)).size).toBe(MAINLINE_STEPS.length)
   })
 
-  it('每步都有 label / why / impact / href（Href 是站内深链）；除算料外都是**阻断**步', () => {
+  it('每步都有 label / why / impact / href（Href 是站内深链）；阻断步 = 工序 / 路线 / 默认路线 / 加工费组合', () => {
     for (const s of MAINLINE_STEPS) {
       expect(s.label.length).toBeGreaterThan(0)
       expect(s.why.length).toBeGreaterThan(0)
       expect(s.impact.length).toBeGreaterThan(0)
       expect(s.href.startsWith('/')).toBe(true)
     }
-    expect(MAINLINE_STEPS.filter((s) => !s.blocking).map((s) => s.key)).toEqual(['calc'])
+    expect(MAINLINE_STEPS.filter((s) => s.blocking).map((s) => s.key)).toEqual([
+      'operations',
+      'routings',
+      'default-route',
+      'fee-combinations',
+    ])
   })
 
   it('算料步的去处就是本页（`/settings/params`）—— 主线与菜单项指向同一个入口', () => {
     expect(MAINLINE_STEPS.find((s) => s.key === 'calc')?.href).toBe('/settings/params')
+  })
+})
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 判据 9：服务端事实 → 三态（`statesFromFacts`，issue #6579）
+//
+// 为什么这条是「只发一个请求」的**判据面**：聚合端点只给事实，三态怎么从事实推出来
+// 必须**仍然只有一处**（本模块）。下面每条都用「事实」当输入，而不是三态当输入 ——
+// 这样翻译逻辑一改，断言当场红；服务端若偷偷给三态字符串，也不会被采信（末条）。
+// ══════════════════════════════════════════════════════════════════════════════
+describe('判据 9：服务端事实 → 三态（statesFromFacts）', () => {
+  /** 一份「全配好」的事实载荷（形状 = 端点 `data.steps`）。 */
+  const healthyFacts = () => ({
+    operations: { facts: { total: 2, unpriced: 0, orphans: 0 }, href: '/production/routings' },
+    routings: { facts: { missing_base_routes: [] }, href: '/production/routings' },
+    'default-route': { facts: { count: 1 }, href: '/production/routings' },
+    'processing-items': { facts: { total: 4, active: 3 }, href: '/settings?domain=processing-items' },
+    'fee-combinations': { facts: { combinations: 3, gaps: 0 }, href: '/production/processing-fees' },
+    calc: { facts: { source: 'stored' }, href: '/settings/params' },
+  })
+
+  it('全绿事实 ⇒ 六步全 done；**载荷里没有** remnant-sizes ⇒ 不产出那个键（不是 unknown）', () => {
+    const states = statesFromFacts(healthyFacts())
+    expect(states).toEqual({
+      operations: 'done',
+      routings: 'done',
+      'default-route': 'done',
+      'processing-items': 'done',
+      'fee-combinations': 'done',
+      calc: 'done',
+    })
+    expect(Object.prototype.hasOwnProperty.call(states, 'remnant-sizes')).toBe(false)
+  })
+
+  it('跨码步骤在载荷里（持 processing:manage）⇒ 产出它的三态', () => {
+    const states = statesFromFacts({
+      ...healthyFacts(),
+      'remnant-sizes': { facts: { configured: true, items: 2 }, href: '/settings?domain=remnant-sizes' },
+    })
+    expect(states['remnant-sizes']).toBe('done')
+  })
+
+  it('🔴 facts **缺键** ⇒ unknown，**绝不**降级成 todo（读不到 ≠ 没配）', () => {
+    const states = statesFromFacts({
+      ...healthyFacts(),
+      operations: { facts: { total: 2 }, href: '/production/routings' },
+      'fee-combinations': { facts: { combinations: 3 }, href: '/production/processing-fees' },
+      'processing-items': { facts: { total: 4 }, href: '/settings?domain=processing-items' },
+    })
+    expect(states.operations).toBe('unknown')
+    expect(states['fee-combinations']).toBe('unknown')
+    expect(states['processing-items']).toBe('unknown')
+  })
+
+  it('🔴 服务端若给三态字符串（`done`）当事实 ⇒ 也读成 unknown（三态不被采信）', () => {
+    const states = statesFromFacts({
+      ...healthyFacts(),
+      calc: { facts: { source: 'done' }, href: '/settings/params' },
+    })
+    expect(states.calc).toBe('unknown')
+  })
+
+  it('整个请求没拿到（`undefined` / `null`）⇒ 空对象（渲染面按「全部读不到」处理）', () => {
+    expect(statesFromFacts(undefined)).toEqual({})
+    expect(statesFromFacts(null)).toEqual({})
+  })
+
+  it('「有工序、未定价、孤儿」三个事实逐条驱动第 ① 步（不是只看总数）', () => {
+    expect(
+      statesFromFacts({ ...healthyFacts(), operations: { facts: { total: 2, unpriced: 1, orphans: 0 } } })
+        .operations,
+    ).toBe('todo')
+    expect(
+      statesFromFacts({ ...healthyFacts(), operations: { facts: { total: 2, unpriced: 0, orphans: 1 } } })
+        .operations,
+    ).toBe('todo')
+    expect(
+      statesFromFacts({ ...healthyFacts(), operations: { facts: { total: 0, unpriced: 0, orphans: 0 } } })
+        .operations,
+    ).toBe('todo')
+  })
+
+  it('加工项：全停用 ⇒ todo；余料尺寸：未配置 ⇒ todo（两步的口径各判一次）', () => {
+    expect(judgeProcessingItemsStep({ total: 3, active: 0 })).toBe('todo')
+    expect(judgeProcessingItemsStep({ total: 0, active: 0 })).toBe('todo')
+    expect(judgeProcessingItemsStep({ total: 3, active: 1 })).toBe('done')
+    expect(judgeRemnantSizesStep({ configured: false, items: 0 })).toBe('todo')
+    expect(judgeRemnantSizesStep({ configured: true, items: 1 })).toBe('done')
   })
 })

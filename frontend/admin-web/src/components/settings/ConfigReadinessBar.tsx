@@ -44,6 +44,17 @@ export interface ConfigReadinessBarProps {
   /** 读数是否仍在路上（**不谎报**：加载中不显示任何一步为「待配置」） */
   loading: boolean
   /**
+   * 可选：**这一步适不适用于当前调用方**（服务端给的 `steps` 键集）。
+   *
+   * 🔴 为什么需要它（issue #6579 已定口径 3）：`remnant-sizes` 是**跨码步骤**
+   * （读面码 `processing:manage`）—— 不持该码时服务端**整个不发这一步**。
+   * 主线若按 `MAINLINE_STEPS` 全量渲染，就会给它画一行「读不到」
+   * （那是「本次没取到」，而事实是「与你无关」）⇒ 谎报。
+   *
+   * 缺省（`undefined`）= 不知道 ⇒ 按 `MAINLINE_STEPS` 全量渲染（老调用方的行为不变）。
+   */
+  stepKeys?: readonly string[]
+  /**
    * 可选：给了就把「去配置」渲染成**页内跳转**（设计 G3：不把人送出页面）—— 入参 = 步骤 key。
    *
    * 为什么不直接改 `MAINLINE_STEPS[].href`：同一块主线**还被别的持有者渲染**（工艺配置页自带的
@@ -60,18 +71,24 @@ const STATE_COPY: Record<ReadinessState, { text: string; className: string }> = 
   unknown: { text: '读不到', className: 'bg-neutral-100 text-neutral-600 border-neutral-200' },
 }
 
-export function ConfigReadinessBar({ states, loading, onGoto }: ConfigReadinessBarProps) {
+export function ConfigReadinessBar({ states, loading, stepKeys, onGoto }: ConfigReadinessBarProps) {
   const [open, setOpen] = useState(false)
 
-  const entries = MAINLINE_STEPS.map((s) => ({
+  // 不适用于调用方的步骤**整行不画**（不是画成「读不到」）—— stepKeys 缺省时全量渲染
+  const steps =
+    stepKeys === undefined
+      ? MAINLINE_STEPS
+      : MAINLINE_STEPS.filter((s) => stepKeys.includes(s.key))
+
+  const entries = steps.map((s) => ({
     key: s.key,
     blocking: s.blocking,
     state: states[s.key] ?? ('unknown' as ReadinessState),
   }))
   const summary = summarizeReadiness(entries)
   const nextStep =
-    MAINLINE_STEPS.find((s) => states[s.key] === 'todo') ??
-    MAINLINE_STEPS.find((s) => states[s.key] === 'unknown') ??
+    steps.find((s) => states[s.key] === 'todo') ??
+    steps.find((s) => states[s.key] === 'unknown') ??
     null
   const headline = loading
     ? '配置主线读取中…'
@@ -102,7 +119,7 @@ export function ConfigReadinessBar({ states, loading, onGoto }: ConfigReadinessB
           data-testid="config-readiness-list"
           className="border-t border-neutral-100 divide-y divide-neutral-100 max-h-80 overflow-y-auto"
         >
-          {MAINLINE_STEPS.map((s, i) => {
+          {steps.map((s, i) => {
             const st = states[s.key] ?? 'unknown'
             const copy = STATE_COPY[st]
             return (
