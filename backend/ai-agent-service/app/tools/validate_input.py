@@ -7,6 +7,7 @@
 from typing import Any, Dict, List, Optional
 from loguru import logger
 
+from app.constants.order_status import AGENT_ORDER_STATUSES
 from app.tools.base import BaseTool, ToolContext, ToolResult, permission_denied
 from app.tools.registry import get_tool_scope
 
@@ -66,7 +67,7 @@ _VALIDATION_RULES: Dict[str, Dict[str, Any]] = {
                 "type": str,
                 "min_len": 1,
                 "label": "订单新状态（pending/confirmed/producing/shipped/completed/cancelled）",
-                "enum": ["pending", "confirmed", "producing", "shipped", "completed", "cancelled"],
+                "enum": list(AGENT_ORDER_STATUSES),
             },
         },
         "update_logistics": {

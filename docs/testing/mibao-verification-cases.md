@@ -4245,7 +4245,7 @@
 ```
 溯源: 2026-10-31 新增（issue #8295）：两步确认，避免误写 ｜ tags: ui, preview
 
-## 杂项域（230 case）
+## 杂项域（231 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -7711,6 +7711,21 @@
 跳过: [backend-contract] Java 侧调用方迁移 + 门面转发退休（零 LLM / 零外网 / 零前端可见面），由 JUnit 判据与 pytest 棘轮判据验证，无 agent 行为面，不进入 agent-eval 冒烟
 ```
 溯源: 2026-11-04 新增（issue #8681 的 P2-1e 第一批，**部分交付**：不写关闭关键词）。现取读数：`git show origin/main:backend/admin-api/src/main/java/com/migao/admin/service/OrderService.java | wc -l` = 1,832（P2-1a/1b/1c/1d 依次由 PR #8192 / #8212 / #8666 / #8675 合并后的基线，sha256 53dbc26c…）。本批迁两族 4 个方法、6 个调用点：租户可见性认定 + 单号解析 → 直接依赖 OrderQueryService（安全层归属认定、Agent 控制器单号解析）；发货前置判定 + 发货人取值 → 直接依赖 OrderLifecycleService（生产待办服务、订单控制器发货路）。门面 1,832 → 1,725（−107），公开面 29 → 25；同时清理生命周期族搬走后已无调用方的 6 个私有死委托（零调用点才删）。⚠️ 有意不搬：applyRollAllocation（被 OrderRollAllocationAuthorityTest 钉在门面）、batchStock 访问器（取消路径在用）；本批**不动**门面里仍被 OrderServiceTest 的 152 条判据直接驱动的 15 个公开入口（删它们会改既有断言，与「断言一字不许改」冲突）⇒ 那 15 个入口的调用方迁移与判据改直测留作下一批。红证 = 两次单变量注入逐条实跑并逐字节还原（塞回两个转发 + 改回门面调用 ⇒ 退休面 3 红；改实现点语义 ⇒ 直测 2 红）。全量读数见 PR body。 ｜ tags: refactor, order-service, facade-retirement, caller-migration, dead-forwarder, ratchet
+
+### MC-204. 订单状态单一源生成到 TS / Python（issue #8198 的 P2-2b）：从 Java `OrderStatusTransitions` 的 7 个常量 + 三张表生成两份**入库**产物（前端 `order-status.generated.ts` / Agent `order_status_generated.py`），删掉 TS 手写的后端状态联合体与两处映射表里的裸值、4 个工具 schema 的订单状态枚举改由生成物派生；生成器确定性（两次重生成逐字节相等，产物里零环境指纹）+ 新鲜度判据三态（0 同步 / 1 陈旧 / 3 无法判定）+ 手写面零裸字面量扫面 + 台账只许缩短；行为零变化（Agent 面仍只暴露 6 个状态，打包态走显式冻结窄化） 🔵
+```
+你: issue #8198 的 P2-2b：从 Java 单一源生成到 TS 与 Python，生成物入库 + 新鲜度校验；删掉 TS 的两套手写定义与 Python schema 里的手写字面量；判据 = 生成物与源逐值相等、删掉生成步骤 ⇒ 判红、手写再出现同名字面量 ⇒ 判红
+你: issue #8198 评论裁定（2026-10-31，仓库所有者读码后）：**不要**新建枚举 —— P2-2a 的正确形态 = 加常量、不加类型 ⇒ 生成器必须从「7 个常量 + 三张表」生成，不许为了生成方便再引入枚举或第三个载体
+你: 商家与 Agent 的可见行为都不许变：状态取值 / 序列化输出 / 工具 schema 暴露的取值集合与改前逐字一致（打包态 `packed` 不在 Agent 面内，放开它属独立的行为变更单）
+数据: **判据 1 · 生成物与源逐值相等（TS，会红）**：独立解析入库的 `frontend/admin-web/src/types/order-status.generated.ts`（`json.loads` 读字面量，**不调用生成器** —— 否则等于生成器自己证明自己），逐值比对 Java 单一源里的 7 个常量 / 标签表 / 流转表 / 可编辑集合；解析出的常量值还要**逐字**能在 Java 原文里找到（防解析器凭空造值）。红证实跑：把生成物里的一处取值改成 `producingg` ⇒ 本条具名红（`values` 逐值不等），还原后 `cmp` 逐字节相等、判据转绿。执行点 = tests/unit_ci_workflows/test_order_status_codegen.py
+数据: **判据 2 · 生成物与源逐值相等（Python，会红）**：同上，用 `ast.literal_eval` 独立读入库的 `backend/ai-agent-service/app/constants/order_status_generated.py`（7 个取值 + 逐名常量 + 标签 + 流转 + 可编辑集合），与 Java 单一源逐值比对。红证实跑：把生成物里的 `packed` 改成 `packedd` ⇒ 本条具名红，还原后逐字节相等并转绿。执行点 = 同判据 1 的判据文件
+数据: **判据 3 · 删掉生成步骤 ⇒ 判红（会红，且三态齐全）**：`python3 scripts/order_status_codegen.py --check` 是唯一的新鲜度入口 —— `0` 同步 / `1` 陈旧 / `3` 无法判定（**没有「跳过」这一态**）。红证实跑（临时树 + 真实命令两路）：只改 Java 源不重生成 ⇒ 退出码 `1`，且具名报出**两个产物**、各自「提交版 / 现取」行数与首个差异的两侧原文；删掉生成物 ⇒ 退出码 `3`（绝不当通过）；挪走单一源 ⇒ 同样 `3`；重生成后回到 `0`（证明它读的是**源**，不是一张写死的表）。同一判据还验确定性：同一份源连跑两次重生成 ⇒ 逐字节相等，且临时树产物与入库产物逐字节相等（产物里没有时间戳 / 环境指纹）。执行点 = 同判据 1 的判据文件
+数据: **判据 4 · 手写面不许再有同名裸字面量（会红，台账只许缩短）**：扫两处手写面（前端 `types/index.ts` + 4 个 Agent 工具 schema）里的裸状态字面量，命中即**具名**报出「文件 + 行 + 值 + 该行原文」；取值走仓内唯一一份引号感知实现 ⇒ 注释里写同样的词不算。非订单域的同名用法（加工单终态、入库单状态、两个查询工具的状态中文映射）逐条按**原文**登记豁免，某条原文不再出现 ⇒ 红并要求销账。红证实跑：往前端类型模块里加一处 `producing` 裸字面量 ⇒ 本条具名红（报出该文件第 N 行与该行原文），还原后逐字节相等、9 条判据全绿。执行点 = 同判据 1 的判据文件
+数据: **判据 5 · 消费侧行为冻结（会红）**：Agent 工具面仍只暴露 6 个状态（不含 `packed`），四个面（订单管理 / 订单查询 / 客户订单查询 / 前置校验闸门）的订单状态枚举都必须**等于**由生成物派生的那 6 个（顺序也一致）；生成物自身仍是 7 个（单一源全集）。红证：把窄化改成全集 ⇒ 冻结判据与四个面的取值判据一起红。执行点 = backend/ai-agent-service/tests/test_order_status.py
+前置: 零运行期前置（纯结构判据）：被测对象 = `backend/admin-api/src/main/java/com/migao/admin/service/OrderStatusTransitions.java`、两份生成物、以及两处手写面（前端类型模块 + 4 个 Agent 工具 schema）；前置 = 它们存在且可读，由仓本身满足。不成立时的红形态已内建：手写面文件不在 ⇒ 判红；单一源或生成物缺失 ⇒ 判据的退出码是 3（无法判定），不是 0。零网络 / 零 LLM / 零 DB。
+跳过: [backend-contract] 纯结构面判据（扫源码文本 + 解析 Java 单一源与两份生成物 + 生成器确定性 + 新鲜度退出码），零网络、零 LLM、不起真库；不进 agent-eval 冒烟
+```
+溯源: 2026-11-04 新增（issue #8198 的 P2-2b，**部分交付**：P2-1/P2-2a 已由前序 PR 落地，本单只做「生成到 TS / Python」）。 形态按 2026-10-31 issue 评论裁定落：**不新建枚举**，单一源 = Java `OrderStatusTransitions` 的 7 个常量 + 三张表 （`STATUS_TRANSITIONS` / `ORDER_STATUS_LABELS` / `CONTENT_EDITABLE_STATUSES`）。生成器 `scripts/order_status_codegen.py` 只读源、输出两份入库产物；排序键显式写死（状态全集按常量声明顺序， 表键与流转目标按全集顺序），产物里**零环境指纹**（无时间戳 / sha / 版本号）⇒ 两次重生成逐字节相等（实测 cmp 相等）。 **删掉的手写重复**：前端 `BackendOrderStatus` 的 6 行字面量联合体 → 改从生成物派生（并显式排除 `packed`，见下）； `FrontendToBackendStatus` / `BackendToFrontendStatus` 两张表的 12 处裸值 → 改引用生成常量（计算键）； `displayOrderStatus` 里 1 处裸 `producing` → 常量；4 个 Agent 工具 schema 的订单状态枚举（订单管理 / 订单查询 / 客户订单查询 / 前置校验闸门）→ `list(AGENT_ORDER_STATUSES)`。**行为零变化**：前端 `BackendOrderStatus` 仍是 **6 个**（有意排除 Java 的 `packed`：补上它会把「已打包」订单的展示从透传变成「待发货」= 行为变更）， Agent 面同样仍是 6 个 ⇒ 工具 schema 的取值集合与改前逐字一致；窄化只写一处 （`backend/ai-agent-service/app/constants/order_status.py`），并登记重启条件（放开 `packed` 要先裁定业务口径 / 权限码 / 描述同步）。 取号 MC-204（派单口径，取 MC-198 之后的新号；claims 目录现取到 MC-203）。 ｜ tags: order-status, single-source, codegen, generated-artifact, freshness, scan-guard, no-behavior-change, red-proof, backend-contract
 
 ## 商家入驻域（7 case）
 
@@ -15236,8 +15251,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：1032（活跃 161，跳过 871）
-- tier 分布：smoke 15 / normal 955 / adversarial 33
+- 用例总数：1033（活跃 161，跳过 872）
+- tier 分布：smoke 15 / normal 956 / adversarial 33
 - 售后域：16
 - Agent 核心域：13
 - API 层域：21
@@ -15253,7 +15268,7 @@
 - 人事域：13
 - 知识问答域：9
 - 客户主数据迁移域：10
-- 杂项域：230
+- 杂项域：231
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：76
@@ -15551,6 +15566,7 @@
 - MC-202: bmini 的每一条 SCSS @use / @import 相对路径都必须解析到仓里真实文件（sass 相对路径只在构建期解析，tsc 抓不到）
 - MC-201: OrderService 切片第二批（issue #8191 的 P2-1d，纯搬运不重写）：取消 / 退款 / 发货 / 状态流转四族 15 个方法搬到 OrderLifecycleService，OrderService 由 2,268 行降到 1,832 行并只留同名门面委托；公开名集合逐名相等、调用点零改动、方法体与拆分前逐字节相同（3 处具名跨类限定）、拆分前后的行为快照逐字节一致
 - MC-203: OrderService 门面收尾第一批（issue #8681 的 P2-1e，部分交付）：租户可见性认定与单号解析两个调用方改直连 OrderQueryService、发货前置判定与发货人取值两个调用方改直连 OrderLifecycleService，门面 1,832 行降到 1,725 行并删掉这 4 个转发方法（公开面 29 → 25），另清理生命周期族搬走后失去调用方的 6 个私有死委托
+- MC-204: 订单状态单一源生成到 TS / Python（issue #8198 的 P2-2b）：从 Java `OrderStatusTransitions` 的 7 个常量 + 三张表生成两份**入库**产物（前端 `order-status.generated.ts` / Agent `order_status_generated.py`），删掉 TS 手写的后端状态联合体与两处映射表里的裸值、4 个工具 schema 的订单状态枚举改由生成物派生；生成器确定性（两次重生成逐字节相等，产物里零环境指纹）+ 新鲜度判据三态（0 同步 / 1 陈旧 / 3 无法判定）+ 手写面零裸字面量扫面 + 台账只许缩短；行为零变化（Agent 面仍只暴露 6 个状态，打包态走显式冻结窄化）
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）

@@ -245,11 +245,120 @@ def _dig(node: ast.AST, keys, where: str):
     return _literal(_dig_ast(node, keys, where))
 
 
+# ── 派生事实源（issue #8198 的 P2-2b）：工具 schema 的枚举可以写成 `list(NAME)` ────────────
+#
+# 病灶（实测）：本守卫的事实源原本**只认字面量**。P2-2b 把 4 个工具 schema 的订单状态枚举
+# 改成从生成物派生（`"enum": list(AGENT_ORDER_STATUSES)`）后，`_literal()` 立刻 red 并报
+# 「事实源不再是字面量（Call）⇒ 守卫无法反解，宁可红」—— 判定本身是对的（它不许返回半个结构），
+# 但它把「有意的派生」也挡在外面。**修法不是把源码改回字面量**（那正是 P2-2b 要消灭的手抄），
+# 而是让本守卫**多认一种载体**，且只认一条窄缝：
+#
+#   ① `list(NAME)` / 裸 `NAME`，且 `NAME`（可跨 1~3 跳的 `from app.… import`）最终是**纯字面量**；
+#   ② `tuple(x for x in SEQ if x != NAME)` —— 「全集减一项」这条窄化（订单状态 Agent 面口径）。
+#
+# 其余形态**一律报错**（宁可红）：判定仍是 fail-closed，判别力自证见
+# `TestClaimCheckerIsNotVacuous::test_derived_enum_refuses_an_unsupported_derivation`。
+
+
+def _module_file(module: str, where: str) -> Path:
+    """`app.constants.order_status` → `backend/ai-agent-service/app/constants/order_status.py`。"""
+    if not module.startswith("app."):
+        raise AssertionError(f"{where}：只反解本服务内的绝对导入（`app.*`），拿到 {module!r} ⇒ 宁可红")
+    path = SERVICE_ROOT / (module.replace(".", "/") + ".py")
+    assert path.is_file(), f"{where}：反解 `{module}` 指向的文件不存在：{path}（fail-closed）"
+    return path
+
+
+def _resolve_module_name(module_path: Path, name: str, where: str,
+                         depth: int = 0) -> tuple[Path, ast.AST]:
+    """在 `module_path` 里解析名字 `name` 的**右值节点**：本模块赋值优先，否则跟 `from X import name`。"""
+    if depth > 3:
+        raise AssertionError(f"{where}：解析 `{name}` 的导入链超过 3 跳（防环）⇒ 宁可红")
+    tree = _module_ast(module_path)
+    for node in tree.body:
+        value = _assigned_to(node, name)
+        if value is not None:
+            return module_path, value
+    for node in tree.body:
+        if isinstance(node, ast.ImportFrom) and node.module and node.level == 0:
+            for alias in node.names:
+                if (alias.asname or alias.name) == name:
+                    return _resolve_module_name(
+                        _module_file(node.module, where), alias.name, where, depth + 1)
+    raise AssertionError(
+        f"{where}：解析不了 `{name}`（模块里既没有赋值、也没有导入它）⇒ 宁可红（事实源消失了）")
+
+
+def _try_literal(node: ast.AST):
+    """能按字面量反解就返回 Python 值，否则 `None`（**不**吞掉真正的结构错误以外的信息）。"""
+    try:
+        return _literal(node)
+    except AssertionError:
+        return None
+
+
+def _filtered_genexp(node: ast.AST, module_path: Path, where: str):
+    """`tuple(x for x in SEQ if x != NAME)` → 过滤后的列表；形态不符 ⇒ `None`。
+
+    只支持**单一 for + 单一 `!=` 过滤**（「全集减一项」）。多条件 / 条件表达式 / 嵌套 for
+    一律 `None` ⇒ 调用方报错（宁可红，不去猜）。
+    """
+    if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+            and node.func.id in ("tuple", "list") and len(node.args) == 1 and not node.keywords):
+        return None
+    gen = node.args[0]
+    if not isinstance(gen, ast.GeneratorExp) or len(gen.generators) != 1:
+        return None
+    comp = gen.generators[0]
+    if comp.is_async or len(comp.ifs) != 1:
+        return None
+    if not (isinstance(gen.elt, ast.Name) and isinstance(comp.target, ast.Name)
+            and gen.elt.id == comp.target.id and isinstance(comp.iter, ast.Name)):
+        return None
+    _seq_path, seq_node = _resolve_module_name(module_path, comp.iter.id, where)
+    seq = _try_literal(seq_node)
+    if not isinstance(seq, (list, tuple)):
+        return None
+    test = comp.ifs[0]
+    if not (isinstance(test, ast.Compare) and len(test.ops) == 1
+            and isinstance(test.ops[0], ast.NotEq) and isinstance(test.left, ast.Name)
+            and test.left.id == comp.target.id and isinstance(test.comparators[0], ast.Name)):
+        return None
+    _drop_path, drop_node = _resolve_module_name(module_path, test.comparators[0].id, where)
+    drop = _try_literal(drop_node)
+    if not isinstance(drop, str):
+        return None
+    return [value for value in seq if value != drop]
+
+
+def _derived_enum(node: ast.AST, module_path: Path, where: str) -> list:
+    """反解**派生**的枚举事实源（只认上表那两种形态，其余报错）。"""
+    inner = node
+    if (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+            and node.func.id in ("list", "tuple") and len(node.args) == 1 and not node.keywords):
+        inner = node.args[0]
+    if isinstance(inner, ast.Name):
+        target_path, value_node = _resolve_module_name(module_path, inner.id, where)
+        literal = _try_literal(value_node)
+        if literal is not None:
+            return list(literal)
+        filtered = _filtered_genexp(value_node, target_path, where)
+        if filtered is not None:
+            return filtered
+    raise AssertionError(
+        f"{where} 的枚举事实源无法反解（只支持纯字面量，或 "
+        f"`tuple(x for x in SEQ if x != NAME)` 这种「全集减一项」的窄化）⇒ 宁可红："
+        f"{ast.dump(node)[:160]}")
+
+
 def validation_enum(tool: str, action: str, field: str) -> list:
     """`_VALIDATION_RULES[tool][action][field]["enum"]`（现取，不抄清单）。"""
     tree = _module_ast(VALIDATE_INPUT_PY)
     rules = _module_assign_node(tree, "_VALIDATION_RULES", "app/tools/validate_input.py")
-    values = _dig(rules, [tool, action, field, "enum"], f"_VALIDATION_RULES[{tool}][{action}]")
+    where = f"_VALIDATION_RULES[{tool}][{action}][{field}][enum]"
+    node = _dig_ast(rules, [tool, action, field, "enum"], f"_VALIDATION_RULES[{tool}][{action}]")
+    literal = _try_literal(node)
+    values = literal if literal is not None else _derived_enum(node, VALIDATE_INPUT_PY, where)
     assert values and all(isinstance(v, str) for v in values), (
         f"_VALIDATION_RULES[{tool}][{action}][{field}][enum] 不是非空字符串表：{values!r}")
     return list(values)
@@ -655,6 +764,32 @@ class TestClaimCheckerIsNotVacuous:
             assert "不再是字面量" in str(exc), str(exc)
         else:
             raise AssertionError("非字面量事实源没有被拒绝 —— 守卫会在运行时静默空跑")
+
+    def test_derived_enum_refuses_an_unsupported_derivation(self, tmp_path):
+        """派生事实源只认「全集减一项」那一条窄缝；别的派生形态 ⇒ **报错**（不许返回半个结构）。"""
+        planted = tmp_path / "planted.py"
+        planted.write_text(
+            "_VALIDATION_RULES = {'t': {'a': {'f': {'enum': list(SOME_MAP.keys())}}}}\n",
+            encoding="utf-8")
+        tree = _module_ast(planted)
+        rules = _module_assign_node(tree, "_VALIDATION_RULES", str(planted))
+        node = _dig_ast(rules, ["t", "a", "f", "enum"], str(planted))
+        try:
+            _derived_enum(node, planted, str(planted))
+        except AssertionError as exc:
+            assert "无法反解" in str(exc), str(exc)
+        else:
+            raise AssertionError("不支持的派生形态没有被拒绝 —— 守卫会静默返回半个结构")
+
+    def test_derived_enum_reads_the_allowed_narrowing(self, tmp_path):
+        """正例：`tuple(x for x in SEQ if x != ONE)` 必须**真反解**（否则上面的红测试只是"恒红"）。"""
+        (tmp_path / "seqmod.py").write_text(
+            'ALL = ("a", "b", "c")\nDROP = "b"\nKEPT = tuple(x for x in ALL if x != DROP)\n',
+            encoding="utf-8")
+        planted = tmp_path / "planted.py"
+        planted.write_text("OTHER = 1\n", encoding="utf-8")
+        kept = _derived_enum(ast.Name(id="KEPT", ctx=ast.Load()), tmp_path / "seqmod.py", str(planted))
+        assert kept == ["a", "c"]
 
     def test_path_navigation_refuses_a_missing_key(self, tmp_path):
         """下钻路径上缺键 ⇒ **报错**（结构变了不许静默返回空）。"""

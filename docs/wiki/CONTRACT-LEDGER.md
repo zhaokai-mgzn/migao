@@ -10,7 +10,7 @@
 
 | 业务对象 | 合法值 | 注释/来源 |
 |---|---|---|
-| 订单状态（DB） | `pending / confirmed / producing / shipped / completed / cancelled` | `OrderService.java` 状态机；**生产中是 producing 不是 processing** |
+| 订单状态（DB） | `pending / confirmed / producing / packed / shipped / completed / cancelled` | **单一源** = `backend/admin-api/src/main/java/com/migao/admin/service/OrderStatusTransitions.java` 的 7 个常量 + 三张表（issue #8198：P2-2a 立源、P2-2b 生成，口径「加常量、不加类型」）；TS / Python 两份**入库生成物**由 `scripts/order_status_codegen.py` 从它生成（改源后 `--write`，`--check` 判新鲜度，三态 0/1/3）；**生产中是 producing 不是 processing**。Agent 工具面**有意只暴露 6 个**（不含 `packed`，重启条件见 `backend/ai-agent-service/app/constants/order_status.py`） |
 | 订单状态（前端展示） | `pending_payment / pending_shipment / shipped / completed / closed / refund` | `types/index.ts` `BackendToFrontendStatus` 映射 |
 | 售后工单状态 | `pending / processing / rejected / resolved / closed` | `AfterSalesTicketService.java` |
 | 商品状态 | `draft / on_sale / off_sale / under_review` | `ProductService.java` `STATUS_TRANSITIONS`（4 值状态机，已核实=后端真值）；前端 `types/index.ts ProductStatus` 同 4 值。**Agent 侧只放开 `on_sale / off_sale`（2 值）—— 有意的权限边界，非能力缺口、不扩枚举，见第九节 #3686** |
