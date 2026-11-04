@@ -17,9 +17,35 @@
 """
 from __future__ import annotations
 
+import http.client
 import socket
 from urllib import error, request
 from urllib.parse import urlsplit
+
+
+def _is_timeout(exc: BaseException) -> bool:
+    """**读超时族**的统一识别（``TimeoutError`` / ``socket.timeout`` / ``URLError(reason=…)``）。
+
+    Python 3.10 起 ``socket.timeout`` 就是 ``TimeoutError``（同一个类）⇒ 判一次即可；
+    ``urllib`` 在**连接阶段**才把超时包成 ``URLError``，故先剥一层 ``reason`` 再判。
+    """
+    if isinstance(exc, error.URLError) and isinstance(exc.reason, BaseException):
+        exc = exc.reason
+    return isinstance(exc, TimeoutError) or "timed out" in str(exc).lower()
+
+
+def _read_timeout_reason(endpoint: str, port: int, timeout: float) -> str:
+    """**有监听但读超时** ⇒ 未就绪 + 一条能当场执行的出口（issue #8647）。
+
+    为什么不能当「就绪」：端口有监听只证明**进程还在**，回不了包说明它已经不是可用服务
+    （实测先例：5 天前的 uvicorn，``/health`` 还能回 200，其它路径接受连接后永不回包）。
+    """
+    return (
+        f"AI Agent Service 在 {endpoint} 有监听但**读超时**"
+        f"（{timeout:g}s 内没有任何响应）⇒ 疑似僵而不死的旧进程占着 {port} 端口"
+        f"（进程还在、服务已不可用）⇒ 先看是谁占着：`lsof -nP -iTCP:{port} -sTCP:LISTEN`，"
+        "确认后 kill 掉它并重启服务，再重跑本档"
+    )
 
 
 def not_ready_reason(endpoint: str, headers: dict, timeout: float = 5.0) -> str:
@@ -32,12 +58,19 @@ def not_ready_reason(endpoint: str, headers: dict, timeout: float = 5.0) -> str:
     分类（**只认「探不通」这一种为未就绪**，其余一律照常跑、由用例判红绿）：
 
       · 连不上（服务没在跑 / 端口不通）        ⇒ 未就绪
+      · **有监听但读超时 / 读不到响应**        ⇒ 未就绪（issue #8647）
       · HTTP 401 / 403（凭据不被接受）        ⇒ 未就绪
       · 其它任何状态（含 422 / 5xx / 200）     ⇒ **就绪**（判不了 ≠ 未就绪；真失败仍由用例判红）
+
+    🔴 **本函数对「传输层探不通」永不抛异常**（issue #8647）：调用点之一是
+    ``tests/test_e2e_mibao_scenarios.py`` 的**模块级**判定 ⇒ 抛出的异常会让 pytest 在**收集阶段**
+    中止整档（不是跑红、也不是未就绪，报表里什么都看不到）。故 ``OSError`` / ``http.client``
+    的整族传输异常一律折成「未就绪 + 一行出口」，**绝不**折成「就绪」或「跳过」。
     """
     parsed = urlsplit(endpoint)
+    port = parsed.port or (443 if parsed.scheme == "https" else 80)
     try:
-        socket.create_connection((parsed.hostname, parsed.port or 80), timeout=3).close()
+        socket.create_connection((parsed.hostname, port), timeout=3).close()
     except OSError as exc:
         return (
             f"AI Agent Service 未在 {endpoint} 运行（{type(exc).__name__}: {exc}）"
@@ -55,7 +88,19 @@ def not_ready_reason(endpoint: str, headers: dict, timeout: float = 5.0) -> str:
     except error.HTTPError as exc:
         status = exc.code
     except error.URLError as exc:
+        if _is_timeout(exc):
+            return _read_timeout_reason(endpoint, port, timeout)
         return f"chat 端点 {endpoint} 请求失败（{exc.reason}）⇒ 确认服务健康后重跑"
+    except (OSError, http.client.HTTPException) as exc:
+        # 连接**已建立**、但读不到响应（issue #8647 的病根就是这里此前**没被 catch**）：
+        # 读超时 / 对端掐断 / 回了不是 HTTP 的东西 —— 一律「探不通 ⇒ 未就绪」，
+        # 不许上抛（上抛 = 收集阶段中止整档），也不许当「就绪」或「跳过」。
+        if _is_timeout(exc):
+            return _read_timeout_reason(endpoint, port, timeout)
+        return (
+            f"chat 端点 {endpoint} 有监听但探不通（{type(exc).__name__}: {exc}）"
+            f" ⇒ 服务可能僵而不死：确认后 kill 占着 {port} 的旧进程并重启（判不了 ≠ 就绪）"
+        )
     if status in (401, 403):
         return (
             f"chat 端点拒绝本用例的凭据：HTTP {status}"
