@@ -7608,7 +7608,7 @@
 数据: **判据 4′（会红）·fencing（僵尸 job 的终态写 0 行）**：批次被回收成 `partial` 后用户发起撤销（又回到 `executing`，执行者已换人）⇒ 旧执行者此时写终态必须 0 行，状态保持 `executing`；换人后的当前执行者写终态必须成功（正对照，护栏不误杀正常路径）。红证：摘掉终态条件更新的执行者谓词 ⇒ 僵尸写成功 1 行、把撤销中的批次改成 `done`（期望 0 行、实得 1 行）⇒ 判据红。
 数据: **判据 5（会红）·迁移 / 列存在性 / 状态机与既有两族同口径**：两列（`executor_id` / `heartbeat_at`）在**增量迁移**与**建库脚本**两源齐备、迁移幂等（`IF NOT EXISTS` + 显式事务）、`heartbeat_at` 是带时区时间戳、回收的取数面有部分索引（只索引 `executing` 行）、且本迁移**不改**状态机取值域（回收复用 `partial`，不新增中间态）。执行点 = `backend/admin-api/src/test/java/com/migao/admin/migration/AgentBatchMigrationTest.java`（与建表三源契约同族）。红证：删掉建库脚本里的 `heartbeat_at` 列 ⇒ 该判据具名红（新建库路径缺列）。
 数据: **判据 6（会红）·类级元守卫登记**：回收写路径与它调用的状态迁移语句必须登记进 `backend/admin-api/src/test/resources/agent-batch-status-cas-ledger.json`（状态写面必须带 `tenant_id` + 来源态字面量谓词，且不得写成参数），未登记即红、登记了不存在的写路径也红。执行点 = `backend/admin-api/src/test/java/com/migao/admin/service/AgentBatchStatusCasMetaGuardTest.java`（与 #6960 同族）。红证：把台账里回收那条写路径改名 ⇒ 元守卫当场红并报出未登记写路径清单。
-数据: **判据 7（会红）·租约失效立刻停手（Java 层）**：心跳条件更新 0 行（已被回收 / 换人）时，执行循环必须立刻停手 —— 一条业务写入都不跑、终态不落 `done`（停在可撤销的 `partial`）；`executor_id` 形态为「实例段 + 每 job 唯一段」（同一实例两条 job 的段必须不同）。执行点 = `backend/admin-api/src/test/java/com/migao/admin/service/AgentBatchServiceTest.java`。红证：摘掉循环里的停手判定 ⇒ 业务写入被调用 ⇒ 判据红。
+数据: **判据 7（会红）·租约失效立刻停手（Java 层）**：心跳条件更新 0 行（已被回收 / 换人）时，执行循环必须立刻停手 —— 一条业务写入都不跑、终态不落 `done`（停在可撤销的 `partial`）；`executor_id` 形态为「实例段 + 每 job 唯一段」（同一实例两条 job 的段必须不同）。执行点 = `backend/admin-api/src/test/java/com/migao/admin/service/AgentBatchLeaseServiceTest.java`（心跳 0 行 = 租约已失，内存心跳不许刷新）+ `backend/admin-api/src/test/java/com/migao/admin/service/AgentBatchServiceTest.java`（收到「已失效」后一条业务写入都不跑）。红证：摘掉循环里的停手判定 ⇒ 业务写入被调用 ⇒ 判据红。
 跳过: [backend-contract] 纯服务端状态机与 SQL 谓词判据（真 PG 一次性临时集群 + 静态迁移/台账守卫；零网络、零 LLM、不碰存量数据），不进入 agent-eval 冒烟
 ```
 真值: ⚠️ 缺口（见对应模板 ⚠️ 注释）
