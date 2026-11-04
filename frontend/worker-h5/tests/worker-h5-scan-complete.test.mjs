@@ -278,7 +278,13 @@ const resolveOk = (data) => ({ status: 200, body: { success: true, data } })
  */
 function bootPage({ doc, f, loggedIn = true, storage = memStorage(loggedIn ? { [STORAGE_KEY]: JSON.stringify(SESSION) } : {}) }) {
   const api = createApi({ fetchImpl: f, storage, baseUrl: '' })
-  const app = createApp({ doc, api, location: 'https://app.migaozn.com/w/', storage })
+  // 本机能力（**第三轴**，issue #8609）：本文件判的是**报工与标签打印**（数据面），
+  // 所以把本机固定成"能力都在"的设备（裁高机链路 + 标签机）；缺省 fail-closed 的行为
+  // 由 `frontend/worker-h5/tests/worker-h5-8609-capabilities.test.mjs` 单独钉住。
+  const terminal = {
+    capabilities: { 'scan.hid': true, 'scan.camera': false, 'cut.link': 'serial:COM3', 'print.label': 'ble', 'update.channel': 'apk' },
+  }
+  const app = createApp({ doc, api, location: 'https://app.migaozn.com/w/', storage, terminal })
   // issue #7845：页面里的手输短码框已撤 ⇒ 单测走装配层暴露的 `app.scan(code)`（与扫码落地 `?t=` 同一条 doScan）。
   doc.app = app
   app.dispatch({ type: 'worker', worker: loggedIn ? { workerName: '张三', workerNo: 'A017', idleMinutes: 15 } : null })
