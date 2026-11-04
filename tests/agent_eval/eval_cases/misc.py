@@ -2,7 +2,7 @@
 # 本文件由 render_cases.py 生成，勿手改（改了也留不住：下次重渲染会覆盖）
 # 源: cases/*.yml（case-contract 单一源）
 # 重新生成: python3 render_cases.py --cases <dir> --out-eval <包目录> --out-md <md>
-# 域: misc（源: cases/misc.yml，224 条）
+# 域: misc（源: cases/misc.yml，225 条）
 
 from ._schema import Difficulty, EvalCase, Skill
 
@@ -4094,6 +4094,25 @@ _CASE_MC_196 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── MC-198 [NORMAL] 订单状态立单一源（issue #8198 的 P2-2a，纯收敛不生成）：载体 = `OrderStatusTransitions` 的 7 个常量（**加常量、不加类型** —— 2026-10-31 评论裁定；值与 DB 存储值逐字相等，「状态全集」的权威仍是 `STATUS_TRANSITIONS` 键集，不另立第二份）；`service/` 与 `controller/` 零订单状态裸字面量（注释里不算，唯一例外是那 7 行常量定义）；错误文案 / 状态取值 / JSON 逐字不变（源: cases/misc.yml）──
+_CASE_MC_198 = EvalCase(
+    id='MC-198',
+    legacy_id='',
+    title='订单状态立单一源（issue #8198 的 P2-2a，纯收敛不生成）：载体 = `OrderStatusTransitions` 的 7 个常量（**加常量、不加类型** —— 2026-10-31 评论裁定；值与 DB 存储值逐字相等，「状态全集」的权威仍是 `STATUS_TRANSITIONS` 键集，不另立第二份）；`service/` 与 `controller/` 零订单状态裸字面量（注释里不算，唯一例外是那 7 行常量定义）；错误文案 / 状态取值 / JSON 逐字不变',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['issue #8198 的 P2-2a：先立源、再生成 —— 只把散落的字面量收敛成一处取值的引用，生成到 TS / Python 留到 P2-2b 另单；判据 = service/ 与 controller/ 下再出现裸 producing 等字面量 ⇒ 红；边界 = `FieldTruth` 不动、agent 侧旧字符串先不动', 'issue #8198 评论裁定（2026-10-31，仓库所有者）：先把既有状态机模块读透，不许为「收得干净」顺手改状态机语义 —— 本单只换载体、不换规则'],
+    expectations=['direct_reply'],
+    data_checks=['**扫面（会红）**：`backend/admin-api/src/main/java/com/migao/admin/service/**` 与 `controller/**` 下不许再出现裸的 producing / shipped / cancelled（注释里不算 —— 取值走仓内唯一一份引号感知实现）。改前 54 处（service/；main/java 全域 60 处）→ 改后 8 处（全域 17 处），余下的是非订单状态的同名用法（见末条）。执行点 = `tests/unit_ci_workflows/test_order_status_single_source.py`。红证：往订单状态查询里加一处裸 producing ⇒ 判据红并**具名报出文件与该行**；恢复 ⇒ 5 条全绿。', '**取值唯一载体（会红）**：7 个常量逐字等于 DB 存储值，字面量在状态机里只许出现在这 7 行定义处，三张表（流转表 / 标签表 / 可编辑集合）的键必须是常量引用。红证：把「生产中」常量改成 `producingg` ⇒ 常量契约红 **且** 状态机测试红（表键取自常量 ⇒ 当场认不出 producing）；把流转表的一处键改回字面量 ⇒ 「表键走常量」判据红。', '**行为不变（会红）**：三张表的流转边 / 标签 / 可编辑集合逐条相等（不靠「引用常量自证」，用独立硬编码的真值比对）；状态字段仍是字符串 ⇒ JSON 输出、状态取值、错误文案逐字不变。红证：删掉一条流转边 / 改一个标签 / 放开可编辑集合 ⇒ 各自判红。', '**台账只许缩短（会红）**：三处非订单状态的同名用法 —— 加工单终态、返工单状态、定时任务的已取消计数键 —— 按**原文逐字**登记豁免；某条不再出现（重构 / 被误改成订单状态常量）⇒ 红并要求删掉该条。'],
+    skip_reason='[backend-contract] 纯结构面判据（扫 Java 源码文本 + 解析枚举定义 + 枚举契约单测），零网络、零 LLM、不起真库；不进 agent-eval 冒烟',
+    tags=['order-status', 'single-source', 'no-behavior-change', 'scan-guard', 'red-proof', 'backend-contract'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='零运行期前置（纯结构判据）：被测对象 = `backend/admin-api/src/main/java/com/migao/admin/service/OrderStatusTransitions.java`、`service/` 与 `controller/` 其余源码、以及那两个测试文件；前置 = 它们存在且可读，由仓本身满足。不成立时的红形态已内建：扫面面清单断言「必扫文件都在面内」，读不到 ⇒ 红（不是绿）。零网络 / 零 LLM / 零 DB。',
+)
+
 # ── MC-197 [NORMAL] 批次后台 job 的跨实例执行租约（issue #8285）：心跳新鲜不误杀 / 心跳超时或为空 ⇒ 回收成可撤销 partial 且幂等 / 两个 executor 的活批次互不误伤 / 回收不覆盖终态（含 fencing）（源: cases/misc.yml）──
 _CASE_MC_197 = EvalCase(
     id='MC-197',
@@ -4336,5 +4355,6 @@ CASES = (
     _CASE_MC_195,
     _CASE_MC_194,
     _CASE_MC_196,
+    _CASE_MC_198,
     _CASE_MC_197,
 )

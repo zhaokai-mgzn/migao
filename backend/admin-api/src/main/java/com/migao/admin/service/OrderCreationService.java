@@ -199,7 +199,7 @@ public class OrderCreationService {
         order.setActualAmount(requestedActual != null ? requestedActual : totalAmount);
         // 优惠金额落库
         order.setDiscountAmount(discountAmount);
-        order.setStatus("pending");
+        order.setStatus(OrderStatusTransitions.PENDING);
         order.setRemark(request.getRemark());
         // C 端数据隔离：绑定下单用户（可为空=游客/商户代录）
         order.setUserId(request.getUserId());

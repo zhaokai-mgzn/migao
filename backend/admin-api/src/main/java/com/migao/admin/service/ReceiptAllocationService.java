@@ -99,7 +99,7 @@ public class ReceiptAllocationService {
             if (order == null) {
                 throw BusinessException.notFound("订单");
             }
-            if ("cancelled".equals(order.getStatus())) {
+            if (OrderStatusTransitions.CANCELLED.equals(order.getStatus())) {
                 throw BusinessException.validationError(
                         "已取消的订单不能核销收款：" + order.getOrderNo());
             }
