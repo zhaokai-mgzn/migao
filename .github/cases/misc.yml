@@ -8617,6 +8617,38 @@ cases:
         - pr-check.yml
       verifies: []
 
+  - id: MC-209
+    legacy_id: ""
+    title: "任何入库文件都不许含合并冲突标记（跨语言的类级判据：YAML 会 ScannerError、JSON 会 JSONDecodeError、代码有时能编译通过）"
+    domains:
+      - misc
+      - ci
+    tier: normal
+    tags:
+      - 类级判据
+      - 合并冲突
+      - 入库卫生
+    truths_ref: []
+    user_inputs:
+      - "N/A（全树静态扫描判据，无对话轮次）"
+    expectations:
+      - "扫 git ls-files 的全部入库文件（按 NUL 字节跳过二进制），任何文件出现行首七字符冲突标记（尖括号族 / 等号族 / 大于号族 / 竖线族）⇒ 判红并具名「文件:行号」。"
+      - "判据自带失明检查：扫到的入库文件数为 0 也判红（防守着一片不存在的语料）。"
+      - "豁免面只此一处（判据文件自身），且以常量集中放置 —— 想放宽必须改那一处，极度显眼。"
+    data_checks:
+      - "注入式红证：往 case_machine_fail_channel_baseline.json 尾部追加一行七字符尖括号标记 ⇒ 1 failed 并具名「文件:1468」；还原 ⇒ 1 passed。"
+      - "为什么不靠各语言的病因报错：本次冲突标记进 main 后，CI 的红是另一个测试在解析 JSON 时报 JSONDecodeError —— 症状与病因隔了三层；YAML 则报 ScannerError。"
+      - "按文件内容扫、不按语言扫：它是跨语言、跨文件类型的一类缺陷，任何单语言解析器都只能看见自己那一种。"
+    skip_reason: ""
+    merge_log:
+      - "读数影响：本用例 expectations 非空、skip_reason 未标 [backend-contract] ⇒ **不计入** case_machine_fail_channel_baseline 的 backend_contract_scoring_zero（实测仍 318，无需重锚）。"
+      - "2026-11-05 新增（PR #8693）。起因 = 一晚上同一形态咬三次：① 重建 .github/cases/misc.yml 时用正则抠自有用例块，把等号族标记一起带进文件（YAML ScannerError）；② 合并两侧都追加 history 的 baseline JSON，自动合并把冲突留在文件里（CI 红的是另一个测试的 JSONDecodeError）；③ 早前同类。"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_no_conflict_markers_in_tree.py"
+      ci:
+        - pr-check.yml          # required：ci workflow helper unit tests（python -m pytest tests/unit_ci_workflows）
+
   - id: MC-208
     legacy_id: ""
     title: "demo-seed 的 SKU 插入语句必须三处一致：SELECT 行值 = WHERE 关联条件 = product_colors 已声明颜色（issue #7583 缺陷 2 的假绿出口）"
