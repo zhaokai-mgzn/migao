@@ -4221,7 +4221,7 @@
 ```
 溯源: 2026-10-31 新增（issue #8295）：两步确认，避免误写 ｜ tags: ui, preview
 
-## 杂项域（220 case）
+## 杂项域（221 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -7553,6 +7553,23 @@
 跳过: [backend-contract] 接线形态 + Java 行为（logback 捕获）+ 文档要素，零 LLM、零真库、零网络；非 LLM 行为，不进入 agent-eval 冒烟
 ```
 溯源: 2026-11-04 新增（issue #8196 的 ① 面）。取号 MC-193（main 侧现取最大 190、claims 目录无 193）。🔴 自查改判：任务书建议在 compose 的 environment 加空值透传 —— 那会**覆盖成空**（commit 988e490f0 已为 AI_AGENT_SERVICE_TOKEN 删过同一行），故改为「只经 env_file 注入 + 判据禁止在 compose 里覆盖」；判据的值扫描先剔 `${…}` 包装，避免把变量引用误判成值。⚠️ 未闭合：服务器 .env.admin-api 里是否真有值属外部输入（用户侧提供），本单只给可复算的回读命令。 ｜ tags: deploy, env-wiring, wechat, bmini, loud-failure, red-proof
+
+### MC-194. **改客户资料 / 加工项增改停 / 建商品分类接回 B 端**（issue #8618）：action 枚举与 schema 同时可见（漏参数即不可调用）+ 权限走既有 required_permissions 粗筛与 action 级复检（码取控制器注解）+ 确认走既有 base_skill._requires_confirmation（react_turn 同一函数对象；未确认 ⇒ 不执行）+ 端点逐字对齐（PUT /api/admin/customers/{id} · POST /api/admin/categories · POST|PUT /api/admin/processing-items）+ 删除类 action 退场（停用改为 update_item(status=…)，可逆） 🔵
+```
+你: 把张三的手机号改成 13900001111
+你: 新增加工项测试加工，分类选打孔加工
+你: 帮我建一个叫轻奢系列的商品分类
+数据: 判据 0·🔴 前置自断言（机器计分型）：前置 = ① 三把工具都在工具注册表 ② `customer_manage` 绑 `customer` 域、`category_manage` / `processing_item_manage` 绑 `product` 域 ③ 三者 `read_only=False` 且 `requires_confirmation=True` —— 由 `TestActionSurfaceIsVisibleToTheModel::test_tool_is_bound_to_a_b_end_skill` / `::test_read_only_flag_is_false_and_confirmation_is_declared` 逐条断言（前置不成立即红）。前置成立后的正向效果断言 = 持 `*` 权限的真实调用 `success=true`（`TestUnconfirmedWriteDoesNotExecute::test_confirmed_write_reaches_the_endpoint`）；负控路径 = 未确认时零写请求（同文件 `::test_unconfirmed_write_does_not_reach_the_endpoint`）。
+数据: 判据 1·🔴 action 面可见且参数完整：`customer_manage.VALID_ACTIONS` == {list, detail, list_tags, profile_view, value_view, update}、`category_manage` == {tree, create}、`processing_item_manage` == {create_processing_item, update_item, list_categories, create_category, update_category}；三者与各自 `get_schema()` 的 `action.enum` 同一集合；写路径参数（`customer_id`/`data`、`name`/`category_id`、`item_id`/`category_id`/`name`/`craft_hint`/`description`/`status`）全在 schema properties 里；反向也判（schema 声明的参数必须真的被 `execute` 接收）。执行点 = backend/ai-agent-service/tests/test_bend_write_tools_8618.py::TestActionSurfaceIsVisibleToTheModel。
+数据: 判据 2·🔴 权限不是自己判：`customer_manage.required_permissions == [customer:view, customer:create]`、`category_manage == [product:category:view, product:category]`、`processing_item_manage == [processing:manage]`（码取 `CustomerController` / `CategoryController` / `ProcessingItemController` 的 `@RequirePermission`）；只持读码调写 action ⇒ 拒绝且文案具名缺失的码，且**零** POST/PUT；只持写码调读 action ⇒ 同样拒绝（读写两段都要挡）；一个码都不持 ⇒ 入口即拒。执行点 = 同文件 ::TestPermissionUsesTheExistingDeclaration。
+数据: 判据 3·🔴 走既有确认门禁（不是自己写一套）：`react_turn._requires_confirmation is base_skill._requires_confirmation`（按 `is` 判同一函数对象）；三个工具模块里都没有自建判定（无 `def _requires_confirmation` / `def _is_explicit_confirmation`）；`read_only_actions` 恰为只读 action 集合（customer 5 个 / category {tree} / processing {list_categories}）；未确认 ⇒ 门禁判拦截，点卡确认 ⇒ 放行。执行点 = 同文件 ::TestConfirmationGateIsTheSharedOne。
+数据: 判据 4·🔴 未确认不执行（负控）：同一 args、同一工具，只换用户消息（『把资料改一下』 vs 『确认』）⇒ 前者 `blocked=True` 且零 POST/PUT，后者真的发出写请求。执行点 = 同文件 ::TestUnconfirmedWriteDoesNotExecute。
+数据: 判据 5·🔴 校验失败具名：`update` 缺 `customer_id` / 带不可写字段 ⇒ 点名该字段且零 PUT（不得部分写入后谎报成功）；`create` 缺 `name` ⇒ 点名且零 POST；`update_item` 的 `status` 非 active/inactive ⇒ 点名且零 PUT；退场 action（`delete` / `delete_item` / `delete_category` / `toggle_item_status`）入口即拒且零 DELETE。执行点 = 同文件 ::TestValidationErrorsAreNamed。
+数据: 判据 6·🔴 端点与零不可逆动作：`update` ⇒ `PUT /api/admin/customers/{id}`（姓名别名归一化到实体真实列 `wechatNickname`，否则 admin-api 静默丢弃 = 假成功）；`create` ⇒ `POST /api/admin/categories`（body 只含 `name` 一个字段）；停用 ⇒ `PUT /api/admin/processing-items/{id}` 全量回带 `name`/`craftHint`（否则顺手清空工序声明）；三条路径在 admin-api 控制器注解里逐字可查。执行点 = 同文件 ::TestEndpointsAreReal 与 ::TestActionSurfaceIsVisibleToTheModel::test_no_irreversible_action_names_are_exposed。
+数据: 判据 7·🔴 判别力自证（红证）：把 `read_only` 置 True（内存注入）⇒ 门禁判据必红；合成「无门禁写工具」⇒ 判据必须判它**不拦**（证明不恒真）；把删除类 action 塞回枚举 ⇒ 不可逆动作判据必红；摘掉 `requires_confirmation` ⇒ 判据 3 立刻红。执行点 = 同文件 ::TestJudgementIsNotVacuous（实跑红证读数在 PR body）。
+跳过: [backend-contract] 只读源码 + 工具对象（零 LLM / 零网络 / 零 DB）：写路径的**行为面**（模型是否真的先发确认卡）按 migao-dev-flow §13 默认不派发真实评测（#4262 用户裁定「不要自动验证」），需要时由人工集中跑一次（清单 = CU-004 / PP-006 / PP-007 / PP-008 / CT-002）。
+```
+溯源: 2026-11-04 新增（issue #8618）。取号 = **MC-194**（main 侧现取最大 193；MC-099 属历史空档、按口径不回填； claims 目录留 `.github/cases/claims/8635-MC-194.json` 防在飞撞号）。本用例是**三条接回写能力的类级判据面**， 实例判据集中在 backend/ai-agent-service/tests/test_bend_write_tools_8618.py（形态照 #7050 的 test_employee_manage_write_actions.py，不另发明）。同批改判的登记面：`.github/assertion_taxonomy.py` 的 WRITE_TOOL_ACTIONS、`tests/unit_ci_workflows/test_mibao_b_end_readonly.py` 的 CHANGE_TOOLS_REQUIRED_ON_B_END / CHANGE_CLAIM_WORDS、`test_agent_permission_parity.py` 的 CODE_DIVERGENCE_EXCEPTIONS（+ processing_item_manage 条 / customer_manage 改多入口码 codes）、`test_mibao_case_invariants.py` 的 B 端工具集真值。 **边界（照实登记）**：客户建档 / 打标签、分类改名、加工项与分类删除**有意不接**（2026-10-16 终版裁定「只能改，不能删」）； 加工项/分类**无夹具复位动作** ⇒ PP-006~008 的自清理只能登记 namespaces 弱证据。 ｜ tags: agent-capability, write-action, confirm-gate, permission, red-proof, backend-contract
 
 ## 商家入驻域（7 case）
 
@@ -15078,8 +15095,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：1020（活跃 160，跳过 860）
-- tier 分布：smoke 15 / normal 943 / adversarial 33
+- 用例总数：1021（活跃 160，跳过 861）
+- tier 分布：smoke 15 / normal 944 / adversarial 33
 - 售后域：16
 - Agent 核心域：13
 - API 层域：21
@@ -15095,7 +15112,7 @@
 - 人事域：13
 - 知识问答域：9
 - 客户主数据迁移域：10
-- 杂项域：220
+- 杂项域：221
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：76
@@ -15382,6 +15399,7 @@
 - MC-189: 配置就绪度端点 GET /api/admin/config-readiness（issue #6579）：服务端聚合七步事实（含孤儿工序单一真值口径）、跨码步骤按调用方权限整个省略、前端主线只发这一个请求就画出七步
 - MC-192: 工人端菜单吃本机能力（第三轴）：一个 apk 覆盖安卓一体机 + 手持标签机，缺省即隐藏（issue
 - MC-193: B 端小程序（bmini）凭据的部署接线 + 缺失显式告警（issue #8196 ①）：变量名经 admin-api 的 env_file(.env.admin-api) 进容器、compose 的 environment 不得空值覆盖、启动期任一为空（含半配）打一条 WARN 点名缺哪个/影响/补法且不阻止启动、仓库里无凭据值
+- MC-194: **改客户资料 / 加工项增改停 / 建商品分类接回 B 端**（issue #8618）：action 枚举与 schema 同时可见（漏参数即不可调用）+ 权限走既有 required_permissions 粗筛与 action 级复检（码取控制器注解）+ 确认走既有 base_skill._requires_confirmation（react_turn 同一函数对象；未确认 ⇒ 不执行）+ 端点逐字对齐（PUT /api/admin/customers/{id} · POST /api/admin/categories · POST|PUT /api/admin/processing-items）+ 删除类 action 退场（停用改为 update_item(status=…)，可逆）
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）
