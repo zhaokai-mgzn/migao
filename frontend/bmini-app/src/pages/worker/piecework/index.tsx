@@ -36,6 +36,7 @@ import {
 import { WORKER_TAB_LOGIN_ROUTE } from '../../../utils/inbound/gaps'
 import { clearWorkerSession, hasWorkerSession } from '../../../utils/workerSession'
 import './index.scss'
+import { WorkerBackLink } from '../../../components/WorkerBackLink'
 
 /** 页面标题（与商家后台「计件工资」同一件事，工人这里叫「我的计件」）。 */
 export const PIECEWORK_TITLE = '我的计件'
@@ -219,6 +220,7 @@ export default function WorkerPieceworkPage() {
   return (
     <View className='worker-piecework'>
       <View className='worker-piecework__header'>
+        <WorkerBackLink />
         <View className='worker-piecework__heading'>
           <Text className='worker-piecework__title'>{PIECEWORK_TITLE}</Text>
           {phase === 'ready' && model && model.workerName !== '' ? (

@@ -39,6 +39,7 @@ import {
 import { WORKER_TAB_LOGIN_ROUTE } from '../../../utils/inbound/gaps'
 import { clearWorkerSession, hasWorkerSession, type CurrentWorker } from '../../../utils/workerSession'
 import './index.scss'
+import { WorkerBackLink } from '../../../components/WorkerBackLink'
 
 /** 页面标题（与商家后台「返工记录」同名 —— 工人与商家说同一件事用同一个词）。 */
 export const REWORK_TITLE = '返工记录'
@@ -204,6 +205,7 @@ export default function WorkerReworkPage() {
   return (
     <View className='worker-rework'>
       <View className='worker-rework__header'>
+        <WorkerBackLink />
         <View className='worker-rework__heading'>
           <Text className='worker-rework__title'>{REWORK_TITLE}</Text>
           {worker && phase !== 'unauthorized' ? (
