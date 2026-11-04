@@ -26,14 +26,23 @@
  *
  * ## 未实装（如实登记，不是「已覆盖」）
  *
- * - **「加工项」不是本主线的一步**：它的「活跃数」口径今天没有在别处落成判据
- *   （`GET /api/admin/processing-items` 是分页读面，启用 / 停用口径未定）⇒ 宁缺勿滥，
- *   等那个口径先在别处成立再进主线。主线今天到「加工费组合」为止（组合价从**订单侧缺口**反查，
- *   口径在服务端、`unpriced_combination_total`）。
- * - **孤儿工序**（库里有工序、没有任何价目行）：本模块的 {@link judgeOperationsStep} **支持**这一维，
- *   但跨页主线**取不到**它（要复刻 `routings` 页的逻辑名去重口径 = 第二份会漂的实现）⇒
- *   主线传 `null`（不参与判定），`routings` 页传真实数。**已知差异，具名登记**。
+ * **2026-11-04（issue #6579）两件旧账已销**（改前逐条登记为「未实装」，现在都实装了）：
+ *
+ * - **「加工项」进主线了**（{@link judgeProcessingItemsStep}）：启用 / 停用口径已定
+ *   「有加工项 ∧ 至少一项启用」，事实由服务端聚合端点给（`total` / `active`）。
+ * - **「孤儿工序」主线也能拿到数了**（{@link judgeOperationsStep} 的 `orphans` 不再是 `null`）：
+ *   这份事实本来就住在服务端，改由 `GET /api/admin/config-readiness` 按**工艺配置页同一口径**
+ *   算出后给数 ⇒ 前端不再需要复刻逻辑名去重（第二份会漂的实现）。
+ *
+ * 仍未实装（如实登记，不是「已覆盖」）：
+ *
+ * - 主线**只覆盖服务端这七步**；「企业信息 / AI 客服 / 通知设置」三个经营域没有主线步骤
+ *   ⇒ 它们的域徽标不显示（宁缺勿滥，不编读数）。
  */
+
+// 端点响应的**形状**只有一份定义（`types/config-readiness.ts`）—— 本模块只借用它的
+// 「一步」类型来标定 `statesFromFacts` 的入参（`import type` ⇒ 运行时零依赖，不构成环）。
+import type { ConfigReadinessStep } from '@/types/config-readiness'
 
 /** 一步的三态（**只有三种**，没有第四种「不确定但画成 todo」的余地）。 */
 export type ReadinessState = 'done' | 'todo' | 'unknown'
@@ -86,6 +95,16 @@ export const MAINLINE_STEPS: readonly MainlineStep[] = [
     href: '/production/routings',
     blocking: true,
   },
+  // 🔴 issue #6579：接上「加工项」这一步 —— 它是「加工费组合」的**输入**（组合的 items[] 取自
+  // 加工项目录），故排在组合**之前**（本模块头的依赖顺序纪律）。
+  {
+    key: 'processing-items',
+    label: '加工项',
+    why: '顾客能选的那些加工（打孔 / 拼接 / 花边 …），以及每一项怎么收费',
+    impact: '加工项全停用 ⇒ 订单里选不中它们，加工费组合也就命中不到（该行收不到价）',
+    href: '/settings?domain=processing-items',
+    blocking: false,
+  },
   {
     key: 'fee-combinations',
     label: '加工费组合',
@@ -93,6 +112,17 @@ export const MAINLINE_STEPS: readonly MainlineStep[] = [
     impact: '组合命中不到 ⇒ 该行**收不到价**（不是 ¥0.00，是根本没价可收）',
     href: '/production/processing-fees',
     blocking: true,
+  },
+  // 🔴 issue #6579：接上「余料尺寸」这一步（**跨码步骤**）—— 读面码是 `processing:manage`
+  // （余料尺寸表读端点所属的码）。不持该码的调用方拿到的服务端载荷里**整个没有这一步**
+  // ⇒ 这里也就不会给它画一行（「不持码的域不渲染也不请求」的同口径，issue #6573）。
+  {
+    key: 'remnant-sizes',
+    label: '余料尺寸',
+    why: '做一个小件（抱枕 / 搭巾 …）需要多大一块布',
+    impact: '不填 ⇒ 这些小的余料不会产生匹配建议（余料照常登记，只是不会被推荐着用）',
+    href: '/settings?domain=remnant-sizes',
+    blocking: false,
   },
   {
     key: 'calc',
@@ -171,6 +201,119 @@ export function judgeConfigSourceStep(source: string | null | undefined): Readin
   if (source === 'stored') return 'done'
   if (source === 'default') return 'todo'
   return 'unknown'
+}
+
+/**
+ * 「加工项」这一步的判据（issue #6579 接上主线）。
+ *
+ * **有加工项 ∧ 至少一项启用** 才算完成：全停用 ⇒ 订单里选不中任何加工项，
+ * 下游「加工费组合」也就命中不到（组合的 `items[]` 取自加工项目录）。
+ *
+ * @param input.total 加工项目录总数
+ * @param input.active 其中**启用**的条数
+ */
+export function judgeProcessingItemsStep(input: { total: number; active: number }): ReadinessState {
+  if (input.total === 0) return 'todo'
+  return input.active === 0 ? 'todo' : 'done'
+}
+
+/**
+ * 「余料尺寸」这一步的判据（issue #6579 接上主线；**跨码**：读面码 `processing:manage`）。
+ *
+ * 配了任意一条小件用料尺寸 ⇒ 该小件的余料匹配才启用；**一条都没配** ⇒ 不产生匹配建议
+ * （余料照常登记，只是不会被推荐着用）⇒ `todo`。
+ *
+ * @param input.configured 服务端读面的 `configured`（= 本租户配过没有）
+ * @param input.items 配了几条
+ */
+export function judgeRemnantSizesStep(input: { configured: boolean; items: number }): ReadinessState {
+  if (!input.configured) return 'todo'
+  return input.items > 0 ? 'done' : 'todo'
+}
+
+/**
+ * 把**服务端事实**翻译成逐步骤三态（issue #6579）—— 主线只发**一个**请求的依据。
+ *
+ * ## 三条纪律（都可被判据检查）
+ *
+ * 1. 🔴 **只做翻译，不做取数**：输入是 `GET /api/admin/config-readiness` 的
+ *    `data.steps`（事实），输出是三态；判定一律调本模块的 `judge*`，**不在这里另写口径**。
+ * 2. 🔴 **`facts` 缺键 ⇒ `unknown`**（读不到），**不是** `todo`（没配）。服务端取数失败时
+ *    给的就是空 `facts` —— 把它读成「没配置」就是谎报（同族口径：「未定价 ≠ ¥0.00」）。
+ * 3. 🔴 **载荷里整个缺席的步骤 ⇒ 不产出键**：跨码步骤（`remnant-sizes`）在不持该码时
+ *    服务端**不发**这一步 ⇒ 它连「读不到」都不是（是「与你无关」），渲染面据此整行不画。
+ *
+ * @param steps 端点返回的 `steps`（`null` / `undefined` = 整个请求没拿到 ⇒ 返回空对象，
+ *              渲染面会按「全部读不到」处理）
+ */
+export function statesFromFacts(
+  steps: Record<string, ConfigReadinessStep> | null | undefined,
+): Record<string, ReadinessState> {
+  const out: Record<string, ReadinessState> = {}
+  // 整份载荷都没拿到（请求失败）⇒ **一条结论都不产出**（渲染面按「全部读不到」处理）。
+  // 这是有意的：产出六个 `unknown` 会让「没有事实」与「事实缺键」在调用方看起来一样。
+  if (!steps) return out
+  const factsOf = (key: string): Record<string, unknown> | null => {
+    const step = steps?.[key]
+    const facts = step?.facts
+    return facts && typeof facts === 'object' ? facts : null
+  }
+  const numOf = (facts: Record<string, unknown> | null, key: string): number | null => {
+    const value = facts?.[key]
+    return typeof value === 'number' && Number.isFinite(value) ? value : null
+  }
+
+  const operations = factsOf('operations')
+  const opsTotal = numOf(operations, 'total')
+  const opsUnpriced = numOf(operations, 'unpriced')
+  const opsOrphans = numOf(operations, 'orphans')
+  out.operations = judgeOperationsStep({
+    readFailed: opsTotal === null || opsUnpriced === null || opsOrphans === null,
+    total: opsTotal === null ? 0 : opsTotal,
+    unpriced: opsUnpriced === null ? 0 : opsUnpriced,
+    orphans: opsOrphans,
+  })
+
+  const routings = factsOf('routings')
+  const missing = routings?.['missing_base_routes']
+  out.routings = Array.isArray(missing)
+    ? judgeBaseRoutesStep(missing.map((name) => String(name)))
+    : 'unknown'
+
+  const defaultRoute = factsOf('default-route')
+  const defaultCount = numOf(defaultRoute, 'count')
+  out['default-route'] = defaultCount === null ? 'unknown' : judgeDefaultRouteStep(defaultCount)
+
+  const processingItems = factsOf('processing-items')
+  const itemsTotal = numOf(processingItems, 'total')
+  const itemsActive = numOf(processingItems, 'active')
+  out['processing-items'] =
+    itemsTotal === null || itemsActive === null
+      ? 'unknown'
+      : judgeProcessingItemsStep({ total: itemsTotal, active: itemsActive })
+
+  const fees = factsOf('fee-combinations')
+  out['fee-combinations'] = judgeFeeCombinationsStep(
+    numOf(fees, 'combinations'),
+    numOf(fees, 'gaps'),
+  )
+
+  const calc = factsOf('calc')
+  const source = calc?.['source']
+  out.calc = judgeConfigSourceStep(typeof source === 'string' ? source : null)
+
+  // 跨码步骤：**载荷里有这一步**才产出键（不持码时它整个缺席 —— 不是「读不到」）
+  if (Object.prototype.hasOwnProperty.call(steps, 'remnant-sizes')) {
+    const remnant = factsOf('remnant-sizes')
+    const configured = remnant?.['configured']
+    const items = numOf(remnant, 'items')
+    out['remnant-sizes'] =
+      typeof configured === 'boolean' && items !== null
+        ? judgeRemnantSizesStep({ configured, items })
+        : 'unknown'
+  }
+
+  return out
 }
 
 /** 主线的汇总读数（**全部现取**，不缓存、不留痕）。 */

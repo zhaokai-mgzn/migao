@@ -238,6 +238,12 @@ def _source_map() -> dict[str, str]:
     # 否则「改页面第一屏调用」这类注入不会改变判据输入 ⇒ 判据永远不变红（空断言）。
     assert API_TS.is_file(), f"被判据引用的文件不存在：{API_TS}（路径漂移 ⇒ 红，不得静默跳过）"
     srcs["frontend:api.ts"] = API_TS.read_text(encoding="utf8")
+    # 第二个 api 源（issue #6579）：新接口面单开模块（api.ts 有行数棘轮）。
+    # 🔴 不在源码表里 ⇒ 注入不生效 / 第一屏调用解析不出 URL ⇒ fail-closed 断言，不静默跳过。
+    assert API_CONFIG_READINESS_TS.is_file(), (
+        f"被判据引用的文件不存在：{API_CONFIG_READINESS_TS}（路径漂移 ⇒ 红，不得静默跳过）"
+    )
+    srcs["frontend:api-config-readiness.ts"] = API_CONFIG_READINESS_TS.read_text(encoding="utf8")
     assert V129_SQL.is_file(), f"被判据引用的文件不存在：{V129_SQL}（路径漂移 ⇒ 红，不得静默跳过）"
     srcs["sql:V129"] = V129_SQL.read_text(encoding="utf8")
     for path, anchor in MENU_READ_ENDPOINT_ANCHORS.items():
@@ -2258,6 +2264,11 @@ def problems_route_guard(w: World) -> list[str]:
 DASHBOARD_APP = REPO_ROOT / "frontend" / "admin-web" / "src" / "app" / "(dashboard)"
 #: 前端 api 客户端（判据 12 的**第二跳**：`xxxApi.fn` → HTTP 端点）。
 API_TS = REPO_ROOT / "frontend" / "admin-web" / "src" / "lib" / "api.ts"
+#: 第二个 api 源文件（issue #6579）：`api.ts` 有行数棘轮 ⇒ 新面单开模块；
+#: 判据 12 的第二跳必须能看见它（否则第一屏调用解析不出 URL ⇒ 锚点自证红）。
+API_CONFIG_READINESS_TS = (
+    REPO_ROOT / "frontend" / "admin-web" / "src" / "lib" / "api-config-readiness.ts"
+)
 #: 存量回填迁移（**第三个**岗位来源：读码回填谓词，与种子同谓词）。
 V129_SQL = (
     REPO_ROOT / "backend/admin-api/src/main/resources/db/migration"
@@ -2384,10 +2395,15 @@ MENU_READ_ENDPOINT_ANCHORS: dict[str, MenuReadAnchor] = {
     # ⚠️ 边界（如实登记）：若将来经营域改成**无条件挂载**（去掉域级门控），本锚点必须同批把那三个调用
     # 收回来 —— 判据 12 的「声明面自证」（②-a：声明的调用必须仍在该页 effect 驱动面上）只看**包含**
     # 关系，收不回这一条（放宽方向）由 `test_rbac_submenu_granularity.py` 的零 403 段与页面自身判据承重。
+    # 🔴 2026-11-04（issue #6579）**锚点再收窄**：配置主线的读数改由**一个聚合端点**给
+    # （`GET /api/admin/config-readiness`，方法级 `production:view`）⇒ 原先那五个生产域读面
+    # **不再是本页第一屏的调用**（它们分别由各域面板按需自取）。剩下的两个调用都是：
+    #   · `configReadinessApi.get` —— 主线的唯一读面（本页 effect 驱动）；
+    #   · `productionApi.getCraftCalcConfig` —— 算料域面板要**整份配置**（聚合端点只给 `source`），
+    #     同一个码 `production:view`（不引入第二个第一屏码）。
+    # ⚠️ 口径不变（只许缩短 + 不得凭空多算）：声明的调用必须仍在该页 effect 驱动面上。
     "/settings": MenuReadAnchor("企业基础设置", "settings/page.tsx", (
-        "productionApi.getOperationPositions", "productionApi.getRoutings",
-        "productionApi.getFeeCombinations", "productionApi.getFeeGaps",
-        "productionApi.getCraftCalcConfig")),
+        "configReadinessApi.get", "productionApi.getCraftCalcConfig")),
     # 🔴 2026-10-09（issue #6580）：`/settings/params`（「参数总览」一级项）已撤掉 ⇒ 本锚点
     # **删除**（该 path 已不在 `menu.ts`；陈旧登记即红）。
     "/notifications": MenuReadAnchor("通知中心", "notifications/page.tsx",
@@ -2506,25 +2522,32 @@ def page_first_screen_text(page_text: str) -> str:
     return "\n".join(parts)
 
 
-def parse_frontend_api_calls(text: str) -> dict[tuple[str, str], tuple[str, str]]:
-    """`frontend/admin-web/src/lib/api.ts`：`(api 对象名, 方法名) → (verb, url)`。
+def parse_frontend_api_calls(text: str, *extra_texts: str) -> dict[tuple[str, str], tuple[str, str]]:
+    """前端 api 客户端：`(api 对象名, 方法名) → (verb, url)`。
 
     🔴 键**必须带对象名**：方法名跨对象大量重名（`list` / `preview` / `detail` …）——
     只按方法名解析会把 `processingOrderApi.list` 读成 `inboundOrderApi.list` 的 URL
     （issue #5675 实测踩过：拿错端点 ⇒ 判据拿别人的码去比）。
+
+    🔴 `extra_texts`（issue #6579）：`lib/api.ts` 有**只许向下**的行数棘轮
+    （`tests/unit_ci_workflows/loc_freeze_ledger.json`）⇒ 新接口面单开模块
+    （`lib/api-config-readiness.ts`）。若解析器只认 `api.ts`，新模块里的调用会解析不出 URL
+    ⇒ 锚点自证当场红；更糟的形态是「为了过判据把调用塞回 api.ts」（棘轮上限一到就写不进去）。
+    ⇒ 解析器接受**多个 api 源文件**，语义不变（同一套 `(对象, 方法)` 键）。
     """
     out: dict[tuple[str, str], tuple[str, str]] = {}
-    for m in re.finditer(r"export const (\w+)\s*=\s*\{", text):
-        obj = m.group(1)
-        segment = _js_block(text, m.end() - 1)
-        for call in re.finditer(
-            r"request\.(get|post|put|patch|delete)\s*(?:<[^()]*>)?\s*\(\s*[`'\"]([^`'\"]+)",
-            segment,
-            re.S,
-        ):
-            decls = re.findall(r"\n\s*(\w+)\s*:\s*(?:async\s*)?\(", segment[:call.start()])
-            if decls:
-                out.setdefault((obj, decls[-1]), (call.group(1).upper(), call.group(2)))
+    for source in (text, *extra_texts):
+        for m in re.finditer(r"export const (\w+)\s*=\s*\{", source):
+            obj = m.group(1)
+            segment = _js_block(source, m.end() - 1)
+            for call in re.finditer(
+                r"request\.(get|post|put|patch|delete)\s*(?:<[^()]*>)?\s*\(\s*[`'\"]([^`'\"]+)",
+                segment,
+                re.S,
+            ):
+                decls = re.findall(r"\n\s*(\w+)\s*:\s*(?:async\s*)?\(", segment[:call.start()])
+                if decls:
+                    out.setdefault((obj, decls[-1]), (call.group(1).upper(), call.group(2)))
     assert len(out) >= 100, f"api.ts 只解析出 {len(out)} 个调用 ⇒ 判据会空跑（fail-closed）"
     return out
 
@@ -2583,7 +2606,12 @@ def problems_menu_read_parity(w: World) -> list[str]:
     out: list[str] = []
     nodes = [n for n in parse_menu_ts_nodes(w.sources["menu:frontend"]) if n.path]
     by_path = {n.path: n for n in nodes}
-    api_calls = parse_frontend_api_calls(w.sources["frontend:api.ts"])
+    api_calls = parse_frontend_api_calls(
+        w.sources["frontend:api.ts"],
+        # 第二个 api 源（issue #6579）：`.get()` 而不是 `[]` —— 注入式红证用的源码表可能只裁了一部分，
+        # 缺这一项时不是「静默放行」（锚点解析不出 URL 会当场断言失败），而是给出可读的缺失原因。
+        w.sources.get("frontend:api-config-readiness.ts", ""),
+    )
 
     # ⓪ 复算的**前提自证**（issue #5675）：存量租户那一路（V129）必须仍是「读码 ← 只授给
     #    原本持管理码的岗位」。它是「可见性零变化」复算的第三个来源 —— 谓词被改成「授给所有人」

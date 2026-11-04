@@ -22,7 +22,7 @@ import userEvent from '@testing-library/user-event'
 import { ConfigReadinessBar } from '@/components/settings/ConfigReadinessBar'
 import { MAINLINE_STEPS, type ReadinessState } from '@/lib/config-readiness'
 
-/** 五步全给同一个态（省得每条用例手写五遍） */
+/** 全步给同一个态（省得每条用例手写七遍） */
 function allStates(state: ReadinessState): Record<string, ReadinessState> {
   return Object.fromEntries(MAINLINE_STEPS.map((s) => [s.key, state]))
 }
@@ -85,10 +85,10 @@ describe('判据 2：读数在路上 ⇒ 不谎报（加载中不说「未配置
 })
 
 describe('判据 3：三态各有各的说法，互不冒充', () => {
-  it('全 done ⇒ 摘要「配置已完成 5/5」，且**不**出现「下一步」', () => {
+  it('全 done ⇒ 摘要「配置已完成 7/7」，且**不**出现「下一步」', () => {
     renderBar(allStates('done'))
     const headline = screen.getByTestId('config-readiness-headline')
-    expect(headline).toHaveTextContent('配置已完成 5/5')
+    expect(headline).toHaveTextContent('配置已完成 7/7')
     expect(headline).not.toHaveTextContent('下一步')
     expect(headline).not.toHaveTextContent('未配置')
   })
@@ -97,7 +97,7 @@ describe('判据 3：三态各有各的说法，互不冒充', () => {
     // 只把第 2 步（工艺路线）判 todo，其余 done ⇒ 下一步必须点名「工艺路线」
     renderBar({ ...allStates('done'), routings: 'todo' })
     const headline = screen.getByTestId('config-readiness-headline')
-    expect(headline).toHaveTextContent('配置完成 4/5')
+    expect(headline).toHaveTextContent('配置完成 6/7')
     expect(headline).toHaveTextContent('1 项未配置')
     expect(headline).toHaveTextContent('下一步「工艺路线」')
   })
@@ -161,5 +161,35 @@ describe('判据 5：不摆内部标识、语调不催促（§31 P3/P4）', () =
     const text = document.body.textContent ?? ''
     expect(text).not.toContain('!')
     expect(text).not.toContain('！')
+  })
+})
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 判据 7：`stepKeys` —— **不适用于调用方**的步骤整行不画（issue #6579 已定口径 3）
+//
+// 病根：`remnant-sizes` 是跨码步骤（读面码 `processing:manage`），不持该码时服务端**整个不发**
+// 那一步。若渲染面按 `MAINLINE_STEPS` 全量画，就会给它画一行「读不到」——
+// 那是「本次没取到」，而事实是「与你无关」⇒ 谎报。
+// ══════════════════════════════════════════════════════════════════════════════
+describe('判据 7：`stepKeys` —— 不适用于调用方的步骤整行不画（不是画成「读不到」）', () => {
+  it('只给六步（缺 remnant-sizes）⇒ 摘要按 6 计，且那一行 DOM 取不到', async () => {
+    const user = userEvent.setup()
+    const keys = MAINLINE_STEPS.map((s) => s.key).filter((key) => key !== 'remnant-sizes')
+    const states = Object.fromEntries(keys.map((key) => [key, 'done' as ReadinessState]))
+    render(<ConfigReadinessBar states={states} loading={false} stepKeys={keys} />)
+
+    expect(screen.getByTestId('config-readiness-headline')).toHaveTextContent('配置已完成 6/6')
+    await user.click(screen.getByTestId('config-readiness-toggle'))
+    expect(screen.queryByTestId('readiness-item-remnant-sizes')).toBeNull()
+    expect(screen.queryByTestId('readiness-goto-remnant-sizes')).toBeNull()
+    // 其余六步逐项在（省略只针对那一步，不是把主线缩没）
+    expect(screen.getAllByTestId(/^readiness-item-/)).toHaveLength(keys.length)
+  })
+
+  it('缺省 `stepKeys` ⇒ 全量渲染（老调用方行为不变）', async () => {
+    const user = userEvent.setup()
+    renderBar(allStates('done'))
+    await user.click(screen.getByTestId('config-readiness-toggle'))
+    expect(screen.getAllByTestId(/^readiness-item-/)).toHaveLength(MAINLINE_STEPS.length)
   })
 })

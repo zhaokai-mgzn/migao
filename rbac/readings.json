@@ -1085,11 +1085,8 @@
       "gate": "production:view",
       "units": {
         "production:view": [
-          "GET /api/admin/production/craft-calc-config",
-          "GET /api/admin/production/operation-positions",
-          "GET /api/admin/production/processing-fee-combinations",
-          "GET /api/admin/production/processing-fee-gaps",
-          "GET /api/admin/production/routings"
+          "GET /api/admin/config-readiness",
+          "GET /api/admin/production/craft-calc-config"
         ]
       },
       "visibility_rule": "all"

@@ -180,8 +180,8 @@ public class PermissionInterceptor implements HandlerInterceptor {
             }
         }
 
-        // 获取用户所有权限
-        List<String> userPermissions = roleService.getUserPermissions(userId);
+        // 获取用户所有权限（同请求内已取过 ⇒ 复用，见 permissionsOf —— 授权判定只有这一份取码实现）
+        List<String> userPermissions = permissionsOf(userId);
 
         // 检查是否拥有所需权限
         // admin 角色拥有所有权限（用 "*" 表示）
@@ -198,6 +198,65 @@ public class PermissionInterceptor implements HandlerInterceptor {
             requestAttributes.getRequest().setAttribute(memoKey, Boolean.TRUE);
         }
         log.debug("权限检查通过：用户 {} 拥有权限 {}", userId, requiredPermission);
+    }
+
+    /**
+     * 调用方**是否持有**某个权限码（只问、不抛）—— 用于「按调用方权限决定**返回什么**」的端点。
+     *
+     * <p>病根（issue #6579）：{@code @RequirePermission} 只表达「调用本端点需要哪个码」，
+     * 表达不了「同一响应里**有一部分**只该给持某码的人」。若调用方自己再写一遍「查一下这个用户
+     * 有没有那个码」，就出现**第二份授权实现**（身份解析 / 旁路角色 / 取码来源任一处不同 ⇒
+     * 一边放行一边误拒，且没有东西会红）。故这里复用**同一批**私有原语：
+     * {@link #hasBypassRole} / {@link #extractUserId} / {@link #permissionsOf} ——
+     * 与 {@link #requirePermission(String)} **逐条同口径**（含「一次请求只查一次权限」）。</p>
+     *
+     * <p><b>fail-closed</b>：无认证 / 无法解析操作者 ⇒ {@code false}（调用方据此**省略**那段内容；
+     * 省略是可接受形态，谎报「你有」不是）。</p>
+     *
+     * @param requiredPermission 要问的权限码（如 {@code processing:manage}）
+     * @return 旁路身份（平台管理员 / 内部服务）恒 {@code true}；持有该码或 {@code *} ⇒ {@code true}
+     */
+    public boolean holdsPermission(String requiredPermission) {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null || !authentication.isAuthenticated()) {
+            return false;
+        }
+        if (hasBypassRole(authentication)) {
+            return true;
+        }
+        String userId = extractUserId(authentication);
+        if (userId == null) {
+            return false;
+        }
+        List<String> permissions = permissionsOf(userId);
+        return permissions.contains("*") || permissions.contains(requiredPermission);
+    }
+
+    /**
+     * 本请求内该用户**生效权限**（request attribute 记忆 ⇒ 一次请求只查一次库）。
+     *
+     * <p>为什么必须有这层记忆：{@link #requirePermission} 与 {@link #holdsPermission} 可能在同一次
+     * 请求里先后被调用（前者由 {@code @RequirePermission} 触发，后者由端点自己问），
+     * 各自再查一次库会让「一次请求只查一次权限」这条承重判据（{@code SecurityConfigTest}）失败 ——
+     * 也会让同一个用户在同一请求里因为两次查询之间改权限而拿到**不一致的两个答案**。</p>
+     *
+     * <p>非 Web 上下文（命令行 / 异步任务）没有 request attributes ⇒ 退回直查（行为与改前一致）。</p>
+     */
+    @SuppressWarnings("unchecked")
+    private List<String> permissionsOf(String userId) {
+        ServletRequestAttributes attributes =
+                (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
+        if (attributes == null) {
+            return roleService.getUserPermissions(userId);
+        }
+        String memoKey = getClass().getName() + ".permissions." + userId;
+        Object memo = attributes.getRequest().getAttribute(memoKey);
+        if (memo instanceof List<?>) {
+            return (List<String>) memo;
+        }
+        List<String> permissions = roleService.getUserPermissions(userId);
+        attributes.getRequest().setAttribute(memoKey, permissions);
+        return permissions;
     }
 
     /**

@@ -2,7 +2,7 @@
 # 本文件由 render_cases.py 生成，勿手改（改了也留不住：下次重渲染会覆盖）
 # 源: cases/*.yml（case-contract 单一源）
 # 重新生成: python3 render_cases.py --cases <dir> --out-eval <包目录> --out-md <md>
-# 域: misc（源: cases/misc.yml，216 条）
+# 域: misc（源: cases/misc.yml，218 条）
 
 from ._schema import Difficulty, EvalCase, Skill
 
@@ -3968,6 +3968,42 @@ _CASE_MC_188 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── MC-190 [NORMAL] 冒烟数据面收口（#7583 剩余缺口）：自造订单清理自证 + 空态不得冒充通过 + P1 写用例 finally 清理（源: cases/misc.yml）──
+_CASE_MC_190 = EvalCase(
+    id='MC-190',
+    legacy_id='',
+    title='冒烟数据面收口（#7583 剩余缺口）：自造订单清理自证 + 空态不得冒充通过 + P1 写用例 finally 清理',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['冒烟跑完 33/33 全绿，但商品一条 SKU 都没有、客户面为空也记通过；跑完云库里还留着一堆冒烟订单，没人知道留了多少、删没删掉。'],
+    expectations=[],
+    data_checks=['**判据 I（会红）**：商家端冒烟里自造订单的清理必须**自证** —— 「删除成功」分支同时要求回读 404；被业务规则拒绝（4xx）时必须留下服务端原话且对象仍可读（可枚举）；删除成功后还要核「该订单名下活跃加工单为 0」。四类造单入口都必须登记自造台账，跑完由统一扫尾处理（不是逐旅程各写一遍）。摘掉回读 404 的合取条件 ⇒ 判据当场红。执行点 = tests/unit_ci_workflows/test_smoke_data_quality.py。', '**判据 J（会红）**：空态/缺控件不得冒充通过 —— 分类页找不到新增按钮、客户列表无详情链接都必须抛错；财务/通知/门户页除正文长度外还要有内容面读数（表格行 / 对账 tab / 待收款卡片，或显式空态文案 / 标题与链接）。恢复旧的「仅验证渲染」写法 ⇒ 红。执行点同上。', '**判据 K（会红）**：P1 冒烟里造单的写用例必须 finally 清理并自证（删除成功 ⇒ 回读 404；业务规则拒绝 ⇒ 原话 + 仍可读；5xx 一律红），不许只以删除请求的返回布尔值收尾。拿掉任一用例的清理调用 ⇒ 红。执行点同上。', '**判据 DQ-5 订单面（会红）**：数据质量体检新增自造订单的三态计数（删掉 / 业务拒绝保留 / 清理未自证）与加工单残留读数；清理未自证 > 0 ⇒ 具名红；三态之和不等于自造数、或残留读数取不到 ⇒ 不可判定（退出码 3，不得当通过）。执行点 = scripts/smoke_data_quality.py 及其守卫。'],
+    skip_reason='[backend-contract] 纯静态判据（读商家端冒烟脚本与 P1 冒烟源码，零网络、零真栈、零 LLM），不进入 agent-eval 冒烟；真栈行为面见 PR body 的「本机没验证到的」段',
+    tags=['smoke', 'sdqs', 'cleanup', 'empty-state', 'data-quality'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-189 [NORMAL] 配置就绪度端点 GET /api/admin/config-readiness（issue #6579）：服务端聚合七步事实（含孤儿工序单一真值口径）、跨码步骤按调用方权限整个省略、前端主线只发这一个请求就画出七步（源: cases/misc.yml）──
+_CASE_MC_189 = EvalCase(
+    id='MC-189',
+    legacy_id='',
+    title='配置就绪度端点 GET /api/admin/config-readiness（issue #6579）：服务端聚合七步事实（含孤儿工序单一真值口径）、跨码步骤按调用方权限整个省略、前端主线只发这一个请求就画出七步',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['配置主线要发五个请求才画得出来，任一失败只能显示「读不到」，而「没权限」与「网络失败」在界面上长得一样；主线第一步也看不到「孤儿工序」这一维。'],
+    expectations=['direct_reply'],
+    data_checks=['**判据 1（会红）**：端点 `GET /api/admin/config-readiness` 的权限码 = `production:view`，且声明在**方法级**（类级声明也算违规 —— 那会让「这个端点用哪个码」失去源码证据）。执行点 = tests/unit_ci_workflows/test_config_readiness_endpoint.py::test_endpoint_declares_method_level_production_view，端点契约 = backend/admin-api/src/test/java/com/migao/admin/controller/ConfigReadinessControllerTest.java。', '**判据 2（会红）**：七步的事实逐值取自**既有** service（零持久层直连、零手写查询、零三态字面量）：工序与单价 total/unpriced/orphans、工艺路线 missing_base_routes、默认路线 count、加工项 total/active、加工费组合 combinations/gaps、算料 source、余料尺寸 configured/items。执行点 = tests/unit_ci_workflows/test_config_readiness_endpoint.py::test_service_is_an_aggregator_of_existing_read_surfaces + backend/admin-api/src/test/java/com/migao/admin/service/ConfigReadinessServiceTest.java。', '**判据 3（会红，负控）**：调用方不持余料尺寸读面的码时，`remnant-sizes` 那一步**整个不在 steps 里**（不返回 0、不返回 forbidden 占位 —— 两者都是谎报）；持码时该步在且 facts 逐值可读。执行点 = backend/admin-api/src/test/java/com/migao/admin/controller/ConfigReadinessControllerTest.java 与 backend/admin-api/src/test/java/com/migao/admin/service/ConfigReadinessServiceTest.java。', '**判据 4（会红）**：孤儿工序按工艺配置页**同一口径**算（无价目行引用 / 按逻辑工序名去重 / 价目表里已出现的名字不算 / 空名不计），不是另写一份口径。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/ConfigReadinessServiceTest.java 的工序与单价用例。', '**判据 5（会红）**：跨端同值三组 —— 余料尺寸读面码（服务常量 / 余料尺寸控制器类级声明 / 前端域目录 requiredCode）、两条基础路线名（Java / 前端判据模块 / 算料引擎）、七步 href（服务端 / 前端主线）。执行点 = tests/unit_ci_workflows/test_config_readiness_endpoint.py 的四条同值用例。', '**判据 6（会红）**：前端 `/settings` 只发这一个请求画主线 —— 不再直调工序价目 / 工艺路线 / 加工费组合 / 加工费缺口四个旧读面，三态翻译只走单一真值模块（facts 缺键 ⇒ 该步读不到，**不是**待配置）；不持余料尺寸读面码时主线只有六步、那一步整行不画。执行点 = tests/unit_ci_workflows/test_config_readiness_endpoint.py::test_settings_page_draws_the_mainline_with_one_request + frontend/admin-web/tests/unit/pages/settings.test.tsx + frontend/admin-web/tests/unit/lib/config-readiness.test.ts。'],
+    skip_reason='[backend-contract] 端点契约 + 跨端同值 + 前端单请求判据（Java 单测 / pytest / vitest，零 LLM、零真库、零真实浏览器），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['config-readiness', 'rbac', 'single-source', 'red-proof', 'frontend-single-request'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 CASES = (
     _CASE_MC_001,
     _CASE_MC_002,
@@ -4185,4 +4221,6 @@ CASES = (
     _CASE_MC_186,
     _CASE_MC_187,
     _CASE_MC_188,
+    _CASE_MC_190,
+    _CASE_MC_189,
 )
