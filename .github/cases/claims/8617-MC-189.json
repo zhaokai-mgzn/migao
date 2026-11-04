@@ -1,0 +1,6 @@
+{
+  "id": "MC-189",
+  "pr": 8617,
+  "title": "配置就绪度端点 GET /api/admin/config-readiness（issue #6579）：服务端聚合七步事实、跨码步骤按调用方权限整个省略、前端主线只发这一个请求",
+  "claimed_at": "2026-11-04"
+}
