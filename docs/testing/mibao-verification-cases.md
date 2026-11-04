@@ -1753,7 +1753,7 @@
 数据: name 必填校验通过后创建成功（扁平分类，无父分类，对齐 issue #2905）
 数据: 效果层：`must_succeed` 证明 `category_manage(action=create)` 至少一次 `success=true`；随后 `tree` 能查到同名分类（`namespaces` 记同名占用为弱证据 —— 夹具层无分类复位动作，如实登记）
 命名空间(同键互斥·自动串行): category:轻奢系列
-必填: category_manage() 字段 
+必填: category_manage() 字段 name
 必须成功: category_manage(create)
 ```
 真值: category-manage.create
@@ -2777,7 +2777,7 @@
 清理: customer_profile_restore(customer_keyword=13800138000、phone=13800138000)
 复位: customer_profile_restore(customer_keyword=13900001111、phone=13800138000)
 前置: order_count_for_phone(source=13800138000)
-必填: customer_manage() 字段 
+必填: customer_manage() 字段 customer_id, data
 必须成功: customer_manage(update)
 ```
 真值: customer-list.partial-update
@@ -9143,7 +9143,7 @@
 禁词: 修改失败
 禁词: 更新失败
 禁词: 无法修改
-必填: processing_item_manage() 字段 
+必填: processing_item_manage() 字段 item_id, description
 必须成功: processing_item_manage(update_item)
 产出: processing_item_manage(update_item) → description==顶部打孔工艺; name==打孔; craftHint==打孔; status==active
 ```
@@ -9165,7 +9165,7 @@
 禁词: 没有这个功能
 禁词: 停用失败
 禁词: 无法停用
-必填: processing_item_manage() 字段 
+必填: processing_item_manage() 字段 item_id, status
 必须成功: processing_item_manage(update_item)
 产出: processing_item_manage(update_item) → status==inactive
 ```

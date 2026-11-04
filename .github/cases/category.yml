@@ -64,8 +64,8 @@ cases:
         action: create
     required_args:
       - tool: category_manage
-        args:
-          name: 轻奢系列
+        fields:
+          - name
     skip_reason: ""
     merge_log: >-
       2026-11-04 un-skip（issue #8618：B 端工具缺口接回）——`category_manage` 的 `create`（建商品分类）已接回 B 端（`POST /api/admin/categories`，确认门禁 + `product:category` 的 action 级复检 + prompt 口径同批落地）⇒ 本用例撤销 skip，`expectations` / `must_succeed` / `required_args` 三条写声明恢复；判定面 = 工具被真的调用 + 服务端真的建出分类，**不是**「agent 说了会做」。分类改名 / 删除仍不接（不可逆面）。

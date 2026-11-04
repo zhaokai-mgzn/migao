@@ -189,9 +189,9 @@ cases:
         action: update_item
     required_args:
       - tool: processing_item_manage
-        args:
-          item_id: ""
-          description: 顶部打孔工艺
+        fields:
+          - item_id
+          - description
     output_verify:
       - tool: processing_item_manage
         action: update_item
@@ -273,9 +273,9 @@ cases:
         action: update_item
     required_args:
       - tool: processing_item_manage
-        args:
-          item_id: ""
-          status: inactive
+        fields:
+          - item_id
+          - status
     output_verify:
       - tool: processing_item_manage
         action: update_item

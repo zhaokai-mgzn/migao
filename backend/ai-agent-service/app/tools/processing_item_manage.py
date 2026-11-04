@@ -85,7 +85,7 @@ class ProcessingItemManageTool(BaseTool):
         "【参数】action 必填：list_categories（查分类）只读；create_processing_item（name + category_id，"
         "craft_hint 可选）/ update_item（item_id + 至少一个要改的字段，含 status）/ "
         "create_category / update_category 为写操作，需确认。"
-        "【反例】仅查看加工项目录用 processing_item_query，不要混淆；商品加工项关联/建品用 product_manage。"
+        "【反例】仅查看加工项目录用 processing_item_query，不要混淆；商品加工项关联 / 新建商品请引导商家到后台「商品管理」页操作（黄金策不建商品）。"
         "【标注】WRITE — list_categories 只读；增改前必须二次确认"
         "【铁律】用户说'新增加工项'就是执行指令：调 processing_item_manage(action=create_processing_item, name, category_id, craft_hint)——加工项**不再有单价与计价方式**（issue #4882 已从 admin-api 彻底删除），只需要 name + category_id（craft_hint 可选）"
         "（PP-006 实拍：agent 误宣「新增不在功能范围」，实际 create_processing_item 就是新增能力）。"
@@ -296,7 +296,6 @@ class ProcessingItemManageTool(BaseTool):
         overrides: Dict[str, Any],
         action_label: str,
         fail_prefix: str,
-        success_message: str,
     ) -> ToolResult:
         """GET 详情 → 用户显式传入字段覆盖 → PUT 全量（admin-api 是全量替换语义，issue #3584）"""
         client = get_admin_api_client()
@@ -354,7 +353,9 @@ class ProcessingItemManageTool(BaseTool):
         return ToolResult(
             success=True,
             data={"item_id": item_id, **(response.get("data") or {})},
-            message=success_message,
+            # 字面量必须**内联**在构造点：能力下线族守卫按字面量解析运行期文本，
+            # 经函数参数传入的 message 它取不到 ⇒ 会把这条文本当成「静默免检」判红。
+            message="加工项已更新",
         )
 
     async def _update_item(
@@ -418,7 +419,6 @@ class ProcessingItemManageTool(BaseTool):
             json_data,
             action_label="UpdateItem",
             fail_prefix="更新加工项失败",
-            success_message="加工项已更新",
         )
 
     async def _list_categories(self, context: ToolContext) -> ToolResult:

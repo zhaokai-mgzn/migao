@@ -232,9 +232,9 @@ cases:
         action: update
     required_args:
       - tool: customer_manage
-        args:
-          customer_id: ""
-          data: {}
+        fields:
+          - customer_id
+          - data
     skip_reason: ""
     merge_log: >-
       2026-11-04 un-skip（issue #8618：B 端工具缺口接回）——`customer_manage` 的 `update`（改客户资料）已接回 B 端（`PUT /api/admin/customers/{id}`，确认门禁 + `customer:create` 的 action 级复检 + prompt 口径同批落地）⇒ 本用例撤销 skip，`expectations` / `must_succeed` / `required_args` 三条写声明恢复；判定面 = 工具被真的调用 + 服务端真的改了数据（`post_clean` 的真复位是第二条证据），**不是**「agent 说了会做」。

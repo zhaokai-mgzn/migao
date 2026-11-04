@@ -40,7 +40,7 @@ _CASE_CT_002 = EvalCase(
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
-    required_args=[{'tool': 'category_manage', 'args': {'name': '轻奢系列'}}],
+    required_args=[{'tool': 'category_manage', 'fields': ['name']}],
     must_succeed=[{'tool': 'category_manage', 'action': 'create'}],
     namespaces=['category:轻奢系列'],
 )
