@@ -848,7 +848,7 @@
 真值: auth.qr-login-ticket
 溯源: 2026-10-26 新增（issue #7825）：现场 = 顶栏「手机端」二维码只是裸链接（不带登录交接），换浏览器 / App 或本机存储被清后每次扫码都要重新输密码。冻结口径 = 一次性票据（JWT 类型 qr_login、120 秒、兑换即吊销 jti）+ 手机端兑换后与密码登录同一套 30 天会话 + 签发失败降级裸入口 + 启动探针（续期失败原因本地可读）。 ｜ tags: auth, session, qr-login, bmini, admin-web
 
-## B 端小程序域（63 case）
+## B 端小程序域（64 case）
 
 ### BM-001. B 端员工小程序登录 - 账号密码（用户名@企业编码）登录，不再走微信手机号匹配 🔵
 ```
@@ -1744,6 +1744,18 @@
 ```
 真值: frontend-fix.no-api-change
 溯源: 2026-11-04 新增（用户逐字「移动端缺乏返回上一页面的快捷方式，要加一个」，issue #8657）。载体 = 共用组件 src/components/WorkerBackLink.tsx；挂在工人 8 个子页的页头（inbound / reprint / stock / rework / piecework / report / shipment / shipment-orders），home 与 login 不挂（它们是根 / 入口）。 ｜ tags: bmini, worker, navigation, ux
+
+### BM-066. 待出库单详情显示「套数所在仓位」（服务端 stock_bins）—— 只上屏，纸面一格都不印 🔵
+```
+你: 工人打开「待出库单 → 出库单」，除了行清单（订单号/收货人/电话/地址/物流/日期/套数），还要能看到这一单的成品分别在哪个仓位：如「A-01-03 第 1、2 套」「B-02-01 第 3 套」。这段只显示在屏幕上，打印出来的 50×70 成品出库单上不要有仓位。
+期望: direct_reply
+数据: 判据 1·服务端按仓位聚合：`finished_goods_stock`（status=in_stock）两箱三套 ⇒ `stock_bins` = [{bin_code:'A-01', sets_text:'1、2', set_count:2}, {bin_code:'B-02', sets_text:'3', set_count:1}]，且按 order_id 归组、其它订单的行不串。执行点 = backend/admin-api/.../WorkerShipmentReadyServiceTest#仓位按仓位聚合
+数据: 判据 2·缺值不编：没有在库行 / 仓位号为空 ⇒ **不下发** stock_bins（页面不渲染这一段）。执行点 = 同文件#没有在库行不下发仓位 / #空仓位号被丢弃
+数据: 判据 3·🔴 只上屏不入纸：`buildShipLabelRows(order)` 的行里出现「仓位」标签或仓位号 ⇒ 红（用户逐字「不需要打印在标签中」）。执行点 = frontend/bmini-app/tests/worker-shipment-orders-page.test.tsx#⑬
+数据: 判据 4·屏上有：详情块渲染 bin_code + 「第 1、2 套」；空数组不渲染这一段。执行点 = 同文件#⑫/#⑭
+跳过: [backend-contract] 确定性服务层 + 前端渲染判据（junit + jest），非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-11-04 新增（issue #8678，用户逐字「待出库单详情缺乏订单内的套数所在仓位吧？可以显示在出库单详情上，不需要打印在标签中」）。数据源 = finished_goods_stock（status=in_stock，bin_code + set_no/set_index），服务端一次批量取、按 bin_code 聚合；纸面行清单不受影响。 ｜ tags: bmini, worker, ship, stock-bin, screen-only
 
 ## 分类域（3 case）
 
@@ -15245,7 +15257,7 @@
 - Agent 核心域：13
 - API 层域：21
 - 登录认证域：14
-- B 端小程序域：63
+- B 端小程序域：64
 - 分类域：3
 - 对话边界域：53
 - 跨域：3
@@ -15290,6 +15302,7 @@
 - BM-009: 管理面手机端 4 项（智能派单 / 入库过账 / 售后处理 / 计件工资报表）- h5 可用 + 权限双面 + 写动作护栏 + 与 PC 同源
 - BM-046: 手机端菜单 = 服务端按岗位投影（「我的」入口 + 「数据」生产待办块）；菜单拉不到 ⇒ 显式态，不照显
 - BM-047: B 端 H5 底栏 4 项一律可见 + 端侧自绘 + 收起原生条（2026-10-18 裁定；旧「按权限裁剪」退场）
+- BM-066: 待出库单详情显示「套数所在仓位」（服务端 stock_bins）—— 只上屏，纸面一格都不印
 - CH-027: 流式回复中切换会话再切回 - 等待状态与最终回复保留（issue #2901）
 - CH-028: 多会话并发流 - 会话 A 回复中 B 可发送，增量/停止互不干扰（issue #2906）
 - CH-030: C 端交互组件提交锁（防重复提交）—— confirm/choice/form 点选/提交后本地锁卡，已答消息携带 interactiveAnswered，历史回放后不复活

@@ -2272,3 +2272,33 @@ cases:
       ci:
         - bmini-app.yml
       verifies: []
+
+  - id: BM-066
+    legacy_id: ""
+    title: "待出库单详情显示「套数所在仓位」（服务端 stock_bins）—— 只上屏，纸面一格都不印"
+    domains:
+      - bmini
+      - worker
+      - ship
+    tier: normal
+    tags: [bmini, worker, ship, stock-bin, screen-only]
+    truths_ref: []
+    user_inputs:
+      - "工人打开「待出库单 → 出库单」，除了行清单（订单号/收货人/电话/地址/物流/日期/套数），还要能看到这一单的成品分别在哪个仓位：如「A-01-03 第 1、2 套」「B-02-01 第 3 套」。这段只显示在屏幕上，打印出来的 50×70 成品出库单上不要有仓位。"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "判据 1·服务端按仓位聚合：`finished_goods_stock`（status=in_stock）两箱三套 ⇒ `stock_bins` = [{bin_code:'A-01', sets_text:'1、2', set_count:2}, {bin_code:'B-02', sets_text:'3', set_count:1}]，且按 order_id 归组、其它订单的行不串。执行点 = backend/admin-api/.../WorkerShipmentReadyServiceTest#仓位按仓位聚合"
+      - "判据 2·缺值不编：没有在库行 / 仓位号为空 ⇒ **不下发** stock_bins（页面不渲染这一段）。执行点 = 同文件#没有在库行不下发仓位 / #空仓位号被丢弃"
+      - "判据 3·🔴 只上屏不入纸：`buildShipLabelRows(order)` 的行里出现「仓位」标签或仓位号 ⇒ 红（用户逐字「不需要打印在标签中」）。执行点 = frontend/bmini-app/tests/worker-shipment-orders-page.test.tsx#⑬"
+      - "判据 4·屏上有：详情块渲染 bin_code + 「第 1、2 套」；空数组不渲染这一段。执行点 = 同文件#⑫/#⑭"
+    skip_reason: "[backend-contract] 确定性服务层 + 前端渲染判据（junit + jest），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-11-04 新增（issue #8678，用户逐字「待出库单详情缺乏订单内的套数所在仓位吧？可以显示在出库单详情上，不需要打印在标签中」）。数据源 = finished_goods_stock（status=in_stock，bin_code + set_no/set_index），服务端一次批量取、按 bin_code 聚合；纸面行清单不受影响。"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/shipment/WorkerShipmentReadyServiceTest.java"
+        - "frontend/bmini-app/tests/worker-shipment-orders-page.test.tsx"
+      ci:
+        - deploy-admin-api.yml
+        - bmini-app.yml
+      verifies: []

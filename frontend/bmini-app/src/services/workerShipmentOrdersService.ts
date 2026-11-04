@@ -59,6 +59,15 @@ export interface ReadyShipmentOrder {
   install_community?: string | null
   /** 安装位置（可选附注；可多行，缺值 = 该行不印） */
   install_rooms?: string | null
+  /**
+   * 在库仓位（issue #8678）：一个仓位一条 —— **只给详情屏看，不进纸**。
+   * 缺值（还没入库 / 已发货释放仓位）⇒ 页面不显示这一段，不编空仓位。
+   */
+  stock_bins?: Array<{
+    bin_code?: string | null
+    sets_text?: string | null
+    set_count?: number | null
+  }> | null
 }
 
 /** 本次扫描的边界（截断不静默：`truncated=true` 时页面要说明「还有更多单未列出」）。 */
