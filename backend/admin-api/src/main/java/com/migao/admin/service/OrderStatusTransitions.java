@@ -33,11 +33,15 @@ import java.util.Set;
 public final class OrderStatusTransitions {
 
     /**
-     * 订单状态的**唯一载体**（issue #8198，P2-2a 第一步）：值与数据库存储值**逐字相等**。
+     * 订单状态的**唯一取值载体**（issue #8198，P2-2a）：值与数据库存储值**逐字相等**。
      *
-     * <p>只加常量、**不新建枚举**：实体字段是 {@code String}，枚举会引入第三种表示
-     * （枚举 / 字符串 / DB 值）且不带来本单要的扫面判据（issue #8198 评论裁定）。
-     * 三张表与 controller 一律引用这些常量；判据 = {@code OrderStatusConstantsTest}。</p>
+     * <p><b>为什么是常量、不是枚举</b>（issue #8198 评论裁定，2026-10-31，仓库所有者读码后）：
+     * 枚举会引入**第三种表示**（枚举 / 字符串 / DB 值），而实体字段是 {@code String} —— 每次进出都要
+     * {@code valueOf} / {@code code}，净增转换噪音；它**不带来**这里真正想要的东西（扫面判据用常量一样能做）；
+     * 按最少代码阶梯属 YAGNI：先解决「散落」这一个问题，等真有「需要穷举 switch」的场景再升级成枚举。</p>
+     *
+     * <p>「状态全集」的权威**仍是** {@link #STATUS_TRANSITIONS} 的键集 —— 本类不另立第二份全集定义；
+     * 常量集 == 该键集由 {@code OrderStatusConstantsTest} 逐值核对（判据红证：改一个常量的值 ⇒ 状态机测试红）。</p>
      */
     public static final String PENDING = "pending";
     public static final String CONFIRMED = "confirmed";

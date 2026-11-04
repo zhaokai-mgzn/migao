@@ -46,8 +46,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  * </table>
  *
  * <h2>判据按**结构化锚点**判定，不做全文语义判断</h2>
- * <p>扫描只认「转移本体调用 + 目标状态是字面量 {@code "shipped"}」这一形态
- * （{@code transitionStatusAtomic(..., "shipped"} / {@code transition(..., "shipped"}），
+ * <p>扫描只认「转移本体调用 + 目标状态是 {@code shipped}」这一形态
+ * （{@code transitionStatusAtomic(..., "shipped"} / {@code transition(..., "shipped"}，
+ * 或收敛后的 {@code ... , OrderStatusTransitions.SHIPPED}），
  * 注释里的散文喂不动它 —— 本仓反复踩过「把注释里的反例读成代码」（{@code migao-dev-flow} §23.4 T2）。</p>
  */
 @DisplayName("类级守卫：发货写面不变式接线台账（新增发货路漏接 ⇒ 红）")
@@ -64,9 +65,16 @@ class ShipmentInvariantGuardTest {
     /** 不动式判定本体的**接线锚**（登记条目「必须带」时逐字核对它）。 */
     private static final String WIRING_ANCHOR = "assertQuantities(";
 
-    /** 转移本体的形态（目标状态是字面量 —— 注释里的散文不会命中）。第 1 组 = 转移方法名。 */
+    /**
+     * 转移本体的形态（目标状态是 {@code shipped}）。第 1 组 = 转移方法名。
+     *
+     * <p>**两种载体都认**：字面量 {@code "shipped"}（历史形态）与常量引用
+     * {@code OrderStatusTransitions.SHIPPED}（issue #8198 收敛后的形态）。只认字面量会让收敛后的
+     * 写点从扫描面消失 —— 那正是本守卫在 5724 条全量里判红的形态（「写点在源里找不到」）。
+     * 两种都认**不放宽**：任何一处新的「置为 shipped」写点，无论写哪种形态，仍然会落进扫描结果。</p>
+     */
     private static final Pattern SHIPPED_WRITE = Pattern.compile(
-            "transition([A-Za-z]*)\\([^;]*\"shipped\"", Pattern.DOTALL);
+            "transition([A-Za-z]*)\\([^;]*(?:\"shipped\"|OrderStatusTransitions\\.SHIPPED)", Pattern.DOTALL);
 
     /**
      * 发货写面台账（**未登记即红**）。`carriesInvariant` = 该写点是否真的带「累计已发 ≤ 订单量」。

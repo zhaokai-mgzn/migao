@@ -125,7 +125,7 @@ public class AutoCompleteShippedScanService {
         // 🔴 判定本体只有一份（本仓唯一的状态机实现）：动手之前先按流转表断言本次动作合法。
         // 这条断言让「流转表被改小 / shipped 不再是 completed 的出口」当场抛 —— 而不是让本类
         // 悄悄把一批单改成流转表里不存在的目标态（本单**不改** STATUS_TRANSITIONS）。
-        OrderStatusTransitions.assertTransitionAllowed("shipped", "completed");
+        OrderStatusTransitions.assertTransitionAllowed(OrderStatusTransitions.SHIPPED, OrderStatusTransitions.COMPLETED);
         List<Long> tenants = orderMapper.selectShippedTenantIds();
         List<String> completed = new ArrayList<>();
         List<String> failures = new ArrayList<>();
@@ -204,7 +204,7 @@ public class AutoCompleteShippedScanService {
             ctx.put("recipientId", order.getUserId());
             ctx.put("recipientType", "user");
             ctx.put("orderNo", order.getOrderNo() != null ? order.getOrderNo() : order.getId());
-            ctx.put("status", OrderStatusTransitions.label("completed"));
+            ctx.put("status", OrderStatusTransitions.label(OrderStatusTransitions.COMPLETED));
             notificationService.triggerByEvent(tenantId, "order_status_changed", ctx);
         } catch (RuntimeException e) {
             log.warn("[notify] 自动完成站内信发送失败，忽略: orderId={}, error={}", orderId, e.getMessage());

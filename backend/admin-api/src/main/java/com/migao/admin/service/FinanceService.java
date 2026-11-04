@@ -348,7 +348,7 @@ public class FinanceService extends ServiceImpl<FinanceTransactionMapper, Financ
     private BigDecimal computePendingReceivable(Long tenantId) {
         List<Order> orders = orderMapper.selectList(new LambdaQueryWrapper<Order>()
                 .eq(Order::getTenantId, tenantId)
-                .in(Order::getStatus, "confirmed", "producing", "shipped", "completed"));
+                .in(Order::getStatus, OrderStatusTransitions.CONFIRMED, OrderStatusTransitions.PRODUCING, OrderStatusTransitions.SHIPPED, OrderStatusTransitions.COMPLETED));
         BigDecimal pending = BigDecimal.ZERO;
         for (Order o : orders) {
             BigDecimal receivable = nz(o.getTotalAmount());

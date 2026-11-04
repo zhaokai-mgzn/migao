@@ -114,10 +114,10 @@ public class ProductionTodoService {
     public static final int CANDIDATE_SCAN_LIMIT = 50;
 
     /** 待排产候选状态 = 订单已确认（加工单尚未推进到 {@code producing}）。 */
-    private static final List<String> SCHEDULE_CANDIDATE_STATUSES = List.of("confirmed");
+    private static final List<String> SCHEDULE_CANDIDATE_STATUSES = List.of(OrderStatusTransitions.CONFIRMED);
 
     /** 待发货候选状态 = 未发货且可能已加工完成（订单状态机：confirmed/producing → shipped）。 */
-    private static final List<String> SHIP_CANDIDATE_STATUSES = List.of("confirmed", "producing");
+    private static final List<String> SHIP_CANDIDATE_STATUSES = List.of(OrderStatusTransitions.CONFIRMED, OrderStatusTransitions.PRODUCING);
 
     private final ProductionStuckPointService stuckPointService;
     private final OrderService orderService;

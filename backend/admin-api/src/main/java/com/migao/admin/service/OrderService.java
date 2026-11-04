@@ -981,7 +981,7 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
 
         // 加工单联动守卫（issue #3340）：含加工项订单必须完成加工单后才能发货，
         // 防止加工环节被 confirmed→shipped 直跳绕过
-        if ("shipped".equals(status)) {
+        if (OrderStatusTransitions.SHIPPED.equals(status)) {
             // issue #7165：商家/生产端发货（无工人身份）⇒ 完成「发货」工序但不计件；再走守卫
             if (documentOperationLinkage != null) {
                 documentOperationLinkage.completeShippingOperations(order, null, order.getTenantId());
@@ -990,9 +990,9 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         }
 
         // 统一走带库存/销量副作用的路径，避免与 confirmPayment/cancelOrder 逻辑不一致
-        if ("confirmed".equals(status)) {
+        if (OrderStatusTransitions.CONFIRMED.equals(status)) {
             confirmPayment(id);
-        } else if ("cancelled".equals(status)) {
+        } else if (OrderStatusTransitions.CANCELLED.equals(status)) {
             cancelOrder(id, null);
         } else {
             // producing/shipped/completed：无库存副作用，原子状态流转
@@ -1050,7 +1050,7 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         wrapper.eq(Order::getId, id)
                 .eq(Order::getStatus, expectedStatus)
                 .set(Order::getStatus, newStatus);
-        if ("shipped".equals(newStatus)) {
+        if (OrderStatusTransitions.SHIPPED.equals(newStatus)) {
             wrapper.set(Order::getShippedAt, businessClock.nowOffset());
         }
         // issue #7078：paid_at 只在 **pending → confirmed**（= 确认收款）这条边上写。
@@ -1058,13 +1058,13 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         // （作废加工单退回待发货）复用 —— 那是**回退边**，在那里写会让「支付时间」被一次回退
         // 动作顶成当天（屏幕上看不出异常）。判据 = OrderPaidAndReceivedAtWriteGuardTest
         // （含「摘掉前驱限定 ⇒ 判红」的判别力自证）。
-        if ("confirmed".equals(newStatus) && "pending".equals(expectedStatus)) {
+        if (OrderStatusTransitions.CONFIRMED.equals(newStatus) && OrderStatusTransitions.PENDING.equals(expectedStatus)) {
             wrapper.set(Order::getPaidAt, businessClock.nowOffset());
         }
         // issue #7078：received_at = 订单进入 completed 的时刻。completed 在本状态机里没有出边
         // ⇒ 这条边只会走一次、不会覆盖。另一条完成路（发货后 N 天自动完成）**不经**本方法，
         // 在 OrderMapper.autoCompleteShippedOrders 自己的 SQL 里同写（漏写那条腿 = 那批单永远空值）。
-        if ("completed".equals(newStatus)) {
+        if (OrderStatusTransitions.COMPLETED.equals(newStatus)) {
             wrapper.set(Order::getReceivedAt, businessClock.nowOffset());
         }
         if (closeReason != null && !closeReason.isBlank()) {
@@ -1086,7 +1086,7 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         }
 
         // 仅允许待确认状态的订单被删除
-        if (!"pending".equals(order.getStatus())) {
+        if (!OrderStatusTransitions.PENDING.equals(order.getStatus())) {
             throw BusinessException.validationError("仅允许删除待确认状态的订单，当前状态: " + order.getStatus());
         }
 
@@ -1398,7 +1398,7 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
      * 仅状态回退，无库存副作用（confirmed→producing 本身也无库存副作用）。
      */
     public void revertProducingToConfirmed(String orderId, String reason) {
-        int rows = transitionStatusAtomic(orderId, "producing", "confirmed", reason);
+        int rows = transitionStatusAtomic(orderId, OrderStatusTransitions.PRODUCING, OrderStatusTransitions.CONFIRMED, reason);
         if (rows == 0) {
             throw new BusinessException("ORDER_STATUS_CONFLICT", "订单状态已并发变更，请刷新后重试", 409);
         }
@@ -1445,17 +1445,17 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         long total = orderMapper.selectCount(new LambdaQueryWrapper<Order>()
                 .eq(Order::getTenantId, tenantId));
         long pending = orderMapper.selectCount(new LambdaQueryWrapper<Order>()
-                .eq(Order::getTenantId, tenantId).eq(Order::getStatus, "pending"));
+                .eq(Order::getTenantId, tenantId).eq(Order::getStatus, OrderStatusTransitions.PENDING));
         long confirmed = orderMapper.selectCount(new LambdaQueryWrapper<Order>()
-                .eq(Order::getTenantId, tenantId).eq(Order::getStatus, "confirmed"));
+                .eq(Order::getTenantId, tenantId).eq(Order::getStatus, OrderStatusTransitions.CONFIRMED));
         long producing = orderMapper.selectCount(new LambdaQueryWrapper<Order>()
-                .eq(Order::getTenantId, tenantId).eq(Order::getStatus, "producing"));
+                .eq(Order::getTenantId, tenantId).eq(Order::getStatus, OrderStatusTransitions.PRODUCING));
         long shipped = orderMapper.selectCount(new LambdaQueryWrapper<Order>()
-                .eq(Order::getTenantId, tenantId).eq(Order::getStatus, "shipped"));
+                .eq(Order::getTenantId, tenantId).eq(Order::getStatus, OrderStatusTransitions.SHIPPED));
         long completed = orderMapper.selectCount(new LambdaQueryWrapper<Order>()
-                .eq(Order::getTenantId, tenantId).eq(Order::getStatus, "completed"));
+                .eq(Order::getTenantId, tenantId).eq(Order::getStatus, OrderStatusTransitions.COMPLETED));
         long cancelled = orderMapper.selectCount(new LambdaQueryWrapper<Order>()
-                .eq(Order::getTenantId, tenantId).eq(Order::getStatus, "cancelled"));
+                .eq(Order::getTenantId, tenantId).eq(Order::getStatus, OrderStatusTransitions.CANCELLED));
 
         return OrderStatisticsResponse.builder()
                 .totalCount(total)
@@ -1508,7 +1508,7 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         validateStockSufficient(order);
 
         // 原子状态流转：仅 pending → confirmed，防止并发重复扣减库存
-        int rows = transitionStatusAtomic(id, "pending", "confirmed", null);
+        int rows = transitionStatusAtomic(id, OrderStatusTransitions.PENDING, OrderStatusTransitions.CONFIRMED, null);
         if (rows == 0) {
             throw BusinessException.validationError("只有待确认状态的订单可以确认支付，订单状态可能已变更");
         }
@@ -1617,7 +1617,7 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
             throw BusinessException.notFound("订单");
         }
         String previousStatus = order.getStatus();
-        Set<String> cancellableStatuses = Set.of("pending", "confirmed", "producing");
+        Set<String> cancellableStatuses = Set.of(OrderStatusTransitions.PENDING, OrderStatusTransitions.CONFIRMED, OrderStatusTransitions.PRODUCING);
         if (!cancellableStatuses.contains(previousStatus)) {
             throw BusinessException.validationError("当前状态不允许取消");
         }
@@ -1665,13 +1665,13 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         }
 
         // 原子状态流转（以读取到的 previousStatus 为条件，防止并发重复恢复库存）
-        int rows = transitionStatusAtomic(id, previousStatus, "cancelled", closeReason);
+        int rows = transitionStatusAtomic(id, previousStatus, OrderStatusTransitions.CANCELLED, closeReason);
         if (rows == 0) {
             throw BusinessException.validationError("订单状态已并发变更，请刷新后重试");
         }
 
         // 已确认/生产中的订单被取消时，恢复库存和销量，并补记退款流水（与 confirmPayment 的 income 对冲）
-        if ("confirmed".equals(previousStatus) || "producing".equals(previousStatus)) {
+        if (OrderStatusTransitions.CONFIRMED.equals(previousStatus) || OrderStatusTransitions.PRODUCING.equals(previousStatus)) {
             restoreStockAndDecreaseSales(id);
             BigDecimal remainingRefund = effectiveActualAmount(order).subtract(
                     order.getRefundAmount() != null ? order.getRefundAmount() : BigDecimal.ZERO);
@@ -1702,7 +1702,7 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
             throw BusinessException.notFound("订单");
         }
         String previousStatus = order.getStatus();
-        Set<String> refundableStatuses = Set.of("confirmed", "producing", "shipped", "completed");
+        Set<String> refundableStatuses = Set.of(OrderStatusTransitions.CONFIRMED, OrderStatusTransitions.PRODUCING, OrderStatusTransitions.SHIPPED, OrderStatusTransitions.COMPLETED);
         if (!refundableStatuses.contains(previousStatus)) {
             String previousLabel = ORDER_STATUS_LABELS.getOrDefault(previousStatus, previousStatus);
             throw BusinessException.validationError(
@@ -2553,7 +2553,7 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         // 而两条路都会把订单置 shipped ⇒ 抄两份迟早漂移（见 OrderShipmentService.SHIPPABLE_FROM）。
         // 本路多认 shipped：已发货后仅补记/纠正物流（不流转状态），故它是合法的记物流态。
         String status = order.getStatus();
-        if (!OrderShipmentService.SHIPPABLE_FROM.contains(status) && !"shipped".equals(status)) {
+        if (!OrderShipmentService.SHIPPABLE_FROM.contains(status) && !OrderStatusTransitions.SHIPPED.equals(status)) {
             throw BusinessException.validationError("仅已确认/生产中/已发货状态可发货，当前状态: " + status);
         }
         String trimmedTrackingNo = StringUtils.hasText(trackingNo) ? trackingNo.trim() : "";
@@ -2571,7 +2571,7 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         boolean transitioned = shipOrderIfApplicable(orderId);
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("order_id", orderId);
-        result.put("status", "shipped");
+        result.put("status", OrderStatusTransitions.SHIPPED);
         result.put("tracking_no", trimmedTrackingNo);
         result.put("logistics_company", company);
         // 🔴 issue #6181：把「本次是否真的流转了」**显式**交给调用方。调用方随后要调建单写面，而建单
@@ -2621,7 +2621,7 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
             return false;
         }
         String currentStatus = order.getStatus();
-        if ("confirmed".equals(currentStatus) || "producing".equals(currentStatus)) {
+        if (OrderStatusTransitions.CONFIRMED.equals(currentStatus) || OrderStatusTransitions.PRODUCING.equals(currentStatus)) {
             // issue #7165：商家/生产端/agent 发货（无工人身份）⇒ 完成「发货」工序但不计件；再走守卫
             if (documentOperationLinkage != null) {
                 documentOperationLinkage.completeShippingOperations(order, null, order.getTenantId());
@@ -2629,7 +2629,7 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
             // P1 修复（验收复核 #3345）：与 updateOrderStatus 路径同一守卫——含加工项订单
             // 须有 completed 加工单才能发货，防止 agent 发货路径绕过加工环节
             assertProcessingCompletedBeforeShip(order);
-            int rows = transitionStatusAtomic(orderId, currentStatus, "shipped", null);
+            int rows = transitionStatusAtomic(orderId, currentStatus, OrderStatusTransitions.SHIPPED, null);
             if (rows == 0) {
                 throw BusinessException.validationError("订单状态已并发变更，请刷新后重试");
             }
