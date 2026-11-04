@@ -2,7 +2,7 @@
 # 本文件由 render_cases.py 生成，勿手改（改了也留不住：下次重渲染会覆盖）
 # 源: cases/*.yml（case-contract 单一源）
 # 重新生成: python3 render_cases.py --cases <dir> --out-eval <包目录> --out-md <md>
-# 域: misc（源: cases/misc.yml，223 条）
+# 域: misc（源: cases/misc.yml，224 条）
 
 from ._schema import Difficulty, EvalCase, Skill
 
@@ -4076,6 +4076,24 @@ _CASE_MC_194 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── MC-196 [NORMAL] 就绪探针把「有监听但读超时」判成未就绪（issue #8647）：端口上有僵而不死的旧进程时，AI Agent 全量档不再在收集阶段中止；连接被拒 / 401 / 200 三条既有口径不回归（源: cases/misc.yml）──
+_CASE_MC_196 = EvalCase(
+    id='MC-196',
+    legacy_id='',
+    title='就绪探针把「有监听但读超时」判成未就绪（issue #8647）：端口上有僵而不死的旧进程时，AI Agent 全量档不再在收集阶段中止；连接被拒 / 401 / 200 三条既有口径不回归',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['本机 8001 端口上有一个五天前的旧服务进程：健康检查路径还能回 200，其它路径接受连接后永不回包；此时跑 AI Agent 全量档'],
+    expectations=[],
+    data_checks=['判据 1·🔴 读超时 = 未就绪，且不抛异常：注入一个「接受连接但不回包」的本地监听者 ⇒ 判定函数返回一行可行动文案（含端口号 / 读超时 / 看谁占着该端口的出口命令），**不抛异常**（抛异常 ⇒ 模块级判定在收集阶段打挂整档，报表里既不是失败也不是未就绪）。红证 = 摘掉读超时那一段兜底 ⇒ 抛超时异常，该条当场红。执行点 = tests/unit_ci_workflows/test_live_service_readiness_timeout.py 的读超时一条。', '判据 2·🔴 连接被拒仍判未就绪（既有行为不回归）：注入一个没人监听的端口 ⇒ 仍是「服务未在运行」那一条文案。红证 = 摘掉连接段的兜底 ⇒ 抛连接被拒异常，该条当场红。', '判据 3·🔴 401 仍按既有口径：桩回 401 ⇒ 未就绪，文案带 HTTP 码并点明凭据不一致，且**不许**被并进「读超时」口径（401 恰恰证明服务在回包）。红证 = 删掉 401/403 分支 ⇒ 判成「就绪」，该条当场红。', '判据 4·🔴 200 仍判就绪：桩回 200 ⇒ 返回空串。红证 = 让判定函数恒返回文案 ⇒ 该条当场红。', '类级 A·传输层异常**整族**都不许上抛、也不许被读成「就绪」：读超时 / 连接重置 / 管道断开 / 对端提前断开 / 非 HTTP 响应 / 读不全 / 超时的两层包装，逐条注入 ⇒ 一律未就绪。红证 = 把兜底收窄成单一具体类型 ⇒ 五条当场红（本单的病就是「枚举漏了一个」）。', '类级 B·结构守卫：读响应段必须 catch 两类**基类**（OSError 与 http.client.HTTPException）⇒ 子类自动全部进来，不再依赖逐个列举；收窄成具体类型 ⇒ 该条当场红。', '顺带·错桶修正：就绪探针**自身**崩溃（实测形态 = 测试树里有一个语法错文件，现取面清单时解析失败）此前是退出码 1，而 1 在门禁三态里是「有面未就绪」⇒「探针坏了」被静默读成「环境没准备好」。现钉成退出码 2（无法判定 ⇒ 上游记失败），判据同时断言文案里明写「无法判定」+ 异常类型。'],
+    skip_reason='[backend-contract] 纯 stdlib 探针（零 LLM / 零外网 / 只连本机回环桩）由 pytest 单测验证（tests/unit_ci_workflows/test_live_service_readiness_timeout.py），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['readiness', 'gate', 'read-timeout', 'zombie-listener', 'no-self-exemption'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── MC-197 [NORMAL] 批次后台 job 的跨实例执行租约（issue #8285）：心跳新鲜不误杀 / 心跳超时或为空 ⇒ 回收成可撤销 partial 且幂等 / 两个 executor 的活批次互不误伤 / 回收不覆盖终态（含 fencing）（源: cases/misc.yml）──
 _CASE_MC_197 = EvalCase(
     id='MC-197',
@@ -4317,5 +4335,6 @@ CASES = (
     _CASE_MC_193,
     _CASE_MC_195,
     _CASE_MC_194,
+    _CASE_MC_196,
     _CASE_MC_197,
 )
