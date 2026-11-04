@@ -38,6 +38,8 @@ from pathlib import Path
 import pytest
 import yaml
 
+from unit_ci_workflows.injection import inject
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPTS = REPO_ROOT / ".github" / "scripts"
 WORKFLOWS = REPO_ROOT / ".github" / "workflows"
@@ -571,38 +573,37 @@ class TestReconcileWorkflowRedProofs:
 
     def test_inject_removing_the_autopr_call(self):
         """#8628：摘掉 `ensure-pr` 调用 ⇒ 台账领先却没 PR 时又回到「判红 / 靠人手动开」⇒ 必红。"""
-        mutated = REAL_RECONCILE.replace(
-            "            python3 .github/scripts/flaky_ledger.py ensure-pr \\\n", "", 1)
-        assert mutated != REAL_RECONCILE, "注入锚点失效（先修本测试）"
+        mutated = inject(
+            REAL_RECONCILE,
+            "            python3 .github/scripts/flaky_ledger.py ensure-pr \\\n", "",
+            where=".github/workflows/flaky-ledger-reconcile.yml")
         violations = audit_reconcile(mutated)
         assert any("ensure-pr" in v for v in violations), violations
 
     def test_inject_removing_the_autopr_failure_exit(self):
         """#8628：把「建 PR 失败 ⇒ 红」的出口摘掉（改成不痛不痒的 echo）⇒ 静默通过 ⇒ 必红。"""
-        mutated = REAL_RECONCILE.replace(
+        mutated = inject(
+            REAL_RECONCILE,
             "              *) echo \"::error::台账领先 main 却**补建 PR 失败**"
             "（ensure-pr 退 ${ENSURE_RC}）⇒ 台账仍停在分支上、main 不增长；"
             "明细见上方 ⛔ 行。可复制出口：gh pr create --base main --head $LEDGER_BRANCH "
             "--title 'chore(ci): flaky 台账滚动追加' --repo $GITHUB_REPOSITORY\"; exit 1 ;;",
-            '              *) echo "⚠️ 补建失败"; exit 0 ;;', 1)
-        assert mutated != REAL_RECONCILE, "注入锚点失效（先修本测试）"
+            '              *) echo "⚠️ 补建失败"; exit 0 ;;', where=".github/workflows/flaky-ledger-reconcile.yml")
         violations = audit_reconcile(mutated)
         assert any("建 PR 失败" in v for v in violations), violations
 
     def test_inject_arming_the_autopr_pr(self):
         """#8628 红线：摘掉「自建 PR 不 arm」的标记分支 ⇒ **自己开 + 自己 arm** = 自开自合 ⇒ 必红。"""
-        mutated = REAL_RECONCILE.replace(
-            "            *flaky-ledger-autopr*)\n", "            *NO_SUCH_MARKER*)\n", 1)
-        assert mutated != REAL_RECONCILE, "注入锚点失效（先修本测试）"
+        mutated = inject(REAL_RECONCILE, "            *flaky-ledger-autopr*)\n",
+                         "            *NO_SUCH_MARKER*)\n", where=".github/workflows/flaky-ledger-reconcile.yml")
         violations = audit_reconcile(mutated)
         assert any("flaky-ledger-autopr" in v for v in violations), violations
 
     def test_inject_admin_merge(self):
         """#8628 红线：出现 `gh pr merge --admin`（绕过必需检查）⇒ 必红。"""
-        mutated = REAL_RECONCILE.replace(
-            'ARM_OUT=$(gh pr merge "$PR" --auto --squash',
-            'ARM_OUT=$(gh pr merge "$PR" --admin --auto --squash', 1)
-        assert mutated != REAL_RECONCILE, "注入锚点失效（先修本测试）"
+        mutated = inject(REAL_RECONCILE,
+                         'ARM_OUT=$(gh pr merge "$PR" --auto --squash',
+                         'ARM_OUT=$(gh pr merge "$PR" --admin --auto --squash', where=".github/workflows/flaky-ledger-reconcile.yml")
         violations = audit_reconcile(mutated)
         assert any("--admin" in v for v in violations), violations
 
@@ -1150,10 +1151,10 @@ class TestEnsurePrJudge:
 
         这条证明上面那条幂等判据是**载荷**（会红），不是空断言。
         """
-        mutant_src = REAL_SCRIPT.replace(
+        mutant_src = inject(
+            REAL_SCRIPT,
             "    existing = open_ledger_pr(repo, branch)\n    if existing is not None:",
-            "    existing = open_ledger_pr(repo, branch)\n    if False:", 1)
-        assert mutant_src != REAL_SCRIPT, "注入锚点失效（先修本测试）"
+            "    existing = open_ledger_pr(repo, branch)\n    if False:", where=".github/scripts/flaky_ledger.py")
         mod = _load_mutant(mutant_src, "m_flaky_autopr")
         stub = GhStub(open_prs=[4210, 4210])
         _wire(monkeypatch, stub, ahead=1, module=mod)
