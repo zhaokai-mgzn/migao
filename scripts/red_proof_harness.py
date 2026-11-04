@@ -100,7 +100,10 @@ TOOLS: dict[str, ToolSpec] = {
             _AAPI_MAIN + "service/ProcessingOrderService.java",
             _AAPI_MAIN + "service/AutoBatchDispatchListener.java",
             _AAPI_MAIN + "service/PoolChangeNotifier.java",
-            _AAPI_MAIN + "service/OrderService.java",
+            # issue #8191（P2-1d）：确认支付（含通知点）搬到 OrderLifecycleService ⇒ 被守卫文件跟着搬家。
+            # ⚠️ 这份清单同时是**夹具仓库的拷贝面**（test_redproof_harness_gate 只拷 impl + criteria）：
+            # 漏登记 ⇒ 夹具里没有该文件 ⇒ `--check` 在 CI 上判「被守卫的文件不存在」（本 PR 实测踩到）。
+            _AAPI_MAIN + "service/OrderLifecycleService.java",
             "backend/admin-api/src/main/resources/db/init/schema.sql",
         ),
         criteria=(
