@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img" aria-label="观星台">
+  <title>观星台</title>
+  <desc>取景角（扫码入口）+ 中心星芒（AI 中枢）</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#2e3d5c"/><stop offset="100%" stop-color="#48618f"/>
+    </linearGradient>
+    <linearGradient id="gold" x1="0" y1="0" x2="0.35" y2="1">
+      <stop offset="0%" stop-color="#f7e2cf"/><stop offset="55%" stop-color="#e7b99d"/><stop offset="100%" stop-color="#c06a3e"/>
+    </linearGradient>
+  </defs>
+  
+  <g fill="none" stroke="#191f31" stroke-width="66" stroke-linecap="round" stroke-linejoin="round" opacity="0.94">
+    <path d="M344 250 H246 V348"/>
+    <path d="M680 250 H778 V348"/>
+    <path d="M344 774 H246 V676"/>
+    <path d="M680 774 H778 V676"/>
+  </g>
+  <rect x="196" y="497" width="632" height="14" rx="7" fill="#191f31" opacity="0.22"/>
+  <path d="M512 340 C527 445 561 479 666 494 C561 509 527 543 512 648 C497 543 463 509 358 494 C463 479 497 445 512 340 Z" fill="#191f31"/>
+</svg>

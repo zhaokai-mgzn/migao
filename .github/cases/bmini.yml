@@ -2179,3 +2179,33 @@ cases:
         - bmini-app.yml
       verifies: []
 
+  - id: BM-064
+    legacy_id: ""
+    title: "观星台品牌标（C1：取景角=扫码入口 + 星芒=AI 中枢）落进 bmini 登录页；素材规格 / 配色令牌 / 占位字清除三面钉住"
+    domains:
+      - bmini
+    tier: normal
+    tags:
+      - bmini
+      - brand
+      - assets
+    truths_ref:
+      - frontend-fix.no-api-change
+    user_inputs:
+      - "打开小程序登录页：顶部是观星台品牌标（深靛圆角底 + 四个取景角 + 中间金色星芒），下面是「词元观星台」与副标题；原来的文字占位「米」不再出现。"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "判据 1·🔴 素材齐全且尺寸正确：`src/assets/brand/logo.svg` + `logo-144.png`（微信小程序头像规格 144×144）+ `logo-288.png`（登录页 2x）都存在，且 PNG 头里的 IHDR 宽高就是 144/288。红证：把 logo-144.png 换成 512×512 ⇒ 该条红（读 PNG 头，不靠肉眼）"
+      - "判据 2·🔴 配色只能来自 PC 设计令牌：logo.svg 里出现 #2e3d5c / #48618f / #faf7f2 / #c06a3e，且**不得**出现改前那套冷蓝 #0a2540 / #1a73e8。红证：把背景渐变改回 #0A2540 ⇒ 该条红"
+      - "判据 3·🔴 登录页真的挂了这张图：`index.tsx` 里存在 `import brandLogo from '../../../assets/brand/logo-144.png'` 且渲染 `<Image className='login-brand__icon-img' src={brandLogo}>`。红证：删掉 import ⇒ 该条红"
+      - "判据 4·🔴 占位字已清除（换图最常见的回归是「只加图没删占位」⇒ 两个标并排）：`index.tsx` 不再包含 `login-brand__icon-text` / `<Text ...>米</Text>`。红证：把占位块加回去 ⇒ 该条红"
+      - "判据 5·🔴 样式里有对应尺寸：`index.scss` 的 `&__icon-img` 声明 width/height 128px（缺了高度 ⇒ 真机上按 0 高渲染成白块）。红证：删掉 height ⇒ 该条红"
+    skip_reason: "[frontend-contract] 确定性资源/文案判据（jest + 读 PNG 头），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-11-04 新增（用户逐字「我们还需要给观星台设计一个 logo」→ 选定 C1；同日用户纠正方向「不要根据字面意思设计，要根据我们的系统能力去设计」，故图形 = 扫码取景角 + AI 星芒，不是天文台）。"
+    traces:
+      tests:
+        - "frontend/bmini-app/tests/brand-logo.test.ts"
+      ci:
+        - bmini-app.yml
+      verifies: []
