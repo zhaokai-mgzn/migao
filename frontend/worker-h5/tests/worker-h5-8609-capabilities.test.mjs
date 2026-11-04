@@ -254,7 +254,7 @@ test('🔴 判据 ② 同一份 worker_pages，两台设备菜单不同（差异
   assert.deepEqual(renderedIds(handsetHtml), ['wh5-fi-print'],
     '手持标签机：只该有「打印入库标签」，不该出现裁高计算入口（用户裁定：手持机不需要裁高计算/下发）')
   assert.deepEqual(renderedIds(allInOneHtml), ['wh5-machine-entry'],
-    '安卓一体机：只该有「裁高计算（一体机）」，不该出现打印标签（一体机没有标签机链路）')
+    '安卓一体机：只该有「裁高计算」，不该出现打印标签（一体机没有标签机链路）')
   assert.notDeepEqual(renderedIds(handsetHtml), renderedIds(allInOneHtml),
     '两台设备的硬件入口一模一样 ⇒ 第三轴没进判定（这正是"把 capabilities 从判定里去掉"的形态）')
 

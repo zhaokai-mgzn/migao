@@ -70,7 +70,7 @@ const keepNewlines = (m) => m.replace(/[^\n]/g, '')
 function userVisibleSource(src) {
   let out = src
   for (const re of COMMENT_PATTERNS) out = out.replace(re, keepNewlines)
-  // 🔴 注释**先**剥：注释里的引号（如「一律叫「裁高计算（一体机）」——「机台模式」是内部叫法」这类
+  // 🔴 注释**先**剥：注释里的引号（如「屏上/入口一律叫「裁高计算」——「机台模式」是内部叫法」这类
   //    中文引号夹英文撇号）会打断「先剥字符串」的顺序 ⇒ 状态机/正则的引号配对从此失衡、
   //    把**后面几百行代码**当字符串吞掉（实测：真缺陷被吞、判据对着真缺陷也不红）。
   //    注释先没了 ⇒ 那里的引号不再是引号（只剩合法 JS 串，配对平衡）。

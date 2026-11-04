@@ -8,7 +8,7 @@
 // 删掉过滤 / 删掉门控 / 把 fail-open 改成 fail-closed ⇒ 对应断言当场红（红证见每条 test 注释）。
 //
 // 🔴 本文件钉五条（与交付单的五条判据一一对应）：
-//   ① `cut_calc` ∈ pages ⇔ 入口栏出现/消失「裁高计算（一体机）」（`/w/machine.html`）；
+//   ① `cut_calc` ∈ pages ⇔ 入口栏出现/消失「裁高计算」（`/w/machine.html`；2026-11-05 issue #8683 去掉端名）；
 //   ② `report` ∉ pages ⇒ **显式**「本机未开报工页」视图（不静默留一个扫不动码的页面）；
 //   ③ `me` 失败 / `pages` 缺失 ⇒ **fail-open**（报工页照旧可用）+ 显式提示（降级态要看得见）；
 //   ④ 两条跨应用入口**已移出本页**（2026-10-10 用户裁定，issue #6635）⇒ 反向钉住（出现即红）；
@@ -48,7 +48,7 @@ import {
 /** 后端 `WorkerPages.ALL` 的逐字镜像（改后端闭词表 ⇒ 本文件红）。 */
 const BACKEND_PAGE_KEYS = [PAGE_REPORT, PAGE_PIECEWORK, PAGE_ORDER, PAGE_CUT_CALC, PAGE_SHIPMENT, PAGE_TO_SHIP, PAGE_STOCK, PAGE_INBOUND, PAGE_REPRINT, PAGE_INSPECT, PAGE_REWORK]
 
-/** 裁高计算入口（本页唯一的入口；文案 2026-10-10 起用「裁高计算（一体机）」）。 */
+/** 裁高计算入口（本页唯一的入口；文案 2026-10-10 起用「裁高计算」，2026-11-05 issue #8683 去掉端名）。 */
 const MACHINE_ENTRY = './machine.html'
 
 /** 已移出本页的两条跨应用入口（2026-10-10 用户裁定；反向钉住：渲染里出现即红）。 */
@@ -158,11 +158,11 @@ test('`pages` 未被读过 / 空数组 ⇒ 按默认全开（fail-open，不是"
 // ⚠️ 入口栏**只剩两条**（裁高计算 / 返工记录）——「我的计件」「发货」已于 2026-10-27 搬到
 //    工人菜单页（issue #7934，见下面 ①′/①″ 的反向钉住）。
 
-test('🔴 ① `cut_calc` ∈ pages ⇒ 入口栏出现「裁高计算（一体机）」链接；∉ ⇒ 入口栏**不渲染**', () => {
+test('🔴 ① `cut_calc` ∈ pages ⇒ 入口栏出现「裁高计算」链接；∉ ⇒ 入口栏**不渲染**', () => {
   const on = visible(renderPage(loggedIn([PAGE_REPORT, PAGE_CUT_CALC]), null))
   assert.equal(deglue(on).includes(MACHINE_ENTRY), true, '`cut_calc` 已开却没给裁高计算入口（那台屏走不到裁高页）')
   assert.match(on, /id="wh5-machine-entry"[^>]*href="\.\/machine\.html"/, '入口必须是真链接（href 在）')
-  assert.match(on, />裁高计算（一体机）<\/a>/, '入口文案要在链接里（且是人话 —— 2026-10-10 用户裁定）')
+  assert.match(on, />裁高计算<\/a>/, '入口文案要在链接里、且不带端名（2026-11-05 issue #8683：手持机也能进这页）')
 
   const off = visible(renderPage(loggedIn([PAGE_REPORT, PAGE_ORDER]), null))
   // 「变异真的被读到」的自证：把过滤去掉 ⇒ deglue 后**必然**含这条路径（控件句按此判）
@@ -201,7 +201,7 @@ test('🔴 ①″ `to_ship` / `shipment` ∈ pages ⇒ 本页**不再**渲染「
 
 test('🔴 ① 红证：去掉入口栏的 `cut_calc` 过滤（无条件出裁高链接）⇒ 同一条判定必红', () => {
   const html = visible(renderPage(loggedIn([PAGE_REPORT]), null))
-  const unfiltered = `${html}<nav class="wh5-entries" id="wh5-worker-entries"><a class="wh5-entry" id="wh5-machine-entry" href="${MACHINE_ENTRY}">裁高计算（一体机）</a></nav>`
+  const unfiltered = `${html}<nav class="wh5-entries" id="wh5-worker-entries"><a class="wh5-entry" id="wh5-machine-entry" href="${MACHINE_ENTRY}">裁高计算</a></nav>`
   assert.equal(deglue(html).includes(MACHINE_ENTRY), false, '对照：真渲染下判定判绿（`cut_calc` 没开）')
   assert.equal(deglue(unfiltered).includes(MACHINE_ENTRY), true, '变异体确实是"无条件出入口链接"这一形态')
   assert.notDeepEqual(

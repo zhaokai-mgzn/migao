@@ -265,7 +265,10 @@ export function capabilityShown(caps, axis) {
 }
 
 /** 裁高计算入口（同源静态页；`/w/` 与 `/w/machine.html` 同一静态根 ⇒ 相对路径、不写死域名）。
- *  文案 = 「裁高计算（一体机）」（2026-10-10 用户裁定：改前的「机台模式」只有内部人懂，issue #6635）。 */
+ *  文案 = 「裁高计算」（2026-10-10 用户裁定：改前的「机台模式」只有内部人懂，issue #6635）。
+ *  🔴 2026-11-05（issue #8683）：**去掉端名「（一体机）」** —— 手持标签机现在也能进这页（终端仓 #56 / #57），
+ *  同一个入口两端都在用，写端名就是**错误陈述**；不按端分叉（不引入第二套 UI 分支）。
+ *  类级判据 = frontend/worker-h5/tests/worker-h5-no-device-name-copy.test.mjs（入口 / 屏头文案出现端名 ⇒ 红）。 */
 export const MACHINE_ENTRY_HREF = './machine.html'
 
 // 🔴 这里原本还有两条入口常量（`./piecework.html` / `./shipment.html`）——**已删**（issue #7934，
@@ -932,7 +935,7 @@ function workerEntriesBar(state) {
   const caps = terminalCapabilities(state)
   const itemId = state.view?.position?.order_item_id
   const machine = opened.has(PAGE_CUT_CALC) && capabilityShown(caps, 'cut')
-    ? `<a class="wh5-entry" id="wh5-machine-entry" href="${MACHINE_ENTRY_HREF}">裁高计算（一体机）</a>` : ''
+    ? `<a class="wh5-entry" id="wh5-machine-entry" href="${MACHINE_ENTRY_HREF}">裁高计算</a>` : ''
   // 返工记录（issue #7860）：`rework` ∈ 页面集才出入口（用户裁定「在工人档案中设置过可见权限的工人」）；
   // 文案与后端 `WorkerPages.labels()` 同源（商家在工人档案里勾的就是「返工记录」）。
   const rework = opened.has(PAGE_REWORK)

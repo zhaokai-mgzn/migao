@@ -122,7 +122,8 @@ export const PAGE_ENTRY_LEDGER: PageEntry[] = [
       '工人身份（入库 / 补打页在**无工人 session** 时给的显式入口；登录成功 navigateBack 回原页再继续）',
   },
   // 🔴 issue #6635（用户 2026-10-10 逐字：「移除拍照入库和补打入库标签」）：`/w/` 报工页页头
-  // 原本还登记着入库两页的跨应用 `<a>` 入口 —— 已撤（该页只留一条「裁高计算（一体机）」）。
+  // 原本还登记着入库两页的跨应用 `<a>` 入口 —— 已撤（该页只留一条「裁高计算」；2026-11-05
+  // issue #8683 去掉端名「（一体机）」：手持标签机也能进这页，故文案不按端分叉）。
   // **可达性不受影响**：那两页的动线由**工人工作台**承载（上面那条 `from: WORKER_HOME`）。
   // 判据 = frontend/bmini-app/tests/page-entry-reachability.test.ts 的 L5（反向钉住：`/w/`
   // 再出现这两条 ⇒ 红）+ frontend/worker-h5/tests/worker-h5-worker-entries.test.mjs。

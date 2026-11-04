@@ -33,7 +33,7 @@ export const WORKER_MENU_KEYS = {
   piecework: 'piecework',
   /** 订单 / 套号明细 */
   order: 'order',
-  /** 裁高计算（一体机） */
+  /** 裁高计算（2026-11-05 issue #8683 去掉端名：手持标签机也能进这页，文案不按端分叉） */
   cutCalc: 'cut_calc',
   /** 拍照发货（写面） */
   shipment: 'shipment',

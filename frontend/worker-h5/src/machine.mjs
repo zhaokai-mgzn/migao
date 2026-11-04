@@ -1,7 +1,10 @@
 // case_ids: PG-018, BM-006, DF-017
 //
 // 一体机「裁高计算」（母单 #5161；设计 docs/design/cutting-height-config-and-terminal.md §2.6）。
-// 文案（2026-10-10 用户裁定，issue #6635）：屏上/入口一律叫「裁高计算（一体机）」——「机台模式」是内部叫法。
+// 文案（2026-10-10 用户裁定，issue #6635）：屏上/入口一律叫「裁高计算」——「机台模式」是内部叫法。
+// 🔴 2026-11-05（issue #8683）：**屏上标题也去掉端名「（一体机）」** —— 手持标签机现在也能进这页
+// （终端仓 #56 / #57），入口与页面标题必须同一句话（否则点之前一个词、点之后两个词，落差更显眼）。
+// 类级判据 = frontend/worker-h5/tests/worker-h5-no-device-name-copy.test.mjs。
 //
 // 形态（用户 2026-09-29 逐字裁定）：机器旁一块屏 + 一把**有线扫码枪**（= HID 键盘楔）。
 //   扫观星台自己的水洗唛（部位级码 `/s/<短码>` 或 token）⇒ **同一屏**给出
@@ -719,7 +722,7 @@ export function renderScan(state) {
   return `
     <section class="wh5-machine__panel wh5-machine__panel--idle" data-machine-screen="${failed ? 'error' : 'scan'}">
       <header class="wh5-machine__head">
-        <h1>裁高计算（一体机）</h1>
+        <h1>裁高计算</h1>
         ${hasWorker ? `<span class="wh5-machine__worker">${esc(dataOr(state.worker?.workerName))}</span>` : ''}
         ${hasWorker ? '<button type="button" class="wh5-machine__back" id="wh5-machine-switch-worker">切换工人</button>' : ''}
       </header>
