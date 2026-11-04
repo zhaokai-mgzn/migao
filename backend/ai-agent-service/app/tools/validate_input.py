@@ -326,25 +326,17 @@ _VALIDATION_RULES: Dict[str, Dict[str, Any]] = {
             "name": {"type": str, "min_len": 1, "max_len": 20, "label": "加工项名称"},
             "category_id": {"type": str, "min_len": 1, "label": "分类 ID"},
             "craft_hint": {"type": str, "max_len": 16, "label": "工艺声明（≤16 字）"},
-        },
-        # 规则键必须与工具 action 同名：工具 action 是 `delete_item`
-        # （`processing_item_manage.py:17` VALID_ACTIONS），旧键写 `delete` → 永不命中，
-        # 破坏性删除完全不过闸门（issue #3566 核查）
-        "delete_item": {
-            "required": ["item_id"],
-            "item_id": {"type": str, "min_len": 1, "label": "加工项 ID"},
-        },
-        # issue #4011 A4：下面 4 个 action 此前无规则 ⇒ 闸门返回 skipped 假绿。
-        # required 按工具实现（`processing_item_manage.py`）：`_toggle_item_status` 硬拦
-        # item_id + status；`_create_category` 要 name；`_update_category` 要
-        # category_id + name；`_delete_category` 要 category_id（工具无“父分类”参数）。
-        "toggle_item_status": {
-            "required": ["item_id", "status"],
             "status": {"type": str, "enum": ["active", "inactive"], "label": "加工项状态"},
         },
+        # 🔴 issue #8618：`delete_item` / `delete_category` / `toggle_item_status` 三个 action
+        # 已随「只能改，不能删」的裁定从工具 `VALID_ACTIONS` 退场 ⇒ 规则块同批删除
+        # （留着就是死键：闸门永远命中不到一个不存在的 action）。停用/启用并入
+        # `update_item(status=…)`，规则见上一条。
+        # issue #4011 A4：下面 2 个 action 此前无规则 ⇒ 闸门返回 skipped 假绿。
+        # required 按工具实现（`processing_item_manage.py`）：`_create_category` 要 name；
+        # `_update_category` 要 category_id + name。
         "create_category": {"required": ["name"]},
         "update_category": {"required": ["category_id", "name"]},
-        "delete_category": {"required": ["category_id"]},
     },
     "product_update": {
         "update": {

@@ -179,6 +179,15 @@ WRITE_TOOL_ACTIONS: dict[str, frozenset[str]] = {
     # 「部分写」工具（上面 #5247 那段把 `employee_manage（{"list","detail"}）` 记为已移出本表，
     # 现在前提反向成立）。不登记 ⇒ 含它的用例不会被分类为写用例（效果层/自清理判据静默空壳）。
     "employee_manage": frozenset({"create", "update"}),
+    # 🔴 issue #8618（2026-11-04，B 端工具缺口接回）：三条**部分写**工具接回写 action。
+    # 值必须与工具源码的 `read_only_actions` 互补（不变式见 `test_case_trust_gate.py` 的
+    # `test_write_tool_actions_table_matches_sources`）。不登记 ⇒ 含它们的用例不会被分类为
+    # 写用例 ⇒ 效果层（`must_succeed` / `db_verify`）与自清理判据静默空壳。
+    "customer_manage": frozenset({"update"}),
+    "category_manage": frozenset({"create"}),
+    "processing_item_manage": frozenset({
+        "create_processing_item", "update_item", "create_category", "update_category",
+    }),
 }
 
 # 安全护栏：写工具的判据面不得为空（空集合 = 所有写用例都判成读用例 = 门禁静默变空壳）。

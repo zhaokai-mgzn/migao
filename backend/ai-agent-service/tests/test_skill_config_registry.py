@@ -506,6 +506,10 @@ _ISSUE_3317_RETIRED_READ_ONLY: dict = {
 #: `notification_manage`）也收窄为只读 ⇒ 它不再走得到确认门禁 ⇒ 从名册删除（名册 4 → 3）。
 #: 判据本体（绑需确认写工具 ⇒ 必须暴露 `interact`）一字未改。
 _CONFIRM_GATE_BINDING_SKILLS: frozenset = frozenset({
+    # 🔴 **issue #8618（客户域，2026-11-04）**：`customer` 绑定 `customer_manage`
+    # （`update` 接回，`requires_confirmation=True`）且**已绑 `interact`（确认卡可达）**
+    # ⇒ 名册 6 → 7。判据本体（绑需确认写工具 ⇒ 必须暴露 `interact`）一字未改。
+    "customer",
     "customer_order", "customer_aftersales", "product",
     # 🔴 **issue #7040（通知中心域，2026-10-16）**：`notification` 绑定
     # `notification_manage`（`requires_confirmation=True`，变更类）且**已绑 `interact`

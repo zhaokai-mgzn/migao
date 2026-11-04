@@ -1,8 +1,19 @@
 """
 AI 智能客服系统 - 加工项管理 Tool
 
-管理加工项写入操作，包括创建/更新/删除加工项、加工分类 CRUD。
+管理加工项写入操作：创建 / 更新（含启用停用）/ 加工分类增改。
 与 processing_item_query（查询）互补，本工具负责写入操作。
+
+⚠️ issue #8618（2026-11-04，B 端工具缺口接回）：本工具此前**不绑任何 skill**（能力物理不可达），
+现绑进 B 端 `product` 域。接回形态照 `employee_manage`（#7050）：
+1. 权限走既有声明（`required_permissions`，与 admin-api `ProcessingItemController` 类级注解同码），
+   **不自己判角色**；
+2. 确认走 `BaseTool` 的既有门禁（`read_only=False` + `requires_confirmation=True` +
+   `read_only_actions` 豁免只读 action）—— 不自建第二套；
+3. **删除类 action 已从本工具退场**（`delete_item` / `delete_category`）：用户裁定
+   「只能改，不能删」⇒ 不可逆删除不进 B 端对话面（判据 =
+   `tests/unit_ci_workflows/test_mibao_b_end_readonly.py` 的不可逆动作闭词表）。
+   **停用**不是删除：它是 `update_item(status=…)` 的一次**变更**（可再改回 active，幂等）。
 
 ⚠️ issue #4882：`calculate_price`（POST /api/admin/processing-items/calculate）已随
 「加工项单价 + 计价方式」从 admin-api 一并退场（该端点算的就是 unitPrice × …）⇒
@@ -17,11 +28,15 @@ from app.tools.base import admin_api_failure, BaseTool, ToolContext, ToolResult
 from app.utils.http_client import get_admin_api_client
 
 
-# 操作类型
-VALID_ACTIONS = {
-    "create_processing_item", "update_item", "delete_item", "toggle_item_status",
-    "list_categories", "create_category", "update_category", "delete_category",
-}
+# 操作类型（issue #8618：`delete_item` / `delete_category` / `toggle_item_status` 已退场 ——
+# 删除不可逆 ⇒ 不在 B 端支持面；停用改由 `update_item(status=…)` 表达，语义 = 一次可逆的变更）
+VALID_ACTIONS = {"create_processing_item", "update_item", "list_categories", "create_category", "update_category"}
+
+#: 只读 action —— 免确认拦截（`base_skill._requires_confirmation` 直接读这个字段）。
+READ_ONLY_ACTIONS = frozenset({"list_categories"})
+
+#: 写 action（走确认门禁）。
+WRITE_ACTIONS = frozenset(VALID_ACTIONS - READ_ONLY_ACTIONS)
 
 # 加工项**不再有单价与计价方式**（issue #4882）：admin-api 的
 # `ProcessingItemCreateRequest` / `ProcessingItemUpdateRequest` 已把
@@ -56,28 +71,28 @@ ITEM_CARRY_OVER_FIELDS = ITEM_REQUIRED_FIELDS + (
 class ProcessingItemManageTool(BaseTool):
     """加工项管理 Tool
 
-    管理加工项写入操作：创建/更新/删除加工项、加工分类 CRUD。
+    管理加工项写入操作：创建 / 更新（含启用停用）/ 加工分类增改。
 
     使用场景：
     - 创建新的加工项（如打孔、窗帘头加工等）
-    - 更新加工项信息（名称、分类、描述、工艺声明等）
-    - 删除加工项
-    - 管理加工分类（查看/创建/更新/删除）
+    - 更新加工项信息（名称、分类、描述、工艺声明、状态）
+    - 管理加工分类（查看/创建/更新）
     """
 
     name = "processing_item_manage"
     description = (
-        "【触发】用户说'新增加工项''修改加工''删除加工''加工分类管理'时调用。"
-        "【参数】action 必填：list_categories（查分类树）只读；create_processing_item（name + category_id，"
-        "craft_hint 可选）/ update_item / delete_item / toggle_item_status / create_category / "
-        "update_category / delete_category 为写操作，item_id 或 category_id 按 action 必填。"
+        "【触发】用户说'新增加工项''修改加工''把加工项停用/启用''加工分类管理'时调用。"
+        "【参数】action 必填：list_categories（查分类）只读；create_processing_item（name + category_id，"
+        "craft_hint 可选）/ update_item（item_id + 至少一个要改的字段，含 status）/ "
+        "create_category / update_category 为写操作，需确认。"
         "【反例】仅查看加工项目录用 processing_item_query，不要混淆；商品加工项关联/建品用 product_manage。"
-        "【标注】WRITE|DESTRUCTIVE — list_categories 只读；增删改前必须二次确认"
+        "【标注】WRITE — list_categories 只读；增改前必须二次确认"
         "【铁律】用户说'新增加工项'就是执行指令：调 processing_item_manage(action=create_processing_item, name, category_id, craft_hint)——加工项**不再有单价与计价方式**（issue #4882 已从 admin-api 彻底删除），只需要 name + category_id（craft_hint 可选）"
         "（PP-006 实拍：agent 误宣「新增不在功能范围」，实际 create_processing_item 就是新增能力）。"
-        "【铁律】用户明确要求写操作（禁用/创建/调整/删除/上下架/重置等）时：先查必要信息拿真实 ID → 展示操作预览 + 确认卡 → 用户确认后立即调用写工具执行，禁止只查询/展示列表就停（HR-003/PP-006/PR-005 实拍：agent 只 list/query 不执行写工具判失败）。"
-        "【铁律】delete_item 是软删除（记录标记 deleted=1，非物理移除）：删除成功后按名称/列表复查查不到该加工项是正常结果（删除已生效），"
-        "禁止误报「删除未生效」或建议用户去后台手动删除；如需恢复告知用户联系管理员（#3885）。"
+        "【铁律】用户明确要求写操作（启用/停用/创建/调整）时：先查必要信息拿真实 ID → 展示操作预览 + 确认卡 → 用户确认后立即调用写工具执行，禁止只查询/展示列表就停（PP-006/PP-007/PP-008 实拍：agent 只 list/query 不执行写工具判失败）。"
+        "【口径】停用/启用加工项 = `update_item(item_id, status=inactive|active)`（同一次变更，可再改回）；"
+        "**删除加工项 / 删除加工分类不在能力内**（不可逆）——如实说明并引导到后台"
+        "「企业基础设置 → 加工项与加工费」页面操作。"
     )
     # 权限码（admin-api 目录）：ProcessingItemController / ProcessingCategoryController 类级
     # `@RequirePermission("processing:manage")`。
@@ -85,9 +100,10 @@ class ProcessingItemManageTool(BaseTool):
     required_permissions = ["processing:manage"]
 
     read_only = False
-    destructive = True   # 可删除加工项/分类
-    read_only_actions = {"list_categories"}  # 只读 action 免确认拦截
-    idempotent = False   # 创建/删除非幂等
+    read_only_actions = READ_ONLY_ACTIONS  # list_categories 免确认拦截
+    requires_confirmation = True           # 写操作走既有确认门禁（#8618；不自建第二套）
+    destructive = False                  # 删除类 action 已退场（只剩增改）
+    idempotent = False   # 创建非幂等；update_item 是覆盖式全量 PUT
 
     parameters = {
         "type": "object",
@@ -95,25 +111,23 @@ class ProcessingItemManageTool(BaseTool):
             "action": {
                 "type": "string",
                 "description": (
-                    "操作类型：create_processing_item（创建加工项）/ update_item（更新加工项）/ delete_item（删除加工项）"
-                    "/ toggle_item_status（启用/停用加工项）"
+                    "操作类型：create_processing_item（创建加工项）/ update_item（更新加工项，含 status 启用停用）"
                     "/ list_categories（分类列表）/ create_category（创建分类）/ update_category（更新分类）"
-                    "/ delete_category（删除分类）"
                 ),
                 "enum": [
-                    "create_processing_item", "update_item", "delete_item", "toggle_item_status",
-                    "list_categories", "create_category", "update_category", "delete_category",
+                    "create_processing_item", "update_item",
+                    "list_categories", "create_category", "update_category",
                 ],
             },
             "item_id": {
                 "type": "string",
-                "description": "加工项 ID（update_item/delete_item/toggle_item_status 时必填）",
+                "description": "加工项 ID（update_item 时必填）",
             },
             "category_id": {
                 "type": "string",
                 "description": (
                     "加工分类 ID（create_processing_item 时必填；update_item 时可选——不传则沿用该加工项原分类；"
-                    "update_category/delete_category 时必填）"
+                    "update_category 时必填）"
                 ),
             },
             "name": {
@@ -138,7 +152,10 @@ class ProcessingItemManageTool(BaseTool):
             },
             "status": {
                 "type": "string",
-                "description": "目标状态（toggle_item_status 时必填）：active（启用）/ inactive（停用）",
+                "description": (
+                    "目标状态（update_item 时可选）：active（启用）/ inactive（停用）。"
+                    "停用/启用就是一次 status 变更，可再改回来"
+                ),
                 "enum": ["active", "inactive"],
             },
         },
@@ -181,19 +198,13 @@ class ProcessingItemManageTool(BaseTool):
                     context, name, category_id, craft_hint, description)
             elif action == "update_item":
                 return await self._update_item(
-                    context, item_id, name, category_id, craft_hint, description)
-            elif action == "delete_item":
-                return await self._delete_item(context, item_id)
-            elif action == "toggle_item_status":
-                return await self._toggle_item_status(context, item_id, status)
+                    context, item_id, name, category_id, craft_hint, description, status)
             elif action == "list_categories":
                 return await self._list_categories(context)
             elif action == "create_category":
                 return await self._create_category(context, name, description)
             elif action == "update_category":
                 return await self._update_category(context, category_id, name, description)
-            elif action == "delete_category":
-                return await self._delete_category(context, category_id)
             else:
                 return ToolResult(
                     success=False,
@@ -354,12 +365,17 @@ class ProcessingItemManageTool(BaseTool):
         category_id: Optional[str],
         craft_hint: Optional[str] = None,
         description: Optional[str] = None,
+        status: Optional[str] = None,
     ) -> ToolResult:
-        """更新加工项
+        """更新加工项（含启用/停用这一种变更）
 
         请求体契约以 admin-api `ProcessingItemUpdateRequest` 为准（issue #3584 / #4882）：
         全量替换语义，必填只有 `name`/`categoryId`(@NotBlank)（**单价/计价方式字段已删除**）；
         未传的字段从 GET 详情继承（不传 ≠ 清空）。
+
+        🔴 `status`（issue #8618）：启用/停用**不是**独立 action，就是这一次变更的一个字段
+        —— admin-api 没有 `PUT /{id}/status` 子资源（该路径恒 404，issue #3584），
+        `status` 是 `ProcessingItemUpdateRequest` 的合法可选字段 ⇒ 同样走「详情 → merge → PUT 全量」。
         """
         if not item_id:
             return ToolResult(
@@ -378,13 +394,22 @@ class ProcessingItemManageTool(BaseTool):
             json_data["craftHint"] = craft_hint
         if description:
             json_data["description"] = description
+        if status:
+            if status not in ("active", "inactive"):
+                return ToolResult(
+                    success=False,
+                    error=f"无效的状态值: {status}",
+                    message="请提供有效的状态值：active（启用）或 inactive（停用）",
+                    suggestion="status 只支持 active（启用）/ inactive（停用），请按用户意图改传其中一个后重试",
+                )
+            json_data["status"] = status
 
         if not json_data:
             return ToolResult(
                 success=False,
                 error="缺少更新内容",
-                message="更新加工项时至少提供 name、category_id、craft_hint 或 description 之一",
-                suggestion="缺少更新内容，请让用户给出要修改的字段（名称/分类/工艺声明/描述）后重试",
+                message="更新加工项时至少提供 name、category_id、craft_hint、description 或 status 之一",
+                suggestion="缺少更新内容，请让用户给出要修改的字段（名称/分类/工艺声明/描述/启用停用）后重试",
             )
 
         return await self._put_item_full(
@@ -394,81 +419,6 @@ class ProcessingItemManageTool(BaseTool):
             action_label="UpdateItem",
             fail_prefix="更新加工项失败",
             success_message="加工项已更新",
-        )
-
-    async def _delete_item(self, context: ToolContext, item_id: Optional[str]) -> ToolResult:
-        """删除加工项"""
-        if not item_id:
-            return ToolResult(
-                success=False,
-                error="缺少加工项 ID",
-                message="删除加工项时必须提供 item_id",
-                suggestion="缺少加工项 ID item_id，请先用 processing_item_query 查到该加工项后重试",
-            )
-
-        logger.info(f"[processing-item-manage] DeleteItem: item_id={item_id} | tenant={context.tenant_id}")
-
-        client = get_admin_api_client()
-        response = await client.delete(
-            f"/api/admin/processing-items/{item_id}",
-            tenant_id=context.tenant_id,
-            user_id=context.user_id,
-        )
-
-        if not response.get("success"):
-            error_msg = response.get("error", {}).get("message", "删除失败")
-            return admin_api_failure(response,
-                error=error_msg,
-                message=f"删除加工项失败：{error_msg}",
-                suggestion="请先用 processing_item_query 确认该加工项存在、且未被订单或商品引用后再重新执行删除",
-            )
-
-        return ToolResult(
-            success=True,
-            data={"item_id": item_id},
-            message=(
-                f"已删除加工项（ID: {item_id}，软删除）；"
-                "此后按名称/列表查询将查不到该加工项（查不到即删除已生效，属正常结果），"
-                "如需恢复请联系管理员"
-            ),
-        )
-
-    async def _toggle_item_status(
-        self,
-        context: ToolContext,
-        item_id: Optional[str],
-        status: Optional[str],
-    ) -> ToolResult:
-        """启用/停用加工项
-
-        admin-api **没有** `PUT /api/admin/processing-items/{id}/status` 子资源
-        （该路径恒 404，issue #3584）；`status` 是 `ProcessingItemUpdateRequest` 的合法
-        可选字段 → 走真实存在的 `PUT /{id}`；因该端点是全量替换语义，
-        同样「GET 详情 → merge → PUT 全量」，避免只发 status 触发 422 或清空其它字段。
-        """
-        if not item_id:
-            return ToolResult(
-                success=False,
-                error="缺少加工项 ID",
-                message="启用/停用加工项时必须提供 item_id",
-                suggestion="缺少加工项 ID item_id，请先用 processing_item_query 查到该加工项后重试",
-            )
-        if not status or status not in ("active", "inactive"):
-            return ToolResult(
-                success=False,
-                error=f"无效的状态值: {status}",
-                message="请提供有效的状态值：active（启用）或 inactive（停用）",
-                suggestion="status 只支持 active（启用）/ inactive（停用），请按用户意图改传其中一个后重试",
-            )
-
-        status_text = "启用" if status == "active" else "停用"
-        return await self._put_item_full(
-            context,
-            item_id,
-            {"status": status},
-            action_label="ToggleItemStatus",
-            fail_prefix="加工项状态更新失败",
-            success_message=f"加工项已{status_text}",
         )
 
     async def _list_categories(self, context: ToolContext) -> ToolResult:
@@ -593,40 +543,4 @@ class ProcessingItemManageTool(BaseTool):
             success=True,
             data={"category_id": category_id, **json_data},
             message=f"加工分类已更新为「{name}」",
-        )
-
-    async def _delete_category(self, context: ToolContext, category_id: Optional[str]) -> ToolResult:
-        """删除加工分类"""
-        if not category_id:
-            return ToolResult(
-                success=False,
-                error="缺少分类 ID",
-                message="删除加工分类时必须提供 category_id",
-                suggestion="缺少分类 ID category_id，请先用 processing_item_manage 的 list_categories 操作取到分类后重试",
-            )
-
-        logger.info(
-            f"[processing-item-manage] DeleteCategory: category_id={category_id} "
-            f"| tenant={context.tenant_id}"
-        )
-
-        client = get_admin_api_client()
-        response = await client.delete(
-            f"/api/admin/processing-categories/{category_id}",
-            tenant_id=context.tenant_id,
-            user_id=context.user_id,
-        )
-
-        if not response.get("success"):
-            error_msg = response.get("error", {}).get("message", "删除失败")
-            return admin_api_failure(response,
-                error=error_msg,
-                message=f"删除加工分类失败：{error_msg}",
-                suggestion="请先用 processing_item_manage 的 list 操作确认该分类下已无加工项，再重新执行删除",
-            )
-
-        return ToolResult(
-            success=True,
-            data={"category_id": category_id},
-            message="加工分类已删除",
         )

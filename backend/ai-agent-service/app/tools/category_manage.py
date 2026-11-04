@@ -7,12 +7,24 @@ AI 智能客服系统 - 商品分类管理 Tool
 from typing import Any, Dict, Optional
 from loguru import logger
 
-from app.tools.base import admin_api_failure, BaseTool, ToolContext, ToolResult
+from app.tools.base import (
+    admin_api_failure,
+    BaseTool,
+    permission_denied,
+    ToolContext,
+    ToolResult,
+)
 from app.utils.http_client import get_admin_api_client
 
 
-# 操作类型
-VALID_ACTIONS = {"tree"}
+# 操作类型（`create` = 建商品分类，issue #8618 接回；`tree` 一字未动）
+VALID_ACTIONS = {"tree", "create"}
+
+#: 只读 action —— 免确认拦截（`base_skill._requires_confirmation` 直接读这个字段）。
+READ_ONLY_ACTIONS = frozenset({"tree"})
+
+#: 写 action（走确认门禁）。改名 / 删除**有意不在此列**（issue #8618 边界）。
+WRITE_ACTIONS = frozenset(VALID_ACTIONS - READ_ONLY_ACTIONS)
 
 
 class CategoryManageTool(BaseTool):
@@ -31,33 +43,44 @@ class CategoryManageTool(BaseTool):
     description = (
         "【触发】用户问'有哪些分类''分类列表''这个商品是哪个分类'时调用；"
         "建品/查商品需要分类 id 时也用 tree。"
-        "【参数】action 必填，**本工具只有 tree 一个只读 action**（返回扁平分类列表，无父子概念）。"
+        "【参数】action 必填：tree（扁平分类列表，无父子概念，只读）/ create（建商品分类，写，需确认）。"
         "tree 返回的分类 id（长字符串如 88b6c50fbc...）用于按分类筛选商品。"
         "【反例】查商品/库存用 product_search / product_detail；分类 id ≠ 商品 id，不要混用。"
-        "【反例】新建/改名/删除分类**不在本工具能力内**（B 端已只读化，issue #5247）——"
-        "引导用户到后台「商品管理 → 分类管理」页面自行操作，不要承诺代为修改。"
-        "【标注】READONLY — 纯查询，不含任何写 action"
+        "【确认】create 属写操作：调 interact(component=\"confirm\") 发确认卡，**卡面必须逐字带出分类名**；"
+        "用户点卡后才调用，未确认的调用会被门禁拦下。分类是扁平结构（无父子概念），新建的分类直接出现在列表里。"
+        "【反例】改分类名 / 删分类**不在本工具能力内**——如实说明并引导用户到后台"
+        "「商品管理 → 分类管理」页面操作，不要承诺代为修改。"
+        "【标注】WRITE — create 需确认；tree 免确认"
     )
-    # 权限码（admin-api 目录，issue #5291）：分类**读**端点已改挂分类读码 `product:category:view`
-    # （`CategoryController.getCategoryTree` 的方法级注解；写面 POST/PUT/DELETE 仍是 `product:category`）。
-    # 此前写死 ["admin","tenant_admin"] ⇒ operator / product_manager 持码却被判「权限不足」（#4106 F4）。
-    required_permissions = ["product:category:view"]
+    # 权限码（admin-api 目录，issue #5291）：分类**读**端点挂分类读码 `product:category:view`
+    # （`CategoryController.getCategoryTree` 的方法级注解）；写面（`POST /api/admin/categories`）
+    # 是类级 `product:category`。
+    # 粗筛取两码并集（任一命中即可进入工具），**action 级复检**在 execute 内按端点注解收严
+    # （防止仅持读码的岗位借黄金策建分类）。此前写死 ["admin","tenant_admin"] ⇒ operator /
+    # product_manager 持码却被判「权限不足」（#4106 F4）。
+    required_permissions = ["product:category:view", "product:category"]
 
-    read_only = True
-    read_only_actions = {"tree"}  # 只读 action 免确认拦截
-    idempotent = False   # 创建/删除非幂等
+    read_only = False
+    read_only_actions = READ_ONLY_ACTIONS  # tree 免确认拦截
+    requires_confirmation = True           # 写操作走既有确认门禁（#8618；不自建第二套）
+    destructive = False                    # 不含改名/删除（那两类不在能力内）
+    idempotent = False   # create 非幂等：重放会建出第二个同名分类
 
     parameters = {
         "type": "object",
         "properties": {
             "action": {
                 "type": "string",
-                "description": "操作类型：tree（获取分类列表）—— 本工具只有这一个只读 action",
-                "enum": ["tree"],
+                "description": "操作类型：tree（获取分类列表，只读）/ create（新建商品分类，写，需确认）",
+                "enum": ["tree", "create"],
             },
             "category_id": {
                 "type": "string",
                 "description": "分类 ID（update/delete 时必填）",
+            },
+            "name": {
+                "type": "string",
+                "description": "分类名称（create 时必填）",
             },
         },
         "required": ["action"],
@@ -71,13 +94,26 @@ class CategoryManageTool(BaseTool):
         name: Optional[str] = None,
     ) -> ToolResult:
         """执行商品分类管理操作"""
-        # 权限检查
+        # 权限检查（粗粒度：required_permissions 任一命中即可进入工具）
         if not self.check_permission(context):
             return ToolResult(
                 success=False,
                 error="权限不足",
                 message="您没有权限执行分类管理操作",
                 suggestion="请联系管理员获取执行分类管理操作权限",
+            )
+
+        # 细粒度权限（与 `CategoryController` 的 `@RequirePermission` 逐端点对齐）：
+        # tree 要 product:category:view，create（POST /api/admin/categories）要 product:category。
+        # 防的是「只持分类读码的岗位」借黄金策建分类。
+        required = "product:category:view" if action in self.read_only_actions else "product:category"
+        if "*" not in (context.permissions or []) and required not in (context.permissions or []):
+            return permission_denied(
+                message=f"您没有权限执行该分类操作（缺少权限：{required}）",
+                suggestion=(
+                    "请联系管理员在「岗位权限」中为您开通商品分类的相应权限"
+                    f"（{'查看' if required == 'product:category:view' else '管理'}分类）"
+                ),
             )
 
         # 参数校验
@@ -92,6 +128,8 @@ class CategoryManageTool(BaseTool):
         try:
             if action == "tree":
                 return await self._get_tree(context)
+            elif action == "create":
+                return await self._create_category(context, name)
             else:
                 return ToolResult(
                     success=False,
@@ -136,4 +174,46 @@ class CategoryManageTool(BaseTool):
             data={"tree": tree},
             message="已获取商品分类树形结构",
             summary=summary,
+        )
+    async def _create_category(self, context: ToolContext, name: Optional[str]) -> ToolResult:
+        """创建分类（扁平结构，无父子概念，issue #2905）
+
+        端点 `POST /api/admin/categories`（类级 `@RequirePermission("product:category")`）。
+        本地先拦缺名（§31 P4：说清缺哪个字段、该做什么），不把服务端 422 直接甩给模型。
+        """
+        if not name:
+            return ToolResult(
+                success=False,
+                error="缺少分类名称",
+                message="创建分类时必须提供 name",
+                suggestion="缺少分类名称 name，请向用户询问分类名称后重试",
+            )
+
+        json_data: Dict[str, Any] = {"name": name}
+
+        logger.info(
+            f"[category-manage] Create: name={name} | tenant={context.tenant_id}"
+        )
+
+        client = get_admin_api_client()
+        response = await client.post(
+            "/api/admin/categories",
+            json_data=json_data,
+            tenant_id=context.tenant_id,
+            user_id=context.user_id,
+        )
+
+        if not response.get("success"):
+            error_msg = response.get("error", {}).get("message", "创建失败")
+            return admin_api_failure(response,
+                error=error_msg,
+                message=f"创建分类失败：{error_msg}",
+                suggestion="请先用 category_manage 的 tree 操作确认是否已有同名分类，再换一个名称后重试",
+            )
+
+        data = response.get("data", {}) or {}
+        return ToolResult(
+            success=True,
+            data=data,
+            message=f"分类「{name}」创建成功",
         )

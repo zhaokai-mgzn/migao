@@ -159,7 +159,6 @@ WRITE_TOOLS_UNBOUND_FROM_B_END: dict[str, str] = {
     "order_create": "建单（与 C 端共享：只解绑 B 端，文件与 C 端行为一字不动）",
     "order_manage": "改订单状态/发货/退款（单据写面；B 端未接线）",
     "product_manage": "建品/上下架（商品创建 = 严禁）",
-    "processing_item_manage": "加工项增删改（含 `delete_item` = 不可逆 ⇒ 与「只能改不能删」冲突）",
     "processing_order_generate": "生成加工单（单据类创建）",
     "processing_order_update": "加工单状态流转（单据写面）",
     "settings_manage": "系统设置（用户裁定：不进 B 端对话面）",
@@ -182,6 +181,25 @@ CHANGE_TOOLS_REQUIRED_ON_B_END: dict[str, str] = {
     "employee_manage": (
         "员工账号的创建与变更（非单据对象创建 + 变更，issue #7050 接线）：`create` / `update` —— "
         "端点 `POST /api/admin/users` · `PUT /api/admin/users/{id}` 已核存在（权限码 `employee:create`）"
+    ),
+    # 🔴 issue #8618（2026-11-04，B 端工具缺口接回）：三条**变更**能力接回
+    # （终端裁定「其他操作都需要支持」；删除 / 停用「不可逆」面**不进**）。
+    # 三条都带确认门禁（判据 8）+ 权限码逐端点复检。
+    "customer_manage": (
+        "改客户资料（变更，issue #8618 接线）：`update` —— 端点 `PUT /api/admin/customers/{id}` "
+        "已核存在（生效码 `customer:create`；其余五个只读 action 仍是 `customer:view`）"
+    ),
+    "category_manage": (
+        "建商品分类（非单据对象创建，issue #8618 接线）：`create` —— 端点 "
+        "`POST /api/admin/categories` 已核存在（类级码 `product:category`；`tree` 仍是 "
+        "`product:category:view`）。**分类改名 / 删除不接**（删除 ⊂ 不可逆）"
+    ),
+    "processing_item_manage": (
+        "加工项增改 + 停用（变更 + 非单据对象创建，issue #8618 接线）：`create_processing_item` / "
+        "`update_item`（含 `status` 启用停用）/ `list_categories` / `create_category` / "
+        "`update_category` —— 端点 `POST|PUT /api/admin/processing-items*` 已核存在"
+        "（类级码 `processing:manage`）。**删除类 action 已从工具退场**（`delete_item` / "
+        "`delete_category` / `toggle_item_status`），停用改由 `update_item(status=…)` 表达"
     ),
 }
 
@@ -252,6 +270,10 @@ A_TIER_CLAIM_WORDS: dict[str, tuple[str, ...]] = {
 #: （接回了变更却在 greeting/capabilities 里一个字不提 ⇒ 商家不知道能找黄金策办 = 白接）。
 CHANGE_CLAIM_WORDS: dict[str, tuple[str, ...]] = {
     "notification_manage": ("标记已读", "标为已读", "全部已读"),
+    # issue #8618：三条接回的变更能力必须在能力文案里如实说出来（接回了却不说 = 白接）。
+    "customer_manage": ("改客户资料", "客户资料"),
+    "category_manage": ("建分类", "新建分类"),
+    "processing_item_manage": ("新增加工项", "加工项"),
 }
 
 #: 与 C 端共享的工具（判据 5）：必须仍存在、且仍被 C 端 skill 绑定。
@@ -1366,27 +1388,23 @@ def _injections() -> dict[str, tuple[str, "callable", "callable"]]:
         # ── 判据 3：action 面零建单零删除（三条子面各自独立红证）────────────────────
         "③ 让 B 端可达工具向单据集合发 POST（category_manage 加建单调用）⇒ 判据 3 红": (
             "tool:category_manage.py",
-            lambda s: s.replace(
-                'VALID_ACTIONS = {"tree"}',
-                'VALID_ACTIONS = {"tree"}\n\n\nasync def _planted_create(client):\n'
-                '    return await client.post("/api/admin/agent/orders", json_data={})',
-                1,
-            ),
+            # 锚点改到**文件末尾追加**（issue #8618 后 `VALID_ACTIONS` 已含 create，
+            # 拿它当锚点会随能力面漂移 ⇒ 判据自己先红）
+            lambda s: s + '\n\nasync def _planted_create(client):\n'
+            '    return await client.post("/api/admin/agent/orders", json_data={})\n',
             problems_action_sets,
         ),
         "③b 让 B 端可达工具发 DELETE（category_manage 加删分类调用）⇒ 判据 3 红": (
             "tool:category_manage.py",
-            lambda s: s.replace(
-                'VALID_ACTIONS = {"tree"}',
-                'VALID_ACTIONS = {"tree"}\n\n\nasync def _planted_delete(client):\n'
-                '    return await client.delete("/api/admin/categories/1")',
-                1,
-            ),
+            lambda s: s + '\n\nasync def _planted_delete(client):\n'
+            '    return await client.delete("/api/admin/categories/1")\n',
             problems_action_sets,
         ),
         "③c 往 B 端只读工具的 action 集塞不可逆动作名（category_manage += delete）⇒ 判据 3 红": (
             "tool:category_manage.py",
-            lambda s: s.replace('VALID_ACTIONS = {"tree"}', 'VALID_ACTIONS = {"tree", "delete"}', 1),
+            # `VALID_ACTIONS` 的当值里已有 create ⇒ 仍按"往集合塞不可逆动作名"注入
+            lambda s: s.replace('VALID_ACTIONS = {"tree", "create"}',
+                                'VALID_ACTIONS = {"tree", "create", "delete"}', 1),
             problems_action_sets,
         ),
         "③d 把写 action 挪进 `read_only_actions` 洗白（notification_manage += mark_read）⇒ 判据 3 红": (

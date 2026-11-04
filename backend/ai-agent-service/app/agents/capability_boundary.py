@@ -123,20 +123,39 @@ UNITS: Tuple[CapabilityUnit, ...] = (
         tool="role_manage", actions=("create", "update"),
         next_step="后台「组织管理 → 岗位权限」",
     ),
+    # 🔴 issue #8618：三条能力**只接了一半**（只接「改/建」，不接删除与建档）⇒ 按本模块的口径
+    # （「多动作标签必须把动作列全；只接一半时宁可先拆成两条单元」）拆开写，别让一条标签
+    # 代表整条业务动作。探针用工具**真实的** action 名（`customer_manage` 是 `update`，
+    # `processing_item_manage` 是 `create_processing_item` / `update_item`）。
     CapabilityUnit(
-        "customer_write", "客户建档 / 改资料 / 打标签",
-        tool="customer_manage", actions=("create", "update", "add_tag"),
+        "customer_update", "改客户资料",
+        tool="customer_manage", actions=("update",),
+    ),
+    CapabilityUnit(
+        "customer_write", "客户建档 / 打标签",
+        tool="customer_manage", actions=("create", "add_tag"),
         next_step="后台「客户列表」",
     ),
     CapabilityUnit(
-        "category_write", "商品分类的创建与变更",
-        tool="category_manage", actions=("create", "update"),
+        "category_create", "建商品分类",
+        tool="category_manage", actions=("create",),
+    ),
+    CapabilityUnit(
+        "category_update", "商品分类的改名",
+        tool="category_manage", actions=("update",),
         next_step="后台「商品管理 → 商品分类管理」",
     ),
     CapabilityUnit(
-        "processing_item_write", "加工项的创建与变更",
-        tool="processing_item_manage", actions=("create", "update"),
-        next_step="后台「企业基础设置 → 加工项与加工费」",
+        "processing_item_create", "新增加工项",
+        tool="processing_item_manage", actions=("create_processing_item",),
+    ),
+    CapabilityUnit(
+        "processing_item_update", "改加工项（含启用 / 停用）",
+        tool="processing_item_manage", actions=("update_item",),
+    ),
+    CapabilityUnit(
+        "processing_category_write", "加工分类的创建与变更",
+        tool="processing_item_manage", actions=("create_category", "update_category"),
     ),
     CapabilityUnit(
         "supplier_write", "供应商档案的创建与变更",

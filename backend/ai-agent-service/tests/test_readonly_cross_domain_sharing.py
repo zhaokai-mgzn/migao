@@ -336,7 +336,12 @@ class TestPersonaBoundaryIsHard:
             # 由 True 变回 False ⇒ 按本见证既有口径自然退场（不再是只读工具）。
             # 退场 ≠ 放宽：它的 C 端零绑定由 xiaobu 侧 skill 集合现算（不含它），写面边界由
             # `tests/unit_ci_workflows/test_mibao_b_end_readonly.py` 的判据 1/3/6b/8 承担。
-            "after_sales_manage", "category_manage", "customer_manage",
+            # 🔴 issue #8618（2026-11-04）**退场 2 把**：`customer_manage`（改客户资料）与
+            # `category_manage`（建商品分类）接回写 action ⇒ `read_only` 由 True 变回 False
+            # ⇒ 按本见证的既有口径（`(mibao 可达 - xiaobu 可达) ∩ read_only`）**自然退场**。
+            # 退场 ≠ 放宽：它们的 C 端零绑定由 xiaobu 侧 skill 集合现算（不含它们）；写面边界由
+            # `tests/unit_ci_workflows/test_mibao_b_end_readonly.py` 的判据 3/6b/8/9/10 承担。
+            "after_sales_manage",
             "finance_api", "inventory_manage", "role_manage", "session_manage",
             # ── #5247 ② 新增的 6 把只读工具 ────────────────────────────────────────
             "briefing_query", "craft_calc_config_query", "inbound_order_query",
@@ -373,7 +378,7 @@ class TestPersonaBoundaryIsHard:
             # （元元一个都不绑）；③ 声明 `order:list`（C 端 JWT 无权限码 ⇒ 即便可达也会被工具层拒绝）。
             "sales_attribution",
         }, (
-            f"B 端专属只读工具集实测 {sorted(b_only_readonly)} —— 与见证集（29 把）不等，口径漂移"
+            f"B 端专属只读工具集实测 {sorted(b_only_readonly)} —— 与见证集（27 把）不等，口径漂移"
             "（进场/退场都必须在本见证里显式改判，见 docstring 的 2026-09-21 / 2026-09-23 /"
             "2026-09-24 / 2026-09-25 / 2026-09-24(#5368) / 2026-10-02(#4923) /"
             "2026-10-02(#5989) 七次改判说明）")

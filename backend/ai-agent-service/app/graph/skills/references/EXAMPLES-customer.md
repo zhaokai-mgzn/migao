@@ -1,10 +1,19 @@
 # Customer Skill — Few-shot 示例
 
-> 🔴 本域无可写工具：建档/改资料/打标签/移除标签/创建删除标签都
-> **不在能力内**——`customer_manage` 只剩 list / detail / list_tags。
-> 示例一律是「查到位 + 如实说明 + 引导到后台」。
+> 🔴 本域写面只有一条：`customer_manage(action=update)`（改客户资料，issue #8618）。
+> 建档/打标签/移除标签/创建删除标签**仍不在能力内** ⇒ 如实说明 + 引导到后台。
+> 改资料必须**真的执行**：定位客户 → 确认卡（「改前 → 改后」）→ 点卡后调用 update。
 
 ## ✅ 正确示例
+
+### 例0: 改客户资料（写，需确认卡）
+用户: "张三（手机号 13800138000）的手机号改成 13900001111"
+```
+→ customer_manage(action=list, keyword="张三")        # 命中多位同名 ⇒ 先发 choice 卡让同事点选
+→ interact(component=confirm, fields=[客户, 手机号], confirmValue="…张三…13800138000 → 13900001111…")
+→ 同事点卡后再 customer_manage(action=update, customer_id="<真实UUID>", data={"phone": "13900001111"})
+→ "张三的手机号已从 138****8000 改为 139****1111，其余资料未动。"
+```
 
 ### 例1: 查客户信息
 用户: "查下张三的资料"

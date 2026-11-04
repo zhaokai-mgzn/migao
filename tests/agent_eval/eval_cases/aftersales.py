@@ -314,6 +314,8 @@ _CASE_AS_016 = EvalCase(
     form_prefill=[],
     forbidden_card_text=[],
     forbidden_text=['已为您提交售后', '已帮您申请售后', '已登记售后'],
+    must_succeed=[{'tool': 'order_query', 'action': 'list'}],
+    namespaces=['customer_phone:13800138000'],
     precondition='前置 = 客户「张三」名下有夹具订单（`EVAL-MB-ORD-0001/0002`，customer_name=张三 / 13800138000，见 mibao_eval_seed.sql 的订单夹具块）；前置不成立 ⇒ agent 查不到单、判红会伪装成「不会处理售后」',
 )
 

@@ -4,7 +4,7 @@ issue #4882：加工项**不再有单价与计价方式**（DTO/实体/schema �
 本文件同步去掉 price/pricing_method 的夹具与断言，并把「不得下发已删键」钉成红证；
 `calculate_price` action 随 `POST /processing-items/calculate` 端点退场一并删除。
 """
-# case_ids: PP-002, PP-006, PP-009, PR-017
+# case_ids: PP-002, PP-006, PP-007, PP-008, PP-009, PR-017, MC-194
 import ast
 import inspect
 import re
@@ -387,68 +387,63 @@ class TestProcessingItemUpdate:
         item_client.put.assert_not_called()
 
 
-class TestProcessingItemDelete:
+class TestRetiredActionsAreRefused:
+    """issue #8618：`delete_item` / `delete_category` **已从能力面退场**（用户裁定「只能改，不能删」）。
+
+    正向测试随能力一起退场；这里换成**更强的负例**：模型若仍按旧习惯传这两个 action，
+    必须在入口即被拒，且**零 HTTP 调用**（不得把不可逆删除悄悄发出去）。
+    """
+
+    @pytest.mark.parametrize("action", ["delete_item", "delete_category"])
     @patch("app.tools.processing_item_manage.get_admin_api_client")
-    async def test_delete_missing_id(self, mock_get_client, tool, admin_tool_context, mock_client):
+    async def test_retired_delete_actions_are_refused_at_entry(
+            self, mock_get_client, tool, admin_tool_context, mock_client, action):
         mock_get_client.return_value = mock_client
-        result = await tool.execute(context=admin_tool_context, action="delete_item")
+        result = await tool.execute(context=admin_tool_context, action=action, item_id="pi-1",
+                                    category_id="pc-1")
         assert result.success is False
-        assert "缺少加工项 ID" in result.error
+        assert "不支持的操作类型" in result.message
         mock_client.delete.assert_not_called()
+        mock_client.put.assert_not_called()
+
+    def test_schema_does_not_expose_delete_or_toggle_actions(self, tool):
+        """action 面自证：三个退场 action 一个都不许回到 schema（申报即回归）。"""
+        enum = set(tool.parameters["properties"]["action"]["enum"])
+        assert enum & {"delete_item", "delete_category", "toggle_item_status"} == set()
+
+class TestProcessingItemStatusViaUpdate:
+    """issue #3584 + #8618：`PUT /api/admin/processing-items/{id}/status` 在 admin-api **不存在**，
+    旧实现必 404；`status` 是 ProcessingItemUpdateRequest 的合法可选字段 ⇒ 启用/停用就是
+    `update_item(status=…)` 的一次变更（GET 详情 → merge → 全量 PUT）。"""
 
     @patch("app.tools.processing_item_manage.get_admin_api_client")
-    async def test_delete_success(self, mock_get_client, tool, admin_tool_context, mock_client):
-        mock_client.delete = AsyncMock(return_value={"success": True})
+    async def test_status_missing_id(self, mock_get_client, tool, admin_tool_context, mock_client):
         mock_get_client.return_value = mock_client
-
-        result = await tool.execute(context=admin_tool_context, action="delete_item", item_id="pi-1")
-        assert result.success is True
-        assert mock_client.delete.call_args[0][0] == "/api/admin/processing-items/pi-1"
-        # issue #3885：admin-api 的 ProcessingItem.deleted 是 MyBatis-Plus @TableLogic 软删除
-        # （deleted=1，非物理移除）。成功消息必须传达软删语义，否则 agent 复查时把
-        # 「按名称/列表查不到」误判为「删除未生效」，还会建议用户去后台手动删除。
-        assert "软删除" in result.message, "成功消息必须说明是软删除"
-        assert "查不到" in result.message, "成功消息必须预告复查时查不到属正常"
-
-    def test_description_includes_soft_delete_review_guidance(self, tool):
-        """issue #3885：description 须给复查指引——删除后按名称/列表查询返回空是正常结果。"""
-        assert "软删除" in tool.description, "description 必须点明 delete_item 是软删除"
-        assert "查不到" in tool.description, "description 必须提示复查查不到 = 删除成功（非未生效）"
-
-
-class TestProcessingToggleStatus:
-    """issue #3584：`PUT /api/admin/processing-items/{id}/status` 在 admin-api **不存在**，
-    旧实现必 404；status 是 ProcessingItemUpdateRequest 的合法可选字段 →
-    改走真实存在的 `PUT /{id}`（同样是 GET 详情 → merge → 全量 PUT）。"""
-
-    @patch("app.tools.processing_item_manage.get_admin_api_client")
-    async def test_toggle_missing_id(self, mock_get_client, tool, admin_tool_context, mock_client):
-        mock_get_client.return_value = mock_client
-        result = await tool.execute(context=admin_tool_context, action="toggle_item_status", status="active")
+        result = await tool.execute(context=admin_tool_context, action="update_item", status="active")
         assert result.success is False
         assert "缺少加工项 ID" in result.error
         mock_client.get.assert_not_called()
         mock_client.put.assert_not_called()
 
     @patch("app.tools.processing_item_manage.get_admin_api_client")
-    async def test_toggle_invalid_status(self, mock_get_client, tool, admin_tool_context, mock_client):
+    async def test_status_invalid_value(self, mock_get_client, tool, admin_tool_context, mock_client):
         mock_get_client.return_value = mock_client
         result = await tool.execute(
-            context=admin_tool_context, action="toggle_item_status", item_id="pi-1", status="archived")
+            context=admin_tool_context, action="update_item", item_id="pi-1", status="archived")
         assert result.success is False
         assert "无效的状态值" in result.error
         mock_client.get.assert_not_called()
         mock_client.put.assert_not_called()
 
     @patch("app.tools.processing_item_manage.get_admin_api_client")
-    async def test_toggle_active(self, mock_get_client, tool, admin_tool_context, item_client):
+    async def test_status_active(self, mock_get_client, tool, admin_tool_context, item_client):
         mock_get_client.return_value = item_client
 
         result = await tool.execute(
-            context=admin_tool_context, action="toggle_item_status", item_id="pi-1", status="active")
+            context=admin_tool_context, action="update_item", item_id="pi-1", status="active")
 
         assert result.success is True
-        assert "已启用" in result.message
+        assert result.message == "加工项已更新"
         # 真实端点：PUT /{id}（不是 /{id}/status —— 后者 admin-api 无此映射，必 404）
         assert item_client.put.call_args[0][0] == "/api/admin/processing-items/pi-1"
         body = _put_body(item_client)
@@ -457,17 +452,17 @@ class TestProcessingToggleStatus:
             assert field in body, f"全量替换 PUT 缺必填字段 {field}"
 
     @patch("app.tools.processing_item_manage.get_admin_api_client")
-    async def test_toggle_inactive(self, mock_get_client, tool, admin_tool_context, item_client):
+    async def test_status_inactive_keeps_other_fields(self, mock_get_client, tool, admin_tool_context, item_client):
         mock_get_client.return_value = item_client
 
         result = await tool.execute(
-            context=admin_tool_context, action="toggle_item_status", item_id="pi-1", status="inactive")
+            context=admin_tool_context, action="update_item", item_id="pi-1", status="inactive")
 
         assert result.success is True
-        assert "已停用" in result.message
         body = _put_body(item_client)
         assert body["status"] == "inactive"
         assert body["name"] == ITEM_DETAIL["name"]  # 其余字段原样保留
+        assert body["craftHint"] == ITEM_DETAIL["craftHint"]  # 工艺维不得被停用顺手清空
 
 
 class TestSchemaRuntimeInvariants:
@@ -554,20 +549,3 @@ class TestProcessingCategories:
             context=admin_tool_context, action="update_category", category_id="pc-1", name="新名")
         assert result.success is True
         assert mock_client.put.call_args[0][0] == "/api/admin/processing-categories/pc-1"
-
-    @patch("app.tools.processing_item_manage.get_admin_api_client")
-    async def test_delete_category_missing_id(self, mock_get_client, tool, admin_tool_context, mock_client):
-        mock_get_client.return_value = mock_client
-        result = await tool.execute(context=admin_tool_context, action="delete_category")
-        assert result.success is False
-        assert "缺少分类 ID" in result.error
-        mock_client.delete.assert_not_called()
-
-    @patch("app.tools.processing_item_manage.get_admin_api_client")
-    async def test_delete_category_success(self, mock_get_client, tool, admin_tool_context, mock_client):
-        mock_client.delete = AsyncMock(return_value={"success": True})
-        mock_get_client.return_value = mock_client
-
-        result = await tool.execute(context=admin_tool_context, action="delete_category", category_id="pc-1")
-        assert result.success is True
-        assert mock_client.delete.call_args[0][0] == "/api/admin/processing-categories/pc-1"

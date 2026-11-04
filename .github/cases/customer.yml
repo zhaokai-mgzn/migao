@@ -208,39 +208,12 @@ cases:
       - auto_respond:
           fallback: "确认"
     expectations:
-      # ── 2026-09-24（issue #5247，B 端只读化）：写 action `update` 已从源码删除（工具收窄为只读
-      # `{list, detail, list_tags}`）⇒ 机器可判字段改判到**存活的只读路径** `action: detail`。
       - tool: customer_manage
         args:
-          action: detail
+          action: update
     data_checks:
-      - "仅 phone 被更新，未传字段保持原值"
-    # ── 前置自断言 + 自清理 + 效果层（#4960 / #4961 轮次的 case-trust burn-down 缴费，metric=entries ⇒ 整条销账）──
-    # 本用例命中的三条存量违规：
-    #   ① CASE-TRUST-NO-PRECONDITION-ASSERTION  ② CASE-TRUST-NO-SELF-CLEAN  ③ CASE-TRUST-NO-EFFECT-ASSERTION
-    # 【真前置】本用例用**手机号唯一指代**（13800138000）定位靶子客户 —— 靶子不存在时红的表现是
-    #   `unmatched expectation`（看起来像「agent 不会改客户资料」，归因全错，同 `order_count_for_phone` 族的理由）。
-    #   取数走既有 `_probe_phone_order_count` → `GET /api/admin/orders?receiver=<手机号>`（与 AS-003 / OR-012 /
-    #   OR-006 同一部手机号、同一份「怎么数订单」的口径 —— **不另立第二份定义**，§18）。**刻意不声明
-    #   `expect: <N>`**：该基线随栈组成而变（同栈并行建单用例），写死常量 = 依赖栈的恒红判据（反模式 CH-034）
-    #   ⇒ 只用 runner 的**结构下界** `min: 1`。类型 `order_count_for_phone` 是**既有已登记**类型 ⇒ 不新增 type、不改探针。
-    #   ⚠️ 它与本用例的写动作**不冲突**：探针按 `orders.receiver`（订单收件手机号）计数，而本用例改的是
-    #   **客户档案**的手机号 ⇒ 靶子存在性在写完之后**依然成立**（不是「跑一遍就把自己的前置改没了」）。
-    # 【效果层 = `must_succeed`】「调用了 ≠ 成了」（#3778）：`expectations` 只证明 `customer_manage(action=update)`
-    #   被调用过且 args 对；工具返回 `success=false`（字段校验拒绝 / 并发改名冲突）时照样计分通过。
-    # 【自清理 = `customer_profile_restore`（**真复位**，issue #4992）】本用例把客户档案手机号
-    #   13800138000 → 13900001111 ⇒ 重跑前置不再等价（第二轮按 `13800138000` 定位不到客户）。
-    #   #4992 前夹具层**没有**「把客户档案改回来」的类型（已落地的五个：product_remove /
-    #   product_dedupe / employee_reactivate / aftersales_ticket_prepare / customer_tag_remove），
-    #   只能登记 `namespaces`（taxonomy 明列的**弱证据**档）。现补上 `customer_profile_restore`
-    #   （`tests/agent_eval/local_runner.py` 的复位族第二批）：
-    #     · `pre_clean` 的定位键 = **种子手机号**（13800138000）⇒ 首跑/重试都从种子态起跑；
-    #     · `post_clean` 的定位键 = **本用例写出去的值**（13900001111）⇒ 把它复位回种子号，
-    #       世界归零（后续读该客户档案的用例看到的是种子态）。
-    #   ⚠️ 弱证据 `namespaces` 随之**撤掉**：并行互斥的诉求已被"用例结束后世界即归零"覆盖
-    #   （同窗口并行改同一客户的用例读到的不再是对方的脏值）。
-    # 【断言面一字未放宽】`user_inputs` / `expectations` / `data_checks` / `skip_reason` **全部未动**，
-    #   只加上面两格复位声明 + 撤掉 `namespaces`。
+      - "仅 phone 被更新，未传字段保持原值（`update` 只下发 `data` 里给出的键）"
+      - "效果层：`must_succeed` 证明 `customer_manage(action=update)` 至少一次 `success=true`；`post_clean` 的 `customer_profile_restore` 按本用例写出的手机号定位并复位回种子号 —— 复位找不到目标即暴露「工具说改了、库里没改」的假成功"
     pre_clean:
       - type: customer_profile_restore
         customer_keyword: "13800138000"
@@ -254,8 +227,18 @@ cases:
         source: "13800138000"
     # ── 2026-09-24（issue #5247，B 端只读化）：`must_succeed[customer_manage]` **整格移除**
     # （写声明同步移除）—— `update` 已从源码删除 ⇒ 该断言在新事实下**永不满足**（悬空声明）。
-    skip_reason: "[backend-contract] #5247 B 端只读化（用户裁定 2026-09-23：B 端黄金策只做数据查询与分析，创建/更新能力与对应 tools 全部从 B 端移除）⇒ 本用例断言的「更新客户资料」（customer_manage / action=update）已从 B 端下线、工具已收窄为只读。用例条目与退役理由保留（不删除）；断言面改判为存活的只读路径 customer_manage(action=detail)（只读查询客户详情）。本条的正确判定层 = 工具层单测与 B 端绑定判据（traces.tests 已钉住）⇒ 按 [backend-contract] 分类：判定不在 LLM 层。"
-    merge_log: "verification 4.4 独有；2026-09-09 校准：补「选第一个」+「确认」两轮——「张三」生产有 3 位重名，agent 正确发 choice 卡澄清（#3142 修 validate_input 空转后不再幻觉「不支持」），需用户点选+确认后 update；probe 实证完整流程走通（重名澄清→选第一个→确认→update 成功）。2026-09-14 消除顺序依赖（issue #3568）：裸文本「第一个」→ 手机号唯一指代（重名澄清轮消失，干净栈/生产栈同判；连打三轮的澄清轮次表也随之消失） ｜ 2026-09-21（case-trust burn-down 缴费，metric=entries ⇒ 整条销账）：补 `namespaces[customer_phone:13800138000]`（弱证据，如实登记：夹具层无「把客户档案改回来」的复位动作）+ `precondition[order_count_for_phone: 13800138000]`（靶子存在性，结构化下界 `min:1`）+ `must_succeed[customer_manage]`（效果层）；`user_inputs` / `expectations` / `data_checks` / `skip_reason` 一字未动、断言强度不放宽 ｜ 2026-09-21（issue #4992 的夹具层复位动作）：自清理由**弱证据** `namespaces` 升级为**真复位** `pre_clean` + `post_clean[customer_profile_restore]`（`pre` 按种子手机号 13800138000 定位、`post` 按本用例写出的 13900001111 定位并复位回种子号；实现见 `tests/agent_eval/local_runner.py` 的 `_restore_customer_profile`），`namespaces` 随之撤掉 —— `user_inputs` / `expectations` / `data_checks` / `skip_reason` / `precondition` / `must_succeed` 一字未动、断言强度不放宽 ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：`customer_manage` 的写 action `update` 已删除（工具收窄为只读 `{list, detail, list_tags}`）⇒ 本用例退役（理由写在 `skip_reason`，条目不删除）；`expectations` 由 `customer_manage(action=update)` 改判为存活的只读路径 `customer_manage(action=detail)`，`must_succeed[customer_manage]` 整格移除（否则成为永不满足的悬空声明，会阻塞 CI 的 action 绑定判据）。"
+    must_succeed:
+      - tool: customer_manage
+        action: update
+    required_args:
+      - tool: customer_manage
+        args:
+          customer_id: ""
+          data: {}
+    skip_reason: ""
+    merge_log: >-
+      2026-11-04 un-skip（issue #8618：B 端工具缺口接回）——`customer_manage` 的 `update`（改客户资料）已接回 B 端（`PUT /api/admin/customers/{id}`，确认门禁 + `customer:create` 的 action 级复检 + prompt 口径同批落地）⇒ 本用例撤销 skip，`expectations` / `must_succeed` / `required_args` 三条写声明恢复；判定面 = 工具被真的调用 + 服务端真的改了数据（`post_clean` 的真复位是第二条证据），**不是**「agent 说了会做」。
+      ｜verification 4.4 独有；2026-09-09 校准：补「选第一个」+「确认」两轮——「张三」生产有 3 位重名，agent 正确发 choice 卡澄清（#3142 修 validate_input 空转后不再幻觉「不支持」），需用户点选+确认后 update；probe 实证完整流程走通（重名澄清→选第一个→确认→update 成功）。2026-09-14 消除顺序依赖（issue #3568）：裸文本「第一个」→ 手机号唯一指代（重名澄清轮消失，干净栈/生产栈同判；连打三轮的澄清轮次表也随之消失） ｜ 2026-09-21（case-trust burn-down 缴费，metric=entries ⇒ 整条销账）：补 `namespaces[customer_phone:13800138000]`（弱证据，如实登记：夹具层无「把客户档案改回来」的复位动作）+ `precondition[order_count_for_phone: 13800138000]`（靶子存在性，结构化下界 `min:1`）+ `must_succeed[customer_manage]`（效果层）；`user_inputs` / `expectations` / `data_checks` / `skip_reason` 一字未动、断言强度不放宽 ｜ 2026-09-21（issue #4992 的夹具层复位动作）：自清理由**弱证据** `namespaces` 升级为**真复位** `pre_clean` + `post_clean[customer_profile_restore]`（`pre` 按种子手机号 13800138000 定位、`post` 按本用例写出的 13900001111 定位并复位回种子号；实现见 `tests/agent_eval/local_runner.py` 的 `_restore_customer_profile`），`namespaces` 随之撤掉 —— `user_inputs` / `expectations` / `data_checks` / `skip_reason` / `precondition` / `must_succeed` 一字未动、断言强度不放宽 ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：`customer_manage` 的写 action `update` 已删除（工具收窄为只读 `{list, detail, list_tags}`）⇒ 本用例退役（理由写在 `skip_reason`，条目不删除）；`expectations` 由 `customer_manage(action=update)` 改判为存活的只读路径 `customer_manage(action=detail)`，`must_succeed[customer_manage]` 整格移除（否则成为永不满足的悬空声明，会阻塞 CI 的 action 绑定判据）。
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_base.py"

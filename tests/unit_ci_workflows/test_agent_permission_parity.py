@@ -269,6 +269,9 @@ class ToolDecl:
     declared_allowed_roles: tuple[str, ...] | None   # None = 类体未声明（吃 BaseTool 默认值）
     destructive: bool
     description: str
+    #: 只读 action 集（`READ_ONLY_ACTIONS` 模块常量或类体字面量；未声明 ⇒ 空集）。
+    #: 判据 10 用它判「部分写工具的读码是否仍管辖一条真的只读路径」（issue #8618）。
+    read_only_actions: frozenset[str] = frozenset()
     endpoints: tuple[tuple[str, str, str | None], ...] = ()   # (verb, 归一化路径, 生效码)
 
 
@@ -298,6 +301,23 @@ def _declares(node: ast.ClassDef, attr: str) -> bool:
     )
 
 
+def _module_const(tree: ast.Module, name: str):
+    """模块级常量字面量（`READ_ONLY_ACTIONS = frozenset({...})`）⇒ 值；取不到 ⇒ None。"""
+    for st in tree.body:
+        if (isinstance(st, ast.Assign) and len(st.targets) == 1
+                and isinstance(st.targets[0], ast.Name) and st.targets[0].id == name):
+            try:
+                return ast.literal_eval(st.value)
+            except ValueError:
+                # `frozenset({...})`：取调用参数里的字面量集合
+                if isinstance(st.value, ast.Call) and st.value.args:
+                    try:
+                        return ast.literal_eval(st.value.args[0])
+                    except ValueError:
+                        return None
+    return None
+
+
 def parse_tools(sources: dict[str, str]) -> tuple[ToolDecl, ...]:
     """S1：`app/tools/*.py` 里每个 `name = "..."` 的工具类声明。"""
     out: list[ToolDecl] = []
@@ -314,6 +334,15 @@ def parse_tools(sources: dict[str, str]) -> tuple[ToolDecl, ...]:
             ro = _class_literal(node, "read_only")
             rp = _class_literal(node, "required_permissions")
             ar = _class_literal(node, "allowed_roles")
+            # `read_only_actions`：类体字面量，或类体引用模块常量（如 `READ_ONLY_ACTIONS`）
+            roa = _class_literal(node, "read_only_actions")
+            if roa is None:
+                for st in node.body:
+                    if (isinstance(st, ast.Assign) and len(st.targets) == 1
+                            and isinstance(st.targets[0], ast.Name)
+                            and st.targets[0].id == "read_only_actions"
+                            and isinstance(st.value, ast.Name)):
+                        roa = _module_const(tree, st.value.id)
             out.append(
                 ToolDecl(
                     file=f"app/tools/{key.split(':', 1)[1]}",
@@ -324,6 +353,9 @@ def parse_tools(sources: dict[str, str]) -> tuple[ToolDecl, ...]:
                     declared_allowed_roles=None if ar is None else tuple(ar),
                     destructive=bool(_class_literal(node, "destructive") or False),
                     description=str(_class_literal(node, "description") or ""),
+                    read_only_actions=frozenset(
+                        str(a) for a in (roa or ()) if isinstance(a, str)
+                    ),
                 )
             )
     assert out, "工具解析出 0 个声明 ⇒ 判据会空跑（fail-closed）"
@@ -931,6 +963,39 @@ READ_WRITE_EXCEPTIONS_CEILING = 0
 #:   `code`（工具声明的码）· `diverges`（与声明码不同的端点路径，定界）· `live`（那些端点**现取**的
 #:   生效码，逐值冻结 ⇒ 端点侧一改就红）· `why`（为什么现在不动）· `where`（去向）。
 CODE_DIVERGENCE_EXCEPTIONS: dict[str, dict[str, object]] = {
+    # ── issue #8618（2026-11-04，B 端工具缺口接回）：第四条／第五条 ─────────────────
+    # 形态 = 「工具**必须**声明入口码，而它的端点在别的域」的既有结构性分歧（与上一条同族），
+    # 不是新口径。两条都写清 why/where 与**重启条件**（陈旧即红，由 `_divergence_ledger_problems` 判）。
+    "processing_item_manage": {
+        "code": "processing:manage",
+        "diverges": [
+            "/api/admin/processing-categories",
+            "/api/admin/processing-items/{}",
+        ],
+        "live": {
+            "/api/admin/processing-categories": "production:view",
+            "/api/admin/processing-items/{}": "production:view",
+        },
+        "why": (
+            "issue #8618（B 端工具缺口接回）：`processing_item_manage` 接回 B 端后暴露了它的既有事实 —— "
+            "**读端点挂 `production:view`、写端点挂 `processing:manage`**（`ProcessingItemController` / "
+            "`ProcessingCategoryController` 是**类级** `@RequirePermission(\"processing:manage\")`，"
+            "而 GET 的读面在 #5291 之后挂到了生产读码）。工具只能声明一个入口码：声明读码会让"
+            "「新增加工项」的持码人（`product_manager` 持 `processing:manage`）进不了工具；"
+            "声明写码则与 GET 的读码不等 —— 两条路都改授权面，属需人工裁定的五类，本单不做。"
+            "🔴 **为什么不构成越权**：工具声明的是**入口码**（它属于哪类操作面），不是数据面授权 —— "
+            "每个端点仍由 admin-api 自己的 `@RequirePermission` 逐面把关；缺码 ⇒ 403 ⇒ 工具 "
+            "fail-closed 并把 admin-api 的拒绝如实转述。"
+        ),
+        "where": (
+            "工具声明 `processing:manage`（写面 / 管理码，与「加工项与加工费」后台页的写操作同码）；"
+            "`GET /api/admin/processing-items/{}` 与 `GET /api/admin/processing-categories` 生效码 "
+            "`production:view`。两侧**本单零改动**（未碰任何 `@RequirePermission`）。"
+            "**重启条件** = 若将来由人工裁定「加工项读面应归并到 `processing:manage`」（或反方向），"
+            "则本条目**改判或删除**（陈旧即红）；届时同批要改的是控制器注解 + 工具声明 + 岗位目录三处。"
+            "判据 = `tests/unit_ci_workflows/test_agent_permission_parity.py` 的判据 2。"
+        ),
+    },
     "craft_config_query": {
         "code": "production:view",
         "diverges": [
@@ -1027,7 +1092,10 @@ CODE_DIVERGENCE_EXCEPTIONS: dict[str, dict[str, object]] = {
     # **跨域具名视图**固有的形态：一个视图要横跨**三个权限面**（客户 / 订单 / 售后），
     # 而仓内**没有任何一个码**同时覆盖这三面 ⇒ 工具声明的「入口码」必然 ≠ 其中两个端点的生效码。
     "customer_manage": {
-        "code": "customer:view",
+        # 🔴 issue #8618：接回 `update` 后**入口码 = 读码 ∪ 写码**（粗筛并集，进入工具后按
+        # action 逐端点复检）⇒ 登记为 `codes`（多个入口码）。写码 `customer:create` 的依据 =
+        # `PUT /api/admin/customers/{id}` 的 `@RequirePermission`。
+        "codes": ["customer:view", "customer:create"],
         "diverges": ["/api/admin/after-sales", "/api/admin/orders"],
         "live": {
             "/api/admin/after-sales": "after_sales:view",
@@ -1070,7 +1138,15 @@ CODE_DIVERGENCE_EXCEPTIONS: dict[str, dict[str, object]] = {
 #: issue #6217：2 → 3（新增 `customer_manage` 那条 —— 跨域视图横跨三个权限面，仓内无单码可覆盖）。
 #: issue #7514：3 → 4（新增 `craft_calc_config_update` 那条 —— 写工具的「读前校验 + 写面」
 #: 同路径不同方法、读写分码，工具声明写面码后与 GET 的读码结构性不等）。
-CODE_DIVERGENCE_EXCEPTIONS_CEILING = 4
+#: 🔴 issue #8618（2026-11-04）：4 → **5**。新增两条**结构性**分歧（都因「容量收窄/接回写面」而
+#: 必然出现，且都属「工具声明的入口码 ≠ 全部端点生效码」的既有形态）：
+#:   · `customer_manage` —— 接回写 action 后，**入口码**要同时含读码 `customer:view` 与写码
+#:     `customer:create`（`PUT /api/admin/customers/{id}` 的生效码），故与「读面 + 跨域取数面」
+#:     的生效码集合不再相等（跨域面本就已登记在 `CODS` 表里）；
+#:   · `processing_item_manage` —— 接回 B 端后暴露了它的**读端点为 `production:view`**、写端点
+#:     为 `processing:manage`（类级注解）这一既有事实：工具只能声明一个入口码。
+#: 两条都在下面 `CODE_DIVERGENCE_EXCEPTIONS` 里逐条登记了 why/where 与重启条件。
+CODE_DIVERGENCE_EXCEPTIONS_CEILING = 5
 
 #: **在飞端点**的显式登记（判据 1/2 的补集；issue #5314）。
 #:
@@ -1418,7 +1494,9 @@ def problems_endpoint_parity(w: World) -> list[str]:
             # 跨码工具的**具名**出口（issue #4923）：登记了才放行，其余一律照旧红；
             # 登记项本身也参与对账（陈旧 / 现取不符 / 缺字段 ⇒ 红）—— 见 `_divergence_ledger_problems`。
             entry = CODE_DIVERGENCE_EXCEPTIONS.get(t.name)
-            registered = bool(entry) and codes == {entry.get("code")} and all(
+            # 登记的入口码集合：新形态 `codes`（多个入口码，issue #8618）/ 旧形态 `code`（单码）。
+            registered_codes = set(entry.get("codes") or [entry.get("code")]) if entry else set()
+            registered = bool(entry) and codes == registered_codes and all(
                 _divergence_entry_problems(t, entry)
             )
             if not registered:
@@ -1463,8 +1541,13 @@ def _divergence_ledger_problems(w: World) -> list[str]:
             "（加一条例外必须在同一 diff 里显式改上限那一行 —— 评审可见）"
         )
     for name, entry in sorted(CODE_DIVERGENCE_EXCEPTIONS.items()):
-        declared_fields = ("code", "diverges", "live", "why", "where")
+        declared_fields = ("diverges", "live", "why", "where")
         empty = [f for f in declared_fields if not entry.get(f)]
+        # 入口码二选一：单码 `code`（旧形态）/ 多码 `codes`（issue #8618 起）—— 两者都必须真给
+        if not (entry.get("code") or entry.get("codes")):
+            empty.append("code")
+        if entry.get("code") and entry.get("codes"):
+            empty.append("code 与 codes 同时出现（二选一）")
         if empty:
             out.append(
                 f"`CODE_DIVERGENCE_EXCEPTIONS['{name}']` 缺字段 {empty}"
@@ -1475,10 +1558,13 @@ def _divergence_ledger_problems(w: World) -> list[str]:
 
 def _divergence_entry_problems(t: ToolDecl, entry: dict) -> list[str]:
     """单条登记 vs 现取读数（返回空 = 该条登记兑现、可放行）。"""
-    if not isinstance(entry.get("code"), str) or not isinstance(entry.get("diverges"), list):
-        return [f"`CODE_DIVERGENCE_EXCEPTIONS['{t.name}']` 的 code/diverges 形态非法"]
+    entry_codes = set(entry.get("codes") or [entry.get("code")])
+    if (not entry_codes or None in entry_codes
+            or not all(isinstance(c, str) for c in entry_codes)
+            or not isinstance(entry.get("diverges"), list)):
+        return [f"`CODE_DIVERGENCE_EXCEPTIONS['{t.name}']` 的 code/codes/diverges 形态非法"]
     live = {
-        path: perm for verb, path, perm in t.endpoints if perm != entry["code"]
+        path: perm for verb, path, perm in t.endpoints if perm not in entry_codes
     }
     problems = []
     if sorted(live) != sorted(entry["diverges"]):
@@ -1991,7 +2077,21 @@ def problems_read_code_anchoring(w: World) -> list[str]:
                     "⇒ 只读工具退回管理码"
                 )
             if not t.read_only:
-                out.append(f"{a.tool} 已不是只读工具（read_only=False）⇒ 读码的「只读」语义无从成立")
+                # 🔴 issue #8618：工具可以是「部分写」（#5247 收窄的工具又接回了**写** action，
+                # 如 `category_manage` 的 `create`）。此时读码仍然成立**当且仅当**：
+                # ① 它真有只读 action（读码真的管辖那条读路径）；② 写路径用**另一个**码
+                # （否则读码被写路径共用 ⇒ 「读/写分码」的授权语义又塌回去了）。
+                read_actions = set(getattr(t, "read_only_actions", None) or ())
+                write_codes = set(t.required_permissions) - {code}
+                if not read_actions:
+                    out.append(
+                        f"{a.tool} 既非只读工具、也没有任何只读 action ⇒ 读码 `{code}` 的"
+                        "「只读」语义无从成立")
+                elif not write_codes:
+                    out.append(
+                        f"{a.tool} 的写路径也用读码 `{code}`（required_permissions="
+                        f"{list(t.required_permissions)}）⇒ 读/写不再分码（把读码挂在写面 = "
+                        "只读持有者能改数据）")
         # ③ 菜单源：登记的每个 (源, 节点) 都必须**在**该源里、且码**逐字等于**本码
         for src, node in a.node_sources:
             nodes = w.menus.get(src, {})

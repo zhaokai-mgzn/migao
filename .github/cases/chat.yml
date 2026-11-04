@@ -573,7 +573,9 @@ cases:
       # 出口为什么不选"改 runner 的 direct_reply 语义"（如实登记）：那会**全局**放宽
       #   「无工具调用」这一条 —— 影响所有用 `direct_reply` 的用例（含 xiaobu 腿），
       #   属另一包射程；本包只按**本用例观测到的真行为**补等价分支。
-      - tool: direct_reply or interact or customer_manage
+      # 🔴 2026-11-04（issue #8618）：`customer_manage` 接回写 action 后成为「部分写」工具，
+      # bare 工具名按 taxonomy **保守判写** ⇒ 本分支显式写清只读 action，判定面才与事实一致。
+      - "direct_reply or interact or customer_manage(action=list)"
     # ── 效果层断言 + 自清理（2026-09-25，issue #3778 第一批）──
     # 本条的写分支（`order_create`）是**可选**的（C 端合格落地形态之一）⇒ 不能用无条件的
     # `must_succeed`：只发文本（`direct_reply`）是合格行为，无条件声明会把合格行为判红。

@@ -30,10 +30,12 @@ GENERAL_TOOLS = [
     "product_image_generate",
     "processing_item_query",
     "processing_order_query",
-    # 客户 / 售后 / 分类（均已只读化）
-    "customer_manage",
+    # 客户 / 售后 / 分类
+    # ⚠️ issue #8618（2026-11-04）：`customer_manage`（改客户资料）与 `category_manage`
+    # （建商品分类）接回写 action 后**不再是只读工具** ⇒ 按本文件与
+    # `test_general_tools_no_core_write_operations` 的兜底纪律（写操作必须走领域 Skill 的
+    # 确认链）把它们从兜底摘掉；客户查询随 `customer` 域走、分类查询随 `product` 域走。
     "after_sales_manage",
-    "category_manage",
     # 生产（只读；#3996 / #4201 / #5188 的既有只读面）
     "production_progress_query",
     "production_worklog_query",
