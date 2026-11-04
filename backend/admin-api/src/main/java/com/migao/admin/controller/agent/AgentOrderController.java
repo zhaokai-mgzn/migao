@@ -178,7 +178,8 @@ public class AgentOrderController {
         }
         // 强制用户隔离 + 仅允许状态筛选（不允许 keyword/receiver 等模糊条件，避免跨用户试探）；
         // phone 兜底仅作用于 user_id IS NULL 且 customer_phone=本人绑定号的订单（商户代录/历史订单）
-        PageResponse<OrderListResponse> result = orderService.getMyOrderPage(
+        // issue #8681（P2-1e 第二批）：门面的同名转发已退休 ⇒ 直连实现点（参数/响应逐字不变）。
+        PageResponse<OrderListResponse> result = orderQueryService.getMyOrderPage(
                 page, size, status, tenantId, userId, userPhone);
         return ApiResponse.success(result);
     }
