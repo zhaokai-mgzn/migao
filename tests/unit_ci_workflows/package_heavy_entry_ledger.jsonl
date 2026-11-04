@@ -87,3 +87,5 @@
 {"id":"1793429719.8934.447","ts":"2026-10-31T06:55:19Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/8218-p1-residual","why":"子包 worktree 直跑全量（无批次标记）"}
 {"id":"1793410739.30877.19453","ts":"2026-10-31T01:39:00Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/8203-observability","why":"子包 worktree 直跑全量（无批次标记）"}
 {"id":"1793677993.6863.31233","ts":"2026-11-03T03:53:15Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/8543-acceptance-ignore","why":"子包 worktree 直跑全量（无批次标记）"}
+{"id":"1793748869.11562.8188","ts":"2026-11-03T23:34:30Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/8290-split","why":"子包 worktree 直跑全量（无批次标记）"}
+{"id":"1793748884.11739.29879","ts":"2026-11-03T23:34:45Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/8290-split","why":"--allow-package-heavy（命令行显式）"}

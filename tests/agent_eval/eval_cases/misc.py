@@ -2,7 +2,7 @@
 # 本文件由 render_cases.py 生成，勿手改（改了也留不住：下次重渲染会覆盖）
 # 源: cases/*.yml（case-contract 单一源）
 # 重新生成: python3 render_cases.py --cases <dir> --out-eval <包目录> --out-md <md>
-# 域: misc（源: cases/misc.yml，214 条）
+# 域: misc（源: cases/misc.yml，215 条）
 
 from ._schema import Difficulty, EvalCase, Skill
 
@@ -3914,6 +3914,24 @@ _CASE_MC_184 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── MC-186 [NORMAL] 商品健康度视图拆分（issue #8290）：数值底座 + 判断 / 刻度 / 归因三块各自独立，门面保留全部既有名字（源: cases/misc.yml）──
+_CASE_MC_186 = EvalCase(
+    id='MC-186',
+    legacy_id='',
+    title='商品健康度视图拆分（issue #8290）：数值底座 + 判断 / 刻度 / 归因三块各自独立，门面保留全部既有名字',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['无（纯研发侧重构：backend/ai-agent-service/app/briefing/product_health.py 已 910 行，越过 test_loc_ratchet 的 800 线）'],
+    expectations=[],
+    data_checks=['**判据 1（会红）**：数值底座的接缝逐条钉住 —— `_dec` 读不出 ⇒ `None`、真 0 ⇒ `Decimal(0)`（0 是结论不是未知）、`_out` 4 位 HALF_UP 且 `None` 原样透出、计数为负 ⇒ `None`、`_gross_margin` 任一端未知 ⇒ `None`；注入「未知当 0」⇒ 同一条断言必红。执行点 = backend/ai-agent-service/tests/test_briefing_product_numbers.py。', '**判据 2（会红）**：判断层的分位口径（中位数奇偶 / p75 最近秩法 ceil(0.75n)）与 verdict 边界（等号归属：`<= peer_median` ⇒ good、`<= peer_p75` ⇒ watch、`> peer_p75` ⇒ bad）逐值钉住；方向表 `METRIC_DIRECTIONS` 是契约、翻方向 ⇒ 极值断言必红；未登记指标 ⇒ `KeyError` 且点名表名。执行点 = backend/ai-agent-service/tests/test_briefing_product_judgement.py。', '**判据 3（会红）**：刻度层的「成本未知不许当 0」（`stock_value=None` + 自述 `cost_unknown`）、每件增量不乘销量、差额有方向（正数 = 比同行中位少赚）；可选动作「没问题不给」（good / unknown ⇒ 无）、三要素齐全、内部标记 `money_kind` 不外泄。执行点 = backend/ai-agent-service/tests/test_briefing_product_options.py。', '**判据 4（会红）**：归因层「退货率是商品级 ⇒ 只给 `product_level_only` 且**没有** `gap`（变体 gap 恒为 0 = 假归因）」；单独一个 SKU / 兄弟毛利未知 / 兄弟都不比本行好 ⇒ `None`；能指到变体时优先指到变体。执行点 = backend/ai-agent-service/tests/test_briefing_product_attribution.py。', '**判据 5（会红·类级）**：门面 backend/ai-agent-service/app/briefing/product_health.py 必须**跌破 800 行且不再登记** —— 已从 tests/unit_ci_workflows/loc_ratchet_exemptions.json 销账（`declared_count` 59 → 58）；文件再涨回 ≥800 而未登记 ⇒ tests/unit_ci_workflows/test_loc_ratchet.py 判据 3 红；文件已跌破 800 却仍登记 ⇒ 判据 4 红。', '**判据 6（会红·兼容面）**：既有 6 个判据文件与 backend/ai-agent-service/app/tools/briefing_query.py 一律**不改** import —— `app.briefing.product_health.<名字>` 仍是唯一入口；摘掉任一再导出 ⇒ 那些文件在 import 期即红。'],
+    skip_reason='[backend-contract] 纯重构（行为零变化）+ 纯静态台账面：判据是 ai-agent 单测（真实跑 product_* 四个模块，零 LLM、零网络），不进入 agent-eval 冒烟',
+    tags=['refactor', 'loc-ratchet', 'briefing', 'product-health'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── MC-187 [NORMAL] 冒烟旅程 16- 的「生成作业单」走智能派单唯一入口，不许退化成可跳过的空判据（#7743）（源: cases/misc.yml）──
 _CASE_MC_187 = EvalCase(
     id='MC-187',
@@ -4146,5 +4164,6 @@ CASES = (
     _CASE_MC_155,
     _CASE_MC_182,
     _CASE_MC_184,
+    _CASE_MC_186,
     _CASE_MC_187,
 )

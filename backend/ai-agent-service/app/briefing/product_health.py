@@ -40,11 +40,28 @@
 `limit`（默认 `MAX_VIEW_ROWS`）是有界的硬前提；**输出被截断时每个字段都落 `incomplete`**（有界不许
 变成静默少报）。租户由调用方传入并原样回显（**不由行数据反推**）—— 隔离的关口在装配层（每条查询
 带租户），视图不承担取数，也不提供绕过通道。
+
+## 模块分层（issue #8290：本文件是**门面**）
+
+判断 / 刻度 / 归因三块原本与视图同住（893 行 ⇒ 越过 `test_loc_ratchet` 的 800 线），
+而拆不动的阻碍是**循环依赖**：三块都要用 `_dec` / `_out` / `_gross_margin` 等数值 helper，
+helper 同样住在本文件里。现已按「**数值底座 → 三块**」拆开，**对外名字与 import 路径一律不变**
+（`app.briefing.product_health` 仍是唯一入口，调用点无需改动）：
+
+| 模块 | 负责 | 依赖 |
+|---|---|---|
+| `app/briefing/product_numbers.py` | 数值读取与输出精度（「未知 vs 0」的唯一接缝） | 无（仓内零 import） |
+| `app/briefing/product_judgement.py` | 同行基线 + 分档 verdict + 指标方向表 | numbers |
+| `app/briefing/product_options.py` | 刻度（钱）与可选动作规则表 | numbers / judgement |
+| `app/briefing/product_attribution.py` | 归因（同款对照） | numbers / judgement |
+
+本文件保留：视图契约常量、服务端过滤事实、逐字段三态、视图行与 `product_health()`。
+🔴 新增决策维度请落到对应底层模块，**不要再往本文件堆**（否则会重新撞上 800 线）。
 """
 
 from __future__ import annotations
 
-from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
+from decimal import Decimal
 from typing import Any, Dict, List, Optional, Tuple
 
 # 内核读取器（声明优先 / 截断显式 / 行数组容错）—— 复用，不复制第二份（#5369 判据 3）
@@ -57,8 +74,38 @@ from app.briefing.proactive import (
     _row_meta,
     _rows,
 )
+from app.briefing.product_attribution import ATTRIBUTION_BASIS, _attribution, _sales_text
+from app.briefing.product_judgement import (
+    BASELINE_BASIS,
+    METRIC_DIRECTIONS,
+    MIN_BASELINE_SAMPLE,
+    VERDICT_BAD,
+    VERDICT_GOOD,
+    VERDICT_UNKNOWN,
+    VERDICT_WATCH,
+    _baselines,
+    _median,
+    _peer_baseline,
+    _p75,
+    _verdict,
+)
+from app.briefing.product_numbers import _OUTPUT_QUANT, _dec, _gross_margin, _int_or_none, _out
+from app.briefing.product_options import (
+    MONEY_BASIS,
+    OPTIONS_BASIS,
+    PRICE_UP_STEP,
+    _COST_LOW,
+    _OPTIONS,
+    _money,
+    _next_options,
+    _option_money,
+)
 from app.tools.stock_semantics import LOW_STOCK_OPERATOR, LOW_STOCK_THRESHOLD, STOCK_AUTHORITY
 
+# ── 复用件再导出（**兼容既有 import 路径**：issue #8290）──────────────────────────
+# 上面这些名字在拆分前都住在本模块，`app/briefing/product_health.py::<名字>` 是它们的既有入口
+# （`app/tools/briefing_query.py` 与 6 个判据文件都从这里取）。门面保留同名再导出 ⇒ **零调用点改动**；
+# 它们的实现与真值源在对应的底层模块（见模块 docstring 的分层表），本文件不再重复定义。
 __all__ = [
     "MAX_VIEW_ROWS",
     "VIEW_ID",
@@ -109,9 +156,6 @@ FORBIDDEN_ATTRIBUTIONS = (
     "没有任何 SKU",
 )
 
-#: 金额 / 比率的输出精度（4 位小数：与 `product_skus.avg_cost NUMERIC(12,4)` 同粒度）
-_OUTPUT_QUANT = Decimal("0.0001")
-
 #: 逐字段来源（**单点声明**）：视图字段 → （权威行数组，该数组里必须存在的字段）
 FIELD_SOURCES: Dict[str, Tuple[str, Tuple[str, ...]]] = {
     "sales_count": ("skus", ("sales_count",)),
@@ -147,410 +191,6 @@ _FIELD_NOTES = {
     "gross_margin": "毛利 = 售价 − 移动加权成本；成本未知 ⇒ 该行未知（不产出 0）",
     "return_rate": "退货率 = 退货工单数 ÷ 订单行数（同期窗口）；无分母 ⇒ 未知（不产出 0）",
 }
-
-
-# ── 数值读取（确定性：非数值 / 缺字段一律「未知」，不猜 0）─────────────────────
-
-
-def _dec(value: Any) -> Optional[Decimal]:
-    """读成 `Decimal`；非数值 / 非有限 / 缺省 ⇒ `None`（未知）。"""
-    if isinstance(value, bool) or value is None:
-        return None
-    if isinstance(value, Decimal):
-        parsed = value
-    else:
-        try:
-            parsed = Decimal(str(value).strip())
-        except (InvalidOperation, ValueError, TypeError):
-            return None
-    return parsed if parsed.is_finite() else None
-
-
-def _int_or_none(value: Any) -> Optional[int]:
-    """整数计数（条数）：读不出或为负 ⇒ `None`（未知）。"""
-    parsed = _dec(value)
-    if parsed is None or parsed < 0:
-        return None
-    return int(parsed)
-
-
-def _out(value: Optional[Decimal]) -> Optional[float]:
-    """`Decimal` ⇒ JSON 原生 `float`（定精度），`None` 原样透出。"""
-    if value is None:
-        return None
-    return float(value.quantize(_OUTPUT_QUANT, rounding=ROUND_HALF_UP))
-
-
-def _gross_margin(price: Optional[Decimal], avg_cost: Optional[Decimal]) -> Optional[Decimal]:
-    """毛利 = 售价 − 成本；**任一端未知 ⇒ `None`**（🔴 不得用 0 冒充「成本为零」）。
-
-    这是「未知 vs 0」的唯一接缝：注入式红证（`test_injected_zero_filling_turns_the_same_assertion_red`）
-    就是把本函数换成「未知当 0」的版本，同一断言必须变红。
-    """
-    if price is None or avg_cost is None:
-        return None
-    return price - avg_cost
-
-
-# ── 同行基线（peer baseline）与判断（verdict）—— issue #8234 ─────────────────
-
-#: 判定所需的最小有效样本量：少于它 ⇒ `unknown`（**样本太少不装懂**）
-MIN_BASELINE_SAMPLE = 5
-
-VERDICT_GOOD = "good"
-VERDICT_WATCH = "watch"
-VERDICT_BAD = "bad"
-VERDICT_UNKNOWN = "unknown"
-
-#: 基线性质自述（纪律 3：别让调用方把「相对」读成「绝对」）
-BASELINE_BASIS = (
-    "同行基线 = 同一份快照内全部 SKU 的中位数（peer_median）/ 上四分位（peer_p75，最近秩法）；"
-    "这是**相对**判断、**非绝对**标准 —— 全店整体偏高时，相对 good 不代表单店健康"
-)
-
-
-def _median(values: List[Decimal]) -> Optional[Decimal]:
-    """中位数（奇数取中位、偶数取中间两数均值）；空集 ⇒ `None`。"""
-    if not values:
-        return None
-    ordered = sorted(values)
-    middle = len(ordered) // 2
-    if len(ordered) % 2 == 1:
-        return ordered[middle]
-    return (ordered[middle - 1] + ordered[middle]) / Decimal(2)
-
-
-def _p75(values: List[Decimal]) -> Optional[Decimal]:
-    """上四分位（最近秩法，NIST 口径）：取第 `ceil(0.75n)` 个（1-based）；空集 ⇒ `None`。"""
-    if not values:
-        return None
-    ordered = sorted(values)
-    rank = -((-3 * len(ordered)) // 4)  # ceil(3n/4)，不引入 math
-    return ordered[max(0, min(rank - 1, len(ordered) - 1))]
-
-
-def _peer_baseline(values: List[Optional[float]]) -> Optional[Dict[str, Any]]:
-    """`{peer_median, peer_p75, sample_size}`；`None` 值**不进样本**，样本不足 ⇒ `None`。"""
-    known = [Decimal(str(value)) for value in values if value is not None]
-    if len(known) < MIN_BASELINE_SAMPLE:
-        return None
-    return {
-        "peer_median": _out(_median(known)),
-        "peer_p75": _out(_p75(known)),
-        "sample_size": len(known),
-    }
-
-
-#: 指标方向 —— **登记即契约**（issue #8293）。
-#:
-#: 为什么方向不能由调用方传参：缺陷 #8280 就是这么来的 —— `_verdict` 只为退货率写（「越小越好」），
-#: 毛利复制粘贴调用时**忘了传方向**，于是毛利越低越判「好」，而**那条单测也一起写反了**，CI 一直是绿的。
-#: ⇒ 方向必须来自**这张表**：调用方连传错的机会都没有；新指标没登记 ⇒ `KeyError` ⇒ 当场红。
-METRIC_DIRECTIONS: Dict[str, bool] = {
-    "return_rate": False,     # 越低越好：退货率高是坏事
-    "gross_margin": True,     # 越高越好：毛利高是好事
-}
-
-
-def _verdict(
-    metric: str,
-    value: Optional[float],
-    baseline: Optional[Dict[str, Any]],
-    *,
-    absolute_bad: bool = False,
-) -> str:
-    """分档。**方向从 `METRIC_DIRECTIONS` 查**（不由调用方传）。
-
-    默认（退货率这类「越小越好」的量）：`<= peer_median` ⇒ good；`<= peer_p75` ⇒ watch；
-    `> peer_p75` ⇒ bad。
-
-    `higher_is_better=True`（毛利这类「越大越好」的量）：`>= peer_median` ⇒ good；否则
-    `watch`（`< 0` 由 `absolute_bad` 先兜成 bad）。🔴 少传这个参数会让**毛利越低越被判好**
-    —— issue #8280 就是这么来的：`_verdict` 原本只为退货率写，毛利直接复用了它。
-
-    `absolute_bad=True` 时**先判绝对**（`value < 0` ⇒ bad）—— 毛利为负**不因**「全店都亏、
-    中位数也是负」而被相对判成 good（注入式红证见
-    `test_negative_margin_is_bad_even_when_the_whole_store_loses_money`）。
-    值未知或基线不可用（样本不足）⇒ `unknown`（**不装懂**）。
-    """
-    try:
-        higher_is_better = METRIC_DIRECTIONS[metric]
-    except KeyError:
-        raise KeyError(
-            f"指标 `{metric}` 没有登记方向 —— 在 `METRIC_DIRECTIONS`（product_health.py）里加一行："
-            "越高越好写 True、越低越好写 False。方向不许猜（issue #8293 / 缺陷 #8280）"
-        ) from None
-    if value is None:
-        return VERDICT_UNKNOWN
-    if absolute_bad and Decimal(str(value)) < 0:
-        return VERDICT_BAD
-    if baseline is None:
-        return VERDICT_UNKNOWN
-    current = Decimal(str(value))
-    median = Decimal(str(baseline["peer_median"]))
-    if higher_is_better:
-        # 越大越好：毛利有绝对判据兜底 bad（< 0），相对判据只需要「低于同行中位 ⇒ 值得看一眼」
-        return VERDICT_GOOD if current >= median else VERDICT_WATCH
-    if current <= median:
-        return VERDICT_GOOD
-    if current <= Decimal(str(baseline["peer_p75"])):
-        return VERDICT_WATCH
-    return VERDICT_BAD
-
-
-def _baselines(rows: List[Dict[str, Any]]) -> Dict[str, Optional[Dict[str, Any]]]:
-    """两条基线（退货率 / 毛利率）—— 用**全量**行算，不受输出截断影响。"""
-    return {
-        "return_rate": _peer_baseline([row.get("return_rate") for row in rows]),
-        "gross_margin": _peer_baseline([row.get("gross_margin") for row in rows]),
-    }
-
-
-# ── 可选动作（next options）—— issue #8251 ───────────────────────────────────
-# 判据：P0 让视图能说「判 bad」，但**然后呢？** 没有下文。给人一个方案叫「通知」，
-# 给几个选项**带代价与可逆性**才叫「帮决策」。
-#
-# v1 只收**可逆 + 低成本**的动作（清仓 / 下架 / 换供应商这类不可逆动作不进 v1，
-# 登记在 issue #8251「不在本单」—— 它们需要业务裁定，不是代码能替老板决定的）。
-
-#: 选项性质自述（纪律 3：别让调用方把「行业常见做法」读成「对你这家店的建议」）
-OPTIONS_BASIS = (
-    "行业常见做法，**不是**对具体店铺的建议；每条都需人工判断后再执行"
-)
-
-#: 试调价的固定步长（选项表是**确定性规则表** ⇒ 不做参数化，同一行永远同一组数）
-PRICE_UP_STEP = Decimal("0.05")
-
-#: 归因自述（P3「归因」issue #8279）—— **差异不是因果**
-ATTRIBUTION_BASIS = (
-    "同款对照，**只对 SKU 级信号有效**（毛利）：同一商品下多个变体之间比毛利率，"
-    "差异指向「问题更可能出在这个变体的**定价或成本维护**」。"
-    "退货率是**商品级**数据（`product_return_stats` 按 product_id 聚合）⇒ 同一商品所有 SKU 拿到同一个数，"
-    "**指不到具体变体** —— 这种情况只给「整款退货高」，不给变体归因。"
-    "这是**差异证据，不是因果结论**：样本量差很多时差异可能只是样本量（销量并排给出，由人判断）"
-)
-
-#: 金额自述（纪律 2：别让「给定情景的算术」被读成「预测」）
-MONEY_BASIS = (
-    "金额 = 给定情景下的**算术**，不是预测：成本未知的行不算钱（未知 ≠ 0）；"
-    "调价只算「每件多赚多少」—— 销量会怎么变我们没有**价格弹性**数据，不猜"
-)
-
-_COST_LOW = ("low", "低成本：只看数据 / 改文案")
-
-_OPTIONS: Dict[str, Dict[str, List[Dict[str, Any]]]] = {
-    "return_rate": {
-        VERDICT_BAD: [
-            {
-                "action": "先看这批退货的售后原因分布（色差 / 尺寸 / 物流 / 质量）",
-                "cost": "low",
-                "cost_note": _COST_LOW[1],
-                "reversible": True,
-                "verify": "售后工单按原因分组的条数；先知道「主要怪谁」再决定改什么",
-            },
-            {
-                "action": "在商品描述里补「实物色差 / 尺寸以实物为准」提示",
-                "cost": "low",
-                "cost_note": "改文案，不动物流与价格",
-                "reversible": True,
-                "verify": "两周后该 SKU 的退货率是否回落（对比本视图的 peer_median）",
-            },
-        ],
-        VERDICT_WATCH: [
-            {
-                "action": "先看这批退货的售后原因分布（色差 / 尺寸 / 物流 / 质量）",
-                "cost": "low",
-                "cost_note": _COST_LOW[1],
-                "reversible": True,
-                "verify": "售后工单按原因分组的条数",
-            },
-        ],
-    },
-    "gross_margin": {
-        VERDICT_BAD: [
-            {
-                "action": "先核对成本价是否已维护（成本未知时毛利根本不可算，本行的负数可能是脏数据）",
-                "cost": "low",
-                "cost_note": _COST_LOW[1],
-                "reversible": True,
-                "verify": "该 SKU 的 avg_cost 是否有值；有值才是真亏，无值只是「算不出来」",
-            },
-            {
-                "action": "核对近期是否有低于成本价的成交（改价 / 折扣叠加）",
-                "cost": "low",
-                "cost_note": _COST_LOW[1],
-                "reversible": True,
-                "verify": "改价记录与订单折扣：看这笔低价是「定价」还是「一次性的让利」",
-            },
-            {
-                "action": "小范围试调价（如 +5%），观察 2 周销量再决定是否扩大",
-                "cost": "medium",
-                "cost_note": "调价影响转化，需盯销量",
-                "reversible": True,
-                "verify": "两周内该 SKU 的销量与毛利双向变化；只涨毛利不涨销量的价格要慎用",
-                # 唯一能算钱的选项：+5% 每件多赚多少（见 _option_money）
-                "money_kind": "price_step",
-            },
-        ],
-        VERDICT_WATCH: [
-            {
-                "action": "核对成本价是否已维护（成本未知时毛利不可算）",
-                "cost": "low",
-                "cost_note": _COST_LOW[1],
-                "reversible": True,
-                "verify": "该 SKU 的 avg_cost 是否有值",
-            },
-        ],
-    },
-}
-
-
-def _attribution(
-    row: Dict[str, Any], siblings: List[Dict[str, Any]]
-) -> Optional[Dict[str, Any]]:
-    """归因（issue #8279）—— 「问题出在这个变体，还是整个商品？」。
-
-    🔴 关键约束（写码时实测撞出来的，见 issue #8279 的自我纠正评论）：
-    **退货率是商品级数据**（`product_return_stats` 按 `product_id` 聚合）⇒ 同一商品下所有 SKU
-    拿到**同一个** `return_rate`，拿它做变体对照的 gap **恒等于 0** —— 那是假归因。
-    ⇒ 变体归因**只能用 SKU 级信号（毛利）**；退货率只能落成 `product_level_only`（明说指不到变体）。
-
-    其余三条不许：
-    · **单独一个 SKU 不许给归因**：没有对照就没有差异，`None` 才是诚实的（不是「没问题」）。
-    · **兄弟的毛利未知不许算进来**：拿脏数据算差值，差值本身就成了噪音。
-    · **不给因果断言**：只说「差异指向这个变体的定价/成本」，不说「因为这个变体质量差」。
-    """
-    rate_verdict = row.get("return_rate_verdict")
-    margin_verdict = row.get("gross_margin_verdict")
-    if rate_verdict not in (VERDICT_BAD, VERDICT_WATCH) and margin_verdict not in (
-        VERDICT_BAD,
-        VERDICT_WATCH,
-    ):
-        return None
-
-    # ① 毛利（SKU 级）⇒ 可以指到变体
-    mine = _dec(row.get("gross_margin"))
-    if mine is not None and margin_verdict in (VERDICT_BAD, VERDICT_WATCH):
-        peers = [
-            item for item in siblings
-            if item.get("sku_id") != row.get("sku_id") and _dec(item.get("gross_margin")) is not None
-        ]
-        if peers:
-            best = max(peers, key=lambda item: _dec(item["gross_margin"]))
-            best_margin = _dec(best["gross_margin"])
-            if best_margin > mine:
-                return {
-                    "kind": "sibling_margin_contrast",
-                    "level": "sku",
-                    "sibling_count": len(peers) + 1,
-                    "best_sibling_sku_id": best.get("sku_id"),
-                    "best_sibling_gross_margin": _out(best_margin),
-                    "gap": _out(mine - best_margin),
-                    "sample_note": (
-                        f"本 SKU 销量 {_sales_text(row)}、对比的兄弟 {_sales_text(best)}；"
-                        "样本量差很多时差异可能只是样本量 —— 这是**差异证据，不是因果结论**"
-                    ),
-                }
-
-    # ② 退货率（商品级）⇒ **指不到变体**，只如实说清「整款高的原因不在这份数据里」
-    if rate_verdict in (VERDICT_BAD, VERDICT_WATCH):
-        return {
-            "kind": "product_level_only",
-            "level": "product",
-            "reason": (
-                "退货率是**商品级**数据（按 product_id 聚合）⇒ 同一商品下所有变体拿到同一个数，"
-                "这里**指不到具体变体**。要定位到变体，需要 SKU 级的退货原因数据（当前快照没有）"
-            ),
-        }
-
-    return None
-
-
-def _sales_text(row: Dict[str, Any]) -> str:
-    count = _num(row.get("sales_count"))
-    return "未知" if count is None else f"{int(count)} 件"
-
-
-def _money(row: Dict[str, Any], margin_baseline: Optional[Dict[str, Any]]) -> Dict[str, Any]:
-    """权衡的刻度（issue #8276）—— 「这批货压了多少钱 / 离同行差多少 / 每件多赚多少」。
-
-    🔴 三条不许：
-    · **成本未知不许当 0**：`stock_value = None` + 自述 `cost_unknown`。把未知写成 0 等于
-      说「这批货不占钱」，与事实**正好相反**（注入式红证见 `test_unknown_cost_is_not_zero_capital`）。
-    · **不乘销量**：`sales_count` 的周期口径在快照契约里没标注，乘上去就是编
-      （红证见 `test_price_step_does_not_multiply_by_sales_count`）。
-    · **不给「建议价」**：没有弹性数据，只算「+5% 这个情景下每件多赚多少」。
-    """
-    stock = _dec(row.get("stock"))
-    price = _dec(row.get("price"))
-    cost = _dec(row.get("avg_cost"))
-    margin = _dec(row.get("gross_margin"))
-
-    if cost is None:
-        stock_value, value_basis = None, "cost_unknown"
-    elif stock is None:
-        stock_value, value_basis = None, "stock_unknown"
-    else:
-        stock_value, value_basis = stock * cost, "stock × avg_cost"
-
-    peer_median = _dec((margin_baseline or {}).get("peer_median"))
-    gap = (peer_median - margin) if (margin is not None and peer_median is not None) else None
-
-    return {
-        "stock_value": _out(stock_value),
-        "stock_value_basis": value_basis,
-        # 正数 = 每件比同行中位**少赚**这么多（方向写反是最难发现的错）
-        "margin_gap_per_unit": _out(gap),
-        "margin_gap_basis": (
-            "peer_median − 本行毛利；正数 = 每件比同行中位少赚"
-            if gap is not None
-            else "基线样本不足（< 最小样本量）或本行毛利未知 ⇒ 算不出差额"
-        ),
-        "price_up_5pct_per_unit": _out(price * PRICE_UP_STEP) if price is not None else None,
-    }
-
-
-def _option_money(row: Dict[str, Any], money_kind: str) -> Optional[Dict[str, Any]]:
-    """选项层面的钱：**算得出才给**（算不出的不给字段，而不是给 0）。"""
-    if money_kind != "price_step":
-        return None
-    price = _dec(row.get("price"))
-    if price is None:
-        return None
-    return {
-        "per_unit": _out(price * PRICE_UP_STEP),
-        "premise": "销量不变假设下每件多赚这么多；销量会怎么变没有弹性数据（不猜）",
-    }
-
-
-def _next_options(row: Dict[str, Any]) -> Optional[List[Dict[str, Any]]]:
-    """按行的 verdict 产出去重后的可选动作；**没问题（good / unknown）⇒ 不产出**。
-
-    纯规则表（不读 LLM）⇒ 同一组 verdict 必然产出同一组选项（确定性由规则表保证，不需要额外排序）。
-    """
-    options: List[Dict[str, Any]] = []
-    seen = set()
-    for metric, verdict_field in (
-        ("return_rate", "return_rate_verdict"),
-        ("gross_margin", "gross_margin_verdict"),
-    ):
-        verdict = row.get(verdict_field)
-        if verdict not in (VERDICT_BAD, VERDICT_WATCH):
-            continue
-        for option in _OPTIONS.get(metric, {}).get(verdict, []):
-            key = (metric, option["action"])
-            if key in seen:
-                continue
-            seen.add(key)
-            entry = {**option, "metric": metric, "for_verdict": verdict}
-            money_kind = option.get("money_kind")
-            impact = _option_money(row, money_kind) if money_kind else None
-            if impact is not None:
-                entry["money_impact"] = impact
-            # 内部标记不外泄（它是规则表的元数据，不是给调用方看的）
-            entry.pop("money_kind", None)
-            options.append(entry)
-    return options or None
 
 
 def _blank_rows(snapshot: Any, array: str, field: str) -> int:
