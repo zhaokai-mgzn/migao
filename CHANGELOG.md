@@ -5,6 +5,26 @@
 > 原因 = 单文件涨到 512KB 越过扫描上限，详见存档文件头与 issue #6404。
 > **后续条目继续在本文件 `## [Unreleased]
 
+### 配置主线一次读齐：服务端聚合就绪度端点 + 主线接上「加工项 / 余料尺寸」（2026-11-04，issue #6579）
+
+- **改前**：`/settings`（企业基础设置）画「配置主线」要发 **5 个**读请求（工序价目 / 工艺路线 / 加工费组合 /
+  加工费缺口 / 算料配置）—— 任一失败只能落「读不到」，而**「没权限」与「网络失败」在界面上长得一样**，话术给不出
+  可行动出口；主线第 ① 步（工序与单价）**看不到孤儿工序**（要复刻工艺配置页的逻辑名去重口径 ⇒ 第二份会漂的实现，
+  故一直不参与判定）；「加工项」「余料尺寸」两步根本不在主线上。
+- **改后**：新增 `GET /api/admin/config-readiness`（方法级 `production:view`，与该页第一屏码 / 菜单节点码 / 路由守卫码
+  **同一个码**）—— **一个请求**给出七步的**事实**（工序与单价 `total`/`unpriced`/`orphans`、工艺路线
+  `missing_base_routes`、默认路线 `count`、加工项 `total`/`active`、加工费组合 `combinations`/`gaps`、
+  余料尺寸 `configured`/`items`、算料 `source`）+ 每步 `href`；前端只做「事实 → 三态」的翻译，**一个请求**画出七步主线。
+  孤儿工序按**工艺配置页同一口径**在服务端算（价目行引用 / 逻辑名去重 / 已定价的名字不算 / 空名不计）。
+- **口径（三条都是硬约束）**：① 端点**只给事实、不给三态**（`done` / `todo` / `unknown` 的唯一真值源仍是
+  `frontend/admin-web/src/lib/config-readiness.ts`）；② **跨码步骤按调用方权限整个省略** —— 余料尺寸的读面码是
+  `processing:manage`，不持该码时那一步**整个不在 `steps` 里**（不返回 0、不返回 forbidden 占位），主线只画六步；
+  ③ 聚合**复用既有 service**（零持久层直连、零手写查询、零新口径）。
+- 判据 = `tests/unit_ci_workflows/test_config_readiness_endpoint.py`（六条同值/接线判据，每条带注入式红证）+
+  `backend/admin-api/.../service/ConfigReadinessServiceTest.java`（事实逐值 + 跨码省略 + 取不到≠0）+
+  `.../controller/ConfigReadinessControllerTest.java`（方法级码 + 负控）+ `frontend/admin-web/tests/unit/pages/settings.test.tsx`
+  （只发一个请求 / 七步摘要 / 跨码步骤整行不画）+ `frontend/admin-web/tests/unit/lib/config-readiness.test.ts`（事实→三态）。
+
 ### 手机端（bmini 小程序）整体视觉统一到 PC 端「织物质感」：深蓝金 → 织物暖色（2026-11-04，issue #8600）
 
 - **改前**：PC 后台是织物暖色（primary 靛蓝 `#48618f` / neutral 米白 `#faf7f2` / accent 陶土 `#c06a3e` + 暖阴影），
