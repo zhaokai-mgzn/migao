@@ -196,7 +196,7 @@ _CASE_HR_010 = EvalCase(
     skill=Skill.GENERAL,
     difficulty=Difficulty.NORMAL,
     user_inputs=['帮我开个客服账号，姓名李四，手机号 13800009999，密码 Test123456', '确认'],
-    expectations=['employee_manage(action=create) or role_manage or interact'],
+    expectations=['employee_manage(action=create) or role_manage(action=list) or interact'],
     data_checks=['持 employee:create 的员工请求同一动作时，agent 必须走完创建（不得以权限为由拒绝）', '创建结果须回执给用户（账号已开/密码等），不得只展示查询结果就停（HR-003/PP-006/PR-005 同族）'],
     skip_reason='',
     tags=['permission', 'create', 'positive-control'],

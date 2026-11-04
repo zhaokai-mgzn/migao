@@ -55,7 +55,7 @@ cases:
       # 原「只读路径 action: list」是**过期的低标准**（把「不执行」奖励成合格）。
       # OR 第二分支 interact = 确认卡路径（写 action 受 confirm 门禁约束时发卡也合格）；
       # 但「只查员工列表就交差」不再合格 —— 判别力只增不减。
-      - tool: "employee_manage(action=create) or interact"
+      - "employee_manage(action=create) or interact"
     # 效果层断言（门禁 a2 条，#3778「调用了 ≠ 成了」）：expectations 只证明"调了/发了卡"，
     # 本字段证明**至少一次 create 真的 success=true**（否则「发完卡就停」也能绿）。
     must_succeed:
@@ -413,7 +413,7 @@ cases:
       # 已含 update、read_only=False（issue #7050 接回，PR #8561）⇒ 原「只读路径
       # action: detail」是**过期的低标准**（把「只读一下就交差」奖励成合格）。
       # ⚠️ 仍 skip 的真实原因 = **夹具缺口**（改号后没有复位路径，会自污染），见 skip_reason。
-      - tool: "employee_manage(action=update) or interact"
+      - "employee_manage(action=update) or interact"
     # 效果层断言（门禁 a2 条，#3778「调用了 ≠ 成了」）：update 必须**真的成功**，
     # 否则「发完确认卡就停」也能绿。
     must_succeed:
@@ -781,7 +781,7 @@ cases:
       # 「创建**非单据对象**（含员工/账号）」= ✅ 必须支持；employee_manage 的 VALID_ACTIONS
       # 已含 create、read_only=False（issue #7050 接回，PR #8561）⇒ 原「只读路径
       # role_manage(action=list)」把本条**标题**要求的「必须真的执行」判反了。
-      - tool: "employee_manage(action=create) or role_manage or interact"
+      - "employee_manage(action=create) or role_manage(action=list) or interact"
     # 效果层断言（门禁 a2 条，#3778「调用了 ≠ 成了」）：create 必须**真的成功**。
     must_succeed:
       - tool: employee_manage
