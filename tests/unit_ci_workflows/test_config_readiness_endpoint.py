@@ -94,6 +94,17 @@ _FORBIDDEN_SERVICE_PATTERNS: tuple[tuple[str, str], ...] = (
 )
 
 
+def _literal(raw: str) -> str:
+    """把一段「字面量尾巴」清成纯值：去掉首尾空白 / 分号 / 逗号 / 引号（**不用**引号捕获正则）。
+
+    为什么不写 `'"([^"]*)"'` 这种正则（issue #5325 的元守卫
+    `test_guard_parsing_is_comment_aware.py`）：按引号扫**原文**取值时，注释 / docstring 里
+    一句「看起来像声明」的话就能喂中它 ⇒ 判据的取值来源不是代码。这里改成
+    「先用结构锚点（`NAME = List.of(` / `hrefs.put(STEP_X,` / `href:`）切出那一段，再用字符串方法剥引号」。
+    """
+    return raw.strip().strip(",;").strip().strip("\"'").strip()
+
+
 def _class_level_annotation(text: str) -> str | None:
     """类级 `@RequirePermission("…")`（在 `public class` 之前出现的那个）。"""
     head = text.partition("public class ")[0]
@@ -160,8 +171,8 @@ def _domain_required_code(domains_text: str, domain_key: str) -> str | None:
         return None
     nxt = domains_text.find("  {\n    key: '", start)
     window = domains_text[start: nxt if nxt > 0 else len(domains_text)]
-    match = re.search(r"requiredCode:\s*'([^']+)'", window)
-    return match.group(1) if match else None
+    match = re.search(r"requiredCode:\s*([^,\n}]+)", window)
+    return _literal(match.group(1)) if match else None
 
 
 def problems_cross_code_single_source(
@@ -192,14 +203,14 @@ def _java_list(text: str, name: str) -> list[str]:
     match = re.search(rf"{re.escape(name)}\s*=\s*List\.of\(([^)]*)\)", text)
     if match is None:
         return []
-    return re.findall(r'"([^"]*)"', match.group(1))
+    return [value for value in (_literal(item) for item in match.group(1).split(",")) if value]
 
 
 def _ts_string_array(text: str, name: str) -> list[str]:
     match = re.search(rf"{re.escape(name)}\s*=\s*\[([^\]]*)\]", text)
     if match is None:
         return []
-    return re.findall(r"'([^']*)'", match.group(1))
+    return [value for value in (_literal(item) for item in match.group(1).split(",")) if value]
 
 
 def problems_base_route_names(service_text: str, readiness_ts: str, routing_py: str) -> list[str]:
@@ -227,14 +238,14 @@ def problems_base_route_names(service_text: str, readiness_ts: str, routing_py: 
 def _java_step_hrefs(service_text: str) -> dict[str, str]:
     """`STEP_*` 常量 → `hrefs.put(STEP_*, "...")` 的键值对（服务端七步的去处）。"""
     constants = {
-        name: value
-        for name, value in re.findall(r'(STEP_[A-Z_]+)\s*=\s*"([^"]*)"', service_text)
+        name: _literal(raw)
+        for name, raw in re.findall(r"(STEP_[A-Z_]+)\s*=\s*([^;\n]+)", service_text)
     }
     hrefs: dict[str, str] = {}
-    for step_constant, href in re.findall(r'hrefs\.put\(\s*(STEP_[A-Z_]+)\s*,\s*"([^"]*)"\s*\)', service_text):
+    for step_constant, raw in re.findall(r"hrefs\.put\(\s*(STEP_[A-Z_]+)\s*,\s*([^)]+?)\s*\)", service_text):
         key = constants.get(step_constant)
         if key is not None:
-            hrefs[key] = href
+            hrefs[key] = _literal(raw)
     return hrefs
 
 
@@ -246,10 +257,10 @@ def _ts_mainline_hrefs(readiness_ts: str) -> dict[str, str]:
     end = readiness_ts.find("\n]", start)
     block = readiness_ts[start: end if end > 0 else len(readiness_ts)]
     hrefs: dict[str, str] = {}
-    for entry in re.finditer(r"\{\s*key:\s*'([^']+)'(.*?)\n  \}", block, re.S):
-        href = re.search(r"href:\s*'([^']+)'", entry.group(2))
+    for entry in re.finditer(r"\{\s*key:\s*([^,\n]+)(.*?)\n  \}", block, re.S):
+        href = re.search(r"href:\s*([^,\n]+)", entry.group(2))
         if href:
-            hrefs[entry.group(1)] = href.group(1)
+            hrefs[_literal(entry.group(1))] = _literal(href.group(1))
     return hrefs
 
 
