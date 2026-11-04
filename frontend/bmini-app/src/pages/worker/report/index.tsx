@@ -696,11 +696,6 @@ export default function WorkerReportPage() {
               </View>
             ))}
           </View>
-          {state.finishedInbound.label?.short_code ? (
-            <Text className='worker-report__label-code' data-testid='worker-report-finished-code'>
-              {state.finishedInbound.label.short_code}
-            </Text>
-          ) : null}
           <Text className='worker-report__hint' data-testid='worker-report-finished-label-hint'>
             {printCapability.ok ? printCapability.readyHint : printCapability.hint}
           </Text>

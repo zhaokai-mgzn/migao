@@ -67,6 +67,24 @@ final class OptionFamilyNames {
     private OptionFamilyNames() {
     }
 
+    /**
+     * 落库键 ⇒ 展示名（族成员收回语义名；其余原样）—— 展示面唯一收敛点。
+     *
+     * <p>与前端 {@code frontend/admin-web/src/lib/order-craft-fields.ts::specialOptionDisplayName}
+     * 同口径（issue #8007 / #8108）；issue #8673 起成品入库标签复用。</p>
+     */
+    static String displayName(String name) {
+        if (name == null) {
+            return null;
+        }
+        for (Map.Entry<String, List<String>> family : FAMILIES.entrySet()) {
+            if (family.getValue().contains(name)) {
+                return family.getKey();
+            }
+        }
+        return name;
+    }
+
     /** 该名字是否属于某个布/纱派生族（语义名或任一派生键） */
     static boolean isFamilyName(String name) {
         if (name == null) {
