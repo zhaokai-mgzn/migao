@@ -2,7 +2,7 @@
 # 本文件由 render_cases.py 生成，勿手改（改了也留不住：下次重渲染会覆盖）
 # 源: cases/*.yml（case-contract 单一源）
 # 重新生成: python3 render_cases.py --cases <dir> --out-eval <包目录> --out-md <md>
-# 域: misc（源: cases/misc.yml，225 条）
+# 域: misc（源: cases/misc.yml，226 条）
 
 from ._schema import Difficulty, EvalCase, Skill
 
@@ -4131,6 +4131,24 @@ _CASE_MC_197 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── MC-202 [NORMAL] bmini 的每一条 SCSS @use / @import 相对路径都必须解析到仓里真实文件（sass 相对路径只在构建期解析，tsc 抓不到）（源: cases/misc.yml）──
+_CASE_MC_202 = EvalCase(
+    id='MC-202',
+    legacy_id='',
+    title='bmini 的每一条 SCSS @use / @import 相对路径都必须解析到仓里真实文件（sass 相对路径只在构建期解析，tsc 抓不到）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['N/A（构建期静态判据，无对话轮次）'],
+    expectations=['扫 frontend/bmini-app/src/**/*.scss 的每一条 @use / @import（跳过 sass: 内置与波浪线包名），目标在 (文件所在目录 / 目标) 下不存在 ⇒ 判红并具名给出文件与目标。', '判据自带失明检查：扫到的 @use/@import 条数为 0 也判红（防止守着一份不存在的语料）。'],
+    data_checks=['注入式红证：把 WorkerBackLink.scss 的 @use 改回多退一级的路径 ⇒ 1 failed；还原 ⇒ 1 passed。', '现取全仓读数：17 条 @use/@import，解析失败 0 条。', '为什么不靠 tsc：TypeScript 的 import 由 tsc 抓，Sass 的相对路径只在构建期被解析 ⇒ 静态判据缺位时只能靠一轮 CI 发现，而 bmini 两条腿不在 required 集合里，红着也不拦合并。'],
+    skip_reason='',
+    tags=['类级判据', '构建期失败', '相对路径'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 CASES = (
     _CASE_MC_001,
     _CASE_MC_002,
@@ -4357,4 +4375,5 @@ CASES = (
     _CASE_MC_196,
     _CASE_MC_198,
     _CASE_MC_197,
+    _CASE_MC_202,
 )

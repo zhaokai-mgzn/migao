@@ -4233,7 +4233,7 @@
 ```
 溯源: 2026-10-31 新增（issue #8295）：两步确认，避免误写 ｜ tags: ui, preview
 
-## 杂项域（225 case）
+## 杂项域（226 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -7639,6 +7639,17 @@
 ```
 真值: ⚠️ 缺口（见对应模板 ⚠️ 注释）
 溯源: 2026-11-04 新增（issue #8285，#8283 显式登记的缺口）。取号 MC-197（`python3 scripts/next_case_id.py MC` 现取 main 侧最大号 + claims 目录现取，180~196 段避开在飞占号）。修法 = 迁移 V208 给 `agent_batches` 加 `executor_id` / `heartbeat_at` 两列 + 一条带时效谓词的原子回收（`status='executing' AND (心跳为空 OR 心跳超时) ⇒ partial`）+ 心跳按明细续期且 0 行立刻停手 + 终态条件更新加执行者谓词（fencing）+ 每分钟一轮的回收薄壳。红证（注入式、逐条实跑、注入后均还原并核 sha256）：① 时效谓词恒真 ⇒ 判据 1/3 红；② 回收写 `done` ⇒ 判据 2 红；③ 来源态谓词放宽 ⇒ 判据 2′/4 红（期望 0 实得 1 / 期望 0 实得 4）；④ 摘掉终态执行者谓词 ⇒ 判据 4′ 红（期望 0 实得 1）；⑤ 删建库脚本 `heartbeat_at` 列 ⇒ 判据 5 红；⑥ 台账写路径改名 ⇒ 判据 6 红；⑦ 摘掉停手判定 ⇒ 判据 7 红。边界（照实登记）：回收只改批次状态、不碰明细 ⇒ 「已生效但条目状态未落库」的窗口**仍然存在**，本单只保证状态可回收 + 可撤销，不承诺精确到条目的自动复原（需要时另开对账单）。 ｜ tags: agent-batch, lease, heartbeat, crash-recovery, idempotent, multi-instance, fencing, red-proof
+
+### MC-202. bmini 的每一条 SCSS @use / @import 相对路径都必须解析到仓里真实文件（sass 相对路径只在构建期解析，tsc 抓不到） 🔵
+```
+你: N/A（构建期静态判据，无对话轮次）
+期望: 扫 frontend/bmini-app/src/**/*.scss 的每一条 @use / @import（跳过 sass: 内置与波浪线包名），目标在 (文件所在目录 / 目标) 下不存在 ⇒ 判红并具名给出文件与目标。
+期望: 判据自带失明检查：扫到的 @use/@import 条数为 0 也判红（防止守着一份不存在的语料）。
+数据: 注入式红证：把 WorkerBackLink.scss 的 @use 改回多退一级的路径 ⇒ 1 failed；还原 ⇒ 1 passed。
+数据: 现取全仓读数：17 条 @use/@import，解析失败 0 条。
+数据: 为什么不靠 tsc：TypeScript 的 import 由 tsc 抓，Sass 的相对路径只在构建期被解析 ⇒ 静态判据缺位时只能靠一轮 CI 发现，而 bmini 两条腿不在 required 集合里，红着也不拦合并。
+```
+溯源: ['2026-11-04 新增（PR #8671）。起因 = 同一 PR 里把颜色改走语义 token 时，照抄 src/components/cards/OrderCard.scss 的 @use ../../styles/… 多退了一级，合进 main 后红掉 bmini-app build (h5 + weapp) 与 bmini H5 tabBar geometry (e2e) 两条腿。'] ｜ tags: 类级判据, 构建期失败, 相对路径
 
 ## 商家入驻域（7 case）
 
@@ -15164,8 +15175,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：1026（活跃 160，跳过 866）
-- tier 分布：smoke 15 / normal 949 / adversarial 33
+- 用例总数：1027（活跃 161，跳过 866）
+- tier 分布：smoke 15 / normal 950 / adversarial 33
 - 售后域：16
 - Agent 核心域：13
 - API 层域：21
@@ -15181,7 +15192,7 @@
 - 人事域：13
 - 知识问答域：9
 - 客户主数据迁移域：10
-- 杂项域：225
+- 杂项域：226
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：76
@@ -15473,6 +15484,7 @@
 - MC-196: 就绪探针把「有监听但读超时」判成未就绪（issue #8647）：端口上有僵而不死的旧进程时，AI Agent 全量档不再在收集阶段中止；连接被拒 / 401 / 200 三条既有口径不回归
 - MC-198: 订单状态立单一源（issue #8198 的 P2-2a，纯收敛不生成）：载体 = `OrderStatusTransitions` 的 7 个常量（**加常量、不加类型** —— 2026-10-31 评论裁定；值与 DB 存储值逐字相等，「状态全集」的权威仍是 `STATUS_TRANSITIONS` 键集，不另立第二份）；`service/` 与 `controller/` 零订单状态裸字面量（注释里不算，唯一例外是那 7 行常量定义）；错误文案 / 状态取值 / JSON 逐字不变
 - MC-197: 批次后台 job 的跨实例执行租约（issue #8285）：心跳新鲜不误杀 / 心跳超时或为空 ⇒ 回收成可撤销 partial 且幂等 / 两个 executor 的活批次互不误伤 / 回收不覆盖终态（含 fencing）
+- MC-202: bmini 的每一条 SCSS @use / @import 相对路径都必须解析到仓里真实文件（sass 相对路径只在构建期解析，tsc 抓不到）
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）

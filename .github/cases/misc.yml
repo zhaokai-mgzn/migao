@@ -8269,3 +8269,32 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+
+  - id: MC-202
+    legacy_id: ""
+    title: "bmini 的每一条 SCSS @use / @import 相对路径都必须解析到仓里真实文件（sass 相对路径只在构建期解析，tsc 抓不到）"
+    domains:
+      - misc
+      - ci
+      - frontend
+    tier: normal
+    tags:
+      - 类级判据
+      - 构建期失败
+      - 相对路径
+    truths_ref: []
+    user_inputs:
+      - "N/A（构建期静态判据，无对话轮次）"
+    expectations:
+      - "扫 frontend/bmini-app/src/**/*.scss 的每一条 @use / @import（跳过 sass: 内置与波浪线包名），目标在 (文件所在目录 / 目标) 下不存在 ⇒ 判红并具名给出文件与目标。"
+      - "判据自带失明检查：扫到的 @use/@import 条数为 0 也判红（防止守着一份不存在的语料）。"
+    data_checks:
+      - "注入式红证：把 WorkerBackLink.scss 的 @use 改回多退一级的路径 ⇒ 1 failed；还原 ⇒ 1 passed。"
+      - "现取全仓读数：17 条 @use/@import，解析失败 0 条。"
+      - "为什么不靠 tsc：TypeScript 的 import 由 tsc 抓，Sass 的相对路径只在构建期被解析 ⇒ 静态判据缺位时只能靠一轮 CI 发现，而 bmini 两条腿不在 required 集合里，红着也不拦合并。"
+    skip_reason: ""
+    merge_log:
+      - "2026-11-04 新增（PR #8671）。起因 = 同一 PR 里把颜色改走语义 token 时，照抄 src/components/cards/OrderCard.scss 的 @use ../../styles/… 多退了一级，合进 main 后红掉 bmini-app build (h5 + weapp) 与 bmini H5 tabBar geometry (e2e) 两条腿。"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_bmini_scss_import_resolves.py"
