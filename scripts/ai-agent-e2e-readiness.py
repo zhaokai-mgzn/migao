@@ -143,4 +143,12 @@ def main(argv=None) -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except Exception as exc:  # noqa: BLE001 —— 探针**自身**坏了 ⇒ 「判不了」，不许落「未就绪」
+        # issue #8647：此前未捕获异常 = 解释器 `exit 1`，而 `exit 1` 在本脚本的三态里是
+        # **「有面未就绪」** ⇒ 探针崩溃被静默读成「环境没准备好」，读者永远看不到「探针自己坏了」
+        # （实测形态：ai-agent 的测试树里一个语法错文件 ⇒ `ast.parse` 抛 SyntaxError ⇒ 记成 ⏭️）。
+        # 口径：`2` = 无法判定 ⇒ 上游 `probe_ready()` 记「脚本配置错误」= ❌（判不了 ≠ 未就绪）。
+        print(f"无法判定：就绪探针自身异常（{type(exc).__name__}: {exc}）—— 判不了 ≠ 未就绪")
+        sys.exit(2)

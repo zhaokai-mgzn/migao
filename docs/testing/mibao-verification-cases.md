@@ -4221,7 +4221,7 @@
 ```
 溯源: 2026-10-31 新增（issue #8295）：两步确认，避免误写 ｜ tags: ui, preview
 
-## 杂项域（222 case）
+## 杂项域（223 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -7582,6 +7582,20 @@
 跳过: [backend-contract] 只读源码 + 工具对象（零 LLM / 零网络 / 零 DB）：写路径的**行为面**（模型是否真的先发确认卡）按 migao-dev-flow §13 默认不派发真实评测（#4262 用户裁定「不要自动验证」），需要时由人工集中跑一次（清单 = CU-004 / PP-006 / PP-007 / PP-008 / CT-002）。
 ```
 溯源: 2026-11-04 新增（issue #8618）。取号 = **MC-194**（main 侧现取最大 193；MC-099 属历史空档、按口径不回填； claims 目录留 `.github/cases/claims/8635-MC-194.json` 防在飞撞号）。本用例是**三条接回写能力的类级判据面**， 实例判据集中在 backend/ai-agent-service/tests/test_bend_write_tools_8618.py（形态照 #7050 的 test_employee_manage_write_actions.py，不另发明）。同批改判的登记面：`.github/assertion_taxonomy.py` 的 WRITE_TOOL_ACTIONS、`tests/unit_ci_workflows/test_mibao_b_end_readonly.py` 的 CHANGE_TOOLS_REQUIRED_ON_B_END / CHANGE_CLAIM_WORDS、`test_agent_permission_parity.py` 的 CODE_DIVERGENCE_EXCEPTIONS（+ processing_item_manage 条 / customer_manage 改多入口码 codes）、`test_mibao_case_invariants.py` 的 B 端工具集真值。 **边界（照实登记）**：客户建档 / 打标签、分类改名、加工项与分类删除**有意不接**（2026-10-16 终版裁定「只能改，不能删」）； 加工项/分类**无夹具复位动作** ⇒ PP-006~008 的自清理只能登记 namespaces 弱证据。 ｜ tags: agent-capability, write-action, confirm-gate, permission, red-proof, backend-contract
+
+### MC-196. 就绪探针把「有监听但读超时」判成未就绪（issue #8647）：端口上有僵而不死的旧进程时，AI Agent 全量档不再在收集阶段中止；连接被拒 / 401 / 200 三条既有口径不回归 🔵
+```
+你: 本机 8001 端口上有一个五天前的旧服务进程：健康检查路径还能回 200，其它路径接受连接后永不回包；此时跑 AI Agent 全量档
+数据: 判据 1·🔴 读超时 = 未就绪，且不抛异常：注入一个「接受连接但不回包」的本地监听者 ⇒ 判定函数返回一行可行动文案（含端口号 / 读超时 / 看谁占着该端口的出口命令），**不抛异常**（抛异常 ⇒ 模块级判定在收集阶段打挂整档，报表里既不是失败也不是未就绪）。红证 = 摘掉读超时那一段兜底 ⇒ 抛超时异常，该条当场红。执行点 = tests/unit_ci_workflows/test_live_service_readiness_timeout.py 的读超时一条。
+数据: 判据 2·🔴 连接被拒仍判未就绪（既有行为不回归）：注入一个没人监听的端口 ⇒ 仍是「服务未在运行」那一条文案。红证 = 摘掉连接段的兜底 ⇒ 抛连接被拒异常，该条当场红。
+数据: 判据 3·🔴 401 仍按既有口径：桩回 401 ⇒ 未就绪，文案带 HTTP 码并点明凭据不一致，且**不许**被并进「读超时」口径（401 恰恰证明服务在回包）。红证 = 删掉 401/403 分支 ⇒ 判成「就绪」，该条当场红。
+数据: 判据 4·🔴 200 仍判就绪：桩回 200 ⇒ 返回空串。红证 = 让判定函数恒返回文案 ⇒ 该条当场红。
+数据: 类级 A·传输层异常**整族**都不许上抛、也不许被读成「就绪」：读超时 / 连接重置 / 管道断开 / 对端提前断开 / 非 HTTP 响应 / 读不全 / 超时的两层包装，逐条注入 ⇒ 一律未就绪。红证 = 把兜底收窄成单一具体类型 ⇒ 五条当场红（本单的病就是「枚举漏了一个」）。
+数据: 类级 B·结构守卫：读响应段必须 catch 两类**基类**（OSError 与 http.client.HTTPException）⇒ 子类自动全部进来，不再依赖逐个列举；收窄成具体类型 ⇒ 该条当场红。
+数据: 顺带·错桶修正：就绪探针**自身**崩溃（实测形态 = 测试树里有一个语法错文件，现取面清单时解析失败）此前是退出码 1，而 1 在门禁三态里是「有面未就绪」⇒「探针坏了」被静默读成「环境没准备好」。现钉成退出码 2（无法判定 ⇒ 上游记失败），判据同时断言文案里明写「无法判定」+ 异常类型。
+跳过: [backend-contract] 纯 stdlib 探针（零 LLM / 零外网 / 只连本机回环桩）由 pytest 单测验证（tests/unit_ci_workflows/test_live_service_readiness_timeout.py），非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-11-04 新增（issue #8647）。病：`verify-all.sh agent` 在**收集阶段**中止 —— 本机 8001 上有一个五天前的 uvicorn（健康检查还能回 200，其它路径接受连接却不回包），而判定模块只 catch 了「连接失败」与 401、**没 catch 读超时** ⇒ 探针抛超时异常 ⇒ 模块级判定在收集阶段炸掉整档（报表里既不是失败也不是未就绪）。修法 = 最小改动：读响应段改成 catch 两类**基类**（OSError 与 http.client.HTTPException），超时族折成「未就绪 + 一行出口（看谁占着端口再 kill / 重启）」，其余传输异常折成「探不通 ⇒ 未就绪」；口径不变 = **未就绪、不计通过**，绝不折成「通过」或「跳过」。顺带把就绪探针自身崩溃的退出码从 1 改成 2（错桶修正：1 = 有面未就绪，2 = 无法判定）。取号 MC-196（`python3 scripts/next_case_id.py MC` 现取 main 到 195、claims 目录无 196；claims 目录留 `<PR号>-MC-196.json` 防在飞撞号）。红证 = 六次单变量注入逐条实跑（摘读超时兜底 / 摘连接段兜底 / 删 401 分支 / 恒返回文案 / 收窄成单一类型 / 摘探针自身兜底）分别红 2 / 1 / 1 / 1 / 6 / 1 条，逐字节还原后 15 条全绿。⚠️ 有意不做：不自动 kill 别人的进程（进程生命周期不归门禁管，只报出来并给出口）；不改档位与腿名。 ｜ tags: readiness, gate, read-timeout, zombie-listener, no-self-exemption
 
 ## 商家入驻域（7 case）
 
@@ -15107,8 +15121,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：1022（活跃 160，跳过 862）
-- tier 分布：smoke 15 / normal 945 / adversarial 33
+- 用例总数：1023（活跃 160，跳过 863）
+- tier 分布：smoke 15 / normal 946 / adversarial 33
 - 售后域：16
 - Agent 核心域：13
 - API 层域：21
@@ -15124,7 +15138,7 @@
 - 人事域：13
 - 知识问答域：9
 - 客户主数据迁移域：10
-- 杂项域：222
+- 杂项域：223
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：76
@@ -15413,6 +15427,7 @@
 - MC-193: B 端小程序（bmini）凭据的部署接线 + 缺失显式告警（issue #8196 ①）：变量名经 admin-api 的 env_file(.env.admin-api) 进容器、compose 的 environment 不得空值覆盖、启动期任一为空（含半配）打一条 WARN 点名缺哪个/影响/补法且不阻止启动、仓库里无凭据值
 - MC-195: Flaky Ledger Reconcile 自愈（issue #8628）：台账分支领先 main 却无 open PR 时**机械幂等补建**（不 arm、不 --admin、不受豁免）；ahead=0 / 已有 PR 零动作；补建失败一行可行动出口 + 非零退出
 - MC-194: **改客户资料 / 加工项增改停 / 建商品分类接回 B 端**（issue #8618）：action 枚举与 schema 同时可见（漏参数即不可调用）+ 权限走既有 required_permissions 粗筛与 action 级复检（码取控制器注解）+ 确认走既有 base_skill._requires_confirmation（react_turn 同一函数对象；未确认 ⇒ 不执行）+ 端点逐字对齐（PUT /api/admin/customers/{id} · POST /api/admin/categories · POST|PUT /api/admin/processing-items）+ 删除类 action 退场（停用改为 update_item(status=…)，可逆）
+- MC-196: 就绪探针把「有监听但读超时」判成未就绪（issue #8647）：端口上有僵而不死的旧进程时，AI Agent 全量档不再在收集阶段中止；连接被拒 / 401 / 200 三条既有口径不回归
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）
