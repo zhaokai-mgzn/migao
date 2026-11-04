@@ -14,7 +14,7 @@ import com.migao.admin.mapper.ProductMapper;
 import com.migao.admin.mapper.WarehouseLocationMapper;
 import com.migao.admin.service.NotificationRuleService;
 import com.migao.admin.service.NotificationTemplateService;
-import com.migao.admin.service.OrderService;
+import com.migao.admin.service.OrderQueryService;
 import com.migao.admin.service.WorkerAdminService;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
@@ -47,7 +47,11 @@ public class TenantResourceOwnership {
     private final ProcessingItemMapper processingItemMapper;
     private final ProcessingCategoryMapper processingCategoryMapper;
     private final AfterSalesTicketMapper afterSalesTicketMapper;
-    private final OrderService orderService;
+    /**
+     * 订单可见性认定的**实现点**（issue #8681，P2-1e）：本类只判「本租户可见吗」这一件事
+     * ⇒ 直接依赖 {@code OrderQueryService}（实现点），不再绕门面 {@code OrderService}。
+     */
+    private final OrderQueryService orderQueryService;
     /**
      * 通知模板 / 规则的服务（issue #6167）—— 这两张表在 {@code IGNORE_TENANT_TABLES} 里，
      * 归属语义**不与其余租户域资源同源**（见 {@link #registerChecks()} 的登记说明）。
@@ -173,7 +177,7 @@ public class TenantResourceOwnership {
         // （闸门语义的唯一实现点是 OrderStatusTransitions，由服务层在那条路上执行；这里多判一次
         // 就是第二套判定，正是本单要避免的）。
         checks.put("order", id -> {
-            if (!orderService.existsForCurrentTenant(id)) {
+            if (!orderQueryService.existsForCurrentTenant(id)) {
                 throw BusinessException.notFound("订单");
             }
         });

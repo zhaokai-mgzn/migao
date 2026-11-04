@@ -51,6 +51,13 @@ class OrderIntegrationTest {
     @Mock
     private com.migao.admin.service.RoleService roleService;
 
+    /**
+     * 发货人取值的实现点（issue #8681，P2-1e）：控制器改为直接依赖它，不再绕门面。
+     * 未打桩 ⇒ 返回 null —— 与拆分前「门面是 @Mock、同类方法同样返回 null」逐字一致。
+     */
+    @Mock
+    private com.migao.admin.service.OrderLifecycleService orderLifecycleService;
+
     @InjectMocks
     private OrderController orderController;
 

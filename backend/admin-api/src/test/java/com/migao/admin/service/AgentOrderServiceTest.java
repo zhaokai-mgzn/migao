@@ -492,14 +492,24 @@ class AgentOrderServiceTest {
     @DisplayName("订单 ID 解析")
     class ResolveOrderId {
 
+        /**
+         * 门面转发已删除（issue #8681，P2-1e）⇒ 判据改为**直测实现点**：真实
+         * {@code OrderQueryService}，协作者就是本类已 mock 的那几个 Mapper（不换一套假实现）。
+         */
         @Test
         @DisplayName("未找到 → 抛 BusinessException")
         void notFound() {
             when(orderMapper.selectById("notexist")).thenReturn(null);
             when(orderMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
 
-            assertThatThrownBy(() -> orderService.resolveOrderId("notexist", 1L))
-                    .isInstanceOf(BusinessException.class);
+            com.migao.admin.service.OrderQueryService queryService =
+                    new com.migao.admin.service.OrderQueryService(orderMapper, orderItemMapper,
+                            orderLogisticsMapper, productMapper, productSkuMapper, objectMapper, null,
+                            new com.migao.admin.time.BusinessClock());
+
+            assertThatThrownBy(() -> queryService.resolveOrderId("notexist", 1L))
+                    .isInstanceOf(BusinessException.class)
+                    .hasMessageContaining("未找到匹配的订单：notexist");
         }
     }
 

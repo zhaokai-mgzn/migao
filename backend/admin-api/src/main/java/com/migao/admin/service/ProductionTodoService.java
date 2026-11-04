@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.migao.admin.entity.Order;
 import com.migao.admin.entity.ProcessingOrder;
 import com.migao.admin.entity.ProcessingPositionOperation;
+import com.migao.admin.service.OrderLifecycleService;
 import com.migao.admin.mapper.OrderMapper;
 import com.migao.admin.mapper.ProcessingOrderMapper;
 import com.migao.admin.mapper.ProcessingPositionOperationMapper;
@@ -124,6 +125,11 @@ public class ProductionTodoService {
     private final OrderMapper orderMapper;
     private final ProcessingOrderMapper processingOrderMapper;
     private final ProcessingPositionOperationMapper positionOperationMapper;
+    /**
+     * 发货守卫的**实现点**（issue #8681，P2-1e）：{@code isProcessingReadyForShip} 直接依赖
+     * {@code OrderLifecycleService}，不再绕门面（门面的同名转发方法已删除）。
+     */
+    private final OrderLifecycleService orderLifecycleService;
 
     /** 生产待办总览（挂钟版；生产路径用）。 */
     public Map<String, Object> overview(Long tenantId) {
@@ -182,7 +188,7 @@ public class ProductionTodoService {
         List<Order> shipCandidates = candidateOrders(tenantId, SHIP_CANDIDATE_STATUSES);
         boolean truncated = shipCandidates.size() >= CANDIDATE_SCAN_LIMIT;
         for (Order order : shipCandidates) {
-            if (orderService.needsWork(order) && orderService.isProcessingReadyForShip(order)) {
+            if (orderService.needsWork(order) && orderLifecycleService.isProcessingReadyForShip(order)) {
                 todos.add(toShipTodo(order));
                 byType.merge(TYPE_TO_SHIP, 1, Integer::sum);
             }

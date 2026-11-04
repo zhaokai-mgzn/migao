@@ -497,26 +497,6 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
     }
 
     /**
-     * 订单在**当前租户**下是否可见（issue #6158）。
-     *
-     * <p>语义 = {@link #getOrderById} 的 404 那一半（同一条 {@code orderMapper.selectById}，由
-     * MyBatis-Plus 租户拦截器按 {@link com.migao.admin.config.TenantContext} 追加
-     * {@code tenant_id} 条件）—— 本单只做归属认定，**不**顺手带状态闸门
-     * （那是 {@code OrderStatusTransitions} 在写路径上的职责，多判一次 = 第二套判定）。</p>
-     *
-     * <p>存在理由：该认定要在 {@code PUT /api/admin/orders/{id}/content} 的**参数解析之前**
-     * 执行（见 {@code TenantOwnershipInterceptor}），而写路径自己的 {@code selectById}
-     * 发生在参数解析之后。</p>
-     *
-     * @param id 订单ID
-     * @return 当前租户下可见 ⇒ true
-     */
-    public boolean existsForCurrentTenant(String id) {
-        // 门面委托（issue #8191，P2-1a）：查询族实现点在 OrderQueryService，调用方零改动。
-        return queryService().existsForCurrentTenant(id);
-    }
-
-    /**
      * 创建订单（issue #8191，P2-1b）：实现点在 {@link OrderCreationService}，本方法只留门面委托（调用方零改动）。
      *
      * <p>事务注解随方法体搬到新服务（{@code @Transactional} 逐字跟随，边界不变）；本类把建单与改单共用的
@@ -1020,8 +1000,6 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         lifecycleService().updateOrderStatus(id, status, this);
     }
 
-
-
     /**
      * 删除订单（逻辑删除，仅允许待确认状态）
      *
@@ -1306,15 +1284,6 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
     }
 
     /**
-     * 发货前置判据（issue #8191，P2-1d）：实现点已搬到 {@link OrderLifecycleService}；
-     * 判定本体仍在 {@link OrderShipGuard}（单一实现点），本方法只留门面委托。
-     */
-    public boolean isProcessingReadyForShip(Order order) {
-        return lifecycleService().isProcessingReadyForShip(order);
-    }
-
-
-    /**
      * 加载订单明细（走 BaseMapper，确保 processing_info 经 JacksonTypeHandler 反序列化为 Map）。
      * 与 getOrderById 的既有约定一致（见查询明细处的注释）。
      */
@@ -1422,13 +1391,6 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
      */
     public void confirmPayment(String id) {
         lifecycleService().confirmPayment(id);
-    }
-
-    /**
-     * validateStockSufficient（issue #8191，P2-1c）：实现点已搬到 {@link StockService}，本方法只留门面委托。
-     */
-    private void validateStockSufficient(Order order) {
-        stockService().validateStockSufficient(order);
     }
 
     /**
@@ -1602,44 +1564,6 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         log.info("添加订单备注成功: id={}", id);
     }
 
-
-    /**
-     * effectiveActualAmount（issue #8191，P2-1c）：实现点已搬到 {@link FeeSupport}，本方法只留门面委托。
-     */
-    private BigDecimal effectiveActualAmount(Order order) {
-        return feeSupport().effectiveActualAmount(order);
-    }
-
-    /**
-     * recordFinanceTransaction（issue #8191，P2-1c）：实现点已搬到 {@link FeeSupport}，本方法只留门面委托。
-     */
-    private void recordFinanceTransaction(Order order, String type, String remark) {
-        feeSupport().recordFinanceTransaction(order, type, remark);
-    }
-
-    /**
-     * recordFinanceTransaction（issue #8191，P2-1c）：实现点已搬到 {@link FeeSupport}，本方法只留门面委托。
-     */
-    private void recordFinanceTransaction(Order order, BigDecimal amount, String type, String remark) {
-        feeSupport().recordFinanceTransaction(order, amount, type, remark);
-    }
-
-
-
-    /**
-     * deductStockAndIncreaseSales（issue #8191，P2-1c）：实现点已搬到 {@link StockService}，本方法只留门面委托。
-     */
-    private void deductStockAndIncreaseSales(String orderId) {
-        stockService().deductStockAndIncreaseSales(orderId);
-    }
-
-    /**
-     * restoreStockAndDecreaseSales（issue #8191，P2-1c）：实现点已搬到 {@link StockService}，本方法只留门面委托。
-     */
-    private void restoreStockAndDecreaseSales(String orderId) {
-        stockService().restoreStockAndDecreaseSales(orderId);
-    }
-
     /**
      * restoreStockForReturn（issue #8191，P2-1c）：实现点已搬到 {@link StockService}，本方法只留门面委托。
      */
@@ -1663,19 +1587,7 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         return stockBatchConsumptionService;
     }
 
-
-
-
-
-
-
-
-
-
-
-
     // ======================== Agent BFF 方法 ========================
-
 
     /**
      * Agent 专用创建订单（issue #8191，P2-1b）：实现点在 {@link OrderCreationService}，本方法只留门面委托。
@@ -1744,14 +1656,6 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
     }
 
     /**
-     * 发货人取值（issue #8191，P2-1d）：实现点已搬到 {@link OrderLifecycleService}，本方法只留门面委托。
-     */
-    public String resolveShipperName(String provided) {
-        return lifecycleService().resolveShipperName(provided);
-    }
-
-
-    /**
      * 发货（issue #8191，P2-1d）：实现点已搬到 {@link OrderLifecycleService}，本方法只留门面委托。
      * 公开类型 {@link OrderShipmentOutcome} 与签名**逐字保留**（调用方零改动）。
      */
@@ -1781,17 +1685,6 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
      *                     {@code false} = 订单本来就已是 {@code shipped}（本路只补记/纠正物流）
      */
     public record OrderShipmentOutcome(Map<String, Object> result, boolean transitioned) {
-    }
-
-
-
-    /**
-     * 通过订单号/UUID/关键词解析订单 UUID。
-     * GET /api/admin/agent/orders/resolve?keyword=xxx 的核心逻辑。
-     */
-    public AgentOrderResolveResponse resolveOrderId(String keyword, Long tenantId) {
-        // 门面委托（issue #8191，P2-1a）：查询族实现点在 OrderQueryService，调用方零改动。
-        return queryService().resolveOrderId(keyword, tenantId);
     }
 
     /**

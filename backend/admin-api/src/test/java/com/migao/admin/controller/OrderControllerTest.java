@@ -5,6 +5,7 @@ package com.migao.admin.controller;
 import com.migao.admin.dto.*;
 import com.migao.admin.entity.OrderLogistics;
 import com.migao.admin.exception.BusinessException;
+import com.migao.admin.service.OrderLifecycleService;
 import com.migao.admin.service.OrderLogisticsService;
 import com.migao.admin.service.OrderService;
 import org.junit.jupiter.api.BeforeEach;
@@ -41,6 +42,8 @@ class OrderControllerTest extends BaseControllerTest {
     /** 数据范围解析（issue #7372）：本类只验控制器接线，范围解析本身的判据在 DataScopeTest / RoleServiceTest。 */
     @Mock private com.migao.admin.service.RoleService roleService;
     @Mock private OrderLogisticsService orderLogisticsService;
+    /** 发货人取值的实现点（issue #8681，P2-1e）：控制器直接依赖新服务，不再绕门面。 */
+    @Mock private OrderLifecycleService orderLifecycleService;
 
     @InjectMocks
     private OrderController orderController;
@@ -423,7 +426,7 @@ class OrderControllerTest extends BaseControllerTest {
         void persistsNoneShippingMethodOnCreate() throws Exception {
             when(orderService.getOrderById(eq(ORDER_ID), isNull())).thenReturn(orderWithStatus("confirmed"));
             when(orderLogisticsService.getByOrderId(ORDER_ID)).thenReturn(List.of());
-            when(orderService.resolveShipperName(null)).thenReturn("李四");
+            when(orderLifecycleService.resolveShipperName(null)).thenReturn("李四");
 
             mockMvc.perform(put(BASE + "/" + ORDER_ID + "/logistics")
                             .contentType(MediaType.APPLICATION_JSON)
@@ -454,7 +457,7 @@ class OrderControllerTest extends BaseControllerTest {
         void rejectsLogisticsWithoutTrackingNoAndWritesNothing() throws Exception {
             when(orderService.getOrderById(eq(ORDER_ID), isNull())).thenReturn(orderWithStatus("confirmed"));
             when(orderLogisticsService.getByOrderId(ORDER_ID)).thenReturn(List.of());
-            when(orderService.resolveShipperName(null)).thenReturn("李四");
+            when(orderLifecycleService.resolveShipperName(null)).thenReturn("李四");
 
             mockMvc.perform(put(BASE + "/" + ORDER_ID + "/logistics")
                             .contentType(MediaType.APPLICATION_JSON)
@@ -470,7 +473,7 @@ class OrderControllerTest extends BaseControllerTest {
         void acceptsLogisticsWithTrackingNo() throws Exception {
             when(orderService.getOrderById(eq(ORDER_ID), isNull())).thenReturn(orderWithStatus("confirmed"));
             when(orderLogisticsService.getByOrderId(ORDER_ID)).thenReturn(List.of());
-            when(orderService.resolveShipperName("王五")).thenReturn("王五");
+            when(orderLifecycleService.resolveShipperName("王五")).thenReturn("王五");
 
             mockMvc.perform(put(BASE + "/" + ORDER_ID + "/logistics")
                             .contentType(MediaType.APPLICATION_JSON)
@@ -536,7 +539,7 @@ class OrderControllerTest extends BaseControllerTest {
         void createsLogisticsWithExplicitShipper() throws Exception {
             when(orderService.getOrderById(eq(ORDER_ID), isNull())).thenReturn(orderWithStatus("confirmed"));
             when(orderLogisticsService.getByOrderId(ORDER_ID)).thenReturn(List.of());
-            when(orderService.resolveShipperName("王五")).thenReturn("王五");
+            when(orderLifecycleService.resolveShipperName("王五")).thenReturn("王五");
 
             mockMvc.perform(put(BASE + "/" + ORDER_ID + "/logistics")
                             .contentType(MediaType.APPLICATION_JSON)
@@ -552,7 +555,7 @@ class OrderControllerTest extends BaseControllerTest {
         void createsLogisticsWithFallbackShipper() throws Exception {
             when(orderService.getOrderById(eq(ORDER_ID), isNull())).thenReturn(orderWithStatus("producing"));
             when(orderLogisticsService.getByOrderId(ORDER_ID)).thenReturn(List.of());
-            when(orderService.resolveShipperName(null)).thenReturn("李四");
+            when(orderLifecycleService.resolveShipperName(null)).thenReturn("李四");
 
             mockMvc.perform(put(BASE + "/" + ORDER_ID + "/logistics")
                             .contentType(MediaType.APPLICATION_JSON)
@@ -613,7 +616,7 @@ class OrderControllerTest extends BaseControllerTest {
 
             when(orderService.getOrderById(eq(ORDER_ID), isNull())).thenReturn(orderWithStatus("shipped"));
             when(orderLogisticsService.getByOrderId(ORDER_ID)).thenReturn(List.of(legacy));
-            when(orderService.resolveShipperName("赵六")).thenReturn("赵六");
+            when(orderLifecycleService.resolveShipperName("赵六")).thenReturn("赵六");
 
             mockMvc.perform(put(BASE + "/" + ORDER_ID + "/logistics")
                             .contentType(MediaType.APPLICATION_JSON)
