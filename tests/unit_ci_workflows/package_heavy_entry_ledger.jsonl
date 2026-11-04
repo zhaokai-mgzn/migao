@@ -129,3 +129,4 @@
 {"id":"1793806411.53275.27981","ts":"2026-11-04T15:33:31Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/8198b-codegen","why":"--allow-package-heavy（命令行显式）"}
 {"id":"1793807667.44572.3481","ts":"2026-11-04T15:54:27Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/8198b-codegen","why":"--allow-package-heavy（命令行显式）"}
 {"id":"1793808576.34124.11613","ts":"2026-11-04T16:09:36Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/8198b-codegen","why":"--allow-package-heavy（命令行显式）"}
+{"id":"1793833324.56036.8651","ts":"2026-11-04T23:02:05Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/7583-seed","why":"--allow-package-heavy（命令行显式）"}
