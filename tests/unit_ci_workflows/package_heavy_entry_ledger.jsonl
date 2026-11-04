@@ -115,3 +115,4 @@
 {"id":"1793786435.46302.23727","ts":"2026-11-04T10:00:35Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/8285-lease","why":"--allow-package-heavy（命令行显式）"}
 {"id":"1793787397.65276.4042","ts":"2026-11-04T10:16:37Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/8285-lease","why":"--allow-package-heavy（命令行显式）"}
 {"id":"1793789456.68254.15007","ts":"2026-11-04T10:50:56Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/8285-lease","why":"--allow-package-heavy（命令行显式）"}
+{"id":"1793789661.73445.8844","ts":"2026-11-04T10:54:21Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/8285-lease","why":"--allow-package-heavy（命令行显式）"}
