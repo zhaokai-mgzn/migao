@@ -4221,7 +4221,7 @@
 ```
 溯源: 2026-10-31 新增（issue #8295）：两步确认，避免误写 ｜ tags: ui, preview
 
-## 杂项域（222 case）
+## 杂项域（223 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -7582,6 +7582,23 @@
 跳过: [backend-contract] 只读源码 + 工具对象（零 LLM / 零网络 / 零 DB）：写路径的**行为面**（模型是否真的先发确认卡）按 migao-dev-flow §13 默认不派发真实评测（#4262 用户裁定「不要自动验证」），需要时由人工集中跑一次（清单 = CU-004 / PP-006 / PP-007 / PP-008 / CT-002）。
 ```
 溯源: 2026-11-04 新增（issue #8618）。取号 = **MC-194**（main 侧现取最大 193；MC-099 属历史空档、按口径不回填； claims 目录留 `.github/cases/claims/8635-MC-194.json` 防在飞撞号）。本用例是**三条接回写能力的类级判据面**， 实例判据集中在 backend/ai-agent-service/tests/test_bend_write_tools_8618.py（形态照 #7050 的 test_employee_manage_write_actions.py，不另发明）。同批改判的登记面：`.github/assertion_taxonomy.py` 的 WRITE_TOOL_ACTIONS、`tests/unit_ci_workflows/test_mibao_b_end_readonly.py` 的 CHANGE_TOOLS_REQUIRED_ON_B_END / CHANGE_CLAIM_WORDS、`test_agent_permission_parity.py` 的 CODE_DIVERGENCE_EXCEPTIONS（+ processing_item_manage 条 / customer_manage 改多入口码 codes）、`test_mibao_case_invariants.py` 的 B 端工具集真值。 **边界（照实登记）**：客户建档 / 打标签、分类改名、加工项与分类删除**有意不接**（2026-10-16 终版裁定「只能改，不能删」）； 加工项/分类**无夹具复位动作** ⇒ PP-006~008 的自清理只能登记 namespaces 弱证据。 ｜ tags: agent-capability, write-action, confirm-gate, permission, red-proof, backend-contract
+
+### MC-197. 批次后台 job 的跨实例执行租约（issue #8285）：心跳新鲜不误杀 / 心跳超时或为空 ⇒ 回收成可撤销 partial 且幂等 / 两个 executor 的活批次互不误伤 / 回收不覆盖终态（含 fencing） 🔵
+```
+你: 批次后台 job 崩了以后批次会永远停在「执行中」：单实例重启后分不清「真的还在跑」和「上一次进程已死」；多实例时更不敢回收 —— 任一实例一动手就会把另一实例正在跑的批次标成部分失败，而那个 job 其实还活着。
+数据: **判据 1（会红）·心跳新鲜 ⇒ 回收 0 行**：`status=executing` 且心跳是刚才的批次（活 job）跑一轮回收后必须 **0 行**、状态仍是 `executing`、`executor_id` 不被清空。执行点 = `backend/admin-api/src/test/java/com/migao/admin/service/AgentBatchLeaseRecoveryRealDbTest.java`。红证：把回收 SQL 的心跳时效谓词改成恒真 ⇒ 该判据当场红（活批次被回收）。
+数据: **判据 2（会红）·心跳超时或为空 ⇒ 可撤销的 partial**：心跳停在两小时前、以及从未心跳（列为空）的两种批次都收回成 `partial`，`executor_id` 置空且补 `executed_at`；随后走**既有撤销路径**能把它撤销成 `reverted`（执行成功过的条目逐条还原，未生效的置跳过）。红证：把回收写入的状态改成 `done` ⇒ 该判据红在状态断言（期望 `partial`）。
+数据: **判据 2′（会红）·重复回收幂等**：同一批回收两次，第二轮必须 0 行，且状态与 `executed_at` 逐字不变。红证：把回收的来源态谓词放宽（不再限定 `executing`）⇒ 第二轮又改到同一批（期望 0 行、实得 1 行）⇒ 判据红。
+数据: **判据 3（会红）·两个实例的活批次互不误伤**：两个不同 `executor_id` 各持一个 `executing` 批次、心跳都新鲜 ⇒ 任一实例的回收都是 0 行；把其中一个的心跳改成超时后，只回收它那一条，另一个仍 `executing` 且 `executor_id` 不变；另一个租户里的活批次同样不在射程内，且取数面确实跨租户（扫到 2 个租户）。红证：同上「时效谓词恒真」注入 ⇒ 两侧活批次一起被回收，该判据红。
+数据: **判据 4（会红）·回收不覆盖终态**：`done` / `partial` / `reverted` / `revert_partial` 四条（心跳都为空）在同租户**有活批次**的前提下一起跑回收 ⇒ 0 行、四条状态逐字不变。红证：把来源态谓词放宽成 `status <> 'preview'` ⇒ 四条终态被改成 `partial`（期望 0 行、实得 4 行）⇒ 判据红。
+数据: **判据 4′（会红）·fencing（僵尸 job 的终态写 0 行）**：批次被回收成 `partial` 后用户发起撤销（又回到 `executing`，执行者已换人）⇒ 旧执行者此时写终态必须 0 行，状态保持 `executing`；换人后的当前执行者写终态必须成功（正对照，护栏不误杀正常路径）。红证：摘掉终态条件更新的执行者谓词 ⇒ 僵尸写成功 1 行、把撤销中的批次改成 `done`（期望 0 行、实得 1 行）⇒ 判据红。
+数据: **判据 5（会红）·迁移 / 列存在性 / 状态机与既有两族同口径**：两列（`executor_id` / `heartbeat_at`）在**增量迁移**与**建库脚本**两源齐备、迁移幂等（`IF NOT EXISTS` + 显式事务）、`heartbeat_at` 是带时区时间戳、回收的取数面有部分索引（只索引 `executing` 行）、且本迁移**不改**状态机取值域（回收复用 `partial`，不新增中间态）。执行点 = `backend/admin-api/src/test/java/com/migao/admin/migration/AgentBatchMigrationTest.java`（与建表三源契约同族）。红证：删掉建库脚本里的 `heartbeat_at` 列 ⇒ 该判据具名红（新建库路径缺列）。
+数据: **判据 6（会红）·类级元守卫登记**：回收写路径与它调用的状态迁移语句必须登记进 `backend/admin-api/src/test/resources/agent-batch-status-cas-ledger.json`（状态写面必须带 `tenant_id` + 来源态字面量谓词，且不得写成参数），未登记即红、登记了不存在的写路径也红。执行点 = `backend/admin-api/src/test/java/com/migao/admin/service/AgentBatchStatusCasMetaGuardTest.java`（与 #6960 同族）。红证：把台账里回收那条写路径改名 ⇒ 元守卫当场红并报出未登记写路径清单。
+数据: **判据 7（会红）·租约失效立刻停手（Java 层）**：心跳条件更新 0 行（已被回收 / 换人）时，执行循环必须立刻停手 —— 一条业务写入都不跑、终态不落 `done`（停在可撤销的 `partial`）；`executor_id` 形态为「实例段 + 每 job 唯一段」（同一实例两条 job 的段必须不同）。执行点 = `backend/admin-api/src/test/java/com/migao/admin/service/AgentBatchServiceTest.java`。红证：摘掉循环里的停手判定 ⇒ 业务写入被调用 ⇒ 判据红。
+跳过: [backend-contract] 纯服务端状态机与 SQL 谓词判据（真 PG 一次性临时集群 + 静态迁移/台账守卫；零网络、零 LLM、不碰存量数据），不进入 agent-eval 冒烟
+```
+真值: ⚠️ 缺口（见对应模板 ⚠️ 注释）
+溯源: 2026-11-04 新增（issue #8285，#8283 显式登记的缺口）。取号 MC-197（`python3 scripts/next_case_id.py MC` 现取 main 侧最大号 + claims 目录现取，180~196 段避开在飞占号）。修法 = 迁移 V208 给 `agent_batches` 加 `executor_id` / `heartbeat_at` 两列 + 一条带时效谓词的原子回收（`status='executing' AND (心跳为空 OR 心跳超时) ⇒ partial`）+ 心跳按明细续期且 0 行立刻停手 + 终态条件更新加执行者谓词（fencing）+ 每分钟一轮的回收薄壳。红证（注入式、逐条实跑、注入后均还原并核 sha256）：① 时效谓词恒真 ⇒ 判据 1/3 红；② 回收写 `done` ⇒ 判据 2 红；③ 来源态谓词放宽 ⇒ 判据 2′/4 红（期望 0 实得 1 / 期望 0 实得 4）；④ 摘掉终态执行者谓词 ⇒ 判据 4′ 红（期望 0 实得 1）；⑤ 删建库脚本 `heartbeat_at` 列 ⇒ 判据 5 红；⑥ 台账写路径改名 ⇒ 判据 6 红；⑦ 摘掉停手判定 ⇒ 判据 7 红。边界（照实登记）：回收只改批次状态、不碰明细 ⇒ 「已生效但条目状态未落库」的窗口**仍然存在**，本单只保证状态可回收 + 可撤销，不承诺精确到条目的自动复原（需要时另开对账单）。 ｜ tags: agent-batch, lease, heartbeat, crash-recovery, idempotent, multi-instance, fencing, red-proof
 
 ## 商家入驻域（7 case）
 
@@ -15107,8 +15124,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：1022（活跃 160，跳过 862）
-- tier 分布：smoke 15 / normal 945 / adversarial 33
+- 用例总数：1023（活跃 160，跳过 863）
+- tier 分布：smoke 15 / normal 946 / adversarial 33
 - 售后域：16
 - Agent 核心域：13
 - API 层域：21
@@ -15124,7 +15141,7 @@
 - 人事域：13
 - 知识问答域：9
 - 客户主数据迁移域：10
-- 杂项域：222
+- 杂项域：223
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：76
@@ -15413,6 +15430,7 @@
 - MC-193: B 端小程序（bmini）凭据的部署接线 + 缺失显式告警（issue #8196 ①）：变量名经 admin-api 的 env_file(.env.admin-api) 进容器、compose 的 environment 不得空值覆盖、启动期任一为空（含半配）打一条 WARN 点名缺哪个/影响/补法且不阻止启动、仓库里无凭据值
 - MC-195: Flaky Ledger Reconcile 自愈（issue #8628）：台账分支领先 main 却无 open PR 时**机械幂等补建**（不 arm、不 --admin、不受豁免）；ahead=0 / 已有 PR 零动作；补建失败一行可行动出口 + 非零退出
 - MC-194: **改客户资料 / 加工项增改停 / 建商品分类接回 B 端**（issue #8618）：action 枚举与 schema 同时可见（漏参数即不可调用）+ 权限走既有 required_permissions 粗筛与 action 级复检（码取控制器注解）+ 确认走既有 base_skill._requires_confirmation（react_turn 同一函数对象；未确认 ⇒ 不执行）+ 端点逐字对齐（PUT /api/admin/customers/{id} · POST /api/admin/categories · POST|PUT /api/admin/processing-items）+ 删除类 action 退场（停用改为 update_item(status=…)，可逆）
+- MC-197: 批次后台 job 的跨实例执行租约（issue #8285）：心跳新鲜不误杀 / 心跳超时或为空 ⇒ 回收成可撤销 partial 且幂等 / 两个 executor 的活批次互不误伤 / 回收不覆盖终态（含 fencing）
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）

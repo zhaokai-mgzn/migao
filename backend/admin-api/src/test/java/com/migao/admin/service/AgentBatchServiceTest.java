@@ -94,13 +94,16 @@ class AgentBatchServiceTest {
         // 并发准入闸（issue #6960）：execute / revert 先抢条件更新（CAS），0 行 ⇒ 409。
         // mock 的 int 默认返回 0 ⇒ 不 stub 会让**所有**路径都 409（判据当场变噪声）。
         // 「抢不到 ⇒ 409 且零写」的判据各自显式覆盖这两条 stub。
-        when(batchMapper.markExecuting(any(), any())).thenReturn(1);
-        when(batchMapper.markReverting(any(), any(), any(), any())).thenReturn(1);
+        when(batchMapper.markExecuting(any(), any(), any(), any())).thenReturn(1);
+        when(batchMapper.markReverting(any(), any(), any(), any(), any(), any())).thenReturn(1);
+        // 执行租约（issue #8285）：心跳 CAS 默认 1 = 「租约仍归本 job」；0 行 = 已被回收 ⇒ 停手
+        // （「0 行 ⇒ 立刻停手」的判据在 AgentBatchLeaseLogProtocolTest 里显式覆盖）。
+        when(batchMapper.heartbeat(any(), any(), any(), any())).thenReturn(1);
         // 终态 CAS（issue #8283）：mock int 默认 0 ⇒ 不 stub 会跳过 updateById（终态不落库）。
-        when(batchMapper.markExecutedDone(any(), any(), anyInt(), anyInt(), any())).thenReturn(1);
-        when(batchMapper.markExecutedPartial(any(), any(), anyInt(), anyInt(), any())).thenReturn(1);
-        when(batchMapper.markReverted(any(), any(), any())).thenReturn(1);
-        when(batchMapper.markRevertPartial(any(), any(), any())).thenReturn(1);
+        when(batchMapper.markExecutedDone(any(), any(), anyInt(), anyInt(), any(), any())).thenReturn(1);
+        when(batchMapper.markExecutedPartial(any(), any(), anyInt(), anyInt(), any(), any())).thenReturn(1);
+        when(batchMapper.markReverted(any(), any(), any(), any())).thenReturn(1);
+        when(batchMapper.markRevertPartial(any(), any(), any(), any())).thenReturn(1);
         // MyBatis-Plus 的 lambda 列名缓存（CI 无 Spring 上下文，见 TenantIsolationTest 同款初始化）
         MybatisConfiguration configuration = new MybatisConfiguration();
         TableInfoHelper.initTableInfo(new MapperBuilderAssistant(configuration, ""), AgentBatch.class);
@@ -572,7 +575,7 @@ class AgentBatchServiceTest {
             assertThat(batchStatusWrites)
                     .as("状态机：终态 done 是**落库**的（executing 那一步见下面的 CAS 兑现判据）")
                     .containsExactly(AgentBatchService.STATUS_DONE);
-            verify(batchMapper).markExecuting(BATCH_ID, TENANT);
+            verify(batchMapper).markExecuting(eq(BATCH_ID), eq(TENANT), any(), any());
             assertThat(view.getSuccessCount()).isEqualTo(1);
             assertThat(view.getFailCount()).isZero();
             assertThat(view.getExecutedAt()).isNotNull();
@@ -637,7 +640,7 @@ class AgentBatchServiceTest {
         void refusesToExecuteWhenAnotherRequestClaimedTheBatch() {
             // 内存里读到的仍是 preview（并发对手在窗口内抢到了执行权才把它置成 executing）
             when(batchMapper.selectById(BATCH_ID)).thenReturn(batch(AgentBatchService.STATUS_PREVIEW));
-            when(batchMapper.markExecuting(BATCH_ID, TENANT)).thenReturn(0);
+            when(batchMapper.markExecuting(eq(BATCH_ID), eq(TENANT), any(), any())).thenReturn(0);
             when(itemMapper.selectList(any())).thenReturn(List.of(
                     item(P1, "10.00", "12.00", AgentBatchService.ITEM_PENDING)));
 
@@ -703,7 +706,7 @@ class AgentBatchServiceTest {
         @DisplayName("execute-async：抢不到执行权 ⇒ 409，且任务不入池")
         void executeAsyncDoesNotSubmitWhenClaimLost() {
             when(batchMapper.selectById(BATCH_ID)).thenReturn(batch(AgentBatchService.STATUS_PREVIEW));
-            when(batchMapper.markExecuting(BATCH_ID, TENANT)).thenReturn(0);
+            when(batchMapper.markExecuting(eq(BATCH_ID), eq(TENANT), any(), any())).thenReturn(0);
 
             BusinessException ex = rejection(() -> batchService.executeAsync(TENANT, BATCH_ID));
 
@@ -851,8 +854,8 @@ class AgentBatchServiceTest {
         @DisplayName("抢不到撤销权（CAS 0 行，另一请求已 claim）⇒ 409 且**一条 apply 都不跑**")
         void refusesToRevertWhenAnotherRequestClaimedTheBatch() {
             when(batchMapper.selectById(BATCH_ID)).thenReturn(batch(AgentBatchService.STATUS_DONE));
-            when(batchMapper.markReverting(BATCH_ID, TENANT, AgentBatchService.STATUS_DONE,
-                    AgentBatchService.STATUS_PARTIAL)).thenReturn(0);
+            when(batchMapper.markReverting(eq(BATCH_ID), eq(TENANT), eq(AgentBatchService.STATUS_DONE),
+                    eq(AgentBatchService.STATUS_PARTIAL), any(), any())).thenReturn(0);
             when(itemMapper.selectList(any())).thenReturn(List.of(
                     item(P1, "10.00", "12.00", AgentBatchService.ITEM_SUCCESS)));
 
@@ -975,4 +978,65 @@ class AgentBatchServiceTest {
             assertThat(view.getSuccessCount()).isEqualTo(1);
         }
     }
+
+    @Nested
+    @DisplayName("执行租约（issue #8285：claim 即写租约 / 心跳 0 行立刻停手 / executor 标识 = 实例 + job）")
+    class Lease {
+
+        @Test
+        @DisplayName("🔴 claim 即写租约：markExecuting 同一条语句收到非空 executor_id + 心跳（不许先置 executing 再补）")
+        void claimWritesLeaseInTheSameStatement() {
+            when(batchMapper.selectById(BATCH_ID)).thenReturn(batch(AgentBatchService.STATUS_PREVIEW));
+            when(itemMapper.selectList(any())).thenReturn(List.of());
+
+            batchService.execute(TENANT, BATCH_ID);
+
+            ArgumentCaptor<String> executor = ArgumentCaptor.forClass(String.class);
+            ArgumentCaptor<OffsetDateTime> heartbeat = ArgumentCaptor.forClass(OffsetDateTime.class);
+            verify(batchMapper).markExecuting(eq(BATCH_ID), eq(TENANT), executor.capture(), heartbeat.capture());
+            System.out.println("[READING #8285 claim 租约] executor=" + executor.getValue()
+                    + " heartbeat=" + heartbeat.getValue());
+            assertThat(executor.getValue())
+                    .as("claim 必须同时写 executor_id（否则「executing 且心跳为空」的窗口会被回收器当成崩溃遗留）")
+                    .contains("/");
+            assertThat(heartbeat.getValue())
+                    .as("claim 必须同时写心跳（值 = 提交时刻，不是 null、也不是很久以前）")
+                    .isAfter(OffsetDateTime.now().minusMinutes(1));
+        }
+
+        @Test
+        @DisplayName("🔴 心跳 CAS 0 行（已被回收 / 换人）⇒ 立刻停手：一条 apply 都不跑，终态不落 done")
+        void stopsWhenLeaseIsLost() {
+            when(batchMapper.selectById(BATCH_ID)).thenReturn(batch(AgentBatchService.STATUS_PREVIEW));
+            when(itemMapper.selectList(any())).thenReturn(List.of(
+                    item(P1, "10.00", "12.00", AgentBatchService.ITEM_PENDING)));
+            when(batchMapper.heartbeat(any(), any(), any(), any())).thenReturn(0);
+
+            AgentBatchViews.Batch view = batchService.execute(TENANT, BATCH_ID);
+
+            verify(productService, never()).updateProductForAgent(any(), any(), any());
+            verify(batchMapper, never()).markExecutedDone(any(), any(), anyInt(), anyInt(), any(), any());
+            System.out.println("[READING #8285 租约丢失] 批次状态=" + view.getStatus()
+                    + " 明细状态=" + AgentBatchService.ITEM_PENDING);
+            assertThat(view.getStatus())
+                    .as("租约丢失时停在可撤销的 partial（不允许 done，也不允许永远 executing）")
+                    .isEqualTo(AgentBatchService.STATUS_PARTIAL);
+        }
+
+        @Test
+        @DisplayName("executor_id = 实例 + job：同实例两条 job 的标识必须不同（回收后新 job 不许认领旧租约）")
+        void executorIdIsInstancePlusJob() {
+            String first = AgentBatchService.newExecutorId();
+            String second = AgentBatchService.newExecutorId();
+            System.out.println("[READING #8285 executor] first=" + first + " second=" + second);
+            String firstInstance = first.substring(0, first.lastIndexOf('/'));
+            String secondInstance = second.substring(0, second.lastIndexOf('/'));
+            assertThat(secondInstance).as("同一进程的实例段必须一致（跨实例回收靠它归因）")
+                    .isEqualTo(firstInstance);
+            assertThat(second.substring(second.lastIndexOf('/')))
+                    .as("job 段必须逐 job 唯一（否则同实例的后一条 job 会被当成「还是它」⇒ 心跳伪造成功）")
+                    .isNotEqualTo(first.substring(first.lastIndexOf('/')));
+        }
+    }
+
 }

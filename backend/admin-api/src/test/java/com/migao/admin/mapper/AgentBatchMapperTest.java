@@ -43,7 +43,9 @@ class AgentBatchMapperTest {
                 .toList();
         assertThat(fields).contains(
                 "id", "tenantId", "batchType", "status", "itemCount", "successCount",
-                "failCount", "createdBy", "createdAt", "executedAt", "revertedAt");
+                "failCount", "createdBy", "createdAt", "executedAt", "revertedAt",
+                // 执行租约两列（issue #8285 / V208）：实体缺它们的直接后果是回收 SQL 的参数无从取
+                "executorId", "heartbeatAt");
     }
 
     @Test

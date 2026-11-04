@@ -55,4 +55,16 @@ public class AgentBatch {
     private OffsetDateTime executedAt;
 
     private OffsetDateTime revertedAt;
+
+    /**
+     * 执行者标识 = <b>实例 + job</b>（{@code <实例>#<pid>/<job uuid>}，迁移 V208 / issue #8285）。
+     *
+     * <p>它是<b>租约的 fencing token</b>：claim 时写入、回收时置 NULL；终态 CAS 带
+     * {@code executor_id} 谓词 ⇒ 心跳超时被回收的<b>僵尸 job</b> 再也不能把批次改写回
+     * {@code done}（{@code WHERE status='executing'} 单独一条挡不住「回收后又有人在撤销」这种交错）。</p>
+     */
+    private String executorId;
+
+    /** 该 executor 最近一次心跳时刻（claim 时写一次、执行中每条明细前刷新；超时/为空 ⇒ 可回收）。 */
+    private OffsetDateTime heartbeatAt;
 }

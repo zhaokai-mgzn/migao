@@ -342,6 +342,13 @@ REALDB_FILES: dict[str, str] = {
     # 「恰一轮 apply」的读数由真 `ProductService` 的计数子类现取 + 商品终态真库直读。
     # 窗口探针 = `AgentBatchService#setBatchProbePauseMillisForTest`（生产恒 0）。
     _SVC + "AgentBatchStatusRaceRealDbTest.java": "direct",
+    # issue #8285：批次执行租约的**崩溃回收**真库判据 —— 只真 PG 能证的四条（全部落在一条 SQL 的谓词上）：
+    # ① 心跳新鲜 ⇒ 回收 0 行（活 job 不被误杀：mock 的 `@Update` 恒返回 1，也不因谓词不满足返回 0 ⇒
+    #    「超时谓词是否真的在生效」在 mock 面上整个不可见）；② 心跳超时 / 为空 ⇒ `partial` 且**重复回收 0 行**
+    #    （幂等来自 `status='executing'` 谓词的条件重估）；③ 两个 `executor_id` 各持活批次 ⇒ 互不误伤
+    #    （含跨租户取数面：`selectExecutingTenantIds` 的 `@InterceptorIgnore` 若失效会当场红）；
+    # ④ 终态 `done/partial/reverted/revert_partial` 不被覆盖 + 终态 CAS 的 executor 谓词挡回**僵尸 job**。
+    _SVC + "AgentBatchLeaseRecoveryRealDbTest.java": "direct",
     _SVC + "RemnantRecoveryRealDbTest.java": "direct",
     _SVC + "SavingMetricsBoardRealDbTest.java": "direct",
     _SVC + "SkuBatchGuardRealDbTest.java": "direct",
