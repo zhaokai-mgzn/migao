@@ -2,7 +2,7 @@
 # 本文件由 render_cases.py 生成，勿手改（改了也留不住：下次重渲染会覆盖）
 # 源: cases/*.yml（case-contract 单一源）
 # 重新生成: python3 render_cases.py --cases <dir> --out-eval <包目录> --out-md <md>
-# 域: misc（源: cases/misc.yml，233 条）
+# 域: misc（源: cases/misc.yml，234 条）
 
 from ._schema import Difficulty, EvalCase, Skill
 
@@ -4279,6 +4279,24 @@ _CASE_MC_205 = EvalCase(
     precondition='零运行期前置（纯结构判据 + JUnit 单测）：被测对象 = 门面 OrderService 及其四个新服务的**调用关系**（driver 调用形态）+ 既有 152 条行为判据的断言文本 + 仓内源码文本；前置 = 这些文件存在且可读，由仓本身满足。零网络 / 零 LLM / 零 DB（本单无真库腿）。',
 )
 
+# ── MC-209 [NORMAL] 任何入库文件都不许含合并冲突标记（跨语言的类级判据：YAML 会 ScannerError、JSON 会 JSONDecodeError、代码有时能编译通过）（源: cases/misc.yml）──
+_CASE_MC_209 = EvalCase(
+    id='MC-209',
+    legacy_id='',
+    title='任何入库文件都不许含合并冲突标记（跨语言的类级判据：YAML 会 ScannerError、JSON 会 JSONDecodeError、代码有时能编译通过）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['N/A（全树静态扫描判据，无对话轮次）'],
+    expectations=['扫 git ls-files 的全部入库文件（按 NUL 字节跳过二进制），任何文件出现行首七字符冲突标记（尖括号族 / 等号族 / 大于号族 / 竖线族）⇒ 判红并具名「文件:行号」。', '判据自带失明检查：扫到的入库文件数为 0 也判红（防守着一片不存在的语料）。', '豁免面只此一处（判据文件自身），且以常量集中放置 —— 想放宽必须改那一处，极度显眼。'],
+    data_checks=['注入式红证：往 case_machine_fail_channel_baseline.json 尾部追加一行七字符尖括号标记 ⇒ 1 failed 并具名「文件:1468」；还原 ⇒ 1 passed。', '为什么不靠各语言的病因报错：本次冲突标记进 main 后，CI 的红是另一个测试在解析 JSON 时报 JSONDecodeError —— 症状与病因隔了三层；YAML 则报 ScannerError。', '按文件内容扫、不按语言扫：它是跨语言、跨文件类型的一类缺陷，任何单语言解析器都只能看见自己那一种。'],
+    skip_reason='',
+    tags=['类级判据', '合并冲突', '入库卫生'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 CASES = (
     _CASE_MC_001,
     _CASE_MC_002,
@@ -4513,4 +4531,5 @@ CASES = (
     _CASE_MC_204,
     _CASE_MC_206,
     _CASE_MC_205,
+    _CASE_MC_209,
 )

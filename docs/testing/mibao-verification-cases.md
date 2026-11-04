@@ -4245,7 +4245,7 @@
 ```
 溯源: 2026-10-31 新增（issue #8295）：两步确认，避免误写 ｜ tags: ui, preview
 
-## 杂项域（233 case）
+## 杂项域（234 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -7756,6 +7756,18 @@
 跳过: [backend-contract] Java 侧测试驱动对象迁移 + 门面转发退休（零 LLM / 零外网 / 零前端可见面 / 无 HTTP 契约变化），由 JUnit 判据与 pytest 棘轮判据验证，无 agent 行为面，不进入 agent-eval 冒烟
 ```
 溯源: 2026-11-05 新增（issue #8681 的 P2-1e 第二批，**部分交付**：不写关闭关键词）。 现取读数（`git show origin/main:backend/admin-api/src/main/java/com/migao/admin/service/OrderService.java | wc -l` = 1,725， `grep -c "@Test" backend/admin-api/src/test/java/com/migao/admin/service/OrderServiceTest.java` = 152）。本批只做一件事的两半：① **解结构性阻塞** —— OrderServiceTest 的驱动对象从门面迁到实现点（129 个调用点：查询 27 / 建单 55 / 生命周期 47）； 三个实例取自门面自己懒构造的那一份（`queryService()` / `creationService()` / `lifecycleService()`）， 所以是**同一条调用链、同一份协作者**，断言逐字未改（152 tests / 0 failures）；② **删解锁的转发** —— `getMyOrderPage`（C 端「我的订单」端点改直连 `OrderQueryService`，仓内零调用点、前端零涉及）， 门面 1,725 → 1,702（−23 行、0 行新增），公开成员 26 → 25。 ⚠️ 照实登记：迁后 OrderServiceTest 仍有 **15 个调用点驱动门面**（删单 5 / 备注 4 / 手机号回填 3 / 跟进状态 2 / 内容改单 1）—— 这 5 个是门面里的**实体实现**、不是转发，删它们要先搬实现，属下一批；因此「15 个入口全删」本批**未**达成。 ⚠️ 另外两个入口的删除被**别的**调用方挡住（本批未动）：`getOrderById` 仍被 `OrderCreationService` 经门面实例调用、 `createOrder` / 生命周期族的转发仍被接线判据与快照判据驱动并仍有生产调用方 —— 逐条清单见 PR body。 取号 MC-205（派单口径；现取用例库最大号 MC-204，claims 目录现取到 MC-204）。 ｜ tags: refactor, order-service, facade-retirement, caller-migration, test-driver-migration, assertion-unchanged, ratchet
+
+### MC-209. 任何入库文件都不许含合并冲突标记（跨语言的类级判据：YAML 会 ScannerError、JSON 会 JSONDecodeError、代码有时能编译通过） 🔵
+```
+你: N/A（全树静态扫描判据，无对话轮次）
+期望: 扫 git ls-files 的全部入库文件（按 NUL 字节跳过二进制），任何文件出现行首七字符冲突标记（尖括号族 / 等号族 / 大于号族 / 竖线族）⇒ 判红并具名「文件:行号」。
+期望: 判据自带失明检查：扫到的入库文件数为 0 也判红（防守着一片不存在的语料）。
+期望: 豁免面只此一处（判据文件自身），且以常量集中放置 —— 想放宽必须改那一处，极度显眼。
+数据: 注入式红证：往 case_machine_fail_channel_baseline.json 尾部追加一行七字符尖括号标记 ⇒ 1 failed 并具名「文件:1468」；还原 ⇒ 1 passed。
+数据: 为什么不靠各语言的病因报错：本次冲突标记进 main 后，CI 的红是另一个测试在解析 JSON 时报 JSONDecodeError —— 症状与病因隔了三层；YAML 则报 ScannerError。
+数据: 按文件内容扫、不按语言扫：它是跨语言、跨文件类型的一类缺陷，任何单语言解析器都只能看见自己那一种。
+```
+溯源: ['读数影响：本用例 expectations 非空、skip_reason 未标 [backend-contract] ⇒ **不计入** case_machine_fail_channel_baseline 的 backend_contract_scoring_zero（实测仍 318，无需重锚）。', '2026-11-05 新增（PR #8693）。起因 = 一晚上同一形态咬三次：① 重建 .github/cases/misc.yml 时用正则抠自有用例块，把等号族标记一起带进文件（YAML ScannerError）；② 合并两侧都追加 history 的 baseline JSON，自动合并把冲突留在文件里（CI 红的是另一个测试的 JSONDecodeError）；③ 早前同类。'] ｜ tags: 类级判据, 合并冲突, 入库卫生
 
 ## 商家入驻域（7 case）
 
@@ -15281,8 +15293,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：1035（活跃 161，跳过 874）
-- tier 分布：smoke 15 / normal 958 / adversarial 33
+- 用例总数：1036（活跃 162，跳过 874）
+- tier 分布：smoke 15 / normal 959 / adversarial 33
 - 售后域：16
 - Agent 核心域：13
 - API 层域：21
@@ -15298,7 +15310,7 @@
 - 人事域：13
 - 知识问答域：9
 - 客户主数据迁移域：10
-- 杂项域：233
+- 杂项域：234
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：76
@@ -15599,6 +15611,7 @@
 - MC-204: 订单状态单一源生成到 TS / Python（issue #8198 的 P2-2b）：从 Java `OrderStatusTransitions` 的 7 个常量 + 三张表生成两份**入库**产物（前端 `order-status.generated.ts` / Agent `order_status_generated.py`），删掉 TS 手写的后端状态联合体与两处映射表里的裸值、4 个工具 schema 的订单状态枚举改由生成物派生；生成器确定性（两次重生成逐字节相等，产物里零环境指纹）+ 新鲜度判据三态（0 同步 / 1 陈旧 / 3 无法判定）+ 手写面零裸字面量扫面 + 台账只许缩短；行为零变化（Agent 面仍只暴露 6 个状态，打包态走显式冻结窄化）
 - MC-206: 工人端「裁高计算（一体机）」更名「裁高计算」（issue #8683）：手持标签机现在也能进这页 ⇒ 同一个入口两端都在用，端名就是错误陈述；入口文案 / 机台屏 h1 / machine.html title 三处同批改，并落一条类级守卫（用户可见面出现端名 ⇒ 红），不按端分叉、不引入第二套 UI 分支
 - MC-205: OrderService 门面收尾第二批（issue #8681 的 P2-1e，部分交付）：OrderServiceTest 的 152 条判据把驱动对象从门面迁到实现点（129 个调用点改直驱查询 / 建单 / 生命周期三个新服务，断言零改动），并删除因此解锁的 getMyOrderPage 转发（C 端「我的订单」端点改直连 OrderQueryService；门面 1,725 → 1,702 行，公开成员 26 → 25）
+- MC-209: 任何入库文件都不许含合并冲突标记（跨语言的类级判据：YAML 会 ScannerError、JSON 会 JSONDecodeError、代码有时能编译通过）
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）
