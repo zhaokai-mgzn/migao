@@ -4,7 +4,7 @@
  *
  * ## 治的形态（2026-10-27 用户真机截图）
  *
- * 「待发货单」页的标题「待发货单」「当前工人：验收工人」被挤成**竖排**，刷新按钮独占整行。
+ * 「待出库单」页的标题「待出库单」「当前工人：验收工人」被挤成**竖排**，刷新按钮独占整行。
  * 根因不在文案、不在数据：Taro 的 `Button` 默认 `width: 100%`（`.taro-button-core`），
  * 在 `display: flex` 的页头里只写 `flex: 0 0 auto` 不够 —— `flex-basis: auto` 会去用那条 100%
  * ⇒ 标题被压到最小内容宽度（中文逐字折行 = 竖排）。
@@ -117,7 +117,7 @@ function readWorkerScss(): ScssFile[] {
 }
 
 describe('工人端 Taro Button 宽度守卫（issue #7921）', () => {
-  it('① 实例：待发货单页的「刷新」显式 width: auto + nowrap（修前形态 ⇒ 红）', () => {
+  it('① 实例：待出库单页的「刷新」显式 width: auto + nowrap（修前形态 ⇒ 红）', () => {
     const scss = stripComments(fs.readFileSync(path.join(ROOT, SHIPMENT_REL), 'utf8'))
     const refresh = blockOf(scss, '&__refresh')
     expect(refresh).not.toBe('')
@@ -133,7 +133,7 @@ describe('工人端 Taro Button 宽度守卫（issue #7921）', () => {
     expect(widthProblems(files)).toEqual([])
   })
 
-  it('③ 红证（内存变异，不落仓库）：摘掉待发货单页的 width: auto ⇒ 判红且具名', () => {
+  it('③ 红证（内存变异，不落仓库）：摘掉待出库单页的 width: auto ⇒ 判红且具名', () => {
     const original = stripComments(fs.readFileSync(path.join(ROOT, SHIPMENT_REL), 'utf8'))
     const mutated = original.replace(/(&__refresh\s*\{[\s\S]*?)\n\s*width:\s*auto;/, '$1')
     // 变异自证：真的摘掉了（否则本红证退化成空断言）

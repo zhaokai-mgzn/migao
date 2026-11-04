@@ -50,7 +50,7 @@ describe('打印介质矩阵（issue #5651）', () => {
       'a4',
       // 2026-10-27（issue #7948，用户逐字「把水洗唛的尺寸改成50*110，现在偏长了」）：
       // 水洗唛介质 id 由 **`label-50x150` 改为 `label-50x140`**（纸型仍固定；#7816 的 150mm 作废）；
-      // 🔴 `label-50x70` **仍在册** —— 它只服务**工人端发货标签**（#7761/#7786，
+      // 🔴 `label-50x70` **仍在册** —— 它只服务**工人端成品出库单**（#7761/#7786，
       // `frontend/worker-h5/src/shipment.mjs` 逐字指它），仍是「纸长按内容撑开」的那张纸。
       'label-50x140',
       // 🔴 2026-10-29（issue #8107）立、**2026-10-30（issue #8163）纸长 100 → 80**：水洗唛**专属唛**
@@ -84,7 +84,7 @@ describe('打印介质矩阵（issue #5651）', () => {
     expect(label.dotGeometry?.headWidthPx).toBe(labelDots * 48)
     // 有效打宽 = min(纸宽, 打印头宽)：50mm 纸 > 48mm 头 ⇒ 出图必须按头宽（右侧约 2mm 打不到）
     expect(label.dotGeometry?.effectiveWidthPx).toBe(labelDots * 48)
-    // 发货标签（工人端，issue #7761/#7786）仍是 `label-50x70`：纸长按内容撑开（矩阵仍登记 lengthMm）
+    // 成品出库单（工人端，issue #7761/#7786）仍是 `label-50x70`：纸长按内容撑开（矩阵仍登记 lengthMm）
     const ship = printMediaSpec('label-50x70')
     expect(ship.pageSize).toBe('50mm 70mm')
     expect(ship.lengthMm?.minMm).toBe(70)
@@ -176,7 +176,7 @@ describe('打印介质矩阵（issue #5651）', () => {
     // 反空跑：同一个模块的导出面**确实**读得到（否则上面两条会因读错模块而假绿）
     expect(typeof mediaModule.printPageRule).toBe('function')
     expect(mediaModule.PRINT_MEDIA_IDS).toContain('label-50x140')
-    // 发货标签的介质仍在册（两张纸不合并：一张固定 50×140、一张连续卷按内容撑开）
+    // 成品出库单的介质仍在册（两张纸不合并：一张固定 50×140、一张连续卷按内容撑开）
     expect(mediaModule.PRINT_MEDIA_IDS).toContain('label-50x70')
     const ship = printMediaSpec('label-50x70')
     expect(ship.pageSize).toBe('50mm 70mm')

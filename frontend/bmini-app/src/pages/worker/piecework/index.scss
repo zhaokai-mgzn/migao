@@ -2,7 +2,7 @@
 
 // 工人端「我的计件」（issue #7934）
 //
-// ## 视觉语言：与同族工人页（返工记录 / 待发货单 / 拍照发货）**同一套**（issue #7240 的既有裁定）
+// ## 视觉语言：与同族工人页（返工记录 / 待出库单 / 拍照发货）**同一套**（issue #7240 的既有裁定）
 //   · 页面根声明**非白**底色 + `min-height: 100vh`（判据：`tests/worker-card-contrast-guard.test.ts`）
 //   · 卡片 = 白底 + `$radius-lg` + 细描边 + `$shadow-card`（可见边界）
 //   · 字号按 **750 设计尺度**（本仓样式管线 `1px = 1/40 rem`），正文 / 次要字号下限 24
@@ -11,7 +11,7 @@
 //
 // 🔴 `&__refresh` / `&__month` 必须显式 `width: auto`：Taro 的 `Button` 默认 `width: 100%`，
 //    在 `display: flex` 的行里 `flex-basis: auto` 会去吃那条 100% ⇒ 标题被挤成**竖排**
-//    （待发货单页 2026-10-27 真机截图就是这个形态）。判据 = `tests/worker-page-header-button-width.test.ts`。
+//    （待出库单页 2026-10-27 真机截图就是这个形态）。判据 = `tests/worker-page-header-button-width.test.ts`。
 .worker-piecework {
   min-height: 100vh;
   background: $bg-secondary;

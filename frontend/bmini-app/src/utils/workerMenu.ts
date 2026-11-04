@@ -37,7 +37,7 @@ export const WORKER_MENU_KEYS = {
   cutCalc: 'cut_calc',
   /** 拍照发货（写面） */
   shipment: 'shipment',
-  /** 待发货单（读面：全完工名单 + 发货标签；后端键由 issue #7814 落地） */
+  /** 待出库单（读面：全完工名单 + 成品出库单；后端键由 issue #7814 落地） */
   toShip: 'to_ship',
   /** 质检（逐人开，不在默认集合里） */
   inspect: 'inspect',
@@ -52,7 +52,7 @@ export const WORKER_MENU_KEYS = {
 } as const
 
 /**
- * 「待发货单」的页面键（issue #7814 已把它落进后端 `WorkerPages` 闭词表 + 默认集合）。
+ * 「待出库单」的页面键（issue #7814 已把它落进后端 `WorkerPages` 闭词表 + 默认集合）。
  *
  * 🔴 与 `shipment`（拍照发货，写面）**分开**：前者是「今天能发哪些、贴哪张标签」（读），
  * 后者是「把这一单发出去」（写）。商家后台「设置工人端菜单」可以分别勾选。

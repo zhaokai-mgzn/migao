@@ -38,7 +38,7 @@ class WorkerPagesTest {
         assertThat(WorkerPages.defaultPages())
                 .containsExactly("report", "piecework", "order", "cut_calc", "shipment", "to_ship",
                         "stock", "inbound", "reprint");
-        // issue #7814（用户 2026-10-26「新增的工人菜单在这里也要能设置」）：`to_ship`（待发货单）
+        // issue #7814（用户 2026-10-26「新增的工人菜单在这里也要能设置」）：`to_ship`（待出库单）
         // 与 `shipment`（拍照发货）是**两个能力** —— 读面 / 写面。合并成一个键 ⇒ 商家想关掉其中一个
         // 就得两个都关（菜单开关 = 显隐，关错了现场就没入口）。默认集合里两者都在。
         // issue #7162：`inspect`（质检）在闭词表里，但**不在默认集合**（逐人开、且是服务端写准入）

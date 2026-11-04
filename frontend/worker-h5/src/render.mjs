@@ -99,7 +99,7 @@ export const PAGE_CUT_CALC = 'cut_calc'
 export const PAGE_ORDER = 'order'
 
 /**
- * 页面键：**待发货单**（`/w/shipment.html`，issue #7761 / #7814）。
+ * 页面键：**待出库单**（`/w/shipment.html`，issue #7761 / #7814）。
  *
  * <p>与 {@link PAGE_SHIPMENT}（发货 = 拍照发货，写面）是**两个能力**：本键管「车间今天能发哪些单、
  * 贴哪张标签」（读面）。商家后台「设置工人端菜单」按这个键勾选（issue #7814）。</p>
@@ -109,7 +109,7 @@ export const PAGE_ORDER = 'order'
  */
 export const PAGE_SHIPMENT = 'shipment'
 
-/** 页面键：待发货单（名单 + 发货标签；与 {@link PAGE_SHIPMENT} 写面分开，issue #7814）。 */
+/** 页面键：待出库单（名单 + 成品出库单；与 {@link PAGE_SHIPMENT} 写面分开，issue #7814）。 */
 export const PAGE_TO_SHIP = 'to_ship'
 
 /**
@@ -1600,7 +1600,7 @@ export const DEFAULT_WORKER_IDLE_MINUTES = 43200
  * 成品标签的**打印纸张文档**（50mm × 70mm，V197 / issue #7762）。
  *
  * <p>为什么是一份独立文档（而不是给报工页加打印样式）：`@page` 是**文档级**声明 —— 放进报工页
- * 会把整页（登录/报工/工序选择器）都按 50×70 印出来。#7761 的发货标签用「打印态隔离」解，
+ * 会把整页（登录/报工/工序选择器）都按 50×70 印出来。#7761 的成品出库单用「打印态隔离」解，
  * 这里同样只让标签上纸：新窗口 = 干净文档，`@page` 只作用于它。</p>
  *
  * <p>返回纯字符串 ⇒ 可零浏览器单测（判据：行序 = 服务端下发顺序、缺值行不出现、短码在纸面上）。</p>

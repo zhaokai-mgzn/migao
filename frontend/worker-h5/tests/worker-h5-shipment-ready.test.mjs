@@ -73,7 +73,7 @@ test('列表渲染服务端给的行：半完工行不得被补成「全完工�
   assert.match(html, /id="wh5-ready-1"/, '前端把服务端给的第二行丢了（等于在前端重做了一遍筛选）')
   assert.match(html, /3 套（全完工）/, '全完工那一行要明说全完工')
   assert.match(html, /1\/3 套/, '半完工行要照实说 1/3，不能显示成「全完工」')
-  assert.match(html, /待发货 2 单/, '计数取服务端给的 items.length')
+  assert.match(html, /待出库 2 单/, '计数取服务端给的 items.length')
 })
 
 test('空列表 = 可行动空态（不是空白、不是「加载中」）', () => {
@@ -82,7 +82,7 @@ test('空列表 = 可行动空态（不是空白、不是「加载中」）', ()
   assert.match(html, /最后一道工序报完后/, '空态要告诉工人「怎么才会有单」，不是只说「没有」')
   assert.ok(!html.includes('wh5-ready-0'), '空态不得再渲染行')
   // 真机读数 2026-11-01：0 单时那句「（全部套已完工）」自相矛盾 —— 括号是**结论**，没有单就没有指代对象
-  assert.match(html, /待发货 0 单/, '计数照旧要说')
+  assert.match(html, /待出库 0 单/, '计数照旧要说')
   assert.ok(!html.includes('全部套已完工'), '0 单时不得再下「全部套已完工」的结论')
 })
 
@@ -181,22 +181,26 @@ test('半完工的套数照实印（纸面也不补算）', () => {
   assert.equal(rows.find((r) => r.key === 'sets').value, '1/3 套')
 })
 
-test('发货联 HTML：抬头 + 每行稳定 data-label-key（纸面判据按 key 取，不按文案）', () => {
+test('成品出库单 HTML：抬头 + 每行稳定 data-label-key（纸面判据按 key 取，不按文案）', () => {
   const html = renderShipLabel(READY_ROW)
   for (const key of ['order_no', 'consignee', 'customer_phone', 'customer_address',
     'logistics_type', 'logistics_company', 'order_date', 'sets', 'remark']) {
-    assert.match(html, new RegExp(`data-label-key="${key}"`), `发货联缺 ${key} 行`)
+    assert.match(html, new RegExp(`data-label-key="${key}"`), `成品出库单缺 ${key} 行`)
   }
   assert.match(html, /id="wh5-ship-label"/)
-  assert.match(html, /发货联/, '抬头缺失（纸上第一眼不知道这是什么单）')
-  assert.ok(!html.includes('发货标签'), '旧抬头「发货标签」必须退场（issue #7786 改判为发货联）')
+  assert.match(html, /成品出库单/, '抬头缺失（纸上第一眼不知道这是什么单）')
+  // issue #8632（2026-11-04 用户裁定「待发货单和发货标签都对应成品帘出库动作」）：
+  // 这张纸按**出库**口径命名；旧名「发货联」「发货标签」都不得再上纸。
+  assert.ok(!html.includes('发货联'), '旧抬头「发货联」必须退场（issue #8632 改判为成品出库单）')
+  assert.ok(!html.includes('发货标签'), '更旧的抬头「发货标签」同样不得复活')
   assert.ok(!html.includes('express') && !html.includes('logistics"'), '内部键不得上纸')
 })
 
-test('列表行内动作叫「发货联」，纸面 = 整套出库单（一单一张，覆盖该订单全部套）', () => {
+test('列表行内动作叫「出库单」，纸面 = 整套出库单（一单一张，覆盖该订单全部套）', () => {
   const html = renderReadyOrders({ items: [READY_ROW] })
-  assert.match(html, /id="wh5-label-0"[^>]*>发货联</, '行内动作要叫发货联（不是「发货标签」）')
-  assert.ok(!html.includes('>发货标签<'), '旧动作名必须退场')
+  assert.match(html, /id="wh5-label-0"[^>]*>出库单</, '行内动作要叫「出库单」（不是副标题名「成品出库单」）')
+  assert.ok(!html.includes('>发货联<'), '旧动作名必须退场')
+  assert.ok(!html.includes('>发货标签<'), '更旧的动作名不得复活')
   // 整套 = 纸面自己读得到「共 N 套」，不必回列表核对
   assert.match(renderShipLabel(READY_ROW), /3 套（全完工）/)
 })

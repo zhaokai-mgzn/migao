@@ -125,8 +125,8 @@ async function renderLoggedIn() {
  * 本页是**两阶段渲染**：`pages === null` ⇒ fail-open 全开；`fetchWorkerPages()` resolve 之后
  * `.then(setPages)` 才收敛到工人档案的收窄集（判据本体见 `frontend/bmini-app/src/utils/workerMenu.ts`）。
  * 身份卡（工号）在**第一阶段**就出现了 ⇒ 它不是菜单已应用的信号。旧形态的断言就跑在这个窗口里：
- * CI（run 40490058403 / PR #7922）实测 `queryByText('待发货单')` 拿到
- * `<span class="worker-home__entry-text">待发货单</span>` ⇒ 判红（同一 SHA 重跑又绿 ⇒ 被记成 flaky）。
+ * CI（run 40490058403 / PR #7922）实测 `queryByText('待出库单')` 拿到
+ * `<span class="worker-home__entry-text">待出库单</span>` ⇒ 判红（同一 SHA 重跑又绿 ⇒ 被记成 flaky）。
  *
  * ## 怎么钉稳
  * promise 由测试持有，`release` 在 `act` 内调用 ⇒ React 在 `act` 返回前完成 state 更新与重渲染，
@@ -189,8 +189,8 @@ describe('WorkerHomePage 工人首页（issue #6467 判据 2）', () => {
     fireEvent.click(screen.getByText('拍照发货'))
     expect(Taro.navigateTo).toHaveBeenCalledWith({ url: SHIPMENT_PAGE_ROUTE })
 
-    // 待发货单（issue #7806 P1a）与返工记录（issue #7921）都是**只读名单页**
-    fireEvent.click(screen.getByText('待发货单'))
+    // 待出库单（issue #7806 P1a）与返工记录（issue #7921）都是**只读名单页**
+    fireEvent.click(screen.getByText('待出库单'))
     expect(Taro.navigateTo).toHaveBeenCalledWith({ url: SHIPMENT_ORDERS_PAGE_ROUTE })
 
     fireEvent.click(screen.getByText('返工记录'))
@@ -295,8 +295,8 @@ describe('WorkerHomePage 工人首页（issue #6467 判据 2）', () => {
     await renderWithMenu(['report', 'rework'])
 
     expect(screen.getByText('返工记录')).toBeTruthy()
-    // 同一份收窄集里没有 to_ship / shipment ⇒ 待发货单 / 拍照发货如实不出现（显隐按同一套口径）
-    expect(screen.queryByText('待发货单')).toBeNull()
+    // 同一份收窄集里没有 to_ship / shipment ⇒ 待出库单 / 拍照发货如实不出现（显隐按同一套口径）
+    expect(screen.queryByText('待出库单')).toBeNull()
     expect(screen.queryByText('拍照发货')).toBeNull()
   })
 
@@ -304,7 +304,7 @@ describe('WorkerHomePage 工人首页（issue #6467 判据 2）', () => {
     await renderWithMenu(['report', 'to_ship'])
 
     expect(screen.queryByText('返工记录')).toBeNull()
-    expect(screen.getByText('待发货单')).toBeTruthy()
+    expect(screen.getByText('待出库单')).toBeTruthy()
     // 收窄是**整套**生效（`shipment` 没勾 ⇒ 「拍照发货」也不在），不是只藏了返工记录
     expect(screen.queryByText('拍照发货')).toBeNull()
   })
@@ -320,7 +320,7 @@ describe('WorkerHomePage 工人首页（issue #6467 判据 2）', () => {
     await renderLoggedIn()
 
     // ① 页面集还没回来 ⇒ fail-open：受键控制的入口都在（读不到不能把活挡掉）
-    expect(screen.getByText('待发货单')).toBeTruthy()
+    expect(screen.getByText('待出库单')).toBeTruthy()
     expect(screen.getByText('返工记录')).toBeTruthy()
 
     // ② 读回 `['report','rework']` ⇒ 收敛：只剩 rework 那一条（`to_ship` / `shipment` 收起）
@@ -328,7 +328,7 @@ describe('WorkerHomePage 工人首页（issue #6467 判据 2）', () => {
       release({ pages: ['report', 'rework'], unread: false, unauthorized: false })
     })
     expect(screen.getByText('返工记录')).toBeTruthy()
-    expect(screen.queryByText('待发货单')).toBeNull()
+    expect(screen.queryByText('待出库单')).toBeNull()
     expect(screen.queryByText('拍照发货')).toBeNull()
   })
 

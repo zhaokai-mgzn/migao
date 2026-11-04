@@ -678,7 +678,7 @@ a.wh5-machine__back:active { color: var(--wh5-machine-ink); }
   .wh5-ready-empty, .wh5-ready-more { font-size: 20px; }
 }
 
-/* ── 发货标签（屏幕态；issue #7761）─────────────────────────────────────────────
+/* ── 成品出库单（屏幕态；issue #7761）─────────────────────────────────────────────
    纸型 / 打印隔离在 `src/ship-label.css`（`@page` 是文档级声明，只能由那一页引入）。
    这里只负责「手机上看这张纸长什么样」：按真尺寸 50mm × 70mm 预览。 */.wh5-label-sheet {
   background: var(--wh5-card);
