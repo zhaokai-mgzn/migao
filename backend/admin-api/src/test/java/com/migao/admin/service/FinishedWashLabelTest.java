@@ -124,8 +124,11 @@ class FinishedWashLabelTest {
                 .containsEntry("bin_code", "A-01")
                 .containsEntry("short_code", SHORT);
         @SuppressWarnings("unchecked")
-        List<Map<String, String>> rows = (List<Map<String, String>>)
-                ((Map<String, Object>) view.get("label")).get("rows");
+        Map<String, Object> label = (Map<String, Object>) view.get("label");
+        // issue #8673：成品入库标签摘掉短码时**不得**误伤水洗唛（同一条 labelOf）
+        assertThat(label).containsEntry("short_code", SHORT);
+        @SuppressWarnings("unchecked")
+        List<Map<String, String>> rows = (List<Map<String, String>>) label.get("rows");
         assertThat(rows).extracting(r -> r.get("label"))
                 .contains("订单编号", "客户", "下单日期", "套数", "尺寸", "开数", "帘种", "主布货号", "打包区域")
                 // issue #7856：纸面标签统一叫「帘种」，不再有「部位」行

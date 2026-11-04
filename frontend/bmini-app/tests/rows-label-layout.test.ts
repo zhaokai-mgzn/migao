@@ -58,7 +58,6 @@ const FINISHED: FinishedInboundView = {
       { label: '入库日期', value: '2026-10-31' },
       { label: '数量', value: '3 米' },
     ],
-    short_code: 'ABCD2345',
   },
   quality: { result: 'rework', reason: '跳线' },
 }
@@ -106,7 +105,7 @@ describe('L2 成品入库标签：固定 70mm + 服务端字段原样', () => {
     expect(finishedInboundQualityText({})).toBe('正常')
   })
 
-  it('行 / 短码 = 服务端 `label` 块原样（前端不补行、不改写）', () => {
+  it('行 = 服务端 `label` 块原样；成品入库标签不印短码（issue #8673）', () => {
     expect(finishedInboundRows(FINISHED).map((row) => [row.label, row.value])).toEqual([
       ['品名', '遮光布'],
       ['色号', '米白'],
@@ -117,9 +116,9 @@ describe('L2 成品入库标签：固定 70mm + 服务端字段原样', () => {
     const plan = layoutRowsLabel(finishedInboundSpec(FINISHED))
     expect(plan.heightPx).toBe(Math.round(PAPER.heightMm * GEOMETRY.dotsPerMm))
     expect(plan.qr).toBeNull()
-    expect(plan.codeText).toBe('ABCD2345')
+    expect(plan.codeText).toBe('')
     const printed = texts(finishedInboundSpec(FINISHED))
-    for (const expected of ['品名', '遮光布', '色号', '米白', '入库日期', '2026-10-31', '数量', '3 米', 'ABCD2345']) {
+    for (const expected of ['品名', '遮光布', '色号', '米白', '入库日期', '2026-10-31', '数量', '3 米']) {
       expect(printed).toContain(expected)
     }
     expect(plan.warnings).toEqual([])
@@ -136,7 +135,7 @@ describe('L2 成品入库标签：固定 70mm + 服务端字段原样', () => {
       value: '内容',
     }))
     const plan = layoutRowsLabel(
-      finishedInboundSpec({ ...FINISHED, label: { rows: manyRows, short_code: 'ABCD2345' } }),
+      finishedInboundSpec({ ...FINISHED, label: { rows: manyRows } }),
     )
     expect(plan.heightPx).toBe(Math.round(PAPER.heightMm * GEOMETRY.dotsPerMm))
     expect(plan.warnings.length).toBeGreaterThan(0)

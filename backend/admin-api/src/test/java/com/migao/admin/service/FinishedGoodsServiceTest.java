@@ -303,7 +303,8 @@ class FinishedGoodsServiceTest {
                 .containsEntry("inbound_no", "RK-20261026-0001");
         @SuppressWarnings("unchecked")
         Map<String, Object> label = (Map<String, Object>) out.get("label");
-        assertThat(label).containsEntry("short_code", "ABCD1234");
+        // issue #8673：成品入库标签不印短码（短码仍用于入库单行 / 扫码；水洗唛的 label 仍保留）
+        assertThat(label).doesNotContainKey("short_code");
 
         // 一行 = 这一件（套 × 部位）；**不是**整单所有部位
         @SuppressWarnings("unchecked")

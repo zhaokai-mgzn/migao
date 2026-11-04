@@ -1602,14 +1602,14 @@ export const DEFAULT_WORKER_IDLE_MINUTES = 43200
  * 会把整页（登录/报工/工序选择器）都按 50×70 印出来。#7761 的成品出库单用「打印态隔离」解，
  * 这里同样只让标签上纸：新窗口 = 干净文档，`@page` 只作用于它。</p>
  *
- * <p>返回纯字符串 ⇒ 可零浏览器单测（判据：行序 = 服务端下发顺序、缺值行不出现、短码在纸面上）。</p>
+ * <p>返回纯字符串 ⇒ 可零浏览器单测（判据：行序 = 服务端下发顺序、缺值行不出现、<b>成品入库标签不印短码</b> ——
+ * issue #8673 用户 2026-11-04「短码还在？移除掉」；水洗唛的短码/二维码走另一条打印链）。</p>
  */
 export function washLabelPrintHtml(w) {
   const label = w?.label ?? {}
   const rows = (Array.isArray(label.rows) ? label.rows : []).map((row) => (
     `<div class="row"><span class="k">${esc(row.label)}</span><span class="v">${esc(row.value)}</span></div>`
   )).join('')
-  const code = label.short_code ? `<div class="code">${esc(label.short_code)}</div>` : ''
   return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8" />
 <title>成品标签 ${esc(label.bin_code ?? w?.bin_code ?? '')}</title>
 <style>
@@ -1619,10 +1619,8 @@ export function washLabelPrintHtml(w) {
   .row { display: flex; gap: 1mm; font-size: 2.6mm; line-height: 1.35; }
   .k { flex: 0 0 11mm; color: #333; }
   .v { flex: 1 1 auto; font-weight: 600; word-break: break-all; }
-  .code { margin-top: 1mm; font-size: 3mm; letter-spacing: .3mm; font-weight: 700; text-align: center; }
 </style></head><body>
 ${rows}
-${code}
 </body></html>`
 }
 

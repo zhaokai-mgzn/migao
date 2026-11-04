@@ -2,7 +2,8 @@
  * 成品入库块（issue #7845 的服务端契约 → bmini 渲染层；issue #8287 补齐手机端）。
  *
  * 数据**全部**来自服务端随扫码 / 报工回执下发的 `finished_inbound`：
- * `{ already, bin_code, inbound_no, label: { rows, short_code }, quality: { result, reason } }`
+ * `{ already, bin_code, inbound_no, label: { rows }, quality: { result, reason } }`
+ * （成品入库标签不印短码；issue #8673 起服务端 `inboundView` 已把 `short_code` 摘掉）
  * （服务端唯一来源 = `FinishedGoodsService#inboundView`）。
  *
  * 🔴 本层**不拼业务字段**：卡片上的每一行 / 入库单号 / 仓位 / 质检结论都原样取服务端；
@@ -19,7 +20,6 @@ export interface FinishedInboundLabelRow {
 /** 服务端下发的标签块（`FinishedGoodsService#labelOf`）。 */
 export interface FinishedInboundLabel {
   rows?: FinishedInboundLabelRow[] | null
-  short_code?: string | null
 }
 
 /** 质检结论（`QualityCheckService#latest` 的投影；无记录 = `null` = 正常，不是「未检」）。 */
@@ -78,11 +78,10 @@ export function finishedInboundRows(view: FinishedInboundView | null | undefined
     .filter((row) => row.label !== '')
 }
 
-/** 纸面输入：固定 70mm（成品入库标签不是「按内容撑开」的连续纸） + 服务端短码。 */
+/** 纸面输入：固定 70mm（成品入库标签不是「按内容撑开」的连续纸）；**不印短码**（issue #8673）。 */
 export function finishedInboundSpec(view: FinishedInboundView | null | undefined): RowsLabelSpec {
   return {
     rows: finishedInboundRows(view),
-    shortCode: view?.label?.short_code ?? null,
     fixedLengthMm: rowsLabelPaper().heightMm,
   }
 }

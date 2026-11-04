@@ -128,7 +128,6 @@ const FINISHED_INBOUND = {
       { label: '色号', value: '米白' },
       { label: '数量', value: '3 米' },
     ],
-    short_code: 'ABCD2345',
   },
   quality: { result: 'rework', reason: '跳线' },
 }

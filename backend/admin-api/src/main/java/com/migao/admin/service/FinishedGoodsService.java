@@ -411,7 +411,11 @@ public class FinishedGoodsService {
         out.put("already", already);
         out.put("bin_code", stock.getBinCode());
         out.put("inbound_no", stock.getInboundNo());
-        out.put("label", labelOf(tenantId, token, stock));
+        Map<String, Object> label = labelOf(tenantId, token, stock);
+        // issue #8673（用户 2026-11-04「短码还在？移除掉」）：成品入库标签**不印短码**。
+        // 同一份 labelOf 还服务水洗唛（washLabelView），那里必须保留短码/二维码 ⇒ 只在这里摘掉。
+        label.remove("short_code");
+        out.put("label", label);
         // 质检读不到（未接线 / 码上缺订单行 / 读面异常）⇒ null（页面写「正常」），**绝不**让一张卡片
         // 把归一屏扫码打挂（质检结论是辅助信息，不是入库的前提）。
         Object quality = null;

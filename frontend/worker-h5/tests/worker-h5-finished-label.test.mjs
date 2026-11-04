@@ -29,18 +29,18 @@ test('成品入库卡片的每一行都来自服务端（label.rows / inbound_no
   assert.match(card, /w\.inbound_no/, '入库单号来自服务端（可对账）')
   assert.match(card, /w\.bin_code/, '仓位号来自服务端（与商家库存页同一口径）')
   assert.match(card, /w\.quality/, '质检结论来自服务端（打包工人要核对的那一项）')
-  assert.doesNotMatch(card, /short_code|wh5-fl-code/, '卡片不再显示短码（issue #8673；短码只留在标签纸面）')
+  assert.doesNotMatch(card, /short_code|wh5-fl-code/, '卡片不再显示短码（issue #8673；卡片与标签纸面都不显示）')
   // 前端不得自己读这些业务字段拼标签（唯一来源是服务端 rows）
   assert.doesNotMatch(card, /order_no|customer_name|sku_code/)
 })
 
-test('打印走独立文档：@page 50mm × 70mm，且只含标签行与短码', () => {
+test('打印走独立文档：@page 50mm × 70mm，只含标签行（成品入库标签不印短码，issue #8673）', () => {
   const start = render.indexOf('export function washLabelPrintHtml')
   assert.ok(start > 0, '缺少 washLabelPrintHtml')
   const body = render.slice(start, render.indexOf('export function renderPage'))
   assert.match(body, /@page \{ size: 50mm 70mm; margin: 0; \}/)
   assert.match(body, /label\.rows/)
-  assert.match(body, /label\.short_code/)
+  assert.doesNotMatch(body, /label\.short_code|class="code"/, '成品入库标签纸面不再印短码')
   // 打印文档里不得出现报工页的容器（否则会把整页印上纸）
   assert.doesNotMatch(body, /worker-h5-root|wh5-card/)
 })
