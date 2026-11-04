@@ -7,7 +7,8 @@
     "mapper": "mapper/ProcessingOrderMapper.java",
     "services": [
       "service/ProcessingOrderService.java",
-      "service/OrderService.java"
+      "service/OrderService.java",
+      "service/OrderLifecycleService.java"
     ],
     "shape": "① mapper：手写 @Update SQL（`UPDATE processing_orders`）里凡在 **SET 侧**写 `status` 的，必须带完整谓词 `tenant_id` 参数 + **WHERE 侧 status 谓词**（`status = #{fromStatus}` 参数化 / `status = 'x'` / `status IN (…)`）+ `deleted = 0`；② service：凡**方法体内出现** `processingOrderMapper.updateById(` 或 `processingOrderMapper.mark*(` 的方法 = 状态列的写路径，必须逐条在册，且其 `call_anchor` 必须**逐字**出现在该方法体内（「以 `markStatusIfFrom` 收口」这条主张必须被兑现：把它退回无谓词 `updateById` ⇒ 红）。",
     "note": "形态判据不做 AST 解析（只认「注解 + 方法窗口 + 文本标记」）⇒ 换措辞可绕过；真实防线仍是实例判据（见 coverage_boundary）。⚠️ **射程含 `OrderService` 是刻意的**：本单第二个写面就在那条文件的 `cancelOrder` 里，只扫 service+mapper 那一对会漏掉一半的病。"
@@ -55,11 +56,11 @@
       ]
     },
     {
-      "method": "OrderService#cancelOrder",
-      "file": "backend/admin-api/src/main/java/com/migao/admin/service/OrderService.java",
+      "method": "OrderLifecycleService#cancelOrder",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/OrderLifecycleService.java",
       "path": "ProcessingOrderMapper#markStatusIfFrom",
       "call_anchor": "processingOrderMapper.markStatusIfFrom(",
-      "evidence": "backend/admin-api/src/main/java/com/migao/admin/service/OrderService.java::processingOrderMapper.markStatusIfFrom(",
+      "evidence": "backend/admin-api/src/main/java/com/migao/admin/service/OrderLifecycleService.java::processingOrderMapper.markStatusIfFrom(",
       "case_ids": [
         "PG-076",
         "MC-104"

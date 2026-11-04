@@ -27,7 +27,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       「先 SELECT 再逐条 update」⇒ 集群并发下会重复完成、且副作用（站内信）会按"扫到多少"发
  *       ⇒ 判据要求**只有一条 UPDATE、且必须带 RETURNING id**。</li>
  *   <li><b>锚点写入点被摘掉</b>：{@code orders.shipped_at} 由两条发货路各写一次
- *       （{@code OrderService.transitionStatusAtomic} / {@code OrderShipmentService.transition}）
+ *       （{@code OrderLifecycleService.transitionStatusAtomic}（issue #8191 P2-1d 前在 {@code OrderService}）/ {@code OrderShipmentService.transition}）
  *       ⇒ 摘掉任何一条，那条路上的单**永远不会**自动完成，而**不会有别的东西变红**（静默漏单）。
  *       见 {@link #bothShipPathsWriteShippedAtAtomically()}。</li>
  * </ol>
@@ -43,7 +43,7 @@ class OrderAutoCompleteSqlGuardTest {
     private static final Path MAIN = Path.of("src", "main", "java", "com", "migao", "admin");
     private static final Path ORDER_MAPPER = MAIN.resolve("mapper/OrderMapper.java");
     private static final Path SCAN_SERVICE = MAIN.resolve("service/AutoCompleteShippedScanService.java");
-    private static final Path ORDER_SERVICE = MAIN.resolve("service/OrderService.java");
+    private static final Path LIFECYCLE_SERVICE = MAIN.resolve("service/OrderLifecycleService.java");
     private static final Path SHIPMENT_SERVICE = MAIN.resolve("service/OrderShipmentService.java");
     private static final Path SCHEDULER = MAIN.resolve("config/AutoCompleteShippedScanScheduler.java");
 
@@ -178,7 +178,7 @@ class OrderAutoCompleteSqlGuardTest {
     @Test
     @DisplayName("④ 两条发货路都写 orders.shipped_at：商家路 + 工人路各一处，且都在「仅当目标态是 shipped」的守卫里")
     void bothShipPathsWriteShippedAtAtomically() throws IOException {
-        for (Path path : List.of(ORDER_SERVICE, SHIPMENT_SERVICE)) {
+        for (Path path : List.of(LIFECYCLE_SERVICE, SHIPMENT_SERVICE)) {
             String source = codeOnly(source(path));
             Matcher setter = Pattern.compile(
                     "\\.set\\(\\s*Order::getShippedAt\\s*,").matcher(source);

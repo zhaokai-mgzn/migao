@@ -4233,7 +4233,7 @@
 ```
 溯源: 2026-10-31 新增（issue #8295）：两步确认，避免误写 ｜ tags: ui, preview
 
-## 杂项域（226 case）
+## 杂项域（227 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -7650,6 +7650,17 @@
 跳过: [backend-contract] Java 侧纯搬运重构（零 LLM / 零外网 / 零前端可见面），由 JUnit 判据与 pytest 棘轮/台账判据验证，无 agent 行为面，不进入 agent-eval 冒烟
 ```
 溯源: 2026-11-04 新增（issue #8191 的 P2-1c；P2-1a/P2-1b 已由 PR #8192 / #8212 交付）。现取读数：`git show origin/main:backend/admin-api/src/main/java/com/migao/admin/service/OrderService.java | wc -l` = 2,685（不是 issue 正文里的 3,690 —— 那是两期合并前的数，主工作区落后的脏读也是 3,690）。本批按职责边界搬两族：库存与销量族 18 个方法（库存前置校验 / 扣减 / 回补 / SKU 定位键族）→ OrderStockService（513 行）；财务流水族 4 个方法（实收取数 / 收款退款流水 / 流水号）→ OrderFeeSupport（113 行）。OrderService 2,685 → 2,269，只留同名门面委托；不再有调用方的私有助手不保留死委托（最少代码）。避开状态流转族（OrderLifecycleService）是**有意的取舍**：并行 PR #8650 正在同一批方法上把状态字面量换成 OrderStatusTransitions 常量，两条验收线不同，先让路。红证 = 两次单变量注入逐条实跑（删门面委托一行 ⇒ 接线 1 红；改一个字符话术 ⇒ 快照 1 红 + 逐字节一致 1 红），逐字节还原后 12 条全绿。⚠️ 有意不做：不搬 applyRollAllocation（整卷分配判据钉着它的唯一权威文件）、不搬 batchStock 访问器（取消路径在用）、不改任何业务口径与事务边界（restoreStockForReturn 的 @Transactional 跟着方法走）。 ｜ tags: refactor, order-service, slice, stock, finance, byte-identical, snapshot
+
+### MC-201. OrderService 切片第二批（issue #8191 的 P2-1d，纯搬运不重写）：取消 / 退款 / 发货 / 状态流转四族 15 个方法搬到 OrderLifecycleService，OrderService 由 2,268 行降到 1,832 行并只留同名门面委托；公开名集合逐名相等、调用点零改动、方法体与拆分前逐字节相同（3 处具名跨类限定）、拆分前后的行为快照逐字节一致 🔵
+```
+你: 商家端在订单上做取消 / 退款 / 发货 / 改状态各一次（状态机与三个时刻锚点按同一份口径落库、加工单联动与发货守卫照旧拦截）
+数据: 判据 1·🔴 接线：门面的生命周期族入口必须真的转到新服务 —— 把门面的新服务字段换成 Mockito 替身后，从原有公开入口（取消 / 确认支付 / 状态流转 / 退款 / 发货两个重载 / 发货人兜底 / 发货前置判据）驱动，替身上必须收到同名同参调用；发货的返回对象必须原样透传（isSameAs）。红证 = 删掉门面 cancelOrder 的委托那一行 ⇒ 接线一条当场红（实测：12 条里红 1 条）。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/OrderLifecycleServiceTest.java
+数据: 判据 2·🔴 搬运逐字节一致：拆分前 origin/main 的 OrderService.java（2,268 行）随判据入库、sha256 钉死，取消 / 退款 / 发货 / 状态流转四族 15 个方法的方法体必须原样出现在新载体，且门面里一处都不许留；5 条事务注解逐字跟着方法走、门面委托一条都不加；具名的 3 处跨类限定必须恰好兑现（多一处少一处都红）。红证 = 在新载体里把一句拒绝话术改一个字符 ⇒ 逐字节一致一条当场红（实测：5 条里红 1 条）。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/OrderLifecycleSliceSourceIdentityTest.java
+数据: 判据 3·🔴 行为快照：23 例固定输入覆盖四族的每一条分支与 6 条拒绝路径（取消四种前驱 + 加工单联动 CAS 输赢、退款部分/全额/越界、发货物流/无需物流/白名单外/状态不符/承运商兜底、状态流转五条边含含加工项被守卫拦截），在拆分前录制「协作者调用序列 + 返回值 + 异常类与话术」，拆分后必须逐字节相同（基线 142 行；冻结时钟使三个时刻锚点可复算，两处既有墙钟拼写只渲染来源不渲染那一秒）。红证 = 改一个字符话术 ⇒ 快照一条当场红。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/OrderLifecycleSliceSnapshotTest.java
+数据: 判据 4·🔴 台账与棘轮跟着载体走（回归面一字未放宽）：orders.status 的 CAS 写面随 transitionStatusAtomic 改载体；加工单联动作废的写路径改名为 OrderLifecycleService#cancelOrder 且 evidence 锚逐字兑现；发货写面不变式台账的两条商家侧条目改载体并新增「门面零残留」断言；shipped_at / paid_at / received_at 三条结构判据与金额入口台账的载体集合改为「门面 + 生命周期服务」（未登记即红、死条目即红、写面为空即红都没改）；OrderService 2,268 → 1,832 已跌破 2,000 ⇒ 冻结条目销账、豁免登记保留（仍 ≥ 800 行）；新文件 719 行 < 800 未登记豁免。执行点 = tests/unit_ci_workflows/test_loc_ratchet.py / test_state_write_face_metaguard.py / test_order_status_single_source.py 与 backend/admin-api/src/test/java/com/migao/admin/service/OrderPaidAndReceivedAtWriteGuardTest.java / OrderAutoCompleteSqlGuardTest.java / ProcessingOrderStatusCasMetaGuardTest.java / MoneyEntryPrecisionMetaGuardTest.java / backend/admin-api/src/test/java/com/migao/admin/shipment/ShipmentInvariantGuardTest.java
+跳过: [backend-contract] Java 侧纯搬运重构（零 LLM / 零外网 / 零前端可见面），由 JUnit 判据与 pytest 棘轮/台账判据验证，无 agent 行为面，不进入 agent-eval 冒烟
+```
+溯源: 2026-11-04 新增（issue #8191 的 P2-1d；P2-1a/P2-1b/P2-1c 已由 PR #8192 / #8212 / #8666 交付）。现取读数：`git show origin/main:backend/admin-api/src/main/java/com/migao/admin/service/OrderService.java | wc -l` = 2,268（#8666 合并后实取）。本批按职责边界搬四族 15 个方法：取消（cancelOrder + 加工单联动探针）/ 退款（refundOrder）/ 发货（shipWithLogistics 两个重载 + upsertLogistics + shipOrderIfApplicable + currentLogisticsCompany + resolveShipperName + isProcessingReadyForShip）/ 状态流转（updateOrderStatus + confirmPayment + transitionStatusAtomic + notifyOrderStatusChanged + revertProducingToConfirmed + assertProcessingCompletedBeforeShip）→ OrderLifecycleService（719 行）。OrderService 2,268 → 1,832，只留同名门面委托；公开名集合逐名相等（29 → 29，0 缺失 / 0 新增）；不再有调用方的私有助手不保留死委托（最少代码）。⚠️ 有意不做：不搬 applyRollAllocation（OrderRollAllocationAuthorityTest 钉着它是唯一权威文件）、不搬 batchStock 访问器（取消路径经门面调用它，判据同族口径）、不搬 deleteOrder / generateOrderNo / 建单改单（各自属于别的族）、不改任何业务口径、异常话术与事务边界（5 条 @Transactional 跟着方法走，门面委托一条不加）。红证 = 两次单变量注入逐条实跑（删门面委托一行 ⇒ 接线 1 红；改一个字符话术 ⇒ 快照 1 红 + 逐字节一致 1 红），两次逐字节还原后 18 条全绿（cmp 自证）。全量读数：backend/admin-api 5,781 tests / 0 failures / 0 errors / 1 skipped / BUILD SUCCESS（拆分前 5,763）。边界：logger 的发出类由门面变成新服务（既有断言靠载体集合保住，线上按 logger 名过滤这一面没有判据，如实登记）。 ｜ tags: refactor, order-service, slice, lifecycle, cancel, refund, shipping, status-transition, byte-identical, snapshot
 
 ## 商家入驻域（7 case）
 
@@ -15175,8 +15186,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：1027（活跃 160，跳过 867）
-- tier 分布：smoke 15 / normal 950 / adversarial 33
+- 用例总数：1028（活跃 160，跳过 868）
+- tier 分布：smoke 15 / normal 951 / adversarial 33
 - 售后域：16
 - Agent 核心域：13
 - API 层域：21
@@ -15192,7 +15203,7 @@
 - 人事域：13
 - 知识问答域：9
 - 客户主数据迁移域：10
-- 杂项域：226
+- 杂项域：227
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：76
@@ -15485,6 +15496,7 @@
 - MC-198: 订单状态立单一源（issue #8198 的 P2-2a，纯收敛不生成）：载体 = `OrderStatusTransitions` 的 7 个常量（**加常量、不加类型** —— 2026-10-31 评论裁定；值与 DB 存储值逐字相等，「状态全集」的权威仍是 `STATUS_TRANSITIONS` 键集，不另立第二份）；`service/` 与 `controller/` 零订单状态裸字面量（注释里不算，唯一例外是那 7 行常量定义）；错误文案 / 状态取值 / JSON 逐字不变
 - MC-197: 批次后台 job 的跨实例执行租约（issue #8285）：心跳新鲜不误杀 / 心跳超时或为空 ⇒ 回收成可撤销 partial 且幂等 / 两个 executor 的活批次互不误伤 / 回收不覆盖终态（含 fencing）
 - MC-199: OrderService 切片第一批（issue #8191 的 P2-1c，纯搬运不重写）：库存与销量族 18 个方法搬到 OrderStockService、财务流水族 4 个方法搬到 OrderFeeSupport，OrderService 由 2,685 行降到 2,269 行并只留同名门面委托；公开名一个不改、调用点零改动、方法体与拆分前逐字节相同、拆分前后的行为快照逐字节一致
+- MC-201: OrderService 切片第二批（issue #8191 的 P2-1d，纯搬运不重写）：取消 / 退款 / 发货 / 状态流转四族 15 个方法搬到 OrderLifecycleService，OrderService 由 2,268 行降到 1,832 行并只留同名门面委托；公开名集合逐名相等、调用点零改动、方法体与拆分前逐字节相同（3 处具名跨类限定）、拆分前后的行为快照逐字节一致
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）

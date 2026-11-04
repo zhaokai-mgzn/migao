@@ -134,8 +134,9 @@ class MoneyEntryPrecisionMetaGuardTest {
     private static List<Site> registry() {
         return List.of(
                 // ── ① 本包修复的入口（GATED）──────────────────────────────────────
-                site("com/migao/admin/service/OrderService.java", "setRefundAmount", Admission.GATED,
-                        "退款（issue #6221）：refund_amount 落库前过 MoneyScale.requireTwoDecimalsOrNull"),
+                site("com/migao/admin/service/OrderLifecycleService.java", "setRefundAmount", Admission.GATED,
+                        "退款（issue #6221）：refund_amount 落库前过 MoneyScale.requireTwoDecimalsOrNull；"
+                                + "issue #8191（P2-1d）随 refundOrder 从 OrderService 搬到本文件，准入形态仍是 GATED"),
                 site("com/migao/admin/service/OrderFeeSupport.java", "FinanceTransaction.builder()", Admission.NO_NEW_INPUT_SOURCE,
                         "收款/退款流水：金额 = 订单实收（actualAmount 兜底 totalAmount，库列 numeric(12,2)）"
                                 + "或取消退款 = 实收 − 已退（两个已准入值之差，≤2 位小数不产生新精度）⇒ 不引入新输入源；"
