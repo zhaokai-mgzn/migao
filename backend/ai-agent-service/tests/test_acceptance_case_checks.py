@@ -2769,7 +2769,8 @@ def _run_suite_with_progress(cases, concurrency, *, stall_in=None, per_case_dela
             if stall_in is not None and c.id == stall_in:
                 # #3361 的原始形态：调度器已给本任务读位，这里再要写位 ⇒ 互等（真死锁）
                 async with gates[0].writer():
-                    pass
+                    # 只有**真拿到写位**才会走到这里（互等时永远到不了 ⇒ 进度也不再增长）
+                    meter.tick("gate.writer.entered", c.id)
             await asyncio.sleep(0.02)
             if per_case_delay:
                 await asyncio.sleep(per_case_delay)
