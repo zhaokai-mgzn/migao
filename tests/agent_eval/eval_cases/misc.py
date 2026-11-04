@@ -2,7 +2,7 @@
 # 本文件由 render_cases.py 生成，勿手改（改了也留不住：下次重渲染会覆盖）
 # 源: cases/*.yml（case-contract 单一源）
 # 重新生成: python3 render_cases.py --cases <dir> --out-eval <包目录> --out-md <md>
-# 域: misc（源: cases/misc.yml，233 条）
+# 域: misc（源: cases/misc.yml，234 条）
 
 from ._schema import Difficulty, EvalCase, Skill
 
@@ -4260,6 +4260,25 @@ _CASE_MC_206 = EvalCase(
     precondition='零运行期前置（纯渲染判据）：被测对象 = frontend/worker-h5 的渲染产物（页头入口栏与机台屏 h1）与静态页 title；前置 = node 可跑、worker-h5 的 src 可加载 —— 由仓本身满足。不成立时的红形态已内建：渲染不出入口 / 没有 h1 / 静态页没有 title ⇒ 判据自己红并具名是哪一面，绝不静默跳过。零网络 / 零 LLM / 零 DB。',
 )
 
+# ── MC-205 [NORMAL] OrderService 门面收尾第二批（issue #8681 的 P2-1e，部分交付）：OrderServiceTest 的 152 条判据把驱动对象从门面迁到实现点（129 个调用点改直驱查询 / 建单 / 生命周期三个新服务，断言零改动），并删除因此解锁的 getMyOrderPage 转发（C 端「我的订单」端点改直连 OrderQueryService；门面 1,725 → 1,702 行，公开成员 26 → 25）（源: cases/misc.yml）──
+_CASE_MC_205 = EvalCase(
+    id='MC-205',
+    legacy_id='',
+    title='OrderService 门面收尾第二批（issue #8681 的 P2-1e，部分交付）：OrderServiceTest 的 152 条判据把驱动对象从门面迁到实现点（129 个调用点改直驱查询 / 建单 / 生命周期三个新服务，断言零改动），并删除因此解锁的 getMyOrderPage 转发（C 端「我的订单」端点改直连 OrderQueryService；门面 1,725 → 1,702 行，公开成员 26 → 25）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['issue #8681 的结构性阻塞原文（上一批 PR #8682 的结论）：只要 OrderServiceTest 的 152 条还直接驱动门面那批公开入口，入口就删不掉 —— 删了就得改既有断言，而「门面是否真的转出去」也会同时失去看管。⇒ 本批第一步 = 把驱动对象迁到新服务（断言本身不改），再删解锁的转发。', '既有 152 条订单行为判据的**断言**（期望值 / 异常话术 / 边界读数）一个字都不许改，只许换「谁被驱动」；C 端「我的订单」仍按 user_id 直配 + 绑定手机号兜底做用户级隔离，Agent 端 /mine 端点的入参 / 响应 / 拒绝话术逐字不变'],
+    expectations=[],
+    data_checks=['判据 1·🔴 驱动对象已迁到实现点（会红）：OrderServiceTest 里经门面入口调用的行数 = 0，查询族经 OrderQueryService、建单族经 OrderCreationService、状态流转 / 取消 / 退款 / 确认支付 / 发货 / 加工单联动作废经 OrderLifecycleService（本批 129 个调用点）；把任一族改回门面入口 ⇒ 该族判据重新变成「门面驱动」（退休判据与调用形态判据具名红）。现取读数：迁后仍有 15 个调用点驱动门面，全部落在**实体实现**而非转发上（删单 5 / 备注 4 / 手机号回填 3 / 跟进状态 2 / 内容改单 1）⇒ 那 5 个方法要等「实现搬家」那一批，不是本批能删的。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/OrderServiceTest.java', '判据 2·🔴 断言零改动（会红）：把改动集的 OrderServiceTest 逐行归一化（把驱动接收者归一、去掉追加的 support 实参）后，增删两侧逐行相等；且 @Test 条数仍为 152、测试方法名集合与改前相同；任何期望值 / 异常话术 / 边界读数被改动 ⇒ 归一化后两侧不等即红。实测：152 tests / 0 failures / 0 errors / 0 skipped（驱动迁移后与删转发后各跑一次）。执行点 = 同判据 1 的判据文件', '判据 3·🔴 退休面（会红）：门面里不再声明 getMyOrderPage（把转发加回来 ⇒ 具名红），且 src/main 全树零处「经门面变量调用 getMyOrderPage」（谁改回门面 ⇒ 具名红）；同时实现点 OrderQueryService 必须仍声明它（防「两边都没了」的恒绿），具名消费方 AgentOrderController 必须逐字调用实现点。判别力自证内建：内存里塞回跨行签名的转发 ⇒ 谓词判真；注释里的同名文本不算声明。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/OrderFacadeForwarderRetirementTest.java', '判据 4·🔴 失对象的接线判据改成直测实现点（不删、不恒绿）：C 端「我的订单」的用户级隔离改由真实 OrderQueryService 直测 —— 无绑定手机号时查询条件只含 user_id、有绑定手机号时才追加「未归属 + 手机号相等」兜底（从 wrapper 的 SQL 段读，不看散文），缺用户标识 ⇒ 拒绝且一次都不查库；Agent 端控制器的参透传判据改 mock 实现点（同参 / 拒绝时不查库 / 响应字段三条断言逐字保留）。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/OrderQueryServiceTest.java 与 backend/admin-api/src/test/java/com/migao/admin/controller/AgentOrderControllerMineTest.java', '判据 5·🔴 体量棘轮只许降：OrderService 1,725 → 1,702 行（−23，只删不加：本批删 1 个转发方法、未新增任何源码文件），公开成员 26 → 25（removed: 只一个方法 / added: 空）；新类 < 800 行一条不触发。执行点 = tests/unit_ci_workflows/test_loc_ratchet.py'],
+    skip_reason='[backend-contract] Java 侧测试驱动对象迁移 + 门面转发退休（零 LLM / 零外网 / 零前端可见面 / 无 HTTP 契约变化），由 JUnit 判据与 pytest 棘轮判据验证，无 agent 行为面，不进入 agent-eval 冒烟',
+    tags=['refactor', 'order-service', 'facade-retirement', 'caller-migration', 'test-driver-migration', 'assertion-unchanged', 'ratchet'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='零运行期前置（纯结构判据 + JUnit 单测）：被测对象 = 门面 OrderService 及其四个新服务的**调用关系**（driver 调用形态）+ 既有 152 条行为判据的断言文本 + 仓内源码文本；前置 = 这些文件存在且可读，由仓本身满足。零网络 / 零 LLM / 零 DB（本单无真库腿）。',
+)
+
 # ── MC-208 [NORMAL] demo-seed 的 SKU 插入语句必须三处一致：SELECT 行值 = WHERE 关联条件 = product_colors 已声明颜色（issue #7583 缺陷 2 的假绿出口）（源: cases/misc.yml）──
 _CASE_MC_208 = EvalCase(
     id='MC-208',
@@ -4512,5 +4531,6 @@ CASES = (
     _CASE_MC_203,
     _CASE_MC_204,
     _CASE_MC_206,
+    _CASE_MC_205,
     _CASE_MC_208,
 )

@@ -45,6 +45,12 @@ class AgentOrderControllerMineTest extends BaseControllerTest {
 
     @Mock private OrderService orderService;
 
+    /**
+     * issue #8681（P2-1e 第二批）：门面的 {@code getMyOrderPage} 转发已退休 ⇒ 控制器直连实现点。
+     * 断言（同参透传 / 拒绝时不查库 / 响应字段）一字未改，只把**被 mock 的协作者**换成实现点。
+     */
+    @Mock private com.migao.admin.service.OrderQueryService orderQueryService;
+
     @Mock private UserMapper userMapper;
 
     @InjectMocks
@@ -88,7 +94,7 @@ class AgentOrderControllerMineTest extends BaseControllerTest {
             // 用户未绑定手机号 → phone 兜底为 null（仅 user_id 直配）
             User noPhoneUser = User.builder().id("customer-001").phone(null).build();
             when(userMapper.selectById("customer-001")).thenReturn(noPhoneUser);
-            when(orderService.getMyOrderPage(
+            when(orderQueryService.getMyOrderPage(
                     eq(1L), eq(10L), isNull(), eq(TEST_TENANT_ID), eq("customer-001"), isNull()))
                     .thenReturn(PageResponse.of(0L, 1L, 10L, List.of()));
 
@@ -96,7 +102,7 @@ class AgentOrderControllerMineTest extends BaseControllerTest {
                     .andExpect(status().isOk());
 
             // 强制走 C 端专用 mine 查询（user_id + phone 兜底由 service 处理）
-            verify(orderService).getMyOrderPage(
+            verify(orderQueryService).getMyOrderPage(
                     eq(1L), eq(10L), isNull(), eq(TEST_TENANT_ID), eq("customer-001"), isNull());
         }
 
@@ -106,14 +112,14 @@ class AgentOrderControllerMineTest extends BaseControllerTest {
             setServiceUserWithRealId("customer-003");
             User boundUser = User.builder().id("customer-003").phone("13900139000").build();
             when(userMapper.selectById("customer-003")).thenReturn(boundUser);
-            when(orderService.getMyOrderPage(
+            when(orderQueryService.getMyOrderPage(
                     eq(1L), eq(10L), isNull(), eq(TEST_TENANT_ID), eq("customer-003"), eq("13900139000")))
                     .thenReturn(PageResponse.of(0L, 1L, 10L, List.of()));
 
             mockMvc.perform(get(MINE))
                     .andExpect(status().isOk());
 
-            verify(orderService).getMyOrderPage(
+            verify(orderQueryService).getMyOrderPage(
                     eq(1L), eq(10L), isNull(), eq(TEST_TENANT_ID), eq("customer-003"), eq("13900139000"));
         }
 
@@ -123,14 +129,14 @@ class AgentOrderControllerMineTest extends BaseControllerTest {
             setServiceUserWithRealId("customer-002");
             when(userMapper.selectById("customer-002")).thenReturn(
                     User.builder().id("customer-002").phone(null).build());
-            when(orderService.getMyOrderPage(
+            when(orderQueryService.getMyOrderPage(
                     eq(1L), eq(10L), eq("shipped"), eq(TEST_TENANT_ID), eq("customer-002"), isNull()))
                     .thenReturn(PageResponse.of(0L, 1L, 10L, List.of()));
 
             mockMvc.perform(get(MINE).param("status", "shipped"))
                     .andExpect(status().isOk());
 
-            verify(orderService).getMyOrderPage(
+            verify(orderQueryService).getMyOrderPage(
                     eq(1L), eq(10L), eq("shipped"), eq(TEST_TENANT_ID), eq("customer-002"), isNull());
         }
 
@@ -143,7 +149,7 @@ class AgentOrderControllerMineTest extends BaseControllerTest {
             mockMvc.perform(get(MINE))
                     .andExpect(status().is4xxClientError());
 
-            verify(orderService, never()).getMyOrderPage(anyLong(), anyLong(), any(), anyLong(), any(), any());
+            verify(orderQueryService, never()).getMyOrderPage(anyLong(), anyLong(), any(), anyLong(), any(), any());
         }
 
         @Test
@@ -154,7 +160,7 @@ class AgentOrderControllerMineTest extends BaseControllerTest {
             mockMvc.perform(get(MINE))
                     .andExpect(status().is4xxClientError());
 
-            verify(orderService, never()).getMyOrderPage(anyLong(), anyLong(), any(), anyLong(), any(), any());
+            verify(orderQueryService, never()).getMyOrderPage(anyLong(), anyLong(), any(), anyLong(), any(), any());
         }
 
         @Test
@@ -170,7 +176,7 @@ class AgentOrderControllerMineTest extends BaseControllerTest {
             order.setCustomerName("张三");
             order.setCustomerPhone("13800138000");
             order.setCustomerAddress("杭州西湖区文三路1号");
-            when(orderService.getMyOrderPage(
+            when(orderQueryService.getMyOrderPage(
                     eq(1L), eq(10L), isNull(), eq(TEST_TENANT_ID), eq("customer-001"), isNull()))
                     .thenReturn(PageResponse.of(1L, 1L, 10L, List.of(order)));
 

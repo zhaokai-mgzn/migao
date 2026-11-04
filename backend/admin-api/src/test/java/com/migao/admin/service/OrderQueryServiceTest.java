@@ -5,6 +5,8 @@ import com.migao.admin.dto.OrderDetailResponse;
 import com.migao.admin.dto.OrderListResponse;
 import com.migao.admin.dto.PageResponse;
 import com.migao.admin.dto.agent.AgentOrderResolveResponse;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.migao.admin.entity.Order;
 import com.migao.admin.entity.OrderItem;
 import com.migao.admin.exception.BusinessException;
@@ -15,6 +17,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -24,6 +27,8 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -39,6 +44,11 @@ import static org.mockito.Mockito.when;
  * ① {@code verify(orderQueryService)} 拿不到交互 ⇒ 红；② 内联实现走的是真 Mapper
  * （本类只给了一个 {@code @Mock OrderQueryService}，其余协作者为 {@code null}）⇒ 更早地 NPE。
  * 实测见 PR body「接线判据红证」一节。</p>
+ *
+ * <p><b>第二批（issue #8681，P2-1e 第二批）</b>：{@code getMyOrderPage} 的调用方（Agent 控制器
+ * C 端「我的订单」端点）已改直连实现点、门面同名转发**删除** ⇒ 对应的委托判据失去对象。
+ * 按本文件既有口径（不删、不恒绿）改成<b>直测实现点</b>：用真实 {@link OrderQueryService}
+ * 判「用户级隔离条件是否真的进了查询」，并钉住缺用户标识时**拒绝且不查库**。</p>
  *
  * <p><b>边界（照实登记）</b>：本判据只管<b>门面 → 服务</b>这一次跳转；它不判
  * {@link OrderQueryService} 内部实现对不对（那由既有 {@code OrderServiceTest} 逐条行为判据承担），
@@ -84,18 +94,46 @@ class OrderQueryServiceTest {
                 "2026-01-01", "2026-01-31", "ORD-1", "张三", "P001", "窗帘", 7L, "u-1", "李四", "u-1");
     }
 
+    /**
+     * C 端「我的订单」的**用户级隔离**（门面转发已退休 ⇒ 改直测实现点，issue #8681 第二批）。
+     *
+     * <p>判据形状：从查询 wrapper 的 SQL 段读「隔离条件是否真的进了查询」—— 这是这条查询的
+     * 安全语义本体（{@code user_id} 直配；**只有**带绑定手机号时才追加「该单未被归属 且
+     * 手机号等于本人」的兜底）。另一半是 fail-closed 出口：缺用户标识 ⇒ 拒绝**且一次都不查库**。</p>
+     */
     @Test
-    @DisplayName("🔴 C 端列表门面 getMyOrderPage ⇒ 委托 getMyOrderPage")
-    void getMyOrderPageDelegates() {
-        PageResponse<OrderListResponse> expected = PageResponse.of(0L, 1L, 20L, List.of());
-        when(orderQueryService.getMyOrderPage(2L, 10L, "pending", 7L, "u-1", "13800138000"))
-                .thenReturn(expected);
+    @DisplayName("🔴 C 端我的订单（直测实现点）：user_id 直配、仅绑定手机号才追加「未归属 + 同手机号」兜底；缺标识 ⇒ 拒绝且不查库")
+    void getMyOrderPageIsolatesByUser() {
+        Page<Order> empty = new Page<>(1L, 10L);
+        empty.setRecords(List.of());
+        empty.setTotal(0);
+        when(orderMapper.selectPage(any(Page.class), any(LambdaQueryWrapper.class))).thenReturn(empty);
 
-        PageResponse<OrderListResponse> actual = orderService.getMyOrderPage(2L, 10L, "pending", 7L, "u-1",
-                "13800138000");
+        OrderQueryService service = directQueryService();
+        service.getMyOrderPage(1L, 10L, null, 7L, "u-1", null);
 
-        assertThat(actual).isSameAs(expected);
-        verify(orderQueryService).getMyOrderPage(2L, 10L, "pending", 7L, "u-1", "13800138000");
+        ArgumentCaptor<LambdaQueryWrapper<Order>> noPhone = ArgumentCaptor.forClass(LambdaQueryWrapper.class);
+        verify(orderMapper).selectPage(any(Page.class), noPhone.capture());
+        assertThat(noPhone.getValue().getSqlSegment())
+                .as("没有绑定手机号 ⇒ 只按 user_id 直配，不许出现手机号兜底条件")
+                .contains("user_id")
+                .doesNotContain("customer_phone");
+
+        service.getMyOrderPage(1L, 10L, null, 7L, "u-1", " 13800138000 ");
+
+        ArgumentCaptor<LambdaQueryWrapper<Order>> withPhone = ArgumentCaptor.forClass(LambdaQueryWrapper.class);
+        verify(orderMapper, times(2)).selectPage(any(Page.class), withPhone.capture());
+        assertThat(withPhone.getValue().getSqlSegment())
+                .as("有绑定手机号 ⇒ 追加「未归属 + 手机号相等」兜底（手机号去空白后参与比较）")
+                .contains("user_id")
+                .contains("customer_phone");
+
+        assertThatThrownBy(() -> service.getMyOrderPage(1L, 10L, null, 7L, "internal-service", null))
+                .as("缺用户标识 ⇒ fail-closed")
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("缺少用户标识");
+        // 拒绝的这条路径一次都不许查库（查库次数仍是 2）
+        verify(orderMapper, times(2)).selectPage(any(Page.class), any(LambdaQueryWrapper.class));
     }
 
     @Test
