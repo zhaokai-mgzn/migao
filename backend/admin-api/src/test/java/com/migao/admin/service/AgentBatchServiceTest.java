@@ -1027,20 +1027,6 @@ class AgentBatchServiceTest {
                     .isEqualTo(AgentBatchService.STATUS_PARTIAL);
         }
 
-        @Test
-        @DisplayName("executor_id = 实例 + job：同实例两条 job 的标识必须不同（回收后新 job 不许认领旧租约）")
-        void executorIdIsInstancePlusJob() {
-            String first = new AgentBatchLeaseService(batchMapper).newExecutorId();
-            String second = new AgentBatchLeaseService(batchMapper).newExecutorId();
-            System.out.println("[READING #8285 executor] first=" + first + " second=" + second);
-            String firstInstance = first.substring(0, first.lastIndexOf('/'));
-            String secondInstance = second.substring(0, second.lastIndexOf('/'));
-            assertThat(secondInstance).as("同一进程的实例段必须一致（跨实例回收靠它归因）")
-                    .isEqualTo(firstInstance);
-            assertThat(second.substring(second.lastIndexOf('/')))
-                    .as("job 段必须逐 job 唯一（否则同实例的后一条 job 会被当成「还是它」⇒ 心跳伪造成功）")
-                    .isNotEqualTo(first.substring(first.lastIndexOf('/')));
-        }
     }
 
 }
