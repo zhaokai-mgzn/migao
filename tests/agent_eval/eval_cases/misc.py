@@ -2,7 +2,7 @@
 # 本文件由 render_cases.py 生成，勿手改（改了也留不住：下次重渲染会覆盖）
 # 源: cases/*.yml（case-contract 单一源）
 # 重新生成: python3 render_cases.py --cases <dir> --out-eval <包目录> --out-md <md>
-# 域: misc（源: cases/misc.yml，219 条）
+# 域: misc（源: cases/misc.yml，220 条）
 
 from ._schema import Difficulty, EvalCase, Skill
 
@@ -4022,6 +4022,24 @@ _CASE_MC_192 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── MC-193 [NORMAL] B 端小程序（bmini）凭据的部署接线 + 缺失显式告警（issue #8196 ①）：变量名经 admin-api 的 env_file(.env.admin-api) 进容器、compose 的 environment 不得空值覆盖、启动期任一为空（含半配）打一条 WARN 点名缺哪个/影响/补法且不阻止启动、仓库里无凭据值（源: cases/misc.yml）──
+_CASE_MC_193 = EvalCase(
+    id='MC-193',
+    legacy_id='',
+    title='B 端小程序（bmini）凭据的部署接线 + 缺失显式告警（issue #8196 ①）：变量名经 admin-api 的 env_file(.env.admin-api) 进容器、compose 的 environment 不得空值覆盖、启动期任一为空（含半配）打一条 WARN 点名缺哪个/影响/补法且不阻止启动、仓库里无凭据值',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['A 档「扫普通链接二维码打开小程序」要 admin-api 能换 bmini 的 openid / 手机号 ⇒ 部署环境必须拿到两个凭据；改前 application.yml 只有空占位、部署侧没人说该放哪儿、backend/admin-api/src/main/java 里 `WECHAT_BMINI` 零命中（缺了也没有任何东西会红）'],
+    expectations=['direct_reply'],
+    data_checks=['**接线面（会红）**：`wechat.bmini.appid/secret` 必须绑到 `WECHAT_BMINI_APPID` / `WECHAT_BMINI_SECRET` 且**默认值为空**（非空默认 = 缺省悄悄变成某个值）；变量名必须写进 `backend/admin-api/.env.example` 且**值为空**；真实注入面 = admin-api 的 `env_file: .env.admin-api`，而 compose 的 `environment` **不得**出现这两个名（environment 优先级高于 env_file，`${…:-}` 插值读不到 env 文件 ⇒ 把真值覆盖成空串；同一形态 2026-08-30 已在 AI_AGENT_SERVICE_TOKEN 上出过事，commit 988e490f0 删掉了那行）。执行点 = tests/unit_ci_workflows/test_wechat_bmini_env_wiring.py 的三条接线判据 + 内建变异红证。', '**全仓无值（会红）**：任何文本面都不许出现这两个变量的**值**（空 / 占位符 / `${…}` 引用放行；取值前先剔 `${…}` 包装）。执行点 = 同文件的 credential_value_problems 与它的判别力自证（三种「写成值」必红、三种占位必放行）。', '**启动期告警（双向，会红）**：两个都空 ⇒ 至少一条 WARN 且点名缺哪个 / 影响（fail-closed）/ 补法（写进 .env.admin-api）；两个都给 ⇒ **零** WARN/ERROR；**半配也算缺**且只点缺的那个；空白 / null 与不写等价；**缺失不许变成启动失败**（方法里不得出现 throw）。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/WechatServiceBminiWiringTest.java（logback ListAppender 真跑）+ pytest 的源码接线判据。', '**文档一处写全（会红）**：docs/deployment/wechat-mini-program-qr.md 的「部署接线」节必须同时给：两个 env 名 / 值的落点（服务器 .env.admin-api，不入仓）/ 一条可复算回读命令（printenv）/ 缺省行为（只告警、admin-api 照常启动）。执行点 = 同文件的第六条判据。'],
+    skip_reason='[backend-contract] 接线形态 + Java 行为（logback 捕获）+ 文档要素，零 LLM、零真库、零网络；非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['deploy', 'env-wiring', 'wechat', 'bmini', 'loud-failure', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 CASES = (
     _CASE_MC_001,
     _CASE_MC_002,
@@ -4242,4 +4260,5 @@ CASES = (
     _CASE_MC_190,
     _CASE_MC_189,
     _CASE_MC_192,
+    _CASE_MC_193,
 )
