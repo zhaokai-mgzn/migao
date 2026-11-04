@@ -2,7 +2,7 @@
 # 本文件由 render_cases.py 生成，勿手改（改了也留不住：下次重渲染会覆盖）
 # 源: cases/*.yml（case-contract 单一源）
 # 重新生成: python3 render_cases.py --cases <dir> --out-eval <包目录> --out-md <md>
-# 域: misc（源: cases/misc.yml，228 条）
+# 域: misc（源: cases/misc.yml，230 条）
 
 from ._schema import Difficulty, EvalCase, Skill
 
@@ -4186,6 +4186,42 @@ _CASE_MC_202 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── MC-201 [NORMAL] OrderService 切片第二批（issue #8191 的 P2-1d，纯搬运不重写）：取消 / 退款 / 发货 / 状态流转四族 15 个方法搬到 OrderLifecycleService，OrderService 由 2,268 行降到 1,832 行并只留同名门面委托；公开名集合逐名相等、调用点零改动、方法体与拆分前逐字节相同（3 处具名跨类限定）、拆分前后的行为快照逐字节一致（源: cases/misc.yml）──
+_CASE_MC_201 = EvalCase(
+    id='MC-201',
+    legacy_id='',
+    title='OrderService 切片第二批（issue #8191 的 P2-1d，纯搬运不重写）：取消 / 退款 / 发货 / 状态流转四族 15 个方法搬到 OrderLifecycleService，OrderService 由 2,268 行降到 1,832 行并只留同名门面委托；公开名集合逐名相等、调用点零改动、方法体与拆分前逐字节相同（3 处具名跨类限定）、拆分前后的行为快照逐字节一致',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['商家端在订单上做取消 / 退款 / 发货 / 改状态各一次（状态机与三个时刻锚点按同一份口径落库、加工单联动与发货守卫照旧拦截）'],
+    expectations=[],
+    data_checks=['判据 1·🔴 接线：门面的生命周期族入口必须真的转到新服务 —— 把门面的新服务字段换成 Mockito 替身后，从原有公开入口（取消 / 确认支付 / 状态流转 / 退款 / 发货两个重载 / 发货人兜底 / 发货前置判据）驱动，替身上必须收到同名同参调用；发货的返回对象必须原样透传（isSameAs）。红证 = 删掉门面 cancelOrder 的委托那一行 ⇒ 接线一条当场红（实测：12 条里红 1 条）。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/OrderLifecycleServiceTest.java', '判据 2·🔴 搬运逐字节一致：拆分前 origin/main 的 OrderService.java（2,268 行）随判据入库、sha256 钉死，取消 / 退款 / 发货 / 状态流转四族 15 个方法的方法体必须原样出现在新载体，且门面里一处都不许留；5 条事务注解逐字跟着方法走、门面委托一条都不加；具名的 3 处跨类限定必须恰好兑现（多一处少一处都红）。红证 = 在新载体里把一句拒绝话术改一个字符 ⇒ 逐字节一致一条当场红（实测：5 条里红 1 条）。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/OrderLifecycleSliceSourceIdentityTest.java', '判据 3·🔴 行为快照：23 例固定输入覆盖四族的每一条分支与 6 条拒绝路径（取消四种前驱 + 加工单联动 CAS 输赢、退款部分/全额/越界、发货物流/无需物流/白名单外/状态不符/承运商兜底、状态流转五条边含含加工项被守卫拦截），在拆分前录制「协作者调用序列 + 返回值 + 异常类与话术」，拆分后必须逐字节相同（基线 142 行；冻结时钟使三个时刻锚点可复算，两处既有墙钟拼写只渲染来源不渲染那一秒）。红证 = 改一个字符话术 ⇒ 快照一条当场红。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/OrderLifecycleSliceSnapshotTest.java', '判据 4·🔴 台账与棘轮跟着载体走（回归面一字未放宽）：orders.status 的 CAS 写面随 transitionStatusAtomic 改载体；加工单联动作废的写路径改名为 OrderLifecycleService#cancelOrder 且 evidence 锚逐字兑现；发货写面不变式台账的两条商家侧条目改载体并新增「门面零残留」断言；shipped_at / paid_at / received_at 三条结构判据与金额入口台账的载体集合改为「门面 + 生命周期服务」（未登记即红、死条目即红、写面为空即红都没改）；OrderService 2,268 → 1,832 已跌破 2,000 ⇒ 冻结条目销账、豁免登记保留（仍 ≥ 800 行）；新文件 719 行 < 800 未登记豁免。执行点 = tests/unit_ci_workflows/test_loc_ratchet.py / test_state_write_face_metaguard.py / test_order_status_single_source.py 与 backend/admin-api/src/test/java/com/migao/admin/service/OrderPaidAndReceivedAtWriteGuardTest.java / OrderAutoCompleteSqlGuardTest.java / ProcessingOrderStatusCasMetaGuardTest.java / MoneyEntryPrecisionMetaGuardTest.java / backend/admin-api/src/test/java/com/migao/admin/shipment/ShipmentInvariantGuardTest.java'],
+    skip_reason='[backend-contract] Java 侧纯搬运重构（零 LLM / 零外网 / 零前端可见面），由 JUnit 判据与 pytest 棘轮/台账判据验证，无 agent 行为面，不进入 agent-eval 冒烟',
+    tags=['refactor', 'order-service', 'slice', 'lifecycle', 'cancel', 'refund', 'shipping', 'status-transition', 'byte-identical', 'snapshot'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-203 [NORMAL] OrderService 门面收尾第一批（issue #8681 的 P2-1e，部分交付）：租户可见性认定与单号解析两个调用方改直连 OrderQueryService、发货前置判定与发货人取值两个调用方改直连 OrderLifecycleService，门面 1,832 行降到 1,725 行并删掉这 4 个转发方法（公开面 29 → 25），另清理生命周期族搬走后失去调用方的 6 个私有死委托（源: cases/misc.yml）──
+_CASE_MC_203 = EvalCase(
+    id='MC-203',
+    legacy_id='',
+    title='OrderService 门面收尾第一批（issue #8681 的 P2-1e，部分交付）：租户可见性认定与单号解析两个调用方改直连 OrderQueryService、发货前置判定与发货人取值两个调用方改直连 OrderLifecycleService，门面 1,832 行降到 1,725 行并删掉这 4 个转发方法（公开面 29 → 25），另清理生命周期族搬走后失去调用方的 6 个私有死委托',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['商家端照常读订单列表与详情、跨租户访问仍回同一个 404；Agent 用订单号解析订单、生产待办仍按同一份发货守卫判断「待发货」、物流落库时的发货人仍按「显式优先、否则当前登录用户」取值'],
+    expectations=[],
+    data_checks=['判据 1·🔴 退休面（这 4 个转发不许回来）：门面源码里不许再有租户可见性认定 / 单号解析 / 发货前置判定 / 发货人取值这 4 个方法的声明（把任一转发加回门面 ⇒ 具名红），且全部 main 源码里零处「经门面变量调用这 4 个方法」（谁把调用方改回门面 ⇒ 具名红）。注入红证实测：把两个转发塞回门面 + 把生产待办的调用改回门面 ⇒ 7 条里红 3 条，报出「这两个方法又长回门面」与「这个消费方没有直连实现点」；逐字节还原后 7 条全绿（cmp 自证）。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/OrderFacadeForwarderRetirementTest.java', '判据 2·🔴 接线面两侧夹住（防恒绿）：实现点（OrderQueryService / OrderLifecycleService）必须仍声明这 4 个方法，四个**具名**消费方（安全层的归属认定、Agent 控制器的单号解析、订单控制器的发货人取值、生产待办服务的发货前置判定）必须逐字调用实现点；消费方改回门面或方法被改名 ⇒ 具名红。同一条判据内含判别力自证：内存里把转发塞回门面 / 把消费方改回门面 ⇒ 谓词各自判假，注释里的同名文本不算声明。执行点 = 同判据 1 的判据文件', '判据 3·🔴 改直测的实现点判据（门面接线判据失去对象时不许删、不许恒绿）：归属认定直测「查得到为真 / 查不到为假」两值；单号解析直测两条 fail-closed 出口（关键词为空、解析不到，话术逐字）；发货人取值直测「显式值去空白优先」与「缺省回落当前登录用户姓名」，并钉住显式值时一次都不查当前用户；发货前置判据直测三条分支（无需报工的作业直接放行且不查作业单完成数 / 有作业未完成拦住 / 作业已完成放行）。注入红证实测：把归属认定改成恒真、把发货人取值改成不去空白 ⇒ 两条当场红（期望假、实际真；期望「张三」、实际「  张三 」），逐字节还原后 26 条全绿。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/OrderQueryServiceTest.java 与 backend/admin-api/src/test/java/com/migao/admin/service/OrderLifecycleServiceTest.java', '判据 4·🔴 死委托清理（零调用点才删）与体量棘轮：生命周期族搬走后门面里已无任何调用方的 6 个私有只转发方法（库存前置校验 / 实收取数 / 收款退款流水两个重载 / 扣减 / 回补）不许长回来；OrderService 1,832 → 1,725 行（只降，棘轮条目仍在、豁免登记保留），本批不新增任何源码文件（新类 < 800 行一条不触发）。执行点 = tests/unit_ci_workflows/test_loc_ratchet.py 与判据 1 的判据文件', '判据 5·🔴 行为 diff = 0 的承载面未动：既有 152 条门面行为判据一字未改且全绿；被迁走的 4 个方法实现体逐字留在实现点（只删门面里的同名转发，一行实现都没改）；不新增/不移除任何事务注解（本批迁的都是读面与发货前置判定，本来就没有事务注解）。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/OrderServiceTest.java'],
+    skip_reason='[backend-contract] Java 侧调用方迁移 + 门面转发退休（零 LLM / 零外网 / 零前端可见面），由 JUnit 判据与 pytest 棘轮判据验证，无 agent 行为面，不进入 agent-eval 冒烟',
+    tags=['refactor', 'order-service', 'facade-retirement', 'caller-migration', 'dead-forwarder', 'ratchet'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 CASES = (
     _CASE_MC_001,
     _CASE_MC_002,
@@ -4415,4 +4451,6 @@ CASES = (
     _CASE_MC_199,
     _CASE_MC_200,
     _CASE_MC_202,
+    _CASE_MC_201,
+    _CASE_MC_203,
 )

@@ -1,0 +1,142 @@
+CASE 0 cancelOrder(confirmed)
+  orderMapper.selectById(order-0, Order{id=order-0,tenant=1,no=ORD-order-0,status=confirmed,total=1000.00,actual=1000.00,refund=null,user=null})
+  processingOrderMapper.selectActiveByOrderId(order-0, 1, ->null)
+  orderMapper.update(<entity>, Wrapper{MPGENVAL1=cancelled;MPGENVAL2=客户不要了;}, ->1)
+  orderItemMapper.selectList(Wrapper{}, ->0 items)
+  financeTransactionMapper.selectOne(Wrapper{}, ->null)
+  financeTransactionMapper.insert(Txn{no=FIN-20261104-0001,orderId=order-0,orderNo=ORD-order-0,type=refund,amount=1000.00,status=success,operator=系统,remark=订单取消退款}, ->1)
+  OUTCOME OK
+CASE 1 cancelOrder(pending)
+  orderMapper.selectById(order-1, Order{id=order-1,tenant=1,no=ORD-order-1,status=pending,total=520.00,actual=520.00,refund=null,user=null})
+  processingOrderMapper.selectActiveByOrderId(order-1, 1, ->null)
+  orderMapper.update(<entity>, Wrapper{MPGENVAL1=cancelled;}, ->1)
+  OUTCOME OK
+CASE 2 cancelOrder(producing+po generated)
+  orderMapper.selectById(order-2, Order{id=order-2,tenant=1,no=ORD-order-2,status=producing,total=800.00,actual=800.00,refund=null,user=null})
+  processingOrderMapper.selectActiveByOrderId(order-2, 1, ->Po{id=po-order-2,no=JG-order-2,status=generated})
+  processingOrderMapper.markStatusIfFrom(po-order-2, 1, generated, cancelled, @wallClock, 订单取消，加工单自动作废, @wallClock, ->1)
+  stockBatchConsumptionService.reverse(1, JG-order-2, ORD-order-2, 订单取消，加工单自动作废，回补批次库存, ->1)
+  orderMapper.update(<entity>, Wrapper{MPGENVAL1=cancelled;MPGENVAL2=客户改主意;}, ->1)
+  orderItemMapper.selectList(Wrapper{}, ->0 items)
+  financeTransactionMapper.selectOne(Wrapper{}, ->null)
+  financeTransactionMapper.insert(Txn{no=FIN-20261104-0001,orderId=order-2,orderNo=ORD-order-2,type=refund,amount=800.00,status=success,operator=系统,remark=订单取消退款}, ->1)
+  OUTCOME OK
+CASE 3 variant=3
+  orderMapper.selectById(order-3, Order{id=order-3,tenant=1,no=ORD-order-3,status=confirmed,total=300.00,actual=300.00,refund=null,user=null})
+  processingOrderMapper.selectActiveByOrderId(order-3, 1, ->Po{id=po-order-3,no=JG-order-3,status=issued})
+  OUTCOME ERR BusinessException :: 订单已发加工（加工单 JG-order-3 状态：issued），请先在订单详情或让黄金策处理加工单后再取消订单
+CASE 4 variant=4
+  orderMapper.selectById(order-4, Order{id=order-4,tenant=1,no=ORD-order-4,status=confirmed,total=300.00,actual=300.00,refund=null,user=null})
+  processingOrderMapper.selectActiveByOrderId(order-4, 1, ->Po{id=po-order-4,no=JG-order-4,status=generated})
+  processingOrderMapper.markStatusIfFrom(po-order-4, 1, generated, cancelled, @wallClock, 订单取消，加工单自动作废, @wallClock, ->0)
+  processingOrderMapper.selectById(po-order-4, ->Po{id=po-order-4,no=JG-order-4,status=generated})
+  OUTCOME ERR BusinessException :: 订单已发加工（加工单 JG-order-4 状态：generated），请先在订单详情或让黄金策处理加工单后再取消订单
+CASE 5 variant=5
+  orderMapper.selectById(order-5, Order{id=order-5,tenant=1,no=ORD-order-5,status=shipped,total=100.00,actual=100.00,refund=null,user=null})
+  OUTCOME ERR BusinessException :: 当前状态不允许取消
+CASE 6 refundOrder(partial)
+  orderMapper.selectById(order-6, Order{id=order-6,tenant=1,no=ORD-order-6,status=confirmed,total=600.00,actual=600.00,refund=null,user=null})
+  orderMapper.update(<entity>, Wrapper{MPGENVAL1=@wallClock;}, ->1)
+  financeTransactionMapper.selectOne(Wrapper{}, ->null)
+  financeTransactionMapper.insert(Txn{no=FIN-20261104-0001,orderId=order-6,orderNo=ORD-order-6,type=refund,amount=30.00,status=success,operator=系统,remark=订单退款: 少发一件}, ->1)
+  OUTCOME OK
+CASE 7 refundOrder(full)
+  orderMapper.selectById(order-7, Order{id=order-7,tenant=1,no=ORD-order-7,status=shipped,total=450.00,actual=450.00,refund=null,user=null})
+  orderMapper.update(<entity>, Wrapper{MPGENVAL1=@wallClock;}, ->1)
+  financeTransactionMapper.selectOne(Wrapper{}, ->null)
+  financeTransactionMapper.insert(Txn{no=FIN-20261104-0001,orderId=order-7,orderNo=ORD-order-7,type=refund,amount=450.00,status=success,operator=系统,remark=订单退款: 退款}, ->1)
+  OUTCOME OK
+CASE 8 variant=8
+  orderMapper.selectById(order-8, Order{id=order-8,tenant=1,no=ORD-order-8,status=pending,total=450.00,actual=450.00,refund=null,user=null})
+  OUTCOME ERR BusinessException :: 当前状态[待付款]不允许退款，仅已确认/生产中/已发货/已完成可退款
+CASE 9 variant=9
+  orderMapper.selectById(order-9, Order{id=order-9,tenant=1,no=ORD-order-9,status=producing,total=200.00,actual=200.00,refund=null,user=null})
+  OUTCOME ERR BusinessException :: 退款金额不能超过实收款 200.00
+CASE 10 shipWithLogistics(logistics)
+  orderMapper.selectById(order-10, Order{id=order-10,tenant=1,no=ORD-order-10,status=confirmed,total=900.00,actual=900.00,refund=null,user=null})
+  orderLogisticsMapper.updateShippingDetails(1, order-10, 顺丰, SF1234567890, null, null, null, ->1)
+  orderMapper.selectById(order-10, Order{id=order-10,tenant=1,no=ORD-order-10,status=confirmed,total=900.00,actual=900.00,refund=null,user=null})
+  orderItemMapper.selectList(Wrapper{}, ->0 items)
+  orderItemMapper.selectList(Wrapper{}, ->0 items)
+  processingOrderMapper.selectActiveByOrderId(order-10, 1, ->Po{id=po-order-4,no=JG-order-4,status=generated})
+  orderMapper.update(<entity>, Wrapper{MPGENVAL1=shipped;MPGENVAL2=@businessClock;}, ->1)
+  RETURN transitioned=true result=Map{logistics_company=顺丰;order_id=order-10;status=shipped;tracking_no=SF1234567890;}
+  OUTCOME OK
+CASE 11 shipWithLogistics(already shipped)
+  orderMapper.selectById(order-11, Order{id=order-11,tenant=1,no=ORD-order-11,status=shipped,total=900.00,actual=900.00,refund=null,user=null})
+  orderLogisticsMapper.updateShippingDetails(1, order-11, 圆通, YT0001, null, null, null, ->1)
+  orderMapper.selectById(order-11, Order{id=order-11,tenant=1,no=ORD-order-11,status=shipped,total=900.00,actual=900.00,refund=null,user=null})
+  RETURN transitioned=false result=Map{logistics_company=圆通;order_id=order-11;status=shipped;tracking_no=YT0001;}
+  OUTCOME OK
+CASE 12 shipWithLogistics(noLogistics)
+  orderMapper.selectById(order-12, Order{id=order-12,tenant=1,no=ORD-order-12,status=confirmed,total=900.00,actual=900.00,refund=null,user=null})
+  orderLogisticsMapper.selectByOrderId(order-12, 1, ->0 rows)
+  orderLogisticsMapper.updateShippingDetails(1, order-12, , , 张三, express, none, ->1)
+  orderMapper.selectById(order-12, Order{id=order-12,tenant=1,no=ORD-order-12,status=confirmed,total=900.00,actual=900.00,refund=null,user=null})
+  orderItemMapper.selectList(Wrapper{}, ->0 items)
+  orderItemMapper.selectList(Wrapper{}, ->0 items)
+  processingOrderMapper.selectActiveByOrderId(order-12, 1, ->Po{id=po-order-4,no=JG-order-4,status=generated})
+  orderMapper.update(<entity>, Wrapper{MPGENVAL1=shipped;MPGENVAL2=@businessClock;}, ->1)
+  RETURN transitioned=true result=Map{logistics_company=null;order_id=order-12;status=shipped;tracking_no=;}
+  OUTCOME OK
+CASE 13 variant=13
+  OUTCOME ERR BusinessException :: 无效的发货方式: airdrop（只接受 logistics 物流发货 / none 无需物流）
+CASE 14 variant=14
+  orderMapper.selectById(order-14, Order{id=order-14,tenant=1,no=ORD-order-14,status=pending,total=900.00,actual=900.00,refund=null,user=null})
+  OUTCOME ERR BusinessException :: 仅已确认/生产中/已发货状态可发货，当前状态: pending
+CASE 15 variant=15
+  orderMapper.selectById(order-15, Order{id=order-15,tenant=1,no=ORD-order-15,status=confirmed,total=900.00,actual=900.00,refund=null,user=null})
+  orderLogisticsMapper.selectByOrderId(order-15, 1, ->0 rows)
+  OUTCOME ERR BusinessException :: 承运商不能为空（客户档案未带出常用物流时需显式选择）
+CASE 16 shipWithLogistics(company fallback)
+  orderMapper.selectById(order-16, Order{id=order-16,tenant=1,no=ORD-order-16,status=confirmed,total=900.00,actual=900.00,refund=null,user=null})
+  orderLogisticsMapper.selectByOrderId(order-16, 1, ->1 rows)
+  orderLogisticsMapper.updateShippingDetails(1, order-16, 德邦, DB1, null, null, null, ->1)
+  orderMapper.selectById(order-16, Order{id=order-16,tenant=1,no=ORD-order-16,status=confirmed,total=900.00,actual=900.00,refund=null,user=null})
+  orderItemMapper.selectList(Wrapper{}, ->0 items)
+  orderItemMapper.selectList(Wrapper{}, ->0 items)
+  processingOrderMapper.selectActiveByOrderId(order-16, 1, ->Po{id=po-order-4,no=JG-order-4,status=generated})
+  orderMapper.update(<entity>, Wrapper{MPGENVAL1=shipped;MPGENVAL2=@businessClock;}, ->1)
+  RETURN transitioned=true result=Map{logistics_company=德邦;order_id=order-16;status=shipped;tracking_no=DB1;}
+  OUTCOME OK
+CASE 17 updateOrderStatus(confirmed->producing)
+  orderMapper.selectById(order-17, Order{id=order-17,tenant=1,no=ORD-order-17,status=confirmed,total=700.00,actual=700.00,refund=null,user=user-7})
+  orderMapper.update(<entity>, Wrapper{MPGENVAL1=producing;}, ->1)
+  notificationService.triggerByEvent(1, order_status_changed, Map{orderNo=ORD-order-17;recipientId=user-7;recipientType=user;status=生产中;})
+  OUTCOME OK
+CASE 18 variant=18
+  orderMapper.selectById(order-18, Order{id=order-18,tenant=1,no=ORD-order-18,status=confirmed,total=700.00,actual=700.00,refund=null,user=null})
+  orderMapper.selectById(order-18, Order{id=order-18,tenant=1,no=ORD-order-18,status=confirmed,total=700.00,actual=700.00,refund=null,user=null})
+  processingOrderMapper.selectActiveByOrderId(order-18, 1, ->Po{id=po-order-4,no=JG-order-4,status=generated})
+  processingOrderMapper.markStatusIfFrom(po-order-4, 1, generated, cancelled, @wallClock, 订单取消，加工单自动作废, @wallClock, ->0)
+  processingOrderMapper.selectById(po-order-4, ->Po{id=po-order-4,no=JG-order-4,status=generated})
+  OUTCOME ERR BusinessException :: 订单已发加工（加工单 JG-order-4 状态：generated），请先在订单详情或让黄金策处理加工单后再取消订单
+CASE 19 variant=19
+  orderMapper.selectById(order-19, Order{id=order-19,tenant=1,no=ORD-order-19,status=confirmed,total=700.00,actual=700.00,refund=null,user=null})
+  orderItemMapper.selectList(Wrapper{}, ->1 items)
+  orderItemMapper.selectList(Wrapper{}, ->1 items)
+  OUTCOME ERR BusinessException :: 订单含加工项，须先完成加工单后再发货（可在订单详情或让黄金策生成/更新加工单）
+CASE 20 updateOrderStatus(pending->confirmed)
+  orderMapper.selectById(order-20, Order{id=order-20,tenant=1,no=ORD-order-20,status=pending,total=260.00,actual=260.00,refund=null,user=null})
+  orderMapper.selectById(order-20, Order{id=order-20,tenant=1,no=ORD-order-20,status=pending,total=260.00,actual=260.00,refund=null,user=null})
+  orderItemMapper.selectList(Wrapper{}, ->1 items)
+  orderMapper.update(<entity>, Wrapper{MPGENVAL1=confirmed;MPGENVAL2=@businessClock;}, ->1)
+  orderItemMapper.selectList(Wrapper{}, ->1 items)
+  orderMapper.selectById(order-20, Order{id=order-20,tenant=1,no=ORD-order-20,status=pending,total=260.00,actual=260.00,refund=null,user=null})
+  orderMapper.selectById(order-20, Order{id=order-20,tenant=1,no=ORD-order-20,status=pending,total=260.00,actual=260.00,refund=null,user=null})
+  financeTransactionMapper.selectOne(Wrapper{}, ->null)
+  financeTransactionMapper.insert(Txn{no=FIN-20261104-0001,orderId=order-20,orderNo=ORD-order-20,type=income,amount=260.00,status=success,operator=系统,remark=订单确认收款}, ->1)
+  OUTCOME OK
+CASE 21 confirmPayment
+  orderMapper.selectById(order-21, Order{id=order-21,tenant=1,no=ORD-order-21,status=pending,total=180.00,actual=180.00,refund=null,user=null})
+  orderItemMapper.selectList(Wrapper{}, ->1 items)
+  orderMapper.update(<entity>, Wrapper{MPGENVAL1=confirmed;MPGENVAL2=@businessClock;}, ->1)
+  orderItemMapper.selectList(Wrapper{}, ->1 items)
+  orderMapper.selectById(order-21, Order{id=order-21,tenant=1,no=ORD-order-21,status=pending,total=180.00,actual=180.00,refund=null,user=null})
+  orderMapper.selectById(order-21, Order{id=order-21,tenant=1,no=ORD-order-21,status=pending,total=180.00,actual=180.00,refund=null,user=null})
+  financeTransactionMapper.selectOne(Wrapper{}, ->null)
+  financeTransactionMapper.insert(Txn{no=FIN-20261104-0001,orderId=order-21,orderNo=ORD-order-21,type=income,amount=180.00,status=success,operator=系统,remark=订单确认收款}, ->1)
+  OUTCOME OK
+CASE 22 revertProducingToConfirmed
+  orderMapper.update(<entity>, Wrapper{MPGENVAL1=confirmed;MPGENVAL2=作业单作废;}, ->1)
+  OUTCOME OK

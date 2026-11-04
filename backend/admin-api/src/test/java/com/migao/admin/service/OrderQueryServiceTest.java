@@ -5,6 +5,12 @@ import com.migao.admin.dto.OrderDetailResponse;
 import com.migao.admin.dto.OrderListResponse;
 import com.migao.admin.dto.PageResponse;
 import com.migao.admin.dto.agent.AgentOrderResolveResponse;
+import com.migao.admin.entity.Order;
+import com.migao.admin.entity.OrderItem;
+import com.migao.admin.exception.BusinessException;
+import com.migao.admin.mapper.OrderItemMapper;
+import com.migao.admin.mapper.OrderMapper;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -17,6 +23,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -44,6 +51,11 @@ class OrderQueryServiceTest {
 
     @Mock
     private OrderQueryService orderQueryService;
+    /** 直测实现点时它自己读的两个协作者（issue #8681，P2-1e）。 */
+    @Mock
+    private OrderMapper orderMapper;
+    @Mock
+    private OrderItemMapper orderItemMapper;
 
     @InjectMocks
     private OrderService orderService;
@@ -106,26 +118,53 @@ class OrderQueryServiceTest {
         verify(orderQueryService).getOrderById("o-1", "u-owner");
     }
 
-    @Test
-    @DisplayName("🔴 归属认定门面 existsForCurrentTenant ⇒ 委托（返回值原样透传，含 false）")
-    void existsForCurrentTenantDelegates() {
-        when(orderQueryService.existsForCurrentTenant("o-1")).thenReturn(false);
+    // ── 以下两条（issue #8681，P2-1e）：门面的同名转发已随调用方迁移**删除** ────────────────
+    // 判据**不删、不恒绿**：改成**直接测实现点**（真实 OrderQueryService，只 mock 它自己读的 Mapper）。
+    // 「调用方不再走门面」这一半由 OrderFacadeForwarderRetirementTest 的载体判据承担。
 
-        assertThat(orderService.existsForCurrentTenant("o-1")).isFalse();
-        verify(orderQueryService).existsForCurrentTenant("o-1");
+    /** 直测用实现点：真实 OrderQueryService，只交给它 resolveOrderId / existsForCurrentTenant 会碰的协作者。 */
+    private OrderQueryService directQueryService() {
+        return new OrderQueryService(orderMapper, orderItemMapper, null, null, null,
+                new ObjectMapper(), null, new com.migao.admin.time.BusinessClock());
     }
 
+    /**
+     * 归属认定 = {@code orderMapper.selectById} 的「查得到吗」（租户条件由拦截器追加）。
+     */
     @Test
-    @DisplayName("🔴 单号解析门面 resolveOrderId ⇒ 委托（返回值原样透传）")
-    void resolveOrderIdDelegates() {
-        AgentOrderResolveResponse expected = AgentOrderResolveResponse.builder()
-                .id("o-1")
-                .orderNo("ORD-1")
-                .itemCount(2)
-                .build();
-        when(orderQueryService.resolveOrderId("ORD-1", 7L)).thenReturn(expected);
+    @DisplayName("🔴 归属认定 existsForCurrentTenant（直测实现点）：本租户查得到 ⇒ true；查不到 ⇒ false")
+    void existsForCurrentTenantIsTheMapperTruth() {
+        OrderQueryService service = directQueryService();
+        when(orderMapper.selectById("o-1")).thenReturn(new Order());
 
-        assertThat(orderService.resolveOrderId("ORD-1", 7L)).isSameAs(expected);
-        verify(orderQueryService).resolveOrderId("ORD-1", 7L);
+        assertThat(service.existsForCurrentTenant("o-1")).isTrue();
+        assertThat(service.existsForCurrentTenant("o-404")).isFalse();
+    }
+
+    /**
+     * 单号解析的两条 fail-closed 出口（空关键词 / 解析不到），话术与拆分前逐字一致。
+     */
+    @Test
+    @DisplayName("🔴 单号解析 resolveOrderId（直测实现点）：关键词为空 ⇒ 校验失败；解析不到 ⇒ ORDER_NOT_FOUND")
+    void resolveOrderIdFailsClosed() {
+        OrderQueryService service = directQueryService();
+
+        assertThatThrownBy(() -> service.resolveOrderId("   ", 7L))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("keyword 不能为空");
+        assertThatThrownBy(() -> service.resolveOrderId("NOPE", 7L))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("未找到匹配的订单：NOPE");
+    }
+
+    /** MyBatis-Plus 的 Lambda 列名是惰性解析的（不预热 ⇒ can not find lambda cache）。 */
+    @org.junit.jupiter.api.BeforeAll
+    static void primeMybatisPlusLambdaCache() {
+        com.baomidou.mybatisplus.core.MybatisConfiguration configuration =
+                new com.baomidou.mybatisplus.core.MybatisConfiguration();
+        org.apache.ibatis.builder.MapperBuilderAssistant assistant =
+                new org.apache.ibatis.builder.MapperBuilderAssistant(configuration, "");
+        com.baomidou.mybatisplus.core.metadata.TableInfoHelper.initTableInfo(assistant, Order.class);
+        com.baomidou.mybatisplus.core.metadata.TableInfoHelper.initTableInfo(assistant, OrderItem.class);
     }
 }

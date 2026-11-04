@@ -58,9 +58,15 @@ class ShipmentInvariantGuardTest {
     private static final Path SERVICE_DIR =
             REPO_ROOT.resolve("backend/admin-api/src/main/java/com/migao/admin/service");
 
-    /** 扫描面：**只**扫这两个「订单状态写面」的承载文件（第③条路的转移在本体里，故也扫它）。 */
+    /**
+     * 扫描面：**只**扫这两个「订单状态写面」的承载文件（第③条路的转移在本体里，故也扫它）。
+     *
+     * <p>issue #8191（P2-1d）：商家侧两处写点（{@code shipOrderIfApplicable} / {@code updateOrderStatus}）
+     * 随生命周期族搬到 {@code OrderLifecycleService} ⇒ 扫描面跟着载体走（不是放宽：门面里若**残留**
+     * 一处「置为 shipped」写点，C1 的「门面零残留」断言当场红）。</p>
+     */
     private static final List<String> SCAN_SOURCES = List.of(
-            "OrderShipmentService.java", "OrderService.java");
+            "OrderShipmentService.java", "OrderLifecycleService.java");
 
     /** 不动式判定本体的**接线锚**（登记条目「必须带」时逐字核对它）。 */
     private static final String WIRING_ANCHOR = "assertQuantities(";
@@ -88,7 +94,7 @@ class ShipmentInvariantGuardTest {
                     "工人发货（唯一 owner 的写面）",
                     "POST /api/worker/shipment/orders/{orderId}/ship",
                     true, "OrderShipmentService::assertQuantities", null, null),
-            new WritePoint("OrderService.java",
+            new WritePoint("OrderLifecycleService.java",
                     "商家/生产发货（shipOrderIfApplicable ← shipWithLogistics ← ProductionController.ship）",
                     "POST /api/admin/production/orders/{orderId}/ship",
                     false, null,
@@ -100,7 +106,7 @@ class ShipmentInvariantGuardTest {
                     "若要本路也承载实发数量，需先裁定「商家发货要不要建发货单 + 实发数量从哪来」"
                             + "（业务口径，涉单据与对账）⇒ 裁定后把本条目改为 carriesInvariant=true "
                             + "并接上 OrderShipmentService::assertQuantities。"),
-            new WritePoint("OrderService.java",
+            new WritePoint("OrderLifecycleService.java",
                     "裸状态流转（updateOrderStatus 的 confirmed|producing → shipped）",
                     "PUT /api/admin/orders/{id}/status",
                     false, null,
@@ -114,13 +120,18 @@ class ShipmentInvariantGuardTest {
 
     @Test
     @DisplayName("C1 fail-closed：扫描面与台账都非空（判据空转 = 假绿）")
-    void scanAndLedgerAreNotEmpty() {
+    void scanAndLedgerAreNotEmpty() throws IOException {
         assertThat(SCAN_SOURCES).as("扫描面为空 ⇒ 本守卫恒绿（空断言）").isNotEmpty();
         assertThat(LEDGER).as("台账为空 ⇒ 「新增发货路」永远不会被发现").isNotEmpty();
         for (String source : SCAN_SOURCES) {
             assertThat(Files.exists(SERVICE_DIR.resolve(source)))
                     .as("扫描面声明的文件必须真实存在（路径漂移不得静默跳过）: %s", source).isTrue();
         }
+        // issue #8191（P2-1d）：写点搬走后，门面里不许**残留**同一族写点 —— 否则它既不在扫描面
+        // （未登记即红那条就看不到它），又仍然写 orders.status（= 静默的第二条发货路）。
+        assertThat(scanText(Files.readString(SERVICE_DIR.resolve("OrderService.java"))))
+                .as("门面里残留「置为 shipped」写点 ⇒ 必须并回 OrderLifecycleService 或登记进台账并加回扫描面")
+                .isEmpty();
     }
 
     // ══════════════════════════════════════════════════════════════════════════

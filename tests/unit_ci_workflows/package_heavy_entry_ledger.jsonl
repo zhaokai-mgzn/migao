@@ -122,3 +122,7 @@
 {"id":"1793793297.35810.12995","ts":"2026-11-04T11:54:57Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/8654-deadlock","why":"--allow-package-heavy（命令行显式）"}
 {"id":"1793795308.76037.32706","ts":"2026-11-04T12:28:28Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/8654-deadlock","why":"--allow-package-heavy（命令行显式）"}
 {"id":"1793795631.77143.10166","ts":"2026-11-04T12:33:51Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/8654-deadlock","why":"--allow-package-heavy（命令行显式）"}
+{"id":"1793798449.34964.3158","ts":"2026-11-04T13:20:50Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/8191-lifecycle","why":"--allow-package-heavy（命令行显式）"}
+{"id":"1793798465.37081.5537","ts":"2026-11-04T13:21:05Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/8191-lifecycle","why":"--allow-package-heavy（命令行显式）"}
+{"id":"1793804083.28488.13848","ts":"2026-11-04T14:54:43Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/8681-facade","why":"--allow-package-heavy（命令行显式）"}
+{"id":"1793804556.38446.17741","ts":"2026-11-04T15:02:36Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/8681-facade","why":"--allow-package-heavy（命令行显式）"}

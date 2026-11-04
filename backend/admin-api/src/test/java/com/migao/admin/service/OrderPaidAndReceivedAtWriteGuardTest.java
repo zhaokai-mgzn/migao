@@ -38,8 +38,24 @@ class OrderPaidAndReceivedAtWriteGuardTest {
 
     private static final Path MAIN = Path.of("src", "main", "java", "com", "migao", "admin");
     private static final Path ORDER_SERVICE = MAIN.resolve("service/OrderService.java");
+    /** 生命周期族载体（issue #8191，P2-1d）：{@code transitionStatusAtomic} 的实现点搬到这里。 */
+    private static final Path LIFECYCLE_SERVICE = MAIN.resolve("service/OrderLifecycleService.java");
     private static final Path ORDER_MAPPER = MAIN.resolve("mapper/OrderMapper.java");
     private static final Path ORDER_DETAIL_RESPONSE = MAIN.resolve("dto/OrderDetailResponse.java");
+
+    /**
+     * **载体集合**（issue #8191，P2-1d）：{@code transitionStatusAtomic} 随生命周期族搬到
+     * {@code OrderLifecycleService}。两个载体**都读**再合并 —— 判据的语义是「整族只有一个写面」：
+     * 合并后写面若搬回门面 / 被复制一份，`count(...) != 1` 当场红。
+     * fail-closed：声明点必须在合并语料里**恰好一处**（取不到 ⇒ 判据空跑通过，不许当绿）。
+     */
+    private static String lifecycleCarriers() throws IOException {
+        String joined = source(ORDER_SERVICE) + "\n" + source(LIFECYCLE_SERVICE);
+        assertThat(count(stripComments(joined), "int transitionStatusAtomic("))
+                .as("载体集合里必须恰好有一处 transitionStatusAtomic 声明（取不到 ⇒ 判据会空跑通过）")
+                .isEqualTo(1);
+        return joined;
+    }
 
     private static String source(Path path) throws IOException {
         assertThat(path).as("判据的扫描面必须真实存在（路径漂移 ⇒ 判红，不是空跑通过）").exists();
@@ -197,7 +213,7 @@ class OrderPaidAndReceivedAtWriteGuardTest {
     @Test
     @DisplayName("paid_at 只在 pending→confirmed 这条边上写（回退边不得写）")
     void paidAtIsWrittenOnlyOnTheConfirmEdge() throws IOException {
-        assertThat(paidAtIsWrittenOnlyOnTheConfirmEdge(source(ORDER_SERVICE)))
+        assertThat(paidAtIsWrittenOnlyOnTheConfirmEdge(lifecycleCarriers()))
                 .as("paid_at 的写面漂了（被写到回退边 / 挪出 transitionStatusAtomic / 多出第二个写面）")
                 .isTrue();
     }
@@ -205,7 +221,7 @@ class OrderPaidAndReceivedAtWriteGuardTest {
     @Test
     @DisplayName("received_at 由商家确认收货与自动完成**两条路**各写一次")
     void receivedAtIsWrittenOnBothCompletedPaths() throws IOException {
-        assertThat(receivedAtIsWrittenOnBothCompletedPaths(source(ORDER_SERVICE), source(ORDER_MAPPER)))
+        assertThat(receivedAtIsWrittenOnBothCompletedPaths(lifecycleCarriers(), source(ORDER_MAPPER)))
                 .as("received_at 的写面漂了（自动完成那条腿漏写 ⇒ 那批单永远空值且不会有别的东西变红）")
                 .isTrue();
     }
@@ -223,7 +239,7 @@ class OrderPaidAndReceivedAtWriteGuardTest {
     @Test
     @DisplayName("判别力自证：注入四种坏形态 ⇒ 判据各自判红（未注入 ⇒ 不报）")
     void guardHasDiscriminatingPower() throws IOException {
-        String service = source(ORDER_SERVICE);
+        String service = lifecycleCarriers();
         String mapper = source(ORDER_MAPPER);
         String dto = source(ORDER_DETAIL_RESPONSE);
 

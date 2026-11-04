@@ -173,7 +173,9 @@ MUTATIONS = [
     {
         "name": "mount_point_removed",
         "why": "把确认支付上的通知点整句删掉（事件不再到达）",
-        "file": SVC + "OrderService.java",
+        # issue #8191（P2-1d）：`confirmPayment` 与其通知点已搬到 OrderLifecycleService ⇒ 被守卫对象跟着搬家
+        # （判据源码不变、期望变红的用例不变；锚点仍须在该文件里**恰好命中 1 次**，腐烂即红）。
+        "file": SVC + "OrderLifecycleService.java",
         "old": "        PoolChangeNotifier.notifySafely(poolChangeNotifier, order.getTenantId(),\n                PoolChangeNotifier.TRIGGER_ORDER_CONFIRMED);",
         "new": "        // [RED-PROOF] 通知点被删",
         "cls": MOUNT, "fqn": MOUNT_FQN,

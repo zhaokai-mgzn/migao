@@ -86,7 +86,8 @@ class PaginationParamGateEndpointTest extends BaseControllerTest {
     @BeforeEach
     void setUp() {
         super.baseSetUp();
-        orderController = new OrderController(orderService, roleService, orderLogisticsService, orderShipmentService);
+        orderController = new OrderController(orderService, roleService, orderLogisticsService, orderShipmentService,
+                null);
         stockLedgerController = new StockLedgerController(stockLedgerService);
         notificationController = new NotificationController(notificationService);
         mockMvc = withGate();

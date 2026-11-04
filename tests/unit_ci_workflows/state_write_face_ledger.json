@@ -524,7 +524,7 @@
     },
     {
       "table": "orders",
-      "file": "backend/admin-api/src/main/java/com/migao/admin/service/OrderService.java",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/OrderLifecycleService.java",
       "symbol": "transitionStatusAtomic",
       "form": "lambda_set",
       "params": "String id, String expectedStatus, String newStatus, String closeReason",

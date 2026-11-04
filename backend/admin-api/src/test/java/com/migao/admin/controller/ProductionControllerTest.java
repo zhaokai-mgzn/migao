@@ -253,7 +253,10 @@ class ProductionControllerTest {
         // 由 ProductionTodoServiceTest（真实 OrderService）覆盖；本类只钉端点契约（路径/权限/信封）。
         org.springframework.test.util.ReflectionTestUtils.setField(controller, "productionTodoService",
                 new ProductionTodoService(stuckPointService, orderService, orderMapper,
-                        processingOrderMapper, positionOperationMapper));
+                        processingOrderMapper, positionOperationMapper,
+                        // 发货守卫实现点（issue #8681，P2-1e）：本类 orderService 是 @Mock，且
+                        // to_ship 判据在 needsWork=false 时短路 ⇒ 替身返回 false 与拆分前逐字一致。
+                        org.mockito.Mockito.mock(com.migao.admin.service.OrderLifecycleService.class)));
         mockMvc = MockMvcBuilders.standaloneSetup(controller)
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .build();

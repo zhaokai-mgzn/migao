@@ -97,13 +97,17 @@ class ProcessingOrderStatusCasMetaGuardTest {
     private static final String MAPPER_FILE = MAIN + "/mapper/ProcessingOrderMapper.java";
     private static final String SERVICE_FILE = MAIN + "/service/ProcessingOrderService.java";
     private static final String ORDER_SERVICE_FILE = MAIN + "/service/OrderService.java";
+    /** 生命周期族载体（issue #8191，P2-1d）：{@code cancelOrder} 的联动作废腿搬到本文件。 */
+    private static final String LIFECYCLE_SERVICE_FILE = MAIN + "/service/OrderLifecycleService.java";
     private static final String LEDGER_PATH =
             MODULE + "/src/test/resources/processing-order-status-cas-ledger.json";
 
-    /** 两条 service 文件（台账条目的 {@code file} 字段必须落在这两个之一）。 */
+    /** 三处 service 载体（台账条目的 {@code file} 字段必须落在其中之一；issue #8191 P2-1d 新增第三个）。 */
     private static final Map<String, String> SERVICE_FILES = Map.of(
             "backend/admin-api/src/main/java/com/migao/admin/service/ProcessingOrderService.java", SERVICE_FILE,
-            "backend/admin-api/src/main/java/com/migao/admin/service/OrderService.java", ORDER_SERVICE_FILE);
+            "backend/admin-api/src/main/java/com/migao/admin/service/OrderService.java", ORDER_SERVICE_FILE,
+            "backend/admin-api/src/main/java/com/migao/admin/service/OrderLifecycleService.java",
+            LIFECYCLE_SERVICE_FILE);
 
     // ── 形态（与台账 scan 段的声明逐字对应）
 
@@ -140,7 +144,7 @@ class ProcessingOrderStatusCasMetaGuardTest {
     void scannersAreNotBlind() throws IOException {
         List<String> mapperMethods = mapperStatusWrites(mapperText()).stream().map(MapperWrite::method).toList();
         List<String> servicePaths = new ArrayList<>();
-        for (String file : List.of(SERVICE_FILE, ORDER_SERVICE_FILE)) {
+        for (String file : List.of(SERVICE_FILE, ORDER_SERVICE_FILE, LIFECYCLE_SERVICE_FILE)) {
             servicePaths.addAll(serviceStatusWritePaths(serviceText(file), file));
         }
 
@@ -150,8 +154,8 @@ class ProcessingOrderStatusCasMetaGuardTest {
                 .as("扫描器必须现取到写 status 的 mapper 手写 SQL（返回空集 = 判据失明，不是通过）")
                 .contains("markCompletedIfActive", "markInProcessingIfFrom", "markStatusIfFrom");
         assertThat(servicePaths)
-                .as("扫描器必须现取到两条 service 里写状态列的调用点（含 OrderService —— 本单第二个写面就在那里）")
-                .contains("ProcessingOrderService#updateStatus", "OrderService#cancelOrder");
+                .as("扫描器必须现取到各 service 载体里写状态列的调用点（#6955 的第二个写面 = cancelOrder 的联动作废腿）")
+                .contains("ProcessingOrderService#updateStatus", "OrderLifecycleService#cancelOrder");
     }
 
     @Test
@@ -184,7 +188,7 @@ class ProcessingOrderStatusCasMetaGuardTest {
     @DisplayName("状态迁移写路径不得使用无谓词 updateById（必须走条件更新 CAS）")
     void noStatusWritePathUsesUnconditionalUpdateById() throws IOException {
         List<String> offenders = new ArrayList<>();
-        for (String file : List.of(SERVICE_FILE, ORDER_SERVICE_FILE)) {
+        for (String file : List.of(SERVICE_FILE, ORDER_SERVICE_FILE, LIFECYCLE_SERVICE_FILE)) {
             String owner = ownerOf(file);
             offenders.addAll(serviceStatusWriteCandidates(serviceText(file)).stream()
                     .filter(m -> UNCONDITIONAL_UPDATE_BY_ID.matcher(m.body()).find())
@@ -612,7 +616,7 @@ class ProcessingOrderStatusCasMetaGuardTest {
     /** 两条 service 文件的现取写路径清单（{@code <类>#<方法>}，报读与台账对账都用它）。 */
     private static List<String> allServiceWritePaths() throws IOException {
         List<String> out = new ArrayList<>();
-        for (String file : List.of(SERVICE_FILE, ORDER_SERVICE_FILE)) {
+        for (String file : List.of(SERVICE_FILE, ORDER_SERVICE_FILE, LIFECYCLE_SERVICE_FILE)) {
             out.addAll(serviceStatusWritePaths(serviceText(file), file));
         }
         return out;
