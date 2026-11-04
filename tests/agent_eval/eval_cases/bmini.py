@@ -2,7 +2,7 @@
 # 本文件由 render_cases.py 生成，勿手改（改了也留不住：下次重渲染会覆盖）
 # 源: cases/*.yml（case-contract 单一源）
 # 重新生成: python3 render_cases.py --cases <dir> --out-eval <包目录> --out-md <md>
-# 域: bmini（源: cases/bmini.yml，63 条）
+# 域: bmini（源: cases/bmini.yml，64 条）
 
 from ._schema import Difficulty, EvalCase, Skill
 
@@ -1140,6 +1140,24 @@ _CASE_BM_065 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── BM-066 [NORMAL] 待出库单详情显示「套数所在仓位」（服务端 stock_bins）—— 只上屏，纸面一格都不印（源: cases/bmini.yml）──
+_CASE_BM_066 = EvalCase(
+    id='BM-066',
+    legacy_id='',
+    title='待出库单详情显示「套数所在仓位」（服务端 stock_bins）—— 只上屏，纸面一格都不印',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['工人打开「待出库单 → 出库单」，除了行清单（订单号/收货人/电话/地址/物流/日期/套数），还要能看到这一单的成品分别在哪个仓位：如「A-01-03 第 1、2 套」「B-02-01 第 3 套」。这段只显示在屏幕上，打印出来的 50×70 成品出库单上不要有仓位。'],
+    expectations=['direct_reply'],
+    data_checks=["判据 1·服务端按仓位聚合：`finished_goods_stock`（status=in_stock）两箱三套 ⇒ `stock_bins` = [{bin_code:'A-01', sets_text:'1、2', set_count:2}, {bin_code:'B-02', sets_text:'3', set_count:1}]，且按 order_id 归组、其它订单的行不串。执行点 = backend/admin-api/.../WorkerShipmentReadyServiceTest#仓位按仓位聚合", '判据 2·缺值不编：没有在库行 / 仓位号为空 ⇒ **不下发** stock_bins（页面不渲染这一段）。执行点 = 同文件#没有在库行不下发仓位 / #空仓位号被丢弃', '判据 3·🔴 只上屏不入纸：`buildShipLabelRows(order)` 的行里出现「仓位」标签或仓位号 ⇒ 红（用户逐字「不需要打印在标签中」）。执行点 = frontend/bmini-app/tests/worker-shipment-orders-page.test.tsx#⑬', '判据 4·屏上有：详情块渲染 bin_code + 「第 1、2 套」；空数组不渲染这一段。执行点 = 同文件#⑫/#⑭'],
+    skip_reason='[backend-contract] 确定性服务层 + 前端渲染判据（junit + jest），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['bmini', 'worker', 'ship', 'stock-bin', 'screen-only'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 CASES = (
     _CASE_BM_001,
     _CASE_BM_002,
@@ -1204,4 +1222,5 @@ CASES = (
     _CASE_BM_063,
     _CASE_BM_064,
     _CASE_BM_065,
+    _CASE_BM_066,
 )

@@ -1,4 +1,4 @@
-// case_ids: BM-025, BM-034, BM-036, BM-051, BM-061
+// case_ids: BM-025, BM-034, BM-036, BM-051, BM-061, BM-066
 /**
  * 工人**待出库单**列表页（issue #7806 P1a；页面 = `src/pages/worker/shipment-orders/index.tsx`）
  *
@@ -70,6 +70,7 @@ jest.mock('../src/utils/inbound/printCapability', () => ({
 
 import Taro from '@tarojs/taro'
 import WorkerShipmentOrdersPage, { EMPTY_HINT } from '../src/pages/worker/shipment-orders/index'
+import { buildShipLabelRows } from '../src/utils/labels/shipLabel'
 import { listReadyShipmentOrders } from '../src/services/workerShipmentOrdersService'
 import { fetchCurrentWorker } from '../src/services/workerService'
 import { printRowsLabel } from '../src/utils/inbound/labelPrint'
@@ -393,4 +394,46 @@ describe('WorkerShipmentOrdersPage 待出库单列表（issue #7806 P1a）', () 
     fireEvent.click(button)
     expect(mockPrintRows).not.toHaveBeenCalled()
   })
+  // ── 仓位（issue #8678）：详情屏显示「哪一套在哪个仓位」，纸面**不印** ───────────────
+
+  const BIN_ROW = {
+    ...READY_ROW,
+    stock_bins: [
+      { bin_code: 'A-01-03', sets_text: '1、2', set_count: 2 },
+      { bin_code: 'B-02-01', sets_text: '3', set_count: 1 },
+    ],
+  }
+
+  it('⑫ 仓位：预览显示每个仓位里是哪几套（服务端下发 stock_bins）', async () => {
+    mockList.mockResolvedValueOnce(okPage([BIN_ROW]))
+    renderPage()
+    await screen.findByTestId('shipment-orders-list')
+
+    fireEvent.click(screen.getByTestId('shipment-orders-label-0'))
+    const bins = await screen.findByTestId('shipment-orders-label-bins')
+    const text = bins.textContent ?? ''
+    expect(text).toContain('仓位')
+    expect(text).toContain('A-01-03')
+    expect(text).toContain('第 1、2 套')
+    expect(text).toContain('B-02-01')
+    expect(text).toContain('第 3 套')
+  })
+
+  it('⑬ 🔴 仓位只在屏幕上：纸面行清单（buildShipLabelRows）里一格都不许有', async () => {
+    // 用户逐字（2026-11-04）：「可以显示在出库单详情上，不需要打印在标签中」
+    const rows = buildShipLabelRows(BIN_ROW)
+    expect(rows.map((row) => row.label)).not.toContain('仓位')
+    expect(JSON.stringify(rows)).not.toContain('A-01-03')
+    expect(JSON.stringify(rows)).not.toContain('B-02-01')
+  })
+
+  it('⑭ 仓位：服务端没给 / 给空数组 ⇒ 这一段不渲染（不编空仓位）', async () => {
+    mockList.mockResolvedValueOnce(okPage([{ ...READY_ROW, stock_bins: [] }]))
+    renderPage()
+    await screen.findByTestId('shipment-orders-list')
+    fireEvent.click(screen.getByTestId('shipment-orders-label-0'))
+    await screen.findByTestId('shipment-orders-label-preview')
+    expect(screen.queryByTestId('shipment-orders-label-bins')).toBeNull()
+  })
+
 })

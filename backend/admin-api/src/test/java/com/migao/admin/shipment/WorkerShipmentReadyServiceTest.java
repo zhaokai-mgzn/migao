@@ -3,9 +3,11 @@ package com.migao.admin.shipment;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.migao.admin.controller.WorkerShipmentController;
+import com.migao.admin.entity.FinishedGoodsStock;
 import com.migao.admin.entity.Order;
 import com.migao.admin.entity.OrderItem;
 import com.migao.admin.exception.BusinessException;
+import com.migao.admin.mapper.FinishedGoodsStockMapper;
 import com.migao.admin.mapper.OrderItemMapper;
 import com.migao.admin.mapper.OrderMapper;
 import com.migao.admin.service.OrderShipmentService;
@@ -34,6 +36,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyCollection;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.when;
 
 /**
@@ -73,6 +77,10 @@ class WorkerShipmentReadyServiceTest {
     @Mock
     private OrderItemMapper orderItemMapper;
 
+    /** 成品在库行（issue #8678）：工人端详情要显示「哪一套在哪个仓位」。 */
+    @Mock
+    private FinishedGoodsStockMapper finishedGoodsStockMapper;
+
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     private WorkerShipmentReadyService service;
@@ -80,7 +88,9 @@ class WorkerShipmentReadyServiceTest {
     @BeforeEach
     void setUp() {
         service = new WorkerShipmentReadyService(orderMapper, processingSetReadService,
-                orderItemMapper, objectMapper);
+                orderItemMapper, objectMapper, finishedGoodsStockMapper);
+        lenient().when(finishedGoodsStockMapper.selectInStockByOrderIds(any(), anyList()))
+                .thenReturn(new ArrayList<>());
     }
 
     // ── 夹具 ────────────────────────────────────────────────────────────────
@@ -357,4 +367,64 @@ class WorkerShipmentReadyServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("登录");
     }
+    // ── ⑨ 仓位（issue #8678）：详情屏要显示「哪一套在哪个仓位」；纸面不印 ─────────────
+
+    private static FinishedGoodsStock stock(String orderId, String binCode, String setNo, Integer setIndex) {
+        return FinishedGoodsStock.builder()
+                .tenantId(TENANT)
+                .orderId(orderId)
+                .binCode(binCode)
+                .setNo(setNo)
+                .setIndex(setIndex)
+                .status("in_stock")
+                .deleted(0)
+                .build();
+    }
+
+    @Test
+    @DisplayName("仓位：在库行按仓位聚合 ⇒ bin_code + sets_text（套号按取数序去重）+ set_count")
+    void 仓位按仓位聚合() {
+        Order order = order("o-1", "SO-1");
+        givenCandidates(order);
+        givenCompletion(Map.of("o-1", sets("PO-1", 2, 2, "completed")));
+        lenient().when(finishedGoodsStockMapper.selectInStockByOrderIds(any(), anyList())).thenReturn(List.of(
+                stock("o-1", "A-01", "1", 1),
+                stock("o-1", "A-01", "2", 2),
+                stock("o-1", "B-02", "3", null),
+                stock("o-9", "C-03", "1", 1)));
+
+        Map<String, Object> row = items(service.listReadyOrders(TENANT)).get(0);
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> bins = (List<Map<String, Object>>) row.get("stock_bins");
+        assertThat(bins).hasSize(2);
+        assertThat(bins.get(0)).containsEntry("bin_code", "A-01")
+                .containsEntry("sets_text", "1、2")
+                .containsEntry("set_count", 2);
+        assertThat(bins.get(1)).containsEntry("bin_code", "B-02").containsEntry("sets_text", "3");
+    }
+
+    @Test
+    @DisplayName("仓位：没有在库行 ⇒ **不下发** stock_bins（不编一个空仓位，页面印「—」）")
+    void 没有在库行不下发仓位() {
+        Order order = order("o-2", "SO-2");
+        givenCandidates(order);
+        givenCompletion(Map.of("o-2", sets("PO-2", 1, 1, "completed")));
+
+        Map<String, Object> row = items(service.listReadyOrders(TENANT)).get(0);
+        assertThat(row).doesNotContainKey("stock_bins");
+    }
+
+    @Test
+    @DisplayName("仓位：仓位号为空的行被丢弃（信息价值 = 告诉工人去哪个仓位拿）")
+    void 空仓位号被丢弃() {
+        Order order = order("o-3", "SO-3");
+        givenCandidates(order);
+        givenCompletion(Map.of("o-3", sets("PO-3", 1, 1, "completed")));
+        lenient().when(finishedGoodsStockMapper.selectInStockByOrderIds(any(), anyList())).thenReturn(List.of(
+                stock("o-3", "  ", "1", 1)));
+
+        Map<String, Object> row = items(service.listReadyOrders(TENANT)).get(0);
+        assertThat(row).doesNotContainKey("stock_bins");
+    }
+
 }

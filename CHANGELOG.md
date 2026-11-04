@@ -11,6 +11,15 @@
 - **改后**：标签补两行 —— **加工组合**（加工单快照 `processingItems[].name`，与水洗唛同源）与 **特殊选项**（同快照 `specialOptions[]`，按 `余料带回-布` → `余料带回` 的展示名归一）；开数改印行业词（1 单开 / 2 双开 / 3 三开 / 4 四开 / 表外 `N 开`）；**报工页卡片与成品入库标签纸面都不再显示短码**（水洗唛的短码/二维码不受影响，服务端 `washLabelView` 仍下发）。
 - **边界**：其他行、行序与 50×70 纸型不动；快照缺失或两项为空 ⇒ 整行不出现（不印空壳）。
 - 判据 = `FinishedGoodsServiceTest#finishedLabelCarriesCraftComboAndSpecialOptions` / `OptionFamilyNamesTest#displayNameCollapsesFamilyMembers` / `frontend/worker-h5/tests/worker-h5-finished-label.test.mjs` / `frontend/bmini-app/tests/worker-report-page.test.tsx`。
+### 待出库单详情能看到「这一套在哪个仓位」了（2026-11-04，issue #8678）
+
+- **改前**：工人打开「待出库单 → 出库单」只看到行清单（收货人 / 电话 / 地址 / 物流 / 日期 / 套数），
+  **看不到成品放在哪几个仓位** —— 拣货的人知道发什么，不知道去哪儿拿。
+- **改后**：详情块下面多一段「仓位（只在屏幕上，不进纸）」：每个仓位一行，写清这个仓位里有哪几套
+  （`A-01-03 第 1、2 套`）。服务端在待出库列表行里一次批量下发（`stock_bins`），不逐单查。
+- **不入纸**：50×70 成品出库单的行清单**一格都没变** —— 纸是给收货人看的，仓位是给拣货的人看的。
+  判据 = 用例 `BM-066`（含「纸面出现仓位号 ⇒ 红」的反向判据）。
+- **缺值不编**：还没入库 / 仓位已释放 ⇒ 这一段不显示（不编一个空仓位）。
 
 ### 工人端每个子页都有「‹ 返回」了（2026-11-04，issue #8657）
 
