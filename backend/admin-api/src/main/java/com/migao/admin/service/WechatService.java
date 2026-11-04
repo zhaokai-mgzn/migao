@@ -3,6 +3,7 @@ package com.migao.admin.service;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.migao.admin.exception.BusinessException;
+import jakarta.annotation.PostConstruct;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -75,6 +76,49 @@ public class WechatService {
     private volatile long accessTokenExpireAt;
     private volatile String bminiCachedAccessToken;
     private volatile long bminiAccessTokenExpireAt;
+
+    /**
+     * 启动期**出声**：B 端小程序（bmini）凭据缺失（issue #8196 的 ① 面）。
+     *
+     * <p>治的形态：`wechat.bmini.appid/secret` 的默认值是空（`${WECHAT_BMINI_APPID:}`），
+     * 部署环境漏接线时**没有任何读数会变红** —— 现场表现是 B 端员工小程序登录 / 手机号换取
+     * fail-closed 回「系统繁忙」，而 admin-api 看起来完全健康（同 AGENTS.md 记的
+     * `AI_AGENT_SERVICE_TOKEN` 那个坑）。</p>
+     *
+     * <p>⚠️ **只告警、不阻止启动**：整站可用性与「B 端小程序能否登录」是两件事；
+     * 缺失时让 admin-api 起不来，会把「A 档不可用」放大成「整站不可用」。
+     * 生产 fail-closed 已由 `wechat.mock-enabled=false` 兜底（禁止伪造 openid）。</p>
+     *
+     * <p>**半配也算缺**（只给 appid 或只给 secret），日志里点名缺的那一个，免得运维去补已经有的那个。
+     * public 的理由同 {@code TenantResourceOwnership#registerChecks()}：判据要能直接装配它
+     * （{@code new WechatService()} 之后调一次），不靠起 Spring 上下文。</p>
+     */
+    @PostConstruct
+    public void logBminiCredentialWarningIfMissing() {
+        boolean appIdMissing = !StringUtils.hasText(bminiAppId);
+        boolean secretMissing = !StringUtils.hasText(bminiAppSecret);
+        if (!appIdMissing && !secretMissing) {
+            return;
+        }
+        log.warn("⚠️ B 端小程序（bmini）凭据未配置完整：缺 {}。"
+                        + "影响：B 端员工小程序登录 / 手机号换取 fail-closed（wechat.mock-enabled={}），"
+                        + "「扫普通链接二维码打开小程序」的报工页不可用；整站其它功能不受影响（本告警不阻止启动）。"
+                        + "补法：把两个值写进服务器 .env.admin-api 的 WECHAT_BMINI_APPID / WECHAT_BMINI_SECRET"
+                        + "（值不入仓）后 `docker compose up -d admin-api`；"
+                        + "自证：`docker compose exec -T admin-api printenv | grep WECHAT_BMINI`。issue #8196",
+                missingBminiNames(appIdMissing, secretMissing), mockEnabled);
+    }
+
+    /** 缺哪几个（半配也算缺）—— 一条日志就能定位，不用去猜另一个是不是也有。 */
+    private static String missingBminiNames(boolean appIdMissing, boolean secretMissing) {
+        if (appIdMissing && secretMissing) {
+            return "WECHAT_BMINI_APPID 与 WECHAT_BMINI_SECRET（两个都空）";
+        }
+        if (appIdMissing) {
+            return "WECHAT_BMINI_APPID（appid 空、secret 有值）";
+        }
+        return "WECHAT_BMINI_SECRET（secret 空、appid 有值）";
+    }
 
     /**
      * 微信 code2Session 响应

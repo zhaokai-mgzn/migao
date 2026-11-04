@@ -37,6 +37,37 @@
 > （短链面，`worker_entry` 限流），所以 `/s/<短码>/json` 跟二维码链接**同域**、不需要再加 `api.` 域名。
 > ⚠️ 构建 weapp 时必须显式给 `TARO_APP_API_URL`（见 §5）：不给会烘进 `http://localhost:8080`，上传后真机连不上。
 
+## 2.1 部署接线：admin-api 怎么读到 bmini 凭据（issue #8196 的 ① 面）
+
+A 档要换来小程序的 openid / 手机号，admin-api 必须拿到 **B 端员工小程序**（bmini）的那一对凭据。
+接线只有一处，**值不入仓**：
+
+| 面 | 值 / 位置 |
+|---|---|
+| Spring 绑定 | `backend/admin-api/src/main/resources/application.yml` 的 `wechat.bmini.appid` / `.secret`，取值表达式 `${WECHAT_BMINI_APPID:}` / `${WECHAT_BMINI_SECRET:}`（**空默认** ⇒ 缺了也能启动） |
+| 容器 env 名 | `WECHAT_BMINI_APPID` / `WECHAT_BMINI_SECRET` |
+| 值的落点（**不入仓**） | 服务器 `/opt/migao-deploy/.env.admin-api`（admin-api 的 `env_file: .env.admin-api`）；本机开发写 `backend/admin-api/.env`（仓库里只有 `backend/admin-api/.env.example` 的空占位） |
+| 🔴 **别放的地方** | `deploy/swas/docker-compose.yml` 的 `environment:` —— compose 的 `environment` 优先级**高于** `env_file`，`${VAR:-}` 插值读不到 `.env.admin-api` ⇒ 会把真值**覆盖成空串**（2026-08-30 `AI_AGENT_SERVICE_TOKEN` 同一形态已踩过，commit `988e490f0` 删掉了那行）。判据会判红 |
+
+**怎么验证「读到了」**（在服务器 `/opt/migao-deploy` 下；两条都可复算、零猜测）：
+
+```bash
+grep -cE '^WECHAT_BMINI_(APPID|SECRET)=' .env.admin-api    # 期望 2（缺行 ⇒ 把值补进 .env.admin-api）
+docker compose exec -T admin-api printenv | grep -E '^WECHAT_BMINI_'   # 期望两行、值非空
+```
+
+**缺省行为（可断言，不是"看着办"）**：
+
+- **缺任一（含半配：只给一个）** ⇒ admin-api **照常启动**，启动期打**一条 WARN**，写明缺哪个 / 影响 / 怎么补
+  （`WechatService` 的 `@PostConstruct`；行为判据 = `backend/admin-api/src/test/java/com/migao/admin/service/WechatServiceBminiWiringTest.java`：
+  两空 ⇒ 有 WARN、全给 ⇒ 零 WARN、半配 ⇒ 只点缺的那个）。
+- 影响面 = B 端员工小程序登录与手机号换取 **fail-closed**（生产 `WECHAT_MOCK_ENABLED=false` 的默认）⇒
+  「扫普通链接二维码打开小程序」的报工页不可用；**整站其它功能不受影响** —— 所以是**只告警、不阻止启动**
+  （再 fail-closed 一次，会把「A 档不可用」放大成「整站起不来」）。
+- 补上值之后 `docker compose up -d admin-api` 重建容器即生效（env 只在容器创建时注入，`restart` 不会重读）。
+- 接线面判据（会红）：`python3 -m pytest tests/unit_ci_workflows/test_wechat_bmini_env_wiring.py -q`
+  （变量名入仓 / 值不入仓 / `env_file` 注入面 / compose 不得空值覆盖 / 文档要素齐全）。
+
 ## 3. 微信后台规则（用户侧，一次性）
 
 1. 微信公众平台 → 小程序后台 → **开发 → 开发管理 → 扫普通链接二维码打开小程序** → 添加规则。
