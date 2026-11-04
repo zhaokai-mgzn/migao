@@ -1,0 +1,6 @@
+{
+  "id": "MC-199",
+  "pr": 8666,
+  "title": "OrderService 切片第一批（issue #8191 的 P2-1c，纯搬运不重写）：库存与销量族 18 个方法搬到 OrderStockService、财务流水族 4 个方法搬到 OrderFeeSupport，OrderService 2,685 → 2,268 并只留同名门面委托；公开名一个不改、调用点零改动、方法体与拆分前逐字节相同、拆分前后行为快照逐字节一致",
+  "claimed_at": "2026-11-04"
+}
