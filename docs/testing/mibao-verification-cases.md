@@ -4215,7 +4215,7 @@
 ```
 溯源: 2026-10-31 新增（issue #8295）：两步确认，避免误写 ｜ tags: ui, preview
 
-## 杂项域（219 case）
+## 杂项域（220 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -7535,6 +7535,18 @@
 跳过: [frontend-contract] 确定性页面判据（node --test: worker-h5-8609-capabilities），计分通道 = traces.tests 里那三个真实测试文件；非 LLM 行为，不进入 agent-eval 冒烟。真机与真浏览器面见 PR body 的「真机观测」段
 ```
 溯源: 2026-11-04 新增（issue #8609 的 B 包：页面显隐吃本机能力）。取号 MC-192（MC-180~191 已占用 / 在飞，派单口径指定 192 起）。红证：四次单变量注入逐条实跑（能力读取恒真 / 能力移出判定 / 无硬件即禁用报工 / 拆掉桥缺失护栏）分别红 6 / 5 / 1 / 2 条，逐字节恢复后 7/7 绿。 ｜ tags: worker-h5, terminal, capabilities, fail-closed, menu, red-proof
+
+### MC-193. B 端小程序（bmini）凭据的部署接线 + 缺失显式告警（issue #8196 ①）：变量名经 admin-api 的 env_file(.env.admin-api) 进容器、compose 的 environment 不得空值覆盖、启动期任一为空（含半配）打一条 WARN 点名缺哪个/影响/补法且不阻止启动、仓库里无凭据值 🔵
+```
+你: A 档「扫普通链接二维码打开小程序」要 admin-api 能换 bmini 的 openid / 手机号 ⇒ 部署环境必须拿到两个凭据；改前 application.yml 只有空占位、部署侧没人说该放哪儿、backend/admin-api/src/main/java 里 `WECHAT_BMINI` 零命中（缺了也没有任何东西会红）
+期望: direct_reply
+数据: **接线面（会红）**：`wechat.bmini.appid/secret` 必须绑到 `WECHAT_BMINI_APPID` / `WECHAT_BMINI_SECRET` 且**默认值为空**（非空默认 = 缺省悄悄变成某个值）；变量名必须写进 `backend/admin-api/.env.example` 且**值为空**；真实注入面 = admin-api 的 `env_file: .env.admin-api`，而 compose 的 `environment` **不得**出现这两个名（environment 优先级高于 env_file，`${…:-}` 插值读不到 env 文件 ⇒ 把真值覆盖成空串；同一形态 2026-08-30 已在 AI_AGENT_SERVICE_TOKEN 上出过事，commit 988e490f0 删掉了那行）。执行点 = tests/unit_ci_workflows/test_wechat_bmini_env_wiring.py 的三条接线判据 + 内建变异红证。
+数据: **全仓无值（会红）**：任何文本面都不许出现这两个变量的**值**（空 / 占位符 / `${…}` 引用放行；取值前先剔 `${…}` 包装）。执行点 = 同文件的 credential_value_problems 与它的判别力自证（三种「写成值」必红、三种占位必放行）。
+数据: **启动期告警（双向，会红）**：两个都空 ⇒ 至少一条 WARN 且点名缺哪个 / 影响（fail-closed）/ 补法（写进 .env.admin-api）；两个都给 ⇒ **零** WARN/ERROR；**半配也算缺**且只点缺的那个；空白 / null 与不写等价；**缺失不许变成启动失败**（方法里不得出现 throw）。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/WechatServiceBminiWiringTest.java（logback ListAppender 真跑）+ pytest 的源码接线判据。
+数据: **文档一处写全（会红）**：docs/deployment/wechat-mini-program-qr.md 的「部署接线」节必须同时给：两个 env 名 / 值的落点（服务器 .env.admin-api，不入仓）/ 一条可复算回读命令（printenv）/ 缺省行为（只告警、admin-api 照常启动）。执行点 = 同文件的第六条判据。
+跳过: [backend-contract] 接线形态 + Java 行为（logback 捕获）+ 文档要素，零 LLM、零真库、零网络；非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-11-04 新增（issue #8196 的 ① 面）。取号 MC-193（main 侧现取最大 190、claims 目录无 193）。🔴 自查改判：任务书建议在 compose 的 environment 加空值透传 —— 那会**覆盖成空**（commit 988e490f0 已为 AI_AGENT_SERVICE_TOKEN 删过同一行），故改为「只经 env_file 注入 + 判据禁止在 compose 里覆盖」；判据的值扫描先剔 `${…}` 包装，避免把变量引用误判成值。⚠️ 未闭合：服务器 .env.admin-api 里是否真有值属外部输入（用户侧提供），本单只给可复算的回读命令。 ｜ tags: deploy, env-wiring, wechat, bmini, loud-failure, red-proof
 
 ## 商家入驻域（7 case）
 
@@ -15047,8 +15059,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：1019（活跃 155，跳过 864）
-- tier 分布：smoke 15 / normal 942 / adversarial 33
+- 用例总数：1020（活跃 155，跳过 865）
+- tier 分布：smoke 15 / normal 943 / adversarial 33
 - 售后域：16
 - Agent 核心域：13
 - API 层域：21
@@ -15064,7 +15076,7 @@
 - 人事域：13
 - 知识问答域：9
 - 客户主数据迁移域：10
-- 杂项域：219
+- 杂项域：220
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：76
@@ -15350,6 +15362,7 @@
 - MC-190: 冒烟数据面收口（#7583 剩余缺口）：自造订单清理自证 + 空态不得冒充通过 + P1 写用例 finally 清理
 - MC-189: 配置就绪度端点 GET /api/admin/config-readiness（issue #6579）：服务端聚合七步事实（含孤儿工序单一真值口径）、跨码步骤按调用方权限整个省略、前端主线只发这一个请求就画出七步
 - MC-192: 工人端菜单吃本机能力（第三轴）：一个 apk 覆盖安卓一体机 + 手持标签机，缺省即隐藏（issue
+- MC-193: B 端小程序（bmini）凭据的部署接线 + 缺失显式告警（issue #8196 ①）：变量名经 admin-api 的 env_file(.env.admin-api) 进容器、compose 的 environment 不得空值覆盖、启动期任一为空（含半配）打一条 WARN 点名缺哪个/影响/补法且不阻止启动、仓库里无凭据值
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）
