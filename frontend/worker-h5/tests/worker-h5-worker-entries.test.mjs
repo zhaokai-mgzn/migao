@@ -5,7 +5,7 @@
 //
 // 🔴 本文件现在的判据（用户 2026-10-27 逐字「我的计件和发货…为什么做到报工详情页面？应该都作为
 // 工人菜单页面上的菜单，工人页面有拍照发货了，可以把报工详情页面的发货功能移除掉」）：
-//   ① 入口栏**只剩两条**：`cut_calc` ⇒「裁高计算（一体机）」、`rework` ⇒「返工记录」；
+//   ① 入口栏**只剩两条**：`cut_calc` ⇒「裁高计算」（2026-11-05 issue #8683 去掉端名）、`rework` ⇒「返工记录」；
 //      两条都没开 ⇒ **整条入口栏不渲染**（不留空 `<nav>`）；
 //   ② **四条跨应用入口不得再出现在本页**（拍照入库 / 补打入库标签 / 我的计件 / 发货）——
 //      反向钉住：页头再出现这四条里任何一条 ⇒ 红；即使对应页面键（`piecework` / `to_ship`）
@@ -73,12 +73,12 @@ const ALL_IN_ONE = {
 
 const loggedIn = (pages, extra = {}) => ({ ...initialState(), worker: WORKER, mode: 'scan', pages, terminal: ALL_IN_ONE, ...extra })
 
-test('🔴 ① `cut_calc` ∈ pages ⇒ 页头有「裁高计算（一体机）」入口；两条都没开 ⇒ 整条入口栏不渲染', () => {
+test('🔴 ① `cut_calc` ∈ pages ⇒ 页头有「裁高计算」入口；两条都没开 ⇒ 整条入口栏不渲染', () => {
   const on = visible(renderPage(loggedIn([PAGE_REPORT, PAGE_CUT_CALC])))
   assert.equal(on.includes(`href="${MACHINE_ENTRY}"`), true, '`cut_calc` 已开却没有入口（机台那台屏走不到裁高页）')
   assert.match(on, /id="wh5-worker-entries"/, '入口栏要有稳定 id（判据 / 排障都按它定位）')
   assert.match(on, /class="wh5-entry"/, '入口必须带 wh5-entry 类（尺寸由 styles.css 统一给）')
-  assert.match(on, />裁高计算（一体机）<\/a>/, '入口文案必须是人话（改前的「机台模式」用户看不懂：issue #6635）')
+  assert.match(on, />裁高计算<\/a>/, '入口文案必须是人话、且不带端名（issue #6635 + 2026-11-05 issue #8683）')
   assert.ok(!/机台模式/.test(on), '「机台模式」这个内部叫法不得再上屏')
 
   const off = visible(renderPage(loggedIn([PAGE_REPORT])))

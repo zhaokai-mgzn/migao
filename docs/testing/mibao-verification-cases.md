@@ -1187,7 +1187,7 @@
 数据: 判据 1·🔴 **未登记即红**：`src/app.config.ts` 里每个**非 tabBar** 页面都必须在 `src/utils/pageEntries.ts` 的 `PAGE_ENTRY_LEDGER` 具名（tabBar 页面按 `tabBar.list` 机械豁免，且不许登记 —— 登记它 = 台账里躺着一条假入口）。红证：给 app.config 加一个页面而不登记 ⇒ 判红（证据：frontend/bmini-app/tests/page-entry-reachability.test.ts 的 L2）
 数据: 判据 2·🔴 **登记了没人指向也红**：每条登记都必须在 `from` 里找到真导航形态（`Taro.navigateTo/redirectTo/switchTab/reLaunch` 或跨应用 `href`）**且**跳转里带着目标记号。红证（变异注入实跑）：把入口换回「只声明」（`from` 指向只写着路由常量的 `src/utils/inbound/gaps.ts`）⇒ 判红点名「声明存在 ≠ 可达」；删掉 `/w/` 上的 `<a href>` ⇒ 判红。这是本单要治的形态本身：两条路由常量被声明、被 `tests/inbound-page-platform-gaps.test.ts` 的 G0 比对过 `app.config.ts`，却没有任何跳转用它们（证据：同文件 L3）
 数据: 判据 3·**台账只许缩短**：条目对应的页面从 `app.config.ts` 消失 ⇒ 判红（条目必须活着）；`via` 为动态记号时 `viaBinding` 必须钉住「记号 ⇒ 路由」的绑定。红证：从 app.config 删掉补打页 / 把 viaBinding 指向无关文件 ⇒ 各自判红（证据：同文件 L0 / L4）
-数据: 判据 4·**跨应用入口已收敛**（2026-10-10 用户逐字「移除拍照入库和补打入库标签」，issue #6635）：`/w/` 报工页**不再**承载入库两页的 `<a>`（反向钉住：本页再出现 `/b/#/pages/worker/inbound|reprint` ⇒ 红）—— 可达性**没有丢**：那两页由**工人工作台** `src/pages/worker/home/index.tsx` 承载（台账 `from` 逐值核 + `nav` 形态 + L3b「写了 ≠ 会被执行」），且台账里**不再有** `nav: 'href'` 条目。渲染面判据在 frontend/worker-h5/tests/worker-h5-worker-entries.test.mjs（`renderPage` 的渲染结果；本页只留「裁高计算（一体机）」「返工记录」两条入口）+ 反向面在 frontend/bmini-app/tests/page-entry-reachability.test.ts 的 L5。🔴 **2026-10-27 再收窄（issue #7934）**：用户逐字「我的计件和发货…为什么做到报工详情页面？应该都作为工人菜单页面上的菜单」⇒ 本页连「我的计件」「发货」两条也撤除（反向钉住 `./piecework.html` / `./shipment.html` 出现即红，即使 `piecework` / `to_ship` 页面键开着）；两张静态页本身**保留可直连**（判据同文件 ④：文件 + 装配模块都在）。红证（实跑）：把 `<a href="./piecework.html">` 加回 `workerEntriesBar` ⇒ 4 failed（worker-h5-worker-entries 的 ② 与 worker-h5-pages 的 ①′ 各自具名）。
+数据: 判据 4·**跨应用入口已收敛**（2026-10-10 用户逐字「移除拍照入库和补打入库标签」，issue #6635）：`/w/` 报工页**不再**承载入库两页的 `<a>`（反向钉住：本页再出现 `/b/#/pages/worker/inbound|reprint` ⇒ 红）—— 可达性**没有丢**：那两页由**工人工作台** `src/pages/worker/home/index.tsx` 承载（台账 `from` 逐值核 + `nav` 形态 + L3b「写了 ≠ 会被执行」），且台账里**不再有** `nav: 'href'` 条目。渲染面判据在 frontend/worker-h5/tests/worker-h5-worker-entries.test.mjs（`renderPage` 的渲染结果；本页只留「裁高计算」「返工记录」两条入口 —— 裁高那条的端名「（一体机）」已于 2026-11-05 去掉，issue #8683）+ 反向面在 frontend/bmini-app/tests/page-entry-reachability.test.ts 的 L5。🔴 **2026-10-27 再收窄（issue #7934）**：用户逐字「我的计件和发货…为什么做到报工详情页面？应该都作为工人菜单页面上的菜单」⇒ 本页连「我的计件」「发货」两条也撤除（反向钉住 `./piecework.html` / `./shipment.html` 出现即红，即使 `piecework` / `to_ship` 页面键开着）；两张静态页本身**保留可直连**（判据同文件 ④：文件 + 装配模块都在）。红证（实跑）：把 `<a href="./piecework.html">` 加回 `workerEntriesBar` ⇒ 4 failed（worker-h5-worker-entries 的 ② 与 worker-h5-pages 的 ①′ 各自具名）。
 数据: 判据 5·**平台缺口必须有登记且被真的接线**：`/b/?code=` 是 h5 专有形态（小程序没有 URL query），登记在 `src/utils/inbound/gaps.ts` 的 `WORKER_SURFACE_PLATFORM_GAPS`，`wiredBy` 的文件**代码**里必须真的出现 `wiredToken`（只登记不接线 ⇒ 红）
 数据: 判据 6·**两平台都要能编译**：`npm run build:h5` 与 `npm run build:weapp` 均退出 0（CI 的 `bmini-app build (h5 + weapp)` 腿）
 跳过: [backend-contract] 确定性入口/台账判据（jest: frontend/bmini-app/tests/page-entry-reachability.test.ts + node --test: frontend/worker-h5/tests/worker-h5-worker-entries.test.mjs + 两平台构建腿），非 LLM 行为，不进入 agent-eval 冒烟
@@ -4245,7 +4245,7 @@
 ```
 溯源: 2026-10-31 新增（issue #8295）：两步确认，避免误写 ｜ tags: ui, preview
 
-## 杂项域（231 case）
+## 杂项域（232 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -7558,7 +7558,7 @@
 数据: **判据 ①（会红）·无壳 ⇒ 隐藏**：本机桥**整块缺失**或非对象（数组 / 字符串 / 数字 / 布尔）一律当「没有该能力」⇒ 裁高计算入口与打印入库标签**都不渲染**；这是普通浏览器（真没有串口 / 蓝牙）的正确形态。控制组：真给能力凭据时两个入口各自出现（防空断言）。执行点 = frontend/worker-h5/tests/worker-h5-8609-capabilities.test.mjs 的判据 ①。红证：把能力读取改成恒返回凭据 ⇒ 该判据当场红（实测 7 条红）。
 数据: **判据 ①′（会红）·旧壳 ⇒ 不隐藏（迁移期「未知 ≠ 没有」）**：桥**在场但没有能力表**（线上 1.0.2 旧壳的真实形态：桥只有 `post`，证据 = frontend/bmini-app/tests/inbound-print-channel.test.ts 的终端打印桥夹具）⇒ 两条入口**都在**（未知不等于没有；否则会把线上真实工人的入口弄没）。同一判据里还有一条负控：能力表在场且两条都缺 ⇒ 两条都隐藏（防「unknown 写成恒显示」）。执行点 = 同上文件判据 ①′ 与 ④′。红证：把 unknown 并入 absent ⇒ 该判据当场红（实测 3 条红，含装配层那条 ④′）。🔴 **迁移分支的移除条件**：A 包（终端仓能力桥）全量到达设备后，把 unknown 并入 absent（同一分支隐藏），并同批把本判据从「都在」改成「都隐藏」—— 否则迁移口子会永久留着。
 数据: **判据 ①″（会红）·有能力表 ⇒ fail-closed 主体**：能力表是对象时逐键判定 —— 缺键 / `null` / 空串 / 空白 / 布尔 / 数字 / 对象 / 数组 / 键名拼错一律当「没有该能力」，且**只隐藏缺的那一条**（只给裁高机链路 ⇒ 只出裁高入口，不许一刀切把打印也藏了）。执行点 = 同上文件判据 ①″。红证：把能力读取改成恒返回凭据 ⇒ 该判据当场红（同上组读数）。
-数据: **判据 ②（会红）**：同一份工人页面集（全开）下两台设备菜单不同，差异只来自本机能力 —— 手持标签机只有「打印入库标签」、安卓一体机只有「裁高计算（一体机）」；两个能力都具备的设备两个入口都在；非硬件面（页头 / 报工卡 / 返工记录入口）逐字不受影响。执行点 = 同上文件判据 ②。红证：把本机能力从判定里去掉（入口恒开）⇒ 两台设备入口集合一模一样 ⇒ 该判据当场红（实测 8 条红）。
+数据: **判据 ②（会红）**：同一份工人页面集（全开）下两台设备菜单不同，差异只来自本机能力 —— 手持标签机只有「打印入库标签」、安卓一体机只有「裁高计算」（该入口文案 2026-11-05 起去掉端名「（一体机）」，issue #8683；本判据只认入口 **id 集合**，与文案无关）；两个能力都具备的设备两个入口都在；非硬件面（页头 / 报工卡 / 返工记录入口）逐字不受影响。执行点 = 同上文件判据 ②。红证：把本机能力从判定里去掉（入口恒开）⇒ 两台设备入口集合一模一样 ⇒ 该判据当场红（实测 8 条红）。
 数据: **判据 ③（会红）**：无硬件不阻断其它功能 —— 裁高机与标签机都缺席时，报工按钮仍渲染且未被禁用、套号与部位信息在、返工记录入口在、成品入库卡的信息面（入库单 / 仓位）照旧显示。执行点 = 同上文件判据 ③。红证：注入「无串口 ⇒ 报工按钮禁用」这个错误修法 ⇒ 该判据当场红（实测 1 条红）。
 数据: **判据 ④ / ④′（会红）**：出错不白屏（回归面）—— 浏览器直接打开工人报工页（没有壳）时装配层落成「无壳」，登录卡 / 扫码页 / 页头一个都不消失、不往错误面写内容；同一装配层喂旧壳形态的桥 ⇒ 裁高入口仍在（迁移期不退化）。执行点 = 同上文件判据 ④ 与 ④′。红证：拆掉桥缺失的护栏（裸取桥上的能力表）⇒ 渲染抛错、判据④当场红（实测 4 条红，含 ① 与 ①′）。
 数据: **类级元守卫（会红）**：a）本机桥的代码级引用只许出现在装配层且恰好一次，渲染模块是纯函数层（不读 window / globalThis / document），且两个硬件入口只能经同一个三态出口判定（旁路判定 ⇒ 红）；b）能力读取器暴露的轴与「能力 → 入口」台账逐键相等（未登记即红、两个方向都判）、三态常量互不相同；c）台账每一条都要在 absent / unknown / present-缺键 / present-在场 四种状态下各判一次。执行点 = 同上文件元守卫 a/b/c。红证：注入「读取器恒真」⇒ b/c 红；在渲染模块里加一处全局桥引用或旁路判定 ⇒ a 红。
@@ -7726,6 +7726,22 @@
 跳过: [backend-contract] 纯结构面判据（扫源码文本 + 解析 Java 单一源与两份生成物 + 生成器确定性 + 新鲜度退出码），零网络、零 LLM、不起真库；不进 agent-eval 冒烟
 ```
 溯源: 2026-11-04 新增（issue #8198 的 P2-2b，**部分交付**：P2-1/P2-2a 已由前序 PR 落地，本单只做「生成到 TS / Python」）。 形态按 2026-10-31 issue 评论裁定落：**不新建枚举**，单一源 = Java `OrderStatusTransitions` 的 7 个常量 + 三张表 （`STATUS_TRANSITIONS` / `ORDER_STATUS_LABELS` / `CONTENT_EDITABLE_STATUSES`）。生成器 `scripts/order_status_codegen.py` 只读源、输出两份入库产物；排序键显式写死（状态全集按常量声明顺序， 表键与流转目标按全集顺序），产物里**零环境指纹**（无时间戳 / sha / 版本号）⇒ 两次重生成逐字节相等（实测 cmp 相等）。 **删掉的手写重复**：前端 `BackendOrderStatus` 的 6 行字面量联合体 → 改从生成物派生（并显式排除 `packed`，见下）； `FrontendToBackendStatus` / `BackendToFrontendStatus` 两张表的 12 处裸值 → 改引用生成常量（计算键）； `displayOrderStatus` 里 1 处裸 `producing` → 常量；4 个 Agent 工具 schema 的订单状态枚举（订单管理 / 订单查询 / 客户订单查询 / 前置校验闸门）→ `list(AGENT_ORDER_STATUSES)`。**行为零变化**：前端 `BackendOrderStatus` 仍是 **6 个**（有意排除 Java 的 `packed`：补上它会把「已打包」订单的展示从透传变成「待发货」= 行为变更）， Agent 面同样仍是 6 个 ⇒ 工具 schema 的取值集合与改前逐字一致；窄化只写一处 （`backend/ai-agent-service/app/constants/order_status.py`），并登记重启条件（放开 `packed` 要先裁定业务口径 / 权限码 / 描述同步）。 取号 MC-204（派单口径，取 MC-198 之后的新号；claims 目录现取到 MC-203）。 ｜ tags: order-status, single-source, codegen, generated-artifact, freshness, scan-guard, no-behavior-change, red-proof, backend-contract
+
+### MC-206. 工人端「裁高计算（一体机）」更名「裁高计算」（issue #8683）：手持标签机现在也能进这页 ⇒ 同一个入口两端都在用，端名就是错误陈述；入口文案 / 机台屏 h1 / machine.html title 三处同批改，并落一条类级守卫（用户可见面出现端名 ⇒ 红），不按端分叉、不引入第二套 UI 分支 🔵
+```
+你: issue #8683：手持标签机现在也能进裁高页（终端仓 #56 / PR #57：菜单「⋮ → 裁高计算」与同一张入口）⇒ 入口上的「（一体机）」与行为不符，文案改成「裁高计算」，不按端分叉
+你: 2026-11-04 用户逐字（终端仓 #56）：「把裁高页面功能做进手持标签机，然后进行样式适配后进行测试安卓自动连通串口和下发功能mock验证」⇒ 两端同一个入口语义，页面不再属于某一端
+你: 边界：只改文案，不动入口行为与权限；终端仓（migao-terminal）零改动、不注入不改页面；不新增第二套 UI 分支，也不在 bmini 上新建卡片（issue 正文写的「bmini 工人首页卡片」在 main 上并不存在，已按意图改到真实落点）
+数据: **判据 1（会红）·入口文案 = 「裁高计算」**：工人页头入口栏（`cut_calc` ∈ 页面集且本机有裁高机链路）渲染出的裁高链接文字逐字等于「裁高计算」；改回「裁高计算（一体机）」⇒ 本条具名红（实测：把入口文案改回带端名 ⇒ 本文件 ① 与 ④ 各自具名红，另两条既有断言同步红 = 4 failed / 41 passed）。执行点 = frontend/worker-h5/tests/worker-h5-no-device-name-copy.test.mjs
+数据: **判据 2（会红）·机台屏标题 = 「裁高计算」**：机台屏「等扫码那一屏」的标题文字逐字等于「裁高计算」（入口与页面标题必须同一句话）；改回带端名 ⇒ 本条 + 类级判据各自具名红（实测：把屏上标题改回带端名 ⇒ 本文件 ② / ④ / ⑤ 与 worker-h5-machine 的屏上标题断言红 = 4 failed / 29 passed）。执行点 = 同判据 1 的判据文件
+数据: **判据 3（会红）·静态页标题 = 「裁高计算」**：`frontend/worker-h5/machine.html` 的页面标题逐字等于「裁高计算」（浏览器标签页 / kiosk 标题栏都会念它）；改回带端名 ⇒ 本条红。执行点 = 同判据 1 的判据文件
+数据: **判据 4（会红）·类级：用户可见面出现端名 ⇒ 红**：把所有用户可见面（工人主屏 / 机台屏 / 现取的全部静态页标题，清单走目录现取、不手写）剥注释、剥标签后的可见文本扫一遍，命中「一体机」/「手持机」（「安卓一体机」含前者子串 ⇒ 同条覆盖）⇒ 具名报出「哪一面 :: 命中片段」。红证实跑：机台屏标题改回「裁高计算（一体机）」⇒ 类级判据当场红并报出机台屏那一面与命中片段。执行点 = 同判据 1 的判据文件
+数据: **判据 5（会红）·负向对照（判据 4 不是空断言）**：把端名写回机台屏的渲染产物后再跑同一把尺子必须命中；未注入时不命中（同一把尺子两读数）。变异未生效（锚点漂移）⇒ 本条红。执行点 = 同判据 1 的判据文件
+数据: **判据 6·既有断言同步（是同步、不是弱化）**：worker-h5 的 pages / worker-entries / machine / 8609-capabilities 四处断言旧文案改成新文案（仍是逐字匹配 ⇒ 改回旧文案照样红），另有 plain-text-guard 与 machine-screen-contrast 两处注释同步；bmini 侧只改 workerMenu / pageEntries 两处注释，用户可见面零改动。执行点 = 上述文件
+前置: 零运行期前置（纯渲染判据）：被测对象 = frontend/worker-h5 的渲染产物（页头入口栏与机台屏 h1）与静态页 title；前置 = node 可跑、worker-h5 的 src 可加载 —— 由仓本身满足。不成立时的红形态已内建：渲染不出入口 / 没有 h1 / 静态页没有 title ⇒ 判据自己红并具名是哪一面，绝不静默跳过。零网络 / 零 LLM / 零 DB。
+跳过: [frontend-contract] 纯前端文案 + 渲染产物判据（零 LLM / 零网络 / 零 DB / 零权限面）：判据在 traces.tests 的 worker-h5 渲染测试里（不进 agent-eval 冒烟）；权威执行面 = frontend/worker-h5/tests/worker-h5-no-device-name-copy.test.mjs 与既有 worker-h5 渲染判据
+```
+溯源: 2026-11-05 新增（issue #8683）。现取读数（`git show origin/main:frontend/bmini-app/src/pages/worker/home/index.tsx`）：bmini 工人首页没有裁高计算卡片 —— issue 正文写的落点（bmini 工人首页卡片）与 main 事实不符；「裁高计算（一体机）」的用户可见落点实际在 frontend/worker-h5：页头入口栏（裁高入口链接）、machine.mjs 的屏上标题、machine.html 的页面标题。⇒ 按 issue 的意图（两端同一个入口、不按端分叉）改这三处，并落类级守卫（用户可见面出现端名 ⇒ 红）；bmini 侧只改两处引用旧文案的注释，终端仓零改动。红证 = 两次单变量注入逐条实跑并逐字节还原（屏上标题改回带端名 ⇒ 4 failed；入口文案改回带端名 ⇒ 4 failed）；还原后 node --test 全量 worker-h5 = 421 passed / 0 failed。 ｜ tags: user-copy, no-device-name, worker-h5, meta-guard, class-level, no-end-fork, red-proof
 
 ## 商家入驻域（7 case）
 
@@ -9627,7 +9643,7 @@
 数据: 报工走既有 POST /api/worker/production/scan/complete：**只发 token + 幂等键**，工序/数量/身份由服务端定；手改裁高项不进请求体
 数据: 常驻扫码输入不依赖 focus；兼容 CR+LF / 双 Enter；输入法合成期不吃字符
 数据: 🔴 任何路径都不写机器（无串口 / 无 Modbus 调用面）
-数据: 🔴 屏上 / 入口文案一律 **「裁高计算（一体机）」**（2026-10-10 用户裁定，issue #6635 —— 改前的「机台模式」只有内部人懂）+ **设备级预设**：机台那台屏打开一次 `/w/?page=cut_calc` ⇒ 本机记住（`migao:worker-h5:home`），此后打开 `/w/` 直接落到 `/w/machine.html`（**只在已登录后换页** —— 机台页没有登录面，未登录换过去 = 把人关在门外）；`?page=report`（不带 `keep`）取消钉住；机台屏上的「去报工页」= `?page=report&keep=1`（**只本次**，绝不改机台的预设）。**零后端改动**（不新增字段/端点）。证据：frontend/worker-h5/tests/worker-h5-pages.test.mjs（⑥ 六条：解析 / 钉住 / 逃生门 / 取消 / 存储不可用 / 唯一换页出口）+ frontend/worker-h5/tests/worker-h5-scan-complete.test.mjs（⑨ 真装配层三段）
+数据: 🔴 屏上 / 入口文案一律 **「裁高计算」**（2026-10-10 用户裁定，issue #6635 —— 改前的「机台模式」只有内部人懂；2026-11-05 issue #8683 去掉端名「（一体机）」：手持标签机也能进这页，文案不按端分叉）+ **设备级预设**：机台那台屏打开一次 `/w/?page=cut_calc` ⇒ 本机记住（`migao:worker-h5:home`），此后打开 `/w/` 直接落到 `/w/machine.html`（**只在已登录后换页** —— 机台页没有登录面，未登录换过去 = 把人关在门外）；`?page=report`（不带 `keep`）取消钉住；机台屏上的「去报工页」= `?page=report&keep=1`（**只本次**，绝不改机台的预设）。**零后端改动**（不新增字段/端点）。证据：frontend/worker-h5/tests/worker-h5-pages.test.mjs（⑥ 六条：解析 / 钉住 / 逃生门 / 取消 / 存储不可用 / 唯一换页出口）+ frontend/worker-h5/tests/worker-h5-scan-complete.test.mjs（⑨ 真装配层三段）
 跳过: [backend-contract] 本条只登记「一体机读面 + 报工链 + 不写机器」这几层**确定性行为**，由单元测试覆盖（backend/admin-api/src/test/java/com/migao/admin/controller/WorkerProductionCuttingHeightTest.java、backend/admin-api/src/test/java/com/migao/admin/service/WorkerCuttingHeightServiceTest.java、frontend/worker-h5/tests/worker-h5-machine.test.mjs）⇒ 不进 agent-eval 冒烟。⚠️ 真机（一体机 + 有线扫码枪）的 HID 时序与输入法行为为**注入式单测**覆盖，现场未验。
 ```
 真值: processing-manage.worker-cutting-height-terminal
@@ -9642,7 +9658,7 @@
 数据: GET /api/worker/me 只回**本工人**身份与**本工人**的页面集（租户 / 工人取自会话行，不接受任何请求入参）；工人 session/JWT 的 permissions 恒为 []、工人进 /api/admin/** 仍 403
 数据: worker.session.idle-minutes 全局默认 = 43200（30 天，2026-10-07 用户裁定「延长到 1 个月」；上一版 10080 一周）；越界/非法 ⇒ 回落默认并 WARN；换人/切换工人仍立即失效旧会话
 数据: 🔴 后台对账（`checkAlive` = `current-worker` + `/me`）的两条硬约束（2026-10-10 收口，issue #6642；线上日志实测）：① **请求有界** —— 单飞 + 最小间隔 5s ⇒ 一次可见性事件风暴只允许**一轮**（2 个请求），不再放大成 15–23 req/s（现场：同一条 session 4 秒 92 个请求、被 nginx `worker_sess` rate=2r/s burst=60 拒 4 条）；② **失败不进报工卡** —— 对账是后台动作，它的失败（429 / 5xx / 断网）只给一句「不影响报工」的提示（现场：`current-worker` 被拒 429 ⇒ 报工卡出现红字「请求失败（HTTP 429）」= 用户截图），唯一例外 = 401/会话过期（身份面）仍回落未登录。证据：frontend/worker-h5/tests/worker-h5-scan-complete.test.mjs（⑩ / ⑪）
-数据: 🔴 页面开关的**前端消费面**（2026-10-10 收口，issue #6635）：`cut_calc` ∈ `pages` ⇔ `/w/` 页头出现**唯一**入口「裁高计算（一体机）」（`/w/machine.html`；文案与商家端「裁高计算器」同源，改前的「机台模式」只有内部人懂）；∉ ⇒ **整条入口栏不渲染**（不留空 `<nav>`）。两条跨应用入口（拍照入库 / 补打入库标签）**已移出 `/w/`**（用户逐字「移除拍照入库和补打入库标签」）⇒ 反向钉住（本页再出现 `/b/#/pages/worker/inbound|reprint` ⇒ 红），可达性由**工人工作台**承担（入口台账 `from` 逐值核）。**设备级预设**（同上裁定，「扫码枪那台屏默认机台模式、其他工人默认报工」）：`/w/?page=cut_calc` ⇒ 本机记住并落到 `/w/machine.html`（**只在已登录后换页**）、`?page=report` 取消、`?page=report&keep=1` = 只本次（机台屏的「去报工页」逃生门）；零后端改动。证据：frontend/worker-h5/tests/worker-h5-pages.test.mjs（① / ④ / ⑥）+ frontend/worker-h5/tests/worker-h5-worker-entries.test.mjs + frontend/bmini-app/tests/page-entry-reachability.test.ts（L5）
+数据: 🔴 页面开关的**前端消费面**（2026-10-10 收口，issue #6635）：`cut_calc` ∈ `pages` ⇔ `/w/` 页头出现**唯一**入口「裁高计算」（`/w/machine.html`；文案与商家端「裁高计算器」同源，改前的「机台模式」只有内部人懂；2026-11-05 issue #8683 去掉端名「（一体机）」）；∉ ⇒ **整条入口栏不渲染**（不留空 `<nav>`）。两条跨应用入口（拍照入库 / 补打入库标签）**已移出 `/w/`**（用户逐字「移除拍照入库和补打入库标签」）⇒ 反向钉住（本页再出现 `/b/#/pages/worker/inbound|reprint` ⇒ 红），可达性由**工人工作台**承担（入口台账 `from` 逐值核）。**设备级预设**（同上裁定，「扫码枪那台屏默认机台模式、其他工人默认报工」）：`/w/?page=cut_calc` ⇒ 本机记住并落到 `/w/machine.html`（**只在已登录后换页**）、`?page=report` 取消、`?page=report&keep=1` = 只本次（机台屏的「去报工页」逃生门）；零后端改动。证据：frontend/worker-h5/tests/worker-h5-pages.test.mjs（① / ④ / ⑥）+ frontend/worker-h5/tests/worker-h5-worker-entries.test.mjs + frontend/bmini-app/tests/page-entry-reachability.test.ts（L5）
 数据: 🔴 逐人收窄（issue #6788；用户 2026-10-13 逐字「工人档案上也应该设置 h5 工人端的菜单权限，这样让不同岗位的工人只关注他自己有权限的功能了」）是页面集的**唯一**来源 —— issue #6828 起企业级那一层（租户级开关）已整层移除，完整口径见用例 **PG-072**；本条只登记「页面集 + 会话超时」这两层确定性行为
 数据: 🔴 归一后为空集（脏数据：全未知键 / 空数组 / 非字符串元素）⇒ **回落全部页面**（issue #6788 评审实测形态 + issue #6828 改判为单层）：若原样下发空数组，工人端 `effectivePages` 会把空集读成「没读到权限 ⇒ **全开**」—— 服务端与端侧口径会分叉；回落与「未收窄 ⇒ 全部页面」同向（fail-open，绝不把工人挡在活外面）。证据：backend/admin-api/src/test/java/com/migao/admin/controller/WorkerProfileControllerTest.java + backend/admin-api/src/test/java/com/migao/admin/worker/WorkerPagesTest.java
 跳过: [backend-contract] 本条只登记「页面集（单层）+ 会话超时」这两层**确定性行为**，由单元测试覆盖（backend/admin-api/src/test/java/com/migao/admin/worker/WorkerPagesTest.java、backend/admin-api/src/test/java/com/migao/admin/controller/WorkerProfileControllerTest.java、backend/admin-api/src/test/java/com/migao/admin/worker/WorkerSessionServiceTest.java）⇒ 不进 agent-eval 冒烟。
@@ -15251,8 +15267,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：1033（活跃 161，跳过 872）
-- tier 分布：smoke 15 / normal 956 / adversarial 33
+- 用例总数：1034（活跃 161，跳过 873）
+- tier 分布：smoke 15 / normal 957 / adversarial 33
 - 售后域：16
 - Agent 核心域：13
 - API 层域：21
@@ -15268,7 +15284,7 @@
 - 人事域：13
 - 知识问答域：9
 - 客户主数据迁移域：10
-- 杂项域：231
+- 杂项域：232
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：76
@@ -15567,6 +15583,7 @@
 - MC-201: OrderService 切片第二批（issue #8191 的 P2-1d，纯搬运不重写）：取消 / 退款 / 发货 / 状态流转四族 15 个方法搬到 OrderLifecycleService，OrderService 由 2,268 行降到 1,832 行并只留同名门面委托；公开名集合逐名相等、调用点零改动、方法体与拆分前逐字节相同（3 处具名跨类限定）、拆分前后的行为快照逐字节一致
 - MC-203: OrderService 门面收尾第一批（issue #8681 的 P2-1e，部分交付）：租户可见性认定与单号解析两个调用方改直连 OrderQueryService、发货前置判定与发货人取值两个调用方改直连 OrderLifecycleService，门面 1,832 行降到 1,725 行并删掉这 4 个转发方法（公开面 29 → 25），另清理生命周期族搬走后失去调用方的 6 个私有死委托
 - MC-204: 订单状态单一源生成到 TS / Python（issue #8198 的 P2-2b）：从 Java `OrderStatusTransitions` 的 7 个常量 + 三张表生成两份**入库**产物（前端 `order-status.generated.ts` / Agent `order_status_generated.py`），删掉 TS 手写的后端状态联合体与两处映射表里的裸值、4 个工具 schema 的订单状态枚举改由生成物派生；生成器确定性（两次重生成逐字节相等，产物里零环境指纹）+ 新鲜度判据三态（0 同步 / 1 陈旧 / 3 无法判定）+ 手写面零裸字面量扫面 + 台账只许缩短；行为零变化（Agent 面仍只暴露 6 个状态，打包态走显式冻结窄化）
+- MC-206: 工人端「裁高计算（一体机）」更名「裁高计算」（issue #8683）：手持标签机现在也能进这页 ⇒ 同一个入口两端都在用，端名就是错误陈述；入口文案 / 机台屏 h1 / machine.html title 三处同批改，并落一条类级守卫（用户可见面出现端名 ⇒ 红），不按端分叉、不引入第二套 UI 分支
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）
