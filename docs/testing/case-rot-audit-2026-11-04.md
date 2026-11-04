@@ -254,6 +254,17 @@ PY
   ⇒ 这是**产品侧能力缺口**，不是用例腐烂；按 #7035 边界「须改实现才能过的 ⇒ 另开单」。
   本包**不改用例**把它们洗绿，也不在用例里写「应支持」的期望（那会让用例恒红）。
 
+### 3.1 OR 面的两条硬形态（本包**踩过一次**，CI 抓到的，照实登记）
+
+`expectations` 的 OR 一旦写成 `dict` 形态（`- tool: "A(action=x) or B"`）就会被
+`tests/unit_ci_workflows/test_eval_expectation_or_group.py` 判红 ——
+**args 必须写进 `args` 字段，或整条改用字符串形态**（否则写身份 / args 值级校验会被扫描面漏掉）。
+本包第一版正是写成 `dict` 形态 ⇒ CI 的 `ci workflow helper unit tests` 判红，已改成字符串形态。
+
+另：OR 里的**裸分支**（后面不带 `(...)`）必须在同一判据的 `BARE_BRANCH_LEDGER` 里登记
+（`interact` 已登记；`role_manage` **未**登记 ⇒ `HR-010` 必须写成 `role_manage(action=list)`）。
+⇒ **动手前跑一次**：`python3 -m pytest tests/unit_ci_workflows/test_eval_expectation_or_group.py -q`。
+
 ## 4. 待裁定 —— **已由集成侧裁定（2026-11-04），逐条结论如下**
 
 | # | 事项 | 裁定结论 | 落地 |
