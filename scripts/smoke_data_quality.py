@@ -22,6 +22,7 @@
 | `DQ-3` | SKU 口径 **canonical** | `skus.door_width_noncanonical > 0`（如落库 `2.8米`） |
 | `DQ-4` | 订单/客户/售后面**非空** | 对应旅程跑过，而 `total == 0`（空态冒充绿） |
 | `DQ-5` | 冒烟自造商品**清理干净** | `fixtures.products_residue > 0`（残留可删对象） |
+| `DQ-5` | 自造**订单**的清理**自证** | 有单既没证明删掉（`GET 404`）、也没有服务端拒绝删除的原话 ⇒ 红；删除后仍挂**活跃**加工单 ⇒ 红 |
 | `DQ-U` | 读不到就**不许当通过** | 任何被判定面 `collected == false` ⇒ 退出码 3（不可判定） |
 
 ## 怎么跑
@@ -249,6 +250,67 @@ def evaluate(snapshot: dict) -> tuple[list[dict], list[dict]]:
             "observed": {"products_residue": int(residue),
                          "samples": fixtures.get("residue_samples") or []},
         })
+
+    # ── DQ-5（续）：自造**订单**的清理自证（issue #7583 缺陷 6）──
+    # 订单「能不能删」是业务事实（`OrderService.deleteOrder`：只允许 `pending`，且已生成活跃作业单
+    # 会被拒），所以两态都必须**可自证**：真删掉 ⇒ `GET 404`；删不掉 ⇒ 服务端原话 + 仍可读
+    # （= 可枚举的残留）。旧形态 `cleanupOrder` 只 `return res.ok`、四条旅程一条都没清
+    # ⇒ 共享云库越跑越脏，而且脏了多少没有任何读数。
+    orders_created = _num(fixtures.get("orders_created"))
+    if orders_created is not None and orders_created > 0:
+        gone = _num(fixtures.get("orders_gone_404"))
+        kept = _num(fixtures.get("orders_kept"))
+        failed = _num(fixtures.get("orders_cleanup_failed"))
+        processing = _num(fixtures.get("orders_processing_residue"))
+        unreadable = _num(fixtures.get("orders_processing_unreadable"))
+        if gone is None or kept is None or failed is None:
+            undecidable.append({
+                "code": "DQ-U", "rule": "DQ-5:orders",
+                "why": "fixtures 声明了 orders_created，却缺 gone/kept/failed 三格读数"
+                       "（无法判定「清理已自证」）",
+                "observed": {k: fixtures.get(k) for k in
+                             ("orders_created", "orders_gone_404", "orders_kept",
+                              "orders_cleanup_failed")},
+            })
+        else:
+            if gone + kept + failed != orders_created:
+                undecidable.append({
+                    "code": "DQ-U", "rule": "DQ-5:orders",
+                    "why": f"订单清理读数不自洽：gone {int(gone)} + kept {int(kept)} + "
+                           f"failed {int(failed)} ≠ created {int(orders_created)}",
+                    "observed": {k: fixtures.get(k) for k in
+                                 ("orders_created", "orders_gone_404", "orders_kept",
+                                  "orders_cleanup_failed")},
+                })
+            if failed > 0:
+                violations.append({
+                    "code": "DQ-5", "rule": "order_cleanup_proven",
+                    "why": f"自造 {int(orders_created)} 张订单里 {int(failed)} 张**清理未自证**"
+                           "（既没证明删掉、也没有服务端拒绝的原话）",
+                    "observed": {"orders_cleanup_failed": int(failed),
+                                 "samples": fixtures.get("orders_residue_samples") or []},
+                })
+            if processing is None or unreadable is None:
+                undecidable.append({
+                    "code": "DQ-U", "rule": "DQ-5:orders",
+                    "why": "缺 orders_processing_residue / orders_processing_unreadable "
+                           "（无法判定「删除后没有悬挂加工单」）",
+                    "observed": fixtures,
+                })
+            elif unreadable > 0:
+                undecidable.append({
+                    "code": "DQ-U", "rule": "DQ-5:orders",
+                    "why": f"{int(unreadable)} 张订单的加工单残留读数取不到"
+                           "（读不到 ≠ 没有残留）",
+                    "observed": {"orders_processing_unreadable": int(unreadable)},
+                })
+            elif processing > 0:
+                violations.append({
+                    "code": "DQ-5", "rule": "order_processing_residue",
+                    "why": f"清理自造订单后仍挂着 {int(processing)} 张**活跃**加工单"
+                           "（作业看板会对已删父订单扇出 404）",
+                    "observed": {"orders_processing_residue": int(processing)},
+                })
 
     return violations, undecidable
 
