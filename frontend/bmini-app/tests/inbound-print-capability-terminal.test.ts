@@ -74,16 +74,18 @@ describe('T2 负控：printerMode 正向 ⇒ 仍然报能打（别把功能修�
     expect(cap.readyHint).toBe(PRINT_READY_HINT_TERMINAL)
   })
 
-  it('三态判定的方向是单向的：只有正向读数才 available', () => {
+  it('三态判定的方向是单向的：非负读数都 available（0 = 机身内置打印机）', () => {
     expect(terminalPrintState(1)).toBe('available')
     expect(terminalPrintState(2)).toBe('available')
+    // 🔴 2026-11-04 真机改判（issue #8661）：SUNMI V2s 内置打印机上报 **0**，端子自身契约
+    //    `print.label = isReady() || mode() >= 0` 也认它。改回 `> 0` ⇒ 这条与真机一起红。
+    expect(terminalPrintState(0)).toBe('available')
   })
 })
 
 describe('T3 判不了：读不到 printerMode ⇒ unknown（不许当能打，也不许冒充「确知没有」）', () => {
   it.each([
     ['缺省（原生没送）', undefined],
-    ['0（语义仓外未定义）', 0],
     ['NaN', Number.NaN],
     ['Infinity', Number.POSITIVE_INFINITY],
   ])('%s ⇒ unknown ⇒ ok:false 且不说能打', (_label, printerMode) => {
@@ -101,7 +103,6 @@ describe('T3 判不了：读不到 printerMode ⇒ unknown（不许当能打，�
     expect(terminalPrintState(-1)).toBe('unavailable')
     expect(terminalPrintState(-7)).toBe('unavailable')
     expect(terminalPrintState(undefined)).toBe('unknown')
-    expect(terminalPrintState(0)).toBe('unknown')
     expect(terminalPrintState(Number.NaN)).toBe('unknown')
   })
 })
