@@ -1,4 +1,4 @@
-// case_ids: MC-203
+// case_ids: MC-203, MC-205
 package com.migao.admin.service;
 
 import org.junit.jupiter.api.DisplayName;
@@ -197,6 +197,45 @@ class OrderFacadeForwarderRetirementTest {
         }
 
         assertThat(violations).as("这些消费方没有直连实现点（被改回门面 / 方法被改名）: %s", violations).isEmpty();
+    }
+
+    // ──────────────────────────────────────────── 判据 4：驱动对象迁到实现点（第二批）
+
+    /**
+     * 第二批把 {@code OrderServiceTest} 的**驱动对象**迁到实现点的那批入口（issue #8681，P2-1e 第二批）。
+     *
+     * <p>只列**本批迁走**的：删单 / 备注 / 手机号回填 / 跟进 / 内容改单仍驱动门面 —— 它们是门面里的
+     * **实体实现**（不是转发），删它们要先搬实现，属下一批 ⇒ 不在本清单里，也不算违规。</p>
+     */
+    private static final List<String> DRIVER_MIGRATED = List.of(
+            "getOrderPage", "getMyOrderPage", "getOrderById", "createOrder", "updateOrderStatus",
+            "cancelOrder", "refundOrder", "confirmPayment", "shipWithLogistics", "revertProducingToConfirmed");
+
+    @Test
+    @DisplayName("OrderServiceTest 的驱动对象是实现点（改回门面 ⇒ 具名红：本批的解锁不许静默失效）")
+    void orderServiceTestDrivesImplementationSites() throws IOException {
+        Path testFile = Path.of("src", "test", "java", "com", "migao", "admin", "service", "OrderServiceTest.java");
+        assertThat(Files.exists(testFile))
+                .as("判据载体必须真实存在（路径漂移不得静默跳过）: %s", testFile).isTrue();
+        assertThat(DRIVER_MIGRATED).as("清单被清空 ⇒ 本判据退化成空断言").hasSize(10);
+
+        String source = stripComments(Files.readString(testFile, StandardCharsets.UTF_8));
+        List<String> back = DRIVER_MIGRATED.stream()
+                .filter(m -> source.contains("orderService." + m + "("))
+                .sorted()
+                .toList();
+
+        assertThat(back)
+                .as("这些驱动调用又回到门面了（本批已改为直驱实现点；改回去 ⇒ 门面入口重新被 152 条钉住、删不掉）: %s", back)
+                .isEmpty();
+
+        // 判别力自证：同一谓词在「门面驱动」的内存语料上必须判真（否则上面那条是恒真的空断言）
+        String facadeDriven = "orderService.getOrderById(\"o-1\");";
+        String implementationDriven = "orderQueryService.getOrderById(\"o-1\");";
+        assertThat(DRIVER_MIGRATED.stream().anyMatch(m -> facadeDriven.contains("orderService." + m + "(")))
+                .as("门面驱动的形态必须被判真").isTrue();
+        assertThat(DRIVER_MIGRATED.stream().anyMatch(m -> implementationDriven.contains("orderService." + m + "(")))
+                .as("直驱实现点的形态必须被判假").isFalse();
     }
 
     // ──────────────────────────────────────────── 判据 3：判别力自证（内存注入）
