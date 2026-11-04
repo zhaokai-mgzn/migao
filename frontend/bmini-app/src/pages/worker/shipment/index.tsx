@@ -53,6 +53,7 @@ import { MAX_INBOUND_PHOTOS } from '../../../utils/inbound/recognizeFlow'
 import type { PendingPhoto } from '../../../utils/inbound/barcodeDecode'
 import '../../../styles/admin-surfaces.scss'
 import './index.scss'
+import { WorkerBackLink } from '../../../components/WorkerBackLink'
 
 /** 物流单位三选一（与后端 `parseDetails` 的话术同名：米 / 套 / 件）。 */
 const SHIPMENT_UNITS = ['米', '套', '件']
@@ -238,6 +239,7 @@ export default function WorkerShipmentPage() {
     return (
       <View className='admin-surface' data-testid='worker-shipment-page'>
         <View className='admin-surface__header'>
+          <WorkerBackLink />
           <Text className='admin-surface__title'>拍照发货</Text>
           <Text className='admin-surface__subtitle'>{SHIPMENT_WORKER_LOGIN_REQUIRED}</Text>
         </View>
@@ -257,6 +259,7 @@ export default function WorkerShipmentPage() {
   return (
     <ScrollView scrollY className='admin-surface' data-testid='worker-shipment-page'>
       <View className='admin-surface__header'>
+        <WorkerBackLink />
         <Text className='admin-surface__title'>拍照发货</Text>
         <Text className='admin-surface__subtitle'>
           拍订单行 / 商品标签 → 核对 → 定位订单 → 生成发货单（实发多少由你填）

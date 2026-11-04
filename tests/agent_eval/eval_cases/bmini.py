@@ -2,7 +2,7 @@
 # 本文件由 render_cases.py 生成，勿手改（改了也留不住：下次重渲染会覆盖）
 # 源: cases/*.yml（case-contract 单一源）
 # 重新生成: python3 render_cases.py --cases <dir> --out-eval <包目录> --out-md <md>
-# 域: bmini（源: cases/bmini.yml，62 条）
+# 域: bmini（源: cases/bmini.yml，63 条）
 
 from ._schema import Difficulty, EvalCase, Skill
 
@@ -1122,6 +1122,24 @@ _CASE_BM_064 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── BM-064 [NORMAL] 工人子页的「返回」入口：手机 / 微信 / 手持标签机 WebView 里也能回工作台（源: cases/bmini.yml）──
+_CASE_BM_064 = EvalCase(
+    id='BM-064',
+    legacy_id='',
+    title='工人子页的「返回」入口：手机 / 微信 / 手持标签机 WebView 里也能回工作台',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['工人在手机上点进「待出库单」「拍照入库」「我的计件」等子页后，想回工作台：点页头左上角的「‹ 返回」就回去（不用靠手势、不用杀掉重进）。若是扫码/短链直接打开的子页（没有上一页），同一个按钮回到工人工作台。'],
+    expectations=['direct_reply'],
+    data_checks=['判据 1·有上一页 ⇒ Taro.navigateBack({delta:1})，且**不**调 reLaunch。红证：改成无条件 reLaunch ⇒ frontend/bmini-app/tests/worker-back-link.test.tsx 判据①红', '判据 2·🔴 没有历史（扫码短链 / 直接打开子页 / 终端冷启动落到子页）⇒ reLaunch 到 /pages/worker/home/index，**不静默失败**。红证：去掉兜底只调 navigateBack ⇒ 判据②红', '判据 3·🔴 类级：src/pages/worker/* 的每个子页（除 home / login）都必须挂 `<WorkerBackLink />` —— 新增子页忘挂 ⇒ 判据③红'],
+    skip_reason='[frontend-contract] 确定性导航判据（jest），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['bmini', 'worker', 'navigation', 'ux'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 CASES = (
     _CASE_BM_001,
     _CASE_BM_002,
@@ -1184,5 +1202,6 @@ CASES = (
     _CASE_BM_061,
     _CASE_BM_062,
     _CASE_BM_063,
+    _CASE_BM_064,
     _CASE_BM_064,
 )

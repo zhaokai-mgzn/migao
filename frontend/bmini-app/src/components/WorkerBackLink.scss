@@ -1,0 +1,23 @@
+/* 工人端子页「返回」入口（issue #8659）：一枚小尺寸 Chevron + 文案，
+   放在页头最左侧，不抢标题权重（设计 §31：常驻面克制）。 */
+.worker-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px 4px 4px;
+  margin-right: 8px;
+  flex: none;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.worker-back__chevron {
+  font-size: 34px;
+  line-height: 1;
+  color: #475569;
+}
+
+.worker-back__text {
+  font-size: 26px;
+  color: #475569;
+}

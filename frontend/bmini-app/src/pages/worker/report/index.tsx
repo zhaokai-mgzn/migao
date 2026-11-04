@@ -107,6 +107,7 @@ import { printRowsLabel } from '../../../utils/inbound/labelPrint'
 import { probePrintCapability } from '../../../utils/inbound/printCapability'
 import { createPrintTransport } from '../../../utils/inbound/terminalTransport'
 import './index.scss'
+import { WorkerBackLink } from '../../../components/WorkerBackLink'
 
 /** 读面失败兜底（技术原文留在请求层）。 */
 export const RESOLVE_FAILED_HINT = '扫码结果读取失败，请重试'
@@ -447,6 +448,7 @@ export default function WorkerReportPage() {
           登录成功（`state.worker` 就绪）后页头出现。 */}
       {state.mode === 'unauthorized' ? null : (
         <View className='worker-report__header' data-testid='worker-report-header'>
+          <WorkerBackLink />
           <Text className='worker-report__title'>扫码报工</Text>
           {state.worker ? (
             <Text className='worker-report__worker' data-testid='worker-report-worker'>
