@@ -27,7 +27,14 @@ jobs:
   block-env-files:
     name: Block .env files (except .env.example)
     runs-on: ubuntu-latest
-    timeout-minutes: 2
+    # ── 超时上限（2026-11-04 抬）：口径 = **拆掉一个确定的假红**，判据 = 本段，裁定载体 = issue #8605 ──
+    # 撞顶 incident（本轮实测，可复算）：19:45:26Z→19:47:58Z = 152s（上限 120s）；卡在 ``Run actions/checkout@v7`（checkout 都没跑完）`。
+    #   复算 = `gh api repos/<owner>/<repo>/actions/runs/<run_id>/jobs --jq '.jobs[]|select(.conclusion=="cancelled")'`
+    # 台账现取读数（`ci_cost_ledger.json`）：median 10s / p90 11s / 旧上限 120s ⇒ 正常有 10 倍余量，
+    #   本轮实测 **15 倍慢化**（runner 饥饿）。抬上限的代价**健康时为零**（job 做完就退）；
+    #   不抬的代价 = required 永久 BLOCKED + 界面不可归因 + 诱导 `--admin` 绕过保护（那是靠纪律不是靠机制）。
+    # ⛔ 抬上限**不是**成本结论（§pr-check 既有口径①不变）：只覆盖「轻量 job 被慢化打成假红」这一形态。
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
         with:
@@ -917,7 +924,14 @@ jobs:
   case-truth-check:
     name: Case Contract (truths_ref)
     runs-on: ubuntu-latest
-    timeout-minutes: 2
+    # ── 超时上限（2026-11-04 抬）：口径 = **拆掉一个确定的假红**，判据 = 本段，裁定载体 = issue #8605 ──
+    # 撞顶 incident（本轮实测，可复算）：19:49:37Z→19:51:41Z = 124s（上限 120s）；卡在 ``Merge-result freshness`（合并探测）`。
+    #   复算 = `gh api repos/<owner>/<repo>/actions/runs/<run_id>/jobs --jq '.jobs[]|select(.conclusion=="cancelled")'`
+    # 台账现取读数（`ci_cost_ledger.json`）：median 8s / p90 8s / 旧上限 120s ⇒ 正常有 10 倍余量，
+    #   本轮实测 **15 倍慢化**（runner 饥饿）。抬上限的代价**健康时为零**（job 做完就退）；
+    #   不抬的代价 = required 永久 BLOCKED + 界面不可归因 + 诱导 `--admin` 绕过保护（那是靠纪律不是靠机制）。
+    # ⛔ 抬上限**不是**成本结论（§pr-check 既有口径①不变）：只覆盖「轻量 job 被慢化打成假红」这一形态。
+    timeout-minutes: 15
     if: github.event_name == 'pull_request'
     steps:
       - uses: actions/checkout@v7
@@ -1308,7 +1322,14 @@ jobs:
   label-needs-changes:
     name: Label needs-changes on any CI failure
     runs-on: ubuntu-latest
-    timeout-minutes: 2
+    # ── 超时上限（2026-11-04 抬）：口径 = **拆掉一个确定的假红**，判据 = 本段，裁定载体 = issue #8605 ──
+    # 撞顶 incident（本轮实测，可复算）：同族（同样只做 checkout + 几次 `gh` 调用；本轮未撞顶但上限相同）；卡在 ``Run actions/checkout@v7``。
+    #   复算 = `gh api repos/<owner>/<repo>/actions/runs/<run_id>/jobs --jq '.jobs[]|select(.conclusion=="cancelled")'`
+    # 台账现取读数（`ci_cost_ledger.json`）：median 3s / p90 4s / 旧上限 120s ⇒ 正常有 10 倍余量，
+    #   本轮实测 **— 倍慢化**（runner 饥饿）。抬上限的代价**健康时为零**（job 做完就退）；
+    #   不抬的代价 = required 永久 BLOCKED + 界面不可归因 + 诱导 `--admin` 绕过保护（那是靠纪律不是靠机制）。
+    # ⛔ 抬上限**不是**成本结论（§pr-check 既有口径①不变）：只覆盖「轻量 job 被慢化打成假红」这一形态。
+    timeout-minutes: 10
     if: always() && github.event_name == 'pull_request'
     needs:
       - block-env-files

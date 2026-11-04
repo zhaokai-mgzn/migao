@@ -4187,7 +4187,7 @@
 ```
 溯源: 2026-10-31 新增（issue #8295）：两步确认，避免误写 ｜ tags: ui, preview
 
-## 杂项域（214 case）
+## 杂项域（216 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -7449,6 +7449,24 @@
 跳过: [backend-contract] 纯重构（行为零变化）+ 纯静态台账面：判据是 ai-agent 单测（真实跑 product_* 四个模块，零 LLM、零网络），不进入 agent-eval 冒烟
 ```
 溯源: 2026-11-04 新增（issue #8290 债务单的偿还）。拆分前 product_health.py = 910 行（origin/main 2f87e7f05 现取），拆后 = 551 行；四个底层模块 = product_numbers 61 / product_judgement 131 / product_options 184 / product_attribution 98，全部远低于 800 线。取号 MC-186（派单口径指定，避开 MC-180~185 的在飞占号）。行为零变化的证据 = 400 例随机快照差分（旧模块 vs 新模块输出逐字节一致，含异常形态）+ 既有判据一条未改。 ｜ tags: refactor, loc-ratchet, briefing, product-health
+
+### MC-187. 冒烟旅程 16- 的「生成作业单」走智能派单唯一入口，不许退化成可跳过的空判据（#7743） 🔵
+```
+你: 商家在订单详情页找不到「生成作业单」按钮（销售订单只读、直派入口全关），作业单只能在「智能派单」里生成；可冒烟旅程 16- 还在点那个已经不存在的按钮，点不到就静默跳过，后面再断言作业单块 —— 等于什么都没验。
+数据: **判据 1（会红）**：`scripts/ui-smoke-merchant/spec.mjs` 的 16- 旅程体内必须出现智能派单入口 `pool-dispatch-batch`（`/production/pool` 一键合并派单），且**不再**驱动 `getByRole('button', { name: /生成加工单/ })`。执行点 = tests/unit_ci_workflows/test_smoke16_dispatch_entry.py::test_journey16_drives_the_pool_dispatch_entry。
+数据: **判据 2（会红）**：作业单生成段至少 4 个 `throw` 出口（池里查不到本单 / 勾选框被禁用 / 成批预览没出 / 派单按钮缺席），且**真的**执行 `await pick.check()` 与 `await batchBtn.click()`（注释掉任一 ⇒ 红）。执行点 = ::test_journey16_fails_closed_at_every_dispatch_step。
+跳过: [backend-contract] 纯静态源码面判据（读 spec.mjs 文本，零浏览器、零真实栈），非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-11-04 新增（issue #7743）。取号 MC-187（集成侧指定）。红证两条：注释 `await batchBtn.click()` ⇒ 判据 2 红；注释 `await pick.check()` ⇒ 判据 2 红。 ｜ tags: smoke, false-green, ui-smoke, dispatch
+
+### MC-188. required 轻量 job 的超时上限有安全下限（#8605） 🔵
+```
+你: PR 的所有检查看起来都没问题，但有几个检查显示「已取消」，PR 就一直卡在不能合并；点进去也没有任何断言失败，像是平台挂了。
+数据: **判据 1（会红）**：`pr-check.yml` 的三个 required 轻量 job（`block-env-files` / `case-truth-check` / `label-needs-changes`）必须声明 `timeout-minutes`，且 **≥ 5 分钟**。改回 2 分钟 ⇒ 逐条具名报红。执行点 = tests/unit_ci_workflows/test_required_light_job_timeout_floor.py::test_light_required_jobs_have_a_timeout_floor。
+数据: **判据 2（会红）**：上限必须容得下本轮实测 152s 的 **2 倍**余量（防把下限调到「好看但没用」）。执行点 = ::test_the_floor_matches_the_measured_slowdown。
+跳过: [backend-contract] 纯静态 YAML 面判据（读 workflow 的 timeout-minutes，零 runner、零真实栈），非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-11-04 新增（issue #8605）。取号 MC-188。红证：把 `block-env-files` 的 timeout-minutes 改回 2 ⇒ 两条判据同时红（`2 failed`）；恢复 ⇒ `2 passed`。 ｜ tags: ci, required, false-red, timeout
 
 ## 商家入驻域（7 case）
 
@@ -14957,8 +14975,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：1012（活跃 153，跳过 859）
-- tier 分布：smoke 15 / normal 935 / adversarial 33
+- 用例总数：1014（活跃 153，跳过 861）
+- tier 分布：smoke 15 / normal 937 / adversarial 33
 - 售后域：16
 - Agent 核心域：13
 - API 层域：21
@@ -14974,7 +14992,7 @@
 - 人事域：13
 - 知识问答域：9
 - 客户主数据迁移域：10
-- 杂项域：214
+- 杂项域：216
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：76
@@ -15255,6 +15273,8 @@
 - MC-182: 缺料风险页（admin-web `/production/material-shortage`，issue #6282）：默认只列缺口 > 0（常驻面克制）；行序 = 服务端分层降序 → 缺口降序（前端不重排）；未知 ≠ 0；空态是事实陈述；读失败不印空态
 - MC-184: C 端 H5 输入面字体族 / 占位符收口（issue #8575）：共享层给内层原生控件继承字体、textarea 补 font-size: inherit、::placeholder 唯一来源且不写字号
 - MC-186: 商品健康度视图拆分（issue #8290）：数值底座 + 判断 / 刻度 / 归因三块各自独立，门面保留全部既有名字
+- MC-187: 冒烟旅程 16- 的「生成作业单」走智能派单唯一入口，不许退化成可跳过的空判据（#7743）
+- MC-188: required 轻量 job 的超时上限有安全下限（#8605）
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）
