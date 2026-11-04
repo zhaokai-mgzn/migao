@@ -2,7 +2,7 @@
 # 本文件由 render_cases.py 生成，勿手改（改了也留不住：下次重渲染会覆盖）
 # 源: cases/*.yml（case-contract 单一源）
 # 重新生成: python3 render_cases.py --cases <dir> --out-eval <包目录> --out-md <md>
-# 域: misc（源: cases/misc.yml，224 条）
+# 域: misc（源: cases/misc.yml，225 条）
 
 from ._schema import Difficulty, EvalCase, Skill
 
@@ -4113,6 +4113,24 @@ _CASE_MC_198 = EvalCase(
     precondition='零运行期前置（纯结构判据）：被测对象 = `backend/admin-api/src/main/java/com/migao/admin/service/OrderStatusTransitions.java`、`service/` 与 `controller/` 其余源码、以及那两个测试文件；前置 = 它们存在且可读，由仓本身满足。不成立时的红形态已内建：扫面面清单断言「必扫文件都在面内」，读不到 ⇒ 红（不是绿）。零网络 / 零 LLM / 零 DB。',
 )
 
+# ── MC-197 [NORMAL] 批次后台 job 的跨实例执行租约（issue #8285）：心跳新鲜不误杀 / 心跳超时或为空 ⇒ 回收成可撤销 partial 且幂等 / 两个 executor 的活批次互不误伤 / 回收不覆盖终态（含 fencing）（源: cases/misc.yml）──
+_CASE_MC_197 = EvalCase(
+    id='MC-197',
+    legacy_id='',
+    title='批次后台 job 的跨实例执行租约（issue #8285）：心跳新鲜不误杀 / 心跳超时或为空 ⇒ 回收成可撤销 partial 且幂等 / 两个 executor 的活批次互不误伤 / 回收不覆盖终态（含 fencing）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['批次后台 job 崩了以后批次会永远停在「执行中」：单实例重启后分不清「真的还在跑」和「上一次进程已死」；多实例时更不敢回收 —— 任一实例一动手就会把另一实例正在跑的批次标成部分失败，而那个 job 其实还活着。'],
+    expectations=[],
+    data_checks=['**判据 1（会红）·心跳新鲜 ⇒ 回收 0 行**：`status=executing` 且心跳是刚才的批次（活 job）跑一轮回收后必须 **0 行**、状态仍是 `executing`、`executor_id` 不被清空。执行点 = `backend/admin-api/src/test/java/com/migao/admin/service/AgentBatchLeaseRecoveryRealDbTest.java`。红证：把回收 SQL 的心跳时效谓词改成恒真 ⇒ 该判据当场红（活批次被回收）。', '**判据 2（会红）·心跳超时或为空 ⇒ 可撤销的 partial**：心跳停在两小时前、以及从未心跳（列为空）的两种批次都收回成 `partial`，`executor_id` 置空且补 `executed_at`；随后走**既有撤销路径**能把它撤销成 `reverted`（执行成功过的条目逐条还原，未生效的置跳过）。红证：把回收写入的状态改成 `done` ⇒ 该判据红在状态断言（期望 `partial`）。', '**判据 2′（会红）·重复回收幂等**：同一批回收两次，第二轮必须 0 行，且状态与 `executed_at` 逐字不变。红证：把回收的来源态谓词放宽（不再限定 `executing`）⇒ 第二轮又改到同一批（期望 0 行、实得 1 行）⇒ 判据红。', '**判据 3（会红）·两个实例的活批次互不误伤**：两个不同 `executor_id` 各持一个 `executing` 批次、心跳都新鲜 ⇒ 任一实例的回收都是 0 行；把其中一个的心跳改成超时后，只回收它那一条，另一个仍 `executing` 且 `executor_id` 不变；另一个租户里的活批次同样不在射程内，且取数面确实跨租户（扫到 2 个租户）。红证：同上「时效谓词恒真」注入 ⇒ 两侧活批次一起被回收，该判据红。', "**判据 4（会红）·回收不覆盖终态**：`done` / `partial` / `reverted` / `revert_partial` 四条（心跳都为空）在同租户**有活批次**的前提下一起跑回收 ⇒ 0 行、四条状态逐字不变。红证：把来源态谓词放宽成 `status <> 'preview'` ⇒ 四条终态被改成 `partial`（期望 0 行、实得 4 行）⇒ 判据红。", '**判据 4′（会红）·fencing（僵尸 job 的终态写 0 行）**：批次被回收成 `partial` 后用户发起撤销（又回到 `executing`，执行者已换人）⇒ 旧执行者此时写终态必须 0 行，状态保持 `executing`；换人后的当前执行者写终态必须成功（正对照，护栏不误杀正常路径）。红证：摘掉终态条件更新的执行者谓词 ⇒ 僵尸写成功 1 行、把撤销中的批次改成 `done`（期望 0 行、实得 1 行）⇒ 判据红。', '**判据 5（会红）·迁移 / 列存在性 / 状态机与既有两族同口径**：两列（`executor_id` / `heartbeat_at`）在**增量迁移**与**建库脚本**两源齐备、迁移幂等（`IF NOT EXISTS` + 显式事务）、`heartbeat_at` 是带时区时间戳、回收的取数面有部分索引（只索引 `executing` 行）、且本迁移**不改**状态机取值域（回收复用 `partial`，不新增中间态）。执行点 = `backend/admin-api/src/test/java/com/migao/admin/migration/AgentBatchMigrationTest.java`（与建表三源契约同族）。红证：删掉建库脚本里的 `heartbeat_at` 列 ⇒ 该判据具名红（新建库路径缺列）。', '**判据 6（会红）·类级元守卫登记**：回收写路径与它调用的状态迁移语句必须登记进 `backend/admin-api/src/test/resources/agent-batch-status-cas-ledger.json`（状态写面必须带 `tenant_id` + 来源态字面量谓词，且不得写成参数），未登记即红、登记了不存在的写路径也红。执行点 = `backend/admin-api/src/test/java/com/migao/admin/service/AgentBatchStatusCasMetaGuardTest.java`（与 #6960 同族）。红证：把台账里回收那条写路径改名 ⇒ 元守卫当场红并报出未登记写路径清单。', '**判据 7（会红）·租约失效立刻停手（Java 层）**：心跳条件更新 0 行（已被回收 / 换人）时，执行循环必须立刻停手 —— 一条业务写入都不跑、终态不落 `done`（停在可撤销的 `partial`）；`executor_id` 形态为「实例段 + 每 job 唯一段」（同一实例两条 job 的段必须不同）。执行点 = `backend/admin-api/src/test/java/com/migao/admin/service/AgentBatchLeaseServiceTest.java`（心跳 0 行 = 租约已失，内存心跳不许刷新）+ `backend/admin-api/src/test/java/com/migao/admin/service/AgentBatchServiceTest.java`（收到「已失效」后一条业务写入都不跑）。红证：摘掉循环里的停手判定 ⇒ 业务写入被调用 ⇒ 判据红。'],
+    skip_reason='[backend-contract] 纯服务端状态机与 SQL 谓词判据（真 PG 一次性临时集群 + 静态迁移/台账守卫；零网络、零 LLM、不碰存量数据），不进入 agent-eval 冒烟',
+    tags=['agent-batch', 'lease', 'heartbeat', 'crash-recovery', 'idempotent', 'multi-instance', 'fencing', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 CASES = (
     _CASE_MC_001,
     _CASE_MC_002,
@@ -4338,4 +4356,5 @@ CASES = (
     _CASE_MC_194,
     _CASE_MC_196,
     _CASE_MC_198,
+    _CASE_MC_197,
 )

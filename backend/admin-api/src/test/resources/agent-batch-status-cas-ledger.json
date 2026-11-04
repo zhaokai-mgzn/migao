@@ -72,6 +72,15 @@
         "PR-007",
         "PR-010"
       ]
+    },
+    {
+      "method": "AgentBatchMapper#markStaleExecutingPartial",
+      "verdict": "guarded",
+      "guard": "崩溃回收（issue #8285 / 迁移 V208）：`UPDATE agent_batches SET status='partial', executor_id=NULL, executed_at=COALESCE(executed_at, ?) WHERE tenant_id=? AND status='executing' AND (heartbeat_at IS NULL OR heartbeat_at < ?)`。一条语句同时钉住三条：① 心跳新鲜 ⇒ 0 行（**活 job 不被误杀**）；② 状态已不是 executing ⇒ 0 行（**幂等** + **不覆盖终态** done/partial/reverted/revert_partial）；③ 只改批次行、不碰明细（不伪造 item 成功，撤销仍逐条还原）。`executor_id` 置 NULL 是 fencing 的另一半：僵尸 job 的心跳/终态写都带 executor 谓词 ⇒ 当场 0 行。",
+      "evidence": "backend/admin-api/src/main/java/com/migao/admin/mapper/AgentBatchMapper.java::int markStaleExecutingPartial(",
+      "case_ids": [
+        "MC-197"
+      ]
     }
   ],
   "service_write_paths": [
@@ -117,6 +126,15 @@
         "PR-028",
         "PR-007",
         "PR-010"
+      ]
+    },
+    {
+      "method": "AgentBatchLeaseService#recoverStaleExecuting",
+      "path": "AgentBatchMapper#markStaleExecutingPartial",
+      "call_anchor": "batchMapper.markStaleExecutingPartial(",
+      "evidence": "backend/admin-api/src/main/java/com/migao/admin/service/AgentBatchLeaseService.java::batchMapper.markStaleExecutingPartial(",
+      "case_ids": [
+        "MC-197"
       ]
     }
   ],
