@@ -72,7 +72,7 @@
       "symbol": "markExecuting",
       "form": "sql",
       "params": "",
-      "anchor": "\"UPDATE agent_batches SET status = 'executing' \" + \"WHERE id = #{id} AND tenant_id = #{tenantId} AND status = 'preview'\""
+      "anchor": "\"UPDATE agent_batches SET status = 'executing', executor_id = #{executorId}, \" + \"heartbeat_at = #{heartbeatAt} \" + \"WHERE id = #{id} AND tenant_id = #{tenantId"
     },
     {
       "table": "agent_batches",
@@ -80,7 +80,7 @@
       "symbol": "markRevertPartial",
       "form": "sql",
       "params": "",
-      "anchor": "\"UPDATE agent_batches SET status = 'revert_partial', reverted_at = #{revertedAt} \" + \"WHERE id = #{id} AND tenant_id = #{tenantId} AND status = 'executing'\""
+      "anchor": "\"UPDATE agent_batches SET status = 'revert_partial', reverted_at = #{revertedAt} \" + \"WHERE id = #{id} AND tenant_id = #{tenantId} AND status = 'executing' \" + "
     },
     {
       "table": "agent_batches",
@@ -88,7 +88,7 @@
       "symbol": "markReverted",
       "form": "sql",
       "params": "",
-      "anchor": "\"UPDATE agent_batches SET status = 'reverted', reverted_at = #{revertedAt} \" + \"WHERE id = #{id} AND tenant_id = #{tenantId} AND status = 'executing'\""
+      "anchor": "\"UPDATE agent_batches SET status = 'reverted', reverted_at = #{revertedAt} \" + \"WHERE id = #{id} AND tenant_id = #{tenantId} AND status = 'executing' \" + \"AND e"
     },
     {
       "table": "agent_batches",
@@ -96,7 +96,15 @@
       "symbol": "markReverting",
       "form": "sql",
       "params": "",
-      "anchor": "\"UPDATE agent_batches SET status = 'executing' \" + \"WHERE id = #{id} AND tenant_id = #{tenantId} \" + \"AND status IN (#{revertableA}, #{revertableB})\""
+      "anchor": "\"UPDATE agent_batches SET status = 'executing', executor_id = #{executorId}, \" + \"heartbeat_at = #{heartbeatAt} \" + \"WHERE id = #{id} AND tenant_id = #{tenantId"
+    },
+    {
+      "table": "agent_batches",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/mapper/AgentBatchMapper.java",
+      "symbol": "markStaleExecutingPartial",
+      "form": "sql",
+      "params": "",
+      "anchor": "\"UPDATE agent_batches SET status = 'partial', executor_id = NULL, \" + \"executed_at = COALESCE(executed_at, #{now}) \" + \"WHERE tenant_id = #{tenantId} AND status"
     },
     {
       "table": "agent_batches",
@@ -104,7 +112,7 @@
       "symbol": "claimForExecute",
       "form": "setStatus",
       "params": "Long tenantId, String batchId",
-      "anchor": ".setStatus(STATUS_EXECUTING); return batch; } private List<AgentBatchViews.Result> runBatch(Long t"
+      "anchor": ".setStatus(STATUS_EXECUTING); batch.setExecutorId(executorId); batch.setHeartbeatAt(heartbeatAt);"
     },
     {
       "table": "agent_batches",
@@ -112,7 +120,7 @@
       "symbol": "claimForRevert",
       "form": "setStatus",
       "params": "Long tenantId, String batchId",
-      "anchor": ".setStatus(STATUS_EXECUTING); return batch; } private List<AgentBatchViews.Result> runRevert(Long"
+      "anchor": ".setStatus(STATUS_EXECUTING); batch.setExecutorId(executorId); batch.setHeartbeatAt(heartbeatAt);"
     },
     {
       "table": "agent_batches",

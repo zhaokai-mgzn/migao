@@ -4221,7 +4221,7 @@
 ```
 溯源: 2026-10-31 新增（issue #8295）：两步确认，避免误写 ｜ tags: ui, preview
 
-## 杂项域（225 case）
+## 杂项域（226 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -7252,8 +7252,8 @@
 你: 用户（2026-11-01 真机取证，商米 V2s `Qbao_h2` / Android 11 / 终端壳 1.0.19）：拍照入库页第一行写「点「打印标签」，由本机打印机直接出纸。」，而同一台机器点「打印测试页」⇒「打印失败 / 打印机未连接（需商米内置打印服务）」（`PrinterLink.mode()` = -1，设备上只有 `com.sunmi.printer.firmware`）
 期望: direct_reply
 数据: 🔴 **判据 1（实例，会红）**：`printerMode = -1`（真机读数：没有商米打印服务）⇒ 能力探测必须 `ok:false`、`reason = terminal-printer-unavailable`，且**不出现**「由本机打印机直接出纸」（`readyHint` 为空）。执行点 = frontend/bmini-app/tests/inbound-print-capability-terminal.test.ts::T1
-数据: 🔴 **判据 2（负控，防「修坏了」）**：`printerMode > 0`（原生报正向）⇒ **仍**报能打 + 机身内置打印机文案（`PRINT_READY_HINT_TERMINAL`），与 #8089 的终端通道形态一致。执行点 = 同文件::T2
-数据: 🔴 **判据 3（三态，最容易被写成 `|| true`）**：`printerMode` **读不到**（缺省 / 0 / NaN / Infinity）⇒ `unknown` ⇒ `ok:false` 且**不说**能打；「判不了」与「确知没有」是**两条不同文案**（出口相同 = 电脑端补打 / 找管理员）。执行点 = 同文件::T3
+数据: 🔴 **判据 2（负控，防「修坏了」）**：`printerMode >= 0`（原生报有效模式；**`0` = 商米机身内置打印机**，与端子 `print.label = isReady() || mode() >= 0` 同口径）⇒ **仍**报能打 + 机身内置打印机文案（`PRINT_READY_HINT_TERMINAL`），与 #8089 的终端通道形态一致。执行点 = 同文件::T2
+数据: 🔴 **判据 3（三态，最容易被写成 `|| true`）**：`printerMode` **读不到**（缺省 / NaN / Infinity；⚠️ `0` 不在其列 —— 见判据 2 的 2026-11-04 改判）⇒ `unknown` ⇒ `ok:false` 且**不说**能打；「判不了」与「确知没有」是**两条不同文案**（出口相同 = 电脑端补打 / 找管理员）。执行点 = 同文件::T3
 数据: 🔴 **判据 4（类级固化）**：终端分支必须消费 `printerMode`（`terminalPrintState(env.printerMode)`），旧形态 `if (env.terminalBridge) { return { ok: true … } }` 必须不复存在；`PRINT_READY_HINT_TERMINAL` 只许由 frontend/bmini-app/src/utils/inbound/printCapability.ts 的 `available` 分支产出，`src/**` 里别的文件不许自己写死这句话。执行点 = 同文件::T4
 数据: 🔴 **判据 5（取值接线）**：`readPrintEnv()` 从原生注入的 `window.__CFG__.printerMode` 取数，非数字 / 非有限值一律按「读不到」处理（fail-closed）；端到端：`__CFG__ = { printerMode: -1 }` ⇒ 探针（读真环境）也不说能打。执行点 = 同文件::T5
 数据: **边界（照实登记，§19.1）**：① 判据只钉**本仓这一侧**（判定 + 文案 + 取值接线），**不覆盖**原生侧是否真的按 `PrinterLink.mode()` 赋值（仓外，终端仓另单）；② 不判「这台机器该不该配打印机」（硬件选型不在本单）；③ 不改任何门禁的通过条件、不新增豁免；④ `terminalBridge` 的既有定义（`chrome.webview`）**未动** —— 本轮只让「能力」由原生上报的事实说话。
@@ -7261,7 +7261,7 @@
 跳过: [backend-contract] 纯前端确定性判据（能力探测 = 纯函数 + 取值接线 + 源码结构守卫），由 frontend/bmini-app/tests/inbound-print-capability-terminal.test.ts 验证，非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: ⚠️ 缺口（见对应模板 ⚠️ 注释）
-溯源: 2026-11-03 新增（issue #8310）。病 = 终端壳**打印能力误报**：页面说「由本机打印机直接出纸」，本机 `PrinterLink.mode()` = **-1**；根因 = `probePrintCapability()` 的终端分支**只看壳**（有 `chrome.webview` 就 `ok:true`）、`PrintEnv` 里没有能力字段。修 = 三态判定 `terminalPrintState(printerMode)`（`>0` available / `<0` unavailable / `0`·缺省·非有限 unknown），新增两条缺口文案（`terminal-printer-unavailable` / `terminal-print-unknown`）并登记进 `INBOUND_PRINT_GAP_WIRING`；`readPrintEnv()` 从 `window.__CFG__.printerMode` 取数（非数字按读不到）。取号 = MC-154（`python3 scripts/next_case_id.py MC` 现取 main 001-098/100-144/146-147 ⇒ 工具返回历史空档 MC-099，按裁定**不回填**；MC-139~MC-153 属并行包保留带，**避开** ⇒ 顺延 MC-154）。🔴 **仓外事实（如实登记，不假造）**：原生侧本轮**还没有**送 `printerMode` ⇒ 真机一律落 `unknown`（fail-closed：不许说能打）；**原生侧要补送 `printerMode`**（值域口径：负 = 不可用 / 正 = 可用 / 0 与缺省 = 判不了），补送后本仓代码**无需再改**。边界 = 不覆盖原生赋值、不判硬件选型。 ｜ tags: backend-contract, bmini, print-capability, fail-closed, three-state, no-overclaim, red-proof
+溯源: 2026-11-04 真机改判（issue #8661）：商米 V2s（Qbao_h2）内置打印服务 woyou.aidlservice.jiuiv5/...PrinterService 绑定成功、顶栏「打印 就绪」，端子注入的 printerMode 实测为 **0**（内置打印机）；改前页面把 0 判成 unknown ⇒ 工人端「打印成品出库单」按钮点了没动作（现场症状）。同时发现端子自身契约就是 print.label = isReady() || mode() >= 0 ⇒ 页面比原生更严、**说错了**。判据 2 / 3 口径随之改判：0 从 unknown 移入 available（负向仍 unavailable、缺省/非有限仍 unknown），判据对象与强度不变（红证：`>= 0` 改回 `> 0` ⇒ 判据 2 红）。｜ 2026-11-03 新增（issue #8310）。病 = 终端壳**打印能力误报**：页面说「由本机打印机直接出纸」，本机 `PrinterLink.mode()` = **-1**；根因 = `probePrintCapability()` 的终端分支**只看壳**（有 `chrome.webview` 就 `ok:true`）、`PrintEnv` 里没有能力字段。修 = 三态判定 `terminalPrintState(printerMode)`（`>0` available / `<0` unavailable / `0`·缺省·非有限 unknown），新增两条缺口文案（`terminal-printer-unavailable` / `terminal-print-unknown`）并登记进 `INBOUND_PRINT_GAP_WIRING`；`readPrintEnv()` 从 `window.__CFG__.printerMode` 取数（非数字按读不到）。取号 = MC-154（`python3 scripts/next_case_id.py MC` 现取 main 001-098/100-144/146-147 ⇒ 工具返回历史空档 MC-099，按裁定**不回填**；MC-139~MC-153 属并行包保留带，**避开** ⇒ 顺延 MC-154）。🔴 **仓外事实（如实登记，不假造）**：原生侧本轮**还没有**送 `printerMode` ⇒ 真机一律落 `unknown`（fail-closed：不许说能打）；**原生侧要补送 `printerMode`**（值域口径：负 = 不可用 / 正 = 可用 / 0 与缺省 = 判不了），补送后本仓代码**无需再改**。边界 = 不覆盖原生赋值、不判硬件选型。 ｜ tags: backend-contract, bmini, print-capability, fail-closed, three-state, no-overclaim, red-proof
 
 ### MC-159. **员工账号的 create / update 接回 B 端**（issue #7050，2026-10-16「能力边界 终版」）：action 枚举与 schema 同时可见（漏参数即不可调用）+ 权限走既有 required_permissions 粗筛与 action 级复检（码取 AdminUserController 注解，不自己判角色）+ 确认走既有 base_skill._requires_confirmation（react_turn 用同一函数对象；未确认 ⇒ 不执行）+ 端点逐字对齐（POST /api/admin/users · PUT /api/admin/users/{id}）+ 删除/停用/重置密码仍不接线 🔵
 ```
@@ -7432,8 +7432,8 @@
 你: 用户（2026-11-01 真机取证，商米 V2s `Qbao_h2` / Android 11 / 终端壳 1.0.19）：拍照入库页第一行写「点「打印标签」，由本机打印机直接出纸。」，而同一台机器点「打印测试页」⇒「打印失败 / 打印机未连接（需商米内置打印服务）」（`PrinterLink.mode()` = -1，设备上只有 `com.sunmi.printer.firmware`）
 期望: direct_reply
 数据: 🔴 **判据 1（实例，会红）**：`printerMode = -1`（真机读数：没有商米打印服务）⇒ 能力探测必须 `ok:false`、`reason = terminal-printer-unavailable`，且**不出现**「由本机打印机直接出纸」（`readyHint` 为空）。执行点 = frontend/bmini-app/tests/inbound-print-capability-terminal.test.ts::T1
-数据: 🔴 **判据 2（负控，防「修坏了」）**：`printerMode > 0`（原生报正向）⇒ **仍**报能打 + 机身内置打印机文案（`PRINT_READY_HINT_TERMINAL`），与 #8089 的终端通道形态一致。执行点 = 同文件::T2
-数据: 🔴 **判据 3（三态，最容易被写成 `|| true`）**：`printerMode` **读不到**（缺省 / 0 / NaN / Infinity）⇒ `unknown` ⇒ `ok:false` 且**不说**能打；「判不了」与「确知没有」是**两条不同文案**（出口相同 = 电脑端补打 / 找管理员）。执行点 = 同文件::T3
+数据: 🔴 **判据 2（负控，防「修坏了」）**：`printerMode >= 0`（原生报有效模式；**`0` = 商米机身内置打印机**，与端子 `print.label = isReady() || mode() >= 0` 同口径）⇒ **仍**报能打 + 机身内置打印机文案（`PRINT_READY_HINT_TERMINAL`），与 #8089 的终端通道形态一致。执行点 = 同文件::T2
+数据: 🔴 **判据 3（三态，最容易被写成 `|| true`）**：`printerMode` **读不到**（缺省 / NaN / Infinity；⚠️ `0` 不在其列 —— 见判据 2 的 2026-11-04 改判）⇒ `unknown` ⇒ `ok:false` 且**不说**能打；「判不了」与「确知没有」是**两条不同文案**（出口相同 = 电脑端补打 / 找管理员）。执行点 = 同文件::T3
 数据: 🔴 **判据 4（类级固化）**：终端分支必须消费 `printerMode`（`terminalPrintState(env.printerMode)`），旧形态 `if (env.terminalBridge) { return { ok: true … } }` 必须不复存在；`PRINT_READY_HINT_TERMINAL` 只许由 frontend/bmini-app/src/utils/inbound/printCapability.ts 的 `available` 分支产出，`src/**` 里别的文件不许自己写死这句话。执行点 = 同文件::T4
 数据: 🔴 **判据 5（取值接线）**：`readPrintEnv()` 从原生注入的 `window.__CFG__.printerMode` 取数，非数字 / 非有限值一律按「读不到」处理（fail-closed）；端到端：`__CFG__ = { printerMode: -1 }` ⇒ 探针（读真环境）也不说能打。执行点 = 同文件::T5
 数据: **边界（照实登记，§19.1）**：① 判据只钉**本仓这一侧**（判定 + 文案 + 取值接线），**不覆盖**原生侧是否真的按 `PrinterLink.mode()` 赋值（仓外，终端仓另单）；② 不判「这台机器该不该配打印机」（硬件选型不在本单）；③ 不改任何门禁的通过条件、不新增豁免；④ `terminalBridge` 的既有定义（`chrome.webview`）**未动** —— 本轮只让「能力」由原生上报的事实说话。
@@ -7441,7 +7441,7 @@
 跳过: [backend-contract] 纯前端确定性判据（能力探测 = 纯函数 + 取值接线 + 源码结构守卫），由 frontend/bmini-app/tests/inbound-print-capability-terminal.test.ts 验证，非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: ⚠️ 缺口（见对应模板 ⚠️ 注释）
-溯源: 2026-11-03 新增（issue #8310）。病 = 终端壳**打印能力误报**：页面说「由本机打印机直接出纸」，本机 `PrinterLink.mode()` = **-1**；根因 = `probePrintCapability()` 的终端分支**只看壳**（有 `chrome.webview` 就 `ok:true`）、`PrintEnv` 里没有能力字段。修 = 三态判定 `terminalPrintState(printerMode)`（`>0` available / `<0` unavailable / `0`·缺省·非有限 unknown），新增两条缺口文案（`terminal-printer-unavailable` / `terminal-print-unknown`）并登记进 `INBOUND_PRINT_GAP_WIRING`；`readPrintEnv()` 从 `window.__CFG__.printerMode` 取数（非数字按读不到）。取号 = MC-154（`python3 scripts/next_case_id.py MC` 现取 main 001-098/100-144/146-147 ⇒ 工具返回历史空档 MC-099，按裁定**不回填**；MC-139~MC-153 属并行包保留带，**避开** ⇒ 顺延 MC-154）。🔴 **仓外事实（如实登记，不假造）**：原生侧本轮**还没有**送 `printerMode` ⇒ 真机一律落 `unknown`（fail-closed：不许说能打）；**原生侧要补送 `printerMode`**（值域口径：负 = 不可用 / 正 = 可用 / 0 与缺省 = 判不了），补送后本仓代码**无需再改**。边界 = 不覆盖原生赋值、不判硬件选型。 ｜ tags: backend-contract, bmini, print-capability, fail-closed, three-state, no-overclaim, red-proof
+溯源: 2026-11-04 真机改判（issue #8661）：商米 V2s（Qbao_h2）内置打印服务 woyou.aidlservice.jiuiv5/...PrinterService 绑定成功、顶栏「打印 就绪」，端子注入的 printerMode 实测为 **0**（内置打印机）；改前页面把 0 判成 unknown ⇒ 工人端「打印成品出库单」按钮点了没动作（现场症状）。同时发现端子自身契约就是 print.label = isReady() || mode() >= 0 ⇒ 页面比原生更严、**说错了**。判据 2 / 3 口径随之改判：0 从 unknown 移入 available（负向仍 unavailable、缺省/非有限仍 unknown），判据对象与强度不变（红证：`>= 0` 改回 `> 0` ⇒ 判据 2 红）。｜ 2026-11-03 新增（issue #8310）。病 = 终端壳**打印能力误报**：页面说「由本机打印机直接出纸」，本机 `PrinterLink.mode()` = **-1**；根因 = `probePrintCapability()` 的终端分支**只看壳**（有 `chrome.webview` 就 `ok:true`）、`PrintEnv` 里没有能力字段。修 = 三态判定 `terminalPrintState(printerMode)`（`>0` available / `<0` unavailable / `0`·缺省·非有限 unknown），新增两条缺口文案（`terminal-printer-unavailable` / `terminal-print-unknown`）并登记进 `INBOUND_PRINT_GAP_WIRING`；`readPrintEnv()` 从 `window.__CFG__.printerMode` 取数（非数字按读不到）。取号 = MC-154（`python3 scripts/next_case_id.py MC` 现取 main 001-098/100-144/146-147 ⇒ 工具返回历史空档 MC-099，按裁定**不回填**；MC-139~MC-153 属并行包保留带，**避开** ⇒ 顺延 MC-154）。🔴 **仓外事实（如实登记，不假造）**：原生侧本轮**还没有**送 `printerMode` ⇒ 真机一律落 `unknown`（fail-closed：不许说能打）；**原生侧要补送 `printerMode`**（值域口径：负 = 不可用 / 正 = 可用 / 0 与缺省 = 判不了），补送后本仓代码**无需再改**。边界 = 不覆盖原生赋值、不判硬件选型。 ｜ tags: backend-contract, bmini, print-capability, fail-closed, three-state, no-overclaim, red-proof
 
 ### MC-182. 缺料风险页（admin-web `/production/material-shortage`，issue #6282）：默认只列缺口 > 0（常驻面克制）；行序 = 服务端分层降序 → 缺口降序（前端不重排）；未知 ≠ 0；空态是事实陈述；读失败不印空态 🔵
 ```
@@ -7611,11 +7611,26 @@
 ```
 溯源: 2026-11-04 新增（issue #8198 的 P2-2a 第二步）。第一步（PR #8207）已落状态机 7 个常量与 controller 面扫面； 本步补 service/ 的 46 处与「取值唯一载体」这一层。⚠️ 载体形态曾按派单要求建成枚举，评审时按 issue 评论（2026-10-31「读完 OrderStatusTransitions 后的降级结论：不要新建枚举」「P2-2a 的正确形态 = 加常量，不加类型」） **回退**：删除枚举文件，7 个常量改回自持字面量，判据改成「常量值 == DB 值 + 表键走常量引用 + 扫面」。 同批修好三处「按字面量扫源码」的既有守卫（发货写面台账 / 自动完成 SQL / paid_at·received_at 写面）—— 收敛后它们读不到写点会假红，改成**两种载体都认**（不放宽：任一形态的新写点仍会被扫到）。 取号 MC-198（派单口径指定；claims 目录现取到 MC-195）。 ｜ tags: order-status, single-source, no-behavior-change, scan-guard, red-proof, backend-contract
 
+### MC-197. 批次后台 job 的跨实例执行租约（issue #8285）：心跳新鲜不误杀 / 心跳超时或为空 ⇒ 回收成可撤销 partial 且幂等 / 两个 executor 的活批次互不误伤 / 回收不覆盖终态（含 fencing） 🔵
+```
+你: 批次后台 job 崩了以后批次会永远停在「执行中」：单实例重启后分不清「真的还在跑」和「上一次进程已死」；多实例时更不敢回收 —— 任一实例一动手就会把另一实例正在跑的批次标成部分失败，而那个 job 其实还活着。
+数据: **判据 1（会红）·心跳新鲜 ⇒ 回收 0 行**：`status=executing` 且心跳是刚才的批次（活 job）跑一轮回收后必须 **0 行**、状态仍是 `executing`、`executor_id` 不被清空。执行点 = `backend/admin-api/src/test/java/com/migao/admin/service/AgentBatchLeaseRecoveryRealDbTest.java`。红证：把回收 SQL 的心跳时效谓词改成恒真 ⇒ 该判据当场红（活批次被回收）。
+数据: **判据 2（会红）·心跳超时或为空 ⇒ 可撤销的 partial**：心跳停在两小时前、以及从未心跳（列为空）的两种批次都收回成 `partial`，`executor_id` 置空且补 `executed_at`；随后走**既有撤销路径**能把它撤销成 `reverted`（执行成功过的条目逐条还原，未生效的置跳过）。红证：把回收写入的状态改成 `done` ⇒ 该判据红在状态断言（期望 `partial`）。
+数据: **判据 2′（会红）·重复回收幂等**：同一批回收两次，第二轮必须 0 行，且状态与 `executed_at` 逐字不变。红证：把回收的来源态谓词放宽（不再限定 `executing`）⇒ 第二轮又改到同一批（期望 0 行、实得 1 行）⇒ 判据红。
+数据: **判据 3（会红）·两个实例的活批次互不误伤**：两个不同 `executor_id` 各持一个 `executing` 批次、心跳都新鲜 ⇒ 任一实例的回收都是 0 行；把其中一个的心跳改成超时后，只回收它那一条，另一个仍 `executing` 且 `executor_id` 不变；另一个租户里的活批次同样不在射程内，且取数面确实跨租户（扫到 2 个租户）。红证：同上「时效谓词恒真」注入 ⇒ 两侧活批次一起被回收，该判据红。
+数据: **判据 4（会红）·回收不覆盖终态**：`done` / `partial` / `reverted` / `revert_partial` 四条（心跳都为空）在同租户**有活批次**的前提下一起跑回收 ⇒ 0 行、四条状态逐字不变。红证：把来源态谓词放宽成 `status <> 'preview'` ⇒ 四条终态被改成 `partial`（期望 0 行、实得 4 行）⇒ 判据红。
+数据: **判据 4′（会红）·fencing（僵尸 job 的终态写 0 行）**：批次被回收成 `partial` 后用户发起撤销（又回到 `executing`，执行者已换人）⇒ 旧执行者此时写终态必须 0 行，状态保持 `executing`；换人后的当前执行者写终态必须成功（正对照，护栏不误杀正常路径）。红证：摘掉终态条件更新的执行者谓词 ⇒ 僵尸写成功 1 行、把撤销中的批次改成 `done`（期望 0 行、实得 1 行）⇒ 判据红。
+数据: **判据 5（会红）·迁移 / 列存在性 / 状态机与既有两族同口径**：两列（`executor_id` / `heartbeat_at`）在**增量迁移**与**建库脚本**两源齐备、迁移幂等（`IF NOT EXISTS` + 显式事务）、`heartbeat_at` 是带时区时间戳、回收的取数面有部分索引（只索引 `executing` 行）、且本迁移**不改**状态机取值域（回收复用 `partial`，不新增中间态）。执行点 = `backend/admin-api/src/test/java/com/migao/admin/migration/AgentBatchMigrationTest.java`（与建表三源契约同族）。红证：删掉建库脚本里的 `heartbeat_at` 列 ⇒ 该判据具名红（新建库路径缺列）。
+数据: **判据 6（会红）·类级元守卫登记**：回收写路径与它调用的状态迁移语句必须登记进 `backend/admin-api/src/test/resources/agent-batch-status-cas-ledger.json`（状态写面必须带 `tenant_id` + 来源态字面量谓词，且不得写成参数），未登记即红、登记了不存在的写路径也红。执行点 = `backend/admin-api/src/test/java/com/migao/admin/service/AgentBatchStatusCasMetaGuardTest.java`（与 #6960 同族）。红证：把台账里回收那条写路径改名 ⇒ 元守卫当场红并报出未登记写路径清单。
+数据: **判据 7（会红）·租约失效立刻停手（Java 层）**：心跳条件更新 0 行（已被回收 / 换人）时，执行循环必须立刻停手 —— 一条业务写入都不跑、终态不落 `done`（停在可撤销的 `partial`）；`executor_id` 形态为「实例段 + 每 job 唯一段」（同一实例两条 job 的段必须不同）。执行点 = `backend/admin-api/src/test/java/com/migao/admin/service/AgentBatchLeaseServiceTest.java`（心跳 0 行 = 租约已失，内存心跳不许刷新）+ `backend/admin-api/src/test/java/com/migao/admin/service/AgentBatchServiceTest.java`（收到「已失效」后一条业务写入都不跑）。红证：摘掉循环里的停手判定 ⇒ 业务写入被调用 ⇒ 判据红。
+跳过: [backend-contract] 纯服务端状态机与 SQL 谓词判据（真 PG 一次性临时集群 + 静态迁移/台账守卫；零网络、零 LLM、不碰存量数据），不进入 agent-eval 冒烟
+```
+真值: ⚠️ 缺口（见对应模板 ⚠️ 注释）
+溯源: 2026-11-04 新增（issue #8285，#8283 显式登记的缺口）。取号 MC-197（`python3 scripts/next_case_id.py MC` 现取 main 侧最大号 + claims 目录现取，180~196 段避开在飞占号）。修法 = 迁移 V208 给 `agent_batches` 加 `executor_id` / `heartbeat_at` 两列 + 一条带时效谓词的原子回收（`status='executing' AND (心跳为空 OR 心跳超时) ⇒ partial`）+ 心跳按明细续期且 0 行立刻停手 + 终态条件更新加执行者谓词（fencing）+ 每分钟一轮的回收薄壳。红证（注入式、逐条实跑、注入后均还原并核 sha256）：① 时效谓词恒真 ⇒ 判据 1/3 红；② 回收写 `done` ⇒ 判据 2 红；③ 来源态谓词放宽 ⇒ 判据 2′/4 红（期望 0 实得 1 / 期望 0 实得 4）；④ 摘掉终态执行者谓词 ⇒ 判据 4′ 红（期望 0 实得 1）；⑤ 删建库脚本 `heartbeat_at` 列 ⇒ 判据 5 红；⑥ 台账写路径改名 ⇒ 判据 6 红；⑦ 摘掉停手判定 ⇒ 判据 7 红。边界（照实登记）：回收只改批次状态、不碰明细 ⇒ 「已生效但条目状态未落库」的窗口**仍然存在**，本单只保证状态可回收 + 可撤销，不承诺精确到条目的自动复原（需要时另开对账单）。 ｜ tags: agent-batch, lease, heartbeat, crash-recovery, idempotent, multi-instance, fencing, red-proof
+
 ### MC-199. OrderService 切片第一批（issue #8191 的 P2-1c，纯搬运不重写）：库存与销量族 18 个方法搬到 OrderStockService、财务流水族 4 个方法搬到 OrderFeeSupport，OrderService 由 2,685 行降到 2,269 行并只留同名门面委托；公开名一个不改、调用点零改动、方法体与拆分前逐字节相同、拆分前后的行为快照逐字节一致 🔵
 ```
-你: 商家端确认支付一笔待确认订单：库存与销量按真实米数扣减、台账落一行、收款流水登记一条
-你: 商家端取消一笔已确认订单：库存与销量回补、退款流水按实收金额登记
-你: 售后工单完结时调用售后退货回补库存这一条公开入口
+你: 商家端在订单上做确认支付 / 取消 / 售后回补各一次（库存与销量按真实米数增减、台账与收款退款流水各落一行）
 数据: 判据 1·🔴 接线：门面的库存与记账入口必须真的转到新服务 —— 把两个新服务字段换成 Mockito 替身后，从原有公开入口（确认支付 / 取消 / 退款 / 售后退货回补 / 下单前置库存校验）驱动，替身上必须收到同名同参调用（取消只回补不扣减、退款不碰库存族）。红证 = 删掉门面里扣减库存那一行委托 ⇒ 确认支付一条当场红（实测：6 条里红 1 条）。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/OrderServiceSliceWiringTest.java
 数据: 判据 2·🔴 搬运逐字节一致：拆分前 origin/main 的 OrderService.java 随判据入库（sha256 钉死），库存族 18 个方法体与财务流水族 4 个方法体必须原样出现在新载体文件里，且门面里一处都不许留（不留第二份口径）。红证 = 在新载体里改一句「库存不足」话术的一个字符 ⇒ 库存族一条当场红（实测：5 条里红 1 条）。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/OrderServiceSliceSourceIdentityTest.java
 数据: 判据 3·🔴 行为快照：25 例种子随机输入（SKU 直查命中 / 字符串族回退 / 声明了身份却定位不到即拒绝 / 售后回补 / 小数米数库存不足）在拆分前录制了「协作者调用序列 + 返回值 + 异常类与话术」，拆分后必须逐字节相同（基线 270 行，含条件构造器的参数值，冻结时钟使时间戳可复算）。红证 = 改一句库存不足话术 ⇒ 快照一条当场红。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/OrderServiceSliceSnapshotTest.java
@@ -15148,8 +15163,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：1025（活跃 160，跳过 865）
-- tier 分布：smoke 15 / normal 948 / adversarial 33
+- 用例总数：1026（活跃 160，跳过 866）
+- tier 分布：smoke 15 / normal 949 / adversarial 33
 - 售后域：16
 - Agent 核心域：13
 - API 层域：21
@@ -15165,7 +15180,7 @@
 - 人事域：13
 - 知识问答域：9
 - 客户主数据迁移域：10
-- 杂项域：225
+- 杂项域：226
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：76
@@ -15456,6 +15471,7 @@
 - MC-194: **改客户资料 / 加工项增改停 / 建商品分类接回 B 端**（issue #8618）：action 枚举与 schema 同时可见（漏参数即不可调用）+ 权限走既有 required_permissions 粗筛与 action 级复检（码取控制器注解）+ 确认走既有 base_skill._requires_confirmation（react_turn 同一函数对象；未确认 ⇒ 不执行）+ 端点逐字对齐（PUT /api/admin/customers/{id} · POST /api/admin/categories · POST|PUT /api/admin/processing-items）+ 删除类 action 退场（停用改为 update_item(status=…)，可逆）
 - MC-196: 就绪探针把「有监听但读超时」判成未就绪（issue #8647）：端口上有僵而不死的旧进程时，AI Agent 全量档不再在收集阶段中止；连接被拒 / 401 / 200 三条既有口径不回归
 - MC-198: 订单状态立单一源（issue #8198 的 P2-2a，纯收敛不生成）：载体 = `OrderStatusTransitions` 的 7 个常量（**加常量、不加类型** —— 2026-10-31 评论裁定；值与 DB 存储值逐字相等，「状态全集」的权威仍是 `STATUS_TRANSITIONS` 键集，不另立第二份）；`service/` 与 `controller/` 零订单状态裸字面量（注释里不算，唯一例外是那 7 行常量定义）；错误文案 / 状态取值 / JSON 逐字不变
+- MC-197: 批次后台 job 的跨实例执行租约（issue #8285）：心跳新鲜不误杀 / 心跳超时或为空 ⇒ 回收成可撤销 partial 且幂等 / 两个 executor 的活批次互不误伤 / 回收不覆盖终态（含 fencing）
 - MC-199: OrderService 切片第一批（issue #8191 的 P2-1c，纯搬运不重写）：库存与销量族 18 个方法搬到 OrderStockService、财务流水族 4 个方法搬到 OrderFeeSupport，OrderService 由 2,685 行降到 2,269 行并只留同名门面委托；公开名一个不改、调用点零改动、方法体与拆分前逐字节相同、拆分前后的行为快照逐字节一致
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）

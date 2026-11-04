@@ -147,17 +147,28 @@ export type TerminalPrintState = 'available' | 'unavailable' | 'unknown'
  *
  * | 入参 | 判定 | 为什么 |
  * |---|---|---|
- * | `> 0` | `available` | 原生报的是**正向**模式（正整数含义由终端仓定义，本仓只认符号） |
- * | `< 0` | `unavailable` | 实测 **-1** = 没有商米打印服务 |
- * | `0` / 缺省 / 非有限数字 | `unknown` | **不猜**：`0` 的语义仓外未定义、读不到就更不该说能打 |
+ * | `>= 0` | `available` | 原生报的是**有效打印模式**（`0` = 机身内置打印机；正整数含义由终端仓定义） |
+ * | `< 0` | `unavailable` | 实测 **-1** = 没有商米打印服务 / 服务没绑上 |
+ * | 缺省 / 非有限数字 | `unknown` | **不猜**：读不到就不该说能打 |
  *
- * ⚠️ 方向是**单向**的：只有正向读数才允许说能打；判不了与确知没有**分开**说（出口都是电脑端补打）。
+ * 🔴 **`0` 是「能打」而不是「判不了」**（2026-11-04 真机改判，issue #8661）：
+ *   - 证据一（端子自身契约）：终端仓 `MainActivity` 的能力上报逐字是
+ *     `print.label = printer.isReady() || printer.mode() >= 0` —— **原生自己的口径就是 `>= 0`**；
+ *   - 证据二（真机）：SUNMI V2s（`Qbao_h2`）商米内置打印服务
+ *     `woyou.aidlservice.jiuiv5/...PrinterService` 已绑定、顶栏显示「打印 就绪」，
+ *     上报的 `printerMode` 正是 **0**（内置打印机）—— 改前页面把它判成 `unknown`，
+ *     于是工人端「打印成品出库单」被能力闸关掉、点了没动作（现场症状）。
+ *   ⇒ 页面口径此前比原生**更严**，这不是"更保守"，而是**说错了**：它把一台确实能打的机器说成"判不了"。
+ *
+ * ⚠️ 方向仍是**单向**的：只有 `>= 0` 的读数才允许说能打；判不了（缺省/非有限）与确知没有（负数）
+ *    **分开**说（出口都是电脑端补打）。
  */
 export function terminalPrintState(printerMode?: number): TerminalPrintState {
   if (typeof printerMode !== 'number' || !Number.isFinite(printerMode)) return 'unknown'
   if (printerMode < 0) return 'unavailable'
-  if (printerMode > 0) return 'available'
-  return 'unknown'
+  // `0` = 商米**机身内置**打印机（2026-11-04 真机；与端子 `print.label = … || mode() >= 0` 同口径，
+  // 见本函数上方改判块）。别再退回 `> 0`：那会把内置打印机说成「判不了」，按钮当场哑掉。
+  return 'available'
 }
 
 export interface PrintCapability {
