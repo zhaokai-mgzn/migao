@@ -154,8 +154,8 @@ class OrderPaidAndReceivedAtWriteGuardTest {
             return false;
         }
         // 两个限定缺一不可：新态 confirmed + **期望前驱** pending（回退边限定）
-        return body.contains("\"confirmed\".equals(newStatus)")
-                && body.contains("\"pending\".equals(expectedStatus)");
+        return comparesStatus(body, "CONFIRMED", "confirmed", "newStatus")
+                && comparesStatus(body, "PENDING", "pending", "expectedStatus");
     }
 
     /** {@code received_at}：商家确认收货（{@code transitionStatusAtomic}）与自动完成（mapper SQL）两条路都写。 */
@@ -165,11 +165,23 @@ class OrderPaidAndReceivedAtWriteGuardTest {
             return false;
         }
         String body = methodBody(service, "transitionStatusAtomic");
-        if (!body.contains("set(Order::getReceivedAt") || !body.contains("\"completed\".equals(newStatus)")) {
+        if (!body.contains("set(Order::getReceivedAt")
+                || !comparesStatus(body, "COMPLETED", "completed", "newStatus")) {
             return false;
         }
         // 自动完成那条腿**不经** transitionStatusAtomic ⇒ 必须在它自己的 SQL 里同写
         return stripComments(orderMapperSrc).contains("received_at = NOW()");
+    }
+
+    /**
+     * 状态比较的**两种合法载体**：字面量（历史形态）或常量引用（issue #8198 收敛后的形态）。
+     *
+     * <p>只认字面量会把收敛后的限定条件读成「不存在」⇒ 判据假红；两种都认**不放宽**：
+     * 两个限定本身仍缺一不可（下面「判别力自证」逐条注入两者缺失的形态）。</p>
+     */
+    static boolean comparesStatus(String body, String constant, String literal, String variable) {
+        return body.contains("\"" + literal + "\".equals(" + variable + ")")
+                || body.contains("OrderStatusTransitions." + constant + ".equals(" + variable + ")");
     }
 
     /** 详情响应必须**透出**三个时刻（否则屏幕退回「恒 `-`」）。 */
@@ -220,9 +232,16 @@ class OrderPaidAndReceivedAtWriteGuardTest {
         assertThat(receivedAtIsWrittenOnBothCompletedPaths(service, mapper)).isTrue();
 
         // 坏 ①：摘掉「期望前驱 pending」限定 ⇒ 回退边也会写 paid_at
+        //      （真源今天是常量形态；两种载体各注入一次，证明两个分支都有牙）
         assertThat(paidAtIsWrittenOnlyOnTheConfirmEdge(
-                service.replace("\"pending\".equals(expectedStatus)", "\"anything\".equals(expectedStatus)")))
-                .as("摘掉回退边限定后判据仍绿 ⇒ 判据没有判别力")
+                service.replace("OrderStatusTransitions.PENDING.equals(expectedStatus)",
+                        "OrderStatusTransitions.CONFIRMED.equals(expectedStatus)")))
+                .as("摘掉回退边限定后判据仍绿 ⇒ 判据没有判别力（常量形态分支）")
+                .isFalse();
+        assertThat(paidAtIsWrittenOnlyOnTheConfirmEdge(
+                service.replace("OrderStatusTransitions.PENDING.equals(expectedStatus)",
+                        "\"anything\".equals(expectedStatus)")))
+                .as("字面量形态分支也必须能判红")
                 .isFalse();
 
         // 坏 ②：多出一个 paid_at 写面（第二个类内写点）

@@ -118,12 +118,12 @@ public class ProductionService {
     private static final String UNSIGNED_WORKER = "未署名";
 
     private static final Map<String, String> ORDER_STATUS_LABELS = Map.of(
-            "pending", "待付款",
-            "confirmed", "已确认",
-            "producing", "生产中",
-            "shipped", "已发货",
-            "completed", "已完成",
-            "cancelled", "已取消");
+            OrderStatusTransitions.PENDING, "待付款",
+            OrderStatusTransitions.CONFIRMED, "已确认",
+            OrderStatusTransitions.PRODUCING, "生产中",
+            OrderStatusTransitions.SHIPPED, "已发货",
+            OrderStatusTransitions.COMPLETED, "已完成",
+            OrderStatusTransitions.CANCELLED, "已取消");
 
     /** 业务时钟（issue #3802）：业务「今天」的唯一来源。Spring 注入单例；**不扫描 @Component 的切片上下文**
      * （@WebMvcTest / ApplicationContextRunner）与直接 new 构造的既有单测没有该 bean ⇒ required=false +

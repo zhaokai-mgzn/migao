@@ -163,6 +163,16 @@ class OrderAutoCompleteSqlGuardTest {
                 .contains("completedIds");
     }
 
+    /**
+     * 「仅当目标状态是 shipped」的守卫谓词 —— **两种载体都认**：字面量 {@code "shipped"} 与常量引用
+     * {@code OrderStatusTransitions.SHIPPED}（issue #8198 收敛后的形态）。任一形态缺失即判红，
+     * 因此收敛不会把这条判据变成恒真。
+     */
+    private static boolean hasShippedEdgeGuard(String source) {
+        return source.contains("if (\"shipped\".equals(")
+                || source.contains("if (OrderStatusTransitions.SHIPPED.equals(");
+    }
+
     // ────────────────────────────────────────────── ④ 两条发货路都写锚点（静默漏单的防线）
 
     @Test
@@ -179,10 +189,10 @@ class OrderAutoCompleteSqlGuardTest {
             assertThat(setter.find())
                     .as("%s 只许有一处写 shipped_at（多写 = 第二条口径）", path.getFileName())
                     .isFalse();
-            assertThat(source)
+            assertThat(hasShippedEdgeGuard(source))
                     .as("%s 写 shipped_at 必须与状态流转在同一个条件 UPDATE 里"
                             + "（分两条语句 ⇒ 造出「状态是 shipped 而锚点为空」的形态）", path.getFileName())
-                    .contains("if (\"shipped\".equals(");
+                    .isTrue();
             assertThat(source)
                     .as("%s 的锚点取值也必须走 businessClock（不许墙钟拼写）", path.getFileName())
                     .contains("businessClock.nowOffset()");

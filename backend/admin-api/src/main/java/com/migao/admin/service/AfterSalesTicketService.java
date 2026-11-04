@@ -146,14 +146,18 @@ public class AfterSalesTicketService extends ServiceImpl<AfterSalesTicketMapper,
 
     /**
      * 订单状态 → 中文业务术语（错误消息用，面向企业客户）。
+     *
+     * <p>键取自 {@link OrderStatusTransitions} 的常量（issue #8198）；<b>但不直接复用</b>
+     * {@link OrderStatusTransitions#ORDER_STATUS_LABELS}：那份多一个 {@code packed}（已打包），
+     * 复用会让已打包订单的错误文案从「packed」变成「已打包」—— 本单是纯收敛，文案不许变。</p>
      */
     private static final Map<String, String> ORDER_STATUS_LABELS = Map.of(
-            "pending", "待付款",
-            "confirmed", "已确认",
-            "producing", "生产中",
-            "shipped", "已发货",
-            "completed", "已完成",
-            "cancelled", "已取消"
+            OrderStatusTransitions.PENDING, "待付款",
+            OrderStatusTransitions.CONFIRMED, "已确认",
+            OrderStatusTransitions.PRODUCING, "生产中",
+            OrderStatusTransitions.SHIPPED, "已发货",
+            OrderStatusTransitions.COMPLETED, "已完成",
+            OrderStatusTransitions.CANCELLED, "已取消"
     );
 
     /**
@@ -381,7 +385,7 @@ public class AfterSalesTicketService extends ServiceImpl<AfterSalesTicketMapper,
 
             // 状态门禁：退款/退货工单仅允许在已确认及以上的订单创建（与 refundOrder 一致）
             boolean isRefundType = "refund".equals(request.getTicketType()) || "return".equals(request.getTicketType());
-            if (isRefundType && !Set.of("confirmed", "producing", "shipped", "completed").contains(order.getStatus())) {
+            if (isRefundType && !Set.of(OrderStatusTransitions.CONFIRMED, OrderStatusTransitions.PRODUCING, OrderStatusTransitions.SHIPPED, OrderStatusTransitions.COMPLETED).contains(order.getStatus())) {
                 String orderStatusLabel = ORDER_STATUS_LABELS.getOrDefault(order.getStatus(), order.getStatus());
                 throw BusinessException.validationError(
                         String.format("当前订单状态[%s]不允许创建退款/退货工单，仅已确认/生产中/已发货/已完成可创建",

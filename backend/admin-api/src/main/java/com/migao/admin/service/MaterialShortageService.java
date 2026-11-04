@@ -201,7 +201,7 @@ public class MaterialShortageService {
 
     /** 订单状态白名单（现取 DB 实测：pending 686 / confirmed 374 / producing 58 / shipped 21 / completed 7 / cancelled 5）。 */
     public static final Set<String> KNOWN_STATUSES = Set.of(
-            "pending", "confirmed", "producing", "shipped", "completed", "cancelled");
+            OrderStatusTransitions.PENDING, OrderStatusTransitions.CONFIRMED, OrderStatusTransitions.PRODUCING, OrderStatusTransitions.SHIPPED, OrderStatusTransitions.COMPLETED, OrderStatusTransitions.CANCELLED);
 
     /**
      * 声明**无真值**的字段 —— 逐条具名理由（三态纪律的「未接线」支，**不可行动**）。
@@ -571,7 +571,7 @@ public class MaterialShortageService {
     // ── 入参解析（fail-closed：非法值显式拒绝，不静默回落）──────────────────────
 
     /** 默认状态集（与族 1 {@code UNSHIPPED_STATUSES} 同口径：不做 {@code pending}，避免未付款意向单放大缺口）。 */
-    public static final List<String> DEFAULT_STATUSES = List.of("confirmed", "producing");
+    public static final List<String> DEFAULT_STATUSES = List.of(OrderStatusTransitions.CONFIRMED, OrderStatusTransitions.PRODUCING);
 
     /** 状态解析：空 ⇒ 缺省；未知状态 ⇒ 400（**不静默忽略**——静默会让判据悄悄变松）。 */
     public static List<String> parseStatuses(String raw) {

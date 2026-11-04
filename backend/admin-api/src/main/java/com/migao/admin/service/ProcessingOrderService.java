@@ -2074,9 +2074,9 @@ public class ProcessingOrderService {
         // 待付款单**不动**（订单状态机没有 pending→producing；付款转 confirmed 后不会补推，
         // 这是存量缺口，本单不放大也不修 —— 见 issue #7723 的边界）。
         Order order = p.order();
-        boolean orderLinked = "confirmed".equals(order.getStatus());
+        boolean orderLinked = OrderStatusTransitions.CONFIRMED.equals(order.getStatus());
         if (orderLinked) {
-            orderService.updateOrderStatus(order.getId(), "producing");
+            orderService.updateOrderStatus(order.getId(), OrderStatusTransitions.PRODUCING);
         }
         try {
             try {
@@ -4110,8 +4110,8 @@ public class ProcessingOrderService {
         boolean orderLinked = false;
         if ("issue".equals(action)) {
             Order order = orderMapper.selectById(po.getOrderId());
-            if (order != null && "confirmed".equals(order.getStatus())) {
-                orderService.updateOrderStatus(order.getId(), "producing");
+            if (order != null && OrderStatusTransitions.CONFIRMED.equals(order.getStatus())) {
+                orderService.updateOrderStatus(order.getId(), OrderStatusTransitions.PRODUCING);
                 orderLinked = true;
             }
         }
@@ -4143,7 +4143,7 @@ public class ProcessingOrderService {
         // 联动：加工单取消（未发货）→ 订单 producing→confirmed 回退（重新可生成加工单）
         if ("cancel".equals(action)) {
             Order order = orderMapper.selectById(po.getOrderId());
-            if (order != null && "producing".equals(order.getStatus())) {
+            if (order != null && OrderStatusTransitions.PRODUCING.equals(order.getStatus())) {
                 orderService.revertProducingToConfirmed(order.getId(),
                         "加工单 " + po.getProcessingOrderNo() + " 取消，订单回退已确认");
                 log.info("加工单取消联动回退订单: po={}, orderId={}", po.getProcessingOrderNo(), order.getId());

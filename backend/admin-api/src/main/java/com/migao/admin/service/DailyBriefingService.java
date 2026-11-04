@@ -111,7 +111,7 @@ public class DailyBriefingService {
     static final int LOW_STOCK_THRESHOLD = 100;
 
     /** 「该发货而未发货」的订单状态 —— 与聚合指标 `pending_ship_orders` 同一口径。 */
-    static final List<String> UNSHIPPED_STATUSES = List.of("confirmed", "producing");
+    static final List<String> UNSHIPPED_STATUSES = List.of(OrderStatusTransitions.CONFIRMED, OrderStatusTransitions.PRODUCING);
 
     /** 退货事实的来源：售后工单里的**退货**类型（全仓无独立退货流水表）。 */
     static final String RETURN_TICKET_TYPE = "return";

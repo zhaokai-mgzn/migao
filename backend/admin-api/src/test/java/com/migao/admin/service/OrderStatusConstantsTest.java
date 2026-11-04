@@ -19,24 +19,35 @@ import java.util.stream.Stream;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * 订单状态常量（issue #8198，P2-2a 第一步）：**只加常量，不加枚举**。
+ * 订单状态**立单一源**（issue #8198，P2-2a）：**加常量、不加类型**（2026-10-31 评论裁定）——
+ * 7 个 {@code public static final String} 就是唯一取值载体，「状态全集」的权威是
+ * {@link OrderStatusTransitions#STATUS_TRANSITIONS} 的键集（本类不另立第二份全集）。
  *
- * <p>三条判据（都会红）：
+ * <p>四条判据（都会红）：
  * <ol>
  *   <li><b>扫面</b>：{@code controller/} 下不许再写裸 {@code "pending"} 等（注释除外）——
- *       红证：把 {@code OrderController} 里一处常量改回字面量 ⇒ 红；</li>
- *   <li><b>值一致</b>：7 个常量逐字等于 DB 存储值，且 == 流转表键集 == 标签表键集 ——
- *       红证：把 {@code PRODUCING} 的值改成 {@code "producingg"} ⇒ 红；</li>
+ *       红证：把 {@code OrderController} 里一处常量改回字面量 ⇒ 红；
+ *       （{@code service/} 那一半的扫面在 {@code tests/unit_ci_workflows/test_order_status_single_source.py}，
+ *       同一套口径只留一份实现，不在两处各写一遍。）</li>
+ *   <li><b>值一致</b>：7 个常量逐字等于 DB 存储值，且常量集 == 流转表键集 == 标签表键集 ——
+ *       红证：把 {@code PRODUCING} 的值改成 {@code "producingg"} ⇒ 本类红 **且** 状态机测试红
+ *       （表键取自常量 ⇒ 状态机当场认不出 {@code producing}）；</li>
+ *   <li><b>表键走常量引用</b>：状态字面量在本类**只许**出现在 7 个常量定义里（三张表若被改回字面量 ⇒ 红）；
+ *       红证：把流转表的一处 {@code PRODUCING} 写回 {@code "producing"} ⇒ 红；</li>
  *   <li><b>三张表未被削弱</b>：流转边逐条相等 + 标签逐条相等 + 可编辑集合不变 ——
  *       红证：删掉 {@code packed → shipped} ⇒ 红。</li>
  * </ol>
  *
  * <p>扫面用的字面量**独立硬编码**（不引用被测常量），否则改常量值会同时改判据 ⇒ 假绿。</p>
  */
-@DisplayName("订单状态常量：controller 零裸字面量 + 值与三张表一致 + 状态机未被削弱")
+@DisplayName("订单状态单一源：controller 零裸字面量 + 常量值与 DB 一致 + 表键走常量 + 状态机未被削弱")
 class OrderStatusConstantsTest {
 
     private static final Path CONTROLLER_DIR = Path.of("src/main/java/com/migao/admin/controller");
+
+    /** 状态机源（本类同时判它的「表键走常量」）。 */
+    private static final Path TRANSITIONS_SOURCE =
+            Path.of("src/main/java/com/migao/admin/service/OrderStatusTransitions.java");
 
     /** DB 存储值（硬编码的独立真值；故意不引用 {@link OrderStatusTransitions} 的常量）。 */
     private static final List<String> DB_STATUS_VALUES = List.of(
@@ -123,6 +134,35 @@ class OrderStatusConstantsTest {
                 .as("常量值集合必须就是两张表的键集合（多一个 / 少一个 / 拼错都红）")
                 .isEqualTo(OrderStatusTransitions.STATUS_TRANSITIONS.keySet())
                 .isEqualTo(OrderStatusTransitions.ORDER_STATUS_LABELS.keySet());
+    }
+
+    @Test
+    @DisplayName("🔴 表键走常量引用：状态字面量在状态机里只许出现在 7 个常量定义处")
+    void tablesReferenceConstantsInsteadOfLiterals() throws IOException {
+        StringBuilder codeOnly = new StringBuilder();
+        for (String line : Files.readAllLines(TRANSITIONS_SOURCE)) {
+            codeOnly.append(stripComments(line)).append('\n');
+        }
+        String code = codeOnly.toString();
+
+        List<String> problems = new ArrayList<>();
+        for (String value : DB_STATUS_VALUES) {
+            int occurrences = code.split("\"" + value + "\"", -1).length - 1;
+            if (occurrences != 1) {
+                problems.add("字面量 \"" + value + "\" 在状态机里出现 " + occurrences
+                        + " 次（只许在常量定义里出现 1 次 —— 三张表的键必须走常量引用）");
+            }
+        }
+        // 表键确实是常量引用（不是「值碰巧相等」）：抽两处代表性锚点
+        for (String anchor : List.of(
+                "PENDING, Set.of(CONFIRMED, CANCELLED)",
+                "PENDING, \"待付款\"",
+                "CONTENT_EDITABLE_STATUSES = Set.of(PENDING)")) {
+            if (!code.contains(anchor)) {
+                problems.add("表键不是常量引用（缺锚点 `" + anchor + "`）");
+            }
+        }
+        assertThat(problems).as("三张表的键被改回字面量 / 常量定义被改动的逐条读数").isEmpty();
     }
 
     @Test
