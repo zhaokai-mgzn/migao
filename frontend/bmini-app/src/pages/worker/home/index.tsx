@@ -12,14 +12,14 @@
  * 1. **身份卡读服务端**（`fetchCurrentWorker()`）：页头显示的正是「这笔活会记到谁头上」
  *    = 计件工资的凭证 ⇒ 前端自己拼一个名字就是把凭证交给客户端。服务端读不到就**回落成未登录**
  *    （绝不静默留着上一个人的名字）；
- * 2. **工人功能入口**（拍照入库 / 补打入库标签 / 拍照发货 / 待发货单 / 返工记录）都走既有页面与
+ * 2. **工人功能入口**（拍照入库 / 补打入库标签 / 拍照发货 / 待出库单 / 返工记录）都走既有页面与
  *    既有路由常量（`utils/inbound/gaps.ts` 是路由单一真值，本页不写第二份字面量）；
  *    🔴 **「扫码报工」入口已移除**（2026-10-27 用户逐字「把工人菜单页面的扫码报工菜单移除掉了，
  *    直接用其他 app 的扫一扫功能替代」，issue #7920）：工人用**微信 / 手机相机**扫纸上的码
  *    ⇒ 服务端 302 到 `/b/?t=<token>` ⇒ 启动器 redirectTo 报工页（#7879 起就是落地面）。
  *    本页因此**不再发射**报工页入口 —— 报工页由一个**外部扫码**到达，不由菜单点进去；
  *    🔴 **入口显隐由「工人端菜单」开关决定**（`utils/workerMenu`）：读不到 ⇒ fail-open 全开；
- *    🔴 **待处理数**（issue #7921）：待发货单 / 返工记录两条入口标题上带红色数字（= 服务端列表行数，
+ *    🔴 **待处理数**（issue #7921）：待出库单 / 返工记录两条入口标题上带红色数字（= 服务端列表行数，
  *    仅 >0 时显示；读不到 / 失败**不显示**，绝不冒充 0）；
  * 3. **一件商家面都不出现**：问黄金策 / 数据 / 坐席 / 管理面 4 项都不在本页（工人点了只会 403）；
  * 4. **退出工人身份** = `workerLogout()`（服务端留 `end_reason=logout` 痕）+ `clearWorkerSession()`
@@ -73,9 +73,6 @@ import {
 /** 读不到菜单开关时给工人的一句话（不摆内部键；文案守卫只扫 src/pages/**，故写在页内）。 */
 export const PAGES_UNREAD_NOTICE = '未能读取本机菜单开关，已按全部菜单显示；若与本机应开的不符，请找管理员'
 import './index.scss'
-
-/** 发货标签页（工人端 `/w/` 的静态页；与 `/b/` 同源 ⇒ 用相对路径，不写死域名） */
-const SHIPMENT_LABEL_PATH = '/b/report/shipment.html'
 
 export default function WorkerHomePage() {
   /** 本机有没有工人身份（本地判据，只决定「渲染工人功能」还是「引导去登录」） */
@@ -295,26 +292,11 @@ export default function WorkerHomePage() {
           </View>
           ) : null}
 
-          {/* 发货标签（用户 2026-11-01 18:39 裁定）：从终端 ⋮ 菜单搬到这里 —— 页面在 `/w/shipment.html`
-              （终端壳里 window.print() 由原生接管，纸面 50×70；issue #7906：手机端只走 `/b` 命名空间）。与「拍照发货」同一道门控。 */}
-          {showShipment ? (
-          <View
-            className='worker-home__entry'
-            onClick={() => {
-              if (typeof window !== 'undefined') window.location.href = SHIPMENT_LABEL_PATH
-            }}
-          >
-            <View className='worker-home__entry-bar worker-home__entry-bar--b' />
-            <View className='worker-home__entry-body'>
-              <Text className='worker-home__entry-text'>发货标签</Text>
-              <Text className='worker-home__entry-sub'>打一张 50×70 的发货标签</Text>
-            </View>
-            <Text className='worker-home__entry-go'>›</Text>
-          </View>
-          ) : null}
-
-          {/* 待发货单（issue #7806 P1a；门控键 `to_ship` 由 #7814 落地）：与「拍照发货」分开勾选 ——
-              前者是名单 + 标签（读），后者是发出去（写）。 */}
+          {/* 待出库单（issue #7806 P1a；门控键 `to_ship` 由 #7814 落地）：与「拍照发货」分开勾选 ——
+              前者是名单 + 打纸（读），后者是交给物流、记运单（写）。
+              🔴 原「发货标签」那张卡已**删除**（issue #8632，2026-11-04 用户逐字「发货标签和待发货单应该做成一个菜单」）：
+              它打开的 `/w/shipment.html` 与本页是**同一件事的两个壳**（同一个端点、同一份纸面），
+              而本页每一行早就能打这张纸（#8287）⇒ 合并 = 删卡，不新建任何东西。 */}
           {showToShip ? (
           <View
             className='worker-home__entry'
@@ -323,21 +305,21 @@ export default function WorkerHomePage() {
             <View className='worker-home__entry-bar worker-home__entry-bar--a' />
             <View className='worker-home__entry-body'>
               <View className='worker-home__entry-head'>
-                <Text className='worker-home__entry-text'>待发货单</Text>
+                <Text className='worker-home__entry-text'>待出库单</Text>
                 {pendingToShip !== null && pendingToShip > 0 ? (
                   <Text className='worker-home__badge' data-testid='worker-home-badge-to-ship'>
                     {pendingToShip}
                   </Text>
                 ) : null}
               </View>
-              <Text className='worker-home__entry-sub'>全部完工的单 ⇒ 看收货人 / 电话 / 地址 / 物流</Text>
+              <Text className='worker-home__entry-sub'>全部完工的单 ⇒ 打成品出库单、装车出厂</Text>
             </View>
             <Text className='worker-home__entry-go'>›</Text>
           </View>
           ) : null}
 
           {/* 返工记录（issue #7921）：显隐键 = 工人档案的 `rework`（商家面名字「返工记录」，
-              后端 `WorkerPages.optionalPages()` 逐人开）。与「待发货单」同类 = 只读名单 + 待处理数。 */}
+              后端 `WorkerPages.optionalPages()` 逐人开）。与「待出库单」同类 = 只读名单 + 待处理数。 */}
           {showRework ? (
           <View
             className='worker-home__entry'

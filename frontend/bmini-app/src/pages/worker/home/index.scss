@@ -133,7 +133,7 @@
       background: rgba($success-color, 0.18);
     }
 
-    // 第 4 条（issue #7806「待发货单」）：用**既有**金铜 token 的弱色，与 --b 的浅金区分开
+    // 第 4 条（issue #7806「待出库单」）：用**既有**金铜 token 的弱色，与 --b 的浅金区分开
     &--d {
       background: rgba($brand-gold, 0.18);
     }

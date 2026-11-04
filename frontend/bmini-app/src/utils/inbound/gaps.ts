@@ -175,14 +175,14 @@ export const SHIPMENT_PAGE_ROUTE = '/pages/worker/shipment/index'
 export const SHIPMENT_PAGE_FILE = 'src/pages/worker/shipment/index.tsx'
 
 /**
- * **待发货单**列表页路由（issue #7806 P1a）—— 工人工作台**新增**的一条入口（只读列表页）。
+ * **待出库单**列表页路由（issue #7806 P1a）—— 工人工作台**新增**的一条入口（只读列表页）。
  *
  * 为什么要有它：#7764 已上线读面 `GET /api/worker/shipment/orders`（只回「多套全部完工 +
  * 可发货状态 + 作业单已完成」的订单），而 `/b/` 侧**还没有任何页面消费它** ——
  * 工人只能在 H5 `/w/`（发货页）看到这份名单，端内工作台里看不见。
  * 本页补的就是这个入口与读面消费，**只读**。
  *
- * ✅ 发货联（整套出库单）预览 / 50×70 打印已接（issue #8287；BLE 通道 = #7803）。
+ * ✅ 成品出库单（整套出库单）预览 / 50×70 打印已接（issue #8287；BLE 通道 = #7803）。
  * ⚠️ 本页**仍不发货**：成品出库的写路径仍是拍照发货 / PC 发货（不新增第二条写路径）。
  *
  * 🔴 路由字面量是**单一真值**：`src/app.config.ts` 的 pages 必须逐字含它
@@ -190,7 +190,7 @@ export const SHIPMENT_PAGE_FILE = 'src/pages/worker/shipment/index.tsx'
  */
 export const SHIPMENT_ORDERS_PAGE_ROUTE = '/pages/worker/shipment-orders/index'
 
-/** 待发货单页文件（入口台账 `from` 要核的落点） */
+/** 待出库单页文件（入口台账 `from` 要核的落点） */
 export const SHIPMENT_ORDERS_PAGE_FILE = 'src/pages/worker/shipment-orders/index.tsx'
 
 /**
@@ -209,9 +209,9 @@ export const REWORK_PAGE_ROUTE = '/pages/worker/rework/index'
 /** 返工记录页文件（入口台账 `from` 要核的落点） */
 export const REWORK_PAGE_FILE = 'src/pages/worker/rework/index.tsx'
 
-/** 待发货单页未登录时的引导（与其它工人面同一口径，但说清本页是「看待发货单」） */
+/** 待出库单页未登录时的引导（与其它工人面同一口径，但说清本页是「看待出库单」） */
 export const SHIPMENT_ORDERS_WORKER_LOGIN_REQUIRED =
-  '请先用工号 + PIN 登录工人身份，再查看待发货单（商家账号不能走这条路径）。'
+  '请先用工号 + PIN 登录工人身份，再查看待出库单（商家账号不能走这条路径）。'
 
 /** 拍照发货页未登录时的引导（与入库页同一口径，但说清本页是"发货"） */
 export const SHIPMENT_WORKER_LOGIN_REQUIRED =

@@ -13,10 +13,10 @@
  *
  * 顺序是硬的：**②失败 ⇒ 不打印**（留不下痕就不许打）；跳过②直接进④的路径**在本模块里不存在**
  * （守卫 `frontend/bmini-app/tests/inbound-print-channel.test.ts` 用调用序断言 + 源码面判据钉住）。
- * 行式标签（成品入库标签 / 发货联）另走 `printRowsLabel`（见下节）—— 它没有留痕这一步，
+ * 行式标签（成品入库标签 / 成品出库单）另走 `printRowsLabel`（见下节）—— 它没有留痕这一步，
  * 但**同样只在本文件里送数据**。
  *
- * ## 第二类纸（issue #8287）：成品入库标签 / 发货联
+ * ## 第二类纸（issue #8287）：成品入库标签 / 成品出库单
  *
  * 这两类纸**没有**服务端打印留痕端点（H5 `/w/` 那一版也是直接打印，见 `CHANGELOG.md`）⇒
  * 它们的入口是 `printRowsLabel()`：能力探测 → 渲染 → 送打印机，**没有 recordPrint 这一步**。
@@ -148,7 +148,7 @@ export async function printInboundLabel(deps: InboundPrintDeps): Promise<Inbound
   }
 }
 
-/** 50×70 行式标签（成品入库标签 / 发货联）的送打印依赖（**无**服务端留痕端点）。 */
+/** 50×70 行式标签（成品入库标签 / 成品出库单）的送打印依赖（**无**服务端留痕端点）。 */
 export interface RowsPrintDeps {
   /** 能力探测结果（`ok: false` ⇒ 直接给文案，**不连打印机**） */
   capability: PrintCapability
@@ -164,7 +164,7 @@ export type RowsPrintResult =
   | { ok: false; reason: PrintFailureReason; hint: string }
 
 /**
- * 打印一张 **50×70 行式标签**（成品入库标签 / 发货联；issue #8287）。
+ * 打印一张 **50×70 行式标签**（成品入库标签 / 成品出库单；issue #8287）。
  *
  * 执行序：① 能力探测（不可用 ⇒ 直接给文案）→ ② 渲染（失败 ⇒ 中止，不送空白图）→ ③ 送打印机。
  * 🔴 这两类纸**不做服务端留痕**：它们没有 `print_count` 端点（与 H5 `/w/` 的打印行为一致）；
