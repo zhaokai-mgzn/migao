@@ -120,3 +120,4 @@
 {"id":"1793792670.83461.11560","ts":"2026-11-04T11:44:30Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/8191-order-service-slice","why":"--allow-package-heavy（命令行显式）"}
 {"id":"1793793292.35371.7891","ts":"2026-11-04T11:54:53Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/8654-deadlock","why":"子包 worktree 直跑全量（无批次标记）"}
 {"id":"1793793297.35810.12995","ts":"2026-11-04T11:54:57Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/8654-deadlock","why":"--allow-package-heavy（命令行显式）"}
+{"id":"1793795308.76037.32706","ts":"2026-11-04T12:28:28Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/8654-deadlock","why":"--allow-package-heavy（命令行显式）"}
