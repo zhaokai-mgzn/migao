@@ -268,7 +268,7 @@
     },
     {
       "table": "finance_transactions",
-      "file": "backend/admin-api/src/main/java/com/migao/admin/service/OrderService.java",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/OrderFeeSupport.java",
       "symbol": "recordFinanceTransaction",
       "form": "builder",
       "params": "Order order, BigDecimal amount, String type, String remark",
@@ -1178,7 +1178,7 @@
       },
       {
         "table": "finance_transactions",
-        "file": "backend/admin-api/src/main/java/com/migao/admin/service/OrderService.java",
+        "file": "backend/admin-api/src/main/java/com/migao/admin/service/OrderFeeSupport.java",
         "symbol": "recordFinanceTransaction",
         "form": "builder",
         "values": [

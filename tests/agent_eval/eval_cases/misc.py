@@ -2,7 +2,7 @@
 # 本文件由 render_cases.py 生成，勿手改（改了也留不住：下次重渲染会覆盖）
 # 源: cases/*.yml（case-contract 单一源）
 # 重新生成: python3 render_cases.py --cases <dir> --out-eval <包目录> --out-md <md>
-# 域: misc（源: cases/misc.yml，224 条）
+# 域: misc（源: cases/misc.yml，225 条）
 
 from ._schema import Difficulty, EvalCase, Skill
 
@@ -4113,6 +4113,24 @@ _CASE_MC_198 = EvalCase(
     precondition='零运行期前置（纯结构判据）：被测对象 = `backend/admin-api/src/main/java/com/migao/admin/service/OrderStatusTransitions.java`、`service/` 与 `controller/` 其余源码、以及那两个测试文件；前置 = 它们存在且可读，由仓本身满足。不成立时的红形态已内建：扫面面清单断言「必扫文件都在面内」，读不到 ⇒ 红（不是绿）。零网络 / 零 LLM / 零 DB。',
 )
 
+# ── MC-199 [NORMAL] OrderService 切片第一批（issue #8191 的 P2-1c，纯搬运不重写）：库存与销量族 18 个方法搬到 OrderStockService、财务流水族 4 个方法搬到 OrderFeeSupport，OrderService 由 2,685 行降到 2,269 行并只留同名门面委托；公开名一个不改、调用点零改动、方法体与拆分前逐字节相同、拆分前后的行为快照逐字节一致（源: cases/misc.yml）──
+_CASE_MC_199 = EvalCase(
+    id='MC-199',
+    legacy_id='',
+    title='OrderService 切片第一批（issue #8191 的 P2-1c，纯搬运不重写）：库存与销量族 18 个方法搬到 OrderStockService、财务流水族 4 个方法搬到 OrderFeeSupport，OrderService 由 2,685 行降到 2,269 行并只留同名门面委托；公开名一个不改、调用点零改动、方法体与拆分前逐字节相同、拆分前后的行为快照逐字节一致',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['商家端确认支付一笔待确认订单：库存与销量按真实米数扣减、台账落一行、收款流水登记一条', '商家端取消一笔已确认订单：库存与销量回补、退款流水按实收金额登记', '售后工单完结时调用售后退货回补库存这一条公开入口'],
+    expectations=[],
+    data_checks=['判据 1·🔴 接线：门面的库存与记账入口必须真的转到新服务 —— 把两个新服务字段换成 Mockito 替身后，从原有公开入口（确认支付 / 取消 / 退款 / 售后退货回补 / 下单前置库存校验）驱动，替身上必须收到同名同参调用（取消只回补不扣减、退款不碰库存族）。红证 = 删掉门面里扣减库存那一行委托 ⇒ 确认支付一条当场红（实测：6 条里红 1 条）。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/OrderServiceSliceWiringTest.java', '判据 2·🔴 搬运逐字节一致：拆分前 origin/main 的 OrderService.java 随判据入库（sha256 钉死），库存族 18 个方法体与财务流水族 4 个方法体必须原样出现在新载体文件里，且门面里一处都不许留（不留第二份口径）。红证 = 在新载体里改一句「库存不足」话术的一个字符 ⇒ 库存族一条当场红（实测：5 条里红 1 条）。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/OrderServiceSliceSourceIdentityTest.java', '判据 3·🔴 行为快照：25 例种子随机输入（SKU 直查命中 / 字符串族回退 / 声明了身份却定位不到即拒绝 / 售后回补 / 小数米数库存不足）在拆分前录制了「协作者调用序列 + 返回值 + 异常类与话术」，拆分后必须逐字节相同（基线 270 行，含条件构造器的参数值，冻结时钟使时间戳可复算）。红证 = 改一句库存不足话术 ⇒ 快照一条当场红。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/OrderServiceSliceSnapshotTest.java', '判据 4·🔴 体量棘轮与写面台账跟着载体走：OrderService 只许下降（2,685 → 2,269）；新文件 < 800 行（513 / 113，未登记豁免）；财务流水的状态写面与金额入口台账的载体由门面改到 OrderFeeSupport，库存原子落账的载体由门面改到 OrderStockService —— 回归面一字未放宽（仍是「未登记即红」「快照读即红」）。执行点 = tests/unit_ci_workflows/test_loc_ratchet.py / test_state_write_face_metaguard.py 与 backend/admin-api/src/test/java/com/migao/admin/service/StockDeductionAndLedgerAtomicityMetaGuardTest.java / MoneyEntryPrecisionMetaGuardTest.java'],
+    skip_reason='[backend-contract] Java 侧纯搬运重构（零 LLM / 零外网 / 零前端可见面），由 JUnit 判据与 pytest 棘轮/台账判据验证，无 agent 行为面，不进入 agent-eval 冒烟',
+    tags=['refactor', 'order-service', 'slice', 'stock', 'finance', 'byte-identical', 'snapshot'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 CASES = (
     _CASE_MC_001,
     _CASE_MC_002,
@@ -4338,4 +4356,5 @@ CASES = (
     _CASE_MC_194,
     _CASE_MC_196,
     _CASE_MC_198,
+    _CASE_MC_199,
 )

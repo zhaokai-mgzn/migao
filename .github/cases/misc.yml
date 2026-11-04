@@ -8227,3 +8227,44 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+
+  - id: MC-199
+    legacy_id: ""
+    title: "OrderService 切片第一批（issue #8191 的 P2-1c，纯搬运不重写）：库存与销量族 18 个方法搬到 OrderStockService、财务流水族 4 个方法搬到 OrderFeeSupport，OrderService 由 2,685 行降到 2,269 行并只留同名门面委托；公开名一个不改、调用点零改动、方法体与拆分前逐字节相同、拆分前后的行为快照逐字节一致"
+    domains:
+      - misc
+      - backend
+    tier: normal
+    tags:
+      - refactor
+      - order-service
+      - slice
+      - stock
+      - finance
+      - byte-identical
+      - snapshot
+    truths_ref: []
+    user_inputs:
+      - "商家端确认支付一笔待确认订单：库存与销量按真实米数扣减、台账落一行、收款流水登记一条"
+      - "商家端取消一笔已确认订单：库存与销量回补、退款流水按实收金额登记"
+      - "售后工单完结时调用售后退货回补库存这一条公开入口"
+    expectations: []
+    data_checks:
+      - "判据 1·🔴 接线：门面的库存与记账入口必须真的转到新服务 —— 把两个新服务字段换成 Mockito 替身后，从原有公开入口（确认支付 / 取消 / 退款 / 售后退货回补 / 下单前置库存校验）驱动，替身上必须收到同名同参调用（取消只回补不扣减、退款不碰库存族）。红证 = 删掉门面里扣减库存那一行委托 ⇒ 确认支付一条当场红（实测：6 条里红 1 条）。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/OrderServiceSliceWiringTest.java"
+      - "判据 2·🔴 搬运逐字节一致：拆分前 origin/main 的 OrderService.java 随判据入库（sha256 钉死），库存族 18 个方法体与财务流水族 4 个方法体必须原样出现在新载体文件里，且门面里一处都不许留（不留第二份口径）。红证 = 在新载体里改一句「库存不足」话术的一个字符 ⇒ 库存族一条当场红（实测：5 条里红 1 条）。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/OrderServiceSliceSourceIdentityTest.java"
+      - "判据 3·🔴 行为快照：25 例种子随机输入（SKU 直查命中 / 字符串族回退 / 声明了身份却定位不到即拒绝 / 售后回补 / 小数米数库存不足）在拆分前录制了「协作者调用序列 + 返回值 + 异常类与话术」，拆分后必须逐字节相同（基线 270 行，含条件构造器的参数值，冻结时钟使时间戳可复算）。红证 = 改一句库存不足话术 ⇒ 快照一条当场红。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/OrderServiceSliceSnapshotTest.java"
+      - "判据 4·🔴 体量棘轮与写面台账跟着载体走：OrderService 只许下降（2,685 → 2,269）；新文件 < 800 行（513 / 113，未登记豁免）；财务流水的状态写面与金额入口台账的载体由门面改到 OrderFeeSupport，库存原子落账的载体由门面改到 OrderStockService —— 回归面一字未放宽（仍是「未登记即红」「快照读即红」）。执行点 = tests/unit_ci_workflows/test_loc_ratchet.py / test_state_write_face_metaguard.py 与 backend/admin-api/src/test/java/com/migao/admin/service/StockDeductionAndLedgerAtomicityMetaGuardTest.java / MoneyEntryPrecisionMetaGuardTest.java"
+    skip_reason: "[backend-contract] Java 侧纯搬运重构（零 LLM / 零外网 / 零前端可见面），由 JUnit 判据与 pytest 棘轮/台账判据验证，无 agent 行为面，不进入 agent-eval 冒烟"
+    merge_log: "2026-11-04 新增（issue #8191 的 P2-1c；P2-1a/P2-1b 已由 PR #8192 / #8212 交付）。现取读数：`git show origin/main:backend/admin-api/src/main/java/com/migao/admin/service/OrderService.java | wc -l` = 2,685（不是 issue 正文里的 3,690 —— 那是两期合并前的数，主工作区落后的脏读也是 3,690）。本批按职责边界搬两族：库存与销量族 18 个方法（库存前置校验 / 扣减 / 回补 / SKU 定位键族）→ OrderStockService（513 行）；财务流水族 4 个方法（实收取数 / 收款退款流水 / 流水号）→ OrderFeeSupport（113 行）。OrderService 2,685 → 2,269，只留同名门面委托；不再有调用方的私有助手不保留死委托（最少代码）。避开状态流转族（OrderLifecycleService）是**有意的取舍**：并行 PR #8650 正在同一批方法上把状态字面量换成 OrderStatusTransitions 常量，两条验收线不同，先让路。红证 = 两次单变量注入逐条实跑（删门面委托一行 ⇒ 接线 1 红；改一个字符话术 ⇒ 快照 1 红 + 逐字节一致 1 红），逐字节还原后 12 条全绿。⚠️ 有意不做：不搬 applyRollAllocation（整卷分配判据钉着它的唯一权威文件）、不搬 batchStock 访问器（取消路径在用）、不改任何业务口径与事务边界（restoreStockForReturn 的 @Transactional 跟着方法走）。"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/OrderServiceSliceWiringTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/OrderServiceSliceSourceIdentityTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/OrderServiceSliceSnapshotTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/StockDeductionAndLedgerAtomicityMetaGuardTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/MoneyEntryPrecisionMetaGuardTest.java"
+        - "tests/unit_ci_workflows/test_loc_ratchet.py"
+        - "tests/unit_ci_workflows/test_state_write_face_metaguard.py"
+      ci:
+        - pr-check.yml
+      verifies: []

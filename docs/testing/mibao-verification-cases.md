@@ -4221,7 +4221,7 @@
 ```
 溯源: 2026-10-31 新增（issue #8295）：两步确认，避免误写 ｜ tags: ui, preview
 
-## 杂项域（224 case）
+## 杂项域（225 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -7610,6 +7610,19 @@
 跳过: [backend-contract] 纯结构面判据（扫 Java 源码文本 + 解析枚举定义 + 枚举契约单测），零网络、零 LLM、不起真库；不进 agent-eval 冒烟
 ```
 溯源: 2026-11-04 新增（issue #8198 的 P2-2a 第二步）。第一步（PR #8207）已落状态机 7 个常量与 controller 面扫面； 本步补 service/ 的 46 处与「取值唯一载体」这一层。⚠️ 载体形态曾按派单要求建成枚举，评审时按 issue 评论（2026-10-31「读完 OrderStatusTransitions 后的降级结论：不要新建枚举」「P2-2a 的正确形态 = 加常量，不加类型」） **回退**：删除枚举文件，7 个常量改回自持字面量，判据改成「常量值 == DB 值 + 表键走常量引用 + 扫面」。 同批修好三处「按字面量扫源码」的既有守卫（发货写面台账 / 自动完成 SQL / paid_at·received_at 写面）—— 收敛后它们读不到写点会假红，改成**两种载体都认**（不放宽：任一形态的新写点仍会被扫到）。 取号 MC-198（派单口径指定；claims 目录现取到 MC-195）。 ｜ tags: order-status, single-source, no-behavior-change, scan-guard, red-proof, backend-contract
+
+### MC-199. OrderService 切片第一批（issue #8191 的 P2-1c，纯搬运不重写）：库存与销量族 18 个方法搬到 OrderStockService、财务流水族 4 个方法搬到 OrderFeeSupport，OrderService 由 2,685 行降到 2,269 行并只留同名门面委托；公开名一个不改、调用点零改动、方法体与拆分前逐字节相同、拆分前后的行为快照逐字节一致 🔵
+```
+你: 商家端确认支付一笔待确认订单：库存与销量按真实米数扣减、台账落一行、收款流水登记一条
+你: 商家端取消一笔已确认订单：库存与销量回补、退款流水按实收金额登记
+你: 售后工单完结时调用售后退货回补库存这一条公开入口
+数据: 判据 1·🔴 接线：门面的库存与记账入口必须真的转到新服务 —— 把两个新服务字段换成 Mockito 替身后，从原有公开入口（确认支付 / 取消 / 退款 / 售后退货回补 / 下单前置库存校验）驱动，替身上必须收到同名同参调用（取消只回补不扣减、退款不碰库存族）。红证 = 删掉门面里扣减库存那一行委托 ⇒ 确认支付一条当场红（实测：6 条里红 1 条）。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/OrderServiceSliceWiringTest.java
+数据: 判据 2·🔴 搬运逐字节一致：拆分前 origin/main 的 OrderService.java 随判据入库（sha256 钉死），库存族 18 个方法体与财务流水族 4 个方法体必须原样出现在新载体文件里，且门面里一处都不许留（不留第二份口径）。红证 = 在新载体里改一句「库存不足」话术的一个字符 ⇒ 库存族一条当场红（实测：5 条里红 1 条）。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/OrderServiceSliceSourceIdentityTest.java
+数据: 判据 3·🔴 行为快照：25 例种子随机输入（SKU 直查命中 / 字符串族回退 / 声明了身份却定位不到即拒绝 / 售后回补 / 小数米数库存不足）在拆分前录制了「协作者调用序列 + 返回值 + 异常类与话术」，拆分后必须逐字节相同（基线 270 行，含条件构造器的参数值，冻结时钟使时间戳可复算）。红证 = 改一句库存不足话术 ⇒ 快照一条当场红。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/OrderServiceSliceSnapshotTest.java
+数据: 判据 4·🔴 体量棘轮与写面台账跟着载体走：OrderService 只许下降（2,685 → 2,269）；新文件 < 800 行（513 / 113，未登记豁免）；财务流水的状态写面与金额入口台账的载体由门面改到 OrderFeeSupport，库存原子落账的载体由门面改到 OrderStockService —— 回归面一字未放宽（仍是「未登记即红」「快照读即红」）。执行点 = tests/unit_ci_workflows/test_loc_ratchet.py / test_state_write_face_metaguard.py 与 backend/admin-api/src/test/java/com/migao/admin/service/StockDeductionAndLedgerAtomicityMetaGuardTest.java / MoneyEntryPrecisionMetaGuardTest.java
+跳过: [backend-contract] Java 侧纯搬运重构（零 LLM / 零外网 / 零前端可见面），由 JUnit 判据与 pytest 棘轮/台账判据验证，无 agent 行为面，不进入 agent-eval 冒烟
+```
+溯源: 2026-11-04 新增（issue #8191 的 P2-1c；P2-1a/P2-1b 已由 PR #8192 / #8212 交付）。现取读数：`git show origin/main:backend/admin-api/src/main/java/com/migao/admin/service/OrderService.java | wc -l` = 2,685（不是 issue 正文里的 3,690 —— 那是两期合并前的数，主工作区落后的脏读也是 3,690）。本批按职责边界搬两族：库存与销量族 18 个方法（库存前置校验 / 扣减 / 回补 / SKU 定位键族）→ OrderStockService（513 行）；财务流水族 4 个方法（实收取数 / 收款退款流水 / 流水号）→ OrderFeeSupport（113 行）。OrderService 2,685 → 2,269，只留同名门面委托；不再有调用方的私有助手不保留死委托（最少代码）。避开状态流转族（OrderLifecycleService）是**有意的取舍**：并行 PR #8650 正在同一批方法上把状态字面量换成 OrderStatusTransitions 常量，两条验收线不同，先让路。红证 = 两次单变量注入逐条实跑（删门面委托一行 ⇒ 接线 1 红；改一个字符话术 ⇒ 快照 1 红 + 逐字节一致 1 红），逐字节还原后 12 条全绿。⚠️ 有意不做：不搬 applyRollAllocation（整卷分配判据钉着它的唯一权威文件）、不搬 batchStock 访问器（取消路径在用）、不改任何业务口径与事务边界（restoreStockForReturn 的 @Transactional 跟着方法走）。 ｜ tags: refactor, order-service, slice, stock, finance, byte-identical, snapshot
 
 ## 商家入驻域（7 case）
 
@@ -15135,8 +15148,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：1024（活跃 160，跳过 864）
-- tier 分布：smoke 15 / normal 947 / adversarial 33
+- 用例总数：1025（活跃 160，跳过 865）
+- tier 分布：smoke 15 / normal 948 / adversarial 33
 - 售后域：16
 - Agent 核心域：13
 - API 层域：21
@@ -15152,7 +15165,7 @@
 - 人事域：13
 - 知识问答域：9
 - 客户主数据迁移域：10
-- 杂项域：224
+- 杂项域：225
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：76
@@ -15443,6 +15456,7 @@
 - MC-194: **改客户资料 / 加工项增改停 / 建商品分类接回 B 端**（issue #8618）：action 枚举与 schema 同时可见（漏参数即不可调用）+ 权限走既有 required_permissions 粗筛与 action 级复检（码取控制器注解）+ 确认走既有 base_skill._requires_confirmation（react_turn 同一函数对象；未确认 ⇒ 不执行）+ 端点逐字对齐（PUT /api/admin/customers/{id} · POST /api/admin/categories · POST|PUT /api/admin/processing-items）+ 删除类 action 退场（停用改为 update_item(status=…)，可逆）
 - MC-196: 就绪探针把「有监听但读超时」判成未就绪（issue #8647）：端口上有僵而不死的旧进程时，AI Agent 全量档不再在收集阶段中止；连接被拒 / 401 / 200 三条既有口径不回归
 - MC-198: 订单状态立单一源（issue #8198 的 P2-2a，纯收敛不生成）：载体 = `OrderStatusTransitions` 的 7 个常量（**加常量、不加类型** —— 2026-10-31 评论裁定；值与 DB 存储值逐字相等，「状态全集」的权威仍是 `STATUS_TRANSITIONS` 键集，不另立第二份）；`service/` 与 `controller/` 零订单状态裸字面量（注释里不算，唯一例外是那 7 行常量定义）；错误文案 / 状态取值 / JSON 逐字不变
+- MC-199: OrderService 切片第一批（issue #8191 的 P2-1c，纯搬运不重写）：库存与销量族 18 个方法搬到 OrderStockService、财务流水族 4 个方法搬到 OrderFeeSupport，OrderService 由 2,685 行降到 2,269 行并只留同名门面委托；公开名一个不改、调用点零改动、方法体与拆分前逐字节相同、拆分前后的行为快照逐字节一致
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）
