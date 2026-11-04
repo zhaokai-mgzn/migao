@@ -228,7 +228,7 @@
 ```
 你: 张三那单收到的窗帘布边上有个破洞，这怎么处理？
 端: mibao（单端 —— 仅黄金策腿跑，元元腿跳过）
-期望: order_query or customer_manage
+期望: order_query or customer_manage(action=detail)
 数据: 前置（precondition）：订单夹具 `EVAL-MB-ORD-0001` 在库且客户名为「张三」（success=true；真值 = tests/agent_eval/fixtures/mibao_eval_seed.sql 的订单 INSERT 块）
 数据: 必须先**真的查**（order_query 按客户名/订单号定位张三的单，或 customer_manage 查档案），不得凭空说「已为您登记」
 数据: 售后**写面**已随 #5247 只读化下线 ⇒ 回复必须引导后台「售后」页面自行处理，且不得承诺代办（机器断言 = forbidden_text）

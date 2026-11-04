@@ -908,7 +908,9 @@ cases:
     user_inputs:
       - "张三那单收到的窗帘布边上有个破洞，这怎么处理？"
     expectations:
-      - tool: order_query or customer_manage
+      # 2026-11-04（issue #8618）：`customer_manage` 接回写 action 后成为「部分写」工具，
+      # bare 工具名会被扫描面读成「空 action 写方」⇒ 本分支写成**显式只读 action**（查客户档案）。
+      - "order_query or customer_manage(action=detail)"
     forbidden_text:
       - "已为您提交售后"
       - "已帮您申请售后"

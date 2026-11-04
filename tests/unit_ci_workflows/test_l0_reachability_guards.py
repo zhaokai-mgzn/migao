@@ -78,7 +78,8 @@ UNREACHABLE_REGISTERED_WRITE_TOOLS: dict[str, str] = {
     # taxonomy 表态（已在 `assertion_taxonomy.WRITE_TOOLS`，同表 `test_every_..._declared`
     # 的 `undeclared` 半边会检查）。本表是「不可达 ⇒ 登记」的 fail-closed 台账，
     # 可达了却不移出会让**双向相等**判据红 —— 这次改判正是它按设计生效的形态。
-    "processing_item_manage": "#5247：从 B 端全部 skill 解绑（原为 B 端增删改加工项）",
+    # 🔴 issue #8618（2026-11-04）：`processing_item_manage` **已移出本台账** —— 它绑回 B 端
+    # `product` skill 且删除类 action 退场（剩「增改 + 停用」= 可逆变更）⇒ 不再是「注册但不可达」。
     "processing_order_generate": "#5247：从 B 端全部 skill 解绑（原为 B 端生成加工单）",
     "processing_order_update": "#5247：从 B 端全部 skill 解绑（原为 B 端加工单状态迁移）",
 }
