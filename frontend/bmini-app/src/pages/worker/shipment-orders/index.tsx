@@ -44,6 +44,7 @@ import { printRowsLabel } from '../../../utils/inbound/labelPrint'
 import { probePrintCapability } from '../../../utils/inbound/printCapability'
 import { createPrintTransport } from '../../../utils/inbound/terminalTransport'
 import './index.scss'
+import { WorkerBackLink } from '../../../components/WorkerBackLink'
 
 /** 缺值占位符（与 H5 发货页 / 发货单纸面同口径：**不是** 0、不是空串、不是「未知」）。 */
 export const MISSING = '—'
@@ -243,6 +244,7 @@ export default function WorkerShipmentOrdersPage() {
   return (
     <View className='shipment-orders'>
       <View className='shipment-orders__header'>
+        <WorkerBackLink />
         <View className='shipment-orders__heading'>
           <Text className='shipment-orders__title'>待出库单</Text>
           {worker && phase !== 'unauthorized' ? (

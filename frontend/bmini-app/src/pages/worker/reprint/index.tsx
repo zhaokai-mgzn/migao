@@ -73,6 +73,7 @@ import {
 import { getInboundLabel, recordInboundLabelPrint } from '../../../services/workerInboundService'
 import '../../../styles/admin-surfaces.scss'
 import './index.scss'
+import { WorkerBackLink } from '../../../components/WorkerBackLink'
 
 type Step = 'photo' | 'manual' | 'detail'
 
@@ -264,6 +265,7 @@ export default function WorkerReprintPage() {
     return (
       <View className='admin-surface' data-testid='worker-reprint-page'>
         <View className='admin-surface__header'>
+          <WorkerBackLink />
           <Text className='admin-surface__title'>拍照补打标签</Text>
           <Text className='admin-surface__subtitle' data-testid='reprint-worker-login-required'>
             {REPRINT_WORKER_LOGIN_REQUIRED}
@@ -285,6 +287,7 @@ export default function WorkerReprintPage() {
   return (
     <ScrollView scrollY className='admin-surface' data-testid='worker-reprint-page'>
       <View className='admin-surface__header'>
+        <WorkerBackLink />
         <Text className='admin-surface__title'>拍照补打标签</Text>
         <Text className='admin-surface__subtitle'>
           拍入库标签上的二维码（或手输标签编号）→ 看单据详情 → 补打一张新标签

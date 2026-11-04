@@ -105,6 +105,7 @@ import {
 } from '../../../services/workerInboundService'
 import '../../../styles/admin-surfaces.scss'
 import './index.scss'
+import { WorkerBackLink } from '../../../components/WorkerBackLink'
 
 /** 画布工厂 / 组件缺失文案 / 预览渲染 = **共用件**（`utils/inbound/labelPageKit`）。
  * 补打页（`pages/worker/reprint/index.tsx`）是**同族页面**，两页必须引用同一份 ——
@@ -426,6 +427,7 @@ export default function WorkerInboundPage() {
     return (
       <View className='admin-surface' data-testid='worker-inbound-page'>
         <View className='admin-surface__header'>
+          <WorkerBackLink />
           <Text className='admin-surface__title'>拍照入库</Text>
           <Text className='admin-surface__subtitle'>{INBOUND_WORKER_LOGIN_REQUIRED}</Text>
         </View>
@@ -445,6 +447,7 @@ export default function WorkerInboundPage() {
   return (
     <ScrollView scrollY className='admin-surface' data-testid='worker-inbound-page'>
       <View className='admin-surface__header'>
+        <WorkerBackLink />
         <Text className='admin-surface__title'>拍照入库</Text>
         <Text className='admin-surface__subtitle'>
           拍上游标签 → 核对 → 过账入库 → 打印标签

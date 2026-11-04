@@ -62,6 +62,7 @@ import {
   runStockRecognize,
 } from '../../../utils/workerStockRecognize'
 import './index.scss'
+import { WorkerBackLink } from '../../../components/WorkerBackLink'
 
 /** 空态文案（说清「怎么才会有批次」——只说「没有」等于没说）。 */
 export const EMPTY_HINT = '没有匹配的批次：换个关键词（批次号 / 货号 / 缸号 / 入库单号任一段），或清空后直接看最近入库的批次'
@@ -364,6 +365,7 @@ export default function WorkerStockPage() {
   return (
     <View className='worker-stock'>
       <View className='worker-stock__header'>
+        <WorkerBackLink />
         <View className='worker-stock__heading'>
           <Text className='worker-stock__title'>库存修正</Text>
           <Text className='worker-stock__worker' data-testid='worker-stock-worker'>

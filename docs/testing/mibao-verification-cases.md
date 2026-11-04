@@ -848,7 +848,7 @@
 真值: auth.qr-login-ticket
 溯源: 2026-10-26 新增（issue #7825）：现场 = 顶栏「手机端」二维码只是裸链接（不带登录交接），换浏览器 / App 或本机存储被清后每次扫码都要重新输密码。冻结口径 = 一次性票据（JWT 类型 qr_login、120 秒、兑换即吊销 jti）+ 手机端兑换后与密码登录同一套 30 天会话 + 签发失败降级裸入口 + 启动探针（续期失败原因本地可读）。 ｜ tags: auth, session, qr-login, bmini, admin-web
 
-## B 端小程序域（62 case）
+## B 端小程序域（63 case）
 
 ### BM-001. B 端员工小程序登录 - 账号密码（用户名@企业编码）登录，不再走微信手机号匹配 🔵
 ```
@@ -1732,6 +1732,18 @@
 ```
 真值: frontend-fix.no-api-change
 溯源: 2026-11-04 新增（用户逐字「我们还需要给观星台设计一个 logo」→ 选定 C1；同日用户纠正方向「不要根据字面意思设计，要根据我们的系统能力去设计」，故图形 = 扫码取景角 + AI 星芒，不是天文台）。 ｜ tags: bmini, brand, assets
+
+### BM-065. 工人子页的「返回」入口：手机 / 微信 / 手持标签机 WebView 里也能回工作台 🔵
+```
+你: 工人在手机上点进「待出库单」「拍照入库」「我的计件」等子页后，想回工作台：点页头左上角的「‹ 返回」就回去（不用靠手势、不用杀掉重进）。若是扫码/短链直接打开的子页（没有上一页），同一个按钮回到工人工作台。
+期望: direct_reply
+数据: 判据 1·有上一页 ⇒ Taro.navigateBack({delta:1})，且**不**调 reLaunch。红证：改成无条件 reLaunch ⇒ frontend/bmini-app/tests/worker-back-link.test.tsx 判据①红
+数据: 判据 2·🔴 没有历史（扫码短链 / 直接打开子页 / 终端冷启动落到子页）⇒ reLaunch 到 /pages/worker/home/index，**不静默失败**。红证：去掉兜底只调 navigateBack ⇒ 判据②红
+数据: 判据 3·🔴 类级：src/pages/worker/* 的每个子页（除 home / login）都必须挂 `<WorkerBackLink />` —— 新增子页忘挂 ⇒ 判据③红
+跳过: [frontend-contract] 确定性导航判据（jest），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: frontend-fix.no-api-change
+溯源: 2026-11-04 新增（用户逐字「移动端缺乏返回上一页面的快捷方式，要加一个」，issue #8657）。载体 = 共用组件 src/components/WorkerBackLink.tsx；挂在工人 8 个子页的页头（inbound / reprint / stock / rework / piecework / report / shipment / shipment-orders），home 与 login 不挂（它们是根 / 入口）。 ｜ tags: bmini, worker, navigation, ux
 
 ## 分类域（3 case）
 
@@ -15152,13 +15164,13 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：1025（活跃 160，跳过 865）
-- tier 分布：smoke 15 / normal 948 / adversarial 33
+- 用例总数：1026（活跃 160，跳过 866）
+- tier 分布：smoke 15 / normal 949 / adversarial 33
 - 售后域：16
 - Agent 核心域：13
 - API 层域：21
 - 登录认证域：14
-- B 端小程序域：62
+- B 端小程序域：63
 - 分类域：3
 - 对话边界域：53
 - 跨域：3
