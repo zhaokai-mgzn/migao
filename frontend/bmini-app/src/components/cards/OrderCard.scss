@@ -47,7 +47,7 @@
     font-weight: 500;
 
     &--pending {
-      background: #fff7e6;
+      background: #ffffff7e6;
       color: #b45309;
     }
 
@@ -57,17 +57,17 @@
     }
 
     &--producing {
-      background: #f3e8ff;
-      color: #7c3aed;
+      background: #eef2f8;
+      color: #48618f;
     }
 
     &--shipped {
-      background: #e0f2fe;
-      color: #0369a1;
+      background: #eef2f8;
+      color: #48618f;
     }
 
     &--completed {
-      background: #e6f7ee;
+      background: #ecfdf5;
       color: $success-color;
     }
 

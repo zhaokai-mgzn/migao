@@ -51,10 +51,10 @@ export default function AdminGrantGate({ testid, guide }: AdminGrantGateProps) {
         textAlign: 'center',
       }}
     >
-      <Text style={{ fontSize: '32px', fontWeight: '600', color: '#1f2937' }}>
+      <Text style={{ fontSize: '32px', fontWeight: '600', color: '#312c26' }}>
         {SURFACE_NEEDS_ADMIN_GRANT_TEXT}
       </Text>
-      <Text style={{ marginTop: '16px', fontSize: '26px', color: '#6b7280', lineHeight: '1.6' }}>
+      <Text style={{ marginTop: '16px', fontSize: '26px', color: '#7e6f57', lineHeight: '1.6' }}>
         {guide}
       </Text>
     </View>

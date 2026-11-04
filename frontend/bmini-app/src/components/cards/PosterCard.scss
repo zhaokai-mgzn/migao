@@ -14,12 +14,12 @@
   &__title {
     font-size: 30px;
     font-weight: 600;
-    color: #0a2540;
+    color: #312c26;
   }
 
   &__subtitle {
     font-size: 24px;
-    color: #9ca3af;
+    color: #b8aa94;
   }
 
   &__loading {
@@ -28,8 +28,8 @@
     align-items: center;
     justify-content: center;
     font-size: 26px;
-    color: #9ca3af;
-    background: #f3f4f6;
+    color: #b8aa94;
+    background: #f2ede5;
     border-radius: 12px;
   }
 
@@ -37,7 +37,7 @@
     width: 100%;
     display: block;
     border-radius: 12px;
-    border: 1px solid #f3f4f6;
+    border: 1px solid #f2ede5;
   }
 
   &__note {
@@ -61,7 +61,7 @@
     align-items: center;
     justify-content: center;
     border-radius: 12px;
-    background: #1a73e8;
+    background: #3a4e75;
     color: #ffffff;
     font-size: 28px;
     font-weight: 500;
@@ -72,7 +72,7 @@
     margin-top: 14px;
     text-align: center;
     font-size: 24px;
-    color: #9ca3af;
+    color: #b8aa94;
   }
 
   &__empty {
@@ -80,7 +80,7 @@
     padding: 40px 0;
     text-align: center;
     font-size: 26px;
-    color: #6b7280;
+    color: #7e6f57;
     line-height: 1.6;
   }
 
@@ -92,7 +92,7 @@
   &__error-text {
     display: block;
     font-size: 26px;
-    color: #6b7280;
+    color: #7e6f57;
   }
 
   &__retry {
@@ -102,8 +102,8 @@
     margin-top: 16px;
     padding: 12px 36px;
     border-radius: 10px;
-    border: 1px solid #d1d5db;
+    border: 1px solid #d4c9b8;
     font-size: 26px;
-    color: #374151;
+    color: #484036;
   }
 }

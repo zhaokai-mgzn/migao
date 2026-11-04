@@ -93,7 +93,7 @@
     display: block;
     margin-top: 24px;
     font-size: 26px;
-    color: #d93025;
+    color: #dc2626;
     text-align: center;
   }
 }
@@ -250,12 +250,12 @@
   letter-spacing: 1px;
   background: linear-gradient(135deg, $primary-color 0%, $primary-light 100%);
   border-radius: $radius-lg;
-  box-shadow: 0 4px 16px rgba(47, 84, 235, 0.3);
+  box-shadow: 0 4px 16px rgba(72, 97, 143, 0.3);
   transition: all 0.2s ease;
 
   &:active {
     transform: scale(0.98);
-    box-shadow: 0 2px 8px rgba(47, 84, 235, 0.2);
+    box-shadow: 0 2px 8px rgba(72, 97, 143, 0.2);
   }
 
   &--loading {
@@ -293,8 +293,8 @@
   margin: 0 32px 20px;
   padding: 16px;
   border-radius: 12px;
-  background: #faf8f4;
-  border: 1px solid #e8e2d8;
+  background: #faf7f2;
+  border: 1px solid #e6dfd3;
   max-height: 320px;
   overflow-y: auto;
 
@@ -302,7 +302,7 @@
     display: block;
     font-size: 28px;
     font-weight: 600;
-    color: #4a3f33;
+    color: #312c26;
     margin-bottom: 8px;
   }
 
@@ -311,7 +311,7 @@
     font-family: Menlo, Consolas, monospace;
     font-size: 24px;
     line-height: 1.5;
-    color: #6b5d4d;
+    color: #625545;
     word-break: break-all;
   }
 
@@ -319,7 +319,7 @@
   &__hint {
     display: block;
     font-size: 24px;
-    color: #9c8f7d;
+    color: #9c8c72;
     margin-top: 8px;
   }
 }

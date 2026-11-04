@@ -106,14 +106,14 @@ export default defineAppConfig({
   ],
   window: {
     backgroundTextStyle: 'light',
-    navigationBarBackgroundColor: '#0A2540',
+    navigationBarBackgroundColor: '#2e3d5c',
     navigationBarTitleText: '黄金策商家助手',
     navigationBarTextStyle: 'white',
-    backgroundColor: '#F5F7FA',
+    backgroundColor: '#faf7f2',
   },
   tabBar: {
-    color: '#9AA5B1',
-    selectedColor: '#1A73E8',
+    color: '#7e6f57',
+    selectedColor: '#3a4e75',
     backgroundColor: '#ffffff',
     borderStyle: 'white',
     list: [

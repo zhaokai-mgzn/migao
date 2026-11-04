@@ -3,7 +3,7 @@
   // 为浮层底栏留位（issue #6666 判据 1）：算式与 MerchantTabBar.scss 的条高逐字同源
   box-sizing: border-box;
   padding-bottom: calc(50PX + env(safe-area-inset-bottom));
-  background: #f5f7fa;
+  background: #faf7f2;
 }
 
 .sessions-stats {
@@ -23,17 +23,17 @@
   &__num {
     font-size: 44px;
     font-weight: 600;
-    color: #0a2540;
+    color: #312c26;
 
     &--danger {
-      color: #f04438;
+      color: #dc2626;
     }
   }
 
   &__label {
     margin-top: 6px;
     font-size: 26px;
-    color: #667085;
+    color: #7e6f57;
   }
 }
 
@@ -44,7 +44,7 @@
     display: block;
     font-size: 28px;
     font-weight: 600;
-    color: #0a2540;
+    color: #312c26;
     margin-bottom: 12px;
     padding-left: 4px;
   }
@@ -59,7 +59,7 @@
 
   > Text {
     font-size: 24px;
-    color: #9aa5b1;
+    color: #b8aa94;
   }
 }
 
@@ -75,19 +75,19 @@
     width: 72px;
     height: 72px;
     border-radius: 50%;
-    background: #eef4ff;
+    background: #eef2f8;
     display: flex;
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
 
     &--urgent {
-      background: #fff1f0;
+      background: #ffffff1f0;
     }
 
     &-text {
       font-size: 32px;
-      color: #1a73e8;
+      color: #3a4e75;
     }
   }
 
@@ -102,14 +102,14 @@
   &__name {
     font-size: 28px;
     font-weight: 500;
-    color: #0a2540;
+    color: #312c26;
   }
 
   &__badge {
     margin-left: 8px;
     font-size: 24px;
-    color: #f04438;
-    background: #fff1f0;
+    color: #dc2626;
+    background: #ffffff1f0;
     padding: 2px 10px;
     border-radius: 8px;
   }
@@ -117,13 +117,13 @@
   &__reason {
     margin-top: 6px;
     font-size: 24px;
-    color: #667085;
+    color: #7e6f57;
   }
 
   &__time {
     margin-top: 6px;
     font-size: 24px;
-    color: #9aa5b1;
+    color: #b8aa94;
   }
 
   &__action {
@@ -135,11 +135,11 @@
     font-size: 24px;
 
     &--waiting {
-      color: #f79009;
+      color: #d97706;
     }
 
     &--active {
-      color: #12b76a;
+      color: #059669;
     }
   }
 }

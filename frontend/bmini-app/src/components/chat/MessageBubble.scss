@@ -12,7 +12,7 @@
       background: $bubble-user-bg;
       color: $bubble-user-text;
       border-radius: $radius-lg $radius-lg 4px $radius-lg;
-      box-shadow: 0 2px 8px rgba(26, 115, 232, 0.25);
+      box-shadow: 0 2px 8px rgba(58, 78, 117, 0.25);
     }
 
     .message-bubble__time {
@@ -29,7 +29,7 @@
       color: $bubble-ai-text;
       border-radius: $radius-lg $radius-lg $radius-lg 4px;
       box-shadow: $shadow-card;
-      border: 1px solid rgba(10, 37, 64, 0.04);
+      border: 1px solid rgba(36, 31, 24, 0.04);
     }
 
     .message-bubble__time {
@@ -167,7 +167,7 @@
     width: 200px;
     height: 200px;
     border-radius: $radius-md;
-    background: #F3F4F6;
+    background: #f2ede5;
   }
 
   // 工具调用指示器
@@ -183,7 +183,7 @@
     align-items: center;
     gap: 8px;
     padding: 10px 16px;
-    background: #F3F4F6;
+    background: #f2ede5;
     border-radius: $radius-md;
     font-size: 24px;
     color: $text-secondary;
@@ -259,10 +259,10 @@
   align-items: center;
   font-size: 24px;
   line-height: 1;
-  color: #94a0b4;
+  color: #b8aa94;
   letter-spacing: 0.5px;
 }
 
 .message-bubble__source-text--human {
-  color: #2f9e6e;
+  color: #059669;
 }
