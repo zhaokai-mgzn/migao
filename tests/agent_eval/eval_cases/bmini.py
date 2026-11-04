@@ -2,7 +2,7 @@
 # 本文件由 render_cases.py 生成，勿手改（改了也留不住：下次重渲染会覆盖）
 # 源: cases/*.yml（case-contract 单一源）
 # 重新生成: python3 render_cases.py --cases <dir> --out-eval <包目录> --out-md <md>
-# 域: bmini（源: cases/bmini.yml，61 条）
+# 域: bmini（源: cases/bmini.yml，62 条）
 
 from ._schema import Difficulty, EvalCase, Skill
 
@@ -109,6 +109,24 @@ _CASE_BM_006 = EvalCase(
     skip_reason='[backend-contract] 纯前端单元测试（frontend/worker-h5/tests/*.mjs + frontend/bmini-app/tests/production-qr.test.ts / production-report-idempotency.test.ts / worker-home-page.test.tsx / page-entry-reachability.test.ts / h5-platform-runtime.test.ts / h5-platform-api-guard.test.ts），非 LLM 行为，不进入 agent-eval 冒烟',
     tags=['bmini', 'production', 'qr-report'],
     persona='mibao',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── BM-007 [NORMAL] AI 生成内容标识（微信「深度合成-AI问答」类目 + 《人工智能生成合成内容标识办法》2025-09-01）—— 每条 AI 气泡含「AI生成」+ 对话页常驻说明（源: cases/bmini.yml）──
+_CASE_BM_007 = EvalCase(
+    id='BM-007',
+    legacy_id='',
+    title='AI 生成内容标识（微信「深度合成-AI问答」类目 + 《人工智能生成合成内容标识办法》2025-09-01）—— 每条 AI 气泡含「AI生成」+ 对话页常驻说明',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['商家/工人在「问黄金策」里看到 AI 回复：每条 AI 消息必须明确标注「AI生成」，对话页常驻一行「内容由人工智能生成，仅供参考」；转人工后的人工消息不能被标成 AI 生成'],
+    expectations=['direct_reply'],
+    data_checks=['判据 1·assistant 气泡来源标识含「AI生成」（改前只有「🤖 AI 助手」，不含要求字样）：执行点 frontend/bmini-app/tests/chat-ai-generated-label.test.tsx；红证 = 文案改回「🤖 AI 助手」⇒ `ai-generated-label` 的 textContent 不含「AI生成」当场红', '判据 2·人工客服消息**不得**冒充 AI 生成：`ai-generated-label` 不存在，`human-agent-label` 含「人工客服」', '判据 3·对话页常驻说明存在且含「人工智能生成」（`ai-generated-disclaimer`）', '判据 4·接线（不是只写了组件）：对话页源码真的 import 并渲染 `<AiGeneratedNote />`；删掉页面里的渲染 ⇒ 判据 4 红'],
+    skip_reason='[backend-contract] 确定性前端判据（jest: frontend/bmini-app/tests/chat-ai-generated-label.test.tsx），不经过 LLM 对话/工具，不进入 agent-eval 冒烟',
+    tags=['bmini', 'chat', 'ai-label', 'compliance'],
+    persona='',
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
@@ -582,16 +600,16 @@ _CASE_BM_033 = EvalCase(
     forbidden_card_text=[],
 )
 
-# ── BM-034 [NORMAL] 工人工作台（pages/worker/home/index）- 身份卡读服务端 + 工人功能入口按工人档案菜单显隐（拍照入库 / 补打入库标签 / 拍照发货 / 待发货单 / 返工记录 / 我的计件）+ 待处理数 + 退出工人身份；不出现任何商家面入口；扫码报工入口已移除（扫码由微信 / 手机相机承担）（源: cases/bmini.yml）──
+# ── BM-034 [NORMAL] 工人工作台（pages/worker/home/index）- 身份卡读服务端 + 工人功能入口按工人档案菜单显隐（拍照入库 / 补打入库标签 / 拍照发货 / 待出库单 / 返工记录 / 我的计件）+ 待处理数；原「发货标签」入口已并入待出库单（issue #8632） + 退出工人身份；不出现任何商家面入口；扫码报工入口已移除（扫码由微信 / 手机相机承担）（源: cases/bmini.yml）──
 _CASE_BM_034 = EvalCase(
     id='BM-034',
     legacy_id='',
-    title='工人工作台（pages/worker/home/index）- 身份卡读服务端 + 工人功能入口按工人档案菜单显隐（拍照入库 / 补打入库标签 / 拍照发货 / 待发货单 / 返工记录 / 我的计件）+ 待处理数 + 退出工人身份；不出现任何商家面入口；扫码报工入口已移除（扫码由微信 / 手机相机承担）',
+    title='工人工作台（pages/worker/home/index）- 身份卡读服务端 + 工人功能入口按工人档案菜单显隐（拍照入库 / 补打入库标签 / 拍照发货 / 待出库单 / 返工记录 / 我的计件）+ 待处理数；原「发货标签」入口已并入待出库单（issue #8632） + 退出工人身份；不出现任何商家面入口；扫码报工入口已移除（扫码由微信 / 手机相机承担）',
     skill=Skill.GENERAL,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['工人用「工号 + PIN」登录成功后落在**工人工作台**：页头显示当前工人（工号 + 姓名，来自服务端 `GET /api/worker/production/current-worker`）→ 工人功能：拍照入库 / 补打入库标签 / 拍照发货 / 待发货单 / 返工记录 / 我的计件（按工人档案的菜单勾选显隐；2026-10-27 用户裁定「把工人菜单页面的扫码报工菜单移除掉，直接用其他 app 的扫一扫功能替代」⇒ 扫码报工**不再是本页菜单**，工人用微信 / 手机相机扫纸上的码直接落到报工页）；底部「退出工人身份」→ 回登录页的工人入口'],
+    user_inputs=['工人用「工号 + PIN」登录成功后落在**工人工作台**：页头显示当前工人（工号 + 姓名，来自服务端 `GET /api/worker/production/current-worker`）→ 工人功能：拍照入库 / 补打入库标签 / 拍照发货 / 待出库单 / 返工记录 / 我的计件（按工人档案的菜单勾选显隐；2026-10-27 用户裁定「把工人菜单页面的扫码报工菜单移除掉，直接用其他 app 的扫一扫功能替代」⇒ 扫码报工**不再是本页菜单**，工人用微信 / 手机相机扫纸上的码直接落到报工页）；底部「退出工人身份」→ 回登录页的工人入口'],
     expectations=['direct_reply'],
-    data_checks=['判据 1·**身份卡读服务端**：工号 + 姓名来自 `fetchCurrentWorker()`（服务端工人 session，页头显示的正是「这笔活会记到谁头上」= 计件工资凭证）；服务端读不到（session 失效）⇒ 回落成「未登录工人身份」并清本机工人态，**不**静默保留上一个人的名字。红证（实跑）：把身份卡改读 `getCachedWorker()`（不调服务端）⇒ 1 failed', '判据 2·**工人功能入口各自跳对路由 + 扫码报工入口已移除**：拍照入库 → `INBOUND_PAGE_ROUTE`、补打入库标签 → `REPRINT_PAGE_ROUTE`、拍照发货 → `SHIPMENT_PAGE_ROUTE`、待发货单 → `SHIPMENT_ORDERS_PAGE_ROUTE`、返工记录 → `REWORK_PAGE_ROUTE`、**我的计件 → `PIECEWORK_PAGE_ROUTE`**（真值全在 frontend/bmini-app/src/utils/inbound/gaps.ts，页面不写第二份字面量；我的计件这条是 issue #7934 从**报工详情页**页头搬到本页的，worker-h5 侧同步反向钉住「报工页不得再渲染它」）。🔴 2026-10-27（issue #7920，用户逐字「把工人菜单页面的扫码报工菜单移除掉，直接用其他 app 的扫一扫功能替代」）：**该入口已删除**，并**反向钉住**「本页的 `Taro.navigateTo` 里不许再出现 `/pages/worker/report/index`」（报工页只由外部扫码 302 → 启动器 `redirectTo` 到达）。红证（实跑）：把「扫码报工」卡加回去 / 或把返工记录入口摘掉 ⇒ frontend/bmini-app/tests/worker-home-page.test.tsx 对应断言 red', '判据 6·**待处理红色数字**（issue #7921）：待发货单 / 返工记录两条入口标题上显示服务端列表行数（`GET /api/worker/shipment/orders` 的 `items`、`GET /api/worker/production/rework-orders` 的 `orders`）；**只在这条入口可见时才请求**；`>0` 才显示、`0` 与读失败都**不显示**（读失败绝不回落成 0 —— 那是在替服务端断言「没有待处理的活」）。红证（实跑）：把读失败的 `null` 改成 0 ⇒ 徽标出现 ⇒ 断言 red', '判据 7·**返工记录页**（issue #7921，新页 pages/worker/rework/index）：数据 = `GET /api/worker/production/rework-orders`（与 H5 `/w/rework.html` 同一端点，端侧只渲染）；五态互斥 —— 读取中 / 读不到（可重试）/ 401（去登录）/ **403（工人档案没开「返工记录」页 ⇒ 可行动提示，不冒充「没有返工」）** / 读到了（空态或列表）。判据 = frontend/bmini-app/tests/worker-rework-page.test.tsx。红证（实跑）：把 403 归到 error / 把 `rework_count` 缺值补 0 ⇒ 对应断言 red', '判据 3·🔴 **不出现任何商家面入口**：问黄金策 / 数据 / 坐席 / 我的 四个 tabBar 文案与管理面 4 项（标签取自 frontend/bmini-app/src/utils/adminPermission.ts 的 `ADMIN_SURFACES`）一个都不渲染 —— 工人零商家权限（`/api/admin/**` 拒绝集合含 `worker`），点了只会 403/空页。红证（实跑）：往页面混入一行「问黄金策」⇒ 1 failed', '判据 4·**退出工人身份**：`workerLogout()`（服务端留 `end_reason=logout` 痕）+ `clearWorkerSession()` 清本机 ⇒ `redirectTo` 登录页的工人入口（共用 PAD 场景：下一个人接着用；只清本机会让下一个人记到上一个人头上）', '判据 5·**新页必须在册**：`WORKER_HOME_ROUTE` / `REWORK_PAGE_ROUTE` / `PIECEWORK_PAGE_ROUTE` 逐字出现在 frontend/bmini-app/src/app.config.ts 的 pages 里（没登记 = 死链），并登记进 frontend/bmini-app/src/utils/pageEntries.ts 的入口台账（「登记了没人指向也红 / 没登记即红」）。🔴 2026-10-27 台账**缩表**：报工页的发射方由两条（端内点击 + 扫码落地）降为**一条**（扫码落地，`src/app.tsx`）—— 入口台账只许缩短。证据：frontend/bmini-app/tests/page-entry-reachability.test.ts + frontend/bmini-app/tests/report-landing.test.ts（B4）'],
+    data_checks=['判据 1·**身份卡读服务端**：工号 + 姓名来自 `fetchCurrentWorker()`（服务端工人 session，页头显示的正是「这笔活会记到谁头上」= 计件工资凭证）；服务端读不到（session 失效）⇒ 回落成「未登录工人身份」并清本机工人态，**不**静默保留上一个人的名字。红证（实跑）：把身份卡改读 `getCachedWorker()`（不调服务端）⇒ 1 failed', '判据 2·**工人功能入口各自跳对路由 + 扫码报工入口已移除**：拍照入库 → `INBOUND_PAGE_ROUTE`、补打入库标签 → `REPRINT_PAGE_ROUTE`、拍照发货 → `SHIPMENT_PAGE_ROUTE`、待出库单 → `SHIPMENT_ORDERS_PAGE_ROUTE`、返工记录 → `REWORK_PAGE_ROUTE`、**我的计件 → `PIECEWORK_PAGE_ROUTE`**（真值全在 frontend/bmini-app/src/utils/inbound/gaps.ts，页面不写第二份字面量；我的计件这条是 issue #7934 从**报工详情页**页头搬到本页的，worker-h5 侧同步反向钉住「报工页不得再渲染它」）。🔴 2026-10-27（issue #7920，用户逐字「把工人菜单页面的扫码报工菜单移除掉，直接用其他 app 的扫一扫功能替代」）：**该入口已删除**，并**反向钉住**「本页的 `Taro.navigateTo` 里不许再出现 `/pages/worker/report/index`」（报工页只由外部扫码 302 → 启动器 `redirectTo` 到达）。红证（实跑）：把「扫码报工」卡加回去 / 或把返工记录入口摘掉 ⇒ frontend/bmini-app/tests/worker-home-page.test.tsx 对应断言 red', '判据 6·**待处理红色数字**（issue #7921）：待出库单 / 返工记录两条入口标题上显示服务端列表行数（`GET /api/worker/shipment/orders` 的 `items`、`GET /api/worker/production/rework-orders` 的 `orders`）；**只在这条入口可见时才请求**；`>0` 才显示、`0` 与读失败都**不显示**（读失败绝不回落成 0 —— 那是在替服务端断言「没有待处理的活」）。红证（实跑）：把读失败的 `null` 改成 0 ⇒ 徽标出现 ⇒ 断言 red', '判据 7·**返工记录页**（issue #7921，新页 pages/worker/rework/index）：数据 = `GET /api/worker/production/rework-orders`（与 H5 `/w/rework.html` 同一端点，端侧只渲染）；五态互斥 —— 读取中 / 读不到（可重试）/ 401（去登录）/ **403（工人档案没开「返工记录」页 ⇒ 可行动提示，不冒充「没有返工」）** / 读到了（空态或列表）。判据 = frontend/bmini-app/tests/worker-rework-page.test.tsx。红证（实跑）：把 403 归到 error / 把 `rework_count` 缺值补 0 ⇒ 对应断言 red', '判据 3·🔴 **不出现任何商家面入口**：问黄金策 / 数据 / 坐席 / 我的 四个 tabBar 文案与管理面 4 项（标签取自 frontend/bmini-app/src/utils/adminPermission.ts 的 `ADMIN_SURFACES`）一个都不渲染 —— 工人零商家权限（`/api/admin/**` 拒绝集合含 `worker`），点了只会 403/空页。红证（实跑）：往页面混入一行「问黄金策」⇒ 1 failed', '判据 4·**退出工人身份**：`workerLogout()`（服务端留 `end_reason=logout` 痕）+ `clearWorkerSession()` 清本机 ⇒ `redirectTo` 登录页的工人入口（共用 PAD 场景：下一个人接着用；只清本机会让下一个人记到上一个人头上）', '判据 5·**新页必须在册**：`WORKER_HOME_ROUTE` / `REWORK_PAGE_ROUTE` / `PIECEWORK_PAGE_ROUTE` 逐字出现在 frontend/bmini-app/src/app.config.ts 的 pages 里（没登记 = 死链），并登记进 frontend/bmini-app/src/utils/pageEntries.ts 的入口台账（「登记了没人指向也红 / 没登记即红」）。🔴 2026-10-27 台账**缩表**：报工页的发射方由两条（端内点击 + 扫码落地）降为**一条**（扫码落地，`src/app.tsx`）—— 入口台账只许缩短。证据：frontend/bmini-app/tests/page-entry-reachability.test.ts + frontend/bmini-app/tests/report-landing.test.ts（B4）'],
     skip_reason='[backend-contract] 确定性页面链路判据（jest: frontend/bmini-app/tests/worker-home-page.test.tsx + tests/page-entry-reachability.test.ts），非 LLM 行为，不进入 agent-eval 冒烟',
     tags=['bmini', 'worker', 'page-flow'],
     persona='',
@@ -1032,14 +1050,14 @@ _CASE_BM_060 = EvalCase(
     forbidden_card_text=[],
 )
 
-# ── BM-061 [NORMAL] 待发货单整套出库单（发货联）50×70 预览 + 打印 —— 行清单与 /w/ 同源，仍不新增发货写路径（源: cases/bmini.yml）──
+# ── BM-061 [NORMAL] 待出库单整套出库单（成品出库单）50×70 预览 + 打印 —— 行清单与 /w/ 同源，仍不新增发货写路径（源: cases/bmini.yml）──
 _CASE_BM_061 = EvalCase(
     id='BM-061',
     legacy_id='',
-    title='待发货单整套出库单（发货联）50×70 预览 + 打印 —— 行清单与 /w/ 同源，仍不新增发货写路径',
+    title='待出库单整套出库单（成品出库单）50×70 预览 + 打印 —— 行清单与 /w/ 同源，仍不新增发货写路径',
     skill=Skill.GENERAL,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['工人在「待发货单」列表点某单「发货联」→ 屏上出现 50×70 纸面的行清单（订单号 / 收货人 / 电话 / 地址 / 帘种 / 安装小区 / 安装位置 / 物流类型 / 物流公司 / 下单日期 / 套数 / 备注）→ 点「打印发货联（50×70）」经共享行式标签通道打出整套出库单；缺值印 —、可选附注缺值整行不印；本页仍不发货。'],
+    user_inputs=['工人在「待出库单」列表点某单「出库单」→ 屏上出现 50×70 纸面的行清单（订单号 / 收货人 / 电话 / 地址 / 帘种 / 安装小区 / 安装位置 / 物流类型 / 物流公司 / 下单日期 / 套数 / 备注）→ 点「打印成品出库单（50×70）」经共享行式标签通道打出整套出库单；缺值印 —、可选附注缺值整行不印；本页仍不发货。'],
     expectations=['direct_reply'],
     data_checks=['判据 1·🔴 行清单与 /w/ 逐行等价：bmini buildShipLabelRows 与 frontend/worker-h5/src/shipment.mjs 的 buildShipLabelRows 对同一组 fixture（全字段 / 最小 / 可选全缺 / 时区 / 缺值）逐行相等。红证：任一侧改行序 / 缺值规则 / 日期 ⇒ frontend/bmini-app/tests/ship-label-rows-parity.test.ts 红（逐字段点名）', '判据 2·🔴 日期按 Asia/Shanghai：16:30Z ⇒ 次日；不按 UTC 切。红证：改成本地 / UTC 取日 ⇒ parity P4 与 worker-shipment-orders-page.test.tsx 的 ⑧ 红', '判据 3·🔴 纸长按内容撑开 70~150mm、50mm 宽、像素口径只取介质矩阵；长内容可见省略 / 折行，超上限停止追加并给 warnings。红证：把纸长写死 / 删 warnings ⇒ rows-label-layout.test.ts 的 L3 红', '判据 4·🔴 仍然不新增发货写路径：页面只读列表 + 打纸，不调 ship 端点；送打印只走 printRowsLabel（页面无 .print）。红证：页面里加 .print 直连 ⇒ inbound-print-channel 的 D7 红；加 ship 调用 ⇒ 现有测试的 mock 服务导出不存在即红'],
     skip_reason='[frontend-contract] 确定性页面 / 跨端行清单判据（jest: ship-label-rows-parity / worker-shipment-orders-page / rows-label-layout），非 LLM 行为，不进入 agent-eval 冒烟',
@@ -1111,6 +1129,7 @@ CASES = (
     _CASE_BM_004,
     _CASE_BM_005,
     _CASE_BM_006,
+    _CASE_BM_007,
     _CASE_BM_008,
     _CASE_BM_009,
     _CASE_BM_010,

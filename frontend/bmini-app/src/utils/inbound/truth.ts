@@ -6,7 +6,7 @@
  * | 真值 | 真值源（仓库相对全路径） | 谁落的 |
  * |---|---|---|
  * | 入库标签（50×80mm）的**纸型 + 像素口径** | `frontend/admin-web/src/lib/print-media.json` | #5651 打印介质矩阵 |
- * | 成品入库标签 / 发货联（50×70mm）的**纸型 + 像素口径 + 纸长范围** | 同上（`label-50x70`） | #7761 / #7786 / #8287 |
+ * | 成品入库标签 / 成品出库单（50×70mm）的**纸型 + 像素口径 + 纸长范围** | 同上（`label-50x70`） | #7761 / #7786 / #8287 |
  *
  * ## 🔴 为什么是「直接 import」，不是「各写一份」或「构建期拷贝」
  *
@@ -39,7 +39,7 @@ import matrix from '../../../../admin-web/src/lib/print-media.json'
 export const INBOUND_LABEL_MEDIA_ID = 'label-50x80'
 
 /**
- * 成品入库标签 / 发货联共用的介质 id（issue #8287）：50mm 宽连续纸卷、纸长按内容撑开。
+ * 成品入库标签 / 成品出库单共用的介质 id（issue #8287）：50mm 宽连续纸卷、纸长按内容撑开。
  * 与 `frontend/worker-h5/src/shipment.mjs` 的 `SHIP_LABEL_MEDIA_ID` **逐字同名**（同一份真值）。
  */
 export const SHIP_LABEL_MEDIA_ID = 'label-50x70'
@@ -142,7 +142,7 @@ export function labelPaperBox(id: string): { widthMm: number; heightMm: number }
 }
 
 /**
- * 连续纸卷的纸长范围（mm）—— 发货联按内容撑开（下限 / 上限）的唯一真值。
+ * 连续纸卷的纸长范围（mm）—— 成品出库单按内容撑开（下限 / 上限）的唯一真值。
  * 固定纸型 / 缺 `lengthMm` ⇒ 抛错（调用方要的是「按内容撑开」，不能静默按固定纸长出图）。
  */
 export function labelLengthRange(id: string): LabelLengthRange {

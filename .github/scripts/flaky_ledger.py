@@ -2511,6 +2511,144 @@ def branch_head_age_minutes():
     return max(0, int((datetime.now(timezone.utc).timestamp() - ct) // 60))
 
 
+# ── #8628：台账领先 main 却**没有 open PR** ⇒ 机械补建（幂等；**不 arm**）────────────
+#
+# 病（**实测两次**，2026-11-04，有 run 号）：`chore/flaky-ledger` 领先 `main` 但**没有 open PR**
+# 时，本兜底（`flaky-ledger-reconcile.yml`）原口径**判红**（`::error::…没有 open PR` + `exit 1`），
+# 因为「建 PR 是 flaky-triage.yml 的职责」。而 `flaky-triage.yml` **只在有新的终态事件时**才补建
+# PR ⇒ 这个状态下**没有任何路径**把它推上 main ⇒ 腿在**每一个** PR 上报红（它不在 required 集合
+# ⇒ 不拦合并，但持续稀释「红 = 有事」），只能靠人**手工**开 PR 压住（当晚两次：#8604 / #8612）。
+# 机械开单：#8628（连续 4 次真红达阈值；run 41773739654 / 41772598095 / 41765847283 / 41763430690）。
+#
+# 修法 = 把「人记得开 PR」换成**机械幂等**（判据只此一处，workflow 只编排）：
+#   · `ahead > 0` ∧ 无 open PR ⇒ **建**（base `main`、head 台账分支，title/body 走既有文案）；
+#   · 已有 open PR ⇒ **零动作**（幂等：绝不重复建 —— 这正是「每晚手工开一次」的病灶）；
+#   · `ahead == 0` / 分支不存在 ⇒ **零动作、腿绿**（既有口径）。
+#
+# 🔴 红线（#8628，任何一条被破坏都等于把「自愈」变成「自开自合」的口子）：
+#   · **本函数只建 PR**：不 `gh pr merge`、**不 arm auto-merge**（建出来的 PR 由 workflow 侧按
+#     `AUTOPR_MARKER` 识别并**跳过 arm** —— 人要能看见并复核）；
+#   · **不碰分支保护 / 不用 `--admin` / 不给自己豁免**：PR 仍受**全部** required 检查约束；
+#   · 失败**不许静默**：`gh pr create` 失败 ⇒ 抛 `EnsurePrError`（调用方 `::error::` + 退 1）；
+#     读数面读不到 ⇒ 抛 `EnsurePrUndecidable`（退 `3`：**未跑 ≠ 通过**，不得当「无需 PR」）。
+class EnsurePrError(RuntimeError):
+    """**动作失败**（`gh pr create` 建不出来）⇒ 调用方退 `1`（fail-closed，不许静默）。"""
+
+
+class EnsurePrUndecidable(RuntimeError):
+    """**读数面无法判定**（列 PR / 取 main 台账 / 取分支台账读不到）⇒ 调用方退 `3`。"""
+
+
+#: body 里用来识别「这条 PR 是本腿自建的」的**标记 token**（workflow 的 case 臂按它匹配）。
+#: 单一事实源：`AUTOPR_MARKER` 由它拼出，workflow 侧只写 token（同值由判据钉住）。
+AUTOPR_TOKEN = "flaky-ledger-autopr"
+AUTOPR_MARKER = f"<!-- {AUTOPR_TOKEN} -->"
+AUTOPR_TITLE = "chore(ci): flaky 台账滚动追加"
+
+#: PR body 与 `flaky-triage.yml` 建的那条**同一套口径**（只多两段：谁建的、为什么不 arm）。
+#: ⚠️ body 里**不得**出现「关闭关键词 + 号」的形态（`close-linked-issues.yml` 是朴素正则，
+#: 任何这种形态都会被误判成关闭意图，包括反引号里的样例）—— 故 issue 号只以「关联 issue N」出现。
+AUTOPR_BODY = (
+    "由 `.github/workflows/flaky-ledger-reconcile.yml` **机械补建**（关联 issue 8628，**不关闭**它）。\n\n"
+    "为什么会有这条 PR：`chore/flaky-ledger` 已领先 `main` 却**没有 open PR** ⇒ 台账没有任何路径"
+    "落 main，而「对账腿」会因此在**每一个** PR 上报红（它不在 required 集合 ⇒ 不拦合并，"
+    "但持续稀释「红 = 有事」）。本 PR 因此由对账腿**幂等补建**：已有 open PR ⇒ 零动作，不会重复建。\n\n"
+    "🔴 **本 PR 不 arm auto-merge**（body 末行的标记即判据）：人工复核后才 arm / 合并 —— "
+    "**人只需要复核，不需要记得开 PR**。required 检查仍是唯一闸，全绿前合不了。\n\n"
+    "只改 `.github/flaky-ledger.json`：**只追加**、幂等（键 = `(workflow, run_id, job)`）、可审计。\n"
+    "消费方式：**条数现取**（本台账不写任何计数）。\n\n"
+    f"{AUTOPR_MARKER}\n"
+)
+
+
+def _gh(*args):
+    """`gh` 调用的**唯一出口**（本节的判据要能断言「到底调没调」——测试替换它即可，不建真 PR）。"""
+    return subprocess.run(["gh", *args], capture_output=True, text=True)
+
+
+def open_ledger_pr(repo: str, branch: str = LEDGER_BRANCH):
+    """台账分支上的 open PR 号（**唯一读数**）；没有 ⇒ `None`；读不到 ⇒ `EnsurePrUndecidable`。
+
+    为什么要有唯一读数：幂等判据（「已有 open PR ⇒ 零动作」）与「建完回读」读的必须是**同一处**，
+    否则两处各查一遍会把「刚被合并」读成「没有 PR」（#5310 跨时刻读数同族）。
+    """
+    proc = _gh("pr", "list", "--head", branch, "--state", "open", "--json", "number",
+               "--jq", ".[0].number // empty", "--repo", repo)
+    if proc.returncode != 0:
+        raise EnsurePrUndecidable(
+            f"`gh pr list --head {branch} --state open` 失败（无法判定有没有 open PR）："
+            f"{(proc.stderr or '').strip()[:200]}")
+    out = (proc.stdout or "").strip()
+    if not out:
+        return None
+    try:
+        return int(out)
+    except ValueError:
+        raise EnsurePrUndecidable(f"`gh pr list` 返回的不是 PR 号：{out[:120]!r}")
+
+
+def ensure_ledger_pr(repo: str, branch: str = LEDGER_BRANCH, *,
+                     base: str = "main", dry_run: bool = False) -> dict:
+    """#8628：`ahead > 0` ∧ 无 open PR ⇒ **幂等**补建台账 PR；否则**零动作**。
+
+    判定顺序即安全顺序（先查后建 ⇒ 已有 PR 时**结构上不可能**再建一条）：
+      ① 已有 open PR ⇒ `action="exists"`（零动作，幂等）；
+      ② 分支不存在 ⇒ `action="no-branch"`（没有可落 main 的内容）；
+      ③ **实时**算 ahead（main 与分支两个读数都取「现在」，同 #5310 口径）：
+         `ahead == 0` ⇒ `action="in-sync"`（零动作、腿绿）；
+      ④ `ahead > 0` ⇒ 建 PR：`dry_run` ⇒ `action="would-create"`（只打印命令，不建）；
+         真建 ⇒ `action="created"`；create 失败但回读已有 PR ⇒ `action="race-exists"`（幂等）。
+
+    三态：返回 `dict` = 判定完成；抛 `RuntimeError` = **建 PR 失败**或**无法判定**
+    （调用方据此退 `1` / `3`，**不得**静默当「无需 PR」）。
+
+    🔴 本函数**只建 PR**：不 `--admin`、不改分支保护、**不 arm auto-merge**（红线见本节头）。
+    """
+    existing = open_ledger_pr(repo, branch)
+    if existing is not None:
+        return {"action": "exists", "pr": existing, "created": False, "ahead": None,
+                "branch": branch, "base": base}
+    main_ledger = read_main_ledger_live(repo)
+    branch_ledger = read_branch_ledger(branch)
+    if branch_ledger is None:
+        return {"action": "no-branch", "pr": None, "created": False, "ahead": 0,
+                "branch": branch, "base": base}
+    ahead = len(ledger_drift(main_ledger, branch_ledger)["ahead"])
+    if ahead == 0:
+        return {"action": "in-sync", "pr": None, "created": False, "ahead": 0,
+                "branch": branch, "base": base}
+    if dry_run:
+        # 判据用：只报「**会**执行什么」，一个字节都不写盘、不建 PR。
+        print(f"::notice::[dry-run] ahead={ahead} 且无 open PR ⇒ 会执行：gh pr create --base {base} "
+              f"--head {branch} --title {AUTOPR_TITLE!r} --repo {repo}（**不** arm auto-merge；"
+              f"**不** --admin、不改分支保护）")
+        return {"action": "would-create", "pr": None, "created": False, "ahead": ahead,
+                "branch": branch, "base": base}
+    proc = _gh("pr", "create", "--base", base, "--head", branch,
+               "--title", AUTOPR_TITLE, "--body", AUTOPR_BODY, "--repo", repo)
+    if proc.returncode != 0:
+        # race：人 / flaky-triage.yml 在本轮判定与 create 之间建了 PR ⇒ 幂等成功（不报红、不重复建）
+        try:
+            raced = open_ledger_pr(repo, branch)
+        except RuntimeError:
+            raced = None
+        if raced is not None:
+            return {"action": "race-exists", "pr": raced, "created": False, "ahead": ahead,
+                    "branch": branch, "base": base}
+        raise EnsurePrError(
+            f"`gh pr create` 失败（rc={proc.returncode}）："
+            f"{(proc.stderr or proc.stdout or '无输出').strip()[:300]}"
+            f" ⇒ 台账仍停在 {branch} 上、main 不增长。可复制出口：gh pr create --base {base} "
+            f"--head {branch} --title '{AUTOPR_TITLE}' --repo {repo}")
+    # 回读 PR 号：不信 create 的输出（与 #5075 ④「读数与动作必须自洽」同一口径）
+    number = open_ledger_pr(repo, branch)
+    if number is None:
+        raise EnsurePrError(
+            f"`gh pr create` 退出 0 但回读不到 {branch} 的 open PR ⇒ 不得当「已建」读（fail-closed）")
+    return {"action": "created", "pr": number, "created": True, "ahead": ahead,
+            "branch": branch, "base": base}
+
+
 # ── #5687：窗口型疑似的**跟踪单**（机械落单；「必须跟踪」不能靠人记得） ─────────────
 
 TRACKING_LABEL = "flaky/tracking"
@@ -3069,6 +3207,17 @@ def main(argv=None) -> int:
                    help="台账分支名 —— **只作用于该分支**（别的分支的 run 一律不重跑）")
     p.add_argument("--json-out", help="写出本轮的重跑 / 额度用尽清单（供审计）")
 
+    p = sub.add_parser("ensure-pr",
+                       help="#8628：台账领先 main 却无 open PR ⇒ **幂等**补建（只建 PR，"
+                            "**不 arm auto-merge**、不 --admin、不改分支保护）")
+    p.add_argument("--repo", required=True)
+    p.add_argument("--branch", default=LEDGER_BRANCH, help="台账分支名（head）")
+    p.add_argument("--base", default="main", help="PR 的 base 分支")
+    p.add_argument("--dry-run", action="store_true",
+                   help="只打印**会**执行的 gh 命令（判据用：离线断言「会不会建」，绝不真建 PR）")
+    p.add_argument("--json-out", help="写出判定结果（action / pr / created / ahead）")
+    p.add_argument("--gh-output", help="写出 `pr=` / `created=0|1` / `action=` / `ahead=`")
+
     args = ap.parse_args(argv)
 
     if args.cmd == "fetch":
@@ -3379,6 +3528,44 @@ def main(argv=None) -> int:
             with open(args.gh_output, "a", encoding="utf-8") as fh:
                 fh.write(f"issue={info['number']}\n")
                 fh.write(f"created={1 if info['created'] else 0}\n")
+        return 0
+
+    if args.cmd == "ensure-pr":
+        # #8628：`ahead>0` ∧ 无 open PR ⇒ **机械**补建（幂等）；其它状态 ⇒ 零动作（腿绿）。
+        # 三态：0 = 判定完成（含「零动作」）；1 = **建 PR 失败**（fail-closed，一行可行动出口）；
+        #       3 = 读数面**无法判定**（**未跑 ≠ 通过**，不得当「无需 PR」）。
+        try:
+            info = ensure_ledger_pr(args.repo, args.branch, base=args.base,
+                                    dry_run=args.dry_run)
+        except EnsurePrError as exc:
+            print(f"⛔ 台账领先 main 却**补建 PR 失败**：{exc}", file=sys.stderr)
+            return 1
+        except (RuntimeError, OSError) as exc:
+            # 读数面（列 PR / 取 main 台账 / 取分支台账 / git）读不到 ⇒ **无法判定**（3）。
+            # ⚠️ 不许降级成 0：那会把「没跑成」读成「无需 PR」（未跑 ≠ 通过）。
+            print(f"⛔ 无法判定台账该不该建 PR：{exc}", file=sys.stderr)
+            return 3
+        action = info["action"]
+        if action in ("exists", "race-exists"):
+            print(f"::notice::✅ 台账 PR #{info['pr']} 已存在（{action}）⇒ **零动作**"
+                  f"（幂等：已有 open PR 不重复建 —— #8628）")
+        elif action == "in-sync":
+            print("::notice::✅ 台账已与 main 收敛（ahead=0）⇒ 不建 PR（无事可做，腿绿）")
+        elif action == "no-branch":
+            print(f"::notice::ℹ️ 台账分支 `{args.branch}` 不存在 ⇒ 没有可落 main 的内容，"
+                  f"不建 PR（非缺陷）")
+        elif action == "created":
+            print(f"::notice::🆕 台账分支领先 main {info['ahead']} 条却**没有 open PR** ⇒ "
+                  f"已机械补建 PR #{info['pr']}（#8628：**不 arm auto-merge** —— 人工只需复核，"
+                  f"不需要记得开；required 检查仍是唯一闸）")
+        if args.json_out:
+            _write(args.json_out, json.dumps(info, ensure_ascii=False, indent=2))
+        if args.gh_output:
+            with open(args.gh_output, "a", encoding="utf-8") as fh:
+                fh.write(f"pr={info['pr'] if info['pr'] is not None else ''}\n")
+                fh.write(f"created={1 if info['created'] else 0}\n")
+                fh.write(f"action={action}\n")
+                fh.write(f"ahead={info['ahead'] if info['ahead'] is not None else ''}\n")
         return 0
 
     if args.cmd == "ledger-drift":

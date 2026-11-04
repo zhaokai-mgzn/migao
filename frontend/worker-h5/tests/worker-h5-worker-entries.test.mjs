@@ -60,8 +60,18 @@ const WORKER = { workerName: '张师傅', workerNo: 'W-001', idleMinutes: 43200 
 /** 去 HTML 注释后的可见文本（注释里的锚点不是入口，D2）。 */
 const visible = (html) => html.replace(/<!--[\s\S]*?-->/g, '')
 
-/** 登录态（`pages` 直接落在 state 上：本文件只测渲染，不走装配层）。 */
-const loggedIn = (pages, extra = {}) => ({ ...initialState(), worker: WORKER, mode: 'scan', pages, ...extra })
+/**
+ * 登录态（`pages` 直接落在 state 上：本文件只测渲染，不走装配层）。
+ *
+ * 🔴 第三轴（**本机能力**，issue #8609）固定为「安卓一体机」（有裁高机链路）：
+ * 本文件判的是**页头入口栏**（第一轴），第三轴不能成为隐藏变量。
+ * 第三轴自己的判据 = `tests/worker-h5-8609-capabilities.test.mjs`。
+ */
+const ALL_IN_ONE = {
+  capabilities: { 'scan.hid': true, 'scan.camera': true, 'cut.link': 'serial:COM3', 'print.label': null, 'update.channel': 'apk' },
+}
+
+const loggedIn = (pages, extra = {}) => ({ ...initialState(), worker: WORKER, mode: 'scan', pages, terminal: ALL_IN_ONE, ...extra })
 
 test('🔴 ① `cut_calc` ∈ pages ⇒ 页头有「裁高计算（一体机）」入口；两条都没开 ⇒ 整条入口栏不渲染', () => {
   const on = visible(renderPage(loggedIn([PAGE_REPORT, PAGE_CUT_CALC])))

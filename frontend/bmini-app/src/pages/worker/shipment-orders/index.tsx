@@ -1,5 +1,5 @@
 /**
- * 工人**待发货单**列表（issue #7806 P1a）—— `/b/` 工人工作台新增的一条入口（只读）。
+ * 工人**待出库单**列表（issue #7806 P1a）—— `/b/` 工人工作台新增的一条入口（只读）。
  *
  * ## 这一页回答什么
  *
@@ -21,7 +21,7 @@
  *
  * ## 边界（照实登记）
  *
- * - **发货联（整套出库单）预览 + 50×70 打印**（issue #8287）：行清单 = `utils/labels/shipLabel.ts`，
+ * - **成品出库单（一单一张，覆盖该订单全部套）预览 + 50×70 打印**（issue #8287）：行清单 = `utils/labels/shipLabel.ts`，
  *   与 H5 `/w/` 的 `buildShipLabelRows` **同源**（判据 `tests/ship-label-rows-parity.test.ts` 现取两侧实现比对）；
  *   打印走共享行式标签通道（小程序 BLE / 手持终端 / 浏览器蓝牙，经 `createPrintTransport`）。
  * - 本页**仍然不发货**（没有写入口）：发货的写路径在 H5 `/w/` 与端内「拍照发货」
@@ -36,7 +36,7 @@ import { listReadyShipmentOrders } from '../../../services/workerShipmentOrdersS
 import { SHIPMENT_ORDERS_WORKER_LOGIN_REQUIRED, WORKER_TAB_LOGIN_ROUTE } from '../../../utils/inbound/gaps'
 import { clearWorkerSession, hasWorkerSession, type CurrentWorker } from '../../../utils/workerSession'
 import type { ReadyShipmentOrder, ReadyShipmentOrdersPage } from '../../../services/workerShipmentOrdersService'
-// 发货联（50×70）预览 / 打印：行清单与 `/w/` 同源；送打印只走共享入口（不在页面里碰 transport）。
+// 成品出库单（50×70）预览 / 打印：行清单与 `/w/` 同源；送打印只走共享入口（不在页面里碰 transport）。
 import { buildShipLabelRows, shipLabelSpec } from '../../../utils/labels/shipLabel'
 import { renderRowsLabel } from '../../../utils/labels/rowsLabel'
 import { createH5CanvasFactory, SDK_UNAVAILABLE_HINT } from '../../../utils/inbound/labelPageKit'
@@ -128,7 +128,7 @@ function OrderRow({
         data-testid={`shipment-orders-label-${index}`}
         onClick={() => onPreview(order)}
       >
-        发货联
+        出库单
       </Button>
     </View>
   )
@@ -141,7 +141,7 @@ export default function WorkerShipmentOrdersPage() {
   const [phase, setPhase] = useState<ShipmentOrdersPhase>(workerReady ? 'loading' : 'unauthorized')
   const [page, setPage] = useState<ReadyShipmentOrdersPage | null>(null)
   const [message, setMessage] = useState('')
-  /** 正在预览 / 待打印的那张发货联（`null` = 收起） */
+  /** 正在预览 / 待打印的那张成品出库单（`null` = 收起） */
   const [labelOrder, setLabelOrder] = useState<ReadyShipmentOrder | null>(null)
   const [printBusy, setPrintBusy] = useState(false)
   const [labelNotice, setLabelNotice] = useState('')
@@ -201,10 +201,10 @@ export default function WorkerShipmentOrdersPage() {
   }, [])
 
   /**
-   * 打印发货联（50×70 整套出库单）。
+   * 打印成品出库单（50×70 整套出库单）。
    *
    * 行清单只取本行服务端字段；版面 / 渲染 / 送打印走共享件。本页**不发货** ——
-   * 发货联是**出库单纸面**，不改库存、不调 ship 端点（写路径仍在拍照发货 / PC 发货）。
+   * 成品出库单是**出库单纸面**，不改库存、不调 ship 端点（写路径仍在拍照发货 / PC 发货）。
    */
   const printShipLabel = useCallback(
     async (order: ReadyShipmentOrder) => {
@@ -244,7 +244,7 @@ export default function WorkerShipmentOrdersPage() {
     <View className='shipment-orders'>
       <View className='shipment-orders__header'>
         <View className='shipment-orders__heading'>
-          <Text className='shipment-orders__title'>待发货单</Text>
+          <Text className='shipment-orders__title'>待出库单</Text>
           {worker && phase !== 'unauthorized' ? (
             <Text className='shipment-orders__worker' data-testid='shipment-orders-worker'>
               当前工人：{textOrMissing(worker.worker_name)}
@@ -264,7 +264,7 @@ export default function WorkerShipmentOrdersPage() {
 
       {phase === 'loading' ? (
         <View className='shipment-orders__notice' data-testid='shipment-orders-loading'>
-          <Text className='shipment-orders__notice-text'>正在读取待发货单…</Text>
+          <Text className='shipment-orders__notice-text'>正在读取待出库单…</Text>
         </View>
       ) : null}
 
@@ -300,9 +300,9 @@ export default function WorkerShipmentOrdersPage() {
         <View className='shipment-orders__body'>
           <Text className='shipment-orders__count' data-testid='shipment-orders-count'>
             {/* 🔴 0 单时那句「（全部套已完工）」没有指代对象（真机读数 2026-11-01：
-                「待发货 0 单（全部套已完工）」自相矛盾）—— 括号是**结论**，只在有单时说。
+                「待出库 0 单（全部套已完工）」自相矛盾）—— 括号是**结论**，只在有单时说。
                 与 /w/ 发货页（`shipment.mjs` 的 countLine）逐字同口径。 */}
-            {count === 0 ? '待发货 0 单' : `待发货 ${count} 单（全部套已完工）`}
+            {count === 0 ? '待出库 0 单' : `待出库 ${count} 单（全部套已完工）`}
           </Text>
           {count === 0 ? (
             <View className='shipment-orders__notice' data-testid='shipment-orders-empty'>
@@ -329,7 +329,7 @@ export default function WorkerShipmentOrdersPage() {
           {labelOrder ? (
             <View className='shipment-orders__label' data-testid='shipment-orders-label-preview'>
               <Text className='shipment-orders__label-title' data-testid='shipment-orders-label-title'>
-                发货联 · {textOrMissing(labelOrder.order_no)}
+                成品出库单 · {textOrMissing(labelOrder.order_no)}
               </Text>
               <View className='shipment-orders__label-rows' data-testid='shipment-orders-label-rows'>
                 {buildShipLabelRows(labelOrder).map((row) => (
@@ -351,7 +351,7 @@ export default function WorkerShipmentOrdersPage() {
                     void printShipLabel(labelOrder)
                   }}
                 >
-                  {printBusy ? '打印中…' : '打印发货联（50×70）'}
+                  {printBusy ? '打印中…' : '打印成品出库单（50×70）'}
                 </Button>
                 <Button
                   className='shipment-orders__label-close'

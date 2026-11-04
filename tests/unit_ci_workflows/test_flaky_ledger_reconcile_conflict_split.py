@@ -1,4 +1,4 @@
-# case_ids: MC-012
+# case_ids: MC-012, MC-195
 # （沿用 tests/unit_ci_workflows/** 的既有惯例：CI 结构类 L0 不变式统一挂 MC-012，
 #   「CI workflow 结构由 pytest 单测验证」是 misc.yml 里已登记的形态。）
 """#5075 的「判据拆分 + 动作自洽」（L0，离线、零 LLM、秒级；**行为级**红证）。
@@ -36,21 +36,36 @@ SRC = WF.read_text(encoding="utf-8")
 
 REPAIR_PREFIX = "有漂移 ⇒"
 
+#: #8628 的「本腿自建 PR」标记 token（与 `flaky_ledger.AUTOPR_TOKEN` **同值**；
+#: 同值由 `test_flaky_ledger_reconcile.py::TestReconcileWorkflowStructure::
+#: test_autopr_marker_has_a_single_source` 钉住 —— 这里只是桩的输入字面量）。
+MARKER_TOKEN = "flaky-ledger-autopr"
+
+
+def _log(path: Path) -> list:
+    """读桩写下的调用日志（空 / 不存在 ⇒ 空列表：**没调用** 是真的读数，不是异常）。"""
+    return path.read_text(encoding="utf-8").splitlines() if path.exists() else []
+
 # ── 桩：只回答被测步骤会问的问题；其余一律 exit 1（**不假装成功**）────────────────
 GH_STUB = r"""#!/usr/bin/env bash
 field=""
 for ((i = 1; i <= $#; i++)); do
   if [ "${!i}" = "--json" ]; then j=$((i + 1)); field="${!j}"; fi
 done
+# #8628：把每次调用逐行记账 —— 「建没建 PR / arm 没 arm」是**动作**，只能靠调用日志判。
+[ -n "${STUB_GH_CALL_LOG:-}" ] && printf '%s\n' "$*" >> "$STUB_GH_CALL_LOG"
 case "${1:-} ${2:-}" in
   "pr list") printf '%s' "${STUB_PR:-}" ;;
+  "pr create") printf '%s\n' "${STUB_CREATE_OUT:-}"; exit "${STUB_CREATE_RC:-0}" ;;
   "pr merge") printf '%s\n' "${STUB_ARM_OUT:-}"; exit "${STUB_ARM_RC:-0}" ;;
   "pr view")
     case "$field" in
+      number) printf '%s' "${STUB_PR:-}" ;;
       state) printf '%s' "${STUB_PR_STATE:-OPEN}" ;;
       mergeStateStatus) printf '%s' "${STUB_MERGE_STATE:-CLEAN}" ;;
       mergeable) printf '%s' "${STUB_MERGEABLE:-MERGEABLE}" ;;
       autoMergeRequest) printf '%s' "${STUB_AUTO_MERGE:-armed}" ;;
+      body) printf '%s' "${STUB_PR_BODY:-}" ;;
       *) echo "stub: unexpected --json $field" >&2; exit 1 ;;
     esac ;;
   "pr checks") printf '%s' "${STUB_CHECKS:-0}" ;;
@@ -65,16 +80,37 @@ import os
 import pathlib
 import sys
 
+cmd = sys.argv[1] if len(sys.argv) > 1 else ""
+log = os.environ.get("STUB_LEDGER_CALL_LOG")
+if log:
+    # 只记**子命令**：判据要断言「这一轮到底走没走 ensure-pr」（幂等 = 已有 PR 时零调用）。
+    with open(log, "a", encoding="utf-8") as fh:
+        fh.write(cmd + "\n")
+
 out = None
 for i, a in enumerate(sys.argv):
     if a == "--json-out":
         out = sys.argv[i + 1]
+
+if cmd == "ensure-pr":
+    rc = int(os.environ.get("STUB_ENSURE_RC", "0"))
+    if rc:
+        print("⛔ stub: `gh pr create` 失败（HTTP 403）", file=sys.stderr)
+        sys.exit(rc)
+    payload = {
+        "action": "created" if os.environ.get("STUB_ENSURE_CREATED", "0") == "1" else "in-sync",
+        "pr": int(os.environ["STUB_ENSURE_PR"]) if os.environ.get("STUB_ENSURE_PR") else None,
+        "created": os.environ.get("STUB_ENSURE_CREATED", "0") == "1",
+        "ahead": 9,
+        "branch": os.environ.get("LEDGER_BRANCH", "chore/flaky-ledger"),
+        "base": "main",
+    }
+elif "ledger-drift" in sys.argv:
+    n = int(os.environ.get("STUB_RECHECK_AHEAD", "0"))
+    payload = {"ahead": [f"w/{i}/j" for i in range(n)], "behind": []}
+else:
+    payload = []
 if out:
-    if "ledger-drift" in sys.argv:
-        n = int(os.environ.get("STUB_RECHECK_AHEAD", "0"))
-        payload = {"ahead": [f"w/{i}/j" for i in range(n)], "behind": []}
-    else:
-        payload = []
     pathlib.Path(out).write_text(json.dumps(payload), encoding="utf-8")
 """
 
@@ -100,7 +136,8 @@ def _script(src: str, ahead: int, age: int) -> str:
 def run_repair(tmp_path: Path, src: str = SRC, *, ahead: int = 4, age: int = 448,
                pr: str = "5093", merge_state: str = "CLEAN", mergeable: str = "MERGEABLE",
                auto_merge: str = "armed", arm_rc: int = 0, arm_out: str = "",
-               checks: int = 3, recheck_ahead: int = 0):
+               checks: int = 3, recheck_ahead: int = 0, pr_body: str = "",
+               ensure_rc: int = 0, ensure_created: int = 0, ensure_pr: str = ""):
     """把该步骤**真的执行一遍**（`bash -e`，与 GitHub 的默认 shell 形态一致）。
 
     `recheck_ahead` = 报红前那次**复核**（`ledger-drift` 实时重算）读到的 ahead 条数（#5310）。
@@ -130,6 +167,13 @@ def run_repair(tmp_path: Path, src: str = SRC, *, ahead: int = 4, age: int = 448
         "STUB_ARM_OUT": arm_out,
         "STUB_CHECKS": str(checks),
         "STUB_RECHECK_AHEAD": str(recheck_ahead),
+        # #8628：自建 PR 的标记 / 补建动作 / 三态退出码 + 两份调用日志（判据只能靠调用日志判「动作」）
+        "STUB_PR_BODY": pr_body,
+        "STUB_ENSURE_RC": str(ensure_rc),
+        "STUB_ENSURE_CREATED": str(ensure_created),
+        "STUB_ENSURE_PR": ensure_pr,
+        "STUB_GH_CALL_LOG": str(tmp_path / "gh-calls.log"),
+        "STUB_LEDGER_CALL_LOG": str(tmp_path / "ledger-calls.log"),
     })
     return subprocess.run(["bash", "-e", "-c", _script(src, ahead, age)],
                           cwd=work, env=env, capture_output=True, text=True)
@@ -210,28 +254,112 @@ def test_zero_ahead_is_zero_action_and_never_the_no_pr_error(tmp_path):
     assert "::error::" not in p.stdout, p.stdout
 
 
-def test_red_proof_zero_ahead_guard_removed_goes_red(tmp_path):
-    """**红证**（判据②）：把这道闸摘掉 ⇒ 同一输入（`ahead=0` ∧ 无 PR）走到「无 PR ⇒ error」。
+def test_red_proof_zero_ahead_guard_removed_starts_creating(tmp_path):
+    """**红证**（判据②）：摘掉「ahead=0 ⇒ 零动作」这道闸 ⇒ 同一输入会**进入补建路径**。
 
-    这正是**旧形态**：判据拿的是一个跨时刻读数，于是「无事可做」被读成「领先却无 PR」的假红。
+    本单口径下 `ensure-pr` 自己还会实时复核 ahead（幂等兜底），所以摘掉闸不是「假红」而是
+    「多走一次判定 / 多一次写面机会」—— 判据钉的就是「**零动作**必须真的是零动作」：
+    基线**一次** `ensure-pr` 调用都没有，摘掉闸后**至少一次**。
     """
     mutated = SRC.replace(ZERO_ACTION_GUARD, "", 1)
     assert mutated != SRC, "注入锚点失效（先修本测试）"
     # 复核读到 ahead=7（= 判据与 PR 查询之间**没有**收敛）⇒ 挡住它的只有「零动作」这道闸。
     base = run_repair(tmp_path / "base", SRC, ahead=0, pr="", recheck_ahead=7)
     assert base.returncode == 0, base.stdout + base.stderr
+    if "ensure-pr" in _log(tmp_path / "base" / "ledger-calls.log"):
+        raise AssertionError("基线（ahead=0）不该调用 ensure-pr —— 零动作被破坏了")
     injected = run_repair(tmp_path / "inj", mutated, ahead=0, pr="", recheck_ahead=7)
-    assert injected.returncode == 1, "摘掉零动作闸后本该（按旧形态）假红，实际仍绿"
-    assert "没有 open PR" in injected.stdout, injected.stdout
+    assert injected.returncode == 0, injected.stdout + injected.stderr
+    if "ensure-pr" not in _log(tmp_path / "inj" / "ledger-calls.log"):
+        raise AssertionError("摘掉零动作闸后本该进入补建路径，实际没有（红证不成立）")
+
+def test_truly_behind_and_truly_no_pr_creates_one_and_stays_green(tmp_path):
+    """#8628 主判据：**真**落后 + **真**无 PR ⇒ **机械补建一条**，腿**绿**（不再对所有人常驻红）。"""
+    p = run_repair(tmp_path, ahead=7, pr="", recheck_ahead=7,
+                   ensure_created=1, ensure_pr="9001")
+    bad = []
+    calls = _log(tmp_path / "gh-calls.log")
+    if p.returncode != 0:
+        bad.append(f"建 PR 成功时必须绿（旧形态是红），实际 rc={p.returncode}\n{p.stdout}{p.stderr}")
+    if "ensure-pr" not in _log(tmp_path / "ledger-calls.log"):
+        bad.append("没有走 `ensure-pr`（判据/实现必须唯一）")
+    if "已机械补建" not in p.stdout:
+        bad.append("没有报出「已机械补建」（读数不可归因）")
+    if "不 arm" not in p.stdout:
+        bad.append("没有报出「不 arm auto-merge」（#8628 红线：人要能看见并复核）")
+    if any(c.startswith("pr merge") for c in calls):
+        bad.append(f"自建 PR **不许** arm（红线），实际调用 {calls}")
+    if "::error::" in p.stdout:
+        bad.append(f"建成功时不许报红：{p.stdout}")
+    assert bad == []
 
 
-def test_truly_behind_and_truly_no_pr_is_still_red_with_a_real_exit(tmp_path):
-    """#5310 判据③④：**真**落后 + **真**无 PR ⇒ 仍必须红（不放宽本意），且出口**真的可行动**。"""
-    p = run_repair(tmp_path, ahead=7, pr="", recheck_ahead=7)
-    assert p.returncode == 1, p.stdout + p.stderr
-    assert "gh pr create --base main --head" in p.stdout, "报错没给能改变结果的真出口"
-    assert "不改变结果" in p.stdout, "没说明旧出口（重跑 flaky-triage.yml）为何无效"
+def test_no_pr_create_failure_is_loud_and_actionable(tmp_path):
+    """#8628 判据③：**动作被拦**（模拟 create 失败）⇒ 一行可行动文案 + **非零退出**（不许静默）。"""
+    p = run_repair(tmp_path, ahead=7, pr="", recheck_ahead=7, ensure_rc=1)
+    bad = []
+    if p.returncode != 1:
+        bad.append(f"建 PR 失败必须非零退出（fail-closed），实际 rc={p.returncode}")
+    if "补建 PR 失败" not in p.stdout:
+        bad.append("没有报出「补建 PR 失败」（不可归因）")
+    if "::error::" not in p.stdout:
+        bad.append("没有 `::error::` 标注（在 PR 页面上看不出来）")
+    if "gh pr create --base main" not in p.stdout:
+        bad.append("没有给可复制出口 `gh pr create --base main …`（出口不可行动）")
+    assert bad == []
 
+
+def test_no_pr_undecidable_is_red_not_green(tmp_path):
+    """#8628 三态：`ensure-pr` 退 3（**无法判定**）⇒ 红；**不许**当「无需 PR」读。"""
+    p = run_repair(tmp_path, ahead=7, pr="", recheck_ahead=7, ensure_rc=3)
+    bad = []
+    if p.returncode != 1:
+        bad.append(f"无法判定必须红（未跑 ≠ 通过），实际 rc={p.returncode}")
+    if "未跑 ≠ 通过" not in p.stdout:
+        bad.append("没有显式说明「未跑 ≠ 通过」")
+    assert bad == []
+
+
+def test_existing_open_pr_is_never_created_again(tmp_path):
+    """#8628 幂等（**双向**）：已有 open PR ⇒ **零** `ensure-pr`；且既有 PR 仍照旧 arm。"""
+    p = run_repair(tmp_path, pr="5093", ahead=9, checks=7)
+    bad = []
+    ledger_calls = _log(tmp_path / "ledger-calls.log")
+    if "ensure-pr" in ledger_calls:
+        bad.append(f"已有 open PR 时不该走补建（幂等被破坏）：{ledger_calls}")
+    if p.returncode != 0:
+        bad.append(f"既有 PR 的健康轮必须绿，实际 rc={p.returncode}\n{p.stdout}")
+    if not any(c.startswith("pr merge") for c in _log(tmp_path / "gh-calls.log")):
+        bad.append("非自建的台账 PR 仍应照旧 arm（本次不改变既有台账语义）")
+    assert bad == []
+
+
+def test_autopr_pr_is_not_armed_on_later_rounds(tmp_path):
+    """#8628 红线：**本腿自建**的 PR（body 带标记）在后续轮次**也不 arm** —— 人要能看见并复核。"""
+    p = run_repair(tmp_path, pr="5093", pr_body=f"...{MARKER_TOKEN}...", checks=7)
+    bad = []
+    calls = _log(tmp_path / "gh-calls.log")
+    if any(c.startswith("pr merge") for c in calls):
+        bad.append(f"自建 PR 被 arm 了（自开自合）：{calls}")
+    if "不 arm" not in p.stdout:
+        bad.append("跳过 arm 时没有 `::notice::` 出声（不许静默跳过）")
+    if p.returncode != 0:
+        bad.append(f"跳过 arm 不应判红，实际 rc={p.returncode}\n{p.stdout}")
+    assert bad == []
+
+
+def test_red_proof_autopr_marker_gate_removed_rearms(tmp_path):
+    """红证：摘掉「标记 ⇒ 跳过 arm」这道闸 ⇒ 同一输入会真的 `pr merge`（证明它是有牙的）。"""
+    mutated = SRC.replace("            *flaky-ledger-autopr*)\n", "            *NO_SUCH*)\n", 1)
+    assert mutated != SRC, "注入锚点失效（先修本测试）"
+    base = run_repair(tmp_path / "base", SRC, pr="5093",
+                      pr_body=f"...{MARKER_TOKEN}...", checks=7)
+    if any(c.startswith("pr merge") for c in _log(tmp_path / "base" / "gh-calls.log")):
+        raise AssertionError("基线不该 arm 自建 PR")
+    injected = run_repair(tmp_path / "inj", mutated, pr="5093",
+                          pr_body=f"...{MARKER_TOKEN}...", checks=7)
+    if not any(c.startswith("pr merge") for c in _log(tmp_path / "inj" / "gh-calls.log")):
+        raise AssertionError("摘掉标记闸后本该 arm，实际没有（红证不成立）")
 
 def test_converged_inside_the_window_is_not_red(tmp_path):
     """判据①收尾复核：判据与 PR 查询跨的那个**秒级**窗口内已收敛 ⇒ 零动作（不假红）。"""
@@ -240,8 +368,12 @@ def test_converged_inside_the_window_is_not_red(tmp_path):
     assert "复核 ahead=0" in p.stdout, p.stdout
 
 
-def test_red_proof_recheck_removed_reintroduces_false_red(tmp_path):
-    """**红证**（判据①）：把「报红前复核一次」摘掉 ⇒ 收敛在窗口内的场景又变假红。"""
+def test_red_proof_recheck_removed_enters_create_path(tmp_path):
+    """**红证**（判据①）：把「动作前复核一次」摘掉 ⇒ 收敛在秒级窗口内的场景会**进入补建路径**。
+
+    修法是双保险：复核（本处）+ `ensure-pr` 自己的实时复核。判据钉的是「复核确实挡在前面」——
+    基线一次补建都不走，摘掉后至少走一次（否则这道闸就是摆设）。
+    """
     mutated = SRC.replace(
         '            if [ "$RECHECK_RC" = "0" ] && [ "$RECHECK_AHEAD" = "0" ]; then\n'
         '              echo "::notice::✅ 复核 ahead=0 —— 台账已在窗口内落仓'
@@ -251,13 +383,22 @@ def test_red_proof_recheck_removed_reintroduces_false_red(tmp_path):
     assert mutated != SRC, "注入锚点失效（先修本测试）"
     base = run_repair(tmp_path / "base", SRC, ahead=3, pr="", recheck_ahead=0)
     assert base.returncode == 0, base.stdout + base.stderr
+    if "ensure-pr" in _log(tmp_path / "base" / "ledger-calls.log"):
+        raise AssertionError("基线（窗口内已收敛）不该走补建")
     injected = run_repair(tmp_path / "inj", mutated, ahead=3, pr="", recheck_ahead=0)
-    assert injected.returncode == 1, "摘掉复核后本该假红，实际仍绿"
-
+    assert injected.returncode == 0, injected.stdout + injected.stderr
+    if "ensure-pr" not in _log(tmp_path / "inj" / "ledger-calls.log"):
+        raise AssertionError("摘掉复核后本该进入补建路径，实际没有（红证不成立）")
 
 def test_unactionable_exit_text_is_gone():
-    """判据③的**反向**判据：旧的不可行动出口不许留在文案里（否则会被再贴回来）。"""
+    """#5310 判据③的**反向**判据：旧的不可行动出口不许留在文案里（否则会被再贴回来）。"""
     assert "可行动：重跑 flaky-triage.yml（由它补建台账 PR）" not in SRC
+
+
+def test_old_no_pr_error_is_gone():
+    """#8628 的反向判据：旧形态「无 PR ⇒ `::error::` 判红」必须已不存在（否则又回到人工开 PR）。"""
+    assert "却**没有 open PR** ⇒ 无任何路径把它推上 main" not in SRC
+    assert "ensure-pr" in SRC
 
 
 # ── 每条判据都能被**单独**注入变红 ──────────────────────────────────────────────

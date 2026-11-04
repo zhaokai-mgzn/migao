@@ -47,6 +47,9 @@ export function initialState() {
     // 工人端页面权限（V141 母单 #5161）：`null` = **还没读到**（fail-open 的初值，见 `effectivePages`）
     pages: null,
     pagesUnread: false,
+    // 本机能力（**第三轴**，issue #8609）：装配层把壳注入的 `window.migaoTerminal` **原样**放这里。
+    // `null` = 没有壳 / 桥没接上 ⇒ `terminalCapabilities` 一律当「没有该能力」（fail-closed）。
+    terminal: null,
     // 质检（issue #7162 / #7973）：最新判定 + 记录列表（`records`）/ 读取中 / 读失败；
     // qualityForm = 展开中的录入表单（`recheck=true` = 从「待复检」里点的【复检仍有问题】）
     quality: null,
@@ -96,7 +99,7 @@ export const PAGE_CUT_CALC = 'cut_calc'
 export const PAGE_ORDER = 'order'
 
 /**
- * 页面键：**待发货单**（`/w/shipment.html`，issue #7761 / #7814）。
+ * 页面键：**待出库单**（`/w/shipment.html`，issue #7761 / #7814）。
  *
  * <p>与 {@link PAGE_SHIPMENT}（发货 = 拍照发货，写面）是**两个能力**：本键管「车间今天能发哪些单、
  * 贴哪张标签」（读面）。商家后台「设置工人端菜单」按这个键勾选（issue #7814）。</p>
@@ -106,7 +109,7 @@ export const PAGE_ORDER = 'order'
  */
 export const PAGE_SHIPMENT = 'shipment'
 
-/** 页面键：待发货单（名单 + 发货标签；与 {@link PAGE_SHIPMENT} 写面分开，issue #7814）。 */
+/** 页面键：待出库单（名单 + 成品出库单；与 {@link PAGE_SHIPMENT} 写面分开，issue #7814）。 */
 export const PAGE_TO_SHIP = 'to_ship'
 
 /**
@@ -166,6 +169,100 @@ export const DEFAULT_PAGES = [
   PAGE_INBOUND,
   PAGE_REPRINT,
 ]
+
+// ════════════════════════════════════════════════════════════════════════════════
+// **第三轴：本机能力**（`window.migaoTerminal.capabilities`，issue #8609 B 包）—— 壳注入、页面只读。
+//
+// 为什么需要这一轴：**同一个 apk** 装在**安卓一体机**和**手持标签机**上（issue #8609 裁定 ③），
+// 而两者的菜单必须不同 —— 手持机没有裁高机链路、一体机没有标签机。**按工人账号拆菜单不行**
+// （同一工人今天一体机、明天手持机 ⇒ 写进账号 = 运维灾难，裁定「有意不做」），
+// 所以差异只能来自**本机**。菜单 = `worker_pages` ∩ 租户页面开关 ∩ 本机能力（三轴与），
+// 前两轴见 `effectivePages`（本文件**不**再写第二份），第三轴 = 本节的 `terminalCapabilities`。
+//
+// 🔴 **缺省 = fail-closed**：`undefined` / 整块桥缺失 / 缺键 / 非对象 / 空串 ⇒ 一律当
+//    「**没有该能力**」（入口**不渲染**，不是点了再报错）。**绝不默认全开。**
+//    （对照：第一轴 `pages` 的缺省是 **fail-open**，见 `effectivePages` —— 两者**故意不同**：
+//      `pages` 读不到 = 服务端的可见性开关丢了（挡的是活）；capabilities 读不到 = 本机桥没接上
+//      （这台机器上到底有没有那台机器），而报工本来就还能用 ⇒ 藏一个入口，不挡活。）
+//
+// 唯一合法来源 = `state.terminal`：装配层（`frontend/worker-h5/src/app.mjs`）从
+//   `window.migaoTerminal` 读**一次**放进 state。**本文件是纯函数层，不碰任何全局**
+//   （元守卫 = `tests/worker-h5-8609-capabilities.test.mjs` 的「桥只在装配层碰一次」）。
+//
+// 能力表的**完整契约**（壳侧 = A 包，issue #8609）：
+//   `scan.hid` / `scan.camera` / `cut.link` / `print.label` / `update.channel`
+// 本页只消费**与页面显隐有关**的两条；另外三条本页没有对应面 ⇒ **不读**
+// （读了不用 = 假轴：判据会绿，而屏幕上什么都没变）。
+// ════════════════════════════════════════════════════════════════════════════════
+
+/** 能力键：裁高机链路（`serial:<port>` / `tcp:<host:port>`；`null` = 本机没有裁高机）。 */
+export const CAP_CUT_LINK = 'cut.link'
+
+/** 能力键：标签机（`ble`；`null` = 本机没有标签机）。 */
+export const CAP_PRINT_LABEL = 'print.label'
+
+/** 桥三态：**没有桥**（普通浏览器 / 没有壳）⇒ 真没有这些硬件。 */
+export const CAP_STATE_ABSENT = 'absent'
+
+/** 桥三态：**有桥、但没有能力表**（迁移期：线上 1.0.2 旧壳，桥只有 `post`）⇒ 未知。 */
+export const CAP_STATE_UNKNOWN = 'unknown'
+
+/** 桥三态：**有能力表**（A 包起）⇒ 逐键判定（缺键 = 没有该能力）。 */
+export const CAP_STATE_PRESENT = 'present'
+
+/**
+ * 本机能力（**唯一读取处**）—— 三态，缺省 fail-closed。
+ *
+ * 🔴 **三态各不相同**（压成两态就会出事，两个方向都踩过）：
+ *   ① `absent`（`window.migaoTerminal` 整块缺失 = 普通浏览器 / 没有壳）：**真没有**串口/蓝牙 ⇒ 两条都隐藏；
+ *   ② `unknown`（**桥在场但没有 `capabilities`** = 线上 1.0.2 旧壳，桥只有 `post`：证据 =
+ *      `frontend/bmini-app/tests/inbound-print-channel.test.ts` 的「终端桥」夹具与
+ *      `probePrintCapability({ terminalBridge: true })`）：**「未知」≠「没有」** ⇒ **不隐藏**
+ *      （迁移期口径，见下「移除条件」）；
+ *   ③ `present`（`capabilities` 是对象 = A 包起）：逐键判定，**缺键 / 空串 / 非字符串 ⇒ 没有该能力**。
+ *
+ * 🔴 **迁移期口径的移除条件**（这条分支不许永久留着）：
+ *   旧壳 1.0.2 的桥 = `{ post }`、没有 `capabilities` ⇒ 若把 `unknown` 并入 `absent`，
+ *   线上**一体机的「裁高计算」入口与手持机的「打印入库标签」会在真实工人手上消失**（用户可见退化，
+ *   且没有任何东西会把它算成回归 —— 屏上就是少了个入口）。**移除条件 = A 包（终端仓能力桥）
+ *   全量到达设备之后**：把 `CAP_STATE_UNKNOWN` 并入 `CAP_STATE_ABSENT`（同一个分支里一起隐藏），
+ *   并同批把 `tests/worker-h5-8609-capabilities.test.mjs` 的 `判据 ①′` 从「两条都在」改成「两条都隐藏」。
+ *
+ * @param {object} state 页面状态（`state.terminal` = 壳注入的 `window.migaoTerminal`，可缺）
+ * @returns {{state: string, cut: string|null, print: string|null}} 值 = 能力凭据（串）；`null` = 没有该能力
+ */
+export function terminalCapabilities(state) {
+  const bridge = state?.terminal
+  if (!bridge || typeof bridge !== 'object' || Array.isArray(bridge)) {
+    return { state: CAP_STATE_ABSENT, cut: null, print: null }
+  }
+  const table = bridge.capabilities
+  if (!table || typeof table !== 'object' || Array.isArray(table)) {
+    // 桥在、能力表**不合法地缺席** ⇒ 未知（迁移期旧壳）。**不从别的键去猜**能力：
+    // 猜错就是页面替壳做决定，而壳才是能力的唯一真值源。
+    return { state: CAP_STATE_UNKNOWN, cut: null, print: null }
+  }
+  // 只认**非空字符串**：`true` / `1` / `{}` 这类"像是开了"的值一律当没开
+  //（能力值本身就是凭据：`serial:COM3` / `ble` —— 布尔真值不携带"连哪台机器"这件事）
+  const read = (key) => {
+    const v = table[key]
+    return typeof v === 'string' && v.trim() !== '' ? v.trim() : null
+  }
+  return { state: CAP_STATE_PRESENT, cut: read(CAP_CUT_LINK), print: read(CAP_PRINT_LABEL) }
+}
+
+/**
+ * 该硬件入口**要不要渲染**（三态的**唯一**出口 —— 两个入口都只能问它，不许各自写一遍判定）。
+ *
+ * @param {{state: string}} caps {@link terminalCapabilities} 的返回值
+ * @param {'cut'|'print'} axis 能力轴
+ * @returns {boolean} `true` = 渲染该入口
+ */
+export function capabilityShown(caps, axis) {
+  if (caps?.state === CAP_STATE_UNKNOWN) return true // 迁移期：未知 ≠ 没有（移除条件见 terminalCapabilities）
+  const v = caps?.[axis]
+  return typeof v === 'string' && v !== ''
+}
 
 /** 裁高计算入口（同源静态页；`/w/` 与 `/w/machine.html` 同一静态根 ⇒ 相对路径、不写死域名）。
  *  文案 = 「裁高计算（一体机）」（2026-10-10 用户裁定：改前的「机台模式」只有内部人懂，issue #6635）。 */
@@ -829,8 +926,12 @@ function doneNoticeBase(receipt, auto) {
  */
 function workerEntriesBar(state) {
   const { opened } = effectivePages(state)
+  // 第三轴（issue #8609）：`cut_calc` ∈ 页面集 **且本机"有裁高机链路"** 才出入口。
+  // 判定走 `capabilityShown`（三态唯一出口）：`present` 缺键 ⇒ 隐藏；`unknown`（旧壳）⇒ 不隐藏；
+  // `absent`（无壳）⇒ 隐藏。手持标签机没有裁高机 ⇒ 这一条**不渲染**（不是点了报错）；一体机照旧有。
+  const caps = terminalCapabilities(state)
   const itemId = state.view?.position?.order_item_id
-  const machine = opened.has(PAGE_CUT_CALC)
+  const machine = opened.has(PAGE_CUT_CALC) && capabilityShown(caps, 'cut')
     ? `<a class="wh5-entry" id="wh5-machine-entry" href="${MACHINE_ENTRY_HREF}">裁高计算（一体机）</a>` : ''
   // 返工记录（issue #7860）：`rework` ∈ 页面集才出入口（用户裁定「在工人档案中设置过可见权限的工人」）；
   // 文案与后端 `WorkerPages.labels()` 同源（商家在工人档案里勾的就是「返工记录」）。
@@ -1109,6 +1210,15 @@ function qualityFormView(state) {
 function finishedInboundCard(state) {
   const w = state.finishedInbound
   if (!w) return ''
+  // 第三轴（issue #8609）：**本机"有标签机"** 才渲染「打印入库标签」（判定走三态唯一出口
+  // `capabilityShown`：`present` 缺键 ⇒ 隐藏；`unknown`（旧壳）⇒ 不隐藏；`absent`（无壳）⇒ 隐藏）。
+  // 安卓一体机没有标签机（标签机是手持机那条链路）⇒ 整条动作行不渲染（不留空壳、不留死按钮）；
+  // 卡片本身的信息面（入库单 / 仓位 / 标签行）照旧 —— 那是**数据**，与"本机能不能印"无关。
+  const printAction = capabilityShown(terminalCapabilities(state), 'print')
+    ? `<div class="wh5-fl-actions">
+      <button id="wh5-fi-print" class="wh5-ghost" type="button">打印入库标签</button>
+    </div>`
+    : ''
   const label = w.label ?? {}
   const rows = (Array.isArray(label.rows) ? label.rows : []).map((row) => (
     `<div class="wh5-fl-row" data-label-key="${esc(row.label)}">`
@@ -1124,9 +1234,7 @@ function finishedInboundCard(state) {
     ${w.inbound_no ? `<p class="wh5-sub" id="wh5-fi-no">入库单 ${esc(w.inbound_no)}</p>` : ''}
     <div class="wh5-fl-rows" id="wh5-fl-rows">${rows}</div>
     ${label.short_code ? `<p class="wh5-fl-code" id="wh5-fl-code">${esc(label.short_code)}</p>` : ''}
-    <div class="wh5-fl-actions">
-      <button id="wh5-fi-print" class="wh5-ghost" type="button">打印入库标签</button>
-    </div>
+    ${printAction}
   </section>`
 }
 
@@ -1492,7 +1600,7 @@ export const DEFAULT_WORKER_IDLE_MINUTES = 43200
  * 成品标签的**打印纸张文档**（50mm × 70mm，V197 / issue #7762）。
  *
  * <p>为什么是一份独立文档（而不是给报工页加打印样式）：`@page` 是**文档级**声明 —— 放进报工页
- * 会把整页（登录/报工/工序选择器）都按 50×70 印出来。#7761 的发货标签用「打印态隔离」解，
+ * 会把整页（登录/报工/工序选择器）都按 50×70 印出来。#7761 的成品出库单用「打印态隔离」解，
  * 这里同样只让标签上纸：新窗口 = 干净文档，`@page` 只作用于它。</p>
  *
  * <p>返回纯字符串 ⇒ 可零浏览器单测（判据：行序 = 服务端下发顺序、缺值行不出现、短码在纸面上）。</p>

@@ -278,10 +278,10 @@ export const PAGE_ENTRY_LEDGER: PageEntry[] = [
     audience:
       '公开入口 → 工人身份（扫纸上的码：`GET /s/{短码}` 302 到 `/b/?t=<token>`，启动器把 token 原样交给报工页；未登录时页面引导去工号 + PIN 登录，登录回来接着扫）',
   },
-  // issue #7806 P1a：工人工作台**新增**的一条入口（「待发货单」= 全完工订单列表，只读）。
+  // issue #7806 P1a：工人工作台**新增**的一条入口（「待出库单」= 全完工订单列表，只读）。
   // 为什么必须有这一条：#7764 的读面 `GET /api/worker/shipment/orders` 已上线，而 `/b/` 侧
   // **还没有任何页面消费它** ⇒ 不登记就是一条死链（L2 未登记即红）。
-  // ✅ 发货联（50×70）预览 / 打印已接（issue #8287）；本页仍只读（不发货）。
+  // ✅ 成品出库单（50×70）预览 / 打印已接（issue #8287）；本页仍只读（不发货）。
   {
     route: SHIPMENT_ORDERS_PAGE_ROUTE,
     from: 'src/pages/worker/home/index.tsx',
@@ -289,7 +289,7 @@ export const PAGE_ENTRY_LEDGER: PageEntry[] = [
     via: 'SHIPMENT_ORDERS_PAGE_ROUTE',
     viaBinding: 'src/utils/inbound/gaps.ts',
     audience:
-      '工人身份（工人首页 →「待发货单」；未登录时该页自身引导去工号 + PIN 登录，先登录再看名单）',
+      '工人身份（工人首页 →「待出库单」；未登录时该页自身引导去工号 + PIN 登录，先登录再看名单）',
   },
   // issue #7921：工人工作台**新增**「返工记录」入口（只读；显隐由工人档案的 `rework` 页面键决定）。
   // 为什么必须有这一条：后端 #7860 的读面与 403 准入早已上线，而 `/b/` 侧**没有页面、没有入口**

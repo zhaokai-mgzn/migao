@@ -57,11 +57,11 @@ export default defineAppConfig({
     // 路由字面量是**单一真值**：`src/utils/inbound/gaps.ts` 的 `SHIPMENT_PAGE_ROUTE` 必须逐字等于它
     // （守卫 tests/page-entry-reachability.test.ts 的 L2：没登记进这里 = 死链 ⇒ 红）
     'pages/worker/shipment/index',
-    // 工人**待发货单**列表（issue #7806 P1a）：全完工订单一屏可见（订单号 / 收货人 + 电话 /
+    // 工人**待出库单**列表（issue #7806 P1a）：全完工订单一屏可见（订单号 / 收货人 + 电话 /
     // 地址 / 物流方式 · 公司 / N 套全完工），只读、无写入口。
     // 数据源 = `GET /api/worker/shipment/orders`（#7764 已上线：只回「多套全部完工 + 可发货状态 +
     // 作业单已完成」的单）⇒ 端侧**不筛、不补算**（半完工行照实显示 `1/3 套`）。
-    // ✅ 发货联（50×70）预览 / 打印已接（issue #8287）；本页仍只读（不发货）。
+    // ✅ 成品出库单（50×70）预览 / 打印已接（issue #8287）；本页仍只读（不发货）。
     // 路由字面量是**单一真值**：`src/utils/inbound/gaps.ts` 的 `SHIPMENT_ORDERS_PAGE_ROUTE`
     // 必须逐字等于它（没登记 = 死链 ⇒ 入口台账 tests/page-entry-reachability.test.ts 的 L0/L2 判红）
     'pages/worker/shipment-orders/index',

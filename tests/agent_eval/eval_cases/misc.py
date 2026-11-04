@@ -2,7 +2,7 @@
 # 本文件由 render_cases.py 生成，勿手改（改了也留不住：下次重渲染会覆盖）
 # 源: cases/*.yml（case-contract 单一源）
 # 重新生成: python3 render_cases.py --cases <dir> --out-eval <包目录> --out-md <md>
-# 域: misc（源: cases/misc.yml，218 条）
+# 域: misc（源: cases/misc.yml，221 条）
 
 from ._schema import Difficulty, EvalCase, Skill
 
@@ -3777,7 +3777,7 @@ _CASE_MC_158 = EvalCase(
     difficulty=Difficulty.NORMAL,
     user_inputs=['用户（2026-11-01 测试账号真机）：你这个测试账号的权限太大了，不符合实际使用？通常每个工序或者每个工人只能操作 1-3 个菜单，根据工人岗位来定菜单的'],
     expectations=[],
-    data_checks=['🔴 **判据 ①·键集 ⇄ 工人端真实页面（双向）**：`inbound` / `reprint`（拍照入库 / 补打入库标签）在 bmini 上**早已有页面**（frontend/bmini-app/src/pages/worker/inbound|reprint/index.tsx）却**没有页面键、恒显示** ⇒ 现纳入闭词表 + 默认集合；每个键都有人话名、写侧认得它们。执行点 = WorkerPagesTest::inboundAndReprintPagesAreKeyedNow / everyPageKeyHasAHumanLabel', '🔴 **判据 ②·每个岗位都有默认菜单且默认键全在键集内**：裁剪/车位 = 报工+计件；仓管 = 入库+补打+库存修正；发货 = 发货+待发货单；每组非空 ⊆ `WorkerPages.ALL`、项数 ≤ 3、且能通过写侧校验（默认值 = 合法值）。执行点 = WorkerPagesTest::everyPositionHasDefaultsInsideTheVocabulary / positionDefaultsMatchTheIssueCriteria', '🔴 **判据 ③·显式菜单优先于岗位默认（负控）**：建号时同时给岗位与 `workerPages` ⇒ 落库的是**显式集合**（岗位默认被覆盖），且覆盖仍受 3 项上限约束。执行点 = WorkerAdminServiceTest::explicitPagesWinOverThePositionDefaults / perWorkerOverrideStillWinsButIsCapped', '🔴 **判据 ④·首屏上限 3 项，边界两侧都钉**：正好 3 项 ⇒ 通过；第 4 项 ⇒ 422 具名拒错（说清「最多 3 项」+「你填了 4 项」+ 列出这 4 项）且**零写入**。执行点 = WorkerPagesTest::pageCapIsThreeAndTheFourthIsRejectedByName / WorkerAdminServiceTest::moreThanThePageCapIsRejectedByName', '🔴 **判据 ⑤·改岗位 ⇒ 菜单按新岗位重新带出**（岗位是源；`PUT /api/admin/workers/{id}/position` 两列一起显式 set）：仓管 ⇒ 入库+补打+库存修正；清岗位 ⇒ 回到未收窄（全部页面）。执行点 = WorkerAdminServiceTest::updateWorkerPositionReDerivesTheMenu / clearingThePositionReturnsToAllPages / AdminWorkerControllerTest::updateWorkerPositionReturnsTheDerivedMenu', '🔴 **判据 ⑥·存量数据不回退**：旧键集（无 `inbound`/`reprint`）读面原样下发、**不**被默认集合反向放宽（不做隐式补齐）、未知/已撤键照旧裁掉且不抛异常；车位工（收窄到报工+计件）在工人工作台上**取不到**「拍照入库 / 补打入库标签」两个入口。执行点 = WorkerPagesTest::legacyStoredSetsKeepWorkingAndAreNotWidened / frontend/bmini-app/tests/worker-home-page.test.tsx::「车位工看不见」', '🔴 **红证（注入式，实跑）**：① 把 `仓管` 从 `positionDefaults()` 删掉 ⇒ 判据 ② 红（`containsExactlyInAnyOrderElementsOf(positions())` 具名报缺）；② 把 `validateRestriction` 末尾的 `MAX_PAGES_PER_WORKER` 检查摘掉 ⇒ 判据 ④ 红（第 4 项静默通过）。两次注入各自单变量、恢复即绿。', '**边界（照实登记，§19.1）**：① `order`（我的活）**仍是「键已登记、面待建」**（issue #6764 §6.2 待裁定）—— 判据 ① 的「双向」对本键是**具名白名单**，不是「每键都有面」；② 存量工人**不重置** `worker_pages`（and 不做迁移回填）：没有岗位的存量档案行为与今天一字不差；③ 岗位不是权限（不写 `users.permissions`、不进 `user_roles`，授权判据仍是 `/api/worker/**` 403）；④ 本批**未**改商家后台配置面板（岗位下拉的读面 = `GET /api/admin/worker-pages` 的 `positions` / `position_defaults`，面板改造另单）。'],
+    data_checks=['🔴 **判据 ①·键集 ⇄ 工人端真实页面（双向）**：`inbound` / `reprint`（拍照入库 / 补打入库标签）在 bmini 上**早已有页面**（frontend/bmini-app/src/pages/worker/inbound|reprint/index.tsx）却**没有页面键、恒显示** ⇒ 现纳入闭词表 + 默认集合；每个键都有人话名、写侧认得它们。执行点 = WorkerPagesTest::inboundAndReprintPagesAreKeyedNow / everyPageKeyHasAHumanLabel', '🔴 **判据 ②·每个岗位都有默认菜单且默认键全在键集内**：裁剪/车位 = 报工+计件；仓管 = 入库+补打+库存修正；发货 = 拍照发货+待出库单；每组非空 ⊆ `WorkerPages.ALL`、项数 ≤ 3、且能通过写侧校验（默认值 = 合法值）。执行点 = WorkerPagesTest::everyPositionHasDefaultsInsideTheVocabulary / positionDefaultsMatchTheIssueCriteria', '🔴 **判据 ③·显式菜单优先于岗位默认（负控）**：建号时同时给岗位与 `workerPages` ⇒ 落库的是**显式集合**（岗位默认被覆盖），且覆盖仍受 3 项上限约束。执行点 = WorkerAdminServiceTest::explicitPagesWinOverThePositionDefaults / perWorkerOverrideStillWinsButIsCapped', '🔴 **判据 ④·首屏上限 3 项，边界两侧都钉**：正好 3 项 ⇒ 通过；第 4 项 ⇒ 422 具名拒错（说清「最多 3 项」+「你填了 4 项」+ 列出这 4 项）且**零写入**。执行点 = WorkerPagesTest::pageCapIsThreeAndTheFourthIsRejectedByName / WorkerAdminServiceTest::moreThanThePageCapIsRejectedByName', '🔴 **判据 ⑤·改岗位 ⇒ 菜单按新岗位重新带出**（岗位是源；`PUT /api/admin/workers/{id}/position` 两列一起显式 set）：仓管 ⇒ 入库+补打+库存修正；清岗位 ⇒ 回到未收窄（全部页面）。执行点 = WorkerAdminServiceTest::updateWorkerPositionReDerivesTheMenu / clearingThePositionReturnsToAllPages / AdminWorkerControllerTest::updateWorkerPositionReturnsTheDerivedMenu', '🔴 **判据 ⑥·存量数据不回退**：旧键集（无 `inbound`/`reprint`）读面原样下发、**不**被默认集合反向放宽（不做隐式补齐）、未知/已撤键照旧裁掉且不抛异常；车位工（收窄到报工+计件）在工人工作台上**取不到**「拍照入库 / 补打入库标签」两个入口。执行点 = WorkerPagesTest::legacyStoredSetsKeepWorkingAndAreNotWidened / frontend/bmini-app/tests/worker-home-page.test.tsx::「车位工看不见」', '🔴 **红证（注入式，实跑）**：① 把 `仓管` 从 `positionDefaults()` 删掉 ⇒ 判据 ② 红（`containsExactlyInAnyOrderElementsOf(positions())` 具名报缺）；② 把 `validateRestriction` 末尾的 `MAX_PAGES_PER_WORKER` 检查摘掉 ⇒ 判据 ④ 红（第 4 项静默通过）。两次注入各自单变量、恢复即绿。', '**边界（照实登记，§19.1）**：① `order`（我的活）**仍是「键已登记、面待建」**（issue #6764 §6.2 待裁定）—— 判据 ① 的「双向」对本键是**具名白名单**，不是「每键都有面」；② 存量工人**不重置** `worker_pages`（and 不做迁移回填）：没有岗位的存量档案行为与今天一字不差；③ 岗位不是权限（不写 `users.permissions`、不进 `user_roles`，授权判据仍是 `/api/worker/**` 403）；④ 本批**未**改商家后台配置面板（岗位下拉的读面 = `GET /api/admin/worker-pages` 的 `positions` / `position_defaults`，面板改造另单）。'],
     skip_reason='[backend-contract] 闭词表 / 岗位映射 / 写侧上限是**确定性判据**（Java 单测 + 端侧渲染），由 backend/admin-api/src/test 的 WorkerPagesTest / WorkerAdminServiceTest / AdminWorkerControllerTest 与 frontend/bmini-app/tests/worker-home-page.test.tsx 验证，非 LLM 行为，不进入 agent-eval 冒烟',
     tags=['backend-contract', 'worker', 'page-keys', 'position', 'single-source', 'fail-open', 'red-proof'],
     persona='',
@@ -4004,6 +4004,60 @@ _CASE_MC_189 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── MC-192 [NORMAL] 工人端菜单吃本机能力（第三轴）：一个 apk 覆盖安卓一体机 + 手持标签机，缺省即隐藏（issue（源: cases/misc.yml）──
+_CASE_MC_192 = EvalCase(
+    id='MC-192',
+    legacy_id='',
+    title='工人端菜单吃本机能力（第三轴）：一个 apk 覆盖安卓一体机 + 手持标签机，缺省即隐藏（issue',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['（2026-11-04 同一次裁定，逐字三条）「安卓一体机和 window 一体机功能完全一样，也有串口和下发动作」/「手持标签机不需要裁高计算/下发」/「接受，我也希望一个包搞定」'],
+    expectations=[],
+    data_checks=['**判据 ①（会红）·无壳 ⇒ 隐藏**：本机桥**整块缺失**或非对象（数组 / 字符串 / 数字 / 布尔）一律当「没有该能力」⇒ 裁高计算入口与打印入库标签**都不渲染**；这是普通浏览器（真没有串口 / 蓝牙）的正确形态。控制组：真给能力凭据时两个入口各自出现（防空断言）。执行点 = frontend/worker-h5/tests/worker-h5-8609-capabilities.test.mjs 的判据 ①。红证：把能力读取改成恒返回凭据 ⇒ 该判据当场红（实测 7 条红）。', '**判据 ①′（会红）·旧壳 ⇒ 不隐藏（迁移期「未知 ≠ 没有」）**：桥**在场但没有能力表**（线上 1.0.2 旧壳的真实形态：桥只有 `post`，证据 = frontend/bmini-app/tests/inbound-print-channel.test.ts 的终端打印桥夹具）⇒ 两条入口**都在**（未知不等于没有；否则会把线上真实工人的入口弄没）。同一判据里还有一条负控：能力表在场且两条都缺 ⇒ 两条都隐藏（防「unknown 写成恒显示」）。执行点 = 同上文件判据 ①′ 与 ④′。红证：把 unknown 并入 absent ⇒ 该判据当场红（实测 3 条红，含装配层那条 ④′）。🔴 **迁移分支的移除条件**：A 包（终端仓能力桥）全量到达设备后，把 unknown 并入 absent（同一分支隐藏），并同批把本判据从「都在」改成「都隐藏」—— 否则迁移口子会永久留着。', '**判据 ①″（会红）·有能力表 ⇒ fail-closed 主体**：能力表是对象时逐键判定 —— 缺键 / `null` / 空串 / 空白 / 布尔 / 数字 / 对象 / 数组 / 键名拼错一律当「没有该能力」，且**只隐藏缺的那一条**（只给裁高机链路 ⇒ 只出裁高入口，不许一刀切把打印也藏了）。执行点 = 同上文件判据 ①″。红证：把能力读取改成恒返回凭据 ⇒ 该判据当场红（同上组读数）。', '**判据 ②（会红）**：同一份工人页面集（全开）下两台设备菜单不同，差异只来自本机能力 —— 手持标签机只有「打印入库标签」、安卓一体机只有「裁高计算（一体机）」；两个能力都具备的设备两个入口都在；非硬件面（页头 / 报工卡 / 返工记录入口）逐字不受影响。执行点 = 同上文件判据 ②。红证：把本机能力从判定里去掉（入口恒开）⇒ 两台设备入口集合一模一样 ⇒ 该判据当场红（实测 8 条红）。', '**判据 ③（会红）**：无硬件不阻断其它功能 —— 裁高机与标签机都缺席时，报工按钮仍渲染且未被禁用、套号与部位信息在、返工记录入口在、成品入库卡的信息面（入库单 / 仓位）照旧显示。执行点 = 同上文件判据 ③。红证：注入「无串口 ⇒ 报工按钮禁用」这个错误修法 ⇒ 该判据当场红（实测 1 条红）。', '**判据 ④ / ④′（会红）**：出错不白屏（回归面）—— 浏览器直接打开工人报工页（没有壳）时装配层落成「无壳」，登录卡 / 扫码页 / 页头一个都不消失、不往错误面写内容；同一装配层喂旧壳形态的桥 ⇒ 裁高入口仍在（迁移期不退化）。执行点 = 同上文件判据 ④ 与 ④′。红证：拆掉桥缺失的护栏（裸取桥上的能力表）⇒ 渲染抛错、判据④当场红（实测 4 条红，含 ① 与 ①′）。', '**类级元守卫（会红）**：a）本机桥的代码级引用只许出现在装配层且恰好一次，渲染模块是纯函数层（不读 window / globalThis / document），且两个硬件入口只能经同一个三态出口判定（旁路判定 ⇒ 红）；b）能力读取器暴露的轴与「能力 → 入口」台账逐键相等（未登记即红、两个方向都判）、三态常量互不相同；c）台账每一条都要在 absent / unknown / present-缺键 / present-在场 四种状态下各判一次。执行点 = 同上文件元守卫 a/b/c。红证：注入「读取器恒真」⇒ b/c 红；在渲染模块里加一处全局桥引用或旁路判定 ⇒ a 红。'],
+    skip_reason='[frontend-contract] 确定性页面判据（node --test: worker-h5-8609-capabilities），计分通道 = traces.tests 里那三个真实测试文件；非 LLM 行为，不进入 agent-eval 冒烟。真机与真浏览器面见 PR body 的「真机观测」段',
+    tags=['worker-h5', 'terminal', 'capabilities', 'fail-closed', 'menu', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-193 [NORMAL] B 端小程序（bmini）凭据的部署接线 + 缺失显式告警（issue #8196 ①）：变量名经 admin-api 的 env_file(.env.admin-api) 进容器、compose 的 environment 不得空值覆盖、启动期任一为空（含半配）打一条 WARN 点名缺哪个/影响/补法且不阻止启动、仓库里无凭据值（源: cases/misc.yml）──
+_CASE_MC_193 = EvalCase(
+    id='MC-193',
+    legacy_id='',
+    title='B 端小程序（bmini）凭据的部署接线 + 缺失显式告警（issue #8196 ①）：变量名经 admin-api 的 env_file(.env.admin-api) 进容器、compose 的 environment 不得空值覆盖、启动期任一为空（含半配）打一条 WARN 点名缺哪个/影响/补法且不阻止启动、仓库里无凭据值',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['A 档「扫普通链接二维码打开小程序」要 admin-api 能换 bmini 的 openid / 手机号 ⇒ 部署环境必须拿到两个凭据；改前 application.yml 只有空占位、部署侧没人说该放哪儿、backend/admin-api/src/main/java 里 `WECHAT_BMINI` 零命中（缺了也没有任何东西会红）'],
+    expectations=['direct_reply'],
+    data_checks=['**接线面（会红）**：`wechat.bmini.appid/secret` 必须绑到 `WECHAT_BMINI_APPID` / `WECHAT_BMINI_SECRET` 且**默认值为空**（非空默认 = 缺省悄悄变成某个值）；变量名必须写进 `backend/admin-api/.env.example` 且**值为空**；真实注入面 = admin-api 的 `env_file: .env.admin-api`，而 compose 的 `environment` **不得**出现这两个名（environment 优先级高于 env_file，`${…:-}` 插值读不到 env 文件 ⇒ 把真值覆盖成空串；同一形态 2026-08-30 已在 AI_AGENT_SERVICE_TOKEN 上出过事，commit 988e490f0 删掉了那行）。执行点 = tests/unit_ci_workflows/test_wechat_bmini_env_wiring.py 的三条接线判据 + 内建变异红证。', '**全仓无值（会红）**：任何文本面都不许出现这两个变量的**值**（空 / 占位符 / `${…}` 引用放行；取值前先剔 `${…}` 包装）。执行点 = 同文件的 credential_value_problems 与它的判别力自证（三种「写成值」必红、三种占位必放行）。', '**启动期告警（双向，会红）**：两个都空 ⇒ 至少一条 WARN 且点名缺哪个 / 影响（fail-closed）/ 补法（写进 .env.admin-api）；两个都给 ⇒ **零** WARN/ERROR；**半配也算缺**且只点缺的那个；空白 / null 与不写等价；**缺失不许变成启动失败**（方法里不得出现 throw）。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/WechatServiceBminiWiringTest.java（logback ListAppender 真跑）+ pytest 的源码接线判据。', '**文档一处写全（会红）**：docs/deployment/wechat-mini-program-qr.md 的「部署接线」节必须同时给：两个 env 名 / 值的落点（服务器 .env.admin-api，不入仓）/ 一条可复算回读命令（printenv）/ 缺省行为（只告警、admin-api 照常启动）。执行点 = 同文件的第六条判据。'],
+    skip_reason='[backend-contract] 接线形态 + Java 行为（logback 捕获）+ 文档要素，零 LLM、零真库、零网络；非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['deploy', 'env-wiring', 'wechat', 'bmini', 'loud-failure', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-195 [NORMAL] Flaky Ledger Reconcile 自愈（issue #8628）：台账分支领先 main 却无 open PR 时**机械幂等补建**（不 arm、不 --admin、不受豁免）；ahead=0 / 已有 PR 零动作；补建失败一行可行动出口 + 非零退出（源: cases/misc.yml）──
+_CASE_MC_195 = EvalCase(
+    id='MC-195',
+    legacy_id='',
+    title='Flaky Ledger Reconcile 自愈（issue #8628）：台账分支领先 main 却无 open PR 时**机械幂等补建**（不 arm、不 --admin、不受豁免）；ahead=0 / 已有 PR 零动作；补建失败一行可行动出口 + 非零退出',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['`Flaky Ledger Reconcile` 这条腿在 `chore/flaky-ledger` 领先 main 但没有 open PR 时对**每一个** PR 报红，只能靠人手动开 PR 压住；希望机械自愈 —— 已有一律不重复建，人只需复核'],
+    expectations=['direct_reply'],
+    data_checks=['**建（会红）**：`ahead>0` ∧ `gh pr list --state open --head chore/flaky-ledger` 为空 ⇒ 调 `flaky_ledger.py ensure-pr` **恰好一次** `gh pr create`（base main / head 台账分支），PR body 带 `AUTOPR_MARKER`。判据 = 替换脚本唯一的 gh 出口 `_gh` 打桩并逐条记 argv（**不在测试里真建 PR**），另有 `--dry-run` 只打印不建。执行点 = `tests/unit_ci_workflows/test_flaky_ledger_reconcile.py` 的 ensure-pr 行为判据。', '**幂等（双向，会红）**：已有 open PR ⇒ **零次** `gh pr create`（`action=exists`）；`ahead==0` / 分支不存在 ⇒ **零次** + 腿绿。红证 = 把「已有 PR ⇒ 零动作」的短路改成恒假 ⇒ 同一输入会多建一条，判据当场红（`test_red_proof_existing_pr_shortcut_removed`）。', '**不许自开自合（会红）**：本腿自建的 PR（body 带标记 token）在后续轮次**不 arm auto-merge**（summary 写「arm：跳过」），workflow 全域不得出现 `gh pr merge --admin`，不改分支保护、不给该腿任何豁免；required 检查仍是唯一闸。红证 = 摘掉标记分支臂 ⇒ 同一输入会真的 `pr merge`；插入 `--admin` ⇒ 结构判据红。', '**失败必须响（会红）**：`gh pr create` 失败 ⇒ `::error::` 一行含可复制出口（`gh pr create --base main …`）+ 退出码 1；读数面读不到 ⇒ 退出码 3（**未跑 ≠ 通过**，不得当「无需 PR」）。红证 = 把失败出口改成「echo 且 exit 0」⇒ 结构判据红；行为判据断言 rc=1 / rc=3 且文案含可行动出口。'],
+    skip_reason='[backend-contract] CI 对账腿的**动作级**判据（打桩断言 gh 调用 + 真跑 workflow 步骤），零网络、零 LLM、不建真 PR、不碰真库；非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ci', 'flaky-ledger', 'self-heal', 'idempotent', 'no-self-merge', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 CASES = (
     _CASE_MC_001,
     _CASE_MC_002,
@@ -4223,4 +4277,7 @@ CASES = (
     _CASE_MC_188,
     _CASE_MC_190,
     _CASE_MC_189,
+    _CASE_MC_192,
+    _CASE_MC_193,
+    _CASE_MC_195,
 )

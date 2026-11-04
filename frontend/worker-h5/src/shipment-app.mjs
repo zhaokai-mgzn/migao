@@ -1,6 +1,6 @@
 // case_ids: PG-018, BM-006, DF-017
 //
-// 工人端 H5「发货」页 —— 装配层（列表 → 发货标签预览 → 浏览器打印），issue #7761。
+// 工人端 H5「发货」页 —— 装配层（列表 → 成品出库单预览 → 浏览器打印），issue #7761。
 //
 // 判据都在 `shipment.mjs` 的纯函数里（`node --test` 直接钉住，无需 DOM）；本文件只做接线：
 //   ① 首屏先拉 `GET /api/worker/me` 认身份（**页头常驻「当前工人」**：共用 PAD 的既有纪律
@@ -18,7 +18,7 @@ import { renderReadyOrders, renderShipLabel, shipLabelLengthMm, shipLabelPageRul
 export const SHIPMENT_LOGIN_HREF = './'
 
 /** 读面失败时的兜底文案（技术原文留在 `err.technical`，屏上只出现人话）。 */
-export const SHIPMENT_UNREADABLE = '待发货订单读取失败：请检查网络后刷新'
+export const SHIPMENT_UNREADABLE = '待出库单读取失败：请检查网络后刷新'
 
 /** 打印抓屏隔离的 class（`styles.css` 的 `html.wh5-printing` 规则；
  *  终端打印 = 抓屏，见 printLabel 的注释）。 */
@@ -47,20 +47,20 @@ function pageHeader(worker) {
 /** 「登录已失效」的显式文案 + 回登录页真链接（本页没有登录面）。 */
 function loginFallback() {
   return `<section class="wh5-card">
-    <h1 class="wh5-title">发货</h1>
-    <p class="wh5-error" id="wh5-shipment-login-required">登录已失效：请先用工号 + PIN 登录，再查看待发货订单。</p>
+    <h1 class="wh5-title">待出库单</h1>
+    <p class="wh5-error" id="wh5-shipment-login-required">登录已失效：请先用工号 + PIN 登录，再查看待出库单。</p>
     <a class="wh5-entry" id="wh5-shipment-login" href="${SHIPMENT_LOGIN_HREF}">去登录</a>
   </section>`
 }
 
-/** 发货联（整套出库单）预览层（含唯一的打印入口）。 */
+/** 成品出库单（整套出库单）预览层（含唯一的打印入口）。 */
 function labelSheet(order) {
   return `<section class="wh5-label-sheet" id="wh5-ship-label-sheet" role="dialog" aria-modal="true"
-      aria-label="发货联预览">
+      aria-label="成品出库单预览">
     <p class="wh5-sub" id="wh5-label-hint">核对无误后打印：50mm × 70mm 标签纸，整单一张（该订单全部套），贴在箱上</p>
     ${renderShipLabel(order)}
     <div class="wh5-label-actions">
-      <button type="button" class="wh5-entry" id="wh5-label-print">打印发货联</button>
+      <button type="button" class="wh5-entry" id="wh5-label-print">打印成品出库单</button>
       <button type="button" class="wh5-ghost" id="wh5-label-close">关闭</button>
     </div>
   </section>`
@@ -82,7 +82,7 @@ export function createShipmentApp({ doc, api, win = globalThis, replace = null }
   let orders = []
   /** 当前打开标签的那一单（`null` = 没开预览） */
   let labelOrderId = null
-  let html = '<p class="wh5-sub" id="wh5-ship-loading">正在读取待发货订单…</p>'
+  let html = '<p class="wh5-sub" id="wh5-ship-loading">正在读取待出库单…</p>'
 
   const draw = () => {
     if (root) root.innerHTML = `${pageHeader(worker)}${html}`
@@ -101,7 +101,7 @@ export function createShipmentApp({ doc, api, win = globalThis, replace = null }
     html = `${renderReadyOrders({ items: orders })}${open ? labelSheet(open) : ''}`
     draw()
     // 🔴 预览层在列表**之后**（列表不重排）⇒ 单多时要滚下去才看得到。
-    //    点了「发货标签」却看不到纸面 = 工人以为没反应，会连点（真机现场最容易发生的一类）。
+    //    点了「成品出库单」却看不到纸面 = 工人以为没反应，会连点（真机现场最容易发生的一类）。
     if (open && typeof doc.getElementById === 'function') {
       // 预览一打开就把纸长按内容定下来（屏幕上看到的纸 = 打出来的纸）
       fitLabelToPaper()
@@ -121,9 +121,9 @@ export function createShipmentApp({ doc, api, win = globalThis, replace = null }
         goLogin()
         return
       }
-      // 读面失败**不冒充空态**（「没有待发货订单」与「读不到」是两个事实，工人据此决定要不要等）
+      // 读面失败**不冒充空态**（「没有待出库单」与「读不到」是两个事实，工人据此决定要不要等）
       html = `<section class="wh5-card">
-        <h1 class="wh5-title">发货</h1>
+        <h1 class="wh5-title">待出库单</h1>
         <p class="wh5-error" id="wh5-shipment-error">${esc(e?.message ?? SHIPMENT_UNREADABLE)}</p>
         <button type="button" class="wh5-entry" id="wh5-shipment-retry">重新读取</button>
       </section>`

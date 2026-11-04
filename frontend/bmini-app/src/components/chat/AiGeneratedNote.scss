@@ -1,0 +1,13 @@
+@use '../../styles/variables.scss' as *;
+
+.ai-generated-note {
+  padding: 8px 16px;
+  background: $bg-secondary;
+  border-bottom: 1px solid $border-color;
+
+  &__text {
+    font-size: 24px;
+    line-height: 1.4;
+    color: $text-secondary;
+  }
+}
