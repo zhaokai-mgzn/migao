@@ -33,6 +33,13 @@ services:
       # compose environment 的 ${VAR:-} 插值读不到 .env.admin-api，会覆盖为空导致
       # ai-agent 401 校验失败（入驻 fail-closed 系统繁忙）。deploy.sh 自愈补齐该值。
       AI_AGENT_BASE_URL: http://ai-agent:8000
+      # B 端小程序（bmini）凭据（issue #8196 ①）：WECHAT_BMINI_APPID / WECHAT_BMINI_SECRET
+      # —— **只经 env_file(.env.admin-api) 注入**，这里**故意不放** `environment:` 透传：
+      # 理由与上面 AI_AGENT_SERVICE_TOKEN 逐字相同 —— compose 的 environment 优先级高于 env_file，
+      # 而 `${VAR:-}` 插值读不到 .env.admin-api ⇒ 服务器没在 shell 里 export 时会把真值**覆盖成空串**
+      # （2026-08-30 已在那个 key 上踩过，commit 988e490f0 删掉了那行）。
+      # 缺失时 admin-api 启动期打一条 WARN（WechatService 的 @PostConstruct），不阻止启动。
+      # 判据 = tests/unit_ci_workflows/test_wechat_bmini_env_wiring.py
     ports:
       - "127.0.0.1:8080:8080"
     mem_limit: 1536m
