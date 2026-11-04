@@ -2,7 +2,7 @@
 # 本文件由 render_cases.py 生成，勿手改（改了也留不住：下次重渲染会覆盖）
 # 源: cases/*.yml（case-contract 单一源）
 # 重新生成: python3 render_cases.py --cases <dir> --out-eval <包目录> --out-md <md>
-# 域: bmini（源: cases/bmini.yml，61 条）
+# 域: bmini（源: cases/bmini.yml，62 条）
 
 from ._schema import Difficulty, EvalCase, Skill
 
@@ -109,6 +109,24 @@ _CASE_BM_006 = EvalCase(
     skip_reason='[backend-contract] 纯前端单元测试（frontend/worker-h5/tests/*.mjs + frontend/bmini-app/tests/production-qr.test.ts / production-report-idempotency.test.ts / worker-home-page.test.tsx / page-entry-reachability.test.ts / h5-platform-runtime.test.ts / h5-platform-api-guard.test.ts），非 LLM 行为，不进入 agent-eval 冒烟',
     tags=['bmini', 'production', 'qr-report'],
     persona='mibao',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── BM-007 [NORMAL] AI 生成内容标识（微信「深度合成-AI问答」类目 + 《人工智能生成合成内容标识办法》2025-09-01）—— 每条 AI 气泡含「AI生成」+ 对话页常驻说明（源: cases/bmini.yml）──
+_CASE_BM_007 = EvalCase(
+    id='BM-007',
+    legacy_id='',
+    title='AI 生成内容标识（微信「深度合成-AI问答」类目 + 《人工智能生成合成内容标识办法》2025-09-01）—— 每条 AI 气泡含「AI生成」+ 对话页常驻说明',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['商家/工人在「问黄金策」里看到 AI 回复：每条 AI 消息必须明确标注「AI生成」，对话页常驻一行「内容由人工智能生成，仅供参考」；转人工后的人工消息不能被标成 AI 生成'],
+    expectations=['direct_reply'],
+    data_checks=['判据 1·assistant 气泡来源标识含「AI生成」（改前只有「🤖 AI 助手」，不含要求字样）：执行点 frontend/bmini-app/tests/chat-ai-generated-label.test.tsx；红证 = 文案改回「🤖 AI 助手」⇒ `ai-generated-label` 的 textContent 不含「AI生成」当场红', '判据 2·人工客服消息**不得**冒充 AI 生成：`ai-generated-label` 不存在，`human-agent-label` 含「人工客服」', '判据 3·对话页常驻说明存在且含「人工智能生成」（`ai-generated-disclaimer`）', '判据 4·接线（不是只写了组件）：对话页源码真的 import 并渲染 `<AiGeneratedNote />`；删掉页面里的渲染 ⇒ 判据 4 红'],
+    skip_reason='[backend-contract] 确定性前端判据（jest: frontend/bmini-app/tests/chat-ai-generated-label.test.tsx），不经过 LLM 对话/工具，不进入 agent-eval 冒烟',
+    tags=['bmini', 'chat', 'ai-label', 'compliance'],
+    persona='',
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
@@ -1111,6 +1129,7 @@ CASES = (
     _CASE_BM_004,
     _CASE_BM_005,
     _CASE_BM_006,
+    _CASE_BM_007,
     _CASE_BM_008,
     _CASE_BM_009,
     _CASE_BM_010,
