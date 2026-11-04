@@ -8518,6 +8518,7 @@ cases:
       tests:
         - "tests/unit_ci_workflows/test_order_status_codegen.py"
         - "backend/ai-agent-service/tests/test_order_status_generated.py"
+        - "backend/ai-agent-service/tests/test_order_status.py"
       ci:
         - pr-check.yml
       verifies: []
