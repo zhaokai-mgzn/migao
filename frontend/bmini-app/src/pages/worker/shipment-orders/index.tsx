@@ -341,6 +341,23 @@ export default function WorkerShipmentOrdersPage() {
                   </View>
                 ))}
               </View>
+              {labelOrder.stock_bins && labelOrder.stock_bins.length > 0 ? (
+                <View className='shipment-orders__bins' data-testid='shipment-orders-label-bins'>
+                  <Text className='shipment-orders__bins-title'>仓位（只在屏幕上，不进纸）</Text>
+                  {(labelOrder.stock_bins ?? []).map((bin, index) => (
+                    <View
+                      key={`${bin.bin_code ?? 'bin'}-${index}`}
+                      className='shipment-orders__bin-row'
+                      data-testid='shipment-orders-bin-row'
+                    >
+                      <Text className='shipment-orders__bin-code'>{textOrMissing(bin.bin_code)}</Text>
+                      <Text className='shipment-orders__bin-sets'>
+                        {bin.sets_text ? `第 ${bin.sets_text} 套` : `共 ${bin.set_count ?? 0} 套`}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+              ) : null}
               <Text className='shipment-orders__label-hint' data-testid='shipment-orders-label-capability'>
                 {printCapability.ok ? printCapability.readyHint : printCapability.hint}
               </Text>

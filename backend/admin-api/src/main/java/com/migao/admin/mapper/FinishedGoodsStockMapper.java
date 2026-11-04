@@ -82,6 +82,20 @@ public interface FinishedGoodsStockMapper extends BaseMapper<FinishedGoodsStock>
                                                   @Param("orderId") String orderId);
 
     /**
+     * 批量取多张订单的**在库成品行**（工人待出库单详情要显示「哪一套在哪个仓位」，issue #8678）。
+     *
+     * <p>为什么批量：列表一次最多 200 张单，逐单查就是 200 次往返（本仓 §N+1 纪律）。
+     * 排序 = {@code order_id, bin_code, set_index}：同一仓位里的套按套序读，纸面/屏幕都不跳。</p>
+     */
+    @InterceptorIgnore(tenantLine = "true")
+    @Select("<script>SELECT * FROM finished_goods_stock "
+            + "WHERE tenant_id = #{tenantId} AND status = 'in_stock' AND deleted = 0 "
+            + "  AND order_id IN <foreach collection='orderIds' item='id' open='(' separator=',' close=')'>#{id}</foreach> "
+            + "ORDER BY order_id, bin_code, set_index</script>")
+    List<FinishedGoodsStock> selectInStockByOrderIds(@Param("tenantId") Long tenantId,
+                                                     @Param("orderIds") List<String> orderIds);
+
+    /**
      * 在库总览（成品库存页）。
      *
      * <p>LEFT JOIN {@code inbound_orders} 取**入库单号**（{@code inbound_no}）：本表

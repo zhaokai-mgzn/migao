@@ -3,8 +3,10 @@ package com.migao.admin.service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.migao.admin.entity.FinishedGoodsStock;
 import com.migao.admin.entity.Order;
 import com.migao.admin.entity.OrderItem;
+import com.migao.admin.mapper.FinishedGoodsStockMapper;
 import com.migao.admin.mapper.OrderItemMapper;
 import com.migao.admin.mapper.OrderMapper;
 import lombok.RequiredArgsConstructor;
@@ -84,6 +86,11 @@ public class WorkerShipmentReadyService {
     private final OrderItemMapper orderItemMapper;
     /** {@code processing_info} 可能是 JSON **字符串**（自定义 {@code @Select} 路径）⇒ 复用既有归一实现。 */
     private final ObjectMapper objectMapper;
+    /**
+     * 成品在库行（issue #8678）：工人端「待出库单详情」要显示**这一单的套在哪几个仓位** ——
+     * 那是拣货的人真正要拿的信息（纸面（50×70 出库单）**不印**：纸是给收货人看的，仓位是给捡货的人看的）。
+     */
+    private final FinishedGoodsStockMapper finishedGoodsStockMapper;
 
     /**
      * 全完工待发货列表。
@@ -97,7 +104,8 @@ public class WorkerShipmentReadyService {
      *     "logistics_type", "logistics_type_label", "logistics_company",
      *     "total_sets", "completed_sets",
      *     "processing_order_no", "remark",
-     *     "curtain_types", "install_community", "install_rooms"   // 安装信息（issue #7856；缺值不下发）
+     *     "curtain_types", "install_community", "install_rooms",  // 安装信息（issue #7856；缺值不下发）
+     *     "stock_bins": [{"bin_code", "sets_text", "set_count"}]  // 在库仓位（issue #8678；**只给屏幕，不入纸**）
      *   }],
      *   "scan": {"limit": 200, "truncated": false}
      * }
@@ -125,9 +133,12 @@ public class WorkerShipmentReadyService {
         // （不逐单查 = 不 N+1），且只为**已进列表**的单取。
         Map<String, List<OrderItem>> itemsByOrder = loadOrderItemsByOrder(
                 listed.stream().map(Order::getId).toList(), tenantId);
+        Map<String, List<FinishedGoodsStock>> stockByOrder = loadStockByOrder(
+                listed.stream().map(Order::getId).toList(), tenantId);
         for (Order order : listed) {
             items.add(rowView(order, completion.get(order.getId()),
-                    itemsByOrder.getOrDefault(order.getId(), List.of())));
+                    itemsByOrder.getOrDefault(order.getId(), List.of()),
+                    stockByOrder.getOrDefault(order.getId(), List.of())));
         }
 
         Map<String, Object> scan = new LinkedHashMap<>();
@@ -200,7 +211,8 @@ public class WorkerShipmentReadyService {
      * 也不印孤立的分隔符（{@code /主卧} 这类）。顺序**只由部位序决定**（去重保留首次出现的位置），
      * 不排序 —— 纸面要与加工单上的部位顺序一致，排序就是第二份口径。</p>
      */
-    private Map<String, Object> rowView(Order order, Map<String, Object> sets, List<OrderItem> orderItems) {
+    private Map<String, Object> rowView(Order order, Map<String, Object> sets, List<OrderItem> orderItems,
+                                       List<FinishedGoodsStock> stockRows) {
         Map<String, Object> row = new LinkedHashMap<>();
         row.put("order_id", order.getId());
         row.put("order_no", order.getOrderNo());
@@ -222,7 +234,71 @@ public class WorkerShipmentReadyService {
         putIfPresent(row, "curtain_types", joinDistinct(curtainTypesOf(orderItems)));
         putIfPresent(row, "install_community", OrderInstallInfo.firstCommunity(orderItems, objectMapper));
         putIfPresent(row, "install_rooms", joinDistinct(installRoomsOf(orderItems)));
+        // 仓位（issue #8678）：屏幕详情用，**不进纸**（纸面行清单位于 utils/labels/shipLabel.ts，与这里无关）。
+        putStockBins(row, stockRows);
         return row;
+    }
+
+    /**
+     * 在库行 ⇒ {@code stock_bins}（一个仓位一条：仓位号 + 里面有哪几套）。
+     *
+     * <p>口径：</p>
+     * <ul>
+     *   <li><b>只取 {@code status = 'in_stock'}</b> —— 已发货 / 已释放的仓位不该再叫工人去拿；</li>
+     *   <li><b>没有在库行 ⇒ 不下发这个键</b>（页面印「—」）：0 条与「仓位是空的」是两件事，
+     *       编一个空仓位比不显示更坏；</li>
+     *   <li>仓位号为空的行**丢弃**（告诉工人「去某仓位拿」才是这条信息的全部价值）；</li>
+     *   <li>套号优先 {@code set_no}，缺了退 {@code set_index}（V197 前的老行两者都可能空 ⇒ 只数套数、不编套号）。</li>
+     * </ul>
+     */
+    private void putStockBins(Map<String, Object> row, List<FinishedGoodsStock> stockRows) {
+        if (stockRows == null || stockRows.isEmpty()) {
+            return;
+        }
+        Map<String, List<String>> byBin = new LinkedHashMap<>();
+        Map<String, Integer> countByBin = new LinkedHashMap<>();
+        for (FinishedGoodsStock stock : stockRows) {
+            String binCode = stock == null || stock.getBinCode() == null ? "" : stock.getBinCode().trim();
+            if (binCode.isEmpty()) {
+                continue;
+            }
+            byBin.computeIfAbsent(binCode, key -> new ArrayList<>());
+            countByBin.merge(binCode, 1, Integer::sum);
+            String setLabel = stock.getSetNo() == null ? "" : stock.getSetNo().trim();
+            if (setLabel.isEmpty() && stock.getSetIndex() != null) {
+                setLabel = String.valueOf(stock.getSetIndex());
+            }
+            if (!setLabel.isEmpty() && !byBin.get(binCode).contains(setLabel)) {
+                byBin.get(binCode).add(setLabel);
+            }
+        }
+        if (byBin.isEmpty()) {
+            return;
+        }
+        List<Map<String, Object>> bins = new ArrayList<>();
+        for (Map.Entry<String, List<String>> entry : byBin.entrySet()) {
+            Map<String, Object> bin = new LinkedHashMap<>();
+            bin.put("bin_code", entry.getKey());
+            bin.put("sets_text", String.join("、", entry.getValue()));
+            bin.put("set_count", countByBin.get(entry.getKey()));
+            bins.add(bin);
+        }
+        row.put("stock_bins", bins);
+    }
+
+    /** 批量取在库行并按订单分组（保持取数序；空集给**可变**表，理由同 {@link #loadOrderItemsByOrder}）。 */
+    private Map<String, List<FinishedGoodsStock>> loadStockByOrder(List<String> orderIds, Long tenantId) {
+        Map<String, List<FinishedGoodsStock>> grouped = new LinkedHashMap<>();
+        if (orderIds == null || orderIds.isEmpty()) {
+            return grouped;
+        }
+        List<FinishedGoodsStock> rows = finishedGoodsStockMapper.selectInStockByOrderIds(tenantId, orderIds);
+        if (rows != null) {
+            for (FinishedGoodsStock row : rows) {
+                grouped.computeIfAbsent(row.getOrderId(), key -> new ArrayList<>()).add(row);
+            }
+        }
+        return grouped;
     }
 
     /**

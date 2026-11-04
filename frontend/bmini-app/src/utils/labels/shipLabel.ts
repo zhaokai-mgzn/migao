@@ -24,6 +24,18 @@ export const SHIP_LABEL_MISSING = ROWS_LABEL_MISSING
 /** 业务时区（与服务端 `businessClock` 同口径）：Asia/Shanghai = UTC+8（无夏令时）。 */
 const SHANGHAI_OFFSET_MINUTES = 8 * 60
 
+/**
+ * 在库仓位（issue #8678）：一个仓位一条 —— 工人拣货要知道「这一套在哪个仓位拿」。
+ * 🔴 **只上屏，不进纸**：纸面行清单一律由 `buildShipLabelRows` 决定，本结构不参与。
+ */
+export interface ShipStockBin {
+  bin_code?: string | null
+  /** 该仓位里是哪几套（服务端按取数序去重、`、` 连接；老数据可能为空） */
+  sets_text?: string | null
+  /** 该仓位里的套数（与 `sets_text` 同源；`sets_text` 为空时用它兜底） */
+  set_count?: number | null
+}
+
 /** 成品出库单需要的最小行字段面（`GET /api/worker/shipment/orders` 的 `items[]`）。 */
 export interface ReadyShipmentOrderLike {
   order_id?: string | null
@@ -42,9 +54,10 @@ export interface ReadyShipmentOrderLike {
   curtain_types?: string | null
   install_community?: string | null
   install_rooms?: string | null
+  /** 在库仓位（issue #8678）：**只上屏，不进纸**（见 {@link ShipStockBin}） */
+  stock_bins?: ShipStockBin[] | null
 }
 
-/** 值 → 纸面文本：去空白后为空 ⇒ `—`（缺值不编造）。 */
 export function textOrMissing(value: unknown): string {
   const text = value == null ? '' : String(value).trim()
   return text === '' ? SHIP_LABEL_MISSING : text
