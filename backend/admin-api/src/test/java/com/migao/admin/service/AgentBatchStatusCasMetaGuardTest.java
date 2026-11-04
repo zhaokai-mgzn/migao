@@ -81,7 +81,10 @@ class AgentBatchStatusCasMetaGuardTest {
     private static final String MODULE = "backend/admin-api";
     private static final String MAIN = MODULE + "/src/main/java/com/migao/admin";
     private static final String MAPPER_FILE = MAIN + "/mapper/AgentBatchMapper.java";
-    private static final String SERVICE_FILE = MAIN + "/service/AgentBatchService.java";
+    /** 状态写面在**这两个**文件里（issue #8285 把租约拆出独立类 —— 拆出去不等于搬出射程）。 */
+    private static final List<String> SERVICE_FILES = List.of(
+            MAIN + "/service/AgentBatchService.java",
+            MAIN + "/service/AgentBatchLeaseService.java");
     private static final String LEDGER_PATH = MODULE + "/src/test/resources/agent-batch-status-cas-ledger.json";
 
     // ── 形态（与台账 scan 段的声明逐字对应）
@@ -626,7 +629,11 @@ class AgentBatchStatusCasMetaGuardTest {
     }
 
     private static String serviceText() throws IOException {
-        return Files.readString(repoRoot().resolve(SERVICE_FILE), StandardCharsets.UTF_8);
+        List<String> parts = new ArrayList<>();
+        for (String file : SERVICE_FILES) {
+            parts.add(Files.readString(repoRoot().resolve(file), StandardCharsets.UTF_8));
+        }
+        return String.join("\n", parts);
     }
 
     private static JsonNode ledger() throws IOException {

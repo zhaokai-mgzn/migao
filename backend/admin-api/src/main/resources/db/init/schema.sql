@@ -2336,6 +2336,8 @@ CREATE TABLE IF NOT EXISTS agent_batches (
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
     executed_at TIMESTAMP WITH TIME ZONE,
     reverted_at TIMESTAMP WITH TIME ZONE,
+    executor_id VARCHAR(128),                        -- 执行者 = 实例 + job（V208 / #8285；回收时置 NULL）
+    heartbeat_at TIMESTAMP WITH TIME ZONE,           -- 最近心跳（V208 / #8285；超时/为空 ⇒ 可回收成 partial）
     CONSTRAINT ck_agent_batch_type
         CHECK (batch_type IN ('product_price', 'product_status', 'inventory_stock')),
     CONSTRAINT ck_agent_batch_status
@@ -2346,6 +2348,10 @@ CREATE TABLE IF NOT EXISTS agent_batches (
 );
 CREATE INDEX IF NOT EXISTS idx_agent_batches_tenant_created
     ON agent_batches (tenant_id, created_at DESC);
+-- 崩溃回收的取数面（V208 / #8285）：只索引 executing 行，按心跳判时效
+CREATE INDEX IF NOT EXISTS idx_agent_batches_executing_heartbeat
+    ON agent_batches (heartbeat_at)
+    WHERE status = 'executing';
 
 CREATE TABLE IF NOT EXISTS agent_batch_items (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,

@@ -381,4 +381,70 @@ class AgentBatchMigrationTest {
             assertThat(AgentBatchService.MAX_ITEMS).isEqualTo(50);
         }
     }
+    @Nested
+    @DisplayName("④ 执行租约（issue #8285 / V208：executor_id + heartbeat_at）")
+    class ExecutorLease {
+
+        /** 本单新增的**增量**迁移（V127 是建表，租约两列后补 ⇒ 存量库只能靠这条）。 */
+        private static final String V208_REL = LIVE_DIR + "V208__add_agent_batch_executor_lease.sql";
+
+        @Test
+        @DisplayName("🔴 两列在**迁移**与**建库脚本**两源齐备，且迁移幂等（ADD COLUMN IF NOT EXISTS + 显式事务）")
+        void bothColumnsExistInBothSources() throws Exception {
+            String migration = read(V208_REL);
+            String code = sqlCode(migration);
+            String schemaBatches = tableBody(read(SCHEMA_REL), "agent_batches");
+            for (String column : List.of("executor_id", "heartbeat_at")) {
+                assertThat(code).as("V208 缺列 %s（存量库路径拿不到 ⇒ 一执行就 SQL 报错）", column)
+                        .containsPattern("(?m)ADD\\s+COLUMN\\s+IF\\s+NOT\\s+EXISTS\\s+" + column + "\\s");
+                assertThat(schemaBatches)
+                        .as("schema.sql 的 agent_batches 缺列 %s（新建库路径不跑历史迁移链）", column)
+                        .containsPattern("(?m)^\\s*" + column + "\\s");
+            }
+            assertThat(code).as("迁移必须可重复执行（MigrationRunner 的幂等约定）")
+                    .contains("BEGIN;").contains("COMMIT;");
+            assertThat(code).as("heartbeat_at 必须是 timestamptz（OffsetDateTime 要能原样往返）")
+                    .containsIgnoringCase("TIMESTAMP WITH TIME ZONE");
+        }
+
+        @Test
+        @DisplayName("🔴 回收的取数面有部分索引（只索引 executing 行），两源同形")
+        void executingHeartbeatIndexExistsInBothSources() throws Exception {
+            // ⚠️ 只剥注释、**保留字面量**：`sqlCode` 会把 'executing' 抹成 '' ⇒ 断言字面量永远失败
+            String code = read(V208_REL).replaceAll("(?m)--.*$", " ");
+            assertThat(code).contains("CREATE INDEX IF NOT EXISTS idx_agent_batches_executing_heartbeat");
+            assertThat(code).as("部分索引的谓词必须与回收谓词同形（status = 'executing'）")
+                    .containsPattern("(?s)idx_agent_batches_executing_heartbeat.*?WHERE\\s+status\\s*=\\s*'executing'");
+            assertThat(read(SCHEMA_REL))
+                    .as("bootstrap 终态同样要有该索引（两个终态不许分叉）")
+                    .contains("idx_agent_batches_executing_heartbeat");
+        }
+
+        @Test
+        @DisplayName("🔴 状态机取值域不被本迁移扩新态（回收复用 partial，不新增 recovering/abandoned）")
+        void stateMachineIsNotExtendedByThisMigration() throws Exception {
+            String code = sqlCode(read(V208_REL));
+            assertThat(code)
+                    .as("V208 不许改 ck_agent_batch_status —— 回收复用既有 partial（新增中间态要另开单）")
+                    .doesNotContain("ADD CONSTRAINT ck_agent_batch_status")
+                    .doesNotContain("DROP CONSTRAINT ck_agent_batch_status");
+            // 同族（与 AgentBatchStatusCasMetaGuardTest 的取值域主张一致）：六个取值仍是 DB 约束
+            // ⚠️ 必须用**保留字面量**的原文：`sqlCode` 会把 '…' 抹成 ''（拿它断字面量永远失败）
+            String v127 = read(MIGRATION_REL);
+            for (String status : List.of("preview", "executing", "done", "partial", "reverted", "revert_partial")) {
+                assertThat(v127).as("V127 的状态机缺 %s", status).contains("'" + status + "'");
+            }
+            assertThat(AgentBatchService.STATUS_PARTIAL)
+                    .as("回收落的状态必须是契约里的既有取值（服务层单一事实源）").isEqualTo("partial");
+        }
+
+        @Test
+        @DisplayName("实体两列与迁移收敛（缺一列 ⇒ MyBatis-Plus 更新/读取与表结构错位）")
+        void entityCarriesBothColumns() throws Exception {
+            for (String field : List.of("executorId", "heartbeatAt")) {
+                assertThat(AgentBatch.class.getDeclaredField(field))
+                        .as("AgentBatch 缺字段 %s（租约两列必须能被实体读写）", field).isNotNull();
+            }
+        }
+    }
 }

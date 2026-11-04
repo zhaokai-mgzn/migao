@@ -379,8 +379,10 @@ class AgentBatchStatusRaceRealDbTest {
         CountingProductService productService =
                 new CountingProductService(s.getMapper(com.migao.admin.mapper.ProductMapper.class),
                         s.getMapper(com.migao.admin.mapper.ProductSkuMapper.class));
-        return new AgentBatchService(s.getMapper(AgentBatchMapper.class),
-                s.getMapper(AgentBatchItemMapper.class), productService, job -> job.run());
+        AgentBatchMapper mapper = s.getMapper(AgentBatchMapper.class);
+        return new AgentBatchService(mapper,
+                s.getMapper(AgentBatchItemMapper.class), productService, job -> job.run(),
+                new AgentBatchLeaseService(mapper));
     }
 
     /**

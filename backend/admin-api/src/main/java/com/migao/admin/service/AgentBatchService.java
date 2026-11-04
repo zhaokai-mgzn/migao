@@ -48,8 +48,11 @@ import java.util.UUID;
  *   <li><b>同步 + 后台双形态</b>：同步 {@code execute}/{@code revert} 保留 #5314 冻结契约；
  *       {@code executeAsync}/{@code revertAsync}（issue #8283）提交进程内线程池并立即返回
  *       {@code executing}，进度由 GET 查询。{@code N > 50} 仍直接拒绝并提示分批。</li>
- *   <li><b>后台 job 的生命周期边界</b>：进程内线程池 + 优雅停机等待 60s；JVM 崩溃 / 强杀可能留下
- *       {@code executing} 批次（不自动回收 —— 跨实例需 lease/heartbeat，另开单跟踪）。</li>
+ *   <li><b>后台 job 的生命周期边界</b>：进程内线程池 + 优雅停机等待 60s；JVM 崩溃 / 强杀会留下
+ *       {@code executing} 批次 —— 由 <b>执行租约</b>（issue #8285：{@code executor_id} +
+ *       {@code heartbeat_at}，迁移 V208）在心跳超时后**回收成可撤销的 {@code partial}**。
+ *       回收只改批次状态、不碰明细 ⇒ 它**不**承诺「已 apply 但 item 状态未落库」那一段的精确复原
+ *       （见 {@link AgentBatchLeaseService#recoverStaleExecuting} 的边界）。</li>
  *   <li><b>上/下架的撤销可能被状态机挡住</b>：例如原状态 {@code draft} 的商品被批量上架后，
  *       撤销回 {@code draft} 会被 {@code ProductService} 的状态机拒绝（{@code on_sale → draft} 不是
  *       合法流转）⇒ 该条以 {@code revert_failed} 逐条报出，批次落 {@code revert_partial}。
@@ -118,14 +121,19 @@ public class AgentBatchService {
     /** 批次后台 job 提交口（issue #8283；专用接口，不占用 Spring 的 TaskExecutor bean 面）。 */
     private final BatchJobLauncher batchJobLauncher;
 
+    /** 执行租约（issue #8285）：executor 标识 / 心跳续期 / 崩溃回收 —— 独立关切，见该类文档。 */
+    private final AgentBatchLeaseService leaseService;
+
     public AgentBatchService(AgentBatchMapper batchMapper,
                              AgentBatchItemMapper itemMapper,
                              ProductService productService,
-                             BatchJobLauncher batchJobLauncher) {
+                             BatchJobLauncher batchJobLauncher,
+                             AgentBatchLeaseService leaseService) {
         this.batchMapper = batchMapper;
         this.itemMapper = itemMapper;
         this.productService = productService;
         this.batchJobLauncher = batchJobLauncher;
+        this.leaseService = leaseService;
     }
 
     // ═══════════════════ ① 创建批次（= 预演）═══════════════════
@@ -257,13 +265,19 @@ public class AgentBatchService {
             pauseForBatchProbe(BATCH_PROBE_PAUSE_MILLIS);
         }
         // 抢执行权：条件更新（CAS）—— 判断与写入同一条语句；0 行 ⇒ 并发的另一个请求已抢到 ⇒ 一条不写
-        if (batchMapper.markExecuting(batchId, tenantId) == 0) {
+        // 租约（issue #8285）：executor_id + heartbeat_at 与状态迁移写在**同一条**语句里 ⇒
+        // 不存在「executing 但心跳为空」的窗口（那个窗口会被回收器当成崩溃遗留）。
+        String executorId = leaseService.newExecutorId();
+        OffsetDateTime heartbeatAt = OffsetDateTime.now();
+        if (batchMapper.markExecuting(batchId, tenantId, executorId, heartbeatAt) == 0) {
             AgentBatch fresh = requireBatch(tenantId, batchId);
             throw BusinessException.conflict("批次当前状态为 " + fresh.getStatus()
                             + "，只有 preview 的批次可以执行（不可重复执行）",
                     "请刷新该批次的状态与结果后重试");
         }
         batch.setStatus(STATUS_EXECUTING);
+        batch.setExecutorId(executorId);
+        batch.setHeartbeatAt(heartbeatAt);
         return batch;
     }
 
@@ -285,7 +299,7 @@ public class AgentBatchService {
             batch.setFailCount(batch.getItemCount() == null ? 0 : batch.getItemCount());
             batch.setExecutedAt(OffsetDateTime.now());
             int finalized = batchMapper.markExecutedPartial(batchId, tenantId, 0,
-                    batch.getFailCount(), batch.getExecutedAt());
+                    batch.getFailCount(), batch.getExecutedAt(), batch.getExecutorId());
             if (finalized == 0) {
                 log.warn("[Agent] 批量执行终态 CAS 未命中（状态已被并发改变），不覆盖: batchId={}", batchId);
             } else {
@@ -300,6 +314,10 @@ public class AgentBatchService {
         for (AgentBatchItem item : items) {
             if (Thread.currentThread().isInterrupted()) {
                 log.warn("[Agent] 批量执行被中断，剩余条目保持 pending: batchId={}", batchId);
+                break;
+            }
+            // 心跳续期 + 租约校验（issue #8285）：0 行 = 已被回收 / 换人 ⇒ 立刻停手（不再 apply）
+            if (!leaseService.renewLease(tenantId, batch)) {
                 break;
             }
             try {
@@ -335,8 +353,10 @@ public class AgentBatchService {
         batch.setStatus(fail == 0 && allProcessed ? STATUS_DONE : STATUS_PARTIAL);
         batch.setExecutedAt(OffsetDateTime.now());
         int finalized = STATUS_DONE.equals(batch.getStatus())
-                ? batchMapper.markExecutedDone(batchId, tenantId, success, fail, batch.getExecutedAt())
-                : batchMapper.markExecutedPartial(batchId, tenantId, success, fail, batch.getExecutedAt());
+                ? batchMapper.markExecutedDone(batchId, tenantId, success, fail,
+                        batch.getExecutedAt(), batch.getExecutorId())
+                : batchMapper.markExecutedPartial(batchId, tenantId, success, fail,
+                        batch.getExecutedAt(), batch.getExecutorId());
         if (finalized == 0) {
             log.warn("[Agent] 批量执行终态 CAS 未命中（状态已被并发改变），不覆盖: batchId={}", batchId);
         } else {
@@ -393,13 +413,19 @@ public class AgentBatchService {
             pauseForBatchProbe(BATCH_PROBE_PAUSE_MILLIS);
         }
         // 抢撤销权：条件更新（CAS）—— 0 行 ⇒ 并发的另一个请求已抢到（或状态已不可撤销）⇒ 一条不写
-        if (batchMapper.markReverting(batchId, tenantId, STATUS_DONE, STATUS_PARTIAL) == 0) {
+        // 租约同 claimForExecute（issue #8285）：撤销也是一条后台 job，也要能被安全回收。
+        String executorId = leaseService.newExecutorId();
+        OffsetDateTime heartbeatAt = OffsetDateTime.now();
+        if (batchMapper.markReverting(batchId, tenantId, STATUS_DONE, STATUS_PARTIAL,
+                executorId, heartbeatAt) == 0) {
             AgentBatch fresh = requireBatch(tenantId, batchId);
             throw BusinessException.conflict("批次当前状态为 " + fresh.getStatus()
                             + "，可撤销状态只有 " + STATUS_DONE + " / " + STATUS_PARTIAL,
                     "请先执行该批次，再撤销");
         }
         batch.setStatus(STATUS_EXECUTING);
+        batch.setExecutorId(executorId);
+        batch.setHeartbeatAt(heartbeatAt);
         return batch;
     }
 
@@ -418,7 +444,8 @@ public class AgentBatchService {
             log.error("[Agent] 批量撤销读取明细失败，落 revert_partial: batchId={}", batchId, e);
             batch.setStatus(STATUS_REVERT_PARTIAL);
             batch.setRevertedAt(OffsetDateTime.now());
-            int finalized = batchMapper.markRevertPartial(batchId, tenantId, batch.getRevertedAt());
+            int finalized = batchMapper.markRevertPartial(batchId, tenantId,
+                    batch.getRevertedAt(), batch.getExecutorId());
             if (finalized == 0) {
                 log.warn("[Agent] 批量撤销终态 CAS 未命中（状态已被并发改变），不覆盖: batchId={}", batchId);
             } else {
@@ -434,6 +461,10 @@ public class AgentBatchService {
                 log.warn("[Agent] 批量撤销被中断，剩余条目保持原状态: batchId={}", batchId);
                 failed++;
                 continue;
+            }
+            // 心跳续期 + 租约校验（issue #8285）：撤销同样是一条后台 job —— 0 行 ⇒ 立刻停手
+            if (!leaseService.renewLease(tenantId, batch)) {
+                break;
             }
             if (!ITEM_SUCCESS.equals(item.getStatus())) {
                 // 执行阶段就失败过的条目从未生效 ⇒ 没有东西要还原；逐条报出（不静默略过、不误写）
@@ -465,8 +496,9 @@ public class AgentBatchService {
         batch.setStatus(failed == 0 ? STATUS_REVERTED : STATUS_REVERT_PARTIAL);
         batch.setRevertedAt(OffsetDateTime.now());
         int finalized = STATUS_REVERTED.equals(batch.getStatus())
-                ? batchMapper.markReverted(batchId, tenantId, batch.getRevertedAt())
-                : batchMapper.markRevertPartial(batchId, tenantId, batch.getRevertedAt());
+                ? batchMapper.markReverted(batchId, tenantId, batch.getRevertedAt(), batch.getExecutorId())
+                : batchMapper.markRevertPartial(batchId, tenantId, batch.getRevertedAt(),
+                        batch.getExecutorId());
         if (finalized == 0) {
             log.warn("[Agent] 批量撤销终态 CAS 未命中（状态已被并发改变），不覆盖: batchId={}", batchId);
         } else {
@@ -476,7 +508,6 @@ public class AgentBatchService {
         return results;
     }
 
-    // ══════════════════════════════════════════════════════════════════════════════════
     // 测试探针（issue #6960）：**只在包内可见**，生产恒为 0
     // ══════════════════════════════════════════════════════════════════════════════════
 
