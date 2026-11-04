@@ -2,7 +2,7 @@
 # 本文件由 render_cases.py 生成，勿手改（改了也留不住：下次重渲染会覆盖）
 # 源: cases/*.yml（case-contract 单一源）
 # 重新生成: python3 render_cases.py --cases <dir> --out-eval <包目录> --out-md <md>
-# 域: misc（源: cases/misc.yml，228 条）
+# 域: misc（源: cases/misc.yml，229 条）
 
 from ._schema import Difficulty, EvalCase, Skill
 
@@ -4186,6 +4186,24 @@ _CASE_MC_202 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── MC-201 [NORMAL] OrderService 切片第二批（issue #8191 的 P2-1d，纯搬运不重写）：取消 / 退款 / 发货 / 状态流转四族 15 个方法搬到 OrderLifecycleService，OrderService 由 2,268 行降到 1,832 行并只留同名门面委托；公开名集合逐名相等、调用点零改动、方法体与拆分前逐字节相同（3 处具名跨类限定）、拆分前后的行为快照逐字节一致（源: cases/misc.yml）──
+_CASE_MC_201 = EvalCase(
+    id='MC-201',
+    legacy_id='',
+    title='OrderService 切片第二批（issue #8191 的 P2-1d，纯搬运不重写）：取消 / 退款 / 发货 / 状态流转四族 15 个方法搬到 OrderLifecycleService，OrderService 由 2,268 行降到 1,832 行并只留同名门面委托；公开名集合逐名相等、调用点零改动、方法体与拆分前逐字节相同（3 处具名跨类限定）、拆分前后的行为快照逐字节一致',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['商家端在订单上做取消 / 退款 / 发货 / 改状态各一次（状态机与三个时刻锚点按同一份口径落库、加工单联动与发货守卫照旧拦截）'],
+    expectations=[],
+    data_checks=['判据 1·🔴 接线：门面的生命周期族入口必须真的转到新服务 —— 把门面的新服务字段换成 Mockito 替身后，从原有公开入口（取消 / 确认支付 / 状态流转 / 退款 / 发货两个重载 / 发货人兜底 / 发货前置判据）驱动，替身上必须收到同名同参调用；发货的返回对象必须原样透传（isSameAs）。红证 = 删掉门面 cancelOrder 的委托那一行 ⇒ 接线一条当场红（实测：12 条里红 1 条）。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/OrderLifecycleServiceTest.java', '判据 2·🔴 搬运逐字节一致：拆分前 origin/main 的 OrderService.java（2,268 行）随判据入库、sha256 钉死，取消 / 退款 / 发货 / 状态流转四族 15 个方法的方法体必须原样出现在新载体，且门面里一处都不许留；5 条事务注解逐字跟着方法走、门面委托一条都不加；具名的 3 处跨类限定必须恰好兑现（多一处少一处都红）。红证 = 在新载体里把一句拒绝话术改一个字符 ⇒ 逐字节一致一条当场红（实测：5 条里红 1 条）。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/OrderLifecycleSliceSourceIdentityTest.java', '判据 3·🔴 行为快照：23 例固定输入覆盖四族的每一条分支与 6 条拒绝路径（取消四种前驱 + 加工单联动 CAS 输赢、退款部分/全额/越界、发货物流/无需物流/白名单外/状态不符/承运商兜底、状态流转五条边含含加工项被守卫拦截），在拆分前录制「协作者调用序列 + 返回值 + 异常类与话术」，拆分后必须逐字节相同（基线 142 行；冻结时钟使三个时刻锚点可复算，两处既有墙钟拼写只渲染来源不渲染那一秒）。红证 = 改一个字符话术 ⇒ 快照一条当场红。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/OrderLifecycleSliceSnapshotTest.java', '判据 4·🔴 台账与棘轮跟着载体走（回归面一字未放宽）：orders.status 的 CAS 写面随 transitionStatusAtomic 改载体；加工单联动作废的写路径改名为 OrderLifecycleService#cancelOrder 且 evidence 锚逐字兑现；发货写面不变式台账的两条商家侧条目改载体并新增「门面零残留」断言；shipped_at / paid_at / received_at 三条结构判据与金额入口台账的载体集合改为「门面 + 生命周期服务」（未登记即红、死条目即红、写面为空即红都没改）；OrderService 2,268 → 1,832 已跌破 2,000 ⇒ 冻结条目销账、豁免登记保留（仍 ≥ 800 行）；新文件 719 行 < 800 未登记豁免。执行点 = tests/unit_ci_workflows/test_loc_ratchet.py / test_state_write_face_metaguard.py / test_order_status_single_source.py 与 backend/admin-api/src/test/java/com/migao/admin/service/OrderPaidAndReceivedAtWriteGuardTest.java / OrderAutoCompleteSqlGuardTest.java / ProcessingOrderStatusCasMetaGuardTest.java / MoneyEntryPrecisionMetaGuardTest.java / backend/admin-api/src/test/java/com/migao/admin/shipment/ShipmentInvariantGuardTest.java'],
+    skip_reason='[backend-contract] Java 侧纯搬运重构（零 LLM / 零外网 / 零前端可见面），由 JUnit 判据与 pytest 棘轮/台账判据验证，无 agent 行为面，不进入 agent-eval 冒烟',
+    tags=['refactor', 'order-service', 'slice', 'lifecycle', 'cancel', 'refund', 'shipping', 'status-transition', 'byte-identical', 'snapshot'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 CASES = (
     _CASE_MC_001,
     _CASE_MC_002,
@@ -4415,4 +4433,5 @@ CASES = (
     _CASE_MC_199,
     _CASE_MC_200,
     _CASE_MC_202,
+    _CASE_MC_201,
 )

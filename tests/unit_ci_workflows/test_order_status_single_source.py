@@ -87,7 +87,8 @@ NON_ORDER_STATUS_USAGES: dict[str, tuple[str, ...]] = {
         'case "cancel": target = "cancelled"; break;',
     ),
     # 订单取消时**联动**改加工单状态：这一处的 `cancelled` 落在加工单 mapper 的更新里。
-    "service/OrderService.java": (
+    # issue #8191（P2-1d）：`cancelOrder` 的联动作废腿搬到 OrderLifecycleService ⇒ 载体键跟着搬。
+    "service/OrderLifecycleService.java": (
         '"generated", "cancelled", null, null, null, null, null,',
     ),
     # 返工单状态（draft / in_progress / done / cancelled），与订单状态无关。
