@@ -7862,3 +7862,30 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+  - id: MC-187
+    legacy_id: ''
+    title: 冒烟旅程 16- 的「生成作业单」走智能派单唯一入口，不许退化成可跳过的空判据（#7743）
+    domains:
+      - misc
+      - ci
+    tier: normal
+    tags:
+      - smoke
+      - false-green
+      - ui-smoke
+      - dispatch
+    truths_ref: []
+    user_inputs:
+      - "商家在订单详情页找不到「生成作业单」按钮（销售订单只读、直派入口全关），作业单只能在「智能派单」里生成；可冒烟旅程 16- 还在点那个已经不存在的按钮，点不到就静默跳过，后面再断言作业单块 —— 等于什么都没验。"
+    expectations: []
+    data_checks:
+      - "**判据 1（会红）**：`scripts/ui-smoke-merchant/spec.mjs` 的 16- 旅程体内必须出现智能派单入口 `pool-dispatch-batch`（`/production/pool` 一键合并派单），且**不再**驱动 `getByRole('button', { name: /生成加工单/ })`。执行点 = tests/unit_ci_workflows/test_smoke16_dispatch_entry.py::test_journey16_drives_the_pool_dispatch_entry。"
+      - "**判据 2（会红）**：作业单生成段至少 4 个 `throw` 出口（池里查不到本单 / 勾选框被禁用 / 成批预览没出 / 派单按钮缺席），且**真的**执行 `await pick.check()` 与 `await batchBtn.click()`（注释掉任一 ⇒ 红）。执行点 = ::test_journey16_fails_closed_at_every_dispatch_step。"
+    skip_reason: "[backend-contract] 纯静态源码面判据（读 spec.mjs 文本，零浏览器、零真实栈），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-11-04 新增（issue #7743）。取号 MC-187（集成侧指定）。红证两条：注释 `await batchBtn.click()` ⇒ 判据 2 红；注释 `await pick.check()` ⇒ 判据 2 红。"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_smoke16_dispatch_entry.py"
+      ci:
+        - pr-check.yml
+      verifies: []
