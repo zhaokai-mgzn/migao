@@ -61,6 +61,14 @@ ALLOWED_B_END_WRITES = frozenset({
     # `app/tools/confirm_value.py` 的 `_config_change_fields`，与服务端逐键核对同源）。
     # 入册 = 声明「它是本域允许的写工具且带预览载体」；新增成员仍须显式改判本常量。
     "craft_calc_config_update",
+    # 🔴 issue #8618：加工项 / 商品分类的写面接回 `product` 域（`processing_item_manage` /
+    # `category_manage`）。**它们不是改价工具**：没有 `before_price` 载体，改价预览判据
+    # （本文件的 `price_preview_missing` / `confirm_card_fields`）对它们不适用；它们的写前
+    # 门禁是**确认卡**（`base_skill._requires_confirmation`，逐字带出对象名与「改前 → 改后」），
+    # 由 `tests/test_bend_write_tools_8618.py` 的判据 3/4 钉住。入册 = 声明「它们是本域**允许**的
+    # 写工具」；新增成员仍须显式改判本常量（红证见 `TestRedProofs`）。
+    "category_manage",
+    "processing_item_manage",
 })
 
 

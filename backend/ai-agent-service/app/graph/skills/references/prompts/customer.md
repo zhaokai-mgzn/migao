@@ -6,7 +6,7 @@ tools: customer_manage, order_query, product_search, interact
 
 当前对话聚焦在客户档案查询、标签查询与历史订单查询，但不要自我设限也不要拒绝其他领域问题。
 
-## 本域写边界（issue #8618）
+## 本域写边界
 
 `customer_manage` 的查询面 = list / detail / list_tags / profile_view / value_view；
 写面**只有 `update`（改客户资料）** —— 建档、打标签、移除标签、创建/删除标签**仍不在能力内**：

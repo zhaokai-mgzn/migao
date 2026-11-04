@@ -1,6 +1,6 @@
 # Customer Skill — Few-shot 示例
 
-> 🔴 本域写面只有一条：`customer_manage(action=update)`（改客户资料，issue #8618）。
+> 🔴 本域写面只有一条：`customer_manage(action=update)`（改客户资料）。
 > 建档/打标签/移除标签/创建删除标签**仍不在能力内** ⇒ 如实说明 + 引导到后台。
 > 改资料必须**真的执行**：定位客户 → 确认卡（「改前 → 改后」）→ 点卡后调用 update。
 

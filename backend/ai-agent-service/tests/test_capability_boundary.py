@@ -605,7 +605,13 @@ def test_zero_write_skills_never_claim_direct_capability():
     assert "staff" not in zero_write, f"staff 已绑 employee_manage(写) 却仍被判零写 skill：{zero_write}"
     assert "customer" not in zero_write, f"customer 已绑 customer_manage.update(写) 却仍被判零写 skill：{zero_write}"
     # 具名集合（比下界更硬：少一个 = 有域悄悄拿到了写工具，多一个 = 写能力被摘掉）
-    assert set(zero_write) == {"aftersales", "data", "knowledge", "order", "settings"}, (
+    # `general`（兜底 agent）**本来就该零写**：写工具必须走「领域 skill + 确认链」，
+    # 兜底路径没有确认语境（#7050 起把 `employee_manage` 移出；#8618 同批把
+    # `customer_manage` / `category_manage` 移出 —— 它们的读面仍在 customer / product 域）。
+    assert "general" in zero_write, (
+        f"兜底 agent 拿到了写工具 ⇒ 写路径绕过了领域确认链：{sorted(zero_write)}"
+    )
+    assert set(zero_write) == {"aftersales", "data", "general", "knowledge", "order", "settings"}, (
         f"零写 skill 现取集合与当值不符：{sorted(zero_write)}"
     )
 

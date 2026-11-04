@@ -375,6 +375,33 @@ CARD_DB_CONSISTENCY_LEDGER: dict = {
         "note": "`price` 属 CARD_ONLY_VALUE_FIELDS ⇒ 建品调用带该字段即入按值比对（该比对与工具无关）",
     },
     # ── ② 结构上不可判定（逐条给理由，**不静默跳过**）──────────────────────────
+    # 🔴 issue #8618（2026-11-04，B 端工具缺口接回）：`customer_manage.update` /
+    # `category_manage.create` 接回后重新成为**写路径** ⇒ 必须在本台账表态（未登记即红）。
+    # 两者参数面都**没有** `CARD_ONLY_VALUE_FIELDS` 里的涉钱字段（price / before_price /
+    # batch_id）⇒ 没有「卡值 ↔ 落库值」的比对载体：卡上写的是字段新值，落库由 admin-api 的
+    # 实体校验承担，机器侧没有可与之核对的那一份独立真值。故登记为「结构上无从比对」，
+    # 而不是静默跳过（VALD 口径同 `scheduled_task_manage` / `notification_manage`）。
+    "customer_manage": {
+        "stance": UNDECIDABLE,
+        "anchor": "#8618",
+        "issue": "#8618",
+        "owner": "客户域写路径 owner（customer_manage）",
+        "reason": "写面只有一个 action `update`，参数面是 `customer_id` + `data`（客户档案字段白名单："
+                  "wechatNickname / phone / remark / vipLevel / 收货信息…），**无金额、无数量、无价**"
+                  "⇒ 没有卡值比对载体；落库是「部分更新」（只下发 data 里给出的键），一致性由"
+                  "admin-api 的实体校验 + 回读承担 —— 是「结构上无从比对」，不是「没登记」。"
+                  "写前门禁 = 确认卡（`base_skill._requires_confirmation`），由 "
+                  "`tests/test_bend_write_tools_8618.py` 判据 3/4 钉住。",
+    },
+    "category_manage": {
+        "stance": UNDECIDABLE,
+        "anchor": "#8618",
+        "issue": "#8618",
+        "owner": "商品分类域写路径 owner（category_manage）",
+        "reason": "写面只有一个 action `create`，参数面是 `name`（分类名；扁平结构、无父分类、无金额）"
+                  "⇒ 没有卡值比对载体；落库是「新建一行分类」，业务账在该域不存在 —— "
+                  "是「结构上无从比对」，不是「没登记」。写前门禁 = 确认卡，同上。",
+    },
     "scheduled_task_manage": {
         "stance": UNDECIDABLE,
         "anchor": "#6486",
