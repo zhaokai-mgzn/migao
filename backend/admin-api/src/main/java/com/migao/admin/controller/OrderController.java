@@ -5,6 +5,7 @@ import com.migao.admin.config.TenantContext;
 import com.migao.admin.entity.OrderLogistics;
 import com.migao.admin.exception.BusinessException;
 import com.migao.admin.service.OrderLogisticsService;
+import com.migao.admin.service.OrderLifecycleService;
 import com.migao.admin.service.OrderLogisticsWriter;
 import com.migao.admin.service.OrderService;
 import com.migao.admin.service.OrderShipmentService;
@@ -45,6 +46,11 @@ public class OrderController {
     private final com.migao.admin.service.RoleService roleService;
     private final OrderLogisticsService orderLogisticsService;
     private final OrderShipmentService orderShipmentService;
+    /**
+     * 发货前置读面（issue #8681，P2-1e）：发货人取值的实现点在 {@code OrderLifecycleService}
+     * ⇒ 直接依赖新服务，不再绕门面（门面的同名转发方法已删除）。
+     */
+    private final OrderLifecycleService orderLifecycleService;
 
     // ==================== 字面路径（无路径变量） ====================
 
@@ -469,7 +475,7 @@ public class OrderController {
         }
         // 发货人（issue #3768）：显式传入优先，否则取当前登录用户姓名兜底
         String providedShipper = body.get("shipperName");
-        String shipperName = orderService.resolveShipperName(providedShipper);
+        String shipperName = orderLifecycleService.resolveShipperName(providedShipper);
 
         // 查询现有物流记录
         java.util.List<OrderLogistics> existing = orderLogisticsService.getByOrderId(id);

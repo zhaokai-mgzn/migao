@@ -11,6 +11,7 @@ import com.migao.admin.dto.agent.AgentOrderUpdateRequest;
 import com.migao.admin.security.SecurityUser;
 import com.migao.admin.security.PermissionInterceptor;
 import com.migao.admin.service.ClientRequestIdService;
+import com.migao.admin.service.OrderQueryService;
 import com.migao.admin.service.OrderService;
 import com.migao.admin.security.RequirePermission;
 import jakarta.validation.Valid;
@@ -47,6 +48,11 @@ import org.springframework.web.bind.annotation.*;
 public class AgentOrderController {
 
     private final OrderService orderService;
+    /**
+     * 单号/UUID 解析的**实现点**（issue #8681，P2-1e）：{@code GET /agent/orders/resolve} 直接依赖
+     * {@code OrderQueryService}，不再绕门面（门面的同名转发方法已删除）。
+     */
+    private final OrderQueryService orderQueryService;
     private final com.migao.admin.mapper.UserMapper userMapper;
     /**
      * 权限判定复用点（issue #4148）：统一 PATCH 里的 action 级权限复检。
@@ -131,7 +137,7 @@ public class AgentOrderController {
         Long tenantId = TenantContext.getTenantId();
         log.info("[Agent] 解析订单: keyword={}, tenantId={}", keyword, tenantId);
         try {
-            AgentOrderResolveResponse result = orderService.resolveOrderId(keyword, tenantId);
+            AgentOrderResolveResponse result = orderQueryService.resolveOrderId(keyword, tenantId);
             return ApiResponse.success(result);
         } catch (Exception e) {
             log.warn("[Agent] 解析订单失败: keyword={}, error={}", keyword, e.getMessage());

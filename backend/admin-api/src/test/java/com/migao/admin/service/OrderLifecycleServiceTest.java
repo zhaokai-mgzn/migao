@@ -56,8 +56,10 @@ import static org.mockito.Mockito.when;
  *
  * <p><b>为什么需要接线判据</b>：它先把门面的 `orderLifecycleService` 字段替换成 Mockito 替身，
  * 再从**原有公开入口**（{@code cancelOrder} / {@code confirmPayment} / {@code updateOrderStatus} /
- * {@code refundOrder} / {@code shipWithLogistics} / {@code revertProducingToConfirmed} /
- * {@code resolveShipperName} / {@code isProcessingReadyForShip}）驱动。一旦有人把委托改回内联实现
+ * {@code refundOrder} / {@code shipWithLogistics} / {@code revertProducingToConfirmed}）驱动。
+ * ⚠️ {@code resolveShipperName} / {@code isProcessingReadyForShip} 的门面转发已**删除**
+ * （issue #8681，P2-1e：调用方直接依赖新服务）⇒ 这两条改为**直测实现点**（见本类两个「直测」用例，
+ * 判据不删也不恒绿）。一旦有人把委托改回内联实现
  * （或换了目标服务），替身上就收不到那次调用 ⇒ 当场红。既有 {@code OrderServiceTest} 的 152 条**不具备**
  * 这个判别力：把门面整体内联回去，那 152 条也照样绿。</p>
  *
@@ -174,18 +176,45 @@ class OrderLifecycleServiceTest {
         verify(orderLifecycleService).shipWithLogistics(eq("order-1"), eq("SF1"), eq("顺丰"), any());
     }
 
+    // ── 门面转发已删除（issue #8681，P2-1e）⇒ 以下两例改为**直测实现点**（不删判据、不恒绿） ──
+
     @Test
-    @DisplayName("接线：发货人兜底与发货前置判据也转到新服务，返回值透传")
-    void shipperAndShipGuardDelegate() {
-        Order order = order("order-1", OrderStatusTransitions.CONFIRMED);
-        when(orderLifecycleService.resolveShipperName("张三")).thenReturn("张三");
-        when(orderLifecycleService.isProcessingReadyForShip(order)).thenReturn(true);
+    @DisplayName("直测：发货人取值——显式值去空白优先，缺省回落「当前登录用户姓名」")
+    void resolveShipperNamePrefersProvidedThenCurrentUser() {
+        when(userService.resolveCurrentUserDisplayName()).thenReturn("李四");
 
-        assertThat(orderService.resolveShipperName("张三")).isEqualTo("张三");
-        assertThat(orderService.isProcessingReadyForShip(order)).isTrue();
+        assertThat(lifecycle.resolveShipperName("  张三 ")).isEqualTo("张三");
+        assertThat(lifecycle.resolveShipperName("   ")).isEqualTo("李四");
 
-        verify(orderLifecycleService).resolveShipperName("张三");
-        verify(orderLifecycleService).isProcessingReadyForShip(order);
+        // 显式值**不**去查当前用户（一次都不查 = 兜底没被顺手放到前面）
+        org.mockito.Mockito.clearInvocations(userService);
+        assertThat(lifecycle.resolveShipperName("王五")).isEqualTo("王五");
+        verify(userService, org.mockito.Mockito.never()).resolveCurrentUserDisplayName();
+    }
+
+    @Test
+    @DisplayName("直测：发货前置判据读同一份 OrderShipGuard——无需报工即放行，有作业则看作业单完成数")
+    void isProcessingReadyForShipReadsTheSingleGuard() {
+        // ① 无加工项 ⇒ needsWork=false ⇒ 直接放行（不查作业单完成数）
+        when(orderItemMapper.selectList(any())).thenReturn(List.of());
+        assertThat(lifecycle.isProcessingReadyForShip(order("order-1", OrderStatusTransitions.CONFIRMED)))
+                .isTrue();
+        verify(processingOrderMapper, org.mockito.Mockito.never())
+                .countCompletedByOrderId(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyLong());
+
+        // ② 有加工项但作业单未完成 ⇒ 拦住
+        when(orderItemMapper.selectList(any())).thenReturn(List.of(
+                OrderItem.builder().id("item-1").orderId("order-2").tenantId(1L).deleted(0)
+                        .processingInfo(Map.of("processingItems", List.of(Map.of("name", "打孔"))))
+                        .build()));
+        when(processingOrderMapper.countCompletedByOrderId("order-2", 1L)).thenReturn(0L);
+        assertThat(lifecycle.isProcessingReadyForShip(order("order-2", OrderStatusTransitions.CONFIRMED)))
+                .isFalse();
+
+        // ③ 作业单已完成 ⇒ 放行
+        when(processingOrderMapper.countCompletedByOrderId("order-2", 1L)).thenReturn(1L);
+        assertThat(lifecycle.isProcessingReadyForShip(order("order-2", OrderStatusTransitions.CONFIRMED)))
+                .isTrue();
     }
 
     @Test

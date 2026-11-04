@@ -493,13 +493,23 @@ class ProductionTodoServiceTest {
 
     // ============================================================ 夹具
 
+    /**
+     * 发货守卫的实现点（issue #8681，P2-1e）：待办服务改为**直接依赖** {@code OrderLifecycleService}
+     * （门面转发已删除）。这里用**真实对象**、只装配本路径会碰的三个协作者 —— 其余留 null，
+     * 一旦被触碰就 NPE 当场暴露（不静默走空实现）。
+     */
+    private com.migao.admin.service.OrderLifecycleService newLifecycleService() {
+        return new com.migao.admin.service.OrderLifecycleService(orderMapper, orderItemMapper, null,
+                processingOrderMapper, null, null, null, null, null, null);
+    }
+
     private ProductionTodoService newService(double thresholdHours) {
         stuckPointService = new ProductionStuckPointService(
                 new ProductionService(processingOrderMapper, positionOperationMapper, workLogMapper,
                         orderMapper, orderItemMapper, null),
                 positionOperationMapper, orderSetMapper, thresholdHours);
         return new ProductionTodoService(stuckPointService, orderService, orderMapper,
-                processingOrderMapper, positionOperationMapper);
+                processingOrderMapper, positionOperationMapper, newLifecycleService());
     }
 
     /** 卡点场景：前道已完成（{@code stalledHours} 小时前）+ 这道没开工。 */

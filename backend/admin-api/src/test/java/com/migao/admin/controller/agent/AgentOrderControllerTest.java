@@ -6,6 +6,7 @@ import com.migao.admin.controller.BaseControllerTest;
 import com.migao.admin.dto.OrderDetailResponse;
 import com.migao.admin.dto.agent.AgentOrderCreateRequest;
 import com.migao.admin.mapper.UserMapper;
+import com.migao.admin.service.OrderQueryService;
 import com.migao.admin.service.OrderService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -46,6 +47,9 @@ class AgentOrderControllerTest extends BaseControllerTest {
 
     @Mock
     private OrderService orderService;
+    /** 单号解析的实现点（issue #8681，P2-1e）：`/resolve` 直接依赖新服务，门面转发已删除。 */
+    @Mock
+    private OrderQueryService orderQueryService;
     @Mock
     private UserMapper userMapper;
 
