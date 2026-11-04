@@ -689,7 +689,11 @@ gate_check() {
 # `… | grep -q .` —— `grep -q` 命中即退，上游 printf 吃 SIGPIPE ⇒ `set -o pipefail` 下
 # 「命中」被读成「不命中」= 假绿。
 bmini_face_paths() {
-  grep -E '^(frontend/bmini-app/|frontend/admin-web/src/lib/print-media\.json$|backend/ai-agent-service/app/api/chat\.py$|frontend/worker-h5/src/shipment\.mjs$)' || true
+  # `assets/brand/logo-144\.png$`（issue #8614 / PR #8616）：bmini 的 `tests/brand-logo.test.ts`
+  # 逐字节读仓根这份品牌标位图 ⇒ 它是本腿判定对象的**跨目录输入**。登记进
+  # `trigger_face_uncovered_inputs` 的出口走不通（那份台账 **只许缩短**，实测 3 > 上限 2 直接红），
+  # 所以按判据自己给的出口 ① **纳入谓词**：换图时 bmini 腿真跑一遍，比"换图后没人验"更安全。
+  grep -E '^(frontend/bmini-app/|frontend/admin-web/src/lib/print-media\.json$|backend/ai-agent-service/app/api/chat\.py$|frontend/worker-h5/src/shipment\.mjs$|assets/brand/logo-144\.png$)' || true
 }
 bmini_face_hit() {
   local hit
