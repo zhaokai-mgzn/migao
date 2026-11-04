@@ -912,7 +912,7 @@
       "symbol": "createRole",
       "form": "builder",
       "params": "String name, String code, String description, Long tenantId, List<String> permissionIds",
-      "anchor": "Role.builder() .id(java.util.UUID.randomUUID().toString().replace(\"-\", \"\")) .tenantId(te"
+      "anchor": "Role.builder() .id(java.util.UUID.randomUUID().toString().replace(\"-\", \"\")) .tenantId(tenantId) .name(name) .code(code)"
     },
     {
       "table": "scheduled_tasks",
@@ -1016,7 +1016,7 @@
       "symbol": "upsertPaymentQrcode",
       "form": "builder",
       "params": "@PathVariable String type, @RequestBody java.util.Map<String, String> body",
-      "anchor": "TenantPaymentQrcode.builder() .id(java.util.UUID.randomUUID().toString().replace(\"-\", \"\"))"
+      "anchor": "TenantPaymentQrcode.builder() .id(java.util.UUID.randomUUID().toString().replace(\"-\", \"\")) .tenantId(tenantId) .paymentType(type)"
     },
     {
       "table": "tenants",
