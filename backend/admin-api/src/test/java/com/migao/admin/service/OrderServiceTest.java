@@ -2723,21 +2723,30 @@ class OrderServiceTest {
                 .build();
     }
 
+    /**
+     * 订单日志的**载体集合**（issue #8191，P2-1c）：库存族（{@code matchSkuId} 的 WARN 等）搬到
+     * {@link OrderStockService} 后，日志的发出类跟着变 ⇒ appender 同时挂到门面与新服务上。
+     * 断言面**一字未改**（仍要求「WARN 级别 + 话术含『键族定位不到』『显式拒绝』」），只是收集面跟着代码走。
+     */
+    private static final Class<?>[] ORDER_LOG_CARRIERS = {OrderService.class, OrderStockService.class};
+
     private ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> attachOrderLogAppender() {
-        ch.qos.logback.classic.Logger logger =
-                (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(OrderService.class);
         ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> appender =
                 new ch.qos.logback.core.read.ListAppender<>();
         appender.start();
-        logger.addAppender(appender);
+        for (Class<?> carrier : ORDER_LOG_CARRIERS) {
+            ((ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(carrier))
+                    .addAppender(appender);
+        }
         return appender;
     }
 
     private void detachOrderLogAppender(
             ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> appender) {
-        ch.qos.logback.classic.Logger logger =
-                (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(OrderService.class);
-        logger.detachAppender(appender);
+        for (Class<?> carrier : ORDER_LOG_CARRIERS) {
+            ((ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(carrier))
+                    .detachAppender(appender);
+        }
     }
 
     @Test

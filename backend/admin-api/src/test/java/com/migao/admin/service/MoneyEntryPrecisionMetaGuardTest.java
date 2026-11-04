@@ -136,8 +136,13 @@ class MoneyEntryPrecisionMetaGuardTest {
                 // ── ① 本包修复的入口（GATED）──────────────────────────────────────
                 site("com/migao/admin/service/OrderService.java", "setRefundAmount", Admission.GATED,
                         "退款（issue #6221）：refund_amount 落库前过 MoneyScale.requireTwoDecimalsOrNull"),
-                site("com/migao/admin/service/OrderService.java", "FinanceTransaction.builder()", Admission.GATED,
-                        "退款流水 amount = applied（同一笔已过准入）；收款流水 amount 取自订单实收（库列 numeric(12,2)）"),
+                site("com/migao/admin/service/OrderFeeSupport.java", "FinanceTransaction.builder()", Admission.NO_NEW_INPUT_SOURCE,
+                        "收款/退款流水：金额 = 订单实收（actualAmount 兜底 totalAmount，库列 numeric(12,2)）"
+                                + "或取消退款 = 实收 − 已退（两个已准入值之差，≤2 位小数不产生新精度）⇒ 不引入新输入源；"
+                                + "issue #8191（P2-1c）随 recordFinanceTransaction 从 OrderService 搬到本文件"
+                                + "（台账同步：从 GATED 改判 NO_NEW_INPUT_SOURCE —— 该写面**从来**不自己做准入，"
+                                + "原先满足 GATE-TEXT 只因同文件恰好有别处的 MoneyScale；根条目 = "
+                                + "OrderService.java :: setRefundAmount 仍为 GATED）"),
 
                 // ── ② 已有等价准入（EQUIVALENT_GATED，本仓既有范式）────────────────
                 site("com/migao/admin/service/ProductionOperationPositionCommandService.java", "setUnitPrice",

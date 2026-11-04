@@ -116,3 +116,5 @@
 {"id":"1793787397.65276.4042","ts":"2026-11-04T10:16:37Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/8285-lease","why":"--allow-package-heavy（命令行显式）"}
 {"id":"1793789456.68254.15007","ts":"2026-11-04T10:50:56Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/8285-lease","why":"--allow-package-heavy（命令行显式）"}
 {"id":"1793789661.73445.8844","ts":"2026-11-04T10:54:21Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/8285-lease","why":"--allow-package-heavy（命令行显式）"}
+{"id":"1793792664.83377.3441","ts":"2026-11-04T11:44:25Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/8191-order-service-slice","why":"子包 worktree 直跑全量（无批次标记）"}
+{"id":"1793792670.83461.11560","ts":"2026-11-04T11:44:30Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/8191-order-service-slice","why":"--allow-package-heavy（命令行显式）"}
