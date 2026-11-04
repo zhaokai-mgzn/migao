@@ -69,6 +69,27 @@ vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 
 const ok = (data: unknown) => ({ data: { success: true, data } })
 
+// issue #6579：`/settings` 的主线读数来自**一个**聚合端点（接口面单开模块）——
+// 不桩它的话，`<SettingsPage />` 会真的发一次网络请求（本仓 jest/jsdom 里必失败），
+// 于是算料域的落数被拖慢 ⇒ 判据 5 会变成**看天吃饭**（实测全量并发下偶红：拿到 0 个字段）。
+vi.mock('@/lib/api-config-readiness', () => ({
+  configReadinessApi: {
+    get: () =>
+      Promise.resolve(
+        ok({
+          steps: {
+            operations: { facts: { total: 1, unpriced: 0, orphans: 0 }, href: '/production/routings' },
+            routings: { facts: { missing_base_routes: [] }, href: '/production/routings' },
+            'default-route': { facts: { count: 1 }, href: '/production/routings' },
+            'processing-items': { facts: { total: 1, active: 1 }, href: '/settings?domain=processing-items' },
+            'fee-combinations': { facts: { combinations: 1, gaps: 0 }, href: '/production/processing-fees' },
+            calc: { facts: { source: 'stored' }, href: '/settings/params' },
+          },
+        }),
+      ),
+  },
+}))
+
 vi.mock('@/lib/api', () => ({
   settingsApi: {
     getSettings: () =>
