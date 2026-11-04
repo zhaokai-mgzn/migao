@@ -2364,15 +2364,18 @@ async function financeJourney(page) {
     const bodyLen = await page.evaluate(() => document.body.innerText.length)
     if (bodyLen < 50) throw new Error('财务页空白')
     // 🔴 SDQS Q1/D5（issue #7583 缺陷 5）：`bodyLen` 只证明「有字」—— **空态页面壳**同样能过。
-    //    再要一个「只在数据/区块真渲染时才存在」的读数：表格行 / 金额 / 对账区块。
+    //    再要一个「只在数据/区块真渲染时才存在」的读数：表格行 / 待收款卡片 / 对账 tab。
+    //    ⚠️ 文案一律用**现取字面量**（`应收对账` / `待收款` 取自 finance/page.tsx）——
+    //    纯形态正则（如金额正则）在 `test_ui_smoke_selector_liveness.py` 判据 A 里是
+    //    「取不到文案」（静态面核不了 ⇒ 该 selector 永不命中）。这里不写正则。
     const rows = await page.locator('tbody tr, [role="row"]').count().catch(() => 0)
-    const money = await page.getByText(/[¥￥]\s?[\d,]+(?:\.\d+)?/).count().catch(() => 0)
-    const face = await page.getByText(/对账|应收|应付|收款|结算/).count().catch(() => 0)
-    if (rows + money + face === 0) {
-      throw new Error(`财务页只有文字壳（bodyLen=${bodyLen}，表格行=${rows}、金额=${money}、区块=${face} 全 0）`
-        + ' —— 空态/加载态不是有效结论（SDQS Q1/D5）')
+    const reconcile = await page.getByText('应收对账').count().catch(() => 0)
+    const receivable = await page.getByText('待收款').count().catch(() => 0)
+    if (rows + reconcile + receivable === 0) {
+      throw new Error(`财务页只有文字壳（bodyLen=${bodyLen}，表格行=${rows}、对账=${reconcile}、`
+        + `待收款=${receivable} 全 0）—— 空态/加载态不是有效结论（SDQS Q1/D5）`)
     }
-    await h.done(true, '', `财务对账页渲染（bodyLen=${bodyLen}，行=${rows}、金额=${money}、区块=${face}）`)
+    await h.done(true, '', `财务对账页渲染（bodyLen=${bodyLen}，行=${rows}、对账=${reconcile}、待收款=${receivable}）`)
   } catch (e) {
     await h.done(false, `财务页失败: ${String(e).slice(0, 300)}`)
   }
@@ -2563,10 +2566,11 @@ async function notificationsJourney(page) {
     const bodyLen = await page.evaluate(() => document.body.innerText.length)
     if (bodyLen < 30) throw new Error('通知页空白')
     // 🔴 SDQS Q1/D5（issue #7583 缺陷 5）：通知面**业务上可为空**，但「没有通知」与
-    //    「页面壳没渲染」必须能分辨 ⇒ 要么有通知条目，要么有**显式**空态文案。只判 bodyLen
-    //    会把「渲染了一张壳」读成通过。
-    const items = await page.locator('tbody tr, [role="row"], [class*="list"] li').count().catch(() => 0)
-    const emptyText = await page.getByText(/暂无(通知|消息)|没有(新)?通知/).count().catch(() => 0)
+    //    「页面壳没渲染」必须能分辨 ⇒ 要么有通知条目，要么有**显式**空态文案。
+    //    ⚠️ 空态字面量**现取**自 notifications/page.tsx（#8040 的三个 tab 各自说清为什么空）；
+    //    不写字面形态正则里取不到的候选（判据 A 会把「源码里没有的候选」判成永不命中）。
+    const items = await page.locator('tbody tr, [role="row"]').count().catch(() => 0)
+    const emptyText = await page.getByText(/还没有通知|没有未读通知/).count().catch(() => 0)
     if (items + emptyText === 0) {
       throw new Error(`通知页既无条目也无显式空态（bodyLen=${bodyLen}）`
         + ' —— 页面壳不是有效结论（SDQS Q1/D5：空态必须显式）')
@@ -2612,11 +2616,13 @@ async function corporatePage(page, name, path) {
     const bodyLen = await page.evaluate(() => document.body.innerText.length)
     if (bodyLen < 30) throw new Error(`${path} 页面空白`)
     // 🔴 SDQS Q1/D5（issue #7583 缺陷 5）：门户页旧形态也只判 `bodyLen` ⇒ 「渲染了一张错误页 /
-    //    空壳」同样通过。再要一个结构性读数：页面标题与导航/页脚链接都必须存在。
-    const heads = await page.locator('h1, h2').count().catch(() => 0)
-    const links = await page.locator('header a, nav a, footer a').count().catch(() => 0)
+    //    空壳」同样通过。再要一个结构性读数：页面标题与链接都必须存在。
+    //    ⚠️ 用 **role** 选择器（`heading` / `link` 在判据 R 的现取口径里），不写裸标签 CSS 选择器
+    //    —— 族外 CSS 形态要进 `ui_smoke_css_registry.json`，而那张台账**只许缩短**。
+    const heads = await page.getByRole('heading').count().catch(() => 0)
+    const links = await page.getByRole('link').count().catch(() => 0)
     if (heads === 0 || links === 0) {
-      throw new Error(`${path} 缺少页面骨架（标题=${heads}、导航/页脚链接=${links}）`
+      throw new Error(`${path} 缺少页面骨架（标题=${heads}、链接=${links}）`
         + ' —— 只有文字长度不是有效结论（SDQS Q1/D5）')
     }
     await h.done(true, '', `${path} 渲染（${bodyLen} 字符；标题=${heads}、链接=${links}）`)

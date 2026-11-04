@@ -493,8 +493,10 @@ def test_order_fixture_cleanup_is_self_proving():
 WEAK_PAGE_FUNCTIONS = {
     "categoriesJourney": ("未见「新增分类」按钮", "throw new Error"),
     "financeJourney": ('tbody tr', 'role="row"'),
-    "notificationsJourney": ("暂无", 'tbody tr'),
-    "corporatePage": ("h1, h2", "header a, nav a, footer a"),
+    # 空态字面量**现取**自 notifications/page.tsx（#8040）—— 判据 A 只认源码里真有的候选
+    "notificationsJourney": ("还没有通知", 'tbody tr'),
+    # role 选择器（判据 R 的现取口径）—— 不写裸标签 CSS（族外形态要进只许缩短的台账）
+    "corporatePage": ("getByRole('heading')", "getByRole('link')"),
     "customerDetailJourney": ("缺数据不是有效结论", "throw new Error"),
 }
 
