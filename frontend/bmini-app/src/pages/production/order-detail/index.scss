@@ -1,14 +1,14 @@
 .order-detail {
   min-height: 100vh;
   padding: 24px;
-  background: #f5f7fa;
+  background: #faf7f2;
   box-sizing: border-box;
 
   &__hint {
     display: block;
     padding: 32px 8px;
     font-size: 28px;
-    color: #5b6570;
+    color: #625545;
     line-height: 1.6;
   }
 
@@ -24,9 +24,9 @@
     height: 88px;
     line-height: 88px;
     font-size: 32px;
-    color: #1a73e8;
+    color: #3a4e75;
     background: #ffffff;
-    border: 2px solid #1a73e8;
+    border: 2px solid #3a4e75;
     border-radius: 12px;
   }
 
@@ -48,14 +48,14 @@
     flex: 0 0 auto;
     margin-right: 24px;
     font-size: 28px;
-    color: #5b6570;
+    color: #625545;
   }
 
   &__value {
     flex: 1 1 auto;
     text-align: right;
     font-size: 32px;
-    color: #0a2540;
+    color: #312c26;
     word-break: break-all;
   }
 
@@ -63,27 +63,27 @@
     display: block;
     font-size: 32px;
     font-weight: 600;
-    color: #0a2540;
+    color: #312c26;
   }
 
   &__progress {
     display: block;
     margin-top: 12px;
     font-size: 28px;
-    color: #1a73e8;
+    color: #3a4e75;
   }
 
   &__position {
     margin-top: 20px;
     padding-top: 16px;
-    border-top: 2px solid #eef1f5;
+    border-top: 2px solid #f2ede5;
   }
 
   &__position-name {
     display: block;
     font-size: 30px;
     font-weight: 600;
-    color: #0a2540;
+    color: #312c26;
   }
 
   /* 「商品与加工信息」块（issue #6901 包 B）：抬头下的一句用途说明，然后是逐部位若干行。
@@ -92,7 +92,7 @@
     display: block;
     margin-top: 8px;
     font-size: 26px;
-    color: #5b6570;
+    color: #625545;
   }
 
   &__operation {
@@ -102,14 +102,14 @@
   &__operation-name {
     display: block;
     font-size: 30px;
-    color: #0a2540;
+    color: #312c26;
   }
 
   &__operation-meta {
     display: block;
     margin-top: 4px;
     font-size: 26px;
-    color: #5b6570;
+    color: #625545;
   }
 
   /* 「卡在哪」块（issue #6597）：读数全部来自服务端，这里只管排版 ——
@@ -118,7 +118,7 @@
     display: block;
     margin-top: 8px;
     font-size: 26px;
-    color: #5b6570;
+    color: #625545;
     line-height: 1.6;
   }
 
@@ -133,14 +133,14 @@
     flex: 1 1 auto;
     margin-right: 16px;
     font-size: 30px;
-    color: #0a2540;
+    color: #312c26;
     word-break: break-all;
   }
 
   &__stuck-wait {
     flex: 0 0 auto;
     font-size: 28px;
-    color: #d92d20;
+    color: #dc2626;
     white-space: nowrap;
   }
 }

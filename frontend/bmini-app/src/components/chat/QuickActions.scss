@@ -33,7 +33,7 @@
     &:active {
       transform: scale(0.96);
       background: $primary-light;
-      border-color: rgba(26, 115, 232, 0.3);
+      border-color: rgba(58, 78, 117, 0.3);
     }
   }
 
@@ -63,11 +63,11 @@
     align-items: center;
     padding: 20px 24px;
     border-radius: $radius-lg;
-    border: 1px solid rgba(26, 115, 232, 0.35);
+    border: 1px solid rgba(58, 78, 117, 0.35);
     background: $primary-light;
 
     &:active {
-      background: rgba(26, 115, 232, 0.14);
+      background: rgba(58, 78, 117, 0.14);
     }
   }
 

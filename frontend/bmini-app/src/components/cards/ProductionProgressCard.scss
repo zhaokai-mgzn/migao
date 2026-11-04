@@ -13,26 +13,26 @@
   &__title {
     font-size: 28px;
     font-weight: 600;
-    color: #1f2937;
+    color: #312c26;
   }
 
   &__percent {
     font-size: 32px;
     font-weight: 600;
-    color: #1a73e8;
+    color: #3a4e75;
   }
 
   &__track {
     margin-top: 16px;
     height: 12px;
-    background: #eef2f7;
+    background: #f2ede5;
     border-radius: 6px;
     overflow: hidden;
   }
 
   &__fill {
     height: 12px;
-    background: #1a73e8;
+    background: #3a4e75;
     border-radius: 6px;
   }
 
@@ -40,22 +40,22 @@
     display: block;
     margin-top: 12px;
     font-size: 24px;
-    color: #4b5563;
+    color: #625545;
   }
 
   &__empty {
     display: block;
     margin-top: 16px;
     font-size: 24px;
-    color: #9ca3af;
+    color: #b8aa94;
   }
 
   &__delivery {
     display: block;
     margin-top: 16px;
     padding-top: 16px;
-    border-top: 1px solid #f3f4f6;
+    border-top: 1px solid #f2ede5;
     font-size: 24px;
-    color: #6b7280;
+    color: #7e6f57;
   }
 }

@@ -14,11 +14,11 @@ export const POSTER_WIDTH = 750
 export const POSTER_HEIGHT = 1000
 
 const PADDING = 40
-const INK = '#0A2540'
-const GOLD = '#C8A45C'
-const MUTED = '#6B7280'
-const PRICE_RED = '#C0392B'
-const PAPER = '#F7F5F1'
+const INK = '#312c26'
+const GOLD = '#c06a3e'
+const MUTED = '#7e6f57'
+const PRICE_RED = '#dc2626'
+const PAPER = '#faf7f2'
 
 export interface PosterProduct {
   name: string
@@ -211,7 +211,7 @@ export function layoutMarketingPoster(view: MarketingPosterView): PosterLayout {
 
   // 商品主图
   const imageRect = { x: PADDING, y: 250, w: POSTER_WIDTH - PADDING * 2, h: 360 }
-  ops.push({ kind: 'rect', x: imageRect.x, y: imageRect.y, w: imageRect.w, h: imageRect.h, color: '#E5E7EB' })
+  ops.push({ kind: 'rect', x: imageRect.x, y: imageRect.y, w: imageRect.w, h: imageRect.h, color: '#e6dfd3' })
 
   // 商品名（最多 2 行）
   const name = wrapText(view.product.name, 34, POSTER_WIDTH - PADDING * 2, 2)
@@ -263,7 +263,7 @@ export function layoutMarketingPoster(view: MarketingPosterView): PosterLayout {
   ops.push({ kind: 'rect', x: 0, y: 968, w: POSTER_WIDTH, h: 32, color: INK })
   ops.push({
     kind: 'text', text: '黄金策 · 智慧经营', x: PADDING, y: 974, fontPx: 18,
-    weight: 'normal', color: '#E8D3A2', align: 'left',
+    weight: 'normal', color: '#e7b99d', align: 'left',
   })
 
   return {

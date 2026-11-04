@@ -1,5 +1,5 @@
 .confirm-card {
-  background: #fff;
+  background: #ffffff;
   border-radius: 16rpx;
   padding: 24rpx;
   box-shadow: 0 2rpx 12rpx rgba(0, 0, 0, 0.06);
@@ -10,7 +10,7 @@
   display: block;
   font-size: 30rpx;
   font-weight: 600;
-  color: #1f2937;
+  color: #312c26;
   padding-bottom: 16rpx;
 }
 
@@ -26,7 +26,7 @@
   justify-content: space-between;
   align-items: center;
   height: 56rpx;
-  border-bottom: 1px solid #f0ede8;
+  border-bottom: 1px solid #f2ede5;
 }
 
 .confirm-card__field:last-child {
@@ -35,12 +35,12 @@
 
 .confirm-card__field-label {
   font-size: 26rpx;
-  color: #6b7280;
+  color: #7e6f57;
 }
 
 .confirm-card__field-value {
   font-size: 26rpx;
-  color: #1f2937;
+  color: #312c26;
   font-weight: 500;
   max-width: 60%;
   text-align: right;
@@ -60,7 +60,7 @@
 .confirm-card__meta-label {
   display: block;
   font-size: 24rpx;
-  color: #8a8a8a;
+  color: #9c8c72;
   margin-bottom: 12rpx;
 }
 
@@ -77,25 +77,25 @@
   flex: 1;
   height: 64rpx;
   border-radius: 12rpx;
-  border: 1rpx solid #e8e8e8;
-  background: #f7f7f7;
+  border: 1rpx solid #e6dfd3;
+  background: #f2ede5;
   display: flex;
   align-items: center;
   justify-content: center;
 
   &--active {
-    border-color: #1a73e8;
-    background: #e8f1fe;
+    border-color: #3a4e75;
+    background: #eef2f8;
   }
 }
 
 .confirm-card__seg-text {
   font-size: 26rpx;
-  color: #333;
+  color: #312c26;
 
   .confirm-card__seg-item--active &,
   .confirm-card__seg-item--active & {
-    color: #1a73e8;
+    color: #3a4e75;
     font-weight: 600;
   }
 }
@@ -109,23 +109,23 @@
 .confirm-card__payment-item {
   padding: 12rpx 24rpx;
   border-radius: 12rpx;
-  border: 1rpx solid #e8e8e8;
-  background: #fff;
+  border: 1rpx solid #e6dfd3;
+  background: #ffffff;
   display: flex;
   align-items: center;
 
   &--active {
-    border-color: #1a73e8;
-    background: #e8f1fe;
+    border-color: #3a4e75;
+    background: #eef2f8;
   }
 }
 
 .confirm-card__payment-text {
   font-size: 26rpx;
-  color: #333;
+  color: #312c26;
 
   .confirm-card__payment-item--active & {
-    color: #1a73e8;
+    color: #3a4e75;
     font-weight: 600;
   }
 }
@@ -140,13 +140,13 @@
 
 .confirm-card__amount-label {
   font-size: 24rpx;
-  color: #8a8a8a;
+  color: #9c8c72;
 }
 
 .confirm-card__amount-value {
   font-size: 36rpx;
   font-weight: 700;
-  color: #1a73e8;
+  color: #3a4e75;
 }
 
 .confirm-card__btn {
@@ -159,20 +159,20 @@
 }
 
 .confirm-card__btn--cancel {
-  background: #f5f5f5;
-  border: 1px solid #e8e8e8;
+  background: #f2ede5;
+  border: 1px solid #e6dfd3;
 }
 
 .confirm-card__btn--confirm {
-  background: #b7791f;
+  background: #b45309;
 }
 
 .confirm-card__btn-text {
   font-size: 28rpx;
-  color: #595959;
+  color: #625545;
 }
 
 .confirm-card__btn-text--confirm {
-  color: #fff;
+  color: #ffffff;
   font-weight: 600;
 }

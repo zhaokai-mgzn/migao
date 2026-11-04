@@ -1598,11 +1598,47 @@ async function orderDetailJourney(page, orderId) {
         await confirmBtn.click()
       }
     }
-    // 加工单生成（confirmation 门禁的 UI 侧：按钮 + 结果可见）
-    const genBtn = page.getByRole('button', { name: /生成加工单/ }).first()
-    if (await waitVisible(genBtn, 12000)) {
-      await genBtn.click()
+    // ── 生成作业单：**唯一入口 = 智能派单**（issue #7743 / #7634）─────────────────────
+    // 旧写法点订单详情里的「生成加工单」按钮 —— 自 #7634（销售订单只读、直派入口全关）起
+    // 该按钮**已不存在**，`waitVisible` 只会静默跳过 ⇒ 后面「作业单块出现」必然恒空 = 假绿/假红。
+    // 真链路：`/production/pool` 勾该单 → 「一键合并派单」（`pool-dispatch-batch`）。
+    // ⚠️ 失败一律 **throw**，不许 `if (visible) click` 这种「不可见就当年过了」的形态：
+    //   那正是 issue #7743 要消灭的空判据（把「入口不可达」读成「本步无需做」）。
+    await nav(page, '/production/pool', '')
+    const lineRow = page.locator(`[data-testid="pool-line-${orderId}"]`).first()
+    if (!(await waitVisible(lineRow, 15000))) {
+      throw new Error(
+        `智能派单池里没有本单（${orderId}）—— 自 #7634 起「生成作业单」只在 /production/pool 有入口，`
+        + '池里查不到就意味着作业单无法生成（不是"本步可跳过"）',
+      )
     }
+    const pick = lineRow.locator('input[type="checkbox"]').first()
+    if (await pick.isDisabled().catch(() => true)) {
+      throw new Error(`智能派单池里本单 ${orderId} 的勾选框被禁用（缺料行不可派单）`)
+    }
+    await pick.check()
+    // 勾选后前端自动调 /preview 出成批预览（服务端算）—— 等它出现再派，避免抢跑
+    if (!(await waitVisible(page.locator('[data-testid="pool-preview"]').first(), 15000))) {
+      throw new Error('勾选后 15s 内没出现成批预览（pool-preview）—— 派单不可提交')
+    }
+    const batchBtn = page.locator('[data-testid="pool-dispatch-batch"]').first()
+    if (!(await waitVisible(batchBtn, 15000))) {
+      throw new Error('智能派单页没有「一键合并派单」按钮（pool-dispatch-batch）—— 入口形态已变')
+    }
+    await batchBtn.click()
+    // 派单是**写动作**：等服务端把本单移出待派池（行消失 = 真落地），而不是点完就算过
+    const gone = await page
+      .locator(`[data-testid="pool-line-${orderId}"]`)
+      .first()
+      .waitFor({ state: 'detached', timeout: 20000 })
+      .then(() => true)
+      .catch(() => false)
+    if (!gone) {
+      const err = (await page.locator('[data-testid="pool-dispatch-error"]').first().textContent().catch(() => '')) || ''
+      throw new Error(`点「一键合并派单」后 20s 内本单仍在待派池（未真派单）${err ? `；服务端拒绝：${err.trim()}` : ''}`)
+    }
+    // 回订单详情（只读核对作业单块）：这一跳不可省 —— 判据是「详情页真的长出作业单块」
+    await nav(page, `/orders/${orderId}`, '')
     // ① 加工单块出现：**在加工单块容器内**取单号（issue #4226①：不猜前缀，也不全页乱匹配）。
     // 真实加工单号前缀是 JG-（实测 JG-20260918-9049），旧正则 /PO-…|PG-…/ 永不命中
     // ⇒ 证据恒为「加工单可见=false」= 空判据。容器 = ProcessingOrderBlock 的打印区
