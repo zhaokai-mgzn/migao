@@ -1460,7 +1460,11 @@
       "date": "2026-11-05",
       "no_channel_total": 0,
       "backend_contract_scoring_zero": 318,
+<<<<<<< HEAD
       "note": "issue #8686 新增 MC-207（订单状态 packed 的三轴分离：① Agent 动作面四个工具 schema 枚举保持排除 packed 并把「为什么排除」变成判据（AST 构造式 + 裁定出处 + 集合断言）② 显示面补「已打包」与未知状态兜底（详情展示 + 列表/看板徽标）③ 本体 order.status 显式登记「暂不同源」+ 收敛条件；skip_reason 标 [backend-contract]、expectations 为空 ⇒ 按定义计入本读数）⇒ 317 → 318。按**实测**重锚（本机实跑 `python3 -m pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py -q -p no:randomly` 的报错行原文：`{'no_channel_total': 0, 'backend_contract_scoring_zero': 318}`），非门禁放宽：该用例的机器判红通道 = traces.tests 引用的 backend/ai-agent-service/tests/test_order_status_axis_separation.py（5 条，含 3 次注入式红证）与 backend/ai-agent-service/tests/test_order_status.py（5 条），以及 frontend/admin-web 的两个 vitest 文件（16 条，含 3 次注入式红证）；本机实跑 pytest 19 passed / vitest 16 passed，no_channel_total 仍为 0（历史链上恒 0）。"
+=======
+      "note": "issue #8681 的 P2-1e 第二批新增 MC-205（OrderServiceTest 驱动对象迁到实现点 + 删 getMyOrderPage 转发；skip_reason 标 [backend-contract]、expectations 为空 ⇒ 按定义计入本读数）⇒ 317 → 318（317 那一档含同日晚 #8688 的 MC-206）。按**实测**重锚（rebase 到 origin/main 后本机实跑 `python3 -m pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py -q` 的报错行原文 `{'no_channel_total': 0, 'backend_contract_scoring_zero': 318}`），非门禁放宽：该用例的机器判红通道 = traces.tests 引用的 4 个 Java 判据 + 1 个 pytest 棘轮判据（no_channel_total 仍为 0，历史链上恒 0）。"
+>>>>>>> origin/main
     }
   ]
 }

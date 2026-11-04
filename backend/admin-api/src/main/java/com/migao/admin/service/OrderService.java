@@ -418,29 +418,6 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
     }
 
     /**
-     * C 端「我的订单」分页查询 — user_id 直配 + 手机号兜底。
-     *
-     * 数据隔离语义（与 V23 回填一致）：
-     * - orders.user_id = 当前用户 → 必然可见（聊天/绑定下单）
-     * - orders.user_id IS NULL AND orders.customer_phone = 当前用户已绑定手机号
-     *   → 视为「名下」订单（商户代录/历史订单），仅当本人已授权绑定手机号才可见，
-     *   且 customer_phone 必须精确等于本人手机号（不越权）
-     *
-     * @param page     页码
-     * @param size     每页大小
-     * @param status   订单状态（可选）
-     * @param tenantId 租户ID
-     * @param userId   当前用户ID（X-User-Id 透传）
-     * @param userPhone 当前用户已绑定手机号（可为空：未绑定时退化为仅 user_id 匹配）
-     * @return 分页响应
-     */
-    public PageResponse<OrderListResponse> getMyOrderPage(long page, long size, String status,
-                                                          Long tenantId, String userId, String userPhone) {
-        // 门面委托（issue #8191，P2-1a）：查询族实现点在 OrderQueryService，调用方零改动。
-        return queryService().getMyOrderPage(page, size, status, tenantId, userId, userPhone);
-    }
-
-    /**
      * 手机号回填绑定：把「该手机号下 user_id 为空的本租户订单」绑定到指定用户。
      *
      * 场景：小程序客户授权绑定手机号后，商户代录/历史订单（仅存 customer_phone、

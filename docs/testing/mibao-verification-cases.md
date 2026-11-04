@@ -4245,7 +4245,7 @@
 ```
 溯源: 2026-10-31 新增（issue #8295）：两步确认，避免误写 ｜ tags: ui, preview
 
-## 杂项域（233 case）
+## 杂项域（234 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -7742,6 +7742,20 @@
 跳过: [frontend-contract] 纯前端文案 + 渲染产物判据（零 LLM / 零网络 / 零 DB / 零权限面）：判据在 traces.tests 的 worker-h5 渲染测试里（不进 agent-eval 冒烟）；权威执行面 = frontend/worker-h5/tests/worker-h5-no-device-name-copy.test.mjs 与既有 worker-h5 渲染判据
 ```
 溯源: 2026-11-05 新增（issue #8683）。现取读数（`git show origin/main:frontend/bmini-app/src/pages/worker/home/index.tsx`）：bmini 工人首页没有裁高计算卡片 —— issue 正文写的落点（bmini 工人首页卡片）与 main 事实不符；「裁高计算（一体机）」的用户可见落点实际在 frontend/worker-h5：页头入口栏（裁高入口链接）、machine.mjs 的屏上标题、machine.html 的页面标题。⇒ 按 issue 的意图（两端同一个入口、不按端分叉）改这三处，并落类级守卫（用户可见面出现端名 ⇒ 红）；bmini 侧只改两处引用旧文案的注释，终端仓零改动。红证 = 两次单变量注入逐条实跑并逐字节还原（屏上标题改回带端名 ⇒ 4 failed；入口文案改回带端名 ⇒ 4 failed）；还原后 node --test 全量 worker-h5 = 421 passed / 0 failed。 ｜ tags: user-copy, no-device-name, worker-h5, meta-guard, class-level, no-end-fork, red-proof
+
+### MC-205. OrderService 门面收尾第二批（issue #8681 的 P2-1e，部分交付）：OrderServiceTest 的 152 条判据把驱动对象从门面迁到实现点（129 个调用点改直驱查询 / 建单 / 生命周期三个新服务，断言零改动），并删除因此解锁的 getMyOrderPage 转发（C 端「我的订单」端点改直连 OrderQueryService；门面 1,725 → 1,702 行，公开成员 26 → 25） 🔵
+```
+你: issue #8681 的结构性阻塞原文（上一批 PR #8682 的结论）：只要 OrderServiceTest 的 152 条还直接驱动门面那批公开入口，入口就删不掉 —— 删了就得改既有断言，而「门面是否真的转出去」也会同时失去看管。⇒ 本批第一步 = 把驱动对象迁到新服务（断言本身不改），再删解锁的转发。
+你: 既有 152 条订单行为判据的**断言**（期望值 / 异常话术 / 边界读数）一个字都不许改，只许换「谁被驱动」；C 端「我的订单」仍按 user_id 直配 + 绑定手机号兜底做用户级隔离，Agent 端 /mine 端点的入参 / 响应 / 拒绝话术逐字不变
+数据: 判据 1·🔴 驱动对象已迁到实现点（会红）：OrderServiceTest 里经门面入口调用的行数 = 0，查询族经 OrderQueryService、建单族经 OrderCreationService、状态流转 / 取消 / 退款 / 确认支付 / 发货 / 加工单联动作废经 OrderLifecycleService（本批 129 个调用点）；把任一族改回门面入口 ⇒ 该族判据重新变成「门面驱动」（退休判据与调用形态判据具名红）。现取读数：迁后仍有 15 个调用点驱动门面，全部落在**实体实现**而非转发上（删单 5 / 备注 4 / 手机号回填 3 / 跟进状态 2 / 内容改单 1）⇒ 那 5 个方法要等「实现搬家」那一批，不是本批能删的。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/OrderServiceTest.java
+数据: 判据 2·🔴 断言零改动（会红）：把改动集的 OrderServiceTest 逐行归一化（把驱动接收者归一、去掉追加的 support 实参）后，增删两侧逐行相等；且 @Test 条数仍为 152、测试方法名集合与改前相同；任何期望值 / 异常话术 / 边界读数被改动 ⇒ 归一化后两侧不等即红。实测：152 tests / 0 failures / 0 errors / 0 skipped（驱动迁移后与删转发后各跑一次）。执行点 = 同判据 1 的判据文件
+数据: 判据 3·🔴 退休面（会红）：门面里不再声明 getMyOrderPage（把转发加回来 ⇒ 具名红），且 src/main 全树零处「经门面变量调用 getMyOrderPage」（谁改回门面 ⇒ 具名红）；同时实现点 OrderQueryService 必须仍声明它（防「两边都没了」的恒绿），具名消费方 AgentOrderController 必须逐字调用实现点。判别力自证内建：内存里塞回跨行签名的转发 ⇒ 谓词判真；注释里的同名文本不算声明。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/OrderFacadeForwarderRetirementTest.java
+数据: 判据 4·🔴 失对象的接线判据改成直测实现点（不删、不恒绿）：C 端「我的订单」的用户级隔离改由真实 OrderQueryService 直测 —— 无绑定手机号时查询条件只含 user_id、有绑定手机号时才追加「未归属 + 手机号相等」兜底（从 wrapper 的 SQL 段读，不看散文），缺用户标识 ⇒ 拒绝且一次都不查库；Agent 端控制器的参透传判据改 mock 实现点（同参 / 拒绝时不查库 / 响应字段三条断言逐字保留）。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/OrderQueryServiceTest.java 与 backend/admin-api/src/test/java/com/migao/admin/controller/AgentOrderControllerMineTest.java
+数据: 判据 5·🔴 体量棘轮只许降：OrderService 1,725 → 1,702 行（−23，只删不加：本批删 1 个转发方法、未新增任何源码文件），公开成员 26 → 25（removed: 只一个方法 / added: 空）；新类 < 800 行一条不触发。执行点 = tests/unit_ci_workflows/test_loc_ratchet.py
+前置: 零运行期前置（纯结构判据 + JUnit 单测）：被测对象 = 门面 OrderService 及其四个新服务的**调用关系**（driver 调用形态）+ 既有 152 条行为判据的断言文本 + 仓内源码文本；前置 = 这些文件存在且可读，由仓本身满足。零网络 / 零 LLM / 零 DB（本单无真库腿）。
+跳过: [backend-contract] Java 侧测试驱动对象迁移 + 门面转发退休（零 LLM / 零外网 / 零前端可见面 / 无 HTTP 契约变化），由 JUnit 判据与 pytest 棘轮判据验证，无 agent 行为面，不进入 agent-eval 冒烟
+```
+溯源: 2026-11-05 新增（issue #8681 的 P2-1e 第二批，**部分交付**：不写关闭关键词）。 现取读数（`git show origin/main:backend/admin-api/src/main/java/com/migao/admin/service/OrderService.java | wc -l` = 1,725， `grep -c "@Test" backend/admin-api/src/test/java/com/migao/admin/service/OrderServiceTest.java` = 152）。本批只做一件事的两半：① **解结构性阻塞** —— OrderServiceTest 的驱动对象从门面迁到实现点（129 个调用点：查询 27 / 建单 55 / 生命周期 47）； 三个实例取自门面自己懒构造的那一份（`queryService()` / `creationService()` / `lifecycleService()`）， 所以是**同一条调用链、同一份协作者**，断言逐字未改（152 tests / 0 failures）；② **删解锁的转发** —— `getMyOrderPage`（C 端「我的订单」端点改直连 `OrderQueryService`，仓内零调用点、前端零涉及）， 门面 1,725 → 1,702（−23 行、0 行新增），公开成员 26 → 25。 ⚠️ 照实登记：迁后 OrderServiceTest 仍有 **15 个调用点驱动门面**（删单 5 / 备注 4 / 手机号回填 3 / 跟进状态 2 / 内容改单 1）—— 这 5 个是门面里的**实体实现**、不是转发，删它们要先搬实现，属下一批；因此「15 个入口全删」本批**未**达成。 ⚠️ 另外两个入口的删除被**别的**调用方挡住（本批未动）：`getOrderById` 仍被 `OrderCreationService` 经门面实例调用、 `createOrder` / 生命周期族的转发仍被接线判据与快照判据驱动并仍有生产调用方 —— 逐条清单见 PR body。 取号 MC-205（派单口径；现取用例库最大号 MC-204，claims 目录现取到 MC-204）。 ｜ tags: refactor, order-service, facade-retirement, caller-migration, test-driver-migration, assertion-unchanged, ratchet
 
 ### MC-207. 订单状态 packed（已打包）三轴分离（issue #8686）：动作面（Agent 四个工具 schema 枚举）保持排除、显示面（PC 订单列表徽标 + 详情/状态展示）补「已打包」与未知状态兜底、本体 order.status 显式登记「6 个 / 无 packed / 暂不同源」+ 收敛条件；依据 = 用户 2026-09-26 裁定「打包与发货都是工人的动作」 🔵
 ```
@@ -15280,8 +15294,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：1035（活跃 161，跳过 874）
-- tier 分布：smoke 15 / normal 958 / adversarial 33
+- 用例总数：1036（活跃 161，跳过 875）
+- tier 分布：smoke 15 / normal 959 / adversarial 33
 - 售后域：16
 - Agent 核心域：13
 - API 层域：21
@@ -15297,7 +15311,7 @@
 - 人事域：13
 - 知识问答域：9
 - 客户主数据迁移域：10
-- 杂项域：233
+- 杂项域：234
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：76
@@ -15597,6 +15611,7 @@
 - MC-203: OrderService 门面收尾第一批（issue #8681 的 P2-1e，部分交付）：租户可见性认定与单号解析两个调用方改直连 OrderQueryService、发货前置判定与发货人取值两个调用方改直连 OrderLifecycleService，门面 1,832 行降到 1,725 行并删掉这 4 个转发方法（公开面 29 → 25），另清理生命周期族搬走后失去调用方的 6 个私有死委托
 - MC-204: 订单状态单一源生成到 TS / Python（issue #8198 的 P2-2b）：从 Java `OrderStatusTransitions` 的 7 个常量 + 三张表生成两份**入库**产物（前端 `order-status.generated.ts` / Agent `order_status_generated.py`），删掉 TS 手写的后端状态联合体与两处映射表里的裸值、4 个工具 schema 的订单状态枚举改由生成物派生；生成器确定性（两次重生成逐字节相等，产物里零环境指纹）+ 新鲜度判据三态（0 同步 / 1 陈旧 / 3 无法判定）+ 手写面零裸字面量扫面 + 台账只许缩短；行为零变化（Agent 面仍只暴露 6 个状态，打包态走显式冻结窄化）
 - MC-206: 工人端「裁高计算（一体机）」更名「裁高计算」（issue #8683）：手持标签机现在也能进这页 ⇒ 同一个入口两端都在用，端名就是错误陈述；入口文案 / 机台屏 h1 / machine.html title 三处同批改，并落一条类级守卫（用户可见面出现端名 ⇒ 红），不按端分叉、不引入第二套 UI 分支
+- MC-205: OrderService 门面收尾第二批（issue #8681 的 P2-1e，部分交付）：OrderServiceTest 的 152 条判据把驱动对象从门面迁到实现点（129 个调用点改直驱查询 / 建单 / 生命周期三个新服务，断言零改动），并删除因此解锁的 getMyOrderPage 转发（C 端「我的订单」端点改直连 OrderQueryService；门面 1,725 → 1,702 行，公开成员 26 → 25）
 - MC-207: 订单状态 packed（已打包）三轴分离（issue #8686）：动作面（Agent 四个工具 schema 枚举）保持排除、显示面（PC 订单列表徽标 + 详情/状态展示）补「已打包」与未知状态兜底、本体 order.status 显式登记「6 个 / 无 packed / 暂不同源」+ 收敛条件；依据 = 用户 2026-09-26 裁定「打包与发货都是工人的动作」
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
