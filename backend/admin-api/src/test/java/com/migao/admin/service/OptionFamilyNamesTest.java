@@ -83,6 +83,19 @@ class OptionFamilyNamesTest {
     }
 
     @Test
+    @DisplayName("展示名归一：族成员收回语义名，非族名原样（issue #8673）")
+    void displayNameCollapsesFamilyMembers() {
+        assertThat(OptionFamilyNames.displayName("余料带回-布")).isEqualTo("余料带回");
+        assertThat(OptionFamilyNames.displayName("余料带回-纱")).isEqualTo("余料带回");
+        assertThat(OptionFamilyNames.displayName("布绑带")).isEqualTo("绑带");
+        assertThat(OptionFamilyNames.displayName("纱绑带")).isEqualTo("绑带");
+        // 非族名原样（不拆材料字 / 后缀）
+        assertThat(OptionFamilyNames.displayName("加logo条")).isEqualTo("加logo条");
+        assertThat(OptionFamilyNames.displayName("余料做绑带")).isEqualTo("余料做绑带");
+        assertThat(OptionFamilyNames.displayName(null)).isNull();
+    }
+
+    @Test
     @DisplayName("非族名不折叠：加立边 / 加logo条 是独立选项名（不属任何布/纱族）")
     void independentOptionNamesAreNotFamilyMembers() {
         assertThat(OptionFamilyNames.isFamilyName("加立边")).isFalse();

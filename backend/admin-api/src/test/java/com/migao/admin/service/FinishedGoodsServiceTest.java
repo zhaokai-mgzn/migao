@@ -6,12 +6,15 @@ import com.migao.admin.entity.InboundOrder;
 import com.migao.admin.entity.Order;
 import com.migao.admin.entity.OrderItem;
 import com.migao.admin.entity.OutboundOrder;
+import com.migao.admin.entity.ProcessingOrder;
+import com.migao.admin.entity.ProcessingOrderSet;
 import com.migao.admin.entity.Warehouse;
 import com.migao.admin.dto.InboundOrderResponse;
 import com.migao.admin.dto.FinishedGoodsView;
 import com.migao.admin.exception.BusinessException;
 import com.migao.admin.mapper.FinishedGoodsStockMapper;
 import com.migao.admin.mapper.OrderItemMapper;
+import com.migao.admin.mapper.ProcessingOrderMapper;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -23,6 +26,7 @@ import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 
 import java.math.BigDecimal;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -66,6 +70,8 @@ class FinishedGoodsServiceTest {
     @Mock private com.migao.admin.mapper.ProcessingOrderSetMapper setMapper;
     @Mock private com.migao.admin.mapper.ProductionWorkLogMapper workLogMapper;
     @Mock private com.migao.admin.mapper.OrderMapper orderMapper;
+    // issue #8673：加工组合 / 特殊选项取加工单快照（与水洗唛同一份固化真相）
+    @Mock private ProcessingOrderMapper processingOrderMapper;
 
     @BeforeEach
     void noWashLabelTokensByDefault() {
@@ -309,6 +315,99 @@ class FinishedGoodsServiceTest {
         assertThat(captor.getValue().get(0).getSetId()).isEqualTo("set-1");
         assertThat(captor.getValue().get(0).getOrderItemId()).isEqualTo("item-1");
         assertThat(captor.getValue().get(0).getShortCode()).isEqualTo("ABCD1234");
+    }
+
+    /** 成品入库标签的公共夹具：订单 / 订单行 / 套 / 加工单快照（issue #8673）。 */
+    private void stubFinishedLabelFixture(OrderItem item, ProcessingOrder processingOrder) {
+        when(orderMapper.selectById("order-1")).thenReturn(Order.builder()
+                .id("order-1").tenantId(TENANT).orderNo("DD-20261104-0001")
+                .customerName("肖风伟").build());
+        when(orderItemMapper.selectById("item-1")).thenReturn(item);
+        when(setMapper.selectById("set-1")).thenReturn(ProcessingOrderSet.builder()
+                .id("set-1").processingOrderId("po-1").setIndex(3).deleted(0).build());
+        when(setMapper.selectCount(any())).thenReturn(5L);
+        when(processingOrderMapper.selectById("po-1")).thenReturn(processingOrder);
+    }
+
+    private static List<Map<String, String>> labelRows(Map<String, Object> label) {
+        @SuppressWarnings("unchecked")
+        List<Map<String, String>> rows = (List<Map<String, String>>) label.get("rows");
+        return rows;
+    }
+
+    private static Map<String, String> rowsByLabel(List<Map<String, String>> rows) {
+        Map<String, String> out = new LinkedHashMap<>();
+        for (Map<String, String> row : rows) out.put(row.get("label"), row.get("value"));
+        return out;
+    }
+
+    @Test
+    @DisplayName("🔴 成品入库标签补印加工组合/特殊选项，开数印行业词（issue #8673）")
+    void finishedLabelCarriesCraftComboAndSpecialOptions() {
+        OrderItem item = OrderItem.builder()
+                .id("item-1").tenantId(TENANT).skuCode("2706-03云乳浅茶")
+                .curtainType("布帘").width(new BigDecimal("3")).height(new BigDecimal("2.7"))
+                .openCount(2).build();
+        Map<String, Object> snapshotRow = new LinkedHashMap<>();
+        snapshotRow.put("itemId", "item-1");
+        snapshotRow.put("processingItems", List.of(
+                Map.of("name", "韩褶"), Map.of("name", "超高"),
+                Map.of("name", "超高"), Map.of("name", "倒幅")));
+        snapshotRow.put("specialOptions", List.of("余料带回-布", "防翘扣", "余料带回-布"));
+        stubFinishedLabelFixture(item, ProcessingOrder.builder()
+                .id("po-1").tenantId(TENANT).itemsSnapshot(List.of(snapshotRow)).build());
+
+        List<Map<String, String>> rows = labelRows(
+                service.labelOf(TENANT, partToken("tok-1"), inStock("item-1", "11", "rk-9")));
+        Map<String, String> byLabel = rowsByLabel(rows);
+
+        assertThat(byLabel).containsEntry("开数", "双开")
+                .containsEntry("加工组合", "韩褶、超高、倒幅")
+                .containsEntry("特殊选项", "余料带回、防翘扣");
+        // 行序：加工组合跟开数（对应壁达「安装工艺」位），特殊选项在打包区域之前
+        List<String> labels = rows.stream().map(row -> row.get("label")).toList();
+        assertThat(labels).containsSubsequence("开数", "加工组合", "帘种");
+        assertThat(labels).containsSubsequence("主布货号", "特殊选项", "打包区域");
+    }
+
+    @Test
+    @DisplayName("🔴 加工单快照缺失 / 加工组合与特殊选项为空 ⇒ 这两行整行不出现（不印空壳）")
+    void finishedLabelOmitsCraftRowsWhenSnapshotOrValuesMissing() {
+        OrderItem item = OrderItem.builder()
+                .id("item-1").tenantId(TENANT).curtainType("布帘").openCount(2).build();
+        stubFinishedLabelFixture(item, null);
+
+        Map<String, String> noSnapshot = rowsByLabel(labelRows(
+                service.labelOf(TENANT, partToken("tok-1"), inStock("item-1", "11", "rk-9"))));
+        assertThat(noSnapshot).doesNotContainKeys("加工组合", "特殊选项");
+
+        Map<String, Object> emptyRow = new LinkedHashMap<>();
+        emptyRow.put("itemId", "item-1");
+        emptyRow.put("processingItems", List.of());
+        emptyRow.put("specialOptions", List.of());
+        stubFinishedLabelFixture(item, ProcessingOrder.builder()
+                .id("po-1").tenantId(TENANT).itemsSnapshot(List.of(emptyRow)).build());
+        Map<String, String> empty = rowsByLabel(labelRows(
+                service.labelOf(TENANT, partToken("tok-1"), inStock("item-1", "11", "rk-9"))));
+        assertThat(empty).doesNotContainKeys("加工组合", "特殊选项");
+        assertThat(empty).containsEntry("开数", "双开");
+    }
+
+    @Test
+    @DisplayName("开数行业词：1 单开 / 3 三开 / 4 四开 / 表外 N 开（issue #8673）")
+    void finishedLabelOpenCountUsesIndustryWords() {
+        Map<Integer, String> expected = new LinkedHashMap<>();
+        expected.put(1, "单开");
+        expected.put(3, "三开");
+        expected.put(4, "四开");
+        expected.put(5, "5 开");
+        for (Map.Entry<Integer, String> entry : expected.entrySet()) {
+            OrderItem item = OrderItem.builder().id("item-1").tenantId(TENANT).openCount(entry.getKey()).build();
+            stubFinishedLabelFixture(item, null);
+            Map<String, String> byLabel = rowsByLabel(labelRows(
+                    service.labelOf(TENANT, partToken("tok-1"), inStock("item-1", "11", "rk-9"))));
+            assertThat(byLabel).as("开数 %s", entry.getKey()).containsEntry("开数", entry.getValue());
+        }
     }
 
     @Test

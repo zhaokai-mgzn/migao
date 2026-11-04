@@ -282,7 +282,9 @@ describe('扫码报工页（issue #7812）', () => {
     expect(rows).toContain('遮光布')
     expect(rows).toContain('数量')
     expect(rows).toContain('3 米')
-    expect(card.textContent).toContain('ABCD2345')
+    // issue #8673：短码从卡片移除（只留在打印出来的标签纸尾）
+    expect(screen.queryByTestId('worker-report-finished-code')).toBeNull()
+    expect(card.textContent).not.toContain('ABCD2345')
     // 能力提示在动手前就上屏
     expect(card.textContent).toContain('点「打印标签」')
 

@@ -1032,16 +1032,16 @@ _CASE_BM_059 = EvalCase(
     forbidden_card_text=[],
 )
 
-# ── BM-060 [NORMAL] 报工详情页成品入库卡 + 50×70 入库标签打印（数据只来自服务端 finished_inbound；打印走行式标签通道；小程序离屏画布）（源: cases/bmini.yml）──
+# ── BM-060 [NORMAL] 报工详情页成品入库卡（不再显示短码）+ 50×70 入库标签打印（加工组合/特殊选项；数据只来自服务端 finished_inbound；小程序离屏画布）（源: cases/bmini.yml）──
 _CASE_BM_060 = EvalCase(
     id='BM-060',
     legacy_id='',
-    title='报工详情页成品入库卡 + 50×70 入库标签打印（数据只来自服务端 finished_inbound；打印走行式标签通道；小程序离屏画布）',
+    title='报工详情页成品入库卡（不再显示短码）+ 50×70 入库标签打印（加工组合/特殊选项；数据只来自服务端 finished_inbound；小程序离屏画布）',
     skill=Skill.GENERAL,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['工人扫「套 × 部位」码 → 报完最后一道 → 本页出现「成品入库 · 仓位 A-01」卡：质检结论、入库单号、标签行（品名/色号/入库日期/数量）与短码；点「打印入库标签（50×70）」经小程序 BLE / 手持终端 / 浏览器蓝牙打出 50×70 标签；服务端没给 finished_inbound 时整卡不渲染。'],
+    user_inputs=['工人扫「套 × 部位」码 → 报完最后一道 → 本页出现「成品入库 · 仓位 A-01」卡：质检结论、入库单号与标签行（含加工组合 / 特殊选项；issue #8673）；**卡片不再显示短码**（短码只打在标签纸尾）。点「打印入库标签（50×70）」经小程序 BLE / 手持终端 / 浏览器蓝牙打出 50×70 标签；服务端没给 finished_inbound 时整卡不渲染。'],
     expectations=['direct_reply'],
-    data_checks=['判据 1·🔴 数据只来自服务端：卡片与标签行逐字取 finished_inbound（bin_code / inbound_no / label.rows / label.short_code / quality），端侧不拼业务字段；缺值按「未分配」/「—」/ 无记录=正常。红证：把行数据改成端侧常量或补字段 ⇒ frontend/bmini-app/tests/rows-label-layout.test.ts 的 L2 与 worker-report-page.test.tsx 的 ⑦ 判红', '判据 2·🔴 纸型 50×70 固定：布局只从 label-50x70 介质取纸型 / 像素口径，成品标签高 = 70mm；宽度与纸长不另写一份。红证：删掉 fixedLengthMm ⇒ L2 红；在布局里写像素字面量 ⇒ tests/inbound-print-geometry-single-source.test.ts 的 C2b 红', '判据 3·🔴 送打印只走 printRowsLabel：顺序 = 能力探测 → 渲染 → 送打印机（这两类纸无服务端留痕端点）；能力不可用 ⇒ 按钮 disabled 且先给可行动文案。红证：把按钮改成点了才判 / 页面直连 .print ⇒ inbound-print-channel.test.ts 的 D7 红；worker-report-page.test.tsx 的 ⑨ 红', '判据 4·小程序可打印：无 DOM 时画布工厂改用 Taro.createOffscreenCanvas（h5 仍用 DOM canvas）；取不到位图 ⇒ 渲染抛错（不静默打印白图）。红证：去掉离屏画布分支 ⇒ worker-report-page.test.tsx 的 ⑦ 渲染失败；去掉 requirePixels ⇒ rows-label-layout.test.ts 的 L5 红'],
+    data_checks=['判据 1·🔴 数据只来自服务端：卡片与标签行逐字取 finished_inbound（bin_code / inbound_no / label.rows / quality），端侧不拼业务字段；短码只进打印文档（label.short_code），不上卡片（issue #8673）；缺值按「未分配」/「—」/ 无记录=正常。红证：把行数据改成端侧常量或补字段 ⇒ frontend/bmini-app/tests/rows-label-layout.test.ts 的 L2 与 worker-report-page.test.tsx 的 ⑦ 判红；把短码加回卡片 ⇒ worker-report-page.test.tsx 的 ⑦ 与 worker-h5-finished-label.test.mjs 判红', '判据 2·🔴 纸型 50×70 固定：布局只从 label-50x70 介质取纸型 / 像素口径，成品标签高 = 70mm；宽度与纸长不另写一份。红证：删掉 fixedLengthMm ⇒ L2 红；在布局里写像素字面量 ⇒ tests/inbound-print-geometry-single-source.test.ts 的 C2b 红', '判据 3·🔴 送打印只走 printRowsLabel：顺序 = 能力探测 → 渲染 → 送打印机（这两类纸无服务端留痕端点）；能力不可用 ⇒ 按钮 disabled 且先给可行动文案。红证：把按钮改成点了才判 / 页面直连 .print ⇒ inbound-print-channel.test.ts 的 D7 红；worker-report-page.test.tsx 的 ⑨ 红', '判据 4·小程序可打印：无 DOM 时画布工厂改用 Taro.createOffscreenCanvas（h5 仍用 DOM canvas）；取不到位图 ⇒ 渲染抛错（不静默打印白图）。红证：去掉离屏画布分支 ⇒ worker-report-page.test.tsx 的 ⑦ 渲染失败；去掉 requirePixels ⇒ rows-label-layout.test.ts 的 L5 红'],
     skip_reason='[frontend-contract] 确定性页面 / 版面判据（jest: rows-label-layout / worker-report-page / inbound-print-channel），非 LLM 行为，不进入 agent-eval 冒烟',
     tags=['bmini', 'inbound', 'print', 'finished-goods', 'weapp'],
     persona='',

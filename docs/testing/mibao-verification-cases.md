@@ -1667,18 +1667,18 @@
 真值: processing-manage.worker-menu-pages
 溯源: 2026-10-31 新增（issue #8196 目标 ⑤）：收口「工人菜单有第二份映射」—— bmini 把后端页面键字面量抄了一份（WORKER_MENU_KEYS），两端之间原先**没有判据**（后端加键 / 前端拼错都不会红）。新增子集守卫（只许缩小）；菜单的标签与路由仍只在 bmini 一份（后端只下发可见页面键集合），故不另造标签映射。 ｜ tags: bmini, worker, worker-menu, single-source, cross-language
 
-### BM-060. 报工详情页成品入库卡 + 50×70 入库标签打印（数据只来自服务端 finished_inbound；打印走行式标签通道；小程序离屏画布） 🔵
+### BM-060. 报工详情页成品入库卡（不再显示短码）+ 50×70 入库标签打印（加工组合/特殊选项；数据只来自服务端 finished_inbound；小程序离屏画布） 🔵
 ```
-你: 工人扫「套 × 部位」码 → 报完最后一道 → 本页出现「成品入库 · 仓位 A-01」卡：质检结论、入库单号、标签行（品名/色号/入库日期/数量）与短码；点「打印入库标签（50×70）」经小程序 BLE / 手持终端 / 浏览器蓝牙打出 50×70 标签；服务端没给 finished_inbound 时整卡不渲染。
+你: 工人扫「套 × 部位」码 → 报完最后一道 → 本页出现「成品入库 · 仓位 A-01」卡：质检结论、入库单号与标签行（含加工组合 / 特殊选项；issue #8673）；**卡片不再显示短码**（短码只打在标签纸尾）。点「打印入库标签（50×70）」经小程序 BLE / 手持终端 / 浏览器蓝牙打出 50×70 标签；服务端没给 finished_inbound 时整卡不渲染。
 期望: direct_reply
-数据: 判据 1·🔴 数据只来自服务端：卡片与标签行逐字取 finished_inbound（bin_code / inbound_no / label.rows / label.short_code / quality），端侧不拼业务字段；缺值按「未分配」/「—」/ 无记录=正常。红证：把行数据改成端侧常量或补字段 ⇒ frontend/bmini-app/tests/rows-label-layout.test.ts 的 L2 与 worker-report-page.test.tsx 的 ⑦ 判红
+数据: 判据 1·🔴 数据只来自服务端：卡片与标签行逐字取 finished_inbound（bin_code / inbound_no / label.rows / quality），端侧不拼业务字段；短码只进打印文档（label.short_code），不上卡片（issue #8673）；缺值按「未分配」/「—」/ 无记录=正常。红证：把行数据改成端侧常量或补字段 ⇒ frontend/bmini-app/tests/rows-label-layout.test.ts 的 L2 与 worker-report-page.test.tsx 的 ⑦ 判红；把短码加回卡片 ⇒ worker-report-page.test.tsx 的 ⑦ 与 worker-h5-finished-label.test.mjs 判红
 数据: 判据 2·🔴 纸型 50×70 固定：布局只从 label-50x70 介质取纸型 / 像素口径，成品标签高 = 70mm；宽度与纸长不另写一份。红证：删掉 fixedLengthMm ⇒ L2 红；在布局里写像素字面量 ⇒ tests/inbound-print-geometry-single-source.test.ts 的 C2b 红
 数据: 判据 3·🔴 送打印只走 printRowsLabel：顺序 = 能力探测 → 渲染 → 送打印机（这两类纸无服务端留痕端点）；能力不可用 ⇒ 按钮 disabled 且先给可行动文案。红证：把按钮改成点了才判 / 页面直连 .print ⇒ inbound-print-channel.test.ts 的 D7 红；worker-report-page.test.tsx 的 ⑨ 红
 数据: 判据 4·小程序可打印：无 DOM 时画布工厂改用 Taro.createOffscreenCanvas（h5 仍用 DOM canvas）；取不到位图 ⇒ 渲染抛错（不静默打印白图）。红证：去掉离屏画布分支 ⇒ worker-report-page.test.tsx 的 ⑦ 渲染失败；去掉 requirePixels ⇒ rows-label-layout.test.ts 的 L5 红
 跳过: [frontend-contract] 确定性页面 / 版面判据（jest: rows-label-layout / worker-report-page / inbound-print-channel），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: frontend-fix.no-api-change
-溯源: 2026-10-31 新增（issue #8287：用户「打包的工人要在报工详情页面增加成品入库功能并打印入库标签」）。改动 = bmini 报工页渲染服务端随扫码 / 报工回执下发的 finished_inbound 卡（仓位 / 质检 / 入库单 / 标签行 / 短码），并接 50×70 行式标签打印；共用 rowsLabel 版面 + printRowsLabel 入口；小程序画布改走离屏画布（此前无 DOM 直接抛错 ⇒ 小程序打印实际不可用，本单一并修）。边界：这两类纸无服务端打印留痕端点（与 /w/ 一致），入库标签的必留痕红线仍只约束 printInboundLabel。 ｜ tags: bmini, inbound, print, finished-goods, weapp
+溯源: 2026-10-31 新增（issue #8287：用户「打包的工人要在报工详情页面增加成品入库功能并打印入库标签」）。改动 = bmini 报工页渲染服务端随扫码 / 报工回执下发的 finished_inbound 卡（仓位 / 质检 / 入库单 / 标签行 / 短码），并接 50×70 行式标签打印；共用 rowsLabel 版面 + printRowsLabel 入口；小程序画布改走离屏画布（此前无 DOM 直接抛错 ⇒ 小程序打印实际不可用，本单一并修）。边界：这两类纸无服务端打印留痕端点（与 /w/ 一致），入库标签的必留痕红线仍只约束 printInboundLabel。 ｜ 2026-11-04（issue #8673）：卡片移除短码显示（只留标签纸尾），标签行由服务端补「加工组合 / 特殊选项」、开数改印行业词。 ｜ tags: bmini, inbound, print, finished-goods, weapp
 
 ### BM-061. 待出库单整套出库单（成品出库单）50×70 预览 + 打印 —— 行清单与 /w/ 同源，仍不新增发货写路径 🔵
 ```

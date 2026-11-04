@@ -12,6 +12,7 @@ import com.migao.admin.exception.BusinessException;
 import com.migao.admin.mapper.FinishedGoodsStockMapper;
 import com.migao.admin.mapper.OrderItemMapper;
 import com.migao.admin.mapper.OrderMapper;
+import com.migao.admin.mapper.ProcessingOrderMapper;
 import com.migao.admin.mapper.ProcessingOrderSetMapper;
 import com.migao.admin.mapper.ProcessingSetPartTokenMapper;
 import com.migao.admin.mapper.ProductionWorkLogMapper;
@@ -66,6 +67,8 @@ class FinishedWashLabelTest {
     @Mock private ProcessingOrderSetMapper setMapper;
     @Mock private ProductionWorkLogMapper workLogMapper;
     @Mock private OrderMapper orderMapper;
+    // issue #8673：标签加工组合 / 特殊选项读加工单快照（无快照 ⇒ 两行不印）
+    @Mock private ProcessingOrderMapper processingOrderMapper;
 
     @InjectMocks private FinishedGoodsService service;
 

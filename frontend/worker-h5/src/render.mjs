@@ -1233,7 +1233,6 @@ function finishedInboundCard(state) {
     <p class="wh5-sub" id="wh5-fi-quality">质检：${esc(quality)}</p>
     ${w.inbound_no ? `<p class="wh5-sub" id="wh5-fi-no">入库单 ${esc(w.inbound_no)}</p>` : ''}
     <div class="wh5-fl-rows" id="wh5-fl-rows">${rows}</div>
-    ${label.short_code ? `<p class="wh5-fl-code" id="wh5-fl-code">${esc(label.short_code)}</p>` : ''}
     ${printAction}
   </section>`
 }
