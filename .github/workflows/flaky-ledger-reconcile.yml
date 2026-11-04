@@ -25,13 +25,38 @@ name: Flaky Ledger Reconcile (台账落仓对账兜底)
 #        （同脚本同参数 —— 判据只有一处，不复制规则）；
 #     ② `gh pr merge --auto` 是幂等 arm（已 arm 再 arm 无副作用）；
 #     ③ 无漂移 ⇒ **零动作**（不碰 PR、不 approve、不 push）。
-#   · **绝不削弱既有护栏**：本 workflow **只读**台账（`contents: read`：不写台账、不 push 分支、
-#     **不创建 PR** —— 建 PR 是 flaky-triage.yml 的职责，两个作者会打架）；
+#   · **绝不削弱既有护栏**：台账**内容**仍**只读**（`contents: read`：不写台账、不 push 分支
+#     —— 台账的**唯一写者**仍是 flaky-triage.yml，两个作者会打架）；
+#     ⚠️ #8628 起本腿**会建 PR**（唯一例外，且**只**在「台账已领先 main 却没有任何 open PR」时）：
+#     它不是第二个台账作者（**不写一个字节的内容**），而是把「人记得开 PR」换成机械幂等
+#     —— 见下面 #8628 一节。建 PR 走 `flaky_ledger.py ensure-pr`（唯一实现），workflow 不内联；
 #     `arm auto-merge` **≠ 放行** —— 台账 PR 仍要真的跑完 **required** 检查才可能合并
 #     （「只标注不自动放行」的语义一字未动）；不新增 secret、不放宽任何门禁。
 #   · **绝不静默降级**（本单的全部价值）：判据「无法判定」⇒ 步骤红（`exit 3`）；
-#     有漂移却**没有 open PR** ⇒ `::error::` + `exit 1`；兜底发出后仍 0 check、已无待批准 run、
+#     有漂移却**没有 open PR** ⇒ **机械补建**（#8628；建不出来才 `::error::` + `exit 1`）；
+#     兜底发出后仍 0 check、已无待批准 run、
 #     且分支 HEAD 已陈旧 ⇒ `::error::` + `exit 1`；main 有分支没有的条目（分叉）⇒ `::error::`。
+#
+# ─── #8628：台账领先 main 却没 PR ⇒ **不再判红**，改为机械补建（幂等） ──────────────
+# 病（**实测两次**，2026-11-04；机械开单 = issue #8628，连续 4 次真红达阈值）：
+#   当 `chore/flaky-ledger` 领先 main **却没有 open PR** 时，本腿在**每一个** PR 上报红 ——
+#   旧口径把「没有 PR」判成 `::error::`（「建 PR 是 flaky-triage.yml 的职责」），而
+#   flaky-triage.yml **只在有新的终态事件时**才补建 PR ⇒ 这个状态下**没有任何路径**把台账推上
+#   main，腿就一直红，只能靠**人手工开 PR**压住（当晚 #8604 / #8612 两次，同一个原因）。
+#   现场：`gh pr list --state open --head chore/flaky-ledger` ⇒ 空；
+#        `git rev-list --count origin/main..origin/chore/flaky-ledger` ⇒ ≥1。
+# 修法（**最小改动**，不顺带重构台账语义）：把「人记得开」换成**机械幂等** ——
+#   · `ahead > 0` ∧ 无 open PR ⇒ 调 `flaky_ledger.py ensure-pr` **建**一条（base main / head 台账分支，
+#     title/body 走既有文案；实现与判据只有一处）；
+#   · **已有 open PR ⇒ 零动作**（幂等：绝不重复建）；
+#   · `ahead == 0` / 分支不存在 ⇒ **零动作、腿绿**（既有口径，未放宽）。
+# 🔴 防「自开自合」的三条（本单的硬约束，任一被破坏都等于开了口子）：
+#   ① PR 仍受**全部 required 检查**约束：**不加 `--admin`**、**不改分支保护**、**不给这条腿加豁免**；
+#   ② **本腿自己建的 PR 不 arm auto-merge**（body 带 `flaky-ledger-autopr` 标记 ⇒ 跳过 arm）：
+#      人要能看见并复核 —— 本腿在这条路上只负责「有 PR 可看」，不负责「把它推过闸」；
+#   ③ `gh pr create` 失败 ⇒ **一行可行动出口** + `exit 1`（不许静默当「无事可做」）。
+# ⇒ 人工只需**复核**那条 PR（不需要记得开）；台账落 main 仍由 required 检查 + 人工/既有 arm 决定。
+
 #   · **两种病因必须是两条判据**（#5075 ①）：`mergeable_state=dirty`（分支**真冲突**）与
 #     「check 被抑制」看起来都是「台账落不到 main」，但**病因不同、出路不同**：
 #     冲突时 GitHub **不为冲突 PR 运行 `pull_request` workflow** ⇒ check 数**结构性恒为 0**，
@@ -108,7 +133,8 @@ on:
 
 permissions:
   actions: write        # approve 被抑制的 run（与 flaky-triage.yml 同一权限面；**不新增 secret**）
-  contents: read        # 只读台账分支：本 workflow **不写**台账、**不 push**、**不建 PR**
+  contents: read        # 台账**内容**只读：不写台账、不 push（唯一写者仍是 flaky-triage.yml）；
+                        # #8628 起允许**建 PR**（只此一个例外，见文件头「#8628」一节）
   pull-requests: write  # 读台账 PR / arm auto-merge（不 approve 评审、不改标签）
 
 # 与 flaky-triage.yml 的 `flaky-triage-ledger` **不同组**：两者都只做幂等动作，不该互相排队/取消。
@@ -289,15 +315,13 @@ jobs:
             echo "::error::兜底 approve 失败 ⇒ 台账 PR 仍无 check、main 不增长（fail-closed，不静默）"; exit 1; }
           PENDING=$(python3 -c "import json;print(len(json.load(open('/tmp/pending.json'))))") || {
             echo "::error::读不到 approve 结果 ⇒ 无法判定兜底是否生效（fail-closed，不静默）"; exit 1; }
-          # ② 找台账 PR：**绝不新建**（建 PR 是 flaky-triage.yml 的职责 —— 两个作者会打架，
-          #    且 title/body 规则只应有一处）。分支领先 main 却**没有 open PR** ⇒ 没有任何路径
-          #    把它推上 main ⇒ 必须红（这正是「台账静默停在分支上」的确切形态）。
+          # ② 找台账 PR（#8628：**先查后建** —— 已有 open PR ⇒ 零动作，幂等是这条路的根）。
           PR=$(gh pr list --head "$LEDGER_BRANCH" --state open --json number \
                  --jq '.[0].number // empty' --repo "$GITHUB_REPOSITORY")
           if [ -z "$PR" ]; then
             # ⓪b #5310 判据①的收尾复核：判据（**实时**读 main）与这里的 PR 查询之间仍可能跨一个
             #     **秒级**窗口 —— 台账 PR 若恰在此刻合并，读数又会变成「领先却无 PR」（本单病灶）。
-            #     故在报红前**复核一次**（同一实时读法）：已收敛 ⇒ 零动作，不红。
+            #     故在**动作前**复核一次（同一实时读法）：已收敛 ⇒ 零动作，不红。
             RECHECK_RC=0
             RECHECK_AHEAD=""
             python3 .github/scripts/flaky_ledger.py ledger-drift \
@@ -308,18 +332,64 @@ jobs:
               echo "::notice::✅ 复核 ahead=0 —— 台账已在窗口内落仓（#5310：判据与 PR 查询不许跨时刻读数）⇒ 零动作，不判红"
               exit 0
             fi
-            # ⓪c #5310 判据③：**可行动出口必须真的可行动**。旧文案给的是「重跑 flaky-triage.yml」，
-            #     而在本状态下它**什么也修不了**（没有待落仓条目要补建 PR；且 `flaky-triage.yml`
-            #     只在 `entry_count != '0'` 即**有新的终态事件**时才补建 PR）⇒ 换成真出口，
-            #     并**显式说明旧出口为何无效**（不许留白、也不许给假出口）。
-            echo "::error::台账分支领先 main（${AHEAD} 条未落仓；复核 ahead=${RECHECK_AHEAD:-未知}）却**没有 open PR** ⇒ 无任何路径把它推上 main（台账停在分支上）。**真实出口**（本兜底**不建 PR** —— 建 PR 是 flaky-triage.yml 的唯一职责，见文件头）：① 若该 PR 是被误关的，重开它（gh pr reopen）—— 分支内容与 PR 都在，重开后 required 检查照跑；② 否则由**人 / agent 显式重建**台账 PR：gh pr create --base main --head $LEDGER_BRANCH --title 'chore(flaky): 台账追加' --body '（由 flaky-triage.yml 维护）'，随后本兜底下一轮补 approve + arm auto-merge。⚠️ 旧的出口「重跑 flaky-triage.yml」在本状态下**不改变结果**（它只在有**新的终态事件**时才补建 PR）⇒ 故不再作为出口。"
-            exit 1
+            # ⓪c #8628：**机械补建**（幂等）—— 把「人记得开 PR」换成机械动作，而不是判红。
+            #     判据与动作都在 `flaky_ledger.py ensure-pr`（先查 open PR、再**实时**算 ahead、
+            #     都满足才建）；本步骤只编排。**只建 PR、不 arm**（见 ③ 的标记分支）。
+            #     三态：0 = 判定完成（含「无事可做」）；3 = **无法判定**；其它 = **建 PR 失败**。
+            set +e
+            python3 .github/scripts/flaky_ledger.py ensure-pr \
+              --repo "$GITHUB_REPOSITORY" --branch "$LEDGER_BRANCH" \
+              --json-out /tmp/ensure-pr.json | tee -a "$GITHUB_STEP_SUMMARY"
+            ENSURE_RC=${PIPESTATUS[0]}
+            set -e
+            case "$ENSURE_RC" in
+              0)
+                PR=$(python3 -c "import json;print(json.load(open('/tmp/ensure-pr.json')).get('pr') or '')" 2>/dev/null || echo "")
+                CREATED=$(python3 -c "import json;print(1 if json.load(open('/tmp/ensure-pr.json')).get('created') else 0)" 2>/dev/null || echo 0)
+                if [ -z "$PR" ]; then
+                  echo "::notice::✅ 本轮**无事可做**（台账已收敛 / 分支不存在 ⇒ ensure-pr 未建 PR）⇒ 零动作、腿绿（#8628）"
+                  exit 0
+                fi
+                if [ "$CREATED" = "1" ]; then
+                  {
+                    echo ""
+                    echo "### 🆕 #8628：台账 PR 已**机械补建**（不 arm，等人工复核）"
+                    echo ""
+                    echo "- PR：#${PR} —— 台账领先 main 却**没有任何 open PR**（这就是本腿此前对所有人常驻红的原因）"
+                    echo "- **本腿不 arm auto-merge**：人要能看见并复核；required 检查仍是唯一闸"
+                    echo "- 人工只需**复核**该 PR（不需要记得开）—— 台账落 main 仍由 required 检查决定"
+                  } >> "$GITHUB_STEP_SUMMARY"
+                  echo "::notice::✅ 已机械补建台账 PR #${PR}（#8628：**不 arm auto-merge** —— 人工只需复核，不需要记得开；本轮到此为止，下一轮以既有 PR 身份对账）"
+                  exit 0
+                fi
+                ;;
+              3) echo "::error::无法判定台账分支是否需要 PR（ensure-pr 退 3）⇒ **未跑 ≠ 通过**，不得当「无需 PR」读"; exit 1 ;;
+              *) echo "::error::台账领先 main 却**补建 PR 失败**（ensure-pr 退 ${ENSURE_RC}）⇒ 台账仍停在分支上、main 不增长；明细见上方 ⛔ 行。可复制出口：gh pr create --base main --head $LEDGER_BRANCH --title 'chore(ci): flaky 台账滚动追加' --repo $GITHUB_REPOSITORY"; exit 1 ;;
+            esac
           fi
           # ③ 补 arm auto-merge（幂等）。**不是放行**：台账 PR 仍要真的跑完 required 检查才可能合并。
+          #    🔴 #8628：**本腿自己建的** PR（body 带 `flaky-ledger-autopr` 标记）**不 arm** ——
+          #    「自己开 + 自己 arm」等于自开自合；人要能看见并复核（本腿在这条路上只负责「有 PR 可看」）。
           #    ⚠️ 失败**不许**被吞成「已 arm」（#5075 ④）：退出码与**回读**的真实状态一起报出。
           ARM_RC=0
-          ARM_OUT=$(gh pr merge "$PR" --auto --squash --repo "$GITHUB_REPOSITORY" 2>&1) || ARM_RC=$?
-          if [ -n "$ARM_OUT" ]; then echo "$ARM_OUT"; fi
+          ARM_OUT=""
+          #     读不到 body ⇒ **本轮不 arm**（而不是红）：红线的方向是「不 arm」，不是「必须 arm」；
+          #     这也不是静默 —— `::warning::` 出声，下一轮重试。
+          if ! PR_BODY=$(gh pr view "$PR" --json body --jq '.body' --repo "$GITHUB_REPOSITORY" 2>/dev/null); then
+            PR_BODY=""
+            echo "::warning::读不到台账 PR #$PR 的 body ⇒ 无法判定它是不是本腿自建的 ⇒ **本轮不 arm**（#8628 红线：自建 PR 不许 arm）；下一轮重试"
+          fi
+          case "$PR_BODY" in
+            *flaky-ledger-autopr*)
+              ARM_LINE="- arm：**跳过**（#8628：PR body 带 \`flaky-ledger-autopr\` 标记 ⇒ 本腿自建，等人工复核）"
+              echo "::notice::⏭️ 台账 PR #$PR 由本腿**机械补建**（#8628 标记）⇒ **不 arm auto-merge**：人工只需复核（required 检查仍是唯一闸）"
+              ;;
+            *)
+              ARM_OUT=$(gh pr merge "$PR" --auto --squash --repo "$GITHUB_REPOSITORY" 2>&1) || ARM_RC=$?
+              if [ -n "$ARM_OUT" ]; then echo "$ARM_OUT"; fi
+              ARM_LINE="- 补 arm 的退出码：${ARM_RC}（非 0 时**以回读的 autoMerge 为准** —— 读数与动作必须自洽）"
+              ;;
+          esac
           # ④ 可见读数（写 job summary；**不是**门禁 —— 运行与合并都是异步的）。
           #    全部在**动作之后回读**：这样「读数」反映的是真实状态，不是「我以为 arm 了」。
           PR_STATE=$(gh pr view "$PR" --json state --jq '.state' --repo "$GITHUB_REPOSITORY" 2>/dev/null || echo UNKNOWN)
@@ -335,9 +405,9 @@ jobs:
             echo "- 台账 PR：#${PR} ${STATE}"
             echo "- 可见 check 数：${CHECKS}（0 = 仍被抑制 ⇒ 台账落不到 main）"
             echo "- 本轮 approve 的 run 数：${PENDING}"
-            echo "- 补 arm 的退出码：${ARM_RC}（非 0 时**以回读的 autoMerge 为准** —— 读数与动作必须自洽）"
+            echo "${ARM_LINE}"
             echo ""
-            echo "兜底只补 **approve + arm**（**不放行**：required 检查仍是唯一闸）；无漂移时本 job 零动作。"
+            echo "兜底只补 **approve + arm**（**不放行**：required 检查仍是唯一闸）；无漂移时本 job 零动作；台账领先却没 PR 时**机械补建**（#8628，自建的不 arm）。"
           } >> "$GITHUB_STEP_SUMMARY"
           echo "::notice::📒 台账对账：PR #$PR $STATE / check 数=$CHECKS / 本轮 approve=$PENDING / arm rc=$ARM_RC"
           # ⑤-A **分支真冲突** ⇒ 红（#5075 ①：与「check 被抑制」**分成两条判据**）。

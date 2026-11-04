@@ -104,3 +104,4 @@
 {"id":"1793767135.72845.21084","ts":"2026-11-04T04:38:55Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/8196b-wiring","why":"--allow-package-heavy（命令行显式）"}
 {"id":"1793767369.77884.8193","ts":"2026-11-04T04:42:50Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/8196b-wiring","why":"--allow-package-heavy（命令行显式）"}
 {"id":"1793768521.69843.7821","ts":"2026-11-04T05:02:01Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/8196b-wiring","why":"--allow-package-heavy（命令行显式）"}
+{"id":"1793773332.89240.28389","ts":"2026-11-04T06:22:13Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/8628-autopr","why":"--allow-package-heavy（命令行显式）"}

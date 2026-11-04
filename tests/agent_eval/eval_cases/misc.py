@@ -2,7 +2,7 @@
 # 本文件由 render_cases.py 生成，勿手改（改了也留不住：下次重渲染会覆盖）
 # 源: cases/*.yml（case-contract 单一源）
 # 重新生成: python3 render_cases.py --cases <dir> --out-eval <包目录> --out-md <md>
-# 域: misc（源: cases/misc.yml，220 条）
+# 域: misc（源: cases/misc.yml，221 条）
 
 from ._schema import Difficulty, EvalCase, Skill
 
@@ -4040,6 +4040,24 @@ _CASE_MC_193 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── MC-195 [NORMAL] Flaky Ledger Reconcile 自愈（issue #8628）：台账分支领先 main 却无 open PR 时**机械幂等补建**（不 arm、不 --admin、不受豁免）；ahead=0 / 已有 PR 零动作；补建失败一行可行动出口 + 非零退出（源: cases/misc.yml）──
+_CASE_MC_195 = EvalCase(
+    id='MC-195',
+    legacy_id='',
+    title='Flaky Ledger Reconcile 自愈（issue #8628）：台账分支领先 main 却无 open PR 时**机械幂等补建**（不 arm、不 --admin、不受豁免）；ahead=0 / 已有 PR 零动作；补建失败一行可行动出口 + 非零退出',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['`Flaky Ledger Reconcile` 这条腿在 `chore/flaky-ledger` 领先 main 但没有 open PR 时对**每一个** PR 报红，只能靠人手动开 PR 压住；希望机械自愈 —— 已有一律不重复建，人只需复核'],
+    expectations=['direct_reply'],
+    data_checks=['**建（会红）**：`ahead>0` ∧ `gh pr list --state open --head chore/flaky-ledger` 为空 ⇒ 调 `flaky_ledger.py ensure-pr` **恰好一次** `gh pr create`（base main / head 台账分支），PR body 带 `AUTOPR_MARKER`。判据 = 替换脚本唯一的 gh 出口 `_gh` 打桩并逐条记 argv（**不在测试里真建 PR**），另有 `--dry-run` 只打印不建。执行点 = `tests/unit_ci_workflows/test_flaky_ledger_reconcile.py` 的 ensure-pr 行为判据。', '**幂等（双向，会红）**：已有 open PR ⇒ **零次** `gh pr create`（`action=exists`）；`ahead==0` / 分支不存在 ⇒ **零次** + 腿绿。红证 = 把「已有 PR ⇒ 零动作」的短路改成恒假 ⇒ 同一输入会多建一条，判据当场红（`test_red_proof_existing_pr_shortcut_removed`）。', '**不许自开自合（会红）**：本腿自建的 PR（body 带标记 token）在后续轮次**不 arm auto-merge**（summary 写「arm：跳过」），workflow 全域不得出现 `gh pr merge --admin`，不改分支保护、不给该腿任何豁免；required 检查仍是唯一闸。红证 = 摘掉标记分支臂 ⇒ 同一输入会真的 `pr merge`；插入 `--admin` ⇒ 结构判据红。', '**失败必须响（会红）**：`gh pr create` 失败 ⇒ `::error::` 一行含可复制出口（`gh pr create --base main …`）+ 退出码 1；读数面读不到 ⇒ 退出码 3（**未跑 ≠ 通过**，不得当「无需 PR」）。红证 = 把失败出口改成「echo 且 exit 0」⇒ 结构判据红；行为判据断言 rc=1 / rc=3 且文案含可行动出口。'],
+    skip_reason='[backend-contract] CI 对账腿的**动作级**判据（打桩断言 gh 调用 + 真跑 workflow 步骤），零网络、零 LLM、不建真 PR、不碰真库；非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ci', 'flaky-ledger', 'self-heal', 'idempotent', 'no-self-merge', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 CASES = (
     _CASE_MC_001,
     _CASE_MC_002,
@@ -4261,4 +4279,5 @@ CASES = (
     _CASE_MC_189,
     _CASE_MC_192,
     _CASE_MC_193,
+    _CASE_MC_195,
 )
