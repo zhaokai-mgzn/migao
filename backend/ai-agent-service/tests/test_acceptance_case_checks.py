@@ -9,8 +9,9 @@
   属「工具调用全对、用户看到的话是错的」类缺陷，PR-019 用本断言拦截。
 - interactive 事件采集：send_message 捕获 SSE interactive 事件（卡片证据）。
 """
-# case_ids: OR-016, AS-007, PR-019, CH-010, CH-024, OR-021, OR-022, PR-024, CH-025, AS-004, PP-006, PR-021, HR-003, HR-009, HR-010, DF-020, DF-021, DF-022, DF-023, OR-026
+# case_ids: OR-016, AS-007, PR-019, CH-010, CH-024, OR-021, OR-022, PR-024, CH-025, AS-004, PP-006, PR-021, HR-003, HR-009, HR-010, DF-020, DF-021, DF-022, DF-023, OR-026, MC-200
 import asyncio
+import contextlib
 from types import SimpleNamespace
 import importlib.util
 import json
@@ -2543,6 +2544,265 @@ class TestRunSuitePostSession:
         assert calls["checks"] == 2
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# 死锁判据 = **进度读数**，不是墙钟预算（issue #8654）
+#
+# 病（issue 读数：`4 failed, 7939 passed, 34 skipped in 933.45s`）：retry / deadlock 族
+# 用 `asyncio.wait_for(..., timeout=3.0 / 8.0)` 判「会不会死锁」。**墙钟不是死锁的判据** ——
+# 本机高负载（load 10+、并发跑 Maven 全量）时到点就抛 TimeoutError ⇒ 判红；而**真死锁**与
+# 「慢」在墙钟上不可区分：旧判据判的是速度，不是死锁。
+#
+# 修法（issue 收敛方向 A：换成与负载无关的工作量读数）：给**被测资源**加仪器化进度计数
+# （并发门的 acquire / release、每个用例的开始 / 结束、每次尝试各 +1），判据改成
+#   · 进度计数**持续增长** ⇒「慢但前进」= 绿（与总耗时、机器负载无关）；
+#   · 进度计数**连续 `PROGRESS_STALL_WINDOW` 秒零增长** ⇒ 停住不动 = 红，并**点名**卡住的用例。
+# `PROGRESS_STALL_WINDOW` 是「容忍多长的**零进度**」，不是「多久必须跑完」——
+# 后者正是旧 3s / 8s 预算的病根（总量预算把「慢」判成「死」）。
+#
+# 判据自带双向红证（`TestDeadlockCriterionIsProgressNotWallClock`）：
+#   ① 真死锁（持读位再要写位 = #3361 原始形态）⇒ 短时红且**点名**；
+#   ② 慢但前进（总耗时远超旧 8s 预算）⇒ 绿（旧判据在这一格必假红）；
+#   ③ 进度计数在正常路径**真的在涨**（否则 ① 是空断言）。
+# ─────────────────────────────────────────────────────────────────────────────
+
+PROGRESS_STALL_WINDOW = 2.0      # 秒：连续这么久**零进度**才叫死锁（不是「跑完的预算」）
+PROGRESS_SAMPLE_INTERVAL = 0.05  # 秒：采样间隔（只影响「多快发现」，不影响判红 / 判绿）
+
+
+@pytest.fixture(autouse=True)
+def _no_live_service_reads(monkeypatch):
+    """本文件的单测**一律不连真服务**（issue #8654 的另一半根因）。
+
+    病：`run_suite` 的收尾经 `_close_and_verify_session` → `_record_denial_recovery` →
+    `fetch_session_tool_result_rounds` 去读 `GET /api/chat/history/...`（httpx `timeout=20`）。
+    那是**报告型读数**，单测既没断言它、也**没 mock 掉它** ⇒ 本机只要 8001 上有个「accept
+    但永不回包」的监听者（#8647 记的那个僵而不死的进程），每条尝试就真等 20s；旧墙钟预算
+    随即把「等网络」判成「死锁」—— 这正是 issue 里 `wait_for → TimeoutError` 的来路。
+
+    钉法：**在唯一的网络边界上打桩**（不改任何断言、不加豁免）。该边界是否会被误连，由
+    `TestDeadlockCriterionIsProgressNotWallClock` 的黑洞监听者用例**正向判**（真连一次即红）。
+    """
+    calls = []
+
+    async def _no_network(token, session_id, **kwargs):
+        calls.append(session_id)
+        return [], "单测不连真服务（issue #8654）"
+
+    monkeypatch.setattr(lr, "fetch_session_tool_result_rounds", _no_network)
+    return calls
+
+
+class ProgressMeter:
+    """与负载无关的**进度读数**：只记「发生了什么」，不记「花了多久」。"""
+
+    def __init__(self):
+        self.count = 0
+        self.events = []      # [(kind, who)]，按发生顺序
+        self._open = {}       # 用例 id -> 未结束的尝试数（判死锁时用来**点名**）
+
+    def tick(self, kind, who=""):
+        self.count += 1
+        self.events.append((kind, who))
+
+    def case_start(self, case_id):
+        self._open[case_id] = self._open.get(case_id, 0) + 1
+        self.tick("case.start", case_id)
+
+    def case_end(self, case_id):
+        left = self._open.get(case_id, 0) - 1
+        if left > 0:
+            self._open[case_id] = left
+        else:
+            self._open.pop(case_id, None)
+        self.tick("case.end", case_id)
+
+    def count_of(self, kind):
+        return sum(1 for k, _ in self.events if k == kind)
+
+    def stuck(self):
+        """已开始、未结束的用例（死锁时就是「谁卡住」的答案）。"""
+        return tuple(sorted(self._open))
+
+    def last_event(self):
+        return self.events[-1] if self.events else ("", "")
+
+
+class DeadlockReport:
+    """「进度停住」的判定结论（红证要能**点名**，否则读的人只知道「红了」）。"""
+
+    def __init__(self, stalled_for, meter):
+        self.stalled_for = stalled_for
+        self.stuck = meter.stuck()
+        self.last_event = meter.last_event()
+        self.progress = meter.count
+
+    def __str__(self):
+        kind, who = self.last_event
+        return (f"进度停滞 {self.stalled_for:.1f}s（进度计数停在 {self.progress}；最后进度事件 "
+                f"{kind}:{who}；卡住的用例 = {list(self.stuck) or ['（无在用用例）']}）")
+
+
+class SuiteOutcome:
+    """一次 suite 运行的**观测结果**：死锁判定 + 进度读数 + 结果 + 用时。"""
+
+    def __init__(self, results, deadlock, meter, elapsed):
+        self.results = results
+        self.deadlock = deadlock
+        self.meter = meter
+        self.elapsed = elapsed
+
+    def problems(self, expected_cases, expected_ends=None):
+        """fail-closed 收口：把每一处「不该发生」收进列表（空列表 = 通过）。"""
+        want_ends = expected_cases if expected_ends is None else expected_ends
+        bad = []
+        if self.deadlock is not None:
+            bad.append(f"判成死锁：{self.deadlock}")
+        if len(self.results) != expected_cases:
+            bad.append(f"结果 {len(self.results)} 条 != 用例 {expected_cases} 条")
+        ended = self.meter.count_of("case.end")
+        if ended != want_ends:
+            bad.append(f"用例结束进度计数 {ended} != {want_ends}（进度读数没涨 ⇒ 断言空转）")
+        return bad
+
+
+def _metered_scope(original, meter, kind):
+    """把**真实的** `ConcurrencyGate.reader/writer` 包成「每次 acquire / release 各 +1」。"""
+
+    @contextlib.asynccontextmanager
+    async def _scope(self):
+        meter.tick(f"{kind}.acquire")
+        try:
+            async with original(self):
+                meter.tick(f"{kind}.hold")
+                yield
+        finally:
+            meter.tick(f"{kind}.release")
+
+    return _scope
+
+
+async def _progress_watch(suite_task, meter, stall_window):
+    """看门狗：**只看进度**。涨 ⇒ 继续等（慢不是死）；连续 stall_window 秒不涨 ⇒ 判死锁。"""
+    loop = asyncio.get_running_loop()
+    seen = meter.count
+    quiet_since = loop.time()
+    while not suite_task.done():
+        await asyncio.sleep(PROGRESS_SAMPLE_INTERVAL)
+        if meter.count != seen:
+            seen = meter.count
+            quiet_since = loop.time()
+            continue
+        stalled_for = loop.time() - quiet_since
+        if stalled_for >= stall_window:
+            suite_task.cancel()
+            return DeadlockReport(stalled_for, meter)
+    return None
+
+
+async def _run_with_progress_watch(suite_coro, meter, stall_window=PROGRESS_STALL_WINDOW):
+    """跑一次 suite 并用**进度读数**判死锁（没有任何「跑完的墙钟预算」）。"""
+    loop = asyncio.get_running_loop()
+    started = loop.time()
+    suite_task = asyncio.ensure_future(suite_coro)
+    watcher = asyncio.ensure_future(_progress_watch(suite_task, meter, stall_window))
+    await asyncio.wait({suite_task, watcher}, return_when=asyncio.FIRST_COMPLETED)
+    if not watcher.done():
+        watcher.cancel()
+    results, deadlock = [], None
+    if suite_task.done() and not suite_task.cancelled():
+        exc = suite_task.exception()
+        if exc is not None:
+            with contextlib.suppress(asyncio.CancelledError):
+                await watcher
+            raise exc
+        results = suite_task.result() or []
+    else:
+        with contextlib.suppress(asyncio.CancelledError):
+            await suite_task
+        if watcher.done() and not watcher.cancelled():
+            deadlock = watcher.result()
+    if not watcher.done():
+        with contextlib.suppress(asyncio.CancelledError):
+            await watcher
+    return SuiteOutcome(results, deadlock, meter, loop.time() - started)
+
+
+def _mk_progress_case(cid, pre_clean=None, tags=None):
+    return lr.EvalCase(id=cid, title=cid, skill=lr.Skill.GENERAL,
+                       difficulty=lr.Difficulty.NORMAL, user_inputs=["hi"],
+                       expectations=[], data_checks=[], tags=tags or [],
+                       pre_clean=pre_clean or [])
+
+
+def _run_suite_with_progress(cases, concurrency, *, stall_in=None, per_case_delay=0.0,
+                             stall_window=PROGRESS_STALL_WINDOW):
+    """跑一次 suite，用**进度读数**判死锁（不再有 `wait_for` 墙钟预算）。
+
+    stall_in：该用例的 `run_case` **持读位时去要写位** ⇒ 复现 issue #3361 的真死锁。
+    per_case_delay：慢但前进的注入（每个用例真的花这么久，进度照样在涨）。
+    """
+    import unittest.mock as mock
+
+    meter = ProgressMeter()
+    gates = []
+    gate_cls = lr.ConcurrencyGate
+
+    class _CapturedGate(gate_cls):
+        """捕获调度器**真建**的门（注入要用它复现「持读位再要写位」）。"""
+
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            gates.append(self)
+
+    _CapturedGate.reader = _metered_scope(gate_cls.reader, meter, "gate.reader")
+    _CapturedGate.writer = _metered_scope(gate_cls.writer, meter, "gate.writer")
+
+    async def fake_login():
+        return "tok"
+
+    async def fake_sess(token, prefer_new=True, **kwargs):
+        return "sess"
+
+    async def fake_run_case(c, token, sid):
+        meter.case_start(c.id)
+        try:
+            if stall_in is not None and c.id == stall_in:
+                # #3361 的原始形态：调度器已给本任务读位，这里再要写位 ⇒ 互等（真死锁）
+                async with gates[0].writer():
+                    pass
+            await asyncio.sleep(0.02)
+            if per_case_delay:
+                await asyncio.sleep(per_case_delay)
+            return {"case_id": c.id, "title": c.title, "difficulty": "normal", "tags": [],
+                    "rounds": 1, "tool_calls": [], "round_trace": [], "passed": 1, "total": 1,
+                    "score": 1.0, "failed": [], "last_error": None, "final_text": "",
+                    "final_session_id": sid, "session_breaks": 0}
+        finally:
+            meter.case_end(c.id)
+
+    async def fake_end(token, sid, **kwargs):
+        return None
+
+    async def fake_pre_clean(token, spec):
+        return "ok"
+
+    async def fake_snapshot(token, kw):
+        return None
+
+    async def _go():
+        with mock.patch.object(lr, "ConcurrencyGate", new=_CapturedGate), \
+             mock.patch.object(lr, "login", new=fake_login), \
+             mock.patch.object(lr, "get_or_create_session", new=fake_sess), \
+             mock.patch.object(lr, "run_case", new=fake_run_case), \
+             mock.patch.object(lr, "_end_session", new=fake_end), \
+             mock.patch.object(lr, "_run_pre_clean", new=fake_pre_clean), \
+             mock.patch.object(lr, "snapshot_product", new=fake_snapshot), \
+             mock.patch.object(lr, "CASE_SLEEP", 0.0):
+            return await lr.run_suite(cases, "t", classify=False, concurrency=concurrency)
+
+    return asyncio.run(_run_with_progress_watch(_go(), meter, stall_window))
+
+
 class TestRetryBudget:
     """重试预算（issue #3361 评测提速）：失败多的跑不把分钟数全花在重试上。
 
@@ -2554,20 +2814,25 @@ class TestRetryBudget:
     def _run(self, monkeypatch, tmp_path, n_cases, retry_budget):
         import unittest.mock as mock
 
+        meter = ProgressMeter()
+        attempts = {"run_case": 0}
+
         async def fake_login():
             return "tok"
 
         async def fake_sess(token, prefer_new=True, **kwargs):
             return "sess"
 
-        attempts = {"run_case": 0}
-
         async def fake_run_case(c, token, sid):
             attempts["run_case"] += 1
-            return {"case_id": c.id, "title": c.title, "difficulty": "normal", "tags": [],
-                    "rounds": 1, "tool_calls": [], "round_trace": [], "passed": 0, "total": 1,
-                    "score": 0.0, "failed": [("boom", "x")], "last_error": None,
-                    "final_text": "", "final_session_id": sid, "session_breaks": 0}
+            meter.case_start(c.id)      # 每次**尝试**都记：重试也要在进度读数里可见
+            try:
+                return {"case_id": c.id, "title": c.title, "difficulty": "normal", "tags": [],
+                        "rounds": 1, "tool_calls": [], "round_trace": [], "passed": 0, "total": 1,
+                        "score": 0.0, "failed": [("boom", "x")], "last_error": None,
+                        "final_text": "", "final_session_id": sid, "session_breaks": 0}
+            finally:
+                meter.case_end(c.id)
 
         async def fake_end(token, sid, **kwargs):
             return None
@@ -2578,31 +2843,43 @@ class TestRetryBudget:
                  for i in range(n_cases)]
         monkeypatch.setenv("AGENT_EVAL_FLAKE_LOG", str(tmp_path / "f.json"))
         monkeypatch.setattr(lr, "CASE_SLEEP", 0.0)  # 单测不为节流付费
-        with mock.patch.object(lr, "login", new=fake_login), \
-             mock.patch.object(lr, "get_or_create_session", new=fake_sess), \
-             mock.patch.object(lr, "run_case", new=fake_run_case), \
-             mock.patch.object(lr, "_end_session", new=fake_end):
-            results = asyncio.run(lr.run_suite(cases, "t", retry_budget=retry_budget))
-        return results, attempts["run_case"]
+
+        async def _go():
+            with mock.patch.object(lr, "login", new=fake_login), \
+                 mock.patch.object(lr, "get_or_create_session", new=fake_sess), \
+                 mock.patch.object(lr, "run_case", new=fake_run_case), \
+                 mock.patch.object(lr, "_end_session", new=fake_end):
+                return await lr.run_suite(cases, "t", retry_budget=retry_budget)
+
+        # issue #8654：不设墙钟预算，用**进度读数**判死锁（重试次数仍按 run_case 调用数判）
+        outcome = asyncio.run(_run_with_progress_watch(_go(), meter))
+        return outcome, attempts["run_case"]
 
     def test_budget_limits_retries(self, monkeypatch, tmp_path):
         """3 条失败 + 预算 1 → 只重试 1 次（共 4 次 run_case），其余标 no-retry-budget。"""
-        results, calls = self._run(monkeypatch, tmp_path, 3, 1)
+        out, calls = self._run(monkeypatch, tmp_path, 3, 1)
         assert calls == 4, f"重试预算未生效（run_case 调用 {calls} 次，期望 1+1 次重试）"
-        assert results[0]["classification"] != "no-retry-budget"
-        assert results[1]["classification"] == "no-retry-budget"
-        assert results[2]["classification"] == "no-retry-budget"
+        assert out.problems(3, expected_ends=calls) == [], (
+            f"重试预算跑未通过进度判据：{out.problems(3, expected_ends=calls)}")
+        assert out.results[0]["classification"] != "no-retry-budget"
+        assert out.results[1]["classification"] == "no-retry-budget"
+        assert out.results[2]["classification"] == "no-retry-budget"
 
     def test_budget_does_not_hide_failures(self, monkeypatch, tmp_path):
         """超预算仍必须判失败（预算只省分钟，不掩盖红灯）。"""
-        results, _ = self._run(monkeypatch, tmp_path, 3, 1)
-        assert all(r["score"] == 0.0 for r in results)
-        ok, msg = lr._ci_verdict(results)
+        out, calls = self._run(monkeypatch, tmp_path, 3, 1)
+        assert all(r["score"] == 0.0 for r in out.results)
+        ok, msg = lr._ci_verdict(out.results)
         assert not ok and "3/3" in msg
+        assert out.problems(3, expected_ends=calls) == [], (
+            f"预算不掩盖失败这一格未通过进度判据：{out.problems(3, expected_ends=calls)}")
 
     def test_no_budget_retries_every_failure(self, monkeypatch, tmp_path):
-        results, calls = self._run(monkeypatch, tmp_path, 3, None)
+        """默认（不限预算）应逐条重试；本格过去在高负载下被墙钟预算误判成死锁（#8654）。"""
+        out, calls = self._run(monkeypatch, tmp_path, 3, None)
         assert calls == 6, "默认（不限预算）应逐条重试"
+        assert out.problems(3, expected_ends=calls) == [], (
+            f"逐条重试跑未通过进度判据：{out.problems(3, expected_ends=calls)}")
 
 
 class TestDeclaredPostSessionChecksParse:
@@ -3291,72 +3568,133 @@ class TestNoDeadlockWithPreCleanUnderConcurrency:
     超时（run 34698839019 实测：评测步骤 15min+ 不结束，只能人工 cancel）。
     修法：pre_clean 的独占窗口必须在读位**之外**获取（调度器先清理，再进读位跑主体）。
 
-    本测试用极短超时守护：一旦死锁，用例直接失败而不是把 CI 拖到 60 分钟超时。
+    issue #8654：守护方式从「**墙钟预算**内跑完（`wait_for(..., 8.0)`）」换成「**进度读数**
+    不停」—— 旧写法在本机高负载下必然判红（慢 ≠ 死锁；说明块见 `ProgressMeter` 上方）。
+    三条组合不变（并行 / 串行混排 / 全 pre_clean），断言走 `SuiteOutcome.problems()` 的
+    fail-closed 收口：真死锁 ⇒ 红且点名；慢但前进 ⇒ 绿。
     """
 
-    def _mkcase(self, cid, pre_clean=None, tags=None):
-        return lr.EvalCase(id=cid, title=cid, skill=lr.Skill.GENERAL,
-                           difficulty=lr.Difficulty.NORMAL, user_inputs=["hi"],
-                           expectations=[], data_checks=[], tags=tags or [],
-                           pre_clean=pre_clean or [])
-
-    def _run_with_timeout(self, cases, concurrency, seconds=8.0):
-        import unittest.mock as mock
-
-        async def fake_login():
-            return "tok"
-
-        async def fake_sess(token, prefer_new=True, **kwargs):
-            return "sess"
-
-        async def fake_run_case(c, token, sid):
-            await asyncio.sleep(0.02)
-            return {"case_id": c.id, "title": c.title, "difficulty": "normal", "tags": [],
-                    "rounds": 1, "tool_calls": [], "round_trace": [], "passed": 1, "total": 1,
-                    "score": 1.0, "failed": [], "last_error": None, "final_text": "",
-                    "final_session_id": sid, "session_breaks": 0}
-
-        async def fake_end(token, sid, **kwargs):
-            return None
-
-        async def fake_pre_clean(token, spec):
-            return "ok"
-
-        async def fake_snapshot(token, kw):
-            return None
-
-        async def _go():
-            with mock.patch.object(lr, "login", new=fake_login), \
-                 mock.patch.object(lr, "get_or_create_session", new=fake_sess), \
-                 mock.patch.object(lr, "run_case", new=fake_run_case), \
-                 mock.patch.object(lr, "_end_session", new=fake_end), \
-                 mock.patch.object(lr, "_run_pre_clean", new=fake_pre_clean), \
-                 mock.patch.object(lr, "snapshot_product", new=fake_snapshot), \
-                 mock.patch.object(lr, "CASE_SLEEP", 0.0):
-                return await lr.run_suite(cases, "t", classify=False, concurrency=3)
-
-        async def _guard():
-            return await asyncio.wait_for(_go(), timeout=seconds)
-
-        return asyncio.run(_guard())
-
     def test_pre_clean_case_parallel_does_not_deadlock(self):
-        cases = [self._mkcase("A"), self._mkcase("B"),
-                 self._mkcase("PC", pre_clean=[{"type": "product_dedupe"}])]
-        results = self._run_with_timeout(cases, 3)
-        assert len(results) == 3
+        cases = [_mk_progress_case("A"), _mk_progress_case("B"),
+                 _mk_progress_case("PC", pre_clean=[{"type": "product_dedupe"}])]
+        out = _run_suite_with_progress(cases, 3)
+        assert out.problems(3) == [], f"并行 + pre_clean 判据未过：{out.problems(3)}"
 
     def test_pre_clean_with_serial_case_does_not_deadlock(self):
         """有独占用例（tag=update）+ pre_clean 并行用例 —— 本轮踩到的组合。"""
-        cases = [self._mkcase("A"), self._mkcase("PC", pre_clean=[{"type": "product_dedupe"}]),
-                 self._mkcase("MUT", tags=["update"])]
-        results = self._run_with_timeout(cases, 3)
-        assert len(results) == 3
+        cases = [_mk_progress_case("A"),
+                 _mk_progress_case("PC", pre_clean=[{"type": "product_dedupe"}]),
+                 _mk_progress_case("MUT", tags=["update"])]
+        out = _run_suite_with_progress(cases, 3)
+        assert out.problems(3) == [], f"串行混排 + pre_clean 判据未过：{out.problems(3)}"
 
     def test_all_cases_pre_clean_does_not_deadlock(self):
-        cases = [self._mkcase(f"P{i}", pre_clean=[{"type": "product_dedupe"}]) for i in range(4)]
-        results = self._run_with_timeout(cases, 3)
-        assert len(results) == 4
+        cases = [_mk_progress_case(f"P{i}", pre_clean=[{"type": "product_dedupe"}])
+                 for i in range(4)]
+        out = _run_suite_with_progress(cases, 3)
+        assert out.problems(4) == [], f"全 pre_clean 判据未过：{out.problems(4)}"
+
+
+class TestDeadlockCriterionIsProgressNotWallClock:
+    """死锁判据的**双向红证**（issue #8654）：判「停住不动」，不判「跑得慢」。
+
+    三条判据 × 各自的红证形态：
+      ① 真死锁 ⇒ 短时红 + **点名**卡住的用例（把看门狗改瞎 ⇒ 本条红）；
+      ② 慢但前进 ⇒ 绿（把判据换回「总量超预算就红」⇒ 本条红 —— 这就是现在的假红格）；
+      ③ 进度计数在正常路径真的在涨（把 tick 改成空操作 ⇒ 本条红，① 也就成了空断言）。
+    另有类级元守卫：本文件的单测**不许连真服务**（本机黑洞监听者）。
+    """
+
+    def test_real_deadlock_is_red_and_named(self):
+        """① 真死锁：持读位再要写位（#3361 原始形态）⇒ 短时红 + 点名。"""
+        cases = [_mk_progress_case("RUN"), _mk_progress_case("STUCK"),
+                 _mk_progress_case("RUN2")]
+        out = _run_suite_with_progress(cases, 3, stall_in="STUCK")
+        bad = []
+        if out.deadlock is None:
+            bad.append("真死锁没有被判红（判据失效 ⇒ 真死锁会被放走）")
+        else:
+            if out.deadlock.stuck != ("STUCK",):
+                bad.append(f"点名错人：{out.deadlock.stuck} != ('STUCK',)")
+            if out.deadlock.stalled_for < PROGRESS_STALL_WINDOW:
+                bad.append(f"判据没等满零进度窗口就下结论：{out.deadlock.stalled_for:.2f}s "
+                           f"< {PROGRESS_STALL_WINDOW}s")
+        if out.meter.count <= 0:
+            bad.append("进度计数一次都没涨（判据没有读数支撑）")
+        if out.elapsed >= 60.0:
+            bad.append(f"判红太慢（{out.elapsed:.1f}s ≥ 60s）：判据退化成「等墙钟兜底」")
+        assert bad == []
+
+    def test_slow_but_progressing_is_green(self):
+        """② 慢但前进 ⇒ 绿（本格正是旧判据在高负载 / 慢服务下假红的那一格）。
+
+        注入：60 条用例、每条真花 0.5s、并发 3 ⇒ 总耗时 ~10s（**远超旧 8s 墙钟预算**），
+        但每一步都在推进 ⇒ 进度判据必须绿。红证 = 把判据换回「总时长超预算就红」⇒ 本条红。
+        """
+        n, delay = 60, 0.5
+        cases = [_mk_progress_case(f"SLOW-{i}") for i in range(n)]
+        out = _run_suite_with_progress(cases, 3, per_case_delay=delay)
+        bad = out.problems(n)
+        if out.elapsed <= 8.0:
+            bad.append(f"注入没生效：总耗时 {out.elapsed:.2f}s 没超过旧墙钟预算 8s，"
+                       "「慢」这一格没被覆盖 ⇒ 判据回归也没人拦")
+        assert bad == []
+
+    def test_progress_counter_ticks_on_normal_path(self):
+        """③ 进度计数**真的在涨**（否则 ① 是空断言）：正常路径的计数与真值逐项相等。"""
+        cases = [_mk_progress_case("A"), _mk_progress_case("B"), _mk_progress_case("C")]
+        out = _run_suite_with_progress(cases, 3)
+        bad = out.problems(3)
+        expected = {"case.start": 3, "case.end": 3,
+                    "gate.reader.acquire": 3, "gate.reader.release": 3}
+        seen = {k: out.meter.count_of(k) for k in expected}
+        if seen != expected:
+            bad.append(f"进度计数与真值不符：{seen} != {expected}")
+        assert bad == []
+
+    def test_unit_tests_do_not_touch_the_live_service(self, monkeypatch, _no_live_service_reads):
+        """类级元守卫：本文件的单测**一次都不许连真服务**（issue #8654 的假红来路）。
+
+        复现本机现场：把评测端点指向一个「accept 但永不回包」的本机黑洞（= #8647 记的那个
+        僵而不死的监听者），再跑同一份 suite ⇒ 必须绿，且黑洞**一条连接都没收到**。
+        红证 = 摘掉 `fetch_session_tool_result_rounds` 的桩 ⇒ 每次尝试真等 20s（httpx 读超时），
+        进度读数随即停住 ⇒ 本条判红并点名卡住的用例。
+        """
+        import socket
+        import threading
+
+        sock = socket.socket()
+        sock.bind(("127.0.0.1", 0))
+        sock.listen(8)
+        sock.settimeout(0.05)
+        port = sock.getsockname()[1]
+        accepted, stop = [], threading.Event()
+
+        def _serve():
+            while not stop.is_set():
+                try:
+                    conn, _ = sock.accept()
+                except (TimeoutError, OSError):
+                    continue
+                accepted.append(conn)          # 收下但永不回包
+        thread = threading.Thread(target=_serve, daemon=True)
+        thread.start()
+        try:
+            monkeypatch.setattr(lr, "AI_API", f"http://127.0.0.1:{port}")
+            cases = [_mk_progress_case("A"), _mk_progress_case("B"), _mk_progress_case("C")]
+            out = _run_suite_with_progress(cases, 3)
+        finally:
+            stop.set()
+            thread.join(timeout=2)
+            for conn in accepted:
+                conn.close()
+            sock.close()
+        bad = out.problems(3)
+        if accepted:
+            bad.append(f"单测真的连了评测服务：黑洞收到 {len(accepted)} 条连接")
+        if not _no_live_service_reads:
+            bad.append("网络边界一次都没走到 —— 桩挡在了一条不存在的路径上（判据空转）")
+        assert bad == []
 
 
 # ─────────────────────────────────────────────────────────────────────────────
