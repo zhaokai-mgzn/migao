@@ -240,10 +240,12 @@ _GAP_ACTIONS = [
     ("employee_manage", "delete", {"user_id": "u1"}),
     ("employee_manage", "reset_password", {"user_id": "u1"}),
     ("employee_manage", "toggle_status", {"user_id": "u1", "status": "disabled"}),
-    ("processing_item_manage", "toggle_item_status", {"item_id": "i1", "status": "inactive"}),
+    # 🔴 issue #8618：`toggle_item_status` / `delete_category` 已从工具**退场**（裁定「只能改，
+    # 不能删」；停用改由 `update_item(status=…)` 表达）⇒ 这两个 action 不再有「缺口」可言，
+    # 参数化改挂到**存活**的写 action 上（同一断言强度：合法参数必须真的过校验）。
+    ("processing_item_manage", "update_item", {"item_id": "i1", "status": "inactive"}),
     ("processing_item_manage", "create_category", {"name": "刺绣工艺"}),
     ("processing_item_manage", "update_category", {"category_id": "pc1", "name": "刺绣工艺"}),
-    ("processing_item_manage", "delete_category", {"category_id": "pc1"}),
     # 本次全量审计补出的同族缺口（issue #4011 正文未列）：工单状态变更
     ("after_sales_manage", "update_status", {"ticket_id": "t1", "status": "processing"}),
 ]
@@ -366,7 +368,8 @@ def test_unknown_tool_still_rejected(tool, admin_ctx):
     ("product_manage", "toggle_status", {"product_id": "p1", "status": "off_sale"}),
     ("customer_manage", "add_tag", {"customer_id": "c1", "tag_id": "t1"}),
     ("employee_manage", "toggle_status", {"user_id": "u1", "status": "disabled"}),
-    ("processing_item_manage", "toggle_item_status",
+    # issue #8618：停用改由 `update_item(status=…)` 表达（`toggle_item_status` 已退场）
+    ("processing_item_manage", "update_item",
      {"item_id": "i1", "status": "inactive"}),
     ("category_manage", "create", {"name": "窗帘"}),
 ])

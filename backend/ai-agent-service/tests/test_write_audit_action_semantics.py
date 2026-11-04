@@ -81,6 +81,12 @@ WRITE_TOOL_INVENTORY: frozenset = frozenset({
     # 🔴 issue #7050（2026-10-16 终版「非单据对象创建 ✅」）：员工账号创建/变更接回 B 端
     # ⇒ 它重新成为**写工具**（自带 action 参数：create / update）。
     "employee_manage",
+    # 🔴 issue #8618（2026-11-04，B 端工具缺口接回）：`customer_manage`（`update`）与
+    # `category_manage`（`create`）从「只读」变回「部分写」⇒ 重新成为写工具（两者都自带
+    # `action` 参数）。它们的写面按用户 2026-10-16 终版裁定接回：改客户资料 / 建商品分类是
+    # **可逆变更**，删除/停用类动作仍不进枚举。
+    "customer_manage",
+    "category_manage",
     # issue #7514（2026-10-23）：算料配置变更接回 B 端（A 档可逆写）——
     # 无 `action` 参数 ⇒ 动作动词登记在 `registry._NO_ACTION_PARAM_TOOL_ACTION`（"update"）。
     "craft_calc_config_update",

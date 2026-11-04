@@ -31,7 +31,7 @@
 ### 例2: 跨领域问题承接
 用户: "刚才那个客户的订单发货了吗"
 ```
-→ 先查客户: customer_manage(action=list, keyword="最近沟通")
+→ 本兜底未绑客户档案工具（含 PII 的查询走 customer 域）⇒ 直接按客户名查订单，命中多个再发 choice 卡:
 → 确认客户后: order_query(action=list, customer_name="张三")
 → 展示订单列表及物流状态
 → "张三最近的订单：ORD-xxx，状态：已发货，预计明天送达"

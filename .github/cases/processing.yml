@@ -84,26 +84,18 @@ cases:
     expectations:
       - tool: processing_item_query
         args:
-          keyword: "打孔"
-      # ⚠️ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：原第二条期望
-      # `processing_item_manage(action=create_processing_item)`（新增加工项）已从 B 端全部
-      # skill 解绑 ⇒ 期望工具改判为存活的只读路径 processing_item_query（用例条目保留、
-      # 不删除；退役理由见 skip_reason / merge_log）。
-    # ── 「调了 ≠ 成了」（#3544）：expectations 里出现工具名只证明「模型想建」──
-    # ① must_succeed = canonical 写成功断言（fail-closed：一次都没成功 → 判红）；
-    # ② output_verify = 产出侧值核对（must_succeed 只说"成了"，说不出"建的是哪一项"）。
-    must_succeed: []
-    # （#5247 退役）原写成功断言 = processing_item_manage(action=create_processing_item)，
-    # 载体已从 B 端解绑 ⇒ 断言在新事实下必然为假 ⇒ 清空（原值登记在 skip_reason / merge_log）。
-    output_verify: []
-    # （#5247 退役）原产出侧核对载体 = processing_item_manage(action=create_processing_item)，
-    # 断言真建出用户点名的那一项（expect.name = "测试加工"）—— 载体已从 B 端解绑 ⇒ 清空。
-        # ⚠️ 多 action 工具**必须**声明 action（L0 不变式锁死）：本工具还有 list_categories
-        # 等同名 action，不限定就会核对到**另一个 action** 的 payload（实测 run 34809483940
-        # 取到 R2 list_categories 的 {'categories': [...]} → 假红；字段名撞上则假绿）。
-        # （#5247 退役）原断言：action=create_processing_item；
-          # 真建出用户点名的那一项（而不是误建别的项）
-          # 原断言值（#5247 退役）：expect.name = "测试加工"（真建出用户点名的那一项）。
+          keyword: 打孔
+      - tool: processing_item_manage
+        args:
+          action: create_processing_item
+    must_succeed:
+      - tool: processing_item_manage
+        action: create_processing_item
+    output_verify:
+      - tool: processing_item_manage
+        action: create_processing_item
+        expect:
+          name: 测试加工
     forbidden_text:
       # #4882 的正面要求（断言只增不减）：目录已无单价/计价方式 ⇒ agent 不得反过来向用户
       # 索要这两个**已退场**的字段；也不得宣称「新增加工项」不在功能范围（PP-006 实拍教训）。
@@ -123,8 +115,15 @@ cases:
       - "加工项目录**不再有单价与计价方式**（issue #4882，用户裁定；V101 迁移删列）：`POST/PUT /api/admin/processing-items` 的请求体只认 `name` + `categoryId`（+ 可选 `craftHint` / `description`），`pricingMethod` / `unitPrice` 两键已随 DTO 一并退场 —— 新增加工项不得要求用户补「计价方式」或「单价」"
       - "processing_item_query 响应条目无 pricing_method / unit_price / per_meter_quantity（计价方式与单价已退场；每米数量更早已回滚，issue #3005）"
       - "商品详情 processingItems 无 custom_per_meter_quantity / perMeterQuantity（商品级密度覆盖已回滚）"
-    skip_reason: "[backend-contract] [#5247] B 端只读化（用户裁定 2026-09-23：B 端黄金策只做数据查询与分析，创建/更新能力与对应 tools 全部从 B 端移除）⇒ 本用例断言的「新增加工项（action=create_processing_item）」（processing_item_manage）已从 B 端下线、不再绑定任何 B 端 skill。用例条目与退役理由保留（不删除）；断言面改判为 只读路径 processing_item_query（加工项查询）+ 如实说明 + 引导去后台页面。"
-    merge_log: "2026-09-07 改写（issue #3005，回滚 #2986）：行业加工费按米计价、辅料（罗马圈/四爪钩等）含在按米加工费中——per_piece 与「每米数量」密度不符合实际（数量对不上车间工艺、B 端无法对账），已回滚移除；PP-006 由密度配置用例改为计价方式回归断言。2026-09-14 校准（#3544，REPORT §2.3）：① 假绿升级——补 must_succeed（canonical 写成功断言，fail-closed）+ output_verify（name/pricingMethod 产出核对），此前只断言「调用过」，工具三次真执行全失败仍判 ✅（真缺口见 #3543）；② 输入「分类选打孔加工」改为种子里真实存在的「分类选窗帘加工」。2026-09-14 收口（#3544，run 34809483940 实测）：`output_verify` 补 `action: create_processing_item` —— 原实现按**工具名**取首个成功 payload，而本工具是多 action（R2 的 list_categories 也成功）→ 核对到 `{'categories': [...]}` 造成**假红**；同时给 runner 加 action 过滤 + L0 不变式「多 action 工具的 output_verify 必须声明 action」。2026-09-14 再校准（#3658，run 34820346966 首次真重放）：改为输入直接给分类 ID（pcat_eval_curtain，种子里确定存在），create 首轮成功、不再触发恢复轮。2026-09-19（issue #4537 的 burn-down 缴费 —— 本用例命中的**唯一**一条存量违规是 CASE-TRUST-NO-PRECONDITION-ASSERTION，metric=entries ⇒ 必须**整条销账**）：补**机器计分型**前置自断言。2026-09-19（issue #4542 菜单改名）：侧边栏菜单名 =「加工项管理」（页面仍是两个 tab，功能一条没减）—— 仅登记口径变更。**2026-09-21 改写（issue #4882，用户裁定「彻底删除加工项单价与计价方式」）**：加工项目录不再承载价与计价方式（V101 删列 + `ProcessingItemCreateRequest/UpdateRequest` 去字段 + `POST /processing-items/calculate` 端点退场）⇒ 本用例原行为面（计价方式枚举 per_meter/per_set/fixed/per_area、per_piece 被拒绝）**整体失去对象**。按「用例 ID 不复用给别的行为、也不删号留洞」的惯例，同一 ID 改写为**新世界等价强度的可执行行为面**：新增加工项只需「名称 + 加工分类」，agent **必须真的调 `create_processing_item`**（原防呆内核逐字保留），且**不得反向索要已退场的「计价方式」/「单价」**（新增 forbidden_text，断言只增不减）；分类 ID 仍按种子给（#3658 教训保留）。 ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：processing_item_manage 从 B 端解绑 ⇒ 本用例退役（理由写在 skip_reason，条目不删除）；expectations 由 [processing_item_query(keyword=打孔), processing_item_manage(action=create_processing_item)] 改判为 [processing_item_query(keyword=打孔)]，must_succeed(action=create_processing_item) 与 output_verify(expect.name=「测试加工」) 两条写声明同步移除（否则成为永不满足的悬空声明）；required_args 原本没有此项、precondition / pre_clean 无写声明，无需改动；user_inputs / forbidden_text / data_checks（全部判据说明）一字未动、一条未删。"
+    namespaces:
+      # 弱证据（如实登记）：夹具层**没有**「删加工项 / 删加工分类」的复位动作
+      # （`_CLEAN_TYPES` 无该族），故只能声明命名空间保证并行互斥；重试前置等价性由
+      # 目标对象 `测试加工` 的**罕见命名**承担（同栈内首跑若已建出，第二轮会命中重名分支）。
+      - "processing_item:测试加工"
+    skip_reason: ""
+    merge_log: >-
+      2026-11-04 un-skip（issue #8618：B 端工具缺口接回）——新增加工项（`create_processing_item`）已绑回 B 端 `product` 域（确认门禁 + 权限复检 + prompt 口径同批落地）⇒ 本用例撤销 skip，效果层断言（must_succeed / output_verify）恢复；判定面 = 工具被真的调用 + 服务端真的改了数据，**不是**「agent 说了会做」。
+      ｜2026-09-07 改写（issue #3005，回滚 #2986）：行业加工费按米计价、辅料（罗马圈/四爪钩等）含在按米加工费中——per_piece 与「每米数量」密度不符合实际（数量对不上车间工艺、B 端无法对账），已回滚移除；PP-006 由密度配置用例改为计价方式回归断言。2026-09-14 校准（#3544，REPORT §2.3）：① 假绿升级——补 must_succeed（canonical 写成功断言，fail-closed）+ output_verify（name/pricingMethod 产出核对），此前只断言「调用过」，工具三次真执行全失败仍判 ✅（真缺口见 #3543）；② 输入「分类选打孔加工」改为种子里真实存在的「分类选窗帘加工」。2026-09-14 收口（#3544，run 34809483940 实测）：`output_verify` 补 `action: create_processing_item` —— 原实现按**工具名**取首个成功 payload，而本工具是多 action（R2 的 list_categories 也成功）→ 核对到 `{'categories': [...]}` 造成**假红**；同时给 runner 加 action 过滤 + L0 不变式「多 action 工具的 output_verify 必须声明 action」。2026-09-14 再校准（#3658，run 34820346966 首次真重放）：改为输入直接给分类 ID（pcat_eval_curtain，种子里确定存在），create 首轮成功、不再触发恢复轮。2026-09-19（issue #4537 的 burn-down 缴费 —— 本用例命中的**唯一**一条存量违规是 CASE-TRUST-NO-PRECONDITION-ASSERTION，metric=entries ⇒ 必须**整条销账**）：补**机器计分型**前置自断言。2026-09-19（issue #4542 菜单改名）：侧边栏菜单名 =「加工项管理」（页面仍是两个 tab，功能一条没减）—— 仅登记口径变更。**2026-09-21 改写（issue #4882，用户裁定「彻底删除加工项单价与计价方式」）**：加工项目录不再承载价与计价方式（V101 删列 + `ProcessingItemCreateRequest/UpdateRequest` 去字段 + `POST /processing-items/calculate` 端点退场）⇒ 本用例原行为面（计价方式枚举 per_meter/per_set/fixed/per_area、per_piece 被拒绝）**整体失去对象**。按「用例 ID 不复用给别的行为、也不删号留洞」的惯例，同一 ID 改写为**新世界等价强度的可执行行为面**：新增加工项只需「名称 + 加工分类」，agent **必须真的调 `create_processing_item`**（原防呆内核逐字保留），且**不得反向索要已退场的「计价方式」/「单价」**（新增 forbidden_text，断言只增不减）；分类 ID 仍按种子给（#3658 教训保留）。 ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：processing_item_manage 从 B 端解绑 ⇒ 本用例退役（理由写在 skip_reason，条目不删除）；expectations 由 [processing_item_query(keyword=打孔), processing_item_manage(action=create_processing_item)] 改判为 [processing_item_query(keyword=打孔)]，must_succeed(action=create_processing_item) 与 output_verify(expect.name=「测试加工」) 两条写声明同步移除（否则成为永不满足的悬空声明）；required_args 原本没有此项、precondition / pre_clean 无写声明，无需改动；user_inputs / forbidden_text / data_checks（全部判据说明）一字未动、一条未删。
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_processing_item_query.py"
@@ -161,14 +160,17 @@ cases:
       # #4882：单价与计价方式已退场 ⇒ 「部分更新」的题眼改挂在一个**可选且非 @NotBlank** 的
       # 字段上（`description`），断言强度不变（仍是「GET→merge→PUT 后其它字段不得被清空」）。
       - "把加工项打孔的描述改成顶部打孔工艺"
-      # ⚠️ 2026-09-24（issue #5247）：本轮原挂 `repeat_until{tool_called: processing_item_manage}`
+      # 2026-11-04（issue #8618 un-skip）：控制轮已改成**纯文本**（见下）；
+      # 原挂的 `repeat_until{tool_called: processing_item_manage}` 按 #5247 移除后未恢复，
+      # 因为本用例的判定面已由 expectations + must_succeed 承担（工具真被调用 + 真改数据）。
+      # ⚠️ 2026-09-24（issue #5247，历史）：本轮原挂 `repeat_until{tool_called: processing_item_manage}`
       # （停条件 = 该写工具被调用）；它已从 B 端全部 skill 解绑 ⇒ 停条件悬空（永不满足）
       # ⇒ 整块移除，`fallback` 按处置表保留。
       # ⚠️ 保留后本轮只剩 fallback 键：runner 只把带 repeat_until / auto_respond / auto_select /
       # new_session 的 dict 轮当控制轮，其余 dict 轮取 `msg.get("text", "")` ⇒ 会发**空文本**；
       # 本用例已退役（skip_reason 写明理由）故不影响当前评测，**若将来解退役，本轮必须改成
       # 纯文本** `- "确认"`（否则静默发空消息 = 声明无消费）。
-      - fallback: "确认"
+      - "确认"
       # 回读轮：`update_item` 的返回是 `{item_id, **PUT 回显的完整加工项}`——**是合并后的
       # 对象**（`_put_item_full` GET 详情 → 覆盖传入字段 → PUT 全量后回显）。回读轮保留
       # （二次证据面）。
@@ -178,33 +180,26 @@ cases:
           max: 3
         fallback: "确认"
     expectations:
-      # ⚠️ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：原写期望
-      # `processing_item_manage(action=update_item)` 已从 B 端全部 skill 解绑 ⇒ 期望面按存活的
-      # 只读路径改判为 processing_item_query（用例条目保留、不删除；理由见 skip_reason / merge_log）。
+      - tool: processing_item_manage
+        args:
+          action: update_item
       - tool: processing_item_query
-    must_succeed: []
-    # （#5247 退役）原写成功断言 = processing_item_manage(action=update_item)——
-    # 载体已从 B 端解绑，「只改描述不清空其它字段」在新事实下必然为假 ⇒ 清空（原值登记在 merge_log）。
-    required_args: []
-    # （#5247 退役）原必填参数断言 = processing_item_manage(action=update_item) 的
-    # item_id / description ⇒ 清空（原值登记在 merge_log）。
-    output_verify: []
-    # （#5247 退役）原产出侧核对 = processing_item_manage(action=update_item) 的 payload 里
-    # description="顶部打孔工艺" / name=打孔 / craftHint=打孔 / status=active —— 载体已从 B 端解绑
-    # （agent 不再改加工项、`_put_item_full` 的 PUT 回显不会发生）⇒ 清空；原判据说明逐字保留：
-      # ⚠️ `action` 必写（本工具多 action：create_processing_item / update_item /
-      # delete_item / toggle_item_status / …）—— 不限定会取**首个成功调用**的 payload
-      # （假绿/假红）。
-        # （#5247 退役）原断言：action=update_item；expect.description="顶部打孔工艺"
-          # 本次真改到的字段（回显报文里的键名 = admin-api 的 `description`）
-          # 本用例的题眼是「**只改描述不清空其它字段**」：`_put_item_full` 是
-          # 「GET 详情 → 覆盖传入字段 → PUT 全量」，PUT 回显即**合并后的对象**，
-          # 故「没被清空」能且必须在这份 payload 上机器核到（字段被清 → 键缺失/为空 → 红）。
-          # `craftHint` 是 V78 给加工项加的**路线键「工艺」维受控来源**
-          # （`ProcessingItem.craftHint`）—— 它是最不能丢的一个可选字段
-          # （丢了 → 路线派生少一维 ⇒ 工序/工资错配），且它是**非 @NotBlank 的可选字段**，
-          # 正是「只发改动字段」写法会清掉的那一类。
-          # 原断言值（#5247 退役）：name=打孔 / craftHint=打孔 / status=active（种子 pi_eval_punch status='active'）。
+    must_succeed:
+      - tool: processing_item_manage
+        action: update_item
+    required_args:
+      - tool: processing_item_manage
+        fields:
+          - item_id
+          - description
+    output_verify:
+      - tool: processing_item_manage
+        action: update_item
+        expect:
+          description: 顶部打孔工艺
+          name: 打孔
+          craftHint: 打孔
+          status: active
     forbidden_text:
       - "暂不支持"
       - "功能不存在"
@@ -226,8 +221,15 @@ cases:
       # 只改描述不得把 name / craftHint / status 清空。该语义已**机器可判**
       # （output_verify 的 name/craftHint/status 三个键）；本 prose 仅留作判读说明。
       - "回读结果中 name 仍为「打孔」、craftHint 仍为「打孔」、status 仍为 active（未被清空）——只改 description 不得清空其它字段"
-    skip_reason: "[backend-contract] [#5247] B 端只读化（用户裁定 2026-09-23：B 端黄金策只做数据查询与分析，创建/更新能力与对应 tools 全部从 B 端移除）⇒ 本用例断言的「修改加工项（action=update_item）」（processing_item_manage）已从 B 端下线、不再绑定任何 B 端 skill。用例条目与退役理由保留（不删除）；断言面改判为 只读路径 processing_item_query（加工项查询）+ 如实说明 + 引导去后台页面。"
-    merge_log: "2026-09-14 新增（issue #3568）：`processing_item_manage(action=update_item)` 此前**零用例覆盖**（#3591 收口时如实标注的覆盖边界：只有 create 路径被重放）。断言机器可判：must_succeed(action=update_item) + required_args[item_id,price] + output_verify(unitPrice=9.5 + name/pricingMethod/status 未被清空，显式 action) + forbidden_text。2026-09-15 校准（结论档 run 34841029062 实证）：原 output_verify 写 `price: 9.5` = 用**入参名**核**回显字段名**（回显是 unitPrice）→ 恒红假红；同时更正「update_item 返回只含下发字段」的错误注释（PUT 回显是合并后全量对象，故「不清空」可从 payload 机器核到）。2026-09-19（issue #4525 的 burn-down 缴费）：补**机器计分型**前置自断言（种子 `pi_eval_punch`「打孔」存在 + craft_hint=打孔）。**2026-09-21 改写（issue #4882，用户裁定「彻底删除加工项单价与计价方式」）**：单价与计价方式两个字段整体退场 ⇒ 原题眼「只改**单价**不清空其它字段」的载体消失。按「断言只增不减」原则：① 题眼载体迁到**可选且非 @NotBlank** 的 `description`；② 「不得被清空」的锚点由 `pricingMethod` 换成 **`craftHint`**（V78 的路线键「工艺」维受控来源，丢了会让路线派生少一维 ⇒ 工序/工资错配 ⇒ 锚点比原来更硬）；③ `required_args` 的 `price` → `description`；④ forbidden_text / 回读轮 / `action` 限定语义**一字未改**。 ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：processing_item_manage 从 B 端解绑 ⇒ 本用例退役（理由写在 skip_reason，条目不删除）；expectations 由 [processing_item_manage(action=update_item), processing_item_query] 改判为 [processing_item_query]，must_succeed(action=update_item) / required_args(item_id, description) / output_verify(description=顶部打孔工艺, name=打孔, craftHint=打孔, status=active) 三条写声明同步移除（否则成为永不满足的悬空声明），user_inputs 第 2 轮的 repeat_until{tool_called: processing_item_manage} 整块移除（fallback 保留）；precondition(processing_item_count_for_keyword) / data_checks / forbidden_text / 回读轮一字未动、判据说明一条未删。"
+    namespaces:
+      # 弱证据（如实登记）：本用例改的是种子加工项 `pi_eval_punch`（「打孔」）的 description，
+      # 夹具层**没有** description 的复位动作 ⇒ 只能声明命名空间；同栈内请让本用例**后跑**，
+      # 或由评测栈重建复位（每次重放重建栈）。
+      - "processing_item:打孔"
+    skip_reason: ""
+    merge_log: >-
+      2026-11-04 un-skip（issue #8618：B 端工具缺口接回）——修改加工项（`update_item`，只改 description 不清空其它字段）已绑回 B 端 `product` 域 ⇒ 本用例撤销 skip，效果层断言（must_succeed / required_args / output_verify）恢复；判定面 = 工具被真的调用 + 回读真值，**不是**「agent 说了会做」。
+      ｜2026-09-14 新增（issue #3568）：`processing_item_manage(action=update_item)` 此前**零用例覆盖**（#3591 收口时如实标注的覆盖边界：只有 create 路径被重放）。断言机器可判：must_succeed(action=update_item) + required_args[item_id,price] + output_verify(unitPrice=9.5 + name/pricingMethod/status 未被清空，显式 action) + forbidden_text。2026-09-15 校准（结论档 run 34841029062 实证）：原 output_verify 写 `price: 9.5` = 用**入参名**核**回显字段名**（回显是 unitPrice）→ 恒红假红；同时更正「update_item 返回只含下发字段」的错误注释（PUT 回显是合并后全量对象，故「不清空」可从 payload 机器核到）。2026-09-19（issue #4525 的 burn-down 缴费）：补**机器计分型**前置自断言（种子 `pi_eval_punch`「打孔」存在 + craft_hint=打孔）。**2026-09-21 改写（issue #4882，用户裁定「彻底删除加工项单价与计价方式」）**：单价与计价方式两个字段整体退场 ⇒ 原题眼「只改**单价**不清空其它字段」的载体消失。按「断言只增不减」原则：① 题眼载体迁到**可选且非 @NotBlank** 的 `description`；② 「不得被清空」的锚点由 `pricingMethod` 换成 **`craftHint`**（V78 的路线键「工艺」维受控来源，丢了会让路线派生少一维 ⇒ 工序/工资错配 ⇒ 锚点比原来更硬）；③ `required_args` 的 `price` → `description`；④ forbidden_text / 回读轮 / `action` 限定语义**一字未改**。 ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：processing_item_manage 从 B 端解绑 ⇒ 本用例退役（理由写在 skip_reason，条目不删除）；expectations 由 [processing_item_manage(action=update_item), processing_item_query] 改判为 [processing_item_query]，must_succeed(action=update_item) / required_args(item_id, description) / output_verify(description=顶部打孔工艺, name=打孔, craftHint=打孔, status=active) 三条写声明同步移除（否则成为永不满足的悬空声明），user_inputs 第 2 轮的 repeat_until{tool_called: processing_item_manage} 整块移除（fallback 保留）；precondition(processing_item_count_for_keyword) / data_checks / forbidden_text / 回读轮一字未动、判据说明一条未删。
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_processing_item_manage.py"
@@ -250,31 +252,35 @@ cases:
     truths_ref: []
     user_inputs:
       - "把加工项打孔停用"
-      # ⚠️ 2026-09-24（issue #5247）：本轮原挂 `repeat_until{tool_called: processing_item_manage}`
+      # 2026-11-04（issue #8618 un-skip）：控制轮已改成**纯文本**（见下）；
+      # 原挂的 `repeat_until{tool_called: processing_item_manage}` 按 #5247 移除后未恢复，
+      # 因为本用例的判定面已由 expectations + must_succeed 承担（工具真被调用 + 真改数据）。
+      # ⚠️ 2026-09-24（issue #5247，历史）：本轮原挂 `repeat_until{tool_called: processing_item_manage}`
       # （停条件 = 该写工具被调用）；它已从 B 端全部 skill 解绑 ⇒ 停条件悬空（永不满足）
       # ⇒ 整块移除，`fallback` 按处置表保留。
       # ⚠️ 保留后本轮只剩 fallback 键：runner 只把带 repeat_until / auto_respond / auto_select /
       # new_session 的 dict 轮当控制轮，其余 dict 轮取 `msg.get("text", "")` ⇒ 会发**空文本**；
       # 本用例已退役（skip_reason 写明理由）故不影响当前评测，**若将来解退役，本轮必须改成
       # 纯文本** `- "确认"`（否则静默发空消息 = 声明无消费）。
-      - fallback: "确认"
+      - "确认"
     expectations:
-      # ⚠️ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：原写期望
-      # `processing_item_manage(action=toggle_item_status)` 已从 B 端全部 skill 解绑 ⇒ 期望面按
-      # 存活的只读路径改判为 processing_item_query（用例条目保留、不删除；理由见 skip_reason / merge_log）。
+      - tool: processing_item_manage
+        args:
+          action: update_item
       - tool: processing_item_query
-    must_succeed: []
-    # （#5247 退役）原写成功断言 = processing_item_manage(action=toggle_item_status)——
-    # 载体已从 B 端解绑（黄金策不再停用加工项）⇒ 清空（原值登记在 merge_log）。
-    required_args: []
-    # （#5247 退役）原必填参数断言 = processing_item_manage(action=toggle_item_status) 的
-    # item_id / status ⇒ 清空（原值登记在 merge_log）。
-    output_verify: []
-    # （#5247 退役）原产出侧核对 = processing_item_manage(action=toggle_item_status) 的 payload 里
-    # status=inactive（工具返回 {item_id, status}，目标状态即停用）—— 载体已从 B 端解绑 ⇒ 清空。
-    # 原判据说明逐字保留：
-      # ⚠️ 显式 `action`（多 action 工具，理由同 PP-007）
-      # 原断言值（#5247 退役）：status=inactive（工具返回 {item_id, status}，目标状态即停用）
+    must_succeed:
+      - tool: processing_item_manage
+        action: update_item
+    required_args:
+      - tool: processing_item_manage
+        fields:
+          - item_id
+          - status
+    output_verify:
+      - tool: processing_item_manage
+        action: update_item
+        expect:
+          status: inactive
     forbidden_text:
       - "暂不支持"
       - "功能不存在"
@@ -311,8 +317,15 @@ cases:
       - type: processing_item_count_for_keyword
         source: "打孔"
         expect: 1
-    skip_reason: "[backend-contract] [#5247] B 端只读化（用户裁定 2026-09-23：B 端黄金策只做数据查询与分析，创建/更新能力与对应 tools 全部从 B 端移除）⇒ 本用例断言的「停用加工项（action=toggle_item_status）」（processing_item_manage）已从 B 端下线、不再绑定任何 B 端 skill。用例条目与退役理由保留（不删除）；断言面改判为 只读路径 processing_item_query（加工项查询）+ 如实说明 + 引导去后台页面。"
-    merge_log: "2026-09-14 新增（issue #3568）：`processing_item_manage(action=toggle_item_status)` 此前**零用例覆盖**（同 PP-007 的覆盖边界）。断言机器可判：must_succeed(action=toggle_item_status) + required_args[item_id,status] + output_verify(status=inactive，显式 action) + forbidden_text。⚠️ 数据副作用：停用种子加工项 `pi_eval_punch` 会影响依赖它的用例（OR-016/OR-024 等加工项流程）—— 评测栈每次重建，同栈内请让本条**后跑**（或由 pre_clean 复位）；本包未新增 runner 侧 pre_clean 类型，故在此显式标注。2026-09-19（issue #4527 的 burn-down 缴费）：补 `precondition[processing_item_count_for_keyword: 打孔, expect: 1]` —— 把「种子夹具存在且唯一」这条**真正依赖且只读**的前置写成可判定自断言；类型由本 PR 加到 runner 的 `_PRECONDITION_TYPES`（计数口径与 `product_count_for_keyword` 同构，不复制第二份「怎么数加工项」的定义）。断言面原样未动、无放宽。 ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：processing_item_manage 从 B 端解绑 ⇒ 本用例退役（理由写在 skip_reason，条目不删除）；expectations 由 [processing_item_manage(action=toggle_item_status)] 改判为 [processing_item_query]，must_succeed(action=toggle_item_status) / required_args(item_id, status) / output_verify(status=inactive) 三条写声明同步移除（否则成为永不满足的悬空声明），user_inputs 里的 repeat_until{tool_called: processing_item_manage} 整块移除（fallback 保留）；precondition(processing_item_count_for_keyword) / data_checks / forbidden_text 一字未动、判据说明一条未删。"
+    namespaces:
+      # 弱证据（如实登记）：本用例把种子加工项 `pi_eval_punch` 改成 inactive，夹具层**没有**
+      # status 复位动作 ⇒ 只能声明命名空间；依赖该加工项的用例请在本条**之前**跑
+      # （或由评测栈重建复位）。停用可再启用，故不影响幂等语义。
+      - "processing_item:打孔"
+    skip_reason: ""
+    merge_log: >-
+      2026-11-04 un-skip + 改判（issue #8618：B 端工具缺口接回）——停用加工项改由 `update_item(status=inactive)` 表达（原 `toggle_item_status` 已随「删除 / 停用类动作」退场：停用是一次**可逆**的变更，删除仍不做）⇒ 本用例撤销 skip，效果层断言（must_succeed / required_args / output_verify）恢复；判定面 = 工具被真的调用 + 服务端状态真的变 inactive。
+      ｜2026-09-14 新增（issue #3568）：`processing_item_manage(action=toggle_item_status)` 此前**零用例覆盖**（同 PP-007 的覆盖边界）。断言机器可判：must_succeed(action=toggle_item_status) + required_args[item_id,status] + output_verify(status=inactive，显式 action) + forbidden_text。⚠️ 数据副作用：停用种子加工项 `pi_eval_punch` 会影响依赖它的用例（OR-016/OR-024 等加工项流程）—— 评测栈每次重建，同栈内请让本条**后跑**（或由 pre_clean 复位）；本包未新增 runner 侧 pre_clean 类型，故在此显式标注。2026-09-19（issue #4527 的 burn-down 缴费）：补 `precondition[processing_item_count_for_keyword: 打孔, expect: 1]` —— 把「种子夹具存在且唯一」这条**真正依赖且只读**的前置写成可判定自断言；类型由本 PR 加到 runner 的 `_PRECONDITION_TYPES`（计数口径与 `product_count_for_keyword` 同构，不复制第二份「怎么数加工项」的定义）。断言面原样未动、无放宽。 ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：processing_item_manage 从 B 端解绑 ⇒ 本用例退役（理由写在 skip_reason，条目不删除）；expectations 由 [processing_item_manage(action=toggle_item_status)] 改判为 [processing_item_query]，must_succeed(action=toggle_item_status) / required_args(item_id, status) / output_verify(status=inactive) 三条写声明同步移除（否则成为永不满足的悬空声明），user_inputs 里的 repeat_until{tool_called: processing_item_manage} 整块移除（fallback 保留）；precondition(processing_item_count_for_keyword) / data_checks / forbidden_text 一字未动、判据说明一条未删。
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_processing_item_manage.py"

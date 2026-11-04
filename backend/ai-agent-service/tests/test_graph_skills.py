@@ -139,6 +139,10 @@ class TestSkillToolSubsets:
             skill 解绑）；
           · 新增 `employee_manage` / `role_manage` / `category_manage` / `after_sales_manage`
             （收窄为只读后归入 B 端兜底，含员工与岗位的只读查询）；
+        🔴 issue #7050（2026-11-03）：`employee_manage` 接回写 action ⇒ 移出兜底（写工具不进兜底）。
+        🔴 issue #8618（2026-11-04）：`customer_manage`（改客户资料）与 `category_manage`
+        （建商品分类）接回写 action ⇒ 同样移出兜底（写操作必须走领域 Skill 的确认链）；
+        客户查询随 `customer` 域、分类查询随 `product` 域。
           · 新增 B 端只读模块覆盖：`inbound_order_query`（入库单/批次）、`operation_catalog_query`
             （工序库/路线）、`stock_ledger_query`（库存台账）、`briefing_query`（经营日报）、
             `craft_calc_config_query`（算料配置）、`processing_order_query`（加工单查询）。
@@ -151,7 +155,6 @@ class TestSkillToolSubsets:
             "product_search",
             "product_detail",
             "processing_item_query",
-            "customer_manage",
             "production_progress_query",  # issue #3996
             "piecework_query",            # issue #3996（B 端专用，不对 C 端开放）
             "production_worklog_query",   # issue #4201（B 端专用：过程明细含报工人/计件）
@@ -160,7 +163,6 @@ class TestSkillToolSubsets:
             "dashboard_stats",
             "session_manage",
             "after_sales_manage",
-            "category_manage",
             "interact",
             # ── issue #5247（B 端只读）新增：收窄为只读的既有模块 ──
             # 🔴 issue #7050（2026-11-03）：`employee_manage` 接回 create/update ⇒ **不再是只读

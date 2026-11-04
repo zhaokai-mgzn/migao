@@ -919,9 +919,14 @@ class TestEnumAlignment:
          {"refund", "exchange", "repair", "complaint", "other"}),
         ("after_sales_manage", "status",
          {"pending", "processing", "resolved", "rejected", "closed"}),
+        # 🔴 issue #8618（B 端工具缺口接回）：删除类 action（`delete_item` / `delete_category`）与
+        # 停用类 action 名（`toggle_item_status`）**已从工具退场** —— 用户 2026-10-16 终版裁定
+        # 「只能改，不能删」，停用不是删除，它就是 `update_item(status=inactive)`（可再改回）。
+        # 期望集随之收窄到 5 个；**少一个**（接回的写面被回退）或**多一个**（不可逆动作回到枚举）
+        # 都会让本用例红。
         ("processing_item_manage", "action",
-         {"create_processing_item", "update_item", "delete_item", "toggle_item_status",
-          "list_categories", "create_category", "update_category", "delete_category"}),
+         {"create_processing_item", "update_item", "list_categories",
+          "create_category", "update_category"}),
         ("processing_item_manage", "status",
          {"active", "inactive"}),
         # issue #4882：`pricing_method` 字段已从 admin-api 的 DTO/实体/schema 整体删除，

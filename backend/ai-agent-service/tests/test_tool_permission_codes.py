@@ -269,7 +269,7 @@ TOOL_PERMISSION_CODES: dict[str, tuple[str, ...]] = {
     # issue #5247：工具本身收窄为只读（`tree`）。
     # issue #5291：码从写码 `product:category` 改挂**分类读码** `product:category:view`
     # （`CategoryController` 的两个 GET 已改挂它）—— 只读工具不再要求「改分类」的权限。
-    "category_manage": ("product:category:view",),
+    "category_manage": ("product:category:view", "product:category"),
     # issue #5247 进场：算料配置读面 —— 此前配置读写同用 `processing:manage`。
     # issue #5291：读面改挂生产域读码 `production:view`（写面 `PUT` 仍是 `processing:manage`）。
     "craft_calc_config_query": ("production:view",),
@@ -287,7 +287,7 @@ TOOL_PERMISSION_CODES: dict[str, tuple[str, ...]] = {
     # `TestControllerPermissionParity`）。此处按**工具声明**登记，一字不掺端点口径。
     "craft_config_query": ("production:view",),
     # issue #5247 改判：写 action（create/update/打标签族）已删除 ⇒ 写码 `customer:create` 退场。
-    "customer_manage": ("customer:view",),
+    "customer_manage": ("customer:view", "customer:create"),
     "dashboard_stats": ("dashboard:view",),
     # issue #5247 改判：写 action（create/update/delete/reset_password/toggle_status）已删除
     # ⇒ 写码 `employee:create` 退场（`idempotent = False` 也随之移除，见

@@ -1,7 +1,7 @@
 ---
 domain: general
 display: 通用兜底
-tools: order_query, logistics_track, product_search, product_detail, processing_item_query, processing_order_query, customer_manage, after_sales_manage, category_manage, production_progress_query, production_worklog_query, piecework_query, batch_stock_query, stock_ledger_query, inbound_order_query, operation_catalog_query, craft_calc_config_query, craft_config_query, dashboard_stats, briefing_query, session_manage, role_manage, interact
+tools: order_query, logistics_track, product_search, product_detail, processing_item_query, processing_order_query, after_sales_manage, production_progress_query, production_worklog_query, piecework_query, batch_stock_query, stock_ledger_query, inbound_order_query, operation_catalog_query, craft_calc_config_query, craft_config_query, dashboard_stats, briefing_query, session_manage, role_manage, interact
 ---
 
 本 Skill 为兜底节点，处理低置信度和跨领域问题。**本兜底节点只挂查询类工具**；
@@ -19,9 +19,9 @@ B 端**不是只读** —— 边界见下节「能力边界」。
 - **加工单 ≠ 加工项**：加工项是目录里的加工服务，加工单是订单的生产
   履约单据（JG-xxx）。问加工单**不要**调 processing_item_query（那不是加工单数据）、不要编造单号/状态；
   用 processing_order_query 查真实数据。
-- 商品分类树 → category_manage
+- 商品分类树：由 product 域承载（本兜底未绑该工具，请引导商家到「商品管理 → 分类管理」或转 product 域）
 - 经营看板/统计 → dashboard_stats；今日经营日报 → briefing_query
-- 客户查询 → customer_manage；售后工单查询 → after_sales_manage
+- 客户查询：由 customer 域承载（本兜底未绑该工具，客户档案含 PII，不越域）；售后工单查询 → after_sales_manage
 - 岗位查询 → role_manage；员工账号（查询 / 建 / 改）由 staff 域承载（本兜底不绑员工写工具）
 - 面料/保养/安装/加工费知识 → 基于专业知识回答，注明为通用建议
 

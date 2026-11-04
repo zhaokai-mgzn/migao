@@ -17,12 +17,25 @@ from app.briefing.customer_value import (
     customer_value,
 )
 from app.briefing.proactive import INCOMPLETE, NOT_WIRED, WIRED
-from app.tools.base import admin_api_failure, BaseTool, ToolContext, ToolResult
+from app.tools.base import (
+    admin_api_failure,
+    BaseTool,
+    permission_denied,
+    ToolContext,
+    ToolResult,
+)
 from app.utils.http_client import get_admin_api_client
 
 
-# 操作类型
-VALID_ACTIONS = {"list", "detail", "list_tags", "profile_view", "value_view"}
+# 操作类型（`update` = 改客户资料，issue #8618 接回；五个只读 action 一字未动）
+VALID_ACTIONS = {"list", "detail", "list_tags", "profile_view", "value_view", "update"}
+
+#: 只读 action —— 免确认拦截（`base_skill._requires_confirmation` 直接读这个字段）。
+#: 契约：必须是 `VALID_ACTIONS` 的子集（见 `app/tools/base.py` 的同名字段注释）。
+READ_ONLY_ACTIONS = frozenset({"list", "detail", "list_tags", "profile_view", "value_view"})
+
+#: 写 action（走确认门禁）。建档 / 打标签 / 删标签 / 删客户**有意不在此列**（issue #8618 边界）。
+WRITE_ACTIONS = frozenset(VALID_ACTIONS - READ_ONLY_ACTIONS)
 
 #: 具名跨域视图 `customer_profile`（族 3 · 包 3，issue #5456，**按需**消费）的端点。
 #: 与 `CustomerController` 的 `@GetMapping("/api/admin/customers/profile-view")` 逐字相同，
@@ -107,7 +120,8 @@ class CustomerManageTool(BaseTool):
     name = "customer_manage"
     description = (
         "【触发】用户问'客户''顾客''VIP''客户档案''客户标签''给XX打标签''查XX电话'时调用。"
-        "【参数】action 必填：**只有 list / detail / list_tags / profile_view / value_view 五个只读 action**（B 端已只读化，issue #5247）。"
+        "【参数】action 必填：list / detail / list_tags / profile_view / value_view 五个**只读**；"
+        "update 为**写**（issue #8618 接回：改客户资料）。"
         "list 可按 keyword(名称/手机号) 搜索；detail 需 customer_id（32 位 UUID，先 list 查出真实 UUID，"
         "禁止传手机号）；list_tags 列出全店客户标签；"
         "profile_view = 客户画像视图（逐字段告诉你**哪些字段有真值、哪些没有** —— 没有真值的字段一律「未知」，"
@@ -117,33 +131,54 @@ class CustomerManageTool(BaseTool):
         "该回访谁」时用它 —— 它按流失风险分层排序，**不是**单个客户的画像）。"
         "【反例】查客户的历史订单用 order_query(keyword=XX)，不要用本工具；"
         "员工账号与角色权限属人事域，不在本工具射程内。"
-        "【反例】改客户资料/打标签/删标签**不在本工具能力内**——引导用户到后台「客户列表」页面自行操作。"
+        "【参数】update 需 customer_id + data（键 = 档案字段名，值 = 新值）：只改 data 里给出的字段，"
+        "**其余字段原样保留**；姓名字段名是 wechatNickname（传 name/nickname 会被映射过去）。"
+        "【确认】update 属写操作：调 interact(component=\"confirm\") 发确认卡，**卡面必须逐字带出可核对的标识**："
+        "哪位客户（姓名或 customer_id）+ 每个要改的字段「改前 → 改后」；用户点卡后才调用，未确认的调用会被门禁拦下。"
+        "⚠️ 卡面值必须与你随后传给本工具的 data **同一份**（服务端不会重算）。"
+        "【反例】建档 / 打标签 / 删标签 / 删客户**不在本工具能力内**——如实说明并引导用户到后台「客户列表」页面操作。"
         "【口径】value_view 依赖**三条既有只读端点**（客户 / 订单 / 售后）⇒ 需要同时持有 "
         "customer:view、order:list、after_sales:view 三个权限码；缺哪个会**点名**说清。"
         "该视图里「未接线」的字段（欠款 / 客单价 / 最近活跃天数）在既有端点里**根本没有来源**"
         "⇒ 一律为「未知」，**不是 0 元、不是「从未发生」**。"
-        "【标注】READONLY — 纯查询，不含任何写 action"
+        "【标注】WRITE — update 需确认；五个查询 action 免确认"
         "【不要用于】售后工单/退款进度（用 after_sales_manage）；工人计件工资（用 piecework_query）"
     )
     # 权限码（admin-api 目录）：issue #5246 起 `CustomerController` 的读面 `customer:view`、
-    # 写面（改/删客户、标签增删）`customer:create`（此前整类挂在读码上，只读持有者能删客户）。
-    required_permissions = ["customer:view"]  # B 端只读化（#5247）：写码 customer:create 已随写 action 一并移除
+    # 写面（改客户 `PUT /api/admin/customers/{id}`）`customer:create`。
+    # 粗筛取两码并集（任一命中即可进入工具），**action 级复检**在 execute 内按端点注解收严
+    # （防止仅持读码的岗位借黄金策改客户资料）。不用 allowed_roles —— 手写角色白名单
+    # 会与目录漂移（#4106 F4）。
+    required_permissions = ["customer:view", "customer:create"]
 
-    read_only = True
-    read_only_actions = {"list", "detail", "list_tags", "profile_view", "value_view"}  # 只读 action 免确认拦截
-    idempotent = False   # 创建/删除非幂等
+    read_only = False
+    read_only_actions = READ_ONLY_ACTIONS  # 五个查询 action 免确认拦截
+    requires_confirmation = True           # 写操作走既有确认门禁（#8618；不自建第二套）
+    destructive = False                    # 不含删除/建档/标签增删（那几类不在能力内）
+    idempotent = False   # update 非幂等：同名重放会把「改前」覆盖掉
 
     parameters = {
         "type": "object",
         "properties": {
             "action": {
                 "type": "string",
-                "description": "操作类型：list（客户列表）/ detail（客户详情）/ list_tags（标签列表）/ profile_view（客户画像视图，逐字段标注真值来源）/ value_view（客户价值分层 / 流失预警视图，跨客户按流失风险排序）—— 均为只读",
-                "enum": ["list", "detail", "list_tags", "profile_view", "value_view"],
+                "description": "操作类型：list（客户列表）/ detail（客户详情）/ list_tags（标签列表）/ profile_view（客户画像视图，逐字段标注真值来源）/ value_view（客户价值分层 / 流失预警视图，跨客户按流失风险排序）—— 只读；update（改客户资料）—— 写，需确认",
+                "enum": ["list", "detail", "list_tags", "profile_view", "value_view", "update"],
             },
             "customer_id": {
                 "type": "string",
-                "description": "客户 32 位 UUID。detail/update/add_tag/remove_tag 时必填。必须先通过 customer_manage(list) 查出真实 UUID，禁止传手机号或姓名",
+                "description": "客户 32 位 UUID。detail/update 时必填。必须先通过 customer_manage(list) 查出真实 UUID，禁止传手机号或姓名",
+            },
+            "data": {
+                "type": "object",
+                "description": (
+                    "要修改的档案字段（update 时必填）：键 = 字段名、值 = 新值；只改给出的键。"
+                    "姓名字段名是 wechatNickname（name/nickname 会被映射过去）。"
+                    "可写：wechatNickname / phone / gender / regionProvince / regionCity / "
+                    "regionDistrict / vipLevel / customerStatus / agentNotes / tags / customFields / "
+                    "craftMode / craftProfile / defaultLogisticsType / defaultLogisticsCompany / "
+                    "defaultReceiverName / defaultReceiverPhone / defaultReceiverAddress"
+                ),
             },
             "page": {
                 "type": "integer",
@@ -188,13 +223,26 @@ class CustomerManageTool(BaseTool):
         **kwargs,
     ) -> ToolResult:
         """执行客户管理操作"""
-        # 权限检查
+        # 权限检查（粗粒度：required_permissions 任一命中即可进入工具）
         if not self.check_permission(context):
             return ToolResult(
                 success=False,
                 error="权限不足",
                 message="您没有权限执行客户管理操作",
                 suggestion="请联系管理员获取执行客户管理操作权限",
+            )
+
+        # 细粒度权限（与 `CustomerController` 的 `@RequirePermission` 逐端点对齐）：
+        # 查询类 action 要 customer:view，写 action（update）要 customer:create
+        # （`PUT /api/admin/customers/{id}` 生效码）。防的是「只持读码的岗位」借黄金策改客户资料。
+        required = "customer:view" if action in self.read_only_actions else "customer:create"
+        if "*" not in (context.permissions or []) and required not in (context.permissions or []):
+            return permission_denied(
+                message=f"您没有权限执行该客户操作（缺少权限：{required}）",
+                suggestion=(
+                    "请联系管理员在「客户管理」中为您开通相应权限"
+                    f"（{'查看' if required == 'customer:view' else '编辑'}客户）"
+                ),
             )
 
         # 参数校验
@@ -217,6 +265,8 @@ class CustomerManageTool(BaseTool):
                 return await self._profile_view(context)
             elif action == "value_view":
                 return await self._value_view(context)
+            elif action == "update":
+                return await self._update_customer(context, customer_id, data)
             else:
                 return ToolResult(
                     success=False,
@@ -349,6 +399,95 @@ class CustomerManageTool(BaseTool):
             data=data,
             message=f"客户【{display_name}】的详细信息",
         )
+
+    async def _update_customer(
+        self,
+        context: ToolContext,
+        customer_id: Optional[str],
+        data: Optional[Dict[str, Any]],
+    ) -> ToolResult:
+        """更新客户档案（部分更新：只下发 `data` 里给出的字段）
+
+        端点 `PUT /api/admin/customers/{id}`（权限码 `customer:create`，与端点注解逐字一致）。
+        写路径的两条硬前提（都是既有契约，接回时逐条保留）：
+        1. **只允许下发真实列**（`WRITABLE_FIELDS` ∩ 姓名别名映射）—— 多余键一律显式报错且
+           **零写入**：admin-api 的 Spring 默认忽略未知字段 ⇒ 透传会「HTTP 200 但数据不落库」
+           = 假成功（issue #3551）；
+        2. **craftMode 枚举**本地先拦（非法值服务端 400），给比「更新失败」更可行动的提示（#4115）。
+        """
+        if not customer_id:
+            return ToolResult(
+                success=False,
+                error="缺少客户 ID",
+                message="更新客户档案时必须提供客户 ID（customer_id）",
+                suggestion="缺少 customer_id，请先用 customer_manage 的 list 操作按姓名或手机号搜到客户后重试",
+            )
+
+        if not isinstance(data, dict) or not data:
+            return ToolResult(
+                success=False,
+                error="缺少更新数据",
+                message="更新客户档案时必须提供更新数据（data：键 = 档案字段名，值 = 新值）",
+                suggestion=(
+                    "缺少 data，请把要修改的字段（如 phone / wechatNickname / agentNotes）"
+                    "作为 data 的键放进调用后重试"
+                ),
+            )
+
+        # 归一化为实体真实列名 + 白名单校验：不可写字段显式报错，绝不静默忽略/部分写入（#3551）
+        payload, rejected = normalize_update_data(data)
+        if rejected:
+            return ToolResult(
+                success=False,
+                error=f"不支持的更新字段: {'、'.join(rejected)}",
+                message=f"客户档案未做任何修改：{'、'.join(rejected)} 不是可更新字段",
+                suggestion=(
+                    f"客户档案可更新字段：{'、'.join(sorted(WRITABLE_FIELDS))}"
+                    "（客户姓名字段名为 wechatNickname）"
+                ),
+            )
+
+        # craftMode 是枚举列：非法值服务端会 400 拒绝（#4115），本层提前拦下并给出可行动提示
+        craft_mode = payload.get("craftMode")
+        if craft_mode is not None and craft_mode not in CRAFT_MODES:
+            return ToolResult(
+                success=False,
+                error=f"无效的 craftMode: {craft_mode}",
+                message=f"客户档案未做任何修改：craftMode={craft_mode!r} 不是合法值",
+                suggestion=(
+                    "craftMode 只能是 standard（跟随企业固定工艺）/ economy（主动省料）/ "
+                    "self_quoted（自报用料）之一；请改用合法值重试，其余字段可同时提交"
+                ),
+            )
+
+        client = get_admin_api_client()
+        response = await client.put(
+            f"/api/admin/customers/{customer_id}",
+            json_data=payload,
+            tenant_id=context.tenant_id,
+            user_id=context.user_id,
+        )
+
+        if not response.get("success"):
+            error_msg = response.get("error", {}).get("message", "更新失败")
+            return admin_api_failure(response,
+                error=error_msg,
+                message=f"客户档案更新失败：{error_msg}",
+                suggestion="请先用 customer_manage 的 detail 操作读取当前档案，核对字段后再重试；不要改成其它客户",
+            )
+
+        updated_fields = sorted(payload.keys())
+        logger.info(
+            f"[customer-manage] Updated customer_id={customer_id} fields={updated_fields} "
+            f"| tenant={context.tenant_id}"
+        )
+
+        return ToolResult(
+            success=True,
+            data={"customer_id": customer_id, "updated_fields": updated_fields},
+            message=f"客户档案已更新：{'、'.join(updated_fields)}",
+        )
+
     async def _profile_view(self, context: ToolContext) -> ToolResult:
         """客户画像视图（具名跨域视图 `customer_profile` 的**按需**消费，issue #5456）。
 

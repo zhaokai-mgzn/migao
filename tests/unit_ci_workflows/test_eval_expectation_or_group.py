@@ -89,7 +89,11 @@ _TEXT_SATISFIABLE_BRANCHES = frozenset({"direct_reply"})
 # ⚠️ 登记的是**分支写法**（这些名字在语料里以裸名出现过），**不是**工具能力背书
 #    （`customer_manage` 已整条只读化，见 `assertion_taxonomy.WRITE_TOOL_ACTIONS` 的注释）。
 BARE_BRANCH_LEDGER = frozenset({
-    "customer_manage", "direct_reply", "interact", "nav_guide",
+    # 🔴 2026-11-04（issue #8618）：`customer_manage` **移出**本表 —— 它接回写 action 后成为
+    # 「部分写」工具，裸分支会被读成「空 action 写方」；用例侧已改成**显式只读 action**
+    # （CH-009 = `customer_manage(action=list)`、AS-016 = `(action=detail)`）⇒ 本表不再需要它
+    # （台账只许缩短：销账即删，留着会腐烂成噪音）。
+    "direct_reply", "interact", "nav_guide",
     "order_query", "product_detail", "product_search", "validate_input",
     # 2026-11-01（issue #8300）：ST-011 的 OR 面补入「知识库检索」这一条真实路径 ——
     # 实测两次（全档 41285244288 / 定点 41286316979）模型分别走 nav_guide(how_to) 与 knowledge_search，
@@ -200,10 +204,12 @@ def or_branch_issues(cases: list[dict]) -> list[str]:
          后者由「纯文本」满足 ⇒ 具名写动作可被「一次工具都没调」顶替（假绿通道）⇒ 红；
       3. **裸分支必须已登记**（`BARE_BRANCH_LEDGER`）。
 
-    ⚠️ **为什么不裁「裸写工具名」**（实测会误伤）：`customer_manage` 这类工具**已只读化**
-    （写 action 已删除，见 `cross.yml` 的说明与 CH-009 的注释），名字却仍在
-    `local_runner._WRITE_TOOL_NAMES` 的历史集合里 ⇒ 按名字判会把 CH-009 的**只读**分支
-    误判成写分支。故本判据只认「**args 里真写了写动作**」这一形态。
+    ⚠️ **为什么不裁「裸写工具名」**（实测会误伤）：历史上 `customer_manage` 一度只读，
+    名字却仍在 `local_runner._WRITE_TOOL_NAMES` 的历史集合里 ⇒ 按名字判会把只读分支误判成写。
+    故本判据只认「**args 里真写了写动作**」这一形态。
+    🔴 2026-11-04（issue #8618）：`customer_manage` **不再是只读工具**（接回 `update`）⇒
+    用例侧一律写成显式只读 action（`(action=list)` / `(action=detail)`），裸分支的合法形态
+    只剩纯文本/只读工具（`direct_reply` / `interact` / `nav_guide` / `order_query` …）。
     """
     issues: list[str] = []
     for c in cases:
@@ -460,9 +466,13 @@ class TestObserverGuard:
             "expectations": ["inventory_manage(action=low_stock_alert) or "
                              "product_search(stock_status=low_stock)"],
         }]) == []
+        # 2026-11-04（issue #8618）：`customer_manage` 接回写 action 后成为「部分写」工具 ⇒
+        # bare 工具名按 taxonomy **保守判写**，与 `direct_reply` 同组就是真·假绿通道。
+        # 合法性由**显式只读 action** 承担（与 CH-009 的实际写法同形）。
         assert or_branch_issues([{
             "id": "ZZ-005",
-            "expectations": [{"tool": "direct_reply or interact or customer_manage"}],
+            # ⚠️ 必须用**字符串形态**：dict 形态的 `tool` 里内联 args 会被本判据判红（见上）。
+            "expectations": ["direct_reply or interact or customer_manage(action=list)"],
         }]) == []
         assert or_branch_issues([{
             "id": "ZZ-006",

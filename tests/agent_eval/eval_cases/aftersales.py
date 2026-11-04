@@ -305,7 +305,7 @@ _CASE_AS_016 = EvalCase(
     skill=Skill.AFTERSALES,
     difficulty=Difficulty.NORMAL,
     user_inputs=['张三那单收到的窗帘布边上有个破洞，这怎么处理？'],
-    expectations=['order_query or customer_manage'],
+    expectations=['order_query or customer_manage(action=detail)'],
     data_checks=['前置（precondition）：订单夹具 `EVAL-MB-ORD-0001` 在库且客户名为「张三」（success=true；真值 = tests/agent_eval/fixtures/mibao_eval_seed.sql 的订单 INSERT 块）', '必须先**真的查**（order_query 按客户名/订单号定位张三的单，或 customer_manage 查档案），不得凭空说「已为您登记」', '售后**写面**已随 #5247 只读化下线 ⇒ 回复必须引导后台「售后」页面自行处理，且不得承诺代办（机器断言 = forbidden_text）'],
     skip_reason='',
     tags=['aftersales', 'journey', 'capability-boundary'],
@@ -314,6 +314,8 @@ _CASE_AS_016 = EvalCase(
     form_prefill=[],
     forbidden_card_text=[],
     forbidden_text=['已为您提交售后', '已帮您申请售后', '已登记售后'],
+    must_succeed=[{'tool': 'order_query', 'action': 'list'}],
+    namespaces=['customer_phone:13800138000'],
     precondition='前置 = 客户「张三」名下有夹具订单（`EVAL-MB-ORD-0001/0002`，customer_name=张三 / 13800138000，见 mibao_eval_seed.sql 的订单夹具块）；前置不成立 ⇒ agent 查不到单、判红会伪装成「不会处理售后」',
 )
 

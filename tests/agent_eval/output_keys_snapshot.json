@@ -137,6 +137,10 @@
   },
   "category_manage": {
    "actions": {
+    "create": {
+     "dynamic": true,
+     "keys": []
+    },
     "tree": {
      "dynamic": false,
      "keys": [
@@ -144,7 +148,7 @@
      ]
     }
    },
-   "dynamic": false,
+   "dynamic": true,
    "file": "backend/ai-agent-service/app/tools/category_manage.py",
    "keys": [
     "tree"
@@ -152,7 +156,10 @@
    "literal_keys": [
     "tree"
    ],
-   "source_sha256": "1664f7fb98c257d28e5aafed6dd7fe808b7b524907a456878396b77cc813e10f"
+   "shape_notes": [
+    "data=response.get('data', {}) or {}"
+   ],
+   "source_sha256": "debcae1ba37a9739c1569195c0c48fa1cac9ac9b3ddb9d8c6aa5d93db6fef106"
   },
   "craft_calc_config_query": {
    "actions": null,
@@ -318,6 +325,13 @@
      "dynamic": true,
      "keys": []
     },
+    "update": {
+     "dynamic": false,
+     "keys": [
+      "customer_id",
+      "updated_fields"
+     ]
+    },
     "value_view": {
      "dynamic": true,
      "keys": []
@@ -327,6 +341,7 @@
    "file": "backend/ai-agent-service/app/tools/customer_manage.py",
    "keys": [
     "count",
+    "customer_id",
     "customers",
     "name",
     "nickname",
@@ -335,22 +350,25 @@
     "size",
     "tags",
     "total",
+    "updated_fields",
     "wechatNickname"
    ],
    "literal_keys": [
     "count",
+    "customer_id",
     "customers",
     "page",
     "size",
     "tags",
-    "total"
+    "total",
+    "updated_fields"
    ],
    "shape_notes": [
     "data ← response.get('data', {})",
     "data=dict(result)",
     "data=response.get('data', {})"
    ],
-   "source_sha256": "319cfaa9523bbcb078a7095d4ed6ad02e9b0cd9f7c5cd0122265a764dc369a83"
+   "source_sha256": "73769352a6365bbb921798d8740936723911c8bb2d6993601abf2b8bffd33443"
   },
   "customer_order_query": {
    "actions": null,
@@ -981,28 +999,10 @@
      "dynamic": true,
      "keys": []
     },
-    "delete_category": {
-     "dynamic": false,
-     "keys": [
-      "category_id"
-     ]
-    },
-    "delete_item": {
-     "dynamic": false,
-     "keys": [
-      "item_id"
-     ]
-    },
     "list_categories": {
      "dynamic": false,
      "keys": [
       "categories"
-     ]
-    },
-    "toggle_item_status": {
-     "dynamic": true,
-     "keys": [
-      "item_id"
      ]
     },
     "update_category": {
@@ -1040,7 +1040,7 @@
     "data=response.get('data') or {}",
     "data=response.get('data', {})"
    ],
-   "source_sha256": "086f69f954ba3654b5f4bcd3c0d580cea8c710bae56e019460baa8cd6f7c8abd"
+   "source_sha256": "bfe8ee06b41bed4d1bfb361dd006a0adf5020766c46e0dd5e75a3be70fe0ace8"
   },
   "processing_item_query": {
    "actions": null,
@@ -1562,7 +1562,7 @@
     "params",
     "validated"
    ],
-   "source_sha256": "f881b225c8f65d9945641b576ae2af775995c89071a53bcdb4eb15a16dba3ec8"
+   "source_sha256": "a4dd39ddc6b6c320fa42f7164c34f912e043d7264e6dbc7df70f94497ff3582a"
   }
  }
 }

@@ -6,15 +6,16 @@ tools: customer_manage, order_query, product_search, interact
 
 当前对话聚焦在客户档案查询、标签查询与历史订单查询，但不要自我设限也不要拒绝其他领域问题。
 
-## 🔴 本域无可写工具
+## 本域写边界
 
+`customer_manage` 的查询面 = list / detail / list_tags / profile_view / value_view；
+写面**只有 `update`（改客户资料）** —— 建档、打标签、移除标签、创建/删除标签**仍不在能力内**：
+如实说明并引导商家到后台「客户列表」页操作，**不得**承诺代办。
+改资料**必须真的执行**（CU-004 的判据 = 工具被真的调用 + 服务端真的改了数据，
+只说「请去后台改」算没办）：定位客户 → 发 `interact(component=confirm)` 确认卡
+（逐字带出「哪位客户 + 每个字段的『改前 → 改后』」）→ 点卡后立即 `customer_manage(action=update, …)`。
 
-
-`customer_manage` **只剩 list / detail / list_tags**（客户资料的写操作全部下线）。建档、改资料、
-打标签、移除标签、创建/删除标签**都不在能力内**：如实说明并引导商家到后台「客户列表」页操作，
-**不得**承诺代办、**不得**发写确认卡（`interact` 的 choice 消歧卡仍可用）。
-
-## 工具（全部只读）
+## 工具（查询只读 + `update` 一条写）
 
 | 场景 | 工具 |
 |------|------|
@@ -22,7 +23,7 @@ tools: customer_manage, order_query, product_search, interact
 | 客户详情 | customer_manage(action=detail, customer_id=真实UUID) |
 | 标签列表 | customer_manage(action=list_tags) |
 | 客户历史订单 | order_query(customer_phone=XX) |
-| 更新客户资料 | ❌ 不可用（已下线）→ 引导商家到后台「客户列表」页操作 |
+| 更新客户资料 | customer_manage(action=update, customer_id=真实UUID, data={字段: 新值})——**写，需确认卡** |
 | 添加/移除标签、创建/删除标签 | ❌ 不可用（已下线）→ 引导商家到后台「客户列表」页操作 |
 
 ## 重名消歧流程（重要，CU-003 场景的只读部分）
@@ -32,7 +33,7 @@ tools: customer_manage, order_query, product_search, interact
 3. **查标签**：调 `customer_manage(action=list_tags)` 确认标签是否存在；把真实 `tag_id` 与标签名一并展示。
 4. **打标签不在能力内**：同事要求给客户打/移除标签时，如实说明并引导到后台「客户列表」页的标签入口操作；❌ 不得声称"已添加/已移除"。目标客户**已持有该标签**时如实告知"已带有该标签，无需重复添加"——这是查询结论，不是写结果。
 
-## 客户资料字段口径（只读：用于解释与引导后台）
+## 客户资料字段口径（`update` 的可写字段白名单）
 
 1. `customer_manage(action=list, keyword=...)` 或 detail 定位客户，拿到真实 customer_id。
 2. **客户实体没有 `name` 列**（姓名存 `wechatNickname`），后台可改字段为：`wechatNickname`/`phone`/`gender`/

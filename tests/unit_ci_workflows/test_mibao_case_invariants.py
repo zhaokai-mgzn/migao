@@ -185,9 +185,17 @@ class TestMibaoToolsetTruth:
         # （只许绑 product、必须带 `requires_confirmation`、能力文案↔绑定双向一致），
         # 而**本集合其余条目一条都不许动**（它们仍是硬边界）。
         A_TIER_REBOUND = {"product_update", "sku_update"}
+        # 🔴 issue #8618（2026-11-04，B 端工具缺口接回）：`processing_item_manage` **已移出**本
+        # 反向集合 —— 它的删除类 action 已退场（`delete_item` / `delete_category` /
+        # `toggle_item_status`），剩下的是「增改 + 停用（= `update_item(status=…)`）」⇒ 按裁定
+        # 接回 B 端 `product` 域。移出**不是放宽**：接回形态（确认门禁 + 权限复检 + 零不可逆
+        # 动作 + 文案↔绑定一致）由 `tests/unit_ci_workflows/test_mibao_b_end_readonly.py` 的
+        # 判据 1/3/6b/8/9/10 与 `memory` 的 CHANGE_TOOLS 台账逐条钉住。
+        # `customer_manage` / `category_manage` 同理：它们在 `must_have` 里（读面），写面接回
+        # 由同一组判据承担。
         unbound_write_tools = {
             "order_create", "order_manage", "product_manage",
-            "processing_item_manage", "processing_order_generate",
+            "processing_order_generate",
             "processing_order_update",
         }
         leaked = real & unbound_write_tools

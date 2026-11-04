@@ -64,9 +64,15 @@ AVAILABILITY_SNAPSHOT = {
     # issue #7050（2026-10-16「能力边界 终版」）：员工账号的 create/update 已接回 B 端
     "employee_write": True,
     "role_write": False,
-    "customer_write": False,
-    "category_write": False,
-    "processing_item_write": False,
+    # issue #8618（B 端工具缺口接回）：只接了一半的能力按模块口径**拆成两条单元** ——
+    # 接回的那半 True、未接的那半仍 False（不宣称半条能力）。
+    "customer_update": True,     # customer_manage.update（改客户资料）
+    "customer_write": False,     # 建档 / 打标签仍未接
+    "category_create": True,     # category_manage.create（建商品分类）
+    "category_update": False,    # 分类改名仍未接
+    "processing_item_create": True,          # create_processing_item
+    "processing_item_update": True,          # update_item（含 status 启用停用）
+    "processing_category_write": True,       # create_category / update_category
     "supplier_write": False,
     "document_create": False,
     "delete_object": False,
@@ -417,8 +423,7 @@ NEXT_STEP_SNAPSHOT = {
     "employee_write": "后台「组织管理 → 员工管理」",
     "role_write": "后台「组织管理 → 岗位权限」",
     "customer_write": "后台「客户列表」",
-    "category_write": "后台「商品管理 → 商品分类管理」",
-    "processing_item_write": "后台「企业基础设置 → 加工项与加工费」",
+    "category_update": "后台「商品管理 → 商品分类管理」",
     "supplier_write": "后台「入库单」新增时填写供应商（暂无独立供应商管理页）",
     "document_create": "对应业务页面（提交永远在页面）",
     "delete_object": "对应业务页面",
@@ -595,9 +600,20 @@ def test_zero_write_skills_never_claim_direct_capability():
 
     zero_write = [s for s in _mibao_skill_names() if not _declared_write_tool_names(s)]
     # issue #7050：`staff` 绑回 employee_manage（写）⇒ 零写 skill 7 → 6（staff 退场）。
-    # 反向控制：staff 若又变成零写，说明写能力被悄悄摘掉 ⇒ 下面的断言会红。
+    # issue #8618：`customer` 绑回 customer_manage.update（写）⇒ 6 → 5（customer 退场）。
+    # 反向控制：退场的两个若又变回零写，说明写能力被悄悄摘掉 ⇒ 下面的断言会红。
     assert "staff" not in zero_write, f"staff 已绑 employee_manage(写) 却仍被判零写 skill：{zero_write}"
-    assert len(zero_write) >= 6, f"零写 skill 现取集合异常（应含 order 等 6 个）：{zero_write}"
+    assert "customer" not in zero_write, f"customer 已绑 customer_manage.update(写) 却仍被判零写 skill：{zero_write}"
+    # 具名集合（比下界更硬：少一个 = 有域悄悄拿到了写工具，多一个 = 写能力被摘掉）
+    # `general`（兜底 agent）**本来就该零写**：写工具必须走「领域 skill + 确认链」，
+    # 兜底路径没有确认语境（#7050 起把 `employee_manage` 移出；#8618 同批把
+    # `customer_manage` / `category_manage` 移出 —— 它们的读面仍在 customer / product 域）。
+    assert "general" in zero_write, (
+        f"兜底 agent 拿到了写工具 ⇒ 写路径绕过了领域确认链：{sorted(zero_write)}"
+    )
+    assert set(zero_write) == {"aftersales", "data", "general", "knowledge", "order", "settings"}, (
+        f"零写 skill 现取集合与当值不符：{sorted(zero_write)}"
+    )
 
     states = resolve_units()
     available = [u.label for u in UNITS if states[u.key] and not u.decided_off]

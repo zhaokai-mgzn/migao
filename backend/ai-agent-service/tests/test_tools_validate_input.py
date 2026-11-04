@@ -579,12 +579,14 @@ class TestValidateInputGateContractAudit:
     每条证据见对应注释的 `文件:行号`。
     """
 
-    async def test_processing_item_delete_item_is_validated(self, tool, admin_tool_context):
-        """P0 规则键错：栅门写的是 `delete`，工具 action 是 `delete_item`（`processing_item_manage.py:17`）
-        → 规则永不命中、破坏性删除走 skipped 完全不过闸门。"""
+    async def test_processing_item_update_item_is_validated(self, tool, admin_tool_context):
+        """P0 规则键错（issue #3566 的实例，issue #8618 改锚）：规则键必须与工具 action 同名，
+        否则闸门永不命中、写路径走 skipped 完全不过闸门。改锚到**存活**的写 action
+        `update_item`（原锚 `delete_item` 已随「只能改，不能删」退场）——
+        缺 `item_id` 必须被闸门拦下并点名。"""
         result = await tool.execute(
             context=admin_tool_context, target_tool="processing_item_manage",
-            target_action="delete_item", params={"action": "delete_item"},
+            target_action="update_item", params={"action": "update_item"},
         )
         assert result.success is False
         assert "item_id" in result.message
@@ -732,15 +734,18 @@ RETIRED_RULE_KEYS_B_END_READONLY: frozenset = frozenset({
     ("after_sales_manage", "create"),
     ("after_sales_manage", "update_status"),
     # [RETIRED #5247] category_manage：收窄为 tree（写 action create/update/delete 删除）
-    ("category_manage", "create"),
+    # 🔴 issue #8618 销账（3 → 2）：`create` 已**接回**（不再是死键 —— 规则块见
+    # `_VALIDATION_RULES` 的 `category_manage` 段）；`update` / `delete` 仍不接 ⇒ 继续记账。
     ("category_manage", "delete"),
     ("category_manage", "update"),
     # [RETIRED #5247] customer_manage：收窄为 list/detail/list_tags（含打标签族写 action 全删）
+    # 🔴 issue #8618 销账（6 → 5）：`update` 已**接回**（改客户资料；规则块重新登记）；
+    # 建档 / 打标签族（`add_tag` / `create_tag` / `delete_tag` / `remove_tag` / `update_tag`）
+    # 仍不接 ⇒ 继续记账。
     ("customer_manage", "add_tag"),
     ("customer_manage", "create_tag"),
     ("customer_manage", "delete_tag"),
     ("customer_manage", "remove_tag"),
-    ("customer_manage", "update"),
     ("customer_manage", "update_tag"),
     # [RETIRED #5247] employee_manage：收窄为 list/detail（写 action 全删）
     # 🔴 issue #7050 销账（5 → 3）：`create` / `update` 已**接回**（不再是死键 —— 规则块

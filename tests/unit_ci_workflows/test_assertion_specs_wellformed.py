@@ -391,11 +391,14 @@ class TestOutputVerifyActionScope:
         for name in ("after_sales_manage", "customer_manage", "employee_manage", "role_manage",
                      "session_manage", "inventory_manage", "finance_api", "dashboard_stats",
                      "order_query", "inbound_order_query", "operation_catalog_query",
-                     "processing_order_set_query", "craft_config_query"):
+                     "processing_order_set_query", "craft_config_query",
+                     # 🔴 issue #8618：`category_manage` 接回 `create` ⇒ 它**真的是**多 action
+                     # （`tree` + `create`），从下面「不得误判」组移入本组（防检测器漏掉新断言面）。
+                     # 判定依据仍是源码的 `action.enum` 宽度 —— 本组与反例组**互斥且都判**。
+                     "category_manage"):
             assert name in multi, f"{name} 未被识别为多 action 工具（检测器漏了）"
-        # 单 action 工具不得误判（防过度收紧：curtain_calc 只有算料一个入口；
-        # category_manage 已由 #5247 收窄为 {tree} 单 action —— 这是**新增**的反例面）
-        for name in ("curtain_calc", "category_manage"):
+        # 单 action 工具不得误判（防过度收紧：curtain_calc 只有算料一个入口）
+        for name in ("curtain_calc",):
             assert name not in multi, f"{name} 被误判为多 action 工具"
 
     def test_output_verify_on_multi_action_tool_declares_action(self):

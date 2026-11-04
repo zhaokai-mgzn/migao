@@ -7,9 +7,10 @@
 🔴 写边界（用户裁定 2026-09-23 / issue #5247 只读化 → issue #5303 A 档可逆写补回 →
 issue #5314 批量更新 → 2026-10-16 裁定「上下架都 ❌」/ #7334 裁定 A）：
 除 `product_update` / `product_batch_update` / `sku_update`（改价 + 改名 + 批量改价 +
-批量库存调整 + 撤销；`WRITE`、可逆，批量另带**撤销**入口）外，本 skill **不得**绑定任何
-`read_only != True` 的工具（建品 / 单条与批量上下架 / 单条调库存 / 分类增删改 /
-加工项增删改仍在 B 端下线）。
+批量库存调整 + 撤销；`WRITE`、可逆，批量另带**撤销**入口）、`craft_calc_config_update`
+（算料口径变更）、`processing_item_manage`（加工项增改 + 分类增改，issue #8618）、
+`category_manage`（建商品分类，issue #8618）外，本 skill **不得**绑定任何
+`read_only != True` 的工具（建品 / 单条与批量上下架 / 单条调库存 / 删除类仍在 B 端下线）。
 机械判据 = `tests/unit_ci_workflows/test_mibao_b_end_readonly.py` 的
 `A_TIER_REVERSIBLE_WRITES` 白名单（新增成员必须显式改判）。
 
@@ -35,7 +36,13 @@ PRODUCT_TOOLS = [
     # 省了多少料」—— 只读、声明 `product:list`（仅 B 端）
     "batch_stock_query",
     "processing_item_query",   # 店铺加工项目录（与商品无关）— 用户问加工项列表/单位时调用
-    "category_manage",         # 只读化后仅剩 tree（#5247）
+    # 商品分类（issue #8618 接回写面）：`tree` 只读 + `create` 写（确认门禁）。
+    # 分类改名 / 删除仍在 B 端下线（用户裁定「只能改，不能删」；改名未接）。
+    "category_manage",
+    # 加工项（issue #8618 接回）：`create_processing_item` / `update_item`（含 status 启用停用）
+    # + `list_categories` / `create_category` / `update_category`。删除类 action 已从工具退场。
+    # 此前本工具**不绑任何 skill**（能力物理不可达）⇒ PP-006/007/008 构造上不可能过。
+    "processing_item_manage",
     # ── 商家后端模块只读接入（issue #5247 模块覆盖：库存 / 生产 / 算料）──
     "stock_ledger_query",        # 库存台账（GET /api/admin/stock-ledger → product:list）
     "inbound_order_query",       # 入库单 / 批次（GET /api/admin/inbound-orders* → inbound:view）
@@ -76,9 +83,21 @@ PRODUCT_SYSTEM_PROMPT = """## 本域写边界
 ④ **批量撤销**：`product_batch_update(action=revert, batch_id=…)`（逐条还原为改前值）。
 🔴 **商品上下架（单件与批量）不在 B 端能力内**：
 如实说明并引导商家到后台「商品管理」页操作，**不得**承诺代办、不得发写确认卡。
-**其余写能力仍在 B 端下线**（建品 / 改图 / 单条调库存 / 分类增删改 / 加工项增删改）
-——如实说明「黄金策在商品域现在只做查询、改价、改名、批量改价、批量库存调整与批量撤销」+
-给出具体后台页面（商品管理 /products 的对应按钮）→ **不得**承诺代办、不得发写确认卡。
+**其余写能力仍在 B 端下线**（建品 / 改图 / 单条调库存 / 删除任何对象 / 商品上下架）
+——如实说明并给出具体后台页面（商品管理 /products 的对应按钮）→ **不得**承诺代办、不得发写确认卡。
+
+## 加工项与商品分类（这几类**必须真的执行**，不许只回一句引导）
+
+- **加工项**：新增 `processing_item_manage(action=create_processing_item, name, category_id,
+  craft_hint?)`；修改 `update_item(item_id, …)`；**停用/启用** = `update_item(item_id, status=inactive|active)`
+  （停用不是删除：可再改回来）。**删除加工项/加工分类不在能力内** ⇒ 如实说明 + 引导后台。
+- **商品分类**：新建 `category_manage(action=create, name)`（扁平结构，无父分类）；
+  分类**改名 / 删除不在能力内** ⇒ 如实说明 + 引导后台「商品管理 → 分类管理」。
+- 🔴 商家说「新增加工项 / 建个分类 / 把它停用」就是**执行指令**：先查真实 ID（`processing_item_query`
+  / `list_categories` / `category_manage(tree)`）→ 发 `interact(component=confirm)` 确认卡
+  （卡面逐字带出要改的对象与内容，改状态时给「改前 → 改后」）→ 点卡后**立即调用写工具**。
+  只查列表、只说「请去后台」都算**没办**（PP-006/PP-007/PP-008/CT-002 的判据就是「工具被真的调用
+  且服务端真的改了数据」）。
 
 ## 算料口径变更（先取真值 → 确认卡逐键「改前 → 改后」→ 点卡后才写）
 

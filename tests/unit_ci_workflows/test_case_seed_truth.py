@@ -356,10 +356,21 @@ NAMESPACE_ACCOUNT_PREFIXES = ("account_password:",)
 #:   而 CH-050 写的是**定时提醒待办**（`scheduled_tasks` 表），种子真值目录里没有该实体
 #:   ⇒ 拿它判「名字能否在种子里解析」只会得到恒假结论（"基于错误真相模型写的护栏"）。
 NAMESPACE_SCHEDULED_TASK_PREFIXES = ("scheduled_task:",)
+#: `processing_item:`（issue #8618 给 `PP-007` / `PP-008` 加的并行互斥键）—— **显式范围外**
+#: （**登记而非沉默**，口径同 `customer_order:`）：
+#:   ① 本判据只核对**结构性声明的实体字面量能否在种子真值里解析**；加工项名的可判槽位是
+#:      `output_verify[processing_item_manage].expect.name` / `expectations[processing_item_query].keyword`
+#:      —— `PP-006`~`PP-008` 的加工项名**已经**走那两个槽位被本文件判过（不靠 `namespaces`）；
+#:   ② `namespaces:` 在 `PP-007` / `PP-008` 里的语义**只是并行互斥 + 弱证据登记**（夹具层没有
+#:      加工项复位动作，用例注释已如实登记）⇒ 它不是「点名实体」的声明槽位；
+#:   ③ 若将来把 `namespaces:processing_item:` 升格成实体声明（补抽取分支），本条应**改判**进
+#:      `NAMESPACE_PREFIXES_JUDGED` —— 本常量就是那笔账的登记处。
+NAMESPACE_PROCESSING_ITEM_PREFIXES = ("processing_item:",)
 NAMESPACE_PREFIXES_OUT_OF_SCOPE = (
     NAMESPACE_EMPLOYEE_PREFIXES + NAMESPACE_CATEGORY_PREFIXES + NAMESPACE_FINANCE_PREFIXES
     + NAMESPACE_ROLE_PREFIXES + NAMESPACE_CUSTOMER_ORDER_PREFIXES
     + NAMESPACE_ACCOUNT_PREFIXES + NAMESPACE_SCHEDULED_TASK_PREFIXES
+    + NAMESPACE_PROCESSING_ITEM_PREFIXES
 )
 NAMESPACE_PREFIXES_JUDGED = ("product_name:", "customer_phone:")
 #: 分类面清单（判 / 显式范围外）—— 出现**不在两张表里**的新形态 ⇒ `TestNoSilentSkip` 报红，

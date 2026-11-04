@@ -263,8 +263,10 @@ class TestCustomerProfileView:
         assert PROFILE_VIEW_ENDPOINT == "/api/admin/customers/profile-view"
 
     def test_permission_code_is_the_customer_page_code(self, tool):
-        """与客户列表/详情同码（`customer:view`）⇒ 客户 PII 不越过客户页面的权限面（issue #5246）"""
-        assert tool.required_permissions == ["customer:view"]
+        """入口码 = 客户域读码 `customer:view`（客户 PII 不越过客户页面）+
+        写码 `customer:create`（issue #8618 接回 `update` 后按 #7050 的两段式：粗筛取并集，
+        进入工具后按 action 逐端点复检 —— 只持读码仍改不了客户）。"""
+        assert tool.required_permissions == ["customer:view", "customer:create"]
 
     @patch("app.tools.customer_manage.get_admin_api_client")
     async def test_profile_view_discloses_unknown_is_not_zero(
@@ -375,8 +377,8 @@ class TestCustomerValueAction:
             assert endpoint in mappings, f"{endpoint} 必须真的挂在 admin-api 的控制器上"
 
     def test_tool_permissions_cover_the_three_read_faces(self, tool):
-        """权限面：本工具自身的码是客户域的读码；跨域取数面所需的三码在消息/建议里点名"""
-        assert tool.required_permissions == ["customer:view"]
+        """权限面：入口码 = 客户域读码 + 写码（#8618）；跨域取数面所需的三码在消息/建议里点名"""
+        assert tool.required_permissions == ["customer:view", "customer:create"]
 
     @patch("app.tools.customer_manage.get_admin_api_client")
     async def test_value_view_calls_three_existing_endpoints_with_tenant(

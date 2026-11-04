@@ -283,6 +283,26 @@ PRODUCT_ATTR_WRITERS: dict = {
     ("craft_calc_config_update", ""): "",
     ("notification_manage", "mark_read"): "",
     ("notification_manage", "read_all"): "",
+    # ── 🔴 2026-11-04（issue #8618，B 端工具缺口接回）────────────────────────────────
+    # 三条新活写方都是**非商品属性**的实体写（本表的射程 = 商品属性 ⇒ 属性键 ""）。
+    # 它们**都会**改到共享夹具里的**非商品**对象（客户档案 / 加工项 / 分类），该风险
+    # 由用例侧的显式声明承担（而不是本表**假装**不适用）：
+    #   · `customer_manage.update` —— 改客户档案（`customer_profiles`，CU-004 有真复位
+    #     `customer_profile_restore`）；客户档案**不是**商品属性（#4371 后商品只引用客户 id）；
+    #   · `category_manage.create` / `processing_item_manage.create_category` —— **新建**
+    #     分类行（新对象，不触达既有商品/加工项属性）；
+    #   · `processing_item_manage.create_processing_item` —— 新建加工项（新对象）；
+    #   · `processing_item_manage.update_item` —— 改既有加工项的名称/分类/工艺声明/描述/状态。
+    #     ⚠️ 加工项**不是**商品属性（#4371 商品↔加工项解耦），但 `pi_eval_punch` 是**共享夹具**
+    #     ⇒ PP-007/PP-008 已在用例里显式登记 `namespaces: processing_item:…`（弱证据）并写明
+    #     「夹具层无加工项复位动作（`_CLEAN_TYPES` 无该族）」。这条缺口**如实登记在此**，
+    #     不在本表里被静默豁免（本表只回答「商品属性」这一问）。
+    ("customer_manage", "update"): "",
+    ("category_manage", "create"): "",
+    ("processing_item_manage", "create_processing_item"): "",
+    ("processing_item_manage", "update_item"): "",
+    ("processing_item_manage", "create_category"): "",
+    ("processing_item_manage", "update_category"): "",
     # ── 🔴 2026-11-04（issue #7035，接 #7050 的能力回绑）────────────────────────────
     # 员工域的「创建 / 变更」已接回 B 端（`employee_manage` 的 `create` / `update`；
     # `read_only_actions = {list, detail}`）。它写的是**员工实体**（`users` / `user_roles`），
@@ -618,8 +638,10 @@ class TestSeedTruthAndScanSurface:
         assert {"product_update", "sku_update"} <= WRITE_TOOL_SURFACE, (
             "#5303 回绑的两个 A 档可逆写工具不在扫描面里 ⇒ 含它们期望的用例不再被判成"
             "写用例（效果层 / 复位要求对它静默失效）")
-        assert not ({"product_manage", "inventory_manage", "order_manage",
-                     "processing_item_manage"} & WRITE_TOOL_SURFACE), (
+        # 🔴 issue #8618（2026-11-04）：`processing_item_manage` **移出负例集合** —— 它接回 B 端
+        # `product` 技能（删除类 action 退场，剩「增改 + 停用」= 可逆变更）⇒ 它是**活写方**，
+        # 留在负例里会与「扫描面 ≡ taxonomy」的上一条自相矛盾（真值面自打架）。
+        assert not ({"product_manage", "inventory_manage", "order_manage"} & WRITE_TOOL_SURFACE), (
             "#5247 已退场、且 #5303 **未**回绑的写工具仍在扫描面里 ⇒ 判据按旧地图判（幽灵写方）")
 
     def test_scan_surface_covers_the_known_writers(self, monkeypatch):
@@ -687,8 +709,13 @@ class TestSeedTruthAndScanSurface:
             "要么用例侧的 action 级写期望（`ST-005`）没被扫描面认出（`migao-acceptance`"
             "「绿了但没跑」）"
         )
+        # 🔴 **2026-11-04（issue #8618）第三次同形改判**：`customer_manage`（`update`）、
+        # `category_manage`（`create`）、`processing_item_manage`（`create_processing_item` /
+        # `update_item` / `create_category` / `update_category`）接回 B 端 ⇒ 真实库的
+        # action 级写方从 2 个变 5 个（`CU-004` / `CT-002` / `PP-006`~`PP-008` 已 un-skip）。
         assert {k[0] for k in corpus_action_level} == {
-            "notification_manage", "employee_manage"}, (
+            "notification_manage", "employee_manage",
+            "customer_manage", "category_manage", "processing_item_manage"}, (
             f"action 级写方出现了未预期的工具：{corpus_action_level} —— 新加「部分写」工具时"
             "必须同步改判 `WRITE_TOOL_ACTIONS`（taxonomy 单一源）与本处坐标"
         )
