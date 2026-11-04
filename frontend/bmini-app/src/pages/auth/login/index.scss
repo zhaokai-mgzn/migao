@@ -39,23 +39,13 @@
   padding: 72px 48px 56px;
   box-sizing: border-box;
 
-  &__icon {
+  // 品牌标（观星台）：自带深靛圆角底，不再需要玻璃拟态底衬
+  &__icon-img {
     width: 128px;
     height: 128px;
     border-radius: 32px;
-    background: rgba(255, 255, 255, 0.2);
-    display: flex;
-    align-items: center;
-    justify-content: center;
     margin-bottom: 32px;
-    backdrop-filter: blur(10px);
-  }
-
-  &__icon-text {
-    font-size: 64px;
-    font-weight: 700;
-    color: #ffffff;
-    letter-spacing: 2px;
+    box-shadow: 0 8px 24px rgba(36, 31, 24, 0.18);
   }
 
   &__title {

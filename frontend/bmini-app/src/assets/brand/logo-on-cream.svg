@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img" aria-label="观星台">
+  <title>观星台（浅底版）</title>
+  <rect width="1024" height="1024" rx="228" fill="#faf7f2"/>
+  <g fill="none" stroke="#3a4e75" stroke-width="66" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M344 250 H246 V348"/>
+    <path d="M680 250 H778 V348"/>
+    <path d="M344 774 H246 V676"/>
+    <path d="M680 774 H778 V676"/>
+  </g>
+  <rect x="196" y="497" width="632" height="14" rx="7" fill="#3a4e75" opacity="0.18"/>
+  <path d="M512 340 C527 445 561 479 666 494 C561 509 527 543 512 648 C497 543 463 509 358 494 C463 479 497 445 512 340 Z" fill="#c06a3e"/>
+</svg>

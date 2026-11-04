@@ -846,7 +846,7 @@
 真值: auth.qr-login-ticket
 溯源: 2026-10-26 新增（issue #7825）：现场 = 顶栏「手机端」二维码只是裸链接（不带登录交接），换浏览器 / App 或本机存储被清后每次扫码都要重新输密码。冻结口径 = 一次性票据（JWT 类型 qr_login、120 秒、兑换即吊销 jti）+ 手机端兑换后与密码登录同一套 30 天会话 + 签发失败降级裸入口 + 启动探针（续期失败原因本地可读）。 ｜ tags: auth, session, qr-login, bmini, admin-web
 
-## B 端小程序域（60 case）
+## B 端小程序域（61 case）
 
 ### BM-001. B 端员工小程序登录 - 账号密码（用户名@企业编码）登录，不再走微信手机号匹配 🔵
 ```
@@ -1703,6 +1703,20 @@
 ```
 真值: frontend-fix.no-api-change
 溯源: 2026-11-01 新增（issue #8307 真机复测：超时兜底生效并指认卡点=上传；读码得因 = taro-h5 uploadFile 的 convertObjectUrlToBlob 裸 XHR 无 error 回调）。本单改 Blob 直传，页面与拍照发货共用同一入口。 ｜ tags: bmini, worker, inbound, upload
+
+### BM-064. 观星台品牌标（C1：取景角=扫码入口 + 星芒=AI 中枢）落进 bmini 登录页；素材规格 / 配色令牌 / 占位字清除三面钉住 🔵
+```
+你: 打开小程序登录页：顶部是观星台品牌标（深靛圆角底 + 四个取景角 + 中间金色星芒），下面是「词元观星台」与副标题；原来的文字占位「米」不再出现。
+期望: direct_reply
+数据: 判据 1·🔴 素材齐全且尺寸正确：`src/assets/brand/logo.svg` + `logo-144.png`（微信小程序头像规格 144×144）+ `logo-288.png`（登录页 2x）都存在，且 PNG 头里的 IHDR 宽高就是 144/288。红证：把 logo-144.png 换成 512×512 ⇒ 该条红（读 PNG 头，不靠肉眼）
+数据: 判据 2·🔴 配色只能来自 PC 设计令牌：logo.svg 里出现 #2e3d5c / #48618f / #faf7f2 / #c06a3e，且**不得**出现改前那套冷蓝 #0a2540 / #1a73e8。红证：把背景渐变改回 #0A2540 ⇒ 该条红
+数据: 判据 3·🔴 登录页真的挂了这张图：`index.tsx` 里存在 `import brandLogo from '../../../assets/brand/logo-144.png'` 且渲染 `<Image className='login-brand__icon-img' src={brandLogo}>`。红证：删掉 import ⇒ 该条红
+数据: 判据 4·🔴 占位字已清除（换图最常见的回归是「只加图没删占位」⇒ 两个标并排）：`index.tsx` 不再包含 `login-brand__icon-text` / `<Text ...>米</Text>`。红证：把占位块加回去 ⇒ 该条红
+数据: 判据 5·🔴 样式里有对应尺寸：`index.scss` 的 `&__icon-img` 声明 width/height 128px（缺了高度 ⇒ 真机上按 0 高渲染成白块）。红证：删掉 height ⇒ 该条红
+跳过: [frontend-contract] 确定性资源/文案判据（jest + 读 PNG 头），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: frontend-fix.no-api-change
+溯源: 2026-11-04 新增（用户逐字「我们还需要给观星台设计一个 logo」→ 选定 C1；同日用户纠正方向「不要根据字面意思设计，要根据我们的系统能力去设计」，故图形 = 扫码取景角 + AI 星芒，不是天文台）。 ｜ tags: bmini, brand, assets
 
 ## 分类域（3 case）
 
@@ -15006,13 +15020,13 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：1016（活跃 155，跳过 861）
-- tier 分布：smoke 15 / normal 939 / adversarial 33
+- 用例总数：1017（活跃 155，跳过 862）
+- tier 分布：smoke 15 / normal 940 / adversarial 33
 - 售后域：16
 - Agent 核心域：13
 - API 层域：21
 - 登录认证域：14
-- B 端小程序域：60
+- B 端小程序域：61
 - 分类域：3
 - 对话边界域：53
 - 跨域：3

@@ -2,7 +2,7 @@
 # 本文件由 render_cases.py 生成，勿手改（改了也留不住：下次重渲染会覆盖）
 # 源: cases/*.yml（case-contract 单一源）
 # 重新生成: python3 render_cases.py --cases <dir> --out-eval <包目录> --out-md <md>
-# 域: bmini（源: cases/bmini.yml，60 条）
+# 域: bmini（源: cases/bmini.yml，61 条）
 
 from ._schema import Difficulty, EvalCase, Skill
 
@@ -1086,6 +1086,24 @@ _CASE_BM_063 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── BM-064 [NORMAL] 观星台品牌标（C1：取景角=扫码入口 + 星芒=AI 中枢）落进 bmini 登录页；素材规格 / 配色令牌 / 占位字清除三面钉住（源: cases/bmini.yml）──
+_CASE_BM_064 = EvalCase(
+    id='BM-064',
+    legacy_id='',
+    title='观星台品牌标（C1：取景角=扫码入口 + 星芒=AI 中枢）落进 bmini 登录页；素材规格 / 配色令牌 / 占位字清除三面钉住',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['打开小程序登录页：顶部是观星台品牌标（深靛圆角底 + 四个取景角 + 中间金色星芒），下面是「词元观星台」与副标题；原来的文字占位「米」不再出现。'],
+    expectations=['direct_reply'],
+    data_checks=['判据 1·🔴 素材齐全且尺寸正确：`src/assets/brand/logo.svg` + `logo-144.png`（微信小程序头像规格 144×144）+ `logo-288.png`（登录页 2x）都存在，且 PNG 头里的 IHDR 宽高就是 144/288。红证：把 logo-144.png 换成 512×512 ⇒ 该条红（读 PNG 头，不靠肉眼）', '判据 2·🔴 配色只能来自 PC 设计令牌：logo.svg 里出现 #2e3d5c / #48618f / #faf7f2 / #c06a3e，且**不得**出现改前那套冷蓝 #0a2540 / #1a73e8。红证：把背景渐变改回 #0A2540 ⇒ 该条红', "判据 3·🔴 登录页真的挂了这张图：`index.tsx` 里存在 `import brandLogo from '../../../assets/brand/logo-144.png'` 且渲染 `<Image className='login-brand__icon-img' src={brandLogo}>`。红证：删掉 import ⇒ 该条红", '判据 4·🔴 占位字已清除（换图最常见的回归是「只加图没删占位」⇒ 两个标并排）：`index.tsx` 不再包含 `login-brand__icon-text` / `<Text ...>米</Text>`。红证：把占位块加回去 ⇒ 该条红', '判据 5·🔴 样式里有对应尺寸：`index.scss` 的 `&__icon-img` 声明 width/height 128px（缺了高度 ⇒ 真机上按 0 高渲染成白块）。红证：删掉 height ⇒ 该条红'],
+    skip_reason='[frontend-contract] 确定性资源/文案判据（jest + 读 PNG 头），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['bmini', 'brand', 'assets'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 CASES = (
     _CASE_BM_001,
     _CASE_BM_002,
@@ -1147,4 +1165,5 @@ CASES = (
     _CASE_BM_061,
     _CASE_BM_062,
     _CASE_BM_063,
+    _CASE_BM_064,
 )

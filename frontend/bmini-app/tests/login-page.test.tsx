@@ -5,7 +5,7 @@
  *       成功跳转、失败不跳转、密码框遮蔽、微信授权按钮已退场、
  *       两个入口的切换、管理员「手机号 + 验证码」链路（发码 / 冷却 / 提交 / 失败不跳转）
  */
-// case_ids: AU-001, AU-003, AU-006, BM-001, BM-002, BM-027, BM-033, BM-045
+// case_ids: AU-001, AU-003, AU-006, BM-001, BM-002, BM-027, BM-033, BM-045, BM-064
 import React from 'react'
 import { render, screen, fireEvent, act } from '@testing-library/react'
 
@@ -81,7 +81,9 @@ describe('LoginPage', () => {
   it('应渲染品牌、账号密码两个输入框与登录按钮', () => {
     render(<LoginPage />)
 
-    expect(screen.getByText('黄金策 · 企业智能生产管家')).toBeTruthy()
+    // issue #8614：登录页头衔改为小程序实名「词元观星台」（原「黄金策 · 企业智能生产管家」是
+    // AI 助手名写在头条位置；黄金策仍是对话里的助手名，见 utils/brand.ts 的 buildBotName）
+    expect(screen.getByText('词元观星台')).toBeTruthy()
     expect(screen.getByText('经营数据 · AI 客服 · 移动坐席')).toBeTruthy()
     expect(screen.getByText('员工账号')).toBeTruthy()
     expect(screen.getByText('密码')).toBeTruthy()
