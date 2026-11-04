@@ -1,50 +1,66 @@
 // ============================================================
-// 观星台 AI 智能客服小程序 — 全局设计变量（v2 瑞幸深蓝金风格）
-// 设计语言：深蓝主色 + 金铜点缀 + 大圆角 + 卡片化
+// 观星台 · B 端商家小程序 — 全局设计变量
+//
+// 🔴 设计语言 = **PC 端 admin-web 的「织物质感」**（issue #8600；用户 2026-11-04 逐字
+//    「我们当前移动端的整体样式没有和 pc 端的 UI 风格统一，需要统一」）。
+//
+// 真值源（唯一，不在本文件另立一套）：
+//   · 色   = `frontend/admin-web/tailwind.config.ts` 的 primary / neutral / accent 三组色阶
+//            （页面底 `#faf7f2` 与 `admin-web/src/app/globals.css` 同值）；
+//   · 字   = `frontend/admin-web/src/lib/design-tokens.ts`（移动端另有 750 设计尺度下限，见
+//            `tests/unit_ci_workflows/test_bmini_mobile_typography_floor.py`，此处不改）；
+//   · 影   = `admin-web/tailwind.config.ts` 的 shadow-card（暖中性 `rgba(36,31,24,…)`）。
+//
+// 判据 = `tests/bmini-pc-palette-parity.test.ts`：本文件每个语义 token 逐值等于 PC 对应阶
+//        （PC 改一阶而这里没跟上 ⇒ 红；这里自己发明一个近似色 ⇒ 也红；旧深蓝金字面量残留 ⇒ 也红）。
+//
+// ⚠️ 历史沿革：本文件原为「v2 瑞幸深蓝金」（navy #0A2540 / blue #1A73E8 / gold #C8A24B）。
+//    变量名（$brand-navy / $brand-blue / $brand-gold）保留是为了不把 36 个页面/组件的引用
+//    一次性改爆；**名字是历史包袱，取值已全部换成 PC 织物暖色**，新增代码别再按名字想颜色。
 // ============================================================
 
-// ── 品牌色（深蓝金，参考瑞幸 AI 智能体设计语言）──
-$brand-navy: #0A2540;        // 深蓝主色（顶部渐变基底 / 强调）
-$brand-blue: #1A73E8;        // 品牌蓝（交互主色）
-$brand-blue-light: #4D9BFF;  // 浅蓝（渐变辅助）
-$brand-gold: #C8A24B;        // 金铜点缀（价格/亮点）
-$brand-gold-light: #E8D5A8;  // 浅金（渐变/背景）
+// ── 品牌色（= PC primary 靛蓝 + accent 陶土；无 navy / 无亮蓝 / 无金铜）──
+$brand-navy: #191f31;        // primary-900：深色页头 / 深底强调
+$brand-blue: #3a4e75;        // primary-600：主按钮 / 交互主色（= PC Button primary）
+$brand-blue-light: #6a84ac;  // primary-400：渐变辅助 / 悬停
+$brand-gold: #c06a3e;        // accent-500：陶土点缀（价格 / 警示细线）—— 旧「金铜」位
+$brand-gold-light: #e7b99d;  // accent-200：深底上的第二层字色（旧浅金位）
 
-// ── 功能色 ──
+// ── 功能色（= PC status-chip 的 emerald / red / amber 族）──
 $primary-color: $brand-blue;
-$primary-light: #E8F1FE;
-$success-color: #22A06B;
-$error-color: #E5484D;
-$warning-color: $brand-gold;
+$primary-light: #eef2f8;     // primary-50
+$success-color: #059669;     // emerald-600
+$error-color: #dc2626;       // red-600
+$warning-color: #d97706;     // amber-600
 
-// ── 中性色 ──
-$text-primary: #0A2540;
-$text-secondary: #5A6B7C;
-$text-tertiary: #9AA5B1;
-$bg-primary: #FFFFFF;
-$bg-secondary: #F5F7FA;
-$border-color: #EAEEF3;
+// ── 中性色（= PC neutral 暖色阶；没有一处冷灰）──
+$text-primary: #312c26;      // neutral-900
+$text-secondary: #7e6f57;    // neutral-600
+$text-tertiary: #b8aa94;     // neutral-400
+$bg-primary: #ffffff;        // 卡片面（PC bg-white）
+$bg-secondary: #faf7f2;      // neutral-50：页面底（= /w/ 的 --wh5-bg）
+$border-color: #e6dfd3;      // neutral-200
 
-// ── 圆角 ──
+// ── 圆角（Taro 750 设计尺度：16px = 375 屏上的 8 CSS px = PC rounded-lg）──
 $radius-sm: 8px;
 $radius-md: 12px;
 $radius-lg: 16px;
 $radius-xl: 24px;
 $radius-full: 999px;
 
-// ── 阴影 ──
-$shadow-card: 0 2px 12px rgba(10, 37, 64, 0.06);
-$shadow-pop: 0 4px 20px rgba(10, 37, 64, 0.12);
+// ── 阴影（暖中性；= PC shadow-card 的同色系）──
+$shadow-card: 0 1px 2px rgba(36, 31, 24, 0.04), 0 2px 12px rgba(36, 31, 24, 0.06);
+$shadow-pop: 0 4px 20px rgba(36, 31, 24, 0.12);
 
-// ── 消息气泡 ──
-$bubble-user-bg: linear-gradient(135deg, #1A73E8 0%, #0A2540 100%);
-$bubble-user-text: #FFFFFF;
-$bubble-ai-bg: #FFFFFF;
+// ── 消息气泡（用户 = 靛蓝，AI = 白卡；与 PC 对话面同族）──
+$bubble-user-bg: linear-gradient(135deg, #48618f 0%, #3a4e75 100%);
+$bubble-user-text: #ffffff;
+$bubble-ai-bg: #ffffff;
 $bubble-ai-text: $text-primary;
 
-// ── 渐变 ──
-$gradient-brand: linear-gradient(135deg, #0A2540 0%, #1A73E8 100%);
-$gradient-gold: linear-gradient(135deg, #C8A24B 0%, #E8D5A8 100%);
+// ── 渐变（品牌页头 = primary-700 → primary-500，不再是 navy → 亮蓝）──
+$gradient-brand: linear-gradient(135deg, #2e3d5c 0%, #48618f 100%);
+$gradient-gold: linear-gradient(135deg, #c06a3e 0%, #e7b99d 100%);
 
 // ── 间距 ──
 $space-xs: 4px;

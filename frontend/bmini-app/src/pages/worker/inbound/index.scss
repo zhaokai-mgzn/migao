@@ -10,7 +10,7 @@
   width: 100%;
   margin: 8px 0;
   padding: 10px 12px;
-  border: 1px solid rgba(10, 37, 64, 0.12);
+  border: 1px solid rgba(36, 31, 24, 0.12);
   border-radius: 8px;
   font-size: 32px;
   background: #ffffff;
@@ -24,7 +24,7 @@
   width: 100%;
   margin: 8px 0;
   overflow: hidden;
-  border: 1px solid rgba(10, 37, 64, 0.12);
+  border: 1px solid rgba(36, 31, 24, 0.12);
   border-radius: 6px;
   background: #ffffff;
 }
@@ -46,7 +46,7 @@
  */
 .admin-suggest {
   margin: -4px 0 8px;
-  border: 1px solid rgba(10, 37, 64, 0.12);
+  border: 1px solid rgba(36, 31, 24, 0.12);
   border-radius: 8px;
   background: #ffffff;
   overflow: hidden;
@@ -57,8 +57,8 @@
     box-sizing: border-box;
     font-size: 30px;
     line-height: 20px;
-    color: #0a2540;
-    border-top: 1px solid rgba(10, 37, 64, 0.08);
+    color: #312c26;
+    border-top: 1px solid rgba(36, 31, 24, 0.08);
 
     &:first-child {
       border-top: none;

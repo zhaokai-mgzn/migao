@@ -5,6 +5,17 @@
 > 原因 = 单文件涨到 512KB 越过扫描上限，详见存档文件头与 issue #6404。
 > **后续条目继续在本文件 `## [Unreleased]
 
+### 手机端（bmini 小程序）整体视觉统一到 PC 端「织物质感」：深蓝金 → 织物暖色（2026-11-04，issue #8600）
+
+- **改前**：PC 后台是织物暖色（primary 靛蓝 `#48618f` / neutral 米白 `#faf7f2` / accent 陶土 `#c06a3e` + 暖阴影），
+  而 bmini 小程序自持一套「深蓝金」（`#0a2540` / `#1a73e8` / `#c8a24b` + 冷灰 `#f5f7fa` / `#eaeef3`）⇒ 同一个产品在电脑和手机上是两张脸。
+- **改后**：`frontend/bmini-app/src/styles/variables.scss` 全部语义色逐值对齐 PC 色阶（页头渐变 `primary-700 → primary-500`、
+  暖中性阴影、陶土点缀替代金铜）；34 个 SCSS + 3 个 TS/TSX 文件的深蓝金/冷灰字面量清零；
+  小程序原生导航/ tabBar 同步（`#2e3d5c` / `#faf7f2` / `#7e6f57` / `#3a4e75`）；worker-h5 的返工状态色收口到 accent 阶。
+- **不动**：页面结构、字号下限、接口、文案语义（只换视觉）。
+- 判据 = `frontend/bmini-app/tests/bmini-pc-palette-parity.test.ts`（4 条：token 逐值对账 / 全部 SCSS+TS/TSX 白名单 /
+  冷色阴影清零 / 判别力自证；改一阶或塞回旧 hex 即红）。
+
 ### 缺料风险页：哪些成品会因用料不够交不了货，逐行给需求 / 库存 / 缺口与处置入口（2026-11-03，issue #6282）
 
 - **改前**：`material_shortage`（商品级用料缺口与耗尽风险）只有 agent 对话结论与一个只读端点，

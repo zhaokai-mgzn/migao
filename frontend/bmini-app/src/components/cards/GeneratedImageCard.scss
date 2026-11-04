@@ -12,12 +12,12 @@
 
   &__empty-text {
     font-size: 26px;
-    color: #0a2540;
+    color: #312c26;
   }
 
   &__empty-hint {
     font-size: 24px;
-    color: #9ca3af;
+    color: #b8aa94;
   }
 
   &__header {
@@ -30,12 +30,12 @@
   &__title {
     font-size: 30px;
     font-weight: 600;
-    color: #0a2540;
+    color: #312c26;
   }
 
   &__subtitle {
     font-size: 24px;
-    color: #9ca3af;
+    color: #b8aa94;
     max-width: 60%;
     overflow: hidden;
     white-space: nowrap;
@@ -46,7 +46,7 @@
     width: 100%;
     display: block;
     border-radius: 12px;
-    border: 1px solid #f3f4f6;
+    border: 1px solid #f2ede5;
   }
 
   &__actions {
@@ -62,7 +62,7 @@
     height: 68px;
     padding: 0 32px;
     border-radius: 12px;
-    background: #2563eb;
+    background: #48618f;
     color: #ffffff;
     font-size: 26px;
   }
@@ -71,6 +71,6 @@
     display: block;
     margin-top: 12px;
     font-size: 24px;
-    color: #9ca3af;
+    color: #b8aa94;
   }
 }
