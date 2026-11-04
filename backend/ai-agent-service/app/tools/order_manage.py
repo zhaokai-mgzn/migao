@@ -8,6 +8,7 @@ ID 解析、ORD-xxx→UUID 转换由 Java Agent 端点负责。
 from typing import Any, Dict, Optional
 from loguru import logger
 
+from app.constants.order_status import AGENT_ORDER_STATUSES
 from app.tools.base import (
     admin_api_failure, BaseTool, ToolContext, ToolResult, _denial_suggestion,
 )
@@ -60,7 +61,7 @@ class OrderManageTool(BaseTool):
             },
             "status": {
                 "type": "string",
-                "enum": ["pending", "confirmed", "producing", "shipped", "completed", "cancelled"],
+                "enum": list(AGENT_ORDER_STATUSES),
                 "description": "新状态（update_status 时必填）",
             },
             "logistics_company": {"type": "string", "description": "快递公司（update_logistics 时必填）"},

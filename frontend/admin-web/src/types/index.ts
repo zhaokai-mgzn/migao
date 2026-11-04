@@ -493,17 +493,16 @@ export interface KnowledgeCardListParams extends PageParams {
   status?: KnowledgeCardStatus | string
 }
 
-// ===== 订单状态枚举 =====
+// ===== 订单状态 =====
+// 🔴 后端取值不在本文件手写（issue #8198 P2-2b）：唯一源 = Java `OrderStatusTransitions` → 生成物
+// `order-status.generated.ts`。改源后跑 `python3 scripts/order_status_codegen.py --write`。
+import { ORDER_STATUS_VALUES, type CanonicalOrderStatus } from './order-status.generated'
+
+// 前端展示口径（UI 侧词汇，不是后端取值）
 export type OrderStatus = 'pending_payment' | 'pending_shipment' | 'shipped' | 'completed' | 'closed' | 'refund'
 
-// 后端实际订单状态（数据库存储值）
-export type BackendOrderStatus =
-  | 'pending'
-  | 'confirmed'
-  | 'producing'
-  | 'shipped'
-  | 'completed'
-  | 'cancelled'
+/** 后端实际订单状态（数据库存储值）：取自生成物；有意排除 `packed`（补上 = 行为变更，须单独裁定）。 */
+export type BackendOrderStatus = Exclude<CanonicalOrderStatus, (typeof ORDER_STATUS_VALUES)['PACKED']>
 
 // 前端到后端状态映射（用于API请求时的status参数）
 /**
@@ -517,27 +516,27 @@ export type BackendOrderStatus =
  * 现在按**多值**下发（后端 `OrderService.applyStatusFilter` 支持逗号分隔、按 `in` 处理）。
  */
 export function toBackendStatusParam(status: OrderStatus): string {
-  if (status === 'pending_shipment') return 'confirmed,producing'
+  if (status === 'pending_shipment') return `${ORDER_STATUS_VALUES.CONFIRMED},${ORDER_STATUS_VALUES.PRODUCING}`
   return FrontendToBackendStatus[status]
 }
 
 export const FrontendToBackendStatus: Record<OrderStatus, BackendOrderStatus> = {
-  pending_payment: 'pending',
-  pending_shipment: 'confirmed', // confirmed 和 producing 都算待发货（多值下发见 toBackendStatusParam）
-  shipped: 'shipped',
-  completed: 'completed',
-  closed: 'cancelled',
-  refund: 'cancelled', // 退款目前映射到 cancelled（后端暂无独立 refund 状态）
+  pending_payment: ORDER_STATUS_VALUES.PENDING,
+  pending_shipment: ORDER_STATUS_VALUES.CONFIRMED, // confirmed 和 producing 都算待发货（多值下发见 toBackendStatusParam）
+  shipped: ORDER_STATUS_VALUES.SHIPPED,
+  completed: ORDER_STATUS_VALUES.COMPLETED,
+  closed: ORDER_STATUS_VALUES.CANCELLED,
+  refund: ORDER_STATUS_VALUES.CANCELLED, // 退款目前映射到 cancelled（后端暂无独立 refund 状态）
 }
 
 // 后端到前端状态映射（用于API响应的数据展示）
 export const BackendToFrontendStatus: Record<BackendOrderStatus, OrderStatus> = {
-  pending: 'pending_payment',
-  confirmed: 'pending_shipment',
-  producing: 'pending_shipment', // producing 也归入待发货
-  shipped: 'shipped',
-  completed: 'completed',
-  cancelled: 'closed',
+  [ORDER_STATUS_VALUES.PENDING]: 'pending_payment',
+  [ORDER_STATUS_VALUES.CONFIRMED]: 'pending_shipment',
+  [ORDER_STATUS_VALUES.PRODUCING]: 'pending_shipment', // producing 也归入待发货
+  [ORDER_STATUS_VALUES.SHIPPED]: 'shipped',
+  [ORDER_STATUS_VALUES.COMPLETED]: 'completed',
+  [ORDER_STATUS_VALUES.CANCELLED]: 'closed',
 }
 
 // 将任意状态值（前端或后端）规范化为前端展示状态
@@ -578,7 +577,7 @@ export interface OrderStatusDisplay {
 }
 
 export function displayOrderStatus(status: string | undefined | null): OrderStatusDisplay {
-  if (status === 'producing') return { label: '生产中', color: 'warning' }
+  if (status === ORDER_STATUS_VALUES.PRODUCING) return { label: '生产中', color: 'warning' }
   const normalized = normalizeOrderStatus(status)
   return { label: OrderStatusLabels[normalized], color: OrderStatusColors[normalized] }
 }

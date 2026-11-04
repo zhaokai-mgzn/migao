@@ -11,6 +11,7 @@ receiver（收货人姓名或手机号）/ status / startDate / endDate。
 from typing import Any, Dict, List, Optional
 from loguru import logger
 
+from app.constants.order_status import AGENT_ORDER_STATUSES
 from app.tools.base import admin_api_failure, BaseTool, ToolContext, ToolResult
 from app.utils.http_client import get_admin_api_client
 from app.utils.log_sanitizer import LogSanitizer
@@ -82,7 +83,7 @@ class OrderQueryTool(BaseTool):
             "status": {
                 "type": "string",
                 "description": "订单状态筛选（可选，仅 action=list 时生效）：pending=待付款, confirmed=已确认（待发货）, producing=生产中, shipped=已发货, completed=已完成, cancelled=已取消",
-                "enum": ["pending", "confirmed", "producing", "shipped", "completed", "cancelled"],
+                "enum": list(AGENT_ORDER_STATUSES),
             },
             "start_date": {
                 "type": "string",

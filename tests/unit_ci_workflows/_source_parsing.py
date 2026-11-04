@@ -37,7 +37,8 @@
 ② Java 侧是**词法**走查不是语法解析：它不校验括号/语句结构，只保证「注释里的字面量不算、
    字符串里的注释符不算」；
 ③ 字面量取的是**原文**（未做转义解码）：`"a\\"b"` 交出 `a\\"b`。判据面用到的都是无转义的字面量；
-④ 只覆盖 Python 与 Java 文本；SQL 另有既有实现（不在本模块射程）。
+④ 覆盖 Python / Java / **TS** 文本（Java 与 TS 共用**同一份**词法走查 —— TS 只是多认单引号
+   字符串，`//` `/* */` 与 `"…"` 的规则相同）；SQL 另有既有实现（不在本模块射程）。
 """
 from __future__ import annotations
 
@@ -53,6 +54,8 @@ __all__ = [
     "java_code",
     "java_literals",
     "nested_string_members",
+    "python_string_literals",
+    "typescript_literals",
 ]
 
 
@@ -317,3 +320,57 @@ def java_literals(text: str) -> tuple[tuple[int, str], ...]:
         if kind == _KIND_STRING:
             out.append((start, text[start + 1: max(start + 1, end - 1)]))
     return tuple(out)
+
+
+# ── TS（issue #8198 的 P2-2b）：与 Java **同一份**词法走查，只是单引号也算字符串 ──────────────
+
+
+def typescript_literals(text: str) -> tuple[tuple[int, str], ...]:
+    """TS/TSX 文本里**字符串字面量**的 `(起点下标, 原文值)`（注释里的不算；按出现顺序）。
+
+    与 `java_literals` 的差别只有一个：TS 的单引号是**字符串**（Java 里那是 `char`），
+    所以 `_KIND_CHAR` 段在这里也算字符串。双引号 / 反引号的处理：
+    双引号与单引号都取自同一份走查；**模板字符串（反引号）不在面内** ——
+    它的 `${…}` 是代码不是字面量，误当字面量会把插值读成取值（假绿方向，有意不认）。
+
+    判据侧用途：找「手写的裸状态字面量」。**注释里写同样的词不算**（这正是本走查存在的理由，
+    `#5323`：按引号扫原文会把注释读成代码）。
+    """
+    out: list[tuple[int, str]] = []
+    for kind, start, end in _java_scan(text):
+        if kind == _KIND_STRING:
+            out.append((start, text[start + 1: max(start + 1, end - 1)]))
+        elif kind == _KIND_CHAR:
+            # 单引号段：`'x'` 是字符字面量、`'…'` 是 TS 字符串 —— 两者在本判据面里同义（都算"写了这个词"）。
+            out.append((start, text[start + 1: max(start + 1, end - 1)]))
+    return out
+
+
+def python_string_literals(text: str, where: str) -> tuple[tuple[int, str], ...]:
+    """Python 源码里**字符串字面量**的 `(行号, 原文值)`（注释里的不算；按出现顺序）。
+
+    走 `tokenize`（**词法**说了算，不是按引号扫原文）：`#` 落在字符串里就不是注释，
+    字符串里的 `#` 也不会把行尾吃掉（`#5323` 第 7 条）。f-string 取它的**字面段**拼接结果
+    会掺插值，故 f-string 一律跳过（`string` token 的 `FSTRING_*` 家族）—— 本判据面找的是
+    「手写裸值」，插值不算手写。
+
+    返回的"下标"是**行号**（1-based）：报错要能指到人。
+    """
+    try:
+        toks = list(tokenize.generate_tokens(io.StringIO(text).readline))
+    except (tokenize.TokenError, IndentationError, SyntaxError) as exc:
+        raise AssertionError(f"{where} 无法 tokenize（{exc}）⇒ 解析失配 ⇒ 红（同步本判据）") from exc
+    out: list[tuple[int, str]] = []
+    for tok in toks:
+        if tok.type != tokenize.STRING:
+            continue
+        raw = tok.string
+        # 去掉前缀（r/b/u/f 及其组合）后按引号种类取正文；三引号也在这里收口。
+        body = raw
+        while body and body[0].isalpha():
+            body = body[1:]
+        for quote in ('"""', "'''", '"', "'"):
+            if body.startswith(quote) and body.endswith(quote) and len(body) >= 2 * len(quote):
+                out.append((tok.start[0], body[len(quote):-len(quote)]))
+                break
+    return out
