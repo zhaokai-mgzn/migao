@@ -1,5 +1,9 @@
 /* 工人端子页「返回」入口（issue #8659）：一枚小尺寸 Chevron + 文案，
-   放在页头最左侧，不抢标题权重（设计 §31：常驻面克制）。 */
+   放在页头最左侧，不抢标题权重（设计 §31：常驻面克制）。
+   ⚠️ 颜色**必须**走语义 token（issue #8600 的调色板同源判据）：手写 slate-600 冷灰是
+   **冷灰**，与 bmini 的暖色中性阶 `$text-secondary`（neutral-600）不是同一个值，且不在 PC 调色板
+   白名单里 ⇒ `tests/bmini-pc-palette-parity.test.ts::②` 判红（实测 offenders = 2 处）。 */
+@use '../../styles/variables.scss' as *;
 .worker-back {
   display: inline-flex;
   align-items: center;
@@ -14,10 +18,10 @@
 .worker-back__chevron {
   font-size: 34px;
   line-height: 1;
-  color: #475569;
+  color: $text-secondary;
 }
 
 .worker-back__text {
   font-size: 26px;
-  color: #475569;
+  color: $text-secondary;
 }
