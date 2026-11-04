@@ -2,7 +2,7 @@
 # 本文件由 render_cases.py 生成，勿手改（改了也留不住：下次重渲染会覆盖）
 # 源: cases/*.yml（case-contract 单一源）
 # 重新生成: python3 render_cases.py --cases <dir> --out-eval <包目录> --out-md <md>
-# 域: misc（源: cases/misc.yml，227 条）
+# 域: misc（源: cases/misc.yml，228 条）
 
 from ._schema import Difficulty, EvalCase, Skill
 
@@ -4149,6 +4149,25 @@ _CASE_MC_199 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── MC-200 [NORMAL] 死锁判据改钉**进度读数**、不再用墙钟预算（issue #8654）：进度在涨 ⇒ 慢也绿；连续零进度到窗口 ⇒ 红并点名卡住的用例；单测不许连真评测服务（黑洞监听者下仍绿）（源: cases/misc.yml）──
+_CASE_MC_200 = EvalCase(
+    id='MC-200',
+    legacy_id='',
+    title='死锁判据改钉**进度读数**、不再用墙钟预算（issue #8654）：进度在涨 ⇒ 慢也绿；连续零进度到窗口 ⇒ 红并点名卡住的用例；单测不许连真评测服务（黑洞监听者下仍绿）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['本机高负载（load 10+、并发跑 Maven 全量）时验收用例检查里 retry / deadlock 那 4 条判红，栈都是等待超时的预算到点；同一个提交在 CI 上却是 pass —— 到底该信哪一边？', '这批判据判的应该是会不会死锁，不是跑得多快；但不许删掉、也不许把 3 秒放宽到 300 秒了事'],
+    expectations=[],
+    data_checks=['**判据 1（会红）·真死锁 ⇒ 短时红且点名**：注入「持读位时再要写位」（issue #3361 的原始互等形态）⇒ 进度读数连续零增长到窗口即判红，并报出卡住的那条用例 id。红证：把看门狗改成永不判死、或去掉点名 ⇒ 该条当场红。执行点 = backend/ai-agent-service/tests/test_acceptance_case_checks.py 的死锁判据红证组第一条。', '**判据 2（会红）·慢但前进 ⇒ 绿**：注入 60 条用例、每条真花 0.5 秒、并发 3（总耗时约 10 秒，超过旧 8 秒墙钟预算）⇒ 判据必须绿；把判据换回「总量超预算就红」（即本单之前的写法）⇒ 该条当场红 —— 这正是要修掉的假红格。', '**判据 3（会红）·进度计数真在涨**：正常路径（3 条并行用例、无重试）的计数与真值逐项相等（用例开始 3 / 结束 3 / 读位获取 3 / 读位释放 3）。红证：把计数改成空操作 ⇒ 该条红，且判据 1 随之失去读数支撑。', '**判据 4（会红）·原有三条组合不回归**：并行 + pre_clean、串行（update）混排 + pre_clean、全 pre_clean 三条组合仍必须跑完并逐条出结果（结果条数 == 用例数、用例结束计数 == 用例数）⇒ 任一条卡住都会被判红并点名。', '**判据 5（会红）·单测不连真服务（类级元守卫）**：把评测端点指向一个「accept 但永不回包」的本机黑洞（#8647 记的那个僵而不死的监听者）后再跑同一份套件 ⇒ 必须绿，且黑洞一条连接都没收到。红证：摘掉读侧取数的桩 ⇒ 该条红（连接被收到 / 进度停住）。', '**判据 6（会红）·重试预算族同一口径**：预算三条（限 1 次 / 不掩盖失败 / 不限预算逐条重试）不再用任何墙钟预算，改走同一套进度判据；重试次数仍按真实调用数判定（4 次 / 6 次），预算与判分语义逐字不变。'],
+    skip_reason='[backend-contract] 纯 pytest 层判据（注入式真死锁 / 人为延迟 / 计数真值 / 黑洞监听者；零网络、零 LLM、不碰真库 —— 读侧取数在本文件内钉成桩），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['deadlock', 'flaky', 'progress-counter', 'no-wall-clock', 'no-live-service', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='零运行期前置（纯 pytest 判据）：被测对象 = `backend/ai-agent-service/tests/test_acceptance_case_checks.py` 与它加载的 `tests/agent_eval/local_runner.py`；前置 = 这两个文件存在且可读、asyncio 事件循环可用，由仓本身满足。不成立时的红形态已内建：加载失败 / 收集失败即红（不是绿）；读侧取数在本文件内钉成桩 ⇒ 零网络 / 零 LLM / 零真库。',
+)
+
 # ── MC-202 [NORMAL] bmini 的每一条 SCSS @use / @import 相对路径都必须解析到仓里真实文件（sass 相对路径只在构建期解析，tsc 抓不到）（源: cases/misc.yml）──
 _CASE_MC_202 = EvalCase(
     id='MC-202',
@@ -4394,5 +4413,6 @@ CASES = (
     _CASE_MC_198,
     _CASE_MC_197,
     _CASE_MC_199,
+    _CASE_MC_200,
     _CASE_MC_202,
 )
