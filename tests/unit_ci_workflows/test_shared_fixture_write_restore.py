@@ -283,6 +283,14 @@ PRODUCT_ATTR_WRITERS: dict = {
     ("craft_calc_config_update", ""): "",
     ("notification_manage", "mark_read"): "",
     ("notification_manage", "read_all"): "",
+    # ── 🔴 2026-11-04（issue #7035，接 #7050 的能力回绑）────────────────────────────
+    # 员工域的「创建 / 变更」已接回 B 端（`employee_manage` 的 `create` / `update`；
+    # `read_only_actions = {list, detail}`）。它写的是**员工实体**（`users` / `user_roles`），
+    # **不触达任何商品属性** ⇒ 属性键 = `""`（与 `order_create` / `aftersale_create` 同档）。
+    # 登记触发点 = 本包把 `HR-002` / `HR-010` un-skip 并把期望重锚成 action 级写，
+    # `HR-008` 重锚成 `employee_manage(action=update)`（判据 ① 未归类即红抓到的）。
+    ("employee_manage", "create"): "",
+    ("employee_manage", "update"): "",
     # ── 具名批量写方（issue #5314）：属性由**用例声明的 `batch_type`** 决定 ⇒ 3 元组键 ──
     # `preview` = 预演：只落一条 preview 批次，**不改商品属性**（判别维在场也只是把这条钉死）。
     ("product_batch_update", "preview", "product_price"): "",
@@ -665,6 +673,12 @@ class TestSeedTruthAndScanSurface:
         # 新事实下**恒红**，故改判成**正向**断言：它必须**恰好**是 `notification_manage`，
         # 且 key 必须带**真实的写 action 值**（不写死计数，防以后又加一个写 action 时假红）。
         # 判别力仍由下面两条承担：具名批量写方（#5314）+ 合成注入（`_with_synthetic_action_writer`）。
+        # 🔴 **2026-11-04（issue #7035）再改判 —— 同一条纪律的第二次应用，不是放宽**：
+        # #7050 把员工「创建 / 变更」接回 B 端（`employee_manage` 的 `create` / `update`，
+        # `read_only_actions = {list, detail}`）⇒ 本表**第 2 条成员**。本包把 `HR-002` / `HR-010`
+        # un-skip 并把期望重锚成 `employee_manage(action=create)`、`HR-008` 重锚成
+        # `employee_manage(action=update)` ⇒ 真实库里的 action 级写方从 1 个变 2 个。
+        # 坐标随之登记（值仍**不写死计数**，只列工具名，防以后又加一个写 action 时假红）。
         _action_level_tools = set(_taxonomy().WRITE_TOOL_ACTIONS)
         corpus_action_level = sorted(
             k for k in live_writer_keys(_all_cases()) if k[0] in _action_level_tools)
@@ -673,7 +687,8 @@ class TestSeedTruthAndScanSurface:
             "要么用例侧的 action 级写期望（`ST-005`）没被扫描面认出（`migao-acceptance`"
             "「绿了但没跑」）"
         )
-        assert {k[0] for k in corpus_action_level} == {"notification_manage"}, (
+        assert {k[0] for k in corpus_action_level} == {
+            "notification_manage", "employee_manage"}, (
             f"action 级写方出现了未预期的工具：{corpus_action_level} —— 新加「部分写」工具时"
             "必须同步改判 `WRITE_TOOL_ACTIONS`（taxonomy 单一源）与本处坐标"
         )
