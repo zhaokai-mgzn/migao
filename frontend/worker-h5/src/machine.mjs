@@ -469,7 +469,9 @@ function positionTabs(state) {
   const selected = Number.isInteger(state?.positionIndex) ? state.positionIndex : 0
   return positionsOf(state.data)
     .map((position, index) => {
-      const label = `${dataOr(position?.position_name ?? position?.position_kind)}${position?.scanned ? '（扫到的）' : ''}`
+      // 不再给扫到的那一叶加「（扫到的）」后缀（2026-11-04 用户：「把（扫到的）文字移除，不要这样口语化的文案」）。
+      // 哪一叶是扫到的，靠 tab 的选中态（is-active）表达，不靠括号里的口语标注。
+      const label = dataOr(position?.position_name ?? position?.position_kind)
       return `<button type="button" class="wh5-machine__tab${index === selected ? ' is-active' : ''}" data-machine-pick="${index}">${esc(label)}</button>`
     })
     .join('')
