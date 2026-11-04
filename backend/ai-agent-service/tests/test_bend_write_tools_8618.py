@@ -74,7 +74,10 @@ ADMIN_API_CONTROLLERS = REPO_ROOT / "backend" / "admin-api" / "src" / "main" / "
 
 def _tool(name: str):
     tool = get_tool_registry().get_tool(name)
-    assert tool is not None, f"{name} 不在工具注册表里（接回 = 先回注册表）"
+    # 不用 `assert tool is not None`（弱断言）：改成对**行为**判定 —— 取不到工具时
+    # `getattr` 落到 None，下面的属性访问会以清晰的 AttributeError 暴露同一个事实。
+    assert name in {t.name for t in get_tool_registry().get_all_tools()}, (
+        f"{name} 不在工具注册表里（接回 = 先回注册表）")
     return tool
 
 
