@@ -4215,7 +4215,7 @@
 ```
 溯源: 2026-10-31 新增（issue #8295）：两步确认，避免误写 ｜ tags: ui, preview
 
-## 杂项域（220 case）
+## 杂项域（221 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -7547,6 +7547,18 @@
 跳过: [backend-contract] 接线形态 + Java 行为（logback 捕获）+ 文档要素，零 LLM、零真库、零网络；非 LLM 行为，不进入 agent-eval 冒烟
 ```
 溯源: 2026-11-04 新增（issue #8196 的 ① 面）。取号 MC-193（main 侧现取最大 190、claims 目录无 193）。🔴 自查改判：任务书建议在 compose 的 environment 加空值透传 —— 那会**覆盖成空**（commit 988e490f0 已为 AI_AGENT_SERVICE_TOKEN 删过同一行），故改为「只经 env_file 注入 + 判据禁止在 compose 里覆盖」；判据的值扫描先剔 `${…}` 包装，避免把变量引用误判成值。⚠️ 未闭合：服务器 .env.admin-api 里是否真有值属外部输入（用户侧提供），本单只给可复算的回读命令。 ｜ tags: deploy, env-wiring, wechat, bmini, loud-failure, red-proof
+
+### MC-195. Flaky Ledger Reconcile 自愈（issue #8628）：台账分支领先 main 却无 open PR 时**机械幂等补建**（不 arm、不 --admin、不受豁免）；ahead=0 / 已有 PR 零动作；补建失败一行可行动出口 + 非零退出 🔵
+```
+你: `Flaky Ledger Reconcile` 这条腿在 `chore/flaky-ledger` 领先 main 但没有 open PR 时对**每一个** PR 报红，只能靠人手动开 PR 压住；希望机械自愈 —— 已有一律不重复建，人只需复核
+期望: direct_reply
+数据: **建（会红）**：`ahead>0` ∧ `gh pr list --state open --head chore/flaky-ledger` 为空 ⇒ 调 `flaky_ledger.py ensure-pr` **恰好一次** `gh pr create`（base main / head 台账分支），PR body 带 `AUTOPR_MARKER`。判据 = 替换脚本唯一的 gh 出口 `_gh` 打桩并逐条记 argv（**不在测试里真建 PR**），另有 `--dry-run` 只打印不建。执行点 = `tests/unit_ci_workflows/test_flaky_ledger_reconcile.py` 的 ensure-pr 行为判据。
+数据: **幂等（双向，会红）**：已有 open PR ⇒ **零次** `gh pr create`（`action=exists`）；`ahead==0` / 分支不存在 ⇒ **零次** + 腿绿。红证 = 把「已有 PR ⇒ 零动作」的短路改成恒假 ⇒ 同一输入会多建一条，判据当场红（`test_red_proof_existing_pr_shortcut_removed`）。
+数据: **不许自开自合（会红）**：本腿自建的 PR（body 带标记 token）在后续轮次**不 arm auto-merge**（summary 写「arm：跳过」），workflow 全域不得出现 `gh pr merge --admin`，不改分支保护、不给该腿任何豁免；required 检查仍是唯一闸。红证 = 摘掉标记分支臂 ⇒ 同一输入会真的 `pr merge`；插入 `--admin` ⇒ 结构判据红。
+数据: **失败必须响（会红）**：`gh pr create` 失败 ⇒ `::error::` 一行含可复制出口（`gh pr create --base main …`）+ 退出码 1；读数面读不到 ⇒ 退出码 3（**未跑 ≠ 通过**，不得当「无需 PR」）。红证 = 把失败出口改成「echo 且 exit 0」⇒ 结构判据红；行为判据断言 rc=1 / rc=3 且文案含可行动出口。
+跳过: [backend-contract] CI 对账腿的**动作级**判据（打桩断言 gh 调用 + 真跑 workflow 步骤），零网络、零 LLM、不建真 PR、不碰真库；非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-11-04 新增（issue #8628）。病：台账分支领先 main 但无 open PR 时该腿对每个 PR 常驻红 —— 实测两次（#8604 / #8612 手工开 PR 压住），机械开单 #8628 连续 4 次真红达阈值（run 41773739654 / 41772598095 / 41765847283 / 41763430690）。修法 = 最小改动：`flaky_ledger.py` 新增 `ensure-pr`（先查 open PR、再实时算 ahead，都满足才建；**只建 PR、不 arm**），workflow 把旧「无 PR ⇒ ::error:: 判红」换成调它。取号 MC-195（`python3 scripts/next_case_id.py MC` 现取 main 到 193、claims 目录无 194/195）。⚠️ 根解方向（未在本单实现，见 PR body 分析）：让台账内容由 main 侧补回、根本不产生 ahead —— 属台账语义变更，需单独裁定。 ｜ tags: ci, flaky-ledger, self-heal, idempotent, no-self-merge, red-proof
 
 ## 商家入驻域（7 case）
 
@@ -15059,8 +15071,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：1020（活跃 155，跳过 865）
-- tier 分布：smoke 15 / normal 943 / adversarial 33
+- 用例总数：1021（活跃 155，跳过 866）
+- tier 分布：smoke 15 / normal 944 / adversarial 33
 - 售后域：16
 - Agent 核心域：13
 - API 层域：21
@@ -15076,7 +15088,7 @@
 - 人事域：13
 - 知识问答域：9
 - 客户主数据迁移域：10
-- 杂项域：220
+- 杂项域：221
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：76
@@ -15363,6 +15375,7 @@
 - MC-189: 配置就绪度端点 GET /api/admin/config-readiness（issue #6579）：服务端聚合七步事实（含孤儿工序单一真值口径）、跨码步骤按调用方权限整个省略、前端主线只发这一个请求就画出七步
 - MC-192: 工人端菜单吃本机能力（第三轴）：一个 apk 覆盖安卓一体机 + 手持标签机，缺省即隐藏（issue
 - MC-193: B 端小程序（bmini）凭据的部署接线 + 缺失显式告警（issue #8196 ①）：变量名经 admin-api 的 env_file(.env.admin-api) 进容器、compose 的 environment 不得空值覆盖、启动期任一为空（含半配）打一条 WARN 点名缺哪个/影响/补法且不阻止启动、仓库里无凭据值
+- MC-195: Flaky Ledger Reconcile 自愈（issue #8628）：台账分支领先 main 却无 open PR 时**机械幂等补建**（不 arm、不 --admin、不受豁免）；ahead=0 / 已有 PR 零动作；补建失败一行可行动出口 + 非零退出
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）
