@@ -8498,7 +8498,7 @@ cases:
       - "**判据 2 · 生成物与源逐值相等（Python，会红）**：同上，用 `ast.literal_eval` 独立读入库的 `backend/ai-agent-service/app/constants/order_status_generated.py`（7 个取值 + 逐名常量 + 标签 + 流转 + 可编辑集合），与 Java 单一源逐值比对。红证实跑：把生成物里的 `packed` 改成 `packedd` ⇒ 本条具名红，还原后逐字节相等并转绿。执行点 = 同判据 1 的判据文件"
       - "**判据 3 · 删掉生成步骤 ⇒ 判红（会红，且三态齐全）**：`python3 scripts/order_status_codegen.py --check` 是唯一的新鲜度入口 —— `0` 同步 / `1` 陈旧 / `3` 无法判定（**没有「跳过」这一态**）。红证实跑（临时树 + 真实命令两路）：只改 Java 源不重生成 ⇒ 退出码 `1`，且具名报出**两个产物**、各自「提交版 / 现取」行数与首个差异的两侧原文；删掉生成物 ⇒ 退出码 `3`（绝不当通过）；挪走单一源 ⇒ 同样 `3`；重生成后回到 `0`（证明它读的是**源**，不是一张写死的表）。同一判据还验确定性：同一份源连跑两次重生成 ⇒ 逐字节相等，且临时树产物与入库产物逐字节相等（产物里没有时间戳 / 环境指纹）。执行点 = 同判据 1 的判据文件"
       - "**判据 4 · 手写面不许再有同名裸字面量（会红，台账只许缩短）**：扫两处手写面（前端 `types/index.ts` + 4 个 Agent 工具 schema）里的裸状态字面量，命中即**具名**报出「文件 + 行 + 值 + 该行原文」；取值走仓内唯一一份引号感知实现 ⇒ 注释里写同样的词不算。非订单域的同名用法（加工单终态、入库单状态、两个查询工具的状态中文映射）逐条按**原文**登记豁免，某条原文不再出现 ⇒ 红并要求销账。红证实跑：往前端类型模块里加一处 `producing` 裸字面量 ⇒ 本条具名红（报出该文件第 N 行与该行原文），还原后逐字节相等、9 条判据全绿。执行点 = 同判据 1 的判据文件"
-      - "**判据 5 · 消费侧行为冻结（会红）**：Agent 工具面仍只暴露 6 个状态（不含 `packed`），四个面（订单管理 / 订单查询 / 客户订单查询 / 前置校验闸门）的订单状态枚举都必须**等于**由生成物派生的那 6 个（顺序也一致）；生成物自身仍是 7 个（单一源全集）。红证：把窄化改成全集 ⇒ 冻结判据与四个面的取值判据一起红。执行点 = backend/ai-agent-service/tests/test_order_status_generated.py"
+      - "**判据 5 · 消费侧行为冻结（会红）**：Agent 工具面仍只暴露 6 个状态（不含 `packed`），四个面（订单管理 / 订单查询 / 客户订单查询 / 前置校验闸门）的订单状态枚举都必须**等于**由生成物派生的那 6 个（顺序也一致）；生成物自身仍是 7 个（单一源全集）。红证：把窄化改成全集 ⇒ 冻结判据与四个面的取值判据一起红。执行点 = backend/ai-agent-service/tests/test_order_status.py"
     skip_reason: "[backend-contract] 纯结构面判据（扫源码文本 + 解析 Java 单一源与两份生成物 + 生成器确定性 + 新鲜度退出码），零网络、零 LLM、不起真库；不进 agent-eval 冒烟"
     merge_log: >-
       2026-11-04 新增（issue #8198 的 P2-2b，**部分交付**：P2-1/P2-2a 已由前序 PR 落地，本单只做「生成到 TS / Python」）。
@@ -8517,7 +8517,6 @@ cases:
     traces:
       tests:
         - "tests/unit_ci_workflows/test_order_status_codegen.py"
-        - "backend/ai-agent-service/tests/test_order_status_generated.py"
         - "backend/ai-agent-service/tests/test_order_status.py"
       ci:
         - pr-check.yml

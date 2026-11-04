@@ -127,6 +127,15 @@ modules:
       - pattern: 'backend/ai-agent-service/app/context/(.+)\.py'
         tests:
           - 'tests/test_page_context.py'
+      # 订单状态等常量的**单一源投影**（issue #8198 的 P2-2b，新目录 app/constants/）：
+      # 目录里只有「生成物（Java 单一源的投影）」与「一处窄化口径」，两者都没有独立行为 ——
+      # 判据集中在 tests/test_order_status.py（消费侧冻结 + 生成物形态）与
+      # tests/unit_ci_workflows/test_order_status_codegen.py（生成物 ⇄ 源逐值相等 + 新鲜度）。
+      # 照 `app/core/` 的写法**逐文件**映射到同一个可收集文件（不靠兜底：兜底会产出
+      # `tests/test_order_status_generated.py` 这类"要新建"的路径，而判据其实已集中在一处）。
+      - pattern: 'backend/ai-agent-service/app/constants/(.+)\.py'
+        tests:
+          - 'tests/test_order_status.py'
       # LLM 模型路由（issue #2546 / #5353）：select_model 由 test_vision_integration 的
       # TestSelectModelWithVision 覆盖，故逐文件显式登记。
       # ⚠️ **不得**写 tests/test_llm_pipeline.py —— 它在 pytest.ini 的 addopts `--ignore=` 里
