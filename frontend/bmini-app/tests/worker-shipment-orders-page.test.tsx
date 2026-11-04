@@ -1,6 +1,6 @@
 // case_ids: BM-025, BM-034, BM-036, BM-051, BM-061
 /**
- * 工人**待发货单**列表页（issue #7806 P1a；页面 = `src/pages/worker/shipment-orders/index.tsx`）
+ * 工人**待出库单**列表页（issue #7806 P1a；页面 = `src/pages/worker/shipment-orders/index.tsx`）
  *
  * 数据源 = `GET /api/worker/shipment/orders`（#7764 上线）。它只回「**多套全部完工** + 可发货状态 +
  * 作业单已完成」的订单 ⇒ **筛选是后端的事**，端侧只渲染。
@@ -52,7 +52,7 @@ jest.mock('../src/services/workerService', () => ({
   fetchCurrentWorker: jest.fn(),
 }))
 
-// 发货联（50×70）打印：只经 `printRowsLabel`；通道与能力用替身钉住「不可用不点」。
+// 成品出库单（50×70）打印：只经 `printRowsLabel`；通道与能力用替身钉住「不可用不点」。
 jest.mock('../src/utils/inbound/terminalTransport', () => ({
   createPrintTransport: jest.fn(),
 }))
@@ -108,7 +108,7 @@ const READY_ROW = {
   completed_sets: 3,
   processing_order_no: 'JG-20260901-001',
   remark: '样品货款 600 元',
-  // 随货标识（issue #7856，服务端已下发）：发货联的帘种 / 安装信息行
+  // 随货标识（issue #7856，服务端已下发）：成品出库单的帘种 / 安装信息行
   curtain_types: '布帘/纱帘',
   install_community: '珠江路小区',
   install_rooms: '客厅\n主卧',
@@ -133,7 +133,7 @@ function renderPage() {
   return render(<WorkerShipmentOrdersPage />)
 }
 
-describe('WorkerShipmentOrdersPage 待发货单列表（issue #7806 P1a）', () => {
+describe('WorkerShipmentOrdersPage 待出库单列表（issue #7806 P1a）', () => {
   beforeEach(() => {
     jest.clearAllMocks()
     ;(Taro as any).__clearStorage()
@@ -293,13 +293,17 @@ describe('WorkerShipmentOrdersPage 待发货单列表（issue #7806 P1a）', () 
     await waitFor(() => expect(mockList).toHaveBeenCalledTimes(2))
   })
 
-  it('⑦ 发货联：预览 = /w/ 同一份行清单（含随货标识），打印走 printRowsLabel（50×70）', async () => {
+  it('⑦ 成品出库单：预览 = /w/ 同一份行清单（含随货标识），打印走 printRowsLabel（50×70）', async () => {
     renderPage()
     await screen.findByTestId('shipment-orders-list')
 
     fireEvent.click(screen.getByTestId('shipment-orders-label-0'))
     const preview = await screen.findByTestId('shipment-orders-label-preview')
-    expect(preview.textContent).toContain('发货联 · 0901-000084')
+    expect(preview.textContent).toContain('成品出库单 · 0901-000084')
+    // issue #8632：行内动作 / 打印按钮按**出库**口径命名（旧名「发货联」退场）
+    expect(screen.getByTestId('shipment-orders-label-0').textContent).toContain('出库单')
+    expect(screen.getByTestId('shipment-orders-label-print').textContent).toContain('打印成品出库单（50×70）')
+    expect(preview.textContent).not.toContain('发货联')
 
     const rows = screen.getByTestId('shipment-orders-label-rows').textContent ?? ''
     for (const label of [
@@ -335,7 +339,7 @@ describe('WorkerShipmentOrdersPage 待发货单列表（issue #7806 P1a）', () 
     )
   })
 
-  it('⑧ 发货联下单日期按 Asia/Shanghai 取日（16:30Z ⇒ 次日，不按 UTC 切）', async () => {
+  it('⑧ 成品出库单下单日期按 Asia/Shanghai 取日（16:30Z ⇒ 次日，不按 UTC 切）', async () => {
     mockList.mockResolvedValue(
       okPage([{ ...READY_ROW, created_at: '2026-09-01T16:30:00Z' }]),
     )
@@ -349,7 +353,7 @@ describe('WorkerShipmentOrdersPage 待发货单列表（issue #7806 P1a）', () 
     expect(rows).not.toContain('2026-09-01')
   })
 
-  it('⑨ 可选附注缺值 ⇒ 发货联整行不印（不拿「帘种 —」白吃 50mm 版心）', async () => {
+  it('⑨ 可选附注缺值 ⇒ 成品出库单整行不印（不拿「帘种 —」白吃 50mm 版心）', async () => {
     mockList.mockResolvedValue(
       okPage([
         {
@@ -372,7 +376,7 @@ describe('WorkerShipmentOrdersPage 待发货单列表（issue #7806 P1a）', () 
     }
   })
 
-  it('⑩ 本机不能打印 ⇒ 发货联打印按钮 disabled + 先给可行动文案（不点了才失败）', async () => {
+  it('⑩ 本机不能打印 ⇒ 成品出库单打印按钮 disabled + 先给可行动文案（不点了才失败）', async () => {
     mockProbe.mockReturnValueOnce({
       ok: false,
       reason: 'insecure-context',

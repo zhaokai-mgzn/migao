@@ -451,7 +451,7 @@ export function washLabelRows(input: WashLabelRowsInput): WashLabelRow[] {
   const colorName = typeof input.item?.colorName === 'string' ? input.item.colorName.trim() : ''
   push('color', colorName, '货号')
 
-  // 安装去向（用户 2026-10-26：水洗唛 / 发货标签 / 入库标签都要有）—— 只印，不参与算料/计价/派工。
+  // 安装去向（用户 2026-10-26：水洗唛 / 成品出库单 / 入库标签都要有）—— 只印，不参与算料/计价/派工。
   push('installCommunity', input.item?.installCommunity ?? '', '安装小区')
   push('installRoom', input.item?.installRoom ?? '', '安装位置')
 

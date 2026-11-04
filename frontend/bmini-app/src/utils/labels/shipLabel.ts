@@ -1,5 +1,5 @@
 /**
- * 发货联（整套出库单，issue #7761 / #7786）的**行清单** —— bmini（小程序 / `/b` / 手持终端）侧。
+ * 成品出库单（一单一张、覆盖该订单全部套，issue #7761 / #7786）的**行清单** —— bmini（小程序 / `/b` / 手持终端）侧。
  *
  * ## 与 `/w/` 是**同一份行语义**（issue #8287）
  *
@@ -24,7 +24,7 @@ export const SHIP_LABEL_MISSING = ROWS_LABEL_MISSING
 /** 业务时区（与服务端 `businessClock` 同口径）：Asia/Shanghai = UTC+8（无夏令时）。 */
 const SHANGHAI_OFFSET_MINUTES = 8 * 60
 
-/** 发货联需要的最小行字段面（`GET /api/worker/shipment/orders` 的 `items[]`）。 */
+/** 成品出库单需要的最小行字段面（`GET /api/worker/shipment/orders` 的 `items[]`）。 */
 export interface ReadyShipmentOrderLike {
   order_id?: string | null
   order_no?: string | null
@@ -87,7 +87,7 @@ export function shipLabelDateText(value: unknown): string {
 }
 
 /**
- * 发货联的**行清单**（唯一真值）：屏幕预览、打印、判据都读它。
+ * 成品出库单的**行清单**（唯一真值）：屏幕预览、打印、判据都读它。
  *
  * 行序 = 拣货 / 贴箱的人从上到下核对的顺序（与 `/w/` 逐行相同）。
  * 🔴 **不重复印「客户」**：本系统的客户 = 收货人，同一个人印两遍只是白吃版心。
@@ -129,10 +129,10 @@ export function buildShipLabelRows(order: ReadyShipmentOrderLike | null | undefi
   return rows
 }
 
-/** 纸面输入：标题「发货联」+ 行清单；纸长按内容撑开（介质 `lengthMm` 的上下限）。 */
+/** 纸面输入：标题「成品出库单」+ 行清单；纸长按内容撑开（介质 `lengthMm` 的上下限）。 */
 export function shipLabelSpec(order: ReadyShipmentOrderLike | null | undefined): RowsLabelSpec {
   return {
-    title: '发货联',
+    title: '成品出库单',
     rows: buildShipLabelRows(order),
     shortCode: null,
   }

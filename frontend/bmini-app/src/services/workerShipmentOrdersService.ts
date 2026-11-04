@@ -1,5 +1,5 @@
 /**
- * 工人**待发货单**列表服务（issue #7806 P1a）—— 端点与字段面**照后端逐字同名**，零后端改动。
+ * 工人**待出库单**列表服务（issue #7806 P1a）—— 端点与字段面**照后端逐字同名**，零后端改动。
  *
  * ## 端点真值在后端（本文件不"照语义推测"）
  *
@@ -28,7 +28,7 @@ import { workerSessionHeaders } from '../utils/workerSession'
 export const SHIPMENT_ORDERS_ENDPOINT = '/api/worker/shipment/orders'
 
 /**
- * 一行 = 一张全完工待发货单（字段面与 `WorkerShipmentReadyService.rowView` 逐字同名）。
+ * 一行 = 一张全完工待出库单（字段面与 `WorkerShipmentReadyService.rowView` 逐字同名）。
  *
  * ⚠️ 全是**蛇形**键（与后端响应体一致）：本仓其它工人服务也是这个口径，端侧不另起一层
  * 驼峰映射（多一层转换就多一处会漂的地方）。
@@ -53,7 +53,7 @@ export interface ReadyShipmentOrder {
   completed_sets?: number | null
   processing_order_no?: string | null
   remark?: string | null
-  /** 随货标识（issue #7856，服务端已下发）：帘种，按部位序去重、`/` 连接；缺值 = 发货联该行不印 */
+  /** 随货标识（issue #7856，服务端已下发）：帘种，按部位序去重、`/` 连接；缺值 = 成品出库单该行不印 */
   curtain_types?: string | null
   /** 安装小区（可选附注；缺值 = 该行不印） */
   install_community?: string | null
@@ -109,7 +109,7 @@ function failure<T>(error: any, fallback: string): ShipmentOrdersResponse<T> {
 }
 
 /**
- * 读「全完工待发货单」列表（**只读**；没有写入口 —— 本页不发货，发货联打印只读本列表的行字段）。
+ * 读「全完工待出库单」列表（**只读**；没有写入口 —— 本页不发货，成品出库单打印只读本列表的行字段）。
  *
  * 服务端无工人 session ⇒ 401；调用页据此引导去工人登录页（而不是显示「没有单」）。
  */
@@ -121,9 +121,9 @@ export async function listReadyShipmentOrders(): Promise<
       baseURL: API_BASE_URL,
       headers: workerSessionHeaders(),
     })
-    return toResponse<ReadyShipmentOrdersPage>(res, '读取待发货单失败，请重试')
+    return toResponse<ReadyShipmentOrdersPage>(res, '读取待出库单失败，请重试')
   } catch (error: any) {
-    return failure<ReadyShipmentOrdersPage>(error, '读取待发货单失败，请重试')
+    return failure<ReadyShipmentOrdersPage>(error, '读取待出库单失败，请重试')
   }
 }
 

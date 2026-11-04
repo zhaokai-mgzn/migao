@@ -64,16 +64,16 @@ public final class WorkerPages {
      */
     public static final String PIECEWORK = "piecework";
 
-    /** 页面键：发货（**写面** = 拍照发货 / 生成发货单）。 */
+    /** 页面键：拍照发货（**写面** = 把这一单交给物流、记运单号 / 生成发货单）。 */
     public static final String SHIPMENT = "shipment";
 
     /**
-     * 页面键：**待发货单**（**读面** = 全完工订单名单 + 发货标签；issue #7814）。
+     * 页面键：**待出库单**（**读面** = 全完工订单名单 + 成品出库单；issue #7814）。
      *
      * <p>用户 2026-10-26（商家后台「设置工人端菜单」截图）逐字：「新增的工人菜单在这里也要能设置」。</p>
      *
      * <p>🔴 与 {@link #SHIPMENT} 是**两个能力**，不合并：拍照发货是「把这一单发出去」（写），
-     * 待发货单是「车间今天能发哪些、贴哪张标签」（读）。合成一个键的后果是商家想关掉其中一个
+     * 待出库单是「车间今天能发哪些、贴哪张标签」（读）。合成一个键的后果是商家想关掉其中一个
      * 就必须两个都关（菜单开关是**显隐**，不是权限，关错了现场就没入口可用）。</p>
      */
     public static final String TO_SHIP = "to_ship";
@@ -170,8 +170,8 @@ public final class WorkerPages {
         labels.put(PIECEWORK, "计件工资报表");
         labels.put(ORDER, "订单");
         labels.put(CUT_CALC, "裁高计算器");
-        labels.put(SHIPMENT, "发货");
-        labels.put(TO_SHIP, "待发货单");
+        labels.put(SHIPMENT, "拍照发货");
+        labels.put(TO_SHIP, "待出库单");
         labels.put(STOCK, "库存修正");
         labels.put(INBOUND, "拍照入库");
         labels.put(REPRINT, "补打入库标签");
@@ -200,7 +200,7 @@ public final class WorkerPages {
     /** 岗位码：**仓管**（拍照入库 + 补打入库标签 + 库存修正）。 */
     public static final String POSITION_WAREHOUSE = "仓管";
 
-    /** 岗位码：**发货**（拍照发货 + 待发货单）。 */
+    /** 岗位码：**发货**（拍照发货 + 待出库单）。 */
     public static final String POSITION_SHIPPING = "发货";
 
     /**
@@ -263,7 +263,7 @@ public final class WorkerPages {
         labels.put(POSITION_CUTTING, "裁剪：报工 + 计件工资报表");
         labels.put(POSITION_SEWING, "车位：报工 + 计件工资报表");
         labels.put(POSITION_WAREHOUSE, "仓管：拍照入库 + 补打入库标签 + 库存修正");
-        labels.put(POSITION_SHIPPING, "发货：发货 + 待发货单");
+        labels.put(POSITION_SHIPPING, "发货：拍照发货 + 待出库单");
         return labels;
     }
 
