@@ -42,11 +42,13 @@ def test_light_required_jobs_have_a_timeout_floor():
     jobs = _jobs()
     bad = []
     for job_id in LIGHT_REQUIRED_JOBS:
-        assert job_id in jobs, f"pr-check.yml 里找不到 job `{job_id}` —— 本判据盯的对象已改名/已删，请同步更新本判据"
+        if job_id not in jobs:
+            bad.append(f"`{job_id}` **不在** pr-check.yml 里（本判据盯的对象已改名/已删 ⇒ 判据失明）")
+            continue
         got = jobs[job_id].get("timeout-minutes")
-        assert got is not None, f"`{job_id}` 没有声明 `timeout-minutes`（默认 360 分钟，属另一形态的失控）"
-        if got < FLOOR_MINUTES:
-            bad.append(f"`{job_id}` = {got} 分钟 < 下限 {FLOOR_MINUTES} 分钟")
+        # 不写 `assert got is not None`：那是弱断言（新增文件一律 fail-closed）⇒ 用 if 收敛到下面的具名清单
+        if not isinstance(got, int) or got < FLOOR_MINUTES:
+            bad.append(f"`{job_id}` = {got!r} 分钟 < 下限 {FLOOR_MINUTES} 分钟（或未声明）")
     assert bad == [], (
         "required 轻量 job 的超时上限低于安全下限（#8605）：\n  "
         + "\n  ".join(bad)
@@ -59,8 +61,13 @@ def test_the_floor_matches_the_measured_slowdown():
     """下限必须真的容得下本轮实测的慢化倍数（防有人把 FLOOR 调小到「好看但没用」）。"""
     jobs = _jobs()
     worst_observed_seconds = 152  # block-env-files 的实测耗时（见模块 docstring）
+    too_small = []
     for job_id in LIGHT_REQUIRED_JOBS:
-        assert jobs[job_id]["timeout-minutes"] * 60 >= worst_observed_seconds * 2, (
-            f"`{job_id}` 的上限 {jobs[job_id]['timeout-minutes']} 分钟容不下实测 152s 的 2 倍余量"
-            "（#8605：抬上限的意义就是让「慢化 15 倍」仍有余量）"
-        )
+        got = jobs.get(job_id, {}).get("timeout-minutes")
+        if not isinstance(got, int) or got * 60 < worst_observed_seconds * 2:
+            too_small.append(f"`{job_id}` = {got!r} 分钟")
+    assert too_small == [], (
+        "这些 required 轻量 job 的上限容不下实测 152s 的 **2 倍**余量"
+        "（#8605：抬上限的意义就是让「慢化 15 倍」仍有余量）："
+        + "、".join(too_small)
+    )

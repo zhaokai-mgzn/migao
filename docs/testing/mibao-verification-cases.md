@@ -7452,7 +7452,7 @@
 
 ### MC-188. required 轻量 job 的超时上限有安全下限（#8605） 🔵
 ```
-你: PR 的所有检查看起来都没问题，但有几个检查显示「cancelled」，PR 就一直卡在不能合并；点进去也没有任何断言失败，像是平台挂了。
+你: PR 的所有检查看起来都没问题，但有几个检查显示「已取消」，PR 就一直卡在不能合并；点进去也没有任何断言失败，像是平台挂了。
 数据: **判据 1（会红）**：`pr-check.yml` 的三个 required 轻量 job（`block-env-files` / `case-truth-check` / `label-needs-changes`）必须声明 `timeout-minutes`，且 **≥ 5 分钟**。改回 2 分钟 ⇒ 逐条具名报红。执行点 = tests/unit_ci_workflows/test_required_light_job_timeout_floor.py::test_light_required_jobs_have_a_timeout_floor。
 数据: **判据 2（会红）**：上限必须容得下本轮实测 152s 的 **2 倍**余量（防把下限调到「好看但没用」）。执行点 = ::test_the_floor_matches_the_measured_slowdown。
 跳过: [backend-contract] 纯静态 YAML 面判据（读 workflow 的 timeout-minutes，零 runner、零真实栈），非 LLM 行为，不进入 agent-eval 冒烟
