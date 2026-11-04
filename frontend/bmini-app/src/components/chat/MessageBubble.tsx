@@ -335,8 +335,9 @@ export default function MessageBubble({ message, onInteract, onContentGrow }: Me
                     ? 'message-bubble__source-text message-bubble__source-text--human'
                     : 'message-bubble__source-text'
                 }
+                data-testid={isHuman ? 'human-agent-label' : 'ai-generated-label'}
               >
-                {isHuman ? '👩‍💼 人工客服' : '🤖 AI 助手'}
+                {isHuman ? '👩‍💼 人工客服' : '🤖 AI 助手 · AI生成'}
               </Text>
             </View>
           ) : null

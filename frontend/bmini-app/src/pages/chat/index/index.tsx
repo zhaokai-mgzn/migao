@@ -11,6 +11,7 @@ import { consumeWorkerLanding } from '../../../utils/qrLogin'
 import { WORKER_HOME_ROUTE } from '../../../utils/inbound/gaps'
 import MessageList from '../../../components/chat/MessageList'
 import ChatHeader, { nextHeaderCollapsed } from '../../../components/chat/ChatHeader'
+import AiGeneratedNote from '../../../components/chat/AiGeneratedNote'
 import MessageInput from '../../../components/chat/MessageInput'
 import QuickActions from '../../../components/chat/QuickActions'
 // 黄金策唤出授权门 + 能力位来源（issue #5642 功能⑤）
@@ -190,6 +191,9 @@ export default function ChatPage() {
         onToggle={toggleHeader}
         onNewChat={handleNewChat}
       />
+
+      {/* AI 生成内容常驻提示（微信「深度合成-AI问答」类目要求 + 《标识办法》2025-09-01） */}
+      <AiGeneratedNote />
 
       {/* 🔴 黄金策唤出授权门（issue #5642 功能⑤）：未授权 ⇒ 明确「需要管理员授权」+ 可行动引导 */}
       <MibaoAccessGate allowed={mibaoAllowed}>

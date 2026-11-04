@@ -846,7 +846,7 @@
 真值: auth.qr-login-ticket
 溯源: 2026-10-26 新增（issue #7825）：现场 = 顶栏「手机端」二维码只是裸链接（不带登录交接），换浏览器 / App 或本机存储被清后每次扫码都要重新输密码。冻结口径 = 一次性票据（JWT 类型 qr_login、120 秒、兑换即吊销 jti）+ 手机端兑换后与密码登录同一套 30 天会话 + 签发失败降级裸入口 + 启动探针（续期失败原因本地可读）。 ｜ tags: auth, session, qr-login, bmini, admin-web
 
-## B 端小程序域（61 case）
+## B 端小程序域（62 case）
 
 ### BM-001. B 端员工小程序登录 - 账号密码（用户名@企业编码）登录，不再走微信手机号匹配 🔵
 ```
@@ -923,6 +923,19 @@
 ```
 真值: frontend-fix.no-api-change
 溯源: 2026-09-17 新增（issue #3997 M4-G-3）：消费 M4-G-2 冻结契约 GET/POST /api/admin/production/orders/{orderId}/operations[/{operationId}/report]；truths_ref 用 frontend-fix.no-api-change（本包不改后端 API；生产/扫码域暂无专属真值 key） ｜ 2026-09-21（issue #4961 用例库同步，配套 feat/4960-4961-integration）：第 3 条 data_check 补口径订正 —— 「✅ 订单生产完成」的触发键 `order_completed` 服务端改判为「**全部活跃工序实例报满**」（不再是「必完工序全绿」），页面渲染条件（`isCompleted`，同一门禁也决定「发货」入口是否出现）**一字未动**。⚠️ **按用例库纪律，`user_inputs` 一字未动**：其中「必完工序全绿显示「✅ 订单生产完成」」这句是 #4961 之前的工人口径描述，**保留原文**（改判说明只写在 data_checks / merge_log 里，不改 `user_inputs`）；`expectations` / `skip_reason` / `traces` 同样未动。**判据一格不放宽**。 ｜ 2026-09-21（issue #4967，**语义改判 + 判据改钉**）：扫码语义由「完工（做完扫一次）」改判为 **开工 / 领活**（用户逐字「工人都是先扫码报工后再真实进行生产，不是先生产再扫码报工」）⇒ A 模式一屏的按钮文案由【完成】改为【开工】（**改钉≠放宽**：判据对象不变，期望按用户裁定变更）；屏上「本套工序都已完成，无需再报工」改为「本套工序都已被领走，无需再领」。新增两条 data_check：① 开工语义（按钮文案 + 只调一次 completeByScan + 未确定工序/旧码降级两条**不出现**判据）；② **按套展示工序细节**（`set_overview` 消费 + 缺值不渲染 + 未定价不折 0）。**记账时点与端点一字未变**（仍是 `POST /api/worker/production/scan/complete`，一次事务）；边界登记见 PG-018 与 docs/design/set-code-and-scan-loop.md §4.1 改判块。 ｜ 2026-09-23（issue #5198）：第 5 条 data_check 新增「报工数量键盘 = 小数键位（`digit`）」—— 与 admin-web 侧数字输入框同一族病灶（打不出 0.x）；**判据一格不放宽**（数量校验 / 请求体 / 幂等键一字未动，只把键盘类型这一格钉死并给红证）。 ｜ 2026-09-28（issue #5750，**降级形态改钉**）：用户问「IOS端的扫一扫功能也提示浏览器不支持？」⇒ 现取确认那条提示判的是「在不在微信里」（`canUseNativeScan()` = UA 含 MicroMessenger 且 `window.wx.scanQRCode` 是函数），**与 iOS 无关**；而本仓拍照入库链路早已验证「拍照 + 本机 jsQR 解码」在任何浏览器都能走通 ⇒ 把纯浏览器的降级由「只能手输」改为**拍照识别**（复用 barcodeDecode，0 次 LLM），失败/取消再回落到手输。新增第 6 条 data_check；`user_inputs` / `expectations` / `precondition` 一字未动、**无放宽**（只换了降级路径，扫码后的三级优先与企业口径、报工请求体、幂等键全未变）。旧常量 `H5_SCAN_UNAVAILABLE_HINT` 由 `H5_SCAN_PHOTO_HINT` / `H5_SCAN_PHOTO_FAILED_HINT` 取代（不留死导出）。：用户逐字「**没有用处的页面就直接删了**，商家小程序壳保留」⇒ 小程序侧第二份实现 `frontend/bmini-app/src/pages/production/index/**` **整页删除**（页面注册 / 路由常量 / 入口台账 / 两份工人面台账 / 直接 import 该页的测试同批清理；工人工作台的「扫码报工」主按钮 = 删页后死链，一并删除，身份卡 + 入库 / 补打 / 发货三张行卡保留）。本用例的**断言对象随之改钉到 H5 面**（工人报工的唯一实现 = frontend/worker-h5 的 `/w/`）：原第 4 / 5 格的证据由 `frontend/bmini-app/tests/production-scan-complete.test.tsx` 换成 `frontend/worker-h5/tests/worker-h5-scan-complete.test.mjs`；原第 6 格（小程序 `<Input>` 键盘 digit）与原第 7 格（页内扫码降级）随页面退场（同病灶的现役判据 = UI-055 与 h5-platform-*.test.ts，见 data_checks 末格）。`user_inputs` / `expectations` / `title` / `persona` **一字未动**（冻结字段；且该流程串在 H5 上逐条仍成立：扫码 / 输码 → 一屏 →【报工】→ 本套工序明细）。 ｜ 2026-10-14（issue #6868 **文案口径统一包**，用户同日逐字裁定②「工人屏全部统一到『报』」，承接裁定①「扫码领活改成扫码报工」）：工人可见面的按钮 / 回执 / 状态列**统一到「报」**；**记账口径一字未动**（`started_at` / `done_at` / `done_qty` / 计件、端点 `POST /api/worker/production/scan/complete`、请求体、幂等键、`id=wh5-report` 及全部 DOM id / class 均未改）——只换词。**改钉**（期望值按新口径变，判据对象与断言强度**一格不放宽**）：① 第 3 条 data_check 「H5 一屏的大按钮文案」由 **【开工】⇒【报工】**；② 回执句尾由「本单/本套工序都**领完了**」⇒「…都**报完了**」（`doneNotice`）；③ 无工序说明「本部位推断不出**待领**工序」⇒「**待报**工序」；④ 本套明细状态列「**已领 / 待领**」⇒「**已报工 / 待报工**」（用户逐字选了这两个词）。判据载体 = frontend/worker-h5/tests/worker-h5-page.test.mjs（按钮）+ frontend/worker-h5/tests/worker-h5-operation-display.test.mjs（回执句尾）+ frontend/worker-h5/tests/worker-h5-scan-complete.test.mjs（状态列）+ frontend/bmini-app/tests/worker-scan-report-copy-same-source.test.ts（跨面同源守卫：**收掉旧白名单**并把这些词并入 BANNED，**判据强度只增不减**）。⚠️ `user_inputs` / `expectations` / `title` / `persona` **仍一字未动**（冻结字段，同本用例 2026-09-21 先例）—— 其中「点【开工】= 领活」是 #4967 当时的工人口径原文，**保留原文**，本次改判只写在 data_checks 与 merge_log 里。 ｜ 2026-10-14（issue #6868 **文案口径统一包**，集成侧追加授权）：**`user_inputs` 本刀改钉**（依据 = 用户 2026-10-14 逐字裁定②「工人屏全部统一到『报』」）。**为什么这次破例**：`user_inputs` 是**逐字搬运**字段（`render_cases.py` 的 VERBATIM_FIELDS）只说明「渲染不改写它」，**不说明「内容失真也不许修」** —— 它今天逐字写着「点【开工】= 领活」，而按钮已改判为【报工】且**就在本条用例的第 3 条 data_check 里被改钉**，「用例库自己描述一个不存在的按钮」比「动一次冻结字段」更危险（看用例的人会照旧词去找按钮）。**逐条（旧字面 → 新字面 + 为什么失真）**：① `点「完成报工」` → `点「报工」`（#4967 后按钮早已不叫「完成报工」）。② ⑦ `一个大按钮**【开工】**` → `**【报工】**`（本刀改判的正是这个按钮）。③ `点【开工】= 领活（先领活再生产，完工不扫）` → `点【报工】= 报工（先报工再生产，完工不扫）`（全句是**对这个按钮**的说明 ⇒ 随按钮改判；`先…再生产、完工不扫` 记的是**动力学语义**，**一字未动**）。④ 回执句尾「都**领完了**」/ 状态列「**待领 / 已领**」/ 「**待领**工序」：本刀已把可见文案改判为「都**报完了**」/「**待报工 / 已报工**」/「**待报**工序」，`user_inputs` 里若逐字复现旧词同样失真 ⇒ 同步。⚠️ **本刀只动「因按钮文案变更而失真的字面」**：场景语义、流程串、数量与工序描述**一字未动**；`title` / `persona` / `expectations` / `precondition` 亦**未动**（`title` 里的「扫码开工/领活」是**条目标题**、不是屏幕上的字面量，按集成侧口径不动）。**门禁读数**：重渲染 + 生成物新鲜度 + Case Trust / Case Contract 见本 PR body（本包已实跑）。 ｜ tags: bmini, production, qr-report
+
+### BM-007. AI 生成内容标识（微信「深度合成-AI问答」类目 + 《人工智能生成合成内容标识办法》2025-09-01）—— 每条 AI 气泡含「AI生成」+ 对话页常驻说明 🔵
+```
+你: 商家/工人在「问黄金策」里看到 AI 回复：每条 AI 消息必须明确标注「AI生成」，对话页常驻一行「内容由人工智能生成，仅供参考」；转人工后的人工消息不能被标成 AI 生成
+期望: direct_reply
+数据: 判据 1·assistant 气泡来源标识含「AI生成」（改前只有「🤖 AI 助手」，不含要求字样）：执行点 frontend/bmini-app/tests/chat-ai-generated-label.test.tsx；红证 = 文案改回「🤖 AI 助手」⇒ `ai-generated-label` 的 textContent 不含「AI生成」当场红
+数据: 判据 2·人工客服消息**不得**冒充 AI 生成：`ai-generated-label` 不存在，`human-agent-label` 含「人工客服」
+数据: 判据 3·对话页常驻说明存在且含「人工智能生成」（`ai-generated-disclaimer`）
+数据: 判据 4·接线（不是只写了组件）：对话页源码真的 import 并渲染 `<AiGeneratedNote />`；删掉页面里的渲染 ⇒ 判据 4 红
+跳过: [backend-contract] 确定性前端判据（jest: frontend/bmini-app/tests/chat-ai-generated-label.test.tsx），不经过 LLM 对话/工具，不进入 agent-eval 冒烟
+```
+真值: frontend-fix.no-api-change
+溯源: 2026-11-04 新增（issue #8624）：微信「深度合成 → AI问答」类目备注要求 AI 生成内容在显著位置标注「AI生成/人工智能生成」，《人工智能生成合成内容标识办法》2025-09-01 施行；改前气泡只有「🤖 AI 助手」（不含要求字样）、页面无常驻说明。边界：bmini 无复制/导出入口，隐式标识（元数据）对纯文本无载体、口径未明。 ｜ tags: bmini, chat, ai-label, compliance
 
 ### BM-008. 黄金策唤出授权门（按权限码）- 管理员默认可唤；未授权员工明确「需要管理员授权」+ 可行动引导 🔵
 ```
@@ -15020,13 +15033,13 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：1017（活跃 155，跳过 862）
-- tier 分布：smoke 15 / normal 940 / adversarial 33
+- 用例总数：1018（活跃 155，跳过 863）
+- tier 分布：smoke 15 / normal 941 / adversarial 33
 - 售后域：16
 - Agent 核心域：13
 - API 层域：21
 - 登录认证域：14
-- B 端小程序域：61
+- B 端小程序域：62
 - 分类域：3
 - 对话边界域：53
 - 跨域：3

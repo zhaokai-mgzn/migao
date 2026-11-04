@@ -209,6 +209,37 @@ cases:
   # 「去哪个批次裁多少米」这条真值**仍在**，但承载面换成 H5 的**精裁输出清单**（`set_overview.cut_plan`
   # 的 `batch_no` + 用料 / 片数 / 每片长）⇒ 承接用例 = **PG-058**（.github/cases/processing-order.yml）。
   # 不保留空壳：不许留下「描述了不存在的页面」的用例。
+  - id: BM-007
+    legacy_id: ""
+    title: "AI 生成内容标识（微信「深度合成-AI问答」类目 + 《人工智能生成合成内容标识办法》2025-09-01）—— 每条 AI 气泡含「AI生成」+ 对话页常驻说明"
+    domains:
+      - bmini
+    tier: normal
+    tags:
+      - bmini
+      - chat
+      - ai-label
+      - compliance
+    truths_ref:
+      - frontend-fix.no-api-change
+    user_inputs:
+      - "商家/工人在「问黄金策」里看到 AI 回复：每条 AI 消息必须明确标注「AI生成」，对话页常驻一行「内容由人工智能生成，仅供参考」；转人工后的人工消息不能被标成 AI 生成"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "判据 1·assistant 气泡来源标识含「AI生成」（改前只有「🤖 AI 助手」，不含要求字样）：执行点 frontend/bmini-app/tests/chat-ai-generated-label.test.tsx；红证 = 文案改回「🤖 AI 助手」⇒ `ai-generated-label` 的 textContent 不含「AI生成」当场红"
+      - "判据 2·人工客服消息**不得**冒充 AI 生成：`ai-generated-label` 不存在，`human-agent-label` 含「人工客服」"
+      - "判据 3·对话页常驻说明存在且含「人工智能生成」（`ai-generated-disclaimer`）"
+      - "判据 4·接线（不是只写了组件）：对话页源码真的 import 并渲染 `<AiGeneratedNote />`；删掉页面里的渲染 ⇒ 判据 4 红"
+    skip_reason: "[backend-contract] 确定性前端判据（jest: frontend/bmini-app/tests/chat-ai-generated-label.test.tsx），不经过 LLM 对话/工具，不进入 agent-eval 冒烟"
+    merge_log: "2026-11-04 新增（issue #8624）：微信「深度合成 → AI问答」类目备注要求 AI 生成内容在显著位置标注「AI生成/人工智能生成」，《人工智能生成合成内容标识办法》2025-09-01 施行；改前气泡只有「🤖 AI 助手」（不含要求字样）、页面无常驻说明。边界：bmini 无复制/导出入口，隐式标识（元数据）对纯文本无载体、口径未明。"
+    traces:
+      tests:
+        - "frontend/bmini-app/tests/chat-ai-generated-label.test.tsx"
+      ci:
+        - bmini-app.yml
+      verifies: []
+
   - id: BM-008
     legacy_id: ""
     title: "黄金策唤出授权门（按权限码）- 管理员默认可唤；未授权员工明确「需要管理员授权」+ 可行动引导"
