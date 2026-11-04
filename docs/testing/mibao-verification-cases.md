@@ -4245,7 +4245,7 @@
 ```
 溯源: 2026-10-31 新增（issue #8295）：两步确认，避免误写 ｜ tags: ui, preview
 
-## 杂项域（232 case）
+## 杂项域（233 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -7742,6 +7742,19 @@
 跳过: [frontend-contract] 纯前端文案 + 渲染产物判据（零 LLM / 零网络 / 零 DB / 零权限面）：判据在 traces.tests 的 worker-h5 渲染测试里（不进 agent-eval 冒烟）；权威执行面 = frontend/worker-h5/tests/worker-h5-no-device-name-copy.test.mjs 与既有 worker-h5 渲染判据
 ```
 溯源: 2026-11-05 新增（issue #8683）。现取读数（`git show origin/main:frontend/bmini-app/src/pages/worker/home/index.tsx`）：bmini 工人首页没有裁高计算卡片 —— issue 正文写的落点（bmini 工人首页卡片）与 main 事实不符；「裁高计算（一体机）」的用户可见落点实际在 frontend/worker-h5：页头入口栏（裁高入口链接）、machine.mjs 的屏上标题、machine.html 的页面标题。⇒ 按 issue 的意图（两端同一个入口、不按端分叉）改这三处，并落类级守卫（用户可见面出现端名 ⇒ 红）；bmini 侧只改两处引用旧文案的注释，终端仓零改动。红证 = 两次单变量注入逐条实跑并逐字节还原（屏上标题改回带端名 ⇒ 4 failed；入口文案改回带端名 ⇒ 4 failed）；还原后 node --test 全量 worker-h5 = 421 passed / 0 failed。 ｜ tags: user-copy, no-device-name, worker-h5, meta-guard, class-level, no-end-fork, red-proof
+
+### MC-207. 订单状态 packed（已打包）三轴分离（issue #8686）：动作面（Agent 四个工具 schema 枚举）保持排除、显示面（PC 订单列表徽标 + 详情/状态展示）补「已打包」与未知状态兜底、本体 order.status 显式登记「6 个 / 无 packed / 暂不同源」+ 收敛条件；依据 = 用户 2026-09-26 裁定「打包与发货都是工人的动作」 🔵
+```
+你: 工人已在 H5 把订单推进到「已打包」后，商家在 PC 订单列表与详情必须看到「已打包」，而不是空白或「暂无数据」
+你: Agent 不许把订单改到「已打包」（打包是工人动作，用户 2026-09-26 裁定）；任何未知状态都必须有兜底标签，不得渲染成 undefined
+数据: **判据 1 · 动作面冻结（会红）**：`AGENT_ORDER_STATUSES` 必须 == 生成物全集 − {PACKED}（现取 6 个、不含 packed），四个工具 schema 的枚举仍由它派生（`list(AGENT_ORDER_STATUSES)`）；改成全集 / 改成别的集合 ⇒ 具名红「Agent 面又拿到 packed 了」。注入红证实测：把常量改成 `= ORDER_STATUSES` ⇒ 2 条红（`test_agent_action_face_stays_the_full_set_minus_packed` 与 `test_agent_status_constant_is_derived_from_the_full_set_not_hand_copied`），逐字节还原后 5 条全绿（cmp 自证）。执行点 = backend/ai-agent-service/tests/test_order_status_axis_separation.py
+数据: **判据 2 · 构造式与裁定出处（会红）**：常量必须仍由 `tuple(s for s in ORDER_STATUSES if s != PACKED)` 派生（AST 结构断言；改成手写 6 个字面量 = 第二份真值 ⇒ 红）；模块 docstring 必须留住裁定出处（`OrderShipmentService.java` + 日期 + 原文「打包与发货都是工人的动作」）与三轴「暂不同源」登记 + 收敛条件，删任一处 ⇒ 具名红。执行点 = 同判据 1 的判据文件
+数据: **判据 3 · 显示面（会红）**：`displayOrderStatus('packed')` == { label: '已打包', color: 'info' }；未知状态必须有兜底标签（不得是 undefined）；同时 `BackendToFrontendStatus` 仍只有 6 个键、不含 packed（显示放开不授予写路径）；列表/看板徽标 `orderStatusChipFor('packed')` == { tone: 'info', label: '已打包' }（不再落「暂无数据」）。注入红证实测：删 packed 展示分支 ⇒ 红（实际 { 未知状态, default }）；删兜底 ⇒ 红（实际 label/color 皆 undefined）；删徽标分支 ⇒ 红（实际 { 暂无数据 }）；逐字节还原后 16 条全绿。执行点 = frontend/admin-web/tests/unit/components/order-status-display.test.ts 与 frontend/admin-web/tests/unit/lib/status-chip.test.ts
+数据: **判据 4 · 本体独立（会红）**：`STATUS_LEXICON['order.status']` == 6 个且不含 packed（顺序同 Agent 面），schema.yaml 落到 `Ontology` 的枚举同值；把词表补成 7 个 / 加 packed ⇒ 具名红（本体是交叉校验的另一侧，同步掉就失去第二侧）。注入红证实测：词表改成 7 个含 packed ⇒ 2 条红，逐字节还原后 cmp 相等。执行点 = 同判据 1 的判据文件
+前置: 零运行期前置（纯结构 + 纯函数判据）：被测对象 = `backend/ai-agent-service/app/constants/order_status.py` 的构造式与 docstring、前端 `frontend/admin-web/src/types/index.ts` 的 displayOrderStatus / `frontend/admin-web/src/lib/status-chip.ts` 的 orderStatusChipFor、`backend/ai-agent-service/app/ontology/{loader.py,schema.yaml}` 的 order.status 词表。不成立时红形态已内建：导入失败或文件缺失 ⇒ 判据红。零网络 / 零 LLM / 零 DB。
+跳过: [backend-contract] 纯结构 + 纯函数判据（Agent 常量 AST 构造式 / 前端展示与徽标映射 / 本体词表），零网络、零 LLM、不起真库；不进 agent-eval 冒烟
+```
+溯源: 2026-11-05 新增（issue #8686，按 issue 评论的裁定落：动作面保持排除 + 把理由变成判据；显示面修「已打包」+ 兜底；本体显式登记不同源）。 依据（逐字）= `backend/admin-api/src/main/java/com/migao/admin/service/OrderShipmentService.java` 打包方法 javadoc 「口径（用户 2026-09-26 裁定「打包与发货都是工人的动作」）：packed 由工人在 H5 推进」。 取号 MC-207（现取 origin/main 的 misc.yml 最高 MC-206、claims 目录到 8688-MC-206 ⇒ 207 未被占用）。 交付 = ① order_status.py 三轴登记 + 收敛条件（动作面 6 / DB 全集 7 / ontology 6）② 显示面 displayOrderStatus('packed') 与 orderStatusChipFor('packed') 补「已打包」+ 未知状态兜底 ③ ontology 两侧登记不同源 ④ 判据 test_order_status_axis_separation.py（5 条）+ 两个前端测试文件扩展（11 条）。 **动作面零放开**：四个工具 schema 枚举仍 6 个（判据 1 现取断言 + 生成物差集 == {packed}）。 ｜ tags: order-status, packed, display-only, action-freeze, ontology-divergence, red-proof, backend-contract
 
 ## 商家入驻域（7 case）
 
@@ -15267,8 +15280,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：1034（活跃 161，跳过 873）
-- tier 分布：smoke 15 / normal 957 / adversarial 33
+- 用例总数：1035（活跃 161，跳过 874）
+- tier 分布：smoke 15 / normal 958 / adversarial 33
 - 售后域：16
 - Agent 核心域：13
 - API 层域：21
@@ -15284,7 +15297,7 @@
 - 人事域：13
 - 知识问答域：9
 - 客户主数据迁移域：10
-- 杂项域：232
+- 杂项域：233
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：76
@@ -15584,6 +15597,7 @@
 - MC-203: OrderService 门面收尾第一批（issue #8681 的 P2-1e，部分交付）：租户可见性认定与单号解析两个调用方改直连 OrderQueryService、发货前置判定与发货人取值两个调用方改直连 OrderLifecycleService，门面 1,832 行降到 1,725 行并删掉这 4 个转发方法（公开面 29 → 25），另清理生命周期族搬走后失去调用方的 6 个私有死委托
 - MC-204: 订单状态单一源生成到 TS / Python（issue #8198 的 P2-2b）：从 Java `OrderStatusTransitions` 的 7 个常量 + 三张表生成两份**入库**产物（前端 `order-status.generated.ts` / Agent `order_status_generated.py`），删掉 TS 手写的后端状态联合体与两处映射表里的裸值、4 个工具 schema 的订单状态枚举改由生成物派生；生成器确定性（两次重生成逐字节相等，产物里零环境指纹）+ 新鲜度判据三态（0 同步 / 1 陈旧 / 3 无法判定）+ 手写面零裸字面量扫面 + 台账只许缩短；行为零变化（Agent 面仍只暴露 6 个状态，打包态走显式冻结窄化）
 - MC-206: 工人端「裁高计算（一体机）」更名「裁高计算」（issue #8683）：手持标签机现在也能进这页 ⇒ 同一个入口两端都在用，端名就是错误陈述；入口文案 / 机台屏 h1 / machine.html title 三处同批改，并落一条类级守卫（用户可见面出现端名 ⇒ 红），不按端分叉、不引入第二套 UI 分支
+- MC-207: 订单状态 packed（已打包）三轴分离（issue #8686）：动作面（Agent 四个工具 schema 枚举）保持排除、显示面（PC 订单列表徽标 + 详情/状态展示）补「已打包」与未知状态兜底、本体 order.status 显式登记「6 个 / 无 packed / 暂不同源」+ 收敛条件；依据 = 用户 2026-09-26 裁定「打包与发货都是工人的动作」
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）

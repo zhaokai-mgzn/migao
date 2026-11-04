@@ -1,4 +1,4 @@
-// case_ids: UI-002, DA-007, UI-019, UI-030
+// case_ids: UI-002, DA-007, UI-019, UI-030, MC-207
 import { describe, it, expect } from 'vitest'
 import {
   chipToneClasses,
@@ -59,6 +59,11 @@ describe('status-chip 语义色 chips', () => {
     expect(orderStatusChipFor('cancelled')).toEqual({ tone: 'neutral', label: '已关闭' })
     expect(orderStatusChipFor('shipped')).toEqual({ tone: 'info', label: '已发货' })
     expect(orderStatusChipFor('completed')).toEqual({ tone: 'success', label: '已完成' })
+  })
+
+  // issue #8686：packed 是工人推进的打包态，商家侧**必须看得到**（此前落「暂无数据」兜底）。
+  it('orderStatusChipFor 对 packed 显示「已打包」，不落「暂无数据」', () => {
+    expect(orderStatusChipFor('packed')).toEqual({ tone: 'info', label: '已打包' })
   })
 
   it('afterSalesStatusChipFor 未知/空状态回退 neutral 且 label=暂无数据', () => {
