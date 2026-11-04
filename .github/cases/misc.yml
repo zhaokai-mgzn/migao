@@ -7889,3 +7889,30 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+  - id: MC-188
+    legacy_id: ''
+    title: required 轻量 job 的超时上限有安全下限（#8605）
+    domains:
+      - misc
+      - ci
+    tier: normal
+    tags:
+      - ci
+      - required
+      - false-red
+      - timeout
+    truths_ref: []
+    user_inputs:
+      - "PR 的所有检查看起来都没问题，但有几个检查显示「已取消」，PR 就一直卡在不能合并；点进去也没有任何断言失败，像是平台挂了。"
+    expectations: []
+    data_checks:
+      - "**判据 1（会红）**：`pr-check.yml` 的三个 required 轻量 job（`block-env-files` / `case-truth-check` / `label-needs-changes`）必须声明 `timeout-minutes`，且 **≥ 5 分钟**。改回 2 分钟 ⇒ 逐条具名报红。执行点 = tests/unit_ci_workflows/test_required_light_job_timeout_floor.py::test_light_required_jobs_have_a_timeout_floor。"
+      - "**判据 2（会红）**：上限必须容得下本轮实测 152s 的 **2 倍**余量（防把下限调到「好看但没用」）。执行点 = ::test_the_floor_matches_the_measured_slowdown。"
+    skip_reason: "[backend-contract] 纯静态 YAML 面判据（读 workflow 的 timeout-minutes，零 runner、零真实栈），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-11-04 新增（issue #8605）。取号 MC-188。红证：把 `block-env-files` 的 timeout-minutes 改回 2 ⇒ 两条判据同时红（`2 failed`）；恢复 ⇒ `2 passed`。"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_required_light_job_timeout_floor.py"
+      ci:
+        - pr-check.yml
+      verifies: []

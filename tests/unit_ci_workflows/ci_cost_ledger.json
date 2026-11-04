@@ -365,7 +365,7 @@
       "workflow": "pr-check.yml",
       "job": "block-env-files",
       "check_name": "Block .env files (except .env.example)",
-      "hard_kill_seconds": 120,
+      "hard_kill_seconds": 600,
       "hard_kill_source": "workflow `timeout-minutes: 2`",
       "required": true,
       "measured": {
@@ -422,7 +422,7 @@
       "workflow": "pr-check.yml",
       "job": "case-truth-check",
       "check_name": "Case Contract (truths_ref)",
-      "hard_kill_seconds": 120,
+      "hard_kill_seconds": 900,
       "hard_kill_source": "workflow `timeout-minutes: 2`",
       "required": true,
       "measured": {
@@ -550,7 +550,7 @@
       "workflow": "pr-check.yml",
       "job": "label-needs-changes",
       "check_name": "Label needs-changes on any CI failure",
-      "hard_kill_seconds": 120,
+      "hard_kill_seconds": 600,
       "hard_kill_source": "workflow `timeout-minutes: 2`",
       "required": false,
       "measured": null,
