@@ -129,10 +129,10 @@
       ]
     },
     {
-      "method": "AgentBatchService#recoverStaleExecuting",
+      "method": "AgentBatchLeaseService#recoverStaleExecuting",
       "path": "AgentBatchMapper#markStaleExecutingPartial",
       "call_anchor": "batchMapper.markStaleExecutingPartial(",
-      "evidence": "backend/admin-api/src/main/java/com/migao/admin/service/AgentBatchService.java::batchMapper.markStaleExecutingPartial(",
+      "evidence": "backend/admin-api/src/main/java/com/migao/admin/service/AgentBatchLeaseService.java::batchMapper.markStaleExecutingPartial(",
       "case_ids": [
         "MC-197"
       ]

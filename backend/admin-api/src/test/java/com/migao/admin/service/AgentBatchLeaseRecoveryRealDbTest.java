@@ -94,6 +94,8 @@ class AgentBatchLeaseRecoveryRealDbTest {
     /** 长活会话（autoCommit）：夹具与直接 mapper 调用都走它 —— mapper 代理不能挂在已关闭的 session 上。 */
     private static SqlSession session;
     private static AgentBatchService batchService;
+    /** 租约服务（issue #8285 拆出的独立类）：回收 / 心跳都走它，装配与生产一致（真 mapper）。 */
+    private static AgentBatchLeaseService leaseService;
 
     @BeforeAll
     static void startRealPostgresAndFixtures() throws Exception {
@@ -139,6 +141,7 @@ class AgentBatchLeaseRecoveryRealDbTest {
         factory = new MybatisSqlSessionFactoryBuilder().build(configuration);
         session = factory.openSession(true);
         batchService = serviceOn();
+        leaseService = leaseService();
     }
 
     @AfterAll
@@ -172,7 +175,7 @@ class AgentBatchLeaseRecoveryRealDbTest {
     void freshHeartbeatIsNeverCollected() {
         seedExecuting("b-fresh", TENANT_ID, EXECUTOR_A, OffsetDateTime.now());
 
-        AgentBatchService.LeaseRecoveryOutcome outcome = batchService.recoverStaleExecuting();
+        AgentBatchLeaseService.LeaseRecoveryOutcome outcome = leaseService.recoverStaleExecuting();
 
         System.out.println("[READING #8285 判据1 心跳新鲜] 扫描租户=" + outcome.scannedTenants()
                 + " 回收=" + outcome.recoveredBatches()
@@ -201,7 +204,7 @@ class AgentBatchLeaseRecoveryRealDbTest {
         seedItem("b-stale", 2L, "pending");
         seedItem("b-stale", 3L, "failed");
 
-        AgentBatchService.LeaseRecoveryOutcome first = batchService.recoverStaleExecuting();
+        AgentBatchLeaseService.LeaseRecoveryOutcome first = leaseService.recoverStaleExecuting();
         String staleExecutedAt = str(scalar("SELECT executed_at FROM agent_batches WHERE id = 'b-stale'"));
 
         System.out.println("[READING #8285 判据2 回收] 扫描租户=" + first.scannedTenants()
@@ -224,7 +227,7 @@ class AgentBatchLeaseRecoveryRealDbTest {
                 .containsExactly("success", "pending", "failed");
 
         // 幂等：第二轮必须是 0 行，且状态 / executed_at 逐字不变（重复回收不产生副作用）
-        AgentBatchService.LeaseRecoveryOutcome second = batchService.recoverStaleExecuting();
+        AgentBatchLeaseService.LeaseRecoveryOutcome second = leaseService.recoverStaleExecuting();
         System.out.println("[READING #8285 判据2 幂等] 第二轮回收=" + second.recoveredBatches()
                 + " b-stale=" + batchStatus("b-stale")
                 + " executed_at=" + str(scalar("SELECT executed_at FROM agent_batches WHERE id = 'b-stale'")));
@@ -256,7 +259,7 @@ class AgentBatchLeaseRecoveryRealDbTest {
         seedExecuting("b-owner-a", TENANT_ID, EXECUTOR_A, fresh);
         seedExecuting("b-owner-b", TENANT_ID, EXECUTOR_B, fresh);
 
-        AgentBatchService.LeaseRecoveryOutcome bothLive = batchService.recoverStaleExecuting();
+        AgentBatchLeaseService.LeaseRecoveryOutcome bothLive = leaseService.recoverStaleExecuting();
         System.out.println("[READING #8285 判据3 两侧都活] 回收=" + bothLive.recoveredBatches()
                 + " A=" + batchStatus("b-owner-a") + "/" + executorId("b-owner-a")
                 + " B=" + batchStatus("b-owner-b") + "/" + executorId("b-owner-b"));
@@ -268,7 +271,7 @@ class AgentBatchLeaseRecoveryRealDbTest {
 
         // A 所在的进程死了（心跳停在 2 小时前）；B 的 job 仍在跑（心跳新鲜）
         setHeartbeat("b-owner-a", OffsetDateTime.now().minusHours(2));
-        AgentBatchService.LeaseRecoveryOutcome afterAKilled = batchService.recoverStaleExecuting();
+        AgentBatchLeaseService.LeaseRecoveryOutcome afterAKilled = leaseService.recoverStaleExecuting();
         System.out.println("[READING #8285 判据3 A 死后] 回收=" + afterAKilled.recoveredBatches()
                 + " A=" + batchStatus("b-owner-a") + " B=" + batchStatus("b-owner-b")
                 + "/" + executorId("b-owner-b"));
@@ -282,7 +285,7 @@ class AgentBatchLeaseRecoveryRealDbTest {
 
         // 另一个租户里的活批次同样不在射程内（回收的取数面是跨租户的，误伤面必须一起判）
         seedExecuting("b-other-tenant", OTHER_TENANT_ID, EXECUTOR_A, OffsetDateTime.now());
-        AgentBatchService.LeaseRecoveryOutcome again = batchService.recoverStaleExecuting();
+        AgentBatchLeaseService.LeaseRecoveryOutcome again = leaseService.recoverStaleExecuting();
         System.out.println("[READING #8285 判据3 跨租户活批次] 回收=" + again.recoveredBatches()
                 + " 另一租户批次=" + batchStatus("b-other-tenant"));
         assertThat(again.scannedTenants())
@@ -308,7 +311,7 @@ class AgentBatchLeaseRecoveryRealDbTest {
         // ⇒ 没有它，这个租户压根不会被扫到，本判据对「终态不被覆盖」就是**空的**（实测踩过）。
         seedExecuting("b-live-anchor", TENANT_ID, EXECUTOR_B, OffsetDateTime.now());
 
-        AgentBatchService.LeaseRecoveryOutcome outcome = batchService.recoverStaleExecuting();
+        AgentBatchLeaseService.LeaseRecoveryOutcome outcome = leaseService.recoverStaleExecuting();
         System.out.println("[READING #8285 判据4 终态] 回收=" + outcome.recoveredBatches()
                 + " done=" + batchStatus("b-done") + " partial=" + batchStatus("b-partial")
                 + " reverted=" + batchStatus("b-reverted")
@@ -332,7 +335,7 @@ class AgentBatchLeaseRecoveryRealDbTest {
         // （撤销 claim 又把它置回 executing，但 executor 已换人 C）⇒ 此时 A 还活着，跑完最后一条后写终态。
         // 只靠 `status='executing'` 挡不住它（那时确实是 executing）⇒ 必须靠 executor 谓词。
         seedFencingBatch("b-fencing");
-        assertThat(batchService.recoverStaleExecuting().recoveredBatches())
+        assertThat(leaseService.recoverStaleExecuting().recoveredBatches())
                 .as("夹具前提：A 的批次先被回收成 partial").isEqualTo(1);
         int newOwnerClaim = mapper().markReverting("b-fencing", TENANT_ID,
                 AgentBatchService.STATUS_DONE, AgentBatchService.STATUS_PARTIAL,
@@ -361,8 +364,16 @@ class AgentBatchLeaseRecoveryRealDbTest {
     // ────────────────────────────────────────────── 装置
 
     /** 装配：批次状态机走**真库 mapper**；明细写与商品写与本单无关（ProdService mock 只为满足构造）。 */
+    private static AgentBatchLeaseService leaseService() {
+        if (leaseService == null) {
+            leaseService = new AgentBatchLeaseService(mapper());
+        }
+        return leaseService;
+    }
+
     private static AgentBatchService serviceOn() {
-        return new AgentBatchService(mapper(), itemMapper(), mock(ProductService.class), job -> job.run());
+        return new AgentBatchService(mapper(), itemMapper(), mock(ProductService.class), job -> job.run(),
+                leaseService());
     }
 
     /** 清 MyBatis 一级缓存：夹具写入走的是别的连接 ⇒ 会话本地缓存必须显式作废。 */

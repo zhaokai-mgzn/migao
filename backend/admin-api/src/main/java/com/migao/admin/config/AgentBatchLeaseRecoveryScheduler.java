@@ -1,6 +1,6 @@
 package com.migao.admin.config;
 
-import com.migao.admin.service.AgentBatchService;
+import com.migao.admin.service.AgentBatchLeaseService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -8,7 +8,7 @@ import org.springframework.stereotype.Component;
 
 /**
  * 🔴 <b>批次执行租约的**回收载体**（issue #8285）—— 一个薄壳，判断全在
- * {@link AgentBatchService#recoverStaleExecuting()}。</b>
+ * {@link AgentBatchLeaseService#recoverStaleExecuting()}。</b>
  *
  * <h2>为什么要有这条定时腿</h2>
  * #8283 的批次 job 是**进程内**线程池：JVM 崩溃 / 强杀 / 容器被摘时，进程里没有任何东西还记得
@@ -23,7 +23,7 @@ import org.springframework.stereotype.Component;
  * 不引入 Quartz / ShedLock / 新 workflow，也不判断「我是不是 leader」。
  *
  * <h2>周期怎么定</h2>
- * 缺省**每分钟**一轮：回收判定的时效是 {@code 心跳超时 = 180s}（{@link AgentBatchService#LEASE_TIMEOUT_SECONDS}）
+ * 缺省**每分钟**一轮：回收判定的时效是 {@code 心跳超时 = 180s}（{@link AgentBatchLeaseService#LEASE_TIMEOUT_SECONDS}）
  * ⇒ 崩溃后**最迟约 3~4 分钟**批次变成可撤销。可用属性 {@code migao.agent.batch.lease-scan-cron}
  * 覆盖；缺省值**只有这一处**（不在 yml 里再写一遍 —— 两处缺省值必然漂移）。
  *
@@ -48,13 +48,13 @@ public class AgentBatchLeaseRecoveryScheduler {
      */
     public static final String LEASE_SCAN_DEFAULT_CRON = "0 * * * * *";
 
-    private final AgentBatchService agentBatchService;
+    private final AgentBatchLeaseService leaseService;
 
     /** 回收一轮：只把「心跳超时 / 从未心跳」的 executing 批次收回成 partial（明细一条都不碰）。 */
     @Scheduled(cron = "${migao.agent.batch.lease-scan-cron:" + LEASE_SCAN_DEFAULT_CRON + "}")
     public void recoverStaleBatches() {
         try {
-            AgentBatchService.LeaseRecoveryOutcome outcome = agentBatchService.recoverStaleExecuting();
+            AgentBatchLeaseService.LeaseRecoveryOutcome outcome = leaseService.recoverStaleExecuting();
             if (outcome.recoveredBatches() > 0) {
                 log.warn("[Agent] 批次租约回收：扫描租户={}, 回收批次={}（已置 partial，可撤销）",
                         outcome.scannedTenants(), outcome.recoveredBatches());

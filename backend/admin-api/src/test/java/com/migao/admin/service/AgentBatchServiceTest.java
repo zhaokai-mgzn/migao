@@ -86,6 +86,9 @@ class AgentBatchServiceTest {
     @Mock
     private BatchJobLauncher batchJobLauncher;
 
+    @Mock
+    AgentBatchLeaseService leaseService;
+
     @InjectMocks
     private AgentBatchService batchService;
 
@@ -98,7 +101,8 @@ class AgentBatchServiceTest {
         when(batchMapper.markReverting(any(), any(), any(), any(), any(), any())).thenReturn(1);
         // 执行租约（issue #8285）：心跳 CAS 默认 1 = 「租约仍归本 job」；0 行 = 已被回收 ⇒ 停手
         // （「0 行 ⇒ 立刻停手」的判据在 AgentBatchLeaseLogProtocolTest 里显式覆盖）。
-        when(batchMapper.heartbeat(any(), any(), any(), any())).thenReturn(1);
+        when(leaseService.newExecutorId()).thenReturn("local#1/job-stub");
+        when(leaseService.renewLease(any(), any())).thenReturn(true);
         // 终态 CAS（issue #8283）：mock int 默认 0 ⇒ 不 stub 会跳过 updateById（终态不落库）。
         when(batchMapper.markExecutedDone(any(), any(), anyInt(), anyInt(), any(), any())).thenReturn(1);
         when(batchMapper.markExecutedPartial(any(), any(), anyInt(), anyInt(), any(), any())).thenReturn(1);
@@ -1010,7 +1014,7 @@ class AgentBatchServiceTest {
             when(batchMapper.selectById(BATCH_ID)).thenReturn(batch(AgentBatchService.STATUS_PREVIEW));
             when(itemMapper.selectList(any())).thenReturn(List.of(
                     item(P1, "10.00", "12.00", AgentBatchService.ITEM_PENDING)));
-            when(batchMapper.heartbeat(any(), any(), any(), any())).thenReturn(0);
+            when(leaseService.renewLease(any(), any())).thenReturn(false);
 
             AgentBatchViews.Batch view = batchService.execute(TENANT, BATCH_ID);
 
@@ -1026,8 +1030,8 @@ class AgentBatchServiceTest {
         @Test
         @DisplayName("executor_id = 实例 + job：同实例两条 job 的标识必须不同（回收后新 job 不许认领旧租约）")
         void executorIdIsInstancePlusJob() {
-            String first = AgentBatchService.newExecutorId();
-            String second = AgentBatchService.newExecutorId();
+            String first = new AgentBatchLeaseService(batchMapper).newExecutorId();
+            String second = new AgentBatchLeaseService(batchMapper).newExecutorId();
             System.out.println("[READING #8285 executor] first=" + first + " second=" + second);
             String firstInstance = first.substring(0, first.lastIndexOf('/'));
             String secondInstance = second.substring(0, second.lastIndexOf('/'));

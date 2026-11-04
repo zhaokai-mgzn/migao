@@ -1,7 +1,6 @@
 package com.migao.admin.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.migao.admin.config.TenantContext;
 import com.migao.admin.dto.ProductResponse;
 import com.migao.admin.dto.ProductSkuResponse;
 import com.migao.admin.dto.agent.AgentBatchCreateRequest;
@@ -53,7 +52,7 @@ import java.util.UUID;
  *       {@code executing} 批次 —— 由 <b>执行租约</b>（issue #8285：{@code executor_id} +
  *       {@code heartbeat_at}，迁移 V208）在心跳超时后**回收成可撤销的 {@code partial}**。
  *       回收只改批次状态、不碰明细 ⇒ 它**不**承诺「已 apply 但 item 状态未落库」那一段的精确复原
- *       （见 {@link #recoverStaleExecuting} 的边界）。</li>
+ *       （见 {@link AgentBatchLeaseService#recoverStaleExecuting} 的边界）。</li>
  *   <li><b>上/下架的撤销可能被状态机挡住</b>：例如原状态 {@code draft} 的商品被批量上架后，
  *       撤销回 {@code draft} 会被 {@code ProductService} 的状态机拒绝（{@code on_sale → draft} 不是
  *       合法流转）⇒ 该条以 {@code revert_failed} 逐条报出，批次落 {@code revert_partial}。
@@ -112,20 +111,6 @@ public class AgentBatchService {
     /** {@code agent_batch_items.error} 列宽（VARCHAR(500)）—— 超长截断，不让一次落库失败。 */
     private static final int MAX_ERROR_LEN = 500;
 
-    /**
-     * 租约超时（秒，issue #8285）：超过它没有心跳的 {@code executing} 批次视为「执行者已死」
-     * ⇒ 可回收成 {@code partial}。
-     *
-     * <p>为什么是 180s：心跳在**每条明细前**刷新，而单条明细是普通 DB 写（实测毫秒级）⇒ 正常执行时
-     * 无心跳时长 ≈ 单条明细耗时。取 180s 是为了给「单条明细偶发慢（锁等待 / GC / 网络抖动）」留足余量，
-     * 同时把「崩溃后多久可撤销」压在 3 分钟内。⚠️ 边界：单条明细耗时真的超过它时，活 job 也可能被
-     * 回收 —— 但回收结果只是**可撤销的 partial**，且原 job 的终态写带 fencing 谓词（0 行）⇒ 不会覆盖。</p>
-     */
-    public static final long LEASE_TIMEOUT_SECONDS = 180;
-
-    /** 本进程的实例标识（只算一次）—— {@code executor_id} = 实例 + job，见 {@link #newExecutorId()}。 */
-    private static final String INSTANCE_ID = resolveInstanceId();
-
     private final AgentBatchMapper batchMapper;
 
     private final AgentBatchItemMapper itemMapper;
@@ -136,14 +121,19 @@ public class AgentBatchService {
     /** 批次后台 job 提交口（issue #8283；专用接口，不占用 Spring 的 TaskExecutor bean 面）。 */
     private final BatchJobLauncher batchJobLauncher;
 
+    /** 执行租约（issue #8285）：executor 标识 / 心跳续期 / 崩溃回收 —— 独立关切，见该类文档。 */
+    private final AgentBatchLeaseService leaseService;
+
     public AgentBatchService(AgentBatchMapper batchMapper,
                              AgentBatchItemMapper itemMapper,
                              ProductService productService,
-                             BatchJobLauncher batchJobLauncher) {
+                             BatchJobLauncher batchJobLauncher,
+                             AgentBatchLeaseService leaseService) {
         this.batchMapper = batchMapper;
         this.itemMapper = itemMapper;
         this.productService = productService;
         this.batchJobLauncher = batchJobLauncher;
+        this.leaseService = leaseService;
     }
 
     // ═══════════════════ ① 创建批次（= 预演）═══════════════════
@@ -277,7 +267,7 @@ public class AgentBatchService {
         // 抢执行权：条件更新（CAS）—— 判断与写入同一条语句；0 行 ⇒ 并发的另一个请求已抢到 ⇒ 一条不写
         // 租约（issue #8285）：executor_id + heartbeat_at 与状态迁移写在**同一条**语句里 ⇒
         // 不存在「executing 但心跳为空」的窗口（那个窗口会被回收器当成崩溃遗留）。
-        String executorId = newExecutorId();
+        String executorId = leaseService.newExecutorId();
         OffsetDateTime heartbeatAt = OffsetDateTime.now();
         if (batchMapper.markExecuting(batchId, tenantId, executorId, heartbeatAt) == 0) {
             AgentBatch fresh = requireBatch(tenantId, batchId);
@@ -327,7 +317,7 @@ public class AgentBatchService {
                 break;
             }
             // 心跳续期 + 租约校验（issue #8285）：0 行 = 已被回收 / 换人 ⇒ 立刻停手（不再 apply）
-            if (!renewLease(tenantId, batch)) {
+            if (!leaseService.renewLease(tenantId, batch)) {
                 break;
             }
             try {
@@ -424,7 +414,7 @@ public class AgentBatchService {
         }
         // 抢撤销权：条件更新（CAS）—— 0 行 ⇒ 并发的另一个请求已抢到（或状态已不可撤销）⇒ 一条不写
         // 租约同 claimForExecute（issue #8285）：撤销也是一条后台 job，也要能被安全回收。
-        String executorId = newExecutorId();
+        String executorId = leaseService.newExecutorId();
         OffsetDateTime heartbeatAt = OffsetDateTime.now();
         if (batchMapper.markReverting(batchId, tenantId, STATUS_DONE, STATUS_PARTIAL,
                 executorId, heartbeatAt) == 0) {
@@ -473,7 +463,7 @@ public class AgentBatchService {
                 continue;
             }
             // 心跳续期 + 租约校验（issue #8285）：撤销同样是一条后台 job —— 0 行 ⇒ 立刻停手
-            if (!renewLease(tenantId, batch)) {
+            if (!leaseService.renewLease(tenantId, batch)) {
                 break;
             }
             if (!ITEM_SUCCESS.equals(item.getStatus())) {
@@ -518,142 +508,6 @@ public class AgentBatchService {
         return results;
     }
 
-    // ═══════════════ ③b 执行租约：心跳 / 崩溃回收（issue #8285）═══════════════
-
-    /** 一轮回收的读数（调度载体打日志 / 判据复算用；**无副作用**）。 */
-    public record LeaseRecoveryOutcome(int scannedTenants, int recoveredBatches) {
-    }
-
-    /**
-     * 🔴 **崩溃回收**（issue #8285；运行载体 = {@code AgentBatchLeaseRecoveryScheduler}）：
-     * 把「心跳超时 / 从未心跳」的 {@code executing} 批次收回成 {@code partial}（可撤销）。
-     *
-     * <h2>为什么它必须跨实例安全</h2>
-     * 回收跑在**每个**实例上（没有 leader 选举，也不引入分布式锁）⇒ 判定不能是「我是不是 owner」，
-     * 只能是**客观事实**：{@code status='executing' AND (heartbeat_at IS NULL OR heartbeat_at < 截止)}。
-     * 于是：
-     * <ul>
-     *   <li><b>活 job 不被误杀</b>：A 实例的 job 每条明细前刷新心跳 ⇒ 心跳新鲜 ⇒ B 实例的回收扫到它也是 0 行；</li>
-     *   <li><b>幂等</b>：回收后状态已不是 {@code executing} ⇒ 同一轮 / 下一轮 / 另一个实例再跑都是 0 行；</li>
-     *   <li><b>不覆盖终态</b>：{@code done} / {@code partial} / {@code reverted} / {@code revert_partial}
-     *       都不在谓词内 ⇒ 回收不碰它们（谓词就是这条判据本身，不是靠调用方先读一遍）。</li>
-     * </ul>
-     *
-     * <h2>它只做一件事</h2>
-     * 写批次行（{@code status → partial}、{@code executor_id → NULL}、{@code executed_at} 补空），
-     * <b>明细表一条都不碰</b> ⇒ 不伪造 item 成功：{@code old_value} 仍是撤销的唯一依据，
-     * 用户对收回来的 {@code partial} 走**既有**撤销路径逐条还原（已 apply 的照旧还原、没执行的跳过）。
-     *
-     * <h2>边界（如实登记，不许读成「已精确复原」）</h2>
-     * 「已 apply 但 item 状态未落库」的窗口**仍然存在**（与进程内崩溃同族）—— 本单只保证
-     * <b>状态可回收 + 可撤销</b>，不承诺精确到条目的自动复原（需要时另开对账单）。
-     * 另：心跳是按**明细**刷新的，单条明细耗时超过 {@link #LEASE_TIMEOUT_SECONDS} 时活 job 也可能被回收
-     * —— 那种情况下原 job 的终态写会因 fencing 谓词落 0 行（不会覆盖回收结果），批次停在可撤销的
-     * {@code partial}。
-     *
-     * <h2>为什么逐租户循环</h2>
-     * 调度线程没有请求上下文，而拦截器与写面谓词都要租户 ⇒ 先用
-     * {@link AgentBatchMapper#selectExecutingTenantIds()} 取「有活跃批次的租户」这张**超集**清单，
-     * 再逐租户回收；逐租户失败只记 ERROR、不打断整轮（一个租户的坏数据不许让这条腿停摆）。
-     *
-     * @return 本轮扫了几个租户、真正回收了几批（0 是正常结果：没有崩溃遗留）
-     */
-    public LeaseRecoveryOutcome recoverStaleExecuting() {
-        OffsetDateTime now = OffsetDateTime.now();
-        OffsetDateTime staleBefore = now.minusSeconds(LEASE_TIMEOUT_SECONDS);
-        List<Long> tenants = batchMapper.selectExecutingTenantIds();
-        int scanned = 0;
-        int recovered = 0;
-        Long previous = TenantContext.getTenantId();
-        try {
-            for (Long tenantId : tenants == null ? List.<Long>of() : tenants) {
-                if (tenantId == null) {
-                    continue;
-                }
-                scanned++;
-                TenantContext.setTenantId(tenantId);
-                try {
-                    // 一条语句就是全部判定（见方法注释）：心跳新鲜 / 已进终态 / 已回收过 ⇒ 0 行
-                    int rows = batchMapper.markStaleExecutingPartial(tenantId, staleBefore, now);
-                    if (rows == 0) {
-                        continue;
-                    }
-                    recovered += rows;
-                    log.warn("[Agent] 回收心跳超时的 executing 批次（执行者已死，状态置 partial 可撤销）: "
-                            + "tenantId={}, rows={}, 截止={}", tenantId, rows, staleBefore);
-                } catch (RuntimeException e) {
-                    log.error("[Agent] 批次回收逐租户失败（其余租户继续）: tenantId={}, error={}",
-                            tenantId, e.toString(), e);
-                } finally {
-                    restoreTenant(previous);
-                }
-            }
-        } finally {
-            restoreTenant(previous);
-        }
-        if (recovered > 0) {
-            log.warn("[Agent] 本轮批次回收汇总: 扫描租户={}, 回收批次={}, 超时={}s",
-                    scanned, recovered, LEASE_TIMEOUT_SECONDS);
-        }
-        return new LeaseRecoveryOutcome(scanned, recovered);
-    }
-
-    /**
-     * 心跳续期 + **租约校验**（issue #8285）：{@code 1} 行 = 仍归本 job；{@code 0} 行 = 已被回收 /
-     * 已被换人 ⇒ 调用方**立刻停手**（不再 apply，也不落终态）。
-     *
-     * <p>为什么按**明细**续期而不是起一个后台心跳线程：明细是普通 DB 写（秒级），逐条续期已把
-     * 「无心跳时长」压到单条明细的行时间；而独立心跳线程要多一份生命周期、关停与异常面
-     * （最少代码阶梯：能在既有循环里做，就不新造一个并发体）。</p>
-     *
-     * <p>⚠️ 停手**不等于**回滚：已 apply 的条目照旧是 {@code success}，未动的保持 {@code pending} ——
-     * 与「逐条失败不回滚」同一口径。</p>
-     */
-    private boolean renewLease(Long tenantId, AgentBatch batch) {
-        OffsetDateTime now = OffsetDateTime.now();
-        if (batchMapper.heartbeat(batch.getId(), tenantId, batch.getExecutorId(), now) == 0) {
-            log.warn("[Agent] 批次租约已失效（心跳 CAS 0 行 ⇒ 已被回收 / 换人），停止剩余条目: "
-                    + "batchId={}, executor={}", batch.getId(), batch.getExecutorId());
-            return false;
-        }
-        batch.setHeartbeatAt(now);
-        return true;
-    }
-
-    /**
-     * 新 job 的执行者标识 = <b>实例 + job</b>（{@code <实例>#<pid>/<job uuid>}）。
-     *
-     * <p>两段都是必需的：实例段让「跨实例回收」能回答「这批复属于哪个进程」；job 段让**同一实例**上
-     * 前后两条 job 不会互相认领（否则回收后重启的新 job 会被当成「还是它」⇒ 心跳伪造成功）。
-     * 只写实例 = 同实例多 job 串号；只写 job = 跨实例不可归因。</p>
-     */
-    static String newExecutorId() {
-        return INSTANCE_ID + "/" + UUID.randomUUID();
-    }
-
-    /** 实例标识：显式 {@code MIGAO_INSTANCE_ID}（容器编排可注入）优先，否则 {@code HOSTNAME#pid}。 */
-    private static String resolveInstanceId() {
-        String explicit = System.getenv("MIGAO_INSTANCE_ID");
-        if (explicit != null && !explicit.isBlank()) {
-            return explicit.trim();
-        }
-        String host = System.getenv("HOSTNAME");
-        if (host == null || host.isBlank()) {
-            host = "local";
-        }
-        return host + "#" + ProcessHandle.current().pid();
-    }
-
-    /** 还原调度线程的租户上下文（线程是复用的 —— 不许把租户漏给下一个任务；同 AutoCompleteShippedScanService）。 */
-    private static void restoreTenant(Long tenantId) {
-        if (tenantId == null) {
-            TenantContext.clear();
-        } else {
-            TenantContext.setTenantId(tenantId);
-        }
-    }
-
-    // ══════════════════════════════════════════════════════════════════════════════════
     // 测试探针（issue #6960）：**只在包内可见**，生产恒为 0
     // ══════════════════════════════════════════════════════════════════════════════════
 
