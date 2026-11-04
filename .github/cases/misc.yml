@@ -8616,6 +8616,7 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+
   - id: MC-208
     legacy_id: ""
     title: "demo-seed 的 SKU 插入语句必须三处一致：SELECT 行值 = WHERE 关联条件 = product_colors 已声明颜色（issue #7583 缺陷 2 的假绿出口）"
@@ -8647,5 +8648,4 @@ cases:
       tests:
         - "tests/unit_ci_workflows/test_seed_data_quality.py"
       ci:
-        - pr-check.yml
-      verifies: []
+        - pr-check.yml          # required：ci workflow helper unit tests（python -m pytest tests/unit_ci_workflows）

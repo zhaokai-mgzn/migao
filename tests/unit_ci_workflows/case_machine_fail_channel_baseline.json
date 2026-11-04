@@ -1466,7 +1466,7 @@
       "date": "2026-11-05",
       "no_channel_total": 0,
       "backend_contract_scoring_zero": 319,
-      "note": "issue #7583 缺陷 2 的假绿出口新增 MC-208（在 #8689 的 MC-205 之后落地；demo-seed 的 SKU 插入语句必须 SELECT 行值 = WHERE 关联条件 = product_colors 已声明颜色；skip_reason 标 [backend-contract]、expectations 为空 ⇒ 按定义计入本读数）⇒ 318 → 319。按**实测**重锚（本机实跑 `python3 -m pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py -q` 的报错行原文：{'no_channel_total': 0, 'backend_contract_scoring_zero': 319}），非门禁放宽：该用例的机器判红通道 = traces.tests 引用的 tests/unit_ci_workflows/test_seed_data_quality.py（本机实跑 16 passed，其中新增判据两条注入式红证各自具名红），no_channel_total 仍为 0。"
+      "note": "issue #7583 缺陷 2 的假绿出口新增 MC-208（demo-seed 的 SKU 插入语句必须 SELECT 行值 = WHERE 关联条件 = product_colors 已声明颜色；skip_reason 标 [backend-contract]、expectations 为空 ⇒ 按定义计入本读数）⇒ 318 → 319。按**实测**重锚（本机实跑 `python3 -m pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py -q` 的报错行原文），非门禁放宽：该用例的机器判红通道 = traces.tests 引用的 tests/unit_ci_workflows/test_seed_data_quality.py，no_channel_total 仍为 0（历史链上恒 0）。"
     }
   ]
 }
