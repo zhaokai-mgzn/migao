@@ -45,7 +45,7 @@
   height: calc(50PX + env(safe-area-inset-bottom));
   padding-bottom: env(safe-area-inset-bottom);
   background-color: #ffffff;
-  box-shadow: 0 -1px 0 rgba(10, 37, 64, 0.06);
+  box-shadow: 0 -1px 0 rgba(36, 31, 24, 0.06);
 }
 
 .merchant-tabbar__item {
@@ -70,9 +70,9 @@
   // 字号下限（issue #5721 的台账：大写 PX < 12 即违规，台账**只许缩短**）⇒ 12PX 是允许的最小值
   font-size: 12PX;
   line-height: 14PX;
-  color: #9aa5b1;
+  color: #b8aa94;
 }
 
 .merchant-tabbar__item--active .merchant-tabbar__label {
-  color: #1a73e8;
+  color: #3a4e75;
 }

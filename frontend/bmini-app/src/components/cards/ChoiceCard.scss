@@ -6,14 +6,14 @@
   background: #ffffff;
   border-radius: 16px;
   padding: 16px;
-  border: 1px solid #eceff3;
-  box-shadow: 0 2px 8px rgba(10, 37, 64, 0.06);
+  border: 1px solid #e6dfd3;
+  box-shadow: 0 2px 8px rgba(36, 31, 24, 0.06);
 
   &__title {
     display: block;
     font-size: 28px;
     font-weight: 600;
-    color: #0a2540;
+    color: #312c26;
     margin-bottom: 12px;
     line-height: 1.5;
   }
@@ -29,19 +29,19 @@
     align-items: center;
     justify-content: space-between;
     padding: 12px 14px;
-    background: #f7f9fc;
+    background: #faf7f2;
     border-radius: 12px;
-    border: 1px solid #eef1f6;
+    border: 1px solid #f2ede5;
 
     &--hover {
-      background: #eef4ff;
-      border-color: #1a73e8;
+      background: #eef2f8;
+      border-color: #3a4e75;
     }
 
     // 多选勾选态（issue #3947）：勾选不提交，靠选中态给商家反馈
     &--selected {
-      background: #eef4ff;
-      border-color: #1a73e8;
+      background: #eef2f8;
+      border-color: #3a4e75;
     }
   }
 
@@ -54,17 +54,17 @@
   &__option-label {
     font-size: 26px;
     font-weight: 500;
-    color: #0a2540;
+    color: #312c26;
   }
 
   &__option-desc {
     font-size: 24px;
-    color: #6b7280;
+    color: #7e6f57;
   }
 
   &__option-arrow {
     font-size: 24px;
-    color: #9aa5b1;
+    color: #b8aa94;
   }
 
   &__paging {
@@ -73,16 +73,16 @@
     justify-content: space-between;
     margin-top: 12px;
     padding-top: 12px;
-    border-top: 1px solid #eef1f6;
+    border-top: 1px solid #f2ede5;
   }
 
   &__page-btn {
     padding: 6px 14px;
-    background: #0a2540;
+    background: #312c26;
     border-radius: 20px;
 
     &--disabled {
-      background: #e5e9ef;
+      background: #e6dfd3;
     }
   }
 
@@ -92,13 +92,13 @@
     color: #ffffff;
 
     .choice-card__page-btn--disabled & {
-      color: #9aa5b1;
+      color: #b8aa94;
     }
   }
 
   &__page-indicator {
     font-size: 24px;
-    color: #6b7280;
+    color: #7e6f57;
   }
 
   // 多选提交/跳过（issue #3947）
@@ -112,7 +112,7 @@
   &__submit {
     flex: 1;
     padding: 10px 0;
-    background: #1a73e8;
+    background: #3a4e75;
     border-radius: 12px;
     text-align: center;
   }
@@ -125,13 +125,13 @@
 
   &__skip {
     padding: 10px 16px;
-    background: #f0f2f5;
+    background: #f2ede5;
     border-radius: 12px;
     text-align: center;
   }
 
   &__skip-text {
     font-size: 26px;
-    color: #4b5563;
+    color: #625545;
   }
 }

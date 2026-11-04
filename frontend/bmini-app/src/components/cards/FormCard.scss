@@ -3,14 +3,14 @@
   border-radius: 16px;
   padding: 24px;
   margin: 8px 0;
-  box-shadow: 0 2px 8px rgba(10, 37, 64, 0.06);
+  box-shadow: 0 2px 8px rgba(36, 31, 24, 0.06);
 }
 
 .form-card__title {
   display: block;
   font-size: 28px;
   font-weight: 600;
-  color: #0a2540;
+  color: #312c26;
   margin-bottom: 20px;
   line-height: 1.4;
 }
@@ -20,7 +20,7 @@
 }
 
 .form-card__field--error .form-card__input {
-  border-color: #e5484d;
+  border-color: #dc2626;
 }
 
 .form-card__field-label-row {
@@ -32,28 +32,28 @@
 
 .form-card__field-label {
   font-size: 24px;
-  color: #33475b;
+  color: #484036;
 }
 
 .form-card__required {
-  color: #e5484d;
+  color: #dc2626;
   margin-right: 4px;
 }
 
 .form-card__field-error {
   font-size: 24px;
-  color: #e5484d;
+  color: #dc2626;
 }
 
 .form-card__input {
   width: 100%;
   box-sizing: border-box;
-  border: 1px solid #d8dee6;
+  border: 1px solid #e6dfd3;
   border-radius: 10px;
   padding: 14px 16px;
   font-size: 26px;
-  color: #0a2540;
-  background: #f8fafc;
+  color: #312c26;
+  background: #faf7f2;
 }
 
 .form-card__input--textarea {
@@ -69,7 +69,7 @@
 
 .form-card__submit {
   flex: 1;
-  background: #1a73e8;
+  background: #3a4e75;
   border-radius: 12px;
   padding: 16px 0;
   text-align: center;
@@ -87,7 +87,7 @@
 
 .form-card__cancel {
   flex: 1;
-  background: #eef2f6;
+  background: #f2ede5;
   border-radius: 12px;
   padding: 16px 0;
   text-align: center;
@@ -98,6 +98,6 @@
 }
 
 .form-card__cancel-text {
-  color: #33475b;
+  color: #484036;
   font-size: 28px;
 }

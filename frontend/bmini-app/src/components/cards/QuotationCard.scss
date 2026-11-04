@@ -1,5 +1,5 @@
 .quotation-card {
-  background: #fff;
+  background: #ffffff;
   border-radius: 16rpx;
   padding: 24rpx;
   box-shadow: 0 2rpx 12rpx rgba(0, 0, 0, 0.06);
@@ -11,18 +11,18 @@
   align-items: baseline;
   justify-content: space-between;
   padding-bottom: 16rpx;
-  border-bottom: 1px solid #f3f4f6;
+  border-bottom: 1px solid #f2ede5;
 }
 
 .quotation-card__header-title {
   font-size: 30rpx;
   font-weight: 600;
-  color: #1f2937;
+  color: #312c26;
 }
 
 .quotation-card__header-sub {
   font-size: 22rpx;
-  color: #9ca3af;
+  color: #b8aa94;
 }
 
 .quotation-card__rows {
@@ -33,19 +33,19 @@
   display: flex;
   align-items: center;
   height: 56rpx;
-  border-bottom: 1px solid #f3f4f6;
+  border-bottom: 1px solid #f2ede5;
 }
 
 .quotation-card__row-name {
   width: 120rpx;
   font-size: 26rpx;
-  color: #374151;
+  color: #484036;
 }
 
 .quotation-card__row-detail {
   flex: 1;
   font-size: 22rpx;
-  color: #9ca3af;
+  color: #b8aa94;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -53,21 +53,21 @@
 
 .quotation-card__row-cost {
   font-size: 26rpx;
-  color: #374151;
+  color: #484036;
   font-variant-numeric: tabular-nums;
 }
 
 /* 工艺规格（issue #4355 / 设计文档 §4.9 ①）：缺值行不渲染，无工艺键时整块不出现 */
 .quotation-card__spec {
   padding: 12rpx 0 4rpx;
-  border-top: 1px solid #f3f4f6;
+  border-top: 1px solid #f2ede5;
 }
 
 .quotation-card__spec-title {
   display: block;
   font-size: 22rpx;
   font-weight: 600;
-  color: #6b7280;
+  color: #7e6f57;
   padding-bottom: 6rpx;
 }
 
@@ -81,24 +81,24 @@
   width: 160rpx;
   flex-shrink: 0;
   font-size: 22rpx;
-  color: #9ca3af;
+  color: #b8aa94;
 }
 
 .quotation-card__spec-value {
   flex: 1;
   font-size: 22rpx;
-  color: #374151;
+  color: #484036;
   word-break: break-all;
 }
 
 .quotation-card__warning {
   margin-top: 12rpx;
   padding: 12rpx 16rpx;
-  background: #fff7e6;
+  background: #ffffff7e6;
   border-radius: 8rpx;
 }.quotation-card__warning-text {
   font-size: 22rpx;
-  color: #d48806;
+  color: #c06a3e;
 }
 
 .quotation-card__total {
@@ -111,20 +111,20 @@
 .quotation-card__total-label {
   font-size: 28rpx;
   font-weight: 600;
-  color: #1f2937;
+  color: #312c26;
 }
 
 .quotation-card__total-amount {
   font-size: 36rpx;
   font-weight: 700;
-  color: #b7791f;
+  color: #b45309;
   font-variant-numeric: tabular-nums;
 }
 
 .quotation-card__note {
   display: block;
   font-size: 20rpx;
-  color: #bfbfbf;
+  color: #b8aa94;
   padding-bottom: 8rpx;
 }
 
@@ -144,12 +144,12 @@
 }
 
 .quotation-card__btn--primary {
-  background: #b7791f;
+  background: #b45309;
 }
 
 .quotation-card__btn-text {
   font-size: 28rpx;
-  color: #fff;
+  color: #ffffff;
   font-weight: 600;
 }
 

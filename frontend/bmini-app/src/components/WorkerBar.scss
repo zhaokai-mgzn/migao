@@ -1,6 +1,6 @@
 .worker-bar {
-  background: #eef4ff;
-  border: 1px solid #cddffb;
+  background: #eef2f8;
+  border: 1px solid #d9e2ef;
   border-radius: 8px;
   padding: 16px;
   margin-bottom: 16px;
@@ -14,13 +14,13 @@
   &__label {
     font-size: 28px;
     font-weight: 600;
-    color: #0a2540;
+    color: #312c26;
     margin-right: 12px;
   }
 
   &__no {
     font-size: 24px;
-    color: #5b6b7c;
+    color: #625545;
     margin-right: 12px;
   }
 
@@ -41,7 +41,7 @@
     padding: 0 12px;
     margin-right: 12px;
     background: #ffffff;
-    border: 1px solid #cddffb;
+    border: 1px solid #d9e2ef;
     border-radius: 6px;
     font-size: 26px;
   }
@@ -50,13 +50,13 @@
     display: block;
     margin-top: 8px;
     font-size: 24px;
-    color: #d93025;
+    color: #dc2626;
   }
 
   &__hint {
     display: block;
     margin-top: 8px;
     font-size: 24px;
-    color: #7a8899;
+    color: #9c8c72;
   }
 }

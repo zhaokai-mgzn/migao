@@ -75,7 +75,7 @@
     width: 40px;
     height: 40px;
     border-radius: 50%;
-    background: rgba(10, 37, 64, 0.6);
+    background: rgba(36, 31, 24, 0.6);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -214,7 +214,7 @@
     // 发送：品牌渐变实底 + 反白箭头（继承瑞幸式品牌键）
     &--send {
       background: $gradient-brand;
-      box-shadow: 0 4px 12px rgba(26, 115, 232, 0.25);
+      box-shadow: 0 4px 12px rgba(58, 78, 117, 0.25);
     }
 
     // 停止生成：警示红实底 + 反白方块

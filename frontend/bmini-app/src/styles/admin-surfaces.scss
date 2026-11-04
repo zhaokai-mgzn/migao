@@ -10,14 +10,14 @@
 
 .admin-surface {
   min-height: 100vh;
-  background: #f5f7fa;
+  background: #faf7f2;
   padding-bottom: 40rpx;
 }
 
 // ── 页头：一句话说清「这一页在管什么 + 现在多少条」 ──
 .admin-surface__header {
   padding: 28rpx 24rpx 12rpx;
-  background: linear-gradient(135deg, #0a2540 0%, #1a73e8 100%);
+  background: linear-gradient(135deg, #2e3d5c 0%, #48618f 100%);
 }
 
 .admin-surface__title {
@@ -44,15 +44,15 @@
   border-radius: 16rpx;
   padding: 24rpx;
   margin-bottom: 16rpx;
-  box-shadow: 0 2rpx 8rpx rgba(10, 37, 64, 0.06);
+  box-shadow: 0 2rpx 8rpx rgba(36, 31, 24, 0.06);
 
   &--selectable {
-    border: 1rpx solid #eaeef3;
+    border: 1rpx solid #e6dfd3;
   }
 
   &--selected {
-    border: 2rpx solid #1a73e8;
-    background: #f3f8ff;
+    border: 2rpx solid #3a4e75;
+    background: #eef2f8;
   }
 
   &__row {
@@ -64,27 +64,27 @@
   &__title {
     font-size: 30rpx;
     font-weight: 600;
-    color: #0a2540;
+    color: #312c26;
   }
 
   &__meta {
     display: block;
     margin-top: 8rpx;
     font-size: 24rpx;
-    color: #5a6b7c;
+    color: #625545;
   }
 
   &__note {
     display: block;
     margin-top: 8rpx;
     font-size: 22rpx;
-    color: #9aa5b1;
+    color: #b8aa94;
   }
 
   &__amount {
     font-size: 30rpx;
     font-weight: 600;
-    color: #c8a24b;
+    color: #c06a3e;
   }
 }
 
@@ -98,31 +98,31 @@
 
   &--draft,
   &--pending {
-    background: #fff4e0;
-    color: #a05a00;
+    background: #ffffff4e0;
+    color: #b45309;
   }
 
   &--posted,
   &--resolved {
-    background: #e6f6ee;
-    color: #1a7f4b;
+    background: #ecfdf5;
+    color: #059669;
   }
 
   &--cancelled,
   &--rejected,
   &--closed {
-    background: #f2f3f5;
-    color: #5a6b7c;
+    background: #f2ede5;
+    color: #625545;
   }
 
   &--processing {
-    background: #e8f1fe;
-    color: #1a73e8;
+    background: #eef2f8;
+    color: #3a4e75;
   }
 
   &--urgent {
-    background: #fdeaea;
-    color: #c62828;
+    background: #fef2f2;
+    color: #dc2626;
   }
 }
 
@@ -138,13 +138,13 @@
   padding: 10rpx 22rpx;
   border-radius: 999rpx;
   background: #ffffff;
-  border: 1rpx solid #eaeef3;
+  border: 1rpx solid #e6dfd3;
   font-size: 24rpx;
-  color: #5a6b7c;
+  color: #625545;
 
   &--active {
-    background: #1a73e8;
-    border-color: #1a73e8;
+    background: #3a4e75;
+    border-color: #3a4e75;
     color: #ffffff;
   }
 }
@@ -158,17 +158,17 @@
   border-radius: 16rpx;
   font-size: 30rpx;
   font-weight: 600;
-  background: #1a73e8;
+  background: #3a4e75;
   color: #ffffff;
 
   &--gold {
-    background: #c8a24b;
+    background: #c06a3e;
   }
 
   &--ghost {
     background: #ffffff;
-    border: 1rpx solid #c8a24b;
-    color: #a05a00;
+    border: 1rpx solid #c06a3e;
+    color: #b45309;
   }
 
   &--inline {
@@ -182,7 +182,7 @@
   }
 
   &--disabled {
-    background: #d9dee5;
+    background: #e6dfd3;
     color: #ffffff;
   }
 }
@@ -196,18 +196,18 @@
   text-align: center;
 
   &--forbidden {
-    background: #fff8ec;
-    border: 1rpx solid #f0d9a8;
+    background: #ffffff8ec;
+    border: 1rpx solid #e7b99d;
   }
 
   &--error {
-    background: #fdf3f3;
-    border: 1rpx solid #f3d0d0;
+    background: #fef2f2;
+    border: 1rpx solid #fee2e2;
   }
 
   &__text {
     font-size: 26rpx;
-    color: #5a6b7c;
+    color: #625545;
     line-height: 40rpx;
   }
 }
@@ -217,22 +217,22 @@
   margin: 16rpx 0;
   padding: 20rpx 24rpx;
   border-radius: 12rpx;
-  background: #fff8ec;
-  border: 1rpx solid #f0d9a8;
+  background: #ffffff8ec;
+  border: 1rpx solid #e7b99d;
 
   &__text {
     font-size: 26rpx;
-    color: #a05a00;
+    color: #b45309;
     line-height: 38rpx;
   }
 
   &--error {
-    background: #fdf3f3;
-    border-color: #f3d0d0;
+    background: #fef2f2;
+    border-color: #fee2e2;
   }
 
   &--error &__text {
-    color: #c62828;
+    color: #dc2626;
   }
 }
 
@@ -242,14 +242,14 @@
   margin: 24rpx 0 12rpx;
   font-size: 28rpx;
   font-weight: 600;
-  color: #0a2540;
+  color: #312c26;
 }
 
 .admin-hint {
   display: block;
   margin-top: 8rpx;
   font-size: 22rpx;
-  color: #9aa5b1;
+  color: #b8aa94;
   line-height: 34rpx;
 }
 
@@ -263,14 +263,14 @@
 
 .admin-metric {
   flex: 1 1 46%;
-  background: #f7f9fc;
+  background: #faf7f2;
   border-radius: 12rpx;
   padding: 16rpx;
 
   &__label {
     display: block;
     font-size: 22rpx;
-    color: #5a6b7c;
+    color: #625545;
   }
 
   &__value {
@@ -278,7 +278,7 @@
     margin-top: 6rpx;
     font-size: 30rpx;
     font-weight: 600;
-    color: #0a2540;
+    color: #312c26;
   }
 }
 
@@ -289,12 +289,12 @@
   margin-top: 16rpx;
   padding: 20rpx 24rpx 28rpx;
   background: #ffffff;
-  border-top: 1rpx solid #eaeef3;
+  border-top: 1rpx solid #e6dfd3;
 
   &__count {
     display: block;
     font-size: 24rpx;
-    color: #5a6b7c;
+    color: #625545;
     margin-bottom: 12rpx;
   }
 }
