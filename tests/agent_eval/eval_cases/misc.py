@@ -2,7 +2,7 @@
 # 本文件由 render_cases.py 生成，勿手改（改了也留不住：下次重渲染会覆盖）
 # 源: cases/*.yml（case-contract 单一源）
 # 重新生成: python3 render_cases.py --cases <dir> --out-eval <包目录> --out-md <md>
-# 域: misc（源: cases/misc.yml，214 条）
+# 域: misc（源: cases/misc.yml，215 条）
 
 from ._schema import Difficulty, EvalCase, Skill
 
@@ -3932,6 +3932,24 @@ _CASE_MC_186 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── MC-188 [NORMAL] required 轻量 job 的超时上限有安全下限（#8605）（源: cases/misc.yml）──
+_CASE_MC_188 = EvalCase(
+    id='MC-188',
+    legacy_id='',
+    title='required 轻量 job 的超时上限有安全下限（#8605）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['PR 的所有检查看起来都没问题，但有几个检查显示「cancelled」，PR 就一直卡在不能合并；点进去也没有任何断言失败，像是平台挂了。'],
+    expectations=[],
+    data_checks=['**判据 1（会红）**：`pr-check.yml` 的三个 required 轻量 job（`block-env-files` / `case-truth-check` / `label-needs-changes`）必须声明 `timeout-minutes`，且 **≥ 5 分钟**。改回 2 分钟 ⇒ 逐条具名报红。执行点 = tests/unit_ci_workflows/test_required_light_job_timeout_floor.py::test_light_required_jobs_have_a_timeout_floor。', '**判据 2（会红）**：上限必须容得下本轮实测 152s 的 **2 倍**余量（防把下限调到「好看但没用」）。执行点 = ::test_the_floor_matches_the_measured_slowdown。'],
+    skip_reason='[backend-contract] 纯静态 YAML 面判据（读 workflow 的 timeout-minutes，零 runner、零真实栈），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ci', 'required', 'false-red', 'timeout'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 CASES = (
     _CASE_MC_001,
     _CASE_MC_002,
@@ -4147,4 +4165,5 @@ CASES = (
     _CASE_MC_182,
     _CASE_MC_184,
     _CASE_MC_186,
+    _CASE_MC_188,
 )
