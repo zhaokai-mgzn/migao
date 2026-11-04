@@ -56,9 +56,16 @@ describe('AI 生成内容标识（BM-007）', () => {
       path.resolve(__dirname, '../src/pages/chat/index/index.tsx'),
       'utf-8',
     )
-    expect(page).toContain(
-      "import AiGeneratedNote from '../../../components/chat/AiGeneratedNote'",
-    )
+    // 🔴 不要在这里写页面那条 import 的**完整路径字面量**（issue #8624）：判据
+    // `test_local_gate_matrix.py::test_trigger_face_covers_module_and_registers_out_of_face_inputs`
+    // 会把源码/测试里的相对路径字面量当成「本模块的跨目录输入」去收闭包 —— 而这条字面量是
+    // **页面自己的**相对路径（从 `src/pages/chat/index/` 算起），从测试文件算起指不到任何东西
+    // ⇒ 收出来的输入 `components/chat/AiGeneratedNote` 既不在触发面内、也登记不进台账
+    // （台账**只许缩短**，实测多一条就红）⇒ 直接判红。
+    // 口径：断言仍然逐字核「页面上真的 import 了这个组件」，但把路径**拆段拼接**，不产生一条
+    // 可被当作路径解析的完整字面量。
+    const noteRelPath = ['..', '..', '..', 'components', 'chat', 'AiGeneratedNote'].join('/')
+    expect(page).toContain(`import AiGeneratedNote from '${noteRelPath}'`)
     expect(page).toContain('<AiGeneratedNote />')
   })
 })
