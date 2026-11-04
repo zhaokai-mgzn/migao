@@ -4233,7 +4233,7 @@
 ```
 溯源: 2026-10-31 新增（issue #8295）：两步确认，避免误写 ｜ tags: ui, preview
 
-## 杂项域（223 case）
+## 杂项域（224 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -7608,6 +7608,20 @@
 跳过: [backend-contract] 纯 stdlib 探针（零 LLM / 零外网 / 只连本机回环桩）由 pytest 单测验证（tests/unit_ci_workflows/test_live_service_readiness_timeout.py），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 溯源: 2026-11-04 新增（issue #8647）。病：`verify-all.sh agent` 在**收集阶段**中止 —— 本机 8001 上有一个五天前的 uvicorn（健康检查还能回 200，其它路径接受连接却不回包），而判定模块只 catch 了「连接失败」与 401、**没 catch 读超时** ⇒ 探针抛超时异常 ⇒ 模块级判定在收集阶段炸掉整档（报表里既不是失败也不是未就绪）。修法 = 最小改动：读响应段改成 catch 两类**基类**（OSError 与 http.client.HTTPException），超时族折成「未就绪 + 一行出口（看谁占着端口再 kill / 重启）」，其余传输异常折成「探不通 ⇒ 未就绪」；口径不变 = **未就绪、不计通过**，绝不折成「通过」或「跳过」。顺带把就绪探针自身崩溃的退出码从 1 改成 2（错桶修正：1 = 有面未就绪，2 = 无法判定）。取号 MC-196（`python3 scripts/next_case_id.py MC` 现取 main 到 195、claims 目录无 196；claims 目录留 `<PR号>-MC-196.json` 防在飞撞号）。红证 = 六次单变量注入逐条实跑（摘读超时兜底 / 摘连接段兜底 / 删 401 分支 / 恒返回文案 / 收窄成单一类型 / 摘探针自身兜底）分别红 2 / 1 / 1 / 1 / 6 / 1 条，逐字节还原后 15 条全绿。⚠️ 有意不做：不自动 kill 别人的进程（进程生命周期不归门禁管，只报出来并给出口）；不改档位与腿名。 ｜ tags: readiness, gate, read-timeout, zombie-listener, no-self-exemption
+
+### MC-198. 订单状态立单一源（issue #8198 的 P2-2a，纯收敛不生成）：载体 = `OrderStatusTransitions` 的 7 个常量（**加常量、不加类型** —— 2026-10-31 评论裁定；值与 DB 存储值逐字相等，「状态全集」的权威仍是 `STATUS_TRANSITIONS` 键集，不另立第二份）；`service/` 与 `controller/` 零订单状态裸字面量（注释里不算，唯一例外是那 7 行常量定义）；错误文案 / 状态取值 / JSON 逐字不变 🔵
+```
+你: issue #8198 的 P2-2a：先立源、再生成 —— 只把散落的字面量收敛成一处取值的引用，生成到 TS / Python 留到 P2-2b 另单；判据 = service/ 与 controller/ 下再出现裸 producing 等字面量 ⇒ 红；边界 = `FieldTruth` 不动、agent 侧旧字符串先不动
+你: issue #8198 评论裁定（2026-10-31，仓库所有者）：先把既有状态机模块读透，不许为「收得干净」顺手改状态机语义 —— 本单只换载体、不换规则
+期望: direct_reply
+数据: **扫面（会红）**：`backend/admin-api/src/main/java/com/migao/admin/service/**` 与 `controller/**` 下不许再出现裸的 producing / shipped / cancelled（注释里不算 —— 取值走仓内唯一一份引号感知实现）。改前 54 处（service/；main/java 全域 60 处）→ 改后 8 处（全域 17 处），余下的是非订单状态的同名用法（见末条）。执行点 = `tests/unit_ci_workflows/test_order_status_single_source.py`。红证：往订单状态查询里加一处裸 producing ⇒ 判据红并**具名报出文件与该行**；恢复 ⇒ 5 条全绿。
+数据: **取值唯一载体（会红）**：7 个常量逐字等于 DB 存储值，字面量在状态机里只许出现在这 7 行定义处，三张表（流转表 / 标签表 / 可编辑集合）的键必须是常量引用。红证：把「生产中」常量改成 `producingg` ⇒ 常量契约红 **且** 状态机测试红（表键取自常量 ⇒ 当场认不出 producing）；把流转表的一处键改回字面量 ⇒ 「表键走常量」判据红。
+数据: **行为不变（会红）**：三张表的流转边 / 标签 / 可编辑集合逐条相等（不靠「引用常量自证」，用独立硬编码的真值比对）；状态字段仍是字符串 ⇒ JSON 输出、状态取值、错误文案逐字不变。红证：删掉一条流转边 / 改一个标签 / 放开可编辑集合 ⇒ 各自判红。
+数据: **台账只许缩短（会红）**：三处非订单状态的同名用法 —— 加工单终态、返工单状态、定时任务的已取消计数键 —— 按**原文逐字**登记豁免；某条不再出现（重构 / 被误改成订单状态常量）⇒ 红并要求删掉该条。
+前置: 零运行期前置（纯结构判据）：被测对象 = `backend/admin-api/src/main/java/com/migao/admin/service/OrderStatusTransitions.java`、`service/` 与 `controller/` 其余源码、以及那两个测试文件；前置 = 它们存在且可读，由仓本身满足。不成立时的红形态已内建：扫面面清单断言「必扫文件都在面内」，读不到 ⇒ 红（不是绿）。零网络 / 零 LLM / 零 DB。
+跳过: [backend-contract] 纯结构面判据（扫 Java 源码文本 + 解析枚举定义 + 枚举契约单测），零网络、零 LLM、不起真库；不进 agent-eval 冒烟
+```
+溯源: 2026-11-04 新增（issue #8198 的 P2-2a 第二步）。第一步（PR #8207）已落状态机 7 个常量与 controller 面扫面； 本步补 service/ 的 46 处与「取值唯一载体」这一层。⚠️ 载体形态曾按派单要求建成枚举，评审时按 issue 评论（2026-10-31「读完 OrderStatusTransitions 后的降级结论：不要新建枚举」「P2-2a 的正确形态 = 加常量，不加类型」） **回退**：删除枚举文件，7 个常量改回自持字面量，判据改成「常量值 == DB 值 + 表键走常量引用 + 扫面」。 同批修好三处「按字面量扫源码」的既有守卫（发货写面台账 / 自动完成 SQL / paid_at·received_at 写面）—— 收敛后它们读不到写点会假红，改成**两种载体都认**（不放宽：任一形态的新写点仍会被扫到）。 取号 MC-198（派单口径指定；claims 目录现取到 MC-195）。 ｜ tags: order-status, single-source, no-behavior-change, scan-guard, red-proof, backend-contract
 
 ## 商家入驻域（7 case）
 
@@ -15150,7 +15164,7 @@
 - 人事域：13
 - 知识问答域：9
 - 客户主数据迁移域：10
-- 杂项域：223
+- 杂项域：224
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：76
@@ -15440,6 +15454,7 @@
 - MC-195: Flaky Ledger Reconcile 自愈（issue #8628）：台账分支领先 main 却无 open PR 时**机械幂等补建**（不 arm、不 --admin、不受豁免）；ahead=0 / 已有 PR 零动作；补建失败一行可行动出口 + 非零退出
 - MC-194: **改客户资料 / 加工项增改停 / 建商品分类接回 B 端**（issue #8618）：action 枚举与 schema 同时可见（漏参数即不可调用）+ 权限走既有 required_permissions 粗筛与 action 级复检（码取控制器注解）+ 确认走既有 base_skill._requires_confirmation（react_turn 同一函数对象；未确认 ⇒ 不执行）+ 端点逐字对齐（PUT /api/admin/customers/{id} · POST /api/admin/categories · POST|PUT /api/admin/processing-items）+ 删除类 action 退场（停用改为 update_item(status=…)，可逆）
 - MC-196: 就绪探针把「有监听但读超时」判成未就绪（issue #8647）：端口上有僵而不死的旧进程时，AI Agent 全量档不再在收集阶段中止；连接被拒 / 401 / 200 三条既有口径不回归
+- MC-198: 订单状态立单一源（issue #8198 的 P2-2a，纯收敛不生成）：载体 = `OrderStatusTransitions` 的 7 个常量（**加常量、不加类型** —— 2026-10-31 评论裁定；值与 DB 存储值逐字相等，「状态全集」的权威仍是 `STATUS_TRANSITIONS` 键集，不另立第二份）；`service/` 与 `controller/` 零订单状态裸字面量（注释里不算，唯一例外是那 7 行常量定义）；错误文案 / 状态取值 / JSON 逐字不变
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）

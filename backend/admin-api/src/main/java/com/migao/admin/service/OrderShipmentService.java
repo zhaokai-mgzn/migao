@@ -113,7 +113,7 @@ public class OrderShipmentService {
      * 的状态前置此前把这三个字面量抄了一遍 —— 抄两份就会漂移（一条路加了状态、另一条没加），
      * 而两条路都会把订单置 {@code shipped}。现在只有这一份。</p>
      */
-    public static final List<String> SHIPPABLE_FROM = List.of("confirmed", "producing", "packed");
+    public static final List<String> SHIPPABLE_FROM = List.of(OrderStatusTransitions.CONFIRMED, OrderStatusTransitions.PRODUCING, OrderStatusTransitions.PACKED);
 
     /**
      * 物流类型白名单（issue #8071）：{@code express} 快递 / {@code logistics} 物流专线。
@@ -245,7 +245,7 @@ public class OrderShipmentService {
     private Map<String, Object> doPack(String orderId, Long tenantId, WorkerIdentity identity) {
         Order order = loadOrder(orderId, tenantId);
         String current = order.getStatus();
-        OrderStatusTransitions.assertTransitionAllowed(current, "packed");
+        OrderStatusTransitions.assertTransitionAllowed(current, OrderStatusTransitions.PACKED);
 
         OrderShipment shipment = activeShipment(orderId, tenantId)
                 .orElseGet(() -> newShipment(order, SOURCE_WORKER));
@@ -254,7 +254,7 @@ public class OrderShipmentService {
         shipment.setPackedByWorkerName(identity.workerName());
         persist(shipment);
 
-        int rows = transition(orderId, current, "packed");
+        int rows = transition(orderId, current, OrderStatusTransitions.PACKED);
         if (rows == 0) {
             throw BusinessException.validationError("订单状态已并发变更，请刷新后重试");
         }
@@ -266,7 +266,7 @@ public class OrderShipmentService {
         log.info("[发货] 打包完成: orderId={}, shipmentNo={}, worker={}, 成品仓位={}",
                 orderId, shipment.getShipmentNo(), identity.workerName(),
                 finished.stream().map(FinishedGoodsStock::getBinCode).toList());
-        Map<String, Object> result = resultOf(orderId, tenantId, "packed", shipment, List.of());
+        Map<String, Object> result = resultOf(orderId, tenantId, OrderStatusTransitions.PACKED, shipment, List.of());
         result.put("finished_bins", finishedBins(finished));
         return result;
     }
@@ -408,14 +408,14 @@ public class OrderShipmentService {
 
         // 🔴 状态流转是**最后一步**：失败（并发变更）⇒ 抛 ⇒ 整笔回滚 ⇒
         // 「明细写了但状态没变」这个形态在结构上不可能出现。
-        int rows = transition(orderId, current, "shipped");
+        int rows = transition(orderId, current, OrderStatusTransitions.SHIPPED);
         if (rows == 0) {
             throw BusinessException.validationError("订单状态已并发变更，请刷新后重试");
         }
         log.info("[发货] 完成: orderId={}, shipmentNo={}, trackingNo={}, worker={}, 明细行={}, 成品仓位={}",
                 orderId, shipment.getShipmentNo(), trackingNo, identity.workerName(), details.size(),
                 issued.stream().map(FinishedGoodsStock::getBinCode).toList());
-        Map<String, Object> result = resultOf(orderId, tenantId, "shipped", shipment, details);
+        Map<String, Object> result = resultOf(orderId, tenantId, OrderStatusTransitions.SHIPPED, shipment, details);
         // 仓位号用**出库前**的在库行（发货后它们已置 shipped，不再是 in_stock）
         result.put("finished_bins", finishedBins(issued.isEmpty() ? finished : issued));
         return result;
@@ -462,7 +462,7 @@ public class OrderShipmentService {
     private Map<String, Object> doUnpack(String orderId, String reason, Long tenantId,
                                          WorkerIdentity identity) {
         Order order = loadOrder(orderId, tenantId);
-        if (!"packed".equals(order.getStatus())) {
+        if (!OrderStatusTransitions.PACKED.equals(order.getStatus())) {
             throw BusinessException.validationError(String.format(
                     "仅「已打包」的订单可撤销打包，当前状态: %s",
                     OrderStatusTransitions.label(order.getStatus())));
@@ -493,7 +493,7 @@ public class OrderShipmentService {
         shipment.setPackedByWorkerName(null);
 
         // 🔴 目标状态 producing 是**有意**不在 STATUS_TRANSITIONS 里的（见方法注释）
-        int rows = transition(orderId, "packed", "producing");
+        int rows = transition(orderId, OrderStatusTransitions.PACKED, OrderStatusTransitions.PRODUCING);
         if (rows == 0) {
             throw BusinessException.validationError("订单状态已并发变更，请刷新后重试");
         }
@@ -504,7 +504,7 @@ public class OrderShipmentService {
                 order, tenantId, workerOperator(identity), reason);
         log.info("[发货] 撤销打包: orderId={}, shipmentNo={}, worker={}, reason={}, 释放仓位={}, 行数={}",
                 orderId, shipment.getShipmentNo(), identity.workerName(), reason, releasedBins, released);
-        Map<String, Object> result = resultOf(orderId, tenantId, "producing", shipment, List.of());
+        Map<String, Object> result = resultOf(orderId, tenantId, OrderStatusTransitions.PRODUCING, shipment, List.of());
         result.put("released_bins", releasedBins);
         return result;
     }
@@ -978,7 +978,7 @@ public class OrderShipmentService {
         wrapper.eq(Order::getId, orderId)
                 .eq(Order::getStatus, expected)
                 .set(Order::getStatus, target);
-        if ("shipped".equals(target)) {
+        if (OrderStatusTransitions.SHIPPED.equals(target)) {
             wrapper.set(Order::getShippedAt, businessClock.nowOffset());
         }
         return orderMapper.update(null, wrapper);

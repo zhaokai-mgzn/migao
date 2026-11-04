@@ -512,7 +512,7 @@
       "symbol": "createOrder",
       "form": "setStatus",
       "params": "OrderCreateRequest request, Long tenantId, OrderService orderService",
-      "anchor": ".setStatus(\"pending\"); order.setRemark(request.getRemark()); order.setUserId(request.getUserId("
+      "anchor": ".setStatus(OrderStatusTransitions.PENDING); order.setRemark(request.getRemark()); order.setUserId(request.getUserId("
     },
     {
       "table": "orders",
@@ -520,7 +520,7 @@
       "symbol": "transitionStatusAtomic",
       "form": "lambda_set",
       "params": "String id, String expectedStatus, String newStatus, String closeReason",
-      "anchor": ".set(Order::getStatus, newStatus); if (\"shipped\".equals(newStatus)) { wrapper.set(Order::getShippedA"
+      "anchor": ".set(Order::getStatus, newStatus); if (OrderStatusTransitions.SHIPPED.equals(newStatus)) { wrapper.set(Order::getShippedA"
     },
     {
       "table": "orders",
@@ -528,7 +528,7 @@
       "symbol": "transition",
       "form": "lambda_set",
       "params": "String orderId, String expected, String target",
-      "anchor": ".set(Order::getStatus, target); if (\"shipped\".equals(target)) { wrapper.set(Order::getShippedAt, bus"
+      "anchor": ".set(Order::getStatus, target); if (OrderStatusTransitions.SHIPPED.equals(target)) { wrapper.set(Order::getShippedAt, bus"
     },
     {
       "table": "outbound_orders",
@@ -1092,7 +1092,7 @@
     }
   ],
   "bare_literal_baseline": {
-    "count": 56,
+    "count": 55,
     "note": "**存量债**：这些写点用裸字符串写状态列（合法状态集合因此有第二个来源）。条数与条目都**只许缩短**（上限冻结在判据里）。修一条 ⇒ 同时删掉对应条目（否则判「基线不燃尽」红）。",
     "sites": [
       {
@@ -1291,15 +1291,6 @@
         "form": "builder",
         "values": [
           "in_transit"
-        ]
-      },
-      {
-        "table": "orders",
-        "file": "backend/admin-api/src/main/java/com/migao/admin/service/OrderCreationService.java",
-        "symbol": "createOrder",
-        "form": "setStatus",
-        "values": [
-          "pending"
         ]
       },
       {
