@@ -90,8 +90,13 @@ _MARKERS = ("<<<<<<<", "|||||||", "=======", ">>>>>>>")
 
 #: 块头：`  - id: MC-221`（缩进随文件，不写死 2 空格）
 _ID_RE = re.compile(r"^(?P<indent>[ \t]*)-\s+id:\s*(?P<cid>[^\s#]+)")
-#: 块内**必须**有的字段（`title: >` 这种块标量头也算 —— 后面还有内容行）
-_TITLE_RE = re.compile(r"^[ \t]+title:[ \t]*\S")
+#: 块内**必须**有的字段（`title: >` 这种块标量头也算 —— 后面还有内容行）。
+#: 只收 `title:` + `user_inputs:` 两个：**现取语料实测**（2026-11-05，`origin/main` 的 257 条）
+#: `title:` 缺 0 条、`user_inputs:` 缺 0 条，而 `expectations:` **有 1 条**合法缺（`MC-139`）⇒
+#: 收 `expectations:` 会把合法块判成残缺（假红）。
+#: 🔴 **两个字段而不是一个**：git 按公共行对齐会拆多 hunk（`migao-dev-flow` §34.16 ③）⇒
+#: 「id + legacy_id + title」这种半块**含 `title:` 但丢了后面一切**，只查 `title:` 照样放行。
+_REQUIRED_FIELDS = ("title", "user_inputs")
 # ⚠️ **刻意不用正则解析 id**（`str.rpartition` 就够）：本仓 `scripts/**` 里「用例号形态的
 # 正则字面量 + 号空间后继运算」是**第二份算号实现**的指纹（判据 =
 # `tests/unit_ci_workflows/test_next_case_id_allocator.py::test_only_one_allocation_implementation_in_scripts`）。
@@ -191,6 +196,12 @@ def prefix_counts(ids: Sequence[str]) -> dict[str, int]:
 # ═══════════════════════════════════════════════════════════════════════════
 
 
+def _has_field(text: str, field: str) -> bool:
+    """块里有没有 `field:`（值可以另起行 —— 块标量头 `title: >` 也算有）。"""
+    # 冒号后可以**为空**（`user_inputs:` 的值在下一行的列表项里）⇒ 只判键行在不在
+    return re.search(rf"^[ \t]+{re.escape(field)}:", text, re.MULTILINE) is not None
+
+
 def select_unique(main_ids: Sequence[str], side_blocks: Sequence[Block]) -> list[Block]:
     """**本分支独有**的块 = id **不在 main 集合里**的块。
 
@@ -251,11 +262,13 @@ def select_branch_blocks(main_text: str,
             f"改动了 main 已有的 case 块：{', '.join(changed)} ⇒ 本工具只做「追加」，"
             "这种 modify/modify 冲突必须人工逐块合并（整文件取自己那版会静默回退别人的修复）")
 
-    # ② 完整性：块里必须有 `title:`
+    # ② 完整性：必需字段必须在场（不止 `title:` —— 半块含 title 却丢其余，见 §34.16 ③）
     for block in picked.values():
-        if not any(_TITLE_RE.match(ln) for ln in block.text.splitlines()):
+        missing = [f for f in _REQUIRED_FIELDS if not _has_field(block.text, f)]
+        if missing:
             problems.append(
-                f"`{block.cid}` 的块缺 `title:`（残缺块不追加 —— 追加会在渲染时抛 KeyError: 'title'）"
+                f"`{block.cid}` 的块缺 {' / '.join('`' + f + ':`' for f in missing)}"
+                "（残缺块不追加 —— 追加会在渲染时抛 KeyError，或写进一条只有 id 的幽灵用例）"
                 "⇒ 请把该 case 块补全后再跑")
 
     blocks = sorted(picked.values(), key=lambda b: case_sort_key(b.cid))
