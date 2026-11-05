@@ -178,6 +178,13 @@ async def prepare_turn(
     # 4b. C 端长期记忆注入（issue #2815：仅 xiaobu；mibao 不注入）
     system_prompt = await _inject_user_memories(system_prompt, state)
 
+    # 4c. B 端口径卡注入（issue #8175 出口①）：只有**审核通过（active）**的口径卡会拼进来，
+    # draft / retired 一条都不出现，且读面不缓存（退役立即生效）。C 端 / 无租户 / 任何异常
+    # ⇒ 原样返回同一个字符串（零回归）。判定本体在 app/playbook/prompt.py，此处只是接线。
+    from app.playbook.prompt import inject_playbook_prompt
+
+    system_prompt = await inject_playbook_prompt(system_prompt, state, skill_name)
+
     # 4d. 确认-执行链「已校验待执行」注入（issue #3031：确认轮直接执行写工具）
     # last_user_msg 需在此处可用：从 raw_messages 反向取最后一条 HumanMessage
     _confirm_msg = ""
