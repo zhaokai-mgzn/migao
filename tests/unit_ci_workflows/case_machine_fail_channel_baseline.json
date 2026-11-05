@@ -1508,7 +1508,7 @@
       "date": "2026-11-05",
       "no_channel_total": 0,
       "backend_contract_scoring_zero": 326,
-      "note": "issue #8681 的 P2-1e 第九批新增 MC-243（共享部件族整体搬到新类 OrderSharedParts + 三个服务第三参从门面实例换成共享部件实例 + 「共享部件不许复制第二份」元守卫；门面 1,065 → 547 行 / 公开面 3 → 3；skip_reason 标 [backend-contract]、expectations 为空 ⇒ 按定义计入本读数）⇒ 325 → 326。按**实测**重锚（本机实跑 `python3 -m pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py -q` 的报错行原文为 `{'no_channel_total': 0, 'backend_contract_scoring_zero': 326} != {'no_channel_total': 0, 'backend_contract_scoring_zero': 325}`），非门禁放宽：该用例的机器判红通道 = traces.tests 引用的 12 个入口（10 个 Java 判据 + 两个 pytest 棘轮判据），no_channel_total 仍为 0（历史链上恒 0）。"
+      "note": "issue #8681 的 P2-1e 第九批新增 MC-244（共享部件族整体搬到新类 OrderSharedParts + 三个服务第三参从门面实例换成共享部件实例 + 「共享部件不许复制第二份」元守卫；门面 1,065 → 547 行 / 公开面 3 → 3；skip_reason 标 [backend-contract]、expectations 为空 ⇒ 按定义计入本读数）⇒ 325 → 326。按**实测**重锚（本机实跑 `python3 -m pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py -q` 的报错行原文为 `{'no_channel_total': 0, 'backend_contract_scoring_zero': 326} != {'no_channel_total': 0, 'backend_contract_scoring_zero': 325}`），非门禁放宽：该用例的机器判红通道 = traces.tests 引用的 12 个入口（10 个 Java 判据 + 两个 pytest 棘轮判据），no_channel_total 仍为 0（历史链上恒 0）。"
     }
   ]
 }

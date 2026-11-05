@@ -604,8 +604,11 @@ def test_read_paths_still_read_the_persisted_detail():
     read_face = order_service + "\n" + order_query_service
     assert "ProcessingFeeCalculator.storedFee(" in read_face, \
         "读面（OrderService + OrderQueryService）不再读落库的 processingFeeDetail（改成重算 ⇒ R13 冻结被破）"
-    assert "lineAmount()" in order_service, \
-        "OrderService 的行金额不再含 Σ 选项价（#4525 的 R5 口径未接线）"
+    # issue #8681（P2-1e 第九批）：明细总额（Σ 单价×数量 + Σ 行加工费含选项价）随共享部件族搬到
+    # OrderSharedParts ⇒ 载体跟着搬（判据强度不变：那条算式一旦不含 lineAmount() 就红）。
+    order_shared_parts = (JAVA_MAIN / "com/migao/admin/service/OrderSharedParts.java").read_text(encoding="utf-8")
+    assert "lineAmount()" in order_shared_parts, \
+        "行金额不再含 Σ 选项价（#4525 的 R5 口径未接线；载体 = OrderSharedParts.computeItemsTotal）"
 
 
 # ══════════════════════════ ⑥ 注入式自证（红证）══════════════════════════

@@ -9724,7 +9724,7 @@ cases:
         - "tests/unit_ci_workflows/test_redproof_harness_gate.py"
       ci:
         - pr-check.yml
-  - id: MC-243
+  - id: MC-244
     legacy_id: ""
     title: "OrderService 门面收尾第九批（issue #8681 的 P2-1e，部分交付）：共享部件族（明细装配 / 取价 / 总额 / 加工费组合同步 / 库存前置 / 单号 / 定价留痕 + 整卷分配的私有步骤 + batchStock 访问器）整体搬到新类 OrderSharedParts，三个服务（建单 / 实体写面 / 生命周期）的第三参从「门面实例」换成「共享部件实例」且不留兼容重载；同批固化「共享部件不许复制第二份」元守卫；门面 1,065 → 547 行、公开面 3 → 3"
     domains:

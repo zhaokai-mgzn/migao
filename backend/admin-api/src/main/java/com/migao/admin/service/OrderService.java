@@ -59,7 +59,7 @@ import java.util.stream.Collectors;
  * 明细装配 · 取价 · 总额 · 加工费组合同步 · 库存前置 · 单号 · 定价留痕，以及整卷分配的私有步骤
  * （{@code applyRollAllocation} 一族）与 {@code batchStock()} 访问器，<b>整体搬到</b>
  * {@link OrderSharedParts}。⇒ 三个服务（建单 / 实体写面 / 生命周期）的**第三参从门面实例换成共享部件实例**，
- * 门面不再随调用链传播；「不许复制第二份」由 {@code OrderSharedPartsSingleImplementationTest} 固化。
+ * 门面不再随调用链传播；「不许复制第二份」由 {@code OrderSharedPartsTest} 固化。
  * 整卷分配的权威点随之改由 {@code OrderRollAllocationAuthorityTest} 指向新承载文件（五条判据一字未改，
  * 只换载体常量 —— 这就是「载体搬家同批登记」）。</p>
  *

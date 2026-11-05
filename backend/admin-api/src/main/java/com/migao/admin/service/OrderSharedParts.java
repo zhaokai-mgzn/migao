@@ -53,7 +53,7 @@ import java.util.stream.Collectors;
  * <h2>唯一实现点纪律（元守卫）</h2>
  * <p>本类替代的是「同一段逻辑存在第二份」——那条路的症状是<b>静默分叉</b>
  * （改单漏挂加工费构成 / 建单与改单两个总额），没有任何既有断言会因此变红。
- * ⇒ 判据 = {@code OrderSharedPartsSingleImplementationTest}：任何服务<b>自己实现</b>
+ * ⇒ 判据 = {@code OrderSharedPartsTest}：任何服务<b>自己实现</b>
  * 本族的等价逻辑（明细装配 / 取价 / 总额 / 库存前置 / 整卷分配的落列与回落）⇒ 红并具名。</p>
  */
 @Slf4j
