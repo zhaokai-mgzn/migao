@@ -58,6 +58,10 @@ class OrderIntegrationTest {
     @Mock
     private com.migao.admin.service.OrderLifecycleService orderLifecycleService;
 
+    /** 查询族的实现点（issue #8681，P2-1e 第四批）：控制器直接依赖实现点，门面同名转发已删除。 */
+    @Mock
+    private com.migao.admin.service.OrderQueryService orderQueryService;
+
     @InjectMocks
     private OrderController orderController;
 
@@ -179,7 +183,7 @@ class OrderIntegrationTest {
 
         PageResponse<OrderListResponse> pageResponse = PageResponse.of(2L, 1L, 20L, List.of(order1, order2));
 
-        when(orderService.getOrderPage(eq(1L), eq(20L), isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), eq(1L), isNull(), isNull(), isNull()))
+        when(orderQueryService.getOrderPage(eq(1L), eq(20L), isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), eq(1L), isNull(), isNull(), isNull()))
                 .thenReturn(pageResponse);
 
         // When & Then
@@ -209,7 +213,7 @@ class OrderIntegrationTest {
 
         PageResponse<OrderListResponse> pageResponse = PageResponse.of(1L, 1L, 20L, List.of(order1));
 
-        when(orderService.getOrderPage(eq(1L), eq(20L), isNull(), isNull(), isNull(), isNull(),
+        when(orderQueryService.getOrderPage(eq(1L), eq(20L), isNull(), isNull(), isNull(), isNull(),
                 eq("2025-01-01"), eq("2025-12-31"), isNull(), isNull(), isNull(), isNull(), eq(1L), isNull(), isNull(), isNull()))
                 .thenReturn(pageResponse);
 
@@ -226,7 +230,7 @@ class OrderIntegrationTest {
                 .andExpect(jsonPath("$.data.items").isArray())
                 .andExpect(jsonPath("$.data.items[0].orderNo").value("ORD20250425001"));
 
-        verify(orderService).getOrderPage(eq(1L), eq(20L), isNull(), isNull(), isNull(), isNull(),
+        verify(orderQueryService).getOrderPage(eq(1L), eq(20L), isNull(), isNull(), isNull(), isNull(),
                 eq("2025-01-01"), eq("2025-12-31"), isNull(), isNull(), isNull(), isNull(), eq(1L), isNull(), isNull(), isNull());
     }
 
@@ -246,7 +250,7 @@ class OrderIntegrationTest {
         logistics.setShippedAt(OffsetDateTime.now());
         detail.setLogistics(logistics);
 
-        when(orderService.getOrderById(eq(TEST_ORDER_ID), isNull())).thenReturn(detail);
+        when(orderQueryService.getOrderById(eq(TEST_ORDER_ID), isNull())).thenReturn(detail);
 
         // When & Then
         mockMvc.perform(get("/api/admin/orders/" + TEST_ORDER_ID)
@@ -415,7 +419,7 @@ class OrderIntegrationTest {
     void testUpdateLogistics_ShippedStatus() throws Exception {
         // Given
         OrderDetailResponse detail = buildOrderDetail(TEST_ORDER_ID, "ORD20250425001", "shipped");
-        when(orderService.getOrderById(eq(TEST_ORDER_ID), isNull())).thenReturn(detail);
+        when(orderQueryService.getOrderById(eq(TEST_ORDER_ID), isNull())).thenReturn(detail);
         when(orderLogisticsService.getByOrderId(TEST_ORDER_ID)).thenReturn(List.of());
         // 建行走 createLogistics（内部委托 OrderLogisticsWriter，issue #7398）—— 本用例只验状态校验接线
         when(orderLogisticsService.createLogistics(any(), any(), any(), any(), any())).thenReturn(null);
@@ -432,7 +436,7 @@ class OrderIntegrationTest {
     void testUpdateLogistics_PendingStatusRejected() throws Exception {
         // Given
         OrderDetailResponse detail = buildOrderDetail(TEST_ORDER_ID, "ORD20250425001", "pending");
-        when(orderService.getOrderById(eq(TEST_ORDER_ID), isNull())).thenReturn(detail);
+        when(orderQueryService.getOrderById(eq(TEST_ORDER_ID), isNull())).thenReturn(detail);
 
         // When & Then: validationError 返回 422
         mockMvc.perform(put("/api/admin/orders/" + TEST_ORDER_ID + "/logistics")

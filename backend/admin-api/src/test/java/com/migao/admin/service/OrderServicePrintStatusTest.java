@@ -81,6 +81,9 @@ class OrderServicePrintStatusTest {
     @InjectMocks
     private OrderService orderService;
 
+    /** 查询族的实现点（issue #8681，P2-1e 第四批）：门面同名转发已删除 ⇒ 驱动门面自己懒构造的那一份。 */
+    private OrderQueryService orderQueryService;
+
     @BeforeEach
     void setUp() {
         TenantContext.setTenantId(TENANT);
@@ -88,6 +91,8 @@ class OrderServicePrintStatusTest {
         // 构造签名被多处测试显式装配）。Mockito 的 @InjectMocks 走完构造注入后**不再注入字段**
         // ⇒ 必须显式装配（与 OrderServiceTest 装配 stockBatchConsumptionService 同法）。
         org.springframework.test.util.ReflectionTestUtils.setField(orderService, "printLogMapper", printLogMapper);
+        orderQueryService = org.springframework.test.util.ReflectionTestUtils
+                .invokeMethod(orderService, "queryService");
         // 列表路径用 LambdaQueryWrapper ⇒ 需要 MyBatis-Plus 的实体元数据（纯单测里没有容器）
         MybatisConfiguration configuration = new MybatisConfiguration();
         MapperBuilderAssistant assistant = new MapperBuilderAssistant(configuration, "");
@@ -113,7 +118,7 @@ class OrderServicePrintStatusTest {
         when(orderMapper.selectPage(any(Page.class), any(LambdaQueryWrapper.class))).thenReturn(pageOf(orders));
         when(printLogMapper.selectPrintSummary(eq(TENANT), anyList())).thenReturn(List.of());
 
-        orderService.getOrderPage(1, 20, null, null, null, null, null, null, null, null, null, null,
+        orderQueryService.getOrderPage(1, 20, null, null, null, null, null, null, null, null, null, null,
                 TENANT, null, null, null);
 
         @SuppressWarnings("unchecked")
@@ -141,7 +146,7 @@ class OrderServicePrintStatusTest {
                         .build()
         ));
 
-        PageResponse<OrderListResponse> result = orderService.getOrderPage(1, 20, null, null, null, null,
+        PageResponse<OrderListResponse> result = orderQueryService.getOrderPage(1, 20, null, null, null, null,
                 null, null, null, null, null, null, TENANT, null, null, null);
 
         OrderListResponse printed = result.getItems().get(0);
@@ -165,7 +170,7 @@ class OrderServicePrintStatusTest {
                 .thenReturn(pageOf(List.of(order("order-a"))));
         when(printLogMapper.selectPrintSummary(eq(TENANT), anyList())).thenReturn(List.of());
 
-        PageResponse<OrderListResponse> result = orderService.getOrderPage(1, 20, null, null, null, null,
+        PageResponse<OrderListResponse> result = orderQueryService.getOrderPage(1, 20, null, null, null, null,
                 null, null, null, null, null, null, TENANT, null, null, null);
 
         OrderListResponse row = result.getItems().get(0);
@@ -182,7 +187,7 @@ class OrderServicePrintStatusTest {
         when(orderMapper.selectPage(any(Page.class), any(LambdaQueryWrapper.class)))
                 .thenReturn(pageOf(List.of()));
 
-        PageResponse<OrderListResponse> result = orderService.getOrderPage(1, 20, null, null, null, null,
+        PageResponse<OrderListResponse> result = orderQueryService.getOrderPage(1, 20, null, null, null, null,
                 null, null, null, null, null, null, TENANT, null, null, null);
 
         assertThat(result.getItems()).isEmpty();
