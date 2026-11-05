@@ -138,3 +138,4 @@
 {"id":"1793841962.39334.15141","ts":"2026-11-05T01:26:07Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/8698-waybill","why":"--allow-package-heavy（命令行显式）"}
 {"id":"1793844381.7245.3519","ts":"2026-11-05T02:06:21Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/8698-waybill","why":"--allow-package-heavy（命令行显式）"}
 {"id":"1793850851.5226.10405","ts":"2026-11-05T03:54:12Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/8176-cheatsheet","why":"--allow-package-heavy（命令行显式）"}
+{"id":"1793851152.15340.7030","ts":"2026-11-05T03:59:12Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/8176-cheatsheet","why":"--allow-package-heavy（命令行显式）"}
