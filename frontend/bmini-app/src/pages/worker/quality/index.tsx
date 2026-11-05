@@ -1,4 +1,4 @@
-// case_ids: MC-222
+// case_ids: MC-226
 /**
  * 工人端**质检**页（issue #7813 P2b）—— 工人菜单页的一条行卡：`pages/worker/quality/index`。
  *

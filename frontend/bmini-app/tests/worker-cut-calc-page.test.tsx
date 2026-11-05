@@ -159,6 +159,23 @@ describe('③ 缺必需取值 ⇒ 明说缺什么，不猜数', () => {
   })
 })
 
+describe('① 旧码（加工单级）不猜部位：服务端拒绝 ⇒ 屏上具名错误态 + 原样一句话', () => {
+  test('扫码只到加工单一级 ⇒ 页面把服务端的话摆出来，不显示任何裁高值', async () => {
+    // 服务端口径（WorkerCuttingHeightService#read）：旧码能定位到单、定位不到部位
+    // ⇒ 显式拒绝（422），**绝不**默认取第 1 个部位（裁短 = 事故）。
+    const serverMessage =
+      '这个码只能定位到加工单（旧码），不是水洗唛的部位级码 ⇒ 一体机不知道算哪个部位；请扫部位级水洗唛'
+    mockCut.mockResolvedValue({ success: false, statusCode: 422, message: serverMessage })
+    await mountLoggedIn()
+    await scanByManual('ORDER-ONLY')
+
+    const failed = await screen.findByTestId('worker-cut-calc-read-failed')
+    expect(failed.textContent).toContain('只能定位到加工单')
+    expect(screen.queryByTestId('worker-cut-calc-height')).toBeNull()
+    expect(screen.queryByTestId('worker-cut-calc-card')).toBeNull()
+  })
+})
+
 describe('④ 去报工只交这次扫到的码', () => {
   test('URL 带 t=<码>，不带套号 / 工序', async () => {
     mockCut.mockResolvedValue({ success: true, data: DATA })

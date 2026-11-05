@@ -1,4 +1,4 @@
-// case_ids: MC-222
+// case_ids: MC-226
 /**
  * 三个「读面」的判据与格式化（issue #7813 P2b）—— 纯函数，零 DOM、零 Taro。
  *

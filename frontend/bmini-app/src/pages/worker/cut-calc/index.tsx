@@ -1,4 +1,4 @@
-// case_ids: MC-222
+// case_ids: MC-226
 /**
  * 工人端**裁高计算**页（issue #7813 P2b）—— 工人菜单页的一条行卡：`pages/worker/cut-calc/index`。
  *
