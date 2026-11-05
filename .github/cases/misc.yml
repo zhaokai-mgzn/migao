@@ -9189,4 +9189,4 @@ cases:
     merge_log: "2026-11-05 新增：PR #8719 的 ci workflow helper 两轮红在 `.gen-artifacts-staging/eval_cases/ontology.py` 的 FileNotFoundError；病因不在报错的判据上，在生成腿把暂存区建在仓库根下。修法 = 暂存区移到 `repo.parent`（同盘、仓外）。"
     traces:
       tests:
-        - tests/unit_ci_workflows/test_automerge_bot_safe_path.py::test_staging_area_is_outside_the_repo
+        - "tests/unit_ci_workflows/test_automerge_bot_safe_path.py"
