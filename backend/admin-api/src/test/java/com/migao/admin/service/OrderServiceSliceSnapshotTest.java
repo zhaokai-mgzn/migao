@@ -191,7 +191,7 @@ class OrderServiceSliceSnapshotTest {
                 currentItems = List.of(item(orderId, "prod-" + (index % 3), "2.5", Map.of("skuId", skuId)));
                 skuById = Map.of(skuId, sku(skuId, "prod-" + (index % 3), "2.8", "90.0"));
                 deductRow = stockChangeRow("88.5", "86.0", "SKU-" + skuId);
-                orderService.confirmPayment(orderId);
+                lifecycle().confirmPayment(orderId);
                 return "CASE " + index + " variant=" + variant + " confirmPayment(skuId)";
             }
             case 1 -> {
@@ -202,7 +202,7 @@ class OrderServiceSliceSnapshotTest {
                 skuRows = List.of(sku(7L, "prod-1", "2.8", "40.0"));
                 skuById = Map.of(7L, sku(7L, "prod-1", "2.8", "40.0"));
                 deductRow = stockChangeRow("40.0", "37.0", "SKU-7");
-                orderService.confirmPayment(orderId);
+                lifecycle().confirmPayment(orderId);
                 return "CASE " + index + " variant=" + variant + " confirmPayment(keyFamily)";
             }
             case 2 -> {
@@ -211,7 +211,7 @@ class OrderServiceSliceSnapshotTest {
                 currentItems = List.of(item(orderId, "prod-2", "1.0",
                         Map.of("skuCode", "NOPE", "colorName", "深灰", "doorWidth", "3.2")));
                 skuRows = List.of();
-                orderService.confirmPayment(orderId);
+                lifecycle().confirmPayment(orderId);
                 return "CASE " + index + " variant=" + variant + " confirmPayment(unmatchable)";
             }
             case 3 -> {
@@ -229,7 +229,7 @@ class OrderServiceSliceSnapshotTest {
                 long skuId = 9 + index;
                 currentItems = List.of(item(orderId, "prod-2", "0.5", Map.of("skuId", skuId)));
                 skuById = Map.of(skuId, sku(skuId, "prod-2", "2.8", "0.2"));
-                orderService.confirmPayment(orderId);
+                lifecycle().confirmPayment(orderId);
                 return "CASE " + index + " variant=" + variant + " confirmPayment(insufficient)";
             }
         }
@@ -440,4 +440,13 @@ class OrderServiceSliceSnapshotTest {
         row.put("skuCode", skuCode);
         return row;
     }
+
+    /**
+     * 门面**自己懒构造的那一份**生命周期实现点（issue #8681，P2-1e 第六批）：换的只是「谁被驱动」，
+     * 同一条调用链、同一份协作者（Mapper / 库存 / 流水 / 时钟都是门面已装配的那几个）。
+     */
+    private OrderLifecycleService lifecycle() {
+        return ReflectionTestUtils.invokeMethod(orderService, "lifecycleService");
+    }
+
 }

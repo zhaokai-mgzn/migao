@@ -1,4 +1,4 @@
-// case_ids: MC-201
+// case_ids: MC-201, MC-238
 package com.migao.admin.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -54,9 +54,10 @@ import static org.mockito.Mockito.when;
  * {@link OrderLifecycleService}（issue #8191，P2-1d）的判据：**接线**（门面必须把生命周期族转出去）
  * + **新载体的直测**（搬过来之后行为本身仍成立）。
  *
- * <p><b>为什么需要接线判据</b>：它先把门面的 `orderLifecycleService` 字段替换成 Mockito 替身，
- * 再从**原有公开入口**（{@code cancelOrder} / {@code confirmPayment} / {@code updateOrderStatus} /
- * {@code refundOrder} / {@code shipWithLogistics} / {@code revertProducingToConfirmed}）驱动。
+ * <p><b>为什么需要直测</b>：生命周期族的门面转发已**全部退休**（issue #8681，P2-1e 第六批）⇒
+ * 「门面是否转出去」这条接线判据失去对象，改写为**直测实现点**（不删判据、不恒绿）：
+ * 用同一批协作者替身直接驱动 {@code cancelOrder} / {@code confirmPayment} / {@code updateOrderStatus} /
+ * {@code refundOrder} / {@code shipWithLogistics} / {@code revertProducingToConfirmed}，逐条钉住副作用。
  * ⚠️ {@code resolveShipperName} / {@code isProcessingReadyForShip} 的门面转发已**删除**
  * （issue #8681，P2-1e：调用方直接依赖新服务）⇒ 这两条改为**直测实现点**（见本类两个「直测」用例，
  * 判据不删也不恒绿）。一旦有人把委托改回内联实现
@@ -141,39 +142,72 @@ class OrderLifecycleServiceTest {
         OrderService.setCancelOrderPoProbePauseMillisForTest(0L);
     }
 
-    // ─────────────────────────────────────────── 接线判据（门面 → 新服务）
+    // ─────────────────────────────────────────── 直测实现点（门面转发已随第六批退休）
 
     @Test
-    @DisplayName("接线：取消 / 确认支付 / 状态流转 / 退款四个入口都转到新服务，且把门面自身当实参传下去")
-    void lifecycleEntriesDelegate() {
-        orderService.cancelOrder("order-1", "客户不要了");
-        orderService.confirmPayment("order-1");
-        orderService.updateOrderStatus("order-1", OrderStatusTransitions.PRODUCING);
-        orderService.refundOrder("order-1", new BigDecimal("30.00"), "少发一件");
-        orderService.revertProducingToConfirmed("order-1", "作业单作废");
+    @DisplayName("直测：五个入口在实现点上真的执行——取消（回补库存 + 补退款流水）/ 确认支付（扣库存 + 收款）/ "
+            + "状态流转 / 退款 / 回退")
+    void lifecycleEntriesExecuteAtTheImplementationPoint() {
+        when(orderMapper.update(isNull(), any(Wrapper.class))).thenReturn(1);
+        when(orderFeeSupport.effectiveActualAmount(any())).thenReturn(new BigDecimal("600.00"));
+        when(orderItemMapper.selectList(any())).thenReturn(List.of());
 
-        verify(orderLifecycleService).cancelOrder("order-1", "客户不要了", orderService);
-        verify(orderLifecycleService).confirmPayment("order-1");
-        verify(orderLifecycleService).updateOrderStatus("order-1", OrderStatusTransitions.PRODUCING, orderService);
-        verify(orderLifecycleService).refundOrder("order-1", new BigDecimal("30.00"), "少发一件");
-        verify(orderLifecycleService).revertProducingToConfirmed("order-1", "作业单作废");
+        // ① 取消（已确认）：回补库存 + 补记退款流水（与确认支付的 income 对冲）
+        when(orderMapper.selectById("order-a")).thenReturn(order("order-a", OrderStatusTransitions.CONFIRMED));
+        lifecycle.cancelOrder("order-a", "客户不要了", orderService);
+        verify(orderStockService).restoreStockAndDecreaseSales("order-a");
+        verify(orderFeeSupport).recordFinanceTransaction(any(), eq(new BigDecimal("600.00")),
+                eq("refund"), eq("订单取消退款"));
+
+        // ② 确认支付：库存前置校验 + 原子流转 + 扣减库存 + 收款流水
+        when(orderMapper.selectById("order-b")).thenReturn(order("order-b", OrderStatusTransitions.PENDING));
+        lifecycle.confirmPayment("order-b");
+        verify(orderStockService).validateStockSufficient(any());
+        verify(orderStockService).deductStockAndIncreaseSales("order-b");
+        verify(orderFeeSupport).recordFinanceTransaction(any(), eq("income"), eq("订单确认收款"));
+
+        // ③ 状态流转（confirmed → producing）：原子 CAS 落库
+        when(orderMapper.selectById("order-c")).thenReturn(order("order-c", OrderStatusTransitions.CONFIRMED));
+        lifecycle.updateOrderStatus("order-c", OrderStatusTransitions.PRODUCING, orderService);
+        verify(orderMapper, org.mockito.Mockito.atLeastOnce()).update(isNull(), any(Wrapper.class));
+
+        // ④ 退款：按传入金额封顶实收并登记退款流水（不改订单状态）
+        when(orderMapper.selectById("order-d")).thenReturn(order("order-d", OrderStatusTransitions.CONFIRMED));
+        lifecycle.refundOrder("order-d", new BigDecimal("30.00"), "少发一件");
+        verify(orderFeeSupport).recordFinanceTransaction(any(), eq(new BigDecimal("30.00")),
+                eq("refund"), eq("订单退款: 少发一件"));
+
+        // ⑤ 回退（producing → confirmed）：作废加工单联动的回退边同样落库
+        when(orderMapper.selectById("order-e")).thenReturn(order("order-e", OrderStatusTransitions.PRODUCING));
+        lifecycle.revertProducingToConfirmed("order-e", "作业单作废");
+        verify(orderMapper, org.mockito.Mockito.atLeastOnce()).update(isNull(), any(Wrapper.class));
     }
 
     @Test
-    @DisplayName("接线：发货两个重载都转出去，返回值**原样透传**（调用方零改动）")
-    void shippingDelegatesAndPassesThroughTheOutcome() {
-        OrderService.OrderShipmentOutcome outcome =
-                new OrderService.OrderShipmentOutcome(Map.of("order_id", "order-1"), true);
-        when(orderLifecycleService.shipWithLogistics("order-1", "SF1", "顺丰")).thenReturn(outcome);
-        when(orderLifecycleService.shipWithLogistics(eq("order-1"), eq("SF1"), eq("顺丰"), any()))
-                .thenReturn(outcome);
+    @DisplayName("直测：发货两个重载都返回「结果快照 + 本次是否真的流转」的显式标志（调用方据此决定建不建发货单）")
+    void shippingOutcomeIsExplicitOnBothOverloads() {
+        when(orderMapper.update(isNull(), any(Wrapper.class))).thenReturn(1);
+        when(orderLogisticsMapper.updateShippingDetails(any(), any(), any(), any(), any(), any(), any()))
+                .thenReturn(1);
+        when(orderItemMapper.selectList(any())).thenReturn(List.of());
 
-        assertThat(orderService.shipWithLogistics("order-1", "SF1", "顺丰")).isSameAs(outcome);
-        assertThat(orderService.shipWithLogistics("order-1", "SF1", "顺丰",
-                new OrderLogisticsWriter.ShippingDetails("张三", "express", "logistics"))).isSameAs(outcome);
+        // ① 3 参重载（工人路 / 老调用方）：记物流 + 原子流转 ⇒ 显式标志为真
+        when(orderMapper.selectById("order-1")).thenReturn(order("order-1", OrderStatusTransitions.CONFIRMED));
+        OrderService.OrderShipmentOutcome first = lifecycle.shipWithLogistics("order-1", "SF1", "顺丰");
+        assertThat(first.transitioned()).isTrue();
+        assertThat(first.result()).containsEntry("order_id", "order-1")
+                .containsEntry("tracking_no", "SF1")
+                .containsEntry("status", OrderStatusTransitions.SHIPPED);
 
-        verify(orderLifecycleService).shipWithLogistics("order-1", "SF1", "顺丰");
-        verify(orderLifecycleService).shipWithLogistics(eq("order-1"), eq("SF1"), eq("顺丰"), any());
+        // ② 4 参重载（发货页采集发货人 / 物流类型 / 发货方式）：同一份口径、同样返回显式标志
+        when(orderMapper.selectById("order-2")).thenReturn(order("order-2", OrderStatusTransitions.CONFIRMED));
+        OrderService.OrderShipmentOutcome second = lifecycle.shipWithLogistics("order-2", "SF2", "圆通",
+                new OrderLogisticsWriter.ShippingDetails("张三", "express", "logistics"));
+        assertThat(second.transitioned()).isTrue();
+        assertThat(second.result()).containsEntry("order_id", "order-2")
+                .containsEntry("tracking_no", "SF2")
+                .containsEntry("logistics_company", "圆通")
+                .containsEntry("status", OrderStatusTransitions.SHIPPED);
     }
 
     // ── 门面转发已删除（issue #8681，P2-1e）⇒ 以下两例改为**直测实现点**（不删判据、不恒绿） ──
@@ -227,17 +261,25 @@ class OrderLifecycleServiceTest {
     }
 
     @Test
-    @DisplayName("公开签名保留：四个公开入口仍是 OrderService 的 public 方法（调用方零改动）")
+    @DisplayName("公开签名保留：五个入口在实现点上仍是 public、返回类型逐字不变（调用方按实现点依赖）")
     void publicSignaturesAreKept() throws NoSuchMethodException {
-        assertThat(OrderService.class.getMethod("cancelOrder", String.class, String.class)
-                .getDeclaringClass().getName()).isEqualTo("com.migao.admin.service.OrderService");
-        assertThat(OrderService.class.getMethod("refundOrder", String.class, BigDecimal.class, String.class)
-                .getReturnType().getName()).isEqualTo("void");
-        assertThat(OrderService.class.getMethod("shipWithLogistics", String.class, String.class, String.class)
-                .getReturnType().getName())
+        assertThat(OrderLifecycleService.class.getMethod("cancelOrder", String.class, String.class,
+                        OrderService.class).getDeclaringClass().getName())
+                .isEqualTo("com.migao.admin.service.OrderLifecycleService");
+        assertThat(OrderLifecycleService.class.getMethod("refundOrder", String.class, BigDecimal.class,
+                        String.class).getReturnType().getName())
+                .isEqualTo("void");
+        assertThat(OrderLifecycleService.class.getMethod("shipWithLogistics", String.class, String.class,
+                        String.class).getReturnType().getName())
                 .isEqualTo("com.migao.admin.service.OrderService$OrderShipmentOutcome");
-        assertThat(OrderService.class.getMethod("updateOrderStatus", String.class, String.class)
-                .getDeclaringClass().getName()).isEqualTo("com.migao.admin.service.OrderService");
+        assertThat(OrderLifecycleService.class.getMethod("updateOrderStatus", String.class, String.class,
+                        OrderService.class).getDeclaringClass().getName())
+                .isEqualTo("com.migao.admin.service.OrderLifecycleService");
+        assertThat(OrderLifecycleService.class.getMethod("revertProducingToConfirmed", String.class,
+                        String.class).getReturnType().getName())
+                .isEqualTo("void");
+        assertThat(OrderLifecycleService.class.getMethod("confirmPayment", String.class).getReturnType().getName())
+                .isEqualTo("void");
     }
 
     // ─────────────────────────────────────────── 新载体直测（搬过来的行为本身）

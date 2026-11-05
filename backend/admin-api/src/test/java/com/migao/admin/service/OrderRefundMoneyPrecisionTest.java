@@ -153,7 +153,9 @@ class OrderRefundMoneyPrecisionTest {
                 .build();
 
         mockMvc = MockMvcBuilders
-                .standaloneSetup(new OrderController(orderService, null, orderLogisticsService, orderShipmentService, null, null, null, null))
+                // issue #8681 第六批：退款直连生命周期实现点 ⇒ 第 5 参必须是门面自己懒构造的那一份
+                // （此前传 null 是「门面转发」时代的装配，转发退休后会导致空指针）
+                .standaloneSetup(new OrderController(orderService, null, orderLogisticsService, orderShipmentService, lifecycle(), null, null, null))
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .build();
     }
@@ -172,7 +174,7 @@ class OrderRefundMoneyPrecisionTest {
         // 修前形态对照用：不加准入时这条 update 会**真被执行**（返回 1 = 落库成功，200）
         when(orderMapper.update(any(), any(UpdateWrapper.class))).thenReturn(1);
 
-        assertThatThrownBy(() -> orderService.refundOrder(ORDER_ID, new BigDecimal("0.001"), "子分级退款"))
+        assertThatThrownBy(() -> lifecycle().refundOrder(ORDER_ID, new BigDecimal("0.001"), "子分级退款"))
                 .isInstanceOfSatisfying(BusinessException.class, e -> {
                     assertThat(e.getHttpStatus()).isEqualTo(422);
                     assertThat(e.getMessage())
@@ -212,7 +214,7 @@ class OrderRefundMoneyPrecisionTest {
         when(orderMapper.update(any(), any(UpdateWrapper.class))).thenReturn(1);
 
         for (String raw : List.of("0.004", "0.005", "0.009")) {
-            assertThatThrownBy(() -> orderService.refundOrder(ORDER_ID, new BigDecimal(raw), null))
+            assertThatThrownBy(() -> lifecycle().refundOrder(ORDER_ID, new BigDecimal(raw), null))
                     .as("子分级退款额 %s 必须被显式拒绝", raw)
                     .isInstanceOf(BusinessException.class)
                     .hasMessageContaining("最多支持 2 位小数");
@@ -252,7 +254,7 @@ class OrderRefundMoneyPrecisionTest {
         when(orderMapper.selectById(ORDER_ID)).thenReturn(testOrder);
         when(orderMapper.update(any(), any(UpdateWrapper.class))).thenReturn(1);
 
-        orderService.refundOrder(ORDER_ID, null, "全额退款");
+        lifecycle().refundOrder(ORDER_ID, null, "全额退款");
 
         assertThat(testOrder.getRefundAmount()).isEqualByComparingTo("599.00");
         assertThat(testOrder.getRefundAt()).isNotNull();
@@ -270,7 +272,7 @@ class OrderRefundMoneyPrecisionTest {
         when(orderMapper.selectById(ORDER_ID)).thenReturn(testOrder);
         when(orderMapper.update(any(), any(UpdateWrapper.class))).thenReturn(1);
 
-        orderService.refundOrder(ORDER_ID, new BigDecimal("300.00"), "再次退款");
+        lifecycle().refundOrder(ORDER_ID, new BigDecimal("300.00"), "再次退款");
 
         assertThat(testOrder.getRefundAmount()).isEqualByComparingTo("599.00");
         ArgumentCaptor<FinanceTransaction> txnCaptor = ArgumentCaptor.forClass(FinanceTransaction.class);
@@ -286,10 +288,19 @@ class OrderRefundMoneyPrecisionTest {
                 .status("pending").build();
         when(orderMapper.selectById(ORDER_ID)).thenReturn(pending);
 
-        assertThatThrownBy(() -> orderService.refundOrder(ORDER_ID, new BigDecimal("0.01"), null))
+        assertThatThrownBy(() -> lifecycle().refundOrder(ORDER_ID, new BigDecimal("0.01"), null))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("不允许退款");
         verify(orderMapper, never()).update(any(), any(UpdateWrapper.class));
         verify(financeTransactionMapper, never()).insert(any(FinanceTransaction.class));
     }
+
+    /**
+     * 门面**自己懒构造的那一份**生命周期实现点（issue #8681，P2-1e 第六批）：换的只是「谁被驱动」，
+     * 同一条调用链、同一份协作者（Mapper / 库存 / 流水 / 时钟都是门面已装配的那几个）。
+     */
+    private OrderLifecycleService lifecycle() {
+        return ReflectionTestUtils.invokeMethod(orderService, "lifecycleService");
+    }
+
 }

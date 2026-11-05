@@ -167,8 +167,10 @@ class ProductionRoutingReadControllerTest {
         ProductionRoutingCommandService routingCommandService = new ProductionRoutingCommandService(
                 productionRouteTemplateMapper, routingVersionMapper, productionOperationMapper,
                 queryService, productionRouteRuleMapper, processingItemMapper);
+        // issue #8681 第六批：控制器第 6 参从门面换成生命周期实现点（发货转发已退休）
         ProductionController controller = new ProductionController(service, queryService, commandService,
-                routingCommandService, processingOrderService, orderService);
+                routingCommandService, processingOrderService,
+                org.mockito.Mockito.mock(com.migao.admin.service.OrderLifecycleService.class));
         // 新读面（issue #4500）+ 矩阵写面（issue #4587 ②）：真实服务（只 mock 底层 Mapper）
         ProductionRoutingReadService routingReadService = new ProductionRoutingReadService(
                 productionOperationPositionMapper, productionRouteRuleMapper, queryService,

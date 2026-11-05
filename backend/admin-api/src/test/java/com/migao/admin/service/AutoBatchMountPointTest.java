@@ -138,7 +138,7 @@ class AutoBatchMountPointTest {
         when(orderItemMapper.selectList(any(LambdaQueryWrapper.class)))
                 .thenReturn(List.of(deductibleItem()));
 
-        orderService.confirmPayment("order-001");
+        lifecycle().confirmPayment("order-001");
 
         InOrder inOrder = inOrder(orderMapper, productMapper, poolChangeNotifier);
         inOrder.verify(orderMapper).update(any(), any());
@@ -158,7 +158,7 @@ class AutoBatchMountPointTest {
         doThrow(new IllegalStateException("夹具：通知点炸了")).when(poolChangeNotifier)
                 .notify(any(), any());
 
-        assertThatCode(() -> orderService.confirmPayment("order-001"))
+        assertThatCode(() -> lifecycle().confirmPayment("order-001"))
                 .as("🔴 通知点是**优化触发**，它炸了绝不能让确认支付失败（#5158 的 fail-soft 同口径）")
                 .doesNotThrowAnyException();
 
@@ -178,7 +178,7 @@ class AutoBatchMountPointTest {
         when(orderItemMapper.selectList(any(LambdaQueryWrapper.class)))
                 .thenReturn(List.of(deductibleItem()));
 
-        assertThatCode(() -> orderService.confirmPayment("order-001")).doesNotThrowAnyException();
+        assertThatCode(() -> lifecycle().confirmPayment("order-001")).doesNotThrowAnyException();
         verify(orderMapper).update(any(), any());
     }
 
@@ -246,7 +246,7 @@ class AutoBatchMountPointTest {
         when(orderItemMapper.selectList(any(LambdaQueryWrapper.class)))
                 .thenReturn(List.of(deductibleItem()));
 
-        orderService.cancelOrder("order-001", "客户不要了");
+        lifecycle().cancelOrder("order-001", "客户不要了", orderService);
 
         verify(poolChangeNotifier).notify(TENANT, PoolChangeNotifier.TRIGGER_ORDER_CANCELLED);
     }
@@ -308,4 +308,13 @@ class AutoBatchMountPointTest {
         return ProductSku.builder().id(11L).tenantId(TENANT).productId("prod-1")
                 .skuCode("SKU-A").stock(new BigDecimal("5")).build();
     }
+
+    /**
+     * 门面**自己懒构造的那一份**生命周期实现点（issue #8681，P2-1e 第六批）：换的只是「谁被驱动」，
+     * 同一条调用链、同一份协作者（Mapper / 库存 / 流水 / 时钟都是门面已装配的那几个）。
+     */
+    private OrderLifecycleService lifecycle() {
+        return ReflectionTestUtils.invokeMethod(orderService, "lifecycleService");
+    }
+
 }

@@ -228,10 +228,14 @@ class AutoBatchDueScanRealDbTest {
      * {@code SqlSession} 不是线程安全的，两个线程共用它测出来的不是并发而是数据竞争）。
      */
     private static ProcessingOrderService newService(SqlSession own) {
+        // issue #8681 第六批：订单状态流转经门面的包内访问器取生命周期实现点（改前门面就是替身 ⇒ 等价替身）
+        OrderService facade = mock(OrderService.class);
+        org.mockito.Mockito.when(facade.lifecycleService())
+                .thenReturn(mock(com.migao.admin.service.OrderLifecycleService.class));
         ProcessingOrderService built = new ProcessingOrderService(
                 own.getMapper(ProcessingOrderMapper.class), own.getMapper(OrderMapper.class),
                 own.getMapper(OrderItemMapper.class), own.getMapper(ProcessingItemMapper.class),
-                mock(OrderService.class), new ObjectMapper(), production, operations, qtyClient);
+                facade, new ObjectMapper(), production, operations, qtyClient);
         ReflectionTestUtils.setField(built, "stockBatchConsumptionService", batchStockOf(own));
         // 生产装配：显式把开关打开（缺省**已经是开**；关闸形态由 AutoBatchDueScanServiceTest 判据 4b 钉住）
         ReflectionTestUtils.setField(built, "autoBatchEnabled", true);

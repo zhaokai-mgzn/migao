@@ -302,7 +302,7 @@ public class OrderController {
             @PathVariable String id,
             @Valid @RequestBody OrderStatusUpdateRequest request) {
         log.info("更新订单状态: id={}, status={}", id, request.getStatus());
-        orderService.updateOrderStatus(id, request.getStatus());
+        orderLifecycleService.updateOrderStatus(id, request.getStatus(), orderService);
         return ApiResponse.success();
     }
 
@@ -315,7 +315,7 @@ public class OrderController {
     @PutMapping("/{id:[0-9a-fA-F-]+}/payment")
     public ApiResponse<Void> confirmPayment(@PathVariable String id) {
         log.info("确认支付: orderId={}", id);
-        orderService.confirmPayment(id);
+        orderLifecycleService.confirmPayment(id);
         return ApiResponse.success();
     }
 
@@ -332,7 +332,7 @@ public class OrderController {
             @RequestBody(required = false) java.util.Map<String, String> body) {
         String closeReason = (body != null && body.containsKey("closeReason")) ? body.get("closeReason") : null;
         log.info("取消订单: orderId={}, closeReason={}", id, closeReason);
-        orderService.cancelOrder(id, closeReason);
+        orderLifecycleService.cancelOrder(id, closeReason, orderService);
         return ApiResponse.success();
     }
 
@@ -384,7 +384,7 @@ public class OrderController {
             }
         }
         log.info("退款: orderId={}, refundAmount={}, refundReason={}", id, refundAmount, refundReason);
-        orderService.refundOrder(id, refundAmount, refundReason);
+        orderLifecycleService.refundOrder(id, refundAmount, refundReason);
         return ApiResponse.success();
     }
 

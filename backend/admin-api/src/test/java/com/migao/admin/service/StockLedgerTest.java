@@ -39,6 +39,7 @@ import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.junit.jupiter.api.BeforeEach;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -386,11 +387,11 @@ class StockLedgerTest {
         productService.adjustStockForAgent(PRODUCT_ID, BigDecimal.valueOf(-10), "出库", TENANT_ID);
 
         // ② 站点 3 下单扣减（reason=order，ref_no=订单号）：确认支付 20 → 18
-        orderService.confirmPayment(ORDER_ID);
+        lifecycle().confirmPayment(ORDER_ID);
         order.setStatus("confirmed");
 
         // ③ 站点 3 取消回补（reason=order）：18 → 20
-        orderService.cancelOrder(ORDER_ID, "客户改主意");
+        lifecycle().cancelOrder(ORDER_ID, "客户改主意", orderService);
 
         // ④ 站点 2 售后回补（reason=aftersales，ref_no=工单号）：20 → 22
         AfterSalesStatusUpdateRequest request = new AfterSalesStatusUpdateRequest();
@@ -482,4 +483,13 @@ class StockLedgerTest {
         item.setProcessingInfo(null);
         return item;
     }
+
+    /**
+     * 门面**自己懒构造的那一份**生命周期实现点（issue #8681，P2-1e 第六批）：换的只是「谁被驱动」，
+     * 同一条调用链、同一份协作者（Mapper / 库存 / 流水 / 时钟都是门面已装配的那几个）。
+     */
+    private OrderLifecycleService lifecycle() {
+        return ReflectionTestUtils.invokeMethod(orderService, "lifecycleService");
+    }
+
 }

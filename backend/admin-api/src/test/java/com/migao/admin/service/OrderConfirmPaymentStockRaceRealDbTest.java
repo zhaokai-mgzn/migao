@@ -29,6 +29,7 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 
 import javax.sql.DataSource;
@@ -303,7 +304,10 @@ class OrderConfirmPaymentStockRaceRealDbTest {
     /** 一次确认收款请求（真 OrderService + 真库 mapper）。 */
     private static Outcome confirmOn(SqlSession s, String orderId) {
         try {
-            orderServiceOn(s).confirmPayment(orderId);
+            // issue #8681 第六批：确认支付直连生命周期实现点（取门面自己懒构造的那一份，同一份真库 mapper）
+            OrderService facade = orderServiceOn(s);
+            OrderLifecycleService lifecycle = ReflectionTestUtils.invokeMethod(facade, "lifecycleService");
+            lifecycle.confirmPayment(orderId);
             return new Outcome(true, 200);
         } catch (BusinessException e) {
             return new Outcome(false, e.getHttpStatus());

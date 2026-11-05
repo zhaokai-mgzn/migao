@@ -35,6 +35,7 @@ import com.migao.admin.mapper.StockLedgerMapper;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.assertj.core.groups.Tuple;
 import org.junit.jupiter.api.BeforeEach;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -175,7 +176,7 @@ class OrderStockLedgerTest {
         skuStore.put(SKU_ID, sku(BigDecimal.valueOf(30)));
 
         // when: pending → confirmed（扣减库存）
-        orderService.confirmPayment(ORDER_ID);
+        lifecycle().confirmPayment(ORDER_ID);
 
         // then: 台账一行 —— 库存为什么从 30 变成 28，答案在台账里
         assertThat(skuStore.get(SKU_ID).getStock()).isEqualTo(BigDecimal.valueOf(28));
@@ -195,11 +196,11 @@ class OrderStockLedgerTest {
     void cancelOrderRecordsOrderLedgerRow() {
         // given: 先确认支付（30 → 28），再取消（28 → 30）
         skuStore.put(SKU_ID, sku(BigDecimal.valueOf(30)));
-        orderService.confirmPayment(ORDER_ID);
+        lifecycle().confirmPayment(ORDER_ID);
         order.setStatus("confirmed");
 
         // when
-        orderService.cancelOrder(ORDER_ID, "客户改主意");
+        lifecycle().cancelOrder(ORDER_ID, "客户改主意", orderService);
 
         // then: 两行同链 —— 扣减(30→28) 之后是 回补(28→30)
         assertThat(skuStore.get(SKU_ID).getStock()).isEqualTo(BigDecimal.valueOf(30));
@@ -224,7 +225,7 @@ class OrderStockLedgerTest {
 
         // when & then: issue #6299 —— 扣不动**不再静默成功**（改前 `GREATEST(…,0)` 会钳到 0
         // 并照常落一行台账「未发生的变更」）；显式失败 + 台账不落行
-        assertThatThrownBy(() -> orderService.confirmPayment(ORDER_ID))
+        assertThatThrownBy(() -> lifecycle().confirmPayment(ORDER_ID))
                 .isInstanceOf(com.migao.admin.exception.BusinessException.class)
                 .hasMessageContaining("库存不足");
         assertThat(skuStore.get(SKU_ID).getStock()).isEqualTo(BigDecimal.valueOf(30));
@@ -241,7 +242,7 @@ class OrderStockLedgerTest {
         when(orderItemMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(bare));
 
         // when
-        orderService.confirmPayment(ORDER_ID);
+        lifecycle().confirmPayment(ORDER_ID);
 
         // then
         assertThat(skuStore.get(SKU_ID).getStock()).isEqualTo(BigDecimal.valueOf(30));
@@ -276,7 +277,7 @@ class OrderStockLedgerTest {
         itemQty = new BigDecimal("2.7");
 
         // when
-        orderService.confirmPayment(ORDER_ID);
+        lifecycle().confirmPayment(ORDER_ID);
 
         // then: 库存扣的是 2.7（不是 2），台账三值自洽
         assertThat(skuStore.get(SKU_ID).getStock()).isEqualByComparingTo("27.3");
@@ -293,10 +294,10 @@ class OrderStockLedgerTest {
     void cancelOrderRestoresRealMeters() {
         skuStore.put(SKU_ID, sku(new BigDecimal("30")));
         itemQty = new BigDecimal("2.7");
-        orderService.confirmPayment(ORDER_ID);
+        lifecycle().confirmPayment(ORDER_ID);
         order.setStatus("confirmed");
 
-        orderService.cancelOrder(ORDER_ID, "客户改主意");
+        lifecycle().cancelOrder(ORDER_ID, "客户改主意", orderService);
 
         assertThat(skuStore.get(SKU_ID).getStock()).isEqualByComparingTo("30");
         assertThat(rowsOf(SKU_ID)).hasSize(2);
@@ -312,7 +313,7 @@ class OrderStockLedgerTest {
         skuStore.put(SKU_ID, sku(new BigDecimal("30")));
         itemQty = new BigDecimal("2.75");
 
-        orderService.confirmPayment(ORDER_ID);
+        lifecycle().confirmPayment(ORDER_ID);
 
         // docs/curtain-fabric-quote-rules.md §8「用料米数一律向上进位到 0.1」 —— 库存按同一粒度同向变化
         assertThat(skuStore.get(SKU_ID).getStock()).isEqualByComparingTo("27.2");
@@ -324,7 +325,7 @@ class OrderStockLedgerTest {
     void integerOrderValuesAreUnchanged() {
         skuStore.put(SKU_ID, sku(BigDecimal.valueOf(30)));
 
-        orderService.confirmPayment(ORDER_ID);
+        lifecycle().confirmPayment(ORDER_ID);
 
         assertThat(skuStore.get(SKU_ID).getStock()).isEqualTo(BigDecimal.valueOf(28));
         assertThat(ledger.get(0).getBeforeQty()).isEqualTo(BigDecimal.valueOf(30));
@@ -383,4 +384,13 @@ class OrderStockLedgerTest {
                 .processingInfo(Map.of("skuId", SKU_ID))
                 .build();
     }
+
+    /**
+     * 门面**自己懒构造的那一份**生命周期实现点（issue #8681，P2-1e 第六批）：换的只是「谁被驱动」，
+     * 同一条调用链、同一份协作者（Mapper / 库存 / 流水 / 时钟都是门面已装配的那几个）。
+     */
+    private OrderLifecycleService lifecycle() {
+        return ReflectionTestUtils.invokeMethod(orderService, "lifecycleService");
+    }
+
 }

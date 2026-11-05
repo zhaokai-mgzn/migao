@@ -165,9 +165,11 @@ class OrderLifecycleSliceSourceIdentityTest {
             assertThat(declarationWithAnnotations(carrier, decl))
                     .as("搬走的方法必须带着事务注解（事务边界变化 = 行为变化）：%s", decl)
                     .contains(annotation);
+            // issue #8681 第六批：门面的转发已**退休** ⇒ 门面侧这一条从「不许加事务注解」**加强**为
+            // 「一处声明都不许有」（转发长回来就是两层嵌套语义，且那时本判据会当场红而不是空转）。
             assertThat(declarationWithAnnotations(facade, decl))
-                    .as("门面委托**不许**加事务注解（加了就是嵌套传播语义的变化）：%s", decl)
-                    .doesNotContain(annotation);
+                    .as("门面既不许加事务注解、也不许把这个入口的声明长回来（两层嵌套语义变化）：%s", decl)
+                    .isEmpty();
         }
         assertThat(countStandaloneLines(carrier, annotation))
                 .as("新载体里独立成行的事务注解必须恰好 5 条（多一条 = 顺手给别人加了事务；"
@@ -198,11 +200,13 @@ class OrderLifecycleSliceSourceIdentityTest {
                 .isFalse();
 
         // ② 把同一段方法体塞回门面
+        //   🔴 锚点 = **类声明**，不是某个具体方法的签名：issue #8681 第六批把门面的 cancelOrder 转发删掉之后，
+        //   按方法签名定位的注入会**静默失配**（replace 不命中）⇒ 把「注入没生效」误读成「判据没牙」。
+        //   类声明不会随某个入口退休而消失，且注入后门面里确实多出一份实现 ⇒ 断言仍具判别力。
         String bodyInCarrier = methodBody(carrier, decl);
         String baselineForm = bodyInCarrier.replace("orderService.batchStock().reverse(", "batchStock().reverse(");
-        String launderedFacade = facade.replace(
-                "    public void cancelOrder(String id, String closeReason) {",
-                baselineForm + "\n\n    public void cancelOrder(String id, String closeReason) {");
+        String launderedFacade = facade.replace("public class OrderService extends ServiceImpl<OrderMapper, Order> {",
+                "public class OrderService extends ServiceImpl<OrderMapper, Order> {\n" + baselineForm);
         assertThat(launderedFacade).as("注入必须真的生效").isNotEqualTo(facade);
         assertThat(bodyMatches(baseline, facade, carrier, decl)).isTrue();
         assertThat(bodyMatches(baseline, launderedFacade, carrier, decl))

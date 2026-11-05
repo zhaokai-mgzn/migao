@@ -219,9 +219,14 @@ class AutoBatchDispatchRealDbTest {
         });
         ProductionService production = mock(ProductionService.class);
 
+        // issue #8681 第六批：订单状态流转经门面的包内访问器取生命周期实现点。改前门面就是替身
+        // ⇒ 那次流转同样是空动作；这里给**等价的替身**，本类断言的是成批派单与事件账，与订单状态无关。
+        OrderService facade = mock(OrderService.class);
+        org.mockito.Mockito.when(facade.lifecycleService())
+                .thenReturn(mock(com.migao.admin.service.OrderLifecycleService.class));
         service = new ProcessingOrderService(session.getMapper(ProcessingOrderMapper.class),
                 session.getMapper(OrderMapper.class), session.getMapper(OrderItemMapper.class),
-                session.getMapper(ProcessingItemMapper.class), mock(OrderService.class),
+                session.getMapper(ProcessingItemMapper.class), facade,
                 new ObjectMapper(), production, operations, qtyClient);
         ReflectionTestUtils.setField(service, "stockBatchConsumptionService", batchStock);
         // 生产装配：显式把开关打开（缺省**已经是开**；关闸形态由 AutoBatchDispatchTest 判据 1b 钉住）

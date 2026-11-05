@@ -33,6 +33,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 
 import javax.sql.DataSource;
@@ -420,7 +421,10 @@ class ProcessingOrderStatusCasRaceRealDbTest {
     private static Verdict runOne(String action, String id, String reason) {
         try (SqlSession s = factory.openSession(false)) {
             if ("order-cancel".equals(action)) {
-                orderServiceOn(s).cancelOrder(id, reason);
+                // issue #8681 第六批：取消直连生命周期实现点（第三参 = 同一个门面实例，批次回补仍经它）
+                OrderService facade = orderServiceOn(s);
+                OrderLifecycleService lifecycle = ReflectionTestUtils.invokeMethod(facade, "lifecycleService");
+                lifecycle.cancelOrder(id, reason, facade);
                 s.commit();
                 return new Verdict(200, "ok", "-");
             }
@@ -488,7 +492,8 @@ class ProcessingOrderStatusCasRaceRealDbTest {
                 s.getMapper(OrderMapper.class),
                 s.getMapper(OrderItemMapper.class),
                 s.getMapper(ProcessingItemMapper.class),
-                mock(OrderService.class),
+                // issue #8681 第六批：订单状态流转经门面的包内访问器取生命周期实现点 ⇒ 这里用真门面
+                orderServiceOn(s),
                 new ObjectMapper(),
                 mock(ProductionService.class),
                 mock(ProductionOperationQueryService.class),

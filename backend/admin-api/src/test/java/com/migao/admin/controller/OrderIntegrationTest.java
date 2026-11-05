@@ -293,7 +293,7 @@ class OrderIntegrationTest {
     @DisplayName("订单确认 - pending -> confirmed")
     void testUpdateOrderStatus_Confirm() throws Exception {
         // Given
-        doNothing().when(orderService).updateOrderStatus(TEST_ORDER_ID, "confirmed");
+        doNothing().when(orderLifecycleService).updateOrderStatus(TEST_ORDER_ID, "confirmed", orderService);
 
         // When & Then
         mockMvc.perform(put("/api/admin/orders/" + TEST_ORDER_ID + "/status")
@@ -302,14 +302,14 @@ class OrderIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true));
 
-        verify(orderService).updateOrderStatus(TEST_ORDER_ID, "confirmed");
+        verify(orderLifecycleService).updateOrderStatus(TEST_ORDER_ID, "confirmed", orderService);
     }
 
     @Test
     @DisplayName("订单进入生产 - confirmed -> producing")
     void testUpdateOrderStatus_Ship() throws Exception {
         // Given: confirmed 状态的订单进入生产
-        doNothing().when(orderService).updateOrderStatus(TEST_ORDER_ID, "producing");
+        doNothing().when(orderLifecycleService).updateOrderStatus(TEST_ORDER_ID, "producing", orderService);
 
         // When & Then
         mockMvc.perform(put("/api/admin/orders/" + TEST_ORDER_ID + "/status")
@@ -318,14 +318,14 @@ class OrderIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true));
 
-        verify(orderService).updateOrderStatus(TEST_ORDER_ID, "producing");
+        verify(orderLifecycleService).updateOrderStatus(TEST_ORDER_ID, "producing", orderService);
     }
 
     @Test
     @DisplayName("订单完成 - shipped -> completed")
     void testUpdateOrderStatus_Complete() throws Exception {
         // Given
-        doNothing().when(orderService).updateOrderStatus(TEST_ORDER_ID, "completed");
+        doNothing().when(orderLifecycleService).updateOrderStatus(TEST_ORDER_ID, "completed", orderService);
 
         // When & Then
         mockMvc.perform(put("/api/admin/orders/" + TEST_ORDER_ID + "/status")
@@ -334,7 +334,7 @@ class OrderIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true));
 
-        verify(orderService).updateOrderStatus(TEST_ORDER_ID, "completed");
+        verify(orderLifecycleService).updateOrderStatus(TEST_ORDER_ID, "completed", orderService);
     }
 
     @Test
@@ -342,7 +342,7 @@ class OrderIntegrationTest {
     void testOrderStatusFlowValidation() throws Exception {
         // Given: Service 层抛出业务异常
         doThrow(new BusinessException("INVALID_STATUS", "非法的状态流转: completed -> pending", 400))
-                .when(orderService).updateOrderStatus(TEST_ORDER_ID, "pending");
+                .when(orderLifecycleService).updateOrderStatus(TEST_ORDER_ID, "pending", orderService);
 
         // When & Then
         mockMvc.perform(put("/api/admin/orders/" + TEST_ORDER_ID + "/status")
@@ -359,7 +359,7 @@ class OrderIntegrationTest {
     @DisplayName("取消订单 - 带关闭原因")
     void testCancelOrder_WithCloseReason() throws Exception {
         // Given
-        doNothing().when(orderService).cancelOrder(TEST_ORDER_ID, "缺货");
+        doNothing().when(orderLifecycleService).cancelOrder(TEST_ORDER_ID, "缺货", orderService);
 
         // When & Then
         mockMvc.perform(put("/api/admin/orders/" + TEST_ORDER_ID + "/cancel")
@@ -368,14 +368,14 @@ class OrderIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true));
 
-        verify(orderService).cancelOrder(TEST_ORDER_ID, "缺货");
+        verify(orderLifecycleService).cancelOrder(TEST_ORDER_ID, "缺货", orderService);
     }
 
     @Test
     @DisplayName("取消订单 - 无关闭原因")
     void testCancelOrder_WithoutCloseReason() throws Exception {
         // Given
-        doNothing().when(orderService).cancelOrder(TEST_ORDER_ID, null);
+        doNothing().when(orderLifecycleService).cancelOrder(TEST_ORDER_ID, null, orderService);
 
         // When & Then
         mockMvc.perform(put("/api/admin/orders/" + TEST_ORDER_ID + "/cancel")
@@ -383,7 +383,7 @@ class OrderIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true));
 
-        verify(orderService).cancelOrder(eq(TEST_ORDER_ID), isNull());
+        verify(orderLifecycleService).cancelOrder(eq(TEST_ORDER_ID), isNull(), eq(orderService));
     }
 
     // ======================== 添加备注 ========================

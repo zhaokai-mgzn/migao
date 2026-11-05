@@ -288,7 +288,9 @@ class MerchantShipmentAtomicityTest {
                 imageRecognitionClient, new ObjectMapper(), orderShipmentQueryMapper, finishedGoodsService);
         ReflectionTestUtils.setField(shipmentService, "productMapper", productMapper);
 
-        ProductionController controller = new ProductionController(null, null, null, null, null, orderService);
+        // issue #8681 第六批：发货端点直连生命周期实现点（第 6 参）
+        ProductionController controller = new ProductionController(null, null, null, null, null,
+                ReflectionTestUtils.invokeMethod(orderService, "lifecycleService"));
         ReflectionTestUtils.setField(controller, "clientRequestIdService", clientRequestIdService);
         ReflectionTestUtils.setField(controller, "orderShipmentService", shipmentService);
         ReflectionTestUtils.setField(controller, "orderMapper", orderMapper);

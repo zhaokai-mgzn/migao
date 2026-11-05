@@ -94,6 +94,14 @@ class ProcessingOrderServiceTest {
     @Mock
     private OrderService orderService;
 
+    /**
+     * 订单生命周期族的实现点（issue #8681，P2-1e 第六批）：门面的 {@code updateOrderStatus} /
+     * {@code revertProducingToConfirmed} 转发已退休 ⇒ 本类改直连实现点（订单置 producing / 派单失败回退）。
+     * 字段注入（不动 9 参构造）⇒ setUp 与 {@link #realChainService()} 都要显式装配。
+     */
+    @Mock
+    private OrderLifecycleService orderLifecycleService;
+
     @Mock
     private ProductionService productionService;
 
@@ -441,6 +449,7 @@ class ProcessingOrderServiceTest {
         // 漏装配时不许静默跳过扣减）。
         org.springframework.test.util.ReflectionTestUtils.setField(
                 service, "stockBatchConsumptionService", stockBatchConsumptionService);
+        // 生命周期实现点（issue #8681，P2-1e 第六批）：手写 new 的路径同样经门面访问器取 —— 同一个桩已够用
         return service;
     }
 
@@ -1036,6 +1045,9 @@ class ProcessingOrderServiceTest {
         // 承接方档案（issue #7723）：同上，字段注入的那个也要显式装配
         org.springframework.test.util.ReflectionTestUtils.setField(
                 processingOrderService, "supplierMapper", supplierMapper);
+        // 生命周期实现点（issue #8681，P2-1e 第六批）：门面经包内访问器取同一份实现点 ⇒ 桩住它
+        // （lenient：本类并非每条用例都走订单状态流转那条腿）
+        org.mockito.Mockito.lenient().when(orderService.lifecycleService()).thenReturn(orderLifecycleService);
     }
 
     // ── 快照构建工具 ──────────────────────────────────────────────
@@ -1436,8 +1448,8 @@ class ProcessingOrderServiceTest {
 
         // 派单即生产（issue #7723，用户 2026-10-25 裁定 A）：订单 confirmed→producing 的**唯一时点**
         // 从「发加工」（#4305）挪到「派单」。红证：改前这里是 never ⇒ 本断言必红。
-        verify(orderService).updateOrderStatus("order-001", "producing");
-        verify(orderService, never()).revertProducingToConfirmed(anyString(), anyString());
+        verify(orderLifecycleService).updateOrderStatus("order-001", "producing", orderService);
+        verify(orderLifecycleService, never()).revertProducingToConfirmed(anyString(), anyString());
     }
 
     // ── issue #4116（P0 断链第一环）：生成加工单即实例化工序 → qr_token 非空 ──
@@ -1872,7 +1884,7 @@ class ProcessingOrderServiceTest {
         // fail-closed 的完整语义：**不落半成品**（加工单行、工序实例、订单状态三者都不动）
         verify(processingOrderMapper, never()).insert(any(ProcessingOrder.class));
         verify(positionOperationMapper, never()).insert(any(ProcessingPositionOperation.class));
-        verify(orderService, never()).updateOrderStatus(anyString(), anyString());
+        verify(orderLifecycleService, never()).updateOrderStatus(anyString(), anyString(), any());
     }
 
     // ══════════════════ 特殊选项 → 条件工序 + 计件系数（issue #4230 Java 侧 v1a）══════════════════
@@ -2446,7 +2458,7 @@ class ProcessingOrderServiceTest {
                 .doesNotContain("/api/").doesNotContain("production/routings");
         // 不落半成品：一行不写、订单状态不动（否则会留下「有加工单、无工序、无 qr_token」的孤儿态）
         verify(processingOrderMapper, never()).insert(any(ProcessingOrder.class));
-        verify(orderService, never()).updateOrderStatus(anyString(), anyString());
+        verify(orderLifecycleService, never()).updateOrderStatus(anyString(), anyString(), any());
         verify(productionService, never()).instantiate(anyString(), any(), anyLong());
     }
 
@@ -3635,7 +3647,7 @@ class ProcessingOrderServiceTest {
         assertThat(results.get(0).isSuccess()).isFalse();
         assertThat(results.get(0).getMessage()).contains("已有加工单");
         verify(processingOrderMapper, never()).insert(any(ProcessingOrder.class));
-        verify(orderService, never()).updateOrderStatus(anyString(), anyString());
+        verify(orderLifecycleService, never()).updateOrderStatus(anyString(), anyString(), any());
     }
 
     // ── PG-003 无加工项 ────────────────────────────────────────────
@@ -3704,7 +3716,7 @@ class ProcessingOrderServiceTest {
 
         assertThat(results.get(0).isSuccess()).isTrue();
         // #7723：派单即生产（时点从「发加工」挪到「派单」）
-        verify(orderService).updateOrderStatus("order-001", "producing");
+        verify(orderLifecycleService).updateOrderStatus("order-001", "producing", orderService);
     }
 
     // ── PG-005/006 状态机 ──────────────────────────────────────────
@@ -3740,7 +3752,7 @@ class ProcessingOrderServiceTest {
 
         // 订单联动（issue #4305，用户裁定「发加工 = 订单进入生产中」）：**发加工**才推进
         // 订单 confirmed→producing（生成加工单已不再推进，见 generateSuccess 的 never 断言）
-        verify(orderService).updateOrderStatus("order-001", "producing");
+        verify(orderLifecycleService).updateOrderStatus("order-001", "producing", orderService);
 
         // start
         when(processingOrderMapper.selectOne(any())).thenReturn(po("po-1", "issued"));
@@ -3761,9 +3773,9 @@ class ProcessingOrderServiceTest {
         processingOrderService.updateStatus("po-1", complete, TENANT, "u1");
         verify(processingOrderMapper).markStatusIfFrom(eq("po-1"), eq(TENANT), eq("in_processing"), eq("completed"),
                 any(), any(), any(), any(), any(), any(), any(), any());
-        verify(orderService, never()).updateOrderStatus(eq("order-001"), eq("shipped"));
+        verify(orderLifecycleService, never()).updateOrderStatus(eq("order-001"), eq("shipped"), any());
         // start/complete **不**再联动订单（订单联动只发生在 issue 这一次）
-        verify(orderService, times(1)).updateOrderStatus("order-001", "producing");
+        verify(orderLifecycleService, times(1)).updateOrderStatus("order-001", "producing", orderService);
     }
 
     @Test
@@ -3850,7 +3862,7 @@ class ProcessingOrderServiceTest {
                 any(), any(), any(), any(), any(), any(), reasonArg.capture(), any());
         assertThat(reasonArg.getValue()).isEqualTo("加工方排期冲突");
         // 订单本就 confirmed ⇒ 回退是空动作（revert 会因「非 producing」抛 409）
-        verify(orderService, never()).revertProducingToConfirmed(anyString(), anyString());
+        verify(orderLifecycleService, never()).revertProducingToConfirmed(anyString(), anyString());
     }
 
     @Test
@@ -3867,7 +3879,7 @@ class ProcessingOrderServiceTest {
         processingOrderService.updateStatus("po-1", cancel, TENANT, "u1");
 
         // 派单已推进订单 ⇒ 取消作业单必须把订单退回已确认，否则该单永远停在「生产中」且不能再派
-        verify(orderService).revertProducingToConfirmed(eq("order-001"), anyString());
+        verify(orderLifecycleService).revertProducingToConfirmed(eq("order-001"), anyString());
     }
 
     @Test
@@ -3885,7 +3897,7 @@ class ProcessingOrderServiceTest {
 
         verify(processingOrderMapper).markStatusIfFrom(eq("po-1"), eq(TENANT), eq("issued"), eq("cancelled"),
                 any(), any(), any(), any(), any(), any(), any(), any());
-        verify(orderService).revertProducingToConfirmed(eq("order-001"), anyString());
+        verify(orderLifecycleService).revertProducingToConfirmed(eq("order-001"), anyString());
     }
 
     // ── issue #4305：发加工联动的 fail-closed 负例（形态同 generate 的落库失败回退）──
@@ -3905,8 +3917,8 @@ class ProcessingOrderServiceTest {
                 .isInstanceOf(RuntimeException.class);
         // 联动先行：订单先 confirmed→producing；加工单落库失败 ⇒ 回退订单，杜绝
         // 「订单生产中、加工单未发出」的孤儿态（与 #3345 P2② 给 generate 的同款 fail-closed）
-        verify(orderService).updateOrderStatus("order-001", "producing");
-        verify(orderService).revertProducingToConfirmed(eq("order-001"), anyString());
+        verify(orderLifecycleService).updateOrderStatus("order-001", "producing", orderService);
+        verify(orderLifecycleService).revertProducingToConfirmed(eq("order-001"), anyString());
     }
 
     @Test
@@ -3921,8 +3933,8 @@ class ProcessingOrderServiceTest {
         issue.setAction("issue");
         processingOrderService.updateStatus("po-1", issue, TENANT, "u1");
 
-        verify(orderService, never()).updateOrderStatus(anyString(), anyString());
-        verify(orderService, never()).revertProducingToConfirmed(anyString(), anyString());
+        verify(orderLifecycleService, never()).updateOrderStatus(anyString(), anyString(), any());
+        verify(orderLifecycleService, never()).revertProducingToConfirmed(anyString(), anyString());
     }
 
     @Test
@@ -4198,8 +4210,8 @@ class ProcessingOrderServiceTest {
         assertThat(results.get(0).isSuccess()).isFalse();
         assertThat(results.get(0).getMessage()).contains("已生成");
         // #7723：联动先行（confirmed→producing）+ 落库失败 ⇒ 回退，杜绝「订单生产中、作业单没生成」
-        verify(orderService).updateOrderStatus("order-001", "producing");
-        verify(orderService).revertProducingToConfirmed(eq("order-001"), anyString());
+        verify(orderLifecycleService).updateOrderStatus("order-001", "producing", orderService);
+        verify(orderLifecycleService).revertProducingToConfirmed(eq("order-001"), anyString());
     }
 
     @Test
@@ -4216,8 +4228,8 @@ class ProcessingOrderServiceTest {
         assertThatThrownBy(() -> processingOrderService.generate(List.of("order-001"), TENANT, "u1"))
                 .isInstanceOf(RuntimeException.class);
         // #7723：失败不得留「订单生产中、作业单没生成」的孤儿态
-        verify(orderService).updateOrderStatus("order-001", "producing");
-        verify(orderService).revertProducingToConfirmed(eq("order-001"), anyString());
+        verify(orderLifecycleService).updateOrderStatus("order-001", "producing", orderService);
+        verify(orderLifecycleService).revertProducingToConfirmed(eq("order-001"), anyString());
     }
 
     // ══════════════════ 存量单补工序的派生 + 打印计数（issue #4202）══════════════════
@@ -4995,7 +5007,7 @@ class ProcessingOrderServiceTest {
         assertThat(written.getProcessor()).as("名称快照").isEqualTo("朝阳加工厂");
         assertThat(written.getProcessorSupplierId()).as("档案引用").isEqualTo("sup-1");
         assertThat(written.getExpectedDeliveryDate()).as("回厂日").isEqualTo(returnDate);
-        verify(orderService).updateOrderStatus("order-001", "producing");
+        verify(orderLifecycleService).updateOrderStatus("order-001", "producing", orderService);
     }
 
     @Test
@@ -5009,7 +5021,7 @@ class ProcessingOrderServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("不是加工厂");
         verify(processingOrderMapper, never()).insert(any(ProcessingOrder.class));
-        verify(orderService, never()).updateOrderStatus(anyString(), anyString());
+        verify(orderLifecycleService, never()).updateOrderStatus(anyString(), anyString(), any());
     }
 
     @Test
