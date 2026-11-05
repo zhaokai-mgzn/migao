@@ -9105,7 +9105,7 @@ cases:
       - "**判据 ⑤（会红，链内修）**：旧码候选清单读服务端的 `selections`（不是标记串 `needs_selection`）—— 改前 bmini 报工页把标记串当候选，真实响应下套号按钮一个都渲染不出来（夹具比真响应「好看」= 假绿）。判据 = report-state.test.ts 的「服务端真响应形态」用例；红证 = 退回读 `needs_selection` ⇒ 套号清单为空 ⇒ 红。"
       - "**判据 ⑥（会红）**：三条入口各跟自己的页面键走（裁床两张 = `cut_calc`，质检 = `inspect`）；只开一个键时另外两条不出现（入口显隐 ≠ 访问拦截）。红证 = 入口写成无条件渲染 ⇒ worker-home-menu 的 ⑧ 红；新页面不登记入口台账 ⇒ page-entry-reachability 的 L2 红。"
       - "**判据 ⑦（零后端改动，可复算）**：`git diff --stat origin/main..HEAD -- backend/` 为空、`-- frontend/worker-h5/` 为空；数据全部来自既有只读端点（cutting-height / scan 的 `set_overview.cut_plan` / quality latest），新增两个 service 只有 GET。"
-    skip_reason: "[worker-device] 判据全部离线（纯函数 + jsdom 装配 + 源码静态面）；微信扫码入口、真机渲染与真库数据不在本面，不进入 agent-eval 冒烟（本单不触 agent 行为）"
+    skip_reason: "[frontend-contract] 判据全部离线（纯函数 + jsdom 装配 + 源码静态面）；微信扫码入口、真机渲染与真库数据不在本面，不进入 agent-eval 冒烟（本单不触 agent 行为）"
     merge_log:
       - "2026-11-05 新增（issue #7813 P2b）。号段说明：本单原取 MC-222，因 #8176（PR #8711）先合并占用 ⇒ 按「后合入者让号」改 MC-226（claim = .github/cases/claims/8716-MC-226.json）。"
       - "判据面 = frontend/bmini-app/tests/worker-read-faces.test.ts（纯函数）+ 三页装配判据 + report-state 的旧码真响应形态回归 + worker-home-menu 的入口键门控。"
