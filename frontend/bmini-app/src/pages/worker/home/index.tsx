@@ -47,8 +47,11 @@ import {
   type CurrentWorker,
 } from '../../../utils/workerSession'
 import {
+  CUT_CALC_PAGE_ROUTE,
+  CUT_PLAN_PAGE_ROUTE,
   INBOUND_PAGE_ROUTE,
   PIECEWORK_PAGE_ROUTE,
+  QUALITY_PAGE_ROUTE,
   REPRINT_PAGE_ROUTE,
   REWORK_PAGE_ROUTE,
   SHIPMENT_ORDERS_PAGE_ROUTE,
@@ -128,6 +131,13 @@ export default function WorkerHomePage() {
   // 我的计件（issue #7934）：显隐键 = 工人档案的 `piecework`（后端 `WorkerPages` 闭词表里**本来就有**
   // 这个键 —— 此前只有 H5 `/w/piecework.html` 消费它）。本卡把它归位到工人菜单页。
   const showPiecework = menuVisible(pages, pagesUnread, WORKER_MENU_KEYS.piecework)
+  // 裁床两个读面（issue #7813 P2b）：裁高计算 / 精裁清单。后端闭词表里**只有一个** `cut_calc`
+  // 键（没有独立的「精裁清单」键，而本单零后端改动）⇒ 两条入口共用这个开关；
+  // 重启条件 = 后端 `WorkerPages` 出现独立键时拆分（PR body 已登记）。
+  const showCutCalc = menuVisible(pages, pagesUnread, WORKER_MENU_KEYS.cutCalc)
+  const showCutPlan = menuVisible(pages, pagesUnread, WORKER_MENU_KEYS.cutCalc)
+  // 质检记录（issue #7813 P2b）：显隐键 = `inspect`（工人档案逐人开；它同时是服务端读/写准入）。
+  const showQuality = menuVisible(pages, pagesUnread, WORKER_MENU_KEYS.inspect)
 
   /**
    * 🔴 待处理数（issue #7921）。服务端**没有**计数端点 ⇒ 复用两个既有只读列表端点现算行数
@@ -336,6 +346,58 @@ export default function WorkerHomePage() {
                 ) : null}
               </View>
               <Text className='worker-home__entry-sub'>报过返工的加工单 ⇒ 看返工笔数 / 原因 / 工序</Text>
+            </View>
+            <Text className='worker-home__entry-go'>›</Text>
+          </View>
+          ) : null}
+
+          {/* 裁高计算（issue #7813 P2b）：`/w/machine.html` 那一面搬成一条读面 ——
+              扫一次码 ⇒ 这一樘的成品高 / 命中项 / 「请在机器屏输入 X.XXX 米」。
+              🔴 **只读**：不写机器、不报工（「去报工」只把码交给报工页）。
+              显隐键 = `cut_calc`（与「精裁清单」共用；后端闭词表里只有一个裁床键）。 */}
+          {showCutCalc ? (
+          <View
+            className='worker-home__entry'
+            onClick={() => Taro.navigateTo({ url: CUT_CALC_PAGE_ROUTE })}
+          >
+            <View className='worker-home__entry-bar worker-home__entry-bar--c' />
+            <View className='worker-home__entry-body'>
+              <Text className='worker-home__entry-text'>裁高计算</Text>
+              <Text className='worker-home__entry-sub'>扫水洗唛 ⇒ 这一樘该输多少米</Text>
+            </View>
+            <Text className='worker-home__entry-go'>›</Text>
+          </View>
+          ) : null}
+
+          {/* 精裁清单（issue #7813 P2b）：`/w/` 报工屏里的「精裁输出（裁多长 × 几片）」搬成独立读面。
+              数据 = 扫码解析的 `set_overview.cut_plan`；旧码（多套单）必须先选套 + 部位。
+              显隐键 = `cut_calc`（同上，见上一条注释）。 */}
+          {showCutPlan ? (
+          <View
+            className='worker-home__entry'
+            onClick={() => Taro.navigateTo({ url: CUT_PLAN_PAGE_ROUTE })}
+          >
+            <View className='worker-home__entry-bar worker-home__entry-bar--c' />
+            <View className='worker-home__entry-body'>
+              <Text className='worker-home__entry-text'>精裁清单</Text>
+              <Text className='worker-home__entry-sub'>这一套每一樘：裁多长 × 几片、从哪批裁</Text>
+            </View>
+            <Text className='worker-home__entry-go'>›</Text>
+          </View>
+          ) : null}
+
+          {/* 质检记录（issue #7813 P2b）：`/w/` 报工屏里的「质检记录（做工）」搬成独立读面。
+              🔴 **只读**：不录判定（写面仍在 `/w/`，是否搬进小程序另裁）。
+              显隐键 = `inspect`（工人档案逐人开；同时是服务端准入 ⇒ 未开时页面给可行动提示）。 */}
+          {showQuality ? (
+          <View
+            className='worker-home__entry'
+            onClick={() => Taro.navigateTo({ url: QUALITY_PAGE_ROUTE })}
+          >
+            <View className='worker-home__entry-bar worker-home__entry-bar--b' />
+            <View className='worker-home__entry-body'>
+              <Text className='worker-home__entry-text'>质检记录</Text>
+              <Text className='worker-home__entry-sub'>这一件做过哪些检查、还等不等人复检</Text>
             </View>
             <Text className='worker-home__entry-go'>›</Text>
           </View>

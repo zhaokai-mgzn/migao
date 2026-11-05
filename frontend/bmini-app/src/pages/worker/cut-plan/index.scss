@@ -1,0 +1,121 @@
+@use "../../../styles/variables.scss" as *;
+
+// 工人端「精裁清单」（issue #7813 P2b）
+//
+// 视觉语言与同族工人页同一套（issue #7240）：非白页面底 + 白卡片 + 细描边 + `$shadow-card`
+// （判据 tests/worker-card-contrast-guard.test.ts）。不新增颜色 / 字号 token。
+.worker-cut-plan {
+  min-height: 100vh;
+  background: $bg-secondary;
+  padding: 0 0 40px;
+
+  &__header {
+    padding: 40px 24px 16px;
+  }
+
+  &__title {
+    display: block;
+    margin-top: 8px;
+    font-size: 40px;
+    font-weight: 700;
+    color: $text-primary;
+  }
+
+  &__worker {
+    display: block;
+    margin-top: 6px;
+    font-size: 24px;
+    color: $text-secondary;
+  }
+
+  &__card,
+  &__gate {
+    margin: 0 24px 16px;
+    padding: 24px;
+    background: $bg-primary;
+    border: 1px solid $border-color;
+    border-radius: $radius-lg;
+    box-shadow: $shadow-card;
+  }
+
+  &__notice,
+  &__hint,
+  &__notion {
+    display: block;
+    font-size: 24px;
+    line-height: 1.5;
+    color: $text-secondary;
+  }
+
+  &__notion {
+    color: $warning-color;
+  }
+
+  &__piece {
+    display: block;
+    font-size: 32px;
+    font-weight: 700;
+    color: $text-primary;
+  }
+
+  &__line {
+    display: block;
+    margin-top: 6px;
+    font-size: 26px;
+    color: $text-secondary;
+  }
+
+  &__rows {
+    margin: 16px 0;
+  }
+
+  // 一行 = 一个裁片对象（裁多长 × 几片 / 是哪一樘 / 用料 / 批次）
+  &__row {
+    padding: 16px 0;
+    border-top: 1px solid $border-color;
+  }
+
+  &__size {
+    display: block;
+    font-size: 30px;
+    font-weight: 600;
+    color: $text-primary;
+  }
+
+  &__name {
+    display: block;
+    margin-top: 4px;
+    font-size: 26px;
+    color: $text-primary;
+  }
+
+  &__meters,
+  &__batch {
+    display: block;
+    margin-top: 4px;
+    font-size: 24px;
+    color: $text-secondary;
+  }
+
+  &__reason {
+    display: block;
+    margin-top: 4px;
+    font-size: 24px;
+    line-height: 1.5;
+    color: $warning-color;
+  }
+
+  &__action {
+    width: auto;
+    min-height: 88px;
+    margin-top: 16px;
+    line-height: 88px;
+    padding: 0 32px;
+    font-size: 30px;
+    font-weight: 600;
+    text-align: center;
+    color: #ffffff;
+    background: $primary-color;
+    border-radius: $radius-md;
+  }
+}

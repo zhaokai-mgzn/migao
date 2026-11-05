@@ -1,0 +1,75 @@
+@use "../styles/variables.scss" as *;
+
+// 工人端**读面**共享件（issue #7813 P2b）：等一张码 / 旧码选套选部位。
+//
+// 视觉语言与同族工人页同一套（issue #7240）：页面根负责非白底色，本组件只出「内容块」。
+// 🔴 `__primary` / `__ghost` 必须显式 `width: auto`：Taro 的 Button 默认 `width: 100%`，
+//    在 flex 行里会被挤成竖排（判据 = tests/worker-page-header-button-width.test.ts 同款形态）。
+.worker-read {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin: 0 24px 16px;
+  padding: 24px;
+  background: $bg-primary;
+  border: 1px solid $border-color;
+  border-radius: $radius-lg;
+  box-shadow: $shadow-card;
+
+  &__hint,
+  &__notice {
+    font-size: 24px;
+    line-height: 1.5;
+    color: $text-secondary;
+  }
+
+  &__input {
+    min-height: 88px;
+    padding: 0 20px;
+    font-size: 30px;
+    color: $text-primary;
+    background: $bg-primary;
+    border: 1px solid $border-color;
+    border-radius: $radius-md;
+  }
+
+  &__primary,
+  &__ghost {
+    width: auto;
+    min-height: 88px;
+    line-height: 88px;
+    border-radius: $radius-md;
+    font-size: 30px;
+    text-align: center;
+  }
+
+  &__primary {
+    background: $primary-color;
+    color: #ffffff;
+    font-weight: 700;
+  }
+
+  &__ghost {
+    background: #f2ede5;
+    color: $primary-color;
+  }
+
+  &__choices {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+  }
+
+  &__choice {
+    width: auto;
+    min-height: 80px;
+    line-height: 80px;
+    padding: 0 28px;
+    border: 1px solid $border-color;
+    border-radius: $radius-full;
+    background: $bg-primary;
+    color: $text-primary;
+    font-size: 28px;
+    text-align: center;
+  }
+}
