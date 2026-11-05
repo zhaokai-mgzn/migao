@@ -207,7 +207,7 @@ class OrderStockLedgerTest {
         order.setStatus("confirmed");
 
         // when
-        lifecycle().cancelOrder(ORDER_ID, "客户改主意", orderService);
+        lifecycle().cancelOrder(ORDER_ID, "客户改主意", orderService.sharedParts());
 
         // then: 两行同链 —— 扣减(30→28) 之后是 回补(28→30)
         assertThat(skuStore.get(SKU_ID).getStock()).isEqualTo(BigDecimal.valueOf(30));
@@ -304,7 +304,7 @@ class OrderStockLedgerTest {
         lifecycle().confirmPayment(ORDER_ID);
         order.setStatus("confirmed");
 
-        lifecycle().cancelOrder(ORDER_ID, "客户改主意", orderService);
+        lifecycle().cancelOrder(ORDER_ID, "客户改主意", orderService.sharedParts());
 
         assertThat(skuStore.get(SKU_ID).getStock()).isEqualByComparingTo("30");
         assertThat(rowsOf(SKU_ID)).hasSize(2);

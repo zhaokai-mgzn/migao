@@ -15,7 +15,7 @@ import com.migao.admin.security.TenantOwnershipInterceptor;
 import com.migao.admin.security.TenantResourceOwnership;
 import com.migao.admin.service.CategoryService;
 import com.migao.admin.service.OrderQueryService;
-import com.migao.admin.service.OrderService;
+import com.migao.admin.service.OrderSharedParts;
 import com.migao.admin.service.ProcessingCategoryService;
 import com.migao.admin.service.ProcessingItemService;
 import com.migao.admin.service.ProductService;
@@ -98,7 +98,7 @@ class TenantOwnershipBeforeValidationTest extends BaseControllerTest {
     @Mock private com.migao.admin.mapper.AfterSalesTicketMapper afterSalesTicketMapper;
     @Mock private com.migao.admin.service.AfterSalesTicketService afterSalesTicketService;
     /** 订单服务（真类型 stub）—— 归属认定读的就是它的真实现 {@code existsForCurrentTenant}。 */
-    @Mock private OrderService orderService;
+    @Mock private OrderSharedParts orderSharedParts;
     /** 归属认定的**实现点**（issue #8681，P2-1e）：本类判的就是它，门面转发已删除。 */
     @Mock private OrderQueryService orderQueryService;
     /** 工人档案（同类第 9 个实例，issue #6432）：认定读 {@code findOwnedWorker}（与重置落库同一份判据）。 */
@@ -206,7 +206,7 @@ class TenantOwnershipBeforeValidationTest extends BaseControllerTest {
     @DisplayName("跨租户 + 非法载荷 ⇒ 404（订单 /content：修前是 400 BAD_REQUEST）")
     void crossTenantOrderContentWithInvalidPayload_isNotFound_not400() throws Exception {
         orderVisible(false);
-        withInterceptor(new OrderController(orderService, null, null, null, orderLifecycleServiceStub(), null, null, null, null))
+        withInterceptor(new OrderController(orderSharedParts, null, null, null, orderLifecycleServiceStub(), null, null, null, null))
                 .perform(put("/api/admin/orders/" + ORDER_ID + "/content")
                         .contentType(MediaType.APPLICATION_JSON).content(BAD_BODY))
                 .andExpect(status().isNotFound())
@@ -217,7 +217,7 @@ class TenantOwnershipBeforeValidationTest extends BaseControllerTest {
     @DisplayName("跨租户 + 完全无 body ⇒ 仍是 404（订单 /content 的空 body 形态）")
     void crossTenantOrderContentWithMissingBody_isNotFound() throws Exception {
         orderVisible(false);
-        withInterceptor(new OrderController(orderService, null, null, null, orderLifecycleServiceStub(), null, null, null, null))
+        withInterceptor(new OrderController(orderSharedParts, null, null, null, orderLifecycleServiceStub(), null, null, null, null))
                 .perform(put("/api/admin/orders/" + ORDER_ID + "/content"))
                 .andExpect(status().isNotFound());
     }
@@ -273,7 +273,7 @@ class TenantOwnershipBeforeValidationTest extends BaseControllerTest {
                 .andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
                 .andExpect(jsonPath("$.error.details[*].field", hasItem("name")))
                 .andExpect(jsonPath("$.error.details[0].message").isNotEmpty());
-        withInterceptor(new OrderController(orderService, null, null, null, orderLifecycleServiceStub(), null, null, null, null))
+        withInterceptor(new OrderController(orderSharedParts, null, null, null, orderLifecycleServiceStub(), null, null, null, null))
                 .perform(put("/api/admin/orders/" + ORDER_ID + "/content")
                         .contentType(MediaType.APPLICATION_JSON).content(BAD_BODY))
                 .andExpect(status().isUnprocessableEntity())
@@ -286,7 +286,7 @@ class TenantOwnershipBeforeValidationTest extends BaseControllerTest {
     @DisplayName("同租户 + 完全无 body ⇒ 仍是 400 BAD_REQUEST（订单 /content 现状不回退）")
     void sameTenantOrderContentWithMissingBody_stillBadRequest() throws Exception {
         orderVisible(true);
-        withInterceptor(new OrderController(orderService, null, null, null, orderLifecycleServiceStub(), null, null, null, null))
+        withInterceptor(new OrderController(orderSharedParts, null, null, null, orderLifecycleServiceStub(), null, null, null, null))
                 .perform(put("/api/admin/orders/" + ORDER_ID + "/content"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error.code").value("BAD_REQUEST"));
@@ -311,12 +311,12 @@ class TenantOwnershipBeforeValidationTest extends BaseControllerTest {
     @DisplayName("跨租户 + 非法载荷 ⇒ 404（订单 /status 与 /follow-status：同类第 6/7 个实例）")
     void crossTenantOrderStatusEndpoints_isNotFound() throws Exception {
         orderVisible(false);
-        withInterceptor(new OrderController(orderService, null, null, null, orderLifecycleServiceStub(), null, null, null, null))
+        withInterceptor(new OrderController(orderSharedParts, null, null, null, orderLifecycleServiceStub(), null, null, null, null))
                 .perform(put("/api/admin/orders/" + ORDER_ID + "/status")
                         .contentType(MediaType.APPLICATION_JSON).content(BAD_BODY))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.error.code").value("NOT_FOUND"));
-        withInterceptor(new OrderController(orderService, null, null, null, orderLifecycleServiceStub(), null, null, null, null))
+        withInterceptor(new OrderController(orderSharedParts, null, null, null, orderLifecycleServiceStub(), null, null, null, null))
                 .perform(put("/api/admin/orders/" + ORDER_ID + "/follow-status")
                         .contentType(MediaType.APPLICATION_JSON).content(BAD_BODY))
                 .andExpect(status().isNotFound())

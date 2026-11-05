@@ -9724,6 +9724,56 @@ cases:
         - "tests/unit_ci_workflows/test_redproof_harness_gate.py"
       ci:
         - pr-check.yml
+  - id: MC-244
+    legacy_id: ""
+    title: "OrderService 门面收尾第九批（issue #8681 的 P2-1e，部分交付）：共享部件族（明细装配 / 取价 / 总额 / 加工费组合同步 / 库存前置 / 单号 / 定价留痕 + 整卷分配的私有步骤 + batchStock 访问器）整体搬到新类 OrderSharedParts，三个服务（建单 / 实体写面 / 生命周期）的第三参从「门面实例」换成「共享部件实例」且不留兼容重载；同批固化「共享部件不许复制第二份」元守卫；门面 1,065 → 547 行、公开面 3 → 3"
+    domains:
+      - misc
+      - backend
+    tier: normal
+    tags:
+      - refactor
+      - order-service
+      - shared-parts
+      - third-param-migration
+      - meta-guard
+      - ratchet
+    truths_ref: []
+    precondition:
+      - "共享部件族（明细装配 / 取价 / 总额 / 组合同步 / 库存前置 / 单号 / 定价留痕）的唯一实现点已从门面搬到新类 OrderSharedParts；整卷分配的私有步骤与 batchStock() 访问器随族同址（前者是 persistOrderItems 的唯一私有步骤，后者是生命周期第三参的唯一用法）"
+      - "三个服务的入口第三参已是 OrderSharedParts（不是门面实例），且**不留** OrderService 兼容重载；门面实例不再作为任何 src/main 方法的形参出现"
+      - "驱动对象一律取实现点自己：手写 new 的既有单测经门面自己懒构造的那一份 sharedParts() 取实例 ⇒ 与拆分前是同一条调用链、同一份协作者，断言因此可以一个字都不改"
+      - "扫描面 = backend/admin-api/src/main 全树（剥注释后扫描）；任一扫描面扫到 0 个文件即判红（防「空扫描 = 绿」）"
+    user_inputs:
+      - "商家的建单（表单 / Agent 两条路径）与待付款内容改单、以及取消订单时的加工单联动作废：明细闸门话术、取价与总额口径、加工费构成落库、安装小区/位置归一、库存前置校验、订单号格式、定价改写审计、批次回补，全部逐字不变；HTTP 路径 / 入参 / 响应类型不变"
+    expectations: []
+    data_checks:
+      - "判据 1·🔴 实现点登记表双向相等：每个共享部件的特征调用（ProcessingFeeCalculator.attach 加工费构成挂载 / OrderLineCraftFields.materialize 行要素物化 / OrderInstallInfo.normalizeRoom 安装位置归一 / FEE_SOURCE_MANUAL 组合同步 / orderItemMapper.insert 明细落库 / ProductRollAllocation.resolve 整卷回落 / applyRollAllocation 权威方法 / resolveItemSubtotal 小计 / ORDER_SEQ.incrementAndGet 发号器）只允许出现在登记的承载文件里 —— 新增未登记 ⇒ 红并具名，登记了却扫不到 ⇒ 也红（台账只许缩短）；库存前置两个入口登记为「实现点 OrderStockService + 唯一转发 OrderSharedParts」两个文件。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/OrderSharedPartsTest.java"
+      - "判据 2·🔴 入口名不许在别处另起实现：assertItemAmountsValid / priceItems / computeItemsTotal / syncProcessingFeeCombinations / persistOrderItems / normalizeInstallRooms 六个方法的**声明**只允许在 OrderSharedParts 里存在一份（换文件重写一份 ⇒ 红并具名）。generateOrderNo 有意不入本集合：ProcessingOrderService 有一个同名但语义不同的加工单号发号器（JG-…），按名字判会误红 —— 它的唯一性由判据 1 的 ORDER_SEQ.incrementAndGet 调用点钉住。执行点 = 同判据 1"
+      - "判据 3·🔴 第三参只能是共享部件且没有兼容重载：createOrder / createOrderForAgent（OrderCreationService）、updatePendingOrderContent（OrderEntityWriteService）、updateOrderStatus / cancelOrder（OrderLifecycleService）五个入口的（返回类型 + 参数表）必须是 OrderSharedParts 版本，且**不存在** OrderService 版本的重载 —— 用反射 getMethod 两个签名各判一次（一个必须有、一个必须 NoSuchMethodException）。执行点 = 同判据 1"
+      - "判据 4·🔴 门面实例不许再当参数传：src/main 里不允许出现「形参类型是 OrderService」的方法（本批拆掉的正是这个形态；它一旦回来，共享部件就重新经门面传播）。执行点 = 同判据 1"
+      - "判据 5·🔴 判别力自证 + 负控：在别的服务里复制一条共享部件调用 ⇒ 判据 1 具名红；在服务里加一个 OrderService 兼容重载 ⇒ 判据 3 具名红；**只在源码里加一行同串注释** ⇒ 不红（剥注释扫描生效，负控）。执行点 = 同判据 1（正/负控形态见 PR body 红证表，逐字节 sha256 还原）"
+      - "判据 6·🔴 搬运逐字节一致（生命周期族）：cancelOrder / updateOrderStatus 的方法体与基线逐字节相同，唯一允许的差异是具名白名单里的两处跨类限定（batchStock 经共享部件访问器 / 内部自调用增补第三参）—— 白名单字符串随改名同步，判据的判定逻辑一字未改；另含两条注入式判别力自证（改一个字符 ⇒ 判假；把方法体复制回门面 ⇒ 判假）。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/OrderLifecycleSliceSourceIdentityTest.java"
+      - "判据 7·🔴 整卷分配权威点随族搬家（五条判据一字未改，只换载体常量）：写入点登记表、OrderItem 两列只在 applyRollAllocation 里被写、ProductRollAllocation.resolve 回落点唯一、allocate 不许被绕过、请求 DTO 两字段可空 —— 全部指向新承载文件 OrderSharedParts.java。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/OrderRollAllocationAuthorityTest.java"
+      - "判据 8·🔴 行数棘轮与冻结面未回退：门面 1,065 → 547（已跌破 800 行的存量豁免带 ⇒ 同批从 loc_ratchet_exemptions.json 销账并同步 declared_count 58 → 57），新类 OrderSharedParts 638 行 < 800 的新类阈值；加工单服务（冻结面 4,402 行上限）一行未涨。执行点 = tests/unit_ci_workflows/test_loc_ratchet.py"
+    skip_reason: "[backend-contract] Java 侧共享部件搬家 + 第三参签名改造（零 LLM 评测面，由 JUnit 判据与 pytest 棘轮判据验证，不进 agent-eval 冒烟）"
+    merge_log: "2026-11-05 新增（issue #8681 的 P2-1e 第九批，**部分交付**：不写关闭关键词）。现取读数（`git show origin/main:backend/admin-api/src/main/java/com/migao/admin/service/OrderService.java | wc -l`）= 1,065 / 3 个公开面。本批是**设计决定**不是搬运：新建 OrderSharedParts（638 行 < 800）承载建单/改单/Agent 三条写单路径共用的明细装配·取价·总额·加工费组合同步·库存前置·单号·定价留痕，连同整卷分配的私有步骤与 batchStock 访问器同址；三个服务的入口第三参从「门面实例」换成「共享部件实例」并迁全部调用点（main 6 处 + test 205 处），**不留**门面兼容重载；同批落地一直登记为未固化的「共享部件不许复制第二份」元守卫（4 条判据 + 2 条判别力自证）。门面 1,065 → 547（净 −518）。⚠️ 与派单边界的偏差（逐条现取后裁定）：applyRollAllocation 与 batchStock() 原写「照旧不搬」，但前者是 persistOrderItems 的**唯一私有步骤**（搬明细装配而不搬它就得在两类之间架回调）、后者是生命周期第三参的**唯一用法**（第三参不换成共享部件就完不成派单②）⇒ 二者随族同址；权威判据的五条断言一字未改，只把载体文件常量从 OrderService.java 改到 OrderSharedParts.java（载体搬家同批登记）。全量读数见 PR body。"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/OrderSharedPartsTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/OrderRollAllocationAuthorityTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/OrderLifecycleSliceSourceIdentityTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/OrderServiceTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/OrderCreationServiceTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/OrderContentEditTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/OrderLifecycleServiceTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/OrderAgentFacadeTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/OrderServiceSliceWiringTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/AgentOrderServiceTest.java"
+        - "tests/unit_ci_workflows/test_loc_ratchet.py"
+        - "tests/unit_ci_workflows/test_redproof_harness_gate.py"
+      ci:
+        - pr-check.yml
 
   - id: MC-243
     legacy_id: ""

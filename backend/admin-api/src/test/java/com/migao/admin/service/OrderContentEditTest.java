@@ -203,13 +203,13 @@ class OrderContentEditTest {
             order.setStatus(status);
             when(orderMapper.selectById(ORDER_ID)).thenReturn(order);
 
-            assertThatThrownBy(() -> orderEntityWriteService.updatePendingOrderContent(ORDER_ID, request("3", "50", "150"), orderService))
+            assertThatThrownBy(() -> orderEntityWriteService.updatePendingOrderContent(ORDER_ID, request("3", "50", "150"), orderService.sharedParts()))
                     .as("状态 %s 必须被拒", status)
                     .isInstanceOf(BusinessException.class)
                     .hasMessageContaining("只有「待付款」的订单可以修改内容");
 
             BusinessException e = (BusinessException) org.assertj.core.api.Assertions
-                    .catchThrowable(() -> orderEntityWriteService.updatePendingOrderContent(ORDER_ID, request("3", "50", "150"), orderService));
+                    .catchThrowable(() -> orderEntityWriteService.updatePendingOrderContent(ORDER_ID, request("3", "50", "150"), orderService.sharedParts()));
             assertThat(e.getHttpStatus()).as("422（不是 400/500）").isEqualTo(422);
         }
         verify(orderMapper, never()).updateById(any(Order.class));
@@ -225,7 +225,7 @@ class OrderContentEditTest {
         givenOrderItems(oldItem);
         when(orderMapper.selectById(ORDER_ID)).thenReturn(order);
 
-        OrderDetailResponse detail = orderEntityWriteService.updatePendingOrderContent(ORDER_ID, request("3", "50", "150"), orderService);
+        OrderDetailResponse detail = orderEntityWriteService.updatePendingOrderContent(ORDER_ID, request("3", "50", "150"), orderService.sharedParts());
 
         assertThat(detail).isNotNull();
         // issue #6955：写路径从「读 → 改实体 → updateById（整实体回写）」改成**条件更新 + 只写自己负责的列**
@@ -270,7 +270,7 @@ class OrderContentEditTest {
             return 1;
         });
 
-        orderEntityWriteService.updatePendingOrderContent(ORDER_ID, req, orderService);
+        orderEntityWriteService.updatePendingOrderContent(ORDER_ID, req, orderService.sharedParts());
 
         // issue #6955：金额断言改看条件更新的 SET 实参（不再靠「内存实体被改」）
         ArgumentCaptor<LambdaUpdateWrapper<Order>> wrapper = captorOfWrapper();
@@ -292,7 +292,7 @@ class OrderContentEditTest {
         givenOrderItems(oldItem);
         when(orderMapper.selectById(ORDER_ID)).thenReturn(order);
 
-        assertThatThrownBy(() -> orderEntityWriteService.updatePendingOrderContent(ORDER_ID, request("3", "50", "100"), orderService))
+        assertThatThrownBy(() -> orderEntityWriteService.updatePendingOrderContent(ORDER_ID, request("3", "50", "100"), orderService.sharedParts()))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("实收金额与应收不一致");
         verify(orderMapper, never()).updateById(any(Order.class));
@@ -308,7 +308,7 @@ class OrderContentEditTest {
         givenOrderItems(oldItem);
         when(orderMapper.selectById(ORDER_ID)).thenReturn(order);
 
-        assertThatThrownBy(() -> orderEntityWriteService.updatePendingOrderContent(ORDER_ID, request("3", "50", "150"), orderService))
+        assertThatThrownBy(() -> orderEntityWriteService.updatePendingOrderContent(ORDER_ID, request("3", "50", "150"), orderService.sharedParts()))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("库存不足")
                 .hasMessageContaining("修改订单");
@@ -337,7 +337,7 @@ class OrderContentEditTest {
             return 1;
         });
 
-        orderEntityWriteService.updatePendingOrderContent(ORDER_ID, req, orderService);
+        orderEntityWriteService.updatePendingOrderContent(ORDER_ID, req, orderService.sharedParts());
 
         verify(productSkuMapper, never()).updateById(any(ProductSku.class));
         verifyNoInteractions(stockLedgerService);
@@ -353,7 +353,7 @@ class OrderContentEditTest {
                 ProcessingOrder.builder().id("po-1").orderId(ORDER_ID).tenantId(TENANT)
                         .processingOrderNo("JG-20261001-0001").status("generated").build());
 
-        assertThatThrownBy(() -> orderEntityWriteService.updatePendingOrderContent(ORDER_ID, request("3", "50", "150"), orderService))
+        assertThatThrownBy(() -> orderEntityWriteService.updatePendingOrderContent(ORDER_ID, request("3", "50", "150"), orderService.sharedParts()))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("已生成加工单")
                 .hasMessageContaining("JG-20261001-0001");
@@ -384,7 +384,7 @@ class OrderContentEditTest {
             return 1;
         });
 
-        orderEntityWriteService.updatePendingOrderContent(ORDER_ID, req, orderService);
+        orderEntityWriteService.updatePendingOrderContent(ORDER_ID, req, orderService.sharedParts());
 
         verify(orderItemMapper).delete(any());
         verify(orderItemMapper).insert(any(OrderItem.class));
@@ -418,7 +418,7 @@ class OrderContentEditTest {
             return 1;
         });
 
-        orderEntityWriteService.updatePendingOrderContent(ORDER_ID, req, orderService);
+        orderEntityWriteService.updatePendingOrderContent(ORDER_ID, req, orderService.sharedParts());
 
         @SuppressWarnings("unchecked")
         ArgumentCaptor<Map<String, Object>> detailsCaptor = ArgumentCaptor.forClass(Map.class);
@@ -462,7 +462,7 @@ class OrderContentEditTest {
                                 List.of(Map.of("id", "p1", "name", "韩褶", "quantity", new BigDecimal("1"))))))
                         .build());
 
-        assertThatThrownBy(() -> lifecycle().updateOrderStatus(ORDER_ID, "shipped", orderService))
+        assertThatThrownBy(() -> lifecycle().updateOrderStatus(ORDER_ID, "shipped", orderService.sharedParts()))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("与加工单快照不一致");
     }
@@ -526,7 +526,7 @@ class OrderContentEditTest {
         // 件级安装位置（issue #7856）：可选；传了就必须落进**本行** processing_info（去空白）
         update.getItems().get(0).setInstallRoom(" 阳台 ");
 
-        orderEntityWriteService.updatePendingOrderContent(ORDER_ID, update, orderService);
+        orderEntityWriteService.updatePendingOrderContent(ORDER_ID, update, orderService.sharedParts());
 
         ArgumentCaptor<OrderItem> captor = ArgumentCaptor.forClass(OrderItem.class);
         verify(orderItemMapper).insert(captor.capture());
@@ -549,7 +549,7 @@ class OrderContentEditTest {
         OrderContentUpdateRequest update = request("3", "50", "150");
         update.setInstallCommunity("");
 
-        orderEntityWriteService.updatePendingOrderContent(ORDER_ID, update, orderService);
+        orderEntityWriteService.updatePendingOrderContent(ORDER_ID, update, orderService.sharedParts());
 
         ArgumentCaptor<OrderItem> captor = ArgumentCaptor.forClass(OrderItem.class);
         verify(orderItemMapper).insert(captor.capture());

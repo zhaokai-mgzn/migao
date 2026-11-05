@@ -8,7 +8,7 @@ import com.migao.admin.security.PaginationParamInterceptor;
 import com.migao.admin.validation.PaginationParamGate;
 import com.migao.admin.service.NotificationService;
 import com.migao.admin.service.OrderLogisticsService;
-import com.migao.admin.service.OrderService;
+import com.migao.admin.service.OrderSharedParts;
 import com.migao.admin.service.OrderShipmentService;
 import com.migao.admin.service.StockLedgerService;
 import org.junit.jupiter.api.BeforeEach;
@@ -72,7 +72,7 @@ class PaginationParamGateEndpointTest extends BaseControllerTest {
 
     private MockMvc mockMvc;
 
-    @Mock private OrderService orderService;
+    @Mock private OrderSharedParts orderSharedParts;
     @Mock private com.migao.admin.service.RoleService roleService;
     @Mock private OrderLogisticsService orderLogisticsService;
     @Mock private OrderShipmentService orderShipmentService;
@@ -88,7 +88,7 @@ class PaginationParamGateEndpointTest extends BaseControllerTest {
     @BeforeEach
     void setUp() {
         super.baseSetUp();
-        orderController = new OrderController(orderService, roleService, orderLogisticsService, orderShipmentService,
+        orderController = new OrderController(orderSharedParts, roleService, orderLogisticsService, orderShipmentService,
                 null, orderQueryService, null, null, null);
         stockLedgerController = new StockLedgerController(stockLedgerService);
         notificationController = new NotificationController(notificationService);
@@ -135,7 +135,7 @@ class PaginationParamGateEndpointTest extends BaseControllerTest {
                 .andExpect(jsonPath("$.success").value(false))
                 .andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
                 .andExpect(jsonPath("$.error.details[0].field").value("size"));
-        verifyNoInteractions(orderService);
+        verifyNoInteractions(orderSharedParts);
     }
 
     @Test
@@ -177,7 +177,7 @@ class PaginationParamGateEndpointTest extends BaseControllerTest {
         mockMvc.perform(get("/api/admin/orders").param("page", "1").param("size", "abc"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"));
-        verifyNoInteractions(orderService);
+        verifyNoInteractions(orderSharedParts);
     }
 
     // ────────────────────────── ③ 正对照：合法入参逐字不变 ──────────────────────────
@@ -232,7 +232,7 @@ class PaginationParamGateEndpointTest extends BaseControllerTest {
                 .andExpect(status().isBadRequest());
         // 清掉上面几次调用（无闸路径**会**打到 service —— 这正是修前的行为）。
         // 第四批（issue #8681）：列表读面的实现点改为直连 ⇒ 两次都要清，否则反向判据会被上面几条喂红。
-        clearInvocations(orderService, orderQueryService);
+        clearInvocations(orderSharedParts, orderQueryService);
         // 反向：有闸装配下同一请求是 400，且 service 零调用
         mockMvc.perform(get("/api/admin/orders").param("page", "1").param("size", "-5"))
                 .andExpect(status().isBadRequest());
@@ -246,6 +246,6 @@ class PaginationParamGateEndpointTest extends BaseControllerTest {
         mockMvc.perform(get("/api/admin/orders").param("SIZE", "-5"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error.details[0].field").value("SIZE"));
-        verifyNoInteractions(orderService);
+        verifyNoInteractions(orderSharedParts);
     }
 }
