@@ -4245,7 +4245,7 @@
 ```
 溯源: 2026-10-31 新增（issue #8295）：两步确认，避免误写 ｜ tags: ui, preview
 
-## 杂项域（234 case）
+## 杂项域（235 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -7768,6 +7768,19 @@
 数据: 按文件内容扫、不按语言扫：它是跨语言、跨文件类型的一类缺陷，任何单语言解析器都只能看见自己那一种。
 ```
 溯源: ['读数影响：本用例 expectations 非空、skip_reason 未标 [backend-contract] ⇒ **不计入** case_machine_fail_channel_baseline 的 backend_contract_scoring_zero（实测仍 318，无需重锚）。', '2026-11-05 新增（PR #8693）。起因 = 一晚上同一形态咬三次：① 重建 .github/cases/misc.yml 时用正则抠自有用例块，把等号族标记一起带进文件（YAML ScannerError）；② 合并两侧都追加 history 的 baseline JSON，自动合并把冲突留在文件里（CI 红的是另一个测试的 JSONDecodeError）；③ 早前同类。'] ｜ tags: 类级判据, 合并冲突, 入库卫生
+
+### MC-208. demo-seed 的 SKU 插入语句必须三处一致：SELECT 行值 = WHERE 关联条件 = product_colors 已声明颜色（issue #7583 缺陷 2 的假绿出口） 🔵
+```
+你: issue #7583 缺陷 2：demo-seed 的 SKU 矩阵必须每个颜色至少一条 SKU
+你: 2026-11-05 集成侧复核：SKU 行走 INSERT … SELECT … FROM product_colors c WHERE c.color_name = <色名>，静态解析只看 SELECT 列表 ⇒ 只把 WHERE 打错一个字，真库插 0 行而判据全绿
+你: 边界：只补判据、不改 seed 数据（数据本体已在 PR #7681 修好）；复用 tests/unit_ci_workflows/_seed_sql.py，不重写 SQL 解析器，不新写带引号捕获组的正则
+数据: **判据 1（会红）·WHERE 关联的「商品 × 颜色」必须在 product_colors 里存在**：逐条 product_skus 的 INSERT 取出 c.product_id / c.color_name 关联字面量，必须命中 product_colors 声明过的组合；打错一个字 ⇒ 红并具名「商品 × 颜色 + WHERE 按什么关联」。执行点 = tests/unit_ci_workflows/test_seed_data_quality.py
+数据: **判据 2（会红）·SELECT 行值与 WHERE 关联条件一致**：WHERE 关联到已声明颜色、但与 SELECT 列表写的行值不同 ⇒ 红并具名两侧字面量。执行点 = 同上
+数据: **判据 3·fail-closed**：product_skus 出现本判据判不了的写入形态（元组 VALUES）或缺关联条件 ⇒ 红，不静默跳过。执行点 = 同上
+前置: 零运行期前置（纯静态解析）：被测对象 = docs/deployment/demo-seed.sql 的原文，判据在 tests/unit_ci_workflows/test_seed_data_quality.py 里读盘解析。零网络 / 零 LLM / 零 DB。判不了的形态（元组 VALUES / 缺关联条件）⇒ 判据自己红并具名，绝不静默跳过。
+跳过: [backend-contract] 纯静态落盘判据（零 LLM / 零网络 / 零 DB）：不进 agent-eval 冒烟；机器判红通道 = traces.tests 的 pytest（pr-check 的 ci workflow helper unit tests 全量跑 tests/unit_ci_workflows）
+```
+溯源: 2026-11-05 新增（关联 #7583 缺陷 2；缺陷本体与三条基础判据已由 PR #7681 落地，本条只补它的假绿出口）。现取读数：origin/main 的 demo-seed 里 products 3 行全为 on_sale、product_colors 8 行、product_skus 14 行、orders 4 行 / order_items 6 行且逐单 total == Σ subtotal ⇒ 缺陷 1/2/3 已闭合；但 product_skus 是唯一以「别的表」为行来源的 INSERT（14 条全部 FROM product_colors c），静态解析把 SELECT 列表当已插入行 ⇒ 只改 WHERE 的色名 / 商品 id，真库插 0 行而全部判据仍绿（实测：把 WHERE 色名 象牙白 改成 象牙白X ⇒ 既有判据 2 passed = 假绿）。本 PR 补 1 条会红的判据：注入同一处 ⇒ 红并具名「商品 p-zg-001 × 颜色 象牙白：WHERE 按 象牙白X 关联，但 product_colors 里没有这个颜色」。 ｜ tags: seed, data-quality, false-green, static-parse, red-proof
 
 ## 商家入驻域（7 case）
 
@@ -15293,8 +15306,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：1036（活跃 162，跳过 874）
-- tier 分布：smoke 15 / normal 959 / adversarial 33
+- 用例总数：1037（活跃 162，跳过 875）
+- tier 分布：smoke 15 / normal 960 / adversarial 33
 - 售后域：16
 - Agent 核心域：13
 - API 层域：21
@@ -15310,7 +15323,7 @@
 - 人事域：13
 - 知识问答域：9
 - 客户主数据迁移域：10
-- 杂项域：234
+- 杂项域：235
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：76
@@ -15612,6 +15625,7 @@
 - MC-206: 工人端「裁高计算（一体机）」更名「裁高计算」（issue #8683）：手持标签机现在也能进这页 ⇒ 同一个入口两端都在用，端名就是错误陈述；入口文案 / 机台屏 h1 / machine.html title 三处同批改，并落一条类级守卫（用户可见面出现端名 ⇒ 红），不按端分叉、不引入第二套 UI 分支
 - MC-205: OrderService 门面收尾第二批（issue #8681 的 P2-1e，部分交付）：OrderServiceTest 的 152 条判据把驱动对象从门面迁到实现点（129 个调用点改直驱查询 / 建单 / 生命周期三个新服务，断言零改动），并删除因此解锁的 getMyOrderPage 转发（C 端「我的订单」端点改直连 OrderQueryService；门面 1,725 → 1,702 行，公开成员 26 → 25）
 - MC-209: 任何入库文件都不许含合并冲突标记（跨语言的类级判据：YAML 会 ScannerError、JSON 会 JSONDecodeError、代码有时能编译通过）
+- MC-208: demo-seed 的 SKU 插入语句必须三处一致：SELECT 行值 = WHERE 关联条件 = product_colors 已声明颜色（issue #7583 缺陷 2 的假绿出口）
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）
