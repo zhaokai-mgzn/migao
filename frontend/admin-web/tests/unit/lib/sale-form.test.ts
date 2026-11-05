@@ -16,8 +16,14 @@ import { SALE_FORM_FABRIC, isFabricSaleLine } from '@/lib/sale-form'
 
 const SRC = join(process.cwd(), 'src')
 
-/** 允许出现 `'布料'` 字面量比较的文件（相对 src）—— 本模块 + 下单页（表单态常量 + 展示标签） */
-const FABRIC_LITERAL_ALLOW = new Set(['lib/sale-form.ts', 'app/(dashboard)/orders/new/page.tsx'])
+/**
+ * 允许出现 `'布料'` 字面量的文件（相对 src）—— **只剩本模块一处**。
+ *
+ * issue #8725 第一档切片把下单页的 `SALE_FORM_*` 常量搬进 `lib/order-create/types.ts`，
+ * 但那里只**转出**本模块的 `SALE_FORM_FABRIC`、不另写字面量（展示侧一律引用常量）
+ * ⇒ 原 `app/(dashboard)/orders/new/page.tsx` 条目退场，台账**净减 2 → 1**（只许缩短）。
+ */
+const FABRIC_LITERAL_ALLOW = new Set(['lib/sale-form.ts'])
 
 function walk(dir: string, out: string[] = []): string[] {
   for (const entry of readdirSync(dir)) {

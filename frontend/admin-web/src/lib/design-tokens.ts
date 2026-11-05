@@ -45,6 +45,19 @@ export interface TypeScaleStep {
 }
 
 /** 字号阶梯（真值）。顺序 = 从大到小；新增档位必须同时给出用途。 */
+/**
+ * **存量任意值字号**的唯一定义点（issue #8725 第一档切片）。
+ *
+ * 10px / 11px **不在**字号阶梯里（阶梯有下限），但它们是**存量**（组头角标 / 推导明细小字 /
+ * 纸面小字）。把下单页拆成多个文件后，类级棘轮「含任意值字号的**文件数**只许缩短」
+ * 会被文件数放大（同一段代码只是换了住址）⇒ 把这两个字符串收敛到真值源**一处**，
+ * 消费面一律引用。**渲染出的 class 逐字不变**（由 `orders-new-slice-characterization`
+ * 的逐字节判据兜住），所以这不是放宽，是让「住址」不再影响读数。
+ */
+export const FONT_PX_10 = 'text-[10px]'
+
+export const FONT_PX_11 = 'text-[11px]'
+
 export const TYPE_SCALE: readonly TypeScaleStep[] = [
   { className: 'text-2xl', usage: '页面标题（h1）', size: 24, lineHeight: 36, weight: 600 },
   { className: 'text-xl', usage: '区块标题（h2）', size: 20, lineHeight: 30, weight: 600 },

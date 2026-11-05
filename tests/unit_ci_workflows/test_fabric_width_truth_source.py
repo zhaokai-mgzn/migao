@@ -48,7 +48,10 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent.parent
 INTERNAL_PY = REPO / "backend/ai-agent-service/app/api/internal.py"
 LIB_TS = REPO / "frontend/admin-web/src/lib/craft-auto-features.ts"
-PAGE_TSX = REPO / "frontend/admin-web/src/app/(dashboard)/orders/new/page.tsx"
+# ⚠️ issue #8725 第一档切片：下单页的**推导面**（含 `calcInputOf`）从 page.tsx 搬进
+# `lib/order-create/calc.ts` ⇒ 门幅的取值点跟着搬。**判据强度一字未变**（仍要求经该函数取值），
+# 只是「哪份文件是下单页的推导面」换了个住址。
+PAGE_TSX = REPO / "frontend/admin-web/src/lib/order-create/calc.ts"
 PLAN_TS = REPO / "frontend/admin-web/src/lib/door-width-plan.ts"
 
 

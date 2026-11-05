@@ -58,13 +58,6 @@
         "EF-row-raw-value": 1
       }
     },
-    "src/app/(dashboard)/orders/new/page.tsx": {
-      "kind": "risk",
-      "reason": "取费来源（`FEE_SOURCE_LABELS[feeSource] ?? feeSource`）：涉钱面，未命中即把标识印在费用明细。",
-      "sites": {
-        "EF-row-raw-value": 1
-      }
-    },
     "src/app/(dashboard)/production/pool/page.tsx": {
       "kind": "risk",
       "reason": "派单结果里的订单号兜底（`orderNoById[r.orderRef] ?? r.orderRef`）：`orderRef` 是**内部引用键**（`*Ref` 机器键指纹），查不到单号时会把内部键印给商家。",
@@ -181,6 +174,13 @@
     "src/lib/stock-ledger.ts": {
       "kind": "benign",
       "reason": "库存流水的 `reason` 兜底：前端自建原因词表，兜底值是可读词。",
+      "sites": {
+        "EF-row-raw-value": 1
+      }
+    },
+    "src/components/orders/order-create/LineItemBlock.tsx": {
+      "kind": "risk",
+      "reason": "取费来源（`FEE_SOURCE_LABELS[feeSource] ?? feeSource`）：涉钱面，未命中即把标识印在费用明细。issue #8725 第一档切片把该渲染点从下单页搬进本文件，**调用形态与兜底口径一字未改**。",
       "sites": {
         "EF-row-raw-value": 1
       }
