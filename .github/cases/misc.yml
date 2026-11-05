@@ -9027,97 +9027,43 @@ cases:
 
   - id: MC-222
     legacy_id: ""
-    title: "ToolResult.summary 的**消费面**（issue #5511 第四节 / 台账 #4025 F23）：值必须真的进模型上下文，不许把「字段存在」当「功能生效」"
+    title: "选工具小抄由 tools registry + 本体投影生成，替换 10 处手写速查表（issue #8176）"
     domains:
       - misc
-      - backend
+      - agent
     tier: normal
     tags:
-      - 死字段
-      - 消费面
-      - 模型上下文
-      - 值透传
+      - 工具选择
+      - 注册表投影
+      - 本体词表
+      - 手写表退役
+      - 双向一致
+      - 确定性
       - 红证
     truths_ref: []
     user_inputs:
-      - "台账原文判 ToolResult.summary「声明 + 大量赋值 + 零消费」，证据 = `git grep -n \".summary\"` 只命中 state.summary（不同对象）"
+      - "商家问「这单的加工单到哪了」「库存还有多少」「员工和岗位分别找谁查」时，模型按生成的小抄选工具，而不是靠 9 处手写速查表"
     expectations:
-      - tool: direct_reply
+      - "小抄由工具注册表 + 本体投影而来，按**本轮 skill 的声明面**渲染；每个 B 端 skill 的组装 system prompt 里都有该段，C 端（元元）prompt 逐字节不含它。"
+      - "小抄条目与声明面**双向一致**：声明面里有而小抄没有 ⇒ 判红并具名该工具；小抄写出未注册的工具名 ⇒ 判红。"
+      - "删掉的 5 条手写「不要用 A 做 B」规则，其真值必须落在工具的「不要用于」元数据里、并在小抄行里可见；对应负例仍须留在用例库。"
+      - "9 处手写速查表（6 个领域 prompt + 2 处内联 prompt + 财务规则表）全部清零；表里点名过的工具必须仍被渲染（真值不随表消失）。"
+      - "同一输入两次渲染逐字节相同；`python -m app.graph.skills.cheatsheet --check` 退出码 0；渲染漂移 ⇒ 1；一把工具都没渲染 ⇒ 3（不可判定）。"
     data_checks:
-      - "**裁定现取（推翻「零消费」读法）**：出口字典 `summary=getattr(result, \"summary\", None) or \"\"` → `result_str = json.dumps(result_dict)` → `react_turn.py` 的 `ToolMessage(content=result_str, …)` ⇒ summary 是模型看得到的工具结果字段；台账读法漏掉了 `getattr(result, \"summary\", …)` 这种属性字符串取值形态。⇒ 选 B（保留字段 + 钉住消费面）：删除会真的从上下文拿掉一段信息（行为变更，且按 #4262 不自动跑评测）。"
-      - "**判据 1（会红）**：真跑 `_execute_tool_safe`（替身工具 summary=「共3个分类: 卧室系列,窗帘布艺,测试分类」）⇒ 出口字典与交给 ToolMessage 的那段 JSON 里都是该值；把出口 update 里的 `summary=` 删掉 ⇒ 红。"
-      - "**判据 2（会红）**：工具不填 summary ⇒ 键在、值为空串（消费点直接取键，缺键即 KeyError）。"
-      - "**判据 3（链路静态锁 + 判别力自证，会红）**：AST 判 `result_dict.update(... summary=…)` 与 `ToolMessage(content=result_str, …)`；两处分别注入拆除 ⇒ 判据点名，不注入 ⇒ 不报（防「判据没牙」）。"
-    skip_reason: "[backend-contract] 运行期值透传 + 源码 AST 锁（零 LLM、零网络）由 backend/ai-agent-service/tests/test_tool_result_summary_reaches_context.py 验证；「模型有没有真的用这条摘要」属真实 LLM 行为面，按 #4262 不自动跑评测，不进入 agent-eval 冒烟"
-    merge_log:
-      - "2026-11-05 新增（PR #8715，关联 issue #5511 第四节）。裁定 = B（保留字段 + 钉住消费面），不是 A（删字段）——现取证明消费面存在。"
-      - "取号：MC-222（先查重 .github/cases 全库无 MC-222 及以后，再按 scripts/next_case_id.py 的现取口径复核）。"
+      - "**双向一致（会红）**：把渲染器对 `order_query` 静默跳过 ⇒ `test_rendering_skips_are_reported_by_name` 红并在消息里**具名** `order_query`；未注入 ⇒ 20 passed（复算 = `cd backend/ai-agent-service && .venv/bin/python -m pytest tests/ -q -k cheatsheet`）。"
+      - "**删规则仍绿（本单核心）**：`product.md` 的「查库存不要用 product_search」、`order.md` 的「问加工单不得用 processing_item_query 冒充」、`general.md` 的同族口径、`staff.md` 的「查角色用 role_manage」、`settings.md` 的「不要拿 settings_manage 去查通知」五条删除后 ⇒ 其 true 值分别落在 `product_search` / `processing_item_query` / `employee_manage` / `settings_manage` 的「不要用于」段，且出现在对应 skill 的小抄行里（`test_deleted_handwritten_rule_is_handed_over_by_metadata`）。"
+      - "**表退役但真值不留空**：6 个 prompt 文件的表头 `| 场景 | 工具 |` 命中数 = 0；表里点名过的工具仍出现在该 skill 的小抄里（`test_deleted_table_tools_are_all_still_rendered`）。"
+      - "**扫描面非空自证**：每个 B 端 skill 至少渲染 1 把工具（共 ≥ 16 条），0 把 ⇒ 判红；空注册表 ⇒ 返回空串（不产出空壳段冒充已渲染）。"
+      - "**确定性**：同输入两次渲染逐字节相同；注入漂移渲染 ⇒ `--check` 判 1；注入全空 ⇒ 判 3。"
+      - "**元数据不是第二事实源**：`triggers` / `not_for` 与工具 `description` 的对应段逐字节相等（投影而非副本）；逐族（订单/加工单/加工项/财务/商品）跳转目标必须可达、非自指、至少一个跨业务域。"
+      - "**字符数**：手写速查表 5,772 字符 → 0；组装后 11 个 B 端 skill 的 prompt 合计 123,175 → 122,679（生产形态，含内联 prompt）。"
+    skip_reason: "[backend-contract] 结构 + 投影判据（零网络、零 LLM 调用），由 backend/ai-agent-service/tests/test_cheatsheet.py 与 tests/test_prompt_snapshots.py 验证；判的是「小抄 ⇄ 注册表一致」与「手写规则是否被元数据接手」，不是模型回答质量"
+    merge_log: "2026-11-05 新增（issue #8176）：10 处手写速查表改为注册表 × 本体的投影（新增 `app/graph/skills/cheatsheet.py` + Layer 2.8 注入，只给 mibao）。取号 MC-222（`grep -rn \"id: MC-2\" .github/cases/` 零命中后取号）。30 把工具补「不要用于」元数据（覆盖订单/加工单/加工项/财务/商品五族），6 条手写规则删除并逐条留了接手判据。未闭合（照实登记）：C 端 `prompts/customer_quote.md` 与 `prompts/customer_knowledge.md` 的表格**有意保留**（C 端 prompt 逐字节不变，与 #7291 的 persona 门控同口径），重启条件 = 需要 C 端选工具帮助时另开单。"
     traces:
       tests:
-        - "backend/ai-agent-service/tests/test_tool_result_summary_reaches_context.py"
-      ci:
-        - ai-agent-tests.yml
-
-  - id: MC-223
-    legacy_id: ""
-    title: "存量弱断言增长的失败信息必须带**具体行号**（issue #5511 第四节 / 台账 #8313 残余②）：报错可直接点开，处置不再靠翻整个文件"
-    domains:
-      - misc
-      - ci
-    tier: normal
-    tags:
-      - 弱断言
-      - 门禁报错
-      - 行号
-      - 只许缩短
-      - 红证
-    truths_ref: []
-    user_inputs:
-      - "台账原文：`.github/growth_gate.py` 的 `weak_baseline_diff` 只返回 `(path, cur, base)`、失败信息无行号（原文写 `scripts/` 是旧路径，已漂移）"
-    expectations:
-      - tool: direct_reply
-    data_checks:
-      - "**判据 1（改前必红）**：新入账文件里的弱断言在第 3 行 ⇒ 失败文本必须含「该文件路径 + 冒号 + 行号」这一形态；改前只报「N 个文件越过锚点」+ 路径，不含行号。"
-      - "**判据 2（会红）**：存量文件 1 → 2 处 ⇒ 第 2 行与第 4 行都出现在失败文本里，且「存量增长 1 → 2」仍可读。"
-      - "**负控**：与锚点齐平 ⇒ growth 为空、rc 0（加一列不得把干净的树判红）。"
-      - "**取不到行号不得洗白**：文件已不在 ⇒ 行号列退化为空列表，但文件/处数必须保留（判红不得静默放行）。"
-      - "口径：报「该文件全部弱断言行号」而不是「新增行」—— 账本只存处数，差分不出新增行；宁可多报也不假精确。"
-    skip_reason: "[backend-contract] 纯函数 + 门禁文本判据（零网络、零 LLM）由 tests/unit_ci_workflows/test_weak_baseline_diff_line_numbers.py 验证；不进入 agent-eval 冒烟"
-    merge_log:
-      - "2026-11-05 新增（PR #8715，关联 issue #5511 第四节）。修法：`weak_baseline_diff` 多返回一列行号（`weak_assert_lines()`），`check_weak_baseline` 的失败行写成 `路径:行号`；未新增豁免、未改通过条件。"
-    traces:
-      tests:
-        - "tests/unit_ci_workflows/test_weak_baseline_diff_line_numbers.py"
+        - "backend/ai-agent-service/tests/test_cheatsheet.py"
+        - "backend/ai-agent-service/tests/test_prompt_snapshots.py"
+        - "backend/ai-agent-service/tests/test_tool_selection_metadata.py"
       ci:
         - pr-check.yml
-
-  - id: MC-224
-    legacy_id: ""
-    title: "unfailable_green 标记必须被**读到**（issue #5511 第四节 / 台账 #8300 残余①）：接报告面消费点，不改判定"
-    domains:
-      - misc
-      - ci
-    tier: normal
-    tags:
-      - 假绿
-      - 只写不读
-      - 消费面
-      - 报告面
-      - 红证
-    truths_ref: []
-    user_inputs:
-      - "台账原文：`unfailable_green` 只写不读 —— `local_runner.py` 仅写标记，CI 不消费、无台账"
-    expectations:
-      - tool: direct_reply
-    data_checks:
-      - "**判据 1（会红）**：`fake_green_ids` 读到带标记的用例（OR-010 / PG-013）⇒ 返回 [\"OR-010\", \"PG-013\"]；未标记 / 为 False / 空结果 ⇒ 空列表（负控：不得把所有通过用例算成假绿）。"
-      - "**判据 2（接线静态锁，会红）**：AST 判 `run_suite` 调用 `fake_green_ids` 且其返回值进入 `print`（报告面 = CI 日志）；把调用换成常量 ⇒ 点名「没有调用」；把 print 拆掉 ⇒ 点名「报告面看不见」。"
-      - "**不改判定**：`ok` / `reason` 一个字都不动 —— 假绿候选直接判红会误伤存量用例（存量清账要基线/棘轮，属另一单）；本条治「标记没人读」，不是「标记不够严」。"
-    skip_reason: "[backend-contract] 纯函数 + 源码 AST 接线判据（零 LLM、零网络）由 tests/unit_ci_workflows/test_unfailable_green_is_consumed.py 验证；真实评测轮次里「报告面有没有真的显示」按 #4262 不自动触发，不进入 agent-eval 冒烟"
-    merge_log:
-      - "2026-11-05 新增（PR #8715，关联 issue #5511 第四节）。修法：新增 `fake_green_ids()` 读取口 + `run_suite` 打印（唯一读取点），标记不再只写不读；未新增豁免、未改通过条件。"
-    traces:
-      tests:
-        - "tests/unit_ci_workflows/test_unfailable_green_is_consumed.py"
-      ci:
-        - pr-check.yml
+      verifies: []

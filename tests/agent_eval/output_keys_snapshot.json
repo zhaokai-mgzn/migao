@@ -38,7 +38,7 @@
     "data=attach_ticket_labels(data)",
     "data=response.get('data', {})"
    ],
-   "source_sha256": "3f6766b67461ee794c0c8acc40d873cd5e8304cefcd8f4adb5510fa98e2de196"
+   "source_sha256": "231f49937edf699705c2b5115959db0c28d42ed0f5bff4fca2543ef246821674"
   },
   "aftersale_create": {
    "actions": null,
@@ -103,7 +103,7 @@
     "data=attach_ticket_labels(data)",
     "data=response.get('data', {})"
    ],
-   "source_sha256": "1ad8acdd51fe315648a64212a8127c4110b7d7a8f07210fb69a9747feda3cab0"
+   "source_sha256": "234302a1c7f65bcde704fba1f3b580138f0913453426975e1b2b108c0808cf7f"
   },
   "batch_stock_query": {
    "actions": null,
@@ -122,7 +122,7 @@
     "**data",
     "data=response.get('data') or {}"
    ],
-   "source_sha256": "8ef75b150cbb8f851295ec25d52b35beb28d8b7eb8e6f6a625b85dab6f1f2190"
+   "source_sha256": "b48bb1df5a785bc9a41ae4696efcbb88161010ae7bc97b2b261f110d4baa5ae8"
   },
   "briefing_query": {
    "actions": null,
@@ -133,7 +133,7 @@
    "shape_notes": [
     "data=dict(data, proactive=findings, proactive_status=status)"
    ],
-   "source_sha256": "ba9ef6a7079ebf8ccea2465a9f347f6f78163bc24d1e5024070fcb6df4fa93ea"
+   "source_sha256": "ba6f1728056db9b408aa260b66d39a8e000e29c672d049881871b5074d5fdb17"
   },
   "category_manage": {
    "actions": {
@@ -159,7 +159,7 @@
    "shape_notes": [
     "data=response.get('data', {}) or {}"
    ],
-   "source_sha256": "debcae1ba37a9739c1569195c0c48fa1cac9ac9b3ddb9d8c6aa5d93db6fef106"
+   "source_sha256": "3444af8268c85cbf50d8a3bba3e0b7929c5598d20262f9d5bc38af5d4028c0b2"
   },
   "craft_calc_config_query": {
    "actions": null,
@@ -170,7 +170,7 @@
    "shape_notes": [
     "data=response.get('data') or {}"
    ],
-   "source_sha256": "cb63b3256f1079550c94ae4be45644c1c1d72d61ee410458c1130d29e36678be"
+   "source_sha256": "fc5f5c3bc7638a65d7bdf09f2b231be8d6332dfb47963c8eec20de31cedf122b"
   },
   "craft_calc_config_update": {
    "actions": null,
@@ -207,7 +207,7 @@
    "shape_notes": [
     "data=response.get('data') or {}"
    ],
-   "source_sha256": "601957d50e1b5a77769c58eb6a2faf0fd024e1e0ca616b8a32a5a7755f1b0080"
+   "source_sha256": "07824be4b4b10be00947080275ac906f6551b8e87cd221b00fe2e27d3620951f"
   },
   "curtain_calc": {
    "actions": null,
@@ -577,7 +577,7 @@
     "data ← response.get('data', {})",
     "data=response.get('data', {})"
    ],
-   "source_sha256": "d7a8fcf9c42b90b44e1b8210270f5f4361538272ce3c6885fb1ed83e62105552"
+   "source_sha256": "d857ee1f8fb81c8a28a746308b785ff18b7491169b9e4cf412947d83703587f2"
   },
   "finance_api": {
    "actions": {
@@ -677,7 +677,7 @@
     "data ← response.get('data')",
     "data=response.get('data')"
    ],
-   "source_sha256": "bdd088f538bec981989a14eed408ed37a90376971b3221af61833e35bc0fd626"
+   "source_sha256": "6e6b831b996b97b9b3a88bc3c1e00bc677931c2f4900d3fe4e31c631a50964ea"
   },
   "interact": {
    "actions": null,
@@ -730,7 +730,7 @@
    "shape_notes": [
     "data=dict(view)"
    ],
-   "source_sha256": "1dc05f48521af645e9df9bff4efa9f7ca021722e819166eeee456db3f9327b92"
+   "source_sha256": "55163be6f01ce8cd046df5dca65332fd2262cd692277d0e5f1fbd79932265cb4"
   },
   "knowledge_search": {
    "actions": null,
@@ -766,7 +766,7 @@
     "data=await get_logistics_trace_cache().get(context.tenant_id, tra",
     "data=self._transform_api_response(api_result, tracking_number, co"
    ],
-   "source_sha256": "b07b60ae43ef6ee7dc7d3c0f73353266b407428de4cdad807c103c0c1da37353"
+   "source_sha256": "8fd53dc6efab57c564ff717debc52131fed80fd4731b1f55d6ecb10439ec1035"
   },
   "marketing_poster": {
    "actions": null,
@@ -780,7 +780,7 @@
     "copy",
     "product"
    ],
-   "source_sha256": "299974d7361e6c3099d663a4d23d516338d251fbcadf7906d0e500351e1bbcef"
+   "source_sha256": "869cb2cdcec5f5b6cc2576e4f5286297ed397b8188c47ed4118106b70358ca3e"
   },
   "nav_guide": {
    "actions": null,
@@ -866,7 +866,7 @@
     "total",
     "unread_count"
    ],
-   "source_sha256": "b34ee3f27a83417d613698961a04a25733a553351527986a93724251b898eaf4"
+   "source_sha256": "73d1e80ea68508d2d121b08c6f34fa6fd5ef2be4c1c48e23d88178f2f91c0181"
   },
   "operation_catalog_query": {
    "actions": null,
@@ -881,7 +881,7 @@
    "shape_notes": [
     "data=response.get('data') or {}"
    ],
-   "source_sha256": "64a49d99942447baedfc90d176562acec26c693137ccdf1b48ffe83ffa0c9790"
+   "source_sha256": "7e603f8e41ac5794f3ca9bcb53a6d89a6bf55956b2a1904d599a42f42158da34"
   },
   "order_create": {
    "actions": null,
@@ -987,7 +987,7 @@
     "data ← response.get('data')",
     "data=response.get('data')"
    ],
-   "source_sha256": "f5c83258f5cb39c5664056c40d16b605e47f26396f196c9c606de74c482da4af"
+   "source_sha256": "616aba652699ef41d063a87ac67b51b475fb9e572944a6c0bfe2dc85f1df00f6"
   },
   "processing_item_manage": {
    "actions": {
@@ -1040,7 +1040,7 @@
     "data=response.get('data') or {}",
     "data=response.get('data', {})"
    ],
-   "source_sha256": "bfe8ee06b41bed4d1bfb361dd006a0adf5020766c46e0dd5e75a3be70fe0ace8"
+   "source_sha256": "1cf9c03004a84b81457a019ac4470c72aa1fbdd4478e430b6821a7700410b3dc"
   },
   "processing_item_query": {
    "actions": null,
@@ -1064,7 +1064,7 @@
     "total",
     "total_pages"
    ],
-   "source_sha256": "6b3c4cb041a40669f711a2ca106d8ea46e19d3420295998ac5f91f77d98e689f"
+   "source_sha256": "a012ae0f09aa9f34a46e738454c844fe74e98a4385e5068703a0c5175d60a67d"
   },
   "processing_order_generate": {
    "actions": null,
@@ -1076,7 +1076,7 @@
    "literal_keys": [
     "results"
    ],
-   "source_sha256": "9747aeee412a2d24e3a1e137e66cab804939af55981ce0fb1891de19abcc90ff"
+   "source_sha256": "3f54a1e58edef8feccb417b348e456ee57de6e92cd9f2f71ca3ca5fc1404f4c0"
   },
   "processing_order_query": {
    "actions": {
@@ -1120,7 +1120,7 @@
     "data ← response.get('data')",
     "data=response.get('data')"
    ],
-   "source_sha256": "f54877ed53377f9d403f9c60e375b4fe22b9dd59168657ce5d6aa433a0d8022d"
+   "source_sha256": "9e5a039e2f4fef6e07c6815992c5c05fad2303105a504bdc42e3a08c75cfff09"
   },
   "processing_order_update": {
    "actions": null,
@@ -1144,7 +1144,7 @@
     "processingOrderNo",
     "result"
    ],
-   "source_sha256": "2484867adba739e3926a5a1c8a34838776c36991a889940e6ae50b93940d0c9e"
+   "source_sha256": "be1ecc6e039234915b755093ad0aec845c1aa14187454772b2d6259168ba94ef"
   },
   "product_batch_update": {
    "actions": {
@@ -1194,7 +1194,7 @@
     "data=dict(response.get('data') or {})",
     "data=polled or data"
    ],
-   "source_sha256": "46bffd5984abc9e626676d7f7f3a267a5b5317e9dddbd2ff50c31acaf1ba40d0"
+   "source_sha256": "1f9d3ab426c5d136c9ad411e1a22d7824e943455e466a067b9516f9d9581cfb5"
   },
   "product_detail": {
    "actions": null,
@@ -1210,7 +1210,7 @@
     "data=self._format_product(data)",
     "product ← self._format_product(data)"
    ],
-   "source_sha256": "4bb1144c6443bfdc4abbd1947b4b825d4c44f9bd918d4b272a3e145466ffe175"
+   "source_sha256": "57b4ad9ceab3a23319436173560223eb19081f731ce2eb324074c5c0d8edd0c0"
   },
   "product_image_generate": {
    "actions": null,
@@ -1226,7 +1226,7 @@
     "model",
     "product"
    ],
-   "source_sha256": "0df1339c04ebdd146548054aec432a8b9e71f273828e361a16940d245ca44d0b"
+   "source_sha256": "44adbc3527be089e186bacd444b7adc270f11220cab39bb37b48b4b90370d08e"
   },
   "product_manage": {
    "actions": {
@@ -1286,7 +1286,7 @@
     "total",
     "total_pages"
    ],
-   "source_sha256": "3ae2f3f5260d04dbc4c7fe3ef8098853801e687a34320103a9d130c1c95da8de"
+   "source_sha256": "d7c328eaa6ebaa1d26ff2b7842b3b6a847e5211d1910ce40fde27daec317aeea"
   },
   "product_update": {
    "actions": null,
@@ -1297,7 +1297,7 @@
    "shape_notes": [
     "data=response.get('data', {})"
    ],
-   "source_sha256": "29683309e606cabd197e354b93e9ece5ee2f54fbad5ff39fda79f4605f92efd3"
+   "source_sha256": "f70b16432fe2850fc9e129d63399607fd819a6ecbb9d89d6017f62fcd390046f"
   },
   "production_progress_query": {
    "actions": null,
@@ -1313,7 +1313,7 @@
     "data ← response.get('data')",
     "data=response.get('data')"
    ],
-   "source_sha256": "6bfa6a1227198c1b867b330e127cdf8088ecd3ba20e5a1aac2785ae94aaf388c"
+   "source_sha256": "8ff89d0e42699483568f94d151a919e5fe836e84787a72dbcb74713497741a8e"
   },
   "production_worklog_query": {
    "actions": null,
@@ -1327,7 +1327,7 @@
     "data ← response.get('data')",
     "data=response.get('data')"
    ],
-   "source_sha256": "a44722612c63c9debae2a4db548e22440fdaf732995400a5f573726bb7d6d8f4"
+   "source_sha256": "da3ef9556f2e7e21f64a6b2dc85c9659651a8ab1eb5a95f0b62429aac3da4515"
   },
   "role_manage": {
    "actions": {
@@ -1384,7 +1384,7 @@
     "data ← response.get('data', {})",
     "data=response.get('data', {})"
    ],
-   "source_sha256": "3684cc79937d348f6a09e576f247b547c636436442d2e10b3b444aff3406ec66"
+   "source_sha256": "d84572039ec60e3283cdfa8053e33fb398fade1d3fa2cf91221cded964ddd130"
   },
   "sales_attribution": {
    "actions": null,
@@ -1405,7 +1405,7 @@
     "window_capped"
    ],
    "literal_keys": [],
-   "source_sha256": "4369ca0f5abd3da33dbe2239b61a9a64a9f6c466adb242c2068131ce24bd8692"
+   "source_sha256": "104451cdf3365abc67ad1e26fdea40f780f416fcdf62d158ca38f12b869d8a62"
   },
   "scheduled_task_manage": {
    "actions": {
@@ -1480,7 +1480,7 @@
    "shape_notes": [
     "data=response.get('data', {})"
    ],
-   "source_sha256": "5920e012691b8f9dcff66bac518cda8ab728ee13ccb5d3a9ced3ff7f641aebf9"
+   "source_sha256": "58a68dda57fe9e1632e4a49a91d4f814ff0f62f76f3068322bff53b59562e90f"
   },
   "settings_manage": {
    "actions": {
@@ -1520,7 +1520,7 @@
     "data ← response.get('data', {})",
     "data=response.get('data', {})"
    ],
-   "source_sha256": "f7597d5d32b4bb5c33994d67faa09ee438fc1289849d871fc3c509d505451636"
+   "source_sha256": "fe9bb706be698ced8bcdd38698bf91cb690c7f80a2f1613eb3c3a73f6fb18bb6"
   },
   "sku_update": {
    "actions": null,
@@ -1536,7 +1536,7 @@
     "door_width",
     "new_price"
    ],
-   "source_sha256": "f7c70acdecc781161a472f560426d7313083d7e4c0fa9232ff008c8d7288c41b"
+   "source_sha256": "a9e564291d0aaa5eb8b4959a6253e81455a03fef9b84bda54414b4cbc7c86000"
   },
   "stock_ledger_query": {
    "actions": null,

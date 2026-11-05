@@ -124,6 +124,7 @@ class InventoryManageTool(BaseTool):
         "【口径】material_shortage 的 `rate_per_week` / `exhaust_date` 在预测层未启用（历史台账深度不足）时"
         "一律为「未知」——**不是 0、不是当天**；单位不可比的行需求量为「未知」而非 0。"
         "【标注】READONLY — 纯查询，不含任何写 action"
+        "【不要用于】库存台账/批次来源（用 stock_ledger_query）；商品档案与价格（用 product_detail）"
     )
     
     # 权限码（admin-api 目录）：ProductController / AgentProductController 的库存端点 ——

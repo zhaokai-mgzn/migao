@@ -35,6 +35,7 @@ class SessionManageTool(BaseTool):
         "【反例】经营概况/活跃会话统计用 dashboard_stats；客服员工账号属人事域，不在本工具射程内。"
         "【反例】分配/结束会话**不在本工具能力内**——引导用户到后台「在线接待」页操作。"
         "【标注】READONLY — 纯查询，不含任何写 action"
+        "【不要用于】订单详情/物流（用 order_query）；客户档案与手机号（属 customer 域）"
     )
     # 权限码（admin-api 目录）：读面 `agent:session`；issue #5246 起转接/结束会话/发消息三条
     # 写端点走 `agent:session:manage`（此前挂在会话读码上）。

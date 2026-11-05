@@ -25,6 +25,7 @@ class CraftCalcConfigQueryTool(BaseTool):
         "【反例】具体一单的用布量/报价计算请引导用户到后台算料页填写尺寸后计算（本工具**只读配置**，"
         "不做计算）；工序库/路线模板用 operation_catalog_query。"
         "【标注】READONLY — 只读查询"
+        "【不要用于】改算料参数（用 craft_calc_config_update）；商品价格（用 product_detail）"
     )
 
     # 权限码（admin-api 目录，issue #5291）：`CraftCalcConfigController` 的 `GET` 改挂方法级

@@ -38,6 +38,7 @@ class RoleManageTool(BaseTool):
         "【反例】管理员工账号用 employee_manage；查系统配置请引导用户到后台页面。"
         "【反例】建/改/删岗位**不在本工具能力内**——引导用户到后台「组织管理 → 岗位权限」页操作。"
         "【标注】READONLY — 纯查询，不含任何写 action"
+        "【不要用于】员工账号（用 employee_manage）；客户档案与手机号（属 customer 域）"
     )
     # 权限码（admin-api 目录，issue #5291）：权限目录读端点 `AdminPermissionController` 已改挂
     # 岗位权限**读**码 `system:view`（写面 `PUT/DELETE /api/admin/roles` 仍是 `system:manage`）。
