@@ -127,7 +127,10 @@ jobs:
           set +e
           WINDOW="${INPUT_WINDOW:-20}"
           echo "触发事件 = ${EVENT}；判定基准 = main（ref: main）；候选区间 = 最近 ${WINDOW} 个提交"
-          OUT="$(python3 scripts/generated_artifacts_freshness.py --window "${WINDOW}" \
+          # 出库形态（issue #8167 P1-1）：两个生成物**不在 git 里** ⇒ 判定前先就地生成
+          # （`--write`，幂等）。判定语义随即变成「可复现 / 没被塞回 git / 落盘副本最新」，
+          # 三态退出码不变。🔴 不做这一步 ⇒ 判定会落到「渲染器/产物」的 fail-closed 分支（rc 3）。
+          OUT="$(python3 scripts/generated_artifacts_freshness.py --write --window "${WINDOW}" \
                    --json main-freshness-report.json 2>&1)"
           RC=$?
           printf '%s\n' "${OUT}"

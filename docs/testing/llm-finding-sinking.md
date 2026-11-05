@@ -114,5 +114,5 @@ python3 .github/llm_sink_check.py --json                          # 机读输出
 |---|---|
 | 单一入口 / 档位矩阵 / 触发口径（谁能自动跑） | `docs/testing/eval-environments.md` §3.7（+ `post-deploy-eval.yml` 文件头） |
 | 验收与评测协议（L1/L2/UA、证据分层、红证） | `docs/testing/acceptance-protocol.md` |
-| 用例库单一源与生成物 | `.github/cases/`（改后必须跑 `render_cases.py` 并提交生成物） |
+| 用例库单一源与生成物 | `.github/cases/`（改后跑 `generated_artifacts_freshness.py --write`；生成物不入库） |
 | 断言可信度静态门禁 | `.github/assertion_taxonomy.py` + `.github/case_trust_gate.py` |

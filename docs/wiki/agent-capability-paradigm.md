@@ -100,7 +100,7 @@
 
 | 规则 | 判据 |
 |---|---|
-| 能力增删 ⇒ **同 PR** 更新 `.github/cases/`，跑 `render_cases.py` 并提交生成物 | CI `Main Freshness Guard` + `Case Contract` |
+| 能力增删 ⇒ **同 PR** 更新 `.github/cases/`（生成物按需生成、**不入库**，issue #8167 P1-1） | CI `Main Freshness Guard` + `Case Contract` |
 | B 端用例的**正向工具引用**（`expectations` / `must_succeed` / `required_args` / `order_before`）必须落在 **mibao 可达集**（`direct_reply` 是唯一哨兵） | `tests/test_b_end_case_tool_reachability.py::test_b_end_cases_only_expect_reachable_tools` |
 | 负向引用（`forbidden_tools` / `must_fail`）**不在**上条射程：对不可达工具的禁区恒真，属 #4043 族 | 已登记 |
 | 能力状态翻转（✅↔❌）⇒ 同 PR 补**真实说法**用例（#7334：CH-051「改名不得被误拒」/ CH-052「批量下架不得谎称已下架」） | `agent-eval.yml`（手动集中跑）；确定性红证在 `test_capability_boundary.py` |

@@ -240,9 +240,9 @@ fi
 run_leg "轻量门禁①断言可信度（case_trust_gate）" \
   "每次都跑 · 只判新增/改动的用例，不阻塞存量；跑内建 burn-down 预算" \
   "$PY .github/case_trust_gate.py --base $BASE"
-run_leg "轻量门禁②生成物新鲜度（render + 逐字节比对）" \
-  "每次都跑 · 改了 .github/cases/** 却没提交生成物 ⇒ 具名报出（生成物 = tests/agent_eval/eval_cases/（按域分包）/ docs/testing/mibao-verification-cases.md）" \
-  "$PY scripts/generated_artifacts_freshness.py"
+run_leg "轻量门禁②生成物新鲜度（生成 + 逐字节比对）" \
+  "每次都跑 · 出库形态（issue #8167 P1-1）：先生成再判 —— 副本陈旧/手改 ⇒ 具名报出；渲染不可复现 ⇒ 也报出（生成物 = tests/agent_eval/eval_cases/（按域分包）/ docs/testing/mibao-verification-cases.md，**两者不入库**）" \
+  "$PY scripts/generated_artifacts_freshness.py --write"
 run_leg "轻量门禁③真库判据防回退锁（缺 PG ⇒ 静默变绿）" \
   "每次都跑 · 判「缺 PG 时真库判据不许静默变绿」；注入了 MIGAO_REQUIRE_REALDB ⇒ 实测 skip 必须为 0" \
   "MIGAO_REQUIRE_REALDB=1 $PY -m pytest tests/unit_ci_workflows/test_realdb_failclosed.py -q -p no:cacheprovider"

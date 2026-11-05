@@ -7,7 +7,9 @@
 #   ② merge origin/main 后 cases/ 单一源前进，生成物（eval_cases/ 包目录 /
 #      mibao-verification-cases.md）未同步 → CI「生成物新鲜度校验」必红
 #      → 手动重渲染 + 再 push + 多跑一轮全量 CI。
-# 本脚本把「同步 main + 重渲染生成物 + 提交」合成一步，杜绝②类返工。
+# 本脚本把「同步 main + 重渲染生成物」合成一步，杜绝②类返工。
+# ⚠️ 自 2026-11-05（issue #8167 P1-1）两个生成物**已出库、不入库** ⇒ 本脚本**不再提交**它们
+#    （②类返工因此结构性消失：没有「提交版」可以落后）；第 6 步只把工作区刷成最新，供本地读。
 #
 # 用法（在 migao 仓库/任一 worktree 根目录执行）：
 #   ./scripts/sync-main.sh            # fetch origin/main → merge → 重渲染 → 自动提交
@@ -27,9 +29,7 @@
 #      销账字段块 `must_succeed` / `namespaces` / `precondition` …）必须仍在合并结果里；
 #      缺任何一行 ⇒ 非零退出 + 指名文件与缺失内容
 #   6. 重渲染生成物（.github/render_cases.py → eval_cases/（按域分包）+ casebook.md）
-#   7. 有 diff → 自动提交（仅含两个生成物路径：`eval_cases/` 目录 + casebook 文件，message 标准化）：
-#      "chore(cases): 合并 main 后重渲染生成物（N 条）"
-#   8. 提醒 push
+#   7. 打印重渲染结果（**不再提交** —— 出库形态）
 #
 # 为什么 merge 模式要**拒绝**而不是「让 merge 更聪明」（issue #4984）：
 #   分支分叉期间 main 侧把 case-trust 销账（`must_succeed` / `namespaces` /
@@ -439,25 +439,10 @@ python3 .github/render_cases.py \
   --out-eval "$EVAL_OUT" \
   --out-md "$CASEBOOK_OUT" >/dev/null
 
-# ⚠️ `git diff` **看不见 untracked 文件**，而 `eval_cases/` 是**目录型**生成物（issue #8188）：
-# 新增一个域（新 `.yml`）会产出**新模块文件** ⇒ 只看 `git diff` 会误判「无更新」而漏提交
-# ⇒ 这里改用 `git status --porcelain`（含 untracked）。
-if [ -z "$(git status --porcelain -- "$EVAL_OUT" "$CASEBOOK_OUT")" ]; then
-  echo "✅ 生成物已是最新（无 diff），无额外提交"
-else
-  if [ "$AUTO_COMMIT" -eq 0 ]; then
-    echo "ℹ️ 生成物有更新："
-    git status --short -- "$EVAL_OUT" "$CASEBOOK_OUT"
-    echo "ℹ️ --no-commit：请人工审 diff 后自行提交"
-    exit 0
-  fi
-  git add "$EVAL_OUT" "$CASEBOOK_OUT"
-  echo "ℹ️ 生成物有更新："
-  git diff --cached --stat -- "$EVAL_OUT" "$CASEBOOK_OUT"
-  CHANGES="$(git diff --cached --stat | tail -1 | grep -oE '[0-9]+ files? changed' || echo "生成物更新")"
-  git commit -m "chore(cases): 合并 main 后重渲染生成物（${CHANGES}）"
-  echo "✅ 已提交生成物重渲染"
-fi
+# 出库形态（issue #8167 P1-1）：两个生成物**不入库**（100% 可从 `.github/cases/**` 重建）
+# ⇒ 重渲染只为让**本机**的副本是最新的，**不再有「必须提交生成物」这一步**（它们被 `.gitignore`
+# 覆盖，`git status` 里看不见）。这就是出库要治的那个病：合并 main 不再产生生成物冲突/千行 diff。
+echo "✅ 生成物已按当前 \`.github/cases/**\` 重渲染到工作区（不入库 —— 出库形态，无需提交）"
 
 echo "── 完成 ──"
 echo "分支 ${BRANCH} 已同步 origin/main。CI 即将重跑，请盯首轮结果（见 migao-dev-flow §11）："

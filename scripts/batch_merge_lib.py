@@ -693,9 +693,11 @@ def main(argv=None, cwd=None) -> int:
         delta = write_anchor(repo, measured, note=_anchor_note(infos, measured))
         print(f"   锚点：{delta['before']} → {delta['after']}")
         print("   复核：" + verify_anchor(repo))
-        git(repo, "add", "--", ANCHOR, EVAL_OUT, CASEBOOK)
+        # 出库形态（issue #8167 P1-1）：两个生成物**不入库** ⇒ 只提交锚点；重渲染（上面那步）
+        # 仍然做，作用是把**本机**副本刷新到最新（`git add` 它们会被 .gitignore 拒，也会把出库白做）。
+        git(repo, "add", "--", ANCHOR)
         git(repo, "commit", "-m",
-            f"chore(batch): 重渲染生成物 + 锚点按实测重锚（{len(infos)} 个 PR 的批次合并）")
+            f"chore(batch): 锚点按实测重锚（{len(infos)} 个 PR 的批次合并；生成物已出库）")
         if in_merge_progress(repo):
             raise BatchError("清理提交之后仍处于合并中 —— 现场脏了，拒绝推送")
 
