@@ -112,7 +112,9 @@ DELETED_RULES = (
         "prompt": "settings.md",
         "gone": "不要拿 settings_manage 去查通知",
         "source": "settings_manage",
-        "target": "notification_manage",
+        # 通知工具**不绑本域** ⇒ 点名它会把「域外点名」豁免面撑大（燃尽靶只许缩短，issue #5444）
+        # 故元数据写**去向（域）**：本域工具集里根本没有它，写工具名也不可执行。
+        "route": "通知中心",
         "skill": "settings",
         "case": "ST-001",
     },
@@ -249,13 +251,18 @@ def test_deleted_handwritten_rule_is_handed_over_by_metadata():
         if source is None:
             bad.append(f"{rule['source']}: 工具不存在（跳转目标无从承接）")
             continue
-        targets = [target for _label, target in cs.not_for_entries(source.not_for)]
-        if rule["target"] not in targets:
-            bad.append(f"{rule['source']}: `【不要用于】` 没点名 `{rule['target']}`（手写规则的真值没落进元数据）")
-        line = next((ln for ln in cs.render_cheatsheet(rule["skill"]).splitlines()
-                     if ln.replace("〔写〕", "").startswith(f"- {rule['source']} ")), "")
-        if rule["target"] not in line:
-            bad.append(f"{rule['skill']}: 小抄行没带出 `{rule['source']} → {rule['target']}`（生成物没接手）")
+        route = rule.get("route")
+        if route:
+            if route not in source.not_for:
+                bad.append(f"{rule['source']}: `【不要用于】` 没写去向「{route}」（手写规则的真值没落进元数据）")
+        else:
+            targets = [target for _label, target in cs.not_for_entries(source.not_for)]
+            if rule["target"] not in targets:
+                bad.append(f"{rule['source']}: `【不要用于】` 没点名 `{rule['target']}`（手写规则的真值没落进元数据）")
+            line = next((ln for ln in cs.render_cheatsheet(rule["skill"]).splitlines()
+                         if ln.replace("〔写〕", "").startswith(f"- {rule['source']} ")), "")
+            if rule["target"] not in line:
+                bad.append(f"{rule['skill']}: 小抄行没带出 `{rule['source']} → {rule['target']}`（生成物没接手）")
         if not _case_exists(rule["case"]):
             bad.append(f"{rule['case']}: 该族的负例不在用例库里（删了规则却没有负例兜着）")
     assert bad == [], "手写规则删了但真值没接手：\n  " + "\n  ".join(bad)
