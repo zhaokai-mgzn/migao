@@ -8775,6 +8775,52 @@ cases:
         - "tests/unit_ci_workflows/test_loc_ratchet.py"
       ci:
         - pr-check.yml
+  - id: MC-233
+    legacy_id: ""
+    title: "OrderService 门面收尾第五批（issue #8681 的 P2-1e，部分交付）：建单族 createOrder 的调用方改直连 OrderCreationService、统计与跟进读取族三个入口改直连新建的 OrderStatsService，门面 1,655 行降到 1,582 行并删掉这 4 个转发；六个测试文件里的建单驱动点全数迁到实现点（断言零改动），退休守护扩到 11 个方法 / 7 个驱动入口"
+    domains:
+      - misc
+      - backend
+    tier: normal
+    tags:
+      - refactor
+      - order-service
+      - facade-retirement
+      - caller-migration
+      - creation-family
+      - stats-family
+      - ratchet
+    truths_ref: []
+    user_inputs:
+      - "商家端下单（表单路径）走同一条建单编排水位：明细金额闸门、服务端取价、授信闸门、库存前置、落库与回读全部逐字不变，HTTP 路径 / 入参 / 响应不变；商家端的订单统计卡片与跟单状态读写照旧（统计口径与派生字段：未付款=待付款、已付款=四态之和、退款=已取消、跟单待办=总数减跟进中减已完成）"
+    expectations: []
+    data_checks:
+      - "判据 1·🔴 退休面（这批 4 个转发不许回来）：门面源码里不许再有建单入口与三个统计/跟进读取入口的声明（把任一转发加回门面 ⇒ 具名红），且全部 main 源码里零处「经门面变量调用这四个方法」（谁把调用方改回门面 ⇒ 具名红）。锚点取「返回类型 + 方法名 + 左括号」以覆盖跨行签名；建单入口的锚点与仍保留在门面的 Agent 建单入口方法名不同，不会被误判。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/OrderFacadeForwarderRetirementTest.java"
+      - "判据 2·🔴 接线面两侧夹住（防恒绿）：实现点 OrderCreationService / OrderStatsService 必须仍声明这四个方法，且全部具名消费方逐字调用实现点 —— 订单控制器的建单端点与三个统计/跟进读端点。消费方改回门面或方法被改名 ⇒ 具名红；同一条判据内含判别力自证：内存里把建单转发塞回门面 ⇒ 谓词判真，而只剩 Agent 建单声明时 ⇒ 谓词判假（不把两个方法名混为一谈）。执行点 = 同判据 1 的判据文件"
+      - "判据 3·🔴 驱动面（全 test 树）：src/test 全树的 Java 文件里零处经门面驱动这四个已退休入口，且同时认两种写法 —— 直接调用 与 验证门面交互；扫描面自带非空自证（扫到的文件数必须够大，路径漂移即红）。本批把建单族的六个驱动文件（两个控制器测试 / 集成测试 / Agent BFF 测试 / 无 SKU 标识判据 / 小数数量判据）与三个统计跟进驱动点一并迁走。执行点 = 同判据 1 的判据文件"
+      - "判据 4·🔴 建单实现点的直测判据（门面接线判据失去对象时不许删、不许恒绿）：共享部件必须取自传入的那份门面实例 —— 明细闸门抛 ⇒ 建单中止且一行不落（fail-closed）；反向对照 = 闸门放行 ⇒ 流程真的继续到安装信息归一与服务端取价（防「入口即抛」的恒绿）。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/OrderCreationServiceTest.java"
+      - "判据 5·🔴 统计与跟进读取族的直测判据（这一族此前只有控制器侧的 mock 验调用，方法体算得对不对无人看）：七个 COUNT 的落位、三个派生字段（未付款=待付款 / 已付款=四态之和 / 退款=已取消）用互不相同的读数钉住（混淆必红）；每一条 COUNT 都带租户条件（删掉租户条件 ⇒ 红）；跟进统计的待办 = 总数减跟进中减已完成；跟进读取三态 = 读得到 / 未设置回落 pending / 不存在回 404。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/OrderStatsServiceTest.java"
+      - "判据 6·🔴 行为 diff = 0 的承载面未动：OrderServiceTest 的 152 条行为判据一字未改（文件 diff 为空）且全绿；被搬走的四个方法体逐字留在实现点（统计族 = 从门面原样剪切，COUNT 口径与字段映射零改写）；不新增 / 不移除任何事务注解（本批迁的都是读面与一个转发，建单的事务注解仍逐字跟在实现点上）；同族的跟进**写**面仍留门面（下一批「实体实现搬家」），本批不动它。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/OrderServiceTest.java 与 tests/unit_ci_workflows/test_loc_ratchet.py"
+    skip_reason: "[backend-contract] Java 侧调用方迁移 + 门面转发退休（零 LLM / 零外网 / 零前端可见面），由 JUnit 判据与 pytest 棘轮判据验证，无 agent 行为面，不进入 agent-eval 冒烟"
+    merge_log: "2026-11-05 新增（issue #8681 的 P2-1e 第五批，**部分交付**：不写关闭关键词）。现取读数：`git show origin/main:backend/admin-api/src/main/java/com/migao/admin/service/OrderService.java | wc -l` = 1,655（PR #8700 合并后的基线）。本批按上一批给的逐条清单执行第 2 档（建单族）与第 4 档（统计 / 跟进读取族）：建单入口的调用方改成订单控制器直连实现点（第三参仍是门面实例，共享部件留在门面）、统计与跟进读取族三个入口从门面剪到新建的小服务（因为并进查询服务会越过 800 行阈值）；门面 1,655 → 1582（净 −73）。⚠️ 有意不搬：applyRollAllocation（被 OrderRollAllocationAuthorityTest 钉在门面）、batchStock 访问器（取消路径在用）、跟进**写**面（属下一批实体实现搬家），三者一字未动。⚠️ 本批**不做**生命周期族（第 1 档）与 Agent BFF（第 5 档）—— 生命周期族要连带改 3 个接线 / 快照判据并迁 67 个调用点，单独一批才说得清。红证 = 三次单变量注入逐条实跑并逐字节还原（塞回两个转发 + 把控制器调用改回门面 ⇒ 退休面 3 条具名红；把某个测试文件的驱动改回门面 ⇒ 驱动面 1 条具名红；只在测试里加一行同串注释 ⇒ 不红，负控证明剥注释扫描有效）。全量读数见 PR body。"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/OrderFacadeForwarderRetirementTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/OrderCreationServiceTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/OrderStatsServiceTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/OrderServiceTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/AgentOrderServiceTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/OrderNoSkuIdentityFailClosedTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/OrderQuantityDecimalTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/OrderRefundMoneyPrecisionTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/controller/OrderControllerTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/controller/OrderIntegrationTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/controller/OrderCreateRequiredFieldsTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/controller/PaginationParamGateEndpointTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/controller/TenantOwnershipBeforeValidationTest.java"
+        - "tests/unit_ci_workflows/test_loc_ratchet.py"
+      ci:
+        - pr-check.yml
   - id: MC-210
     legacy_id: ""
     title: "生成物出库：eval_cases/ 与 casebook 不入库，改按需生成 + 可复现判定（PR diff 不再含千行派生内容）"
