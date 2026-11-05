@@ -1,0 +1,182 @@
+"""出口 ①：口径卡的 **system prompt 片段**（issue #8175 判据 1 / 4 / 5 / 6）。
+
+## 这里是「审核门禁」的最后一个关口
+
+写面（admin-api）允许 `draft` 存在、允许 `retired` 留着；**能不能进 prompt 只由这里判**。
+所以本模块**不信任调用方给它的列表**：`select_playbooks` 对每一张卡重判四件事
+（`state == 'active'` / `trigger` 可执行 / `counter` 可执行 / 语境界定），任一条不过就丢掉。
+
+判据 1 的红证就是对着这一层做的：往 `render_playbook_block` 的入参里塞一张 `draft`，
+它的正文**一个字符都不许**出现在返回值里。
+
+## 为什么 `trigger` 也要出现在 prompt 里（哪怕已经按语境过滤过）
+
+模型拿到的不该是「无条件必须这么做」的硬规则 —— 口径本身**带条件**（「整卷优先」只对
+整卷单成立，「除非客户要求零裁」是反例）。把条件渲染出来，模型才能在**语境没被结构化
+捕获**的轮次里自己判断；而条件文本是**由结构生成**的（`condition.describe`），
+不接受任何自由文本进入 prompt。
+
+## 消毒
+
+`correct` 是人工审核过的一句话，但它是**数据**不是代码：仍然要过
+「去控制字符 → XML 转义 → 截断」（与 `user_memories` 注入同口径）。
+理由同 `#2815`：注入面一旦不消毒，一个被篡改的库行就能在 system prompt 里伪造出
+注入块之外的行。
+"""
+
+from typing import Any, Dict, List, Optional
+
+from loguru import logger
+
+from app.playbook.condition import describe, evaluate, is_executable
+from app.playbook.store import STATE_ACTIVE, PlaybookStore
+
+#: 一次注入最多几条（口径是「少而准」的工件；多到几十条说明治理没做）
+MAX_PLAYBOOKS = 12
+#: 单条正解 / 条件说明的字符上限（控 token + 防「一句话口径」变成一篇文档）
+MAX_CORRECT_CHARS = 200
+MAX_CONDITION_CHARS = 120
+
+PROMPT_HEADER = (
+    "【本企业口径】（人工审核通过；与通用经验冲突时以本口径为准；"
+    "条件不满足的轮次按通用规则处理）"
+)
+
+
+def _clean(text: Any, max_len: int) -> str:
+    """去控制字符 → XML 转义 → 截断（防注入 + 控 token）。"""
+    if text is None:
+        return ""
+    out = "".join(ch for ch in str(text) if ch.isprintable())
+    out = (
+        out.replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace('"', "&quot;")
+        .replace("'", "&apos;")
+    )
+    return out[:max_len]
+
+
+def select_playbooks(
+    playbooks: Optional[List[Dict[str, Any]]],
+    context: Optional[Dict[str, Any]] = None,
+) -> List[Dict[str, Any]]:
+    """从**任意**入参里筛出「这一刻可以用」的卡（判据 1 / 4 / 6 的唯一裁决点）。
+
+    - `state != 'active'` ⇒ 丢（判据 1：draft / retired 一条都不许露头）
+    - `trigger` 不可执行 ⇒ 丢（判据 2：自由文本不进 prompt）
+    - 有 `counter` 但不可执行 ⇒ 丢（判据 6：反例不可判 = 反例是注释）
+    - 给了 `context` 且反例命中 ⇒ 丢（判据 6：反例真的进判定面）
+    """
+    if not playbooks:
+        return []
+    selected: List[Dict[str, Any]] = []
+    for pb in playbooks:
+        if not isinstance(pb, dict):
+            continue
+        if pb.get("state") != STATE_ACTIVE:
+            continue
+        if not is_executable(pb.get("trigger")):
+            logger.warning(
+                f"[playbook] 跳过不可执行的 trigger | id={pb.get('id')} "
+                f"tenant={pb.get('tenant_id')}"
+            )
+            continue
+        counter = pb.get("counter")
+        if counter is not None and not is_executable(counter):
+            logger.warning(
+                f"[playbook] 跳过不可执行的反例（反例不可判 = 注释）| id={pb.get('id')} "
+                f"tenant={pb.get('tenant_id')}"
+            )
+            continue
+        if context is not None and counter is not None and evaluate(counter, context):
+            # 反例命中 ⇒ 本卡不适用（这正是「反例不是注释」）
+            continue
+        selected.append(pb)
+    return selected[:MAX_PLAYBOOKS]
+
+
+def applies_now(playbook: Dict[str, Any], context: Dict[str, Any]) -> bool:
+    """这张卡在**这个语境**下该生效吗？（出口③ 的用例执行器与 prompt 共用同一判定）"""
+    selected = select_playbooks([playbook], context)
+    if not selected:
+        return False
+    return evaluate(playbook.get("trigger"), context)
+
+
+def render_playbook_block(
+    playbooks: Optional[List[Dict[str, Any]]],
+    context: Optional[Dict[str, Any]] = None,
+) -> str:
+    """渲染成一段可直接拼进 system prompt 的 XML 块；无可用卡 ⇒ 空串（调用方原样返回）。"""
+    selected = select_playbooks(playbooks, context)
+    if not selected:
+        return ""
+    lines: List[str] = [PROMPT_HEADER, "<playbooks>"]
+    for pb in selected:
+        when = _clean(describe(pb.get("trigger")), MAX_CONDITION_CHARS)
+        correct = _clean(pb.get("correct"), MAX_CORRECT_CHARS)
+        if not when or not correct:
+            continue
+        lines.append(f'  <rule id="{_clean(pb.get("id"), 64)}" scope="{_clean(pb.get("scope"), 16)}">')
+        lines.append(f"    <when>{when}</when>")
+        lines.append(f"    <do>{correct}</do>")
+        counter = pb.get("counter")
+        if counter is not None:
+            except_text = _clean(describe(counter), MAX_CONDITION_CHARS)
+            if except_text:
+                lines.append(f"    <except>{except_text}（命中例外时不套用本口径）</except>")
+        lines.append("  </rule>")
+    lines.append("</playbooks>")
+    if len(lines) <= 3:  # 只有头 + 开闭标签 ⇒ 没有任何可用卡
+        return ""
+    return "\n".join(lines)
+
+
+def _context_from_state(state: Dict[str, Any], skill_name: str = "") -> Dict[str, Any]:
+    """从会话状态抽「结构化语境」——只放**确定**的事实，缺就缺（不猜）。"""
+    context: Dict[str, Any] = {}
+    if state.get("agent_type"):
+        context["agent_type"] = state.get("agent_type")
+    if skill_name:
+        context["skill"] = skill_name
+    role = state.get("role") or state.get("role_key")
+    if role:
+        context["role"] = role
+    return context
+
+
+async def inject_playbook_prompt(
+    system_prompt: str,
+    state: Dict[str, Any],
+    skill_name: str = "",
+) -> str:
+    """**B 端**（黄金策 / `mibao`）system prompt 注入出口 ①。
+
+    - 非 B 端（C 端元元）/ 无租户 ⇒ **原样返回同一个字符串**（C 端零回归）；
+    - 任何异常都不抛（fire-and-forget，与 `_inject_user_memories` 同口径）；
+    - 注入位置：`_build_system_prompt` 之后、其余跨轮注入之前（口径先于临时提示）。
+    """
+    if state.get("agent_type") != "mibao":
+        return system_prompt
+    try:
+        tenant_id = int(state.get("tenant_id", 0) or 0)
+    except (TypeError, ValueError):
+        return system_prompt
+    if not tenant_id:
+        return system_prompt
+    try:
+        playbooks = await PlaybookStore().list_active(
+            tenant_id, role=state.get("role") or state.get("role_key")
+        )
+        block = render_playbook_block(playbooks, _context_from_state(state, skill_name))
+        if block:
+            logger.info(
+                f"[playbook] injected | tenant={tenant_id} "
+                f"count={block.count('<rule ')} len={len(block)}"
+            )
+            return block + "\n" + system_prompt
+    except Exception as e:  # noqa: BLE001 — 注入失败不许毁掉本轮对话
+        logger.warning(f"[playbook] 注入失败（非致命）: {e}")
+    return system_prompt

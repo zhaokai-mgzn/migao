@@ -141,6 +141,19 @@ class SecurityConfigTest {
     private com.migao.admin.waybill.TenantLogisticsConfigService tenantLogisticsConfigService;
 
     /**
+     * 口径卡（issue #8175）：{@code PlaybookController} 的构造依赖 {@code PlaybookService}。
+     * 本类的既有口径是「全上下文测试里，服务一律 {@code @MockBean}」⇒ 新增控制器必须同批登记
+     * （不登记 ⇒ 本类 59 条用例全部因 {@code UnsatisfiedDependencyException} 报 IllegalState）。
+     */
+    @MockBean
+    private com.migao.admin.service.PlaybookService playbookService;
+
+    /** 口径卡表的 Mapper（{@code test_security_config_mapper_mocks} 的元守卫要求：每个 mapper 都必须被 mock；
+     *  本上下文关了 MyBatis 自动配置 ⇒ 不顶替会因缺 {@code sqlSessionFactory} 装配失败）。 */
+    @MockBean
+    private com.migao.admin.mapper.PlaybookMapper playbookMapper;
+
+    /**
      * 工人档案服务（issue #4869）：新控制器 {@code AdminWorkerController} 的构造依赖
      * ⇒ 本上下文必须能装配它（本类对全部服务一律 {@code @MockBean}，与上面几条同款）。
      */

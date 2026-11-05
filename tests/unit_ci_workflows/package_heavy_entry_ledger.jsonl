@@ -144,4 +144,4 @@
 {"id":"1793852282.44526.17221","ts":"2026-11-05T04:18:02Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/8176-cheatsheet","why":"--allow-package-heavy（命令行显式）"}
 {"id":"1793853733.61058.11396","ts":"2026-11-05T04:42:13Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/8176-cheatsheet","why":"--allow-package-heavy（命令行显式）"}
 {"id":"1793854907.54930.21754","ts":"2026-11-05T05:01:47Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/8176-cheatsheet","why":"--allow-package-heavy（命令行显式）"}
-{"id":"1793857423.29764.20868","ts":"2026-11-05T05:43:43Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/8681d-facade5","why":"--allow-package-heavy（命令行显式）"}
+{"id":"1793860311.78790.12767","ts":"2026-11-05T06:31:51Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/8175-playbook","why":"--allow-package-heavy（命令行显式）"}
