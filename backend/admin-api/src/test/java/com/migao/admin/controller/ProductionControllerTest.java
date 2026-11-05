@@ -255,13 +255,16 @@ class ProductionControllerTest {
                 "productionInstanceRepricingService", repricingService);
         // 生产待办聚合（issue #5641）：同款字段注入 —— **真实服务**（只 mock Mapper），
         // 「卡在哪」/三态/threshold_source 全部走上面那个真实卡点服务（不复制第二份装配、
-        // 不动既有 6 参构造）。⚠️ 本类的 orderService 是 @Mock ⇒ 发货/待排产判据的**真实行为**
-        // 由 ProductionTodoServiceTest（真实 OrderService）覆盖；本类只钉端点契约（路径/权限/信封）。
+        // 不动既有 6 参构造）。⚠️ 本类的 orderQueryService 是替身 ⇒ 发货/待排产判据的**真实行为**
+        // 由 ProductionTodoServiceTest（真实 OrderQueryService）覆盖；本类只钉端点契约（路径/权限/信封）。
         org.springframework.test.util.ReflectionTestUtils.setField(controller, "productionTodoService",
-                new ProductionTodoService(stuckPointService, orderService, orderMapper,
-                        processingOrderMapper, positionOperationMapper,
-                        // 发货守卫实现点（issue #8681，P2-1e）：本类 orderService 是 @Mock，且
-                        // to_ship 判据在 needsWork=false 时短路 ⇒ 替身返回 false 与拆分前逐字一致。
+                new ProductionTodoService(stuckPointService,
+                        // 两处订单域判据的实现点（issue #8681，P2-1e 收尾批）：门面转发退休之后
+                        // 生产待办直接依赖 OrderQueryService。本类是替身，needsWork=false ⇒
+                        // to_ship / to_schedule 两处过滤短路，与拆分前逐字一致。
+                        org.mockito.Mockito.mock(com.migao.admin.service.OrderQueryService.class),
+                        orderMapper, processingOrderMapper, positionOperationMapper,
+                        // 发货守卫实现点（issue #8681，P2-1e）：同上，替身返回 false 与拆分前逐字一致。
                         org.mockito.Mockito.mock(com.migao.admin.service.OrderLifecycleService.class)));
         mockMvc = MockMvcBuilders.standaloneSetup(controller)
                 .setControllerAdvice(new GlobalExceptionHandler())

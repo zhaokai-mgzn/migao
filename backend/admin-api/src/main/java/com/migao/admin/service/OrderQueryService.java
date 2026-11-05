@@ -46,10 +46,15 @@ import java.util.stream.Collectors;
  * 状态流转（{@code cancelOrder} / 发货 / {@code refundOrder}）、金额与库存计算 —— 它们仍留在
  * {@link OrderService}，后续期次再拆。</p>
  *
- * <p>两个方法<b>留在 OrderService</b> 并被本类反向调用（既有单测按 {@code OrderService.xxx} 引用，
- * 搬走就得改测试）：{@code OrderService.applyStatusFilter}（状态多值筛选）与
- * {@code OrderService.resolveListWindow}（列表默认回溯窗口）。它们是无状态的静态纯函数，
- * 跨类调用不引入任何第二份口径。</p>
+ * <p>两个<b>无状态静态纯函数</b>（状态多值筛选 / 列表默认回溯窗口）此前留在 {@code OrderService}
+ * 并被本类反向调用；issue #8681 的收尾批把它们搬到 {@link OrderListCriteria}（同一个包、同样的包内可见），
+ * 本类改为 {@code OrderListCriteria.xxx} 直连 —— 仍不引入第二份口径。</p>
+ *
+ * <p><b>本类同时是两处订单域判据的实现点</b>（issue #8681，P2-1e 收尾批）：
+ * {@link #hasProcessingItems} / {@link #needsWork} 从门面搬来 —— 它们是<b>读</b>判据
+ * （「该单是否含加工项 / 是否有需要报工的作业」），而本类就是订单的<b>读面</b>；
+ * {@link #getOrderDetail} 早就在算<b>同一份</b>判据（经 {@code OrderShipGuard.requiredOrderKind}）。
+ * 生产待办（{@code ProductionTodoService}）是本类的消费方，不再绕门面。</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -102,7 +107,7 @@ public class OrderQueryService {
         }
 
         // 状态筛选（支持逗号分隔多值，见 applyStatusFilter）
-        OrderService.applyStatusFilter(wrapper, status);
+        OrderListCriteria.applyStatusFilter(wrapper, status);
 
         // 跟进状态筛选
         if (StringUtils.hasText(followStatus)) {
@@ -112,7 +117,7 @@ public class OrderQueryService {
         // 时间范围筛选（issue #6200：日界 = 业务日 +08，不是 UTC 日）
         // 半开区间 [D 00:00+08, D+1 00:00+08)：原写法把两端拼成 UTC 日的 00:00 与 23:59:59，把
         // 北京 00:00–08:00 的单归错天 / 月 / 年，且与走 businessClock 的看板 / 趋势互相矛盾。
-        OrderService.ListDateWindow window = OrderService.resolveListWindow(startDate, endDate, businessClock);
+        OrderListCriteria.ListDateWindow window = OrderListCriteria.resolveListWindow(startDate, endDate, businessClock);
         wrapper.ge(Order::getCreatedAt, window.start());
         wrapper.lt(Order::getCreatedAt, window.end());
 
@@ -252,7 +257,7 @@ public class OrderQueryService {
         }
 
         // 状态筛选（支持逗号分隔多值，见 applyStatusFilter）
-        OrderService.applyStatusFilter(wrapper, status);
+        OrderListCriteria.applyStatusFilter(wrapper, status);
 
         wrapper.orderByDesc(Order::getCreatedAt);
 
@@ -751,5 +756,35 @@ public class OrderQueryService {
         }
 
         return null;
+    }
+
+    /**
+     * 该订单是否含加工项（订单明细的 {@code processing_info} 非空）。
+     *
+     * <p><b>这是「含加工项」的唯一一份判据</b>（issue #3340 的发货守卫与 issue #5641 的生产待办
+     * 都读它）—— 自己再写一份 {@code extractProcessingItems} 调用就会是两处口径。</p>
+     *
+     * <p>必须走 BaseMapper 加载（见 {@link #loadOrderItems}）：自定义 {@code @Select} 不经过
+     * {@code JacksonTypeHandler}，{@code processing_info} 会以 JSON <b>字符串</b>返回 ⇒ 加工项解析
+     * 恒为空 ⇒ 判据静默失效（issue #3340 验收实战：真实对话生成加工单被判「无加工项」）。</p>
+     */
+    public boolean hasProcessingItems(Order order) {
+        // #5648 合并后：本体在 OrderShipGuard（单一实现点），本方法只做参数搬运。
+        return OrderShipGuard.hasProcessingItems(orderItemMapper, objectMapper, order);
+    }
+
+    /**
+     * 该订单是否**有需要报工的作业**（issue #7079）= 含加工项 **或** 有卖布行。
+     *
+     * <p>卖布单（{@code processing_info.saleForm = 布料}）按米卖布、行上**没有加工项**，
+     * 但它仍要经过「裁剪 → 打包」两道工序并给工人报工计件 ⇒ 只读 {@link #hasProcessingItems}
+     * 会把它判成「无需报工」。生产待办的「待排产」/「待发货」两处过滤读本方法
+     * （与发货守卫 {@link #isProcessingReadyForShip} 同一份判据）。</p>
+     *
+     * <p>本体在 {@code OrderShipGuard.needsWork}（单一实现点），本方法只做参数搬运 ——
+     * 同 {@link #hasProcessingItems} 的范式。</p>
+     */
+    public boolean needsWork(Order order) {
+        return OrderShipGuard.needsWork(orderItemMapper, objectMapper, order);
     }
 }

@@ -19,14 +19,10 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
-import org.springframework.util.StringUtils;
 
-import java.time.LocalDate;
-import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.stream.Collectors;
 
 /**
  * 订单服务类
@@ -52,8 +48,7 @@ import java.util.stream.Collectors;
  * （第八批：{@code createOrderForAgent} 由 Agent 订单控制器直连 {@link OrderCreationService}；
  * {@code updateOrderForAgent} 的编排实现体<b>整体搬到</b> {@link OrderAgentFacade}、事务注解逐字跟随；
  * 售后回补由 {@link AfterSalesTicketService} 直连 {@link OrderStockService}）。
- * 至此门面<b>不再声明任何转发</b>，只剩两处判据（{@code hasProcessingItems} / {@code needsWork}）、
- * 状态常量表、六处「手写 new 的单测取同一份实现点」的包内访问器。</p>
+ * 至此门面<b>不再声明任何转发</b>，只剩状态常量表与六处「手写 new 的单测取同一份实现点」的包内访问器。</p>
  *
  * <p><b>第九批（共享部件族收口，issue #8681 P2-1e）：</b>建单 / 改单 / Agent 三条写单路径共用的
  * 明细装配 · 取价 · 总额 · 加工费组合同步 · 库存前置 · 单号 · 定价留痕，以及整卷分配的私有步骤
@@ -63,16 +58,24 @@ import java.util.stream.Collectors;
  * 整卷分配的权威点随之改由 {@code OrderRollAllocationAuthorityTest} 指向新承载文件（五条判据一字未改，
  * 只换载体常量 —— 这就是「载体搬家同批登记」）。</p>
  *
- * <p><b>行数</b>：1,142 → 1,065（第八批）→ <b>541</b>（第九批，−524）。跌破 800 行的登记带 ⇒
- * {@code tests/unit_ci_workflows/loc_ratchet_exemptions.json} 里本文件的条目**同批销账**（台账只许缩短）。</p>
+ * <p><b>行数</b>：1,142 → 1,065（第八批）→ 547（第九批）→ <b>451</b>（第十批 · 收尾，−96）。
+ * 跌破 800 行的登记带时 {@code tests/unit_ci_workflows/loc_ratchet_exemptions.json} 里本文件的条目
+ * 已在第九批<b>同批销账</b>；{@code loc_freeze_ledger.json} 里本文件从未有条目 ⇒ 本批无需再销账。</p>
  *
- * <p><b>到 &lt; 500 还差 41 行（照实登记，不硬塞）</b>：① 两处订单域判据
- * {@code hasProcessingItems} / {@code needsWork}（生产待办与发货守卫**逐字引用**的公共 API）；
- * ② 状态常量表 / 列表时间窗 / 状态筛选（{@code STATUS_TRANSITIONS} / {@code ORDER_STATUS_LABELS} /
- * {@code resolveListWindow} / {@code applyStatusFilter}，静态契约面，查询族与多条判据按
- * {@code OrderService.xxx} 引用）；③ 六处包内访问器（{@code queryService()} 等）——
- * 手写 new 的既有单测靠它们取「同一份实现点」，删了要改几十个测试文件的装配。
- * 这三族各自要求先裁定「算不算订单域的公共 API」，是下一批的范围（见 issue #8681 的下一批清单）。</p>
+ * <p><b>第十批（收尾批，issue #8681 P2-1e）：<b>&lt; 500 判据达成</b>。</b>搬走两族：
+ * ① 订单域<b>公共 API</b> {@code hasProcessingItems} / {@code needsWork}（生产待办逐字引用的那两个判据）
+ * → {@link OrderQueryService}（读面：它本来就在 {@code getOrderDetail} 里算同一份判据）；
+ * ② 列表<b>时间窗</b>与<b>状态筛选</b>（{@code DEFAULT_LOOKBACK_MONTHS} / {@code ListDateWindow} /
+ * {@code resolveListWindow} / {@code applyStatusFilter}）→ 新建 {@link OrderListCriteria}
+ * （唯一生产消费方是查询族；并进 {@link OrderQueryService} 会越过 800 行登记阈值）。</p>
+ *
+ * <p><b>有意不搬（判据强度不许降，不是「文件不许动」）</b>：① 状态常量表
+ * {@code STATUS_TRANSITIONS} / {@code ORDER_STATUS_LABELS} —— 它们<b>只为一条权威判据而存在</b>
+ * （{@code OrderStatusTransitionsTest.stateMachineHasASingleImplementation} 用反射
+ * {@code OrderService.class.getDeclaredField(...)} 逐对象核对），删字段 = 把那条断言的对象一起删掉；
+ * 那<b>不是载体搬家</b>（载体改名做不到，只能重写断言）⇒ 按集成侧裁定的「载体搬家三条」它属越界；
+ * ② 六处包内访问器（{@code queryService()} 等）—— 手写 new 的既有单测靠它们取「同一份实现点」，
+ * 现取 16 处 {@code ReflectionTestUtils.invokeMethod}；动它 = 改测试装配面，收益不抵风险。</p>
  */
 @Slf4j
 @Service
@@ -84,47 +87,6 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
      * 默认实例（同为 +08 口径，行为一致），不因引入时钟让任何既有上下文启动失败（实测 OssEmptyConfigContextTest）。 */
     @Autowired(required = false)
     private BusinessClock businessClock = new BusinessClock();
-
-    /**
-     * 订单列表的**默认回溯窗口**（issue #7404：用户裁定「不允许查全部」／「最多回溯近 3 年」）。
-     *
-     * <p>只在不给下单时间范围时生效（见 {@code getOrderPage}）—— 显式区间原样透传，不被截断。
-     * 取 3 年而不是 12 个月：常见诉求是「翻去年的单 / 客户查三年前的记录」，
-     * 而 3 年窗口下单租户的订单量仍是万级（月订单几千），关键词 {@code LIKE '%kw%'} 逐行匹配在毫秒级。</p>
-     */
-    static final int DEFAULT_LOOKBACK_MONTHS = 36;
-
-    /** 订单列表的生效时间窗：半开区间 {@code [start, end)}，两条边界**恒非空**（兜底在 {@link #resolveListWindow}）。 */
-    record ListDateWindow(OffsetDateTime start, OffsetDateTime end) {
-    }
-
-    /**
-     * 解析订单列表的**生效**下单时间窗（issue #7404）。
-     *
-     * <p>口径（顺序即安全顺序）：</p>
-     * <ol>
-     *   <li>显式给了 {@code startDate}/{@code endDate} ⇒ **原样**使用（要查更早的历史单，自己选日期即可）；</li>
-     *   <li>没给起点 ⇒ 起点 = 「终止日（没给就是今天）− {@value #DEFAULT_LOOKBACK_MONTHS} 个月」；</li>
-     *   <li>没给终点 ⇒ 终点 = 「今天 + 1 天」（与显式区间同口径的半开区间）。</li>
-     * </ol>
-     *
-     * <p>⇒ 「忘选 / 清空日期」不再退化成**无时间谓词**的查询。为什么必须兜底：关键词是
-     * {@code LIKE '%kw%'}（name / phone / order_no 三列 OR），B-tree 用不上 ⇒ 无时间谓词时是
-     * 「本租户全部订单逐行匹配」，且分页每次 {@code COUNT(*)} 都要再来一遍。</p>
-     *
-     * <p>为什么是「补齐」而不是 400 拒绝：AI 侧 {@code logistics_track} 工具用
-     * {@code GET /api/admin/orders?keyword=<单号>}（**不带日期**）解析订单号 —— 拒绝会让物流追踪当场坏掉。</p>
-     */
-    static ListDateWindow resolveListWindow(String startDate, String endDate, BusinessClock clock) {
-        boolean hasStart = StringUtils.hasText(startDate);
-        boolean hasEnd = StringUtils.hasText(endDate);
-        LocalDate today = clock.today();
-        LocalDate startDay = hasStart
-                ? LocalDate.parse(startDate)
-                : (hasEnd ? LocalDate.parse(endDate) : today).minusMonths(DEFAULT_LOOKBACK_MONTHS);
-        LocalDate endDayExclusive = hasEnd ? LocalDate.parse(endDate).plusDays(1) : today.plusDays(1);
-        return new ListDateWindow(clock.startOfDay(startDay), clock.startOfDay(endDayExclusive));
-    }
 
     private final OrderMapper orderMapper;
     private final OrderItemMapper orderItemMapper;
@@ -456,36 +418,6 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
     private static final Map<String, String> ORDER_STATUS_LABELS =
             OrderStatusTransitions.ORDER_STATUS_LABELS;
 
-
-    /**
-     * 该订单是否含加工项（订单明细的 {@code processing_info} 非空）。
-     *
-     * <p><b>这是「含加工项」的唯一一份判据</b>（issue #3340 的发货守卫与 issue #5641 的生产待办
-     * 都读它）—— 自己再写一份 {@code extractProcessingItems} 调用就会是两处口径。</p>
-     *
-     * <p>必须走 BaseMapper 加载（见 {@link #loadOrderItems}）：自定义 {@code @Select} 不经过
-     * {@code JacksonTypeHandler}，{@code processing_info} 会以 JSON <b>字符串</b>返回 ⇒ 加工项解析
-     * 恒为空 ⇒ 判据静默失效（issue #3340 验收实战：真实对话生成加工单被判「无加工项」）。</p>
-     */
-    public boolean hasProcessingItems(Order order) {
-        // #5648 合并后：本体在 OrderShipGuard（单一实现点），本方法只做参数搬运。
-        return OrderShipGuard.hasProcessingItems(orderItemMapper, objectMapper, order);
-    }
-
-    /**
-     * 该订单是否**有需要报工的作业**（issue #7079）= 含加工项 **或** 有卖布行。
-     *
-     * <p>卖布单（{@code processing_info.saleForm = 布料}）按米卖布、行上**没有加工项**，
-     * 但它仍要经过「裁剪 → 打包」两道工序并给工人报工计件 ⇒ 只读 {@link #hasProcessingItems}
-     * 会把它判成「无需报工」。生产待办的「待排产」/「待发货」两处过滤读本方法
-     * （与发货守卫 {@link #isProcessingReadyForShip} 同一份判据）。</p>
-     *
-     * <p>本体在 {@code OrderShipGuard.needsWork}（单一实现点），本方法只做参数搬运 ——
-     * 同 {@link #hasProcessingItems} 的范式。</p>
-     */
-    public boolean needsWork(Order order) {
-        return OrderShipGuard.needsWork(orderItemMapper, objectMapper, order);
-    }
     /**
      * SKU 身份兜底（issue #7219）—— **纯函数**，判据见 {@code OrderServiceSkuBackfillTest}。
      *
@@ -519,29 +451,4 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
     public record OrderShipmentOutcome(Map<String, Object> result, boolean transitioned) {
     }
 
-    /**
-     * 订单状态筛选：支持**逗号分隔多值**（issue #5792）。
-     *
-     * <p>为什么需要：前端「待发货」在业务上是 **`confirmed` + `producing`** 两个状态之和
-     * （`frontend/admin-web/src/types/index.ts` 的映射注释已这么写），而后端此前只收单值
-     * ⇒ 列表比计数少（看板卡说 N 条、点进去只看到其中一部分）。
-     * 现按 `in` 处理 ⇒ 与计数的口径取齐（本仓同族缺陷的修法见 issue #5792 的口径整改）。</p>
-     */
-    static void applyStatusFilter(
-            com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<com.migao.admin.entity.Order> wrapper,
-            String status) {
-        if (!StringUtils.hasText(status)) {
-            return;
-        }
-        java.util.List<String> statuses = java.util.Arrays.stream(status.split(","))
-                .map(String::trim)
-                .filter(x -> !x.isEmpty())
-                .distinct()
-                .collect(java.util.stream.Collectors.toList());
-        if (statuses.size() == 1) {
-            wrapper.eq(com.migao.admin.entity.Order::getStatus, statuses.get(0));
-        } else {
-            wrapper.in(com.migao.admin.entity.Order::getStatus, statuses);
-        }
-    }
 }
