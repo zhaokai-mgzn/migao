@@ -8775,7 +8775,7 @@ cases:
         - "tests/unit_ci_workflows/test_loc_ratchet.py"
       ci:
         - pr-check.yml
-  - id: MC-223
+  - id: MC-233
     legacy_id: ""
     title: "OrderService 门面收尾第五批（issue #8681 的 P2-1e，部分交付）：建单族 createOrder 的调用方改直连 OrderCreationService、统计与跟进读取族三个入口改直连新建的 OrderStatsService，门面 1,655 行降到 1,582 行并删掉这 4 个转发；六个测试文件里的建单驱动点全数迁到实现点（断言零改动），退休守护扩到 11 个方法 / 7 个驱动入口"
     domains:
