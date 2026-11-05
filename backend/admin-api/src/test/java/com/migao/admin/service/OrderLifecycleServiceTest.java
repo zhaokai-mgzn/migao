@@ -154,7 +154,7 @@ class OrderLifecycleServiceTest {
 
         // ① 取消（已确认）：回补库存 + 补记退款流水（与确认支付的 income 对冲）
         when(orderMapper.selectById("order-a")).thenReturn(order("order-a", OrderStatusTransitions.CONFIRMED));
-        lifecycle.cancelOrder("order-a", "客户不要了", orderService);
+        lifecycle.cancelOrder("order-a", "客户不要了", orderService.sharedParts());
         verify(orderStockService).restoreStockAndDecreaseSales("order-a");
         verify(orderFeeSupport).recordFinanceTransaction(any(), eq(new BigDecimal("600.00")),
                 eq("refund"), eq("订单取消退款"));
@@ -168,7 +168,7 @@ class OrderLifecycleServiceTest {
 
         // ③ 状态流转（confirmed → producing）：原子 CAS 落库
         when(orderMapper.selectById("order-c")).thenReturn(order("order-c", OrderStatusTransitions.CONFIRMED));
-        lifecycle.updateOrderStatus("order-c", OrderStatusTransitions.PRODUCING, orderService);
+        lifecycle.updateOrderStatus("order-c", OrderStatusTransitions.PRODUCING, orderService.sharedParts());
         verify(orderMapper, org.mockito.Mockito.atLeastOnce()).update(isNull(), any(Wrapper.class));
 
         // ④ 退款：按传入金额封顶实收并登记退款流水（不改订单状态）
@@ -264,7 +264,7 @@ class OrderLifecycleServiceTest {
     @DisplayName("公开签名保留：五个入口在实现点上仍是 public、返回类型逐字不变（调用方按实现点依赖）")
     void publicSignaturesAreKept() throws NoSuchMethodException {
         assertThat(OrderLifecycleService.class.getMethod("cancelOrder", String.class, String.class,
-                        OrderService.class).getDeclaringClass().getName())
+                        OrderSharedParts.class).getDeclaringClass().getName())
                 .isEqualTo("com.migao.admin.service.OrderLifecycleService");
         assertThat(OrderLifecycleService.class.getMethod("refundOrder", String.class, BigDecimal.class,
                         String.class).getReturnType().getName())
@@ -273,7 +273,7 @@ class OrderLifecycleServiceTest {
                         String.class).getReturnType().getName())
                 .isEqualTo("com.migao.admin.service.OrderService$OrderShipmentOutcome");
         assertThat(OrderLifecycleService.class.getMethod("updateOrderStatus", String.class, String.class,
-                        OrderService.class).getDeclaringClass().getName())
+                        OrderSharedParts.class).getDeclaringClass().getName())
                 .isEqualTo("com.migao.admin.service.OrderLifecycleService");
         assertThat(OrderLifecycleService.class.getMethod("revertProducingToConfirmed", String.class,
                         String.class).getReturnType().getName())
@@ -290,7 +290,7 @@ class OrderLifecycleServiceTest {
         when(orderMapper.selectById("order-1")).thenReturn(order("order-1", OrderStatusTransitions.PENDING));
         when(orderMapper.update(isNull(), any(Wrapper.class))).thenReturn(1);
 
-        lifecycle.cancelOrder("order-1", null, orderService);
+        lifecycle.cancelOrder("order-1", null, orderService.sharedParts());
 
         verify(orderStockService, never()).restoreStockAndDecreaseSales(any());
         verify(orderFeeSupport, never()).recordFinanceTransaction(any(), any(), any(), any());
@@ -305,7 +305,7 @@ class OrderLifecycleServiceTest {
         when(orderMapper.update(isNull(), any(Wrapper.class))).thenReturn(1);
         when(orderFeeSupport.effectiveActualAmount(order)).thenReturn(new BigDecimal("600.00"));
 
-        lifecycle.cancelOrder("order-1", "客户不要了", orderService);
+        lifecycle.cancelOrder("order-1", "客户不要了", orderService.sharedParts());
 
         verify(orderStockService).restoreStockAndDecreaseSales("order-1");
         verify(orderFeeSupport).recordFinanceTransaction(
@@ -351,7 +351,7 @@ class OrderLifecycleServiceTest {
         when(orderMapper.selectById("order-1")).thenReturn(order("order-1", OrderStatusTransitions.PENDING));
         when(orderMapper.update(isNull(), any(Wrapper.class))).thenReturn(1);
 
-        lifecycle.updateOrderStatus("order-1", OrderStatusTransitions.CONFIRMED, orderService);
+        lifecycle.updateOrderStatus("order-1", OrderStatusTransitions.CONFIRMED, orderService.sharedParts());
 
         verify(orderMapper, org.mockito.Mockito.atLeastOnce()).update(isNull(), captor.capture());
         String confirmEdge = sqlSetOf(captor.getAllValues());
@@ -400,7 +400,7 @@ class OrderLifecycleServiceTest {
         ReflectionTestUtils.setField(lifecycle, "poolChangeNotifier", null);
         ReflectionTestUtils.setField(orderService, "stockBatchConsumptionService", batch);
 
-        assertThatCode(() -> lifecycle.cancelOrder("order-1", "客户不要了", orderService))
+        assertThatCode(() -> lifecycle.cancelOrder("order-1", "客户不要了", orderService.sharedParts()))
                 .doesNotThrowAnyException();
 
         verify(processingOrderMapper).markStatusIfFrom(eq("po-1"), eq(1L), eq("generated"), eq("cancelled"),

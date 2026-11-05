@@ -62,7 +62,7 @@ class OrderCreationServiceTest {
      * 所以这里用 mock —— 真实现本身由 {@code OrderServiceTest} / {@code AgentOrderServiceTest} 等逐条承担。
      */
     @Mock
-    private OrderService facadeSharedParts;
+    private OrderSharedParts facadeSharedParts;
 
     @Mock
     private OrderMapper orderMapper;

@@ -1448,7 +1448,7 @@ class ProcessingOrderServiceTest {
 
         // 派单即生产（issue #7723，用户 2026-10-25 裁定 A）：订单 confirmed→producing 的**唯一时点**
         // 从「发加工」（#4305）挪到「派单」。红证：改前这里是 never ⇒ 本断言必红。
-        verify(orderLifecycleService).updateOrderStatus("order-001", "producing", orderService);
+        verify(orderLifecycleService).updateOrderStatus("order-001", "producing", orderService.sharedParts());
         verify(orderLifecycleService, never()).revertProducingToConfirmed(anyString(), anyString());
     }
 
@@ -3716,7 +3716,7 @@ class ProcessingOrderServiceTest {
 
         assertThat(results.get(0).isSuccess()).isTrue();
         // #7723：派单即生产（时点从「发加工」挪到「派单」）
-        verify(orderLifecycleService).updateOrderStatus("order-001", "producing", orderService);
+        verify(orderLifecycleService).updateOrderStatus("order-001", "producing", orderService.sharedParts());
     }
 
     // ── PG-005/006 状态机 ──────────────────────────────────────────
@@ -3752,7 +3752,7 @@ class ProcessingOrderServiceTest {
 
         // 订单联动（issue #4305，用户裁定「发加工 = 订单进入生产中」）：**发加工**才推进
         // 订单 confirmed→producing（生成加工单已不再推进，见 generateSuccess 的 never 断言）
-        verify(orderLifecycleService).updateOrderStatus("order-001", "producing", orderService);
+        verify(orderLifecycleService).updateOrderStatus("order-001", "producing", orderService.sharedParts());
 
         // start
         when(processingOrderMapper.selectOne(any())).thenReturn(po("po-1", "issued"));
@@ -3775,7 +3775,7 @@ class ProcessingOrderServiceTest {
                 any(), any(), any(), any(), any(), any(), any(), any());
         verify(orderLifecycleService, never()).updateOrderStatus(eq("order-001"), eq("shipped"), any());
         // start/complete **不**再联动订单（订单联动只发生在 issue 这一次）
-        verify(orderLifecycleService, times(1)).updateOrderStatus("order-001", "producing", orderService);
+        verify(orderLifecycleService, times(1)).updateOrderStatus("order-001", "producing", orderService.sharedParts());
     }
 
     @Test
@@ -3917,7 +3917,7 @@ class ProcessingOrderServiceTest {
                 .isInstanceOf(RuntimeException.class);
         // 联动先行：订单先 confirmed→producing；加工单落库失败 ⇒ 回退订单，杜绝
         // 「订单生产中、加工单未发出」的孤儿态（与 #3345 P2② 给 generate 的同款 fail-closed）
-        verify(orderLifecycleService).updateOrderStatus("order-001", "producing", orderService);
+        verify(orderLifecycleService).updateOrderStatus("order-001", "producing", orderService.sharedParts());
         verify(orderLifecycleService).revertProducingToConfirmed(eq("order-001"), anyString());
     }
 
@@ -4210,7 +4210,7 @@ class ProcessingOrderServiceTest {
         assertThat(results.get(0).isSuccess()).isFalse();
         assertThat(results.get(0).getMessage()).contains("已生成");
         // #7723：联动先行（confirmed→producing）+ 落库失败 ⇒ 回退，杜绝「订单生产中、作业单没生成」
-        verify(orderLifecycleService).updateOrderStatus("order-001", "producing", orderService);
+        verify(orderLifecycleService).updateOrderStatus("order-001", "producing", orderService.sharedParts());
         verify(orderLifecycleService).revertProducingToConfirmed(eq("order-001"), anyString());
     }
 
@@ -4228,7 +4228,7 @@ class ProcessingOrderServiceTest {
         assertThatThrownBy(() -> processingOrderService.generate(List.of("order-001"), TENANT, "u1"))
                 .isInstanceOf(RuntimeException.class);
         // #7723：失败不得留「订单生产中、作业单没生成」的孤儿态
-        verify(orderLifecycleService).updateOrderStatus("order-001", "producing", orderService);
+        verify(orderLifecycleService).updateOrderStatus("order-001", "producing", orderService.sharedParts());
         verify(orderLifecycleService).revertProducingToConfirmed(eq("order-001"), anyString());
     }
 
@@ -5007,7 +5007,7 @@ class ProcessingOrderServiceTest {
         assertThat(written.getProcessor()).as("名称快照").isEqualTo("朝阳加工厂");
         assertThat(written.getProcessorSupplierId()).as("档案引用").isEqualTo("sup-1");
         assertThat(written.getExpectedDeliveryDate()).as("回厂日").isEqualTo(returnDate);
-        verify(orderLifecycleService).updateOrderStatus("order-001", "producing", orderService);
+        verify(orderLifecycleService).updateOrderStatus("order-001", "producing", orderService.sharedParts());
     }
 
     @Test

@@ -255,7 +255,7 @@ class AutoBatchMountPointTest {
         when(orderItemMapper.selectList(any(LambdaQueryWrapper.class)))
                 .thenReturn(List.of(deductibleItem()));
 
-        lifecycle().cancelOrder("order-001", "客户不要了", orderService);
+        lifecycle().cancelOrder("order-001", "客户不要了", orderService.sharedParts());
 
         verify(poolChangeNotifier).notify(TENANT, PoolChangeNotifier.TRIGGER_ORDER_CANCELLED);
     }

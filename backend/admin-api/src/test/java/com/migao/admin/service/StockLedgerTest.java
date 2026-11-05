@@ -397,7 +397,7 @@ class StockLedgerTest {
         order.setStatus("confirmed");
 
         // ③ 站点 3 取消回补（reason=order）：18 → 20
-        lifecycle().cancelOrder(ORDER_ID, "客户改主意", orderService);
+        lifecycle().cancelOrder(ORDER_ID, "客户改主意", orderService.sharedParts());
 
         // ④ 站点 2 售后回补（reason=aftersales，ref_no=工单号）：20 → 22
         AfterSalesStatusUpdateRequest request = new AfterSalesStatusUpdateRequest();

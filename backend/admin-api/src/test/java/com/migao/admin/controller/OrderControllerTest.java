@@ -7,7 +7,7 @@ import com.migao.admin.entity.OrderLogistics;
 import com.migao.admin.exception.BusinessException;
 import com.migao.admin.service.OrderLifecycleService;
 import com.migao.admin.service.OrderLogisticsService;
-import com.migao.admin.service.OrderService;
+import com.migao.admin.service.OrderSharedParts;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -38,7 +38,7 @@ class OrderControllerTest extends BaseControllerTest {
 
     private MockMvc mockMvc;
 
-    @Mock private OrderService orderService;
+    @Mock private OrderSharedParts orderSharedParts;
     /** 数据范围解析（issue #7372）：本类只验控制器接线，范围解析本身的判据在 DataScopeTest / RoleServiceTest。 */
     @Mock private com.migao.admin.service.RoleService roleService;
     @Mock private OrderLogisticsService orderLogisticsService;
@@ -48,7 +48,7 @@ class OrderControllerTest extends BaseControllerTest {
     @Mock private com.migao.admin.service.OrderQueryService orderQueryService;
     /**
      * 建单编排的实现点（issue #8681，P2-1e 第五批）：控制器直连实现点，门面的 {@code createOrder} 转发已删除；
-     * 第三参仍是门面实例（共享部件留在门面）⇒ 断言里用 {@code eq(orderService)} 钉住「传的是同一份」。
+     * 第三参仍是门面实例（共享部件留在门面）⇒ 断言里用 {@code eq(orderSharedParts)} 钉住「传的是同一份」。
      */
     @Mock private com.migao.admin.service.OrderCreationService orderCreationService;
     /**
@@ -278,7 +278,7 @@ class OrderControllerTest extends BaseControllerTest {
         @Test
         @DisplayName("创建订单携带租户 ID")
         void createPassesTenantId() throws Exception {
-            when(orderCreationService.createOrder(any(OrderCreateRequest.class), eq(TEST_TENANT_ID), eq(orderService)))
+            when(orderCreationService.createOrder(any(OrderCreateRequest.class), eq(TEST_TENANT_ID), eq(orderSharedParts)))
                     .thenReturn(buildOrder(ORDER_ID, "pending"));
 
             // 收货地址 + 物流两项（issue #5840 表单路径必填）——本用例验的是租户透传 ⇒ 给完整表单
@@ -288,7 +288,7 @@ class OrderControllerTest extends BaseControllerTest {
 
             mockMvc.perform(post(BASE).contentType(MediaType.APPLICATION_JSON).content(body));
 
-            verify(orderCreationService).createOrder(any(OrderCreateRequest.class), eq(TEST_TENANT_ID), eq(orderService));
+            verify(orderCreationService).createOrder(any(OrderCreateRequest.class), eq(TEST_TENANT_ID), eq(orderSharedParts));
         }
 
         @Test
@@ -301,7 +301,7 @@ class OrderControllerTest extends BaseControllerTest {
             mockMvc.perform(post(BASE).contentType(MediaType.APPLICATION_JSON).content(body))
                     .andExpect(status().isUnprocessableEntity());
 
-            verifyNoInteractions(orderService, orderCreationService);
+            verifyNoInteractions(orderSharedParts, orderCreationService);
         }
     }
 
@@ -344,7 +344,7 @@ class OrderControllerTest extends BaseControllerTest {
                     .andExpect(jsonPath("$.error.details[0].field").value("items[0].quantity"))
                     .andExpect(jsonPath("$.error.details[0].message").value("数量不能小于 1"));
 
-            verifyNoInteractions(orderService, orderCreationService);
+            verifyNoInteractions(orderSharedParts, orderCreationService);
         }
 
         @Test
@@ -357,13 +357,13 @@ class OrderControllerTest extends BaseControllerTest {
                     .andExpect(jsonPath("$.error.details[0].field").value("items[0].quantity"))
                     .andExpect(jsonPath("$.error.details[0].message").value("数量不能小于 1"));
 
-            verifyNoInteractions(orderService, orderCreationService);
+            verifyNoInteractions(orderSharedParts, orderCreationService);
         }
 
         @Test
         @DisplayName("quantity=1 → 200（下限值本身必须放行）")
         void minimumQuantityOnePasses() throws Exception {
-            when(orderCreationService.createOrder(any(OrderCreateRequest.class), eq(TEST_TENANT_ID), eq(orderService)))
+            when(orderCreationService.createOrder(any(OrderCreateRequest.class), eq(TEST_TENANT_ID), eq(orderSharedParts)))
                     .thenReturn(buildOrder(ORDER_ID, "pending"));
 
             mockMvc.perform(post(BASE).contentType(MediaType.APPLICATION_JSON)
@@ -371,33 +371,33 @@ class OrderControllerTest extends BaseControllerTest {
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.success").value(true));
 
-            verify(orderCreationService).createOrder(any(OrderCreateRequest.class), eq(TEST_TENANT_ID), eq(orderService));
+            verify(orderCreationService).createOrder(any(OrderCreateRequest.class), eq(TEST_TENANT_ID), eq(orderSharedParts));
         }
 
         @Test
         @DisplayName("quantity=3 → 200（整数数量不误伤）")
         void integerQuantityPasses() throws Exception {
-            when(orderCreationService.createOrder(any(OrderCreateRequest.class), eq(TEST_TENANT_ID), eq(orderService)))
+            when(orderCreationService.createOrder(any(OrderCreateRequest.class), eq(TEST_TENANT_ID), eq(orderSharedParts)))
                     .thenReturn(buildOrder(ORDER_ID, "pending"));
 
             mockMvc.perform(post(BASE).contentType(MediaType.APPLICATION_JSON)
                             .content(bodyWithQuantity("3", "300")))
                     .andExpect(status().isOk());
 
-            verify(orderCreationService).createOrder(any(OrderCreateRequest.class), eq(TEST_TENANT_ID), eq(orderService));
+            verify(orderCreationService).createOrder(any(OrderCreateRequest.class), eq(TEST_TENANT_ID), eq(orderSharedParts));
         }
 
         @Test
         @DisplayName("quantity=8.4 → 200（OR-028 小数数量 ≥1 不误伤，仍走 DECIMAL 口径）")
         void decimalQuantityPasses() throws Exception {
-            when(orderCreationService.createOrder(any(OrderCreateRequest.class), eq(TEST_TENANT_ID), eq(orderService)))
+            when(orderCreationService.createOrder(any(OrderCreateRequest.class), eq(TEST_TENANT_ID), eq(orderSharedParts)))
                     .thenReturn(buildOrder(ORDER_ID, "pending"));
 
             mockMvc.perform(post(BASE).contentType(MediaType.APPLICATION_JSON)
                             .content(bodyWithQuantity("8.4", "840")))
                     .andExpect(status().isOk());
 
-            verify(orderCreationService).createOrder(any(OrderCreateRequest.class), eq(TEST_TENANT_ID), eq(orderService));
+            verify(orderCreationService).createOrder(any(OrderCreateRequest.class), eq(TEST_TENANT_ID), eq(orderSharedParts));
         }
     }
 

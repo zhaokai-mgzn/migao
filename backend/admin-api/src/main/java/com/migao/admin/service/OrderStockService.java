@@ -35,9 +35,10 @@ import java.util.Map;
  * <p><b>单向依赖</b>：本类只依赖 Mapper 与 {@link StockLedgerService}，<b>不</b>反向引用
  * {@link OrderService}（搬走的是整条闭包 ⇒ 不需要门面提供任何共享部件）。</p>
  *
- * <p><b>有意不搬</b>：批次消耗台账访问器 {@code batchStock()} 仍在 {@link OrderService}
- * （{@code cancelOrder} 的加工单作废路径在用，与库存族无关）；整卷分配 {@code applyRollAllocation}、
- * 状态流转与金额计算也不在本期（P2-1c/P2-1d 的后续边界）。</p>
+ * <p><b>不在本类</b>：批次消耗台账访问器 {@code batchStock()} 自 issue #8681 第九批起随共享部件族
+ * 落在 {@link OrderSharedParts}（{@code cancelOrder} 的加工单作废路径在用，与库存族无关）；
+ * 整卷分配 {@code applyRollAllocation} 同址；状态流转在 {@link OrderLifecycleService}、
+ * 金额计算在 {@link OrderSharedParts}。</p>
  */
 @Slf4j
 @Service

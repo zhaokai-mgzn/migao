@@ -8,7 +8,7 @@ import com.migao.admin.service.OrderEntityWriteService;
 import com.migao.admin.service.OrderLogisticsService;
 import com.migao.admin.service.OrderLifecycleService;
 import com.migao.admin.service.OrderLogisticsWriter;
-import com.migao.admin.service.OrderService;
+import com.migao.admin.service.OrderSharedParts;
 import com.migao.admin.service.OrderShipmentService;
 import com.migao.admin.service.OrderStatsService;
 import com.migao.admin.service.OrderStatusTransitions;
@@ -39,7 +39,7 @@ import org.springframework.web.bind.annotation.*;
 @RequiredArgsConstructor
 public class OrderController {
 
-    private final OrderService orderService;
+    private final OrderSharedParts orderSharedParts;
 
     /**
      * 数据范围（issue #7372 段 1）：`order:list` / `order:detail` 两处读面都要按角色范围收窄。
@@ -62,8 +62,9 @@ public class OrderController {
 
     /**
      * 建单编排（issue #8681，P2-1e 第五批）：实现点在 {@link com.migao.admin.service.OrderCreationService}
-     * ⇒ 直接依赖实现点，门面的同名转发已删除。第三参仍是<b>门面实例</b>：建单与改单共用的明细装配 /
-     * 取价 / 库存前置的唯一实现点留 {@code OrderService}（见其类注释），新服务复用**同一份**口径。
+     * ⇒ 直接依赖实现点，门面的同名转发已删除。第三参是 {@link com.migao.admin.service.OrderSharedParts}
+     * 实例（issue #8681 第九批起）：建单与改单共用的明细装配 / 取价 / 库存前置的唯一实现点住在那里，
+     * 新服务复用**同一份**口径，门面实例不再进入这条调用链。
      */
     private final com.migao.admin.service.OrderCreationService orderCreationService;
 
@@ -126,7 +127,7 @@ public class OrderController {
         requireFormOnlyFields(request);
         log.info("创建订单: customerName={}", request.getCustomerName());
         Long tenantId = TenantContext.getTenantId();
-        OrderDetailResponse order = orderCreationService.createOrder(request, tenantId, orderService);
+        OrderDetailResponse order = orderCreationService.createOrder(request, tenantId, orderSharedParts);
         return ApiResponse.success(order);
     }
 
@@ -190,7 +191,7 @@ public class OrderController {
             @Valid @RequestBody OrderContentUpdateRequest request) {
         log.info("修改订单内容: id={}, customerName={}, items={}",
                 id, request.getCustomerName(), request.getItems() != null ? request.getItems().size() : 0);
-        return ApiResponse.success(orderEntityWriteService.updatePendingOrderContent(id, request, orderService));
+        return ApiResponse.success(orderEntityWriteService.updatePendingOrderContent(id, request, orderSharedParts));
     }
 
     /**
@@ -310,7 +311,7 @@ public class OrderController {
             @PathVariable String id,
             @Valid @RequestBody OrderStatusUpdateRequest request) {
         log.info("更新订单状态: id={}, status={}", id, request.getStatus());
-        orderLifecycleService.updateOrderStatus(id, request.getStatus(), orderService);
+        orderLifecycleService.updateOrderStatus(id, request.getStatus(), orderSharedParts);
         return ApiResponse.success();
     }
 
@@ -340,7 +341,7 @@ public class OrderController {
             @RequestBody(required = false) java.util.Map<String, String> body) {
         String closeReason = (body != null && body.containsKey("closeReason")) ? body.get("closeReason") : null;
         log.info("取消订单: orderId={}, closeReason={}", id, closeReason);
-        orderLifecycleService.cancelOrder(id, closeReason, orderService);
+        orderLifecycleService.cancelOrder(id, closeReason, orderSharedParts);
         return ApiResponse.success();
     }
 
