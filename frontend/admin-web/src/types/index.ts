@@ -496,7 +496,7 @@ export interface KnowledgeCardListParams extends PageParams {
 // ===== 订单状态 =====
 // 🔴 后端取值不在本文件手写（issue #8198 P2-2b）：唯一源 = Java `OrderStatusTransitions` → 生成物
 // `order-status.generated.ts`。改源后跑 `python3 scripts/order_status_codegen.py --write`。
-import { ORDER_STATUS_VALUES, type CanonicalOrderStatus } from './order-status.generated'
+import { ORDER_STATUS_LABELS, ORDER_STATUS_VALUES, type CanonicalOrderStatus } from './order-status.generated'
 
 // 前端展示口径（UI 侧词汇，不是后端取值）
 export type OrderStatus = 'pending_payment' | 'pending_shipment' | 'shipped' | 'completed' | 'closed' | 'refund'
@@ -577,9 +577,11 @@ export interface OrderStatusDisplay {
 }
 
 export function displayOrderStatus(status: string | undefined | null): OrderStatusDisplay {
+  // 已打包（packed）**显示专用**：不授予任何动作（issue #8686；依据 = 用户 2026-09-26 裁定「打包与发货都是工人的动作」）
+  if (status === ORDER_STATUS_VALUES.PACKED) return { label: ORDER_STATUS_LABELS[ORDER_STATUS_VALUES.PACKED], color: 'info' }
   if (status === ORDER_STATUS_VALUES.PRODUCING) return { label: '生产中', color: 'warning' }
   const normalized = normalizeOrderStatus(status)
-  return { label: OrderStatusLabels[normalized], color: OrderStatusColors[normalized] }
+  return { label: OrderStatusLabels[normalized] ?? '未知状态', color: OrderStatusColors[normalized] ?? 'default' }
 }
 
 // 订单状态流转顺序（正常流程）

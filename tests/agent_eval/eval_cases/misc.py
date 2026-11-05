@@ -2,7 +2,7 @@
 # 本文件由 render_cases.py 生成，勿手改（改了也留不住：下次重渲染会覆盖）
 # 源: cases/*.yml（case-contract 单一源）
 # 重新生成: python3 render_cases.py --cases <dir> --out-eval <包目录> --out-md <md>
-# 域: misc（源: cases/misc.yml，235 条）
+# 域: misc（源: cases/misc.yml，236 条）
 
 from ._schema import Difficulty, EvalCase, Skill
 
@@ -4316,6 +4316,25 @@ _CASE_MC_208 = EvalCase(
     precondition='零运行期前置（纯静态解析）：被测对象 = docs/deployment/demo-seed.sql 的原文，判据在 tests/unit_ci_workflows/test_seed_data_quality.py 里读盘解析。零网络 / 零 LLM / 零 DB。判不了的形态（元组 VALUES / 缺关联条件）⇒ 判据自己红并具名，绝不静默跳过。',
 )
 
+# ── MC-207 [NORMAL] 订单状态 packed（已打包）三轴分离（issue #8686）：动作面（Agent 四个工具 schema 枚举）保持排除、显示面（PC 订单列表徽标 + 详情/状态展示）补「已打包」与未知状态兜底、本体 order.status 显式登记「6 个 / 无 packed / 暂不同源」+ 收敛条件；依据 = 用户 2026-09-26 裁定「打包与发货都是工人的动作」（源: cases/misc.yml）──
+_CASE_MC_207 = EvalCase(
+    id='MC-207',
+    legacy_id='',
+    title='订单状态 packed（已打包）三轴分离（issue #8686）：动作面（Agent 四个工具 schema 枚举）保持排除、显示面（PC 订单列表徽标 + 详情/状态展示）补「已打包」与未知状态兜底、本体 order.status 显式登记「6 个 / 无 packed / 暂不同源」+ 收敛条件；依据 = 用户 2026-09-26 裁定「打包与发货都是工人的动作」',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['工人已在 H5 把订单推进到「已打包」后，商家在 PC 订单列表与详情必须看到「已打包」，而不是空白或「暂无数据」', 'Agent 不许把订单改到「已打包」（打包是工人动作，用户 2026-09-26 裁定）；任何未知状态都必须有兜底标签，不得渲染成 undefined'],
+    expectations=[],
+    data_checks=['**判据 1 · 动作面冻结（会红）**：`AGENT_ORDER_STATUSES` 必须 == 生成物全集 − {PACKED}（现取 6 个、不含 packed），四个工具 schema 的枚举仍由它派生（`list(AGENT_ORDER_STATUSES)`）；改成全集 / 改成别的集合 ⇒ 具名红「Agent 面又拿到 packed 了」。注入红证实测：把常量改成 `= ORDER_STATUSES` ⇒ 2 条红（集合断言与构造式断言各一条），逐字节还原后 5 条全绿（cmp 自证）。执行点 = backend/ai-agent-service/tests/test_order_status_axis_separation.py', '**判据 2 · 构造式与裁定出处（会红）**：常量必须仍由 `tuple(s for s in ORDER_STATUSES if s != PACKED)` 派生（AST 结构断言；改成手写 6 个字面量 = 第二份真值 ⇒ 红）；模块 docstring 必须留住裁定出处（`OrderShipmentService.java` + 日期 + 原文「打包与发货都是工人的动作」）与三轴「暂不同源」登记 + 收敛条件，删任一处 ⇒ 具名红。执行点 = 同判据 1 的判据文件', "**判据 3 · 显示面（会红）**：`displayOrderStatus('packed')` == { label: '已打包', color: 'info' }；未知状态必须有兜底标签（不得是 undefined）；同时 `BackendToFrontendStatus` 仍只有 6 个键、不含 packed（显示放开不授予写路径）；列表/看板徽标 `orderStatusChipFor('packed')` == { tone: 'info', label: '已打包' }（不再落「暂无数据」）。注入红证实测：删 packed 展示分支 ⇒ 红（实际 { 未知状态, default }）；删兜底 ⇒ 红（实际 label/color 皆 undefined）；删徽标分支 ⇒ 红（实际 { 暂无数据 }）；逐字节还原后 16 条全绿。执行点 = frontend/admin-web/tests/unit/components/order-status-display.test.ts 与 frontend/admin-web/tests/unit/lib/status-chip.test.ts", "**判据 4 · 本体独立（会红）**：`STATUS_LEXICON['order.status']` == 6 个且不含 packed（顺序同 Agent 面），schema.yaml 落到 `Ontology` 的枚举同值；把词表补成 7 个 / 加 packed ⇒ 具名红（本体是交叉校验的另一侧，同步掉就失去第二侧）。注入红证实测：词表改成 7 个含 packed ⇒ 2 条红，逐字节还原后 cmp 相等。执行点 = 同判据 1 的判据文件"],
+    skip_reason='[backend-contract] 纯结构 + 纯函数判据（Agent 常量 AST 构造式 / 前端展示与徽标映射 / 本体词表），零网络、零 LLM、不起真库；不进 agent-eval 冒烟',
+    tags=['order-status', 'packed', 'display-only', 'action-freeze', 'ontology-divergence', 'red-proof', 'backend-contract'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='零运行期前置（纯结构 + 纯函数判据）：被测对象 = `backend/ai-agent-service/app/constants/order_status.py` 的构造式与 docstring、前端 `frontend/admin-web/src/types/index.ts` 的 displayOrderStatus / `frontend/admin-web/src/lib/status-chip.ts` 的 orderStatusChipFor、`backend/ai-agent-service/app/ontology/{loader.py,schema.yaml}` 的 order.status 词表。不成立时红形态已内建：导入失败或文件缺失 ⇒ 判据红。零网络 / 零 LLM / 零 DB。',
+)
+
 CASES = (
     _CASE_MC_001,
     _CASE_MC_002,
@@ -4552,4 +4571,5 @@ CASES = (
     _CASE_MC_205,
     _CASE_MC_209,
     _CASE_MC_208,
+    _CASE_MC_207,
 )

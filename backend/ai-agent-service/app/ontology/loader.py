@@ -33,6 +33,10 @@ DEFAULT_SCHEMA_PATH = Path(__file__).resolve().parent / "schema.yaml"
 # 加载时校验：schema 中的 <对象>.status 枚举必须与词表**逐字一致**，
 # 否则 OntologySchemaError——从源头拦截"processing/producing"类漂移。
 STATUS_LEXICON: Dict[str, List[str]] = {
+    # ⚠️ `order.status` 是**独立真值源**（6 个、**无** `packed`），与 DB 全集（7 个）/ Agent 动作面
+    # （6 个）**有意暂不同源**（issue #8686）：本侧是交叉校验的另一侧，被「顺手同步」成 7 个就失去第二侧。
+    # 收敛条件登记在 backend/ai-agent-service/app/constants/order_status.py 的「收敛条件 / 重启条件」；
+    # 「6 个且不含 packed」由 backend/ai-agent-service/tests/test_order_status_axis_separation.py 钉住。
     "order.status": ["pending", "confirmed", "producing", "shipped", "completed", "cancelled"],
     "aftersales.status": ["pending", "processing", "rejected", "resolved", "closed"],
     "product_sku.status": ["draft", "on_sale", "off_sale", "under_review"],

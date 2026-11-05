@@ -1,3 +1,4 @@
+import { ORDER_STATUS_VALUES } from '@/types/order-status.generated'
 import { displayOrderStatus, normalizeOrderStatus, type AfterSalesStatus, type OrderStatus } from '@/types'
 
 /**
@@ -49,6 +50,11 @@ export function orderStatusChipFor(status: string | null | undefined): StatusChi
   // 列表徽标与详情页同一展示口径（displayOrderStatus）；其余沿用归一化 chip 映射
   if (status === 'producing') {
     return { tone: 'warning', label: displayOrderStatus(status).label }
+  }
+  // issue #8686：packed（已打包）由工人在 H5 推进（用户 2026-09-26 裁定「打包与发货都是工人的动作」）——
+  // 商家侧只需**看得到**，不授予任何动作；此前它会掉进下面「暂无数据」兜底（列表/看板一片空白）。
+  if (status === ORDER_STATUS_VALUES.PACKED) {
+    return { tone: 'info', label: displayOrderStatus(status).label }
   }
   const normalized = normalizeOrderStatus(status)
   if (normalized in orderStatusChip) {
