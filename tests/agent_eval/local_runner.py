@@ -10231,6 +10231,13 @@ async def run_suite(cases, label: str, classify: bool = True, retry_budget: int 
               f"{', '.join(verdict['case_asset_failures'])}")
     if verdict["flake_released"]:
         print(f"   🎲 已放行波动（flake 台账）: {', '.join(verdict['flake_released'])}")
+    # 假绿候选（issue #8300 残余①，由 #5511 第四节承接）：`unfailable_green` 此前**只写不读**
+    # —— 每条 summary 条目都带标记，而**没有任何一处读它** ⇒ 报告面看不见「这一轮的绿里
+    # 哪些没有可失败支撑」。这里就是它的消费点（报告面 = CI 日志）。
+    _fake_green = fake_green_ids(results)
+    if _fake_green:
+        print(f"   🧪 假绿候选（通过但无可失败支撑，见 assertions_fired）: "
+              f"{', '.join(_fake_green)}")
 
     return results
 
@@ -10683,6 +10690,10 @@ def _unfailable_green(score: float, scoring_checks: list, assertions_fired: dict
     （scoring 可失败性 + 效果层触发）。参数保留仅为兼容既有调用、并让红证夹具
     直陈该漏标机制；taxonomy 把 `order_before` 判为行为层，服务的是
     `forbidden_text` 禁令规则（不得单独承载）那个问题，与本标记是两回事。
+
+    **消费点**（issue #8300 残余①）：`fake_green_ids()` 在 `run_suite` 的完成判定块把它读出来
+    逐条打印（报告面 = CI 日志）。标记因此不再「只写不读」；判据 =
+    `tests/unit_ci_workflows/test_unfailable_green_is_consumed.py`（含接线拆除的注入式红证）。
     """
     if score < 1.0:
         return False
@@ -10691,6 +10702,21 @@ def _unfailable_green(score: float, scoring_checks: list, assertions_fired: dict
     if any((assertions_fired.get("effect_layers") or {}).values()):
         return False
     return True
+
+
+def fake_green_ids(results: list) -> list:
+    """通过用例里的**假绿候选**（`unfailable_green` 标记）→ ID 列表 —— **报告面消费点**。
+
+    为什么必须有这个函数（issue #8300 残余①，由 #5511 第四节承接）：`_unfailable_green`
+    自 #3483 T2 起就把标记写进每条 summary 条目，而**全仓没有一处读它** ⇒ 标记只写不读，
+    写的人以为它有效、读报告的人根本看不到（与「字段在架没人用」同族）。
+    现在 `run_suite` 的完成判定块**消费**它：有候选就逐条打印，报告面（CI 日志）直接可见
+    「这一轮的绿里哪些是**没有可失败支撑**的」。
+
+    ⚠️ **只报告、不改判定**：`ok` / `reason` 一个字都不变。把假绿候选直接判红会误伤存量用例
+    （存量清账需要基线/棘轮，属另一单），而本条要治的是「标记没人读」，不是「标记不够严」。
+    """
+    return [str(r.get("case_id")) for r in (results or []) if r.get("unfailable_green")]
 
 
 def _summary_case(result: dict, failures: list) -> dict:
