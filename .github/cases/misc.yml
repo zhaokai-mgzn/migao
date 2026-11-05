@@ -9461,3 +9461,37 @@ cases:
     traces:
       tests:
         - "tests/unit_ci_workflows/test_automerge_bot_safe_path.py"
+
+  - id: MC-236
+    legacy_id: ""
+    title: ".github/cases/*.yml 合并冲突的一键解法：以 main 为底 + 追加不在 main 里的块（id 集合差，不是字符串号段）+ 五条校验 + 生成物刷新失败则逐字节回滚"
+    domains:
+      - misc
+      - ci
+    tier: normal
+    tags:
+      - ci
+      - merge-conflict
+      - case-corpus
+      - tooling
+      - fail-closed
+      - red-proof
+    truths_ref: []
+    user_inputs:
+      - "两个包都在 .github/cases/misc.yml 末尾追加自己的 case 块：我要解这个冲突，同时不能误抓别的前缀（PK/SP/WH/QC）、不能丢 main 的用例、不能留下重复 id、生成物刷新失败时不能留下半成品"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "**判据 1（会红）：选块 = id 集合差**。候选集含 `MC-221` + `PK-100` + `SP-050`（同一文件里的邻居）时只取到 `MC-221`，且追加顺序 = 前缀分组 + 组内按数字（`MC-999` 在 `MC-1000` 前）。红证 = 把选块改回字符串比较号段（`cid >= MC-221`）⇒ 判据红并点名误抓了 `PK-100`/`SP-050`/`WH-7`/`QC-2`，同时第二道防线（重复 id）也拒绝落盘。"
+      - "**判据 2（会红）：残缺块不追加**。没有 `title:` 的块 ⇒ 脚本非零退出、点名该 id、**一个字都不写**（文件逐字节不变）；红证 = 放宽成「跳过继续」⇒ 半截用例被写进去（它能通过 YAML 解析，只有 `title:` 判据拦得住）。"
+      - "**判据 3（会红）：main 的 id 不许丢**。底 + 追加的结果里少了 main 的某条 id ⇒ 拒绝写入；红证 = 摘掉该检查 ⇒ 静默通过。"
+      - "**判据 4（会红）：重号拒绝并说明让号**。追加块的 id 已在 main 里 ⇒ 拒绝，并指出重号该怎么处置（`scripts/next_case_id.py` 让号）而不是让人自己猜；红证 = 摘掉该检查 ⇒ 只剩重复 id 报错、不再给处置口径。"
+      - "**判据 5（会红）：写后回滚逐字节相同**。让生成物刷新腿失败 ⇒ 文件内容与写前**逐字节相同**、索引仍是冲突态；正控 = 替身生成器成功时它真被调用（否则回滚判据是空跑）。"
+      - "**判据 6：端到端真 merge**。临时仓 `git init` + 两分支各自追加 + `git merge` 造真冲突 ⇒ 跑脚本后冲突标记消失、`main ⊆ 结果`、双方新增块都在、条数正确，且工具**不动索引**（`git add` 由人做，回滚语义因此干净）。"
+      - "附带实测：从**工作树**带标记文件按行区间取块会结构性产生残缺块（git 把两侧追加区拆成多个 hunk，`title:` 之后的内容落在第二个 hunk）⇒ 实现改读索引 `:2:`/`:3:`（未冲突的双方完整体）。"
+    skip_reason: "[backend-contract] 纯文本 + 临时 git 仓夹具（零网络 / 零 LLM），计分通道 = traces.tests；真实「多包并发同改 misc.yml」的 GitHub 侧冲突由临时仓真 merge 等价复现"
+    merge_log:
+      - "2026-11-05 新增（集成侧当晚手写同一段解冲突脚本 8+ 次后收敛成 `scripts/resolve_cases_conflict.py`；本 PR 无关联 issue，标 N/A（基建））。四类踩坑各自有判据：字符串号段误抓 / 残缺块 / 生成物没刷新 / 没校验 main ⊆ 结果。"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_resolve_cases_conflict.py"
