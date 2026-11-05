@@ -84,6 +84,13 @@ class OrderContentEditTest {
     @InjectMocks
     private OrderService orderService;
 
+    /**
+     * 实体写面的实现点（issue #8681，P2-1e 第七批）。取门面**自己懒构造的那一份**
+     * （{@code entityWriteService()}）⇒ 与拆分前是<b>同一条调用链、同一份协作者</b>，
+     * 所以期望值 / 异常话术 / 边界读数逐字不变，只是「谁被驱动」变了。
+     */
+    private OrderEntityWriteService orderEntityWriteService;
+
     @Mock private OrderMapper orderMapper;
     @Mock private OrderItemMapper orderItemMapper;
     @Mock private OrderLogisticsMapper orderLogisticsMapper;
@@ -117,6 +124,8 @@ class OrderContentEditTest {
         ReflectionTestUtils.setField(orderService, "objectMapper", objectMapper);
         // 审计留痕是**字段注入**（不进构造签名）⇒ Mockito 的 @InjectMocks 不装配它，必须显式给
         ReflectionTestUtils.setField(orderService, "auditLogService", auditLogService);
+        // issue #8681（P2-1e 第七批）：驱动对象迁到实现点 —— 取门面自己懒构造的那一份
+        orderEntityWriteService = ReflectionTestUtils.invokeMethod(orderService, "entityWriteService");
 
         MybatisConfiguration conf = new MybatisConfiguration();
         MapperBuilderAssistant assistant = new MapperBuilderAssistant(conf, "");
@@ -194,13 +203,13 @@ class OrderContentEditTest {
             order.setStatus(status);
             when(orderMapper.selectById(ORDER_ID)).thenReturn(order);
 
-            assertThatThrownBy(() -> orderService.updatePendingOrderContent(ORDER_ID, request("3", "50", "150")))
+            assertThatThrownBy(() -> orderEntityWriteService.updatePendingOrderContent(ORDER_ID, request("3", "50", "150"), orderService))
                     .as("状态 %s 必须被拒", status)
                     .isInstanceOf(BusinessException.class)
                     .hasMessageContaining("只有「待付款」的订单可以修改内容");
 
             BusinessException e = (BusinessException) org.assertj.core.api.Assertions
-                    .catchThrowable(() -> orderService.updatePendingOrderContent(ORDER_ID, request("3", "50", "150")));
+                    .catchThrowable(() -> orderEntityWriteService.updatePendingOrderContent(ORDER_ID, request("3", "50", "150"), orderService));
             assertThat(e.getHttpStatus()).as("422（不是 400/500）").isEqualTo(422);
         }
         verify(orderMapper, never()).updateById(any(Order.class));
@@ -216,7 +225,7 @@ class OrderContentEditTest {
         givenOrderItems(oldItem);
         when(orderMapper.selectById(ORDER_ID)).thenReturn(order);
 
-        OrderDetailResponse detail = orderService.updatePendingOrderContent(ORDER_ID, request("3", "50", "150"));
+        OrderDetailResponse detail = orderEntityWriteService.updatePendingOrderContent(ORDER_ID, request("3", "50", "150"), orderService);
 
         assertThat(detail).isNotNull();
         // issue #6955：写路径从「读 → 改实体 → updateById（整实体回写）」改成**条件更新 + 只写自己负责的列**
@@ -261,7 +270,7 @@ class OrderContentEditTest {
             return 1;
         });
 
-        orderService.updatePendingOrderContent(ORDER_ID, req);
+        orderEntityWriteService.updatePendingOrderContent(ORDER_ID, req, orderService);
 
         // issue #6955：金额断言改看条件更新的 SET 实参（不再靠「内存实体被改」）
         ArgumentCaptor<LambdaUpdateWrapper<Order>> wrapper = captorOfWrapper();
@@ -283,7 +292,7 @@ class OrderContentEditTest {
         givenOrderItems(oldItem);
         when(orderMapper.selectById(ORDER_ID)).thenReturn(order);
 
-        assertThatThrownBy(() -> orderService.updatePendingOrderContent(ORDER_ID, request("3", "50", "100")))
+        assertThatThrownBy(() -> orderEntityWriteService.updatePendingOrderContent(ORDER_ID, request("3", "50", "100"), orderService))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("实收金额与应收不一致");
         verify(orderMapper, never()).updateById(any(Order.class));
@@ -299,7 +308,7 @@ class OrderContentEditTest {
         givenOrderItems(oldItem);
         when(orderMapper.selectById(ORDER_ID)).thenReturn(order);
 
-        assertThatThrownBy(() -> orderService.updatePendingOrderContent(ORDER_ID, request("3", "50", "150")))
+        assertThatThrownBy(() -> orderEntityWriteService.updatePendingOrderContent(ORDER_ID, request("3", "50", "150"), orderService))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("库存不足")
                 .hasMessageContaining("修改订单");
@@ -328,7 +337,7 @@ class OrderContentEditTest {
             return 1;
         });
 
-        orderService.updatePendingOrderContent(ORDER_ID, req);
+        orderEntityWriteService.updatePendingOrderContent(ORDER_ID, req, orderService);
 
         verify(productSkuMapper, never()).updateById(any(ProductSku.class));
         verifyNoInteractions(stockLedgerService);
@@ -344,7 +353,7 @@ class OrderContentEditTest {
                 ProcessingOrder.builder().id("po-1").orderId(ORDER_ID).tenantId(TENANT)
                         .processingOrderNo("JG-20261001-0001").status("generated").build());
 
-        assertThatThrownBy(() -> orderService.updatePendingOrderContent(ORDER_ID, request("3", "50", "150")))
+        assertThatThrownBy(() -> orderEntityWriteService.updatePendingOrderContent(ORDER_ID, request("3", "50", "150"), orderService))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("已生成加工单")
                 .hasMessageContaining("JG-20261001-0001");
@@ -375,7 +384,7 @@ class OrderContentEditTest {
             return 1;
         });
 
-        orderService.updatePendingOrderContent(ORDER_ID, req);
+        orderEntityWriteService.updatePendingOrderContent(ORDER_ID, req, orderService);
 
         verify(orderItemMapper).delete(any());
         verify(orderItemMapper).insert(any(OrderItem.class));
@@ -409,7 +418,7 @@ class OrderContentEditTest {
             return 1;
         });
 
-        orderService.updatePendingOrderContent(ORDER_ID, req);
+        orderEntityWriteService.updatePendingOrderContent(ORDER_ID, req, orderService);
 
         @SuppressWarnings("unchecked")
         ArgumentCaptor<Map<String, Object>> detailsCaptor = ArgumentCaptor.forClass(Map.class);
@@ -517,7 +526,7 @@ class OrderContentEditTest {
         // 件级安装位置（issue #7856）：可选；传了就必须落进**本行** processing_info（去空白）
         update.getItems().get(0).setInstallRoom(" 阳台 ");
 
-        orderService.updatePendingOrderContent(ORDER_ID, update);
+        orderEntityWriteService.updatePendingOrderContent(ORDER_ID, update, orderService);
 
         ArgumentCaptor<OrderItem> captor = ArgumentCaptor.forClass(OrderItem.class);
         verify(orderItemMapper).insert(captor.capture());
@@ -540,7 +549,7 @@ class OrderContentEditTest {
         OrderContentUpdateRequest update = request("3", "50", "150");
         update.setInstallCommunity("");
 
-        orderService.updatePendingOrderContent(ORDER_ID, update);
+        orderEntityWriteService.updatePendingOrderContent(ORDER_ID, update, orderService);
 
         ArgumentCaptor<OrderItem> captor = ArgumentCaptor.forClass(OrderItem.class);
         verify(orderItemMapper).insert(captor.capture());

@@ -234,6 +234,11 @@ class MoneyEntryPrecisionMetaGuardTest {
                                 + "issue #8191（P2-1b）随 createOrder 从 OrderService 搬到本文件（准入形态不变）"),
                 site("com/migao/admin/service/OrderService.java", "setUnitPrice", Admission.GATED,
                         "明细单价在 assertItemAmountsValid（建单/改单唯一共享闸门）过 MoneyScale"),
+                site("com/migao/admin/service/OrderEntityWriteService.java", "setUnitPrice", Admission.GATED,
+                        "改单请求明细 → 建单行类型（toCreateItems）：单价原样搬运，准入仍由"
+                                + " assertItemAmountsValid（建单/改单唯一共享闸门，唯一实现点留在门面）执行；"
+                                + "issue #8681（P2-1e 第七批）随 updatePendingOrderContent 从 OrderService 搬到本文件"
+                                + "（准入形态不变，仍是 GATED）"),
                 site("com/migao/admin/service/ProcessingFeeCombinationCommandService.java", "setUnitPrice",
                         Admission.GATED,
                         "requiredPrice（create/update 的收集式校验）与 upsertFromOrderOverride 两处过 MoneyScale"),

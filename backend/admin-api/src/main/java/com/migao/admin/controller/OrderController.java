@@ -4,6 +4,7 @@ import com.migao.admin.dto.*;
 import com.migao.admin.config.TenantContext;
 import com.migao.admin.entity.OrderLogistics;
 import com.migao.admin.exception.BusinessException;
+import com.migao.admin.service.OrderEntityWriteService;
 import com.migao.admin.service.OrderLogisticsService;
 import com.migao.admin.service.OrderLifecycleService;
 import com.migao.admin.service.OrderLogisticsWriter;
@@ -72,6 +73,13 @@ public class OrderController {
      * 「实体实现搬家」，过渡期仍走门面。
      */
     private final OrderStatsService orderStatsService;
+
+    /**
+     * 订单**实体写面**（issue #8681，P2-1e 第七批）：删单 / 备注 / 手机号回填 / 跟进状态（读 + 写）/
+     * 加急 / 待付款内容编辑的实现点在 {@link OrderEntityWriteService} ⇒ 直接依赖实现点，
+     * 门面不再声明这批入口（同名转发已退休）。
+     */
+    private final OrderEntityWriteService orderEntityWriteService;
 
     // ==================== 字面路径（无路径变量） ====================
 
@@ -182,7 +190,7 @@ public class OrderController {
             @Valid @RequestBody OrderContentUpdateRequest request) {
         log.info("修改订单内容: id={}, customerName={}, items={}",
                 id, request.getCustomerName(), request.getItems() != null ? request.getItems().size() : 0);
-        return ApiResponse.success(orderService.updatePendingOrderContent(id, request));
+        return ApiResponse.success(orderEntityWriteService.updatePendingOrderContent(id, request, orderService));
     }
 
     /**
@@ -349,7 +357,7 @@ public class OrderController {
             @RequestBody java.util.Map<String, String> body) {
         String content = (body != null && body.containsKey("content")) ? body.get("content") : null;
         log.info("添加订单备注: orderId={}", id);
-        orderService.addRemark(id, content);
+        orderEntityWriteService.addRemark(id, content);
         return ApiResponse.success();
     }
 
@@ -397,7 +405,7 @@ public class OrderController {
     @GetMapping("/{id:[0-9a-fA-F-]+}/follow-status")
     public ApiResponse<FollowStatusResponse> getFollowStatus(@PathVariable String id) {
         log.info("获取订单跟进状态: orderId={}", id);
-        FollowStatusResponse response = orderStatsService.getFollowStatus(id);
+        FollowStatusResponse response = orderEntityWriteService.getFollowStatus(id);
         return ApiResponse.success(response);
     }
 
@@ -413,7 +421,7 @@ public class OrderController {
             @PathVariable String id,
             @Valid @RequestBody FollowStatusUpdateRequest request) {
         log.info("更新跟进状态: orderId={}, followStatus={}", id, request.getFollowStatus());
-        orderService.updateFollowStatus(id, request.getFollowStatus());
+        orderEntityWriteService.updateFollowStatus(id, request.getFollowStatus());
         return ApiResponse.success();
     }
 
@@ -437,7 +445,7 @@ public class OrderController {
             @RequestBody OrderUrgencyUpdateRequest request) {
         log.info("更新订单加急/到货日: orderId={}, isUrgent={}, requiredDeliveryDate={}",
                 id, request.getIsUrgent(), request.getRequiredDeliveryDate());
-        orderService.updateUrgency(id, request.getIsUrgent(), request.getIsOutsourced(),
+        orderEntityWriteService.updateUrgency(id, request.getIsUrgent(), request.getIsOutsourced(),
                 request.getRequiredDeliveryDate());
         return ApiResponse.success();
     }
@@ -451,7 +459,7 @@ public class OrderController {
     @DeleteMapping("/{id:[0-9a-fA-F-]+}")
     public ApiResponse<Void> deleteOrder(@PathVariable String id) {
         log.info("删除订单: id={}", id);
-        orderService.deleteOrder(id);
+        orderEntityWriteService.deleteOrder(id);
         return ApiResponse.success();
     }
 

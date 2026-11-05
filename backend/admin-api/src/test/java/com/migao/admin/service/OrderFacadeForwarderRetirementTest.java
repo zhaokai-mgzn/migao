@@ -30,7 +30,11 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@code getFollowStatusStats} / {@code getFollowStatus} 直连 {@link OrderStatsService}）；
  * <b>第六批</b>：生命周期族 {@code updateOrderStatus} / {@code confirmPayment} / {@code cancelOrder} /
  * {@code refundOrder} / {@code shipWithLogistics}（两个重载）/ {@code revertProducingToConfirmed}
- * 直连 {@link OrderLifecycleService}（订单 / 生产控制器与加工单服务；门面共 7 个声明退休）。</p>
+ * 直连 {@link OrderLifecycleService}（订单 / 生产控制器与加工单服务；门面共 7 个声明退休）；
+ * <b>第七批</b>：实体实现 {@code deleteOrder} / {@code addRemark} / {@code bindOrdersToUser} /
+ * {@code updateFollowStatus} / {@code getFollowStatus} / {@code updateUrgency} /
+ * {@code updatePendingOrderContent} 直连 {@link OrderEntityWriteService}（订单控制器 + 小程序手机号绑定服务；
+ * 门面共 7 个声明退休，且不再留这族的私有死委托）。</p>
  *
  * <p><b>为什么需要它（这条判据补的是哪一半）</b>：删掉门面转发之后，原来「门面必须把这一族转出去」的
  * 接线判据就**没有对象**了 ⇒ 若只是把它们删掉，这个方向就变成**无人看管**：任何人把转发加回来、
@@ -61,6 +65,8 @@ class OrderFacadeForwarderRetirementTest {
     private static final Path LIFECYCLE_SERVICE = MAIN.resolve("service").resolve("OrderLifecycleService.java");
     private static final Path CREATION_SERVICE = MAIN.resolve("service").resolve("OrderCreationService.java");
     private static final Path STATS_SERVICE = MAIN.resolve("service").resolve("OrderStatsService.java");
+    /** 第七批（issue #8681，P2-1e 第七批）：订单**实体写面**的唯一实现点。 */
+    private static final Path WRITE_SERVICE = MAIN.resolve("service").resolve("OrderEntityWriteService.java");
 
     /**
      * 本批退休的转发：方法名 → 声明签名（逐字）+ 实现点所在文件 + 消费方清单（目录 + 文件 + 必须出现的调用串）。
@@ -137,11 +143,14 @@ class OrderFacadeForwarderRetirementTest {
                 STATS_SERVICE,
                 List.of(new Consumer("controller", "OrderController.java",
                         "orderStatsService.getFollowStatusStats("))));
+        // 第七批（issue #8681，P2-1e 第七批）：读写**同址**收口 —— 写面 updateFollowStatus 搬进
+        // {@link OrderEntityWriteService} 时，读面 getFollowStatus 也同批从 {@link OrderStatsService} 并回
+        // （第五批登记的返工点就此销账）。本条的实现点载体因此从 STATS_SERVICE 改为 WRITE_SERVICE。
         RETIRED.put("getFollowStatus", new Retired(
                 "FollowStatusResponse getFollowStatus(",
-                STATS_SERVICE,
+                WRITE_SERVICE,
                 List.of(new Consumer("controller", "OrderController.java",
-                        "orderStatsService.getFollowStatus("))));
+                        "orderEntityWriteService.getFollowStatus("))));
         // 第六批（issue #8681，P2-1e 第六批）：生命周期族收口 —— 订单 / 生产控制器与加工单服务直连
         // {@link OrderLifecycleService}（加工单服务是**冻结面**、一行都不许涨 ⇒ 它经门面的包内访问器取
         // **同一份**实现点，调用形态仍是直连实现点、不经任何退休前的转发）。声明锚点取「返回类型（或 void）+ 方法名 + 左括号」：
@@ -180,6 +189,41 @@ class OrderFacadeForwarderRetirementTest {
                 LIFECYCLE_SERVICE,
                 List.of(new Consumer("service", "ProcessingOrderService.java",
                         "lifecycleService().revertProducingToConfirmed("))));
+        // 第七批（issue #8681，P2-1e 第七批）：**实体实现**搬家 —— 这批不是转发，是门面里最后一批
+        // 「真正干活」的订单实体写法。实现体逐字节搬进 {@link OrderEntityWriteService} 之后，门面
+        // 一处声明都不许留（连私有死委托都不留），消费方一律直连实现点。
+        // 内容编辑的第三参仍是**门面实例**：建单与改单共用的明细装配 / 取价 / 总额 / 库存前置的唯一实现点
+        // 留 {@code OrderService}（与第五批 createOrder 同一条口径，不重搭第二份）。
+        RETIRED.put("deleteOrder", new Retired(
+                "void deleteOrder(",
+                WRITE_SERVICE,
+                List.of(new Consumer("controller", "OrderController.java",
+                        "orderEntityWriteService.deleteOrder("))));
+        RETIRED.put("addRemark", new Retired(
+                "void addRemark(",
+                WRITE_SERVICE,
+                List.of(new Consumer("controller", "OrderController.java",
+                        "orderEntityWriteService.addRemark("))));
+        RETIRED.put("bindOrdersToUser", new Retired(
+                "int bindOrdersToUser(",
+                WRITE_SERVICE,
+                List.of(new Consumer("service", "MiniPhoneBindService.java",
+                        "orderEntityWriteService.bindOrdersToUser("))));
+        RETIRED.put("updateFollowStatus", new Retired(
+                "void updateFollowStatus(",
+                WRITE_SERVICE,
+                List.of(new Consumer("controller", "OrderController.java",
+                        "orderEntityWriteService.updateFollowStatus("))));
+        RETIRED.put("updateUrgency", new Retired(
+                "void updateUrgency(",
+                WRITE_SERVICE,
+                List.of(new Consumer("controller", "OrderController.java",
+                        "orderEntityWriteService.updateUrgency("))));
+        RETIRED.put("updatePendingOrderContent", new Retired(
+                "OrderDetailResponse updatePendingOrderContent(",
+                WRITE_SERVICE,
+                List.of(new Consumer("controller", "OrderController.java",
+                        "orderEntityWriteService.updatePendingOrderContent("))));
     }
 
     /**
@@ -209,7 +253,12 @@ class OrderFacadeForwarderRetirementTest {
             // （{@code ReflectionTestUtils.invokeMethod(orderService, "lifecycleService")} 那一份），
             // 其余驱动点一并迁走 ⇒ 门面同名入口在 src/test 全树零驱动。
             "updateOrderStatus", "confirmPayment", "cancelOrder", "refundOrder",
-            "shipWithLogistics", "revertProducingToConfirmed");
+            "shipWithLogistics", "revertProducingToConfirmed",
+            // 第七批（issue #8681，P2-1e 第七批）：实体写面。驱动点从门面迁到实现点
+            // （{@code ReflectionTestUtils.invokeMethod(orderService, "entityWriteService")} 那一份），
+            // 断言逐字未改。
+            "deleteOrder", "addRemark", "bindOrdersToUser", "updateFollowStatus",
+            "updateUrgency", "updatePendingOrderContent");
 
     private record Consumer(String dir, String file, String call) {
     }
@@ -222,7 +271,8 @@ class OrderFacadeForwarderRetirementTest {
     @Test
     @DisplayName("扫描面自证：门面 / 三个实现点 / 全部具名消费方文件都必须真实存在（缺一个 ⇒ 红，不是跳过）")
     void scanSurfaceExists() {
-        for (Path path : List.of(ORDER_SERVICE, QUERY_SERVICE, LIFECYCLE_SERVICE, CREATION_SERVICE, STATS_SERVICE)) {
+        for (Path path : List.of(ORDER_SERVICE, QUERY_SERVICE, LIFECYCLE_SERVICE, CREATION_SERVICE, STATS_SERVICE,
+                WRITE_SERVICE)) {
             assertThat(Files.exists(path)).as("判据的载体必须真实存在（路径漂移不得静默跳过）: %s", path).isTrue();
         }
         for (Retired retired : RETIRED.values()) {
@@ -233,15 +283,15 @@ class OrderFacadeForwarderRetirementTest {
                 assertThat(Files.exists(path)).as("具名消费方必须真实存在: %s", path).isTrue();
             }
         }
-        assertThat(RETIRED).as("退休清单被清空 ⇒ 本判据退化成空断言").hasSize(17);
+        assertThat(RETIRED).as("退休清单被清空 ⇒ 本判据退化成空断言").hasSize(23);
         assertThat(DEAD_PRIVATE_FORWARDERS).as("死委托清单被清空 ⇒ 本判据退化成空断言").hasSize(6);
-        assertThat(TEST_DRIVER_RETIRED).as("驱动面清单被清空 ⇒ 本判据退化成空断言").hasSize(13);
+        assertThat(TEST_DRIVER_RETIRED).as("驱动面清单被清空 ⇒ 本判据退化成空断言").hasSize(19);
     }
 
     // ──────────────────────────────────────────── 判据 1：退休面（门面 + 全 main）
 
     @Test
-    @DisplayName("门面里不许再有这 17 个转发方法的声明（加回来 ⇒ 具名红）")
+    @DisplayName("门面里不许再有这 23 个转发方法的声明（加回来 ⇒ 具名红）")
     void facadeNoLongerDeclaresTheRetiredForwarders() throws IOException {
         String facade = Files.readString(ORDER_SERVICE, StandardCharsets.UTF_8);
 
@@ -267,7 +317,7 @@ class OrderFacadeForwarderRetirementTest {
     }
 
     @Test
-    @DisplayName("全 main 源码里零处「经门面变量调用这 17 个方法」（谁改回门面 ⇒ 具名红）")
+    @DisplayName("全 main 源码里零处「经门面变量调用这 23 个方法」（谁改回门面 ⇒ 具名红）")
     void nobodyCallsTheRetiredMethodsThroughTheFacade() throws IOException {
         Map<String, List<String>> hits = new LinkedHashMap<>();
         for (Map.Entry<String, Retired> entry : RETIRED.entrySet()) {
@@ -286,7 +336,7 @@ class OrderFacadeForwarderRetirementTest {
     // ──────────────────────────────────────────── 判据 2：接线面（实现点 + 具名消费方）
 
     @Test
-    @DisplayName("实现点仍声明这 17 个方法（两边都没了 ⇒ 本判据会恒绿，所以先钉住这一侧）")
+    @DisplayName("实现点仍声明这 23 个方法（两边都没了 ⇒ 本判据会恒绿，所以先钉住这一侧）")
     void implementationSitesStillDeclareThem() {
         List<String> missing = new ArrayList<>();
         for (Map.Entry<String, Retired> entry : RETIRED.entrySet()) {
@@ -325,7 +375,9 @@ class OrderFacadeForwarderRetirementTest {
      */
     private static final List<String> DRIVER_MIGRATED = List.of(
             "getOrderPage", "getMyOrderPage", "getOrderById", "createOrder", "updateOrderStatus",
-            "cancelOrder", "refundOrder", "confirmPayment", "shipWithLogistics", "revertProducingToConfirmed");
+            "cancelOrder", "refundOrder", "confirmPayment", "shipWithLogistics", "revertProducingToConfirmed",
+            // 第七批：OrderServiceTest 里这批入口的 15 个驱动点（删单 5 / 备注 4 / 手机号回填 3 / 跟进 2 / 内容改单 1）
+            "deleteOrder", "addRemark", "bindOrdersToUser", "updateFollowStatus", "updatePendingOrderContent");
 
     @Test
     @DisplayName("OrderServiceTest 的驱动对象是实现点（改回门面 ⇒ 具名红：本批的解锁不许静默失效）")
@@ -333,7 +385,7 @@ class OrderFacadeForwarderRetirementTest {
         Path testFile = Path.of("src", "test", "java", "com", "migao", "admin", "service", "OrderServiceTest.java");
         assertThat(Files.exists(testFile))
                 .as("判据载体必须真实存在（路径漂移不得静默跳过）: %s", testFile).isTrue();
-        assertThat(DRIVER_MIGRATED).as("清单被清空 ⇒ 本判据退化成空断言").hasSize(10);
+        assertThat(DRIVER_MIGRATED).as("清单被清空 ⇒ 本判据退化成空断言").hasSize(15);
 
         String source = stripComments(Files.readString(testFile, StandardCharsets.UTF_8));
         List<String> back = DRIVER_MIGRATED.stream()
@@ -456,6 +508,21 @@ class OrderFacadeForwarderRetirementTest {
         String directDrive = "orderLifecycleService.updateOrderStatus(id, status, orderService);";
         assertThat(declaresMethod(directDrive, RETIRED.get("updateOrderStatus").declaration()))
                 .as("直驱实现点的调用串不算声明").isFalse();
+
+        // 第七批：实体实现的声明锚点同样是「返回类型（或 void）+ 方法名 + 左括号」；
+        // 实现点的 updatePendingOrderContent 比门面多一个门面实参 ⇒ 整行锚点在两侧不是同一串，
+        // 而调用形态（`orderEntityWriteService.xxx(`）不含返回类型 ⇒ 不会被误判成声明。
+        String writeForward = "public class OrderService {\n"
+                + "    public void deleteOrder(String id) { }\n}";
+        assertThat(declaresMethod(writeForward, RETIRED.get("deleteOrder").declaration()))
+                .as("删单实现搬回门面必须被判真（否则搬完之后就没人看管了）").isTrue();
+        String writeForwardMultiArg = "public class OrderService {\n"
+                + "    public OrderDetailResponse updatePendingOrderContent(String id, OrderContentUpdateRequest request) { }\n}";
+        assertThat(declaresMethod(writeForwardMultiArg, RETIRED.get("updatePendingOrderContent").declaration()))
+                .as("内容编辑实现搬回门面必须被判真（锚点不区分形参个数）").isTrue();
+        String writeDirectDrive = "return orderEntityWriteService.updatePendingOrderContent(id, request, orderService);";
+        assertThat(declaresMethod(writeDirectDrive, RETIRED.get("updatePendingOrderContent").declaration()))
+                .as("直驱实现点（带门面实参）的调用串不算声明").isFalse();
 
         String consumerThroughFacade = "String name = orderService.resolveShipperName(provided);";
         assertThat(consumerThroughFacade.contains("orderService.resolveShipperName("))

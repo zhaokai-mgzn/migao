@@ -101,6 +101,13 @@ class AutoBatchMountPointTest {
     @InjectMocks
     private OrderService orderService;
 
+    /**
+     * 实体写面的实现点（issue #8681，P2-1e 第七批）。取门面**自己懒构造的那一份**
+     * （{@code entityWriteService()}）⇒ 与拆分前是<b>同一条调用链、同一份协作者</b>，
+     * 所以期望值 / 异常话术 / 边界读数逐字不变，只是「谁被驱动」变了。
+     */
+    private OrderEntityWriteService orderEntityWriteService;
+
     // ── InboundOrderService 侧
     @Mock private InboundOrderMapper inboundOrderMapper;
     @Mock private InboundOrderItemMapper inboundOrderItemMapper;
@@ -125,6 +132,8 @@ class AutoBatchMountPointTest {
         // 通知点是**字段注入**（不扩构造签名）⇒ 手工装配（同 stockBatchConsumptionService 的先例）
         ReflectionTestUtils.setField(orderService, "poolChangeNotifier", poolChangeNotifier);
         ReflectionTestUtils.setField(inboundOrderService, "poolChangeNotifier", poolChangeNotifier);
+        // issue #8681（P2-1e 第七批）：驱动对象迁到实现点 —— 取门面自己懒构造的那一份
+        orderEntityWriteService = ReflectionTestUtils.invokeMethod(orderService, "entityWriteService");
     }
 
     // ─────────────────────────────────────────── ① 确认支付
@@ -231,7 +240,7 @@ class AutoBatchMountPointTest {
         when(orderMapper.selectById("order-001")).thenReturn(confirmed);
         when(orderMapper.update(any(), any())).thenReturn(1);
 
-        orderService.updateUrgency("order-001", Boolean.TRUE, null, LocalDate.now().plusDays(3).toString());
+        orderEntityWriteService.updateUrgency("order-001", Boolean.TRUE, null, LocalDate.now().plusDays(3).toString());
 
         verify(poolChangeNotifier).notify(TENANT, PoolChangeNotifier.TRIGGER_ORDER_UPDATED);
     }
@@ -260,7 +269,7 @@ class AutoBatchMountPointTest {
         doThrow(new IllegalStateException("夹具：通知点炸了")).when(poolChangeNotifier)
                 .notify(any(), any());
 
-        assertThatCode(() -> orderService.updateUrgency("order-001", Boolean.TRUE, null, null))
+        assertThatCode(() -> orderEntityWriteService.updateUrgency("order-001", Boolean.TRUE, null, null))
                 .doesNotThrowAnyException();
         verify(orderMapper).update(any(), any());
     }

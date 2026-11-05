@@ -69,6 +69,10 @@ class OrderIntegrationTest {
     @Mock
     private com.migao.admin.service.OrderCreationService orderCreationService;
 
+    /** 实体写面的实现点（issue #8681，P2-1e 第七批）：控制器直连实现点，门面声明已退休。 */
+    @Mock
+    private com.migao.admin.service.OrderEntityWriteService orderEntityWriteService;
+
     @InjectMocks
     private OrderController orderController;
 
@@ -276,7 +280,7 @@ class OrderIntegrationTest {
     @DisplayName("删除订单 - 成功")
     void testUpdateOrder() throws Exception {
         // Given
-        doNothing().when(orderService).deleteOrder(TEST_ORDER_ID);
+        doNothing().when(orderEntityWriteService).deleteOrder(TEST_ORDER_ID);
 
         // When & Then
         mockMvc.perform(delete("/api/admin/orders/" + TEST_ORDER_ID)
@@ -284,7 +288,7 @@ class OrderIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true));
 
-        verify(orderService).deleteOrder(TEST_ORDER_ID);
+        verify(orderEntityWriteService).deleteOrder(TEST_ORDER_ID);
     }
 
     // ======================== 订单状态流转 ========================
@@ -392,7 +396,7 @@ class OrderIntegrationTest {
     @DisplayName("添加订单备注 - 成功")
     void testAddRemark_Success() throws Exception {
         // Given
-        doNothing().when(orderService).addRemark(TEST_ORDER_ID, "客户催单，请尽快发货");
+        doNothing().when(orderEntityWriteService).addRemark(TEST_ORDER_ID, "客户催单，请尽快发货");
 
         // When & Then
         mockMvc.perform(post("/api/admin/orders/" + TEST_ORDER_ID + "/remark")
@@ -401,7 +405,7 @@ class OrderIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true));
 
-        verify(orderService).addRemark(TEST_ORDER_ID, "客户催单，请尽快发货");
+        verify(orderEntityWriteService).addRemark(TEST_ORDER_ID, "客户催单，请尽快发货");
     }
 
     @Test
@@ -409,7 +413,7 @@ class OrderIntegrationTest {
     void testAddRemark_EmptyContent() throws Exception {
         // Given: Service 层校验拒绝空内容（validationError 返回 422）
         doThrow(new BusinessException("VALIDATION_ERROR", "备注内容不能为空", 422))
-                .when(orderService).addRemark(eq(TEST_ORDER_ID), isNull());
+                .when(orderEntityWriteService).addRemark(eq(TEST_ORDER_ID), isNull());
 
         // When & Then
         mockMvc.perform(post("/api/admin/orders/" + TEST_ORDER_ID + "/remark")

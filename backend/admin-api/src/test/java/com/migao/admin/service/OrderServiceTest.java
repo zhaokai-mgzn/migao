@@ -87,6 +87,13 @@ class OrderServiceTest {
     /** issue #8681：生命周期族的实现点（{@code updateOrderStatus} / {@code cancelOrder} 同样吃门面的共享部件）。 */
     private OrderLifecycleService orderLifecycleService;
 
+    /**
+     * 实体写面的实现点（issue #8681，P2-1e 第七批）。取门面**自己懒构造的那一份**
+     * （{@code entityWriteService()}）⇒ 与拆分前是<b>同一条调用链、同一份协作者</b>，
+     * 所以期望值 / 异常话术 / 边界读数逐字不变，只是「谁被驱动」变了。
+     */
+    private OrderEntityWriteService orderEntityWriteService;
+
     @Mock
     private UserService userService;
     @Mock
@@ -162,6 +169,8 @@ class OrderServiceTest {
         // 而 Mockito 的 @InjectMocks 只做构造注入（构造成功后不再注入字段）⇒ 必须显式装配。
         ReflectionTestUtils.setField(orderService, "stockBatchConsumptionService",
                 stockBatchConsumptionService);
+        // issue #8681（P2-1e 第七批）：驱动对象迁到实现点 —— 取门面自己懒构造的那一份
+        orderEntityWriteService = ReflectionTestUtils.invokeMethod(orderService, "entityWriteService");
 
         // 初始化 MyBatis-Plus 实体 lambda 缓存，使 LambdaUpdateWrapper 的 Order::getId 等方法引用可解析
         MybatisConfiguration conf = new MybatisConfiguration();
@@ -1235,7 +1244,7 @@ class OrderServiceTest {
         when(orderItemMapper.deleteById("item-001")).thenReturn(1);
 
         // when
-        orderService.deleteOrder("order-001");
+        orderEntityWriteService.deleteOrder("order-001");
 
         // then
         verify(orderMapper).deleteById("order-001");
@@ -1249,7 +1258,7 @@ class OrderServiceTest {
         when(orderMapper.selectById("nonexistent")).thenReturn(null);
 
         // when & then
-        assertThatThrownBy(() -> orderService.deleteOrder("nonexistent"))
+        assertThatThrownBy(() -> orderEntityWriteService.deleteOrder("nonexistent"))
                 .isInstanceOf(BusinessException.class)
                 .satisfies(ex -> {
                     BusinessException bex = (BusinessException) ex;
@@ -1265,7 +1274,7 @@ class OrderServiceTest {
         when(orderMapper.selectById("order-001")).thenReturn(testOrder);
 
         // when & then
-        assertThatThrownBy(() -> orderService.deleteOrder("order-001"))
+        assertThatThrownBy(() -> orderEntityWriteService.deleteOrder("order-001"))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("仅允许删除待确认状态的订单");
     }
@@ -1289,7 +1298,7 @@ class OrderServiceTest {
         when(processingOrderMapper.selectActiveByOrderId("order-001", 1L)).thenReturn(active);
 
         // when & then：拒绝删除（不静默留下悬挂作业单）
-        assertThatThrownBy(() -> orderService.deleteOrder("order-001"))
+        assertThatThrownBy(() -> orderEntityWriteService.deleteOrder("order-001"))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("作业单")
                 .hasMessageContaining("JG-20261024-3226")
@@ -1316,7 +1325,7 @@ class OrderServiceTest {
         when(orderItemMapper.deleteById("item-001")).thenReturn(1);
 
         // when
-        orderService.deleteOrder("order-001");
+        orderEntityWriteService.deleteOrder("order-001");
 
         // then
         verify(orderMapper).deleteById("order-001");
@@ -1611,7 +1620,7 @@ class OrderServiceTest {
         when(orderMapper.update(isNull(), any())).thenReturn(1);
 
         // when
-        orderService.addRemark("order-001", "客户催单");
+        orderEntityWriteService.addRemark("order-001", "客户催单");
 
         // then
         // issue #6955：改为「只写 remark 列」的条件更新 ⇒ 断言从「整实体入参」改成 SET 子句的实参
@@ -1631,7 +1640,7 @@ class OrderServiceTest {
         when(orderMapper.update(isNull(), any())).thenReturn(1);
 
         // when
-        orderService.addRemark("order-001", "新备注");
+        orderEntityWriteService.addRemark("order-001", "新备注");
 
         // then
         verify(orderMapper).update(isNull(), argThat(w -> {
@@ -1647,7 +1656,7 @@ class OrderServiceTest {
         when(orderMapper.selectById("order-001")).thenReturn(testOrder);
 
         // when & then
-        assertThatThrownBy(() -> orderService.addRemark("order-001", ""))
+        assertThatThrownBy(() -> orderEntityWriteService.addRemark("order-001", ""))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("备注内容不能为空");
     }
@@ -1660,7 +1669,7 @@ class OrderServiceTest {
         String longContent = "x".repeat(2001);
 
         // when & then
-        assertThatThrownBy(() -> orderService.addRemark("order-001", longContent))
+        assertThatThrownBy(() -> orderEntityWriteService.addRemark("order-001", longContent))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("2000");
     }
@@ -1674,7 +1683,7 @@ class OrderServiceTest {
         when(orderMapper.selectById("order-001")).thenReturn(testOrder);
 
         // when & then
-        assertThatThrownBy(() -> orderService.updateFollowStatus("order-001", "invalid"))
+        assertThatThrownBy(() -> orderEntityWriteService.updateFollowStatus("order-001", "invalid"))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("无效的跟进状态");
     }
@@ -1823,7 +1832,7 @@ class OrderServiceTest {
         when(orderMapper.update(isNull(), any())).thenReturn(1);
 
         // when
-        orderService.updateFollowStatus("order-001", "following");
+        orderEntityWriteService.updateFollowStatus("order-001", "following");
 
         // then
         verify(orderMapper).update(isNull(), argThat(w -> "following".equals(setStringValue(w, "following"))));
@@ -2110,7 +2119,7 @@ class OrderServiceTest {
         when(orderMapper.update(any(), any())).thenReturn(3);
 
         // when
-        int updated = orderService.bindOrdersToUser(1L, "user-001", "13900139000");
+        int updated = orderEntityWriteService.bindOrdersToUser(1L, "user-001", "13900139000");
 
         // then
         assertThat(updated).isEqualTo(3);
@@ -2124,7 +2133,7 @@ class OrderServiceTest {
     @Test
     @DisplayName("bindOrdersToUser - 空手机号直接返回 0（不查库）")
     void bindOrdersToUser_BlankPhoneSkips() {
-        int updated = orderService.bindOrdersToUser(1L, "user-001", "  ");
+        int updated = orderEntityWriteService.bindOrdersToUser(1L, "user-001", "  ");
 
         assertThat(updated).isEqualTo(0);
         verify(orderMapper, never()).update(any(), any());
@@ -2133,7 +2142,7 @@ class OrderServiceTest {
     @Test
     @DisplayName("bindOrdersToUser - 空 userId 直接返回 0（不查库）")
     void bindOrdersToUser_BlankUserSkips() {
-        int updated = orderService.bindOrdersToUser(1L, "internal-service", "13900139000");
+        int updated = orderEntityWriteService.bindOrdersToUser(1L, "internal-service", "13900139000");
 
         assertThat(updated).isEqualTo(0);
         verify(orderMapper, never()).update(any(), any());
@@ -3700,7 +3709,7 @@ class OrderServiceTest {
         item.setUnitPrice(new BigDecimal("1.005"));
         request.setItems(List.of(item));
 
-        assertThatThrownBy(() -> orderService.updatePendingOrderContent("order-001", request))
+        assertThatThrownBy(() -> orderEntityWriteService.updatePendingOrderContent("order-001", request, orderService))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("2 位小数");
 

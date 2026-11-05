@@ -9622,3 +9622,54 @@ cases:
         - "tests/unit_ci_workflows/test_loc_ratchet.py"
       ci:
         - pr-check.yml
+
+  - id: MC-241
+    legacy_id: ""
+    title: "OrderService 门面收尾第七批（issue #8681 的 P2-1e，部分交付）：实体实现搬家 —— 删单 / 备注 / 手机号回填 / 跟进状态（读 + 写）/ 加急 / 待付款内容编辑的实现体从门面搬到 OrderEntityWriteService，门面 1,539 行降到 1,141 行、公开面 12 → 6，5 条事务注解逐字跟随；跟进状态的读面从 OrderStatsService 并回同一处（第五批登记的返工点销账），退休守护扩到 23 个方法 / 19 个驱动入口"
+    domains:
+      - misc
+      - backend
+    tier: normal
+    tags:
+      - refactor
+      - order-service
+      - facade-retirement
+      - caller-migration
+      - entity-write-family
+      - ratchet
+    truths_ref: []
+    precondition:
+      - "门面与四个既有实现点（OrderQueryService / OrderCreationService / OrderLifecycleService / OrderStatsService）的关系已在判据源码里钉住；本批新增的实现点 OrderEntityWriteService 是七个入口的唯一实现载体"
+      - "驱动对象一律取门面**自己懒构造的那一份**（entityWriteService()）⇒ 与拆分前是同一条调用链、同一份协作者，断言因此可以一个字都不改"
+      - "扫描面 = backend/admin-api/src 全树（main + test）；任一扫描面扫到 0 个文件即判红（防「空扫描 = 绿」）"
+    user_inputs:
+      - "商家端删单 / 加备注 / 改加急与到货日 / 改跟进状态 / 改待付款订单内容，以及小程序授权手机号后的历史订单回填：闸门、异常话术、落库列、审计留痕与返回值全部逐字不变，HTTP 路径 / 入参 / 响应不变"
+    expectations: []
+    data_checks:
+      - "判据 1·🔴 退休面（这批 7 个声明不许回来）：门面源码里不许再声明删单 / 备注 / 手机号回填 / 跟进状态读写 / 加急 / 待付款内容编辑这七个入口，且全部 main 源码里零处「经门面变量调用这七个方法」——谁把调用方改回门面就具名红。声明锚点取「返回类型或 void + 方法名 + 左括号」：实现点的内容编辑比门面多一个门面实参，整行锚点在两侧不是同一串；调用形态不含返回类型，不会被误判成声明。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/OrderFacadeForwarderRetirementTest.java"
+      - "判据 2·🔴 接线面两侧夹住（防恒绿）：实现点必须仍声明这七个方法，且具名消费方逐字调用实现点——订单控制器的删单 / 备注 / 加急 / 跟进读 / 跟进写 / 内容编辑六个端点，以及小程序手机号绑定服务的回填一条腿。消费方改回门面或方法改名就具名红；同一条判据内含判别力自证：内存里把删单实现塞回门面就判真、把内容编辑塞回去也判真，而直驱实现点（带门面实参）的调用串必须判假。执行点 = 同判据 1 的判据文件"
+      - "判据 3·🔴 驱动面（全 test 树）：测试源码全树零处经门面驱动这批已退休入口，两种写法都认（直接调用与验证门面交互）；扫描面自带非空自证（扫到的文件数必须够大，路径漂移即红）。本批把散在七个测试文件里的 27 个驱动点迁到实现点。执行点 = 同判据 1 的判据文件"
+      - "判据 4·🔴 断言零改动：15 个测试文件的 @Test 合计 278 → 275 + 新建文件 3 条（净 0），断言行合计 682 → 682；接收者归一化后多重集相等，唯一形态差异是内容编辑的调用多了门面实参（不是断言放松），另有 3 条判别力自证属**加强**。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/OrderEntityWriteServiceTest.java 与同批迁移的 15 个测试文件"
+      - "判据 5·🔴 事务注解逐字跟随：内容编辑 / 删单 / 跟进写 / 加急 / 备注五条 @Transactional(rollbackFor = Exception.class) 原样搬进实现点，手机号回填与跟进读本来没有注解、搬入后也没有；门面一侧不再声明这些方法，因此也不许出现对应注解。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/OrderEntityWriteServiceTest.java"
+      - "判据 6·🔴 跟进状态读写同址（返工点销账）：读面 getFollowStatus 必须已从 OrderStatsService 删除、只由 OrderEntityWriteService 声明，订单控制器的读端点直连实现点；三条读取口径（读得到 / 未设置回落 pending / 不存在 404）逐字搬到新判据文件，断言强度不变。执行点 = 同判据 5 的判据文件"
+      - "判据 7·🔴 加急写面与挂载点未回退：加急改单仍只写那两列加时间戳、仍拒绝空改单、非法日期显式拒绝且零写入，改单后的池化通知点仍在业务完成之后触发；被测源跟着搬家后，红证机具的五条变异仍逐条命中对应判据。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/OrderUrgencyFieldsTest.java 与 scripts/order-urgency-red-proof.py"
+      - "判据 8·🔴 行数棘轮与冻结面未回退：门面 1,539 → 1,141（仍在 800–2,000 豁免带内，未越过任何冻结值），新实现点 557 行 < 800 的新类阈值，OrderStatsService 103 → 88 行；加工单服务未碰（冻结面 4,402 行上限，一行未涨）。执行点 = tests/unit_ci_workflows/test_loc_ratchet.py"
+    skip_reason: "[backend-contract] Java 侧实体实现搬家 + 门面声明退休（零 LLM / 零外网 / 零前端可见面），由 JUnit 判据与 pytest 棘轮判据验证，无 agent 行为面，不进入 agent-eval 冒烟"
+    merge_log: "2026-11-05 新增（issue #8681 的 P2-1e 第七批，**部分交付**：不写关闭关键词）。现取读数（`git show origin/main:backend/admin-api/src/main/java/com/migao/admin/service/OrderService.java | wc -l`）= 1,539 / 12 个公开面。本批按上一批给的逐条清单执行「实体实现搬家」：删单（main 1 / 测试 5）、备注（1 / 4）、手机号回填（1 / 6）、跟进写面（1 / 2）、内容编辑（1 / 13）、加急（1 / 9），并把跟进读面从 OrderStatsService 并回同一处（第五批登记的返工点）。⚠️ 实现落点**不是** OrderLifecycleService：并进去会从 719 行涨到 1,100+ 行、越过 800 行的登记阈值（豁免台账只许缩短，不拿它当出口），故新开 OrderEntityWriteService（557 行 < 800）。⚠️ 内容编辑的第三参是门面实参：建单与改单共用的明细装配 / 取价 / 总额 / 库存前置的唯一实现点留 OrderService（与第五批 createOrder 同一条口径，不重搭第二份）。⚠️ 有意不搬（一字未动）：applyRollAllocation（被整卷分配权威判据钉在门面）、batchStock 访问器（取消路径经传入的门面实例在用）。红证 = 三次注入逐条实跑并逐字节还原（把删单实现塞回门面 ⇒ 退休面具名红；同批把一个驱动点改回门面 ⇒ 驱动面 + OrderServiceTest 驱动面各具名红；只在测试里加一行同串注释 ⇒ 不红，负控证明剥注释扫描有效）。全量读数见 PR body。"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/OrderEntityWriteServiceTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/OrderFacadeForwarderRetirementTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/OrderServiceTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/OrderContentEditTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/OrderUrgencyFieldsTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/AutoBatchMountPointTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/MiniPhoneBindServiceTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/OrderStatsServiceTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/controller/OrderControllerTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/controller/OrderIntegrationTest.java"
+        - "scripts/order-urgency-red-proof.py"
+        - "tests/unit_ci_workflows/test_loc_ratchet.py"
+        - "tests/unit_ci_workflows/test_redproof_harness_gate.py"
+      ci:
+        - pr-check.yml

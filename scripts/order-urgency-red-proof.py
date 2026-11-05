@@ -21,8 +21,11 @@
 
 同族 = `scripts/pool-board-red-proof.py`（#5177 的另一半：池看板 / 加急插队）+ 同批纪律
 （`scripts/red_proof_harness.py` 的登记表与 `--check` 前提自检、#5193 的门禁调用）。
-差异只有一处：本机具同时守卫**两个**被测源文件（`OrderService.java` 的改单路径 +
+差异只有一处：本机具同时守卫**两个**被测源文件（`OrderEntityWriteService.java` 的改单路径 +
 `OrderDetailResponse.java` 的 wire 类型），故按 `(文件, 变异)` 逐条还原，而不是单文件。
+> ⚠️ 载体沿革（issue #8681，P2-1e 第七批）：`updateUrgency` 的实现体从 `OrderService.java` 逐字节搬到
+> `OrderEntityWriteService.java` ⇒ 被测源跟着搬家（变异锚点与判据**逐字未变**；不跟着搬 = 锚点失配，
+> `--check` 会判「无法判定」而不是「通过」）。
 
 **不要求 git 工作区干净**：本机具只碰上面两个被测源文件（测试文件不在写入半径内），
 用「读原文 → 写变异 → 跑 → 写回原文 → 校验 sha256」的**内容级**还原，不依赖 git 兜底。
@@ -57,7 +60,7 @@ TEST_FQN = f"com.migao.admin.service.{TEST_CLASS}"
 TOOL_REL = "scripts/order-urgency-red-proof.py"
 
 AAPI = "backend/admin-api/src/main/java/com/migao/admin/"
-SVC_REL = AAPI + "service/OrderService.java"
+SVC_REL = AAPI + "service/OrderEntityWriteService.java"  # issue #8681 第七批：实现点从门面搬到实体写面
 DTO_REL = AAPI + "dto/OrderDetailResponse.java"
 TEST_REL = "backend/admin-api/src/test/java/com/migao/admin/service/OrderUrgencyFieldsTest.java"
 
