@@ -9339,3 +9339,65 @@ cases:
 
 
 
+
+  - id: MC-231
+    legacy_id: ""
+    title: "flaky 台账：混合场景（既有真红又有被判限流的 job）下**判红 ≠ 记账** —— 限流 job 零条目、真红照旧记账，动作仍按真红（issue #8709 的残留缺陷）"
+    domains:
+      - misc
+      - ci
+    tier: normal
+    tags:
+      - ci
+      - flaky-triage
+      - ledger
+      - rate-limit
+      - mixed-scenario
+      - red-proof
+    truths_ref: []
+    # ⚠️ 真值暂缺：本判据是**纯函数 + 台账面**事实（离线、零网络），由
+    # tests/unit_ci_workflows/test_flaky_triage_mixed_entries.py 验证；真实 GitHub 配额窗口下的
+    # 端到端复现（真跑一轮混合失败）不在本面，见 skip_reason。
+    user_inputs:
+      - "一次 flaky-triage 的 6 个失败 job 里 5 个只是「限流致 exit 3（判不了）」、1 个是真红：旧口径（#8709 只处理了「全部 job 都限流」那条路径）在混合场景下把 6 个 job 全记进 flaky 台账（现场 entries=6）⇒ 台账虚增 4~5 条假证据"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "**判据 1（会红）：限流 job 零条目、真红 job 有条目**。混合场景（5 判限流 + 1 真红）下台账条目只许有真红那一条，被排除的集合**恰好**是判为限流的 5 条。红证 = 源码级单变量变异去掉 `exclude_jobs` 透传 ⇒ 条目数 1 → 6（现场形态复现）⇒ 判据当场具名红并报出『判为限流的 job 混进了证据台账』。"
+      - "**判据 2（会红）：动作仍按真红（判红 ≠ 记账）**。混合场景的 action 由**真红那批**派生（跨时间桶 ⇒ mark_suspect），不得是 infra_rate_limited；红证 = 让混合场景走 infra_rate_limited ⇒ 判据具名红『真红被一起放过』。本单只改**证据面**：被判『其实只是限流』的 job 仍然是红的 ⇒ required 仍不满足 ⇒ PR 仍被挡，退出码与放行语义一个字未动。"
+      - "**判据 3（回归，会红）：全限流场景不许退化**。#8709 已交付的『全部判限流 ⇒ infra_rate_limited + 零台账条目』照旧有效；全限流却产出条目或判成 flaky ⇒ 红。"
+      - "**判据 5（会红）：扫描面非空自证**。判限流的 job 数 + 真红 job 数 = 总失败 job 数；`条目 ∪ 被排除` == 全部失败 job 且两者不相交（没有 job 在两边都消失），`surface.complete` 必须为真。红证 = 让一个被判限流的 job 从排除清单里消失 ⇒ 判据具名报出漏算的那一个。"
+    skip_reason: "[backend-contract] 纯函数 + 台账面判据（零网络 / 零 LLM），计分通道 = traces.tests；真实 GitHub 配额窗口下的端到端混合失败复现不在本面"
+    merge_log:
+      - "2026-11-05 新增（issue #8709 的残留缺陷）。现场读数（run 41991584085）：扫描面 6/6 · 判限流 5 · 按真红 1 · 未判定 0，而 `entries=6` ⇒ 5 条限流 job 也进了台账（`failing_tests` 全空的那 4~5 条）。修法 = `rate_limited_only()` 给出具名取数面（rate_limited_jobs / not_rate_limited_jobs / undetermined_jobs + surface 自证），`_terminal` / `build_entries` 据此把判限流的 job 排出**台账面**；action / kind 一律仍按真红派生。"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_flaky_triage_mixed_entries.py"
+
+  - id: MC-232
+    legacy_id: ""
+    title: "flaky 台账：日志取不到（未判定）的失败 job 必须显式标注「未判定」而非静默记成 flaky 证据（issue #8709 的残留缺陷）"
+    domains:
+      - misc
+      - ci
+    tier: normal
+    tags:
+      - ci
+      - flaky-triage
+      - ledger
+      - undetermined
+      - fail-closed
+      - red-proof
+    truths_ref: []
+    user_inputs:
+      - "失败 job 的日志已被清理 / 权限不足因而取不到：旧口径下该 job 是「未判定」⇒ 走原路径（fail-closed），但台账条目看起来与『已确认 flaky』一模一样 ⇒ 取数失败被静默读成一条 flaky 证据"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "**判据 4（会红）：未判定不许静默**。日志取不到的失败 job 必须**仍产出条目**（不许当限流排除、不许丢掉 —— 那都会放过真红），且条目上要能看出『这是未判定，不是 flaky 结论』：`undetermined=True` + `undetermined_reason` 明写『不是已判定为 flaky 的证据』+ `reason` 带「未判定」前缀 + `remedy` 指向『先取回日志』；job summary 上也要具名。红证 = 摘掉标注 ⇒ 判据具名红（条目读起来像「已确认 flaky」）；把未判定当限流排除 ⇒ 判据另一条红（fail-closed 被破坏、真红会被放过）。"
+    skip_reason: "[backend-contract] 纯函数 + 台账面判据（零网络 / 零 LLM），计分通道 = traces.tests；真实『日志被清理』的 GitHub 侧复现不在本面"
+    merge_log:
+      - "2026-11-05 新增（issue #8709 的残留缺陷，与 MC-231 同一处改动）。`build_entries` 对 `undetermined_jobs` 追加 `undetermined` / `undetermined_reason` 并给 `reason` / `remedy` 加前缀；**有意不新造 kind**（kind 决定动作与跟踪单要求，改写它会削弱既有闸门），也不把未判定 job 排出台账 —— 那会放过真红。"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_flaky_triage_mixed_entries.py"
