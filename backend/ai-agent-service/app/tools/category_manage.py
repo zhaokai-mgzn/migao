@@ -51,6 +51,7 @@ class CategoryManageTool(BaseTool):
         "【反例】改分类名 / 删分类**不在本工具能力内**——如实说明并引导用户到后台"
         "「商品管理 → 分类管理」页面操作，不要承诺代为修改。"
         "【标注】WRITE — create 需确认；tree 免确认"
+        "【不要用于】店铺加工项目录（用 processing_item_query）；商品档案/价格（用 product_detail）"
     )
     # 权限码（admin-api 目录，issue #5291）：分类**读**端点挂分类读码 `product:category:view`
     # （`CategoryController.getCategoryTree` 的方法级注解）；写面（`POST /api/admin/categories`）

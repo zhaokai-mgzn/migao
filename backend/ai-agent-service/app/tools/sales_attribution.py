@@ -146,6 +146,7 @@ class SalesAttributionTool(BaseTool):
         "【反例】只看单窗口销量排行用 dashboard_stats(product_ranking)；对比两个总量用 "
         "dashboard_stats(trend_compare)；查具体订单用 order_query。"
         "【标注】READONLY — 只给数字与排名，不给归因结论/建议"
+        "【不要用于】单个商品销量/排行（用 dashboard_stats）；订单明细/单号（用 order_query）"
     )
     # 权限码（admin-api 目录）：订单列表读面 `order:list`（= 「销售订单」菜单节点码）。
     # 与 `GET /api/admin/orders` 的方法级 `@RequirePermission("order:list")` 同码 ⇒ 判据 2 绿。

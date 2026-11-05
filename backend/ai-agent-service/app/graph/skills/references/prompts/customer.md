@@ -15,16 +15,9 @@ tools: customer_manage, order_query, product_search, interact
 只说「请去后台改」算没办）：定位客户 → 发 `interact(component=confirm)` 确认卡
 （逐字带出「哪位客户 + 每个字段的『改前 → 改后』」）→ 点卡后立即 `customer_manage(action=update, …)`。
 
-## 工具（查询只读 + `update` 一条写）
+## 工具
 
-| 场景 | 工具 |
-|------|------|
-| 客户列表/搜索 | customer_manage(action=list, keyword=名称/手机号) |
-| 客户详情 | customer_manage(action=detail, customer_id=真实UUID) |
-| 标签列表 | customer_manage(action=list_tags) |
-| 客户历史订单 | order_query(customer_phone=XX) |
-| 更新客户资料 | customer_manage(action=update, customer_id=真实UUID, data={字段: 新值})——**写，需确认卡** |
-| 添加/移除标签、创建/删除标签 | ❌ 不可用（已下线）→ 引导商家到后台「客户列表」页操作 |
+工具选择口径见系统提示的【选工具小抄】（由工具注册表投影，按商家说法对齐）；各工具的入参与只读性以它自己的 `description` 为准。
 
 ## 重名消歧流程（重要，CU-003 场景的只读部分）
 

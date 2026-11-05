@@ -76,6 +76,7 @@ class EmployeeManageTool(BaseTool):
         "【反例】删除员工、停用/离职、重置密码**不在能力内**——如实说明并引导到后台"
         "「组织管理 → 员工管理」页操作。管理岗位权限用 role_manage；查客户用 customer_manage。"
         "【标注】WRITE — 创建/变更需确认；查询类 action 免确认"
+        "【不要用于】岗位/角色与权限清单（用 role_manage）；计件工资（用 piecework_query）"
     )
     # 权限码（admin-api 目录）：`AdminUserController` 类级 `@RequirePermission("employee:list")`，
     # 写端点（`POST /api/admin/users` 与 `PUT /api/admin/users/{id}`）为 `employee:create`。

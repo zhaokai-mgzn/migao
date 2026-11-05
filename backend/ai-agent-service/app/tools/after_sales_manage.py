@@ -51,6 +51,7 @@ class AfterSalesManageTool(BaseTool):
         "【反例】只查订单本身（金额/明细/状态）用 order_query；顾客本人查自己的工单用 aftersale_query。"
         "【反例】建工单/改工单状态（关闭/拒绝）**不在本工具能力内**——引导用户到后台「售后工单」页处理。"
         "【标注】READONLY — 纯查询，不含任何写 action"
+        "【不要用于】退款流水/对账（用 finance_api）；客户档案与手机号（属 customer 域）"
     )
     # 权限码（admin-api 目录）：AfterSalesController / AgentAfterSalesController 类级
     # `@RequirePermission("order:refund")`（售后工单 = 退款处理）。
