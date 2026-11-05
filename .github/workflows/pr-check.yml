@@ -329,6 +329,15 @@ jobs:
             exit "$rc"
           fi
 
+      - name: Generate case artifacts（出库产物：按需生成，issue #8167 P1-1）
+        run: |
+          # 两个生成物（`tests/agent_eval/eval_cases/`、`docs/testing/mibao-verification-cases.md`）
+          # **不入库**（100% 可从 `.github/cases/**` 重建）⇒ 本 job 的套件在 import 期就要用它们，
+          # 必须**先**生成。命令与 `verify-all.sh` / 三个 conftest **逐字相同**（单一来源）。
+          # 🔴 删掉/改名本步 ⇒ 判据 `tests/unit_ci_workflows/test_generated_artifacts_clean_checkout.py`
+          #    会红（它反向查这里有没有这条命令），且干净检出里套件会当场炸 —— 两条都具名。
+          python3 scripts/generated_artifacts_freshness.py --write
+
       - name: Run ci workflow helper tests
         env:
           # 缺 PG ⇒ `pg_cluster.require_pg()` 判 **FAIL**（不是 skip）：CI 上「没跑」绝不能是绿。
@@ -952,20 +961,21 @@ jobs:
             echo "ℹ️ 无用例库（cases/），跳过 case-contract 校验"
           fi
 
-      - name: Verify generated artifacts fresh (render + diff)
+      - name: Generate + verify case artifacts（出库形态；生成 + 可复现性判定）
         run: |
           # 判定本体 = `scripts/generated_artifacts_freshness.py`（**单一实现**；不许在这里再内联一份）。
-          # 判定语义**逐字不变**：以 `.github/cases/**` 为唯一源重渲染 → 与提交的生成物**逐字节**比对，
-          # 不同 ⇒ 阻塞合并（防止「改了 cases 忘重渲染」导致分叉）。差别只有两处，都是收紧：
-          #   ① 判红输出**具名**（产物名 + 差量 + 可复制的复算/重渲染命令）—— 旧文案「生成物不同步」
-          #      不具名，实测导致归因指错对象（2026-09-27 同一天两次）；
-          #   ② 原来的 `else 跳过` 分支取消：渲染器/用例库/生成物缺失、渲染失败、语料为空一律
-          #      **fail-closed（非零）**——「跳过然后成功」正是本仓点名的「没跑长得像通过」。
+          # 出库形态（issue #8167 P1-1）：两个生成物（`tests/agent_eval/eval_cases/` 与
+          # `docs/testing/mibao-verification-cases.md`）**不入库** —— 它们 100% 可从
+          # `.github/cases/**` 重建。⇒ 本步先 `--write` **就地生成**（幂等），再判三条：
+          #   ① 产物**不许**被 git 跟踪 / `.gitignore` 必须覆盖（塞回来 ⇒ 具名判红）；
+          #   ② 渲染**确定性**（同一棵树连渲两次逐字节相同；渲染失败 / 空产出 ⇒ 非零）；
+          #   ③ 落盘副本必须最新（陈旧 / 手改 ⇒ 具名判红）。
+          # 🔴 与入库时代的差别**只有**「没有提交版可比对」这一件事 —— 判定面一格没删：
+          #    「改了 cases 忘重渲染」这个**动作**已不可表达（不提交就无从遗忘），换成的是
+          #    「能不能稳定重建」。**没有**「文件不存在 ⇒ 跳过」这条出口（三态 0/1/3 不变）。
           # main 侧守护腿 `.github/workflows/main-freshness-guard.yml` 调的是**同一个**脚本
-          # （issue #5687 族的残余：本判据原先只在本 job 跑，而本 job 只在 `pull_request` 触发
-          #  ⇒ **main 可以先漂移**，而第一个撞上它的无辜 PR 才红）。两侧同源由
-          # tests/unit_ci_workflows/test_main_freshness_guard.py 的判据钉住（反向查内联实现）。
-          python3 scripts/generated_artifacts_freshness.py
+          # （同一份实现；两侧同源由 tests/unit_ci_workflows/test_main_freshness_guard.py 钉住）。
+          python3 scripts/generated_artifacts_freshness.py --write
 
       - name: Detect 受管用例面 changes（决定是否跑**合并探测**；未命中 ⇒ 显式打印「未跑」）
         id: probe_face

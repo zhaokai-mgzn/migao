@@ -31,7 +31,10 @@ cases/
 2. **ID 稳定**：`<域前缀>-<3位数字>` 一经发布不可改；旧 ID 保留在 `legacy_id`。
 3. **并源溯源**：每条用例的 `merge_log` 记录「由哪些旧用例合并而来」，防止合并时丢覆盖。
 4. **缺口显式**：真值暂缺时 `truths_ref: []` + ⚠️ 注释，由映射表 5.1 节跟踪补真值，禁止留空装作无事发生。
-5. **生成物禁手写**：`eval_cases/`（按域分包的目录，issue #8188）与 `mibao-verification-cases.md` 由 `render_cases.py` 渲染。
+5. **生成物禁手写、且不入库**：`eval_cases/`（按域分包的目录，issue #8188）与 `mibao-verification-cases.md`
+   由 `render_cases.py` 渲染，**100% 可从本目录重建 ⇒ 不进 git**（`.gitignore` 覆盖，issue #8167 P1-1）。
+   要它们就**先生成**：`python3 scripts/generated_artifacts_freshness.py --write`（幂等；CI 各消费腿
+   与三个 pytest 根的 conftest 都自动跑这一条）。
 6. **persona 归属（issue #2855）**：可选字段 `persona: mibao | xiaobu`，标记用例归属 agent；缺省/`both` = 双端。
    `local_runner` 按 persona 过滤（mibao 跳过 xiaobu 专属，反之亦然），防止 C/B 端专属用例在另一端回归中误报。
    已标记案例：C 端订单/物流（customer_* 工具）等元元专属用例。
@@ -43,7 +46,7 @@ cases/
    （判据：文件名匹配生效的 `python_files = test_*.py`，且落在 CI 真跑的收集根内、未被 `--ignore` 排除）
    —— 否则该用例的机器证据为**零**，而 case_ids / traces / skip_reason 三个环节都不会报错（CH-037 实证）。
    守卫：`tests/unit_ci_workflows/test_eval_evidence_chain.py`（pr-check 的 `ci workflow helper unit tests` job 每次 PR 都跑）。
-   改完用例记得同批重渲染生成物（见下「重新生成命令」）。
+   改完用例跑一次生成腿（见下「重新生成命令」）—— **不需要提交生成物**（它们不入库）。
 
 ## 迁移进度
 
@@ -56,13 +59,17 @@ cases/
 | 真值解析器 | ✅ `.github/truths.py`（index / check，fail-closed）+ `test_truths.py` 6 条单测 |
 | 12 域用例转换 | ✅ 80 条全部落地（126 处 truths_ref 可解析，7 个缺口用例显式标注） |
 | CI 门禁 | ✅ `pr-check.yml` 新增 `case-truth-check` job（seed + migao 两份），seed 文件已部署至 `migao/.github/` |
-| `render_cases.py` 生成器 | ✅ YAML → `eval_cases/`（按域分包的目录）+ `mibao-verification-cases.md`，两者已生成、禁止手改 |
+| `render_cases.py` 生成器 | ✅ YAML → `eval_cases/`（按域分包的目录）+ `mibao-verification-cases.md`；两者**按需生成、禁止手改、不入库**（issue #8167 P1-1） |
 | `local_runner.py` 直读 YAML | ✅ 新增 `--cases` 参数 + direct_reply 分支 + legacy_id 查找；`agent-eval.yml` 已改走单一源 |
 | G5 追溯链（测试文件→用例） | ⏳ |
 
 ## 重新生成命令
 
 ```bash
+# 生成到仓库里的正式落点（幂等；出库产物**不需要提交**）
+python3 scripts/generated_artifacts_freshness.py --write
+
+# 只想渲染到别处（例如比对两份产物）：直接用渲染器
 python3 .github/render_cases.py \
   --cases .github/cases \
   --out-eval tests/agent_eval/eval_cases \

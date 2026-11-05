@@ -122,7 +122,7 @@ Java admin-api + Python ai-agent-service + Next.js admin-web + Taro mini-app。
 | **验收/评测（下"验收通过"结论前必读）** | [docs/testing/acceptance-protocol.md](docs/testing/acceptance-protocol.md)（配套 DSH 技能 `migao-acceptance`） |
 | **Agent 能力开发（加工具/改能力/改 prompt 前）** | [docs/wiki/agent-capability-paradigm.md](docs/wiki/agent-capability-paradigm.md) |
 | CI/CD / 部署 | [docs/wiki/CI-CD.md](docs/wiki/CI-CD.md) |
-| 行为用例单一源 | `.github/cases/`（改后必须跑 `render_cases.py` 并提交生成物） |
+| 行为用例单一源 | `.github/cases/`（改后跑 `python3 scripts/generated_artifacts_freshness.py --write` 生成；**两个生成物不入库**，见 issue #8167 P1-1） |
 
 ## 开发环境准备（获取研发模式）
 

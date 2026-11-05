@@ -139,3 +139,14 @@ frontend/mini-app/e2e/report.md
 
 # Agent Eval 运行时产物（flake 台账，随运行位置变化，不入库）
 agent-eval-flakes.json
+
+# ── 生成物出库（issue #8167 P1-1）──────────────────────────────────────────────
+# 这两个产物**100% 可从 `.github/cases/**` 重建**（判据 = 是不是能 100% 重建）⇒ 不入库。
+# 唯一来源 = `python3 scripts/generated_artifacts_freshness.py --write`（幂等；CI 每个
+# 需要它们的 job 都先跑这一条，pytest 起动时 conftest 也会自动补）。
+# 🔴 谁 `git add -f` 塞回来 ⇒ `tests/unit_ci_workflows/test_generated_artifacts_untracked.py`
+#    与新鲜度腿当场判红并具名。
+/tests/agent_eval/eval_cases/
+/docs/testing/mibao-verification-cases.md
+# 生成腿的暂存目录（先渲染到这里，再原子替换到上面两个正式路径）
+/.gen-artifacts-staging/

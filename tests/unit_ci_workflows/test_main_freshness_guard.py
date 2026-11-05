@@ -503,19 +503,21 @@ class TestOneSharedImplementation:
 # ══════════════════════════════════════════════════════════════════════════════
 
 
+# 出库形态（issue #8167 P1-1）：产物不在树里 ⇒ 收口在 `_finish_untracked()`；红证变异锚点
+# 跟着搬过去 —— **不删红证**：换了判定对象，判别力必须在新对象上重新证明一次。
 FAILCLOSED_BRANCH = """    if undecidable:
+        report["verdict"] = "undecidable"
         report["problems"] = [
-            f"{ERROR_PREFIX}生成物新鲜度**无法判定**（fail-closed）：{'；'.join(undecidable)}",
-            f"   复算（可复制）：{recompute_command()}",
-        ]
-        report["error_annotation"] = error_annotation([], undecidable)
-        return report
+            f"{ERROR_PREFIX}生成物判定**无法判定**（fail-closed，绝不当「通过/跳过」读）："
 """
 SKIP_BRANCH = """    if undecidable:
         # 变异：把 fail-closed 换成「跳过然后成功」（本仓点名的「没跑长得像通过」）
         report["problems"] = ["ℹ️ 跳过生成物新鲜度校验"]
         report["verdict"] = "fresh"
         return report
+    if False:  # 变异体里下面那段不再可达
+        report["problems"] = [
+            f"{ERROR_PREFIX}生成物判定**无法判定**（fail-closed，绝不当「通过/跳过」读）："
 """
 
 
@@ -1092,11 +1094,15 @@ class TestReconcileFaceIsReallyWired:
         problems = light_leg_problems(doc)
         assert problems != [], f"{inject} 注入后判据没红 ⇒ 空断言（注入未生效或判据漏检）"
 
-    def test_command_is_red_on_stale_main_and_green_when_fresh(self, tmp_path):
-        """**双向对照 + 直连真接线**：真 YAML 里那条判定命令，在两个夹具上各跑一次。
+    def test_command_reds_on_broken_renderer_and_repairs_a_stale_copy(self, tmp_path):
+        """**三向对照 + 直连真接线**：真 YAML 里那条判定命令，在三个夹具上各跑一次。
 
-        · 陈旧夹具（源动过、生成物没跟 = #6255 的形态）⇒ **非零 + `::error::` 具名**；
-        · 新鲜夹具 ⇒ **0 且无 `::error::`**。
+        · 新鲜夹具 ⇒ **0 且无 `::error::`**；
+        · **陈旧副本**（源动过、生成物没跟 = #6255 的形态）⇒ 该命令**当场重渲染** ⇒ 0，
+          且 casebook 里出现新读数 —— 这是出库形态的**正面断言**：陈旧已不可能被提交进 git
+          （判据 2/3：没有提交版 ⇒「忘了重渲染」这个**动作**不可表达）；
+        · **渲染器跑不起来**（main 上的渲染器坏了）⇒ **非零 + `::error::`** —— 这才是出库后
+          本腿真正守着的那一类（原来是「提交版陈旧」，它随出库结构性消失）。
 
         ⚠️ **与 CI 的差异逐字登记**：① 追加 `--repo <夹具>`（CI 上不加，它就在仓根跑）；
         ② `cwd` = 真仓根（命令里的 `scripts/…` 是相对路径，夹具里没有 `scripts/`）——
@@ -1104,23 +1110,31 @@ class TestReconcileFaceIsReallyWired:
         """
         cmd = judgement_invocation(judgement_step(_workflow_doc()).get("run") or "")
         assert cmd, "取不到判定命令（红证会是空断言）"
-        stale = _build_repo(tmp_path / "stale" / "repo", drift_source=True)
+        assert "--write" in cmd, f"判定命令不再带 --write（出库形态的生成腿）：{cmd}"
         fresh = _build_repo(tmp_path / "fresh" / "repo")
+        stale = _build_repo(tmp_path / "stale" / "repo", drift_source=True)
+        broken = _build_repo(tmp_path / "broken" / "repo")
+        (broken / ".github" / "render_cases.py").write_text(
+            "import sys\nsys.exit(3)\n", encoding="utf-8")
 
-        rc, out, report = _run_yaml_command(cmd, stale)
-        assert rc != 0, f"main 生成物陈旧 ⇒ 判定命令却没红（rc={rc}）：{out[-800:]}"
-        assert "::error::" in out, f"判红没有 ::error::（告警面①）：{out[-800:]}"
-        assert "generated_artifacts_freshness" in out, f"判红不含可复制的复算命令：{out[-800:]}"
-        assert report.get("verdict") == "drifted", report
+        rc, out, report = _run_yaml_command(cmd, fresh)
+        assert rc == 0, f"生成物新鲜 ⇒ 判定命令却红了（rc={rc}）：{out[-800:]}"
+        assert "::error::" not in out, out[-400:]
+        assert report.get("verdict") == "fresh", report
 
-        rc2, out2, report2 = _run_yaml_command(cmd, fresh)
-        assert rc2 == 0, f"生成物新鲜 ⇒ 判定命令却红了（rc={rc2}）：{out2[-800:]}"
-        assert "::error::" not in out2, out2[-400:]
-        assert report2.get("verdict") == "fresh", report2
+        rc2, out2, _ = _run_yaml_command(cmd, stale)
+        assert rc2 == 0, f"陈旧副本没法被 --write 修好（rc={rc2}）：{out2[-800:]}"
+        assert "（夹具漂移）" in (stale / COVERED_ARTIFACTS[1]).read_text(encoding="utf-8"), \
+            "生成命令跑完后 casebook 里没有夹具漂移的读数（没真重渲染）"
+
+        rc3, out3, report3 = _run_yaml_command(cmd, broken)
+        assert rc3 != 0, f"渲染器坏了 ⇒ 判定命令却没红（rc={rc3}）：{out3[-800:]}"
+        assert "::error::" in out3, f"判红没有 ::error::（告警面①）：{out3[-800:]}"
+        assert report3.get("verdict") == "undecidable", report3
 
     def test_summary_line_drift_turns_it_red(self, tmp_path):
-        """**#6255 的逐字形态**：只把 casebook 的**汇总读数减 1**（行数不变、文件内部仍自洽、
-        也不提交任何脏产物）⇒ 真 YAML 的判定命令**仍必红且具名到产物**。
+        """**#6255 的逐字形态**：只把 casebook 的**汇总读数减 1**（行数不变、文件内部仍自洽）
+        ⇒ 判据本体（不带 `--write`）**仍必红且具名到产物**；而出库形态的生成命令把它**当场修好**。
 
         （这是 issue 里「造一个『main 生成物落后 1 条』的场景」的机械化版本；真实现场 =
         `提交版 9638 行 / 现取 9638 行，不同 2 行` —— 只看行数 / 只看文档自洽都发现不了。）
@@ -1130,13 +1144,22 @@ class TestReconcileFaceIsReallyWired:
         text = md.read_text(encoding="utf-8")
         m = re.search(r"用例总数：(\d+)", text)
         assert m, "汇总读数锚点不存在 ⇒ 夹具没生效（红证会是空断言）"
-        md.write_text(text.replace(m.group(0), f"用例总数：{int(m.group(1)) - 1}", 1), encoding="utf-8")
-        cmd = judgement_invocation(judgement_step(_workflow_doc()).get("run") or "")
-        rc, out, report = _run_yaml_command(cmd, repo)
+        drifted = int(m.group(1)) - 1
+        md.write_text(text.replace(m.group(0), f"用例总数：{drifted}", 1), encoding="utf-8")
+
+        # ① 判据本体（不带 `--write`）：陈旧 ⇒ **红 + 具名到产物**（这一格没被出库删掉）
+        rc, out, report = _run(repo)
         assert rc != 0, f"汇总读数减 1（行数不变）却没红（rc={rc}）：{out[-800:]}"
         assert "::error::" in out and COVERED_ARTIFACTS[1] in out, \
             f"判红没具名到产物 / 没有 ::error::：{out[-800:]}"
         assert report.get("verdict") == "drifted", report
+
+        # ② 出库形态的生成命令（真 YAML 里那条）：把它修好，此后不再红
+        cmd = judgement_invocation(judgement_step(_workflow_doc()).get("run") or "")
+        rc2, out2, _ = _run_yaml_command(cmd, repo)
+        assert rc2 == 0, f"--write 没能把陈旧副本修好（rc={rc2}）：{out2[-800:]}"
+        assert f"用例总数：{drifted}" not in md.read_text(encoding="utf-8"), \
+            "生成命令跑完后 casebook 里仍是旧汇总读数（没真重渲染）"
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1428,7 +1451,11 @@ def _add_one_case_and_rerender(repo: Path, new_id: str, *, at_end: bool) -> None
 
 @pytest.fixture(scope="module")
 def two_fresh_branches(tmp_path_factory) -> Path:
-    """**两侧各自新鲜**、而**合并结果会陈旧**的真夹具（`FM-E18` 的现场形态）。"""
+    """**两侧各自新鲜**的真夹具。
+
+    ⚠️ 出库形态（issue #8167 P1-1）后，`FM-E18` 的「合并结果里提交版生成物被顶旧」**整类消失**
+    （没有提交版了）⇒ 这个夹具现在证明的是**正面事实**：两个各自可重建的分支合并后仍然可重建。
+    """
     repo = _git_fixture(tmp_path_factory.mktemp("probe") / "repo")
     _git_in(repo, "checkout", "-q", "-b", "pr")
     _add_one_case_and_rerender(repo, "MC-900", at_end=True)
@@ -1440,22 +1467,55 @@ def two_fresh_branches(tmp_path_factory) -> Path:
     return repo
 
 
+def _make_render_nondeterministic(repo: Path) -> None:
+    """把渲染器改成**每次输出都不同**（出库形态下合并探测唯一还守得住的那一类真红）。
+
+    锚点 = 渲染器写 casebook 的那一句；锚点漂了就**显式失败**（否则红证变成空断言）。
+    """
+    path = repo / ".github" / "render_cases.py"
+    src = path.read_text(encoding="utf-8")
+    anchor = "        f.write(md)\n"
+    assert anchor in src, "渲染器锚点不存在 ⇒ 夹具没生效（红证会是空断言）"
+    path.write_text(src.replace("import argparse", "import argparse\nimport random", 1)
+                       .replace(anchor, "        f.write(md + str(random.random()))\n", 1),
+                    encoding="utf-8")
+
+
+@pytest.fixture(scope="module")
+def nondeterministic_branches(tmp_path_factory) -> Path:
+    """合并结果**渲不出确定产物**：`pr` 侧把 casebook 渲染改成含随机数（合并后必不稳定）。"""
+    repo = _git_fixture(tmp_path_factory.mktemp("probe_nd") / "repo")
+    _git_in(repo, "checkout", "-q", "-b", "pr")
+    _make_render_nondeterministic(repo)
+    _git_in(repo, "commit", "-qam", "pr：渲染器不再确定")
+    return repo
+
+
+def _probe_rc(repo: Path, ref: str) -> int:
+    """跑一次 CLI 的合并探测，只取退出码（三态 0/1/3）。"""
+    proc = subprocess.run([sys.executable, str(SCRIPT), "--repo", str(repo), "--merge-probe", ref],
+                          capture_output=True, text=True, timeout=900)
+    return proc.returncode
+
+
 class TestMergeProbe:
     def test_both_sides_are_fresh_on_their_own(self, two_fresh_branches):
         """**前提自证**：两侧**各自的树**都新鲜 —— 否则测到的不是「合并结果」这一面。"""
         rc, out, report = _run(two_fresh_branches)
         assert rc == 0 and report.get("verdict") == "fresh", f"前提不成立：\n{out}"
 
-    def test_probe_flags_the_merge_result_that_would_be_stale(self, two_fresh_branches):
-        """🔴 **判据 12（行为级）**：本树新鲜 + 合并结果陈旧 ⇒ `drifted`，且**归因指对本树那一侧**。"""
+    def test_probe_flags_a_merge_result_that_cannot_be_reproduced(self, nondeterministic_branches):
+        """🔴 **判据 12'（行为级）**：出库形态下 `FM-E18` 的「提交版被合并 hunk 顶旧」整类消失
+        （没有提交版），合并探测现在守的是**合并结果能不能稳定重建**：合并进去的渲染器一旦
+        不确定 ⇒ 必红，且**归因**把两侧读数都摆出来（不指向错误的对象）。"""
         module = _load_script()
-        probe = module.probe_merge(two_fresh_branches, "main")
+        probe = module.probe_merge(nondeterministic_branches, "main")
         assert probe["verdict"] == "drifted", probe
-        assert probe["tree_verdict"] == "fresh" and probe["merge_verdict"] == "drifted", probe
+        assert probe["merge_verdict"] == "drifted", probe
         joined = "\n".join(probe["problems"])
-        assert "合并探测" in joined and "不同源" in joined, joined
-        assert "提交版" in joined and "现取" in joined, joined          # 具名差量（与 FM-E5 同口径）
-        assert "FM-E18" in probe["attribution"] and "重渲染" in probe["attribution"], probe["attribution"]
+        assert "不可复现" in joined or "两次渲染" in joined, joined
+        assert "合并探测" in joined, joined
+        assert "归因" in probe["attribution"], probe["attribution"]
 
     def test_probe_on_own_branch_is_fresh(self, two_fresh_branches):
         """**对照读数**：探测自己的分支 ⇒ 合并结果 == 本树 ⇒ 新鲜（不是恒判红）。"""
@@ -1468,24 +1528,27 @@ class TestMergeProbe:
         probe = module.probe_merge(two_fresh_branches, "origin/does-not-exist")
         assert probe["verdict"] == "undecidable" and "取不到" in "\n".join(probe["problems"]), probe
 
-    def test_json_carries_the_overall_verdict(self, two_fresh_branches, tmp_path):
+    def test_json_carries_the_overall_verdict(self, nondeterministic_branches, tmp_path):
         """**判据（验收 P2-3）**：`--json` 顶层 `verdict` 是本树的，另须有 `verdict_overall` + `exit_code`。"""
         out = tmp_path / "probe.json"
-        proc = subprocess.run([sys.executable, str(SCRIPT), "--repo", str(two_fresh_branches),
+        proc = subprocess.run([sys.executable, str(SCRIPT), "--repo", str(nondeterministic_branches),
                                "--merge-probe", "main", "--json", str(out)],
                               capture_output=True, text=True, timeout=900)
         assert proc.returncode == 1, proc.stdout[-600:]
         payload = json.loads(out.read_text(encoding="utf-8"))
-        assert payload["verdict"] == "fresh", "顶层 `verdict` = **本树**（语义未改，向后兼容）"
+        assert "verdict" in payload, "机读面缺本树的 `verdict`（向后兼容的那一格）"
         assert payload["verdict_overall"] == "drifted" and payload["exit_code"] == 1, \
             f"机读面缺「合起来看」的那一格 ⇒ 读的人会把合并结果的结论漏掉：{sorted(payload)}"
 
-    @pytest.mark.parametrize("ref,expect_rc", [("main", 1), ("pr", 0)])
-    def test_cli_exit_codes(self, two_fresh_branches, ref, expect_rc):
-        """**判据 13**：CLI 把探测结论带出去（1 = 合并结果会陈旧 / 0 = 仍新鲜）。"""
-        proc = subprocess.run([sys.executable, str(SCRIPT), "--repo", str(two_fresh_branches),
-                               "--merge-probe", ref], capture_output=True, text=True, timeout=900)
-        assert proc.returncode == expect_rc, proc.stdout[-800:] + proc.stderr[-400:]
+    def test_cli_exit_codes(self, two_fresh_branches, nondeterministic_branches):
+        """**判据 13**：CLI 把探测结论带出去（0 = 合并结果仍可稳定重建 / 1 = 不稳定）。
+
+        ⚠️ 出库形态后 `--merge-probe main` 在**正常树**上恒为 0（没有提交版可顶旧，`FM-E18` 消失）
+        —— 这不是判据变松，是**那一类失败不可表达**；判据 12' 在真会红的那一类上仍有判别力。
+        """
+        assert _probe_rc(two_fresh_branches, "main") == 0, "两侧可重建 ⇒ 合并结果也该可重建"
+        assert _probe_rc(two_fresh_branches, "pr") == 0
+        assert _probe_rc(nondeterministic_branches, "main") == 1, "合并结果不稳定 ⇒ 必须非零"
 
 
 class TestProbeWiring:
