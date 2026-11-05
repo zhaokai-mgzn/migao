@@ -148,3 +148,5 @@ agent-eval-flakes.json
 #    与新鲜度腿当场判红并具名。
 /tests/agent_eval/eval_cases/
 /docs/testing/mibao-verification-cases.md
+# 生成腿的暂存目录（先渲染到这里，再原子替换到上面两个正式路径）
+/.gen-artifacts-staging/

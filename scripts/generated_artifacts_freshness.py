@@ -72,9 +72,12 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import difflib
+import hashlib
 import io
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -159,9 +162,37 @@ class GenerationError(RuntimeError):
     """生成腿失败。调用方**不许**把它降级成 skip/return 0（那正是「没跑长得像通过」）。"""
 
 
+#: 生成腿的**暂存目录**（渲染先落这里，再逐文件原子替换到正式路径；`.gitignore` 已覆盖）。
+STAGING_NAME = ".gen-artifacts-staging"
+
+
 def _out_paths(repo: Path) -> dict[str, Path]:
     """每个产物在**仓库里**的正式落点（目录型产物按其路径建目录）。"""
     return {a.rel: repo / a.rel for a in ARTIFACTS}
+
+
+@contextlib.contextmanager
+def _generation_lock(repo: Path):
+    """生成腿的**进程间互斥**（`pytest -n N` 的 N 个 worker 共享一棵树时必须）。
+
+    ⚠️ 没有它会怎样（**实测**，2026-11-05 gate）：4 个 xdist worker 各自在 conftest 里跑生成
+    ⇒ A 正在写 `eval_cases/*.py`、B 同时在渲染/导入 ⇒ 一次渲染失败返回 3 ⇒ **conftest 导入期抛错**，
+    报错还落在不相干的测试文件上（`ERROR tests/unit_ci_workflows/test_code_ask_semantics_l0.py`，
+    症状与病因隔了三层）。⇒ 锁 + 暂存区（下面 `ensure_generated`）两条一起上。
+    """
+    try:
+        import fcntl
+    except ImportError:  # pragma: no cover - 非 POSIX（本仓只在 macOS / Linux 上开发）
+        yield
+        return
+    key = hashlib.sha1(str(repo.resolve()).encode()).hexdigest()[:16]
+    lock_path = Path(tempfile.gettempdir()) / f"migao-gen-artifacts-{key}.lock"
+    with open(lock_path, "a+", encoding="utf-8") as fh:
+        fcntl.flock(fh.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
 
 
 def ensure_generated(repo: Path, *, python: str | None = None, cases_rel: str = CASES_REL,
@@ -178,33 +209,50 @@ def ensure_generated(repo: Path, *, python: str | None = None, cases_rel: str = 
         raise GenerationError(f"渲染器缺失：{renderer_rel}（生成腿无法执行 —— 这不是「产物可选」）")
     if not cases_dir.is_dir():
         raise GenerationError(f"用例库缺失：{cases_rel}/")
-    outs = _out_paths(repo)
-    for art in ARTIFACTS:
-        # 目录型产物建目录；单文件产物建**父目录**（干净检出里 docs/testing/ 可能根本不存在
-        # —— 不建就直接 open() 失败，那会把「生成腿没建路径」伪装成「渲染器坏了」）
-        outs[art.rel].mkdir(parents=True, exist_ok=True) if art.kind == "dir" \
-            else outs[art.rel].parent.mkdir(parents=True, exist_ok=True)
-    argv = build_render_argv(python or sys.executable, cases_rel, renderer_rel, outs)
-    try:
-        proc = subprocess.run(argv, cwd=str(repo), capture_output=True, text=True,
-                              timeout=render_timeout)
-    except (OSError, subprocess.SubprocessError) as exc:
-        raise GenerationError(f"渲染器无法执行（{type(exc).__name__}: {exc}）") from exc
-    if proc.returncode != 0:
-        tail = ((proc.stderr or "") + (proc.stdout or "")).strip().replace("\n", " ")[:600]
-        raise GenerationError(f"渲染失败（rc={proc.returncode}）：{tail}")
-    # 非空自证：rc=0 却**产出空**是最隐蔽的假绿（消费者会 import 到一个空包 / 读到空 casebook）
-    empty: list[str] = []
-    for art in ARTIFACTS:
-        path = outs[art.rel]
-        if art.kind == "dir":
-            if not any(path.glob("*.py")):
-                empty.append(art.rel + "/（没有任何模块）")
-        elif not (path.is_file() and path.stat().st_size > 0):
-            empty.append(art.rel + "（不存在或为空）")
-    if empty:
-        raise GenerationError(f"渲染器 rc=0 但**没有产出**：{'、'.join(empty)}")
-    return proc.stdout.strip()
+    staging = repo / STAGING_NAME
+    with _generation_lock(repo):
+        # 锁内做全套：清暂存区 → 渲染到暂存区 → 原子替换 → 清暂存区。
+        # `os.replace` 在**同一文件系统**内是原子的 ⇒ 并发读者永远看到**完整的旧版或完整的新版**
+        # （直接写正式路径会留下"被截断的中间态"，那正是上面记录的那次 conftest 崩溃）。
+        shutil.rmtree(staging, ignore_errors=True)
+        try:
+            outs = {a.rel: staging / Path(a.rel).name for a in ARTIFACTS}
+            for art in ARTIFACTS:
+                outs[art.rel].mkdir(parents=True, exist_ok=True) if art.kind == "dir" \
+                    else outs[art.rel].parent.mkdir(parents=True, exist_ok=True)
+            argv = build_render_argv(python or sys.executable, cases_rel, renderer_rel, outs)
+            try:
+                proc = subprocess.run(argv, cwd=str(repo), capture_output=True, text=True,
+                                      timeout=render_timeout)
+            except (OSError, subprocess.SubprocessError) as exc:
+                raise GenerationError(f"渲染器无法执行（{type(exc).__name__}: {exc}）") from exc
+            if proc.returncode != 0:
+                tail = ((proc.stderr or "") + (proc.stdout or "")).strip().replace("\n", " ")[:600]
+                raise GenerationError(f"渲染失败（rc={proc.returncode}）：{tail}")
+            # 非空自证：rc=0 却**产出空**是最隐蔽的假绿（消费者会 import 到一个空包 / 读到空 casebook）
+            empty: list[str] = []
+            for art in ARTIFACTS:
+                staged = outs[art.rel]
+                if art.kind == "dir":
+                    if not any(staged.glob("*.py")):
+                        empty.append(art.rel + "/（没有任何模块）")
+                elif not (staged.is_file() and staged.stat().st_size > 0):
+                    empty.append(art.rel + "（不存在或为空）")
+            if empty:
+                raise GenerationError(f"渲染器 rc=0 但**没有产出**：{'、'.join(empty)}")
+            # 原子落盘：目录型产物**逐模块** replace（暂存区与目标同卷）；单文件同理。
+            for art in ARTIFACTS:
+                target = repo / art.rel
+                if art.kind == "dir":
+                    target.mkdir(parents=True, exist_ok=True)
+                    for src in sorted(outs[art.rel].glob("*.py")):
+                        os.replace(src, target / src.name)
+                else:
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    os.replace(outs[art.rel], target)
+            return proc.stdout.strip()
+        finally:
+            shutil.rmtree(staging, ignore_errors=True)
 
 
 def tracked_artifact_paths(repo: Path) -> tuple[list[str], str]:

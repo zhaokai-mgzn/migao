@@ -84,7 +84,11 @@ def _extract_clean_tree(dest: Path) -> Path:
 
 def _pytest_in(tree: Path, target: str) -> subprocess.CompletedProcess:
     """在干净树里跑一个消费者（清掉会串味的 `PYTHONPATH` / `PYTEST_ADDOPTS`）。"""
-    env = {k: v for k, v in os.environ.items() if k not in ("PYTHONPATH", "PYTEST_ADDOPTS")}
+    # ⚠️ 必须清掉继承来的 `MIGAO_*`：CI 的那条腿会设 `MIGAO_CI_HELPER_SHARD=N/2`，
+    # 内层 pytest 会据此把**目标用例 deselected** ⇒ 退化成「8 deselected / rc 5」，
+    # 而断言会读成「干净检出跑不过」（归因指向错误的对象）。
+    env = {k: v for k, v in os.environ.items()
+           if k not in ("PYTHONPATH", "PYTEST_ADDOPTS") and not k.startswith("MIGAO_")}
     return subprocess.run([sys.executable, "-m", "pytest", target, "-q", "-p", "no:cacheprovider"],
                           cwd=str(tree), capture_output=True, text=True, env=env, timeout=1800)
 
