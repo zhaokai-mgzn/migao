@@ -2,7 +2,7 @@
 # 本文件由 render_cases.py 生成，勿手改（改了也留不住：下次重渲染会覆盖）
 # 源: cases/*.yml（case-contract 单一源）
 # 重新生成: python3 render_cases.py --cases <dir> --out-eval <包目录> --out-md <md>
-# 域: misc（源: cases/misc.yml，236 条）
+# 域: misc（源: cases/misc.yml，237 条）
 
 from ._schema import Difficulty, EvalCase, Skill
 
@@ -4335,6 +4335,24 @@ _CASE_MC_207 = EvalCase(
     precondition='零运行期前置（纯结构 + 纯函数判据）：被测对象 = `backend/ai-agent-service/app/constants/order_status.py` 的构造式与 docstring、前端 `frontend/admin-web/src/types/index.ts` 的 displayOrderStatus / `frontend/admin-web/src/lib/status-chip.ts` 的 orderStatusChipFor、`backend/ai-agent-service/app/ontology/{loader.py,schema.yaml}` 的 order.status 词表。不成立时红形态已内建：导入失败或文件缺失 ⇒ 判据红。零网络 / 零 LLM / 零 DB。',
 )
 
+# ── MC-211 [NORMAL] OrderService 门面收尾第四批（issue #8681 的 P2-1e，部分交付）：订单列表与两处详情（含数据范围收窄）三个查询入口的调用方改直连 OrderQueryService（含建单服务回读一处），门面 1,702 行降到 1,655 行并删掉这 3 个转发；查询侧驱动方从 8 个测试文件全数迁到实现点（断言零改动），并把退休守护扩成「全 test 树零处经门面驱动」的驱动面判据（源: cases/misc.yml）──
+_CASE_MC_211 = EvalCase(
+    id='MC-211',
+    legacy_id='',
+    title='OrderService 门面收尾第四批（issue #8681 的 P2-1e，部分交付）：订单列表与两处详情（含数据范围收窄）三个查询入口的调用方改直连 OrderQueryService（含建单服务回读一处），门面 1,702 行降到 1,655 行并删掉这 3 个转发；查询侧驱动方从 8 个测试文件全数迁到实现点（断言零改动），并把退休守护扩成「全 test 树零处经门面驱动」的驱动面判据',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['商家端照常按状态 / 关键词 / 制单人筛选订单列表并按角色数据范围收窄详情（范围外与不存在回同一个 404）；下单成功后返回的订单详情与拆分前逐字一致，HTTP 路径 / 入参 / 响应不变'],
+    expectations=[],
+    data_checks=['判据 1·🔴 退休面（这 3 个转发不许回来）：门面源码里不许再有列表查询 / 单参详情 / 带范围详情三个方法的声明（把任一转发加回门面 ⇒ 具名红），且全部 main 源码里零处「经门面变量调用这三个方法」（谁把调用方改回门面 ⇒ 具名红）。锚点取「返回类型 + 方法名 + 左括号」以覆盖跨行签名，且两个详情重载共用同一锚点（任一重载回来都会命中）。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/OrderFacadeForwarderRetirementTest.java', '判据 2·🔴 接线面两侧夹住（防恒绿）：实现点 OrderQueryService 必须仍声明这三个方法，且全部具名消费方逐字调用实现点 —— 订单控制器的列表与两处详情、建单服务的回读（第四批新增的第二个消费方）。消费方改回门面或方法被改名 ⇒ 具名红；同一条判据内含判别力自证：内存里把跨行声明塞回门面 / 把带范围的重载塞回门面 ⇒ 谓词各自判真，注释里的同名文本不算声明。执行点 = 同判据 1 的判据文件', '判据 3·🔴 驱动面扩到全 test 树（第四批新增）：src/test 全树的 Java 文件里零处经门面驱动列表查询 / 我的订单 / 详情三个入口，且同时认两种写法 —— 直接调用 与 验证门面交互（后者同样是让门面入口继续被钉住的原因）；扫描面自带非空自证（扫到的文件数必须够大，路径漂移即红）。生命周期族**有意不在**本清单内：它们仍有接线 / 快照判据故意经门面驱动，要等那几族一并收口时才提上来。执行点 = 同判据 1 的判据文件', '判据 4·🔴 改直测的实现点判据（门面接线判据失去对象时不许删、不许恒绿）：列表读面直测三条安全 / 语义条件是否真的进了查询（服务端角色范围落 created_by 精确匹配、C 端隔离落 user_id 精确匹配、制单人落 created_by_name 模糊匹配），并有反向对照（三者缺省时条件一个都不许出现，防「不限范围」被静默收窄）；单参详情直测 404 出口与读得到的反向对照（防「永远 404」的恒绿）；带范围详情直测「范围外与不存在同一个 404」（不泄露存在性）、范围内的单读得到、范围缺省时不收窄。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/OrderQueryServiceTest.java', '判据 5·🔴 行为 diff = 0 的承载面未动：OrderServiceTest 的 152 条行为判据一字未改且全绿；被迁走的三个方法实现体逐字留在实现点（本批不修改 OrderQueryService 一行）；不新增 / 不移除任何事务注解（本批迁的都是读面，本来就没有事务注解）；建单服务只把回读的接收者从门面换成实现点（同一份协作者、同一条调用链）。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/OrderServiceTest.java 与 tests/unit_ci_workflows/test_loc_ratchet.py'],
+    skip_reason='[backend-contract] Java 侧调用方迁移 + 门面转发退休（零 LLM / 零外网 / 零前端可见面），由 JUnit 判据与 pytest 棘轮判据验证，无 agent 行为面，不进入 agent-eval 冒烟',
+    tags=['refactor', 'order-service', 'facade-retirement', 'caller-migration', 'query-family', 'ratchet'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 CASES = (
     _CASE_MC_001,
     _CASE_MC_002,
@@ -4572,4 +4590,5 @@ CASES = (
     _CASE_MC_209,
     _CASE_MC_208,
     _CASE_MC_207,
+    _CASE_MC_211,
 )

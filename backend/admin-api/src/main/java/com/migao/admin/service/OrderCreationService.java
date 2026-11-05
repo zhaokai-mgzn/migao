@@ -67,6 +67,11 @@ public class OrderCreationService {
     private final OrderPricingService orderPricingService;
     /** 具名审批回填（issue #7374 段 1）：可空（切片上下文 / 直接 new 的单测仅少一次回填）。 */
     private final ApprovalService approvalService;
+    /**
+     * 建单后的**回读**（issue #8681，P2-1e 第四批）：返回体由查询族的唯一实现点组装，
+     * 不再经门面的同名转发（该转发已随调用方迁移删除）。单向依赖，无环。
+     */
+    private final OrderQueryService orderQueryService;
 
     /** Agent 建单写面的幂等键命名空间（与控制器端点一致）。 */
     private static final String ENDPOINT_CREATE_ORDER = "POST /api/admin/agent/orders";
@@ -79,7 +84,8 @@ public class OrderCreationService {
                                 NotificationService notificationService,
                                 ClientRequestIdService clientRequestIdService,
                                 OrderPricingService orderPricingService,
-                                ApprovalService approvalService) {
+                                ApprovalService approvalService,
+                                OrderQueryService orderQueryService) {
         this.orderMapper = orderMapper;
         this.productMapper = productMapper;
         this.productSkuMapper = productSkuMapper;
@@ -89,6 +95,7 @@ public class OrderCreationService {
         this.clientRequestIdService = clientRequestIdService;
         this.orderPricingService = orderPricingService;
         this.approvalService = approvalService;
+        this.orderQueryService = orderQueryService;
     }
 
     /**
@@ -279,7 +286,7 @@ public class OrderCreationService {
         // 站内信：新订单创建成功，通知订单归属用户（无归属用户则跳过）
         notifyOrderCreated(tenantId, order, totalAmount);
 
-        return orderService.getOrderById(order.getId());
+        return orderQueryService.getOrderById(order.getId());
     }
 
     /**
