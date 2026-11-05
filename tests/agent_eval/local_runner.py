@@ -2808,6 +2808,12 @@ def _round_matches_tool(r: dict, tool: str, comp: str | None, sem: str | None) -
 
     `interact[confirm]` 额外接受**卡片事件证据**（见 `_round_has_interactive_card`）：
     确认卡可能来自代码兜底（文本 XML → SSE 事件）而非工具调用。
+
+    **参数限定（issue #8726）**：非 `interact` 工具也支持 `tool[<参数名>:<值>]`
+    （如 `customer_order_query[action:recent_address] before order_create`）—— 收敛后
+    工具名不再能区分能力（一个工具两个 action）⇒ 时序断言必须能钉到 action，
+    否则「先查历史地址再写单」会退化成「先调过订单工具再写单」（**判据降级**）。
+    缺 `sem` 的限定 **fail-closed**（不匹配），不会退化成"任何调用都算"。
     """
     if tool == "processing_ask":
         return bool(_processing_ask_in_round(r))
@@ -2818,11 +2824,14 @@ def _round_matches_tool(r: dict, tool: str, comp: str | None, sem: str | None) -
         name = str(tc.get("name", "")).lower()
         if tool.lower() not in name:
             continue
-        if tool.lower() == "interact" and comp:
+        if comp:
             args = tc.get("args") or {}
-            if args.get("component") != comp:
-                continue
-            if sem == "processing_items" and not _is_processing_items_card(args):
+            if tool.lower() == "interact":
+                if args.get("component") != comp:
+                    continue
+                if sem == "processing_items" and not _is_processing_items_card(args):
+                    continue
+            elif not sem or str(args.get(comp) or "").strip().lower() != str(sem).strip().lower():
                 continue
         return True
     return False
@@ -5907,7 +5916,7 @@ def check_form_prefill(results: list, spec: list) -> list:
         if not forms:
             issues.append(
                 f"form_prefill[{field}]: 会话里没有出现任何 form 卡 —— 老客户收货信息没有被带进表单"
-                f"（预期：customer_address_query 命中后下发预填 form）")
+                f"（预期：customer_order_query(action=recent_address) 命中后下发预填 form）")
             continue
         if not found_any:
             issues.append(

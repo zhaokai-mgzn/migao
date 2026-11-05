@@ -590,7 +590,6 @@ def render_baseline_worklist(rep: CoverageReport, persona_label: str = "") -> st
 XIAOBU_TOOL_LABELS = {
     "customer_order_query": "查本人订单",
     "customer_logistics_track": "查物流（仅本人已发货）",
-    "customer_address_query": "查收货地址",
     "order_create": "下单创建",
     "product_search": "商品搜索",
     "product_detail": "商品详情",

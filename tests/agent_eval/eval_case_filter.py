@@ -25,7 +25,8 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 # 而这些用例断言的工具元元根本没有 → 「C 端评测通过率」不可信（假绿）。
 XIAOBU_TOOLS = frozenset({
     # customer_order_skill
-    "customer_order_query", "customer_logistics_track", "customer_address_query",
+    "customer_order_query", "customer_logistics_track",
+    # issue #8726：收货地址查询已收敛为 customer_order_query 的 recent_address action
     "order_create", "interact",
     # ⚠️ `human_handoff` 已于 2026-09-19 按用户裁定退场（模型不可达）⇒ 从本真值移除：
     # 留着的后果是"用例断言一个永远调不到的工具"，覆盖门禁会把已清理的用例重新判成

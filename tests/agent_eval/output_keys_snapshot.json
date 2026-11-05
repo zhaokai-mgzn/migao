@@ -251,28 +251,6 @@
    ],
    "source_sha256": "960c85104cb224f9d2904b496df8a78a6084627c181b186901be9cc901f6ded5"
   },
-  "customer_address_query": {
-   "actions": null,
-   "dynamic": false,
-   "file": "backend/ai-agent-service/app/tools/customer_address_query.py",
-   "keys": [
-    "customer_address",
-    "customer_name",
-    "customer_phone",
-    "has_address",
-    "order_no",
-    "source"
-   ],
-   "literal_keys": [
-    "customer_address",
-    "customer_name",
-    "customer_phone",
-    "has_address",
-    "order_no",
-    "source"
-   ],
-   "source_sha256": "73e342688401950aaa54e6e5ec458409ffce0cb99d014f08d947bada4c74d026"
-  },
   "customer_logistics_track": {
    "actions": null,
    "actions_unattributed": [
@@ -373,25 +351,38 @@
   "customer_order_query": {
    "actions": null,
    "actions_unattributed": [
-    "list"
+    "list",
+    "recent_address"
    ],
    "dynamic": false,
    "file": "backend/ai-agent-service/app/tools/customer_order_query.py",
    "keys": [
+    "customer_address",
+    "customer_name",
+    "customer_phone",
+    "has_address",
+    "order_no",
     "orders",
     "page",
     "page_size",
+    "source",
     "total",
     "total_pages"
    ],
    "literal_keys": [
+    "customer_address",
+    "customer_name",
+    "customer_phone",
+    "has_address",
+    "order_no",
     "orders",
     "page",
     "page_size",
+    "source",
     "total",
     "total_pages"
    ],
-   "source_sha256": "b5eecfb847dca92f21a84286861dd61b67512ac5c7ff9574e06d245aa5955b8c"
+   "source_sha256": "8928b5e330e857b3ff5d4e4c54c2f92a3cd70b03b37efc981c5a0d4900d8b9d0"
   },
   "dashboard_stats": {
    "actions": {

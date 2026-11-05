@@ -139,10 +139,26 @@ class TestUncoveredActionsAreReportedNotBlocking:
         """单 action 工具：调工具 == 调该 action，报"未覆盖"是**假缺口**，必须排除。"""
         rep = build_coverage_report(
             [{"id": "T-12", "tier": "normal", "persona": "xiaobu", "skip_reason": "",
-              "user_inputs": ["我的订单"], "expectations": [{"tool": "customer_order_query"}]}],
-            "xiaobu", tools={"customer_order_query"})
-        assert rep.action_tools.get("customer_order_query") == {"list"}
+              "user_inputs": ["我的物流"], "expectations": [{"tool": "customer_logistics_track"}]}],
+            "xiaobu", tools={"customer_logistics_track"})
+        assert rep.action_tools.get("customer_logistics_track") == {"list"}
         assert rep.action_uncovered == []
+
+    def test_merged_address_action_is_a_real_second_action(self):
+        """issue #8726：地址能力收敛成 `customer_order_query` 的第二个 action 后，
+        **只断言 list 的**用例会把 `recent_address` 留成 action 级厚度缺口（报告、不阻塞）。
+
+        这条同时是上一条的**反向对照**：单 action 工具的「未覆盖」是假缺口，
+        多 action 工具的「未覆盖」是真读数 —— 判据必须能区分两者。
+        """
+        rep = build_coverage_report(
+            [{"id": "T-12b", "tier": "normal", "persona": "xiaobu", "skip_reason": "",
+              "user_inputs": ["我的订单"],
+              "expectations": [{"tool": "customer_order_query", "args": {"action": "list"}}]}],
+            "xiaobu", tools={"customer_order_query"})
+        assert rep.action_tools.get("customer_order_query") == {"list", "recent_address"}
+        assert [a for t, a in rep.action_uncovered if t == "customer_order_query"] == ["recent_address"]
+        assert rep.check_problems() == [], "action 厚度缺口不许升级成 check 失败（只报告）"
 
     def test_zero_case_tool_is_not_double_reported(self):
         """零用例工具的 action 由工具级 `uncovered` 报；action 级不重复报同一件事。"""

@@ -9540,6 +9540,41 @@ cases:
         - "tests/unit_ci_workflows/test_w_compat_period.py"
         - "frontend/bmini-app/tests/page-entry-reachability.test.ts"
 
+  - id: MC-240
+    legacy_id: ""
+    title: "旧工具名零残留 + 能力面等价：`customer_address_query` 收敛进 `customer_order_query` 的 `recent_address`（同端点派生视图，issue #8726）"
+    domains:
+      - misc
+      - agent
+      - tools
+    tier: normal
+    tags:
+      - agent
+      - tools
+      - equivalence
+      - residual-scan
+    truths_ref: []
+    precondition:
+      - "收敛前的对外可观测面已冻结在判据源码里（`FROZEN_OLD_SURFACE` / `FROZEN_HIT_KEYS` / `FROZEN_MISS_KEYS`）—— 旧实现文件已删，冻结快照是唯一 durable 载体"
+      - "扫描面 = `backend/ai-agent-service/app`（含内联 prompt）/ `backend/ai-agent-service/tests` / `.github/cases/*.yml` 的机器判定位 / 仓级 `tests` / `scripts`；任一面扫到 0 个文件即判红（防「空扫描 = 绿」）"
+      - "「可执行位置」= 字面量 / import / 标识符 / 用例机器判定字段；注释与 docstring 不计（历史证据要留，且它们不驱动任何调用）"
+    user_inputs:
+      - "开发者把地址查询改回独立工具名，或在 prompt / 用例断言里写回旧名 ⇒ 判据必须红并列出文件与行"
+      - "开发者只在注释或文档里提到旧名 ⇒ 判据必须不红（反向负控：只改注释/文档不改结论）"
+      - "有人在 action 枚举里加第三个值、删掉 list、或去掉 status 入参 ⇒ 能力面等价判据必须红"
+    expectations:
+      - "旧工具名在 5 个调用面的可执行位置零残留（注释 / docstring 允许）"
+      - "「工具名 × 入参」集合等价：旧地址能力 ⇒ `recent_address`；旧 list 能力 ⇒ `action=list`；入参一个不多一个不少"
+      - "`_recent_address` 的两条返回路径 data 键恰好等于收敛前冻结的六键 / 四键"
+      - "每个扫描面文件数 > 0（空扫描 = 空断言）"
+      - "反向负控：只改注释 / 文档时判据保持绿"
+    data_checks: []
+    skip_reason: ""
+    merge_log: "2026-11-05 新增（issue #8726 = #8167 P1-3 的唯一真候选）。取号 **MC-240**（撞号两次，记实：首取 MC-236、rebase 时发现 main 已被并行包（#8740 冲突解法）占用；顺延 MC-237 后 main 又同分钟被另一包占用 ⇒ 按「后合入者让号」+「并行取远号段」改取 MC-240；`python3 scripts/next_case_id.py MC` 当时返回历史空档 MC-145 —— 按既有裁定「刻意空档不回填」跳过；main 现取最大 = MC-235，故顺延 236，并在 main 与两个在飞 PR 分支上逐一核对零命中后落号）。收敛依据（现取）：两工具同端点 `/api/admin/agent/orders/mine`、同 `allowed_roles=[\"customer\"]`、同 `required_permissions=[]`、同强制 `X-User-Id` 过滤，且地址结果 = 订单列表首条有地址记录的**投影**（`_format_orders` 本已含 customer_name/customer_phone/customer_address）⇒ 等价变换。判据 = `tests/unit_ci_workflows/test_customer_address_merged_into_order_query.py`（零残留扫描 + 能力面等价 + 返回形状 + 空扫描自证 + 反注释负控）；行为面逐字段等价由 `backend/ai-agent-service/tests/test_tools_customer_order_query_recent_address.py` 的冻结载荷断言守。**未闭合（照实登记）**：按 #4262 未派发真实 LLM 评测，该清单见 PR body §13.2。"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_customer_address_merged_into_order_query.py"
+
   - id: MC-238
     legacy_id: ""
     title: "OrderService 门面收尾第六批（issue #8681 的 P2-1e，部分交付）：生命周期族收口 —— 订单控制器 / 生产控制器 / 加工单服务改直连 OrderLifecycleService，门面 1,582 行降到 1,539 行并删掉 7 个转发声明（6 个方法，发货两个重载）；三个接线与快照判据改直测实现点、98 个测试驱动点迁到实现点（断言零改动：23 例生命周期快照与 25 例切片快照逐字节不变），退休守护扩到 17 个方法 / 13 个驱动入口"

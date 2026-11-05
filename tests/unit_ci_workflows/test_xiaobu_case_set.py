@@ -723,7 +723,8 @@ class TestCh025AddressPrefillIsExecutable:
             "「可修改」就没人守了"
         )
         order_before = c.get("order_before") or []
-        assert any("customer_address_query before order_create" in str(x) for x in order_before), (
+        assert any("customer_order_query[action:recent_address] before order_create" in str(x)
+                   for x in order_before), (
             "缺『先查历史地址再写单』的时序断言"
         )
 

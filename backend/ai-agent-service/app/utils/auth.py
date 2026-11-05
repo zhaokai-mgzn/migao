@@ -342,7 +342,7 @@ async def get_current_user(
                 _uid = DEBUG_CUSTOMER_USER_ID
                 # ── 多身份评测（issue #3391）──
                 # 为什么需要：debug_customer_1 在评测种子里有历史订单 →
-                # `customer_address_query` 恒返回 has_address=true →「新客没有历史收货信息
+                # `customer_order_query(action="recent_address")` 恒返回 has_address=true →「新客没有历史收货信息
                 # → 主动收集」这条路径**在评测里不可达**，而那正是验收 C-A1 暴露问题的路径。
                 # 安全约束（与 P0-3 同源：DEBUG 误配不得变成数据泄露后门）：
                 #   · 仅 DEBUG=true + role=customer 时生效（生产 DEBUG=false 永不进本分支）；

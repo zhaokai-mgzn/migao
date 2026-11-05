@@ -1,0 +1,6 @@
+{
+  "id": "MC-240",
+  "pr": 8745,
+  "title": "旧工具名零残留 + 能力面等价：customer_address_query 收敛进 customer_order_query 的 recent_address（同端点派生视图，issue #8726）",
+  "claimed_at": "2026-11-05"
+}

@@ -3977,7 +3977,7 @@ class TestFormPrefillFidelityWiring:
 
     def test_read_tool_address_is_remembered(self):
         """读工具返回的地址必须被记住 —— 否则守卫没有真值可比（M178 的形态）。"""
-        seen = self._run({"keyword": "x"}, tool_name="customer_address_query",
+        seen = self._run({"keyword": "x"}, tool_name="customer_order_query",
                          store_extra={"known_customer_address": []},
                          read_data={"has_address": True, "customer_address": self.KNOWN_ADDR})
         merged = [a for c in seen.get("commits") or []

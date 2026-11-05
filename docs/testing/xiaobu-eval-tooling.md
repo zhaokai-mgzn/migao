@@ -124,8 +124,9 @@ python3 scripts/xiaobu_coverage.py --md && python3 scripts/mibao_coverage.py --m
 输出：① 工具覆盖矩阵（缺口标 ⚠️，含正向用例数）② 用例归属（按 tier）
 ③ 孤儿用例（期望工具该端没有 = 端点挂错，门禁拦截）④ **薄覆盖清单**
 （缺正向用例 ❌ 阻塞 / 仅 1 条用例 ⚠️ 只报告）⑤ 显式豁免 ⑥ **action 级覆盖**（见下）。
-**显式豁免**区：有用例但声明了 `skip_reason` 的工具（如 C 端 `customer_address_query`
-由 CH-025 覆盖但 skip，改由 pytest 验证）——豁免必须显式声明理由，不得靠「看起来有覆盖」。
+**显式豁免**区：有用例但声明了 `skip_reason` 的工具 —— 豁免必须显式声明理由，不得靠「看起来有覆盖」。
+**今天为空**：最后一条（C 端地址查询）随 issue #8726 的收敛删除（工具名已不存在，
+能力改由 `customer_order_query(action=recent_address)` 的 action 级断言守）。
 
 ### 判据（issue #3555 收紧）
 
@@ -193,7 +194,8 @@ python3 scripts/xiaobu_coverage.py --md && python3 scripts/mibao_coverage.py --m
 | smoke | PR-001 | 商品搜索 | ✅ 100% |
 | smoke | PR-003 | 商品详情（ID 解析） | ✅ 100%（偶发噪声重试放行） |
 
-工具覆盖 **12/13**（唯一未覆盖 `customer_address_query` 已显式豁免）。
+工具覆盖 **13/13**（`customer_address_query` 已收敛为 `customer_order_query` 的 `recent_address`
+action，issue #8726 ⇒ 工具名少一个、能力不减；覆盖由 CH-025 / OR-023 的 `args.action` 断言守）。
 
 ### 已实测发现的 C 端行为问题（待收敛）
 
