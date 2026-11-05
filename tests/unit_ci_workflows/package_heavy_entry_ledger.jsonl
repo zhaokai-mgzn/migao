@@ -141,3 +141,4 @@
 {"id":"1793851152.15340.7030","ts":"2026-11-05T03:59:12Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/8176-cheatsheet","why":"--allow-package-heavy（命令行显式）"}
 {"id":"1793851415.19779.13258","ts":"2026-11-05T04:03:35Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/8176-cheatsheet","why":"--allow-package-heavy（命令行显式）"}
 {"id":"1793851958.36478.14856","ts":"2026-11-05T04:12:38Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/8176-cheatsheet","why":"--allow-package-heavy（命令行显式）"}
+{"id":"1793852282.44526.17221","ts":"2026-11-05T04:18:02Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/8176-cheatsheet","why":"--allow-package-heavy（命令行显式）"}

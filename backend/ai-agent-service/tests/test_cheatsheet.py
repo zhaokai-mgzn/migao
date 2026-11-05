@@ -459,6 +459,13 @@ def test_rendering_is_derived_not_hardcoded():
         read_only = False
         description = "【触发】商家说「合成说法」时调用。【不要用于】合成反例（用 zzz_query）"
 
+        @property
+        def not_for(self) -> str:
+            # 投影**只许有一处实现**：真工具走 `BaseTool.not_for`（同一份字节），合成工具照同一条口径投影。
+            from app.tools.base import segment
+
+            return segment(self.description, "【不要用于】")
+
     class _SyntheticRegistry:
         def get_all_tools(self):
             return [_SyntheticTool()]

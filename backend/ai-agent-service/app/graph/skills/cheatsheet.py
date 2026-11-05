@@ -54,14 +54,16 @@ _OBJECT_LINE_CHARS = 60
 _TARGET_OPEN = "（用 "
 
 
-def not_for_entries(text: str) -> List[tuple]:
-    """`【不要用于】` 段 → `[(商家说法, 该用的工具名)]`（解析不出目标名的条目丢弃）。
+def not_for_entries(body: str) -> List[tuple]:
+    """`【不要用于】` 段的**内容** → `[(商家说法, 该用的工具名)]`（解析不出目标名的条目丢弃）。
 
-    `text` 可以是**整段 description**，也可以**已经是**该段（调用方常直接传 `tool.not_for`）——
-    两种形态都吃，避免"传错一层就静默返回空"这类假绿。
+    入参是**已切好的段内容**（`BaseTool.not_for` 就是那个投影）—— 切段只有一处实现
+    （`app.tools.base.segment`），这里不再二次判定"传进来的是整段还是段内容"：
+    那类"兼容两种形态"的写法要靠**中文子串当判据**，属本仓判据明令禁止的形态
+    （`test_tool_input_contract_guards`：缺参/失败语义走结构化字段）。
     """
     out: List[tuple] = []
-    body = segment(text, "【不要用于】") if "【不要用于】" in (text or "") else (text or "")
+    body = body or ""
     for chunk in body.split("；"):
         chunk = chunk.strip()
         if not chunk:
@@ -144,7 +146,7 @@ def _tool_triggers(tool: Any) -> str:
 def _tool_not_for(tool: Any) -> str:
     """「别拿它做这些」的跳转目标（最多 `_NOT_FOR_MAX` 个，逗号分隔）；没有 ⇒ 空串。"""
     targets: List[str] = []
-    for _label, target in not_for_entries(getattr(tool, "description", "") or ""):
+    for _label, target in not_for_entries(getattr(tool, "not_for", "") or ""):
         if target in targets:
             continue
         targets.append(target)

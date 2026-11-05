@@ -9050,7 +9050,7 @@ cases:
       - "9 处手写速查表（6 个领域 prompt + 2 处内联 prompt + 财务规则表）全部清零；表里点名过的工具必须仍被渲染（真值不随表消失）。"
       - "同一输入两次渲染逐字节相同；`python -m app.graph.skills.cheatsheet --check` 退出码 0；渲染漂移 ⇒ 1；一把工具都没渲染 ⇒ 3（不可判定）。"
     data_checks:
-      - "**双向一致（会红）**：把渲染器对 `order_query` 静默跳过 ⇒ `test_rendering_skips_are_reported_by_name` 红并在消息里**具名** `order_query`；未注入 ⇒ 20 passed（复算 = `cd backend/ai-agent-service && .venv/bin/python -m pytest tests/test_cheatsheet.py -q`）。"
+      - "**双向一致（会红）**：把渲染器对 `order_query` 静默跳过 ⇒ `test_rendering_skips_are_reported_by_name` 红并在消息里**具名** `order_query`；未注入 ⇒ 20 passed（复算 = `cd backend/ai-agent-service && .venv/bin/python -m pytest tests/ -q -k cheatsheet`）。"
       - "**删规则仍绿（本单核心）**：`product.md` 的「查库存不要用 product_search」、`order.md` 的「问加工单不得用 processing_item_query 冒充」、`general.md` 的同族口径、`staff.md` 的「查角色用 role_manage」、`settings.md` 的「不要拿 settings_manage 去查通知」五条删除后 ⇒ 其 true 值分别落在 `product_search` / `processing_item_query` / `employee_manage` / `settings_manage` 的「不要用于」段，且出现在对应 skill 的小抄行里（`test_deleted_handwritten_rule_is_handed_over_by_metadata`）。"
       - "**表退役但真值不留空**：6 个 prompt 文件的表头 `| 场景 | 工具 |` 命中数 = 0；表里点名过的工具仍出现在该 skill 的小抄里（`test_deleted_table_tools_are_all_still_rendered`）。"
       - "**扫描面非空自证**：每个 B 端 skill 至少渲染 1 把工具（共 ≥ 16 条），0 把 ⇒ 判红；空注册表 ⇒ 返回空串（不产出空壳段冒充已渲染）。"
