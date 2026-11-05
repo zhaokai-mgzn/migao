@@ -4,6 +4,9 @@ package com.migao.admin.service;
 import com.migao.admin.dto.agent.AgentOrderCreateRequest;
 import com.migao.admin.dto.OrderContentUpdateRequest;
 import com.migao.admin.dto.OrderCreateRequest;
+import com.migao.admin.exception.BusinessException;
+import com.migao.admin.time.BusinessClock;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -13,7 +16,9 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.math.BigDecimal;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
@@ -73,7 +78,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * 判据 3/4 是**反射 + 源码**双面：反射认签名，源码认「形参声明」这一形态。</p>
  */
 @DisplayName("#8681 P2-1e 第九批：共享部件不许复制第二份（实现点唯一 · 第三参唯一 · 门面不再当参数）")
-class OrderSharedPartsSingleImplementationTest {
+class OrderSharedPartsTest {
 
     /** 主源码根（surefire 的 cwd = {@code backend/admin-api}，与既有契约判据同口径）。 */
     private static final Path MAIN_SRC = Paths.get("src", "main", "java", "com", "migao", "admin");
@@ -321,5 +326,49 @@ class OrderSharedPartsSingleImplementationTest {
         }
         assertThat(found).as("五个入口必须逐个找到（找不到 ⇒ 判据 3 会恒绿）。登记表 = %s", SHARED_PARTS_ENTRIES)
                 .isEqualTo(5);
+    }
+
+    // ─────────────────────────────────────────── 判据 5：本体直测
+
+    /**
+     * 共享部件<b>本体</b>的直测：这个类不只是「被元守卫描述的对象」，它的两个纯逻辑入口
+     * （明细金额闸门 / 安装位置归一的调用契约）本身也钉在这里。
+     *
+     * <p>为什么值得单独测：搬走之后这两条是**所有**写单路径的共同前置，
+     * 而它们原先由 {@code OrderServiceTest} 间接覆盖；载体搬家后如果只留元守卫，
+     * 「闸门话术 / 精度准入」这一面就只剩间接覆盖了。</p>
+     */
+    @Test
+    @DisplayName("判据 5·本体直测：明细闸门（数量 < 1 / 单价 ≤ 0 / 超 2 位小数）话术与拒绝面逐字未变")
+    void assertItemAmountsValidKeepsTheSameRejectionSurface() {
+        OrderSharedParts parts = new OrderSharedParts(null, new ObjectMapper(), null, null, null,
+                new BusinessClock(), null, null, null, null);
+
+        OrderCreateRequest.OrderItemRequest lowQuantity = new OrderCreateRequest.OrderItemRequest();
+        lowQuantity.setQuantity(new BigDecimal("0.5"));
+        lowQuantity.setUnitPrice(BigDecimal.ONE);
+        assertThatThrownBy(() -> parts.assertItemAmountsValid(List.of(lowQuantity)))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("商品明细第 1 项的数量不能小于 1");
+
+        OrderCreateRequest.OrderItemRequest zeroPrice = new OrderCreateRequest.OrderItemRequest();
+        zeroPrice.setQuantity(BigDecimal.ONE);
+        zeroPrice.setUnitPrice(BigDecimal.ZERO);
+        assertThatThrownBy(() -> parts.assertItemAmountsValid(List.of(zeroPrice)))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("商品明细第 1 项的单价必须大于 0");
+
+        OrderCreateRequest.OrderItemRequest threeDecimals = new OrderCreateRequest.OrderItemRequest();
+        threeDecimals.setQuantity(BigDecimal.ONE);
+        threeDecimals.setUnitPrice(new BigDecimal("10.005"));
+        assertThatThrownBy(() -> parts.assertItemAmountsValid(List.of(threeDecimals)))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("商品明细第 1 项的单价");
+
+        OrderCreateRequest.OrderItemRequest legal = new OrderCreateRequest.OrderItemRequest();
+        legal.setQuantity(new BigDecimal("2.5"));
+        legal.setUnitPrice(new BigDecimal("30.00"));
+        parts.assertItemAmountsValid(List.of(legal));
+        assertThat(legal.getUnitPrice()).isEqualByComparingTo("30.00");
     }
 }

@@ -9748,7 +9748,7 @@ cases:
       - "商家的建单（表单 / Agent 两条路径）与待付款内容改单、以及取消订单时的加工单联动作废：明细闸门话术、取价与总额口径、加工费构成落库、安装小区/位置归一、库存前置校验、订单号格式、定价改写审计、批次回补，全部逐字不变；HTTP 路径 / 入参 / 响应类型不变"
     expectations: []
     data_checks:
-      - "判据 1·🔴 实现点登记表双向相等：每个共享部件的特征调用（ProcessingFeeCalculator.attach 加工费构成挂载 / OrderLineCraftFields.materialize 行要素物化 / OrderInstallInfo.normalizeRoom 安装位置归一 / FEE_SOURCE_MANUAL 组合同步 / orderItemMapper.insert 明细落库 / ProductRollAllocation.resolve 整卷回落 / applyRollAllocation 权威方法 / resolveItemSubtotal 小计 / ORDER_SEQ.incrementAndGet 发号器）只允许出现在登记的承载文件里 —— 新增未登记 ⇒ 红并具名，登记了却扫不到 ⇒ 也红（台账只许缩短）；库存前置两个入口登记为「实现点 OrderStockService + 唯一转发 OrderSharedParts」两个文件。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/OrderSharedPartsSingleImplementationTest.java"
+      - "判据 1·🔴 实现点登记表双向相等：每个共享部件的特征调用（ProcessingFeeCalculator.attach 加工费构成挂载 / OrderLineCraftFields.materialize 行要素物化 / OrderInstallInfo.normalizeRoom 安装位置归一 / FEE_SOURCE_MANUAL 组合同步 / orderItemMapper.insert 明细落库 / ProductRollAllocation.resolve 整卷回落 / applyRollAllocation 权威方法 / resolveItemSubtotal 小计 / ORDER_SEQ.incrementAndGet 发号器）只允许出现在登记的承载文件里 —— 新增未登记 ⇒ 红并具名，登记了却扫不到 ⇒ 也红（台账只许缩短）；库存前置两个入口登记为「实现点 OrderStockService + 唯一转发 OrderSharedParts」两个文件。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/OrderSharedPartsTest.java"
       - "判据 2·🔴 入口名不许在别处另起实现：assertItemAmountsValid / priceItems / computeItemsTotal / syncProcessingFeeCombinations / persistOrderItems / normalizeInstallRooms 六个方法的**声明**只允许在 OrderSharedParts 里存在一份（换文件重写一份 ⇒ 红并具名）。generateOrderNo 有意不入本集合：ProcessingOrderService 有一个同名但语义不同的加工单号发号器（JG-…），按名字判会误红 —— 它的唯一性由判据 1 的 ORDER_SEQ.incrementAndGet 调用点钉住。执行点 = 同判据 1"
       - "判据 3·🔴 第三参只能是共享部件且没有兼容重载：createOrder / createOrderForAgent（OrderCreationService）、updatePendingOrderContent（OrderEntityWriteService）、updateOrderStatus / cancelOrder（OrderLifecycleService）五个入口的（返回类型 + 参数表）必须是 OrderSharedParts 版本，且**不存在** OrderService 版本的重载 —— 用反射 getMethod 两个签名各判一次（一个必须有、一个必须 NoSuchMethodException）。执行点 = 同判据 1"
       - "判据 4·🔴 门面实例不许再当参数传：src/main 里不允许出现「形参类型是 OrderService」的方法（本批拆掉的正是这个形态；它一旦回来，共享部件就重新经门面传播）。执行点 = 同判据 1"
@@ -9760,7 +9760,7 @@ cases:
     merge_log: "2026-11-05 新增（issue #8681 的 P2-1e 第九批，**部分交付**：不写关闭关键词）。现取读数（`git show origin/main:backend/admin-api/src/main/java/com/migao/admin/service/OrderService.java | wc -l`）= 1,065 / 3 个公开面。本批是**设计决定**不是搬运：新建 OrderSharedParts（638 行 < 800）承载建单/改单/Agent 三条写单路径共用的明细装配·取价·总额·加工费组合同步·库存前置·单号·定价留痕，连同整卷分配的私有步骤与 batchStock 访问器同址；三个服务的入口第三参从「门面实例」换成「共享部件实例」并迁全部调用点（main 6 处 + test 205 处），**不留**门面兼容重载；同批落地一直登记为未固化的「共享部件不许复制第二份」元守卫（4 条判据 + 2 条判别力自证）。门面 1,065 → 547（净 −518）。⚠️ 与派单边界的偏差（逐条现取后裁定）：applyRollAllocation 与 batchStock() 原写「照旧不搬」，但前者是 persistOrderItems 的**唯一私有步骤**（搬明细装配而不搬它就得在两类之间架回调）、后者是生命周期第三参的**唯一用法**（第三参不换成共享部件就完不成派单②）⇒ 二者随族同址；权威判据的五条断言一字未改，只把载体文件常量从 OrderService.java 改到 OrderSharedParts.java（载体搬家同批登记）。全量读数见 PR body。"
     traces:
       tests:
-        - "backend/admin-api/src/test/java/com/migao/admin/service/OrderSharedPartsSingleImplementationTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/OrderSharedPartsTest.java"
         - "backend/admin-api/src/test/java/com/migao/admin/service/OrderRollAllocationAuthorityTest.java"
         - "backend/admin-api/src/test/java/com/migao/admin/service/OrderLifecycleSliceSourceIdentityTest.java"
         - "backend/admin-api/src/test/java/com/migao/admin/service/OrderServiceTest.java"
