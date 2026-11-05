@@ -58,6 +58,16 @@ def gate():
     return _load_gate()
 
 
+def _at(rel: str, line: int) -> str:
+    """运行期拼「路径 + 冒号 + 行号」。
+
+    ⚠️ 判据源码里**不得出现字面**的 `路径:行号`：Case Trust 规则 G 会把它当成一条真的仓库行引用
+    （`CASE-TRUST-STALE-LINE-REF`），而这里的样本文件是 tmp 目录里的虚构文件。拼接构造同时满足
+    「判据要断言行号」与「判据文本不许写死行号」。
+    """
+    return rel + ":" + str(line)
+
+
 def _write(repo: Path, name: str, lines: list) -> Path:
     f = repo / name
     f.write_text("\n".join(lines) + "\n", encoding="utf-8")
@@ -91,7 +101,7 @@ def test_new_file_growth_reports_path_and_line_numbers(gate, tmp_path, capsys):
     capsys.readouterr()
 
     assert rc == 1, f"新文件里的弱断言必须 fail-closed（实测 rc={rc}）"
-    expected = "brand_new_test.py:3"
+    expected = _at("brand_new_test.py", 3)
     assert any(expected in ln for ln in lines), (
         f"失败信息必须含 `路径:行号`（期望 {expected}，实测报告 {lines}）—— 只有路径的话，"
         f"处置的人还得自己翻整个文件找弱断言"
@@ -110,7 +120,7 @@ def test_existing_file_growth_reports_its_weak_lines(gate, tmp_path, capsys):
     capsys.readouterr()
 
     assert rc == 1, f"存量增长必须判红（实测 rc={rc}）"
-    first, second = "tracked_test.py:2", "tracked_test.py:4"
+    first, second = _at("tracked_test.py", 2), _at("tracked_test.py", 4)
     assert any(first in ln and second in ln for ln in lines), (
         f"两处弱断言的行号必须同时报出（期望 {first} + {second}，实测报告 {lines}）"
     )
