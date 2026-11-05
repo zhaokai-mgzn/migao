@@ -58,6 +58,13 @@ class OrderCreateRequiredFieldsTest {
     @Mock
     private OrderService orderService;
 
+    /**
+     * 建单编排的实现点（issue #8681，P2-1e 第五批）：控制器直连实现点，门面的 {@code createOrder} 转发已删除；
+     * 第三参仍是门面实例 ⇒ 断言用 {@code eq(orderService)} 钉住「传的是同一份」。
+     */
+    @Mock
+    private com.migao.admin.service.OrderCreationService orderCreationService;
+
     @InjectMocks
     private OrderController orderController;
 
@@ -107,7 +114,7 @@ class OrderCreateRequiredFieldsTest {
                 .andExpect(jsonPath("$.error.details[0].message").value(expectedMessage));
 
         // 闸门必须**在调 service 之前**拦住（落库 = 已经晚了）
-        verifyNoInteractions(orderService);
+        verifyNoInteractions(orderService, orderCreationService);
     }
 
     @Test
@@ -139,7 +146,7 @@ class OrderCreateRequiredFieldsTest {
                 .andExpect(status().isUnprocessableEntity())
                 .andExpect(jsonPath("$.error.details[0].message").value("常用物流公司不能为空"));
 
-        verifyNoInteractions(orderService);
+        verifyNoInteractions(orderService, orderCreationService);
     }
 
     @Test
@@ -149,7 +156,7 @@ class OrderCreateRequiredFieldsTest {
         response.setId("a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6");
         response.setOrderNo("ORD20261001001");
         response.setStatus("pending");
-        when(orderService.createOrder(any(OrderCreateRequest.class), eq(1L))).thenReturn(response);
+        when(orderCreationService.createOrder(any(OrderCreateRequest.class), eq(1L), eq(orderService))).thenReturn(response);
 
         mockMvc.perform(post(CREATE).contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(validPayload())))
@@ -157,6 +164,6 @@ class OrderCreateRequiredFieldsTest {
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data.orderNo").value("ORD20261001001"));
 
-        verify(orderService, times(1)).createOrder(any(OrderCreateRequest.class), eq(1L));
+        verify(orderCreationService, times(1)).createOrder(any(OrderCreateRequest.class), eq(1L), eq(orderService));
     }
 }

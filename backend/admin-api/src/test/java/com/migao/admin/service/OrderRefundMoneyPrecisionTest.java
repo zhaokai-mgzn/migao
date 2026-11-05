@@ -153,7 +153,7 @@ class OrderRefundMoneyPrecisionTest {
                 .build();
 
         mockMvc = MockMvcBuilders
-                .standaloneSetup(new OrderController(orderService, null, orderLogisticsService, orderShipmentService, null, null))
+                .standaloneSetup(new OrderController(orderService, null, orderLogisticsService, orderShipmentService, null, null, null, null))
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .build();
     }
