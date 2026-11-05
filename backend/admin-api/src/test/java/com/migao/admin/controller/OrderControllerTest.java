@@ -142,20 +142,20 @@ class OrderControllerTest extends BaseControllerTest {
         @Test
         @DisplayName("确认收款成功 -> 200")
         void confirmPayment() throws Exception {
-            doNothing().when(orderService).confirmPayment(ORDER_ID);
+            doNothing().when(orderLifecycleService).confirmPayment(ORDER_ID);
 
             mockMvc.perform(put(BASE + "/" + ORDER_ID + "/payment"))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.success").value(true));
 
-            verify(orderService).confirmPayment(ORDER_ID);
+            verify(orderLifecycleService).confirmPayment(ORDER_ID);
         }
 
         @Test
         @DisplayName("订单不存在时确认收款 -> 404")
         void confirmPaymentNotFound() throws Exception {
             doThrow(new BusinessException("NOT_FOUND", "订单不存在", 404))
-                    .when(orderService).confirmPayment("nonexistent");
+                    .when(orderLifecycleService).confirmPayment("nonexistent");
 
             mockMvc.perform(put(BASE + "/nonexistent/payment"))
                     .andExpect(status().isNotFound());
@@ -171,18 +171,18 @@ class OrderControllerTest extends BaseControllerTest {
         @Test
         @DisplayName("退款成功 -> 200")
         void refund() throws Exception {
-            doNothing().when(orderService).refundOrder(eq(ORDER_ID), isNull(), isNull());
+            doNothing().when(orderLifecycleService).refundOrder(eq(ORDER_ID), isNull(), isNull());
 
             mockMvc.perform(put(BASE + "/" + ORDER_ID + "/refund"))
                     .andExpect(status().isOk());
 
-            verify(orderService).refundOrder(eq(ORDER_ID), isNull(), isNull());
+            verify(orderLifecycleService).refundOrder(eq(ORDER_ID), isNull(), isNull());
         }
 
         @Test
         @DisplayName("退款成功 - 携带金额与原因 -> 200")
         void refundWithAmountAndReason() throws Exception {
-            doNothing().when(orderService).refundOrder(eq(ORDER_ID),
+            doNothing().when(orderLifecycleService).refundOrder(eq(ORDER_ID),
                     argThat(bd -> bd != null && bd.compareTo(new BigDecimal("100.00")) == 0),
                     eq("部分退款"));
 
@@ -191,7 +191,7 @@ class OrderControllerTest extends BaseControllerTest {
                             .content("{\"refund_amount\": 100.00, \"refund_reason\": \"部分退款\"}"))
                     .andExpect(status().isOk());
 
-            verify(orderService).refundOrder(eq(ORDER_ID),
+            verify(orderLifecycleService).refundOrder(eq(ORDER_ID),
                     argThat(bd -> bd != null && bd.compareTo(new BigDecimal("100.00")) == 0),
                     eq("部分退款"));
         }
@@ -200,7 +200,7 @@ class OrderControllerTest extends BaseControllerTest {
         @DisplayName("非可退款状态退款 -> 400")
         void refundInvalidStatus() throws Exception {
             doThrow(new BusinessException("INVALID_STATUS", "当前状态不允许退款", 400))
-                    .when(orderService).refundOrder(eq(ORDER_ID), isNull(), isNull());
+                    .when(orderLifecycleService).refundOrder(eq(ORDER_ID), isNull(), isNull());
 
             mockMvc.perform(put(BASE + "/" + ORDER_ID + "/refund"))
                     .andExpect(status().isBadRequest());

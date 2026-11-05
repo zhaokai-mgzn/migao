@@ -225,7 +225,9 @@ class MerchantShipmentRouteTest {
 
     /** 用**指定**的建单写面组装一个真控制器 + standalone MockMvc（真控制器 + 真 OrderService）。 */
     private MockMvc mockMvcWith(OrderShipmentService shipmentService) {
-        ProductionController controller = new ProductionController(null, null, null, null, null, orderService);
+        // issue #8681 第六批：发货端点直连生命周期实现点（第 6 参）
+        ProductionController controller = new ProductionController(null, null, null, null, null,
+                ReflectionTestUtils.invokeMethod(orderService, "lifecycleService"));
         ReflectionTestUtils.setField(controller, "clientRequestIdService", clientRequestIdService);
         ReflectionTestUtils.setField(controller, "orderShipmentService", shipmentService);
         ReflectionTestUtils.setField(controller, "orderMapper", orderMapper);

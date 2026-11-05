@@ -160,6 +160,12 @@ class ProductionControllerTest {
     private com.migao.admin.mapper.ProcessingFeeCombinationVersionMapper processingFeeCombinationVersionMapper;
     @Mock
     private OrderService orderService;
+    /**
+     * 生命周期族的实现点（issue #8681，P2-1e 第六批）：门面的 {@code shipWithLogistics} 转发已退休
+     * ⇒ /ship 端点直连实现点（控制器第 6 个构造参数），本类的桩与验证跟着换到它身上。
+     */
+    @Mock
+    private com.migao.admin.service.OrderLifecycleService orderLifecycleService;
     /** 未定价实例补价动作账（V94，issue #4709 C）。 */
     @Mock
     private com.migao.admin.mapper.ProductionInstanceRepricingLogMapper repricingLogMapper;
@@ -212,7 +218,7 @@ class ProductionControllerTest {
                         processingFeeCombinationMapper, processingFeeCombinationVersionMapper,
                         processingItemMapper, feeQueryService);
         ProductionController controller = new ProductionController(productionService, queryService, commandService,
-                routingCommandService, processingOrderService, orderService);
+                routingCommandService, processingOrderService, orderLifecycleService);
         // issue #6157：/ship 的幂等键 = 字段注入（不动既有 6 参构造）⇒ 这里显式装配同一个 @Mock
         org.springframework.test.util.ReflectionTestUtils.setField(controller,
                 "clientRequestIdService", clientRequestIdService);
@@ -2289,7 +2295,7 @@ class ProductionControllerTest {
     @Test
     @DisplayName("🔴 同 X-Client-Request-Id 第二次 ⇒ 跳过执行、回放首次结果（运单号不被覆写）")
     void sameClientRequestIdReplaysWithoutSecondSideEffect() throws Exception {
-        when(orderService.shipWithLogistics(eq(ORDER_ID), eq("SF-FIRST-7777"), eq("顺丰"), any()))
+        when(orderLifecycleService.shipWithLogistics(eq(ORDER_ID), eq("SF-FIRST-7777"), eq("顺丰"), any()))
                 .thenReturn(shipOutcome(true, "order_id", ORDER_ID, "status", "shipped",
                         "tracking_no", "SF-FIRST-7777", "logistics_company", "顺丰"));
         String url = "/api/admin/production/orders/" + ORDER_ID + "/ship";
@@ -2319,14 +2325,14 @@ class ProductionControllerTest {
                 .andExpect(jsonPath("$.data.tracking_no").value("SF-FIRST-7777"))
                 .andExpect(jsonPath("$.data.replayed").value(true));
         // 第二次**零副作用**：不再调一次服务（= 不再 upsert 物流 / 不再流转状态）
-        verify(orderService, times(1)).shipWithLogistics(any(), any(), any(), any());
+        verify(orderLifecycleService, times(1)).shipWithLogistics(any(), any(), any(), any());
         verify(clientRequestIdService, never()).discard(any(), any());
     }
 
     @Test
     @DisplayName("🔴 首次执行失败 ⇒ 释放占位（否则该键被永久占死，重试全被误判为「重复」）")
     void failedShipDiscardsPlaceholder() throws Exception {
-        when(orderService.shipWithLogistics(any(), any(), any(), any()))
+        when(orderLifecycleService.shipWithLogistics(any(), any(), any(), any()))
                 .thenThrow(com.migao.admin.exception.BusinessException.validationError("货运单号不能为空"));
 
         mockMvc.perform(post("/api/admin/production/orders/" + ORDER_ID + "/ship")
@@ -2340,7 +2346,7 @@ class ProductionControllerTest {
     @Test
     @DisplayName("🔴 无幂等键 ⇒ 老客户端路径不变（不 claim 也不回放，正常发货）")
     void absentClientRequestIdKeepsLegacyPath() throws Exception {
-        when(orderService.shipWithLogistics(any(), any(), any(), any()))
+        when(orderLifecycleService.shipWithLogistics(any(), any(), any(), any()))
                 .thenReturn(shipOutcome(true, "order_id", ORDER_ID, "status", "shipped", "tracking_no", "SF-9"));
 
         mockMvc.perform(post("/api/admin/production/orders/" + ORDER_ID + "/ship")

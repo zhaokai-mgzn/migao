@@ -400,7 +400,7 @@ class ShipmentInvariantGuardTest {
         // ③ 把第③步（建单）挪到第②步之前 ⇒ C9 红（写序契约被破坏）
         String body = shipAtomicBody(source);
         String reordered = source.replace(body, body
-                .replace("orderService.shipWithLogistics(", "ZZZ_PLACEHOLDER("));
+                .replace("orderLifecycleService.shipWithLogistics(", "ZZZ_PLACEHOLDER("));
         assertThat(writeOrderIsIntact(reordered))
                 .as("把②摘掉/改名 ⇒ C9 必须判红（写序不再齐全）").isFalse();
 

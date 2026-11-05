@@ -270,7 +270,7 @@ class OrderStockSkuKeyFamilyTest {
         // when: 下单成功 → 确认支付
         OrderDetailResponse created = orderService.createOrderForAgent(agentRequest(agentSpecInfo(), 2), 1L);
         assertThat(created).isNotNull();
-        orderService.confirmPayment(ORDER_ID);
+        lifecycle().confirmPayment(ORDER_ID);
 
         // then: 效果层证据三件套 —— 库存真的减了、销量真的涨了、台账真的落了行
         // （修前这三处一起静默跳过：订单成交但库存不动/销量不涨/台账无行 ⇒ 红）
@@ -293,7 +293,7 @@ class OrderStockSkuKeyFamilyTest {
 
         orderService.createOrderForAgent(agentRequest(agentSpecInfo(), 2), 1L);
         assertThat(captured[0]).isNotNull();
-        orderService.cancelOrder(ORDER_ID, "客户不要了");
+        lifecycle().cancelOrder(ORDER_ID, "客户不要了", orderService);
 
         verify(productSkuMapper).restoreStock(SKU_ID, BigDecimal.valueOf(2));
         verify(productSkuMapper).decreaseSalesCount(SKU_ID, BigDecimal.valueOf(2));
@@ -333,7 +333,7 @@ class OrderStockSkuKeyFamilyTest {
         when(productSkuMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
 
         assertThat(captured[0]).isNotNull();
-        assertThatThrownBy(() -> orderService.confirmPayment(ORDER_ID))
+        assertThatThrownBy(() -> lifecycle().confirmPayment(ORDER_ID))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("SKU");
         verify(productSkuMapper, never()).deductStock(anyLong(), any(), any());
@@ -359,7 +359,7 @@ class OrderStockSkuKeyFamilyTest {
 
         OrderDetailResponse created = orderService.createOrderForAgent(agentRequest(processingOnlyInfo(), 2), 1L);
         assertThat(created).as("无 SKU 身份的合法订单不得被拒").isNotNull();
-        orderService.confirmPayment(ORDER_ID);
+        lifecycle().confirmPayment(ORDER_ID);
 
         // 合法跳过：不猜 SKU（不扣减、不记 SKU 销量、不落台账行）——这是设计，不是缺陷
         verify(productSkuMapper, never()).deductStock(anyLong(), any(), any());
@@ -369,4 +369,13 @@ class OrderStockSkuKeyFamilyTest {
         // 但商品级销量照记（订单本身是有效的）
         verify(productMapper).increaseSales(eq(PRODUCT_ID), eq(BigDecimal.valueOf(2)), any(BigDecimal.class));
     }
+
+    /**
+     * 门面**自己懒构造的那一份**生命周期实现点（issue #8681，P2-1e 第六批）：换的只是「谁被驱动」，
+     * 同一条调用链、同一份协作者（Mapper / 库存 / 流水 / 时钟都是门面已装配的那几个）。
+     */
+    private OrderLifecycleService lifecycle() {
+        return ReflectionTestUtils.invokeMethod(orderService, "lifecycleService");
+    }
+
 }

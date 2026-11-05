@@ -2076,7 +2076,7 @@ public class ProcessingOrderService {
         Order order = p.order();
         boolean orderLinked = OrderStatusTransitions.CONFIRMED.equals(order.getStatus());
         if (orderLinked) {
-            orderService.updateOrderStatus(order.getId(), OrderStatusTransitions.PRODUCING);
+            orderService.lifecycleService().updateOrderStatus(order.getId(), OrderStatusTransitions.PRODUCING, orderService);
         }
         try {
             try {
@@ -2108,7 +2108,7 @@ public class ProcessingOrderService {
             // 让商家刷新后能原样重派。回退自身失败只记 WARN（不掩盖主异常，也不能把主异常吞掉）。
             if (orderLinked) {
                 try {
-                    orderService.revertProducingToConfirmed(order.getId(), "派单落库失败，订单状态回退");
+                    orderService.lifecycleService().revertProducingToConfirmed(order.getId(), "派单落库失败，订单状态回退");
                 } catch (Exception revertErr) {
                     log.warn("派单落库失败且订单状态回退失败: orderId={}, err={}",
                             order.getId(), revertErr.getMessage());
@@ -4111,7 +4111,7 @@ public class ProcessingOrderService {
         if ("issue".equals(action)) {
             Order order = orderMapper.selectById(po.getOrderId());
             if (order != null && OrderStatusTransitions.CONFIRMED.equals(order.getStatus())) {
-                orderService.updateOrderStatus(order.getId(), OrderStatusTransitions.PRODUCING);
+                orderService.lifecycleService().updateOrderStatus(order.getId(), OrderStatusTransitions.PRODUCING, orderService);
                 orderLinked = true;
             }
         }
@@ -4132,7 +4132,7 @@ public class ProcessingOrderService {
         } catch (Exception e) {
             if (orderLinked) {
                 try {
-                    orderService.revertProducingToConfirmed(po.getOrderId(), "加工单发加工落库失败，订单状态回退");
+                    orderService.lifecycleService().revertProducingToConfirmed(po.getOrderId(), "加工单发加工落库失败，订单状态回退");
                 } catch (Exception revertErr) {
                     log.warn("发加工落库失败且订单状态回退失败: orderId={}, err={}",
                             po.getOrderId(), revertErr.getMessage());
@@ -4144,7 +4144,7 @@ public class ProcessingOrderService {
         if ("cancel".equals(action)) {
             Order order = orderMapper.selectById(po.getOrderId());
             if (order != null && OrderStatusTransitions.PRODUCING.equals(order.getStatus())) {
-                orderService.revertProducingToConfirmed(order.getId(),
+                orderService.lifecycleService().revertProducingToConfirmed(order.getId(),
                         "加工单 " + po.getProcessingOrderNo() + " 取消，订单回退已确认");
                 log.info("加工单取消联动回退订单: po={}, orderId={}", po.getProcessingOrderNo(), order.getId());
             }

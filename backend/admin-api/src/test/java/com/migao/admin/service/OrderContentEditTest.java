@@ -453,7 +453,7 @@ class OrderContentEditTest {
                                 List.of(Map.of("id", "p1", "name", "韩褶", "quantity", new BigDecimal("1"))))))
                         .build());
 
-        assertThatThrownBy(() -> orderService.updateOrderStatus(ORDER_ID, "shipped"))
+        assertThatThrownBy(() -> lifecycle().updateOrderStatus(ORDER_ID, "shipped", orderService))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("与加工单快照不一致");
     }
@@ -563,4 +563,13 @@ class OrderContentEditTest {
                 .map(BigDecimal.class::cast)
                 .toList();
     }
+
+    /**
+     * 门面**自己懒构造的那一份**生命周期实现点（issue #8681，P2-1e 第六批）：换的只是「谁被驱动」，
+     * 同一条调用链、同一份协作者（Mapper / 库存 / 流水 / 时钟都是门面已装配的那几个）。
+     */
+    private OrderLifecycleService lifecycle() {
+        return ReflectionTestUtils.invokeMethod(orderService, "lifecycleService");
+    }
+
 }

@@ -156,7 +156,7 @@ class OrderServiceSliceWiringTest {
         when(orderMapper.selectById("order-8191")).thenReturn(order);
         when(orderMapper.update(any(), any())).thenReturn(1);
 
-        orderService.confirmPayment("order-8191");
+        lifecycle().confirmPayment("order-8191");
 
         verify(orderStockService).validateStockSufficient(order);
         verify(orderStockService).deductStockAndIncreaseSales("order-8191");
@@ -174,7 +174,7 @@ class OrderServiceSliceWiringTest {
         when(processingOrderMapper.selectActiveByOrderId(any(), any())).thenReturn(null);
         when(orderFeeSupport.effectiveActualAmount(order)).thenReturn(new BigDecimal("100.00"));
 
-        orderService.cancelOrder("order-8191", "客户不要了");
+        lifecycle().cancelOrder("order-8191", "客户不要了", orderService);
 
         verify(orderStockService).restoreStockAndDecreaseSales("order-8191");
         verify(orderStockService, never()).deductStockAndIncreaseSales(anyString());
@@ -190,7 +190,7 @@ class OrderServiceSliceWiringTest {
         when(orderMapper.update(any(), any())).thenReturn(1);
         when(orderFeeSupport.effectiveActualAmount(order)).thenReturn(new BigDecimal("100.00"));
 
-        orderService.refundOrder("order-8191", new BigDecimal("30.00"), "少发一件");
+        lifecycle().refundOrder("order-8191", new BigDecimal("30.00"), "少发一件");
 
         verify(orderFeeSupport).effectiveActualAmount(order);
         verify(orderFeeSupport).recordFinanceTransaction(
@@ -209,4 +209,13 @@ class OrderServiceSliceWiringTest {
         assertThat(method.getReturnType().getName()).isEqualTo("void");
         assertThat(method.getDeclaringClass().getName()).isEqualTo("com.migao.admin.service.OrderService");
     }
+
+    /**
+     * 门面**自己懒构造的那一份**生命周期实现点（issue #8681，P2-1e 第六批）：换的只是「谁被驱动」，
+     * 同一条调用链、同一份协作者（Mapper / 库存 / 流水 / 时钟都是门面已装配的那几个）。
+     */
+    private OrderLifecycleService lifecycle() {
+        return ReflectionTestUtils.invokeMethod(orderService, "lifecycleService");
+    }
+
 }

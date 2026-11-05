@@ -64,7 +64,10 @@ import java.util.stream.Collectors;
  * （看管见 {@code OrderFacadeForwarderRetirementTest}）。已退休：{@code existsForCurrentTenant} /
  * {@code resolveOrderId} / {@code isProcessingReadyForShip} / {@code resolveShipperName}（第一批）、
  * {@code getMyOrderPage}（第二批）、{@code getOrderPage} / {@code getOrderById}（第四批）、
- * {@code createOrder}（第五批：订单控制器直连 {@link OrderCreationService}，经 {@code this} 复用本类共享部件）。</p>
+ * {@code createOrder}（第五批：订单控制器直连 {@link OrderCreationService}，经 {@code this} 复用本类共享部件）、
+ * 生命周期族 {@code updateOrderStatus} / {@code confirmPayment} / {@code cancelOrder} / {@code refundOrder} /
+ * {@code shipWithLogistics}（两个重载）/ {@code revertProducingToConfirmed}（第六批：订单 / 生产控制器与
+ * 加工单服务直连 {@link OrderLifecycleService}；门面不再声明这 7 个入口）。</p>
  *
  * <p><b>包内可见的共享部件</b>（issue #8191，P2-1b）：建单与改单（{@code updatePendingOrderContent}）/
  * 确认支付共用同一份明细装配、取价、总额与库存前置校验（{@code assertItemAmountsValid} /
@@ -178,7 +181,7 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
     /**
      * 批次消耗台账（V116，issue #5145 阶段 1）：**订单取消自动作废加工单**这条路上的批次回补。
      *
-     * <p>为什么这里必须有它：{@link #cancelOrder} 对 {@code generated} 态加工单是**直接
+     * <p>为什么这里必须有它：{@link OrderLifecycleService#cancelOrder} 对 {@code generated} 态加工单是**直接
      * {@code updateById} 置 cancelled**、<b>绕过</b> {@code ProcessingOrderService.updateStatus}
      * —— 派工扣减的对称回补挂在后者。不在这里接同一句话，「订单取消 → 加工单自动作废」这一条路
      * 就成了**只扣不回补**的单向账（判据「对称回补」在这条路上直接不成立）。</p>
@@ -343,7 +346,12 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
      * 没有该 bean ⇒ 用本类已装配的协作者就地构造一个（同一份 Mapper / 服务 / 时钟实例，
      * 并把测试改写过的可选协作者一并带过去）⇒ 行为与拆分前逐字一致。
      */
-    private OrderLifecycleService lifecycleService() {
+    /**
+     * 包内可见（issue #8681，P2-1e 第六批）：加工单服务要直连生命周期实现点，而它是**冻结面**
+     * （{@code tests/unit_ci_workflows/loc_freeze_ledger.json} 的 4,402 行上限，一行都不许涨）
+     * ⇒ 经本访问器取**同一份**实现点，不在那个文件里新增字段。
+     */
+    OrderLifecycleService lifecycleService() {
         OrderLifecycleService service = this.orderLifecycleService;
         if (service == null) {
             service = new OrderLifecycleService(orderMapper, orderItemMapper, orderLogisticsMapper,
@@ -783,7 +791,7 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
      * </ol>
      *
      * <p>⚠️ <b>不回滚库存这件事的前提**在本方法内被显式保证**</b>：状态闸门只放 {@code pending}，
-     * 而扣减只发生在 {@code pending → confirmed}（{@link #confirmPayment}）⇒ 走到这里时该单一定没扣过。
+     * 而扣减只发生在 {@code pending → confirmed}（{@link OrderLifecycleService#confirmPayment}）⇒ 走到这里时该单一定没扣过。
      * 若将来放宽可编辑状态，回滚/重算库存必须同批补上（本注释就是那件事的坐标）。</p>
      */
     @Transactional(rollbackFor = Exception.class)
@@ -917,13 +925,6 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
                 operator != null ? operator.displayName() : null,
                 "update_content", "order", null,
                 order.getId(), order.getOrderNo(), details, null, null);
-    }
-
-    /**
-     * 更新订单状态（issue #8191，P2-1d）：实现点已搬到 {@link OrderLifecycleService}，本方法只留门面委托。
-     */
-    public void updateOrderStatus(String id, String status) {
-        lifecycleService().updateOrderStatus(id, status, this);
     }
 
     /**
@@ -1217,13 +1218,6 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         return OrderShipGuard.loadOrderItems(orderItemMapper, orderId, tenantId);
     }
 
-    /**
-     * 加工单取消联动（issue #8191，P2-1d）：实现点已搬到 {@link OrderLifecycleService}，本方法只留门面委托。
-     */
-    public void revertProducingToConfirmed(String orderId, String reason) {
-        lifecycleService().revertProducingToConfirmed(orderId, reason);
-    }
-
     private BigDecimal toBigDecimal(Object value) {
         return OrderShipGuard.toBigDecimal(value);
     }
@@ -1259,13 +1253,6 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
     // ==================== 订单统计与跟进状态 ====================
 
     /**
-     * 确认支付（issue #8191，P2-1d）：实现点已搬到 {@link OrderLifecycleService}，本方法只留门面委托。
-     */
-    public void confirmPayment(String id) {
-        lifecycleService().confirmPayment(id);
-    }
-
-    /**
      * validateStockSufficientForRequest（issue #8191，P2-1c）：实现点已搬到 {@link StockService}，本方法只留门面委托。
      */
     void validateStockSufficientForRequest(OrderCreateRequest request, String actionLabel) {
@@ -1277,20 +1264,6 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
      */
     private void validateStockSufficientForItems(List<OrderItem> items, String actionLabel) {
         stockService().validateStockSufficientForItems(items, actionLabel);
-    }
-
-    /**
-     * 取消/关闭订单（issue #8191，P2-1d）：实现点已搬到 {@link OrderLifecycleService}，本方法只留门面委托。
-     */
-    public void cancelOrder(String id, String closeReason) {
-        lifecycleService().cancelOrder(id, closeReason, this);
-    }
-
-    /**
-     * 退款（issue #8191，P2-1d）：实现点已搬到 {@link OrderLifecycleService}，本方法只留门面委托。
-     */
-    public void refundOrder(String id, BigDecimal refundAmount, String refundReason) {
-        lifecycleService().refundOrder(id, refundAmount, refundReason);
     }
 
     /**
@@ -1479,19 +1452,19 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
                 if (!StringUtils.hasText(request.getStatus())) {
                     throw BusinessException.validationError("status 不能为空");
                 }
-                updateOrderStatus(resolvedId, request.getStatus());
+                lifecycleService().updateOrderStatus(resolvedId, request.getStatus(), this);
                 yield queryService().getOrderById(resolvedId);
             }
             case "confirm_payment" -> {
-                confirmPayment(resolvedId);
+                lifecycleService().confirmPayment(resolvedId);
                 yield queryService().getOrderById(resolvedId);
             }
             case "cancel" -> {
-                cancelOrder(resolvedId, request.getCancelReason());
+                lifecycleService().cancelOrder(resolvedId, request.getCancelReason(), this);
                 yield queryService().getOrderById(resolvedId);
             }
             case "refund" -> {
-                refundOrder(resolvedId, request.getRefundAmount(), request.getRefundReason());
+                lifecycleService().refundOrder(resolvedId, request.getRefundAmount(), request.getRefundReason());
                 yield queryService().getOrderById(resolvedId);
             }
             case "update_logistics" -> {
@@ -1510,22 +1483,6 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
             default -> throw BusinessException.validationError(
                     "不支持的操作类型: " + action + "，可选: update_status/update_logistics/confirm_payment/cancel/refund");
         };
-    }
-
-    /**
-     * 发货（issue #8191，P2-1d）：实现点已搬到 {@link OrderLifecycleService}，本方法只留门面委托。
-     * 公开类型 {@link OrderShipmentOutcome} 与签名**逐字保留**（调用方零改动）。
-     */
-    public OrderShipmentOutcome shipWithLogistics(String orderId, String trackingNo, String logisticsCompany) {
-        return lifecycleService().shipWithLogistics(orderId, trackingNo, logisticsCompany);
-    }
-
-    /**
-     * 发货（issue #8191，P2-1d）：实现点已搬到 {@link OrderLifecycleService}，本方法只留门面委托。
-     */
-    public OrderShipmentOutcome shipWithLogistics(String orderId, String trackingNo, String logisticsCompany,
-                                                  OrderLogisticsWriter.ShippingDetails details) {
-        return lifecycleService().shipWithLogistics(orderId, trackingNo, logisticsCompany, details);
     }
 
     /**

@@ -105,6 +105,10 @@ class ProcessingOrderRouteSourceTest {
 
     @BeforeEach
     void setUp() {
+        // issue #8681 第六批：订单状态流转经门面的包内访问器取生命周期实现点。改前门面是替身
+        // ⇒ 那次流转同样是空动作；本类只判路线来源，给**等价替身**保持行为不变。
+        org.mockito.Mockito.lenient().when(orderService.lifecycleService())
+                .thenReturn(org.mockito.Mockito.mock(OrderLifecycleService.class));
         TenantContext.setTenantId(TENANT);
         MybatisConfiguration conf = new MybatisConfiguration();
         MapperBuilderAssistant assistant = new MapperBuilderAssistant(conf, "");

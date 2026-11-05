@@ -6,6 +6,7 @@ import com.migao.admin.security.RequirePermission;
 import com.migao.admin.worker.WorkerIdentity;
 import com.migao.admin.service.ClientRequestIdService;
 import com.migao.admin.service.OrderLogisticsWriter;
+import com.migao.admin.service.OrderLifecycleService;
 import com.migao.admin.service.OrderService;
 import com.migao.admin.service.OrderShipmentService;
 import com.migao.admin.service.OrderStatusTransitions;
@@ -95,7 +96,8 @@ public class ProductionController {
     private final ProductionOperationCommandService productionOperationCommandService;
     private final ProductionRoutingCommandService productionRoutingCommandService;
     private final ProcessingOrderService processingOrderService;
-    private final OrderService orderService;
+    /** 生命周期族的实现点（issue #8681，P2-1e 第六批）：门面 {@code shipWithLogistics} 转发已退休，本控制器直连实现点。 */
+    private final OrderLifecycleService orderLifecycleService;
 
     /**
      * 幂等键单一实现（issue #6157）：本控制器的 {@code /ship} 与工人侧三条写面**共用**它
@@ -262,7 +264,7 @@ public class ProductionController {
      *   <li><b>「无需物流」成立</b>：{@code shippingMethod=none} ⇒ 运单号与承运商都允许为空
      *       （都落空串）。其余形态沿用原有的「运单号必填 + 承运商必填」两条校验
      *       （工人扫码端口径：「没有单号的发货在车间不可核对」）—— 判定本体在
-     *       {@link OrderService#shipWithLogistics(String, String, String, OrderLogisticsWriter.ShippingDetails)}，
+     *       {@link OrderLifecycleService#shipWithLogistics(String, String, String, OrderLogisticsWriter.ShippingDetails)}，
      *       本端点与状态端点**同一份**，不复制。</li>
      * </ul></p>
      *
@@ -279,7 +281,7 @@ public class ProductionController {
      * （客服 · 运营 · 销售 · 财务）⇒ 有效权限集合**逐值不变**。</p>
      *
      * <p><b>守卫不复制</b>：含加工项订单必须有 completed 加工单这条判定在
-     * {@link OrderService#shipWithLogistics} 内部（与 {@code updateOrderStatus} 路径**同一份**），
+     * {@link OrderLifecycleService#shipWithLogistics} 内部（与 {@code updateOrderStatus} 路径**同一份**），
      * 本端点只做转发。</p>
      *
      * <p>🔴 <b>幂等（issue #6157）</b>：本端点此前**完全不认</b> {@code X-Client-Request-Id}
@@ -291,7 +293,7 @@ public class ProductionController {
      *
      * <p>🔴 <b>写序与事务边界是契约的一部分（issue #6181）</b>：本端点是商家发货**整条路**的事务 owner，
      * 三步 = ① {@link #assertShippableOrder}（订单存在 / 归属本租户 / 处于可发货状态 —— <b>零写</b>）
-     * ② {@link OrderService#shipWithLogistics}（记物流 + 原子流转 {@code shipped}）
+     * ② {@link OrderLifecycleService#shipWithLogistics}（记物流 + 原子流转 {@code shipped}）
      * ③ {@link OrderShipmentService#recordMerchantShipment}（落可查的发货单，数量 = 未发余量，
      * 且**由 ② 的返回值显式告知本次是否真的流转过**）。</p>
      * <p>⚠️ <b>为什么本方法必须 {@code @Transactional}</b>：② 与 ③ 若各自成事务，③ 抛错时 ② 已提交
@@ -340,7 +342,7 @@ public class ProductionController {
         //     + 发货方式白名单 fail-closed —— 同样在任何写之前。
         OrderLogisticsWriter.ShippingDetails details = assertShipBody(body);
         // ② 记物流 + 原子流转 shipped（加工单守卫在服务内部，与状态端点同一份）
-        OrderService.OrderShipmentOutcome outcome = orderService.shipWithLogistics(orderId,
+        OrderService.OrderShipmentOutcome outcome = orderLifecycleService.shipWithLogistics(orderId,
                 body == null ? null : body.get("trackingNo"),
                 body == null ? null : body.get("logisticsCompany"),
                 details);
@@ -372,7 +374,7 @@ public class ProductionController {
      *   <li>{@code shippingMethod} 非空且 ∉ {logistics, none} ⇒ 422（缺席/空串不拒绝 ——
      *       「没这句话」≠「说了个坏值」，老调用方只发前两个键）；</li>
      *   <li>「物流发货 ⇒ 运单号必填」的**收窄**（{@code shippingMethod=none} + 空运单号合法）
-     *       在 {@code OrderService.shipWithLogistics} 里，与状态端点**同一份**判定，此处不复制。</li>
+     *       在 {@code OrderLifecycleService.shipWithLogistics} 里，与状态端点**同一份**判定，此处不复制。</li>
      * </ul>
      *
      * @return 交给服务层的三个可选字段（一次构造，避免调用点漏传其中一个 = 静默不覆盖）
@@ -401,7 +403,7 @@ public class ProductionController {
      * 但「拒绝 = 零写」这条口径就不再有结构保证。加工单守卫 / 物流 / 状态流转仍在服务层
      * （本方法**不复制**它们，只读一次订单）。</p>
      *
-     * <p>🔴 <b>{@code shipped} 也在放行之列</b>（与 {@code OrderService.shipWithLogistics} 逐字同口径）：
+     * <p>🔴 <b>{@code shipped} 也在放行之列</b>（与 {@code OrderLifecycleService.shipWithLogistics} 逐字同口径）：
      * 已发货后本路是**补记 / 纠正物流**的合法路径（不流转状态）。若这里把 {@code shipped} 拦掉，
      * issue #6181 要求 ② 的「换新幂等键重复调用**不得**出现『状态变了却 422』」就会以另一种形式复发
      * —— 重复调用拿到 422，而订单确实已经发货。⇒ 拦的是**真正不可发货**的状态

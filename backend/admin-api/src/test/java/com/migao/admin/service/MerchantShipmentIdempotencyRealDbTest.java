@@ -274,7 +274,9 @@ class MerchantShipmentIdempotencyRealDbTest {
                 null, org.mockito.Mockito.mock(com.migao.admin.service.FinishedGoodsService.class));
         ReflectionTestUtils.setField(orderShipmentService, "productMapper", productMapper);
 
-        ProductionController controller = new ProductionController(null, null, null, null, null, orderService);
+        // issue #8681 第六批：发货端点直连生命周期实现点 ⇒ 取门面**自己懒构造的那一份**（同一份协作者）
+        ProductionController controller = new ProductionController(null, null, null, null, null,
+                org.springframework.test.util.ReflectionTestUtils.invokeMethod(orderService, "lifecycleService"));
         ReflectionTestUtils.setField(controller, "clientRequestIdService", clientRequestIdService);
         ReflectionTestUtils.setField(controller, "orderShipmentService", orderShipmentService);
         ReflectionTestUtils.setField(controller, "orderMapper", orderMapper);
