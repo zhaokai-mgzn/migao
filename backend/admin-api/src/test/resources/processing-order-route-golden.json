@@ -1,0 +1,1540 @@
+{
+  "01-derived" : {
+    "positions" : [ {
+      "position_name" : "遮光帘A 米白",
+      "order_item_id" : "item-1",
+      "position_kind" : "布帘",
+      "operations" : [ {
+        "operation" : "精裁-布",
+        "logical_name" : "精裁",
+        "position" : "布帘",
+        "group" : "裁剪",
+        "unit" : "米",
+        "unit_price" : 0.4,
+        "is_start_marker" : true,
+        "seq" : 1,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "布三边",
+        "logical_name" : "三边",
+        "position" : "布帘",
+        "group" : "车位",
+        "unit" : "米",
+        "unit_price" : 0.4,
+        "is_start_marker" : false,
+        "seq" : 2,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "韩褶-布",
+        "logical_name" : "韩褶",
+        "position" : "布帘",
+        "group" : "车位",
+        "unit" : "折",
+        "unit_price" : 0.4,
+        "is_start_marker" : false,
+        "seq" : 3,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "上车布-布",
+        "logical_name" : "上车布",
+        "position" : "布帘",
+        "group" : "车位",
+        "unit" : "米",
+        "unit_price" : 0.5,
+        "is_start_marker" : false,
+        "seq" : 4,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "熨烫-布",
+        "logical_name" : "熨烫",
+        "position" : "布帘",
+        "group" : "后道",
+        "unit" : "米",
+        "unit_price" : 0.35,
+        "is_start_marker" : false,
+        "seq" : 5,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "定型-布",
+        "logical_name" : "定型",
+        "position" : "布帘",
+        "group" : "后道",
+        "unit" : "米",
+        "unit_price" : 0.4,
+        "is_start_marker" : false,
+        "seq" : 6,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "复烫-布",
+        "logical_name" : "复烫",
+        "position" : "布帘",
+        "group" : "后道",
+        "unit" : "米",
+        "unit_price" : 0.35,
+        "is_start_marker" : false,
+        "seq" : 7,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "布帘车被",
+        "logical_name" : "车被",
+        "position" : "布帘",
+        "group" : "后道",
+        "unit" : "米",
+        "unit_price" : 0.4,
+        "is_start_marker" : false,
+        "seq" : 8,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "外帘打卷",
+        "logical_name" : "外帘打卷",
+        "position" : null,
+        "group" : "后道",
+        "unit" : "套",
+        "unit_price" : 1.0,
+        "is_start_marker" : false,
+        "seq" : 9,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "打包",
+        "logical_name" : "打包",
+        "position" : null,
+        "group" : "后道",
+        "unit" : "套",
+        "unit_price" : null,
+        "is_start_marker" : false,
+        "seq" : 10,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "外帘装袋",
+        "logical_name" : "外帘装袋",
+        "position" : null,
+        "group" : "后道",
+        "unit" : "套",
+        "unit_price" : 1.0,
+        "is_start_marker" : false,
+        "seq" : 11,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "外帘发货",
+        "logical_name" : "外帘发货",
+        "position" : null,
+        "group" : "后道",
+        "unit" : "套",
+        "unit_price" : 1.0,
+        "is_start_marker" : false,
+        "seq" : 12,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      } ]
+    } ],
+    "route" : {
+      "route_key" : "窗帘工序路线（默认）",
+      "route_requested_key" : "布帘×韩褶",
+      "route_source" : "direct",
+      "order_kind" : "processing"
+    }
+  },
+  "02-default" : {
+    "positions" : [ {
+      "position_name" : "普通帘 米白",
+      "order_item_id" : "item-2",
+      "position_kind" : null,
+      "operations" : [ {
+        "operation" : "精裁-布",
+        "logical_name" : "精裁",
+        "position" : "布帘",
+        "group" : "裁剪",
+        "unit" : "米",
+        "unit_price" : 0.4,
+        "is_start_marker" : true,
+        "seq" : 1,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "布三边",
+        "logical_name" : "三边",
+        "position" : "布帘",
+        "group" : "车位",
+        "unit" : "米",
+        "unit_price" : 0.4,
+        "is_start_marker" : false,
+        "seq" : 2,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "韩褶-布",
+        "logical_name" : "韩褶",
+        "position" : "布帘",
+        "group" : "车位",
+        "unit" : "折",
+        "unit_price" : 0.4,
+        "is_start_marker" : false,
+        "seq" : 3,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "上车布-布",
+        "logical_name" : "上车布",
+        "position" : "布帘",
+        "group" : "车位",
+        "unit" : "米",
+        "unit_price" : 0.5,
+        "is_start_marker" : false,
+        "seq" : 4,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "熨烫-布",
+        "logical_name" : "熨烫",
+        "position" : "布帘",
+        "group" : "后道",
+        "unit" : "米",
+        "unit_price" : 0.35,
+        "is_start_marker" : false,
+        "seq" : 5,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "定型-布",
+        "logical_name" : "定型",
+        "position" : "布帘",
+        "group" : "后道",
+        "unit" : "米",
+        "unit_price" : 0.4,
+        "is_start_marker" : false,
+        "seq" : 6,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "复烫-布",
+        "logical_name" : "复烫",
+        "position" : "布帘",
+        "group" : "后道",
+        "unit" : "米",
+        "unit_price" : 0.35,
+        "is_start_marker" : false,
+        "seq" : 7,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "布帘车被",
+        "logical_name" : "车被",
+        "position" : "布帘",
+        "group" : "后道",
+        "unit" : "米",
+        "unit_price" : 0.4,
+        "is_start_marker" : false,
+        "seq" : 8,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "外帘打卷",
+        "logical_name" : "外帘打卷",
+        "position" : null,
+        "group" : "后道",
+        "unit" : "套",
+        "unit_price" : 1.0,
+        "is_start_marker" : false,
+        "seq" : 9,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "打包",
+        "logical_name" : "打包",
+        "position" : null,
+        "group" : "后道",
+        "unit" : "套",
+        "unit_price" : null,
+        "is_start_marker" : false,
+        "seq" : 10,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "外帘装袋",
+        "logical_name" : "外帘装袋",
+        "position" : null,
+        "group" : "后道",
+        "unit" : "套",
+        "unit_price" : 1.0,
+        "is_start_marker" : false,
+        "seq" : 11,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "外帘发货",
+        "logical_name" : "外帘发货",
+        "position" : null,
+        "group" : "后道",
+        "unit" : "套",
+        "unit_price" : 1.0,
+        "is_start_marker" : false,
+        "seq" : 12,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      } ]
+    } ],
+    "route" : {
+      "route_key" : "窗帘工序路线（默认）",
+      "route_requested_key" : null,
+      "route_source" : "default",
+      "order_kind" : "processing"
+    }
+  },
+  "03-missing-route" : {
+    "positions" : [ {
+      "position_name" : "罗马帘A 米白",
+      "order_item_id" : "item-3",
+      "position_kind" : "罗马帘",
+      "operations" : [ {
+        "operation" : "精裁-布",
+        "logical_name" : "精裁",
+        "position" : "布帘",
+        "group" : "裁剪",
+        "unit" : "米",
+        "unit_price" : 0.4,
+        "is_start_marker" : true,
+        "seq" : 1,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "布三边",
+        "logical_name" : "三边",
+        "position" : "布帘",
+        "group" : "车位",
+        "unit" : "米",
+        "unit_price" : 0.4,
+        "is_start_marker" : false,
+        "seq" : 2,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "韩褶-布",
+        "logical_name" : "韩褶",
+        "position" : "布帘",
+        "group" : "车位",
+        "unit" : "折",
+        "unit_price" : 0.4,
+        "is_start_marker" : false,
+        "seq" : 3,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "上车布-布",
+        "logical_name" : "上车布",
+        "position" : "布帘",
+        "group" : "车位",
+        "unit" : "米",
+        "unit_price" : 0.5,
+        "is_start_marker" : false,
+        "seq" : 4,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "熨烫-布",
+        "logical_name" : "熨烫",
+        "position" : "布帘",
+        "group" : "后道",
+        "unit" : "米",
+        "unit_price" : 0.35,
+        "is_start_marker" : false,
+        "seq" : 5,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "定型-布",
+        "logical_name" : "定型",
+        "position" : "布帘",
+        "group" : "后道",
+        "unit" : "米",
+        "unit_price" : 0.4,
+        "is_start_marker" : false,
+        "seq" : 6,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "复烫-布",
+        "logical_name" : "复烫",
+        "position" : "布帘",
+        "group" : "后道",
+        "unit" : "米",
+        "unit_price" : 0.35,
+        "is_start_marker" : false,
+        "seq" : 7,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "布帘车被",
+        "logical_name" : "车被",
+        "position" : "布帘",
+        "group" : "后道",
+        "unit" : "米",
+        "unit_price" : 0.4,
+        "is_start_marker" : false,
+        "seq" : 8,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "外帘打卷",
+        "logical_name" : "外帘打卷",
+        "position" : null,
+        "group" : "后道",
+        "unit" : "套",
+        "unit_price" : 1.0,
+        "is_start_marker" : false,
+        "seq" : 9,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "打包",
+        "logical_name" : "打包",
+        "position" : null,
+        "group" : "后道",
+        "unit" : "套",
+        "unit_price" : null,
+        "is_start_marker" : false,
+        "seq" : 10,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "外帘装袋",
+        "logical_name" : "外帘装袋",
+        "position" : null,
+        "group" : "后道",
+        "unit" : "套",
+        "unit_price" : 1.0,
+        "is_start_marker" : false,
+        "seq" : 11,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "外帘发货",
+        "logical_name" : "外帘发货",
+        "position" : null,
+        "group" : "后道",
+        "unit" : "套",
+        "unit_price" : 1.0,
+        "is_start_marker" : false,
+        "seq" : 12,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      } ]
+    } ],
+    "route" : {
+      "route_key" : "窗帘工序路线（默认）",
+      "route_requested_key" : "罗马帘×韩褶",
+      "route_source" : "missing_route",
+      "order_kind" : "processing"
+    }
+  },
+  "04-unshaped-with-option" : {
+    "positions" : [ {
+      "position_name" : "遮光帘D 米白",
+      "order_item_id" : "item-4",
+      "position_kind" : "布帘",
+      "operations" : [ {
+        "operation" : "精裁-布",
+        "logical_name" : "精裁",
+        "position" : "布帘",
+        "group" : "裁剪",
+        "unit" : "米",
+        "unit_price" : 0.4,
+        "is_start_marker" : true,
+        "seq" : 1,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "布三边",
+        "logical_name" : "三边",
+        "position" : "布帘",
+        "group" : "车位",
+        "unit" : "米",
+        "unit_price" : 0.4,
+        "is_start_marker" : false,
+        "seq" : 2,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "韩褶-布",
+        "logical_name" : "韩褶",
+        "position" : "布帘",
+        "group" : "车位",
+        "unit" : "折",
+        "unit_price" : 0.4,
+        "is_start_marker" : false,
+        "seq" : 3,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "上车布-布",
+        "logical_name" : "上车布",
+        "position" : "布帘",
+        "group" : "车位",
+        "unit" : "米",
+        "unit_price" : 0.5,
+        "is_start_marker" : false,
+        "seq" : 4,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "熨烫-布",
+        "logical_name" : "熨烫",
+        "position" : "布帘",
+        "group" : "后道",
+        "unit" : "米",
+        "unit_price" : 0.35,
+        "is_start_marker" : false,
+        "seq" : 5,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "布帘车被",
+        "logical_name" : "车被",
+        "position" : "布帘",
+        "group" : "后道",
+        "unit" : "米",
+        "unit_price" : 0.4,
+        "is_start_marker" : false,
+        "seq" : 6,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "外帘打卷",
+        "logical_name" : "外帘打卷",
+        "position" : null,
+        "group" : "后道",
+        "unit" : "套",
+        "unit_price" : 1.0,
+        "is_start_marker" : false,
+        "seq" : 7,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "打包",
+        "logical_name" : "打包",
+        "position" : null,
+        "group" : "后道",
+        "unit" : "套",
+        "unit_price" : null,
+        "is_start_marker" : false,
+        "seq" : 8,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "外帘装袋",
+        "logical_name" : "外帘装袋",
+        "position" : null,
+        "group" : "后道",
+        "unit" : "套",
+        "unit_price" : 1.0,
+        "is_start_marker" : false,
+        "seq" : 9,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "外帘发货",
+        "logical_name" : "外帘发货",
+        "position" : null,
+        "group" : "后道",
+        "unit" : "套",
+        "unit_price" : 1.0,
+        "is_start_marker" : false,
+        "seq" : 10,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      } ]
+    } ],
+    "route" : {
+      "route_key" : "窗帘工序路线（默认）",
+      "route_requested_key" : "布帘×韩褶",
+      "route_source" : "direct",
+      "order_kind" : "processing"
+    }
+  },
+  "05-options-and-items" : {
+    "positions" : [ {
+      "position_name" : "遮光帘E 米白",
+      "order_item_id" : "item-5",
+      "position_kind" : "布帘",
+      "operations" : [ {
+        "operation" : "精裁-布",
+        "logical_name" : "精裁",
+        "position" : "布帘",
+        "group" : "裁剪",
+        "unit" : "米",
+        "unit_price" : 0.4,
+        "is_start_marker" : true,
+        "seq" : 1,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "布三边",
+        "logical_name" : "三边",
+        "position" : "布帘",
+        "group" : "车位",
+        "unit" : "米",
+        "unit_price" : 0.4,
+        "is_start_marker" : false,
+        "seq" : 2,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "韩褶-布",
+        "logical_name" : "韩褶",
+        "position" : "布帘",
+        "group" : "车位",
+        "unit" : "折",
+        "unit_price" : 0.4,
+        "is_start_marker" : false,
+        "seq" : 3,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "上车布-布",
+        "logical_name" : "上车布",
+        "position" : "布帘",
+        "group" : "车位",
+        "unit" : "米",
+        "unit_price" : 0.5,
+        "is_start_marker" : false,
+        "seq" : 4,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "熨烫-布",
+        "logical_name" : "熨烫",
+        "position" : "布帘",
+        "group" : "后道",
+        "unit" : "米",
+        "unit_price" : 0.35,
+        "is_start_marker" : false,
+        "seq" : 5,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "定型-布",
+        "logical_name" : "定型",
+        "position" : "布帘",
+        "group" : "后道",
+        "unit" : "米",
+        "unit_price" : 0.4,
+        "is_start_marker" : false,
+        "seq" : 6,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "复烫-布",
+        "logical_name" : "复烫",
+        "position" : "布帘",
+        "group" : "后道",
+        "unit" : "米",
+        "unit_price" : 0.35,
+        "is_start_marker" : false,
+        "seq" : 7,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "布帘车被",
+        "logical_name" : "车被",
+        "position" : "布帘",
+        "group" : "后道",
+        "unit" : "米",
+        "unit_price" : 0.4,
+        "is_start_marker" : false,
+        "seq" : 8,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "外帘打卷",
+        "logical_name" : "外帘打卷",
+        "position" : null,
+        "group" : "后道",
+        "unit" : "套",
+        "unit_price" : 1.0,
+        "is_start_marker" : false,
+        "seq" : 9,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "打包",
+        "logical_name" : "打包",
+        "position" : null,
+        "group" : "后道",
+        "unit" : "套",
+        "unit_price" : null,
+        "is_start_marker" : false,
+        "seq" : 10,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "外帘装袋",
+        "logical_name" : "外帘装袋",
+        "position" : null,
+        "group" : "后道",
+        "unit" : "套",
+        "unit_price" : 1.0,
+        "is_start_marker" : false,
+        "seq" : 11,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "外帘发货",
+        "logical_name" : "外帘发货",
+        "position" : null,
+        "group" : "后道",
+        "unit" : "套",
+        "unit_price" : 1.0,
+        "is_start_marker" : false,
+        "seq" : 12,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      } ]
+    } ],
+    "route" : {
+      "route_key" : "窗帘工序路线（默认）",
+      "route_requested_key" : "布帘×韩褶",
+      "route_source" : "direct",
+      "order_kind" : "processing"
+    }
+  },
+  "06-window-group" : {
+    "positions" : [ {
+      "position_name" : "遮光帘F 米白",
+      "order_item_id" : "item-6",
+      "position_kind" : "布帘",
+      "operations" : [ {
+        "operation" : "精裁-布",
+        "logical_name" : "精裁",
+        "position" : "布帘",
+        "group" : "裁剪",
+        "unit" : "米",
+        "unit_price" : 0.4,
+        "is_start_marker" : true,
+        "seq" : 1,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "布三边",
+        "logical_name" : "三边",
+        "position" : "布帘",
+        "group" : "车位",
+        "unit" : "米",
+        "unit_price" : 0.4,
+        "is_start_marker" : false,
+        "seq" : 2,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "韩褶-布",
+        "logical_name" : "韩褶",
+        "position" : "布帘",
+        "group" : "车位",
+        "unit" : "折",
+        "unit_price" : 0.4,
+        "is_start_marker" : false,
+        "seq" : 3,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "上车布-布",
+        "logical_name" : "上车布",
+        "position" : "布帘",
+        "group" : "车位",
+        "unit" : "米",
+        "unit_price" : 0.5,
+        "is_start_marker" : false,
+        "seq" : 4,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "熨烫-布",
+        "logical_name" : "熨烫",
+        "position" : "布帘",
+        "group" : "后道",
+        "unit" : "米",
+        "unit_price" : 0.35,
+        "is_start_marker" : false,
+        "seq" : 5,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "定型-布",
+        "logical_name" : "定型",
+        "position" : "布帘",
+        "group" : "后道",
+        "unit" : "米",
+        "unit_price" : 0.4,
+        "is_start_marker" : false,
+        "seq" : 6,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "复烫-布",
+        "logical_name" : "复烫",
+        "position" : "布帘",
+        "group" : "后道",
+        "unit" : "米",
+        "unit_price" : 0.35,
+        "is_start_marker" : false,
+        "seq" : 7,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "布帘车被",
+        "logical_name" : "车被",
+        "position" : "布帘",
+        "group" : "后道",
+        "unit" : "米",
+        "unit_price" : 0.4,
+        "is_start_marker" : false,
+        "seq" : 8,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "外帘打卷",
+        "logical_name" : "外帘打卷",
+        "position" : null,
+        "group" : "后道",
+        "unit" : "套",
+        "unit_price" : 1.0,
+        "is_start_marker" : false,
+        "seq" : 9,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "打包",
+        "logical_name" : "打包",
+        "position" : null,
+        "group" : "后道",
+        "unit" : "套",
+        "unit_price" : null,
+        "is_start_marker" : false,
+        "seq" : 10,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "外帘装袋",
+        "logical_name" : "外帘装袋",
+        "position" : null,
+        "group" : "后道",
+        "unit" : "套",
+        "unit_price" : 1.0,
+        "is_start_marker" : false,
+        "seq" : 11,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "外帘发货",
+        "logical_name" : "外帘发货",
+        "position" : null,
+        "group" : "后道",
+        "unit" : "套",
+        "unit_price" : 1.0,
+        "is_start_marker" : false,
+        "seq" : 12,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      } ]
+    }, {
+      "position_name" : "纱帘F 奶白",
+      "order_item_id" : "item-8",
+      "position_kind" : "纱帘",
+      "operations" : [ {
+        "operation" : "精裁-纱",
+        "logical_name" : "精裁",
+        "position" : "纱帘",
+        "group" : "裁剪",
+        "unit" : "米",
+        "unit_price" : 0.4,
+        "is_start_marker" : true,
+        "seq" : 1,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "纱三边",
+        "logical_name" : "三边",
+        "position" : "纱帘",
+        "group" : "车位",
+        "unit" : "米",
+        "unit_price" : 0.4,
+        "is_start_marker" : false,
+        "seq" : 2,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "韩褶-纱",
+        "logical_name" : "韩褶",
+        "position" : "纱帘",
+        "group" : "车位",
+        "unit" : "折",
+        "unit_price" : 0.4,
+        "is_start_marker" : false,
+        "seq" : 3,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "熨烫-纱",
+        "logical_name" : "熨烫",
+        "position" : "纱帘",
+        "group" : "后道",
+        "unit" : "米",
+        "unit_price" : 0.35,
+        "is_start_marker" : false,
+        "seq" : 4,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "定型-纱",
+        "logical_name" : "定型",
+        "position" : "纱帘",
+        "group" : "后道",
+        "unit" : "米",
+        "unit_price" : 0.4,
+        "is_start_marker" : false,
+        "seq" : 5,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "复烫-纱",
+        "logical_name" : "复烫",
+        "position" : "纱帘",
+        "group" : "后道",
+        "unit" : "米",
+        "unit_price" : 0.35,
+        "is_start_marker" : false,
+        "seq" : 6,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "车被-纱",
+        "logical_name" : "车被",
+        "position" : "纱帘",
+        "group" : "后道",
+        "unit" : "米",
+        "unit_price" : 0.4,
+        "is_start_marker" : false,
+        "seq" : 7,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      } ]
+    } ],
+    "route" : {
+      "route_key" : "窗帘工序路线（默认）",
+      "route_requested_key" : "布帘×韩褶",
+      "route_source" : "direct",
+      "order_kind" : "processing"
+    }
+  },
+  "07-fabric-mixed" : {
+    "positions" : [ {
+      "position_name" : "遮光布料X 米白",
+      "order_item_id" : "item-9",
+      "position_kind" : null,
+      "operations" : [ {
+        "operation" : "配料",
+        "logical_name" : "配料",
+        "position" : null,
+        "group" : "后道",
+        "unit" : "米",
+        "unit_price" : null,
+        "is_start_marker" : false,
+        "seq" : 1,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "打包",
+        "logical_name" : "打包",
+        "position" : null,
+        "group" : "后道",
+        "unit" : "套",
+        "unit_price" : null,
+        "is_start_marker" : false,
+        "seq" : 2,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      } ]
+    }, {
+      "position_name" : "遮光帘G 米白",
+      "order_item_id" : "item-10",
+      "position_kind" : "布帘",
+      "operations" : [ {
+        "operation" : "精裁-布",
+        "logical_name" : "精裁",
+        "position" : "布帘",
+        "group" : "裁剪",
+        "unit" : "米",
+        "unit_price" : 0.4,
+        "is_start_marker" : true,
+        "seq" : 1,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "布三边",
+        "logical_name" : "三边",
+        "position" : "布帘",
+        "group" : "车位",
+        "unit" : "米",
+        "unit_price" : 0.4,
+        "is_start_marker" : false,
+        "seq" : 2,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "韩褶-布",
+        "logical_name" : "韩褶",
+        "position" : "布帘",
+        "group" : "车位",
+        "unit" : "折",
+        "unit_price" : 0.4,
+        "is_start_marker" : false,
+        "seq" : 3,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "上车布-布",
+        "logical_name" : "上车布",
+        "position" : "布帘",
+        "group" : "车位",
+        "unit" : "米",
+        "unit_price" : 0.5,
+        "is_start_marker" : false,
+        "seq" : 4,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "熨烫-布",
+        "logical_name" : "熨烫",
+        "position" : "布帘",
+        "group" : "后道",
+        "unit" : "米",
+        "unit_price" : 0.35,
+        "is_start_marker" : false,
+        "seq" : 5,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "定型-布",
+        "logical_name" : "定型",
+        "position" : "布帘",
+        "group" : "后道",
+        "unit" : "米",
+        "unit_price" : 0.4,
+        "is_start_marker" : false,
+        "seq" : 6,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "复烫-布",
+        "logical_name" : "复烫",
+        "position" : "布帘",
+        "group" : "后道",
+        "unit" : "米",
+        "unit_price" : 0.35,
+        "is_start_marker" : false,
+        "seq" : 7,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "布帘车被",
+        "logical_name" : "车被",
+        "position" : "布帘",
+        "group" : "后道",
+        "unit" : "米",
+        "unit_price" : 0.4,
+        "is_start_marker" : false,
+        "seq" : 8,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "外帘打卷",
+        "logical_name" : "外帘打卷",
+        "position" : null,
+        "group" : "后道",
+        "unit" : "套",
+        "unit_price" : 1.0,
+        "is_start_marker" : false,
+        "seq" : 9,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "打包",
+        "logical_name" : "打包",
+        "position" : null,
+        "group" : "后道",
+        "unit" : "套",
+        "unit_price" : null,
+        "is_start_marker" : false,
+        "seq" : 10,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "外帘装袋",
+        "logical_name" : "外帘装袋",
+        "position" : null,
+        "group" : "后道",
+        "unit" : "套",
+        "unit_price" : 1.0,
+        "is_start_marker" : false,
+        "seq" : 11,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "外帘发货",
+        "logical_name" : "外帘发货",
+        "position" : null,
+        "group" : "后道",
+        "unit" : "套",
+        "unit_price" : 1.0,
+        "is_start_marker" : false,
+        "seq" : 12,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      } ]
+    } ],
+    "route" : {
+      "route_key" : "布料工序路线",
+      "route_requested_key" : "布料×韩褶",
+      "route_source" : "direct",
+      "order_kind" : "processing"
+    }
+  },
+  "08-rollup-missing-route" : {
+    "positions" : [ {
+      "position_name" : "遮光帘H 米白",
+      "order_item_id" : "item-11",
+      "position_kind" : "布帘",
+      "operations" : [ {
+        "operation" : "精裁-布",
+        "logical_name" : "精裁",
+        "position" : "布帘",
+        "group" : "裁剪",
+        "unit" : "米",
+        "unit_price" : 0.4,
+        "is_start_marker" : true,
+        "seq" : 1,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "布三边",
+        "logical_name" : "三边",
+        "position" : "布帘",
+        "group" : "车位",
+        "unit" : "米",
+        "unit_price" : 0.4,
+        "is_start_marker" : false,
+        "seq" : 2,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "韩褶-布",
+        "logical_name" : "韩褶",
+        "position" : "布帘",
+        "group" : "车位",
+        "unit" : "折",
+        "unit_price" : 0.4,
+        "is_start_marker" : false,
+        "seq" : 3,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "上车布-布",
+        "logical_name" : "上车布",
+        "position" : "布帘",
+        "group" : "车位",
+        "unit" : "米",
+        "unit_price" : 0.5,
+        "is_start_marker" : false,
+        "seq" : 4,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "熨烫-布",
+        "logical_name" : "熨烫",
+        "position" : "布帘",
+        "group" : "后道",
+        "unit" : "米",
+        "unit_price" : 0.35,
+        "is_start_marker" : false,
+        "seq" : 5,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "定型-布",
+        "logical_name" : "定型",
+        "position" : "布帘",
+        "group" : "后道",
+        "unit" : "米",
+        "unit_price" : 0.4,
+        "is_start_marker" : false,
+        "seq" : 6,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "复烫-布",
+        "logical_name" : "复烫",
+        "position" : "布帘",
+        "group" : "后道",
+        "unit" : "米",
+        "unit_price" : 0.35,
+        "is_start_marker" : false,
+        "seq" : 7,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "布帘车被",
+        "logical_name" : "车被",
+        "position" : "布帘",
+        "group" : "后道",
+        "unit" : "米",
+        "unit_price" : 0.4,
+        "is_start_marker" : false,
+        "seq" : 8,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "外帘打卷",
+        "logical_name" : "外帘打卷",
+        "position" : null,
+        "group" : "后道",
+        "unit" : "套",
+        "unit_price" : 1.0,
+        "is_start_marker" : false,
+        "seq" : 9,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "打包",
+        "logical_name" : "打包",
+        "position" : null,
+        "group" : "后道",
+        "unit" : "套",
+        "unit_price" : null,
+        "is_start_marker" : false,
+        "seq" : 10,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "外帘装袋",
+        "logical_name" : "外帘装袋",
+        "position" : null,
+        "group" : "后道",
+        "unit" : "套",
+        "unit_price" : 1.0,
+        "is_start_marker" : false,
+        "seq" : 11,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "外帘发货",
+        "logical_name" : "外帘发货",
+        "position" : null,
+        "group" : "后道",
+        "unit" : "套",
+        "unit_price" : 1.0,
+        "is_start_marker" : false,
+        "seq" : 12,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      } ]
+    }, {
+      "position_name" : "罗马帘H 米白",
+      "order_item_id" : "item-12",
+      "position_kind" : "罗马帘",
+      "operations" : [ {
+        "operation" : "精裁-布",
+        "logical_name" : "精裁",
+        "position" : "布帘",
+        "group" : "裁剪",
+        "unit" : "米",
+        "unit_price" : 0.4,
+        "is_start_marker" : true,
+        "seq" : 1,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "布三边",
+        "logical_name" : "三边",
+        "position" : "布帘",
+        "group" : "车位",
+        "unit" : "米",
+        "unit_price" : 0.4,
+        "is_start_marker" : false,
+        "seq" : 2,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "韩褶-布",
+        "logical_name" : "韩褶",
+        "position" : "布帘",
+        "group" : "车位",
+        "unit" : "折",
+        "unit_price" : 0.4,
+        "is_start_marker" : false,
+        "seq" : 3,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "上车布-布",
+        "logical_name" : "上车布",
+        "position" : "布帘",
+        "group" : "车位",
+        "unit" : "米",
+        "unit_price" : 0.5,
+        "is_start_marker" : false,
+        "seq" : 4,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "熨烫-布",
+        "logical_name" : "熨烫",
+        "position" : "布帘",
+        "group" : "后道",
+        "unit" : "米",
+        "unit_price" : 0.35,
+        "is_start_marker" : false,
+        "seq" : 5,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "定型-布",
+        "logical_name" : "定型",
+        "position" : "布帘",
+        "group" : "后道",
+        "unit" : "米",
+        "unit_price" : 0.4,
+        "is_start_marker" : false,
+        "seq" : 6,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "复烫-布",
+        "logical_name" : "复烫",
+        "position" : "布帘",
+        "group" : "后道",
+        "unit" : "米",
+        "unit_price" : 0.35,
+        "is_start_marker" : false,
+        "seq" : 7,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "布帘车被",
+        "logical_name" : "车被",
+        "position" : "布帘",
+        "group" : "后道",
+        "unit" : "米",
+        "unit_price" : 0.4,
+        "is_start_marker" : false,
+        "seq" : 8,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "外帘打卷",
+        "logical_name" : "外帘打卷",
+        "position" : null,
+        "group" : "后道",
+        "unit" : "套",
+        "unit_price" : 1.0,
+        "is_start_marker" : false,
+        "seq" : 9,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "打包",
+        "logical_name" : "打包",
+        "position" : null,
+        "group" : "后道",
+        "unit" : "套",
+        "unit_price" : null,
+        "is_start_marker" : false,
+        "seq" : 10,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "外帘装袋",
+        "logical_name" : "外帘装袋",
+        "position" : null,
+        "group" : "后道",
+        "unit" : "套",
+        "unit_price" : 1.0,
+        "is_start_marker" : false,
+        "seq" : 11,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "外帘发货",
+        "logical_name" : "外帘发货",
+        "position" : null,
+        "group" : "后道",
+        "unit" : "套",
+        "unit_price" : 1.0,
+        "is_start_marker" : false,
+        "seq" : 12,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      } ]
+    } ],
+    "route" : {
+      "route_key" : "窗帘工序路线（默认）",
+      "route_requested_key" : "罗马帘×韩褶",
+      "route_source" : "missing_route",
+      "order_kind" : "processing"
+    }
+  },
+  "09-partial" : {
+    "positions" : [ {
+      "position_name" : "遮光帘I 米白",
+      "order_item_id" : "item-13",
+      "position_kind" : "布帘",
+      "operations" : [ {
+        "operation" : "精裁-布",
+        "logical_name" : "精裁",
+        "position" : "布帘",
+        "group" : "裁剪",
+        "unit" : "米",
+        "unit_price" : 0.4,
+        "is_start_marker" : true,
+        "seq" : 1,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "布三边",
+        "logical_name" : "三边",
+        "position" : "布帘",
+        "group" : "车位",
+        "unit" : "米",
+        "unit_price" : 0.4,
+        "is_start_marker" : false,
+        "seq" : 2,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "韩褶-布",
+        "logical_name" : "韩褶",
+        "position" : "布帘",
+        "group" : "车位",
+        "unit" : "折",
+        "unit_price" : 0.4,
+        "is_start_marker" : false,
+        "seq" : 3,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "上车布-布",
+        "logical_name" : "上车布",
+        "position" : "布帘",
+        "group" : "车位",
+        "unit" : "米",
+        "unit_price" : 0.5,
+        "is_start_marker" : false,
+        "seq" : 4,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "熨烫-布",
+        "logical_name" : "熨烫",
+        "position" : "布帘",
+        "group" : "后道",
+        "unit" : "米",
+        "unit_price" : 0.35,
+        "is_start_marker" : false,
+        "seq" : 5,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "定型-布",
+        "logical_name" : "定型",
+        "position" : "布帘",
+        "group" : "后道",
+        "unit" : "米",
+        "unit_price" : 0.4,
+        "is_start_marker" : false,
+        "seq" : 6,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "复烫-布",
+        "logical_name" : "复烫",
+        "position" : "布帘",
+        "group" : "后道",
+        "unit" : "米",
+        "unit_price" : 0.35,
+        "is_start_marker" : false,
+        "seq" : 7,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "布帘车被",
+        "logical_name" : "车被",
+        "position" : "布帘",
+        "group" : "后道",
+        "unit" : "米",
+        "unit_price" : 0.4,
+        "is_start_marker" : false,
+        "seq" : 8,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "外帘打卷",
+        "logical_name" : "外帘打卷",
+        "position" : null,
+        "group" : "后道",
+        "unit" : "套",
+        "unit_price" : 1.0,
+        "is_start_marker" : false,
+        "seq" : 9,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "打包",
+        "logical_name" : "打包",
+        "position" : null,
+        "group" : "后道",
+        "unit" : "套",
+        "unit_price" : null,
+        "is_start_marker" : false,
+        "seq" : 10,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "外帘装袋",
+        "logical_name" : "外帘装袋",
+        "position" : null,
+        "group" : "后道",
+        "unit" : "套",
+        "unit_price" : 1.0,
+        "is_start_marker" : false,
+        "seq" : 11,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      }, {
+        "operation" : "外帘发货",
+        "logical_name" : "外帘发货",
+        "position" : null,
+        "group" : "后道",
+        "unit" : "套",
+        "unit_price" : 1.0,
+        "is_start_marker" : false,
+        "seq" : 12,
+        "qty" : 1,
+        "qty_source" : "fallback"
+      } ]
+    } ],
+    "route" : {
+      "route_key" : "窗帘工序路线（默认）",
+      "route_requested_key" : "布帘×韩褶",
+      "route_source" : "partial",
+      "order_kind" : "processing"
+    }
+  }
+}
