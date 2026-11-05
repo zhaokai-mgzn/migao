@@ -205,12 +205,34 @@ def test_incomplete_block_is_refused_by_name() -> None:
     assert any("MC-902" in p and "title" in p for p in problems), "残缺块必须点名 + 说清缺什么"
 
 
+def test_half_block_with_title_only_is_refused() -> None:
+    """🔴 半块形态（`migao-dev-flow` §34.16 ③）：git 拆多 hunk ⇒ 截断后**含 `title:`** 却丢了其余。
+
+    只查 `title:` 会放行这种块 ⇒ 必须按**必需字段**判（现取语料：`title:` / `user_inputs:`
+    各缺 0 条；`expectations:` 有 1 条合法缺 ⇒ **不收**它，避免假红）。
+    """
+    half = ('  - id: MC-903\n    legacy_id: ""\n    title: "半块"\n    domains:\n      - misc\n')
+    main = _doc(*MAIN_IDS[:5])
+    blocks, problems = MOD.select_branch_blocks(main, [("stage2", main + half)])
+    assert [b.cid for b in blocks] == ["MC-903"]
+    assert any("MC-903" in p and "user_inputs" in p for p in problems), "半块必须点名缺 user_inputs"
+    assert not any("title" in p for p in problems), "该块**有** title，别报缺 title（假红）"
+
+
+def test_block_missing_expectations_is_accepted() -> None:
+    """负控：语料里 `expectations:` 有 1 条合法缺（`MC-139`）⇒ 本工具**不许**把它判成残缺。"""
+    main = _doc(*MAIN_IDS[:5])
+    no_expect = ('  - id: MC-904\n    legacy_id: ""\n    title: "只有 data_checks"\n'
+                 '    domains:\n      - misc\n    user_inputs:\n      - "u"\n'
+                 '    data_checks:\n      - "d"\n')
+    blocks, problems = MOD.select_branch_blocks(main, [("stage2", main + no_expect)])
+    assert [b.cid for b in blocks] == ["MC-904"]
+    assert problems == []
+
+
 def test_red_proof_skipping_incomplete_block_writes_a_half_case() -> None:
     """红证 ②：放宽成「跳过继续」⇒ 判据 2 红（问题列表空 ⇒ CLI 会把它写进去）。"""
-    mutant = _mutant(
-        "        if not any(_TITLE_RE.match(ln) for ln in block.text.splitlines()):",
-        "        if False:",
-    )
+    mutant = _mutant("        if missing:", "        if False:")
     half = "  - id: MC-902\n    legacy_id: \"\"\n    domains:\n      - misc\n"
     main = _doc(*MAIN_IDS[:5])
     blocks, problems = mutant.select_branch_blocks(main, [("stage2", main + half)])
