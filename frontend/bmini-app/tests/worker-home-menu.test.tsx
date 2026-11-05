@@ -23,7 +23,7 @@
  *    把那张卡写回工作台 ⇒ 判据 ①反向 里的 `queryByText('发货标签') === null` 当场红。
  */
 import React from 'react'
-import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
+import { cleanup, render, screen, fireEvent, waitFor, act } from '@testing-library/react'
 
 jest.mock('@tarojs/taro', () => {
   const store: Record<string, any> = {}
@@ -168,6 +168,34 @@ describe('工人工作台入口按「工人端菜单」显隐（issue #7812）',
   it('⑤反向 开 `to_ship` ⇒ 出现待出库单（默认集合里就有它）', async () => {
     await renderWithPages(['report', 'shipment', 'to_ship'])
     expect(screen.getByText('待出库单')).toBeTruthy()
+  })
+
+  it('⑧ P2b 三条读面各有入口，且各跟自己的页面键走（裁床两张 = `cut_calc`；质检 = `inspect`）', async () => {
+    // 只开裁床键 ⇒ 裁高计算 + 精裁清单出现；质检记录**不**出现（inspect 是另一档、逐人开）
+    await renderWithPages(['cut_calc'])
+    expect(screen.getByText('裁高计算')).toBeTruthy()
+    expect(screen.getByText('精裁清单')).toBeTruthy()
+    expect(screen.queryByText('质检记录')).toBeNull()
+    cleanup()
+
+    // 只开质检键 ⇒ 只有质检记录；裁床两张不出现
+    await renderWithPages(['inspect'])
+    expect(screen.getByText('质检记录')).toBeTruthy()
+    expect(screen.queryByText('裁高计算')).toBeNull()
+    expect(screen.queryByText('精裁清单')).toBeNull()
+  })
+
+  it('⑧反向 三条读面入口都指向各自页面（入口可达性由 page-entry-reachability 的 L3 再核一遍）', async () => {
+    await renderWithPages(['cut_calc', 'inspect'])
+    for (const label of ['裁高计算', '精裁清单', '质检记录']) {
+      fireEvent.click(screen.getByText(label))
+    }
+    const urls = (Taro.navigateTo as jest.Mock).mock.calls.map((call) => call[0].url as string)
+    expect(urls).toEqual([
+      '/pages/worker/cut-calc/index',
+      '/pages/worker/cut-plan/index',
+      '/pages/worker/quality/index',
+    ])
   })
 
   it('⑦ 我的计件只跟 `piecework` 走（issue #7934：入口从报工详情页搬到本菜单）', async () => {

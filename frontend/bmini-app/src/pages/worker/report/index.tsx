@@ -56,6 +56,7 @@ import {
   initialState,
   kindText,
   legacySelection,
+  legacySets,
   operationName,
   pickPosition,
   pickSet,
@@ -438,7 +439,7 @@ export default function WorkerReportPage() {
 
   const showPicker = !state.view?.worker_operation && !state.view?.completed && candidates.length > 1
   const legacy = state.mode === 'select'
-  const currentSet = (state.view?.needs_selection ?? []).find((s) => s.set_id === state.selection.setId)
+  const currentSet = legacySets(state.view).find((s) => s.set_id === state.selection.setId)
 
   return (
     <View className='worker-report'>
@@ -520,7 +521,7 @@ export default function WorkerReportPage() {
           </Text>
           {!state.selection.setId ? (
             <View className='worker-report__sets' data-testid='worker-report-sets'>
-              {(state.view?.needs_selection ?? []).map((set, index) => (
+              {legacySets(state.view).map((set, index) => (
                 <Button
                   key={set.set_id}
                   className='worker-report__set'

@@ -93,10 +93,16 @@ const MAIN_VIEW: ReportView = {
 
 const NO_OPERATION_VIEW: ReportView = { ...MAIN_VIEW, operation: null, completed: true }
 
+/**
+ * 旧码一屏 —— **服务端降级响应的真形态**（`needs_selection` 是 `['set','position']` 标记串，
+ * 候选清单在 `selections`；见 `ProductionScanService#degradedView`）。
+ * 夹具写错形态 = 线上旧码工人看不到套号按钮而单测全绿（issue #7813 P2b 链内修）。
+ */
 const LEGACY_VIEW: ReportView = {
   granularity: 'order',
   operation: null,
-  needs_selection: [
+  needs_selection: ['set', 'position'],
+  selections: [
     {
       set_id: 'set-1',
       set_no: 1,

@@ -282,6 +282,12 @@ export interface ScanSetOverviewView {
   set_no?: string | null
   set_index?: number | null
   positions: ScanOverviewPositionView[]
+  /**
+   * **精裁输出清单**（issue #5693）：给裁床的「裁多长（米）× 几片」。
+   * 服务端只在**绑的就是裁剪**时下发，其余情况是空数组（`ProductionScanService`）——
+   * 端侧不算法、不做单位换算。
+   */
+  cut_plan?: import('../utils/reportState').CutPlanRow[] | null
 }
 
 export interface ScanResolveResult {
@@ -301,8 +307,16 @@ export interface ScanResolveResult {
   /** null = **未知**（旧码降级判不出是哪一套），不是 false */
   completed?: boolean | null
   completed_at?: string | null
-  /** 非空 = 旧码降级，必须由工人补齐（绝不默认取第 1 套） */
+  /**
+   * 旧码降级标记（服务端给 `["set","position"]` 这类**标记串**，不是套号对象）；
+   * 非空 ⇒ 必须由工人补齐（绝不默认取第 1 套）。
+   */
   needs_selection: string[]
+  /**
+   * 旧码降级的**候选清单**（套 + 部位）；`needs_selection` 只是标记 —— 两份不是同一个键
+   * （改前 bmini 把标记当候选，真实响应下套号清单渲染不出来，issue #7813 P2b 链内修）。
+   */
+  selections?: import('../utils/reportState').ReportSelectionSet[] | null
   /** 成品入库块（issue #8287；服务端 `ProductionScanService` 注入）—— 没有 = 本次扫码不涉及成品入库 */
   finished_inbound?: FinishedInboundView | null
 }
