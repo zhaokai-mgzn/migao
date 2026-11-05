@@ -26,7 +26,8 @@
 //
 // 类级元守卫（`migao-dev-flow` §23 / 铁律 8）：
 //   a）桥的**代码级**引用只许在装配层且恰好 1 处；`render.mjs` 是纯函数层（不读全局）；两个硬件入口**只能**
-//      经 `capabilityShown` 判定（旁路判定 ⇒ 红）。
+//      经 `capabilityShown` 判定（旁路判定 ⇒ 红）；第三轴**只读** —— 页面侧出现 `capabilities` 的
+//      **赋值**路径 ⇒ 红（壳注入、页面只读：为了显示某入口反过来写能力 = 页面替壳做决定，能力真值变两份）。
 //   b）**未登记即红**：读取器暴露的能力轴 ⇄ 台账逐键相等（两个方向都判），且三态常量必须自洽。
 //   c）**登记了就必须双向判**：台账每一条在 absent / unknown / present-缺键 / present-在场 四种状态下各判一次。
 import { readdirSync, readFileSync } from 'node:fs'
@@ -387,6 +388,21 @@ test('🔴 元守卫 a：桥只在装配层碰一次；两个硬件入口只能�
     [],
     'render.mjs 是纯函数层：它不该读 window / globalThis / document（桥由装配层送进来）',
   )
+
+  // 🔴 第三轴**只读**（issue #8609 边界的「壳注入、页面只读」）：页面侧不得出现对 capabilities 的
+  //    **赋值**路径 —— 为了显示某个入口反过来写能力，就是页面替壳做决定（能力真值从此有两份，
+  //    而壳再也不会纠正它）。四种写法都收：直接赋值 / 键赋值 / `Object.assign` / `defineProperty`。
+  const WRITE_CAPS = /capabilities(?:\s*\[[^\]]{0,40}\]|\s*\.[\w$]+)?\s*=(?!=)|\bObject\.assign\s*\([^)]{0,80}capabilities|\bdefineProperty\s*\([^)]{0,80}capabilities/g
+  const capsWrites = []
+  const capsReaders = []
+  for (const file of files) {
+    const code = stripComments(read(file))
+    for (const hit of code.match(WRITE_CAPS) ?? []) capsWrites.push(`${file}: ${hit}`)
+    if (code.includes('.capabilities')) capsReaders.push(file)
+  }
+  assert.deepEqual(capsWrites, [], '页面侧出现了对 capabilities 的赋值路径：第三轴是壳注入、页面只读（写回 = 页面替壳做决定）')
+  // 扫描面非空自证：**读取点本身**必须被扫到（`src/` 空集 / 读取写法被改名 ⇒ 上面那条会恒绿 = 空判据）。
+  assert.deepEqual(capsReaders, ['render.mjs'], '能力读取点必须落在 render.mjs（扫不到任何读取点 = 这条判据自己就是空的）')
 })
 
 test('🔴 元守卫 b：能力读取器的形状 = 台账（未登记即红），三态常量自洽', () => {
