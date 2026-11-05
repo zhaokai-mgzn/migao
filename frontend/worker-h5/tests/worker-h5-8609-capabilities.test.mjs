@@ -1,3 +1,4 @@
+// case_ids: MC-234
 // case_ids: MC-192
 //
 // 工人端 `/w/` 的**第三轴：本机能力**（`window.migaoTerminal.capabilities`）—— issue #8609 B 包。
@@ -456,4 +457,26 @@ test('🔴 元守卫 c：台账每条要四态双向判（absent / unknown / pre
     }
   }
   assert.deepEqual(bad, [], '台账里有条目的四态判据没落地')
+})
+
+// ── 能力值形态：**不是白名单**（2026-11-05，终端仓 #59 交付后同步）──────────────────────
+// 病的形态：判定写成 `print.label === 'ble'` ⇒ Android 手持机报 `builtin`（商米内置打印服务）
+// ⇒ **入口消失**，而上面那一档全喂 `ble` ⇒ **全绿**（判据盲区）。
+// 判据：任何**非空字符串**都要渲染；只有 null / 空串 / 非法形态才隐藏。
+test('能力值形态：`builtin`（Android 内置打印）也必须渲染 —— 取值不是白名单', () => {
+  const caps = { state: CAP_STATE_PRESENT, cut: null, print: 'builtin' }
+  assert.equal(capabilityShown(caps, 'print'), true)
+})
+
+test('能力值形态：`cut.link = serial:/dev/ttyS1`（Android 板载串口）也必须渲染', () => {
+  const caps = { state: CAP_STATE_PRESENT, cut: 'serial:/dev/ttyS1', print: null }
+  assert.equal(capabilityShown(caps, 'cut'), true)
+})
+
+test('能力值形态：反向 —— 空串 / 纯空白 / null 仍然隐藏（不许为了过上面两条而放宽到恒真）', () => {
+  for (const bad of ['', '   ', null, undefined]) {
+    const caps = { state: CAP_STATE_PRESENT, cut: bad, print: bad }
+    assert.equal(capabilityShown(caps, 'cut'), false, `cut=${JSON.stringify(bad)} 竟然渲染了`)
+    assert.equal(capabilityShown(caps, 'print'), false, `print=${JSON.stringify(bad)} 竟然渲染了`)
+  }
 })
