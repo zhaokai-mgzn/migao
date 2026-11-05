@@ -9024,3 +9024,100 @@ cases:
         - "tests/unit_ci_workflows/test_flaky_triage_rate_limit.py"
       ci:
         - pr-check.yml
+
+  - id: MC-222
+    legacy_id: ""
+    title: "ToolResult.summary 的**消费面**（issue #5511 第四节 / 台账 #4025 F23）：值必须真的进模型上下文，不许把「字段存在」当「功能生效」"
+    domains:
+      - misc
+      - backend
+    tier: normal
+    tags:
+      - 死字段
+      - 消费面
+      - 模型上下文
+      - 值透传
+      - 红证
+    truths_ref: []
+    user_inputs:
+      - "台账原文判 ToolResult.summary「声明 + 大量赋值 + 零消费」，证据 = `git grep -n \".summary\"` 只命中 state.summary（不同对象）"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "**裁定现取（推翻「零消费」读法）**：出口字典 `summary=getattr(result, \"summary\", None) or \"\"` → `result_str = json.dumps(result_dict)` → `react_turn.py` 的 `ToolMessage(content=result_str, …)` ⇒ summary 是模型看得到的工具结果字段；台账读法漏掉了 `getattr(result, \"summary\", …)` 这种属性字符串取值形态。⇒ 选 B（保留字段 + 钉住消费面）：删除会真的从上下文拿掉一段信息（行为变更，且按 #4262 不自动跑评测）。"
+      - "**判据 1（会红）**：真跑 `_execute_tool_safe`（替身工具 summary=「共3个分类: 卧室系列,窗帘布艺,测试分类」）⇒ 出口字典与交给 ToolMessage 的那段 JSON 里都是该值；把出口 update 里的 `summary=` 删掉 ⇒ 红。"
+      - "**判据 2（会红）**：工具不填 summary ⇒ 键在、值为空串（消费点直接取键，缺键即 KeyError）。"
+      - "**判据 3（链路静态锁 + 判别力自证，会红）**：AST 判 `result_dict.update(... summary=…)` 与 `ToolMessage(content=result_str, …)`；两处分别注入拆除 ⇒ 判据点名，不注入 ⇒ 不报（防「判据没牙」）。"
+    skip_reason: "[backend-contract] 运行期值透传 + 源码 AST 锁（零 LLM、零网络）由 backend/ai-agent-service/tests/test_tool_result_summary_reaches_context.py 验证；「模型有没有真的用这条摘要」属真实 LLM 行为面，按 #4262 不自动跑评测，不进入 agent-eval 冒烟"
+    merge_log:
+      - "2026-11-05 新增（关联 issue #5511 第四节；取号见 .github/cases/claims/）。裁定 = B（保留字段 + 钉住消费面），不是 A（删字段）——现取证明消费面存在。"
+      - "取号：MC-222（先查重 .github/cases 全库无 MC-222 及以后，再按 scripts/next_case_id.py 的现取口径复核）。"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_tool_result_summary_reaches_context.py"
+      ci:
+        - ai-agent-tests.yml
+
+  - id: MC-223
+    legacy_id: ""
+    title: "存量弱断言增长的失败信息必须带**具体行号**（issue #5511 第四节 / 台账 #8313 残余②）：报错可直接点开，处置不再靠翻整个文件"
+    domains:
+      - misc
+      - ci
+    tier: normal
+    tags:
+      - 弱断言
+      - 门禁报错
+      - 行号
+      - 只许缩短
+      - 红证
+    truths_ref: []
+    user_inputs:
+      - "台账原文：`.github/growth_gate.py` 的 `weak_baseline_diff` 只返回 `(path, cur, base)`、失败信息无行号（原文写 `scripts/` 是旧路径，已漂移）"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "**判据 1（改前必红）**：新入账文件里的弱断言在第 3 行 ⇒ 失败文本含 `brand_new_test.py:3`；改前只报「N 个文件越过锚点」+ 路径，不含行号。"
+      - "**判据 2（会红）**：存量文件 1 → 2 处 ⇒ 两处行号都出现（`tracked_test.py:2` / `tracked_test.py:4`）且「存量增长 1 → 2」仍可读。"
+      - "**负控**：与锚点齐平 ⇒ growth 为空、rc 0（加一列不得把干净的树判红）。"
+      - "**取不到行号不得洗白**：文件已不在 ⇒ 行号列退化为空列表，但文件/处数必须保留（判红不得静默放行）。"
+      - "口径：报「该文件全部弱断言行号」而不是「新增行」—— 账本只存处数，差分不出新增行；宁可多报也不假精确。"
+    skip_reason: "[backend-contract] 纯函数 + 门禁文本判据（零网络、零 LLM）由 tests/unit_ci_workflows/test_weak_baseline_diff_line_numbers.py 验证；不进入 agent-eval 冒烟"
+    merge_log:
+      - "2026-11-05 新增（关联 issue #5511 第四节；取号见 .github/cases/claims/）。修法：`weak_baseline_diff` 多返回一列行号（`weak_assert_lines()`），`check_weak_baseline` 的失败行写成 `路径:行号`；未新增豁免、未改通过条件。"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_weak_baseline_diff_line_numbers.py"
+      ci:
+        - pr-check.yml
+
+  - id: MC-224
+    legacy_id: ""
+    title: "unfailable_green 标记必须被**读到**（issue #5511 第四节 / 台账 #8300 残余①）：接报告面消费点，不改判定"
+    domains:
+      - misc
+      - ci
+    tier: normal
+    tags:
+      - 假绿
+      - 只写不读
+      - 消费面
+      - 报告面
+      - 红证
+    truths_ref: []
+    user_inputs:
+      - "台账原文：`unfailable_green` 只写不读 —— `local_runner.py` 仅写标记，CI 不消费、无台账"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "**判据 1（会红）**：`fake_green_ids` 读到带标记的用例（OR-010 / PG-013）⇒ 返回 [\"OR-010\", \"PG-013\"]；未标记 / 为 False / 空结果 ⇒ 空列表（负控：不得把所有通过用例算成假绿）。"
+      - "**判据 2（接线静态锁，会红）**：AST 判 `run_suite` 调用 `fake_green_ids` 且其返回值进入 `print`（报告面 = CI 日志）；把调用换成常量 ⇒ 点名「没有调用」；把 print 拆掉 ⇒ 点名「报告面看不见」。"
+      - "**不改判定**：`ok` / `reason` 一个字都不动 —— 假绿候选直接判红会误伤存量用例（存量清账要基线/棘轮，属另一单）；本条治「标记没人读」，不是「标记不够严」。"
+    skip_reason: "[backend-contract] 纯函数 + 源码 AST 接线判据（零 LLM、零网络）由 tests/unit_ci_workflows/test_unfailable_green_is_consumed.py 验证；真实评测轮次里「报告面有没有真的显示」按 #4262 不自动触发，不进入 agent-eval 冒烟"
+    merge_log:
+      - "2026-11-05 新增（关联 issue #5511 第四节；取号见 .github/cases/claims/）。修法：新增 `fake_green_ids()` 读取口 + `run_suite` 打印（唯一读取点），标记不再只写不读；未新增豁免、未改通过条件。"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_unfailable_green_is_consumed.py"
+      ci:
+        - pr-check.yml
