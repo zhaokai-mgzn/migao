@@ -873,10 +873,16 @@ def check_generated(a: Audit) -> CheckResult:
             return r
         renewed_md = out_md.read_text(encoding="utf-8")
 
+    absent: list[str] = []
     for rel, renewed in ((GEN_EVAL, renewed_eval), (GEN_MD, renewed_md)):
         committed = _read_artifact_text(a.repo, rel)
         if committed is None:
-            r.findings.append(Finding(f"{rel}|missing", f"生成物缺失：{rel}"))
+            # 出库形态（issue #8167 P1-1）：这两个产物**不入库**（100% 可从 `.github/cases/**`
+            # 重建）⇒「树里没有它们」是**预期形态**，不是 finding。但这**不是免检**：判定本体
+            # 收敛到唯一实现 `scripts/generated_artifacts_freshness.py`（pr-check 的
+            # `Generate + verify case artifacts` / main 侧守护腿 / verify-all 的 cases 面门禁
+            # 三处都调它，判「没被塞回 git + 渲染可复现 + 落盘副本最新」）。
+            absent.append(rel)
             continue
         if committed != renewed:
             r.findings.append(Finding(
@@ -899,6 +905,16 @@ def check_generated(a: Audit) -> CheckResult:
             "render-drops-pre_clean",
             f"用例库有 {src_has_preclean} 条 `pre_clean`，但渲染出的 {GEN_EVAL} 不含该字段"
             f"（派生视图丢了运行期复位声明 = 结构性陈旧快照）"))
+    if len(absent) == 2:
+        # 全部不在树里 ⇒ 本探面**没有「提交版」这个判定对象**（具名声明，不是静默跳过）
+        r.status = "not_applicable"
+        r.na_subject = f"生成物新鲜度（{GEN_EVAL} / {GEN_MD}）"
+        r.na_reason = "两个生成物**不入库**（issue #8167 P1-1 的出库形态）⇒ 本探面没有「提交版」可比对"
+        r.na_remedy = ("判定本体 = `scripts/generated_artifacts_freshness.py`（pr-check、main 侧守护腿、"
+                       "verify-all 三处调用）；本探面只保留「在场即必须最新」这一半")
+        r.notes.append("出库形态：两个生成物未落盘，判定由唯一实现承担（见 na_remedy）")
+    elif absent:
+        r.notes.append(f"以下生成物未落盘（出库形态的预期）：{'、'.join(absent)}")
     r.notes.append(f"用例库含 pre_clean 的用例：{src_has_preclean} 条")
     return r
 

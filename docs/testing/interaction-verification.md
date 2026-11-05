@@ -83,6 +83,6 @@
 1. 工具改了 schema → 跑 `test_tool_schema_signature_contract.py`（① 必过）；
 2. 交互字段变了 → 同步后端白名单 + 前端 types（① 两文件同改）；
 3. 交互流程变了 → 补协议流 runner 测试（②）；
-4. 用户可见行为变了 → 补/改 `cases/*.yml`（③，渲染生成物后提交）；
+4. 用户可见行为变了 → 补/改 `cases/*.yml`（③，生成物按需生成、不入库）；
 5. 提交前：`./verify-all.sh gate` + `./check-ui-regression.sh`；
-   cases 改动后 `python3 .github/render_cases.py` 重渲染并提交生成物。
+   cases 改动后 `python3 scripts/generated_artifacts_freshness.py --write` 生成（不入库、无需提交）。

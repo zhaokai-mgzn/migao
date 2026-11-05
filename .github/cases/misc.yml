@@ -8732,3 +8732,39 @@ cases:
       ci:
         - pr-check.yml
         - ai-agent-tests.yml
+  - id: MC-210
+    legacy_id: ""
+    title: "生成物出库：eval_cases/ 与 casebook 不入库，改按需生成 + 可复现判定（PR diff 不再含千行派生内容）"
+    domains:
+      - misc
+      - ci
+    tier: normal
+    tags:
+      - 类级判据
+      - 生成物出库
+      - 入库卫生
+      - 合并冲突
+    truths_ref: []
+    user_inputs:
+      - "N/A（构建与门禁面的静态/运行期判据，无对话轮次）"
+    expectations:
+      - "`tests/agent_eval/eval_cases/**` 与 `docs/testing/mibao-verification-cases.md` 都是 `.github/cases/**` 的 100% 派生视图 ⇒ 不入库（`.gitignore` 覆盖 + `git rm --cached`，工作区文件保留）。"
+      - "任何入口要它们都必须先跑同一条生成腿（`scripts/generated_artifacts_freshness.py --write`）：CI 两条消费腿 + main 侧守护腿 + `verify-all.sh` + 三个 pytest 根的 conftest + `local_runner`；生成失败即抛，不 skip。"
+      - "判定本体在出库后仍会红：落盘副本陈旧或手改 ⇒ 退出码 1 且具名到产物；同一棵树连渲两次逐字节不同（不可复现）⇒ 退出码 1；渲染器坏了或产出为空 ⇒ 退出码 3（不可判定，绝不当通过）。"
+      - "有人用强制加入把产物塞回 git ⇒ 判据具名判红（索引与 HEAD 两侧都查）；忽略清单缺条目同样判红。"
+      - "干净检出（归档导出的树，无产物、无版本库目录）里跑消费者全绿 —— 因为收集前自动生成；把 conftest 里的生成腿摘掉 ⇒ 同一棵树当场红。"
+    data_checks:
+      - "注入式红证（实跑）：把 conftest 的生成腿删掉 ⇒ 干净树里报「找不到 eval_cases 模块」，判据非零。"
+      - "注入式红证（实跑）：渲染器改成每次追加随机数 ⇒ 退出码 1 且输出含「不可复现」；渲染器直接非零退出 ⇒ 退出码 3 且输出含「无法判定」。"
+      - "为什么用例机器判红台账（case_machine_fail_channel_baseline.json）不随出库：它是手工维护的台账（历史锚点 + 来由），不能从别的文件 100% 重建 ⇒ 判断标准 = 能不能 100% 重建。"
+      - "收益口径：改一条用例后 PR 差异从千行级降到只含真实改动（用例文件一处），且两个并行 PR 不再在生成物上冲突。"
+    skip_reason: ""
+    merge_log:
+      - "读数影响：本用例 expectations 非空、skip_reason 未标 backend-contract ⇒ 不计入 case_machine_fail_channel_baseline 的 backend_contract_scoring_zero（与 MC-209 同口径；改完实测确认）。"
+      - "2026-11-05 新增（关联 issue #8167 P1-1）：出库前每次改用例都要重渲染并提交两个生成物（1000~1800 行差异），一晚至少 5 次返工；两个并行 PR 的冲突几乎总落在生成物上。"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_generated_artifacts_untracked.py"
+        - "tests/unit_ci_workflows/test_generated_artifacts_clean_checkout.py"
+      ci:
+        - pr-check.yml

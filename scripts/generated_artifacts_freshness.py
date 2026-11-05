@@ -180,8 +180,10 @@ def ensure_generated(repo: Path, *, python: str | None = None, cases_rel: str = 
         raise GenerationError(f"用例库缺失：{cases_rel}/")
     outs = _out_paths(repo)
     for art in ARTIFACTS:
-        if art.kind == "dir":
-            outs[art.rel].mkdir(parents=True, exist_ok=True)
+        # 目录型产物建目录；单文件产物建**父目录**（干净检出里 docs/testing/ 可能根本不存在
+        # —— 不建就直接 open() 失败，那会把「生成腿没建路径」伪装成「渲染器坏了」）
+        outs[art.rel].mkdir(parents=True, exist_ok=True) if art.kind == "dir" \
+            else outs[art.rel].parent.mkdir(parents=True, exist_ok=True)
     argv = build_render_argv(python or sys.executable, cases_rel, renderer_rel, outs)
     try:
         proc = subprocess.run(argv, cwd=str(repo), capture_output=True, text=True,
@@ -472,24 +474,23 @@ def _violation_block(report: dict) -> list[str]:
 def _out_of_git_problems(report: dict, repo: Path, *, python: str, cases_rel: str,
                          renderer_rel: str, render_timeout: int,
                          first: dict[str, bytes] | None = None) -> dict[str, bytes]:
-    """出库形态的**两条新判定**（issue #8167 P1-1），两种 mode 共用（单一实现，别处不许再写）。
+    """出库形态的**确定性判定**（issue #8167 P1-1），两种 mode 共用（单一实现，别处不许再写）。
 
-    ① 产物不许被 git 跟踪、`.gitignore` 必须覆盖（`artifact_hygiene`）；
-    ② 渲染**确定性**：同一棵树连渲两次**逐字节**相同。
+    渲染**确定性**：同一棵树连渲两次**逐字节**相同。不同 ⇒ `violations`（判红，具名到产物）。
 
-    ⚠️ 为什么这两条必须**显式**判：入库时代它们被「提交版 vs 现取」间接兜住（提交版存在 ⇒ 有人跑过），
+    ⚠️ 为什么必须**显式**判：入库时代它被「提交版 vs 现取」间接兜住（提交版存在 ⇒ 有人跑过），
     出库后那一步没有了 —— 只剩「磁盘副本 vs 本次渲染」，而那一步是**自指**的（刚 `--write` 过必然相等）。
     取不到 ⇒ `undecidable`（**不是**「通过」）。
+    ⚠️ 另一半（产物**不许被 git 跟踪** / `.gitignore` 必须覆盖）是对**本仓库形态**的判定，不放这里
+    —— 见 `artifact_hygiene()` 的专用判据 `tests/unit_ci_workflows/test_generated_artifacts_untracked.py`。
 
     返回**第一次**渲染的字节投影（调用方复用它判「落盘副本是否陈旧」，省一次全量渲染）；
     渲染没成 ⇒ `{}`（原因已进 `report["undecidable"]`）。
     """
-    hygiene = artifact_hygiene(repo)
-    report["hygiene"] = hygiene
-    report["violations"] += [f"{rel}（仍被 git 跟踪 —— 出库产物不许入库）"
-                             for rel in hygiene["tracked"]]
-    report["violations"] += [f"{GITIGNORE_REL} 缺条目：{gap}" for gap in hygiene["gitignore_gaps"]]
-    report["undecidable"] += hygiene["undecidable"]
+    # ⚠️ 「产物是否被塞回 git / `.gitignore` 是否覆盖」**不在这里**判：那是**本仓库**的形态事实
+    # （夹具树与合并探测的提取树都不是仓库，没有索引可查）⇒ 由 `artifact_hygiene()` 的**专用判据**
+    # 在真仓库上判：`tests/unit_ci_workflows/test_generated_artifacts_untracked.py`（required 腿里跑）。
+    # 本函数只判**树内可判**的那一半：渲染确定性。
     if first is None:
         first, err = _render_once(repo, python, cases_rel, renderer_rel, render_timeout, "det1")
         if err:
@@ -727,9 +728,6 @@ def evaluate_untracked(repo: Path, *, python: str | None = None, cases_rel: str 
     first = _out_of_git_problems(report, repo, python=python or sys.executable,
                                  cases_rel=cases_rel, renderer_rel=renderer_rel,
                                  render_timeout=render_timeout)
-    hygiene = report.get("hygiene") or {}
-    if hygiene and not hygiene.get("applicable"):
-        problems.append(f"ℹ️ 「产物是否被塞回 git」本格不判：{hygiene.get('note', '')}")
     empty = [a.rel for a in ARTIFACTS if not first.get(a.rel)]
     if first and empty:
         report["undecidable"].append(
@@ -849,12 +847,11 @@ def probe_merge(repo: Path, ref: str, *, python: str | None = None, window: int 
             report["problems"].append(f"{ERROR_PREFIX}合并探测**无法判定**：解包失败（{type(exc).__name__}）")
             return report
         tree = tree_report or evaluate(repo, python=python, window=window, render_timeout=render_timeout)
-        # 出库形态（issue #8167 P1-1）：提取树里**没有**产物（它们不在 git 里）⇒ 这一面要判的
-        # 是「合并后的用例库还渲不渲得出来、且渲得**稳定**」= `evaluate_untracked`（连渲两次比对）。
-        # 不再是「提交版会不会被合并 hunk 顶旧」（`FM-E18/E22` 随出库整类消失 —— 没有提交版了）。
-        merge = evaluate_untracked(
-            dest, python=python, window=window, render_timeout=render_timeout,
-            missing=[a.rel + ("/" if a.kind == "dir" else "") for a in ARTIFACTS])
+        # 出库形态（issue #8167 P1-1）：提取树取自 `git archive` ⇒ 真实现场里**没有**产物
+        # （它们不在 git 里）⇒ `evaluate()` 自动落到 absent 分支（判合并后的用例库还渲不渲得出来、
+        # 且渲得**稳定**）。`FM-E18/E22` 的「提交版被合并 hunk 顶旧」随出库整类消失 —— 没有提交版了。
+        # ⚠️ 产物**仍在**树里的夹具树仍按「与提交版比对」判：两条路径由同一份实现决定，不是两套。
+        merge = evaluate(dest, python=python, window=window, render_timeout=render_timeout)
 
     report["tree_verdict"] = str(tree.get("verdict") or "")
     report["merge_verdict"] = str(merge.get("verdict") or "")
@@ -874,13 +871,17 @@ def probe_merge(repo: Path, ref: str, *, python: str | None = None, window: int 
         report["verdict"] = "fresh"
         report["problems"].append(f"✅ 合并探测：把本树合并到 `{ref}`（{report['base_sha'][:8]}）之后，"
                                   f"生成物仍与 `.github/cases/**` 同源")
+    if report["tree_verdict"] == "drifted":
+        hint = "本树自己就不新鲜 ⇒ **重渲染并提交生成物**（不许手改）；"
+    elif report["merge_verdict"] != "fresh":
+        hint = ("合并结果**渲不出确定的产物** ⇒ 合到该 ref 之后**重跑生成腿**"
+                "（两个各自可重建的分支，合并后的用例库/渲染器组合不稳定）；")
+    else:
+        hint = ("两侧都新鲜 ⇒ 合并结果**仍可稳定重建**"
+                "（出库后 `FM-E18`「提交版生成物被合并 hunk 顶旧」整类消失 —— 没有提交版了）。")
     report["attribution"] = (
         f"归因（别指向错误的对象）：本树 = **{report['tree_verdict']}** / 合并结果 = "
-        f"**{report['merge_verdict']}** ⇒ "
-        + ("本树自己就不新鲜 ⇒ **重渲染并提交生成物**（不许手改）；"
-           if report["tree_verdict"] == "drifted"
-           else "本树是新鲜的，**合并结果**才陈旧 ⇒ 两侧**各自渲染**后合并出的汇总行不重算（`FM-E18` 的形态）"
-                "⇒ `git rebase` 到最新 main 后**再重渲染一次**；"))
+        f"**{report['merge_verdict']}** ⇒ " + hint)
     return report
 
 
@@ -960,6 +961,16 @@ def main(argv: list[str] | None = None) -> int:
                                    renderer_rel=args.renderer))
         except GenerationError as exc:
             print(f"{ERROR_PREFIX}生成失败（fail-closed）：{exc}")
+            # 🔴 机读面**在失败路径上也要有**：读报告的人/脚本不该因为「这一步红了」拿不到任何结构
+            # （那会让「红的形状」与「绿的形状」不同 ⇒ 归因只能靠猜）。rc 仍是 3（不可判定）。
+            if args.json:
+                Path(args.json).write_text(json.dumps({
+                    "schema": 1, "repo": str(repo), "mode": "write-failed",
+                    "verdict": "undecidable", "problems": [f"生成失败（fail-closed）：{exc}"],
+                    "undecidable": [str(exc)], "drifted": [], "violations": [],
+                    "artifacts": [a.rel for a in ARTIFACTS], "seen": 0, "acted": 0,
+                    "generate_command": generate_command(), "exit_code": RC_UNDECIDABLE,
+                }, ensure_ascii=False, indent=1), encoding="utf-8")
             return RC_UNDECIDABLE
 
     report = evaluate(repo, python=args.python, cases_rel=args.cases,
