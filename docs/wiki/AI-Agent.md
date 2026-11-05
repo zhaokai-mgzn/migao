@@ -92,7 +92,7 @@ skill，能力误宣会被纠正并把会话回锁到在办流程的归属 skill
 | 域 | Tools |
 |----|-------|
 | 商品 | product_search, product_detail, product_manage, category_manage |
-| 订单 | order_search, order_detail, order_create, order_manage, logistics_track, customer_order_query, customer_address_query |
+| 订单 | order_search, order_detail, order_create, order_manage, logistics_track, customer_order_query（含 `recent_address`：下单前预填历史收货信息，原 `customer_address_query`，issue #8726 收敛） |
 | 售后 | aftersale_create, aftersale_query, after_sales_manage |
 | 加工 | processing_item_query, processing_item_manage, processing_items |
 | 库存 | inventory_manage |

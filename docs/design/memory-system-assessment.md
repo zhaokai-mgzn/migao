@@ -210,7 +210,7 @@ upsert 按 `(tenant,user,key)` 去重，但 key 由 LLM 自由生成 → 同一�
 | 注入接线 | `base_skill._inject_user_memories`：仅 xiaobu 在 identity_prefix 后注入消毒后的 `<user_memories>` 块；chat.py 每轮传 `agent_type` | `tests/test_memory_injection.py`（4 例，case CH-024） |
 | 合规 API | `GET /api/chat/memories`（查询权）+ `DELETE /api/chat/memories`（删除权），仅本人 tenant+user | `app/api/chat.py`；`tests/test_memories_api.py`（6 例，case MC-015） |
 | 会话末聚合挂载 | close_session / close_idle_sessions / delete_session 前 `_flush_pending_memories`（候选落库后再清状态） | `tests/test_session_memory.py`（含 flush 断言） |
-| 下单地址自动填充 | admin-api `OrderListResponse` 增 `customerAddress`（BeanUtils 自动复制）；新增 `customer_address_query` 工具（C 端只读，调 `/orders/mine` 取最近订单地址）；customer_order_skill 下单流程先查历史地址 → form 预填 value → 用户确认/修改 | `tests/test_tools_customer_address_query.py`（7 例，case CH-025）；`AgentOrderControllerMineTest` 增 customerAddress 断言 |
+| 下单地址自动填充 | admin-api `OrderListResponse` 增 `customerAddress`（BeanUtils 自动复制）；新增 `customer_address_query` 工具（C 端只读，调 `/orders/mine` 取最近订单地址；**已于 issue #8726 收敛为 `customer_order_query(action=recent_address)`**）；customer_order_skill 下单流程先查历史地址 → form 预填 value → 用户确认/修改 | `tests/test_tools_customer_order_query_recent_address.py`（14 例，case CH-025）；`AgentOrderControllerMineTest` 增 customerAddress 断言 |
 | 场景调研 | 6 个记忆主动提示场景清单 + 地址预填详设（数据源优先级/掩码/回写确认/多地址策略） | `/tmp/c-end-memory-scenarios.md`（微信官方文档与合规来源已验证） |
 
 **后续可选项**（本次未做，供排期）：

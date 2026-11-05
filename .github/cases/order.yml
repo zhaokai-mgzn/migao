@@ -1936,7 +1936,7 @@ cases:
         source: order_create
         expect_phone: "13800138000"
     data_checks:
-      - "缺收货信息时先 customer_address_query 查历史地址，没有再发 form 卡/直接问 —— 不得自我否定能力、不得推去小程序"
+      - "缺收货信息时先 customer_order_query(action=recent_address) 查历史地址，没有再发 form 卡/直接问 —— 不得自我否定能力、不得推去小程序"
       - "任何一轮回复都不得出现「我无法提交订单 / 没法帮您下单」这类能力误宣"
       - "参数补齐后必须真实落单（order_create 成功 + 明细/数量/手机号正确）"
     skip_reason: ""
@@ -2160,8 +2160,12 @@ cases:
     expectations:
       - tool: product_search
       - tool: product_detail
-      # 老客户自动带出收货信息 = 必须先查历史地址（零断言的工具之一）
-      - tool: customer_address_query
+      # 老客户自动带出收货信息 = 必须先查历史地址。issue #8726 起该能力收敛为
+      # customer_order_query 的 recent_address action ⇒ 断言必须钉到 args.action
+      # （只写 tool 名 = 任何订单查询都算命中 = 判据降级）。
+      - tool: customer_order_query
+        args:
+          action: recent_address
       # 写前校验步骤（零断言的工具之一）：confirm → validate_input → order_create
       - tool: validate_input
       - tool: interact
@@ -2172,7 +2176,7 @@ cases:
     # （prompt 第 4 步：validate_input → interact(confirm)）。此前只有 CH-010 断言了这条，
     # 其余下单用例不守 → 评测看不见"文本确认就直接写单"这条路径（验收 C-A1 抓到）。
     order_before:
-      - "customer_address_query before order_create"
+      - "customer_order_query[action:recent_address] before order_create"
       - "interact[confirm] before order_create"
     # 老客户"带出上次收货信息"的断言取**产出侧**（issue #3404 复盘）：
     #   · 顾客在意的是**订单上的值对不对**，而"过程必须发 form 卡"把用例绑死在**机制**上
@@ -2480,7 +2484,9 @@ cases:
         expect: 1
     expectations:
       - tool: product_search
-      - tool: customer_address_query
+      - tool: customer_order_query
+        args:
+          action: recent_address
       # 写前校验必须是**真的调用**（带 target/params），而不是被跳过
       - tool: validate_input
       - tool: interact

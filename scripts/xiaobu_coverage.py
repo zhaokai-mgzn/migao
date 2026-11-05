@@ -50,12 +50,11 @@ PERSONA = "xiaobu"
 # 显式豁免：已有用例但因客观原因 skip（不是覆盖缺口，禁止当缺口处理）
 # 依据 acceptance-protocol §1.3「关键行为禁止只写进自然语义 data_checks」的反面——
 # 豁免必须显式声明理由，不得靠"看起来有覆盖"。
-COVERAGE_EXEMPT = {
-    "customer_address_query": (
-        "CH-025 已覆盖（下单地址自动填充），但 case 声明 skip_reason："
-        "agent-eval 无稳定历史订单数据 → 由 pytest tests/test_customer_address_query.py 验证"
-    ),
-}
+# issue #8726：最后一条（地址查询工具）随工具收敛一并删除 —— 它的理由早已过期
+# （声称对应 case 带 skip_reason，实已解除；真实覆盖 = CH-025 / OR-023），留着只是一个
+# **预置吸收器**（见 docs/wiki/gate-exemption-ledger.md 第 14 条：工具一旦失去覆盖，
+# uncovered 缺口会被无声吞掉）。覆盖缺口现在会真的判红。
+COVERAGE_EXEMPT: dict = {}
 
 
 def build_report():

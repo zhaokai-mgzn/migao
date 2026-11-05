@@ -1664,7 +1664,12 @@ cases:
           color: "米白"
           colorName: "米白"
     expectations:
-      - tool: customer_address_query
+      # issue #8726：收货地址查询已收敛为 customer_order_query 的 recent_address action
+      # （同端点 / 同角色 / 同强制用户过滤）⇒ 断言必须钉到 action，否则「先查历史地址」
+      # 会退化成「先调过订单工具」（判据降级）。
+      - tool: customer_order_query
+        args:
+          action: recent_address
       # 不写 `args: component: form`（issue #3404 复盘）：顾客在意的是订单上的值对不对，
       # 把用例绑死在"必须发 form 卡"这一**机制**上会造出假红（实测 run 34755272379：
       # agent 用 confirm 卡承载同样的字段，行为合法却被判失败）。
@@ -1673,7 +1678,9 @@ cases:
     must_succeed:
       - tool: order_create
     order_before:
-      - "customer_address_query before order_create"
+      # 参数限定形态（issue #8726，DSL = `工具[参数名:值]`）：钉到 recent_address ——
+      # 其它 action 的调用不算，与收敛前「必须是地址工具」同一判别力。
+      - "customer_order_query[action:recent_address] before order_create"
       - "interact[confirm] before order_create"
     db_verify:
       - fetch: order_items
@@ -1689,15 +1696,15 @@ cases:
         # 地址里不会有"2号5幢" → 判红（不会因"地址非空"而假绿）。
         expect_address_contains: "2号5幢"
     data_checks:
-      - "老客户（有历史订单）下单时先调 customer_address_query 取最近订单收货信息（order_before 已可执行）"
+      - "老客户（有历史订单）下单时先调 customer_order_query(action=recent_address) 取最近订单收货信息（order_before 已可执行）"
       - "预填收货信息可被顾客修改，且修改后的地址落到订单（db_verify.expect_address_contains 已可执行）"
       - "未修改的收货人/手机号沿用历史值（张三 / 13800138000），掩码值不得回流建单（db_verify 已可执行）"
-      - "新客户（无历史订单）customer_address_query 返回空 → 维持原表单询问流程（OR-021/OR-022 覆盖）"
-      - "customer_address_query 仅查当前用户本人订单（强制 user_id 过滤，只读）—— 由 pytest test_customer_address_query.py 保证"
-    merge_log: "issue #2815：C 端长期记忆系统 — 下单自动填充收货信息场景；issue #3360：解 skip + 补可执行断言（原 skip 理由已过期）"
+      - "新客户（无历史订单）recent_address 返回空 → 维持原表单询问流程（OR-021/OR-022 覆盖）"
+      - "recent_address（原 customer_address_query 能力）仅查当前用户本人订单（强制 user_id 过滤，只读）—— 由 pytest test_tools_customer_order_query_recent_address.py 保证"
+    merge_log: "issue #2815：C 端长期记忆系统 — 下单自动填充收货信息场景；issue #3360：解 skip + 补可执行断言（原 skip 理由已过期）；issue #8726：customer_address_query 收敛为 customer_order_query(action=recent_address)（等价变换：端点/角色/用户过滤/返回字段与文案逐字不变），断言同批改钉 action+args（不留名字级弱断言）"
     traces:
       tests:
-        - "backend/ai-agent-service/tests/test_tools_customer_address_query.py"
+        - "backend/ai-agent-service/tests/test_tools_customer_order_query_recent_address.py"
       ci:
         - ai-agent-tests.yml
       verifies: []

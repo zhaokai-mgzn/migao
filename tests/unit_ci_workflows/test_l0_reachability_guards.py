@@ -95,11 +95,13 @@ BASE_PY = SERVICE_ROOT / "app" / "tools" / "base.py"
 #: 本次移除 `human_handoff`（按用户裁定 2026-09-19 退场、模型不可达，注册行已注释）
 #: ⇒ 解析集合少一个 ⇒ 名单同步（工具类文件仍在，正是"比注册表不比文件"的活例，
 #: 与 `#3917` 的 `processing_order_*` 同款）。
+# issue #8726：`customer_address_query` 已收敛为 `customer_order_query` 的 `recent_address` action
+# ⇒ 工具文件已删、注册行已去、本名单必须同步少一个（这正是"比注册表不比文件"的活例）。
 KNOWN_REGISTERED_TOOLS: frozenset[str] = frozenset({
     # issue #6486 包 2：定时提醒（用户「预约」）的 A 档可逆写工具
     "scheduled_task_manage",
     "after_sales_manage", "aftersale_create", "aftersale_query", "category_manage",
-    "curtain_calc", "customer_address_query", "customer_logistics_track", "customer_manage",
+    "curtain_calc", "customer_logistics_track", "customer_manage",
     "customer_order_query", "dashboard_stats", "employee_manage", "finance_api",
     "interact", "inventory_manage", "knowledge_search", "logistics_track",
     "notification_manage", "order_create", "order_manage", "order_query", "piecework_query",

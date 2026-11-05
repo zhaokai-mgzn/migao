@@ -43,7 +43,7 @@ from app.tools.customer_logistics_track import CustomerLogisticsTrackTool
 from app.tools.knowledge_search import KnowledgeSearchTool
 from app.tools.order_query import OrderQueryTool
 from app.tools.customer_order_query import CustomerOrderQueryTool
-from app.tools.customer_address_query import CustomerAddressQueryTool
+# 收货地址查询已收敛为 customer_order_query 的 recent_address（issue #8726，等价变换）
 from app.tools.order_manage import OrderManageTool
 from app.tools.order_create import OrderCreateTool
 from app.tools.processing_order_generate import ProcessingOrderGenerateTool
@@ -105,7 +105,7 @@ __all__ = [
     "ProductSearchTool", "ProductDetailTool", "MarketingPosterTool",
     "ProductImageGenerateTool", "LogisticsTrackTool",
     "CustomerLogisticsTrackTool", "KnowledgeSearchTool", "OrderQueryTool",
-    "CustomerOrderQueryTool", "CustomerAddressQueryTool", "OrderManageTool",
+    "CustomerOrderQueryTool", "OrderManageTool",
     "OrderCreateTool", "ProductManageTool", "InventoryManageTool",
     "ProcessingOrderGenerateTool", "ProcessingOrderQueryTool",
     "ProcessingOrderUpdateTool",

@@ -1087,7 +1087,7 @@ class TestPromptToolPromiseInvariant:
 
     KNOWN_TOOLS = (
         "product_search", "product_detail", "order_create", "aftersale_create",
-        "customer_order_query", "customer_logistics_track", "customer_address_query",
+        "customer_order_query", "customer_logistics_track",
         "aftersale_query", "validate_input", "interact", "human_handoff",
         "curtain_calc", "knowledge_search", "order_query", "product_manage",
         "order_manage", "inventory_manage", "employee_manage", "role_manage",
