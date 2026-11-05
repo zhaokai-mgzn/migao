@@ -36,8 +36,11 @@
  *    可达性由系统（微信 / Taro h5 的 tabbar）提供，不是谁"跳"过去的。
  */
 import {
+  CUT_CALC_PAGE_ROUTE,
+  CUT_PLAN_PAGE_ROUTE,
   INBOUND_PAGE_ROUTE,
   PIECEWORK_PAGE_ROUTE,
+  QUALITY_PAGE_ROUTE,
   REPORT_PAGE_ROUTE,
   REPRINT_PAGE_ROUTE,
   REWORK_PAGE_ROUTE,
@@ -318,5 +321,35 @@ export const PAGE_ENTRY_LEDGER: PageEntry[] = [
     viaBinding: 'src/utils/inbound/gaps.ts',
     audience:
       '工人身份（工人首页 →「我的计件」；未登录时该页自身引导去工号 + PIN 登录，先登录再看到自己的计件）',
+  },
+  // issue #7813 P2b：三个**只读**读面从 `/w/` 搬进小程序，各一条入口（都长在工人工作台）。
+  // 为什么必须登记：`/w/` 一字未动（P2c 才收口）⇒ 这三页是**新增面**，不登记就是三条死链
+  // （入口台账的 L2「未登记即红」）。三页都是**读面**（不报工、不录判定），写入口仍只在报工页。
+  {
+    route: CUT_CALC_PAGE_ROUTE,
+    from: 'src/pages/worker/home/index.tsx',
+    nav: 'navigateTo',
+    via: 'CUT_CALC_PAGE_ROUTE',
+    viaBinding: 'src/utils/inbound/gaps.ts',
+    audience:
+      '工人身份（工人首页 →「裁高计算」；显隐键 = 工人档案的 cut_calc。未登录时该页自身引导去工号 + PIN 登录）',
+  },
+  {
+    route: CUT_PLAN_PAGE_ROUTE,
+    from: 'src/pages/worker/home/index.tsx',
+    nav: 'navigateTo',
+    via: 'CUT_PLAN_PAGE_ROUTE',
+    viaBinding: 'src/utils/inbound/gaps.ts',
+    audience:
+      '工人身份（工人首页 →「精裁清单」；与「裁高计算」共用 cut_calc 键 —— 后端闭词表里没有独立键，本单零后端改动）',
+  },
+  {
+    route: QUALITY_PAGE_ROUTE,
+    from: 'src/pages/worker/home/index.tsx',
+    nav: 'navigateTo',
+    via: 'QUALITY_PAGE_ROUTE',
+    viaBinding: 'src/utils/inbound/gaps.ts',
+    audience:
+      '工人身份（工人首页 →「质检记录」；显隐键 = 工人档案的 inspect，且它同时是服务端读/写准入）',
   },
 ]

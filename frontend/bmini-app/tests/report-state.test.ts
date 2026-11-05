@@ -31,6 +31,7 @@ import {
   isQualityOperation,
   kindText,
   legacySelection,
+  legacySets,
   operationName,
   pickPosition,
   pickSet,
@@ -57,12 +58,20 @@ const MAIN_VIEW: ReportView = {
   set_progress: { done: 1, total: 3 },
 }
 
-/** 旧码一屏（必须选套 + 部位）。 */
+/**
+ * 旧码一屏（必须选套 + 部位）—— **逐字取服务端降级响应的形态**
+ * （`ProductionScanService#degradedView`）：`needs_selection` 是 `["set","position"]` 标记串，
+ * 候选清单在 `selections`。
+ *
+ * 🔴 2026-11-05（issue #7813 P2b 链内修）：改前夹具把候选写在 `needs_selection` 里（对象形态），
+ * 而真实响应不是那样 ⇒ 单测全绿、线上旧码工人看不到任何套号按钮。夹具必须长得像真响应。
+ */
 const LEGACY_VIEW: ReportView = {
   granularity: 'order',
   set_no: null,
   operation: null,
-  needs_selection: [
+  needs_selection: ['set', 'position'],
+  selections: [
     {
       set_id: 'set-1',
       set_no: 1,
@@ -92,7 +101,7 @@ describe('① 旧码：进选套态，绝不默认取第 1 套', () => {
   test('isLegacyScan 两条判据都认（granularity 与 needs_selection）', () => {
     expect(isLegacyScan(LEGACY_VIEW)).toBe(true)
     expect(isLegacyScan({ granularity: 'order' })).toBe(true)
-    expect(isLegacyScan({ needs_selection: [{ set_id: 's', positions: [] }] })).toBe(true)
+    expect(isLegacyScan({ needs_selection: ['set'] })).toBe(true)
     expect(isLegacyScan(MAIN_VIEW)).toBe(false)
     expect(isLegacyScan(null)).toBe(false)
   })
@@ -111,6 +120,20 @@ describe('① 旧码：进选套态，绝不默认取第 1 套', () => {
     const bad = { ...applyScan(loggedIn(), LEGACY_VIEW), selection: { setId: 'set-1', orderItemId: null } }
     expect(bad.selection.setId).toBe('set-1')
     expect(applyScan(loggedIn(), LEGACY_VIEW).selection.setId).toBeNull()
+  })
+})
+
+describe('①′ 旧码候选清单读服务端的 `selections`（#7813 P2b 链内修）', () => {
+  test('套号清单来自 selections；把标记当候选 ⇒ 一个套都没有（就是改前线上的形态）', () => {
+    expect(legacySets(LEGACY_VIEW).map((s) => s.set_id)).toEqual(['set-1', 'set-2'])
+    // 改前读的是 `needs_selection`（`['set','position']`）⇒ 取不出任何套号 ⇒ 屏幕上一个按钮都没有
+    expect(legacySets({ needs_selection: ['set', 'position'] } as unknown as ReportView)).toEqual([])
+  })
+
+  test('选套后的部位清单也来自 selections（不是标记串）', () => {
+    const state = pickSet(applyScan(loggedIn(), LEGACY_VIEW), 'set-2', 2)
+    expect(legacySets(LEGACY_VIEW).find((s) => s.set_id === 'set-2')?.positions?.length).toBe(1)
+    expect(pickSet(state, 'set-2', 2).selection).toEqual({ setId: 'set-2', orderItemId: null })
   })
 })
 

@@ -275,6 +275,56 @@ export const STOCK_WORKER_LOGIN_REQUIRED =
   '请先用工号 + PIN 登录工人身份，再修正批次库存（商家账号不能走这条路径）。'
 
 /**
+ * **裁高计算**页路由（issue #7813 P2b）：`/w/machine.html` 那一面搬进小程序后的落点。
+ *
+ * 数据源 = `GET /api/worker/production/cutting-height`（与 `/w/` 机台屏同一个端点，
+ * 计算复用商家端 `CuttingHeightConfigService#preview`）⇒ **零后端改动**、端侧不重算。
+ *
+ * 🔴 路由字面量是**单一真值**：`src/app.config.ts` 的 pages 必须逐字含它
+ * （没登记 = 死链；守卫 = `tests/page-entry-reachability.test.ts` 的 L0/L2）。
+ */
+export const CUT_CALC_PAGE_ROUTE = '/pages/worker/cut-calc/index'
+
+/** 裁高计算页文件（入口台账 `from` 要核的落点） */
+export const CUT_CALC_PAGE_FILE = 'src/pages/worker/cut-calc/index.tsx'
+
+/** 裁高计算页未登录时的引导（说清本页是「看数」，不是记账） */
+export const CUT_CALC_WORKER_LOGIN_REQUIRED =
+  '请先用工号 + PIN 登录工人身份，再看这一樘的裁高（商家账号不能走这条路径）。'
+
+/**
+ * **精裁清单**页路由（issue #7813 P2b）：`/w/` 报工屏里的「精裁输出（裁多长 × 几片）」区块
+ * （issue #5693）搬进小程序后成了一条**独立读面**。
+ *
+ * 数据 = 扫码解析响应的 `set_overview.cut_plan`（后端唯一实现 `ProcessingSetReadService`，
+ * 与商家端加工单详情**同一份**）⇒ **零后端改动**、端侧不算法。
+ */
+export const CUT_PLAN_PAGE_ROUTE = '/pages/worker/cut-plan/index'
+
+/** 精裁清单页文件（入口台账 `from` 要核的落点） */
+export const CUT_PLAN_PAGE_FILE = 'src/pages/worker/cut-plan/index.tsx'
+
+/** 精裁清单页未登录时的引导 */
+export const CUT_PLAN_WORKER_LOGIN_REQUIRED =
+  '请先用工号 + PIN 登录工人身份，再看这一套的裁片（商家账号不能走这条路径）。'
+
+/**
+ * **质检记录**页路由（issue #7813 P2b）：`/w/` 报工屏里的「质检记录（做工）」块搬进小程序后
+ * 成了一条**独立读面**（与 `/w/` 同一个读面 `GET /api/worker/quality/latest`）。
+ *
+ * 🔴 准入在服务端：工人档案的页面集里没有 `inspect` ⇒ 403（`WorkerQualityController.requireInspector`）；
+ * 本页据此给可行动提示，**不**把 403 渲染成「没有质检记录」。
+ */
+export const QUALITY_PAGE_ROUTE = '/pages/worker/quality/index'
+
+/** 质检记录页文件（入口台账 `from` 要核的落点） */
+export const QUALITY_PAGE_FILE = 'src/pages/worker/quality/index.tsx'
+
+/** 质检记录页未登录时的引导 */
+export const QUALITY_WORKER_LOGIN_REQUIRED =
+  '请先用工号 + PIN 登录工人身份，再看这一件的质检记录（商家账号不能走这条路径）。'
+
+/**
  * 守卫射程：**工人标签面**（入库页 + 补打页）+ 它们依赖的入库模块
  * （服务 / 门禁 / 解码 / 打印 / 共用件 / 确认框）。
  *

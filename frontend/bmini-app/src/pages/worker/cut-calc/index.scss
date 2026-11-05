@@ -1,0 +1,140 @@
+@use "../../../styles/variables.scss" as *;
+
+// 工人端「裁高计算」（issue #7813 P2b）
+//
+// 视觉语言与同族工人页（我的计件 / 返工记录 / 待出库单）**同一套**（issue #7240 的既有裁定）：
+//   · 页面根声明**非白**底色 + `min-height: 100vh`（判据：tests/worker-card-contrast-guard.test.ts）
+//   · 卡片 = 白底 + `$radius-lg` + 细描边 + `$shadow-card`（可见边界）
+//   · 字号按 **750 设计尺度**（1px = 1/40 rem），正文 / 次要字号下限 24
+//
+// 🔴 不新增颜色 / 字号 token（check-ui-regression.sh 判 UI 回退）——只取既有变量。
+.worker-cut-calc {
+  min-height: 100vh;
+  background: $bg-secondary;
+  padding: 0 0 40px;
+
+  &__header {
+    padding: 40px 24px 16px;
+  }
+
+  &__title {
+    display: block;
+    margin-top: 8px;
+    font-size: 40px;
+    font-weight: 700;
+    color: $text-primary;
+  }
+
+  &__worker {
+    display: block;
+    margin-top: 6px;
+    font-size: 24px;
+    color: $text-secondary;
+  }
+
+  &__card,
+  &__gate {
+    margin: 0 24px 16px;
+    padding: 24px;
+    background: $bg-primary;
+    border: 1px solid $border-color;
+    border-radius: $radius-lg;
+    box-shadow: $shadow-card;
+  }
+
+  &__notice,
+  &__hint {
+    display: block;
+    font-size: 24px;
+    line-height: 1.5;
+    color: $text-secondary;
+  }
+
+  &__order {
+    display: block;
+    font-size: 28px;
+    font-weight: 600;
+    color: $text-primary;
+  }
+
+  // 大字：车间里隔着一步也要读得出来（与 /w/ 机台屏同一档）
+  &__big {
+    display: block;
+    margin: 16px 0;
+    font-size: 44px;
+    font-weight: 700;
+    line-height: 1.35;
+    color: $brand-navy;
+  }
+
+  &__tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    margin: 16px 0;
+  }
+
+  &__tab {
+    width: auto;
+    min-height: 72px;
+    line-height: 72px;
+    padding: 0 24px;
+    font-size: 26px;
+    text-align: center;
+    color: $text-primary;
+    background: $bg-primary;
+    border: 1px solid $border-color;
+    border-radius: $radius-full;
+  }
+
+  &__row {
+    display: flex;
+    align-items: flex-start;
+    gap: 16px;
+    padding: 6px 0;
+    font-size: 26px;
+    line-height: 1.5;
+  }
+
+  &__label {
+    flex: 0 0 200px;
+    color: $text-secondary;
+  }
+
+  &__value {
+    flex: 1 1 auto;
+    min-width: 0;
+    color: $text-primary;
+    word-break: break-all;
+  }
+
+  &__section {
+    display: block;
+    margin: 12px 0 4px;
+    font-size: 26px;
+    font-weight: 600;
+    color: $text-primary;
+  }
+
+  &__warn {
+    display: block;
+    margin-top: 12px;
+    font-size: 24px;
+    line-height: 1.5;
+    color: $warning-color;
+  }
+
+  &__action {
+    width: auto;
+    min-height: 88px;
+    margin-top: 16px;
+    line-height: 88px;
+    padding: 0 32px;
+    font-size: 30px;
+    font-weight: 600;
+    text-align: center;
+    color: #ffffff;
+    background: $primary-color;
+    border-radius: $radius-md;
+  }
+}

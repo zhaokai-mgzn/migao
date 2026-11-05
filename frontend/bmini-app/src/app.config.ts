@@ -81,6 +81,19 @@ export default defineAppConfig({
     // 路由字面量是**单一真值**：`src/utils/inbound/gaps.ts` 的 `PIECEWORK_PAGE_ROUTE`
     // 必须逐字等于它（没登记 = 死链 ⇒ 入口台账 tests/page-entry-reachability.test.ts 的 L0/L2 判红）
     'pages/worker/piecework/index',
+    // 工人**裁高计算**（issue #7813 P2b）：`/w/machine.html` 那一面搬进小程序 ——
+    // 扫码 / 手输码 ⇒ 一屏（部位 / 成品高 / 命中项 / 裁高值大字）。**只读**：不写机器（2026-09-29 裁定①），
+    // 也不报工（报工只在报工页；本页的「去报工」只把码交过去）。
+    // 数据源 = `GET /api/worker/production/cutting-height`（与 `/w/` 同一个端点，零后端改动）。
+    'pages/worker/cut-calc/index',
+    // 工人**精裁清单**（issue #7813 P2b）：`/w/` 报工屏里的「精裁输出（裁多长 × 几片）」区块
+    // （issue #5693）搬成一条独立读面 —— 数据 = 扫码解析响应的 `set_overview.cut_plan`（零后端改动）。
+    // 🔴 旧码（多套单）必须先选套 + 部位：猜错套 = 把别的套的裁片给工人照做。
+    'pages/worker/cut-plan/index',
+    // 工人**质检记录**（issue #7813 P2b）：`/w/` 报工屏里的「质检记录（做工）」块搬成独立读面 ——
+    // 数据源 = `GET /api/worker/quality/latest`（与 `/w/` 同一个端点，零后端改动）。
+    // 准入在服务端：工人档案页面集没有 `inspect` ⇒ 403（本页给可行动提示，不冒充「没有记录」）。
+    'pages/worker/quality/index',
     // 工人**库存修正**（issue #8104；用户 2026-10-29 逐字「允许工人对某个批次的布匹进行修正」）：
     // 搜批次（批次号 / 货号 / 缸号 / 入库单号）→ 看系统余量 → 填实盘米数 + 选原因 → 二次确认 → 提交。
     // 走 `/api/worker/batch-stock/**`（工人零商家权限码，不是管理面）；服务端复用按批次盘点的唯一写面。
