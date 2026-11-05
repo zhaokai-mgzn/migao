@@ -232,3 +232,71 @@ def test_comment_mention_does_not_satisfy_resolution():
     bad = unresolved_sources(injected, entities, doctored)
     assert any("Order.ghostColumn" in b for b in bad), (
         "注释里提到列名就算落地 ⇒ 判据会被文案喂绿（实际：注释不该改变结论）")
+
+
+# ══════════════════════════════════════════════════════════════════════════════════
+# 本体 `rules` 段出库后**迁移**过来的判据（issue #8167 P1-2，承自 #5245 B5）
+# ══════════════════════════════════════════════════════════════════════════════════
+# 旧判据在 backend/ai-agent-service/tests/test_ontology_schema.py 里按**规则文本**断言
+# 「加工项目录无单价 / 加工费取组合价」。规则段出库（19 条里的那一条）⇒ 同一条事实改钉在
+# **真值载体**上：加工项目录不许再有单价列（V101 已 DROP unit_price / pricing_method），
+# 加工费真值源 = `processing_fee_combinations`（必须有 unit_price 列）。
+# 为什么**不降级**：文本断言只能管住「同一句再写一遍」，改的是副本、真值仍可漂；
+# DDL 断言钉在唯一真值上，且能对**注入**判红（下面那条）。
+
+#: 加工费真值源表（V68/V101 口径：加工项目录不再计价，组合价才是真值）
+FEE_TRUTH_TABLE = "processing_fee_combinations"
+#: 加工项目录**不许**再出现的计价列（V101 删除）
+FORBIDDEN_ITEM_COLUMNS = {"unit_price", "pricing_method"}
+
+
+def price_column_violations(columns: dict) -> list:
+    """纯函数：判「加工项目录无单价 ∧ 加工费真值源带 unit_price」→ 违规明细（空 = 通过）。
+
+    抽成纯函数是为了让注入式红证**复用同一份判据**（不在测试里另写一套比对）。
+    """
+    bad = []
+    items = columns.get("processing_items")
+    if not items:
+        bad.append("processing_items 表不存在（查不到 ⇒ 判红，不把「没得查」当通过）")
+    else:
+        leftovers = sorted(FORBIDDEN_ITEM_COLUMNS & set(items))
+        if leftovers:
+            bad.append(f"processing_items 又出现计价列 {leftovers}（V101 已删除）")
+    fee = columns.get(FEE_TRUTH_TABLE)
+    if not fee:
+        bad.append(f"加工费真值源表 {FEE_TRUTH_TABLE} 不在建库脚本里")
+    elif "unit_price" not in fee:
+        bad.append(f"{FEE_TRUTH_TABLE} 缺少 unit_price 列（那它就不可能是加工费真值源）")
+    return bad
+
+
+def test_processing_items_have_no_price_columns():
+    """加工项目录不得有单价列；加工费真值源必须存在且带 unit_price（#5245 B5 → #8167 P1-2）。"""
+    columns = parse_schema_columns_strict()
+    bad = price_column_violations(columns)
+    assert bad == [], "加工费真值源口径被改回去了：\n  " + "\n  ".join(bad) + f"\n（查了 {SCHEMA}）"
+    # 扫描面非空自证：三张相关表都真的解析出来了（否则「没扫到 ⇒ 没问题」是假绿）
+    assert "processing_items" in columns and FEE_TRUTH_TABLE in columns, (
+        f"解析面缺表 ⇒ 判据空转（解析出 {len(columns)} 张表；查了 {SCHEMA}）")
+
+
+def test_price_column_injection_is_red():
+    """注入式红证：把 V101 删掉的计价列灌回加工项目录 / 抽掉真值源的 unit_price ⇒ 必红。"""
+    columns = parse_schema_columns_strict()
+    assert price_column_violations(columns) == [], "前提：真实 DDL 此刻是干净的"
+
+    injected = {k: set(v) for k, v in columns.items()}
+    injected["processing_items"] = set(injected["processing_items"]) | {"unit_price"}
+    assert any("unit_price" in b for b in price_column_violations(injected)), (
+        "加工项目录重新出现 unit_price 却不判红 ⇒ 判据没牙（V101 的删除会被静默回滚）")
+
+    starved = {k: set(v) for k, v in columns.items()}
+    starved[FEE_TRUTH_TABLE] = set(starved[FEE_TRUTH_TABLE]) - {"unit_price"}
+    assert any(FEE_TRUTH_TABLE in b for b in price_column_violations(starved)), (
+        "真值源缺 unit_price 却不判红 ⇒ 判据没牙")
+
+    # 负控：只动无关表 ⇒ 不得误伤
+    untouched = {k: set(v) for k, v in columns.items()}
+    untouched["orders"] = set(untouched["orders"]) | {"a_fake_column"}
+    assert price_column_violations(untouched) == [], "无关表的列变化被判红 ⇒ 判据过严"
