@@ -54,7 +54,7 @@ import pytest
 
 from app.graph.skills.base_skill import _PROMPT_CACHE, _build_system_prompt
 from app.graph.skills.skill_registry import get_skill_registry
-from app.tools import cheatsheet as cs
+from app.graph.skills import cheatsheet as cs
 from app.tools.registry import get_tool_registry
 
 SERVICE_ROOT = Path(__file__).resolve().parents[1]
@@ -312,7 +312,7 @@ def test_rendering_is_byte_stable():
 
 
 def test_check_command_reports_determinism():
-    """`python -m app.tools.cheatsheet --check` 的真实读数必须是 `0`（通过）。"""
+    """`python -m app.graph.skills.cheatsheet --check` 的真实读数必须是 `0`（通过）。"""
     assert cs.check_deterministic() == 0
 
 
@@ -491,7 +491,7 @@ def test_cheatsheet_renderer_is_only_referenced_by_base_skill():
 def test_renderer_boundary_guard_has_red_power(tmp_path):
     """**红证**：把引用塞进替身目录 ⇒ 边界判据必报（否则上一条是永远绿的空判据）。"""
     (tmp_path / "follow_up.py").write_text(
-        "from app.tools.cheatsheet import render_cheatsheet\n"
+        "from app.graph.skills.cheatsheet import render_cheatsheet\n"
         "\n"
         "def user_visible_hint():\n"
         "    return render_cheatsheet('order')\n",

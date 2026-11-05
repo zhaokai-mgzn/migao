@@ -422,6 +422,45 @@ def _type_hint(declared: str) -> str:
     }.get(declared, declared)
 
 
+# ── `description` 段的**纯字符串**解析（`triggers` / `not_for` / 选工具小抄的唯一实现）──
+# 为什么不用正则：本仓对「按引号定界取值」有专门守卫（注释里的假字面量会被当真值），
+# 故这里一律 `find` / `startswith` / `split`，不写带引号捕获组的正则。
+#: 商家说法的引号形态（`【触发】` 段里实际出现两种；纯字符串扫描，不用正则取引号内内容）。
+_QUOTE_PAIRS = (("「", "」"), ("'", "'"), ("“", "”"))
+
+def segment(description: str, marker: str) -> str:
+    """取 `description` 里 `marker` 段（到下一个 `【` 段或结尾为止）；没有 ⇒ 空串。"""
+    text = description or ""
+    start = text.find(marker)
+    if start < 0:
+        return ""
+    rest = text[start + len(marker):]
+    end = rest.find("【")
+    return (rest if end < 0 else rest[:end]).strip()
+
+
+def quoted_phrases(text: str) -> List[str]:
+    """按出现顺序取 `text` 里被引号括起来的短语（三种引号形态）。"""
+    out: List[str] = []
+    index = 0
+    text = text or ""
+    while index < len(text):
+        for opening, closing in _QUOTE_PAIRS:
+            if not text.startswith(opening, index):
+                continue
+            end = text.find(closing, index + len(opening))
+            if end > index + len(opening):
+                phrase = text[index + len(opening):end].strip()
+                if phrase:
+                    out.append(phrase)
+                index = end + len(closing)
+                break
+            break
+        else:
+            index += 1
+    return out
+
+
 class BaseTool(ABC):
     """Tool 基类
     
@@ -449,15 +488,11 @@ class BaseTool(ABC):
     @property
     def triggers(self) -> List[str]:
         """商家怎么说（← `description` 的 `【触发】` 段里的引号短语，按出现顺序）。"""
-        from app.tools.cheatsheet import quoted_phrases, segment
-
         return quoted_phrases(segment(self.description, "【触发】"))
 
     @property
     def not_for(self) -> str:
         """别拿它做 B（← `description` 的 `【不要用于】` 段原文；没有该段 ⇒ 空串）。"""
-        from app.tools.cheatsheet import segment
-
         return segment(self.description, "【不要用于】")
 
     # 参数 JSON Schema（用于 LangChain/OpenAI function calling）

@@ -514,12 +514,12 @@ def _tool_cheatsheet(skill_name: str) -> str:
 
     真值分工（issue #8176 的口径，不得改）：能力 = 工具注册表；商家叫法 = 本体 objects；
     「不该用 A 做 B」= 工具 `description` 的 `【不要用于】` 段。渲染器在
-    `app/tools/cheatsheet.py`，本函数只做 persona 门控与常量漂移自证。
+    `app/graph/skills/cheatsheet.py`，本函数只做 persona 门控与常量漂移自证。
     """
     cfg = _skill_config(skill_name)
     if cfg is None or "mibao" not in set(cfg.system_prompts or {}):
         return ""
-    from app.tools.cheatsheet import MARKER, render_cheatsheet
+    from app.graph.skills.cheatsheet import MARKER, render_cheatsheet
 
     text = render_cheatsheet(skill_name)
     # 两处常量漂移会让「段在不在」被判错（测试也抓不到的那类静默失效）⇒ 就地自证。

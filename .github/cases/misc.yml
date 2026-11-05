@@ -9048,7 +9048,7 @@ cases:
       - "小抄条目与声明面**双向一致**：声明面里有而小抄没有 ⇒ 判红并具名该工具；小抄写出未注册的工具名 ⇒ 判红。"
       - "删掉的 5 条手写「不要用 A 做 B」规则，其真值必须落在工具的「不要用于」元数据里、并在小抄行里可见；对应负例仍须留在用例库。"
       - "9 处手写速查表（6 个领域 prompt + 2 处内联 prompt + 财务规则表）全部清零；表里点名过的工具必须仍被渲染（真值不随表消失）。"
-      - "同一输入两次渲染逐字节相同；`python -m app.tools.cheatsheet --check` 退出码 0；渲染漂移 ⇒ 1；一把工具都没渲染 ⇒ 3（不可判定）。"
+      - "同一输入两次渲染逐字节相同；`python -m app.graph.skills.cheatsheet --check` 退出码 0；渲染漂移 ⇒ 1；一把工具都没渲染 ⇒ 3（不可判定）。"
     data_checks:
       - "**双向一致（会红）**：把渲染器对 `order_query` 静默跳过 ⇒ `test_rendering_skips_are_reported_by_name` 红并在消息里**具名** `order_query`；未注入 ⇒ 20 passed（复算 = `cd backend/ai-agent-service && .venv/bin/python -m pytest tests/test_cheatsheet.py -q`）。"
       - "**删规则仍绿（本单核心）**：`product.md` 的「查库存不要用 product_search」、`order.md` 的「问加工单不得用 processing_item_query 冒充」、`general.md` 的同族口径、`staff.md` 的「查角色用 role_manage」、`settings.md` 的「不要拿 settings_manage 去查通知」五条删除后 ⇒ 其 true 值分别落在 `product_search` / `processing_item_query` / `employee_manage` / `settings_manage` 的「不要用于」段，且出现在对应 skill 的小抄行里（`test_deleted_handwritten_rule_is_handed_over_by_metadata`）。"
@@ -9058,7 +9058,7 @@ cases:
       - "**元数据不是第二事实源**：`triggers` / `not_for` 与工具 `description` 的对应段逐字节相等（投影而非副本）；逐族（订单/加工单/加工项/财务/商品）跳转目标必须可达、非自指、至少一个跨业务域。"
       - "**字符数**：手写速查表 5,772 字符 → 0；组装后 11 个 B 端 skill 的 prompt 合计 123,175 → 122,679（生产形态，含内联 prompt）。"
     skip_reason: "[backend-contract] 结构 + 投影判据（零网络、零 LLM 调用），由 backend/ai-agent-service/tests/test_cheatsheet.py 与 tests/test_prompt_snapshots.py 验证；判的是「小抄 ⇄ 注册表一致」与「手写规则是否被元数据接手」，不是模型回答质量"
-    merge_log: "2026-11-05 新增（issue #8176）：9 处手写速查表改为注册表 × 本体的投影（新增 `app/tools/cheatsheet.py` + Layer 2.8 注入，只给 mibao）。取号 MC-222（`grep -rn \"id: MC-2\" .github/cases/` 零命中后取号）。30 把工具补「不要用于」元数据（覆盖订单/加工单/加工项/财务/商品五族），6 条手写规则删除并逐条留了接手判据。未闭合（照实登记）：C 端 `prompts/customer_quote.md` 与 `prompts/customer_knowledge.md` 的表格**有意保留**（C 端 prompt 逐字节不变，与 #7291 的 persona 门控同口径），重启条件 = 需要 C 端选工具帮助时另开单。"
+    merge_log: "2026-11-05 新增（issue #8176）：10 处手写速查表改为注册表 × 本体的投影（新增 `app/graph/skills/cheatsheet.py` + Layer 2.8 注入，只给 mibao）。取号 MC-222（`grep -rn \"id: MC-2\" .github/cases/` 零命中后取号）。30 把工具补「不要用于」元数据（覆盖订单/加工单/加工项/财务/商品五族），6 条手写规则删除并逐条留了接手判据。未闭合（照实登记）：C 端 `prompts/customer_quote.md` 与 `prompts/customer_knowledge.md` 的表格**有意保留**（C 端 prompt 逐字节不变，与 #7291 的 persona 门控同口径），重启条件 = 需要 C 端选工具帮助时另开单。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_cheatsheet.py"

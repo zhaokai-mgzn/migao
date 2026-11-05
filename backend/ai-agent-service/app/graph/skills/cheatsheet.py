@@ -23,13 +23,15 @@ B 端每轮绑 34~39 把工具，「选错工具」是主要失败来源之一�
    **不贡献**「能不能做」—— schema 的 `actions` 段已按 issue #8172 出库。
 
 Seam: `render_cheatsheet(skill_name)` → str（只给 mibao；调用方按 persona 门控）。
-`python -m app.tools.cheatsheet --check`：同一输入两次渲染逐字节比对（确定性判据）。
+`python -m app.graph.skills.cheatsheet --check`：同一输入两次渲染逐字节比对（确定性判据）。
 """
 
 from __future__ import annotations
 
 from functools import lru_cache
-from typing import Any, Iterable, List, Optional, Sequence, Tuple
+from typing import Any, Iterable, List, Optional, Sequence
+
+from app.tools.base import quoted_phrases, segment
 
 #: 段首标记（渲染与解析共用同一串；解析不到 = 「没有小抄」）。
 MARKER = "【选工具小抄】"
@@ -48,74 +50,36 @@ _NOT_FOR_MAX = 2
 #: 本体词表：整行最多几个字（超了截断 —— 宁可少说也不白烧每轮 token）。
 _OBJECT_LINE_CHARS = 60
 
-#: 商家说法的引号形态（`【触发】` 段里实际出现两种；纯字符串扫描，不用正则取引号内内容）。
-_QUOTE_PAIRS: Tuple[Tuple[str, str], ...] = (("「", "」"), ("'", "'"), ("“", "”"))
-
 #: `not_for` 条目里的跳转形态：「（用 X）」。
 _TARGET_OPEN = "（用 "
 
-#: 本体词表行的前缀（判据据此把它与工具条目区分开）。
-OBJECT_LINE_PREFIX = "- 业务对象（本体）："
 
-
-# ── `description` 段的**纯字符串**解析（`triggers` / `not_for` 的唯一实现）────────
-# 为什么不用正则：本仓对「按引号定界取值」有专门守卫（注释里的假字面量会被当真值），
-# 故这里一律 `find` / `startswith` / `split`，不写带引号捕获组的正则。
-def segment(description: str, marker: str) -> str:
-    """取 `description` 里 `marker` 段（到下一个 `【` 段或结尾为止）；没有 ⇒ 空串。"""
-    text = description or ""
-    start = text.find(marker)
-    if start < 0:
-        return ""
-    rest = text[start + len(marker):]
-    end = rest.find("【")
-    return (rest if end < 0 else rest[:end]).strip()
-
-
-def quoted_phrases(text: str) -> List[str]:
-    """按出现顺序取 `text` 里被引号括起来的短语（三种引号形态）。"""
-    out: List[str] = []
-    index = 0
-    text = text or ""
-    while index < len(text):
-        for opening, closing in _QUOTE_PAIRS:
-            if not text.startswith(opening, index):
-                continue
-            end = text.find(closing, index + len(opening))
-            if end > index + len(opening):
-                phrase = text[index + len(opening):end].strip()
-                if phrase:
-                    out.append(phrase)
-                index = end + len(closing)
-                break
-            break
-        else:
-            index += 1
-    return out
-
-
-def not_for_entries(text: str) -> List[Tuple[str, str]]:
+def not_for_entries(text: str) -> List[tuple]:
     """`【不要用于】` 段 → `[(商家说法, 该用的工具名)]`（解析不出目标名的条目丢弃）。
 
     `text` 可以是**整段 description**，也可以**已经是**该段（调用方常直接传 `tool.not_for`）——
     两种形态都吃，避免"传错一层就静默返回空"这类假绿。
     """
-    out: List[Tuple[str, str]] = []
+    out: List[tuple] = []
     body = segment(text, "【不要用于】") if "【不要用于】" in (text or "") else (text or "")
     for chunk in body.split("；"):
         chunk = chunk.strip()
         if not chunk:
             continue
-        start = chunk.find(_TARGET_OPEN)
-        if start < 0:
+        at = chunk.find(_TARGET_OPEN)
+        if at < 0:
             continue
-        end = chunk.find("）", start + len(_TARGET_OPEN))
-        if end < 0:
+        close = chunk.find("）", at + len(_TARGET_OPEN))
+        if close < 0:
             continue
-        target = chunk[start + len(_TARGET_OPEN):end].strip()
+        target = chunk[at + len(_TARGET_OPEN):close].strip()
         if target:
-            out.append((chunk[:start].strip(), target))
+            out.append((chunk[:at].strip(), target))
     return out
+
+
+#: 本体词表行的前缀（判据据此把它与工具条目区分开）。
+OBJECT_LINE_PREFIX = "- 业务对象（本体）："
 
 
 # ── 注册表 / 本体（事实源；不在这里抄任何清单）─────────────────────────────────
@@ -301,7 +265,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             return 3
         print(text)
         return 0
-    print("用法：python -m app.tools.cheatsheet --check | --render <skill>")
+    print("用法：python -m app.graph.skills.cheatsheet --check | --render <skill>")
     return 2
 
 
