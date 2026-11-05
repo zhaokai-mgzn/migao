@@ -237,7 +237,8 @@ export interface CutHeightData {
 /** 显示精度（服务端 `rounding.digits`；0~3 之外 / 缺 ⇒ 3）。 */
 export function digitsOf(position: CutHeightPosition | null | undefined): number {
   const digits = Number(position?.rounding?.digits)
-  return Number.isInteger(digits) && digits >= 0 && digits && digits <= 3 ? digits : DEFAULT_DIGITS
+  // 🔴 显式判 0：`digits && …` 会把合法的 0 位（整米取整）当成缺值退回 3 位（少印一位 = 机器屏输错数）
+  return Number.isInteger(digits) && digits >= 0 && digits <= 3 ? digits : DEFAULT_DIGITS
 }
 
 /** 数值 → 定长文本；缺值 / 非数 ⇒ `—`（**不印 0**）。 */

@@ -255,6 +255,11 @@ describe('裁高计算：只格式化，不重算、不编造缺值', () => {
     expect(unresolvedRows(position)).toEqual(['花距'])
   })
 
+  test('取整位数尊重服务端（0 位也要认 —— 不能被当成缺值退回 3 位）', () => {
+    const zero = { order_item_id: 'i', base: 2, cutting_height: 3, rounding: { mode: 'half_up', digits: 0 } }
+    expect(cutHeightText(zero)).toBe('请在机器屏输入 3 米')
+  })
+
   test('明细行缺值 ⇒ —（不摆 0）', () => {
     const rows = cutHeightDetailRows(cutHeightPosition(DATA, 2))
     expect(rows.find((row) => row.label === '成品高')?.value).toBe('—')

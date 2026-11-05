@@ -137,3 +137,4 @@
 {"id":"1793843198.11049.30992","ts":"2026-11-05T01:46:39Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/8681c-facade4","why":"--allow-package-heavy（命令行显式）"}
 {"id":"1793841962.39334.15141","ts":"2026-11-05T01:26:07Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/8698-waybill","why":"--allow-package-heavy（命令行显式）"}
 {"id":"1793844381.7245.3519","ts":"2026-11-05T02:06:21Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/8698-waybill","why":"--allow-package-heavy（命令行显式）"}
+{"id":"1793855765.70636.10245","ts":"2026-11-05T05:16:05Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/7813-p2b","why":"--allow-package-heavy（命令行显式）"}
