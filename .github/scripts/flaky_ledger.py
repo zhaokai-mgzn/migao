@@ -306,6 +306,20 @@ FEATURE_RATE_LIMITED = "rate_limited"
 FEATURE_NOT_RATE_LIMITED = "not_rate_limited"
 FEATURE_UNKNOWN = "unknown"
 
+#: 🔴 **#8709 残留**：日志**没取到**（`unknown`）的 job 在台账条目上的标注语。
+#:
+#: 为什么必须有这一条：`unknown` ⇒ 走**原路径**（fail-closed：宁可多判一次 flaky，不许放过真红），
+#: 于是它的条目 `kind` 可能是 `flaky` —— 但那**不是**「已判定为 flaky」，只是「未判定」下的保守结论。
+#: 不标注 ⇒ 读台账的人会把它当成**证据**：**「取不到日志」静默变成一条 flaky 证据**。
+#: 标注是**追加字段**（`undetermined` / `undetermined_reason` + `reason` 前缀），**不新造 kind**：
+#: `kind` 决定动作与跟踪单要求（`FOLLOW_UP_REQUIRED_KINDS`），改写它会**削弱**既有闸门。
+UNDETERMINED_REASON = (
+    "这个失败 job 的**日志没取到**（判不了是不是限流）⇒ 本条是**未判定**下的保守结论，"
+    "**不是**「已判定为 flaky」的证据；取回日志后按 #8709 的前提判定重判"
+)
+#: 条目上的布尔标注字段（与 `UNDETERMINED_REASON` 成对写入）。
+UNDETERMINED_FIELD = "undetermined"
+
 #: 把上述判定挂到 bundle 上的字段名。为什么放进 bundle 而不是让 `decide` 自己拉日志：
 #: `decide` 是**纯函数**（无 IO、无网络，故可离线红证）—— 取数归 `classify-failures` 子命令，
 #: 判定只读这个字段。「取数 / 判定」分家的代价是多一个 workflow 步骤，换来的是判据能被注入式红证。
@@ -1074,7 +1088,19 @@ def rate_limited_only(bundle, failed_jobs, attempt) -> dict:
     other = [row["job"] for row in rows if row["verdict"] == FEATURE_NOT_RATE_LIMITED]
     undecided = [row["job"] for row in rows if row["verdict"] == FEATURE_UNKNOWN]
     out = {"rate_limited": False, "total": total, "scanned": scanned,
-           "blind": bool(total and scanned == 0), "jobs": rows}
+           "blind": bool(total and scanned == 0), "jobs": rows,
+           # 🔴 **#8709 残留**：`jobs` 是给人看的明细，这三份是**具名取数面** —— 混合场景下
+           # `build_entries` 要据此把「其实只是限流」的 job 排出台账。**不许**让调用方自己再筛一遍
+           # （第二份筛选逻辑 = 第二个会漂的口径；残留缺陷正是「判定对了、记账没跟上」）。
+           "rate_limited_jobs": rate,
+           "not_rate_limited_jobs": other,
+           "undetermined_jobs": undecided,
+           # 扫描面**自证**（判据 5）：三类必须**恰好铺满**失败 job 面 —— 有 job 漏算 ⇒
+           # `complete=False`（「没算到」不许长得像「算完了」）。
+           "surface": {"total": total, "rate_limited": len(rate), "real_red": len(other),
+                       "undetermined": len(undecided),
+                       "accounted": len(rate) + len(other) + len(undecided),
+                       "complete": len(rate) + len(other) + len(undecided) == total}}
     if not total:
         out["reason"] = "没有任何失败 job ⇒ 无前提判定可做"
     elif len(rate) == total:
@@ -1160,8 +1186,18 @@ def classify_both_red(a1, a2) -> tuple:
 
 def build_entries(run, failed_jobs, rerun_result: str, prior_failed_jobs=None,
                   failed_attempt=None, *, facts_attempt=None, prev_attempt=None,
-                  rerun_jobs=None) -> list:
+                  rerun_jobs=None, exclude_jobs=None, undetermined_jobs=None) -> list:
     """把「失败 job 列表 + 重跑结果」变成台账条目（**只追加**，不修改既有条目）。
+
+    🔴 **#8709 残留：判红 ≠ 记账**（两个入参就是这条区分的全部实现）：
+      · `exclude_jobs` = **日志里只有限流特征**的失败 job（`rate_limited_only()` 的
+        `rate_limited_jobs`）⇒ 它们**不产出台账条目**。判定（`action`）仍由**真红那批**派生
+        ⇒ PR 照旧被挡（那次 job 仍然是红的）；被判的只是**台账面** —— 把「判不了（exit 3）」
+        写成 flaky 正是 #8709 判据 4 要禁的形态，而**混合场景**（一条真红 + N 条限流）此前
+        把 N 条限流也记了进来（现场 `entries=6` 而其中 5 条其实只是限流）。
+      · `undetermined_jobs` = 日志**没取到**的 job（`unknown`）⇒ 照旧产出条目（fail-closed：
+        宁可多判一次 flaky，不许放过真红），但**显式标注** `undetermined=True` +
+        `undetermined_reason` + `reason` 前缀 —— 「取不到日志」不许静默成「这就是 flaky」。
 
     #5088：`kind` **不再由 `rerun_result` 单独推出** —— 两次都红 ⇒ `unknown`（fail-closed），
     并把**原始事实**同时记下（`attempts`：每次尝试的失败步骤逐字、断言摘要待 `attest` 回填），
@@ -1179,12 +1215,18 @@ def build_entries(run, failed_jobs, rerun_result: str, prior_failed_jobs=None,
     out = []
     prior = list(prior_failed_jobs or [])
     rerun = list(rerun_jobs or [])
+    #: 判为「其实只是限流」的 job ⇒ **零条目**（判红 ≠ 记账，见 docstring）
+    excluded = {str(n) for n in (exclude_jobs or []) if str(n)}
+    #: 日志**没取到**的 job ⇒ 条目照旧产出，但打「未判定」标注（**不是** flaky 结论）
+    undecided = {str(n) for n in (undetermined_jobs or []) if str(n)}
     current = _attempt(run) if failed_attempt is None else int(failed_attempt)
     #: `failed_jobs` 这次尝试的序号与 `prior_failed_jobs` 那次尝试的序号（**分开**，见 docstring）
     facts_attempt = current if facts_attempt is None else int(facts_attempt)
     prev_attempt = max(facts_attempt - 1, 1) if prev_attempt is None else int(prev_attempt)
     for job in failed_jobs:
         name = job.get("name")
+        if str(name) in excluded:
+            continue
         facts = attempt_facts(job, facts_attempt)
         # 上一次尝试的同一 job（用于把**两次的原始事实**都记下来 —— 供读者自己复核）
         prev_job = next((j for j in prior if j.get("name") == name), None)
@@ -1273,6 +1315,13 @@ def build_entries(run, failed_jobs, rerun_result: str, prior_failed_jobs=None,
         }
         if unknown_reason:
             entry["unknown_reason"] = unknown_reason
+        if str(name) in undecided:
+            # 🔴 #8709 残留（判据 4）：**未判定**必须在条目上看得见 —— 否则「日志没取到」
+            # 会被读成「已确认 flaky」（静默把取数失败变成证据）。不新造 kind（见常量注释）。
+            entry[UNDETERMINED_FIELD] = True
+            entry["undetermined_reason"] = UNDETERMINED_REASON
+            entry["reason"] = f"**未判定**（{UNDETERMINED_REASON}）—— {entry['reason']}"
+            entry["remedy"] = f"先取回失败 job 的日志再判定。{entry['remedy']}"
         out.append(entry)
     return out
 
@@ -1447,7 +1496,12 @@ def decide(bundle, max_attempts: int = MAX_ATTEMPTS, *, ledger=None, now=None,
                              #    ⇒ `prev_facts=None`）。
                              prior_failed_jobs=prior_jobs,
                              rerun_jobs=jobs,
-                             failed_attempt=max(attempt - 1, 1))
+                             failed_attempt=max(attempt - 1, 1),
+                             # 🔴 #8709 残留：**判红 ≠ 记账** —— 判为「其实只是限流」的 job
+                             # 不产出台账条目（`entries` 只留真红那批），`action` 仍由真红派生；
+                             # 日志没取到的 job 照旧记账但打「未判定」标注（fail-closed 不降级）。
+                             exclude_jobs=limit["rate_limited_jobs"],
+                             undetermined_jobs=limit["undetermined_jobs"])
         # #8709：前提判定的**取数面**随决策一起返回（含 `blind`）—— job summary 与 PR 评论
         # 都要能说出「扫了几份、判了什么、有没有盲区」（0 命中 ≠ 已排除）。
         decision["failure_kinds"] = limit
@@ -1466,7 +1520,11 @@ def decide(bundle, max_attempts: int = MAX_ATTEMPTS, *, ledger=None, now=None,
         return _infra_rate_limited_decision(run, failed, attempt, limit)
     if attempt >= max_attempts:
         decision = _terminal(run, failed, "failure", attempt,
-                             prior_failed_jobs=prior_jobs, failed_attempt=attempt)
+                             prior_failed_jobs=prior_jobs, failed_attempt=attempt,
+                             # 同「第二次绿」那条路径：限流 job **零台账条目**（判红 ≠ 记账）；
+                             # 真红 / 未判定照旧记账 ⇒ 条目数**可以**少于失败 job 数，且可核。
+                             exclude_jobs=limit["rate_limited_jobs"],
+                             undetermined_jobs=limit["undetermined_jobs"])
         decision["failure_kinds"] = limit
         return decision
     return {
@@ -1555,11 +1613,13 @@ def _attempt(run) -> int:
 
 def _terminal(run, failed_jobs, rerun_result: str, attempt: int, prior_failed_jobs=None,
               failed_attempt=None, *, rerun_jobs=None, facts_attempt=None,
-              prev_attempt=None) -> dict:
+              prev_attempt=None, exclude_jobs=None, undetermined_jobs=None) -> dict:
     entries = build_entries(run, failed_jobs, rerun_result, prior_failed_jobs,
                             failed_attempt=failed_attempt,
                             facts_attempt=facts_attempt, prev_attempt=prev_attempt,
-                            rerun_jobs=rerun_jobs)
+                            rerun_jobs=rerun_jobs,
+                            exclude_jobs=exclude_jobs,
+                            undetermined_jobs=undetermined_jobs)
     kinds = {e["kind"] for e in entries}
     # 🔴 #5687：**动作由条目的 kind 派生**，不由 `rerun_result` 单独派生 —— 旧口径
     # `if rerun_result == "success" and "flaky" in kinds: mark_flaky` 会让「跨时间桶的
@@ -1583,7 +1643,11 @@ def _terminal(run, failed_jobs, rerun_result: str, attempt: int, prior_failed_jo
                   f"；两次尝试都红 **≠** 确定性失败（#5088 实测：21 条里 7 条被旧口径这样判错）"
                   f"⇒ 记 `kind=unknown` + 原始事实，**不归因**（归因需先按 #5088 口径取证再 `attest`）")
     return {"action": action, "reason": reason, "kind": kind,
-            "entries": entries, "pr": pr_number(run), "attempt": attempt}
+            "entries": entries, "pr": pr_number(run), "attempt": attempt,
+            # 🔴 #8709 残留：**判红 ≠ 记账** —— 被判「其实只是限流」的失败 job 仍然是红的
+            # （`action` / `kind` 一律按**真红那批**派生 ⇒ PR 照旧被挡），只是**不进证据台账**。
+            # 显式列出它们：「条目数少于失败 job 数」才可核（少掉的那几条不是漏算）。
+            "entries_excluded": [str(n) for n in (exclude_jobs or [])]}
 
 
 def _infra_rate_limited_decision(run, failed_jobs, attempt, verdict) -> dict:
@@ -3430,6 +3494,13 @@ def render_comment(decision: dict) -> str:
             "",
             f"判据：{decision.get('reason')}",
         ]
+    # 🔴 #8709 残留：**判红 ≠ 记账** —— 判为「其实只是限流」的 job **不进**台账，但**仍然是红的**
+    # （PR 仍被挡）。不写这一行 ⇒ 评论只列真红条目，读的人会以为「漏记了」或「已被放过」。
+    excluded = decision.get("entries_excluded") or []
+    if excluded:
+        lines += ["", f"🧾 **台账面（#8709 残留：判红 ≠ 记账）**：其中 **{len(excluded)}** 个失败 job 的日志"
+                      f"**只有限流特征**（`exit 3` = 判不了）⇒ **零台账条目**（不是 flaky 证据）；"
+                      f"但它们**仍然是红的 ⇒ PR 仍被挡**：{'、'.join(f'`{n}`' for n in excluded)}"]
     lines += ["", "<sub>机制见 `migao` issue #4717（CI 层两项：重跑分流 + flaky 台账）；"
                   "`kind` 的语义收紧见 #5088；判据 `tests/unit_ci_workflows/test_flaky_triage.py` + "
                   "`tests/unit_ci_workflows/test_flaky_ledger_kind_semantics.py`</sub>"]
@@ -3456,6 +3527,17 @@ def render_summary(decision: dict) -> str:
             text += (f"\n::warning::失败 job 的日志**扫描面为空**（0/{kinds.get('total')}）⇒ "
                      f"本轮**未判定**是不是限流 —— **不是**「判定为非限流」；"
                      f"分流按原路径处置（取不到 ≠ 没有问题）")
+        # 🔴 #8709 残留：**判红 ≠ 记账** 必须在读数里看得见 —— 否则「条目数少于失败 job 数」
+        # 会被读成「漏记」。被判限流的那批 job 仍是红的（PR 仍被挡），只是不进证据台账。
+        if decision.get("entries_excluded"):
+            text += (f"\n台账面（#8709 残留：**判红 ≠ 记账**）：其中 "
+                     f"{len(decision['entries_excluded'])} 个失败 job 被判「其实只是限流」⇒ "
+                     f"**零台账条目**（判定/动作仍按真红，PR 仍被挡）："
+                     f"{'、'.join(decision['entries_excluded'])}")
+        if kinds.get("undetermined_jobs"):
+            text += (f"\n::warning::其中 {len(kinds['undetermined_jobs'])} 个失败 job 的日志**没取到** ⇒ "
+                     f"对应台账条目已显式标注「未判定」（**不是** flaky 结论；取不到 ≠ 已确认）："
+                     f"{'、'.join(kinds['undetermined_jobs'])}")
     if decision.get("infra_rate_limited"):
         text += ("\n::warning::#8709 判 `infra_rate_limited`：限流导致 exit 3 = **未判定**，"
                  "**不是通过、也不是测试红**；零重跑 / 零记账 / 未打任何 flaky 标注 / 未卸 "
