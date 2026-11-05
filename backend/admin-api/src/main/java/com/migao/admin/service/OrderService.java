@@ -60,6 +60,12 @@ import java.util.stream.Collectors;
  * {@link OrderStockService} / {@link OrderFeeSupport}（P2-1c）、取消 / 退款 / 发货 / 状态流转族已搬到
  * {@link OrderLifecycleService}（P2-1d）；本类保留同名<b>门面委托</b>，调用方零改动。</p>
  *
+ * <p><b>门面委托的逐批退休（issue #8681，P2-1e）</b>：调用方迁到实现点之后，同名转发<b>删除</b>且不许回来
+ * （看管见 {@code OrderFacadeForwarderRetirementTest}）。已退休：{@code existsForCurrentTenant} /
+ * {@code resolveOrderId} / {@code isProcessingReadyForShip} / {@code resolveShipperName}（第一批）、
+ * {@code getMyOrderPage}（第二批）、{@code getOrderPage} / {@code getOrderById}（第四批）、
+ * {@code createOrder}（第五批：订单控制器直连 {@link OrderCreationService}，经 {@code this} 复用本类共享部件）。</p>
+ *
  * <p><b>包内可见的共享部件</b>（issue #8191，P2-1b）：建单与改单（{@code updatePendingOrderContent}）/
  * 确认支付共用同一份明细装配、取价、总额与库存前置校验（{@code assertItemAmountsValid} /
  * {@code priceItems} / {@code computeItemsTotal} / {@code persistOrderItems} /
@@ -424,16 +430,6 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         log.info("[bind-orders] 手机号回填完成: tenantId={}, userId={}, phone={}****, bound={}",
                 tenantId, userId, phone.substring(0, 3), updated);
         return updated;
-    }
-
-    /**
-     * 创建订单（issue #8191，P2-1b）：实现点在 {@link OrderCreationService}，本方法只留门面委托（调用方零改动）。
-     *
-     * <p>事务注解随方法体搬到新服务（{@code @Transactional} 逐字跟随，边界不变）；本类把建单与改单共用的
-     * 明细装配 / 取价 / 库存前置（唯一实现点，见类注释）经 {@code this} 交给新服务复用。</p>
-     */
-    public OrderDetailResponse createOrder(OrderCreateRequest request, Long tenantId) {
-        return creationService().createOrder(request, tenantId, this);
     }
 
     // ══════════════════ 待付款订单内容编辑（issue #5842）与共用写面部件 ══════════════════
@@ -1263,60 +1259,6 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
     // ==================== 订单统计与跟进状态 ====================
 
     /**
-     * 获取订单统计（使用 COUNT 查询，避免全量加载到内存）
-     */
-    public OrderStatisticsResponse getOrderStatistics(Long tenantId) {
-        long total = orderMapper.selectCount(new LambdaQueryWrapper<Order>()
-                .eq(Order::getTenantId, tenantId));
-        long pending = orderMapper.selectCount(new LambdaQueryWrapper<Order>()
-                .eq(Order::getTenantId, tenantId).eq(Order::getStatus, OrderStatusTransitions.PENDING));
-        long confirmed = orderMapper.selectCount(new LambdaQueryWrapper<Order>()
-                .eq(Order::getTenantId, tenantId).eq(Order::getStatus, OrderStatusTransitions.CONFIRMED));
-        long producing = orderMapper.selectCount(new LambdaQueryWrapper<Order>()
-                .eq(Order::getTenantId, tenantId).eq(Order::getStatus, OrderStatusTransitions.PRODUCING));
-        long shipped = orderMapper.selectCount(new LambdaQueryWrapper<Order>()
-                .eq(Order::getTenantId, tenantId).eq(Order::getStatus, OrderStatusTransitions.SHIPPED));
-        long completed = orderMapper.selectCount(new LambdaQueryWrapper<Order>()
-                .eq(Order::getTenantId, tenantId).eq(Order::getStatus, OrderStatusTransitions.COMPLETED));
-        long cancelled = orderMapper.selectCount(new LambdaQueryWrapper<Order>()
-                .eq(Order::getTenantId, tenantId).eq(Order::getStatus, OrderStatusTransitions.CANCELLED));
-
-        return OrderStatisticsResponse.builder()
-                .totalCount(total)
-                .pendingCount(pending)
-                .confirmedCount(confirmed)
-                .producingCount(producing)
-                .shippedCount(shipped)
-                .completedCount(completed)
-                .cancelledCount(cancelled)
-                .unpaidCount(pending)
-                .paidCount(confirmed + producing + shipped + completed)
-                .refundedCount(cancelled) // 退款订单即已取消的订单
-                .build();
-    }
-
-    /**
-     * 获取跟进状态统计（使用 COUNT 查询，避免全量加载到内存）
-     */
-    public FollowStatusStatsResponse getFollowStatusStats(Long tenantId) {
-        long total = orderMapper.selectCount(new LambdaQueryWrapper<Order>()
-                .eq(Order::getTenantId, tenantId));
-        long following = orderMapper.selectCount(new LambdaQueryWrapper<Order>()
-                .eq(Order::getTenantId, tenantId).eq(Order::getFollowStatus, "following"));
-        long completedFollow = orderMapper.selectCount(new LambdaQueryWrapper<Order>()
-                .eq(Order::getTenantId, tenantId).eq(Order::getFollowStatus, "completed"));
-        // pending = total - following - completed（含 null 值）
-        long pendingFollow = total - following - completedFollow;
-
-        return FollowStatusStatsResponse.builder()
-                .pending(pendingFollow)
-                .following(following)
-                .completed(completedFollow)
-                .total(total)
-                .build();
-    }
-
-    /**
      * 确认支付（issue #8191，P2-1d）：实现点已搬到 {@link OrderLifecycleService}，本方法只留门面委托。
      */
     public void confirmPayment(String id) {
@@ -1349,21 +1291,6 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
      */
     public void refundOrder(String id, BigDecimal refundAmount, String refundReason) {
         lifecycleService().refundOrder(id, refundAmount, refundReason);
-    }
-
-    /**
-     * 获取订单跟进状态
-     */
-    public FollowStatusResponse getFollowStatus(String id) {
-        Order order = orderMapper.selectById(id);
-        if (order == null) {
-            throw BusinessException.notFound("订单");
-        }
-        return FollowStatusResponse.builder()
-                .orderId(id)
-                .followStatus(order.getFollowStatus() != null ? order.getFollowStatus() : "pending")
-                .updatedAt(order.getUpdatedAt())
-                .build();
     }
 
     /**

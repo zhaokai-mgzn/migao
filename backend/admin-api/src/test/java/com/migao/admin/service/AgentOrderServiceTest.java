@@ -57,6 +57,12 @@ class AgentOrderServiceTest {
 
     private Order testOrder;
 
+    /**
+     * 建单编排的实现点（issue #8681，P2-1e 第五批）：门面的 {@code createOrder} 转发已删除 ⇒ 驱动对象换成
+     * 门面<b>自己懒构造的那一份</b>（同一条调用链、同一份协作者），断言一字未改。
+     */
+    private com.migao.admin.service.OrderCreationService orderCreationService;
+
     @BeforeEach
     void setUp() {
         // issue #4406：取价点用**真实**对象（只桩价目表 Mapper）—— 金额算法仍走生产代码。
@@ -64,6 +70,7 @@ class AgentOrderServiceTest {
         // 「谁发射加工费」这条接线本身也 mock 掉（接线判据就失去意义）。
         ReflectionTestUtils.setField(orderService, "processingFeeCalculator",
                 new ProcessingFeeCalculator(processingFeeCombinationMapper, routeRuleMapper));
+        orderCreationService = ReflectionTestUtils.invokeMethod(orderService, "creationService");
         MybatisConfiguration conf = new MybatisConfiguration();
         MapperBuilderAssistant assistant = new MapperBuilderAssistant(conf, "");
         TableInfoHelper.initTableInfo(assistant, Order.class);
@@ -387,7 +394,7 @@ class AgentOrderServiceTest {
         void negativeQuantityRejectedInSharedEntry() {
             OrderCreateRequest req = buildReq(BigDecimal.valueOf(-2), new BigDecimal("100"));
 
-            assertThatThrownBy(() -> orderService.createOrder(req, 1L))
+            assertThatThrownBy(() -> orderCreationService.createOrder(req, 1L, orderService))
                     .isInstanceOf(BusinessException.class)
                     .hasMessageContaining("数量");
 
@@ -399,7 +406,7 @@ class AgentOrderServiceTest {
         void negativeUnitPriceRejectedInSharedEntry() {
             OrderCreateRequest req = buildReq(BigDecimal.valueOf(2), new BigDecimal("-100"));
 
-            assertThatThrownBy(() -> orderService.createOrder(req, 1L))
+            assertThatThrownBy(() -> orderCreationService.createOrder(req, 1L, orderService))
                     .isInstanceOf(BusinessException.class)
                     .hasMessageContaining("单价");
 
@@ -412,7 +419,7 @@ class AgentOrderServiceTest {
             OrderCreateRequest req = buildReq(BigDecimal.valueOf(2), new BigDecimal("100"));
             mockOrderInsert2();
 
-            OrderDetailResponse result = orderService.createOrder(req, 1L);
+            OrderDetailResponse result = orderCreationService.createOrder(req, 1L, orderService);
 
             assertThat(result).isNotNull();
             verify(orderMapper).insert(any(Order.class));
@@ -429,7 +436,7 @@ class AgentOrderServiceTest {
         void subOneQuantityRejectedInSharedEntry() {
             OrderCreateRequest req = buildReq(new BigDecimal("0.5"), new BigDecimal("100"));
 
-            assertThatThrownBy(() -> orderService.createOrder(req, 1L))
+            assertThatThrownBy(() -> orderCreationService.createOrder(req, 1L, orderService))
                     .isInstanceOf(BusinessException.class)
                     .hasMessageContaining("数量")
                     .hasMessageContaining("1");
@@ -464,12 +471,12 @@ class AgentOrderServiceTest {
         void minimumAndDecimalQuantityStillPassInSharedEntry() {
             OrderCreateRequest req = buildReq(new BigDecimal("1"), new BigDecimal("100"));
             mockOrderInsert2();
-            assertThat(orderService.createOrder(req, 1L)).as("数量 1 = 下限值，必须放行").isNotNull();
+            assertThat(orderCreationService.createOrder(req, 1L, orderService)).as("数量 1 = 下限值，必须放行").isNotNull();
             verify(orderMapper).insert(any(Order.class));
 
             OrderCreateRequest decimalReq = buildReq(new BigDecimal("8.4"), new BigDecimal("100"));
             mockOrderInsert2();
-            assertThat(orderService.createOrder(decimalReq, 1L))
+            assertThat(orderCreationService.createOrder(decimalReq, 1L, orderService))
                     .as("数量 8.4（per_area 面积）≥1，必须放行").isNotNull();
             verify(orderMapper, times(2)).insert(any(Order.class));
         }
