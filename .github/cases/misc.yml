@@ -9542,7 +9542,7 @@ cases:
 
   - id: MC-238
     legacy_id: ""
-    title: "OrderService 门面收尾第六批（issue #8681 的 P2-1e，部分交付）：生命周期族收口 —— 订单控制器 / 生产控制器 / 加工单服务改直连 OrderLifecycleService，门面 1,582 行降到 1,531 行并删掉 7 个转发声明（6 个方法，发货两个重载）；三个接线与快照判据改直测实现点、98 个测试驱动点迁到实现点（断言零改动：23 例生命周期快照与 25 例切片快照逐字节不变），退休守护扩到 17 个方法 / 13 个驱动入口"
+    title: "OrderService 门面收尾第六批（issue #8681 的 P2-1e，部分交付）：生命周期族收口 —— 订单控制器 / 生产控制器 / 加工单服务改直连 OrderLifecycleService，门面 1,582 行降到 1,539 行并删掉 7 个转发声明（6 个方法，发货两个重载）；三个接线与快照判据改直测实现点、98 个测试驱动点迁到实现点（断言零改动：23 例生命周期快照与 25 例切片快照逐字节不变），退休守护扩到 17 个方法 / 13 个驱动入口"
     domains:
       - misc
       - backend
@@ -9568,7 +9568,7 @@ cases:
       - "判据 7·🔴 发货写面台账与不变式未回退：门面里仍不许残留任何「置为 shipped」写点；三条已登记发货写面与「带不变式的写点必须真的接上断言」照旧；判别力自证的内存变异改到实现点的调用串上。执行点 = backend/admin-api/src/test/java/com/migao/admin/shipment/ShipmentInvariantGuardTest.java"
       - "判据 8·🔴 加工单的状态迁移权仍是 CAS：订单取消联动作废加工单那条腿的写面锚点逐字不变，跨真库的并发判据（订单作废与加工单开工并发）仍恰一个赢家、终态不自相矛盾；本批给加工单服务接上生命周期实现点时漏装配会当场抛错（不静默跳过状态流转），由真库并发判据当场打红。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/ProcessingOrderStatusCasRaceRealDbTest.java 与 backend/admin-api/src/test/java/com/migao/admin/service/ProcessingOrderServiceTest.java"
     skip_reason: "[backend-contract] Java 侧调用方迁移 + 门面转发退休（零 LLM / 零外网 / 零前端可见面），由 JUnit 判据与 pytest 棘轮判据验证，无 agent 行为面，不进入 agent-eval 冒烟"
-    merge_log: "2026-11-05 新增（issue #8681 的 P2-1e 第六批，**部分交付**：不写关闭关键词）。现取读数：`git show origin/main:backend/admin-api/src/main/java/com/migao/admin/service/OrderService.java | wc -l` = 1,582（PR #8720 合并后的基线）。本批按上一批给的逐条清单执行第 1 档（生命周期族收口）：先把三个接线 / 快照判据改成直测实现点，再迁三处生产调用方（订单控制器四端点 / 生产控制器发货 / 加工单服务五处），再迁测试驱动点，最后删门面 7 个转发声明；门面 1,582 → 1,531（净 −51）。⚠️ 有意不搬：applyRollAllocation（被整卷分配权威判据钉在门面）、batchStock 访问器（取消路径经传入的门面实例在用，一字未动）、Agent 建单 / 改单（属下一批 Agent BFF）。⚠️ 本批**不做**实体实现搬家（删单 / 备注 / 手机号回填 / 跟进写面 / 内容改单）——它们要先搬实现再删转发。红证 = 三次单变量注入逐条实跑并逐字节还原（把状态流转与确认支付两个转发塞回门面 + 把订单控制器两处调用改回门面 ⇒ 退休面具名红；把生命周期快照判据的驱动改回门面 ⇒ 驱动面具名红；只在测试里加一行同串注释 ⇒ 不红，负控证明剥注释扫描有效）。全量读数见 PR body。"
+    merge_log: "2026-11-05 新增（issue #8681 的 P2-1e 第六批，**部分交付**：不写关闭关键词）。现取读数：`git show origin/main:backend/admin-api/src/main/java/com/migao/admin/service/OrderService.java | wc -l` = 1,582（PR #8720 合并后的基线）。本批按上一批给的逐条清单执行第 1 档（生命周期族收口）：先把三个接线 / 快照判据改成直测实现点，再迁三处生产调用方（订单控制器四端点 / 生产控制器发货 / 加工单服务五处），再迁测试驱动点，最后删门面 7 个转发声明；门面 1,582 → 1,539（净 −43）。⚠️ 有意不搬：applyRollAllocation（被整卷分配权威判据钉在门面）、batchStock 访问器（取消路径经传入的门面实例在用，一字未动）、Agent 建单 / 改单（属下一批 Agent BFF）。⚠️ 本批**不做**实体实现搬家（删单 / 备注 / 手机号回填 / 跟进写面 / 内容改单）——它们要先搬实现再删转发。红证 = 三次单变量注入逐条实跑并逐字节还原（把状态流转与确认支付两个转发塞回门面 + 把订单控制器两处调用改回门面 ⇒ 退休面具名红；把生命周期快照判据的驱动改回门面 ⇒ 驱动面具名红；只在测试里加一行同串注释 ⇒ 不红，负控证明剥注释扫描有效）。全量读数见 PR body。"
     traces:
       tests:
         - "backend/admin-api/src/test/java/com/migao/admin/service/OrderFacadeForwarderRetirementTest.java"
