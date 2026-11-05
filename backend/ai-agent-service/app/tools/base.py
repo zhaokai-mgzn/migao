@@ -280,6 +280,13 @@ class ToolResult(BaseModel):
     suggestion 字段: 失败时必须填写，告诉 LLM 如何引导用户修复问题。
     每个 tool 应自行设定 summary，确保 LLM 能快速理解结果。
     示例: ToolResult(success=True, data={...}, summary="共3个分类: 卧室系列,窗帘布艺,测试分类")
+
+    ⚠️ **summary 的消费点**（issue #5511 第四节 / 来源台账 #4025 F23 —— 曾被判「零消费」，
+    实测不成立，别再照抄那个结论）：`_execute_tool_safe` 的出口字典把它带进 `result_dict`
+    ⇒ `result_str = json.dumps(result_dict)` ⇒ `react_turn.py` 的
+    `ToolMessage(content=result_str, …)` 原样进**模型上下文**。判据 =
+    `tests/test_tool_result_summary_reaches_context.py`（值透传 + 链路静态锁，各带红证）。
+    改这里之前先读那条判据：删掉 summary 会**真的**从模型上下文里拿掉一段信息。
     """
     success: bool = Field(..., description="是否成功")
     data: Optional[Dict[str, Any]] = Field(None, description="返回数据")
