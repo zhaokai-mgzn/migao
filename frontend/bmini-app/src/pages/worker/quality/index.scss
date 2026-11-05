@@ -1,0 +1,142 @@
+@use "../../../styles/variables.scss" as *;
+
+// 工人端「质检记录」（issue #7813 P2b）
+//
+// 视觉语言与同族工人页同一套（issue #7240）：非白页面底 + 白卡片 + 细描边 + `$shadow-card`
+// （判据 tests/worker-card-contrast-guard.test.ts）。不新增颜色 / 字号 token。
+//
+// 🔴 状态词（正常 / 待复检 / 已判报废 / 未读到）用**颜色 + 字**两重表达：
+//    车间光线差，只靠颜色分不出「待复检」与「正常」。
+.worker-quality {
+  min-height: 100vh;
+  background: $bg-secondary;
+  padding: 0 0 40px;
+
+  &__header {
+    padding: 40px 24px 16px;
+  }
+
+  &__title {
+    display: block;
+    margin-top: 8px;
+    font-size: 40px;
+    font-weight: 700;
+    color: $text-primary;
+  }
+
+  &__worker {
+    display: block;
+    margin-top: 6px;
+    font-size: 24px;
+    color: $text-secondary;
+  }
+
+  &__card,
+  &__gate {
+    margin: 0 24px 16px;
+    padding: 24px;
+    background: $bg-primary;
+    border: 1px solid $border-color;
+    border-radius: $radius-lg;
+    box-shadow: $shadow-card;
+  }
+
+  &__notice,
+  &__hint {
+    display: block;
+    font-size: 24px;
+    line-height: 1.5;
+    color: $text-secondary;
+  }
+
+  &__head {
+    display: flex;
+    align-items: baseline;
+    gap: 16px;
+  }
+
+  &__piece {
+    flex: 1 1 auto;
+    min-width: 0;
+    font-size: 32px;
+    font-weight: 700;
+    color: $text-primary;
+  }
+
+  &__state {
+    flex: 0 0 auto;
+    font-size: 26px;
+    font-weight: 600;
+    color: $warning-color;
+  }
+
+  &__line {
+    display: block;
+    margin-top: 6px;
+    font-size: 26px;
+    color: $text-secondary;
+  }
+
+  &__notion {
+    display: block;
+    margin-top: 6px;
+    font-size: 24px;
+    line-height: 1.5;
+    color: $warning-color;
+  }
+
+  &__records {
+    margin: 16px 0;
+  }
+
+  &__record {
+    padding: 16px 0;
+    border-top: 1px solid $border-color;
+  }
+
+  &__record-top {
+    display: flex;
+    align-items: baseline;
+    gap: 16px;
+  }
+
+  &__label {
+    font-size: 28px;
+    font-weight: 600;
+    color: $text-primary;
+  }
+
+  &__time {
+    font-size: 24px;
+    color: $text-secondary;
+  }
+
+  &__reason {
+    display: block;
+    margin-top: 4px;
+    font-size: 26px;
+    line-height: 1.5;
+    color: $text-primary;
+  }
+
+  &__meta {
+    display: block;
+    margin-top: 4px;
+    font-size: 24px;
+    color: $text-secondary;
+  }
+
+  &__action {
+    width: auto;
+    min-height: 88px;
+    margin-top: 16px;
+    line-height: 88px;
+    padding: 0 32px;
+    font-size: 30px;
+    font-weight: 600;
+    text-align: center;
+    color: #ffffff;
+    background: $primary-color;
+    border-radius: $radius-md;
+  }
+}

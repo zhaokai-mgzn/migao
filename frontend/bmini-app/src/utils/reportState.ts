@@ -78,6 +78,27 @@ export interface ReportSelectionSet {
   }> | null
 }
 
+/**
+ * 精裁清单一行（`set_overview.cut_plan[]`，issue #5693；字段名与后端
+ * `ProcessingSetReadService#cutPlan` 逐字同名）。
+ *
+ * 🔴 米数 / 片数**全部来自服务端**（`CuttingPlanCalculator` 的同一份分解）——端侧不算法、
+ * 不做单位换算；`panel_*` 任一为 `null` ⇒ 屏上 `—`（**不显示 0 / 1**）。
+ */
+export interface CutPlanRow {
+  order_item_id?: string | null
+  position_kind?: string | null
+  position_name?: string | null
+  component?: string | null
+  panel_length_m?: number | string | null
+  panel_count?: number | string | null
+  fabric_meters?: number | string | null
+  /** 派工指定批次（`null` = 未指派 ⇒ 这一格不渲染） */
+  batch_no?: string | null
+  batch_meters?: number | string | null
+  missing_reason?: string | null
+}
+
 /** 扫码解析的一屏（`GET /api/worker/production/scan` 的 `data`；只声明本页用到的键）。 */
 export interface ReportView {
   granularity?: string | null
@@ -85,7 +106,18 @@ export interface ReportView {
   position?: ReportPosition | null
   operation?: ReportOperation | null
   alternatives?: ReportOperation[] | null
-  needs_selection?: ReportSelectionSet[] | null
+  /**
+   * 旧码降级标记（服务端给的是 `["set","position"]` 这类**标记串**，不是套号对象）。
+   * 非空 ⇒ 必须由工人补齐（绝不默认取第 1 套）。
+   */
+  needs_selection?: string[] | null
+  /**
+   * 旧码降级的**候选清单**（套 + 部位）—— 服务端把候选放在 `selections`（见
+   * `ProductionScanService#degradedView`）；`needs_selection` 只是标记，两件事不是同一个键。
+   */
+  selections?: ReportSelectionSet[] | null
+  /** 本套工序明细（服务端下发；旧码降级形态没有这个键）—— 精裁清单取 `set_overview.cut_plan` */
+  set_overview?: { set_no?: number | string | null; cut_plan?: CutPlanRow[] | null } | null
   set_progress?: { done?: number | null; total?: number | null } | null
   completed?: boolean | null
   /** 工人档案绑定了工序时 = 那一道（服务端已自动选中 ⇒ 不出选择器） */
@@ -147,6 +179,7 @@ export function signedIn(state: ReportState, worker: ReportState['worker']): Rep
 export function isLegacyScan(view: ReportView | null | undefined): boolean {
   if (!view) return false
   if (Array.isArray(view.needs_selection) && view.needs_selection.length > 0) return true
+  if (legacySets(view).length > 0) return true
   return view.granularity === 'order'
 }
 
@@ -177,6 +210,18 @@ export function applyScan(state: ReportState, view: ReportView | null): ReportSt
 }
 
 /** 旧码：选中一套（部位随之清空 —— 半截选择不算选完）。 */
+/**
+ * 旧码的**候选套清单**（真值只有一处）：服务端把候选放在 `selections`。
+ *
+ * 🔴 2026-11-05（issue #7813 P2b 链内修）：改前这里读的是 `needs_selection`，而服务端给的是
+ * `["set","position"]` 标记串 ⇒ 真实响应下套号清单**一个按钮都渲染不出来**（旧码工人卡死），
+ * 而单测夹具用的是对象形态所以一直是绿的（夹具比真响应"好看" = 假绿）。
+ * 判据 = `tests/report-state.test.ts` 的「服务端真响应形态」用例。
+ */
+export function legacySets(view: ReportView | null | undefined): ReportSelectionSet[] {
+  return Array.isArray(view?.selections) ? view?.selections ?? [] : []
+}
+
 export function pickSet(state: ReportState, setId: string, setNo?: number | string | null): ReportState {
   return {
     ...state,
@@ -187,7 +232,7 @@ export function pickSet(state: ReportState, setId: string, setNo?: number | stri
 
 /** 旧码：选中一个部位（此时两截齐全 ⇒ 调用方带 selection 重新解析）。 */
 export function pickPosition(state: ReportState, orderItemId: string, positionName?: string | null): ReportState {
-  const set = (state.view?.needs_selection ?? []).find((s) => s.set_id === state.selection.setId)
+  const set = legacySets(state.view).find((s) => s.set_id === state.selection.setId)
   const position = (set?.positions ?? []).find((p) => p.order_item_id === orderItemId)
   const name = positionName ?? position?.position_name ?? ''
   return {
@@ -222,7 +267,7 @@ export function isQualityOperation(operation: ReportOperation | null | undefined
 export function canReport(state: ReportState, view: ReportView | null = state.view): boolean {
   if (!state.worker) return false // ③ 未登录不能报工
   if (!view || view.completed === true) return false
-  if (isLegacyScan(view) && (view.needs_selection ?? []).length > 0) return false // ① 旧码未选定
+  if (isLegacyScan(view) && legacySets(view).length > 0) return false // ① 旧码未选定
   if (!view.operation?.operation_id) return false // ② 工序未确定不得记账
   if (isQualityOperation(view.operation)) return false
   return true

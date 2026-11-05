@@ -21,6 +21,23 @@
   `backend/ai-agent-service/tests/test_store.py`、
   `tests/unit_ci_workflows/test_playbook_condition_contract.py`、
   `backend/admin-api/src/test/java/com/migao/admin/service/PlaybookServiceTest.java`。
+
+### 工人的小程序菜单多了「裁高计算 / 精裁清单 / 质检记录」：都只看不记，报工仍在报工页（2026-11-05，issue #7813）
+
+- **改前**：这三块只在车间终端 `/w/` 上（裁高计算是独立一屏，精裁清单与质检记录是报工页里的两个区块），
+  工人用手机小程序时看不到 —— 裁床要「这一樘该输多少米」「这一套每樘裁多长 × 几片」、质检员要「这一件待不待复检」，
+  都得回终端那台设备。
+- **改后**：小程序工人工作台多了**三条入口**（各按「工人端菜单」里的开关显隐）：**裁高计算**、
+  **精裁清单**、**质检记录**。三页都是**只读**：不报工、不写机器、不录质检判定（写面仍在原处），
+  屏上常驻一句「本页只看不记：报工请在报工页提交」，需要报工时点「去报工」回报工页（码自动带过去）。
+- **老码（多套单）必须先选套号与部位**：没选之前一个裁片 / 一条质检记录都不显示 —— 猜错套等于把别的套的
+  裁多长、别的件的质检结论给工人照做。顺带修好一处线上问题：**改前小程序报工页在真实的老码响应下，
+  套号按钮一个都渲染不出来**（它读的是标记位而不是候选清单），老码工人会卡在空白页。
+- **读不到就说读不到**：质检读失败时屏上显示「未读到」，**不会**显示成「正常」；这台设备没开通「质检」时
+  给的是「请让管理员在工人档案里勾上「质检」」，而不是当作「这一件没有记录」。
+- 判据 = MC-222：`frontend/bmini-app/tests/worker-read-faces.test.ts`、
+  `frontend/bmini-app/tests/worker-cut-calc-page.test.tsx`、`frontend/bmini-app/tests/worker-cut-plan-page.test.tsx`、
+  `frontend/bmini-app/tests/worker-quality-page.test.tsx`、`frontend/bmini-app/tests/report-state.test.ts`。
 ### 黄金策的「选工具」口径改由工具注册表 + 本体现算：10 处手写速查表退场，选错工具不再靠记性（2026-11-05，issue #8176）
 
 - **改前**：「商家这么说 → 用哪把工具 / 别拿它做什么」手抄在 10 处（6 个领域 prompt 的「场景 / 工具」表 + 财务规则表 + 兜底列表 + 两处内联 prompt），
