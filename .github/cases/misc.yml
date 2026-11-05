@@ -9823,3 +9823,48 @@ cases:
         - "frontend/admin-web/tests/unit/components/ProductGroupBlock.test.tsx"
       ci:
         - pr-check.yml
+  - id: MC-245
+    legacy_id: ""
+    title: "OrderService 门面收尾第十批（issue #8681 的 P2-1e，收尾：< 500 判据达成）：两处订单域公共 API 判据 hasProcessingItems / needsWork 搬到订单读面 OrderQueryService（生产待办直连实现点、不再绕门面），列表时间窗与状态筛选（DEFAULT_LOOKBACK_MONTHS / ListDateWindow / resolveListWindow / applyStatusFilter）搬到新建的 OrderListCriteria；门面 547 → 454 行"
+    domains:
+      - misc
+      - backend
+    tier: normal
+    tags:
+      - refactor
+      - order-service
+      - facade-retirement
+      - loc-ratchet
+      - meta-guard
+    truths_ref: []
+    precondition:
+      - "两处订单域公共 API 判据（该单是否含加工项 / 是否有需要报工的作业）的唯一实现点已是 OrderQueryService（订单读面：getOrderDetail 本来就经 OrderShipGuard.requiredOrderKind 算同一份判据）；生产待办 ProductionTodoService 的依赖从门面换成 OrderQueryService，src/main + src/test 里 orderService.hasProcessingItems( / orderService.needsWork( 零处"
+      - "列表时间窗与状态筛选的唯一实现点是新建的 OrderListCriteria（包内可见、无状态静态纯函数）；OrderQueryService 的两处静态调用改直连，OrderServiceTest 的 6 个驱动点只换接收者、断言一字未改"
+      - "门面里 STATUS_TRANSITIONS / ORDER_STATUS_LABELS 两个常量表有意**不搬**：它们是 OrderStatusTransitionsTest.stateMachineHasASingleImplementation 用反射 getDeclaredField 逐对象核对的对象，删字段 = 删掉那条断言的对象（那是判据强度降低，不是载体搬家）"
+      - "扫描面 = backend/admin-api/src/main + src/test 全树（剥注释后扫描）；任一扫描面扫到 0 个文件即判红（防「空扫描 = 绿」）"
+    user_inputs:
+      - "商家与 AI 两侧的订单列表 / 详情 / 生产待办：默认回溯 3 年时间窗、显式区间原样透传、状态多值筛选（逗号分隔）、该单是否含加工项、是否有需要报工的作业——口径、文案与 HTTP 契约全部逐字不变；门面只换住址，业务口径零改动"
+    expectations: []
+    data_checks:
+      - "判据 1·🔴 门面不再声明这 30 个已退休方法（本批 +4：hasProcessingItems / needsWork / resolveListWindow / applyStatusFilter），加回来 ⇒ 具名红。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/OrderFacadeForwarderRetirementTest.java"
+      - "判据 2·🔴 实现点仍声明它们（两边都没了 ⇒ 判据会恒绿），且具名消费方逐字直连实现点：ProductionTodoService 里的 orderQueryService.hasProcessingItems( / orderQueryService.needsWork(、OrderQueryService 里的 OrderListCriteria.resolveListWindow( / OrderListCriteria.applyStatusFilter(；改回门面或改调用形态 ⇒ 具名红。执行点 = 同判据 1"
+      - "判据 3·🔴 全 main 源码零处「经门面变量调用这 30 个方法」；src/test 全树零处经门面驱动（驱动面清单 22 → 24）。执行点 = 同判据 1"
+      - "判据 4·🔴 静态载体单独看管（本批新增）：main / test 里零处 OrderService.applyStatusFilter( / OrderService.resolveListWindow( / OrderService.ListDateWindow / OrderService.DEFAULT_LOOKBACK_MONTHS —— 静态成员不走「门面变量」形态，故单列一条并带判别力自证。执行点 = 同判据 1"
+      - "判据 5·🔴 行数判据达成：门面 547 → 454（< 500）；OrderService 已不在 loc_ratchet_exemptions.json（跌破 800 的存量带在第九批销账）、loc_freeze_ledger.json 里从未有条目；新类 OrderListCriteria 100 行 < 800 的新类阈值。执行点 = tests/unit_ci_workflows/test_loc_ratchet.py"
+      - "判据 6·🔴 断言零改动：被改的 4 个测试文件里既有断言一条未删、未弱化（本次只**新增** 1 条判据 —— OrderFacadeForwarderRetirementTest 的静态载体判据）；接收者归一化后断言行多重集逐文件相等。执行点 = 同判据 1"
+    skip_reason: "[backend-contract] Java 侧门面收尾搬运（零 LLM 评测面，由 JUnit 判据与 pytest 棘轮判据验证，不进 agent-eval 冒烟）"
+    merge_log: "2026-11-06 新增（issue #8681 的 P2-1e 第十批 · 收尾批）。现取读数：`git show origin/main:backend/admin-api/src/main/java/com/migao/admin/service/OrderService.java | wc -l` = 547，本批后 = 454 ⇒ **< 500 判据达成**。搬两族：① hasProcessingItems / needsWork（生产待办逐字引用的订单域公共 API）→ OrderQueryService（读面，getOrderDetail 本来就在算同一份判据；790 行 < 800 阈值）；② DEFAULT_LOOKBACK_MONTHS / ListDateWindow / resolveListWindow / applyStatusFilter → 新建 OrderListCriteria（100 行；唯一生产消费方是查询族，并进 OrderQueryService 会越过 800 行登记阈值）。有意不搬：STATUS_TRANSITIONS / ORDER_STATUS_LABELS（只为一条权威判据而存在，删字段 = 判据强度降低）与六处包内访问器（现取 16 处 invokeMethod 测试装配）。全量读数见 PR body。"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/OrderFacadeForwarderRetirementTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/OrderListCriteriaTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/OrderServiceTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ProductionTodoServiceTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/OrderStatusTransitionsTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/OrderStatusConstantsTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/controller/ProductionControllerTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/OrderShipGuardTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/OrderQueryServiceTest.java"
+        - "tests/unit_ci_workflows/test_loc_ratchet.py"
+      ci:
+        - pr-check.yml
