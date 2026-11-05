@@ -58,11 +58,11 @@ import java.util.Set;
  * 整卷分配的权威点随之改由 {@code OrderRollAllocationAuthorityTest} 指向新承载文件（五条判据一字未改，
  * 只换载体常量 —— 这就是「载体搬家同批登记」）。</p>
  *
- * <p><b>行数</b>：1,142 → 1,065（第八批）→ 547（第九批）→ <b>451</b>（第十批 · 收尾，−96）。
+ * <p><b>行数</b>：1,142 → 1,065（第八批）→ 547（第九批）→ <b>454</b>（第十批 · 收尾，−93，**&lt; 500 判据达成**）。
  * 跌破 800 行的登记带时 {@code tests/unit_ci_workflows/loc_ratchet_exemptions.json} 里本文件的条目
  * 已在第九批<b>同批销账</b>；{@code loc_freeze_ledger.json} 里本文件从未有条目 ⇒ 本批无需再销账。</p>
  *
- * <p><b>第十批（收尾批，issue #8681 P2-1e）：<b>&lt; 500 判据达成</b>。</b>搬走两族：
+ * <p><b>第十批（收尾批，issue #8681 P2-1e）：&lt; 500 判据达成。</b>搬走两族：
  * ① 订单域<b>公共 API</b> {@code hasProcessingItems} / {@code needsWork}（生产待办逐字引用的那两个判据）
  * → {@link OrderQueryService}（读面：它本来就在 {@code getOrderDetail} 里算同一份判据）；
  * ② 列表<b>时间窗</b>与<b>状态筛选</b>（{@code DEFAULT_LOOKBACK_MONTHS} / {@code ListDateWindow} /
