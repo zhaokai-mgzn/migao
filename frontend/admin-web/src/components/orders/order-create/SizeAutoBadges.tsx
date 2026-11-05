@@ -5,6 +5,7 @@
  * 采纳 / 不采纳在部位行的自动特征面板里）。组级与行内共用同一实现，避免两份判定各说各话。
  */
 import { parseDoorWidth } from '@/lib/craft-auto-features'
+import { FONT_PX_10 } from '@/lib/design-tokens'
 import { SALE_FORM_FABRIC, type OrderLineItem } from '@/lib/order-create/types'
 import { autoFeatureRowsOf } from '@/lib/order-create/calc'
 
@@ -32,7 +33,7 @@ export function sizeAutoBadgesOf(line: OrderLineItem): React.ReactNode {
           key={row.name}
           data-testid={`size-auto-badge-${row.name}`}
           title={row.reason}
-          className="rounded border border-amber-200 bg-amber-50 px-1 text-[10px] leading-4 text-amber-700"
+          className={`rounded border border-amber-200 bg-amber-50 px-1 ${FONT_PX_10} leading-4 text-amber-700`}
         >
           {row.name}
         </span>
@@ -41,7 +42,7 @@ export function sizeAutoBadgesOf(line: OrderLineItem): React.ReactNode {
         <span
           data-testid="size-door-width-missing"
           title="该 SKU 未维护门幅 —— 系统不按缺省门幅推算（分幅与加工类型判不了；超高/超宽是按净窗宽高与企业阈值判的）"
-          className="rounded border border-neutral-300 bg-neutral-100 px-1 text-[10px] leading-4 text-neutral-500"
+          className={`rounded border border-neutral-300 bg-neutral-100 px-1 ${FONT_PX_10} leading-4 text-neutral-500`}
         >
           门幅未维护
         </span>

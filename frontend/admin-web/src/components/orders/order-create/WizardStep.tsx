@@ -5,6 +5,7 @@
  * 两处使用者共用它：向导步骤（issue #4511）与商品卡组头（issue #4679）。
  */
 import { ChevronDown, ChevronRight } from 'lucide-react'
+import { FONT_PX_11 } from '@/lib/design-tokens'
 
 /**
  * **可折叠头部**（issue #4679）—— 折叠开关的**唯一实现**：`button` 语义 + `aria-expanded`
@@ -108,7 +109,7 @@ export function WizardStep({
     >
       <span
         className={
-          'inline-flex items-center justify-center w-5 h-5 shrink-0 rounded-full text-[11px] font-semibold ' +
+          `inline-flex items-center justify-center w-5 h-5 shrink-0 rounded-full ${FONT_PX_11} font-semibold ` +
           (open ? 'bg-primary-600 text-white' : 'bg-neutral-100 text-neutral-500')
         }
       >

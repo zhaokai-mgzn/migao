@@ -5,6 +5,7 @@
  * 改了组级属性就**组内所有行同步**（它们是同一块布的属性）。
  */
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { FONT_PX_11 } from '@/lib/design-tokens'
 import { Package, Search, Trash2 } from 'lucide-react'
 import { ORDER_DERIVATION_INPUT_KEYS } from '@/lib/image-recognize'
 import { RecognizedBadge } from '@/components/image-recognize/ImageRecognizeButton'
@@ -232,7 +233,7 @@ export function ProductGroupBlock({
             <span className="font-medium">① 门幅</span>
             {group.selectedSku?.doorWidth ? ` · ${group.selectedSku.doorWidth}` : ''}
           </p>
-          <div className="mt-1 rounded border border-neutral-200 bg-neutral-50/60 px-3 py-2 text-[11px] text-neutral-500">
+          <div className={`mt-1 rounded border border-neutral-200 bg-neutral-50/60 px-3 py-2 ${FONT_PX_11} text-neutral-500`}>
             <p data-testid="door-width-candidates">
               候选门幅（该颜色共 {skuOptions.length} 支）：
               {skuOptions.map((sku, i) => (

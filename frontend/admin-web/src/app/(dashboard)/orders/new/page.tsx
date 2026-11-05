@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { FONT_PX_11 } from '@/lib/design-tokens'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowLeft, MapPin, Package, Phone, Plus, Receipt, User, UserPlus, Zap } from 'lucide-react'
@@ -2708,7 +2709,7 @@ export default function NewOrderPage() {
                         </div>
                       </div>
                       {c.sourceChannel && (
-                        <span className="shrink-0 rounded bg-neutral-100 px-1.5 py-0.5 text-[11px] text-neutral-500">
+                        <span className={`shrink-0 rounded bg-neutral-100 px-1.5 py-0.5 ${FONT_PX_11} text-neutral-500`}>
                           {c.sourceChannel === 'wechat_mini' ? '小程序' : c.sourceChannel === 'h5' ? 'H5' : c.sourceChannel}
                         </span>
                       )}

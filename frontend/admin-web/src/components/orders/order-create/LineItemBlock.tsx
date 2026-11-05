@@ -7,6 +7,7 @@
  * ⚠️ 与本文件同名的 `LineItemBlockProps` 就是它的对外契约 —— 切片**没有**放宽或收窄任何一个 prop。
  */
 import { useEffect, useState } from 'react'
+import { FONT_PX_10, FONT_PX_11 } from '@/lib/design-tokens'
 import Link from 'next/link'
 import { Check, Pencil, X } from 'lucide-react'
 import { RECOGNIZE_SOURCE_TAG } from '@/lib/image-recognize'
@@ -664,7 +665,7 @@ export function LineItemBlock({
        改前是 ① 门幅 / ② 用料公式 / ③ 用料方案 **三条各自折叠**；现在**只有这一块**是可折叠的，
        三块原样收进它里面（编号即标题），标题行 = 引导语，**不折叠套折叠**。 */
     <details data-testid="derivation-panel" className="w-full">
-      <summary className="cursor-pointer text-[11px] text-neutral-400 hover:text-neutral-600">
+      <summary className={`cursor-pointer ${FONT_PX_11} text-neutral-400 hover:text-neutral-600`}>
         推导细节（默认收起，点标题展开）
       </summary>
       <div className="mt-1.5 space-y-1.5">
@@ -785,7 +786,7 @@ export function LineItemBlock({
                           数一律取自引擎 `plan`（`craftPlanConclusionOf` 只做措辞，不重算任何几何/用料）。 */}
                       <ul
                         data-testid="craft-plan-items"
-                        className="mt-1 flex flex-wrap gap-x-4 gap-y-0.5 text-[11px] text-neutral-500"
+                        className={`mt-1 flex flex-wrap gap-x-4 gap-y-0.5 ${FONT_PX_11} text-neutral-500`}
                       >
                         {craftPlanItems.map((item) => (
                           <li key={item.label}>
@@ -804,7 +805,7 @@ export function LineItemBlock({
                       {spliceOption !== null && (
                         <p
                           data-testid="craft-plan-splice-state"
-                          className="mt-0.5 text-[11px] text-neutral-500"
+                          className={`mt-0.5 ${FONT_PX_11} text-neutral-500`}
                         >
                           {derivedOptionState(spliceOption) === 'merged'
                             ? '拼接已并入特殊选项 ⇒ 插工序 + 计件'
@@ -819,7 +820,7 @@ export function LineItemBlock({
                           结论留在上面那行（加工类型 / 用料 / 拼接 / 接高接宽），逐条依据与每个候选
                           **要核对时**再展开。⚠️ 收起的只是**默认展开态**：`craft-plan-reason` /
                           `craft-plan-candidates` 照旧渲染（既有判据仍读得到），红证方向 = 整块删掉。 */}
-                        <p data-testid="craft-plan-reason" className="mt-1 text-[11px] text-neutral-500">
+                        <p data-testid="craft-plan-reason" className={`mt-1 ${FONT_PX_11} text-neutral-500`}>
                           {/* 引擎文案里的**候选键是英文枚举**（契约 #5200 §三：键名冻结）——
                               展示层换成与下方候选清单**同一份**中文名（2026-09-30 用户逐字
                               「这里的 `fixed_height`，用中文术语，不要用英文」）。 */}
@@ -830,7 +831,7 @@ export function LineItemBlock({
                             <li
                               key={candidate.key}
                               data-testid={`craft-plan-candidate-${candidate.key}`}
-                              className="text-[11px] text-neutral-500"
+                              className={`${FONT_PX_11} text-neutral-500`}
                             >
                               <span className="text-neutral-600">
                                 {craftPlanCandidateLabel(candidate.key)}
@@ -1046,9 +1047,9 @@ export function LineItemBlock({
                       data-testid="craft-plan-current"
                       className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded border border-primary-200 bg-primary-50 px-2 py-1"
                     >
-                      <span className="text-[11px] text-neutral-500">当前</span>
+                      <span className={`${FONT_PX_11} text-neutral-500`}>当前</span>
                       {craftPlanCurrentRows.map((row) => (
-                        <span key={row.label} className="text-[11px] text-neutral-500">
+                        <span key={row.label} className={`${FONT_PX_11} text-neutral-500`}>
                           {row.label}
                           <span className="ml-1 font-medium text-primary-700">{row.value}</span>
                         </span>
@@ -1159,13 +1160,13 @@ export function LineItemBlock({
                           <span className="text-neutral-400">（{row.source}）</span>
                         </span>
                         {/* 逐条显示**判定依据**（#4658：商家要能核对「为什么判它超宽」） */}
-                        <span className="text-[11px] text-neutral-500">{row.reason}</span>
+                        <span className={`${FONT_PX_11} text-neutral-500`}>{row.reason}</span>
                         {row.rejected ? (
                           <>
                             {/* 留痕（#4657）：谁改的、原推算是什么 —— 一行看得见 */}
                             <span
                               data-testid={`auto-feature-rejected-${row.name}`}
-                              className="text-[11px] text-amber-600"
+                              className={`${FONT_PX_11} text-amber-600`}
                             >
                               已忽略系统推算（依据：{row.reason}）
                             </span>
@@ -1173,7 +1174,7 @@ export function LineItemBlock({
                               type="button"
                               data-testid={`auto-feature-adopt-${row.name}`}
                               onClick={() => onAutoFeatureDecision(row.name, 'adopt')}
-                              className="text-[11px] text-primary-600 underline hover:text-primary-700"
+                              className={`${FONT_PX_11} text-primary-600 underline hover:text-primary-700`}
                             >
                               采纳
                             </button>
@@ -1182,7 +1183,7 @@ export function LineItemBlock({
                           <>
                             <span
                               data-testid={`auto-feature-manual-${row.name}`}
-                              className="text-[11px] text-amber-600"
+                              className={`${FONT_PX_11} text-amber-600`}
                             >
                               手动加（系统未推算）
                             </span>
@@ -1190,7 +1191,7 @@ export function LineItemBlock({
                               type="button"
                               data-testid={`auto-feature-remove-${row.name}`}
                               onClick={() => onAutoFeatureDecision(row.name, 'adopt')}
-                              className="text-[11px] text-neutral-500 underline hover:text-neutral-700"
+                              className={`${FONT_PX_11} text-neutral-500 underline hover:text-neutral-700`}
                             >
                               移除
                             </button>
@@ -1200,7 +1201,7 @@ export function LineItemBlock({
                             type="button"
                             data-testid={`auto-feature-reject-${row.name}`}
                             onClick={() => onAutoFeatureDecision(row.name, 'reject')}
-                            className="text-[11px] text-neutral-500 underline hover:text-neutral-700"
+                            className={`${FONT_PX_11} text-neutral-500 underline hover:text-neutral-700`}
                           >
                             不采纳
                           </button>
@@ -1231,7 +1232,7 @@ export function LineItemBlock({
                     data-testid="craft-plan-derived-options"
                     className="mt-2 border-t border-dashed border-neutral-200 pt-1.5"
                   >
-                    <p className="text-[11px] text-neutral-400">
+                    <p className={`${FONT_PX_11} text-neutral-400`}>
                       推导出的工序项（进特殊选项 ⇒ 插工序 + 计件；可采纳 / 不采纳）
                     </p>
                     {derivedOptions.length === 0 && (
@@ -1245,7 +1246,7 @@ export function LineItemBlock({
                         <p
                           key={name}
                           data-testid={`craft-plan-derived-option-${name}`}
-                          className="mt-0.5 flex flex-wrap items-baseline gap-x-2 text-[11px] text-neutral-500"
+                          className={`mt-0.5 flex flex-wrap items-baseline gap-x-2 ${FONT_PX_11} text-neutral-500`}
                         >
                           <span className="font-medium text-neutral-700">「{name}」</span>
                           <span>
@@ -1282,7 +1283,7 @@ export function LineItemBlock({
                     })}
                     {/* **拼接档位**（人工选；「由推导决定」= 交给引擎） */}
                     <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
-                      <span className="text-[11px] text-neutral-500">拼接</span>
+                      <span className={`${FONT_PX_11} text-neutral-500`}>拼接</span>
                       <div
                         className="flex flex-wrap gap-1"
                         role="radiogroup"
@@ -1299,7 +1300,7 @@ export function LineItemBlock({
                               aria-checked={active}
                               onClick={() => onChangePlanOverrides({ spliceTimes: option.value })}
                               className={
-                                'h-6 px-2 rounded-full border text-[11px] transition-colors ' +
+                                `h-6 px-2 rounded-full border ${FONT_PX_11} transition-colors ` +
                                 (active
                                   ? 'border-primary-600 bg-primary-50 text-primary-700'
                                   : 'border-neutral-300 bg-white text-neutral-600 hover:border-neutral-400')
@@ -1315,14 +1316,14 @@ export function LineItemBlock({
                   {/* **强制加**（#4657）：系统没推、但商家知道该算 —— 门幅数据缺失导致漏判时的唯一补救 */}
                   {addableAutoFeatures.length > 0 && (
                     <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                      <span className="text-[10px] text-neutral-400">系统未推算？手动加：</span>
+                      <span className={`${FONT_PX_10} text-neutral-400`}>系统未推算？手动加：</span>
                       {addableAutoFeatures.map((name) => (
                         <button
                           key={name}
                           type="button"
                           data-testid={`auto-feature-add-${name}`}
                           onClick={() => onAutoFeatureDecision(name, 'add')}
-                          className="rounded border border-neutral-300 bg-white px-1.5 text-[11px] leading-5 text-neutral-600 hover:border-neutral-400"
+                          className={`rounded border border-neutral-300 bg-white px-1.5 ${FONT_PX_11} leading-5 text-neutral-600 hover:border-neutral-400`}
                         >
                           + {name}
                         </button>
@@ -1383,7 +1384,7 @@ export function LineItemBlock({
                           />
                         </div>
                       ) : (
-                        <p className="mt-2 text-[11px] text-neutral-400">
+                        <p className={`mt-2 ${FONT_PX_11} text-neutral-400`}>
                           加工类型未定 ⇒ 无法人工加接高 / 接宽（接高只在「定高买宽」下成立、
                           接宽只在「倒幅」下成立）
                         </p>
@@ -1553,14 +1554,14 @@ export function LineItemBlock({
                               <span
                                 data-testid={`processing-single-badge-${pi.id}`}
                                 title="工艺项：一张单只能选一个"
-                                className="rounded border border-amber-200 bg-amber-50 px-1 text-[10px] leading-4 text-amber-700"
+                                className={`rounded border border-amber-200 bg-amber-50 px-1 ${FONT_PX_10} leading-4 text-amber-700`}
                               >
                                 单选
                               </span>
                             )}
                             {/* 搜索跨分类命中时标出所属分类（未搜索时只显示当前分类，无需重复标） */}
                             {searchingProcessing && (
-                              <span className="text-[10px] text-neutral-400">
+                              <span className={`${FONT_PX_10} text-neutral-400`}>
                                 {categoryNameOf(pi)}
                               </span>
                             )}
