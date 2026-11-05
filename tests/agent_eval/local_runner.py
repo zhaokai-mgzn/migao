@@ -7,7 +7,7 @@ Mibao Agent 本地评测 — 直接调 localhost chat API，采集 SSE 事件
   PRIMARY_API_KEY=sk-xxx python local_runner.py case P005 # 单条
 """
 
-import sys, os, json, time, asyncio, re
+import sys, os, json, time, asyncio, re, subprocess
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -26,6 +26,15 @@ sys.path.insert(0, os.path.dirname(__file__))
 # 保证无 --cases（ALL_CASES 生成物）路径下 main() 也能 import
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_REPO_ROOT / ".github"))
+# 生成物出库（issue #8167 P1-1）：`eval_cases/` **不在 git 里**（100% 可从 `.github/cases/**`
+# 重建）⇒ 下面这行 import **之前**必须先生成。`check=True` ⇒ 生成失败 = 进程当场退出，
+# **不**带着空/旧用例集继续跑（"没跑长得像通过"）。
+# 🔴 pytest 路径上由 `tests/agent_eval/conftest.py` / `tests/unit_ci_workflows/conftest.py` 前置；
+#    本行兜住**直接跑脚本**（`python tests/agent_eval/local_runner.py smoke`）的那条入口。
+subprocess.run(
+    [sys.executable, str(_REPO_ROOT / "scripts" / "generated_artifacts_freshness.py"), "--write"],
+    check=True, cwd=str(_REPO_ROOT),
+)
 from eval_cases import ALL_CASES, EvalCase, Skill, Difficulty
 
 # Config

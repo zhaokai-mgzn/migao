@@ -373,8 +373,9 @@ NOT_JUDGED = {
         "**判据自身**：它的 docstring 举例与注入自证载荷**必须**是失效引用（写红证的前提条件），"
         "否则本判据的红证根本写不出来 —— 与 `drift_audit` 的 `refs-are-fixtures` 同一取舍",
     ".github/cases/": "由 `.github/templates/**` 经渲染脚本生成（判源面）",
-    "docs/testing/mibao-verification-cases.md": "由 `.github/cases/**` 生成",
-    "tests/agent_eval/eval_cases/": "与用例库同步的生成物（issue #8188 起是按域分包的目录）",
+    # 2026-11-05（issue #8167 P1-1，生成物出库）：`docs/testing/mibao-verification-cases.md` 与
+    # `tests/agent_eval/eval_cases/` 的豁免条目**删掉**了 —— 它们不再是 tracked 文件，留着就是
+    # **空豁免**（`test_judged_surface_exclusions_are_few_and_real` 判的就是这个：豁免必须逐条兑现）。
 }
 
 

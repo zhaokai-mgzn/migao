@@ -6,12 +6,30 @@ AI 智能客服系统 - 测试公用 Fixtures
 # case_ids: AG-001, CH-001, MC-001
 
 import os
+import subprocess
+import sys
 import time
+from pathlib import Path
+
 import jwt
 import pytest
 from unittest.mock import patch, MagicMock, AsyncMock
 
 from fastapi.testclient import TestClient
+
+
+# ========== 生成物出库（issue #8167 P1-1）：产物不在 git 里 ⇒ 用之前先造出来 ==========
+# `tests/agent_eval/eval_cases/`（按域分包）100% 可从 `.github/cases/**` 重建 ⇒ 不入库。
+# 本套件里有**模块级**消费者（`test_behavior_mapping.py` 的 `import eval_cases`、
+# `test_acceptance_case_checks.py` 的 `eval_cases/_schema.py`）⇒ 干净检出里必须在**收集之前**
+# 造出来。命令与 CI / `verify-all.sh` / 另两个 conftest **逐字相同**（单一来源）。
+# `check=True`：生成失败 = 收集阶段抛错 = **红**；**不许**改成 skip / return。
+subprocess.run(
+    [sys.executable,
+     str(Path(__file__).resolve().parents[3] / "scripts" / "generated_artifacts_freshness.py"),
+     "--write"],
+    check=True, cwd=str(Path(__file__).resolve().parents[3]),
+)
 
 
 # ========== 在导入 app.* 前注入必需的环境变量 ==========
