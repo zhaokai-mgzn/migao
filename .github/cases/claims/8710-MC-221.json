@@ -1,0 +1,6 @@
+{
+  "id": "MC-221",
+  "pr": 8710,
+  "title": "CI 分流认「限流导致 exit 3（无法判定）」为 infra_rate_limited（issue #8709）",
+  "claimed_at": "2026-11-05"
+}
