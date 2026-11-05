@@ -1,62 +1,22 @@
 package com.migao.admin.service;
 
-import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.migao.admin.dto.BatchStockViews;
-import com.migao.admin.dto.MaterialLabels;
-import com.migao.admin.dto.ProcessingOrderGenerateRequest;
-import com.migao.admin.dto.ProcessingOrderGenerateRequest.BatchAssignment;
-import com.migao.admin.dto.ProcessingOrderResponse;
-import com.migao.admin.dto.ProcessingOrderUpdateRequest;
-import com.migao.admin.dto.ProductionPoolViews;
-import com.migao.admin.entity.Order;
-import com.migao.admin.entity.OrderItem;
-import com.migao.admin.entity.ProcessingItem;
-import com.migao.admin.entity.ProcessingOrder;
-import com.migao.admin.entity.ProductionOperationPosition;
 import com.migao.admin.entity.ProductionRouteRule;
-import com.migao.admin.entity.ProductionRouteSignal;
-import com.migao.admin.entity.ProductionRouteTemplate;
-import com.migao.admin.entity.Supplier;
 import com.migao.admin.exception.BusinessException;
-import com.migao.admin.mapper.OrderItemMapper;
-import com.migao.admin.mapper.OrderMapper;
-import com.migao.admin.mapper.ProcessingItemMapper;
-import com.migao.admin.mapper.ProcessingOrderMapper;
-import com.migao.admin.mapper.SupplierMapper;
-import com.migao.admin.time.BusinessClock;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-import org.springframework.util.StringUtils;
-
-import java.math.BigDecimal;
-import java.math.RoundingMode;
-import java.time.Duration;
-import java.time.LocalDate;
-import java.time.OffsetDateTime;
-import java.time.temporal.ChronoUnit;
-import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.HashMap;
 import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
-import java.util.concurrent.ThreadLocalRandom;
+
 import static com.migao.admin.service.ProcessingOrderService.*;
 
 /**
  * 加工单**条件工序编织**单元（issue #8725 第二档切片，从 {@link ProcessingOrderService} **纯搬运**）。
  *
  * <p><b>单一职责</b>：特殊选项 / 加工项名 ⇒ 条件工序规则的触发判定与插序、逻辑锚点定位、seq 重排。
- * 全是**纯函数**（入参进、出参出，无状态、不写库、不发请求）⇒ 本类是静态工具，不需要装配。</p>
+ * 除 `insertConditionalOperations`（要读工序库把逻辑名换成变体名）之外全是**纯函数**
+ * （入参进、出参出，无状态、不写库、不发请求）；它只持有 `ProductionOperationQueryService`，无状态。</p>
  *
  * <p>搬运口径：方法体、注释、异常码、日志文案**一字未改**。</p>
  */
