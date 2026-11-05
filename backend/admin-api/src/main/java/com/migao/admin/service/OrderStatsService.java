@@ -1,11 +1,9 @@
 package com.migao.admin.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.migao.admin.dto.FollowStatusResponse;
 import com.migao.admin.dto.FollowStatusStatsResponse;
 import com.migao.admin.dto.OrderStatisticsResponse;
 import com.migao.admin.entity.Order;
-import com.migao.admin.exception.BusinessException;
 import com.migao.admin.mapper.OrderMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -19,9 +17,10 @@ import org.springframework.stereotype.Service;
  * 三个方法都只读 {@code OrderMapper}、且是同一个「统计 / 跟进」语义族 ⇒ 同址收在某处，
  * 不制造「统计逻辑分散在三个文件」的第二份口径。</p>
  *
- * <p><b>返工边界（照实登记）</b>：本类<b>只搬读取</b>。同族的写面 {@code updateFollowStatus} 仍留在门面
- * （它是实体实现，属 #8681 下一批「实体实现搬家」那一档），因此「跟进状态」的读与写在过渡期分处两个文件
- * —— 这不是最终形态，等那一档落地后应合并。</p>
+ * <p><b>返工点已销账</b>（issue #8681，P2-1e 第七批）：同族的写面 {@code updateFollowStatus} 搬进
+ * {@link OrderEntityWriteService} 的同时，读面 {@code getFollowStatus} 也从本类<b>合并回</b>同一处 ——
+ * 「跟进状态」的读与写同址收口，不再分处两个文件。本类只剩两个<b>统计</b>入口
+ * （{@code getOrderStatistics} / {@code getFollowStatusStats}）。</p>
  *
  * <p><b>看管</b>：门面的三条同名转发已删除且不许回来（{@code OrderFacadeForwarderRetirementTest} 的退休面 +
  * 具名消费方清单）；本类内部口径由 {@code OrderStatsServiceTest} 逐条钉住。</p>
@@ -86,18 +85,4 @@ public class OrderStatsService {
                 .build();
     }
 
-    /**
-     * 获取订单跟进状态
-     */
-    public FollowStatusResponse getFollowStatus(String id) {
-        Order order = orderMapper.selectById(id);
-        if (order == null) {
-            throw BusinessException.notFound("订单");
-        }
-        return FollowStatusResponse.builder()
-                .orderId(id)
-                .followStatus(order.getFollowStatus() != null ? order.getFollowStatus() : "pending")
-                .updatedAt(order.getUpdatedAt())
-                .build();
-    }
 }

@@ -171,7 +171,7 @@
       "tool": "scripts/order-urgency-red-proof.py",
       "mutation": "extra_column",
       "criterion": "判据1 加急回写只动自己那两列（SET 白名单）",
-      "guarded": "backend/admin-api/src/main/java/com/migao/admin/service/OrderService.java",
+      "guarded": "backend/admin-api/src/main/java/com/migao/admin/service/OrderEntityWriteService.java",
       "anchor": "        update.set(Order::getUpdatedAt, OffsetDateTime.now());\n        orderMapper.update(null, update);",
       "replacement": "        update.set(Order::getUpdatedAt, OffsetDateTime.now());\n        // [RED-PROOF] 顺手把订单状态也同步一行\n        update.set(Order::getStatus, order.getStatus());\n        orderMapper.update(null, update);",
       "criteria": {

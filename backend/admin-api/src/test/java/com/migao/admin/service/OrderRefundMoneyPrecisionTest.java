@@ -155,7 +155,7 @@ class OrderRefundMoneyPrecisionTest {
         mockMvc = MockMvcBuilders
                 // issue #8681 第六批：退款直连生命周期实现点 ⇒ 第 5 参必须是门面自己懒构造的那一份
                 // （此前传 null 是「门面转发」时代的装配，转发退休后会导致空指针）
-                .standaloneSetup(new OrderController(orderService, null, orderLogisticsService, orderShipmentService, lifecycle(), null, null, null))
+                .standaloneSetup(new OrderController(orderService, null, orderLogisticsService, orderShipmentService, lifecycle(), null, null, null, null))
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .build();
     }

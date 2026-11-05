@@ -38,7 +38,7 @@ class MiniPhoneBindServiceTest {
     private UserMapper userMapper;
 
     @Mock
-    private OrderService orderService;
+    private OrderEntityWriteService orderEntityWriteService;
 
     @Mock
     private UserIdentityMapper userIdentityMapper;
@@ -81,7 +81,7 @@ class MiniPhoneBindServiceTest {
                 .thenReturn(phoneResult("13900139000"));
         // 租户内无其他用户占用该手机号
         when(userMapper.selectCount(any(LambdaQueryWrapper.class))).thenReturn(0L);
-        when(orderService.bindOrdersToUser(1L, "user-mini-001", "13900139000")).thenReturn(2);
+        when(orderEntityWriteService.bindOrdersToUser(1L, "user-mini-001", "13900139000")).thenReturn(2);
 
         MiniPhoneBindService.BindResult result =
                 miniPhoneBindService.bind("user-mini-001", 1L, "wx-phone-code-1");
@@ -102,7 +102,7 @@ class MiniPhoneBindServiceTest {
         when(userMapper.selectById("user-mini-001")).thenReturn(user);
         when(wechatService.getPhoneNumber("wx-phone-code-1")).thenReturn(phoneResult("13900139000"));
         when(userMapper.selectCount(any(LambdaQueryWrapper.class))).thenReturn(0L);
-        when(orderService.bindOrdersToUser(1L, "user-mini-001", "13900139000")).thenReturn(0);
+        when(orderEntityWriteService.bindOrdersToUser(1L, "user-mini-001", "13900139000")).thenReturn(0);
         when(userIdentityMapper.selectOne(any(LambdaQueryWrapper.class)))
                 .thenReturn(UserIdentity.builder().userId("user-mini-001").tenantId(1L)
                         .identityType("mini_program").openid("openid-mini-001").deleted(0).build());
@@ -125,7 +125,7 @@ class MiniPhoneBindServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("已被绑定");
         verify(userMapper, never()).updateById(any(User.class));
-        verify(orderService, never()).bindOrdersToUser(anyLong(), anyString(), anyString());
+        verify(orderEntityWriteService, never()).bindOrdersToUser(anyLong(), anyString(), anyString());
     }
 
     @Test
@@ -137,7 +137,7 @@ class MiniPhoneBindServiceTest {
 
         assertThatThrownBy(() -> miniPhoneBindService.bind("user-mini-001", 1L, "code"))
                 .isInstanceOf(BusinessException.class);
-        verify(orderService, never()).bindOrdersToUser(anyLong(), anyString(), anyString());
+        verify(orderEntityWriteService, never()).bindOrdersToUser(anyLong(), anyString(), anyString());
     }
 
     @Test
@@ -158,7 +158,7 @@ class MiniPhoneBindServiceTest {
         when(userMapper.selectById("user-mini-001")).thenReturn(user);
         when(wechatService.getPhoneNumber("code")).thenReturn(phoneResult("13900139000"));
         // 本人已绑同号 → 跳过占用检查（不查 count），幂等放行
-        when(orderService.bindOrdersToUser(1L, "user-mini-001", "13900139000")).thenReturn(1);
+        when(orderEntityWriteService.bindOrdersToUser(1L, "user-mini-001", "13900139000")).thenReturn(1);
 
         MiniPhoneBindService.BindResult result =
                 miniPhoneBindService.bind("user-mini-001", 1L, "code");

@@ -36,7 +36,8 @@ public class MiniPhoneBindService {
     private final WechatService wechatService;
     private final UserMapper userMapper;
     private final UserIdentityMapper userIdentityMapper;
-    private final OrderService orderService;
+    /** 订单实体写面（issue #8681，P2-1e 第七批）：手机号回填的实现点在 {@link OrderEntityWriteService}。 */
+    private final OrderEntityWriteService orderEntityWriteService;
     private final CustomerService customerService;
 
     /**
@@ -107,7 +108,7 @@ public class MiniPhoneBindService {
         }
 
         // 5. 回填名下历史订单（user_id 为空 + customer_phone=该号 → 归属本人）
-        int bound = orderService.bindOrdersToUser(tenantId, userId, purePhone);
+        int bound = orderEntityWriteService.bindOrdersToUser(tenantId, userId, purePhone);
 
         // 6. 客户档案身份收敛（issue #7711）：此刻**手机号与 openid 同时可知** —— 这是把
         //    「商户代录下单建的档案（只有手机号）」与「小程序登录建的档案（只有 openid）」

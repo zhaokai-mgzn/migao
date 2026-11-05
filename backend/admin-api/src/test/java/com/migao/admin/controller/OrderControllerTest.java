@@ -56,6 +56,8 @@ class OrderControllerTest extends BaseControllerTest {
      * 写面 {@code updateFollowStatus} 仍走门面（下一批「实体实现搬家」）。
      */
     @Mock private com.migao.admin.service.OrderStatsService orderStatsService;
+    /** 实体写面的实现点（issue #8681，P2-1e 第七批）：控制器直连实现点，门面声明已退休。 */
+    @Mock private com.migao.admin.service.OrderEntityWriteService orderEntityWriteService;
 
     @InjectMocks
     private OrderController orderController;
@@ -221,7 +223,7 @@ class OrderControllerTest extends BaseControllerTest {
                     .updatedAt(OffsetDateTime.now())
                     .build();
 
-            when(orderStatsService.getFollowStatus(ORDER_ID)).thenReturn(resp);
+            when(orderEntityWriteService.getFollowStatus(ORDER_ID)).thenReturn(resp);
 
             mockMvc.perform(get(BASE + "/" + ORDER_ID + "/follow-status"))
                     .andExpect(status().isOk())
@@ -231,7 +233,7 @@ class OrderControllerTest extends BaseControllerTest {
         @Test
         @DisplayName("更新跟单状态 -> 200")
         void updateFollowStatus() throws Exception {
-            doNothing().when(orderService).updateFollowStatus(eq(ORDER_ID), eq("followed"));
+            doNothing().when(orderEntityWriteService).updateFollowStatus(eq(ORDER_ID), eq("followed"));
 
             String body = "{\"followStatus\":\"followed\",\"remark\":\"已联系客户\"}";
 

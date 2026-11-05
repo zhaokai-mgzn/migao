@@ -11,10 +11,10 @@
   },
   "exempt": [
     {
-      "file": "backend/admin-api/src/main/java/com/migao/admin/service/OrderService.java",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/OrderEntityWriteService.java",
       "method": "deleteOrder",
       "call_anchor": "orderItemMapper.deleteById(item.getId());",
-      "reason": "父单级联删明细：集合是按父单现取的 ⇒ 删不到只可能是并发已删，重放必须幂等（判 404 会让「删单重试」失败）。",
+      "reason": "父单级联删明细：集合是按父单现取的 ⇒ 删不到只可能是并发已删，重放必须幂等（判 404 会让「删单重试」失败）。issue #8681（P2-1e 第七批）：deleteOrder 的实现体逐字节搬到 OrderEntityWriteService ⇒ 条目载体跟着搬（锚与理由不变）。",
       "restart_condition": "若明细删除开始承担账目 / 库存副作用 ⇒ 必须改判行数并重评。"
     },
     {

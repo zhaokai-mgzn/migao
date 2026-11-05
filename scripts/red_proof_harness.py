@@ -76,7 +76,12 @@ TOOLS: dict[str, ToolSpec] = {
     "scripts/order-urgency-red-proof.py": ToolSpec(
         floor=5,
         heavy="Maven + JDK（admin-api 单测；5 条变异实测 570s≈9.5min）",
-        impl=(_AAPI_MAIN + "service/OrderService.java",
+        # issue #8681（P2-1e 第七批）：updateUrgency 的实现体从门面逐字节搬到实体写面 ⇒ 被守卫文件跟着搬家
+        # （清单里的每一项都必须是**该机具真的会注入变异**的文件：留一个已不再被读的文件，
+        #  「删掉它 ⇒ --check 判腐烂」这条自证就会失去判别力）。
+        # ⚠️ 同时是**夹具仓库的拷贝面**（test_redproof_harness_gate 只拷 impl + criteria）：
+        # 漏登记 ⇒ 夹具里没有该文件 ⇒ `--check` 在 CI 上判「被守卫的文件不存在」。
+        impl=(_AAPI_MAIN + "service/OrderEntityWriteService.java",
               _AAPI_MAIN + "dto/OrderDetailResponse.java"),
         criteria=(_AAPI_TEST + "service/OrderUrgencyFieldsTest.java",),
     ),
