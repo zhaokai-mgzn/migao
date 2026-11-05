@@ -71,7 +71,7 @@ class TestToolDigestInTranscript:
     def test_no_pii_dump(self):
         """不得把全量载荷（含手机号等）整段写进 transcript。"""
         out = ar.render(self._round([{
-            "tool": "customer_address_query",
+            "tool": "customer_order_query",
             "result": {"success": True, "data": {"customer_phone": "13800138000",
                                                  "customer_address": "杭州市西湖区文三路1号"}}}]))
         assert "13800138000" not in out, f"摘要里不得出现完整手机号：{out}"

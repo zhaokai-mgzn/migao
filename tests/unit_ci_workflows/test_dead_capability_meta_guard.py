@@ -1647,8 +1647,11 @@ def test_out_of_domain_mentions_are_not_judged() -> None:
     """
     base_sources = surface_sources()
     base = scan(base_sources, ledger())
-    # 活例取 #5400 / PR #5435 明写「**一字未动**」的那一档（C 端只读工具描述里的 `order_query`）
-    live = "tool:customer_address_query::order_query"
+    # 活例取 #5400 / PR #5435 明写「**一字未动**」的那一档（C 端只读工具描述里的 `order_query`）。
+    # issue #8726：原活例 `tool:customer_address_query::order_query` 随该工具收敛而**消失**
+    # （文本与工具一起没了）⇒ 换到同一族的 `customer_order_query`（其描述里同样点名 B 端
+    # `order_query` 作反例，两处文本本单**零改动**）。
+    live = "tool:customer_order_query::order_query"
     assert live in base.ref_not_judged, (
         f"活例 `{live}` 不在显式不判表里 ⇒ 域外点名档被误判红"
         f"（现取不判表={sorted(base.ref_not_judged)}）"

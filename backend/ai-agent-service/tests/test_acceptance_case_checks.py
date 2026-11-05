@@ -1907,7 +1907,7 @@ class TestRoundTraceResultDigest:
 
     def test_scalar_values_shown(self):
         d = lr.build_round_trace([self._res(
-            "customer_address_query",
+            "customer_order_query",
             {"success": True, "data": {"has_address": False, "customer_name": None}})])[0]
         assert "has_address=False" in d["results"][0]["digest"]
 

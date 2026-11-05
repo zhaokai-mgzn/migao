@@ -744,7 +744,7 @@ async def react_turn(
                                     f"`order_create` 就是本流程的写工具（参数齐了就能真实落单）。"
                                     f"「无法代为提交订单」属**能力误宣**：顾客明明要买，"
                                     f"却被告知系统做不到，转化路径被自己掐断。"
-                                    f"正确做法：缺收货信息就先 `customer_address_query` 查历史地址，"
+                                    f"正确做法：缺收货信息就先 `customer_order_query(action=\"recent_address\")` 查历史地址，"
                                     f"没有再发 `interact(component=form)` 或用自然语言问姓名/手机号/地址；"
                                     f"参数齐了走 confirm 卡 → `validate_input` → `order_create`（含 sms_code）。"
                                     f"只有当顾客**显式**要求人工、情绪激烈或诉求超出能力时，才允许转人工。")
@@ -775,7 +775,7 @@ async def react_turn(
                                 _msg2 = (
                                     "顾客正在下单（本轮消息仍在推进下单），且本会话已经查过商品详情 —— "
                                     "**不要转人工**：`order_create` 就是本流程的写工具，参数齐了就能真实落单。"
-                                    "缺收货信息就先 `customer_address_query` 查历史地址，没有再发 "
+                                    "缺收货信息就先 `customer_order_query(action=\"recent_address\")` 查历史地址，没有再发 "
                                     "`interact(component=form)` 或直接问；然后走 confirm 卡 → "
                                     "`validate_input` → `order_create`（含 sms_code）。"
                                     "只有当顾客**显式**要求人工、情绪激烈或诉求超出能力时，才允许转人工。")
@@ -1737,7 +1737,7 @@ async def react_turn(
                 # ── 「顾客已确认却不动手」：一次纠正重试（issue #3445/#3477 类）──
                 # 实测（run 34794687762 的 OR-024 首跑，`ai=` 让轨迹第一次可读）：
                 # 顾客 R4「确认下单」、R5「确认」、R6/R7 给验证码，模型却 9 轮全在
-                # product_detail/customer_address_query 打转，validate_input → order_create
+                # product_detail 与地址查询（现为 customer_order_query 的 recent_address）打转，validate_input → order_create
                 # **从未发生**。8.4 确认收口要求先有 pending（validate_input 跑过才写）——
                 # validate_input 没跑 → 收口也救不了，只能靠重试碰巧捞回。
                 # 判据（保守）：C 端 + 顾客本轮明确确认/推进下单 + 商品已接地 + 本轮

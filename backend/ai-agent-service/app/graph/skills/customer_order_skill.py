@@ -8,7 +8,8 @@ from app.graph.skills.skill_config import SkillConfig
 
 # 客服订单 Skill 可用的 Tool 列表（C 端专用：customer_order_query 物理隔离自 B 端 order_query，
 # 强制按当前用户过滤；物流用 customer_logistics_track（仅本人已发货订单、拒绝快递单号直查）；
-# customer_address_query 查历史收货信息用于下单预填（issue #2815 CH-025）；
+# 历史收货信息预填用 customer_order_query(action="recent_address")（issue #2815 CH-025；
+# #8726 起地址查询收敛成订单查询的第二个 action —— 同端点/同角色/同用户过滤）；
 # 查询 + 创建 + 确认交互；转人工工具已退场，模型不可达）
 CUSTOMER_ORDER_TOOLS = [
     "customer_order_query",
@@ -24,7 +25,7 @@ CUSTOMER_ORDER_TOOLS = [
     # 若只注册不绑定，模型永远调不到（skill 工具集是唯一暴露点）⇒ 卡片仍是零发射点。
     "payment_qrcode_query",
     "customer_logistics_track",
-    "customer_address_query",
+    # 收货地址查询不再是独立工具：用上面已绑定的 customer_order_query 的 recent_address action
     # ── 商品检索/详情：**下单流程的必需项**（issue #3365）──
     # 本 skill 的提示词写着「商品详情铁律：confirm 之前必须先调 product_detail」，
     # 但工具集里原本**没有**这两个工具 —— 提示词承诺了做不到的事（与 customer_quote
@@ -92,8 +93,8 @@ issue #4454）：左列说法**一律换成右列内部值**写进 `processing_i
    金额来自会话上下文中顾客已选商品的单价×数量，或已确认的算料报价（curtain_calc 结果）。
    上下文没有商品与价格时不要硬下单：先引导选品（"先帮您确认商品和价格～ 您想买哪一款？"）。
 1. **收货信息（地址自动填充）**：客户姓名、手机号、收货地址、商品明细（规格/数量）。
-   - **先调 customer_address_query 查询历史收货信息**（老客户自动填充场景，issue #2815）：
-     ⚠️ 已拿到收货信息后**不要重复调用** customer_address_query（流程会原地打转）。
+   - **先调 customer_order_query(action="recent_address") 查询历史收货信息**（老客户自动填充场景，issue #2815）：
+     ⚠️ 已拿到收货信息后**不要重复调用** recent_address（流程会原地打转）。
      - 命中（has_address=true）→ 用 interact(component=form) 下发收货信息表单并**预填** value（收货人/手机号/地址），让顾客确认或修改后提交；
      - 未命中（has_address=false）→ 再询问顾客收货信息（"亲，方便告诉我您的姓名、手机号和收货地址吗？我帮您登记～"）。
    - **数量口径铁律**：顾客说「要 3 米」＝**买 3 米布**＝订单**数量**。禁止当窗宽算料、
@@ -135,7 +136,7 @@ issue #4454）：左列说法**一律换成右列内部值**写进 `processing_i
 9. **手机号用完整 11 位**（卡片 fields 与工具参数都填真号 `13800138000`）：**展示脱敏系统做，你不要自己打码**；
    写掩码值、或把 `****` 填成 0 会**静默写错号码**，顾客收不到短信/配送（#3386）。
 10. **你有下单能力，禁止自我否定**：`order_create` 是你的写工具，**禁止**说"元元没法提交订单/无法代为下单/
-   请去小程序点立即购买"（能力误宣，顾客以为系统坏了，issue #3389）。缺收货信息就查 `customer_address_query`，
+   请去小程序点立即购买"（能力误宣，顾客以为系统坏了，issue #3389）。缺收货信息就查 `customer_order_query(action="recent_address")`，
    没有就发 form 卡或直接问姓名/手机号/地址，补齐后继续，**不要放弃流程**。
 
 顾客要求找老板/经理/人工、或强烈不满时（**无人工转接通道**）：

@@ -289,7 +289,7 @@ class TestMibaoToolsetTruth:
         real = _mibao_real_toolset()
         c_only_expected = {
             "aftersale_create", "aftersale_query", "curtain_calc",
-            "customer_address_query", "customer_logistics_track",
+            "customer_logistics_track",
             "customer_order_query",
         }
         leaked = real & c_only_expected
@@ -386,7 +386,7 @@ class TestBendWriteToolSuccessAssertions:
         在**两端并集**内，拼错/臆造照旧红）；且**无条件**声明仍照本条原样判红。
         """
         c_only = {"aftersale_create", "curtain_calc", "customer_order_query",
-                  "customer_address_query", "customer_logistics_track"}
+                  "customer_logistics_track"}
         bad = []
         for c in _bend_runnable_cases():
             for tool, conditional in _must_succeed_branches(c):

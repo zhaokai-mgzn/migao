@@ -6,6 +6,12 @@ AI 智能客服系统 - C 端"我的订单"查询 Tool（元元专用）
 - 无论 LLM 传什么参数，都强制按当前登录用户（context.user_id）过滤，
   调用 admin-api 的 C 端专用端点 GET /api/admin/agent/orders/mine（后端同样强制按用户过滤）
 - 不支持 keyword/receiver 等模糊搜索（避免跨用户试探），仅支持状态筛选 + 分页
+
+两个 action（issue #8726，把 `customer_address_query` 收敛进来）：
+- `list`：订单列表分页查询（原能力，一字未动）；
+- `recent_address`：下单前预填的历史收货信息 —— 原 `customer_address_query` 的**派生视图**
+  （同一端点、同一角色、同一强制用户过滤、同一数据源：取列表里最近一笔有地址的订单），
+  故收敛为一个工具的第二个 action，而不是第二份实现。
 """
 
 from typing import Any, Dict, Optional
@@ -28,6 +34,10 @@ ORDER_STATUS_TEXT = {
 }
 
 
+# 派生视图 action（issue #8726）：下单前预填历史收货信息（收敛前的 customer_address_query）
+RECENT_ADDRESS_ACTION = "recent_address"
+
+
 class CustomerOrderQueryTool(BaseTool):
     """C 端"我的订单"查询 Tool（元元专用，强制用户级隔离）
 
@@ -37,8 +47,11 @@ class CustomerOrderQueryTool(BaseTool):
     name = "customer_order_query"
 
     description = (
-        "【触发】C 端顾客查询自己的订单时调用：'我的订单''查订单''订单到哪了''ORD-单号'。"
-        "【参数】action 必填（唯一取值 list，分页）；list 支持 status(状态筛选)/page(页码)/page_size(每页数量)。"
+        "【触发】C 端顾客（a）查询自己的订单：'我的订单''查订单''订单到哪了''ORD-单号' → action=list；"
+        "（b）下单/购买时需要带出历史收货信息：'帮我下单''我要买''地址是多少' → action=recent_address。"
+        "【参数】action 必填：list（默认，当前用户订单列表分页，支持 status/page/page_size）；"
+        "recent_address（无参数，取最近一笔有收货地址的订单，返回 "
+        "has_address/customer_name/customer_phone/customer_address/order_no，供 form 预填）。"
         "【反例】顾客问物流/快递用 customer_logistics_track；"
         "商户员工查询订单用 order_query（管理/改单等写操作**不在 Agent 能力内**，引导其到商家后台订单页处理）。"
         "【标注】READONLY — 仅查询当前登录顾客自己的订单，结果由系统强制按用户过滤，无需也无法传用户标识"
@@ -49,8 +62,15 @@ class CustomerOrderQueryTool(BaseTool):
         "properties": {
             "action": {
                 "type": "string",
-                "description": "操作类型：list（默认，当前用户订单列表分页查询）",
-                "enum": ["list"],
+                "description": (
+                    "操作类型：list（默认，当前用户订单列表分页查询）| "
+                    "recent_address（下单前预填：取最近一笔有收货地址的订单的收货信息，无其它参数）"
+                ),
+                # enum 成员必须是**字符串字面量**（`tests/unit_ci_workflows/test_assertion_specs_wellformed.py`
+                # 的 `TestActionSetParsingIsSyntaxBased`：出现非字面量成员即判「口径漂移」红）
+                # ⇒ 这里刻意不引用 `RECENT_ADDRESS_ACTION` 常量；两者一致性由 service 侧
+                # 可执行判据 `test_tools_customer_order_query_recent_address.py` 钉住。
+                "enum": ["list", "recent_address"],
                 "default": "list",
             },
             "status": {
@@ -106,13 +126,33 @@ class CustomerOrderQueryTool(BaseTool):
             )
 
         action = (action or "list").strip().lower()
-        if action not in ("list",):
+        if action not in ("list", RECENT_ADDRESS_ACTION):
             return ToolResult(
                 success=False,
                 error=f"无效的操作类型: {action}",
-                message="不支持的操作类型，可选：list",
-                suggestion="本工具只支持 list 操作，请改用只读查询（如需下单请转下单技能），不要传入其它 action",
+                message="不支持的操作类型，可选：list、recent_address",
+                suggestion=(
+                    "本工具只做只读查询：查订单列表用 action=list；"
+                    "下单前查历史收货信息用 action=recent_address；不要传入其它 action"
+                ),
             )
+
+        # recent_address 不吃的分页/状态参数**忽略**（老调用面没有它们 —— 不得因此改变结果）
+        if action == RECENT_ADDRESS_ACTION:
+            try:
+                return await self._recent_address(context)
+            except Exception as e:
+                logger.error(
+                    f"[customer-order-query] recent_address failed | tenant={context.tenant_id} "
+                    f"user={LogSanitizer.mask_phone(context.user_id)} error={type(e).__name__}: {e}",
+                    exc_info=True,
+                )
+                return ToolResult(
+                    success=False,
+                    error="tool_execution_failed",
+                    message="收货地址查询时出错，请直接告诉我您的收货信息",
+                    suggestion="直接询问顾客收货人/手机号/地址后继续下单流程",
+                )
 
         # 分页参数强制 int（LLM 可能传字符串）
         try:
@@ -136,6 +176,68 @@ class CustomerOrderQueryTool(BaseTool):
                 message="查询订单时出错，请稍后重试",
                 suggestion="请稍后重试",
             )
+
+    async def _recent_address(self, context: ToolContext) -> ToolResult:
+        """最近一笔有收货地址的订单收货信息（下单表单预填，issue #2815 / #8726 收敛）。
+
+        与 `_list_my_orders` 同一端点、同一强制用户过滤；差别只是**取列表里第一条有地址的记录**。
+        入参与出参逐字沿用收敛前的形态（`page=1/size=10`、`has_address`/`customer_name`/
+        `customer_phone`/`customer_address`/`order_no`/`source`），故这是一次**等价变换**。
+        """
+        client = get_admin_api_client()
+        response = await client.get(
+            "/api/admin/agent/orders/mine",
+            params={"page": 1, "size": 10},
+            tenant_id=context.tenant_id,
+            user_id=context.user_id,
+        )
+
+        if not response.get("success"):
+            error_msg = response.get("error", {}).get("message", "查询失败")
+            logger.info(
+                f"[customer-order-query] recent_address rejected | tenant={context.tenant_id} "
+                f"error={error_msg}"
+            )
+            return admin_api_failure(response,
+                error=error_msg,
+                message="收货地址查询失败，请直接告诉我您的收货信息",
+                suggestion="直接询问顾客收货人/手机号/地址后继续下单流程",
+            )
+
+        data = response.get("data", {})
+        records = data.get("items", []) or []
+
+        # 取最近一笔有收货地址的订单（列表按后端返回顺序；无则任意）
+        for record in records:
+            address = record.get("customerAddress") or record.get("customer_address")
+            name = record.get("customerName") or record.get("customer_name")
+            phone = record.get("customerPhone") or record.get("customer_phone")
+            if address and str(address).strip():
+                order_no = record.get("orderNo") or record.get("order_no")
+                return ToolResult(
+                    success=True,
+                    data={
+                        "has_address": True,
+                        "customer_name": name,
+                        "customer_phone": phone,
+                        "customer_address": str(address).strip(),
+                        "order_no": order_no,
+                        "source": "last_order",
+                    },
+                    message=f"已找到您上次的收货信息（来自订单 {order_no}），可直接确认或修改",
+                    summary=f"命中上次收货信息: {LogSanitizer.mask_text(str(name) if name else '')} "
+                            f"{LogSanitizer.mask_phone(str(phone) if phone else '')} "
+                            f"{LogSanitizer.mask_text(str(address))}",
+                )
+
+        # 无历史订单或无地址：返回空，LLM 走原表单询问流程
+        return ToolResult(
+            success=True,
+            data={"has_address": False, "customer_name": None,
+                  "customer_phone": None, "customer_address": None},
+            message="暂未找到您之前保存的收货信息",
+            summary="无历史收货地址，按原流程询问顾客收货人/手机号/地址",
+        )
 
     async def _list_my_orders(
         self,

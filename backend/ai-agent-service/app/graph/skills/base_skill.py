@@ -2326,7 +2326,7 @@ def capability_denial_text_hit(text: str, *, include_assist: bool = False) -> st
 
 _STALL_CORRECTIVE = (
     "顾客已经明确确认下单、商品也已经查过了 —— **不要再重复查询商品/地址/报价**。"
-    "如果收货信息已齐（可先用 `customer_address_query` 取历史地址），本轮必须推进写流程："
+    "如果收货信息已齐（可先用 `customer_order_query(action=\"recent_address\")` 取历史地址），本轮必须推进写流程："
     "`validate_input` → `interact(component=confirm)` 展示明细 → 顾客确认后 `order_create`"
     "（含 sms_code）；如果还缺信息（收货人/手机号/地址/验证码），用一句话问缺的那一项，"
     "**不要空转在只读查询上**。"
@@ -2347,14 +2347,15 @@ _TEXT_DENIAL_CORRECTIVE = (
     "你刚才的回复以「自己做不了」为由把顾客推给小程序/人工，但事实相反："
     "`order_create` 就是本流程的写工具，**你可以真实下单**。"
     "请**重新给出回复**：不要再出现「没办法直接帮您提交订单 / 没有权限帮您提交 / "
-    "去小程序操作 / 我是咨询客服」这类话术；缺信息就先 `customer_address_query` 查历史地址、"
+    "去小程序操作 / 我是咨询客服」这类话术；缺信息就先 `customer_order_query(action=\"recent_address\")` 查历史地址、"
     "再发 `interact(component=form)` 或用自然语言问；参数齐了走 confirm 卡 → `validate_input` → "
     "`order_create`（含 sms_code）。只有顾客**显式**要求人工、情绪激动或诉求超出能力时才允许引导人工。"
 )
 
 # B 端（黄金策，店员/管理员）同义纠正话术：C 端那段提到"小程序 / 短信验证码 / 收货地址查询"
-# 都不是 B 端口径（`ORDER_TOOLS` 里没有 `customer_address_query`，B 端代客下单也不需要
-# 顾客短信码）—— 拿 C 端话术去纠正 B 端，只会把模型推向另一个不存在的工具。
+# 都不是 B 端口径（C 端专属的收货地址查询现为 `customer_order_query` 的 recent_address action，
+# 该工具不在 `ORDER_TOOLS` 里，B 端代客下单也不需要顾客短信码）—— 拿 C 端话术去纠正 B 端，
+# 只会把模型推向另一个不存在的工具。
 _TEXT_DENIAL_CORRECTIVE_BIZ = (
     "你刚才的回复以「我做不了/不归我管」为由把落单推走，但事实相反："
     "`order_create` 就在本流程的工具表里，**你可以真实落单**。"
@@ -2855,7 +2856,7 @@ async def _known_raw_phones(session_id: str, state: dict | None = None,
     """本会话已知的**真实**手机号：跨轮持久化集合 ∪ 会话里顾客自己说过的号码。
 
     为什么要两路：顾客提供的号码在本轮消息/历史里（无需持久化），而
-    `customer_address_query` 之类读工具返回的号码要靠持久化跨轮带过来。
+    `customer_order_query` 等读工具返回的号码要靠持久化跨轮带过来。
     """
     known = set()
     try:
