@@ -52,6 +52,7 @@ class MarketingPosterTool(BaseTool):
         "【返回】营销海报卡（商品主图 + 名称 + 价格 + 单位 + 文案），前端可直接下载/保存到相册。"
         "【反例】不得用商品描述自动拼卖点；不得编造折扣/赠品/材质；没问过文案就调用 = 违规。"
         "【标注】READONLY"
+        "【不要用于】商品图生成/主图（用 product_image_generate）；商品档案（用 product_detail）"
     )
 
     # 与 `GET /api/admin/products/{id}` 的读码逐字同码（ProductController 的

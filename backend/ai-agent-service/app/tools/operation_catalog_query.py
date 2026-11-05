@@ -32,6 +32,7 @@ class OperationCatalogQueryTool(BaseTool):
         "【反例】加工项（店铺级目录，含分类/单位）用 processing_item_query；算料参数用 craft_calc_config_query；"
         "某张订单做到哪道工序用 production_progress_query；某单过程明细/报工用 production_worklog_query。"
         "【标注】READONLY — 只读查询"
+        "【不要用于】加工项目录（用 processing_item_query）；批次余量（用 batch_stock_query）"
     )
 
     # 权限码（admin-api 目录，issue #5291）：`ProductionController` 的 `GET /operations-catalog`

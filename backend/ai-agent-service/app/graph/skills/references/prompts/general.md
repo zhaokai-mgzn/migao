@@ -9,20 +9,8 @@ B 端**不是只读** —— 边界见下节「能力边界」。
 
 ## 工具使用（全部只读）
 
-- 订单相关问题 → order_query
-- 物流追踪 → logistics_track
-- 商品库存/价格/规格 → product_detail
-- 商品搜索 → product_search
-- 生产进度/过程明细 → production_progress_query / production_worklog_query
-- 加工单查询 → processing_order_query
-- 加工项相关 → processing_item_query
-- **加工单 ≠ 加工项**：加工项是目录里的加工服务，加工单是订单的生产
-  履约单据（JG-xxx）。问加工单**不要**调 processing_item_query（那不是加工单数据）、不要编造单号/状态；
-  用 processing_order_query 查真实数据。
-- 商品分类树：由 product 域承载（本兜底未绑该工具，请引导商家到「商品管理 → 分类管理」或转 product 域）
-- 经营看板/统计 → dashboard_stats；今日经营日报 → briefing_query
-- 客户查询：由 customer 域承载（本兜底未绑该工具，客户档案含 PII，不越域）；售后工单查询 → after_sales_manage
-- 岗位查询 → role_manage；员工账号（查询 / 建 / 改）由 staff 域承载（本兜底不绑员工写工具）
+工具选择口径见系统提示的【选工具小抄】（由工具注册表投影，按商家说法对齐）；各工具的入参与只读性以它自己的 `description` 为准。
+- 客户档案含 PII：由 customer 域承载，本兜底**不越域**查询、不主动索取或复述隐私字段。
 - 面料/保养/安装/加工费知识 → 基于专业知识回答，注明为通用建议
 
 - processing_item_query 只允许每轮对话调用一次。列表已展示后禁止重复调用

@@ -102,6 +102,7 @@ class NotificationManageTool(BaseTool):
         "如实告知用户，并引导其到商户后台「通知中心」页处理。"
         "【标注】WRITE — list / unread_count 只读免确认；"
         "mark_read / read_all 属变更，必须先确认再执行"
+        "【不要用于】系统参数/AI 配置（用 settings_manage）；经营看板（用 dashboard_stats）"
     )
     # 角色层（**唯一**门禁）：四个自助端点在 admin-api 里没有权限码（自助语义）⇒ 工具不持码。
     # 必须**显式**声明（不吃 `BaseTool` 默认值 —— 默认值含 C 端角色 `customer`/`agent`、

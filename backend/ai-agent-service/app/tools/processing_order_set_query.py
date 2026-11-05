@@ -49,6 +49,7 @@ class ProcessingOrderSetQueryTool(BaseTool):
         "production_progress_query / production_worklog_query；工序库与工艺路线模板用 operation_catalog_query。"
         "【口径】明细里的 unit_price 为 null 表示**尚未定价**，必须原样转述（不得说成 0 元、不得估算）。"
         "【标注】READONLY — 只读查询，不含任何写 action"
+        "【不要用于】加工单整体状态/交期（用 processing_order_query）；店铺加工项目录（用 processing_item_query）"
     )
 
     # 权限码（admin-api 目录，issue #5291）：三个读端点按生产域读码 `production:view` 收口

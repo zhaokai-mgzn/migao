@@ -46,6 +46,7 @@ class PieceworkQueryTool(BaseTool):
         "【反例】查订单金额/货款用 order_query；查经营汇总（营收/看板）用 dashboard_stats；"
         "查员工账号用 employee_manage。"
         "【标注】READONLY — 只读查询计件（工人工资，仅商户员工/管理员可用，不对顾客开放）"
+        "【不要用于】收支/流水/对账（用 finance_api）；加工单过程明细（用 production_worklog_query）"
     )
 
     parameters = {

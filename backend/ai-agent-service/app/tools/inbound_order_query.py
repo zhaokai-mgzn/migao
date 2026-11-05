@@ -42,6 +42,7 @@ class InboundOrderQueryTool(BaseTool):
         "【反例】商品/颜色的库存数用 inventory_manage(query)；库存台账分页用 stock_ledger_query；"
         "批次成本与省料金额用 batch_stock_query。"
         "【标注】READONLY — 只读查询，不含任何写 action"
+        "【不要用于】库存台账/颜色分布（用 stock_ledger_query）；批次省料度量（用 batch_stock_query）"
     )
 
     # 权限码（admin-api 目录）：`InboundOrderController` 的三个读端点均方法级
