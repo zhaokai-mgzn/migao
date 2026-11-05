@@ -74,8 +74,9 @@ class AfterSalesTicketServiceTest {
     @Mock
     private NotificationService notificationService;
 
+    /** 售后回补的实现点（issue #8681，P2-1e 第八批）：门面转发已退休，本类直连它 */
     @Mock
-    private OrderService orderService;
+    private OrderStockService orderStockService;
 
     /** 库存台账（issue #4055）：回补链落账语义见 StockLedgerTest / StockLedgerServiceTest */
     @Mock
@@ -860,7 +861,7 @@ class AfterSalesTicketServiceTest {
         verify(ticketTimelineMapper, never()).insert(any(TicketTimeline.class));
         verify(orderMapper, never()).update(any(), any(UpdateWrapper.class));
         verify(financeService, never()).recordRefund(any(), any(), any());
-        verify(orderService, never()).restoreStockForReturn(any());
+        verify(orderStockService, never()).restoreStockForReturn(any());
         verify(notificationService, never()).triggerByEvent(any(), any(), any());
     }
 
@@ -1342,7 +1343,7 @@ class AfterSalesTicketServiceTest {
         afterSalesTicketService.updateTicketStatus("ticket-rs1", request);
 
         // then: 订单全部商品允许回补 → 调用库存恢复
-        verify(orderService).restoreStockForReturn("order-001");
+        verify(orderStockService).restoreStockForReturn("order-001");
     }
 
     @Test
@@ -1378,9 +1379,9 @@ class AfterSalesTicketServiceTest {
 
         // then: 顺序是「先快照 → 再回补 → 最后比对落账」——
         // 顺序反了 before 就是回补后的值，台账会记不出这次变化（静默漏账，账实不符）
-        InOrder inOrder = inOrder(stockLedgerService, orderService);
+        InOrder inOrder = inOrder(stockLedgerService, orderStockService);
         inOrder.verify(stockLedgerService).snapshotSkus(anyCollection());
-        inOrder.verify(orderService).restoreStockForReturn("order-001");
+        inOrder.verify(orderStockService).restoreStockForReturn("order-001");
         inOrder.verify(stockLedgerService).recordChangesAgainstSnapshot(
                 eq(1L), eq(snapshot), eq(StockLedger.REASON_AFTERSALES), eq("AS-RESTOCK-001"), anyString());
     }
@@ -1450,7 +1451,7 @@ class AfterSalesTicketServiceTest {
         afterSalesTicketService.updateTicketStatus("ticket-rs2", request);
 
         // then: 商品不允许回补 → 不调用库存恢复
-        verify(orderService, never()).restoreStockForReturn(anyString());
+        verify(orderStockService, never()).restoreStockForReturn(anyString());
     }
 
     @Test
@@ -1481,7 +1482,7 @@ class AfterSalesTicketServiceTest {
         afterSalesTicketService.updateTicketStatus("ticket-rs3", request);
 
         // then: 任一商品不允许 → 整单不回补，防止定制商品误入可售库存
-        verify(orderService, never()).restoreStockForReturn(anyString());
+        verify(orderStockService, never()).restoreStockForReturn(anyString());
     }
 
     @Test
@@ -1508,7 +1509,7 @@ class AfterSalesTicketServiceTest {
 
         // then: 无明细 → 不查商品开关、不回补库存
         verify(productMapper, never()).selectBatchIds(anyCollection());
-        verify(orderService, never()).restoreStockForReturn(anyString());
+        verify(orderStockService, never()).restoreStockForReturn(anyString());
     }
 
     @Test
@@ -1534,7 +1535,7 @@ class AfterSalesTicketServiceTest {
 
         // then: repair 工单不触发库存回补
         verify(orderItemMapper, never()).selectList(any(LambdaQueryWrapper.class));
-        verify(orderService, never()).restoreStockForReturn(anyString());
+        verify(orderStockService, never()).restoreStockForReturn(anyString());
     }
 
     // ════════════════ issue #6228：退款金额小数位准入（超 2 位有效小数 ⇒ 422 + 零写入）════════════════

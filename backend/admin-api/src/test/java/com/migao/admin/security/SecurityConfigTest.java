@@ -354,6 +354,14 @@ class SecurityConfigTest {
     @MockBean
     private com.migao.admin.service.OrderService orderService;
 
+    /**
+     * Agent 改单的**实现点**（issue #8681，P2-1e 第八批）：{@code updateOrderForAgent} 的编排已整体搬到
+     * {@code OrderAgentFacade} ⇒ 本类的 action 级权限判据必须盯这个新服务（盯旧门面会变成「永远零交互」的
+     * 空断言）。同本类既有口径：全上下文测试里服务一律 {@code @MockBean}。
+     */
+    @MockBean
+    private com.migao.admin.service.OrderAgentFacade orderAgentFacade;
+
     @MockBean
     private com.migao.admin.service.OrderLogisticsService orderLogisticsService;
 
@@ -943,7 +951,7 @@ class SecurityConfigTest {
 
         // 承重判据（负向控制）：退款**一次都不许**进服务层 —— 缺此断言时，
         // 「返回 403 但订单已被退款」这种最坏形态会照样绿。
-        verify(orderService, never()).updateOrderForAgent(anyString(), any(), any());
+        verify(orderAgentFacade, never()).updateOrderForAgent(anyString(), any(), any());
     }
 
     @Test
@@ -951,7 +959,7 @@ class SecurityConfigTest {
     void agentRefund_merchantStaffWithRefundPermission_allowed() throws Exception {
         when(userMapper.selectById("staff-op")).thenReturn(staffUser("staff-op", 1L, "operator", "active"));
         when(roleService.getUserPermissions("staff-op")).thenReturn(List.of("order:update", "order:refund"));
-        when(orderService.updateOrderForAgent(anyString(), any(), any()))
+        when(orderAgentFacade.updateOrderForAgent(anyString(), any(), any()))
                 .thenReturn(new com.migao.admin.dto.OrderDetailResponse());
 
         mockMvc.perform(patch("/api/admin/agent/orders/ORD-20260101-0001")
@@ -963,7 +971,7 @@ class SecurityConfigTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true));
 
-        verify(orderService).updateOrderForAgent(anyString(), any(), any());
+        verify(orderAgentFacade).updateOrderForAgent(anyString(), any(), any());
     }
 
     @Test
@@ -986,7 +994,7 @@ class SecurityConfigTest {
                 .andExpect(jsonPath("$.error.details[0].message").value("order:update"));
 
         // 负向控制：被拒的改单**一次都不许**进服务层
-        verify(orderService, never()).updateOrderForAgent(anyString(), any(), any());
+        verify(orderAgentFacade, never()).updateOrderForAgent(anyString(), any(), any());
     }
 
     @Test
@@ -994,7 +1002,7 @@ class SecurityConfigTest {
     void agentUpdateStatus_merchantStaffWithWriteCode_allowed() throws Exception {
         when(userMapper.selectById("staff-cs")).thenReturn(staffUser("staff-cs", 1L, "customer_service", "active"));
         when(roleService.getUserPermissions("staff-cs")).thenReturn(List.of("order:update"));
-        when(orderService.updateOrderForAgent(anyString(), any(), any()))
+        when(orderAgentFacade.updateOrderForAgent(anyString(), any(), any()))
                 .thenReturn(new com.migao.admin.dto.OrderDetailResponse());
 
         mockMvc.perform(patch("/api/admin/agent/orders/ORD-20260101-0001")
@@ -1006,13 +1014,13 @@ class SecurityConfigTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true));
 
-        verify(orderService).updateOrderForAgent(anyString(), any(), any());
+        verify(orderAgentFacade).updateOrderForAgent(anyString(), any(), any());
     }
 
     @Test
     @DisplayName("Agent 退款 - 纯内部服务调用（无 X-User-Id）保持既有旁路 ⇒ 200（零回归）")
     void agentRefund_internalServiceCall_keepsBypass() throws Exception {
-        when(orderService.updateOrderForAgent(anyString(), any(), any()))
+        when(orderAgentFacade.updateOrderForAgent(anyString(), any(), any()))
                 .thenReturn(new com.migao.admin.dto.OrderDetailResponse());
 
         mockMvc.perform(patch("/api/admin/agent/orders/ORD-20260101-0001")

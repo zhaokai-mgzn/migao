@@ -11,6 +11,8 @@ import com.migao.admin.dto.agent.AgentOrderUpdateRequest;
 import com.migao.admin.security.SecurityUser;
 import com.migao.admin.security.PermissionInterceptor;
 import com.migao.admin.service.ClientRequestIdService;
+import com.migao.admin.service.OrderAgentFacade;
+import com.migao.admin.service.OrderCreationService;
 import com.migao.admin.service.OrderQueryService;
 import com.migao.admin.service.OrderService;
 import com.migao.admin.security.RequirePermission;
@@ -47,7 +49,26 @@ import org.springframework.web.bind.annotation.*;
 @RequiredArgsConstructor
 public class AgentOrderController {
 
+    /**
+     * 建单 / 改单共用的<b>共享部件</b>（明细装配 / 取价 / 总额 / 库存前置 / 批次台账访问器）的唯一实现点。
+     *
+     * <p>issue #8681（P2-1e 第八批）：门面的 {@code createOrderForAgent} / {@code updateOrderForAgent}
+     * 两个转发都退休了 ⇒ 本类<b>不再经门面调用任何业务入口</b>；这个字段只剩一个用途 —— 作为两个实现点入口的
+     * <b>第三参</b>传过去（与 {@code createOrder(request, tenantId, orderService)} 同一条既有口径，
+     * 不重搭第二份共享部件）。</p>
+     */
     private final OrderService orderService;
+    /**
+     * 建单的**实现点**（issue #8681，P2-1e 第八批）：{@code POST /agent/orders} 直接依赖
+     * {@code OrderCreationService}（幂等键 claim/complete/discard/replay 与事务边界都在它那一侧），
+     * 不再绕门面。
+     */
+    private final OrderCreationService orderCreationService;
+    /**
+     * 改单的**实现点**（issue #8681，P2-1e 第八批）：{@code PATCH /agent/orders/{id}} 的 action 路由
+     * （status / logistics / payment / cancel / refund）整体搬到 {@link OrderAgentFacade}。
+     */
+    private final OrderAgentFacade orderAgentFacade;
     /**
      * 单号/UUID 解析的**实现点**（issue #8681，P2-1e）：{@code GET /agent/orders/resolve} 直接依赖
      * {@code OrderQueryService}，不再绕门面（门面的同名转发方法已删除）。
@@ -72,7 +93,7 @@ public class AgentOrderController {
      *
      * <p>幂等键（issue #4037）：请求头 {@code X-Client-Request-Id} 透传到
      * {@link AgentOrderCreateRequest#getClientRequestId()}，由
-     * {@code OrderService#createOrderForAgent} 做 (tenantId, 键) 去重与结果回放。
+     * {@code OrderCreationService#createOrderForAgent} 做 (tenantId, 键) 去重与结果回放。
      * **缺省不报错**（向后兼容未升级的调用方，走原路径）。</p>
      */
     @PostMapping
@@ -90,7 +111,7 @@ public class AgentOrderController {
                 request.getItems() != null ? request.getItems().size() : 0, tenantId,
                 request.getUserId(), clientRequestId);
         try {
-            OrderDetailResponse result = orderService.createOrderForAgent(request, tenantId);
+            OrderDetailResponse result = orderCreationService.createOrderForAgent(request, tenantId, orderService);
             return ApiResponse.success(result);
         } catch (Exception e) {
             log.warn("[Agent] 创建订单失败: {}", e.getMessage());
@@ -120,7 +141,7 @@ public class AgentOrderController {
         Long tenantId = TenantContext.getTenantId();
         log.info("[Agent] 更新订单: id={}, action={}, tenantId={}", id, request.getAction(), tenantId);
         try {
-            Object result = orderService.updateOrderForAgent(id, request, tenantId);
+            Object result = orderAgentFacade.updateOrderForAgent(id, request, tenantId);
             return ApiResponse.success((OrderDetailResponse) result);
         } catch (Exception e) {
             log.warn("[Agent] 更新订单失败: id={}, error={}", id, e.getMessage());

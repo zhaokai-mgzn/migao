@@ -26,6 +26,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import javax.sql.DataSource;
 import java.io.IOException;
@@ -90,6 +91,8 @@ class OrderNoSkuIdentityRealDbTest {
     private static DataSource dataSource;
     private static SqlSession session;
     private static OrderService orderService;
+    /** 建单实现点（issue #8681，P2-1e 第八批）：createOrderForAgent 的门面转发已退休 ⇒ 直驱实现点（门面自己懒构造的那一份） */
+    private static OrderCreationService orderCreationService;
 
     @BeforeAll
     static void startRealPostgresAndFixtures() throws Exception {
@@ -159,6 +162,7 @@ class OrderNoSkuIdentityRealDbTest {
                         mock(com.migao.admin.mapper.ProcessingFeeCombinationMapper.class),
                         mock(com.migao.admin.mapper.ProductionRouteRuleMapper.class)),
                 mock(ProcessingFeeCombinationCommandService.class));
+        orderCreationService = ReflectionTestUtils.invokeMethod(orderService, "creationService");
     }
 
     @AfterAll
@@ -180,7 +184,7 @@ class OrderNoSkuIdentityRealDbTest {
         String phone = "13800138831";
         AgentOrderCreateRequest req = agentRequest(MULTI_PRODUCT, MULTI_NAME, "150", phone, null);
 
-        Throwable thrown = catchThrowable(() -> orderService.createOrderForAgent(req, TENANT_ID));
+        Throwable thrown = catchThrowable(() -> orderCreationService.createOrderForAgent(req, TENANT_ID, orderService));
         int landed = landedOrders(phone);
         String amount = landedAmount(phone);
         // 三个读数一起打印（改前/改后都能读出「到底拦没拦、落没落」）
@@ -206,7 +210,7 @@ class OrderNoSkuIdentityRealDbTest {
         String phone = "13800138832";
         AgentOrderCreateRequest req = agentRequest(null, MULTI_NAME, "150", phone, null);
 
-        Throwable thrown = catchThrowable(() -> orderService.createOrderForAgent(req, TENANT_ID));
+        Throwable thrown = catchThrowable(() -> orderCreationService.createOrderForAgent(req, TENANT_ID, orderService));
         System.out.println("[red-reading #3881 判据2] thrown=" + thrown
                 + " | landedOrders=" + landedOrders(phone));
 
@@ -226,7 +230,7 @@ class OrderNoSkuIdentityRealDbTest {
         String phone = "13800138833";
         AgentOrderCreateRequest req = agentRequest(SINGLE_PRODUCT, SINGLE_NAME, "150", phone, null);
 
-        var created = orderService.createOrderForAgent(req, TENANT_ID);
+        var created = orderCreationService.createOrderForAgent(req, TENANT_ID, orderService);
         int landed = landedOrders(phone);
         String amount = landedAmount(phone);
         System.out.println("[reading #3881 判据3] status=" + created.getStatus()
@@ -245,7 +249,7 @@ class OrderNoSkuIdentityRealDbTest {
         String phone = "13800138834";
         AgentOrderCreateRequest req = agentRequest(SIMPLE_PRODUCT, SIMPLE_NAME, "30", phone, null);
 
-        var created = orderService.createOrderForAgent(req, TENANT_ID);
+        var created = orderCreationService.createOrderForAgent(req, TENANT_ID, orderService);
         int landed = landedOrders(phone);
         String amount = landedAmount(phone);
         System.out.println("[reading #3881 判据4] status=" + created.getStatus()
@@ -265,7 +269,7 @@ class OrderNoSkuIdentityRealDbTest {
         String phone = "13800138835";
         AgentOrderCreateRequest req = agentRequest(null, "真库根本不存在的商品", "150", phone, null);
 
-        Throwable thrown = catchThrowable(() -> orderService.createOrderForAgent(req, TENANT_ID));
+        Throwable thrown = catchThrowable(() -> orderCreationService.createOrderForAgent(req, TENANT_ID, orderService));
         System.out.println("[red-reading #3881 判据5] thrown=" + thrown
                 + " | landedOrders=" + landedOrders(phone));
 

@@ -3,6 +3,7 @@ package com.migao.admin.controller;
 
 import com.migao.admin.controller.agent.AgentOrderController;
 import com.migao.admin.mapper.UserMapper;
+import com.migao.admin.service.OrderCreationService;
 import com.migao.admin.service.OrderService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -46,7 +47,10 @@ class AgentOrderCreateBoundaryTest extends BaseControllerTest {
 
     private MockMvc mockMvc;
 
+    /** 建单 / 改单共用的共享部件实现点（issue #8681，P2-1e 第八批）：只作为实现点入口的第三参出现 */
     @Mock private OrderService orderService;
+    /** 建单实现点（issue #8681，P2-1e 第八批）：门面转发已退休，控制器直连它 ⇒「零调用」必须盯它 */
+    @Mock private OrderCreationService orderCreationService;
     @Mock private UserMapper userMapper;
 
     @InjectMocks private AgentOrderController agentOrderController;
@@ -70,7 +74,7 @@ class AgentOrderCreateBoundaryTest extends BaseControllerTest {
                 .andExpect(jsonPath("$.error.details[0].field").value("items"))
                 .andExpect(jsonPath("$.error.details[0].message").value("订单明细不能为空"));
 
-        verifyNoInteractions(orderService);
+        verifyNoInteractions(orderCreationService, orderService);
     }
 
     @Test
@@ -87,7 +91,7 @@ class AgentOrderCreateBoundaryTest extends BaseControllerTest {
                 .andExpect(jsonPath("$.error.details[0].message")
                         .value("手机号格式不正确，请输入11位中国大陆手机号"));
 
-        verifyNoInteractions(orderService);
+        verifyNoInteractions(orderCreationService, orderService);
     }
 
     @Test
@@ -103,7 +107,7 @@ class AgentOrderCreateBoundaryTest extends BaseControllerTest {
                 .andExpect(jsonPath("$.error.details[0].field").value("items[0].subtotal"))
                 .andExpect(jsonPath("$.error.details[0].message").value("小计不能为空"));
 
-        verifyNoInteractions(orderService);
+        verifyNoInteractions(orderCreationService, orderService);
     }
 
     @Test
@@ -120,6 +124,6 @@ class AgentOrderCreateBoundaryTest extends BaseControllerTest {
                 .andExpect(jsonPath("$.error.details[0].field").value("items[0].width"))
                 .andExpect(jsonPath("$.error.details[0].message").value("宽度不能为负数"));
 
-        verifyNoInteractions(orderService);
+        verifyNoInteractions(orderCreationService, orderService);
     }
 }

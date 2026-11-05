@@ -137,7 +137,7 @@
     {
       "file": "backend/admin-api/src/main/java/com/migao/admin/controller/agent/AgentOrderController.java",
       "anchor": "@RequestHeader(value = ClientRequestIdService.HEADER, required = false)",
-      "surface": "POST /api/admin/agent/orders（读头并透传到 OrderService）",
+      "surface": "POST /api/admin/agent/orders（读头并透传到 OrderCreationService —— issue #8681 P2-1e 第八批起门面转发已退休）",
       "case_ids": [
         "OR-049"
       ]

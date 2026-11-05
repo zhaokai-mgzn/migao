@@ -117,6 +117,8 @@ class StockLedgerTest {
     private AfterSalesTicketService afterSalesTicketService;
     /** issue #4137：订单腿必须是**真实** OrderService —— 否则「扣减 → 台账行」的因果被 mock 掉 */
     private OrderService orderService;
+    /** 库存实现点（issue #8681，P2-1e 第八批）：售后回补直连它 */
+    private OrderStockService orderStockService;
     /** 订单账本里的那一行（状态在链上被真实流转：pending → confirmed → cancelled） */
     private Order order;
 
@@ -141,8 +143,12 @@ class StockLedgerTest {
                 new ProcessingFeeCalculator(processingFeeCombinationMapper, routeRuleMapper),
                 // issue #4872：建单回写加工费组合（本类零 manual 行 ⇒ 该路径不可达；给 mock，不留 null 依赖）
                 org.mockito.Mockito.mock(ProcessingFeeCombinationCommandService.class));
+        // issue #8681（P2-1e 第八批）：restoreStockForReturn 的门面转发退休 ⇒ 售后回补直连库存实现点
+        // （同一份 mapper / 台账实例，与 OrderService 内部懒构造的那一份等价）。
+        orderStockService = new OrderStockService(orderMapper, orderItemMapper, productMapper,
+                productSkuMapper, stockLedgerService);
         afterSalesTicketService = new AfterSalesTicketService(afterSalesTicketMapper, orderMapper,
-                orderItemMapper, productMapper, ticketTimelineMapper, financeService, orderService,
+                orderItemMapper, productMapper, ticketTimelineMapper, financeService, orderStockService,
                 new ObjectMapper(), notificationService, stockLedgerService);
 
         // ── 内存账本接线：读返回快照副本（隔离实体原地改写），写改内存值 ──

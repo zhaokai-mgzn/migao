@@ -204,8 +204,8 @@ class OrderNoSkuIdentityFailClosedTest {
         when(productSkuMapper.selectList(any(LambdaQueryWrapper.class)))
                 .thenReturn(List.of(sku(1L, "SKU-150", "150"), sku(2L, "SKU-180", "180")));
 
-        assertThatThrownBy(() -> orderService.createOrderForAgent(
-                agentRequest(PRODUCT_ID, "遮光窗帘", new BigDecimal("150"), null), TENANT_ID))
+        assertThatThrownBy(() -> orderCreationService.createOrderForAgent(
+                agentRequest(PRODUCT_ID, "遮光窗帘", new BigDecimal("150"), null), TENANT_ID, orderService))
                 .isInstanceOfSatisfying(BusinessException.class, ex -> {
                     assertFailClosed(ex, "多个不同规格价");
                     assertThat(ex.getMessage()).contains("遮光窗帘");
@@ -226,8 +226,8 @@ class OrderNoSkuIdentityFailClosedTest {
         when(productSkuMapper.selectList(any(LambdaQueryWrapper.class)))
                 .thenReturn(List.of(sku(1L, "SKU-168", "168")));
 
-        assertThatThrownBy(() -> orderService.createOrderForAgent(
-                agentRequest(null, "遮光窗帘", new BigDecimal("150"), null), TENANT_ID))
+        assertThatThrownBy(() -> orderCreationService.createOrderForAgent(
+                agentRequest(null, "遮光窗帘", new BigDecimal("150"), null), TENANT_ID, orderService))
                 .isInstanceOfSatisfying(BusinessException.class, ex -> {
                     assertThat(ex.getHttpStatus()).isEqualTo(422);
                     assertThat(ex.getMessage()).contains("单价与系统价格不一致")
@@ -243,8 +243,8 @@ class OrderNoSkuIdentityFailClosedTest {
     void unresolvableProductIsRejected() {
         when(productMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
 
-        assertThatThrownBy(() -> orderService.createOrderForAgent(
-                agentRequest(null, "不存在的商品", new BigDecimal("150"), null), TENANT_ID))
+        assertThatThrownBy(() -> orderCreationService.createOrderForAgent(
+                agentRequest(null, "不存在的商品", new BigDecimal("150"), null), TENANT_ID, orderService))
                 .isInstanceOfSatisfying(BusinessException.class,
                         ex -> assertFailClosed(ex, "匹配不到唯一商品"));
         verify(orderMapper, never()).insert(any(Order.class));
@@ -260,8 +260,8 @@ class OrderNoSkuIdentityFailClosedTest {
                 .price(new BigDecimal("168")).stock(BigDecimal.valueOf(10)).build();
         when(productSkuMapper.selectById(77L)).thenReturn(target);
 
-        assertThatThrownBy(() -> orderService.createOrderForAgent(
-                agentRequest(PRODUCT_ID, "遮光窗帘", new BigDecimal("150"), Map.of("skuId", 77L)), TENANT_ID))
+        assertThatThrownBy(() -> orderCreationService.createOrderForAgent(
+                agentRequest(PRODUCT_ID, "遮光窗帘", new BigDecimal("150"), Map.of("skuId", 77L)), TENANT_ID, orderService))
                 .isInstanceOfSatisfying(BusinessException.class, ex -> {
                     assertThat(ex.getHttpStatus()).isEqualTo(422);
                     assertThat(ex.getMessage()).contains("单价与系统价格不一致").contains("系统价 168.00");
@@ -278,8 +278,8 @@ class OrderNoSkuIdentityFailClosedTest {
         when(productSkuMapper.selectList(any(LambdaQueryWrapper.class)))
                 .thenReturn(List.of(sku(1L, "SKU-A", "150"), sku(2L, "SKU-B", "150")));
 
-        OrderDetailResponse result = orderService.createOrderForAgent(
-                agentRequest(PRODUCT_ID, "遮光窗帘", new BigDecimal("150"), null), TENANT_ID);
+        OrderDetailResponse result = orderCreationService.createOrderForAgent(
+                agentRequest(PRODUCT_ID, "遮光窗帘", new BigDecimal("150"), null), TENANT_ID, orderService);
 
         assertThat(result.getStatus()).isEqualTo("pending");
         assertThat(result.getTotalAmount()).isEqualByComparingTo("300.00");
@@ -294,8 +294,8 @@ class OrderNoSkuIdentityFailClosedTest {
         when(productSkuMapper.selectList(any(LambdaQueryWrapper.class)))
                 .thenReturn(List.of(sku(1L, "SKU-A", "150"), sku(2L, "SKU-B", "150")));
 
-        assertThatThrownBy(() -> orderService.createOrderForAgent(
-                agentRequest(PRODUCT_ID, "遮光窗帘", new BigDecimal("151"), null), TENANT_ID))
+        assertThatThrownBy(() -> orderCreationService.createOrderForAgent(
+                agentRequest(PRODUCT_ID, "遮光窗帘", new BigDecimal("151"), null), TENANT_ID, orderService))
                 .isInstanceOfSatisfying(BusinessException.class, ex -> {
                     assertThat(ex.getHttpStatus()).isEqualTo(422);
                     assertThat(ex.getMessage()).contains("系统价 150.00");
@@ -311,8 +311,8 @@ class OrderNoSkuIdentityFailClosedTest {
         when(productMapper.selectById(PRODUCT_ID)).thenReturn(product(PRODUCT_ID, "纯色布", "30"));
         when(productSkuMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
 
-        OrderDetailResponse result = orderService.createOrderForAgent(
-                agentRequest(PRODUCT_ID, "纯色布", new BigDecimal("30"), null), TENANT_ID);
+        OrderDetailResponse result = orderCreationService.createOrderForAgent(
+                agentRequest(PRODUCT_ID, "纯色布", new BigDecimal("30"), null), TENANT_ID, orderService);
 
         assertThat(result.getStatus()).isEqualTo("pending");
         assertThat(result.getTotalAmount()).isEqualByComparingTo("60.00");
@@ -328,8 +328,8 @@ class OrderNoSkuIdentityFailClosedTest {
                 .price(new BigDecimal("150")).stock(BigDecimal.valueOf(10)).build();
         when(productSkuMapper.selectById(88L)).thenReturn(target);
 
-        OrderDetailResponse result = orderService.createOrderForAgent(
-                agentRequest(PRODUCT_ID, "遮光窗帘", new BigDecimal("150"), Map.of("skuId", 88L)), TENANT_ID);
+        OrderDetailResponse result = orderCreationService.createOrderForAgent(
+                agentRequest(PRODUCT_ID, "遮光窗帘", new BigDecimal("150"), Map.of("skuId", 88L)), TENANT_ID, orderService);
 
         assertThat(result.getStatus()).isEqualTo("pending");
         assertThat(result.getTotalAmount()).isEqualByComparingTo("300.00");

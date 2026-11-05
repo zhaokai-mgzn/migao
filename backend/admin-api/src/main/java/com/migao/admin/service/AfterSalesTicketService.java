@@ -55,7 +55,15 @@ public class AfterSalesTicketService extends ServiceImpl<AfterSalesTicketMapper,
     private final ProductMapper productMapper;
     private final TicketTimelineMapper ticketTimelineMapper;
     private final FinanceService financeService;
-    private final OrderService orderService;
+    /**
+     * 售后回补的**实现点**（issue #8681，P2-1e 第八批）：{@code restoreStockForReturn} 的门面转发已退休
+     * （该转发只转发、零自有点），本类直连 {@link OrderStockService} —— 与取消订单同一条库存恢复路径，
+     * 不复制口径。
+     *
+     * <p>同批把<b>因此失去唯一调用点</b>的 {@code OrderService} 依赖一并移除（本类再无任何一处经门面）：
+     * 留一个没人用的注入字段就是「看起来还在用」的假接线。</p>
+     */
+    private final OrderStockService orderStockService;
     private final ObjectMapper objectMapper;
     private final NotificationService notificationService;
     /** 库存台账（issue #4055）：回补/扣减只在这一处比对落账，变更逻辑本身仍在既有实现点 */
@@ -759,11 +767,12 @@ public class AfterSalesTicketService extends ServiceImpl<AfterSalesTicketMapper,
 
         // 全部商品允许回补 → 复用订单库存恢复路径（恢复 SKU 库存 + 减销量）
         try {
-            // 库存台账（issue #4055）：真正的 SKU 改动发生在 OrderService.restoreStockForReturn 内部
-            // （本 issue 不动该文件），故按「回补前快照 vs 回补后实际值」比对落账 ——
+            // 库存台账（issue #4055）：真正的 SKU 改动发生在 OrderStockService.restoreStockForReturn 内部
+            // （issue #8681 P2-1e 第八批起本类直连该实现点，不再经 OrderService 的同名转发），
+            // 故按「回补前快照 vs 回补后实际值」比对落账 ——
             // 只记真实变化的 SKU，且快照必须取在**调用回补之前**（否则链条首尾接不上）。
             Map<Long, ProductSku> stockBefore = stockLedgerService.snapshotSkus(productIds);
-            orderService.restoreStockForReturn(ticket.getOrderId());
+            orderStockService.restoreStockForReturn(ticket.getOrderId());
             int ledgerRows = stockLedgerService.recordChangesAgainstSnapshot(
                     ticket.getTenantId(), stockBefore, StockLedger.REASON_AFTERSALES,
                     ticket.getTicketNo(), "退货回补库存（allow_return_restock=true）");

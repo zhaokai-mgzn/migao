@@ -96,6 +96,8 @@ class OrderStockLedgerTest {
     private final List<StockLedger> ledger = new ArrayList<>();
 
     private OrderService orderService;
+    /** 库存实现点（issue #8681，P2-1e 第八批）：restoreStockForReturn 的门面转发已退休 ⇒ 直驱它 */
+    private OrderStockService orderStockService;
     private Order order;
 
     @BeforeEach
@@ -115,6 +117,11 @@ class OrderStockLedgerTest {
                 new ProcessingFeeCalculator(processingFeeCombinationMapper, routeRuleMapper),
                 // issue #4872：建单回写加工费组合（本类零 manual 行 ⇒ 该路径不可达；给 mock，不留 null 依赖）
                 org.mockito.Mockito.mock(ProcessingFeeCombinationCommandService.class));
+
+        // issue #8681（P2-1e 第八批）：售后回补的门面转发退休 ⇒ 直驱库存实现点（同一份 mapper / 台账实例，
+        // 与 OrderService 内部懒构造的那一份等价 ⇒ 调用链与落账口径一字未变）。
+        orderStockService = new OrderStockService(orderMapper, orderItemMapper, productMapper,
+                productSkuMapper, stockLedgerService);
 
         order = Order.builder()
                 .id(ORDER_ID)
@@ -259,7 +266,7 @@ class OrderStockLedgerTest {
         skuStore.put(SKU_ID, sku(BigDecimal.valueOf(30)));
 
         // when
-        orderService.restoreStockForReturn(ORDER_ID);
+        orderStockService.restoreStockForReturn(ORDER_ID);
 
         // then: 库存真的回补了，但本路径不落 order 行 ——
         //       若这里再写一行，同一次变更会出现两行（20→22 与 20→22），delta 翻倍且相邻行接不上

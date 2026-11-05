@@ -317,23 +317,14 @@ class AfterSalesConcurrentResolveRealDbTest {
     private static AfterSalesTicketService serviceOn(SqlSession s) {
         StockLedgerService stockLedgerService = new StockLedgerService(
                 s.getMapper(StockLedgerMapper.class), s.getMapper(ProductSkuMapper.class));
-        OrderService orderService = new OrderService(
+        // issue #8681（P2-1e 第八批）：restoreStockForReturn 的门面转发退休 ⇒ 售后回补直连库存实现点
+        // （真库 mapper + 真台账实例，与 OrderService 内部懒构造那一份同源）。
+        OrderStockService orderStockService = new OrderStockService(
                 s.getMapper(OrderMapper.class),
                 s.getMapper(OrderItemMapper.class),
-                mock(OrderLogisticsMapper.class),
-                mock(CustomerService.class),
                 s.getMapper(ProductMapper.class),
                 s.getMapper(ProductSkuMapper.class),
-                mock(FinanceTransactionMapper.class),
-                new ObjectMapper(),
-                mock(NotificationService.class),
-                mock(ProcessingOrderMapper.class),
-                mock(UserService.class),
-                mock(ClientRequestIdService.class),
-                stockLedgerService,
-                new ProcessingFeeCalculator(mock(ProcessingFeeCombinationMapper.class),
-                        mock(ProductionRouteRuleMapper.class)),
-                mock(ProcessingFeeCombinationCommandService.class));
+                stockLedgerService);
         return new AfterSalesTicketService(
                 s.getMapper(AfterSalesTicketMapper.class),
                 s.getMapper(OrderMapper.class),
@@ -341,7 +332,7 @@ class AfterSalesConcurrentResolveRealDbTest {
                 s.getMapper(ProductMapper.class),
                 s.getMapper(TicketTimelineMapper.class),
                 mock(FinanceService.class),
-                orderService,
+                orderStockService,
                 new ObjectMapper(),
                 mock(NotificationService.class),
                 stockLedgerService);

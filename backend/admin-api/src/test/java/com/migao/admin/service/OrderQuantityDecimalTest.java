@@ -317,7 +317,7 @@ class OrderQuantityDecimalTest {
                 .id("p-eval-embroidery").tenantId(1L).name("刺绣窗帘")
                 .basePrice(new BigDecimal("100.00")).build());
 
-        OrderDetailResponse result = orderService.createOrderForAgent(agentRequest, 1L);
+        OrderDetailResponse result = orderCreationService.createOrderForAgent(agentRequest, 1L, orderService);
 
         assertThat(result).isNotNull();
         assertThat(captured.item.getQuantity())
