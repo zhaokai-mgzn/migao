@@ -9163,3 +9163,30 @@ cases:
         - "tests/unit_ci_workflows/test_unfailable_green_is_consumed.py"
       ci:
         - pr-check.yml
+
+  - id: MC-227
+    legacy_id: ""
+    title: "生成腿的暂存区必须在仓库外：`REPO_ROOT.rglob` 的整仓扫描面不许扫到生成过程的临时物（否则并发生成时 FileNotFoundError）"
+    domains:
+      - ci
+      - generated-artifacts
+    tier: normal
+    tags:
+      - ci
+      - generated-artifacts
+      - race
+      - rglob
+      - fail-closed
+    truths_ref: []
+    user_inputs:
+      - "并发跑生成腿（pytest -n 4 各自在 conftest 里 --write）时，整仓 rglob 的判据在两轮 CI 上红在同一处 FileNotFoundError，而同一份代码单跑全绿"
+    expectations:
+      - "暂存目录**不在**仓库目录树里（`repo.relative_to` 抛 ValueError），否则整仓 rglob 会扫到生成过程的临时物"
+      - "暂存目录与仓库**同一设备**（`os.stat(...).st_dev` 相等）—— `os.replace` 只在同盘原子，换到 /tmp 会退化成两步写"
+      - "判别力自证：在仓库内造一个同名目录 ⇒ 判据必须判出「在仓库内」，不许恒绿"
+    data_checks: []
+    skip_reason: ""
+    merge_log: "2026-11-05 新增：PR #8719 的 ci workflow helper 两轮红在 `.gen-artifacts-staging/eval_cases/ontology.py` 的 FileNotFoundError；病因不在报错的判据上，在生成腿把暂存区建在仓库根下。修法 = 暂存区移到 `repo.parent`（同盘、仓外）。"
+    traces:
+      tests:
+        - tests/unit_ci_workflows/test_automerge_bot_safe_path.py::test_staging_area_is_outside_the_repo
