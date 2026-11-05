@@ -150,3 +150,4 @@
 {"id":"1793871951.65675.14410","ts":"2026-11-05T09:45:51Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/cases-conflict","why":"--allow-package-heavy（命令行显式）"}
 {"id":"1793871951.65733.7991","ts":"2026-11-05T09:45:52Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/7813-p2c","why":"--allow-package-heavy（命令行显式）"}
 {"id":"1793873162.64635.10176","ts":"2026-11-05T10:06:02Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/7813-p2c","why":"--allow-package-heavy（命令行显式）"}
+{"id":"1793877441.73953.10611","ts":"2026-11-05T11:17:21Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/8681e-facade6","why":"--allow-package-heavy（命令行显式）"}
