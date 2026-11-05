@@ -9261,6 +9261,32 @@ cases:
         - "backend/admin-api/src/test/java/com/migao/admin/mapper/PlaybookMapperTest.java"
         - "backend/admin-api/src/test/java/com/migao/admin/controller/PlaybookControllerTest.java"
 
+  - id: MC-235
+    legacy_id: ""
+    title: "取号工具默认必须**尾部顺延**而不是填历史空档：空档是并行取号方撞号的病根（`--fill-gap` 才填空档）"
+    domains:
+      - ci
+      - case-governance
+    tier: normal
+    tags:
+      - ci
+      - case-ids
+      - concurrency
+      - fail-closed
+    truths_ref: []
+    user_inputs:
+      - "两个并行修复包各自跑 `python3 scripts/next_case_id.py MC` 取号：改前都被告知同一个历史空档（MC-145 / MC-099）⇒ 两个包拿同一个号"
+    expectations:
+      - "默认口径 = **尾部顺延**（现取最大号 + 1）；历史空档只在显式 `--fill-gap` 时给出"
+      - "判别力自证：`fill_gap=True` 与默认口径**必须给出不同的号**（相同 ⇒ 判据分不出两种口径 ⇒ 空断言）"
+      - "内部断言「返回的号 ∉ 候选集」在两个分支上都要生效（变异 `min_free` 返回已占号 ⇒ 必抛且报文点名那个号）"
+    data_checks: []
+    skip_reason: ""
+    merge_log: "2026-11-05 新增。两个独立来源报同一缺陷：① #8720 的包「next_case_id.py 的建议值是 MC-099（历史空档），与并行包的取远号段口径冲突」；② #5740 §3.4 已登记「最小空闲号落在历史空档时判不了是刻意保留还是已废弃」。一夜实测撞号 4 次（两个包同时拿 MC-222、另一个 MC-223）。修法 = 默认尾部顺延 + `--fill-gap` opt-in。"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_next_case_id_allocator.py"
+
   - id: MC-227
     legacy_id: ""
     title: "生成腿的暂存区必须在仓库外：`REPO_ROOT.rglob` 的整仓扫描面不许扫到生成过程的临时物（否则并发生成时 FileNotFoundError）"
