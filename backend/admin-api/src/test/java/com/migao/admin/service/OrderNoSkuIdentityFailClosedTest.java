@@ -112,11 +112,18 @@ class OrderNoSkuIdentityFailClosedTest {
     /** 刚插入的那份订单（回读用）—— 让金额断言断言**落库口径**而不是另造的桩。 */
     private final Order[] saved = new Order[1];
 
+    /**
+     * 建单编排的实现点（issue #8681，P2-1e 第五批）：门面的 {@code createOrder} 转发已删除 ⇒ 驱动对象换成
+     * 门面<b>自己懒构造的那一份</b>（同一条调用链、同一份协作者），断言一字未改。
+     */
+    private com.migao.admin.service.OrderCreationService orderCreationService;
+
     @BeforeEach
     void setUp() {
         // issue #4406：取价点用**真实**对象（只桩价目表 Mapper）—— 金额算法仍走生产代码
         ReflectionTestUtils.setField(orderService, "processingFeeCalculator",
                 new ProcessingFeeCalculator(processingFeeCombinationMapper, routeRuleMapper));
+        orderCreationService = ReflectionTestUtils.invokeMethod(orderService, "creationService");
         MybatisConfiguration conf = new MybatisConfiguration();
         MapperBuilderAssistant assistant = new MapperBuilderAssistant(conf, "");
         TableInfoHelper.initTableInfo(assistant, Order.class);
@@ -335,8 +342,8 @@ class OrderNoSkuIdentityFailClosedTest {
             + "**逐字不变**（不经 Agent 取价守卫）")
     void formPathIsUnaffected() {
         // 表单路径根本不查商品/规格：同样的「无 SKU 标识」明细照样落单（改前改后一致）
-        OrderDetailResponse result = orderService.createOrder(
-                formRequest(PRODUCT_ID, "遮光窗帘", new BigDecimal("150")), TENANT_ID);
+        OrderDetailResponse result = orderCreationService.createOrder(
+                formRequest(PRODUCT_ID, "遮光窗帘", new BigDecimal("150")), TENANT_ID, orderService);
 
         assertThat(result.getStatus()).isEqualTo("pending");
         assertThat(result.getTotalAmount()).isEqualByComparingTo("300.00");
