@@ -70,6 +70,8 @@ class OrderQuantityDecimalTest {
 
 @InjectMocks
     private OrderService orderService;
+    /** 查询族的实现点（issue #8681，P2-1e 第四批）：门面同名转发已删除 ⇒ 驱动门面自己懒构造的那一份。 */
+    private OrderQueryService orderQueryService;
     /**
      * 制单人留痕（issue #5835）：本类不涉及制单人口径 ⇒ 解析恒为 null ⇒ 两列不写
      * （与「取不到操作者」同一条路径，既有断言一字未动）。
@@ -119,6 +121,7 @@ class OrderQuantityDecimalTest {
                 new ProcessingFeeCalculator(processingFeeCombinationMapper, routeRuleMapper));
         TenantContext.setTenantId(1L);
         ReflectionTestUtils.setField(orderService, "objectMapper", objectMapper);
+        orderQueryService = ReflectionTestUtils.invokeMethod(orderService, "queryService");
 
         MybatisConfiguration conf = new MybatisConfiguration();
         MapperBuilderAssistant assistant = new MapperBuilderAssistant(conf, "");
@@ -195,7 +198,7 @@ class OrderQuantityDecimalTest {
         lenient().when(orderLogisticsMapper.selectByOrderId(anyString(), anyLong())).thenReturn(List.of());
 
         // when
-        OrderDetailResponse detail = orderService.getOrderById("order-001");
+        OrderDetailResponse detail = orderQueryService.getOrderById("order-001");
 
         // then：详情里的加工项数量与金额都按 8.4 计（旧实现 Integer quantity=8 → amount=240.00）
         assertThat(detail.getItems()).hasSize(1);

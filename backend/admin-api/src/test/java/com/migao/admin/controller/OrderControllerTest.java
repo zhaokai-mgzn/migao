@@ -44,6 +44,8 @@ class OrderControllerTest extends BaseControllerTest {
     @Mock private OrderLogisticsService orderLogisticsService;
     /** 发货人取值的实现点（issue #8681，P2-1e）：控制器直接依赖新服务，不再绕门面。 */
     @Mock private OrderLifecycleService orderLifecycleService;
+    /** 查询族的实现点（issue #8681，P2-1e 第四批）：控制器直接依赖实现点，门面同名转发已删除。 */
+    @Mock private com.migao.admin.service.OrderQueryService orderQueryService;
 
     @InjectMocks
     private OrderController orderController;
@@ -238,26 +240,26 @@ class OrderControllerTest extends BaseControllerTest {
         @Test
         @DisplayName("列表查询携带租户 ID")
         void listPassesTenantId() throws Exception {
-            when(orderService.getOrderPage(anyLong(), anyLong(), isNull(), isNull(), isNull(),
+            when(orderQueryService.getOrderPage(anyLong(), anyLong(), isNull(), isNull(), isNull(),
                     isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), eq(TEST_TENANT_ID), isNull(), isNull(), isNull()))
                     .thenReturn(PageResponse.of(0L, 1L, 20L, List.of()));
 
             mockMvc.perform(get(BASE));
 
-            verify(orderService).getOrderPage(anyLong(), anyLong(), isNull(), isNull(), isNull(),
+            verify(orderQueryService).getOrderPage(anyLong(), anyLong(), isNull(), isNull(), isNull(),
                     isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), eq(TEST_TENANT_ID), isNull(), isNull(), isNull());
         }
 
         @Test
         @DisplayName("列表查询支持按 userId 过滤（C 端数据隔离）")
         void listPassesUserIdFilter() throws Exception {
-            when(orderService.getOrderPage(anyLong(), anyLong(), isNull(), isNull(), isNull(),
+            when(orderQueryService.getOrderPage(anyLong(), anyLong(), isNull(), isNull(), isNull(),
                     isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), eq(TEST_TENANT_ID), eq("user-abc"), isNull(), isNull()))
                     .thenReturn(PageResponse.of(0L, 1L, 20L, List.of()));
 
             mockMvc.perform(get(BASE).param("userId", "user-abc"));
 
-            verify(orderService).getOrderPage(anyLong(), anyLong(), isNull(), isNull(), isNull(),
+            verify(orderQueryService).getOrderPage(anyLong(), anyLong(), isNull(), isNull(), isNull(),
                     isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), eq(TEST_TENANT_ID), eq("user-abc"), isNull(), isNull());
         }
 
@@ -424,7 +426,7 @@ class OrderControllerTest extends BaseControllerTest {
         @Test
         @DisplayName("发货方式 none：新建物流 ⇒ 落库 'none'（服务端开始记录用户的选择）")
         void persistsNoneShippingMethodOnCreate() throws Exception {
-            when(orderService.getOrderById(eq(ORDER_ID), isNull())).thenReturn(orderWithStatus("confirmed"));
+            when(orderQueryService.getOrderById(eq(ORDER_ID), isNull())).thenReturn(orderWithStatus("confirmed"));
             when(orderLogisticsService.getByOrderId(ORDER_ID)).thenReturn(List.of());
             when(orderLifecycleService.resolveShipperName(null)).thenReturn("李四");
 
@@ -440,7 +442,7 @@ class OrderControllerTest extends BaseControllerTest {
         @Test
         @DisplayName("发货方式非法值（如 express）⇒ 422 显式拒绝、不静默兜底、**不写库**")
         void rejectsInvalidShippingMethodWithoutWriting() throws Exception {
-            when(orderService.getOrderById(eq(ORDER_ID), isNull())).thenReturn(orderWithStatus("confirmed"));
+            when(orderQueryService.getOrderById(eq(ORDER_ID), isNull())).thenReturn(orderWithStatus("confirmed"));
             when(orderLogisticsService.getByOrderId(ORDER_ID)).thenReturn(List.of());
 
             mockMvc.perform(put(BASE + "/" + ORDER_ID + "/logistics")
@@ -455,7 +457,7 @@ class OrderControllerTest extends BaseControllerTest {
         @Test
         @DisplayName("服务端规则：显式 logistics + 运单号为空 ⇒ 422 且**无写入**（前端那条校验搬到了服务端）")
         void rejectsLogisticsWithoutTrackingNoAndWritesNothing() throws Exception {
-            when(orderService.getOrderById(eq(ORDER_ID), isNull())).thenReturn(orderWithStatus("confirmed"));
+            when(orderQueryService.getOrderById(eq(ORDER_ID), isNull())).thenReturn(orderWithStatus("confirmed"));
             when(orderLogisticsService.getByOrderId(ORDER_ID)).thenReturn(List.of());
             when(orderLifecycleService.resolveShipperName(null)).thenReturn("李四");
 
@@ -471,7 +473,7 @@ class OrderControllerTest extends BaseControllerTest {
         @Test
         @DisplayName("正对照：logistics + 有单号 ⇒ 成功且落库 'logistics'")
         void acceptsLogisticsWithTrackingNo() throws Exception {
-            when(orderService.getOrderById(eq(ORDER_ID), isNull())).thenReturn(orderWithStatus("confirmed"));
+            when(orderQueryService.getOrderById(eq(ORDER_ID), isNull())).thenReturn(orderWithStatus("confirmed"));
             when(orderLogisticsService.getByOrderId(ORDER_ID)).thenReturn(List.of());
             when(orderLifecycleService.resolveShipperName("王五")).thenReturn("王五");
 
@@ -497,7 +499,7 @@ class OrderControllerTest extends BaseControllerTest {
                     .logisticsCompany("顺丰速运").trackingNo("SFOLD")
                     .shipperName("李四").status("in_transit").build();
 
-            when(orderService.getOrderById(eq(ORDER_ID), isNull())).thenReturn(orderWithStatus("shipped"));
+            when(orderQueryService.getOrderById(eq(ORDER_ID), isNull())).thenReturn(orderWithStatus("shipped"));
             when(orderLogisticsService.getByOrderId(ORDER_ID)).thenReturn(List.of(legacy));
 
             // 弹窗本体（components/orders/LogisticsForm.tsx）的 validate 要求运单号必填、
@@ -520,7 +522,7 @@ class OrderControllerTest extends BaseControllerTest {
                     .shippingMethod("none")   // 已记录「无需物流」
                     .shipperName("李四").status("in_transit").build();
 
-            when(orderService.getOrderById(eq(ORDER_ID), isNull())).thenReturn(orderWithStatus("shipped"));
+            when(orderQueryService.getOrderById(eq(ORDER_ID), isNull())).thenReturn(orderWithStatus("shipped"));
             when(orderLogisticsService.getByOrderId(ORDER_ID)).thenReturn(List.of(existing));
 
             // 不传 shippingMethod 键：既不因白名单被拒，也不因「logistics 缺单号」被拒
@@ -537,7 +539,7 @@ class OrderControllerTest extends BaseControllerTest {
         @Test
         @DisplayName("新建物流：显式传入发货人 → 原样落库")
         void createsLogisticsWithExplicitShipper() throws Exception {
-            when(orderService.getOrderById(eq(ORDER_ID), isNull())).thenReturn(orderWithStatus("confirmed"));
+            when(orderQueryService.getOrderById(eq(ORDER_ID), isNull())).thenReturn(orderWithStatus("confirmed"));
             when(orderLogisticsService.getByOrderId(ORDER_ID)).thenReturn(List.of());
             when(orderLifecycleService.resolveShipperName("王五")).thenReturn("王五");
 
@@ -553,7 +555,7 @@ class OrderControllerTest extends BaseControllerTest {
         @Test
         @DisplayName("新建物流：未传发货人 → 用后端兜底（当前登录用户姓名）")
         void createsLogisticsWithFallbackShipper() throws Exception {
-            when(orderService.getOrderById(eq(ORDER_ID), isNull())).thenReturn(orderWithStatus("producing"));
+            when(orderQueryService.getOrderById(eq(ORDER_ID), isNull())).thenReturn(orderWithStatus("producing"));
             when(orderLogisticsService.getByOrderId(ORDER_ID)).thenReturn(List.of());
             when(orderLifecycleService.resolveShipperName(null)).thenReturn("李四");
 
@@ -574,7 +576,7 @@ class OrderControllerTest extends BaseControllerTest {
                     .logisticsCompany("顺丰速运").trackingNo("SFOLD")
                     .shipperName("李四").status("in_transit").build();
 
-            when(orderService.getOrderById(eq(ORDER_ID), isNull())).thenReturn(orderWithStatus("shipped"));
+            when(orderQueryService.getOrderById(eq(ORDER_ID), isNull())).thenReturn(orderWithStatus("shipped"));
             when(orderLogisticsService.getByOrderId(ORDER_ID)).thenReturn(List.of(existing));
 
             mockMvc.perform(put(BASE + "/" + ORDER_ID + "/logistics")
@@ -593,7 +595,7 @@ class OrderControllerTest extends BaseControllerTest {
                     .id("log-005").orderId(ORDER_ID).tenantId(TEST_TENANT_ID)
                     .logisticsCompany("顺丰速运").trackingNo("SFOLD").status("in_transit").build();
 
-            when(orderService.getOrderById(eq(ORDER_ID), isNull())).thenReturn(orderWithStatus("shipped"));
+            when(orderQueryService.getOrderById(eq(ORDER_ID), isNull())).thenReturn(orderWithStatus("shipped"));
             when(orderLogisticsService.getByOrderId(ORDER_ID)).thenReturn(List.of(existing));
 
             mockMvc.perform(put(BASE + "/" + ORDER_ID + "/logistics")
@@ -614,7 +616,7 @@ class OrderControllerTest extends BaseControllerTest {
                     .logisticsCompany("顺丰速运").trackingNo("SFOLD")
                     .status("in_transit").build(); // 存量：shipperName = null
 
-            when(orderService.getOrderById(eq(ORDER_ID), isNull())).thenReturn(orderWithStatus("shipped"));
+            when(orderQueryService.getOrderById(eq(ORDER_ID), isNull())).thenReturn(orderWithStatus("shipped"));
             when(orderLogisticsService.getByOrderId(ORDER_ID)).thenReturn(List.of(legacy));
             when(orderLifecycleService.resolveShipperName("赵六")).thenReturn("赵六");
 
@@ -630,7 +632,7 @@ class OrderControllerTest extends BaseControllerTest {
         @Test
         @DisplayName("状态守卫：待付款订单拒绝更新物流")
         void rejectsNonShippableStatus() throws Exception {
-            when(orderService.getOrderById(eq(ORDER_ID), isNull())).thenReturn(orderWithStatus("pending"));
+            when(orderQueryService.getOrderById(eq(ORDER_ID), isNull())).thenReturn(orderWithStatus("pending"));
 
             mockMvc.perform(put(BASE + "/" + ORDER_ID + "/logistics")
                             .contentType(MediaType.APPLICATION_JSON)

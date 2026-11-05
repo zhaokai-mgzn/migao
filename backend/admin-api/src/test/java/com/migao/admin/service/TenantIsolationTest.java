@@ -115,6 +115,9 @@ class TenantIsolationTest {
     @InjectMocks
     private OrderService orderService;
 
+    /** 查询族的实现点（issue #8681，P2-1e 第四批）：门面同名转发已删除 ⇒ 驱动门面自己懒构造的那一份。 */
+    private OrderQueryService orderQueryService;
+
     @BeforeEach
     void setUp() {
         // 初始化 MyBatis-Plus lambda 缓存（CI 环境无 Spring 上下文）
@@ -123,6 +126,8 @@ class TenantIsolationTest {
         TableInfoHelper.initTableInfo(new MapperBuilderAssistant(configuration, ""), ProductColor.class);
         TableInfoHelper.initTableInfo(new MapperBuilderAssistant(configuration, ""), ProductSku.class);
         TableInfoHelper.initTableInfo(new MapperBuilderAssistant(configuration, ""), Category.class);
+        orderQueryService = org.springframework.test.util.ReflectionTestUtils
+                .invokeMethod(orderService, "queryService");
     }
 
     @AfterEach
@@ -435,7 +440,7 @@ class TenantIsolationTest {
 
         // When: 以租户A身份查询订单列表
         com.migao.admin.dto.PageResponse<com.migao.admin.dto.OrderListResponse> result =
-                orderService.getOrderPage(1, 20, null, null, null, null, null, null, null, null, null, null, TENANT_A, null, null, null);
+                orderQueryService.getOrderPage(1, 20, null, null, null, null, null, null, null, null, null, null, TENANT_A, null, null, null);
 
         // Then: 只返回租户A的订单
         assertThat(result.getItems()).hasSize(1);

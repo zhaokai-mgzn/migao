@@ -128,6 +128,8 @@ class BusinessDayWindowTest {
 
     private FinanceService financeService;
     private OrderService orderService;
+    /** 查询族的实现点（issue #8681，P2-1e 第四批）：门面同名转发已删除 ⇒ 驱动门面自己懒构造的那一份。 */
+    private com.migao.admin.service.OrderQueryService orderQueryService;
 
     @BeforeEach
     void setUp() {
@@ -153,6 +155,7 @@ class BusinessDayWindowTest {
                 processingFeeCombinationCommandService);
         // businessClock 是 @Autowired 字段（生产单例 / 既有测试不注入则默认 +08 实例）⇒ 这里钉住时刻
         ReflectionTestUtils.setField(orderService, "businessClock", clock);
+        orderQueryService = ReflectionTestUtils.invokeMethod(orderService, "queryService");
     }
 
     /**
@@ -187,7 +190,7 @@ class BusinessDayWindowTest {
     private Wrapper<Order> capturedOrderWindow() {
         when(orderMapper.selectPage(any(Page.class), any(LambdaQueryWrapper.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
-        orderService.getOrderPage(1, 20, null, null, null, null,
+        orderQueryService.getOrderPage(1, 20, null, null, null, null,
                 DAY.toString(), DAY.toString(), null, null, null, null, 1L, null, null, null);
         ArgumentCaptor<Wrapper<Order>> captor = ArgumentCaptor.forClass(Wrapper.class);
         org.mockito.Mockito.verify(orderMapper).selectPage(any(Page.class), captor.capture());
