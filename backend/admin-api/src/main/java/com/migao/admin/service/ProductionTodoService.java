@@ -121,7 +121,12 @@ public class ProductionTodoService {
     private static final List<String> SHIP_CANDIDATE_STATUSES = List.of(OrderStatusTransitions.CONFIRMED, OrderStatusTransitions.PRODUCING);
 
     private final ProductionStuckPointService stuckPointService;
-    private final OrderService orderService;
+    /**
+     * 两处判据（含加工项 / 有需要报工的作业）的**实现点**（issue #8681，P2-1e 收尾批）：
+     * 那两个方法已从 {@link OrderService} 门面搬到 {@link OrderQueryService}（订单读面）；
+     * 本服务只读它们 ⇒ 直接依赖实现点，不再绕门面（同 {@code AfterSalesTicketService} 直连库存实现点的口径）。
+     */
+    private final OrderQueryService orderQueryService;
     private final OrderMapper orderMapper;
     private final ProcessingOrderMapper processingOrderMapper;
     private final ProcessingPositionOperationMapper positionOperationMapper;
@@ -184,11 +189,12 @@ public class ProductionTodoService {
             byType.merge(TYPE_STUCK, 1, Integer::sum);
         }
 
-        // ③ 待发货：判据 = OrderService 发货守卫（**有需要报工的作业** + 作业单已完成），唯一一份
+        // ③ 待发货：判据 = 发货守卫（**有需要报工的作业** + 作业单已完成），唯一一份
+        //    （判据实现点 = OrderQueryService，issue #8681 收尾批从门面搬来）
         List<Order> shipCandidates = candidateOrders(tenantId, SHIP_CANDIDATE_STATUSES);
         boolean truncated = shipCandidates.size() >= CANDIDATE_SCAN_LIMIT;
         for (Order order : shipCandidates) {
-            if (orderService.needsWork(order) && orderLifecycleService.isProcessingReadyForShip(order)) {
+            if (orderQueryService.needsWork(order) && orderLifecycleService.isProcessingReadyForShip(order)) {
                 todos.add(toShipTodo(order));
                 byType.merge(TYPE_TO_SHIP, 1, Integer::sum);
             }
@@ -203,7 +209,7 @@ public class ProductionTodoService {
             if (instanceCountByOrder.getOrDefault(order.getId(), 0) > 0) {
                 continue;
             }
-            if (!orderService.needsWork(order)) {
+            if (!orderQueryService.needsWork(order)) {
                 continue;
             }
             todos.add(toScheduleTodo(order));
@@ -280,12 +286,12 @@ public class ProductionTodoService {
         // 单」这个前提下写的，而卖布单（只有 `saleForm=布料` 的行、按米卖布、不选加工项）现在也进
         // 这两类 ⇒ 标题 / reason / evidence 里每一句**类型相关**的措辞与键都必须按型。
         // 对卖布单说「加工单」是商家屏上的**不实文案**（用户逐字：单布料售卖是不应该生成加工单的）。
-        boolean hasProcessing = orderService.hasProcessingItems(order);
+        boolean hasProcessing = orderQueryService.hasProcessingItems(order);
 
         Map<String, Object> evidence = new LinkedHashMap<>();
         evidence.put("order_status", order.getStatus());
         evidence.put("has_processing_items", hasProcessing);
-        evidence.put("needs_work", orderService.needsWork(order));
+        evidence.put("needs_work", orderQueryService.needsWork(order));
         if (hasProcessing) {
             // 「没有加工单」比「加工单未完成」更诚实：卖布单没有加工单 ⇒ 该键**缺席**
             // （与本读面既有的 non_null / 缺值不落键语义一致，不是新发明）。
@@ -310,12 +316,12 @@ public class ProductionTodoService {
         target.put("order_no", order.getOrderNo());
 
         // 按型分岔的理由同 toShipTodo（issue #7079）
-        boolean hasProcessing = orderService.hasProcessingItems(order);
+        boolean hasProcessing = orderQueryService.hasProcessingItems(order);
 
         Map<String, Object> evidence = new LinkedHashMap<>();
         evidence.put("order_status", order.getStatus());
         evidence.put("has_processing_items", hasProcessing);
-        evidence.put("needs_work", orderService.needsWork(order));
+        evidence.put("needs_work", orderQueryService.needsWork(order));
         evidence.put("operation_instance_count", 0);
 
         return todo(TYPE_TO_SCHEDULE, "待排产", "medium",

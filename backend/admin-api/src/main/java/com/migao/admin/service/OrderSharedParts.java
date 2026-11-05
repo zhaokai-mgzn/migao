@@ -45,7 +45,8 @@ import java.util.stream.Collectors;
  *       {@link OrderCreationService} 单加两个构造依赖（业务时钟 / 审计）的收益为负。
  *       ⇒ <b>具名登记</b>：它俩是「建单族专用、暂寄共享部件」；若建单族日后自持，应当迁走。</li>
  *   <li><b>不收</b>：{@code hasProcessingItems} / {@code needsWork}（订单域<b>公共 API</b>，
- *       生产待办与发货守卫逐字引用）、状态常量表 / 列表时间窗 / 状态筛选（静态契约面）、
+ *       生产待办与发货守卫逐字引用 —— 收尾批已落到 {@link OrderQueryService}，那是读面）、
+ *       列表时间窗 / 状态筛选（静态契约面 —— 收尾批已落到 {@link OrderListCriteria}）、状态常量表、
  *       {@code OrderShipmentOutcome}（公开类型名）、{@code backfillSkuIdentity}（既有单测按
  *       {@code OrderService.xxx} 引用的静态入口）。</li>
  * </ul>

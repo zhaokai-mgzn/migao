@@ -44,7 +44,7 @@ import static org.mockito.Mockito.when;
  * 生产待办聚合（issue #5641，PG-059）。
  *
  * <p><b>本测试是行为断言，不是桩断言</b>：{@link ProductionStuckPointService} 与
- * {@link OrderService} 都用**真实对象**（只 mock Mapper）——
+ * {@link OrderQueryService} 都用**真实对象**（只 mock Mapper）——
  * 「卡在哪」的判据与阈值必须真的走那个服务，发货判据必须真的走发货守卫；
  * 把它们 mock 掉等于把被测口径换成桩（本仓 §17.3 登记的「局部绿 ≠ 整体绿」）。</p>
  *
@@ -65,7 +65,7 @@ import static org.mockito.Mockito.when;
  * </ol>
  *
  * <p><b>issue #7079 的红证</b>：把 {@code to_ship} / {@code to_schedule} 两处过滤退回
- * {@code orderService.hasProcessingItems(order)} ⇒ {@link #fabricSaleOrderEntersToShip} 与
+ * {@code orderQueryService.hasProcessingItems(order)} ⇒ {@link #fabricSaleOrderEntersToShip} 与
  * {@link #fabricSaleOrderEntersToSchedule} 必红（卖布单两类待办都进不去）；
  * 反之把判据改成「无加工项一律进」⇒ 既有的
  * {@link #noToScheduleWithoutProcessingItems} 必红（反向护栏）。</p>
@@ -115,9 +115,9 @@ class ProductionTodoServiceTest {
     @Mock
     private OrderItemMapper orderItemMapper;
 
-    /** 真实对象（只 mock Mapper）——发货判据必须走它，不许在待办服务里重写一份。 */
+    /** 真实对象（只 mock Mapper）——两处判据必须走它，不许在待办服务里重写一份。 */
     @InjectMocks
-    private OrderService orderService;
+    private OrderQueryService orderQueryService;
 
     private ProductionStuckPointService stuckPointService;
     private ProductionTodoService service;
@@ -508,7 +508,7 @@ class ProductionTodoServiceTest {
                 new ProductionService(processingOrderMapper, positionOperationMapper, workLogMapper,
                         orderMapper, orderItemMapper, null),
                 positionOperationMapper, orderSetMapper, thresholdHours);
-        return new ProductionTodoService(stuckPointService, orderService, orderMapper,
+        return new ProductionTodoService(stuckPointService, orderQueryService, orderMapper,
                 processingOrderMapper, positionOperationMapper, newLifecycleService());
     }
 
@@ -536,7 +536,7 @@ class ProductionTodoServiceTest {
             ops.add(op("op-" + i, i + 1, "三边", "11", "0", null));
         }
         when(positionOperationMapper.selectList(any())).thenReturn(ops);
-        assertThat(orderService.hasProcessingItems(order)).isTrue();
+        assertThat(orderQueryService.hasProcessingItems(order)).isTrue();
     }
 
     private static Order order(String status) {
@@ -569,7 +569,7 @@ class ProductionTodoServiceTest {
         }
         when(positionOperationMapper.selectList(any())).thenReturn(ops);
         // 前置自断言：卖布单确实**没有加工项**（否则「卖布单进得来」证明不了判据换过）
-        assertThat(orderService.hasProcessingItems(order)).isFalse();
+        assertThat(orderQueryService.hasProcessingItems(order)).isFalse();
     }
 
     private static ProcessingOrder processingOrder() {

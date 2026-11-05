@@ -673,7 +673,6 @@ class OrderServiceTest {
         return request;
     }
 
-
     // ======================== 订单详情测试 ========================
 
     @Test
@@ -3618,32 +3617,6 @@ class OrderServiceTest {
         assertThat(detail.getLogisticsCompany()).isEqualTo("四季安");
     }
 
-    // ── issue #5792：状态筛选支持**逗号分隔多值**（前端「待发货」= confirmed + producing）──
-
-    @Test
-    @DisplayName("🔴 `applyStatusFilter`：单值用 =、多值用 IN（改前只收单值 ⇒ 列表比计数少）")
-    void statusFilterSupportsMultiValue() throws Exception {
-        // 单值：仍走等值（不因兼容多值而放宽成 IN —— 语义与既有行为一致）
-        com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<com.migao.admin.entity.Order> one =
-                new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<>();
-        OrderService.applyStatusFilter(one, "confirmed");
-        assertThat(one.getSqlSegment()).contains("status =").doesNotContain("IN");
-
-        // 多值：IN 两个状态（这就是「待发货」的正确口径）
-        com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<com.migao.admin.entity.Order> many =
-                new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<>();
-        OrderService.applyStatusFilter(many, "confirmed,producing");
-        String seg = many.getSqlSegment();
-        assertThat(seg).contains("status IN");
-        assertThat(many.getParamNameValuePairs().values()).contains("confirmed", "producing");
-
-        // 空/空白：不动 wrapper（不误加条件把列表清空）
-        com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<com.migao.admin.entity.Order> none =
-                new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<>();
-        OrderService.applyStatusFilter(none, "  ");
-        assertThat(none.getSqlSegment()).isEmpty();
-    }
-
     // ════════════════ issue #6228：金额入口小数位准入（超 2 位有效小数 ⇒ 422 + 零写入）════════════════
 
     @Test
@@ -3828,40 +3801,10 @@ class OrderServiceTest {
     }
 
     // ── issue #7404：订单列表「不允许查全部」的时间窗兜底 ──────────────────────
-    // 用户裁定：「需要做个兜底，不允许查全部」「最多回溯 近3年」。
-    // 红证（会怎么红）：把 `OrderService.resolveListWindow` 的兜底分支删掉（只保留显式区间）⇒
-    // `noDatesYieldsThreeYearWindow` / `endOnlyAnchorsAtEndDate` / `getOrderPageAppliesTheWindow` 必红；
-    // 把 `DEFAULT_LOOKBACK_MONTHS` 从 36 改成 12 ⇒ 前两条的窗口断言必红。
-
-    @Test
-    @DisplayName("#7404 不给日期 ⇒ 窗口 = 最近 36 个月（而不是没有任何时间谓词）")
-    void noDatesYieldsThreeYearWindow() {
-        BusinessClock clock = new BusinessClock();
-        OrderService.ListDateWindow window = OrderService.resolveListWindow(null, null, clock);
-
-        assertThat(window.start()).isEqualTo(clock.startOfDay(clock.today().minusMonths(36)));
-        assertThat(window.end()).isEqualTo(clock.startOfDay(clock.today().plusDays(1)));
-    }
-
-    @Test
-    @DisplayName("#7404 只给截止日 ⇒ 起点 = 截止日往前 36 个月（以截止日为准，不是以今天）")
-    void endOnlyAnchorsAtEndDate() {
-        BusinessClock clock = new BusinessClock();
-        OrderService.ListDateWindow window = OrderService.resolveListWindow(null, "2024-03-31", clock);
-
-        assertThat(window.start()).isEqualTo(clock.startOfDay(java.time.LocalDate.parse("2021-03-31")));
-        assertThat(window.end()).isEqualTo(clock.startOfDay(java.time.LocalDate.parse("2024-04-01")));
-    }
-
-    @Test
-    @DisplayName("#7404 显式区间原样透传（查更早的单不被静默截断到 3 年）")
-    void explicitRangePassesThrough() {
-        BusinessClock clock = new BusinessClock();
-        OrderService.ListDateWindow window = OrderService.resolveListWindow("2019-01-01", "2019-12-31", clock);
-
-        assertThat(window.start()).isEqualTo(clock.startOfDay(java.time.LocalDate.parse("2019-01-01")));
-        assertThat(window.end()).isEqualTo(clock.startOfDay(java.time.LocalDate.parse("2020-01-01")));
-    }
+    // 窗口**解析**的四条判据（含红证与兜底分支/常量两处注入点）在收尾批随实现点搬到
+    // {@code OrderListCriteriaTest}；这里只留「列表查询真的把这个窗口用上了」这一条整链判据。
+    // 红证（会怎么红）：把 {@code OrderQueryService#getOrderPage} 里的
+    // {@code wrapper.ge/lt(Order::getCreatedAt, ...)} 删掉 ⇒ 本条必红。
 
     @Test
     @DisplayName("#7404 列表查询真的带上这个窗口（不是只算不用）")
