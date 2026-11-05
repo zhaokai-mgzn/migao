@@ -222,8 +222,17 @@ def warn_unknown_prefix(prefix: str, known: set[str]) -> list[str]:
     return [msg]
 
 
-def allocate(occupied: dict[str, set[int]], prefixes: list[str] | None = None) -> dict[str, int]:
-    """逐前缀取**最小空闲号**，并在**同一次调用里**断言「返回的号 ∉ 候选集」。
+def allocate(occupied: dict[str, set[int]], prefixes: list[str] | None = None,
+             fill_gap: bool = False) -> dict[str, int]:
+    """逐前缀取号，并在**同一次调用里**断言「返回的号 ∉ 候选集」。
+
+    🔴 **取值口径（2026-11-05 改）**：默认 = **尾部顺延**（`max(used) + 1`），
+    `fill_gap=True` 才取**最小空闲号**（可能落历史空档）。
+
+    为什么要改：改前一律取最小空闲号 ⇒ 本仓存在大量历史空档（MC 的 041/042/046、DF 的 019、PR 的 014…）
+    ⇒ **每个并行取号方都被指向同一个空档**，2026-11-05 一晚撞号 4 次（两个包同时拿 MC-222、
+    另一个拿 MC-223、还有一个拿到与在飞号相邻的位置）。尾部顺延不消除并发窗口（工具仍看不到
+    未 push 的分支），但把「唯一的空档」变成「随每次 push 前进的尾部」⇒ 撞号概率大幅下降。
 
     这个断言是**内在**的（不靠调用方记得核）：它保证「工具给出的号」与「候选集」在语义上
     不可能同时成立 —— 即「工具说空、候选集说占」这种自相矛盾会当场炸，而不是变成下游的撞号。
@@ -232,7 +241,7 @@ def allocate(occupied: dict[str, set[int]], prefixes: list[str] | None = None) -
     result: dict[str, int] = {}
     for prefix in keys:
         used = occupied.get(prefix, set())
-        n = min_free(used)
+        n = max(used) + 1 if (used and not fill_gap) else min_free(used)
         assert n not in used, (  # noqa: S101 —— 内在自证：不满足即「工具坏了」，不许静默给号
             f"内在断言失败：{prefix}-{n:03d} 落在候选集里（min_free 与内部记录自相矛盾）"
         )
@@ -410,6 +419,9 @@ def main(argv: list[str] | None = None) -> int:
         description="取下一个用例号（只读；候选 = main ∪ 全部 open PR 的分支 ∪ 本工作区）",
     )
     parser.add_argument("prefix", nargs="?", help="可选前缀（如 MC / UI / BM）；缺省打印全部前缀")
+    parser.add_argument(
+        "--fill-gap", action="store_true",
+        help="允许把**历史空档**当候选（默认关：默认**尾部顺延** = 现取最大号 + 1）")
     args = parser.parse_args(argv)
     prefix = args.prefix.upper() if args.prefix else None
     if prefix is not None and not PREFIX_RE.match(prefix):
@@ -435,7 +447,7 @@ def main(argv: list[str] | None = None) -> int:
         # 「某个在飞 PR / 本工作区刚引进的新前缀」误报成「一次都没出现」。
         warnings = warn_unknown_prefix(prefix, set(occupied))
         occupied = {prefix: occupied.get(prefix, set())}
-    result = allocate(occupied, [prefix] if prefix else None)
+    result = allocate(occupied, [prefix] if prefix else None, fill_gap=args.fill_gap)
     if not result:
         print("❌ 无法判定 ⇒ 不许取号\n   原因：候选集里一个前缀都没有（main 侧语料为空？）")
         return 3
