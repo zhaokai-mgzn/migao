@@ -62,6 +62,13 @@ class OrderIntegrationTest {
     @Mock
     private com.migao.admin.service.OrderQueryService orderQueryService;
 
+    /**
+     * 建单编排的实现点（issue #8681，P2-1e 第五批）：控制器直连实现点，门面的 {@code createOrder} 转发已删除；
+     * 第三参仍是门面实例 ⇒ 断言用 {@code eq(orderService)} 钉住「传的是同一份」。
+     */
+    @Mock
+    private com.migao.admin.service.OrderCreationService orderCreationService;
+
     @InjectMocks
     private OrderController orderController;
 
@@ -142,7 +149,7 @@ class OrderIntegrationTest {
         OrderCreateRequest request = buildCreateRequest();
         OrderDetailResponse response = buildOrderDetail(TEST_ORDER_ID, "ORD20250425001", "pending");
 
-        when(orderService.createOrder(any(OrderCreateRequest.class), eq(1L)))
+        when(orderCreationService.createOrder(any(OrderCreateRequest.class), eq(1L), eq(orderService)))
                 .thenReturn(response);
 
         // When & Then
@@ -158,7 +165,7 @@ class OrderIntegrationTest {
                 .andExpect(jsonPath("$.data.items").isArray())
                 .andExpect(jsonPath("$.data.items[0].productName").value("遮光窗帘"));
 
-        verify(orderService).createOrder(any(OrderCreateRequest.class), eq(1L));
+        verify(orderCreationService).createOrder(any(OrderCreateRequest.class), eq(1L), eq(orderService));
     }
 
     // ======================== 查询订单列表 ========================

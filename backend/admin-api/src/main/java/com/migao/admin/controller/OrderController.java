@@ -9,6 +9,7 @@ import com.migao.admin.service.OrderLifecycleService;
 import com.migao.admin.service.OrderLogisticsWriter;
 import com.migao.admin.service.OrderService;
 import com.migao.admin.service.OrderShipmentService;
+import com.migao.admin.service.OrderStatsService;
 import com.migao.admin.service.OrderStatusTransitions;
 import com.migao.admin.security.RequirePermission;
 import com.migao.admin.security.TenantOwnedResource;
@@ -58,6 +59,20 @@ public class OrderController {
      */
     private final com.migao.admin.service.OrderQueryService orderQueryService;
 
+    /**
+     * 建单编排（issue #8681，P2-1e 第五批）：实现点在 {@link com.migao.admin.service.OrderCreationService}
+     * ⇒ 直接依赖实现点，门面的同名转发已删除。第三参仍是<b>门面实例</b>：建单与改单共用的明细装配 /
+     * 取价 / 库存前置的唯一实现点留 {@code OrderService}（见其类注释），新服务复用**同一份**口径。
+     */
+    private final com.migao.admin.service.OrderCreationService orderCreationService;
+
+    /**
+     * 统计与跟进**读取**族（issue #8681，P2-1e 第五批）：实现点在 {@link OrderStatsService}
+     * ⇒ 直接依赖实现点，门面的同名转发已删除。同族的**写面** {@code updateFollowStatus} 属下一批
+     * 「实体实现搬家」，过渡期仍走门面。
+     */
+    private final OrderStatsService orderStatsService;
+
     // ==================== 字面路径（无路径变量） ====================
 
     /**
@@ -103,7 +118,7 @@ public class OrderController {
         requireFormOnlyFields(request);
         log.info("创建订单: customerName={}", request.getCustomerName());
         Long tenantId = TenantContext.getTenantId();
-        OrderDetailResponse order = orderService.createOrder(request, tenantId);
+        OrderDetailResponse order = orderCreationService.createOrder(request, tenantId, orderService);
         return ApiResponse.success(order);
     }
 
@@ -180,7 +195,7 @@ public class OrderController {
     public ApiResponse<OrderStatisticsResponse> getOrderStatistics() {
         log.info("获取订单统计");
         Long tenantId = TenantContext.getTenantId();
-        OrderStatisticsResponse statistics = orderService.getOrderStatistics(tenantId);
+        OrderStatisticsResponse statistics = orderStatsService.getOrderStatistics(tenantId);
         return ApiResponse.success(statistics);
     }
 
@@ -194,7 +209,7 @@ public class OrderController {
     public ApiResponse<FollowStatusStatsResponse> getFollowStatusStats() {
         log.info("获取跟进状态统计");
         Long tenantId = TenantContext.getTenantId();
-        FollowStatusStatsResponse stats = orderService.getFollowStatusStats(tenantId);
+        FollowStatusStatsResponse stats = orderStatsService.getFollowStatusStats(tenantId);
         return ApiResponse.success(stats);
     }
 
@@ -382,7 +397,7 @@ public class OrderController {
     @GetMapping("/{id:[0-9a-fA-F-]+}/follow-status")
     public ApiResponse<FollowStatusResponse> getFollowStatus(@PathVariable String id) {
         log.info("获取订单跟进状态: orderId={}", id);
-        FollowStatusResponse response = orderService.getFollowStatus(id);
+        FollowStatusResponse response = orderStatsService.getFollowStatus(id);
         return ApiResponse.success(response);
     }
 
