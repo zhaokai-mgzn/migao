@@ -33,6 +33,18 @@ from pathlib import Path
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+
+# ── 生成物出库（issue #8167 P1-1）：产物**不在 git 里** ⇒ 用之前必须先造出来 ────────────────
+# `tests/agent_eval/eval_cases/` 与 `docs/testing/mibao-verification-cases.md` 都能 100% 从
+# `.github/cases/**` 重建 ⇒ 不入库（`.gitignore` 覆盖；判据 `test_generated_artifacts_untracked.py`）。
+# 这里在**收集之前**跑一次生成腿：**失败 = 当场抛错（收集阶段红）**，绝不 skip / return ——
+# 缺产物还继续跑就是本仓点名的「没跑长得像通过」。命令与 CI / `verify-all.sh` **逐字相同**
+# （单一来源；判据 `test_generated_artifacts_clean_checkout.py` 反向查有没有人另拼一份）。
+subprocess.run(
+    [sys.executable, str(REPO_ROOT / "scripts" / "generated_artifacts_freshness.py"), "--write"],
+    check=True, cwd=str(REPO_ROOT),
+)
+
 # append（**不是** insert）：只作兜底解析路径，避免遮蔽 app/ 或 site-packages 里的同名模块。
 # 下面这个 `import eval_cases` 必须在**任何测试跑过之前**完成 —— 基线要钉在"无人改过"的时刻。
 sys.path.append(str(REPO_ROOT / "tests" / "agent_eval"))

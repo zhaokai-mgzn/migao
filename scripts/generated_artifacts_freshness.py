@@ -23,6 +23,22 @@
 | `tests/agent_eval/eval_cases/` | `.github/cases/**` |
 | `docs/testing/mibao-verification-cases.md` | `.github/cases/**` |
 
+## 出库形态（issue #8167 P1-1）：产物**不入库**，判定换成三条仍会红的
+
+入库时代的判定 = 「提交版 vs 现取」（忘了提交 ⇒ rc 1）。出库后**没有提交版**，那条判定
+失去对象 ⇒ 本文件换成三条**仍会红**的判定（口径只在这里实现一次，别处不许再写第二份）：
+
+1. **不许塞回 git**（`git ls-files` / `git ls-tree HEAD` 命中即违规，逐文件具名）——
+   有人 `git add -f` 把产物塞回来 ⇒ rc 1；
+2. **可复现**：同一棵树连渲染两次**逐字节**相同（非确定性是最难查的失效形态，
+   而它现在**就是**主判据；渲染失败 / 语料为空 ⇒ rc 3）；
+3. **落盘副本必须是最新的**：本地已生成过一份、而源又改过 ⇒ rc 1（陈旧/手改都要重生成）。
+
+🔴 **「产物不存在」不构成通过、也不是免检**：缺副本时判定落在第 2 条（渲染器真跑起来、
+结果确定、非空），**不是** `return 0`。三态退出码语义不变 —— 唯一的变化是判定对象，
+**没有任何一格被删掉**（判据 `tests/unit_ci_workflows/test_generated_artifacts_untracked.py`）。
+`.gitignore` 必须覆盖这两条路径（缺一条 ⇒ 第 1 条防线被绕过 ⇒ 判红）。
+
 渲染口径**不在这里重写**：一律调 `.github/render_cases.py`（渲染器本身就是单一源，
 包括它自己的严格 YAML fail-closed，见 `.github/cases_yaml.py`）。
 
@@ -120,6 +136,153 @@ def rerender_command() -> str:
     """**可复制**的重渲染并提交命令（口径与 `scripts/drift_audit.py` 的 remedy 一致）。"""
     pairs = " ".join(f"{a.out_flag} {a.rel}" for a in ARTIFACTS)
     return f"python3 {RENDERER_REL} --cases {CASES_REL} {pairs}"
+
+
+def generate_command() -> str:
+    """**可复制**的生成命令（出库后产物的唯一来源；幂等，CI / 本地 / pytest 起动都调它）。"""
+    return "python3 scripts/generated_artifacts_freshness.py --write"
+
+
+# ── 出库形态（issue #8167 P1-1）：生成腿 + 三条判定 ─────────────────────────────────────────
+
+#: `.gitignore` 里每个出库产物**必须**有的条目（缺一条 ⇒ 判据 1 的防线被绕过）。
+IGNORE_PATTERNS: dict[str, str] = {
+    "tests/agent_eval/eval_cases": "/tests/agent_eval/eval_cases/",
+    "docs/testing/mibao-verification-cases.md": "/docs/testing/mibao-verification-cases.md",
+}
+
+#: `.gitignore` 文件（相对于仓根）。
+GITIGNORE_REL = ".gitignore"
+
+
+class GenerationError(RuntimeError):
+    """生成腿失败。调用方**不许**把它降级成 skip/return 0（那正是「没跑长得像通过」）。"""
+
+
+def _out_paths(repo: Path) -> dict[str, Path]:
+    """每个产物在**仓库里**的正式落点（目录型产物按其路径建目录）。"""
+    return {a.rel: repo / a.rel for a in ARTIFACTS}
+
+
+def ensure_generated(repo: Path, *, python: str | None = None, cases_rel: str = CASES_REL,
+                     renderer_rel: str = RENDERER_REL, render_timeout: int = 300) -> str:
+    """把出库产物**就地生成**到仓库里的正式路径（幂等；issue #8167 P1-1）。
+
+    失败一律抛 `GenerationError` —— **没有**「跳过」出口：产物不在 git 里，生成腿就是
+    它们唯一的来源，生成失败 ⇒ 消费者（pytest / local_runner / 判据）必须当场红，而不是
+    拿着一份不存在的文件继续跑。
+    """
+    renderer = repo / renderer_rel
+    cases_dir = repo / cases_rel
+    if not renderer.is_file():
+        raise GenerationError(f"渲染器缺失：{renderer_rel}（生成腿无法执行 —— 这不是「产物可选」）")
+    if not cases_dir.is_dir():
+        raise GenerationError(f"用例库缺失：{cases_rel}/")
+    outs = _out_paths(repo)
+    for art in ARTIFACTS:
+        if art.kind == "dir":
+            outs[art.rel].mkdir(parents=True, exist_ok=True)
+    argv = build_render_argv(python or sys.executable, cases_rel, renderer_rel, outs)
+    try:
+        proc = subprocess.run(argv, cwd=str(repo), capture_output=True, text=True,
+                              timeout=render_timeout)
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise GenerationError(f"渲染器无法执行（{type(exc).__name__}: {exc}）") from exc
+    if proc.returncode != 0:
+        tail = ((proc.stderr or "") + (proc.stdout or "")).strip().replace("\n", " ")[:600]
+        raise GenerationError(f"渲染失败（rc={proc.returncode}）：{tail}")
+    # 非空自证：rc=0 却**产出空**是最隐蔽的假绿（消费者会 import 到一个空包 / 读到空 casebook）
+    empty: list[str] = []
+    for art in ARTIFACTS:
+        path = outs[art.rel]
+        if art.kind == "dir":
+            if not any(path.glob("*.py")):
+                empty.append(art.rel + "/（没有任何模块）")
+        elif not (path.is_file() and path.stat().st_size > 0):
+            empty.append(art.rel + "（不存在或为空）")
+    if empty:
+        raise GenerationError(f"渲染器 rc=0 但**没有产出**：{'、'.join(empty)}")
+    return proc.stdout.strip()
+
+
+def tracked_artifact_paths(repo: Path) -> tuple[list[str], str]:
+    """出库产物里**仍被 git 跟踪**的路径（空列表 = 合规）。`(paths, error)`；error 非空 ⇒ 无法判定。
+
+    索引与 HEAD 两侧都查：`git add -f` 之后**还没提交**时索引里就已经有了它 ——
+    那正是「悄悄塞回来」的第一个时点，只查 HEAD 会漏掉。
+    """
+    specs = [a.rel for a in ARTIFACTS]
+    found: set[str] = set()
+    errors: list[str] = []
+    for label, argv in (("index", ("ls-files", "--cached", "--")),
+                        ("HEAD", ("ls-tree", "-r", "--name-only", "HEAD", "--"))):
+        proc = subprocess.run(["git", *argv, *specs], cwd=str(repo),
+                              capture_output=True, text=True, timeout=120)
+        if proc.returncode != 0:
+            errors.append(f"{label} 侧取不到（git rc={proc.returncode}）："
+                          f"{(proc.stderr or '').strip().splitlines()[-1:][0][:120] if (proc.stderr or '').strip() else '（无输出）'}")
+            continue
+        found.update(ln.strip() for ln in proc.stdout.splitlines() if ln.strip())
+    return sorted(found), "；".join(errors)
+
+
+def gitignore_gaps(repo: Path) -> tuple[list[str], str]:
+    """`.gitignore` 里**缺的**出库产物条目（空列表 = 合规）。`(gaps, error)`。"""
+    try:
+        lines = {ln.strip() for ln in (repo / GITIGNORE_REL).read_text(encoding="utf-8").splitlines()}
+    except OSError as exc:
+        return [], f"{GITIGNORE_REL} 读不到（{type(exc).__name__}）"
+    return [f"{rel}（缺条目 {pattern}）" for rel, pattern in IGNORE_PATTERNS.items()
+            if pattern not in lines], ""
+
+
+def artifact_hygiene(repo: Path) -> dict:
+    """出库形态的**卫生判定**（判据 1）：谁把它塞回 git / `.gitignore` 漏了条目。
+
+    `applicable=False` 只出现在**临时提取树**（合并探测把 `git archive` 的内容解到非仓库目录）——
+    那里没有 git 索引可查，本格**不判**并由调用方**显式报出**（不是静默跳过：真树永远 applicable）。
+    """
+    out: dict = {"applicable": False, "tracked": [], "gitignore_gaps": [], "undecidable": [], "note": ""}
+    inner = _git_rc(repo, "rev-parse", "--is-inside-work-tree")
+    if inner.returncode != 0 or inner.stdout.strip() != b"true":
+        out["note"] = "不是 git 工作树（临时提取树）—— 本格不判；PR / main 的真树上会判"
+        return out
+    out["applicable"] = True
+    tracked, err = tracked_artifact_paths(repo)
+    out["tracked"] = tracked
+    if err:
+        out["undecidable"].append(f"「产物是否被塞回 git」无法判定：{err}")
+    gaps, gerr = gitignore_gaps(repo)
+    out["gitignore_gaps"] = gaps
+    if gerr:
+        out["undecidable"].append(f"`.gitignore` 覆盖判定无法执行：{gerr}")
+    return out
+
+
+def _base_report(repo: Path, cases_rel: str, renderer_rel: str, window: int,
+                 mode: str) -> dict:
+    """机器可读报告的**骨架**（两种 mode 共用；单一来源，别处不许再拼一份）。"""
+    return {
+        "schema": 1,
+        "repo": str(repo),
+        "cases": cases_rel,
+        "renderer": renderer_rel,
+        "mode": mode,
+        "verdict": "undecidable",
+        "problems": [],
+        "undecidable": [],
+        "drifted": [],
+        "violations": [],
+        "artifacts": [a.rel for a in ARTIFACTS],
+        "seen": 0,
+        "acted": 0,
+        "recompute_command": recompute_command(),
+        "rerender_command": rerender_command(),
+        "generate_command": generate_command(),
+        "drift_window": [],
+        "drift_window_note": "",
+        "window": window,
+    }
 
 
 def build_render_argv(python: str, cases_rel: str, renderer_rel: str, outs: dict[str, Path]) -> list[str]:
@@ -262,8 +425,12 @@ def divergence_report(rel: str, committed: str, renewed: str) -> list[str]:
     return lines
 
 
-def error_annotation(drifted: list[tuple[str, int, int, int]], undecidable: list[str]) -> str:
+def error_annotation(drifted: list[tuple[str, int, int, int]], undecidable: list[str],
+                     violations: list[str] | None = None) -> str:
     """**单行** `::error::` 注解：产物名 + 差量 + 复算命令（不许不具名）。"""
+    if violations:
+        return (f"{ERROR_PREFIX}出库形态判红（issue #8167 P1-1）：{'；'.join(violations)[:300]}"
+                " —— 处置：见 stdout 的具名明细（被跟踪 ⇒ `git rm --cached`；不可复现 ⇒ 修渲染器）")
     if undecidable:
         why = "；".join(undecidable)[:300]
         return (f"{ERROR_PREFIX}生成物新鲜度**无法判定**（fail-closed，绝不当「通过/跳过」读）：{why}"
@@ -293,30 +460,63 @@ def drift_window(repo: Path, window: int, cases_rel: str = CASES_REL) -> tuple[l
     return rows, f"最近 {window} 个提交里改了 `{cases_rel}/` 的：{len(rows)} 个"
 
 
+def _violation_block(report: dict) -> list[str]:
+    """出库形态判红的**具名**明细（两种 mode 共用；处置命令可复制）。"""
+    lines = ["", f"🔴 出库形态判红（issue #8167 P1-1）：命中 {len(report['violations'])} 处"]
+    lines += [f"     - {v}" for v in report["violations"]]
+    lines.append("     处置（可复制）：① 被跟踪 ⇒ `git rm --cached <上列路径>`（**保留工作区文件**）"
+                 f"；② 不可复现 ⇒ 修渲染器（不是重试）；③ 生成：{generate_command()}")
+    return lines
+
+
+def _out_of_git_problems(report: dict, repo: Path, *, python: str, cases_rel: str,
+                         renderer_rel: str, render_timeout: int,
+                         first: dict[str, bytes] | None = None) -> dict[str, bytes]:
+    """出库形态的**两条新判定**（issue #8167 P1-1），两种 mode 共用（单一实现，别处不许再写）。
+
+    ① 产物不许被 git 跟踪、`.gitignore` 必须覆盖（`artifact_hygiene`）；
+    ② 渲染**确定性**：同一棵树连渲两次**逐字节**相同。
+
+    ⚠️ 为什么这两条必须**显式**判：入库时代它们被「提交版 vs 现取」间接兜住（提交版存在 ⇒ 有人跑过），
+    出库后那一步没有了 —— 只剩「磁盘副本 vs 本次渲染」，而那一步是**自指**的（刚 `--write` 过必然相等）。
+    取不到 ⇒ `undecidable`（**不是**「通过」）。
+
+    返回**第一次**渲染的字节投影（调用方复用它判「落盘副本是否陈旧」，省一次全量渲染）；
+    渲染没成 ⇒ `{}`（原因已进 `report["undecidable"]`）。
+    """
+    hygiene = artifact_hygiene(repo)
+    report["hygiene"] = hygiene
+    report["violations"] += [f"{rel}（仍被 git 跟踪 —— 出库产物不许入库）"
+                             for rel in hygiene["tracked"]]
+    report["violations"] += [f"{GITIGNORE_REL} 缺条目：{gap}" for gap in hygiene["gitignore_gaps"]]
+    report["undecidable"] += hygiene["undecidable"]
+    if first is None:
+        first, err = _render_once(repo, python, cases_rel, renderer_rel, render_timeout, "det1")
+        if err:
+            report["undecidable"].append(f"确定性判定：第 1 次{err}")
+            return {}
+    second, err = _render_once(repo, python, cases_rel, renderer_rel, render_timeout, "det2")
+    if err:
+        report["undecidable"].append(f"确定性判定：第 2 次{err}")
+        return first
+    diff = sorted(rel for rel in set(first) | set(second) if first.get(rel) != second.get(rel))
+    if diff:
+        report["violations"].append(
+            f"渲染**不可复现**：同一棵树连渲染两次，以下产物不同：{'、'.join(diff)}"
+            "（结果依赖了非源输入：时间戳 / 集合顺序 / 环境 ⇒ 修渲染器，不是重试）")
+    return first
+
+
 def evaluate(repo: Path, *, python: str | None = None, cases_rel: str = CASES_REL,
              renderer_rel: str = RENDERER_REL, window: int = DEFAULT_WINDOW,
              render_timeout: int = 300) -> dict:
     """跑一次判定，返回**机器可读报告**（`verdict` / `problems` / `drifted` / `undecidable` / …）。
 
     fail-closed 的每一条都在**渲染之前**判定，且**没有任何「跳过」出口**。
+    `mode="on-disk"` = 树里已有一份副本（本地跑过生成）⇒ 判「副本是不是最新的」；
+    副本不存在 ⇒ 转 `evaluate_untracked()`（判可复现性），**不是** `return 0`。
     """
-    report: dict = {
-        "schema": 1,
-        "repo": str(repo),
-        "cases": cases_rel,
-        "renderer": renderer_rel,
-        "verdict": "undecidable",
-        "problems": [],
-        "undecidable": [],
-        "drifted": [],
-        "artifacts": [a.rel for a in ARTIFACTS],
-        "seen": 0,
-        "acted": 0,
-        "recompute_command": recompute_command(),
-        "rerender_command": rerender_command(),
-        "drift_window": [],
-        "drift_window_note": "",
-    }
+    report: dict = _base_report(repo, cases_rel, renderer_rel, window, mode="on-disk")
     undecidable: list[str] = report["undecidable"]
 
     renderer = repo / renderer_rel
@@ -328,7 +528,12 @@ def evaluate(repo: Path, *, python: str | None = None, cases_rel: str = CASES_RE
     missing = [a.rel + ("/" if a.kind == "dir" else "") for a in ARTIFACTS
                if not ((repo / a.rel).is_dir() if a.kind == "dir" else (repo / a.rel).is_file())]
     if missing:
-        undecidable.append(f"生成物缺失：{'、'.join(missing)}")
+        # 出库形态（issue #8167 P1-1）：产物**本来就不在树里**。但「不在」**不是**「通过」也
+        # **不是**「免检」—— 判定转交给 `evaluate_untracked()`（可复现性 + 没被塞回 git），
+        # 仍然会红。这里**不是** `return 0` 的入口。
+        return evaluate_untracked(repo, python=python, cases_rel=cases_rel,
+                                  renderer_rel=renderer_rel, render_timeout=render_timeout,
+                                  window=window, missing=missing)
     if undecidable:
         report["problems"] = [
             f"{ERROR_PREFIX}生成物新鲜度**无法判定**（fail-closed）：{'；'.join(undecidable)}",
@@ -364,6 +569,11 @@ def evaluate(repo: Path, *, python: str | None = None, cases_rel: str = CASES_RE
             return report
 
         drifted: list[tuple[str, int, int, int]] = []
+        # 出库形态的两条新判定（issue #8167 P1-1）—— 复用本步已渲染的 `outs` 当"第一次渲染"，
+        # 只多渲一次就够判确定性（省一次全量渲染）。
+        _out_of_git_problems(report, repo, python=python, cases_rel=cases_rel,
+                             renderer_rel=renderer_rel, render_timeout=render_timeout,
+                             first={a.rel: _bundle(outs[a.rel], a) for a in ARTIFACTS})
         for art in ARTIFACTS:
             if art.kind == "dir":
                 row, problems, undec = _compare_dir_artifact(repo, art, outs[art.rel])
@@ -394,6 +604,13 @@ def evaluate(repo: Path, *, python: str | None = None, cases_rel: str = CASES_RE
     report["drifted"] = [{"artifact": rel, "committed_lines": c, "renewed_lines": r, "changed_lines": d}
                          for rel, c, r, d in drifted]
     report["acted"] = len(drifted)
+    if report["violations"]:
+        # 出库形态的违规（被塞回 git / 渲染不可复现）比「副本陈旧」更根本：陈旧一条命令就好，
+        # 违规要改仓库形态 ⇒ 先报它（旧的漂移读数仍留在 problems 里，不丢）。
+        report["verdict"] = "drifted"
+        report["problems"] += _violation_block(report)
+        report["error_annotation"] = error_annotation([], [], report["violations"])
+        return report
     if drifted:
         report["verdict"] = "drifted"
         rows, note = drift_window(repo, window, cases_rel)
@@ -421,14 +638,131 @@ def evaluate(repo: Path, *, python: str | None = None, cases_rel: str = CASES_RE
     return report
 
 
+def _bundle(path: Path, art: Artifact) -> bytes | None:
+    """产物的**可比字节投影**：单文件 = 全文；目录 = 排序后 `模块名\\0内容` 的拼接。
+
+    目录里**多出的模块**（手塞）与**缺的模块**都会让投影不同 —— 这正是要判的两种形态。
+    不是目录/文件 ⇒ `None`（= 该产物不在树里）。
+    """
+    if art.kind == "dir":
+        if not path.is_dir():
+            return None
+        parts = [p.name.encode() + b"\0" + p.read_bytes() for p in sorted(path.glob("*.py"))]
+        return b"\0\0".join(parts) if parts else None
+    return path.read_bytes() if path.is_file() else None
+
+
+def _render_once(repo: Path, python: str, cases_rel: str, renderer_rel: str,
+                 render_timeout: int, tag: str) -> tuple[dict[str, bytes], str]:
+    """渲染到一个临时目录，返回 `({产物: 字节投影}, 错误)`。错误非空 ⇒ 渲染没成。"""
+    with tempfile.TemporaryDirectory() as td:
+        outs = {a.rel: Path(td) / tag / Path(a.rel).name for a in ARTIFACTS}
+        argv = build_render_argv(python, cases_rel, renderer_rel, outs)
+        try:
+            proc = subprocess.run(argv, cwd=str(repo), capture_output=True, text=True,
+                                  timeout=render_timeout)
+        except (OSError, subprocess.SubprocessError) as exc:
+            return {}, f"渲染器无法执行（{type(exc).__name__}: {exc}）"
+        if proc.returncode != 0:
+            tail = ((proc.stderr or "") + (proc.stdout or "")).strip().replace("\n", " ")[:400]
+            return {}, f"渲染失败（rc={proc.returncode}）：{tail}"
+        return {a.rel: _bundle(outs[a.rel], a) for a in ARTIFACTS}, ""
+
+
+def _finish_untracked(report: dict) -> dict:
+    """出库形态的收口（三态判定；**没有「跳过」这一态**）。"""
+    undecidable = report["undecidable"]
+    if undecidable:
+        report["verdict"] = "undecidable"
+        report["problems"] = [
+            f"{ERROR_PREFIX}生成物判定**无法判定**（fail-closed，绝不当「通过/跳过」读）："
+            + "；".join(undecidable),
+            f"   生成（可复制）：{generate_command()}",
+        ]
+        report["error_annotation"] = error_annotation([], undecidable)
+        return report
+    if report["violations"]:
+        report["verdict"] = "drifted"
+        report["problems"] += _violation_block(report)
+        report["error_annotation"] = error_annotation([], [], report["violations"])
+        return report
+    if report["drifted"]:
+        report["verdict"] = "drifted"
+        report["error_annotation"] = error_annotation(report["drifted"], [])
+        return report
+    report["verdict"] = "fresh"
+    report["seen"] = len(ARTIFACTS)
+    report["problems"].append(
+        f"✅ 出库产物可复现（{report['seen']} 个产物：" + "、".join(a.rel for a in ARTIFACTS)
+        + "；两次渲染逐字节相同、未被 git 跟踪；缺副本不构成免检 —— 本判定就是它的替代）")
+    return report
+
+
+def evaluate_untracked(repo: Path, *, python: str | None = None, cases_rel: str = CASES_REL,
+                       renderer_rel: str = RENDERER_REL, render_timeout: int = 300,
+                       window: int = DEFAULT_WINDOW, missing: list[str] | None = None) -> dict:
+    """**出库形态**的判定本体（issue #8167 P1-1）：`evaluate()` 发现产物不在树里时转到这里。
+
+    判三条（模块 docstring「出库形态」节），**没有「跳过」出口**：
+
+    1. 产物不许被 git 跟踪、`.gitignore` 必须覆盖；
+    2. 连渲染两次**逐字节**相同（非确定性 / 渲染失败 / 空产出 ⇒ 非零）；
+    3. 磁盘上若已有副本，它必须与本次渲染一致（陈旧或手改 ⇒ rc 1）。
+
+    🔴 与入库形态的**唯一**差别：没有「提交版」这个比较对象。**不是**少了一条判据 ——
+    换上来的是「能不能稳定重建」，那是产物出库后**唯一**还有意义的陈述。
+    """
+    report = _base_report(repo, cases_rel, renderer_rel, window, mode="absent")
+    problems: list[str] = report["problems"]
+    if missing:
+        problems.append(
+            "ℹ️ 出库形态：产物不在树里属**预期**（不是错误），判定改为**可复现性**"
+            f"（缺：{'、'.join(missing)}）—— 生成：{generate_command()}")
+    if not (repo / renderer_rel).is_file():
+        report["undecidable"].append(f"渲染器缺失：{renderer_rel}")
+    if not (repo / cases_rel).is_dir():
+        report["undecidable"].append(f"用例库缺失：{cases_rel}/")
+    report["seen"] = len(ARTIFACTS)
+    # ①② 与「副本存在」那条路径**共用同一实现**（单一来源），返回值复用为第 1 次渲染
+    first = _out_of_git_problems(report, repo, python=python or sys.executable,
+                                 cases_rel=cases_rel, renderer_rel=renderer_rel,
+                                 render_timeout=render_timeout)
+    hygiene = report.get("hygiene") or {}
+    if hygiene and not hygiene.get("applicable"):
+        problems.append(f"ℹ️ 「产物是否被塞回 git」本格不判：{hygiene.get('note', '')}")
+    empty = [a.rel for a in ARTIFACTS if not first.get(a.rel)]
+    if first and empty:
+        report["undecidable"].append(
+            f"渲染 rc=0 但产出为空：{'、'.join(empty)}（语料或渲染器形态变了？）")
+
+    # ③ 副本**存在**的产物必须与本次渲染一致（缺副本不判这一条：那是出库形态的预期）
+    for art in ARTIFACTS:
+        on_disk = _bundle(repo / art.rel, art)
+        if on_disk is None or not first.get(art.rel) or on_disk == first.get(art.rel):
+            continue
+        n_disk = len(on_disk.decode("utf-8", "replace").splitlines())
+        n_new = len(first[art.rel].decode("utf-8", "replace").splitlines())
+        report["drifted"].append((art.rel, n_disk, n_new, abs(n_disk - n_new)))
+        problems += [
+            f"❌ 落盘副本与本次渲染**不一致**：{art.rel}（陈旧或手改）",
+            f"   差量：落盘 {n_disk} 行 / 现取 {n_new} 行",
+            f"   处置（可复制）：{generate_command()}",
+        ]
+    return _finish_untracked(report)
+
+
 def summary_line(report: dict) -> str:
     """机器可读的单行读数（存活读数用；**与负载无关**，不含任何时长）。"""
-    why = ("全部新鲜" if report["verdict"] == "fresh"
-           else ("陈旧：" + "、".join(d["artifact"] for d in report["drifted"])
-                 if report["verdict"] == "drifted"
-                 else "无法判定：" + "；".join(report.get("undecidable") or [])[:160]))
+    if report["verdict"] == "fresh":
+        why = "全部新鲜"
+    elif report["verdict"] == "drifted":
+        names = [d["artifact"] for d in report.get("drifted") or []]
+        names += [v.split("（")[0].split("：")[0] for v in report.get("violations") or []]
+        why = "陈旧/违规：" + "、".join(dict.fromkeys(names))
+    else:
+        why = "无法判定：" + "；".join(report.get("undecidable") or [])[:160]
     return (f"MIGAO-GENFRESH-SUMMARY seen={report.get('seen', 0)} acted={report.get('acted', 0)} "
-            f"verdict={report.get('verdict', '?')} why={why}")
+            f"verdict={report.get('verdict', '?')} mode={report.get('mode', '?')} why={why}")
 
 
 # ── 合并探测（`FM-E22`）：把「本树 × 基线」的**合并结果**物化出来，对**它**再判一次 ────────────
@@ -442,8 +776,11 @@ def summary_line(report: dict) -> str:
 #    经 `tarfile` 解到临时目录（**不写仓内对象**）。判定面只需用例库 / 渲染器 / 两个生成物。
 
 #: 合并探测要物化的路径（够跑 `evaluate()` 即可；整仓 `git archive` 太重）。
-MERGE_PROBE_PATHS: tuple[str, ...] = (".github", "docs/testing/mibao-verification-cases.md",
-                                      "tests/agent_eval/eval_cases")
+#:   🔴 issue #8167 P1-1 之后两个生成物**不在树里**（`git archive` 对不存在的 pathspec 直接
+#:   报错）⇒ 只取 `.github`（用例库 + 渲染器），到提取树里**现场生成**再判「能不能稳定重建」。
+#:   代价：`FM-E18/E22`（合并结果里「提交版生成物陈旧」）**整类**随出库消失 —— 已经没有
+#:   「提交版」可以被合并 hunk 顶旧；剩下的可判面 = 合并后的用例库还渲不渲得出来。
+MERGE_PROBE_PATHS: tuple[str, ...] = (".github",)
 
 
 def _git_rc(repo: Path, *args: str, timeout: int = 300) -> subprocess.CompletedProcess:
@@ -453,7 +790,11 @@ def _git_rc(repo: Path, *args: str, timeout: int = 300) -> subprocess.CompletedP
 
 def probe_merge(repo: Path, ref: str, *, python: str | None = None, window: int = DEFAULT_WINDOW,
                 render_timeout: int = 300, tree_report: dict | None = None) -> dict:
-    """判「**把本树合并到 `<ref>` 之后**，生成物会不会陈旧」（`FM-E22`）。返回机器可读报告。
+    """判「**把本树合并到 `<ref>` 之后**，`render_cases.py` 还能不能稳定渲染」（`FM-E22`）。返回机器可读报告。
+
+    出库形态（issue #8167 P1-1）之后**判定对象变了**（如实登记）：原来判「提交版生成物会不会被
+    合并 hunk 顶旧」—— 产物出库后**没有提交版**，那一类失败形态结构性消失；现在判的是
+    「合并后的用例库（两侧各加了用例）还能不能渲染出**确定**的产物」。
 
     三态 `verdict` ∈ {`fresh`, `drifted`, `undecidable`}；`undecidable` 含「取不到 `<ref>`」与
     「与 `<ref>` 冲突」（后者 GitHub 侧本来就会拦合并 ⇒ 不在此重复下判定，但**出声**、不当通过）。
@@ -508,15 +849,20 @@ def probe_merge(repo: Path, ref: str, *, python: str | None = None, window: int 
             report["problems"].append(f"{ERROR_PREFIX}合并探测**无法判定**：解包失败（{type(exc).__name__}）")
             return report
         tree = tree_report or evaluate(repo, python=python, window=window, render_timeout=render_timeout)
-        merge = evaluate(dest, python=python, window=window, render_timeout=render_timeout)
+        # 出库形态（issue #8167 P1-1）：提取树里**没有**产物（它们不在 git 里）⇒ 这一面要判的
+        # 是「合并后的用例库还渲不渲得出来、且渲得**稳定**」= `evaluate_untracked`（连渲两次比对）。
+        # 不再是「提交版会不会被合并 hunk 顶旧」（`FM-E18/E22` 随出库整类消失 —— 没有提交版了）。
+        merge = evaluate_untracked(
+            dest, python=python, window=window, render_timeout=render_timeout,
+            missing=[a.rel + ("/" if a.kind == "dir" else "") for a in ARTIFACTS])
 
     report["tree_verdict"] = str(tree.get("verdict") or "")
     report["merge_verdict"] = str(merge.get("verdict") or "")
     if merge["verdict"] == "drifted":
         report["verdict"] = "drifted"
         report["problems"] += [
-            f"❌ 合并探测：把本树合并到 `{ref}`（{report['base_sha'][:8]}）之后，生成物与 "
-            f"`{CASES_REL}/**` **不同源** —— **落地的那一份会比源陈旧**",
+            f"❌ 合并探测：把本树合并到 `{ref}`（{report['base_sha'][:8]}）之后，"
+            f"`{CASES_REL}/**` **渲不出稳定的生成物** —— 落地的那棵树无法自证可重建",
             *merge["problems"],
         ]
     elif merge["verdict"] == "undecidable":
@@ -597,13 +943,26 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--python", default=sys.executable, help="跑渲染器的解释器（缺省 = 本进程的）")
     ap.add_argument("--window", type=int, default=DEFAULT_WINDOW, help="漂移候选区间的提交数")
     ap.add_argument("--json", default="", help="把机器可读报告写到该路径")
+    ap.add_argument("--write", action="store_true",
+                    help="先**就地生成**出库产物（幂等），再判定 —— CI / verify-all / 本地入口用这一档")
     ap.add_argument("--merge-probe", default="", metavar="REF",
                     help="额外判「把本树合并到该 ref 之后」生成物是否新鲜（`FM-E22`；缺省不跑）")
     ap.add_argument("--base-probe", default="", metavar="REF",
                     help="额外判「该 ref 自己是否也陈旧」⇒ 一步归因（issue #6027；缺省不跑）")
     args = ap.parse_args(argv)
 
-    report = evaluate(Path(args.repo), python=args.python, cases_rel=args.cases,
+    repo = Path(args.repo)
+    if args.write:
+        # 出库形态的**生成腿**：产物不在 git 里 ⇒ 任何「判定」之前必须先把它们造出来。
+        # 失败 ⇒ rc 3（fail-closed），**不许**继续跑一个没有被测对象的判定。
+        try:
+            print(ensure_generated(repo, python=args.python, cases_rel=args.cases,
+                                   renderer_rel=args.renderer))
+        except GenerationError as exc:
+            print(f"{ERROR_PREFIX}生成失败（fail-closed）：{exc}")
+            return RC_UNDECIDABLE
+
+    report = evaluate(repo, python=args.python, cases_rel=args.cases,
                       renderer_rel=args.renderer, window=args.window)
     for line in report["problems"]:
         print(line)
