@@ -441,6 +441,25 @@ class BaseTool(ABC):
     name: str = ""
     description: str = ""
 
+    # ── 选工具小抄的可投影元数据（issue #8176）──────────────────────────────────
+    # 真值**不另存副本**：`【触发】` / `【不要用于】` 段就在上面的 `description` 里（#8133 定下的
+    # 形态），本处只是它的**投影**（同一份字节）。为什么不另立字段：`description` 会原样进
+    # function schema（模型看得到），再存一份 = 同一事实两个载体，改一处忘一处就静默不一致 ——
+    # 本仓反复批判的「第二事实源」形态。
+    @property
+    def triggers(self) -> List[str]:
+        """商家怎么说（← `description` 的 `【触发】` 段里的引号短语，按出现顺序）。"""
+        from app.tools.cheatsheet import quoted_phrases, segment
+
+        return quoted_phrases(segment(self.description, "【触发】"))
+
+    @property
+    def not_for(self) -> str:
+        """别拿它做 B（← `description` 的 `【不要用于】` 段原文；没有该段 ⇒ 空串）。"""
+        from app.tools.cheatsheet import segment
+
+        return segment(self.description, "【不要用于】")
+
     # 参数 JSON Schema（用于 LangChain/OpenAI function calling）
     parameters: Dict[str, Any] = {
         "type": "object",

@@ -11,11 +11,7 @@ tools: settings_manage, interact
 
 ## 工具
 
-| 场景 | 工具 |
-|------|------|
-| 系统参数查询 | settings_manage(action=get_settings) |
-| AI 配置查询（模型/问候语等） | settings_manage(action=get_ai_config) |
-| 登录日志 | settings_manage(action=login_logs) |
+工具选择口径见系统提示的【选工具小抄】（由工具注册表投影，按商家说法对齐）；各工具的入参与只读性以它自己的 `description` 为准。
 
 ## 不在本域能力内（如实告知 + 引导，**不得承诺已办**）
 
@@ -28,7 +24,7 @@ tools: settings_manage, interact
 
 ## 领域规则
 
-1. 查系统参数/AI 配置/租户级配置**只用** settings_manage；站内通知（含标记已读）**不属本域**，按「通知中心」域的口径处置（不要拿 settings_manage 去查通知）。
+1. 查系统参数/AI 配置/租户级配置**只用** settings_manage。
 2. **只读铁律**：本域没有任何写 action。同事提出写诉求时**先如实说明能力边界**，再给出后台页面的具体路径；禁止假装执行、禁止承诺「已修改/已标记」，也不要用「稍后帮您处理」把用户拖住。
 3. 不编造配置项与默认值，所有信息通过工具查询确认；查不到就如实说查不到。
 4. 通知查询支持按状态（unread/read）与渠道（system/email/sms/wechat）筛选；查不到通知时先放宽筛选条件再回话。

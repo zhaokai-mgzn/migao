@@ -34,6 +34,7 @@ class ProcessingOrderUpdateTool(BaseTool):
         "cancel 必填 reason；取消已发加工及以上的加工单需人工确认（填原因）。"
         "【反例】查询用 processing_order_query；生成用 processing_order_generate。"
         "【标注】WRITE|DESTRUCTIVE — cancel 会联动订单回退，必须二次确认"
+        "【不要用于】生成加工单（用 processing_order_generate）；店铺加工项目录（用 processing_item_query）"
     )
 
     # 权限码（admin-api 目录）：加工单**写**（issue/start/complete/cancel）取写码 `processing:update`

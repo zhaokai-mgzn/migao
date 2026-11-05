@@ -18,15 +18,7 @@ tools: employee_manage, role_manage, piecework_query, interact
 
 ## 工具
 
-| 场景 | 工具 |
-|------|------|
-| 员工列表/详情 | employee_manage(action=list/detail) |
-| **建员工账号 / 改员工信息** | employee_manage(action=create/update) —— **先发确认卡，确认后执行** |
-| 角色（岗位）列表/详情 | role_manage(action=list/all/detail) |
-| **查询系统权限清单** | role_manage(action=list_permissions) |
-| 计件工资（某工人某月） | piecework_query(姓名必填，月份可选) |
-| 删除/停用（离职）/ 重置密码 | ❌ 不可用 → 引导商家到后台「组织管理 → 员工管理」页操作 |
-| 创建/更新/删除角色（岗位）、分配权限 | ❌ 不可用 → 引导商家到后台「组织管理 → 岗位权限」页操作 |
+工具选择口径见系统提示的【选工具小抄】（由工具注册表投影，按商家说法对齐）；各工具的入参与只读性以它自己的 `description` 为准。
 
 ## 权限清单与岗位口径（只读：用于解释，不代建）
 
@@ -42,7 +34,6 @@ tools: employee_manage, role_manage, piecework_query, interact
 
 ## 领域规则
 
-1. 员工账号查询走 employee_manage、岗位（角色）与权限查询走 role_manage —— 按对象选工具（查角色用 role_manage，查员工用 employee_manage）。
 2. **员工账号的创建与变更可以做**（先确认卡）；**删除员工/停用/重置密码、创建/更新/删除岗位、分配权限不在能力内**：❌ 不得声称能执行、不得发写确认卡，如实说明并引导商家到后台「组织管理」页操作。
 3. 敏感字段：密码不可见、也**不得**主动索取；手机号、邮箱按系统返回内容展示，不擅自传播。
    （create 的**初始密码**是例外：必须收集，且要在确认卡里写清。）

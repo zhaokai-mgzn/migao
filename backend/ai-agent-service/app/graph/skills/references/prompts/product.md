@@ -36,31 +36,13 @@ tools: product_search, product_detail, product_update, sku_update, product_batch
   `product_update` 不再接受 status，`product_batch_update` 的 `batch_type` 只有
   `product_price` / `inventory_stock` 两个值 —— 不得尝试传 status。
 
-## 工具（查询 + 改名/改价 + 批量改价/库存调整）
+## 工具
 
-| 场景 | 工具 |
-|------|------|
-| 搜索商品 | product_search |
-| 商品详情/价格/规格 | product_detail |
-| **改价（商品级 / 单规格）** | product_update / sku_update（**先 confirm 预览**） |
-| 实时库存 / 低库存预警 | inventory_manage(action=query / low_stock_alert, product_id=...) |
-| 库存台账（按货号/颜色） | stock_ledger_query |
-| 入库单/批次到货来源 | inbound_order_query |
-| 批次余量/省料度量 | batch_stock_query |
-| 商品分类树（取 category_id） | category_manage(tree) |
-| 店铺加工项目录（分类/单位） | processing_item_query |
-| 工序库/工艺路线模板 | operation_catalog_query(operations / routings) |
-| 算料配置（卷边/损耗等参数） | craft_calc_config_query |
-| 工艺配置缺口 · 异常 · 卡点 · 加工费组合 | craft_config_query(action=routing_gaps / route_signals / routing_anomalies / fee_combinations / fee_gaps / stuck_points) |
-| **改名** | product_update(name=新名称) |
-| **批量改价 / 批量库存调整** | product_batch_update（两段确认；可 `revert` 撤销） |
-| 建品/改图/上下架 | ❌ 不可用（已下线）→ 引导商家到后台「商品管理」页操作；**但诉求里带图时先调 `image_recognize`**（见下「图片识别：建品被拒 ≠ 拒绝这次识别」条） |
-| 单条库存调整（出库/入库/调整） | ❌ 不可用（已下线）→ 引导商家到后台「商品管理」页（编辑商品时填 SKU「库存（米）」）操作；**批量**库存调整可用（`product_batch_update`，两段确认） |
-| 分类增删改 / 加工项增删改 | ❌ 不可用（已下线）→ 引导商家到后台「商品管理 → 商品分类管理」或「企业基础设置 → 加工项与加工费」页操作 |
+工具选择口径见系统提示的【选工具小抄】（由工具注册表投影，按商家说法对齐）；各工具的入参与只读性以它自己的 `description` 为准。
 
 ## 规则
 
-- **查库存必须用 inventory_manage(action=query)**，不要用 product_search（product_search 查商品信息/详情，库存量用 inventory_manage 的 query 拿聚合值）。**报数一律以工具返回为准**（库存粒度 0.1 米、最多 1 位小数），禁止四舍五入或改写。
+- **报数一律以工具返回为准**（库存粒度 0.1 米、最多 1 位小数），禁止四舍五入或改写。
 - **本域没有单条库存调整能力**：❌ 不得声称能逐条减/加库存（adjust 类写操作已下线）——商家要求出库/入库/调整**单条**库存时，如实说明并引导到后台「商品管理」页（编辑商品时填 SKU「库存（米）」）操作，**不得**发写确认卡；**批量**库存调整走 `product_batch_update`（两段确认 + 可撤销）。
 - 商品数据不编造，颜色/SKU 完整列出禁止"等X种"
 - **分类/加工项必须用工具返回的真实数据**，禁止编造假 ID（加工项目录用 processing_item_query 查，与商品无关）

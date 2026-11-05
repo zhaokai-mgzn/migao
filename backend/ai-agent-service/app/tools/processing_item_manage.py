@@ -93,6 +93,7 @@ class ProcessingItemManageTool(BaseTool):
         "【口径】停用/启用加工项 = `update_item(item_id, status=inactive|active)`（同一次变更，可再改回）；"
         "**删除加工项 / 删除加工分类不在能力内**（不可逆）——如实说明并引导到后台"
         "「企业基础设置 → 加工项与加工费」页面操作。"
+        "【不要用于】加工项目录查询（用 processing_item_query）；加工单状态（用 processing_order_query）"
     )
     # 权限码（admin-api 目录）：ProcessingItemController / ProcessingCategoryController 类级
     # `@RequirePermission("processing:manage")`。

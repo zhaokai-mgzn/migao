@@ -89,6 +89,7 @@ class LogisticsTrackTool(BaseTool):
         "【铁律】不接受用户提供的快递单号/运单号直接查询——用户给单号时引导其提供订单号，"
         "运单号只能由系统从订单详情中读取。"
         "【反例】查订单详情(金额/商品/客户)用 order_query，不要混淆。【标注】READONLY"
+        "【不要用于】订单列表/统计/跟进（用 order_query）；加工单进度（用 processing_order_query）"
     )
 
     # 权限码（admin-api 目录）：本工具调两个 admin-api 端点，各自生效码**逐个对齐**（判据 =

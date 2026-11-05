@@ -81,6 +81,7 @@ class BatchStockQueryTool(BaseTool):
         "【反例】查商品 SKU 库存/调整库存用 inventory_manage；查订单/生产进度用 order_query / "
         "production_progress_query；查加工单用 processing_order_query。"
         "【标注】READONLY — 只读服务端批次账与省料读面，不改动任何数据、不算米数与金额"
+        "【不要用于】实时库存/低库存（用 inventory_manage）；入库单明细（用 inbound_order_query）"
     )
 
     parameters = {
