@@ -46806,6 +46806,213 @@
         "tests/unit_ci_workflows/test_rbac_endpoint_write_codes.py::test_comment_only_change_is_not_red"
       ],
       "unknown_reason": "两次尝试都红、且落在同一个步骤，但**只有步骤级事实**（GitHub 的 jobs API 只给步骤名，不给断言文本）⇒ 不足以判断是否同一断言（同一 SHA 两跑都红也可能是宽窗口竞态），**不归因**。要归因：取证（#5088 口径）：`gh api repos/<owner>/<repo>/actions/runs/<run_id>/attempts/<n>/jobs` 取失败 job 的 id，再 `gh api repos/<owner>/<repo>/actions/jobs/<job_id>/logs` 拉**两次尝试**的日志，比对是否**同一断言同一错误**；然后回填（**字段级**，不新增/删除/重排条目）：`python3 .github/scripts/flaky_ledger.py attest --ledger .github/flaky-ledger.json --run-id <run_id> --job '<job>' --attempt1-assertion '<断言+错误>' --attempt2-assertion '<断言+错误>' --evidence '<凭据：run/attempt 与日志取法>'`；两次同一 ⇒ `deterministic`；不同 ⇒ 仍 `unknown`（**不许**凭 `kind` 归因）。"
+    },
+    {
+      "workflow": "PR Check",
+      "job": "ci workflow helper unit tests",
+      "run_id": 41955768005,
+      "run_attempt": 2,
+      "run_url": "https://github.com/zhaokai-mgzn/migao/actions/runs/41955768005",
+      "pr": 8699,
+      "head_sha": "e6759c527c6c162128f499dd270abda5ecb41e58",
+      "head_branch": "feat/8698-waybill-p0",
+      "first_failure_step": "Run ci workflow helper tests",
+      "rerun_result": "success",
+      "kind": "flaky",
+      "attempts": [
+        {
+          "attempt": 1,
+          "job": "ci workflow helper unit tests",
+          "step": "Run ci workflow helper tests",
+          "assertion": null,
+          "timestamp": "2026-11-05T02:40:21Z"
+        },
+        {
+          "attempt": 1,
+          "job": "ci workflow helper unit tests",
+          "step": "Run ci workflow helper tests",
+          "assertion": null,
+          "timestamp": "2026-11-05T02:40:21Z"
+        }
+      ],
+      "failed_at": "2026-11-05T02:40:21Z",
+      "rerun_at": "2026-11-05T02:47:47Z",
+      "failed_bucket": {
+        "utc": "2026-11-05T02:40:21Z",
+        "utc_date": "2026-11-05",
+        "biz_date": "2026-11-05",
+        "utc_hour": "02"
+      },
+      "rerun_bucket": {
+        "utc": "2026-11-05T02:47:47Z",
+        "utc_date": "2026-11-05",
+        "biz_date": "2026-11-05",
+        "utc_hour": "02"
+      },
+      "rerun_bucket_verdict": true,
+      "observed_at": "2026-11-05T02:47:54Z",
+      "reason": "失败（2026-11-05T02:40:21Z）与重跑通过（2026-11-05T02:47:47Z）落在**同一时间桶**⇒ 「重跑通过」仍是 flaky 的合法证据",
+      "remedy": "按 `migao-acceptance`「随机红 = 归因层失效」**定位机制**（不许只加 waitFor/sleep）：时间相关 ⇒ 冻结时钟（`jest.setSystemTime` / 注入时钟）；并行或共享状态 ⇒ 显式隔离或独立 fixture；修后**必须给红证**（把机制注回 ⇒ 必红）",
+      "status": "open",
+      "follow_up": 8706,
+      "requires_follow_up": true,
+      "failing_tests": [
+        "tests/unit_ci_workflows/test_case_id_claims.py::test_repo_case_id_claims_are_clean",
+        "tests/unit_ci_workflows/test_case_id_claims.py::test_repo_corpus_face_is_clean"
+      ]
+    },
+    {
+      "workflow": "PR Check",
+      "job": "Secret Scan (gitleaks)",
+      "run_id": 41955768005,
+      "run_attempt": 2,
+      "run_url": "https://github.com/zhaokai-mgzn/migao/actions/runs/41955768005",
+      "pr": 8699,
+      "head_sha": "e6759c527c6c162128f499dd270abda5ecb41e58",
+      "head_branch": "feat/8698-waybill-p0",
+      "first_failure_step": "Run gitleaks secret scan",
+      "rerun_result": "success",
+      "kind": "flaky",
+      "attempts": [
+        {
+          "attempt": 1,
+          "job": "Secret Scan (gitleaks)",
+          "step": "Run gitleaks secret scan",
+          "assertion": null,
+          "timestamp": "2026-11-05T02:32:37Z"
+        },
+        {
+          "attempt": 1,
+          "job": "Secret Scan (gitleaks)",
+          "step": "Run gitleaks secret scan",
+          "assertion": null,
+          "timestamp": "2026-11-05T02:32:37Z"
+        }
+      ],
+      "failed_at": "2026-11-05T02:32:37Z",
+      "rerun_at": "2026-11-05T02:41:44Z",
+      "failed_bucket": {
+        "utc": "2026-11-05T02:32:37Z",
+        "utc_date": "2026-11-05",
+        "biz_date": "2026-11-05",
+        "utc_hour": "02"
+      },
+      "rerun_bucket": {
+        "utc": "2026-11-05T02:41:44Z",
+        "utc_date": "2026-11-05",
+        "biz_date": "2026-11-05",
+        "utc_hour": "02"
+      },
+      "rerun_bucket_verdict": true,
+      "observed_at": "2026-11-05T02:47:54Z",
+      "reason": "失败（2026-11-05T02:32:37Z）与重跑通过（2026-11-05T02:41:44Z）落在**同一时间桶**⇒ 「重跑通过」仍是 flaky 的合法证据",
+      "remedy": "按 `migao-acceptance`「随机红 = 归因层失效」**定位机制**（不许只加 waitFor/sleep）：时间相关 ⇒ 冻结时钟（`jest.setSystemTime` / 注入时钟）；并行或共享状态 ⇒ 显式隔离或独立 fixture；修后**必须给红证**（把机制注回 ⇒ 必红）",
+      "status": "open",
+      "follow_up": 8706,
+      "requires_follow_up": true,
+      "failing_tests": []
+    },
+    {
+      "workflow": "PR Check",
+      "job": "QA Growth Gate",
+      "run_id": 41955768005,
+      "run_attempt": 2,
+      "run_url": "https://github.com/zhaokai-mgzn/migao/actions/runs/41955768005",
+      "pr": 8699,
+      "head_sha": "e6759c527c6c162128f499dd270abda5ecb41e58",
+      "head_branch": "feat/8698-waybill-p0",
+      "first_failure_step": "Post PR comment",
+      "rerun_result": "success",
+      "kind": "flaky",
+      "attempts": [
+        {
+          "attempt": 1,
+          "job": "QA Growth Gate",
+          "step": "Post PR comment",
+          "assertion": null,
+          "timestamp": "2026-11-05T02:32:45Z"
+        },
+        {
+          "attempt": 1,
+          "job": "QA Growth Gate",
+          "step": "Post PR comment",
+          "assertion": null,
+          "timestamp": "2026-11-05T02:32:45Z"
+        }
+      ],
+      "failed_at": "2026-11-05T02:32:45Z",
+      "rerun_at": "2026-11-05T02:41:36Z",
+      "failed_bucket": {
+        "utc": "2026-11-05T02:32:45Z",
+        "utc_date": "2026-11-05",
+        "biz_date": "2026-11-05",
+        "utc_hour": "02"
+      },
+      "rerun_bucket": {
+        "utc": "2026-11-05T02:41:36Z",
+        "utc_date": "2026-11-05",
+        "biz_date": "2026-11-05",
+        "utc_hour": "02"
+      },
+      "rerun_bucket_verdict": true,
+      "observed_at": "2026-11-05T02:47:54Z",
+      "reason": "失败（2026-11-05T02:32:45Z）与重跑通过（2026-11-05T02:41:36Z）落在**同一时间桶**⇒ 「重跑通过」仍是 flaky 的合法证据",
+      "remedy": "按 `migao-acceptance`「随机红 = 归因层失效」**定位机制**（不许只加 waitFor/sleep）：时间相关 ⇒ 冻结时钟（`jest.setSystemTime` / 注入时钟）；并行或共享状态 ⇒ 显式隔离或独立 fixture；修后**必须给红证**（把机制注回 ⇒ 必红）",
+      "status": "open",
+      "follow_up": 8706,
+      "requires_follow_up": true,
+      "failing_tests": []
+    },
+    {
+      "workflow": "PR Check",
+      "job": "Danger Scan (破坏性变更检测)",
+      "run_id": 41955768005,
+      "run_attempt": 2,
+      "run_url": "https://github.com/zhaokai-mgzn/migao/actions/runs/41955768005",
+      "pr": 8699,
+      "head_sha": "e6759c527c6c162128f499dd270abda5ecb41e58",
+      "head_branch": "feat/8698-waybill-p0",
+      "first_failure_step": "Resolve workflow-deletion acks (owner 显式确认 → DANGER_ACK_DELETE)",
+      "rerun_result": "success",
+      "kind": "flaky",
+      "attempts": [
+        {
+          "attempt": 1,
+          "job": "Danger Scan (破坏性变更检测)",
+          "step": "Resolve workflow-deletion acks (owner 显式确认 → DANGER_ACK_DELETE)",
+          "assertion": null,
+          "timestamp": "2026-11-05T02:33:22Z"
+        },
+        {
+          "attempt": 1,
+          "job": "Danger Scan (破坏性变更检测)",
+          "step": "Resolve workflow-deletion acks (owner 显式确认 → DANGER_ACK_DELETE)",
+          "assertion": null,
+          "timestamp": "2026-11-05T02:33:22Z"
+        }
+      ],
+      "failed_at": "2026-11-05T02:33:22Z",
+      "rerun_at": "2026-11-05T02:41:38Z",
+      "failed_bucket": {
+        "utc": "2026-11-05T02:33:22Z",
+        "utc_date": "2026-11-05",
+        "biz_date": "2026-11-05",
+        "utc_hour": "02"
+      },
+      "rerun_bucket": {
+        "utc": "2026-11-05T02:41:38Z",
+        "utc_date": "2026-11-05",
+        "biz_date": "2026-11-05",
+        "utc_hour": "02"
+      },
+      "rerun_bucket_verdict": true,
+      "observed_at": "2026-11-05T02:47:54Z",
+      "reason": "失败（2026-11-05T02:33:22Z）与重跑通过（2026-11-05T02:41:38Z）落在**同一时间桶**⇒ 「重跑通过」仍是 flaky 的合法证据",
+      "remedy": "按 `migao-acceptance`「随机红 = 归因层失效」**定位机制**（不许只加 waitFor/sleep）：时间相关 ⇒ 冻结时钟（`jest.setSystemTime` / 注入时钟）；并行或共享状态 ⇒ 显式隔离或独立 fixture；修后**必须给红证**（把机制注回 ⇒ 必红）",
+      "status": "open",
+      "follow_up": 8706,
+      "requires_follow_up": true,
+      "failing_tests": []
     }
   ]
 }

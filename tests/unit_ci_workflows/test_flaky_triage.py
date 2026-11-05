@@ -631,7 +631,15 @@ def _fixture(tmp_path, name="ledger.json", inject=True, run_id=990000001):
         entry.update({"workflow": "PR Check", "job": "admin-web typecheck + unit tests",
                       "run_id": run_id, "run_attempt": 2, "kind": "flaky", "status": "open",
                       "follow_up": None, "rerun_result": "success",
-                      "reason": FL.KIND_REASON["flaky"], "remedy": FL.KIND_REMEDY["flaky"]})
+                      # 🔴 **必须显式声明**（2026-11-05 实测缺陷）：上面 `deepcopy(entries[-1])`
+                      # 会**连带继承末条的任意字段**。台账末条一旦是「#5960 写侧形状闸」产物
+                      # （`requires_follow_up: true`），注入的这条就同时命中 `ledger_violations`
+                      # 的 #5960 判据 ⇒ `follow-up` 命令**拒绝回填**（"台账自身不合规"）
+                      # ⇒ 本组三条回填判据**在没有真缺陷的树上判红**（实测：main 绿、台账分支红，
+                      # 差异只在末条是不是那个形状的条目 —— 夹具对末条形状有隐式依赖）。
+                      # 这里是**存量欠账**的模拟（判据由本文件自己的 `shipped_violations` 判），
+                      # 不是「写入新条目」⇒ 写侧形状闸的字段必须显式为 False。
+                      "requires_follow_up": False})
         entry.pop("fixed_by", None)
         ledger["entries"].append(entry)
     path = tmp_path / name
@@ -721,8 +729,10 @@ class TestFollowUp:
         path, ledger, entry = _fixture(tmp_path, inject=False)
         for job in ("job A", "job B"):
             twin = copy.deepcopy(entry if entry else ledger["entries"][-1])
+            # 同 `_fixture` 的理由：`deepcopy` 会继承末条形状 ⇒ 显式声明「存量欠账，不是新写入」
             twin.update({"job": job, "run_id": 990000002, "kind": "flaky", "status": "open",
-                         "follow_up": None, "rerun_result": "success"})
+                         "follow_up": None, "rerun_result": "success",
+                         "requires_follow_up": False})
             twin.pop("fixed_by", None)
             ledger["entries"].append(twin)
         path.write_text(json.dumps(ledger, ensure_ascii=False, indent=2), encoding="utf-8")
