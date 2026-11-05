@@ -329,10 +329,17 @@ class ProcessingRouteSourceDeclarationTest {
     @Test
     @DisplayName("#4452 交付判据 4：signals() 里零残留（商品名 / 销售方式不得再进信号列表）")
     void signalsMethodHasNoProductNameOrSellingMethodRemnants() throws Exception {
+        // issue #8725 第二档切片：signals() 纯搬运到 ProcessingRouteResolver —— 读面跟着搬家，
+        // 判据强度一字未变；另加一条「门面不许再有第二份」，两头都不许写回去。
         String source = Files.readString(
+                Path.of("src/main/java/com/migao/admin/service/ProcessingRouteResolver.java"),
+                StandardCharsets.UTF_8);
+        String serviceSource = Files.readString(
                 Path.of("src/main/java/com/migao/admin/service/ProcessingOrderService.java"),
                 StandardCharsets.UTF_8);
-        int start = source.indexOf("private static List<String> signals(");
+        assertThat(serviceSource).as("signals() 不许再回到门面（两份 = 第二份口径）")
+                .doesNotContain("static List<String> signals(");
+        int start = source.indexOf("static List<String> signals(");
         assertThat(start).as("signals() 必须仍存在（存量单兜底的信号源）").isGreaterThan(0);
         int end = source.indexOf("\n    /**", start);
         assertThat(end).as("signals() 的方法体必须能定位").isGreaterThan(start);
