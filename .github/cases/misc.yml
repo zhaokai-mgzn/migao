@@ -8811,3 +8811,47 @@ cases:
         - "tests/unit_ci_workflows/test_generated_artifacts_clean_checkout.py"
       ci:
         - pr-check.yml
+
+  - id: MC-221
+    legacy_id: ""
+    title: "CI 分流认「限流导致 exit 3（无法判定）」为 infra_rate_limited（issue #8709）：只修「第一次红是不是测试红」这个前提判定，不放松「第二次绿 ≠ 通过」；不重跑 / 不记账 / 不打 flaky 标 / 不卸 auto-merge，但也不放行"
+    domains:
+      - misc
+      - ci
+    tier: normal
+    tags:
+      - ci
+      - flaky-triage
+      - rate-limit
+      - exit-3
+      - undecidable
+      - fail-closed
+      - red-proof
+    truths_ref: []
+    # ⚠️ 真值暂缺：本判据是**纯函数 + workflow 结构**事实（离线、零网络），由
+    # tests/unit_ci_workflows/test_flaky_triage_rate_limit.py 验证；真实 GitHub 配额窗口下的
+    # 端到端复现（真跑一轮撞配额）不在本面，见 skip_reason。
+    user_inputs:
+      - "小时配额耗尽时 5 条互不相干的守卫同时 fail-closed（日志：限流（HTTP 403） ⇒ exit 3 未判定）；旧口径把这次「判不了」当成 flaky ⇒ 重跑 ⇒ 第二次绿 ⇒ block/merge + --disable-auto，把与 flaky 无关的 PR 挡住，还要人工摘标签"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "**判据 1（会红）**：失败 job 的日志里**只有限流特征**（中英都认：限流 / rate limit）⇒ 分流的动作必须是 infra_rate_limited —— **不重跑、零台账条目、不打任何 flaky 标注、不卸 auto-merge**。红证 = 把动作换成 mark_flaky 或让它产出一条 flaky 条目 ⇒ 独立不变式检查器当场判红并具名。"
+      - "**判据 2（负控，会红）**：日志里有真测试失败行（pytest 失败行形态）⇒ 仍走原路径（首次失败 ⇒ 重跑；第二次绿 ⇒ mark_flaky 且条目 kind=flaky）。红证 = 把「一律判 infra」注回 ⇒ 负控判红（真 flaky 被一起放过）。"
+      - "**判据 3（混合，会红）**：一个 job 限流 + 一个 job 真测试红 ⇒ 按真红处置；另有一条更弱的形态（一个 job 限流 + 另一个 job 日志取不到）同样按真红处置（宁缺勿滥）。"
+      - "**判据 4（会红）**：限流判定**不产台账条目**（entries 为空）⇒ 台账的 kind 里不会出现由限流产生的 flaky。"
+      - "**判据 5（可见性不许降，会红）**：判了限流仍必须在 job summary 与 PR 面显示「未判定」—— summary 含 ::warning:: 与未判定字样、且**不得**出现「已通过 / 全部通过 / 没有失败」这类读起来像通过的字样；PR 评论节必须与 flaky 那节长得不一样（不出现 flaky 标签名、不出现「重跑才绿」措辞），并给出配额窗口后的重跑命令；workflow 侧另打 infra/rate-limited 标签并 fail-closed 复核其落地。"
+      - "**判据 2′（同一个病的第二出口，会红）**：pytest 面的失败也可能**就是限流**（实测台账 5 条同源条目：两条联网取号判据在配额耗尽时 fail-closed，失败文本写着 HTTP 403 与限流读数）⇒ 判据下沉到失败**记录的整段错误文本**（FAILED 行 + 续行）：每一条都带限流特征才判环境态；任一条不带、或只有测试名带 rate-limit 字样、或是无 token / 超预算 / 超页数上限这类非限流「判定不了」⇒ 一律按真红处置（负控各一条，证明判据没变成「一律 infra」）。"
+      - "**判据 6（机制自证，会红）**：新判据自身要有「扫描面非空」自证 —— 现场日志必须真的命中标记；分类读数必须报出扫描面（scanned/total）；**一份日志都取不到 ⇒ blind 必须为真并打 ::warning::（0 命中 = 盲，不是「判定为非限流」）**，且分流按原路径处置。"
+      - "**注入式红证（源码级单变量对照）**：把中文标记从限流片段表里摘掉 ⇒ 同一份 bundle 退回 mark_flaky（= 改前行为，逐字复现「修了但没证明它原来会红」的反面）；注入锚必须恰好命中一处、且变异前后源码必须不同（注入没生效不许报成「判据没牙」）。"
+      - "**未放松的核心判据**：第二次绿 ≠ 通过这条**一个字都没动** —— 本用例只改「第一次红是不是测试红」这个前提判定；且 exit 3 的 fail-closed 语义、既有守卫的退出码、required 检查的通过条件均未改（被否掉的「限流时判 neutral」正是会把判不了洗成没红）。"
+    skip_reason: "[backend-contract] 纯函数 + workflow 结构判据（零网络、零 LLM、不真跑 GitHub 配额）由 tests/unit_ci_workflows/test_flaky_triage_rate_limit.py 验证；真实配额窗口下的端到端复现（真撞一小时配额）属环境面，不在本面，不进入 agent-eval 冒烟"
+    merge_log:
+      - "2026-11-05 新增（issue #8709）：接线 = flaky-triage 在 decide 之前加一步 classify-failures（读失败 job 日志 ⇒ 写 bundle 的 failure_kinds），decide 新增 infra_rate_limited 动作（首次失败与第二次绿两条路径都在终态判定之前短路），workflow 新增 ②″ 步骤打 infra/rate-limited 并 fail-closed 复核，③ 评论步显式纳入该动作（它不产台账条目）。"
+      - "修法裁定：选「读失败 job 日志」而不是①已知限流守卫名单（名单是第二份会腐烂的真值，新守卫一出现就静默失效）②让守卫在限流时判 neutral（把 exit 3 洗成没红 = 绿了但没跑同族，且要动 5 个守卫脚本）。"
+      - "取号：MC-221（先查重 .github/cases 全库无 MC-22x，再用 scripts/next_case_id.py 现取口径复核）。"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_flaky_triage_rate_limit.py"
+      ci:
+        - pr-check.yml

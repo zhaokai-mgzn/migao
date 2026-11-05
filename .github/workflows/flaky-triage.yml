@@ -147,6 +147,31 @@ jobs:
           python3 .github/scripts/flaky_ledger.py fetch \
             --repo "$GITHUB_REPOSITORY" --run-id "$RUN_ID" --out /tmp/flaky-bundle.json
 
+      # ── ②′0 #8709：**前提判定**的取数 —— 「第一次红**是不是测试红**」──────────────────
+      # 病根（实测，issue #8709 / PR #8699，**别再重新猜**）：Actions token 小时配额耗尽时，5 条
+      # 互不相干的守卫（Secret Scan / Danger Scan / External Authorship / Contribution Gate /
+      # QA Growth Gate）同时 fail-closed，日志原文：
+      #     ⏳ gitleaks license 校验预检：限流（HTTP 403），2.0s 后重试（第 1/3 次）
+      #     ⛔ … 限流退避用尽（次数上限，已尝试 3 次，最后一次 HTTP 403） —— **未判定**（exit 3，不得当 0 读）
+      # 旧口径把这次「**判不了**」当成测试红 ⇒ `rerun` ⇒ 配额恢复后第二次绿 ⇒ `mark_flaky`
+      # ⇒ `block/merge` + `flaky/rerun-green` + `--disable-auto` ⇒ **与 flaky 完全无关的 PR 被
+      # 人工闸挡住**（要人手工摘标签），还会把「其实是限流」的假条目写进**证据**台账。
+      # 🔴 本步骤**不改任何状态**（只读网络 + 原地补 bundle 的 `failure_kinds`）；判定本体是
+      #    **纯函数**（`rate_limited_only`）⇒ 可离线红证。
+      # ⚠️ 取数面与 ③b `collect-failing-tests` 同一条（`gh api …/jobs/{id}/logs`，不计 `core` 配额），
+      #    但**目的不同**：那个填台账的 `failing_tests`，这个填 `decide` 的前提判定。
+      - name: ②′0 #8709 失败 job 日志分类（只有限流特征 ⇒ 环境态，不是测试红）
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # `set -o pipefail` 必需（同 `decide` 那步）：接了 `tee` 时管道退出码取 `tee` 的 0
+          # ⇒ 判据失败会被吞掉 ⇒ bundle 里没有分类结果 ⇒ `decide` 按原路径重跑（静默退化）。
+          set -uo pipefail
+          python3 .github/scripts/flaky_ledger.py classify-failures \
+            --repo "$GITHUB_REPOSITORY" --bundle /tmp/flaky-bundle.json \
+            | tee -a "$GITHUB_STEP_SUMMARY" || {
+            echo "::error::失败 job 的日志分类没跑成（bundle 读不到 / 形状不对）⇒ **不得**当「没有限流」继续（未跑 ≠ 通过）"; exit 1; }
+
       - name: 分流判定（纯函数；不判定 = 不改任何状态）
         id: decide
         run: |
@@ -304,12 +329,46 @@ jobs:
             echo "::error::本类必须带跟踪单，但 ②′a 没给出单号（未跑 ≠ 通过）⇒ fail-closed"; exit 1; }
           echo "::notice::🕒 跨时间桶的「重跑通过」已按 suspect-window-deterministic 处置（记账 + 跟踪单 + 未自动放行）—— 第二次绿 ≠ 通过，也 ≠ flaky"
 
+      # ── ②″ #8709：限流致 exit 3 ⇒ 标 `infra/rate-limited`（**不重跑、不记账、不放行**）────
+      # 为什么需要一个**独立步骤**（而不是复用 ② 那一套）：本类既**不是** flaky（不许打
+      # `flaky/rerun-green`、不许记台账），也**不是**通过（不许卸闸放行）—— 它需要一个**读得出来**
+      # 的第三种标注，否则「未判定」在 PR 面上就与「没有 flaky」长得一样 = 本仓最贵的
+      # 「绿了但没跑」同族。
+      # 🔴 本步**不** `--disable-auto`：本类不放行是**结构事实**（那次 job 仍红 ⇒ required 仍不满足），
+      #    不需要也不应该多打一道闸（多打就是「看起来像 flaky 处置」，读数与事实不一致）。
+      - name: ②″ #8709 限流致 exit 3 ⇒ 标 infra/rate-limited（不重跑 / 不记账 / 不放行）
+        if: steps.decide.outputs.action == 'infra_rate_limited'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ steps.decide.outputs.pr }}
+        run: |
+          set -uo pipefail
+          gh label create "infra/rate-limited" --force --color 6A737D \
+            --description "环境态：Actions token 小时配额限流 ⇒ 那次红是「未判定（exit 3）」，不是 flaky" \
+            --repo "$GITHUB_REPOSITORY"
+          gh pr edit "$PR_NUMBER" --add-label "infra/rate-limited" --repo "$GITHUB_REPOSITORY"
+          # 复核 + fail-closed：标注必须**真的落地**，否则本 job 红（同 ② 的理由：
+          # 标不上却继续 = 可见性静默失效）。
+          LABELS=$(gh pr view "$PR_NUMBER" --json labels --jq '[.labels[].name]|join(",")' \
+            --repo "$GITHUB_REPOSITORY")
+          echo "复核：labels=[$LABELS]"
+          case ",$LABELS," in *",infra/rate-limited,"*) ;; *)
+            echo "::error::可见标注未落地：infra/rate-limited 不在 [$LABELS] ⇒ fail-closed"; exit 1;; esac
+          # 🔴 反向判据（**本类与 flaky 的可读差异**）：本类**不得**拿到 `flaky/rerun-green`
+          #    —— 那个标签读作「已查清是重跑才绿」，会把「判不了」误读成「与本次改动无关」。
+          #    这里**只出声不判红**：历史误标（本单修复前被误打的）不是本轮的错，但要人摘。
+          case ",$LABELS," in *",flaky/rerun-green,"*)
+            echo "::warning::该 PR 仍带着历史误标的 flaky/rerun-green（#8709 修复前打的）⇒ 请人工摘除：gh pr edit $PR_NUMBER --remove-label flaky/rerun-green --remove-label block/merge";; esac
+          echo "::notice::⏳ 判 infra_rate_limited（#8709）：限流导致 exit 3 = **判不了**，不是测试红。零重跑 / 零记账 / 未打 flaky 标注 / 未卸 auto-merge / **未放行**（那次 job 仍红 ⇒ required 仍不满足）—— 等配额窗口后重跑那次失败 job"
+
       # ── ③ 可见评论（幂等：同 marker 已存在则**更新**，不重复堆积 ⇒ 不再造噪音）──
       - name: ③ PR 评论（幂等：同 marker 更新而非重复创建）
         # #6455：**部署腿没有 PR**（push / schedule 触发 ⇒ `pr` 为空）⇒ 不发评论
         # （否则 `issues//comments` 会 404 ⇒ fail-closed 判红，把「只记账」变成「整条链红」）。
         # PR 腿的 `pr` 恒非空 ⇒ 本条件对既有路径**零影响**。
-        if: steps.decide.outputs.entry_count != '0' && steps.decide.outputs.pr != ''
+        # 🔴 #8709：`infra_rate_limited` **不产台账条目**（判据 4），所以它 `entry_count == '0'`
+        # ⇒ 必须在这里**显式**放进来，否则「等配额窗口后重跑」这句话在 PR 面上根本不存在。
+        if: (steps.decide.outputs.entry_count != '0' || steps.decide.outputs.action == 'infra_rate_limited') && steps.decide.outputs.pr != ''
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ steps.decide.outputs.pr }}
