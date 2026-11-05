@@ -136,6 +136,15 @@ modules:
       - pattern: 'backend/ai-agent-service/app/constants/(.+)\.py'
         tests:
           - 'tests/test_order_status.py'
+      # 口径卡（issue #8175，新目录 app/playbook/）：条件是**条件语言**、读面是**不缓存**、
+      # 出口①是 prompt 片段、出口③是「生成物真能跑」——四块各有同名测试文件
+      # （tests/test_condition.py / test_store.py / test_prompt.py / test_casegen.py）。
+      # 兜底规则本可承接（basename → tests/test_{1}.py），这里**显式登记**的理由：
+      # 这个目录是企业级口径的**唯一实现**，将来任一块被单独换掉时，要能一眼看到
+      # 它的判据落在哪个文件，而不是靠兜底猜。
+      - pattern: 'backend/ai-agent-service/app/playbook/(.+)\.py'
+        tests:
+          - 'tests/test_{1}.py'
       # LLM 模型路由（issue #2546 / #5353）：select_model 由 test_vision_integration 的
       # TestSelectModelWithVision 覆盖，故逐文件显式登记。
       # ⚠️ **不得**写 tests/test_llm_pipeline.py —— 它在 pytest.ini 的 addopts `--ignore=` 里

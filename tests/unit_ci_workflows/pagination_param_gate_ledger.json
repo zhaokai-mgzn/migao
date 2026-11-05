@@ -98,6 +98,11 @@
       "why": "经 `@RequestParam` 取 page/size ⇒ 请求参数集必过单点闸 `PaginationParamGate.requireValid`（`PaginationParamInterceptor.preHandle` 委派），非法值 ⇒ 400，不再出现「total=0 却返回整页」。"
     },
     {
+      "key": "backend/admin-api/src/main/java/com/migao/admin/controller/PlaybookController.java::page",
+      "source": "@RequestParam",
+      "why": "经 `@RequestParam` 取 page/size ⇒ 请求参数集必过单点闸 `PaginationParamGate.requireValid`（`PaginationParamInterceptor.preHandle` 委派），非法值 ⇒ 400，不再出现「total=0 却返回整页」。"
+    },
+    {
       "key": "backend/admin-api/src/main/java/com/migao/admin/controller/ProcessingItemController.java::getProcessingItems",
       "source": "ProcessingItemQueryRequest",
       "why": "经查询 DTO 绑 page/size（DTO 自带默认值、无共同基类）⇒ 同一 HTTP 参数集仍过单点闸；DTO 属性名与 HTTP 参数名可以不同（实测 ProductQueryRequest.productId 对 @RequestParam productCode），故准入放在取参层而不是 DTO 层。"

@@ -9163,6 +9163,57 @@ cases:
         - "tests/unit_ci_workflows/test_unfailable_green_is_consumed.py"
       ci:
         - pr-check.yml
+  - id: MC-230
+    legacy_id: ""
+    title: "B 端口径卡 Playbook 一期最小闭环（issue #8175）：只有「人工审核通过」的口径进 prompt、trigger/counter 必须是机器可判的结构化条件、出口③从 trigger+counter 自动生成**真能跑**的用例；租户隔离与退役立即生效各有注入式红证"
+    domains:
+      - agent
+      - knowledge
+      - misc
+    tier: normal
+    tags:
+      - playbook
+      - prompt-injection
+      - tenant-isolation
+      - state-machine
+      - case-generation
+      - fail-closed
+      - red-proof
+    truths_ref: []
+    # ⚠️ 真值暂缺：本判据是**纯函数 + 结构**事实（零网络、零 LLM、零真库），由
+    # tests/test_playbook_* 与 tests/unit_ci_workflows/test_playbook_condition_contract.py 验证；
+    # 真实 B 端会话的自动落卡管道（P1b）不在本面，见 skip_reason。
+    user_inputs:
+      - "B 端商家在会话里纠正过一次口径（「报价按整卷走，除非客户要零裁」）。旧形态下这条纠正只活在当次会话里：黄金策的会话根本不在蒸馏面内（蒸馏读的是人工客服的 agent_sessions），user_memories 又是 C 端顾客画像且对 mibao 关闭 ⇒ 「纠正一次」不可能变成「全企业受益」"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "**判据 1（会红）：只有 active 的卡进 prompt**。注入一张 draft 与一张 retired ⇒ 它们的正文**一个字符都不许**出现在渲染结果里，且判红要**具名**是哪张卡；反向对照（同一张卡改成 active ⇒ 必须出现且 when/do/except 三段齐全）也在同一批里。红证实测 = 去掉状态过滤后该断言当场红。"
+      - "**判据 2（会红）：trigger 必须可执行**。自由文本 trigger（如「整卷优先」）⇒ 写面 422、读面整卡不进任何出口；未知算子 / 空条件 / value 类型不对 / 组合键共存 / 嵌套超限一律具名报出。反向判据 = 合法条件零问题。两端算子表由纯字符串操作现取对账（剥注释后取值），少一项 / 多一项 / 顺序不同 / 一侧为空四种坏形态各有一条内存变异红证。"
+      - "**判据 3（会红）：出口③生成的用例真能跑**。生成物带机器载荷（traces.playbook 的 trigger 语境与 counter 语境），执行器调**生产同一条判定链**算 passed/failed；正向语境必生效、反例语境必不生效、prompt 渲染两条同源。红证 = 把判定链换成不读 counter 的坏引擎 ⇒ 同一份生成物当场 failed。生成是确定的（同一张卡两次生成摘要逐字节相同）。"
+      - "**判据 4（会红）：租户隔离**。把别的租户的卡混进读面返回行（模拟「SQL 漏了租户条件」）⇒ 本租户的读面与 prompt 里一条都不许有；缺租户时读面返回空列表而不是退化成查全表；岗位口径只对命中岗位的会话生效、不知道岗位时只走全企业口径。"
+      - "**判据 5（会红）：退役立即生效**。同一个读面实例上，库内状态改成 retired 后**下一次读**必须读不到（退役是一次库内变更，进程无从感知 ⇒ 任何进程内缓存都会让这条红）；同时核 prompt 段里该卡的正解随之消失。"
+      - "**判据 6（会红）：反例不是注释**。反例存在但不可执行 ⇒ 写面 422、读面整卡不用、生成器拒绝生成（拒不降级成「少一条断言」）；反例可执行时，负向断言的语境必须**触发仍成立 + 反例命中**（否则「本卡不生效」有两个原因，坏引擎照样能绿）—— 互斥时拒绝生成并具名。"
+      - "**接线判据（会红）**：口径卡注入必须排在 _build_system_prompt 之后；删掉那行调用 ⇒ 红。C 端（元元）传入即原样返回同一个对象（逐字节零回归）。"
+      - "**状态机与审计（Java 面）**：写面**只**落 draft（请求里写 active 也没用）；draft→active 与 active→retired 用 CAS（影响 0 行 = 冲突，不许静默成功）；每次迁移留一条审计（谁 / 什么动作 / 哪张卡）。"
+      - "**未做项（照实登记）**：出口②知识卡（knowledge_search 命中）与出口④工具默认参数**本期不做**；B 端会话的自动落卡管道（P1b）不做（本期允许手工建卡）。重启条件写在 PR body。"
+    skip_reason: "[backend-contract] 纯函数 + 结构判据（零网络、零 LLM、零真库），计分通道 = traces.tests；真实 B 端会话的自动落卡管道（P1b）与真库端到端迁移不在本面，不进入 agent-eval 冒烟"
+    merge_log:
+      - "2026-11-05 新增（issue #8175 一期）：schema + 表（V210 playbooks，state 三态 draft/active/retired + CHECK + 三个索引）；落卡路径 = admin-api 手工建卡（只落 draft）；出口① prompt 片段（只有 active，读面不缓存）；出口③ 用例自动生成（生成物带可执行载荷并真跑）；审核 + 退役状态机（CAS）+ 权限码（复用 knowledge:view / knowledge:manage）+ 审计。"
+      - "口径裁定：条件语言是**结构化 JSON**（算子白名单八项），自由文本一律不可执行 —— 因为自然语义断言「只写不判」是本仓铁律明确禁止的形态。两端实现（Java 写面校验 / Python 读面求值）由对账判据守着，只改一侧即红。"
+      - "口径裁定：权限码**复用** knowledge 面而不是新造 playbook:* —— 新码没有任何岗位持有 ⇒ 接口对所有人 403（字段存在但功能不可达），且要同批改 RBAC 单一真值源与生成物。重启条件 = 需要「口径审核」与「知识审核」分权时另开一单拆码。"
+      - "取号：MC-230。**两次让号**（撞号是并行包的结构性产物，不是谁不小心）：首取 MC-222 ⇒ 被 #8711（issue #8176）先合入占用；让到 MC-223 ⇒ 又被 #8715 占用（该 PR 一次占了 223/224/225）。按「main 侧既有 id 一律不许改、后到者让号」再让到 MC-230（现取 main 侧 MC-226~240 = 0，取远号段以压掉再撞窗口）；用例号四处同批：测试文件头 / 用例块 / claim 文件名与内容 / 重新渲染。"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_condition.py"
+        - "backend/ai-agent-service/tests/test_store.py"
+        - "backend/ai-agent-service/tests/test_prompt.py"
+        - "backend/ai-agent-service/tests/test_casegen.py"
+        - "tests/unit_ci_workflows/test_playbook_condition_contract.py"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/PlaybookServiceTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/PlaybookConditionValidatorTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/mapper/PlaybookMapperTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/controller/PlaybookControllerTest.java"
 
   - id: MC-227
     legacy_id: ""
