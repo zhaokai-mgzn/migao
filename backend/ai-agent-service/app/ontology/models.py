@@ -1,8 +1,8 @@
 """
 领域本体数据模型（issue #2821 切片 1）
 
-四对象（订单/商品SKU/售后单/客户）× 三要素（属性/关系/规则）——
-对应 Palantir 式 Object/Link/Rule 骨架，作为 MIGAO 业务语义的
+四对象（订单/商品SKU/售后单/客户）× 两要素（属性/关系）——
+对应 Palantir 式 Object/Link 骨架，作为 MIGAO 业务语义的
 机器可消费单一事实源（TBox）。全部 frozen dataclass，加载后不可变。
 
 🔴 2026-10-30 动作要素出库（issue #8172）：原 `ActionDef`（Palantir 骨架里的 Action 位）
@@ -10,6 +10,11 @@
 13 条指向注册表里不存在的工具）。动作的真值只有一处 = `app/tools/**`（registry +
 各工具的 `requires_confirmation` / action 枚举）。回潮判据见
 `backend/ai-agent-service/tests/test_ontology_schema.py::TestActionsSectionStaysOut`。
+
+🔴 2026-11-05 规则要素出库（issue #8167 P1-2）：`RuleDef` 连同 schema 的 rules 段一起删除 ——
+19 条规则**零运行期消费者**、且逐条都是同文件枚举 / 工具闸门 / Java 校验 / DDL 的**第二份副本**
+（判定依据见 schema.yaml 头部与 PR body）。回潮判据见
+`backend/ai-agent-service/tests/test_ontology_schema.py::TestRulesSectionStaysOut`。
 """
 
 from dataclasses import dataclass, field
@@ -51,24 +56,12 @@ class RelationDef:
 
 
 @dataclass(frozen=True)
-class RuleDef:
-    """业务规则（Axiom）——机器可校验的约束声明
-
-    text: 规则文本（可直接注入 prompt / 用于断言）
-    severity: must（硬约束，违反即拒绝）| should（软约束，需澄清/提示）
-    """
-    text: str
-    severity: str = "must"
-
-
-@dataclass(frozen=True)
 class OntologyObject:
     """领域对象（订单/商品SKU/售后单/客户…）"""
     name: str
     display_name: str
     properties: Dict[str, PropertyDef] = field(default_factory=dict)
     relations: List[RelationDef] = field(default_factory=list)
-    rules: List[RuleDef] = field(default_factory=list)
 
     def get_property(self, name: str) -> Optional[PropertyDef]:
         return self.properties.get(name)
