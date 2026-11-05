@@ -198,7 +198,15 @@ export const DEFAULT_PAGES = [
 /** 能力键：裁高机链路（`serial:<port>` / `tcp:<host:port>`；`null` = 本机没有裁高机）。 */
 export const CAP_CUT_LINK = 'cut.link'
 
-/** 能力键：标签机（`ble`；`null` = 本机没有标签机）。 */
+/**
+ * 能力键：标签机（**值为非空字符串 = 本机能打**；`null` = 本机没有标签机）。
+ *
+ * 🔴 **不要把取值写成白名单**（2026-11-05，终端仓 #59 交付后同步）：标签机的取值是**端的能力证明**，
+ * 不是枚举：`ble`（蓝牙打印机）/ `builtin`（商米内置打印服务，Android 手持机就是这个）/ 将来还可能是别的。
+ * 判定只认「**非空字符串**」⇒ 写 `=== 'ble'` 会让「明明能打」的手持机**入口消失**，
+ * 而旧测试只喂 `ble` ⇒ **全绿**（已加 `builtin` / `serial:/dev/ttyS1` 对照组堵这个盲区，
+ * 见 `worker-h5-8609-capabilities.test.mjs` 的「能力值形态」一档）。
+ */
 export const CAP_PRINT_LABEL = 'print.label'
 
 /** 桥三态：**没有桥**（普通浏览器 / 没有壳）⇒ 真没有这些硬件。 */
@@ -261,7 +269,9 @@ export function terminalCapabilities(state) {
 export function capabilityShown(caps, axis) {
   if (caps?.state === CAP_STATE_UNKNOWN) return true // 迁移期：未知 ≠ 没有（移除条件见 terminalCapabilities）
   const v = caps?.[axis]
-  return typeof v === 'string' && v !== ''
+  // `trim()` 必须与 `terminalCapabilities` 的 `read()` **同一口径**（2026-11-05 判据咬出来的）：
+  // 那里 trim 后判空就把 `'   '` 规范成 null，这里若只判 `!== ''` ⇒ 同一个值在两条路径上结论相反。
+  return typeof v === 'string' && v.trim() !== ''
 }
 
 /** 裁高计算入口（同源静态页；`/w/` 与 `/w/machine.html` 同一静态根 ⇒ 相对路径、不写死域名）。
