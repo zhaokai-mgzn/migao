@@ -15,6 +15,14 @@ issue #8172 追加（动作要素出库）：
 - schema 的「动作段」已删除（原 19 条、其中 13 条指向注册表里不存在的工具）⇒ 能力真值只认 tools registry
 - 元守卫 `TestActionsSectionStaysOut`：schema 再出现该键 ⇒ 红（含注入式自证 + 「只改注释不红」的对照读数）
 
+issue #8167 P1-2 追加（规则要素出库）：
+- schema 的 `rules` 段已删除（原 7 对象 19 条）⇒ 规则真值只认可执行载体
+  （同文件 status 枚举 / 工具 requires_confirmation / C 端 skill 工具绑定 / Java 服务校验 / DDL）
+- 元守卫 `TestRulesSectionStaysOut`：schema 再出现 rules 键 ⇒ 红
+  （注入式自证 + 「只改注释不红」对照 + 模型符号 RuleDef/OntologyObject.rules 已删）
+- 原按**文本**钉住的加工费真值已改钉 DDL：
+  `tests/unit_ci_workflows/test_ontology_source_resolves.py::test_processing_items_have_no_price_columns`
+
 Seam: app.ontology.loader.load_ontology() → Ontology（唯一公共入口，
 不触碰内部 models/加载实现细节）。
 """
@@ -66,17 +74,19 @@ class TestOntologyLoad:
         ]
 
     def test_each_object_has_required_sections(self, ontology):
-        """每个对象必须有属性/关系/规则三要素（缺一不可）。
+        """每个对象必须有属性/关系两要素（缺一不可）。
 
-        动作要素已于 issue #8172 出库（能力真值在 tools registry）⇒ 这里不再断言它，
-        回潮判据由 TestActionsSectionStaysOut 承担。
+        动作/规则两要素均已出库（#8172 / #8167 P1-2）⇒ 这里**不再**断言它们，
+        回潮判据分别由 TestActionsSectionStaysOut / TestRulesSectionStaysOut 承担。
+        这条判据同时是「瘦身不许删到真值段」的守门人：properties（含 `source` 挂载点）与
+        relations（含 `target` 登记）是本体**保留段**，被顺手删空 ⇒ 立刻红。
         """
         for name, obj in ontology.objects.items():
             assert obj.properties, f"{name} 缺属性"
-            assert obj.relations is not None, f"{name} 缺关系"
-            assert obj.rules, f"{name} 缺规则"
-        # 模型侧也钉住：OntologyObject 不得再有 actions 字段（issue #8172 删的是模型，不只是 YAML）
+            assert isinstance(obj.relations, list) and obj.relations, f"{name} 缺关系"
+        # 模型侧也钉住：OntologyObject 不得再有 actions / rules 字段（删的是模型，不只是 YAML）
         assert not hasattr(ontology.objects["order"], "actions"), "OntologyObject.actions 应已删除（#8172）"
+        assert not hasattr(ontology.objects["order"], "rules"), "OntologyObject.rules 应已删除（#8167 P1-2）"
 
 
 class TestOrderStatusEnum:
@@ -233,13 +243,14 @@ class TestPropertySourcesMatchRealCarriers:
         assert {"name", "address", "user_id"} & set(props) == set()
 
 
-class TestProcessingItemFeeRule:
-    """issue #5245 B5：V101 已删加工项单价/计价方式 ⇒ 规则文本不得再引用加工项单价。"""
-
-    def test_rule_points_at_the_fee_combination_truth_source(self, ontology):
-        rules = [r.text for r in ontology.objects["processing_item"].rules]
-        assert not any("加工项单价" in t for t in rules)
-        assert any("加工费组合" in t for t in rules)
+# ── issue #5245 B5 的**文本**判据已迁移（issue #8167 P1-2）────────────────────────────
+# 旧判据 `TestProcessingItemFeeRule::test_rule_points_at_the_fee_combination_truth_source` 断言
+# `processing_item.rules` 里**没有**「加工项单价」、**有**「加工费组合」。规则段出库后，那条事实
+# （加工项目录无单价 / 加工费取组合价）改钉在**真值载体**上，判据强度不降反升：
+#   ⇒ `tests/unit_ci_workflows/test_ontology_source_resolves.py::test_processing_items_have_no_price_columns`
+#      （读 DDL：`processing_items` 不得有 unit_price/pricing_method 列；`processing_fee_combinations`
+#      必须存在且带 unit_price 列 —— 它才是加工费真值源）
+# 原判据在此**不保留**：留着它只会让「规则文本」这个已出库的第二事实源有理由复活。
 
 
 # ── 动作要素已出库（issue #8172）：原句 → 新载体（承重句不许静默丢弃）──────────────────
@@ -328,6 +339,121 @@ class TestActionsSectionStaysOut:
             encoding="utf-8"
         )
         assert find_actions_keys(text) == []
+
+
+# ── 规则要素已出库（issue #8167 P1-2）：判定依据 + 迁移去向（承重句不许静默丢弃）──────────
+# schema 原有 19 条规则（7 个对象），本单全部删除。判定口径 = 「同一事实写了两遍」：
+#   ① **零运行期消费者**：`git grep -n "\.rules" -- '*.py'` 全仓命中 2 处，都在本文件（断言文本存在）。
+#      loader 之外没有任何代码读取它 ⇒ 它不承载可执行真值，删掉**不改变任何行为**
+#      （与 #8172 的动作段同形：loader 不再解析 ⇒ 加回去也不会报错，只能靠源文件元守卫拦）。
+#   ② **19 条逐条落到唯一真值载体**（逐条表见 PR body）：
+#      · 4 条 = 同文件 `properties.status.values` 的重复（order / employee / processing_item / category）；
+#      · 14 条 = 可执行载体（工具 requires_confirmation / C 端 skill 工具绑定 / Java 服务校验 /
+#        handoff_judge 赔偿关键词 / DDL 的 processing_fee_combinations）；
+#      · 1 条 = 已下线能力（role_manage 自 #5247 起只读，没有写面可挂闸）。
+#   ③ **它确实会漂移且不响**：#5245 B5 原句「算料报价引用加工项单价」与库事实相反
+#      （processing_items.unit_price 由 V101 删除），只能人工改文本纠正。
+# 迁移去向：唯一那条曾被**文本**钉住的事实（加工费取组合价 / 加工项目录无单价）改钉在 DDL 真值上 ⇒
+# `tests/unit_ci_workflows/test_ontology_source_resolves.py::test_processing_items_have_no_price_columns`。
+
+RULES_KEY_RE = re.compile(r"^\s*rules\s*:")
+
+
+def find_rules_keys(text: str) -> list:
+    """返回 schema 文本里出现的规则键（`<行号>: <行内容>`；**注释行不算**）。
+
+    与 `find_actions_keys` 同因：规则段出库后 loader 不再解析它 ⇒ 有人加回去**也不会报错**
+    （静默被忽略 —— 正是「看着有、实际没人读」的形态）⇒ 必须直接查源文件。
+    """
+    hits = []
+    for lineno, line in enumerate(text.splitlines(), 1):
+        stripped = line.lstrip()
+        if stripped.startswith("#"):
+            continue
+        if RULES_KEY_RE.match(line):
+            hits.append(f"{lineno}: {stripped}")
+    return hits
+
+
+class TestRulesSectionStaysOut:
+    """issue #8167 P1-2：规则段已出库，且不许回潮（元守卫）。"""
+
+    def test_default_schema_has_no_rules_key(self):
+        """默认 schema 既不许有规则键，解析结果里也不许有（源文件 + 解析两侧都判）。"""
+        text = DEFAULT_SCHEMA_PATH.read_text(encoding="utf-8")
+        assert find_rules_keys(text) == [], "schema.yaml 又出现 rules 键（issue #8167 P1-2 已出库）"
+        data = yaml.safe_load(text)
+        offenders = [name for name, obj in data["objects"].items() if "rules" in obj]
+        assert offenders == [], f"这些对象又重新声明了规则: {offenders}"
+
+    def test_rule_model_is_gone(self):
+        """删的是**模型**，不只是 YAML：RuleDef 符号与 OntologyObject.rules 字段都必须消失。"""
+        from app.ontology import models as ontology_models
+
+        assert not hasattr(ontology_models, "RuleDef"), "RuleDef 应已删除（issue #8167 P1-2）"
+        assert not hasattr(load_ontology().objects["order"], "rules"), "OntologyObject.rules 应已删除"
+
+    def test_rules_key_injection_is_detected(self):
+        """判别力自证（注入式红证）：把一条规则段灌回 schema 副本 ⇒ 判据必须红并具名对象。
+
+        若这条判据退化成恒绿（比如只看 OntologyObject 有没有该属性 —— 而模型已经没有它了），
+        这条自证立刻红：它喂的是**另一份带规则段的文本**，不依赖默认 schema 的现状。
+        """
+        text = DEFAULT_SCHEMA_PATH.read_text(encoding="utf-8")
+        anchor = "    relations:\n      - name: has_items"
+        injected = text.replace(
+            anchor,
+            '    rules:\n      - text: "幽灵规则（注入）"\n        severity: must\n' + anchor,
+            1,
+        )
+        assert injected != text, "注入锚（order.relations）必须命中，否则这条自证是空跑"
+        assert len(find_rules_keys(injected)) == 1
+        assert "rules:" in find_rules_keys(injected)[0]
+        data = yaml.safe_load(injected)
+        assert [n for n, o in data["objects"].items() if "rules" in o] == ["order"]
+
+    def test_commented_occurrence_is_not_red(self):
+        """对照读数：只有**注释里**提到该键 ⇒ 不红（守卫不许被自己的说明文案喂红）。"""
+        text = "# rules: 本键已出库（issue #8167 P1-2）\n" + DEFAULT_SCHEMA_PATH.read_text(
+            encoding="utf-8"
+        )
+        assert find_rules_keys(text) == []
+
+
+class TestSlimmedSchemaKeepsOnlyTruthSections:
+    """issue #8167 P1-2 的**反向判据**：瘦身只许删第二事实源，**保留段一个都不许少**。
+
+    为什么要有这条：本单的处置是「删段」（动作 #8172 / 规则 #8167 P1-2），而「删」是最容易
+    顺手过头的动作 —— 下一个人可能把 `properties`（含 `source` 挂载点）或 `intent_ownership`
+    当成同类删掉。允许集合是**白名单**：新增段必须先想清楚「它是不是第二事实源」，
+    再动这条判据（红 → 有意识地改）。
+    """
+
+    #: 顶层允许的键（只留 objects/properties/relations/intent + source 对账所需）
+    TOP_LEVEL_KEYS = {"version", "intent_ownership", "external_targets", "objects"}
+    #: 每个对象允许的键（动作/规则两要素均已出库）
+    OBJECT_KEYS = {"display_name", "properties", "relations"}
+
+    def _data(self):
+        return yaml.safe_load(DEFAULT_SCHEMA_PATH.read_text(encoding="utf-8"))
+
+    def test_top_level_keys_are_the_allowed_set(self):
+        """顶层键集 == 白名单（`objects` / `intent_ownership` 被删也会红）。"""
+        assert set(self._data()) == self.TOP_LEVEL_KEYS
+
+    def test_object_keys_are_the_allowed_set(self):
+        """每个对象的键集 ⊆ 白名单，且 `properties`/`relations` 必须在（真值段不许少）。"""
+        for name, obj in self._data()["objects"].items():
+            assert set(obj) <= self.OBJECT_KEYS, f"{name} 出现未登记的新段：{sorted(set(obj) - self.OBJECT_KEYS)}"
+            assert {"properties", "relations"} <= set(obj), f"{name} 丢了真值段：{sorted(set(obj))}"
+
+    def test_intent_ownership_is_kept(self):
+        """`intent_ownership` 不是第二事实源（它是与 skill_registry 对账的唯一一侧）⇒ 必须仍在。"""
+        intents = self._data()["intent_ownership"]
+        assert isinstance(intents, dict) and len(intents) >= 20, (
+            f"intent 归属表疑似被删/被削（仅 {len(intents) if isinstance(intents, dict) else '非映射'} 条）"
+        )
+        assert all("route_key" in spec for spec in intents.values()), "有条目丢了 route_key"
 
 
 class TestEnumValidation:
