@@ -1,3 +1,4 @@
+# case_ids: MC-235
 # case_ids: MC-041
 """**「取下一个用例号」必须是机械化的一条只读命令**（issue #5707 的链内收口；`FM-E7` / `FM-E15`）。
 
@@ -486,12 +487,16 @@ def test_allocate_asserts_the_answer_is_outside_the_candidate_set() -> None:
     """判据 4：`allocate()` **内部**断言「返回的号 ∉ 候选集」；变异成"返回已占号" ⇒ 必抛。"""
     module = _load_tool()
     occupied = _occupied(module, INCIDENT_MAIN, INCIDENT_PR_A)
-    assert module.allocate(occupied) == {"MC": 41}
+    # 🔴 2026-11-05 口径变更：默认**尾部顺延** ⇒ 要拿空档必须显式 `fill_gap=True`。
+    # 本条判据 4 关心的是「内部断言会炸」，与取号口径无关，故显式走空档路径（语义不变）。
+    assert module.allocate(occupied, fill_gap=True) == {"MC": 41}
     # 内存变异：把 min_free 换成"返回一个已被占用的号" ⇒ 内部断言必须真的炸
     ns = _exec(_mutant_source("def min_free(used: set[int]) -> int:",
                               "def min_free(used: set[int]) -> int:\n    return 46  # 变异：返回已占号"))
     try:
-        ns["allocate"](_occupied(ns, INCIDENT_MAIN, INCIDENT_PR_A))
+        # ⚠️ 必须 `fill_gap=True`：默认走 `max+1` 分支**根本不调用 `min_free`** ⇒ 变异不生效、
+        # 这条判据会退化成空断言（改成默认口径时实测就是这样红的）。
+        ns["allocate"](_occupied(ns, INCIDENT_MAIN, INCIDENT_PR_A), fill_gap=True)
     except AssertionError as exc:
         assert "MC-046" in str(exc), f"断言炸了但报文没点名那个号：{exc}"
     else:
@@ -504,26 +509,34 @@ def test_todays_incident_is_reproduced_in_memory() -> None:
     main_only = module.parse_ids(INCIDENT_MAIN)
     two_inflight = _occupied(module, INCIDENT_MAIN, INCIDENT_PR_A, INCIDENT_PR_B)
     moved = _occupied(module, INCIDENT_MAIN, INCIDENT_PR_A_MOVED, INCIDENT_PR_B)
-    assert module.allocate(two_inflight) == {"MC": 41}, \
+    assert module.allocate(two_inflight, fill_gap=True) == {"MC": 41}, \
         "最小空闲号必须是 041（main 001-040/043-045/047 + 在飞 046/048）"
-    assert module.allocate(moved) == {"MC": 42}, "在飞 A 占了 041 ⇒ 必须让到 042"
-    # 对照读数（防「变异没生效 ⇒ 空断言」）：手工口径「最大号 + 1」在这两幕里都答 049 ⇒ 与最小空闲号**不同**
+    assert module.allocate(moved, fill_gap=True) == {"MC": 42}, "在飞 A 占了 041 ⇒ 必须让到 042"
+    # 🔴 **2026-11-05 口径变更（本单的修法本体）**：改前默认给**最小空闲号**（= 041/042，历史空档），
+    # 后果是并行取号方全被指向同一个空档 ⇒ 一晚撞号 4 次。改后默认 = **尾部顺延**。
+    # ⇒ 这条「事故复现」判据的语义随之翻转：**默认必须答 049**（事故已修），空档只在 `fill_gap=True` 时给。
     for corpus in (two_inflight, moved):
         tail_plus_one = max(n for nums in corpus.values() for n in nums) + 1
-        assert tail_plus_one == 49 and tail_plus_one != module.allocate(corpus)["MC"], \
-            "对照读数与最小空闲号相同 ⇒ 这条判据分不出两种口径"
+        assert tail_plus_one == 49, "对照读数前提变了（这两个语料的最大号应仍是 048）"
+        assert module.allocate(corpus)["MC"] == tail_plus_one, (
+            "默认口径必须是尾部顺延（049）—— 若又回到 041/042（历史空档）⇒ 并行撞号的病根回来了")
+        assert module.allocate(corpus, fill_gap=True)["MC"] != tail_plus_one, (
+            "fill_gap=True 与默认口径给出了同一个号 ⇒ 这条判据分不出两种口径（空断言）")
 
 
 def test_min_free_is_not_max_plus_one_and_counts_all_sources() -> None:
     """判据 5 的口径核对：**最小空闲号** ≠ 最大号 + 1；且「工作区先占」的号不许被自己判成空闲。"""
     module = _load_tool()
     gap = _occupied(module, "".join(f"  - id: MC-{n:03d}\n" for n in (1, 2, 3, 10, 11)))
-    assert module.allocate(gap) == {"MC": 4}, "有空档时必须填空档（尾部 +1 会答 12）"
+    # 🔴 2026-11-05 口径变更：**默认不再填空档**（那正是并行包撞号的病根）。
+    # 空档改为 `--fill-gap` 的**有意**行为 ⇒ 本条判据改成双向：默认给尾部、显式才填空档。
+    assert module.allocate(gap) == {"MC": 12}, "默认必须尾部顺延（11 + 1），不许填空档"
+    assert module.allocate(gap, fill_gap=True) == {"MC": 4}, "fill_gap=True 时才填空档"
     assert module.min_free({1, 2, 3}) == 4
     assert module.min_free(set()) == 1
     # 工作区来源先占：main + 工作区一起占住 041 ⇒ 答案必须是 042
     worktree_owned = _occupied(module, INCIDENT_MAIN, INCIDENT_PR_A_MOVED)
-    assert module.allocate(worktree_owned) == {"MC": 42}
+    assert module.allocate(worktree_owned, fill_gap=True) == {"MC": 42}
 
 
 def test_parse_agrees_with_the_criterion_side_parser() -> None:
