@@ -1,0 +1,6 @@
+{
+  "id": "MC-208",
+  "pr": 8691,
+  "title": "demo-seed 的 SKU 插入语句必须三处一致：SELECT 行值 = WHERE 关联条件 = product_colors 已声明颜色（issue #7583 缺陷 2 的假绿出口 —— 静态解析把 SELECT 列表当已插入行，WHERE 打错一字则真库插 0 行而判据全绿）",
+  "claimed_at": "2026-11-05"
+}

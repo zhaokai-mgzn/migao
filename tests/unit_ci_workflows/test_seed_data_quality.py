@@ -21,8 +21,9 @@
 | ① 商品状态 ∈ 应用枚举 | seed 写回 `active` ⇒ 红（枚举从 `ProductService` **现取**，不抄第二份） |
 | ② 每个颜色都有 SKU | 删掉某商品某色的 SKU 行 / 新增颜色不补矩阵 ⇒ 红（具名「商品 × 颜色」） |
 | ③ SKU 矩阵字段有效 | 色名空 / 门幅非 canonical / `price <= 0` / `stock < 0` ⇒ 红 |
-| ④ 金额链闭合 | 总额 ≠ Σ 明细小计 / 明细单价不在该商品 SKU 价集 / 有单无明细 / 已收 > 总额 ⇒ 各自具名红 |
-| ⑤ 评测栈五类计数 | `eval_stack_seed.sh` 少断言一类，或任一类 0 行仍绿 ⇒ 红（**stub `docker` 跑真脚本**，不是读源码猜） |
+| ④ SKU 插入语句的关联条件与行值一致 | `WHERE c.color_name = …` 打错一字 ⇒ 真库插 0 行而 ② 仍绿（缺陷 2 的复发通道）⇒ 红并具名「商品 × 颜色」 |
+| ⑤ 金额链闭合 | 总额 ≠ Σ 明细小计 / 明细单价不在该商品 SKU 价集 / 有单无明细 / 已收 > 总额 ⇒ 各自具名红 |
+| ⑥ 评测栈五类计数 | `eval_stack_seed.sh` 少断言一类，或任一类 0 行仍绿 ⇒ 红（**stub `docker` 跑真脚本**，不是读源码猜） |
 
 **红证怎么取**（回退实现 ⇒ 本文件必红；恢复 ⇒ 绿）：见 PR body 的读数表；
 `_seed_sql.py` 的解析是纯函数，判据吃的是**磁盘上的真 seed**，注入即红。
@@ -44,6 +45,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from unit_ci_workflows._seed_sql import (  # noqa: E402
     literal,
+    parse_seed,
     read as read_seed,
     rows as seed_rows,
 )
@@ -129,7 +131,71 @@ def test_demo_seed_sku_matrix_fields_are_valid():
         f"{bad[:3]}")
 
 
-# ── ④ 金额链闭合（缺陷 3）─────────────────────────────────────────────
+# ── ④ SKU 插入语句的关联条件与行值一致（缺陷 2 的假绿出口）──────────────────
+def _relation_literal(statement: str, column: str) -> str | None:
+    """从 `… WHERE … AND c.<column> = '<值>' …` 取那个字面量（**纯字符串操作**）。
+
+    刻意不写正则：`tests/unit_ci_workflows/test_guard_parsing_is_comment_aware.py` 把
+    「带引号的捕获组」判成高危口径（注释 / docstring 里的假字面量会被当成真站点）。
+    取不到 ⇒ `None`，调用方 **fail-closed**（判不了 ≠ 通过）。
+    """
+    if "WHERE" not in statement:
+        return None
+    for segment in statement.split("WHERE", 1)[1].split(" AND "):
+        text = segment.strip()
+        prefix = f"c.{column}"
+        if not text.startswith(prefix):
+            continue
+        rest = text[len(prefix):].lstrip()
+        if not rest.startswith("="):
+            continue
+        value = rest[1:].strip()
+        if len(value) >= 2 and value.startswith("'") and value.endswith("'"):
+            return value[1:-1].replace("''", "'")
+        return None
+    return None
+
+
+def test_demo_seed_sku_insert_relations_match_row_values():
+    """SKU 行走 `FROM product_colors c` 的相关子查询 ⇒ **插 0 行也是静默的**。
+
+    缺陷 2 的复发通道：只把 `WHERE c.color_name = '<色名>'`（或 `c.product_id`）打错一个字，
+    真库里这一行**根本插不进去**（子查询无行，INSERT … SELECT 静默插 0 行），而 ② 仍从
+    SELECT 列表读到「该颜色有 SKU」⇒ 判据绿、演示库空。本判据把**三处**对齐：
+    SELECT 列表的行值 ⇄ WHERE 的关联条件 ⇄ `product_colors` 里真实声明的颜色。
+    """
+    sql = _demo()
+    declared = {(str(literal(c["product_id"])), str(literal(c["color_name"])))
+                for c in seed_rows(sql, "product_colors")}
+    assert declared, "fail-closed：demo-seed 解析不到 product_colors 行 —— 判不了，不得当通过"
+    blocks = [b for b in parse_seed(sql) if b["table"] == "product_skus"]
+    assert blocks, "fail-closed：demo-seed 解析不到 product_skus 语句 —— 判不了，不得当通过"
+    bad: list[str] = []
+    for block in blocks:
+        if block["literals"] is None:
+            bad.append("product_skus 出现未经本判据核对的写入形态（元组 VALUES）："
+                       f"{block['sql'][:90]}…")
+            continue
+        row = dict(zip(block["columns"], block["literals"]))
+        selected = (str(literal(row["product_id"])), str(literal(row["color_name"])))
+        who = f"商品 {selected[0]} / 颜色 {selected[1]}"
+        related = tuple(_relation_literal(block["sql"], column)
+                        for column in ("product_id", "color_name"))
+        if None in related:
+            bad.append(f"{who}：语句里没有 `c.product_id` / `c.color_name = '<字面量>'` "
+                       "关联条件 —— 判不了（fail-closed）")
+        elif related not in declared:
+            bad.append(f"{who}：WHERE 按「商品 {related[0]} × 颜色 {related[1]}」关联，"
+                       "但 product_colors 里没有这个颜色 ⇒ 真库插 0 行")
+        elif related != selected:
+            bad.append(f"{who}：SELECT 写「商品 {selected[0]} × 颜色 {selected[1]}」，"
+                       f"WHERE 却按「商品 {related[0]} × 颜色 {related[1]}」关联 ⇒ 真库插 0 行")
+    assert not bad, (
+        "SKU 插入语句的关联条件与行值不一致：静态判据仍读到「该颜色有 SKU」，真库里却是空的"
+        "（缺陷 2 的复发通道；issue #7583）：\n" + "\n".join(bad))
+
+
+# ── ⑤ 金额链闭合（缺陷 3）─────────────────────────────────────────────
 def test_demo_seed_every_order_has_items():
     sql = _demo()
     orders = {str(literal(o["id"])) for o in seed_rows(sql, "orders")}
@@ -185,7 +251,7 @@ def test_demo_seed_order_row_is_arithmetically_closed():
     assert not bad, "明细 / 订单金额算术不闭合：" + "；".join(bad)
 
 
-# ── ⑤ 评测栈种子的五类计数（缺陷 7）:真脚本 + 桩 docker ─────────────────
+# ── ⑥ 评测栈种子的五类计数（缺陷 7）:真脚本 + 桩 docker ─────────────────
 def _run_eval_seed(tmp_path: Path, counts: str) -> subprocess.CompletedProcess:
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir(exist_ok=True)
