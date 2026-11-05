@@ -492,6 +492,12 @@
       "guards": "**状态列写面**的族级元守卫（issue #6953 的 SW-100）：每张有 `status` 列的表 × 每个写它的入口（Service 成员 / mapper 手写 SQL / builder）必须登记在 `state_write_face_ledger.json`；违者判红（未登记即红 / 台账陈旧即红 / 裸字符串写状态列即红 / 每张状态表须声明合法集合来源）。现取 = 53 张表 / 134 条写点（Java 108 + SQL 26），不靠手抄清单。",
       "red_proof": "① 往真实 Service 里加一条未登记的状态写（例：`InboundOrderService` 加 `sw100InjectedWrite(InboundOrder)`）⇒ tests/unit_ci_workflows/test_state_write_face_metaguard.py::test_every_status_write_is_registered 红并具名该写点与文件:行；② 把 `order.setStatus(InboundOrder.STATUS_POSTED)` 改成裸字符串 ⇒ ::test_status_literals_have_a_single_source 红并具名；③ 把 `unregistered()` / `bare_literal_sites()` 摘掉 ⇒ ::test_detector_has_teeth 当场红（内建内存变异体）。",
       "owner": "#6953"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_waybill_p0_guards.py",
+      "guards": "物流取号 P0（issue #8698）的四类跨端形态：① 取号路径（waybill/**.java 剥注释后）不得出现任何订单状态写入口（取号 ≠ 发货）；② 设置域 logistics 的登记 / 面板挂载 / requiredCode 与写面端点权限码逐字一致；③ 生产承运商目录零过声明（P0 不接任何第三方）；④ 前端源码零承运商域名 / 零凭据键。每条都带内存注入式判别力自证（坏形态必红、干净语料不报）。",
+      "red_proof": "① 往 WaybillService 的 create 里加一行 orderMapper.updateById ⇒ test_waybill_package_has_no_order_status_write_entry 红并具名 WaybillService.java::OrderMapper；② 从 CONFIG_DOMAINS 删掉 logistics 域 ⇒ test_logistics_domain_is_registered_and_mounted 红；③ 把 CarrierCatalogue 的 sf 行 canCreate 改 true ⇒ test_production_catalogue_declares_no_capability 红并具名 sf；④ 往前端 src/lib/waybill.ts 塞承运商域名 ⇒ test_frontend_has_no_carrier_secret_or_direct_host 红。",
+      "owner": "#8698"
     }
   ]
 }

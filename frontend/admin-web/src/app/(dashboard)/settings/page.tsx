@@ -70,6 +70,8 @@ import { Button, PageHeader } from '@/components/ui'
 import { settingsApi, uploadApi, briefingApi, productionApi } from '@/lib/api'
 import { CalcCaliberPanel } from '@/components/settings/CalcCaliberPanel'
 import { RemnantItemSizesPanel } from '@/components/settings/RemnantItemSizesPanel'
+// 物流取号域面板（issue #8698 P0）：承运商注册表 + 租户级配置
+import LogisticsDomainPanel from '@/components/settings/LogisticsDomainPanel'
 import { ConfigReadinessBar } from '@/components/settings/ConfigReadinessBar'
 import ListLoadError from '@/components/common/ListLoadError'
 import ProcessingItemsPanel from '@/components/production-config/ProcessingItemsPanel'
@@ -477,6 +479,7 @@ export default function SettingsPage() {
             {activeDomain.key === 'remnant-sizes' && (
               <RemnantItemSizesPanel copy={REMNANT_PARAM_COPY} />
             )}
+            {activeDomain.key === 'logistics' && <LogisticsDomainPanel />}
             {activeDomain.key === 'enterprise' && <EnterpriseDomainPanel />}
             {activeDomain.key === 'ai' && <AiDomainPanel />}
             {activeDomain.key === 'notifications' && <NotificationsDomainPanel />}

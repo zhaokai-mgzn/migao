@@ -129,6 +129,11 @@
 --     knowledge_documents, knowledge_sync_history, rag_chunks,   ← V36 迁移 DROP
 --     quick_reply_templates
 --
+--
+--   ⚠️ 后续新增（本快照之后落库的表，同样不在本文件里）：
+--     tenant_logistics_configs
+--      物流取号**租户级配置**（V209，issue #8698 P0）。单行/租户，**缺行 = 全 manual**
+--      （今天的手填单号能力）；只存承运商选择，不存任何凭据。
 -- 即：拿它建库会**同时**缺表和多出已废弃的表 —— 不是"旧一点"，是错的。
 --
 -- ✅ 正确入口（单一事实源）：
