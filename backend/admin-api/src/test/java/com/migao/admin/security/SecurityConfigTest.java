@@ -125,6 +125,22 @@ class SecurityConfigTest {
     private com.migao.admin.mapper.CuttingHeightConfigMapper cuttingHeightConfigMapper;
 
     /**
+     * 物流取号（issue #8698）：{@code WaybillController} 依赖这两个服务。
+     * 本类的既有口径是「全上下文测试里，服务一律 {@code @MockBean}」⇒ 新增控制器必须同批登记，
+     * 否则本类 59 条用例会全部因 {@code UnsatisfiedDependencyException} 报 IllegalState（实测一次）。
+     */
+    @MockBean
+    private com.migao.admin.waybill.WaybillService waybillService;
+
+    /** 物流取号配置表的 Mapper：本上下文关了 MyBatis 自动配置 ⇒ 必须 {@code @MockBean} 顶替
+     *  （与 {@code CuttingHeightConfigMapper} 同款；不顶替会因缺 {@code sqlSessionFactory} 装配失败）。 */
+    @MockBean
+    private com.migao.admin.mapper.TenantLogisticsConfigMapper tenantLogisticsConfigMapper;
+
+    @MockBean
+    private com.migao.admin.waybill.TenantLogisticsConfigService tenantLogisticsConfigService;
+
+    /**
      * 工人档案服务（issue #4869）：新控制器 {@code AdminWorkerController} 的构造依赖
      * ⇒ 本上下文必须能装配它（本类对全部服务一律 {@code @MockBean}，与上面几条同款）。
      */

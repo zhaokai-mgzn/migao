@@ -5,6 +5,21 @@
 > 原因 = 单文件涨到 512KB 越过扫描上限，详见存档文件头与 issue #6404。
 > **后续条目继续在本文件 `## [Unreleased]
 
+### 发货页多了「取号」入口、设置里多了「物流取号」域：今天一律手填，且取号不等于发货（2026-11-05，issue #8698）
+
+- **改前**：发货页只有手填单号；「这家承运商能不能自动取号」在系统里没有任何落点，加一家承运商也无处配置。
+- **改后**：企业基础设置新增「**物流取号**」域（`/settings?domain=logistics`）—— 选发货默认承运商，并列出每家承运商的
+  取号能力；发货页多一个「**取号**」按钮，**按承运商能力位决定可用 / 禁用**，禁用时说清下一步（未接入 ⇒ 请手填单号）。
+- **P0 一家承运商都没接**（真实第三方是 P1/P1′，依赖账号与沙箱）：今天所有承运商都走手填，取号按钮一律禁用。
+  「支持多家」= 加一行配置而不是加一段流程；未接入的承运商自动退回手填，且**不产生任何外呼**。
+- **取号 ≠ 发货**：即便将来接入，取号成功也只回填运单号，订单**仍「待发货」**，必须人点「确认发货」；
+  现有发货端点一行未改（避免「未交件却已发货」）。
+- **前端不直连承运商**：前端只调本系统 `/api/admin/logistics/*`，产物里零承运商密钥与域名（grep 判据）。
+- 判据 = MC-211 ~ MC-215：`tests/unit_ci_workflows/test_waybill_p0_guards.py`、
+  `backend/admin-api/src/test/java/com/migao/admin/waybill/`（注册表 / 取号编排）、
+  `frontend/admin-web/tests/unit/lib/waybill.test.ts`、`frontend/admin-web/tests/unit/pages/ship-waybill-capability.test.tsx`、
+  `frontend/admin-web/tests/unit/pages/settings-logistics-domain.test.tsx`。
+
 ### 商家在 PC 上能看到「已打包」了：订单列表徽标与详情状态不再空白 /「暂无数据」（2026-11-05，issue #8686）
 
 - **改前**：工人在 H5 把订单推进到「已打包」（`packed`）后，商家在 PC 上看到的是一段**空白**状态（详情显示为空），

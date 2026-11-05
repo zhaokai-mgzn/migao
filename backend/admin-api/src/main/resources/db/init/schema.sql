@@ -1150,6 +1150,28 @@ CREATE TABLE IF NOT EXISTS cutting_height_configs (
 CREATE UNIQUE INDEX IF NOT EXISTS uk_cutting_height_configs_tenant
     ON cutting_height_configs (tenant_id)
     WHERE deleted = 0;
+-- 物流取号**租户级配置**（V209，issue #8698 P0）：单行/租户，**缺行 = 全 manual**（不做开租播种）。
+-- 只存承运商选择，**不存任何凭据**（凭据面口径见 docs/logistics-waybill-api-research.md §3-4）。
+CREATE TABLE IF NOT EXISTS tenant_logistics_configs (
+    id VARCHAR(64) PRIMARY KEY,
+    tenant_id BIGINT NOT NULL REFERENCES tenants(id),
+    carrier_code VARCHAR(64),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    deleted INTEGER NOT NULL DEFAULT 0
+);
+-- 租户级**单行**（部分唯一索引：软删行不占位）
+CREATE UNIQUE INDEX IF NOT EXISTS uk_tenant_logistics_configs_tenant
+    ON tenant_logistics_configs (tenant_id)
+    WHERE deleted = 0;
+COMMENT ON TABLE tenant_logistics_configs IS
+    '物流取号**租户级配置**（V209，issue #8698 P0）。单行/租户，**缺行 = 全 manual**'
+    '（不做开租播种；默认值唯一来源 = CarrierCatalogue.MANUAL_CODE）。'
+    '只存承运商选择，不存任何凭据（凭据面口径见 docs/logistics-waybill-api-research.md §3-4）。';
+COMMENT ON COLUMN tenant_logistics_configs.carrier_code IS
+    '承运商 code（CarrierCatalogue 的登记行，如 sf/zto/sja；manual = 手填）。'
+    'NULL/缺行 ⇒ 全 manual。写面白名单 = 注册表现取（未登记 ⇒ 422，不静默落库）。';
+
 COMMENT ON TABLE cutting_height_configs IS
     '裁高（定高）**租户级配置**（V140，母单 #5161）。单行/租户，**缺行 = 用默认种子**'
     '（CuttingHeightDefaults，逐字 = 壁达现场弹窗 7 项）—— 不做开租播种。'

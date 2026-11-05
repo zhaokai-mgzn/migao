@@ -202,7 +202,8 @@
     "V205__add_customer_external_id.sql": "sha256:9c804a0ea18a1fc5f73b59c43c5463a371c515a03f64bd28e2fcb265b98f9894",
     "V206__ensure_unique_keys_payment_qrcodes_and_roles.sql": "sha256:63d2cf40e246e085b5f6b32bc948184f7621542eab58ce4d5cefc65703c03c73",
     "V207__add_quality_reason_code.sql": "sha256:841c97473f5cdd5c1fc3f19cd5199c4a5e41824d94ad430425bddddf9ec5d3ef",
-    "schema.sql": "sha256:092a05f1941192abffffc79e1ee6b17acc4c45a5a564b8bca335955ef7d03090",
-    "V208__add_agent_batch_executor_lease.sql": "sha256:f5345e239a7f08a50d9315a3750f2268f336f95df2774070539447360fd2ce4d"
+    "schema.sql": "sha256:0054891c343649ef662c30ac0e48ff052f59394147ca25b109e37da261fcfa91",
+    "V208__add_agent_batch_executor_lease.sql": "sha256:f5345e239a7f08a50d9315a3750f2268f336f95df2774070539447360fd2ce4d",
+    "V209__create_tenant_logistics_configs.sql": "sha256:b752e39d7ea55a811b4a2926f5638b4f2747a085bbe4312b69483e9ec53791a0"
   }
 }

@@ -34,6 +34,8 @@ const EXPECTED_KEYS = [
   'craft-route',
   'cutting-height',
   'remnant-sizes',
+  // issue #8698 P0：物流取号（承运商注册表 + 租户级配置）。**加在这里 = 设置页左栏跟着出现该域**
+  'logistics',
   'enterprise',
   'ai',
   'notifications',
