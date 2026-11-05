@@ -1,0 +1,6 @@
+{
+  "id": "MC-241",
+  "pr": 8751,
+  "title": "OrderService 门面收尾第七批（issue #8681 的 P2-1e，部分交付）：实体实现搬家 7 个入口到 OrderEntityWriteService、跟进读写同址（1,539 → 1,141 行 / 公开面 12 → 6）",
+  "claimed_at": "2026-11-05"
+}
