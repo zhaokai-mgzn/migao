@@ -52,6 +52,12 @@ public class OrderController {
      */
     private final OrderLifecycleService orderLifecycleService;
 
+    /**
+     * 查询读面（issue #8681，P2-1e 第四批）：列表 / 详情（含数据范围收窄）的实现点在
+     * {@link com.migao.admin.service.OrderQueryService} ⇒ 直接依赖实现点，门面的同名转发已删除。
+     */
+    private final com.migao.admin.service.OrderQueryService orderQueryService;
+
     // ==================== 字面路径（无路径变量） ====================
 
     /**
@@ -82,7 +88,7 @@ public class OrderController {
         // 数据范围（issue #7372）：本人范围 ⇒ 只取自己创建的单据（null = 不收窄）
         String scopeOwnerId = com.migao.admin.security.DataScope.ownerFilter(
                 roleService.resolveDataScope(currentUserId()), currentUserId());
-        PageResponse<OrderListResponse> result = orderService.getOrderPage(page, size, status, keyword, followStatus, hasProcessing, startDate, endDate, orderId, receiver, productCode, productTitle, tenantId, userId, creator, scopeOwnerId);
+        PageResponse<OrderListResponse> result = orderQueryService.getOrderPage(page, size, status, keyword, followStatus, hasProcessing, startDate, endDate, orderId, receiver, productCode, productTitle, tenantId, userId, creator, scopeOwnerId);
         return ApiResponse.success(result);
     }
 
@@ -222,7 +228,7 @@ public class OrderController {
         // 数据范围（issue #7372）：范围外 ⇒ 与「不存在」同一个 404（不 403，不泄露存在性）
         String scopeOwnerId = com.migao.admin.security.DataScope.ownerFilter(
                 roleService.resolveDataScope(currentUserId()), currentUserId());
-        OrderDetailResponse order = orderService.getOrderById(id, scopeOwnerId);
+        OrderDetailResponse order = orderQueryService.getOrderById(id, scopeOwnerId);
         return ApiResponse.success(order);
     }
 
@@ -451,7 +457,7 @@ public class OrderController {
         // 数据范围（issue #7372）：改单前也要按范围放行 —— 范围外 = 不存在（同一个 404）
         String scopedOwner = com.migao.admin.security.DataScope.ownerFilter(
                 roleService.resolveDataScope(currentUserId()), currentUserId());
-        OrderDetailResponse orderDetail = orderService.getOrderById(id, scopedOwner);
+        OrderDetailResponse orderDetail = orderQueryService.getOrderById(id, scopedOwner);
         String orderStatus = orderDetail.getStatus();
         if (!OrderStatusTransitions.SHIPPED.equals(orderStatus)
                 && !OrderStatusTransitions.CONFIRMED.equals(orderStatus)

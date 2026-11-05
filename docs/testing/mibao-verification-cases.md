@@ -4245,7 +4245,7 @@
 ```
 溯源: 2026-10-31 新增（issue #8295）：两步确认，避免误写 ｜ tags: ui, preview
 
-## 杂项域（236 case）
+## 杂项域（237 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -7794,6 +7794,18 @@
 跳过: [backend-contract] 纯结构 + 纯函数判据（Agent 常量 AST 构造式 / 前端展示与徽标映射 / 本体词表），零网络、零 LLM、不起真库；不进 agent-eval 冒烟
 ```
 溯源: 2026-11-05 新增（issue #8686，按 issue 评论的裁定落：动作面保持排除 + 把理由变成判据；显示面修「已打包」+ 兜底；本体显式登记不同源）。 依据（逐字）= `backend/admin-api/src/main/java/com/migao/admin/service/OrderShipmentService.java` 打包方法 javadoc 「口径（用户 2026-09-26 裁定「打包与发货都是工人的动作」）：packed 由工人在 H5 推进」。 取号 MC-207（现取 origin/main 的 misc.yml 最高 MC-206、claims 目录到 8688-MC-206 ⇒ 207 未被占用）。 交付 = ① order_status.py 三轴登记 + 收敛条件（动作面 6 / DB 全集 7 / ontology 6）② 显示面 displayOrderStatus('packed') 与 orderStatusChipFor('packed') 补「已打包」+ 未知状态兜底 ③ ontology 两侧登记不同源 ④ 判据 test_order_status_axis_separation.py（5 条）+ 两个前端测试文件扩展（11 条）。 **动作面零放开**：四个工具 schema 枚举仍 6 个（判据 1 现取断言 + 生成物差集 == {packed}）。 ｜ tags: order-status, packed, display-only, action-freeze, ontology-divergence, red-proof, backend-contract
+
+### MC-211. OrderService 门面收尾第四批（issue #8681 的 P2-1e，部分交付）：订单列表与两处详情（含数据范围收窄）三个查询入口的调用方改直连 OrderQueryService（含建单服务回读一处），门面 1,702 行降到 1,655 行并删掉这 3 个转发；查询侧驱动方从 8 个测试文件全数迁到实现点（断言零改动），并把退休守护扩成「全 test 树零处经门面驱动」的驱动面判据 🔵
+```
+你: 商家端照常按状态 / 关键词 / 制单人筛选订单列表并按角色数据范围收窄详情（范围外与不存在回同一个 404）；下单成功后返回的订单详情与拆分前逐字一致，HTTP 路径 / 入参 / 响应不变
+数据: 判据 1·🔴 退休面（这 3 个转发不许回来）：门面源码里不许再有列表查询 / 单参详情 / 带范围详情三个方法的声明（把任一转发加回门面 ⇒ 具名红），且全部 main 源码里零处「经门面变量调用这三个方法」（谁把调用方改回门面 ⇒ 具名红）。锚点取「返回类型 + 方法名 + 左括号」以覆盖跨行签名，且两个详情重载共用同一锚点（任一重载回来都会命中）。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/OrderFacadeForwarderRetirementTest.java
+数据: 判据 2·🔴 接线面两侧夹住（防恒绿）：实现点 OrderQueryService 必须仍声明这三个方法，且全部具名消费方逐字调用实现点 —— 订单控制器的列表与两处详情、建单服务的回读（第四批新增的第二个消费方）。消费方改回门面或方法被改名 ⇒ 具名红；同一条判据内含判别力自证：内存里把跨行声明塞回门面 / 把带范围的重载塞回门面 ⇒ 谓词各自判真，注释里的同名文本不算声明。执行点 = 同判据 1 的判据文件
+数据: 判据 3·🔴 驱动面扩到全 test 树（第四批新增）：src/test 全树的 Java 文件里零处经门面驱动列表查询 / 我的订单 / 详情三个入口，且同时认两种写法 —— 直接调用 与 验证门面交互（后者同样是让门面入口继续被钉住的原因）；扫描面自带非空自证（扫到的文件数必须够大，路径漂移即红）。生命周期族**有意不在**本清单内：它们仍有接线 / 快照判据故意经门面驱动，要等那几族一并收口时才提上来。执行点 = 同判据 1 的判据文件
+数据: 判据 4·🔴 改直测的实现点判据（门面接线判据失去对象时不许删、不许恒绿）：列表读面直测三条安全 / 语义条件是否真的进了查询（服务端角色范围落 created_by 精确匹配、C 端隔离落 user_id 精确匹配、制单人落 created_by_name 模糊匹配），并有反向对照（三者缺省时条件一个都不许出现，防「不限范围」被静默收窄）；单参详情直测 404 出口与读得到的反向对照（防「永远 404」的恒绿）；带范围详情直测「范围外与不存在同一个 404」（不泄露存在性）、范围内的单读得到、范围缺省时不收窄。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/OrderQueryServiceTest.java
+数据: 判据 5·🔴 行为 diff = 0 的承载面未动：OrderServiceTest 的 152 条行为判据一字未改且全绿；被迁走的三个方法实现体逐字留在实现点（本批不修改 OrderQueryService 一行）；不新增 / 不移除任何事务注解（本批迁的都是读面，本来就没有事务注解）；建单服务只把回读的接收者从门面换成实现点（同一份协作者、同一条调用链）。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/OrderServiceTest.java 与 tests/unit_ci_workflows/test_loc_ratchet.py
+跳过: [backend-contract] Java 侧调用方迁移 + 门面转发退休（零 LLM / 零外网 / 零前端可见面），由 JUnit 判据与 pytest 棘轮判据验证，无 agent 行为面，不进入 agent-eval 冒烟
+```
+溯源: 2026-11-05 新增（issue #8681 的 P2-1e 第四批，**部分交付**：不写关闭关键词）。现取读数：`git show origin/main:backend/admin-api/src/main/java/com/migao/admin/service/OrderService.java | wc -l` = 1,702（PR #8689 合并后的基线，origin/main = e2e02af37）。本批按上一批给的逐条清单执行第 1 档：列表查询 + 单参详情 + 带范围详情三个转发的调用方全部改直连实现点 —— 订单控制器两处详情与列表、建单服务创建后的回读（后者是「经 support 形参调门面」那一处，改成构造注入 OrderQueryService，单向依赖无环）；门面 1,702 → 1,655（净 −47，0 行新增）；同时把查询侧驱动方从 8 个测试文件（32 个调用点）迁到门面自己懒构造的那一份实现点，断言一个字未改；门面里三条委托判据按上一批范式改直测实现点（不删、不恒绿）。⚠️ 有意不搬：applyRollAllocation（被 OrderRollAllocationAuthorityTest 钉在门面）、batchStock 访问器（取消路径在用），两者一字未动。⚠️ 本批**不做**生命周期族（章节 3）与实体实现搬家（章节 4）—— 生命周期族 3 个接线 / 快照判据的改写要连带迁 67 个调用点，单独一批才说得清。红证 = 三次单变量注入逐条实跑并逐字节还原（塞回转发 + 把控制器与建单服务的调用改回门面 ⇒ 退休面 4 条红；把某个测试文件的驱动改回门面 ⇒ 驱动面 1 条具名红；只加注释写门面驱动 ⇒ 不红，负控证明剥注释扫描有效）。全量读数见 PR body。 ｜ tags: refactor, order-service, facade-retirement, caller-migration, query-family, ratchet
 
 ## 商家入驻域（7 case）
 
@@ -15319,8 +15331,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：1038（活跃 162，跳过 876）
-- tier 分布：smoke 15 / normal 961 / adversarial 33
+- 用例总数：1039（活跃 162，跳过 877）
+- tier 分布：smoke 15 / normal 962 / adversarial 33
 - 售后域：16
 - Agent 核心域：13
 - API 层域：21
@@ -15336,7 +15348,7 @@
 - 人事域：13
 - 知识问答域：9
 - 客户主数据迁移域：10
-- 杂项域：236
+- 杂项域：237
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：76
@@ -15640,6 +15652,7 @@
 - MC-209: 任何入库文件都不许含合并冲突标记（跨语言的类级判据：YAML 会 ScannerError、JSON 会 JSONDecodeError、代码有时能编译通过）
 - MC-208: demo-seed 的 SKU 插入语句必须三处一致：SELECT 行值 = WHERE 关联条件 = product_colors 已声明颜色（issue #7583 缺陷 2 的假绿出口）
 - MC-207: 订单状态 packed（已打包）三轴分离（issue #8686）：动作面（Agent 四个工具 schema 枚举）保持排除、显示面（PC 订单列表徽标 + 详情/状态展示）补「已打包」与未知状态兜底、本体 order.status 显式登记「6 个 / 无 packed / 暂不同源」+ 收敛条件；依据 = 用户 2026-09-26 裁定「打包与发货都是工人的动作」
+- MC-211: OrderService 门面收尾第四批（issue #8681 的 P2-1e，部分交付）：订单列表与两处详情（含数据范围收窄）三个查询入口的调用方改直连 OrderQueryService（含建单服务回读一处），门面 1,702 行降到 1,655 行并删掉这 3 个转发；查询侧驱动方从 8 个测试文件全数迁到实现点（断言零改动），并把退休守护扩成「全 test 树零处经门面驱动」的驱动面判据
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）

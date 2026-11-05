@@ -78,6 +78,8 @@ class PaginationParamGateEndpointTest extends BaseControllerTest {
     @Mock private OrderShipmentService orderShipmentService;
     @Mock private StockLedgerService stockLedgerService;
     @Mock private NotificationService notificationService;
+    /** 查询族的实现点（issue #8681，P2-1e 第四批）：控制器直接依赖实现点。 */
+    @Mock private com.migao.admin.service.OrderQueryService orderQueryService;
 
     private OrderController orderController;
     private StockLedgerController stockLedgerController;
@@ -87,7 +89,7 @@ class PaginationParamGateEndpointTest extends BaseControllerTest {
     void setUp() {
         super.baseSetUp();
         orderController = new OrderController(orderService, roleService, orderLogisticsService, orderShipmentService,
-                null);
+                null, orderQueryService);
         stockLedgerController = new StockLedgerController(stockLedgerService);
         notificationController = new NotificationController(notificationService);
         mockMvc = withGate();
@@ -115,7 +117,7 @@ class PaginationParamGateEndpointTest extends BaseControllerTest {
     }
 
     private void stubEmptyPages() {
-        when(orderService.getOrderPage(anyLong(), anyLong(), any(), any(), any(), any(), any(), any(),
+        when(orderQueryService.getOrderPage(anyLong(), anyLong(), any(), any(), any(), any(), any(), any(),
                 any(), any(), any(), any(), any(), any(), any(), any())).thenReturn(PageResponse.of(0L, 1L, 20L, List.of()));
         when(stockLedgerService.getLedgerPage(any(), any(), any(), any(), anyLong(), anyLong()))
                 .thenReturn(PageResponse.of(0L, 1L, 20L, List.of()));
@@ -165,7 +167,7 @@ class PaginationParamGateEndpointTest extends BaseControllerTest {
         mockMvc.perform(get("/api/admin/orders").param("page", "-1").param("size", "20"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true));
-        verify(orderService).getOrderPage(anyLong(), anyLong(), any(), any(), any(), any(), any(), any(),
+        verify(orderQueryService).getOrderPage(anyLong(), anyLong(), any(), any(), any(), any(), any(), any(),
                 any(), any(), any(), any(), any(), any(), any(), any());
     }
 
@@ -189,7 +191,7 @@ class PaginationParamGateEndpointTest extends BaseControllerTest {
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data.total").value(0))
                 .andExpect(jsonPath("$.data.size").value(20));
-        verify(orderService).getOrderPage(anyLong(), anyLong(), any(), any(), any(), any(), any(), any(),
+        verify(orderQueryService).getOrderPage(anyLong(), anyLong(), any(), any(), any(), any(), any(), any(),
                 any(), any(), any(), any(), any(), any(), any(), any());
     }
 
@@ -206,7 +208,7 @@ class PaginationParamGateEndpointTest extends BaseControllerTest {
     void withoutPagingParams_stillReturns200() throws Exception {
         stubEmptyPages();
         mockMvc.perform(get("/api/admin/orders")).andExpect(status().isOk());
-        verify(orderService).getOrderPage(anyLong(), anyLong(), any(), any(), any(), any(), any(), any(),
+        verify(orderQueryService).getOrderPage(anyLong(), anyLong(), any(), any(), any(), any(), any(), any(),
                 any(), any(), any(), any(), any(), any(), any(), any());
     }
 
@@ -228,12 +230,13 @@ class PaginationParamGateEndpointTest extends BaseControllerTest {
                 .andExpect(status().isOk());
         ungated.perform(get("/api/admin/orders").param("page", "1").param("size", "abc"))
                 .andExpect(status().isBadRequest());
-        // 清掉上面几次调用（无闸路径**会**打到 service —— 这正是修前的行为）
-        clearInvocations(orderService);
+        // 清掉上面几次调用（无闸路径**会**打到 service —— 这正是修前的行为）。
+        // 第四批（issue #8681）：列表读面的实现点改为直连 ⇒ 两次都要清，否则反向判据会被上面几条喂红。
+        clearInvocations(orderService, orderQueryService);
         // 反向：有闸装配下同一请求是 400，且 service 零调用
         mockMvc.perform(get("/api/admin/orders").param("page", "1").param("size", "-5"))
                 .andExpect(status().isBadRequest());
-        verify(orderService, never()).getOrderPage(anyLong(), anyLong(), any(), any(), any(), any(), any(),
+        verify(orderQueryService, never()).getOrderPage(anyLong(), anyLong(), any(), any(), any(), any(), any(),
                 any(), any(), any(), any(), any(), any(), any(), any(), any());
     }
 

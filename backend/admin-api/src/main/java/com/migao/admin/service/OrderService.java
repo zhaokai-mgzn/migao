@@ -271,7 +271,7 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         if (service == null) {
             service = new OrderCreationService(orderMapper, productMapper, productSkuMapper,
                     customerService, userService, notificationService, clientRequestIdService,
-                    orderPricingService, approvalService);
+                    orderPricingService, approvalService, queryService());
             this.orderCreationService = service;
         }
         return service;
@@ -395,29 +395,6 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
             OrderStatusTransitions.ORDER_STATUS_LABELS;
 
     /**
-     * 分页查询订单列表
-     *
-     * @param page            页码
-     * @param size            每页大小
-     * @param status          订单状态
-     * @param keyword         搜索关键词（客户姓名/电话/订单号）
-     * @param followStatus    跟进状态
-     * @param hasProcessing   是否含加工项（true=只查含加工项，false=只查不含加工项，null=不过滤）
-     * @param startDate       开始日期（YYYY-MM-DD 格式）
-     * @param endDate         结束日期（YYYY-MM-DD 格式）
-     * @param tenantId        租户ID
-     * @param userId          下单用户ID（C 端数据隔离：非空时强制只查该用户的订单）
-     * @param creator         制单人姓名（issue #5835：非空时按 {@code created_by_name} **模糊**匹配）
-     * @return 分页响应
-     */
-    public PageResponse<OrderListResponse> getOrderPage(long page, long size, String status, String keyword, String followStatus, Boolean hasProcessing, String startDate, String endDate, String orderId, String receiver, String productCode, String productTitle, Long tenantId, String userId, String creator, String dataScopeOwnerId) {
-        // 门面委托（issue #8191，P2-1a）：查询族实现点在 OrderQueryService，调用方零改动。
-        return queryService().getOrderPage(page, size, status, keyword, followStatus, hasProcessing, startDate,
-                endDate, orderId, receiver, productCode, productTitle, tenantId, userId, creator,
-                dataScopeOwnerId);
-    }
-
-    /**
      * 手机号回填绑定：把「该手机号下 user_id 为空的本租户订单」绑定到指定用户。
      *
      * 场景：小程序客户授权绑定手机号后，商户代录/历史订单（仅存 customer_phone、
@@ -447,30 +424,6 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         log.info("[bind-orders] 手机号回填完成: tenantId={}, userId={}, phone={}****, bound={}",
                 tenantId, userId, phone.substring(0, 3), updated);
         return updated;
-    }
-
-    /**
-     * 根据ID查询订单详情（含订单明细和物流信息）
-     *
-     * @param id 订单ID
-     * @return 订单详情响应
-     */
-    public OrderDetailResponse getOrderById(String id) {
-        // 门面委托（issue #8191，P2-1a）：查询族实现点在 OrderQueryService，调用方零改动。
-        return queryService().getOrderById(id);
-    }
-
-    /**
-     * 详情读面 + **数据范围**（issue #7372 段 1）。
-     *
-     * <p>范围外 ⇒ 与「不存在」**同一个 404**（不 403）：403 会告诉调用方「这个 id 存在，只是你看不到」，
-     * 那本身就是泄露。判据 = {@code DataScopeTest#outOfScopeIsIndistinguishableFromMissing}。</p>
-     *
-     * @param dataScopeOwnerId 非 null ⇒ 只允许读该用户创建的单据
-     */
-    public OrderDetailResponse getOrderById(String id, String dataScopeOwnerId) {
-        // 门面委托（issue #8191，P2-1a）：查询族实现点在 OrderQueryService，调用方零改动。
-        return queryService().getOrderById(id, dataScopeOwnerId);
     }
 
     /**
@@ -918,7 +871,7 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
                 contentSnapshot(orderMapper.selectById(order.getId()), loadOrderItems(order.getId(), tenantId)));
         log.info("订单内容已修改: id={}, orderNo={}, totalAmount={}, 明细 {} 行",
                 order.getId(), order.getOrderNo(), totalAmount, items.size());
-        return getOrderById(order.getId());
+        return queryService().getOrderById(order.getId());
     }
 
     /**
@@ -1600,19 +1553,19 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
                     throw BusinessException.validationError("status 不能为空");
                 }
                 updateOrderStatus(resolvedId, request.getStatus());
-                yield getOrderById(resolvedId);
+                yield queryService().getOrderById(resolvedId);
             }
             case "confirm_payment" -> {
                 confirmPayment(resolvedId);
-                yield getOrderById(resolvedId);
+                yield queryService().getOrderById(resolvedId);
             }
             case "cancel" -> {
                 cancelOrder(resolvedId, request.getCancelReason());
-                yield getOrderById(resolvedId);
+                yield queryService().getOrderById(resolvedId);
             }
             case "refund" -> {
                 refundOrder(resolvedId, request.getRefundAmount(), request.getRefundReason());
-                yield getOrderById(resolvedId);
+                yield queryService().getOrderById(resolvedId);
             }
             case "update_logistics" -> {
                 if (!StringUtils.hasText(request.getLogisticsCompany())) {
@@ -1625,7 +1578,7 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
                         request.getTrackingNumber().trim(), null, request.getLogisticsType());
                 // 发货语义：记录物流后将订单流转为 shipped（与契约 order_manage(update_logistics) 可发货一致）
                 lifecycleService().shipOrderIfApplicable(resolvedId);
-                yield getOrderById(resolvedId);
+                yield queryService().getOrderById(resolvedId);
             }
             default -> throw BusinessException.validationError(
                     "不支持的操作类型: " + action + "，可选: update_status/update_logistics/confirm_payment/cancel/refund");
