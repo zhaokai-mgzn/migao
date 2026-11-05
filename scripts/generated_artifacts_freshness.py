@@ -162,8 +162,28 @@ class GenerationError(RuntimeError):
     """生成腿失败。调用方**不许**把它降级成 skip/return 0（那正是「没跑长得像通过」）。"""
 
 
-#: 生成腿的**暂存目录**（渲染先落这里，再逐文件原子替换到正式路径；`.gitignore` 已覆盖）。
+#: 生成腿的**暂存目录**（渲染先落这里，再逐文件原子替换到正式路径）。
+#:
+#: 🔴 **2026-11-05 修正：它必须落在仓库**外面**（改前是 `repo / STAGING_NAME`，即仓库根下的
+#: `.gen-artifacts-staging/`）。实测后果（PR #8719 两轮红在同一处，而同一份代码单跑全绿）：
+#: 任何 `REPO_ROOT.rglob("*.py")` 的判据都会扫进这个**生成过程中的临时物**，而遍历与
+#: `rmtree()` / `os.replace()` 并发时文件**恰好被移走** ⇒
+#: `FileNotFoundError: …/.gen-artifacts-staging/eval_cases/ontology.py`
+#: （症状落在 `test_automerge_bot_safe_path` 上，病因在生成腿 —— 又是"症状与病因隔三层"）。
+#:
+#: 为什么放在 `repo.parent`（仓库的**上级目录**）而不是 `tempfile.gettempdir()`：
+#: `os.replace()` 只在**同一文件系统**内原子；`/tmp` 在有些环境上是另一个挂载点 ⇒ 会退化成
+#: 「先删后拷」的两步写（正是本函数要消除的那个中间态）。`repo.parent` 与仓库同盘，确定性成立。
 STAGING_NAME = ".gen-artifacts-staging"
+
+
+def staging_dir(repo: Path) -> Path:
+    """暂存目录的**唯一取值口**：仓库外、同文件系统。
+
+    ⚠️ 判据 `test_staging_area_is_outside_the_repo`（本文件同行新增）钉住「它不在 `repo` 里面」——
+    改回 `repo / STAGING_NAME` ⇒ 那条判据当场红。
+    """
+    return repo.parent / f"{STAGING_NAME}-{repo.name}"
 
 
 def _out_paths(repo: Path) -> dict[str, Path]:
@@ -209,7 +229,7 @@ def ensure_generated(repo: Path, *, python: str | None = None, cases_rel: str = 
         raise GenerationError(f"渲染器缺失：{renderer_rel}（生成腿无法执行 —— 这不是「产物可选」）")
     if not cases_dir.is_dir():
         raise GenerationError(f"用例库缺失：{cases_rel}/")
-    staging = repo / STAGING_NAME
+    staging = staging_dir(repo)
     with _generation_lock(repo):
         # 锁内做全套：清暂存区 → 渲染到暂存区 → 原子替换 → 清暂存区。
         # `os.replace` 在**同一文件系统**内是原子的 ⇒ 并发读者永远看到**完整的旧版或完整的新版**

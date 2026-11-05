@@ -1460,3 +1460,73 @@ class TestWorkflowStructureAndHardConstraints:
         run = run_guard(tmp_path, [wf_file(old="v8", new="v8")], title=WF_TITLE)
         assert not run.armed
         assert run.code() == "NO_TAG_CHANGE"
+
+
+def test_staging_area_is_outside_the_repo():
+    """🔴 生成腿的**暂存区必须在仓库外**（2026-11-05 实测竞态，`# case_ids: MC-227`）。
+
+    ## 病（实测，不是推演）
+
+    PR #8719 的 `ci workflow helper unit tests` **两轮红在同一处**，而同一份代码单跑全绿：
+
+    ```
+    FAILED …::test_no_generated_artifact_defines_the_yardstick
+      FileNotFoundError: …/.gen-artifacts-staging/eval_cases/ontology.py
+    ```
+
+    病根不在那个判据：本文件（以及仓里其它几处）用 `REPO_ROOT.rglob("*.py")` 扫**整仓**，
+    而 `generated_artifacts_freshness.py` 的暂存区**当时就在仓库根下**（`.gen-artifacts-staging/`）。
+    ⇒ 遍历与 `rmtree()` / `os.replace()` 并发时，文件在 `rglob` 产出路径之后、`read_text()` 之前被移走。
+
+    ## 判据（三条，缺一条就还是"看起来稳"）
+
+    ① 暂存目录**不在** `repo` 里面（本判据的主断言）；
+    ② 它与 `repo` **同一个文件系统**（`os.replace` 只在同盘原子 —— 换到 `/tmp` 会退化成两步写）；
+    ③ **扫描面自证会红**：在仓库内造一个 `.gen-artifacts-staging/` 并放个 `.py` ⇒ 本判据必须红
+       （证明它不是"恒绿"）。
+    """
+    import importlib.util
+    import os
+    import sys
+
+    spec = importlib.util.spec_from_file_location(
+        "generated_artifacts_freshness", REPO_ROOT / "scripts" / "generated_artifacts_freshness.py")
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules["generated_artifacts_freshness"] = mod
+    try:
+        spec.loader.exec_module(mod)
+    finally:
+        sys.modules.pop("generated_artifacts_freshness", None)
+
+    staging = mod.staging_dir(REPO_ROOT)
+    # ① 不在仓库里
+    inside = []
+    try:
+        staging.relative_to(REPO_ROOT)
+        inside.append(f"暂存区 {staging} 在仓库 {REPO_ROOT} 里面 ⇒ 整仓 rglob 会扫到生成过程的临时物")
+    except ValueError:
+        pass
+    assert inside == [], "\n".join(inside)
+    # ② 同文件系统（`os.replace` 原子性前提）
+    assert os.stat(staging.parent).st_dev == os.stat(REPO_ROOT).st_dev, (
+        f"暂存区父目录 {staging.parent} 与仓库不在同一设备 ⇒ os.replace 会退化成两步写"
+    )
+    # ③ 判别力自证：仓库内**造**一个同名目录 ⇒ 必须被 ① 检出
+    fake = REPO_ROOT / mod.STAGING_NAME
+    created = False
+    try:
+        fake.mkdir(exist_ok=True)
+        created = True
+        fake_inside = []
+        try:
+            fake.relative_to(REPO_ROOT)
+            fake_inside.append("x")
+        except ValueError:
+            pass
+        assert fake_inside == ["x"], "在仓库内造的暂存目录竟然被判成'在仓库外' ⇒ 判据 ① 的判别力失效"
+    finally:
+        if created:
+            try:
+                fake.rmdir()
+            except OSError:
+                pass
