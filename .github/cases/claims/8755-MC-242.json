@@ -1,0 +1,6 @@
+{
+  "id": "MC-242",
+  "pr": 8755,
+  "title": "OrderService 门面收尾第八批（issue #8681 的 P2-1e，部分交付）：Agent BFF 收口 —— createOrderForAgent 转发退休 + updateOrderForAgent 编排搬进 OrderAgentFacade + restoreStockForReturn 退休（1,142 → 1,065 行 / 公开面 6 → 3）",
+  "claimed_at": "2026-11-05"
+}
