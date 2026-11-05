@@ -503,6 +503,30 @@ def _capability_boundary(skill_name: str) -> str:
 # re-export）。`prepare_turn` 仍按 `_base.create_skill_registry` 取值 ⇒ patch 接缝与调用语义不变。
 
 
+#: 选工具小抄段首标记（issue #8176）。与 `_CAPABILITY_INDEX_MARKER` / `_CAPABILITY_BOUNDARY_MARKER`
+#: 同族但**不同物**：索引答「哪个域有哪些写工具」、边界答「能办什么 / 不能办什么」，
+#: 小抄答「商家这么说时该点哪把工具、别拿它去做什么」。
+_CHEATSHEET_MARKER = "【选工具小抄】"
+
+
+def _tool_cheatsheet(skill_name: str) -> str:
+    """选工具小抄段（**只给 mibao**；C 端提示词逐字节不变，与 Layer 2.7 同一道 persona 门控）。
+
+    真值分工（issue #8176 的口径，不得改）：能力 = 工具注册表；商家叫法 = 本体 objects；
+    「不该用 A 做 B」= 工具 `description` 的 `【不要用于】` 段。渲染器在
+    `app/graph/skills/cheatsheet.py`，本函数只做 persona 门控与常量漂移自证。
+    """
+    cfg = _skill_config(skill_name)
+    if cfg is None or "mibao" not in set(cfg.system_prompts or {}):
+        return ""
+    from app.graph.skills.cheatsheet import MARKER, render_cheatsheet
+
+    text = render_cheatsheet(skill_name)
+    # 两处常量漂移会让「段在不在」被判错（测试也抓不到的那类静默失效）⇒ 就地自证。
+    assert text.startswith(MARKER) and MARKER == _CHEATSHEET_MARKER
+    return text
+
+
 def _sanitize_messages_for_text_path(messages):
     """清理历史消息中的 image_url 内容块，避免文本模型收到无法处理的多模态内容。
 
@@ -731,6 +755,12 @@ def _build_system_prompt(skill_name: str, inline_prompt: str = "",
     capability_boundary = _capability_boundary(skill_name)
     if capability_boundary:
         parts.append(capability_boundary)
+
+    # Layer 2.8: 选工具小抄（issue #8176）—— 按本轮 skill 的声明面从**工具注册表 + 本体**投影，
+    # 替掉原先手抄在 9 处的「场景 → 工具」速查表（#7291 同族：手写的能力声明必与真值漂移）。
+    cheatsheet = _tool_cheatsheet(skill_name)
+    if cheatsheet:
+        parts.append(cheatsheet)
 
     # Layer 3: 领域 Prompt
     domain = _read_cached(_os.path.join(_ref_dir, "prompts", f"{skill_name}.md"))

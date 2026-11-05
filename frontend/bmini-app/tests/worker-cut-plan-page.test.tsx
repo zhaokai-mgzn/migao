@@ -1,4 +1,4 @@
-// case_ids: MC-222
+// case_ids: MC-226
 /**
  * 工人端**精裁清单**页判据（issue #7813 P2b；页面 = `src/pages/worker/cut-plan/index.tsx`）。
  *

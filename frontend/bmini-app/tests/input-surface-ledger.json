@@ -112,7 +112,7 @@
       "className": "worker-read__input",
       "label": "工人端读面共享件「输码」输入框（裁高计算 / 精裁清单 / 质检记录三页共用）",
       "case_ids": [
-        "MC-222"
+        "MC-226"
       ]
     }
   ]

@@ -137,4 +137,10 @@
 {"id":"1793843198.11049.30992","ts":"2026-11-05T01:46:39Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/8681c-facade4","why":"--allow-package-heavy（命令行显式）"}
 {"id":"1793841962.39334.15141","ts":"2026-11-05T01:26:07Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/8698-waybill","why":"--allow-package-heavy（命令行显式）"}
 {"id":"1793844381.7245.3519","ts":"2026-11-05T02:06:21Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/8698-waybill","why":"--allow-package-heavy（命令行显式）"}
-{"id":"1793855765.70636.10245","ts":"2026-11-05T05:16:05Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/7813-p2b","why":"--allow-package-heavy（命令行显式）"}
+{"id":"1793850851.5226.10405","ts":"2026-11-05T03:54:12Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/8176-cheatsheet","why":"--allow-package-heavy（命令行显式）"}
+{"id":"1793851152.15340.7030","ts":"2026-11-05T03:59:12Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/8176-cheatsheet","why":"--allow-package-heavy（命令行显式）"}
+{"id":"1793851415.19779.13258","ts":"2026-11-05T04:03:35Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/8176-cheatsheet","why":"--allow-package-heavy（命令行显式）"}
+{"id":"1793851958.36478.14856","ts":"2026-11-05T04:12:38Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/8176-cheatsheet","why":"--allow-package-heavy（命令行显式）"}
+{"id":"1793852282.44526.17221","ts":"2026-11-05T04:18:02Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/8176-cheatsheet","why":"--allow-package-heavy（命令行显式）"}
+{"id":"1793853733.61058.11396","ts":"2026-11-05T04:42:13Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/8176-cheatsheet","why":"--allow-package-heavy（命令行显式）"}
+{"id":"1793854907.54930.21754","ts":"2026-11-05T05:01:47Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/8176-cheatsheet","why":"--allow-package-heavy（命令行显式）"}

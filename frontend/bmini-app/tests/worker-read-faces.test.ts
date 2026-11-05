@@ -1,4 +1,4 @@
-// case_ids: MC-222
+// case_ids: MC-226
 /**
  * P2b 三个**读面**的判据（issue #7813；实现 = `src/utils/workerReadFaces.ts`）。
  *

@@ -144,6 +144,7 @@ class ProductImageGenerateTool(BaseTool):
         "商家要换主图请在「商品管理」里自行上传。"
         "【文案】本工具不写任何营销文案；要做海报/宣传图（带标题与卖点）请用 marketing_poster。"
         "【标注】READONLY"
+        "【不要用于】营销海报（用 marketing_poster）；商品改名改价（用 product_update）"
     )
 
     # 与 `GET /api/admin/products/{id}` 的读码逐字同码（与 product_detail / marketing_poster 同族）。

@@ -21,6 +21,16 @@
 - 判据 = MC-222：`frontend/bmini-app/tests/worker-read-faces.test.ts`、
   `frontend/bmini-app/tests/worker-cut-calc-page.test.tsx`、`frontend/bmini-app/tests/worker-cut-plan-page.test.tsx`、
   `frontend/bmini-app/tests/worker-quality-page.test.tsx`、`frontend/bmini-app/tests/report-state.test.ts`。
+### 黄金策的「选工具」口径改由工具注册表 + 本体现算：10 处手写速查表退场，选错工具不再靠记性（2026-11-05，issue #8176）
+
+- **改前**：「商家这么说 → 用哪把工具 / 别拿它做什么」手抄在 10 处（6 个领域 prompt 的「场景 / 工具」表 + 财务规则表 + 兜底列表 + 两处内联 prompt），
+  与工具真值必然漂移（同族实证 #7291：10 处手写边界声明里 9 处与真值相反）。
+- **改后**：新增 `app/graph/skills/cheatsheet.py`，按**本轮 skill 的声明面**从**工具注册表**（工具名 / 入参 / 只读性）+ **工具元数据的「不要用于」** + **本体**（商家叫法 / 对象关系）现算，
+  作为 system prompt 的一段（「商家这么说→用哪把（✗ = 别拿它做这些）」）；工具一变文案自动跟随，手写表全部删除。
+- **口径分工**（不许改）：能做什么只认工具注册表；商家怎么叫它只认本体 objects；不该用 A 做 B 只认工具元数据。**不从本体推能力**（schema 的动作段已于 #8172 出库）。
+- **覆盖面**：30 把工具补齐「不要用于」元数据（订单 / 加工单 / 加工项 / 财务 / 商品五族 + 员工 / 设置 / 会话 / 售后）。
+- 判据 = MC-221：`backend/ai-agent-service/tests/test_tool_cheatsheet.py`（双向一致 / 删手写规则后负例仍绿 / 字符数 / 渲染静默跳过的红证 / 渲染确定性 / 扫描面非空）。
+
 
 ### 发货页多了「取号」入口、设置里多了「物流取号」域：今天一律手填，且取号不等于发货（2026-11-05，issue #8698）
 

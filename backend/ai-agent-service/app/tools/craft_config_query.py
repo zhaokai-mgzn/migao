@@ -68,6 +68,7 @@ class CraftConfigQueryTool(BaseTool):
         "算料参数用 craft_calc_config_query；加工项目录用 processing_item_query；"
         "某张订单做到哪道工序用 production_progress_query。"
         "【标注】READONLY — 只读查询"
+        "【不要用于】算料参数（卷边/损耗）（用 craft_calc_config_query）；商品档案（用 product_detail）"
     )
 
     # 权限码（admin-api 目录）：生产域**读**码 `production:view`，与侧边栏「企业基础设置 → 工艺与路线」节点同码
