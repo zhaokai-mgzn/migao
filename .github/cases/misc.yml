@@ -9495,3 +9495,47 @@ cases:
     traces:
       tests:
         - "tests/unit_ci_workflows/test_resolve_cases_conflict.py"
+
+  - id: MC-237
+    legacy_id: ""
+    title: "`/w/` 转入兼容期：不再是任何 302 / 跳转的目标（deploy / frontend / backend 三类面零命中），而**已印出的码仍可用**（`location /w/` + `/b/report/` 内部换页 + 302 目标常量仍是 `/b/…`）"
+    domains:
+      - worker
+      - worker-h5
+      - bmini
+      - ci
+    tier: normal
+    tags:
+      - worker
+      - worker-h5
+      - compat-period
+      - redirect-target
+      - legacy-code-usable
+      - fail-closed
+      - red-proof
+    truths_ref: []
+    precondition:
+      - "判据读的是**已提交的仓库文本**（`deploy/swas/nginx.conf` / `WorkerShortLinkService.java` / `frontend/**` 生产代码），不启动 nginx、不连后端 ⇒ 前置 = 工作树里有这几份文件（读不到 ⇒ 判红，不 skip）"
+      - "「旧码仍可用」是**模拟**判定：按 nginx 的前缀 location + `try_files` 语义在 `frontend/worker-h5/**` 的真实文件集合上算 `/w/?t=` / `/w/machine.html` / 未知页 的取文件结果；线上那一跳由 `deploy/scripts/worker-h5-verify-served.sh` 承担（不在本用例面内，不许把它读成已验线上）"
+      - "扫描面**必须非空**：`deploy/**`、`frontend/**`（剪掉 tests/依赖/产物）、`backend/admin-api/src/main/java/**` 共 1300+ 文件；语料为空或必扫文件不在面内 ⇒ 判红（「扫了 0 个文件」不是通过）"
+    user_inputs:
+      - "工人扫纸上的码 `https://app.migaozn.com/s/<短码>` ⇒ 服务端 302 到 `/b/report/`（URL 在 /b 下，nginx 内部 rewrite 到 `/w/` 那一份页面）—— 不许再 302 到 `/w/…`"
+      - "工人手机里存着旧地址 `https://app.migaozn.com/w/?t=<token>` ⇒ 仍必须 200 且仍是报工页，并且 `/w/machine.html`（裁高页）仍打得开（纸上码不可重印）"
+      - "工人从 bmini 工人工作台去报工 / 裁高 / 精裁清单 / 质检 ⇒ 四条面各有入口，且**入口都在 bmini**（不是跳去 `/w/`）"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "**判据 1（会红）：没有任何 302 / 跳转指向 `/w/`**。扫描面 = `deploy/**` + `frontend/**`（生产代码）+ `backend/admin-api/src/main/java/**`；形态 = nginx `return 30x …/w/…` / `rewrite … /w/… redirect|permanent` / `add_header Location` / `proxy_redirect`、Java `sendRedirect(…/w/…)` / `.location(…/w/…)` / `*_PATH|_ROUTE|_URL = 「/w/…」`、TS `Taro.navigateTo|redirectTo|reLaunch|switchTab` + `href=` + `location.*` + 模板串。红证 = 五类面各注入一条 ⇒ 同一判定具名判红（文件 + 行 + 形态）；负控 = 内部换页 `rewrite … /w/$1 last` / 注释里的说明 / 普通字符串一律不红（实测 1371 文件 / 0 命中 / 内部换页现取 1 处）。"
+      - "**判据 1b（会红）：`/w/` 可以被「供应」，不可以被「跳转」到**。真语料里必须能认出**至少一处**内部换页（`/b/report/` → `/w/` 的 `last`），否则「零命中」分不清『真没有跳转』与『扫描器读不到 /w/』；把那条 rewrite 的 flag 改成 `redirect` ⇒ 判据 2 当场红。"
+      - "**判据 2（会红）：已印出的码仍可用**。`location /w/` 仍在（兜底必须是自己命名空间内的 `/w/index.html`，且 `default_type application/javascript` 在块内）；`location /b/report/` 仍在且**内部** rewrite 到 `/w/`；`location /s/` 仍反代 admin-api（`proxy_pass` 不带 URI 后缀）；302 目标常量仍以 `/b/` 开头、`?t=` 口径未动；模拟取文件：`/w/?t=` → 200 index.html、`/w/machine.html` → 200、`/w/src/app.mjs` → 200、未知页 → 兜回 `/w/index.html`。红证 = 删掉 `location /w/` ⇒ 红（报文写明「会落到 SPA 兜底 = 200 + C 端首页」）；把 `REPORT_PAGE_PATH` 改回 `/w/` ⇒ 红。"
+      - "**判据 3（会红）：`/w/` 不再新增入口**。bmini 生产代码（`frontend/bmini-app/src/**`，现取 166 文件）零命中；红证 = 工人首页加一个 `Taro.navigateTo({ url: '/w/machine.html' })` ⇒ 判红**并点名该文件**。负控 = `H5_WORKER_SESSION_KEY` 的同源 localStorage 镜像**不是**入口（它只让旧码落到的那一页复用身份）；把镜像改成 `location.replace('/w/')` ⇒ 同一判定必红（证明「镜像 ≠ 入口」真被区分）。"
+      - "**判据 4（会红，在 `frontend/bmini-app/tests/page-entry-reachability.test.ts` 的 L7）**：报工 / 裁高 / 精裁清单 / 质检四条面 ①在 `app.config.ts` 的 `pages` 里 ②页面本体在 bmini ③有入口登记 ④发射方也在 bmini（`src/…`）。红证 = 删掉「质检」那一条登记 ⇒ 点名质检；把「精裁清单」的发射方指回 `frontend/worker-h5/src/render.mjs` ⇒ 点名「不在 bmini 内」。"
+      - "**判据 5（会红）：扫描面非空自证**。扫描面文件数 > 0、四个必扫文件（nginx / 唯一 302 常量 / 入口台账 / app.config）都在面内、真语料里至少一个文件提及 `/w/`（现取 48 个）⇒ 「零命中」不是假绿。红证 = 让必扫文件脱离扫描面 ⇒ 判红并列出缺失项。"
+      - "**判据 6（会红）：兼容期声明在案**。`frontend/worker-h5/README.md` 必须写清三句口径（只为已印出的码服务 / 不再新增功能 / 不再是 302 的目标）+「旧码直连」这条唯一通道；删掉任一句 ⇒ 红（声明只在 PR body 里 = 下一个人看不到）。"
+    skip_reason: "[backend-contract] 纯静态判据（读 nginx 配置 / Java 常量 / 前端源码 + 按 nginx 语义模拟 try_files），零网络 / 零 LLM；计分通道 = traces.tests。线上 `/w/` 身份（HTTP 200 + 逐字节一致 + MIME）由 deploy/scripts/worker-h5-verify-served.sh 与 bmini-h5-verify-served.sh 承担，不在本面"
+    merge_log:
+      - "2026-11-05 新增（issue #7813 P2c）。四条动作：① 现取确认 302 的唯一真值已是 `/b/report/`（#7879/#7906 到位）⇒ 本包**只补判据**；② `frontend/worker-h5/README.md` 写清兼容期三句口径 + 「旧码直连」是唯一通道；③ bmini 侧入口完整性由 `page-entry-reachability.test.ts` 的 L7 点名四条面（报工/裁高/精裁清单/质检，P2a/P2b 已交付）；④ 「已印出的码不许失效」落成 `/w/` 供应面的模拟判定（`location /w/` + `/b/report/` 内部换页 + 302 常量 /b/）。**`/w/` 不删、不改功能**（退役属 #7806 的 P3）；未新增豁免、未抬任何台账基线。"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_w_compat_period.py"
+        - "frontend/bmini-app/tests/page-entry-reachability.test.ts"

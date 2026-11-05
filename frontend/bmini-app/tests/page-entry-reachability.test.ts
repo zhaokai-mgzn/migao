@@ -1,4 +1,4 @@
-// case_ids: BM-025
+// case_ids: BM-025, MC-237
 /**
  * **入口可达性元守卫**（issue #5052 实现 PR；验收协议 v1.11「交付物可达性」三问之②）
  *
@@ -23,6 +23,7 @@
  * | L4 | `via` 不是路由字面量时，「记号 ⇒ 路由」的绑定必须被 `viaBinding` 钉住（那里出现路由字面量 / 路由常量名） | 把 viaBinding 指向无关文件 ⇒ 红 |
  * | L5 | 🔴 **跨应用入口已收敛**（2026-10-10，issue #6635）：`/w/` 报工页**不再**承载入库两页的 `<a>`（反向钉住：出现即红），可达性由**工人工作台**承担（`from` 逐值核） | 把 `/w/` 的那两条入口加回去 / 把工作台的入口删掉 ⇒ 红 |
  * | L6 | 平台缺口台账（Taro API 之外那一类）：缺口必须**由真的调用它的文件接线**（`wiredBy` 的**代码**里出现 `wiredToken`） | 只登记不接线 ⇒ 红 |
+| L7 | 🔴 **工人四条面点名**（issue #7813 P2c）：报工 / 裁高 / 精裁清单 / 质检 —— 每条都必须①在 `app.config.ts` 的 `pages` 里 ②页面本体在 bmini ③有入口登记 ④**发射方也在 bmini**（`src/…`，不是 `/w/` 那边） | 删掉任一条入口登记 / 把发射方指回 `worker-h5/src/render.mjs` ⇒ 红并**点名那一条** |
  *
  * ## 边界（明确的，不要把本守卫读成覆盖面更大的东西）
  *
@@ -43,7 +44,10 @@
 import fs from 'fs'
 import path from 'path'
 import {
+  CUT_CALC_PAGE_ROUTE,
+  CUT_PLAN_PAGE_ROUTE,
   INBOUND_PAGE_ROUTE,
+  QUALITY_PAGE_ROUTE,
   REPORT_PAGE_ROUTE,
   REPRINT_PAGE_ROUTE,
   WORKER_LOGIN_ROUTE,
@@ -434,5 +438,93 @@ describe('入口可达性：交付物可达性三问之② —— 每个面向�
     expect(stripComments(unwired(gap.wiredBy)).includes(gap.wiredToken)).toBe(false)
     // 同一份输入下，真读法必须接线（否则上面那条"红"可能只是读错了文件）
     expect(stripComments(input.read(gap.wiredBy)).includes(gap.wiredToken)).toBe(true)
+  })
+})
+
+// ══════════════════════════════════════════════════════════════════════════════
+// L7（issue #7813 P2c）：工人四条面点名 —— 入口齐全，且**都在 bmini**
+// ══════════════════════════════════════════════════════════════════════════════
+
+/** 工人日常四条面（`/w/` 兼容期之后，它们是**唯一**入口；`/w/` 只剩「旧码直连」）。 */
+const WORKER_FACES: { name: string; route: string; page: string }[] = [
+  { name: '扫码报工', route: REPORT_PAGE_ROUTE, page: 'src/pages/worker/report/index.tsx' },
+  { name: '机台裁高', route: CUT_CALC_PAGE_ROUTE, page: 'src/pages/worker/cut-calc/index.tsx' },
+  { name: '精裁清单', route: CUT_PLAN_PAGE_ROUTE, page: 'src/pages/worker/cut-plan/index.tsx' },
+  { name: '质检', route: QUALITY_PAGE_ROUTE, page: 'src/pages/worker/quality/index.tsx' },
+]
+
+/**
+ * 判定（真判据与红证**共用这一份**）：四条面各自 ① 在 pages 里 ② 页面本体在 bmini
+ * ③ 有入口登记 ④ 发射方在 bmini 内（`src/…`，不是 `frontend/worker-h5/…`）。
+ */
+export function workerFaceProblems(input: {
+  pages: string[]
+  entries: PageEntry[]
+  exists: (rel: string) => boolean
+}): string[] {
+  const problems: string[] = []
+  for (const face of WORKER_FACES) {
+    if (!input.pages.includes(face.route)) {
+      problems.push(`${face.name}（${face.route}）：不在 app.config.ts 的 pages 里 —— 这一面在 bmini 里不存在`)
+    }
+    if (!input.exists(face.page)) {
+      problems.push(`${face.name}（${face.route}）：页面本体不在 bmini（缺 ${face.page}）`)
+    }
+    const entries = input.entries.filter((entry) => entry.route === face.route)
+    if (entries.length === 0) {
+      problems.push(`${face.name}（${face.route}）：**没有任何入口登记**（谁把它送到工人眼前？）`)
+      continue
+    }
+    for (const entry of entries) {
+      if (!entry.from.startsWith('src/')) {
+        problems.push(
+          `${face.name}（${face.route}）：发射方不在 bmini 内（${entry.from}）——` +
+            ` 「/w/」兼容期之后工人路径必须全部落在 bmini（/w/ 只剩旧码直连）`,
+        )
+      }
+      if (!input.exists(entry.from)) {
+        problems.push(`${face.name}（${face.route}）：登记的发射方不存在（${entry.from}）—— 台账指着一个死文件`)
+      }
+    }
+  }
+  return problems
+}
+
+describe('L7 工人四条面点名：入口齐全，且都在 bmini（issue #7813 P2c）', () => {
+  const exists = (rel: string): boolean =>
+    fs.existsSync(path.join(BMINI_ROOT, rel)) || fs.existsSync(path.join(REPO_ROOT, rel))
+
+  it('L7 正跑：报工 / 裁高 / 精裁清单 / 质检 四条面 ①在册 ②本体在 bmini ③有入口 ④发射方在 bmini', () => {
+    const input = realInput()
+    // 反空跑：真的是四条面、真的解析到了页面（否则下面判绿可能只是两边都空）
+    expect(WORKER_FACES.map((face) => face.name)).toEqual(['扫码报工', '机台裁高', '精裁清单', '质检'])
+    expect(input.pages.length).toBeGreaterThanOrEqual(12)
+    expect(workerFaceProblems({ pages: input.pages, entries: input.entries, exists })).toEqual([])
+    // 报工面的发射方是**扫码落地**（`src/app.tsx`）—— 端内菜单已按 #7920 移除，不许再长回来
+    const reportEnts = input.entries.filter((entry) => entry.route === REPORT_PAGE_ROUTE)
+    expect(reportEnts.map((entry) => entry.from)).toEqual(['src/app.tsx'])
+  })
+
+  it('L7 🔴 红证：删掉「质检」那一条入口登记 ⇒ 同一判定**点名**质检（不是笼统红）', () => {
+    const input = realInput()
+    const withoutQuality = input.entries.filter((entry) => entry.route !== QUALITY_PAGE_ROUTE)
+    expect(withoutQuality.length).toBe(input.entries.length - 1)
+    const problems = workerFaceProblems({ pages: input.pages, entries: withoutQuality, exists })
+    expect(problems.join('\n')).toContain('质检')
+    expect(problems.join('\n')).toContain(QUALITY_PAGE_ROUTE)
+    // 对照：把这条加回去 ⇒ 零问题（说明上面那条红不是"读错了文件"）
+    expect(workerFaceProblems({ pages: input.pages, entries: input.entries, exists })).toEqual([])
+  })
+
+  it('L7 🔴 红证：把「精裁清单」的发射方指回 /w/ 那边 ⇒ 判定点名「不在 bmini 内」', () => {
+    const input = realInput()
+    const hijacked = input.entries.map((entry) =>
+      entry.route === CUT_PLAN_PAGE_ROUTE ? { ...entry, from: 'frontend/worker-h5/src/render.mjs' } : entry,
+    )
+    const problems = workerFaceProblems({ pages: input.pages, entries: hijacked, exists })
+    expect(problems.join('\n')).toContain('精裁清单')
+    expect(problems.join('\n')).toContain('不在 bmini 内')
+    // 负控：只改注释/文案不算（这里用「同一个 entry 原样」作对照）
+    expect(workerFaceProblems({ pages: input.pages, entries: input.entries, exists })).toEqual([])
   })
 })
