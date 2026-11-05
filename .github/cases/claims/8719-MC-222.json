@@ -1,0 +1,6 @@
+{
+  "id": "MC-222",
+  "pr": 8719,
+  "title": "B 端口径卡 Playbook 一期最小闭环（issue #8175）：只有审核通过（active）的口径进 prompt、trigger/counter 必须是机器可判的结构化条件、出口③从 trigger+counter 自动生成真能跑的用例；租户隔离与退役立即生效各有注入式红证",
+  "claimed_at": "2026-11-05"
+}
