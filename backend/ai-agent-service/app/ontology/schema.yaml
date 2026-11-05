@@ -1,7 +1,13 @@
 # =============================================================================
 # MIGAO 领域本体 schema — 机器可消费单一事实源（issue #2821 切片 1）
 #
-# 范围：切片 1 四核心对象（订单/商品SKU/售后单/客户）× 三要素（属性/关系/规则）
+# 范围：切片 1 四核心对象（订单/商品SKU/售后单/客户）× **两要素**（属性/关系）
+#       + `intent_ownership`（归属表）+ `external_targets`（关系目标登记）—— 动作/规则两要素均已
+#       出库（#8172 / #8167 P1-2，见下）。保留段**各自都是真值源**（不是第二份副本）：
+#       `properties[].source` ↔ Java 实体字段 / DB 列 由
+#       `tests/unit_ci_workflows/test_ontology_source_resolves.py` 机械对账；`status` 枚举 ↔
+#       loader.STATUS_LEXICON ↔ CONTRACT-LEDGER 三向一致（且 `order.status` 是**独立第二侧**，
+#       issue #8686）；`intent_ownership` ↔ skill_registry 由 `app/ontology/contract.py` 校验。
 # 状态枚举铁律来源：docs/wiki/CONTRACT-LEDGER.md §一（勿在此处私自改枚举，
 # 修改必须同步 CONTRACT-LEDGER 与 loader.STATUS_LEXICON，否则加载直接拒绝）。
 # 字段挂载点（source）指向 admin-api Java 实体，供跨端对账。
@@ -12,6 +18,16 @@
 # 动作真值只有一处 = `app/tools/**`（registry + 各工具的 `requires_confirmation` / action 枚举）。
 # **本文件再出现动作键 ⇒ `tests/test_ontology_schema.py::TestActionsSectionStaysOut` 判红**
 # （loader 已不再解析它 ⇒ 加回去也**不会报错**，只能靠这条元守卫拦住回潮）。
+#
+# 🔴 2026-11-05 规则要素（原第 3 要素）出库（issue #8167 P1-2）：原 7 对象共 19 条规则已删除。
+# 判定 = 「同一事实写了两遍」：① **零运行期消费者**（全仓 `.rules` 仅 2 处 pytest 断言，loader 之外无人读
+# ⇒ 删掉不改变任何行为，与 #8172 的动作段同形）；② 19 条逐条落到唯一真值载体（4 条 = 同文件 status 枚举；
+# 14 条 = 工具闸门 / C 端 skill 绑定 / Java 服务校验 / DDL；1 条 = 已下线能力 role_manage #5247 只读）；
+# ③ 它确实漂过且不响（#5245 B5 原句与库事实相反，只能人工改文本）。逐条载体表见 PR（关联 #8167）。
+# 迁移去向：唯一被 pytest 按**文本**钉住的事实改钉 DDL ——
+# `tests/unit_ci_workflows/test_ontology_source_resolves.py::test_processing_items_have_no_price_columns`。
+# **再出现 rules 键 ⇒ `tests/test_ontology_schema.py::TestRulesSectionStaysOut` 判红**
+# （loader 已不解析 ⇒ 加回去也不会报错，只能靠本条源文件元守卫拦住回潮）。
 # =============================================================================
 version: "1.0"
 
@@ -277,16 +293,6 @@ objects:
         target: aftersales
         cardinality: "1:N"
         description: 订单可挂多个售后工单
-    rules:
-      - text: "订单状态枚举以 CONTRACT-LEDGER 为准（producing 非 processing）"
-        severity: must
-      - text: "服务端不信任 LLM 定价：下单重算 subtotal，单价取 SKU 权威价"
-        severity: must
-      - text: "C 端订单查询强制按 X-User-Id 过滤（user_id=本人 OR 手机号兜底），禁止跨用户"
-        severity: must
-      - text: "已发货订单取消/退款需人工确认，禁止 LLM 自行终态变更"
-        severity: must
-
   product_sku:
     display_name: 商品SKU
     properties:
@@ -341,14 +347,6 @@ objects:
       # 依据：绑定表 `product_processing_items` 与列 `processing_items.applicable_product_categories`
       # 均由 V66__decouple_product_processing_items.sql DROP（此前注释误记为 V61）。
       # 真值源：docs/design/position-instance-routing-model.md §9.4。
-    rules:
-      - text: "SKU 价格是权威价：下单/改价一律以 SKU 价格为基准，禁止向顾客索要价格"
-        severity: must
-      - text: "元元（C 端）无改价/取消类动作：L0 工具白名单物理隔离资金/改价/取消工具"
-        severity: must
-      - text: "价格/库存变更需确认闸（GB-03）"
-        severity: must
-
   aftersales:
     display_name: 售后单
     properties:
@@ -400,16 +398,6 @@ objects:
         target: order
         cardinality: "N:1"
         description: 售后单关联订单
-    rules:
-      - text: "售后申请创建恒 pending，由商户审核；AI 只解释规则与收集材料，不做终态承诺"
-        severity: must
-      - text: "售后 resolved + refund/return 类 → 订单累加 refundAmount、写退款流水"
-        severity: must
-      - text: "元元无退款/改价/取消工具；涉赔偿/法律一律转人工"
-        severity: must
-      - text: "C 端售后查询按 X-User-Id 反查本人订单，只返回这些订单上的工单"
-        severity: must
-
   customer:
     display_name: 客户
     properties:
@@ -461,12 +449,6 @@ objects:
         target: aftersales
         cardinality: "1:N"
         description: 客户名下售后
-    rules:
-      - text: "老客户只刷新 lastActiveAt，不重复累计画像（勿重复实现）"
-        severity: must
-      - text: "客户 PII（手机号/地址）只用于订单关联与授权查询，禁止注入无关记忆"
-        severity: must
-
   employee:
     display_name: 员工
     properties:
@@ -515,12 +497,6 @@ objects:
         target: tenant
         cardinality: "N:1"
         description: 员工归属租户
-    rules:
-      - text: "员工状态合法值为 online/offline/busy，非法值拒绝（AgentEmployeeService）"
-        severity: must
-      - text: "角色/权限变更需确认闸（GB-03）"
-        severity: must
-
   processing_item:
     display_name: 加工项
     properties:
@@ -573,15 +549,6 @@ objects:
       # 原 `linked_to_products → product_sku`（N:M）已删除（issue #4431 B4 附带）：
       # 它是 `product_sku.has_processing_items` 的**反向同一绑定**，#4371 解耦后两个方向
       # 一起退场（绑定表已由 V66 DROP）。留一个方向 = 同一份假声明换个位置继续存在。
-    rules:
-      - text: "加工项状态合法值为 active/inactive（前端 ProcessingItemStatus）"
-        severity: must
-      # 🔴 2026-09-23 改判（issue #5245 B5）：原句「算料报价引用加工项单价」与库事实相反 ——
-      # `processing_items.unit_price` / `.pricing_method` 已由 V101 删除（issue #4882 用户裁定），
-      # 加工项目录不再承担计价；加工费真值源 = `processing_fee_combinations`（组合价 × 加工费米数）。
-      - text: "算料报价的加工费取加工费组合价（组合价 × 加工费米数）；加工项目录无单价，禁止编造计价"
-        severity: must
-
   category:
     display_name: 分类
     properties:
@@ -625,8 +592,3 @@ objects:
         target: category
         cardinality: "N:1"
         description: 父分类
-    rules:
-      - text: "分类状态合法值为 active/inactive（CategoryCreateRequest 注释）"
-        severity: must
-      - text: "删除分类前必须确认无商品挂载（防孤儿数据）"
-        severity: must
