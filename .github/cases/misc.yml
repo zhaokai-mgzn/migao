@@ -9261,6 +9261,32 @@ cases:
         - "backend/admin-api/src/test/java/com/migao/admin/mapper/PlaybookMapperTest.java"
         - "backend/admin-api/src/test/java/com/migao/admin/controller/PlaybookControllerTest.java"
 
+  - id: MC-235
+    legacy_id: ""
+    title: "取号工具默认必须**尾部顺延**而不是填历史空档：空档是并行取号方撞号的病根（`--fill-gap` 才填空档）"
+    domains:
+      - ci
+      - case-governance
+    tier: normal
+    tags:
+      - ci
+      - case-ids
+      - concurrency
+      - fail-closed
+    truths_ref: []
+    user_inputs:
+      - "两个并行修复包各自跑 `python3 scripts/next_case_id.py MC` 取号：改前都被告知同一个历史空档（MC-145 / MC-099）⇒ 两个包拿同一个号"
+    expectations:
+      - "默认口径 = **尾部顺延**（现取最大号 + 1）；历史空档只在显式 `--fill-gap` 时给出"
+      - "判别力自证：`fill_gap=True` 与默认口径**必须给出不同的号**（相同 ⇒ 判据分不出两种口径 ⇒ 空断言）"
+      - "内部断言「返回的号 ∉ 候选集」在两个分支上都要生效（变异 `min_free` 返回已占号 ⇒ 必抛且报文点名那个号）"
+    data_checks: []
+    skip_reason: ""
+    merge_log: "2026-11-05 新增。两个独立来源报同一缺陷：① #8720 的包「next_case_id.py 的建议值是 MC-099（历史空档），与并行包的取远号段口径冲突」；② #5740 §3.4 已登记「最小空闲号落在历史空档时判不了是刻意保留还是已废弃」。一夜实测撞号 4 次（两个包同时拿 MC-222、另一个 MC-223）。修法 = 默认尾部顺延 + `--fill-gap` opt-in。"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_next_case_id_allocator.py"
+
   - id: MC-234
     legacy_id: ""
     title: "能力取值不是白名单：`print.label` / `cut.link` 的任何非空字符串都必须渲染入口（`builtin` / `serial:/dev/ttyS1` 对照组），且与能力读取 trim 同口径"
@@ -9275,6 +9301,10 @@ cases:
       - fail-closed
       - cross-repo
     truths_ref: []
+    precondition:
+      - "壳注入的 `window.__CFG__.capabilities` 里 `print.label` 的值是**非空字符串** `builtin`（商米内置打印服务；终端仓 #59 实装口径），`cut.link` 是 `serial:/dev/ttyS1`"
+      - "这三条判据都是**纯函数**调用 `capabilityShown(caps, axis)`，不启动壳、不连设备 ⇒ 前置不成立的表现是「函数收到 null 而不是 builtin」，与「入口不渲染」不同，可区分"
+      - "反向负控组的前置是相反值（空串 / 纯空白 / null / undefined），必须是**四种都试过**而不是只试 null"
     user_inputs:
       - "工人用手持标签机（Android 壳报 print.label=builtin，商米内置打印服务）打开 /w/ ⇒ 「打印入库标签」入口必须出现"
       - "工人用安卓一体机（cut.link=serial:/dev/ttyS1）打开 /w/ ⇒ 「裁高计算」入口必须出现"
