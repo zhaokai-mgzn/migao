@@ -1,4 +1,4 @@
-# case_ids: MC-223
+# case_ids: MC-230
 """口径卡出口③（issue #8175 判据 2 / 3 / 6）：从 `trigger` + `counter` 生成**真能跑**的用例。
 
 「真能跑」在这里是可验的：生成物带机器载荷（`traces.playbook`），`run_case` 用它与

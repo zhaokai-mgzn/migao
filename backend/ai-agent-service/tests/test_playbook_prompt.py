@@ -1,4 +1,4 @@
-# case_ids: MC-223
+# case_ids: MC-230
 """口径卡出口①（issue #8175）：只有 `active` 进 prompt · 租户隔离 · 退役立即生效。
 
 三个判据的红证都是**注入式**：

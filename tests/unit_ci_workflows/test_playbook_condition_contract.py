@@ -1,4 +1,4 @@
-# case_ids: MC-223
+# case_ids: MC-230
 """口径卡条件语言的**两端对账**（issue #8175 判据 2 的类级元守卫）。
 
 ## 这条判据治什么
@@ -34,7 +34,7 @@ JAVA_SOURCE = (
 PY_MARKER = "OPS = ("
 JAVA_MARKER = "public static final List<String> OPS = List.of("
 
-JAVA_CASE_IDS = "// case_ids: MC-223"
+JAVA_CASE_IDS = "// case_ids: MC-230"
 
 
 def _strip_comments(text: str, *, java: bool) -> str:
