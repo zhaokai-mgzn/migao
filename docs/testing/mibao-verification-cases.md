@@ -4245,7 +4245,7 @@
 ```
 溯源: 2026-10-31 新增（issue #8295）：两步确认，避免误写 ｜ tags: ui, preview
 
-## 杂项域（237 case）
+## 杂项域（242 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -7806,6 +7806,66 @@
 跳过: [backend-contract] Java 侧调用方迁移 + 门面转发退休（零 LLM / 零外网 / 零前端可见面），由 JUnit 判据与 pytest 棘轮判据验证，无 agent 行为面，不进入 agent-eval 冒烟
 ```
 溯源: 2026-11-05 新增（issue #8681 的 P2-1e 第四批，**部分交付**：不写关闭关键词）。现取读数：`git show origin/main:backend/admin-api/src/main/java/com/migao/admin/service/OrderService.java | wc -l` = 1,702（PR #8689 合并后的基线，origin/main = e2e02af37）。本批按上一批给的逐条清单执行第 1 档：列表查询 + 单参详情 + 带范围详情三个转发的调用方全部改直连实现点 —— 订单控制器两处详情与列表、建单服务创建后的回读（后者是「经 support 形参调门面」那一处，改成构造注入 OrderQueryService，单向依赖无环）；门面 1,702 → 1,655（净 −47，0 行新增）；同时把查询侧驱动方从 8 个测试文件（32 个调用点）迁到门面自己懒构造的那一份实现点，断言一个字未改；门面里三条委托判据按上一批范式改直测实现点（不删、不恒绿）。⚠️ 有意不搬：applyRollAllocation（被 OrderRollAllocationAuthorityTest 钉在门面）、batchStock 访问器（取消路径在用），两者一字未动。⚠️ 本批**不做**生命周期族（章节 3）与实体实现搬家（章节 4）—— 生命周期族 3 个接线 / 快照判据的改写要连带迁 67 个调用点，单独一批才说得清。红证 = 三次单变量注入逐条实跑并逐字节还原（塞回转发 + 把控制器与建单服务的调用改回门面 ⇒ 退休面 4 条红；把某个测试文件的驱动改回门面 ⇒ 驱动面 1 条具名红；只加注释写门面驱动 ⇒ 不红，负控证明剥注释扫描有效）。全量读数见 PR body。 ｜ tags: refactor, order-service, facade-retirement, caller-migration, query-family, ratchet
+
+### MC-216. 物流取号（issue #8698 P0）：取号不改变订单状态 —— 取号 ≠ 发货，订单仍「待发货」 🔵
+```
+你: issue #8698 判据 1：注入取号成功路径 ⇒ orders.status 必须不变；变了判红并具名
+期望: Java 侧结构判据：com.migao.admin.waybill 包的代码（剥注释后）不出现任何订单状态写入口（订单类型 / shipWithLogistics / updateOrderStatus），WaybillService 的字段里没有订单类型；WaybillCreateResult 无状态字段。
+期望: 行为判据：走一次真的会成功的取号路径（替身 provider），观测点订单 status=confirmed 调用前后逐字不变，且结果体不含 status/orderStatus/shipped。
+期望: Python 侧跨文件判据：waybill/**.java 剥注释后零订单写入口；ProductionController#ship 的端点与写码仍在原位（本单一行不改它）。
+期望: 前端判据：发货页取号成功后只回填运单号，不调用 productionApi.shipOrder（mock 断言未调用）。
+数据: 注入式红证（实测）：往 WaybillService 加一行 orderMapper.updateById(...) ⇒ test_waybill_package_has_no_order_status_write_entry 红并具名「WaybillService.java::OrderMapper」；还原 ⇒ 9 passed。
+数据: 注入式红证（实测）：给 ShipOrder 的 handleCreateWaybill 加一句 productionApi.shipOrder(...) ⇒ 「不调发货端点」一条红；还原 ⇒ 3 passed。
+```
+溯源: ['2026-11-05 新增（PR #8699）。承接 issue #8698（由 #7897 拆出的 P0），口径源 docs/logistics-waybill-api-research.md §3-2 / §8。', '读数影响：expectations 非空、skip_reason 未标 [backend-contract] ⇒ 不计入 case_machine_fail_channel_baseline 的 backend_contract_scoring_zero。'] ｜ tags: 类级判据, 取号, 订单状态, 红证
+
+### MC-217. 物流取号（issue #8698 P0）：能力位驱动 UI —— 注册表新增/删除一家 carrier ⇒ 设置页与发货页跟着变（硬编码 ⇒ 红） 🔵
+```
+你: issue #8698 判据 2：注册表新增/删除一个 carrier ⇒ 设置页与发货页的能力位跟着变；硬编码 ⇒ 红
+期望: 后端：注册表行数 ≡ CarrierCatalogue 目录行数、code 序列逐字相等；加一行目录 ⇒ 注册表恰多一家；GET /api/admin/logistics/carriers 逐条下发 canCreate/canCancel/canTrack/mode。
+期望: 前端纯函数（src/lib/waybill.ts）：注册表里有这家且 canCreate=true ⇒ 按钮可用；删掉该家 ⇒ 同一家公司立刻退回手填；新增一家 ⇒ 设置页候选多一条。
+期望: 设置页：CONFIG_DOMAINS 登记 logistics 域 + ConfigDomainKey 加该 key + 页面挂载面板；域的 requiredCode 与写面端点的权限码逐字一致。
+期望: 源码形态：取号链路（waybill.ts / api-waybill.ts / ShipOrder.tsx / LogisticsDomainPanel.tsx）不出现任何承运商名字面量。
+数据: 注入式红证（实测）：把 waybillCapabilityFor 改成恒 canCreate=true ⇒ 「未接入 ⇒ 禁用」两条红；还原 ⇒ 13 passed。
+数据: 注入式红证（实测）：把 ShipOrder.tsx 里的取号按钮换回写死的名字判断 ⇒ 「不出现承运商名字面量」一条红并具名该文件。
+```
+溯源: ['2026-11-05 新增（PR #8699）。域登记与面板挂载同批落地（避免「加域但页面空白」）。'] ｜ tags: 类级判据, 能力位, 配置域, 跨端
+
+### MC-218. 物流取号（issue #8698 P0）：不能声称能做而实际不能 —— canCreate 声明 true 而没 provider ⇒ 红 🔵
+```
+你: issue #8698 判据 3：把某 carrier 的 canCreate 从 false 改 true 而没接 provider ⇒ 红
+期望: 运行时对 UI 只暴露「声明 ∧ 实现」的交集：目录声明 canCreate=true 而没 provider ⇒ 生效能力位恒 false、mode=manual，并在 overClaimed() 里具名该 code（构造期另打 WARN）。
+期望: 声明与实现对齐时能力位为真（证明交集不是恒 false）：替身 provider + 声明行 ⇒ canCreate=true、mode=api、overClaimed 为空。
+期望: P0 生产目录零过声明：CarrierCatalogue 的能力位全 false（本单不接任何真实第三方）。
+期望: 承运商实现的未支持能力必须抛「不支持」（422 + 可行动文案），不返回 null / 空轨迹冒充「查过了」。
+数据: 注入式红证（实测）：把 CarrierCatalogue 的 sf 行 canCreate 翻成 true ⇒ test_production_catalogue_declares_no_capability 红并具名 sf；还原 ⇒ 9 passed。
+数据: 注入式红证（实测）：把 WaybillProvider.create 的 default 改成 return null ⇒ 「未实现抛不支持」一条红。
+```
+溯源: ['2026-11-05 新增（PR #8699）。两层防线：运行时取交集（不谎报）+ 判据具名（发现过声明）。'] ｜ tags: 类级判据, 过声明, 能力位
+
+### MC-219. 物流取号（issue #8698 P0）：manual 兜底可证明 —— 注册表里没有的 carrier 走手填，且不产生任何外呼 🔵
+```
+你: issue #8698 判据 4：注册表里没有的 carrier ⇒ 走 manual 路径，且不产生任何外呼
+期望: 未登记 / 空 code ⇒ 解析成 manual（手填），不抛错、不编一家承运商；租户没配 / 配了未接入 ⇒ 取号端点 422 + 「请手填单号」，且替身 provider 的 create 调用数为 0。
+期望: ManualWaybillProvider 结构上没有 HTTP 客户端、没有第三方依赖（外呼不可能发生）。
+期望: 注册表同时含 manual 行，且前后端承运商词表逐字对齐（否则会出现「下拉能选、注册表查不到 ⇒ 静默走手填」）。
+期望: 前端：能力面为 null / 空 / 自定义承运商名 ⇒ 一律手填判定（fail-closed，不编「可以取号」）。
+数据: 注入式红证（实测）：让 create 在 manual 兜底时直接返回一个运单号（跳过 422）⇒ 「零外呼 + 422」两条红；还原 ⇒ 7 passed。
+数据: 注入式红证（实测）：从 CarrierCatalogue 删掉 manual 行 ⇒ test_manual_fallback_entry_exists… 红并具名。
+```
+溯源: ['2026-11-05 新增（PR #8699）。「不产生任何外呼」用调用计数 + 结构（无 HTTP 客户端）双向证明。'] ｜ tags: 类级判据, manual 兜底, 零外呼
+
+### MC-220. 物流取号（issue #8698 P0）：前端不直连承运商 —— 前端产物 grep 承运商密钥/域名 ⇒ 命中即红 🔵
+```
+你: issue #8698 判据 4（口径文档 §8 密钥面）：前端产物里不得出现任何承运商密钥（grep 判据）
+期望: frontend/admin-web/src/** （全部 .ts/.tsx）不出现任何承运商开放平台域名（顺丰丰桥 / 中通 / 圆通 / 韵达 / 申通 / 京东 / EMS / 极兔 / 菜鸟 / 安能 / 壹米滴答 / 中通快运 / 百世 / 四季安）与聚合平台（快递100 / 快递鸟）。
+期望: 同上扫描面不出现承运商凭据键（appSecret / app_key 族 / partnerKey / privateKey / signKey / apiSecret）。
+期望: 扫描面非空（> 100 个源文件）⇒ 扫描面漂了即红（防止对一片空语料放行）。
+期望: 接口面只有本系统的 /api/admin/logistics/*（前端没有直连承运商的请求）。
+数据: 注入式红证（实测）：往任一前端文件塞一个承运商域名 + 一个凭据键 ⇒ 判据红并具名「文件::命中串」；还原 ⇒ 9 passed。
+数据: 判别力自证内建：test_secret_scanner_has_teeth 在内存语料上必红、干净语料上不报。
+```
+溯源: ['2026-11-05 新增（PR #8699）。口径 = 承运商凭据只进服务端、按租户存（docs/logistics-waybill-api-research.md §3-4）。'] ｜ tags: 类级判据, 密钥面, 前端产物
 
 ## 商家入驻域（7 case）
 
@@ -15331,8 +15391,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：1039（活跃 162，跳过 877）
-- tier 分布：smoke 15 / normal 962 / adversarial 33
+- 用例总数：1044（活跃 167，跳过 877）
+- tier 分布：smoke 15 / normal 967 / adversarial 33
 - 售后域：16
 - Agent 核心域：13
 - API 层域：21
@@ -15348,7 +15408,7 @@
 - 人事域：13
 - 知识问答域：9
 - 客户主数据迁移域：10
-- 杂项域：237
+- 杂项域：242
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：76
@@ -15653,6 +15713,11 @@
 - MC-208: demo-seed 的 SKU 插入语句必须三处一致：SELECT 行值 = WHERE 关联条件 = product_colors 已声明颜色（issue #7583 缺陷 2 的假绿出口）
 - MC-207: 订单状态 packed（已打包）三轴分离（issue #8686）：动作面（Agent 四个工具 schema 枚举）保持排除、显示面（PC 订单列表徽标 + 详情/状态展示）补「已打包」与未知状态兜底、本体 order.status 显式登记「6 个 / 无 packed / 暂不同源」+ 收敛条件；依据 = 用户 2026-09-26 裁定「打包与发货都是工人的动作」
 - MC-211: OrderService 门面收尾第四批（issue #8681 的 P2-1e，部分交付）：订单列表与两处详情（含数据范围收窄）三个查询入口的调用方改直连 OrderQueryService（含建单服务回读一处），门面 1,702 行降到 1,655 行并删掉这 3 个转发；查询侧驱动方从 8 个测试文件全数迁到实现点（断言零改动），并把退休守护扩成「全 test 树零处经门面驱动」的驱动面判据
+- MC-216: 物流取号（issue #8698 P0）：取号不改变订单状态 —— 取号 ≠ 发货，订单仍「待发货」
+- MC-217: 物流取号（issue #8698 P0）：能力位驱动 UI —— 注册表新增/删除一家 carrier ⇒ 设置页与发货页跟着变（硬编码 ⇒ 红）
+- MC-218: 物流取号（issue #8698 P0）：不能声称能做而实际不能 —— canCreate 声明 true 而没 provider ⇒ 红
+- MC-219: 物流取号（issue #8698 P0）：manual 兜底可证明 —— 注册表里没有的 carrier 走手填，且不产生任何外呼
+- MC-220: 物流取号（issue #8698 P0）：前端不直连承运商 —— 前端产物 grep 承运商密钥/域名 ⇒ 命中即红
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）

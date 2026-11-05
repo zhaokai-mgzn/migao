@@ -2,7 +2,7 @@
 # 本文件由 render_cases.py 生成，勿手改（改了也留不住：下次重渲染会覆盖）
 # 源: cases/*.yml（case-contract 单一源）
 # 重新生成: python3 render_cases.py --cases <dir> --out-eval <包目录> --out-md <md>
-# 域: misc（源: cases/misc.yml，237 条）
+# 域: misc（源: cases/misc.yml，242 条）
 
 from ._schema import Difficulty, EvalCase, Skill
 
@@ -4353,6 +4353,96 @@ _CASE_MC_211 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── MC-216 [NORMAL] 物流取号（issue #8698 P0）：取号不改变订单状态 —— 取号 ≠ 发货，订单仍「待发货」（源: cases/misc.yml）──
+_CASE_MC_216 = EvalCase(
+    id='MC-216',
+    legacy_id='',
+    title='物流取号（issue #8698 P0）：取号不改变订单状态 —— 取号 ≠ 发货，订单仍「待发货」',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['issue #8698 判据 1：注入取号成功路径 ⇒ orders.status 必须不变；变了判红并具名'],
+    expectations=['Java 侧结构判据：com.migao.admin.waybill 包的代码（剥注释后）不出现任何订单状态写入口（订单类型 / shipWithLogistics / updateOrderStatus），WaybillService 的字段里没有订单类型；WaybillCreateResult 无状态字段。', '行为判据：走一次真的会成功的取号路径（替身 provider），观测点订单 status=confirmed 调用前后逐字不变，且结果体不含 status/orderStatus/shipped。', 'Python 侧跨文件判据：waybill/**.java 剥注释后零订单写入口；ProductionController#ship 的端点与写码仍在原位（本单一行不改它）。', '前端判据：发货页取号成功后只回填运单号，不调用 productionApi.shipOrder（mock 断言未调用）。'],
+    data_checks=['注入式红证（实测）：往 WaybillService 加一行 orderMapper.updateById(...) ⇒ test_waybill_package_has_no_order_status_write_entry 红并具名「WaybillService.java::OrderMapper」；还原 ⇒ 9 passed。', '注入式红证（实测）：给 ShipOrder 的 handleCreateWaybill 加一句 productionApi.shipOrder(...) ⇒ 「不调发货端点」一条红；还原 ⇒ 3 passed。'],
+    skip_reason='',
+    tags=['类级判据', '取号', '订单状态', '红证'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-217 [NORMAL] 物流取号（issue #8698 P0）：能力位驱动 UI —— 注册表新增/删除一家 carrier ⇒ 设置页与发货页跟着变（硬编码 ⇒ 红）（源: cases/misc.yml）──
+_CASE_MC_217 = EvalCase(
+    id='MC-217',
+    legacy_id='',
+    title='物流取号（issue #8698 P0）：能力位驱动 UI —— 注册表新增/删除一家 carrier ⇒ 设置页与发货页跟着变（硬编码 ⇒ 红）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['issue #8698 判据 2：注册表新增/删除一个 carrier ⇒ 设置页与发货页的能力位跟着变；硬编码 ⇒ 红'],
+    expectations=['后端：注册表行数 ≡ CarrierCatalogue 目录行数、code 序列逐字相等；加一行目录 ⇒ 注册表恰多一家；GET /api/admin/logistics/carriers 逐条下发 canCreate/canCancel/canTrack/mode。', '前端纯函数（src/lib/waybill.ts）：注册表里有这家且 canCreate=true ⇒ 按钮可用；删掉该家 ⇒ 同一家公司立刻退回手填；新增一家 ⇒ 设置页候选多一条。', '设置页：CONFIG_DOMAINS 登记 logistics 域 + ConfigDomainKey 加该 key + 页面挂载面板；域的 requiredCode 与写面端点的权限码逐字一致。', '源码形态：取号链路（waybill.ts / api-waybill.ts / ShipOrder.tsx / LogisticsDomainPanel.tsx）不出现任何承运商名字面量。'],
+    data_checks=['注入式红证（实测）：把 waybillCapabilityFor 改成恒 canCreate=true ⇒ 「未接入 ⇒ 禁用」两条红；还原 ⇒ 13 passed。', '注入式红证（实测）：把 ShipOrder.tsx 里的取号按钮换回写死的名字判断 ⇒ 「不出现承运商名字面量」一条红并具名该文件。'],
+    skip_reason='',
+    tags=['类级判据', '能力位', '配置域', '跨端'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-218 [NORMAL] 物流取号（issue #8698 P0）：不能声称能做而实际不能 —— canCreate 声明 true 而没 provider ⇒ 红（源: cases/misc.yml）──
+_CASE_MC_218 = EvalCase(
+    id='MC-218',
+    legacy_id='',
+    title='物流取号（issue #8698 P0）：不能声称能做而实际不能 —— canCreate 声明 true 而没 provider ⇒ 红',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['issue #8698 判据 3：把某 carrier 的 canCreate 从 false 改 true 而没接 provider ⇒ 红'],
+    expectations=['运行时对 UI 只暴露「声明 ∧ 实现」的交集：目录声明 canCreate=true 而没 provider ⇒ 生效能力位恒 false、mode=manual，并在 overClaimed() 里具名该 code（构造期另打 WARN）。', '声明与实现对齐时能力位为真（证明交集不是恒 false）：替身 provider + 声明行 ⇒ canCreate=true、mode=api、overClaimed 为空。', 'P0 生产目录零过声明：CarrierCatalogue 的能力位全 false（本单不接任何真实第三方）。', '承运商实现的未支持能力必须抛「不支持」（422 + 可行动文案），不返回 null / 空轨迹冒充「查过了」。'],
+    data_checks=['注入式红证（实测）：把 CarrierCatalogue 的 sf 行 canCreate 翻成 true ⇒ test_production_catalogue_declares_no_capability 红并具名 sf；还原 ⇒ 9 passed。', '注入式红证（实测）：把 WaybillProvider.create 的 default 改成 return null ⇒ 「未实现抛不支持」一条红。'],
+    skip_reason='',
+    tags=['类级判据', '过声明', '能力位'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-219 [NORMAL] 物流取号（issue #8698 P0）：manual 兜底可证明 —— 注册表里没有的 carrier 走手填，且不产生任何外呼（源: cases/misc.yml）──
+_CASE_MC_219 = EvalCase(
+    id='MC-219',
+    legacy_id='',
+    title='物流取号（issue #8698 P0）：manual 兜底可证明 —— 注册表里没有的 carrier 走手填，且不产生任何外呼',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['issue #8698 判据 4：注册表里没有的 carrier ⇒ 走 manual 路径，且不产生任何外呼'],
+    expectations=['未登记 / 空 code ⇒ 解析成 manual（手填），不抛错、不编一家承运商；租户没配 / 配了未接入 ⇒ 取号端点 422 + 「请手填单号」，且替身 provider 的 create 调用数为 0。', 'ManualWaybillProvider 结构上没有 HTTP 客户端、没有第三方依赖（外呼不可能发生）。', '注册表同时含 manual 行，且前后端承运商词表逐字对齐（否则会出现「下拉能选、注册表查不到 ⇒ 静默走手填」）。', '前端：能力面为 null / 空 / 自定义承运商名 ⇒ 一律手填判定（fail-closed，不编「可以取号」）。'],
+    data_checks=['注入式红证（实测）：让 create 在 manual 兜底时直接返回一个运单号（跳过 422）⇒ 「零外呼 + 422」两条红；还原 ⇒ 7 passed。', '注入式红证（实测）：从 CarrierCatalogue 删掉 manual 行 ⇒ test_manual_fallback_entry_exists… 红并具名。'],
+    skip_reason='',
+    tags=['类级判据', 'manual 兜底', '零外呼'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-220 [NORMAL] 物流取号（issue #8698 P0）：前端不直连承运商 —— 前端产物 grep 承运商密钥/域名 ⇒ 命中即红（源: cases/misc.yml）──
+_CASE_MC_220 = EvalCase(
+    id='MC-220',
+    legacy_id='',
+    title='物流取号（issue #8698 P0）：前端不直连承运商 —— 前端产物 grep 承运商密钥/域名 ⇒ 命中即红',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['issue #8698 判据 4（口径文档 §8 密钥面）：前端产物里不得出现任何承运商密钥（grep 判据）'],
+    expectations=['frontend/admin-web/src/** （全部 .ts/.tsx）不出现任何承运商开放平台域名（顺丰丰桥 / 中通 / 圆通 / 韵达 / 申通 / 京东 / EMS / 极兔 / 菜鸟 / 安能 / 壹米滴答 / 中通快运 / 百世 / 四季安）与聚合平台（快递100 / 快递鸟）。', '同上扫描面不出现承运商凭据键（appSecret / app_key 族 / partnerKey / privateKey / signKey / apiSecret）。', '扫描面非空（> 100 个源文件）⇒ 扫描面漂了即红（防止对一片空语料放行）。', '接口面只有本系统的 /api/admin/logistics/*（前端没有直连承运商的请求）。'],
+    data_checks=['注入式红证（实测）：往任一前端文件塞一个承运商域名 + 一个凭据键 ⇒ 判据红并具名「文件::命中串」；还原 ⇒ 9 passed。', '判别力自证内建：test_secret_scanner_has_teeth 在内存语料上必红、干净语料上不报。'],
+    skip_reason='',
+    tags=['类级判据', '密钥面', '前端产物'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 CASES = (
     _CASE_MC_001,
     _CASE_MC_002,
@@ -4591,4 +4681,9 @@ CASES = (
     _CASE_MC_208,
     _CASE_MC_207,
     _CASE_MC_211,
+    _CASE_MC_216,
+    _CASE_MC_217,
+    _CASE_MC_218,
+    _CASE_MC_219,
+    _CASE_MC_220,
 )

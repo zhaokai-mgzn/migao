@@ -210,6 +210,11 @@
       "table": "roles",
       "handling": "none",
       "note": "同上（注册流程的内置角色种子写入，8 处）。冲突出现在「新租户不该有同名 code」的前提下，但形态与 createRole 同族 ⇒ 如实登记（重启条件：注册流程并发判据落地时一并收口）"
+    },
+    "backend/admin-api/src/main/java/com/migao/admin/waybill/TenantLogisticsConfigService.java::mapper": {
+      "table": "tenant_logistics_configs",
+      "handling": "none",
+      "note": "issue #8698 P0 新表（V209）：单行/租户的部分唯一索引 uk_tenant_logistics_configs_tenant（WHERE deleted = 0）。写面口径 = 「先 selectActiveByTenant 判空 → insert / updateById」，并发同租户双写撞唯一键时异常冒泡成 5xx。当前无原子写（P0 只是设置页的选择，冲突面极低），按台账登记为已观测缺口；收敛方向 = 改成 ON CONFLICT (tenant_id) WHERE deleted = 0 DO UPDATE 的 mapper 原子 upsert（与 TenantPaymentQrcodeMapper#upsertActive 同款）。"
     }
   }
 }
