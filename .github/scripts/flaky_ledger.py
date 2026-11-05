@@ -249,8 +249,26 @@ MAX_LEDGER_RERUNS = MAX_ATTEMPTS - 1
 # ⚠️ 两条都**不改变**任何既有语义：`MAX_ATTEMPTS` 仍是 2、`run_attempt > 1` 那一半
 #    （第二次绿检测）仍在、台账仍只追加、`decide` 仍是不改任何状态的纯函数。
 
-#: `gh` 报错文本里表示**限流**的片段（小写匹配）。命中的是**环境态**，不是 flaky。
-RATE_LIMIT_MARKERS = ("rate limit", "secondary rate limit", "abuse detection")
+#: 「限流」的**文本片段**（小写匹配；**中英都认**）。命中的是**环境态**，不是 flaky。
+#:
+#: 🔴 #8709：射程从「triage 自己调 `gh` 撞限流」扩到「**被判定的那个 job 内部**因限流而失败」——
+#: 后者的日志是**中文**的（实测原文，PR #8699：`⏳ gitleaks license 校验预检：限流（HTTP 403）…` /
+#: `⛔ … 限流退避用尽（次数上限，已尝试 3 次，最后一次 HTTP 403） —— **未判定**（exit 3，不得当 0 读）`）
+#: ⇒ 只认英文时**这份日志 0 命中**（本单的红证里逐字复现过这条读数）。
+#: ⚠️ **仍不把「任意 403」当限流**：`403 Resource not accessible by integration` 是**权限**问题
+#: ⇒ 必须照旧 fail-closed（否则真失效会被当成「环境态」静默掉 = 本仓最贵的「绿了但没跑」同族）。
+#:
+#: 🔴 #8709 的第二条出口（**同一个病的另一个面**，实测台账 9 条里 5 条是这个）：`ci workflow helper
+#: unit tests` 里的两条**联网判据**（`tests/unit_ci_workflows/test_case_id_claims.py` 的判据 7）在
+#: 限流时 fail-closed，失败文本由该文件的 `_http_error_text()` 产出，形态是
+#: `HTTP 403（**限流**：X-RateLimit-Remaining=0 · Reset=… · Retry-After=…）` 或
+#: `HTTP 403（疑似限流，但响应头读不到）` ⇒ 中文 `限流` 已覆盖；`ratelimit` 覆盖响应头名
+#: （`X-RateLimit-Remaining`）与 `rate_limit` 变体。
+#: ⚠️ **`判定不了` / `无法判定` 有意不收**：同一个文件里它也用于「无 token」「超页数上限」
+#: 「缺字段」—— 那些**不是**限流（重跑不会变好，且无 token 属真配置缺失），收进来会把
+#: 真失效洗成「环境态」。它们按原路径处置（见 `rate_limit_only_evidence` 的边界节）。
+RATE_LIMIT_MARKERS = ("rate limit", "secondary rate limit", "abuse detection", "ratelimit",
+                      "限流")
 
 #: #8444②：同一 `(workflow, head_sha)` 的**时间窗去重**（分钟）。窗口内重复的完成事件只分流一次。
 #: 窗口用**现取时间戳**判（`_dedup_hit`），**不是**计数器 —— 计数器会腐烂（随进程消失、随分支分叉），
@@ -276,6 +294,34 @@ def is_rate_limit_error(text) -> bool:
     """
     low = str(text or "").lower()
     return any(marker in low for marker in RATE_LIMIT_MARKERS)
+
+
+#: #8709：**失败 job 的日志**能得出的三种判定（判据只在 `rate_limit_only_evidence` 里写一份）。
+#:
+#:   · `rate_limited`     —— 日志里**只有**限流特征 ⇒ 环境态：那次 job 是「判不了」（exit 3），
+#:     **不是测试红**；
+#:   · `not_rate_limited` —— 有别的失败证据（真测试红 / 权限 403 / 别的报错）⇒ **照旧走原路径**；
+#:   · `unknown`          —— 日志取不到 / 为空 ⇒ **未判定**（**不是**「判定为非限流」：0 命中是**盲**）。
+FEATURE_RATE_LIMITED = "rate_limited"
+FEATURE_NOT_RATE_LIMITED = "not_rate_limited"
+FEATURE_UNKNOWN = "unknown"
+
+#: 把上述判定挂到 bundle 上的字段名。为什么放进 bundle 而不是让 `decide` 自己拉日志：
+#: `decide` 是**纯函数**（无 IO、无网络，故可离线红证）—— 取数归 `classify-failures` 子命令，
+#: 判定只读这个字段。「取数 / 判定」分家的代价是多一个 workflow 步骤，换来的是判据能被注入式红证。
+FAILURE_KINDS_FIELD = "failure_kinds"
+
+#: #8709：**前提判定**每次 run 最多拉几份日志。
+#:
+#: 🔴 为什么与 `MAX_LOG_FETCHES`（4，台账面）**不同**：台账面的上限是「控时间/控上下文」的取舍
+#: （少取一条只是台账少一条测试名）；而**前提判定必须覆盖本次尝试的**全部**失败 job** ——
+#: 少读一份 ⇒ 那个 job 是 `unknown` ⇒ 按原路径（重跑 ⇒ 大概率再误判成 flaky）。
+#: 实测现场（issue #8709 / PR #8699）**同时红了 5 条守卫**（Secret Scan / Danger Scan /
+#: External Authorship / Contribution Gate / QA Growth Gate）⇒ 用 4 会**恰好漏掉一条**，
+#: 等于本单没修（这也是它必须是**独立常量**、而不是复用 `MAX_LOG_FETCHES` 的原因）。
+#: 20 = 覆盖任何现实 run 的失败 job 数；**超限只可能发生在病态 run**，此时截断并**出声**
+#: （`render_failure_kinds_report` 打 ::warning::），分流按原路径处置（宁缺勿滥）。
+MAX_CLASSIFY_FETCHES = 20
 
 
 #: 这些 conclusion **不是测试失败**：取消 / 超时 / 基础设施 / 启动失败 / 过期。
@@ -689,16 +735,23 @@ def strip_log_prefix(line: str) -> str:
     return LOG_LINE_PREFIX_RE.sub("", ANSI_ESCAPE_RE.sub("", line))
 
 
-def extract_failing_tests(log_text) -> list:
-    """**纯函数**：从一份 job 日志里提取失败的 pytest node id（去重、保序、上限 `MAX_FAILING_TESTS`）。
+#: 一条 `FAILED` 记录最多带几行续行（多行断言消息）—— 防病态日志把整份 log 吞进一条记录。
+MAX_FAILURE_BLOCK_LINES = 40
 
-    取数纪律（**三条**，每条都对着一个已发生的形态）：
-      · **优先只读 `short test summary info` 段之后** —— 该段之前的正文里可能**回显**测试输出
-        （`pytest -q` / `tee` / 嵌套调用都会把 `FAILED …` 重新打一遍，`-vv` 下还带缩进），
-        只在段后取能一次性把它们挡掉；段头**没出现**（日志被截断 / 非 pytest）⇒ 退回**全文**扫，
-        但此时**只认行首**形态（`^\\s*FAILED `），不认正文中间的引用；
-      · 只留 **node id**（`FAILED` 与错误文本都不要）⇒ 读的人能直接 `pytest <node id>` 复现；
-      · **去重保序**（同一条测试被回显多次只算一次），并截断到 `MAX_FAILING_TESTS`。
+
+def _failing_lines(log_text) -> list:
+    """**纯函数**：逐条给出 `(node id, 该失败记录的**整段错误文本**)`。
+
+    取数纪律与 `extract_failing_tests` **同一份**（`short test summary info` 段之后、行首形态、
+    剥时间戳前缀与 ANSI）。
+
+    🔴 #8709 两处关键（都**实测**过，不是推理）：
+      ① **必须与 node id 分开**：node id 里可能**自带** rate-limit 字样（某条测试的**主题**就是限流），
+         拿整行匹配会把它误判成环境态 ⇒ 匹配只落在 `FAILED <node> - ` **之后**那段；
+      ② **必须带「续行」**：真实的失败文本是**多行**的 —— `assert problems == [], "…" + "\n".join(…)`
+         会把详情打在**下一行**（实测 `tests/unit_ci_workflows/test_case_id_claims.py` 的
+         `取号登记台账判据报红：` 之后那一行才是 `HTTP 403（**限流**：X-RateLimit-Remaining=…）`）。
+         ⇒ 一条失败记录 = `FAILED` 行 **+ 后续续行**（直到下一条 `FAILED` 行 / 段尾）。
     """
     if isinstance(log_text, bytes):
         log_text = log_text.decode("utf-8", errors="replace")
@@ -710,13 +763,35 @@ def extract_failing_tests(log_text) -> list:
         if PYTEST_SHORT_SUMMARY_MARKER in line:
             start = i + 1
             break
-    found: list = []
+    out = []
     for line in lines[start:]:
         match = PYTEST_FAILED_LINE_RE.match(line)
-        if match is None:
+        if match is not None:
+            node = match.group("node").strip()
+            if node:
+                out.append([node, [line[match.end():].strip()]])
             continue
-        node = match.group("node").strip()
-        if node and node not in found:
+        if out and len(out[-1][1]) < MAX_FAILURE_BLOCK_LINES:
+            continuation = line.strip()
+            if continuation:
+                out[-1][1].append(continuation)
+    return [(node, "\n".join(parts).strip()) for node, parts in out]
+
+
+def extract_failing_tests(log_text) -> list:
+    """**纯函数**：从一份 job 日志里提取失败的 pytest node id（去重、保序、上限 `MAX_FAILING_TESTS`）。
+
+    取数纪律（**三条**，每条都对着一个已发生的形态）：
+      · **优先只读 `short test summary info` 段之后** —— 该段之前的正文里可能**回显**测试输出
+        （`pytest -q` / `tee` / 嵌套调用都会把 `FAILED …` 重新打一遍，`-vv` 下还带缩进），
+        只在段后取能一次性把它们挡掉；段头**没出现**（日志被截断 / 非 pytest）⇒ 退回**全文**扫，
+        但此时**只认行首**形态（`^\\s*FAILED `），不认正文中间的引用；
+      · 只留 **node id**（`FAILED` 与错误文本都不要）⇒ 读的人能直接 `pytest <node id>` 复现；
+      · **去重保序**（同一条测试被回显多次只算一次），并截断到 `MAX_FAILING_TESTS`。
+    """
+    found: list = []
+    for node, _ in _failing_lines(log_text):
+        if node not in found:
             found.append(node)
         if len(found) >= MAX_FAILING_TESTS:
             break
@@ -811,6 +886,232 @@ def collect_failing_tests(entries: list, repo: str, fetch_jobs=None, fetch_log=N
     return {"mapped": mapped, "unresolved": unresolved,
             "fetches": sum(1 for v in log_cache.values() if v is not None),
             "failed": failed}
+
+
+# ── #8709：失败 job 的日志分类 —— 「第一次红**是不是测试红**」这个**前提判定** ─────────
+#
+# 病灶（2026-11-05 实测，PR #8699）：Actions token 小时配额耗尽时，5 条互不相干的守卫同时
+# fail-closed，日志原文是 `限流（HTTP 403）` ⇒ `exit 3`（**判不了**，不是测试红）。旧口径把这次
+# 「判不了」的首红当成测试红 ⇒ 重跑 ⇒ 配额恢复后第二次绿 ⇒ `mark_flaky` + `block/merge` +
+# `flaky/rerun-green` + `gh pr merge --disable-auto` ⇒ **一个与 flaky 完全无关的 PR 被人工闸挡住**，
+# 还会把「其实是限流」的假条目写进**证据**台账。
+#
+# 🔴 本机制**不动**「第二次绿 ≠ 通过」这条核心判据（它是对的），只修它的**隐含前提**：
+#    「第一次红是测试红」。判据 = 失败 job 的日志里**是否只有限流特征**（日志是**另一条取数面**，
+#    与 #5960 的 `failing_tests` 同一条 `gh api …/jobs/{id}/logs`，但目的不同）。
+#
+# 🔴 三条不可越过的性质（每条都有判据，见 tests/unit_ci_workflows/test_flaky_triage_rate_limit.py）：
+#    ① **不重跑 / 不记账 / 不打 flaky 标 / 不卸 auto-merge**（限流不是 flaky，重跑只会再撞配额）；
+#    ② **也不放行**：那次 job 仍然是红的 ⇒ required 检查仍不满足 ⇒ PR 仍被挡（`exit 3` 的可见性
+#       不降：本机制**不改任何守卫的退出码** —— 修法 C「限流时判 neutral」被否掉就是这个理由）；
+#    ③ **宁缺勿滥**：任何一个 job 有「真测试红 / 别的失败证据」或**日志取不到** ⇒ 全部走原路径
+#       （宁可多判一次 flaky，不许放过真红）。
+
+
+def _has_rate_limit_marker(text) -> bool:
+    """**纯函数**：这段文本是否带**限流特征**（`is_rate_limit_error` 的同一份 marker 表）。"""
+    low = str(text or "").lower()
+    return any(marker in low for marker in RATE_LIMIT_MARKERS)
+
+
+def rate_limit_only_evidence(log_text) -> dict:
+    """**纯函数**：一份**失败 job 的日志**是否「**只有限流特征**」（⇒ 环境态，不是测试红）。
+
+    判据（三条，每条都对着一个**已实测**的形态）：
+      ① **有 pytest 失败行 ⇒ 逐条看失败行的「错误文本」**（`FAILED <node> - ` **之后**那一段）：
+         **每一条**（含其**续行**：真实失败文本是多行的）都带限流特征 ⇒ `rate_limited`
+         （失败原因是限流，不是断言不成立）；
+         **任一条**不带 ⇒ `not_rate_limited` ⇒ 走原路径（**宁可多判一次 flaky，不许放过真红**）。
+         ⚠️ **只匹配错误文本、不匹配 node id**：node id 里可能自带 rate-limit 字样（某条测试的
+         主题就是限流），拿整行匹配会把它误判成环境态；
+      ② **没有任何失败测试行、但日志里有限流特征 ⇒ `rate_limited`**：现场形态 = 守卫脚本
+         fail-closed 打了「限流（HTTP 403）… 未判定（exit 3）」，它**没有**产出 `FAILED <node id>`；
+      ③ **日志为空 / 取不到 ⇒ `unknown`**（**未判定**）：0 命中 = **盲**，不得读成「判定为非限流」。
+
+    返回 `{verdict, markers, test_failures, why}` —— `why` 是**逐字可读**的依据（不是只有一个布尔）。
+
+    ⚠️ **边界（照实登记）**：非 pytest 的失败面（vitest / shell 断言）**没有** `FAILED <node id>` 行，
+    若同一份日志里又恰好出现「限流 / rate limit」字样，本函数会判 `rate_limited`。代价**有界**：
+    本类**绝不重跑、绝不判 flaky、绝不卸 auto-merge、绝不放行** —— 那次 job 仍然红 ⇒ required 仍不满足；
+    唯一的差别是「标注成限流 + 不白烧一次重跑」。要收窄它，得先有一个**可静态判定**的「失败面」维度
+    （否则判据只会变成噪音源），本单**有意不做**。
+
+    ⚠️ **边界 2（有意不覆盖）**：非限流的「无法判定」—— 无 token / 超预算 / 超页数上限 / 缺字段
+    （`tests/unit_ci_workflows/test_case_id_claims.py` 里 `判定不了` 的其余出口）—— **不**算限流：
+    它们重跑不会变好（无 token 更是真配置缺失），收进来就是把真失效洗成环境态。
+    ⇒ 它们**照旧走原路径**（重跑 ⇒ 可能仍红 ⇒ 记 `unknown`/`flaky`）。若实测出现，应按同一机制
+    单独扩一类（那是另一单，不在 #8709 的射程内）。
+    """
+    if isinstance(log_text, bytes):
+        log_text = log_text.decode("utf-8", errors="replace")
+    text = str(log_text or "")
+    if not text.strip():
+        return {"verdict": FEATURE_UNKNOWN, "markers": [], "test_failures": [],
+                "why": "日志为空 / 取不到 ⇒ **未判定**（不是「没有限流」—— 0 命中是**盲**）"}
+    low = text.lower()
+    markers = [m for m in RATE_LIMIT_MARKERS if m in low]
+    failures = _failing_lines(text)
+    if failures:
+        # ① pytest 面：**逐条**看失败行的**错误文本**（不是测试名、也不是整行）。
+        # 实测第二形态（#8709）：`ci workflow helper unit tests` 的两条联网判据在限流时 fail-closed，
+        # 错误文本 = `HTTP 403（**限流**：X-RateLimit-Remaining=0 · Reset=…）` ⇒ 每一条都带特征
+        # ⇒ 判环境态。这条**必须**在「有 FAILED 行就是真红」之外单独成立，否则同一个病的第二出口
+        # 照旧被记成 flaky（台账实测：9 条带 `failing_tests` 的条目里 5 条就是它）。
+        unmarked = [(node, err) for node, err in failures
+                    if not _has_rate_limit_marker(err)]
+        nodes = [node for node, _ in failures]
+        if unmarked:
+            sample = unmarked[0][1][:120] or "（空）"
+            return {"verdict": FEATURE_NOT_RATE_LIMITED, "markers": markers,
+                    "test_failures": nodes,
+                    "why": (f"{len(unmarked)}/{len(failures)} 条失败测试的**错误文本**里没有限流特征"
+                            f"（如 `{sample}`）⇒ **真测试红**"
+                            f"（宁可多判一次 flaky，不许放过真红）")}
+        return {"verdict": FEATURE_RATE_LIMITED, "markers": markers,
+                "test_failures": nodes,
+                "why": (f"**每一条**失败测试的错误文本都带限流特征（{len(nodes)} 条："
+                        f"`{'`、`'.join(nodes[:3])}`）⇒ 失败原因是**限流**（判不了），"
+                        f"不是断言本身不成立")}
+    if markers:
+        return {"verdict": FEATURE_RATE_LIMITED, "markers": markers, "test_failures": [],
+                "why": (f"只有限流特征（命中 `{'`、`'.join(markers)}`）、没有任何失败测试行 ⇒ "
+                        f"**环境态**：那次 job 是「判不了」（exit 3），不是测试红")}
+    return {"verdict": FEATURE_NOT_RATE_LIMITED, "markers": [], "test_failures": [],
+            "why": "没有限流特征 ⇒ 按原路径处置（不是环境态）"}
+
+
+def collect_failure_kinds(bundle, repo, fetch_log=None,
+                          max_fetches: int = MAX_CLASSIFY_FETCHES) -> dict:
+    """给 bundle 里**失败那次尝试的 job** 各读一份日志，把分类写进 `bundle[FAILURE_KINDS_FIELD]`。
+
+    看**两次尝试**（第二次绿时失败那批在 `prior_jobs` —— 本单的现场就是那条路径）：
+      · 本次尝试的失败 job —— attempt=1 的首红、以及「两次都红」的第二批；
+      · 上一次尝试的失败 job —— **第二次绿**那条路径上唯一的失败事实来源。
+
+    ⚠️ **fail-safe，不是 fail-closed**（与 `collect_failing_tests` 同口径）：单份日志取不到
+    （job 已被清理 / 权限 / 网络）**不抛**，记进 `failed` 清单 ⇒ 该 job 的判定是 `unknown` ⇒
+    `rate_limited_only` 得到「未判定」⇒ **照旧走原路径**（重跑）。但 `blind` 会显式报出来，
+    `render_failure_kinds_report` 会打 `::warning::` —— **「取不到」与「没有限流」长得不一样**
+    （这是本单最容易做错的地方：把盲区读成「已排除」）。
+
+    返回 reading（**计数现取**，不写死）：`{total, scanned, blind, rate_limited,
+    not_rate_limited, unknown, fetches, failed}`。
+    """
+    fetch_log = fetch_log or fetch_job_log
+    bundle = bundle if isinstance(bundle, dict) else {}
+    run = (bundle or {}).get("run") or {}
+    attempt = _attempt(run)
+    targets = [(attempt, list(bundle.get("jobs") or []))]
+    if attempt >= 2:
+        targets.append((max(attempt - 1, 1), list(bundle.get("prior_jobs") or [])))
+    by_attempt: dict = {}
+    reading = {"total": 0, "scanned": 0, "blind": False,
+               "rate_limited": [], "not_rate_limited": [], "unknown": [],
+               "fetches": 0, "failed": []}
+    budget = max(0, int(max_fetches))
+    for attempt_no, jobs in targets:
+        failed = [j for j in jobs if is_failed(j)]
+        if not failed:
+            continue
+        table = by_attempt.setdefault(str(attempt_no), {})
+        for job in failed:
+            name = str(job.get("name") or "")
+            reading["total"] += 1
+            if budget <= 0:
+                table[name] = FEATURE_UNKNOWN
+                reading["unknown"].append([attempt_no, name])
+                reading["failed"].append({
+                    "key": [attempt_no, name],
+                    "why": f"超出每次 run 的日志拉取上限 {max_fetches}"
+                           f"（MAX_CLASSIFY_FETCHES）⇒ 该 job **未判定**"})
+                continue
+            try:
+                jid = job_id(job)
+                if jid is None:
+                    raise LookupError(f"job `{name}` 没有 job id（无法拉日志）")
+                budget -= 1
+                evidence = rate_limit_only_evidence(fetch_log(repo, jid))
+            except Exception as exc:  # noqa: BLE001 - fail-safe：取数面坏掉不许拖垮分流
+                table[name] = FEATURE_UNKNOWN
+                reading["unknown"].append([attempt_no, name])
+                reading["failed"].append({"key": [attempt_no, name],
+                                          "why": f"{type(exc).__name__}: {exc}"})
+                continue
+            reading["fetches"] += 1
+            table[name] = evidence["verdict"]
+            if evidence["verdict"] == FEATURE_RATE_LIMITED:
+                reading["scanned"] += 1
+                reading["rate_limited"].append([attempt_no, name])
+            elif evidence["verdict"] == FEATURE_NOT_RATE_LIMITED:
+                reading["scanned"] += 1
+                reading["not_rate_limited"].append([attempt_no, name])
+            else:
+                reading["unknown"].append([attempt_no, name])
+    reading["blind"] = reading["total"] > 0 and reading["scanned"] == 0
+    bundle[FAILURE_KINDS_FIELD] = {"by_attempt": by_attempt, "reading": reading}
+    return reading
+
+
+def rate_limited_only(bundle, failed_jobs, attempt) -> dict:
+    """**纯函数**：这些失败 job 是否**全部**被判为「只有限流特征」（⇒ 环境态，不是测试红）。
+
+    这是 #8709 唯一的前提判定 —— 「**第一次红是不是测试红**」。三条规则（全部 fail-safe）：
+      ① **全部** `rate_limited` ⇒ `rate_limited=True`（**任一个**不是 ⇒ 走原路径，判据 3）；
+      ② 有 `not_rate_limited` ⇒ False，理由写明「按真红处置」（宁可多判一次 flaky，
+         不许放过真红）；
+      ③ 有 `unknown` 但无 `not_rate_limited` ⇒ False + `blind`（**未判定 ≠ 已判定为非限流**）。
+    没有任何失败 job ⇒ False（调用方已先挡掉那种情形）。
+    """
+    jobs = [j for j in (failed_jobs or []) if isinstance(j, dict)]
+    names = [str(j.get("name") or "") for j in jobs]
+    known = ((bundle or {}).get(FAILURE_KINDS_FIELD) or {})
+    table = (known.get("by_attempt") or {}).get(str(attempt)) or {}
+    rows = [{"attempt": attempt, "job": name,
+             "verdict": table.get(name, FEATURE_UNKNOWN)} for name in names]
+    total = len(rows)
+    scanned = sum(1 for row in rows if row["verdict"] != FEATURE_UNKNOWN)
+    rate = [row["job"] for row in rows if row["verdict"] == FEATURE_RATE_LIMITED]
+    other = [row["job"] for row in rows if row["verdict"] == FEATURE_NOT_RATE_LIMITED]
+    undecided = [row["job"] for row in rows if row["verdict"] == FEATURE_UNKNOWN]
+    out = {"rate_limited": False, "total": total, "scanned": scanned,
+           "blind": bool(total and scanned == 0), "jobs": rows}
+    if not total:
+        out["reason"] = "没有任何失败 job ⇒ 无前提判定可做"
+    elif len(rate) == total:
+        out["rate_limited"] = True
+        out["reason"] = (f"**{total}** 个失败 job 的日志**只有限流特征**（`{'`、`'.join(rate)}`）⇒ "
+                         f"**环境态**：那次 job 是「判不了」（exit 3），**不是测试红**")
+    elif other:
+        out["reason"] = (f"其中 {len(other)} 个 job 的日志里有真测试失败 / 非限流证据"
+                         f"（`{'`、`'.join(other)}`）⇒ **按真红处置**"
+                         f"（宁可多判一次 flaky，不许放过真红）"
+                         + (f"；另有 {len(undecided)} 个未判定" if undecided else ""))
+    else:
+        out["reason"] = (f"{len(undecided)}/{total} 个失败 job 的日志**没有取到** ⇒ "
+                         f"**未判定**是不是限流（0 命中 = **盲**，不是「已判定为非限流」）"
+                         f"⇒ 保守按原路径处置")
+    return out
+
+
+def render_failure_kinds_report(reading) -> str:
+    """分类步骤的**可见读数**（job summary）：扫了几份、判了什么、有没有盲区。"""
+    reading = reading if isinstance(reading, dict) else {}
+    total = int(reading.get("total") or 0)
+    scanned = int(reading.get("scanned") or 0)
+    lines = [f"**失败 job 的日志分类（#8709）**：扫描面 {scanned}/{total} 个失败 job · "
+             f"拉取日志 {reading.get('fetches') or 0} 份 · "
+             f"判限流 {len(reading.get('rate_limited') or [])} 个 · "
+             f"按真红 {len(reading.get('not_rate_limited') or [])} 个 · "
+             f"**未判定 {len(reading.get('unknown') or [])} 个**"]
+    if total == 0:
+        lines.append("   · 本次没有失败 job ⇒ 无前提判定可做（**不是**「没有限流」）")
+    if reading.get("blind"):
+        lines.append(f"::warning::失败 job 的日志**一份都没取到**（扫描面 0/{total}）⇒ "
+                     f"本轮**未判定**是不是限流（0 命中 = **盲**，不是「判定为非限流」）；"
+                     f"分流按原路径处置")
+    for row in reading.get("failed") or []:
+        lines.append(f"   · ⚠️ attempt={row['key'][0]} job={row['key'][1]!r}：{row['why']}")
+    return "\n".join(lines)
 
 
 def attempt_facts(job, attempt: int, assertion=None) -> dict:
@@ -1053,13 +1354,18 @@ def decide(bundle, max_attempts: int = MAX_ATTEMPTS, *, ledger=None, now=None,
       · `ledger` —— 同 `(workflow, head_sha)` **时间窗去重**的状态源（条目自带时刻，无计数器）；
       · `now` —— 现取时间戳（UTC ISO）；缺省 → `_now()`。窗口长度 = `dedup_window_minutes`。
 
-    action 四态：
+    action 五态：
       · `skip`                   —— 不动作（含 infra/取消/超时/非 PR/不在白名单）
       · `rerun`                  —— 首次失败 ⇒ 重跑失败 job **1 次**
       · `mark_flaky`             —— 第二次绿 ⇒ 标 flaky（**并卸 auto-merge**）
       · `record_infra`           —— 第二次绿但全是 infra ⇒ 只记账（不打 flaky 标、不卸）
       · `record_both_red`        —— 第二次仍红 ⇒ **照常失败**（不再重跑第三次）；条目 `kind=unknown`
         （#5088：两次都红**不足以**判定「确定性失败」⇒ 只记事实、不归因）
+      · `infra_rate_limited`     —— 🔴 #8709：失败 job 的日志**只有限流特征**（中英都认）⇒ 那次红是
+        「**判不了**」（`exit 3`），**不是测试红** ⇒ **不重跑 / 不记账 / 不打 flaky 标 / 不卸
+        auto-merge**，但**也不放行**（那次 job 仍然红 ⇒ required 仍不满足）。前提判定 = 本函数
+        **之前**的 `classify-failures` 取数（`FAILURE_KINDS_FIELD`）；取不到日志 ⇒ `unknown` ⇒
+        **走原路径**（宁缺勿滥：宁可多判一次 flaky，不许放过真红）
     """
     run = (bundle or {}).get("run") or {}
     jobs = (bundle or {}).get("jobs") or []
@@ -1119,29 +1425,50 @@ def decide(bundle, max_attempts: int = MAX_ATTEMPTS, *, ledger=None, now=None,
         first_failed = [j for j in prior_jobs if is_failed(j)]
         if not first_failed:
             return skip("重跑绿，但**首次尝试没有失败 job**（可能被取消后重跑）⇒ 无 flaky 证据")
-        return _terminal(run, first_failed, "success", attempt,
-                         # ⚠️ 三个参数缺一不可（#5687 实测各踩过一次，每一处的失效形态都一样：
-                         # **时间桶判据静默退化成「恒判同桶」**）：
-                         # ① `prior_failed_jobs` —— 首次失败那批 job（`attempts` / 首个失败步骤的
-                         #    取数面）；
-                         # ② `rerun_jobs` —— **重跑那次**的 job（= 本次 `jobs`，全绿）⇒「重跑时刻」
-                         #    的**唯一**取数面。缺它 ⇒ 重跑时刻回落到失败 job 自己 ⇒ `failed_at
-                         #    == rerun_at` 恒成立（实测）；
-                         # ③ `failed_attempt=attempt - 1` —— 失败那批 job 的**尝试序号**（缺它会被
-                         #    标成 `attempt=2`，于是 `build_entries` 去找不存在的 attempt 1
-                         #    ⇒ `prev_facts=None`）。
-                         prior_failed_jobs=prior_jobs,
-                         rerun_jobs=jobs,
-                         failed_attempt=max(attempt - 1, 1))
+        # ── 🔴 #8709：**第一次红是不是测试红**（本单唯一的**前提判定**）───────────────
+        # 位置是判据的一部分：必须在 `_terminal` **之前** —— 一旦进去，「第二次绿 ⇒ flaky」
+        # 就已经写进 `kind` 了（旧口径把「限流致 exit 3」洗成 flaky 的路径正是它，
+        # 现场 = PR #8699：5 条守卫同时撞小时内配额 ⇒ 重跑 ⇒ 配额恢复后绿 ⇒ `mark_flaky`
+        # ⇒ `block/merge` + `--disable-auto` ⇒ 与 flaky 完全无关的 PR 被人工闸挡住）。
+        # 取数面 = **失败那批 job**（这条路径上 = `prior_jobs`，attempt 号 = `attempt - 1`）。
+        limit = rate_limited_only(bundle, first_failed, max(attempt - 1, 1))
+        if limit["rate_limited"]:
+            return _infra_rate_limited_decision(run, first_failed, attempt, limit)
+        decision = _terminal(run, first_failed, "success", attempt,
+                             # ⚠️ 三个参数缺一不可（#5687 实测各踩过一次，每一处的失效形态都一样：
+                             # **时间桶判据静默退化成「恒判同桶」**）：
+                             # ① `prior_failed_jobs` —— 首次失败那批 job（`attempts` / 首个失败步骤的
+                             #    取数面）；
+                             # ② `rerun_jobs` —— **重跑那次**的 job（= 本次 `jobs`，全绿）⇒「重跑时刻」
+                             #    的**唯一**取数面。缺它 ⇒ 重跑时刻回落到失败 job 自己 ⇒ `failed_at
+                             #    == rerun_at` 恒成立（实测）；
+                             # ③ `failed_attempt=attempt - 1` —— 失败那批 job 的**尝试序号**（缺它会被
+                             #    标成 `attempt=2`，于是 `build_entries` 去找不存在的 attempt 1
+                             #    ⇒ `prev_facts=None`）。
+                             prior_failed_jobs=prior_jobs,
+                             rerun_jobs=jobs,
+                             failed_attempt=max(attempt - 1, 1))
+        # #8709：前提判定的**取数面**随决策一起返回（含 `blind`）—— job summary 与 PR 评论
+        # 都要能说出「扫了几份、判了什么、有没有盲区」（0 命中 ≠ 已排除）。
+        decision["failure_kinds"] = limit
+        return decision
     if conclusion != "failure":
         return skip(f"conclusion={conclusion} 不是测试失败")
 
     failed = [j for j in jobs if is_failed(j)]
     if not failed:
         return skip("conclusion=failure 但没有任何失败 job（workflow 级失败）—— 无 job 可重跑")
+    # ── 🔴 #8709：同一前提判定，用在「**首次失败**」这条路径上（重跑之前）────────────
+    # 为什么必须先判：重跑**只会再撞同一小时配额**（白烧一次，实测一晚 3 个包各多跑一轮
+    # 8~10 分钟的 CI）；而且「重跑过」会让下一次完成事件更可能被读成「第二次绿 ⇒ flaky」。
+    limit = rate_limited_only(bundle, failed, attempt)
+    if limit["rate_limited"]:
+        return _infra_rate_limited_decision(run, failed, attempt, limit)
     if attempt >= max_attempts:
-        return _terminal(run, failed, "failure", attempt,
-                         prior_failed_jobs=prior_jobs, failed_attempt=attempt)
+        decision = _terminal(run, failed, "failure", attempt,
+                             prior_failed_jobs=prior_jobs, failed_attempt=attempt)
+        decision["failure_kinds"] = limit
+        return decision
     return {
         "action": "rerun",
         "reason": (f"首次失败（attempt={attempt}）⇒ 自动重跑失败 job "
@@ -1151,6 +1478,7 @@ def decide(bundle, max_attempts: int = MAX_ATTEMPTS, *, ledger=None, now=None,
         "entries": [],
         "pr": pr_number(run),
         "attempt": attempt,
+        "failure_kinds": limit,
     }
 
 
@@ -1256,6 +1584,41 @@ def _terminal(run, failed_jobs, rerun_result: str, attempt: int, prior_failed_jo
                   f"⇒ 记 `kind=unknown` + 原始事实，**不归因**（归因需先按 #5088 口径取证再 `attest`）")
     return {"action": action, "reason": reason, "kind": kind,
             "entries": entries, "pr": pr_number(run), "attempt": attempt}
+
+
+def _infra_rate_limited_decision(run, failed_jobs, attempt, verdict) -> dict:
+    """🔴 #8709：`infra_rate_limited` 的**唯一**产出点。
+
+    **五件不做**（每条都对着本单要治的后果）：不重跑（重跑只会再撞同一小时配额）、不记账
+    （台账是**证据**：把限流写成 flaky 比缺证据更难查）、不打 flaky 标注、不卸 auto-merge
+    （本类不需要额外闸门）、**不放行**。
+
+    🔴 「不放行」不是本函数给的承诺，而是**结构事实**：那次失败的 job **仍然是红的** ⇒
+    required 检查仍不满足 ⇒ PR 仍被挡。本单**一个字都没改**任何守卫的退出码 ——
+    修法 C（限流时让守卫判 `neutral`）被否掉就是这个理由：把 `exit 3` 洗成「没红」= 本仓最贵的
+    「绿了但没跑」同族。
+    """
+    return {
+        "action": "infra_rate_limited",
+        "kind": None,
+        "reason": ("失败 job 的日志里**只有限流特征**（Actions token 小时配额，HTTP 403）⇒ 这是"
+                   "**环境态**：那次 job 是「**判不了**」（exit 3），**不是测试红**。"
+                   "**不重跑**（重跑只会再撞配额）、**不记账**、**不判 flaky**、**不卸 auto-merge**；"
+                   "**也不放行** —— 那次 job 仍然是红的 ⇒ required 检查仍不满足 ⇒ PR 仍被挡。"
+                   "等配额窗口恢复后重跑那次失败 job（issue #8709）"),
+        "failed_jobs": [j.get("name") for j in failed_jobs],
+        # 台账面：**零条目**（判据 4：限流产生的 `flaky` 不许混进证据台账）
+        "entries": [],
+        "pr": pr_number(run),
+        "attempt": attempt,
+        "run_id": run.get("id"),
+        "run_url": run.get("html_url"),
+        # 三个显式标志：读日志 / 判据 / PR 面据此知道「这轮**没判定**」（不是「没有失败」）
+        "infra_rate_limited": True,
+        "environment_state": True,
+        # 前提判定的**取数面**（谁被判限流、扫了几份、有没有盲区）—— 可见性随决策一起走
+        "failure_kinds": verdict,
+    }
 
 
 # ── 台账：只追加 + 幂等 ───────────────────────────────────────────────────────
@@ -2995,6 +3358,44 @@ def render_comment(decision: dict) -> str:
             "",
             f"判据：{decision.get('reason')}",
         ]
+    elif decision.get("action") == "infra_rate_limited":
+        # 🔴 #8709：本类**不是 flaky、也不是通过** —— 它是「**判不了**」（限流致的 exit 3）。
+        # 这一节必须与 `mark_flaky` **长得不一样**（否则读的人会把「环境态」读成
+        # 「已查清是重跑才绿」，那正是本单要治的读数与事实不一致）。⇒ 本类**不出现**
+        # `flaky/rerun-green` 这个标签名，也不出现「重跑才绿」的措辞。
+        rows = ["| job | 日志判定 | 依据 |", "|---|---|---|"]
+        for row in (decision.get("failure_kinds") or {}).get("jobs") or []:
+            rows.append(f"| `{row.get('job')}` | **`{row.get('verdict')}`** | "
+                        f"第 {row.get('attempt')} 次尝试的日志 |")
+        lines += [
+            "## ⏳ Flaky Triage —— **未判定**（限流致 exit 3），既不是 flaky、也不是通过",
+            "",
+            "**为什么停在这里**：失败的 job 日志里**只有限流特征**（Actions token 小时配额，HTTP 403），"
+            "守卫按设计 fail-closed 打了 `未判定（exit 3，不得当 0 读）` —— 这是**环境态**，"
+            "**不是测试红**。对一个「判不了」的结果做「重跑 ⇒ 绿 ⇒ 判 flaky」，"
+            "等于**用重跑把「无法判定」洗成 flaky 结论**，还会把假条目写进证据台账。",
+            "",
+            "本类**什么都没做**（逐条列出，便于复核）：",
+            "",
+            "- ⛔ **没有重跑**（重跑只会再撞同一小时配额，白烧一轮 CI）",
+            "- ⛔ **没有记账**（台账是**证据**：混进「其实是限流」的条目比缺证据更难查）",
+            "- ⛔ **没有**打任何 flaky 标注",
+            "- ⛔ **没有**卸下 auto-merge（本类不需要额外闸门）",
+            "- 🔴 **也没有放行**：那次失败的 job **仍然是红的** ⇒ required 检查仍不满足 ⇒ PR 仍被挡。"
+            "「未判定」在这里**不等于**「通过」（`exit 3` = 判不了，不得当 0 读）。",
+            "",
+            *rows,
+            "",
+            "**下一步（可行动）**：等 Actions token 配额窗口恢复后，重跑那次失败的 job：",
+            "",
+            "```bash",
+            f"gh run rerun {decision.get('run_id') or '<run_id>'} --failed --repo <owner/repo>",
+            "```",
+            "",
+            "配额恢复后若**仍然红**，那才是真失败（届时按真红处置）。",
+            "",
+            f"判据：{decision.get('reason')}",
+        ]
     elif decision.get("action") == "record_infra":
         lines += [
             "## 🧰 Flaky Triage —— 重跑绿，但属**基础设施/环境**失败",
@@ -3044,6 +3445,22 @@ def render_summary(decision: dict) -> str:
     if decision.get("rate_limited"):
         text += ("\n::warning::限流熔断：本轮**未分流**（环境态，不是 flaky）—— 零 rerun / "
                  "零记账 / 零推台账。**「没跑」≠「没有 flaky」**（本轮的失败留白）")
+    # 🔴 #8709：**前提判定**的取数面必须可见 —— 『扫了几份、判了什么、有没有盲区』。
+    # 为什么这一节不可或缺：本单要治的是「把判不了当成测试红」，而修法本身的失效形态是
+    # **反向的** —— 日志一份都没取到（盲）却被读成「已排除限流」。⇒ 盲区在这里出声。
+    kinds = decision.get("failure_kinds") or {}
+    if isinstance(kinds, dict) and kinds:
+        text += (f"\n日志分类（#8709 前提判定）：扫描面 {kinds.get('scanned')}/{kinds.get('total')} "
+                 f"个失败 job ⇒ **不是**「通过」（`exit 3` = 判不了，不得当 0 读）")
+        if kinds.get("blind"):
+            text += (f"\n::warning::失败 job 的日志**扫描面为空**（0/{kinds.get('total')}）⇒ "
+                     f"本轮**未判定**是不是限流 —— **不是**「判定为非限流」；"
+                     f"分流按原路径处置（取不到 ≠ 没有问题）")
+    if decision.get("infra_rate_limited"):
+        text += ("\n::warning::#8709 判 `infra_rate_limited`：限流导致 exit 3 = **未判定**，"
+                 "**不是通过、也不是测试红**；零重跑 / 零记账 / 未打任何 flaky 标注 / 未卸 "
+                 "auto-merge，**也未放行**（那次 job 仍红 ⇒ required 仍不满足）"
+                 "—— 等配额窗口后重跑那次失败 job")
     return text
 
 
@@ -3058,6 +3475,11 @@ def _write(path: str, text: str) -> None:
 #: 单独做成常量是**判据需要**：workflow 结构守卫按这个名字找调用（`test_flaky_triage.py`），
 #: 且「摘掉这一步 ⇒ 必红」的注入锚也从它取值（不写第二份字面量）。
 COLLECT_FAILING_TESTS_COMMAND = "collect-failing-tests"
+
+#: 🔴 #8709：**前提判定**的取数命令（`flaky-triage.yml` 必须**在 `decide` 之前**调用它 ⇒
+#: 「第一次红是不是测试红」才有取数面）。同样单独成常量：workflow 结构守卫按这个名字找调用，
+#: 「摘掉这一步 ⇒ 必红」的注入锚也从它取值（不写第二份字面量）。
+CLASSIFY_FAILURES_COMMAND = "classify-failures"
 
 
 def render_failing_tests_report(entries: list, info: dict) -> str:
@@ -3135,6 +3557,18 @@ def main(argv=None) -> int:
                    help="`decide --entries-out` 写出的条目文件（本命令**原地**补 `failing_tests`）")
     p.add_argument("--attempt", type=int, action="append", default=None,
                    help="只处理失败那次尝试 = 该序号的条目（可重复；缺省 ⇒ 每条按自己的 attempts 推）")
+    p.add_argument("--json-out")
+
+    p = sub.add_parser(CLASSIFY_FAILURES_COMMAND,
+                       help="#8709：读**失败 job 的日志**，判「这次失败是不是**只有限流特征**」"
+                            "（⇒ 环境态：那次红是 `exit 3` 判不了，不是测试红），"
+                            "写进 bundle 的 `failure_kinds`（**只读网络 + 原地改 bundle**）")
+    p.add_argument("--repo", required=True)
+    p.add_argument("--bundle", required=True,
+                   help="`fetch --out` 写出的 bundle 文件（本命令**原地**补 `failure_kinds`）")
+    p.add_argument("--max-fetches", type=int, default=MAX_CLASSIFY_FETCHES,
+                   help=f"最多拉几份日志（默认 {MAX_CLASSIFY_FETCHES}：必须覆盖**本次全部**失败 job，"
+                        f"见 MAX_CLASSIFY_FETCHES；台账面是另一个更小的上限 MAX_LOG_FETCHES）")
     p.add_argument("--json-out")
 
     p = sub.add_parser("ledger-drift",
@@ -3413,6 +3847,27 @@ def main(argv=None) -> int:
         if args.json_out:
             _write(args.json_out, json.dumps(reading, ensure_ascii=False))
             return 0
+        return 0
+
+    if args.cmd == CLASSIFY_FAILURES_COMMAND:
+        # 🔴 #8709：**前提判定**的取数（「第一次红是不是测试红」）。只读网络 + 原地改 bundle；
+        # 判定本体在 `rate_limited_only`（**纯函数**）⇒ 离线可红证。
+        # ⚠️ **fail-safe，不是 fail-closed**：单份日志取不到 ⇒ 该 job `unknown` ⇒ 走原路径
+        #    （宁可多判一次 flaky，不许放过真红）；但 `blind`（一份都没取到）**必须出声**
+        #    —— 0 命中是**盲**，不是「判定为非限流」。
+        #    唯一的 fail-closed 是「bundle 读不到 / 形状不对」⇒ 退 1：把它当「没有失败 job」
+        #    继续，就是本仓最忌的「未跑 ≠ 通过」。
+        try:
+            bundle = json.loads(Path(args.bundle).read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            print(f"::error::bundle 读不到 / 形状不对（{args.bundle}：{exc}）⇒ "
+                  f"**不得**当「没有失败 job」继续（未跑 ≠ 通过）", file=sys.stderr)
+            return 1
+        reading = collect_failure_kinds(bundle, args.repo, max_fetches=args.max_fetches)
+        _write(args.bundle, json.dumps(bundle, ensure_ascii=False))
+        print(render_failure_kinds_report(reading))
+        if args.json_out:
+            _write(args.json_out, json.dumps(reading, ensure_ascii=False, indent=2))
         return 0
 
     if args.cmd == COLLECT_FAILING_TESTS_COMMAND:
