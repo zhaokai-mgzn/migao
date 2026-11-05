@@ -1,0 +1,6 @@
+{
+  "id": "MC-223",
+  "pr": 8720,
+  "title": "OrderService 门面收尾第五批（issue #8681 的 P2-1e，部分交付）：建单族 createOrder 的调用方改直连 OrderCreationService、统计与跟进读取三个入口改直连新建的 OrderStatsService，门面 1,655 → 1,582 行并删掉这 4 个转发；六个测试文件的建单驱动点全数迁到实现点（断言零改动），退休守护扩到 11 个方法与 7 个驱动入口",
+  "claimed_at": "2026-11-05"
+}
