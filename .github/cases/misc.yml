@@ -8770,6 +8770,7 @@ cases:
         - "backend/admin-api/src/test/java/com/migao/admin/controller/OrderIntegrationTest.java"
         - "backend/admin-api/src/test/java/com/migao/admin/controller/PaginationParamGateEndpointTest.java"
         - "backend/admin-api/src/test/java/com/migao/admin/controller/TenantOwnershipBeforeValidationTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/controller/OrderDataScopeGuardTest.java"
         - "backend/admin-api/src/test/java/com/migao/admin/time/BusinessDayWindowTest.java"
         - "tests/unit_ci_workflows/test_loc_ratchet.py"
       ci:

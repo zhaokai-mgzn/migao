@@ -134,3 +134,4 @@
 {"id":"1793831554.60056.15033","ts":"2026-11-04T22:32:34Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/8681b-tests","why":"--allow-package-heavy（命令行显式）"}
 {"id":"1793833324.56036.8651","ts":"2026-11-04T23:02:05Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/7583-seed","why":"--allow-package-heavy（命令行显式）"}
 {"id":"1793842642.84756.20820","ts":"2026-11-05T01:37:22Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/8681c-facade4","why":"--allow-package-heavy（命令行显式）"}
+{"id":"1793843198.11049.30992","ts":"2026-11-05T01:46:39Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/8681c-facade4","why":"--allow-package-heavy（命令行显式）"}
