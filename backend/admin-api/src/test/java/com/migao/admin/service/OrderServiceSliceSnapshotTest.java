@@ -220,7 +220,7 @@ class OrderServiceSliceSnapshotTest {
                 long skuId = 40 + index;
                 currentItems = List.of(item(orderId, "prod-0", "1.5", Map.of("skuId", skuId)));
                 skuById = Map.of(skuId, sku(skuId, "prod-0", "2.8", "12.0"));
-                orderService.restoreStockForReturn(orderId);
+                stockImpl().restoreStockForReturn(orderId);
                 return "CASE " + index + " variant=" + variant + " restoreStockForReturn(skuId)";
             }
             default -> {
@@ -447,6 +447,15 @@ class OrderServiceSliceSnapshotTest {
      */
     private OrderLifecycleService lifecycle() {
         return ReflectionTestUtils.invokeMethod(orderService, "lifecycleService");
+    }
+
+    /**
+     * 门面**自己懒构造的那一份**库存实现点（issue #8681，P2-1e 第八批）：
+     * {@code restoreStockForReturn} 的门面转发已退休 ⇒ 只换「谁被驱动」，
+     * 同一条调用链、同一份协作者（Mapper / 台账 / 时钟都是门面已装配的那几个），快照基线因此逐字节不变。
+     */
+    private OrderStockService stockImpl() {
+        return ReflectionTestUtils.invokeMethod(orderService, "stockService");
     }
 
 }

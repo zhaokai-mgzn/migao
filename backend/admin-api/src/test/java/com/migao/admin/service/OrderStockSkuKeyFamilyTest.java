@@ -89,6 +89,8 @@ class OrderStockSkuKeyFamilyTest {
 
     @InjectMocks
     private OrderService orderService;
+    /** 建单实现点（issue #8681，P2-1e 第八批）：createOrderForAgent 的门面转发已退休 ⇒ 直驱实现点（门面自己懒构造的那一份） */
+    private OrderCreationService orderCreationService;
     /**
      * 制单人留痕（issue #5835）：本类不涉及制单人口径 ⇒ 解析恒为 null ⇒ 两列不写
      * （与「取不到操作者」同一条路径，既有断言一字未动）。
@@ -142,6 +144,7 @@ class OrderStockSkuKeyFamilyTest {
                 new ProcessingFeeCalculator(processingFeeCombinationMapper, routeRuleMapper));
         TenantContext.setTenantId(1L);
         // LambdaQueryWrapper<ProductSku> 需要 lambda 缓存才能解析列名
+        orderCreationService = ReflectionTestUtils.invokeMethod(orderService, "creationService");
         MybatisConfiguration conf = new MybatisConfiguration();
         MapperBuilderAssistant assistant = new MapperBuilderAssistant(conf, "");
         TableInfoHelper.initTableInfo(assistant, Order.class);
@@ -268,7 +271,7 @@ class OrderStockSkuKeyFamilyTest {
         mockCreatedOrder("confirmed");
 
         // when: 下单成功 → 确认支付
-        OrderDetailResponse created = orderService.createOrderForAgent(agentRequest(agentSpecInfo(), 2), 1L);
+        OrderDetailResponse created = orderCreationService.createOrderForAgent(agentRequest(agentSpecInfo(), 2), 1L, orderService);
         assertThat(created).isNotNull();
         lifecycle().confirmPayment(ORDER_ID);
 
@@ -291,7 +294,7 @@ class OrderStockSkuKeyFamilyTest {
         when(productSkuMapper.selectById(SKU_ID)).thenReturn(storedSku());
         when(orderMapper.update(any(), any())).thenReturn(1);
 
-        orderService.createOrderForAgent(agentRequest(agentSpecInfo(), 2), 1L);
+        orderCreationService.createOrderForAgent(agentRequest(agentSpecInfo(), 2), 1L, orderService);
         assertThat(captured[0]).isNotNull();
         lifecycle().cancelOrder(ORDER_ID, "客户不要了", orderService);
 
@@ -312,7 +315,7 @@ class OrderStockSkuKeyFamilyTest {
         // given: 明细声明了规格（skuCode/colorName/门幅），但该商品下没有任何匹配的 SKU 行
         when(productSkuMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
 
-        assertThatThrownBy(() -> orderService.createOrderForAgent(agentRequest(agentSpecInfo(), 2), 1L))
+        assertThatThrownBy(() -> orderCreationService.createOrderForAgent(agentRequest(agentSpecInfo(), 2), 1L, orderService))
                 .isInstanceOf(BusinessException.class)
                 // 可行动：说清声明了哪些键、该补什么
                 .hasMessageContaining("SKU")
@@ -327,7 +330,7 @@ class OrderStockSkuKeyFamilyTest {
         OrderItem[] captured = mockCreatedOrder("pending");
         when(productSkuMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(storedSku()));
         when(productSkuMapper.selectById(SKU_ID)).thenReturn(storedSku());
-        orderService.createOrderForAgent(agentRequest(agentSpecInfo(), 2), 1L);
+        orderCreationService.createOrderForAgent(agentRequest(agentSpecInfo(), 2), 1L, orderService);
 
         // 下单后该规格的 SKU 行被删/改名（规格漂移）⇒ 确认支付必须显式失败
         when(productSkuMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
@@ -357,7 +360,7 @@ class OrderStockSkuKeyFamilyTest {
         when(orderMapper.update(any(), any())).thenReturn(1);
         mockCreatedOrder("confirmed");
 
-        OrderDetailResponse created = orderService.createOrderForAgent(agentRequest(processingOnlyInfo(), 2), 1L);
+        OrderDetailResponse created = orderCreationService.createOrderForAgent(agentRequest(processingOnlyInfo(), 2), 1L, orderService);
         assertThat(created).as("无 SKU 身份的合法订单不得被拒").isNotNull();
         lifecycle().confirmPayment(ORDER_ID);
 

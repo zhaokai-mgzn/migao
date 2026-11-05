@@ -6,6 +6,8 @@ import com.migao.admin.controller.BaseControllerTest;
 import com.migao.admin.dto.OrderDetailResponse;
 import com.migao.admin.dto.agent.AgentOrderCreateRequest;
 import com.migao.admin.mapper.UserMapper;
+import com.migao.admin.service.OrderAgentFacade;
+import com.migao.admin.service.OrderCreationService;
 import com.migao.admin.service.OrderQueryService;
 import com.migao.admin.service.OrderService;
 import org.junit.jupiter.api.BeforeEach;
@@ -45,8 +47,18 @@ class AgentOrderControllerTest extends BaseControllerTest {
 
     private static final String URL = "/api/admin/agent/orders";
 
+    /**
+     * 建单 / 改单共用的共享部件实现点（issue #8681，P2-1e 第八批）：门面的两个 Agent 转发已退休 ⇒
+     * 本类不再经它调用业务入口，它只作为两个实现点入口的**第三参**出现在调用里。
+     */
     @Mock
     private OrderService orderService;
+    /** 建单实现点（issue #8681，P2-1e 第八批）：{@code POST /agent/orders} 直连它 */
+    @Mock
+    private OrderCreationService orderCreationService;
+    /** 改单实现点（issue #8681，P2-1e 第八批）：{@code PATCH /agent/orders/{id}} 直连它 */
+    @Mock
+    private OrderAgentFacade orderAgentFacade;
     /** 单号解析的实现点（issue #8681，P2-1e）：`/resolve` 直接依赖新服务，门面转发已删除。 */
     @Mock
     private OrderQueryService orderQueryService;
@@ -66,7 +78,7 @@ class AgentOrderControllerTest extends BaseControllerTest {
         OrderDetailResponse detail = new OrderDetailResponse();
         detail.setId("order-1");
         detail.setOrderNo("ORD-1");
-        when(orderService.createOrderForAgent(any(AgentOrderCreateRequest.class), eq(TEST_TENANT_ID)))
+        when(orderCreationService.createOrderForAgent(any(AgentOrderCreateRequest.class), eq(TEST_TENANT_ID), eq(orderService)))
                 .thenReturn(detail);
     }
 
@@ -81,7 +93,7 @@ class AgentOrderControllerTest extends BaseControllerTest {
 
         ArgumentCaptor<AgentOrderCreateRequest> captor =
                 ArgumentCaptor.forClass(AgentOrderCreateRequest.class);
-        verify(orderService).createOrderForAgent(captor.capture(), eq(TEST_TENANT_ID));
+        verify(orderCreationService).createOrderForAgent(captor.capture(), eq(TEST_TENANT_ID), eq(orderService));
         assertThat(captor.getValue().getClientRequestId()).isEqualTo("req-key-1");
     }
 
@@ -95,7 +107,7 @@ class AgentOrderControllerTest extends BaseControllerTest {
 
         ArgumentCaptor<AgentOrderCreateRequest> captor =
                 ArgumentCaptor.forClass(AgentOrderCreateRequest.class);
-        verify(orderService).createOrderForAgent(captor.capture(), eq(TEST_TENANT_ID));
+        verify(orderCreationService).createOrderForAgent(captor.capture(), eq(TEST_TENANT_ID), eq(orderService));
         assertThat(captor.getValue().getClientRequestId()).isNull();
     }
 
@@ -109,7 +121,7 @@ class AgentOrderControllerTest extends BaseControllerTest {
 
         ArgumentCaptor<AgentOrderCreateRequest> captor =
                 ArgumentCaptor.forClass(AgentOrderCreateRequest.class);
-        verify(orderService).createOrderForAgent(captor.capture(), eq(TEST_TENANT_ID));
+        verify(orderCreationService).createOrderForAgent(captor.capture(), eq(TEST_TENANT_ID), eq(orderService));
         assertThat(captor.getValue().getClientRequestId()).isNull();
     }
 

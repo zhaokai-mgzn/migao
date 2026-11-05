@@ -37,6 +37,7 @@ import java.time.ZoneOffset;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -128,12 +129,22 @@ class OrderServiceSliceWiringTest {
                 .build();
     }
 
+    /**
+     * issue #8681（P2-1e 第八批）：{@code restoreStockForReturn} 的门面转发已<b>退休</b> ⇒ 原来那条
+     * 「门面必须把它转出去」的判据<b>失去对象</b>。按本单既定范式<b>不删、不恒绿</b>，改成<b>直测实现点</b>：
+     * 唯一实现点仍是 {@link OrderStockService#restoreStockForReturn}，且<b>事务注解逐字留在它身上</b>
+     * —— 这正是「注解跟着方法走」这条硬约束在售后回补这一处的机械判据（转发删掉时最容易连注解一起丢）。
+     */
     @Test
-    @DisplayName("门面委托：restoreStockForReturn 必须转到 OrderStockService（公开名与参数原样透传）")
-    void restoreStockForReturnDelegates() {
-        orderService.restoreStockForReturn("order-8191");
+    @DisplayName("售后回补的实现在 OrderStockService，且 @Transactional(rollbackFor=Exception) 逐字跟随")
+    void restoreStockForReturnIsImplementedAtTheStockServiceWithItsTransaction() throws NoSuchMethodException {
+        Method method = OrderStockService.class.getDeclaredMethod("restoreStockForReturn", String.class);
 
-        verify(orderStockService).restoreStockForReturn("order-8191");
+        assertThat(method.getReturnType().getName()).isEqualTo("void");
+        org.springframework.transaction.annotation.Transactional tx =
+                method.getAnnotation(org.springframework.transaction.annotation.Transactional.class);
+        assertThat(tx).as("售后回补的事务注解必须留在唯一实现点（转发退休不得连注解一起丢）").isNotNull();
+        assertThat(tx.rollbackFor()).containsExactly(Exception.class);
     }
 
     @Test
@@ -200,14 +211,16 @@ class OrderServiceSliceWiringTest {
         verify(orderStockService, never()).restoreStockForReturn(anyString());
     }
 
+    /**
+     * 同一批的另一半（**反射**夹住，与退休守护的源码扫描互为正交）：门面里<b>不再有</b>这个入口。
+     * 它同时给上一条兜底 —— 「实现点还在」与「门面没了」两侧都判，才不会出现「两边都没了 ⇒ 恒绿」。
+     */
     @Test
-    @DisplayName("公开签名保留：售后回补入口仍是 OrderService 的 public void（调用方零改动）")
-    void restoreStockForReturnKeepsPublicSignature() throws NoSuchMethodException {
-        Method method = OrderService.class.getMethod("restoreStockForReturn", String.class);
-
-        assertThat(Modifier.toString(method.getModifiers())).isEqualTo("public");
-        assertThat(method.getReturnType().getName()).isEqualTo("void");
-        assertThat(method.getDeclaringClass().getName()).isEqualTo("com.migao.admin.service.OrderService");
+    @DisplayName("公开签名退休：门面不再声明 restoreStockForReturn（加回来 ⇒ 本判据红）")
+    void restoreStockForReturnKeepsPublicSignature() {
+        assertThatThrownBy(() -> OrderService.class.getMethod("restoreStockForReturn", String.class))
+                .as("门面转发已退休（调用方直连 OrderStockService）；把它加回来 ⇒ 本判据当场红")
+                .isInstanceOf(NoSuchMethodException.class);
     }
 
     /**

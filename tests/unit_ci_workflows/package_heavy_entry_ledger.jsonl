@@ -154,3 +154,4 @@
 {"id":"1793873248.69917.24060","ts":"2026-11-05T10:07:28Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/8726-addr-merge","why":"--allow-package-heavy（命令行显式）"}
 {"id":"1793873517.71781.26440","ts":"2026-11-05T10:11:57Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/8726-addr-merge","why":"--allow-package-heavy（命令行显式）"}
 {"id":"1793874817.72488.4345","ts":"2026-11-05T10:33:37Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/8726-addr-merge","why":"--allow-package-heavy（命令行显式）"}
+{"id":"1793885284.65040.16024","ts":"2026-11-05T13:28:05Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/8681g-facade8","why":"--allow-package-heavy（命令行显式）"}

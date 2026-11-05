@@ -36,6 +36,9 @@ import static org.mockito.Mockito.*;
 class AgentOrderServiceTest {
 
     @InjectMocks private OrderService orderService;
+    /** 建单实现点（issue #8681，P2-1e 第八批）：createOrderForAgent 的门面转发已退休 ⇒ 直驱实现点（门面自己懒构造的那一份） */
+    /** 改单编排实现点（issue #8681，P2-1e 第八批）：updateOrderForAgent 整体搬到 OrderAgentFacade */
+    private OrderAgentFacade orderAgentFacade;
     /** 加工费组合价目表（issue #4406 的取价依赖；本类不涉及加工费口径 ⇒ 空表 ⇒ 未定价 0） */
     @Mock(lenient = true)
     private com.migao.admin.mapper.ProcessingFeeCombinationMapper processingFeeCombinationMapper;
@@ -60,11 +63,15 @@ class AgentOrderServiceTest {
     /**
      * 建单编排的实现点（issue #8681，P2-1e 第五批）：门面的 {@code createOrder} 转发已删除 ⇒ 驱动对象换成
      * 门面<b>自己懒构造的那一份</b>（同一条调用链、同一份协作者），断言一字未改。
+     * 第八批 {@code createOrderForAgent} 的转发同样退休 ⇒ 本字段复用同一份实现点（第三参仍是门面实例）。
      */
     private com.migao.admin.service.OrderCreationService orderCreationService;
 
     @BeforeEach
     void setUp() {
+        // issue #8681（P2-1e 第八批）：改单编排已整体搬到 OrderAgentFacade ⇒ 用**门面自己懒构造的那一份**
+        // 生命周期 / 查询实现点构造它（同一条调用链、同一份协作者），断言一字未改。
+        orderAgentFacade = new OrderAgentFacade(orderService, orderService.lifecycleService(), orderService.queryService());
         // issue #4406：取价点用**真实**对象（只桩价目表 Mapper）—— 金额算法仍走生产代码。
         // 为什么不用 @Mock：@InjectMocks 的构造注入发生在本方法之前 ⇒ 直接塞 mock 会把
         // 「谁发射加工费」这条接线本身也 mock 掉（接线判据就失去意义）。
@@ -123,7 +130,7 @@ class AgentOrderServiceTest {
                             .totalAmount(new BigDecimal("300.00")).build());
             when(orderItemMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
 
-            OrderDetailResponse result = orderService.createOrderForAgent(req, 1L);
+            OrderDetailResponse result = orderCreationService.createOrderForAgent(req, 1L, orderService);
             assertThat(result).isNotNull();
             assertThat(result.getCustomerName()).isEqualTo("张三");
         }
@@ -133,7 +140,7 @@ class AgentOrderServiceTest {
         void invalidPhone() {
             AgentOrderCreateRequest req = new AgentOrderCreateRequest();
             req.setCustomerName("张三"); req.setCustomerPhone("12345");
-            assertThatThrownBy(() -> orderService.createOrderForAgent(req, 1L))
+            assertThatThrownBy(() -> orderCreationService.createOrderForAgent(req, 1L, orderService))
                     .isInstanceOf(BusinessException.class);
         }
 
@@ -142,7 +149,7 @@ class AgentOrderServiceTest {
         void missingName() {
             AgentOrderCreateRequest req = new AgentOrderCreateRequest();
             req.setCustomerPhone("13800001111");
-            assertThatThrownBy(() -> orderService.createOrderForAgent(req, 1L))
+            assertThatThrownBy(() -> orderCreationService.createOrderForAgent(req, 1L, orderService))
                     .isInstanceOf(BusinessException.class);
         }
 
@@ -151,7 +158,7 @@ class AgentOrderServiceTest {
         void missingItems() {
             AgentOrderCreateRequest req = new AgentOrderCreateRequest();
             req.setCustomerName("张三"); req.setCustomerPhone("13800001111");
-            assertThatThrownBy(() -> orderService.createOrderForAgent(req, 1L))
+            assertThatThrownBy(() -> orderCreationService.createOrderForAgent(req, 1L, orderService))
                     .isInstanceOf(BusinessException.class);
         }
 
@@ -207,7 +214,7 @@ class AgentOrderServiceTest {
             when(productSkuMapper.selectById(1L)).thenReturn(sku);
             mockOrderInsert();
 
-            OrderDetailResponse result = orderService.createOrderForAgent(req, 1L);
+            OrderDetailResponse result = orderCreationService.createOrderForAgent(req, 1L, orderService);
             assertThat(result).isNotNull();
             // 取价校验 + 库存键族匹配各查一次（同一 processingInfo 键族）
             verify(productSkuMapper, atLeastOnce()).selectList(any(LambdaQueryWrapper.class));
@@ -229,7 +236,7 @@ class AgentOrderServiceTest {
             when(productSkuMapper.selectById(1L)).thenReturn(sku);
             mockOrderInsert();
 
-            OrderDetailResponse result = orderService.createOrderForAgent(req, 1L);
+            OrderDetailResponse result = orderCreationService.createOrderForAgent(req, 1L, orderService);
             assertThat(result).isNotNull();
             // 取价校验 + 库存匹配各查一次（同一键族，两次都读 processingInfo）
             verify(productSkuMapper, atLeastOnce()).selectList(any(LambdaQueryWrapper.class));
@@ -242,7 +249,7 @@ class AgentOrderServiceTest {
             when(productSkuMapper.selectList(any(LambdaQueryWrapper.class)))
                     .thenReturn(List.of(ProductSku.builder().id(1L).price(new BigDecimal("150")).build()));
 
-            assertThatThrownBy(() -> orderService.createOrderForAgent(req, 1L))
+            assertThatThrownBy(() -> orderCreationService.createOrderForAgent(req, 1L, orderService))
                     .isInstanceOf(BusinessException.class)
                     .hasMessageContaining("单价与系统价格不一致")
                     .hasMessageContaining("系统价 150.00");
@@ -258,7 +265,7 @@ class AgentOrderServiceTest {
             // 却在库中定位不到 ⇒ 库存路径 **fail-closed 显式拒绝**（修前是静默跳过：订单成交但
             // 库存不动、销量不涨、台账无行）。取价校验的 fail-open（防误伤）语义保持不变 ——
             // 拒绝话术来自库存判据，不是「单价与系统价格不一致」。
-            assertThatThrownBy(() -> orderService.createOrderForAgent(req, 1L))
+            assertThatThrownBy(() -> orderCreationService.createOrderForAgent(req, 1L, orderService))
                     .isInstanceOf(BusinessException.class)
                     .hasMessageContaining("无法定位到 SKU")
                     .hasMessageContaining("skuCode=SKU-NOPE")
@@ -277,7 +284,7 @@ class AgentOrderServiceTest {
 
             // 行为变更（issue #4090）：命中多行 ⇒ 无法唯一确定该扣哪个 SKU ⇒ 显式拒绝，
             // 而不是「取第一条」或「静默跳过」（任取一条会扣错 SKU 的库存，比拒绝更糟）。
-            assertThatThrownBy(() -> orderService.createOrderForAgent(req, 1L))
+            assertThatThrownBy(() -> orderCreationService.createOrderForAgent(req, 1L, orderService))
                     .isInstanceOf(BusinessException.class)
                     .hasMessageContaining("无法定位到 SKU")
                     .hasMessageContaining("colorName=白色");
@@ -311,7 +318,7 @@ class AgentOrderServiceTest {
             AgentOrderCreateRequest req = buildQtyReq(BigDecimal.valueOf(-3), new BigDecimal("168"));
             stubProductAuthority(new BigDecimal("168"));
 
-            assertThatThrownBy(() -> orderService.createOrderForAgent(req, 1L))
+            assertThatThrownBy(() -> orderCreationService.createOrderForAgent(req, 1L, orderService))
                     .isInstanceOf(BusinessException.class)
                     .hasMessageContaining("数量");
 
@@ -324,7 +331,7 @@ class AgentOrderServiceTest {
             AgentOrderCreateRequest req = buildQtyReq(BigDecimal.valueOf(0), new BigDecimal("168"));
             stubProductAuthority(new BigDecimal("168"));
 
-            assertThatThrownBy(() -> orderService.createOrderForAgent(req, 1L))
+            assertThatThrownBy(() -> orderCreationService.createOrderForAgent(req, 1L, orderService))
                     .isInstanceOf(BusinessException.class)
                     .hasMessageContaining("数量");
 
@@ -337,7 +344,7 @@ class AgentOrderServiceTest {
             AgentOrderCreateRequest req = buildQtyReq(BigDecimal.valueOf(3), new BigDecimal("-168"));
             stubProductAuthority(new BigDecimal("-168"));
 
-            assertThatThrownBy(() -> orderService.createOrderForAgent(req, 1L))
+            assertThatThrownBy(() -> orderCreationService.createOrderForAgent(req, 1L, orderService))
                     .isInstanceOf(BusinessException.class)
                     .hasMessageContaining("单价");
 
@@ -350,7 +357,7 @@ class AgentOrderServiceTest {
             AgentOrderCreateRequest req = buildQtyReq(BigDecimal.valueOf(3), BigDecimal.ZERO);
             stubProductAuthority(BigDecimal.ZERO);
 
-            assertThatThrownBy(() -> orderService.createOrderForAgent(req, 1L))
+            assertThatThrownBy(() -> orderCreationService.createOrderForAgent(req, 1L, orderService))
                     .isInstanceOf(BusinessException.class)
                     .hasMessageContaining("单价");
 
@@ -364,7 +371,7 @@ class AgentOrderServiceTest {
             stubProductAuthority(new BigDecimal("168"));
             mockOrderInsert();
 
-            OrderDetailResponse result = orderService.createOrderForAgent(req, 1L);
+            OrderDetailResponse result = orderCreationService.createOrderForAgent(req, 1L, orderService);
 
             assertThat(result).isNotNull();
             verify(orderMapper).insert(any(Order.class));
@@ -459,7 +466,7 @@ class AgentOrderServiceTest {
             req.setItems(List.of(item));
             stubProductAuthority(new BigDecimal("168"));
 
-            assertThatThrownBy(() -> orderService.createOrderForAgent(req, 1L))
+            assertThatThrownBy(() -> orderCreationService.createOrderForAgent(req, 1L, orderService))
                     .isInstanceOf(BusinessException.class)
                     .hasMessageContaining("数量");
 
@@ -559,7 +566,7 @@ class AgentOrderServiceTest {
             when(orderItemMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
             when(orderItemMapper.selectByOrderId(any(), any())).thenReturn(List.of());
 
-            orderService.updateOrderForAgent("order-uuid-001", req, 1L);
+            orderAgentFacade.updateOrderForAgent("order-uuid-001", req, 1L);
 
             verify(orderLogisticsMapper).updateShippingDetails(any(),
                     eq("order-uuid-001"), eq("四季安"), eq("SJA001"),
@@ -592,7 +599,7 @@ class AgentOrderServiceTest {
             when(orderItemMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
             when(orderItemMapper.selectByOrderId(any(), any())).thenReturn(List.of());
 
-            orderService.updateOrderForAgent("order-uuid-001", req, 1L);
+            orderAgentFacade.updateOrderForAgent("order-uuid-001", req, 1L);
 
             verify(orderLogisticsMapper).updateShippingDetails(any(),
                     eq("order-uuid-001"), eq("中通"), eq("ZT123456"),
@@ -617,7 +624,7 @@ class AgentOrderServiceTest {
             when(orderItemMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
             when(orderItemMapper.selectByOrderId(any(), any())).thenReturn(List.of());
 
-            orderService.updateOrderForAgent("order-uuid-001", req, 1L);
+            orderAgentFacade.updateOrderForAgent("order-uuid-001", req, 1L);
 
             verify(orderLogisticsMapper).insert(org.mockito.ArgumentMatchers.<OrderLogistics>argThat(l ->
                     "logistics".equals(l.getLogisticsType())));
@@ -640,7 +647,7 @@ class AgentOrderServiceTest {
 
             // when
             OrderDetailResponse result = (OrderDetailResponse)
-                    orderService.updateOrderForAgent("order-uuid-001", req, 1L);
+                    orderAgentFacade.updateOrderForAgent("order-uuid-001", req, 1L);
 
             // then: 创建物流记录（含发货人兜底）+ 状态流转 shipped
             verify(orderLogisticsMapper).insert(org.mockito.ArgumentMatchers.<OrderLogistics>argThat(l ->
@@ -674,7 +681,7 @@ class AgentOrderServiceTest {
             when(orderItemMapper.selectByOrderId(any(), any())).thenReturn(List.of()); // 加工单守卫：无加工项
 
             // when
-            orderService.updateOrderForAgent("order-uuid-001", req, 1L);
+            orderAgentFacade.updateOrderForAgent("order-uuid-001", req, 1L);
 
             // then: 更新最新物流记录，且**不覆盖**已记录的发货人
             // （改运单号/纠错 ≠ 换发货人；agent 本次操作人不该顶替首发的经手人）
@@ -713,7 +720,7 @@ class AgentOrderServiceTest {
             when(orderItemMapper.selectByOrderId(any(), any())).thenReturn(List.of());
 
             // when
-            orderService.updateOrderForAgent("order-uuid-001", req, 1L);
+            orderAgentFacade.updateOrderForAgent("order-uuid-001", req, 1L);
 
             // then: 发货人保持 null（宁可空白显示「-」，也不把当次操作人写成历史经手人）
             // 发货人传 null = 本次没说 ⇒ SQL 侧保留原值（历史行本来就是 null ⇒ 仍是 null，不猜一个经手人）
@@ -743,7 +750,7 @@ class AgentOrderServiceTest {
             when(orderItemMapper.selectByOrderId(any(), any())).thenReturn(List.of()); // 加工单守卫：无加工项
 
             // when
-            orderService.updateOrderForAgent("order-uuid-001", req, 1L);
+            orderAgentFacade.updateOrderForAgent("order-uuid-001", req, 1L);
 
             // then: 发生状态流转（producing → shipped）
             verify(orderMapper).update(any(), any());
@@ -767,7 +774,7 @@ class AgentOrderServiceTest {
             when(processingOrderMapper.countCompletedByOrderId("order-uuid-001", 1L)).thenReturn(0L);
 
             // when
-            assertThatThrownBy(() -> orderService.updateOrderForAgent("order-uuid-001", req, 1L))
+            assertThatThrownBy(() -> orderAgentFacade.updateOrderForAgent("order-uuid-001", req, 1L))
                     .isInstanceOf(BusinessException.class)
                     .hasMessageContaining("须先完成加工单");
 
@@ -781,12 +788,12 @@ class AgentOrderServiceTest {
             when(orderMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(testOrder);
 
             AgentOrderUpdateRequest noCompany = buildRequest(null, "SF123");
-            assertThatThrownBy(() -> orderService.updateOrderForAgent("order-uuid-001", noCompany, 1L))
+            assertThatThrownBy(() -> orderAgentFacade.updateOrderForAgent("order-uuid-001", noCompany, 1L))
                     .isInstanceOf(BusinessException.class)
                     .hasMessageContaining("logisticsCompany");
 
             AgentOrderUpdateRequest noTracking = buildRequest("顺丰", null);
-            assertThatThrownBy(() -> orderService.updateOrderForAgent("order-uuid-001", noTracking, 1L))
+            assertThatThrownBy(() -> orderAgentFacade.updateOrderForAgent("order-uuid-001", noTracking, 1L))
                     .isInstanceOf(BusinessException.class)
                     .hasMessageContaining("trackingNumber");
         }
@@ -805,7 +812,7 @@ class AgentOrderServiceTest {
             when(orderItemMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
 
             // when
-            orderService.updateOrderForAgent("order-uuid-001", req, 1L);
+            orderAgentFacade.updateOrderForAgent("order-uuid-001", req, 1L);
 
             // then: refundOrder 以 3 参调用，原子累加退款金额（审计 07 P1-10）
             assertThat(testOrder.getRefundAmount()).isEqualByComparingTo("100.00");

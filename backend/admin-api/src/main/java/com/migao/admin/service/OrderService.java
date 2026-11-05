@@ -2,9 +2,7 @@ package com.migao.admin.service;
 
 import com.migao.admin.config.TenantContext;
 import com.migao.admin.dto.*;
-import com.migao.admin.dto.agent.AgentOrderCreateRequest;
 import com.migao.admin.dto.agent.AgentOrderResolveResponse;
-import com.migao.admin.dto.agent.AgentOrderUpdateRequest;
 import com.migao.admin.entity.Order;
 import com.migao.admin.entity.OrderItem;
 import com.migao.admin.entity.OrderLogistics;
@@ -32,7 +30,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
@@ -70,7 +67,18 @@ import java.util.stream.Collectors;
  * 加工单服务直连 {@link OrderLifecycleService}；门面不再声明这 7 个入口）、
  * 实体写面 {@code deleteOrder} / {@code addRemark} / {@code bindOrdersToUser} / {@code updateFollowStatus} /
  * {@code getFollowStatus} / {@code updateUrgency} / {@code updatePendingOrderContent}（第七批：订单控制器与
- * 小程序手机号绑定服务直连 {@link OrderEntityWriteService}；门面不再声明这 7 个入口，也不留这族的私有死委托）。</p>
+ * 小程序手机号绑定服务直连 {@link OrderEntityWriteService}；门面不再声明这 7 个入口，也不留这族的私有死委托）、
+ * <b>Agent BFF</b>{@code createOrderForAgent} / {@code updateOrderForAgent} 与 {@code restoreStockForReturn}
+ * （第八批：{@code createOrderForAgent} 由 Agent 订单控制器直连 {@link OrderCreationService}；
+ * {@code updateOrderForAgent} 的编排实现体<b>整体搬到</b> {@link OrderAgentFacade}、事务注解逐字跟随；
+ * 售后回补由 {@link AfterSalesTicketService} 直连 {@link OrderStockService}）。
+ * 至此门面<b>不再声明任何转发</b>，只剩共享部件、两处判据（{@code hasProcessingItems} / {@code needsWork}）、
+ * 状态常量表、{@code applyRollAllocation}（被 {@code OrderRollAllocationAuthorityTest} 钉死）与
+ * {@code batchStock()} 访问器。</p>
+ *
+ * <p><b>行数</b>：1,142 → 1,057（第八批；<b>仍在 800–2,000 行的存量带内</b> ⇒ 尚未触发豁免台账销账）。
+ * 目标 &lt; 500 的剩余部分是<b>共享部件族</b>（约 450 行）—— 它属<b>跨批设计决定</b>
+ * （谁持有第三参、共享部件落在哪个服务），见 issue #8681 的下一批清单。</p>
  *
  * <p><b>包内可见的共享部件</b>（issue #8191，P2-1b）：建单与改单（{@code updatePendingOrderContent}）/
  * 确认支付共用同一份明细装配、取价、总额与库存前置校验（{@code assertItemAmountsValid} /
@@ -998,13 +1006,6 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
 
 
     /**
-     * restoreStockForReturn（issue #8191，P2-1c）：实现点已搬到 {@link StockService}，本方法只留门面委托。
-     */
-    public void restoreStockForReturn(String orderId) {
-        stockService().restoreStockForReturn(orderId);
-    }
-
-    /**
      * 批次消耗台账（V116 / issue #5145 阶段 1）—— 装配不上就**显式抛错**，绝不静默跳过回补
      * （静默跳过 = 加工单作废了、批次余量还是扣着，而没有任何东西会变红）。
      *
@@ -1018,74 +1019,6 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
                     "StockBatchConsumptionService 未装配 —— 加工单作废的批次回补不能静默跳过（issue #5145）");
         }
         return stockBatchConsumptionService;
-    }
-
-    // ======================== Agent BFF 方法 ========================
-
-    /**
-     * Agent 专用创建订单（issue #8191，P2-1b）：实现点在 {@link OrderCreationService}，本方法只留门面委托。
-     *
-     * <p>幂等键 / 取价守卫 / 事务边界随方法体搬到新服务（逐字跟随）；调用方零改动。</p>
-     */
-    public OrderDetailResponse createOrderForAgent(AgentOrderCreateRequest request, Long tenantId) {
-        return creationService().createOrderForAgent(request, tenantId, this);
-    }
-
-    /**
-     * Agent 专用统一订单更新。
-     * ID 可传 UUID 或订单号（ORD-xxx），服务端自动解析。
-     * 通过 action 字段路由到具体的操作方法。
-     */
-    @Transactional(rollbackFor = Exception.class)
-    public Object updateOrderForAgent(String rawId, AgentOrderUpdateRequest request, Long tenantId) {
-        // 解析订单 ID
-        String resolvedId = resolveOrderIdToUuid(rawId, tenantId);
-        if (resolvedId == null) {
-            throw new BusinessException("ORDER_NOT_FOUND",
-                    "无法找到订单：" + rawId + "。请使用 order_query 查询正确的订单号后重试。", 404);
-        }
-
-        String action = request.getAction();
-        if (!StringUtils.hasText(action)) {
-            throw BusinessException.validationError("action 不能为空");
-        }
-
-        return switch (action) {
-            case "update_status" -> {
-                if (!StringUtils.hasText(request.getStatus())) {
-                    throw BusinessException.validationError("status 不能为空");
-                }
-                lifecycleService().updateOrderStatus(resolvedId, request.getStatus(), this);
-                yield queryService().getOrderById(resolvedId);
-            }
-            case "confirm_payment" -> {
-                lifecycleService().confirmPayment(resolvedId);
-                yield queryService().getOrderById(resolvedId);
-            }
-            case "cancel" -> {
-                lifecycleService().cancelOrder(resolvedId, request.getCancelReason(), this);
-                yield queryService().getOrderById(resolvedId);
-            }
-            case "refund" -> {
-                lifecycleService().refundOrder(resolvedId, request.getRefundAmount(), request.getRefundReason());
-                yield queryService().getOrderById(resolvedId);
-            }
-            case "update_logistics" -> {
-                if (!StringUtils.hasText(request.getLogisticsCompany())) {
-                    throw BusinessException.validationError("logisticsCompany 不能为空");
-                }
-                if (!StringUtils.hasText(request.getTrackingNumber())) {
-                    throw BusinessException.validationError("trackingNumber 不能为空");
-                }
-                lifecycleService().upsertLogistics(resolvedId, request.getLogisticsCompany().trim(),
-                        request.getTrackingNumber().trim(), null, request.getLogisticsType());
-                // 发货语义：记录物流后将订单流转为 shipped（与契约 order_manage(update_logistics) 可发货一致）
-                lifecycleService().shipOrderIfApplicable(resolvedId);
-                yield queryService().getOrderById(resolvedId);
-            }
-            default -> throw BusinessException.validationError(
-                    "不支持的操作类型: " + action + "，可选: update_status/update_logistics/confirm_payment/cancel/refund");
-        };
     }
 
     /**
@@ -1102,16 +1035,6 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
      *                     {@code false} = 订单本来就已是 {@code shipped}（本路只补记/纠正物流）
      */
     public record OrderShipmentOutcome(Map<String, Object> result, boolean transitioned) {
-    }
-
-    /**
-     * 订单 ID 解析：UUID 精确匹配 → 订单号匹配 → UUID 前缀匹配。
-     *
-     * @return 解析出的 UUID，未找到返回 null
-     */
-    private String resolveOrderIdToUuid(String raw, Long tenantId) {
-        // 解析口径单点在 OrderQueryService（issue #8191，P2-1a）；本留私有入口给写入路径 updateOrderForAgent。
-        return queryService().resolveOrderIdToUuid(raw, tenantId);
     }
 
     /**

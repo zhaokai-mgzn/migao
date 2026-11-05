@@ -5,19 +5,19 @@ import com.migao.admin.dto.OrderCreateRequest;
 import com.migao.admin.dto.OrderDetailResponse;
 import com.migao.admin.dto.agent.AgentOrderCreateRequest;
 import com.migao.admin.entity.Order;
+import com.migao.admin.entity.Product;
 import com.migao.admin.exception.BusinessException;
 import com.migao.admin.mapper.OrderMapper;
 import com.migao.admin.mapper.ProductMapper;
 import com.migao.admin.mapper.ProductSkuMapper;
+import java.math.BigDecimal;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.test.util.ReflectionTestUtils;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -41,8 +41,11 @@ import static org.mockito.Mockito.when;
  * （明细金额闸门 / 安装信息归一 / 服务端取价）—— 闸门抛 ⇒ 建单中止、一行不落（fail-closed）；
  * ② 闸门放行 ⇒ 流程**真的继续**向下（否则「闸门抛了就停」可以靠「永远抛」蒙混过关）。</p>
  *
- * <p><b>{@code createOrderForAgent} 为什么仍判「门面 ⇒ 委托」</b>：它是 Agent BFF 的一档，
- * 转发本批<b>没有</b>退休（按 #8681 的下一批清单第 5 项在 Agent BFF 收口时处理）⇒ 那一半的接线判据保留原样。</p>
+ * <p><b>{@code createOrderForAgent}（issue #8681，P2-1e 第八批）</b>：门面的同名转发已<b>退休</b>
+ * （Agent 订单控制器直连本实现点）⇒ 原来那条「门面 ⇒ 委托」判据失去对象。按本单既定范式
+ * <b>不删、不恒绿</b>，改成<b>直测实现点</b>：Agent 建单路径同样必须走<b>传入的那份</b>门面实例上的共享部件
+ * （明细闸门抛 ⇒ 建单中止、一行不落）。「调用方有没有直连实现点」交给
+ * {@code OrderFacadeForwarderRetirementTest} 的退休／接线面（载体集合）。</p>
  *
  * <p><b>红证方向</b>：把实现点里的共享部件调用改成「自己另造一份」或删掉 ⇒ ① 的 verify 与「零落库」当场红；
  * 把实现点改成入口即抛 ⇒ ② 红。两者都在同一份真实现上跑，不是内存谓词。</p>
@@ -50,12 +53,8 @@ import static org.mockito.Mockito.when;
  * <p><b>复算</b>：{@code cd backend/admin-api && ./mvnw -Dtest=OrderCreationServiceTest test}。</p>
  */
 @ExtendWith(MockitoExtension.class)
-@DisplayName("建单实现点直测 + Agent 建单门面仍须委托（#8191 P2-1b / #8681 P2-1e 第五批）")
+@DisplayName("建单实现点直测（含 Agent 建单路径）（#8191 P2-1b / #8681 P2-1e 第五批 + 第八批）")
 class OrderCreationServiceTest {
-
-    /** Agent 建单门面的委托目标（该转发本批未退休）。 */
-    @Mock
-    private OrderCreationService orderCreationServiceForFacade;
 
     /**
      * 建单实现点的**共享部件来源**：真实现点要求把一个 {@code OrderService} 实例传进去，建单与改单共用同一份
@@ -86,17 +85,11 @@ class OrderCreationServiceTest {
     @Mock
     private OrderQueryService orderQueryService;
 
-    @InjectMocks
-    private OrderService orderService;
-
     /** 建单实现点（**真实例**，只桩它自己的协作者）。 */
     private OrderCreationService creationService;
 
     @BeforeEach
     void setUp() {
-        // @InjectMocks 只做构造注入；orderCreationService 是字段注入（理由见 OrderService 的
-        // creationService() 注释：构造签名被多处测试显式装配）⇒ 显式装配。
-        ReflectionTestUtils.setField(orderService, "orderCreationService", orderCreationServiceForFacade);
         creationService = new OrderCreationService(orderMapper, productMapper, productSkuMapper,
                 customerService, userService, notificationService, clientRequestIdService,
                 orderPricingService, approvalService, orderQueryService);
@@ -142,16 +135,29 @@ class OrderCreationServiceTest {
     // ──────────────────────── Agent 建单门面（本批未退休，判据保留原样）
 
     @Test
-    @DisplayName("🔴 Agent 建单门面 createOrderForAgent ⇒ 委托（同样带 this）")
-    void createOrderForAgentDelegates() {
+    @DisplayName("🔴 Agent 建单实现点直测：共享部件取自**传入的那份**门面实例 —— 闸门抛 ⇒ 中止、一行不落")
+    void createOrderForAgentUsesThePassedInFacadeSharedParts() {
+        // 权威价唯一可得的简单商品（无 SKU 记录 ⇒ 商品级价即权威价），让 Agent 路径的取价守卫放行、
+        // 真正走到建单编排里那处**共享部件**（本用例要判的是「用的是不是传进来的那一份」）。
+        when(productMapper.selectById("prod-agent")).thenReturn(Product.builder()
+                .id("prod-agent").tenantId(7L).basePrice(new BigDecimal("100.00")).build());
         AgentOrderCreateRequest request = new AgentOrderCreateRequest();
-        OrderDetailResponse expected = new OrderDetailResponse();
-        when(orderCreationServiceForFacade.createOrderForAgent(request, 9L, orderService)).thenReturn(expected);
+        request.setCustomerName("张三");
+        request.setCustomerPhone("13800001111");
+        OrderCreateRequest.OrderItemRequest item = new OrderCreateRequest.OrderItemRequest();
+        item.setProductId("prod-agent");
+        item.setProductName("遮光窗帘");
+        item.setUnitPrice(new BigDecimal("100.00"));
+        item.setQuantity(BigDecimal.ONE);
+        request.setItems(List.of(item));
+        doThrow(BusinessException.validationError("明细闸门拒绝")).when(facadeSharedParts).assertItemAmountsValid(anyList());
 
-        OrderDetailResponse actual = orderService.createOrderForAgent(request, 9L);
+        assertThatThrownBy(() -> creationService.createOrderForAgent(request, 7L, facadeSharedParts))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("明细闸门拒绝");
 
-        assertThat(actual).isSameAs(expected);
-        verify(orderCreationServiceForFacade).createOrderForAgent(request, 9L, orderService);
+        verify(facadeSharedParts).assertItemAmountsValid(anyList());
+        verify(orderMapper, never()).insert(any(Order.class));
     }
 
     // ──────────────────────── 夹具

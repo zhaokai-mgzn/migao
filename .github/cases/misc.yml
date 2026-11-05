@@ -9673,3 +9673,54 @@ cases:
         - "tests/unit_ci_workflows/test_redproof_harness_gate.py"
       ci:
         - pr-check.yml
+  - id: MC-242
+    legacy_id: ""
+    title: "OrderService 门面收尾第八批（issue #8681 的 P2-1e，部分交付）：Agent BFF 收口 —— createOrderForAgent 转发退休（控制器直连 OrderCreationService）、updateOrderForAgent 的编排实现体整体搬进新类 OrderAgentFacade（@Transactional 逐字跟随）、restoreStockForReturn 转发退休（售后直连 OrderStockService），门面 1,142 → 1,065 行、公开面 6 → 3；同批清掉 1 个失去调用点的私有死委托"
+    domains:
+      - misc
+      - backend
+    tier: normal
+    tags:
+      - refactor
+      - order-service
+      - facade-retirement
+      - caller-migration
+      - agent-bff
+      - ratchet
+    truths_ref: []
+    precondition:
+      - "门面与既有实现点（OrderQueryService / OrderCreationService / OrderLifecycleService / OrderEntityWriteService / OrderStockService）的关系已在判据源码里钉住；本批新增的实现载体 OrderAgentFacade 是 updateOrderForAgent 的唯一实现点"
+      - "驱动对象一律取实现点自己：建单用门面**自己懒构造的那一份** creationService()（第三参仍是门面实例）、改单用由门面自己懒构造的 lifecycleService()/queryService() 构造的 OrderAgentFacade ⇒ 与拆分前是同一条调用链、同一份协作者，断言因此可以一个字都不改"
+      - "扫描面 = backend/admin-api/src 全树（main + test）；任一扫描面扫到 0 个文件即判红（防「空扫描 = 绿」）"
+    user_inputs:
+      - "黄金策 Agent 的建单（POST /api/admin/agent/orders，含 X-Client-Request-Id 幂等键）与改单（PATCH /api/admin/agent/orders/{id} 的 status / logistics / payment / cancel / refund 五个 action），以及售后工单完结时的退货回补库存：action 白名单、缺参话术、404 文案、发货语义、幂等回放、事务边界、库存与台账落点全部逐字不变，HTTP 路径 / 入参 / 响应不变"
+    expectations: []
+    data_checks:
+      - "判据 1·🔴 退休面（这批 3 个声明不许回来）：门面源码里不许再声明 createOrderForAgent / updateOrderForAgent / restoreStockForReturn，且全部 main 源码里零处「经门面变量调用这三个方法」——谁把调用方改回门面就具名红。声明锚点取「返回类型 + 方法名 + 左括号」：实现点的 createOrderForAgent 比门面多一个门面实参、restoreStockForReturn 在实现点侧是包内可见 ⇒ 整行锚点在两侧不是同一串；调用形态不含返回类型，不会被误判成声明。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/OrderFacadeForwarderRetirementTest.java"
+      - "判据 2·🔴 接线面两侧夹住（防恒绿）：实现点必须仍声明这三个方法（OrderCreationService / OrderAgentFacade / OrderStockService），且具名消费方逐字调用实现点——Agent 订单控制器的建单与改单两个端点、售后工单服务的回补一条腿。消费方改回门面或方法改名就具名红；同一条判据内含判别力自证：内存里把三个声明塞回门面各判真一次，而直驱实现点（建单带门面实参）的调用串必须判假，且 `orderStockService.restoreStockForReturn(` / `orderCreationService.createOrderForAgent(` 不得被「经门面调用」的谓词误判（前缀差一个 Stock / Creation）。执行点 = 同判据 1 的判据文件"
+      - "判据 3·🔴 驱动面（全 test 树）：测试源码全树零处经门面驱动这批已退休入口，两种写法都认（直接调用与验证门面交互）；扫描面自带非空自证。本批把散在 10 个测试文件里的 57 个驱动点迁到实现点（createOrderForAgent 45 / updateOrderForAgent 11 / restoreStockForReturn 1），另有 7 处 verify 换成实现点。执行点 = 同判据 1 的判据文件"
+      - "判据 4·🔴 断言零改动：18 个被改测试文件的 @Test 合计 228 → 228（净 0），断言行 499 → 508（+9 全是判别力自证与失去对象后改直测实现点的新判据，一条都没删）；归一化后 10/18 文件多重集完全相等，其余 8 处逐条可枚举：6 处是接收者换成实现点（旧形态在实现点迁移后已恒为零交互的空断言），2 处是加强（verifyNoInteractions 从门面换成实现点集合、建单第三参用 eq(orderService) 钉住）。执行点 = 同批迁移的 18 个测试文件"
+      - "判据 5·🔴 事务注解逐字跟随 + 第三参身份：updateOrderForAgent 的 @Transactional(rollbackFor = Exception.class) 原样搬进 OrderAgentFacade（注解只对经代理的调用生效，调用方依赖的正是该 bean 的代理 ⇒ 事务边界同一个），且每个 action 落到生命周期实现点时第三参**恒为注入的门面实例**（共享部件不重搭）；restoreStockForReturn 的事务注解留在唯一实现点 OrderStockService，并由反射判据钉住（转发退休不得连注解一起丢）。门面一侧不再声明这些方法，因此也不许出现对应注解。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/OrderAgentFacadeTest.java 与 backend/admin-api/src/test/java/com/migao/admin/service/OrderServiceSliceWiringTest.java"
+      - "判据 6·🔴 拒绝路径 fail-closed：非法 / 空 action 与解析不到的订单号必须在落到生命周期实现点**之前**被拒（零交互），且话术给出可执行下一步（重试用 order_query / 可选值逐个列出）。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/OrderAgentFacadeTest.java"
+      - "判据 7·🔴 建单 Agent 路径仍用传入的那份门面实例的共享部件：Agent 建单实现点直测 —— 明细闸门抛 ⇒ 建单中止、一行不落（fail-closed），且闸门取自**传进来的** OrderService 实例（不是自己另造一份），验证点 = verify(facadeSharedParts).assertItemAmountsValid + verify(orderMapper, never()).insert。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/OrderCreationServiceTest.java"
+      - "判据 8·🔴 行数棘轮与冻结面未回退：门面 1,142 → 1,065（仍在 800–2,000 行的存量豁免带内 ⇒ 尚未触发豁免销账），新类 OrderAgentFacade 117 行 < 800 的新类阈值；加工单服务（冻结面 4,402 行上限）一行未涨。执行点 = tests/unit_ci_workflows/test_loc_ratchet.py"
+    skip_reason: "[backend-contract] Java 侧 Agent BFF 编排搬家 + 门面声明退休（零 LLM 评测面，由 JUnit 判据与 pytest 棘轮判据验证，不进 agent-eval 冒烟）"
+    merge_log: "2026-11-05 新增（issue #8681 的 P2-1e 第八批，**部分交付**：不写关闭关键词）。现取读数（`git show origin/main:backend/admin-api/src/main/java/com/migao/admin/service/OrderService.java | wc -l`）= 1,142 / 6 个公开面。本批按上一批给的清单第 1、2 项执行：① Agent BFF 收口 —— createOrderForAgent 的实现体本就在 OrderCreationService（本批只退休门面转发，Agent 订单控制器直连实现点，与第五批 createOrder 同一条口径）；updateOrderForAgent 是门面里**最后一块真正干活**的编排，实现体逐字节搬进新开的 OrderAgentFacade（117 行 < 800），三条跨类限定具名登记（解析口径直连 OrderQueryService / 生命周期族直连 OrderLifecycleService / 生命周期入口第三参仍是门面实例）；② restoreStockForReturn 转发退休 —— 实现早已在 OrderStockService，只欠调用方迁移 + 退休登记，售后工单服务直连实现点并同批移除因此失去唯一调用点的 OrderService 注入。⚠️ 与上一批清单的读数偏差：清单写「做完这两项预计 1,142 → ~600」，**现取实际 1,065** —— 差的约 450 行正是清单第 3 项「共享部件族」，它属跨批设计决定（谁持有第三参），本批**有意不做**；清单写 createOrderForAgent 测试 48 / updateOrderForAgent 14 / restoreStockForReturn 3，现取实际是 45 / 11 / 1 个**经门面**的驱动点（另有 7 处 verify 形态），以现取为准。⚠️ 有意不搬（一字未动）：applyRollAllocation（被整卷分配权威判据钉在门面）、batchStock 访问器（取消路径经传入的门面实例在用）。红证 = 三次注入逐条实跑并逐字节还原。全量读数见 PR body。"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/OrderFacadeForwarderRetirementTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/OrderAgentFacadeTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/OrderCreationServiceTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/AgentOrderServiceTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/OrderServiceSliceWiringTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/OrderServiceSliceSnapshotTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/OrderStockLedgerTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/AfterSalesTicketServiceTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/OrderIdempotencyTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/controller/agent/AgentOrderControllerTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/controller/AgentOrderCreateValidationTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/security/SecurityConfigTest.java"
+        - "tests/unit_ci_workflows/test_loc_ratchet.py"
+        - "tests/unit_ci_workflows/test_redproof_harness_gate.py"
+      ci:
+        - pr-check.yml
