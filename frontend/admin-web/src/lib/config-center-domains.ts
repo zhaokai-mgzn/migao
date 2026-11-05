@@ -102,12 +102,13 @@ export type ConfigDomainKey =
   | 'craft-route'
   | 'cutting-height'
   | 'remnant-sizes'
+  | 'logistics'
   | 'enterprise'
   | 'ai'
   | 'notifications'
 
 /**
- * 十个域（**顺序即左栏顺序、也是依赖顺序**：先算钱 → 再干活 → 再省料 → 最后是这家店）。
+ * 十一个域（**顺序即左栏顺序、也是依赖顺序**：先算钱 → 再干活 → 再省料 → 最后是这家店）。
  *
  * ⚠️ **v2（issue #6585）**：由 8 个域拆到 **11 个** —— 原来的 `processing-fee`（「加工项与加工费」，
  * 一个域里塞两件事）拆成 `processing-items` + `fee-combinations`；原来的 `craft-route`
@@ -187,6 +188,18 @@ export const CONFIG_DOMAINS: readonly ConfigDomain[] = [
     // 🔴 2026-11-04（issue #6579）：「余料尺寸」进主线了（**跨码步骤**：不持 `processing:manage`
     // 时服务端整个不发这一步 ⇒ 主线不画那行；本域本身也不渲染 ⇒ 徽标与渲染面同进同出）
     mainlineSteps: ['remnant-sizes'],
+  },
+  {
+    key: 'logistics',
+    label: '物流取号',
+    zone: 'production',
+    summary: '发货默认走哪家承运商 —— 没配就一律手填单号（取号不等于发货）',
+    // 承运商注册表读面 `GET /api/admin/logistics/carriers` 是 `production:view`，
+    // 但**本域要能改**（`PUT /api/admin/logistics/carrier-config` = `system:manage`）⇒
+    // requiredCode 取写码：不持写码的人看到的是一个改不了的下拉（= #6573 判死线「别渲染出来再撞 403」）
+    requiredCode: 'system:manage',
+    // 配置主线今天没有物流步骤（`config-readiness.ts` 的 MAINLINE_STEPS 不含它）⇒ 不显示徽标
+    mainlineSteps: [],
   },
   {
     key: 'enterprise',

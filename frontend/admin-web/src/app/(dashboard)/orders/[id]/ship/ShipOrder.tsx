@@ -24,6 +24,11 @@ import { newClientRequestId } from '@/lib/client-request-id'
 import { orderItemSku } from '@/lib/order-item-sku'
 // 「发货前要不要作业」的唯一读点 + 按型分岔的阻断文案（issue #7079 第 5 包）
 import { WORK_ORDER_NEEDED_COPY, workOrderKindOf } from '@/lib/processing-order'
+// 物流取号**能力位**（issue #8698 P0）：按钮可用性只由服务端注册表决定 ——
+// 不按端、不按承运商名硬编码（`@/lib/waybill` 是唯一判定处）。
+import { waybillApi } from '@/lib/api-waybill'
+import { waybillCapabilityFor } from '@/lib/waybill'
+import type { WaybillCapabilities } from '@/types/waybill'
 
 // 可发货订单状态（后端枚举：pending/confirmed/producing/shipped/completed/cancelled；
 // producing = 加工单流转后订单进入「生产中」，仍属待发货；'processing' 是历史误写，从不产生）
@@ -100,6 +105,11 @@ export default function ShipOrder() {
   const [carrierNotice, setCarrierNotice] = useState('')
   const [logisticsTouched, setLogisticsTouched] = useState(false)
   const [trackingNo, setTrackingNo] = useState('')
+  /** 承运商取号能力面（读不到 ⇒ 全手填，fail-closed；不编「可以取号」） */
+  const [waybillCaps, setWaybillCaps] = useState<WaybillCapabilities | null>(null)
+  /** 取号能力位**读取失败**（fail-closed 的可见面：禁用按钮 + 说清「读不到」而不是「没有」） */
+  const [waybillReadFailed, setWaybillReadFailed] = useState(false)
+  const [waybillCreating, setWaybillCreating] = useState(false)
   const [shipperName, setShipperName] = useState(defaultShipperName)
   const [shipperTouched, setShipperTouched] = useState(false)
 
@@ -109,6 +119,27 @@ export default function ShipOrder() {
       setShipperName(defaultShipperName)
     }
   }, [defaultShipperName, shipperTouched])
+
+  // 取号能力位（issue #8698）：与订单无关，挂载即读；**失败保留 null ⇒ 全手填**
+  // （`waybillCapabilityFor(null, …)` 返回 manual ⇒ 按钮禁用 + 提示手填，不是「当作能取号」）。
+  useEffect(() => {
+    let alive = true
+    void (async () => {
+      try {
+        const res = await waybillApi.getCapabilities()
+        if (alive) setWaybillCaps(res.data.data ?? null)
+      } catch {
+        // 读不到 ≠ 不能取号：标记出来并让按钮保持禁用（fail-closed），文案说清是「读取失败」
+        if (alive) {
+          setWaybillCaps(null)
+          setWaybillReadFailed(true)
+        }
+      }
+    })()
+    return () => {
+      alive = false
+    }
+  }, [])
 
   const loadOrder = useCallback(async () => {
     if (!orderId) return
@@ -261,6 +292,36 @@ export default function ShipOrder() {
    * 且都不带幂等键。类级判据见 `tests/unit/pages/ship-order.test.tsx` 的
    * 「发货页不得再走两步老路」组（扫本文件源码 ⇒ 旧调用回潮即红）。
    */
+  /** 当前承运商能不能自动取号（唯一判定：`@/lib/waybill` 的 `waybillCapabilityFor`） */
+  const waybill = waybillCapabilityFor(waybillCaps, logisticsCompany)
+
+  /**
+   * **取号**（issue #8698；口径 §3-2「取号 ≠ 发货」）。
+   *
+   * 成功后只把运单号回填输入框 —— **不**改订单状态、**不**调发货端点：
+   * 订单仍「待发货」，必须由人再点「确认发货」。
+   */
+  const handleCreateWaybill = async () => {
+    if (!order || !waybill.canCreate) return
+    setWaybillCreating(true)
+    try {
+      const res = await waybillApi.createWaybill(order.id, {
+        receiverName: order.customerName,
+        receiverPhone: order.customerPhone,
+        receiverAddress: order.customerAddress,
+        // 件数 / 重量：口径 §6-2 给默认值且页面可改（P0 不建商品主数据字段）
+        packageCount: 1,
+        weightKg: 1,
+      })
+      setTrackingNo(res.data.data.trackingNo)
+      toast.success('已取号，订单仍需点「确认发货」')
+    } catch (e) {
+      toastRequestError(e, '取号失败')
+    } finally {
+      setWaybillCreating(false)
+    }
+  }
+
   const handleSubmit = async () => {
     if (!order) return
     if (!shipperName.trim()) {
@@ -545,6 +606,27 @@ export default function ShipOrder() {
                       {carrierNotice}
                     </p>
                   )}
+                </div>
+              </div>
+
+              {/* 取号（issue #8698）：能力位驱动 —— 未接入取号的承运商一律手填，
+                  **不按端、不按承运商名硬编码**；取号成功后订单仍待发货 */}
+              <div className="flex items-center gap-4 text-sm">
+                <span className="text-neutral-700 w-20 shrink-0">自动取号：</span>
+                <div className="flex items-center gap-2 min-w-0">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    data-testid="ship-waybill-create"
+                    disabled={!waybill.canCreate || waybillCreating}
+                    loading={waybillCreating}
+                    onClick={handleCreateWaybill}
+                  >
+                    取号
+                  </Button>
+                  <span data-testid="ship-waybill-hint" className="text-xs text-neutral-500">
+                    {waybillReadFailed ? '取号能力读取失败，请手填单号' : waybill.hint}
+                  </span>
                 </div>
               </div>
 
