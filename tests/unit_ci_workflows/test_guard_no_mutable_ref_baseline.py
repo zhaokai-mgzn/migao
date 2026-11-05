@@ -82,6 +82,13 @@ MUTABLE_REF_BASELINE = {
         "（夹具自己 `git push` 上去的那条 main）⇒ 该 ref 与 CI 的浅克隆无关、永远可达。"
         "**不是**「读主仓的 origin/main」：本判据不碰真仓库（只从主仓 `copy` 实现文件）。"
     ),
+    "test_resolve_cases_conflict.py": (
+        "`_git(repo, \"show\", \"origin/main:.github/cases/misc.yml\")` 里的 `repo` 是 "
+        "`_build_conflict(tmp_path)` **自建的临时仓库**（`_init_repo()` 里 `git init --bare` 出 "
+        "`origin.git`、夹具自己 `git push -u origin main`）⇒ 该 `origin/main` 与 CI 的浅克隆无关、"
+        "永远可达。**不是**「读主仓的 origin/main」：本判据**不碰**真仓库的 cases 文件"
+        "（被测脚本也只经 `--repo <tmp>` 指向那个临时仓）。"
+    ),
     "test_sync_main_case_surface_guard.py": (
         "`_out(work, \"show\", f\"origin/main:{CASES_REL}\")` 里的 `work` 是 `_build_repo(tmp_path)` "
         "**自建的临时仓库**（它自己 `update-ref refs/remotes/origin/main`）⇒ 该 `origin/main` "

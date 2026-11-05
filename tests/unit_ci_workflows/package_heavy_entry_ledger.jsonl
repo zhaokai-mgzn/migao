@@ -147,3 +147,4 @@
 {"id":"1793860311.78790.12767","ts":"2026-11-05T06:31:51Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/8175-playbook","why":"--allow-package-heavy（命令行显式）"}
 {"id":"1793867632.3713.32706","ts":"2026-11-05T08:33:52Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/8709mix-flaky","why":"--allow-package-heavy（命令行显式）"}
 {"id":"1793871735.55384.8757","ts":"2026-11-05T09:42:15Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/cases-conflict","why":"--allow-package-heavy（命令行显式）"}
+{"id":"1793871951.65675.14410","ts":"2026-11-05T09:45:51Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/cases-conflict","why":"--allow-package-heavy（命令行显式）"}

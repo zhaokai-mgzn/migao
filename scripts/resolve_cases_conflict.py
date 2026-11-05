@@ -92,8 +92,11 @@ _MARKERS = ("<<<<<<<", "|||||||", "=======", ">>>>>>>")
 _ID_RE = re.compile(r"^(?P<indent>[ \t]*)-\s+id:\s*(?P<cid>[^\s#]+)")
 #: 块内**必须**有的字段（`title: >` 这种块标量头也算 —— 后面还有内容行）
 _TITLE_RE = re.compile(r"^[ \t]+title:[ \t]*\S")
-#: `<前缀>-<数字>`：解析成「前缀 + 数字」才能按前缀分组、按数字排序
-_ID_PARTS_RE = re.compile(r"^(?P<prefix>[A-Za-z][A-Za-z0-9_]*)-(?P<num>\d+)$")
+# ⚠️ **刻意不用正则解析 id**（`str.rpartition` 就够）：本仓 `scripts/**` 里「用例号形态的
+# 正则字面量 + 号空间后继运算」是**第二份算号实现**的指纹（判据 =
+# `tests/unit_ci_workflows/test_next_case_id_allocator.py::test_only_one_allocation_implementation_in_scripts`）。
+# 本工具**不算号**（唯一与号相关的动作是**报错时叫人去** `scripts/next_case_id.py` 让号）⇒
+# 不写那种正则就不进指纹面，也不必去动那份「取号实现点」冻结台账（那本账只登记**真的**算号器）。
 
 
 class Block(NamedTuple):
@@ -149,24 +152,36 @@ def ids_in_order(text: str) -> list[str]:
     return [b.cid for b in parse_blocks(text)]
 
 
+def split_case_id(cid: str) -> tuple[str, int] | None:
+    """把 `MC-041` 解析成 `("MC", 41)`（`<前缀>`、`<数字>`）；解析不了 ⇒ `None`。
+
+    解析得通才能**按前缀分组、组内按数字**排序 —— 直接比字符串会按字典序把
+    `MC-1000` 排到 `MC-999` 前面，也会把 `PK-*` 排在 `MC-*` 之后当成「更大的号段」。
+    """
+    prefix, sep, digits = cid.rpartition("-")
+    if not sep or not prefix or not digits.isdigit():
+        return None
+    return prefix, int(digits)
+
+
 def case_sort_key(cid: str) -> tuple[int, str, int, str]:
     """**按 `<前缀>-<数字>` 解析后**排序：先前缀分组，组内按数字。
 
     不可解析的 id 排在解析得通的后面（按字面），**绝不**因此被丢掉 —— 丢 id 会被
     `check_document` 抓住，但排序本身不该制造丢件。
     """
-    m = _ID_PARTS_RE.match(cid)
-    if m:
-        return (0, m.group("prefix"), int(m.group("num")), cid)
-    return (1, cid, 0, cid)
+    parts = split_case_id(cid)
+    if parts is None:
+        return (1, cid, 0, cid)
+    return (0, parts[0], parts[1], cid)
 
 
 def prefix_counts(ids: Sequence[str]) -> dict[str, int]:
     """按前缀分组计数（报告用：一眼看出「我的块属于哪个前缀、会不会抓错别的前缀」）。"""
     out: dict[str, int] = {}
     for cid in ids:
-        m = _ID_PARTS_RE.match(cid)
-        key = m.group("prefix") if m else cid
+        parts = split_case_id(cid)
+        key = parts[0] if parts else cid
         out[key] = out.get(key, 0) + 1
     return dict(sorted(out.items()))
 
