@@ -4,6 +4,10 @@
 职责：schema.yaml（YAML 单一事实源）→ Ontology 数据模型，并在加载时做
 结构校验 + 状态枚举铁律校验（与 CONTRACT-LEDGER 对齐，防止 schema 漂移）。
 
+⚠️ 只解析**保留段**：objects（properties/relations）、external_targets、intent_ownership。
+动作/规则两段已出库（#8172 / #8167 P1-2）⇒ loader 不再解析它们，且**不报错**（忽略即静默）；
+回潮由 `tests/test_ontology_schema.py` 的两个源文件元守卫拦。
+
 Seam: load_ontology(path=None) → Ontology；所有加载异常统一抛 OntologySchemaError。
 """
 
@@ -18,7 +22,6 @@ from app.ontology.models import (
     OntologyObject,
     PropertyDef,
     RelationDef,
-    RuleDef,
 )
 
 
@@ -156,14 +159,12 @@ def _parse_object(name: str, obj_raw: object) -> OntologyObject:
             )
 
     relations = _parse_relations(name, obj_raw.get("relations"))
-    rules = _parse_rules(name, obj_raw.get("rules"))
 
     return OntologyObject(
         name=name,
         display_name=display_name,
         properties=properties,
         relations=relations,
-        rules=rules,
     )
 
 
@@ -203,25 +204,6 @@ def _parse_relations(obj_name: str, relations_raw: object) -> List[RelationDef]:
             )
         )
     return relations
-
-
-def _parse_rules(obj_name: str, rules_raw: object) -> List[RuleDef]:
-    rules: List[RuleDef] = []
-    if not isinstance(rules_raw, list):
-        return rules
-    for r_raw in rules_raw:
-        if isinstance(r_raw, str):
-            rules.append(RuleDef(text=r_raw, severity="must"))
-        elif isinstance(r_raw, dict):
-            rules.append(
-                RuleDef(
-                    text=str(r_raw.get("text", "")),
-                    severity=str(r_raw.get("severity", "must")),
-                )
-            )
-        else:
-            raise _schema_error(f"对象 {obj_name} rules 项必须为字符串或映射")
-    return rules
 
 
 def _parse_intent_ownership(intent_raw: object) -> Dict[str, IntentOwnership]:
