@@ -50,6 +50,7 @@ class SettingsManageTool(BaseTool):
         "【反例】修改密码**不在本工具能力内**（后台暂无自助改密入口）—— 如实告知，"
         "并引导用户联系管理员处理，禁止承诺「已改好」。"
         "【标注】READONLY — 纯查询，不含任何写 action"
+        "【不要用于】站内通知/未读（属「通知中心」域，本域不办）；经营数据看板（用 dashboard_stats）"
     )
     # 权限码（admin-api 目录）：本工具**仍调用**的三个读端点都是
     # `@RequirePermission("system:manage")`（`SettingsController`）⇒ 该码是**读码**，必须保留：

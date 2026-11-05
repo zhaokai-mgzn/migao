@@ -46,6 +46,7 @@ class ProductionProgressQueryTool(BaseTool):
         "查订单金额/状态/明细用 order_query（C 端 customer_order_query）；"
         "查经营汇总用 dashboard_stats。"
         "【标注】READONLY — 只读查询生产进度，不改动任何数据"
+        "【不要用于】加工单状态/单号（用 processing_order_query）；报工明细与合格数（用 production_worklog_query）"
     )
 
     parameters = {

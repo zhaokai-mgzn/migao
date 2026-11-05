@@ -15,20 +15,7 @@ tools: dashboard_stats, finance_api, session_manage, piecework_query, briefing_q
 
 ## 工具（全部只读）
 
-| 场景 | 工具 |
-|------|------|
-| 今日概览（营收/订单/客户） | dashboard_stats(action=overview) |
-| 订单趋势（需 days，默认7） | dashboard_stats(action=order_trend, days=...) |
-| 环比对比（本周 vs 上周） | dashboard_stats(action=trend_compare, days=7) |
-| 状态分布 | dashboard_stats(action=order_status) |
-| 最近 N 条订单 | dashboard_stats(action=recent_orders, limit=...) |
-| 活跃会话 | dashboard_stats(action=active_sessions, limit=...) |
-| 商品销量排行 | dashboard_stats(action=product_ranking, period=day近7天\|month近30天, limit=...) |
-| 今日经营日报 | briefing_query |
-| 计件工资/人工成本（某工人某月） | piecework_query(姓名必填，月份可选) |
-| 会话列表/排队 | session_manage(action=list/monitor) |
-| 会话详情 | session_manage(action=detail, session_id=...) |
-| 分配/结束会话 | ❌ 不可用（已下线）→ 引导商家到后台「在线接待」页操作 |
+工具选择口径见系统提示的【选工具小抄】（由工具注册表投影，按商家说法对齐）；各工具的入参与只读性以它自己的 `description` 为准。
 
 ## 日报追问（条目 → 当场办）
 
@@ -38,13 +25,6 @@ tools: dashboard_stats, finance_api, session_manage, piecework_query, briefing_q
 
 ## 财务规则（finance_api，全部只读）
 
-| 场景 | 工具 |
-|------|------|
-| 收支汇总（收入/退款/净收入/待收款） | finance_api(action=get_summary) |
-| 收支环比（本期 vs 等长上一期） | finance_api(action=get_summary, compare=true) |
-| 资金流水 | finance_api(action=get_transactions) |
-| 应收对账 | finance_api(action=get_reconciliation) |
-| 登记收支 | ❌ 不可用（已下线）→ 引导商家到后台「财务对账」页操作 |
 
 - **收支/收入/退款/对账 汇总必须用 finance_api(get_summary)**，不要拆解成 order_query（查订单）+ after_sales_manage（查售后）——收支汇总是一个聚合接口，四项（收入/退款/净收入/待收款）一次取回（FN-004 实拍：agent 拆查订单+售后导致结果不符）。
 - **时间范围必带**：「本期/这个月/本月」默认 = **本月1号~今天**（startDate=本月1号,
@@ -55,7 +35,7 @@ tools: dashboard_stats, finance_api, session_manage, piecework_query, briefing_q
 
 ## 领域规则
 
-1. 数据只从工具查询，不编造统计数据；看板/趋势/分布/排行类问题**优先用 dashboard_stats**，不要用 order_query 硬查（order_query 只查具体订单）。
+1. 数据只从工具查询，不编造统计数据。
 > 工具选择口径以对应工具的 `description` 为准（见 `【不要用于】`）。
 3. **时间范围参数明确**：用户说"近X天趋势"→ days=X；"本月/上个月"→ 换算成对应 days；趋势/排行类查询**必须带时间参数**，禁止不传参数空查。
 4. 多项指标同时查询时（概览+趋势+排行），汇总后结构化展示，不逐条丢出。

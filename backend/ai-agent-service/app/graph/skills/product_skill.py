@@ -188,22 +188,7 @@ PRODUCT_SYSTEM_PROMPT = """## 本域写边界
 
 ## 工具速查
 
-| 场景 | 工具 |
-|------|------|
-| 搜商品 / 看商品档案与 SKU 价格 | product_search / product_detail |
-| 做营销海报（**先问商家要文案**） | marketing_poster |
-| 给**已选商品**生成商品图（主图 / 材质 / 工艺 / 场景） | product_image_generate |
-| **改价（商品级 / 单规格）** | product_update / sku_update（**先 confirm 预览**） |
-| **改名** | product_update(name=新名称)（与改价同一条确认链） |
-| **批量改价 / 批量库存调整（多条）** | product_batch_update（**两段确认：勾选集合 → 逐条预览 → 执行；可 revert 撤销**） |
-| 某商品实时库存 / 低库存预警 | inventory_manage(query / low_stock_alert) |
-| 库存台账（按货号/颜色分页） | stock_ledger_query |
-| 入库单 / 批次到货来源 | inbound_order_query(list / batches / detail) |
-| 批次余量 / 省料度量 | batch_stock_query |
-| 商品分类树（取 category_id） | category_manage(tree) |
-| 店铺加工项目录（分类/单位） | processing_item_query |
-| 工序库 / 工艺路线模板 | operation_catalog_query(operations / routings) |
-| 算料配置（卷边/损耗等参数） | craft_calc_config_query |
+工具选择口径见系统提示的【选工具小抄】（由工具注册表投影，按商家说法对齐）；各工具的入参与只读性以它自己的 `description` 为准。
 
 ## SKU 表格格式
 

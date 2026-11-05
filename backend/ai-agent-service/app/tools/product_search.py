@@ -52,6 +52,7 @@ class ProductSearchTool(BaseTool):
         "需更大范围请调大 size。"
         "【反例】查单个商品详情用 product_detail，查分类用 category_manage(tree)。"
         "【标注】READONLY — 放心调用，无需确认"
+        "【不要用于】实时库存量/低库存（用 inventory_manage）；商品分类树（用 category_manage）"
     )
 
     # 权限码（admin-api 目录）：商品**读**码 `product:list`（ProductController / AgentProductController

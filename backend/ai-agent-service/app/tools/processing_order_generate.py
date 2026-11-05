@@ -30,6 +30,7 @@ class ProcessingOrderGenerateTool(BaseTool):
         "待付款（pending）与加急（is_urgent=true）订单同样在派单页派 —— 不再有直派例外。"
         "【反例】查询加工单用 processing_order_query；更新加工单状态用 processing_order_update。"
         "【标注】WRITE — 批量生成前必须列出订单清单并二次确认"
+        "【不要用于】单张加工单的状态流转（用 processing_order_update）；店铺加工项目录（用 processing_item_query）"
     )
 
     # 权限码（admin-api 目录）：ProcessingOrderController 类级
