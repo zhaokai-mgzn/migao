@@ -42,6 +42,7 @@ class ProcessingItemQueryTool(BaseTool):
         "创建/修改/删除加工项**不在能力内**——如实说明并引导商家到后台「商品管理」页操作；"
         "选规格/色号用 product_detail 的 skus[]。"
         "【标注】READONLY"
+        "【不要用于】加工单状态/套件（用 processing_order_query）；商品分类树（用 category_manage）"
     )
 
     # 权限码（admin-api 目录，issue #5291）：加工项/加工分类的**读**端点取生产域读码

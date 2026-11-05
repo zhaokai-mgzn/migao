@@ -63,6 +63,7 @@ class ProductionWorklogQueryTool(BaseTool):
         "查订单金额/状态用 order_query。"
         "【标注】READONLY — 只读查询工序报工明细（仅商户员工/管理员可用，不对顾客开放）；"
         "禁止编造报工人/数量/计件金额，数字一律以本工具返回为准"
+        "【不要用于】计件工资/人工成本（用 piecework_query）；加工单状态（用 processing_order_query）"
     )
 
     parameters = {

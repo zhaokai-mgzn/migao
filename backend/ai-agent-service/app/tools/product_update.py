@@ -34,6 +34,7 @@ class ProductUpdateTool(BaseTool):
         "【确认形态·改价】改价是**涉钱面**：确认形态**只认点卡**——判据 = 商家消息**逐字等于**你刚发出的确认卡 confirmValue（点卡回传的原文），其它文本（含「确认」二字）都不算（issue #5317）；**点卡之后必须立即调用本工具执行**，不得重发卡片、不得再问一次。"
         "【标注】WRITE|IDEMPOTENT — 写操作；用户确认后立即执行，禁止只查询/展示就停"
         "【铁律】用户明确要求设置/修改商品（回补库存开关/价格/名称等）时：先查商品拿真实 product_id → 展示操作预览 + 确认卡 → 用户确认后立即调用本工具执行，禁止只查询/展示就停（PR-017 实拍：设置退货回补库存只 product_search 不 update 判失败）。"
+        "【不要用于】批量改价/多条一起改（用 product_batch_update）；搜商品取 ID（用 product_search）"
     )
     # 权限码（admin-api 目录）：商品写取写码 `product:create`（ProductController 的 PUT/PATCH）。
     # 该 agent 端点自身只挂类级读码 `product:list` —— 按读码放行会让只读持有者拿到写权限。

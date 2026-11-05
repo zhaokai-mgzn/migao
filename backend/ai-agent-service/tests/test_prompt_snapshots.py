@@ -27,17 +27,24 @@ def _clear_cache():
 
 
 def _without_capability_index(prompt: str) -> str:
-    """去掉 #4125 的**能力索引**层（域隔离判据的判据面）。
+    """去掉**生成层**（#4125 能力索引 / #8176 选工具小抄）—— 域隔离判据的判据面。
+
+    ⚠️ 2026-11-05（issue #8176）：层清单从「能力索引」扩到「选工具小抄」。两者都是
+    **跨域地图**（小抄按设计点名别的域的工具，如 `product_search ✗inventory_manage`），
+    算进"域规则污染"会让 `test_order_prompt_no_product_contamination` 从"判域规则"
+    退化成"判有没有地图"（同 #4125 的理由，**不是**放宽域隔离判据）。
 
     为什么：索引是**跨域地图**，按设计就会点名其它域的**写工具**（"域 → 该域可执行的写工具"）
     —— 它既不是 order 的领域规则、也不是 product 的领域规则，把它算进"域规则污染"会让
     「域隔离」判据（`test_*_prompt_no_*_contamination`）从"判域规则"退化成"判有没有地图"。
     索引自身的内容一致性由 `tests/test_capability_index_prompt.py` 逐域机械比对锁定。
     """
-    if _CAPABILITY_INDEX_MARKER not in prompt:
-        return prompt
-    head, _, tail = prompt.partition(_CAPABILITY_INDEX_MARKER)
-    return head + tail.split("\n\n", 1)[-1] if "\n\n" in tail else head
+    for marker in (_CAPABILITY_INDEX_MARKER, "【选工具小抄】"):
+        if marker not in prompt:
+            continue
+        head, _, tail = prompt.partition(marker)
+        prompt = head + tail.split("\n\n", 1)[-1] if "\n\n" in tail else head
+    return prompt
 
 
 @pytest.fixture(autouse=True)
@@ -435,7 +442,11 @@ def test_snapshot_all_skills():
         # 「能力边界 终版」重写（**B 端不是只读**：变更 ✅ / 创建单据·删除 ❌）+ 新增「检索克制」
         # 段（issue #7042）；该层**注入所有 persona**（机械投影、无可 trim），另加本域
         # `prompts/aftersales.md` 的边界块。实测 9428，按既有惯例上取整到百位（留 ~170 余量）。
-        "aftersales": 9800,  # +1300: 禁英文枚举 + 退货库存规则（issue #2991）+ 换货加工项确认（issue #3033，达 6269）+ 共享规则确认卡片铁律（issue #3045，达 6566）+ 创建/关闭工单执行引导（Round 43，达 7068）
+        # 🔴 2026-11-05（issue #8176）：9800→**10300** —— 新增 Layer 2.8「选工具小抄」
+        #   （按 `SkillConfig.tool_names` × 工具元数据 × 本体**机械投影**，无可 trim）。
+        #   本域原先**没有**手写速查表 ⇒ 增量是纯新增；实测 10070（命令自证：本文件即判据），
+        #   按本 dict 惯例「实测 +200、上取整到百位」。**未放宽断言**（超限仍判红）。
+        "aftersales": 10300,  # +1300: 禁英文枚举 + 退货库存规则（issue #2991）+ 换货加工项确认（issue #3033，达 6269）+ 共享规则确认卡片铁律（issue #3045，达 6566）+ 创建/关闭工单执行引导（Round 43，达 7068）
         # 🔴 2026-10-16（issue #7040）：9400→9700 —— 同共享层口径（机械投影、无可 trim）：
         # `PROMPT-rules.md` 的边界重写 + 「检索克制」段注入所有 persona，另加本域边界块。
         # 实测 9501，上取整到百位并留余量。
@@ -471,7 +482,10 @@ def test_snapshot_all_skills():
         # 「能力边界 终版」重写（**变更 ✅ / 创建·删除 ❌** 三段 + 「变更类别不要照搬拒绝话术」
         # 反例）；按惯例先 trim 措辞（未删任何规则）后实测 7638，故显式抬本 per-skill 预算。
         # 🔴 2026-10-16（issue #7040）：7600→8000 —— 同共享层口径 + 本域边界块；实测 8283，上取整到百位并留余量。
-        "general": 8700,  # 2026-09-24（issue #5303，A 档可逆写补回）：+200 —— 共享的「能力索引」块是**机械投影**（`域 → 该域写工具`），product 域新增两条写工具 ⇒ 每个同 persona 域的 prompt 都多一行 `- product: product_update sku_update`，**无可 trim**（实测 7415，按既有惯例「实测 +200、上取整到百位」）。沿革：+600: Phase 2 (#2789) 澄清卡引导（choice 候选示例）达 5465；+200: 兜底库存查询改真实工具（issue #3569，达 5827）；+200: 面向用户一律中文（扩到 SKU/ID 等技术术语，达 6079）；+207（issue #3921）：加工单≠加工项兜底口径——问加工单不调 processing_item_query、解释概念并引导后台（达 6286）；+200（issue #4107 F7）：同上共享层权限归因规则补后半（达 6450）
+        # 🔴 2026-11-05（issue #8176）：8700→**9700** —— Layer 2.8「选工具小抄」是机械投影
+        #   （兜底域声明 27 把工具 ⇒ 小抄最长；原「工具速查」手写表已删，**无可再 trim**）；
+        #   实测 9400（命令自证：本文件即判据），按惯例「实测 +200、上取整到百位」。
+        "general": 9700,  # 2026-09-24（issue #5303，A 档可逆写补回）：+200 —— 共享的「能力索引」块是**机械投影**（`域 → 该域写工具`），product 域新增两条写工具 ⇒ 每个同 persona 域的 prompt 都多一行 `- product: product_update sku_update`，**无可 trim**（实测 7415，按既有惯例「实测 +200、上取整到百位」）。沿革：+600: Phase 2 (#2789) 澄清卡引导（choice 候选示例）达 5465；+200: 兜底库存查询改真实工具（issue #3569，达 5827）；+200: 面向用户一律中文（扩到 SKU/ID 等技术术语，达 6079）；+207（issue #3921）：加工单≠加工项兜底口径——问加工单不调 processing_item_query、解释概念并引导后台（达 6286）；+200（issue #4107 F7）：同上共享层权限归因规则补后半（达 6450）
         # 🔴 2026-10-19（issue #7334 裁定 A）：7000→7400 —— 能力边界投影补字段级/枚举值级单元
         #   与「写工具全覆盖」说明（机械投影 + 权限 caveat，无可 trim）；实测 7115，按惯例
         #   「实测 +200、上取整到百位」取 7400；**未放宽其它域**。

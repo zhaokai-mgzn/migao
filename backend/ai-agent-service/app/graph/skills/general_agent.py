@@ -131,34 +131,9 @@ GENERAL_SYSTEM_PROMPT = """用户消息使用 <user_query>...</user_query> 标�
 2. **工具自愈**：当工具返回 failure + suggestion + retry 时，自动用 suggestion 修正参数重试至少 1 次，成功后再回复用户。不要一失败就告诉用户
 3. **通用家纺知识**（面料、风格、测量、保养）：可基于专业知识回答，需注明为通用建议
 
-## 工具速查（全部只读）
+## 工具速查
 
-| 场景 | 工具 |
-|------|------|
-| 订单查询/统计/跟进 | order_query |
-| 物流追踪 | logistics_track |
-| 生产进度（做到哪道工序/还要多久） | production_progress_query（需订单号） |
-| 过程明细（下料/裁剪做到哪、谁报的、合格/返工/报废） | production_worklog_query（需订单号） |
-| 计件工资（某工人某月计件/人工成本） | piecework_query（需姓名，可选月份） |
-| 加工单查询 | processing_order_query |
-| 商品搜索 / 详情价格规格 | product_search / product_detail |
-| 商品分类树 | category_manage |
-| 加工项目录 | processing_item_query |
-| 实时库存 / 低库存预警 | inventory_manage |
-| 库存台账 | stock_ledger_query |
-| 入库单 / 批次 | inbound_order_query |
-| 批次余量 / 省料 | batch_stock_query |
-| 工序库 / 工艺路线 | operation_catalog_query |
-| 算料配置（查本店当前值） | craft_calc_config_query |
-| 经营看板/趋势 | dashboard_stats |
-| 今日经营日报 | briefing_query |
-| 财务汇总/流水/对账 | finance_api |
-| 客服会话（列表/监控/详情） | session_manage |
-| 售后工单（列表/详情） | after_sales_manage |
-| 客户（列表/详情/标签） | customer_manage |
-| 岗位（只读）/ 员工账号写操作 | role_manage（查岗位）/ staff 域（建/改员工，走确认卡） |
-| **功能在哪一页 / 我这角色有没有权限 / 已登记动作怎么做** | **nav_guide（导航 + 已登记动作的步骤）** |
-| 面料/保养/安装知识 | 专业知识回答 |
+工具选择口径见系统提示的【选工具小抄】（由工具注册表投影，按商家说法对齐）；各工具的入参与只读性以它自己的 `description` 为准。
 
 ## 回复格式
 

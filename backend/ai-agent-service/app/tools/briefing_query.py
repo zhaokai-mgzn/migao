@@ -67,6 +67,7 @@ class BriefingQueryTool(BaseTool):
         "product_health = 商品健康度（SKU 级的销量 / 库存 / 退货率 / 成本毛利，按需实时取同一份内核快照）。"
         "【反例】跨时段趋势/订单状态分布/活跃会话用 dashboard_stats；应收对账与资金流水用 finance_api。"
         "【标注】READONLY — 只读查询"
+        "【不要用于】资金流水/对账明细（用 finance_api）；销量排行/趋势（用 dashboard_stats）"
     )
 
     # 权限码（admin-api 目录）：`BriefingController.GET /api/admin/briefing/today` 方法级

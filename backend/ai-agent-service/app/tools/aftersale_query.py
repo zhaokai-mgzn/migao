@@ -37,6 +37,7 @@ class AftersaleQueryTool(BaseTool):
         "【反例】查订单本身（金额/明细/状态）用 order_query（顾客本人用 customer_order_query）；"
         "创建/更新工单用 aftersale_create（商户端用 after_sales_manage）。"
         "【标注】READONLY — 纯查询，无需确认"
+        "【不要用于】商家侧工单处理（用 after_sales_manage）；订单状态（用 order_query）"
     )
     allowed_roles = ["customer", "admin", "agent", "tenant_admin", "operator"]
 

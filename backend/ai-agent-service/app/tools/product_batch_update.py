@@ -390,6 +390,7 @@ class ProductBatchUpdateTool(BaseTool):
         "【标注】WRITE|NON_IDEMPOTENT — 写操作：先 preview（两段确认齐了）再 execute；"
         "禁止只预览就宣称已改，也禁止把 preview 的结果当成已执行；execute/revert 返回「尚未完成」时"
         "更不得声称做完。"
+        "【不要用于】单条商品改价（用 product_update）；单规格改价（用 sku_update）"
     )
     # 权限码（契约 §三）：与**逐条写同码**，不新开权限面。
     # 逐条写的码 = `product_update.required_permissions` = admin-api `ProductController`
