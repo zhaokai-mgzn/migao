@@ -9762,5 +9762,14 @@ cases:
       tests:
         - "frontend/admin-web/tests/unit/pages/orders-new-slice-characterization.test.tsx"
         - "frontend/admin-web/tests/unit/pages/orders-new-slice-structure-guard.test.ts"
+        - "frontend/admin-web/tests/unit/lib/order-create/types.test.ts"
+        - "frontend/admin-web/tests/unit/lib/order-create/display.test.ts"
+        - "frontend/admin-web/tests/unit/lib/order-create/calc.test.ts"
+        - "frontend/admin-web/tests/unit/components/primitives.test.tsx"
+        - "frontend/admin-web/tests/unit/components/WizardStep.test.tsx"
+        - "frontend/admin-web/tests/unit/components/FabricRow.test.tsx"
+        - "frontend/admin-web/tests/unit/components/SizeAutoBadges.test.tsx"
+        - "frontend/admin-web/tests/unit/components/LineItemBlock.test.tsx"
+        - "frontend/admin-web/tests/unit/components/ProductGroupBlock.test.tsx"
       ci:
         - pr-check.yml
