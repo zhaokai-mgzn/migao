@@ -9724,3 +9724,43 @@ cases:
         - "tests/unit_ci_workflows/test_redproof_harness_gate.py"
       ci:
         - pr-check.yml
+
+  - id: MC-243
+    legacy_id: ""
+    title: "下单页 orders/new/page.tsx 切片第一档（issue #8725 的部分交付）：6,913 行按现取边界切成 类型 / 展示口径 / 算料联动 / 五个表单组件 / 折叠骨架，行为逐字节不变（characterization 三层冻结 + 切片面单一真值守卫）"
+    domains:
+      - misc
+      - frontend
+    tier: normal
+    tags:
+      - refactor
+      - frontend
+      - slice
+      - characterization-test
+      - single-source
+      - ratchet
+    truths_ref: []
+    precondition:
+      - "切片前的真实结构由 `git show origin/main:frontend/admin-web/src/app/(dashboard)/orders/new/page.tsx | wc -l` 现取（6,913 行），不是按猜的分法切：① 1-137 import ② 139-396 类型 ③ 397-1603 纯函数层 ④ 1604-4208 主组件 ⑤ 4209-4274 LineItemBlockProps ⑥ 4277-4414 FabricRow ⑦ 4415-4633 ProductGroup/CollapsibleHeader/WizardStep ⑧ 4634-5154 ProductGroupBlock ⑨ 5155-6821 LineItemBlock ⑩ 6822-6913 内联小组件；切段器逐段断言「139..末尾被完全覆盖，无孤儿代码行」才落盘"
+      - "golden 必须**录制于未切片代码**：`CHARACTERIZATION_UPDATE=1` 只在 `git show origin/main:` 的原始 page.tsx 上跑过一次；切片后只读复核。失败时不许直接重录（重录 = 把判据降成空断言）"
+      - "扫描面 = `frontend/admin-web/src` 全树；本判据的切片面 = 页面 + 9 个单元文件（少一个 / 多一个都红，防「扫 0 处 = 恒绿」）"
+    user_inputs:
+      - "商家在下单页录入一张订单：选商品 → 填净宽净高 → 展开用料与规格（算料推导读数）→ 展开加工项勾打孔（加工费组合取价）→ 展开费用明细；以及切售卖形态为布料后按米键入数量。同一批输入下，金额 / 用料米数 / 加工费 / 推导结论 / 表单读数 / 整页渲染逐字节不变"
+    expectations: []
+    data_checks:
+      - "判据 1·🔴 渲染逐字节（characterization）：同一批输入下三层冻结 —— ① 每个 data-testid 节点的可见文本（键级 diff 具名到 fee-summary-total[0] / craft-plan-meters[0] 这种粒度）② 全页 input/select/textarea 的 value/checked ③ 归一化后整页 innerHTML（只把 crypto.randomUUID 按首现顺序换成 UUID_n，其余一个字符不动）。四个场景：首屏空表单 / 算料联动展开态 / 加工费价格预览展开态 / 布料行。golden 由**未切片**代码录制，切片后只读复核。执行点 = frontend/admin-web/tests/unit/pages/orders-new-slice-characterization.test.tsx"
+      - "判据 2·🔴 无重复实现：登记的 60+ 符号在**切片面内**各自恰好定义 1 次且就在登记的文件里；页面一处都不许再定义它们。红证 = 把 formatAmount 再抄一份进页面 ⇒ 具名红（期望只在 lib/order-create/display.ts）。执行点 = frontend/admin-web/tests/unit/pages/orders-new-slice-structure-guard.test.ts"
+      - "判据 3·🔴 页面只做装配：页面必须从它**用到**的单元 import（types/display/calc 三条腿强制出现），且不得出现任何单元的顶层声明 —— 搬完又抄回来、或忘了 import 实际还在跑旧代码，都在这里具名红。执行点 = 同判据 2 的判据文件"
+      - "判据 4·🔴 单元可用（无孤儿 + 单一职责）：每个单元被至少一个别的源文件 import；模块头必须声明「单一职责」；责任一句话不得是空串（防登记成空串把判据架空）。执行点 = 同判据 2 的判据文件"
+      - "判据 5·🔴 依赖方向单向：算料层 calc.ts 单向依赖展示层 display.ts（取色口一处），反向不存在；types.ts 不依赖 calc.ts —— 成环就是「两个单元又在说同一件事」。执行点 = 同判据 2 的判据文件"
+      - "判据 6·🔴 扫描面非空自证：切片面现取必须正好是页面 + 9 个单元（多一个未登记文件也红），且每个文件非空（>200 字符）—— 防「路径漂了 ⇒ 判据恒绿」。执行点 = 同判据 2 的判据文件"
+      - "判据 7·🔴 登记面同步（不是放宽）：craftSpecRows 直调点台账 / 枚举兜底台账的条目**随调用点搬到 LineItemBlock.tsx**（count/sites 数字不变 = 1）；算料落库键集守卫的读面搬到 calc.ts（同一函数、同一断言）；`布料` 字面量白名单由 2 条**净减**为 1 条（types.ts 只转出 lib/sale-form.ts 的常量，不再写字面量）。执行点 = frontend/admin-web/tests/unit/craft-spec-row-source-guard.test.ts / design-baseline-expression-fallback.test.ts / lib/sale-form.test.ts / pages/orders-new-calc-persist.test.tsx"
+      - "判据 8·🔴 既有 16 个 orders-new 判据文件 301 条一条不降：切片后全员绿（含 81 条的 orders-new.test.tsx 与 43 条的 orders-new-plan.test.tsx）。执行点 = frontend/admin-web/tests/unit/pages/orders-new*.test.tsx"
+    skip_reason: "[frontend-refactor] 纯搬运（零 LLM 评测面、零接口面变化），由 vitest 的三层冻结判据与结构守卫验证，不进 agent-eval 冒烟"
+    merge_log: "2026-11-05 新增（issue #8725 第一档，**部分交付**：不写关闭关键词；三档 base_skill.py / chat.py / ProcessingOrderService.java 未做）。现取读数（`git show origin/main:frontend/admin-web/src/app/(dashboard)/orders/new/page.tsx | wc -l`）= 6,913 行；切片后页面 2,725 行，新增 9 个单元共 4,244 行（净增来自每个文件的模块头与 import 块，**零行注释被删**）。行为 diff = 0 的证据 = 同一份 golden（录制于未切片代码）在切片后逐字节通过（三层：观测点 / 表单读数 / 归一化 innerHTML）。红证（逐条真注入后逐字节还原）：① formatAmount 小数位 2→0 ⇒ 具名红（fee-summary-total[0] / fee-summary-bar[0]）② deriveProcessingQty 取整改动 ⇒ 具名红（03-processing-fee 观测点）③ 把 formatAmount 抄回页面 ⇒ 结构守卫判据 2 具名红。⚠️ 复核时踩到并修掉的两处**判据自身缺陷**（如实登记）：(a) golden 起初在「计价预览 pending」那一刻冻结 ⇒ 把时序当行为，负载下假红；(b) 加工项按 `findAllByRole('checkbox')[0]` 位置抓 ⇒ 「勾的是哪一项」随负载漂。修法 = 静默判定（读数连续 600ms 不变才冻结）+ 按名字抓控件；修完 pristine 与切片后各自 6/6 稳定。⚠️ 有意不做（重启条件见 PR body）：formatAmount 在**别的** 9 个页面里早就有同名实现（切片前既存），不在本单修。"
+    traces:
+      tests:
+        - "frontend/admin-web/tests/unit/pages/orders-new-slice-characterization.test.tsx"
+        - "frontend/admin-web/tests/unit/pages/orders-new-slice-structure-guard.test.ts"
+      ci:
+        - pr-check.yml

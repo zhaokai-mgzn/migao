@@ -299,7 +299,9 @@ const readSrc = (rel: string) => readFileSync(join(ROOT, rel), 'utf8')
  * （否则「写进注释」会被判成「已落库」，本判据退化成空断言）。
  */
 function writtenCalcKeys(): Set<string> {
-  const src = readSrc('frontend/admin-web/src/app/(dashboard)/orders/new/page.tsx')
+  // issue #8725 第一档切片：`buildLineProcessingInfo` 是**唯一构造点**，随算料层搬进
+  // `lib/order-create/calc.ts` ⇒ 读面跟着搬（断言与键集口径一字未改）。
+  const src = readSrc('frontend/admin-web/src/lib/order-create/calc.ts')
   const start = src.indexOf('function buildLineProcessingInfo(')
   if (start < 0) throw new Error('找不到 buildLineProcessingInfo —— 判据前提失效，请同步本守卫')
   const end = src.indexOf('\n}', start)

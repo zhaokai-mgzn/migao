@@ -307,11 +307,11 @@ const recorded: Record<string, Snapshot> = {}
  * 冻结一个场景：`UPDATE=1` 时只记账（写完盘再断言一次，防「录错也算绿」）；
  * 缺省档 **只读** —— 与 golden 逐字节比对。
  */
-function freeze(scenario: string, container: HTMLElement) {
+function freeze(scenario: string, container: HTMLElement): Snapshot {
   const actual = snapshot(container)
   if (UPDATE) {
     recorded[scenario] = actual
-    return
+    return actual
   }
   const expected = goldens[scenario]
   if (!expected) {
@@ -326,6 +326,7 @@ function freeze(scenario: string, container: HTMLElement) {
   // ③ 渲染结果逐字节
   expect(actual.html.length, `${scenario}: innerHTML 字节数`).toBe(expected.html.length)
   expect(actual.html, `${scenario}: 渲染结果逐字节`).toBe(expected.html)
+  return actual
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -337,6 +338,52 @@ const pickInput = (label: string, idx = 0) => {
   const input = el.closest('div')?.querySelector('input') as HTMLInputElement | null
   if (!input) throw new Error(`找不到「${label}」所在容器里的 input`)
   return input
+}
+
+/**
+ * **等计价预览跑完**再冻结（issue #8725 复核实测的 flake 根因）。
+ *
+ * `feePreviewPending` 为真时页面会印「加工费计价中…」，而那一刻屏幕上还是**上一轮**的读数
+ * （实测：同一份代码在负载下会稳定地录到「加工 1 米」、在空载下录到「加工 13.8 米」）。
+ * 把这一态录进 golden = 把**时序**当行为 ⇒ 负载一高就红（假红），而且没人看得出为什么。
+ * ⇒ 冻结前必须等它消失（那一刻屏幕上的才是**最终**读数）。
+ */
+const waitFeeSettled = async () => {
+  await waitFor(() => {
+    expect(screen.queryByText('加工费计价中…')).toBeNull()
+  })
+}
+
+/**
+ * **静默判定**：屏幕上所有具名读数连续 3 次轮询不再变化 ⇒ 认为这一轮异步（算料 / 门幅规则 /
+ * 计价预览 / 推荐默认）已经落定，然后把**那一刻**的样子冻进 golden。
+ *
+ * 为什么需要它：本页有 **4 条互不同步的异步链**（试算 400ms / 计价预览 300ms / 门幅规则 /
+ * 推荐默认 effect）。只等其中一条（例如「计价中」消失）挡不住另一条**稍后**再改一次屏幕
+ * ⇒ 同一份代码会稳定地录到不同的总额（实测 pristine 代码上就有 ¥1,265.56 / ¥1,424.30 /
+ * ¥1,464.66 三种）⇒ golden 变成「时序的照片」，负载一高就假红。
+ *
+ * ⚠️ 这不是固定 sleep：**一静止立刻返回**（正常毫秒级）；只有真在变的时候才继续等。
+ */
+const waitQuiescent = async (container: HTMLElement) => {
+  const read = () => {
+    const snap = snapshot(container)
+    return JSON.stringify([snap.points, snap.fields])
+  }
+  let prev = read()
+  let stable = 0
+  await waitFor(
+    () => {
+      const now = read()
+      stable = now === prev ? stable + 1 : 0
+      prev = now
+      // 连续 12 次（≈600ms）相同 ⇒ 落定。**600ms 必须大于本页最长的防抖**（试算 400ms /
+      // 计价预览 300ms），否则会在防抖**还没发出去**的那一刻误判「已落定」
+      // （实测 3 次 ≈150ms 时仍会偶发假红）。抛错 = waitFor 继续等，不是失败。
+      if (stable < 12) throw new Error('读数仍在变化，继续等')
+    },
+    { timeout: 15000, interval: 50 }
+  )
 }
 
 const openStep = (title: string, idx = 0) => {
@@ -386,6 +433,7 @@ describe('下单页切片 · 行为冻结（characterization，issue #8725 第�
       const { container } = render(<NewOrderPage />)
       await mounted()
       await screen.findByText('新增订单')
+      await waitQuiescent(container)
       freeze('01-empty', container)
     })
   })
@@ -402,24 +450,33 @@ describe('下单页切片 · 行为冻结（characterization，issue #8725 第�
       openStep('用料与规格')
       await screen.findByTestId('craft-plan')          // 自证：展开真的生效了（不是空场景）
       await screen.findByTestId('derivation-panel')
+      await waitFeeSettled()
+      await waitQuiescent(container)
       freeze('02-craft-spec', container)
 
       // ② 加工项：勾「打孔」（加工费组合键随之变化 ⇒ 计价预览重算）
       openStep('加工项')
-      const checkbox = (await screen.findAllByRole('checkbox'))[0]
-      fireEvent.click(checkbox)
+      // 🔴 先等「系统推荐组合」**渲染出来**：推荐默认是挂载后由 effect 落的，
+      //    在它之前按 `[0]` 抓 checkbox 会让「勾的是哪一项」随机器负载漂
+      //    （实测：同一份代码录到 ¥1,464.66 / ¥1,265.56 / ¥1,424.30 三个总额）。
+      await screen.findByTestId('processing-recommended')
+      // 按**名字**抓，不按位置抓（位置是时序的函数，名字不是）
+      fireEvent.click(await screen.findByRole('checkbox', { name: '打孔' }))
+      // 勾完等它落定：勾选会改组合键 ⇒ 计价预览重算（防抖 300ms）
+      await waitFor(() => {
+        expect((screen.getByRole('checkbox', { name: '打孔' }) as HTMLInputElement).checked).toBe(true)
+      })
+      await waitFeeSettled()
 
       // ③ 费用明细（默认收起；展开才有逐行读数）
       const toggle = screen.getByTestId('fee-detail-toggle')
       if (toggle.getAttribute('aria-expanded') === 'false') fireEvent.click(toggle)
       await screen.findByText('费用明细')
 
-      // 计价预览是防抖（300ms）后发的 ⇒ 等总额真的落到「¥」形态再采集
-      await waitFor(() => {
-        const el = screen.getByTestId('fee-summary-total')
-        expect(el.textContent ?? '').toContain('¥')
-      })
       await screen.findByTestId('fee-detail-panel')
+      // 计价预览是防抖（300ms）后发的 ⇒ 等它**跑完**（不是等它「开始」）
+      await waitFeeSettled()
+      await waitQuiescent(container)
       freeze('03-processing-fee', container)
     })
   })
@@ -429,6 +486,7 @@ describe('下单页切片 · 行为冻结（characterization，issue #8725 第�
       const { container } = render(<NewOrderPage />)
       await mounted()
       await pickProductAndSize('6.6', '2.6')
+      await waitFeeSettled()
 
       // 售卖形态是组级 radiogroup（chips）
       const group = screen.getAllByRole('radiogroup', { name: '售卖形态' })[0]
@@ -439,6 +497,7 @@ describe('下单页切片 · 行为冻结（characterization，issue #8725 第�
       const input = qty.closest('div')?.querySelector('input') as HTMLInputElement | null
       if (!input) throw new Error('布料行找不到「数量」输入框')
       fireEvent.change(input, { target: { value: '12.5' } })
+      await waitQuiescent(container)
 
       freeze('04-fabric', container)
     })

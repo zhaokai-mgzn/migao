@@ -13,13 +13,13 @@
       "count": 1,
       "why": "下单页**写侧**取「打开方式」的展示文案：入参对象只给 `{ openCount }`（无 doorWidth）⇒ 渲染不出门幅"
     },
-    "src/app/(dashboard)/orders/new/page.tsx": {
-      "count": 1,
-      "why": "下单页工艺预览：入参只给 cuttingMode/openCount/style/formula 四项，**不含 doorWidth** ⇒ 渲染不出门幅"
-    },
     "src/app/(dashboard)/processing-orders/[id]/production/page.tsx": {
       "count": 1,
       "why": "加工单生产明细页只从 `craftSpecRows()` 里 **pick「特殊选项」那一行**（按 label 过滤，其余行一律不渲染，含「门幅」）⇒ 不构成「同屏两处门幅」；本页门幅只来自快照 `item.doorWidth`（明细行）。issue #7851。"
+    },
+    "src/components/orders/order-create/LineItemBlock.tsx": {
+      "count": 1,
+      "why": "下单页部位行的工艺预览（issue #8725 第一档切片：随 `LineItemBlock` 从页面搬进本文件，**调用点与入参一字未改**）：入参只给 cuttingMode/openCount/style/formula 四项，**不含 doorWidth** ⇒ 渲染不出门幅"
     }
   },
   "definition_site": "src/lib/craft-display.ts（`craftSpecRows` 的定义处，不算调用）"
