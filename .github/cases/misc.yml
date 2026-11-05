@@ -9205,8 +9205,12 @@ cases:
       - "取号：MC-230。**两次让号**（撞号是并行包的结构性产物，不是谁不小心）：首取 MC-222 ⇒ 被 #8711（issue #8176）先合入占用；让到 MC-223 ⇒ 又被 #8715 占用（该 PR 一次占了 223/224/225）。按「main 侧既有 id 一律不许改、后到者让号」再让到 MC-230（现取 main 侧 MC-226~240 = 0，取远号段以压掉再撞窗口）；用例号四处同批：测试文件头 / 用例块 / claim 文件名与内容 / 重新渲染。"
     traces:
       tests:
-        - "backend/ai-agent-service/tests/test_playbook_condition.py"
-        - "backend/ai-agent-service/tests/test_playbook_prompt.py"
-        - "backend/ai-agent-service/tests/test_playbook_casegen.py"
+        - "backend/ai-agent-service/tests/test_condition.py"
+        - "backend/ai-agent-service/tests/test_store.py"
+        - "backend/ai-agent-service/tests/test_prompt.py"
+        - "backend/ai-agent-service/tests/test_casegen.py"
         - "tests/unit_ci_workflows/test_playbook_condition_contract.py"
         - "backend/admin-api/src/test/java/com/migao/admin/service/PlaybookServiceTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/PlaybookConditionValidatorTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/mapper/PlaybookMapperTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/controller/PlaybookControllerTest.java"

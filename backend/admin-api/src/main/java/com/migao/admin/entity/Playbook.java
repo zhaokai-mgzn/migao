@@ -22,7 +22,7 @@ import java.time.OffsetDateTime;
  * {@code draft --activate--> active --retire--> retired}。
  * 只有 {@code active} 会出现在任何出口（prompt 片段 / 生成的用例）；
  * {@code draft} 与 {@code retired} 一条都不许露头（判据见
- * {@code backend/ai-agent-service/tests/test_playbook_prompt.py}）。</p>
+ * {@code backend/ai-agent-service/tests/test_prompt.py}、{@code test_store.py}）。</p>
  *
  * <p><b>{@code triggerJson} / {@code counterJson} 是条件语言 JSON</b>，不是自然语言。
  * 自由文本 / 未知算子 / 空条件 ⇒ 写面直接 422（{@code PlaybookConditionValidator}），

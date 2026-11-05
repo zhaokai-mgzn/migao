@@ -192,38 +192,4 @@ class PlaybookServiceTest {
         }
     }
 
-    @Nested
-    @DisplayName("条件语言写面校验（与 Python 读面同一张算子表）")
-    class Conditions {
-
-        @Test
-        @DisplayName("合法条件零问题；组合条件递归校验")
-        void validConditionsPass() {
-            assertThat(PlaybookConditionValidator.validateJson(TRIGGER)).isEqualTo(List.of());
-            assertThat(PlaybookConditionValidator.validateJson(
-                    "{\"all\":[" + TRIGGER + ",{\"not\":{\"field\":\"role\",\"op\":\"exists\"}}]}"))
-                    .isEqualTo(List.of());
-        }
-
-        @Test
-        @DisplayName("自由文本 / 未知算子 / 空条件 / 类型不对 ⇒ 具名问题清单")
-        void badConditionsAreNamed() {
-            assertThat(PlaybookConditionValidator.validateJson("\"整卷优先\""))
-                    .containsExactly("条件必须是 JSON 对象，实际是 STRING");
-            assertThat(PlaybookConditionValidator.validateJson(""))
-                    .containsExactly("条件是空对象");
-            assertThat(PlaybookConditionValidator.validateJson(TRIGGER.replace("in", "类似")))
-                    .anyMatch(p -> p.contains("未知算子 类似"));
-            assertThat(PlaybookConditionValidator.validateJson(
-                    "{\"field\":\"intent\",\"op\":\"in\",\"value\":\"quote\"}"))
-                    .containsExactly("算子 in 的 value 必须是非空数组");
-        }
-
-        @Test
-        @DisplayName("算子白名单恰为八项且顺序固定（Python 侧同表，对账判据守着）")
-        void operatorWhitelistIsExact() {
-            assertThat(PlaybookConditionValidator.OPS).containsExactly(
-                    "eq", "ne", "in", "not_in", "contains", "not_contains", "exists", "not_exists");
-        }
-    }
 }

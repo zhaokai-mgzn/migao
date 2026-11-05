@@ -15,9 +15,10 @@
 - **条件不是散文**：触发条件与反例都是机器可判的结构化条件（不是一句自然语言），
   自由文本写不进库；因此同一张卡还能**自动生成一条会红的用例**（正向：条件命中必须生效；负向：反例命中必须不生效）。
 - **本期未做**：口径卡进「知识库检索」与「工具默认参数」两个出口、B 端会话的自动落卡管道（本期为手工建卡）。
-- 判据 = MC-223：`backend/ai-agent-service/tests/test_playbook_prompt.py`、
-  `backend/ai-agent-service/tests/test_playbook_casegen.py`、
-  `backend/ai-agent-service/tests/test_playbook_condition.py`、
+- 判据 = MC-230：`backend/ai-agent-service/tests/test_prompt.py`、
+  `backend/ai-agent-service/tests/test_casegen.py`、
+  `backend/ai-agent-service/tests/test_condition.py`、
+  `backend/ai-agent-service/tests/test_store.py`、
   `tests/unit_ci_workflows/test_playbook_condition_contract.py`、
   `backend/admin-api/src/test/java/com/migao/admin/service/PlaybookServiceTest.java`。
 ### 黄金策的「选工具」口径改由工具注册表 + 本体现算：10 处手写速查表退场，选错工具不再靠记性（2026-11-05，issue #8176）
