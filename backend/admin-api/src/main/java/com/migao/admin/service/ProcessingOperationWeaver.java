@@ -154,7 +154,7 @@ class ProcessingOperationWeaver {
      *
      * <p>工序元数据（分组/单位/单价/必完/开始标记）**逐字取库**（经
      * {@code variantNameOf} 把逻辑名换成该租户库里的变体名）；条件工序在工序库无活跃行 ⇒
-     * fail-closed（{@link #ERR_OPERATION_NOT_FOUND}）—— 静默跳过会让「勾了却没加工序」
+     * fail-closed（{@link ProcessingOrderService#ERR_OPERATION_NOT_FOUND}）—— 静默跳过会让「勾了却没加工序」
      * 在数据上消失，那正是本单要治的「设计过但从未接线」形态。</p>
      *
      * <p><b>唯一性 = 取代（issue #4577）</b>：目标逻辑工序**已在序列里** ⇒ <b>先移除旧位置、再按本条

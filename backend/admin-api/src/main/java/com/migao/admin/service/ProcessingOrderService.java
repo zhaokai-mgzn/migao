@@ -80,7 +80,7 @@ import java.util.concurrent.ThreadLocalRandom;
  * <p><b>一行 {@code order_items} = 一个部位（帘件）</b>（用户裁定 2026-09-19，issue #4387）：
  * 布 + 纱 = **两条明细行**，各成一个部位，靠 {@code craftLineId} 绑成**同一樘窗**（一个窗户）——
  * 樘窗是套级工序（#4384）与加工费樘窗级（#4386）的归属层级；配布边仍不独立成部位。</p>
- * 取法 = {@link #deriveRouteKey} 的三层链（issue #4452 起，第 2 层从「{@code contains} 猜文本」
+ * 取法 = {@link ProcessingRouteResolver#deriveRouteKey} 的三层链（issue #4452 起，第 2 层从「{@code contains} 猜文本」
  * 换成**受控来源**）：
  * <b>显式字段</b>（issue #4362 起 = {@code order_items} 的 craft spec **列**；issue #4354 起
  * {@code processing_info} 顶层同键是旧载体）&gt; <b>受控来源</b>（部位 ← {@code componentRole}
@@ -197,7 +197,7 @@ public class ProcessingOrderService {
      * （取值 = {@link ProductionOperationQueryService#POSITION_LIMIT_VOCABULARY}）。
      *
      * <p>写面把它**镜像**进 {@code production_route_rules.position} 列（列才是「限哪个部位」的
-     * 唯一判据），因此实例化侧只看列、不看 kind —— 见 {@link #rulePositionMatches}。</p>
+     * 唯一判据），因此实例化侧只看列、不看 kind —— 见 {@link ProcessingOperationWeaver#rulePositionMatches}。</p>
      */
     public static final String TRIGGER_KIND_POSITION = "position";
 
@@ -335,7 +335,7 @@ public class ProcessingOrderService {
     /**
      * 算料输入的透传白名单（键名与 ai-agent {@code routing.py} 的
      * {@code METER_KEYS/FOLD_KEYS/HOLE_KEYS/PANEL_KEYS/SET_KEYS} 同口径）：
-     * 订单侧若已存算料输出就原样送过去，Java 侧**不发明数字**（见 {@link #calcInfo}）。
+     * 订单侧若已存算料输出就原样送过去，Java 侧**不发明数字**（见 {@link ProcessingPositionPayloadBuilder#calcInfo}）。
      *
      * <p>{@code per_panel_pleats} / {@code fullness} / {@code fullness_actual} 为 issue #4354 新增
      * （设计文档 §4.3）：它们是**展示/复核**用键（每片褶数、理论/实际褶倍），算料端点按
@@ -487,7 +487,7 @@ public class ProcessingOrderService {
      * 实例化时同一樘窗（{@code craftGroupKey} 组）只落一次，而不是像部位级那样每个部位各落一次。</p>
      *
      * <p>⚠️ 这是**词表值**（库列注释冻结的两态之一），不是工序名白名单 —— 判据一律读
-     * {@link #buildRoute} 从工序库带出的 `scope`（逐字取库）；
+     * {@link ProcessingRouteResolver#buildRoute} 从工序库带出的 `scope`（逐字取库）；
      * 硬编码 `外帘打卷/装袋/发货` 会让商家在工序库把某道改成部位级后**不生效**（第二份口径）。</p>
      */
     static final String SCOPE_SET = "set";
@@ -520,7 +520,7 @@ public class ProcessingOrderService {
      * 而受控枚举已经在手边（{@code isAbsorbedEdgeRow} 早就用它判「纱 = 独立部位」）。</p>
      *
      * <p>{@code 配布边} ⇒ 布帘：它是**不独立成部位**的部件（组内出现主布行时被吸收，
-     * 见 {@link #isAbsorbedEdgeRow}），只有在组内没有主布行时才自成部位 ⇒ 此时它是**主布位**。</p>
+     * 见 {@link ProcessingPositionPayloadBuilder#isAbsorbedEdgeRow}），只有在组内没有主布行时才自成部位 ⇒ 此时它是**主布位**。</p>
      *
      * <p>⚠️ 未知取值 ⇒ **不猜**（返回 null，让该维落到缺维处理），不得默认成布帘：
      * 枚举以后扩值（如「帘头」）时，旧代码静默按布帘算就是错配。</p>
@@ -2387,15 +2387,15 @@ public class ProcessingOrderService {
      * <p><b>工序来源（本包的核心变更；P2b 起为新结构）</b>：`production_route_templates`（主线）
      * + `production_route_rules`（规则）+ `production_operation_positions`（部位价目/适用性）
      * + `production_operations`（每道工序的分组/单位/必完标记/作用域），全部是**库里的行**，
-     * 由 {@link ProductionOperationQueryService} 的新读面读出（见 {@link #buildRoute}）。加工项目录（快照里的
+     * 由 {@link ProductionOperationQueryService} 的新读面读出（见 {@link ProcessingRouteResolver#buildRoute}）。加工项目录（快照里的
      * `processingItems`）自此刻起**只**用于①派生路线键的信号、②加工单快照本身的展示，
      * **不再**提供工序 —— 旧的「工序 = 加工项名」路径已删除，取不到库数据时**显式失败**，
      * 不回退（回退会让「切库」变成装饰性的：旧路径还在 ⇒ 库为空也没人发现）。</p>
      *
      * <p><b>取路线判据</b>（订单侧**没有**部位/帘种字段，故必须显式定义取法）：按可派生信号
      * 匹配 `curtain_type`/`craft`，优先级 = 加工项名 &gt; 加工项 options &gt; 商品名 &gt; 销售方式，
-     * 命中即止；两类信号全不命中 ⇒ 该租户的**默认路线模板**（见 {@link #deriveRouteKey}
-     * 与 {@link #resolveRoute}）。</p>
+     * 命中即止；两类信号全不命中 ⇒ 该租户的**默认路线模板**（见 {@link ProcessingRouteResolver#deriveRouteKey}
+     * 与 {@link ProcessingRouteResolver#resolveRoute}）。</p>
      *
      * <p><b>`is_start_marker` 读库</b>：取 `production_operations` 的同名列。
      * 🔴 `is_must_finish`（必完）**已退场**（#4961，用户裁定 2026-09-21「完工 = 全部工序全绿」）：
@@ -2505,7 +2505,7 @@ public class ProcessingOrderService {
     /**
      * 按订单派生工序实例 payload（issue #4202）——{@code POST /api/admin/production/orders/{orderId}/instantiate}
      * 的 {@code positions} 缺省路径复用**生成加工单时的同一份**解析：
-     * {@link #buildSnapshot}（订单明细 → 部位/工艺信号）+ {@link #buildPositionPayload}（工序库路线）。
+     * {@link #buildSnapshot}（订单明细 → 部位/工艺信号）+ {@link ProcessingPositionPayloadBuilder#buildPositionPayload}（工序库路线）。
      *
      * <p>为什么必须复用而不是另写一份：存量单（生成于 #4116「生成即实例化」之前，工序实例与
      * {@code qr_token} 双空）补工序时，派生的路线/单价/必完标记必须与**新建单**逐字同源 ——

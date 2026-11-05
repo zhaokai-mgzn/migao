@@ -58,10 +58,10 @@ class ProcessingRouteResolver {
      *
      * <ul>
      *   <li><b>T1</b> 信号全不命中 ⇒ 取该租户的**默认路线模板**，来源 {@code default}，
-     *       记 {@link #INCIDENT_ROUTE_DEFAULTED}（warn 级 —— 迁移前这一层**连 info 都没有**）；</li>
+     *       记 {@link ProcessingOrderService#INCIDENT_ROUTE_DEFAULTED}（warn 级 —— 迁移前这一层**连 info 都没有**）；</li>
      *   <li><b>T2</b> 派生键的部位**没有**路线模板 ⇒ 回落默认路线模板，来源降级 {@code missing_route}
      *       （**不并入 {@code partial}**：补救动作不同 —— T2 要「建/改路线」、只命中一维要「配信号」），
-     *       记 {@link #INCIDENT_ROUTE_FALLBACK}；</li>
+     *       记 {@link ProcessingOrderService#INCIDENT_ROUTE_FALLBACK}；</li>
      *   <li><b>T3</b> 该租户**连默认路线模板都没有** / 路线引用的工序在库中缺行 ⇒
      *       **fail-closed 中止生成**（#4116 已落码，本单保持不动）。
      *       ⚠️ **绝不**回落到常量 {@code 布帘×韩褶} 或加工项目录。</li>
@@ -278,7 +278,7 @@ class ProcessingRouteResolver {
                 }
             } else if (TRIGGER_KIND_POSITION.equals(kind)) {
                 // 部位维（issue #4962）：`trigger_value` = 部位名，写面把它**镜像**进 `position` 列
-                // ⇒ 真正的筛选是下面那一处 {@link #rulePositionMatches}（**只有一处判据**）。
+                // ⇒ 真正的筛选是下面那一处 {@link ProcessingOperationWeaver#rulePositionMatches}（**只有一处判据**）。
                 // 列缺值 ⇒ 这条规则对**任何**部位都不生效 = 「规则已落库但永不生效」的黑洞
                 // ⇒ 显式失败（不允许静默）。
                 if (rule.getPosition() == null || rule.getPosition().isEmpty()) {
@@ -371,7 +371,7 @@ class ProcessingRouteResolver {
 
 
     /**
-     * 回落默认模板时用来实例化的**部位**：优先 {@link #DEFAULT_CURTAIN_TYPE}（V54 起的事实默认、
+     * 回落默认模板时用来实例化的**部位**：优先 {@link ProcessingOrderService#DEFAULT_CURTAIN_TYPE}（V54 起的事实默认、
      * 也是旧结构回落目标的部位维），否则取模板声明的第一个部位。
      *
      * <p>为什么不直接用订单派生的部位：库里可能根本没有那个部位的价目/工序行（如商家自建信号
@@ -431,12 +431,12 @@ class ProcessingRouteResolver {
      *   <li><b>显式字段</b>（最高）—— 订单行写下的部位/工艺。载体有两者、**同源**：
      *       {@code order_items.curtain_type} / {@code craft} <b>列</b>（V63 / issue #4362，结构化落库）
      *       与 {@code processing_info} 顶层的同键（issue #4354 起的旧载体，存量单）；
-     *       列非空时在 {@link #buildSnapshot} 里覆盖同键 ⇒ 两维都在 ⇒ 来源 {@code direct}
+     *       列非空时在 {@link ProcessingOrderService#buildSnapshot} 里覆盖同键 ⇒ 两维都在 ⇒ 来源 {@code direct}
      *       （**此时全程不读** {@code production_route_signals}）；</li>
      *   <li><b>受控来源</b>（第 2 层，issue #4452 新增）—— 显式字段缺的那一维由**结构化字段**补齐：
-     *       部位 ← {@code componentRole} 受控枚举（{@link #COMPONENT_ROLE_POSITIONS}：{@code 纱} ⇒ 纱帘，
+     *       部位 ← {@code componentRole} 受控枚举（{@link ProcessingOrderService#COMPONENT_ROLE_POSITIONS}：{@code 纱} ⇒ 纱帘，
      *       {@code 主布}/{@code 配布边} ⇒ 布帘）；工艺 ← 加工项的**显式声明**
-     *       {@code processing_items.craft_hint}（{@link #craftHintOf}）。
+     *       {@code processing_items.craft_hint}（{@link ProcessingOrderService#craftHintOf}）。
      *       ⚠️ **不再** `contains` 加工项名 / 加工项 options —— 那些是**商家可自定义的自由文本**，
      *       把判据绑在研发改的关键词表上就是「名词解释」（{@code craft-routing-customization.md} §4 P2）；</li>
      *   <li><b>存量单信号兜底</b>（第 3 层，**两维都缺**时才轮到）—— 存量的**订单行**上没有 V63 列值
@@ -538,7 +538,7 @@ class ProcessingRouteResolver {
     /**
      * 部位维的**受控来源**（issue #4452）：{@code componentRole} 受控枚举 → 部位名。
      *
-     * <p>受控枚举值见 {@link #COMPONENT_ROLE_POSITIONS}（写侧 {@code order_create.py} 的 enum：
+     * <p>受控枚举值见 {@link ProcessingOrderService#COMPONENT_ROLE_POSITIONS}（写侧 {@code order_create.py} 的 enum：
      * 主布 / 配布边 / 纱）。**未知取值返回 null**（不猜、不默认成布帘）—— 该维按缺维处理，
      * 由 {@code route_source} 显式标注并在异常订单清单里可见。</p>
      */

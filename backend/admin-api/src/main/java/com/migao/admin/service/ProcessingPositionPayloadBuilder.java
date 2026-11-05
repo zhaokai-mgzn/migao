@@ -55,7 +55,7 @@ class ProcessingPositionPayloadBuilder {
      * 实例化 payload：快照行 → 部位 → **工序库**里的基准工序序列 → **算料引擎**给出的应做数量。
      *
      * <p>部位名 = 加工产物名[+色号]（同行多套据此区分）—— 见类注释「部位语义」节：
-     * 部位名落到产品名，而路线键由 {@link #deriveRouteKey} **直读**订单工艺规格（存量单才派生）。</p>
+     * 部位名落到产品名，而路线键由 {@link ProcessingRouteResolver#deriveRouteKey} **直读**订单工艺规格（存量单才派生）。</p>
      *
      * <p><b>樘窗绑组（issue #4354 引入，issue #4387 语义扩展）</b>：{@code craftLineId} 标识
      * **同一樘窗（一个窗户）** —— 它是套级工序（#4384）与加工费樘窗级（#4386）的**归属层级**。
@@ -65,7 +65,7 @@ class ProcessingPositionPayloadBuilder {
      * 组内只有配布边行时它仍自成部位（不静默丢窗）。</p>
      *
      * <p><b>定型开关（issue #4354，设计文档 §4.7）</b>：{@code isShaped=false} ⇒ 从基准序列里
-     * 剔除 {@link #UNSHAPED_REMOVED_OPERATIONS}（真值源 §10 登记的「唯一尚未接线」项），
+     * 剔除 {@link ProcessingOrderService#UNSHAPED_REMOVED_OPERATIONS}（真值源 §10 登记的「唯一尚未接线」项），
      * 与 {@code routing.py::build_routing} 同序（在条件工序插入之前）。</p>
      *
      * <p><b>应做数量（qty，issue #4208）</b>：库路线只给单位/单价，不给数量；数量的唯一真值源是
@@ -209,7 +209,7 @@ class ProcessingPositionPayloadBuilder {
      * 两个不同行的 {@code itemId} 天然不等 ⇒ **没有 {@code craftLineId} 的行永远各自成组**，
      * 即「缺键时行为逐字不变」（存量单兼容）。</p>
      *
-     * @return 组内**存在**可作主布的行（有加工项且角色非 {@link #COMPONENT_ROLE_EDGE}）的组键集合
+     * @return 组内**存在**可作主布的行（有加工项且角色非 {@link ProcessingOrderService#COMPONENT_ROLE_EDGE}）的组键集合
      */
     static Set<String> groupsWithMainRow(List<Map<String, Object>> snapshot) {
         Set<String> groups = new LinkedHashSet<>();
