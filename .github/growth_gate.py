@@ -753,9 +753,28 @@ def load_weak_baseline(path):
     return counts, data, ""
 
 
-def weak_baseline_diff(counts, anchored):
-    """纯函数：相对锚点的**增长**（含新入账文件）→ [(path, cur, base)]，base=None 表示新文件。"""
-    return [(p, c, anchored.get(p)) for p, c in sorted(counts.items())
+def weak_assert_lines(repo_root, rel):
+    """该文件里**全部弱断言的行号**（升序）；读不到 ⇒ 空列表（已判红的结论不因它消失）。
+
+    为什么报「全部」而不是「这次新增的那几行」：锚点账本只存**处数**（`legacy_weak_counts`），
+    没有逐行快照 ⇒ 差分不出「哪几行是新加的」。这里的取舍是**宁可多报**（列出的每一行都是
+    可点开的候选），而不是把猜出来的编号写成「新增行」—— 假精确比不精确更贵。
+    """
+    try:
+        return sorted({hit["line_no"] for hit in find_weak_asserts(os.path.join(repo_root, rel))})
+    except ValueError:
+        return []
+
+
+def weak_baseline_diff(counts, anchored, repo_root="."):
+    """纯函数：相对锚点的**增长**（含新入账文件）→ [(path, cur, base, [行号…])]。
+
+    `base=None` 表示新入账文件。**行号**是本单补的（issue #5511 第四节 / 台账 #8313 残余②）：
+    旧返回值只有 `(path, cur, base)` ⇒ 失败信息只能说「某文件涨了几处」，读的人还得自己在
+    整个文件里找弱断言；现在把该文件的弱断言行号一起带出，报错文本可直接点开（`路径:行号`）。
+    """
+    return [(p, c, anchored.get(p), weak_assert_lines(repo_root, p))
+            for p, c in sorted(counts.items())
             if c > anchored.get(p, 0)]
 
 
@@ -780,13 +799,22 @@ def check_weak_baseline(repo_root=".", baseline_path=None):
         for ln in lines:
             print(ln, file=sys.stderr)
         return 2, lines, {}
-    growth = weak_baseline_diff(counts, anchored)
+    growth = weak_baseline_diff(counts, anchored, repo_root)
     if growth:
         lines = [f"❌ 弱断言只许非增：{len(growth)} 个文件越过锚点"
                  f"（锚点 {sum(anchored.values())} 处 → 当前 {sum(counts.values())} 处）"]
-        for p, cur, base in growth:
+        for p, cur, base, line_nos in growth:
             kind = "新增入账 —— 新文件一律 fail-closed" if base is None else f"存量增长 {base} → {cur}"
-            lines.append(f"  · {p}: {cur} 处（{kind}）")
+            # 行号（issue #5511 第四节 / 台账 #8313 残余②）：报错必须**可直接点开**，
+            # 否则「只许缩短」的处置还得先人工在文件里找弱断言。取不到行号时退回只报文件。
+            spot = f"{p}:{line_nos[0]}" if line_nos else p
+            tail = ""
+            if line_nos:
+                # 每一条都写成 `路径:行号`（而不是「行 2, 4」）—— 报错文本要能直接点开。
+                tail = "；弱断言行 " + ", ".join(f"{p}:{n}" for n in line_nos[:10])
+                if len(line_nos) > 10:
+                    tail += f" …（共 {len(line_nos)} 行）"
+            lines.append(f"  · {spot} —— {cur} 处（{kind}）{tail}")
         lines.append("  处置：把弱断言改成触业务数据的断言（不得靠改账本洗白："
                      "重锚定只接受净缩，见 --write-weak-baseline）")
         for ln in lines:
