@@ -209,13 +209,13 @@ class OrderLifecycleSliceSnapshotTest {
             case 0 -> {
                 // 取消：已确认 + 无加工单 ⇒ 回补库存 + 补记退款流水
                 currentOrder = order(orderId, OrderStatusTransitions.CONFIRMED, "1000.00", "1000.00");
-                lifecycle().cancelOrder(orderId, "客户不要了", orderService);
+                lifecycle().cancelOrder(orderId, "客户不要了", orderService.sharedParts());
                 return "CASE " + index + " cancelOrder(confirmed)";
             }
             case 1 -> {
                 // 取消：待付款 + 无加工单 ⇒ 无库存/流水副作用
                 currentOrder = order(orderId, OrderStatusTransitions.PENDING, "520.00", "520.00");
-                lifecycle().cancelOrder(orderId, null, orderService);
+                lifecycle().cancelOrder(orderId, null, orderService.sharedParts());
                 return "CASE " + index + " cancelOrder(pending)";
             }
             case 2 -> {
@@ -223,14 +223,14 @@ class OrderLifecycleSliceSnapshotTest {
                 currentOrder = order(orderId, OrderStatusTransitions.PRODUCING, "800.00", "800.00");
                 activePo = processingOrder(orderId, "generated");
                 poRows = 1;
-                lifecycle().cancelOrder(orderId, "客户改主意", orderService);
+                lifecycle().cancelOrder(orderId, "客户改主意", orderService.sharedParts());
                 return "CASE " + index + " cancelOrder(producing+po generated)";
             }
             case 3 -> {
                 // 取消：加工单已发出 ⇒ 显式拒绝（要求先处理加工单）
                 currentOrder = order(orderId, OrderStatusTransitions.CONFIRMED, "300.00", "300.00");
                 activePo = processingOrder(orderId, "issued");
-                lifecycle().cancelOrder(orderId, "不要了", orderService);
+                lifecycle().cancelOrder(orderId, "不要了", orderService.sharedParts());
                 return "CASE " + index + " cancelOrder(po issued)";
             }
             case 4 -> {
@@ -238,13 +238,13 @@ class OrderLifecycleSliceSnapshotTest {
                 currentOrder = order(orderId, OrderStatusTransitions.CONFIRMED, "300.00", "300.00");
                 activePo = processingOrder(orderId, "generated");
                 poRows = 0;
-                lifecycle().cancelOrder(orderId, "不要了", orderService);
+                lifecycle().cancelOrder(orderId, "不要了", orderService.sharedParts());
                 return "CASE " + index + " cancelOrder(po cas lost)";
             }
             case 5 -> {
                 // 取消：已发货 ⇒ 当前状态不允许取消
                 currentOrder = order(orderId, OrderStatusTransitions.SHIPPED, "100.00", "100.00");
-                lifecycle().cancelOrder(orderId, null, orderService);
+                lifecycle().cancelOrder(orderId, null, orderService.sharedParts());
                 return "CASE " + index + " cancelOrder(shipped)";
             }
             case 6 -> {
@@ -334,26 +334,26 @@ class OrderLifecycleSliceSnapshotTest {
                 // 状态流转：已确认 → 生产中（无库存副作用的原子流转）
                 currentOrder = order(orderId, OrderStatusTransitions.CONFIRMED, "700.00", "700.00");
                 currentOrder.setUserId("user-7");
-                lifecycle().updateOrderStatus(orderId, OrderStatusTransitions.PRODUCING, orderService);
+                lifecycle().updateOrderStatus(orderId, OrderStatusTransitions.PRODUCING, orderService.sharedParts());
                 return "CASE " + index + " updateOrderStatus(confirmed->producing)";
             }
             case 18 -> {
                 // 状态流转：已确认 → 取消（走 cancelOrder 路径）
                 currentOrder = order(orderId, OrderStatusTransitions.CONFIRMED, "700.00", "700.00");
-                lifecycle().updateOrderStatus(orderId, OrderStatusTransitions.CANCELLED, orderService);
+                lifecycle().updateOrderStatus(orderId, OrderStatusTransitions.CANCELLED, orderService.sharedParts());
                 return "CASE " + index + " updateOrderStatus(confirmed->cancelled)";
             }
             case 19 -> {
                 // 状态流转：含加工项却无完成作业单 ⇒ 发货守卫拦截
                 currentOrder = order(orderId, OrderStatusTransitions.CONFIRMED, "700.00", "700.00");
                 currentItems = List.of(processingItem(orderId));
-                lifecycle().updateOrderStatus(orderId, OrderStatusTransitions.SHIPPED, orderService);
+                lifecycle().updateOrderStatus(orderId, OrderStatusTransitions.SHIPPED, orderService.sharedParts());
                 return "CASE " + index + " updateOrderStatus(shipped blocked)";
             }
             case 20 -> {
                 // 状态流转：待付款 → 已确认（走 confirmPayment 路径）
                 currentOrder = order(orderId, OrderStatusTransitions.PENDING, "260.00", "260.00");
-                lifecycle().updateOrderStatus(orderId, OrderStatusTransitions.CONFIRMED, orderService);
+                lifecycle().updateOrderStatus(orderId, OrderStatusTransitions.CONFIRMED, orderService.sharedParts());
                 return "CASE " + index + " updateOrderStatus(pending->confirmed)";
             }
             case 21 -> {

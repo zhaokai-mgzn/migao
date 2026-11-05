@@ -267,7 +267,7 @@ public class OrderCreateRequest {
          *
          * <p>🔴 <b>「成对」不是前提</b>（用户 2026-10-01 二次裁定<b>取消成对契约</b>）：
          * 只给卷数（哪怕卷长两边都没配）、只给每卷米数、两个都给 —— 三种都合法，
-         * 缺的那一半走回落。见 {@code OrderService.applyRollAllocation} 与
+         * 缺的那一半走回落。见 {@code OrderSharedParts.applyRollAllocation} 与
          * {@code ProductRollAllocation.resolve}（回落点唯一）。</p>
          *
          * <p>🔴 <b>不变式（改判后仍一字不动）</b>：一次分配里<b>同一个字段只有一个权威来源</b>

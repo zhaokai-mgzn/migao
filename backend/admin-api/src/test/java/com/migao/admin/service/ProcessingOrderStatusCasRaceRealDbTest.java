@@ -424,7 +424,7 @@ class ProcessingOrderStatusCasRaceRealDbTest {
                 // issue #8681 第六批：取消直连生命周期实现点（第三参 = 同一个门面实例，批次回补仍经它）
                 OrderService facade = orderServiceOn(s);
                 OrderLifecycleService lifecycle = ReflectionTestUtils.invokeMethod(facade, "lifecycleService");
-                lifecycle.cancelOrder(id, reason, facade);
+                lifecycle.cancelOrder(id, reason, facade.sharedParts());
                 s.commit();
                 return new Verdict(200, "ok", "-");
             }

@@ -48,9 +48,9 @@ import java.util.Set;
  *       {@code @Transactional(rollbackFor = Exception.class)} 原样搬入；门面委托**不加**事务注解
  *       （加了就是嵌套传播语义的变化）；</li>
  *   <li><b>具名的三处跨类限定</b>：① {@code cancelOrder} 里的
- *       {@code batchStock()} → {@code orderService.batchStock()}（该访问器被权威判据钉在门面，
- *       见 {@code OrderRollAllocationAuthorityTest} 同族的「门面持有唯一实现」口径）；
- *       ② {@code updateOrderStatus} 内部自调用 {@code cancelOrder(id, null)} 增补门面实参；
+ *       {@code batchStock()} → {@code orderSharedParts.batchStock()}（第九批起该访问器住在
+ *       {@link OrderSharedParts}，与共享部件族同址；本类对它<b>唯一</b>的用法就是它）；
+ *       ② {@code updateOrderStatus} 内部自调用 {@code cancelOrder(id, null)} 增补第三参；
  *       ③ {@code OrderShipmentOutcome} 仍声明在门面（公开类型名 {@code OrderService.OrderShipmentOutcome}
  *       被调用方逐字引用）⇒ 构造点加类名限定。</li>
  *   <li><b>库存 / 财务流水不搬第二份</b>：{@link OrderStockService} / {@link OrderFeeSupport} 仍是
@@ -58,9 +58,9 @@ import java.util.Set;
  *       逐字节不变。</li>
  * </ul>
  *
- * <p><b>不搬（有意）</b>：{@code applyRollAllocation}（{@code OrderRollAllocationAuthorityTest}
- * 钉着它是唯一权威文件）、{@code batchStock()} 访问器（取消路径在用）、
- * {@code deleteOrder} / {@code generateOrderNo} / 建单改单（各自属于别的族）。</p>
+ * <p><b>第三参（issue #8681，P2-1e 第九批）</b>：{@code updateOrderStatus} / {@code cancelOrder} 的第三参
+ * 从<b>门面实例</b>换成 {@link OrderSharedParts} —— 本类对它唯一的用法是 {@code batchStock()}；
+ * 门面实例不再进入这条调用链。{@code applyRollAllocation} / 建单改单 / 删单等族各自另有归属。</p>
  */
 @Slf4j
 @Service
@@ -187,7 +187,7 @@ public class OrderLifecycleService {
      * @param status 新状态
      */
     @Transactional(rollbackFor = Exception.class)
-    public void updateOrderStatus(String id, String status, OrderService orderService) {
+    public void updateOrderStatus(String id, String status, OrderSharedParts orderSharedParts) {
         Order order = orderMapper.selectById(id);
         if (order == null) {
             throw BusinessException.notFound("订单");
@@ -214,7 +214,7 @@ public class OrderLifecycleService {
         if (OrderStatusTransitions.CONFIRMED.equals(status)) {
             confirmPayment(id);
         } else if (OrderStatusTransitions.CANCELLED.equals(status)) {
-            cancelOrder(id, null, orderService);
+            cancelOrder(id, null, orderSharedParts);
         } else {
             // producing/shipped/completed：无库存副作用，原子状态流转
             int rows = transitionStatusAtomic(id, currentStatus, status, null);
@@ -384,7 +384,7 @@ public class OrderLifecycleService {
      * @param closeReason 关闭原因（可选）
      */
     @Transactional(rollbackFor = Exception.class)
-    public void cancelOrder(String id, String closeReason, OrderService orderService) {
+    public void cancelOrder(String id, String closeReason, OrderSharedParts orderSharedParts) {
         Order order = orderMapper.selectById(id);
         if (order == null) {
             throw BusinessException.notFound("订单");
@@ -428,7 +428,7 @@ public class OrderLifecycleService {
                 // 派工扣减的**对称回补**（V116 / issue #5145 判据 3）：本分支绕过
                 // ProcessingOrderService.updateStatus（直接置 cancelled）⇒ 必须在此接同一句话，
                 // 否则这条路上批次账只扣不回补。幂等由服务层保证（已回补的行跳过 ⇒ 可重跑）。
-                orderService.batchStock().reverse(order.getTenantId(), activePo.getProcessingOrderNo(),
+                orderSharedParts.batchStock().reverse(order.getTenantId(), activePo.getProcessingOrderNo(),
                         order.getOrderNo(), "订单取消，加工单自动作废，回补批次库存");
             } else {
                 throw BusinessException.validationError(String.format(

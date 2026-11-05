@@ -81,7 +81,7 @@ class OrderServiceTest {
      */
     private OrderQueryService orderQueryService;
 
-    /** issue #8681：建单族的实现点（{@code createOrder(request, tenantId, orderService)} 的第三个形参是门面的共享部件）。 */
+    /** issue #8681：建单族的实现点（{@code createOrder(request, tenantId, orderService.sharedParts())} 的第三个形参是门面的共享部件）。 */
     private OrderCreationService orderCreationService;
 
     /** issue #8681：生命周期族的实现点（{@code updateOrderStatus} / {@code cancelOrder} 同样吃门面的共享部件）。 */
@@ -479,7 +479,7 @@ class OrderServiceTest {
                 .thenReturn(new UserService.CurrentOperator("staff-001", "蒋雪云"));
         stubCreateOrderPersistence("order-new");
 
-        orderCreationService.createOrder(minimalCreateOrderRequest(), 1L, orderService);
+        orderCreationService.createOrder(minimalCreateOrderRequest(), 1L, orderService.sharedParts());
 
         // then：insert 的那一行必须带制单人（**有效果**，不是「解析方法被调用过」）
         ArgumentCaptor<Order> captor = ArgumentCaptor.forClass(Order.class);
@@ -497,7 +497,7 @@ class OrderServiceTest {
         when(userService.resolveCurrentOperator()).thenReturn(null);
         stubCreateOrderPersistence("order-new");
 
-        orderCreationService.createOrder(minimalCreateOrderRequest(), 1L, orderService);
+        orderCreationService.createOrder(minimalCreateOrderRequest(), 1L, orderService.sharedParts());
 
         ArgumentCaptor<Order> captor = ArgumentCaptor.forClass(Order.class);
         verify(orderMapper).insert(captor.capture());
@@ -572,7 +572,7 @@ class OrderServiceTest {
         secondWindow.setInstallRoom("客厅");
         request.setItems(List.of(firstWindow, secondWindow));
 
-        orderCreationService.createOrder(request, 1L, orderService);
+        orderCreationService.createOrder(request, 1L, orderService.sharedParts());
 
         ArgumentCaptor<OrderItem> captor = ArgumentCaptor.forClass(OrderItem.class);
         verify(orderItemMapper, times(2)).insert(captor.capture());
@@ -594,7 +594,7 @@ class OrderServiceTest {
         request.setInstallCommunity("春".repeat(OrderInstallInfo.COMMUNITY_MAX_LENGTH + 1));
 
         BusinessException e = (BusinessException) org.assertj.core.api.Assertions
-                .catchThrowable(() -> orderCreationService.createOrder(request, 1L, orderService));
+                .catchThrowable(() -> orderCreationService.createOrder(request, 1L, orderService.sharedParts()));
 
         assertThat(e).as("超长必须被拒（不是静默截断）").isNotNull();
         assertThat(e.getHttpStatus()).as("422（本仓字段校验的统一形态）").isEqualTo(422);
@@ -801,7 +801,7 @@ class OrderServiceTest {
         when(orderLogisticsMapper.selectByOrderId("order-new", 1L)).thenReturn(List.of());
 
         // when
-        OrderDetailResponse result = orderCreationService.createOrder(request, 1L, orderService);
+        OrderDetailResponse result = orderCreationService.createOrder(request, 1L, orderService.sharedParts());
 
         // then
         assertThat(result).isNotNull();
@@ -866,7 +866,7 @@ class OrderServiceTest {
         info.put("processingItems", List.of(Map.of("id", "p1", "name", "打孔-纱",
                 "unitPrice", 3.0, "quantity", 2, "unit", "米")));
 
-        orderCreationService.createOrder(createOrderRequestWithCraftSpec(info), 1L, orderService);
+        orderCreationService.createOrder(createOrderRequestWithCraftSpec(info), 1L, orderService.sharedParts());
 
         ArgumentCaptor<OrderItem> captor = ArgumentCaptor.forClass(OrderItem.class);
         verify(orderItemMapper).insert(captor.capture());
@@ -901,7 +901,7 @@ class OrderServiceTest {
                 "processingItems", List.of(Map.of("id", "p1", "name", "韩褶-布",
                         "unitPrice", 3.0, "quantity", 2, "unit", "米"))));
 
-        orderCreationService.createOrder(createOrderRequestWithCraftSpec(json), 1L, orderService);
+        orderCreationService.createOrder(createOrderRequestWithCraftSpec(json), 1L, orderService.sharedParts());
 
         ArgumentCaptor<OrderItem> captor = ArgumentCaptor.forClass(OrderItem.class);
         verify(orderItemMapper).insert(captor.capture());
@@ -924,7 +924,7 @@ class OrderServiceTest {
         info.put("processingItems", List.of(Map.of("id", "p1", "name", "韩褶-布",
                 "unitPrice", 3.0, "quantity", 2, "unit", "米")));
 
-        orderCreationService.createOrder(createOrderRequestWithCraftSpec(info), 1L, orderService);
+        orderCreationService.createOrder(createOrderRequestWithCraftSpec(info), 1L, orderService.sharedParts());
 
         ArgumentCaptor<OrderItem> captor = ArgumentCaptor.forClass(OrderItem.class);
         verify(orderItemMapper).insert(captor.capture());
@@ -951,7 +951,7 @@ class OrderServiceTest {
         info.put("processingItems", List.of(Map.of("id", "p1", "name", "韩褶-布",
                 "unitPrice", 3.0, "quantity", 2, "unit", "米")));
 
-        orderCreationService.createOrder(createOrderRequestWithCraftSpec(info), 1L, orderService);
+        orderCreationService.createOrder(createOrderRequestWithCraftSpec(info), 1L, orderService.sharedParts());
 
         ArgumentCaptor<OrderItem> captor = ArgumentCaptor.forClass(OrderItem.class);
         verify(orderItemMapper).insert(captor.capture());
@@ -1001,7 +1001,7 @@ class OrderServiceTest {
         when(orderLogisticsMapper.selectByOrderId("order-multi", 1L)).thenReturn(List.of());
 
         // when
-        OrderDetailResponse result = orderCreationService.createOrder(request, 1L, orderService);
+        OrderDetailResponse result = orderCreationService.createOrder(request, 1L, orderService.sharedParts());
 
         // then
         assertThat(result).isNotNull();
@@ -1029,7 +1029,7 @@ class OrderServiceTest {
                 .thenReturn(ProductSku.builder().id(100L).stock(BigDecimal.valueOf(1)).build());
 
         // when & then: 拒绝创建，库存不足提示出现在下单时而非确认付款时
-        assertThatThrownBy(() -> orderCreationService.createOrder(request, 1L, orderService))
+        assertThatThrownBy(() -> orderCreationService.createOrder(request, 1L, orderService.sharedParts()))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("库存不足");
         verify(orderMapper, never()).insert(any(Order.class));
@@ -1075,7 +1075,7 @@ class OrderServiceTest {
         when(orderLogisticsMapper.selectByOrderId("order-stock-ok", 1L)).thenReturn(List.of());
 
         // when & then: 不抛异常，订单正常创建
-        OrderDetailResponse result = orderCreationService.createOrder(request, 1L, orderService);
+        OrderDetailResponse result = orderCreationService.createOrder(request, 1L, orderService.sharedParts());
         assertThat(result).isNotNull();
         assertThat(result.getStatus()).isEqualTo("pending");
         verify(orderMapper).insert(any(Order.class));
@@ -1116,7 +1116,7 @@ class OrderServiceTest {
         when(orderLogisticsMapper.selectByOrderId("order-no-sku", 1L)).thenReturn(List.of());
 
         // when & then: 不抛异常，订单正常创建
-        OrderDetailResponse result = orderCreationService.createOrder(request, 1L, orderService);
+        OrderDetailResponse result = orderCreationService.createOrder(request, 1L, orderService.sharedParts());
         assertThat(result).isNotNull();
         verify(orderMapper).insert(any(Order.class));
     }
@@ -1132,7 +1132,7 @@ class OrderServiceTest {
         when(orderItemMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(testOrderItem));
 
         // when
-        orderLifecycleService.updateOrderStatus("order-001", "confirmed", orderService);
+        orderLifecycleService.updateOrderStatus("order-001", "confirmed", orderService.sharedParts());
 
         // then: 委托 confirmPayment → 扣减库存/增加销量（此前此路径会跳过副作用）
         verify(productMapper).increaseSales(eq("prod-001"), eq(BigDecimal.valueOf(2)), any(BigDecimal.class));
@@ -1146,7 +1146,7 @@ class OrderServiceTest {
         when(orderMapper.update(any(), any())).thenReturn(1);
 
         // when
-        orderLifecycleService.updateOrderStatus("order-001", "cancelled", orderService);
+        orderLifecycleService.updateOrderStatus("order-001", "cancelled", orderService.sharedParts());
 
         // then: pending 取消不恢复库存
         verify(orderMapper).update(any(), any());
@@ -1160,7 +1160,7 @@ class OrderServiceTest {
         when(orderMapper.selectById("nonexistent")).thenReturn(null);
 
         // when & then
-        assertThatThrownBy(() -> orderLifecycleService.updateOrderStatus("nonexistent", "confirmed", orderService))
+        assertThatThrownBy(() -> orderLifecycleService.updateOrderStatus("nonexistent", "confirmed", orderService.sharedParts()))
                 .isInstanceOf(BusinessException.class)
                 .satisfies(ex -> {
                     BusinessException bex = (BusinessException) ex;
@@ -1175,7 +1175,7 @@ class OrderServiceTest {
         when(orderMapper.selectById("order-001")).thenReturn(testOrder);
 
         // when & then
-        assertThatThrownBy(() -> orderLifecycleService.updateOrderStatus("order-001", "invalid_status", orderService))
+        assertThatThrownBy(() -> orderLifecycleService.updateOrderStatus("order-001", "invalid_status", orderService.sharedParts()))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("无效的订单状态");
     }
@@ -1187,7 +1187,7 @@ class OrderServiceTest {
         when(orderMapper.selectById("order-001")).thenReturn(testOrder);
 
         // when & then: 报错不得暴露英文枚举 pending/shipped
-        assertThatThrownBy(() -> orderLifecycleService.updateOrderStatus("order-001", "shipped", orderService))
+        assertThatThrownBy(() -> orderLifecycleService.updateOrderStatus("order-001", "shipped", orderService.sharedParts()))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("待付款")
                 .hasMessageContaining("已发货")
@@ -1202,7 +1202,7 @@ class OrderServiceTest {
         when(orderMapper.selectById("order-001")).thenReturn(testOrder);
 
         // when & then: invalid_status 不是合法枚举，报错展示原始值 + 中文提示
-        assertThatThrownBy(() -> orderLifecycleService.updateOrderStatus("order-001", "invalid_status", orderService))
+        assertThatThrownBy(() -> orderLifecycleService.updateOrderStatus("order-001", "invalid_status", orderService.sharedParts()))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("无效的订单状态");
     }
@@ -1214,7 +1214,7 @@ class OrderServiceTest {
         when(orderMapper.selectById("order-001")).thenReturn(testOrder);
 
         // when & then
-        assertThatThrownBy(() -> orderLifecycleService.updateOrderStatus("order-001", "shipped", orderService))
+        assertThatThrownBy(() -> orderLifecycleService.updateOrderStatus("order-001", "shipped", orderService.sharedParts()))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("不允许从");
     }
@@ -1227,7 +1227,7 @@ class OrderServiceTest {
         when(orderMapper.selectById("order-001")).thenReturn(testOrder);
 
         // when & then
-        assertThatThrownBy(() -> orderLifecycleService.updateOrderStatus("order-001", "cancelled", orderService))
+        assertThatThrownBy(() -> orderLifecycleService.updateOrderStatus("order-001", "cancelled", orderService.sharedParts()))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("不允许从");
     }
@@ -1369,7 +1369,7 @@ class OrderServiceTest {
         when(orderLogisticsMapper.selectByOrderId("order-gen", 1L)).thenReturn(List.of());
 
         // when
-        orderCreationService.createOrder(request, 1L, orderService);
+        orderCreationService.createOrder(request, 1L, orderService.sharedParts());
 
         // then
         verify(orderMapper).insert(argThat((Order o) -> o.getOrderNo() != null && o.getOrderNo().matches("\\d{17}")));
@@ -1379,8 +1379,8 @@ class OrderServiceTest {
     @DisplayName("生成订单号 - 连续两次不同（原子序列保证）")
     void generateOrderNo_Uniqueness() {
         // when: 直接调用私有 generateOrderNo 两次
-        String no1 = (String) ReflectionTestUtils.invokeMethod(orderService, "generateOrderNo");
-        String no2 = (String) ReflectionTestUtils.invokeMethod(orderService, "generateOrderNo");
+        String no1 = (String) ReflectionTestUtils.invokeMethod(orderService.sharedParts(), "generateOrderNo");
+        String no2 = (String) ReflectionTestUtils.invokeMethod(orderService.sharedParts(), "generateOrderNo");
 
         // then: 均为 17 位且互不相同
         assertThat(no1).matches("\\d{17}");
@@ -1419,7 +1419,7 @@ class OrderServiceTest {
         when(orderItemMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(testOrderItem));
 
         // when
-        orderLifecycleService.cancelOrder("order-001", "缺货", orderService);
+        orderLifecycleService.cancelOrder("order-001", "缺货", orderService.sharedParts());
 
         // then: 原子流转 + 恢复库存
         verify(orderMapper).update(any(), any());
@@ -1434,7 +1434,7 @@ class OrderServiceTest {
         when(orderMapper.update(any(), any())).thenReturn(1);
 
         // when
-        orderLifecycleService.cancelOrder("order-001", null, orderService);
+        orderLifecycleService.cancelOrder("order-001", null, orderService.sharedParts());
 
         // then: pending 订单取消不应调用库存恢复
         verify(orderMapper).update(any(), any());
@@ -1449,7 +1449,7 @@ class OrderServiceTest {
         String longReason = "x".repeat(501);
 
         // when & then
-        assertThatThrownBy(() -> orderLifecycleService.cancelOrder("order-001", longReason, orderService))
+        assertThatThrownBy(() -> orderLifecycleService.cancelOrder("order-001", longReason, orderService.sharedParts()))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("500");
     }
@@ -1462,7 +1462,7 @@ class OrderServiceTest {
         when(orderMapper.selectById("order-001")).thenReturn(testOrder);
 
         // when & then
-        assertThatThrownBy(() -> orderLifecycleService.cancelOrder("order-001", null, orderService))
+        assertThatThrownBy(() -> orderLifecycleService.cancelOrder("order-001", null, orderService.sharedParts()))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("当前状态不允许取消");
     }
@@ -1734,7 +1734,7 @@ class OrderServiceTest {
         when(orderLogisticsMapper.selectByOrderId("order-actual-zero", 1L)).thenReturn(List.of());
 
         // when
-        OrderDetailResponse result = orderCreationService.createOrder(request, 1L, orderService);
+        OrderDetailResponse result = orderCreationService.createOrder(request, 1L, orderService.sharedParts());
 
         // then: 详情返回的 actualAmount 应该是 0，不是 totalAmount
         assertThat(result.getActualAmount()).isEqualTo(BigDecimal.ZERO);
@@ -1782,7 +1782,7 @@ class OrderServiceTest {
         when(orderLogisticsMapper.selectByOrderId("order-actual-default", 1L)).thenReturn(List.of());
 
         // when
-        OrderDetailResponse result = orderCreationService.createOrder(request, 1L, orderService);
+        OrderDetailResponse result = orderCreationService.createOrder(request, 1L, orderService.sharedParts());
 
         // then
         assertThat(result.getActualAmount()).isEqualByComparingTo(new BigDecimal("599.00"));
@@ -1886,7 +1886,7 @@ class OrderServiceTest {
         when(orderLogisticsMapper.selectByOrderId("order-discount", 1L)).thenReturn(List.of());
 
         // when
-        OrderDetailResponse result = orderCreationService.createOrder(request, 1L, orderService);
+        OrderDetailResponse result = orderCreationService.createOrder(request, 1L, orderService.sharedParts());
 
         // then: 详情返回 discountAmount
         assertThat(result.getDiscountAmount()).isEqualByComparingTo("99.00");
@@ -1929,7 +1929,7 @@ class OrderServiceTest {
         when(orderLogisticsMapper.selectByOrderId("order-discount-default", 1L)).thenReturn(List.of());
 
         // when
-        orderCreationService.createOrder(request, 1L, orderService);
+        orderCreationService.createOrder(request, 1L, orderService.sharedParts());
 
         // then
         verify(orderMapper).insert(argThat((Order o) ->
@@ -1943,7 +1943,7 @@ class OrderServiceTest {
         OrderCreateRequest request = buildCreateRequestWithAmounts(new BigDecimal("480.00"), new BigDecimal("99.00"));
 
         // when & then
-        assertThatThrownBy(() -> orderCreationService.createOrder(request, 1L, orderService))
+        assertThatThrownBy(() -> orderCreationService.createOrder(request, 1L, orderService.sharedParts()))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("实收金额");
     }
@@ -1975,7 +1975,7 @@ class OrderServiceTest {
         when(orderLogisticsMapper.selectByOrderId("order-tolerance", 1L)).thenReturn(List.of());
 
         // when & then: 不抛异常
-        OrderDetailResponse result = orderCreationService.createOrder(request, 1L, orderService);
+        OrderDetailResponse result = orderCreationService.createOrder(request, 1L, orderService.sharedParts());
         assertThat(result).isNotNull();
     }
 
@@ -2012,7 +2012,7 @@ class OrderServiceTest {
         when(orderItemMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(testOrderItem));
 
         // when
-        orderLifecycleService.cancelOrder("order-001", "客户取消", orderService);
+        orderLifecycleService.cancelOrder("order-001", "客户取消", orderService.sharedParts());
 
         // then: 状态流转 + 恢复库存 + 登记退款流水
         verify(orderMapper).update(any(), any());
@@ -2030,7 +2030,7 @@ class OrderServiceTest {
         when(orderMapper.update(any(), any())).thenReturn(1);
 
         // when
-        orderLifecycleService.cancelOrder("order-001", null, orderService);
+        orderLifecycleService.cancelOrder("order-001", null, orderService.sharedParts());
 
         // then
         verify(orderMapper).update(any(), any());
@@ -2235,7 +2235,7 @@ class OrderServiceTest {
         when(orderLogisticsMapper.selectByOrderId("order-notif", 1L)).thenReturn(List.of());
 
         // when
-        OrderDetailResponse result = orderCreationService.createOrder(request, 1L, orderService);
+        OrderDetailResponse result = orderCreationService.createOrder(request, 1L, orderService.sharedParts());
 
         // then: C 端自助下单 → 触发 order_created 待办通知（接收人由
         // NotificationService.triggerForTenantAdmins 按租户 admin 角色解析）
@@ -2279,7 +2279,7 @@ class OrderServiceTest {
         when(orderLogisticsMapper.selectByOrderId("order-skip", 1L)).thenReturn(List.of());
 
         // when
-        orderCreationService.createOrder(request, 1L, orderService);
+        orderCreationService.createOrder(request, 1L, orderService.sharedParts());
 
         // then: 商户代录（无归属用户）不触发任何站内信，不影响主流程
         verify(notificationService, never()).triggerForTenantAdmins(anyLong(), anyString(), any());
@@ -2305,7 +2305,7 @@ class OrderServiceTest {
         when(orderItemMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(testOrderItem));
 
         // when
-        orderLifecycleService.updateOrderStatus("order-001", "confirmed", orderService);
+        orderLifecycleService.updateOrderStatus("order-001", "confirmed", orderService.sharedParts());
 
         // then
         verify(notificationService).triggerByEvent(eq(1L), eq("order_status_changed"), any());
@@ -2389,7 +2389,7 @@ class OrderServiceTest {
         givenPricedCombinations("打孔+韩褶", "8.00");
 
         OrderCreateRequest request = createOrderRequestWithFee(info);
-        orderCreationService.createOrder(request, 1L, orderService);
+        orderCreationService.createOrder(request, 1L, orderService.sharedParts());
 
         // 总金额 = 商品 599.00 + 加工费（8.00 × 12.30 = 98.40）；**不是** Σ 加工项（9.50×2×2 = 38.00）
         ArgumentCaptor<Order> orderCaptor = ArgumentCaptor.forClass(Order.class);
@@ -2426,7 +2426,7 @@ class OrderServiceTest {
         givenPricedCombinations("定型+打孔+韩褶", "8.00");
 
         OrderCreateRequest request = createOrderRequestWithFee(info);
-        orderCreationService.createOrder(request, 1L, orderService);
+        orderCreationService.createOrder(request, 1L, orderService.sharedParts());
 
         ArgumentCaptor<Order> orderCaptor = ArgumentCaptor.forClass(Order.class);
         verify(orderMapper).insert(orderCaptor.capture());
@@ -2458,7 +2458,7 @@ class OrderServiceTest {
         givenPricedOptions("加铅块", "6.00");
 
         OrderCreateRequest request = createOrderRequestWithFee(info);
-        orderCreationService.createOrder(request, 1L, orderService);
+        orderCreationService.createOrder(request, 1L, orderService.sharedParts());
 
         // 影响面（issue #4594 显式登记）：组合没配价时订单金额**变大**（开始收已定价的选项价）
         ArgumentCaptor<Order> orderCaptor = ArgumentCaptor.forClass(Order.class);
@@ -2516,7 +2516,7 @@ class OrderServiceTest {
         // 第一次下单：组合价 ¥8.00/m ⇒ 80.00，落库构成记下当时那一份
         givenPricedCombinations("打孔", "8.00");
         OrderCreateRequest request = createOrderRequestWithFee(info);
-        orderCreationService.createOrder(request, 1L, orderService);
+        orderCreationService.createOrder(request, 1L, orderService.sharedParts());
         ArgumentCaptor<OrderItem> first = ArgumentCaptor.forClass(OrderItem.class);
         verify(orderItemMapper).insert(first.capture());
         Map<String, Object> firstDetail = feeDetailOf(first.getValue().getProcessingInfo());
@@ -2526,7 +2526,7 @@ class OrderServiceTest {
         // 商家改价（¥9.50/m）后：新单按新价 ⇒ 95.00
         givenPricedCombinations("打孔", "9.50");
         OrderCreateRequest requestAfterPriceChange = createOrderRequestWithFee(info);
-        orderCreationService.createOrder(requestAfterPriceChange, 1L, orderService);
+        orderCreationService.createOrder(requestAfterPriceChange, 1L, orderService.sharedParts());
         ArgumentCaptor<OrderItem> second = ArgumentCaptor.forClass(OrderItem.class);
         verify(orderItemMapper, times(2)).insert(second.capture());
         Map<String, Object> secondDetail = feeDetailOf(second.getAllValues().get(1).getProcessingInfo());
@@ -2614,7 +2614,7 @@ class OrderServiceTest {
         when(orderItemMapper.selectList(any())).thenReturn(List.of(testOrderItem));
         when(processingOrderMapper.countCompletedByOrderId("order-001", 1L)).thenReturn(0L);
 
-        assertThatThrownBy(() -> orderLifecycleService.updateOrderStatus("order-001", "shipped", orderService))
+        assertThatThrownBy(() -> orderLifecycleService.updateOrderStatus("order-001", "shipped", orderService.sharedParts()))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("须先完成加工单");
     }
@@ -2628,7 +2628,7 @@ class OrderServiceTest {
         when(orderItemMapper.selectList(any())).thenReturn(List.of(testOrderItem));
         when(processingOrderMapper.countCompletedByOrderId("order-001", 1L)).thenReturn(0L);
 
-        assertThatThrownBy(() -> orderLifecycleService.updateOrderStatus("order-001", "shipped", orderService))
+        assertThatThrownBy(() -> orderLifecycleService.updateOrderStatus("order-001", "shipped", orderService.sharedParts()))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("须先完成加工单");
         verify(orderMapper, never()).update(any(), any());
@@ -2644,7 +2644,7 @@ class OrderServiceTest {
         when(processingOrderMapper.countCompletedByOrderId("order-001", 1L)).thenReturn(1L);
         when(orderMapper.update(any(), any())).thenReturn(1);
 
-        orderLifecycleService.updateOrderStatus("order-001", "shipped", orderService);
+        orderLifecycleService.updateOrderStatus("order-001", "shipped", orderService.sharedParts());
 
         verify(orderMapper).update(any(), any());
     }
@@ -2658,7 +2658,7 @@ class OrderServiceTest {
         when(orderItemMapper.selectList(any())).thenReturn(List.of(testOrderItem));
         when(orderMapper.update(any(), any())).thenReturn(1);
 
-        orderLifecycleService.updateOrderStatus("order-001", "shipped", orderService);
+        orderLifecycleService.updateOrderStatus("order-001", "shipped", orderService.sharedParts());
 
         verify(orderMapper).update(any(), any());
     }
@@ -2676,7 +2676,7 @@ class OrderServiceTest {
         when(processingOrderMapper.markStatusIfFrom(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any())).thenReturn(1);
         when(orderMapper.update(any(), any())).thenReturn(1);
 
-        orderLifecycleService.cancelOrder("order-001", "客户不要了", orderService);
+        orderLifecycleService.cancelOrder("order-001", "客户不要了", orderService.sharedParts());
 
         ArgumentCaptor<String> statusArg = ArgumentCaptor.forClass(String.class);
         ArgumentCaptor<String> reasonArg = ArgumentCaptor.forClass(String.class);
@@ -2696,7 +2696,7 @@ class OrderServiceTest {
         when(orderMapper.selectById("order-001")).thenReturn(testOrder);
         when(processingOrderMapper.selectActiveByOrderId("order-001", 1L)).thenReturn(po);
 
-        assertThatThrownBy(() -> orderLifecycleService.cancelOrder("order-001", "客户不要了", orderService))
+        assertThatThrownBy(() -> orderLifecycleService.cancelOrder("order-001", "客户不要了", orderService.sharedParts()))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("已发加工");
         verify(processingOrderMapper, never()).updateById(any(ProcessingOrder.class));
@@ -2802,7 +2802,7 @@ class OrderServiceTest {
                 .thenReturn(List.of(storedSku("2.8")));
 
         // when
-        orderLifecycleService.cancelOrder("order-001", "客户不要了", orderService);
+        orderLifecycleService.cancelOrder("order-001", "客户不要了", orderService.sharedParts());
 
         // then: 库存回补 + 销量减记落到既有 SKU 行（不再静默跳过）
         verify(productSkuMapper).restoreStock(COMBO_SKU_ID, BigDecimal.valueOf(2));
@@ -2820,7 +2820,7 @@ class OrderServiceTest {
         when(productSkuMapper.selectList(any(LambdaQueryWrapper.class)))
                 .thenReturn(List.of(storedSku("2.8米")));
 
-        orderLifecycleService.cancelOrder("order-001", "客户不要了", orderService);
+        orderLifecycleService.cancelOrder("order-001", "客户不要了", orderService.sharedParts());
 
         verify(productSkuMapper).restoreStock(COMBO_SKU_ID, BigDecimal.valueOf(2));
     }
@@ -2895,7 +2895,7 @@ class OrderServiceTest {
                 .rollLengthM(new BigDecimal("60.00"))
                 .build());
 
-        orderCreationService.createOrder(rollAllocationRequest("full_roll", "100"), 1L, orderService);
+        orderCreationService.createOrder(rollAllocationRequest("full_roll", "100"), 1L, orderService.sharedParts());
 
         ArgumentCaptor<OrderItem> captor = ArgumentCaptor.forClass(OrderItem.class);
         verify(orderItemMapper).insert(captor.capture());
@@ -2922,7 +2922,7 @@ class OrderServiceTest {
                 .rollLengthM(new BigDecimal("60.00"))
                 .build());
 
-        orderCreationService.createOrder(rollAllocationRequest("bulk_cut", "100"), 1L, orderService);
+        orderCreationService.createOrder(rollAllocationRequest("bulk_cut", "100"), 1L, orderService.sharedParts());
 
         ArgumentCaptor<OrderItem> captor = ArgumentCaptor.forClass(OrderItem.class);
         verify(orderItemMapper).insert(captor.capture());
@@ -2942,7 +2942,7 @@ class OrderServiceTest {
                 .rollLengthM(new BigDecimal("60.00"))
                 .build());
 
-        orderCreationService.createOrder(rollAllocationRequest(null, "100"), 1L, orderService);
+        orderCreationService.createOrder(rollAllocationRequest(null, "100"), 1L, orderService.sharedParts());
 
         ArgumentCaptor<OrderItem> captor = ArgumentCaptor.forClass(OrderItem.class);
         verify(orderItemMapper).insert(captor.capture());
@@ -2961,7 +2961,7 @@ class OrderServiceTest {
                 .rollLengthM(null)
                 .build());
 
-        orderCreationService.createOrder(rollAllocationRequest("full_roll", "100"), 1L, orderService);
+        orderCreationService.createOrder(rollAllocationRequest("full_roll", "100"), 1L, orderService.sharedParts());
 
         ArgumentCaptor<OrderItem> captor = ArgumentCaptor.forClass(OrderItem.class);
         verify(orderItemMapper).insert(captor.capture());
@@ -2989,7 +2989,7 @@ class OrderServiceTest {
         info.put("sellingMethod", "整卷"); // agent 真实形态：中文标签
         request.getItems().get(0).setProcessingInfo(info);
 
-        orderCreationService.createOrder(request, 1L, orderService);
+        orderCreationService.createOrder(request, 1L, orderService.sharedParts());
 
         ArgumentCaptor<OrderItem> captor = ArgumentCaptor.forClass(OrderItem.class);
         verify(orderItemMapper).insert(captor.capture());
@@ -3011,7 +3011,7 @@ class OrderServiceTest {
                 .rollLengthM(null)   // 货号未配卷长 ⇒ 分配两列必须保持 NULL
                 .build());
 
-        orderCreationService.createOrder(rollAllocationRequest(null, "100"), 1L, orderService);
+        orderCreationService.createOrder(rollAllocationRequest(null, "100"), 1L, orderService.sharedParts());
 
         ArgumentCaptor<OrderItem> captor = ArgumentCaptor.forClass(OrderItem.class);
         verify(orderItemMapper).insert(captor.capture());
@@ -3032,7 +3032,7 @@ class OrderServiceTest {
                 .rollLengthM(new BigDecimal("60.00"))
                 .build());
 
-        assertThatThrownBy(() -> orderCreationService.createOrder(rollAllocationRequest("full_roll", "100"), 1L, orderService))
+        assertThatThrownBy(() -> orderCreationService.createOrder(rollAllocationRequest("full_roll", "100"), 1L, orderService.sharedParts()))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("不支持售卖方式");
         verify(orderItemMapper, never()).insert(any(OrderItem.class));
@@ -3073,7 +3073,7 @@ class OrderServiceTest {
         stubCreateOrderPersistence();
         stubProductWithRollLength("60.00"); // 派生会给 floor(100/60) = 1 卷 + 60 米
 
-        orderCreationService.createOrder(explicitRollRequest("2", "58.5", "100"), 1L, orderService);
+        orderCreationService.createOrder(explicitRollRequest("2", "58.5", "100"), 1L, orderService.sharedParts());
 
         ArgumentCaptor<OrderItem> captor = ArgumentCaptor.forClass(OrderItem.class);
         verify(orderItemMapper).insert(captor.capture());
@@ -3094,7 +3094,7 @@ class OrderServiceTest {
         stubProductWithRollLength("60.00");
 
         // ⚠️ 数量 100 是刻意的：**派生**会给出 1 卷（floor(100/60)）⇒ 「0 卷」只可能来自显式值
-        orderCreationService.createOrder(explicitRollRequest("0", "60", "100"), 1L, orderService);
+        orderCreationService.createOrder(explicitRollRequest("0", "60", "100"), 1L, orderService.sharedParts());
 
         ArgumentCaptor<OrderItem> captor = ArgumentCaptor.forClass(OrderItem.class);
         verify(orderItemMapper).insert(captor.capture());
@@ -3111,7 +3111,7 @@ class OrderServiceTest {
         stubCreateOrderPersistence();
         stubProductWithRollLength(null); // 货号未配卷长 ⇒ 派生路径不写分配（红线不变）
 
-        orderCreationService.createOrder(explicitRollRequest("2", "58.5", "117"), 1L, orderService);
+        orderCreationService.createOrder(explicitRollRequest("2", "58.5", "117"), 1L, orderService.sharedParts());
 
         ArgumentCaptor<OrderItem> captor = ArgumentCaptor.forClass(OrderItem.class);
         verify(orderItemMapper).insert(captor.capture());
@@ -3130,7 +3130,7 @@ class OrderServiceTest {
         stubCreateOrderPersistence();
         stubProductWithRollLength(null); // 货号未配 + 客户端没给 ⇒ 两边都没有
 
-        orderCreationService.createOrder(explicitRollRequest("2", null, "100"), 1L, orderService);
+        orderCreationService.createOrder(explicitRollRequest("2", null, "100"), 1L, orderService.sharedParts());
 
         ArgumentCaptor<OrderItem> captor = ArgumentCaptor.forClass(OrderItem.class);
         verify(orderItemMapper).insert(captor.capture());
@@ -3147,7 +3147,7 @@ class OrderServiceTest {
         stubCreateOrderPersistence();
         stubProductWithRollLength("60.00");
 
-        orderCreationService.createOrder(explicitRollRequest("2", null, "100"), 1L, orderService);
+        orderCreationService.createOrder(explicitRollRequest("2", null, "100"), 1L, orderService.sharedParts());
 
         ArgumentCaptor<OrderItem> captor = ArgumentCaptor.forClass(OrderItem.class);
         verify(orderItemMapper).insert(captor.capture());
@@ -3163,7 +3163,7 @@ class OrderServiceTest {
         stubProductWithRollLength("60.00"); // 货号 60 ⇒ 若错用它派生会得 1 卷
 
         // 数量 60 / 显式每卷 30 ⇒ **显式长度**派生 2 卷；错用货号 60 会得 1 卷（判别性）
-        orderCreationService.createOrder(explicitRollRequest(null, "30", "60"), 1L, orderService);
+        orderCreationService.createOrder(explicitRollRequest(null, "30", "60"), 1L, orderService.sharedParts());
 
         ArgumentCaptor<OrderItem> captor = ArgumentCaptor.forClass(OrderItem.class);
         verify(orderItemMapper).insert(captor.capture());
@@ -3178,7 +3178,7 @@ class OrderServiceTest {
     void createOrder_negativeRollCount_isRejected() {
         stubCreateOrderPersistence();
 
-        assertThatThrownBy(() -> orderCreationService.createOrder(explicitRollRequest("-1", "60", "100"), 1L, orderService))
+        assertThatThrownBy(() -> orderCreationService.createOrder(explicitRollRequest("-1", "60", "100"), 1L, orderService.sharedParts()))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("卷数");
         verify(orderItemMapper, never()).insert(any(OrderItem.class));
@@ -3190,7 +3190,7 @@ class OrderServiceTest {
         stubCreateOrderPersistence();
 
         for (String bad : List.of("0", "-1")) {
-            assertThatThrownBy(() -> orderCreationService.createOrder(explicitRollRequest("2", bad, "100"), 1L, orderService))
+            assertThatThrownBy(() -> orderCreationService.createOrder(explicitRollRequest("2", bad, "100"), 1L, orderService.sharedParts()))
                     .as("每卷米数 = %s", bad)
                     .isInstanceOf(BusinessException.class)
                     .hasMessageContaining("每卷米数");
@@ -3203,7 +3203,7 @@ class OrderServiceTest {
     void createOrder_fractionalRollCount_isRejected() {
         stubCreateOrderPersistence();
 
-        assertThatThrownBy(() -> orderCreationService.createOrder(explicitRollRequest("2.5", "58.5", "100"), 1L, orderService))
+        assertThatThrownBy(() -> orderCreationService.createOrder(explicitRollRequest("2.5", "58.5", "100"), 1L, orderService.sharedParts()))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("整数");
         verify(orderItemMapper, never()).insert(any(OrderItem.class));
@@ -3217,7 +3217,7 @@ class OrderServiceTest {
         OrderCreateRequest request = explicitRollRequest("2", "58.5", "100");
         request.getItems().get(0).setSellingMethod("full_roll");
 
-        orderCreationService.createOrder(request, 1L, orderService);
+        orderCreationService.createOrder(request, 1L, orderService.sharedParts());
 
         ArgumentCaptor<OrderItem> captor = ArgumentCaptor.forClass(OrderItem.class);
         verify(orderItemMapper).insert(captor.capture());
@@ -3242,7 +3242,7 @@ class OrderServiceTest {
                 attachOrderLogAppender();
         try {
             // issue #4090：声明了 SKU 身份却定位不到 ⇒ 显式失败（修前是 WARN + 静默跳过）
-            assertThatThrownBy(() -> orderLifecycleService.cancelOrder("order-001", "客户不要了", orderService))
+            assertThatThrownBy(() -> orderLifecycleService.cancelOrder("order-001", "客户不要了", orderService.sharedParts()))
                     .isInstanceOf(BusinessException.class)
                     .hasMessageContaining("无法定位到 SKU")
                     .hasMessageContaining("doorWidth=2.8米");
@@ -3275,7 +3275,7 @@ class OrderServiceTest {
         when(productSkuMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(java.util.List.<ProductSku>of(storedSku("2.8")));
         when(productSkuMapper.restoreStock(anyLong(), any())).thenReturn(1);
 
-        orderLifecycleService.cancelOrder("order-001", "客户不要了", orderService);
+        orderLifecycleService.cancelOrder("order-001", "客户不要了", orderService.sharedParts());
 
         // Then: 回补到那一行（售卖方式不参与定位）
         verify(productSkuMapper).restoreStock(anyLong(), any());
@@ -3315,7 +3315,7 @@ class OrderServiceTest {
         when(productSkuMapper.selectList(any(LambdaQueryWrapper.class)))
                 .thenReturn(List.of(storedSku("2.8")));
 
-        orderLifecycleService.cancelOrder("order-001", "客户不要了", orderService);
+        orderLifecycleService.cancelOrder("order-001", "客户不要了", orderService.sharedParts());
 
         // 回退到组合匹配的现有行，而不是拿陈旧 id 去 update（命中 0 行的静默失败）
         verify(productSkuMapper).restoreStock(COMBO_SKU_ID, BigDecimal.valueOf(2));
@@ -3446,7 +3446,7 @@ class OrderServiceTest {
         givenPricedCombinations("定型+打孔+韩褶", "8.00");
 
         OrderCreateRequest request = createOrderRequestWithFee(info);
-        orderCreationService.createOrder(request, 1L, orderService);
+        orderCreationService.createOrder(request, 1L, orderService.sharedParts());
 
         // 总额 = 商品 599.00 + 人工改价 12.50 × 12.30 = 153.75 ⇒ 752.75（未定价 0 ⇒ 599.00 ⇒ 红）
         ArgumentCaptor<Order> orderCaptor = ArgumentCaptor.forClass(Order.class);
@@ -3481,7 +3481,7 @@ class OrderServiceTest {
         givenPricedCombinations("打孔", "8.00");
 
         OrderCreateRequest request = createOrderRequestWithFee(info);
-        orderCreationService.createOrder(request, 1L, orderService);
+        orderCreationService.createOrder(request, 1L, orderService.sharedParts());
 
         // 用户 2026-10-24：「在订单中改成 0 后，费用明细的展示费用未联动更改」
         // ⇒ 本单加工费 = 0 × 12.30 = 0 ⇒ 总额 = 商品 599.00（改前走 matched = 697.40 ⇒ 红）
@@ -3515,7 +3515,7 @@ class OrderServiceTest {
         givenPricedCombinations("打孔", "8.00");
 
         OrderCreateRequest request = createOrderRequestWithFee(info);
-        orderCreationService.createOrder(request, 1L, orderService);
+        orderCreationService.createOrder(request, 1L, orderService.sharedParts());
 
         // 本单按 12.50 × 12.30 = 153.75 ⇒ 总额 752.75（改判前忽略 override = 697.40 ⇒ 红）
         ArgumentCaptor<Order> orderCaptor = ArgumentCaptor.forClass(Order.class);
@@ -3550,7 +3550,7 @@ class OrderServiceTest {
         givenPricedCombinations("定型+打孔+韩褶", "8.00");
 
         OrderCreateRequest request = createOrderRequestWithFee(info);
-        orderCreationService.createOrder(request, 1L, orderService);
+        orderCreationService.createOrder(request, 1L, orderService.sharedParts());
 
         ArgumentCaptor<Order> orderCaptor = ArgumentCaptor.forClass(Order.class);
         verify(orderMapper).insert(orderCaptor.capture());
@@ -3579,7 +3579,7 @@ class OrderServiceTest {
         request.setLogisticsType(" logistics ");
         request.setLogisticsCompany(" 四季安 ");
 
-        orderCreationService.createOrder(request, 1L, orderService);
+        orderCreationService.createOrder(request, 1L, orderService.sharedParts());
 
         ArgumentCaptor<Order> orderCaptor = ArgumentCaptor.forClass(Order.class);
         verify(orderMapper).insert(orderCaptor.capture());
@@ -3595,7 +3595,7 @@ class OrderServiceTest {
         info.put("processingItems", List.of(Map.of("id", "p1", "name", "打孔")));
 
         OrderCreateRequest request = createOrderRequestWithFee(info);
-        orderCreationService.createOrder(request, 1L, orderService);
+        orderCreationService.createOrder(request, 1L, orderService.sharedParts());
 
         ArgumentCaptor<Order> orderCaptor = ArgumentCaptor.forClass(Order.class);
         verify(orderMapper).insert(orderCaptor.capture());
@@ -3652,7 +3652,7 @@ class OrderServiceTest {
         OrderCreateRequest request = minimalCreateOrderRequest();
         request.getItems().get(0).setUnitPrice(new BigDecimal("1.005"));
 
-        assertThatThrownBy(() -> orderCreationService.createOrder(request, 1L, orderService))
+        assertThatThrownBy(() -> orderCreationService.createOrder(request, 1L, orderService.sharedParts()))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("商品明细第 1 项的单价")
                 .hasMessageContaining("2 位小数");
@@ -3668,7 +3668,7 @@ class OrderServiceTest {
         request.getItems().get(0).setQuantity(new BigDecimal("1.005"));
         request.getItems().get(0).setUnitPrice(new BigDecimal("1.00"));
 
-        assertThatThrownBy(() -> orderCreationService.createOrder(request, 1L, orderService))
+        assertThatThrownBy(() -> orderCreationService.createOrder(request, 1L, orderService.sharedParts()))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("订单总额")
                 .hasMessageContaining("2 位小数");
@@ -3682,13 +3682,13 @@ class OrderServiceTest {
     void createOrder_discountAndActualOverScale_areRejectedWithNoWrites() {
         OrderCreateRequest discountReq = minimalCreateOrderRequest();
         discountReq.setDiscountAmount(new BigDecimal("0.005"));
-        assertThatThrownBy(() -> orderCreationService.createOrder(discountReq, 1L, orderService))
+        assertThatThrownBy(() -> orderCreationService.createOrder(discountReq, 1L, orderService.sharedParts()))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("优惠金额");
 
         OrderCreateRequest actualReq = minimalCreateOrderRequest();
         actualReq.setActualAmount(new BigDecimal("0.005"));
-        assertThatThrownBy(() -> orderCreationService.createOrder(actualReq, 1L, orderService))
+        assertThatThrownBy(() -> orderCreationService.createOrder(actualReq, 1L, orderService.sharedParts()))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("实收金额");
 
@@ -3709,7 +3709,7 @@ class OrderServiceTest {
         item.setUnitPrice(new BigDecimal("1.005"));
         request.setItems(List.of(item));
 
-        assertThatThrownBy(() -> orderEntityWriteService.updatePendingOrderContent("order-001", request, orderService))
+        assertThatThrownBy(() -> orderEntityWriteService.updatePendingOrderContent("order-001", request, orderService.sharedParts()))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("2 位小数");
 
@@ -3725,7 +3725,7 @@ class OrderServiceTest {
         request.getItems().get(0).setQuantity(BigDecimal.ONE);
         request.getItems().get(0).setUnitPrice(new BigDecimal("0.01"));
 
-        orderCreationService.createOrder(request, 1L, orderService);
+        orderCreationService.createOrder(request, 1L, orderService.sharedParts());
 
         ArgumentCaptor<Order> captor = ArgumentCaptor.forClass(Order.class);
         verify(orderMapper).insert(captor.capture());

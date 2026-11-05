@@ -4,7 +4,7 @@
   "why": "「新增文件 ≥800 行」必须有个**可判的界面**：未登记即红（判据里不硬编码清单，读本表）。本表同时是**存量上限**（只许缩短）—— 文件已删 / 改名 / 已拆到 800 行以下 ⇒ 必须销账，否则红；因此「豁免」不会腐烂成永久白名单。台账为空**合法**（没有大文件时它就该是空的）。",
   "seeded_at": "2026-10-30",
   "seeded_from": "origin/main @ 456e0632a（2026-10-30 现取）：源码面 ≥ 800 行的全部 60 个文件（> 2000 行的 12 个 + 800–2000 行的 48 个）；判据侧逐条与现取行数对账。",
-  "declared_count": 58,
+  "declared_count": 57,
   "declared_count_note": "条数**现取**：判据不做「>= N」下界，而是断言 `declared_count == len(exemptions)`（少一条/多一条且不同步声明 ⇒ 红）。增删条目必须同步本字段 —— 一次改动 = diff 里看得见。",
   "shrink_only_note": "① 条目指向的文件已不存在 ⇒ 红（销账即删）；② 文件已跌破 800 线 ⇒ 红（本表是存量上限，不是永久白名单）；③ 台账为空合法；④ 本表**不**给 > 2000 行的文件发放「可以继续长」的许可（那由 loc_freeze_ledger.json 逐行冻结）。",
   "exemptions": [
@@ -26,11 +26,6 @@
     {
       "path": "backend/ai-agent-service/app/graph/skills/base_skill.py",
       "reason": "已进冻结清单（> 2000 行）—— 本表登记仅为保证「删掉冻结条目 ⇒ 绿」不会退化成「文件变未登记大文件 ⇒ 红」；逐行上限见 loc_freeze_ledger.json::frozen",
-      "date": "2026-10-30"
-    },
-    {
-      "path": "backend/admin-api/src/main/java/com/migao/admin/service/OrderService.java",
-      "reason": "issue #8191（P2-1d）后已跌破 2,000 行 ⇒ 冻结条目销账；但仍 ≥800 行，本表按「只登记存在」保留（本表不给大文件发放继续增长的许可）",
       "date": "2026-10-30"
     },
     {

@@ -2076,7 +2076,7 @@ public class ProcessingOrderService {
         Order order = p.order();
         boolean orderLinked = OrderStatusTransitions.CONFIRMED.equals(order.getStatus());
         if (orderLinked) {
-            orderService.lifecycleService().updateOrderStatus(order.getId(), OrderStatusTransitions.PRODUCING, orderService);
+            orderService.lifecycleService().updateOrderStatus(order.getId(), OrderStatusTransitions.PRODUCING, orderService.sharedParts());
         }
         try {
             try {
@@ -4111,7 +4111,7 @@ public class ProcessingOrderService {
         if ("issue".equals(action)) {
             Order order = orderMapper.selectById(po.getOrderId());
             if (order != null && OrderStatusTransitions.CONFIRMED.equals(order.getStatus())) {
-                orderService.lifecycleService().updateOrderStatus(order.getId(), OrderStatusTransitions.PRODUCING, orderService);
+                orderService.lifecycleService().updateOrderStatus(order.getId(), OrderStatusTransitions.PRODUCING, orderService.sharedParts());
                 orderLinked = true;
             }
         }

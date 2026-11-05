@@ -88,13 +88,13 @@ class OrderAgentFacadeTest {
         status.setAction("update_status");
         status.setStatus("confirmed");
         assertThat(facade.updateOrderForAgent("ORD-1", status, 1L)).isSameAs(detail);
-        verify(orderLifecycleService).updateOrderStatus("uuid-1", "confirmed", orderService);
+        verify(orderLifecycleService).updateOrderStatus("uuid-1", "confirmed", orderService.sharedParts());
 
         AgentOrderUpdateRequest cancel = new AgentOrderUpdateRequest();
         cancel.setAction("cancel");
         cancel.setCancelReason("客户不要了");
         assertThat(facade.updateOrderForAgent("ORD-1", cancel, 1L)).isSameAs(detail);
-        verify(orderLifecycleService).cancelOrder("uuid-1", "客户不要了", orderService);
+        verify(orderLifecycleService).cancelOrder("uuid-1", "客户不要了", orderService.sharedParts());
 
         // 每个 action 之后都回读一次（返回值是 OrderDetailResponse，不是生命周期方法的返回值）
         verify(orderQueryService, times(2)).getOrderById("uuid-1");

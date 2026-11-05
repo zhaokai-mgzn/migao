@@ -271,7 +271,7 @@ class OrderStockSkuKeyFamilyTest {
         mockCreatedOrder("confirmed");
 
         // when: 下单成功 → 确认支付
-        OrderDetailResponse created = orderCreationService.createOrderForAgent(agentRequest(agentSpecInfo(), 2), 1L, orderService);
+        OrderDetailResponse created = orderCreationService.createOrderForAgent(agentRequest(agentSpecInfo(), 2), 1L, orderService.sharedParts());
         assertThat(created).isNotNull();
         lifecycle().confirmPayment(ORDER_ID);
 
@@ -294,9 +294,9 @@ class OrderStockSkuKeyFamilyTest {
         when(productSkuMapper.selectById(SKU_ID)).thenReturn(storedSku());
         when(orderMapper.update(any(), any())).thenReturn(1);
 
-        orderCreationService.createOrderForAgent(agentRequest(agentSpecInfo(), 2), 1L, orderService);
+        orderCreationService.createOrderForAgent(agentRequest(agentSpecInfo(), 2), 1L, orderService.sharedParts());
         assertThat(captured[0]).isNotNull();
-        lifecycle().cancelOrder(ORDER_ID, "客户不要了", orderService);
+        lifecycle().cancelOrder(ORDER_ID, "客户不要了", orderService.sharedParts());
 
         verify(productSkuMapper).restoreStock(SKU_ID, BigDecimal.valueOf(2));
         verify(productSkuMapper).decreaseSalesCount(SKU_ID, BigDecimal.valueOf(2));
@@ -315,7 +315,7 @@ class OrderStockSkuKeyFamilyTest {
         // given: 明细声明了规格（skuCode/colorName/门幅），但该商品下没有任何匹配的 SKU 行
         when(productSkuMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
 
-        assertThatThrownBy(() -> orderCreationService.createOrderForAgent(agentRequest(agentSpecInfo(), 2), 1L, orderService))
+        assertThatThrownBy(() -> orderCreationService.createOrderForAgent(agentRequest(agentSpecInfo(), 2), 1L, orderService.sharedParts()))
                 .isInstanceOf(BusinessException.class)
                 // 可行动：说清声明了哪些键、该补什么
                 .hasMessageContaining("SKU")
@@ -330,7 +330,7 @@ class OrderStockSkuKeyFamilyTest {
         OrderItem[] captured = mockCreatedOrder("pending");
         when(productSkuMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(storedSku()));
         when(productSkuMapper.selectById(SKU_ID)).thenReturn(storedSku());
-        orderCreationService.createOrderForAgent(agentRequest(agentSpecInfo(), 2), 1L, orderService);
+        orderCreationService.createOrderForAgent(agentRequest(agentSpecInfo(), 2), 1L, orderService.sharedParts());
 
         // 下单后该规格的 SKU 行被删/改名（规格漂移）⇒ 确认支付必须显式失败
         when(productSkuMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
@@ -360,7 +360,7 @@ class OrderStockSkuKeyFamilyTest {
         when(orderMapper.update(any(), any())).thenReturn(1);
         mockCreatedOrder("confirmed");
 
-        OrderDetailResponse created = orderCreationService.createOrderForAgent(agentRequest(processingOnlyInfo(), 2), 1L, orderService);
+        OrderDetailResponse created = orderCreationService.createOrderForAgent(agentRequest(processingOnlyInfo(), 2), 1L, orderService.sharedParts());
         assertThat(created).as("无 SKU 身份的合法订单不得被拒").isNotNull();
         lifecycle().confirmPayment(ORDER_ID);
 

@@ -14,7 +14,7 @@ import com.migao.admin.service.ClientRequestIdService;
 import com.migao.admin.service.OrderAgentFacade;
 import com.migao.admin.service.OrderCreationService;
 import com.migao.admin.service.OrderQueryService;
-import com.migao.admin.service.OrderService;
+import com.migao.admin.service.OrderSharedParts;
 import com.migao.admin.security.RequirePermission;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -54,10 +54,10 @@ public class AgentOrderController {
      *
      * <p>issue #8681（P2-1e 第八批）：门面的 {@code createOrderForAgent} / {@code updateOrderForAgent}
      * 两个转发都退休了 ⇒ 本类<b>不再经门面调用任何业务入口</b>；这个字段只剩一个用途 —— 作为两个实现点入口的
-     * <b>第三参</b>传过去（与 {@code createOrder(request, tenantId, orderService)} 同一条既有口径，
+     * <b>第三参</b>传过去（与 {@code createOrder(request, tenantId, orderSharedParts)} 同一条既有口径，
      * 不重搭第二份共享部件）。</p>
      */
-    private final OrderService orderService;
+    private final OrderSharedParts orderSharedParts;
     /**
      * 建单的**实现点**（issue #8681，P2-1e 第八批）：{@code POST /agent/orders} 直接依赖
      * {@code OrderCreationService}（幂等键 claim/complete/discard/replay 与事务边界都在它那一侧），
@@ -111,7 +111,7 @@ public class AgentOrderController {
                 request.getItems() != null ? request.getItems().size() : 0, tenantId,
                 request.getUserId(), clientRequestId);
         try {
-            OrderDetailResponse result = orderCreationService.createOrderForAgent(request, tenantId, orderService);
+            OrderDetailResponse result = orderCreationService.createOrderForAgent(request, tenantId, orderSharedParts);
             return ApiResponse.success(result);
         } catch (Exception e) {
             log.warn("[Agent] 创建订单失败: {}", e.getMessage());
