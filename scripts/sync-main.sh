@@ -7,7 +7,9 @@
 #   ② merge origin/main 后 cases/ 单一源前进，生成物（eval_cases/ 包目录 /
 #      mibao-verification-cases.md）未同步 → CI「生成物新鲜度校验」必红
 #      → 手动重渲染 + 再 push + 多跑一轮全量 CI。
-# 本脚本把「同步 main + 重渲染生成物 + 提交」合成一步，杜绝②类返工。
+# 本脚本把「同步 main + 重渲染生成物」合成一步，杜绝②类返工。
+# ⚠️ 自 2026-11-05（issue #8167 P1-1）两个生成物**已出库、不入库** ⇒ 本脚本**不再提交**它们
+#    （②类返工因此结构性消失：没有「提交版」可以落后）；第 6 步只把工作区刷成最新，供本地读。
 #
 # 用法（在 migao 仓库/任一 worktree 根目录执行）：
 #   ./scripts/sync-main.sh            # fetch origin/main → merge → 重渲染 → 自动提交
@@ -27,9 +29,7 @@
 #      销账字段块 `must_succeed` / `namespaces` / `precondition` …）必须仍在合并结果里；
 #      缺任何一行 ⇒ 非零退出 + 指名文件与缺失内容
 #   6. 重渲染生成物（.github/render_cases.py → eval_cases/（按域分包）+ casebook.md）
-#   7. 有 diff → 自动提交（仅含两个生成物路径：`eval_cases/` 目录 + casebook 文件，message 标准化）：
-#      "chore(cases): 合并 main 后重渲染生成物（N 条）"
-#   8. 提醒 push
+#   7. 打印重渲染结果（**不再提交** —— 出库形态）
 #
 # 为什么 merge 模式要**拒绝**而不是「让 merge 更聪明」（issue #4984）：
 #   分支分叉期间 main 侧把 case-trust 销账（`must_succeed` / `namespaces` /
