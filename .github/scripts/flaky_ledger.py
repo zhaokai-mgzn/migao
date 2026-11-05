@@ -3494,6 +3494,13 @@ def render_comment(decision: dict) -> str:
             "",
             f"判据：{decision.get('reason')}",
         ]
+    # 🔴 #8709 残留：**判红 ≠ 记账** —— 判为「其实只是限流」的 job **不进**台账，但**仍然是红的**
+    # （PR 仍被挡）。不写这一行 ⇒ 评论只列真红条目，读的人会以为「漏记了」或「已被放过」。
+    excluded = decision.get("entries_excluded") or []
+    if excluded:
+        lines += ["", f"🧾 **台账面（#8709 残留：判红 ≠ 记账）**：其中 **{len(excluded)}** 个失败 job 的日志"
+                      f"**只有限流特征**（`exit 3` = 判不了）⇒ **零台账条目**（不是 flaky 证据）；"
+                      f"但它们**仍然是红的 ⇒ PR 仍被挡**：{'、'.join(f'`{n}`' for n in excluded)}"]
     lines += ["", "<sub>机制见 `migao` issue #4717（CI 层两项：重跑分流 + flaky 台账）；"
                   "`kind` 的语义收紧见 #5088；判据 `tests/unit_ci_workflows/test_flaky_triage.py` + "
                   "`tests/unit_ci_workflows/test_flaky_ledger_kind_semantics.py`</sub>"]

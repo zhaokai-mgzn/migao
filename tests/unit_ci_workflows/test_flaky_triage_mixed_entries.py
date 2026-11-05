@@ -265,6 +265,20 @@ class TestRealDecideIsClean:
         assert d.get("kind") == FL.SUSPECT_WINDOW_KIND
         assert not d.get("infra_rate_limited")
 
+    def test_pr_comment_says_the_excluded_jobs_are_not_ledger_evidence(self):
+        """判据 2 的另一半：**PR 面**也要说得出「这些 job 没记账，但它们仍是红的」。"""
+        _bundle, d = mixed_second_green(FL)
+        comment = FL.render_comment(d)
+        assert "判红 ≠ 记账" in comment
+        for name in RATE_LIMITED_JOBS:
+            assert name in comment
+
+    def test_all_rate_limited_comment_does_not_claim_exclusions(self):
+        """负控：全限流走 `infra_rate_limited`（零条目）⇒ 评论里**不**该出现「排除记账」那段。"""
+        _bundle, d = all_rate_limited_second_green(FL)
+        assert d["action"] == "infra_rate_limited"
+        assert "判红 ≠ 记账" not in FL.render_comment(d)
+
     def test_first_failure_path_excludes_rate_limited_jobs_too(self):
         """另一条调用点（两次都红）：限流 job 同样零条目，真红照旧记账。"""
         failed = _failed_jobs()
