@@ -543,7 +543,7 @@ class OrderFacadeForwarderRetirementTest {
         assertThat(declaresMethod(shipOverload, RETIRED.get("shipWithLogistics").declaration()))
                 .as("发货重载回来必须被判真（锚点不区分重载）").isTrue();
         // 直驱实现点的调用形态不得被判成「转发回来」（返回类型 + 左括号 的锚点不会命中调用串）
-        String directDrive = "orderLifecycleService.updateOrderStatus(id, status, orderService);";
+        String directDrive = "orderLifecycleService.updateOrderStatus(id, status, orderService.sharedParts());";
         assertThat(declaresMethod(directDrive, RETIRED.get("updateOrderStatus").declaration()))
                 .as("直驱实现点的调用串不算声明").isFalse();
 
@@ -558,7 +558,7 @@ class OrderFacadeForwarderRetirementTest {
                 + "    public OrderDetailResponse updatePendingOrderContent(String id, OrderContentUpdateRequest request) { }\n}";
         assertThat(declaresMethod(writeForwardMultiArg, RETIRED.get("updatePendingOrderContent").declaration()))
                 .as("内容编辑实现搬回门面必须被判真（锚点不区分形参个数）").isTrue();
-        String writeDirectDrive = "return orderEntityWriteService.updatePendingOrderContent(id, request, orderService);";
+        String writeDirectDrive = "return orderEntityWriteService.updatePendingOrderContent(id, request, orderService.sharedParts());";
         assertThat(declaresMethod(writeDirectDrive, RETIRED.get("updatePendingOrderContent").declaration()))
                 .as("直驱实现点（带门面实参）的调用串不算声明").isFalse();
 
@@ -575,7 +575,7 @@ class OrderFacadeForwarderRetirementTest {
         assertThat(declaresMethod("    public void restoreStockForReturn(String orderId) { stockService().restoreStockForReturn(orderId); }",
                 RETIRED.get("restoreStockForReturn").declaration()))
                 .as("售后回补转发回来必须被判真").isTrue();
-        String agentDirectDrive = "return orderCreationService.createOrderForAgent(request, tenantId, orderService);";
+        String agentDirectDrive = "return orderCreationService.createOrderForAgent(request, tenantId, orderService.sharedParts());";
         assertThat(declaresMethod(agentDirectDrive, RETIRED.get("createOrderForAgent").declaration()))
                 .as("直驱建单实现点（第三参是门面实例）的调用串不算声明").isFalse();
         String stockDirectDrive = "orderStockService.restoreStockForReturn(ticket.getOrderId());";

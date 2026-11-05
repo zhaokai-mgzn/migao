@@ -149,11 +149,11 @@ class OrderIdempotencyTest {
     void sameKeyReplaysFirstSnapshot() {
         when(clientRequestIdService.claim(TENANT, KEY, ENDPOINT)).thenReturn(true, false);
 
-        OrderDetailResponse first = orderCreationService.createOrderForAgent(request(KEY), TENANT, orderService);
+        OrderDetailResponse first = orderCreationService.createOrderForAgent(request(KEY), TENANT, orderService.sharedParts());
         // 第二次到达：回放的就是首次那份快照（同一对象 ⇒ 同一订单号，这才叫幂等）
         when(clientRequestIdService.replay(TENANT, KEY, OrderDetailResponse.class))
                 .thenReturn(Optional.of(first));
-        OrderDetailResponse replayed = orderCreationService.createOrderForAgent(request(KEY), TENANT, orderService);
+        OrderDetailResponse replayed = orderCreationService.createOrderForAgent(request(KEY), TENANT, orderService.sharedParts());
 
         assertThat(first.getOrderNo()).isEqualTo("ORD-1");
         assertThat(replayed).isSameAs(first);
@@ -170,8 +170,8 @@ class OrderIdempotencyTest {
         when(clientRequestIdService.claim(TENANT, "req-key-1", ENDPOINT)).thenReturn(true);
         when(clientRequestIdService.claim(TENANT, "req-key-2", ENDPOINT)).thenReturn(true);
 
-        OrderDetailResponse r1 = orderCreationService.createOrderForAgent(request("req-key-1"), TENANT, orderService);
-        OrderDetailResponse r2 = orderCreationService.createOrderForAgent(request("req-key-2"), TENANT, orderService);
+        OrderDetailResponse r1 = orderCreationService.createOrderForAgent(request("req-key-1"), TENANT, orderService.sharedParts());
+        OrderDetailResponse r2 = orderCreationService.createOrderForAgent(request("req-key-2"), TENANT, orderService.sharedParts());
 
         assertThat(r1.getOrderNo()).isEqualTo("ORD-1");
         assertThat(r2.getOrderNo()).isEqualTo("ORD-2");
@@ -183,7 +183,7 @@ class OrderIdempotencyTest {
     @Test
     @DisplayName("无幂等键：完全走原路径（零幂等交互、不报错）—— 向后兼容未升级的调用方")
     void noKeyKeepsLegacyPath() {
-        OrderDetailResponse result = orderCreationService.createOrderForAgent(request(null), TENANT, orderService);
+        OrderDetailResponse result = orderCreationService.createOrderForAgent(request(null), TENANT, orderService.sharedParts());
 
         assertThat(result.getOrderNo()).isEqualTo("ORD-1");
         verify(orderMapper).insert(any(Order.class));
@@ -197,7 +197,7 @@ class OrderIdempotencyTest {
         when(clientRequestIdService.replay(TENANT, KEY, OrderDetailResponse.class))
                 .thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> orderCreationService.createOrderForAgent(request(KEY), TENANT, orderService))
+        assertThatThrownBy(() -> orderCreationService.createOrderForAgent(request(KEY), TENANT, orderService.sharedParts()))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("请勿重复提交");
 
@@ -211,7 +211,7 @@ class OrderIdempotencyTest {
         when(clientRequestIdService.claim(TENANT, KEY, ENDPOINT)).thenReturn(true);
         when(orderMapper.insert(any(Order.class))).thenThrow(new RuntimeException("DB 写失败"));
 
-        assertThatThrownBy(() -> orderCreationService.createOrderForAgent(request(KEY), TENANT, orderService))
+        assertThatThrownBy(() -> orderCreationService.createOrderForAgent(request(KEY), TENANT, orderService.sharedParts()))
                 .isInstanceOf(RuntimeException.class)
                 .hasMessageContaining("DB 写失败");
 
@@ -225,7 +225,7 @@ class OrderIdempotencyTest {
         AgentOrderCreateRequest invalid = request(KEY);
         invalid.setCustomerPhone("12345");
 
-        assertThatThrownBy(() -> orderCreationService.createOrderForAgent(invalid, TENANT, orderService))
+        assertThatThrownBy(() -> orderCreationService.createOrderForAgent(invalid, TENANT, orderService.sharedParts()))
                 .isInstanceOf(BusinessException.class);
 
         verifyNoInteractions(clientRequestIdService);

@@ -156,7 +156,7 @@ class OrderServiceSliceWiringTest {
         item.setQuantity(new BigDecimal("2.5"));
         request.setItems(List.of(item));
 
-        orderService.validateStockSufficientForRequest(request, "下单");
+        orderService.sharedParts().validateStockSufficientForRequest(request, "下单");
 
         verify(orderStockService).validateStockSufficientForRequest(request, "下单");
     }
@@ -185,7 +185,7 @@ class OrderServiceSliceWiringTest {
         when(processingOrderMapper.selectActiveByOrderId(any(), any())).thenReturn(null);
         when(orderFeeSupport.effectiveActualAmount(order)).thenReturn(new BigDecimal("100.00"));
 
-        lifecycle().cancelOrder("order-8191", "客户不要了", orderService);
+        lifecycle().cancelOrder("order-8191", "客户不要了", orderService.sharedParts());
 
         verify(orderStockService).restoreStockAndDecreaseSales("order-8191");
         verify(orderStockService, never()).deductStockAndIncreaseSales(anyString());

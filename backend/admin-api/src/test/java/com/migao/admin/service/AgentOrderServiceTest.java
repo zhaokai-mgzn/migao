@@ -71,12 +71,14 @@ class AgentOrderServiceTest {
     void setUp() {
         // issue #8681（P2-1e 第八批）：改单编排已整体搬到 OrderAgentFacade ⇒ 用**门面自己懒构造的那一份**
         // 生命周期 / 查询实现点构造它（同一条调用链、同一份协作者），断言一字未改。
-        orderAgentFacade = new OrderAgentFacade(orderService, orderService.lifecycleService(), orderService.queryService());
         // issue #4406：取价点用**真实**对象（只桩价目表 Mapper）—— 金额算法仍走生产代码。
         // 为什么不用 @Mock：@InjectMocks 的构造注入发生在本方法之前 ⇒ 直接塞 mock 会把
         // 「谁发射加工费」这条接线本身也 mock 掉（接线判据就失去意义）。
         ReflectionTestUtils.setField(orderService, "processingFeeCalculator",
                 new ProcessingFeeCalculator(processingFeeCombinationMapper, routeRuleMapper));
+        // issue #8681（P2-1e 第九批）：第三参已换成**共享部件实例** ⇒ 门面自己懒构造的那一份必须在
+        // 上面那处反射改写**之后**创建（否则它拿到的是 null 取价点）。可见性 / 调用链与改前同一条。
+        orderAgentFacade = new OrderAgentFacade(orderService.sharedParts(), orderService.lifecycleService(), orderService.queryService());
         orderCreationService = ReflectionTestUtils.invokeMethod(orderService, "creationService");
         MybatisConfiguration conf = new MybatisConfiguration();
         MapperBuilderAssistant assistant = new MapperBuilderAssistant(conf, "");
@@ -130,7 +132,7 @@ class AgentOrderServiceTest {
                             .totalAmount(new BigDecimal("300.00")).build());
             when(orderItemMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
 
-            OrderDetailResponse result = orderCreationService.createOrderForAgent(req, 1L, orderService);
+            OrderDetailResponse result = orderCreationService.createOrderForAgent(req, 1L, orderService.sharedParts());
             assertThat(result).isNotNull();
             assertThat(result.getCustomerName()).isEqualTo("张三");
         }
@@ -140,7 +142,7 @@ class AgentOrderServiceTest {
         void invalidPhone() {
             AgentOrderCreateRequest req = new AgentOrderCreateRequest();
             req.setCustomerName("张三"); req.setCustomerPhone("12345");
-            assertThatThrownBy(() -> orderCreationService.createOrderForAgent(req, 1L, orderService))
+            assertThatThrownBy(() -> orderCreationService.createOrderForAgent(req, 1L, orderService.sharedParts()))
                     .isInstanceOf(BusinessException.class);
         }
 
@@ -149,7 +151,7 @@ class AgentOrderServiceTest {
         void missingName() {
             AgentOrderCreateRequest req = new AgentOrderCreateRequest();
             req.setCustomerPhone("13800001111");
-            assertThatThrownBy(() -> orderCreationService.createOrderForAgent(req, 1L, orderService))
+            assertThatThrownBy(() -> orderCreationService.createOrderForAgent(req, 1L, orderService.sharedParts()))
                     .isInstanceOf(BusinessException.class);
         }
 
@@ -158,7 +160,7 @@ class AgentOrderServiceTest {
         void missingItems() {
             AgentOrderCreateRequest req = new AgentOrderCreateRequest();
             req.setCustomerName("张三"); req.setCustomerPhone("13800001111");
-            assertThatThrownBy(() -> orderCreationService.createOrderForAgent(req, 1L, orderService))
+            assertThatThrownBy(() -> orderCreationService.createOrderForAgent(req, 1L, orderService.sharedParts()))
                     .isInstanceOf(BusinessException.class);
         }
 
@@ -214,7 +216,7 @@ class AgentOrderServiceTest {
             when(productSkuMapper.selectById(1L)).thenReturn(sku);
             mockOrderInsert();
 
-            OrderDetailResponse result = orderCreationService.createOrderForAgent(req, 1L, orderService);
+            OrderDetailResponse result = orderCreationService.createOrderForAgent(req, 1L, orderService.sharedParts());
             assertThat(result).isNotNull();
             // 取价校验 + 库存键族匹配各查一次（同一 processingInfo 键族）
             verify(productSkuMapper, atLeastOnce()).selectList(any(LambdaQueryWrapper.class));
@@ -236,7 +238,7 @@ class AgentOrderServiceTest {
             when(productSkuMapper.selectById(1L)).thenReturn(sku);
             mockOrderInsert();
 
-            OrderDetailResponse result = orderCreationService.createOrderForAgent(req, 1L, orderService);
+            OrderDetailResponse result = orderCreationService.createOrderForAgent(req, 1L, orderService.sharedParts());
             assertThat(result).isNotNull();
             // 取价校验 + 库存匹配各查一次（同一键族，两次都读 processingInfo）
             verify(productSkuMapper, atLeastOnce()).selectList(any(LambdaQueryWrapper.class));
@@ -249,7 +251,7 @@ class AgentOrderServiceTest {
             when(productSkuMapper.selectList(any(LambdaQueryWrapper.class)))
                     .thenReturn(List.of(ProductSku.builder().id(1L).price(new BigDecimal("150")).build()));
 
-            assertThatThrownBy(() -> orderCreationService.createOrderForAgent(req, 1L, orderService))
+            assertThatThrownBy(() -> orderCreationService.createOrderForAgent(req, 1L, orderService.sharedParts()))
                     .isInstanceOf(BusinessException.class)
                     .hasMessageContaining("单价与系统价格不一致")
                     .hasMessageContaining("系统价 150.00");
@@ -265,7 +267,7 @@ class AgentOrderServiceTest {
             // 却在库中定位不到 ⇒ 库存路径 **fail-closed 显式拒绝**（修前是静默跳过：订单成交但
             // 库存不动、销量不涨、台账无行）。取价校验的 fail-open（防误伤）语义保持不变 ——
             // 拒绝话术来自库存判据，不是「单价与系统价格不一致」。
-            assertThatThrownBy(() -> orderCreationService.createOrderForAgent(req, 1L, orderService))
+            assertThatThrownBy(() -> orderCreationService.createOrderForAgent(req, 1L, orderService.sharedParts()))
                     .isInstanceOf(BusinessException.class)
                     .hasMessageContaining("无法定位到 SKU")
                     .hasMessageContaining("skuCode=SKU-NOPE")
@@ -284,7 +286,7 @@ class AgentOrderServiceTest {
 
             // 行为变更（issue #4090）：命中多行 ⇒ 无法唯一确定该扣哪个 SKU ⇒ 显式拒绝，
             // 而不是「取第一条」或「静默跳过」（任取一条会扣错 SKU 的库存，比拒绝更糟）。
-            assertThatThrownBy(() -> orderCreationService.createOrderForAgent(req, 1L, orderService))
+            assertThatThrownBy(() -> orderCreationService.createOrderForAgent(req, 1L, orderService.sharedParts()))
                     .isInstanceOf(BusinessException.class)
                     .hasMessageContaining("无法定位到 SKU")
                     .hasMessageContaining("colorName=白色");
@@ -318,7 +320,7 @@ class AgentOrderServiceTest {
             AgentOrderCreateRequest req = buildQtyReq(BigDecimal.valueOf(-3), new BigDecimal("168"));
             stubProductAuthority(new BigDecimal("168"));
 
-            assertThatThrownBy(() -> orderCreationService.createOrderForAgent(req, 1L, orderService))
+            assertThatThrownBy(() -> orderCreationService.createOrderForAgent(req, 1L, orderService.sharedParts()))
                     .isInstanceOf(BusinessException.class)
                     .hasMessageContaining("数量");
 
@@ -331,7 +333,7 @@ class AgentOrderServiceTest {
             AgentOrderCreateRequest req = buildQtyReq(BigDecimal.valueOf(0), new BigDecimal("168"));
             stubProductAuthority(new BigDecimal("168"));
 
-            assertThatThrownBy(() -> orderCreationService.createOrderForAgent(req, 1L, orderService))
+            assertThatThrownBy(() -> orderCreationService.createOrderForAgent(req, 1L, orderService.sharedParts()))
                     .isInstanceOf(BusinessException.class)
                     .hasMessageContaining("数量");
 
@@ -344,7 +346,7 @@ class AgentOrderServiceTest {
             AgentOrderCreateRequest req = buildQtyReq(BigDecimal.valueOf(3), new BigDecimal("-168"));
             stubProductAuthority(new BigDecimal("-168"));
 
-            assertThatThrownBy(() -> orderCreationService.createOrderForAgent(req, 1L, orderService))
+            assertThatThrownBy(() -> orderCreationService.createOrderForAgent(req, 1L, orderService.sharedParts()))
                     .isInstanceOf(BusinessException.class)
                     .hasMessageContaining("单价");
 
@@ -357,7 +359,7 @@ class AgentOrderServiceTest {
             AgentOrderCreateRequest req = buildQtyReq(BigDecimal.valueOf(3), BigDecimal.ZERO);
             stubProductAuthority(BigDecimal.ZERO);
 
-            assertThatThrownBy(() -> orderCreationService.createOrderForAgent(req, 1L, orderService))
+            assertThatThrownBy(() -> orderCreationService.createOrderForAgent(req, 1L, orderService.sharedParts()))
                     .isInstanceOf(BusinessException.class)
                     .hasMessageContaining("单价");
 
@@ -371,7 +373,7 @@ class AgentOrderServiceTest {
             stubProductAuthority(new BigDecimal("168"));
             mockOrderInsert();
 
-            OrderDetailResponse result = orderCreationService.createOrderForAgent(req, 1L, orderService);
+            OrderDetailResponse result = orderCreationService.createOrderForAgent(req, 1L, orderService.sharedParts());
 
             assertThat(result).isNotNull();
             verify(orderMapper).insert(any(Order.class));
@@ -401,7 +403,7 @@ class AgentOrderServiceTest {
         void negativeQuantityRejectedInSharedEntry() {
             OrderCreateRequest req = buildReq(BigDecimal.valueOf(-2), new BigDecimal("100"));
 
-            assertThatThrownBy(() -> orderCreationService.createOrder(req, 1L, orderService))
+            assertThatThrownBy(() -> orderCreationService.createOrder(req, 1L, orderService.sharedParts()))
                     .isInstanceOf(BusinessException.class)
                     .hasMessageContaining("数量");
 
@@ -413,7 +415,7 @@ class AgentOrderServiceTest {
         void negativeUnitPriceRejectedInSharedEntry() {
             OrderCreateRequest req = buildReq(BigDecimal.valueOf(2), new BigDecimal("-100"));
 
-            assertThatThrownBy(() -> orderCreationService.createOrder(req, 1L, orderService))
+            assertThatThrownBy(() -> orderCreationService.createOrder(req, 1L, orderService.sharedParts()))
                     .isInstanceOf(BusinessException.class)
                     .hasMessageContaining("单价");
 
@@ -426,7 +428,7 @@ class AgentOrderServiceTest {
             OrderCreateRequest req = buildReq(BigDecimal.valueOf(2), new BigDecimal("100"));
             mockOrderInsert2();
 
-            OrderDetailResponse result = orderCreationService.createOrder(req, 1L, orderService);
+            OrderDetailResponse result = orderCreationService.createOrder(req, 1L, orderService.sharedParts());
 
             assertThat(result).isNotNull();
             verify(orderMapper).insert(any(Order.class));
@@ -443,7 +445,7 @@ class AgentOrderServiceTest {
         void subOneQuantityRejectedInSharedEntry() {
             OrderCreateRequest req = buildReq(new BigDecimal("0.5"), new BigDecimal("100"));
 
-            assertThatThrownBy(() -> orderCreationService.createOrder(req, 1L, orderService))
+            assertThatThrownBy(() -> orderCreationService.createOrder(req, 1L, orderService.sharedParts()))
                     .isInstanceOf(BusinessException.class)
                     .hasMessageContaining("数量")
                     .hasMessageContaining("1");
@@ -466,7 +468,7 @@ class AgentOrderServiceTest {
             req.setItems(List.of(item));
             stubProductAuthority(new BigDecimal("168"));
 
-            assertThatThrownBy(() -> orderCreationService.createOrderForAgent(req, 1L, orderService))
+            assertThatThrownBy(() -> orderCreationService.createOrderForAgent(req, 1L, orderService.sharedParts()))
                     .isInstanceOf(BusinessException.class)
                     .hasMessageContaining("数量");
 
@@ -478,12 +480,12 @@ class AgentOrderServiceTest {
         void minimumAndDecimalQuantityStillPassInSharedEntry() {
             OrderCreateRequest req = buildReq(new BigDecimal("1"), new BigDecimal("100"));
             mockOrderInsert2();
-            assertThat(orderCreationService.createOrder(req, 1L, orderService)).as("数量 1 = 下限值，必须放行").isNotNull();
+            assertThat(orderCreationService.createOrder(req, 1L, orderService.sharedParts())).as("数量 1 = 下限值，必须放行").isNotNull();
             verify(orderMapper).insert(any(Order.class));
 
             OrderCreateRequest decimalReq = buildReq(new BigDecimal("8.4"), new BigDecimal("100"));
             mockOrderInsert2();
-            assertThat(orderCreationService.createOrder(decimalReq, 1L, orderService))
+            assertThat(orderCreationService.createOrder(decimalReq, 1L, orderService.sharedParts()))
                     .as("数量 8.4（per_area 面积）≥1，必须放行").isNotNull();
             verify(orderMapper, times(2)).insert(any(Order.class));
         }

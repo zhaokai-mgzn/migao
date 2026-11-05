@@ -30,23 +30,22 @@ import java.util.Map;
  * （分支 / 异常类型 / 日志 / 守卫顺序不变），{@code @Transactional} 边界跟着方法走；
  * {@link OrderService} 保留同名门面委托，现有调用方（控制器 / 其它服务 / 既有单测）零改动。</p>
  *
- * <h2>共享部件（有意不搬，P2-1c 再拆）</h2>
- * <p>建单与<b>改单</b>（{@code OrderService.updatePendingOrderContent}）、<b>确认支付</b>
+ * <h2>共享部件（issue #8681，P2-1e 第九批：第三参换成 {@link OrderSharedParts}）</h2>
+ * <p>建单与<b>改单</b>（{@code OrderEntityWriteService.updatePendingOrderContent}）、<b>确认支付</b>
  * 共用同一份明细装配 / 取价 / 总额 / 库存前置校验（{@code assertItemAmountsValid} /
  * {@code priceItems} / {@code computeItemsTotal} / {@code persistOrderItems} /
  * {@code validateStockSufficientForRequest} 等）—— 它们是<b>唯一实现点</b>，
- * 搬走会迫使改单或支付路径另起第二份口径，所以留在 {@link OrderService}（金额计算族 = P2-1c 的边界）。
- * 本服务通过门面传入的 {@code OrderService} 实例复用它们（同一份实现，不复制算法、不加第二份判据）。</p>
+ * 搬走会迫使改单或支付路径另起第二份口径。第九批把这族整体搬到 {@link OrderSharedParts}，
+ * 本服务的第三参随之从<b>门面实例</b>换成<b>共享部件实例</b>：依赖面不再含门面，
+ * 「复用同一份实现」不变，门面也不再随调用链传播。</p>
  *
- * <p>为什么用<b>参数</b>而不是字段注入：{@link OrderService} 依赖本服务（门面委托）、本服务又要用它的
- * 共享部件 ⇒ 字段注入会形成 Spring 构造期环（Boot 3 默认禁止循环引用）。参数形态让依赖<b>单向</b>
- * （门面 → 本服务），且传进来的是 OrderService 的<b>目标实例</b>（不是 AOP 代理），
- * 包内可见的共享部件可直接调用（不必为拆分把它们放宽到 public）。</p>
+ * <p>为什么仍用<b>参数</b>而不是字段注入：本服务由控制器按请求传入共享部件实例，依赖保持<b>单向</b>
+ * （控制器 → 共享部件），也不让本类与组件持有者互相构造依赖。传进来的是共享部件的<b>目标实例</b>
+ * （不是 AOP 代理），包内可见的共享部件可直接调用（不必为拆分把它们放宽到 public）。</p>
  *
- * <p><b>有意不搬</b>（P2-1b 的边界）：状态流转（cancel / 发货 / refund）、查询族（P2-1a 已在
- * {@link OrderQueryService}）、金额计算与明细装配族（P2-1c）、库存 SKU 匹配族
- * （{@code matchSkuId} 与确认支付 / 取消回补共用）与整卷分配
- * （{@code applyRollAllocation}，明细落库共用）—— 它们仍在 {@link OrderService}。</p>
+ * <p><b>不进本类的（边界）</b>：状态流转（cancel / 发货 / refund）在 {@link OrderLifecycleService}、
+ * 查询族在 {@link OrderQueryService}、库存 SKU 匹配族在 {@link OrderStockService}、
+ * 明细装配与整卷分配在 {@link OrderSharedParts}。</p>
  */
 @Slf4j
 @Service
@@ -103,11 +102,12 @@ public class OrderCreationService {
      *
      * @param request      创建请求
      * @param tenantId     租户ID
-     * @param orderService 门面实例（本类复用它的共享部件：明细装配 / 取价 / 库存前置；见类注释）
+     * @param orderSharedParts 共享部件实例（明细装配 / 取价 / 总额 / 库存前置 / 单号 / 定价留痕的唯一实现点；
+     *                         见 {@link OrderSharedParts}）
      * @return 订单详情响应
      */
     @Transactional(rollbackFor = Exception.class)
-    public OrderDetailResponse createOrder(OrderCreateRequest request, Long tenantId, OrderService orderService) {
+    public OrderDetailResponse createOrder(OrderCreateRequest request, Long tenantId, OrderSharedParts orderSharedParts) {
         // ── 资金/库存完整性闸门（issue #3622 / #3682）：数量 ≥ 1，单价 > 0 ──
         // issue #3666：数量已放宽为 BigDecimal（DECIMAL(10,2)），per_area 的合法数量就是小数
         // （门幅 2.8m × 3m = 8.4 ㎡）——但不能因此放行 <1。
@@ -126,13 +126,13 @@ public class OrderCreationService {
         // 不判的后果：负数量 → `unitPrice × 负数` 算出**负金额**落库；库存前置校验
         // （下方 validateStockSufficientForRequest）判据「需求量 ≤ 库存」对**负需求恒真**
         // → **超卖防线被绕过**；0 < 数量 < 1 → 库存/销量零扣减（本条 issue #3682）。
-        orderService.assertItemAmountsValid(request.getItems());
+        orderSharedParts.assertItemAmountsValid(request.getItems());
 
         // 安装信息（issue #7856）：归一 + 准入**在任何写之前**（超长 ⇒ 422，一行都不落 —— 与上面
         // 资金闸门同一条纪律；否则会先 insert 订单再抛，靠事务回滚兜，多一次白写）。
         // 两者都**可选**（用户 2026-10-26：「C 端/客服收单允许先空、后台再补」）⇒ 空白 = 不落键。
         String installCommunity = OrderInstallInfo.normalizeCommunity(request.getInstallCommunity());
-        orderService.normalizeInstallRooms(request.getItems());
+        orderSharedParts.normalizeInstallRooms(request.getItems());
 
         // ── 服务端定价（issue #7375 段 2）──
         // 口径见 OrderPricingService：只有**价格本命中**（协议/等级/阶梯）才覆盖客户端价 ——
@@ -147,12 +147,12 @@ public class OrderCreationService {
         // **未命中 ⇒ 0 + fee_source=unpriced + 可行动提示，绝不回落 Σ 加工项、绝不套默认价**
         // （#4308「静默回落」同族纪律：静默 = 算错钱且无人知道）。
         // 逐行结果按**下标**与 request.items 对齐（此刻明细行还没 id）。
-        List<ProcessingFeeCalculator.Fee> itemFees = orderService.priceItems(request.getItems(), tenantId);
+        List<ProcessingFeeCalculator.Fee> itemFees = orderSharedParts.priceItems(request.getItems(), tenantId);
         // 金额精度准入（issue #6228）：总额 = Σ(单价×数量) + Σ 行加工费，是**计算值**（"积"）——
         // 单价与数量各自合法不代表积合法（`2.8 × 1.005` 出 3 位小数）⇒ 必须在写之前落一次准入。
         // 判在这里、且在下方任何写（syncProcessingFeeCombinations / insert）之前。
         BigDecimal totalAmount = MoneyScale.requireTwoDecimalsOrNull(
-                orderService.computeItemsTotal(request.getItems(), itemFees), "订单总额");
+                orderSharedParts.computeItemsTotal(request.getItems(), itemFees), "订单总额");
 
         // ── 授信额度闸门（issue #7370，P0-2 段 1）──
         // 口径见 CreditPolicy：NULL = 未启用（存量客户零回归）；0 = 零额度（拒一切赊销）。
@@ -167,7 +167,7 @@ public class OrderCreationService {
         // 按 `compositionKey` **同源口径**（取价结果原样带来的 key/items，不另拼一套）upsert
         // 组合价 + 追加版本台账。幂等三态见 ProcessingFeeCombinationCommandService#upsertFromOrderOverride。
         // 🔴 无 manual 行 ⇒ **零调用**（正常建单路径不多一次写库、不改任何既有金额）。
-        orderService.syncProcessingFeeCombinations(itemFees, tenantId);
+        orderSharedParts.syncProcessingFeeCombinations(itemFees, tenantId);
 
         // 优惠金额（默认 0）；若提供了实收款，校验 应收 - 优惠 ≈ 实收（容差 0.01）
         // 金额精度准入（issue #6228）：`orders.discount_amount` / `orders.actual_amount` 均 NUMERIC(10,2)，
@@ -192,12 +192,12 @@ public class OrderCreationService {
         // 前置库存校验：库存不足拒绝创建订单（提示前移至下单时，issue #2922）。
         // 与确认支付共用同一套 SKU 匹配/库存口径（validateStockSufficient），
         // 无 SKU 匹配的明细不校验（与扣减语义一致）。
-        orderService.validateStockSufficientForRequest(request, "下单");
+        orderSharedParts.validateStockSufficientForRequest(request, "下单");
 
         // 创建订单实体
         Order order = new Order();
         order.setTenantId(tenantId);
-        order.setOrderNo(orderService.generateOrderNo());
+        order.setOrderNo(orderSharedParts.generateOrderNo());
         order.setCustomerName(request.getCustomerName());
         order.setCustomerPhone(request.getCustomerPhone());
         order.setCustomerAddress(request.getCustomerAddress());
@@ -257,7 +257,7 @@ public class OrderCreationService {
         // 安装小区（issue #7856）：**唯一写点扇出**在 persistOrderItems 里（逐行写进
         // `processing_info.installCommunity`）—— 订单级语义、行数组载体 ⇒ 落每行同一字符串。
         // 归一 + 准入（去空白 / 折叠内部换行 / ≤40 字，超长 422）在这里做一次，落库前就拒。
-        orderService.persistOrderItems(order, request.getItems(), itemFees, tenantId, linePricings, installCommunity);
+        orderSharedParts.persistOrderItems(order, request.getItems(), itemFees, tenantId, linePricings, installCommunity);
 
         // 审批留痕回填（issue #7374 段 1）：超授信是被审批放行的，把那笔审批的「用在哪」补成这张订单
         // （闸门跑在下单之前，那时还没有 order id —— 所以是事后回填，不是闸门内直接写）
@@ -267,7 +267,7 @@ public class OrderCreationService {
 
         // 定价改写留痕（issue #7375 段 2，判据「不一致 ⇒ 服务端为准且记录差异」）：
         // 只在**真的改写了**某行时写一条审计（没有改写 = 没有差异 = 不制造噪音）。
-        orderService.recordPriceOverrideAudit(order, linePricings);
+        orderSharedParts.recordPriceOverrideAudit(order, linePricings);
 
         log.info("创建订单成功: id={}, orderNo={}, totalAmount={}", order.getId(), order.getOrderNo(), totalAmount);
 
@@ -318,7 +318,7 @@ public class OrderCreationService {
      * 代价是同键并发第二个请求的响应时间被拉长。</p>
      */
     @Transactional(rollbackFor = Exception.class)
-    public OrderDetailResponse createOrderForAgent(AgentOrderCreateRequest request, Long tenantId, OrderService orderService) {
+    public OrderDetailResponse createOrderForAgent(AgentOrderCreateRequest request, Long tenantId, OrderSharedParts orderSharedParts) {
 
         if (!StringUtils.hasText(request.getCustomerName())) {
             throw BusinessException.validationError("客户姓名不能为空");
@@ -358,7 +358,7 @@ public class OrderCreationService {
         String clientRequestId = request.getClientRequestId();
         // 无幂等键（老 ai-agent / 表单类调用方）⇒ 原路径逐字不变：零 DB 往返、不因服务端升级而报错
         if (!StringUtils.hasText(clientRequestId)) {
-            return createOrder(request, tenantId, orderService);
+            return createOrder(request, tenantId, orderSharedParts);
         }
         // ① 原子占位（INSERT ... ON CONFLICT DO NOTHING，按影响行数判首次）——
         //    不用「捕获唯一约束异常」探测冲突：PG 里冲突会让当前事务进入 aborted 状态，后续查询全失败
@@ -372,7 +372,7 @@ public class OrderCreationService {
         }
         OrderDetailResponse created;
         try {
-            created = createOrder(request, tenantId, orderService);
+            created = createOrder(request, tenantId, orderSharedParts);
         } catch (RuntimeException e) {
             // ④ 执行失败 ⇒ 释放占位：否则一次失败就把该键永久占死，之后的重试全被误判为「重复」
             clientRequestIdService.discard(tenantId, clientRequestId);

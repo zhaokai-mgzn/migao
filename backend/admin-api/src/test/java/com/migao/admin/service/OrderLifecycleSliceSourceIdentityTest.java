@@ -79,9 +79,9 @@ class OrderLifecycleSliceSourceIdentityTest {
 
     static {
         QUALIFICATIONS.put("void cancelOrder(", Map.of(
-                "batchStock().reverse(", "orderService.batchStock().reverse("));
+                "batchStock().reverse(", "orderSharedParts.batchStock().reverse("));
         QUALIFICATIONS.put("void updateOrderStatus(", Map.of(
-                "cancelOrder(id, null);", "cancelOrder(id, null, orderService);"));
+                "cancelOrder(id, null);", "cancelOrder(id, null, orderSharedParts);"));
         QUALIFICATIONS.put("shipWithLogistics(String orderId, String trackingNo, String logisticsCompany,",
                 Map.of("new OrderShipmentOutcome(result, transitioned);",
                         "new OrderService.OrderShipmentOutcome(result, transitioned);"));
@@ -204,7 +204,7 @@ class OrderLifecycleSliceSourceIdentityTest {
         //   按方法签名定位的注入会**静默失配**（replace 不命中）⇒ 把「注入没生效」误读成「判据没牙」。
         //   类声明不会随某个入口退休而消失，且注入后门面里确实多出一份实现 ⇒ 断言仍具判别力。
         String bodyInCarrier = methodBody(carrier, decl);
-        String baselineForm = bodyInCarrier.replace("orderService.batchStock().reverse(", "batchStock().reverse(");
+        String baselineForm = bodyInCarrier.replace("orderSharedParts.batchStock().reverse(", "batchStock().reverse(");
         String launderedFacade = facade.replace("public class OrderService extends ServiceImpl<OrderMapper, Order> {",
                 "public class OrderService extends ServiceImpl<OrderMapper, Order> {\n" + baselineForm);
         assertThat(launderedFacade).as("注入必须真的生效").isNotEqualTo(facade);
@@ -214,7 +214,7 @@ class OrderLifecycleSliceSourceIdentityTest {
                 .isFalse();
 
         // ③ 撤掉具名限定（把新载体改回基线的原形态）
-        String unqualified = carrier.replace("orderService.batchStock().reverse(", "batchStock().reverse(");
+        String unqualified = carrier.replace("orderSharedParts.batchStock().reverse(", "batchStock().reverse(");
         assertThat(unqualified).as("注入必须真的生效").isNotEqualTo(carrier);
         assertThat(bodyMatches(baseline, facade, unqualified, decl))
                 .as("具名限定被撤掉 ⇒ 方法体与基线不再「只差白名单里的那一处」⇒ 必须判假")
@@ -287,7 +287,7 @@ class OrderLifecycleSliceSourceIdentityTest {
                     depth--;
                     if (depth == 0) {
                         // **只比方法体**（大括号起止）：两条门面入口的签名必然多一个门面实参
-                        // （`cancelOrder(id, reason, orderService)` / `updateOrderStatus(..., orderService)`），
+                        // （`cancelOrder(id, reason, orderService.sharedParts())` / `updateOrderStatus(..., orderService.sharedParts())`），
                         // 那是**具名**的签名变化（公开签名由接线判据另行钉住），不是实现被改写。
                         return src.substring(open, i + 1);
                     }

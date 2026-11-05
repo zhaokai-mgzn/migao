@@ -45,7 +45,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       **必须全部落在** {@code OrderService.applyRollAllocation} 方法体内 ——
  *       在同类里另起一个写分配的方法 ⇒ 红。</li>
  *   <li><b>回落点唯一</b>（issue #5846，用户 2026-10-01 取消成对契约后的新语义）：
- *       {@code ProductRollAllocation.resolve(} 的调用点只有 {@code OrderService.java} 一处 ——
+ *       {@code ProductRollAllocation.resolve(} 的调用点只有 {@code OrderSharedParts.java} 一处 ——
  *       「显式 ?? 商品」的回落**只有这一处**，另起一个回落实现 ⇒ 红。</li>
  *   <li><b>派生入口不许被绕过</b>：{@code ProductRollAllocation.allocate(} <b>不得</b>被本类之外的
  *       主源码直接调用（外部一律走 {@code resolve}）—— 绕过回落点自己派生 ⇒ 红。</li>
@@ -83,12 +83,12 @@ class OrderRollAllocationAuthorityTest {
     private static final Path MAIN_SRC = Paths.get("src", "main", "java", "com", "migao", "admin");
 
     /** 订单行整卷分配的**唯一**权威实现（文件 + 方法名）。 */
-    private static final String ORDER_AUTHORITY_FILE = "OrderService.java";
+    private static final String ORDER_AUTHORITY_FILE = "OrderSharedParts.java";
     private static final String ORDER_AUTHORITY_METHOD = "applyRollAllocation";
 
     /** 给 `rollCount` / `rollLengthM` 赋值的**允许集合**（未登记即红 / 登记了扫不到也红）。 */
     private static final Map<String, String> REGISTERED_WRITERS = new LinkedHashMap<>() {{
-        put("OrderService.java", "order_items.roll_count / roll_length_m —— 订单行分配（本包唯一权威）");
+        put("OrderSharedParts.java", "order_items.roll_count / roll_length_m —— 订单行分配（本包唯一权威）");
         put("WorkerInboundService.java", "inbound_order_items.roll_length_m —— 工人面请求原样落行（issue #6812 起该来源=photo，卷长是**每卷米数**、参与米数换算）");
         put("InboundOrderService.java", "inbound_order_items.roll_count / roll_length_m —— 按卷录入的准入（requireRollCount / requireRollLength）+ 入库米数换算（metersOfRolls，issue #6812 / #7709）");
         put("ProductService.java", "products.roll_length_m —— 商品货号级卷长配置（默认值的来源）");

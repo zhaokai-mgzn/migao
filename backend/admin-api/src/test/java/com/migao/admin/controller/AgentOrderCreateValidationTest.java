@@ -7,7 +7,7 @@ import com.migao.admin.dto.OrderDetailResponse;
 import com.migao.admin.mapper.UserMapper;
 import com.migao.admin.service.OrderAgentFacade;
 import com.migao.admin.service.OrderCreationService;
-import com.migao.admin.service.OrderService;
+import com.migao.admin.service.OrderSharedParts;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -44,7 +44,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  *
  * <p><b>「注解真的执行」怎么验</b>：断言 HTTP **422** + `error.code=VALIDATION_ERROR` +
  * `error.details[i].message` 是**注解上的 message 原文**（"数量不能小于 1" / "单价必须大于 0"）
- * + `orderService` **完全没被调用**。这三条只有 Bean Validation 在控制器层真的跑了才会同时成立
+ * + `orderSharedParts` **完全没被调用**。这三条只有 Bean Validation 在控制器层真的跑了才会同时成立
  * —— 只要有人去掉 `@Valid` 或注解，报文立刻退化成 200 且 service 被调用，本测试变红。</p>
  *
  * <p>数量下限从「&gt; 0」收紧为「≥ 1」（issue #3682）：0.5 会被服务端按整数件算成 0 件
@@ -64,7 +64,7 @@ class AgentOrderCreateValidationTest extends BaseControllerTest {
     private MockMvc mockMvc;
 
     /** 建单 / 改单共用的共享部件实现点（issue #8681，P2-1e 第八批）：只作为实现点入口的第三参出现 */
-    @Mock private OrderService orderService;
+    @Mock private OrderSharedParts orderSharedParts;
     /** 建单实现点（issue #8681，P2-1e 第八批）：门面转发已退休，控制器直连它 */
     @Mock private OrderCreationService orderCreationService;
     /** 改单实现点（issue #8681，P2-1e 第八批） */
@@ -115,7 +115,7 @@ class AgentOrderCreateValidationTest extends BaseControllerTest {
                     .andExpect(jsonPath("$.error.details[0].field").value("items[0].quantity"))
                     .andExpect(jsonPath("$.error.details[0].message").value("数量不能小于 1"));
 
-            verifyNoInteractions(orderCreationService, orderAgentFacade, orderService);
+            verifyNoInteractions(orderCreationService, orderAgentFacade, orderSharedParts);
         }
 
         @Test
@@ -126,7 +126,7 @@ class AgentOrderCreateValidationTest extends BaseControllerTest {
                     .andExpect(status().isUnprocessableEntity())
                     .andExpect(jsonPath("$.error.details[0].message").value("数量不能小于 1"));
 
-            verifyNoInteractions(orderCreationService, orderAgentFacade, orderService);
+            verifyNoInteractions(orderCreationService, orderAgentFacade, orderSharedParts);
         }
 
         @Test
@@ -139,7 +139,7 @@ class AgentOrderCreateValidationTest extends BaseControllerTest {
                     .andExpect(jsonPath("$.error.details[0].field").value("items[0].quantity"))
                     .andExpect(jsonPath("$.error.details[0].message").value("数量不能小于 1"));
 
-            verifyNoInteractions(orderCreationService, orderAgentFacade, orderService);
+            verifyNoInteractions(orderCreationService, orderAgentFacade, orderSharedParts);
         }
 
         @Test
@@ -150,7 +150,7 @@ class AgentOrderCreateValidationTest extends BaseControllerTest {
                     .andExpect(status().isUnprocessableEntity())
                     .andExpect(jsonPath("$.error.details[0].message").value("数量不能为空"));
 
-            verifyNoInteractions(orderCreationService, orderAgentFacade, orderService);
+            verifyNoInteractions(orderCreationService, orderAgentFacade, orderSharedParts);
         }
     }
 
@@ -168,7 +168,7 @@ class AgentOrderCreateValidationTest extends BaseControllerTest {
                     .andExpect(jsonPath("$.error.details[0].field").value("items[0].unitPrice"))
                     .andExpect(jsonPath("$.error.details[0].message").value("单价必须大于 0"));
 
-            verifyNoInteractions(orderCreationService, orderAgentFacade, orderService);
+            verifyNoInteractions(orderCreationService, orderAgentFacade, orderSharedParts);
         }
 
         @Test
@@ -179,7 +179,7 @@ class AgentOrderCreateValidationTest extends BaseControllerTest {
                     .andExpect(status().isUnprocessableEntity())
                     .andExpect(jsonPath("$.error.details[0].message").value("单价必须大于 0"));
 
-            verifyNoInteractions(orderCreationService, orderAgentFacade, orderService);
+            verifyNoInteractions(orderCreationService, orderAgentFacade, orderSharedParts);
         }
 
         @Test
@@ -190,7 +190,7 @@ class AgentOrderCreateValidationTest extends BaseControllerTest {
                     .andExpect(status().isUnprocessableEntity())
                     .andExpect(jsonPath("$.error.details[0].message").value("单价不能为空"));
 
-            verifyNoInteractions(orderCreationService, orderAgentFacade, orderService);
+            verifyNoInteractions(orderCreationService, orderAgentFacade, orderSharedParts);
         }
     }
 
@@ -219,7 +219,7 @@ class AgentOrderCreateValidationTest extends BaseControllerTest {
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.success").value(true));
 
-            verify(orderCreationService, times(1)).createOrderForAgent(any(), eq(TEST_TENANT_ID), eq(orderService));
+            verify(orderCreationService, times(1)).createOrderForAgent(any(), eq(TEST_TENANT_ID), eq(orderSharedParts));
         }
 
         @Test
@@ -232,7 +232,7 @@ class AgentOrderCreateValidationTest extends BaseControllerTest {
                             .content(createBody("1", "168")))
                     .andExpect(status().isOk());
 
-            verify(orderCreationService, times(1)).createOrderForAgent(any(), eq(TEST_TENANT_ID), eq(orderService));
+            verify(orderCreationService, times(1)).createOrderForAgent(any(), eq(TEST_TENANT_ID), eq(orderSharedParts));
         }
 
         @Test
@@ -245,7 +245,7 @@ class AgentOrderCreateValidationTest extends BaseControllerTest {
                             .content(createBody("8.4", "168")))
                     .andExpect(status().isOk());
 
-            verify(orderCreationService, times(1)).createOrderForAgent(any(), eq(TEST_TENANT_ID), eq(orderService));
+            verify(orderCreationService, times(1)).createOrderForAgent(any(), eq(TEST_TENANT_ID), eq(orderSharedParts));
         }
 
         @Test
@@ -254,7 +254,7 @@ class AgentOrderCreateValidationTest extends BaseControllerTest {
             mockMvc.perform(post(CREATE).contentType(MediaType.APPLICATION_JSON)
                             .content(createBody("-3", "168")))
                     .andExpect(status().isUnprocessableEntity());
-            verifyNoInteractions(orderCreationService, orderAgentFacade, orderService);
+            verifyNoInteractions(orderCreationService, orderAgentFacade, orderSharedParts);
 
             when(orderCreationService.createOrderForAgent(any(), anyLong(), any()))
                     .thenReturn(stubOrder("o-3"));
@@ -263,7 +263,7 @@ class AgentOrderCreateValidationTest extends BaseControllerTest {
                             .content(createBody("3", "168")))
                     .andExpect(status().isOk());
 
-            verify(orderCreationService, times(1)).createOrderForAgent(any(), eq(TEST_TENANT_ID), eq(orderService));
+            verify(orderCreationService, times(1)).createOrderForAgent(any(), eq(TEST_TENANT_ID), eq(orderSharedParts));
         }
     }
 }

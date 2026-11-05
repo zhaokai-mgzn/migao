@@ -23,9 +23,8 @@ import org.springframework.util.StringUtils;
  *   <li><b>方法体逐字节搬运</b>，只有三处<b>具名</b>跨类限定：① 解析口径单点在
  *       {@link OrderQueryService#resolveOrderIdToUuid}（本类直连，不再经门面的私有死委托）；
  *       ② 生命周期族直连 {@link OrderLifecycleService}（六个 action 目标）；③ 生命周期入口的
- *       <b>第三参</b>仍是<b>门面实例</b>（建单 / 改单共用的明细装配、取价、库存前置与
- *       {@code batchStock()} 的唯一实现点留 {@code OrderService}，与第五批
- *       {@code createOrder(request, tenantId, orderService)} 同一条既有口径，不重搭第二份）。</li>
+ *       <b>第三参</b>是 {@link OrderSharedParts} 实例（issue #8681 第九批起：建单 / 改单共用的
+ *       明细装配、取价、库存前置与 {@code batchStock()} 的唯一归属；门面实例不再进入这条调用链）。</li>
  *   <li><b>事务注解逐字跟随</b>：{@code @Transactional(rollbackFor = Exception.class)} 原样随方法搬入 ——
  *       注解只对「经代理的调用」生效，调用方 {@code AgentOrderController} 依赖的正是本 bean 的代理，
  *       事务边界与搬家前同一个（不是「加了嵌套传播」）。</li>
@@ -35,9 +34,8 @@ import org.springframework.util.StringUtils;
  *
  * <p><b>不搬（有意）</b>：{@code createOrderForAgent} 的实现体本就在
  * {@link OrderCreationService#createOrderForAgent}（本批只退休门面的同名转发，调用方直连实现点，
- * 与第五批 {@code createOrder} 同一条口径）；{@code applyRollAllocation} /
- * {@code batchStock()} 访问器一字未动（前者被 {@code OrderRollAllocationAuthorityTest} 钉在门面，
- * 后者取消路径在用）。</p>
+ * 与第五批 {@code createOrder} 同一条口径）；共享部件（含整卷分配与 {@code batchStock()} 访问器）
+ * 第九批已整体落在 {@link OrderSharedParts}，本类只把它**转手**当第三参，不复制任何口径。</p>
  *
  * <p><b>看管</b>：本类的入口不许被改回门面、{@code src/test} 全树也不许再经门面驱动它 ——
  * 判据 = {@code OrderFacadeForwarderRetirementTest}。复算：
@@ -52,7 +50,7 @@ public class OrderAgentFacade {
      * 共享部件的<b>唯一实现点</b>（明细装配 / 取价 / 总额 / 库存前置 / 批次台账访问器）：
      * 本类只把它当成生命周期入口的第三参转手，绝不复制口径（见类注释第 ③ 条）。
      */
-    private final OrderService orderService;
+    private final OrderSharedParts orderSharedParts;
     /** 生命周期族唯一实现点（六个 action 的落地处）。 */
     private final OrderLifecycleService orderLifecycleService;
     /** 查询 / 单号解析的唯一实现点（{@code resolveOrderIdToUuid} + 每次 action 后的回读）。 */
@@ -82,7 +80,7 @@ public class OrderAgentFacade {
                 if (!StringUtils.hasText(request.getStatus())) {
                     throw BusinessException.validationError("status 不能为空");
                 }
-                orderLifecycleService.updateOrderStatus(resolvedId, request.getStatus(), orderService);
+                orderLifecycleService.updateOrderStatus(resolvedId, request.getStatus(), orderSharedParts);
                 yield orderQueryService.getOrderById(resolvedId);
             }
             case "confirm_payment" -> {
@@ -90,7 +88,7 @@ public class OrderAgentFacade {
                 yield orderQueryService.getOrderById(resolvedId);
             }
             case "cancel" -> {
-                orderLifecycleService.cancelOrder(resolvedId, request.getCancelReason(), orderService);
+                orderLifecycleService.cancelOrder(resolvedId, request.getCancelReason(), orderSharedParts);
                 yield orderQueryService.getOrderById(resolvedId);
             }
             case "refund" -> {

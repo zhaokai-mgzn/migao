@@ -47,12 +47,12 @@ import java.util.stream.Collectors;
  * <h3>搬运口径（行为 diff = 0）</h3>
  * <ul>
  *   <li><b>方法体逐字节搬运</b>：六个方法（删单 / 备注 / 手机号回填 / 跟进状态 / 加急 / 内容编辑）的方法体
- *       原样搬入，唯一改动是<b>内容编辑</b>里 7 处共享部件改经传入的门面实参调用
+ *       原样搬入，唯一改动是<b>内容编辑</b>里 7 处共享部件改经传入的共享部件实参调用
  *       （{@code assertItemAmountsValid} / {@code priceItems} / {@code computeItemsTotal} /
  *       {@code syncProcessingFeeCombinations} / {@code validateStockSufficientForItems} /
- *       {@code normalizeInstallRooms} / {@code persistOrderItems}）与 1 处回读
- *       （{@code orderService.queryService().getOrderById}）—— 这些是<b>建单与改单共用</b>的唯一实现点，
- *       仍留 {@link OrderService}（不重搭第二份口径）。</li>
+ *       {@code normalizeInstallRooms} / {@code persistOrderItems}）—— 这些是<b>建单与改单共用</b>的唯一实现点，
+ *       第九批起住在 {@link OrderSharedParts}（不重搭第二份口径）；回读改直连
+ *       {@link OrderQueryService}（构造注入，与第四批建单回读同一条范式）。</li>
  *   <li><b>事务注解逐字跟着方法走</b>：{@code updatePendingOrderContent} / {@code deleteOrder} /
  *       {@code updateFollowStatus} / {@code updateUrgency} / {@code addRemark} 的
  *       {@code @Transactional(rollbackFor = Exception.class)} 原样搬入；
@@ -79,6 +79,14 @@ public class OrderEntityWriteService {
     private final AuditLogService auditLogService;
     /** 业务时钟：备注时间戳的唯一时间源（不取系统时钟，单测可注入）。 */
     private final BusinessClock businessClock;
+    /**
+     * 订单查询族（issue #8681，P2-1e 第九批）：内容编辑后的**回读**直连唯一实现点。
+     *
+     * <p>此前写的是 {@code orderSharedParts.queryService().getOrderById(...)} —— 那是「借门面拿查询」的
+     * 最后一条残留；第三参换成共享部件之后共享部件**不含查询**（查询不属写面共享部件），
+     * ⇒ 按第四批 {@link OrderCreationService} 的既有范式改成构造注入，单向依赖、无环。</p>
+     */
+    private final OrderQueryService orderQueryService;
 
     /**
      * 池化事件通知点（issue #5182 挂载点 ③-a）：{@code updateUrgency} 完成之后的一句 fail-soft 通知。
@@ -160,7 +168,7 @@ public class OrderEntityWriteService {
      */
     @Transactional(rollbackFor = Exception.class)
     public OrderDetailResponse updatePendingOrderContent(String id, OrderContentUpdateRequest request,
-                                                        OrderService orderService) {
+                                                        OrderSharedParts orderSharedParts) {
         Order order = orderMapper.selectById(id);
         if (order == null) {
             throw BusinessException.notFound("订单");
@@ -178,11 +186,11 @@ public class OrderEntityWriteService {
 
         // ③ 新明细：服务端闸门 → 加工费取价 → 总额重算（**不信客户端任何金额**）
         List<OrderCreateRequest.OrderItemRequest> items = toCreateItems(request.getItems());
-        orderService.assertItemAmountsValid(items);
-        List<ProcessingFeeCalculator.Fee> itemFees = orderService.priceItems(items, tenantId);
+        orderSharedParts.assertItemAmountsValid(items);
+        List<ProcessingFeeCalculator.Fee> itemFees = orderSharedParts.priceItems(items, tenantId);
         // 金额精度准入（issue #6228）：总额是计算值（"积"），合法单价×合法数量仍可出 3 位小数。
-        BigDecimal totalAmount = MoneyScale.requireTwoDecimalsOrNull(orderService.computeItemsTotal(items, itemFees), "订单总额");
-        orderService.syncProcessingFeeCombinations(itemFees, tenantId);
+        BigDecimal totalAmount = MoneyScale.requireTwoDecimalsOrNull(orderSharedParts.computeItemsTotal(items, itemFees), "订单总额");
+        orderSharedParts.syncProcessingFeeCombinations(itemFees, tenantId);
 
         // ④ 优惠 / 实收：未传 ⇒ **沿用原值**（不清零、不猜）；随后照建单同口径校验
         // 金额精度准入（issue #6228）：只有**请求带来的**值需要准入 —— 沿用值来自库列 NUMERIC(10,2) 回读。
@@ -208,7 +216,7 @@ public class OrderEntityWriteService {
 
         // ⑤ 前置库存校验**按新明细重跑**（与建单/确认支付共用 validateStockSufficientForItems）。
         //    `pending` 未扣库存 ⇒ 无需回滚，但"改完还买得起"必须现在成立。
-        orderService.validateStockSufficientForItems(draftItems(items), "修改订单");
+        orderSharedParts.validateStockSufficientForItems(draftItems(items), "修改订单");
 
         // ⑥ 审计留痕：改动前快照（下一行起 order 对象就被就地改写了）
         //   明细取一次复用：「安装小区」的「未传 = 沿用原值」要靠改动前的行（见下方 ⑧）。
@@ -216,7 +224,7 @@ public class OrderEntityWriteService {
         Map<String, Object> before = contentSnapshot(order, existingItems);
         // 安装信息（issue #7856）：归一 + 准入同样**在任何写之前**（⑦ 的订单更新 / ⑧ 的明细替换都不落半成品）
         String installCommunity = resolveUpdatedInstallCommunity(request.getInstallCommunity(), existingItems);
-        orderService.normalizeInstallRooms(items);
+        orderSharedParts.normalizeInstallRooms(items);
 
         // ⑦ 落库：收货信息 + 三金额
         orderMapper.update(null, new LambdaUpdateWrapper<Order>()
@@ -234,13 +242,13 @@ public class OrderEntityWriteService {
         // 安装小区（issue #7856）：**未传 ⇒ 沿用原值**（改动前明细第一条非空），传空串 ⇒ 清空；
         // 与 discountAmount / actualAmount 的「未传 = 不改、不猜、不清零」同一口径
         // （明细被**整体替换** ⇒ 不沿用就会在「只想改收货地址」时静默抹掉安装小区）。
-        orderService.persistOrderItems(order, items, itemFees, tenantId, null, installCommunity);
+        orderSharedParts.persistOrderItems(order, items, itemFees, tenantId, null, installCommunity);
 
         recordContentEditAudit(order, before,
                 contentSnapshot(orderMapper.selectById(order.getId()), loadOrderItems(order.getId(), tenantId)));
         log.info("订单内容已修改: id={}, orderNo={}, totalAmount={}, 明细 {} 行",
                 order.getId(), order.getOrderNo(), totalAmount, items.size());
-        return orderService.queryService().getOrderById(order.getId());
+        return orderQueryService.getOrderById(order.getId());
     }
 
     /**
