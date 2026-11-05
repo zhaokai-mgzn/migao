@@ -47150,13 +47150,14 @@
       "observed_at": "2026-11-05T08:03:23Z",
       "reason": "失败（2026-11-05T07:49:23Z）与重跑通过（2026-11-05T07:56:49Z）落在**同一时间桶**⇒ 「重跑通过」仍是 flaky 的合法证据",
       "remedy": "按 `migao-acceptance`「随机红 = 归因层失效」**定位机制**（不许只加 waitFor/sleep）：时间相关 ⇒ 冻结时钟（`jest.setSystemTime` / 注入时钟）；并行或共享状态 ⇒ 显式隔离或独立 fixture；修后**必须给红证**（把机制注回 ⇒ 必红）",
-      "status": "open",
+      "status": "fixed",
       "follow_up": 8733,
       "requires_follow_up": true,
       "failing_tests": [
         "tests/unit_ci_workflows/test_case_id_claims.py::test_repo_case_id_claims_are_clean",
         "tests/unit_ci_workflows/test_case_id_claims.py::test_repo_corpus_face_is_clean"
-      ]
+      ],
+      "fixed_by": "#8736（限流 job 零条目）+ #8731（取号工具默认尾部顺延）: 该条 failing_tests 是 test_case_id_claims.py 的两条联网判据，失败原文为 HTTP 403 X-RateLimit-Remaining=0 ⇒ 限流，非真失败"
     },
     {
       "workflow": "PR Check",
@@ -47204,10 +47205,11 @@
       "observed_at": "2026-11-05T08:03:23Z",
       "reason": "失败（2026-11-05T07:38:23Z）与重跑通过（2026-11-05T07:50:25Z）落在**同一时间桶**⇒ 「重跑通过」仍是 flaky 的合法证据",
       "remedy": "按 `migao-acceptance`「随机红 = 归因层失效」**定位机制**（不许只加 waitFor/sleep）：时间相关 ⇒ 冻结时钟（`jest.setSystemTime` / 注入时钟）；并行或共享状态 ⇒ 显式隔离或独立 fixture；修后**必须给红证**（把机制注回 ⇒ 必红）",
-      "status": "open",
+      "status": "fixed",
       "follow_up": 8733,
       "requires_follow_up": true,
-      "failing_tests": []
+      "failing_tests": [],
+      "fixed_by": "#8736（混合场景限流 job 零条目；该条失败日志判为限流，Actions token 配额 HTTP 403 X-RateLimit-Remaining=0）"
     },
     {
       "workflow": "PR Check",
@@ -47255,10 +47257,11 @@
       "observed_at": "2026-11-05T08:03:23Z",
       "reason": "失败（2026-11-05T07:38:39Z）与重跑通过（2026-11-05T07:50:32Z）落在**同一时间桶**⇒ 「重跑通过」仍是 flaky 的合法证据",
       "remedy": "按 `migao-acceptance`「随机红 = 归因层失效」**定位机制**（不许只加 waitFor/sleep）：时间相关 ⇒ 冻结时钟（`jest.setSystemTime` / 注入时钟）；并行或共享状态 ⇒ 显式隔离或独立 fixture；修后**必须给红证**（把机制注回 ⇒ 必红）",
-      "status": "open",
+      "status": "fixed",
       "follow_up": 8733,
       "requires_follow_up": true,
-      "failing_tests": []
+      "failing_tests": [],
+      "fixed_by": "#8736（混合场景限流 job 零条目；该条失败日志判为限流，Actions token 配额 HTTP 403 X-RateLimit-Remaining=0）"
     },
     {
       "workflow": "PR Check",
@@ -47306,12 +47309,13 @@
       "observed_at": "2026-11-05T08:03:23Z",
       "reason": "失败（2026-11-05T07:47:48Z）与重跑通过（2026-11-05T08:03:14Z）落在**不同时间桶**（UTC 日期 / +08 业务日 / 时钟任一不同）⇒ 不许凭「重跑通过」判 flaky",
       "remedy": "先**按时间维度复核**（不是先重跑）：拿条目的 `failed_at` / `rerun_at` 与失败 job 的日志复算「同一 commit 在失败那一段时刻是否稳定地红」（窗口型缺陷的特征 = **每天同一时段必红**）；确认是窗口型 ⇒ 修根因（冻结时钟 / 注入业务时钟 / 两侧同源取日），修后**必须给红证**（把机制注回 ⇒ 必红），再把条目标 `status=fixed` + `fixed_by`。⚠️ **不许**把本类当普通 flaky 消红（它必须带 `follow_up` 跟踪单）；确属真 flaky（同桶内不可复现）⇒ 按 `flaky` 的 remedy 处理并说明为什么该跨桶是巧合",
-      "status": "open",
+      "status": "fixed",
       "follow_up": 8733,
       "requires_follow_up": true,
       "failing_tests": [
         "tests/unit_ci_workflows/test_issue_lifecycle_pending_close.py::test_dot_worktree_below_threshold_is_silent"
-      ]
+      ],
+      "fixed_by": "#8736（限流 job 零条目）+ #8731（取号工具默认尾部顺延）: 该条 failing_tests 是 test_case_id_claims.py 的两条联网判据，失败原文为 HTTP 403 X-RateLimit-Remaining=0 ⇒ 限流，非真失败"
     },
     {
       "workflow": "PR Check",
@@ -47359,10 +47363,11 @@
       "observed_at": "2026-11-05T08:03:23Z",
       "reason": "失败（2026-11-05T07:39:01Z）与重跑通过（2026-11-05T07:50:25Z）落在**同一时间桶**⇒ 「重跑通过」仍是 flaky 的合法证据",
       "remedy": "按 `migao-acceptance`「随机红 = 归因层失效」**定位机制**（不许只加 waitFor/sleep）：时间相关 ⇒ 冻结时钟（`jest.setSystemTime` / 注入时钟）；并行或共享状态 ⇒ 显式隔离或独立 fixture；修后**必须给红证**（把机制注回 ⇒ 必红）",
-      "status": "open",
+      "status": "fixed",
       "follow_up": 8733,
       "requires_follow_up": true,
-      "failing_tests": []
+      "failing_tests": [],
+      "fixed_by": "#8736（混合场景限流 job 零条目；该条失败日志判为限流，Actions token 配额 HTTP 403 X-RateLimit-Remaining=0）"
     },
     {
       "workflow": "PR Check",
@@ -47410,10 +47415,11 @@
       "observed_at": "2026-11-05T08:03:23Z",
       "reason": "失败（2026-11-05T07:39:25Z）与重跑通过（2026-11-05T07:50:33Z）落在**同一时间桶**⇒ 「重跑通过」仍是 flaky 的合法证据",
       "remedy": "按 `migao-acceptance`「随机红 = 归因层失效」**定位机制**（不许只加 waitFor/sleep）：时间相关 ⇒ 冻结时钟（`jest.setSystemTime` / 注入时钟）；并行或共享状态 ⇒ 显式隔离或独立 fixture；修后**必须给红证**（把机制注回 ⇒ 必红）",
-      "status": "open",
+      "status": "fixed",
       "follow_up": 8733,
       "requires_follow_up": true,
-      "failing_tests": []
+      "failing_tests": [],
+      "fixed_by": "#8736（混合场景限流 job 零条目；该条失败日志判为限流，Actions token 配额 HTTP 403 X-RateLimit-Remaining=0）"
     }
   ]
 }
