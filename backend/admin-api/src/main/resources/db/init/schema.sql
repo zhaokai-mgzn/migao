@@ -367,6 +367,36 @@ CREATE TABLE IF NOT EXISTS knowledge_candidates (
 CREATE INDEX IF NOT EXISTS idx_knowledge_candidates_tenant ON knowledge_candidates(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_knowledge_candidates_status ON knowledge_candidates(status);
 
+-- 口径卡（B 端可执行口径，issue #8175 一期；迁移 V210__create_playbooks.sql）
+-- 状态机 draft→active→retired；只有 active 进 prompt；trigger/counter 是结构化条件语言 JSON。
+CREATE TABLE IF NOT EXISTS playbooks (
+    id VARCHAR(64) PRIMARY KEY,
+    tenant_id BIGINT NOT NULL,
+    scope VARCHAR(16) NOT NULL DEFAULT 'tenant',
+    scope_role VARCHAR(64),
+    trigger_json TEXT NOT NULL,
+    correct_text TEXT NOT NULL,
+    counter_json TEXT,
+    source_session_id VARCHAR(128),
+    source_turn INTEGER,
+    hits INTEGER NOT NULL DEFAULT 0,
+    state VARCHAR(16) NOT NULL DEFAULT 'draft',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    activated_at TIMESTAMP WITH TIME ZONE,
+    retired_at TIMESTAMP WITH TIME ZONE,
+    reviewed_by VARCHAR(64),
+    CONSTRAINT ck_playbooks_state CHECK (state IN ('draft', 'active', 'retired')),
+    CONSTRAINT ck_playbooks_scope CHECK (scope IN ('tenant', 'role')),
+    CONSTRAINT ck_playbooks_scope_role CHECK (scope <> 'role' OR (scope_role IS NOT NULL AND scope_role <> '')),
+    CONSTRAINT ck_playbooks_trigger_not_blank CHECK (length(btrim(trigger_json)) > 0),
+    CONSTRAINT ck_playbooks_correct_not_blank CHECK (length(btrim(correct_text)) > 0)
+);
+
+CREATE INDEX IF NOT EXISTS idx_playbooks_tenant_state ON playbooks (tenant_id, state);
+CREATE INDEX IF NOT EXISTS idx_playbooks_tenant_scope ON playbooks (tenant_id, scope, scope_role);
+CREATE INDEX IF NOT EXISTS idx_playbooks_state_created ON playbooks (state, created_at DESC);
+
 -- ================================================
 -- 4. 租户配置相关表
 -- ================================================

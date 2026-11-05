@@ -5,6 +5,23 @@
 > 原因 = 单文件涨到 512KB 越过扫描上限，详见存档文件头与 issue #6404。
 > **后续条目继续在本文件 `## [Unreleased]
 
+### 黄金策开始认「本企业口径」：人工审核过的口径会进它的回复规则，未经审核与已退役的一条都不进（2026-11-05，issue #8175）
+
+- **改前**：商家在会话里纠正过一次口径（比如「报价按整卷走，除非客户要零裁」），只活在当次会话里 ——
+  黄金策的会话不在蒸馏面内，个人记忆又是 C 端顾客画像。同一条口径，每个员工都得被纠正一次。
+- **改后**：口径落成**带条件与反例的口径卡**（触发条件 + 正解 + 反例 + 来源会话），
+  **只有人工审核通过的**会作为「本企业口径」拼进黄金策的 system prompt，并注明「与通用经验冲突时以本口径为准」；
+  未经审核（草稿）与已退役的卡**一条都不出现**，退役**立即**生效（读面不缓存）。
+- **条件不是散文**：触发条件与反例都是机器可判的结构化条件（不是一句自然语言），
+  自由文本写不进库；因此同一张卡还能**自动生成一条会红的用例**（正向：条件命中必须生效；负向：反例命中必须不生效）。
+- **本期未做**：口径卡进「知识库检索」与「工具默认参数」两个出口、B 端会话的自动落卡管道（本期为手工建卡）。
+- 判据 = MC-230：`backend/ai-agent-service/tests/test_prompt.py`、
+  `backend/ai-agent-service/tests/test_casegen.py`、
+  `backend/ai-agent-service/tests/test_condition.py`、
+  `backend/ai-agent-service/tests/test_store.py`、
+  `tests/unit_ci_workflows/test_playbook_condition_contract.py`、
+  `backend/admin-api/src/test/java/com/migao/admin/service/PlaybookServiceTest.java`。
+
 ### 工人的小程序菜单多了「裁高计算 / 精裁清单 / 质检记录」：都只看不记，报工仍在报工页（2026-11-05，issue #7813）
 
 - **改前**：这三块只在车间终端 `/w/` 上（裁高计算是独立一屏，精裁清单与质检记录是报工页里的两个区块），
