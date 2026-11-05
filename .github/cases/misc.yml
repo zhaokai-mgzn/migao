@@ -9402,6 +9402,39 @@ cases:
       tests:
         - "tests/unit_ci_workflows/test_flaky_triage_mixed_entries.py"
 
+  - id: MC-234
+    legacy_id: ""
+    title: "能力取值不是白名单：`print.label` / `cut.link` 的任何非空字符串都必须渲染入口（`builtin` / `serial:/dev/ttyS1` 对照组），且与能力读取 trim 同口径"
+    domains:
+      - worker
+      - worker-h5
+      - terminal
+    tier: normal
+    tags:
+      - worker-h5
+      - capabilities
+      - fail-closed
+      - cross-repo
+    truths_ref: []
+    precondition:
+      - "壳注入的 `window.__CFG__.capabilities` 里 `print.label` 的值是**非空字符串** `builtin`（商米内置打印服务；终端仓 #59 实装口径），`cut.link` 是 `serial:/dev/ttyS1`"
+      - "这三条判据都是**纯函数**调用 `capabilityShown(caps, axis)`，不启动壳、不连设备 ⇒ 前置不成立的表现是「函数收到 null 而不是 builtin」，与「入口不渲染」不同，可区分"
+      - "反向负控组的前置是相反值（空串 / 纯空白 / null / undefined），必须是**四种都试过**而不是只试 null"
+    user_inputs:
+      - "工人用手持标签机（Android 壳报 print.label=builtin，商米内置打印服务）打开 /w/ ⇒ 「打印入库标签」入口必须出现"
+      - "工人用安卓一体机（cut.link=serial:/dev/ttyS1）打开 /w/ ⇒ 「裁高计算」入口必须出现"
+      - "能力值是空串 / 纯空白 / null ⇒ 对应入口不出现（不是点了报错）"
+    expectations:
+      - "能力取值**不是白名单**：判定只认「非空字符串」—— 写 `=== 'ble'` 会让报 `builtin` 的手持机入口消失，而旧测试只喂 `ble` ⇒ 全绿（本条治的就是这个盲区）"
+      - "`capabilityShown` 与 `terminalCapabilities` 的 read() **同一 trim 口径**：`'   '` 在两条路径上结论必须一致（都是隐藏）"
+      - "反向负控：空串 / 纯空白 / null / undefined 一律隐藏 —— 不许为了过上面两条而放宽到恒真"
+    data_checks: []
+    skip_reason: ""
+    merge_log: "2026-11-05 新增。来历 = 终端仓（zhaokai-mgzn/migao-terminal）PR #59 交付能力表注入时照实报「print.label 实际报 builtin 而非文档示例的 ble」⇒ 现取主仓 worker-h5 的旧测试**只喂 ble** ⇒ 若有人把判定改成 === 'ble' 会全绿而手持机入口消失。同一轮判据还咬出 capabilityShown 未 trim、与 read() 口径不一致（'   ' 在两条路径结论相反）。"
+    traces:
+      tests:
+        - "frontend/worker-h5/tests/worker-h5-8609-capabilities.test.mjs"
+
   - id: MC-227
     legacy_id: ""
     title: "生成腿的暂存区必须在仓库外：`REPO_ROOT.rglob` 的整仓扫描面不许扫到生成过程的临时物（否则并发生成时 FileNotFoundError）"
