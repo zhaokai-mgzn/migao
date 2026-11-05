@@ -1,5 +1,5 @@
 {
-  "id": "MC-221",
+  "id": "MC-222",
   "pr": 8711,
   "title": "选工具小抄由 tools registry + 本体投影生成，替换 10 处手写速查表（issue #8176）",
   "claimed_at": "2026-11-05"

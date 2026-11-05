@@ -395,9 +395,11 @@ class TestRedProofs:
         assert any("放行了未复现的失败" in v for v in bad), bad
 
     def test_red_proof_4_removing_the_pr_gate(self):
+        # 🔴 #8709：③ 的 `if:` 扩了一条同义支（`|| action == 'infra_rate_limited'`）⇒ 注入锚随同批
+        # 收窄到「`pr != ''` 这一半」，**注入语义不变**（仍是「摘掉 PR 闸门」），不是放宽判据。
         mutated = REAL_WORKFLOW_TEXT.replace(
-            "        if: steps.decide.outputs.entry_count != '0' && steps.decide.outputs.pr != ''",
-            "        if: steps.decide.outputs.entry_count != '0'", 1)
+            "|| steps.decide.outputs.action == 'infra_rate_limited') && steps.decide.outputs.pr != ''",
+            "|| steps.decide.outputs.action == 'infra_rate_limited')", 1)
         assert mutated != REAL_WORKFLOW_TEXT, "注入锚点失效（先修本测试）"
         steps = _comment_steps(mutated)
         assert steps and all("pr != ''" not in str(s.get("if") or "") for s in steps), \
