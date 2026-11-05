@@ -206,7 +206,7 @@ class TenantOwnershipBeforeValidationTest extends BaseControllerTest {
     @DisplayName("跨租户 + 非法载荷 ⇒ 404（订单 /content：修前是 400 BAD_REQUEST）")
     void crossTenantOrderContentWithInvalidPayload_isNotFound_not400() throws Exception {
         orderVisible(false);
-        withInterceptor(new OrderController(orderService, null, null, null, orderLifecycleServiceStub(), null))
+        withInterceptor(new OrderController(orderService, null, null, null, orderLifecycleServiceStub(), null, null, null))
                 .perform(put("/api/admin/orders/" + ORDER_ID + "/content")
                         .contentType(MediaType.APPLICATION_JSON).content(BAD_BODY))
                 .andExpect(status().isNotFound())
@@ -217,7 +217,7 @@ class TenantOwnershipBeforeValidationTest extends BaseControllerTest {
     @DisplayName("跨租户 + 完全无 body ⇒ 仍是 404（订单 /content 的空 body 形态）")
     void crossTenantOrderContentWithMissingBody_isNotFound() throws Exception {
         orderVisible(false);
-        withInterceptor(new OrderController(orderService, null, null, null, orderLifecycleServiceStub(), null))
+        withInterceptor(new OrderController(orderService, null, null, null, orderLifecycleServiceStub(), null, null, null))
                 .perform(put("/api/admin/orders/" + ORDER_ID + "/content"))
                 .andExpect(status().isNotFound());
     }
@@ -273,7 +273,7 @@ class TenantOwnershipBeforeValidationTest extends BaseControllerTest {
                 .andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
                 .andExpect(jsonPath("$.error.details[*].field", hasItem("name")))
                 .andExpect(jsonPath("$.error.details[0].message").isNotEmpty());
-        withInterceptor(new OrderController(orderService, null, null, null, orderLifecycleServiceStub(), null))
+        withInterceptor(new OrderController(orderService, null, null, null, orderLifecycleServiceStub(), null, null, null))
                 .perform(put("/api/admin/orders/" + ORDER_ID + "/content")
                         .contentType(MediaType.APPLICATION_JSON).content(BAD_BODY))
                 .andExpect(status().isUnprocessableEntity())
@@ -286,7 +286,7 @@ class TenantOwnershipBeforeValidationTest extends BaseControllerTest {
     @DisplayName("同租户 + 完全无 body ⇒ 仍是 400 BAD_REQUEST（订单 /content 现状不回退）")
     void sameTenantOrderContentWithMissingBody_stillBadRequest() throws Exception {
         orderVisible(true);
-        withInterceptor(new OrderController(orderService, null, null, null, orderLifecycleServiceStub(), null))
+        withInterceptor(new OrderController(orderService, null, null, null, orderLifecycleServiceStub(), null, null, null))
                 .perform(put("/api/admin/orders/" + ORDER_ID + "/content"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error.code").value("BAD_REQUEST"));
@@ -311,12 +311,12 @@ class TenantOwnershipBeforeValidationTest extends BaseControllerTest {
     @DisplayName("跨租户 + 非法载荷 ⇒ 404（订单 /status 与 /follow-status：同类第 6/7 个实例）")
     void crossTenantOrderStatusEndpoints_isNotFound() throws Exception {
         orderVisible(false);
-        withInterceptor(new OrderController(orderService, null, null, null, orderLifecycleServiceStub(), null))
+        withInterceptor(new OrderController(orderService, null, null, null, orderLifecycleServiceStub(), null, null, null))
                 .perform(put("/api/admin/orders/" + ORDER_ID + "/status")
                         .contentType(MediaType.APPLICATION_JSON).content(BAD_BODY))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.error.code").value("NOT_FOUND"));
-        withInterceptor(new OrderController(orderService, null, null, null, orderLifecycleServiceStub(), null))
+        withInterceptor(new OrderController(orderService, null, null, null, orderLifecycleServiceStub(), null, null, null))
                 .perform(put("/api/admin/orders/" + ORDER_ID + "/follow-status")
                         .contentType(MediaType.APPLICATION_JSON).content(BAD_BODY))
                 .andExpect(status().isNotFound())

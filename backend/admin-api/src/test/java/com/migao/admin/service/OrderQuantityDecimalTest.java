@@ -73,6 +73,11 @@ class OrderQuantityDecimalTest {
     /** 查询族的实现点（issue #8681，P2-1e 第四批）：门面同名转发已删除 ⇒ 驱动门面自己懒构造的那一份。 */
     private OrderQueryService orderQueryService;
     /**
+     * 建单编排的实现点（issue #8681，P2-1e 第五批）：门面的 {@code createOrder} 转发已删除 ⇒ 驱动对象换成
+     * 门面<b>自己懒构造的那一份</b>（同一条调用链、同一份协作者），断言一字未改。
+     */
+    private com.migao.admin.service.OrderCreationService orderCreationService;
+    /**
      * 制单人留痕（issue #5835）：本类不涉及制单人口径 ⇒ 解析恒为 null ⇒ 两列不写
      * （与「取不到操作者」同一条路径，既有断言一字未动）。
      */
@@ -122,6 +127,7 @@ class OrderQuantityDecimalTest {
         TenantContext.setTenantId(1L);
         ReflectionTestUtils.setField(orderService, "objectMapper", objectMapper);
         orderQueryService = ReflectionTestUtils.invokeMethod(orderService, "queryService");
+        orderCreationService = ReflectionTestUtils.invokeMethod(orderService, "creationService");
 
         MybatisConfiguration conf = new MybatisConfiguration();
         MapperBuilderAssistant assistant = new MapperBuilderAssistant(conf, "");
@@ -373,7 +379,7 @@ class OrderQuantityDecimalTest {
                 .thenAnswer(invocation -> List.of(captured.item));
         lenient().when(orderLogisticsMapper.selectByOrderId(anyString(), anyLong())).thenReturn(List.of());
 
-        orderService.createOrder(request, 1L);
+        orderCreationService.createOrder(request, 1L, orderService);
         verify(orderItemMapper).insert(any(OrderItem.class));
         return captured;
     }
