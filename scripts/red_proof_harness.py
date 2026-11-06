@@ -95,8 +95,11 @@ TOOLS: dict[str, ToolSpec] = {
         #   这条自证失去判别力）。
         # ⚠️ 同时是**夹具仓库的拷贝面**（test_redproof_harness_gate 只拷 impl + criteria）：
         # 漏登记 ⇒ 夹具里没有该文件 ⇒ `--check` 在 CI 上判「被守卫的文件不存在」。
+        # issue #8770（快照/读面一档）：`buildSnapshot` 搬到 ProcessingOrderSnapshotBuilder ⇒
+        # 机具的注入面多一个文件（漏登记 ⇒ 夹具里没有该文件 ⇒ `--check` 判「被守卫的文件不存在」）。
         impl=(_AAPI_MAIN + "service/ProcessingOrderService.java",
-              _AAPI_MAIN + "service/ProcessingOrderDispatchPool.java"),
+              _AAPI_MAIN + "service/ProcessingOrderDispatchPool.java",
+              _AAPI_MAIN + "service/ProcessingOrderSnapshotBuilder.java"),
         criteria=(_AAPI_TEST + "service/PoolBoardUrgencyTest.java",),
     ),
     "scripts/cutting-plan-red-proof.py": ToolSpec(
