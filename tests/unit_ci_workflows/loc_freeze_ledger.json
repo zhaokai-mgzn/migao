@@ -23,7 +23,7 @@
     },
     {
       "path": "backend/admin-api/src/main/java/com/migao/admin/service/ProcessingOrderService.java",
-      "lines": 2653,
+      "lines": 2377,
       "frozen_at": "2026-11-06"
     },
     {

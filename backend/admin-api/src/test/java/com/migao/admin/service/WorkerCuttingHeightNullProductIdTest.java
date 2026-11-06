@@ -496,8 +496,12 @@ class WorkerCuttingHeightNullProductIdTest {
                         new IndexSite("categoryNameMap", "getCategoryNameMap", "product.getCategoryId()", "product.getCategoryId()", 254,
                                 Verdict.KEY_NULLABLE_TRACKED_ELSEWHERE,
                                 "同上（另一调用点）⇒ 已转 issue #6226。对照：ProductService 自己的同名方法用 new HashMap<>()")),
-                Map.entry("backend/admin-api/src/main/java/com/migao/admin/service/ProcessingOrderService.java|orders",
-                        new IndexSite("orders", "loadOrders", "po.getOrderId()", "po.getOrderId()", 3661,
+                // issue #8770（快照/读面一档）：`loadOrders` 与其索引调用点搬到 ProcessingOrderReadFace
+                // ⇒ 登记者跟着搬（本条是**休眠**登记：`loadOrders` 现在两条分支都返回可变表，不在
+                // `Map.of()` 产出方面里 ⇒ 发现器不扫它；但一旦有人把它改回 `Map.of()`，
+                // 发现器会在新住址命中第 94 行，与这里的 key/line 逐字对上 ⇒ 判红而不是静默）。
+                Map.entry("backend/admin-api/src/main/java/com/migao/admin/service/ProcessingOrderReadFace.java|orders",
+                        new IndexSite("orders", "loadOrders", "po.getOrderId()", "po.getOrderId()", 94,
                                 Verdict.KEY_NULLABLE_TRACKED_ELSEWHERE,
                                 "存量同族 ⇒ 已转 issue #6226：po.getOrderId() 可为空，非空分支是 HashMap ⇒ 同样 NPE")));
 

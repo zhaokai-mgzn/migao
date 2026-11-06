@@ -9,7 +9,7 @@
 | 站点 | 空集分支 | 调用点 |
 |---|---|---|
 | `backend/admin-api/src/main/java/com/migao/admin/service/ProcessingItemService.java::getCategoryNameMap` | `return Map.of();` | `categoryNameMap.get(item.getCategoryId())`（键**未过**同一道 `hasText` 过滤） |
-| `backend/admin-api/src/main/java/com/migao/admin/service/ProcessingOrderService.java::loadOrders` | `return Map.of();` | `orders.get(po.getOrderId())`（未判空） |
+| `backend/admin-api/src/main/java/com/migao/admin/service/ProcessingOrderReadFace.java::loadOrders`（issue #8770 起从门面搬出） | `return Map.of();` | `orders.get(po.getOrderId())`（未判空） |
 
 **同族不一致的实证**：`backend/admin-api/src/main/java/com/migao/admin/service/ProductService.java::getCategoryNameMap`
 **同名、同签名**，空集返回 `new HashMap<>()` ⇒ 空键索引返 null 不抛 ⇒ 安全（本单**不动**它）。
@@ -222,7 +222,9 @@ def test_self_check_catches_both_real_sites_reverted_in_memory(tmp_path):
     for rel, method, tolerant in (
         ("backend/admin-api/src/main/java/com/migao/admin/service/ProcessingItemService.java",
          "getCategoryNameMap", "return new HashMap<>();"),
-        ("backend/admin-api/src/main/java/com/migao/admin/service/ProcessingOrderService.java",
+        # issue #8770（快照/读面一档）：`loadOrders` 随读面搬到 ProcessingOrderReadFace ⇒
+        # 自证坐标跟着搬家（变异语义、期望判红、反向对照**一字未改**）。
+        ("backend/admin-api/src/main/java/com/migao/admin/service/ProcessingOrderReadFace.java",
          "loadOrders", "return new HashMap<>();"),
     ):
         text = (REPO / rel).read_text(encoding="utf-8")
