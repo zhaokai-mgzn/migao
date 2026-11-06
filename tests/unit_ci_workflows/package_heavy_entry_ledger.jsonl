@@ -161,3 +161,4 @@
 {"id":"1793920210.83351.2763","ts":"2026-11-05T23:10:10Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/8681i-final","why":"--allow-package-heavy（命令行显式）"}
 {"id":"1793923826.33124.11601","ts":"2026-11-06T00:10:26Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/eval-skip-reason","why":"--allow-package-heavy（命令行显式）"}
 {"id":"1793927198.33259.15606","ts":"2026-11-06T01:06:38Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/8775-l0-guard","why":"--allow-package-heavy（命令行显式）"}
+{"id":"1793932163.38381.27058","ts":"2026-11-06T02:29:24Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/8776-harness","why":"--allow-package-heavy（命令行显式）"}
