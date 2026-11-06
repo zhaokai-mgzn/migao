@@ -1,0 +1,6 @@
+{
+  "id": "MC-246",
+  "pr": 8768,
+  "title": "ProcessingOrderService 切片（LOC 冻结面）：路线/部位派生三单元 + 逐字节 characterization 冻结",
+  "claimed_at": "2026-11-06"
+}
