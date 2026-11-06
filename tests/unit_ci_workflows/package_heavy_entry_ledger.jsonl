@@ -163,4 +163,7 @@
 {"id":"1793927198.33259.15606","ts":"2026-11-06T01:06:38Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/8775-l0-guard","why":"--allow-package-heavy（命令行显式）"}
 {"id":"1793931666.36085.19748","ts":"2026-11-06T02:21:06Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/8783-id-resolver","why":"--allow-package-heavy（命令行显式）"}
 {"id":"1793932001.37688.15458","ts":"2026-11-06T02:26:41Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/8783-id-resolver","why":"子包 worktree 直跑全量（无批次标记）"}
+{"id":"1793932163.38381.27058","ts":"2026-11-06T02:29:24Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/8776-harness","why":"--allow-package-heavy（命令行显式）"}
+{"id":"1793933393.75237.28266","ts":"2026-11-06T02:49:53Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/8776-harness","why":"--allow-package-heavy（命令行显式）"}
+{"id":"1793934889.67471.30581","ts":"2026-11-06T03:14:49Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/8776-harness","why":"--allow-package-heavy（命令行显式）"}
 {"id":"1793938237.79144.22589","ts":"2026-11-06T04:10:37Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/8770-dispatch-pool","why":"--allow-package-heavy（命令行显式）"}
