@@ -6,6 +6,7 @@
 2. Tool 执行层：Tool 从 ToolContext 取出 tenant_id 传递给 HTTP 客户端
 3. Service Token 认证与租户 header 传播
 """
+# case_ids: DF-009
 
 import time
 import pytest
@@ -254,6 +255,11 @@ class TestProductSearchToolTenantContext:
         assert result.data["total"] == 0
 
 
+# 详情入参 = 真实 id 形态（UUID）：product_detail 会先做 id 解析（issue #8783）
+UUID_DETAIL_OWN = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+UUID_DETAIL_OTHER = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+
+
 class TestProductDetailToolTenantContext:
     """ProductDetail Tool 正确传递租户上下文"""
 
@@ -271,7 +277,7 @@ class TestProductDetailToolTenantContext:
         mock_client.get = AsyncMock(return_value={
             "success": True,
             "data": {
-                "id": "p1",
+                "id": UUID_DETAIL_OWN,
                 "name": "测试商品",
                 "tenantId": TENANT_A,
                 "price": 299,
@@ -279,7 +285,7 @@ class TestProductDetailToolTenantContext:
         })
         mock_get_client.return_value = mock_client
 
-        await tool.execute(context=ctx_tenant_a, product_id="p1")
+        await tool.execute(context=ctx_tenant_a, product_id=UUID_DETAIL_OWN)
 
         mock_client.get.assert_called_once()
         call_kwargs = mock_client.get.call_args
@@ -296,7 +302,7 @@ class TestProductDetailToolTenantContext:
         mock_client.get = AsyncMock(return_value={
             "success": True,
             "data": {
-                "id": "p_other",
+                "id": UUID_DETAIL_OTHER,
                 "name": "他人商品",
                 "tenantId": TENANT_B,
                 "price": 999,
@@ -304,7 +310,7 @@ class TestProductDetailToolTenantContext:
         })
         mock_get_client.return_value = mock_client
 
-        result = await tool.execute(context=ctx_tenant_a, product_id="p_other")
+        result = await tool.execute(context=ctx_tenant_a, product_id=UUID_DETAIL_OTHER)
 
         assert result.success is False
         assert result.error == "商品不存在"
