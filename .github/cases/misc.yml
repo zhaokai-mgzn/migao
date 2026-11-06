@@ -9890,11 +9890,14 @@ cases:
       - "扫描面非空自证（fail-closed，两条下界）：① 全库用例数 >= 900（读不到用例 ⇒ 零违规是假绿）；② 锚点在全库的命中数 >= 12（锚点整体失效 ⇒ 判据失明必须红，不许「扫到 0 条 ⇒ 通过」）。"
       - "判别力自证（正控 / 负控各实跑）：正控 = 「扫 xx 文件 ⇒ 判红」且 skip_reason 为空 ⇒ 必须红并具名；负控 ① 「用户问订单状态 ⇒ agent 调 order_query」不许红 ② {tool: direct_reply}（断言不调工具，全库 7 条是这形态）不许红 ③ expectations 为空、走 forbidden_text / forbidden_tools 通道（CH-049 / PR-073）不许红 ④ 已声明契约标记的同形态用例不许红。"
       - "锚点表零误伤：有 agent 行为断言（expectation_tools 非空）却被锚点命中的用例必须为空 —— 误伤会把真 LLM 用例逼去 skip，修法是收窄锚点而不是给用例加 skip_reason。"
+      - "负控 5（库级，最有牙）：run 42127246100 里判红但**不是代码判据**的 8 条真 LLM 用例（mibao 腿 CH-049 / CU-004 / DA-026 / HR-010 / PR-130；xiaobu 腿 CH-015 / CH-043 / OR-017）必须仍在库里、不被本判据要求 skip、且 skip_reason 仍为空 —— 判据不许把「修红」变成「藏红」（把它们标 skip 来让评测变绿 ⇒ 当场红）。附注入式红证。"
+      - "本条**不负责让评测转绿**：本判据只把代码判据移出 LLM 评测面；上述 8 条的正确修法属别的族（真 LLM 行为 / 前置复位 / harness 用例形状）。"
     data_checks:
-      - "现取读数（修前）：run 42127246100（gh workflow run post-deploy-eval.yml --ref main -f tier=normal -f persona=both -f case_ids='' -f purpose=determination）= failure，mibao 行为回归 + xiaobu 行为回归 两条腿都红、失败形态全部是 unmatched expectation；命中的 12 条全部是代码判据类用例。"
+      - "现取读数（修前，逐字）：run 42127246100 = failure；mibao 腿 17 条（CH-049, CU-004, DA-026, HR-010, MC-202, MC-209, MC-210, MC-216, MC-217, MC-218, MC-219, MC-220, MC-235, MC-234, MC-227, MC-240, PR-130），xiaobu 腿 3 条（CH-015, CH-043, OR-017）。其中 12 条是代码判据类（本包修），8 条不是 —— 故本包**不**承诺「评测转绿」。"
       - "根因定位（不是推演）：tests/agent_eval/eval_case_filter.py 的选择函数里有 `cases = [c for c in cases if not case_skip_reason(c)]` —— 机制是有的（skip_reason 非空即过滤），而现取这 12 条的 skip_reason 全是空串。"
       - "修前分类读数（现取 origin/main，1067 条）：已标 skip_reason 895 / 未标 172；未标里有 agent 行为工具名的 158 条 + expectations 为空走 forbidden_* 通道的 2 条（CH-049 / PR-073）；剩下 12 条恰是本次要修的代码判据类用例 ⇒ 漏标 12、误标 0。"
-      - "修后自证（用评测器自己的选择函数，不是猜）：case_skip_reason() 对 12 条全部非空；select_cases_for_persona(cases, 'mibao'/'xiaobu') 对 12 条全部未选中（选中面仍非空：mibao 118 / xiaobu 54）。"
+      - "修后自证（用评测器自己的选择函数，不是猜）：case_skip_reason() 对 12 条全部非空；select_cases_for_persona(cases, 'mibao'/'xiaobu') 对 12 条全部未选中，而那 8 条真 LLM 用例仍被对应腿选中（mibao 5 / xiaobu 3）；选中面仍非空：mibao 118 / xiaobu 54。"
+      - "CU-004 的传染性（照实登记，本包不修）：失败日志原文「前置未复位 1 条（共享状态未回滚，结论不可信）: CU-004」—— 共享状态污染意味着同批其它用例的结论也可能不可信，属评测隔离面。"
     skip_reason: "[backend-contract] 用例库静态不变式（零 LLM / 零网络 / 零 DB）：判的是「哪些用例该标契约标记」，真值载体 = traces.tests 的 tests/unit_ci_workflows/test_code_criteria_cases_are_contract_marked.py，不进 agent-eval 冒烟"
     merge_log: "2026-11-06 新增。病（实证 run 42127246100）：一次集中判定档评测（tier=normal、persona=both）全线红，失败形态全是 unmatched expectation，命中的 12 条（MC-202/209/210/216/217/218/219/220/227/234/235/240）全部是代码判据类用例，而它们的 skip_reason 现取全为空串 ⇒ 被 normal 全量选中、当 LLM 行为用例执行。修法：只给这 12 条补 skip_reason（判据仍在 traces.tests，skip_reason 只说明「不进 LLM 评测」），一条 expectations / traces 未改、一条用例未删。防复发 = 本用例锁的类级元守卫（两个独立信号 + 扫描面自证 + 四个负控）。"
     traces:

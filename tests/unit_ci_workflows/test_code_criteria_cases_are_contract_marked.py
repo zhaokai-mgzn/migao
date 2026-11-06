@@ -64,6 +64,11 @@ gh workflow run post-deploy-eval.yml --ref main -f tier=normal -f persona=both \
 | 负控 2 | `{tool: direct_reply}`（合法行为期望 = 断言「不调工具」，实测 7 条是这形态） | **不许红** |
 | 负控 3 | `expectations` 为空、走 `forbidden_text` / `forbidden_tools` 通道（`CH-049` / `PR-073`） | **不许红** |
 | 负控 4 | 已声明契约标记的同形态用例 | **不许红** |
+| **负控 5（库级，最有牙）** | run 42127246100 里**判红但不是代码判据**的 8 条真 LLM 用例（`CH-049` / `CU-004` / `DA-026` / `HR-010` / `PR-130` / `CH-015` / `CH-043` / `OR-017`） | **不许红，且必须仍然 `skip_reason` 为空（仍真跑）** |
+
+⚠️ **负控 5 的用意：判据不能把「修红」变成「藏红」**。那 8 条是真 LLM 行为失败 / 前置未复位 /
+harness 形状不兼容，**正确修法不是给它们加 `skip_reason`**（那是把红藏起来、把评测面越缩越小）。
+本文件把它们**具名钉住**：谁把它们标成 skip 来「让评测变绿」，这条负控当场红。
 
 ## 未覆盖（照实登记，不写成恒真判断）
 
@@ -78,6 +83,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+import pytest
 import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -118,6 +124,19 @@ CODE_CRITERION_ANCHORS: tuple = (
     "行号",        # 「判红并具名「文件:行号」」
     "具名",        # 「判红并具名」—— 代码判据的报错形态
     "尾部顺延",    # 「取号默认 = 尾部顺延」（纯 CI 工具链行为）
+)
+
+#: **负控 5**：run 42127246100 里判红、但**不是代码判据**的 8 条真 LLM 用例。
+#: 腿归属与失败日志逐条一致（mibao 5 / xiaobu 3）。具名钉住 = 「不许为了变绿把它们标 skip」。
+KNOWN_REAL_LLM_FAILING: tuple = (
+    "CH-049",      # mibao — expectations 为空、走 forbidden_text 通道
+    "CU-004",      # mibao — 前置未复位（共享状态未回滚，结论不可信）
+    "DA-026",      # mibao — 真 LLM 行为
+    "HR-010",      # mibao — 真 LLM 行为
+    "PR-130",      # mibao — 真 LLM 行为
+    "CH-015",      # xiaobu — 真 LLM 行为
+    "CH-043",      # xiaobu — 真 LLM 行为
+    "OR-017",      # xiaobu — harness / 用例形状不兼容（不是 agent 行为失败）
 )
 
 
@@ -283,6 +302,73 @@ def test_negative_control_declared_case_is_green() -> None:
         "skip_reason": "[backend-contract] 判据在 tests/unit_ci_workflows/test_no_conflict_markers_in_tree.py",
     }]
     assert undeclared_code_criteria(fake) == []
+
+
+def test_known_real_llm_cases_are_not_pushed_to_skip() -> None:
+    """**负控 5（库级）**：run 42127246100 里判红、但**不是代码判据**的 8 条真 LLM 用例
+    必须仍然「不需要 `skip_reason`」、且 `skip_reason` 仍为空（仍真跑）。
+
+    由头：本判据的存在是为了把**代码判据**移出 LLM 评测面，**不是**为了把红变绿。
+    这 8 条是 mibao 腿 5 条 + xiaobu 腿 3 条（与失败日志逐条一致）：
+
+        腿 mibao : CH-049, CU-004, DA-026, HR-010, PR-130
+        腿 xiaobu: CH-015, CH-043, OR-017
+
+    它们判红的形态是「真 LLM 行为失败 / 前置未复位 / harness 形状不兼容」——
+    **正确修法不是加 `skip_reason`**：那是把红藏起来、把真 LLM 覆盖面越缩越小。
+    谁把它们标成 skip 来「让评测变绿」，这条负控当场红。
+
+    ⚠️ 三件事一起钉住，缺一件这条负控就是假的：
+    ① **仍在库里**（改名/删用例 ⇒ 红，不许「找不到 = 通过」）；
+    ② 本判据**不要求**它们 skip（不被 `undeclared_code_criteria` 命中）；
+    ③ 它们的 `skip_reason` **仍为空**（确实还留在评测面上）。
+    """
+    cases = load_cases()
+    by_id = {str(c.get("id")): c for c in cases}
+    flagged = set(undeclared_code_criteria(cases))
+    problems = []
+    for cid in KNOWN_REAL_LLM_FAILING:
+        case = by_id.get(cid)
+        if case is None:
+            problems.append(f"{cid}: 用例库里找不到（被改名/删除了？）")
+            continue                                    # ①
+        if cid in flagged:
+            problems.append(f"{cid}: 被判据要求标 skip_reason（误伤真 LLM 用例）")  # ②
+        reason = str(case.get("skip_reason") or "").strip()
+        if reason:
+            problems.append(f"{cid}: 已被标 skip_reason（把红藏起来了）={reason[:50]}…")  # ③
+    assert problems == [], (
+        "run 42127246100 里判红的 8 条**真 LLM 用例**必须留在评测面上：\n  "
+        + "\n  ".join(problems)
+        + "\n本判据只把**代码判据**移出 LLM 评测面，不负责让评测转绿 —— "
+          "那 8 条的正确修法在别的族（真行为 / 前置复位 / harness 形状）。"
+    )
+
+
+def test_negative_control_five_has_teeth(monkeypatch) -> None:
+    """注入式红证：把 8 条之一标成 `skip_reason` ⇒ 负控 5 **必须**报出并具名。
+
+    没有这条，「负控 5」可能是恒真的（读一个空集合 ⇒ 永远没问题串）。
+    同时验证 ②（被判据要求 skip）那一支：把一条真用例换成纯散文期望 ⇒ 也要报出。
+    """
+    hidden = load_cases()
+    for case in hidden:
+        if case.get("id") == "OR-017":
+            case["skip_reason"] = "[backend-contract] 假豁免（注入样本，不是真值）"
+    monkeypatch.setattr(sys.modules[__name__], "load_cases", lambda: hidden)
+    with pytest.raises(AssertionError) as err:
+        test_known_real_llm_cases_are_not_pushed_to_skip()
+    assert "OR-017" in str(err.value) and "把红藏起来" in str(err.value), str(err.value)
+
+    monkeypatch.undo()
+    misfiled = load_cases()
+    for case in misfiled:
+        if case.get("id") == "DA-026":
+            case["expectations"] = ["扫 xx 文件 ⇒ 判红并具名"]        # 变成代码判据形态
+    monkeypatch.setattr(sys.modules[__name__], "load_cases", lambda: misfiled)
+    with pytest.raises(AssertionError) as err2:
+        test_known_real_llm_cases_are_not_pushed_to_skip()
+    assert "DA-026" in str(err2.value), str(err2.value)
 
 
 def test_anchor_set_has_no_false_positives() -> None:
