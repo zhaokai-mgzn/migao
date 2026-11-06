@@ -75,6 +75,16 @@ const GROUPS = [
 ] as const
 
 /**
+ * 长文本格（颜色串 / 规格串，动辄上百字）**独占一行**：挤在三列里会变成又高又窄的
+ * 「面条」，正是这次要消掉的形态。
+ */
+function isWideField(field: PageFillField): boolean {
+  if (!hasValue(field)) return false
+  const text = htmlToPlainText(String(field.value))
+  return text.length > 40 || text.includes('\n')
+}
+
+/**
  * 把「商家填写」与颜色命名规则合并进字段计划（issue #7528）—— 纯函数，**不改入参**。
  *
  * 三条合并规则：
@@ -147,6 +157,10 @@ export function mergeDeclaredFacts(
  * 段：`[图片识别]` 从图上抄的 / `[米宝解读]` 黄金策推的 / `[商家填写]` 按他写的那句话
  * （第三段是 issue #7528：货号 / 门幅 / 规格属性 —— 由 `lib/declared-facts.ts` 确定性解析）。
  *
+ * 🔴 **版式 = 横版整行**（用户 2026-11-06 反馈：改前是 `w-72` 的竖版窄条，字段一行一个，
+ * 长颜色串拉成一米多高的面条，非常占版面）：卡片刻意**不再自带固定窄宽**（`w-full`，
+ * 由落点决定宽度），字段按来源分段后铺成 `1 → 2 → 3` 列网格，长文本格独占一行。
+ *
  * 🔴 **不落库**：本组件不 import 任何写端点，也只调调用方给的那一个 `onFill`
  * （= 页面既有的 `onRecognized`）——「填表」与「提交」是两件事，后者永远是人的动作。
  * 🔴 **空值格不是可填项**：没有勾选框，只显示 `reason`（内核给的原因，前端不另写文案）。
@@ -182,21 +196,34 @@ export default function FormInterpretCard({
   return (
     <div
       data-testid="form-interpret-card"
-      className={`mt-2 w-72 rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-left ${className || ''}`}
+      className={`w-full rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3 text-left ${className || ''}`}
     >
-      <div className="flex items-center gap-2">
+      {/* 头部：缩略图 + 一句说明 + 「一键填入」贴右 —— 按钮不再吃掉一整行的高度 */}
+      <div className="flex flex-wrap items-center gap-3">
         <Image
           src={resolveImageUrl(imageUrl)}
           alt="识别用的图片"
-          width={48}
-          height={48}
+          width={56}
+          height={56}
           unoptimized
           data-testid="form-interpret-thumb"
-          className="h-12 w-12 shrink-0 rounded border border-neutral-200 object-cover"
+          className="h-14 w-14 shrink-0 rounded border border-neutral-200 object-cover"
         />
-        <p className="text-xs leading-5 text-neutral-600">
+        <p className="min-w-0 flex-1 text-xs leading-5 text-neutral-600">
           识别 + 米宝解读（一次性，不留上下文）。勾选要填的格子，再点「一键填入」；不勾的一律不动。
         </p>
+        {/* `type="button"`：本卡片就渲染在**表单里**，缺省 type 会提交表单 */}
+        <Button
+          type="button"
+          variant="secondary"
+          size="sm"
+          className="shrink-0"
+          data-testid="form-interpret-fill"
+          disabled={selectedCount === 0}
+          onClick={handleFill}
+        >
+          一键填入
+        </Button>
       </div>
 
       {GROUPS.map((group) => {
@@ -204,70 +231,71 @@ export default function FormInterpretCard({
         // 这一段没有格子就不占版面（有格子的那一段照常显示）
         if (groupFields.length === 0) return null
         return (
-          <div key={group.source} data-testid={group.testid} className="mt-2">
+          <section
+            key={group.source}
+            data-testid={group.testid}
+            className="mt-3 border-t border-neutral-200/80 pt-2"
+          >
             <p className="text-[11px] font-medium text-neutral-500">{group.title}</p>
-            {groupFields.map((field) => (
-              <div key={field.key} data-testid={`form-interpret-field-${field.key}`} className="mt-1">
-                {hasValue(field) ? (
-                  <label className="flex items-start gap-1.5">
-                    <input
-                      type="checkbox"
-                      className="mt-0.5"
-                      data-testid={`form-interpret-check-${field.key}`}
-                      checked={isSelected(field)}
-                      onChange={() => toggle(field.key)}
-                    />
-                    {/* issue #6403 缺陷 2：值可能是 HTML（富文本区的落值口径）⇒ 展示层转可读纯文本；
-                        落值一个字不改（`onFill` 回传的仍是原始 HTML） */}
-                    <span className="text-xs leading-5 text-neutral-700 whitespace-pre-line">
-                      {field.label}：{htmlToPlainText(field.value)}
-                    </span>
-                  </label>
-                ) : (
-                  <div>
-                    <p
-                      data-testid={`form-interpret-reason-${field.key}`}
-                      className="text-xs leading-5 text-neutral-500"
-                    >
-                      {field.label}：未填（{field.reason || RECOGNIZE_NO_REASON}）
-                    </p>
-                    {field.reference && (
-                      /* 「参考」（issue #6529）：图上读到、但没采纳 —— 如实说清，且**不进表单** */
+            {/* 横版铺开：窄屏 1 列 → 中屏 2 列 → 宽屏 3 列（长文本格整行通栏） */}
+            <div
+              data-testid={`${group.testid}-grid`}
+              className="mt-1.5 grid grid-cols-1 gap-x-6 gap-y-2 sm:grid-cols-2 xl:grid-cols-3"
+            >
+              {groupFields.map((field) => (
+                <div
+                  key={field.key}
+                  data-testid={`form-interpret-field-${field.key}`}
+                  className={isWideField(field) ? 'min-w-0 sm:col-span-2 xl:col-span-3' : 'min-w-0'}
+                >
+                  {hasValue(field) ? (
+                    <label className="flex items-start gap-1.5">
+                      <input
+                        type="checkbox"
+                        className="mt-0.5"
+                        data-testid={`form-interpret-check-${field.key}`}
+                        checked={isSelected(field)}
+                        onChange={() => toggle(field.key)}
+                      />
+                      {/* issue #6403 缺陷 2：值可能是 HTML（富文本区的落值口径）⇒ 展示层转可读纯文本；
+                          落值一个字不改（`onFill` 回传的仍是原始 HTML） */}
+                      <span className="min-w-0 text-xs leading-5 text-neutral-700 whitespace-pre-line break-words">
+                        {field.label}：{htmlToPlainText(field.value)}
+                      </span>
+                    </label>
+                  ) : (
+                    <div>
                       <p
-                        data-testid={`form-interpret-reference-${field.key}`}
-                        className="text-xs leading-5 text-amber-700"
+                        data-testid={`form-interpret-reason-${field.key}`}
+                        className="text-xs leading-5 text-neutral-500"
                       >
-                        {field.label}：图上读到（未采纳，仅供查目录）{field.reference}
+                        {field.label}：未填（{field.reason || RECOGNIZE_NO_REASON}）
                       </p>
-                    )}
-                  </div>
-                )}
-                {field.note && (
-                  <p
-                    data-testid={`form-interpret-note-${field.key}`}
-                    className="ml-5 text-[11px] leading-4 text-neutral-400"
-                  >
-                    依据：{field.note}
-                  </p>
-                )}
-              </div>
-            ))}
-          </div>
+                      {field.reference && (
+                        /* 「参考」（issue #6529）：图上读到、但没采纳 —— 如实说清，且**不进表单** */
+                        <p
+                          data-testid={`form-interpret-reference-${field.key}`}
+                          className="text-xs leading-5 text-amber-700"
+                        >
+                          {field.label}：图上读到（未采纳，仅供查目录）{field.reference}
+                        </p>
+                      )}
+                    </div>
+                  )}
+                  {field.note && (
+                    <p
+                      data-testid={`form-interpret-note-${field.key}`}
+                      className="ml-5 text-[11px] leading-4 text-neutral-400"
+                    >
+                      依据：{field.note}
+                    </p>
+                  )}
+                </div>
+              ))}
+            </div>
+          </section>
         )
       })}
-
-      {/* `type="button"`：本卡片就渲染在**表单里**（`titleActions` 槽），缺省 type 会提交表单 */}
-      <Button
-        type="button"
-        variant="secondary"
-        size="sm"
-        className="mt-2"
-        data-testid="form-interpret-fill"
-        disabled={selectedCount === 0}
-        onClick={handleFill}
-      >
-        一键填入
-      </Button>
     </div>
   )
 }

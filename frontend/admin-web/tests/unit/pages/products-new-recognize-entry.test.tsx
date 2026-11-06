@@ -215,6 +215,43 @@ describe('#5918 新增商品页：识别入口的落点与功能', () => {
     expect(card.contains(screen.getByTestId('form-interpret-card'))).toBe(true)
   })
 
+  it('判据 2e（issue #8808）：结果卡落在**整行落点**里，不在标题行右侧栏（竖版窄条的根因）', async () => {
+    mockUploadImage.mockResolvedValue({ data: { data: { url: 'https://cdn.example.com/roll.jpg' } } })
+    mockInterpret.mockResolvedValue({
+      data: {
+        data: {
+          component: 'page_fill',
+          target_type: 'product',
+          fields: [
+            {
+              key: 'name',
+              label: '商品标题',
+              value: '识别出来的遮光窗帘',
+              source: '[图片识别]',
+              reason: null,
+              candidates: [],
+              note: null,
+              note_source: null,
+            },
+          ],
+        },
+      },
+    })
+    render(<NewProductPage />)
+
+    fireEvent.change(screen.getByTestId('image-recognize-input'), {
+      target: { files: [new File(['x'], 'a.png', { type: 'image/png' })] },
+    })
+    await waitFor(() => expect(screen.getByTestId('form-interpret-card')).toBeTruthy())
+
+    const slot = screen.getByTestId('pf-interpret-slot')
+    const actions = screen.getByTestId('pf-title-actions')
+    const card = screen.getByTestId('form-interpret-card')
+    // 卡片必须挂到整行落点；**不许**留在标题行的右侧栏（那里只有 288px，只能竖排）
+    expect(slot.contains(card)).toBe(true)
+    expect(actions.contains(card)).toBe(false)
+  })
+
   it('判据 2c（issue #6403 缺陷 1）：多值门幅串一键填入 ⇒「规格尺寸」不再是 (0)', async () => {
     mockUploadImage.mockResolvedValue({ data: { data: { url: 'https://cdn.example.com/roll.jpg' } } })
     mockInterpret.mockResolvedValue({
