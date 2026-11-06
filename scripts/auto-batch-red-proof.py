@@ -97,7 +97,7 @@ MUTATIONS = [
     {
         "name": "off_gate",
         "why": "把「显式关 ⇒ 零读零写」的闸拆掉（关着也照评估、照派）",
-        "file": SVC + "ProcessingOrderService.java",
+        "file": SVC + "ProcessingOrderAutoBatch.java",
         # 锚点带上下文行：`if (tenantId == null || !policy.enabled()) {` 在本文件出现**两次**
         # （autoBatchDispatch 与 autoBatchDispatchDue 各一处）⇒ 只取裸行会命中 2 次，机具判「腐烂」
         "old": "        if (tenantId == null || !policy.enabled()) {\n"
@@ -110,7 +110,7 @@ MUTATIONS = [
     {
         "name": "trigger_only_in_fallback",
         "why": "把主触发改成「只在兜底扫描里」（条件判定恒不成立 ⇒ 只有到期的单才会被派）",
-        "file": SVC + "ProcessingOrderService.java",
+        "file": SVC + "ProcessingOrderAutoBatch.java",
         "old": "        if (demand.compareTo(policy.minBatchMeters()) >= 0) {",
         "new": "        if (false && demand.compareTo(policy.minBatchMeters()) >= 0) { // [RED-PROOF]",
         "cls": UNIT, "fqn": UNIT_FQN,
@@ -119,7 +119,7 @@ MUTATIONS = [
     {
         "name": "condition_always_true",
         "why": "成批条件恒真",
-        "file": SVC + "ProcessingOrderService.java",
+        "file": SVC + "ProcessingOrderAutoBatch.java",
         "old": "        BigDecimal demand = StockQuantity.orZero(group.requiredMeters());\n        if (demand.signum() <= 0) {\n            return null;\n        }",
         "new": "        BigDecimal demand = StockQuantity.orZero(group.requiredMeters());\n        if (demand.signum() <= 0) {\n            return null;\n        }\n        if (true) { return \"[RED-PROOF] always\"; }",
         "cls": UNIT, "fqn": UNIT_FQN,
@@ -128,7 +128,7 @@ MUTATIONS = [
     {
         "name": "no_business_fallback",
         "why": "去掉业务兜底（最晚派单日永不到期）",
-        "file": SVC + "ProcessingOrderService.java",
+        "file": SVC + "ProcessingOrderAutoBatch.java",
         "old": "            if (latest == null || today.isBefore(latest)) {\n                continue;\n            }",
         "new": "            if (true) { // [RED-PROOF] 兜底被去掉\n                continue;\n            }",
         "cls": UNIT, "fqn": UNIT_FQN,

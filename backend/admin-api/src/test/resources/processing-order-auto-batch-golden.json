@@ -1,0 +1,389 @@
+{
+  "policy" : {
+    "spring-defaults" : {
+      "enabled" : true,
+      "fillRatioPercent" : 80,
+      "convergeMeters" : 0.2,
+      "minBatchMeters" : 30,
+      "standardCycleDays" : 7,
+      "assignmentRule" : "fifo",
+      "maxWaitHours" : 24
+    },
+    "spring-overridden" : {
+      "enabled" : false,
+      "fillRatioPercent" : 65,
+      "convergeMeters" : 0.35,
+      "minBatchMeters" : 45,
+      "standardCycleDays" : 11,
+      "assignmentRule" : "best_fit",
+      "maxWaitHours" : 24
+    },
+    "defaults" : {
+      "enabled" : true,
+      "fillRatioPercent" : 80,
+      "convergeMeters" : 0.2,
+      "minBatchMeters" : 30,
+      "standardCycleDays" : 7,
+      "assignmentRule" : "fifo",
+      "maxWaitHours" : 24
+    },
+    "enabledPolicy" : {
+      "enabled" : true,
+      "fillRatioPercent" : 80,
+      "convergeMeters" : 0.2,
+      "minBatchMeters" : 30,
+      "standardCycleDays" : 7,
+      "assignmentRule" : "fifo",
+      "maxWaitHours" : 24
+    },
+    "with" : {
+      "enabled" : true,
+      "fillRatioPercent" : 55,
+      "convergeMeters" : 0.75,
+      "minBatchMeters" : 17,
+      "standardCycleDays" : 3,
+      "assignmentRule" : "fifo",
+      "maxWaitHours" : 24
+    }
+  },
+  "dueScan" : {
+    "01-due-is-dispatched" : {
+      "outcome" : {
+        "enabled" : true,
+        "trigger" : "due_scan",
+        "rule" : "fifo",
+        "reasons" : [ "order=ORD-B001:business_due=2026-10-30(required_delivery_date=2026-11-06)" ],
+        "dispatchedOrderNos" : [ "JG-1" ],
+        "failedOrderIds" : [ ],
+        "failures" : [ ]
+      },
+      "generateCalls" : [ {
+        "orderIds" : [ "o-due" ],
+        "itemIds" : [ "i-due" ],
+        "pooled" : true,
+        "rule" : "fifo",
+        "operator" : "auto:due_scan:fifo"
+      } ]
+    },
+    "02-condition-met-but-not-due" : {
+      "outcome" : {
+        "enabled" : true,
+        "trigger" : "due_scan",
+        "rule" : "fifo",
+        "reasons" : [ ],
+        "dispatchedOrderNos" : [ ],
+        "failedOrderIds" : [ ],
+        "failures" : [ ]
+      },
+      "generateCalls" : [ ]
+    },
+    "03-overdue-but-not-due" : {
+      "outcome" : {
+        "enabled" : true,
+        "trigger" : "due_scan",
+        "rule" : "fifo",
+        "reasons" : [ ],
+        "dispatchedOrderNos" : [ ],
+        "failedOrderIds" : [ ],
+        "failures" : [ ]
+      },
+      "generateCalls" : [ ]
+    },
+    "04-explicit-off" : {
+      "outcome" : {
+        "enabled" : false,
+        "trigger" : "due_scan",
+        "rule" : null,
+        "reasons" : [ ],
+        "dispatchedOrderNos" : [ ],
+        "failedOrderIds" : [ ],
+        "failures" : [ ]
+      },
+      "generateCalls" : [ ]
+    }
+  },
+  "event" : {
+    "01-empty-pool" : {
+      "outcome" : {
+        "enabled" : true,
+        "trigger" : "order_confirmed",
+        "rule" : "fifo",
+        "reasons" : [ ],
+        "dispatchedOrderNos" : [ ],
+        "failedOrderIds" : [ ],
+        "failures" : [ ]
+      },
+      "generateCalls" : [ ]
+    },
+    "02-explicit-off" : {
+      "outcome" : {
+        "enabled" : false,
+        "trigger" : "order_confirmed",
+        "rule" : null,
+        "reasons" : [ ],
+        "dispatchedOrderNos" : [ ],
+        "failedOrderIds" : [ ],
+        "failures" : [ ]
+      },
+      "generateCalls" : [ ]
+    },
+    "03-urgent-never-pooled" : {
+      "outcome" : {
+        "enabled" : true,
+        "trigger" : "order_confirmed",
+        "rule" : "fifo",
+        "reasons" : [ "order=ORD-A002:urgent_never_pooled", "material=prod-auto-a|SKU-A:condition=min_batch(demand=3>=3)" ],
+        "dispatchedOrderNos" : [ "JG-1", "JG-2" ],
+        "failedOrderIds" : [ ],
+        "failures" : [ ]
+      },
+      "generateCalls" : [ {
+        "orderIds" : [ "o-u" ],
+        "itemIds" : [ "i-u" ],
+        "pooled" : false,
+        "rule" : "fifo",
+        "operator" : "auto:order_confirmed:fifo"
+      }, {
+        "orderIds" : [ "o-n" ],
+        "itemIds" : [ "i-n" ],
+        "pooled" : true,
+        "rule" : "fifo",
+        "operator" : "auto:order_confirmed:fifo"
+      } ]
+    },
+    "04-condition-min-batch" : {
+      "outcome" : {
+        "enabled" : true,
+        "trigger" : "order_confirmed",
+        "rule" : "fifo",
+        "reasons" : [ "material=prod-auto-a|SKU-A:condition=min_batch(demand=3>=3)" ],
+        "dispatchedOrderNos" : [ "JG-1" ],
+        "failedOrderIds" : [ ],
+        "failures" : [ ]
+      },
+      "generateCalls" : [ {
+        "orderIds" : [ "o-1" ],
+        "itemIds" : [ "i-1" ],
+        "pooled" : true,
+        "rule" : "fifo",
+        "operator" : "auto:order_confirmed:fifo"
+      } ]
+    },
+    "05-condition-fill-ratio" : {
+      "outcome" : {
+        "enabled" : true,
+        "trigger" : "order_confirmed",
+        "rule" : "fifo",
+        "reasons" : [ "material=prod-auto-a|SKU-A:condition=fill_ratio(demand=3>=80%×batch[PC-A005]=3.5)" ],
+        "dispatchedOrderNos" : [ "JG-1" ],
+        "failedOrderIds" : [ ],
+        "failures" : [ ]
+      },
+      "generateCalls" : [ {
+        "orderIds" : [ "o-1" ],
+        "itemIds" : [ "i-1" ],
+        "pooled" : true,
+        "rule" : "fifo",
+        "operator" : "auto:order_confirmed:fifo"
+      } ]
+    },
+    "06-condition-converge" : {
+      "outcome" : {
+        "enabled" : true,
+        "trigger" : "order_confirmed",
+        "rule" : "fifo",
+        "reasons" : [ "material=prod-auto-a|SKU-A:condition=converge(demand=3,batch[PC-A006]余量=3.1⇒0.1<=0.2)" ],
+        "dispatchedOrderNos" : [ "JG-1" ],
+        "failedOrderIds" : [ ],
+        "failures" : [ ]
+      },
+      "generateCalls" : [ {
+        "orderIds" : [ "o-1" ],
+        "itemIds" : [ "i-1" ],
+        "pooled" : true,
+        "rule" : "fifo",
+        "operator" : "auto:order_confirmed:fifo"
+      } ]
+    },
+    "07-no-condition-not-due" : {
+      "outcome" : {
+        "enabled" : true,
+        "trigger" : "order_confirmed",
+        "rule" : "fifo",
+        "reasons" : [ ],
+        "dispatchedOrderNos" : [ ],
+        "failedOrderIds" : [ ],
+        "failures" : [ ]
+      },
+      "generateCalls" : [ ]
+    },
+    "08-business-due-with-delivery-date" : {
+      "outcome" : {
+        "enabled" : true,
+        "trigger" : "order_confirmed",
+        "rule" : "fifo",
+        "reasons" : [ "order=ORD-A008:business_due=2026-11-03(required_delivery_date=2026-11-10)" ],
+        "dispatchedOrderNos" : [ "JG-1" ],
+        "failedOrderIds" : [ ],
+        "failures" : [ ]
+      },
+      "generateCalls" : [ {
+        "orderIds" : [ "o-1" ],
+        "itemIds" : [ "i-1" ],
+        "pooled" : true,
+        "rule" : "fifo",
+        "operator" : "auto:order_confirmed:fifo:due"
+      } ]
+    },
+    "09-business-due-without-delivery-date" : {
+      "outcome" : {
+        "enabled" : true,
+        "trigger" : "order_confirmed",
+        "rule" : "fifo",
+        "reasons" : [ "order=ORD-A009:business_due=2026-10-04(no_required_delivery_date ⇒ 进池日 + 标准生产周期)" ],
+        "dispatchedOrderNos" : [ "JG-1" ],
+        "failedOrderIds" : [ ],
+        "failures" : [ ]
+      },
+      "generateCalls" : [ {
+        "orderIds" : [ "o-1" ],
+        "itemIds" : [ "i-1" ],
+        "pooled" : true,
+        "rule" : "fifo",
+        "operator" : "auto:order_confirmed:fifo:due"
+      } ]
+    },
+    "10-multi-group-same-order" : {
+      "outcome" : {
+        "enabled" : true,
+        "trigger" : "order_confirmed",
+        "rule" : "fifo",
+        "reasons" : [ "material=prod-auto-a|SKU-A:condition=converge(demand=3,batch[PC-A010]余量=3.1⇒0.1<=0.2)" ],
+        "dispatchedOrderNos" : [ "JG-1" ],
+        "failedOrderIds" : [ ],
+        "failures" : [ ]
+      },
+      "generateCalls" : [ {
+        "orderIds" : [ "o-1" ],
+        "itemIds" : [ "i-a", "i-b" ],
+        "pooled" : true,
+        "rule" : "fifo",
+        "operator" : "auto:order_confirmed:fifo"
+      } ]
+    },
+    "11-fail-soft-single-retry" : {
+      "outcome" : {
+        "enabled" : true,
+        "trigger" : "order_confirmed",
+        "rule" : "fifo",
+        "reasons" : [ "material=prod-auto-a|SKU-A:condition=min_batch(demand=3>=3)" ],
+        "dispatchedOrderNos" : [ "JG-1" ],
+        "failedOrderIds" : [ ],
+        "failures" : [ ]
+      },
+      "generateCalls" : [ {
+        "orderIds" : [ "o-1" ],
+        "itemIds" : [ "i-1" ],
+        "pooled" : true,
+        "rule" : "fifo",
+        "operator" : "auto:order_confirmed:fifo"
+      }, {
+        "orderIds" : [ "o-1" ],
+        "itemIds" : [ "i-1" ],
+        "pooled" : false,
+        "rule" : "fifo",
+        "operator" : "auto:order_confirmed:fifo:single"
+      } ]
+    },
+    "12-fail-soft-plain-retry" : {
+      "outcome" : {
+        "enabled" : true,
+        "trigger" : "order_confirmed",
+        "rule" : "fifo",
+        "reasons" : [ "material=prod-auto-a|SKU-A:condition=min_batch(demand=3>=3)" ],
+        "dispatchedOrderNos" : [ "JG-1" ],
+        "failedOrderIds" : [ ],
+        "failures" : [ ]
+      },
+      "generateCalls" : [ {
+        "orderIds" : [ "o-1" ],
+        "itemIds" : [ "i-1" ],
+        "pooled" : true,
+        "rule" : "fifo",
+        "operator" : "auto:order_confirmed:fifo"
+      }, {
+        "orderIds" : [ "o-1" ],
+        "itemIds" : [ "i-1" ],
+        "pooled" : false,
+        "rule" : "fifo",
+        "operator" : "auto:order_confirmed:fifo:single"
+      }, {
+        "orderIds" : [ "o-1" ],
+        "itemIds" : [ ],
+        "pooled" : false,
+        "rule" : null,
+        "operator" : "auto:order_confirmed:fifo:plain"
+      } ]
+    },
+    "13-fail-soft-all-fail" : {
+      "outcome" : {
+        "enabled" : true,
+        "trigger" : "order_confirmed",
+        "rule" : "fifo",
+        "reasons" : [ "material=prod-auto-a|SKU-A:condition=min_batch(demand=3>=3)" ],
+        "dispatchedOrderNos" : [ ],
+        "failedOrderIds" : [ "o-1" ],
+        "failures" : [ "trigger=order_confirmed, orderId=o-1: 夹具：这一级派不出去" ]
+      },
+      "generateCalls" : [ {
+        "orderIds" : [ "o-1" ],
+        "itemIds" : [ "i-1" ],
+        "pooled" : true,
+        "rule" : "fifo",
+        "operator" : "auto:order_confirmed:fifo"
+      }, {
+        "orderIds" : [ "o-1" ],
+        "itemIds" : [ "i-1" ],
+        "pooled" : false,
+        "rule" : "fifo",
+        "operator" : "auto:order_confirmed:fifo:single"
+      }, {
+        "orderIds" : [ "o-1" ],
+        "itemIds" : [ ],
+        "pooled" : false,
+        "rule" : null,
+        "operator" : "auto:order_confirmed:fifo:plain"
+      } ]
+    },
+    "14-rule-normalized" : {
+      "outcome" : {
+        "enabled" : true,
+        "trigger" : "order_confirmed",
+        "rule" : "best_fit",
+        "reasons" : [ "material=prod-auto-a|SKU-A:condition=min_batch(demand=3>=3)" ],
+        "dispatchedOrderNos" : [ "JG-1" ],
+        "failedOrderIds" : [ ],
+        "failures" : [ ]
+      },
+      "generateCalls" : [ {
+        "orderIds" : [ "o-1" ],
+        "itemIds" : [ "i-1" ],
+        "pooled" : true,
+        "rule" : "best_fit",
+        "operator" : "auto:order_confirmed:best_fit"
+      } ]
+    },
+    "15-idempotent-after-dispatch" : {
+      "outcome" : {
+        "enabled" : true,
+        "trigger" : "order_confirmed",
+        "rule" : "fifo",
+        "reasons" : [ ],
+        "dispatchedOrderNos" : [ ],
+        "failedOrderIds" : [ ],
+        "failures" : [ ]
+      },
+      "generateCalls" : [ ]
+    }
+  }
+}
