@@ -265,6 +265,51 @@ public class ProcessingOrderService {
         return autoBatch;
     }
 
+    /**
+     * **快照构建单元**（issue #8770 快照/读面一档）：惰性构造，**不进构造器** —— 与
+     * {@link #dispatchPool()} 同一理由（构造器是 16 处直接 {@code new} 的契约）。单元**无状态**，
+     * 只持有 {@code processingItemMapper} + {@code objectMapper}（两个都是门面的既有依赖）。
+     */
+    private ProcessingOrderSnapshotBuilder snapshotBuilder;
+
+    private ProcessingOrderSnapshotBuilder snapshotBuilder() {
+        if (snapshotBuilder == null) {
+            snapshotBuilder = new ProcessingOrderSnapshotBuilder(processingItemMapper, objectMapper);
+        }
+        return snapshotBuilder;
+    }
+
+    /**
+     * **读面单元**（issue #8770 快照/读面一档）：惰性构造，理由同上。单号解析留在门面
+     * （状态机 / 打印计数 / 详情都在用）⇒ 本类经窄接口 {@link ProcessingOrderReadFace.Owner} 回调，
+     * 且**即时取值**（详情域名可能被既有判据在构造之后换掉）。
+     */
+    private ProcessingOrderReadFace readFace;
+
+    private ProcessingOrderReadFace readFace() {
+        if (readFace == null) {
+            readFace = new ProcessingOrderReadFace(processingOrderMapper, orderMapper, objectMapper,
+                    new ProcessingOrderReadFace.Owner() {
+                        @Override
+                        public ProcessingOrder resolveProcessingOrder(String rawId, Long tenantId) {
+                            return ProcessingOrderService.this.resolveProcessingOrder(rawId, tenantId);
+                        }
+
+                        @Override
+                        public Order resolveOrder(String rawId, Long tenantId) {
+                            return ProcessingOrderService.this.resolveOrder(rawId, tenantId);
+                        }
+
+                        @Override
+                        public String scanBaseUrl() {
+                            return ProcessingOrderService.this.shortLinkBaseUrl;
+                        }
+                    });
+        }
+        return readFace;
+    }
+
+
 
     /**
      * 工序库查不到「部位×工艺」路线时的错误码（fail-closed）。
@@ -439,7 +484,7 @@ public class ProcessingOrderService {
      * （{@code ProcessingOrderBlock} / {@code TaskCardPrint}）此前**看不到** —— 缺的就是本键。
      * 串由 ai-agent 算料引擎产出、下单时原样落 {@code processing_info}，Java **只透传**、不自拼。</p>
      */
-    private static final List<String> CALC_OUTPUT_SNAPSHOT_KEYS = List.of(
+    static final List<String> CALC_OUTPUT_SNAPSHOT_KEYS = List.of(
             "fabric_meters", "pleat_count", "per_panel_pleats", "panels", "holes",
             "fullness", "fullness_actual", "formula_text");
 
@@ -454,7 +499,7 @@ public class ProcessingOrderService {
      * （{@code craft-display.ts} 同登记两个别名）都按 snake_case 读 ⇒ 两者**不同名**。
      * 若直接用键族名取值，会**恒取不到**（静默缺行，且没有任何东西会变红）。</p>
      */
-    private static final Map<String, String> CALC_OUTPUT_SOURCE_KEY_ALIASES = Map.of(
+    static final Map<String, String> CALC_OUTPUT_SOURCE_KEY_ALIASES = Map.of(
             "formula_text", "formulaText");
 
     /**
@@ -464,7 +509,7 @@ public class ProcessingOrderService {
      * <p>⚠️ 新键不加进这里就**不会进快照**（{@link #buildSnapshot} 逐键取）⇒
      * 「车间少一道活 / 少一个展示字段」，而快照是加工单的固化真相，事后补不回来。</p>
      */
-    private static final List<String> CRAFT_SPEC_SNAPSHOT_KEYS = List.of(
+    static final List<String> CRAFT_SPEC_SNAPSHOT_KEYS = List.of(
             "curtainType", "craft", "cuttingMode", "openCount", "isShaped", "pleatSpacing",
             "hasPattern", "patternRepeat", "style", "room", "batchNo",
             "componentRole", "craftLineId", "metersSource", "processingMeters",
@@ -2075,141 +2120,14 @@ public class ProcessingOrderService {
     }
 
     /**
-     * 快照构建（五要素 + options；不含销售价——决策 2）。
-     * 加工项 options 下单时未落库，此处从加工项目录补齐（设计文档查漏点 1）。
+     * 快照构建的**唯一入口**（体积已下沉到 {@link ProcessingOrderSnapshotBuilder}）。
      *
-     * <p><b>craft spec + 算料输出（issue #4354，设计文档 §4.9）</b>：订单侧自 #4346 起把工艺规格与
-     * 算料输出落在 {@code processing_info} 顶层；本方法**逐键**取（{@code copyIfPresent}）——
-     * 新键不加进白名单就**不会进快照**，而快照是加工单的**固化真相**（生成时的条件工序与计件系数
-     * 都从它读）⇒ 漏一个键 = 车间少一道活 / 少一个展示字段，事后补不回来。
-     * 逐键透传的代价是「缺键就缺」（存量单没有这些键）—— **不造值**是硬约束。</p>
+     * <p>保留这一层而不是把三个调用点改成 {@code snapshotBuilder().buildSnapshot(...)}：调用点
+     * （{@code generate} / {@code derivePositionPayload} / 派单池 {@code Owner}）与全部
+     * {@code {@link #buildSnapshot}} 文档引用因此**一字未改**。</p>
      */
-    @SuppressWarnings("unchecked")
     private List<Map<String, Object>> buildSnapshot(List<OrderItem> items, Long tenantId) {
-        List<Map<String, Object>> snapshot = new ArrayList<>();
-        for (OrderItem item : items) {
-            // 归一化：processingInfo 可能是 Map（BaseMapper 路径）或 JSON 字符串（自定义 @Select 路径）
-            Map<String, Object> pi = normalizeProcessingInfo(item.getProcessingInfo());
-            // 🔴 存量行：`order_items.processing_info` **可为 NULL**（真库实证 issue #5550：待派池里
-            // 29 行有 **15 行**是 NULL）⇒ 归一化结果是**可能为 null 的缺值**，不得直接解引用
-            // —— #4909 那行 `str(pi.get("saleForm"))` 踩的正是这里，智能派单因此**恒 500**
-            //（读面把整池的每一行都过一遍，NULL 行必被扫到；这不是间歇故障）。
-            // 缺值语义 = 既没有加工项、也没有 `saleForm` ⇒ 与「无加工项的非卖布行」走**同一条**既有语义：跳过。
-            if (pi == null) {
-                continue;
-            }
-            List<Map<String, Object>> procs = extractProcessingItems(pi);
-            // 卖布行（`saleForm = 布料`）**天然没有加工项**（按米卖布，不选加工项）⇒ 旧过滤把它整行丢掉，
-            // 于是 `buildPositionPayload` 的布料路线分支（`deriveRouteKey`，issue #4529）**永不执行**
-            // ⇒ 整件商品零工序（真库实证：加工单 JG-20260921-8237 缺「9231 遮光窗帘」的裁剪/打包，issue #4909）。
-            // 其余「无加工项」行仍按旧语义跳过（配件 / 赠品行不成部位，行为逐字不变）。
-            // 卖布判据（issue #7222）：缺 `saleForm` 时按**订单行已落库的布料专属事实**兜底 ——
-            // API / 米宝 / 回归脚本漏写 `saleForm` 时，这一行仍必须进快照，否则
-            // `buildPositionPayload` 的布料分支永不执行 ⇒ 工人拿不到裁剪 / 打包活（#4909 的同族形态）。
-            Map<String, Object> fabricEvidence = new LinkedHashMap<>(pi);
-            if (item.getSellingMethod() != null) {
-                fabricEvidence.put("sellingMethod", item.getSellingMethod());
-            }
-            if (item.getRollCount() != null) {
-                fabricEvidence.put("rollCount", item.getRollCount());
-            }
-            if (procs.isEmpty() && !isFabricSaleLine(fabricEvidence)) {
-                continue;
-            }
-            Map<String, Object> entry = new LinkedHashMap<>();
-            // 明细行 id：拼色绑组的组键来源（§4.8 的 craftLineId 取「主布行的 order_item.id」）
-            entry.put("itemId", item.getId());
-            entry.put("productName", item.getProductName());
-            entry.put("quantity", item.getQuantity());
-            entry.put("width", item.getWidth());
-            entry.put("height", item.getHeight());
-            // 销售信息（与加工项同存 processing_info，前端写入）
-            copyIfPresent(pi, entry, "sku");
-            copyIfPresent(pi, entry, "skuCode", "sku");
-            copyIfPresent(pi, entry, "colorName");
-            copyIfPresent(pi, entry, "sellingMethod");
-            // 布料专属事实（issue #7222）：列值 = **服务端落库的事实**，优先于 processing_info 的同名键
-            // ⇒ 客户端漏写 `saleForm` 时，路线键与单据类型仍能认出这一行是卖布行。
-            if (item.getSellingMethod() != null) {
-                entry.put("sellingMethod", item.getSellingMethod());
-            }
-            if (item.getRollCount() != null) {
-                entry.put("rollCount", item.getRollCount());
-            }
-            copyIfPresent(pi, entry, "doorWidth");
-            copyIfPresent(pi, entry, "unit");
-            // 特殊选项（issue #4230 v1a）：订单侧**新携带** specialOptions: string[]，
-            // 落在既有 processingInfo JSONB 内（**无需迁移**）；加工单快照透传一份，
-            // 生成时的条件工序/计件系数都从快照读（快照是加工单的固化真相）。
-            copyIfPresent(pi, entry, "specialOptions");
-            // 工艺规格 + 算料输出（issue #4354）：全键逐字透传（缺键就缺）
-            for (String key : CRAFT_SPEC_SNAPSHOT_KEYS) {
-                copyIfPresent(pi, entry, key);
-            }
-            for (String key : CALC_OUTPUT_SNAPSHOT_KEYS) {
-                // 取值键名可能与落键键名不同（formula_text ← processing_info.formulaText，issue #4555）
-                copyIfPresent(pi, entry, CALC_OUTPUT_SOURCE_KEY_ALIASES.getOrDefault(key, key), key);
-            }
-            // 显式字段覆盖（V63，issue #4362，S1）：order_items 的 craft spec **列**最后叠加 ——
-            // 推导链的**最高优先级**是「显式字段」，JSONB 键是存量单的旧载体（同一事实的两种落法）。
-            // 列非空即覆盖同名的 JSONB 键；列全空（存量单 / 未填）⇒ 本行是 no-op，
-            // 快照与迁移前**逐字相同** ⇒ 派生路径不受影响（它是长期兜底，不退场）。
-            entry.putAll(OrderLineCraftFields.toSnapshotKeys(item));
-            // 加工项明细 + options 补齐
-            List<Map<String, Object>> itemsWithOptions = new ArrayList<>();
-            for (Map<String, Object> p : procs) {
-                Map<String, Object> enriched = new LinkedHashMap<>(p);
-                Object id = p.get("id");
-                if (id != null) {
-                    ProcessingItem piEntity = processingItemMapper.selectById(String.valueOf(id));
-                    if (piEntity != null) {
-                        enriched.put("options", piEntity.getOptions());
-                        if (!enriched.containsKey("unit")) {
-                            enriched.put("unit", piEntity.getUnit());
-                        }
-                        // 加工项**显式声明**的工艺（V78，issue #4452）：路线键「工艺」维的受控来源。
-                        // 缺省 ⇒ 不落键（缺键就是缺键，派生链再走存量兜底 —— 不造值）。
-                        if (piEntity.getCraftHint() != null && !piEntity.getCraftHint().isBlank()) {
-                            enriched.put("craftHint", piEntity.getCraftHint().trim());
-                        }
-                    }
-                }
-                itemsWithOptions.add(enriched);
-            }
-            entry.put("processingItems", itemsWithOptions);
-            snapshot.add(entry);
-        }
-        return snapshot;
-    }
-
-    private void copyIfPresent(Map<String, Object> from, Map<String, Object> to, String key) {
-        copyIfPresent(from, to, key, key);
-    }
-
-    /**
-     * processing_info 归一化：Map 直接用；JSON 字符串（自定义 @Select 路径，不经过
-     * JacksonTypeHandler）解析为 Map；其它形态返回 null。
-     */
-    @SuppressWarnings("unchecked")
-    private Map<String, Object> normalizeProcessingInfo(Object processingInfo) {
-        if (processingInfo instanceof Map) {
-            return (Map<String, Object>) processingInfo;
-        }
-        if (processingInfo instanceof String s && !s.isBlank()) {
-            try {
-                return objectMapper.readValue(s, Map.class);
-            } catch (Exception e) {
-                log.warn("processingInfo JSON 字符串解析失败: {}", e.getMessage());
-            }
-        }
-        return null;
-    }
-
-    private void copyIfPresent(Map<String, Object> from, Map<String, Object> to, String fromKey, String toKey) {
-        Object v = from.get(fromKey);
-        if (v != null) {
-            to.put(toKey, v);
-        }
+        return snapshotBuilder().buildSnapshot(items, tenantId);
     }
 
     /**
@@ -2223,31 +2141,6 @@ public class ProcessingOrderService {
                 .eq(OrderItem::getTenantId, tenantId)
                 .eq(OrderItem::getDeleted, 0));
         return items != null ? items : java.util.Collections.emptyList();
-    }
-
-    /** 解析 processing_info 的加工项列表（与 OrderService.extractProcessingItems 同语义，兼容 JSON 字符串） */
-    @SuppressWarnings("unchecked")
-    private List<Map<String, Object>> extractProcessingItems(Object processingInfo) {
-        Map<String, Object> normalized = normalizeProcessingInfo(processingInfo);
-        if (normalized == null) {
-            return java.util.Collections.emptyList();
-        }
-        try {
-            Object raw = normalized.get("processingItems");
-            if (!(raw instanceof List)) {
-                return java.util.Collections.emptyList();
-            }
-            List<Map<String, Object>> result = new ArrayList<>();
-            for (Object element : (List<Object>) raw) {
-                if (element instanceof Map) {
-                    result.add(new LinkedHashMap<>((Map<String, Object>) element));
-                }
-            }
-            return result;
-        } catch (Exception e) {
-            log.warn("解析 processingInfo 失败: {}", e.getMessage());
-            return java.util.Collections.emptyList();
-        }
     }
 
     private Order resolveOrder(String rawId, Long tenantId) {
@@ -2444,180 +2337,11 @@ public class ProcessingOrderService {
      */
     public List<ProcessingOrderResponse> list(String keyword, String status, Long tenantId,
                                               Boolean outsourced) {
-        List<ProcessingOrder> list;
-        if (StringUtils.hasText(keyword)) {
-            list = processingOrderMapper.selectByKeyword(keyword.trim(), tenantId);
-        } else {
-            LambdaQueryWrapper<ProcessingOrder> wrapper = new LambdaQueryWrapper<ProcessingOrder>()
-                    .eq(ProcessingOrder::getTenantId, tenantId)
-                    .eq(ProcessingOrder::getDeleted, 0)
-                    .orderByDesc(ProcessingOrder::getCreatedAt)
-                    .last("LIMIT 100");
-            if (StringUtils.hasText(status)) {
-                wrapper.eq(ProcessingOrder::getStatus, status);
-            }
-            list = processingOrderMapper.selectList(wrapper);
-        }
-        if (Boolean.TRUE.equals(outsourced)) {
-            // 过滤成**副本**：不原地改 mapper 返回的集合（那会把「被裁过的列表」留给上游/同一次请求里
-            // 的第二个读面；测试里的 mock 更会当场暴露这件事）
-            list = list.stream()
-                    .filter(po -> StringUtils.hasText(po.getProcessorSupplierId()))
-                    .toList();
-        }
-        Map<String, Order> orders = loadOrders(list);
-        List<ProcessingOrderResponse> result = new ArrayList<>();
-        for (ProcessingOrder po : list) {
-            result.add(toResponse(po, tenantId, orders.get(po.getOrderId())));
-        }
-        return result;
-    }
-
-    /**
-     * 批量取回列表所需的订单（issue #4304）。
-     *
-     * <p><b>为什么必须批量</b>：列表此前逐行调用 {@link #toResponse(ProcessingOrder, Long)}，
-     * 而后者内部 {@code orderMapper.selectById(po.getOrderId())} 只为拿
-     * orderNo/customerName/customerPhone ⇒ N 行 N 次单查。实测 31 行的列表请求里
-     * {@code FROM orders} 单行查询 63 条、本地耗时 ~2.0s（云 dev DB 每跳几十毫秒）。
-     * 这里一次 {@code IN} 取回（{@code selectBatchIds}），逐行按 orderId 建映射。</p>
-     *
-     * <p><b>租户过滤不在本方法</b>：{@code selectBatchIds} 与 {@code selectById} 同为 BaseMapper
-     * 标准方法，租户条件由 {@code TenantLineInnerInterceptor} 注入、软删由 {@code Order} 的
-     * {@code @TableLogic} 兜底 ⇒ 与单查同口径，不因批量而放宽。</p>
-     */
-    private Map<String, Order> loadOrders(List<ProcessingOrder> list) {
-        Set<String> orderIds = new LinkedHashSet<>();
-        for (ProcessingOrder po : list) {
-            if (po.getOrderId() != null) {
-                orderIds.add(po.getOrderId());
-            }
-        }
-        if (orderIds.isEmpty()) {
-            // #6226：空集分支**必须**返回容忍空键的表。此前是 `Map.of()`（不可变空表）—— 它的
-            // `get(null)` 会抛 NPE，而调用点 `orders.get(po.getOrderId())` 的键**未判空**
-            // ⇒ 该批加工单只要 `order_id` 全为空就整页 500。下面非空分支返回的是
-            // `new HashMap<>()`（同族、`get(null)` 返 null）⇒ 这里取同一形态，两个分支契约一致。
-            return new HashMap<>();
-        }
-        List<Order> orders = orderMapper.selectBatchIds(orderIds);
-        Map<String, Order> byId = new HashMap<>();
-        if (orders != null) {
-            for (Order order : orders) {
-                byId.put(order.getId(), order);
-            }
-        }
-        return byId;
+        return readFace().list(keyword, status, tenantId, outsourced);
     }
 
     public ProcessingOrderResponse getDetail(String rawId, Long tenantId) {
-        ProcessingOrder po = resolveProcessingOrder(rawId, tenantId);
-        if (po == null) {
-            // 订单还没有加工单是正常状态（issue #3887）：rawId 若能解析为有效订单（tenant 隔离），
-            // 返回 null → ApiResponse.success(null) → 前端 ProcessingOrderBlock 走
-            // res.data?.data ?? null / setNotFound(!data) 展示「生成加工单」态；
-            // 订单也不存在（真无效 ID）才保持 404。
-            if (resolveOrder(rawId, tenantId) == null) {
-                throw BusinessException.notFound("加工单");
-            }
-            return null;
-        }
-        return toResponse(po, tenantId);
-    }
-
-    /**
-     * 单条路径（详情/状态变更）：按 {@code po.getOrderId()} 单查订单。
-     * 行为与 #4304 之前逐字相同 —— 列表路径改用 {@link #toResponse(ProcessingOrder, Long, Order)}
-     * 批量取回的订单，两条路径的响应字段口径共用同一段映射。
-     */
-    private ProcessingOrderResponse toResponse(ProcessingOrder po, Long tenantId) {
-        return toResponse(po, tenantId, orderMapper.selectById(po.getOrderId()));
-    }
-
-    /**
-     * 加工单纸上的码 = {@code {稳定域名}/o/{短码}}（issue #6867 / B3；设计
-     * {@code docs/design/worker-h5-scan-and-report.md} §11.3 的「后端 · 读面键」行）。
-     *
-     * <p><b>服务端拼装</b>（前端不拼 URL —— 拼法只有这一份），域名走上面 {@link #shortLinkBaseUrl}
-     * 那条既有配置。形态与 {@code ProductionService.scanUrlOf(ProcessingSetPartToken)} **同款**
-     * （设计 §11.3 明写「base + 路径段不同 ⇒ **各自一份，不许互相拼**」：{@code /s/} 解「哪一张
-     * 部位纸」、{@code /o/} 解「哪一张加工单纸」，两个码空间互不命中）。</p>
-     *
-     * <p>🔴 <b>短码为空（存量行尚未分配）⇒ 返回 {@code null}</b>，**绝不产出 {@code /o/null}
-     * 这种假码** —— 前端按「无码」处（纸面印 {@code —}），而不是把一个扫不开也输不进的串印出去。
-     * 与 {@code token} 无关：撤销（{@code qr_token} 置 NULL）**不碰短码**，故本键**不因撤销变 null**
-     * （那一跳 {@code /o/{短码}} 见 token 为空 ⇒ 410 Gone，归 B2）。</p>
-     */
-    private String scanUrlOf(ProcessingOrder po) {
-        if (po == null || !StringUtils.hasText(po.getShortCode())) {
-            return null;
-        }
-        String base = shortLinkBaseUrl == null ? "" : shortLinkBaseUrl.trim();
-        while (base.endsWith("/")) {
-            base = base.substring(0, base.length() - 1);
-        }
-        return base + "/o/" + po.getShortCode();
-    }
-
-    @SuppressWarnings("unchecked")
-    private ProcessingOrderResponse toResponse(ProcessingOrder po, Long tenantId, Order order) {
-        ProcessingOrderResponse resp = new ProcessingOrderResponse();
-        resp.setId(po.getId());
-        resp.setTenantId(String.valueOf(po.getTenantId()));
-        resp.setOrderId(po.getOrderId());
-        resp.setProcessingOrderNo(po.getProcessingOrderNo());
-        resp.setProcessor(po.getProcessor());
-        resp.setProcessorSupplierId(po.getProcessorSupplierId());
-        resp.setExpectedDeliveryDate(po.getExpectedDeliveryDate());
-        resp.setStatus(po.getStatus());
-        resp.setRemark(po.getRemark());
-        resp.setTemplateVersion(po.getTemplateVersion());
-        resp.setGeneratedAt(po.getGeneratedAt());
-        resp.setIssuedAt(po.getIssuedAt());
-        resp.setInProcessingAt(po.getInProcessingAt());
-        resp.setCompletedAt(po.getCompletedAt());
-        resp.setCancelledAt(po.getCancelledAt());
-        resp.setCancelledReason(po.getCancelledReason());
-        resp.setPrintCount(po.getPrintCount());
-        // 路线可观测（V60，issue #4308）：详情 API 必须能查出「实际走哪条 / 想走哪条 / 怎么来的」
-        resp.setRouteKey(po.getRouteKey());
-        resp.setRouteRequestedKey(po.getRouteRequestedKey());
-        resp.setRouteSource(po.getRouteSource());
-        // 单据类型（V159，issue #7079）：同表列，随既有查询**已经带回** ⇒ 零新增查询（同 route_* 三列）。
-        resp.setOrderKind(po.getOrderKind());
-        // 加工单纸上的码（issue #6867 / B3；设计 §11.3「后端 · 读面键」）：**追加**两键，
-        // 键**恒在**（未知 ⇒ null），既有键一字不动。
-        // 🔴 **零新增查询**：`po` 由本方法的唯一入口 `resolveProcessingOrder`（详情）/
-        // `selectList`/`selectByKeyword`（列表）**已经带回**（`short_code` 是同表列）⇒
-        // 这里只做映射与拼串，不为这两键多查一次 DB。
-        resp.setShortCode(po.getShortCode());
-        resp.setScanUrl(scanUrlOf(po));
-        // 订单信息（列表路径由调用方批量取回后传入，单条路径传入单查结果；null 时字段留空，同旧行为）
-        if (order != null) {
-            resp.setOrderNo(order.getOrderNo());
-            resp.setCustomerName(order.getCustomerName());
-            resp.setCustomerPhone(order.getCustomerPhone());
-        }
-        // 快照解析（兼容 JSON 字符串：自定义 @Select 查询路径不经过 typeHandler）
-        Object snapshot = po.getItemsSnapshot();
-        if (snapshot instanceof String s && !s.isBlank()) {
-            try {
-                snapshot = objectMapper.readValue(s, Object.class);
-            } catch (Exception e) {
-                log.warn("加工单快照 JSON 字符串解析失败: po={}, err={}", po.getProcessingOrderNo(), e.getMessage());
-                snapshot = null;
-            }
-        }
-        if (snapshot != null) {
-            try {
-                resp.setItems(objectMapper.convertValue(snapshot,
-                        objectMapper.getTypeFactory().constructCollectionType(List.class,
-                                ProcessingOrderResponse.ProcessingOrderItemBrief.class)));
-            } catch (Exception e) {
-                log.warn("加工单快照解析失败: po={}, err={}", po.getProcessingOrderNo(), e.getMessage());
-            }
-        }
-        return resp;
+        return readFace().getDetail(rawId, tenantId);
     }
 
     // ============================================================ 生成结果

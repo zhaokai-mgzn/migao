@@ -430,7 +430,7 @@
       "tool": "scripts/pool-board-red-proof.py",
       "mutation": "pi_null_guard",
       "criterion": "判据1/2 存量行（processing_info 为 NULL，issue #5550）不炸池读面",
-      "guarded": "backend/admin-api/src/main/java/com/migao/admin/service/ProcessingOrderService.java",
+      "guarded": "backend/admin-api/src/main/java/com/migao/admin/service/ProcessingOrderSnapshotBuilder.java",
       "anchor": "            if (pi == null) {\n                continue;\n            }\n",
       "replacement": "            // [RED-PROOF] pi 的 null 判定被摘掉\n",
       "criteria": {
