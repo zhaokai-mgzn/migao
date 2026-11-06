@@ -105,25 +105,27 @@ test.describe('岗位权限管理页面（#2969 由角色权限改名）', () =>
     await expect(page.roleModal.getByText('权限分配', { exact: true })).toBeVisible()
     const tree = await page.permissionTree.waitFor({ state: 'visible', timeout: 5_000 }).catch(() => null)
     expect(tree).not.toBeNull()
-    // 菜单组名 = 侧边栏菜单组（🔴 2026-10-17 issue #7087 现 IA = **5 组**：客户服务 / 交易管理 /
-    // 生产管理 / 仓储与物料 / 组织管理 —— 原第 1 组「工作台」**已整组撤销** ⇒ 下面把它钉成**不得出现**）
-    // 🔴 #5895 / #7087：侧边栏是**四个梯队** —— 最前席位（`standaloneHeadItems`：「经营看板」）→
-    // 尾席位一级项（`standaloneTopItems`：「商品管理」「企业基础设置」）→ 分组 → 尾部项（通知中心）。
-    // 「经营看板」是一级项、**不属于任何组** ⇒ 它渲染在专属容器 `perm-standalone-head` 里
-    //（#5895 的缺陷形态 = 一级项整项缺席权限树；#7087 又把它从组内项升成一级项 ⇒ 容器随之改变）。
+    // 菜单组名 = 侧边栏菜单组（用户裁定「观星台菜单调整」后现 IA = **8 组**：
+    // 客户服务 / 订单/商品 / 生产管理 / 质量管理 / 仓储/物料 / 财务 / 供应链 / 组织管理）
+    // 🔴 #5895 / #7087：侧边栏是**四个梯队** —— 最前席位（`standaloneHeadItems`：经营概览 / 报表中心）→
+    // 分组 → 尾席位一级项（`standaloneTopItems`：企业基础设置，插在供应链之后）→ 尾部项（通知中心）。
+    // 「经营概览」是一级项、**不属于任何组** ⇒ 它渲染在专属容器 `perm-standalone-head` 里。
     const headTier = page.permissionTree.getByTestId('perm-standalone-head')
     await expect(headTier.getByText('经营概览', { exact: true })).toBeVisible()
     await expect(headTier.getByText('dashboard:view', { exact: true })).toBeVisible()
     const topTier = page.permissionTree.getByTestId('perm-standalone-top')
-    await expect(topTier.getByText('商品管理', { exact: true })).toBeVisible()
-    await expect(topTier.getByText('product:list', { exact: true })).toBeVisible()
+    await expect(topTier.getByText('企业基础设置', { exact: true })).toBeVisible()
+    // 商品管理已进「订单/商品」组（不再是尾席位一级项）—— 台账/客户列表是组内唯一名，用它们定位
+    await expect(topTier.getByText('商品管理', { exact: true })).toHaveCount(0)
     await expect(page.permissionTree.getByText('工作台', { exact: true })).toHaveCount(0)
-    await expect(page.permissionTree.getByText('客户服务', { exact: true })).toBeVisible()
+    for (const groupName of ['客户服务', '订单/商品', '生产管理', '质量管理', '仓储/物料', '财务', '供应链', '组织管理']) {
+      await expect(page.permissionTree.getByText(groupName, { exact: true })).toBeVisible()
+    }
+    // 旧组名（本轮合并/正名前）不得残留
+    for (const legacy of ['交易管理', '基础资料', '仓储与物料', '质量']) {
+      await expect(page.permissionTree.getByText(legacy, { exact: true })).toHaveCount(0)
+    }
     await expect(page.permissionTree.getByText('商品与加工项', { exact: true })).toHaveCount(0)
-    // issue #5271：原「订单管理」+「客户管理」两组**并为一组**「交易管理」（客户列表 / 财务对账并入）
-    await expect(page.permissionTree.getByText('交易管理', { exact: true })).toBeVisible()
-    await expect(page.permissionTree.getByText('仓储与物料', { exact: true })).toBeVisible()
-    await expect(page.permissionTree.getByText('组织管理', { exact: true })).toBeVisible()
     // 菜单项名 = 侧边栏菜单项
     await expect(page.permissionTree.getByText('在线接待', { exact: true })).toBeVisible()
     // #3094: 黄金策 · 在线对话 菜单入口已移除（智能体对话经右下角 FAB 进入）

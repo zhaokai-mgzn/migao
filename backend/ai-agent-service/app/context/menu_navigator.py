@@ -77,19 +77,23 @@ from dataclasses import dataclass
 from typing import Any, Dict, FrozenSet, Iterable, Optional, Sequence, Tuple
 
 #: 菜单组（`menu.ts` 的 `menuGroups`）—— key 与组名逐字同源，顺序即渲染顺序。
-#: 🔴 2026-10-17（issue #7087，用户裁定）：「**工作台**」组整组撤销（原 `("workspace", "工作台")`
-#: 已删除）⇒ 现为**五组**。原组内两项的去向：「经营看板」升为**最前席位一级项**（见 `MENU_TREE`
-#: 首节点），「每日简报」菜单项**删除**（那一行结论已在经营看板上，企业开关驱动那张卡）。
+#: 🔴 2026-11-06（用户裁定「观星台菜单调整」）：仍为**八组**，但**组名与组内成员已重排** ——
+#: 旧「交易管理」+「基础资料」合并为「订单/商品」、新增「财务」、「质量」正名「质量管理」、
+#: 「仓储与物料」正名「仓储/物料」、入库单由供应链移入仓储/物料。
+#: （#7087 起「工作台」组已整组撤销：经营概览升为最前席位一级项、每日简报菜单项删除。）
 MENU_GROUPS: Tuple[Tuple[str, str], ...] = (
     ("customer-service", "客户服务"),
-    # 基础资料（2026-10-29 issue #8086，用户裁定 Q2/Q5/Q6）：商品管理 / 客户列表 / 供应商 / 价格本
-    ("basic-data", "基础资料"),
-    ("trade-center", "交易管理"),
+    # 订单/商品（2026-11-06 用户裁定）：旧「交易管理」+「基础资料」合并 —— 销售订单 / 商品管理 /
+    # 价格本 / 客户列表（开单链：卖什么 → 什么价 → 卖给谁 → 成交）
+    ("orders-products", "订单/商品"),
     ("production-center", "生产管理"),
-    # 质量（2026-10-29 issue #8086，用户裁定 Q3）：质检记录 / 返工单
-    ("quality", "质量"),
+    # 质量管理（2026-10-29 issue #8086 拆出、2026-11-06 用户正名）：质检记录 / 返工单
+    ("quality", "质量管理"),
+    # 仓储/物料（2026-11-06 用户正名；入库单由供应链移入）
+    ("inventory-center", "仓储/物料"),
+    # 财务（2026-11-06 用户裁定新建）：财务对账 / 计件工资
+    ("finance-center", "财务"),
     ("supply-chain", "供应链"),
-    ("inventory-center", "仓储与物料"),
     ("org-center", "组织管理"),
 )
 #: 菜单组 key → **商家可见**的组名（上表的显示名一列）。
@@ -116,50 +120,51 @@ class MenuNode:
     permission_code: str
 
 
-#: `menu.ts` 的**全量导航节点**（现取 2026-10-29：**28 项** = 8 组 24 项 + 一级独立项 4
-#: —— 经营看板 / 报表中心 / 企业基础设置 / 通知中心）。
+#: `menu.ts` 的**全量导航节点**（现取 2026-11-06：**28 项** = 8 组 24 项 + 一级独立项 4
+#: —— 经营概览 / 报表中心 / 企业基础设置 / 通知中心）。
 #: 顺序 = `menu.ts` 的渲染顺序；判据按 `MENU_TREE_ORDER_LOCKED` 比对（**顺序也锁**）。
-#: 🔴 2026-10-29（issue #8086，用户四条裁定）：新增「基础资料」（商品管理 / 客户列表 / 供应商 / 价格本）
-#: 与「质量」（质检记录 / 返工单）两组；三处正名（经营看板→经营概览、作业看板→作业单、省料看板→省料分析）；
-#: 商品管理不再是一级项 ⇒ 独立项从 5 项降为 4 项。本镜像**必须**与 `menu.ts` 同批（判据 =
-#: tests/unit_ci_workflows/test_menu_navigator.py 的「MENU_TREE 的顺序与 menu.ts 的渲染顺序不同」）。
+#: 🔴 2026-11-06（用户裁定）：组与组内顺序整体重排（客户服务 / 订单/商品 / 生产管理 / 质量管理 /
+#: 仓储/物料 / 财务 / 供应链 / 组织管理）。本镜像**必须**与 `menu.ts` 同批（判据 =
+#: tests/unit_ci_workflows/test_menu_navigator.py 的「MENU_TREE 的顺序与 menu.ts 的顺序不同」）。
 MENU_TREE: Tuple[MenuNode, ...] = (
     # 最前席位一级项（issue #7087）：渲染在**所有分组之前**（登录落点 = 第一个可见菜单项）。
     MenuNode(STANDALONE_GROUP, "经营概览", "/dashboard", "dashboard:view"),
     MenuNode(STANDALONE_GROUP, "报表中心", "/reports", "dashboard:view"),
-    # 客户服务（2026-10-29：客户列表移入「基础资料」）
+    # 客户服务（2026-11-06：组内顺序 = 在线接待 → 售后工单 → 知识库）
     MenuNode("customer-service", "在线接待", "/agent-workspace/human-sessions", "agent:session"),
-    MenuNode("customer-service", "知识库", "/knowledge", "knowledge:view"),
     MenuNode("customer-service", "售后工单", "/after-sales", "after_sales:view"),
-    # 基础资料（issue #8086）：档案与交易条件 —— 位置 = 客户服务之后、交易管理之前
-    MenuNode("basic-data", "商品管理", "/products", "product:list"),
-    MenuNode("basic-data", "客户列表", "/customers", "customer:view"),
-    MenuNode("basic-data", "供应商", "/suppliers", "supplier:view"),
-    MenuNode("basic-data", "价格本", "/price-books", "order:list"),
-    # 交易管理（2026-10-29：价格本移入「基础资料」；issue #7354 正名「销售订单」）
-    MenuNode("trade-center", "销售订单", "/orders", "order:list"),
-    MenuNode("trade-center", "财务对账", "/finance", "finance:view"),
-    # 生产管理（2026-10-29：质检/返工拆出 →「质量」；issue #6580 起只有三项）
+    MenuNode("customer-service", "知识库", "/knowledge", "knowledge:view"),
+    # 订单/商品（2026-11-06 新组；组内顺序 = 用户逐字）
+    MenuNode("orders-products", "销售订单", "/orders", "order:list"),
+    MenuNode("orders-products", "商品管理", "/products", "product:list"),
+    MenuNode("orders-products", "价格本", "/price-books", "order:list"),
+    MenuNode("orders-products", "客户列表", "/customers", "customer:view"),
+    # 生产管理（2026-11-06：计件工资移出 → 财务）
     MenuNode("production-center", "作业单", "/production", "production:view"),
     MenuNode("production-center", "智能派单", "/production/pool", "processing:view"),
-    MenuNode("production-center", "计件工资", "/production/piecework", "production:view"),
-    # 质量（issue #8086）：质检记录（production:inspect）/ 返工单（after_sales:view）
+    # 质量管理（issue #8086 拆出；2026-11-06 正名）
     MenuNode("quality", "质检记录", "/quality-inspections", "production:inspect"),
     MenuNode("quality", "返工单", "/rework-orders", "after_sales:view"),
-    # 供应链（issue #7369；2026-10-29：供应商移入「基础资料」）
-    MenuNode("supply-chain", "入库单", "/inbound-orders", "inbound:view"),
-    MenuNode("supply-chain", "采购单", "/purchase-orders", "purchase:view"),
-    # 仓储与物料（2026-10-20 起只留库存与出库）
-    MenuNode("inventory-center", "库存明细", "/stock-ledger", "product:list"),
+    # 仓储/物料（2026-11-06：入库单移入并排第一；组名正名）
+    MenuNode("inventory-center", "入库单", "/inbound-orders", "inbound:view"),
     MenuNode("inventory-center", "盘点单", "/stocktakes", "stock:view"),
     MenuNode("inventory-center", "出库单", "/outbound-orders", "stock:view"),
     MenuNode("inventory-center", "发货单", "/shipments", "order:list"),
+    MenuNode("inventory-center", "库存明细", "/stock-ledger", "product:list"),
     MenuNode("inventory-center", "余料台账", "/production/remnants", "processing:manage"),
     MenuNode("inventory-center", "省料分析", "/production/saving-board", "product:list"),
+    # 财务（2026-11-06 新组）：财务对账 / 计件工资
+    MenuNode("finance-center", "财务对账", "/finance", "finance:view"),
+    MenuNode("finance-center", "计件工资", "/production/piecework", "production:view"),
+    # 供应链（2026-11-06：入库单移出；采购单 → 供应商）
+    MenuNode("supply-chain", "采购单", "/purchase-orders", "purchase:view"),
+    MenuNode("supply-chain", "供应商", "/suppliers", "supplier:view"),
     # 组织管理
     MenuNode("org-center", "员工管理", "/employees", "employee:list"),
     MenuNode("org-center", "岗位权限", "/roles", "system:view"),
-    # 尾席位一级项（`standaloneTopItems`）：商品管理已进「基础资料」组 ⇒ 本席位只剩「企业基础设置」
+    # 尾席位一级项（`standaloneTopItems`）：本镜像的**声明顺序**与 `menu.ts` 一致
+    # （`menu.ts` 里该数组声明在 `menuGroups` 之后 ⇒ 本节点排在组之后；渲染位另由
+    # `STANDALONE_TOP_AFTER_GROUP_KEY` 表达 —— 判据 1b 比的是声明顺序，不是渲染位）。
     MenuNode(STANDALONE_GROUP, "企业基础设置", "/settings", "production:view"),
     MenuNode(STANDALONE_GROUP, "通知中心", "/notifications", ""),
 )
@@ -232,7 +237,7 @@ NAV_FEATURES: Tuple[NavFeature, ...] = (
     # 价格本（issue #7375 段 3）：用户问「这个客户什么价 / 能不能便宜 / 阶梯价怎么设」时引导到这里。
     # ⚠️ 说法里必须**逐字**含菜单名「价格本」（判据要求每个菜单节点都有一条能被问到的说法）。
     NavFeature("price-books", "价格本（协议价 / 等级价 / 阶梯价）",
-               (("basic-data", "价格本"),),
+               (("orders-products", "价格本"),),
                ("价格本", "价格本协议价", "价格本等级价", "价格本阶梯价", "价格本改价")),
     # 报表中心（issue #7376 / #7377）：经营数据面的「下钻」—— 用户问「毛利多少 / 哪些货压着 /
     # 谁卖得多 / 质量成本多少」时引导到这里（四张表都在这一页）。
@@ -240,12 +245,12 @@ NAV_FEATURES: Tuple[NavFeature, ...] = (
                ((STANDALONE_GROUP, "报表中心"),),
                ("报表", "报表中心", "毛利", "滞销", "业绩", "质量成本")),
     NavFeature("human-sessions", "在线接待（人工接待）", (("customer-service", "在线接待"),), ("在线接待", "人工接待")),
-    NavFeature("customers", "客户列表（客户）", (("basic-data", "客户列表"),), ("客户列表", "客户")),
+    NavFeature("customers", "客户列表（客户）", (("orders-products", "客户列表"),), ("客户列表", "客户")),
     NavFeature("knowledge", "知识库", (("customer-service", "知识库"),), ("知识库",)),
     NavFeature("after-sales", "售后工单（退换货）", (("customer-service", "售后工单"),), ("售后工单", "退换货")),
     # 2026-10-20（issue #7354）：菜单正名「销售订单」；旧名「订单列表」保留为说法（老用户按旧叫法仍能命中）。
-    NavFeature("orders", "销售订单（订单列表 / 订单）", (("trade-center", "销售订单"),), ("销售订单", "订单列表", "订单")),
-    NavFeature("finance", "财务对账（对账）", (("trade-center", "财务对账"),), ("财务对账", "对账")),
+    NavFeature("orders", "销售订单（订单列表 / 订单）", (("orders-products", "销售订单"),), ("销售订单", "订单列表", "订单")),
+    NavFeature("finance", "财务对账（对账）", (("finance-center", "财务对账"),), ("财务对账", "对账")),
     # 🔴 2026-10-24（issue #7593）：`NavFeature("approvals", …)` **同批删除** —— 判据 9 要求
     # 「登记项的主节点必须在 `menu.ts` 里」，节点撤除后留着它就是编出来的页面（判红）。
     # ⚠️ 用户问「审批」的**页面口径**也已失去（同批销账，见 issue #7593 的已知缺口），
@@ -259,7 +264,7 @@ NAV_FEATURES: Tuple[NavFeature, ...] = (
     # 判据 7/9 要求「逐字等于该页菜单名」的那条说法归属该页，而三处都指同一节点会让
     # `企业基础设置` 这条说法**互相遮蔽**（`problems_shadowed_aliases` 实测判红，见 issue #6062 的
     # 「说法不许与别家成子串」口径）—— 登记项与菜单项必须**一一对应**。
-    NavFeature("piecework", "计件工资（计件）", (("production-center", "计件工资"),), ("计件工资", "计件")),
+    NavFeature("piecework", "计件工资（计件）", (("finance-center", "计件工资"),), ("计件工资", "计件")),
     # 质检记录（issue #7140）：说法必须**逐字落在菜单名里**（判据「接地」）⇒ 只登记
     # 「质检记录」与它的子串「质检」；「合格判定」这类不在菜单名里的说法**不登记**
     #（它命中不了节点 = 不可达，登记了会变成空断言）。
@@ -267,11 +272,11 @@ NAV_FEATURES: Tuple[NavFeature, ...] = (
     # 返工单（issue #7377）：说法必须**逐字落在菜单名里**（判据「接地」）⇒ 只登记「返工单」「返工」，
     # 「返修」这类不在菜单名里的**不作为别名**（命中不了节点 = 不可达，登记了会变成空断言）。
     NavFeature("rework-order", "返工单（售后返工）", (("quality", "返工单"),), ("返工单", "返工")),
-    NavFeature("suppliers", "供应商档案", (("basic-data", "供应商"),), ("供应商", "供应商档案")),
+    NavFeature("suppliers", "供应商档案", (("supply-chain", "供应商"),), ("供应商", "供应商档案")),
     # 采购单（issue #7369 段 4）：说法必须**逐字落在菜单名里**（「采购单」的子串），
     # 「采购」「下单」「到货」这类更宽的说法不登记 —— 命中不了节点就是空断言（判据「接地」）。
     NavFeature("purchase-orders", "采购单（采购与收货）", (("supply-chain", "采购单"),), ("采购单",)),
-    NavFeature("inbound-orders", "入库单（入库）", (("supply-chain", "入库单"),), ("入库单", "入库")),
+    NavFeature("inbound-orders", "入库单（入库）", (("inventory-center", "入库单"),), ("入库单", "入库")),
     NavFeature("shipments", "发货单（出库）", (("inventory-center", "发货单"),), ("发货单",)),
     # 出库单（V196 / issue #7750）：与入库单对称的出口单据（布料手工出库 + 成品发货出库同形）。
     # ⚠️ 泛词「出库」不再归 `shipments`（改登记「发货出库」）：否则「出库单」会被它抢先命中 ——
@@ -291,7 +296,7 @@ NAV_FEATURES: Tuple[NavFeature, ...] = (
     # 的说法（防说法表退化成自由同义词词典），旧名与新名只差一个字、**无包含关系** ⇒
     # 登记它会让 `menu_navigator` 在 import 期直接抛 `MenuNavigatorError`（实测）。
     NavFeature("settings", "企业基础设置（系统设置）", ((STANDALONE_GROUP, "企业基础设置"),), ("企业基础设置", "系统设置")),
-    NavFeature("products", "商品管理（商品）", (("basic-data", "商品管理"),), ("商品管理", "商品")),
+    NavFeature("products", "商品管理（商品）", (("orders-products", "商品管理"),), ("商品管理", "商品")),
     # 🔴 2026-10-09（issue #6580）：「参数总览」一级项已撤掉（内容回到「企业基础设置」页内的
     # 配置域）⇒ 本表对应条目**随之删除**（登记项必须能指到 `MENU_TREE` 里真实存在的节点）。
     NavFeature("notifications", "通知中心（消息）", ((STANDALONE_GROUP, "通知中心"),), ("通知中心", "消息")),

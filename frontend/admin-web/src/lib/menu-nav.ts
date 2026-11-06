@@ -220,7 +220,8 @@ const PARENT_ITEM_HINTS: Record<string, string> = {
 
 const PARENT_GROUP_HINTS: Record<string, string> = {
   // 审批中心（五类业务闸门共用裁决屏；入口 = 顶栏 ApprovalBell）⇒ 交易域
-  '/approvals': 'trade-center',
+  // 🔴 2026-11-06：交易域的分组 = 「订单/商品」（旧 `trade-center` 已合并入该组）
+  '/approvals': 'orders-products',
   // 客服工作台首页（重定向）+ 会话监控 ⇒ 客户服务域
   '/agent-workspace': 'customer-service',
   '/agent-workspace/sessions': 'customer-service',

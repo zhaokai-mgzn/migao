@@ -86,7 +86,7 @@ AUTH_SERVICE = REPO_ROOT / "backend/admin-api/src/main/java/com/migao/admin/serv
 #: 每一条都要能说清「它为什么不是菜单项」—— 否则它就该出现在侧边栏里，或该被删掉。
 ACTION_NODES: dict[str, set[str]] = {
     # 订单详情是**行内下钻**，不占侧边栏位（列表页点行进详情）
-    "trade-center": {"订单详情"},
+    "orders-products": {"订单详情"},
     # 新增员工是员工管理页的按钮动作；
     # 🔴 2026-10-09（issue #6580）新登记「企业基础设置（经营域）」—— **它为什么不是菜单项**
     # （本台账的判据就是这条理由；缺理由 ⇒ 要么补进 `menu.ts`，要么删掉该节点）：
@@ -701,7 +701,9 @@ def _inject_front_head_demoted_below_top(src: str) -> str:
 
 
 def _inject_front_group_rename(src: str) -> str:
-    return src.replace("name: '交易管理',", "name: '订单管理',", 1)
+    # 锚点取一个**真实存在**的组名（2026-11-06 用户裁定后的 IA：质量管理），
+    # 改名为一个逐字不同的名字 ⇒ 只动前端组名一处（服务端两处不动）。
+    return src.replace("name: '质量管理',", "name: '质量管理中心',", 1)
 
 
 def _inject_controller_drop_group(src: str) -> str:

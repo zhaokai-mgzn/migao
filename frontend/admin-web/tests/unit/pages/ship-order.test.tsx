@@ -159,8 +159,8 @@ describe('ShipOrder', () => {
     render(<ShipOrder />)
     await waitFor(() => {
       expect(screen.getByText('首页')).toBeInTheDocument()
-      // issue #5271：组名随侧边栏 IA 改判（原「订单管理」→「交易管理」）
-      expect(screen.getByText('交易管理')).toBeInTheDocument()
+      // 组名随侧边栏 IA 改判（「订单管理」→「交易管理」→ 2026-11-06「订单/商品」）
+      expect(screen.getByText('订单/商品')).toBeInTheDocument()
       expect(screen.getByText('销售订单')).toBeInTheDocument()
     })
   })
