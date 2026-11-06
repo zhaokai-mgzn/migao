@@ -23,7 +23,7 @@
     },
     {
       "path": "backend/admin-api/src/main/java/com/migao/admin/service/ProcessingOrderService.java",
-      "lines": 3136,
+      "lines": 2931,
       "frozen_at": "2026-11-06"
     },
     {
@@ -38,8 +38,8 @@
     },
     {
       "path": "backend/ai-agent-service/app/api/chat.py",
-      "lines": 3004,
-      "frozen_at": "2026-10-30"
+      "lines": 2110,
+      "frozen_at": "2026-11-06"
     },
     {
       "path": "backend/admin-api/src/main/java/com/migao/admin/service/ProductionService.java",

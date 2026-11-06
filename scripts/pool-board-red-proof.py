@@ -5,7 +5,8 @@
 「全绿」本身不构成证据 —— 不会红的断言 = 空断言。本脚本把 issue #5177 每条判据的
 **判别力**变成可复算的：
 
-    ① 对 `ProcessingOrderService.java` 逐条注入一个**语义缺陷**（不是改文案）；
+    ① 对**被守卫的两个文件**（门面 `ProcessingOrderService.java` + 派单池单元
+       `ProcessingOrderDispatchPool.java`，见每条变异的 `src_rel`）逐条注入一个**语义缺陷**（不是改文案）；
     ② 跑**整类** `PoolBoardUrgencyTest`，从 surefire XML 读**逐方法**结果；
     ③ 期望 = **目标判据方法 FAIL**（= 这条判据确实抓得住这个缺陷，不是空断言）；
        同时**逐条打印**还有哪些判据一起红了 —— 那是「共享覆盖面」，**如实登记、不当失败**
@@ -15,7 +16,7 @@
 
 ## 与 `scripts/cutting-plan-red-proof.py` 的关系
 同族机具（同一批纪律），差异只有一处：**本脚本不要求 git 工作区干净** ——
-#5177 的改动本来就是未提交状态，而本脚本只碰 `ProcessingOrderService.java`
+#5177 的改动本来就是未提交状态，而本脚本只碰上面那两个**被测源码**文件
 （前端包与测试文件都不在它的写入半径内），因此用「读原文 → 写变异 → 跑 → 写回原文 →
 校验 sha256」的**内容级**还原，不依赖 git 兜底。中断时 `finally` 仍会还原；
 若还原校验失败，脚本非零退出并打印原文长度，**绝不静默留下变异后的源码**。
@@ -43,11 +44,16 @@ import red_proof_harness as h  # noqa: E402  #5193 门禁调用的是 --check �
 
 REPO = Path(__file__).resolve().parents[1]
 SRC = REPO / "backend/admin-api/src/main/java/com/migao/admin/service/ProcessingOrderService.java"
+#: issue #8770（派单池一档）：`pool()` 及其 4 个辅助 + 2 个成批闸从门面**逐字节搬出** ⇒
+#: 锚点落在新住址的变异必须跟着改 `src_rel`（否则 `--check` 判腐烂，而「腐烂」是**对的**：
+#: 它说明机具的注入面已经不在源码里了）。
+POOL_SRC = REPO / "backend/admin-api/src/main/java/com/migao/admin/service/ProcessingOrderDispatchPool.java"
 MODULE = REPO / "backend/admin-api"
 TEST_CLASS = "PoolBoardUrgencyTest"
 TEST_FQN = f"com.migao.admin.service.{TEST_CLASS}"
 TOOL_REL = "scripts/pool-board-red-proof.py"
 SRC_REL = SRC.relative_to(REPO).as_posix()
+POOL_SRC_REL = POOL_SRC.relative_to(REPO).as_posix()
 TEST_REL = "backend/admin-api/src/test/java/com/migao/admin/service/PoolBoardUrgencyTest.java"
 
 #: 判据方法 → 它钉的那一格（打印用）
@@ -89,7 +95,7 @@ def mutation_urgent_guard(src: str) -> str:
     """删掉「加急单不进池」在成批路径上的那道闸（判据 3 的红证形态）。"""
     return replace_once(src, """        // 🔴 加急单**不进池**（issue #5177 判据 3）：混进成批批次 ⇒ 整批显式拒绝，**一行都不写**。
         // 放在 prepare 之前 ⇒ 拒绝时连只读准备都还没跑，更没有半成品。
-        assertNoUrgentInPooledBatch(orderIds, tenantId);
+        dispatchPool().assertNoUrgentInPooledBatch(orderIds, tenantId);
 """, "        // [RED-PROOF] 闸被摘掉\n")
 
 
@@ -139,23 +145,24 @@ def mutation_pi_null_guard(src: str) -> str:
 
 MUTATIONS = [
     ("urgent_guard", "摘掉「加急单不进池」的成批闸", mutation_urgent_guard,
-     "pooledBatchContainingUrgentOrderIsRejectedFailClosed"),
+     "pooledBatchContainingUrgentOrderIsRejectedFailClosed", SRC_REL),
+    # issue #8770：闸的**本体**已搬到 ProcessingOrderDispatchPool ⇒ 这条变异跟着搬家
     ("urgent_not_in_pool", "忽略加急标记（加急单照旧进池）", mutation_urgent_not_in_pool,
-     "urgentOrderStaysOutOfPoolAndAppearsInQueueJumpSection"),
+     "urgentOrderStaysOutOfPoolAndAppearsInQueueJumpSection", POOL_SRC_REL),
     ("sort_key", "排序键退化成单号序", mutation_sort_key,
-     "orderingPrefersNearestDeliveryDateThenLongestWaitAndPutsNullsLast"),
+     "orderingPrefersNearestDeliveryDateThenLongestWaitAndPutsNullsLast", SRC_REL),
     ("pool_default", "池化缺省改成开", mutation_pool_default,
-     "defaultsAreUnchangedWhenNothingIsUrgentAndNoDeliveryDate"),
+     "defaultsAreUnchangedWhenNothingIsUrgentAndNoDeliveryDate", SRC_REL),
     ("stamp", "订单级字段不进快照", mutation_stamp,
-     "orderLevelFieldsAreStampedIntoSnapshotRows"),
+     "orderLevelFieldsAreStampedIntoSnapshotRows", SRC_REL),
     ("pi_null_guard", "摘掉 buildSnapshot 的 pi null 判定（存量行 NPE）", mutation_pi_null_guard,
-     "poolReadFaceSurvivesLegacyItemWithoutProcessingInfo"),
+     "poolReadFaceSurvivesLegacyItemWithoutProcessingInfo", SRC_REL),
 ]
 
 
-def _probe(mutate, target: str, name: str) -> None:
+def _probe(mutate, target: str, name: str, src_rel: str) -> None:
     """一条变异的前提探针（**只读**）：被守卫文件可读 + 注入锚点命中 1 次 + 目标判据存在。"""
-    src = h.read_source(SRC_REL, what=f"变异 [{name}] 的被测源码")
+    src = h.read_source(src_rel, what=f"变异 [{name}] 的被测源码")
     test = h.read_source(TEST_REL, what=f"变异 [{name}] 的判据源码")
     h.require_method(test, target, what=f"变异 [{name}] 的目标判据")
     if mutate(src) == src:
@@ -164,8 +171,8 @@ def _probe(mutate, target: str, name: str) -> None:
 
 def check() -> int:
     """前提自检（`--check`）：不注入、不跑判据、不写任何文件。"""
-    decls = [h.declare(name, target, partial(_probe, mutate, target, name))
-             for name, _label, mutate, target in MUTATIONS]
+    decls = [h.declare(name, target, partial(_probe, mutate, target, name, src_rel))
+             for name, _label, mutate, target, src_rel in MUTATIONS]
     return h.report_and_exit(TOOL_REL, decls)
 
 
@@ -197,9 +204,11 @@ def main() -> int:
     if args.check:
         return check()
 
-    original = SRC.read_text(encoding="utf-8")
-    original_hash = sha256(original)
-    print(f"被测源码 = {SRC.relative_to(REPO)}  sha256={original_hash[:16]}…  长度={len(original)}\n")
+    originals = {rel: (REPO / rel).read_text(encoding="utf-8") for rel in dict.fromkeys(m[4] for m in MUTATIONS)}
+    hashes = {rel: sha256(text) for rel, text in originals.items()}
+    for rel, text in originals.items():
+        print(f"被测源码 = {rel}  sha256={hashes[rel][:16]}…  长度={len(text)}")
+    print()
 
     selected = [m for m in MUTATIONS if args.only is None or m[0] == args.only]
     if not selected:
@@ -216,22 +225,23 @@ def main() -> int:
             print("❌ 基线不绿 ⇒ 无法取红证（先修基线）", file=sys.stderr)
             return 1
 
-        for name, label, mutate, target in selected:
+        for name, label, mutate, target, src_rel in selected:
             if target not in CRITERIA:
                 print(f"❌ 变异 {name} 的目标方法不在判据表里：{target}", file=sys.stderr)
                 return 3
-            mutated = mutate(original)
-            if mutated == original:
+            src_path = REPO / src_rel
+            mutated = mutate(originals[src_rel])
+            if mutated == originals[src_rel]:
                 print(f"❌ 变异 {name} 没有改变源码（锚点失配）—— **无法判定**", file=sys.stderr)
                 return 3
-            SRC.write_text(mutated, encoding="utf-8")
+            src_path.write_text(mutated, encoding="utf-8")
             print(f"\n── 变异 [{name}] {label}")
             print(f"   期望：{target} 变红，其余判据保持绿")
             try:
                 results = run_suite()
             finally:
-                SRC.write_text(original, encoding="utf-8")
-                if sha256(SRC.read_text(encoding="utf-8")) != original_hash:
+                src_path.write_text(originals[src_rel], encoding="utf-8")
+                if sha256(src_path.read_text(encoding="utf-8")) != hashes[src_rel]:
                     print("❌ 还原校验失败：源码与注入前不一致 —— **停手人工核对**", file=sys.stderr)
                     return 1
 
@@ -250,11 +260,14 @@ def main() -> int:
                     print(f"   ℹ️ 反而有别的判据红了（红被别处抓走）：{others_green}")
                 failures.append(name)
     finally:
-        # 任何路径（含异常 / Ctrl-C）都要还原，且自校验
-        if SRC.read_text(encoding="utf-8") != original:
-            SRC.write_text(original, encoding="utf-8")
-        restored_ok = sha256(SRC.read_text(encoding="utf-8")) == original_hash
-        print(f"\n还原：{'✅ 与注入前逐字节相同' if restored_ok else '❌ 不一致 —— 人工核对 ' + str(SRC)}")
+        # 任何路径（含异常 / Ctrl-C）都要还原，且自校验（逐文件）
+        restored_ok = True
+        for rel, text in originals.items():
+            path = REPO / rel
+            if path.read_text(encoding="utf-8") != text:
+                path.write_text(text, encoding="utf-8")
+            restored_ok = restored_ok and sha256(path.read_text(encoding="utf-8")) == hashes[rel]
+        print(f"\n还原：{'✅ 与注入前逐字节相同' if restored_ok else '❌ 不一致 —— 人工核对 ' + SRC_REL}")
 
     if failures:
         print(f"\n❌ 有 {len(failures)} 个变异没被对应判据抓到：{failures}", file=sys.stderr)

@@ -26,6 +26,12 @@
       "owner": "#3929"
     },
     {
+      "path": "backend/ai-agent-service/tests/test_chat_slice_structure_guard.py",
+      "guards": "`app/api/chat.py` 切片面（issue #8725 第三档）的结构不变量，逐条现取不抄清单：① 切片文件集 == `SLICED_UNITS` 登记表（多一个未登记 `chat_*.py` 即红）；② 44 个被搬符号在登记的单元里各定义 1 次；③ 入口 `chat.py` 一处都不许再定义它们（搬完又抄回来一份即红）；④ 入口 re-export 列表 == 登记全集且来源模块正确；⑤ 单元不得反向 import 入口（`chat.py → 新模块 → chat.py` 成环即红）+ 不得依赖 tests/scripts；⑥ 每个单元 < 800 行且模块 docstring 声明单一职责。守的是「抄回来一份」「新单元未登记」「re-export 被删 ⇒ 外部 import 与 32 处 patch 静默失效」三种形态。",
+      "red_proof": "① 把 `_should_send_card` 的函数体复制回 `app/api/chat.py` ⇒ tests/test_chat_slice_structure_guard.py::test_chat_does_not_redefine_sliced_symbols 红并具名该符号；② 新建 `app/api/chat_extra.py` 不入 `SLICED_UNITS` ⇒ ::test_slice_file_set_is_exact 红并具名该文件名；③ 删掉入口的 `from app.api.chat_outbound import _should_send_card` 一行 ⇒ ::test_entry_reexports_every_sliced_symbol 红（这是**唯一**能提前发现 `patch(\"app.api.chat.X\")` 变成静默空跑的地方）；④ 让 `chat_outbound.py` 涨到 > 800 行 ⇒ ::test_units_stay_below_line_budget 红并具名文件与行数。",
+      "owner": "#8725"
+    },
+    {
       "path": "backend/ai-agent-service/tests/test_clarify_guard.py",
       "guards": "澄清轮次状态机：连续澄清计数递增 / 实质轮清零 / 达上限后强制给示例，且 SessionStateStore 读写失败时必须降级放行（不许因存储抖动阻断对话）",
       "red_proof": "把 judge_clarify 的上限判断从 `>=` 改成 `>` ⇒ TestJudgeClarify::test_at_limit_forces_example 红；让 _mock_store 的 commit 抛异常且不捕获 ⇒ test_guard_degrades_gracefully_on_store_failure 红",
