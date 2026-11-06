@@ -166,5 +166,4 @@
 {"id":"1793932163.38381.27058","ts":"2026-11-06T02:29:24Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/8776-harness","why":"--allow-package-heavy（命令行显式）"}
 {"id":"1793933393.75237.28266","ts":"2026-11-06T02:49:53Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/8776-harness","why":"--allow-package-heavy（命令行显式）"}
 {"id":"1793934889.67471.30581","ts":"2026-11-06T03:14:49Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/8776-harness","why":"--allow-package-heavy（命令行显式）"}
-{"id":"1793939859.70711.24884","ts":"2026-11-06T04:37:39Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/8725-chat","why":"--allow-package-heavy（命令行显式）"}
-{"id":"1793939905.71257.31689","ts":"2026-11-06T04:38:25Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/8725-chat","why":"--allow-package-heavy（命令行显式）"}
+{"id":"1793939215.29532.13485","ts":"2026-11-06T04:26:56Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/menu-ia-restructure","why":"子包 worktree 直跑全量（无批次标记）"}
