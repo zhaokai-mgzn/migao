@@ -33,6 +33,11 @@ AGENT_PRODUCT_UPDATE_DTO = (
 #: #4106 F3：工具层细粒度门禁按 JWT `permissions` claim 判定，夹具必须带上权限码。
 ADMIN_PERMISSIONS = ["*"]
 
+#: 真实 id 形态（UUID）：写路径会在发请求前解析 product_id（issue #8788），
+#: UUID 直通且**零解析往返**；用 "p1" 这类假 id 会被当成商品名去解析，
+#: 与本文件断言的请求体/请求路径无关。
+PID = "a1b2c3d4-e5f6-4a7b-8c9d-0123456789ab"
+
 
 def _admin_ctx(user_id: str = "u1") -> ToolContext:
     """商户管理员上下文（有权限改商品）"""
@@ -57,7 +62,7 @@ class TestProductUpdateRequestField:
         patched = AsyncMock(return_value={"success": True, "data": {}})
         with patch("app.tools.product_update.get_admin_api_client") as m:
             m.return_value.patch = patched
-            result = await tool.execute(ctx, product_id="p1", price=200.0, before_price=168.0)
+            result = await tool.execute(ctx, product_id=PID, price=200.0, before_price=168.0)
         assert result.success
         _, kwargs = patched.call_args
         body = kwargs.get("json_data") or {}
@@ -78,7 +83,7 @@ class TestProductUpdateRequestField:
         patched = AsyncMock(return_value={"success": True, "data": {}})
         with patch("app.tools.product_update.get_admin_api_client") as m:
             m.return_value.patch = patched
-            await tool.execute(ctx, product_id="p1", price=88.8, before_price=88.8)
+            await tool.execute(ctx, product_id=PID, price=88.8, before_price=88.8)
         _, kwargs = patched.call_args
         body = kwargs.get("json_data") or {}
         assert set(body.keys()) == {"basePrice", "beforePrice"}, f"只应传 basePrice + 改前价: {body}"
@@ -87,7 +92,7 @@ class TestProductUpdateRequestField:
     async def test_denied_role_rejected_before_api_call(self, tool):
         """customer 角色 execute 直接被拒（权限守卫前置），不发修改请求"""
         ctx = ToolContext(tenant_id=1, user_id="c1", role="customer")
-        result = await tool.execute(ctx, product_id="p1", price=200.0)
+        result = await tool.execute(ctx, product_id=PID, price=200.0)
         assert result.success is False
         assert "权限" in (result.error or "")
 
@@ -106,7 +111,7 @@ class TestAllowReturnRestock:
         patched = AsyncMock(return_value={"success": True, "data": {}})
         with patch("app.tools.product_update.get_admin_api_client") as m:
             m.return_value.patch = patched
-            result = await tool.execute(ctx, product_id="p1", allow_return_restock=True)
+            result = await tool.execute(ctx, product_id=PID, allow_return_restock=True)
         assert result.success
         _, kwargs = patched.call_args
         body = kwargs.get("json_data") or {}
@@ -119,7 +124,7 @@ class TestAllowReturnRestock:
         patched = AsyncMock(return_value={"success": True, "data": {}})
         with patch("app.tools.product_update.get_admin_api_client") as m:
             m.return_value.patch = patched
-            result = await tool.execute(ctx, product_id="p1", allow_return_restock=False)
+            result = await tool.execute(ctx, product_id=PID, allow_return_restock=False)
         assert result.success
         _, kwargs = patched.call_args
         body = kwargs.get("json_data") or {}

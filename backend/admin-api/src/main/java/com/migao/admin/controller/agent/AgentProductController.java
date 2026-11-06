@@ -9,6 +9,7 @@ import com.migao.admin.dto.agent.AgentProductCreateRequest;
 import com.migao.admin.dto.agent.AgentProductUpdateRequest;
 import com.migao.admin.service.ClientRequestIdService;
 import com.migao.admin.service.ProductService;
+import com.migao.admin.service.ProductWriteRefResolver;
 import com.migao.admin.security.RequirePermission;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -39,6 +40,8 @@ import java.util.Map;
 public class AgentProductController {
 
     private final ProductService productService;
+    /** 写路径专用严格解析：共享的 {@code ProductService.resolveProductId} 会模糊取第一条（issue #8788）。 */
+    private final ProductWriteRefResolver writeRefResolver;
 
     /**
      * Agent 专用创建商品。
@@ -75,7 +78,7 @@ public class AgentProductController {
                                                        @RequestBody AgentProductUpdateRequest request) {
         Long tenantId = TenantContext.getTenantId();
         log.info("[Agent] 更新商品: id={}, tenantId={}", id, tenantId);
-        String resolvedId = productService.resolveProductId(id, tenantId);
+        String resolvedId = writeRefResolver.resolveUniqueProductId(id, tenantId);
         if (resolvedId == null) {
             throw BusinessException.notFound("商品",
                     "未找到商品「" + id + "」，请先用 product_search 查出正确 ID 后重试");
@@ -115,7 +118,7 @@ public class AgentProductController {
         }
         adjustment = com.migao.admin.service.StockQuantity.requireOneDecimal(adjustment, "adjustment");
         String reason = (String) body.getOrDefault("reason", "");
-        String resolvedId = productService.resolveProductId(id, tenantId);
+        String resolvedId = writeRefResolver.resolveUniqueProductId(id, tenantId);
         if (resolvedId == null) {
             throw BusinessException.notFound("商品",
                     "未找到商品「" + id + "」，请先用 product_search 查出正确 ID 后重试");
@@ -162,7 +165,7 @@ public class AgentProductController {
         log.info("[Agent] SKU调价: product={}, color={}, width={}, price={}, before_price={}",
                 productId, color, doorWidth, price, beforePrice);
         try {
-            String resolvedId = productService.resolveProductId(productId, tenantId);
+            String resolvedId = writeRefResolver.resolveUniqueProductId(productId, tenantId);
             if (resolvedId == null) {
                 throw BusinessException.notFound("商品（" + productId + "）",
                         "请先用 product_search 查出正确 ID");
@@ -200,7 +203,7 @@ public class AgentProductController {
         } catch (NumberFormatException e) {
             throw BusinessException.validationError("price 必须为数字");
         }
-        String resolvedId = productService.resolveProductId(productId, tenantId);
+        String resolvedId = writeRefResolver.resolveUniqueProductId(productId, tenantId);
         if (resolvedId == null) {
             throw BusinessException.notFound("商品（" + productId + "）",
                     "请先用 product_search 查出正确 ID");
