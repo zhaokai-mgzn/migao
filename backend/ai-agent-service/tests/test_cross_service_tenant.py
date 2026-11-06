@@ -6,6 +6,7 @@
 2. Tool 执行层：Tool 从 ToolContext 取出 tenant_id 传递给 HTTP 客户端
 3. Service Token 认证与租户 header 传播
 """
+# case_ids: DF-009
 
 import time
 import pytest
