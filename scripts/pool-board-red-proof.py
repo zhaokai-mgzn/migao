@@ -5,8 +5,9 @@
 「全绿」本身不构成证据 —— 不会红的断言 = 空断言。本脚本把 issue #5177 每条判据的
 **判别力**变成可复算的：
 
-    ① 对**被守卫的三个文件**（门面 `ProcessingOrderService.java` + 派单池单元
-       `ProcessingOrderDispatchPool.java` + 快照构建单元 `ProcessingOrderSnapshotBuilder.java`，
+    ① 对**被守卫的四个文件**（门面 `ProcessingOrderService.java` + 派单池单元
+       `ProcessingOrderDispatchPool.java` + 快照构建单元 `ProcessingOrderSnapshotBuilder.java` +
+       订单级事实盖章单元 `ProcessingOrderHeaderStamp.java`，
        见每条变异的 `src_rel`）逐条注入一个**语义缺陷**（不是改文案）；
     ② 跑**整类** `PoolBoardUrgencyTest`，从 surefire XML 读**逐方法**结果；
     ③ 期望 = **目标判据方法 FAIL**（= 这条判据确实抓得住这个缺陷，不是空断言）；
@@ -53,6 +54,10 @@ POOL_SRC = REPO / "backend/admin-api/src/main/java/com/migao/admin/service/Proce
 #: `pi_null_guard`（摘掉 `pi` 的 null 判定）的锚点随方法体搬进本单元，`src_rel` 必须跟着改
 #: （否则 `--check` 判腐烂，而「腐烂」是**对的**：它说明机具的注入面已经不在源码里了）。
 SNAP_SRC = REPO / "backend/admin-api/src/main/java/com/migao/admin/service/ProcessingOrderSnapshotBuilder.java"
+#: issue #8770（**生成族一档**）：`stampOrderUrgency` 从门面**逐字节搬出** ⇒ `stamp` 变异
+#: （让订单级字段不再进快照）的锚点随方法体搬进本单元，`src_rel` 必须跟着改
+#: （否则 `--check` 判腐烂，而「腐烂」是**对的**：它说明机具的注入面已经不在源码里了）。
+HEADER_SRC = REPO / "backend/admin-api/src/main/java/com/migao/admin/service/ProcessingOrderHeaderStamp.java"
 MODULE = REPO / "backend/admin-api"
 TEST_CLASS = "PoolBoardUrgencyTest"
 TEST_FQN = f"com.migao.admin.service.{TEST_CLASS}"
@@ -60,6 +65,7 @@ TOOL_REL = "scripts/pool-board-red-proof.py"
 SRC_REL = SRC.relative_to(REPO).as_posix()
 POOL_SRC_REL = POOL_SRC.relative_to(REPO).as_posix()
 SNAP_SRC_REL = SNAP_SRC.relative_to(REPO).as_posix()
+HEADER_SRC_REL = HEADER_SRC.relative_to(REPO).as_posix()
 TEST_REL = "backend/admin-api/src/test/java/com/migao/admin/service/PoolBoardUrgencyTest.java"
 
 #: 判据方法 → 它钉的那一格（打印用）
@@ -159,8 +165,9 @@ MUTATIONS = [
      "orderingPrefersNearestDeliveryDateThenLongestWaitAndPutsNullsLast", SRC_REL),
     ("pool_default", "池化缺省改成开", mutation_pool_default,
      "defaultsAreUnchangedWhenNothingIsUrgentAndNoDeliveryDate", SRC_REL),
+    # issue #8770（生成族一档）：`stampOrderUrgency` 搬到 ProcessingOrderHeaderStamp ⇒ 锚点跟着搬家
     ("stamp", "订单级字段不进快照", mutation_stamp,
-     "orderLevelFieldsAreStampedIntoSnapshotRows", SRC_REL),
+     "orderLevelFieldsAreStampedIntoSnapshotRows", HEADER_SRC_REL),
     # issue #8770（快照/读面一档）：`buildSnapshot` 已搬到 ProcessingOrderSnapshotBuilder ⇒ 锚点跟着搬家
     ("pi_null_guard", "摘掉 buildSnapshot 的 pi null 判定（存量行 NPE）", mutation_pi_null_guard,
      "poolReadFaceSurvivesLegacyItemWithoutProcessingInfo", SNAP_SRC_REL),
