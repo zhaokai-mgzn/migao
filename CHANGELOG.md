@@ -16,7 +16,7 @@
   `p-zg-001` 这类），否则这次接线会把「真实 id」误判成「未找到」。
 - **边界（照实登记）**：`admin-api` 没有「按 id 前缀查询」的能力（`productId` 精确、`keyword` 只搜名称/货号），
   所以截断 UUID 前缀在线上仍查不到 —— 解析器的前缀分支只做了分支级覆盖，**不**宣称线上可用。
-- 判据 = MC-249：`backend/ai-agent-service/tests/test_product_detail_id_resolution.py`
+- 判据 = MC-251：`backend/ai-agent-service/tests/test_product_detail_id_resolution.py`
   （三条验收判据 + 解析器每条分支 + 非 UUID id 回归保护）；
   类级元守卫 = MC-250：`backend/ai-agent-service/tests/test_tool_id_shape_promises.py`
   （「描述承诺的入参形态 ⇒ 实现必须接线解析器」，删描述来消红会被扫描面自证当场抓住；
