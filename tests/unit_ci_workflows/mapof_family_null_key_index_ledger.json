@@ -27,7 +27,7 @@
       "why": "空集分支由 `Map.of()` 改为 `new HashMap<>()`（与非空分支 `Collectors.toMap(...)` 同族 ⇒ 两个分支类型契约一致）。调用点 `categoryNameMap.get(item.getCategoryId())` 的键**未过**同一道 `StringUtils::hasText` 过滤 ⇒ 谁的把空集分支改回 `Map.of()`，加工项列表页就重新在该页出现空 `category_id` 时 500（本条的回归锁）。"
     },
     {
-      "key": "backend/admin-api/src/main/java/com/migao/admin/service/ProcessingOrderService.java::loadOrders",
+      "key": "backend/admin-api/src/main/java/com/migao/admin/service/ProcessingOrderReadFace.java::loadOrders",
       "why": "空集分支由 `Map.of()` 改为 `new HashMap<>()`（与该分支下面的 `byId` 同族）。调用点 `orders.get(po.getOrderId())` 未判空 ⇒ 改回 `Map.of()` 即在该批加工单 `order_id` 全为空时重新 NPE ⇒ 列表端点 500（本条的回归锁）。"
     }
   ],

@@ -421,8 +421,15 @@ class ProcessingOrderSnapshotReadFaceCharacterizationTest {
             case "09-processing-item-missing-catalog":
                 // 目录行不存在 ⇒ options / unit / craftHint 一律不落键（缺键就是缺键）
                 when(processingItemMapper.selectById("pi-gone")).thenReturn(null);
-                return List.of(item("i-1", "布艺遮光帘", Map.of("processingItems",
-                        List.of(new LinkedHashMap<>(Map.of("id", "pi-gone", "name", "裁剪"))))));
+                // 🔴 加工项行必须用 **LinkedHashMap 显式定序**：`Map.of` 的迭代顺序按 JVM 的
+                // SALT 随机（CI 实测与本机不同 ⇒ 快照里 `id`/`name` 的键序会翻），那是**夹具**
+                // 的不确定性，不是行为差异 —— 用 Map.of 会让这条判据在 CI 上假红。
+                Map<String, Object> proc = new LinkedHashMap<>();
+                proc.put("id", "pi-gone");
+                proc.put("name", "裁剪");
+                Map<String, Object> pi = new LinkedHashMap<>();
+                pi.put("processingItems", List.of(proc));
+                return List.of(item("i-1", "布艺遮光帘", pi));
             case "10-malformed-json-string":
                 return List.of(item("i-1", "布艺遮光帘", "not a json"));
             case "11-multi-rows-order":
