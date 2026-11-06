@@ -1,6 +1,7 @@
 'use client'
 
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Image as ImageIcon } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui'
@@ -88,6 +89,18 @@ export default function ImageRecognizeButton({
   // 确定性解析、零 LLM —— 与「推理结果」是两件事，所以单独算、单独成段（来源 `[商家填写]`）。
   // 商家改了那句话，这一段会**立刻**跟着变（不必再跑一次识别）。
   const declaredFacts = useMemo(() => parseDeclaredFacts(hint), [hint])
+  /**
+   * 结果卡的落点（`ProductForm` 在标题卡片里渲染 `pf-interpret-slot`）。
+   *
+   * 🔴 为什么走 portal：改前卡片是按钮的**兄弟节点**，而按钮被页面注入在标题行的**右侧栏**
+   * （`pf-title-actions`）⇒ 卡片只能缩在 ~288px 的窄条里（用户 2026-11-06 反馈「竖版窄条非常
+   * 占版面」）。挂到专属落点后，卡片铺成表单级整行宽，字段才能横向铺开。
+   * 找不到落点时（独立复用 / 组件测试）退回内嵌形态，行为不变。
+   */
+  const [cardSlot, setCardSlot] = useState<HTMLElement | null>(null)
+  useEffect(() => {
+    setCardSlot(document.querySelector<HTMLElement>('[data-testid="pf-interpret-slot"]'))
+  }, [])
 
   const handleFile = async (file: File) => {
     setLoading(true)
@@ -139,6 +152,18 @@ export default function ImageRecognizeButton({
     }
   }
 
+  // 结果卡：不是弹窗、不是对话、不留上下文（挂到落点时铺成整行宽；否则内嵌在按钮下方）
+  const interpretCard =
+    interpret && plan && imageUrl ? (
+      <FormInterpretCard
+        key={imageUrl}
+        imageUrl={imageUrl}
+        fields={plan}
+        facts={declaredFacts}
+        onFill={onRecognized}
+      />
+    ) : null
+
   return (
     <div className={className}>
       <div className="flex items-center gap-2">
@@ -184,16 +209,7 @@ export default function ImageRecognizeButton({
           {failure}
         </p>
       )}
-      {interpret && plan && imageUrl && (
-        /* 结果卡就嵌在按钮下方（表单内）——不是弹窗、不是对话、不留上下文 */
-        <FormInterpretCard
-          key={imageUrl}
-          imageUrl={imageUrl}
-          fields={plan}
-          facts={declaredFacts}
-          onFill={onRecognized}
-        />
-      )}
+      {interpretCard && (cardSlot ? createPortal(interpretCard, cardSlot) : interpretCard)}
       {fields.length > 0 && (
         <div
           data-testid="image-recognize-result"
