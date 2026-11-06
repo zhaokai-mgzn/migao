@@ -4366,7 +4366,7 @@ cases:
         product_keyword: "北欧风窗帘"
         stock: 500
     skip_reason: ""
-    merge_log: "2026-10-02 新增（issue #5950，第三个具名批量扩面）：批量库存调整复用 #5314 的批次契约（工作值 = **每个规格**的 SKU 库存；要求该商品各规格库存一致，不一致 ⇒ preview 阶段 fail-closed，以免预览/撤销在多 SKU 商品上失真）（同一四端点 / 同一状态机 / 同一 `revertible`），只多一条 `batchType=inventory_stock` + field=`stock`。取号 `scripts/next_case_id.py PR` 现取 = PR-014（历史空档，main 未占用）。post_clean = `product_stock_restore`（属性键 `stock`，实现体见 tests/agent_eval/local_runner.py 的 `_restore_product_stock`）。机器判据（字段配对 / 改前值 / 两段确认结构锁 / 阈值 / 撤销还原 / before→after 投影单一源）在 traces.tests。"
+    merge_log: "2026-10-02 新增（issue #5950，第三个具名批量扩面）：批量库存调整复用 #5314 的批次契约（工作值 = **每个规格**的 SKU 库存；要求该商品各规格库存一致，不一致 ⇒ preview 阶段 fail-closed，以免预览/撤销在多 SKU 商品上失真）（同一四端点 / 同一状态机 / 同一 `revertible`），只多一条 `batchType=inventory_stock` + field=`stock`。取号 `scripts/next_case_id.py PR` 现取 = PR-014（历史空档，main 未占用）。post_clean = `product_stock_restore`（属性键 `stock`，实现体见 tests/agent_eval/local_runner.py 的 `_restore_product_stock`）。机器判据（字段配对 / 改前值 / 两段确认结构锁 / 阈值 / 撤销还原 / before→after 投影单一源）在 traces.tests。 ｜ 2026-11-06（issue #8808，用户反馈「竖版窄条非常占版面」）：结果卡的**版式**改横版整行 —— 卡片去掉固定窄宽 `w-72`（288px）、落点从标题行右侧栏挪到标题卡下方的整行落点 `pf-interpret-slot`、字段铺成 1→2→3 列网格、长文本格（>40 字或含换行）整行通栏（用户逐字要求长颜色串**保留全展开通栏**）。**判据一格不放宽**：字段计划 / 来源分段 / 空值格 / 一键填入 / 不落库全部原样；新增版式判据 = FormInterpretCard.test.tsx 判据 10~13 + products-new-recognize-entry.test.tsx 判据 2e（红证已跑）。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_product_batch_update.py"
