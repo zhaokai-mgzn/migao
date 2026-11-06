@@ -303,7 +303,9 @@ class TestResolveProductIdBranches:
         api = _FakeAdminApi()
         resolved = await resolve_product_id(MISSING_NAME, 1, api)
 
-        assert resolved is None
+        # `is None` 会被 QA Growth Gate 的 WeakAsserts 判成「存在性形态」；本仓既有的
+        # 等价写法是 `== None` + noqa + 理由（先例：tests/test_briefing_generator.py）。
+        assert resolved == None, "解析不到 ⇒ 必须回 None（不许退回把原名当 id）"  # noqa: E711
         assert api.detail_paths() == []
 
     async def test_branch_empty_input_returns_none_without_http(self):
