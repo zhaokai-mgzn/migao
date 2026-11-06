@@ -17,7 +17,7 @@ product_detail 的 id 解析接线 + `resolve_product_id` 分支覆盖（issue #
 序号 / 非 UUID 真实 id / 都不中。判据层零 LLM、零网络：假客户端 `_FakeAdminApi` 照 admin-api 契约分流
 （`ProductService.buildProductQueryWrapper`：`productId` 精确、`keyword` 只搜 name/skuCode）。
 """
-# case_ids: MC-249
+# case_ids: MC-251
 
 import pytest
 from unittest.mock import patch

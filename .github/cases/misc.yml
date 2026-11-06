@@ -9981,7 +9981,7 @@ cases:
         - ai-agent-tests.yml
       verifies: []
 
-  - id: MC-249
+  - id: MC-251
     legacy_id: ""
     title: "product_detail 接线 id 解析器：名称/序号/UUID 三形态都能查到商品；解析不到 ⇒ 具名出口且不把原名当 id 打服务端（issue #8783）"
     domains:
