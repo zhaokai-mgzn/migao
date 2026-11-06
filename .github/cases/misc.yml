@@ -8372,7 +8372,7 @@ cases:
       - "注入式红证：把 WorkerBackLink.scss 的 @use 改回多退一级的路径 ⇒ 1 failed；还原 ⇒ 1 passed。"
       - "现取全仓读数：17 条 @use/@import，解析失败 0 条。"
       - "为什么不靠 tsc：TypeScript 的 import 由 tsc 抓，Sass 的相对路径只在构建期被解析 ⇒ 静态判据缺位时只能靠一轮 CI 发现，而 bmini 两条腿不在 required 集合里，红着也不拦合并。"
-    skip_reason: ""
+    skip_reason: "[frontend-contract] 构建期静态扫描判据（零 LLM / 零网络 / 零 DB）：扫 frontend/bmini-app/src/**/*.scss 的每一条 @use / @import，目标文件在 (文件所在目录 / 目标) 下不存在 ⇒ 判红并具名；判据自带失明检查（扫到 0 条也判红）。真值载体 = traces.tests 的 tests/unit_ci_workflows/test_bmini_scss_import_resolves.py。"
     merge_log:
       - "2026-11-04 新增（PR #8671）。起因 = 同一 PR 里把颜色改走语义 token 时，照抄 src/components/cards/OrderCard.scss 的 @use ../../styles/… 多退了一级，合进 main 后红掉 bmini-app build (h5 + weapp) 与 bmini H5 tabBar geometry (e2e) 两条腿。"
     traces:
@@ -8639,7 +8639,7 @@ cases:
       - "注入式红证：往 case_machine_fail_channel_baseline.json 尾部追加一行七字符尖括号标记 ⇒ 1 failed 并具名「文件:1468」；还原 ⇒ 1 passed。"
       - "为什么不靠各语言的病因报错：本次冲突标记进 main 后，CI 的红是另一个测试在解析 JSON 时报 JSONDecodeError —— 症状与病因隔了三层；YAML 则报 ScannerError。"
       - "按文件内容扫、不按语言扫：它是跨语言、跨文件类型的一类缺陷，任何单语言解析器都只能看见自己那一种。"
-    skip_reason: ""
+    skip_reason: "[backend-contract] 全树静态扫描判据（跨语言，零 LLM / 零网络 / 零 DB）：扫 git ls-files 的全部入库文件，任何文件出现行首七字符冲突标记 ⇒ 判红并具名「文件:行号」；扫到的入库文件数为 0 也判红。真值载体 = traces.tests 的 tests/unit_ci_workflows/test_no_conflict_markers_in_tree.py。"
     merge_log:
       - "读数影响：本用例 expectations 非空、skip_reason 未标 [backend-contract] ⇒ **不计入** case_machine_fail_channel_baseline 的 backend_contract_scoring_zero（实测仍 318，无需重锚）。"
       - "2026-11-05 新增（PR #8693）。起因 = 一晚上同一形态咬三次：① 重建 .github/cases/misc.yml 时用正则抠自有用例块，把等号族标记一起带进文件（YAML ScannerError）；② 合并两侧都追加 history 的 baseline JSON，自动合并把冲突留在文件里（CI 红的是另一个测试的 JSONDecodeError）；③ 早前同类。"
@@ -8847,7 +8847,7 @@ cases:
       - "注入式红证（实跑）：渲染器改成每次追加随机数 ⇒ 退出码 1 且输出含「不可复现」；渲染器直接非零退出 ⇒ 退出码 3 且输出含「无法判定」。"
       - "为什么用例机器判红台账（case_machine_fail_channel_baseline.json）不随出库：它是手工维护的台账（历史锚点 + 来由），不能从别的文件 100% 重建 ⇒ 判断标准 = 能不能 100% 重建。"
       - "收益口径：改一条用例后 PR 差异从千行级降到只含真实改动（用例文件一处），且两个并行 PR 不再在生成物上冲突。"
-    skip_reason: ""
+    skip_reason: "[backend-contract] 构建与门禁面的判据（零 LLM / 零网络 / 零 DB）：生成物出库后必须是 100% 可重建的派生视图，判定本体是三条退出码（陈旧/手改 ⇒ 1 并具名到产物；不可复现 ⇒ 1；渲染器坏或产出为空 ⇒ 3 不可判定，绝不当通过）+ 强制入库探测。真值载体 = traces.tests 的 tests/unit_ci_workflows/test_generated_artifacts_untracked.py 与 tests/unit_ci_workflows/test_generated_artifacts_clean_checkout.py。"
     merge_log:
       - "读数影响：本用例 expectations 非空、skip_reason 未标 backend-contract ⇒ 不计入 case_machine_fail_channel_baseline 的 backend_contract_scoring_zero（与 MC-209 同口径；改完实测确认）。"
       - "2026-11-05 新增（关联 issue #8167 P1-1）：出库前每次改用例都要重渲染并提交两个生成物（1000~1800 行差异），一晚至少 5 次返工；两个并行 PR 的冲突几乎总落在生成物上。"
@@ -8882,7 +8882,7 @@ cases:
     data_checks:
       - "注入式红证（实测）：往 WaybillService 加一行 orderMapper.updateById(...) ⇒ test_waybill_package_has_no_order_status_write_entry 红并具名「WaybillService.java::OrderMapper」；还原 ⇒ 9 passed。"
       - "注入式红证（实测）：给 ShipOrder 的 handleCreateWaybill 加一句 productionApi.shipOrder(...) ⇒ 「不调发货端点」一条红；还原 ⇒ 3 passed。"
-    skip_reason: ""
+    skip_reason: "[backend-contract] Java 结构判据 + 替身 provider 的行为判据（零 LLM / 零网络 / 零真实 DB）：com.migao.admin.waybill 包剥注释后不出现任何订单状态写入口，且走一次真的会成功的取号路径后 orders.status 逐字不变（取号 ≠ 发货）。真值载体 = traces.tests 的 WaybillServiceTest.java / tests/unit_ci_workflows/test_waybill_p0_guards.py / frontend/admin-web/tests/unit/pages/ship-waybill-capability.test.tsx。"
     merge_log:
       - "2026-11-05 新增（PR #8699）。承接 issue #8698（由 #7897 拆出的 P0），口径源 docs/logistics-waybill-api-research.md §3-2 / §8。"
       - "读数影响：expectations 非空、skip_reason 未标 [backend-contract] ⇒ 不计入 case_machine_fail_channel_baseline 的 backend_contract_scoring_zero。"
@@ -8918,7 +8918,7 @@ cases:
     data_checks:
       - "注入式红证（实测）：把 waybillCapabilityFor 改成恒 canCreate=true ⇒ 「未接入 ⇒ 禁用」两条红；还原 ⇒ 13 passed。"
       - "注入式红证（实测）：把 ShipOrder.tsx 里的取号按钮换回写死的名字判断 ⇒ 「不出现承运商名字面量」一条红并具名该文件。"
-    skip_reason: ""
+    skip_reason: "[backend-contract] 注册表 ↔ 能力位的结构判据（零 LLM / 零网络 / 零 DB）：注册表行数与 code 序列逐字等于 CarrierCatalogue、前端纯函数的 canCreate 分支、源码零承运商名字面量。真值载体 = traces.tests 的 WaybillControllerTest.java / CarrierRegistryTest.java / frontend/admin-web/tests/unit/lib/waybill.test.ts / LogisticsDomainPanel.test.tsx / tests/unit_ci_workflows/test_waybill_p0_guards.py。"
     merge_log:
       - "2026-11-05 新增（PR #8699）。域登记与面板挂载同批落地（避免「加域但页面空白」）。"
     traces:
@@ -8953,7 +8953,7 @@ cases:
     data_checks:
       - "注入式红证（实测）：把 CarrierCatalogue 的 sf 行 canCreate 翻成 true ⇒ test_production_catalogue_declares_no_capability 红并具名 sf；还原 ⇒ 9 passed。"
       - "注入式红证（实测）：把 WaybillProvider.create 的 default 改成 return null ⇒ 「未实现抛不支持」一条红。"
-    skip_reason: ""
+    skip_reason: "[backend-contract]「声明 ∧ 实现」交集的结构/运行期判据（零 LLM / 零网络）：目录声明 canCreate=true 而没 provider ⇒ 生效能力位恒 false、mode=manual、overClaimed() 具名该 code；生产目录零过声明。真值载体 = traces.tests 的 CarrierRegistryTest.java 与 tests/unit_ci_workflows/test_waybill_p0_guards.py。"
     merge_log:
       - "2026-11-05 新增（PR #8699）。两层防线：运行时取交集（不谎报）+ 判据具名（发现过声明）。"
     traces:
@@ -8985,7 +8985,7 @@ cases:
     data_checks:
       - "注入式红证（实测）：让 create 在 manual 兜底时直接返回一个运单号（跳过 422）⇒ 「零外呼 + 422」两条红；还原 ⇒ 7 passed。"
       - "注入式红证（实测）：从 CarrierCatalogue 删掉 manual 行 ⇒ test_manual_fallback_entry_exists… 红并具名。"
-    skip_reason: ""
+    skip_reason: "[backend-contract] manual 兜底的结构判据（零 LLM / 零网络）：未登记 / 空 code ⇒ 解析成 manual，替身 provider 的 create 调用数为 0，ManualWaybillProvider 结构上没有 HTTP 客户端、没有第三方依赖。真值载体 = traces.tests 的 WaybillServiceTest.java / CarrierRegistryTest.java / frontend/admin-web/tests/unit/lib/waybill.test.ts / tests/unit_ci_workflows/test_waybill_p0_guards.py。"
     merge_log:
       - "2026-11-05 新增（PR #8699）。「不产生任何外呼」用调用计数 + 结构（无 HTTP 客户端）双向证明。"
     traces:
@@ -9020,7 +9020,7 @@ cases:
     data_checks:
       - "注入式红证（实测）：往任一前端文件塞一个承运商域名 + 一个凭据键 ⇒ 判据红并具名「文件::命中串」；还原 ⇒ 9 passed。"
       - "判别力自证内建：test_secret_scanner_has_teeth 在内存语料上必红、干净语料上不报。"
-    skip_reason: ""
+    skip_reason: "[frontend-contract] 前端产物的 grep 判据（零 LLM / 零网络 / 零 DB）：扫 frontend/admin-web/src/** 的 .ts/.tsx，命中承运商开放平台域名或凭据键 ⇒ 判红并具名「文件::命中串」；扫描面非空（> 100 个源文件）且内建判别力自证。真值载体 = traces.tests 的 tests/unit_ci_workflows/test_waybill_p0_guards.py。"
     merge_log:
       - "2026-11-05 新增（PR #8699）。口径 = 承运商凭据只进服务端、按租户存（docs/logistics-waybill-api-research.md §3-4）。"
     traces:
@@ -9331,7 +9331,7 @@ cases:
       - "判别力自证：`fill_gap=True` 与默认口径**必须给出不同的号**（相同 ⇒ 判据分不出两种口径 ⇒ 空断言）"
       - "内部断言「返回的号 ∉ 候选集」在两个分支上都要生效（变异 `min_free` 返回已占号 ⇒ 必抛且报文点名那个号）"
     data_checks: []
-    skip_reason: ""
+    skip_reason: "[backend-contract] 纯 CI 工具链判据（零 LLM / 零网络 / 零 DB）：取号默认尾部顺延（现取最大号 + 1），历史空档只在显式 --fill-gap 时给出，两个分支都必须抛出「返回的号 ∉ 候选集」并点名该号。真值载体 = traces.tests 的 tests/unit_ci_workflows/test_next_case_id_allocator.py。"
     merge_log: "2026-11-05 新增。两个独立来源报同一缺陷：① #8720 的包「next_case_id.py 的建议值是 MC-099（历史空档），与并行包的取远号段口径冲突」；② #5740 §3.4 已登记「最小空闲号落在历史空档时判不了是刻意保留还是已废弃」。一夜实测撞号 4 次（两个包同时拿 MC-222、另一个 MC-223）。修法 = 默认尾部顺延 + `--fill-gap` opt-in。"
     traces:
       tests:
@@ -9429,7 +9429,7 @@ cases:
       - "`capabilityShown` 与 `terminalCapabilities` 的 read() **同一 trim 口径**：`'   '` 在两条路径上结论必须一致（都是隐藏）"
       - "反向负控：空串 / 纯空白 / null / undefined 一律隐藏 —— 不许为了过上面两条而放宽到恒真"
     data_checks: []
-    skip_reason: ""
+    skip_reason: "[frontend-contract] 前端能力取值判据（node 单测，零 LLM / 零网络）：能力取值不是白名单（任何非空字符串都渲染入口，写 === 'ble' 会让报 builtin 的手持机入口消失），且 capabilityShown 与 terminalCapabilities 的 read() 同一 trim 口径，附反向负控。真值载体 = traces.tests 的 frontend/worker-h5/tests/worker-h5-8609-capabilities.test.mjs。"
     merge_log: "2026-11-05 新增。来历 = 终端仓（zhaokai-mgzn/migao-terminal）PR #59 交付能力表注入时照实报「print.label 实际报 builtin 而非文档示例的 ble」⇒ 现取主仓 worker-h5 的旧测试**只喂 ble** ⇒ 若有人把判定改成 === 'ble' 会全绿而手持机入口消失。同一轮判据还咬出 capabilityShown 未 trim、与 read() 口径不一致（'   ' 在两条路径结论相反）。"
     traces:
       tests:
@@ -9456,7 +9456,7 @@ cases:
       - "暂存目录与仓库**同一设备**（`os.stat(...).st_dev` 相等）—— `os.replace` 只在同盘原子，换到 /tmp 会退化成两步写"
       - "判别力自证：在仓库内造一个同名目录 ⇒ 判据必须判出「在仓库内」，不许恒绿"
     data_checks: []
-    skip_reason: ""
+    skip_reason: "[backend-contract] 生成腿暂存目录的结构判据（零 LLM / 零网络 / 零 DB）：暂存目录必须不在仓库目录树内（repo.relative_to 抛 ValueError）且与仓库同设备（st_dev 相等，os.replace 才原子）；另带判别力自证（在仓库内造同名目录必须判出）。真值载体 = traces.tests 的 tests/unit_ci_workflows/test_automerge_bot_safe_path.py。"
     merge_log: "2026-11-05 新增：PR #8719 的 ci workflow helper 两轮红在 `.gen-artifacts-staging/eval_cases/ontology.py` 的 FileNotFoundError；病因不在报错的判据上，在生成腿把暂存区建在仓库根下。修法 = 暂存区移到 `repo.parent`（同盘、仓外）。"
     traces:
       tests:
@@ -9569,7 +9569,7 @@ cases:
       - "每个扫描面文件数 > 0（空扫描 = 空断言）"
       - "反向负控：只改注释 / 文档时判据保持绿"
     data_checks: []
-    skip_reason: ""
+    skip_reason: "[backend-contract] 静态扫描 + 词表等价判据（零 LLM / 零网络 / 零 DB）：旧工具名在 5 个调用面的可执行位置零残留（注释 / docstring 允许），且「工具名 × 入参」集合与收敛前等价，每个扫描面文件数 > 0（空扫描 = 空断言），并带「只改注释 / 文档时保持绿」的反向负控。真值载体 = traces.tests 的 tests/unit_ci_workflows/test_customer_address_merged_into_order_query.py。"
     merge_log: "2026-11-05 新增（issue #8726 = #8167 P1-3 的唯一真候选）。取号 **MC-240**（撞号两次，记实：首取 MC-236、rebase 时发现 main 已被并行包（#8740 冲突解法）占用；顺延 MC-237 后 main 又同分钟被另一包占用 ⇒ 按「后合入者让号」+「并行取远号段」改取 MC-240；`python3 scripts/next_case_id.py MC` 当时返回历史空档 MC-145 —— 按既有裁定「刻意空档不回填」跳过；main 现取最大 = MC-235，故顺延 236，并在 main 与两个在飞 PR 分支上逐一核对零命中后落号）。收敛依据（现取）：两工具同端点 `/api/admin/agent/orders/mine`、同 `allowed_roles=[\"customer\"]`、同 `required_permissions=[]`、同强制 `X-User-Id` 过滤，且地址结果 = 订单列表首条有地址记录的**投影**（`_format_orders` 本已含 customer_name/customer_phone/customer_address）⇒ 等价变换。判据 = `tests/unit_ci_workflows/test_customer_address_merged_into_order_query.py`（零残留扫描 + 能力面等价 + 返回形状 + 空扫描自证 + 反注释负控）；行为面逐字段等价由 `backend/ai-agent-service/tests/test_tools_customer_order_query_recent_address.py` 的冻结载荷断言守。**未闭合（照实登记）**：按 #4262 未派发真实 LLM 评测，该清单见 PR body §13.2。"
     traces:
       tests:
@@ -9906,3 +9906,40 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+
+  - id: MC-247
+    legacy_id: ""
+    title: "代码判据类用例必须声明契约标记：否则 normal 全量评测把它当 LLM 用例跑，全线 unmatched expectation（run 42127246100）"
+    domains:
+      - misc
+      - ci
+      - case-governance
+    tier: normal
+    tags:
+      - 类级判据
+      - 用例治理
+      - 假红
+      - fail-closed
+    truths_ref: []
+    user_inputs:
+      - "N/A（用例库静态不变式，无对话轮次）"
+    expectations:
+      - "断言**代码判据**的用例必须声明契约标记（[backend-contract] / [frontend-contract]）；未声明即判红并具名。判据 = 两个独立信号的并集：① 结构信号 —— expectations 非空且 assertion_taxonomy.expectation_tools() 一条工具名都取不到（= 没有任何可被 runner 计分的 agent 行为断言）；② 词面信号 —— expectations 命中代码判据形态锚点（扫 / 扫描面 / 零残留 / 不入库 / 不出现 / 不许 / 白名单 / 结构上没有 / 剥注释 / 源码形态 / git ls-files / 暂存目录 / 文件数 / rglob / 行首 / 行号 / 具名 / 尾部顺延）。"
+      - "扫描面非空自证（fail-closed，两条下界）：① 全库用例数 >= 900（读不到用例 ⇒ 零违规是假绿）；② 锚点在全库的命中数 >= 12（锚点整体失效 ⇒ 判据失明必须红，不许「扫到 0 条 ⇒ 通过」）。"
+      - "判别力自证（正控 / 负控各实跑）：正控 = 「扫 xx 文件 ⇒ 判红」且 skip_reason 为空 ⇒ 必须红并具名；负控 ① 「用户问订单状态 ⇒ agent 调 order_query」不许红 ② {tool: direct_reply}（断言不调工具，全库 7 条是这形态）不许红 ③ expectations 为空、走 forbidden_text / forbidden_tools 通道（CH-049 / PR-073）不许红 ④ 已声明契约标记的同形态用例不许红。"
+      - "锚点表零误伤：有 agent 行为断言（expectation_tools 非空）却被锚点命中的用例必须为空 —— 误伤会把真 LLM 用例逼去 skip，修法是收窄锚点而不是给用例加 skip_reason。"
+      - "负控 5（库级，最有牙）：run 42127246100 里判红但**不是代码判据**的 8 条真 LLM 用例（mibao 腿 CH-049 / CU-004 / DA-026 / HR-010 / PR-130；xiaobu 腿 CH-015 / CH-043 / OR-017）必须仍在库里、不被本判据要求 skip、且 skip_reason 仍为空 —— 判据不许把「修红」变成「藏红」（把它们标 skip 来让评测变绿 ⇒ 当场红）。附注入式红证。"
+      - "本条**不负责让评测转绿**：本判据只把代码判据移出 LLM 评测面；上述 8 条的正确修法属别的族（真 LLM 行为 / 前置复位 / harness 用例形状）。"
+    data_checks:
+      - "现取读数（修前，逐字）：run 42127246100 = failure；mibao 腿 17 条（CH-049, CU-004, DA-026, HR-010, MC-202, MC-209, MC-210, MC-216, MC-217, MC-218, MC-219, MC-220, MC-235, MC-234, MC-227, MC-240, PR-130），xiaobu 腿 3 条（CH-015, CH-043, OR-017）。其中 12 条是代码判据类（本包修），8 条不是 —— 故本包**不**承诺「评测转绿」。"
+      - "根因定位（不是推演）：tests/agent_eval/eval_case_filter.py 的选择函数里有 `cases = [c for c in cases if not case_skip_reason(c)]` —— 机制是有的（skip_reason 非空即过滤），而现取这 12 条的 skip_reason 全是空串。"
+      - "修前分类读数（现取 origin/main，1067 条）：已标 skip_reason 895 / 未标 172；未标里有 agent 行为工具名的 158 条 + expectations 为空走 forbidden_* 通道的 2 条（CH-049 / PR-073）；剩下 12 条恰是本次要修的代码判据类用例 ⇒ 漏标 12、误标 0。"
+      - "修后自证（用评测器自己的选择函数，不是猜）：case_skip_reason() 对 12 条全部非空；select_cases_for_persona(cases, 'mibao'/'xiaobu') 对 12 条全部未选中，而那 8 条真 LLM 用例仍被对应腿选中（mibao 5 / xiaobu 3）；选中面仍非空：mibao 118 / xiaobu 54。"
+      - "CU-004 的传染性（照实登记，本包不修）：失败日志原文「前置未复位 1 条（共享状态未回滚，结论不可信）: CU-004」—— 共享状态污染意味着同批其它用例的结论也可能不可信，属评测隔离面。"
+    skip_reason: "[backend-contract] 用例库静态不变式（零 LLM / 零网络 / 零 DB）：判的是「哪些用例该标契约标记」，真值载体 = traces.tests 的 tests/unit_ci_workflows/test_code_criteria_cases_are_contract_marked.py，不进 agent-eval 冒烟"
+    merge_log: "2026-11-06 新增。病（实证 run 42127246100）：一次集中判定档评测（tier=normal、persona=both）全线红，失败形态全是 unmatched expectation，命中的 12 条（MC-202/209/210/216/217/218/219/220/227/234/235/240）全部是代码判据类用例，而它们的 skip_reason 现取全为空串 ⇒ 被 normal 全量选中、当 LLM 行为用例执行。修法：只给这 12 条补 skip_reason（判据仍在 traces.tests，skip_reason 只说明「不进 LLM 评测」），一条 expectations / traces 未改、一条用例未删。防复发 = 本用例锁的类级元守卫（两个独立信号 + 扫描面自证 + 四个负控）。"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_code_criteria_cases_are_contract_marked.py"
+      ci:
+        - pr-check.yml
