@@ -53,7 +53,11 @@ from app.tools.sku_update import SkuUpdateTool
 
 #: 改价的典型参数（#5303 的预览契约：改后价 + 改前价成对）
 PRICE_ARGS = {"product_id": "遮光窗帘", "price": 199, "before_price": 168}
-SKU_PRICE_ARGS = {"product_id": "遮光窗帘", "price": 150, "before_price": 168,
+#: 真实 id 形态（UUID）：写路径会在发请求前解析 product_id（issue #8788），
+#: UUID 直通且**零解析往返**；用 "p1" 这类假 id 会被当成商品名去解析，
+#: 与本文件断言的请求体/请求路径无关。
+PID = "a1b2c3d4-e5f6-4a7b-8c9d-0123456789ab"
+SKU_PRICE_ARGS = {"product_id": PID, "price": 150, "before_price": 168,
                   "color": "米白", "door_width": "2.8"}
 
 REPO = Path(__file__).resolve().parents[3]
@@ -137,7 +141,7 @@ class TestPriceFactIsSentToTheServer:
     @pytest.mark.asyncio
     @pytest.mark.parametrize("module_path,tool_cls,kwargs,kw_wire", [
         ("app.tools.product_update", ProductUpdateTool,
-         {"product_id": "p1", "price": 199, "before_price": 168}, "beforePrice"),
+         {"product_id": PID, "price": 199, "before_price": 168}, "beforePrice"),
     ])
     async def test_product_update_sends_before_price(self, module_path, tool_cls, kwargs, kw_wire):
         from unittest.mock import AsyncMock, patch

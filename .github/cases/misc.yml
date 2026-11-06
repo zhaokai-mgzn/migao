@@ -10035,16 +10035,16 @@ cases:
     expectations:
       - "扫描面自证（fail-closed）：命中「入参形态承诺」锚点的模块 >= 3 且**必须包含 product_detail.py**（把承诺删掉来消红 ⇒ 当场红）；两个锚点各自全库命中 >= 1（锚点失明 ⇒ 判红）。"
       - "判据本体：承诺了名称解析、但同一模块里**没有**解析器调用 ⇒ **具名**判红并给出出口（接线，或登记进豁免台账并写明重启条件）。现取未登记缺口 = 0。"
-      - "豁免台账双向校验（只许缩短，不许静默）：product_update.py / sku_update.py 必须**仍承诺**且**仍未接线**才是合法豁免；一旦修好（出现解析器调用）或改描述（不再承诺）⇒ 必须删掉条目，否则判红。"
+      - "豁免台账双向校验（只许缩短，不许静默）：台账里每条必须**仍承诺**且**仍未接线**才是合法豁免；一旦修好（出现解析器调用）或改描述（不再承诺）⇒ 必须删掉条目，否则判红。**现取为空**：最后两条（product_update.py / sku_update.py）已由 issue #8788 接线，且另有一条永久判据要求它们**只许**用严格解析器 —— 重新登记豁免、或退回只读的宽松解析器，都会当场红。"
       - "判别力自证（正控 + 三条负控实跑）：正控「承诺 + 无解析器 ⇒ 具名」；负控「承诺 + 有解析器 ⇒ 不红」「不承诺 ⇒ 不红」；以及「解析器只出现在**注释**里不算接线」——那正是 #8783 的原病形态（写了但没调用）。"
-      - "现取读数（本 PR HEAD）：承诺面 = 3 个模块（product_detail / product_update / sku_update）；台账生效时未登记缺口 = 0；**清空台账**后具名 2 条（product_update.py / sku_update.py）⇒ 证明判据有牙、台账不是遮羞布。"
+      - "现取读数：#8783 的 PR HEAD 上承诺面 = 3 个模块（product_detail / product_update / sku_update）、台账生效时未登记缺口 = 0；当时**清空台账**即具名 2 条（product_update.py / sku_update.py）⇒ 判据有牙、台账不是遮羞布。**#8788 落地后台账已空**，那两条转为「必须接线」的永久判据。"
     data_checks:
       - "同族缺陷的实证（#8783）：product_detail 修前在 execute 里把入参原样拼进 GET /api/admin/products/{product_id}，而解析器 backend/ai-agent-service/app/utils/id_resolver.py 的 resolve_product_id() 全仓生产代码零调用（83 stmts / 0% 覆盖）。"
-      - "另两条同族（本单**不修**、已登记豁免 + 另单跟踪）：backend/ai-agent-service/app/tools/product_update.py 与 backend/ai-agent-service/app/tools/sku_update.py 的 product_id 描述都写「支持名称/序号/UUID，服务端自动解析」，而两者直接把 product_id 拼进 /api/admin/agent/products/{id}（写路径）；admin-api 侧只按 id 精确查（ProductService 的 eq(Product::getId, ...)），没有名称解析。写路径的失败语义（解析不到时不许静默当「未找到」）与只读不同，故不并入本单。"
+      - "另两条同族（#8783 当时未修、登记豁免；**已由 issue #8788 接线**为严格解析器）：backend/ai-agent-service/app/tools/product_update.py 与 backend/ai-agent-service/app/tools/sku_update.py 的 product_id 描述都写「支持名称/序号/UUID，服务端自动解析」，而两者直接把 product_id 拼进 /api/admin/agent/products/{id}（写路径）；admin-api 侧只按 id 精确查（ProductService 的 eq(Product::getId, ...)），没有名称解析。写路径的失败语义与只读不同（宁可失败绝不猜：命中多条/不命中一律拒绝写），故不并入 #8783 这一单 —— 由 #8788 单独裁定并落地。"
       - "判据层零 LLM / 零网络 / 零 DB：纯静态读文本，用 `in` 做子串判定（不用正则捕获组 —— 规避「按引号扫源码原文取值」那一族陷阱），注释行先剥离再判「是否接线」。"
       - "边界：只判「描述承诺 vs 是否有解析器调用」这一条静态事实；不判解析器本身对不对（由 backend/ai-agent-service/tests/test_product_detail_id_resolution.py 与 backend/ai-agent-service/tests/test_id_resolver.py 负责），也不判模型会不会照描述调用。"
     skip_reason: "[backend-contract] 代码判据（pytest 层，零 LLM / 零网络 / 零 DB）：真值载体 = traces.tests 的 backend/ai-agent-service/tests/test_tool_id_shape_promises.py，不进 agent-eval 冒烟"
-    merge_log: "2026-11-06 新增（issue #8783 的同族固化）。本单裁定走「接线」而非「改描述」；为了让同类进不来，本用例把「描述承诺的入参形态 ⇒ 实现必须接线」固化成类级元守卫，并把**已核实的另外两条同族缺陷**（product_update / sku_update）登记进只许缩短的豁免台账（另单跟踪）。反向也锁：删掉 product_detail 那句承诺来消红 ⇒ 扫描面自证当场红。"
+    merge_log: "2026-11-06 新增（issue #8783 的同族固化）。本单裁定走「接线」而非「改描述」；为了让同类进不来，本用例把「描述承诺的入参形态 ⇒ 实现必须接线」固化成类级元守卫，并把**已核实的另外两条同族缺陷**（product_update / sku_update）登记进只许缩短的豁免台账（另单跟踪）。反向也锁：删掉 product_detail 那句承诺来消红 ⇒ 扫描面自证当场红。2026-11-06 订正（issue #8788）：那两个写工具的豁免**已销账**（台账现取为空），用例里「必须仍未接线」的措辞随之改判为「必须接线、且只许用严格解析器」。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tool_id_shape_promises.py"
@@ -10208,4 +10208,41 @@ cases:
         - "backend/admin-api/src/test/java/com/migao/admin/service/AutoBatchDueScanServiceTest.java"
       ci:
         - pr-check.yml
+      verifies: []
+  - id: MC-252
+    legacy_id: ""
+    title: "写路径的 id 解析：product_update / sku_update 只按**唯一确定**的商品写，命中多条或不命中一律拒绝（零写请求）（issue #8788）"
+    domains:
+      - misc
+      - backend
+      - tools
+    tier: normal
+    tags:
+      - 工具接线
+      - id 解析
+      - 写路径 fail-closed
+      - 绝不猜
+    truths_ref: []
+    precondition: "本用例是 [backend-contract] 的代码判据（零 LLM / 零网络 / 零 DB）：前置 = ① 严格解析器 backend/ai-agent-service/app/utils/id_resolver.py 的 resolve_unique_product_id 与失败话术单一源 backend/ai-agent-service/app/tools/write_refusal.py 在位；② 两个写工具（product_update / sku_update）的 execute 在发写请求前调用它。前置由判据自身持有：假客户端 _FakeAdminApi 直接按 admin-api 的列表契约分流（productId 精确 eq / keyword 搜 name+skuCode），文件被删或接线被摘 ⇒ pytest 当场 ImportError 或具名红，不会表现成「agent 不干活」。"
+    user_inputs:
+      - "N/A（代码判据，无对话轮次：直接调 ProductUpdateTool.execute / SkuUpdateTool.execute；假 admin-api 同时记录读与写两类调用）"
+    expectations:
+      - "情形 ①（唯一命中）：product_id 传商品名、商品名片段（候选只有一条）或序号「2」⇒ 正常写，且**写 URL 里是解析出的真实 id**（不是原名）；序号按 1-based 翻页（page=2,size=1）取第 2 条。"
+      - "情形 ②（命中多条）：product_id =「奶油风提花布」（候选 2 条）⇒ **拒绝写**：success=False、error=商品不唯一、message 含「匹配到 2 个商品」+ 候选 +「未执行修改」、suggestion 含 product_search；**零 PATCH**。红证（修前）：原名被原样拼进写 URL ⇒ 恰好发出一次 PATCH。"
+      - "情形 ③（不命中）：product_id =「不存在的窗帘XYZ」⇒ 拒绝写（error=商品不存在、message 含原名 +「未执行修改」）、**零 PATCH**，且任何请求的 **path** 都不含那个名字（修前的 bug 形态就是 PATCH .../{原名}）。"
+      - "情形 ④（入参本身就是合法 id）：UUID ⇒ 写请求照发且**解析零往返**（断言「没有任何 GET」）；非 UUID 真实 id（docs/deployment/demo-seed.sql 的 p-zg-001）⇒ **只**一次 productId 精确探测即写、**零** keyword 探测（id 与名称静态不可区分，但探测必须精确、绝不产生模糊候选）。"
+      - "负例自证（fail-closed）：货号命中（MG-ZG-001，keyword 也搜 skuCode）不得被当成商品名 ⇒ 拒绝写；列表接口本身失败 ⇒ error=商品查询失败（不许说成「商品不存在」）且零写请求。"
+      - "结构性不变式：两个写工具**只许**调用严格解析器（源码层断言 resolve_unique_product_id 在场、只读的 resolve_product_id 不在场）—— 接错对象会「看起来也接了」，却让写路径重新长出模糊取第一条的猜分支。"
+    data_checks:
+      - "写路径现取事实（本单第一产出，纠正 issue 正文的判断）：PATCH /api/admin/agent/products/{id} 的**控制器**先调 backend/admin-api/src/main/java/com/migao/admin/service/ProductService.java 的 resolveProductId（UUID → UUID 前缀 → 精确名称 → 序号 → **名称 contains 取第一条**），再交给 updateProductForAgent 做 eq(Product::getId)。⇒ issue 正文说的「服务端 eq(id) 必查不到」只对 service 方法成立、对 agent 写端点**不成立**：名称其实查得到，真正的缺陷是**模糊命中取第一条**（改哪件商品取决于谁先被查到）。"
+      - "失败语义裁定（为什么不能照抄 #8783 的只读口径）：只读面解析不到 ⇒ 回「请用 product_search」= 安全；写面一旦「差不多就写」= 改错商品**不可逆**。⇒ 写路径只认**唯一确定**：命中多条拒绝（列出候选与条数）、不命中拒绝（具名）、合法 id 直写；两条拒绝路径都**零写请求**且明确「未执行修改」。"
+      - "改动落点：backend/ai-agent-service/app/utils/id_resolver.py 新增 resolve_unique_product_id（与只读的 resolve_product_id 分家，后者保留原语义给只读面）；backend/ai-agent-service/app/tools/write_refusal.py 是两条写工具共用的话术单一源；product_update.py / sku_update.py 在发写请求前调用它，并把描述里的「服务端自动解析」改成「自动解析（只接受唯一确定的商品）」。"
+      - "边界（照实登记 + 重启条件）：服务端 resolveProductId 的「名称模糊命中取第一条」**本单不修**（改动面在 Java 与 admin-api 测试，超出本包）—— 已在工具侧只发「已确定的真实 id」使其对这两个工具**不可达**；重启条件 = 有别的入口继续把用户原文交给它，或要求服务端自身也拒绝歧义。"
+    skip_reason: "[backend-contract] 代码判据（pytest 层，零 LLM / 零网络 / 零 DB）：真值载体 = traces.tests 的 backend/ai-agent-service/tests/test_write_path_id_resolution.py，不进 agent-eval 冒烟"
+    merge_log: "2026-11-06 新增（issue #8788）。写路径与只读面的**失败语义不同**是本单的核心裁定：只读解析不到是安全的，写路径「差不多就写」不可逆 ⇒ 只接受唯一确定的结果，多条/不命中一律零写请求。红证（把本文件放到 origin/main 上跑）：13 failed / 2 passed —— 通过的两条是**负控**（UUID 直传零解析往返，修前也成立，它防的是「过度解析」而非复现 bug）。"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_write_path_id_resolution.py"
+      ci:
+        - ai-agent-tests.yml
       verifies: []

@@ -25,6 +25,24 @@
   顶层布局序列）+ `test_menu_navigator.py` + 前端 `menu-nav` / `Sidebar` / `SidebarRedesign` /
   `Header` / `CommandPalette` / `roles` / `processing-merged` / 四个 `*-menu-isomorphic` 用例
   + Java `MenuControllerTest`。
+### 写商品 / 写 SKU 价格也真的认「名称/序号/UUID」—— 但**匹配到多个就拒绝写**，绝不替你挑一个（2026-11-06，issue #8788）
+
+- **改前**：`product_update` / `sku_update` 的 `product_id` 都写「支持名称/序号/UUID，服务端自动解析」，
+  而工具把入参**原样拼进写 URL**（`PATCH /api/admin/agent/products/{raw}`）。服务端那层
+  `backend/admin-api/src/main/java/com/migao/admin/service/ProductService.java` 的 `resolveProductId`
+  确实会解析名称，但它的最后一步是「名称包含关键字 ⇒ 取第一条」
+  ⇒ **改哪一件商品取决于「谁先被查到」**（改错价 / 改错名**不可逆**）。
+- **改后**：写请求发出前先解析，且**只接受唯一确定的结果** —— 唯一命中 ⇒ 按解析出的真实 id 写；
+  **命中多条 ⇒ 拒绝写**并回「匹配到 N 个商品，请用 product_search 确认后指定 id」（附候选）；
+  不命中 ⇒ 拒绝写并回具名提示；入参本身就是合法 id ⇒ 直写（UUID **零解析往返**）。
+  两条拒绝路径都**零写请求**，话术里明确「未执行修改」，不会出现「已帮你改名/改价」的半成功。
+- **边界（照实登记）**：服务端 `resolveProductId` 的「模糊命中取第一条」**本单不修**
+  （改动面在 Java 与 admin-api 测试）—— 已在工具侧只下发「已确定的真实 id」，使该分支对这两个工具
+  **不可达**；重启条件 = 还有别的入口把商家原文直接交给它。
+- 判据 = MC-252：`backend/ai-agent-service/tests/test_write_path_id_resolution.py`
+  （四种情形 + 两条负例 + 结构性不变式；红证 = 放到 `origin/main` 上跑 13 failed / 2 passed）；
+  类级元守卫 = `backend/ai-agent-service/tests/test_tool_id_shape_promises.py`
+  （`EXEMPT_KNOWN_GAPS` 已**销账为空**，并新增「写工具只许用严格解析器」的永久判据）。
 
 ### product_detail 真的认「名称/序号/UUID」：描述怎么写就怎么查，查不到也不会把名字当 ID 打服务端（2026-11-06，issue #8783）
 

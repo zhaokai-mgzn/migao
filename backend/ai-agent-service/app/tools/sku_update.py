@@ -6,7 +6,9 @@ from loguru import logger
 
 from app.tools.base import admin_api_failure, BaseTool, ToolContext, ToolResult
 from app.tools.confirm_value import price_preview_missing
+from app.tools.write_refusal import product_ref_failure
 from app.utils.http_client import get_admin_api_client
+from app.utils.id_resolver import resolve_unique_product_id
 
 
 class SkuUpdateTool(BaseTool):
@@ -16,6 +18,7 @@ class SkuUpdateTool(BaseTool):
     description = (
         "【触发】用户说'白色改成XX元''散剪太贵了''XX颜色的调成XX'时直接调用。"
         "【参数】product_id + price + before_price 必填（before_price = 改前价，取自 product_detail 的 skus[].price 真值）；"
+        "product_id 支持名称/序号/UUID（自动解析，**只接受唯一确定的商品**：名称匹配到多个会被拒绝并列出候选，不会挑一个改）；"
         "color/door_width 都是可选的，至少填一个来定位 SKU"
         "（SKU 组合 = 颜色 × 门幅，V111）；取值须来自 product_detail 的 skus[] 原值。"
         "【反例】改商品统一定价（影响所有 SKU）用 product_update；改图片/上下架不在 B 端能力内（不代做）；"
@@ -41,7 +44,9 @@ class SkuUpdateTool(BaseTool):
         "properties": {
             "product_id": {
                 "type": "string",
-                "description": "商品标识。支持名称/序号/UUID，服务端自动解析",
+                "description": "商品标识。支持名称/序号/UUID（自动解析）。写操作**只接受唯一确定的商品**："
+                               "名称匹配到多个商品时会被拒绝并列出候选（不会挑一个改）；"
+                               "不确定时先用 product_search / product_detail 拿真实 id",
             },
             "color": {
                 "type": "string",
@@ -105,6 +110,21 @@ class SkuUpdateTool(BaseTool):
             )
 
         client = get_admin_api_client()
+
+        # ── 写路径的 id 解析：**宁可失败，绝不猜**（issue #8788）──────────────────
+        # 与 product_update 同一口径（话术单一源 = app/tools/write_refusal.py）：
+        # 脚本只接受**唯一确定**的商品；命中多条 / 不命中 ⇒ 零写请求。
+        # 服务端的 `resolveProductId` 自带「名称模糊命中取第一条」的兜底 ⇒ 把原值交给它
+        # 等于让"谁先被查到"决定改哪个 SKU 的价格 —— 不可逆，故在工具侧先钉死。
+        ref = await resolve_unique_product_id(product_id, context.tenant_id, client)
+        if ref.status != "ok":
+            logger.info(
+                f"[sku_update] refuse unresolved ref: raw={product_id!r} "
+                f"status={ref.status} candidates={ref.candidate_count}"
+            )
+            return product_ref_failure(ref, product_id)
+        product_id = ref.product_id
+
         body: dict = {"price": price}
         if color: body["color"] = color
         if door_width: body["door_width"] = door_width

@@ -48,6 +48,11 @@ from app.tools.confirm_value import (
 from app.tools.product_update import ProductUpdateTool
 from app.tools.sku_update import SkuUpdateTool
 
+#: 真实 id 形态（UUID）：写路径会在发请求前解析 product_id（issue #8788），
+#: UUID 直通且**零解析往返**；用 "p1" 这类假 id 会被当成商品名去解析，
+#: 与本文件断言的请求体/请求路径无关。
+PID = "a1b2c3d4-e5f6-4a7b-8c9d-0123456789ab"
+
 #: B 端商品域**允许**存在的写工具（#5303 的补回范围 → #5314 增补批量形态）。
 #: ⚠️ 2026-09-24（issue #5314）：`product_batch_update` 入册 —— 它的改价预览**复用本文件的
 #: 同一套单一源**（`confirm_value.price_preview_missing` / `confirm_card_fields`，逐条
@@ -122,7 +127,7 @@ class TestWriteToolsFailClosed:
         client = AsyncMock()
         factory.return_value = client
 
-        result = await ProductUpdateTool().execute(context, product_id="p1", price=199)
+        result = await ProductUpdateTool().execute(context, product_id=PID, price=199)
 
         assert result.success is False
         assert result.error == "price_preview_required"
@@ -136,7 +141,7 @@ class TestWriteToolsFailClosed:
         factory.return_value = client
 
         result = await SkuUpdateTool().execute(
-            context, product_id="p1", price=150, color="米白", door_width="2.8")
+            context, product_id=PID, price=150, color="米白", door_width="2.8")
 
         assert result.success is False
         assert result.error == "price_preview_required"
@@ -150,7 +155,7 @@ class TestWriteToolsFailClosed:
         factory.return_value = client
 
         result = await ProductUpdateTool().execute(
-            context, product_id="p1", price=199, before_price=168)
+            context, product_id=PID, price=199, before_price=168)
 
         assert result.success is True
         # ⚠️ `before_price` 现在是**下发给服务端回查**的（issue #5317）：服务端拿它与 DB 当前价
@@ -166,7 +171,7 @@ class TestWriteToolsFailClosed:
         factory.return_value = client
 
         result = await SkuUpdateTool().execute(
-            context, product_id="p1", price=150, before_price=168,
+            context, product_id=PID, price=150, before_price=168,
             color="米白", door_width="2.8")
 
         assert result.success is True
@@ -181,7 +186,7 @@ class TestWriteToolsFailClosed:
         client.patch = AsyncMock(return_value={"success": True, "data": {}})
         factory.return_value = client
 
-        result = await ProductUpdateTool().execute(context, product_id="p1", name="新名")
+        result = await ProductUpdateTool().execute(context, product_id=PID, name="新名")
 
         assert result.success is True
         assert client.patch.await_args.kwargs["json_data"] == {"name": "新名"}
@@ -283,7 +288,7 @@ class TestRedProofs:
         factory.return_value = client
 
         with patch("app.tools.product_update.price_preview_missing", lambda _a: ""):
-            result = await ProductUpdateTool().execute(context, product_id="p1", price=199)
+            result = await ProductUpdateTool().execute(context, product_id=PID, price=199)
 
         assert result.success is True
         client.patch.assert_awaited_once()
