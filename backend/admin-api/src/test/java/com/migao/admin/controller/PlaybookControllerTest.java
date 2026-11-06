@@ -47,15 +47,28 @@ class PlaybookControllerTest {
     void writeEndpointsUseManageCode() throws Exception {
         assertThat(permissionOf("create", com.migao.admin.entity.Playbook.class).value())
                 .isEqualTo("knowledge:manage");
-        assertThat(permissionOf("activate", String.class).value()).isEqualTo("knowledge:manage");
+        assertThat(permissionOf("activate", String.class, String.class).value())
+                .isEqualTo("knowledge:manage");
         assertThat(permissionOf("retire", String.class).value()).isEqualTo("knowledge:manage");
 
         assertThat(PlaybookController.class.getMethod("create", com.migao.admin.entity.Playbook.class)
                 .getAnnotation(PostMapping.class)).isNotNull();
-        assertThat(PlaybookController.class.getMethod("activate", String.class)
+        assertThat(PlaybookController.class.getMethod("activate", String.class, String.class)
                 .getAnnotation(PostMapping.class).value()).containsExactly("/{id}/activate");
         assertThat(PlaybookController.class.getMethod("retire", String.class)
                 .getAnnotation(PostMapping.class).value()).containsExactly("/{id}/retire");
+    }
+
+    @Test
+    @DisplayName("supersedes 是**可选**参数：不传 = 默认拒绝路径（守卫默认开），传 = 显式替换")
+    void supersedesIsOptional() throws Exception {
+        java.lang.reflect.Parameter parameter = PlaybookController.class
+                .getMethod("activate", String.class, String.class)
+                .getParameters()[1];
+        org.springframework.web.bind.annotation.RequestParam annotation =
+                parameter.getAnnotation(org.springframework.web.bind.annotation.RequestParam.class);
+        assertThat(annotation).isNotNull();
+        assertThat(annotation.required()).isFalse();
     }
 
     @Test

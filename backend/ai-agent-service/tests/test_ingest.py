@@ -68,6 +68,10 @@ def read_side(row):
             row["source_turn"],
             0,
             row["state"],
+            row.get("conflict_key"),
+            None,
+            None,
+            None,
         )
     )
 
@@ -89,16 +93,31 @@ class FakeResult:
 
 
 class FakeSession:
-    """最小假会话：记录 SQL / 参数；SELECT 返回调用方塞进来的既有行。"""
+    """最小假会话：记录 SQL / 参数；SELECT 返回调用方塞进来的既有行 / 员工行。
 
-    def __init__(self, existing=None):
+    `employees` = `{session_id: employee_id}`：模拟「会话 → 员工」这条真实链路
+    （P2 晋升的数据面）。不在表里的会话 ⇒ 查不到员工（fail-closed，不猜）。
+    """
+
+    def __init__(self, existing=None, employees=None):
         self.existing = list(existing or [])
+        self.employees = dict(employees or {})
         self.calls = []
         self.commits = 0
 
     async def execute(self, sql, params):
-        self.calls.append((str(sql), dict(params)))
-        if str(sql).strip().upper().startswith("SELECT"):
+        text = str(sql)
+        self.calls.append((text, dict(params)))
+        if "FROM sessions" in text:
+            wanted = list(params.get("session_ids") or [])
+            return FakeResult(
+                [
+                    Row(session_id=sid, employee_id=self.employees[sid])
+                    for sid in wanted
+                    if sid in self.employees
+                ]
+            )
+        if text.strip().upper().startswith("SELECT"):
             return FakeResult(self.existing)
         return FakeResult([])
 
@@ -234,7 +253,7 @@ async def test_draft_row_is_also_filtered_at_the_store_layer():
     fake_row = (
         row["id"], row["tenant_id"], row["scope"], row["scope_role"], row["trigger_json"],
         row["correct_text"], row["counter_json"], row["source_session_id"], row["source_turn"],
-        0, "draft",
+        0, "draft", row.get("conflict_key"), None, None, None,
     )
     store = PlaybookStore(db_session=FakeSession([fake_row]))
     assert await store.list_active(1) == []
@@ -386,3 +405,66 @@ def test_cli_dry_run_prints_the_plan_and_apply_goes_through_the_same_wiring(tmp_
         == 0
     )
     assert len(session.statements("INSERT")) == 1
+
+
+# ── P2：复现证据（晋升的数据面：会话 → 员工的真实链路）──────────────────────
+
+
+def test_employee_lookup_only_accepts_merchant_employee_accounts():
+    """会话 → 员工的链路必须显式排除 C 端身份（role=customer / 客服 agent）。
+
+    这是「N 个不同员工复现」的**唯一**数据面判据：`sessions.customer_id` → `users.id`，
+    排除 C 端角色；少这个过滤 ⇒ C 端顾客被算成「第 N 个员工」，晋升就是假的。
+    """
+    sql = " ".join(ingest_mod._SELECT_EMPLOYEE_SQL.split())
+    assert "JOIN users u ON u.id = s.customer_id AND u.tenant_id = s.tenant_id" in sql
+    assert "u.role IS NOT NULL" in sql
+    assert "u.role NOT IN ('customer', 'agent')" in sql
+    assert "s.tenant_id = :tenant_id" in sql
+
+
+@pytest.mark.asyncio
+async def test_same_value_from_two_sessions_records_two_reproductions():
+    """同 key 同值来自两个会话（两个员工）⇒ 两条复现证据；卡片仍只有 1 张（P1 幂等不变）。"""
+    session = FakeSession(employees={"sess-1": "u_1", "sess-2": "u_2"})
+    candidates = [
+        cand("不对，我们按整卷算", session_id="sess-1", turn=2),
+        cand("不对，我们按整卷算", session_id="sess-2", turn=5),
+    ]
+    result = await ingest_mod.ingest(session, candidates, 1, apply=True)
+
+    assert result["planned"] == 1
+    assert result["inserted"] == 1
+    assert result["reproductions_planned"] == 2
+    assert result["reproductions_recorded"] == 2
+    repro = session.statements("INSERT INTO PLAYBOOK_REPRODUCTIONS")
+    assert len(repro) == 2
+    assert sorted(p["employee_id"] for _, p in repro) == ["u_1", "u_2"]
+    sql = " ".join(repro[0][0].split())
+    assert "ON CONFLICT (tenant_id, playbook_key, value_key, employee_id) DO NOTHING" in sql
+
+
+@pytest.mark.asyncio
+async def test_unknown_employee_is_not_counted_and_not_written():
+    """会话查不到员工（C 端 / 导出环境不同）⇒ 不记复现，但卡片照旧落（fail-closed 只影响晋升面）。"""
+    session = FakeSession(employees={})
+    result = await ingest_mod.ingest(
+        session, [cand("不对，我们按整卷算", session_id="sess-1")], 1, apply=True
+    )
+    assert result["planned"] == 1
+    assert result["reproductions_planned"] == 1
+    assert result["unknown_employee"] == 1
+    assert result["reproductions_recorded"] == 0
+    assert session.statements("INSERT INTO PLAYBOOK_REPRODUCTIONS") == []
+
+
+@pytest.mark.asyncio
+async def test_rejected_candidate_produces_no_reproduction():
+    """被 PII 闸门拒掉的候选 ⇒ 0 条复现证据（复现证据只跟着**真正能成卡**的候选走）。"""
+    session = FakeSession(employees={"sess-1": "u_1"})
+    result = await ingest_mod.ingest(
+        session, [cand("不对，联系人一律填店主", session_id="sess-1")], 1, apply=True
+    )
+    assert result["planned"] == 0
+    assert result["reproductions_planned"] == 0
+    assert session.statements("INSERT INTO PLAYBOOK_REPRODUCTIONS") == []

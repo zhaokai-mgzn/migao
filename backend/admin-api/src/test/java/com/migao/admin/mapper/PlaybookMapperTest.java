@@ -2,12 +2,14 @@ package com.migao.admin.mapper;
 
 // case_ids: MC-230
 
+import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Method;
 import java.time.OffsetDateTime;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -64,5 +66,18 @@ class PlaybookMapperTest {
             assertThat(sql).contains("WHERE id = #{id} AND tenant_id = #{tenantId}");
             assertThat(sql).doesNotContain("WHERE id = #{id} AND state");
         }
+    }
+
+    @Test
+    @DisplayName("冲突守卫的参照面：本租户 active 全取（缺租户列 ⇒ 会拿别家的卡判本家的冲突）")
+    void activeSiblingsQueryIsTenantScopedAndActiveOnly() throws Exception {
+        Method method = PlaybookMapper.class.getMethod("selectActiveByTenant", Long.class);
+        Select select = method.getAnnotation(Select.class);
+        assertThat(select).isNotNull();
+        String sql = String.join("", select.value());
+        assertThat(sql).contains("WHERE tenant_id = #{tenantId} AND state = 'active'");
+        assertThat(sql).contains("conflict_key");
+        assertThat(sql).contains("trigger_json");
+        assertThat(method.getReturnType()).isEqualTo(List.class);
     }
 }
