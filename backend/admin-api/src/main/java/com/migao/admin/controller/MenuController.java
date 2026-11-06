@@ -64,143 +64,63 @@ public class MenuController {
     private static List<MenuNode> buildMenuTree() {
         // 权限码格式: 模块:操作 — 与 DB permissions.code 格式一致。
         //
-        // 🔴 issue #5271 菜单重设计（信息架构按业务动线重排）：本树的**顶层组 = 前端
-        // `frontend/admin-web/src/config/menu.ts` 的 `menuGroups`**（组 key / 组名 / 组顺序），
-        // 组内节点 = 该组的**菜单项**（label 与菜单名**逐字一致**）+ 该业务域的**动作码节点**
-        // （后者**统一追加在组尾** —— 集成方口径：导航项必须是动作码节点之前的连续前缀子序列）。
-        // 本树是 `GET /api/admin/menus` 的读面，被前端「员工管理」页渲染成权限勾选树
-        // （`children[].code` → `label`）—— 与 `AuthService.buildMenusByPermissions`（登录下发菜单）、
-        // 前端 `config/menu.ts`（真实侧边栏）**三处同构**；漏一处就是「岗位权限页勾得动、
-        // 侧边栏看不到」（issue #4203 点名的同族坑）。
+        // 🔴 本树的**顶层组 = 前端 `frontend/admin-web/src/config/menu.ts` 的 `menuGroups`**
+        // （组 key / 组名 / 组顺序），组内节点 = 该组的**菜单项**（label 与菜单名**逐字一致**）
+        // + 该业务域的**动作码节点**（后者**统一追加在组尾** —— 导航项必须是动作码节点之前的连续前缀）。
+        // 本树是 `GET /api/admin/menus` 的读面，被前端「员工管理」页渲染成权限勾选树 ——
+        // 与 `AuthService.buildMenusByPermissions`（登录下发菜单）、前端 `config/menu.ts`（真实侧边栏）
+        // **三处同构**；漏一处就是「岗位权限页勾得动、侧边栏看不到」（issue #4203 点名的同族坑）。
         // 判据：tests/unit_ci_workflows/test_menu_three_sources_are_isomorphic.py（#5271 起比对全树）。
         //
-        // 本次重排相对旧树的变化：
-        //   · 新建 `inventory-center`（仓储与物料）组 —— 从「生产管理」组拆出入库单 / 余料台账 / 省料看板；
-        //   · `customer-center`（客户管理）组**不再存在** —— 客户列表、财务对账并入 `trade-center`；
-        //   · 组 key `production` → **`production-center`**（与前端 / AuthService 收口，三源一致）；
-        //   · 组名「商品管理」→「商品与加工项」、「订单管理」→「交易管理」；
-        //   · 旧顶层组 `dashboard` / `orders` / `products` / `employees` / `customers` / `finance` /
-        //     `settings` / `agent` 全部并入下列各组，**不再作为顶层组**。
-        // 🔴 2026-10-17（issue #7087，用户裁定）：「**工作台**」组**整组撤销** ——
-        //   · 「经营看板」升为**顶层一级项**、落**最前席位**（下方 `List.of(...)` 的**首个**节点）；
-        //   · 「每日简报」节点**删除**（菜单项一并撤掉：那行结论已在经营看板上，企业开关驱动那张卡即可）。
-        // ⚠️ 「经营看板」**两种写法都要有，且各自服务一个解析器**（与「商品管理」同款，不是笔误）：
-        //   · 下行**变量声明** —— `test_agent_permission_parity.py` 的 `_iter_menu_controller`
+        // 🔴 2026-11-06（用户裁定「观星台菜单调整」）：八大组 ——
+        //   客户服务 / 订单/商品 / 生产管理 / 质量管理 / 仓储/物料 / 财务 / 供应链 / 组织管理；
+        //   尾席位「企业基础设置」的插入位 = **供应链之后、组织管理之前**
+        //   （前端 `STANDALONE_TOP_AFTER_GROUP_KEY = 'supply-chain'`）。
+        //   本轮**只动信息架构**（分组 / 组名 / 组内顺序 / 席位位置）：权限码与路径一字不动 ⇒ 零授权 delta。
+        //
+        // ⚠️ 「经营概览」「企业基础设置」**两种写法都要有，且各自服务一个解析器**（与「商品管理」同款，不是笔误）：
+        //   · **变量声明** —— `test_agent_permission_parity.py` 的 `_iter_menu_controller`
         //     只认这一形态（`rbac/manifest.json` 的 `menus.controller` 靠它）；
-        //   · `List.of(...)` 里的**内联** `new MenuNode(…)` —— `test_menu_three_sources_are_isomorphic.py`
+        //   · `List.of(...)` 里的**内联**节点 —— `test_menu_three_sources_are_isomorphic.py`
         //     的顶层布局序列解析器只认这一形态。
         MenuNode d1 = new MenuNode("dashboard:view", "经营概览");
-        // 智能客服：🔴 旧节点 `new MenuNode("agent:session", "会话监控")` 在 #5271 **删除** ——
-        // `agent:session` 已由「在线接待」承载，而「会话监控」对应的页面 `/agent-workspace/sessions`
-        // 从来不在侧边栏里 ⇒ 它只是权限树上一个重复勾选项。
-        // （#3094 已把「黄金策 · 在线对话」菜单入口移除，智能体对话走右下角 FAB。）
+        // 客户服务（2026-11-06 组内顺序 = 在线接待 → 售后工单 → 知识库，与 menu.ts 逐项一致）
         MenuNode cs1 = new MenuNode("agent:session", "在线接待");
-        // issue #5246（已合入 main）：知识库节点码 = **读**码 `knowledge:view`（原 `knowledge:manage`）——
-        // #5271 重排本树时必须保留该码（漏带 = 静默回退别人刚修的授权口径）。
+        // issue #5246：售后工单节点码 = **读**码 `after_sales:view`（原写码 `order:refund`）。
+        MenuNode o3 = new MenuNode("after_sales:view", "售后工单");
+        // issue #5246：知识库节点码 = **读**码 `knowledge:view`（原 `knowledge:manage`）。
         MenuNode cs2 = new MenuNode("knowledge:view", "知识库");
-        // 商品管理（2026-09-29 用户裁定）：节点名由「商品列表」改为**「商品管理」**，
-        // 并**升为顶层一级节点**（位置 = 下方 `List.of(...)` 里**所有分组之后**的那个顶层节点 ——
-        // 用户 2026-10-06 三次裁定「沉底」；2026-10-17 issue #7087 起它与「企业基础设置」同处
-        // **尾席位**，而「经营看板」在最前席位）—— 码不变（`product:list`）。
-        // 🔴 位置在**三处同批表达**：本树的顶层节点顺序 / 前端 `menu.ts` 的
-        // `STANDALONE_TOP_AFTER_GROUP_KEY` / `AuthService` 顶层 `menus.add` 的文档位置。
-        // ⚠️ 本节点**不再属于任何组**：原 `product-center`「商品与加工项」组已撤销
-        // （加工项管理移入生产管理组、商品列表升为一级项 ⇒ 组内已空）。
-        // 🔴 两个动作码节点（`p2` / `p3`）**仍保留**（它们不是菜单项，是权限目录里的动作码），
-        // 只是**不再挂在任何组下** ⇒ 对应的 `ACTION_NODES` 登记同步删除（未登记的动作节点会判红）。
+        // 订单/商品（2026-11-06 新组：旧「交易管理」+「基础资料」合并；组内顺序 = 用户逐字）
+        MenuNode o1 = new MenuNode("order:list", "销售订单");
         MenuNode p1 = new MenuNode("product:list", "商品管理");
-        // 🔴 2026-10-09（issue #6580）：**企业基础设置**（原「企业基础信息」）由 `org-center` 组
-        // **移出**，成为与「商品管理」并列的**尾部独立项**、排在「通知中心」上面（用户逐字：
-        // 「放到通知中心的上面，并且和通知中心一起沉底」）。
-        // · 路径一字不动（`/settings`）；**节点码改 `production:view`**（原 `system:manage`）——
-        //   理由见下方顶层内联节点处的注记（生产配置面唯一入口 + 真实配置者持读码不持管理码）；
-        // · 它**带权限码** ⇒ 与「商品管理」同款：**变量声明 + 顶层内联两处都要有**（各自服务一个
-        //   解析器，见下方注释）。
-        // 🔴 2026-10-09（issue #6580）：「加工项管理」菜单项**已移除** ⇒ 它在本次权限树上的
-        // 节点声明（变量 + 内联两处）一并删除 —— 功能体并入 `/settings` 企业基础设置页内的
-        // 配置域；旧路径 `/production/processing` 保留为重定向（无菜单节点 ⇒ 登记在
-        // `test_agent_permission_parity.py` 的 `ROUTE_WITHOUT_MENU_NODE`）。
-        // ⚠️ 注释里**不要**再写出那条旧声明的字面形态（`MenuNode <var> = new MenuNode("…","…")`）
-        // —— 解析器按该形态扫全文（含注释），写出来会被当成「树上真有一个节点」而凭空多出一项。
-        // 🔴 本轮**删除**了两个动作码节点声明（原 `p2` = `product:create`「新增商品」、
-        // `p3` = `product:category`「商品分类管理」）：它们原挂在已撤销的 `product-center` 组下，
-        // 组撤销后**不属于任何位置**（既不是组内动作、也不是一级项）⇒ 留着就是**死声明**
-        //（`_parse_controller_layout` 会把它们读成「顶层未登记节点」而判红）。
-        // = 删的是**权限树上的两个勾选项**，**不是权限码**：`product:create` / `product:category`
-        // 仍在权限目录里、仍可被角色授予（判据：`test_rbac_derived_pages.py` 的 `ACTION_NODE_CODES`
-        // 台账同批删除这两条，见该文件的「只许缩短」口径）。
-        // 2026-10-20（issue #7354，用户逐字「把菜单订单列表改成销售订单」）：菜单正名「销售订单」——
-        // 前端 `menu.ts` / `AuthService` 三源同批改名；权限码 `order:list` 与路径 `/orders` 一字不动。
         // 价格本（issue #7375 段 3）：读面码 = 该页第一屏读码 `order:list`（`PricingController` 类级码）
         MenuNode priceBooks = new MenuNode("order:list", "价格本");
-        MenuNode o1 = new MenuNode("order:list", "销售订单");
-        // 旧 label「退换货」→「售后工单」（#5271 改名消除与菜单名的漂移）；
-        // code 由 issue #5246 改为**读**码 `after_sales:view`（原写码 `order:refund`）。
-        // 本轮（2026-09-29 用户裁定）：随「服务客户」动线移入**客户服务组**（原交易管理组）。
-        MenuNode o3 = new MenuNode("after_sales:view", "售后工单");
-        // 旧 label「客户管理」→「客户列表」（#5271；code 不变 customer:view）——
-        // 本轮（2026-09-29 用户裁定）：由交易管理组移入**客户服务组**（「客户管理不属于交易管理」）。
         MenuNode c1 = new MenuNode("customer:view", "客户列表");
-        MenuNode f1 = new MenuNode("finance:view", "财务对账");
         // 动作码节点：组尾追加（与权限页「操作权限」一节单独勾选的形态一致）
         MenuNode o2 = new MenuNode("order:detail", "订单详情");
-        // 🔴 2026-10-24（issue #7593，用户裁定）：原「审批中心」节点（`approvals`）**已撤除** ——
-        // 它是五类业务闸门共用的裁决屏，跨交易 / 供应链 / 仓储三域，挂在「交易管理」下会误导；
-        // 入口改到顶栏待办入口（前端 `components/layout/ApprovalBell.tsx`）。
-        // `/approvals` 页面与路由守卫保留，读码仍是 `finance:view` ⇒ **零授权 delta**。
-        // 三源同批：`config/menu.ts` / 本文件 / `AuthService.buildMenusByPermissions`。
-        // 生产管理（issue #4203/#4205/#4308/#5177）：本组现有**作业看板 / 智能派单 / 计件工资**
-        // 三项（🔴 2026-10-09 issue #6580：「加工项管理」「工艺配置」两个菜单项已移除 ⇒ 原四项降为三项）。
-        // 「作业看板 / 计件工资」按 issue #5291 挂生产域**读**码 `production:view`（「看得见这一页」与
-        // 「改得动生产数据」就此分开）；「智能派单」按 `processing:view`（其读端点同码）。
-        // 与 `AuthService.buildMenusByPermissions` 的侧边栏节点、前端 menu.ts **三处同构**
-        // （漏一处 = 「岗位权限页勾得动、侧边栏看不到」）。
+        // 生产管理（issue #6580 起两项菜单项已移除；2026-11-06 计件工资移出本组 → 财务）
         MenuNode pr1 = new MenuNode("production:view", "作业单");
         MenuNode prPool = new MenuNode("processing:view", "智能派单");   // #5699 P4：= 该页读码
-        MenuNode pr3 = new MenuNode("production:view", "计件工资");
-        // 质检记录（issue #7140 = #5652 的**商家面**）：节点码 = 该页三个端点的**方法级**
-        // `production:inspect`（读待检清单 / 读流水 / 录判定同码）—— 只授质检员 + 管理员
-        // （用户 2026-10-17 裁定「保持现状」⇒ 零权限放宽）。放在「计件工资」之后 = 与
-        // `AuthService` 的 add 顺序、前端 `menu.ts` 的 children 顺序**逐项一致**（三源同构判据）。
+        // 质量管理（issue #8086 拆出独立组；2026-11-06 组名正名为「质量管理」）
         MenuNode pr4 = new MenuNode("production:inspect", "质检记录");
-        // 返工单（issue #7377，P1-5 质量闭环）：节点码 = 该页第一屏读端点码 `after_sales:view`
-        // （与售后工单同域复用 ⇒ 零授权 delta）；写动作走 `order:refund`，不在菜单码里体现。
-        // 位置 = 「质检记录」之后（质检判定 → 要返工 ⇒ 开单），三源（本树 / AuthService / menu.ts）同序。
         MenuNode prRework = new MenuNode("after_sales:view", "返工单");
-        // 仓储与物料（issue #5271 **新组**）：面料进出与消耗 —— 用户 2026-10-06 组内重排为
-        // **单据（进 → 账 → 出）→ 台账 → 分析**（原序「库存明细」在组末、被「省料看板」隔开）。
-        // 入库单（V111，issue #5034）权限码**独立**（inbound:view，与 @RequirePermission 同码）；
-        // 余料台账（issue #5191）/ 省料看板（issue #5159）沿用 processing:manage ——
-        // 与 RemnantController 的类级 @RequirePermission 同码（门禁不放宽也不收紧）。
-        // 供应商（issue #7369，P0-1 段 1）：**取既有码 inbound:view** —— 不新造 supplier:view
-        // ⚠️ 必须落在「入库单」**之后**：手机端可见面标注按「该码在树序上的首个承载节点」派生
-        // （#6781）⇒ 排在前面会让「供应商」被标成「入库过账」（它没有移动页）。
-        // （新码今天无人持有 ⇒ 节点对所有人不可见，#4203 同族坑；同组「发货单」取 order:list 是先例）。
-        MenuNode iSupplier = new MenuNode("supplier:view", "供应商");
-        // 采购单（issue #7369，P0-1 段 4）：同样取既有码 inbound:view（不新造 purchase:view）；
-        // 同样排在「入库单」之后（手机端标注取树序首个承载节点，#6781）。
-        MenuNode iPurchases = new MenuNode("purchase:view", "采购单");
+        // 仓储/物料（2026-11-06：入库单由供应链移入、排本组第一；组内顺序 = 用户逐字）
         MenuNode i1 = new MenuNode("inbound:view", "入库单");
-        // 发货单（issue #5939）：**取既有码 order:list**（与「销售订单」节点、以及该页第一屏读端点
-        // GET /api/admin/shipments 的 @RequirePermission 逐字同码）—— 不新造 `shipment:view`：
-        // 新码今天没有任何岗位持有 ⇒ 节点对所有人不可见（#4203 同族坑）。
-        // ⚠️ 与「销售订单」节点**同码不同项**是**有意**的（同族先例：`product:list` 同时挂
-        // 「商品管理」与「省料看板」/「库存明细」—— 码 = 「谁看得见」，几页本来就是同一批人在用）。
-        // （2026-10-17 issue #7087 前这里举的先例是「经营看板 + 每日简报」；后者菜单项已撤，换例。）
+        MenuNode stocktakes = new MenuNode("stock:view", "盘点单");
+        MenuNode iOutbound = new MenuNode("stock:view", "出库单");
         MenuNode i2 = new MenuNode("order:list", "发货单");
+        MenuNode prLedger = new MenuNode("product:list", "库存明细");
         MenuNode prRemnants = new MenuNode("processing:manage", "余料台账");
         MenuNode prSaving = new MenuNode("product:list", "省料分析");   // #5699 P4：= 该页读码
-        // 库存明细（issue #6404）：SKU 级库存**变化流水**的读面，补 `StockLedgerController`
-        //（issue #4055）javadoc 里逐字登记的显式延后项「不做前端页面」。
-        // 🔴 权限码 = 该端点**方法级** `@RequirePermission("product:list")`（逐字同码，不新造码）。
-        // 用户 2026-10-06 裁定（方案 A1）：本节点**紧跟进库单**（进仓之后第一件要看的就是账）。
-        MenuNode prLedger = new MenuNode("product:list", "库存明细");
-        // 旧 label「员工列表」→「员工管理」（#5271；code 不变 employee:list）
+        // 财务（2026-11-06 新组）：财务对账 + 计件工资（后者由生产管理移入 —— 计件是结算）
+        MenuNode f1 = new MenuNode("finance:view", "财务对账");
+        MenuNode pr3 = new MenuNode("production:view", "计件工资");
+        // 供应链（issue #7369；2026-11-06 组内顺序 = 采购单 → 供应商，入库单已移出本组）
+        MenuNode iPurchases = new MenuNode("purchase:view", "采购单");
+        MenuNode iSupplier = new MenuNode("supplier:view", "供应商");
+        // 组织管理（#6580 起「企业基础设置」已移出本组 ⇒ 只剩人与权限）
         MenuNode e1 = new MenuNode("employee:list", "员工管理");
-        // issue #5291：岗位权限节点改挂读码 `system:view`。
         MenuNode r1 = new MenuNode("system:view", "岗位权限");
-        // 🆕 2026-10-09（issue #6580）：「企业基础信息」由本组**移出** → 顶层尾部独立项（改名
-        // 「企业基础设置」、节点码改 `production:view`，见下方顶层内联节点处的注记）。
         // 🔴 本节点**不是菜单项** —— 它只为让经营域那个码**仍可授予**：企业信息 / AI 客服 /
         // 工人端页面 / 通知设置都挂 `system:manage`，而菜单项 `/settings` 已改挂
         // `production:view` ⇒ 若此处不留一个 `system:manage` 节点，该码会从**权限勾选树**里
@@ -212,7 +132,7 @@ public class MenuController {
         MenuNode s1 = new MenuNode("system:manage", "企业基础设置（经营域）");
         // 动作码节点：组尾追加
         MenuNode e2 = new MenuNode("employee:create", "新增员工");
-        // 🔴 2026-10-12（issue #6759）：两个**手机端写码**补进权限勾选树（用户当日裁定
+        // 🔴 issue #6759（2026-10-12）：两个**手机端写码**补进权限勾选树（用户当日裁定
         // 「手机端两个写动作码要补进员工管理的个人权限勾选树」）—— 它们是**动作**（不是菜单项），
         // 所以按本树既有口径**追加在各自业务域的组尾**（导航项必须保持为它们之前的连续前缀）。
         // 中文名逐字取 `rbac/manifest.json` 的 `codes.names`（改这里必须同批改
@@ -221,78 +141,39 @@ public class MenuController {
         // 并重生成 `rbac/readings.json` —— 缺一即红）。
         MenuNode prUpdate = new MenuNode("processing:update", "加工单操作");
         MenuNode iCreate = new MenuNode("inbound:create", "入库单操作");
-        // 盘点单（issue #7373 段 3 前端）：节点码 = 该页第一屏读端点 `GET /api/admin/stocktakes` 的
-        // **方法级** `inbound:view` —— 与 `menu.ts` / `AuthService` 三处逐字同码。
-        MenuNode stocktakes = new MenuNode("stock:view", "盘点单");
-        // 出库单（V196 / issue #7750）：与「入库单」对称的出口单据；节点码复用 `inbound:view`
-        //（仓管收发同岗，零授权 delta）—— 与 `menu.ts` / `AuthService` 三处逐字同码。
-        // 位置 = 盘点单之后、发货单之前：本组顺序「库存 → 对账 → 出库 → 台账 → 分析」。
-        MenuNode iOutbound = new MenuNode("stock:view", "出库单");
 
         return List.of(
-            // 🔴 2026-10-17（issue #7087）：**最前席位**一级项「经营看板」（前端 `standaloneHeadItems`）——
-            // 三处同批表达同一位置：本处（`MenuController` 顶层**首个**节点）/
-            // `AuthService.buildMenusByPermissions` 的**首个**顶层 `menus.add` /
-            // 前端 `menu.ts` 的 `standaloneHeadItems`（三源同构守卫按**顶层布局序列**比对，含位置）。
+            // 🔴 最前席位一级项「经营概览」（前端 `standaloneHeadItems`）—— 三处同批表达同一位置：
+            // 本处（顶层**首个**节点）/ `AuthService` 的**首个**顶层 add / 前端 `standaloneHeadItems`
+            // （三源同构守卫按**顶层布局序列**比对，含位置）。
             new MenuNode("dashboard:view", "经营概览"),
-            // 报表中心（issue #7376 / #7377）：与经营看板同属**经营数据面** ⇒ 紧随其后、同为最前席位；
+            // 报表中心（issue #7376 / #7377）：与经营概览同属**经营数据面** ⇒ 紧随其后、同为最前席位；
             // 码取同一把尺子 `dashboard:view`（报表是看板的下钻，零授权 delta）。
             new MenuNode("dashboard:view", "报表中心"),
-            // 客户服务（#5778 新建）：原「智能客服」组 + 客户侧两项（客户列表 / 售后工单）合并。
-            // 🔴 **组内顺序 = `menu.ts` 的 `customer-service` 组顺序**（在线接待 / 知识库 /
-            // 售后工单 / 客户列表 —— 用户 2026-10-06 调整：接待与工具相邻、档案沉底）
-            // —— 三源同构守卫按**前缀子序列**比对，乱序即红。
-            new MenuNode("customer-service", "客户服务", List.of(cs1, cs2, o3)),
-            // 🔴 2026-10-29（issue #8086，用户裁定 Q2/Q5/Q6）：**基础资料** 组（前端 `basic-data`）——
-            // 商品管理 / 客户列表 / 供应商 / 价格本；位置 = **客户服务之后、交易管理之前**（用户 Q5 逐字）。
-            // 三处同批：前端 `menu.ts` 的组顺序 / 本处的顶层节点顺序 / `AuthService` 的 `menus.add` 顺序。
-            // ⚠️ 本组**推翻**两条旧裁定（都是用户 2026-10-29 的明确改判）：2026-09-29「客户管理属于服务客户」
-            // （客户列表移出客户服务）、2026-10-06「商品管理作为一级项沉底」（商品管理进组）。
-            new MenuNode("basic-data", "基础资料", List.of(p1, c1, iSupplier, priceBooks)),
-            // 交易管理（本轮收窄为「下单 → 收款」两项）
-            // 价格本（issue #7375 段 3）：交易前置 ⇒ 排在「销售订单」之前（同组，码 order:list）
-            // 🔴 2026-10-24（issue #7593）：`approvals` 节点已撤除（入口改顶栏）⇒ 本组只剩价格本 / 销售订单 / 财务对账。
-            new MenuNode("trade-center", "交易管理", List.of(o1, f1, o2)),
-            // 生产管理（用户 2026-10-06 组内重排后，再随 issue #6580 收拢为**作业看板 → 智能派单
-            // → 计件工资**三项 —— 「加工项管理」「工艺配置」两个菜单项按用户裁定**移除**，
-            // 功能体并入 `/settings`（企业基础设置）页内的配置域；旧路径保留为重定向）。
-            new MenuNode("production-center", "生产管理", List.of(pr1, prPool, pr3, prUpdate)),
-            // 🔴 2026-10-29（issue #8086，用户裁定 Q3）：**质量** 组（前端 `quality`）——
-            // 质检记录 / 返工单从「生产管理」拆出（三种角色的活混在一组：计划派单 / 计件工资 / 质检返工）。
-            // 权限码本组不动（production:inspect / after_sales:view），拆码见 issue #8087。
-            new MenuNode("quality", "质量", List.of(pr4, prRework)),
-            // 供应链（issue #7369，用户 2026-10-20 裁定「新增的菜单不能放到仓储与物料下，得加个新大菜单」）：
-            // 谁供货 → 买什么 → 到货登记；三项同码 inbound:view（采购与收货同岗位）。
-            // ⚠️「入库单」必须排本组第一个：手机端标注取该码树序首个承载节点（#6781）。
-            new MenuNode("supply-chain", "供应链", List.of(i1, iPurchases)),
-            // 仓储与物料（用户 2026-10-20 起只留**库存与出库**：单据类节点已移到「供应链」）
-            // 🔴 issue #6759：组尾追加动作码节点「入库单操作」（`inbound:create` = 手机端过账的写码）。
-            // 盘点单紧跟「库存明细」（先看账 → 再对账），排在发货单之前。
-            new MenuNode("inventory-center", "仓储与物料", List.of(prLedger, stocktakes, iOutbound, i2, prRemnants, prSaving, iCreate)),
-            new MenuNode("org-center", "组织管理", List.of(e1, r1, s1, e2)),
-            // 🔴 尾部独立项（不属于任何组）：**排在所有分组之后**（用户 2026-10-06 裁定，原为「工作台组之后」）
-            // —— 组名即「分组」，渲染在组与组之间会让「大菜单并列」自相矛盾。
-            // 它与 **menu.ts 的 `standaloneTopItems`** 对应，前端把它渲染在
-            // `STANDALONE_TOP_AFTER_GROUP_KEY`（现取最后一个组 `org-center`）那个组**之后**；
-            // ⚠️ 位置 = 与前端渲染顺序、`AuthService` 的 add 顺序**逐项一致**
-            //（判据 = 三源同构守卫的**顶层布局序列**比对，含位置）。
-            // 🔴 2026-10-09（issue #6580）：「企业基础设置」（原 `org-center` 组内的「企业基础信息」）
-            // 移到这里 —— 与前端 `standaloneTopItems` 的第 2 项、`AuthService` 的第 2 个顶层 add
-            // 三处同批表达同一位置。
-            // 🔴 **节点码 = `production:view`**（原 `system:manage`，用户 2026-10-09 裁定选 A）：
-            //   · 它是合并后**生产配置面唯一的入口**（加工项管理 / 工艺配置的功能体都在本页）；
-            //   · 真实配置者 `operator` / `product_manager`（`rbac/manifest.json` 的 `roles.seed`）
-            //     持 `production:view`、**不持** `system:manage` ⇒ 不换码 = 菜单对他们恒不可见；
-            //   · 复算：seed 里唯一天然持全码的是 `admin: ["*"]` ⇒ 换码**对现有角色零损失**。
-            //   · 经营域的 `system:manage` 由上方 `MenuNode s1`（org-center 组内）保住**可授予面**。
-            // 🔴 **两种写法都要有，且各自服务一个解析器**（与上方「商品管理」同款，不是笔误）：
-            //   · 上方 `MenuNode … = new MenuNode(…)` 的**变量声明** —— `test_agent_permission_parity.py`
-            //     的 `_iter_menu_controller` 只认这一形态（单一真值源的 `menus.controller` 靠它）；
-            //   · 这里的**内联 `new MenuNode(…)`** —— `test_menu_three_sources_are_isomorphic.py`
-            //     的顶层布局序列解析器只认这一形态（缺了它 ⇒ 判「解析失配」当场红）。
-            // ⚠️ 本树**有意不含**尾部「通知中心」（它无权限码、不进权限勾选树；三源同构守卫比对时
+            // 客户服务（#5778 新建；2026-11-06 用户重新给定组内顺序）
+            new MenuNode("customer-service", "客户服务", List.of(cs1, o3, cs2)),
+            // 订单/商品（2026-11-06 新组）：旧「交易管理」（#5271 收窄为下单 → 收款）+ 旧「基础资料」
+            // （#8086）合并 —— 用户本轮把「销售订单 / 商品管理 / 价格本 / 客户列表」定为同一组。
+            new MenuNode("orders-products", "订单/商品", List.of(o1, p1, priceBooks, c1, o2)),
+            // 生产管理（2026-11-06：计件工资移出 ⇒ 作业单 / 智能派单；组尾动作码 = 加工单操作）
+            new MenuNode("production-center", "生产管理", List.of(pr1, prPool, prUpdate)),
+            // 质量管理（2026-11-06：组名由「质量」正名为「质量管理」；码不动，拆码见 issue #8087）
+            new MenuNode("quality", "质量管理", List.of(pr4, prRework)),
+            // 仓储/物料（2026-11-06：组名由「仓储与物料」正名；入库单移入并排第一；组尾动作码 = 入库单操作）
+            new MenuNode("inventory-center", "仓储/物料",
+                    List.of(i1, stocktakes, iOutbound, i2, prLedger, prRemnants, prSaving, iCreate)),
+            // 财务（2026-11-06 新组）：财务对账 + 计件工资
+            new MenuNode("finance-center", "财务", List.of(f1, pr3)),
+            // 供应链（2026-11-06：入库单移出 ⇒ 采购单 / 供应商）
+            new MenuNode("supply-chain", "供应链", List.of(iPurchases, iSupplier)),
+            // 🔴 尾席位一级项「企业基础设置」（前端 `standaloneTopItems`）——
+            // 2026-11-06 用户裁定：**排在供应链之后、组织管理之前**（前端由
+            // `STANDALONE_TOP_AFTER_GROUP_KEY = 'supply-chain'` 表达同一位置）。
+            // 🔴 **两种写法都要有**（见方法头注释）：变量声明给 parity 解析器，本内联节点给布局解析器。
+            // ⚠️ 本树**有意不含**尾部「通知中心」（无权限码、不进权限勾选树；三源同构守卫比对时
             // 从前端侧按**条目数**去掉尾部项）。
-            new MenuNode("production:view", "企业基础设置")
+            new MenuNode("production:view", "企业基础设置"),
+            new MenuNode("org-center", "组织管理", List.of(e1, r1, s1, e2))
         );
     }
 

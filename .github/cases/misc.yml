@@ -5528,7 +5528,7 @@ cases:
       - "用户（2026-10-24，两张截图，逐字）：「这里的交互很诡异，1，新增直接用弹窗，2直接把三种价格平铺，不要下拉 3，允许选择客户，有通用组件」"
     expectations: []
     data_checks:
-      - "**判据 1（菜单归位）**：「价格本」放在**交易管理**组内、**销售订单之前**（先定价，才谈得开单与收款）；节点码 `order:list` = 该页第一屏读码（repo 规则「每页恰好一个码」）。判据 = `menu-nav.test.ts` + `MenuControllerTest#tradeCenterGroupMirrorsMenuTs` + `AuthServiceTest`。"
+      - "**判据 1（菜单归位）**：「价格本」放在**订单/商品**组内、**销售订单之后**（2026-11-06：用户给的组内顺序 = 销售订单 → 商品管理 → 价格本 → 客户列表）（先定价，才谈得开单与收款）；节点码 `order:list` = 该页第一屏读码（repo 规则「每页恰好一个码」）。判据 = `menu-nav.test.ts` + `MenuControllerTest#tradeCenterGroupMirrorsMenuTs` + `AuthServiceTest`。"
       - "**判据 2（🔴 没选 SKU 不打接口 + SKU 只能选）**：价格本按 SKU 维护 ⇒ 未选 SKU 时只给提示、不发请求；SKU 由公共选品器（`components/products/SkuPicker` 的单选态）产出，页面上**没有**手打编号的输入框（issue #7567）。判据 = `price-books.test.tsx#没选 SKU 时只给提示` + `#选中的 SKU 原样字符串交给后端`。"
       - "**判据 2·补（雪花号不得数字化）**：`skuId` 全程**字符串**原样提交（≈2.1e18 > 2^53，`Number()` 会吞末位 ⇒ 查不到该 SKU；#5904 同族）。判据 = `#选中的 SKU 原样字符串交给后端`（断言 `typeof === 'string'` 且 ≠ `String(Number(...))`）。"
       - "**判据 3（🔴 空层写「未设置」而非 ¥0.00）**：三层任一为空 ⇒ 该卡显示「未设置 —— 这一层没有专属价，下单会继续往下找」。判据 = `#三层价格为空时各自显示未设置`。"
@@ -5569,7 +5569,7 @@ cases:
       - "用户（2026-10-22，逐字）：「继续主动推进，不要一直让我点头」+「新模块尽量一步到位，不要反复返工，最近几次界面都没验收过」—— 盘点后端与接口已在 #7458 落地，商家界面上没有入口，等于能力不存在。"
     expectations: []
     data_checks:
-      - "**判据 1（菜单归位）**：「盘点单」落在「仓储与物料」组、**紧跟库存明细**（先看账 → 再对账），码 = `inbound:view`（该页第一屏读端点码，与入库单/仓库同域、零授权 delta）⇒ 三处同一个码。判据 = `menu-nav.test.ts`（`EXPECTED_GROUPS` 的 inventory-center）+ `Sidebar.test.tsx` + `test_rbac_derived_pages.py`。"
+      - "**判据 1（菜单归位）**：「盘点单」落在「仓储/物料」组（2026-11-06 正名）、排在**入库单之后**（进 → 盘 → 出 → 发 → 账 → 台账 → 分析），码 = `inbound:view`（该页第一屏读端点码，与入库单/仓库同域、零授权 delta）⇒ 三处同一个码。判据 = `menu-nav.test.ts`（`EXPECTED_GROUPS` 的 inventory-center）+ `Sidebar.test.tsx` + `test_rbac_derived_pages.py`。"
       - "**判据 2（🔴 未数 ≠ 0）**：还没录实盘的批次，实盘量与差异两列都写「未数」，输入框**留空**（不预填 0）；差异只显示服务端算出的 `diffQty`，前端不现算。判据 = `stocktakes.test.tsx#明细：账面 / 实盘 / 差异逐格；没数的行写「未数」`。"
       - "**判据 3（🔴 部分未数不给合计）**：还有批次没数时，差异合计写「待录入（还有 N 个批次没数）」，**不给出一个看起来已对账的合计**；全部数完后照实显示（含 0）。判据 = 同文件两条合计用例。"
       - "**判据 4（有差异要审批）**：完成被服务端拒绝（「必须先有已通过的盘点差异审批」）时，页面**原样显示服务端原文**，不吞成「操作失败」。判据 = 同文件#完成被服务端拒绝。"
@@ -10082,6 +10082,88 @@ cases:
     traces:
       tests:
         - "tests/unit_ci_workflows/test_eval_harness_gaps_8776.py"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  - id: MC-300
+    legacy_id: ""
+    title: "ProcessingOrderService 派单池搬出（LOC 冻结面 3,136 → 2,931）：池读面单元 + 逐字节 characterization 先扩后搬 + red-proof 面同批"
+    domains:
+      - processing-order
+      - order
+    tier: normal
+    tags:
+      - refactor
+      - backend
+      - slice
+      - characterization-test
+      - loc-freeze
+      - red-proof
+    truths_ref: []
+    precondition:
+      - "切片前的真实结构按**顶层声明边界**现取（`git show origin/main:backend/admin-api/src/main/java/com/migao/admin/service/ProcessingOrderService.java`，3,136 行 / 7 个派单池成员 + 2 个有意留下的成员），切段器逐段断言「区段里没有未归类代码行 + 括号配平到成员真实结束行」才落盘；不是人工抄写"
+      - "golden 必须**录制于未切片代码**：`-Dpos.pool.golden.update=true` 只在未切片的原始文件上跑过一次；切片后只读复核。失败时不许直接重录（重录 = 把判据降成空断言）"
+      - "`waitingSince` / `waitHours` 是墙钟派生：夹具把 `created_at` 造成「冻结时刻 − N 小时」，golden 冻的是 `waitingSince` 的**相对小时数**（恒 N.0）与 `waitHours` 的**被测原值**（同一批输入下恒 N.0）⇒ 判据不随跑测试的时刻漂移"
+    user_inputs:
+      - "对同一批订单 / 明细 / 库存余量（9 个场景：缺省两单 / 加急与外发分区 / 到货日排序 null 最后 / 自定义滞留阈值告警 / 多物料分组与展示名 / 库存可满足性回填 / processing_info 为 NULL 的存量行 / 待付款与已确认并存且排除已派单 / 卖布单进池与配件行不进池）读待派池视图，并把加急单/外发单混进成批批次"
+    expectations: []
+    data_checks:
+      - "判据 1·🔴 池读面逐字节（characterization）：同一批输入下 `ProductionPoolViews.Pool` 的**全部** record 分量（4 个计数 / warnings / urgentLines / outsourcedLines / groups[].lines 的物料键、展示名、需求米数、等待时长、overdue、加急/外发标记、到货日、临期度、stockSatisfiable）与**未切片代码录制的 golden** 逐字节相同。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/ProcessingOrderPoolCharacterizationTest.java"
+      - "判据 2·🔴 成批闸失败面逐字节：加急 / 外发单混进 `pooled=true` 批次时 `assertNoUrgentInPooledBatch` / `assertNoOutsourcedInPooledBatch` 的 code + message + suggestion 逐字节相同（闸必须在任何只读准备与写库之前判完）。执行点 = 同判据 1 的文件"
+      - "判据 3·🔴 池化开关归一：`pooledEnabled(null/false/true)` 逐字节相同（它是「不传 pooled == 逐单派」的唯一缺省解析点）。执行点 = 同判据 1 的文件"
+      - "判据 4·🔴 单元不重复实现：池读面只在 `ProcessingOrderDispatchPool` 里定义，门面只留 `public pool(...)` 公开入口 + 惰性接线；快照 / 业务时钟 / 算料服务仍住门面（经窄接口 Owner 回调，**不缓存**字段 ⇒ 既有判据在构造后换时钟仍生效）。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/ProcessingOrderDispatchPoolTest.java"
+      - "判据 5·🔴 单元自身不变量：滞留上限 null ⇒ 24 / 非正数显式拒绝；等待时长缺值 ⇒ 0、时钟倒挂 ⇒ 0、1 位小数 HALF_UP；临期度未指定 ⇒ null（不编 0）；展示名走 MaterialLabels 唯一实现；三分区 + 组内等待时长降序；成批闸带单号 + 可行动处置。执行点 = 同判据 4 的文件"
+      - "判据 6·🔴 red-proof 面同批搬迁（不是放宽）：`scripts/pool-board-red-proof.py` 的注入面由「一个文件」变「两个文件」（`urgent_not_in_pool` 指向新住址，`urgent_guard` 的锚点改成现取调用点），`scripts/auto-batch-red-proof.py` 的 `urgent_in_pool` / `no_idempotency_guard` 两条同步改指新住址，`scripts/red_proof_harness.py` 的 `impl`（= 夹具拷贝面）两份各 +1 文件，`scripts/redproof_registry.json` 的 anchor 按现取重取。判据 = `python3 -m pytest tests/unit_ci_workflows/test_redproof_harness_gate.py -q` 102 passed + 三份机具 `--check` 全绿"
+      - "判据 7·🔴 登记面同步（不是放宽）：`loc_freeze_ledger` 的行数按**实测**重锚（只许缩短）；新类 345 行 < 800 ⇒ 不进 `loc_ratchet_exemptions`；CAS 台账与状态写面台账零新增（本单元**一个写操作都没有**）；失败通道锚点按实测 +1 并留 note"
+      - "判据 8·🔴 既有守卫族一条不降：`ProcessingOrderServiceTest` / `PoolBoardUrgencyTest` / `AutoBatchDispatchTest` / `AutoBatchDueScanServiceTest` / `ProcessingOrderStatusCasMetaGuardTest` / `ShipmentInvariantGuardTest` / `OrderAutoCompleteSqlGuardTest` / `OrderPaidAndReceivedAtWriteGuardTest` / `MoneyEntryPrecisionMetaGuardTest` / `ProductionPoolControllerTest` / 路线 characterization 全员绿（断言一字未改，只改「读哪个文件」）"
+    skip_reason: "[backend-contract] Java 服务层单测 + 源码结构判据（零 LLM 行为），不进 agent-eval 冒烟"
+    merge_log: "2026-11-06 新增（issue #8770 派单池一档，**部分交付**：不写关闭关键词）。门面 3,136 → 2,931 行（−205）；新单元 345 行。只搬**派单池读面**（pool + 4 个辅助 + 2 个成批闸）—— 上一档的重启条件要求「按派单池 → 自动批次 → 生成族逐个搬，每个先扩 characterization」，本档即第一格。行为 diff = 0 的证据 = 同一份 golden（录制于未切片代码）在切片后逐字节通过（9 场景 × 池读面 + 成批闸失败面 + 开关归一）。取号 = `python3 scripts/next_case_id.py MC` 现取 MC-269 ⇒ 落地前 CI 判出在飞 PR #8800 同时占着该号 ⇒ 让到 MC-270 ⇒ 再按当晚口径（近号段一晚撞号五次）**直接跳到远号段 MC-300**（现取三方 id 集合：main 最大 268 / 全部 open PR 最大 270 ⇒ 300 空闲）。四处同批：claims 文件名与内容 / 本块 id / 两个判据文件头 / 生成物重渲染。"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ProcessingOrderPoolCharacterizationTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ProcessingOrderDispatchPoolTest.java"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  - id: MC-269
+    legacy_id: ""
+    title: "chat.py 切片：出站整形 / interact 协议 / 历史与落库 / 会话档案 四单元（行为逐字节 diff = 0，issue #8725 第三档）"
+    domains:
+      - chat
+      - ci
+    tier: normal
+    tags:
+      - refactor
+      - backend
+      - slice
+      - characterization-test
+      - loc-freeze
+    truths_ref: []
+    precondition:
+      - "切片前的真实结构由 `git show origin/main:backend/ai-agent-service/app/api/chat.py | wc -l` 现取（3,004 行 / 110 个顶层节点），按**顶层声明边界**（`ast` 的 `lineno`/`end_lineno` + 紧邻注释块）量出来；切段器断言两次才落盘：① 每个 chunk 的每一行要么在某个顶层声明 span 内、要么是空行/注释（否则报 `orphan code lines` 并中止）；② 没有任何顶层声明被 chunk 切断（全在里或全在外）"
+      - "golden 必须**录制于未切片代码**：`CHAT_SLICE_GOLDEN_UPDATE=1` 只在 3,004 行的原始文件上跑过一次（`_meta.recorded_chat_lines = 3004`）；切片后**只读**复核。CI 从不设该开关 —— 设了就等于把判据降成「记录现状」"
+      - "夹具边界一律替身（LLM / DB / Redis / 时间）：验的是**装配与分支不变**（哪条路走哪个口、失败走哪个降级），不是「LLM 说了什么」；日志用 loguru sink 抓未格式化的 `record[message]`（审计行本身是要冻的行为，它不是时间戳）"
+    user_inputs:
+      - "N/A（静态判据 + 内存替身，无对话轮次：直接调用切片后的 `app/api/chat_outbound.py` / `chat_interact.py` / `chat_history.py` / `chat_profiles.py` 的纯函数与打桩边界，与 golden 逐字节比对）"
+    expectations: []
+    data_checks:
+      - "判据 1·🔴 行为 diff = 0（四面逐字节）：`tests/golden/chat_slice_golden.json` 录制于**未切片**代码；切片后（chat.py 2,110 行 + 四单元）不带 `CHAT_SLICE_GOLDEN_UPDATE` 复跑，outbound（32 组卡决策 × detect/send/payload + 7 组脱敏文本 × 3 种上下文 + 卡片脱敏 + 12 组卡片声称）/ interact（8 个 XML 块 + 3 种块上报 + 5 组商品过滤）/ history（历史转换 10 条 → 9 条、守卫 4 种结局、落库 4 个分支含审计行、异常映射）/ profiles（昵称与企业名各 3 种、标题 5 例、记忆 3 例）**逐字节相同**。执行点 = backend/ai-agent-service/tests/test_chat_slice_characterization.py"
+      - "判据 2·🔴 红证（判据不许是空断言）：① 改发卡门槛（`production_progress_query` 空 dict 发卡）⇒ outbound 面红并打印首个不同行；② 改脱敏边界（`formFields[].value` 一起脱敏 / 确认值被改）⇒ outbound 面红；③ 改失败通道分类（`_CODE_DEFECT_EXCS` 去掉 TypeError）⇒ history 面红（审计行 `(CODE DEFECT)` → `(degraded)`）；④ 改协议口径（choice 的 value 缺省不回落 label）⇒ interact 面红。负控：只在被搬函数里**加一行注释** ⇒ 不红（证明判据抓行为，不抓字节数/行数）"
+      - "判据 3·🔴 结构唯一真值（类级固化）：四单元文件集合 == 登记表（多一个未登记 `chat_*.py` 即红）；44 个符号在**登记的单元**里各定义 1 次；`chat.py` 一处都不许再定义它们（出现第二份实现即红）；`chat.py` 的 re-export 列表 == 登记全集且来源模块正确（少一个 ⇒ `from app.api.chat import X` 与 `patch(app.api.chat.X)` 一起**静默失效**）。执行点 = backend/ai-agent-service/tests/test_chat_slice_structure_guard.py"
+      - "判据 4·🔴 依赖方向单向：单元不得 import `app.api.chat`（含相对形式）⇒ 无环；单元不得越 800 行线（与 LOC 棘轮 `new_file` 同线）；每个单元模块头必须声明「单一职责」（非空、≥80 字符）"
+      - "判据 5·🔴 载体搬家同批登记（断言强度一字未变，只换对象/扩读面）：落库静默守卫的 `KNOWN_PERSIST_CALL_SITES`（`save_message` / `update_session_title` 随载体走，`_save_message_or_report` 的调用点仍在入口）；出站收口的结构断言读面扩到 `chat_outbound` 并新增「入口不许再定义一份」；存量主动提示行的读面扩到 `chat_history`；四个单元各配镜像判据（`app/api/*.py` 覆盖规则）"
+    skip_reason: "[backend-contract] 切片的结构/行为不变式（零 LLM / 零网络 / 零 DB）：真值载体 = traces.tests 的 characterization + 结构守卫 + 四个镜像判据，不进 agent-eval 冒烟"
+    merge_log: "2026-11-06 新增（issue #8725 第三档，**部分交付**：不写关闭关键词；`base_skill.py` 档未做）。现取读数（`git show origin/main:backend/ai-agent-service/app/api/chat.py | wc -l`）= 3,004 行 / 110 个顶层节点。按顶层声明边界量出四个**零区域内依赖**的族（程序化核过：区域外只用到 import 名，无一条指向本文件其它声明）：出站整形（卡决策 / 脱敏 / 声称改写，412 行）、interact 协议（179 行）、历史与会话守卫与落库策略点（273 行）、会话档案（189 行）。行为 diff = 0 的证据 = 同一份 golden（录制于未切片代码）在切片后不带 update 开关逐字节通过 + 4 条注入式红证各自具名 + 注释负控不红。行数：chat.py 3,004 → 2,110（−894），四单元合计 1,053（净 +159 全是模块头与 import 脚手架，零实现新增、零注释被删）。取号 = `python3 scripts/next_case_id.py MC` 现取 MC-269（当时 origin/main 最大 MC-268 + 3 个 open PR 的 claim 面均不含该号）。"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_chat_slice_characterization.py"
+        - "backend/ai-agent-service/tests/test_chat_slice_structure_guard.py"
+        - "backend/ai-agent-service/tests/test_api_chat_outbound.py"
+        - "backend/ai-agent-service/tests/test_api_chat_interact.py"
+        - "backend/ai-agent-service/tests/test_api_chat_history.py"
+        - "backend/ai-agent-service/tests/test_api_chat_profiles.py"
       ci:
         - pr-check.yml
       verifies: []

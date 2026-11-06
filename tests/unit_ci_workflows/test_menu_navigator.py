@@ -365,10 +365,10 @@ def problems_citation(mod, source: str) -> List[str]:
     citation = answer.to_data()["citation"]
     if citation != "登记项 #products → 菜单节点 菜单组「商品管理」":
         out.append(f"citation 不可溯到「登记项 → 菜单节点」：{citation!r}")
-    # 🔴 2026-10-29（issue #8086）：商品管理已进「基础资料」组（不再是一级项）
-    node = mod.menu_node("basic-data", "商品管理")
+    # 🔴 2026-11-06（用户裁定）：商品管理已进「订单/商品」组（不再是一级项）
+    node = mod.menu_node("orders-products", "商品管理")
     if node is None:
-        out.append("`menu_node('basic-data', '商品管理')` 查不到 —— 登记表被改坏了")
+        out.append("`menu_node('orders-products', '商品管理')` 查不到 —— 登记表被改坏了")
     if mod.menu_node("no-such-group", "商品管理") is not None:
         out.append("未登记节点竟返回了节点对象（默认拒绝失效）")
     literals = _module_string_literals(source)
@@ -820,7 +820,7 @@ class TestEveryJudgementCanGoRed:
             _load_mutated(
                 tmp_path,
                 lambda s: s.replace(
-                    '    MenuNode("trade-center", "销售订单", "/orders", "order:list"),\n', ""
+                    '    MenuNode("orders-products", "销售订单", "/orders", "order:list"),\n', ""
                 ),
             )
         except Exception as exc:  # noqa: BLE001 - 读数就是「抛了什么」
@@ -868,22 +868,22 @@ class TestEveryJudgementCanGoRed:
         assert problems_coverage(nav, []) != [], "对照：空的 menu.ts 节点集必须判红（防空跑）"
 
     def test_judgement_1b_red_on_reorder(self, nav, menu_ts_nodes, tmp_path, capsys):
-        """🔴 2026-10-17（issue #7087）改锚：原注入交换「工作台」组的
-        `经营看板` ⇄ `每日简报` —— 该组与「每日简报」菜单项**均已撤销**（经营看板现为**最前席位**
-        一级项），旧锚点**逐字不在** `menu_navigator.py` 里 ⇒ 注入静默失效（本红证会退化成空断言）。
-        改锚到**首组的相邻两项**（在线接待 ⇄ 知识库）：仍验「顺序漂移」这一维，且锚点是长在树上的。
+        """🔴 2026-11-06 改锚：首组组内顺序已由用户裁定改为「在线接待 → 售后工单 → 知识库」，
+        旧锚点（在线接待 ⇄ 知识库**相邻**）因此失配 ⇒ 改交换**相邻的**「售后工单 ⇄ 知识库」：
+        仍验「顺序漂移」这一维，且锚点是长在树上的。
+        （历史：#7087 之前这里交换的是「工作台」组的 经营看板 ⇄ 每日简报，两者均已撤销。）
         """
         mutated = _load_mutated(
             tmp_path,
             lambda s: s.replace(
-                '    MenuNode("customer-service", "在线接待", "/agent-workspace/human-sessions", "agent:session"),\n'
+                '    MenuNode("customer-service", "售后工单", "/after-sales", "after_sales:view"),\n'
                 '    MenuNode("customer-service", "知识库", "/knowledge", "knowledge:view"),\n',
                 '    MenuNode("customer-service", "知识库", "/knowledge", "knowledge:view"),\n'
-                '    MenuNode("customer-service", "在线接待", "/agent-workspace/human-sessions", "agent:session"),\n',
+                '    MenuNode("customer-service", "售后工单", "/after-sales", "after_sales:view"),\n',
             ),
         )
         # ⚠️ 前两个节点是最前席位（经营看板 → 报表中心，#7087 + #7376）⇒ 被注入的是紧跟其后的首组两项。
-        assert [n.path for n in mutated.MENU_TREE][2:4] == ["/knowledge", "/agent-workspace/human-sessions"], (
+        assert [n.path for n in mutated.MENU_TREE][3:5] == ["/knowledge", "/after-sales"], (
             "前提自证失败（注入没生效 ⇒ 红证无信息量）")
         assert problems_coverage(mutated, menu_ts_nodes), "判据 1b 没看见顺序漂移 ⇒ 空断言"
 
@@ -1002,8 +1002,8 @@ class TestEveryJudgementCanGoRed:
             _load_mutated(
                 tmp_path,
                 lambda s: s.replace(
-                    'NavFeature("orders", "销售订单（订单列表 / 订单）", (("trade-center", "销售订单"),), ("销售订单", "订单列表", "订单"))',
-                    'NavFeature("orders", "销售订单（订单列表 / 订单）", (("trade-center", "销售订单"),), ("销售订单", "订单列表", "库存盘点"))',
+                    'NavFeature("orders", "销售订单（订单列表 / 订单）", (("orders-products", "销售订单"),), ("销售订单", "订单列表", "订单"))',
+                    'NavFeature("orders", "销售订单（订单列表 / 订单）", (("orders-products", "销售订单"),), ("销售订单", "订单列表", "库存盘点"))',
                 ),
             )
         except Exception as exc:  # noqa: BLE001 - 读数就是「抛了什么」
@@ -1137,8 +1137,8 @@ class TestEveryJudgementCanGoRed:
                 lambda s: s.replace(
                     # ⚠️ 注入锚点必须**逐字**等于真源码（issue #7369 段 5：把入库单挪到「供应链」组后
                     # 这里的旧锚点失配 ⇒ 注入变成空操作 ⇒ 本红证当场报「注入未生效」——机制在起作用）
-                    'NavFeature("inbound-orders", "入库单（入库）", (("supply-chain", "入库单"),), ("入库单", "入库"))',
-                    'NavFeature("inbound-orders", "入库单（入库/发货单列表）", (("supply-chain", "入库单"),), ("入库单", "发货单列表"))',
+                    'NavFeature("inbound-orders", "入库单（入库）", (("inventory-center", "入库单"),), ("入库单", "入库"))',
+                    'NavFeature("inbound-orders", "入库单（入库/发货单列表）", (("inventory-center", "入库单"),), ("入库单", "发货单列表"))',
                     1,
                 ),
             )

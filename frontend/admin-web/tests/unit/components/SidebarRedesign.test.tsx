@@ -67,22 +67,22 @@ import Sidebar from '@/components/layout/Sidebar'
 // 🔴 2026-10-29（issue #8086）：**8 组** —— 新增「基础资料」（客户服务之后）与「质量」（生产管理之后）。
 const GROUP_KEYS = [
   'customer-service',
-  'basic-data',
-  'trade-center',
+  'orders-products',
   'production-center',
   'quality',
-  'supply-chain',
   'inventory-center',
+  'finance-center',
+  'supply-chain',
   'org-center',
 ]
 const GROUP_NAMES: Record<string, string> = {
   'customer-service': '客户服务',
-  'basic-data': '基础资料',
-  quality: '质量',
-  'trade-center': '交易管理',
+  'orders-products': '订单/商品',
   'production-center': '生产管理',
+  quality: '质量管理',
+  'inventory-center': '仓储/物料',
+  'finance-center': '财务',
   'supply-chain': '供应链',
-  'inventory-center': '仓储与物料',
   'org-center': '组织管理',
 }
 /**
@@ -104,40 +104,40 @@ const HEAD_TESTID = 'sidebar-standalone-head'
 const ALL_MENU_KEYS = [
   // 最前席位（issue #7087）：恒渲染、在所有组之前
   ...HEAD_KEYS,
-  // 客户服务（#8086 起 3 项）
+  // 客户服务（2026-11-06：在线接待 → 售后工单 → 知识库）
   'human-sessions',
-  'knowledge',
   'after-sales',
-  // 基础资料（#8086）：商品管理 / 客户列表 / 供应商 / 价格本
-  'products',
-  'customers',
-  'suppliers',
-  'price-books',
-  // 交易管理
+  'knowledge',
+  // 订单/商品（2026-11-06 新组）：销售订单 / 商品管理 / 价格本 / 客户列表
   'orders',
-  'finance',
-  // 生产管理
+  'products',
+  'price-books',
+  'customers',
+  // 生产管理（2026-11-06：计件工资移出）
   'production-board',
   'production-pool',
-  'production-piecework',
-  // 质量（#8086）
+  // 质量管理（2026-11-06 正名）
   'quality-inspections',
   'rework-orders',
-  // 供应链（#8086 起 2 项）
+  // 仓储/物料（2026-11-06：入库单移入并排第一；单据进 → 盘 → 出 → 发，再账 → 台账 → 分析）
   'inbound-orders',
-  'purchase-orders',
-  // 仓储与物料
-  'stock-ledger',
   'stocktakes',
   'outbound-orders',
   'shipments',
+  'stock-ledger',
   'production-remnants',
   'production-saving-board',
+  // 财务（2026-11-06 新组）
+  'finance',
+  'production-piecework',
+  // 供应链（2026-11-06：采购单 → 供应商）
+  'purchase-orders',
+  'suppliers',
+  // 尾席位「企业基础设置」（插在供应链之后、组织管理之前）
+  'settings',
   // 组织管理
   'employees',
   'roles',
-  // 尾席位（#8086：只剩企业基础设置）+ 通知中心
-  'settings',
   'notifications',
 ]
 
@@ -167,12 +167,12 @@ describe('Sidebar 重设计 · 新交互（issue #5271 / UI-028）', () => {
     await waitFor(() => expect(menuKeys()).toEqual([...HEAD_KEYS, 'settings', 'notifications']))
     expect(expandedState()).toEqual({
       'customer-service': 'false',
-      'basic-data': 'false',
-      'trade-center': 'false',
-      'quality': 'false',
+      'orders-products': 'false',
       'production-center': 'false',
-      'supply-chain': 'false',
+      'quality': 'false',
       'inventory-center': 'false',
+      'finance-center': 'false',
+      'supply-chain': 'false',
       'org-center': 'false',
     })
     // 收起组的项**不渲染**（不是「渲染了但隐藏」）
@@ -190,9 +190,12 @@ describe('Sidebar 重设计 · 新交互（issue #5271 / UI-028）', () => {
       // 且因它排在**所有分组之后** ⇒ 落在「交易管理」两项之后、「通知中心」之前；
       // 🔴 #7087：最前席位「经营看板」恒渲染（在**所有分组之前**）—— 旧形态下它此时**不渲染**
       //（属「工作台」组且该组收起）。
-      expect(menuKeys()).toEqual(['dashboard', 'reports', 'orders', 'finance', 'settings', 'notifications']),
+      // 2026-11-06：「订单/商品」组展开 ⇒ 组内四项全渲染（销售订单 / 商品管理 / 价格本 / 客户列表）
+      expect(menuKeys()).toEqual(
+        ['dashboard', 'reports', 'orders', 'products', 'price-books', 'customers', 'settings', 'notifications'],
+      ),
     )
-    expect(toggle('trade-center').getAttribute('aria-expanded')).toBe('true')
+    expect(toggle('orders-products').getAttribute('aria-expanded')).toBe('true')
     expect(document.querySelector('[data-menu-key="dashboard"]')).toHaveAttribute('href', '/dashboard')
     // 收起组的项不渲染（对照：非当前组的组内项真的不在 DOM 里）
     expect(document.querySelector('[data-menu-key="human-sessions"]')).toBeNull()
@@ -208,13 +211,14 @@ describe('Sidebar 重设计 · 新交互（issue #5271 / UI-028）', () => {
 
     fireEvent.click(toggle('inventory-center'))
     expect(toggle('inventory-center').getAttribute('aria-expanded')).toBe('true')
-    // issue #7369：本组只留 库存 → 出库 → 台账 → 分析（单据三项已搬去「供应链」组）
+    // 2026-11-06：本组 = 进 → 盘 → 出 → 发 → 账 → 台账 → 分析（入库单已由供应链移入并排第一）
     expect(menuKeys()).toEqual([
       ...HEAD_KEYS,
-      'stock-ledger',
-  'stocktakes',
+      'inbound-orders',
+      'stocktakes',
       'outbound-orders',
       'shipments',
+      'stock-ledger',
       'production-remnants',
       'production-saving-board',
       'settings',
@@ -256,21 +260,20 @@ describe('Sidebar 重设计 · 新交互（issue #5271 / UI-028）', () => {
     // 已手动展开的「仓储与物料」保持展开（用户意图不被顶掉）
     expect(toggle('inventory-center').getAttribute('aria-expanded')).toBe('true')
     expect(menuKeys()).toEqual([
-      // 最前席位恒在（不分组的项不受展开态影响）：经营看板 → 报表中心（#7376）
+      // 最前席位恒在（不分组的项不受展开态影响）：经营概览 → 报表中心（#7376）
       'dashboard', 'reports',
-      // 🔴 #6580：生产管理组只剩「作业看板 → 智能派单 → 计件工资」（加工项管理/工艺配置已移除）
+      // 2026-11-06：生产管理组 = 作业单 → 智能派单（计件工资已移入「财务」组）
       'production-board',
       'production-pool',
-      'production-piecework',
-      // 🔴 #8086：质检记录 / 返工单已拆到「质量」组（未展开 ⇒ 不渲染）
-      // issue #7369：仓储与物料组只留 库存 → 出库 → 台账 → 分析（单据在「供应链」组，未展开 ⇒ 不渲染）
-      'stock-ledger',
-  'stocktakes',
+      // 仓储/物料组（手动展开）：进 → 盘 → 出 → 发 → 账 → 台账 → 分析
+      'inbound-orders',
+      'stocktakes',
       'outbound-orders',
       'shipments',
+      'stock-ledger',
       'production-remnants',
       'production-saving-board',
-      'settings',          // 尾席位（#8086：商品管理已进「基础资料」组）
+      'settings',          // 尾席位（插在供应链之后、组织管理之前）
       'notifications',
     ])
   })
@@ -278,13 +281,13 @@ describe('Sidebar 重设计 · 新交互（issue #5271 / UI-028）', () => {
   it('② 手动**收起**当前组后不会被立刻顶开（用户意图优先）', async () => {
     mockPathname = '/orders'
     const { rerender } = render(<Sidebar collapsed={false} onToggle={() => {}} />)
-    await waitFor(() => expect(toggle('trade-center').getAttribute('aria-expanded')).toBe('true'))
+    await waitFor(() => expect(toggle('orders-products').getAttribute('aria-expanded')).toBe('true'))
 
-    fireEvent.click(toggle('trade-center'))
-    expect(toggle('trade-center').getAttribute('aria-expanded')).toBe('false')
+    fireEvent.click(toggle('orders-products'))
+    expect(toggle('orders-products').getAttribute('aria-expanded')).toBe('false')
 
     rerender(<Sidebar collapsed={false} onToggle={() => {}} />)
-    expect(toggle('trade-center').getAttribute('aria-expanded')).toBe('false')
+    expect(toggle('orders-products').getAttribute('aria-expanded')).toBe('false')
   })
 
   it('② 连续换组：每一次都自动展开当时所在组（/dashboard → /orders → /production/pool）', async () => {
@@ -294,12 +297,12 @@ describe('Sidebar 重设计 · 新交互（issue #5271 / UI-028）', () => {
 
     mockPathname = '/orders'
     rerender(<Sidebar collapsed={false} onToggle={() => {}} />)
-    expect(toggle('trade-center').getAttribute('aria-expanded')).toBe('true')
+    expect(toggle('orders-products').getAttribute('aria-expanded')).toBe('true')
 
     mockPathname = '/production/pool'
     rerender(<Sidebar collapsed={false} onToggle={() => {}} />)
     expect(toggle('production-center').getAttribute('aria-expanded')).toBe('true')
-    expect(toggle('trade-center').getAttribute('aria-expanded')).toBe('true')
+    expect(toggle('orders-products').getAttribute('aria-expanded')).toBe('true')
   })
 
   // ── ③ 折叠态：分组可判定，组名文本不渲染，所有组的项都在 ──
@@ -334,9 +337,8 @@ describe('Sidebar 重设计 · 新交互（issue #5271 / UI-028）', () => {
     expect(document.querySelector('[data-menu-key="orders"]')!.textContent).toBe('')
     // 🔴 #7087：最前席位同样按「图标栏」处理（图标在、文本剥掉）
     expect(document.querySelector('[data-menu-key="dashboard"]')!.textContent).toBe('')
-    // #5778：交易管理组只剩 2 项（销售订单 / 财务对账），客户侧已移入「客户服务」组
-    // 🔴 #8086：价格本已移入「基础资料」组 ⇒ 交易管理只剩**两项**（销售订单 → 财务对账）
-    expect(within(groupEl('trade-center')).getAllByRole('link')).toHaveLength(2)
+    // 2026-11-06：「订单/商品」组 = 4 项（销售订单 / 商品管理 / 价格本 / 客户列表）
+    expect(within(groupEl('orders-products')).getAllByRole('link')).toHaveLength(4)
   })
 
   it('③ 折叠态：**所有组**的项都渲染（图标栏），项 key 序列 == 28 项全量（#6404 +库存明细；#6580 生产组收拢；#7087 撤工作台组 + 最前席位）', async () => {
@@ -345,14 +347,17 @@ describe('Sidebar 重设计 · 新交互（issue #5271 / UI-028）', () => {
     expect(menuKeys()).toEqual(ALL_MENU_KEYS)
     // 每组项数与其组内项数一致（分组信息没丢）；「工作台」组已撤销 ⇒ 探针换成首组
     expect(within(groupEl('customer-service')).getAllByRole('link')).toHaveLength(3)
-    // 🔴 #8086：生产管理只留 3 项（质检记录 / 返工单已拆到「质量」组）
-    expect(within(groupEl('production-center')).getAllByRole('link')).toHaveLength(3)
-    // 🔴 #8086：新组「质量」= 质检记录 → 返工单
+    // 2026-11-06：生产管理 = 作业单 → 智能派单（2 项；计件工资移入「财务」）
+    expect(within(groupEl('production-center')).getAllByRole('link')).toHaveLength(2)
+    // 质量管理 = 质检记录 → 返工单
     expect(within(groupEl('quality')).getAllByRole('link')).toHaveLength(2)
-    // #7369 段 4 + 2026-10-20 新 IA：仓储与物料组由 7 项回到 **4 项**（入库单 / 供应商 / 采购单
-    // 已整组搬去新组「供应链」）；#7373 再 +「盘点单」⇒ **5 项**
-    expect(within(groupEl('inventory-center')).getAllByRole('link')).toHaveLength(6)
-    // issue #7369 + #8086：「供应链」= 入库单 → 采购单（供应商已移入「基础资料」）
+    // 仓储/物料 = 进 → 盘 → 出 → 发 → 账 → 台账 → 分析（7 项；入库单已移入）
+    expect(within(groupEl('inventory-center')).getAllByRole('link')).toHaveLength(7)
+    // 订单/商品 = 销售订单 / 商品管理 / 价格本 / 客户列表（4 项）
+    expect(within(groupEl('orders-products')).getAllByRole('link')).toHaveLength(4)
+    // 财务 = 财务对账 → 计件工资（2 项）
+    expect(within(groupEl('finance-center')).getAllByRole('link')).toHaveLength(2)
+    // 供应链 = 采购单 → 供应商（2 项）
     expect(within(groupEl('supply-chain')).getAllByRole('link')).toHaveLength(2)
     expect(within(groupEl('org-center')).getAllByRole('link')).toHaveLength(2)
     // 🔴 #7087：最前席位**不在**任何组里（它挂在 `sidebar-standalone-head` 块上）

@@ -25,7 +25,7 @@
  *    （同码 = 菜单可见性与页面门禁**同一个判据**；换成别的码就会造出「看得到点不进」或「有权限却看不到」）；
  * ③ **图标注册**：`frontend/admin-web/src/config/menu-icons.ts` 的 `menuIconMap` 里有该图标
  *    （#5271 前内联在 `Sidebar.tsx`；漏注册**不会报错**，只会静默回落 BarChart3）；
- * ④ **真的点得到**：渲染真实 `<Sidebar />` ⇒ 该权限下展开「仓储与物料」组能看到「余料台账」
+ * ④ **真的点得到**：渲染真实 `<Sidebar />` ⇒ 该权限下展开「仓储/物料」组能看到「余料台账」
  *    且 `href = /production/remnants`；**负控**：没有 `processing:manage` 时**不得**出现
  *    （证明开启菜单没有顺手放宽门禁）。
  */
@@ -87,10 +87,10 @@ describe('余料台账菜单三处同构（PR-106 / issue #5191）', () => {
     expect(line).toContain("permissionCode: 'processing:manage'")
 
     expect(MENU_CONTROLLER).toContain(`new MenuNode("processing:manage", "${NAME}")`)
-    // 必须真的挂进「仓储与物料」组（只声明不挂 = 岗位权限页上看不到）
+    // 必须真的挂进「仓储/物料」组（只声明不挂 = 岗位权限页上看不到）
     // issue #5271：本项随「面料进出与消耗」动线**从生产管理组移入新组**（`inventory-center`）
     expect(MENU_CONTROLLER).toMatch(
-      /new MenuNode\("inventory-center", "仓储与物料", List\.of\([^)]*\bprRemnants\b[^)]*\)\)/,
+      /new MenuNode\("inventory-center", "仓储\/物料",\s+List\.of\([^)]*\bprRemnants\b[^)]*\)\)/,
     )
     // 负控：不得**同时**留在生产管理组
     expect(MENU_CONTROLLER).not.toMatch(
@@ -102,7 +102,7 @@ describe('余料台账菜单三处同构（PR-106 / issue #5191）', () => {
     // 服务端 Coins）。图标真值源 = 上面 `MENU_TS` 的 `icon: 'Recycle'`，服务端**不得**长回该字段。
     expect(AUTH_SERVICE).toContain(`menuItem("production-remnants", "${NAME}", "${PATH}")`)
     expect(AUTH_SERVICE).not.toMatch(/menuItem\("[^"]+", "[^"]+", "[^"]+", "[^"]+"\)/)
-    // 且该节点必须落在**「仓储与物料」组的 children 装配区间内**（取该组 children 起点到
+    // 且该节点必须落在**「仓储/物料」组的 children 装配区间内**（取该组 children 起点到
     // `menus.add(menuGroup("inventory-center"…))` 之间）—— 只声明不挂 = 侧边栏看不到。
     const invStart = AUTH_SERVICE.indexOf('List<UserInfoResponse.MenuItem> inventoryChildren')
     const invEnd = AUTH_SERVICE.indexOf('menuGroup("inventory-center"')
@@ -152,16 +152,16 @@ describe('余料台账菜单三处同构（PR-106 / issue #5191）', () => {
     // 面包屑末项必须与菜单名逐字一致（§15.2；PG-038 对**所有**菜单项做通用判据，这里点名本项）
     const crumb = HEADER.split('\n').find((l) => l.includes(`startsWith('${PATH}')`))
     expect(crumb, 'Header.tsx 缺 /production/remnants 面包屑条目').toContain(`label: '${NAME}'`)
-    // issue #5271：本项随动线搬进「仓储与物料」组 ⇒ 面包屑组名也跟着改（§15.2 组名与菜单一致）
-    expect(crumb).toContain("label: '仓储与物料'")
+    // issue #5271：本项随动线搬进「仓储/物料」组 ⇒ 面包屑组名也跟着改（§15.2 组名与菜单一致）
+    expect(crumb).toContain("label: '仓储/物料'")
   })
 
   it('④ 真的点得到：有 processing:manage 时出现「余料台账」→ /production/remnants（单成员组会被提升为独立块）', async () => {
     mockPermissions = ['processing:manage']
     render(<Sidebar collapsed={false} onToggle={() => {}} />)
     // issue #5271：分组默认只展开**当前路由所在组**，而本文件 mock 的 pathname 是 `/production`
-    //（属「生产管理」组）⇒ 「仓储与物料」默认收起。
-    // 🔴 issue #8085：本权限下「仓储与物料」只剩 **1 项** ⇒ 侧边栏把它**提升为独立块**（单成员组不渲染
+    //（属「生产管理」组）⇒ 「仓储/物料」默认收起。
+    // 🔴 issue #8085：本权限下「仓储/物料」只剩 **1 项** ⇒ 侧边栏把它**提升为独立块**（单成员组不渲染
     // 组头、也不留折叠按钮）⇒ 这里先「有折叠按钮就展开、没有就直接断言」，两种形态都覆盖。
     const toggle = screen.queryByTestId('sidebar-group-toggle-inventory-center')
     if (toggle && toggle.getAttribute('aria-expanded') === 'false') fireEvent.click(toggle)
@@ -175,14 +175,14 @@ describe('余料台账菜单三处同构（PR-106 / issue #5191）', () => {
   it('④ 负控：没有 processing:manage ⇒ 该入口**不出现**（开菜单不得顺手放宽门禁）', async () => {
     mockPermissions = ['order:list']
     const { container } = render(<Sidebar collapsed={false} onToggle={() => {}} />)
-    // 自证渲染面非空：`order:list` 下「交易管理」只剩「销售订单」1 项 ⇒ 被提升为一级项（#8085），
+    // 自证渲染面非空：`order:list` 下「订单/商品」剩「销售订单 + 价格本」2 项 ⇒ 仍是分组（不是独立块），
     // 没有折叠按钮可点 ⇒ 直接断言它渲染出来了（菜单渲染失败时这里是 null = 空断言）
-    const tradeToggle = screen.queryByTestId('sidebar-group-toggle-trade-center')
+    const tradeToggle = screen.queryByTestId('sidebar-group-toggle-orders-products')
     if (tradeToggle && tradeToggle.getAttribute('aria-expanded') === 'false') fireEvent.click(tradeToggle)
     expect(within(container).getByRole('link', { name: '销售订单' })).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: NAME })).toBeNull()
     // 🔴 issue #5939 改判（**收窄，不放宽**）：`order:list` 现在会带出**同一组**的「发货单」
-    // ⇒ 「仓储与物料」组不再整组消失。更强的形态随之改成：**该组只带出发货单一项**，
+    // ⇒ 「仓储/物料」组不再整组消失。更强的形态随之改成：**该组只带出发货单一项**，
     // 而「余料台账」仍不在 —— 判据要证的事一件没少（不得靠别的码混进来）。
     // 🔴 issue #8085：本权限下该组只剩 1 项 ⇒ 会被**提升为独立块**（无组头/折叠按钮），
     // 故按「有按钮就展开、没有就直接断言」两种形态都覆盖。
@@ -193,14 +193,15 @@ describe('余料台账菜单三处同构（PR-106 / issue #5191）', () => {
     cleanup()
   })
 
-  it('④ 负控（跨组混权）：有 inbound:view、无 processing:manage ⇒ 「供应链」组在、入库单在，余料台账**不在**', async () => {
-    // 「入库单」与「余料台账」权限码不同（inbound:view vs processing:manage），issue #7369 起还分属
-    // 两个组（供应链 / 仓储与物料）—— 这条证明**同码不等于同权、同权也不跨组**：开菜单没有顺手
-    // 把 processing:manage 的项带出来。
+  it('④ 负控（跨组混权）：有 inbound:view、无 processing:manage ⇒ 入库单在、「供应链」组**整组不在**，余料台账**不在**', async () => {
+    // 「入库单」与「余料台账」权限码不同（inbound:view vs processing:manage），2026-11-06 起入库单
+    // 属「仓储/物料」、供应商/采购单属「供应链」—— 这条证明**同码不等于同权、同权也不跨组**：
+    // 开菜单没有顺手把 processing:manage 的项带出来。
     mockPermissions = ['inbound:view']
     render(<Sidebar collapsed={false} onToggle={() => {}} />)
-    // 🔴 issue #8087（裁定 C）：`inbound:view` 现在**只**开入库单；「供应链」组只剩 1 项 ⇒ 提升为一级项
-    //（无组头可展开），供应商/采购单各有独立读码 ⇒ 不在。
+    // 🔴 issue #8087（裁定 C）：`inbound:view` 现在**只**开入库单；「仓储/物料」组只剩 1 项 ⇒
+    // 侧边栏把它**提升为独立块**（无组头/折叠按钮）。供应商/采购单各有独立读码 ⇒ 「供应链」组整组不在。
+    expect(screen.queryByTestId('sidebar-group-toggle-inventory-center')).toBeNull()
     expect(screen.queryByTestId('sidebar-group-toggle-supply-chain')).toBeNull()
     expect(await screen.findByRole('link', { name: '入库单' })).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: NAME })).toBeNull()

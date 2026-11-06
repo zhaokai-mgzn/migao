@@ -403,7 +403,7 @@ export default function HomePage() {
           <SectionHeading
             kicker="管理后台"
             title="覆盖经营全链路的能力域"
-            lead="商品、客户、交易、生产、供应链、仓储、组织七个能力域数据互通，这也是 AI 答复准确的基础。"
+            lead="客户服务、订单/商品、生产管理、质量管理、仓储/物料、财务、供应链、组织管理八个能力域数据互通，这也是 AI 答复准确的基础。"
           />
           <div className="mt-14 grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
             {capabilityDomains.map((domain) => (

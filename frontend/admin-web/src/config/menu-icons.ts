@@ -23,13 +23,13 @@ import {
   Boxes,
   Building2,
   Calculator,
+  // 财务组（2026-11-06 用户裁定新建「财务」组）：钞票（「财务对账」项的图标）
+  Banknote,
   ClipboardCheck,
   ClipboardList,
   Factory,
   Handshake,
   Headphones,
-  // 基础资料（issue #8086）：档案/资料架
-  Library,
   // 质量（issue #8086）：质检与返工的告警盾牌（与「岗位权限」的 ShieldCheck 不同形）
   ShieldAlert,
   Layers,
@@ -68,12 +68,13 @@ export const menuIconMap: Record<string, LucideIcon> = {
   Boxes,
   Building2,
   Calculator,
+  // 财务组（2026-11-06）：钞票（「财务对账」项的图标；组图标是 Calculator）
+  Banknote,
   ClipboardCheck,
   ClipboardList,
   Factory,
   Handshake,
   Headphones,
-  Library,
   ShieldAlert,
   Layers,
   MessageSquare,

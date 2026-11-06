@@ -49,40 +49,40 @@ const ALL_KEYS = [
   // 最前席位（issue #7087 + #7376）：⌘K 索引的**前两项**（都在所有分组之前）
   'dashboard',
   'reports',
-  // 客户服务（#8086 起 3 项）
+  // 客户服务（2026-11-06：在线接待 → 售后工单 → 知识库）
   'human-sessions',
-  'knowledge',
   'after-sales',
-  // 基础资料（#8086）：商品管理 / 客户列表 / 供应商 / 价格本
-  'products',
-  'customers',
-  'suppliers',
-  'price-books',
-  // 交易管理
+  'knowledge',
+  // 订单/商品（2026-11-06 新组）：销售订单 / 商品管理 / 价格本 / 客户列表
   'orders',
-  'finance',
-  // 生产管理
+  'products',
+  'price-books',
+  'customers',
+  // 生产管理（2026-11-06：计件工资移出）
   'production-board',
   'production-pool',
-  'production-piecework',
-  // 质量（#8086）
+  // 质量管理（2026-11-06 正名）
   'quality-inspections',
   'rework-orders',
-  // 供应链（#8086 起 2 项）
+  // 仓储/物料（2026-11-06：入库单移入并排第一；单据进 → 盘 → 出 → 发，再账 → 台账 → 分析）
   'inbound-orders',
-  'purchase-orders',
-  // 仓储与物料
-  'stock-ledger',
   'stocktakes',
   'outbound-orders',
   'shipments',
+  'stock-ledger',
   'production-remnants',
   'production-saving-board',
+  // 财务（2026-11-06 新组）
+  'finance',
+  'production-piecework',
+  // 供应链（2026-11-06：采购单 → 供应商）
+  'purchase-orders',
+  'suppliers',
+  // 尾席位「企业基础设置」（2026-11-06：插在供应链之后、组织管理之前）
+  'settings',
   // 组织管理
   'employees',
   'roles',
-  // 尾席位（#8086：商品管理已进组 ⇒ 只剩企业基础设置）+ 通知中心
-  'settings',
   'notifications',
 ]
 
@@ -138,7 +138,7 @@ describe('CommandPalette（⌘K 菜单搜索，issue #5271）', () => {
     const item = screen.getByTestId('command-palette-item-dashboard')
     expect(item.textContent).toContain('经营概览')
     // 对照：组内项照旧显示所属组名（证明「不显示组名」不是渲染坏了）
-    expect(screen.getByTestId('command-palette-item-orders').textContent).toContain('交易管理')
+    expect(screen.getByTestId('command-palette-item-orders').textContent).toContain('订单/商品')
   })
 
   it('🔴 ⌘K 里取不到「工作台」与「每日简报」（issue #7087）', async () => {
@@ -162,7 +162,7 @@ describe('CommandPalette（⌘K 菜单搜索，issue #5271）', () => {
     // 面非空（不是「全被过滤光」造成的恒真空集）：销售订单 + **发货单**（#5939：与销售订单同码）
     // + 独立项
     // 🔴 issue #5699（P4）：经营看板要 `dashboard:view` ⇒ 本权限集**无**该码 ⇒ 它（最前席位）不在。
-    expect(renderedKeys()).toEqual(['price-books', 'orders', 'shipments', 'notifications'])
+    expect(renderedKeys()).toEqual(['orders', 'price-books', 'shipments', 'notifications'])
     expect(screen.queryByTestId('command-palette-item-products')).toBeNull()
     expect(screen.queryByTestId('command-palette-item-finance')).toBeNull()
     expect(screen.queryByTestId('command-palette-item-dashboard')).toBeNull()
@@ -174,15 +174,23 @@ describe('CommandPalette（⌘K 菜单搜索，issue #5271）', () => {
     expect(renderedKeys()).toEqual(['orders'])
     const item = screen.getByTestId('command-palette-item-orders')
     expect(item.textContent).toContain('销售订单')
-    expect(item.textContent).toContain('交易管理')
+    expect(item.textContent).toContain('订单/商品')
     // 未命中的项**不出现**（不是只把命中项排前面）
     expect(screen.queryByTestId('command-palette-item-products')).toBeNull()
   })
 
-  it('组名命中：`仓储` ⇒ 仓储与物料组的 6 项（顺序 = 组内顺序：库存明细 → 盘点单 → 出库单 → 发货单 → 余料台账 → 省料看板；issue #7369 起单据三项已搬去「供应链」组）', async () => {
+  it('组名命中：`仓储` ⇒ 「仓储/物料」组的 7 项（顺序 = 组内顺序：入库单 → 盘点单 → 出库单 → 发货单 → 库存明细 → 余料台账 → 省料分析）', async () => {
     render(<CommandPalette open onClose={mockOnClose} />)
     typeQuery('仓储')
-    expect(renderedKeys()).toEqual(['stock-ledger', 'stocktakes', 'outbound-orders', 'shipments', 'production-remnants', 'production-saving-board'])
+    expect(renderedKeys()).toEqual([
+      'inbound-orders',
+      'stocktakes',
+      'outbound-orders',
+      'shipments',
+      'stock-ledger',
+      'production-remnants',
+      'production-saving-board',
+    ])
   })
 
   it('无结果：给可读文案，且列表清空（不是留着上一轮结果）', async () => {
@@ -209,30 +217,30 @@ describe('CommandPalette（⌘K 菜单搜索，issue #5271）', () => {
 
   it('↑/↓ 移动高亮 + Enter 跳转：router.push 收到**被高亮那一项**的 path', () => {
     render(<CommandPalette open onClose={mockOnClose} />)
-    typeQuery('lb') // keywords 命中：商品列表(splb) / 销售订单(ddlb) / 客户列表(khlb)
-    // 顺序 = **菜单自身顺序**（同档稳定）⇒ #8086 后：商品管理（基础资料）→ 客户列表（基础资料）
-    // → 销售订单（交易管理）。「lb」只命中三个 keyword（商品列表 / 销售订单 / 客户列表）。
-    expect(renderedKeys()).toEqual(['products', 'customers', 'orders'])
-    expect(highlightedKeys()).toEqual(['products'])
+    typeQuery('lb') // keywords 命中：销售订单(ddlb) / 商品管理(splb) / 客户列表(khlb)
+    // 顺序 = **菜单自身顺序**（同档稳定）⇒ 2026-11-06：三项同在「订单/商品」组，
+    // 组内顺序 = 销售订单 → 商品管理 → 客户列表。
+    expect(renderedKeys()).toEqual(['orders', 'products', 'customers'])
+    expect(highlightedKeys()).toEqual(['orders'])
 
     press('ArrowDown')
-    expect(highlightedKeys()).toEqual(['customers'])
+    expect(highlightedKeys()).toEqual(['products'])
     press('ArrowDown')
-    expect(highlightedKeys()).toEqual(['orders'])
+    expect(highlightedKeys()).toEqual(['customers'])
 
     press('Enter')
     expect(mockPush).toHaveBeenCalledTimes(1)
-    expect(mockPush).toHaveBeenCalledWith('/orders')
+    expect(mockPush).toHaveBeenCalledWith('/customers')
     expect(mockOnClose).toHaveBeenCalledTimes(1)
   })
 
   it('↑ 从首项回绕到末项（不是停在原地），Enter 跳到末项', () => {
     render(<CommandPalette open onClose={mockOnClose} />)
-    typeQuery('lb')   // 多结果集：商品管理 → 客户列表 → 销售订单（顺序 = 菜单自身顺序）
+    typeQuery('lb')   // 多结果集：销售订单 → 商品管理 → 客户列表（顺序 = 菜单自身顺序）
     press('ArrowUp')
-    expect(highlightedKeys()).toEqual(['orders'])
+    expect(highlightedKeys()).toEqual(['customers'])
     press('Enter')
-    expect(mockPush).toHaveBeenCalledWith('/orders')
+    expect(mockPush).toHaveBeenCalledWith('/customers')
   })
 
   it('查询变化 ⇒ 高亮归零（否则会停在越界/错位的下标上）', () => {
@@ -240,8 +248,8 @@ describe('CommandPalette（⌘K 菜单搜索，issue #5271）', () => {
     typeQuery('lb')
     press('ArrowDown')
     press('ArrowDown')
-    // #8086：商品管理已进「基础资料」组 ⇒ lb 命中序 = 商品管理 → 客户列表 → 销售订单，下移两次 = 销售订单
-    expect(highlightedKeys()).toEqual(['orders'])
+    // 2026-11-06：lb 命中序 = 销售订单 → 商品管理 → 客户列表，下移两次 = 客户列表
+    expect(highlightedKeys()).toEqual(['customers'])
 
     typeQuery('caiwu') // 单结果集：若不归零，高亮下标会停在 2（越界 ⇒ 无高亮）
     expect(renderedKeys()).toEqual(['finance'])

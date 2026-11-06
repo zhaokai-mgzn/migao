@@ -52,9 +52,9 @@ describe('库存明细菜单三处同构（issue #6404 / UI-088）', () => {
     expect(line).toContain(`icon: '${ICON}'`)
 
     expect(MENU_CONTROLLER).toContain(`new MenuNode("product:list", "${NAME}")`)
-    // 必须真的挂进「仓储与物料」组（只声明不挂 = 岗位权限页上看不到）
+    // 必须真的挂进「仓储/物料」组（只声明不挂 = 岗位权限页上看不到）
     expect(MENU_CONTROLLER).toMatch(
-      /new MenuNode\("inventory-center", "仓储与物料", List\.of\([^)]*\bprLedger\b[^)]*\)\)/,
+      /new MenuNode\("inventory-center", "仓储\/物料",\s+List\.of\([^)]*\bprLedger\b[^)]*\)\)/,
     )
     // 负控：不得**同时**留在生产管理组
     expect(MENU_CONTROLLER).not.toMatch(
@@ -63,7 +63,7 @@ describe('库存明细菜单三处同构（issue #6404 / UI-088）', () => {
 
     // ③ AuthService：id/名称/路径三处一起钉（图标是**前端专属**，服务端不下发 icon ⇒ 这里不钉）
     expect(AUTH_SERVICE).toContain(`menuItem("stock-ledger", "${NAME}", "${PATH}")`)
-    // 且该节点必须落在**「仓储与物料」组的 children 装配区间内**
+    // 且该节点必须落在**「仓储/物料」组的 children 装配区间内**
     const invStart = AUTH_SERVICE.indexOf('List<UserInfoResponse.MenuItem> inventoryChildren')
     const invEnd = AUTH_SERVICE.indexOf('menuGroup("inventory-center"')
     expect(invStart, 'AuthService 找不到 inventoryChildren 装配点（解析失配 ⇒ 红，不得静默通过）').toBeGreaterThan(-1)
@@ -109,10 +109,10 @@ describe('库存明细菜单三处同构（issue #6404 / UI-088）', () => {
     expect(SETUP).toMatch(/^\s*ScrollText: iconStub\(/m)
   })
 
-  it('④ 面包屑：/stock-ledger ⇒「仓储与物料 / 库存明细」（末项 == 侧边栏菜单名，§15.2）', () => {
+  it('④ 面包屑：/stock-ledger ⇒「仓储/物料 / 库存明细」（末项 == 侧边栏菜单名，§15.2）', () => {
     const crumb = HEADER.split('\n').find((l) => l.includes(`startsWith('${PATH}')`))
     expect(crumb, 'Header.tsx 缺 /stock-ledger 面包屑条目').toBeTruthy()
     expect(crumb).toContain(`label: '${NAME}'`)
-    expect(crumb).toContain("label: '仓储与物料'")
+    expect(crumb).toContain("label: '仓储/物料'")
   })
 })
