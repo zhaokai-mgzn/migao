@@ -10015,3 +10015,39 @@ cases:
       ci:
         - ai-agent-tests.yml
       verifies: []
+
+  - id: MC-250
+    legacy_id: ""
+    title: "类级元守卫：工具描述承诺的入参形态（名称/序号/UUID）必须在实现里接线解析器，未接线即具名判红（issue #8783 同族）"
+    domains:
+      - misc
+      - backend
+      - tools
+    tier: normal
+    tags:
+      - 类级判据
+      - 描述承诺
+      - 未接线
+      - 豁免台账只许缩短
+    truths_ref: []
+    user_inputs:
+      - "N/A（静态判据，无对话轮次：扫 backend/ai-agent-service/app/tools/*.py 的描述文本与解析器调用）"
+    expectations:
+      - "扫描面自证（fail-closed）：命中「入参形态承诺」锚点的模块 >= 3 且**必须包含 product_detail.py**（把承诺删掉来消红 ⇒ 当场红）；两个锚点各自全库命中 >= 1（锚点失明 ⇒ 判红）。"
+      - "判据本体：承诺了名称解析、但同一模块里**没有**解析器调用 ⇒ **具名**判红并给出出口（接线，或登记进豁免台账并写明重启条件）。现取未登记缺口 = 0。"
+      - "豁免台账双向校验（只许缩短，不许静默）：product_update.py / sku_update.py 必须**仍承诺**且**仍未接线**才是合法豁免；一旦修好（出现解析器调用）或改描述（不再承诺）⇒ 必须删掉条目，否则判红。"
+      - "判别力自证（正控 + 三条负控实跑）：正控「承诺 + 无解析器 ⇒ 具名」；负控「承诺 + 有解析器 ⇒ 不红」「不承诺 ⇒ 不红」；以及「解析器只出现在**注释**里不算接线」——那正是 #8783 的原病形态（写了但没调用）。"
+      - "现取读数（本 PR HEAD）：承诺面 = 3 个模块（product_detail / product_update / sku_update）；台账生效时未登记缺口 = 0；**清空台账**后具名 2 条（product_update.py / sku_update.py）⇒ 证明判据有牙、台账不是遮羞布。"
+    data_checks:
+      - "同族缺陷的实证（#8783）：product_detail 修前在 execute 里把入参原样拼进 GET /api/admin/products/{product_id}，而解析器 backend/ai-agent-service/app/utils/id_resolver.py 的 resolve_product_id() 全仓生产代码零调用（83 stmts / 0% 覆盖）。"
+      - "另两条同族（本单**不修**、已登记豁免 + 另单跟踪）：backend/ai-agent-service/app/tools/product_update.py 与 backend/ai-agent-service/app/tools/sku_update.py 的 product_id 描述都写「支持名称/序号/UUID，服务端自动解析」，而两者直接把 product_id 拼进 /api/admin/agent/products/{id}（写路径）；admin-api 侧只按 id 精确查（ProductService 的 eq(Product::getId, ...)），没有名称解析。写路径的失败语义（解析不到时不许静默当「未找到」）与只读不同，故不并入本单。"
+      - "判据层零 LLM / 零网络 / 零 DB：纯静态读文本，用 `in` 做子串判定（不用正则捕获组 —— 规避「按引号扫源码原文取值」那一族陷阱），注释行先剥离再判「是否接线」。"
+      - "边界：只判「描述承诺 vs 是否有解析器调用」这一条静态事实；不判解析器本身对不对（由 backend/ai-agent-service/tests/test_product_detail_id_resolution.py 与 backend/ai-agent-service/tests/test_id_resolver.py 负责），也不判模型会不会照描述调用。"
+    skip_reason: "[backend-contract] 代码判据（pytest 层，零 LLM / 零网络 / 零 DB）：真值载体 = traces.tests 的 backend/ai-agent-service/tests/test_tool_id_shape_promises.py，不进 agent-eval 冒烟"
+    merge_log: "2026-11-06 新增（issue #8783 的同族固化）。本单裁定走「接线」而非「改描述」；为了让同类进不来，本用例把「描述承诺的入参形态 ⇒ 实现必须接线」固化成类级元守卫，并把**已核实的另外两条同族缺陷**（product_update / sku_update）登记进只许缩短的豁免台账（另单跟踪）。反向也锁：删掉 product_detail 那句承诺来消红 ⇒ 扫描面自证当场红。"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_tool_id_shape_promises.py"
+      ci:
+        - ai-agent-tests.yml
+      verifies: []
