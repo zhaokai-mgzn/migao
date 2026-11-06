@@ -112,9 +112,9 @@
       "id": "pool-board/urgent_guard",
       "tool": "scripts/pool-board-red-proof.py",
       "mutation": "urgent_guard",
-      "criterion": "判据3 加急单不进池（成批路径上的那道闸）",
+      "criterion": "判据3 加急单不进池（成批路径上的那道闸；issue #8770 后闸本体在新单元，调用点仍在门面）",
       "guarded": "backend/admin-api/src/main/java/com/migao/admin/service/ProcessingOrderService.java",
-      "anchor": "        // 🔴 加急单**不进池**（issue #5177 判据 3）：混进成批批次 ⇒ 整批显式拒绝，**一行都不写**。\n        // 放在 prepare 之前 ⇒ 拒绝时连只读准备都还没跑，更没有半成品。\n        assertNoUrgentInPooledBatch(orderIds, tenantId);\n",
+      "anchor": "        // 🔴 加急单**不进池**（issue #5177 判据 3）：混进成批批次 ⇒ 整批显式拒绝，**一行都不写**。\n        // 放在 prepare 之前 ⇒ 拒绝时连只读准备都还没跑，更没有半成品。\n        dispatchPool().assertNoUrgentInPooledBatch(orderIds, tenantId);\n",
       "replacement": "        // [RED-PROOF] 闸被摘掉\n",
       "criteria": {
         "cwd": "backend/admin-api",
