@@ -11,6 +11,15 @@ from unittest.mock import patch, AsyncMock
 from app.tools.product_detail import ProductDetailTool
 from app.tools.base import ToolContext, ToolResult
 
+# product_detail 现在先做 id 解析（issue #8783）：用**真实 id 形态**（UUID，
+# admin-api `@TableId(type = IdType.ASSIGN_UUID)`）才能走到「已是 id ⇒ 直通」分支；
+# 非 UUID 的假 id（prod_001 之类）会被当成**商品名**去解析，与本文件的判据意图不符。
+UUID_PROD_001 = "11111111-1111-4111-8111-111111111111"
+UUID_PROD_MISSING = "99999999-9999-4999-8999-999999999999"
+UUID_PROD_EMPTY = "22222222-2222-4222-8222-222222222222"
+UUID_PROD_2699 = "33333333-3333-4333-8333-333333333333"
+UUID_PROD_NOSKU = "44444444-4444-4444-8444-444444444444"
+
 
 @pytest.fixture
 def tool():
@@ -84,7 +93,7 @@ class TestProductDetailSuccess:
 
         result = await tool.execute(
             context=sample_tool_context,
-            product_id="prod_001",
+            product_id=UUID_PROD_001,
         )
 
         assert result.success is True
@@ -110,7 +119,7 @@ class TestProductDetailSuccess:
 
         result = await tool.execute(
             context=sample_tool_context,
-            product_id="prod_001",
+            product_id=UUID_PROD_001,
         )
 
         skus = result.data["skus"]
@@ -137,7 +146,7 @@ class TestProductDetailNotFound:
 
         result = await tool.execute(
             context=sample_tool_context,
-            product_id="prod_nonexist",
+            product_id=UUID_PROD_MISSING,
         )
 
         assert result.success is False
@@ -157,7 +166,7 @@ class TestProductDetailNotFound:
 
         result = await tool.execute(
             context=sample_tool_context,
-            product_id="prod_empty",
+            product_id=UUID_PROD_EMPTY,
         )
 
         assert result.success is False
@@ -181,7 +190,7 @@ class TestProductDetailValidation:
         """无权限角色查询被拒绝"""
         result = await tool.execute(
             context=unauthorized_tool_context,
-            product_id="prod_001",
+            product_id=UUID_PROD_001,
         )
 
         assert result.success is False
@@ -202,7 +211,7 @@ class TestProductDetailError:
 
         result = await tool.execute(
             context=sample_tool_context,
-            product_id="prod_001",
+            product_id=UUID_PROD_001,
         )
 
         assert result.success is False
@@ -222,7 +231,7 @@ class TestProductDetailError:
 
         result = await tool.execute(
             context=sample_tool_context,
-            product_id="prod_001",
+            product_id=UUID_PROD_001,
         )
 
         assert result.success is False
@@ -250,7 +259,7 @@ class TestProductStockAuthority:
         mock_client.get = AsyncMock(return_value={
             "success": True,
             "data": {
-                "id": "prod_2699",
+                "id": UUID_PROD_2699,
                 "name": "2699系列雪尼尔窗帘面料",
                 "price": 299.0,
                 "stock": 0,  # 商品级（非权威）——实测该商品两列正是 0 vs 9599
@@ -263,7 +272,7 @@ class TestProductStockAuthority:
         })
         mock_get_client.return_value = mock_client
 
-        result = await tool.execute(context=sample_tool_context, product_id="prod_2699")
+        result = await tool.execute(context=sample_tool_context, product_id=UUID_PROD_2699)
 
         assert result.success is True
         assert result.data["stock"] == 9599, "商品库存数字必须来自 SKU 权威，而不是商品级 stock"
@@ -278,7 +287,7 @@ class TestProductStockAuthority:
         mock_client.get = AsyncMock(return_value={
             "success": True,
             "data": {
-                "id": "prod_nosku",
+                "id": UUID_PROD_NOSKU,
                 "name": "未维护规格的帘",
                 "price": 199.0,
                 "stock": 0,
@@ -288,7 +297,7 @@ class TestProductStockAuthority:
         })
         mock_get_client.return_value = mock_client
 
-        result = await tool.execute(context=sample_tool_context, product_id="prod_nosku")
+        result = await tool.execute(context=sample_tool_context, product_id=UUID_PROD_NOSKU)
 
         assert result.success is True
         assert result.data["stock"] is None, "无 SKU 记录不得谎报 0（会被读成「没货」）"

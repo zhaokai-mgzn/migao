@@ -20,6 +20,11 @@ def search_tool():
     return ProductSearchTool()
 
 
+# 详情入参 = 真实 id 形态（UUID）：product_detail 会先做 id 解析（issue #8783）
+UUID_OFF_SALE = "55555555-5555-4555-8555-555555555555"
+UUID_ON_SALE = "66666666-6666-4666-8666-666666666666"
+
+
 @pytest.fixture
 def detail_tool():
     return ProductDetailTool()
@@ -50,7 +55,7 @@ def mixed_status_records():
 def off_sale_product_data():
     """模拟 admin-api 返回的下架商品详情"""
     return {
-        "id": "prod_off_001",
+        "id": UUID_OFF_SALE,
         "name": "已下架遮光帘",
         "description": "该商品已下架",
         "price": 199.0,
@@ -68,7 +73,7 @@ def off_sale_product_data():
 def on_sale_product_data():
     """模拟 admin-api 返回的上架商品详情"""
     return {
-        "id": "prod_on_001",
+        "id": UUID_ON_SALE,
         "name": "在售雪尼尔窗帘",
         "description": "高品质雪尼尔面料",
         "price": 299.0,
@@ -203,14 +208,14 @@ class TestProductDetailCustomerVisibility:
         mock_get_client.return_value = mock_client
 
         result = await detail_tool.execute(
-            context=sample_tool_context, product_id="prod_off_001"
+            context=sample_tool_context, product_id=UUID_OFF_SALE
         )
 
         assert result.success is False
         assert result.error == "商品不存在"
         assert "未找到该商品" in result.message
         assert "已下架遮光帘" not in (result.message or "")
-        assert "prod_off_001" not in (result.message or "")
+        assert UUID_OFF_SALE not in (result.message or "")
 
     @patch("app.tools.product_detail.get_admin_api_client")
     async def test_customer_detail_on_sale_returns_ok(
@@ -225,11 +230,11 @@ class TestProductDetailCustomerVisibility:
         mock_get_client.return_value = mock_client
 
         result = await detail_tool.execute(
-            context=sample_tool_context, product_id="prod_on_001"
+            context=sample_tool_context, product_id=UUID_ON_SALE
         )
 
         assert result.success is True
-        assert result.data["id"] == "prod_on_001"
+        assert result.data["id"] == UUID_ON_SALE
         assert result.data["status"] == "on_sale"
 
     @patch("app.tools.product_detail.get_admin_api_client")
@@ -245,7 +250,7 @@ class TestProductDetailCustomerVisibility:
         mock_get_client.return_value = mock_client
 
         result = await detail_tool.execute(
-            context=admin_tool_context, product_id="prod_off_001"
+            context=admin_tool_context, product_id=UUID_OFF_SALE
         )
 
         assert result.success is True

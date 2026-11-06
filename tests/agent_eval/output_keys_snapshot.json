@@ -1201,7 +1201,7 @@
     "data=self._format_product(data)",
     "product ← self._format_product(data)"
    ],
-   "source_sha256": "57b4ad9ceab3a23319436173560223eb19081f731ce2eb324074c5c0d8edd0c0"
+   "source_sha256": "b63d6a3507942ae6b9263f586bb12ef532d0e0a64800fafb4d6c69d5ac4c7252"
   },
   "product_image_generate": {
    "actions": null,
