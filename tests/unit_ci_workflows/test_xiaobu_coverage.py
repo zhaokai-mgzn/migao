@@ -245,6 +245,10 @@ class TestSharedGuardPersonaScope:
     """
 
     SKILL_SRC = SKILLS_DIR / "base_skill.py"
+    # 🔴 `issue #8725`：`*_block` 拦截守卫已随职责搬进 `injection_blocks.py` ⇒ 扫描面扩到家族。
+    # **不是放宽**：口径一字未改（每个 `*_block` 都必须声明 C 端分端或登记为通用守卫），
+    # 且「未解析到任何 `*_block` 守卫」仍是硬失败（防扫错文件后空转通过）。
+    FAMILY_SRCS = (SKILL_SRC, SKILLS_DIR / "injection_blocks.py")
 
     def _block_guards(self):
         """源码里所有**拦截守卫入口**（函数名以 `_block` 结尾）的函数名 + 函数体。
@@ -256,7 +260,11 @@ class TestSharedGuardPersonaScope:
             像 `_masked_phone_block_result` 这类**响应构造函数**不是"决定是否拦"的地方，
             不纳入分端声明（首版宽匹配把它也抓进来了，属口径不准）。
         """
-        src = self.SKILL_SRC.read_text(encoding="utf-8")
+        parts = []
+        for path in self.FAMILY_SRCS:
+            assert path.is_file(), f"被扫源码不存在（本守卫会空转通过）：{path}"
+            parts.append(path.read_text(encoding="utf-8"))
+        src = "\n\n".join(parts)
         guards = {}
         for m in re.finditer(r"^(?:async )?def (_\w*_block)\(", src, re.M):
             name = m.group(1)

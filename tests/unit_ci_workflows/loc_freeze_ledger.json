@@ -28,8 +28,8 @@
     },
     {
       "path": "backend/ai-agent-service/app/graph/skills/base_skill.py",
-      "lines": 4356,
-      "frozen_at": "2026-10-30"
+      "lines": 2750,
+      "frozen_at": "2026-11-06"
     },
     {
       "path": "backend/admin-api/src/main/java/com/migao/admin/service/ProductService.java",

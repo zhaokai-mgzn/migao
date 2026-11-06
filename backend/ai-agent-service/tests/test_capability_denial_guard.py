@@ -41,6 +41,7 @@ from app.graph.skills.base_skill import (
     create_skill_registry,
 )
 from app.graph.skills import base_skill
+from app.graph.skills import capability_denial
 
 
 # ────────────────────── 措辞面：语义归一 ──────────────────────
@@ -192,11 +193,23 @@ class TestCapabilityPredicatesAreFactDriven:
         """
         empty = MagicMock()
         empty.get_tool.side_effect = lambda n: None
-        with patch.object(base_skill, "_tool_registered_globally", return_value=True):
+        # `issue #8725`：`_order_capability_available` / `_tool_registered_globally` 已搬到
+        # `app.graph.skills.capability_denial`（同族内部互调）⇒ patch 目标**同批搬到新住址**。
+        # ⚠️ 打在 `base_skill` 上**不会报错**，只会让 mock 静默失效（判据变空跑）——
+        # 故每条 patch 都**同批断言 `mock.called`**（本仓最忌讳的「判据自己选择沉默」）。
+        with patch.object(capability_denial, "_tool_registered_globally",
+                          return_value=True) as global_yes:
             assert _order_capability_available(empty, order_in_progress=False) is False
+            assert not global_yes.called, (
+                "不在办流程时不该去问全局注册表（问了就是放过了越权/真不可达）")
             assert _order_capability_available(empty, order_in_progress=True) is True
-        with patch.object(base_skill, "_tool_registered_globally", return_value=False):
+            assert global_yes.called, (
+                "patch 目标失效（mock 一次都没被调用）—— 判据在静默空跑，必须搬到新住址")
+        with patch.object(capability_denial, "_tool_registered_globally",
+                          return_value=False) as global_no:
             assert _order_capability_available(empty, order_in_progress=True) is False
+            assert global_no.called, (
+                "patch 目标失效（mock 一次都没被调用）—— 判据在静默空跑，必须搬到新住址")
 
     def test_handoff_guard_applies_by_fact_not_by_name(self):
         """转人工守卫的适用性由三类事实决定（取代 `skill_name in (…)` 白名单）。"""

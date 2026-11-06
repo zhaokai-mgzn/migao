@@ -35,6 +35,14 @@ SKILLS_DIR = REPO_ROOT / "backend" / "ai-agent-service" / "app" / "graph" / "ski
 # **守卫接线**随之搬走（判据函数本身留在 `base_skill.py`）。任何"只扫 base_skill.py"
 # 的文本/AST 判据都会在搬迁后**变成空跑但仍全绿**（§19.1「判据自己选择沉默」）。
 EXECUTION_DIR = SKILLS_DIR / "execution"
+# 🔴 `issue #8725`：判据族（拒绝话术 / 订单流程锁）已按职责从 `base_skill.py` 搬到两个单元。
+# **读面**随之扩到家族 —— 断言本体一字未改（判据必须存在且独立成函数 / 不得看见 skill 名 /
+# 接线必须 derive 自工具属性与注册表事实）。「家族里出现两份实现」由
+# `backend/ai-agent-service/tests/test_base_skill_slice_structure_guard.py` 钉住（两份 = 红）。
+NEW_UNITS = (
+    SKILLS_DIR / "capability_denial.py",
+    SKILLS_DIR / "order_flow_guard.py",
+)
 
 # 能力可达性 / 转人工守卫的**判据函数**（判据必须全在这里，禁止再内联回 execute_skill）
 GUARD_PREDICATES = (
@@ -74,7 +82,7 @@ def _family_paths(execution_dir: Path = EXECUTION_DIR) -> list:
         f"{execution_dir} 下的实现文件不足 3 个（实得 {[p.name for p in exec_files]}）"
         f"—— 家族扫描会静默漏掉搬走的守卫接线"
     )
-    return [BASE_SKILL] + exec_files
+    return [BASE_SKILL] + exec_files + list(NEW_UNITS)
 
 
 def _family_sources(execution_dir: Path = EXECUTION_DIR) -> list:
@@ -83,8 +91,20 @@ def _family_sources(execution_dir: Path = EXECUTION_DIR) -> list:
             for p in _family_paths(execution_dir)]
 
 
+def _units_source() -> str:
+    """`#8725` 搬出的两个单元源码（缺失即报错，fail-closed）。"""
+    parts = []
+    for path in NEW_UNITS:
+        assert path.is_file(), f"搬迁单元不存在：{path}（fail-closed，判据会空跑）"
+        parts.append(path.read_text(encoding="utf-8"))
+    return "\n\n".join(parts)
+
+
 def _module() -> ast.Module:
-    return ast.parse(BASE_SKILL.read_text(encoding="utf-8"))
+    # ⚠️ 载体 `BASE_SKILL` 必须**显式出现在下面这个 `ast.parse` 的实参里**：
+    # `test_behavior_mapping_guard_family_coverage.py` 用「对载体做 AST 解析」识别守卫族登记处
+    # （issue #3551）。改成只传 `_family_paths()` 会让本文件从普查里掉出去 ⇒ 那条判据假绿。
+    return ast.parse(BASE_SKILL.read_text(encoding="utf-8") + "\n\n" + _units_source())
 
 
 def _functions(tree: ast.Module) -> dict:
