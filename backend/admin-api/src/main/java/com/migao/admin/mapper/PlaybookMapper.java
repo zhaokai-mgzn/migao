@@ -4,9 +4,11 @@ import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.migao.admin.entity.Playbook;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
+import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
 
 import java.time.OffsetDateTime;
+import java.util.List;
 
 /**
  * 口径卡 Mapper（issue #8175）。
@@ -39,4 +41,18 @@ public interface PlaybookMapper extends BaseMapper<Playbook> {
                        @Param("tenantId") Long tenantId,
                        @Param("reviewedBy") String reviewedBy,
                        @Param("now") OffsetDateTime now);
+
+    /**
+     * 本租户全部生效口径（冲突消解写面守卫的参照面，issue #8175 P2）。
+     *
+     * <p>为什么整取而不是「按 key 查一条」：冲突组的判据是 **scope + 触发条件（JSON 树相等）
+     * 或 conflict_key 相等**，JSON 树相等在 SQL 里要么依赖 jsonb cast（脏数据会整条报错）、
+     * 要么要在 SQL 里复刻一套规范化算法（与 Python 侧必然漂移）。本表是「少而准」的工件
+     * （每租户十几到上百行），整取后在服务层比较，判据面只有一份实现。</p>
+     */
+    @Select("SELECT id, tenant_id, scope, scope_role, trigger_json, correct_text, "
+            + "counter_json, source_session_id, source_turn, hits, state, conflict_key "
+            + "FROM playbooks WHERE tenant_id = #{tenantId} AND state = 'active' "
+            + "ORDER BY id ASC")
+    List<Playbook> selectActiveByTenant(@Param("tenantId") Long tenantId);
 }

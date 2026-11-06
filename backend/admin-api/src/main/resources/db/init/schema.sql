@@ -389,6 +389,10 @@ CREATE TABLE IF NOT EXISTS playbooks (
     -- 冲突标记（issue #8175 P1；迁移 V211__add_playbooks_conflict_key.sql）：
     -- 非 NULL = 本租户内还有同 key（scope + trigger）但正解不同的行 ⇒ 两条并存、待人工裁定
     conflict_key VARCHAR(64),
+    -- 命中计数最后一次增长的时刻（issue #8175 P2；迁移 V212）：衰减 / 退役的时间锚点
+    last_hit_at TIMESTAMP WITH TIME ZONE,
+    -- 最近一次自动生命周期动作的原因（规则化退役 / 晋升），可审计
+    lifecycle_reason TEXT,
     CONSTRAINT ck_playbooks_state CHECK (state IN ('draft', 'active', 'retired')),
     CONSTRAINT ck_playbooks_scope CHECK (scope IN ('tenant', 'role')),
     CONSTRAINT ck_playbooks_scope_role CHECK (scope <> 'role' OR (scope_role IS NOT NULL AND scope_role <> '')),
@@ -402,6 +406,24 @@ CREATE INDEX IF NOT EXISTS idx_playbooks_state_created ON playbooks (state, crea
 -- 冲突分组（只索引非 NULL：绝大多数行没有冲突）
 CREATE INDEX IF NOT EXISTS idx_playbooks_conflict ON playbooks (tenant_id, conflict_key)
     WHERE conflict_key IS NOT NULL;
+
+-- 口径卡复现证据（issue #8175 P2；迁移 V212__add_playbook_lifecycle.sql）
+-- 哪个员工（sessions.customer_id → users.id，排除 C 端角色）在哪个会话里复现过同一口径。
+-- 唯一索引 ⇒ 同一员工重复出现只记一条 ⇒ COUNT(DISTINCT employee_id) = 「几个不同员工」。
+CREATE TABLE IF NOT EXISTS playbook_reproductions (
+    id BIGSERIAL PRIMARY KEY,
+    tenant_id BIGINT NOT NULL REFERENCES tenants(id),
+    playbook_key VARCHAR(64) NOT NULL,
+    value_key VARCHAR(64) NOT NULL,
+    employee_id VARCHAR(64) NOT NULL,
+    session_id VARCHAR(128) NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    CONSTRAINT uk_playbook_reproductions_employee
+        UNIQUE (tenant_id, playbook_key, value_key, employee_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_playbook_reproductions_tenant_key
+    ON playbook_reproductions (tenant_id, playbook_key);
 
 -- ================================================
 -- 4. 租户配置相关表

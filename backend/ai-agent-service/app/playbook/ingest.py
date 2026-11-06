@@ -46,7 +46,7 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from loguru import logger
 
-from app.playbook import condition, redact
+from app.playbook import condition, identity, redact
 
 SCHEMA_VERSION = 1
 
@@ -162,6 +162,31 @@ FROM playbooks
 WHERE tenant_id = :tenant_id AND state IN ('draft', 'active')
 """
 
+#: 会话 → 员工（P2 晋升的数据面）：`sessions.customer_id` → `users.id`。
+#: **排除 C 端身份**（`role IN ('customer','agent')`）—— 少这个过滤，C 端顾客会被算成
+#: 「第 N 个员工」，晋升就是假的。查不到就查不到（fail-closed），绝不猜。
+_SELECT_EMPLOYEE_SQL = """
+SELECT s.id AS session_id, s.customer_id AS employee_id
+FROM sessions s
+JOIN users u ON u.id = s.customer_id AND u.tenant_id = s.tenant_id
+WHERE s.tenant_id = :tenant_id
+  AND s.id IN :session_ids
+  AND COALESCE(s.deleted, 0) = 0
+  AND u.deleted = 0
+  AND u.role IS NOT NULL
+  AND u.role NOT IN ('customer', 'agent')
+"""
+
+#: 复现证据：一个员工对同一个 `(key, value)` 只记一条（唯一索引兜底 ⇒ 重跑幂等）
+_INSERT_REPRODUCTION_SQL = """
+INSERT INTO playbook_reproductions (
+    tenant_id, playbook_key, value_key, employee_id, session_id, created_at
+) VALUES (
+    :tenant_id, :playbook_key, :value_key, :employee_id, :session_id, NOW()
+)
+ON CONFLICT (tenant_id, playbook_key, value_key, employee_id) DO NOTHING
+"""
+
 
 # ── 关键词 ──────────────────────────────────────────────────────────────────
 
@@ -195,13 +220,19 @@ def build_trigger(keyword: str) -> Dict[str, Any]:
 
 
 def _canonical(value: Any) -> str:
-    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return identity.canonical(value)
 
 
 def playbook_key(trigger: Any, scope: str = SCOPE_TENANT, scope_role: Optional[str] = None) -> str:
-    """同一条口径的**身份**：范围 + 触发条件。`correct` 是「值」，不参与。"""
-    raw = f"{scope}|{scope_role or ''}|{_canonical(trigger)}"
-    return sha1(raw.encode("utf-8")).hexdigest()[:16]
+    """同一条口径的**身份**（唯一实现 = `app/playbook/identity.py`）。`correct` 是「值」，不参与。"""
+    return identity.playbook_key(trigger, scope, scope_role)
+
+
+def value_key(
+    trigger: Any, correct: Any, scope: str = SCOPE_TENANT, scope_role: Optional[str] = None
+) -> str:
+    """同一身份下的**同一个说法**：晋升计数按 `(key, value)` 分组（不同说法不合并计数）。"""
+    return identity.value_key(trigger, correct, scope, scope_role)
 
 
 def card_id(tenant_id: int, session_id: str, turn: Any, key: str) -> str:
@@ -269,6 +300,7 @@ def candidate_to_card(candidate: Any, tenant_id: int) -> Tuple[Optional[Dict[str
             "state": STATE_DRAFT,
             "conflict_key": None,
             "_key": key,
+            "_value_key": value_key(trigger, correct),
         },
         "",
     )
@@ -310,6 +342,7 @@ def plan_ingest(
     skips: List[Dict[str, Any]] = []
     conflict_updates: List[Dict[str, Any]] = []
     conflicts: List[Dict[str, Any]] = []
+    reproductions: List[Dict[str, Any]] = []
     by_existing = _existing_by_key(existing)
     by_batch: Dict[str, List[Dict[str, Any]]] = {}
 
@@ -327,8 +360,11 @@ def plan_ingest(
         key = card["_key"]
         siblings = list(by_existing.get(key, [])) + list(by_batch.get(key, []))
         if any(str(s.get("correct_text")) == card["correct_text"] for s in siblings):
-            # 同 key 同值 ⇒ 幂等跳过（重跑 / 同一口径被两次会话说到）
+            # 同 key 同值 ⇒ 幂等跳过（重跑 / 同一口径被两次会话说到）。
+            # ⚠️ 卡片不新增，但**复现证据要记**：晋升判的是「几个不同员工说过同一件事」，
+            # 不是「落了几张卡」—— P1 的幂等跳过的正是后来者的证据，不记就永远晋升不了。
             skips.append({**source, "reason": "duplicate"})
+            reproductions.append(_reproduction_entry(card))
             continue
         if siblings:
             # 同 key **不同**值 ⇒ 两条并存，并各打冲突标记（**不是**覆盖）
@@ -344,6 +380,7 @@ def plan_ingest(
         card["_batch"] = True
         by_batch.setdefault(key, []).append(card)
         rows.append(card)
+        reproductions.append(_reproduction_entry(card))
 
     # `_key` / `_batch` 是计划内部字段：出库给 SQL 前要摘掉
     cleaned_rows = [{k: v for k, v in row.items() if not k.startswith("_")} for row in rows]
@@ -352,7 +389,19 @@ def plan_ingest(
         "skips": skips,
         "conflict_updates": conflict_updates,
         "conflicts": conflicts,
+        # 复现证据（会话 → 员工在落库时才解析；这里只带出处与身份）
+        "reproductions": reproductions,
         "skip_counts": {reason: sum(1 for s in skips if s["reason"] == reason) for reason in SKIP_REASONS},
+    }
+
+
+def _reproduction_entry(card: Dict[str, Any]) -> Dict[str, Any]:
+    """一条卡 → 一条复现证据（员工 id 由 `resolve_employees` 另查）。"""
+    return {
+        "session_id": card["source_session_id"],
+        "turn": card["source_turn"],
+        "playbook_key": card["_key"],
+        "value_key": card["_value_key"],
     }
 
 
@@ -373,6 +422,55 @@ async def load_existing(db: Any, tenant_id: int) -> List[Dict[str, Any]]:
 
     result = await db.execute(text(_SELECT_EXISTING_SQL), {"tenant_id": int(tenant_id)})
     return [dict(row._mapping) for row in result.fetchall()]
+
+
+async def resolve_employees(
+    db: Any, tenant_id: int, session_ids: Iterable[Any]
+) -> Dict[str, str]:
+    """`{session_id: employee_id}`（查不到 = 不在字典里，调用方据此 fail-closed）。
+
+    这条链路是 P2 晋升的**数据面**：`sessions.customer_id` → `users.id`，排除 C 端身份。
+    它只回答「这轮是谁在跟黄金策说话」，不猜身份（`role` 为 NULL 的账号一律不算员工）。
+    """
+    ids = [str(session_id) for session_id in (session_ids or []) if session_id]
+    if not ids:
+        return {}
+    from sqlalchemy import bindparam, text
+
+    stmt = text(_SELECT_EMPLOYEE_SQL).bindparams(bindparam("session_ids", expanding=True))
+    result = await db.execute(stmt, {"tenant_id": int(tenant_id), "session_ids": ids})
+    employees: Dict[str, str] = {}
+    for row in result.fetchall():
+        mapping = getattr(row, "_mapping", None) or row
+        item = dict(mapping)
+        employee_id = item.get("employee_id")
+        if employee_id:
+            employees[str(item.get("session_id"))] = str(employee_id)
+    return employees
+
+
+async def apply_reproductions(
+    db: Any, tenant_id: int, reproductions: List[Dict[str, Any]]
+) -> int:
+    """写复现证据（唯一索引兜底幂等：同一员工对同一口径重复出现只记一条）。"""
+    from sqlalchemy import text
+
+    written = 0
+    for entry in reproductions:
+        await db.execute(
+            text(_INSERT_REPRODUCTION_SQL),
+            {
+                "tenant_id": int(tenant_id),
+                "playbook_key": entry["playbook_key"],
+                "value_key": entry["value_key"],
+                "employee_id": entry["employee_id"],
+                "session_id": entry["session_id"],
+            },
+        )
+        written += 1
+    if written:
+        await db.commit()
+    return written
 
 
 async def apply_plan(db: Any, plan: Dict[str, Any]) -> Dict[str, int]:
@@ -397,6 +495,16 @@ async def ingest(db: Any, candidates: Iterable[Any], tenant_id: int, apply: bool
     tenant = int(tenant_id)
     existing = await load_existing(db, tenant)
     plan = plan_ingest(candidates, existing, tenant)
+    reproductions = list(plan.get("reproductions") or [])
+    # 员工解析在 dry-run 里也做（只读 SELECT）：这样「哪几条晋升证据缺失」在写之前就看得见
+    employees = await resolve_employees(
+        db, tenant, [entry["session_id"] for entry in reproductions]
+    )
+    known = [
+        {**entry, "employee_id": employees[str(entry["session_id"])]}
+        for entry in reproductions
+        if str(entry["session_id"]) in employees
+    ]
     result = {
         "tenant_id": tenant,
         "planned": len(plan["rows"]),
@@ -407,6 +515,10 @@ async def ingest(db: Any, candidates: Iterable[Any], tenant_id: int, apply: bool
         "applied": bool(apply),
         "inserted": 0,
         "marked": 0,
+        # 复现证据：planned = 过了闸门的候选数；recorded = 真写进库的条数
+        "reproductions_planned": len(reproductions),
+        "reproductions_recorded": 0,
+        "unknown_employee": len(reproductions) - len(known),
         "rows": plan["rows"],
     }
     if apply and plan["rows"]:
@@ -415,6 +527,13 @@ async def ingest(db: Any, candidates: Iterable[Any], tenant_id: int, apply: bool
         logger.info(
             f"[playbook-ingest] tenant={tenant} inserted={written['inserted']} "
             f"marked={written['marked']} skipped={result['skipped']} conflicts={result['conflicts']}"
+        )
+    if apply and known:
+        recorded = await apply_reproductions(db, tenant, known)
+        result["reproductions_recorded"] = recorded
+        logger.info(
+            f"[playbook-ingest] tenant={tenant} reproductions={recorded} "
+            f"unknown_employee={result['unknown_employee']}"
         )
     return result
 
