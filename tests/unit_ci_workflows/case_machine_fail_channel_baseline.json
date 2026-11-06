@@ -7,7 +7,7 @@
   "_anchor_note": "读数取自该 sha 的 `origin/main`（本判据首次落地时的基线）。它只是**出处留档**，不是判据 —— 判据只比对实测值与 `entries`。",
   "entries": {
     "no_channel_total": 0,
-    "backend_contract_scoring_zero": 329
+    "backend_contract_scoring_zero": 330
   },
   "history": [
     {
@@ -1527,6 +1527,12 @@
       "no_channel_total": 0,
       "backend_contract_scoring_zero": 329,
       "note": "issue #8725 第二档新增 MC-246（ProcessingOrderService 4,400 行 LOC 冻结面按顶层声明边界切成 路线解析 / 条件工序编织 / 部位 payload 三个单元，行为逐字节不变；skip_reason 标 [backend-contract]、expectations 为空 ⇒ 按定义计入本读数）⇒ 328 → 329。按**实测**重锚，非门禁放宽：该用例的机器判红通道 = traces.tests 引用的 4 个 Java 判据文件（9 场景 × 2 面的逐字节 characterization + 三个单元各自的定点判据），no_channel_total 仍为 0（历史链上恒 0）。⚠️ 本单原先取号 MC-245，落地前 main 被 PR #8766 先占 ⇒ 按「main 侧既有 id 一律不许改」让号到 MC-246（claims/8768-MC-246.json 同步登记）。"
+    },
+    {
+      "date": "2026-11-06",
+      "no_channel_total": 0,
+      "backend_contract_scoring_zero": 330,
+      "note": "issue #8770 派单池一档新增 MC-269（ProcessingOrderService 派单池读面按顶层声明边界搬出到 ProcessingOrderDispatchPool，行为逐字节不变；skip_reason 标 [backend-contract]、expectations 为空 ⇒ 按定义计入本读数）⇒ 329 → 330。按**实测**重锚（本机实跑 `python3 -m pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py -q` 的报错行原文给出 实测 dict，与 entries 对齐），非门禁放宽：该用例的机器判红通道 = traces.tests 引用的 2 个 Java 判据文件（9 场景 × 池读面逐字节 characterization + 单元自身 6 条定点判据），no_channel_total 仍为 0（历史链上恒 0）。"
     }
   ]
 }
