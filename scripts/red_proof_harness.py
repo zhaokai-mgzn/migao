@@ -89,7 +89,14 @@ TOOLS: dict[str, ToolSpec] = {
         # issue #5550 新增 pi_null_guard（存量行 NPE 形态）⇒ 下限随声明**同批抬高**（只许增）
         floor=6,
         heavy="Maven + JDK（admin-api 单测；6 条变异实测 119s）",
-        impl=(_AAPI_MAIN + "service/ProcessingOrderService.java",),
+        # issue #8770（派单池一档）：`pool()` 及其辅助从门面逐字节搬到 ProcessingOrderDispatchPool
+        # ⇒ 被守卫文件跟着搬家（清单里每一项都必须是**该机具真的会注入变异**的文件：
+        #   `urgent_not_in_pool` 注入新住址；留一个已不再被读的文件 = 「删掉它 ⇒ --check 判腐烂」
+        #   这条自证失去判别力）。
+        # ⚠️ 同时是**夹具仓库的拷贝面**（test_redproof_harness_gate 只拷 impl + criteria）：
+        # 漏登记 ⇒ 夹具里没有该文件 ⇒ `--check` 在 CI 上判「被守卫的文件不存在」。
+        impl=(_AAPI_MAIN + "service/ProcessingOrderService.java",
+              _AAPI_MAIN + "service/ProcessingOrderDispatchPool.java"),
         criteria=(_AAPI_TEST + "service/PoolBoardUrgencyTest.java",),
     ),
     "scripts/cutting-plan-red-proof.py": ToolSpec(
@@ -109,6 +116,9 @@ TOOLS: dict[str, ToolSpec] = {
             # ⚠️ 这份清单同时是**夹具仓库的拷贝面**（test_redproof_harness_gate 只拷 impl + criteria）：
             # 漏登记 ⇒ 夹具里没有该文件 ⇒ `--check` 在 CI 上判「被守卫的文件不存在」（本 PR 实测踩到）。
             _AAPI_MAIN + "service/OrderLifecycleService.java",
+            # issue #8770（派单池一档）：`pool()` 的「加急标记」与「已派单排除」两处锚点随切片搬到
+            # ProcessingOrderDispatchPool ⇒ 被守卫文件跟着搬家（同样**同时是夹具拷贝面**）。
+            _AAPI_MAIN + "service/ProcessingOrderDispatchPool.java",
             "backend/admin-api/src/main/resources/db/init/schema.sql",
         ),
         criteria=(

@@ -1,0 +1,624 @@
+{
+  "switch" : {
+    "requested-null" : false,
+    "requested-false" : false,
+    "requested-true" : true
+  },
+  "guards" : {
+    "urgent-in-batch" : {
+      "rejected" : {
+        "code" : "VALIDATION_ERROR",
+        "message" : "加急单不参与合并派单，请单独派：ORD-8001",
+        "suggestion" : "请把这几个加急单单独派单（立即派 = 单订单派单），或先取消它们的加急标记再合并派单"
+      }
+    },
+    "outsourced-in-batch" : {
+      "rejected" : {
+        "code" : "VALIDATION_ERROR",
+        "message" : "外发单不参与合并派单，请单独派：ORD-8002",
+        "suggestion" : "请把这几个外发单在「外发区」单独派单（记得先选承接方/加工厂），或先取消它们的外发标记再合并派单"
+      }
+    }
+  },
+  "pool" : {
+    "01-defaults-two-orders" : {
+      "pool" : {
+        "maxWaitHours" : 24,
+        "poolingEnabled" : false,
+        "orderCount" : 2,
+        "lineCount" : 2,
+        "overdueCount" : 1,
+        "urgentCount" : 0,
+        "warnings" : [ {
+          "orderId" : "o-a",
+          "orderNo" : "ORD-0001",
+          "waitHours" : 30.0,
+          "message" : "已超过最长等待 24 小时，请合并派单或单独派单"
+        } ],
+        "urgentLines" : [ ],
+        "outsourcedLines" : [ ],
+        "outsourcedCount" : 0,
+        "groups" : [ {
+          "materialKey" : "prod-1|SKU-A",
+          "materialLabel" : "布艺遮光帘A × SKU-A",
+          "productId" : "prod-1",
+          "skuCode" : "SKU-A",
+          "orderCount" : 2,
+          "requiredMeters" : 5,
+          "lines" : [ {
+            "orderId" : "o-a",
+            "orderNo" : "ORD-0001",
+            "itemId" : "i-a",
+            "productId" : "prod-1",
+            "productName" : "布艺遮光帘A",
+            "skuCode" : "SKU-A",
+            "requiredMeters" : 3,
+            "waitingSince" : 30.0,
+            "waitHours" : 30.0,
+            "overdue" : true,
+            "isUrgent" : false,
+            "isOutsourced" : false,
+            "requiredDeliveryDate" : null,
+            "deliveryDaysLeft" : null,
+            "stockSatisfiable" : false
+          }, {
+            "orderId" : "o-b",
+            "orderNo" : "ORD-0002",
+            "itemId" : "i-b",
+            "productId" : "prod-1",
+            "productName" : "布艺遮光帘A",
+            "skuCode" : "SKU-A",
+            "requiredMeters" : 2,
+            "waitingSince" : 2.0,
+            "waitHours" : 2.0,
+            "overdue" : false,
+            "isUrgent" : false,
+            "isOutsourced" : false,
+            "requiredDeliveryDate" : null,
+            "deliveryDaysLeft" : null,
+            "stockSatisfiable" : false
+          } ]
+        } ]
+      }
+    },
+    "02-urgent-and-outsourced" : {
+      "pool" : {
+        "maxWaitHours" : 24,
+        "poolingEnabled" : false,
+        "orderCount" : 1,
+        "lineCount" : 1,
+        "overdueCount" : 1,
+        "urgentCount" : 1,
+        "warnings" : [ {
+          "orderId" : "o-n",
+          "orderNo" : "ORD-1001",
+          "waitHours" : 30.0,
+          "message" : "已超过最长等待 24 小时，请合并派单或单独派单"
+        } ],
+        "urgentLines" : [ {
+          "orderId" : "o-u",
+          "orderNo" : "ORD-1002",
+          "itemId" : "i-u",
+          "productId" : "prod-1",
+          "productName" : "布艺遮光帘A",
+          "skuCode" : "SKU-A",
+          "requiredMeters" : 3,
+          "waitingSince" : 20.0,
+          "waitHours" : 20.0,
+          "overdue" : false,
+          "isUrgent" : true,
+          "isOutsourced" : false,
+          "requiredDeliveryDate" : null,
+          "deliveryDaysLeft" : null,
+          "stockSatisfiable" : false
+        } ],
+        "outsourcedLines" : [ {
+          "orderId" : "o-o",
+          "orderNo" : "ORD-1003",
+          "itemId" : "i-o",
+          "productId" : "prod-1",
+          "productName" : "布艺遮光帘A",
+          "skuCode" : "SKU-A",
+          "requiredMeters" : 3,
+          "waitingSince" : 10.0,
+          "waitHours" : 10.0,
+          "overdue" : false,
+          "isUrgent" : false,
+          "isOutsourced" : true,
+          "requiredDeliveryDate" : null,
+          "deliveryDaysLeft" : null,
+          "stockSatisfiable" : false
+        } ],
+        "outsourcedCount" : 1,
+        "groups" : [ {
+          "materialKey" : "prod-1|SKU-A",
+          "materialLabel" : "布艺遮光帘A × SKU-A",
+          "productId" : "prod-1",
+          "skuCode" : "SKU-A",
+          "orderCount" : 1,
+          "requiredMeters" : 3,
+          "lines" : [ {
+            "orderId" : "o-n",
+            "orderNo" : "ORD-1001",
+            "itemId" : "i-n",
+            "productId" : "prod-1",
+            "productName" : "布艺遮光帘A",
+            "skuCode" : "SKU-A",
+            "requiredMeters" : 3,
+            "waitingSince" : 30.0,
+            "waitHours" : 30.0,
+            "overdue" : true,
+            "isUrgent" : false,
+            "isOutsourced" : false,
+            "requiredDeliveryDate" : null,
+            "deliveryDaysLeft" : null,
+            "stockSatisfiable" : false
+          } ]
+        } ]
+      }
+    },
+    "03-ordering-null-last" : {
+      "pool" : {
+        "maxWaitHours" : 24,
+        "poolingEnabled" : false,
+        "orderCount" : 4,
+        "lineCount" : 4,
+        "overdueCount" : 3,
+        "urgentCount" : 0,
+        "warnings" : [ {
+          "orderId" : "o-p5",
+          "orderNo" : "ORD-2001",
+          "waitHours" : 30.0,
+          "message" : "已超过最长等待 24 小时，请合并派单或单独派单"
+        }, {
+          "orderId" : "o-nl",
+          "orderNo" : "ORD-2003",
+          "waitHours" : 50.0,
+          "message" : "已超过最长等待 24 小时，请合并派单或单独派单"
+        }, {
+          "orderId" : "o-m1b",
+          "orderNo" : "ORD-2004",
+          "waitHours" : 40.0,
+          "message" : "已超过最长等待 24 小时，请合并派单或单独派单"
+        } ],
+        "urgentLines" : [ ],
+        "outsourcedLines" : [ ],
+        "outsourcedCount" : 0,
+        "groups" : [ {
+          "materialKey" : "prod-1|SKU-A",
+          "materialLabel" : "布艺遮光帘A × SKU-A",
+          "productId" : "prod-1",
+          "skuCode" : "SKU-A",
+          "orderCount" : 4,
+          "requiredMeters" : 4,
+          "lines" : [ {
+            "orderId" : "o-m1b",
+            "orderNo" : "ORD-2004",
+            "itemId" : "i-m1b",
+            "productId" : "prod-1",
+            "productName" : "布艺遮光帘A",
+            "skuCode" : "SKU-A",
+            "requiredMeters" : 1,
+            "waitingSince" : 40.0,
+            "waitHours" : 40.0,
+            "overdue" : true,
+            "isUrgent" : false,
+            "isOutsourced" : false,
+            "requiredDeliveryDate" : "2026-11-05",
+            "deliveryDaysLeft" : -1,
+            "stockSatisfiable" : false
+          }, {
+            "orderId" : "o-m1a",
+            "orderNo" : "ORD-2002",
+            "itemId" : "i-m1a",
+            "productId" : "prod-1",
+            "productName" : "布艺遮光帘A",
+            "skuCode" : "SKU-A",
+            "requiredMeters" : 1,
+            "waitingSince" : 2.0,
+            "waitHours" : 2.0,
+            "overdue" : false,
+            "isUrgent" : false,
+            "isOutsourced" : false,
+            "requiredDeliveryDate" : "2026-11-05",
+            "deliveryDaysLeft" : -1,
+            "stockSatisfiable" : false
+          }, {
+            "orderId" : "o-p5",
+            "orderNo" : "ORD-2001",
+            "itemId" : "i-p5",
+            "productId" : "prod-1",
+            "productName" : "布艺遮光帘A",
+            "skuCode" : "SKU-A",
+            "requiredMeters" : 1,
+            "waitingSince" : 30.0,
+            "waitHours" : 30.0,
+            "overdue" : true,
+            "isUrgent" : false,
+            "isOutsourced" : false,
+            "requiredDeliveryDate" : "2026-11-11",
+            "deliveryDaysLeft" : 5,
+            "stockSatisfiable" : false
+          }, {
+            "orderId" : "o-nl",
+            "orderNo" : "ORD-2003",
+            "itemId" : "i-nl",
+            "productId" : "prod-1",
+            "productName" : "布艺遮光帘A",
+            "skuCode" : "SKU-A",
+            "requiredMeters" : 1,
+            "waitingSince" : 50.0,
+            "waitHours" : 50.0,
+            "overdue" : true,
+            "isUrgent" : false,
+            "isOutsourced" : false,
+            "requiredDeliveryDate" : null,
+            "deliveryDaysLeft" : null,
+            "stockSatisfiable" : false
+          } ]
+        } ]
+      }
+    },
+    "04-overdue-warning-custom-threshold" : {
+      "pool" : {
+        "maxWaitHours" : 6,
+        "poolingEnabled" : false,
+        "orderCount" : 2,
+        "lineCount" : 2,
+        "overdueCount" : 1,
+        "urgentCount" : 0,
+        "warnings" : [ {
+          "orderId" : "o-old",
+          "orderNo" : "ORD-20261008001",
+          "waitHours" : 30.0,
+          "message" : "已超过最长等待 6 小时，请合并派单或单独派单"
+        } ],
+        "urgentLines" : [ ],
+        "outsourcedLines" : [ ],
+        "outsourcedCount" : 0,
+        "groups" : [ {
+          "materialKey" : "prod-1|SKU-A",
+          "materialLabel" : "布艺遮光帘A × SKU-A",
+          "productId" : "prod-1",
+          "skuCode" : "SKU-A",
+          "orderCount" : 2,
+          "requiredMeters" : 6,
+          "lines" : [ {
+            "orderId" : "o-old",
+            "orderNo" : "ORD-20261008001",
+            "itemId" : "i-old",
+            "productId" : "prod-1",
+            "productName" : "布艺遮光帘A",
+            "skuCode" : "SKU-A",
+            "requiredMeters" : 3,
+            "waitingSince" : 30.0,
+            "waitHours" : 30.0,
+            "overdue" : true,
+            "isUrgent" : false,
+            "isOutsourced" : false,
+            "requiredDeliveryDate" : null,
+            "deliveryDaysLeft" : null,
+            "stockSatisfiable" : false
+          }, {
+            "orderId" : "o-new",
+            "orderNo" : "ORD-20261008002",
+            "itemId" : "i-new",
+            "productId" : "prod-1",
+            "productName" : "布艺遮光帘A",
+            "skuCode" : "SKU-A",
+            "requiredMeters" : 3,
+            "waitingSince" : 2.0,
+            "waitHours" : 2.0,
+            "overdue" : false,
+            "isUrgent" : false,
+            "isOutsourced" : false,
+            "requiredDeliveryDate" : null,
+            "deliveryDaysLeft" : null,
+            "stockSatisfiable" : false
+          } ]
+        } ]
+      }
+    },
+    "05-material-groups-and-labels" : {
+      "pool" : {
+        "maxWaitHours" : 24,
+        "poolingEnabled" : false,
+        "orderCount" : 3,
+        "lineCount" : 3,
+        "overdueCount" : 1,
+        "urgentCount" : 0,
+        "warnings" : [ {
+          "orderId" : "o-1",
+          "orderNo" : "ORD-3001",
+          "waitHours" : 30.0,
+          "message" : "已超过最长等待 24 小时，请合并派单或单独派单"
+        } ],
+        "urgentLines" : [ ],
+        "outsourcedLines" : [ ],
+        "outsourcedCount" : 0,
+        "groups" : [ {
+          "materialKey" : "prod-1|SKU-A",
+          "materialLabel" : "布艺遮光帘A × SKU-A",
+          "productId" : "prod-1",
+          "skuCode" : "SKU-A",
+          "orderCount" : 2,
+          "requiredMeters" : 5,
+          "lines" : [ {
+            "orderId" : "o-1",
+            "orderNo" : "ORD-3001",
+            "itemId" : "i-1",
+            "productId" : "prod-1",
+            "productName" : "布艺遮光帘A",
+            "skuCode" : "SKU-A",
+            "requiredMeters" : 3,
+            "waitingSince" : 30.0,
+            "waitHours" : 30.0,
+            "overdue" : true,
+            "isUrgent" : false,
+            "isOutsourced" : false,
+            "requiredDeliveryDate" : null,
+            "deliveryDaysLeft" : null,
+            "stockSatisfiable" : false
+          }, {
+            "orderId" : "o-2",
+            "orderNo" : "ORD-3002",
+            "itemId" : "i-2",
+            "productId" : "prod-1",
+            "productName" : "布艺遮光帘A",
+            "skuCode" : "SKU-A",
+            "requiredMeters" : 2,
+            "waitingSince" : 20.0,
+            "waitHours" : 20.0,
+            "overdue" : false,
+            "isUrgent" : false,
+            "isOutsourced" : false,
+            "requiredDeliveryDate" : null,
+            "deliveryDaysLeft" : null,
+            "stockSatisfiable" : false
+          } ]
+        }, {
+          "materialKey" : "prod-2|SKU-B",
+          "materialLabel" : "遮光帘B × SKU-B",
+          "productId" : "prod-2",
+          "skuCode" : "SKU-B",
+          "orderCount" : 1,
+          "requiredMeters" : 5,
+          "lines" : [ {
+            "orderId" : "o-3",
+            "orderNo" : "ORD-3003",
+            "itemId" : "i-3",
+            "productId" : "prod-2",
+            "productName" : "遮光帘B",
+            "skuCode" : "SKU-B",
+            "requiredMeters" : 5,
+            "waitingSince" : 10.0,
+            "waitHours" : 10.0,
+            "overdue" : false,
+            "isUrgent" : false,
+            "isOutsourced" : false,
+            "requiredDeliveryDate" : null,
+            "deliveryDaysLeft" : null,
+            "stockSatisfiable" : false
+          } ]
+        } ]
+      }
+    },
+    "06-stock-satisfiability" : {
+      "pool" : {
+        "maxWaitHours" : 100,
+        "poolingEnabled" : false,
+        "orderCount" : 2,
+        "lineCount" : 2,
+        "overdueCount" : 0,
+        "urgentCount" : 1,
+        "warnings" : [ ],
+        "urgentLines" : [ {
+          "orderId" : "o-urgent",
+          "orderNo" : "ORD-4003",
+          "itemId" : "i-urgent",
+          "productId" : "prod-2",
+          "productName" : "遮光帘B",
+          "skuCode" : "SKU-B",
+          "requiredMeters" : 5,
+          "waitingSince" : 10.0,
+          "waitHours" : 10.0,
+          "overdue" : false,
+          "isUrgent" : true,
+          "isOutsourced" : false,
+          "requiredDeliveryDate" : null,
+          "deliveryDaysLeft" : null,
+          "stockSatisfiable" : false
+        } ],
+        "outsourcedLines" : [ ],
+        "outsourcedCount" : 0,
+        "groups" : [ {
+          "materialKey" : "prod-1|SKU-A",
+          "materialLabel" : "布艺遮光帘A × SKU-A",
+          "productId" : "prod-1",
+          "skuCode" : "SKU-A",
+          "orderCount" : 1,
+          "requiredMeters" : 3,
+          "lines" : [ {
+            "orderId" : "o-ok",
+            "orderNo" : "ORD-4001",
+            "itemId" : "i-ok",
+            "productId" : "prod-1",
+            "productName" : "布艺遮光帘A",
+            "skuCode" : "SKU-A",
+            "requiredMeters" : 3,
+            "waitingSince" : 30.0,
+            "waitHours" : 30.0,
+            "overdue" : false,
+            "isUrgent" : false,
+            "isOutsourced" : false,
+            "requiredDeliveryDate" : null,
+            "deliveryDaysLeft" : null,
+            "stockSatisfiable" : true
+          } ]
+        }, {
+          "materialKey" : "prod-2|SKU-B",
+          "materialLabel" : "遮光帘B × SKU-B",
+          "productId" : "prod-2",
+          "skuCode" : "SKU-B",
+          "orderCount" : 1,
+          "requiredMeters" : 5,
+          "lines" : [ {
+            "orderId" : "o-short",
+            "orderNo" : "ORD-4002",
+            "itemId" : "i-short",
+            "productId" : "prod-2",
+            "productName" : "遮光帘B",
+            "skuCode" : "SKU-B",
+            "requiredMeters" : 5,
+            "waitingSince" : 20.0,
+            "waitHours" : 20.0,
+            "overdue" : false,
+            "isUrgent" : false,
+            "isOutsourced" : false,
+            "requiredDeliveryDate" : null,
+            "deliveryDaysLeft" : null,
+            "stockSatisfiable" : false
+          } ]
+        } ]
+      }
+    },
+    "07-legacy-null-processing-info" : {
+      "pool" : {
+        "maxWaitHours" : 100,
+        "poolingEnabled" : false,
+        "orderCount" : 1,
+        "lineCount" : 1,
+        "overdueCount" : 0,
+        "urgentCount" : 0,
+        "warnings" : [ ],
+        "urgentLines" : [ ],
+        "outsourcedLines" : [ ],
+        "outsourcedCount" : 0,
+        "groups" : [ {
+          "materialKey" : "prod-1|SKU-A",
+          "materialLabel" : "布艺遮光帘A × SKU-A",
+          "productId" : "prod-1",
+          "skuCode" : "SKU-A",
+          "orderCount" : 1,
+          "requiredMeters" : 3,
+          "lines" : [ {
+            "orderId" : "o-normal",
+            "orderNo" : "ORD-5002",
+            "itemId" : "i-normal",
+            "productId" : "prod-1",
+            "productName" : "布艺遮光帘A",
+            "skuCode" : "SKU-A",
+            "requiredMeters" : 3,
+            "waitingSince" : 2.0,
+            "waitHours" : 2.0,
+            "overdue" : false,
+            "isUrgent" : false,
+            "isOutsourced" : false,
+            "requiredDeliveryDate" : null,
+            "deliveryDaysLeft" : null,
+            "stockSatisfiable" : false
+          } ]
+        } ]
+      }
+    },
+    "08-statuses-and-active-exclusion" : {
+      "pool" : {
+        "maxWaitHours" : 24,
+        "poolingEnabled" : false,
+        "orderCount" : 2,
+        "lineCount" : 2,
+        "overdueCount" : 1,
+        "urgentCount" : 0,
+        "warnings" : [ {
+          "orderId" : "o-pending",
+          "orderNo" : "ORD-6001",
+          "waitHours" : 30.0,
+          "message" : "已超过最长等待 24 小时，请合并派单或单独派单"
+        } ],
+        "urgentLines" : [ ],
+        "outsourcedLines" : [ ],
+        "outsourcedCount" : 0,
+        "groups" : [ {
+          "materialKey" : "prod-1|SKU-A",
+          "materialLabel" : "布艺遮光帘A × SKU-A",
+          "productId" : "prod-1",
+          "skuCode" : "SKU-A",
+          "orderCount" : 2,
+          "requiredMeters" : 6,
+          "lines" : [ {
+            "orderId" : "o-pending",
+            "orderNo" : "ORD-6001",
+            "itemId" : "i-pending",
+            "productId" : "prod-1",
+            "productName" : "布艺遮光帘A",
+            "skuCode" : "SKU-A",
+            "requiredMeters" : 3,
+            "waitingSince" : 30.0,
+            "waitHours" : 30.0,
+            "overdue" : true,
+            "isUrgent" : false,
+            "isOutsourced" : false,
+            "requiredDeliveryDate" : null,
+            "deliveryDaysLeft" : null,
+            "stockSatisfiable" : false
+          }, {
+            "orderId" : "o-confirmed",
+            "orderNo" : "ORD-6002",
+            "itemId" : "i-confirmed",
+            "productId" : "prod-1",
+            "productName" : "布艺遮光帘A",
+            "skuCode" : "SKU-A",
+            "requiredMeters" : 3,
+            "waitingSince" : 20.0,
+            "waitHours" : 20.0,
+            "overdue" : false,
+            "isUrgent" : false,
+            "isOutsourced" : false,
+            "requiredDeliveryDate" : null,
+            "deliveryDaysLeft" : null,
+            "stockSatisfiable" : false
+          } ]
+        } ]
+      }
+    },
+    "09-fabric-and-accessory" : {
+      "pool" : {
+        "maxWaitHours" : 100,
+        "poolingEnabled" : false,
+        "orderCount" : 1,
+        "lineCount" : 1,
+        "overdueCount" : 0,
+        "urgentCount" : 0,
+        "warnings" : [ ],
+        "urgentLines" : [ ],
+        "outsourcedLines" : [ ],
+        "outsourcedCount" : 0,
+        "groups" : [ {
+          "materialKey" : "prod-fabric|SKU-FABRIC",
+          "materialLabel" : "遮光窗帘布料 × SKU-FABRIC",
+          "productId" : "prod-fabric",
+          "skuCode" : "SKU-FABRIC",
+          "orderCount" : 1,
+          "requiredMeters" : 12.5,
+          "lines" : [ {
+            "orderId" : "o-fabric",
+            "orderNo" : "ORD-7001",
+            "itemId" : "i-fabric",
+            "productId" : "prod-fabric",
+            "productName" : "遮光窗帘布料",
+            "skuCode" : "SKU-FABRIC",
+            "requiredMeters" : 12.5,
+            "waitingSince" : 30.0,
+            "waitHours" : 30.0,
+            "overdue" : false,
+            "isUrgent" : false,
+            "isOutsourced" : false,
+            "requiredDeliveryDate" : null,
+            "deliveryDaysLeft" : null,
+            "stockSatisfiable" : false
+          } ]
+        } ]
+      }
+    }
+  }
+}

@@ -137,7 +137,8 @@ MUTATIONS = [
     {
         "name": "urgent_in_pool",
         "why": "让加急单参与池化（不再单独立即派）",
-        "file": SVC + "ProcessingOrderService.java",
+        # issue #8770（派单池一档）：这行随 `pool()` 搬到 ProcessingOrderDispatchPool ⇒ 被守卫文件跟着搬家
+        "file": SVC + "ProcessingOrderDispatchPool.java",
         "old": "            boolean urgent = Boolean.TRUE.equals(order.getIsUrgent());",
         "new": "            boolean urgent = false; // [RED-PROOF] 加急也入池",
         "cls": UNIT, "fqn": UNIT_FQN,
@@ -146,7 +147,8 @@ MUTATIONS = [
     {
         "name": "no_idempotency_guard",
         "why": "池不再排除已有活跃加工单的订单（幂等的第一道结构性保证被拆）",
-        "file": SVC + "ProcessingOrderService.java",
+        # issue #8770（派单池一档）：同上，锚点随 `pool()` 搬家
+        "file": SVC + "ProcessingOrderDispatchPool.java",
         "old": "            if (order.getId() == null || dispatched.contains(order.getId())) {",
         "new": "            if (order.getId() == null) { // [RED-PROOF] 不排除已派单",
         "cls": UNIT, "fqn": UNIT_FQN,
