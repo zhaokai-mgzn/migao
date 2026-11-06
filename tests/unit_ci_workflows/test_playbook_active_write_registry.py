@@ -35,8 +35,13 @@ REGISTRY = {
     "backend/ai-agent-service/app/playbook/lifecycle.py": "_PROMOTE_SQL",
 }
 
-#: 写面语句的形态（`SET state = 'active'`；不含 WHERE 里的读条件）
-_ACTIVATE_PATTERN = re.compile(r"SET\s+state\s*=\s*'active'", re.IGNORECASE)
+#: 写面语句的形态：**对 `playbooks` 的 UPDATE ... SET state='active'**。
+#: 只认这张表 —— 否则别的域（如 agent_batches）将来新增一个同名状态迁移会把本守卫打成假红，
+#: 而「假红」会诱导下一个人去登记无关文件、把登记表变成垃圾场。
+_ACTIVATE_PATTERN = re.compile(
+    r"UPDATE\s+playbooks\b[\s\S]{0,300}?SET\s+state\s*=\s*'active'",
+    re.IGNORECASE,
+)
 
 _SCAN_ROOTS = (
     "backend/admin-api/src/main",
@@ -61,11 +66,8 @@ def scan_activation_paths(files) -> dict:
     """→ `{相对路径: [命中行号...]}`（只扫**可执行**语句，不看注释里的举例）。"""
     hits: dict = {}
     for path, text in files:
-        lines = text.splitlines()
         matched = [
-            index
-            for index, line in enumerate(lines, start=1)
-            if _ACTIVATE_PATTERN.search(line) and not line.lstrip().startswith(("#", "//", "--"))
+            text.count("\n", 0, match.start()) + 1 for match in _ACTIVATE_PATTERN.finditer(text)
         ]
         if matched:
             hits[str(path)] = matched
@@ -111,6 +113,18 @@ def test_registry_entries_name_a_real_symbol():
     for path, symbol in REGISTRY.items():
         text = (REPO_ROOT / path).read_text(encoding="utf-8")
         assert symbol in text, f"{path} 里找不到登记的符号 {symbol!r}"
+
+
+def test_scanner_ignores_unrelated_tables():
+    """别的域的 `SET state='active'` 不许被本守卫误红（否则登记表会变成垃圾场）。"""
+    assert scan_activation_paths(
+        [(Path("rogue.py"), "UPDATE agent_batches SET state = 'active' WHERE id = :id")]
+    ) == {}
+
+
+def test_scanner_matches_multiline_python_sql():
+    """Python 侧的 SQL 是跨行的（`UPDATE playbooks` 换行后才是 `SET`）⇒ 必须按全文匹配。"""
+    assert scan_activation_paths([(Path("x.py"), "UPDATE playbooks\nSET state = 'active', activated_at = NOW()")]) != {}
 
 
 def test_scanner_has_teeth_on_unregistered_path():
