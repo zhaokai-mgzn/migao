@@ -14,6 +14,7 @@ from app.tools.stock_semantics import (
     product_stock_summary,
 )
 from app.utils.http_client import get_admin_api_client
+from app.utils.id_resolver import resolve_product_id
 
 
 class ProductDetailTool(BaseTool):
@@ -46,7 +47,7 @@ class ProductDetailTool(BaseTool):
         "properties": {
             "product_id": {
                 "type": "string",
-                "description": "商品 ID",
+                "description": "商品 ID（UUID / 序号 / 商品名均可，名称无需先调 product_search）",
             },
         },
         "required": ["product_id"],
@@ -84,10 +85,35 @@ class ProductDetailTool(BaseTool):
             )
         
         try:
-            # 调用 admin-api
             client = get_admin_api_client()
+
+            # ── 名称/序号/UUID/前缀 → 真实商品 id（issue #8783）────────────────────
+            # 本工具描述承诺「product_id 支持名称/序号/UUID」，模型是**照描述调用**的
+            # （评测现场：product_detail{product_id: "2699系列雪尼尔窗帘面料"}）。而
+            # admin-api 的 `GET /api/admin/products/{id}` 只按 id 查 ⇒ 解析必须在工具侧完成。
+            # 解析器 app/utils/id_resolver.py 的 resolve_product_id() 早就有这份能力，
+            # 但此前**零调用** ⇒ 描述承诺落空、传商品名必 NOT_FOUND。
+            resolved_id = await resolve_product_id(product_id, context.tenant_id, client)
+
+            # 解析不到 ⇒ **明确出口**，绝不把用户给的原名拼进 `/products/{raw}` 再去打服务端
+            # （那正是修前的 bug 形态：服务端回 NOT_FOUND，模型被引向「检查商品 ID 是否正确」）
+            if not resolved_id:
+                logger.info(
+                    f"[product-detail] unresolved product ref: raw={product_id!r} "
+                    f"tenant={context.tenant_id}"
+                )
+                return ToolResult(
+                    success=False,
+                    error="商品不存在",
+                    message=f"未找到商品「{product_id}」",
+                    suggestion=(
+                        "未找到该商品，请用 product_search 按名字搜（也可以直接按名称搜候选，"
+                        "再把候选给用户确认），不要重复提交同一个名称"
+                    ),
+                )
+
             response = await client.get(
-                f"/api/admin/products/{product_id}",
+                f"/api/admin/products/{resolved_id}",
                 tenant_id=context.tenant_id,
                 user_id=context.user_id,
             )
@@ -140,7 +166,7 @@ class ProductDetailTool(BaseTool):
             if context.role == "customer" and data.get("status") != "on_sale":
                 logger.info(
                     f"[product-detail] Customer blocked non-on_sale product: "
-                    f"id={product_id} status={data.get('status')} tenant={context.tenant_id}"
+                    f"id={resolved_id} status={data.get('status')} tenant={context.tenant_id}"
                 )
                 return ToolResult(
                     success=False,
@@ -153,7 +179,7 @@ class ProductDetailTool(BaseTool):
             product = self._format_product(data)
             
             logger.info(
-                f"Product detail: id={product_id}, name={product.get('name')}, "
+                f"Product detail: id={resolved_id}, name={product.get('name')}, "
                 f"tenant={context.tenant_id}"
             )
             
