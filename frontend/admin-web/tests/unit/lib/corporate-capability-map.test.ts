@@ -39,8 +39,12 @@ import {
  * 未裁定项（交人工）：官网要不要保留「工作台」这个能力域名、「每日简报」这个能力条目？
  * 见交付报告「需裁定」一节；本轮**不动官网文案**。
  */
-const SITE_ONLY_ITEM_NAMES: readonly string[] = ['每日简报']
-const SITE_ONLY_DOMAIN_NAMES: readonly string[] = ['工作台']
+// 🔴 2026-11-06：用户裁定「观星台菜单调整」后，官网能力地图**已跟上**菜单 IA ——
+// 旧的「工作台」能力域与「每日简报」能力条目随 `menu.ts` 的撤销一起从官网退场。
+// 台账因此**清零**（只收缩到空是合法的收敛态；机制保留：一旦再出现官网独有条目就登记在这里，
+// 下面「台账不得藏漂移」两条仍逐条生效）。
+const SITE_ONLY_ITEM_NAMES: readonly string[] = []
+const SITE_ONLY_DOMAIN_NAMES: readonly string[] = []
 
 describe('官网能力地图 × 后台菜单（config/menu.ts）同源', () => {
   const menuItemNames = [
@@ -85,9 +89,11 @@ describe('官网能力地图 × 后台菜单（config/menu.ts）同源', () => {
     // ② 台账项必须**真的在官网出现** —— 否则台账腐烂成一条永远为真的豁免，没人会去删它。
     for (const n of SITE_ONLY_ITEM_NAMES) expect(siteItemNames).toContain(n)
     for (const n of SITE_ONLY_DOMAIN_NAMES) expect(siteDomainNames).toContain(n)
-    // ③ 台账**确实在起作用**（否则上面几条的「∪ 台账」是空跑）：两个名单都不是空的
-    expect(SITE_ONLY_ITEM_NAMES.length).toBeGreaterThan(0)
-    expect(SITE_ONLY_DOMAIN_NAMES.length).toBeGreaterThan(0)
+    // ③ 台账现在**是空的**（2026-11-06 官网已跟上菜单 IA）—— 这条不是「放弃判据」，而是把
+    //    收敛态显式钉住：谁再往台账里加一条，就同时要过上面 ①②（必须真在官网、且后台没有同名），
+    //    加不进「后台已有却挂着豁免」的形态。
+    expect(SITE_ONLY_ITEM_NAMES).toEqual([])
+    expect(SITE_ONLY_DOMAIN_NAMES).toEqual([])
   })
 
   it('官网展示的菜单项总数由数据算出来（不写死）且 = 后台菜单总数 + 台账条数', () => {

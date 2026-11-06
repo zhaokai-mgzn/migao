@@ -171,7 +171,7 @@ describe('生产管理菜单入口（侧边栏）', () => {
     if (btn.getAttribute('aria-expanded') === 'false') fireEvent.click(btn)
   }
 
-  it('侧边栏出现「生产管理」组与**三个**节点，路径与权限码正确（#6580 收拢；#8086 质检/返工拆到「质量」组）', () => {
+  it('侧边栏出现「生产管理」组与**两个**节点（2026-11-06：计件工资移入「财务」），路径与权限码正确（#6580 收拢；#8086 质检/返工拆到「质量」组）', () => {
     render(<Sidebar collapsed={false} onToggle={() => {}} />)
 
     const group = screen.getByText('生产管理').closest('[data-group-key]') as HTMLElement
@@ -188,13 +188,13 @@ describe('生产管理菜单入口（侧边栏）', () => {
     //    （功能体并入一级项「企业基础设置」页内的配置域）⇒ 5 → **3 项**。
     //    旧深链 `/production/processing`、`/production/routings` 保留为**重定向薄壳**（不 404）。
     // 🔴 #8086：质检记录 / 返工单已拆到「质量」组 ⇒ 本组 **3 项**
-    expect(links).toHaveLength(3)
+    expect(links).toHaveLength(2)
     expect(links[0].textContent).toContain('作业单')
     expect(links[0]).toHaveAttribute('href', '/production')
     expect(links[1].textContent).toContain('智能派单')
     expect(links[1]).toHaveAttribute('href', '/production/pool')
-    expect(links[2].textContent).toContain('计件工资')
-    expect(links[2]).toHaveAttribute('href', '/production/piecework')
+    // 反恒真：计件工资已搬去「财务」组（不得两边都挂）
+    expect(Array.from(links).map((a) => a.textContent).join('|')).not.toContain('计件工资')
     // 旧「工序库」入口不再作为独立菜单项（页面改为重定向，旧深链仍可达）
     expect(Array.from(links).map((a) => a.textContent).join('|')).not.toContain('工序库')
     // 🔴 #6580：两个合并项（加工项管理 / 工艺配置）**已不再是菜单项** —— 反向断言（它们的功能体在
@@ -208,63 +208,61 @@ describe('生产管理菜单入口（侧边栏）', () => {
     expect(productionText).not.toContain('省料分析')
   })
 
-  it('单据三项落在新组「供应链」、库存/余料/省料仍在「仓储与物料」（issue #5271 + #7369），点得到且 href 正确', () => {
+  it('供应链 = 采购单 → 供应商；仓储/物料 = 进 → 盘 → 出 → 发 → 账 → 台账 → 分析（2026-11-06 用户裁定）', () => {
     render(<Sidebar collapsed={false} onToggle={() => {}} />)
     // 当前路由是 /production ⇒ 两组都默认收起，先展开再断言（断言强度不变）
     expect(screen.getByText('供应链')).toBeInTheDocument()
     expandGroup('supply-chain')
     const supplyGroup = screen.getByText('供应链').closest('[data-group-key]') as HTMLElement
     const supplyLinks = supplyGroup.querySelectorAll('a')
-    // issue #7369 + #8086：新组 = 入库单 → 采购单（供应商已移入「基础资料」组）
-    //（入库单排第一，手机端标注取树序首个承载节点，#6781）
+    // 2026-11-06：供应链 = 采购单 → 供应商（入库单已移入仓储/物料）
     expect(supplyLinks).toHaveLength(2)
-    expect(supplyLinks[0].textContent).toContain('入库单')
-    expect(supplyLinks[0]).toHaveAttribute('href', '/inbound-orders')
-    expect(supplyLinks[1].textContent).toContain('采购单')
-    expect(supplyLinks[1]).toHaveAttribute('href', '/purchase-orders')
-    // 反恒真：供应商已搬去「基础资料」组 ⇒ 本组不再渲染它
-    expect(within(supplyGroup).queryByText('供应商')).not.toBeInTheDocument()
+    expect(supplyLinks[0].textContent).toContain('采购单')
+    expect(supplyLinks[0]).toHaveAttribute('href', '/purchase-orders')
+    expect(supplyLinks[1].textContent).toContain('供应商')
+    expect(supplyLinks[1]).toHaveAttribute('href', '/suppliers')
+    // 反恒真：入库单已搬去「仓储/物料」组 ⇒ 本组不再渲染它
+    expect(within(supplyGroup).queryByText('入库单')).not.toBeInTheDocument()
 
-    // 仓储与物料组：issue #7369 起只留 库存 → 出库 → 台账 → 分析（单据三项已整组搬出）
-    expect(screen.getByText('仓储与物料')).toBeInTheDocument()
+    // 仓储/物料组：进 → 盘 → 出 → 发 → 账 → 台账 → 分析
+    expect(screen.getByText('仓储/物料')).toBeInTheDocument()
     expandGroup('inventory-center')
-    const group = screen.getByText('仓储与物料').closest('[data-group-key]') as HTMLElement
+    const group = screen.getByText('仓储/物料').closest('[data-group-key]') as HTMLElement
     const links = group.querySelectorAll('a')
-    // #7373：本组 +「盘点单」（紧跟库存明细：先看账 → 再对账）
-    expect(links).toHaveLength(6)
-    expect(links[0].textContent).toContain('库存明细')
-    expect(links[0]).toHaveAttribute('href', '/stock-ledger')
+    expect(links).toHaveLength(7)
+    expect(links[0].textContent).toContain('入库单')
+    expect(links[0]).toHaveAttribute('href', '/inbound-orders')
     expect(links[1].textContent).toContain('盘点单')
     expect(links[1]).toHaveAttribute('href', '/stocktakes')
-    // issue #7750：出库单紧跟盘点单（与入库单对称的出口单据）
     expect(links[2].textContent).toContain('出库单')
     expect(links[2]).toHaveAttribute('href', '/outbound-orders')
     expect(links[3].textContent).toContain('发货单')
     expect(links[3]).toHaveAttribute('href', '/shipments')
-    expect(links[4].textContent).toContain('余料台账')
-    expect(links[4]).toHaveAttribute('href', '/production/remnants')
-    expect(links[5].textContent).toContain('省料分析')
-    expect(links[5]).toHaveAttribute('href', '/production/saving-board')
-    // 反恒真：入库单**不再**出现在本组（搬组不得只搬半边）
-    expect(Array.from(links).map((a) => a.textContent).join('|')).not.toContain('入库单')
+    expect(links[4].textContent).toContain('库存明细')
+    expect(links[4]).toHaveAttribute('href', '/stock-ledger')
+    expect(links[5].textContent).toContain('余料台账')
+    expect(links[5]).toHaveAttribute('href', '/production/remnants')
+    expect(links[6].textContent).toContain('省料分析')
+    expect(links[6]).toHaveAttribute('href', '/production/saving-board')
   })
 
-  it('「加工单」不再是独立菜单项：交易管理组只余两个业务项（issue #4357；#5778 收窄）', () => {
+  it('「加工单」不再是独立菜单项：「订单/商品」组 = 销售订单 / 商品管理 / 价格本 / 客户列表（issue #4357；2026-11-06 并组）', () => {
     render(<Sidebar collapsed={false} onToggle={() => {}} />)
 
-    // 交易管理组：加工单已并入生产管理组（issue #4357 —— 与作业看板合并为单一入口）
-    // issue #5271：原「订单管理」组 + 原「客户管理」组的客户列表/财务对账**并为一组** ⇒ 4 项
-    expect(screen.getByText('交易管理')).toBeInTheDocument()
-    expandGroup('trade-center')
-    const tradeGroup = screen.getByText('交易管理').closest('[data-group-key]') as HTMLElement
+    // 加工单已并入生产管理组（issue #4357 —— 与作业单合并为单一入口）
+    // 2026-11-06：旧「交易管理」+「基础资料」并为「订单/商品」⇒ 4 项；财务对账已移入「财务」组
+    expect(screen.getByText('订单/商品')).toBeInTheDocument()
+    expandGroup('orders-products')
+    const tradeGroup = screen.getByText('订单/商品').closest('[data-group-key]') as HTMLElement
     expect(within(tradeGroup).queryByText('加工单')).not.toBeInTheDocument()
     expect(within(tradeGroup).getByText('销售订单')).toBeInTheDocument()
-    expect(within(tradeGroup).getByText('财务对账')).toBeInTheDocument()
-    // #5778：售后工单 / 客户列表已移入「客户服务」组 ⇒ 本组只余「下单 → 收款」两项
-    // 🔴 #8086：价格本已移入「基础资料」组 ⇒ 本组只剩两项（销售订单 / 财务对账）
-    expect(tradeGroup.querySelectorAll('a')).toHaveLength(2)
+    expect(within(tradeGroup).getByText('商品管理')).toBeInTheDocument()
+    expect(within(tradeGroup).getByText('价格本')).toBeInTheDocument()
+    expect(within(tradeGroup).getByText('客户列表')).toBeInTheDocument()
+    expect(tradeGroup.querySelectorAll('a')).toHaveLength(4)
+    // 反恒真：售后工单在「客户服务」组、财务对账在「财务」组 ⇒ 本组都不渲染
     expect(within(tradeGroup).queryByText('售后工单')).not.toBeInTheDocument()
-    expect(within(tradeGroup).queryByText('客户列表')).not.toBeInTheDocument()
+    expect(within(tradeGroup).queryByText('财务对账')).not.toBeInTheDocument()
 
     // 全站不再有指向 /processing-orders 的菜单项（旧入口收敛到 /production）——
     // 展开**全部**组后再查全站 href，避免「因为收起所以查不到」的恒真断言
@@ -272,12 +270,12 @@ describe('生产管理菜单入口（侧边栏）', () => {
     //（「经营看板」改由**最前席位**承载，它**不受展开态影响**，恒在 hrefs 里）。
     for (const key of [
       'customer-service',
-      'basic-data',
-      'trade-center',
+      'orders-products',
       'production-center',
       'quality',
-      'supply-chain',
       'inventory-center',
+      'finance-center',
+      'supply-chain',
       'org-center',
     ]) {
       expandGroup(key)
@@ -293,7 +291,7 @@ describe('生产管理菜单入口（侧边栏）', () => {
     expect(hrefs).not.toContain('/processing-orders')
   })
 
-  it('权限码口径（#5291 + #5699 P4）：作业看板/工艺配置/计件工资 = production:view，智能派单 = processing:view，省料看板 = product:list', () => {
+  it('权限码口径（#5291 + #5699 P4）：作业单 / 计件工资 = production:view，智能派单 = processing:view，省料看板 = product:list', () => {
     // issue #4490：合并**不改变权限码** —— 两个旧菜单项本来就是 processing:manage（组内同码）
     const group = menuGroups.find((g) => g.key === 'production-center')
     expect(group).toBeTruthy()
@@ -302,27 +300,25 @@ describe('生产管理菜单入口（侧边栏）', () => {
     // 只是它现在挂在**新组**「仓储与物料」下 ⇒ 本用例改判为「按组取码」而不是把它算进本组。
     // 🔴 #6580：本组由 5 项收拢为 3 项（「加工项管理」「工艺配置」菜单项已移除）。
     expect(group!.children.map((c) => c.permissionCode)).toEqual([
-      'production:view',    // 作业看板（issue #5291）
+      'production:view',    // 作业单（issue #5291）
       'processing:view',    // 智能派单（issue #5699 P4：节点码 = 该页读端点码）
-      'production:view',    // 计件工资
-      // 🔴 #8086：质检记录（production:inspect）/ 返工单（after_sales:view）已随「质量」组拆出
+      // 2026-11-06：质检/返工在「质量管理」、计件工资在「财务」⇒ 本组两项
     ])
-    // issue #7369：单据整组搬去「供应链」。🔴 issue #8087（用户裁定 C）：采购单改挂 `purchase:view`，
-    // 入库单仍排组内第一（手机端标注取树序首个承载节点，#6781）。
+    // 2026-11-06：供应链 = 采购单 → 供应商（入库单移入仓储/物料）。
     const supply = menuGroups.find((g) => g.key === 'supply-chain')
-    // #8086：供应商移入「基础资料」组 ⇒ 本组 2 项，但已不同码（#8087 拆码）
     expect(supply!.children.map((c) => c.permissionCode)).toEqual([
-      'inbound:view',       // 入库单（#8087 后本码只承载这一页）
       'purchase:view',      // 采购单（#8087：独立读码，只 admin/operator）
+      'supplier:view',      // 供应商（#8087：独立读码）
     ])
     const inventory = menuGroups.find((g) => g.key === 'inventory-center')
     expect(inventory!.children.map((c) => c.permissionCode)).toEqual([
-      'product:list',       // 库存明细（issue #6404：同取既有 product:list ⇒ 零授权 delta）
+      'inbound:view',       // 入库单（#8087 后本码只承载这一页）
       'stock:view',         // 盘点单（issue #8087：库存单证独立读码）
       'stock:view',         // 出库单（issue #8087：同上）
       'order:list',         // 发货单（issue #5939：取**既有** order:list ⇒ 与销售订单同码、零授权 delta）
+      'product:list',       // 库存明细（issue #6404：同取既有 product:list ⇒ 零授权 delta）
       'processing:manage',  // 余料台账（`RemnantController` 类级码）
-      'product:list',       // 省料看板（issue #5699 P4：节点码 = 该页两个读端点的码）
+      'product:list',       // 省料分析（issue #5699 P4：节点码 = 该页两个读端点的码）
     ])
     // 反恒真（issue #5291）：组内**不是**同码 —— 若有人把四项一起改回去（或一起改过来），本条必红。
     // issue #5699（P4）：智能派单的码由 processing:manage 收敛为 processing:view ⇒ 本集合同批改准。

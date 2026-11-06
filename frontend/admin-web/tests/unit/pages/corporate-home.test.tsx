@@ -103,20 +103,32 @@ describe('CorporateHomePage（官网主页 v4：织物质感重设计 + 真实�
 
   // ── 能力地图 ──
 
-  it('renders 能力地图：六个能力域与独立入口（菜单名与 config/menu.ts 一致）', () => {
+  it('renders 能力地图：八个能力域与独立入口（菜单名与 config/menu.ts 一致）', () => {
     render(<HomePage />)
     expect(screen.getByText('覆盖经营全链路的能力域')).toBeInTheDocument()
-    for (const domain of ['工作台', '客户服务', '交易管理', '生产管理', '仓储与物料', '组织管理']) {
+    for (const domain of [
+      '客户服务',
+      '订单/商品',
+      '生产管理',
+      '质量管理',
+      '仓储/物料',
+      '财务',
+      '供应链',
+      '组织管理',
+    ]) {
       expect(screen.getAllByText(domain).length).toBeGreaterThanOrEqual(1)
     }
-    // 真实菜单项抽样（旧版官网只讲「商品 / 订单 / 知识库」三件事）
+    // 真实菜单项抽样（2026-11-06 新 IA：入库单在仓储/物料、计件工资在财务、商品管理在订单/商品）
     for (const item of [
       '经营概览',
-      '每日简报',
+      '报表中心',
       '智能派单',
+      '质检记录',
       '计件工资',
+      '入库单',
       '余料台账',
       '省料分析',
+      '采购单',
       '岗位权限',
     ]) {
       expect(screen.getAllByText(item).length).toBeGreaterThanOrEqual(1)

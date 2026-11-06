@@ -342,11 +342,10 @@ describe('加工费组合 tab（issue #4386；issue #4490 合并后为 /producti
     expect(allItems.find((c) => c.path === '/production/routings')).toBeUndefined()
     expect(production!.children.map((c) => c.name)).not.toContain('加工项管理')
     expect(production!.children.map((c) => c.name)).not.toContain('工艺配置')
-    // #6580 后本组 = 作业看板 → 智能派单 → 计件工资；🔴 #8086 把质检/返工拆到「质量」组
+    // 2026-11-06 后本组 = 作业单 → 智能派单（计件工资移入「财务」、质检/返工在「质量管理」）
     expect(production!.children.map((c) => c.path)).toEqual([
       '/production',
       '/production/pool',
-      '/production/piecework',
     ])
     // 原「商品与加工项」组已撤销 ⇒ 不得再存在（商品管理表现为独立一级项，不属任何组）
     expect(menuGroups.find((g) => g.key === 'product-center')).toBeUndefined()

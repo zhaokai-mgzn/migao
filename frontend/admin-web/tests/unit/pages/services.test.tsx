@@ -13,7 +13,7 @@ import {
   findQuantifierRhetoric,
 } from './copy-voice-banlist'
 
-describe('ServicesPage（官网产品与服务 v4：双 AI + 四终端 + 六能力域，issue #6291 / #6326）', () => {
+describe('ServicesPage（官网产品与服务 v4：双 AI + 四终端 + 八能力域，issue #6291 / #6326）', () => {
   // ── 页头 ──
 
   it('renders page title 与定位副标', () => {
@@ -30,7 +30,7 @@ describe('ServicesPage（官网产品与服务 v4：双 AI + 四终端 + 六能�
   it('renders 页头事实标签（AI 数 / 能力域数 / 终端数 / 行业纵深）', () => {
     render(<ServicesPage />)
     expect(screen.getByText('2 个 AI：元元与黄金策')).toBeInTheDocument()
-    expect(screen.getByText(/7 个能力域 · \d+ 项功能/)).toBeInTheDocument()
+    expect(screen.getByText(/8 个能力域 · \d+ 项功能/)).toBeInTheDocument()
     expect(screen.getByText('4 个终端')).toBeInTheDocument()
     expect(screen.getByText('算料 · 工序 · 批次 · 计件')).toBeInTheDocument()
   })
@@ -86,33 +86,51 @@ describe('ServicesPage（官网产品与服务 v4：双 AI + 四终端 + 六能�
     expect(screen.getByText('工人登录、拍照入库、补打标签')).toBeInTheDocument()
   })
 
-  // ── 六个能力域 ──
+  // ── 八个能力域 ──
 
-  it('renders 六个能力域与独立入口的全部菜单名', () => {
+  it('renders 八个能力域与独立入口的全部菜单名', () => {
     render(<ServicesPage />)
-    for (const domain of ['工作台', '客户服务', '交易管理', '生产管理', '仓储与物料', '组织管理']) {
+    for (const domain of [
+      '客户服务',
+      '订单/商品',
+      '生产管理',
+      '质量管理',
+      '仓储/物料',
+      '财务',
+      '供应链',
+      '组织管理',
+    ]) {
       expect(screen.getByText(domain)).toBeInTheDocument()
     }
+    // 24 个组内项 + 4 个一级独立项，逐项点名（漏讲 / 多讲 ⇒ 红）
     for (const item of [
-      '经营概览',
-      '每日简报',
       '在线接待',
-      '客户列表',
-      '知识库',
       '售后工单',
+      '知识库',
       '销售订单',
-      '财务对账',
+      '商品管理',
+      '价格本',
+      '客户列表',
       '作业单',
       '智能派单',
-      '计件工资',
+      '质检记录',
+      '返工单',
       '入库单',
+      '盘点单',
+      '出库单',
       '发货单',
+      '库存明细',
       '余料台账',
       '省料分析',
+      '财务对账',
+      '计件工资',
+      '采购单',
+      '供应商',
       '员工管理',
       '岗位权限',
-      // 🔴 #6580：「企业基础设置」（原名「企业基础信息」）现与「商品管理」同为**一级项**
-      '商品管理',
+      // 一级独立项
+      '经营概览',
+      '报表中心',
       '企业基础设置',
       '通知中心',
     ]) {

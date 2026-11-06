@@ -5,6 +5,27 @@
 > 原因 = 单文件涨到 512KB 越过扫描上限，详见存档文件头与 issue #6404。
 > **后续条目继续在本文件 `## [Unreleased]
 
+### 观星台侧边栏按用户裁定重排：8 组 + 4 个一级项，菜单项一项不少不减（2026-11-06，issue #8802）
+
+- **改后（用户给定顺序，逐字落地）**：经营概览 → 报表中心 → **客户服务**（在线接待 / 售后工单 / 知识库）
+  → **订单/商品**（销售订单 / 商品管理 / 价格本 / 客户列表）→ **生产管理**（作业单 / 智能派单）
+  → **质量管理**（质检记录 / 返工单）→ **仓储/物料**（入库单 / 盘点单 / 出库单 / 发货单 / 库存明细 /
+  余料台账 / 省料分析）→ **财务**（财务对账 / 计件工资）→ **供应链**（采购单 / 供应商）
+  → **企业基础设置**（一级项，插在供应链之后、组织管理之前）→ **组织管理**（员工管理 / 岗位权限）
+  → 通知中心（尾部独立项）。共 **28 个节点 = 8 组 24 项 + 4 个一级独立项**，一项不少不减。
+- **合并 / 改名**：旧「交易管理」+「基础资料」两组合并为「订单/商品」（内部 key `trade-center` +
+  `basic-data` ⇒ `orders-products`）；新增「财务」（`finance-center`）；「质量」正名「质量管理」、
+  「仓储与物料」正名「仓储/物料」。**权限码一个都没动**（纯信息架构调整，零授权 delta）。
+- **搬动**：入库单由「供应链」移回「仓储/物料」并排第一（收货登记面属仓），供应商由「基础资料」
+  移入「供应链」、计件工资由「生产管理」移入「财务」、财务对账由「交易管理」移入「财务」。
+- **四源同构同批落地**：`config/menu.ts`、`MenuController.MENU_TREE`、
+  `AuthService.buildMenusByPermissions`、`app/context/menu_navigator.py`；连带 Header 面包屑、
+  ⌘K 索引、岗位权限树（尾席位改为插在两段分组之间）、官网能力地图（8 能力域 + 4 个独立入口）。
+- 判据 = `tests/unit_ci_workflows/test_menu_three_sources_are_isomorphic.py`（组层 / 节点层 /
+  顶层布局序列）+ `test_menu_navigator.py` + 前端 `menu-nav` / `Sidebar` / `SidebarRedesign` /
+  `Header` / `CommandPalette` / `roles` / `processing-merged` / 四个 `*-menu-isomorphic` 用例
+  + Java `MenuControllerTest`。
+
 ### product_detail 真的认「名称/序号/UUID」：描述怎么写就怎么查，查不到也不会把名字当 ID 打服务端（2026-11-06，issue #8783）
 
 - **改前**：`product_detail` 的描述承诺 `product_id` **支持名称/序号/UUID**，而实现把入参原样拼进

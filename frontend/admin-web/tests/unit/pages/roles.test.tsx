@@ -240,12 +240,14 @@ describe('RolesPage', () => {
     render(<RolesPage />)
     fireEvent.click(await screen.findByText('新增岗位'))
     const tree = within(await screen.findByTestId('perm-menu-sections'))
-    // 🔴 菜单组头 = 侧边栏菜单组名（issue #7087 后**5 组**；「工作台」组**整组撤销**）
-    expect(tree.getByText('客户服务')).toBeInTheDocument()
-    expect(tree.getByText('交易管理')).toBeInTheDocument()
-    expect(tree.getByText('生产管理')).toBeInTheDocument()
-    expect(tree.getByText('仓储与物料')).toBeInTheDocument()
-    expect(tree.getByText('组织管理')).toBeInTheDocument()
+    // 🔴 菜单组头 = 侧边栏菜单组名（2026-11-06 用户裁定后**8 组**；「工作台」组早于 #7087 整组撤销）
+    for (const name of ['客户服务', '订单/商品', '生产管理', '质量管理', '仓储/物料', '财务', '供应链', '组织管理']) {
+      expect(tree.getByText(name)).toBeInTheDocument()
+    }
+    // 旧组名（2026-11-06 合并/正名前）不得残留
+    for (const legacy of ['交易管理', '基础资料', '仓储与物料']) {
+      expect(tree.queryByText(legacy)).not.toBeInTheDocument()
+    }
     // 🔴 已撤销的组名不得出现在权限树里 —— 商家可见面（含权限勾选树）不再有「工作台」（issue #7087）
     expect(tree.queryByText('工作台')).not.toBeInTheDocument()
     // 旧组名不再出现：issue #5271 / #5778 三处改判（商品与加工项**撤销**；智能客服 → 客户服务；
@@ -255,16 +257,20 @@ describe('RolesPage', () => {
     // 而**菜单项「商品管理」当时根本没渲染**（#5778 把它升为 `standaloneTopItems` 一级项时本页没跟）。
     // 真实判据 = 本文件 #5895 三条（一级项块 `perm-standalone-top` 的位置/名称/码 + 勾选落库）。
     expect(tree.queryByText('商品与加工项')).not.toBeInTheDocument()
-    // 🔴 2026-10-29（issue #8086）：商品管理已降入「基础资料」组（不再是尾席位一级项）
-    const basicSection = tree.getByText('基础资料').closest('div')!.parentElement as HTMLElement
-    expect(within(basicSection).getByText('商品管理')).toBeInTheDocument()
-    expect(within(basicSection).getByText('客户列表')).toBeInTheDocument()
-    expect(within(basicSection).getByText('供应商')).toBeInTheDocument()
-    expect(within(basicSection).getByText('价格本')).toBeInTheDocument()
-    // 质量组（#8086）：质检记录 / 返工单（从生产管理拆出，权限码不变）
-    const qualitySection = tree.getByText('质量').closest('div')!.parentElement as HTMLElement
+    // 2026-11-06：「订单/商品」组 = 销售订单 / 商品管理 / 价格本 / 客户列表
+    const orderSection = tree.getByText('订单/商品').closest('div')!.parentElement as HTMLElement
+    expect(within(orderSection).getByText('商品管理')).toBeInTheDocument()
+    expect(within(orderSection).getByText('客户列表')).toBeInTheDocument()
+    expect(within(orderSection).getByText('价格本')).toBeInTheDocument()
+    expect(within(orderSection).getByText('销售订单')).toBeInTheDocument()
+    // 质量管理组（2026-11-06 正名）：质检记录 / 返工单（权限码不变）
+    const qualitySection = tree.getByText('质量管理').closest('div')!.parentElement as HTMLElement
     expect(within(qualitySection).getByText('质检记录')).toBeInTheDocument()
     expect(within(qualitySection).getByText('返工单')).toBeInTheDocument()
+    // 财务组（2026-11-06 新组）：财务对账 + 计件工资（后者由生产管理移入）
+    const financeSection = tree.getByText('财务').closest('div')!.parentElement as HTMLElement
+    expect(within(financeSection).getByText('财务对账')).toBeInTheDocument()
+    expect(within(financeSection).getByText('计件工资')).toBeInTheDocument()
     expect(tree.queryByText('智能客服')).not.toBeInTheDocument()
     expect(tree.queryByText('订单管理')).not.toBeInTheDocument()
     expect(tree.queryByText('客户管理')).not.toBeInTheDocument()
@@ -294,7 +300,7 @@ describe('RolesPage', () => {
     expect(tree.getByText('售后工单')).toBeInTheDocument()
     expect(tree.getByText('客户列表')).toBeInTheDocument()
     expect(tree.getByText('财务对账')).toBeInTheDocument()
-    // #5778：生产管理组 5 项（含移入的「加工项管理」）+「仓储与物料」3 项都要在权限树里
+    // 生产管理 2 项 + 仓储/物料 7 项 + 财务 2 项 + 供应链 2 项都要在权限树里
     //（否则「勾得动/看不到」漂移）
     expect(tree.getByText('作业单')).toBeInTheDocument()
     expect(tree.getByText('智能派单')).toBeInTheDocument()
@@ -459,16 +465,17 @@ describe('RolesPage', () => {
     // 报表中心（#7376）与经营看板同码（报表是看板的下钻）⇒ 同码两节点各自渲染，勾任一即授予该码
     expect(within(head).getByText('报表中心')).toBeInTheDocument()
     expect(within(head).getAllByText('dashboard:view')).toHaveLength(2)
-    // 🔴 #8086：商品管理已进「基础资料」组 ⇒ 尾席位只剩「企业基础设置」
+    // 尾席位只剩「企业基础设置」（商品管理在「订单/商品」组内）
     expect(within(top).getByText('企业基础设置')).toBeInTheDocument()
     expect(within(top).queryByText('商品管理')).toBeNull()
-    // 位置与侧边栏同序（一级项块 → 分组 → 尾部项）：**席位块是权限树的第一个子块**
-    // （#7087 前这条判的是 `perm-standalone-top`；最前席位加入后它退到第二个 —— 断言强度不降：
-    //  现在多钉了「最前席位在最前」且「两个席位块连续」）。
+    // 位置与侧边栏同序：最前席位在最前；尾席位插在**供应链之后、组织管理之前**（2026-11-06 用户裁定）
     expect(container.firstElementChild).toBe(head)
-    expect(container.firstElementChild!.nextElementSibling).toBe(top)
-    // 判别力：旧形态（席位块排在分组之后）会让上面两条红
-    expect(container.firstElementChild!.hasAttribute('data-testid')).toBe(true)
+    const follows = (a: Element, b: Element) =>
+      (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0
+    expect(follows(within(container).getByText('供应链'), top)).toBe(true)
+    expect(follows(top, within(container).getByText('组织管理'))).toBe(true)
+    // 判别力：旧形态（尾席位一律排在**所有分组之前**）会让上面两条红
+    expect(follows(top, within(container).getByText('供应链'))).toBe(false)
   })
 
   // ══════════════════════════════════════════════════════════════════════════
@@ -602,14 +609,14 @@ describe('RolesPage', () => {
     expect(visibleText(container)).not.toMatch(/[a-z_]+:[a-z_]+/) // 撤掉注入 ⇒ 绿（判别力自证）
   })
 
-  it('#5895 勾选「基础资料 → 商品管理」→ 创建岗位时 permissionIds 含 product:list 的权限ID（勾得动）', async () => {
+  it('#5895 勾选「订单/商品 → 商品管理」→ 创建岗位时 permissionIds 含 product:list 的权限ID（勾得动）', async () => {
     mockGetRoles.mockResolvedValue({ data: { data: { items: [], total: 0 } } })
     render(<RolesPage />)
     fireEvent.click(await screen.findByText('新增岗位'))
-    // 🔴 #8086：商品管理已进「基础资料」组 ⇒ 在该组小节内取标签（「操作权限」节里另有一个
+    // 商品管理在「订单/商品」组 ⇒ 在该组小节内取标签（「操作权限」节里另有一个
     // 同名的 `product:manage` 旧码，全容器取会撞名 —— 与 #5895 的原始坑同源）
     const sections = within(await screen.findByTestId('perm-menu-sections'))
-    const basic = sections.getByText('基础资料').closest('div')!.parentElement as HTMLElement
+    const basic = sections.getByText('订单/商品').closest('div')!.parentElement as HTMLElement
     fireEvent.click(within(basic).getByText('商品管理').closest('label')!.querySelector('input')!)
     const textboxes = screen.getAllByRole('textbox')
     fireEvent.change(textboxes[0], { target: { value: '商品运营' } })
@@ -771,8 +778,9 @@ describe('RolesPage 默认菜单 = 后台 + 手机端（issue #7146）', () => {
 
     fireEvent.click(within(card).getByRole('button', { name: /默认菜单/ }))
     // 报表中心（#7376）与经营看板同码 ⇒ 勾了 dashboard:view 的岗位默认菜单里**两项都在**
+    // 2026-11-06：组内顺序 = 在线接待 → 销售订单 → 价格本；order:list 还带出发货单（共 6 项）
     expect(await screen.findByTestId('role-default-menu-backend-customer_service')).toHaveTextContent(
-      '经营概览、报表中心、在线接待、价格本、销售订单',
+      '经营概览、报表中心、在线接待、销售订单、价格本、发货单',
     )
     expect(screen.getByTestId('role-default-menu-mobile-customer_service')).toHaveTextContent('数据、坐席')
     expect(within(card).getByRole('button', { name: /默认菜单/ })).toHaveAttribute('aria-expanded', 'true')
