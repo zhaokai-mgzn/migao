@@ -69,9 +69,9 @@ class TestNicknameAndTenantName:
                    return_value=_FakeDB(boom=RuntimeError("db down"))), \
                 patch("app.utils.redis_client.redis_pool", None):
             got, records = _logs_of(lambda: _get_user_nickname(1, "u1"))
-        assert got is None
-        assert len(records) == 1
-        assert records[0].startswith("[chat] Failed to query user nickname")
+        # 降级契约 =「返回 None（昵称非必需）且**恰好**一条可见 warning」
+        assert (got, len(records)) == (None, 1)
+        assert records[0].startswith("[chat] Failed to query user nickname | user=u1 error=db down")
 
     def test_tenant_name_falls_back_to_db(self):
         with patch("app.utils.database.AsyncSessionLocal",

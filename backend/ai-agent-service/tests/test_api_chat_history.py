@@ -130,8 +130,8 @@ class TestPersistStrategyPoint:
                 session_id="sess-1", role="assistant", content="hi"))
         finally:
             logger.remove(sink)
-        assert got is None
-        assert len(records) == 1
+        # fail-open 的**契约**是「返回 None（= 没写进去）且**恰好**留一条审计行」，两条一起断言
+        assert (got, len(records)) == (None, 1)
         assert records[0].startswith(f"{PERSIST_FAILED_MARK} (CODE DEFECT) op=save_message")
         assert "write=chat.assistant" in records[0]
         assert "incident=" in records[0]
