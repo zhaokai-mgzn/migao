@@ -221,9 +221,15 @@ class TestWiringIsStructural:
         """摘掉接线即红：SSE 文本不得再直连 `_mask_for_customer`，落库前必须清一遍。"""
         import inspect
         import app.api.chat as chat
+        import app.api.chat_outbound as outbound
 
         src = inspect.getsource(chat)
-        assert "def _sanitize_outbound_text(" in src, "chat.py 未定义出站收口函数"
+        # 切片（issue #8725 第三档）：收口函数**定义**搬到 `chat_outbound` 单元。
+        # 读面随之扩到该单元；下面三条接线断言仍扫 `chat.py`（调用点留在那里）。
+        assert "def _sanitize_outbound_text(" in inspect.getsource(outbound), (
+            "出站收口函数未定义在切片单元 chat_outbound")
+        assert "def _sanitize_outbound_text(" not in src, (
+            "chat.py 又定义了一份出站收口（两份必然漂移）")
         assert "SSEEvent.text(_mask_for_customer(" not in src, (
             "仍有 SSE 文本绕过收口（直连脱敏层）")
         assert '"content": _sanitize_outbound_text(' in src, (

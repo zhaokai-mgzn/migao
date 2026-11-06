@@ -5,7 +5,7 @@
   "recorded_from": "backend/ai-agent-service/app/api/chat.py",
   "recorded_chat_lines": 3004,
   "recorded_at": "2026-11-06",
-  "updated_by": "CHAT_SLICE_GOLDEN_UPDATE=1"
+  "recorded_note": "四面 golden 全部在**未切片**代码上录制（chat.py = 3,004 行）：先在第一版上录，补掉红证 D 抓出的覆盖缺口（choice value 缺省回落 label）后在干净 origin/main 检出（3,004 行）重录一次；切片后只读复核，不带 update 开关。"
  },
  "outbound": {
   "cards": [
@@ -944,6 +944,24 @@
    {
     "block": "<interact><title>无组件</title></interact>",
     "payload": null,
+    "stripped": ""
+   },
+   {
+    "block": "<interact><component>choice</component><title>请选择</title><options><option><label>米白色</label></option><option><label>有 value</label><value>has</value></option></options></interact>",
+    "payload": {
+     "component": "choice",
+     "title": "请选择",
+     "options": [
+      {
+       "label": "米白色",
+       "value": "米白色"
+      },
+      {
+       "label": "有 value",
+       "value": "has"
+      }
+     ]
+    },
     "stripped": ""
    },
    {

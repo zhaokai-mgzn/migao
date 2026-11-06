@@ -356,11 +356,21 @@ XML_BROKEN = """<interact><component>choice</component><title>请选择</title>
 <options><option><value>only-value</value></option></options></interact>"""
 
 XML_UNKNOWN_COMPONENT = "<interact><component>carousel</component><title>x</title></interact>"
+
+#: choice 的 `value` 缺省时回落到 `label`（协议口径；红证 D 抓出来的覆盖缺口：
+#: 早先两个 option 都显式带 value ⇒ 把 `or label` 改成 `or ""` 判据不红 = 空断言）
+XML_CHOICE_VALUE_FALLBACK = (
+    "<interact><component>choice</component><title>请选择</title><options>"
+    "<option><label>米白色</label></option>"
+    "<option><label>有 value</label><value>has</value></option>"
+    "</options></interact>"
+)
 XML_NO_COMPONENT = "<interact><title>无组件</title></interact>"
 
 XML_BLOCKS: list[str] = [
     XML_CHOICE, XML_CONFIRM, XML_FORM, XML_BROKEN,
-    XML_UNKNOWN_COMPONENT, XML_NO_COMPONENT, "", "<interact></interact>",
+    XML_UNKNOWN_COMPONENT, XML_NO_COMPONENT, XML_CHOICE_VALUE_FALLBACK,
+    "", "<interact></interact>",
 ]
 
 FILTER_PRODUCTS: list[dict] = [
