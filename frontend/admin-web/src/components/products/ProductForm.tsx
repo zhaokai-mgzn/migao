@@ -580,23 +580,31 @@ export default function ProductForm({
       {/* ============ 顶部标题栏 ============ */}
       <div
         data-testid="pf-title-card"
-        className="flex items-center justify-between px-6 py-4 mb-4 bg-white border border-neutral-200 rounded-lg"
+        className="px-6 py-4 mb-4 bg-white border border-neutral-200 rounded-lg"
       >
-        <h2 className="text-lg font-semibold text-neutral-900">
-          {isEdit ? '编辑商品' : '新增商品'}
-        </h2>
-        {/* 标题行右侧 = 页面级动作：识别入口（由页面经 `titleActions` 注入，issue #5918）+ 重置 */}
-        <div data-testid="pf-title-actions" className="flex items-center gap-2">
-          {titleActions}
-          <button
-            type="button"
-            onClick={handleReset}
-            className="inline-flex items-center gap-1.5 px-3 h-8 text-sm text-neutral-600 hover:text-primary-600 hover:bg-neutral-50 rounded transition-colors"
-          >
-            <RotateCcw className="w-3.5 h-3.5" />
-            重置
-          </button>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-lg font-semibold text-neutral-900">
+            {isEdit ? '编辑商品' : '新增商品'}
+          </h2>
+          {/* 标题行右侧 = 页面级动作：识别入口（由页面经 `titleActions` 注入，issue #5918）+ 重置 */}
+          <div data-testid="pf-title-actions" className="flex items-center gap-2">
+            {titleActions}
+            <button
+              type="button"
+              onClick={handleReset}
+              className="inline-flex items-center gap-1.5 px-3 h-8 text-sm text-neutral-600 hover:text-primary-600 hover:bg-neutral-50 rounded transition-colors"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              重置
+            </button>
+          </div>
         </div>
+        {/*
+          识别结果卡的落点（横版 · 整行宽）：`ImageRecognizeButton` 用 portal 把卡片投到这里，
+          卡片因此**不再挤在标题行的右侧栏**里（改前 `w-72` 竖版窄条，字段一行一个，非常占版面）。
+          留空时不占版面；没提供落点的复用方保持内嵌形态（组件测试/别处不受影响）。
+        */}
+        <div data-testid="pf-interpret-slot" />
       </div>
 
       {/* #2908: 表单级校验失败汇总提示（提交校验不通过时醒目可见） */}

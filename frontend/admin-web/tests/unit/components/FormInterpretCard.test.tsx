@@ -275,6 +275,59 @@ describe('FormInterpretCard（issue #6367 包 P3）', () => {
     expect(craft.source).toBe(PAGE_FILL_SOURCE_DECLARED)
   })
 
+  // ────────────────────────────────────────────────────────────────────────
+  // issue #8808：结果卡改**横版整行**（用户 2026-11-06 反馈「竖版窄条非常占版面」）
+  // ────────────────────────────────────────────────────────────────────────
+  it('判据 10（issue #8808）：卡片不再自带固定窄宽 —— 整行宽由落点决定，`w-72` 必须绝迹', () => {
+    renderCard()
+    const card = screen.getByTestId('form-interpret-card')
+    // 改前的形态 = `w-72`（288px）固定窄条 ⇒ 这条判据就是那个缺陷的形状
+    expect(card.className).not.toContain('w-72')
+    expect(card.className).toContain('w-full')
+  })
+
+  it('判据 11（issue #8808）：每段字段铺成响应式网格（1 → 2 → 3 列），不再是「一行一个」竖排', () => {
+    renderCard()
+    for (const group of ['recognized', 'interpreted']) {
+      const grid = screen.getByTestId(`form-interpret-group-${group}-grid`)
+      expect(grid.className).toContain('grid')
+      expect(grid.className).toContain('sm:grid-cols-2')
+      expect(grid.className).toContain('xl:grid-cols-3')
+    }
+  })
+
+  it('判据 12（issue #8808）：长文本格通栏（用户明确要「全展开通栏」，不折叠）', () => {
+    const longColor = field({
+      key: 'color',
+      label: '颜色',
+      value: '米白、奶咖、燕麦、浅灰、雾蓝、豆绿、珊瑚粉、藕荷、烟灰、深咖、藏青、墨绿、酒红、姜黄、焦糖、奶茶、浅驼、炭黑',
+      source: PAGE_FILL_SOURCE_RECOGNIZED,
+    })
+    const shortField = field({
+      key: 'unit',
+      label: '单位',
+      value: '米',
+      source: PAGE_FILL_SOURCE_RECOGNIZED,
+    })
+    renderCard([longColor, shortField])
+
+    // 长值：整行通栏，且**值全文可见**（不折叠成「展开」）
+    const longCell = screen.getByTestId('form-interpret-field-color')
+    expect(longCell.className).toContain('sm:col-span-2')
+    expect(longCell.textContent).toContain('炭黑')
+    // 短值：照常占一列
+    const shortCell = screen.getByTestId('form-interpret-field-unit')
+    expect(shortCell.className).not.toContain('col-span-2')
+  })
+
+  it('判据 13（issue #8808）：「一键填入」在卡片头部（不再独占底部一整行）', () => {
+    renderCard()
+    const card = screen.getByTestId('form-interpret-card')
+    const button = screen.getByTestId('form-interpret-fill')
+    // 头部 = 卡片第一个子节点；按钮必须在它里面
+    expect(card.firstElementChild?.contains(button)).toBe(true)
+  })
+
   it('判据 9：颜色按命名规则改名（来源仍是「图上抄的」，名下注明规则）', () => {
     const colorField = field({
       key: 'color',
