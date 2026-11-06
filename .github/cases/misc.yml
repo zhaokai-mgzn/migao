@@ -9943,3 +9943,40 @@ cases:
         - "tests/unit_ci_workflows/test_code_criteria_cases_are_contract_marked.py"
       ci:
         - pr-check.yml
+
+  - id: MC-248
+    legacy_id: ""
+    title: "L0 判据：prompt 里点名的工具必须在该 skill 裁剪后的可执行集内（PR-130 真回归的静态捕获网，零 LLM）"
+    domains:
+      - misc
+      - ci
+      - backend
+    tier: normal
+    tags:
+      - 类级判据
+      - 工具面
+      - 读面裁剪
+      - fail-closed
+    truths_ref: []
+    user_inputs:
+      - "N/A（静态判据，无对话轮次：直接调用 tool_selection 的裁剪实现与该 skill 的 prompt）"
+    expectations:
+      - "判据本体：对每个已注册 skill × 每个可达输入场景（空信号 / 该 skill 自己的每个意图 / 中性问法 / PR-130 原句 / 对抗场景）执行「prompt 点名的工具 ⊆ 裁剪后可执行集」，不等即具名报出缺哪几个。两侧都现取：点名集合 = 注册表工具名作为独立标识符出现在 system_prompts 文本；可执行集 = 直接调用 plan_read_tools_for_state() + create_skill_registry(read_keep=…)，不复制逻辑。"
+      - "正控（必红）：把 product_search 从 prompt 保底里摘掉 ⇒ 判据具名红且恰好只报它；同时摘掉 prompt 保底与属主保底（= 改动前的实际行为）⇒ 复现 PR-130：product 域被裁 [marketing_poster, processing_item_query, product_image_generate, product_search]。"
+      - "负控 1：对抗场景里确实有工具被裁，但被裁的全是 prompt 没点名的 ⇒ 判据不红；把这些被裁工具假装成点名 ⇒ 立刻全部具名红（证明「不红」来自它们没被点名，而不是判据失明）。"
+      - "负控 2：TOOL_TRIM_ENABLED=False ⇒ 全部绑定、零违规；此时把点名集合放大到全注册表 ⇒ 未绑定工具全部具名红（关裁剪时判据退化成「点名工具必须绑在本 skill 上」，不是空转）。"
+      - "扫描面非空自证（fail-closed）：skill 数 >= 17 且与注册表一致、全库点名工具 >= 40、全库场景 >= 80；任一退化 ⇒ 具名红（不许「扫到 0 个 ⇒ 通过」）。"
+      - "反例读数（改前，在 origin/main 上跑同一判据文件）：11 failed / 12 passed —— order / product / aftersales / staff / settings / data / knowledge / general 八个 skill 的主判据具名红（product 域点名却不可执行：craft_calc_config_query / marketing_poster / processing_item_query / product_detail / product_image_generate / product_search）。"
+    data_checks:
+      - "根因复核（三行可复算）：全日志 not found in global registry 计数 = 0 ⇒ 工具在全局注册表，是被技能子集剔除；backend/ai-agent-service/app/config.py 的 TOOL_TRIM_ENABLED=True / TOOL_TRIM_MAX_READ=16；商品域 20 个声明工具 + 家族只读 35+ ⇒ 必然超上限。"
+      - "修法口径：prompt 点名的工具纳入保底 + 修 owner_extra 里「本 skill 自己声明的读工具不参与属主保底」这个洞。不是调大 TOOL_TRIM_MAX_READ（20+35 静态必然超限，调大只是把下一次挤出往后推），也不是关 TOOL_TRIM_ENABLED（会丢掉 #8174 的收益）。"
+      - "读面棘轮：裁剪后绑定数仍 <= TOOL_TRIM_MAX_READ + OWNER_EXTRA_MAX（= 19），且严格少于不裁剪时的绑定数；关裁剪时与独立 oracle 逐名相等（既有判据一条未放宽）。"
+      - "附带发现（本单不修，需单独开单）：product_detail 的描述写「支持名称/序号/UUID」，但实现直接把入参当 ID 打 GET /api/admin/products/{product_id}，不做名称解析 ⇒ 传商品名必然 NOT_FOUND（PR-130 里那次 product_detail 调用的形态）。"
+    skip_reason: "[backend-contract] 工具面静态不变式（零 LLM / 零网络 / 零 DB）：真值载体 = traces.tests 的 backend/ai-agent-service/tests/test_prompt_named_tools_l0.py，不进 agent-eval 冒烟"
+    merge_log: "2026-11-06 新增（issue #8775）。PR-130 的真回归：product_search 报 tool_not_found，而 not found in global registry 计数 = 0 ⇒ 是被技能子集剔掉的。追责 dbf67f352（#8174）引入的读面裁剪 + b3125f36e（#8300）保底洞。本用例是 issue ①②里价值最高的那条 —— L0 判据一次堵住整类、不烧 LLM 评测；改前在 origin/main 上跑同一文件 = 11 failed / 12 passed。"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_prompt_named_tools_l0.py"
+      ci:
+        - ai-agent-tests.yml
+      verifies: []

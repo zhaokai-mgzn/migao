@@ -14,9 +14,11 @@
 
 - **只裁读面**：`read_only=False` 的工具一个都不裁（写面与权限完全不动）。
 - **保底集合**（`ALWAYS_KEEP_TOOL_NAMES` + 本轮 skill 的写工具 + 上一轮用过的只读工具
-  + **意图属主 skill 的读工具**）
+  + **意图属主 skill 的读工具** + **本 skill prompt 里点名的工具**）
   **永不被裁** —— 裁掉 `validate_input`/`interact` 这类兜底等于把流程关节打断；
-  意图属主那条见 `_intent_owner_read_tool_names`（issue #8300）。
+  意图属主那条见 `_intent_owner_read_tool_names`（issue #8300）；
+  prompt 点名那条见 `_prompt_named_tool_names`（issue #8775：prompt 说要用某把工具、
+  模型照着调，它却不在可执行集里 ⇒ `tool_not_found`，PR-130 的真回归）。
 - **开关可回退**：`settings.TOOL_TRIM_ENABLED=False`（或非 B 端）⇒ `plan_read_tools` 返回
   `None`，`create_skill_registry` 走**与改动前逐字相同**的分支（C 端零回归）。
 
@@ -143,6 +145,49 @@ def _intent_owner_read_tool_names(intent: str) -> List[str]:
     return names
 
 
+def _prompt_named_tool_names(tool_names: Sequence[str]) -> List[str]:
+    """本 skill **prompt 里点名**的工具名（issue #8775 的 L0 口径的唯一实现）。
+
+    「点名」的判定 = **注册表里的工具名**在该 skill 的 `system_prompts` 文本里作为
+    **独立标识符**出现（前后不是 `[A-Za-z0-9_]`）。刻意**不**区分「有没有反引号」「在不在
+    tool_hint」—— prompt 只要写了这个名字，模型就可能照着调，一律算点名（方向安全：
+    多算 = 多保底；少算 = 线上 `tool_not_found`）。
+
+    取哪个 skill 的 prompt：先按**声明面逐名相等**认定（`prepare_turn` 传进来的
+    `tool_names` 就是该 skill 的 `tool_names`）；无相等匹配时退到「声明面 ⊇ 入参」的全部
+    候选并取**并集**（多算仍安全）；仍无候选（名字漂移 / 人造列表）⇒ 空列表，行为与
+    #8775 之前一致。
+
+    为什么用保底而不是「调大 `TOOL_TRIM_MAX_READ`」：商品域 20 个声明工具 + 家族只读
+    35+ **必然**超上限（静态可算）⇒ 调大只是把下一次挤出往后推（issue #8775 修法 ②）。
+    """
+    from app.tools.registry import get_tool_registry
+
+    declared = list(tool_names)
+    cfgs = _all_skill_configs()
+    owners = [c for c in cfgs if list(c.tool_names or []) == declared]
+    if not owners:
+        owners = [c for c in cfgs if set(declared) <= set(c.tool_names or [])]
+    if not owners:
+        return []
+    universe = [t.name for t in get_tool_registry().get_all_tools() if t.name]
+    if not universe:
+        return []
+    # 一个正则走完一遍：名字按长度倒序，避免同名前缀互相吃掉（边界断言另有一层）
+    pattern = re.compile(
+        r"(?<![A-Za-z0-9_])(?:"
+        + "|".join(sorted((re.escape(n) for n in universe), key=len, reverse=True))
+        + r")(?![A-Za-z0-9_])"
+    )
+    named: List[str] = []
+    for cfg in owners:
+        for text in (cfg.system_prompts or {}).values():
+            for name in pattern.findall(str(text or "")):
+                if name not in named:
+                    named.append(name)
+    return named
+
+
 # ── 意图打分（确定性：同样输入两次结果逐字一致）────────────────────────────
 def _cjk_bigrams(text: str) -> Set[str]:
     """中文**二字词**近似（无分词器依赖）：连续汉字串的相邻二元组。
@@ -261,6 +306,9 @@ def plan_read_tools(tool_names: List[str], *, agent_type: str = "",
         return None                                          # 本来就够小 ⇒ 不裁剪
 
     keep = [n for n in ALWAYS_KEEP_TOOL_NAMES if n in candidates]
+    # prompt **点名**的工具（issue #8775）：与兜底工具同级保底 —— prompt 写了名字，模型就会
+    # 照它调用；它被挤出可执行集 ⇒ 模型只会拿到 `tool_not_found`（PR-130 的形态）。
+    keep += [n for n in _prompt_named_tool_names(tool_names) if n in candidates and n not in keep]
     keep_set = set(keep)
     keep += [n for n in recent_tools if n in candidates and n not in keep]
     keep_set = set(keep)
@@ -280,12 +328,15 @@ def plan_read_tools(tool_names: List[str], *, agent_type: str = "",
     keep_set.update(ranked[:budget])
 
     # 意图属主保底（#8300）：意图被过滤到别的 skill 时，属主 skill 的读工具仍要占位。
-    # 🔴 必须**净增**、不许换：它只补「被意图过滤挡在本域声明面之外」的那些（声明面内的一律
-    # 交给上面的分数排序，不重复抬升），按相关度取前 OWNER_EXTRA_MAX 个，且**不占分数槽位**
+    # 🔴 必须**净增**、不许换：按相关度取前 OWNER_EXTRA_MAX 个，且**不占分数槽位**
     # ⇒ 保留集只会变大、不会把本来会留的工具挤掉（2026-11-01 全档评测 7 条转红的形态：
     # craft_config_query / batch_stock_query / operation_catalog_query 被属主工具挤走）。
+    # ⚠️ #8775 修洞：旧条件还排除了 `n not in declared_set`（**本 skill 自己声明的读工具**）
+    # ⇒ 属主工具一旦由本 skill 自己声明，就只剩分数排序一条路，拼输即被裁 —— PR-130 的
+    # `product_search` 正是这样消失的（商品域 20 声明 + 家族只读 35+ 必然超上限）。
+    # 声明面内的属主读工具同样要占位（仍然净增：只加不减）。
     owner_extra = [n for n in _intent_owner_read_tool_names(intent)
-                   if n in candidates and n not in keep_set and n not in declared_set]
+                   if n in candidates and n not in keep_set]
     owner_extra.sort(key=lambda n: -_score_tool(
         get_tool_registry().get_tool(n), query_low, query_words, query_bigrams, False))
     keep_set.update(owner_extra[:OWNER_EXTRA_MAX])
