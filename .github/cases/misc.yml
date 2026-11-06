@@ -10086,7 +10086,7 @@ cases:
         - pr-check.yml
       verifies: []
 
-  - id: MC-269
+  - id: MC-270
     legacy_id: ""
     title: "ProcessingOrderService 派单池搬出（LOC 冻结面 3,136 → 2,931）：池读面单元 + 逐字节 characterization 先扩后搬 + red-proof 面同批"
     domains:
@@ -10118,7 +10118,7 @@ cases:
       - "判据 7·🔴 登记面同步（不是放宽）：`loc_freeze_ledger` 的行数按**实测**重锚（只许缩短）；新类 345 行 < 800 ⇒ 不进 `loc_ratchet_exemptions`；CAS 台账与状态写面台账零新增（本单元**一个写操作都没有**）；失败通道锚点按实测 +1 并留 note"
       - "判据 8·🔴 既有守卫族一条不降：`ProcessingOrderServiceTest` / `PoolBoardUrgencyTest` / `AutoBatchDispatchTest` / `AutoBatchDueScanServiceTest` / `ProcessingOrderStatusCasMetaGuardTest` / `ShipmentInvariantGuardTest` / `OrderAutoCompleteSqlGuardTest` / `OrderPaidAndReceivedAtWriteGuardTest` / `MoneyEntryPrecisionMetaGuardTest` / `ProductionPoolControllerTest` / 路线 characterization 全员绿（断言一字未改，只改「读哪个文件」）"
     skip_reason: "[backend-contract] Java 服务层单测 + 源码结构判据（零 LLM 行为），不进 agent-eval 冒烟"
-    merge_log: "2026-11-06 新增（issue #8770 派单池一档，**部分交付**：不写关闭关键词）。门面 3,136 → 2,931 行（−205）；新单元 345 行。只搬**派单池读面**（pool + 4 个辅助 + 2 个成批闸）—— 上一档的重启条件要求「按派单池 → 自动批次 → 生成族逐个搬，每个先扩 characterization」，本档即第一格。行为 diff = 0 的证据 = 同一份 golden（录制于未切片代码）在切片后逐字节通过（9 场景 × 池读面 + 成批闸失败面 + 开关归一）。取号 = `python3 scripts/next_case_id.py MC` 现取（origin/main 已占最大 MC-268）。"
+    merge_log: "2026-11-06 新增（issue #8770 派单池一档，**部分交付**：不写关闭关键词）。门面 3,136 → 2,931 行（−205）；新单元 345 行。只搬**派单池读面**（pool + 4 个辅助 + 2 个成批闸）—— 上一档的重启条件要求「按派单池 → 自动批次 → 生成族逐个搬，每个先扩 characterization」，本档即第一格。行为 diff = 0 的证据 = 同一份 golden（录制于未切片代码）在切片后逐字节通过（9 场景 × 池读面 + 成批闸失败面 + 开关归一）。取号 = `python3 scripts/next_case_id.py MC` 现取 MC-270（origin/main 已占最大 MC-268；原取 MC-269，落地前 CI 判出在飞 PR #8800 同时占着该号 ⇒ 按「后合入者让号」整组让到 MC-270）。"
     traces:
       tests:
         - "backend/admin-api/src/test/java/com/migao/admin/service/ProcessingOrderPoolCharacterizationTest.java"
