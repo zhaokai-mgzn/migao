@@ -294,8 +294,19 @@ class TestRegistration:
                         for f in ("pre_clean", "post_clean")
                         for s in (by[cid].get(f) or [])}
             assert t in declared, f"{cid} 没有声明 {t}（自清理退回弱证据）：{declared}"
-            assert not (by[cid].get("namespaces") or []), (
-                f"{cid} 仍留着 `namespaces` 弱证据 ⇒ 不再需要的声明就是死账（issue #4992 硬要求）")
+        # ⚠️ 2026-11-06 改判（issue #8776）：原断言是「两条都不得再留 `namespaces`」——
+        # 那条口径（#4992「用真复位替换弱证据」）**只对「重试前置等价性」成立**：
+        # 真复位**不解决并行互斥**。CU-004 写的正是共享客户 `13800138000`
+        # （同键组另有 AS-003 / AS-005 / AS-016 / CH-009 / CU-003 / OR-013 在读它）⇒
+        # 两者必须**并存**（复位管重试、命名空间管并行）。判据见
+        # `_viability`：这里只钉"声明在不在"，机制是否真生效由
+        # `test_eval_harness_gaps_8776.py::TestNamespaceSerialization` 判。
+        assert not (by["OR-007"].get("namespaces") or []), (
+            "OR-007 又留了 `namespaces`：它写的是**订单状态**（按 order_no 定位，"
+            "没有按该订单号并发的用例）⇒ 真复位已足够，留着就是死账（#4992 口径不变）")
+        assert "customer_phone:13800138000" in (by["CU-004"].get("namespaces") or []), (
+            "CU-004 没有声明 `namespaces[customer_phone:13800138000]` ⇒ 它写的共享客户"
+            "不再参与命名空间串行（issue #8776 的 ②；#4992 那次撤掉是**过度收窄**）")
 
     def test_case_library_does_not_use_undeclared_restore_values(self):
         """用例库声明的两条复位动作必须带齐**定位键 + 复位值**（缺一 ⇒ 运行期必红，配置错误）。
