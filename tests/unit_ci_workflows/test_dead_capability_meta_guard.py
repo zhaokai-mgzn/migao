@@ -1324,17 +1324,20 @@ def _injections() -> dict[str, tuple]:
             lambda s: s.replace("## 核心原则", "需要时用 order_manage 处理。\n\n## 核心原则", 1),
             "new", "ref", "skill:knowledge_skill.py::mibao::order_manage",
         ),
+        # 🔴 `issue #8725`：`ORDER_WRITE_TOOL` 随「拒绝话术族」搬进 `capability_denial.py`
+        # ⇒ 红证的注入点与现取键必须**同批搬到新住址**（回到 `skill:base_skill.py` 注入
+        # 会命中不了锚点 ⇒ 红证自己静默空跑，而不是判据没牙）。
         "② 新增一个恒假标志（指向不可达工具）⇒ 守卫面红": (
-            "skill:base_skill.py",
+            "skill:capability_denial.py",
             lambda s: s.replace('ORDER_WRITE_TOOL = "order_create"',
                                 'LEGACY_WRITE_TOOL = "order_manage"\nORDER_WRITE_TOOL = "order_create"', 1),
-            "new", "guard", "base_skill.py::LEGACY_WRITE_TOOL",
+            "new", "guard", "capability_denial.py::LEGACY_WRITE_TOOL",
         ),
         "②b 把一个**可达**标志改指不可达工具（`ORDER_WRITE_TOOL` → product_manage）⇒ 守卫面红": (
-            "skill:base_skill.py",
+            "skill:capability_denial.py",
             lambda s: s.replace('ORDER_WRITE_TOOL = "order_create"',
                                 'ORDER_WRITE_TOOL = "product_manage"', 1),
-            "new", "guard", "base_skill.py::ORDER_WRITE_TOOL",
+            "new", "guard", "capability_denial.py::ORDER_WRITE_TOOL",
         ),
         "③ 只读域新增一条校验器绑定（knowledge 域绑 validate_input）⇒ 绑定面红": (
             "skill:knowledge_skill.py",

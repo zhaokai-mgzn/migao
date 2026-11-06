@@ -36,6 +36,25 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 SKILLS_DIR = REPO_ROOT / "backend" / "ai-agent-service" / "app" / "graph" / "skills"
 BASE_SKILL = SKILLS_DIR / "base_skill.py"
 FINALIZE_TURN = SKILLS_DIR / "execution" / "finalize_turn.py"
+# 🔴 `issue #8725`：判据族已按职责从 base_skill.py 搬到两个单元（拒绝话术 / 订单流程锁）。
+# **读面**因此从「单文件」扩到「整个家族」—— 这**不是放宽**：断言本体一字未改，
+# 仍然要求判据函数体里不得调用图片域判据、词表与正则的单一事实源必须存在；
+# 而「家族里不许出现两份实现」由 backend/ai-agent-service/tests/test_base_skill_slice_structure_guard.py
+# 的 `test_base_skill_no_longer_defines_any_moved_symbol` 钉住（两份 = 红）。
+FAMILY_FILES = (
+    BASE_SKILL,
+    SKILLS_DIR / "capability_denial.py",     # 拒绝话术判据（#8725）
+    SKILLS_DIR / "order_flow_guard.py",      # 撤回解锁 / 在办判据（#8725）
+)
+
+
+def _family_source() -> str:
+    """判据族源码 = base_skill.py + 两个被搬出的单元（文件缺失即报错，fail-closed）。"""
+    parts = []
+    for path in FAMILY_FILES:
+        assert path.is_file(), f"判据族源码不存在（判据会空跑）：{path}"
+        parts.append(path.read_text(encoding="utf-8"))
+    return "\n\n".join(parts)
 NODES = REPO_ROOT / "backend" / "ai-agent-service" / "app" / "graph" / "nodes.py"
 
 
@@ -91,13 +110,13 @@ def withdrawal_wiring_violations(base_src: str, finalize_src: str, nodes_src: st
 
 
 def test_domain_isolation_holds():
-    src = BASE_SKILL.read_text(encoding="utf-8")
+    src = _family_source()
     assert isolation_violations(src) == [], "\n".join(isolation_violations(src))
 
 
 def test_withdrawal_wiring_holds():
     bad = withdrawal_wiring_violations(
-        BASE_SKILL.read_text(encoding="utf-8"),
+        _family_source(),
         FINALIZE_TURN.read_text(encoding="utf-8"),
         NODES.read_text(encoding="utf-8"),
     )
@@ -107,7 +126,7 @@ def test_withdrawal_wiring_holds():
 # ── 反空跑：把缺陷注入源码副本，判据必须报出违规 ──────────────────────────────
 
 def test_isolation_checker_is_not_vacuous():
-    src = BASE_SKILL.read_text(encoding="utf-8")
+    src = _family_source()
     mutated = src.replace(
         "    return _scope_misattribution_hit(text)",
         "    if _product_image_denial_hit(text):\n"
@@ -120,7 +139,7 @@ def test_isolation_checker_is_not_vacuous():
 
 
 def test_narrowing_checker_is_not_vacuous():
-    src = BASE_SKILL.read_text(encoding="utf-8")
+    src = _family_source()
     mutated = src.replace(
         "        for m in _PRODUCT_IMAGE_CAPABILITY_NEGATION_RE.finditer(clause)]",
         "        for m in _PRODUCT_IMAGE_UNABLE_RE.finditer(clause)]",
@@ -134,7 +153,7 @@ def test_narrowing_checker_is_not_vacuous():
 
 def test_wiring_checker_is_not_vacuous():
     final_src = FINALIZE_TURN.read_text(encoding="utf-8")
-    base_src = BASE_SKILL.read_text(encoding="utf-8")
+    base_src = _family_source()
     nodes_src = NODES.read_text(encoding="utf-8")
     mutated = final_src.replace("_release_order_lock_on_withdrawal", "_noop_release")
     assert mutated != final_src, "变异没生效 —— 判据同步到新源码（拒绝空跑）"
@@ -144,6 +163,6 @@ def test_wiring_checker_is_not_vacuous():
 
 def test_no_vacuous_source_paths():
     """三份源码必须真实存在且非空（路径漂移会让上面的判据全部空跑）。"""
-    for p in (BASE_SKILL, FINALIZE_TURN, NODES):
+    for p in (*FAMILY_FILES, FINALIZE_TURN, NODES):
         assert p.is_file(), f"源码路径不存在（判据已空跑）：{p}"
         assert p.stat().st_size > 1000, f"源码文件异常小（判据已空跑）：{p}"

@@ -108,7 +108,15 @@ GUARD_FAMILY_REGISTRIES = {
 # 纯函数（注入式红证用 —— 与被测真值解耦）
 # ══════════════════════════════════════════════════════════════════════════════
 def _module_symbols(src: str) -> set:
-    """源码的**模块级符号**（函数 / 类 / 赋值目标）—— 判据 1 的现取真值。"""
+    """源码的**模块级符号**（函数 / 类 / 赋值目标 / `from … import X` 的再导出名）。
+
+    🔴 `issue #8725`：载体切片后，一族判据按职责搬进了独立模块，载体用 `from … import (…)`
+    **再导出**它们以保住既有 import 面。`from m import X` 让 `X` **确实**成为载体自己的模块级
+    名字（`base_skill.X` 可取到、`patch("…base_skill.X")` 也落在它上面）⇒ 符号面必须含再导出名，
+    否则「以载体符号点名」的登记文件会在切片后**掉出普查**（判据自己选择沉默，§19.1）。
+    **不是放宽**：形态阈值 `MIN_ANCHORS_PER_FAMILY` 与两条形态判据一字未改，
+    且「家族里出现两份实现」由 `test_base_skill_slice_structure_guard.py` 钉住（两份 = 红）。
+    """
     tree = ast.parse(src)
     names = set()
     for node in tree.body:
@@ -116,6 +124,8 @@ def _module_symbols(src: str) -> set:
             names.add(node.name)
         elif isinstance(node, ast.Assign):
             names |= {t.id for t in node.targets if isinstance(t, ast.Name)}
+        elif isinstance(node, ast.ImportFrom):
+            names |= {a.asname or a.name for a in node.names if a.name != "*"}
     return names
 
 

@@ -71,8 +71,39 @@ _JUDGMENT_FUNCS = (
 _PUNCT = "。！？；，、：\n「」【】（）"
 
 
+# 🔴 `issue #8725`：判据族已按职责从 base_skill.py 搬到两个单元（拒绝话术 / 订单流程锁）。
+# 读面从「单文件」扩到「整个家族」—— 断言本体一字未改（仍是"词表必须是形态词不是整句"、
+# "判据函数体里不得有长字符串"、"回锁目标不得出现 skill 名字面量"）；
+# 「家族里不许出现两份实现」由 backend/ai-agent-service/tests/test_base_skill_slice_structure_guard.py 钉住。
+FAMILY_FILES = (
+    BASE_SKILL,
+    SKILLS_DIR / "capability_denial.py",     # 拒绝话术判据（#8725）
+    SKILLS_DIR / "order_flow_guard.py",      # 回锁 / 归属 / 在办判据（#8725）
+)
+
+
+def _units_source() -> str:
+    """`FAMILY_FILES` 里除载体之外的搬迁单元源码（缺失即报错，fail-closed）。"""
+    parts = []
+    for path in FAMILY_FILES[1:]:
+        assert path.is_file(), f"搬迁单元不存在：{path}（fail-closed，判据会空跑）"
+        parts.append(path.read_text(encoding="utf-8"))
+    return "\n\n".join(parts)
+
+
+def _family_source() -> str:
+    parts = []
+    for path in FAMILY_FILES:
+        assert path.is_file(), f"判据族源码不存在（判据会空跑）：{path}"
+        parts.append(path.read_text(encoding="utf-8"))
+    return "\n\n".join(parts)
+
+
 def _module() -> ast.Module:
-    return ast.parse(BASE_SKILL.read_text(encoding="utf-8"))
+    # ⚠️ 载体 `BASE_SKILL` 必须**显式出现在下面这个 `ast.parse` 的实参里**：
+    # `test_behavior_mapping_guard_family_coverage.py` 用「对载体做 AST 解析」识别守卫族登记处
+    # （issue #3551）。改成只传 `_family_source()` 会让本文件从普查里掉出去 ⇒ 那条判据假绿。
+    return ast.parse(BASE_SKILL.read_text(encoding="utf-8") + "\n\n" + _units_source())
 
 
 def _assignments(tree: ast.Module) -> dict:
