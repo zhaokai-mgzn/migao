@@ -9868,3 +9868,41 @@ cases:
         - "tests/unit_ci_workflows/test_loc_ratchet.py"
       ci:
         - pr-check.yml
+  - id: MC-246
+    legacy_id: ""
+    title: "ProcessingOrderService 切片（LOC 冻结面）：路线/部位派生三单元 + 逐字节 characterization 冻结"
+    domains:
+      - processing-order
+      - order
+    tier: normal
+    tags:
+      - refactor
+      - backend
+      - slice
+      - characterization-test
+      - loc-freeze
+    truths_ref: []
+    precondition:
+      - "切片前的真实结构由 `git show origin/main:backend/admin-api/src/main/java/com/migao/admin/service/ProcessingOrderService.java | wc -l` 现取（4,400 行），按**顶层声明边界**逐段量出来，不是按猜的分法切；切段器逐段断言「2419..3742 被完全覆盖、无孤儿代码行」才落盘"
+      - "golden 必须**录制于未切片代码**：`-Dpos.slice.golden.update=true` 只在未切片的原始文件上跑过一次；切片后只读复核。失败时不许直接重录（重录 = 把判据降成空断言）"
+      - "夹具 = `RoutingModelFixture` 的路线模板 / 规则表 / 部位价目 / 工序库 + 12 行存量信号表；`ProductionOperationQueryService` 全桩，`ProductionService` 用真实对象（只 mock Mapper）⇒ 派生走的是生产代码，不是替身"
+    user_inputs:
+      - "对同一批订单明细（7 个场景：显式字段齐全 / 两维都缺 / 库里缺该路线 / isShaped=false 且带特殊选项 / 特殊选项去重 + 加工项触发 / 樘窗绑组含配布边 / 卖布与窗帘混单）派生出部位 payload 并生成加工单"
+    expectations: []
+    data_checks:
+      - "判据 1·🔴 部位 payload 逐字节（characterization）：同一批输入下 `derivePositionPayload(...)` 的完整 JSON（部位名 / order_item_id / position_kind / 每道工序的 operation + logical_name + position + group + unit + unit_price + is_start_marker + seq + qty + qty_source）与**未切片代码录制的 golden** 逐字节相同。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/ProcessingOrderRouteCharacterizationTest.java"
+      - "判据 2·🔴 路线三元组逐字节：同一批输入经 `generate(...)` 落库的 route_key / route_requested_key / route_source / order_kind 逐字节相同 —— 四态（direct / default / missing_route / partial 的 roll-up）各自被钉住，且 roll-up 是「取最需关注的一条」而不是「取第一条」。执行点 = 同判据 1 的文件"
+      - "判据 3·🔴 单元不重复实现（单一真值源）：路线解析 / 条件工序编织 / 部位 payload 三件事各自只在**一个**文件里定义；服务门面一处都不许再定义它们，且必须从它用到的单元调用。红证 = 把 `deriveRouteKey` 或 `renumberSeq` 再抄一份回门面 ⇒ 具名红"
+      - "判据 4·🔴 登记面同步（不是放宽）：`loc_freeze_ledger` 的本条行数按实测**重锚（只许缩短）**；CAS 台账的 `service_write_paths` 与状态写面台账的载体指向随调用点搬家（条数与断言强度不变）；`redproof_registry` 的 guarded 指针、三份 red-proof 脚本的 impl 清单、失败通道锚点台账同批对齐"
+      - "判据 5·🔴 既有守卫族一条不降：`ProcessingOrderServiceTest` / `ProcessingOrderRouteSourceTest` / `ProcessingRouteSourceDeclarationTest` / `ProductionRouteParityTest` / `ProcessingOrderStatusCasMetaGuardTest` / `ShipmentInvariantGuardTest` / `OrderAutoCompleteSqlGuardTest` / `OrderPaidAndReceivedAtWriteGuardTest` / `MoneyEntryPrecisionMetaGuard` 全员绿（断言一字未改，只改「读哪个文件」）"
+    skip_reason: "[backend-contract] Java 服务层单测 + 源码结构判据（零 LLM 行为），不进 agent-eval 冒烟"
+    merge_log: "2026-11-06 新增（issue #8725 第二档，**部分交付**：不写关闭关键词；另两档 base_skill.py / chat.py 未做）。现取读数（`git show origin/main:backend/admin-api/src/main/java/com/migao/admin/service/ProcessingOrderService.java | wc -l`）= 4,400 行（冻结面 4,402）。切片按顶层声明边界量出 32 个声明，聚成 3 个单元（路线解析 636 / 条件工序编织 281 / 部位 payload 545 行），门面保留全部 public API 与状态机。行为 diff = 0 的证据 = 同一份 golden（录制于未切片代码）在切片后逐字节通过（7 场景 × 2 面）。取号 = `python3 scripts/next_case_id.py MC` 现取 MC-246（当时 origin/main + 全部 open PR 已占号最大 MC-244）。"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ProcessingOrderRouteCharacterizationTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ProcessingRouteResolverTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ProcessingOperationWeaverTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ProcessingPositionPayloadBuilderTest.java"
+      ci:
+        - pr-check.yml
+      verifies: []
