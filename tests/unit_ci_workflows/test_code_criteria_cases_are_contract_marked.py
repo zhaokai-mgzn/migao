@@ -1,4 +1,4 @@
-# case_ids: MC-246
+# case_ids: MC-247
 """代码判据类用例必须声明契约标记（`[backend-contract]` / `[frontend-contract]`）。
 
 ## 病（实证 run 42127246100，2026-11-06）

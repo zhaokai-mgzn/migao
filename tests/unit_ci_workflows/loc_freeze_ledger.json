@@ -23,8 +23,8 @@
     },
     {
       "path": "backend/admin-api/src/main/java/com/migao/admin/service/ProcessingOrderService.java",
-      "lines": 4402,
-      "frozen_at": "2026-10-30"
+      "lines": 3136,
+      "frozen_at": "2026-11-06"
     },
     {
       "path": "backend/ai-agent-service/app/graph/skills/base_skill.py",
