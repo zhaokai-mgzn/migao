@@ -9869,7 +9869,7 @@ cases:
       ci:
         - pr-check.yml
 
-  - id: MC-246
+  - id: MC-247
     legacy_id: ""
     title: "代码判据类用例必须声明契约标记：否则 normal 全量评测把它当 LLM 用例跑，全线 unmatched expectation（run 42127246100）"
     domains:
