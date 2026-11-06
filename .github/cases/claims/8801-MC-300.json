@@ -1,5 +1,5 @@
 {
-  "id": "MC-270",
+  "id": "MC-300",
   "pr": 8801,
   "title": "ProcessingOrderService 派单池搬出（LOC 冻结面 3,136 → 2,931）：池读面单元 + 逐字节 characterization 先扩后搬 + red-proof 面同批",
   "claimed_at": "2026-11-06"
