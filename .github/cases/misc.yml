@@ -10078,7 +10078,7 @@ cases:
       - "隔离缺口：CU-004 于 2026-09-21（#4992）把 `namespaces[customer_phone:13800138000]` 换成 pre/post_clean ⇒ 不再参与命名空间串行（该 run 的分组逐字只列 AS-003/AS-005/AS-016/CH-009/CU-003/OR-013）⇒ 真复位只解决「重试前置等价性」，**不**解决「并行互斥」；两者必须并存。"
       - "字段名现取（不是猜的）：OR-017 的三键取自 run 42127246100 的 artifact `post-deploy-eval-xiaobu` 里 R1 那轮 `interact` 的 `call_args.formFields[].key`，与其它 C 端下单用例（OR-014 / OR-016 / OR-018）的 auto_fill 同键。"
     skip_reason: "[backend-contract] 评测 harness 的静态/纯函数不变式（零 LLM / 零网络 / 零 DB）：真值载体 = traces.tests 的 tests/unit_ci_workflows/test_eval_harness_gaps_8776.py，不进 agent-eval 冒烟"
-    merge_log: "2026-11-06 新增（issue #8776）。三处缺口一次收口：① 拆 `WRITE_NOT_PERSISTED` / `PRECONDITION_NOT_RESTORED` 两种真相（判别式 = 先读种子值是否仍在）；② 补回 CU-004 的 namespaces（#4992 撤掉是过度收窄）；③ OR-017 补用例级 auto_fill（走甲，不改 harness 的回填协议）。判据 = tests/unit_ci_workflows/test_eval_harness_gaps_8776.py（19 条，两个方向正控 + 负控 + 注入式红证）。未做项：CU-004 的真实现场要等下一次集中评测（#4262）。"
+    merge_log: "2026-11-06 新增（issue #8776）。三处缺口一次收口：① 拆 `WRITE_NOT_PERSISTED` / `PRECONDITION_NOT_RESTORED` 两种真相（判别式 = 先读种子值是否仍在）；② 补回 CU-004 的 namespaces（#4992 撤掉是过度收窄）；③ OR-017 补用例级 auto_fill（走甲，不改 harness 的回填协议）。判据 = tests/unit_ci_workflows/test_eval_harness_gaps_8776.py（21 条，两个方向正控 + 负控 + 注入式红证）。未做项：CU-004 的真实现场要等下一次集中评测（#4262）。"
     traces:
       tests:
         - "tests/unit_ci_workflows/test_eval_harness_gaps_8776.py"
