@@ -782,7 +782,10 @@ worker_h5_face_paths() {
   # frontend/admin-web/tailwind.config.ts 是**工人端调色板的真值源**（issue #7237：
   # tests/worker-h5-theme-parity.test.mjs 逐值对账 primary/neutral/accent）⇒ 商家端改一阶，
   # 本腿必须重跑（否则「工人端没跟上」这条判据在不命中 paths 的 PR 上永远不跑 = 漏面）。
-  grep -E '^(frontend/worker-h5/|frontend/shared/|frontend/admin-web/tailwind\.config\.ts$)' || true
+  # docs/testing/terminal-shell-capability-matrix.md 是**壳差异矩阵判据的输入**（issue #8609 C 包：
+  # tests/worker-h5-8609-shell-matrix.test.mjs 的元守卫 d 逐档名读它）⇒ 改这份文档必须重跑本腿，
+  # 否则「文档说一套、判据判一套」在不命中 paths 的 PR 上不会有人发现（判据 C5 会判「跨目录输入未覆盖」）。
+  grep -E '^(frontend/worker-h5/|frontend/shared/|frontend/admin-web/tailwind\.config\.ts$|docs/testing/terminal-shell-capability-matrix\.md$)' || true
 }
 # 命中判定与 cases_face_hit() / redproof_face_hit() / bmini_face_hit() **同款**：用变量收结果再判空，
 # **不要**写成 `… | grep -q .` —— `grep -q` 命中即退，上游 printf 吃 SIGPIPE ⇒ `set -o pipefail` 下

@@ -32,6 +32,7 @@ LLM 开发时按需加载对应页面 (~50 行/页，按场景索引)：
 | CI/CD 流水线详情 | [CI-CD](CI-CD.md) |
 | 写测试/了解测试体系 | [Testing](Testing.md) |
 | **测试工程规范（拆分/ignore/脱敏/分层）** | **[test-engineering-standards](../testing/test-engineering-standards.md)** |
+| **终端壳差异验收矩阵（一份业务面跑遍壳档案：串口/蓝牙/摄像头在不在；本仓测不了什么）** | **[terminal-shell-capability-matrix](../testing/terminal-shell-capability-matrix.md)**（判据 = `frontend/worker-h5/tests/worker-h5-8609-shell-matrix.test.mjs`，issue #8609 C 包） |
 | **复杂交互验证机制（三层：契约/协议流/行为）** | **[interaction-verification](../testing/interaction-verification.md)** |
 | **AI 可执行验收协议（验收/评测放心交给 AI）** | **[acceptance-protocol](../testing/acceptance-protocol.md)** |
 | **评测环境分工与门禁（标准考场/云测试/生产三层）** | **[eval-environments](../testing/eval-environments.md)** |
