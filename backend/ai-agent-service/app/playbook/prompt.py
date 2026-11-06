@@ -36,6 +36,8 @@ MAX_PLAYBOOKS = 12
 #: 单条正解 / 条件说明的字符上限（控 token + 防「一句话口径」变成一篇文档）
 MAX_CORRECT_CHARS = 200
 MAX_CONDITION_CHARS = 120
+#: 语境里 `user_text` 的上限（够判 `contains`，又不让整段输入进哈希/比较）
+MAX_USER_TEXT_CHARS = 2000
 
 PROMPT_HEADER = (
     "【本企业口径】（人工审核通过；与通用经验冲突时以本口径为准；"
@@ -119,7 +121,18 @@ def render_playbook_block(
         correct = _clean(pb.get("correct"), MAX_CORRECT_CHARS)
         if not when or not correct:
             continue
-        lines.append(f'  <rule id="{_clean(pb.get("id"), 64)}" scope="{_clean(pb.get("scope"), 16)}">')
+        # 来源（判据 4：审核通过 ⇒ 出现在 prompt **且带来源**）。
+        # 只有 session_id（不是无来源的推断）：模型引用口径时能指回「哪次会话的第几轮」，
+        # 人类复盘时也不用再翻库。`_clean` 会 XML 转义 —— 来源是**数据**，不许在 prompt 里
+        # 制造出注入块之外的元素。
+        source = pb.get("source") or {}
+        session_id = _clean(source.get("session_id"), 64)
+        turn = source.get("turn")
+        provenance = f' source="{session_id}#{_clean(turn, 8)}"' if session_id else ""
+        lines.append(
+            f'  <rule id="{_clean(pb.get("id"), 64)}"'
+            f' scope="{_clean(pb.get("scope"), 16)}"{provenance}>'
+        )
         lines.append(f"    <when>{when}</when>")
         lines.append(f"    <do>{correct}</do>")
         counter = pb.get("counter")
@@ -134,6 +147,29 @@ def render_playbook_block(
     return "\n".join(lines)
 
 
+def _last_user_text(state: Dict[str, Any]) -> str:
+    """本轮最后一条**用户原话**（没有 ⇒ 空串）。
+
+    为什么要进来：条件语言的 `user_text` 字段一直有中文标签（`condition.py` 的
+    `_FIELD_LABELS`）、`casegen` 也按它采样语境，但**运行时语境里从来没有这个键**
+    ⇒ 任何以 `user_text` 为条件的卡（含**反例**「除非客户要零裁」）在真实会话里
+    永远不成立 —— 字段存在、功能不生效。这正是本单要防的形态，所以在这里补上。
+    """
+    messages = state.get("messages") or []
+    for message in reversed(list(messages)):
+        kind = getattr(message, "type", None)
+        if kind is None and isinstance(message, dict):
+            kind = message.get("type")
+        if kind != "human":
+            continue
+        content = getattr(message, "content", None)
+        if content is None and isinstance(message, dict):
+            content = message.get("content")
+        if isinstance(content, str) and content.strip():
+            return content[:MAX_USER_TEXT_CHARS]
+    return ""
+
+
 def _context_from_state(state: Dict[str, Any], skill_name: str = "") -> Dict[str, Any]:
     """从会话状态抽「结构化语境」——只放**确定**的事实，缺就缺（不猜）。"""
     context: Dict[str, Any] = {}
@@ -144,6 +180,9 @@ def _context_from_state(state: Dict[str, Any], skill_name: str = "") -> Dict[str
     role = state.get("role") or state.get("role_key")
     if role:
         context["role"] = role
+    user_text = _last_user_text(state)
+    if user_text:
+        context["user_text"] = user_text
     return context
 
 

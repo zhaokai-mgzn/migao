@@ -76,6 +76,12 @@
           "issue": "#5414",
           "owner": "AI Agent 门禁 owner（pr-check 面）",
           "reason": "跨语言「按值核对」语料（issue #5414）：两侧测试**共用同一份文件**，任一侧改口径必有一侧红。它落在 admin-api 测试树 ⇒ 改它必触发 admin-api 腿；**未纳入本门禁触发面**的原因同上（`src/test/**` 不在谓词里，扩面代价同 #4177 的裁定）"
+        },
+        {
+          "path": "scripts/distill_agent_sessions.py",
+          "issue": "#8175",
+          "owner": "AI Agent 门禁 owner（pr-check 面）",
+          "reason": "P1a 的离线抽取器被本门禁的单测当成**真值实现**端到端跑（tests/test_ingest.py 用 importlib 加载它，证明「会话 → 候选」用的是线上那一份规则，而不是测试里抄的第二份）。**未纳入触发面**：`scripts/**` 不在本门禁谓词里，扩进去会让每个仓根脚本改动都跑本 job 的全量（与 #4177 同款成本裁定）。缺口后果：改这个脚本而本门禁不触发时，CI 可能漏跑那条端到端判据 —— 但它同时被 `ci workflow helper` 腿的用例语料面覆盖（scripts/** 在该腿的扫描面内），不是无人看守。"
         }
       ],
       "auto_discover_root": "backend/ai-agent-service/tests",

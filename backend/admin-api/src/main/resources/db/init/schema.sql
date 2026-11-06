@@ -386,6 +386,9 @@ CREATE TABLE IF NOT EXISTS playbooks (
     activated_at TIMESTAMP WITH TIME ZONE,
     retired_at TIMESTAMP WITH TIME ZONE,
     reviewed_by VARCHAR(64),
+    -- 冲突标记（issue #8175 P1；迁移 V211__add_playbooks_conflict_key.sql）：
+    -- 非 NULL = 本租户内还有同 key（scope + trigger）但正解不同的行 ⇒ 两条并存、待人工裁定
+    conflict_key VARCHAR(64),
     CONSTRAINT ck_playbooks_state CHECK (state IN ('draft', 'active', 'retired')),
     CONSTRAINT ck_playbooks_scope CHECK (scope IN ('tenant', 'role')),
     CONSTRAINT ck_playbooks_scope_role CHECK (scope <> 'role' OR (scope_role IS NOT NULL AND scope_role <> '')),
@@ -396,6 +399,9 @@ CREATE TABLE IF NOT EXISTS playbooks (
 CREATE INDEX IF NOT EXISTS idx_playbooks_tenant_state ON playbooks (tenant_id, state);
 CREATE INDEX IF NOT EXISTS idx_playbooks_tenant_scope ON playbooks (tenant_id, scope, scope_role);
 CREATE INDEX IF NOT EXISTS idx_playbooks_state_created ON playbooks (state, created_at DESC);
+-- 冲突分组（只索引非 NULL：绝大多数行没有冲突）
+CREATE INDEX IF NOT EXISTS idx_playbooks_conflict ON playbooks (tenant_id, conflict_key)
+    WHERE conflict_key IS NOT NULL;
 
 -- ================================================
 -- 4. 租户配置相关表
