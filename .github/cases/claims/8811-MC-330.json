@@ -1,0 +1,6 @@
+{
+  "id": "MC-330",
+  "pr": 8811,
+  "title": "ProcessingOrderService 快照/读面搬出（LOC 冻结面 2,653 → 2,377）：快照全键 + 读面全字段 characterization 先行，常量表与状态机不动",
+  "claimed_at": "2026-11-06"
+}

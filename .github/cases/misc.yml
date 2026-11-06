@@ -10253,9 +10253,51 @@ cases:
         - ai-agent-tests.yml
       verifies: []
 
+  - id: MC-330
+    legacy_id: ""
+    title: "ProcessingOrderService 快照/读面搬出（LOC 冻结面 2,653 → 2,377）：快照全键 + 读面全字段 characterization 先行，常量表与状态机不动"
+    domains:
+      - processing-order
+      - order
+    tier: normal
+    tags:
+      - refactor
+      - backend
+      - slice
+      - characterization-test
+      - loc-freeze
+      - red-proof
+    truths_ref: []
+    precondition:
+      - "切片前的真实结构按**顶层声明边界**现取（`git show origin/main:backend/admin-api/src/main/java/com/migao/admin/service/ProcessingOrderService.java`，2,653 行），切段器逐段断言「区段 [2077,2251]（快照）与 [2438,2621]（读面）被搬走 chunk + 留在门面的声明完全覆盖（无未归类代码行）+ 空隙只能是空白」且每个 chunk 花括号配平到成员真实结束行才落盘；不是人工抄写"
+      - "golden 必须**录制于未切片代码**：`-Dpos.snapshot.golden.update=true` 只在未切片的原始文件上跑过一次；切片后只读复核。失败时不许直接重录（重录 = 把判据降成空断言）"
+      - "本档搬的代码**不读业务时钟**（无 `businessClock` 调用）⇒ 不需要 `Clock.fixed`：所有时间量都是夹具输入（`expectedDeliveryDate` / `generated_at` 等），golden 落的是输入原值 ⇒ 判据不随跑测试的时刻漂移"
+    user_inputs:
+      - "对同一批订单明细（快照 12 个场景：全键 / 列值覆盖 JSONB / JSON 字符串 / NULL 明细 / 无加工项非卖布 / 卖布 saleForm / 列值兜底卖布 / 部分工艺键 / 目录行缺失 / 坏 JSON / 多行顺序 / 空集）跑快照构建，并对同一批加工单（读面 13 个场景：详情全字段 / 快照 JSON 字符串 / 坏快照 / 无订单 / 无短码 / 列表 / 状态过滤 / 只看外发 / order_id 全空 / 空列表 / 有订单无加工单 / 两者都没有 / 订单存在性混合）跑读写面，逐字节核对"
+    expectations: []
+    data_checks:
+      - "判据 1·🔴 快照 12 场景逐字节（characterization）：{@code buildSnapshot} 的**完整输出**（行内键序也是行为 —— 快照行是 LinkedHashMap，落库后就是加工单纸面的字段序）与**未切片代码录制的 golden** 逐字节相同；另有一条独立真值断言：`01-all-keys` 场景的键序与硬编码字面量（43 键）逐字相等 ⇒ 白名单增删必须同时改真值与 golden。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/ProcessingOrderSnapshotReadFaceCharacterizationTest.java"
+      - "判据 2·🔴 读面 13 场景逐字节：`getDetail` / `list` 的**完整 DTO**（用 ALWAYS inclusion 序列化 ⇒ **null 键也在场**；新增字段会让 golden 失配，迫使人显式重录并说明该字段冻的是什么）。执行点 = 同判据 1 的文件"
+      - "判据 3·🔴 扫码 URL 3 条边界：域名去尾斜杠 / 空短码不造 `/o/null` / 空域名给相对路径。执行点 = 同判据 1 的文件"
+      - "判据 4·🔴 列表路径**一次批量取数**：`selectBatchIds` 恰好 1 次、绝不逐行 `selectById`（#4304 的 N+1 防线）；关键词分支走 `selectByKeyword`（不是先全量再内存过滤）。执行点 = 同判据 1 的文件"
+      - "判据 5·🔴 只搬**快照构建 + 读面**，有意不搬（逐条理由）：常量表（公共 API / 判据取用面，仍是门面 `static final`）· `STATUS_TRANSITIONS` 与状态机（`OrderStatusTransitionsTest` 按**单实现**核对，删字段 = 删掉被断言的对象）· 生成族（`@Transactional`，需先落真库事务判据）· `loadOrderItems`（三个单元共用的读，快照只吃 items 参数）· `resolveProcessingOrder`/`resolveOrder`（状态机/打印计数也在用）。执行点 = ProcessingOrderServiceTest.java + ProcessingOrderStatusCasMetaGuardTest.java"
+      - "判据 6·🔴 red-proof 面同批搬迁（不是放宽）：`scripts/pool-board-red-proof.py` 的 `pi_null_guard`（摘掉 `pi` 的 null 判定，issue #5550）注入锚点随 `buildSnapshot` 改指新住址；`scripts/red_proof_harness.py` 的 `impl`（= 夹具拷贝面）+1 文件；`scripts/redproof_registry.json` 的 `pool-board/pi_null_guard` guarded 重取。判据 = `python3 -m pytest tests/unit_ci_workflows/test_redproof_harness_gate.py -q` + 三份机具 `--check`"
+      - "判据 7·🔴 登记面同步（不是放宽）：`loc_freeze_ledger` 的行数按**实测**重锚（只许缩短）；两个新类 212 / 246 行（`wc -l`）< 800 ⇒ 不进 `loc_ratchet_exemptions`；CAS 台账与状态写面台账零新增（搬运半径内**无任何写操作**：只有 `selectById` / `selectOne` / `selectList` / `selectByKeyword` / `selectBatchIds` 五类读）；失败通道锚点按实测 +1 并留 note"
+    skip_reason: "[backend-contract] Java 服务层单测 + 源码结构判据（零 LLM 行为），不进 agent-eval 冒烟"
+    merge_log: "2026-11-06 新增（issue #8770 快照/读面一档，**部分交付**：不写关闭关键词）。门面 2,653 → 2,377 行（−276）；新单元 212（快照）+ 246（读面）行（`wc -l`）。只搬**快照构建**与**读面**两块 —— 上一档（PR #8807）的下一档清单原文「常量表属公共 API；STATUS_TRANSITIONS 已被 OrderStatusTransitionsTest 按单实现核对」⇒ 常量表 / 状态机 / STATUS_TRANSITIONS / 生成族一律不动。行为 diff = 0 的证据 = 同一份 golden（录制于未切片代码）在切片后逐字节通过（12 快照场景 + 13 读面场景 + 3 扫码边界 + 3 条计数断言）；逐行核对 279 行正文只有 6 行不同（3 处可见性 + 2 处 owner 回调 + 1 处域名即时取值）。取号 = 现取三方 id 集合（main 最大 MC-310 / 全部 open PR 最大 MC-310 / claims 最大 MC-310）⇒ 取远号段 **MC-330**。"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ProcessingOrderSnapshotReadFaceCharacterizationTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ProcessingOrderServiceTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ProcessingOrderReadFaceShortCodeTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/PoolBoardUrgencyTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ProcessingOrderStatusCasMetaGuardTest.java"
+      ci:
+        - pr-check.yml
+      verifies: []
   - id: MC-320
     legacy_id: ""
-    title: "base_skill.py 4,317 → 2,4xx 切片（最后一档）：拒绝话术 / 订单流程锁 / 手机号掩码 / 跨轮注入块四族搬出，patch 接缝同批保住"
+    title: "base_skill.py 4,317 → 2,750 切片（最后一档）：拒绝话术 / 订单流程锁 / 手机号掩码 / 跨轮注入块四族搬出，patch 接缝同批保住"
     domains:
       - order
       - after-sales
@@ -10287,7 +10329,7 @@ cases:
       - "判据 8·🔴 既有判据一条不降：test_execute_skill_split.py（20）/ test_graph_skills.py / test_capability_denial_guard.py / test_tool_denial_semantics.py / test_skill_skills/test_base_skill.py / test_contract_wiring.py 全员绿（断言一字未改，只改「读哪个文件」）。执行点 = 上述各文件"
       - "判据 9·🔴 登记面同步（不是放宽）：loc_freeze_ledger 的行数按**实测**重锚（只许缩短）；四个新单元全部 < 800 行 ⇒ 不进 loc_ratchet_exemptions；CAS 状态写面台账零新增（扫描根只有 backend/admin-api/src/main/java，本档全在 Python 面，现取确认）；失败通道锚点按实测 +1 并留 note"
     skip_reason: "[backend-contract] Python 服务层单测 + 源码结构判据（零 LLM 行为、零网络、零真库），不进 agent-eval 冒烟"
-    merge_log: "2026-11-06 新增（issue #8725 最后一档）。base_skill.py 4,317 → 2,4xx 行；四个新单元 capability_denial / order_flow_guard / phone_masking / injection_blocks 全部 < 800 行。行为 diff = 0 的证据 = 同一份 golden（录制于未切片代码，_meta 记 4,317 行）在切片后逐字节通过（四面）。取号 = 现取三方 id 集合（main 最大 MC-310 / 全部 open PR 最大 310 / claims 最大 310）⇒ 取远号段 **MC-320**。"
+    merge_log: "2026-11-06 新增（issue #8725 最后一档）。base_skill.py 4,317 → 2,750 行；四个新单元 capability_denial / order_flow_guard / phone_masking / injection_blocks 全部 < 800 行。行为 diff = 0 的证据 = 同一份 golden（录制于未切片代码，_meta 记 4,317 行）在切片后逐字节通过（四面）。取号 = 现取三方 id 集合（main 最大 MC-310 / 全部 open PR 最大 310 / claims 最大 310）⇒ 取远号段 **MC-320**。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_base_skill_slice_characterization.py"
