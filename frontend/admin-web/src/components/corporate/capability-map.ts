@@ -1,11 +1,8 @@
 import {
   BarChart3,
-  FileSpreadsheet,
-  Tags,
+  Banknote,
   Bell,
   BookOpen,
-  Boxes,
-  Calculator,
   ClipboardCheck,
   Wrench,
   ClipboardList,
@@ -16,7 +13,6 @@ import {
   Headphones,
   Layers,
   LifeBuoy,
-  Newspaper,
   Package,
   PackageMinus,
   PackageOpen,
@@ -26,6 +22,8 @@ import {
   ScrollText,
   Settings,
   ShieldCheck,
+  FileSpreadsheet,
+  Tags,
   TrendingDown,
   Truck,
   UserCircle,
@@ -39,9 +37,13 @@ import {
  * 为什么单独成模块：首页与「产品与服务」页都要展示这套能力域，
  * 两处各写一份必然漂移（官网文案与现实脱节的病根）。
  *
- * 真值源 = `frontend/admin-web/src/config/menu.ts`（侧边栏单一源，6 组 18 项 + 2 个一级项 + 1 个尾部独立项）
+ * 真值源 = `frontend/admin-web/src/config/menu.ts`（侧边栏单一源：**8 组 24 项 + 4 个一级独立项**）
  * ⇒ **本文件只做「分组展示」的排版，不新增、不改写任何菜单名**。
  * 改菜单请改 `config/menu.ts`，再回来同步这里的分组顺序。
+ *
+ * 菜单 IA 重排（用户裁定）：旧「交易管理」+「基础资料」合并为「订单/商品」、新增「财务」、
+ * 「质量」正名「质量管理」、「仓储与物料」正名「仓储/物料」、入库单由供应链移入仓储/物料、
+ * 供应商移入供应链。组名 / 组顺序 / 成员逐字跟菜单走。
  */
 
 export interface CapabilityItem {
@@ -62,32 +64,6 @@ export interface CapabilityDomain {
 
 export const capabilityDomains: CapabilityDomain[] = [
   {
-    key: 'workspace',
-    name: '工作台',
-    summary: '经营全景入口：当日经营状况与待处理事项一屏可见。',
-    items: [
-      {
-        name: '经营概览',
-        detail:
-          '订单量、销售额、环比与待处理事项一屏可见；无上期可比数据时显示「—」，不以 0 代替。',
-        icon: BarChart3,
-      },
-      {
-        // issue #7376：看板的下钻报表（同属经营数据面，所以放在同一能力域里讲）。
-        // 口径必须与后台一致：「没有数据」显示留空/「—」，不写成 0。
-        name: '报表中心',
-        detail:
-          '订单毛利、库存滞销、员工业绩、质量成本四张报表；合计与明细可复算，没有数据时留空而不显示 0，算不出的成本明确标「未知」。',
-        icon: FileSpreadsheet,
-      },
-      {
-        name: '每日简报',
-        detail: 'AI 每天生成经营要点，数字都经过系统核对；简报不含客户手机号等个人信息。',
-        icon: Newspaper,
-      },
-    ],
-  },
-  {
     key: 'customer-service',
     name: '客户服务',
     summary: '顾客从咨询到售后的全流程管理。',
@@ -97,70 +73,52 @@ export const capabilityDomains: CapabilityDomain[] = [
         detail: '人工坐席工作台：会话列表（待接待 / 接待中 / 已结束 / 已转接）+ 对话区 + 回复。',
         icon: Headphones,
       },
-            {
-        name: '知识库',
-        detail: '知识卡片有草稿 / 待审核 / 已发布 / 已归档四态，只有已发布的卡片会被 AI 检索到。',
-        icon: BookOpen,
-      },
       {
         name: '售后工单',
         detail: '退货 / 换货 / 维修 / 退款 / 投诉 / 其他六类，含优先级与超时工单下钻。',
         icon: LifeBuoy,
       },
+      {
+        name: '知识库',
+        detail: '知识卡片有草稿 / 待审核 / 已发布 / 已归档四态，只有已发布的卡片会被 AI 检索到。',
+        icon: BookOpen,
+      },
     ],
   },
   {
-    key: 'basic-data',
-    name: '基础资料',
-    summary: '所有动线共用的档案与条件：商品、客户、供应商、价格。',
+    key: 'orders-products',
+    name: '订单/商品',
+    summary: '开单链的四个环节：卖什么、什么价、卖给谁、成交。',
     items: [
       {
-          name: '商品管理',
-          detail:
-            '状态四态（出售中 / 已下架 / 审核中 / 草稿）、多规格 SKU、Excel 批量导入导出与商品分类树。',
-          icon: Package,
-        },
-      {
-              name: '客户列表',
-              detail: '客户档案、来源渠道、VIP 等级与标签；手机号默认脱敏展示。',
-              icon: UserCircle,
-            },
-      {
-              name: '供应商',
-              detail:
-                '谁在供货、账期几天、停没停：名称 / 联系人 / 电话 / 账期（未设置、现结、N 天）/ 在用或停用，一处维护。',
-              icon: Handshake,
-            },
-      {
-              // issue #7375：价格本是交易的前置配置（先定价，才谈得上开单与收款）。
-              name: '价格本',
-              detail:
-                '商品对客户、等级、数量各自可以有价：协议价优先于等级价，等级价优先于阶梯价；价格必须大于 0，低于成本的改价要先走审批。',
-              icon: Tags,
-            },
-    ],
-  },
-  {
-    key: 'trade-center',
-    name: '交易管理',
-    summary: '先定价，再下单，最后对账。',
-    items: [
-            {
         name: '销售订单',
         detail: '按订单号 / 收货人 / 下单时间 / 商品编码 / 是否含加工多维检索，支持备注、关闭与发货。',
         icon: ClipboardList,
       },
       {
-        name: '财务对账',
-        detail: '资金流水、收支汇总、应收对账三张账；默认本期为自然月。',
-        icon: Calculator,
+        name: '商品管理',
+        detail:
+          '状态四态（出售中 / 已下架 / 审核中 / 草稿）、多规格 SKU、Excel 批量导入导出与商品分类树。',
+        icon: Package,
+      },
+      {
+        // issue #7375：价格本更靠前 —— 它是「开单前先定价」的前置配置，不是售后动作。
+        name: '价格本',
+        detail:
+          '商品对客户、等级、数量各自可以有价：协议价优先于等级价，等级价优先于阶梯价；价格必须大于 0，低于成本的改价要先走审批。',
+        icon: Tags,
+      },
+      {
+        name: '客户列表',
+        detail: '客户档案、来源渠道、VIP 等级与标签；手机号默认脱敏展示。',
+        icon: UserCircle,
       },
     ],
   },
   {
     key: 'production-center',
     name: '生产管理',
-    summary: '布艺行业纵深环节：加工单、工序、报工与计件。',
+    summary: '布艺行业纵深环节：作业单与工序派工。',
     items: [
       {
         name: '作业单',
@@ -172,75 +130,37 @@ export const capabilityDomains: CapabilityDomain[] = [
         detail: '加急插队区 + 按物料分组成批派单（勾选 → 预览 → 一键派），超时未派告警。',
         icon: Factory,
       },
-      {
-        name: '计件工资',
-        detail: '按人 / 工序 / 部位 / 套四档下钻；返工与报废不计件，系统会自动排除。',
-        icon: Coins,
-      },
-                ],
-  },
-  {
-    key: 'quality',
-    name: '质量',
-    summary: '做出来的活合不合格、不合格怎么补。',
-    items: [
-      {
-              name: '质检记录',
-              detail: '待检成品帘清单（未检 / 合格 / 返工 / 报废）+ 三态判定录入与质检流水；作业单明细内也能直接判定，不合格必须写原因。',
-              icon: ClipboardCheck,
-            },
-      {
-              name: '返工单',
-              detail: '售后判定要返工的活在这里开返工单并跟到完工；完工后售后状态才跟着推进，同一售后单同时只能有未完结返工单。',
-              icon: Wrench,
-            },
     ],
   },
   {
-    key: 'supply-chain',
-    name: '供应链',
-    summary: '从谁家进的货、买了什么、什么时候到，上下游看全。',
+    key: 'quality',
+    name: '质量管理',
+    summary: '做出来的活合不合格、不合格怎么补。',
     items: [
-            {
-        name: '采购单',
+      {
+        name: '质检记录',
         detail:
-          '采购登记、分次到货、关闭都在同一处：采购单下可分几次收货，已收和未收按收货记录实时算；到不齐或断货就关闭并写原因，单据不删除、原因留着备查。',
-        icon: ShoppingBag,
+          '待检成品帘清单（未检 / 合格 / 返工 / 报废）+ 三态判定录入与质检流水；作业单明细内也能直接判定，不合格必须写原因。',
+        icon: ClipboardCheck,
       },
       {
-        name: '入库单',
+        name: '返工单',
         detail:
-          '草稿不动库存；过账自动生成批次号、增加库存并按移动加权平均记成本；期初建账支持 Excel 批量导入并逐行给出校验报告。',
-        icon: PackageOpen,
+          '售后判定要返工的活在这里开返工单并跟到完工；完工后售后状态才跟着推进，同一售后单同时只能有未完结返工单。',
+        icon: Wrench,
       },
     ],
   },
   {
     key: 'inventory-center',
-    name: '仓储与物料',
-    summary: '按布料的真实形态记账：批次、缸号与余料。',
+    name: '仓储/物料',
+    summary: '按布料的真实形态记账：单据、批次、缸号与余料。',
     items: [
       {
-        name: '发货单',
-        detail: '全量发货单（单号 / 订单 / 客户 / 来源 / 发货人 / 实发），支持按真实尺寸 A4 补打。',
-        icon: Truck,
-      },
-      {
-        name: '余料台账',
+        name: '入库单',
         detail:
-          '余料尺寸 / 面积 / 来源订单 / 批次 / 缸号 / 状态，含回收记账、报废留痕与小件优先匹配。',
-        icon: Recycle,
-      },
-      {
-        name: '省料分析',
-        detail: '逐单比对公式米数与排料米数、按批次看余量分档、按单位产出看面料消耗。',
-        icon: TrendingDown,
-      },
-      {
-        name: '库存明细',
-        detail:
-          '逐笔列出 SKU 级库存变更（变动前 → 变动后），按时间 / 货号 / 原因 / 单据号 / 操作人成行，想查库存为什么变，顺着它往下看。',
-        icon: ScrollText,
+          '草稿不动库存；过账自动生成批次号、增加库存并按移动加权平均记成本；期初建账支持 Excel 批量导入并逐行给出校验报告。',
+        icon: PackageOpen,
       },
       {
         name: '盘点单',
@@ -253,6 +173,64 @@ export const capabilityDomains: CapabilityDomain[] = [
         detail:
           '与入库单对称的出口单据：布料出库建单即扣库存并落台账，成品随发货自动出库；单据里带成品仓仓位号，货在哪一位一眼可查。',
         icon: PackageMinus,
+      },
+      {
+        name: '发货单',
+        detail: '全量发货单（单号 / 订单 / 客户 / 来源 / 发货人 / 实发），支持按真实尺寸 A4 补打。',
+        icon: Truck,
+      },
+      {
+        name: '库存明细',
+        detail:
+          '逐笔列出 SKU 级库存变更（变动前 → 变动后），按时间 / 货号 / 原因 / 单据号 / 操作人成行，想查库存为什么变，顺着它往下看。',
+        icon: ScrollText,
+      },
+      {
+        name: '余料台账',
+        detail:
+          '余料尺寸 / 面积 / 来源订单 / 批次 / 缸号 / 状态，含回收记账、报废留痕与小件优先匹配。',
+        icon: Recycle,
+      },
+      {
+        name: '省料分析',
+        detail: '逐单比对公式米数与排料米数、按批次看余量分档、按单位产出看面料消耗。',
+        icon: TrendingDown,
+      },
+    ],
+  },
+  {
+    key: 'finance-center',
+    name: '财务',
+    summary: '两头钱一处看：对客户收款、对工人计件。',
+    items: [
+      {
+        name: '财务对账',
+        detail: '资金流水、收支汇总、应收对账三张账；默认本期为自然月。',
+        icon: Banknote,
+      },
+      {
+        name: '计件工资',
+        detail: '按人 / 工序 / 部位 / 套四档下钻；返工与报废不计件，系统会自动排除。',
+        icon: Coins,
+      },
+    ],
+  },
+  {
+    key: 'supply-chain',
+    name: '供应链',
+    summary: '从谁家进的货、买了什么、什么时候到，一处看全。',
+    items: [
+      {
+        name: '采购单',
+        detail:
+          '采购登记、分次到货、关闭都在同一处：采购单下可分几次收货，已收和未收按收货记录实时算；到不齐或断货就关闭并写原因，单据不删除、原因留着备查。',
+        icon: ShoppingBag,
+      },
+      {
+        name: '供应商',
+        detail:
+          '谁在供货、账期几天、停没停：名称 / 联系人 / 电话 / 账期（未设置、现结、N 天）/ 在用或停用，一处维护。',
+        icon: Handshake,
       },
     ],
   },
@@ -275,9 +253,22 @@ export const capabilityDomains: CapabilityDomain[] = [
   },
 ]
 
-/** 不在 6 组内的独立入口（`config/menu.ts` 的 `standaloneTopItems` / `standaloneItems`） */
+/** 不在 8 组内的独立入口（`config/menu.ts` 的最前席位 / 尾席位 / 尾部项） */
 export const standaloneEntries: CapabilityItem[] = [
-    {
+  {
+    name: '经营概览',
+    detail: '订单量、销售额、环比与待处理事项一屏可见；无上期可比数据时显示「—」，不以 0 代替。',
+    icon: BarChart3,
+  },
+  {
+    // issue #7376：看板的下钻报表（同属经营数据面）。
+    // 口径必须与后台一致：「没有数据」显示留空/「—」，不写成 0。
+    name: '报表中心',
+    detail:
+      '订单毛利、库存滞销、员工业绩、质量成本四张报表；合计与明细可复算，没有数据时留空而不显示 0，算不出的成本明确标「未知」。',
+    icon: FileSpreadsheet,
+  },
+  {
     // 🔴 issue #6580：本席位原为「参数总览」—— 该一级项已撤掉（内容回到 `/settings`
     // 页内的配置域），改由**由组织管理组升为一级项**的「企业基础设置」占位（原名「企业基础信息」）。
     // ⚠️ 本文件属「官网源码」⇒ 不得写无出处的年份/时间陈述（`corporate-home.test.tsx` 会判红），
@@ -322,6 +313,6 @@ export const industryDepth = [
   },
 ]
 
-/** 菜单项总数（6 组 + 2 个独立入口），由上面的数据算出来，不写死 */
+/** 菜单项总数（8 组 + 4 个独立入口），由上面的数据算出来，不写死 */
 export const menuItemCount =
   capabilityDomains.reduce((sum, d) => sum + d.items.length, 0) + standaloneEntries.length

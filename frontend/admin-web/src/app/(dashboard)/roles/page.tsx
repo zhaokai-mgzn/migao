@@ -14,7 +14,9 @@ import { formatMobileTitles, mobileTitlesByCodeFromTree } from '@/lib/mobile-sur
 import { deriveRoleDefaultMenu, roleDefaultMenuSummary } from '@/lib/role-default-menu'
 // #3002 权限分配与真实菜单一致：复用侧边栏菜单配置做单一来源，
 // 弹窗分组/名称 = 侧边栏菜单分组/菜单项，避免展示旧口径权限目录
-import { menuGroups, standaloneHeadItems, standaloneTopItems } from '@/config/menu'
+import { menuGroups, standaloneHeadItems, standaloneTopItems, STANDALONE_TOP_AFTER_GROUP_KEY } from '@/config/menu'
+// 🔴 2026-11-06：尾席位的**插入位**（与侧边栏 / ⌘K 同一个实现，不各写一份 slice）
+import { splitGroupsAtTopItemSlot } from '@/lib/menu-nav'
 
 /**
  * 描述超过这个长度才给「展开」（issue #7111）：卡片默认 `line-clamp-2`，短描述本来就不被截断，
@@ -215,18 +217,19 @@ export default function RolesPage() {
     .map(item => ({ code: item.permissionCode!, label: item.name }))
 
   // 菜单组 → 可勾选菜单项（仅带 permissionCode 的菜单项可授予；工作台/通知中心全员可见无码）
-  const menuSections = useMemo(
-    () =>
-      menuGroups
-        .map(group => ({
-          name: group.name,
-          items: group.children
-            .filter(item => item.permissionCode)
-            .map(item => ({ code: item.permissionCode!, label: item.name })),
-        }))
-        .filter(section => section.items.length > 0),
-    []
-  )
+  // 🔴 2026-11-06（用户裁定）：尾席位「企业基础设置」插在 `STANDALONE_TOP_AFTER_GROUP_KEY`（供应链）
+  // **之后**、组织管理**之前** ⇒ 权限树必须与侧边栏同序（不再一律渲染在所有分组之前）。
+  const { menuSectionsBefore, menuSectionsAfter } = useMemo(() => {
+    const toSection = (group: (typeof menuGroups)[number]) => ({
+      name: group.name,
+      items: group.children
+        .filter(item => item.permissionCode)
+        .map(item => ({ code: item.permissionCode!, label: item.name })),
+    })
+    const { head, tail } = splitGroupsAtTopItemSlot(menuGroups, STANDALONE_TOP_AFTER_GROUP_KEY)
+    const keep = (groups: typeof menuGroups) => groups.map(toSection).filter(section => section.items.length > 0)
+    return { menuSectionsBefore: keep(head), menuSectionsAfter: keep(tail) }
+  }, [])
 
   // 权限码 → 权限 ID 列表（roles 保存的是权限 ID，见 RoleService.replaceRolePermissions）
   const codeIds = useMemo(() => {
@@ -307,6 +310,37 @@ export default function RolesPage() {
           <span className="sr-only" data-testid={`roles-code-${code}`}>{code}</span>
         </span>
       </label>
+    )
+  }
+
+  /** 菜单分组小节（组标题 + 组内菜单项）—— 权限树里**两段**渲染（slot 组前后各一次）。 */
+  const renderMenuSection = (section: { name: string; items: { code: string; label: string }[] }) => {
+    const codes = [...new Set(section.items.map(i => i.code))]
+    const allSelected = codes.every(c => isCodeGranted(c))
+    const someSelected = codes.some(c => isCodeGranted(c))
+    return (
+      <div key={section.name} className="border-b border-neutral-100 last:border-b-0">
+        {/* 菜单组标题（= 侧边栏菜单组名） */}
+        <div
+          className="flex items-center gap-2 px-4 py-2.5 bg-neutral-50 cursor-pointer hover:bg-neutral-100 transition-colors"
+          onClick={() => toggleMenuGroup(codes)}
+        >
+          <input
+            type="checkbox"
+            checked={allSelected}
+            ref={(el) => { if (el) el.indeterminate = someSelected && !allSelected }}
+            onChange={() => toggleMenuGroup(codes)}
+            onClick={(e) => e.stopPropagation()}
+            className="w-4 h-4 text-primary-600 rounded border-neutral-300 focus:ring-primary-500"
+          />
+          <span className="text-sm font-medium text-neutral-700">{section.name}</span>
+          <span className="text-xs text-neutral-400">({codes.length}项)</span>
+        </div>
+        {/* 菜单项（= 侧边栏菜单项名，勾选即授予对应权限码） */}
+        <div className="px-4 py-2 flex flex-wrap gap-x-6 gap-y-2">
+          {section.items.map(item => renderCodeItem(item.code, item.label))}
+        </div>
+      </div>
     )
   }
 
@@ -689,43 +723,18 @@ export default function RolesPage() {
                     {headMenuItems.map(item => renderCodeItem(item.code, item.label))}
                   </div>
                 )}
-                {/* #5895 一级项（`standaloneTopItems`，如「商品管理」）：与侧边栏同序 ——
-                    渲染在**所有分组之前**、无分组头（侧边栏里它也不是分组） */}
+                {/* #3002 菜单化权限树（第一段：`STANDALONE_TOP_AFTER_GROUP_KEY` 之前的组）——
+                    分组/名称与真实侧边栏菜单一致（menuGroups 单源） */}
+                {menuSectionsBefore.map(renderMenuSection)}
+                {/* #5895 一级项（`standaloneTopItems`，如「企业基础设置」）：与侧边栏同序 ——
+                    渲染在**插入位组之后**、其余分组之前；无分组头（侧边栏里它也不是分组） */}
                 {topMenuItems.length > 0 && (
                   <div className="border-b border-neutral-100 px-4 py-2 flex flex-wrap gap-x-6 gap-y-2" data-testid="perm-standalone-top">
                     {topMenuItems.map(item => renderCodeItem(item.code, item.label))}
                   </div>
                 )}
-                {/* #3002 菜单化权限树：分组/名称与真实侧边栏菜单一致（menuGroups 单源） */}
-                {menuSections.map(section => {
-                  const codes = [...new Set(section.items.map(i => i.code))]
-                  const allSelected = codes.every(c => isCodeGranted(c))
-                  const someSelected = codes.some(c => isCodeGranted(c))
-                  return (
-                    <div key={section.name} className="border-b border-neutral-100 last:border-b-0">
-                      {/* 菜单组标题（= 侧边栏菜单组名） */}
-                      <div
-                        className="flex items-center gap-2 px-4 py-2.5 bg-neutral-50 cursor-pointer hover:bg-neutral-100 transition-colors"
-                        onClick={() => toggleMenuGroup(codes)}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={allSelected}
-                          ref={(el) => { if (el) el.indeterminate = someSelected && !allSelected }}
-                          onChange={() => toggleMenuGroup(codes)}
-                          onClick={(e) => e.stopPropagation()}
-                          className="w-4 h-4 text-primary-600 rounded border-neutral-300 focus:ring-primary-500"
-                        />
-                        <span className="text-sm font-medium text-neutral-700">{section.name}</span>
-                        <span className="text-xs text-neutral-400">({codes.length}项)</span>
-                      </div>
-                      {/* 菜单项（= 侧边栏菜单项名，勾选即授予对应权限码） */}
-                      <div className="px-4 py-2 flex flex-wrap gap-x-6 gap-y-2">
-                        {section.items.map(item => renderCodeItem(item.code, item.label))}
-                      </div>
-                    </div>
-                  )
-                })}
+                {/* #3002 菜单化权限树（第二段：插入位组**之后**的组，如「组织管理」） */}
+                {menuSectionsAfter.map(renderMenuSection)}
                 {/* 非菜单操作权限（新增商品/订单详情/新增员工等，不直接对应菜单入口） */}
                 {extraPermissions.length > 0 && (
                   <div className="border-b border-neutral-100 last:border-b-0" data-testid="perm-extra-section">

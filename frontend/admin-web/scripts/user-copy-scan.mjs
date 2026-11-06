@@ -541,7 +541,10 @@ export const EXEMPT = [
   // 🔴 issue #7266：本页「手机端默认菜单」的收表改走共享实现 `mobileTitlesByCodeFromTree`
   // （删掉页内 13 行的手写循环，净 -6 行）⇒ placeholder 由 652 推到 **646**，本条同步改号
   // （纯位置变更；本条豁免的文案与判据一字未动）。
-  'src/app/(dashboard)/roles/page.tsx:646',
+  // 🔴 2026-11-06（issue #8802）：权限树按新 IA 拆两段渲染（`renderMenuSection` 抽成局部渲染函数）
+  // ⇒ placeholder 由 646 推到 **680**，本条同步改号（同样是纯位置变更，豁免的「岗位编码示例」
+  // 文案一字未动）。
+  'src/app/(dashboard)/roles/page.tsx:680',
 ]
 
 /**
