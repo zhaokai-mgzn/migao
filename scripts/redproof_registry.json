@@ -229,7 +229,7 @@
       "tool": "scripts/auto-batch-red-proof.py",
       "mutation": "off_gate",
       "criterion": "显式关仍是一条真闸（关闸被拆 ⇒ 零读零写判据红）",
-      "guarded": "backend/admin-api/src/main/java/com/migao/admin/service/ProcessingOrderService.java",
+      "guarded": "backend/admin-api/src/main/java/com/migao/admin/service/ProcessingOrderAutoBatch.java",
       "anchor": "        if (tenantId == null || !policy.enabled()) {\n            // 🔴 判据 1（#6588 重写）：**显式关** ⇒ 零读零写（连池都不查）。",
       "replacement": "        if (tenantId == null) { // [RED-PROOF] 关闸被拆掉\n            // 🔴 判据 1（#6588 重写）：**显式关** ⇒ 零读零写（连池都不查）。",
       "criteria": {
