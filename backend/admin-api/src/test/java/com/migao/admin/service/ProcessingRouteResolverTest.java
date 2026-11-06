@@ -1,4 +1,4 @@
-// case_ids: MC-245
+// case_ids: MC-246
 package com.migao.admin.service;
 
 import com.migao.admin.exception.BusinessException;
