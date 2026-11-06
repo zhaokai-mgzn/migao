@@ -1288,7 +1288,7 @@
    "shape_notes": [
     "data=response.get('data', {})"
    ],
-   "source_sha256": "f70b16432fe2850fc9e129d63399607fd819a6ecbb9d89d6017f62fcd390046f"
+   "source_sha256": "c59f8879644bfce078609a01160f77bec2c65a66e46fa8bc2cd6525b6f4b2849"
   },
   "production_progress_query": {
    "actions": null,
@@ -1527,7 +1527,7 @@
     "door_width",
     "new_price"
    ],
-   "source_sha256": "a9e564291d0aaa5eb8b4959a6253e81455a03fef9b84bda54414b4cbc7c86000"
+   "source_sha256": "b44ad0adbede497fe0f7af959a6eb3798bcb4cdb7df8eccfc3789f8c0fd7db53"
   },
   "stock_ledger_query": {
    "actions": null,

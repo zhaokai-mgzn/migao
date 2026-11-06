@@ -25,6 +25,28 @@
   顶层布局序列）+ `test_menu_navigator.py` + 前端 `menu-nav` / `Sidebar` / `SidebarRedesign` /
   `Header` / `CommandPalette` / `roles` / `processing-merged` / 四个 `*-menu-isomorphic` 用例
   + Java `MenuControllerTest`。
+### 写商品 / 写 SKU 价格只按**唯一确定**的商品写：匹配到多个、序号、无法证明唯一的 id 前缀一律拒绝（2026-11-06，issue #8788）
+
+- **改前**：`product_update` / `sku_update` 的 `product_id` 都写「支持名称/序号/UUID，服务端自动解析」，
+  而工具把入参**原样拼进写 URL**（`PATCH /api/admin/agent/products/{raw}`）。服务端那层
+  `backend/admin-api/src/main/java/com/migao/admin/service/ProductService.java` 的 `resolveProductId`
+  确实会解析，但它的第 2/4/5 步分别是「UUID 前缀取第一条」「序号」「名称包含取第一条」
+  ⇒ **改哪一件商品取决于「谁先被查到」**（改错价 / 改错名**不可逆**）。
+- **改后**：写请求发出前先解析，且**只接受唯一确定的结果** ——
+  唯一命中（名称 / 名称片段 / id 前缀）⇒ 按解析出的真实 id 写；
+  **命中多条 ⇒ 拒绝写**并回「匹配到 N 个商品，请用 product_search 确认后指定 id」（附候选）；
+  **序号一律拒绝**（序号按创建时间排序，增删商品后漂移，「第 3 个」不是可信目标）；
+  **id 前缀无法证明唯一 ⇒ 拒绝**（目录超过扫描上限时宁可不写）；
+  UUID 直传**零解析往返**；非 UUID 真实 id（`p-zg-001`）只做一次精确探测。
+  所有拒绝路径都**零写请求**，话术明确「未执行修改」。
+- **服务层同步**（只读面不动）：新增 `ProductWriteRefResolver.resolveUniqueProductId(...)`，`AgentProductController`
+  的 4 个写端点全部改调它；共享的 `resolveProductId` **逐字不动**（只读面仍在用它的宽松语义）。
+- 判据 = MC-252：`backend/ai-agent-service/tests/test_write_path_id_resolution.py`（三种形态 + 负例 + 服务层静态扫描）、
+  `backend/ai-agent-service/tests/test_write_refusal.py`（四态话术）、
+  `backend/admin-api/src/test/java/com/migao/admin/service/ProductWriteRefResolverTest.java`（Java 10 条）；
+  类级元守卫 = `backend/ai-agent-service/tests/test_tool_id_shape_promises.py`（`EXEMPT_KNOWN_GAPS` 已**销账为空**）。
+- **边界（照实登记）**：`admin-api` 没有 id 前缀查询面（`productId` 精确、`keyword` 只搜名称/货号）⇒ 前缀只能翻页扫目录
+  （页大小 100 / 上限 5 页），扫不完即拒绝；共享解析器的宽松语义保留给只读面（另有重启条件见用例）。
 
 ### product_detail 真的认「名称/序号/UUID」：描述怎么写就怎么查，查不到也不会把名字当 ID 打服务端（2026-11-06，issue #8783）
 

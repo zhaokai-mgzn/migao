@@ -25,10 +25,15 @@
 
 ## 豁免台账（只许缩短，不许静默）
 
-`EXEMPT_KNOWN_GAPS` = **同族未修**的两个工具（`product_update` / `sku_update` 同样写着
-「支持名称/序号/UUID，服务端自动解析」，而两边都不做解析、服务端也不解析）。
+`EXEMPT_KNOWN_GAPS` = **同族未修**的工具「承诺了名称/序号/UUID，实现里却没有解析器调用」。
 台账里每条都会**双向**校验：既承诺、又没解析，才是合法豁免；一旦修好（有解析器）或
 改了描述（不再承诺）⇒ **必须删掉台账条目，否则判红**。⇒ 「没修」这件事**可见且会缩小**。
+
+**现取：台账为空** —— 最后两条（`product_update` / `sku_update` 这两个**写**工具）已由
+issue #8788 接线。⚠️ 写工具接的是**严格**解析器 `resolve_unique_product_id()`（只接受唯一
+确定的结果）；只读那个 `resolve_product_id()` 允许「模糊命中取第一条」，写在写路径上会重新
+长出"猜"的分支 ⇒ 判据见 `backend/ai-agent-service/tests/test_write_path_id_resolution.py` 的
+`TestNoGuessIsStructural::test_write_tools_use_the_strict_resolver_only`。
 
 ## 边界（照实登记）
 
@@ -51,12 +56,8 @@ PROMISE_ANCHORS = ("支持名称/序号", "名称/序号/UUID")
 # 解析器标记：出现任一 = 该模块真的有解析动作（不是只在注释里提一句）。
 RESOLVER_MARKERS = ("resolve_product_id(", "id_resolver")
 
-# 同族未修台账（只许缩短）。理由见文件头；重启条件 = 这两个工具接线解析器（另一包）。
-EXEMPT_KNOWN_GAPS = {
-    "product_update.py": "写操作（改价/改名/退货回补库存）已承诺「支持名称/序号/UUID」但未接线解析器；"
-                         "修法与 #8783 不同族：写路径还要定义「解析不到」的失败语义（不许静默当未找到），另单跟踪",
-    "sku_update.py": "写操作（改单 SKU 价格）同上：承诺「支持名称/序号/UUID」但未接线解析器，另单跟踪",
-}
+# 同族未修台账（只许缩短）。**现取为空**：issue #8788 已把最后两条（两个**写**工具）接线。
+EXEMPT_KNOWN_GAPS: dict = {}
 
 
 def _promises_name_resolution(source: str) -> bool:
@@ -122,6 +123,19 @@ class TestNoUnwiredPromises:
         assert "product_detail.py" not in EXEMPT_KNOWN_GAPS, "本单修好的工具不许留在豁免台账里"
         assert "await resolve_product_id(" in source, "product_detail 必须在 execute 里真的 await 解析器"
         assert _has_resolver(source)
+
+    def test_write_tools_are_no_longer_exempt_and_do_resolve(self, tool_sources):
+        """#8788 销账后的**永久**判据：两个写工具必须真的接线，且不许重新登记豁免。
+
+        写路径比只读面多一条硬约束：接的必须是**严格**解析器。只读那个
+        `resolve_product_id()` 允许「名称模糊命中取第一条」⇒ 写在写路径上 = 改错商品。
+        """
+        for name in ("product_update.py", "sku_update.py"):
+            source = tool_sources[name]
+            assert name not in EXEMPT_KNOWN_GAPS, f"{name} 已修好期，不许重新登记豁免（只许缩短）"
+            assert "await resolve_unique_product_id(" in source, (
+                f"{name} 必须在 execute 里 await **严格**解析器（写路径不接受模糊取第一条）")
+            assert _has_resolver(source)
 
     def test_exempt_ledger_only_shrinks(self, tool_sources):
         """台账双向校验：既承诺又没解析才算合法豁免；修好/改描述后必须删条目。"""

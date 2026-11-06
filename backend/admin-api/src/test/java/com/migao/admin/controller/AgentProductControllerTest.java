@@ -7,6 +7,7 @@ import com.migao.admin.dto.ProductResponse;
 import com.migao.admin.dto.ProductSkuResponse;
 import com.migao.admin.exception.BusinessException;
 import com.migao.admin.service.ProductService;
+import com.migao.admin.service.ProductWriteRefResolver;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -40,6 +41,9 @@ class AgentProductControllerTest extends BaseControllerTest {
 
     @Mock
     private ProductService productService;
+
+    @Mock
+    private ProductWriteRefResolver writeRefResolver;
 
     @InjectMocks
     private AgentProductController controller;
@@ -77,7 +81,7 @@ class AgentProductControllerTest extends BaseControllerTest {
             skuResp.setDoorWidth("2.8米");
             skuResp.setPrice(new BigDecimal("99.00"));
 
-            when(productService.resolveProductId(eq(PROD_ID), eq(TEST_TENANT_ID))).thenReturn(PROD_ID);
+            when(writeRefResolver.resolveUniqueProductId(eq(PROD_ID), eq(TEST_TENANT_ID))).thenReturn(PROD_ID);
             when(productService.updateSkuPriceById(eq(PROD_ID), eq(1001L),
                     argThat((BigDecimal p) -> p != null && p.compareTo(new BigDecimal("99.00")) == 0),
                     eq(TEST_TENANT_ID))).thenReturn(skuResp);
@@ -103,7 +107,7 @@ class AgentProductControllerTest extends BaseControllerTest {
         @Test
         @DisplayName("商品 ID 未解析到 — 404")
         void unresolvedProduct() throws Exception {
-            when(productService.resolveProductId(eq(PROD_ID), eq(TEST_TENANT_ID))).thenReturn(null);
+            when(writeRefResolver.resolveUniqueProductId(eq(PROD_ID), eq(TEST_TENANT_ID))).thenReturn(null);
 
             mockMvc.perform(patch(BASE + "/" + PROD_ID + "/skus/1001")
                             .contentType("application/json")
@@ -119,7 +123,7 @@ class AgentProductControllerTest extends BaseControllerTest {
         @Test
         @DisplayName("调整成功 — 返回更新后 stock（供 agent 读回校验）")
         void success() throws Exception {
-            when(productService.resolveProductId(eq(PROD_ID), eq(TEST_TENANT_ID))).thenReturn(PROD_ID);
+            when(writeRefResolver.resolveUniqueProductId(eq(PROD_ID), eq(TEST_TENANT_ID))).thenReturn(PROD_ID);
             when(productService.adjustStockForAgent(eq(PROD_ID), eq(BigDecimal.valueOf(30)), eq("盘点"), eq(TEST_TENANT_ID)))
                     .thenReturn(responseWithStock(80));
 
@@ -143,7 +147,7 @@ class AgentProductControllerTest extends BaseControllerTest {
         @Test
         @DisplayName("库存不足 — 422 且返回错误信息")
         void insufficientStock() throws Exception {
-            when(productService.resolveProductId(eq(PROD_ID), eq(TEST_TENANT_ID))).thenReturn(PROD_ID);
+            when(writeRefResolver.resolveUniqueProductId(eq(PROD_ID), eq(TEST_TENANT_ID))).thenReturn(PROD_ID);
             when(productService.adjustStockForAgent(eq(PROD_ID), eq(BigDecimal.valueOf(-999)), any(), eq(TEST_TENANT_ID)))
                     .thenThrow(new BusinessException("INSUFFICIENT_STOCK", "库存不足：当前总库存 50，无法减少 999", 422));
 

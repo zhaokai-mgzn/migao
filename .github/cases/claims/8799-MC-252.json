@@ -1,0 +1,6 @@
+{
+  "id": "MC-252",
+  "pr": 8799,
+  "title": "写路径的 id 解析：product_update / sku_update 只按唯一确定的商品写，命中多条或不命中一律拒绝（零写请求）（issue #8788）",
+  "claimed_at": "2026-11-06"
+}

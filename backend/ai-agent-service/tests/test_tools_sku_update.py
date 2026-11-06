@@ -10,6 +10,12 @@ import pytest
 from app.tools.base import ToolContext
 from app.tools.sku_update import SkuUpdateTool
 
+#: 真实 id 形态（UUID）：写路径会在发请求前解析 product_id（issue #8788），
+#: UUID 直通且**零解析往返**；用 "p1" 这类假 id 会被当成商品名去解析，
+#: 与本文件断言的请求体/请求路径无关。
+PID = "a1b2c3d4-e5f6-4a7b-8c9d-0123456789ab"
+PID_MISSING = "b2c3d4e5-f6a7-4b8c-9d0e-123456789abc"
+
 
 @pytest.fixture
 def tool():
@@ -54,7 +60,7 @@ class TestExecute:
         mock_client_factory.return_value = client
 
         result = await tool.execute(
-            context, product_id="prod-001", price=9.9, before_price=9.9,
+            context, product_id=PID, price=9.9, before_price=9.9,
             color="白色", door_width="2.8米",
         )
 
@@ -67,7 +73,7 @@ class TestExecute:
         # 服务端（`/skus/price` 读 body 的 `before_price`）拿它与匹配到的 SKU 当前价按值核对，
         # 不符即 422（口径与批次 oldValue 同一实现）。不下发 ⇒ 服务端无从回查。
         client.patch.assert_awaited_once_with(
-            "/api/admin/agent/products/prod-001/skus/price",
+            f"/api/admin/agent/products/{PID}/skus/price",
             json_data={"price": 9.9, "color": "白色", "door_width": "2.8米", "before_price": 9.9},
             tenant_id=1, user_id="admin_001",
         )
@@ -85,7 +91,7 @@ class TestExecute:
         })
         mock_client_factory.return_value = client
 
-        result = await tool.execute(context, product_id="prod-404", price=5.0, before_price=9.9)
+        result = await tool.execute(context, product_id=PID_MISSING, price=5.0, before_price=9.9)
 
         assert result.success is False
         assert "SKU 调价失败" in result.message
@@ -123,6 +129,6 @@ class TestExecute:
     async def test_denied_role_rejected_before_api_call(self, tool):
         """customer 角色 execute 直接被拒（权限守卫前置），不发调价请求"""
         customer_ctx = ToolContext(tenant_id=1, user_id="c1", session_id="s", role="customer")
-        result = await tool.execute(customer_ctx, product_id="prod-001", price=9.9)
+        result = await tool.execute(customer_ctx, product_id=PID, price=9.9)
         assert result.success is False
         assert "权限" in (result.error or "")

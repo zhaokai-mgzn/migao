@@ -9,7 +9,9 @@ from loguru import logger
 
 from app.tools.base import admin_api_failure, BaseTool, ToolContext, ToolResult
 from app.tools.confirm_value import price_preview_missing
+from app.tools.write_refusal import product_ref_failure
 from app.utils.http_client import get_admin_api_client
+from app.utils.id_resolver import resolve_unique_product_id
 
 
 class ProductUpdateTool(BaseTool):
@@ -20,7 +22,9 @@ class ProductUpdateTool(BaseTool):
         "【触发】用户**明确要求执行**改价格/改名称/设置退货回补库存（给出具体商品 + 新价格/新名称）时**直接调用**，无需 validate_input。"
         "【反例·能力询问】用户只是问「能改名吗？」「可以改价吗？」「支持改名吗？」⇒ **直接回答能力**，"
         "不要先调用本工具或 product_search；等用户给出具体商品和新名称/价格后再走确认流程。"
-        "【参数】product_id 必填（支持名称/序号/UUID，服务端自动解析）；只传要改的字段，其他字段保持不变。"
+        "【参数】product_id 必填（支持名称/序号/UUID 的识别，但**写路径拒绝序号**——序号会随增删商品漂移；"
+        "**名称/id 前缀必须唯一确定一个商品**，匹配到多个会被拒绝并列出候选，不会替你挑一个）；"
+        "只传要改的字段，其他字段保持不变。"
         "【注意】改的是商品统一定价，影响所有 SKU。单独调某个 SKU 价格请引导去商品管理页。"
         "支持设置「退货是否回补库存」（allow_return_restock：true=退货后回补库存/可再售，"
         "false=定制商品退货不回补）。"
@@ -50,7 +54,10 @@ class ProductUpdateTool(BaseTool):
         "properties": {
             "product_id": {
                 "type": "string",
-                "description": "商品标识。支持名称/序号/UUID，服务端自动解析",
+                "description": "商品标识。支持名称/序号/UUID（自动解析）。写操作**只接受唯一确定的商品**："
+                               "名称匹配到多个商品时会被拒绝并列出候选（不会挑一个改）；"
+                               "**序号会被拒绝**（序号按创建时间排序，增删商品后会漂移）；"
+                               "不确定时先用 product_search / product_detail 拿真实 id",
             },
             "price": {"type": "number", "description": "新价格（可选）"},
             "before_price": {
@@ -127,6 +134,22 @@ class ProductUpdateTool(BaseTool):
 
         logger.info(f"[product_update] {product_id}: {list(json_data.keys())} | 改前价={before_price}")
         client = get_admin_api_client()
+
+        # ── 写路径的 id 解析：**宁可失败，绝不猜**（issue #8788）──────────────────
+        # 描述承诺「支持名称/序号/UUID」⇒ 解析必须在**发写请求之前**完成，且只接受
+        # **唯一确定**的结果：命中多条 / 不命中一律拒绝（零写请求，见 app/tools/write_refusal.py）。
+        # 为什么不能像只读面那样把原值交给服务端：`ProductService.resolveProductId` 的第 5 步是
+        # `getName().contains(raw) ⇒ 取第一条` ⇒ **写哪一件商品取决于谁先被查到**，
+        # 那正是「改错商品」的入口（改错价/改错名不可逆）。这里发出去的永远是已确定的真实 id。
+        ref = await resolve_unique_product_id(product_id, context.tenant_id, client)
+        if ref.status != "ok":
+            logger.info(
+                f"[product_update] refuse unresolved ref: raw={product_id!r} "
+                f"status={ref.status} candidates={ref.candidate_count}"
+            )
+            return product_ref_failure(ref, product_id)
+        product_id = ref.product_id
+
         response = await client.patch(
             f"/api/admin/agent/products/{product_id}",
             json_data=json_data,
