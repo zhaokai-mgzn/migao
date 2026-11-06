@@ -72,4 +72,14 @@ public class Playbook {
     private OffsetDateTime retiredAt;
 
     private String reviewedBy;
+
+    /**
+     * 冲突标记（issue #8175 P1；迁移 V211）：非 NULL = 本租户内还有同 key（scope + trigger）
+     * 但正解不同的行 ⇒ 两条**并存**、待人工裁定。
+     *
+     * <p>它由落库面（{@code backend/ai-agent-service/app/playbook/ingest.py}）计算；
+     * 「同一条口径的两个说法」不许用后写覆盖先写来消解 —— 那会让被冲掉的那条**无痕消失**。
+     * 审核队列按这一列分组展示，因此它必须是**可读的实体字段**（写进库却没人读的列 = 假功能）。</p>
+     */
+    private String conflictKey;
 }

@@ -10252,3 +10252,47 @@ cases:
       ci:
         - ai-agent-tests.yml
       verifies: []
+
+  - id: MC-340
+    legacy_id: ""
+    title: "口径卡 P1 写面：黄金策会话的候选**自动落成 draft 卡**（不是手搓）、未审核的卡进不了 system prompt（正控 draft ⇒ 渲染为空 / 负控 active ⇒ 出现且带来源）、同 key 两个说法**两条并存并标记冲突**而不是覆盖、含手机号或报价的候选**整条不产卡**"
+    domains:
+      - agent
+      - knowledge
+      - misc
+    tier: normal
+    tags:
+      - playbook
+      - distillation
+      - draft-gate
+      - conflict
+      - pii
+      - fail-closed
+      - red-proof
+    truths_ref: []
+    # ⚠️ 真值暂缺：本判据是**纯函数 + 结构**事实（零网络、零 LLM、零真库），
+    # 由 backend/ai-agent-service/tests/test_playbook_ingest.py 验证（落库用假会话，INSERT 语句级断言）。
+    user_inputs:
+      - "B 端商家在黄金策会话里纠正过一次口径（「不对，我们按整卷算」）。P1a 的离线抽取器能把这条抽成候选 JSON，但候选**进不了审核队列** —— 它的字段（trigger_text / category / confidence）和 playbooks 行对不上，人得手工抄进 POST /api/admin/playbooks。要让「纠正一次」真的变成「全企业受益」，候选必须自动落成 **draft** 卡、在审核队列里等人裁，且在此之前一个字都不许进 system prompt。"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "**判据 1（会红）：一次纠正会话 ⇒ 1 条 draft 候选**。端到端跑**线上那一个** P1a 抽取器（scripts/distill_agent_sessions.py 的 distill），再进落库计划 ⇒ 恰好 1 行，`state=draft`、`source_session_id/source_turn` 与原始轮次一致、trigger 是**条件语言 JSON**（user_text contains 整卷）。反向对照：同一形态的闲聊会话 ⇒ 0 行（否则「总会产卡」）。删掉接线（candidate→card→INSERT 任一段）⇒ 行数变 0 ⇒ 红。"
+      - "**判据 2（会红，最关键的一条）：未审核的卡不得出现在 system prompt**。**正控** = 把刚蒸馏出来的 draft 直接塞进 render_playbook_block 的入参 ⇒ 返回值必须是空串、select_playbooks 必须为空（去掉读面的 state==active 过滤 ⇒ 该断言当场红）；**负控** = 同一张卡改成 active ⇒ 必须出现且 `<do>` 与来源 `source=\"sess-1#2\"` 都在（否则「过滤」把好东西也滤掉了）。第二道 = 即使 SQL 漏了 state 条件、读面拿到 draft 行 ⇒ PlaybookStore.list_active 仍必须返回空。落库侧硬编码 `state='draft'`，**没有**任何参数能直接落 active。"
+      - "**判据 3（会红）：冲突值两条并存并标记，不是覆盖**。同 key（scope + trigger）两个不同正解 ⇒ 计划里**两行都在**、两行带**同一个** conflict_key；同 key 同值 ⇒ 只留一条并记 duplicate（幂等）。库里已有同 key 的旧卡（不同值）⇒ 新卡照插、旧卡**只补 conflict_key**（conflict_updates 点名旧 id），源码级再守一道：标记语句与 INSERT 里**不许出现** correct_text / ON CONFLICT。把「同 key 就跳过/覆盖」注入回去 ⇒ 并存断言当场红。"
+      - "**判据 4（会红）：审核通过 ⇒ 出现在 prompt 且带来源；退役 ⇒ 不再出现**。来源 = 会话 id + 轮次（`source=\"sess-1#2\"`，XML 转义后再进 prompt）；退役状态渲染为空。另有一条接线判据：读面语境必须真的带 `user_text`（从本轮最后一条用户消息取）—— 条件语言里一直有这个字段、`casegen` 也按它采样语境，但运行时语境里没有它就是「字段存在、功能不生效」（含反例「除非客户要零裁」永远不会命中的形态）。"
+      - "**边界（会红）：PII / 报价不得进口径卡，继承 #2815 并加严**。抽取侧（P1a）拦手机号 ⇒ 0 条候选且 pii_skipped=1；落库侧**加严**：报价（「报价 128 元」）与中文 PII 词根（联系人/地址/…）⇒ 整条不产卡（skip_counts.pii_or_price=1）。复用判据 = 闸门用的手机号/邮箱正则**就是** app/utils/pii_mask.py 的同一批对象（is 比较，抄一份就会漂移）。"
+      - "**fail-closed 边界**：跨租户候选 ⇒ tenant_mismatch 丢弃（口径直接进 prompt，越权即污染）；`例外` 类候选 P1 不自动配对成反例（会造出出口③生成不出用例的卡），记 not_a_card_category；抽不出关键词 ⇒ no_keyword 不产卡（一张永远不触发的卡 = 占位的能力幻觉）；命令行默认 dry-run 零写、`--apply` 走同一条写入路径。"
+      - "**未做项（照实登记）**：`例外` → 反例的自动配对、P2 的晋升/衰减/退役判定、运行时自动触发（P1b）都不在本用例；重启条件写在 PR body。"
+    skip_reason: "[backend-contract] 代码判据（pytest 层，零 LLM / 零网络 / 零真库；落库面用假会话做语句级断言），计分通道 = traces.tests，不进 agent-eval 冒烟"
+    merge_log:
+      - "2026-11-06 新增（issue #8175 P1）：补上 P1a（PR #8199 的离线候选）与一期读面（PR #8719 的 playbooks 表 + 审核 + prompt 出口）之间**断掉的那一截** —— 候选 → draft 卡 → 审核队列，含冲突并存标记与 PII/报价加严。"
+      - "口径裁定：`state` 在写面**硬编码 draft**（不是默认值、不是参数）—— 「自动落库」与「自动生效」必须是两件事；冲突用**并存 + conflict_key 标记**而不是 upsert 覆盖（覆盖会让被冲掉的那条无痕消失）。"
+      - "口径裁定：`例外` 类不自动变反例 —— trigger 与 counter 都落在 `user_text` 上时，出口③ 要求「触发成立且反例命中」的语境无法构造（同一个字段不能同时取两个值），宁可不给反例也不生成一张永远生成不出用例的卡。"
+      - "取号：MC-340（现取 main 侧 MC-3xx 仅 MC-300 / MC-310 被占；按派单建议取 340+ 号段压掉并行撞号窗口）。"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_playbook_ingest.py"
+      ci:
+        - ai-agent-tests.yml
+      verifies: []
