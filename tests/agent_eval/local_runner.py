@@ -864,6 +864,53 @@ def _clean_msg_blocks_retry_equivalence(msg) -> bool:
 _POSTCLEAN_NOT_APPLIED = "PRECONDITION_NOT_RESTORED: post_clean"
 _POSTCLEAN_BAD_MARKERS = (_POSTCLEAN_CONFIG_ERR, _POSTCLEAN_NOT_APPLIED)
 
+# ── 「写没落库」是**另一种真相**，必须独立成标记（issue #8776）───────────────────
+# 病灶（run 42127246100 的 CU-004，实测代价）：`PRECONDITION_NOT_RESTORED` 一个标记压了两种
+# 事实，而二者的**修法相反**：
+#   · 甲「写没落库」= **产品缺陷** —— 工具/模型说改了、库里没改 ⇒ 要修产品（写路径）；
+#   · 乙「夹具被改坏」= **基础设施缺陷** —— 复位定位键失效 / 种子被删 ⇒ 读数不可信，要修夹具。
+# 当次后果：一条**产品缺陷**被记成基础设施缺陷，整批读数被打上「不可信」⇒ 归因错人，
+# 真正要修的那一侧（写路径）从报告上消失了。
+#
+# 判别式（`missing_target_verdict`，纯函数 / 单一真值）：复位**定位键**查不到 ⇒
+# **先读种子值是否仍在**：
+#   · 在   ⇒ 世界压根没被改过 ⇒ 写没落库（甲，`WRITE_NOT_PERSISTED`）；
+#   · 不在 ⇒ 世界确实变了但目标定位不到 ⇒ 夹具/定位键坏了（乙，`PRECONDITION_NOT_RESTORED`）。
+# ⚠️ 两条都 fail-closed（用例照样判红），差别只在**归因桶**与「整批读数是否可信」：
+# 甲进 `completion_verdict.write_not_persisted_failures`（产品缺陷，阻塞），
+# 乙进 `restore_failures`（基础设施，阻塞）—— 不再共用一格。
+_WRITE_NOT_PERSISTED = "WRITE_NOT_PERSISTED"
+_PRODUCT_DEFECT_MARKERS = (_WRITE_NOT_PERSISTED,)
+
+
+def _write_not_persisted(detail: str) -> str:
+    """「写没落库」的稳定标记（**产品缺陷**，不是夹具未复位；issue #8776 的甲）。"""
+    return (f"{_WRITE_NOT_PERSISTED}: {detail} —— **写没落库（产品缺陷）**：复位目标不在库"
+            f"而**种子值仍在**，说明这次写压根没落地；该用例判红且归因指向写路径，"
+            f"**不**把整批读数标成不可信（与 `PRECONDITION_NOT_RESTORED` 分属两种真相，"
+            f"判别式见 `missing_target_verdict`）")
+
+
+def missing_target_verdict(phase: str, locate_key: str, restore_value: str,
+                           seed_present: bool) -> str:
+    """复位**定位键查不到**时该报哪种真相（纯函数，单一真值；issue #8776 的判别式）。
+
+    · `post` ∧ 定位键 ≠ 复位目标值 ∧ **种子值仍在** ⇒ `write_not_persisted`（甲，产品缺陷）；
+    · 其余 ⇒ `not_restored`（乙，基础设施缺陷）。
+
+    **为什么「定位键 ≠ 复位值」是必要条件**：两者相同时它们指向**同一个对象**，
+    「目标不在」只可能是夹具问题（种子本身没了）—— 不存在「写没落库」这个解释。
+    这条约束让判别式只在本用例**写出了一个新标识**（如 CU-004 改手机号）时生效，
+    对既有复位族是**零行为变化**（它们定位键与复位值同源）。
+    """
+    if (str(phase or "") == "post"
+            and str(locate_key or "").strip()
+            and str(restore_value or "").strip()
+            and str(locate_key).strip() != str(restore_value).strip()
+            and seed_present):
+        return "write_not_persisted"
+    return "not_restored"
+
 
 def _clean_not_applied(phase: str, detail: str) -> str:
     """「夹具动作没生效」的**阶段化**文案（单一事实源，纯函数；issue #4075）。
@@ -1528,6 +1575,12 @@ async def _restore_order_status(token: str, spec: dict, phase: str) -> str:
     return f"已复位订单 {order_no} 状态 → {want}（回读一致）"
 
 
+#: 「复位定位键查不到」的稳定片段（issue #8776）：生产者（`_find_customer_target`）与
+#: 消费者（判别式的触发条件）**共用同一个常量** —— 判别式只许在"真的查不到"时生效，
+#: "不唯一"不是写没落库（那是夹具/定位键的问题），不能把夹具缺陷洗成产品缺陷。
+_CUSTOMER_TARGET_MISSING = "不在库里（复位目标不存在）"
+
+
 async def _find_customer_target(client, token: str, keyword: str) -> tuple:
     """按手机号/客户 ID 定位复位目标客户 → `(item, 错误文案)`（二者必有一个为空）。
 
@@ -1546,7 +1599,7 @@ async def _find_customer_target(client, token: str, keyword: str) -> tuple:
     if len(exact) == 1:
         return exact[0], ""
     if not exact:
-        return None, f"客户「{kw}」不在库里（复位目标不存在）"
+        return None, f"客户「{kw}」{_CUSTOMER_TARGET_MISSING}"
     return None, (f"客户「{kw}」命中 {len(exact)} 位（复位目标不唯一）"
                   f"—— 改用手机号或 `customer_id` 精确定位，不要对共享夹具瞎改")
 
@@ -1591,6 +1644,19 @@ async def _restore_customer_profile(token: str, spec: dict, phase: str) -> str:
         h = _admin_headers(token)
         target, err = await _find_customer_target(c, token, kw)
         if not target:
+            # 判别式（issue #8776）：定位键查不到时**先读种子值是否仍在** ——
+            # 在 ⇒ 世界没被改过 ⇒ 是「写没落库」（产品缺陷），不是「没复位」（基础设施缺陷）。
+            # ⚠️ 只在**真的"查不到"**时成立（`_CUSTOMER_TARGET_MISSING`）：
+            #    「不唯一」是夹具/定位键的问题，不是写没落库；
+            #    `pre` 阶段的"目标不在"是前置未应用；定位键 == 复位值时两者同源、无从区分。
+            #    三种情况一律保守归基础设施（乙），不许把夹具缺陷洗成产品缺陷。
+            if kw and want_phone != kw and _CUSTOMER_TARGET_MISSING in str(err):
+                _seed, _ = await _find_customer_target(c, token, want_phone)
+                _verdict = missing_target_verdict(
+                    phase, kw, want_phone, seed_present=_seed is not None)
+                if _verdict == "write_not_persisted":
+                    return _write_not_persisted(
+                        f"客户「{kw}」不在库里（本用例写出的新号）而种子号「{want_phone}」仍在")
             return _clean_not_applied(phase, err)
         cid = str(target.get("id") or "")
         prof = _customer_profile_of(_safe_json(
@@ -4473,6 +4539,10 @@ _CASE_ATOM_RULES = (
     # `post_clean` 的配置错误（#4075）：与 `pre_clean` 同构但**分属不同原子** ——
     # 两者是不同阶段的不同缺陷（"开跑前没准备" vs "跑完没复位"）。
     (re.compile(r"^post_clean: 不支持的 type"), "config_error(post_clean)"),
+    # 「写没落库」（issue #8776）：**产品缺陷**原子，与 `precondition_not_restored` 分家 ——
+    # 同一个标记压两种真相，会让一条产品缺陷被记成基础设施缺陷（整批读数被打上不可信），
+    # 而真正该修的写路径从报告上消失（run 42127246100 的 CU-004 就是这形态）。
+    (re.compile(r"^WRITE_NOT_PERSISTED"), "write_not_persisted"),
     # 复位族未生效（#4075）：**必须排在通用 `^PRECONDITION_NOT_RESTORED` 之前**
     # （先匹配者胜），否则 post 的复位失败会被折成 #3807 的价格复位标签（归因错层）。
     (re.compile(r"^PRECONDITION_NOT_RESTORED: post_clean"),
@@ -7162,6 +7232,18 @@ def check_postclean_not_applied(msgs: list) -> list:
     """
     return [str(m) for m in (msgs or [])
             if str(m).startswith(_POSTCLEAN_BAD_MARKERS)]
+
+
+def check_postclean_write_not_persisted(msgs: list) -> list:
+    """把 `post_clean` 里的**写没落库**（产品缺陷）单列出来（issue #8776）；返回原文列表。
+
+    与 `check_postclean_not_applied` **互斥且必须互斥**：`WRITE_NOT_PERSISTED` 命中时，
+    该消息**不得**再落进 `_POSTCLEAN_BAD_MARKERS` 那一族（那族的语义是「共享夹具未复位
+    ⇒ 整批读数不可信」，是基础设施缺陷）。两条判据各认自己的标记，不互相包含 ——
+    这正是「拆两个标记」的可判定形态（两个方向都有正控判据）。
+    """
+    return [str(m) for m in (msgs or [])
+            if str(m).startswith(_PRODUCT_DEFECT_MARKERS)]
 
 
 _SMS_CODE_RE = re.compile(r"^\s*(?:短信验证码|验证码)?\s*[:：]?\s*(\d{4,6})\s*$")
@@ -9913,6 +9995,19 @@ async def run_suite(cases, label: str, classify: bool = True, retry_budget: int 
                         print(f"     🧹 {str(_m)[:160]}")
         if isinstance(r, dict) and restore_msgs:
             r["restore"] = restore_msgs
+            # ── 「写没落库」= **产品缺陷**，与「夹具未复位」分家（issue #8776）──────────
+            # 为什么必须与下面那一段**互斥**：`precondition` 通道的语义是「共享状态未知 ⇒
+            # 本用例与**后续**用例的读数都不可信」。把「写没落库」塞进它 ⇒ 一条产品缺陷
+            # 同时被记成基础设施缺陷，整批读数被打上不可信（run 42127246100 的归因错误）。
+            # 这里改走**用例自身的失败**（score=0 + `failed` 原文）与独立桶
+            # `write_not_persisted`（→ `completion_verdict.write_not_persisted_failures`）。
+            _write_bad = check_postclean_write_not_persisted(restore_msgs)
+            if _write_bad:
+                r["write_not_persisted"] = _write_bad
+                for _w in _write_bad:
+                    r["failed"].append((_w, _CASE_LEVEL_DETAIL))
+                r["score"] = 0.0
+                print(f"     ⛔ 写没落库（产品缺陷，进结论）: {_write_bad[0][:200]}")
             _not_restored = [m for m in restore_msgs
                             if str(m).startswith("PRECONDITION_NOT_RESTORED")]
             if _not_restored and not r.get("precondition"):
@@ -10367,6 +10462,9 @@ BLOCKED_BUT_PASSED_LABEL = "通过但被 fail-closed 阻塞（跨 run 复发，s
 _BLOCKING_VERDICT_KEYS = (
     "deterministic_failures", "journey_failures", "systemic_recurrence",
     "restore_failures", "harness_incompatible_failures", "case_asset_failures",
+    # 「写没落库」= **产品缺陷**（issue #8776）：与 `restore_failures`（基础设施缺陷）
+    # 分属两个桶 —— 合并会让"工具说改了、库里没改"重新被读成"夹具没复位"。
+    "write_not_persisted_failures",
 )
 
 
@@ -10459,7 +10557,8 @@ def completion_verdict(results: list, key_journey_ids: tuple = ()) -> dict:
     Returns:
         {"ok", "reason", "deterministic_failures", "journey_failures",
          "flake_released", "systemic_recurrence", "restore_failures",
-         "harness_incompatible_failures", "case_asset_failures", "total", "passed"}
+         "harness_incompatible_failures", "case_asset_failures",
+         "write_not_persisted_failures", "total", "passed"}
         （`must_fix_failures` / `blocked_but_passed` **不在**这里 —— 它们是**序列化层**的
         附加字段，由 `write_summary_json` 经 `blocking_groups` 落盘，见该函数 docstring）
     """
@@ -10468,10 +10567,12 @@ def completion_verdict(results: list, key_journey_ids: tuple = ()) -> dict:
                 "deterministic_failures": [], "journey_failures": [],
                 "flake_released": [], "systemic_recurrence": [], "restore_failures": [],
                 "harness_incompatible_failures": [], "case_asset_failures": [],
+                "write_not_persisted_failures": [],
                 "total": 0, "passed": 0}
     journey_set = set(key_journey_ids or ())
     deterministic, journey_fail, flake_released = [], [], []
     systemic, restore_fail, harness_bad, case_asset = [], [], [], []
+    write_bad: list = []
 
     def _is_recurring(r) -> bool:
         return bool(r.get("cross_run_recurrence"))
@@ -10486,6 +10587,11 @@ def completion_verdict(results: list, key_journey_ids: tuple = ()) -> dict:
         # 不进 `deterministic_failures`（那是"agent/产品的确定性回归"清单）。
         if r.get("harness_incompatible"):
             harness_bad.append(cid)
+        # 「写没落库」（issue #8776）：**产品缺陷**，与 `restore_failures`（基础设施缺陷）
+        # 分桶。它**不**污染后续用例的读数（世界没被改过），所以要修的是写路径，
+        # 而不是"把整批读数标成不可信"。
+        if r.get("write_not_persisted"):
+            write_bad.append(cid)
         # 前置不成立族（#4245）：`pre_clean` 未应用 / 运行期前置漂移 ⇒ 该用例本次的
         # 红/绿**无判别力**（runner 原文断言"不可归因于 agent 行为"）⇒ 单列
         # `case_asset_failures`，且**先于**复发/旅程/放行判定 —— 否则同一条会被折进
@@ -10521,12 +10627,15 @@ def completion_verdict(results: list, key_journey_ids: tuple = ()) -> dict:
             journey_fail.append(cid)
         elif str(r.get("classification") or "") in _COMPLETION_RELEASED_CLASSES:
             flake_released.append(cid)
+        elif cid in write_bad:
+            pass          # 已单列（产品缺陷桶），不重复计入"必须处理的失败"
         elif cid in harness_bad:
             pass          # 已单列，不重复计入"必须处理的失败"
         else:
             deterministic.append(cid)
     ok = (not deterministic and not journey_fail and not systemic
-          and not restore_fail and not harness_bad and not case_asset)
+          and not restore_fail and not harness_bad and not case_asset
+          and not write_bad)
     total = len(results)
     passed = sum(1 for r in results if r.get("score", 0) >= 1.0)
     # #4207：两类分组（同一判据供 summary 的结构化字段复用 —— 见 `blocking_groups`）
@@ -10534,6 +10643,7 @@ def completion_verdict(results: list, key_journey_ids: tuple = ()) -> dict:
         "deterministic_failures": deterministic, "journey_failures": journey_fail,
         "systemic_recurrence": systemic, "restore_failures": restore_fail,
         "harness_incompatible_failures": harness_bad, "case_asset_failures": case_asset,
+        "write_not_persisted_failures": write_bad,
     })
     _must_fix, _blocked_passed = _groups["must_fix_failures"], _groups["blocked_but_passed"]
     if ok:
@@ -10577,6 +10687,11 @@ def completion_verdict(results: list, key_journey_ids: tuple = ()) -> dict:
         if restore_fail:
             bucket_parts.append(f"前置未复位 {len(restore_fail)} 条"
                                 f"（共享状态未回滚，结论不可信）: {', '.join(restore_fail)}")
+        if write_bad:
+            bucket_parts.append(f"写没落库 {len(write_bad)} 条"
+                                f"（**产品缺陷**：工具/模型说改了、库里没改 ⇒ 修写路径；"
+                                f"不是夹具未复位、也**不**牵连整批读数）: "
+                                f"{', '.join(write_bad)}")
         if harness_bad:
             bucket_parts.append(f"harness/用例形状不兼容 {len(harness_bad)} 条"
                                 f"（**不是** agent 行为失败，需改用例/harness）: "
@@ -10593,6 +10708,7 @@ def completion_verdict(results: list, key_journey_ids: tuple = ()) -> dict:
         "restore_failures": restore_fail,
         "harness_incompatible_failures": harness_bad,
         "case_asset_failures": case_asset,
+        "write_not_persisted_failures": write_bad,
         "total": total, "passed": passed,
     }
 
@@ -10776,6 +10892,11 @@ def _summary_case(result: dict, failures: list) -> dict:
     # （"用例/卡形状对不上"与"agent 没做"必须能分开，否则红会一直指错人）。
     if result.get("harness_incompatible"):
         entry["harness_incompatible"] = result["harness_incompatible"]
+    # 「写没落库」（issue #8776）：随 artifact 落盘 —— 顶层
+    # `completion.write_not_persisted_failures` 给 ID 列表，这里给原文，
+    # 让"这是产品缺陷还是夹具没复位"可逐条核对（缺省不带该键，同 failures 的理由）。
+    if result.get("write_not_persisted"):
+        entry["write_not_persisted"] = result["write_not_persisted"]
     # 跨 run 复发（issue #3806）：条目标注 —— 顶层 `completion.systemic_recurrence`
     # 给出 ID 列表，这里给出该条的指纹与历史 run，让"为什么不放行"可逐条核对。
     if result.get("cross_run_recurrence"):

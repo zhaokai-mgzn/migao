@@ -213,7 +213,15 @@ cases:
           action: update
     data_checks:
       - "仅 phone 被更新，未传字段保持原值（`update` 只下发 `data` 里给出的键）"
-      - "效果层：`must_succeed` 证明 `customer_manage(action=update)` 至少一次 `success=true`；`post_clean` 的 `customer_profile_restore` 按本用例写出的手机号定位并复位回种子号 —— 复位找不到目标即暴露「工具说改了、库里没改」的假成功"
+      - "效果层：`must_succeed` 证明 `customer_manage(action=update)` 至少一次 `success=true`；`post_clean` 的 `customer_profile_restore` 按本用例写出的手机号定位并复位回种子号 —— 复位目标不在库而**种子号仍在**时由判别式报 `WRITE_NOT_PERSISTED`（**产品缺陷**：工具说改了、库里没改），与「夹具被改坏」的 `PRECONDITION_NOT_RESTORED` 分属两种真相（issue #8776）"
+    # 全局命名空间声明（issue #8776，issue #4992 那次撤掉是错误的过度收窄）：
+    # 真复位只解决**重试前置等价性**，**不**解决**并行互斥** —— 本用例写的正是那位
+    # 共享客户（`cust_eval_zhangsan` / 13800138000），而同键组还有 AS-003 / AS-005 /
+    # AS-016 / CH-009 / CU-003 / OR-013 六条在读它。2026-09-21（#4992）把 `namespaces`
+    # 换成 pre/post_clean 后它**不再参与串行**（run 42127246100 的分组逐字只列那 6 条），
+    # 一旦哪次写**真成功**就成了真并发改同一客户。⇒ 两者都要：复位管重试，命名空间管并行。
+    namespaces:
+      - "customer_phone:13800138000"
     pre_clean:
       - type: customer_profile_restore
         customer_keyword: "13800138000"
@@ -238,7 +246,7 @@ cases:
     skip_reason: ""
     merge_log: >-
       2026-11-04 un-skip（issue #8618：B 端工具缺口接回）——`customer_manage` 的 `update`（改客户资料）已接回 B 端（`PUT /api/admin/customers/{id}`，确认门禁 + `customer:create` 的 action 级复检 + prompt 口径同批落地）⇒ 本用例撤销 skip，`expectations` / `must_succeed` / `required_args` 三条写声明恢复；判定面 = 工具被真的调用 + 服务端真的改了数据（`post_clean` 的真复位是第二条证据），**不是**「agent 说了会做」。
-      ｜verification 4.4 独有；2026-09-09 校准：补「选第一个」+「确认」两轮——「张三」生产有 3 位重名，agent 正确发 choice 卡澄清（#3142 修 validate_input 空转后不再幻觉「不支持」），需用户点选+确认后 update；probe 实证完整流程走通（重名澄清→选第一个→确认→update 成功）。2026-09-14 消除顺序依赖（issue #3568）：裸文本「第一个」→ 手机号唯一指代（重名澄清轮消失，干净栈/生产栈同判；连打三轮的澄清轮次表也随之消失） ｜ 2026-09-21（case-trust burn-down 缴费，metric=entries ⇒ 整条销账）：补 `namespaces[customer_phone:13800138000]`（弱证据，如实登记：夹具层无「把客户档案改回来」的复位动作）+ `precondition[order_count_for_phone: 13800138000]`（靶子存在性，结构化下界 `min:1`）+ `must_succeed[customer_manage]`（效果层）；`user_inputs` / `expectations` / `data_checks` / `skip_reason` 一字未动、断言强度不放宽 ｜ 2026-09-21（issue #4992 的夹具层复位动作）：自清理由**弱证据** `namespaces` 升级为**真复位** `pre_clean` + `post_clean[customer_profile_restore]`（`pre` 按种子手机号 13800138000 定位、`post` 按本用例写出的 13900001111 定位并复位回种子号；实现见 `tests/agent_eval/local_runner.py` 的 `_restore_customer_profile`），`namespaces` 随之撤掉 —— `user_inputs` / `expectations` / `data_checks` / `skip_reason` / `precondition` / `must_succeed` 一字未动、断言强度不放宽 ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：`customer_manage` 的写 action `update` 已删除（工具收窄为只读 `{list, detail, list_tags}`）⇒ 本用例退役（理由写在 `skip_reason`，条目不删除）；`expectations` 由 `customer_manage(action=update)` 改判为存活的只读路径 `customer_manage(action=detail)`，`must_succeed[customer_manage]` 整格移除（否则成为永不满足的悬空声明，会阻塞 CI 的 action 绑定判据）。
+      ｜verification 4.4 独有；2026-09-09 校准：补「选第一个」+「确认」两轮——「张三」生产有 3 位重名，agent 正确发 choice 卡澄清（#3142 修 validate_input 空转后不再幻觉「不支持」），需用户点选+确认后 update；probe 实证完整流程走通（重名澄清→选第一个→确认→update 成功）。2026-09-14 消除顺序依赖（issue #3568）：裸文本「第一个」→ 手机号唯一指代（重名澄清轮消失，干净栈/生产栈同判；连打三轮的澄清轮次表也随之消失） ｜ 2026-09-21（case-trust burn-down 缴费，metric=entries ⇒ 整条销账）：补 `namespaces[customer_phone:13800138000]`（弱证据，如实登记：夹具层无「把客户档案改回来」的复位动作）+ `precondition[order_count_for_phone: 13800138000]`（靶子存在性，结构化下界 `min:1`）+ `must_succeed[customer_manage]`（效果层）；`user_inputs` / `expectations` / `data_checks` / `skip_reason` 一字未动、断言强度不放宽 ｜ 2026-09-21（issue #4992 的夹具层复位动作）：自清理由**弱证据** `namespaces` 升级为**真复位** `pre_clean` + `post_clean[customer_profile_restore]`（`pre` 按种子手机号 13800138000 定位、`post` 按本用例写出的 13900001111 定位并复位回种子号；实现见 `tests/agent_eval/local_runner.py` 的 `_restore_customer_profile`），`namespaces` 随之撤掉 —— `user_inputs` / `expectations` / `data_checks` / `skip_reason` / `precondition` / `must_succeed` 一字未动、断言强度不放宽 ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：`customer_manage` 的写 action `update` 已删除（工具收窄为只读 `{list, detail, list_tags}`）⇒ 本用例退役（理由写在 `skip_reason`，条目不删除）；`expectations` 由 `customer_manage(action=update)` 改判为存活的只读路径 `customer_manage(action=detail)`，`must_succeed[customer_manage]` 整格移除（否则成为永不满足的悬空声明，会阻塞 CI 的 action 绑定判据）。 ｜ 2026-11-06（issue #8776 的 ②：**补回 `namespaces[customer_phone:13800138000]`**）—— run 42127246100 实测：本用例在 R2 把**掩码号** `138****8000` 当"用户新号"喂回模型，守门 `_masked_phone_write_block` 正确拦下、模型没重试 ⇒ 写压根没落库；而 `post_clean` 按用例写出的 `13900001111` 定位不到 ⇒ 旧口径报 `PRECONDITION_NOT_RESTORED`（**基础设施缺陷**，整批读数不可信）⇒ **一条产品缺陷被记成基础设施缺陷**。同一批里补两件事：① 复位侧加**判别式**（先读种子号是否仍在 ⇒ 在 = `WRITE_NOT_PERSISTED` 产品缺陷，不在 = 夹具被改坏），② 隔离侧**补回 `namespaces`** —— #4992 的"用真复位替换弱证据"只对**重试前置**成立，**不**替代**并行互斥**（本用例写的正是那位共享客户，同键组另有 6 条在读它）⇒ 本次两者并存。`user_inputs` / `expectations` / `must_succeed` / `required_args` / `precondition` / `skip_reason` 一字未动、断言强度不放宽。
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_base.py"

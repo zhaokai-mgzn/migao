@@ -10051,3 +10051,37 @@ cases:
       ci:
         - ai-agent-tests.yml
       verifies: []
+
+  - id: MC-268
+    legacy_id: ""
+    title: "L0 判据：评测 harness 的三种归因必须分家（写没落库 / 夹具未复位 / 卡形状不兼容，零 LLM）"
+    domains:
+      - misc
+      - ci
+    tier: normal
+    tags:
+      - 类级判据
+      - 评测harness
+      - 归因
+      - fail-closed
+    truths_ref: []
+    user_inputs:
+      - "N/A（静态判据 + 内存替身，无对话轮次：直接调用 tests/agent_eval/local_runner.py 的判别式/折叠器/判定层与用例资产的纯函数）"
+    expectations:
+      - "判据本体（issue #8776 的三处缺口各一条）：① `missing_target_verdict` 的两方向 —— 复位定位键查不到时**先读种子值是否仍在**：在 ⇒ `WRITE_NOT_PERSISTED`（产品缺陷），不在 ⇒ `PRECONDITION_NOT_RESTORED`（基础设施缺陷）；② CU-004 ∈ `namespace_conflict_groups()[customer_phone:13800138000]`（它写的正是那位共享客户 ⇒ 必须参与串行）；③ OR-017 对**真实卡字段**（run 42127246100 的 `formFields` 逐字：customer_name / customer_phone / customer_address）能交付 `__FORM__|{json}`，且 `payload_window_audit` 无 violation。"
+      - "正控（必红，两个方向都覆盖）：甲方向 = 种子号仍在而写出的新号不在 ⇒ 报 `WRITE_NOT_PERSISTED` 且 `check_postclean_not_applied([msg]) == []`；乙方向 = 种子号也没了 ⇒ 报 `PRECONDITION_NOT_RESTORED` 且 `check_postclean_write_not_persisted([msg]) == []`。"
+      - "判定层分桶（否则拆了标记还是分不清）：`completion_verdict` 把两者分别放进 `write_not_persisted_failures` / `restore_failures`，两者都阻塞 `ok`；新桶与 `_BLOCKING_VERDICT_KEYS` + 两个 return 点键集逐字一致。"
+      - "负控（本单必须做，防「修完把红藏起来」）：修完 ③ 之后，**零载荷**的 form 卡仍必须报 `harness_incompatible(no_fillable_payload)`、有载荷但零匹配仍必须报 `form_fields_mismatch`、卡形状漂移到别名表外的键同样报 `form_fields_mismatch` —— 若有人把「纯文本解析回填」塞进 harness（乙方案），这一组必红。"
+      - "越界防线：夹具缺陷不许洗成产品缺陷 —— 定位键命中多位（不唯一）/ 缺 `customer_keyword` / `pre` 阶段 / 定位键==复位值 一律仍报 `PRECONDITION_NOT_RESTORED`；`_failure_atom` 两侧产出不同原子。"
+    data_checks:
+      - "现场（run 42127246100，B 族两条）：CU-004 的写被 `_masked_phone_write_block` 正确拦下、模型没重试 ⇒ 写没落库，而 `post_clean` 按用例写出的 13900001111 定位不到 ⇒ 旧口径 `PRECONDITION_NOT_RESTORED` 把一条**产品缺陷**记成**基础设施缺陷**、整批读数被打上「不可信」；OR-017 的 R2 只声明纯文本 fallback 而 agent 发 form 卡 ⇒ `harness_incompatible(no_fillable_payload)` ⇒ R2 被吃、R3 去答不存在的 choice 卡。"
+      - "隔离缺口：CU-004 于 2026-09-21（#4992）把 `namespaces[customer_phone:13800138000]` 换成 pre/post_clean ⇒ 不再参与命名空间串行（该 run 的分组逐字只列 AS-003/AS-005/AS-016/CH-009/CU-003/OR-013）⇒ 真复位只解决「重试前置等价性」，**不**解决「并行互斥」；两者必须并存。"
+      - "字段名现取（不是猜的）：OR-017 的三键取自 run 42127246100 的 artifact `post-deploy-eval-xiaobu` 里 R1 那轮 `interact` 的 `call_args.formFields[].key`，与其它 C 端下单用例（OR-014 / OR-016 / OR-018）的 auto_fill 同键。"
+    skip_reason: "[backend-contract] 评测 harness 的静态/纯函数不变式（零 LLM / 零网络 / 零 DB）：真值载体 = traces.tests 的 tests/unit_ci_workflows/test_eval_harness_gaps_8776.py，不进 agent-eval 冒烟"
+    merge_log: "2026-11-06 新增（issue #8776）。三处缺口一次收口：① 拆 `WRITE_NOT_PERSISTED` / `PRECONDITION_NOT_RESTORED` 两种真相（判别式 = 先读种子值是否仍在）；② 补回 CU-004 的 namespaces（#4992 撤掉是过度收窄）；③ OR-017 补用例级 auto_fill（走甲，不改 harness 的回填协议）。判据 = tests/unit_ci_workflows/test_eval_harness_gaps_8776.py（19 条，两个方向正控 + 负控 + 注入式红证）。未做项：CU-004 的真实现场要等下一次集中评测（#4262）。"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_eval_harness_gaps_8776.py"
+      ci:
+        - pr-check.yml
+      verifies: []
