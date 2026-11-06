@@ -29,7 +29,7 @@ import static org.mockito.Mockito.when;
  * {@link ProductService#resolveProductId}，而它第 2/4/5 步分别是「UUID 前缀取第一条」
  * 「序号」「名称模糊取第一条」⇒ **改哪一件商品取决于「谁先被查到」**（200 OK 的数据事故）。</p>
  *
- * <p>本文件钉住 {@link ProductService#resolveProductIdStrict} 的**唯一确定**不变式，三种形态各两条：</p>
+ * <p>本文件钉住 {@link ProductWriteRefResolver#resolveUniqueProductId} 的**唯一确定**不变式，三种形态各两条：</p>
  * <ul>
  *   <li>名称：唯一（精确/片段）⇒ 解析；重建名/命中多条 ⇒ {@code PRODUCT_AMBIGUOUS}；</li>
  *   <li>序号：**一律拒绝**（{@code PRODUCT_INDEX_NOT_ALLOWED}）—— 序号会随增删漂移；</li>
@@ -43,14 +43,14 @@ import static org.mockito.Mockito.when;
  */
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)
-@DisplayName("写路径商品引用严格解析（issue #8788）")
-class ProductResolveStrictTest {
+@DisplayName("写路径商品引用严格解析（ProductWriteRefResolver，issue #8788）")
+class ProductWriteRefResolverTest {
 
     @Mock
     private ProductMapper productMapper;
 
     @InjectMocks
-    private ProductService productService;
+    private ProductWriteRefResolver resolver;
 
     private static final String UUID_A = "a1b2c3d4-e5f6-4a7b-8c9d-0123456789ab";
     private static final String UUID_B = "b2c3d4e5-f6a7-4b8c-9d0e-123456789abc";
@@ -80,19 +80,19 @@ class ProductResolveStrictTest {
     @Test
     @DisplayName("精确 UUID ⇒ 原样返回（写路径不额外「确认」，零猜测空间）")
     void exactUuidIsReturnedVerbatim() {
-        assertThat(productService.resolveProductIdStrict(UUID_A, 1L)).isEqualTo(UUID_A);
+        assertThat(resolver.resolveUniqueProductId(UUID_A, 1L)).isEqualTo(UUID_A);
     }
 
     @Test
     @DisplayName("非 UUID 的种子 id（p-zg-001）⇒ 原样返回（不让真实 id 被当名称搜丢）")
     void legacyNonUuidIdIsReturnedVerbatim() {
-        assertThat(productService.resolveProductIdStrict(LEGACY_ID, 1L)).isEqualTo(LEGACY_ID);
+        assertThat(resolver.resolveUniqueProductId(LEGACY_ID, 1L)).isEqualTo(LEGACY_ID);
     }
 
     @Test
     @DisplayName("精确名称唯一 ⇒ 解析到该商品")
     void uniqueExactNameResolves() {
-        assertThat(productService.resolveProductIdStrict("云朵半遮光窗帘", 1L)).isEqualTo(UUID_B);
+        assertThat(resolver.resolveUniqueProductId("云朵半遮光窗帘", 1L)).isEqualTo(UUID_B);
     }
 
     @Test
@@ -102,7 +102,7 @@ class ProductResolveStrictTest {
                 product(UUID_A, "同名商品"),
                 product(UUID_B, "同名商品")));
 
-        assertThatThrownBy(() -> productService.resolveProductIdStrict("同名商品", 1L))
+        assertThatThrownBy(() -> resolver.resolveUniqueProductId("同名商品", 1L))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("匹配到 2 个商品")
                 .hasMessageContaining("未执行修改")
@@ -112,7 +112,7 @@ class ProductResolveStrictTest {
     @Test
     @DisplayName("🔴 序号「3」⇒ PRODUCT_INDEX_NOT_ALLOWED（序号按创建时间排序，增删后漂移）")
     void indexIsRefused() {
-        assertThatThrownBy(() -> productService.resolveProductIdStrict("3", 1L))
+        assertThatThrownBy(() -> resolver.resolveUniqueProductId("3", 1L))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("序号")
                 .hasMessageContaining("漂移")
@@ -123,13 +123,13 @@ class ProductResolveStrictTest {
     @Test
     @DisplayName("名称片段唯一 ⇒ 解析到该商品")
     void uniqueFuzzyNameResolves() {
-        assertThat(productService.resolveProductIdStrict("云朵半遮光", 1L)).isEqualTo(UUID_B);
+        assertThat(resolver.resolveUniqueProductId("云朵半遮光", 1L)).isEqualTo(UUID_B);
     }
 
     @Test
     @DisplayName("🔴 名称片段命中多条 ⇒ PRODUCT_AMBIGUOUS（绝不取第一条）")
     void ambiguousFuzzyNameIsRefused() {
-        assertThatThrownBy(() -> productService.resolveProductIdStrict("奶油风提花布", 1L))
+        assertThatThrownBy(() -> resolver.resolveUniqueProductId("奶油风提花布", 1L))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("匹配到 2 个商品")
                 .satisfies(e -> assertThat(((BusinessException) e).getCode()).isEqualTo("PRODUCT_AMBIGUOUS"));
@@ -138,13 +138,13 @@ class ProductResolveStrictTest {
     @Test
     @DisplayName("id 前缀唯一 ⇒ 解析到该商品")
     void uniqueUuidPrefixResolves() {
-        assertThat(productService.resolveProductIdStrict("b2c3d4e5", 1L)).isEqualTo(UUID_B);
+        assertThat(resolver.resolveUniqueProductId("b2c3d4e5", 1L)).isEqualTo(UUID_B);
     }
 
     @Test
     @DisplayName("🔴 id 前缀命中多条 ⇒ PRODUCT_AMBIGUOUS（写路径不接受「低概率」）")
     void duplicateUuidPrefixIsRefused() {
-        assertThatThrownBy(() -> productService.resolveProductIdStrict("d4e5f6a7", 1L))
+        assertThatThrownBy(() -> resolver.resolveUniqueProductId("d4e5f6a7", 1L))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("匹配到 2 个商品")
                 .satisfies(e -> assertThat(((BusinessException) e).getCode()).isEqualTo("PRODUCT_AMBIGUOUS"));
@@ -153,6 +153,6 @@ class ProductResolveStrictTest {
     @Test
     @DisplayName("一条都不命中 ⇒ null（交给控制器 404，不在这里编一个 id）")
     void noMatchReturnsNull() {
-        assertThat(productService.resolveProductIdStrict("不存在的窗帘XYZ", 1L)).isNull();
+        assertThat(resolver.resolveUniqueProductId("不存在的窗帘XYZ", 1L)).isNull();
     }
 }

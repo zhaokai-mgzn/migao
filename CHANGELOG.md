@@ -39,11 +39,11 @@
   **id 前缀无法证明唯一 ⇒ 拒绝**（目录超过扫描上限时宁可不写）；
   UUID 直传**零解析往返**；非 UUID 真实 id（`p-zg-001`）只做一次精确探测。
   所有拒绝路径都**零写请求**，话术明确「未执行修改」。
-- **服务层同步**（只读面不动）：新增 `ProductService.resolveProductIdStrict(...)`，`AgentProductController`
+- **服务层同步**（只读面不动）：新增 `ProductWriteRefResolver.resolveUniqueProductId(...)`，`AgentProductController`
   的 4 个写端点全部改调它；共享的 `resolveProductId` **逐字不动**（只读面仍在用它的宽松语义）。
 - 判据 = MC-252：`backend/ai-agent-service/tests/test_write_path_id_resolution.py`（三种形态 + 负例 + 服务层静态扫描）、
   `backend/ai-agent-service/tests/test_write_refusal.py`（四态话术）、
-  `backend/admin-api/src/test/java/com/migao/admin/service/ProductResolveStrictTest.java`（Java 10 条）；
+  `backend/admin-api/src/test/java/com/migao/admin/service/ProductWriteRefResolverTest.java`（Java 10 条）；
   类级元守卫 = `backend/ai-agent-service/tests/test_tool_id_shape_promises.py`（`EXEMPT_KNOWN_GAPS` 已**销账为空**）。
 - **边界（照实登记）**：`admin-api` 没有 id 前缀查询面（`productId` 精确、`keyword` 只搜名称/货号）⇒ 前缀只能翻页扫目录
   （页大小 100 / 上限 5 页），扫不完即拒绝；共享解析器的宽松语义保留给只读面（另有重启条件见用例）。

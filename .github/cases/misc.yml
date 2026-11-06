@@ -10233,7 +10233,7 @@ cases:
       - "情形 ④（入参本身就是合法 id）：UUID ⇒ 写请求照发且**解析零往返**（断言「没有任何 GET」）；非 UUID 真实 id（docs/deployment/demo-seed.sql 的 p-zg-001）⇒ **只**一次 productId 精确探测即写、**零** keyword 探测（id 与名称静态不可区分，但探测必须精确、绝不产生模糊候选）。"
       - "🔴 写路径**拒绝序号**（与只读面不同）：product_id=「2」⇒ 拒绝写（error=商品引用不可用于写入、message 含「序号」「漂移」「未执行修改」）、**零 PATCH** 且**零 HTTP**（不为了「确认一下」去查目录）。理由 = 序号按创建时间排序，任何一次增删商品都会让它漂移 ⇒「第 3 个」不是可信目标。"
       - "🔴 id 前缀（8 位十六进制）：唯一命中 ⇒ 正常写（写 URL 是完整 id）；命中多条 ⇒ 拒绝写（error=商品不唯一、message 含「匹配到 2 个商品」、**零 PATCH**）；目录大于扫描上限 ⇒ **无法证明唯一** ⇒ 拒绝（error=商品引用不可用于写入、message 含「无法证明只有一个商品匹配」、零 PATCH）。"
-      - "服务层孪生（Java）：`ProductService.resolveProductIdStrict` 自带三种拒绝出口（PRODUCT_INDEX_NOT_ALLOWED / PRODUCT_AMBIGUOUS / 无命中返回 null），且 `AgentProductController` 的**每个**写端点都调它、不调共享的 `resolveProductId`（静态扫描：strict 调用点 >= 4、共享调用点 == 0）。共享解析器**逐字不动**（只读面仍在用，改它会波及读路径）。"
+      - "服务层孪生（Java）：`ProductWriteRefResolver.resolveUniqueProductId` 自带三种拒绝出口（PRODUCT_INDEX_NOT_ALLOWED / PRODUCT_AMBIGUOUS / 无命中返回 null），且 `AgentProductController` 的**每个**写端点都调它、不调共享的 `resolveProductId`（静态扫描：strict 调用点 >= 4、共享调用点 == 0）。共享解析器**逐字不动**（只读面仍在用，改它会波及读路径）。"
       - "负例自证（fail-closed）：货号命中（MG-ZG-001，keyword 也搜 skuCode）不得被当成商品名 ⇒ 拒绝写；列表接口本身失败 ⇒ error=商品查询失败（不许说成「商品不存在」）且零写请求。"
       - "拒绝话术单一源（单元判据）：app/tools/write_refusal.py 的 product_ref_failure 对 ambiguous / not_found / unavailable 三态给出**三个不同的 error 与三句不同的 message**，每条都含「未执行修改」；多条态展示候选名但**条数用 candidate_count**（截断不许少报），且 suggestion 明确「不会替你挑一个」；查询失败态**不许**说成「商品不存在」、建议同样入参重试。判别力自证：三态 error/message 去重后必须各为 3（否则上面每条断言都退化成一条）。"
       - "结构性不变式：两个写工具**只许**调用严格解析器（源码层断言 resolve_unique_product_id 在场、只读的 resolve_product_id 不在场）—— 接错对象会「看起来也接了」，却让写路径重新长出模糊取第一条的猜分支。"
@@ -10241,14 +10241,14 @@ cases:
       - "写路径现取事实（本单第一产出，纠正 issue 正文的判断）：PATCH /api/admin/agent/products/{id} 的**控制器**先调 backend/admin-api/src/main/java/com/migao/admin/service/ProductService.java 的 resolveProductId（UUID → UUID 前缀 → 精确名称 → 序号 → **名称 contains 取第一条**），再交给 updateProductForAgent 做 eq(Product::getId)。⇒ issue 正文说的「服务端 eq(id) 必查不到」只对 service 方法成立、对 agent 写端点**不成立**：名称其实查得到，真正的缺陷是**模糊命中取第一条**（改哪件商品取决于谁先被查到）。"
       - "失败语义裁定（为什么不能照抄 #8783 的只读口径）：只读面解析不到 ⇒ 回「请用 product_search」= 安全；写面一旦「差不多就写」= 改错商品**不可逆**。⇒ 写路径只认**唯一确定**：命中多条拒绝（列出候选与条数）、不命中拒绝（具名）、合法 id 直写；两条拒绝路径都**零写请求**且明确「未执行修改」。"
       - "改动落点：backend/ai-agent-service/app/utils/id_resolver.py 新增 resolve_unique_product_id（与只读的 resolve_product_id 分家，后者保留原语义给只读面）；backend/ai-agent-service/app/tools/write_refusal.py 是两条写工具共用的话术单一源；product_update.py / sku_update.py 在发写请求前调用它，并把描述改成「支持名称/序号/UUID 的识别，但**写路径拒绝序号**；名称/id 前缀必须唯一」。"
-      - "边界（照实登记 + 重启条件）：共享 `resolveProductId` 的「前缀/序号/名称模糊取第一条」**本单不删**（只读面在用）—— 写侧已全部改走 `resolveProductIdStrict`，并由静态判据守住「写侧不得出现共享解析器」。残余风险 = 新增写端点时误用共享解析器 ⇒ 「调用点 >= 4 / 共享 == 0」那行当场红。重启条件 = 只读面也要求拒绝歧义时另开单收敛。另有成本边界：id 前缀形态在 admin-api 没有查询面（productId 精确 eq、keyword 只搜 name/货号）⇒ 只能翻页扫目录（页大小 100 / 上限 5 页），扫不完即**无法证明唯一** ⇒ 拒绝。"
+      - "边界（照实登记 + 重启条件）：共享 `resolveProductId` 的「前缀/序号/名称模糊取第一条」**本单不删**（只读面在用）—— 写侧已全部改走 `ProductWriteRefResolver.resolveUniqueProductId`，并由静态判据守住「写侧不得出现共享解析器」。残余风险 = 新增写端点时误用共享解析器 ⇒ 「调用点 >= 4 / 共享 == 0」那行当场红。重启条件 = 只读面也要求拒绝歧义时另开单收敛。另有成本边界：id 前缀形态在 admin-api 没有查询面（productId 精确 eq、keyword 只搜 name/货号）⇒ 只能翻页扫目录（页大小 100 / 上限 5 页），扫不完即**无法证明唯一** ⇒ 拒绝。"
     skip_reason: "[backend-contract] 代码判据（pytest 层，零 LLM / 零网络 / 零 DB）：真值载体 = traces.tests 的 backend/ai-agent-service/tests/test_write_path_id_resolution.py，不进 agent-eval 冒烟"
-    merge_log: "2026-11-06 新增（issue #8788）。写路径与只读面的**失败语义不同**是本单的核心裁定：只读解析不到是安全的，写路径「差不多就写」不可逆 ⇒ 只接受唯一确定的结果，多条/不命中一律零写请求。红证（把本文件放到 origin/main 上跑）：13 failed / 2 passed —— 通过的两条是**负控**（UUID 直传零解析往返，修前也成立，它防的是「过度解析」而非复现 bug）。2026-11-06 扩围（parent 裁定）：**序号在写路径一律拒绝**（按创建时间排序，增删后漂移）、**id 前缀要求唯一**（无查询面 ⇒ 翻页扫目录，扫不完即无法证明唯一 ⇒ 拒绝），并在**服务层**落 `resolveProductIdStrict` + 控制器 4 个写端点全量改调它（共享解析器逐字不动）；判据补 Java 10 条与「写侧不得出现共享解析器」的静态扫描。"
+    merge_log: "2026-11-06 新增（issue #8788）。写路径与只读面的**失败语义不同**是本单的核心裁定：只读解析不到是安全的，写路径「差不多就写」不可逆 ⇒ 只接受唯一确定的结果，多条/不命中一律零写请求。红证（把本文件放到 origin/main 上跑）：13 failed / 2 passed —— 通过的两条是**负控**（UUID 直传零解析往返，修前也成立，它防的是「过度解析」而非复现 bug）。2026-11-06 扩围（parent 裁定）：**序号在写路径一律拒绝**（按创建时间排序，增删后漂移）、**id 前缀要求唯一**（无查询面 ⇒ 翻页扫目录，扫不完即无法证明唯一 ⇒ 拒绝），并在**服务层**落 `ProductWriteRefResolver.resolveUniqueProductId` + 控制器 4 个写端点全量改调它（共享解析器逐字不动）；判据补 Java 10 条与「写侧不得出现共享解析器」的静态扫描。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_write_path_id_resolution.py"
         - "backend/ai-agent-service/tests/test_write_refusal.py"
-        - "backend/admin-api/src/test/java/com/migao/admin/service/ProductResolveStrictTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ProductWriteRefResolverTest.java"
       ci:
         - ai-agent-tests.yml
       verifies: []

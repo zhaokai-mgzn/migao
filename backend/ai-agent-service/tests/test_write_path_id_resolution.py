@@ -436,21 +436,21 @@ class TestNoGuessIsStructural:
         code = self._java_code(
             "backend/admin-api/src/main/java/com/migao/admin/controller/agent/AgentProductController.java")
 
-        assert "productService.resolveProductIdStrict(" in code, "控制器没有接线严格解析"
-        assert "productService.resolveProductId(" not in code, (
+        assert "writeRefResolver.resolveUniqueProductId(" in code, "控制器没有接线严格解析"
+        assert ".resolveProductId(" not in code, (
             "写侧出现了共享解析器（它允许前缀/序号/名称模糊取第一条）—— 改错商品不可逆")
         # 4 个写端点（改品/改库存/改 SKU 价/按 SKU id 改价）一个都不许漏
-        assert code.count("productService.resolveProductIdStrict(") >= 4
+        assert code.count("writeRefResolver.resolveUniqueProductId(") >= 4
 
     def test_service_strict_resolver_keeps_the_three_refusals(self):
         """服务层严格解析器必须**自带**三种拒绝出口（序号 / 重名 / 前缀多条）。"""
         code = self._java_code(
-            "backend/admin-api/src/main/java/com/migao/admin/service/ProductService.java")
+            "backend/admin-api/src/main/java/com/migao/admin/service/ProductWriteRefResolver.java")
 
-        assert "public String resolveProductIdStrict(" in code
+        assert "public String resolveUniqueProductId(" in code
         assert "PRODUCT_INDEX_NOT_ALLOWED" in code, "序号必须在服务层也被拒绝（会随增删漂移）"
         assert "PRODUCT_AMBIGUOUS" in code, "多条命中必须具名拒绝"
-        assert "ambiguousProductRef(" in code
+        assert "ambiguous(" in code
 
     def test_ambiguous_and_not_found_do_not_share_one_message(self):
         """两种拒绝的**话术必须不同**：混成一句「未找到」会把模型推向反复重试同一个名称。"""
