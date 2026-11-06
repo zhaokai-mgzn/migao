@@ -293,6 +293,12 @@ REALDB_FILES: dict[str, str] = {
     _SVC + "OrderNoSkuIdentityRealDbTest.java": "direct",
     _SVC + "OrderUrgencyRealDbTest.java": "direct",
     _SVC + "PooledDispatchRealDbTest.java": "direct",
+    # issue #8770（**生成族一档的硬前置**）：生成链 `@Transactional` 边界 + 盖章同批落库的真库判据。
+    # 为什么必须真 PG + **真事务拦截器**：缺陷是「自调用不走代理 ⇒ 事务边界挪了」——
+    # 只有「真 `@Transactional` 注解经 TransactionInterceptor + DataSourceTransactionManager 执行 +
+    # mapper 落在同一条被 Spring 绑定的连接上」才能让「插完加工单后失败 ⇒ **已提交状态**里零半成品」
+    # 成为可判读数；mock 面只看得见「回退被调了」，看不出库里有没有留下孤儿行。
+    _SVC + "ProcessingOrderGenerationTransactionRealDbTest.java": "direct",
     # issue #4157：库存台账**第三条变更路径**（建品/改品直写 SKU 库存）的真库判据 ——
     # 证的是「一行真的进了 stock_ledger_entries」（含 ck_stock_ledger_reason 约束与 NUMERIC(12,1) 列）。
     _SVC + "ProductStockLedgerRealDbTest.java": "direct",
