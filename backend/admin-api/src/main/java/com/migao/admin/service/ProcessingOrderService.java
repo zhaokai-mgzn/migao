@@ -554,10 +554,10 @@ public class ProcessingOrderService {
      * <p>⚠️ 新键**必须**同时进 {@code ProcessingOrderResponse.ProcessingOrderItemBrief} ——
      * 快照里出现 DTO 没声明的键会让 {@code items} 整段解析失败（响应静默退化）。</p>
      */
-    private static final String SNAPSHOT_ORDER_URGENT = "isUrgent";
+    static final String SNAPSHOT_ORDER_URGENT = "isUrgent";
 
     /** 订单级**客户要求到货日**的快照键（{@code YYYY-MM-DD}；**缺值不落键**）。见 {@link #SNAPSHOT_ORDER_URGENT}。 */
-    private static final String SNAPSHOT_ORDER_REQUIRED_DELIVERY_DATE = "requiredDeliveryDate";
+    static final String SNAPSHOT_ORDER_REQUIRED_DELIVERY_DATE = "requiredDeliveryDate";
 
     /**
      * 智能派单的**唯一**排序口径（issue #5177 判据 5「排序是真实消费者」）。
@@ -810,18 +810,7 @@ public class ProcessingOrderService {
      * 读成一个日期（快照是固化真相，读的人无从分辨）。
      */
     static void stampOrderUrgency(List<Map<String, Object>> snapshot, Order order) {
-        if (snapshot.isEmpty() || order == null) {
-            return;
-        }
-        boolean urgent = Boolean.TRUE.equals(order.getIsUrgent());
-        String date = order.getRequiredDeliveryDate() == null
-                ? null : order.getRequiredDeliveryDate().toString();
-        for (Map<String, Object> row : snapshot) {
-            row.put(SNAPSHOT_ORDER_URGENT, urgent);
-            if (date != null) {
-                row.put(SNAPSHOT_ORDER_REQUIRED_DELIVERY_DATE, date);
-            }
-        }
+        ProcessingOrderHeaderStamp.stampOrderUrgency(snapshot, order);
     }
 
     // ============================================================ 事件驱动自动成批（issue #5182 = 阶段 2b-3）
@@ -1623,16 +1612,7 @@ public class ProcessingOrderService {
      * 缺键的行按**非布料**处理，**不得为它造值**（造值 = 把「没这回事」写成「有这回事」）。</p>
      */
     private static String deriveOrderKind(List<Map<String, Object>> snapshot) {
-        if (snapshot == null || snapshot.isEmpty()) {
-            return ORDER_KIND_PROCESSING;
-        }
-        for (Map<String, Object> row : snapshot) {
-            // 判据委托给唯一实现点（issue #7222）：显式 saleForm 优先，缺键按布料专属事实兜底。
-            if (!isFabricSaleLine(row)) {
-                return ORDER_KIND_PROCESSING;
-            }
-        }
-        return ORDER_KIND_OUTBOUND;
+        return ProcessingOrderHeaderStamp.deriveOrderKind(snapshot);
     }
 
     /**
@@ -1904,43 +1884,13 @@ public class ProcessingOrderService {
      */
     private static void stampCuttingPlan(List<Map<String, Object>> snapshot,
                                          List<StockBatchConsumptionService.Deduction> plan) {
-        if (plan.isEmpty()) {
-            return;
-        }
-        Map<String, StockBatchConsumptionService.Deduction> byItemId = new LinkedHashMap<>();
-        for (StockBatchConsumptionService.Deduction d : plan) {
-            byItemId.put(d.orderItemId(), d);
-        }
-        for (Map<String, Object> row : snapshot) {
-            Object itemId = row.get("itemId");
-            StockBatchConsumptionService.Deduction d =
-                    itemId == null ? null : byItemId.get(String.valueOf(itemId));
-            if (d == null) {
-                continue;
-            }
-            row.put("formulaMeters", d.formulaMeters());
-            row.put("plannedMeters", d.plannedMeters());
-            row.put("savedMeters", d.formulaMeters().subtract(d.plannedMeters()));
-        }
+        ProcessingOrderCuttingStamp.stampCuttingPlan(snapshot, plan);
     }
 
     /** 把指定的批次号写进快照行（`batchNo` = 加工单的固化真相里「这行从哪一批裁」）。 */
     private static void stampAssignedBatches(List<Map<String, Object>> snapshot,
                                              List<StockBatchConsumptionService.Deduction> plan) {
-        if (plan.isEmpty()) {
-            return;
-        }
-        Map<String, String> batchNoByItemId = new LinkedHashMap<>();
-        for (StockBatchConsumptionService.Deduction d : plan) {
-            batchNoByItemId.put(d.orderItemId(), d.batchNo());
-        }
-        for (Map<String, Object> row : snapshot) {
-            Object itemId = row.get("itemId");
-            String batchNo = itemId == null ? null : batchNoByItemId.get(String.valueOf(itemId));
-            if (batchNo != null) {
-                row.put("batchNo", batchNo);
-            }
-        }
+        ProcessingOrderCuttingStamp.stampAssignedBatches(snapshot, plan);
     }
 
     /**
