@@ -9981,7 +9981,7 @@ cases:
         - ai-agent-tests.yml
       verifies: []
 
-  - id: MC-249
+  - id: MC-268
     legacy_id: ""
     title: "L0 判据：评测 harness 的三种归因必须分家（写没落库 / 夹具未复位 / 卡形状不兼容，零 LLM）"
     domains:
