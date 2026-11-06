@@ -425,10 +425,26 @@ class ProcessingOrderPoolCharacterizationTest {
         assertThat(golden.containsKey(section))
                 .as("golden 缺少段 %s —— 新增段必须先重新录制 golden（并说明它冻的是什么）", section)
                 .isTrue();
-        assertThat(mapper.writerWithDefaultPrettyPrinter().writeValueAsString(actual))
-                .as("段 %s 的行为与切片前**不逐字节相同** ⇒ 切片改变了行为（分组键 / 行序 / 计数口径 / 文案 / 回填）",
-                        section)
-                .isEqualTo(mapper.writerWithDefaultPrettyPrinter().writeValueAsString(golden.get(section)));
+        @SuppressWarnings("unchecked")
+        Map<String, Object> expected = (Map<String, Object>) golden.get(section);
+        // 逐场景断言（不是整段一比）：红的时候**具名**是哪个场景变了，排查不必自己 diff 20KB
+        assertThat(actual.keySet())
+                .as("段 %s 的场景集与 golden 不一致（新增 / 删除场景都必须重新录制并说明它冻的是什么）", section)
+                .isEqualTo(expected.keySet());
+        for (String key : actual.keySet()) {
+            assertThat(pretty(actual.get(key)))
+                    .as("段 %s / 场景 %s：与切片前**不逐字节相同** ⇒ 切片改变了行为"
+                            + "（分组键 / 行序 / 计数口径 / 文案 / 回填 / 闸的失败面）", section, key)
+                    .isEqualTo(pretty(expected.get(key)));
+        }
+    }
+
+    private String pretty(Object value) {
+        try {
+            return mapper.writerWithDefaultPrettyPrinter().writeValueAsString(value);
+        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+            throw new IllegalStateException("冻结投影序列化失败", e);
+        }
     }
 
     // ── 夹具 ───────────────────────────────────────────────────────────────
