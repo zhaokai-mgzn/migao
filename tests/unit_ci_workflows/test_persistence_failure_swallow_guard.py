@@ -131,10 +131,14 @@ _SUGGESTION = (
 #: `(相对仓库根路径, 落库口径)` 对。用路径而**不是行号**（行号会漂移，§18.3 不可变引用）。
 #: 声明为**下限**：新增落库调用不产生摩擦；**已知点消失 / 解析器漏解析**必红。
 KNOWN_PERSIST_CALL_SITES: frozenset[tuple[str, str]] = frozenset({
-    ("backend/ai-agent-service/app/api/chat.py", "save_message"),
+    # 切片（issue #8725 第三档）：落库策略点与其两个写口径搬进 `chat_history` 单元 ⇒
+    # 登记面随**载体**走（断言强度不变：名单仍是**下限**，少了就红）。
+    ("backend/ai-agent-service/app/api/chat_history.py", "save_message"),
+    # 调用点仍在本文件（流式桥 / 历史读面）；定义在 chat_history 单元
     ("backend/ai-agent-service/app/api/chat.py", "_save_message_or_report"),
+    # 标题生成随会话档案单元搬家（chat_profiles）
+    ("backend/ai-agent-service/app/api/chat_profiles.py", "update_session_title"),
     ("backend/ai-agent-service/app/api/chat.py", "commit"),
-    ("backend/ai-agent-service/app/api/chat.py", "update_session_title"),
     # 别名形态（`_marker = getattr(session_memory, "mark_last_interactive_answered", None)`）：
     # 能出现在这里就证明**别名解析**真的在工作，而不是把这两处当空气
     ("backend/ai-agent-service/app/api/chat.py", "mark_last_interactive_answered"),

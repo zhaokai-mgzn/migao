@@ -10126,3 +10126,44 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+
+  - id: MC-269
+    legacy_id: ""
+    title: "chat.py 切片：出站整形 / interact 协议 / 历史与落库 / 会话档案 四单元（行为逐字节 diff = 0，issue #8725 第三档）"
+    domains:
+      - chat
+      - ci
+    tier: normal
+    tags:
+      - refactor
+      - backend
+      - slice
+      - characterization-test
+      - loc-freeze
+    truths_ref: []
+    precondition:
+      - "切片前的真实结构由 `git show origin/main:backend/ai-agent-service/app/api/chat.py | wc -l` 现取（3,004 行 / 110 个顶层节点），按**顶层声明边界**（`ast` 的 `lineno`/`end_lineno` + 紧邻注释块）量出来；切段器断言两次才落盘：① 每个 chunk 的每一行要么在某个顶层声明 span 内、要么是空行/注释（否则报 `orphan code lines` 并中止）；② 没有任何顶层声明被 chunk 切断（全在里或全在外）"
+      - "golden 必须**录制于未切片代码**：`CHAT_SLICE_GOLDEN_UPDATE=1` 只在 3,004 行的原始文件上跑过一次（`_meta.recorded_chat_lines = 3004`）；切片后**只读**复核。CI 从不设该开关 —— 设了就等于把判据降成「记录现状」"
+      - "夹具边界一律替身（LLM / DB / Redis / 时间）：验的是**装配与分支不变**（哪条路走哪个口、失败走哪个降级），不是「LLM 说了什么」；日志用 loguru sink 抓未格式化的 `record[message]`（审计行本身是要冻的行为，它不是时间戳）"
+    user_inputs:
+      - "N/A（静态判据 + 内存替身，无对话轮次：直接调用切片后的 `app/api/chat_outbound.py` / `chat_interact.py` / `chat_history.py` / `chat_profiles.py` 的纯函数与打桩边界，与 golden 逐字节比对）"
+    expectations: []
+    data_checks:
+      - "判据 1·🔴 行为 diff = 0（四面逐字节）：`tests/golden/chat_slice_golden.json` 录制于**未切片**代码；切片后（chat.py 2,110 行 + 四单元）不带 `CHAT_SLICE_GOLDEN_UPDATE` 复跑，outbound（32 组卡决策 × detect/send/payload + 7 组脱敏文本 × 3 种上下文 + 卡片脱敏 + 12 组卡片声称）/ interact（8 个 XML 块 + 3 种块上报 + 5 组商品过滤）/ history（历史转换 10 条 → 9 条、守卫 4 种结局、落库 4 个分支含审计行、异常映射）/ profiles（昵称与企业名各 3 种、标题 5 例、记忆 3 例）**逐字节相同**。执行点 = backend/ai-agent-service/tests/test_chat_slice_characterization.py"
+      - "判据 2·🔴 红证（判据不许是空断言）：① 改发卡门槛（`production_progress_query` 空 dict 发卡）⇒ outbound 面红并打印首个不同行；② 改脱敏边界（`formFields[].value` 一起脱敏 / 确认值被改）⇒ outbound 面红；③ 改失败通道分类（`_CODE_DEFECT_EXCS` 去掉 TypeError）⇒ history 面红（审计行 `(CODE DEFECT)` → `(degraded)`）；④ 改协议口径（choice 的 value 缺省不回落 label）⇒ interact 面红。负控：只在被搬函数里**加一行注释** ⇒ 不红（证明判据抓行为，不抓字节数/行数）"
+      - "判据 3·🔴 结构唯一真值（类级固化）：四单元文件集合 == 登记表（多一个未登记 `chat_*.py` 即红）；44 个符号在**登记的单元**里各定义 1 次；`chat.py` 一处都不许再定义它们（出现第二份实现即红）；`chat.py` 的 re-export 列表 == 登记全集且来源模块正确（少一个 ⇒ `from app.api.chat import X` 与 `patch(app.api.chat.X)` 一起**静默失效**）。执行点 = backend/ai-agent-service/tests/test_chat_slice_structure_guard.py"
+      - "判据 4·🔴 依赖方向单向：单元不得 import `app.api.chat`（含相对形式）⇒ 无环；单元不得越 800 行线（与 LOC 棘轮 `new_file` 同线）；每个单元模块头必须声明「单一职责」（非空、≥80 字符）"
+      - "判据 5·🔴 载体搬家同批登记（断言强度一字未变，只换对象/扩读面）：落库静默守卫的 `KNOWN_PERSIST_CALL_SITES`（`save_message` / `update_session_title` 随载体走，`_save_message_or_report` 的调用点仍在入口）；出站收口的结构断言读面扩到 `chat_outbound` 并新增「入口不许再定义一份」；存量主动提示行的读面扩到 `chat_history`；四个单元各配镜像判据（`app/api/*.py` 覆盖规则）"
+    skip_reason: "[backend-contract] 切片的结构/行为不变式（零 LLM / 零网络 / 零 DB）：真值载体 = traces.tests 的 characterization + 结构守卫 + 四个镜像判据，不进 agent-eval 冒烟"
+    merge_log: "2026-11-06 新增（issue #8725 第三档，**部分交付**：不写关闭关键词；`base_skill.py` 档未做）。现取读数（`git show origin/main:backend/ai-agent-service/app/api/chat.py | wc -l`）= 3,004 行 / 110 个顶层节点。按顶层声明边界量出四个**零区域内依赖**的族（程序化核过：区域外只用到 import 名，无一条指向本文件其它声明）：出站整形（卡决策 / 脱敏 / 声称改写，412 行）、interact 协议（179 行）、历史与会话守卫与落库策略点（273 行）、会话档案（189 行）。行为 diff = 0 的证据 = 同一份 golden（录制于未切片代码）在切片后不带 update 开关逐字节通过 + 4 条注入式红证各自具名 + 注释负控不红。行数：chat.py 3,004 → 2,110（−894），四单元合计 1,053（净 +159 全是模块头与 import 脚手架，零实现新增、零注释被删）。取号 = `python3 scripts/next_case_id.py MC` 现取 MC-269（当时 origin/main 最大 MC-268 + 3 个 open PR 的 claim 面均不含该号）。"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_chat_slice_characterization.py"
+        - "backend/ai-agent-service/tests/test_chat_slice_structure_guard.py"
+        - "backend/ai-agent-service/tests/test_api_chat_outbound.py"
+        - "backend/ai-agent-service/tests/test_api_chat_interact.py"
+        - "backend/ai-agent-service/tests/test_api_chat_history.py"
+        - "backend/ai-agent-service/tests/test_api_chat_profiles.py"
+      ci:
+        - pr-check.yml
+      verifies: []
