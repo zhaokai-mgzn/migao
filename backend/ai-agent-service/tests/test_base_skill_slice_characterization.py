@@ -47,7 +47,7 @@ class _FakeStore:
     DATA: dict = {}
 
     def __init__(self, *a, **k):
-        pass
+        super().__init__()   # 接纳任意构造参数（替身不做任何事，但不吞掉调用形态）
 
     async def load(self, session_id):
         return json.loads(json.dumps(self.DATA.get(session_id) or {}))
@@ -60,7 +60,7 @@ class _FakeSessionMemory:
     CALLS: list = []
 
     def __init__(self, *a, **k):
-        pass
+        super().__init__()   # 同上
 
     async def set_pending_skill(self, session_id, value):
         _FakeSessionMemory.CALLS.append([session_id, value])
