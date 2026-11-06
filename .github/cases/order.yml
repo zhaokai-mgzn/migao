@@ -1429,6 +1429,27 @@ cases:
       - type: product_count_for_keyword
         source: "夏日清风窗帘"
         expect: 1
+    # ── 收货信息表单的**可填载荷**（issue #8776 的 ②，走甲：改用例、不改 harness）──
+    # 病灶（run 42127246100 的 R2，首跑与重试都是）：agent 这一轮发的是
+    # `interact(component="form", title="请确认收货信息（可直接修改）", formFields=3)`，
+    # 而本用例 R2 只声明了**纯文本** fallback ⇒ `harness_incompatible(no_fillable_payload)`。
+    # 后果：R2 被吃 ⇒ R3 `auto_select` 去答一张不存在的 choice 卡 ⇒ 轮次错位 +
+    # `order_before` 后半段没发生（首跑其实把订单建成了 ⇒ 能力没问题，是载荷形状对不上）。
+    #
+    # 修法**走甲**（issue 已裁定）：用例侧补可填载荷。**不改 harness 允许纯文本解析回填** ——
+    # 「零载荷 ⇒ 判红」是**有意的** fail-closed：它防止 harness 猜答案，把「agent 没问」
+    # 伪装成「通过」。
+    # 字段名**现取**自那次 run 的卡片原文（trace 里 R1 `interact` 的 `formFields`）：
+    # `customer_name`（收货人）/ `customer_phone`（手机号）/ `customer_address`（地址），
+    # 与其它 C 端下单用例（OR-014 / OR-016 / OR-018 …）的 `auto_fill` **逐字同键**，
+    # 别名组（`FORM_FIELD_ALIASES`）也覆盖 `name` / `receiver` / `phone` / `address` 等变体。
+    # 声明在**用例级**（不是只在 R2）是必须的：载荷窗口审计（`payload_window_audit`，
+    # issue #3804）要求**最后一个可作答轮次**也能交付载荷；只写 R2 会让 R8 那一轮
+    # 拿不到载荷 ⇒ 守卫当场判红，且发卡时机晚一轮就又不可完成（位置依赖）。
+    auto_fill:
+      customer_name: "张三"
+      customer_phone: "13800138000"
+      customer_address: "杭州市西湖区文三路1号"
     # ── 交互轮用协议轮（合作型用户：有什么卡就答什么卡）──
     # issue #3361 实证（run 34691137050 分片跑，OR-017）：静态脚本在第 3 轮发「确认」，
     # 而 agent 此时下发的是一张**加工项 choice 卡**（等顾客选加工项）——静态文本答不了卡

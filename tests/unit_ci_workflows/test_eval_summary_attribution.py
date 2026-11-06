@@ -373,6 +373,12 @@ class TestCompletionCarriesReasons:
         `_COMPLETION_RELEASED_CLASSES` **一字未动**，`completion_verdict` 的键集也不变
         （两个结构化字段在**序列化层**，见 `write_summary_json`）。本夹具两组都有内容
         （PP-007 与关键旅程均 `score<1`）⇒ 文案随之变化，见下方期望串。
+
+        ⚠️ **本包（#8776）再追加一个独立桶**（同一纪律：只加分桶、**不放宽阻塞**）：
+          ⑦ `write_not_persisted_failures`：「写没落库」= **产品缺陷**（工具/模型说改了、
+             库里没改）。它与 `restore_failures`（基础设施缺陷：共享夹具没复位 ⇒ 读数不可信）
+             是**两种真相**，混在一桶就是把产品缺陷记成基础设施缺陷（run 42127246100 的
+             CU-004 实录）。本夹具该桶为空 ⇒ **既有桶/文案一字未动**。
         """
         verdict = lr.completion_verdict(self._results(), (_journey_id(),))
         assert verdict == {
@@ -387,6 +393,7 @@ class TestCompletionCarriesReasons:
             "restore_failures": [],
             "harness_incompatible_failures": [],
             "case_asset_failures": [],
+            "write_not_persisted_failures": [],
             "total": 4, "passed": 1,
         }
         # ② 口径锚点：同样是"两次皆败"，`unstable` 必须进阻塞桶（旧口径会放行）
@@ -403,6 +410,7 @@ class TestCompletionCarriesReasons:
             "restore_failures": [],
             "harness_incompatible_failures": [],
             "case_asset_failures": [],
+            "write_not_persisted_failures": [],
             "total": 1, "passed": 0,
         }
         # ③ #4207 反向锚点：`score==1.0` 的阻塞条目（跨 run 复发）⇒ 落**第二组**，
