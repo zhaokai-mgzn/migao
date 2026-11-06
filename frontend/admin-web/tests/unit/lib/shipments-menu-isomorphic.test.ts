@@ -10,7 +10,7 @@
 // 本文件是**静态文本守卫**：不启动 Spring，因此不可能被「后端没跑起来」掩盖 ——
 // 而三处漂移正是那种「本地全绿、线上菜单少了」的形态。全树逐值比对另见
 // `tests/unit_ci_workflows/test_menu_three_sources_are_isomorphic.py`；本文件钉的是
-// **本节点自己的三件事**：组归属（仓储与物料，与「入库单」镜像对称（不再同组））、路径、权限码。
+// **本节点自己的三件事**：组归属（仓储/物料，与「入库单」镜像对称（不再同组））、路径、权限码。
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -44,7 +44,7 @@ function enclosingGroupKey(src: string, index: number): string | null {
 }
 
 describe('发货单菜单三处同构（UI-078 / issue #5939）', () => {
-  it('① 前端 config/menu.ts：路径 /shipments、权限码 order:list、图标 Truck，且落在「仓储与物料」组、与「入库单」**镜像对称**（issue #7369 段 5 起两者已在不同大菜单：入库单在「供应链」，发货单在「仓储与物料」）', () => {
+  it('① 前端 config/menu.ts：路径 /shipments、权限码 order:list、图标 Truck，且落在「仓储/物料」组、与「入库单」**镜像对称**（issue #7369 段 5 起两者已在不同大菜单：入库单在「供应链」，发货单在「仓储/物料」）', () => {
     const idx = MENU_TS.indexOf("path: '/shipments'")
     expect(idx, 'config/menu.ts 缺 /shipments 菜单项 —— 大菜单里就看不到发货单').toBeGreaterThan(-1)
     const line = MENU_TS.slice(MENU_TS.lastIndexOf('\n', idx) + 1, MENU_TS.indexOf('\n', idx))
@@ -61,15 +61,15 @@ describe('发货单菜单三处同构（UI-078 / issue #5939）', () => {
     expect(between).not.toContain("path: '/production/remnants'")
   })
 
-  it('② MenuController 的权限树有该节点，且挂在「仓储与物料」组内（岗位权限页勾得动）', () => {
+  it('② MenuController 的权限树有该节点，且挂在「仓储/物料」组内（岗位权限页勾得动）', () => {
     expect(MENU_CONTROLLER).toContain('new MenuNode("order:list", "发货单")')
-    // 必须真的挂进「仓储与物料」组（只声明不挂 = 岗位权限页看不到）
+    // 必须真的挂进「仓储/物料」组（只声明不挂 = 岗位权限页看不到）
     expect(MENU_CONTROLLER).toMatch(
-      /new MenuNode\("inventory-center", "仓储与物料", List\.of\([^)]*\bi2\b[^)]*\)\)/,
+      /new MenuNode\("inventory-center", "仓储\/物料",\s+List\.of\([^)]*\bi2\b[^)]*\)\)/,
     )
-    // 负控：不得挂进「交易管理」组（订单列表在那边 ⇒ 挂错组 = 同一件事两个入口）
+    // 负控：不得挂进「订单/商品」组（销售订单在那边 ⇒ 挂错组 = 同一件事两个入口）
     expect(MENU_CONTROLLER).not.toMatch(
-      /new MenuNode\("trade-center", "交易管理", List\.of\([^)]*\bi2\b[^)]*\)\)/,
+      /new MenuNode\("orders-products", "订单\/商品",\s+List\.of\([^)]*\bi2\b[^)]*\)\)/,
     )
   })
 
@@ -79,9 +79,9 @@ describe('发货单菜单三处同构（UI-078 / issue #5939）', () => {
     const idx = AUTH_SERVICE.indexOf('menuItem("shipments", "发货单", "/shipments")')
     const window = AUTH_SERVICE.slice(Math.max(0, idx - 400), idx)
     expect(window).toContain('permissions.contains("order:list")')
-    // 且属于仓储与物料组的 children（不是 tradeChildren）
-    const groupIdx = AUTH_SERVICE.indexOf('menuGroup("inventory-center", "仓储与物料", inventoryChildren)')
-    expect(groupIdx, 'AuthService 必须把该节点并进「仓储与物料」组').toBeGreaterThan(-1)
+    // 且属于仓储/物料组的 children（不是订单组的 children）
+    const groupIdx = AUTH_SERVICE.indexOf('menuGroup("inventory-center", "仓储/物料", inventoryChildren)')
+    expect(groupIdx, 'AuthService 必须把该节点并进「仓储/物料」组').toBeGreaterThan(-1)
     expect(AUTH_SERVICE.indexOf('inventoryChildren.add(menuItem("shipments"')).toBeGreaterThan(-1)
   })
 

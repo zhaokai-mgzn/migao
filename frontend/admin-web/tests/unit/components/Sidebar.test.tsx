@@ -79,64 +79,72 @@ const GROUPS: { key: string; name: string; items: [string, string][] }[] = [
   {
     key: 'customer-service',
     name: '客户服务',
-    // 2026-10-29：客户列表移入「基础资料」组 ⇒ 本组 3 项
+    // 2026-11-06（用户裁定）：在线接待 → 售后工单 → 知识库
     items: [
       ['human-sessions', '在线接待'],
-      ['knowledge', '知识库'],
       ['after-sales', '售后工单'],
+      ['knowledge', '知识库'],
     ],
   },
   {
-    // 基础资料（issue #8086，用户裁定 Q2/Q5/Q6）：档案与交易条件，位置 = 客户服务之后、交易管理之前
-    key: 'basic-data',
-    name: '基础资料',
+    // 订单/商品（2026-11-06 新组：旧「交易管理」+「基础资料」合并）
+    key: 'orders-products',
+    name: '订单/商品',
     items: [
+      ['orders', '销售订单'],
       ['products', '商品管理'],
-      ['customers', '客户列表'],
-      ['suppliers', '供应商'],
       ['price-books', '价格本'],
+      ['customers', '客户列表'],
     ],
   },
-  // 交易管理（2026-10-29：价格本移入「基础资料」）
-  { key: 'trade-center', name: '交易管理', items: [['orders', '销售订单'], ['finance', '财务对账']] },
   {
     key: 'production-center',
     name: '生产管理',
-    // 2026-10-29：质检记录 / 返工单拆到「质量」组 ⇒ 本组 3 项
+    // 2026-11-06：计件工资移出（→ 财务）⇒ 本组 2 项
     items: [
       ['production-board', '作业单'],
       ['production-pool', '智能派单'],
-      ['production-piecework', '计件工资'],
     ],
   },
-  // 质量（issue #8086，用户裁定 Q3）：质检记录 / 返工单
+  // 质量管理（#8086 拆出 / 2026-11-06 正名）
   {
     key: 'quality',
-    name: '质量',
+    name: '质量管理',
     items: [
       ['quality-inspections', '质检记录'],
       ['rework-orders', '返工单'],
     ],
   },
   {
-    key: 'supply-chain',
-    name: '供应链',
-    // 2026-10-29：供应商移入「基础资料」⇒ 本组 2 项
+    key: 'inventory-center',
+    name: '仓储/物料',
+    // 2026-11-06：入库单移入并排第一；组名正名
     items: [
       ['inbound-orders', '入库单'],
-      ['purchase-orders', '采购单'],
-    ],
-  },
-  {
-    key: 'inventory-center',
-    name: '仓储与物料',
-    items: [
-      ['stock-ledger', '库存明细'],
       ['stocktakes', '盘点单'],
       ['outbound-orders', '出库单'],
       ['shipments', '发货单'],
+      ['stock-ledger', '库存明细'],
       ['production-remnants', '余料台账'],
       ['production-saving-board', '省料分析'],
+    ],
+  },
+  // 财务（2026-11-06 新组）
+  {
+    key: 'finance-center',
+    name: '财务',
+    items: [
+      ['finance', '财务对账'],
+      ['production-piecework', '计件工资'],
+    ],
+  },
+  {
+    key: 'supply-chain',
+    name: '供应链',
+    // 2026-11-06：入库单移出、供应商移入 ⇒ 采购单 → 供应商
+    items: [
+      ['purchase-orders', '采购单'],
+      ['suppliers', '供应商'],
     ],
   },
   {
@@ -160,17 +168,21 @@ const STANDALONE_HEAD_TESTID = 'sidebar-standalone-head'
  */
 const STANDALONE_TOP_KEYS = ['settings']
 /** 一级项的插入位（本表独立写死，不从实现反推） */
-const TOP_SLOT_KEY = 'org-center'
+const TOP_SLOT_KEY = 'supply-chain'
 const GROUP_KEYS = GROUPS.map((g) => g.key)
 /**
  * 展开全部组后应渲染的 **28 项**（**最前席位 → 全部分组 → 尾席位 → 尾部独立项**，== `flattenMenu` 顺序）。
  * 🔴 🔊 2026-10-17（issue #7087）：`STANDALONE_HEAD_KEYS`（「经营看板」）在**最前**；
  * 尾席位一级项仍落在**末尾附近**（`TOP_SLOT_KEY` = 最后一个组 ⇒ 通知中心之前）。
  */
+// 🔴 2026-11-06：尾席位插在 `TOP_SLOT_KEY`（供应链）**之后**、其余分组之前 ——
+// 所以序列不能写成「全部组 → 尾席位」。
+const SLOT_INDEX = GROUPS.findIndex((g) => g.key === TOP_SLOT_KEY)
 const ALL_MENU_KEYS = [
   ...STANDALONE_HEAD_KEYS,
-  ...GROUPS.flatMap((g) => g.items.map(([k]) => k)),
+  ...GROUPS.slice(0, SLOT_INDEX + 1).flatMap((g) => g.items.map(([k]) => k)),
   ...STANDALONE_TOP_KEYS,
+  ...GROUPS.slice(SLOT_INDEX + 1).flatMap((g) => g.items.map(([k]) => k)),
   'notifications',
 ]
 
@@ -330,13 +342,21 @@ describe('Sidebar', () => {
 
   it('should render all menu items（issue #7140 + #7369 新 IA：8 组 + 1 个一级项 + 独立项 = 28 项）', async () => {
     render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
-    // 🔴 分组标题 = **8 组**（「工作台」组已整组撤销；#7369 新增「供应链」组 —— 见下方负断言）
+    // 🔴 分组标题 = **8 组**（2026-11-06 用户裁定的八大组：客户服务 / 订单/商品 / 生产管理 /
+    // 质量管理 / 仓储/物料 / 财务 / 供应链 / 组织管理）
     expect(screen.getByText('客户服务')).toBeInTheDocument()
-    expect(screen.getByText('交易管理')).toBeInTheDocument()
+    expect(screen.getByText('订单/商品')).toBeInTheDocument()
     expect(screen.getByText('生产管理')).toBeInTheDocument()
+    expect(screen.getByText('质量管理')).toBeInTheDocument()
+    expect(screen.getByText('仓储/物料')).toBeInTheDocument()
+    expect(screen.getByText('财务')).toBeInTheDocument()
     expect(screen.getByText('供应链')).toBeInTheDocument()
-    expect(screen.getByText('仓储与物料')).toBeInTheDocument()
     expect(screen.getByText('组织管理')).toBeInTheDocument()
+    // 旧组名（2026-11-06 合并/正名前）不得残留
+    expect(screen.queryByText('交易管理')).not.toBeInTheDocument()
+    expect(screen.queryByText('基础资料')).not.toBeInTheDocument()
+    expect(screen.queryByText('仓储与物料')).not.toBeInTheDocument()
+    expect(screen.queryByText('质量')).not.toBeInTheDocument()
     // 🔴 旧组名不再出现：「工作台」组（2026-10-17 issue #7087 整组撤销）、#5778 起「商品与加工项」撤销、
     // 「智能客服」改判为「客户服务」，且「商品管理」不再是**组名**（它是一级项，不渲染组标题）。
     expect(screen.queryByText('工作台')).not.toBeInTheDocument()
@@ -383,19 +403,22 @@ describe('Sidebar', () => {
       'dashboard',
       // 报表中心（#7376）：经营看板之后、分组之前
       'reports',
-      'human-sessions', 'knowledge', 'after-sales',
-      // 基础资料（#8086）：商品管理 / 客户列表 / 供应商 / 价格本
-      'products', 'customers', 'suppliers', 'price-books',
-      'orders', 'finance',
-      'production-board', 'production-pool', 'production-piecework',
-      // 质量（#8086）：质检记录 / 返工单
+      // 客户服务（2026-11-06）：在线接待 → 售后工单 → 知识库
+      'human-sessions', 'after-sales', 'knowledge',
+      // 订单/商品（2026-11-06）：销售订单 / 商品管理 / 价格本 / 客户列表
+      'orders', 'products', 'price-books', 'customers',
+      'production-board', 'production-pool',
       'quality-inspections', 'rework-orders',
-      'inbound-orders', 'purchase-orders',
-      'stock-ledger', 'stocktakes', 'outbound-orders', 'shipments', 'production-remnants',
-      'production-saving-board',
-      'employees', 'roles',
-      // 尾席位只剩「企业基础设置」（#8086：商品管理已降入「基础资料」组）
+      // 仓储/物料（2026-11-06）：单据（进 → 盘 → 出 → 发）→ 账 → 台账 → 分析
+      'inbound-orders', 'stocktakes', 'outbound-orders', 'shipments', 'stock-ledger',
+      'production-remnants', 'production-saving-board',
+      // 财务（2026-11-06 新组）
+      'finance', 'production-piecework',
+      // 供应链（2026-11-06）：采购单 → 供应商
+      'purchase-orders', 'suppliers',
+      // 尾席位「企业基础设置」（2026-11-06：插在供应链之后、组织管理之前）
       'settings',
+      'employees', 'roles',
       'notifications',
     ])
     expect(menuKeys()).toHaveLength(28)
@@ -423,14 +446,14 @@ describe('Sidebar', () => {
     // 判别力：旧形态（一级项块在分组之后）会让这两条红
     expect(follows(firstGroup, head)).toBe(false)
     // ③ 它在**尾席位**一级项之前（两个席位不是同一处）
-    // 🔴 2026-10-29（issue #8086）：商品管理已降入「基础资料」组 ⇒ 只剩「企业基础设置」占尾席位
+    // 尾席位只剩「企业基础设置」（商品管理已在「订单/商品」组内）
     expect(follows(head, linkFor('企业基础设置'))).toBe(true)
 
     // ④ **无星标**：一级项不可收藏（否则「常用」里会出现第二条一模一样的入口）
     expect(within(head).queryByTestId('sidebar-pin-dashboard')).toBeNull()
     expect(screen.queryByTestId('sidebar-pin-dashboard')).toBeNull()
     // 对照（不是「星标整体被删」）：组内项照旧有星标
-    expandGroups('trade-center')
+    expandGroups('orders-products')
     expect(screen.getByTestId('sidebar-pin-orders')).toBeInTheDocument()
   })
 
@@ -531,8 +554,8 @@ describe('Sidebar', () => {
   it('should highlight active menu item for /products', () => {
     mockUsePathname.mockReturnValue('/products')
     render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
-    // 🔴 2026-10-29（issue #8086）：商品管理已降入「基础资料」组 ⇒ 先展开该组
-    expandGroups('basic-data')
+    // 商品管理在「订单/商品」组内 ⇒ 先展开该组
+    expandGroups('orders-products')
     const link = linkFor('商品管理')
     expect(getActiveClass(link)).toContain('bg-primary-600')
   })
@@ -540,8 +563,8 @@ describe('Sidebar', () => {
   it('should not highlight inactive menu items', () => {
     mockUsePathname.mockReturnValue('/dashboard')
     render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
-    // 非当前组默认收起 ⇒ 先展开「基础资料」（客户列表已移入）再断言它**不高亮**
-    expandGroups('basic-data')
+    // 非当前组默认收起 ⇒ 先展开「订单/商品」（客户列表已移入）再断言它**不高亮**
+    expandGroups('orders-products')
     const link = linkFor('客户列表')
     expect(getActiveClass(link)).not.toContain('bg-primary-600')
   })
@@ -585,13 +608,13 @@ describe('Sidebar', () => {
   it('/orders/new 时「销售订单」高亮（嵌套路由前缀匹配回归保护）', () => {
     mockUsePathname.mockReturnValue('/orders/new')
     render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
-    // #5778：交易管理组现为「销售订单 + 财务对账」（售后工单已移入客户服务组）——
-    // 同组对照项随之换成「财务对账」，断言**强度一条没减**（仍是「前缀命中只高亮销售订单」）。
-    expandGroups('trade-center')
+    // 2026-11-06：「订单/商品」组的同组对照项换成「商品管理」
+    //（财务对账已移入「财务」组）—— 断言**强度一条没减**（仍是「前缀命中只高亮销售订单」）。
+    expandGroups('orders-products')
     const ordersLink = linkFor('销售订单')
-    const financeLink = linkFor('财务对账')
+    const productsLink = linkFor('商品管理')
     expect(getActiveClass(ordersLink)).toContain('bg-primary-600')
-    expect(getActiveClass(financeLink)).not.toContain('bg-primary-600')
+    expect(getActiveClass(productsLink)).not.toContain('bg-primary-600')
   })
 
   it('前缀同时命中（/production/pool ↔ /production）时**只有一项**高亮 —— 最长前缀胜出', () => {
@@ -625,10 +648,10 @@ describe('Sidebar', () => {
 
   it('should render standalone items exactly once each', () => {
     render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
-    // #5271: 交易管理是**唯一**的合并组（原「订单管理」+「客户管理」组的客户列表/财务对账）
-    expect(screen.getAllByText('交易管理').length).toBe(1)
-    // 🔴 2026-10-29（issue #8086）：商品管理在「基础资料」组内（展开后恰一次）
-    expandGroups('basic-data')
+    // 2026-11-06：「订单/商品」是**唯一的**合并组（旧「交易管理」+「基础资料」两组）
+    expect(screen.getAllByText('订单/商品').length).toBe(1)
+    // 商品管理在「订单/商品」组内（展开后恰一次）
+    expandGroups('orders-products')
     expect(screen.getAllByText('商品管理').length).toBe(1)
     // #3081: AI 客服配置已移除（合并进企业基础信息），不再渲染
     expect(screen.queryByText('AI 客服配置')).not.toBeInTheDocument()
@@ -640,26 +663,26 @@ describe('Sidebar', () => {
 
   // ── UI-005: 智能客服大类分组与图标 ──
 
-  it('（2026-10-06 用户裁定 / #6580 / #8086）**尾席位**一级项「企业基础设置」在**所有分组之后**、「通知中心」之前（DOM 顺序）', () => {
+  it('（2026-11-06 用户裁定）**尾席位**一级项「企业基础设置」插在**供应链之后、组织管理之前**、「通知中心」之前（DOM 顺序）', () => {
     render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
     const follows = (a: HTMLElement, b: HTMLElement) =>
       (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0
-    // 🔴 2026-10-29（issue #8086）：商品管理已降入「基础资料」组 ⇒ 尾席位只剩「企业基础设置」
     const settingsItem = linkFor('企业基础设置')
     const customerService = screen.getByText('客户服务')
-    const trade = screen.getByText('交易管理')
+    const supplyChain = screen.getByText('供应链')
     const org = screen.getByText('组织管理')
     const notifications = screen.getByText('通知中心')
+    const supplyHeader = supplyChain.closest('[data-group-key]') as HTMLElement
     const orgHeader = org.closest('[data-group-key]') as HTMLElement
-    // 🔴 位置 = **所有分组之后**（用户 2026-10-06 裁定：大菜单项并列 ⇒ 尾席位沉底）
+    // 🔴 位置 = **供应链之后、组织管理之前**（用户 2026-11-06 逐字：十 企业基础设置 / 十一 组织管理）
     expect(follows(customerService, settingsItem)).toBe(true)
-    expect(follows(org, settingsItem)).toBe(true)
-    expect(follows(orgHeader, settingsItem)).toBe(true)
+    expect(follows(supplyHeader, settingsItem)).toBe(true)
+    expect(follows(settingsItem, orgHeader)).toBe(true)
     expect(follows(settingsItem, notifications)).toBe(true)
     // 组顺序不受影响（判别力：这条与「一级项的位置」是两件事）
-    expect(follows(customerService, trade)).toBe(true)
-    // 判别力：旧口径（一级项夹在分组之间）在这条上会给出 true ⇒ 现在就红
-    expect(follows(settingsItem, customerService)).toBe(false)
+    expect(follows(customerService, supplyChain)).toBe(true)
+    // 判别力：旧口径（一级项沉到所有分组之后）在这条上会给出 true ⇒ 现在就红
+    expect(follows(org, settingsItem)).toBe(false)
     // 席位常量与渲染位必须同源（改常量而不改判据 = 无声漂移）
     expect(STANDALONE_TOP_AFTER_GROUP_KEY).toBe(TOP_SLOT_KEY)
   })
@@ -750,7 +773,7 @@ describe('Sidebar', () => {
     expect(screen.queryByTestId('sidebar-pin-products')).toBeNull()
     // #6580：第二个一级项（「企业基础设置」，席位原属「参数总览」）同样是「板块入口」⇒ 也没有星标
     expect(screen.queryByTestId('sidebar-pin-settings')).toBeNull()
-    expandGroups('trade-center')
+    expandGroups('orders-products')
     expect(screen.getByTestId('sidebar-pin-orders')).toBeInTheDocument()
     expect(screen.getByTestId('sidebar-pin-notifications')).toBeInTheDocument()
   })
@@ -765,15 +788,15 @@ describe('Sidebar', () => {
     expect(within(link).queryByTestId('sidebar-pin-products')).toBeNull()
   })
 
-  it('（2026-10-29 起）「客户服务」组内顺序：在线接待 → 知识库 → 售后工单（客户列表已移入「基础资料」）', () => {
+  it('（2026-11-06 起）「客户服务」组内顺序：在线接待 → 售后工单 → 知识库', () => {
     render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
     expandGroups('customer-service')
     const groupContainer = screen.getByText('客户服务').closest('[data-group-key]') as HTMLElement
     const links = groupContainer.querySelectorAll('a')
     expect(links.length).toBe(3)
     expect(links[0].textContent).toContain('在线接待')
-    expect(links[1].textContent).toContain('知识库')
-    expect(links[2].textContent).toContain('售后工单')
+    expect(links[1].textContent).toContain('售后工单')
+    expect(links[2].textContent).toContain('知识库')
   })
 
   it('🔴「工作台」组**整组撤销**（issue #7087）：无此组锚点，「经营看板」改由**最前席位**承载', () => {
@@ -857,53 +880,56 @@ describe('Sidebar', () => {
       // 有权限的：最前席位两项（本权限集持 dashboard:view ⇒ 看板与报表中心同码同可见）
       expect(screen.getByText('经营概览')).toBeInTheDocument()
       expect(screen.getByText('报表中心')).toBeInTheDocument()
-      // 🔴 2026-10-29（issue #8086）：商品管理/价格本在「基础资料」组内 ⇒ 展开后可见
-      expandGroups('basic-data')
-      expect(screen.getByText('商品管理')).toBeInTheDocument()
-      // 🔴 issue #8085：「交易管理」在本权限下只剩「销售订单」1 项 ⇒ 提升为一级项
-      //（无组头、无需展开；组头不渲染正是这条判据要盯的行为）
-      expect(screen.queryByText('交易管理')).not.toBeInTheDocument()
+      // 「订单/商品」组：持 order:list / product:list 的三项可见（客户列表要 customer:view ⇒ 不在）
+      expect(screen.getByText('订单/商品')).toBeInTheDocument()
+      expandGroups('orders-products')
       expect(screen.getByText('销售订单')).toBeInTheDocument()
+      expect(screen.getByText('商品管理')).toBeInTheDocument()
+      expect(screen.getByText('价格本')).toBeInTheDocument()
+      expect(screen.queryByText('客户列表')).not.toBeInTheDocument()
       // 无权限的
       expect(screen.queryByText('商品分类管理')).not.toBeInTheDocument()
       expect(screen.queryByText('加工项管理')).not.toBeInTheDocument()
       expect(screen.queryByText('售后工单')).not.toBeInTheDocument()
-      // #5271: 客户列表/财务对账与销售订单**同组**（交易管理）⇒ 无码时只有它们从组内消失，组本身仍在
-      expect(screen.queryByText('客户列表')).not.toBeInTheDocument()
       expect(screen.queryByText('财务对账')).not.toBeInTheDocument()
-      // 旧「客户管理」组已不存在（#5271 并入交易管理）
+      // 旧组名都不在（2026-11-06 合并/正名：交易管理 / 基础资料 / 仓储与物料 / 质量）
+      expect(screen.queryByText('交易管理')).not.toBeInTheDocument()
+      expect(screen.queryByText('基础资料')).not.toBeInTheDocument()
       expect(screen.queryByText('客户管理')).not.toBeInTheDocument()
-      // #2969: 组织管理组（员工+岗位权限+企业信息）整组隐藏
+      // 组织管理（员工要 employee:list / 岗位权限要 system:view）整组隐藏；
+      // 尾席位「企业基础设置」要 production:view ⇒ 也不在（它默认渲染在供应链之后、组织管理之前）
       expect(screen.queryByText('组织管理')).not.toBeInTheDocument()
       expect(screen.queryByText('员工管理')).not.toBeInTheDocument()
       expect(screen.queryByText('岗位权限')).not.toBeInTheDocument()
-      expect(screen.queryByText('企业基础信息')).not.toBeInTheDocument()
-      // 生产管理整组隐藏（四项都要 production:view / processing:view，本组权限一个都不持）
+      expect(screen.queryByText('企业基础设置')).not.toBeInTheDocument()
+      // 生产管理（production:view / processing:view）、质量管理（production:inspect / after_sales:view）整组隐藏
       expect(screen.queryByText('生产管理')).not.toBeInTheDocument()
+      expect(screen.queryByText('质量管理')).not.toBeInTheDocument()
+      // 供应链（purchase:view / supplier:view）整组隐藏；入库单要 inbound:view ⇒ 不在
+      expect(screen.queryByText('供应链')).not.toBeInTheDocument()
       expect(screen.queryByText('入库单')).not.toBeInTheDocument()
       expect(screen.queryByText('余料台账')).not.toBeInTheDocument()
-      // 🔴 issue #5699（P4）：省料看板节点码 = 该页读码 `product:list`（不再是 processing:manage）
-      // ⇒ 本组权限含它 ⇒ 「仓储与物料」只剩 库存明细 + 发货单 + 省料看板 三项（不再是「整组隐藏」；
-      //   库存明细 #6404 同取 `product:list`、发货单 #5939 取 order:list）。
-      // issue #7369：入库单 / 供应商 / 采购单 已搬去「供应链」组 ⇒ 本权限集无 inbound:view ⇒ 该组整组不在。
-      expect(screen.getByText('仓储与物料')).toBeInTheDocument()
+      // 财务（finance:view / production:view）整组隐藏
+      expect(screen.queryByText('财务')).not.toBeInTheDocument()
+      // 🔴「仓储/物料」本权限含 product:list ⇒ 剩 3 项（发货单 order:list / 库存明细 product:list /
+      // 省料分析 product:list），组仍在、默认收起 ⇒ 展开后可见（盘点单/出库单要 stock:view、
+      // 入库单要 inbound:view、余料台账要 processing:manage ⇒ 不在）
+      expect(screen.getByText('仓储/物料')).toBeInTheDocument()
       expandGroups('inventory-center')
       expect(screen.getByText('省料分析')).toBeInTheDocument()
+      expect(screen.getByText('库存明细')).toBeInTheDocument()
+      expect(screen.getByText('发货单')).toBeInTheDocument()
       // 无 knowledge:view（知识库节点码，issue #5246 起为**读**码）→ 入口隐藏；通知中心全员可见
       expect(screen.queryByText('知识库')).not.toBeInTheDocument()
       expect(screen.getByText('通知中心')).toBeInTheDocument()
-      // 可见项**精确**清单（渲染顺序）：
-      // 🔴 本用例的可见项里**没有** `org-center`（员工管理要 employee:list）⇒ 一级项挂到**可见分组末尾**
-      // （回落方向 = 「挂到末尾」，**不是**跳到最前）
-      // 经营看板 → 销售订单 → **库存明细**（仓储与物料组首项）→ **发货单**
-      // （#5939：与销售订单同码 order:list）→ 省料看板 → 商品管理（一级项）→ 通知中心
-      // （issue #7369：入库单 / 供应商 / 采购单 已搬去「供应链」组 ⇒ 本权限集无 inbound:view ⇒ 整组不在）
-      expect(menuKeys()).toEqual(
-        // 本权限集持 dashboard:view ⇒ 最前席位两项都在（报表中心同码，#7376）
-        ['dashboard', 'reports', 'products', 'price-books', 'orders', 'stock-ledger', 'shipments',
-          'production-saving-board', 'notifications'])
-      // UI-005/UI-011: 无 agent:session / knowledge:view / customer:view / after_sales:view →
-      // **客户服务**整组隐藏（#5778 组名改判；#3081 已移除 AI 客服配置菜单）
+      // 可见项**精确**清单（渲染顺序 = 最前席位 → 各组（展开后按组内序）→ 尾席位 → 通知中心）
+      expect(menuKeys()).toEqual([
+        'dashboard', 'reports',
+        'orders', 'products', 'price-books',
+        'shipments', 'stock-ledger', 'production-saving-board',
+        'notifications',
+      ])
+      // 无 agent:session / knowledge:view / customer:view / after_sales:view → **客户服务**整组隐藏
       expect(screen.queryByText('客户服务')).not.toBeInTheDocument()
       expect(screen.queryByText('黄金策 · 在线对话')).not.toBeInTheDocument()
       expect(screen.queryByText('在线接待')).not.toBeInTheDocument()
@@ -919,7 +945,9 @@ describe('Sidebar', () => {
       expect(screen.queryByText('工作台')).not.toBeInTheDocument()
       expect(screen.queryByText('经营概览')).not.toBeInTheDocument()
       // 分组标题应该都不在（含工作台在内，七组全空 ⇒ 整组剔除）
-      for (const name of ['工作台', '客户服务', '交易管理', '订单管理', '商品与加工项', '智能客服', '生产管理', '供应链', '仓储与物料', '组织管理', '客户管理']) {
+      for (const name of ['工作台', '客户服务', '订单/商品', '订单管理', '商品与加工项', '智能客服',
+        '生产管理', '质量管理', '仓储/物料', '财务', '供应链', '组织管理', '客户管理',
+        '交易管理', '基础资料', '仓储与物料']) {
         expect(screen.queryByText(name)).not.toBeInTheDocument()
       }
       expect(screen.queryByText('员工管理')).not.toBeInTheDocument()
@@ -1029,19 +1057,26 @@ describe('Sidebar', () => {
         user: { id: '4', username: 'partial', name: '部分权限', permissions: ['dashboard:view', 'order:list'], roles: [] },
       })
       render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
-      // 🔴 issue #8085：本权限下「交易管理」只剩「销售订单」1 项 ⇒ 提升为一级项（无组头）
-      expect(screen.queryByText('交易管理')).not.toBeInTheDocument()
+      // 「订单/商品」在本权限下剩 **2 项**（销售订单 / 价格本，同码 order:list）⇒ 仍是组（默认收起）
+      expect(screen.getByText('订单/商品')).toBeInTheDocument()
+      expandGroups('orders-products')
       expect(screen.getByText('销售订单')).toBeInTheDocument()
+      expect(screen.getByText('价格本')).toBeInTheDocument()
       // 但售后工单不应该出现
       expect(screen.queryByText('售后工单')).not.toBeInTheDocument()
-      // 商品与加工项 group should be completely hidden（无 product:list / processing:manage）
+      // 旧「商品与加工项」组应完全隐藏
       expect(screen.queryByText('商品与加工项')).not.toBeInTheDocument()
       // dashboard:view ⇒ 看板 + 报表中心同码同可见（#7376）
-      // 🔴 issue #8085：本权限下「基础资料」只剩「价格本」1 项，「仓储与物料」只剩「发货单」1 项
-      // ⇒ 两处都被**提升为一级项**（无组头、恒可见、不靠折叠隐藏）—— 这正是本测试的判据面
-      expect(screen.getByText('价格本')).toBeInTheDocument()
-      expect(screen.queryByTestId('sidebar-group-toggle-basic-data')).toBeNull()
-      expect(menuKeys()).toEqual(['dashboard', 'reports', 'price-books', 'orders', 'shipments', 'notifications'])
+      // 🔴 issue #8085：本权限下「仓储/物料」只剩「发货单」1 项 ⇒ **提升为一级项**
+      //（无组头、恒可见、不靠折叠隐藏）—— 这正是本测试的判据面
+      expect(screen.getByText('发货单')).toBeInTheDocument()
+      expect(screen.queryByTestId('sidebar-group-toggle-inventory-center')).toBeNull()
+      // 空组一律剔除：生产/质量/财务/供应链/组织管理/客户服务 都不渲染
+      for (const name of ['客户服务', '生产管理', '质量管理', '财务', '供应链', '组织管理']) {
+        expect(screen.queryByText(name)).not.toBeInTheDocument()
+      }
+      expect(menuKeys()).toEqual(
+        ['dashboard', 'reports', 'orders', 'price-books', 'shipments', 'notifications'])
     })
 
     // ── #5271 新组的权限边界（正负控：菜单可见性与页面门禁同码，不互相顶替）──
@@ -1053,6 +1088,8 @@ describe('Sidebar', () => {
         user: { id: '8', username: 'wh', name: '仓管', permissions: ['inbound:view'], roles: [] },
       })
       const { unmount } = render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
+      // 2026-11-06：入库单在「仓储/物料」组；本权限下该组只剩它 1 项 ⇒ 提升为一级项（无组头）
+      expect(screen.queryByTestId('sidebar-group-toggle-inventory-center')).toBeNull()
       expect(screen.queryByTestId('sidebar-group-toggle-supply-chain')).toBeNull()
       expect(screen.getByText('入库单')).toBeInTheDocument()
       expect(screen.queryByText('供应商')).not.toBeInTheDocument()
@@ -1069,7 +1106,7 @@ describe('Sidebar', () => {
       })
       render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
       // ⚠️ 生产组在本组权限下**整组被剔除**（没有 toggle 可点）—— #5699 P4 后的读数。
-      // 🔴 issue #8085：「仓储与物料」只剩「余料台账」1 项 ⇒ 提升为一级项（无组标题可展开）
+      // 🔴 issue #8085：「仓储/物料」只剩「余料台账」1 项 ⇒ 提升为一级项（无组标题可展开）
       expect(screen.queryByTestId('sidebar-group-toggle-inventory-center')).toBeNull()
       expect(screen.getByText('余料台账')).toBeInTheDocument()
       expect(screen.queryByText('入库单')).not.toBeInTheDocument()
@@ -1095,7 +1132,7 @@ describe('Sidebar', () => {
     const reports = document.querySelector('nav a[data-menu-key="reports"]') as HTMLAnchorElement
     expect(reports.getAttribute('aria-current')).toBeNull()
     // 星标与链接是**兄弟**：`<a>` 内嵌 `<button>` 是无效 HTML，键盘会在链接里再落一次焦点
-    expandGroups('trade-center')
+    expandGroups('orders-products')
     const orders = document.querySelector('nav a[data-menu-key="orders"]') as HTMLAnchorElement
     const pin = screen.getByTestId('sidebar-pin-orders')
     expect(orders.contains(pin)).toBe(false)
@@ -1175,7 +1212,7 @@ describe('Sidebar', () => {
       expect(screen.queryByText('常用')).not.toBeInTheDocument()
       // 星标在（当前项恒显、其余 hover 才显 —— 但按钮元素一直在 DOM 里）
       // ⚠️ 交易管理组默认收起 ⇒ 先展开再断言（不是「找不到就等于没有」）
-      expandGroups('trade-center')
+      expandGroups('orders-products')
       expect(screen.getByTestId('sidebar-pin-orders')).toBeInTheDocument()
       expect(screen.getByTestId('sidebar-pin-orders').getAttribute('data-pinned')).toBe('false')
     })
@@ -1183,7 +1220,7 @@ describe('Sidebar', () => {
     it('点星标 ⇒ 该项进入顶部「常用」区（`data-group-key="pinned"`）+ 计数 `1/6` + 落盘 localStorage', async () => {
       render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
       await waitFor(() => expect(screen.getByText('经营概览')).toBeInTheDocument())
-      expandGroups('trade-center')
+      expandGroups('orders-products')
 
       fireEvent.click(screen.getByTestId('sidebar-pin-orders'))
 
@@ -1194,13 +1231,15 @@ describe('Sidebar', () => {
       // 钉住的项在「常用」区里可点，且 href 正确
       expect(within(pinnedSec).getByText('销售订单')).toBeInTheDocument()
       expect(within(pinnedSec).getByText('销售订单').closest('a')).toHaveAttribute('href', '/orders')
-      // 渲染序（#5877 / #7087）：**常用**区在最顶部 → **最前席位**「经营看板」→ 各分组 → 尾席位 → 尾部独立项
+      // 渲染序（#5877 / #7087）：**常用**区在最顶部 → **最前席位**「经营概览」→ 各分组 → 尾席位 → 尾部独立项
+      // 尾席位一级项排在**供应链之后、组织管理之前**（2026-11-06 用户裁定）
+      // ⇒ 先展开这两组，再用「供应链组最后一个可见项」与「组织管理组首项」做两端锚点。
+      expandGroups('supply-chain', 'org-center')
       const allKeys = menuKeys()
       expect(allKeys[0]).toBe('orders')
       expect(allKeys[1]).toBe('dashboard')
-      // 尾席位一级项排在**所有分组之后**（用它前面最后一个组内项做锚点）
-      expect(allKeys.indexOf('settings')).toBeGreaterThan(allKeys.indexOf('roles'))
-      expect(allKeys.indexOf('settings')).toBeLessThan(allKeys.indexOf('notifications'))
+      expect(allKeys.indexOf('settings')).toBeGreaterThan(allKeys.indexOf('suppliers'))
+      expect(allKeys.indexOf('settings')).toBeLessThan(allKeys.indexOf('roles'))
       // 反恒真：orders 在交易管理组里**也**渲染（常用区是快捷方式，不是搬家）
       expect(allKeys.filter((k) => k === 'orders')).toHaveLength(2)
       // 落盘（键名与纯函数同源常量）
@@ -1215,7 +1254,7 @@ describe('Sidebar', () => {
     it('🔴 取消钉住 ⇒ 「常用」区消失（清单为空）+ 落盘为空表', async () => {
       render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
       await waitFor(() => expect(screen.getByText('经营概览')).toBeInTheDocument())
-      expandGroups('trade-center')
+      expandGroups('orders-products')
 
       fireEvent.click(screen.getByTestId('sidebar-pin-orders'))
       expect(document.querySelector('[data-group-key="pinned"]')).toBeTruthy()
@@ -1251,7 +1290,7 @@ describe('Sidebar', () => {
       // 不能出现两条一模一样的入口。（#8086 起 `products` 已是组内项、**可以**收藏 ⇒ 不再作残留样本。）
       window.localStorage.setItem('migao.sidebar.pinned.v1', JSON.stringify(['dashboard', 'orders']))
       render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
-      expandGroups('trade-center')
+      expandGroups('orders-products')
       // 正信号：先等「常用」区真的出现（否则下面几条可能是「还没恢复完」的假绿）
       await waitFor(() => expect(document.querySelector('[data-group-key="pinned"]')).toBeTruthy())
       const pinnedSec = document.querySelector('[data-group-key="pinned"]') as HTMLElement
@@ -1272,7 +1311,7 @@ describe('Sidebar', () => {
       await waitFor(() => expect(document.querySelector('[data-group-key="pinned"]')).toBeTruthy())
       expect(screen.getByTestId('sidebar-pinned-count').textContent).toBe('6/6')
 
-      expandGroups('supply-chain')
+      expandGroups('inventory-center')
       fireEvent.click(screen.getByTestId('sidebar-pin-inbound-orders'))
 
       expect(screen.getByTestId('sidebar-pinned-count').textContent).toBe('6/6')

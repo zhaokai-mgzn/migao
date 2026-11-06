@@ -58,7 +58,7 @@ const ROUTE_BREADCRUMB_MAP: Array<{
   // 原实现给的是 `[商品管理, 商品管理]`（两个**同名**项，纯噪声）。
   // ⚠️ 面包屑取「有无父组」，与渲染位（`menu.ts` 的 `STANDALONE_TOP_AFTER_GROUP_KEY`）无关。
   // 🔴 2026-10-29（issue #8086）：商品管理已进「基础资料」组 ⇒ 面包屑带上组名
-  { match: (p) => p.startsWith('/products'), crumbs: [{ label: '基础资料' }, { label: '商品管理' }] },
+  { match: (p) => p.startsWith('/products'), crumbs: [{ label: '订单/商品' }, { label: '商品管理' }] },
   { match: (p) => p.startsWith('/categories'), crumbs: [{ label: '商品管理' }, { label: '商品分类管理' }] },
   // 顺序敏感：/processing-orders 必须先于 /processing（find 按数组序取首个命中）
   // issue #4357：加工单并入生产管理组 ⇒ 本目录下只剩「生产明细」子路由（列表页已重定向）
@@ -89,19 +89,19 @@ const ROUTE_BREADCRUMB_MAP: Array<{
   // 省料看板（issue #5159）：同样**必须排在 `/production` 之前**（本表 `find` 取首个命中，
   // `/production` 会抢走它 ⇒ 面包屑退化成「作业看板」= §15.2 不成立）。
   // 组名/菜单名与 `config/menu.ts` 的 `production-saving-board`、服务端两处菜单节点逐字一致。
-  { match: (p) => p.startsWith('/production/saving-board'), crumbs: [{ label: '仓储与物料' }, { label: '省料分析' }] },
+  { match: (p) => p.startsWith('/production/saving-board'), crumbs: [{ label: '仓储/物料' }, { label: '省料分析' }] },
   // 余料台账（issue #5146 建页 / issue #5191 **进侧边栏**）：菜单项名 = 「余料台账」，
   // 与 `config/menu.ts` 的 `production-remnants`、服务端两处菜单节点**逐字一致**
   // （§15.2「面包屑末项 == 侧边栏菜单名」；守卫 tests/unit/lib/menu-breadcrumb-coverage.test.tsx）。
   // ⚠️ 必须排在下面的 `/production` 之前（本表 `find` 取首个命中，否则面包屑退化成「作业看板」）。
   // issue #5271：本页随「面料进出与消耗」动线**移入「仓储与物料」组**（原生产管理组）。
-  { match: (p) => p.startsWith('/production/remnants'), crumbs: [{ label: '仓储与物料' }, { label: '余料台账' }] },
-  { match: (p) => p.startsWith('/production/piecework'), crumbs: [{ label: '生产管理' }, { label: '计件工资' }] },
+  { match: (p) => p.startsWith('/production/remnants'), crumbs: [{ label: '仓储/物料' }, { label: '余料台账' }] },
+  { match: (p) => p.startsWith('/production/piecework'), crumbs: [{ label: '财务' }, { label: '计件工资' }] },
   // 质检记录（issue #7140）：菜单名与 `config/menu.ts` 的 `quality-inspections`、服务端两处菜单节点
   // **逐字一致**（§15.2「面包屑末项 == 侧边栏菜单名」，守卫 menu-breadcrumb-coverage.test.tsx）。
-  { match: (p) => p.startsWith('/quality-inspections'), crumbs: [{ label: '质量' }, { label: '质检记录' }] },
+  { match: (p) => p.startsWith('/quality-inspections'), crumbs: [{ label: '质量管理' }, { label: '质检记录' }] },
   // 返工单（issue #7377）：与 `config/menu.ts` 的 `rework-orders`、服务端两处菜单节点同名同组
-  { match: (p) => p.startsWith('/rework-orders'), crumbs: [{ label: '质量' }, { label: '返工单' }] },
+  { match: (p) => p.startsWith('/rework-orders'), crumbs: [{ label: '质量管理' }, { label: '返工单' }] },
   // 审批中心（issue #7593，用户 2026-10-24 裁定）：**侧边栏菜单项已撤除**，入口改到顶栏
   // `ApprovalBell`（图标 + 待审数徽标 + 面板）⇒ 它现在**没有父组**，面包屑是**单级**
   // （与「商品管理」「通知中心」同口径）。菜单名 / 页面名仍是「审批中心」，与 `/approvals` 页一致。
@@ -114,33 +114,33 @@ const ROUTE_BREADCRUMB_MAP: Array<{
   // 供应商（issue #7369）：新增菜单项同批补面包屑（V111/#5034 漏过一次的教训）。
   // 🔴 issue #7369（用户 2026-10-20 裁定「得加个新大菜单」）：三项已从「仓储与物料」移到「供应链」
   // —— 面包屑的组名必须与菜单组名逐字一致（本文件文件头的硬约束），漏改就是「同页面两个组名」。
-  { match: (p) => p.startsWith('/suppliers'), crumbs: [{ label: '基础资料' }, { label: '供应商' }] },
+  { match: (p) => p.startsWith('/suppliers'), crumbs: [{ label: '供应链' }, { label: '供应商' }] },
   // 价格本（issue #7375 段 3）：归属「交易管理」组 —— 定价是交易前置。
-  { match: (p) => p.startsWith('/price-books'), crumbs: [{ label: '基础资料' }, { label: '价格本' }] },
+  { match: (p) => p.startsWith('/price-books'), crumbs: [{ label: '订单/商品' }, { label: '价格本' }] },
   { match: (p) => p.startsWith('/purchase-orders'), crumbs: [{ label: '供应链' }, { label: '采购单' }] },
-  { match: (p) => p.startsWith('/inbound-orders'), crumbs: [{ label: '供应链' }, { label: '入库单' }] },
+  { match: (p) => p.startsWith('/inbound-orders'), crumbs: [{ label: '仓储/物料' }, { label: '入库单' }] },
   // 发货单（issue #5939，用户 2026-10-02 裁定）：与「入库单」对称的出口单据，同属「仓储与物料」组。
   // 组名/菜单名与侧边栏 `config/menu.ts` 的 `shipments`、服务端两处菜单节点逐字一致（判据 PG-038）。
-  { match: (p) => p.startsWith('/shipments'), crumbs: [{ label: '仓储与物料' }, { label: '发货单' }] },
+  { match: (p) => p.startsWith('/shipments'), crumbs: [{ label: '仓储/物料' }, { label: '发货单' }] },
   // 库存明细（issue #6404）：V111/#5034 那次**漏过本表一处**（入库单）的教训照抄在这里 ——
   // 新增菜单项必须同批补面包屑，否则末项退化成「工作台」。组名/菜单名与 `config/menu.ts` 的
   // `stock-ledger`、服务端两处菜单节点**逐字一致**（判据 PG-038 / §15.2）。
-  { match: (p) => p.startsWith('/stock-ledger'), crumbs: [{ label: '仓储与物料' }, { label: '库存明细' }] },
+  { match: (p) => p.startsWith('/stock-ledger'), crumbs: [{ label: '仓储/物料' }, { label: '库存明细' }] },
   // 盘点单（issue #7373）：组名/菜单名与 `config/menu.ts` 的 `stocktakes`、服务端两处菜单节点逐字一致
   //（§15.2「面包屑末项 == 侧边栏菜单名」）。
-  { match: (p) => p.startsWith('/stocktakes'), crumbs: [{ label: '仓储与物料' }, { label: '盘点单' }] },
+  { match: (p) => p.startsWith('/stocktakes'), crumbs: [{ label: '仓储/物料' }, { label: '盘点单' }] },
   // 出库单（V194 / issue #7750）：与「入库单」对称的出口单据；组名/菜单名与 `config/menu.ts`
   // 的 `outbound-orders`、服务端两处菜单节点逐字一致（§15.2「面包屑末项 == 侧边栏菜单名」）。
-  { match: (p) => p.startsWith('/outbound-orders'), crumbs: [{ label: '仓储与物料' }, { label: '出库单' }] },
+  { match: (p) => p.startsWith('/outbound-orders'), crumbs: [{ label: '仓储/物料' }, { label: '出库单' }] },
 
   // 交易管理组（本轮 2026-09-29 收窄为**「下单 → 收款」两项**：客户列表 / 售后工单已移入
   // 「客户服务」组 —— 用户原话「客户管理也不属于交易管理」「（售后）和客户管理……都属于服务客户的功能」）
-  { match: (p) => p.startsWith('/orders'), crumbs: [{ label: '交易管理' }, { label: '销售订单' }] },
-  { match: (p) => p.startsWith('/finance'), crumbs: [{ label: '交易管理' }, { label: '财务对账' }] },
+  { match: (p) => p.startsWith('/orders'), crumbs: [{ label: '订单/商品' }, { label: '销售订单' }] },
+  { match: (p) => p.startsWith('/finance'), crumbs: [{ label: '财务' }, { label: '财务对账' }] },
 
   // 客户服务组的两项业务页（与上面的 /agent-workspace、/knowledge 同组）
   { match: (p) => p.startsWith('/after-sales'), crumbs: [{ label: '客户服务' }, { label: '售后工单' }] },
-  { match: (p) => p.startsWith('/customers'), crumbs: [{ label: '基础资料' }, { label: '客户列表' }] },
+  { match: (p) => p.startsWith('/customers'), crumbs: [{ label: '订单/商品' }, { label: '客户列表' }] },
 
   // 组织管理组（与侧边栏"组织管理"分组对齐，#2969 员工/岗位权限/企业信息归入本组）
   { match: (p) => p.startsWith('/employees'), crumbs: [{ label: '组织管理' }, { label: '员工管理' }] },

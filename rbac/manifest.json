@@ -331,33 +331,33 @@
       "报表中心": "dashboard:view",
       "客户服务": null,
       "在线接待": "agent:session",
-      "知识库": "knowledge:view",
       "售后工单": "after_sales:view",
-      "基础资料": null,
-      "商品管理": "product:list",
-      "客户列表": "customer:view",
-      "供应商": "supplier:view",
-      "价格本": "order:list",
-      "交易管理": null,
+      "知识库": "knowledge:view",
+      "订单/商品": null,
       "销售订单": "order:list",
-      "财务对账": "finance:view",
+      "商品管理": "product:list",
+      "价格本": "order:list",
+      "客户列表": "customer:view",
       "生产管理": null,
       "作业单": "production:view",
       "智能派单": "processing:view",
-      "计件工资": "production:view",
-      "质量": null,
+      "质量管理": null,
       "质检记录": "production:inspect",
       "返工单": "after_sales:view",
-      "供应链": null,
+      "仓储/物料": null,
       "入库单": "inbound:view",
-      "采购单": "purchase:view",
-      "仓储与物料": null,
-      "库存明细": "product:list",
       "盘点单": "stock:view",
       "出库单": "stock:view",
       "发货单": "order:list",
+      "库存明细": "product:list",
       "余料台账": "processing:manage",
       "省料分析": "product:list",
+      "财务": null,
+      "财务对账": "finance:view",
+      "计件工资": "production:view",
+      "供应链": null,
+      "采购单": "purchase:view",
+      "供应商": "supplier:view",
       "组织管理": null,
       "员工管理": "employee:list",
       "岗位权限": "system:view",
@@ -367,63 +367,63 @@
     "controller": {
       "经营概览": "dashboard:view",
       "在线接待": "agent:session",
+      "售后工单": "after_sales:view",
       "知识库": "knowledge:view",
+      "销售订单": "order:list",
       "商品管理": "product:list",
       "价格本": "order:list",
-      "销售订单": "order:list",
-      "售后工单": "after_sales:view",
       "客户列表": "customer:view",
-      "财务对账": "finance:view",
       "订单详情": "order:detail",
       "作业单": "production:view",
       "智能派单": "processing:view",
-      "计件工资": "production:view",
       "质检记录": "production:inspect",
       "返工单": "after_sales:view",
-      "供应商": "supplier:view",
-      "采购单": "purchase:view",
       "入库单": "inbound:view",
+      "盘点单": "stock:view",
+      "出库单": "stock:view",
       "发货单": "order:list",
+      "库存明细": "product:list",
       "余料台账": "processing:manage",
       "省料分析": "product:list",
-      "库存明细": "product:list",
+      "财务对账": "finance:view",
+      "计件工资": "production:view",
+      "采购单": "purchase:view",
+      "供应商": "supplier:view",
       "员工管理": "employee:list",
       "岗位权限": "system:view",
       "企业基础设置（经营域）": "system:manage",
       "新增员工": "employee:create",
       "加工单操作": "processing:update",
-      "入库单操作": "inbound:create",
-      "盘点单": "stock:view",
-      "出库单": "stock:view"
+      "入库单操作": "inbound:create"
     },
     "auth": {
       "经营概览": "dashboard:view",
       "报表中心": "dashboard:view",
       "在线接待": "agent:session",
-      "知识库": "knowledge:view",
       "售后工单": "after_sales:view",
-      "商品管理": "product:list",
-      "客户列表": "customer:view",
-      "供应商": "supplier:view",
-      "价格本": "order:list",
+      "知识库": "knowledge:view",
       "销售订单": "order:list",
-      "财务对账": "finance:view",
+      "商品管理": "product:list",
+      "价格本": "order:list",
+      "客户列表": "customer:view",
       "作业单": "production:view",
       "智能派单": "processing:view",
-      "计件工资": "production:view",
       "质检记录": "production:inspect",
       "返工单": "after_sales:view",
       "入库单": "inbound:view",
-      "采购单": "purchase:view",
-      "库存明细": "product:list",
       "盘点单": "stock:view",
       "出库单": "stock:view",
       "发货单": "order:list",
+      "库存明细": "product:list",
       "余料台账": "processing:manage",
       "省料分析": "product:list",
+      "财务对账": "finance:view",
+      "计件工资": "production:view",
+      "采购单": "purchase:view",
+      "供应商": "supplier:view",
+      "企业基础设置": "production:view",
       "员工管理": "employee:list",
-      "岗位权限": "system:view",
-      "企业基础设置": "production:view"
+      "岗位权限": "system:view"
     },
     "user": {}
   },
@@ -453,50 +453,20 @@
       "code": "agent:session"
     },
     {
-      "key": "knowledge",
-      "name": "知识库",
-      "path": "/knowledge",
-      "code": "knowledge:view"
-    },
-    {
       "key": "after-sales",
       "name": "售后工单",
       "path": "/after-sales",
       "code": "after_sales:view"
     },
     {
-      "key": "basic-data",
-      "name": "基础资料",
-      "path": null,
-      "code": null
+      "key": "knowledge",
+      "name": "知识库",
+      "path": "/knowledge",
+      "code": "knowledge:view"
     },
     {
-      "key": "products",
-      "name": "商品管理",
-      "path": "/products",
-      "code": "product:list"
-    },
-    {
-      "key": "customers",
-      "name": "客户列表",
-      "path": "/customers",
-      "code": "customer:view"
-    },
-    {
-      "key": "suppliers",
-      "name": "供应商",
-      "path": "/suppliers",
-      "code": "supplier:view"
-    },
-    {
-      "key": "price-books",
-      "name": "价格本",
-      "path": "/price-books",
-      "code": "order:list"
-    },
-    {
-      "key": "trade-center",
-      "name": "交易管理",
+      "key": "orders-products",
+      "name": "订单/商品",
       "path": null,
       "code": null
     },
@@ -507,10 +477,22 @@
       "code": "order:list"
     },
     {
-      "key": "finance",
-      "name": "财务对账",
-      "path": "/finance",
-      "code": "finance:view"
+      "key": "products",
+      "name": "商品管理",
+      "path": "/products",
+      "code": "product:list"
+    },
+    {
+      "key": "price-books",
+      "name": "价格本",
+      "path": "/price-books",
+      "code": "order:list"
+    },
+    {
+      "key": "customers",
+      "name": "客户列表",
+      "path": "/customers",
+      "code": "customer:view"
     },
     {
       "key": "production-center",
@@ -531,14 +513,8 @@
       "code": "processing:view"
     },
     {
-      "key": "production-piecework",
-      "name": "计件工资",
-      "path": "/production/piecework",
-      "code": "production:view"
-    },
-    {
       "key": "quality",
-      "name": "质量",
+      "name": "质量管理",
       "path": null,
       "code": null
     },
@@ -555,8 +531,8 @@
       "code": "after_sales:view"
     },
     {
-      "key": "supply-chain",
-      "name": "供应链",
+      "key": "inventory-center",
+      "name": "仓储/物料",
       "path": null,
       "code": null
     },
@@ -565,24 +541,6 @@
       "name": "入库单",
       "path": "/inbound-orders",
       "code": "inbound:view"
-    },
-    {
-      "key": "purchase-orders",
-      "name": "采购单",
-      "path": "/purchase-orders",
-      "code": "purchase:view"
-    },
-    {
-      "key": "inventory-center",
-      "name": "仓储与物料",
-      "path": null,
-      "code": null
-    },
-    {
-      "key": "stock-ledger",
-      "name": "库存明细",
-      "path": "/stock-ledger",
-      "code": "product:list"
     },
     {
       "key": "stocktakes",
@@ -603,6 +561,12 @@
       "code": "order:list"
     },
     {
+      "key": "stock-ledger",
+      "name": "库存明细",
+      "path": "/stock-ledger",
+      "code": "product:list"
+    },
+    {
       "key": "production-remnants",
       "name": "余料台账",
       "path": "/production/remnants",
@@ -613,6 +577,42 @@
       "name": "省料分析",
       "path": "/production/saving-board",
       "code": "product:list"
+    },
+    {
+      "key": "finance-center",
+      "name": "财务",
+      "path": null,
+      "code": null
+    },
+    {
+      "key": "finance",
+      "name": "财务对账",
+      "path": "/finance",
+      "code": "finance:view"
+    },
+    {
+      "key": "production-piecework",
+      "name": "计件工资",
+      "path": "/production/piecework",
+      "code": "production:view"
+    },
+    {
+      "key": "supply-chain",
+      "name": "供应链",
+      "path": null,
+      "code": null
+    },
+    {
+      "key": "purchase-orders",
+      "name": "采购单",
+      "path": "/purchase-orders",
+      "code": "purchase:view"
+    },
+    {
+      "key": "suppliers",
+      "name": "供应商",
+      "path": "/suppliers",
+      "code": "supplier:view"
     },
     {
       "key": "org-center",

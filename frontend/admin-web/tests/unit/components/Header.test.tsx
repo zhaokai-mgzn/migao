@@ -105,36 +105,36 @@ describe('Header', () => {
     expect(document.querySelector('nav')!.textContent).toBe('经营概览')
   })
 
-  // 🔴 2026-10-29（issue #8086）：商品管理由**一级项**降入「基础资料」组 ⇒ 面包屑恢复**两级**
-  //（组名 + 菜单名），与侧边栏分组逐字一致；旧口径（单级、无父组）随席位一起退场。
-  it('/products 路径应显示「基础资料 > 商品管理」面包屑（#8086 商品管理进组）', async () => {
+  // 🔴 2026-11-06（用户裁定）：商品管理属**「订单/商品」**组 ⇒ 面包屑两级（组名 + 菜单名），
+  // 与侧边栏分组逐字一致。
+  it('/products 路径应显示「订单/商品 > 商品管理」面包屑', async () => {
     mockPathname = '/products'
     await act(async () => {
       render(<Header />)
     })
-    expect(screen.getByText('基础资料')).toBeInTheDocument()
+    expect(screen.getByText('订单/商品')).toBeInTheDocument()
     expect(screen.getByText('商品管理')).toBeInTheDocument()
     expect(screen.queryByText('商品与加工项')).not.toBeInTheDocument()
-    expect(document.querySelector('nav')!.textContent).toBe('基础资料/商品管理')
+    expect(document.querySelector('nav')!.textContent).toBe('订单/商品/商品管理')
   })
 
-  // issue #5271：原「订单管理」组与原「客户管理」组的客户列表/财务对账**并为一组**「交易管理」
-  it('/orders 路径应显示"交易管理 > 销售订单"面包屑', async () => {
+  // 🔴 2026-11-06：销售订单属「订单/商品」组（旧「交易管理」组已并入）
+  it('/orders 路径应显示"订单/商品 > 销售订单"面包屑', async () => {
     mockPathname = '/orders'
     await act(async () => {
       render(<Header />)
     })
-    expect(screen.getByText('交易管理')).toBeInTheDocument()
+    expect(screen.getByText('订单/商品')).toBeInTheDocument()
     expect(screen.getByText('销售订单')).toBeInTheDocument()
   })
 
-  // 🔴 #8086：客户列表由「客户服务」移入**基础资料**组（用户 2026-10-29 裁定的第二处改判）
-  it('/customers 路径应显示「基础资料 > 客户列表」面包屑（#8086 归入基础资料组）', async () => {
+  // 🔴 2026-11-06：客户列表属「订单/商品」组
+  it('/customers 路径应显示「订单/商品 > 客户列表」面包屑', async () => {
     mockPathname = '/customers'
     await act(async () => {
       render(<Header />)
     })
-    expect(screen.getByText('基础资料')).toBeInTheDocument()
+    expect(screen.getByText('订单/商品')).toBeInTheDocument()
     expect(screen.getByText('客户列表')).toBeInTheDocument()
     expect(screen.queryByText('客户服务')).not.toBeInTheDocument()
     expect(screen.queryByText('交易管理')).not.toBeInTheDocument()
@@ -190,14 +190,14 @@ describe('Header', () => {
 
   // ─── 子路径匹配 ───
 
-  it('/products/123 子路径应匹配「基础资料 > 商品管理」（前缀命中）', async () => {
+  it('/products/123 子路径应匹配「订单/商品 > 商品管理」（前缀命中）', async () => {
     mockPathname = '/products/123'
     await act(async () => {
       render(<Header />)
     })
-    expect(screen.getByText('基础资料')).toBeInTheDocument()
+    expect(screen.getByText('订单/商品')).toBeInTheDocument()
     expect(screen.getByText('商品管理')).toBeInTheDocument()
-    expect(document.querySelector('nav')!.textContent).toBe('基础资料/商品管理')
+    expect(document.querySelector('nav')!.textContent).toBe('订单/商品/商品管理')
   })
 
   it('/agent-workspace 子路径优先匹配（/agent-workspace/sessions）', async () => {
@@ -517,8 +517,8 @@ describe('Header', () => {
   // ─── 面包屑分隔符 ───
 
   it('多级面包屑应显示 / 分隔符', async () => {
-    // ⚠️ #5877：本用例原来用 `/products`（当时是两级同名面包屑）；该路径现为**单级**
-    //（一级项无父组）⇒ 改用真正的多级路径「交易管理 / 销售订单」，用例强度不变。
+    // ⚠️ #5877：本用例原来用 `/products`（当时是两级同名面包屑）；现改用真正的多级路径
+    //「订单/商品 / 销售订单」，用例强度不变。
     mockPathname = '/orders'
     await act(async () => {
       render(<Header />)
@@ -577,25 +577,25 @@ describe('Header', () => {
     expect(screen.queryByText('工作台')).not.toBeInTheDocument()
   })
 
-  it('/production/piecework 路径面包屑（生产管理 > 计件工资）', async () => {
+  it('/production/piecework 路径面包屑（财务 > 计件工资）', async () => {
     mockPathname = '/production/piecework'
     await act(async () => {
       render(<Header />)
     })
-    expect(screen.getByText('生产管理')).toBeInTheDocument()
+    expect(screen.getByText('财务')).toBeInTheDocument()
     expect(screen.getByText('计件工资')).toBeInTheDocument()
   })
 
   // 入库单（issue #5071）：V111（#5034）新增该菜单项时**漏了 Header 的匹配表** ⇒ 该页面包屑
   // 落兜底分支（当时只剩「工作台」一项，实测），§15.2「面包屑与侧边栏菜单名一致」不成立。
-  // 🔴 issue #7369（用户 2026-10-20 裁定「得加个新大菜单」）：入库单已从「仓储与物料」移到新组「供应链」
-  // —— 面包屑组名必须与菜单组名逐字一致（`Header.tsx` 文件头的硬约束），本用例就是钉它的那一处。
-  it('/inbound-orders 路径面包屑（供应链 > 入库单，issue #5071 补 / #5271 原判仓储与物料 / #7369 改判供应链）', async () => {
+  // 🔴 2026-11-06（用户裁定）：入库单**由「供应链」移入「仓储/物料」组**（它是收货后的登记面，属仓）。
+  // 面包屑组名必须与菜单组名逐字一致（`Header.tsx` 文件头的硬约束）。
+  it('/inbound-orders 路径面包屑（仓储/物料 > 入库单）', async () => {
     mockPathname = '/inbound-orders'
     await act(async () => {
       render(<Header />)
     })
-    expect(screen.getByText('供应链')).toBeInTheDocument()
+    expect(screen.getByText('仓储/物料')).toBeInTheDocument()
     expect(screen.getByText('入库单')).toBeInTheDocument()
     // 不得回落成兜底（#7087 起兜底 = 单级「经营概览」）
     expect(screen.queryByText('工作台')).not.toBeInTheDocument()
@@ -603,24 +603,24 @@ describe('Header', () => {
 
   // ── issue #5271 新 IA 的面包屑改判（组名跟着菜单走，§15.2）──
 
-  it('/production/remnants 路径面包屑（仓储与物料 > 余料台账，issue #5271 改判组名；原生产管理）', async () => {
+  it('/production/remnants 路径面包屑（仓储/物料 > 余料台账）', async () => {
     mockPathname = '/production/remnants'
     await act(async () => {
       render(<Header />)
     })
-    expect(screen.getByText('仓储与物料')).toBeInTheDocument()
+    expect(screen.getByText('仓储/物料')).toBeInTheDocument()
     expect(screen.getByText('余料台账')).toBeInTheDocument()
     // 不得退化成父路径的「作业单」（本表 `find` 取首个命中 ⇒ 顺序敏感）
     expect(screen.queryByText('作业单')).not.toBeInTheDocument()
     expect(screen.queryByText('生产管理')).not.toBeInTheDocument()
   })
 
-  it('/production/saving-board 路径面包屑（仓储与物料 > 省料看板，issue #5271 改判组名）', async () => {
+  it('/production/saving-board 路径面包屑（仓储/物料 > 省料分析）', async () => {
     mockPathname = '/production/saving-board'
     await act(async () => {
       render(<Header />)
     })
-    expect(screen.getByText('仓储与物料')).toBeInTheDocument()
+    expect(screen.getByText('仓储/物料')).toBeInTheDocument()
     expect(screen.getByText('省料分析')).toBeInTheDocument()
     expect(screen.queryByText('作业单')).not.toBeInTheDocument()
   })
@@ -732,12 +732,12 @@ describe('Header', () => {
     expect(screen.getByText('岗位权限')).toBeInTheDocument()
   })
 
-  it('/finance 路径面包屑（#2969 财务对账归入客户管理组）', async () => {
+  it('/finance 路径面包屑（2026-11-06：财务对账归入「财务」组）', async () => {
     mockPathname = '/finance'
     await act(async () => {
       render(<Header />)
     })
-    expect(screen.getByText('交易管理')).toBeInTheDocument()
+    expect(screen.getByText('财务')).toBeInTheDocument()
     expect(screen.getByText('财务对账')).toBeInTheDocument()
   })
 
