@@ -9981,6 +9981,77 @@ cases:
         - ai-agent-tests.yml
       verifies: []
 
+  - id: MC-251
+    legacy_id: ""
+    title: "product_detail 接线 id 解析器：名称/序号/UUID 三形态都能查到商品；解析不到 ⇒ 具名出口且不把原名当 id 打服务端（issue #8783）"
+    domains:
+      - misc
+      - backend
+      - tools
+    tier: normal
+    tags:
+      - 工具接线
+      - id 解析
+      - 描述承诺
+      - fail-closed
+    truths_ref: []
+    user_inputs:
+      - "N/A（代码判据，无对话轮次：直接调 ProductDetailTool.execute 与 resolve_product_id；假 admin-api 按真实接口契约分流）"
+    expectations:
+      - "判据 ①（issue 原文）：product_detail(product_id=「2699系列雪尼尔窗帘面料」) ⇒ 解析成真实 id 后查到详情，返回该商品**真实价格**（259.0），而不是 NOT_FOUND。修前红证：execute 把名称原样拼进 GET /api/admin/products/{name} ⇒ 服务端 NOT_FOUND。"
+      - "判据 ②：解析不到 ⇒ **不得**发出 GET /api/admin/products/<原名>，回「未找到该商品，请用 product_search 按名字搜」。红证 = 同一输入下 detail_paths() == [] 且所有请求 path 不含原名；修前唯一那次请求就是 /products/<那个名字>。"
+      - "判据 ③：序号 / UUID / 名称三种形态各一条 —— 序号「3」按 1-based 翻页（page=3,size=1）取第 3 条；UUID 直通且**零列表查询**（只有 detail 一次调用）；名称精确优先（同名候选里取精确匹配而不是第一条）。负控：不存在的名字 ⇒ 具名提示（error=商品不存在、message 含原名、suggestion 含 product_search），不 500、也不回「请检查商品 ID 是否正确」的裸 NOT_FOUND。"
+      - "resolve_product_id 分支覆盖（该函数此前 83 stmts / 0% 覆盖，接线后第一次被真跑）：UUID 精确（零 HTTP）/ UUID 前缀（桩，服务端前缀能力边界见 data_checks）/ 名称精确 / 名称模糊 / 序号 1-based / 非 UUID 真实 id（demo-seed 的 p-zg-001，走最后的 productId 精确查询）/ 都不中（None）/ 空输入（零 HTTP）；每分支都断言到具体读数，另有「每次请求都带 tenant_id」。"
+    data_checks:
+      - "接线改动（backend/ai-agent-service/app/tools/product_detail.py 的 execute）：先 resolve_product_id(raw, tenant_id, client) → 命中则按解析出的 id 查详情；解析不到 ⇒ 直接返回具名 ToolResult，**绝不**再发 /products/{raw}。"
+      - "解析器改动（backend/ai-agent-service/app/utils/id_resolver.py 的 resolve_product_id）：末尾补第 5 步「服务端 id 精确匹配」—— admin-api 的 productId 是精确 eq（见 backend/admin-api/src/main/java/com/migao/admin/service/ProductService.java 的 buildProductQueryWrapper），传名字只会拿到空集、不会误命中；放最后是为了不给正常名称解析多付一次往返。没有这一步，接线会把**真实存在的非 UUID id**（docs/deployment/demo-seed.sql 的 products 段：p-zg-001 等）误判成「未找到」，等于用修 bug 的方式造新 bug。"
+      - "前缀形态的边界（照实登记，不宣称线上可用）：admin-api 没有 id 前缀查询能力（productId 精确、keyword 只搜 name/skuCode）⇒ 截断的 UUID 前缀在线上查不到；本包只用桩验证解析器分支逻辑本身。重启条件 = admin-api 提供按 id 前缀的查询面。"
+      - "判据层零 LLM / 零网络 / 零 DB：假客户端 _FakeAdminApi 照 admin-api 契约分流（列表 vs 详情、未知 id 回 NOT_FOUND），断言到具体 path / 价格 / 参数，不用「字段存在」充当「功能生效」。"
+    skip_reason: "[backend-contract] 代码判据（pytest 层，零 LLM / 零网络 / 零 DB）：真值载体 = traces.tests 的 backend/ai-agent-service/tests/test_product_detail_id_resolution.py，不进 agent-eval 冒烟"
+    merge_log: "2026-11-06 新增（issue #8783）。裁定走「接线」而非「改描述删承诺」：resolve_product_id() 早已写好但生产代码零调用（83 stmts / 0% 覆盖）⇒ 删承诺等于扔掉已完成实现；且评测里模型拿到的是用户说的商品名、product_detail 描述明写「支持名称/序号/UUID」⇒ 模型是照描述调的，描述没错、实现没跟上。本用例锁三条判据（名称真查到价 / 解析失败出口 / 三形态 + 负控）与解析器每条分支。"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_product_detail_id_resolution.py"
+      ci:
+        - ai-agent-tests.yml
+      verifies: []
+
+  - id: MC-250
+    legacy_id: ""
+    title: "类级元守卫：工具描述承诺的入参形态（名称/序号/UUID）必须在实现里接线解析器，未接线即具名判红（issue #8783 同族）"
+    domains:
+      - misc
+      - backend
+      - tools
+    tier: normal
+    tags:
+      - 类级判据
+      - 描述承诺
+      - 未接线
+      - 豁免台账只许缩短
+    truths_ref: []
+    user_inputs:
+      - "N/A（静态判据，无对话轮次：扫 backend/ai-agent-service/app/tools/*.py 的描述文本与解析器调用）"
+    expectations:
+      - "扫描面自证（fail-closed）：命中「入参形态承诺」锚点的模块 >= 3 且**必须包含 product_detail.py**（把承诺删掉来消红 ⇒ 当场红）；两个锚点各自全库命中 >= 1（锚点失明 ⇒ 判红）。"
+      - "判据本体：承诺了名称解析、但同一模块里**没有**解析器调用 ⇒ **具名**判红并给出出口（接线，或登记进豁免台账并写明重启条件）。现取未登记缺口 = 0。"
+      - "豁免台账双向校验（只许缩短，不许静默）：product_update.py / sku_update.py 必须**仍承诺**且**仍未接线**才是合法豁免；一旦修好（出现解析器调用）或改描述（不再承诺）⇒ 必须删掉条目，否则判红。"
+      - "判别力自证（正控 + 三条负控实跑）：正控「承诺 + 无解析器 ⇒ 具名」；负控「承诺 + 有解析器 ⇒ 不红」「不承诺 ⇒ 不红」；以及「解析器只出现在**注释**里不算接线」——那正是 #8783 的原病形态（写了但没调用）。"
+      - "现取读数（本 PR HEAD）：承诺面 = 3 个模块（product_detail / product_update / sku_update）；台账生效时未登记缺口 = 0；**清空台账**后具名 2 条（product_update.py / sku_update.py）⇒ 证明判据有牙、台账不是遮羞布。"
+    data_checks:
+      - "同族缺陷的实证（#8783）：product_detail 修前在 execute 里把入参原样拼进 GET /api/admin/products/{product_id}，而解析器 backend/ai-agent-service/app/utils/id_resolver.py 的 resolve_product_id() 全仓生产代码零调用（83 stmts / 0% 覆盖）。"
+      - "另两条同族（本单**不修**、已登记豁免 + 另单跟踪）：backend/ai-agent-service/app/tools/product_update.py 与 backend/ai-agent-service/app/tools/sku_update.py 的 product_id 描述都写「支持名称/序号/UUID，服务端自动解析」，而两者直接把 product_id 拼进 /api/admin/agent/products/{id}（写路径）；admin-api 侧只按 id 精确查（ProductService 的 eq(Product::getId, ...)），没有名称解析。写路径的失败语义（解析不到时不许静默当「未找到」）与只读不同，故不并入本单。"
+      - "判据层零 LLM / 零网络 / 零 DB：纯静态读文本，用 `in` 做子串判定（不用正则捕获组 —— 规避「按引号扫源码原文取值」那一族陷阱），注释行先剥离再判「是否接线」。"
+      - "边界：只判「描述承诺 vs 是否有解析器调用」这一条静态事实；不判解析器本身对不对（由 backend/ai-agent-service/tests/test_product_detail_id_resolution.py 与 backend/ai-agent-service/tests/test_id_resolver.py 负责），也不判模型会不会照描述调用。"
+    skip_reason: "[backend-contract] 代码判据（pytest 层，零 LLM / 零网络 / 零 DB）：真值载体 = traces.tests 的 backend/ai-agent-service/tests/test_tool_id_shape_promises.py，不进 agent-eval 冒烟"
+    merge_log: "2026-11-06 新增（issue #8783 的同族固化）。本单裁定走「接线」而非「改描述」；为了让同类进不来，本用例把「描述承诺的入参形态 ⇒ 实现必须接线」固化成类级元守卫，并把**已核实的另外两条同族缺陷**（product_update / sku_update）登记进只许缩短的豁免台账（另单跟踪）。反向也锁：删掉 product_detail 那句承诺来消红 ⇒ 扫描面自证当场红。"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_tool_id_shape_promises.py"
+      ci:
+        - ai-agent-tests.yml
+      verifies: []
+
   - id: MC-268
     legacy_id: ""
     title: "L0 判据：评测 harness 的三种归因必须分家（写没落库 / 夹具未复位 / 卡形状不兼容，零 LLM）"

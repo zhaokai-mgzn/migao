@@ -5,6 +5,23 @@
 > 原因 = 单文件涨到 512KB 越过扫描上限，详见存档文件头与 issue #6404。
 > **后续条目继续在本文件 `## [Unreleased]
 
+### product_detail 真的认「名称/序号/UUID」：描述怎么写就怎么查，查不到也不会把名字当 ID 打服务端（2026-11-06，issue #8783）
+
+- **改前**：`product_detail` 的描述承诺 `product_id` **支持名称/序号/UUID**，而实现把入参原样拼进
+  `GET /api/admin/products/{product_id}` ⇒ 传商品名必 `NOT_FOUND`。评测里模型拿到的是**用户说的商品名**，
+  它是照描述调的（`product_detail{product_id: "2699系列雪尼尔窗帘面料"} ⇒ 商品不存在`）。
+  仓库里早有 `resolve_product_id()`（UUID → 前缀 → 名称 → 序号），但**生产代码零调用**。
+- **改后**：先解析再查 —— 命中就按解析出的 id 查详情；**解析不到直接回「未找到该商品，请用 product_search 按名字搜」**，
+  绝不再把原名当 id 发请求（那正是修前的 bug 形态）。同时兼容**非 UUID 的真实 id**（演示库 / 历史数据的
+  `p-zg-001` 这类），否则这次接线会把「真实 id」误判成「未找到」。
+- **边界（照实登记）**：`admin-api` 没有「按 id 前缀查询」的能力（`productId` 精确、`keyword` 只搜名称/货号），
+  所以截断 UUID 前缀在线上仍查不到 —— 解析器的前缀分支只做了分支级覆盖，**不**宣称线上可用。
+- 判据 = MC-251：`backend/ai-agent-service/tests/test_product_detail_id_resolution.py`
+  （三条验收判据 + 解析器每条分支 + 非 UUID id 回归保护）；
+  类级元守卫 = MC-250：`backend/ai-agent-service/tests/test_tool_id_shape_promises.py`
+  （「描述承诺的入参形态 ⇒ 实现必须接线解析器」，删描述来消红会被扫描面自证当场抓住；
+  同族剩余两条 `product_update` / `sku_update` 登记在只许缩短的豁免台账，另开 #8788）。
+
 ### 黄金策不再「认识了却调不动」：prompt 里点名的工具一律留在本轮可执行集内（2026-11-06，issue #8775）
 
 - **改前**：10-31 起的读面裁剪（`TOOL_TRIM_ENABLED` / `TOOL_TRIM_MAX_READ`）按分数留 top-k，

@@ -3,6 +3,7 @@ ID 自动解析器 — LLM 传名称/序号/UUID/前缀都能正确转为 UUID�
 
 设计原则：不要让 LLM 记住 UUID。LLM 传什么过来都能解析。
 匹配优先级：UUID 精确匹配 → UUID 前缀 → 名称 → 序号（1-based）
+→ 服务端 id 精确匹配（最后兜底：兼容非 UUID 的历史/种子 id，如 `p-zg-001`）
 """
 
 import re
@@ -86,6 +87,20 @@ async def resolve_product_id(
                 return p.get("id")
         # 模糊匹配：取第一个
         return products[0].get("id")
+
+    # 5. 服务端 id 精确匹配 —— 兼容**非 UUID 的历史/种子 id**（如 demo-seed 的 `p-zg-001`）。
+    #    admin-api 的 `productId` 是**精确**过滤（ProductService.buildProductQueryWrapper 用
+    #    `eq(Product::getId, ...)`），所以传一个名字只会拿到空集、不会误命中别的商品。
+    #    为什么放在最后：它是**多一次**服务端往返，只在前面全部落空时才付这个成本；
+    #    放在前面虽然也能工作，但每次按名称查详情都要多一次调用。
+    #    注意：只走 query 参数，**不**把 raw 拼进 `/products/{raw}` —— 那是 issue #8783 的 bug 形态。
+    resp = await http_client.get("/api/admin/products", params={
+        "productId": raw, "page": 1, "size": 1
+    }, tenant_id=tenant_id)
+    products = (resp.get("data", {}) or {}).get("items", [])
+    for p in products:
+        if p.get("id") == raw:
+            return raw
 
     return None
 

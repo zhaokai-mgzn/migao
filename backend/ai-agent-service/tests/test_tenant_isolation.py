@@ -289,6 +289,11 @@ class TestProductSearchTenantFilter:
         assert result.data["total"] == 2
 
 
+# 详情入参 = 真实 id 形态（UUID）：product_detail 会先做 id 解析（issue #8783）
+UUID_OTHER_TENANT_PRODUCT = "77777777-7777-4777-8777-777777777777"
+UUID_OWN_TENANT_PRODUCT = "88888888-8888-4888-8888-888888888888"
+
+
 class TestProductDetailTenantValidation:
     """product_detail 的 tenant_id 验证测试"""
 
@@ -305,7 +310,7 @@ class TestProductDetailTenantValidation:
         mock_client.get = AsyncMock(return_value={
             "success": True,
             "data": {
-                "id": "p_other",
+                "id": UUID_OTHER_TENANT_PRODUCT,
                 "name": "其他租户商品",
                 "tenantId": TENANT_B,  # 不属于当前租户
                 "price": 999,
@@ -313,7 +318,7 @@ class TestProductDetailTenantValidation:
         })
         mock_get_client.return_value = mock_client
 
-        result = await tool.execute(context=ctx_tenant_a, product_id="p_other")
+        result = await tool.execute(context=ctx_tenant_a, product_id=UUID_OTHER_TENANT_PRODUCT)
 
         assert result.success is False
         assert result.error == "商品不存在"
@@ -327,7 +332,7 @@ class TestProductDetailTenantValidation:
         mock_client.get = AsyncMock(return_value={
             "success": True,
             "data": {
-                "id": "p_own",
+                "id": UUID_OWN_TENANT_PRODUCT,
                 "name": "自家商品",
                 "tenantId": TENANT_A,
                 "price": 299,
@@ -336,7 +341,7 @@ class TestProductDetailTenantValidation:
         })
         mock_get_client.return_value = mock_client
 
-        result = await tool.execute(context=ctx_tenant_a, product_id="p_own")
+        result = await tool.execute(context=ctx_tenant_a, product_id=UUID_OWN_TENANT_PRODUCT)
 
         assert result.success is True
         assert result.data["name"] == "自家商品"
