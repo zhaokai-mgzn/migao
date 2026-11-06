@@ -1,0 +1,6 @@
+{
+  "id": "MC-310",
+  "pr": 8807,
+  "title": "ProcessingOrderService 自动批次决策族搬出（LOC 冻结面 2,931 → 2,653）：决策面 characterization 先扩后搬 + 只搬决策不搬写库",
+  "claimed_at": "2026-11-06"
+}

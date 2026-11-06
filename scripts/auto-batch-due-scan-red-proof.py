@@ -100,7 +100,7 @@ MUTATIONS = [
     {
         "name": "no_business_due",
         "why": "去掉业务兜底判据（最晚派单日永不到期 ⇒ 该单永远不派）",
-        "file": SVC + "ProcessingOrderService.java",
+        "file": SVC + "ProcessingOrderAutoBatch.java",
         "old": "            if (latest == null || today.isBefore(latest)) {\n                continue;\n            }",
         "new": "            if (true) { // [RED-PROOF] 兜底判据被去掉\n                continue;\n            }",
         "cls": UNIT, "fqn": UNIT_FQN,
@@ -109,7 +109,7 @@ MUTATIONS = [
     {
         "name": "window_as_deadline",
         "why": "把**池化窗口**（等待时长上限）当派单死线（用户逐字否掉的形态）",
-        "file": SVC + "ProcessingOrderService.java",
+        "file": SVC + "ProcessingOrderAutoBatch.java",
         "old": "            if (latest == null || today.isBefore(latest)) {\n                continue;\n            }",
         "new": "            if (latest == null || (today.isBefore(latest) && !first.overdue())) {"
                "\n                continue;\n            } // [RED-PROOF] 用窗口当死线",
@@ -119,7 +119,7 @@ MUTATIONS = [
     {
         "name": "timer_dispatches_everything",
         "why": "定时腿改成「池里有什么派什么」（= 变成第二条主触发、不再只判业务约束）",
-        "file": SVC + "ProcessingOrderService.java",
+        "file": SVC + "ProcessingOrderAutoBatch.java",
         "old": "            LocalDate latest = latestDispatchDate(first, policy.standardCycleDays());\n"
                "            if (latest == null || today.isBefore(latest)) {\n                continue;\n            }",
         "new": "            LocalDate latest = latestDispatchDate(first, policy.standardCycleDays());\n"
@@ -148,7 +148,7 @@ MUTATIONS = [
     {
         "name": "realdb_no_business_due",
         "why": "同一条兜底判据在**真库**面上被去掉（无事件也不派 ⇒ 到点自愈不成立）",
-        "file": SVC + "ProcessingOrderService.java",
+        "file": SVC + "ProcessingOrderAutoBatch.java",
         "old": "            if (latest == null || today.isBefore(latest)) {\n                continue;\n            }",
         "new": "            if (true) { // [RED-PROOF] 兜底判据被去掉（真库面）\n                continue;\n            }",
         "cls": REALDB, "fqn": REALDB_FQN,

@@ -110,6 +110,7 @@ TOOLS: dict[str, ToolSpec] = {
         heavy="Maven + JDK + PG 二进制（含 1 条真库判据；13 条变异实测 807s≈13min）",
         impl=(
             _AAPI_MAIN + "service/ProcessingOrderService.java",
+            _AAPI_MAIN + "service/ProcessingOrderAutoBatch.java",
             _AAPI_MAIN + "service/AutoBatchDispatchListener.java",
             _AAPI_MAIN + "service/PoolChangeNotifier.java",
             # issue #8191（P2-1d）：确认支付（含通知点）搬到 OrderLifecycleService ⇒ 被守卫文件跟着搬家。
@@ -118,6 +119,8 @@ TOOLS: dict[str, ToolSpec] = {
             _AAPI_MAIN + "service/OrderLifecycleService.java",
             # issue #8770（派单池一档）：`pool()` 的「加急标记」与「已派单排除」两处锚点随切片搬到
             # ProcessingOrderDispatchPool ⇒ 被守卫文件跟着搬家（同样**同时是夹具拷贝面**）。
+            # issue #8770（自动批次一档）：关闸 / 三条件 / 兜底判据的锚点随「决策族」搬到
+            # ProcessingOrderAutoBatch ⇒ 被守卫文件跟着搬家（同样**同时是夹具拷贝面**）。
             _AAPI_MAIN + "service/ProcessingOrderDispatchPool.java",
             "backend/admin-api/src/main/resources/db/init/schema.sql",
         ),
@@ -135,6 +138,7 @@ TOOLS: dict[str, ToolSpec] = {
         impl=(
             _AAPI_MAIN + "service/AutoBatchDueScanService.java",
             _AAPI_MAIN + "service/ProcessingOrderService.java",
+            _AAPI_MAIN + "service/ProcessingOrderAutoBatch.java",
             _AAPI_MAIN + "config/AutoBatchDueScanHealthIndicator.java",
         ),
         criteria=(
