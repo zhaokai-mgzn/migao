@@ -57,11 +57,18 @@ public class PlaybookController {
         return ApiResponse.success(playbookService.createDraft(body));
     }
 
-    /** 审核通过：draft → active（此后才进 prompt / 才能生成用例）。 */
+    /**
+     * 审核通过：draft → active（此后才进 prompt / 才能生成用例）。
+     *
+     * <p>同冲突组已有生效卡 ⇒ **默认 409**；`supersedes` = 要替换掉的旧卡，走
+     * 「同一事务内先退役旧的、再激活新的」路径（issue #8175 P2）。</p>
+     */
     @PostMapping("/{id}/activate")
     @RequirePermission("knowledge:manage")
-    public ApiResponse<Playbook> activate(@PathVariable String id) {
-        return ApiResponse.success(playbookService.activate(id));
+    public ApiResponse<Playbook> activate(
+            @PathVariable String id,
+            @RequestParam(required = false) String supersedes) {
+        return ApiResponse.success(playbookService.activate(id, supersedes));
     }
 
     /** 退役：active → retired（**立即**从所有出口消失，读面不缓存）。 */

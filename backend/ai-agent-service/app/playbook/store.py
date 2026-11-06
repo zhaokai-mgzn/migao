@@ -48,6 +48,11 @@ _COLUMNS = (
     "source_turn",
     "hits",
     "state",
+    # P2：冲突消解（`conflict_key`）与生命周期（衰减/退役）的唯一输入面
+    "conflict_key",
+    "activated_at",
+    "created_at",
+    "last_hit_at",
 )
 
 _SELECT_ACTIVE_SQL = """
@@ -59,6 +64,13 @@ LIMIT 200
 """.format(
     columns=", ".join(_COLUMNS)
 )
+
+#: 命中计数：**只加不减** + 显式租户列 + 与 `last_hit_at` 同批写（衰减/退役的数据面）
+_RECORD_HITS_SQL = """
+UPDATE playbooks
+SET hits = hits + 1, last_hit_at = NOW(), updated_at = NOW()
+WHERE tenant_id = :tenant_id AND id IN :ids
+"""
 
 
 def _parse_condition(raw: Any) -> Any:
@@ -96,6 +108,12 @@ def _row_to_playbook(row: Any) -> Dict[str, Any]:
         },
         "hits": raw["hits"],
         "state": raw["state"],
+        # 冲突消解用：P1 落库面打的标记；读面**不单独信任它**（见 identity.group_key）
+        "conflict_key": raw["conflict_key"],
+        # 衰减 / 退役的时间锚点（`last_hit_at` > `activated_at` > `created_at`）
+        "activated_at": raw["activated_at"],
+        "created_at": raw["created_at"],
+        "last_hit_at": raw["last_hit_at"],
     }
 
 
@@ -145,6 +163,24 @@ class PlaybookStore:
                 f"[playbook] loaded {len(playbooks)} active | tenant={tenant_id} role={role or '-'}"
             )
         return playbooks
+
+    async def record_hits(self, tenant_id: int, playbook_ids: Optional[List[Any]]) -> int:
+        """给**本轮真的命中**的卡 +1 次命中（`hits` / `last_hit_at` 同批写）。
+
+        - 空清单 / 无租户 ⇒ 一条 SQL 都不发（别把「没命中」写成一次空更新）；
+        - 租户条件**写在 SQL 里**：一次 B 端回合不许给别家的卡加命中；
+        - `hits = hits + 1` 而不是 `hits = 1`：这是累计量，覆盖会把它抹平。
+        """
+        ids = [str(pid) for pid in (playbook_ids or []) if pid]
+        if not tenant_id or not ids:
+            return 0
+        from sqlalchemy import bindparam, text
+
+        stmt = text(_RECORD_HITS_SQL).bindparams(bindparam("ids", expanding=True))
+        async with await self._get_session() as db:
+            await db.execute(stmt, {"tenant_id": int(tenant_id), "ids": ids})
+            await db.commit()
+        return len(ids)
 
     @staticmethod
     def _scope_applies(playbook: Dict[str, Any], role: Optional[str]) -> bool:

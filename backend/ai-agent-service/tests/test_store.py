@@ -4,6 +4,10 @@
 这里的红证都是注入式：① 伪造「SQL 漏了租户条件」的读面（同一批行里混进 B 租户的卡）
 ⇒ B 的卡不许露头；② 同一 store 实例上 retire 后**立刻**再读 ⇒ 必须读不到（任何进程内缓存
 都会让这条红 —— 退役是库内状态变更，进程无从感知）。
+
+P2 追加两件：读面新增 `conflict_key` / 生命周期时间列（冲突消解与衰减的唯一输入），
+以及 `record_hits` 的**租户范围 + 只加不减**契约（少写 tenant 条件 = 一次 B 端回合
+给别家的卡加命中；写成覆盖 = 命中数会被后来的一次写入抹平）。
 """
 
 import json
@@ -29,6 +33,10 @@ def make_card(**overrides):
         "source": {"session_id": "sess-1", "turn": 3},
         "hits": 0,
         "state": "active",
+        "conflict_key": None,
+        "activated_at": None,
+        "created_at": None,
+        "last_hit_at": None,
     }
     card.update(overrides)
     return card
@@ -39,12 +47,11 @@ def make_card(**overrides):
 COLUMNS = (
     "id", "tenant_id", "scope", "scope_role", "trigger_json", "correct_text",
     "counter_json", "source_session_id", "source_turn", "hits", "state",
+    "conflict_key", "activated_at", "created_at", "last_hit_at",
 )
 
 
 def row(card):
-    import json
-
     return (
         card["id"],
         card["tenant_id"],
@@ -57,6 +64,10 @@ def row(card):
         card["source"]["turn"],
         card["hits"],
         card["state"],
+        card["conflict_key"],
+        card["activated_at"],
+        card["created_at"],
+        card["last_hit_at"],
     )
 
 
@@ -77,10 +88,14 @@ class FakeSession:
     def __init__(self, rows):
         self.rows = list(rows)
         self.calls = []
+        self.commits = 0
 
     async def execute(self, sql, params):
         self.calls.append((str(sql), dict(params)))
         return FakeResult(list(self.rows))
+
+    async def commit(self):
+        self.commits += 1
 
     async def __aenter__(self):
         return self
@@ -126,6 +141,19 @@ async def test_role_scope_only_applies_to_the_matching_role():
     assert [p["id"] for p in await store.list_active(1, role=None)] == ["pb_tenant"]
 
 
+def test_lifecycle_columns_are_read_for_conflict_and_decay():
+    """读面必须真的把 `conflict_key` / 时间列读出来（少一列 ⇒ 冲突消解与衰减都没输入）。"""
+    from app.playbook.store import _row_to_playbook
+
+    card = make_card(conflict_key="grp", hits=4, last_hit_at="2026-11-05T00:00:00+00:00")
+    mapped = _row_to_playbook(row(card))
+    assert mapped["conflict_key"] == "grp"
+    assert mapped["hits"] == 4
+    assert mapped["last_hit_at"] == "2026-11-05T00:00:00+00:00"
+    assert "activated_at" in mapped
+    assert "created_at" in mapped
+
+
 # ── 判据 5：退役立即生效（读面不缓存）──────────────────────────────────────
 
 
@@ -151,3 +179,34 @@ async def test_retire_removes_the_card_from_the_prompt_on_the_next_turn():
     session.rows = [row(make_card(id="pb_1", correct="整卷优先", state="retired"))]
     after = render_playbook_block(await store.list_active(1), {"intent": "quote"})
     assert "整卷优先" not in after
+
+
+# ── 命中计数（衰减 / 退役的数据面）─────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_record_hits_is_tenant_scoped_and_increments_only():
+    """`hits = hits + 1`（不是 `= 1`）+ 显式租户条件 + `last_hit_at` 同批写。"""
+    session = FakeSession([])
+    written = await PlaybookStore(db_session=session).record_hits(1, ["pb_1", "pb_2"])
+
+    assert written == 2
+    sql, params = session.calls[0]
+    flat = " ".join(sql.split())
+    assert "SET hits = hits + 1" in flat
+    assert "last_hit_at = NOW()" in flat
+    assert "WHERE tenant_id = :tenant_id" in flat
+    assert "id IN" in flat
+    assert params["tenant_id"] == 1
+    assert sorted(params["ids"]) == ["pb_1", "pb_2"]
+    assert session.commits == 1
+
+
+@pytest.mark.asyncio
+async def test_record_hits_with_no_ids_writes_nothing():
+    """空清单 / 无租户 ⇒ 一条 SQL 都不发（别把「没命中」写成一次空更新）。"""
+    session = FakeSession([])
+    store = PlaybookStore(db_session=session)
+    assert await store.record_hits(1, []) == 0
+    assert await store.record_hits(0, ["pb_1"]) == 0
+    assert session.calls == []

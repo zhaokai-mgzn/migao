@@ -181,6 +181,20 @@ class Settings(BaseSettings):
     LLM_RETRY_MAX_ATTEMPTS: int = 2
     LLM_RETRY_BASE_DELAY_S: float = 0.5
 
+    # ── 口径卡生命周期（issue #8175 P2）─────────────────────────────────
+    # 衰减分 = hits × 0.5^(距上次命中天数 / 半衰期)。半衰期越长 ⇒ 衰减越慢。
+    PLAYBOOK_DECAY_HALF_LIFE_DAYS: float = 90.0
+    # 规则化退役：**连续 N 天无命中** 且 **衰减分 < 阈值** 才转 retired；原因写库可审计。
+    PLAYBOOK_RETIRE_AFTER_DAYS: int = 60
+    PLAYBOOK_RETIRE_DECAY_THRESHOLD: float = 0.5
+    # 自动退役 / 晋升**默认关**（缺省不改变线上行为；开启前先跑 dry-run 看清单）。
+    PLAYBOOK_AUTO_RETIRE_ENABLED: bool = False
+    PLAYBOOK_PROMOTION_ENABLED: bool = False
+    # N 个**不同员工**复现同一口径 ⇒ 具备晋升资格（只对 scope=tenant 的 draft 生效）。
+    PLAYBOOK_PROMOTION_MIN_EMPLOYEES: int = 3
+    # 命中计数：只在「触发条件真的命中本轮语境」时 +1（衰减 / 退役的唯一数据面）。
+    PLAYBOOK_HIT_TRACKING_ENABLED: bool = True
+
     model_config = {"env_file": ".env", "case_sensitive": True, "extra": "ignore"}
 
     @model_validator(mode='after')

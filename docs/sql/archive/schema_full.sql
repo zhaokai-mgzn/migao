@@ -4,11 +4,16 @@
 -- 本文件是 **2026-05-30 的一次性快照**，此后未随迁移链更新，**两个方向都已失真**
 -- （2026-09-11 实测，逐表比对 backend/admin-api/src/main/resources/db/init/schema.sql）：
 --
---   本文件缺失（schema.sql 已有，共 64 张）：
+--   本文件缺失（schema.sql 已有，共 65 张）：
 --     playbooks
 --      口径卡（V210，issue #8175 —— 企业级可执行口径：trigger / counter 是**结构化条件语言 JSON**
 --      （不是自然语言）、state 三态 draft / active / retired。缺这张表，「纠正一次 → 全企业受益」
 --      就无处落地，而把口径塞进 user_memories 会被后写覆盖先写）。
+--     playbook_reproductions
+--      口径卡复现证据（V212，issue #8175 P2 —— 哪个员工在哪个会话里复现过同一口径；
+--      唯一索引按 (tenant_id, playbook_key, value_key, employee_id) ⇒
+--      COUNT(DISTINCT employee_id) = 「几个不同员工」。缺这张表，「N 个员工复现才晋升」
+--      就只能靠猜，而 P1 的幂等语义会**丢掉**第二个员工的证据）。
 --     agent_batches, agent_batch_items
 --      批量更新的批次资源（V127，issue #5314 服务端包 —— 一张批次 + 一张逐条明细；
 --      明细的 old_value 是**撤销的唯一依据**，**不得**改用 audit_logs：审计是有界 fail-open、丢行允许），
