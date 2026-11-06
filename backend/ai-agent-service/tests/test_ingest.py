@@ -19,14 +19,12 @@ from pathlib import Path
 import pytest
 
 from app.playbook import ingest as ingest_mod
-from app.playbook import redact
 from app.playbook.prompt import (
     _context_from_state,
     render_playbook_block,
     select_playbooks,
 )
 from app.playbook.store import PlaybookStore, _row_to_playbook
-from app.utils import pii_mask
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
@@ -319,7 +317,7 @@ def test_retired_card_disappears_from_the_prompt():
     assert block == ""
 
 
-# ── 边界：PII / 报价不得进口径卡（继承 #2815 并加严）─────────────────────
+# ── 边界：PII / 报价不得进口径卡（互斥：规则单测在 tests/test_redact.py）──────────
 
 
 def test_phone_message_is_skipped_before_it_becomes_a_candidate():
@@ -345,14 +343,6 @@ def test_pii_word_root_candidate_is_rejected_at_ingest():
     plan = ingest_mod.plan_ingest([cand("不对，联系人一律填店主")], [], 1)
     assert plan["rows"] == []
     assert plan["skip_counts"]["pii_or_price"] == 1
-
-
-def test_phone_and_email_regexes_are_reused_not_copied():
-    """复用判据：闸门用的是 `pii_mask` 的**同一批对象**（抄一份就会漂移）。"""
-    assert redact.PHONE_RE is pii_mask.PHONE_RE
-    assert redact.EMAIL_RE is pii_mask.EMAIL_RE
-    assert redact.problems("打 13800138000") == ["手机号"]
-    assert redact.problems("报价按整卷走") == ["报价/金额"]
 
 
 # ── 其余 fail-closed 边界 ──────────────────────────────────────────────────

@@ -10271,7 +10271,7 @@ cases:
       - red-proof
     truths_ref: []
     # ⚠️ 真值暂缺：本判据是**纯函数 + 结构**事实（零网络、零 LLM、零真库），
-    # 由 backend/ai-agent-service/tests/test_playbook_ingest.py 验证（落库用假会话，INSERT 语句级断言）。
+    # 由 backend/ai-agent-service/tests/test_ingest.py 与 tests/test_redact.py 验证（落库用假会话，INSERT 语句级断言；PII / 报价规则单列一个文件）。
     user_inputs:
       - "B 端商家在黄金策会话里纠正过一次口径（「不对，我们按整卷算」）。P1a 的离线抽取器能把这条抽成候选 JSON，但候选**进不了审核队列** —— 它的字段（trigger_text / category / confidence）和 playbooks 行对不上，人得手工抄进 POST /api/admin/playbooks。要让「纠正一次」真的变成「全企业受益」，候选必须自动落成 **draft** 卡、在审核队列里等人裁，且在此之前一个字都不许进 system prompt。"
     expectations:
@@ -10292,7 +10292,8 @@ cases:
       - "取号：MC-340（现取 main 侧 MC-3xx 仅 MC-300 / MC-310 被占；按派单建议取 340+ 号段压掉并行撞号窗口）。"
     traces:
       tests:
-        - "backend/ai-agent-service/tests/test_playbook_ingest.py"
+        - "backend/ai-agent-service/tests/test_ingest.py"
+        - "backend/ai-agent-service/tests/test_redact.py"
       ci:
         - ai-agent-tests.yml
       verifies: []
