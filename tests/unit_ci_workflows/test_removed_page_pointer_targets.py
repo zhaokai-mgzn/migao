@@ -89,6 +89,11 @@ MUST_FIX_FILES = (
     "ProcessingOrderService.java",
     "ProductionInstanceRepricingService.java",
     "ProductionService.java",
+    # 🔻 issue #8725 第二档切片：路线解析 / 条件工序编织 / 部位 payload 纯搬运到三个新单元
+    # ⇒ 承包面**同批扩到新住址**（判据 1 的「零已移除页面名」对它们同样生效；只扩不缩）。
+    "ProcessingRouteResolver.java",
+    "ProcessingOperationWeaver.java",
+    "ProcessingPositionPayloadBuilder.java",
 )
 
 #: 能力名（权限/岗位显示名）—— **有意不改**，判据 1 不为它们红。
@@ -99,7 +104,11 @@ DOMAIN_POSITIVE_CONTROLS = {
     "ProcessingFeeCalculator.java": "企业基础设置 → 加工费组合",
     "ProcessingFeeCombinationCommandService.java": "企业基础设置 → 加工项与分类",
     "ProductionRoutingCommandService.java": "企业基础设置 → 加工项与分类",
-    "ProcessingOrderService.java": "企业基础设置 → 工艺路线",
+    # 🔻 issue #8725 第二档切片：`企业基础设置 → 工艺路线` 这条域指针随派生面搬到新住址
+    # （工艺路线缺失 / 缺工艺 / 缺模板的 suggestion 都在那里）；门面另有一条同域提示走
+    # `ProcessingOperationWeaver`（条件工序缺活跃行）⇒ 两个住址各登记一条，各自逐字核。
+    "ProcessingRouteResolver.java": "企业基础设置 → 工艺路线",
+    "ProcessingOperationWeaver.java": "企业基础设置 → 工艺路线",
     "ProductionInstanceRepricingService.java": "企业基础设置 → 工序与部位单价",
     "ProductionService.java": "企业基础设置 → 工序与部位单价",
 }
@@ -213,7 +222,10 @@ def test_false_exits_no_longer_name_a_nonexistent_coordinate():
         "改写后必须说清**真边界**（触发值只能取自本店已有的活跃工艺 / 换一个已有的 / 联系服务方新增）"
     )
 
-    order = literals_of(sources()["ProcessingOrderService.java"])
+    # 切片后「默认工艺」这条提示分布在门面 + 路线解析两处（门面 1 处措辞、解析 15 处日志/建议）
+    order = literals_of(sources()["ProcessingOrderService.java"]
+                        + sources()["ProcessingRouteResolver.java"]
+                        + sources()["ProcessingOperationWeaver.java"])
     default_hints = [t for t in order if "默认工艺" in t]
     assert default_hints, "`ProcessingOrderService` 的默认工艺提示不见了（判据失去对象 ⇒ fail-closed）"
     assert all("工艺配置" not in t for t in default_hints), "默认工艺那条仍是陈旧页名坐标"

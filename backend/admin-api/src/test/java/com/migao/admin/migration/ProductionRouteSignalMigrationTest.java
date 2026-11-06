@@ -62,6 +62,13 @@ class ProductionRouteSignalMigrationTest {
     private static final String SCHEMA = "backend/admin-api/src/main/resources/db/init/schema.sql";
     private static final String SERVICE =
             "backend/admin-api/src/main/java/com/migao/admin/service/ProcessingOrderService.java";
+    /**
+     * issue #8725 第二档切片：路线派生（{@code deriveRouteKey} / {@code resolveRoute} / {@code buildRoute}）
+     * 纯搬运到 {@code ProcessingRouteResolver}。判据对象**只扩不缩** ——
+     * 门面与新住址**两个文件**都要扫（搬回去 / 两头都写 = 第二份口径，照样红）。
+     */
+    private static final String ROUTE_RESOLVER =
+            "backend/admin-api/src/main/java/com/migao/admin/service/ProcessingRouteResolver.java";
 
     private static Path repoRoot() {
         Path cur = Paths.get("").toAbsolutePath();
@@ -280,7 +287,8 @@ class ProductionRouteSignalMigrationTest {
     @Test
     @DisplayName("判据 3：派生**不再读常量** —— 两张常量表不得回到 ProcessingOrderService")
     void derivationNoLongerReadsJavaConstants() throws Exception {
-        String service = read(SERVICE);
+        // 两个文件合起来算「派生面」（切片前是同一个文件）
+        String service = read(SERVICE) + "\n" + read(ROUTE_RESOLVER);
         // 只看**声明形态**（注释/javadoc 里提到这两个名字是为了说明「为什么删掉」——
         // 用裸 contains 会把说明文字判成违规 = 假红，正是「散文禁令不单独承重」的反面）
         for (String constant : List.of("CURTAIN_TYPE_KEYWORDS", "CRAFT_KEYWORDS")) {

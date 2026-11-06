@@ -262,9 +262,14 @@ def test_no_hardcoded_default_craft_constant_in_derive_route_key():
     常量本身可以保留（退化为**种子回填来源与文案措辞**，规格 §四明文允许），
     但**不得**再作为运行时的缺维补齐目标。
     """
-    src = _read(JAVA_SERVICE_DIR / "ProcessingOrderService.java")
-    derive = re.search(r"private\s+RouteKey\s+deriveRouteKey\s*\([\s\S]*?\n    \}", src)
-    assert derive, "找不到 ProcessingOrderService.deriveRouteKey —— 规格锚点变了，请同步本守卫"
+    # 🔻 issue #8725 第二档切片：deriveRouteKey 纯搬运到 ProcessingRouteResolver（方法体一字未改，
+    # 只从 `private` 变成同包可见）⇒ 读面跟着搬家；另加一条「门面不许再有第二份」。
+    assert "deriveRouteKey(" not in _read(JAVA_SERVICE_DIR / "ProcessingOrderService.java"), (
+        "deriveRouteKey 搬走后又回到门面 = 第二份口径"
+    )
+    src = _read(JAVA_SERVICE_DIR / "ProcessingRouteResolver.java")
+    derive = re.search(r"(?:private\s+)?RouteKey\s+deriveRouteKey\s*\([\s\S]*?\n    \}", src)
+    assert derive, "找不到 ProcessingRouteResolver.deriveRouteKey —— 规格锚点变了，请同步本守卫"
     assert "DEFAULT_CRAFT" not in derive.group(0), (
         "deriveRouteKey 仍在缺 `craft` 时回落到 `DEFAULT_CRAFT` 常量 —— 规格订正判据 22/24 要求"
         "改取**该租户的默认工艺**（配置可改）；写死常量 ⇒ 商户只做打孔时插错工序 + "
