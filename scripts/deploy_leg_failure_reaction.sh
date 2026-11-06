@@ -76,6 +76,18 @@ STATE_FALLBACK="${STATE_FALLBACK:-0}"
 STATE_FILE="${STATE_FILE:-.deploy-watchdog-state.tsv}"
 TARGET_SHA="${TARGET_SHA:-}"
 
+# 🔴 离线夹具驱动**不得**写远端（issue #8817 实测，2026-11-06）：
+#    守卫测试 `test_gate_detection_is_offline_and_calls_no_gh` 用 `REACT_LOG_FILE` 喂夹具日志、
+#    只把空的 tmp/bin 前置到 PATH（`/usr/bin:/bin` 仍在 ⇒ CI 上真 `gh` 被找到）+ 继承 `GH_TOKEN`
+#    ⇒ 脚本带着**夹具值**（`run 999` / sha 未知）在真仓开出 `#8817`（作者 `app/github-actions`），
+#    而那条判据只断言「没有 `gh: command not found`」⇒ **真调用了 gh 反而更绿**（假绿）。
+#    ⇒ fail-closed：给了夹具日志（`REACT_LOG_FILE`）却没给调用记录面（`GH_CALL_LOG`，只有守卫测试
+#    会同时给）⇒ 强制 `DRY_RUN=1`（只打印、不写远端）。真要离线跑真写，显式给 `REACT_ALLOW_REMOTE=1`。
+if [ -n "${REACT_LOG_FILE:-}" ] && [ -z "${GH_CALL_LOG:-}" ] && [ "${REACT_ALLOW_REMOTE:-}" != "1" ]; then
+  echo "::warning::离线驱动（REACT_LOG_FILE）没给调用记录面（GH_CALL_LOG）⇒ 强制 DRY_RUN=1，不写远端（issue #8817）。要真写请显式 REACT_ALLOW_REMOTE=1。"
+  DRY_RUN=1
+fi
+
 # gh 的薄封装：统一加 `|| :`（反应步**不许**把 job 判红）+ 记录调用（守卫测试读它）
 ghc() {
   # ⚠️ 调用记录只记**第一行**（正文经 `--body-file -` 从 stdin 走 ⇒ 命令本身仍是单行）——
