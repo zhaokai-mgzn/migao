@@ -333,6 +333,7 @@
         "paths": [
           "frontend/worker-h5/**",
           "frontend/admin-web/tailwind.config.ts",
+          "docs/testing/terminal-shell-capability-matrix.md",
           ".github/workflows/worker-h5-tests.yml"
         ]
       },
