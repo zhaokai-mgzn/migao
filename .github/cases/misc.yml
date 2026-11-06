@@ -10167,3 +10167,45 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+
+  - id: MC-310
+    legacy_id: ""
+    title: "ProcessingOrderService 自动批次决策族搬出（LOC 冻结面 2,931 → 2,653）：决策面 characterization 先扩后搬 + 只搬决策不搬写库"
+    domains:
+      - processing-order
+      - order
+    tier: normal
+    tags:
+      - refactor
+      - backend
+      - slice
+      - characterization-test
+      - loc-freeze
+      - red-proof
+    truths_ref: []
+    precondition:
+      - "切片前的真实结构按**顶层声明边界**现取（`git show origin/main:backend/admin-api/src/main/java/com/migao/admin/service/ProcessingOrderService.java`，2,931 行），切段器逐段断言「区段 [742,1318] 被搬走 chunk + 留在门面的声明完全覆盖（无未归类代码行）+ 空隙只能是空白」且每个 chunk 花括号配平到成员真实结束行才落盘；不是人工抄写"
+      - "golden 必须**录制于未切片代码**：`-Dpos.autobatch.golden.update=true` 只在未切片的原始文件上跑过一次；切片后只读复核。失败时不许直接重录（重录 = 把判据降成空断言）"
+      - "到期判据 `today ≥ 最晚派单日` 是「今天」的函数（理由串里带 `business_due=<date>`）⇒ 判据用 `Clock.fixed(2026-11-06T02:00:00Z)` 钉死业务时钟，夹具的 created_at / 到货日一律写成相对该钉住时刻的绝对日期 ⇒ 判据不随跑测试的时刻漂移"
+    user_inputs:
+      - "对同一批订单 / 明细 / 批次余量（事件腿 15 个场景：池空 / 显式关 / 加急永不入池 / 条件①②③各一条 / 三条都不满足 / 兜底两种算式 / 一单多料组 / 三级降级三种结局 / 规则归一 / 幂等；扫描腿 4 个场景：到期必派 / 满足条件但未到期 / 超看板窗口但未到期 / 显式关）跑自动成批与到期扫描两条腿，并核对策略面映射"
+    expectations: []
+    data_checks:
+      - "判据 1·🔴 事件腿决策面逐字节（characterization）：同一批输入下 `AutoBatchOutcome` 的**全部** record 分量（enabled / trigger / rule / reasons / dispatchedOrderNos / failedOrderIds / failures）与**未切片代码录制的 golden** 逐字节相同；同时冻结每次 `generate(...)` 的入参快照（orderIds / itemIds / pooled / rule / operator —— operator 是落进 `processing_orders.generated_by` 的持久痕迹）。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/ProcessingOrderAutoBatchCharacterizationTest.java"
+      - "判据 2·🔴 到期扫描腿决策面逐字节：扫描腿**只**做业务兜底 —— 满足成批条件但未到期 ⇒ 一张都不派；超看板窗口（30h > 24h）但未到期 ⇒ 仍不派。执行点 = 同判据 1 的文件"
+      - "判据 3·🔴 策略面逐字节：Spring 属性 → `AutoBatchPolicy` 的映射 + `defaults()/enabledPolicy()/with(...)` 三个构造器逐字节相同。执行点 = 同判据 1 的文件"
+      - "判据 4·🔴 只搬决策、不搬写库：写库路径（`generate` / `generatePooled` / `generateOne`）与池读面（`pool`）、业务时钟、算料服务仍住门面；新单元只经窄接口 `Owner` 回调（**不缓存**字段 ⇒ 既有判据在构造后换时钟仍生效）。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/AutoBatchDispatchTest.java"
+      - "判据 5·🔴 既有判据一条不降：`AutoBatchDispatchTest`（12）/`AutoBatchDueScanServiceTest`（12）/`AutoBatchDispatchListenerTest`/`AutoBatchMountPointTest`/`PoolChangeNotifierTest`/`ProcessingOrderPoolCharacterizationTest`/`ProcessingOrderDispatchPoolTest` 全员绿（断言一字未改，只改「读哪个文件」）。执行点 = 上述各文件"
+      - "判据 6·🔴 red-proof 面同批搬迁（不是放宽）：`scripts/auto-batch-red-proof.py` 的 4 条变异（off_gate / trigger_only_in_fallback / condition_always_true / no_business_fallback）与 `scripts/auto-batch-due-scan-red-proof.py` 的 4 条（no_business_due / window_as_deadline / timer_dispatches_everything / realdb_no_business_due）注入锚点随决策族改指新住址；`scripts/red_proof_harness.py` 的 `impl`（= 夹具拷贝面）两份各 +1 文件；`scripts/redproof_registry.json` 的 `auto-batch/off_gate` guarded 重取。判据 = `python3 -m pytest tests/unit_ci_workflows/test_redproof_harness_gate.py -q` 102 passed + 三份机具 `--check` 全绿"
+      - "判据 7·🔴 登记面同步（不是放宽）：`loc_freeze_ledger` 的行数按**实测**重锚（只许缩短）；新类 421 行 < 800 ⇒ 不进 `loc_ratchet_exemptions`；CAS 台账与状态写面台账零新增（搬运半径内**无任何写操作**：只有池读 / 批次余量读 / 门面的 generate 入口委托）；失败通道锚点按实测 +1 并留 note"
+    skip_reason: "[backend-contract] Java 服务层单测 + 源码结构判据（零 LLM 行为），不进 agent-eval 冒烟"
+    merge_log: "2026-11-06 新增（issue #8770 自动批次一档，**部分交付**：不写关闭关键词）。门面 2,931 → 2,653 行（−278）；新单元 421 行。只搬**自动批次决策族**（成批条件①②③ / 业务兜底 / 三级降级 / 理由与持久痕迹装配）—— 上一档的重启条件原文「只搬决策、不搬写库」。行为 diff = 0 的证据 = 同一份 golden（录制于未切片代码）在切片后逐字节通过（15 事件场景 + 4 扫描场景 + 5 策略面）。取号 = 现取三方 id 集合（main 最大 MC-300 / 全部 open PR 最大 MC-300 / claims 最大 MC-300）⇒ 取远号段 **MC-310**。四处同批：claims 文件名与内容 / 本块 id / 判据文件头 / 生成物重渲染。"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ProcessingOrderAutoBatchCharacterizationTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ProcessingOrderAutoBatchTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/AutoBatchDispatchTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/AutoBatchDueScanServiceTest.java"
+      ci:
+        - pr-check.yml
+      verifies: []
