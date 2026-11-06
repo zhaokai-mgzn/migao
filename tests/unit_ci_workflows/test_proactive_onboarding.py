@@ -48,6 +48,10 @@ REPO_ROOT = next(
 AI_SERVICE = REPO_ROOT / "backend" / "ai-agent-service"
 NAV_MODULE = AI_SERVICE / "app" / "context" / "menu_navigator.py"
 CHAT_API = AI_SERVICE / "app" / "api" / "chat.py"
+#: 切片单元（issue #8725 第三档）：`_convert_history_to_agent_format` 的**定义**住在这里。
+#: 读面必须跟过来 —— 否则「模型历史里仍带着存量提示行」这条断言会因为**找不到函数**而报，
+#: 或更糟：被改成扫一个空串后恒绿。
+CHAT_HISTORY_API = AI_SERVICE / "app" / "api" / "chat_history.py"
 MENU_TS = REPO_ROOT / "frontend" / "admin-web" / "src" / "config" / "menu.ts"
 CHAT_STORE = REPO_ROOT / "frontend" / "admin-web" / "src" / "store" / "chat.ts"
 LAYOUT_TSX = REPO_ROOT / "frontend" / "admin-web" / "src" / "app" / "(dashboard)" / "layout.tsx"
@@ -351,7 +355,8 @@ class TestNotPersistedOnScreenHistory:
         source = _read(CHAT_API)
         history = _function_source(source, "get_history")
         assert "_is_legacy_proactive_tip_row" in history, "展示面没有消化存量提示行 ⇒ 重登仍看得到"
-        converted = _function_source(source, "_convert_history_to_agent_format")
+        converted = _function_source(
+            _read(CHAT_HISTORY_API), "_convert_history_to_agent_format")
         assert "_is_legacy_proactive_tip_row" in converted, "模型历史里仍带着存量提示行（污染上下文）"
         # 判别力锚：识别函数必须真的按 #7324 的旧文案签名判，不是恒真/恒假
         nav_source = _read(NAV_MODULE)
