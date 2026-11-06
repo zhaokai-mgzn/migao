@@ -9896,7 +9896,7 @@ cases:
       - "判据 4·🔴 登记面同步（不是放宽）：`loc_freeze_ledger` 的本条行数按实测**重锚（只许缩短）**；CAS 台账的 `service_write_paths` 与状态写面台账的载体指向随调用点搬家（条数与断言强度不变）；`redproof_registry` 的 guarded 指针、三份 red-proof 脚本的 impl 清单、失败通道锚点台账同批对齐"
       - "判据 5·🔴 既有守卫族一条不降：`ProcessingOrderServiceTest` / `ProcessingOrderRouteSourceTest` / `ProcessingRouteSourceDeclarationTest` / `ProductionRouteParityTest` / `ProcessingOrderStatusCasMetaGuardTest` / `ShipmentInvariantGuardTest` / `OrderAutoCompleteSqlGuardTest` / `OrderPaidAndReceivedAtWriteGuardTest` / `MoneyEntryPrecisionMetaGuard` 全员绿（断言一字未改，只改「读哪个文件」）"
     skip_reason: "[backend-contract] Java 服务层单测 + 源码结构判据（零 LLM 行为），不进 agent-eval 冒烟"
-    merge_log: "2026-11-06 新增（issue #8725 第二档，**部分交付**：不写关闭关键词；另两档 base_skill.py / chat.py 未做）。现取读数（`git show origin/main:.../ProcessingOrderService.java | wc -l`）= 4,400 行（冻结面 4,402）。切片按顶层声明边界量出 32 段，聚成 3 个单元（路线解析 640 / 条件工序编织 238 / 部位 payload 446），门面保留全部 public API 与状态机。行为 diff = 0 的证据 = 同一份 golden（录制于未切片代码）在切片后逐字节通过（7 场景 × 2 面）。取号 = `python3 scripts/next_case_id.py MC` 现取 MC-246（当时 origin/main + 全部 open PR 已占号最大 MC-244）。"
+    merge_log: "2026-11-06 新增（issue #8725 第二档，**部分交付**：不写关闭关键词；另两档 base_skill.py / chat.py 未做）。现取读数（`git show origin/main:backend/admin-api/src/main/java/com/migao/admin/service/ProcessingOrderService.java | wc -l`）= 4,400 行（冻结面 4,402）。切片按顶层声明边界量出 32 个声明，聚成 3 个单元（路线解析 636 / 条件工序编织 281 / 部位 payload 545 行），门面保留全部 public API 与状态机。行为 diff = 0 的证据 = 同一份 golden（录制于未切片代码）在切片后逐字节通过（7 场景 × 2 面）。取号 = `python3 scripts/next_case_id.py MC` 现取 MC-246（当时 origin/main + 全部 open PR 已占号最大 MC-244）。"
     traces:
       tests:
         - "backend/admin-api/src/test/java/com/migao/admin/service/ProcessingOrderRouteCharacterizationTest.java"
