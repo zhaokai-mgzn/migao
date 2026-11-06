@@ -561,18 +561,40 @@ def test_rerun_false_leg_notifies_without_rerun(tmp_path):
     assert r.ran("issue create"), f"仍必须通知 → {r.gh_calls}"
 
 
-def test_gate_detection_is_offline_and_calls_no_gh(tmp_path):
-    """闸门检出走 `REACT_LOG_FILE` ⇒ **一次 `gh` 都不调**（可离线驱动）。"""
-    log = tmp_path / "run.log"
-    log.write_text("磁盘可用 12 MB\n::error::中止构建\n", encoding="utf-8")
+def _offline_gh_marker(tmp_path: Path) -> tuple[Path, Path, str]:
+    """造一个**会记账的 `gh` 桩**（放在 PATH 最前）+ 返回标记文件。
+
+    🔴 旧形态的判据是「PATH 里不提供 `gh`，再断言输出里没有 `gh: command not found`」——
+    那条断言**在 CI 上恒真**（runner 的 `/usr/bin/gh` 真存在 ⇒ 真调用了 gh 反而没有那句报错），
+    实测后果：2026-11-06 这条测试用夹具值（`run 999` / sha 未知）在真仓开出了 **#8817**
+    （作者 `app/github-actions`）。⇒ 改法 = **正向记账**：桩一旦被调用就落标记，断言标记不存在。
+    """
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
-    # 故意**不提供** `gh`：若脚本在闸门判定时调 `gh`，会走 `gh: command not found` ⇒ 判决变化
-    # ⚠️ 但 `awk`/`grep`/`sed`/`tail` 是脚本解析台账与找锚点的**基本工具**（第 1 节实测踩过：
-    #    只给一个空目录当 PATH ⇒ `awk: command not found` ⇒ 判据把「缺基本工具」当成「调了 gh」）。
+    marker = tmp_path / "gh-was-called.log"
+    stub = bin_dir / "gh"
+    stub.write_text(
+        "#!/usr/bin/env bash\n"
+        f"printf '%s\\n' \"$*\" >> '{marker}'\n"
+        "exit 1\n",
+        encoding="utf-8",
+    )
+    stub.chmod(0o755)
+    return bin_dir, marker, f"{bin_dir}{os.pathsep}/usr/bin{os.pathsep}/bin"
+
+
+def test_gate_detection_is_offline_and_calls_no_gh(tmp_path):
+    """闸门检出走 `REACT_LOG_FILE` ⇒ **一次 `gh` 都不调**（可离线驱动）。
+
+    判别力来自**正向记账**（`gh` 桩被调用 ⇒ 标记文件出现），不是「输出里没有某句报错」——
+    后者在真 `gh` 存在的环境里恒绿（#8817 就是这么开出来的）。
+    """
+    log = tmp_path / "run.log"
+    log.write_text("磁盘可用 12 MB\n::error::中止构建\n", encoding="utf-8")
+    bin_dir, marker, path = _offline_gh_marker(tmp_path)
     env = os.environ.copy()
     env.update({
-        "PATH": f"{bin_dir}{os.pathsep}/usr/bin{os.pathsep}/bin",
+        "PATH": path,
         "REACT_LEDGER": str(LEDGER), "REACT_LOG_FILE": str(log),
         "LEG_NAME": "Build and Deploy admin-api", "LEG_CONCLUSION": "failure",
         "LEG_ATTEMPT": "1", "LEG_RUN_ID": "999",
@@ -581,7 +603,31 @@ def test_gate_detection_is_offline_and_calls_no_gh(tmp_path):
     assert proc.returncode == 0, f"→ {proc.returncode}\n{proc.stdout}{proc.stderr}"
     out = proc.stdout + proc.stderr
     assert "命中具名确定性闸门" in out, f"没检出闸门（或以调 gh 的方式去取日志）→ {out!r}"
-    assert "gh: command not found" not in out, f"闸门判定去调 `gh` 了（REACT_LOG_FILE 离线面失效）→ {out!r}"
+    # ① 一次 gh 都不许调（夹具驱动 + 无调用记录面 ⇒ 脚本自己必须 fail-closed 成 dry-run）
+    assert not marker.exists(), (
+        f"夹具驱动（REACT_LOG_FILE）调了真 `gh` —— 会往生产仓写假单（#8817 同款）→ "
+        f"{marker.read_text(encoding='utf-8') if marker.exists() else ''!r}"
+    )
+    # ② 而且要**说出来**（静默 muting 会被读成「跑通了」）
+    assert "强制 DRY_RUN=1" in out, f"没声明 fail-closed 动作（读者会把「没写远端」读成「测过了」）→ {out!r}"
+
+
+def test_offline_fixture_allow_remote_is_the_only_escape_hatch(tmp_path):
+    """**反向自证**：`REACT_ALLOW_REMOTE=1` ⇒ 同一夹具驱动**会**调 `gh`（守卫不是无条件静音）。"""
+    log = tmp_path / "run.log"
+    log.write_text("磁盘可用 12 MB\n::error::中止构建\n", encoding="utf-8")
+    bin_dir, marker, path = _offline_gh_marker(tmp_path)
+    env = os.environ.copy()
+    env.update({
+        "PATH": path,
+        "REACT_LEDGER": str(LEDGER), "REACT_LOG_FILE": str(log),
+        "LEG_NAME": "Build and Deploy admin-api", "LEG_CONCLUSION": "failure",
+        "LEG_ATTEMPT": "1", "LEG_RUN_ID": "999",
+        "REACT_ALLOW_REMOTE": "1",
+    })
+    proc = subprocess.run([BASH, str(SCRIPT)], env=env, capture_output=True, text=True, timeout=60)
+    assert proc.returncode == 0, f"→ {proc.returncode}\n{proc.stdout}{proc.stderr}"
+    assert marker.exists(), f"显式 REACT_ALLOW_REMOTE=1 却没调 `gh` ⇒ 逃生口失效（守卫成了无条件静音）→ {proc.stdout!r}"
 
 
 # ══════════════════════════════════════════════════════════════════════════
