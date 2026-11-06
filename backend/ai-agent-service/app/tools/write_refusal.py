@@ -8,7 +8,8 @@
 
 1. 「命中多条」与「不命中」的**话术必须不同** —— 混成一句「未找到」会让模型反复重试同一个名称；
 2. 每条都必须写明 **未执行修改** —— 写工具的半成功话术（「已帮你改价」）就是数据事故的开端；
-3. 只有 `ambiguous` 才列候选；`not_found` 不编候选。
+3. 只有 `ambiguous` 才列候选；`not_found` 不编候选；
+4. `unsafe_ref`（序号 / 无法证明唯一的 id 前缀）要**说清为什么不能用**（否则模型会原样重试）。
 """
 
 from app.tools.base import ToolResult
@@ -27,6 +28,18 @@ def product_ref_failure(resolution: ProductResolution, raw: str) -> ToolResult:
             suggestion=(
                 "匹配到多个商品，写操作不会替你挑一个。请先用 product_search 按名字搜出候选，"
                 "把候选给商家确认后，用**该商品的 id** 重新调用本工具"
+            ),
+        )
+
+    if resolution.status == "unsafe_ref":
+        # 序号 / 无法证明唯一的 id 前缀：把**原因**原样交给模型（`detail` 由解析器写，单一源）
+        return ToolResult(
+            success=False,
+            error="商品引用不可用于写入",
+            message=f"{resolution.detail}，未执行修改",
+            suggestion=(
+                "请先用 product_search 搜出候选，把候选给商家确认后，用该商品的 id（完整 id 或唯一名称）"
+                "重新调用本工具；写操作不接受序号，也不接受无法证明唯一的 id 前缀"
             ),
         )
 

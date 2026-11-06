@@ -75,7 +75,7 @@ public class AgentProductController {
                                                        @RequestBody AgentProductUpdateRequest request) {
         Long tenantId = TenantContext.getTenantId();
         log.info("[Agent] 更新商品: id={}, tenantId={}", id, tenantId);
-        String resolvedId = productService.resolveProductId(id, tenantId);
+        String resolvedId = productService.resolveProductIdStrict(id, tenantId);
         if (resolvedId == null) {
             throw BusinessException.notFound("商品",
                     "未找到商品「" + id + "」，请先用 product_search 查出正确 ID 后重试");
@@ -115,7 +115,7 @@ public class AgentProductController {
         }
         adjustment = com.migao.admin.service.StockQuantity.requireOneDecimal(adjustment, "adjustment");
         String reason = (String) body.getOrDefault("reason", "");
-        String resolvedId = productService.resolveProductId(id, tenantId);
+        String resolvedId = productService.resolveProductIdStrict(id, tenantId);
         if (resolvedId == null) {
             throw BusinessException.notFound("商品",
                     "未找到商品「" + id + "」，请先用 product_search 查出正确 ID 后重试");
@@ -162,7 +162,7 @@ public class AgentProductController {
         log.info("[Agent] SKU调价: product={}, color={}, width={}, price={}, before_price={}",
                 productId, color, doorWidth, price, beforePrice);
         try {
-            String resolvedId = productService.resolveProductId(productId, tenantId);
+            String resolvedId = productService.resolveProductIdStrict(productId, tenantId);
             if (resolvedId == null) {
                 throw BusinessException.notFound("商品（" + productId + "）",
                         "请先用 product_search 查出正确 ID");
@@ -200,7 +200,7 @@ public class AgentProductController {
         } catch (NumberFormatException e) {
             throw BusinessException.validationError("price 必须为数字");
         }
-        String resolvedId = productService.resolveProductId(productId, tenantId);
+        String resolvedId = productService.resolveProductIdStrict(productId, tenantId);
         if (resolvedId == null) {
             throw BusinessException.notFound("商品（" + productId + "）",
                     "请先用 product_search 查出正确 ID");

@@ -10,6 +10,7 @@
 | `ambiguous` | 商品不唯一 | 用候选问商家要哪一件（**不许**替商家挑） |
 | `not_found` | 商品不存在 | 换名字搜 / 让商家确认名字（**不许**编 id） |
 | `unavailable` | 商品查询失败 | 同样入参重试一次（**不许**说成"商品不存在"） |
+| `unsafe_ref` | 商品引用不可用于写入 | 序号 / 无法证明唯一的 id 前缀 ⇒ 换 id 重来（**不许**原样重试） |
 
 ⇒ 本文件的判据不是"字段存在"，而是**三态话术互不相同**且每态都带「未执行修改」。
 
@@ -32,6 +33,10 @@ def _messages() -> dict:
         ),
         "not_found": product_ref_failure(ProductResolution("not_found"), "不存在的窗帘XYZ"),
         "unavailable": product_ref_failure(ProductResolution("unavailable"), "2699系列雪尼尔窗帘面料"),
+        "unsafe_ref": product_ref_failure(
+            ProductResolution("unsafe_ref", detail="「3」是商品序号：序号按创建时间排序，增删商品后会漂移，写操作不接受序号"),
+            "3",
+        ),
     }
 
 
@@ -97,11 +102,31 @@ class TestUnavailable:
         assert "重试" in result.suggestion
 
 
-class TestThreeStatesDiffer:
-    """判别力自证：三态如果话术相同，上面所有断言都会退化成一条（= 判据失明）。"""
+class TestUnsafeRef:
+    """序号 / 无法证明唯一的 id 前缀：**说清为什么不能用**，否则模型会原样重试同一个入参。"""
+
+    def test_explains_why_the_reference_cannot_be_written(self):
+        result = _messages()["unsafe_ref"]
+
+        assert result.success is False
+        assert result.error == "商品引用不可用于写入"
+        assert "序号" in result.message and "漂移" in result.message
+        assert "未执行修改" in result.message
+        assert "product_search" in result.suggestion
+
+    def test_detail_is_carried_verbatim_from_the_resolver(self):
+        """原因文本的**单一源**在解析器（`detail`）；话术层只搬运，不另写一套。"""
+        result = product_ref_failure(
+            ProductResolution("unsafe_ref", detail="「d4e5f6a7」是 id 前缀，命中 2 个商品"), "d4e5f6a7")
+
+        assert "「d4e5f6a7」是 id 前缀，命中 2 个商品" in result.message
+
+
+class TestFourStatesDiffer:
+    """判别力自证：四态如果话术相同，上面所有断言都会退化成一条（= 判据失明）。"""
 
     def test_each_status_has_its_own_error_and_message(self):
         msgs = _messages()
 
-        assert len({m.error for m in msgs.values()}) == 3, "三种拒绝原因必须有三个不同的 error"
-        assert len({m.message for m in msgs.values()}) == 3, "三种拒绝原因必须有三种不同的 message"
+        assert len({m.error for m in msgs.values()}) == 4, "四种拒绝原因必须有四个不同的 error"
+        assert len({m.message for m in msgs.values()}) == 4, "四种拒绝原因必须有四种不同的 message"

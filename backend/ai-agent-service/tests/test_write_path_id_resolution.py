@@ -47,7 +47,9 @@ from app.tools.sku_update import SkuUpdateTool
 UUID_CHE_AIR = "a1b2c3d4-e5f6-4a7b-8c9d-0123456789ab"
 UUID_CLOUD = "b2c3d4e5-f6a7-4b8c-9d0e-123456789abc"
 UUID_TIE_A = "d4e5f6a7-b8c9-4d0e-9f1a-3456789abcde"
-UUID_TIE_B = "e5f6a7b8-c9d0-4e1f-8a2b-456789abcdef"
+UUID_TIE_B = "d4e5f6a7-c9d0-4e1f-8a2b-456789abcdef"   # 与 TIE_A 共享 8 位前缀 d4e5f6a7
+#: 前缀唯一的商品（「id 前缀」形态的负控：唯一命中 ⇒ 正常写）
+UUID_PREFIX_UNIQUE = "f7a8b9c0-1d2e-4f3a-8b4c-56789abcdef0"
 # docs/deployment/demo-seed.sql 的 products 段：**真实存在的非 UUID 商品 id**
 LEGACY_ID = "p-zg-001"
 UNAVAILABLE = "unavailable"
@@ -63,6 +65,7 @@ PRODUCTS = [
     {"id": LEGACY_ID, "name": "星空全遮光窗帘", "skuCode": "MG-ZG-001"},
     {"id": UUID_TIE_A, "name": "奶油风提花布-米白", "skuCode": "MG-TH-001"},
     {"id": UUID_TIE_B, "name": "奶油风提花布-灰蓝", "skuCode": "MG-TH-002"},
+    {"id": UUID_PREFIX_UNIQUE, "name": "亚麻遮光布", "skuCode": "MG-YM-001"},
 ]
 
 
@@ -116,6 +119,20 @@ class _FakeAdminApi:
 
     def resolve_calls(self):
         return [c for c in self.calls if c["method"] == "GET"]
+
+
+class _HugeCatalogApi(_FakeAdminApi):
+    """商品目录**大于扫描上限**的假面：用来钉「无法证明唯一 ⇒ 拒绝」这条 fail-closed 出口。"""
+
+    async def get(self, path, params=None, tenant_id=None, user_id=None):
+        params = dict(params or {})
+        self.calls.append({"method": "GET", "path": path, "params": params,
+                           "tenant_id": tenant_id})
+        page = int(params.get("page", 1))
+        size = int(params.get("size", 10))
+        items = [{"id": f"f7a8b9c0-{page:02d}{i:02d}-4e1f-8a2b-456789abcdef",
+                  "name": f"商品{page}-{i}"} for i in range(size)]
+        return {"success": True, "data": {"items": items, "total": 1000}}
 
 
 def _ctx() -> ToolContext:
@@ -184,15 +201,24 @@ class TestProductUpdateResolvesBeforeWrite:
         assert api.write_paths() == [f"/api/admin/agent/products/{UUID_CLOUD}"]
 
     @pytest.mark.asyncio
-    async def test_index_resolves_to_nth_product(self, product_update, monkeypatch):
-        """序号「2」按 1-based 翻页取第 2 条（`page=2,size=1`），写的是那一条的 id。"""
+    async def test_index_is_refused_with_zero_write_and_zero_http(
+            self, product_update, monkeypatch):
+        """🔴 **写路径拒绝序号**（issue #8788 裁定，与只读面不同）：序号按创建时间排序，
+        增删商品后漂移 ⇒ 同一个「3」今天是 A、明天是 B ⇒「第 3 个」不是可信目标。
+
+        判据同时钉住两件事：**零 PATCH**（不写）+ **零 HTTP**（不为了"确认一下"去查目录）。
+        """
         api = _patch_client(monkeypatch, "app.tools.product_update", _FakeAdminApi())
 
         result = await product_update.execute(_ctx(), product_id="2", name="改个名")
 
-        assert result.success is True, result.message
-        assert api.resolve_calls()[0]["params"] == {"page": 2, "size": 1}
-        assert api.write_paths() == [f"/api/admin/agent/products/{UUID_CLOUD}"]
+        assert result.success is False
+        assert result.error == "商品引用不可用于写入"
+        assert "序号" in result.message and "漂移" in result.message
+        assert "未执行修改" in result.message
+        assert "product_search" in result.suggestion
+        assert api.writes() == [], f"序号必须拒绝，实际写了: {api.write_paths()}"
+        assert api.resolve_calls() == [], f"序号不该产生任何查询: {api.resolve_calls()}"
 
     @pytest.mark.asyncio
     async def test_legacy_non_uuid_id_needs_one_exact_probe_and_no_name_search(
@@ -214,6 +240,49 @@ class TestProductUpdateResolvesBeforeWrite:
         assert not any("keyword" in c["params"] for c in api.resolve_calls()), (
             f"非 UUID 真实 id 不该走名称搜索: {api.resolve_calls()}")
         assert api.write_paths() == [f"/api/admin/agent/products/{LEGACY_ID}"]
+
+    @pytest.mark.asyncio
+    async def test_unique_id_prefix_is_resolved_then_written(
+            self, product_update, monkeypatch):
+        """id 前缀**唯一命中** ⇒ 正常写（写 URL 里是完整 id）。
+
+        服务端没有 id 前缀查询面（`productId` 精确 eq、`keyword` 只搜 name/货号）⇒ 只能翻页扫目录；
+        本判据同时钉住「扫描只发生在前缀形态上」（名称/序号形态不付这个成本）。
+        """
+        api = _patch_client(monkeypatch, "app.tools.product_update", _FakeAdminApi())
+
+        result = await product_update.execute(_ctx(), product_id="f7a8b9c0", name="改个名")
+
+        assert result.success is True, result.message
+        assert api.write_paths() == [f"/api/admin/agent/products/{UUID_PREFIX_UNIQUE}"]
+        assert [c["params"] for c in api.resolve_calls()] == [
+            {"page": 1, "size": 100}]  # 只扫了一页（目录已到底）
+
+    @pytest.mark.asyncio
+    async def test_id_prefix_matching_multiple_products_is_refused(
+            self, product_update, monkeypatch):
+        """🔴 id 前缀命中**多条** ⇒ 拒绝写（零 PATCH）：「低概率猜错」在写路径上不接受。"""
+        api = _patch_client(monkeypatch, "app.tools.product_update", _FakeAdminApi())
+
+        result = await product_update.execute(_ctx(), product_id="d4e5f6a7", name="改个名")
+
+        assert result.success is False
+        assert result.error == "商品不唯一"
+        assert "匹配到 2 个商品" in result.message
+        assert "未执行修改" in result.message
+        assert api.writes() == []
+
+    @pytest.mark.asyncio
+    async def test_unprovable_prefix_is_refused(self, product_update, monkeypatch):
+        """目录大于扫描上限 ⇒ **无法证明唯一** ⇒ 拒绝（fail-closed，不许拿"扫到的第一条"当答案）。"""
+        api = _patch_client(monkeypatch, "app.tools.product_update", _HugeCatalogApi())
+
+        result = await product_update.execute(_ctx(), product_id="f7a8b9c0", name="改个名")
+
+        assert result.success is False
+        assert result.error == "商品引用不可用于写入"
+        assert "无法证明只有一个商品匹配" in result.message
+        assert api.writes() == []
 
     @pytest.mark.asyncio
     async def test_ambiguous_name_is_refused_with_zero_write(
@@ -346,6 +415,42 @@ class TestNoGuessIsStructural:
             assert "resolve_unique_product_id(" in source, f"{name} 未接线严格解析器"
             assert "resolve_product_id(" not in source, (
                 f"{name} 调用了只读的宽松解析器（它允许名称模糊取第一条）—— 写路径禁止")
+
+    REPO_ROOT = Path(__file__).resolve().parents[3]
+
+    def _java_code(self, rel: str) -> str:
+        """读 Java 源并剥掉注释行 —— 判据只看**代码**（注释里的字样不算接线）。"""
+        source = (self.REPO_ROOT / rel).read_text(encoding="utf-8")
+        return "\n".join(
+            line for line in source.splitlines()
+            if not line.lstrip().startswith(("*", "//", "/*"))
+        )
+
+    def test_controller_write_paths_use_the_strict_resolver(self):
+        """**服务层才是真相所在地**：`AgentProductController` 的每个写端点都必须用严格解析。
+
+        这条守卫是 Python 侧不变式的**上游孪生**：工具侧只发已确定的 id，但服务端仍有别的调用方
+        （以及未来新增的端点）⇒ 控制器这一层也必须只走 `resolveProductIdStrict`
+        （共享的 `resolveProductId` 允许「前缀/序号/名称模糊取第一条」，出现在写侧就是改错商品）。
+        """
+        code = self._java_code(
+            "backend/admin-api/src/main/java/com/migao/admin/controller/agent/AgentProductController.java")
+
+        assert "productService.resolveProductIdStrict(" in code, "控制器没有接线严格解析"
+        assert "productService.resolveProductId(" not in code, (
+            "写侧出现了共享解析器（它允许前缀/序号/名称模糊取第一条）—— 改错商品不可逆")
+        # 4 个写端点（改品/改库存/改 SKU 价/按 SKU id 改价）一个都不许漏
+        assert code.count("productService.resolveProductIdStrict(") >= 4
+
+    def test_service_strict_resolver_keeps_the_three_refusals(self):
+        """服务层严格解析器必须**自带**三种拒绝出口（序号 / 重名 / 前缀多条）。"""
+        code = self._java_code(
+            "backend/admin-api/src/main/java/com/migao/admin/service/ProductService.java")
+
+        assert "public String resolveProductIdStrict(" in code
+        assert "PRODUCT_INDEX_NOT_ALLOWED" in code, "序号必须在服务层也被拒绝（会随增删漂移）"
+        assert "PRODUCT_AMBIGUOUS" in code, "多条命中必须具名拒绝"
+        assert "ambiguousProductRef(" in code
 
     def test_ambiguous_and_not_found_do_not_share_one_message(self):
         """两种拒绝的**话术必须不同**：混成一句「未找到」会把模型推向反复重试同一个名称。"""
