@@ -10252,3 +10252,51 @@ cases:
       ci:
         - ai-agent-tests.yml
       verifies: []
+
+  - id: MC-320
+    legacy_id: ""
+    title: "base_skill.py 4,317 → 2,4xx 切片（最后一档）：拒绝话术 / 订单流程锁 / 手机号掩码 / 跨轮注入块四族搬出，patch 接缝同批保住"
+    domains:
+      - order
+      - after-sales
+    tier: normal
+    tags:
+      - refactor
+      - backend
+      - slice
+      - characterization-test
+      - loc-freeze
+      - red-proof
+      - patch-seam
+    truths_ref: []
+    precondition:
+      - "切片前的真实结构按**顶层声明边界**现取（`git show origin/main:backend/ai-agent-service/app/graph/skills/base_skill.py | wc -l` = 4,317 行 / 235 个顶层节点 / 209 个具名声明），族归属由 `symtable` 递归取「函数体内引用的全局名 ∩ 本文件其它顶层声明」求交算出（四族**族外依赖逐条点名**：capability_denial = 0 / phone_masking = 0 / order_flow_guard = 2（都指向 capability_denial）/ injection_blocks = 8（7 条指向 phone_masking + 1 条 extract_sms_code 调用期取）），切段器两次断言（无孤儿代码行 / 无被切断声明）才落盘；不是人工抄写"
+      - "golden 必须**录制于未切片代码**（4,317 行）：`BASE_SKILL_SLICE_GOLDEN_UPDATE=1` 只在未切片的原始文件上跑过一次，`_meta.recorded_base_skill_lines = 4317` 由判据 `test_meta_golden_was_recorded_on_unsliced_code` 钉住；切片后只读复核。失败时不许直接重录（重录 = 把「行为 diff = 0」降成同义反复）"
+      - "`patch()` 接缝必须**同批保住**：全仓测试里 `patch(\"app.graph.skills.base_skill.*\")` 共 379 处（14 个属性名），`patch.object(base_skill, ...)` 另有若干；搬走的族里被 patch 的名字（`logger` / `_route_cross_skill_target`）一律在**函数入口处调用期**从 base_skill 取（与 execution/*.py 同源写法），模块顶层 import 会把绑定冻在加载那一刻 ⇒ patch 静默失效"
+    user_inputs:
+      - "对同一批输入（34 条话术文本 × 8 个判据 / 4 组跨轮事实 × 2 组状态 × 4 条本轮消息 / 8 条号码文本 × 8 个掩码值 × 8 组嵌套参数 / 6 段注入块的 17 个场景）跑四面客户端函数，并核对返回值逐字节"
+    expectations: []
+    data_checks:
+      - "判据 1·🔴 拒绝话术面逐字节（characterization）：同一批输入下 capability_denial_text_hit（含 include_assist 两态）/ _product_image_denial_hit / _scope_misattribution_hit / _is_ordering_withdrawal / _has_ordering_intent / _normalize_clause / _negation_positions / _clause_is_self_line 的输出与**未切片代码录制的 golden** 逐字节相同；另冻 26 个词表常量（含 8 条正则的 pattern+flags）与 5 条纠偏话术原文。执行点 = backend/ai-agent-service/tests/test_base_skill_slice_characterization.py"
+      - "判据 2·🔴 订单流程锁面逐字节：_has_inflight_interactive_card / _flow_state_in_progress / _load_session_facts / _order_flow_started / _order_flow_in_progress 的**真值表**（4 组跨轮事实 × 2 组状态 × 4 条本轮消息 = 32 行）与 _release_order_lock_on_withdrawal 的 4 组状态结局逐字节相同，且「显式撤回优先于状态事实」这条方向被钉住。执行点 = 同判据 1 的文件"
+      - "判据 3·🔴 手机号掩码面逐字节：raw_phones_in / mask_variants（11 字符 × 10 种填充形态，含「把 **** 填成 0」）/ _is_mask_shaped / _phone_args（嵌套 / 深度 > 3 / 非号码字段）/ _norm_ws / _should_code_close_loop / _is_customer_role，以及 _remember_known_value / _remember_raw_phones / _known_raw_phones 的**提交内容**（只增不减 + 幂等）逐字节相同。执行点 = 同判据 1 的文件"
+      - "判据 4·🔴 跨轮注入块面逐字节：card_fingerprint / user_supplied_param / _accepted_param_names / _clear_write_input_error / _stated_purchase_quantities 与 6 段注入块（用量倍数 / 表单预填 / 掩码写入 / 缺参恢复 / 卡片循环 / system_prompt 装配）的 (tool_call, result_str, result_dict) 三元组逐字节相同（拦下 = 回放真值，放行 = None）。执行点 = 同判据 1 的文件"
+      - "判据 5·🔴 patch 接缝仍然生效（同批断言 mock.called）：对搬走后仍被 patch 的每一个名字，先 patch 再驱动，**断言 mock.called** —— 因为 patch 打在不存在的属性上**不报错**，只让 mock 失效 ⇒ 判据会静默空跑。执行点 = backend/ai-agent-service/tests/test_base_skill_slice_structure_guard.py"
+      - "判据 6·🔴 结构元守卫（未登记即红）：四个新单元的符号集合 == 登记表（多一个未登记即红）；每个符号在登记的单元里**恰好定义 1 次**；base_skill.py 里**一处都不许再定义**它们；re-export 列表 == 登记全集且来源正确；新单元不得反向 import base_skill 的模块顶层（无环）+ 不得依赖 tests/scripts；模块头必须声明单一职责 + 文件 < 800 行。执行点 = 同判据 5 的文件"
+      - "判据 7·🔴 零手抄可复算：被搬声明的源码片段全部是原文件的**逐字节子串**（ast.get_source_segment 子串判定）；逐条具名差异只允许「2 行 patch 前导 / 1 行调用期 import」。执行点 = 同判据 5 的文件"
+      - "判据 8·🔴 既有判据一条不降：test_execute_skill_split.py（20）/ test_graph_skills.py / test_capability_denial_guard.py / test_tool_denial_semantics.py / test_skill_skills/test_base_skill.py / test_contract_wiring.py 全员绿（断言一字未改，只改「读哪个文件」）。执行点 = 上述各文件"
+      - "判据 9·🔴 登记面同步（不是放宽）：loc_freeze_ledger 的行数按**实测**重锚（只许缩短）；四个新单元全部 < 800 行 ⇒ 不进 loc_ratchet_exemptions；CAS 状态写面台账零新增（扫描根只有 backend/admin-api/src/main/java，本档全在 Python 面，现取确认）；失败通道锚点按实测 +1 并留 note"
+    skip_reason: "[backend-contract] Python 服务层单测 + 源码结构判据（零 LLM 行为、零网络、零真库），不进 agent-eval 冒烟"
+    merge_log: "2026-11-06 新增（issue #8725 最后一档）。base_skill.py 4,317 → 2,4xx 行；四个新单元 capability_denial / order_flow_guard / phone_masking / injection_blocks 全部 < 800 行。行为 diff = 0 的证据 = 同一份 golden（录制于未切片代码，_meta 记 4,317 行）在切片后逐字节通过（四面）。取号 = 现取三方 id 集合（main 最大 MC-310 / 全部 open PR 最大 310 / claims 最大 310）⇒ 取远号段 **MC-320**。"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_base_skill_slice_characterization.py"
+        - "backend/ai-agent-service/tests/test_base_skill_slice_structure_guard.py"
+        - "backend/ai-agent-service/tests/unit/test_execute_skill_split.py"
+        - "backend/ai-agent-service/tests/test_capability_denial_guard.py"
+        - "backend/ai-agent-service/tests/test_tool_denial_semantics.py"
+        - "backend/ai-agent-service/tests/test_skill_skills/test_base_skill.py"
+        - "backend/ai-agent-service/tests/test_contract_wiring.py"
+      ci:
+        - ai-agent-tests.yml
+      verifies: []
