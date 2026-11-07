@@ -123,6 +123,9 @@ async function mockOrderDetailApi(page: any) {
 
   // 页面级权限：真实 /me 下发 permissions=['*']（fixture 默认只给 admin 角色、不给权限码，
   // 侧边栏会只剩「通知中心」）——截图要的是**真实登录态下的版式**，故按真响应形状补权限。
+  // ⚠️ 身份对象用**扁平**形态（与 `tests/e2e/fixtures.ts` 一致）：store 兼容 `{user:{...},…}` 包装，
+  // 但 `test_mibao_chat_gate.py` 判据 ⑧ 的宿主对象解析只认「最近的 `{`」—— 再嵌一层 `user` 会让
+  // 它把 `roles` 归到 user 对象、误判能力位缺失。扁平既保真又不触发该误判。
   await page.route('**/api/auth/me', async (route: any) =>
     route.fulfill({
       status: 200,
@@ -130,7 +133,9 @@ async function mockOrderDetailApi(page: any) {
       body: JSON.stringify({
         success: true,
         data: {
-          user: { id: '1', username: '13800138000', name: '管理员' },
+          id: '1',
+          username: '13800138000',
+          name: '管理员',
           roles: ['admin'],
           permissions: ['*'],
           menus: [],
