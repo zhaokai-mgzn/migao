@@ -30,11 +30,13 @@
  *
  * ## 判据（各自独立红）
  *
- * ① **未登记即红**：密度 > 2 且不在台账 ⇒ 红（附文件 + 读数 + 面数）；
+ * ① **未登记即红**：密度 > 2 且不在台账、也不是用户裁定的平铺面 ⇒ 红（附文件 + 读数 + 面数）；
  * ② **台账只许缩短**：条目数 > `frozen_count` ⇒ 红；条目**已不再是缺陷** ⇒ 僵尸红（逼着删）；
  * ③ **债务不许放大**：台账条目的当前密度 > 登记时冻结的读数 ⇒ 红（`frozen` 字段）；
- * ④ **正向锚**：已收口的三面（`orders` / `products` / `knowledge`）必须逐字含 `<RowActions` ——
- *    「把动作整列删掉」也能让密度变 0，这条把那种假绿堵掉。
+ * ④ **正向锚**：已收口的四面（`products` / `knowledge` / 工人档案 / 仓位面板）必须逐字含
+ *    `<RowActions` —— 「把动作整列删掉」也能让密度变 0，这条把那种假绿堵掉；
+ * ⑤ **平铺面必须是平铺**：台账 `flat_by_design` 只收**用户逐字裁定**的面；每个条目必须带
+ *    裁定来源 + 平铺锚点（`requires`）/ 折叠锚点（`forbids`）。用户要的平铺被改回「⋯」⇒ 红。
  *
  * ## 边界（照实登记，`migao-dev-flow` §19.1）
  *
@@ -300,13 +302,15 @@ export function loadLedger() {
 }
 
 /**
- * 正向核：本单已收口的**五面**必须逐字含共享原语（防「删掉整列 ⇒ 密度 0」的假绿）。
+ * 正向核：本单已收口的**四面**必须逐字含共享原语（防「删掉整列 ⇒ 密度 0」的假绿）。
  *
- * 前三面 = #8038 的主面（#8011 起 orders 已是该形态）；后两面 = 本单收口的两块面板
- * （集成侧裁定「别留无主债务」，与三页同批收口 ⇒ 同批进正向锚）。
+ * 前三面 = #8038 的主面；后两面 = 本单收口的两块面板（集成侧裁定「别留无主债务」，与三页同批收口
+ * ⇒ 同批进正向锚）。
+ *
+ * ⚠️ **销售订单列表不在本数组里**（2026-11-07 用户裁定把它改成**平铺**）—— 它的正向锚是
+ * `flatByDesignViolations()`（必须仍是 `RowActionLink` 平铺），见台账 `flat_by_design`。
  */
 export const FIXED_SURFACES = [
-  { name: '销售订单列表', file: 'src/components/orders/OrderTable.tsx' },
   { name: '商品列表', file: 'src/components/products/ProductTable.tsx' },
   { name: '知识库', file: 'src/app/(dashboard)/knowledge/page.tsx' },
   { name: '工人档案面板', file: 'src/components/employees/WorkerProfilesPanel.tsx' },
@@ -328,11 +332,56 @@ export function missingFixedAnchors(root) {
   return missing
 }
 
-/** 命中清单（台账过滤后）：**未登记即红** */
+/** 用户裁定的**平铺**面（`flat_by_design`）：不是债务条目，是设计例外（见台账 `why` ③） */
+export function flatByDesignEntries() {
+  return loadLedger().flat_by_design || []
+}
+
+export function flatByDesignFiles() {
+  return new Set(flatByDesignEntries().map((e) => e.file))
+}
+
+/**
+ * 平铺面的**正向锚**：登记了 `flat_by_design` 就**必须仍是平铺**。
+ *
+ * - 缺文件 / 缺 `requires` 锚点 ⇒ 红（用户要的平铺形态被删掉了）；
+ * - 出现 `forbids` 锚点（`<RowActions` / 「更多操作」）⇒ 红（又收回「⋯」菜单了）。
+ *
+ * 这条判据让「用户裁定的例外」**有代价**：想退回折叠形态，必须删掉台账条目并写清依据，
+ * 而不是悄悄改代码让密度读数变绿。
+ */
+export function flatByDesignViolationsFrom(root, entries) {
+  const violations = []
+  for (const entry of entries) {
+    let src = ''
+    try {
+      src = readFileSync(join(root, entry.file), 'utf8')
+    } catch {
+      violations.push(`${entry.name}（文件不可读：${entry.file}）`)
+      continue
+    }
+    for (const anchor of entry.requires || []) {
+      if (!src.includes(anchor)) violations.push(`${entry.name}（${entry.file} 里找不到平铺锚点 ${anchor}）`)
+    }
+    for (const forbidden of entry.forbids || []) {
+      if (src.includes(forbidden)) violations.push(`${entry.name}（${entry.file} 里又出现 ${forbidden}）`)
+    }
+  }
+  return violations
+}
+
+export function flatByDesignViolations(root) {
+  return flatByDesignViolationsFrom(root, flatByDesignEntries())
+}
+
+/** 命中清单（台账 + 用户裁定平铺面过滤后）：**未登记即红** */
 export function offendersOf(root) {
   const ledger = loadLedger().ledger || {}
+  const flat = flatByDesignFiles()
   const { files, sites } = rowActionSites(root)
-  const offenders = sites.filter((s) => s.density > MAX_CLICKABLE_PER_ROW && !(s.key in ledger))
+  const offenders = sites.filter(
+    (s) => s.density > MAX_CLICKABLE_PER_ROW && !(s.key in ledger) && !flat.has(s.key),
+  )
   return { files, sites, offenders }
 }
 
@@ -365,12 +414,19 @@ if (isMain) {
   const root = process.env.MIGAO_SCAN_ROOT || join(dirname(fileURLToPath(import.meta.url)), '..')
   const ledger = loadLedger()
   const { files, sites, offenders } = offendersOf(root)
+  const flat = flatByDesignFiles()
   console.log(
     `扫描 ${files} 个 tsx 文件 · 命中「操作列动作面」${sites.length} 处 ` +
-      `（台账 ${Object.keys(ledger.ledger || {}).length} / 未登记红 ${offenders.length}）\n`,
+      `（台账 ${Object.keys(ledger.ledger || {}).length} / 用户裁定平铺 ${flat.size} / 未登记红 ${offenders.length}）\n`,
   )
   for (const s of sites) {
-    const mark = s.density <= MAX_CLICKABLE_PER_ROW ? '✅ 达标' : s.key in (ledger.ledger || {}) ? '📒 已登记（存量债）' : '❌ 未登记'
+    const mark = flat.has(s.key)
+      ? '🧷 用户裁定平铺'
+      : s.density <= MAX_CLICKABLE_PER_ROW
+        ? '✅ 达标'
+        : s.key in (ledger.ledger || {})
+          ? '📒 已登记（存量债）'
+          : '❌ 未登记'
     console.log(`  ${mark}  密度 ${s.density}  ${s.key}（面 ${s.surfaces}）`)
   }
   const stale = staleLedger(root)
@@ -379,5 +435,9 @@ if (isMain) {
   if (grown.length) console.log(`\n❌ 债务放大：${grown.map((g) => `${g.key} 冻结 ${g.frozen} → 现 ${g.now}`).join('、')}`)
   const missing = missingFixedAnchors(root)
   if (missing.length) console.log(`\n❌ 正向锚缺失：${missing.join('、')}`)
-  process.exit(offenders.length || stale.length || grown.length || missing.length ? 1 : 0)
+  const flatViolations = flatByDesignViolations(root)
+  if (flatViolations.length) console.log(`\n❌ 用户裁定的平铺面已变形：${flatViolations.join('、')}`)
+  process.exit(
+    offenders.length || stale.length || grown.length || missing.length || flatViolations.length ? 1 : 0,
+  )
 }
