@@ -13,7 +13,10 @@ import Button from './Button'
  * 但实现留在 `components/orders/OrderTable.tsx` 里 —— `products`（每行 5 个）与
  * `knowledge`（每行 4 个）仍是平铺文字链（#8035 审计：`≥3 个同级可点` 共 5 页）。
  * 「再抄一份」= 第二份会漂的口径（`RowActionLink` 头注释已登记过同款教训）⇒ 本组件是
- * **那一份实现**：`OrderTable` 也改用它，三个列表从此只有一处菜单行为。
+ * **那一份实现**：`products` / `knowledge` / `employees` 等列表都改用它。
+ *
+ * ⚠️ **销售订单列表已退出本原语**（2026-11-07 用户裁定：操作按钮直接平铺，不再收进「⋯」）——
+ * 那张表不是折叠形态；本组件仍是其它列表页的折叠原语。
  *
  * ## 判据（会红，见 `tests/unit/components/RowActions.test.tsx`）
  *
