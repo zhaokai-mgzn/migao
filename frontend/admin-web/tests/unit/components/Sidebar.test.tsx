@@ -723,13 +723,13 @@ describe('Sidebar', () => {
     expect(topIcon.getAttribute('class')).toContain('w-[18px]')
     // 那枚 chevron 留给「可展开的组」—— 直达项挂它是假示能
     expect(within(top).queryByTestId('icon-chevron-right')).toBeNull()
-    // ③ 叶子项（二级菜单）：2026-11-07 用户裁定「二级菜单前面的图标统一去掉」⇒ 展开态**不挂**领域图标；
-    //    去掉图标后文本仍保持三级缩进（`pl-14` = 56px；改回 `pl-7` = 28px 会缩到一级标题文字左侧）。
+    // ③ 叶子项（二级菜单）：图标口径 = 展开态**不挂**领域图标；缩进口径 = 2026-11-07 用户追加裁定
+    //    「二级菜单名称缩进太大，把二级菜单名称和一级菜单名称对齐」⇒ 名称左边界与一级菜单名称一致（38px）。
     expandGroups('customer-service')
     const leaf = linkFor('在线接待')
     expect(within(leaf).getByText('在线接待').className).toContain('text-sm')
     expect(leaf.className).toContain('h-8')
-    expect(leaf.className).toContain('pl-14')
+    expect(leaf.className).toContain('pl-[2.375rem]')
     expect(leaf.className).toContain('text-neutral-300')
     expect(leaf.className).not.toContain('font-semibold')
     expect(within(leaf).queryByTestId('icon-headphones')).toBeNull()
@@ -930,6 +930,25 @@ describe('Sidebar', () => {
     const icon = within(header).getByTestId(`icon-${kebab(menuGroups[0].icon)}`)
     const label = within(header).getByText(menuGroups[0].name)
     expect(icon.compareDocumentPosition(label) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('（2026-11-07 后续）二级菜单名称与一级菜单名称**同一左边界**：一级 = px-2.5 + 18px 图标 + gap-2.5（38px）；二级 = pl-[2.375rem]（38px）', () => {
+    render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
+    expandAll()
+    // 一级菜单名称的左边距构成（判据钉的是**契约**，不是从实现抄一个数字）：
+    // `px-2.5` 10px + `w-[18px]` 18px + `gap-2.5` 10px = 38px
+    const header = groupButton('customer-service')
+    expect(hasToken(header, 'px-2.5')).toBe(true)
+    expect(hasToken(header, 'gap-2.5')).toBe(true)
+    const groupIcon = within(header).getByTestId('icon-message-square')
+    expect(hasToken(groupIcon, 'w-[18px]')).toBe(true)
+    // 二级菜单名称：同一左边界（`pl-[2.375rem]` = 38px）
+    const leaf = linkFor('在线接待')
+    expect(hasToken(leaf, 'pl-[2.375rem]')).toBe(true)
+    // 负控：旧口径 `pl-14`（56px）在同一量具下必须为 false（证明本断言不是恒真）
+    expect(hasToken(leaf, 'pl-14')).toBe(false)
+    // 只改左内距：行高 / 字号口径不变
+    expect(hasToken(leaf, 'h-8')).toBe(true)
   })
 
   it('「黄金策·在线对话」菜单入口已移除（#3094：智能体对话经右下角浮动按钮进入）', () => {

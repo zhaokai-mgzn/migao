@@ -69,7 +69,8 @@ import {
 //   ② **一级项**（三个席位）= 14px/600 最亮 + 18px 图标 + **36px 行**（比组标题更高 ⇒
 //      「可点的目的地」比「分类标签」重）；右端**不挂 chevron**（直达项没有展开语义）；
 //   ③ **叶子项**（二级菜单）= 14px/400 次级亮度 + **32px 行**，展开态**不挂图标**、左内距
-//      `pl-14`（56px）⇒ 三级缩进锚点：10（「常用」标签）/ 38（一级菜单文字）/ 56（二级菜单文字）。
+//      `pl-[2.375rem]`（38px）⇒ 名称文字与一级菜单名称**同一左边界**（2026-11-07 用户追加裁定：
+//      「二级菜单名称缩进太大，把二级菜单名称和一级菜单名称对齐」；层级仍靠图标/字重区分）。
 //      折叠态保留 16px 图标 —— 折叠态没有文字，图标是该行**唯一**可见标识与可点区域依据。
 //
 // 判据（会红）：`tests/unit/components/Sidebar.test.tsx` 的「视觉层次 / 图标层级」用例
@@ -88,9 +89,12 @@ const SECTION_COUNT = 'text-xs leading-none text-neutral-600'
 /** 一级项行（36px，比组标题更高 ⇒ 目的地重于标签） */
 const TOP_ROW = 'group/item relative flex h-9 items-center gap-2.5 rounded-md px-2.5 transition-colors'
 const TOP_LABEL = 'flex-1 truncate text-sm font-semibold'
-/** 叶子项行（32px；`pl-14` = 56px，三级缩进里的最内层；折叠态由 `px-2` 覆盖为图标居中） */
+/**
+ * 叶子项行（32px）。`pl-[2.375rem]` = 38px = `px-2.5` + 18px 图标 + `gap-2.5` ⇒
+ * 展开态名称与一级菜单名称**同一左边界**（2026-11-07 用户追加裁定）；折叠态由 `px-2` 覆盖为图标居中。
+ */
 const LEAF_ROW =
-  'group/item relative flex h-8 items-center gap-2 rounded-md pl-14 pr-2.5 transition-colors'
+  'group/item relative flex h-8 items-center gap-2 rounded-md pl-[2.375rem] pr-2.5 transition-colors'
 
 interface SidebarProps {
   collapsed: boolean
@@ -225,8 +229,8 @@ export default function Sidebar({
     )
   }
 
-  // ── 叶子项（组内项 / 「常用」区）── 三级里最内层：32px 行、展开态**无图标**、`pl-14` 缩进；
-  //    折叠态保留 16px 图标（没有文字时图标是该行唯一标识，见上方 2026-11-07 口径）。
+  // ── 叶子项（组内项 / 「常用」区）── 32px 行、展开态**无图标**、名称与一级菜单名称同一左边界
+  //    （`pl-[2.375rem]` = 38px）；折叠态保留 16px 图标（没有文字时图标是该行唯一标识）。
   const renderItem = (item: MenuItem, opts: { alwaysShowPin: boolean }) => {
     const Icon = resolveMenuIcon(item.icon)
     const active = isActive(item.path)
