@@ -614,3 +614,92 @@ test.describe('订单列表页面', () => {
     await expect(page.getByText('YK20260601001')).toBeVisible()
   })
 })
+
+// ========== 整行点击 + 操作按钮平铺（2026-11-07 用户裁定） ==========
+//
+// 用户逐字：「一、需要支持订单非操作区域整行可点击，点击跳转至对应订单的订单详情页；
+// 二、操作一列：把订单对应的可操作按钮直接展示出来，不要收在『...』里面」。
+// 本组判据走真浏览器：整行点击是**导航**（jsdom 里只有 `router.push` 被调用，验不到地址栏），
+// 操作按钮平铺是**同屏可见**（jsdom 验不了「展开菜单才可见」与真机观感的差别）。
+test.describe('订单列表 · 整行点击 + 操作按钮平铺', () => {
+  test.beforeEach(async ({ page }) => {
+    await mockOrderApis(page)
+    // 与 `key-columns-reachability.spec.ts` 同口径：点行会进订单详情，详情页会打若干非本判据接口；
+    // fixture 模式无后端，这些请求不会有响应 ⇒ axios 拦截器按会话失效把整页踢到登录页，
+    // 「行点击 → /orders/o001」就变成一条与被测行为无关的假红。只放行 `/api/auth/me`（认证夹具），
+    // 其余非订单列表接口返回空成功体。
+    await page.route('**/api/**', (route) => {
+      const url = route.request().url()
+      if (url.includes('/api/auth/me')) return route.fallback()
+      if (url.includes('/api/auth/refresh')) {
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            code: 200,
+            data: { accessToken: 'fixture-token', refreshToken: 'fixture-refresh', expiresIn: 3600, tokenType: 'Bearer' },
+          }),
+        })
+      }
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ code: 200, data: null }),
+      })
+    })
+    // 本组判据的靶心是「行点击 / 平铺形态」，不是日期筛选：默认日期范围（近一个月）会把
+    // fixture 的 6 月订单过滤掉 ⇒ 这里用后注册的路由（Playwright LIFO）固定返回同一份 fixture，
+    // 不依赖测试运行当天。其它订单子路径仍 fallback 给 `mockOrderApis`。
+    await page.route('**/api/admin/orders*', async (route) => {
+      if (route.request().method() !== 'GET') return route.fallback()
+      const url = new URL(route.request().url())
+      if (url.pathname !== '/api/admin/orders') return route.fallback()
+      const pg = Number(url.searchParams.get('page')) || 1
+      const size = Number(url.searchParams.get('size')) || 20
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          code: 200,
+          data: { items: MOCK_ORDERS, total: MOCK_ORDERS.length, page: pg, size },
+        }),
+      })
+    })
+    await page.goto('/orders')
+    await expect(page.getByText('加载中…')).not.toBeVisible({ timeout: 10_000 })
+    await expect(page.getByText('YK20260601001')).toBeVisible({ timeout: 15_000 })
+  })
+
+  test('操作按钮平铺：没有「更多操作」，状态相关按钮直接可见', async ({ page }) => {
+    // 每行都不再有 ⋯ 触发器（旧形态的机器读数）
+    await expect(page.getByRole('button', { name: '更多操作' })).toHaveCount(0)
+
+    // 待付款行：收款 / 关闭订单 / 查看详情 / 备注 同屏
+    // `exact: true`：Playwright 的 accessible name 默认是**子串**匹配 —— 「发货」会把
+    // 「去发货页」也算进来（strict mode 直接报两处命中，不是形态缺陷）。
+    const payRow = page.locator('tbody tr').filter({ hasText: 'YK20260601001' })
+    for (const label of ['查看详情', '备注', '关闭订单', '收款']) {
+      await expect(payRow.getByRole('button', { name: label, exact: true })).toBeVisible()
+    }
+
+    // 待发货行：发货 / 去发货页 / 处理退款 同屏
+    const shipRow = page.locator('tbody tr').filter({ hasText: 'YK20260601002' })
+    for (const label of ['查看详情', '备注', '发货', '去发货页', '处理退款']) {
+      await expect(shipRow.getByRole('button', { name: label, exact: true })).toBeVisible()
+    }
+  })
+
+  test('点非操作区域（收货人）⇒ 整行跳订单详情', async ({ page }) => {
+    await page.getByText('张三').click()
+    await expect(page).toHaveURL(/\/orders\/o001$/, { timeout: 10_000 })
+  })
+
+  test('点操作按钮不触发整行跳转：备注弹窗仍在列表页', async ({ page }) => {
+    const payRow = page.locator('tbody tr').filter({ hasText: 'YK20260601001' })
+    await payRow.getByRole('button', { name: '备注' }).click()
+    await expect(
+      page.locator('.fixed.inset-0').getByRole('heading', { name: '添加备注' }),
+    ).toBeVisible()
+    await expect(page).toHaveURL(/\/orders$/)
+  })
+})

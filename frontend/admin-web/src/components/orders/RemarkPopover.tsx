@@ -199,7 +199,11 @@ export default function RemarkPopover({ remark, remarks, children }: RemarkPopov
       role="button"
       tabIndex={0}
       aria-expanded={visible}
-      onClick={() => setVisible(v => !v)}
+      // 销售订单列表整行可点击进详情后，点备注预览只开备注浮层、不顺带跳详情
+      onClick={(e) => {
+        e.stopPropagation()
+        setVisible(v => !v)
+      }}
       onFocus={() => setVisible(true)}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {

@@ -15,10 +15,15 @@
  * ① **未登记即红**：某「操作」列密度 > 2 且不在台账 ⇒ 红（具名文件 + 读数）；
  * ② **台账只许缩短**：条目数 > `frozen_count` ⇒ 红；条目**已不再是缺陷** ⇒ 僵尸红（逼着删）；
  * ③ **债务不许放大**：台账条目的当前密度 > 登记时 `frozen` ⇒ 红；
- * ④ **正向锚**：已收口的 `orders` / `products` / `knowledge` 必须逐字含 `<RowActions` ——
+ * ④ **正向锚**：已收口的 `products` / `knowledge` / 工人档案 / 仓位面板必须逐字含 `<RowActions` ——
  *    「把整列删掉」也能让密度读成 0，这条堵掉那种假绿；
- * ⑤ **判别力自证**（本文件）：改前的**逐字坏形态**必红、改后形态不红、注释里的同形态不误伤、
- *    委托式动作面（`{renderActions(order)}`）会被跟随 —— 守卫自己退化成绿时先在这里红。
+ * ⑤ **用户裁定的平铺面必须是平铺**：台账 `flat_by_design` 只收**用户逐字裁定**的面
+ *    （2026-11-07 销售订单列表「操作按钮直接展示、不收进『...』」）。登记了平铺就必须仍是
+ *    `RowActionLink` 平铺、且不得出现 `<RowActions` / 「更多操作」——
+ *    想回收成折叠形态必须删掉这条例外并写清依据，不许悄悄改代码让密度读数变绿；
+ * ⑥ **判别力自证**（本文件）：改前的**逐字坏形态**必红、改后形态不红、注释里的同形态不误伤、
+ *    委托式动作面（`{renderActions(order)}`）会被跟随 —— 守卫自己退化成绿时先在这里红；
+ *    平铺锚的**反向对照**（缺锚 / 出现折叠锚）也在这里跑，防止 ⑤ 恒绿。
  *
  * ## 边界（照实登记，`migao-dev-flow` §19.1）
  *
@@ -29,6 +34,7 @@
  */
 import { describe, it, expect } from 'vitest'
 import fs from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -38,6 +44,10 @@ import {
   SCOPES,
   FIXED_SURFACES,
   actionSurfacesFromSource,
+  flatByDesignEntries,
+  flatByDesignFiles,
+  flatByDesignViolations,
+  flatByDesignViolationsFrom,
   grownLedger,
   loadLedger,
   missingFixedAnchors,
@@ -152,8 +162,8 @@ describe('类级守卫：「操作」列行内动作密度 ≤ 2（issue #8038�
     ).toEqual([])
   })
 
-  it('④ 正向锚：已收口的五面（orders / products / knowledge / 工人档案 / 仓位面板）必须真用共享原语', () => {
-    // 五面都在扫描面内（台账以外不许有僵尸面）
+  it('④ 正向锚：已收口的四面（products / knowledge / 工人档案 / 仓位面板）必须真用共享原语', () => {
+    // 四面都在扫描面内（台账以外不许有僵尸面）
     const { sites } = rowActionSites(ADMIN_WEB_ROOT)
     const keys = new Set(sites.map((s) => s.key))
     for (const f of FIXED_SURFACES) {
@@ -162,7 +172,31 @@ describe('类级守卫：「操作」列行内动作密度 ≤ 2（issue #8038�
     expect(missingFixedAnchors(ADMIN_WEB_ROOT)).toEqual([])
   })
 
-  it('⑤ 判别力自证：改前形态必红、改后形态不红、注释不误伤', () => {
+  it('⑤ 用户裁定的平铺面：销售订单列表必须仍是 RowActionLink 平铺（不是 ⋯ 菜单）', () => {
+    const entries = flatByDesignEntries()
+    expect(entries.length, '用户裁定的平铺面不能为空（空数组 = 判据在扫空气）').toBeGreaterThan(0)
+
+    // 例外必须带**裁定来源 + 双向锚点**，否则「平铺例外」可以随手加、判据就成了一张空头支票
+    for (const e of entries) {
+      // 来源必须是「哪一天、谁要求的」这种可追溯的裁定，不是一句「设计如此」
+      expect(e.source, `${e.file} 缺裁定来源`).toMatch(/\d{4}-\d{2}-\d{2}/)
+      expect(e.source, `${e.file} 的裁定来源没写「用户」`).toMatch(/用户/)
+      expect(e.requires?.length, `${e.file} 缺平铺锚点（requires）`).toBeGreaterThan(0)
+      expect(e.forbids?.length, `${e.file} 缺折叠锚点（forbids）`).toBeGreaterThan(0)
+    }
+
+    // 销售订单列表：在扫描面内、已登记为平铺、且真用 RowActionLink（不是 RowActions / 更多操作）
+    const ordersFile = 'src/components/orders/OrderTable.tsx'
+    expect(flatByDesignFiles().has(ordersFile), '销售订单列表未登记为平铺面').toBe(true)
+    const { sites } = rowActionSites(ADMIN_WEB_ROOT)
+    expect(sites.some((s) => s.key === ordersFile), '销售订单列表没被扫到 ⇒ 扫描面漂移').toBe(true)
+    expect(flatByDesignViolations(ADMIN_WEB_ROOT)).toEqual([])
+
+    // 同一个文件不许同时出现在「必须用共享原语」的正向锚里（两套口径互斥）
+    expect(FIXED_SURFACES.some((f) => f.file === ordersFile)).toBe(false)
+  })
+
+  it('⑥ 判别力自证：改前形态必红、改后形态不红、注释不误伤', () => {
     // 改前：5 个平级 → 5 > 2（= #8035 审计的现场读数）
     expect(density(PRE_FIX_PRODUCTS_COLUMN)).toBe(5)
     expect(density(PRE_FIX_PRODUCTS_COLUMN)).toBeGreaterThan(MAX_CLICKABLE_PER_ROW)
@@ -182,7 +216,32 @@ describe('类级守卫：「操作」列行内动作密度 ≤ 2（issue #8038�
     ).toEqual([])
   })
 
-  it('⑤ 判别力自证：条件分支取最大值（互斥不叠加）、委托式动作面会被跟随', () => {
+  it('⑥ 判别力自证：平铺锚缺一即红（不是「登记了就当通过」）', () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'migao-flat-anchor-'))
+    const rel = 'src/components/orders/OrderTable.tsx'
+    const abs = path.join(tmp, rel)
+    fs.mkdirSync(path.dirname(abs), { recursive: true })
+    const entry = {
+      name: '销售订单列表（自证探针）',
+      file: rel,
+      requires: ['<RowActionLink'],
+      forbids: ['<RowActions', '更多操作'],
+    }
+
+    // 正向：平铺形态不红
+    fs.writeFileSync(abs, '<RowActionLink onClick={...}>查看详情</RowActionLink>')
+    expect(flatByDesignViolationsFrom(tmp, [entry])).toEqual([])
+
+    // 反向：改回折叠形态 ⇒ 缺平铺锚 + 两个折叠锚同时报红（缺文件也红）
+    fs.writeFileSync(abs, '<RowActions items={items}>更多操作</RowActions>')
+    expect(flatByDesignViolationsFrom(tmp, [entry])).toHaveLength(3)
+    fs.unlinkSync(abs)
+    expect(flatByDesignViolationsFrom(tmp, [entry])).toHaveLength(1)
+
+    fs.rmSync(tmp, { recursive: true, force: true })
+  })
+
+  it('⑥ 判别力自证：条件分支取最大值（互斥不叠加）、委托式动作面会被跟随', () => {
     // `cond ? A : B` 互斥 ⇒ max(1, 2) = 2，不是 3
     expect(
       density(`
