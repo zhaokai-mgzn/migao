@@ -1,7 +1,21 @@
 {
-  "why": "issue #8038 的类级台账：`src/app/(dashboard)` + `src/components`（`products` / `orders` 的表格组件在 components 里）中凡带「操作」列的表，**一行同时可点 ≤ 2**（1 主行动 + 1 个「⋯」触发器，形态 = 共享原语 `src/components/ui/RowActions.tsx`）。判据 = `frontend/admin-web/tests/unit/row-action-density-guard.test.ts`（扫描器 = `frontend/admin-web/scripts/row-action-density-scan.mjs`）。未登记即红；**条目只许缩短**（改好后同批删条目）；`frozen` = 登记时的密度读数，**债务不许放大**（现读数 > frozen ⇒ 红）。**沿革**：① #8038 收口 `products` / `knowledge` 后，扫描器又扫出两处**审计口径外**的存量债（`WorkerProfilesPanel` 密度 5、`WarehouseLocationPanel` 密度 3）—— 集成侧裁定「别留无主债务」⇒ 同分支用共享原语一并收口，两条条目同批删除；② #8039 收口 `approvals` / `rework-orders` / `employees` 三页（各 3 个平级可点 → 1 主行动 + ⋯ 菜单）后，台账**清零**，`frozen_count = 0`。⚠️ 清零后**不许再加条目**：判据变红的唯一处置是用共享原语改页面（`RowActions` 的 children = 主行动、`items` = 其余动作），不许多传一个平级可点元素。",
+  "why": "issue #8038 的类级台账：`src/app/(dashboard)` + `src/components`（`products` / `orders` 的表格组件在 components 里）中凡带「操作」列的表，**一行同时可点 ≤ 2**（1 主行动 + 1 个「⋯」触发器，形态 = 共享原语 `src/components/ui/RowActions.tsx`）。判据 = `frontend/admin-web/tests/unit/row-action-density-guard.test.ts`（扫描器 = `frontend/admin-web/scripts/row-action-density-scan.mjs`）。未登记即红；**条目只许缩短**（改好后同批删条目）；`frozen` = 登记时的密度读数，**债务不许放大**（现读数 > frozen ⇒ 红）。**沿革**：① #8038 收口 `products` / `knowledge` 后，扫描器又扫出两处**审计口径外**的存量债（`WorkerProfilesPanel` 密度 5、`WarehouseLocationPanel` 密度 3）—— 集成侧裁定「别留无主债务」⇒ 同分支用共享原语一并收口，两条条目同批删除；② #8039 收口 `approvals` / `rework-orders` / `employees` 三页（各 3 个平级可点 → 1 主行动 + ⋯ 菜单）后，台账**清零**，`frozen_count = 0`。⚠️ 清零后**不许再加债务条目**：判据变红的唯一处置是用共享原语改页面（`RowActions` 的 children = 主行动、`items` = 其余动作），不许多传一个平级可点元素。 ③ **2026-11-07 用户裁定的设计例外（不是债务）**：销售订单列表改为「操作按钮直接平铺、不收进『...』」（见 `flat_by_design`），因此该面**不按「≤ 2」收口**（扫描器的 `.map()` 口径会把成组平铺读成 1，密度读数不能单独证明这一面的形态）；`flat_by_design` 只放**用户逐字裁定**的平铺面，且守卫会核「它仍是平铺」—— 想把它收回菜单必须同时删掉这条例外并说明依据，不许悄悄退回。",
   "scope": "src/app/(dashboard)/**/*.tsx + src/components/**/*.tsx",
   "frozen_count": 0,
   "ledger": {},
-  "boundary": "静态判据（源码文本 / AST）：判不了菜单展开后的落点与遮挡（真机视觉，集成侧截图复核），也判不了运行时「收起态菜单项不进 DOM」（那是原语自己的判据 `tests/unit/components/RowActions.test.tsx`）。跨组件不可见：动作面若渲染**别的文件**里的格子组件，扫描器看不进去（计 0）—— 有意不做跨文件调用图。同字段互斥分支（`{s==='a' && <B1/>}{s==='b' && <B2/>}`）在语法上是两个平级条件 ⇒ 计 2（真实同行 1 个）：偏保守、**不会假绿**；要精确就按共享原语形态写（主行动走 children、其余走 items 数据）。本台账**当前 0 条**（无存量债、无无主条目）。"
+  "flat_by_design": [
+    {
+      "file": "src/components/orders/OrderTable.tsx",
+      "name": "销售订单列表",
+      "source": "2026-11-07 用户逐字（钉钉）：「操作一列：把订单对应的可操作按钮直接展示出来，不要收在“...”里面」",
+      "requires": [
+        "<RowActionLink"
+      ],
+      "forbids": [
+        "<RowActions",
+        "更多操作"
+      ]
+    }
+  ],
+  "boundary": "静态判据（源码文本 / AST）：判不了菜单展开后的落点与遮挡（真机视觉，集成侧截图复核），也判不了运行时「收起态菜单项不进 DOM」（那是原语自己的判据 `tests/unit/components/RowActions.test.tsx`）。跨组件不可见：动作面若渲染**别的文件**里的格子组件，扫描器看不进去（计 0）—— 有意不做跨文件调用图。同字段互斥分支（`{s==='a' && <B1/>}{s==='b' && <B2/>}`）在语法上是两个平级条件 ⇒ 计 2（真实同行 1 个）：偏保守、**不会假绿**；要精确就按共享原语形态写（主行动走 children、其余走 items 数据）。本台账**当前 0 条债务**（无存量债、无无主条目）；`flat_by_design` 是**用户裁定的设计例外**（不是待还债务），条目同样只许缩短，且每条都必须带裁定来源 + 平铺锚点。"
 }
