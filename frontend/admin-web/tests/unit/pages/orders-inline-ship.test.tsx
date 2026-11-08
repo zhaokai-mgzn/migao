@@ -20,7 +20,7 @@
  *    （不提交 + 行内报错）；`shippingMethod=none`（无需物流）**空运单号也直接提交**；
  * ④ 失败（4xx）⇒ 录入区保留、输入**原样保留**、行内错误文案可见（服务端原文优先），
  *    行不消失、**不弹 toast 独占**、不跳页；
- * ⑤ 兜底路径仍在：⋯ 菜单里的「去发货页」跳既有 `/orders/{id}/ship`；
+ * ⑤ 兜底路径仍在：平铺动作「去发货页」跳既有 `/orders/{id}/ship`（2026-11-07 起不再收进 ⋯ 菜单）；
  * ⑥ 收起后**焦点归位**（issue #8027）：提交成功 / `Escape` / 「取消」三条路径收完之后
  *    `document.activeElement` 都回到**触发这一行**的「发货」按钮（改前落 `body`：连续录单时
  *    键盘 / 读屏用户每单都要重新找回位置）。焦点只在**收起**时搬动，换行展开不会把上一行的焦点抢回来。
@@ -35,7 +35,7 @@
  *   原子发货端点」与「行变已发货」当场红（后者在 #6983 已实证：老路不建发货单、不确定状态）；
  * - 去掉前端空单号预校验 ⇒ ③ 红；把 `none` 也拦下 ⇒ ③ 的负控（无需物流直接提交）红；
  * - 把失败分支改成 `toast.error` + 清空输入 ⇒ ④ 的红；
- * - 把「去发货页」从菜单里删掉 ⇒ ⑤ 红；
+ * - 把平铺动作「去发货页」删掉 ⇒ ⑤ 红；
  * - 去掉焦点归位（或只在同步收起时还一次、刷新回来就不管）⇒ ⑥ 的提交成功那条红
  *   （刷新期间表体整体换成「加载中…」，行按钮是新的一茬节点）；
  * - 把 `logisticsType` 从提交 payload 里去掉（或无条件写成 `'express'`）⇒ ⑦ 的三条判据同时红；
@@ -43,7 +43,7 @@
  *
  * ## 与相邻判据的分工（不重复）
  *
- * - 行内操作收敛（1 主行动 + ⋯ 菜单）⇒ `tests/unit/pages/orders-list-row-actions.test.tsx`；
+ * - 行内动作平铺 + 整行点击（2026-11-07 用户裁定）⇒ `tests/unit/pages/orders-list-row-actions.test.tsx`；
  * - 组件级渲染（表头 / 明细列 / 空态）⇒ `tests/unit/components/OrderTable.test.tsx`；
  * - 发货页整页表单（含原子端点 / 幂等键 / 加工单守卫）⇒ `tests/unit/pages/ship-order.test.tsx`。
  */
@@ -380,12 +380,12 @@ describe('销售订单列表 · 行内快捷发货（issue #8013）', () => {
 
   // ================= ⑤ 兜底：既有发货页仍在 =================
 
-  it('⑤ ⋯ 菜单保留「去发货页」入口，点击跳既有 /orders/{id}/ship', async () => {
+  it('⑤ 平铺动作保留「去发货页」入口，点击跳既有 /orders/{id}/ship', async () => {
     render(<OrdersPage />)
     await waitForRows()
 
-    fireEvent.click(within(actionsCell('ship1')).getByRole('button', { name: '更多操作' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: '去发货页' }))
+    // 2026-11-07 用户裁定：操作按钮直接展示，不再先点「⋯」再点菜单项
+    fireEvent.click(within(actionsCell('ship1')).getByRole('button', { name: '去发货页' }))
 
     expect(routerMock.push).toHaveBeenCalledWith('/orders/ship1/ship')
   })

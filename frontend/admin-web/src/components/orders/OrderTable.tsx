@@ -5,8 +5,7 @@ import { Fragment, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import type { OrderBrief } from '@/types'
 import { normalizeOrderStatus } from '@/types'
-import { Badge, Button, RowActions } from '@/components/ui'
-import type { RowActionItem } from '@/components/ui'
+import { Badge, Button, RowActionLink } from '@/components/ui'
 import DateTimeCell from '@/components/common/DateTimeCell'
 import OrderStatusBadge from './OrderStatusBadge'
 import { isUrgentFlag, urgentBadgeText } from '@/lib/order-urgency'
@@ -111,14 +110,18 @@ function getItemAmount(item: { amount?: number; subtotal?: number; unitPrice?: n
 }
 
 /**
- * 行内「⋯」菜单（issue #8011 由本表首例；issue #8038 收成**共享原语** `ui/RowActions`）。
+ * 行内「⋯」菜单（issue #8011）在**本表已退场**（2026-11-07 用户裁定）。
  *
- * 本表是那一形态的首例，改前实现就写在本文件里；#8038 把它抽到 `components/ui/RowActions.tsx`
- * （`products` / `knowledge` 同批接入）—— 菜单的开合、键盘可达、`fixed` 落点、**收起态不进 DOM**
- * 现在**只有一份实现**。这里**不再**保留本地副本：抄一份 = 第二份会漂的口径
- * （`RowActionLink` 头注释已登记过同款教训）。
+ * 用户逐字：「操作一列：把订单对应的可操作按钮直接展示出来，不要收在『...』里面」——
+ * ⇒ 本表改为**平铺**：主行动仍是 `Button variant="ghost"`（按订单状态派生），其余动作
+ * 逐条以共享原语 `ui/RowActionLink` 直接同屏展示。`ui/RowActions` 仍是其它列表页的行内
+ * 收敛原语（`products` / `knowledge` / `employees` 等），本表只是**不再使用**它。
  *
- * 本表自己的判据（形态/主行动派生/复制订单号）：`tests/unit/pages/orders-list-row-actions.test.tsx`。
+ * 平铺是**用户裁定的设计例外**，已在类级密度判据里显式登记
+ * （`tests/unit/row-action-density-ledger.json` 的 `flat_by_design`，守卫会核「仍是平铺」）。
+ *
+ * 本表自己的判据（形态/整行点击/主行动派生/复制订单号）：
+ * `tests/unit/pages/orders-list-row-actions.test.tsx`。
  */
 
 /** 订单号复制（issue #8011）：17 位纯数字手抄必错，给一个**明确的**复制入口 */
@@ -180,11 +183,15 @@ export default function OrderTable({
   }, [shippingOrderId, loading])
 
   /**
-   * 行内操作（issue #8011）：**1 个主行动 + 1 个「⋯」菜单**。
+   * 行内操作（2026-11-07 用户裁定：**平铺**，替换 issue #8011 的「主行动 + ⋯ 菜单」）。
    *
    * 主行动按**订单状态**派生（待付款→收款 / 待发货→发货 / 已发货→确认收货 / 其它→无主行动），
-   * 其余动作收进菜单。🔴 **逐条保持改前的条件与回调** —— 本次只动**形态**，不动权限判断、
+   * 其余动作（查看详情 / 备注 / 关闭订单 / 处理退款 / 去发货页）**同屏逐条展示**，不再折叠。
+   *
+   * 🔴 **逐条保持改前的条件与回调** —— 本次只动**形态**，不动权限判断、
    * 不动「哪些状态哪些动作可做」（红灯面：`refundable` / `alreadyRefunded` / 可选回调缺省）。
+   * 每个动作都显式 `stopPropagation`（`RowActionLink` 内部已做，主行动这里自己做）：
+   * 整行可点击进详情后，点操作按钮不得再触发一次跳转。
    */
   const renderActions = (order: OrderBrief) => {
     const displayStatus = normalizeOrderStatus(order.status as string)
@@ -195,7 +202,7 @@ export default function OrderTable({
     const alreadyRefunded = (order.refundAmount ?? 0) > 0
 
     // 主行动：**只**按状态派生；回调缺席（页面没接线）⇒ 同样不渲染，不摆一个点不动的按钮
-    const primary: RowActionItem | null =
+    const primary: { key: string; label: string; onClick: () => void } | null =
       displayStatus === 'pending_payment' && onConfirmPayment
         ? { key: 'payment', label: '收款', onClick: () => onConfirmPayment(order) }
         : displayStatus === 'pending_shipment' && (onToggleShip || onShip)
@@ -209,27 +216,23 @@ export default function OrderTable({
             ? { key: 'receive', label: '确认收货', onClick: () => onConfirmReceive(order) }
             : null
 
-    const menuItems: RowActionItem[] = [
+    const actions: { key: string; label: string; onClick: () => void }[] = [
       { key: 'view', label: '查看详情', onClick: () => onView(order) },
       { key: 'remark', label: '备注', onClick: () => onRemark(order) },
     ]
     if (displayStatus === 'pending_payment') {
-      menuItems.push({ key: 'close', label: '关闭订单', onClick: () => onClose(order) })
+      actions.push({ key: 'close', label: '关闭订单', onClick: () => onClose(order) })
     }
     if (refundable && !alreadyRefunded && onRefund) {
-      menuItems.push({ key: 'refund', label: '处理退款', onClick: () => onRefund(order) })
+      actions.push({ key: 'refund', label: '处理退款', onClick: () => onRefund(order) })
     }
     if (displayStatus === 'pending_shipment' && onGoShipPage) {
       // 兜底路径（issue #8013 第 ⑤ 条）：既有整页发货表单仍在 —— 想看商品 / 收货人再发货时走它
-      menuItems.push({ key: 'ship-page', label: '去发货页', onClick: () => onGoShipPage(order) })
+      actions.push({ key: 'ship-page', label: '去发货页', onClick: () => onGoShipPage(order) })
     }
 
     return (
-      <RowActions
-        testId={`order-actions-${order.id}`}
-        menuTestId={`order-menu-${order.id}`}
-        items={menuItems}
-      >
+      <div className="flex items-center gap-3 whitespace-nowrap" data-testid={`order-actions-${order.id}`}>
         {primary && (
           // 行内主行动走 `ghost`（§32.2 / §32.4：表格行内不用实心主色 —— 一屏至多一个 primary，
           // 那一个是页面头的「新增订单」）
@@ -239,7 +242,11 @@ export default function OrderTable({
               size="sm"
               className="px-2"
               type="button"
-              onClick={primary.onClick}
+              onClick={(e) => {
+                // 整行点击进详情：操作按钮自己的点击不得冒泡成一次跳转
+                e.stopPropagation()
+                primary.onClick()
+              }}
               // 焦点归位的落点（issue #8027）：收起录入区时焦点回到这里。
               // 🔴 用 block body：箭头函数的返回值在 React 19 会被当成 ref 清理函数。
               ref={(el) => {
@@ -253,7 +260,17 @@ export default function OrderTable({
             </Button>
           </span>
         )}
-      </RowActions>
+        {actions.map((action) => (
+          <RowActionLink
+            key={action.key}
+            size="sm"
+            data-testid={`order-action-${action.key}-${order.id}`}
+            onClick={action.onClick}
+          >
+            {action.label}
+          </RowActionLink>
+        ))}
+      </div>
     )
   }
 
@@ -337,8 +354,16 @@ export default function OrderTable({
                 // issue #8013：行 + （可选）它自己的展开行 —— 两行同属一单，故外层用 Fragment 承 key
                 <Fragment key={order.id}>
                 {/* issue #6717：行背景**显式**声明在 `<tr>` 上（`sticky right-0` 的「操作」列
-                    横滚时不得让下层内容穿透；退回 `bg-inherit` 会重新引入 #6729 的穿透缺陷） */}
-                <tr className="border-b border-neutral-100 bg-white align-top transition-colors hover:bg-neutral-50">
+                    横滚时不得让下层内容穿透；退回 `bg-inherit` 会重新引入 #6729 的穿透缺陷）。
+
+                    整行点击进详情（2026-11-07 用户裁定）：**非操作区域**（除「操作」列外的任意
+                    单元格）点击 ⇒ 跳 `/orders/{id}`。行内交互元素（复制订单号、备注预览、操作按钮）
+                    各自 `stopPropagation`，「操作」列整格也拦一道 —— 否则点按钮会顺带再跳一次详情。 */}
+                <tr
+                  data-testid={`order-row-${order.id}`}
+                  className="border-b border-neutral-100 bg-white align-top transition-colors hover:bg-neutral-50 cursor-pointer"
+                  onClick={() => onView(order)}
+                >
                   {/* 订单ID（issue #8011：17 位纯数字手抄必错 ⇒ 单元格内给复制入口） */}
                   <td className="pl-0 pr-4 py-4 font-mono text-neutral-800 whitespace-nowrap">
                     <span className="inline-flex items-center gap-1">
@@ -350,7 +375,11 @@ export default function OrderTable({
                         className="h-6 px-1"
                         aria-label="复制订单号"
                         data-testid={`order-copy-${order.id}`}
-                        onClick={() => void copyOrderNo(order.orderNo || order.id)}
+                        onClick={(e) => {
+                          // 复制不是进详情：别让一次复制顺手把当前页跳走
+                          e.stopPropagation()
+                          void copyOrderNo(order.orderNo || order.id)
+                        }}
                         icon={<Copy className="h-3.5 w-3.5" />}
                       />
                     </span>
@@ -500,7 +529,12 @@ export default function OrderTable({
                       修法 = 冻结格**自己**声明不透明底色：这里用 `bg-white`（与行底色同值，逐像素一致），
                       行 hover 变 `neutral-50` 时本格保持不透明白底 —— 与改前未选中态观感完全相同。
                       🔴 不要再退回 `bg-inherit` / 半透明色：背景一旦透明，冻结列必然穿透（类级判据会拦住）。 */}
-                  <td className="sticky right-0 z-10 border-l border-neutral-100 bg-white pl-2 pr-3 py-4">
+                  <td
+                    className="sticky right-0 z-10 border-l border-neutral-100 bg-white pl-2 pr-3 py-4"
+                    // 「操作」列 = 用户说的**操作区域**：整格拦掉行点击（按钮各自的 stopPropagation
+                    // 只管按钮本体；格子的内边距 / 未来新增的非按钮内容也不能触发跳转）
+                    onClick={(e) => e.stopPropagation()}
+                  >
                     {renderActions(order)}
                   </td>
                 </tr>
