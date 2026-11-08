@@ -3,7 +3,7 @@
  * 覆盖：基本渲染、采购商品列、采购明细列、加工项计费、空状态、加载状态
  */
 // case_ids: UI-002, UI-020, UI-019, UI-030, OR-072
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import { describe, it, expect, vi } from 'vitest'
 import OrderTable from '@/components/orders/OrderTable'
 import type { Order, OrderStatus } from '@/types'
@@ -383,48 +383,45 @@ describe('OrderTable 退款按钮（基于真实状态 + refundAmount）', () =>
   }
 
   /**
-   * issue #8011：「处理退款」已从行内文字链收进「⋯」菜单 ⇒ 先展开菜单再取。
-   * 🔴 展开这一步不能省 —— 省掉后 `queryByText('处理退款')` 恒为 null，
-   * 「可退状态不显示退款」那条会**空跑通过**（负控变成假绿）。
+   * 2026-11-07 用户裁定：操作按钮**平铺**，不再收进「⋯」菜单 ⇒ 退款动作直接可见。
+   * 🔴 负控（不可退状态）必须真的看整行文本：`queryByText('处理退款')` 若因「整列没渲染」
+   * 而恒为 null，会**空跑通过** ⇒ 下面每条都带正控（`查看详情` 在）。
    */
-  const openActionsMenu = () => {
-    fireEvent.click(screen.getByRole('button', { name: '更多操作' }))
+  const expectsFlatRefund = (status: OrderStatus, refundAmount: number, visible: boolean) => {
+    render(
+      <OrderTable
+        {...refundProps}
+        orders={[{ ...mockOrder, status: status as unknown as OrderStatus, refundAmount }]}
+      />,
+    )
+    // 正控：平铺形态仍在（防止「整行没渲染」让负控空跑通过）
+    expect(screen.getByRole('button', { name: '查看详情' })).toBeTruthy()
+    if (visible) expect(screen.getByRole('button', { name: '处理退款' })).toBeTruthy()
+    else expect(screen.queryByText('处理退款')).toBeNull()
   }
 
-  it('confirmed 订单（未退款）：「⋯」菜单里有 处理退款', () => {
-    render(<OrderTable {...refundProps} orders={[{ ...mockOrder, status: 'confirmed' as unknown as OrderStatus, refundAmount: 0 }]} />)
-    openActionsMenu()
-    expect(screen.getByRole('menuitem', { name: '处理退款' })).toBeTruthy()
+  it('confirmed 订单（未退款）：平铺可见 处理退款', () => {
+    expectsFlatRefund('confirmed' as unknown as OrderStatus, 0, true)
   })
 
-  it('shipped 订单（未退款）：「⋯」菜单里有 处理退款', () => {
-    render(<OrderTable {...refundProps} orders={[{ ...mockOrder, status: 'shipped' as unknown as OrderStatus, refundAmount: 0 }]} />)
-    openActionsMenu()
-    expect(screen.getByRole('menuitem', { name: '处理退款' })).toBeTruthy()
+  it('shipped 订单（未退款）：平铺可见 处理退款', () => {
+    expectsFlatRefund('shipped' as unknown as OrderStatus, 0, true)
   })
 
-  it('completed 订单（未退款）：「⋯」菜单里有 处理退款', () => {
-    render(<OrderTable {...refundProps} orders={[{ ...mockOrder, status: 'completed' as unknown as OrderStatus, refundAmount: 0 }]} />)
-    openActionsMenu()
-    expect(screen.getByRole('menuitem', { name: '处理退款' })).toBeTruthy()
+  it('completed 订单（未退款）：平铺可见 处理退款', () => {
+    expectsFlatRefund('completed' as unknown as OrderStatus, 0, true)
   })
 
-  it('已退款订单（refundAmount > 0）菜单里没有 处理退款', () => {
-    render(<OrderTable {...refundProps} orders={[{ ...mockOrder, status: 'completed' as unknown as OrderStatus, refundAmount: 99 }]} />)
-    openActionsMenu()
-    expect(screen.queryByText('处理退款')).toBeNull()
+  it('已退款订单（refundAmount > 0）：没有 处理退款', () => {
+    expectsFlatRefund('completed' as unknown as OrderStatus, 99, false)
   })
 
-  it('pending（待付款）订单菜单里没有 处理退款', () => {
-    render(<OrderTable {...refundProps} orders={[{ ...mockOrder, status: 'pending_payment' as unknown as OrderStatus, refundAmount: 0 }]} />)
-    openActionsMenu()
-    expect(screen.queryByText('处理退款')).toBeNull()
+  it('pending（待付款）订单：没有 处理退款', () => {
+    expectsFlatRefund('pending_payment' as unknown as OrderStatus, 0, false)
   })
 
-  it('cancelled（已关闭）订单菜单里没有 处理退款', () => {
-    render(<OrderTable {...refundProps} orders={[{ ...mockOrder, status: 'closed' as unknown as OrderStatus, refundAmount: 0 }]} />)
-    openActionsMenu()
-    expect(screen.queryByText('处理退款')).toBeNull()
+  it('cancelled（已关闭）订单：没有 处理退款', () => {
+    expectsFlatRefund('closed' as unknown as OrderStatus, 0, false)
   })
 })
 })
