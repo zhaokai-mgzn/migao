@@ -434,6 +434,14 @@ def job_wiring_problems(doc):
         problems.append("缺存活读数（机制兜底失败不可见，issue #5326）")
     if "发射器不在检出里" not in run:
         problems.append("缺「发射器不在检出里」的降级 warning（读数缺失不得静默）")
+    # 退出码映射必须是**白名单**：只放行 0/3，其余（2=脚本不见了、127=command not found…）一律判红。
+    # 用 `-eq 1` 的黑名单形态 ⇒ 「机制根本没跑成」会退化成一条静默的绿。
+    mapping = [line for line in run.splitlines() if "READING_RC=" in line]
+    if not any("0|3)" in line and "READING_RC=0" in line for line in mapping):
+        problems.append("退出码映射缺「0|3) ⇒ READING_RC=0」这一支（白名单口径）：%r" % (mapping,))
+    if not any("*)" in line and "READING_RC=1" in line for line in mapping):
+        problems.append("退出码映射缺「*) ⇒ READING_RC=1」这一支（未知退出码必须判红）：%r"
+                        % (mapping,))
     if "secrets." in json.dumps(job, ensure_ascii=False):
         problems.append("job 里不许出现 secrets.* 引用（Danger Scan 对新增凭据引用判红）")
     if not any(str(step.get("uses") or "").startswith("actions/checkout") for step in steps):
@@ -495,6 +503,13 @@ def test_host_workflow_wiring_guard_is_not_vacuous():
                               and "发射器不在检出里" not in line))),
         ("新增一条 cron",
          lambda d: (d.get("on") or d.get(True))["schedule"].append({"cron": "*/15 * * * *"})),
+        ("退出码白名单改成黑名单",
+         lambda d: d["jobs"][JOB]["steps"][-1].__setitem__(
+             "run", str(d["jobs"][JOB]["steps"][-1]["run"]).replace("0|3)", "0|4)"))),
+        ("未知退出码被读成绿",
+         lambda d: d["jobs"][JOB]["steps"][-1].__setitem__(
+             "run", str(d["jobs"][JOB]["steps"][-1]["run"]).replace("READING_RC=1 ;;",
+                                                                    "READING_RC=0 ;;"))),
         ("加 needs 绑到别的 job",
          lambda d: d["jobs"][JOB].__setitem__("needs", "detect-dangling-prs")),
     ]

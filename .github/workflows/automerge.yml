@@ -815,7 +815,12 @@ jobs:
           set -e
           # 读数 rc 必须与 job 结论一致：脚本 rc=1 ⇒ 本步 exit 1 ⇒ job 失败 ⇒ 读数 rc=1；
           # rc ∈ {0,3} ⇒ job 绿 ⇒ 读数 rc=0（**3 的语义在 why 里逐字写明**，不靠 rc 字段冒充）。
-          if [ "$RC" -eq 1 ]; then READING_RC=1; else READING_RC=0; fi
+          # ⚠️ 用**白名单**而不是 `-eq 1`：否则 2（脚本不见了 / 解释器错）、127（command not found）
+          #    这些「机制根本没跑成」会被读成绿 —— 本 job 的全部价值就是那层兜底，静默绿即失效。
+          case "$RC" in
+            0|3) READING_RC=0 ;;
+            *)   READING_RC=1 ;;
+          esac
           # 存活读数（issue #5326 判据 1 / 4）：rc=3 也必须出声（「我有事要说」≠「我没跑」）。
           # 发射器可能不在检出里（固定 ref / 浅检出）⇒ 降级为 warning，**绝不**让读数把机制判红。
           if [ -f .github/scripts/mechanism_liveness.sh ]; then
