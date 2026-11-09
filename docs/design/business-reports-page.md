@@ -61,7 +61,7 @@
 
 - 页面结构 / 分区顺序 / 报表段挂载：`frontend/admin-web/tests/unit/pages/business-reports-page.test.tsx`
   （同时断言 `/reports` 重定向）；
-- 报表五卡的四条展示纪律：`frontend/admin-web/tests/unit/pages/reports.test.tsx`（组件级，口径原样）；
+- 报表五卡的四条展示纪律：`frontend/admin-web/tests/unit/components/BusinessReportsSection.test.tsx`（组件级，口径原样）；
 - 菜单三源同构：`tests/unit_ci_workflows/test_menu_three_sources_are_isomorphic.py`；
 - AI 导航镜像：`tests/unit_ci_workflows/test_menu_navigator.py`；页面上下文登记：
   `tests/unit_ci_workflows/test_page_context_registry_coverage.py`；

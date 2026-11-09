@@ -891,7 +891,7 @@ export default function DashboardPage() {
       </div>
 
       {/* 经营报表（原 /reports「报表中心」五张卡）：同一页的「分析」段 —— 区间筛选、导出、
-          空数据 ≠ 0、未知不填 0 等口径一字未改（判据在 reports.test.tsx / BusinessReportsSection）。 */}
+          空数据 ≠ 0、未知不填 0 等口径一字未改（判据在 BusinessReportsSection.test.tsx / BusinessReportsSection）。 */}
       <BusinessReportsSection refreshSeq={refreshSeq} />
       </PageSection>
 

@@ -15,7 +15,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
  *   ⑦ 旧 `/reports` 入口 = 重定向薄壳 → `/dashboard`（旧深链不 404）。
  *
  * 报表五卡自身的口径判据（空数据 ≠ 0 / 未知不填 0 / 合计不完整标注 / 一张慢不拖累其余）仍在
- * `reports.test.tsx`（组件级，逐条原样保留）；本文件只判「它挂在哪、和谁同段」。
+ * `BusinessReportsSection.test.tsx`（组件级，逐条原样保留）；本文件只判「它挂在哪、和谁同段」。
  */
 
 const dashboardApi = vi.hoisted(() => ({

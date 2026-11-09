@@ -5505,7 +5505,7 @@ cases:
     merge_log: "2026-10-22 新增（issue #7376 段 4）。落码 = `reports/page.tsx` + `lib/api.ts` 的 `reportApi` + `types/reports.ts` + 菜单五副本（menu.ts / MenuController / AuthService / ai-agent MENU_TREE + FEATURE_MAP）+ Header 面包屑 + 官网能力地图 + rbac 清单与 readings + page_registry。"
     traces:
       tests:
-        - "frontend/admin-web/tests/unit/pages/reports.test.tsx"
+        - "frontend/admin-web/tests/unit/components/BusinessReportsSection.test.tsx"
         - "frontend/admin-web/tests/unit/lib/menu-nav.test.ts"
         - "frontend/admin-web/tests/unit/components/Sidebar.test.tsx"
         - "tests/unit_ci_workflows/test_rbac_derived_pages.py"
@@ -5618,7 +5618,7 @@ cases:
     merge_log: "2026-10-23 新增（issue #7376 段 5）。落码 = `ReportController` + `ReportService.receivableAging` + `ReceivableAgingReportView` + `OrderMapper.selectReceivableRows(createdBy)` + `reports/page.tsx` 账龄卡与五张卡的导出按钮 + `lib/csv.ts`。"
     traces:
       tests:
-        - "frontend/admin-web/tests/unit/pages/reports.test.tsx"
+        - "frontend/admin-web/tests/unit/components/BusinessReportsSection.test.tsx"
         - "frontend/admin-web/tests/unit/lib/csv.test.ts"
         - "backend/admin-api/src/test/java/com/migao/admin/service/ReportReceivableAgingServiceTest.java"
         - "backend/admin-api/src/test/java/com/migao/admin/controller/ReportControllerTest.java"
@@ -5721,7 +5721,7 @@ cases:
       tests:
         - "backend/admin-api/src/test/java/com/migao/admin/service/QualityCostBreakdownTest.java"
         - "backend/admin-api/src/test/java/com/migao/admin/controller/ReportControllerTest.java"
-        - "frontend/admin-web/tests/unit/pages/reports.test.tsx"
+        - "frontend/admin-web/tests/unit/components/BusinessReportsSection.test.tsx"
       ci:
         - pr-check.yml
       verifies: []
@@ -5750,7 +5750,7 @@ cases:
     merge_log: "2026-10-23 新增（issue #7376 段 6）。落码 = `reports/page.tsx` 的 `presetRange()` 纯函数 + 区间栏 + `loadDated()`/`load()` 拆分（换区间只重取三张表）。"
     traces:
       tests:
-        - "frontend/admin-web/tests/unit/pages/reports.test.tsx"
+        - "frontend/admin-web/tests/unit/components/BusinessReportsSection.test.tsx"
       ci:
         - pr-check.yml
       verifies: []
@@ -5853,7 +5853,7 @@ cases:
     traces:
       tests:
         - "backend/admin-api/src/test/java/com/migao/admin/service/QualityCostBreakdownTest.java"
-        - "frontend/admin-web/tests/unit/pages/reports.test.tsx"
+        - "frontend/admin-web/tests/unit/components/BusinessReportsSection.test.tsx"
       ci:
         - pr-check.yml
       verifies: []
@@ -5882,7 +5882,7 @@ cases:
     merge_log: "2026-10-23 新增（issue #7377 段 7，用户授权 AI 自裁「多维筛选」）。落码 = 报表页 `invWarehouse` + `reloadInventory()` + 库存滞销卡下拉。"
     traces:
       tests:
-        - "frontend/admin-web/tests/unit/pages/reports.test.tsx"
+        - "frontend/admin-web/tests/unit/components/BusinessReportsSection.test.tsx"
       ci:
         - pr-check.yml
       verifies: []
@@ -5916,7 +5916,7 @@ cases:
       tests:
         - "backend/admin-api/src/test/java/com/migao/admin/service/QualityCostReportTest.java"
         - "backend/admin-api/src/test/java/com/migao/admin/service/QualityCostBreakdownTest.java"
-        - "frontend/admin-web/tests/unit/pages/reports.test.tsx"
+        - "frontend/admin-web/tests/unit/components/BusinessReportsSection.test.tsx"
       ci:
         - pr-check.yml
       verifies: []

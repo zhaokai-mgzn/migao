@@ -5774,7 +5774,7 @@ cases:
     traces:
       tests:
         - "frontend/admin-web/tests/unit/pages/business-reports-page.test.tsx"
-        - "frontend/admin-web/tests/unit/pages/reports.test.tsx"
+        - "frontend/admin-web/tests/unit/components/BusinessReportsSection.test.tsx"
         - "frontend/admin-web/tests/unit/lib/menu-nav.test.ts"
         - "tests/unit_ci_workflows/test_menu_three_sources_are_isomorphic.py"
         - "tests/e2e/specs/dashboard/dashboard.spec.ts"
