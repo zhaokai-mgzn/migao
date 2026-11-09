@@ -9,6 +9,10 @@
 #   ② **顺序即安全顺序**：`gh pr update-branch`（把 main 合进 dependabot 分支）会把补齐的条目**再吃掉**
 #      （lock 冲突取 main 侧）⇒ 必须「先 update-branch，再补 lock，补完立刻 push + 合」。
 #      本脚本把这两步钉在一条命令里，**不许**手工拆开（拆开 = 又一轮假红）。
+# 追加（issue #8843，2026-11-09 实测）：`gh pr update-branch` 是**异步**的 —— 它返回时服务端
+#   还没造好合并提交，紧接着 pull 拿到旧 head ⇒ 本地在旧 head 上提交 ⇒ push 被 `(fetch first)` 拒。
+#   ⇒ 本脚本在 update-branch 与 pull 之间**加有界等待**（轮询 git ls-remote），并在推前自证
+#   HEAD == PR head；超时 / 不一致一律**出声退出**，不许静默继续。
 #
 # 用法（在 PR 的分支工作区里执行；不要在 main 工作区跑）
 #   ./scripts/deps-lock-regen.sh <PR号>              # 真跑：update-branch → 补 lock → 自证 → 提交推送
@@ -45,14 +49,15 @@ DIRS="$(gh pr view "$PR" --json files -q '[.files[].path | select(endswith("/pac
 plan() {
   echo "PR #${PR}（分支 ${BRANCH}）的 lock 修复顺序："
   echo "  1) gh pr update-branch $PR            # 先把 main 合进来（**必须在前**：它会把之前补的 lock 条目吃掉）"
-  echo "  2) git pull --ff-only                 # 把 update-branch 的结果拉到本地"
+  echo "  2) git ls-remote 轮询等远端 ref 前进   # update-branch 是**异步**的（issue #8843）：不等就会拿到旧 head"
+  echo "  3) git fetch && git merge --ff-only   # 把 update-branch 的结果拉到本地（必须快进；非快进 = 本地有未推送提交）"
   for d in $DIRS; do
-    echo "  3) (cd $d && npx -y npm@$NPM_FOR_LOCK install --package-lock-only)"
+    echo "  4) (cd $d && npx -y npm@$NPM_FOR_LOCK install --package-lock-only)"
   done
   for d in $DIRS; do
-    echo "  4) (cd $d && npx -y npm@$NPM_FOR_LOCK ci --dry-run)   # 自证：这一步不过就不许推"
+    echo "  5) (cd $d && npx -y npm@$NPM_FOR_LOCK ci --dry-run)   # 自证：这一步不过就不许推"
   done
-  echo "  5) git add <lock> && git commit && git push          # 补完立刻推；随后立刻合，别再 update-branch"
+  echo "  6) git add <lock> && git commit && git push          # 补完立刻推；随后立刻合，别再 update-branch"
 }
 
 if [ "$MODE" = "--print-plan" ]; then
@@ -69,16 +74,39 @@ fi
 
 echo "── PR #${PR}（${BRANCH}）──"
 echo "① update-branch"
-gh pr update-branch "$PR" >/dev/null 2>&1 || echo "   （无需更新或已是最新）"
-echo "② git pull --ff-only"
-git pull --ff-only >/dev/null 2>&1 || die "拉不下来（本地有未提交改动或分叉）⇒ 先处理工作区"
+# `gh pr update-branch` 是**异步**的：命令返回时服务端**还没**造好合并提交 / ref 还没前进。
+# 2026-11-09 实测（issue #8843）：紧接着 pull 会拿到**旧 head**，本地在旧 head 上提交 ⇒
+# 服务端合并提交一落地就变成 non-fast-forward ⇒ push 被 `! [rejected] (fetch first)` 拒绝；
+# 若改用非 ff 的 pull 还会让 package-lock.json **内容冲突**（又一轮假红）。
+PREV_REMOTE="$(git ls-remote origin "refs/heads/$BRANCH" | awk '{print $1}')"
+UB_OUT="$(gh pr update-branch "$PR" 2>&1 || true)"
+if printf '%s' "$UB_OUT" | grep -qiE "already up to date|is up to date|无需更新"; then
+  echo "   （gh 报已是最新 ⇒ 跳过等待）"
+else
+  echo "② 等远端 ref 前进（有界 30×2s；未跑 ≠ 通过 ⇒ 超时就出声退出）"
+  MOVED=0
+  for _ in $(seq 1 30); do
+    NOW_REMOTE="$(git ls-remote origin "refs/heads/$BRANCH" | awk '{print $1}')"
+    if [ -n "$NOW_REMOTE" ] && [ "$NOW_REMOTE" != "$PREV_REMOTE" ]; then MOVED=1; break; fi
+    sleep 2
+  done
+  [ "$MOVED" -eq 1 ] || die "等了 60s，远端 ref 没有前进 ⇒ **无法判定** update-branch 是否生效（未跑 ≠ 通过）；重跑本脚本（幂等）"
+fi
+echo "③ git fetch + merge --ff-only"
+git fetch origin "$BRANCH" --quiet || die "fetch 失败"
+git merge --ff-only "origin/$BRANCH" >/dev/null 2>&1 || die "不是快进（本地有未推送提交或分叉）⇒ 先处理工作区"
+# 推前自证：本地 HEAD 必须就是 PR 的 head（否则这一轮注定被拒）
+PR_HEAD="$(gh pr view "$PR" --json headRefOid -q .headRefOid 2>/dev/null || echo "")"
+if [ -n "$PR_HEAD" ] && [ "$(git rev-parse HEAD)" != "$PR_HEAD" ]; then
+  die "本地 HEAD $(git rev-parse --short HEAD) ≠ PR head $(printf '%s' "$PR_HEAD" | cut -c1-9) ⇒ 远端在本次运行期间又前进了，重跑本脚本（幂等）"
+fi
 
 CHANGED=0
 for d in $DIRS; do
-  echo "③ 补 lock：${d}（npm $NPM_FOR_LOCK 视角）"
+  echo "④ 补 lock：${d}（npm $NPM_FOR_LOCK 视角）"
   ( cd "$d" && npx -y "npm@$NPM_FOR_LOCK" install --package-lock-only --no-audit --no-fund >/dev/null 2>&1 ) \
     || die "${d}：npm install --package-lock-only 失败"
-  echo "④ 自证：$d → npm ci --dry-run"
+  echo "⑤ 自证：$d → npm ci --dry-run"
   if ! ( cd "$d" && npx -y "npm@$NPM_FOR_LOCK" ci --dry-run --no-audit --no-fund >/dev/null 2>&1 ); then
     echo "❌ $d 的 lock 在 npm $NPM_FOR_LOCK 视角仍不同步（自证失败）" >&2
     exit 2
@@ -97,7 +125,7 @@ if [ "$MODE" = "--dry-run" ]; then
   echo "（--dry-run：lock 已修好但**未提交**；真跑请去掉 --dry-run）"
   exit 0
 fi
-echo "⑤ 提交并推送（补完立刻推：随后立刻合，别再 update-branch）"
+echo "⑥ 提交并推送（补完立刻推：随后立刻合，别再 update-branch）"
 git -c user.name="migao-deps-lockfix" -c user.email="noreply@migao.local" \
   commit -q -m "chore(deps): 用 npm $NPM_FOR_LOCK 视角重生成 package-lock（CI 用 node 20/npm 10，npm ci 判 EUSAGE）（关联 #7688）"
 git push origin "HEAD:$BRANCH" || die "推送失败"
