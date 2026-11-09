@@ -228,7 +228,7 @@ def create_app() -> FastAPI:
 
     # LLM 主凭据探针（issue #8084）：**服务活着 ≠ AI 可用**。
     #
-    # 改前：主凭据被供应商拒绝（401 `AuthenticationError`）时全部 AI 面（黄金策 / 元元 / 意图分类 /
+    # 改前：主凭据被供应商拒绝（401 `AuthenticationError`）时全部 AI 面（黄金策 / 米宝 / 意图分类 /
     # 会话标题 / 视觉）只看得到一句通用兜底话术，而 `/ready` 只探 DB+Redis ⇒ 200 全绿、
     # 容器 healthy、`docker ps` 一路绿 ⇒ 靠人肉发现（2026-10-29 15:29 线上事故）。
     #

@@ -595,8 +595,8 @@ def to_md(cases):
             # 缺行 = YAML 未声明 = 双端（与 `filter_by_persona` 的缺省语义一致，不额外落字面量）。
             if c.get("persona"):
                 _persona = _one_line(c["persona"])
-                _leg = {"mibao": "单端 —— 仅黄金策腿跑，元元腿跳过",
-                        "xiaobu": "单端 —— 仅元元腿跑，黄金策腿跳过"}.get(
+                _leg = {"mibao": "单端 —— 仅黄金策腿跑，米宝腿跳过",
+                        "xiaobu": "单端 —— 仅米宝腿跑，黄金策腿跳过"}.get(
                             _persona, "两腿都跑（非 mibao/xiaobu 的取值按缺省处理）")
                 lines.append(f"端: {_persona}（{_leg}）")
             # 历史轮次（issue #5482）：与 `pre_clean` / `post_clean` 同因同形 —— 声明了

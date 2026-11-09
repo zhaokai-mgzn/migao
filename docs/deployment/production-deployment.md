@@ -86,7 +86,7 @@ rollback.md 回滚（重新发布上一稳定版本）
 **CSP 的刻意放宽（照实登记，不是遗漏）**：`/b/`（bmini h5）的 `script-src` 含 `'unsafe-inline'`
 —— 它的 `frontend/bmini-app/src/index.html` 自带两段内联脚本（`window.TARO_ENV` 占位 + 响应式根字号，
 后者是 issue #5721 的修法，删掉字号只剩设计值 40%）。**重启条件**：把这两段搬成外部脚本
-（或加 build-time hash / nonce）后收紧到 `'self'`。`/`（C 端元元）与 admin-web **暂不加 CSP**，
+（或加 build-time hash / nonce）后收紧到 `'self'`。`/`（C 端米宝）与 admin-web **暂不加 CSP**，
 同一原因（Taro / Next 的内联脚本），**重启条件**同上。
 
 **线上判据**（只读，0/1/3 三态，**3 不得当 0 读**）= `deploy/scripts/prod-security-headers.sh`，

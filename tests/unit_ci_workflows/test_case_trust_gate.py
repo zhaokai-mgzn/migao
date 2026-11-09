@@ -132,7 +132,7 @@ def fixture_pg_013() -> dict:
     已从 B 端全部 skill 解绑 ⇒ 连 C 端也没绑定 ⇒ **两侧工具集都不可达**（= 幽灵写工具，
     判据从「真实可达」退化成「曾经可达」）⇒ 它从 `WRITE_TOOLS` 移出后，上面那段 #4010/A13
     的失效形态**原样复发**（本夹具承载的四条规则同时落空）。改用**当前可达**的整工具写
-    工具 `order_create`（`WRITE_TOOLS` 成员，C 端元元；`required_args` 同步换成
+    工具 `order_create`（`WRITE_TOOLS` 成员，C 端米宝；`required_args` 同步换成
     `order_create` 的真实参数形态），**缺陷形态不变**（只证明「调用了」+ 全程禁令 +
     无自清理 + 无前置自断言）。
     """
@@ -218,13 +218,13 @@ def fixture_ch_016() -> dict:
 
 
 def fixture_single_leg_unmarked() -> dict:
-    """单端（纯元元工具集）用例缺 persona 标注 —— 跨腿窄跑必红（#3822）。
+    """单端（纯米宝工具集）用例缺 persona 标注 —— 跨腿窄跑必红（#3822）。
 
     工具集 `{curtain_calc}` ⊆ `eval_case_filter.XIAOBU_TOOLS`（黄金策工具集无 curtain_calc）。
     """
     return {
         "id": "FAKE-PR-999",
-        "title": "（注入夹具）元元算料用例但未标注 persona",
+        "title": "（注入夹具）米宝算料用例但未标注 persona",
         "expectations": [{"tool": "curtain_calc"}],
         "data_checks": ["用量结果含 face_width/meters"],
         "forbidden_text": [],
@@ -240,7 +240,7 @@ def fixture_shared_tool_unmarked() -> dict:
     `eval_case_filter.mibao_real_toolset()` 里）⇒ 本用例两条腿都跑得动。
 
     ⚠️ 第二条共享工具已**重新锚定**（#5247，B 端只读化）：原载荷的 `order_create` 已从
-    B 端全部 skill 解绑 ⇒ 只剩 C 端可达 ⇒ 本夹具会被判成「只能跑元元」（上面那条
+    B 端全部 skill 解绑 ⇒ 只剩 C 端可达 ⇒ 本夹具会被判成「只能跑米宝」（上面那条
     #4356 假阳性重新回流，本测试随之失去判别力）。改用同属**两端共享工具集**的
     `validate_input`（`OR-008` 用例本身也已随 #5247 退役、`expectations` 改判为
     `product_detail`，见 `.github/cases/order.yml`）——「两条 expectations 都是两端共享
@@ -479,7 +479,7 @@ class TestKnownDefectFixturesAreBlocked:
         assert tax.backend_contract_scoring_channel(case, repo_root=tmp_path) is False
 
     def test_single_leg_without_persona_is_flagged(self):
-        """#3822：纯元元工具集用例缺 persona 标注。"""
+        """#3822：纯米宝工具集用例缺 persona 标注。"""
         v = tax.judge_case(fixture_single_leg_unmarked(), catalog=_seed_catalog())
         assert "CASE-TRUST-SINGLE-LEG-NO-PERSONA" in codes(v), (
             f"单端未标注 persona 未被判违规，实际={v}"
@@ -1191,7 +1191,7 @@ class TestReferenceFreshness:
         本仓的视觉回归基线就是 PNG（**UI 一改就必须更新**）⇒ `UnicodeDecodeError`
         ⇒ 整个 Case Trust Gate 以 **crash** 报红：规则 G **事实上没跑**，却把合法 PR 拦下
         （既是**假红**，又让判据在「改动集含二进制」这一整类 PR 上失效）。
-        实证载体：PR #4209（元元主页改版只更新了截图基线，业务断言全绿，本 gate 9s 内崩溃）。
+        实证载体：PR #4209（米宝主页改版只更新了截图基线，业务断言全绿，本 gate 9s 内崩溃）。
 
         判据三条（缺任一条都不算修好）：
           ① 不抛异常；
@@ -1481,7 +1481,7 @@ class TestNoFalsePositivesOnCorrectShapes:
         assert "CASE-TRUST-SINGLE-LEG-NO-PERSONA" not in codes(v)
 
     def test_dual_leg_case_is_not_required_to_annotate(self):
-        """双端用例（工具集不 ⊆ 元元）不得被要求标注（有意不做的口径）。"""
+        """双端用例（工具集不 ⊆ 米宝）不得被要求标注（有意不做的口径）。"""
         case = {
             "id": "FAKE-OR-900", "title": "（注入夹具）双端订单查询",
             "expectations": [{"tool": "order_query"}],
@@ -1501,7 +1501,7 @@ class TestNoFalsePositivesOnCorrectShapes:
         """
         case = fixture_shared_tool_unmarked()
         assert not tax.is_single_leg_by_toolset(case), (
-            "共享工具用例被判成「只能跑元元」—— 前提「双端工具集不相交」为假（#4356）"
+            "共享工具用例被判成「只能跑米宝」—— 前提「双端工具集不相交」为假（#4356）"
         )
         v = tax.judge_case(case, catalog=_seed_catalog())
         assert "CASE-TRUST-SINGLE-LEG-NO-PERSONA" not in codes(v), (
@@ -1577,7 +1577,7 @@ class TestDegenerateGuardRails:
     def test_mibao_toolset_truth_loaded(self):
         """黄金策工具集真值必须加载成功（#4356）。
 
-        为什么：收紧后的判据 = 「元元腿跑得动 ∧ 黄金策腿跑不动」—— 黄金策真值缺失时
+        为什么：收紧后的判据 = 「米宝腿跑得动 ∧ 黄金策腿跑不动」—— 黄金策真值缺失时
         整个判据会退化成旧形态（假阳性回流），而这**不会有任何东西变红**。
         故这里做上界/下界双向守卫：真值非空、规模够、且两端**确实相交**
         （若哪天不再相交，本判据的收紧就成了空操作 ⇒ 必须有人重新评估）。
@@ -1591,15 +1591,15 @@ class TestDegenerateGuardRails:
         )
         shared = set(tax._XIAOBU_TOOLS) & set(tax._MIBAO_TOOLS)
         assert shared, (
-            "两端工具集不再相交 ⇒ 「⊆ 元元 ∧ ⊄ 黄金策」与旧判据等价（收紧成空操作）"
+            "两端工具集不再相交 ⇒ 「⊆ 米宝 ∧ ⊄ 黄金策」与旧判据等价（收紧成空操作）"
         )
 
     def test_predicate_never_contradicts_mibao_annotation(self):
-        """库级前提守卫：判据声称「只可能是元元」的用例，不得已标注 `persona: mibao`（#4356）。
+        """库级前提守卫：判据声称「只可能是米宝」的用例，不得已标注 `persona: mibao`（#4356）。
 
-        这是把**假前提**变成可红判据：旧判据隐含「黄金策工具集与元元工具集不相交」，
+        这是把**假前提**变成可红判据：旧判据隐含「黄金策工具集与米宝工具集不相交」，
         而实测两端共享 7 个工具 ⇒ 库内一批 `persona: mibao` 的用例被同一判据判成
-        「只可能是元元」（改前 @74f8d5ff 实测 21 条，含 `OR-008`/`OR-010`）——
+        「只可能是米宝」（改前 @74f8d5ff 实测 21 条，含 `OR-008`/`OR-010`）——
         判据与**同库标注**自相矛盾，而规则 d 只查「标注存在」，矛盾永远不变红。
         改后必须为 0（判据与库内标注一致）。
         """
@@ -1647,7 +1647,7 @@ class TestDegenerateGuardRails:
 
         真值来源：`tests/agent_eval/eval_case_filter.py`（零第三方依赖，CI helper job
         与覆盖体检共用）—— `mibao_real_toolset()` 解析黄金策 skill 源码的 `*_TOOLS`，
-        `XIAOBU_TOOLS` 是元元侧真值，二者并集 = `scripts/case_coverage.py::registered_tools()`
+        `XIAOBU_TOOLS` 是米宝侧真值，二者并集 = `scripts/case_coverage.py::registered_tools()`
         的「两端注册表并集」，也是**用例能断言到的工具全集**。不复制清单（复制 = 双源漂移）。
         """
         from eval_case_filter import XIAOBU_TOOLS, mibao_real_toolset  # noqa: PLC0415
@@ -1710,11 +1710,11 @@ class TestDegenerateGuardRails:
             )
 
     def test_xiaobu_toolset_source_is_forwarded_not_copied(self):
-        """元元工具集必须**转发**单一源，不得在本模块复制一份平行清单。"""
+        """米宝工具集必须**转发**单一源，不得在本模块复制一份平行清单。"""
         assert tax.XIAOBU_TOOLSET_SOURCE == "eval_case_filter.XIAOBU_TOOLS", (
-            "元元工具集来源变了 —— 复制平行清单会造成双源漂移"
+            "米宝工具集来源变了 —— 复制平行清单会造成双源漂移"
         )
-        assert tax._XIAOBU_TOOLS, "元元工具集未加载 ⇒ 规则 d 静默失效"
+        assert tax._XIAOBU_TOOLS, "米宝工具集未加载 ⇒ 规则 d 静默失效"
 
     def test_unimplemented_entries_carry_reason_and_need(self):
         """未实装项必须写明**缺什么**（不得留空凑数），且必须带**可执行约束**四字段。

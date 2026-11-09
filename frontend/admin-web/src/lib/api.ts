@@ -2109,7 +2109,7 @@ export interface AgentSessionDetail extends AgentSession {
   customerAvatarUrl?: string
   /** 转人工时点 AI 会话上下文摘要（管理端可见；GB/T 47746-2026） */
   aiContextSummary?: string | null
-  /** 转人工前顾客与 AI 客服（元元）的对话快照（管理端可见） */
+  /** 转人工前顾客与 AI 客服（米宝）的对话快照（管理端可见） */
   aiContext?: AgentAiTurn[] | null
 }
 

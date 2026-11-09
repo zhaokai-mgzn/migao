@@ -1,5 +1,5 @@
 """
-渠道配置 — 元元多渠道路由
+渠道配置 — 米宝多渠道路由
 
 支持渠道: wechat_mini / wechat_h5 / douyin_mini / web
 新增渠道只需加配置，不改代码。
@@ -83,7 +83,7 @@ def get_channel_config(channel: str, tenant_config: Optional[dict] = None) -> Ch
     )
 
 
-def resolve_greeting(channel: str, tenant_config: Optional[dict] = None, bot_name: str = "元元") -> str:
+def resolve_greeting(channel: str, tenant_config: Optional[dict] = None, bot_name: str = "米宝") -> str:
     """解析最终欢迎语，替换 {bot_name} 占位符"""
     ch = get_channel_config(channel, tenant_config)
     greeting = ch.greeting or "您好！我是{bot_name}，有什么可以帮您的吗？"

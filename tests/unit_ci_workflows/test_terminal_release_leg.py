@@ -6,7 +6,7 @@ r"""观星台终端（工人端 APK / Windows 一体机 EXE）**正式发布链�
 | 件 | 读数 |
 |---|---|
 | 终端更新检查地址（终端仓） | Windows `https://app.migaozn.com/terminal/latest.json`；Android `/terminal/android/latest.json` |
-| `npx? nginx.conf` 里 `/terminal` | **0 命中** ⇒ 请求落到 `location /` 的 SPA fallback ⇒ **HTTP 200 + C 端元元 HTML**（缺失文件也是 200，监控不红） |
+| `npx? nginx.conf` 里 `/terminal` | **0 命中** ⇒ 请求落到 `location /` 的 SPA fallback ⇒ **HTTP 200 + C 端米宝 HTML**（缺失文件也是 200，监控不红） |
 | 官网下载页 | `https://migaozn.com/download` = **404**（`(corporate)` 下没有该路由） |
 | 终端产物怎么上线 | **没有任何通路**（没有 workflow、没有脚本、没有静态落位） |
 
@@ -804,7 +804,7 @@ def _make_static_root(tmp_path: Path) -> Path:
     (root / "js").mkdir(parents=True)
     (root / "w").mkdir()
     (root / "terminal" / "android").mkdir(parents=True)
-    (root / "index.html").write_text("<!doctype html><title>观星台 · 元元</title>", encoding="utf-8")
+    (root / "index.html").write_text("<!doctype html><title>观星台 · 米宝</title>", encoding="utf-8")
     (root / "js" / "app.js").write_text("// C 端 Taro 产物", encoding="utf-8")
     (root / "w" / "index.html").write_text("<!doctype html><title>报工</title>", encoding="utf-8")
     (root / "terminal" / "stale.txt").write_text("上一版留下的陈旧文件，发布后必须消失", encoding="utf-8")

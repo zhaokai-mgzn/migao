@@ -242,7 +242,7 @@ class TestReachability:
         assert "image_recognize" in ORDER_TOOLS
 
     def test_tool_is_not_bound_to_the_c_end_agent(self):
-        """C 端零改动：不把元元拖进这条链路。"""
+        """C 端零改动：不把米宝拖进这条链路。"""
         from app.graph.skills.customer_skill import CUSTOMER_TOOLS
 
         assert "image_recognize" not in CUSTOMER_TOOLS

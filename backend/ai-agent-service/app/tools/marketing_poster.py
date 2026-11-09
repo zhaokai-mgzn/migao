@@ -59,7 +59,7 @@ class MarketingPosterTool(BaseTool):
     # `@RequirePermission("product:list")`，与 product_detail 同族）。
     required_permissions = ["product:list"]
     read_only = True
-    # 仅 B 端：海报是商家营销物料，元元（顾客）没有这个面。
+    # 仅 B 端：海报是商家营销物料，米宝（顾客）没有这个面。
     c_end_reachable = False
 
     parameters = {

@@ -23,7 +23,7 @@ describe('CorporateAboutPage（官网关于页 v4：产品原则 + 主体事实�
   it('renders company intro（布艺行业真实流程 + 双 AI 分工）', () => {
     render(<AboutPage />)
     expect(screen.getByText(/一款窗帘要按颜色 × 售卖方式 × 门幅组合出几十个规格/)).toBeInTheDocument()
-    expect(screen.getByText(/顾客侧由元元 7×24 小时接待咨询/)).toBeInTheDocument()
+    expect(screen.getByText(/顾客侧由米宝 7×24 小时接待咨询/)).toBeInTheDocument()
     expect(screen.getByText(/经营侧由黄金策以自然语言问答/)).toBeInTheDocument()
   })
 
@@ -98,7 +98,7 @@ describe('CorporateAboutPage（官网关于页 v4：产品原则 + 主体事实�
     expect(findQuantifierRhetoric('一套经营平台，一次咨询，一张订单')).toEqual(['一套', '一次', '一张'])
     expect(findPersonifiedAi('两位 AI 助手')).toEqual(['两位 AI'])
     expect(findQuantifierRhetoric('六个能力域 · 4 个终端 · 至少10个字符')).toEqual([])
-    expect(findPersonifiedAi('元元与黄金策')).toEqual([])
+    expect(findPersonifiedAi('米宝与黄金策')).toEqual([])
 
     // 真实语料
     const quantifiers = findQuantifierRhetoric(text)

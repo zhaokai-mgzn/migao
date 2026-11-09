@@ -286,7 +286,7 @@ class TestRepoActionLevelJudgement:
           ② **去掉清单必红**：判据本身不得被削弱 —— 由下方注入**真实用例集副本**
              承担（`action_dangling` + `check_problems()` 文本**带用例 ID** + `blocking_gaps()`
              三处同验），不再依赖"仓库里恰好有一条真实违规"；
-          ③ C 端同样归零（`order_query` 本就不是元元工具）。
+          ③ C 端同样归零（`order_query` 本就不是米宝工具）。
 
         ⚠️ 2026-09-24（issue #5247，B 端只读化）：注入用的工具**重新锚定** —— 原用的
         `order_manage` 已从 B 端全部 skill 解绑（不在 `toolset_for("mibao")` 里）⇒
@@ -299,7 +299,7 @@ class TestRepoActionLevelJudgement:
         assert rep.action_dangling == [], (
             f"B 端出现悬空 action 声明（断言永不满足 = 假红/假绿）: {rep.action_dangling}")
         assert _rep(self.cases, "xiaobu").action_dangling == [], (
-            "C 端不得有悬空 action（order_query 不是元元工具）")
+            "C 端不得有悬空 action（order_query 不是米宝工具）")
 
         injected = list(self.cases) + [
             _case("T-DANGLING", expectations=[{"tool": "inventory_manage",

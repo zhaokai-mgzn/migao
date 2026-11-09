@@ -5,7 +5,7 @@ Skill 节点模块
 节点函数由 skill_registry.create_node_function() 动态生成。
 
 黄金策（工作助手）Skill：order, product, knowledge, aftersales, customer, staff, settings, data, general
-元元（C端客服）Skill：customer_order, customer_product, customer_knowledge, customer_general
+米宝（C端客服）Skill：customer_order, customer_product, customer_knowledge, customer_general
 """
 
 # 配置与注册

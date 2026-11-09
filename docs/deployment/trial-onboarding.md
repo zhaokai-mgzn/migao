@@ -102,7 +102,7 @@
 | Android 清单 | `https://app.migaozn.com/terminal/android/latest.json` | app 域 |
 | 安装包 | `https://app.migaozn.com/terminal/<清单里的 download_url 文件名>` | app 域 |
 
-> 🔴 **`/download` 只有裸域是对的**。`app.migaozn.com/download` 回 200 但内容是 C 端元元那页 ——
+> 🔴 **`/download` 只有裸域是对的**。`app.migaozn.com/download` 回 200 但内容是 C 端米宝那页 ——
 > 只看状态码的验收会在这里**假绿**（脚本用「正文含『观星台终端』」判它，不是只看 200）。
 > 🔴 `/terminal` 裸前缀必须 301，否则同样落 SPA fallback ⇒ **缺失文件也回 200**，客户端把 HTML 当清单解析。
 

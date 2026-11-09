@@ -600,7 +600,7 @@ class TestSeedTruthAndScanSurface:
         names = seed_product_names()
         assert names, "从 fixtures/*.sql 解析不到任何商品名 —— 判据会空跑（fail-closed）"
         assert {"遮光窗帘", "北欧风窗帘", "夏日清风窗帘"} <= names, (
-            f"元元栈的三个种子商品名必须都在派生集合里（解析口径变了？）：{sorted(names)}")
+            f"米宝栈的三个种子商品名必须都在派生集合里（解析口径变了？）：{sorted(names)}")
 
     def test_two_independent_seed_sources_agree(self):
         """与 #3835 守卫的硬编码清单**互校**：两份真值集合必须相等。

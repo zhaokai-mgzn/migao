@@ -362,7 +362,7 @@ _POINTER_PAIR = re.compile(r"「([^」]{1,24})」\s*[或/]\s*「([^」]{1,24})�
 
 #: 显式不判表（**只许缩短**）：与 admin-web 侧边栏无关的页面指针。每条必须带理由。
 LEGACY_POINTER_EXEMPTIONS: tuple[str, ...] = (
-    "app/api/products.py::「我的」",      # C 端小程序「我的」页（元元面）—— 不在 admin-web 侧边栏
+    "app/api/products.py::「我的」",      # C 端小程序「我的」页（米宝面）—— 不在 admin-web 侧边栏
     "app/api/internal.py::「应做数量」",  # 看板**字段名**，不是页面入口
 )
 #: 冻结账户：条数**现取**比对，涨跌都红（与 `dead_object_ledger.json` 的 `anchor.not_judged` 同纪律）。

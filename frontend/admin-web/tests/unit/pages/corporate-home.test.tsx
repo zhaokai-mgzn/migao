@@ -33,7 +33,7 @@ describe('CorporateHomePage（官网主页 v5：中小企业 AI 经营平台叙�
     expect(
       screen.getByText(/观星台是词元通达面向布艺 \/ 窗帘企业的 AI 经营平台/)
     ).toBeInTheDocument()
-    expect(screen.getByText(/元元承接顾客咨询、算料报价、下单与售后/)).toBeInTheDocument()
+    expect(screen.getByText(/米宝承接顾客咨询、算料报价、下单与售后/)).toBeInTheDocument()
     expect(screen.getByText(/黄金策承接商品、订单、生产、库存与财务/)).toBeInTheDocument()
     expect(screen.getByText(/读取同源经营数据，回答与后台记录一致/)).toBeInTheDocument()
   })
@@ -79,7 +79,7 @@ describe('CorporateHomePage（官网主页 v5：中小企业 AI 经营平台叙�
     expect(
       screen.getByText(/管理后台、顾客小程序、商家小程序与员工端 H5，按角色提供入口与权限/)
     ).toBeInTheDocument()
-    expect(screen.getByText(/元元与黄金策理解业务意图/)).toBeInTheDocument()
+    expect(screen.getByText(/米宝与黄金策理解业务意图/)).toBeInTheDocument()
     expect(screen.getByText(/八个能力域覆盖客户服务/)).toBeInTheDocument()
     expect(
       screen.getByText(/多租户隔离、行级安全、岗位权限与操作审计/)
@@ -93,7 +93,7 @@ describe('CorporateHomePage（官网主页 v5：中小企业 AI 经营平台叙�
     expect(screen.getByText('顾客侧服务，经营侧管理')).toBeInTheDocument()
     expect(screen.getAllByText('黄金策').length).toBeGreaterThanOrEqual(1)
     expect(screen.getAllByText('企业智能生产管家').length).toBeGreaterThanOrEqual(1)
-    expect(screen.getAllByText('元元').length).toBeGreaterThanOrEqual(1)
+    expect(screen.getAllByText('米宝').length).toBeGreaterThanOrEqual(1)
     expect(screen.getAllByText('企业智能客服').length).toBeGreaterThanOrEqual(1)
     // 能力规格要点（都对应真实存在的模块 / 工具）
     expect(
@@ -235,7 +235,7 @@ describe('CorporateHomePage（官网主页 v5：中小企业 AI 经营平台叙�
     expect(screen.getByText('人机协同')).toBeInTheDocument()
     expect(screen.getByText(/AI 优先应答，人工按规则接续/)).toBeInTheDocument()
     expect(screen.getByText('客户咨询')).toBeInTheDocument()
-    expect(screen.getByText('元元 AI 应答')).toBeInTheDocument()
+    expect(screen.getByText('米宝 AI 应答')).toBeInTheDocument()
     expect(screen.getByText('自动转人工')).toBeInTheDocument()
     expect(screen.getByText('人工接续')).toBeInTheDocument()
     expect(screen.getByText('留言受理')).toBeInTheDocument()
@@ -409,7 +409,7 @@ describe('CorporateHomePage（官网主页 v5：中小企业 AI 经营平台叙�
     expect(findQuantifierRhetoric('一套经营平台，一次咨询，一张订单')).toEqual(['一套', '一次', '一张'])
     expect(findPersonifiedAi('两位 AI 助手')).toEqual(['两位 AI'])
     expect(findQuantifierRhetoric('六个能力域 · 4 个终端 · 至少10个字符')).toEqual([])
-    expect(findPersonifiedAi('元元与黄金策')).toEqual([])
+    expect(findPersonifiedAi('米宝与黄金策')).toEqual([])
 
     // 真实语料
     const quantifiers = findQuantifierRhetoric(text)

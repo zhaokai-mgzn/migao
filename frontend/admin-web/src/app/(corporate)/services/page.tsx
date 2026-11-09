@@ -25,12 +25,12 @@ import {
 export const metadata: Metadata = {
   title: '产品与服务 — AI 客服、经营助手与全链路经营平台',
   description:
-    `观星台产品全景：顾客侧元元${AI_ROLES.xiaobu}，经营侧黄金策${AI_ROLES.mibao}；管理后台、顾客小程序、商家小程序、员工端 H5 四个终端，覆盖客户服务、订单/商品、生产、质量、仓储、财务、供应链与组织八个能力域。`,
+    `观星台产品全景：顾客侧米宝${AI_ROLES.xiaobu}，经营侧黄金策${AI_ROLES.mibao}；管理后台、顾客小程序、商家小程序、员工端 H5 四个终端，覆盖客户服务、订单/商品、生产、质量、仓储、财务、供应链与组织八个能力域。`,
 }
 
 const coreProducts = [
   {
-    title: `元元 · ${AI_ROLES.xiaobu}`,
+    title: `米宝 · ${AI_ROLES.xiaobu}`,
     icon: MessageSquare,
     tagline: '顾客侧：从规格咨询到下单、物流查询与售后受理',
     features: [
@@ -73,7 +73,7 @@ const terminals = [
     icon: Smartphone,
     title: '顾客小程序',
     audience: '终端消费者',
-    description: '在微信内直接咨询元元、下单、查询物流与提交售后，无需额外下载。',
+    description: '在微信内直接咨询米宝、下单、查询物流与提交售后，无需额外下载。',
     points: ['7×24 咨询与下单', '订单与物流进度', '售后申请与进度'],
   },
   {
@@ -123,23 +123,23 @@ export default function ServicesPage() {
     <>
       <PageHero
         kicker="产品与服务"
-        title="元元与黄金策，以及全链路经营平台"
-        lead="顾客侧由元元承接服务，经营侧由黄金策承接管理；后端由客户服务、订单/商品、生产管理、质量管理、仓储/物料、财务、供应链、组织管理八个能力域支撑，四个终端共用数据底座。"
+        title="米宝与黄金策，以及全链路经营平台"
+        lead="顾客侧由米宝承接服务，经营侧由黄金策承接管理；后端由客户服务、订单/商品、生产管理、质量管理、仓储/物料、财务、供应链、组织管理八个能力域支撑，四个终端共用数据底座。"
         chips={[
-          '2 个 AI：元元与黄金策',
+          '2 个 AI：米宝与黄金策',
           `${capabilityDomains.length} 个能力域 · ${menuItemCount} 项功能`,
           '4 个终端',
           '算料 · 工序 · 批次 · 计件',
         ]}
       />
 
-      {/* ── 元元与黄金策 ──────────────────────────────────────── */}
+      {/* ── 米宝与黄金策 ──────────────────────────────────────── */}
       <section className="bg-white py-20 sm:py-28">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <SectionHeading
             kicker="核心 AI 产品"
-            title="元元服务顾客，黄金策管理经营"
-            lead="元元与黄金策读取真实经营数据：顾客问到的商品、订单与库存，与经营者在后台看到的完全一致。"
+            title="米宝服务顾客，黄金策管理经营"
+            lead="米宝与黄金策读取真实经营数据：顾客问到的商品、订单与库存，与经营者在后台看到的完全一致。"
           />
 
           <div className="mt-14 space-y-8">

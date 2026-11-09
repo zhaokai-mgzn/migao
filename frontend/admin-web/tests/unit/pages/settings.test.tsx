@@ -299,7 +299,7 @@ function mockApiSuccess() {
   mockGetSettings.mockResolvedValue(
     ok({ companyName: '测试企业', logo: '', notificationEnabled: true, code: 'migao' }),
   )
-  mockGetAiConfig.mockResolvedValue(ok({ botName: '元元', greetingTemplate: '您好' }))
+  mockGetAiConfig.mockResolvedValue(ok({ botName: '米宝', greetingTemplate: '您好' }))
   mockBriefingGetConfig.mockResolvedValue(ok({ enabled: false, generateTime: '06:00' }))
   // 🔴 用 `mockImplementation`（每次调用现算）而不是 `mockResolvedValue`（一次性冻结）：
   // 服务端的步骤集**取决于调用方权限**（跨码步骤），一次性冻结的载荷会让「不持码」的用例
@@ -575,7 +575,7 @@ describe('判据 4：URL —— `?domain=` 直达 + 旧 `?tab=` 逐条映射且*
     mockSearchParams.mockReturnValue(new URLSearchParams('tab=ai'))
     render(<SettingsPage />)
     expect(await screen.findByTestId('config-domain-panel-ai')).toBeInTheDocument()
-    expect(screen.getByPlaceholderText('元元')).toBeInTheDocument()
+    expect(screen.getByPlaceholderText('米宝')).toBeInTheDocument()
     expect(mockRouterReplace).not.toHaveBeenCalled()
   })
 
@@ -800,7 +800,7 @@ describe('判据 7：原四个 tab 的能力迁入域后零回归', () => {
     const user = userEvent.setup()
     mockSearchParams.mockReturnValue(new URLSearchParams('domain=ai'))
     render(<SettingsPage />)
-    const input = await screen.findByDisplayValue('元元')
+    const input = await screen.findByDisplayValue('米宝')
     await user.clear(input)
     await user.type(input, '观星台助手')
     fireEvent.blur(input)

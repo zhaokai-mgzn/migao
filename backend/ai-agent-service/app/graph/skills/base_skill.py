@@ -56,7 +56,7 @@ from app.llm.retry_policy import _is_retryable
 # 历史坑（2026-09-11 实测）：此前所有 skill 共用**一个全局**熔断器名
 # `LLM_BREAKER = "llm_minimax"`（遗留名，与实际模型无关）→ 任一 skill 的 LLM
 # 连续 3 次超时即把该全局熔断器打成 OPEN → **全部** skill 的 LLM 调用被拒 →
-# 用户侧（含 C 端元元）查订单/下单/问答统一返回兜底文案「抱歉，AI 服务暂时不可用」。
+# 用户侧（含 C 端米宝）查订单/下单/问答统一返回兜底文案「抱歉，AI 服务暂时不可用」。
 #
 #     [circuit-breaker:llm_minimax] OPEN → HALF_OPEN | recovery_timeout(30.0s)
 #     [circuit-breaker:llm_minimax] HALF_OPEN → OPEN | probe failed: TimeoutError
@@ -334,7 +334,7 @@ def _extract_usage(response: AIMessage) -> Optional[tuple[int, int]]:
 # （「第一笔订单」「数量 3 米」「确认下单」）——不锁就会被重新意图分类跳出本 Skill，
 # 上下文断裂、流程每轮从头重来。
 #
-# ⚠️ 必须同时列出 C 端（元元）Skill 名：元元的 Skill 叫 `customer_*`，与 B 端名
+# ⚠️ 必须同时列出 C 端（米宝）Skill 名：米宝的 Skill 叫 `customer_*`，与 B 端名
 # （product/order/aftersales/...）**名字对不上**。只写 B 端名时 C 端写流程**从不锁**
 # （CI 实证 run 34613307565 / CH-012 路由 dump）：
 #     R1 intent=after_sales → aftersales   ← 正确进入
@@ -350,7 +350,7 @@ def _extract_usage(response: AIMessage) -> Optional[tuple[int, int]]:
 CREATION_SKILL_NAMES = frozenset({
     # B 端
     "product", "order", "aftersales", "staff", "customer",
-    # C 端（元元）写流程
+    # C 端（米宝）写流程
     "customer_order", "customer_aftersales",
 })
 
@@ -1073,7 +1073,7 @@ def _user_already_answered_processing(messages, source_tool: str = "processing_i
     """顾客**是否已经就加工项作答**（文本形态：说了加工项名 / 明确不要）。
 
     实证（C-A1 重放 9，run 34788143133 的 transcript）：
-      R2 元元**在文本里**问「需要一起加工吗？」→ R3 顾客答「打孔」→
+      R2 米宝**在文本里**问「需要一起加工吗？」→ R3 顾客答「打孔」→
       R5 代码兜底仍把 confirm 卡改写成加工项 choice 卡 → **同一件事问第二遍**，
       顾客不得不再答一次才轮到「确认下单」（UA 判定因此记"有条件通过"）。
     账上为什么没痕迹：`PROC_ITEMS_ASKED_KEY` 只在**发出加工项卡**时记账 ——
@@ -1737,7 +1737,7 @@ async def _curtain_calc_dimension_block(tool_name: str, args: dict, tool_call: d
     """无窗户尺寸证据时拦下 `curtain_calc`（返回 3 元组），否则放行（None）。"""
     if tool_name != "curtain_calc":
         return None
-    # C 端专属：`curtain_calc` 是元元（顾客自助）的报价能力；B 端黄金策有自己的算料链路。
+    # C 端专属：`curtain_calc` 是米宝（顾客自助）的报价能力；B 端黄金策有自己的算料链路。
     if not _is_customer_role(state):
         return None
     if _conversation_mentions_dimensions((state or {}).get("messages") or []):
@@ -2131,7 +2131,7 @@ async def _execute_tool_safe(tool, tool_args: dict, tool_context, state: dict) -
                     return cached["result"], cached["dict"]
 
     # 3. 执行 + 超时
-    # 写审计落库（issue #4039）：本函数是黄金策/元元**真实写路径**（直调 tool.execute，
+    # 写审计落库（issue #4039）：本函数是黄金策/米宝**真实写路径**（直调 tool.execute，
     # 不经 ToolRegistry.execute_tool）⇒ hook 必须挂在这里，否则 audit_logs 恒 0 行。
     # 挂 finally：成功/超时/异常三条出口都留痕（失败也要可追溯）；只读工具不记。
     _audit_write = not tool.read_only

@@ -212,7 +212,7 @@ class TestMibaoReferenceAlignedCards:
 class TestXiaobuKeepsFullCards:
     @pytest.mark.asyncio
     async def test_xiaobu_sends_all_products_unfiltered(self):
-        """元元：product_search 有结果即发全量卡片（货架浏览）"""
+        """米宝：product_search 有结果即发全量卡片（货架浏览）"""
         products = [_product("p1", "雪尼尔遮光帘"), _product("p2", "棉麻纱帘")]
         responses = [
             _tool_result("product_search", products),

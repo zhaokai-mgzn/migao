@@ -56,7 +56,7 @@ class TestBuildGraph:
             assert node_name in nodes, f"Node '{node_name}' not found in mibao graph. Got: {nodes}"
 
     def test_graph_has_expected_nodes_xiaobu(self):
-        """元元图应包含所有预期节点（配置驱动）"""
+        """米宝图应包含所有预期节点（配置驱动）"""
         from app.graph.builder import build_agent_graph
         graph = build_agent_graph("xiaobu")
         nodes = set(graph.get_graph().nodes.keys())

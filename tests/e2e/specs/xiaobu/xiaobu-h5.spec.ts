@@ -1,6 +1,6 @@
 // case_ids: OR-001, DF-002, UI-014, UI-016, UI-044, ST-011
 /**
- * 元元 H5 视觉回归 — 无会话 UX + 主页（推荐胶囊 + 六格等权）+ 订单卡片
+ * 米宝 H5 视觉回归 — 无会话 UX + 主页（推荐胶囊 + 六格等权）+ 订单卡片
  *
  * 目的：验证 C 端 mini-app 渲染效果（用户直接看到的 UI），
  * 弥补 API 层验收覆盖不到的视觉/布局回归。
@@ -170,7 +170,7 @@ async function setupMocks(page: import('@playwright/test').Page) {
 // 测试
 // ═══════════════════════════════════════════════════════════════
 
-test.describe('元元 H5 视觉回归', () => {
+test.describe('米宝 H5 视觉回归', () => {
   test('空态欢迎屏：横滑推荐胶囊 + 六格等权入口（无商品推荐卡）', async ({ page }) => {
     await setupMocks(page)
     await page.goto('/#/pages/chat/index/index')

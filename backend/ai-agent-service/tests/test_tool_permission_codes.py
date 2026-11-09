@@ -385,7 +385,7 @@ EXPECTED_ALLOWED_ROLES: dict[str, frozenset[str]] = {
     "craft_calc_config_update": frozenset({"operator", "product_manager"}),
     # issue #4923 进场：声明 `production:view` ⇒ 目录推导的持有角色 = operator + product_manager
     # （与 `craft_calc_config_query` / `operation_catalog_query` 同码同放行集）。
-    # ⚠️ C 端恒不可达：C 端 JWT 无权限码（`UserIdentity.permissions` 默认空）⇒ 元元不做权限码授权。
+    # ⚠️ C 端恒不可达：C 端 JWT 无权限码（`UserIdentity.permissions` 默认空）⇒ 米宝不做权限码授权。
     "craft_config_query": frozenset({"operator", "product_manager", "inspector"}),
     # issue #5988（2026-10-02 人类裁定「应允许」）：财务补 `customer:view` ⇒
     # 它**首次**满足本工具的码门禁 ⇒ 放行集必须加上它（否则「有码却被角色层拒」= 假拒绝）。
@@ -657,7 +657,7 @@ class TestPermissionCodeIsTheGate:
     def test_customer_without_codes_is_denied_on_every_coded_tool(self):
         """C 端顾客 JWT 没有权限码 ⇒ 非双端的管理类工具一律拒绝（不因改码而开口子）。
 
-        issue #5246：声明了 `c_end_reachable` 的**双端工具**（被元元 skill 绑定）是**唯一**例外 ——
+        issue #5246：声明了 `c_end_reachable` 的**双端工具**（被米宝 skill 绑定）是**唯一**例外 ——
         权限码层对 C 端不可判，按 `base.py` 的既定语义落到角色层（= 加码前的行为，零回归）。
         例外集合在这里**逐字**钉住（它的取值由 `tests/unit_ci_workflows/test_agent_permission_parity.py`
         从 `app/graph/skills/*.py` 机械推导），两个方向都要成立：非双端工具拒 + 双端工具放行。

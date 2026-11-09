@@ -4,7 +4,7 @@ name: Publish terminal (app.migaozn.com/terminal/)
 # 观星台终端（车间一体机 Windows EXE / 工人手持机 Android APK）此前**没有任何发布通路**：
 #   · 终端程序的更新检查地址写死为 `https://app.migaozn.com/terminal/latest.json`（Windows）
 #     与 `/terminal/android/latest.json`（Android），而 nginx 里 `/terminal` **0 命中**
-#     ⇒ 请求落进 `location /` 的 SPA fallback：HTTP 200 + 一页 C 端元元 HTML（假 200，监控不红）；
+#     ⇒ 请求落进 `location /` 的 SPA fallback：HTTP 200 + 一页 C 端米宝 HTML（假 200，监控不红）；
 #   · 官网下载页也不存在（`https://migaozn.com/download` = 404）。
 # ⇒ 终端做完了，用户既打不开官网下载页、终端自己检查更新也永远拿不到清单。
 # 本腿把「终端仓 Release 里的 exe/apk」发布到静态根下的 `terminal/` 子树，并生成两份更新清单。

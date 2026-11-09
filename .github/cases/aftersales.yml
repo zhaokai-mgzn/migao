@@ -142,7 +142,7 @@ cases:
       # （`VALID_ACTIONS = {list, detail}`，`read_only = True`）；跨域复用 `order_id` 的意图
       # 由 `precondition` + `data_checks` 继续承重。
       # ⚠️ 写声明**留在条件效果层**（下面 `must_succeed[aftersale_create, only_if_called]` 一字未动）：
-      # `aftersale_create` 是 **C 端元元**的能力（`tests/agent_eval/eval_case_filter.XIAOBU_TOOLS`
+      # `aftersale_create` 是 **C 端米宝**的能力（`tests/agent_eval/eval_case_filter.XIAOBU_TOOLS`
       # 在册），本用例是**双端**用例（`persona` 缺省）⇒ C 端腿真去建工单时仍要求它成功；
       # B 端腿从不调用它 ⇒ 条件档不产生噪音。写类身份改由
       # `tests/unit_ci_workflows/test_case_trust_gate.py` 的 `effect_declared_write_tools()`
@@ -599,7 +599,7 @@ cases:
       - "aftersale_query 无用户/租户参数，后端强制按当前登录顾客过滤（/api/admin/agent/after-sales/mine 同构）——顾客无法通过任何参数读取他人工单"
       - "list 返回当前顾客工单（含 status 标签与 timeline）；无工单时如实告知『暂无售后记录』，不编造工单号/状态"
       - "status 可筛选（pending/processing/resolved/rejected/closed），非法值不静默当成全部"
-      - "与 B 端 after_sales_manage 物理隔离：元元无 after_sales_manage 工具，不得出现管理端动作（改状态/退款/回补库存）"
+      - "与 B 端 after_sales_manage 物理隔离：米宝无 after_sales_manage 工具，不得出现管理端动作（改状态/退款/回补库存）"
     skip_reason: ""
     merge_log: "2026-09-11 新增（issue #3266 C 端评测覆盖体检）：aftersale_query 是唯一无任何 C 端用例覆盖的真实能力缺口——AS-005 的 `after_sales_manage or aftersale_query` 因 after_sales_manage 属 B 端工具被 C 端用例集排除后，C 端售后查询能力归零；本条补 C 端专属进度查询 + 数据隔离断言"
     traces:

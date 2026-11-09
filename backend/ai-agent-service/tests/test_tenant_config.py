@@ -52,17 +52,17 @@ class TestGetTenantAiConfig:
         mock_client = AsyncMock()
         mock_client.get = AsyncMock(return_value={
             "success": True,
-            "data": {"botName": "元元", "autoHandoffKeywords": ["老板"]},
+            "data": {"botName": "米宝", "autoHandoffKeywords": ["老板"]},
         })
         with patch("app.agents.tenant_config.get_admin_api_client", return_value=mock_client):
             config = await get_tenant_ai_config(1)
-        assert config["botName"] == "元元"
+        assert config["botName"] == "米宝"
 
     async def test_cache_hit_avoids_second_http(self):
         mock_client = AsyncMock()
         mock_client.get = AsyncMock(return_value={
             "success": True,
-            "data": {"botName": "元元"},
+            "data": {"botName": "米宝"},
         })
         with patch("app.agents.tenant_config.get_admin_api_client", return_value=mock_client):
             await get_tenant_ai_config(1)

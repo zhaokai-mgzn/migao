@@ -2,8 +2,10 @@
 """**品牌文案**守卫（三组判据同处一文件）：
 
 ① **产品定位文案**（issue #6463）：观星台不得再被写成「电商管理系统 / 电商管理解决方案」；
-② **品牌称呼**（issue #6525）：旧称呼（米高 / 米宝 / 小布）不得在用户可见面回流，
-   新称呼（观星台 / 黄金策 / 元元）必须在关键落点**正向存在** —— 见文末「品牌称呼」一节。
+② **品牌称呼**（issue #6525 / #8881）：旧称呼（元元 / 小布 / 米高）不得在用户可见面回流，
+   新称呼（观星台 / 黄金策 / 米宝）必须在关键落点**正向存在** —— 见文末「品牌称呼」一节。
+   ⚠️ 沿革：「米宝」在 2026-10-08 的改名里是旧 B 端称呼（→黄金策），2026-11-10 起是**新 C 端称呼**
+   （元元→米宝）⇒ 同一字面量在两次改名里先旧后新，旧名集合**按最近一次改名现取**。
 
 ── ① 的正文 ────────────────────────────────────────────────────────────────
 
@@ -176,53 +178,81 @@ def test_string_with_double_slash_is_not_eaten_as_a_comment():
     )
 
 
-# ── ② 品牌称呼（issue #6525）：旧名不得回流 + 新名正向存在 ────────────────────
+# ── ② 品牌称呼（issue #6525 / #8881）：旧名不得回流 + 新名正向存在 ────────────
 #
-# 为什么要有这条（而不是改完 662 个文件就算完）：
+# 沿革（两次改名，旧名集合随最近一次收窄）：
+#   · 2026-10-08（issue #6525）：米高→观星台 / 米宝→黄金策 / 小布→元元；
+#   · 2026-11-10（issue #8881）：C 端顾客客服 **元元→米宝**（只改称呼；内部标识符
+#     `xiaobu` / `persona` / `agent_type` / 文件名 / 接口参数一字未动）。
+# ⇒ 本轮旧称呼 = 元元 / 小布 / 米高；新称呼 = 观星台 / 黄金策 / 米宝。
+#
+# 为什么要有这条（而不是改完 321 个文件就算完）：
 # 改名是**一次性的批量动作**，而「旧名回流」会以两种形态持续发生 ——
 #   · 新增页面 / 新写文案的人不知道旧名已废，照抄旧稿（同 #5747「C 端 agent 名混进 B 端空态」的形态）；
 #   · 一部分文件（历史迁移、归档、活环境数据名）**有意保留旧名**，于是"全仓 grep 零命中"永远不成立
-#     ⇒ 必须有**面**的判据：只判**用户可见的生产源码**，且把计量义与内部协议标签排除在外。
+#     ⇒ 必须有**面**的判据：只判**用户可见的生产源码**，且把计量义排除在外。
 #
 # 判据（逐条可红）：
 # | # | 判什么 | 怎么红 |
 # |---|---|---|
-# | 1 | 四个前端包生产源码的**代码面**零旧称呼 | `米宝` / `小布` 命中即具名；`米高` 命中且**非计量义**即具名 |
-# | 2 | **正向锚**：agent 定义与三个前端品牌工具都已是新名 | 任一锚缺失 ⇒ 红（防「删掉旧词」被当成「改完了」） |
-# | 3 | **判别力自证**：字符串里的旧名判红 / 计量义不假红 / 注释面不假红 / 新名零命中 | 判据不是空断言，也不会被领域文案喂红 |
+# | 1 | 四个前端包生产源码的**代码面**零旧称呼 | `元元` / `小布` 命中即具名；`米高` 命中且**非计量义**即具名 |
+# | 2 | C 端 agent 的**用户可见字符串**零旧称呼（`C_END_PROMPT_SURFACES`） | 逐文件取 Python 字符串字面量（tokenize）/ Markdown 原文，命中 `元元` / `小布` 即具名 |
+# | 3 | **正向锚**：agent 定义、默认客服名、提示词与三个前端品牌工具都已是新名 | 任一锚缺失 ⇒ 红（防「删掉旧词」被当成「改完了」） |
+# | 4 | **判别力自证**：字符串里的旧名判红 / 注释与计量义不假红 / 新名零命中 | 判据不是空断言，也不会被领域文案喂红 |
 #
 # 边界（照实登记，不粉饰）：
 # - **计量义豁免**：`米高` 前一个非空白字符是数字 / 小数点 /「米」时**不是品牌名**
 #   （实测全仓 30 行 `2.7 米高窗` / `宽2米高2.5米` 这类算料文案）⇒ 不许把它们判红。
-# - **协议标签豁免**：`[米宝解读]` 是服务端 SSE source 的**协议值**（Python `SOURCE_INTERPRETED`
-#   与 TS `PAGE_FILL_SOURCE_INTERPRETED` 同值；issue #6461 跟踪「内部标签上屏」）⇒ 不是称呼，不判红。
-# - **射程**：只到四个前端包的 `src` 代码面（注释抹白）。`docs/`、`tests/`、历史迁移、
-#   `acceptance/` 与**活环境数据名**（如租户名「米高测试环境」）**不在面内** —— 那里的旧名是
-#   历史记录或 DB 真值，改了就是伪造证据 / 制造代码与数据不一致。
+# - **协议标签**：`[米宝解读]` 是服务端 SSE source 的**协议值**（Python `SOURCE_INTERPRETED`
+#   与 TS `PAGE_FILL_SOURCE_INTERPRETED` 同值；issue #6461 跟踪「内部标签上屏」）⇒ 它是**来源标签**，
+#   不是 agent 称呼。本轮旧名集合是 `元元 / 小布 / 米高`，不会把它误判成旧名。
+# - **射程**：前端四个包 `src` 的代码面 + 后端 C 端用户可见字符串清单（`C_END_PROMPT_SURFACES`）。
+#   `docs/`、`tests/`、历史迁移、`acceptance/` 与**活环境数据名**（如租户名「米高测试环境」）**不在面内**
+#   —— 那里的旧名是历史记录或 DB 真值，改了就是伪造证据 / 制造代码与数据不一致。
+# - **内部标识符豁免**：`xiaobu` / `persona` / `agent_type` / `mibao` / `botName` / 文件名不是称呼，
+#   不改（改了会破接口与数据）。本文件判的是**中文称呼字面量**，与标识符无关。
 
-#: 旧称呼（改名前的口径）；回流 = 称呼又漂了
-OLD_AGENT_NAMES = ("米宝", "小布", "米高")
+#: 旧称呼（最近一次改名后的口径）；回流 = 称呼又漂了
+OLD_AGENT_NAMES = ("元元", "小布", "米高")
 
 #: 计量义的合法前导字符（`米高` 专用）
 _MEASURE_PREFIX = tuple("0123456789.．０１２３４５６７８９米")
 
-#: 协议内部标签（不是称呼）
-_PROTOCOL_TAG = "米宝解读"
+#: C 端 agent 的**用户可见字符串**面（称呼落点；新增提示词 / 默认名文件时请登记进来）
+C_END_PROMPT_SURFACES = (
+    "backend/ai-agent-service/app/agents/agents/xiaobu.py",
+    "backend/ai-agent-service/app/agents/channel_config.py",
+    "backend/ai-agent-service/app/graph/handoff_offer.py",
+    "backend/ai-agent-service/app/graph/skills/capability_denial.py",
+    "backend/ai-agent-service/app/graph/skills/customer_aftersales_skill.py",
+    "backend/ai-agent-service/app/graph/skills/customer_general_skill.py",
+    "backend/ai-agent-service/app/graph/skills/customer_knowledge_skill.py",
+    "backend/ai-agent-service/app/graph/skills/customer_order_skill.py",
+    "backend/ai-agent-service/app/graph/skills/customer_product_skill.py",
+    "backend/ai-agent-service/app/graph/skills/customer_quote_skill.py",
+    "backend/ai-agent-service/app/graph/skills/references/EXAMPLES-customer_aftersales.md",
+    "backend/ai-agent-service/app/graph/skills/references/EXAMPLES-customer_general.md",
+    "backend/ai-agent-service/app/graph/skills/references/EXAMPLES-customer_knowledge.md",
+    "backend/ai-agent-service/app/graph/skills/references/EXAMPLES-customer_order.md",
+    "backend/ai-agent-service/app/graph/skills/references/EXAMPLES-customer_product.md",
+    "backend/ai-agent-service/app/graph/skills/references/EXAMPLES-customer_quote.md",
+)
 
 #: 新称呼必须**正向存在**的落点（防「只删旧词就算改完」）
 NEW_NAME_ANCHORS = (
-    ("frontend/admin-web/src/app/(corporate)/page.tsx", ("元元", "黄金策")),
+    ("frontend/admin-web/src/app/(corporate)/page.tsx", ("米宝", "黄金策")),
     ("frontend/bmini-app/src/utils/brand.ts", ("黄金策",)),
-    ("frontend/mini-app/src/utils/brand.ts", ("元元",)),
-    ("backend/ai-agent-service/app/agents/agents/xiaobu.py", ('display_name="元元"',)),
+    ("frontend/mini-app/src/utils/brand.ts", ("米宝",)),
+    ("backend/ai-agent-service/app/agents/agents/xiaobu.py", ('display_name="米宝"', 'DEFAULT_BOT_NAME = "米宝"')),
     ("backend/ai-agent-service/app/agents/agents/mibao.py", ('display_name="黄金策"',)),
+    ("backend/ai-agent-service/app/agents/channel_config.py", ('bot_name: str = "米宝"',)),
+    ("backend/ai-agent-service/app/graph/skills/customer_order_skill.py", ('你是"米宝"',)),
+    ("backend/ai-agent-service/app/graph/handoff_offer.py", ("继续咨询米宝",)),
 )
 
 
 def _is_brand_occurrence(text: str, index: int, name: str) -> bool:
-    """该命中是不是**品牌称呼**（而非计量义 / 协议标签）。"""
-    if name == "米宝" and text[index : index + len(_PROTOCOL_TAG)] == _PROTOCOL_TAG:
-        return False
+    """该命中是不是**品牌称呼**（而非计量义）。"""
     if name != "米高":
         return True
     j = index - 1
@@ -248,6 +278,38 @@ def old_name_violations(source: str) -> list[tuple[int, str, str]]:
     return found
 
 
+def _python_string_tokens(source: str):
+    """Python 源码里的字符串字面量（含 docstring / f-string 前缀）⇒ `(起始行, 字面量)`。"""
+    import io
+    import tokenize
+
+    try:
+        tokens = tokenize.generate_tokens(io.StringIO(source).readline)
+        return [(tok.start[0], tok.string) for tok in tokens if tok.type == tokenize.STRING]
+    except (tokenize.TokenError, IndentationError):
+        # 静态解析失败 ⇒ fail-closed：整份源码参与判定（宁可假红，不许假绿）
+        return [(no, line) for no, line in enumerate(source.splitlines(), start=1)]
+
+
+def surface_name_violations(rel: str, text: str) -> list[tuple[int, str]]:
+    """C 端用户可见字符串里的旧称呼 ⇒ `(行号, 旧名)`。
+
+    Python 只取字符串字面量（注释里的沿革不算）；Markdown 取全文（示例即提示词）。
+    """
+    literals = (
+        [(no, line) for no, line in enumerate(text.splitlines(), start=1)]
+        if rel.endswith(".md")
+        else _python_string_tokens(text)
+    )
+    found: list[tuple[int, str]] = []
+    for line_no, literal in literals:
+        for name in ("元元", "小布"):
+            if name in literal:
+                found.append((line_no, name))
+                break
+    return found
+
+
 def test_old_agent_names_do_not_come_back_in_code_face():
     violations: list[str] = []
     scanned: list[Path] = []
@@ -266,8 +328,27 @@ def test_old_agent_names_do_not_come_back_in_code_face():
                 violations.append(f"{rel}:{line_no}: 旧称呼「{name}」: {raw}")
     assert scanned, "扫面为空 —— 守卫的射程断了（SCAN_ROOTS 路径写错？）"
     assert violations == [], (
-        "用户可见面出现**已废的**品牌称呼（issue #6525：米高→观星台 / 米宝→黄金策 / 小布→元元）：\n  "
+        "用户可见面出现**已废的**品牌称呼（issue #6525 / #8881："
+        "米高→观星台 / 米宝→黄金策 / 小布→元元（2026-10-08）；元元→米宝（2026-11-10））：\n  "
         + "\n  ".join(violations)
+    )
+
+
+def test_c_end_agent_old_name_is_absent_from_user_visible_strings():
+    """C 端 agent 的提示词 / 默认名 / 转人工选项里不得再出现旧称呼。"""
+    violations: list[str] = []
+    scanned: list[str] = []
+    for rel in C_END_PROMPT_SURFACES:
+        path = REPO_ROOT / rel
+        assert path.is_file(), f"C 端用户可见字符串面文件不存在（路径漂移？）: {rel}"
+        text = path.read_text(encoding="utf-8")
+        scanned.append(rel)
+        for line_no, name in surface_name_violations(rel, text):
+            violations.append(f"{rel}:{line_no}: 旧称呼「{name}」")
+    assert scanned, "扫面为空 —— 守卫的射程断了（C_END_PROMPT_SURFACES 为空？）"
+    assert violations == [], (
+        "C 端 agent 的用户可见字符串里仍有旧称呼（issue #8881：元元→米宝；"
+        "内部标识符 xiaobu / persona / agent_type 未改）：\n  " + "\n  ".join(violations)
     )
 
 
@@ -284,16 +365,20 @@ def test_new_agent_names_are_present_at_key_surfaces():
 def test_agent_name_guard_discriminating_power():
     """判别力自证：会红 / 不假红 / 不误判。"""
     # ① 字符串里的旧称呼 ⇒ 判红且**指到行**
-    assert old_name_violations("const a = '米宝'\n") == [(1, "米宝", "const a = '米宝'")]
+    assert old_name_violations("const a = '元元'\n") == [(1, "元元", "const a = '元元'")]
     # ② 计量义**不得假红**（算料领域文案：「2.7 米高窗」是尺寸不是品牌）
     assert old_name_violations("const q = '2.7 米高窗报价'\n") == []
     assert old_name_violations("const q = '宽2米高2.5米'\n") == []
-    # ③ 协议标签**不得假红**（服务端 source 值，issue #6461 跟踪的是「不上屏」而非改名）
+    # ③ 注释面豁免（历史沿革照旧保留）
+    assert old_name_violations("// 2026-11-10 改名自元元\n") == []
+    # ④ 新称呼零命中（正面对照：守卫不会被自己的新口径喂红；协议值 [米宝解读] 也不是旧称呼）
+    assert old_name_violations("const a = '黄金策'\nconst b = '米宝'\nconst c = '观星台'\n") == []
     assert old_name_violations("const SOURCE = '[米宝解读]'\n") == []
-    # ④ 注释面豁免（历史沿革照旧保留）
-    assert old_name_violations("// 2026-10-08 改名自米宝\n") == []
-    # ⑤ 新称呼零命中（正面对照：守卫不会被自己的新口径喂红）
-    assert old_name_violations("const a = '黄金策'\nconst b = '元元'\nconst c = '观星台'\n") == []
+    # ⑤ C 端字符串面：字符串字面量里的旧名判红（含 docstring）；注释不假红
+    assert surface_name_violations("sample.py", 'DEFAULT_BOT_NAME = "元元"\n') == [(1, "元元")]
+    assert surface_name_violations("sample.py", '提示词 = """你是"元元"\n"""\n') == [(1, "元元")]
+    assert surface_name_violations("sample.py", "# 2026-11-10 改名自元元\nx = '米宝'\n") == []
+    assert surface_name_violations("sample.md", "我是元元\n") == [(1, "元元")]
 
 
 # ── ③ 文档定位（issue #8857）：README / wiki / 模块 README 不得再自称旧系统名 ──────
@@ -366,7 +451,7 @@ def test_doc_positioning_guard_discriminating_power():
     # 新文案 + 能力名（智能客服作为客户服务域的一项能力）**不得假红**
     benign = (
         "# 观星台 — 布艺行业 AI 经营平台\n\n"
-        "顾客侧由元元提供 7×24 智能客服；智能客服是客户服务能力域的一项能力。\n"
+        "顾客侧由米宝提供 7×24 智能客服；智能客服是客户服务能力域的一项能力。\n"
     )
     assert doc_positioning_violations("sample.md", benign) == [], "能力名被误判成旧系统名（假红）"
     # 无空格形态同样是旧系统名

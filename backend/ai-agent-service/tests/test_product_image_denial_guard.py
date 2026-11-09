@@ -99,7 +99,7 @@ class TestProductImageDenialHit:
             # 中性描述（商品没设主图，帮忙查详情）
             "该商品没有设置主图，我帮您查一下详情",
             # 与图片无关的既有边界（回归：下单域越权拒绝不得因图片判据误报）
-            "元元没有权限查看其他租户的数据，只能看您自己的订单",
+            "米宝没有权限查看其他租户的数据，只能看您自己的订单",
             "库存不足无法创建订单",
         ]:
             assert capability_denial_text_hit(t) == "", f"中性/越权文本误命中: {t!r}"
@@ -107,7 +107,7 @@ class TestProductImageDenialHit:
 
     def test_order_denial_phrasing_unaffected(self):
         """下单域既有判据不因图片域扩展而回归（锚点不相交）。"""
-        for t in ["没有权限帮您下单", "非常抱歉，元元这边没有办法帮您直接下单哦",
+        for t in ["没有权限帮您下单", "非常抱歉，米宝这边没有办法帮您直接下单哦",
                   "抱歉，下单功能暂时不可用"]:
             assert capability_denial_text_hit(t), f"下单域判据回归: {t!r}"
 

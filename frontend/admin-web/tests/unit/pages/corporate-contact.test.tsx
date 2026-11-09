@@ -137,7 +137,7 @@ describe('CorporateContactPage（官网联系页 v5：按用户裁定隐藏留�
     expect(findQuantifierRhetoric('一套经营平台，一次咨询，一张订单')).toEqual(['一套', '一次', '一张'])
     expect(findPersonifiedAi('两位 AI 助手')).toEqual(['两位 AI'])
     expect(findQuantifierRhetoric('六个能力域 · 4 个终端 · 至少10个字符')).toEqual([])
-    expect(findPersonifiedAi('元元与黄金策')).toEqual([])
+    expect(findPersonifiedAi('米宝与黄金策')).toEqual([])
 
     const quantifiers = findQuantifierRhetoric(text)
     expect(
