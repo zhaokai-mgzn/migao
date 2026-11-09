@@ -1209,7 +1209,9 @@ describe('OrderDetailPage', () => {
   //
   // 用户 2026-11-07 口径：订单详情按「商品信息 / 作业单 / 可操作」三区展示；
   // **整体操作**（打印 / 确认付款 / 发货 / 确认收货 / 退款 / 修改订单 / 关闭订单）在页面顶部，
-  // **局部操作**贴对应信息（编辑物流 → 收货信息；加急/到货日 → 基础信息）。
+  // **局部操作**贴对应信息（编辑物流 → 收货信息）。
+  // 用户 2026-11-09 追加口径：加急/到货日**上收页面顶部**，与「订单操作」合并为同一个模块
+  // （不再留在基础信息内 —— 改前按 #8838 落在基础信息，本组第 4 条随口径改判）。
   //
   // 本组判的是**渲染位置**（谁在哪个区域里、谁不在），不是「页面上有这句话」——
   // 后者在改前同样成立，判不出「操作与信息穿插」这个被投诉的形态。
@@ -1274,7 +1276,7 @@ describe('OrderDetailPage', () => {
       expect(within(goods).queryByRole('button', { name: '发货' })).toBeNull()
     })
 
-    it('局部操作贴对应信息：编辑物流在收货信息旁、加急/到货日在基础信息内，且不混进整体操作区', async () => {
+    it('加急/到货日与订单操作同区：面板在顶部操作区内，基础信息内不再有它；编辑物流仍贴收货信息', async () => {
       mockGetOrder.mockResolvedValue({
         data: { data: { ...mockOrder, status: 'shipped', refundAmount: 0 } },
       })
@@ -1285,11 +1287,15 @@ describe('OrderDetailPage', () => {
       const receiving = within(goods).getByTestId('order-receiving-info')
       const basic = within(goods).getByTestId('order-basic-info')
 
+      // 用户 2026-11-09 口径：加急/到货日整块上收页面顶部，与「订单操作」同一张区域卡
+      // （改前按 #8838 落在基础信息内 ⇒ 这里判的是**渲染位置**，两侧都判，防「两处入口」半回退）
+      expect(within(operation).getByTestId('order-urgency-panel')).toBeInTheDocument()
+      expect(within(basic).queryByTestId('order-urgency-panel')).toBeNull()
+      expect(within(goods).queryByTestId('order-urgency-panel')).toBeNull()
+
+      // 编辑物流仍是收货信息的局部操作：贴着收货信息、不在顶部操作区
       expect(within(receiving).getByRole('button', { name: '编辑物流' })).toBeInTheDocument()
-      expect(within(basic).getByTestId('order-urgency-panel')).toBeInTheDocument()
-      // 局部操作不该同时混在顶部整体操作区（否则又是两处入口）
       expect(within(operation).queryByRole('button', { name: '编辑物流' })).toBeNull()
-      expect(within(operation).queryByTestId('order-urgency-panel')).toBeNull()
     })
   })
 })

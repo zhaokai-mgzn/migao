@@ -520,8 +520,8 @@ export default function OrderDetailPage() {
 
       {/* ===== 可操作区域（issue #8838）=====
           整体操作（打印 / 确认付款 / 发货 / 确认收货 / 退款 / 修改订单 / 关闭订单）集中在
-          页面顶部的这一区；局部操作不在这里 —— 它们贴各自的信息（见下方商品信息区域 /
-          作业单区域）。打印入口在本区卡头、不在任何状态分支里（issue #7544）。 */}
+          页面顶部的这一区；2026-11-09 用户追加口径：加急 / 到货日也从基础信息**上收到本区**，
+          与整体操作合并为同一个模块。打印入口在本区卡头、不在任何状态分支里（issue #7544）。 */}
       <OperationSection
         order={order}
         processingOrder={processingOrder}
@@ -532,11 +532,12 @@ export default function OrderDetailPage() {
         onConfirmReceive={() => setConfirmReceiveOpen(true)}
         onRefund={() => setRefundModalOpen(true)}
         onPrint={() => openPreview(DEFAULT_ORDER_PRINT_DOC)}
+        onUrgencyChanged={loadOrder}
       />
 
       {/* ===== 商品信息区域（issue #8838）=====
           基础信息 / 商品明细 / 收货信息 同区展示；状态、退款、打印等**整体操作**不穿插进来，
-          只保留贴在各信息旁边的**局部操作**（加急/到货日 → 基础信息；编辑物流 → 收货信息）。 */}
+          局部操作贴在各信息旁边（编辑物流 → 收货信息；加急/到货日已按 2026-11-09 口径上收顶部）。 */}
       <SectionCard
         title="商品信息"
         testId="order-goods-region"
@@ -547,7 +548,7 @@ export default function OrderDetailPage() {
         }
       >
         <div className="space-y-6">
-          {/* 基础信息（局部操作：加急 / 到货日） */}
+          {/* 基础信息（只读信息行；加急/到货日已按 2026-11-09 口径上收顶部「订单操作」区） */}
           <section data-testid="order-basic-info">
             <SubSectionTitle>基础信息</SubSectionTitle>
             <div className="grid grid-cols-3 gap-y-4 gap-x-8 text-sm">
@@ -559,12 +560,6 @@ export default function OrderDetailPage() {
                   一并删除（编译器成为类级守卫，防再读）。 */}
               <InfoRow label="发货时间" value={<DateTimeCell value={order.shippedAt} />} />
               <InfoRow label="确认收货时间" value={<DateTimeCell value={order.receivedAt} />} />
-            </div>
-            {/* 加急 / 要求到货日（issue #5177）—— **订单页上直接改**（不是售后页）；
-                PUT /api/admin/orders/{id}/urgency；保存后 loadOrder 重新拉单，徽标刷新为服务端真值。
-                局部操作贴在「基础信息」内（issue #8838）。 */}
-            <div className="mt-5 border-t border-neutral-100 pt-4">
-              <OrderUrgencyPanel order={order} onChanged={loadOrder} />
             </div>
           </section>
 
@@ -918,12 +913,15 @@ interface OperationSectionProps {
   onRefund: () => void
   /** 打印 = 页面级唯一入口（issue #7544），落在本区卡头、不跟订单状态挂钩 */
   onPrint: () => void
+  /** 加急 / 到货日保存成功（2026-11-09 上收到本区）—— 父级重新拉单，徽标刷新为服务端真值 */
+  onUrgencyChanged: () => void
 }
 
 /**
- * 可操作区域（issue #8838）：**只放订单整体操作** —— 状态推进（确认付款 / 发货 / 确认收货）、
- * 退款、修改订单、关闭订单、打印。局部操作不在这里：
- * 编辑物流贴在「收货信息」标题旁、加急/到货日贴在「基础信息」内、作业单动作在「作业单」区。
+ * 可操作区域（issue #8838）：**订单整体操作** + **加急 / 到货日**（2026-11-09 用户口径：
+ * 两者合并为同一个模块，加急/到货日从「基础信息」上收到页面顶部）。
+ * 状态推进（确认付款 / 发货 / 确认收货）、退款、修改订单、关闭订单、打印；
+ * 编辑物流仍贴「收货信息」、作业单动作留在「作业单」区。
  *
  * 位置在页面顶部（用户 2026-11-07 口径：「整体操作按钮展示在页面顶部或者页面底部悬浮都可以」）——
  * 选顶部而不是底部悬浮：不遮挡内容、不压住右下角常驻助手，且长页滚动前就能操作。
@@ -938,6 +936,7 @@ function OperationSection({
   onConfirmReceive,
   onRefund,
   onPrint,
+  onUrgencyChanged,
 }: OperationSectionProps) {
   const status = normalizeOrderStatus(order.status as string)
   // issue #3889：producing（生产中）从 pending_shipment 展示中独立（向导第 2 步显示「生产中」）
@@ -1084,6 +1083,13 @@ function OperationSection({
       {status === 'refund' && (
         <div className="text-2xl font-semibold text-amber-600">退款/售后中</div>
       )}
+
+      {/* 加急 / 要求到货日（issue #5177）：2026-11-09 用户口径 —— 从「基础信息」上收页面顶部，
+          与「订单操作」合并为同一个模块。读写口径不变（PUT /api/admin/orders/{id}/urgency）；
+          保存成功后父级 loadOrder 重新拉单，徽标刷新为服务端真值。 */}
+      <div className="mt-5 border-t border-neutral-100 pt-4">
+        <OrderUrgencyPanel order={order} onChanged={onUrgencyChanged} />
+      </div>
     </SectionCard>
   )
 }
