@@ -1,6 +1,6 @@
 # Admin API
 
-观星台 AI 智能客服 — Java 管理后端
+观星台 — 布艺行业 AI 经营平台 · Java 管理后端（业务真值）
 
 ## 技术栈
 
@@ -16,8 +16,8 @@ cp .env.example .env
 
 # 2. 启动（连接云 dev 数据库）
 ./mvnw spring-boot:run
-# 启动后访问: http://localhost:8081
-# Swagger UI: http://localhost:8081/swagger-ui.html
+# 启动后访问: http://localhost:8080
+# Swagger UI: http://localhost:8080/swagger-ui.html
 ```
 
 ## 测试
