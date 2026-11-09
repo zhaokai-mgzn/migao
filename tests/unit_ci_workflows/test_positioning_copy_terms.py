@@ -285,7 +285,12 @@ def _python_string_tokens(source: str):
 
     try:
         tokens = tokenize.generate_tokens(io.StringIO(source).readline)
-        return [(tok.start[0], tok.string) for tok in tokens if tok.type == tokenize.STRING]
+        fstring_middle = getattr(tokenize, "FSTRING_MIDDLE", -1)
+        return [
+            (tok.start[0], tok.string)
+            for tok in tokens
+            if tok.type == tokenize.STRING or tok.type == fstring_middle
+        ]
     except (tokenize.TokenError, IndentationError):
         # 静态解析失败 ⇒ fail-closed：整份源码参与判定（宁可假红，不许假绿）
         return [(no, line) for no, line in enumerate(source.splitlines(), start=1)]
@@ -378,6 +383,7 @@ def test_agent_name_guard_discriminating_power():
     assert surface_name_violations("sample.py", 'DEFAULT_BOT_NAME = "元元"\n') == [(1, "元元")]
     assert surface_name_violations("sample.py", '提示词 = """你是"元元"\n"""\n') == [(1, "元元")]
     assert surface_name_violations("sample.py", "# 2026-11-10 改名自元元\nx = '米宝'\n") == []
+    assert surface_name_violations("sample.py", 'msg = f"我是元元 {name}"\n') == [(1, "元元")]
     assert surface_name_violations("sample.md", "我是元元\n") == [(1, "元元")]
 
 
