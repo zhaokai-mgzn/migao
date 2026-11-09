@@ -26,7 +26,13 @@
 3. **触发条件（二选一，任一成立即需 rebase）**：
    a. `mergeStateStatus ∈ {BEHIND, DIRTY}` —— 分支落后 / 冲突，GitHub 的 up-to-date 要求永远不满足；
    b. **合并结果的 lock 与 package.json 不一致** —— 即上面那条 EUSAGE 的因（本脚本自己算，不解析日志）。
-4. **动作 = 评论 `@dependabot rebase`**（官方入口，由 dependabot 用**它自己的** npm 重建 lock）。
+4. **动作按「有没有 npm lock 风险」分流**（2026-11-09 实测：`@dependabot rebase` 在本仓是 no-op ——
+   三条评论（bot 1 + owner 2）既无动作也无 👍 反应，见 dependabot-core #16596 与「命令只认具 push
+   权限的人类账号、忽略所有 App 账号」的既有裁决 ⇒ **不能把它当执行器**）：
+   a. **不涉及 npm lock**（pip / maven / github-actions 等）⇒ `gh pr update-branch`（确定性、零 lock 风险）；
+   b. **涉及 npm lock** ⇒ 评论 `@dependabot rebase` **并点名可执行出口**
+      （`./scripts/deps-lock-regen.sh <PR>`：补 lock 的唯一真值路径，顺序即安全顺序）。
+      ⛔ 这一类**不**自动 update-branch —— 那把 main 合进来正会产出坏 lock（#7688 的形态）。
    ⛔ **不往分支推提交**：① 那会与 dependabot 的下一次推送抢写（§34.13 同一分支不许两个写者）；
    ② `GITHUB_TOKEN` 推送会被 GitHub 反递归抑制 ⇒ **新一轮 CI 根本不跑** ⇒ PR 卡死得更彻底。
 5. **幂等 + 有界**：评论里带 `<!-- migao:dependabot-rebase:<head sha> -->`，
@@ -166,8 +172,13 @@ def decide(pr, comments, lock_report):
 
     state = (pr.get("mergeStateStatus") or "").upper()
     if state in ("BEHIND", "DIRTY"):
+        if lock_report is not None and lock_report.get("dir") is None:
+            # 不涉及 npm lock ⇒ update-branch 是确定性的、不会产出坏 lock。
+            return {"action": "update-branch",
+                    "reason": "分支落后/冲突（mergeStateStatus=%s），且不涉及 npm lock" % state}
+        # 涉及 npm lock（或判不出）⇒ 只出声：update-branch 会把 main 合进来、正会产出坏 lock。
         return {"action": "rebase",
-                "reason": "分支落后/冲突（mergeStateStatus=%s）" % state}
+                "reason": "分支落后/冲突（mergeStateStatus=%s），涉及 npm lock ⇒ 需重建 lock" % state}
 
     if state == "UNKNOWN":
         # GitHub 尚在计算可合并性（#5113 的既有口径：这个窗口里「读不到」不得渲染成红）。
@@ -248,9 +259,16 @@ def probe_lock(repo, detail):
 
 def request_rebase(repo, number, head_sha, reason):
     body = ("%s\n%s —— %s\n\n（本评论由 CI 自动发出：同一 head 只发一次；本仓分支保护要求"
-            " up-to-date，落后分支的合并结果 lock 会与 package.json 不一致 ⇒ required 腿恒红。）"
-            % (marker_for(head_sha), REBASE_COMMAND, reason))
+            " up-to-date，落后分支的合并结果 lock 会与 package.json 不一致 ⇒ required 腿恒红。）\n\n"
+            "**出口（一条命令，顺序即安全顺序）**：`./scripts/deps-lock-regen.sh %s`"
+            "（update-branch → 用 npm 10.8.2 视角重建 lock → 自证 → 推送；别手工拆开）"
+            % (marker_for(head_sha), REBASE_COMMAND, reason, number))
     _gh(["pr", "comment", str(number), "--repo", repo, "--body", body])
+
+
+def request_update_branch(repo, number):
+    """非 npm lock 的落后分支：直接让 GitHub 做 update-branch（确定、无 lock 风险）。"""
+    _gh(["pr", "update-branch", str(number), "--repo", repo])
 
 
 def _write_summary(path, lines):
@@ -312,19 +330,36 @@ def main(argv=None):
               "mergeStateStatus": detail.get("mergeStateStatus") or ""}
         comments = detail.get("comments") or []
 
-        # 只有走到「需要看 lock」时才付 API 取数成本（落后/冲突已足够判定）
+        # 探测成本与「这个 PR 有没有 npm lock」成正比：没有 lock 目录时 `probe_lock` 直接返回、
+        # 一次 API 都不发（`dir=None`），所以这里始终探测 —— 它是「能不能安全 update-branch」的判据。
         report = None
         state = (pr["mergeStateStatus"] or "").upper()
-        if state not in ("BEHIND", "DIRTY") and pr["author"] in BOT_LOGINS \
-                and not pr["isDraft"] and BLOCK_LABEL not in pr["labels"]:
+        if pr["author"] in BOT_LOGINS and not pr["isDraft"] and BLOCK_LABEL not in pr["labels"]:
             try:
                 report = probe_lock(args.repo, detail)
             except (GhError, LockUnreadable, json.JSONDecodeError) as exc:
-                unjudged.append("#%s 合并结果 lock 读不懂/读不到 ⇒ 无法判定：%s" % (number, exc))
-                exit_code = EXIT_UNJUDGEABLE
-                continue
+                # 判不出 lock 面时**不能**自动 update-branch（可能把 lock 合坏）；
+                # 但落后/冲突本身已经足够出声（那是确定的读数，不依赖 lock 探测）。
+                if state in ("BEHIND", "DIRTY"):
+                    report = None
+                else:
+                    unjudged.append("#%s 合并结果 lock 读不懂/读不到 ⇒ 无法判定：%s" % (number, exc))
+                    exit_code = EXIT_UNJUDGEABLE
+                    continue
 
         verdict = decide(pr, comments, report)
+        if verdict["action"] == "update-branch":
+            if args.dry_run:
+                actions.append("#%s ⇒ 将 update-branch：%s" % (number, verdict["reason"]))
+                continue
+            try:
+                request_update_branch(args.repo, number)
+            except GhError as exc:
+                failed.append("#%s update-branch 失败：%s" % (number, exc))
+                exit_code = EXIT_FAIL
+            else:
+                actions.append("#%s ⇒ 已 update-branch：%s" % (number, verdict["reason"]))
+            continue
         if verdict["action"] == "rebase":
             if args.dry_run:
                 actions.append("#%s ⇒ 将请求 rebase：%s" % (number, verdict["reason"]))

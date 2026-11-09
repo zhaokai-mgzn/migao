@@ -704,15 +704,20 @@ jobs:
   #       npm error Missing: msw@2.15.0 from lock file
   #   两侧各自自洽、只有合出来的树坏。本仓分支保护 `strict: true` + 仓库 `allow_update_branch=false`
   #   ⇒ 页面**没有**「Update branch」按钮，required 腿恒红之后**没有任何东西会自己变**。
-  # 动作 = 评论 `@dependabot rebase`（官方入口，由 dependabot 用**它自己的**工具链重建 lock）。
-  #   ⛔ 不往分支推提交（与 dependabot 抢写；且 GITHUB_TOKEN 的推送被反递归抑制 ⇒ 新一轮 CI 不跑）。
+  # 动作按「有没有 npm lock 风险」分流（2026-11-09 实测：`@dependabot rebase` 在本仓是 **no-op** ——
+  #   三条评论（bot 1 + owner 2）既无动作也无 👍 反应；既有裁决：该命令只认具 push 权限的**人类**账号、
+  #   **忽略所有 App 账号**；另见 dependabot-core #16596 的 rebase 失败族 ⇒ 不能把它当执行器）：
+  #   ① 不涉及 npm lock（pip / maven / github-actions）⇒ `gh pr update-branch`（确定性、零 lock 风险）；
+  #   ② 涉及 npm lock ⇒ 评论 `@dependabot rebase` **并点名可执行出口** `./scripts/deps-lock-regen.sh <PR>`
+  #      （补 lock 的唯一真值路径）；⛔ 这一类**不**自动 update-branch —— 那把 main 合进来正会产出坏 lock。
+  #   ⛔ 任何情况下都不 `git push`、不 `gh pr merge`（与 dependabot 抢写 / 绕过门禁）。
   # 触发面 = ① 依赖 bot 的 PR 事件（刚开出来就落在一个早已前进的 main 上，是最常见的形态）；
   #          ② 本文件**既有**的每小时 schedule（main 在 PR 开着的时候继续前进 ⇒ 没有任何事件）。
   #          ⚠️ 不新增 cron：复用 `on.schedule` 的既有入口（判据 `test_dependabot_rebase_sweep.py`）。
   # 幂等 + 有界：评论带 `<!-- migao:dependabot-rebase:<head sha> -->`，同一 head 只发一次；
   #   每条 PR 累计最多 2 次，到顶只出声（`::warning::` + step summary），不再自动动作。
   rebase-stale-dependabot:
-    name: Rebase stale dependabot PRs (behind main / broken merge lock)
+    name: Unstick stale dependabot PRs (behind main / broken merge lock)
     runs-on: ubuntu-latest
     timeout-minutes: 10
     if: |
@@ -731,7 +736,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: "Request @dependabot rebase（同一 head 只发一次；探测失败 ⇒ 退出码 3）"
+      - name: "Unstick（无 lock ⇒ update-branch；有 lock ⇒ 点名出口；同一 head 只做一次）"
         if: always()
         run: |
           set +e
@@ -745,7 +750,7 @@ jobs:
           set -e
           if [ -f .github/scripts/mechanism_liveness.sh ]; then
             bash .github/scripts/mechanism_liveness.sh emit automerge --rc "$RC" \
-              --why "dependabot rebase 收口：退出码 ${RC}（0=无待办/已请求 / 1=请求失败 / 3=无法判定）"
+              --why "dependabot 落后收口：退出码 ${RC}（0=无待办/已动作 / 1=动作失败 / 3=无法判定）"
           else
             echo "::warning::机制存活读数**本轮无声**（mech=automerge）：发射器不在检出里 ⇒ 本轮读数缺失（**不是**「零动作」）"
           fi
