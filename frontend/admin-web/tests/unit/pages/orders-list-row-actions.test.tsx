@@ -1,39 +1,46 @@
 // case_ids: OR-001, OR-002, OR-003, OR-004, OR-005, UI-057, UI-058, UI-130
 /**
- * 销售订单列表 · 行内操作收敛 + 噪声清理（issue #8011，B 端体验打磨 P0-1）。
+ * 销售订单列表 · 整行点击进详情 + 操作按钮平铺（2026-11-07 用户裁定）。
  *
- * ## 改前（真机读数，2026-10-24 截图 `14-orders-list.png`）
+ * ## 改动来源（用户逐字）
  *
- * ① 每行 **4 个同级文字链**：`查看 · 备注 · 发货 · 处理退款` —— 20 行/页 ⇒ 单屏 **80** 个可点文本，
- *    没有层级、没有主行动；
- * ② 普通行的「加急」列把**「不加急」**印在每一行（同屏零信息量重复，`migao-dev-flow` §31 P2）；
- * ③ 订单号是 17 位纯数字，**没有复制入口**；
- * ④ 加急与不加急同样字号 ⇒ 扫视读不出来。
+ * 「一、需要支持订单非操作区域整行可点击，点击跳转至对应订单的订单详情页；
+ *  二、操作一列：把订单对应的可操作按钮直接展示出来，不要收在『...』里面」。
+ *
+ * ⇒ 本页**推翻** issue #8011 在本页落的「1 主行动 + ⋯ 菜单」形态：操作列改成平铺
+ * （主行动仍是 `Button variant="ghost"`，其余动作 = `RowActionLink`），并给非操作区域加整行点击。
+ * 其它列表页的「⋯」菜单形态（`RowActions`）不受影响。
  *
  * ## 本文件的判据（会红，不是"看起来像"）
  *
  * ① 「不加急」全表**零出现**（非加急行 `textContent === ''`，不是灰字、不是 CSS 隐藏）；
- * ② 每行操作区**可点元素 ≤ 2**（1 主行动 + 1 菜单触发器），且旧的四文字链形态**不再同屏**；
+ * ② 操作列**没有「⋯」入口**：每行 `queryByRole('menu')` / 「更多操作」均为空；所有可做动作
+ *    同屏可见，按钮数 = 主行动 + 平铺动作数（逐状态可证伪）；
  * ③ 主行动**按状态派生**：待付款→`收款`、待发货→`发货`、已发货→`确认收货`、其它→无；
  * ④ 加急行渲染**醒目徽标**（彩色 Badge，不是同字号灰字），非加急行空单元格；
- * ⑤ 订单号单元格有复制按钮（`aria-label="复制订单号"`），点击**真写剪贴板**并 toast 提示。
+ * ⑤ 订单号单元格有复制按钮（`aria-label="复制订单号"`），点击**真写剪贴板**并 toast 提示；
+ * ⑥ **整行点击**：点非操作区域（收货人 / 状态 / 金额…）⇒ `router.push('/orders/{id}')`；
+ *    点操作按钮 / 操作格内边距 / 复制按钮 / 备注预览 ⇒ **不跳转**，各自动作照旧执行。
  *
  * **注入式红证**（复核用，非本文件运行时执行）：
- * - 把 `renderActions` 恢复成旧的 4 个 `RowActionLink` ⇒ ② 的「≤ 2」与负控当场红；
+ * - 把 `renderActions` 改回 `RowActions`（1 主行动 + ⋯ 菜单）⇒ ② 的「无更多操作」与逐状态按钮数当场红；
+ * - 去掉 `<tr onClick>` ⇒ ⑥ 的第一条（非操作区域跳详情）红；
+ * - 去掉操作 `<td>` 的 `stopPropagation` ⇒ ⑥ 的「点操作格不跳转」红；
+ * - 去掉复制按钮 / 备注预览的 `stopPropagation` ⇒ ⑥ 的对应负控红；
  * - 把非加急分支写回 `{urgentBadgeText(order)}` ⇒ ① 当场红（全表出现「不加急」）；
- * - 把主行动映射改错（待付款 ⇒ `发货`）⇒ ③ 当场红；
- * - 把复制按钮的 `aria-label` 改掉 / 去掉 clipboard 调用 ⇒ ⑤ 当场红。
+ * - 把主行动映射改错（待付款 ⇒ `发货`）⇒ ③ 当场红。
  *
  * ## 为什么渲染**整页**而不是只渲染 OrderTable
  *
- * issue 的判据是**页面级**形态（单屏 80 个可点文本、一屏至多一个 primary）。页面测试才覆盖
+ * 判据是**页面级**形态（整行点击的落点 = 页面路由、操作列的逐状态按钮集合）。页面测试才覆盖
  * 「表格 + 分页 + 筛选」同屏的真实组合；`@/components/orders` 与 `@/components/ui` **都不替身**
  * （替身会让判据测到自己写的 mock）。
  *
  * 相邻判据（不重复）：
  * - 加急**取值口径**（服务端 `isUrgent` 缺省 = 不加急）⇒ `tests/unit/components/OrderTableUrgency.test.tsx`；
  * - 确认动作走自研 Modal（不是 `window.confirm`）⇒ `tests/unit/pages/orders-confirm-modal.test.tsx`；
- * - 「操作」列右缘冻结几何 ⇒ `tests/unit/wide-table-action-column-guard.test.ts`。
+ * - 「操作」列右缘冻结几何 ⇒ `tests/unit/wide-table-action-column-guard.test.ts`；
+ * - 行内快捷发货 / 焦点归位 ⇒ `tests/unit/pages/orders-inline-ship.test.tsx`。
  */
 import React from 'react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
@@ -99,10 +106,13 @@ const ROWS = [
     totalAmount: 1000,
     actualAmount: 0,
     customerName: '张先生',
+    customerPhone: '13800000001',
+    customerAddress: '浙江省杭州市西湖区文三路 100 号',
     hasProcessing: false,
-    createdAt: '2026-10-20T10:00:00Z',
+    createdAt: '2026-11-06T10:00:00Z',
     items: [],
     isUrgent: false,
+    remark: '[2026-11-06 09:00] 客户催单',
   },
   {
     id: 'ship',
@@ -111,12 +121,14 @@ const ROWS = [
     totalAmount: 2000,
     actualAmount: 2000,
     customerName: '李女士',
+    customerPhone: '13800000002',
+    customerAddress: '江苏省南京市玄武区中山路 200 号',
     hasProcessing: false,
-    createdAt: '2026-10-21T10:00:00Z',
+    createdAt: '2026-11-05T10:00:00Z',
     items: [],
     // 唯一的加急行 ⇒ 「加急徽标只出现在这一行」可逐单证伪
     isUrgent: true,
-    requiredDeliveryDate: '2026-10-30',
+    requiredDeliveryDate: '2026-11-12',
     refundAmount: 0,
   },
   {
@@ -126,8 +138,10 @@ const ROWS = [
     totalAmount: 3000,
     actualAmount: 3000,
     customerName: '王先生',
+    customerPhone: '13800000003',
+    customerAddress: '上海市浦东新区陆家嘴金融中心',
     hasProcessing: false,
-    createdAt: '2026-10-22T10:00:00Z',
+    createdAt: '2026-11-04T10:00:00Z',
     items: [],
     isUrgent: false,
     refundAmount: 0,
@@ -139,8 +153,10 @@ const ROWS = [
     totalAmount: 4000,
     actualAmount: 4000,
     customerName: '赵女士',
+    customerPhone: '13800000004',
+    customerAddress: '北京市朝阳区建国路 88 号',
     hasProcessing: false,
-    createdAt: '2026-10-23T10:00:00Z',
+    createdAt: '2026-11-03T10:00:00Z',
     items: [],
     isUrgent: false,
     refundAmount: 0,
@@ -148,6 +164,17 @@ const ROWS = [
 ]
 
 const ALL_IDS = ROWS.map((r) => r.id)
+
+/**
+ * 逐状态「同屏可点的操作按钮」集合（2026-11-07 平铺形态）。
+ * 主行动 + 平铺动作，按现有条件派生；顺序与 `renderActions` 一致。
+ */
+const EXPECTED_ACTION_LABELS: Record<string, string[]> = {
+  pay: ['收款', '查看详情', '备注', '关闭订单'],
+  ship: ['发货', '查看详情', '备注', '处理退款', '去发货页'],
+  recv: ['确认收货', '查看详情', '备注', '处理退款'],
+  done: ['查看详情', '备注', '处理退款'],
+}
 
 function renderPage() {
   return render(<OrdersPage />)
@@ -173,8 +200,10 @@ async function waitForRows() {
 }
 
 const actionsCell = (id: string) => screen.getByTestId(`order-actions-${id}`)
+const actionButton = (id: string, label: string) =>
+  within(actionsCell(id)).getByRole('button', { name: label })
 
-describe('销售订单列表 · 行内操作收敛 + 噪声清理（issue #8011）', () => {
+describe('销售订单列表 · 整行点击 + 操作按钮平铺（2026-11-07 用户裁定）', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     api.getOrders.mockResolvedValue({ data: { data: { items: ROWS, total: ROWS.length } } })
@@ -186,7 +215,6 @@ describe('销售订单列表 · 行内操作收敛 + 噪声清理（issue #8011�
     renderPage()
     await waitForRows()
 
-    // 靶心：改用例前这里是灰字「不加急」× 3 行（noise = 同屏零信息量重复）
     expect(screen.queryAllByText(/不加急/)).toHaveLength(0)
     for (const id of ['pay', 'recv', 'done']) {
       // 空单元格 = **真的没内容**（`textContent === ''`，不是 CSS 隐藏 / sr-only）
@@ -212,39 +240,36 @@ describe('销售订单列表 · 行内操作收敛 + 噪声清理（issue #8011�
     }
   })
 
-  // ================= ② 每行 ≤ 2 个可点元素 + 旧形态负控 =================
+  // ================= ② 操作按钮平铺、没有「⋯」 =================
 
-  it('② 每行操作区可点元素 ≤ 2（1 主行动 + 1 菜单触发器）', async () => {
-    renderPage()
-    await waitForRows()
-
-    for (const id of ALL_IDS) {
-      const buttons = within(actionsCell(id)).getAllByRole('button')
-      expect(
-        buttons.length,
-        `订单 ${id} 的操作区有 ${buttons.length} 个可点元素（>2 ⇐ 又回到了平铺文字链的形态）`,
-      ).toBeLessThanOrEqual(2)
-    }
-    // 页面级同一读数：单屏可点元素不再是 4 × 行数
-    const total = ALL_IDS.reduce((n, id) => n + within(actionsCell(id)).getAllByRole('button').length, 0)
-    expect(total).toBeLessThanOrEqual(2 * ROWS.length)
-  })
-
-  it('② 负控：旧的「查看 / 备注 / 发货 / 处理退款」四文字链同屏形态不再出现', async () => {
+  it('② 每行的可做动作**同屏平铺**：没有「更多操作」触发器、没有菜单，按钮集合逐状态可证伪', async () => {
     renderPage()
     await waitForRows()
 
     for (const id of ALL_IDS) {
       const cell = actionsCell(id)
-      // 收起态：菜单项**不进 DOM**（折叠不是 CSS 隐藏，§31 P1 的机器读数）
+      // 「平铺」的机器读数：没有 ⋯ 触发器、也没有菜单（收起态/展开态都不许有）
+      expect(within(cell).queryByRole('button', { name: '更多操作' })).toBeNull()
       expect(within(cell).queryByRole('menu')).toBeNull()
-      // 旧形态的同级文字链 —— 现在都收进菜单（有待发货行做正控：主行动「发货」仍在）
-      expect(cell.textContent).not.toMatch(/查看/)
-      expect(cell.textContent).not.toMatch(/备注/)
-      expect(cell.textContent).not.toMatch(/处理退款/)
+      expect(within(cell).queryByRole('menuitem')).toBeNull()
+
+      // 逐状态正控：该做的动作全在，且**没有**被漏掉/多出来
+      const labels = within(cell)
+        .getAllByRole('button')
+        .map((b) => (b.textContent || '').trim())
+      expect(labels, `订单 ${id} 的同屏动作集合漂移了`).toEqual(EXPECTED_ACTION_LABELS[id])
     }
-    // 正控（防止上面三条因「整列压根没渲染」而空跑通过）
-    expect(actionsCell('ship').textContent).toContain('发货')
+  })
+
+  it('② 负控：旧形态「1 主行动 + ⋯ 菜单」在本页不再出现（菜单项文案只以平铺按钮露出）', async () => {
+    renderPage()
+    await waitForRows()
+
+    // 行内可点元素不再是「主行动 + 触发器」两枚；待发货行 = 主行动 1 + 平铺动作 4
+    expect(within(actionsCell('ship')).getAllByRole('button')).toHaveLength(5)
+    // 旧形态的「⋯」触发器不在了；而「去发货页」现在直接可见（不再是菜单项）
+    expect(within(actionsCell('ship')).queryByLabelText('更多操作')).toBeNull()
+    expect(actionButton('ship', '去发货页')).toBeInTheDocument()
   })
 
   // ================= ③ 主行动按状态派生 =================
@@ -257,15 +282,15 @@ describe('销售订单列表 · 行内操作收敛 + 噪声清理（issue #8011�
     expect(within(screen.getByTestId('order-primary-ship')).getByRole('button').textContent).toBe('发货')
   })
 
-  it('③ 已发货行主行动 = 确认收货；已完成行无主行动（只剩「⋯」菜单）', async () => {
+  it('③ 已发货行主行动 = 确认收货；已完成行无主行动（只剩平铺动作）', async () => {
     renderPage()
     await waitForRows()
 
     expect(within(screen.getByTestId('order-primary-recv')).getByRole('button').textContent).toBe('确认收货')
     // completed 没有派生主行动 ⇒ 主行动位不渲染（不是渲染一个禁用按钮占位）
     expect(screen.queryByTestId('order-primary-done')).toBeNull()
-    // 而菜单触发器仍在（每行都能操作，只是没有「主」行动）
-    expect(within(actionsCell('done')).getByRole('button', { name: '更多操作' })).toBeInTheDocument()
+    // 而平铺动作仍在（每行都能操作，只是没有「主」行动）
+    expect(actionButton('done', '查看详情')).toBeInTheDocument()
   })
 
   it('③ 一屏至多一个 primary（§32.2）：行内动作一律不走主色实心 variant', async () => {
@@ -307,77 +332,117 @@ describe('销售订单列表 · 行内操作收敛 + 噪声清理（issue #8011�
     expect(writeText).not.toHaveBeenCalledWith('MG-PAY-0001')
   })
 
-  // ================= 「保持原有行为」= 收敛不改语义 =================
+  // ================= ⑥ 整行点击（非操作区域） =================
 
-  it('菜单里的动作保持原行为：查看详情跳详情页、备注仍打开备注弹框', async () => {
+  it('⑥ 点非操作区域（收货人 / 状态 / 金额）⇒ 跳该行订单详情', async () => {
     renderPage()
     await waitForRows()
 
-    // 待发货行：查看详情 → 详情页（改前是行内文字链，容器变了、回调没变）
-    fireEvent.click(within(actionsCell('ship')).getByRole('button', { name: '更多操作' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: '查看详情' }))
+    // 收货人单元格（非操作区域；第 9 格，0 起 = 8）
+    fireEvent.click(screen.getByTestId('order-row-ship').querySelectorAll('td')[8])
     expect(routerMock.push).toHaveBeenCalledWith('/orders/ship')
-    // 点了就收起（菜单不留在屏上）
-    expect(screen.queryByRole('menu')).toBeNull()
 
-    // 备注 → 备注弹框（`RemarkModal` 自带标题「添加备注」，没有 role="dialog"）
-    fireEvent.click(within(actionsCell('ship')).getByRole('button', { name: '更多操作' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: '备注' }))
-    expect(await screen.findByText('添加备注')).toBeInTheDocument()
+    // 状态单元格（非操作区域）—— 再点另一行，证明不是「只对第一行生效」。
+    // 用行内第 2 格（状态）定位，避免依赖状态文案在多处出现。
+    const statusCell = screen.getByTestId('order-row-done').querySelectorAll('td')[1]
+    fireEvent.click(statusCell)
+    expect(routerMock.push).toHaveBeenCalledWith('/orders/done')
+    expect(routerMock.push).toHaveBeenCalledTimes(2)
   })
 
-  it('主行动仍是原行为：待付款行「收款」开确认弹框（不直接改状态）；待发货行「发货」**不跳页**（issue #8013 起就地展开）', async () => {
+  it('⑥ 点「操作」列（按钮 / 格内空白）⇒ 不跳详情，各自动作照旧执行', async () => {
     renderPage()
     await waitForRows()
 
-    // issue #8013：待发货行的主行动「发货」= **就地展开录入区**，不再是整页跳转
-    // （录入区自身的判据在 tests/unit/pages/orders-inline-ship.test.tsx，本文件只钉「不跳页」这一条边界）
+    // 平铺动作按钮自己 stopPropagation
+    fireEvent.click(actionButton('ship', '备注'))
+    expect(routerMock.push).not.toHaveBeenCalled()
+    expect(await screen.findByText('添加备注')).toBeInTheDocument()
+
+    // 「操作」格的内边距 / 空白也不能触发跳转（整格拦截，不只靠按钮自己）
+    fireEvent.click(actionsCell('pay'))
+    expect(routerMock.push).not.toHaveBeenCalled()
+  })
+
+  it('⑥ 点复制订单号 / 备注预览 ⇒ 不跳详情（行内交互元素各自拦冒泡）', async () => {
+    stubClipboard()
+    renderPage()
+    await waitForRows()
+
+    // 复制按钮
+    fireEvent.click(screen.getByTestId('order-copy-pay'))
+    expect(routerMock.push).not.toHaveBeenCalled()
+
+    // 备注预览（点开浮层，不进详情）
+    fireEvent.click(screen.getByText(/客户催单/))
+    expect(routerMock.push).not.toHaveBeenCalled()
+    expect(await screen.findByRole('tooltip')).toBeInTheDocument()
+  })
+
+  it('⑥ 主行动点「发货」仍是就地展开（不跳页），展开后整行点击也不误触', async () => {
+    renderPage()
+    await waitForRows()
+
     fireEvent.click(within(screen.getByTestId('order-primary-ship')).getByRole('button'))
     expect(routerMock.push).not.toHaveBeenCalled()
     expect(screen.getByTestId('ship-inline-form')).toBeInTheDocument()
 
-    // 收款 = 旧「确认付款」的同一个弹框闸门（弹框里点确认才发请求）
+    // 展开行（录入区）不是可点击行；点它不应把页面带走
+    fireEvent.click(screen.getByTestId('ship-inline-row-ship'))
+    expect(routerMock.push).not.toHaveBeenCalled()
+  })
+
+  // ================= 「保持原有行为」= 只改形态，不改语义 =================
+
+  it('平铺后的动作保持原行为：查看详情跳详情页、备注仍打开备注弹框', async () => {
+    renderPage()
+    await waitForRows()
+
+    // 待发货行：查看详情 → 详情页（改前在 ⋯ 菜单里，容器变了、回调没变）
+    fireEvent.click(actionButton('ship', '查看详情'))
+    expect(routerMock.push).toHaveBeenCalledWith('/orders/ship')
+
+    // 备注 → 备注弹框（`RemarkModal` 自带标题「添加备注」，没有 role="dialog"）
+    fireEvent.click(actionButton('ship', '备注'))
+    expect(await screen.findByText('添加备注')).toBeInTheDocument()
+  })
+
+  it('主行动仍是原行为：待付款行「收款」开确认弹框（不直接改状态）', async () => {
+    renderPage()
+    await waitForRows()
+
     fireEvent.click(within(screen.getByTestId('order-primary-pay')).getByRole('button'))
     const dialog = await screen.findByRole('dialog')
     expect(within(dialog).getByText(/已收到客户付款|确认付款/)).toBeInTheDocument()
     expect(api.confirmPayment).not.toHaveBeenCalled()
   })
 
-  it('处理退款仍在菜单里且仍受「可退状态 + 未退过款」约束（权限判断不变）', async () => {
+  it('处理退款仍受「可退状态 + 未退过款」约束（权限判断不变，只是不再收在菜单里）', async () => {
     renderPage()
     await waitForRows()
 
-    // 待付款行不可退 ⇒ 菜单里没有该项（旧实现同样不渲染）
-    fireEvent.click(within(actionsCell('pay')).getByRole('button', { name: '更多操作' }))
-    expect(screen.queryByRole('menuitem', { name: '处理退款' })).toBeNull()
-    expect(screen.getByRole('menuitem', { name: '关闭订单' })).toBeInTheDocument()
+    // 待付款行不可退 ⇒ 整行文本里没有这一项（旧实现同样不渲染）
+    expect(within(actionsCell('pay')).queryByText('处理退款')).toBeNull()
+    expect(actionButton('pay', '关闭订单')).toBeInTheDocument()
 
-    // 已发货行可退 ⇒ 有该项，点击仍弹退款弹框
-    fireEvent.click(within(actionsCell('recv')).getByRole('button', { name: '更多操作' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: '处理退款' }))
+    // 已发货行可退 ⇒ 平铺可见，点击仍弹退款弹框
+    fireEvent.click(actionButton('recv', '处理退款'))
     expect(await screen.findByRole('dialog')).toBeInTheDocument()
   })
-})
 
-describe('行内菜单的键盘可达性（收敛不得把动作藏成不可达）', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
-    api.getOrders.mockResolvedValue({ data: { data: { items: ROWS, total: ROWS.length } } })
-  })
-
-  it('Escape 收起菜单；触发器 aria-expanded 随开合变化', async () => {
+  it('关闭订单只在待付款行平铺展示，点击仍走既有确认弹框', async () => {
     renderPage()
     await waitForRows()
 
-    const trigger = within(actionsCell('ship')).getByRole('button', { name: '更多操作' })
-    expect(trigger.getAttribute('aria-expanded')).toBe('false')
+    expect(actionButton('pay', '关闭订单')).toBeInTheDocument()
+    for (const id of ['ship', 'recv', 'done']) {
+      expect(within(actionsCell(id)).queryByText('关闭订单')).toBeNull()
+    }
 
-    fireEvent.click(trigger)
-    expect(trigger.getAttribute('aria-expanded')).toBe('true')
-    expect(screen.getByRole('menu')).toBeInTheDocument()
-
-    fireEvent.keyDown(document, { key: 'Escape' })
-    await waitFor(() => expect(screen.queryByRole('menu')).toBeNull())
+    fireEvent.click(actionButton('pay', '关闭订单'))
+    // 本仓自研 `Modal` / `CloseOrderModal` 没有 role="dialog"（与 RemarkModal 同口径）⇒ 按标题正控
+    expect(await screen.findByRole('heading', { name: '关闭订单' })).toBeInTheDocument()
+    expect(api.closeOrder).not.toHaveBeenCalled()
   })
 })
 

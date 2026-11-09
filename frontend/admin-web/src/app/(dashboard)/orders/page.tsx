@@ -360,7 +360,7 @@ export default function OrdersPage() {
     setShippingOrderId((prev) => (prev === order.id ? null : order.id))
   }
 
-  /** 兜底路径：既有整页发货表单（想看商品 / 收货人再发货时，「⋯」菜单里有入口） */
+  /** 兜底路径：既有整页发货表单（想看商品 / 收货人再发货时，操作列的平铺「去发货页」有入口） */
   const handleGoShipPage = (order: OrderBrief) => {
     router.push(`/orders/${order.id}/ship`)
   }
@@ -662,7 +662,7 @@ export default function OrdersPage() {
           onRemark={handleOpenRemark}
           onClose={handleOpenClose}
           /* issue #8013：列表即队列 —— 主行动「发货」**就地展开**录入区（不跳页）；
-             兜底路径（既有整页发货表单）留在「⋯」菜单的「去发货页」里。 */
+             兜底路径（既有整页发货表单）是操作列平铺的「去发货页」（2026-11-07 起不再收在菜单里）。 */
           shippingOrderId={shippingOrderId}
           onToggleShip={handleToggleShip}
           onGoShipPage={handleGoShipPage}

@@ -1,7 +1,7 @@
-// case_ids: OR-001, OR-002, OR-003, OR-046, OR-055, OR-067, OR-068, OR-070, UI-024, UI-040, UI-053, UI-076, UI-090, OR-072
+// case_ids: OR-001, OR-002, OR-003, OR-046, OR-055, OR-067, OR-068, OR-070, UI-024, UI-040, UI-053, UI-076, UI-090, OR-072, UI-149
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { useEffect } from 'react'
-import { render, cleanup, screen, waitFor, fireEvent } from '@testing-library/react'
+import { render, cleanup, screen, waitFor, fireEvent, within } from '@testing-library/react'
 
 // issue #7276：订单详情页的**页面码 = order:detail**（判据见 tests/unit/pages/order-detail-permission-gate.test.tsx）
 // ⇒ 本文件渲染的是「有权限的商家」形态，必须给登录态一份 `*` 权限；否则页面走拒绝态，
@@ -1204,4 +1204,92 @@ describe('OrderDetailPage', () => {
     expect(mockGetOrderOperations.mock.calls.length).toBe(opCalls + 1)
     expect(mockGetOrder.mock.calls.length).toBe(orderCalls)
   }, 20_000) // ⏱ 整例 20s：失败面等到底时 RTL 的 asyncUtilTimeout 是 5s（否则红成 Test timed out = 没跑到断言）
+
+  // ===== 三区展示与操作层级（issue #8838）=====
+  //
+  // 用户 2026-11-07 口径：订单详情按「商品信息 / 作业单 / 可操作」三区展示；
+  // **整体操作**（打印 / 确认付款 / 发货 / 确认收货 / 退款 / 修改订单 / 关闭订单）在页面顶部，
+  // **局部操作**贴对应信息（编辑物流 → 收货信息；加急/到货日 → 基础信息）。
+  //
+  // 本组判的是**渲染位置**（谁在哪个区域里、谁不在），不是「页面上有这句话」——
+  // 后者在改前同样成立，判不出「操作与信息穿插」这个被投诉的形态。
+  describe('三区展示与操作层级（issue #8838）', () => {
+    it('三区齐备：操作区在顶部，商品信息区内含基础信息/商品明细/收货信息，作业单独立成区', async () => {
+      mockGetOrder.mockResolvedValue({
+        data: { data: { ...mockOrder, status: 'shipped', refundAmount: 0 } },
+      })
+      render(<OrderDetailPage />)
+
+      const operation = await screen.findByTestId('order-operation-region')
+      const goods = screen.getByTestId('order-goods-region')
+      const workOrder = screen.getByTestId('order-work-order-region')
+
+      // 商品信息区域 = 三块同区（不是三张各自漂在不同位置的卡）
+      expect(within(goods).getByTestId('order-basic-info')).toBeInTheDocument()
+      expect(within(goods).getByTestId('order-product-info')).toBeInTheDocument()
+      expect(within(goods).getByTestId('order-receiving-info')).toBeInTheDocument()
+      // 作业单区域承载作业单块
+      expect(within(workOrder).getByTestId('po-block')).toBeInTheDocument()
+
+      // 页面顺序：整体操作区 → 商品信息区 → 作业单区（整体操作在页面顶部）
+      expect(
+        operation.compareDocumentPosition(goods) & Node.DOCUMENT_POSITION_FOLLOWING,
+        '「订单操作」区应在商品信息区域之前（整体操作在页面顶部）',
+      ).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
+      expect(
+        goods.compareDocumentPosition(workOrder) & Node.DOCUMENT_POSITION_FOLLOWING,
+        '商品信息区域应在作业单区域之前',
+      ).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
+    })
+
+    it('待付款：修改订单/关闭订单/确认付款/打印都在顶部操作区，商品信息区域内没有整体操作', async () => {
+      mockGetOrder.mockResolvedValue({
+        data: { data: { ...mockOrder, status: 'pending', refundAmount: 0 } },
+      })
+      render(<OrderDetailPage />)
+
+      const operation = await screen.findByTestId('order-operation-region')
+      const goods = screen.getByTestId('order-goods-region')
+
+      for (const name of ['修改订单', '关闭订单', '确认付款']) {
+        expect(within(operation).getByRole('button', { name })).toBeInTheDocument()
+        expect(within(goods).queryByRole('button', { name })).toBeNull()
+      }
+      expect(within(operation).getByTestId('order-print-entry')).toBeInTheDocument()
+      expect(within(goods).queryByTestId('order-print-entry')).toBeNull()
+    })
+
+    it('待发货：退款/发货在顶部操作区，不穿插进商品信息区域', async () => {
+      mockGetOrder.mockResolvedValue({
+        data: { data: { ...mockOrder, status: 'confirmed', refundAmount: 0 } },
+      })
+      render(<OrderDetailPage />)
+
+      const operation = await screen.findByTestId('order-operation-region')
+      const goods = screen.getByTestId('order-goods-region')
+
+      expect(within(operation).getByRole('button', { name: '退款' })).toBeInTheDocument()
+      expect(within(operation).getByRole('button', { name: '发货' })).toBeInTheDocument()
+      expect(within(goods).queryByRole('button', { name: '退款' })).toBeNull()
+      expect(within(goods).queryByRole('button', { name: '发货' })).toBeNull()
+    })
+
+    it('局部操作贴对应信息：编辑物流在收货信息旁、加急/到货日在基础信息内，且不混进整体操作区', async () => {
+      mockGetOrder.mockResolvedValue({
+        data: { data: { ...mockOrder, status: 'shipped', refundAmount: 0 } },
+      })
+      render(<OrderDetailPage />)
+
+      const operation = await screen.findByTestId('order-operation-region')
+      const goods = screen.getByTestId('order-goods-region')
+      const receiving = within(goods).getByTestId('order-receiving-info')
+      const basic = within(goods).getByTestId('order-basic-info')
+
+      expect(within(receiving).getByRole('button', { name: '编辑物流' })).toBeInTheDocument()
+      expect(within(basic).getByTestId('order-urgency-panel')).toBeInTheDocument()
+      // 局部操作不该同时混在顶部整体操作区（否则又是两处入口）
+      expect(within(operation).queryByRole('button', { name: '编辑物流' })).toBeNull()
+      expect(within(operation).queryByTestId('order-urgency-panel')).toBeNull()
+    })
+  })
 })
