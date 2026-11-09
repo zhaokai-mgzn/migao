@@ -122,7 +122,7 @@
     "**data",
     "data=response.get('data') or {}"
    ],
-   "source_sha256": "b48bb1df5a785bc9a41ae4696efcbb88161010ae7bc97b2b261f110d4baa5ae8"
+   "source_sha256": "508cf53a762b4043cfe79ae41d4535cf4c325372ed067dd2208709572923dcf7"
   },
   "briefing_query": {
    "actions": null,
@@ -1185,7 +1185,7 @@
     "data=dict(response.get('data') or {})",
     "data=polled or data"
    ],
-   "source_sha256": "1f9d3ab426c5d136c9ad411e1a22d7824e943455e466a067b9516f9d9581cfb5"
+   "source_sha256": "0f32320c379117b227fd9dc2e4527c5794de6c79441570df277221c036bd6999"
   },
   "product_detail": {
    "actions": null,
@@ -1432,7 +1432,7 @@
    "shape_notes": [
     "data=response.get('data') or {}"
    ],
-   "source_sha256": "f3e585265809d2299b222e0c552fc2ce4b91b286298560209442ff96fc622322"
+   "source_sha256": "da84e425f717c0cfdf346f20409ead246d78c43648163924df7ddb4d0c74fca5"
   },
   "session_manage": {
    "actions": {
