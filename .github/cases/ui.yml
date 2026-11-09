@@ -5703,10 +5703,10 @@ cases:
         - pr-check.yml
       verifies: []
 
-  # UI-149（issue #8838）：订单详情三区展示 + 操作按整体/局部层级摆放
+  # UI-149（issue #8838 / #8848）：订单详情三区展示 + 操作按整体/局部层级摆放 + 加急/到货日上收顶部
   - id: UI-149
     legacy_id: ""
-    title: "订单详情页重排为「商品信息 / 作业单 / 订单操作」三区：整体操作上收页面顶部、局部操作贴对应信息（issue #8838）"
+    title: "订单详情页重排为「商品信息 / 作业单 / 订单操作」三区：整体操作上收页面顶部、加急/到货日与订单操作同区、编辑物流贴收货信息（issue #8838 / #8848）"
     domains:
       - ui
       - frontend
@@ -5721,17 +5721,17 @@ cases:
       - frontend-fix.layout
       - frontend-fix.no-api-change
     user_inputs:
-      - "用户 2026-11-07 钉钉原话：订单详情页面分成三个区域展示：商品信息区域（基础信息、商品信息、收货信息）、作业单区域、可操作区域（退款、发货、编辑物流、打印、加急/到货日等操作）；不要把其他信息和操作穿插在商品信息中间；操作按钮要分清订单整体操作和局部信息操作，整体操作展示在页面顶部或者页面底部悬浮都可以，对应的操作按钮展示在对应信息的旁边"
+      - "用户 2026-11-07 钉钉原话：订单详情页面分成三个区域展示：商品信息区域（基础信息、商品信息、收货信息）、作业单区域、可操作区域（退款、发货、编辑物流、打印、加急/到货日等操作）；不要把其他信息和操作穿插在商品信息中间；操作按钮要分清订单整体操作和局部信息操作，整体操作展示在页面顶部或者页面底部悬浮都可以，对应的操作按钮展示在对应信息的旁边。用户 2026-11-09 追加钉钉原话：把订单详情页的“加急/到货日”这个模块移到页面顶部跟“订单操作”模块整合为一个模块"
     expectations:
       - tool: direct_reply
     data_checks:
       - "判据 1·**三区齐备且顺序正确**：页面渲染出 `order-operation-region` / `order-goods-region` / `order-work-order-region` 三个区域锚点；真实浏览器里操作区 y < 商品信息区 y < 作业单区 y。执行点 = frontend/admin-web/tests/unit/pages/order-detail.test.tsx::三区展示与操作层级 与 tests/e2e/specs/orders/order-detail-regions.spec.ts。"
       - "判据 2·**整体操作不穿插**：打印（`order-print-entry`）、退款、发货、确认付款、确认收货、修改订单、关闭订单都只在 `order-operation-region` 内；`order-goods-region` 内查不到上述按钮。执行点 = 同文件 4 条用例（待付款 / 待发货 / 已发货）。"
-      - "判据 3·**局部操作贴对应信息**：`编辑物流` 在 `order-receiving-info` 内、不在操作区；`order-urgency-panel` 在 `order-basic-info` 内、不在操作区；「复制全部」仍留在作业单块内（块不再自带同名「作业单」标题）。执行点 = order-detail.test.tsx 与 ProcessingOrderBlock.test.tsx::由外层区域承载标题。"
+      - "判据 3·**局部操作落位 + 加急/到货日与订单操作同区**：`编辑物流` 在 `order-receiving-info` 内、不在操作区；`order-urgency-panel` 在 `order-operation-region` 内、不在 `order-goods-region` / `order-basic-info` 内（2026-11-09 用户口径）；「复制全部」仍留在作业单块内（块不再自带同名「作业单」标题）。执行点 = order-detail.test.tsx、tests/e2e/specs/orders/order-detail-regions.spec.ts 与 ProcessingOrderBlock.test.tsx::由外层区域承载标题。"
       - "判据 4·**页面头走单一原语**：OrderDetail 改用 `PageHeader`（不再手写 `<h1>`），并从 page-header-single-source-guard 的存量快照/有意不迁清单销账（上界 7→6）。执行点 = frontend/admin-web/tests/unit/page-header-single-source-guard.test.ts。"
       - "判据 5·**零行为改动**：打印仍是页面级唯一入口、与订单状态无关（#7544）；退款/发货/确认收货/修改订单/关闭订单的可见状态条件与提交语义不变；编辑物流仍只在已发货可见；编辑物流 / 加急保存 / 工序读面失败重试等既有判据全部保持绿。执行点 = 既有 order-detail.test.tsx / OrderDetailShipGuard.test.tsx / OrderUrgencyPanel.test.tsx / ProcessingOrderBlock.test.tsx。"
     skip_reason: "[backend-contract] 纯前端版式与信息架构调整（无接口/字段变更），由 vitest 页面判据 + Playwright 真浏览器判据覆盖，不进入 agent-eval 冒烟"
-    merge_log: "2026-11-07 新增（issue #8838）：订单详情按用户口径重排三区、整体操作上收顶部、局部操作贴对应信息；页面头迁 PageHeader 并同步销账。取号 UI-149（`python3 scripts/next_case_id.py UI` 现取）。"
+    merge_log: "2026-11-07 新增（issue #8838）：订单详情按用户口径重排三区、整体操作上收顶部、局部操作贴对应信息；页面头迁 PageHeader 并同步销账。取号 UI-149（`python3 scripts/next_case_id.py UI` 现取）。 ｜ 2026-11-09（issue #8848）：用户追加口径 —— 加急/到货日从「基础信息」上收页面顶部、与「订单操作」合并为同一区域卡；判据 3 同步改判（`order-urgency-panel` 在 `order-operation-region` 内、不在商品信息区域/基础信息内），其余判据不变。"
     traces:
       tests:
         - "frontend/admin-web/tests/unit/pages/order-detail.test.tsx"
