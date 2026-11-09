@@ -1,5 +1,20 @@
 name: PR Check
 
+# ── 判定面凭据（issue #8847，2026-11-09 owner 裁定①「加凭据」）─────────────────
+# 本文件里所有调 GitHub API 的守卫 / 打标步骤一律写
+#   `${{ secrets.AUTOMERGE_PAT || secrets.GITHUB_TOKEN }}`
+# 为什么：
+#   · 内置 `github.token` 的配额是**每仓每小时 1000 次** —— 本仓实测 **3 条 PR 并发**就打穿
+#     （#8847 现场：5 条互不相干的守卫同时 `exit 3`，外观与真红**一模一样**，只能靠日志里的
+#      `HTTP 403` / `x-ratelimit-remaining=0` 分辨）；
+#   · PAT 走**用户配额**（5000 次/小时），与 Actions 安装令牌**不是同一个窗口**；
+#   · `||` 是**回落**而不是可选装饰：**fork PR 拿不到 secrets** ⇒ 自动退回内置令牌
+#     （缺了它，fork PR 会因空 token 全红 —— 这是 fork 场景唯一可用的凭据）。
+# ⚠️ 安全边界（照实登记，不粉饰）：本仓是 **public**，`pull_request` 事件的 secrets **只发给
+#   同仓分支**（fork 一律不投递）⇒ PAT 的可见面 = 本来就能推同仓分支的账号
+#   = `.github/external-authorship-allow.json` 白名单里的使用者账号 + CI bot，**不新增信任面**。
+#   要收得更紧：把 `AUTOMERGE_PAT` 换成只读细粒度 PAT，**本文件的接线一个字都不用改**。
+# 判据 = tests/unit_ci_workflows/test_guard_credential_quota.py（含 3 条注入式红证）。
 on:
   pull_request:
     branches: [main]
@@ -72,9 +87,24 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 1
+      # ── 凭据来源读数（issue #8847）：环境静默即缺陷 ─────────────────────────────
+      # 回落形态（`AUTOMERGE_PAT || GITHUB_TOKEN`）让「用了 PAT」与「回落内置」在日志里**同形**
+      # ⇒ 无法回答「这枚凭据到底生效了没有」。本步只打一个**非密布尔**（不打凭据本身）。
+      # ⚠️ 本 workflow 是 `pull_request`（用**本 PR 的** workflow 文件）⇒ 这条读数在引入它的 PR
+      #    里就能看到；`contribution-gate.yml` 是 `pull_request_target`（用 **base** 的文件）
+      #    ⇒ 那份读数要**合并之后**的 PR run 才生效。
+      - name: 凭据来源读数（PAT vs 内置）
+        env:
+          PAT_PRESENT: ${{ secrets.AUTOMERGE_PAT != '' }}
+        run: |
+          if [ "$PAT_PRESENT" = "true" ]; then
+            echo "🔑 判定面凭据 = AUTOMERGE_PAT（用户配额 5000/h，与安装令牌不是同一窗口）"
+          else
+            echo "::warning::AUTOMERGE_PAT 不可用（未配置，或本事件不投递 secrets —— 如 fork PR）⇒ 回落内置令牌（每仓 1000/h，可能 exit 3；这是**预期回落**，不是故障）"
+          fi
       - name: 拦截陌生账号 / fork 来源的 PR
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.AUTOMERGE_PAT || secrets.GITHUB_TOKEN }}
         run: |
           python3 scripts/external_authorship_guard.py \
             --repo "${{ github.repository }}" \
@@ -355,7 +385,7 @@ jobs:
           #   ⚠️ 顺带修正本段下文「无网络」的旧口径：本 job **仍是纯 CPU 判据套件**，
           #   网络只发生在「本 PR 号可判定 + Actions 环境」时（1 次列 PR + 每个 open PR 1 次读目录，
           #   逐请求 8s 超时 + 整轮 30s 预算，超预算即停 ⇒ 判「无法判定」，**不拖重 CI**）。
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.AUTOMERGE_PAT || secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
           pip install -q pytest pytest-xdist pyyaml
@@ -411,7 +441,7 @@ jobs:
       # ⚠️ 离线结构判据（取值枚举 + 具名失败出口）在 pytest 那一步里 ⇒ **没网络也能判**。
       - name: 清零声明元守卫（[deploy-leg] 声称已关 ⇄ 实际 CLOSED，issue #7075）
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.AUTOMERGE_PAT || secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           # 显式 `--repo`：不靠 `gh` 从当前检出推断远端（§18.6 环境静默即缺陷）。
           GH_REPO: ${{ github.repository }}
@@ -778,7 +808,7 @@ jobs:
       - name: Label PR on failure
         if: failure()
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.AUTOMERGE_PAT || secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           echo "❌ Case Coverage Gate 未通过：评测用例库存在能力覆盖缺口（缺正向用例 / 零覆盖 / 用例挂错端）。"
@@ -848,7 +878,7 @@ jobs:
       - name: Fail on blocking violations
         if: steps.check.outputs.BLOCKERS != '0'
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.AUTOMERGE_PAT || secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           echo "❌ QA Growth Gate 发现 ${{ steps.check.outputs.BLOCKERS }} 处缺测，阻塞合并。"
@@ -876,6 +906,7 @@ jobs:
         if: always()
         uses: actions/github-script@v9
         with:
+          github-token: ${{ secrets.AUTOMERGE_PAT || secrets.GITHUB_TOKEN }}
           script: |
             const fs = require('fs');
             // 正文**只能**来自上一步渲染出的正文文件（其数据源 = growth-gate-result.json），
@@ -1140,7 +1171,7 @@ jobs:
       #    红仍由下面的归因步骤按三态判）。
       - name: Preflight gitleaks license check (限流退避，issue #7549)
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.AUTOMERGE_PAT || secrets.GITHUB_TOKEN }}
         run: |
           python3 .github/rate_limit_backoff.py exec --best-effort \
             --label "gitleaks license 校验预检" -- gh api "users/${{ github.repository_owner }}" > /dev/null
@@ -1149,7 +1180,7 @@ jobs:
         id: gitleaks
         uses: gitleaks/gitleaks-action@v3
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.AUTOMERGE_PAT || secrets.GITHUB_TOKEN }}
 
       - name: Upload gitleaks report
         if: always()
@@ -1235,7 +1266,7 @@ jobs:
       #   本步骤只负责「取评论 → 喂给它 → 写 GITHUB_ENV」。要改逻辑请改那个函数。
       - name: Resolve workflow-deletion acks (owner 显式确认 → DANGER_ACK_DELETE)
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.AUTOMERGE_PAT || secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           # 与 DANGER_TRUSTED_ACTOR 同源（本仓库 owner）；非 owner 的评论一律不算确认
           DANGER_OWNER: zhaokai-mgzn
@@ -1286,6 +1317,7 @@ jobs:
         if: always()
         uses: actions/github-script@v9
         with:
+          github-token: ${{ secrets.AUTOMERGE_PAT || secrets.GITHUB_TOKEN }}
           script: |
             const fs = require('fs');
             // 🔒 认领依据 = 唯一的 **HTML marker**（issue #6423）：`listComments` 按创建序返回（旧 → 新），
@@ -1363,7 +1395,7 @@ jobs:
     steps:
       - name: Add review/needs-changes
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.AUTOMERGE_PAT || secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           if gh pr view "$PR_NUMBER" --json labels --jq '.labels[].name' 2>/dev/null | grep -qx "review/needs-changes"; then
@@ -1402,7 +1434,7 @@ jobs:
     steps:
       - name: Remove review/needs-changes
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.AUTOMERGE_PAT || secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           # ⚠️ **必须有 `GH_REPO`**（issue #7022，实测）：本 job **没有 checkout**，`gh` 靠 git 远端
           # 推断仓库会失败（`failed to run git: fatal: not a git repository`）⇒ 在
