@@ -4,7 +4,8 @@
  *
  * 用户 2026-11-07 口径：订单详情页按「商品信息 / 作业单 / 可操作」三区展示；整体操作
  *（打印 / 退款 / 发货 / 确认收货…）在页面顶部，局部操作贴对应信息
- *（编辑物流 → 收货信息；加急/到货日 → 基础信息）。
+ *（编辑物流 → 收货信息）。
+ * 用户 2026-11-09 追加口径：加急/到货日从基础信息上收页面顶部，与「订单操作」同一区域卡。
  *
  * 这层要回答的是单测答不了的两件事：
  * ① **真实渲染位置** —— 区域在 DOM 里谁先谁后、是否真的上下分区（jsdom 不做布局，y 坐标只能真浏览器取）；
@@ -204,10 +205,10 @@ async function mockOrderDetailApi(page: any) {
   )
 }
 
-test.describe('订单详情三区与操作层级（issue #8838）', () => {
+test.describe('订单详情三区与操作层级（issue #8838 / #8848）', () => {
   test.use({ viewport: { width: 1440, height: 980 } })
 
-  test('三区齐备 + 整体操作在顶部 + 局部操作贴对应信息', async ({ page }) => {
+  test('三区齐备 + 整体操作在顶部 + 加急/到货日与订单操作同区 + 编辑物流贴收货信息', async ({ page }) => {
     test.setTimeout(360_000)
     await mockOrderDetailApi(page)
     await page.goto(`/orders/${ORDER_ID}`, { waitUntil: 'domcontentloaded', timeout: 300_000 })
@@ -253,16 +254,15 @@ test.describe('订单详情三区与操作层级（issue #8838）', () => {
     await expect(goods.getByRole('columnheader', { name: '商品合计' })).toBeVisible()
     await expect(goods.getByRole('button', { name: '退款' })).toHaveCount(0)
     await expect(goods.getByTestId('order-print-entry')).toHaveCount(0)
+    // 加急/到货日已按 2026-11-09 口径上收顶部 ⇒ 商品信息区域（含基础信息）里不该再有它
+    await expect(goods.getByTestId('order-urgency-panel')).toHaveCount(0)
 
-    // ③ 局部操作贴对应信息：编辑物流在收货信息旁、加急/到货日在基础信息内
+    // ③ 加急/到货日与「订单操作」同区；编辑物流仍贴收货信息
     await expect(
       goods.getByTestId('order-receiving-info').getByRole('button', { name: '编辑物流' }),
     ).toBeVisible()
-    await expect(
-      goods.getByTestId('order-basic-info').getByTestId('order-urgency-panel'),
-    ).toBeVisible()
+    await expect(operation.getByTestId('order-urgency-panel')).toBeVisible()
     await expect(operation.getByRole('button', { name: '编辑物流' })).toHaveCount(0)
-    await expect(operation.getByTestId('order-urgency-panel')).toHaveCount(0)
 
     // ④ 真实几何：操作区在商品信息区上方、商品信息区在作业单区上方（不是仅 DOM 顺序）
     const opBox = await operation.boundingBox()
