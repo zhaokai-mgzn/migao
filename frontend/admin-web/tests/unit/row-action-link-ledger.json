@@ -103,7 +103,7 @@
   "conformant": [
     {
       "file": "src/app/(dashboard)/inbound-orders/page.tsx",
-      "reason": "issue #7082 把入库单列为「按钮形态，需先裁定要不要跟订单列表一样」。**裁定已由事件给出**：订单列表自己在 issue #8011（2026-10-28）改成了「1 主行动（`Button variant=\"ghost\" size=\"sm\"`）+ ⋯ 菜单」⇒ 入库单的行内「详情」**正是**订单列表现在的形态；且本文件从来没有链接规格副本（扫描面零命中）。把它改成 `RowActionLink` 反而会**背离**订单列表并改动观感 ⇒ 有意保持。",
+      "reason": "issue #7082 把入库单列为「按钮形态，需先裁定要不要跟订单列表一样」。裁定（2026-11-09）：观星台所有列表页的操作列按钮逐条平铺、不得收进「⋯」——本页行内只有一个「详情」动作（`Button variant=\"ghost\" size=\"sm\"`），本就是平铺、不存在折叠问题；改为 `RowActionLink` 会无谓改动观感，且本文件从无链接规格副本 ⇒ 有意保持。",
       "forbidden_anchors": [
         "<RowActionLink"
       ],
@@ -117,29 +117,7 @@
           ]
         }
       ]
-    },
-    {
-      "file": "src/components/products/ProductTable.tsx",
-      "reason": "issue #7082 列的「商品」那一处（`linkBase` + 链接字面量）已由 issue #8038（2026-10-28）改为共享原语 `RowActions`（主行动 = `Button variant=\"ghost\" size=\"sm\"`）⇒ 本文件**没有**链接规格副本（扫描面零命中），无需再动。",
-      "forbidden_anchors": [
-        "<RowActionLink"
-      ],
-      "forms": [
-        {
-          "component": "RowActions",
-          "marker": "product-actions-",
-          "requires": []
-        },
-        {
-          "component": "Button",
-          "marker": "action.primary.onClick()",
-          "requires": [
-            "variant=\"ghost\"",
-            "size=\"sm\""
-          ]
-        }
-      ]
     }
   ],
-  "boundary": "① 只裁「与原语**同规格**」的副本（三个 token 同时出现）；缺 `hover:text-primary-700` 的**漂移副本**（`purchase-orders` / `suppliers` / 各处页面级链接）不在面内 —— 它们已不是同一份规格，收口要先逐页裁定形态，如实登记为残余。② 静态文本判据：判不了渲染是否同色同字号（原语变体断言 + 真机读图承担）。③ 判不了「新页面用 `Button` 手拼行内动作」（意图判不了）：那一半由 `row-action-density-scan.mjs` + 评审承担。④ `mini-app` / H5 各自一套 token，不在面内。 ⑤ `conformant` 是**双读**台账：`forbidden_anchors` 出现即红（= 悄悄改成原语形态却没改台账），`forms` 要求「同一个开标签里」同时有 marker 与该形态的 props（文件级字符串匹配会假绿 —— 实测入库单还有别的 ghost Button、商品表格里还有别的 Button）。"
+  "boundary": "① 只裁「与原语**同规格**」的副本（三个 token 同时出现）；缺 `hover:text-primary-700` 的**漂移副本**（`purchase-orders` / `suppliers` / 各处页面级链接）不在面内 —— 它们已不是同一份规格，收口要先逐页裁定形态，如实登记为残余。② 静态文本判据：判不了渲染是否同色同字号（原语变体断言 + 真机读图承担）。③ 判不了「新页面用 `Button` 手拼行内动作」（意图判不了）：那一半由 `row-action-flat-scan.mjs` + 评审承担。④ `mini-app` / H5 各自一套 token，不在面内。 ⑤ `conformant` 是**双读**台账：`forbidden_anchors` 出现即红（= 悄悄改成原语形态却没改台账），`forms` 要求「同一个开标签里」同时有 marker 与该形态的 props（文件级字符串匹配会假绿 —— 实测入库单还有别的 ghost Button、商品表格里还有别的 Button）。"
 }

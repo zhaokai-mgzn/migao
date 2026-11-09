@@ -110,15 +110,13 @@ function getItemAmount(item: { amount?: number; subtotal?: number; unitPrice?: n
 }
 
 /**
- * 行内「⋯」菜单（issue #8011）在**本表已退场**（2026-11-07 用户裁定）。
+ * 行内「⋯」菜单（issue #8011）在**全站已退场**：本表 2026-11-07 先按用户裁定平铺
+ * （issue #8837），2026-11-09 用户把同一裁定推广到观星台全部列表页（issue #8849）。
  *
  * 用户逐字：「操作一列：把订单对应的可操作按钮直接展示出来，不要收在『...』里面」——
- * ⇒ 本表改为**平铺**：主行动仍是 `Button variant="ghost"`（按订单状态派生），其余动作
- * 逐条以共享原语 `ui/RowActionLink` 直接同屏展示。`ui/RowActions` 仍是其它列表页的行内
- * 收敛原语（`products` / `knowledge` / `employees` 等），本表只是**不再使用**它。
- *
- * 平铺是**用户裁定的设计例外**，已在类级密度判据里显式登记
- * （`tests/unit/row-action-density-ledger.json` 的 `flat_by_design`，守卫会核「仍是平铺」）。
+ * ⇒ 本表：主行动仍是 `Button variant="ghost"`（按订单状态派生），其余动作逐条以共享原语
+ * `ui/RowActionLink` 直接同屏展示。平铺面已在类级判据里登记正向锚
+ * （`tests/unit/row-action-flat-ledger.json` 的 `flat_surfaces`，守卫会核「仍是平铺」）。
  *
  * 本表自己的判据（形态/整行点击/主行动派生/复制订单号）：
  * `tests/unit/pages/orders-list-row-actions.test.tsx`。

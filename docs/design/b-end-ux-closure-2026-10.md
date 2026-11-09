@@ -60,7 +60,7 @@ CHANGELOG 分 4 个独立 PR 入册（#8033/#8034/#8047/#8055/#8060/#8068）—�
 
 | 台账 | 终态 | 判据 |
 |---|---|---|
-| 操作列密度 `row-action-density-ledger.json` | `frozen_count: 0` / `ledger: {}` | `row-action-density-guard.test.ts` |
+| 操作列密度 `row-action-density-ledger.json`（2026-11-09 起被 `row-action-flat-ledger.json` 取代：口径从「一行可点 ≤ 2」改判为「操作列不得折叠成『⋯』」） | `frozen_count: 0` / `ledger: {}` | `row-action-flat-guard.test.ts` |
 | 四态契约 `page-state-contract-ledger.json` | `ledger: {}`（**归零**，`FROZEN_ENTRY_MAX = 0`） | `design-baseline-page-state-contract.test.ts` |
 | 空态豁免 `EMPTY_STATE_LEDGER` | **2 条**（`FLOOR = 2`），见下 | `read-failure-empty-state-guard.test.ts` |
 | 表格空态 `TABLE_EMPTY_LEDGER` | `[]`（`FLOOR = 0`） | 同上判据 ④ |

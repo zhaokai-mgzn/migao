@@ -1,8 +1,8 @@
 'use client'
 
 import { useState } from 'react'
-import { Table, Badge, StatusBadge, Pagination, Button, RowActions } from '@/components/ui'
-import type { TableColumn, RowActionItem } from '@/components/ui'
+import { Table, Badge, StatusBadge, Pagination, Button, RowActionLink } from '@/components/ui'
+import type { TableColumn } from '@/components/ui'
 import Image from 'next/image'
 import { cn, resolveImageUrl } from '@/lib/utils'
 import type { Product, ProductStatus } from '@/types'
@@ -118,53 +118,80 @@ export default function ProductTable({
   }
 
   /**
-   * 行内动作（issue #8038）：**1 主行动 + ⋯ 菜单**。
+   * 行内动作（2026-11-09 用户裁定：**逐条平铺**，不再收进「⋯」）。
    *
-   * 改前在架行有 **5 个**、下架行 **4 个**同级文字链（#8035 审计：`products` 是全站密度最高的一页）。
+   * 用户逐字：「操作一列：把商品对应的可操作按钮直接展示出来，不要收在“...”里面」。
    * 主行动**按状态派生**（取该行「最可能需要的一步」，与 `/orders` 的取法同源）：
-   * - `on_sale` → **编辑**（在架商品最常用的一步；下架 / 删除是破坏性 ⇒ 进菜单）；
+   * - `on_sale` → **编辑**（在架商品最常用的一步）；
    * - `off_sale` → **上架**（下架行唯一能推进状态的动作）；
-   * - `under_review` → **查看**（审核中只读，没有其它动作可收 ⇒ 连 ⋯ 都不渲染）；
+   * - `under_review` → **查看**（审核中只读，没有其它动作）；
    * - `draft` → **编辑**（草稿的下一步就是补全内容）。
+   * 其余动作逐条以共享原语 `RowActionLink` 同屏展示；**动作集合与条件逐条保持改前**。
    *
-   * 🔴 **硬边界**：本函数只决定「谁是主行动」，**一个回调都没改** —— 危险动作（下架 / 删除）
-   * 仍走页面既有的 `setSingleConfirm(...)` ⇒ 二次确认弹框一字未动（改容器不改语义）。
+   * 🔴 **硬边界**：本函数只决定「谁是主行动 / 其余怎么排」，**一个回调都没改** —— 危险动作
+   * （下架 / 删除）仍走页面既有的 `setSingleConfirm(...)` ⇒ 二次确认弹框一字未动（改容器不改语义）。
    */
-  const rowActionsFor = (
-    record: Product,
-  ): { primary: RowActionItem; items: RowActionItem[] } => {
-    const view: RowActionItem = { key: 'view', label: '查看', onClick: () => onView(record) }
-    const edit: RowActionItem = { key: 'edit', label: '编辑', onClick: () => onEdit(record) }
-    const remove: RowActionItem = {
+  const renderActions = (record: Product) => {
+    const view = { key: 'view', label: '查看', onClick: () => onView(record) }
+    const edit = { key: 'edit', label: '编辑', onClick: () => onEdit(record) }
+    const remove = {
       key: 'delete',
       label: '删除',
       onClick: () => onDelete(record),
       danger: true,
     }
+    let primary = edit
+    let items: Array<{ key: string; label: string; onClick: () => void; danger?: boolean }> = []
     if (record.status === 'on_sale') {
-      return {
-        primary: edit,
-        items: [
-          view,
-          record.recommended
-            ? { key: 'unrecommend', label: '取消推荐', onClick: () => onUnrecommend(record) }
-            : { key: 'recommend', label: '推荐', onClick: () => onRecommend(record) },
-          { key: 'off_shelf', label: '下架', onClick: () => onTakeOffShelf(record), danger: true },
-          remove,
-        ],
-      }
+      items = [
+        view,
+        record.recommended
+          ? { key: 'unrecommend', label: '取消推荐', onClick: () => onUnrecommend(record) }
+          : { key: 'recommend', label: '推荐', onClick: () => onRecommend(record) },
+        { key: 'off_shelf', label: '下架', onClick: () => onTakeOffShelf(record), danger: true },
+        remove,
+      ]
+    } else if (record.status === 'off_sale') {
+      primary = { key: 'on_shelf', label: '上架', onClick: () => onPutOnShelf(record) }
+      items = [view, edit, remove]
+    } else if (record.status === 'under_review') {
+      primary = view as typeof primary
+      items = []
+    } else {
+      // draft：下一步 = 补全内容（删除是破坏性）
+      items = [remove]
     }
-    if (record.status === 'off_sale') {
-      return {
-        primary: { key: 'on_shelf', label: '上架', onClick: () => onPutOnShelf(record) },
-        items: [view, edit, remove],
-      }
-    }
-    if (record.status === 'under_review') {
-      return { primary: view, items: [] }
-    }
-    // draft：下一步 = 补全内容（删除是破坏性 ⇒ 只进菜单）
-    return { primary: edit, items: [remove] }
+
+    return (
+      <div
+        className="flex items-center gap-1 whitespace-nowrap"
+        data-testid={`product-actions-${record.id}`}
+      >
+        {/* 行内主行动走 ghost（§32.2：一屏至多一个 primary，那一个是页面头的「新增商品」） */}
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={(e) => {
+            // 整行可点击进详情：操作按钮自己的点击不得冒泡成一次跳转
+            e.stopPropagation()
+            primary.onClick()
+          }}
+        >
+          {primary.label}
+        </Button>
+        {items.map((item) => (
+          <RowActionLink
+            key={item.key}
+            size="sm"
+            tone={item.danger ? 'danger' : 'primary'}
+            data-testid={`product-action-${item.key}-${record.id}`}
+            onClick={item.onClick}
+          >
+            {item.label}
+          </RowActionLink>
+        ))}
+      </div>
+    )
   }
 
   const columns: TableColumn<Product>[] = [
@@ -322,30 +349,11 @@ export default function ProductTable({
     {
       key: 'actions',
       title: '操作',
-      width: '160px',
       align: 'left',
-      render: (record) => {
-        const action = rowActionsFor(record)
-        return (
-          <RowActions
-            testId={`product-actions-${record.id}`}
-            menuTestId={`product-menu-${record.id}`}
-            items={action.items}
-          >
-            {/* 行内主行动走 ghost（§32.2：一屏至多一个 primary，那一个是页面头的「新增商品」） */}
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={(e) => {
-                e.stopPropagation()
-                action.primary.onClick()
-              }}
-            >
-              {action.primary.label}
-            </Button>
-          </RowActions>
-        )
-      },
+      // 平铺后动作变宽（在架 5 个）：1440 视口下会被卡片右缘裁掉 ⇒ 右缘冻结，始终可见
+      // （销售订单 / 审批 / 返工的「操作」列早已 sticky right-0，本页现在同口径）。
+      stickyRight: true,
+      render: (record) => renderActions(record),
     },
   ]
 
@@ -358,6 +366,9 @@ export default function ProductTable({
           dataSource={products}
           loading={loading}
           rowKey="id"
+          // 2026-11-09 用户裁定：**非操作区域整行点击** ⇒ 商品详情页（页面把它接到 `router.push`）。
+          // 行内交互元素（复选框 / 操作按钮）各自 `stopPropagation`，不误触跳转。
+          onRowClick={onView}
           sortField={sortField}
           sortOrder={sortOrder}
           onSort={(field) => onSortChange(field as ProductSortField)}

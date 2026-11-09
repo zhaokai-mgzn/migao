@@ -1,0 +1,55 @@
+{
+  "why": "2026-11-09 用户裁定：商品管理列表支持「非操作区域整行点击进商品详情」，「操作」列按钮逐条平铺、不再收进「⋯」；同一条裁定要求「检查观星台的其他所有列表页，操作列按钮逐条平铺、不再收进「⋯」」。判据 = frontend/admin-web/tests/unit/row-action-flat-guard.test.ts（扫描器 = frontend/admin-web/scripts/row-action-flat-scan.mjs）：① 任何「操作」动作面出现折叠原语（<RowActions> / aria-label=「更多操作」/ aria-haspopup / <MoreHorizontal>）即红；② 全 src 不许再用退役原语 RowActions / 「更多操作」；③ 本台账 flat_surfaces 是已收口面的正向锚（每条必须逐字含 <RowActionLink），防「把整列删掉 ⇒ 判据看空气」。**沿革**：#8011 / #8038 / #8039 曾要求「1 主行动 + ⋯ 菜单、一行同时可点 ≤ 2」；2026-11-07 用户先对销售订单列表反向裁定平铺（issue #8837 / PR #8839，仅该页为设计例外），2026-11-09 用户把平铺推广到全部列表页（issue #8849）⇒ 密度上限与「⋯」原语一并退场。",
+  "scope": "src/app/(dashboard)/**/*.tsx + src/components/**/*.tsx",
+  "flat_surfaces": [
+    {
+      "file": "src/components/orders/OrderTable.tsx",
+      "name": "销售订单列表",
+      "source": "2026-11-07 用户逐字（钉钉）：「操作一列：把订单对应的可操作按钮直接展示出来，不要收在“...”里面」",
+      "requires": ["<RowActionLink"]
+    },
+    {
+      "file": "src/components/products/ProductTable.tsx",
+      "name": "商品管理列表",
+      "source": "2026-11-09 用户逐字（钉钉）：「把商品对应的可操作按钮直接展示出来，不要收在“...”里面」",
+      "requires": ["<RowActionLink"]
+    },
+    {
+      "file": "src/app/(dashboard)/knowledge/page.tsx",
+      "name": "知识库列表",
+      "source": "2026-11-09 用户逐字（钉钉）：「检查一下观星台的其他所有列表页，操作列按钮逐条平铺、不再收进「⋯」」",
+      "requires": ["<RowActionLink"]
+    },
+    {
+      "file": "src/app/(dashboard)/employees/page.tsx",
+      "name": "员工管理列表",
+      "source": "2026-11-09 用户逐字（钉钉）：「检查一下观星台的其他所有列表页，操作列按钮逐条平铺、不再收进「⋯」」",
+      "requires": ["<RowActionLink"]
+    },
+    {
+      "file": "src/app/(dashboard)/approvals/page.tsx",
+      "name": "审批中心列表",
+      "source": "2026-11-09 用户逐字（钉钉）：「检查一下观星台的其他所有列表页，操作列按钮逐条平铺、不再收进「⋯」」",
+      "requires": ["<RowActionLink"]
+    },
+    {
+      "file": "src/app/(dashboard)/rework-orders/page.tsx",
+      "name": "返工单列表",
+      "source": "2026-11-09 用户逐字（钉钉）：「检查一下观星台的其他所有列表页，操作列按钮逐条平铺、不再收进「⋯」」",
+      "requires": ["<RowActionLink"]
+    },
+    {
+      "file": "src/components/stock/WarehouseLocationPanel.tsx",
+      "name": "成品仓仓位面板",
+      "source": "2026-11-09 用户逐字（钉钉）：「检查一下观星台的其他所有列表页，操作列按钮逐条平铺、不再收进「⋯」」",
+      "requires": ["<RowActionLink"]
+    },
+    {
+      "file": "src/components/employees/WorkerProfilesPanel.tsx",
+      "name": "工人档案面板",
+      "source": "2026-11-09 用户逐字（钉钉）：「检查一下观星台的其他所有列表页，操作列按钮逐条平铺、不再收进「⋯」」",
+      "requires": ["<RowActionLink"]
+    }
+  ],
+  "boundary": "静态判据（源码 AST）：判不了真机观感（是否挤 / 是否被遮挡），那由 Playwright 真浏览器判据 + 前后对照截图承担；跨组件不可见：动作面若渲染**别的文件**里的格子组件，扫描器看不进去（计 0 面），这种形态要自带实例判据；只扫 src/app/(dashboard) 与 src/components 的 tsx。注释里提到折叠原语**不算**（AST 只认真实 JSX / import）。台账条目只许缩短：某面交回折叠形态必须同时删条目并写清依据（本裁定下没有合法例外）。"
+}

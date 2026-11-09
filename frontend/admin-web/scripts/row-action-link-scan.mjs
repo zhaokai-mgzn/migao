@@ -42,7 +42,7 @@
  * - 静态文本判据：判不了「渲染出来是否同色同字号」（那是原语自己的判据
  *   `tests/unit/components/RowActionLink.test.tsx` 的变体断言 + 真机读图）；
  * - 判不了「新页面拿 `Button` 手拼了一个行内动作」（形态判据说不了意图）—— 那一半由
- *   `row-action-density-scan.mjs`（一行可点 ≤ 2）与评审承担。
+ *   `row-action-flat-scan.mjs`（操作列不得折叠成「⋯」）与评审承担。
  */
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { dirname, join } from 'node:path'
