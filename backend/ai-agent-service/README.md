@@ -1,12 +1,12 @@
 # AI Agent Service
 
-观星台 AI 智能客服 — Python AI 服务（黄金策 + 元元双 Agent）
+观星台 — 布艺行业 AI 经营平台 · Python AI 服务（元元 + 黄金策双 Agent）
 
 ## 技术栈
 
 - Python 3.11 + FastAPI + LangChain + LangGraph
-- DeepSeek V4 Pro（主模型）+ DeepSeek V4 Flash Vision（视觉模型，图片识别）
-- PostgreSQL + Redis + DashVector（向量检索）
+- DeepSeek（主模型 / 视觉模型由 `PRIMARY_MODEL` / `VISION_MODEL` 配置）
+- PostgreSQL + Redis（知识问答走 `knowledge_cards`，无向量库）
 
 ## 快速开始
 
@@ -37,10 +37,10 @@ python -m uvicorn app.main:app --port 8001 --reload
 ```
 app/
 ├── agents/      # 双 Agent 定义（黄金策/元元）
-├── graph/       # LangGraph 状态图 + 23 个 Skill
+├── graph/       # LangGraph 状态图 + Skill（数量现取：ls app/graph/skills/*_skill.py）
 │   ├── skills/  # Skill 节点定义
 │   └── nodes.py # Graph 节点逻辑
-├── tools/       # 22 个 Tool（调用 admin-api）
+├── tools/       # 业务工具（数量以 app/tools/registry.py 为单一源）
 ├── memory/      # 会话记忆管理
 ├── api/         # FastAPI 路由（chat.py 核心）
 └── utils/       # HTTP 客户端、日志脱敏等

@@ -2,22 +2,30 @@
 
 ## 概览
 
-PostgreSQL 15，39 张业务表，按域分组：
+PostgreSQL 15。**表数以唯一建库脚本为单一源，本页不写死**（issue #5082）：
 
-| 域 | 表 | 说明 |
-|----|----|------|
-| **租户/认证** | tenants, tenant_apps, tenant_ai_configs, users, user_identities, platform_admins | 多租户 + 多渠道认证 |
-| **RBAC** | roles, permissions, user_roles | 5角色权限体系 |
-| **商品** | products, product_skus, product_colors, product_attributes | SKU矩阵 |
-| **分类/加工** | categories, processing_categories, processing_items | 分类树 + 加工项 |
-| **订单** | orders, order_items, order_logistics | 订单全生命周期 |
-| **售后** | after_sales_tickets, ticket_notes, ticket_timeline | 售后工单 |
-| **客户** | customers, customer_tags, customer_segments, customer_segment_members | CRM(RFM) |
-| **对话** | chat_sessions, chat_messages, sessions, session_messages | C端对话 |
-| **人工坐席** | agent_employees, agent_sessions, agent_messages | 客服工作台 |
-| **知识库** | knowledge_cards, knowledge_candidates | LLM WIKI 知识卡片模型 + AI 提炼待确认队列（RAG 已下线并移除，决策 D1 + issue #3051） |
-| **通知** | notifications, notification_templates, notification_rules | 消息推送 |
-| **系统** | system_configs, login_logs, audit_logs, user_memories, user_suggestion_prefs | 配置/审计/AI偏好 |
+```bash
+grep -ciE '^[[:space:]]*create table' backend/admin-api/src/main/resources/db/init/schema.sql
+```
+
+按域分组（代表表，不追求穷举）：
+
+| 域 | 代表表 | 说明 |
+|----|--------|------|
+| **租户/认证** | tenants, tenant_apps, tenant_ai_configs, users, user_identities, platform_admins, tenant_applications | 多租户 + 多渠道认证 + 入驻申请 |
+| **RBAC** | roles, permissions, user_roles, role_permissions | 岗位权限体系 |
+| **商品/价格** | products, product_skus, product_colors, product_attributes, customer_sku_prices, vip_level_prices, sku_tier_prices | SKU 矩阵 + 价格本（协议价 / 等级价 / 阶梯价） |
+| **分类/加工** | categories, processing_categories, processing_items, processing_fee_combinations, craft_calc_configs | 分类树 + 加工项 + 加工费组合 |
+| **订单/发货** | orders, order_items, order_logistics, order_shipments, order_shipment_items | 订单全生命周期 + 发货单 |
+| **售后** | after_sales_tickets, ticket_notes, ticket_timeline | 售后六类工单 |
+| **客户** | customer_profiles, customer_tags, customer_segments, customer_segment_members | CRM（客户档案 / 分群） |
+| **生产** | processing_orders, processing_order_sets, production_operations, production_routings, production_work_logs, production_route_templates, production_route_rules, production_crafts, cutting_height_configs, fabric_remnants | 加工单 / 工序 / 报工 / 余料 |
+| **质量/计件** | quality_inspections, rework_orders, piecework_settlements | 质检 / 返工 / 计件 |
+| **仓储/供应链** | warehouses, inbound_orders, outbound_orders, stock_batches, stock_ledger_entries, stocktakes, stock_transfers, purchase_orders, suppliers, supplier_payments | 批次库存 + 盘点 + 采购 |
+| **财务/审批** | finance_transactions, receipt_allocations, approvals | 资金流水 / 对账 / 审批 |
+| **对话/坐席** | sessions, session_messages, agent_employees, agent_sessions, agent_messages, worker_sessions | C 端对话 + 人工坐席 + 工人端 |
+| **知识/学习** | knowledge_cards, knowledge_candidates, playbooks, playbook_reproductions | 知识卡片 + 口径卡（RAG 已下线，issue #3051） |
+| **通知/系统** | notifications, notification_templates, notification_rules, audit_logs, scheduled_tasks, user_memories, user_suggestion_prefs, client_request_keys | 消息推送 / 审计 / 定时任务 / AI 记忆 |
 
 > 🔴 **2026-09-23 僵尸对象清理（issue #5245 A 组，用户裁定）**：删 **3 张表**
 > （`production_option_routings` / `production_option_factors` —— V73 只软删了行、表仍在；

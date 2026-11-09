@@ -1,182 +1,193 @@
-# AI 智能客服系统（AIKF）
+# 观星台（MIGAO）— 布艺行业 AI 经营平台
 
 [![CI](https://github.com/zhaokai-mgzn/migao/actions/workflows/pr-check.yml/badge.svg)](https://github.com/zhaokai-mgzn/migao/actions/workflows/pr-check.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-> 面向通用行业的多租户 AI 智能客服 SaaS 平台，以布艺窗帘行业为示例场景。  
-> 基于大语言模型（DeepSeek V4 Pro + DeepSeek V4 Flash Vision）+ 业务工具（**数量以注册表为单一源**，复算命令见「技术栈」的「版本真值源」），覆盖售前咨询到售后服务全链路。
+> 面向布艺 / 窗帘商家的多租户 AI 经营平台：顾客侧由 **元元** 提供 7×24 智能客服与下单；
+> 经营侧由 **黄金策** 覆盖商品、订单、生产、质量、仓储、财务与供应链。
+> 业务闭环 = 询价算料 → 下单 → 生产（裁床 / 车位 / 后整）→ 入库 → 发货 → 售后与对账。
+>
+> 智能客服是「客户服务」能力域的一部分，不再代表系统的全部定位
+> （定位沿革见 issue #6463 / 品牌改名见 issue #6525）。
+
+## 🎯 产品定位
+
+| 维度 | 事实 |
+|------|------|
+| **产品名** | 观星台 |
+| **定位** | 布艺 / 窗帘行业的企业级 AI 经营管理平台 |
+| **使用者** | 商家管理员与员工、终端顾客、车间工人 |
+| **AI 分工** | 元元（C 端顾客服务）+ 黄金策（B 端经营助手） |
+| **业务纵深** | 窗帘算料报价、SKU 矩阵（颜色 × 售卖方式 × 门幅）、加工项与工序、批次库存与移动加权成本、计件工资 |
+| **部署形态** | 多租户 SaaS（租户级数据隔离，商家入驻 AI 自动甄别） |
+
+本仓**不是**「通用行业 AI 客服模板」：默认行业模型就是布艺 / 窗帘，
+行业术语、算料规则与生产工序都有可执行真值源（见「文档」一节）。
 
 ## ✨ 核心亮点
 
-- **双 Agent 架构** — C 端客服"元元" + B 端工作助手"黄金策"，LangGraph 状态图驱动
-- **AI 工具** — 商品搜索、订单管理、物流追踪、客户查询等，自动意图路由（数量以 `registry.py` 注册表为单一源）
-- **多租户 SaaS** — 租户隔离（JWT 派生 tenant_id → MyBatis 租户拦截器 → 字段脱敏）
-- **完整业务后台** — 商品、订单、CRM、人工坐席、数据看板等 12+ 管理模块
-- **微信小程序** — Taro 跨端框架，SSE 流式对话，原生体验
-- **阿里云全栈部署** — SWAS 轻量应用服务器（CI 构建镜像 + 服务器 pull）+ RDS + Redis(Tair) + OSS，GitHub Actions CI/CD
+- **双 Agent** — 元元（顾客侧，LangGraph）+ 黄金策（经营侧），工具与 Skill 注册表驱动
+- **四端协同** — 观星台后台、顾客微信小程序、商家小程序、员工端 H5 / 安卓终端
+- **全链路经营** — 从算料报价、下单、生产报工、入库过账到发货、售后与财务对账
+- **行业纵深** — 窗帘算料、工序路线、批次成本、余料台账、计件工资不是外挂，是主模型
+- **多租户与权限** — JWT 派生租户 → MyBatis 拦截器 → PostgreSQL RLS → 字段脱敏；岗位权限逐人可配
+- **可审核的 AI** — B 端口径卡先审核再进 prompt；写操作有边界、有确认卡、有审计记录
+- **CI/CD** — GitHub Actions 门禁 + 服务器侧构建部署；行为用例单一源（`.github/cases/`）
 
-> ℹ️ **知识库说明**：旧 RAG 知识库（向量检索文档库）已随 LLM WIKI 板块完全移除（issue #3051）。知识问答采用「知识卡片」模型：行业模板一键套用 + 商品/配置自动派生 + 会话/文档 AI 提炼待确认，AI 客服直接读已发布的知识卡片回答，检索用结构化过滤 + 关键词（无向量库）。设计见 `docs/design/knowledge-wiki-design.md`。
+## 🧭 四端与两位 Agent
+
+### 四端
+
+| 端 | 代码 | 使用者 | 主要能力 |
+|----|------|--------|----------|
+| **观星台管理后台** | `frontend/admin-web` | 商家管理员 / 员工 | 经营概览、报表、客户服务、订单商品、生产、质量、仓储、财务、供应链、组织 |
+| **顾客微信小程序** | `frontend/mini-app` | 终端顾客 | 元元对话、算料报价、下单、订单与物流、售后、知识卡片、图片识别 |
+| **商家小程序** | `frontend/bmini-app` | 商家 / 员工 | 黄金策移动版、经营一屏、移动坐席、工人工作台（H5 `/b/` 与小程序双编译） |
+| **员工端 H5 / 安卓终端** | `frontend/bmini-app` 的 H5 编译 | 车间工人 | 扫码报工、入库、发货、返工、计件；安卓一体机 / 手持标签机 |
+
+> `frontend/worker-h5`（线上 `/w/`）只服务**已印出的纸码**，处于兼容期、不再新增功能；
+> 新的工人面统一做在 `frontend/bmini-app`。
+
+### 元元 — C 端顾客服务
+
+- 商品咨询：颜色、门幅、加工项，按店内已上架商品作答
+- 窗帘算料报价：按尺寸与工艺计算用料，给出**估算**报价
+- 下单：短信验证码校验，成交单价取商品库权威价
+- 订单与物流：订单进度、物流轨迹、收货地址
+- 售后受理：售后咨询与申请，工单恒为「待商家审核」
+- 知识卡片与图片识别：只检索**已发布**卡片；顾客发图可识别解读
+
+**能力边界**：不改价、不取消订单、不退款、不承诺优惠折扣、不报库存数量。
+
+### 黄金策 — B 端经营助手
+
+- 经营看板与每日简报：订单量、销售额、环比、待处理事项
+- 商品与 SKU：批量改价、批量库存调整（可撤销）、商品改名、分类与资料维护
+- 订单与加工单：订单查询、物流、加工单进度与报工明细
+- 库存与入库：批次库存、库存台账、入库单与批次成本
+- 生产与计件：工序库、工艺路线、计件工资报表
+- 财务与客户：资金流水 / 收支汇总 / 应收对账问答，客户档案与售后工单
+- 口径卡（Playbook）：会话中的纠正先落成 **draft** 卡，审核通过后才进入本企业 prompt
+
+**能力边界**：可写的动作 = 改价、商品改名、批量改价与批量库存调整、通知标记已读、定时提醒；
+上下架与删除不做；改价须携带改前价并经确认卡二次确认；AI 不创建订单与商品。
 
 ## 🏗️ 系统架构
 
 ```mermaid
 graph TB
-    subgraph 客户端
-        A[微信小程序<br/>Taro] --> |SSE| GW[API 网关]
-        B[管理后台<br/>Next.js 14] --> |REST| GW
+    subgraph terminals["终端"]
+        A["顾客微信小程序<br/>Taro"]
+        B["商家小程序 + 员工端 H5<br/>Taro 双编译"]
+        C["观星台管理后台<br/>Next.js"]
+        D["安卓一体机 / 手持终端"]
     end
 
-    subgraph 后端服务
-        GW --> C[Admin API<br/>Java 21 · Spring Boot]
-        GW --> D[AI Agent Service<br/>Python 3.11 · FastAPI]
-        C <--> |Service Token| D
-    end
+    GW["nginx<br/>域名分流 / TLS"]
+    A --> GW
+    B --> GW
+    C --> GW
+    D --> GW
 
-    subgraph 数据层
-        C --> E[(PostgreSQL 15<br/>41 张表)]
-        C --> F[(Redis 7<br/>会话 / 缓存)]
-        D --> E
-        D --> F
-    end
+    API["admin-api<br/>Java · Spring Boot"]
+    WEB["admin-web<br/>Next.js"]
+    AGENT["ai-agent-service<br/>Python · FastAPI · LangGraph"]
+    GW --> API
+    GW --> WEB
+    API <--> |Service Token| AGENT
 
-    subgraph AI 能力
-        D --> H[DeepSeek<br/>V4 Pro / V4 Flash Vision]
-        D --> I[意图路由 → 工具调用<br/>LangGraph 状态机]
-        D --> J[Tools<br/>业务工具 + 权限/确认守卫]
-    end
+    PG[("PostgreSQL 15<br/>RLS 多租户")]
+    REDIS[("Redis 7<br/>会话 / 缓存")]
+    LLM["DeepSeek<br/>主模型 / 视觉模型"]
+    OSS["OSS<br/>图片与文件"]
 
-    subgraph 基础设施
-        K[OSS 对象存储]
-        L[CDN 内容分发]
-        M[SLS 日志服务]
-        N[ACR 容器镜像]
-    end
+    API --> PG
+    AGENT --> PG
+    API --> REDIS
+    AGENT --> REDIS
+    AGENT --> LLM
+    API --> OSS
 ```
+
+- **业务真值在 admin-api**：价格、库存、权限、单据状态都由服务端裁决；AI 只经工具读写。
+- **AI 服务与 admin-api 共用同一 PostgreSQL**：会话状态 / 记忆落库，但不持有独立业务库；
+  业务能力经内部 API + Service Token 访问。
+- **知识问答不用向量库**：知识卡片（结构化过滤 + 关键词）是唯一检索面（RAG 已随 issue #3051 移除）。
+- **部署拓扑**：SWAS 单机容器 + RDS + Redis(Tair) + OSS，见 [docs/wiki/Deployment.md](docs/wiki/Deployment.md)。
 
 ## 🛠️ 技术栈
 
-| 层级 | 技术 | 版本 |
-|------|------|------|
-| **后端 — 管理 API** | Java + Spring Boot + MyBatis-Plus + Spring Security | JDK 21（Boot / MP 版本见 `backend/admin-api/pom.xml`） |
-| **后端 — AI 服务** | Python + FastAPI + LangChain Core + LangGraph | Python 3.11（依赖版本见 `backend/ai-agent-service/requirements.txt`） |
-| **前端 — 管理后台** | Next.js (App Router) + React + TypeScript + Tailwind CSS | 14.2 / React 18 / TS 5.7 |
-| **前端 — 微信小程序** | Taro + React + TypeScript + Sass | React 18（Taro 版本见 `frontend/mini-app/package.json`） |
-| **数据库** | PostgreSQL + Redis | PG 15 / Redis 7 |
-| **知识库** | PostgreSQL（knowledge_cards 词条模型，结构化检索，无向量库） | LLM WIKI（issue #3051） |
-| **大语言模型** | DeepSeek V4 Pro (主) + DeepSeek V4 Flash Vision (视觉) | V4-Pro / V4-Flash / V4-Flash-Vision |
-| **认证** | RS256 JWT (BouncyCastle) + 微信小程序登录 + 短信验证码 | — |
+| 层级 | 技术 | 版本口径 |
+|------|------|----------|
+| **管理 API** | Java + Spring Boot + MyBatis-Plus + Spring Security | 见 `backend/admin-api/pom.xml` |
+| **AI 服务** | Python + FastAPI + LangChain Core + LangGraph | 见 `backend/ai-agent-service/requirements.txt` |
+| **管理后台 / 官网** | Next.js（App Router）+ React + TypeScript + Tailwind CSS | 见 `frontend/admin-web/package.json` |
+| **顾客小程序** | Taro + React + TypeScript + Sass | 见 `frontend/mini-app/package.json` |
+| **商家小程序 / 员工端** | Taro + React + TypeScript（H5 与小程序双编译） | 见 `frontend/bmini-app/package.json` |
+| **数据库 / 缓存** | PostgreSQL + Redis | PG 15 / Redis 7 |
+| **知识库** | PostgreSQL `knowledge_cards` 词条模型（结构化检索，无向量库） | — |
+| **大语言模型** | DeepSeek（主模型 / 视觉模型由 `PRIMARY_MODEL` / `VISION_MODEL` 配置） | 见服务配置 |
+| **认证** | RS256 JWT + 微信登录 + 短信验证码 | — |
 | **部署** | 阿里云 SWAS + RDS + Redis(Tair) + OSS + GitHub Actions | — |
 
 > **版本真值源（易变现值一律不在此抄数 —— 抄一份 = 第二个真值源，且没有任何东西会红；issue #5082）**
 >
 > - Java / Spring Boot / MyBatis-Plus：`backend/admin-api/pom.xml`
-> - AI 服务依赖（FastAPI / LangChain Core / LangGraph）：`backend/ai-agent-service/requirements.txt`
->   —— 复算 `grep -E '^(fastapi|langgraph|langchain-)==' backend/ai-agent-service/requirements.txt`
-> - 前端版本：`frontend/admin-web/package.json` / `frontend/mini-app/package.json`
-> - **业务工具数量**：以 `backend/ai-agent-service/app/tools/registry.py` 的注册表为单一源
->   —— 复算 `python3 -c "import sys;sys.path.insert(0,'backend/ai-agent-service');from app.tools.registry import create_default_registry;print(len(create_default_registry().get_all_tools()))"`
->   （需该服务依赖已安装）
+> - AI 服务依赖：`backend/ai-agent-service/requirements.txt`
+> - 前端依赖：`frontend/admin-web/package.json` / `frontend/mini-app/package.json` / `frontend/bmini-app/package.json`
+> - **业务工具**：以 `backend/ai-agent-service/app/tools/registry.py` 的注册表为单一源
+>   —— 复算 `grep -cE '^[[:space:]]*registry\.register\(' backend/ai-agent-service/app/tools/registry.py`
 > - **workflow 数量**：`ls .github/workflows/*.yml .github/workflows/*.yaml 2>/dev/null | wc -l`
+> - **数据表**：以 `backend/admin-api/src/main/resources/db/init/schema.sql` 为单一源
+>   —— 复算 `grep -ciE '^[[:space:]]*create table' backend/admin-api/src/main/resources/db/init/schema.sql`
 >
 > 守卫 = `tests/unit_ci_workflows/test_doc_present_value_guard.py`（登记面上一处写死现值即红）。
 
-## 📦 功能概览
+## 📦 能力地图
 
-### C 端 — AI 智能客服（微信小程序）
+侧边栏与官网共用同一份能力口径，真值源 = `frontend/admin-web/src/config/menu.ts`：
 
-| 能力 | 说明 |
-|------|------|
-| 售前咨询 | 产品推荐、材质介绍、风格搭配、窗帘尺寸计算 |
-| 订单服务 | 下单查询、状态跟踪、历史订单、AI 下单（服务端取价校验） |
-| 售后处理 | 退货/换货/投诉、问题跟踪 |
-| 物流查询 | 实时物流状态、配送时间预估 |
-| 知识库问答 | 知识卡片优先（本店已发布：模板/商品派生/会话提炼/文档提炼）+ LLM 通用知识兜底 |
-| 图片识别 | 窗帘/面料图片分析（DeepSeek V4 Flash Vision）；随手发图自动澄清 |
-| 人工转接 | AI 自动判断并转接人工坐席，转人工携带 AI 对话上下文快照 |
-| 多轮对话 | 上下文维护、会话记忆、智能追问、连续模糊意图护栏 |
-| 长期记忆 | C 端用户画像记忆 + 会话末聚合（PII 过滤，可查询/删除），下单地址自动填充 |
+| 能力域 | 菜单 |
+|--------|------|
+| **经营概览** | 经营概览 · 报表中心 |
+| **客户服务** | 在线接待 · 售后工单 · 知识库 |
+| **订单 / 商品** | 销售订单 · 商品管理 · 价格本 · 客户列表 |
+| **生产管理** | 作业单 · 智能派单 |
+| **质量管理** | 质检记录 · 返工单 |
+| **仓储 / 物料** | 入库单 · 盘点单 · 出库单 · 发货单 · 库存明细 · 余料台账 · 省料分析 |
+| **财务** | 财务对账 · 计件工资 |
+| **供应链** | 采购单 · 供应商 |
+| **组织管理** | 员工管理 · 岗位权限 |
+| **独立入口** | 企业基础设置 · 通知中心 |
 
-### B 端 — 管理后台
-
-| 模块 | 说明 |
-|------|------|
-| 数据看板 | 订单趋势、状态分布、活跃会话、关键指标 |
-| 商品管理 | CRUD、SKU 矩阵（颜色×售卖方式×门幅）、加工项关联、批量上下架 |
-| 分类管理 | 树形商品分类 |
-| 加工项管理 | 窗帘加工工艺（锁边、褶皱、挂钩等）及计价 |
-| 订单管理 | 全生命周期（待付款→确认→生产→发货→完成）、发货、退款、跟进状态 |
-| 售后工单 | 退货/换货/维修/投诉工单流转 |
-| 客户 CRM | 客户画像、标签管理、客户分群、RFM 评分 |
-| 人工坐席 | 坐席管理、会话分配、快捷回复 |
-| 知识库 | 知识卡片管理（词条 CRUD/发布/归档）+ 待确认队列（AI 提炼候选，采纳后生效）+ 行业模板一键套用 |
-| 通知中心 | 模板消息、规则引擎、多渠道推送 |
-| 角色权限 | RBAC 五角色、细粒度权限、动态菜单 |
-| 系统设置 | AI 配置（模型/温度/提示词）、租户信息、密码管理 |
+行业纵深与逐项能力说明见 [docs/wiki/Product.md](docs/wiki/Product.md)。
 
 ## 📁 项目结构
 
 ```
 migao/
 ├── backend/
-│   ├── admin-api/              # Java 管理后台 API（Spring Boot）
+│   ├── admin-api/                 # Java 管理 API（业务真值 / 租户 / 权限 / 单据）
 │   │   ├── src/main/java/com/migao/admin/
-│   │   │   ├── controller/     # 27 个 REST Controller
-│   │   │   ├── service/        # 26 个业务 Service
-│   │   │   ├── entity/         # 44 个数据实体
-│   │   │   ├── mapper/         # 44 个 MyBatis-Plus Mapper
-│   │   │   ├── dto/            # 请求/响应 DTO
-│   │   │   ├── security/       # JWT RS256 + RBAC + 多租户
-│   │   │   └── config/         # 全局配置、异常处理、多租户拦截器
-│   │   ├── src/test/           # 80+ 单元/集成测试
-│   │   ├── pom.xml
-│   │   ├── Dockerfile
-│   │   └── .env.example
-│   │
-│   └── ai-agent-service/       # Python AI Agent 服务（FastAPI + LangGraph）
-│       ├── app/
-│       │   ├── agents/         # 双 Agent：元元（C端）+ 黄金策（B端）
-│       │   ├── api/            # SSE 流式聊天 + 内部 API
-│       │   ├── graph/          # LangGraph 状态图（意图路由→工具调用→响应）
-│       │   ├── tools/          # 业务工具（注册于 registry.py，数量以注册表为单一源）
-│       │   ├── router/         # 意图分类（LLM + 规则引擎）
-│       │   ├── llm/            # LLM 工厂、模型路由、成本追踪
-│       │   ├── cache/          # 语义缓存
-│       │   └── memory/         # 会话记忆
-│       ├── tests/              # 30+ 测试用例
-│       ├── requirements.txt
-│       ├── Dockerfile
-│       └── .env.example
-│
+│   │   ├── src/main/resources/db/ # 唯一建库脚本 + 增量迁移 + 归档链
+│   │   └── src/test/
+│   └── ai-agent-service/          # Python AI 服务（元元 / 黄金策）
+│       ├── app/agents/            # Agent 定义与 persona
+│       ├── app/graph/             # LangGraph 状态图 + Skill
+│       ├── app/tools/             # 业务工具（registry.py 为单一源）
+│       ├── app/router/            # 意图分类（规则 + LLM）
+│       └── tests/
 ├── frontend/
-│   ├── admin-web/              # Next.js 14 管理后台（App Router + 静态导出）
-│   │   ├── src/app/            # 页面路由（Dashboard、商品、订单、CRM…）
-│   │   ├── src/components/     # 40+ React 组件
-│   │   ├── src/lib/            # API 客户端、工具函数
-│   │   ├── package.json
-│   │   └── .env.development / .env.production
-│   │
-│   └── mini-app/               # Taro 微信小程序 + H5（app.migaozn.com）
-│       ├── src/pages/          # 对话、会话列表、个人中心
-│       ├── src/components/     # 消息气泡、产品卡片、物流卡片等
-│       └── package.json
-│
-├── deploy/
-│   ├── swas/                   # SWAS 生产部署（deploy.sh + compose + nginx.conf）
-│   ├── docker-compose.yml      # 本地开发（PostgreSQL + Redis + 双后端）
-│   └── scripts/                # 部署辅助脚本（swas-deploy-ci.sh）
-│
-├── docs/
-│   ├── wiki/                   # 现役 Wiki（架构/开发/部署/测试，见 INDEX.md）
-│   ├── api/                    # API 参考文档
-│   ├── design/                 # 产品设计文档
-│   ├── deployment/             # 部署踩坑与清单
-│   ├── testing/                # 测试工程规范
-│   ├── sql/                    # 数据库 Schema + 增量迁移脚本
-│   └── audit-2026-08/          # 2026-08 审计与决策记录
-│
-├── tests/smoke/                # E2E 冒烟测试（pytest）
-├── backend/admin-api/src/main/resources/knowledge-templates/  # 行业模板（布艺 curtain，32 条预置知识卡片）
-└── .github/workflows/          # CI/CD（工作流数量现取：ls .github/workflows/*.yml .github/workflows/*.yaml 2>/dev/null | wc -l）
+│   ├── admin-web/                 # 观星台后台 + 官网（Next.js）
+│   ├── mini-app/                  # 顾客微信小程序（Taro）
+│   ├── bmini-app/                 # 商家小程序 + 员工端 H5（Taro 双编译）
+│   └── worker-h5/                 # 兼容期旧工人端静态页（/w/，不再新增功能）
+├── deploy/                        # SWAS 部署脚本 / compose / nginx
+├── docs/                          # wiki / design / deployment / testing / api / sql
+├── tests/                         # 单元工作流守卫 / E2E / smoke
+├── rbac/                          # 权限数据与迁移生成
+├── scripts/                       # 研发与运维脚本（gate / 对账 / 发布）
+└── .github/                       # CI/CD、行为用例（cases/）、CI 辅助脚本
 ```
 
 ## 🚀 快速开始
@@ -186,190 +197,124 @@ migao/
 | 工具 | 最低版本 | 用途 |
 |------|---------|------|
 | JDK | 21 | admin-api 编译运行 |
-| Node.js | 18+ | admin-web 前端 |
+| Node.js | 20+ | 四个前端包 |
 | Python | 3.11+ | ai-agent-service |
-| Docker + Docker Compose | — | 本地数据库（推荐） |
+| Docker + Docker Compose | — | 本地数据库（可选；默认连云 dev） |
 
-### 方式一：Docker Compose（推荐）
+### 本地开发（三组件 + 云 dev 数据库）
 
-一键启动数据库和双后端服务：
+本地默认只起 **admin-api(:8080) + ai-agent-service(:8001) + admin-web(:3001)**，
+数据库 / Redis 连云 dev。首次需要把当前公网 IP 加入 RDS 白名单：
 
 ```bash
-cd deploy
-
-# 配置 AI 服务环境变量（首次）
-export PRIMARY_API_KEY=your_deepseek_key
-export PRIMARY_MODEL=deepseek-flash
-
-# 启动所有服务
-docker-compose up --build
-
-# 服务启动后：
-# - Admin API:       http://localhost:8080
-# - AI Agent:        http://localhost:8001（compose 宿主映射，容器内 8000）
-# - PostgreSQL:      localhost:5432
-# - Redis:           localhost:6379
+./scripts/dev-db-whitelist.sh          # 诊断（不写云资源）
+./scripts/dev-db-whitelist.sh --yes    # 不在列 ⇒ 只追加 + 回读确认 + TCP 复测
 ```
 
-### 方式二：逐服务启动
-
-#### 1. 启动基础设施
-
 ```bash
-cd deploy
-docker-compose up postgres redis   # 仅启动数据库和缓存
-```
+# 1. AI Agent（宿主端口 8001；容器内才是 8000）—— 先起，admin-api 要调它
+cd backend/ai-agent-service
+python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
+cp .env.example .env
+.venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8001 --reload
 
-#### 2. 启动 Admin API（Java）
-
-```bash
+# 2. Admin API（:8080）
+# ⚠️ AI 接线两个变量必须显式给，否则真实入驻静默 fail-closed 回「系统繁忙」
 cd backend/admin-api
 cp .env.example .env
-# 编辑 .env 配置数据库、Redis、JWT 密钥等
-
-# ⚠️ Spring Boot **不读** .env —— 必须先显式导出，否则上面这些键一个都不会进 JVM
-#（实证：不导出时 .env 里的 SMS_BYPASS_CODE 不生效，手机验证码登录恒报「短信验证码错误或已过期」）
 set -a && . ./.env && set +a
-
+export AI_AGENT_BASE_URL=http://localhost:8001
+export AI_AGENT_SERVICE_TOKEN="$(grep -E '^SERVICE_TOKEN=' ../ai-agent-service/.env | cut -d= -f2- | tr -d '\"')"
 ./mvnw spring-boot:run
-# → http://localhost:8080
-```
 
-#### 3. 启动 AI Agent Service（Python）
-
-```bash
-cd backend/ai-agent-service
-python -m venv venv && source venv/bin/activate
-pip install -r requirements.txt
-cp .env.example .env
-# 编辑 .env 配置 LLM API Key、数据库、Redis 等
-
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
-# → http://localhost:8000
-```
-
-#### 4. 启动管理后台前端（Next.js）
-
-```bash
+# 3. 观星台后台（:3001）
 cd frontend/admin-web
 npm install
 npm run dev
-# → http://localhost:3001
 ```
 
-#### 5. 启动微信小程序（Taro）
+> 详细排查（RDS 白名单、AI 接线症状、worktree 依赖）见
+> [docs/wiki/Quick-Start.md](docs/wiki/Quick-Start.md)。
+> 也可以用 `cd deploy && docker-compose up --build` 起数据库与双后端。
+
+### 其它端
 
 ```bash
-cd frontend/mini-app
-npm install
-npm run dev:weapp
-# 微信开发者工具打开 dist/ 目录
+# 顾客小程序（微信开发者工具打开 dist/）
+cd frontend/mini-app && npm install && npm run dev:weapp
+
+# 商家小程序 / 员工端 H5
+cd frontend/bmini-app && npm install
+npm run dev:weapp     # 小程序
+npm run dev:h5        # H5（/b/）
 ```
 
 ## 🧪 测试
 
 ```bash
-# Java 单元测试（admin-api）
+# 提交前（与 CI 同规则）
+./verify-all.sh gate          # 三模块测试 + QA gate 预检（全量档，需机器级重活锁）
+./check-ui-regression.sh      # UI 回退检测（改了 web 面才需要）
+./contract-check.sh           # 三端契约一致性（跨模块改动）
+
+# 分模块
 cd backend/admin-api && ./mvnw test
+cd backend/ai-agent-service && .venv/bin/python -m pytest
+cd frontend/admin-web && npx vitest run && npx tsc --noEmit
+cd frontend/bmini-app && npm test
 
-# Python 测试（ai-agent-service）
-cd backend/ai-agent-service && pytest
-
-# E2E 冒烟测试
+# E2E / 冒烟
+cd tests && npx playwright test
 cd tests/smoke && pytest
 ```
 
+测试工程规范（拆分 / ignore / 脱敏 / 分层）见
+[docs/testing/test-engineering-standards.md](docs/testing/test-engineering-standards.md)。
+
 ## 🚢 部署
 
-本项目使用 **GitHub Actions** 自动部署到阿里云。标准流程：
+合并到 `main` 后按变更路径自动触发部署；构建发生在服务器侧（SWAS 上就地构建），
+CI 只跑测试与部署编排。
 
-```
-本地开发 → 创建功能分支 → 提交代码 → 创建 PR → Review 通过 → 合并到 main → 自动部署
-```
+| 工作流 | 触发 | 说明 |
+|--------|------|------|
+| `deploy-admin-api` | push main（`backend/admin-api/**`、`deploy/swas/**`）/ tag | 测试 → 服务器侧构建 → 部署 → post-deploy 冒烟 |
+| `deploy-ai-agent-service` | push main（`backend/ai-agent-service/**`）/ tag | 同上 |
+| `deploy-frontend` | push main（`frontend/admin-web/**`）/ tag | tsc + vitest → 构建 → 部署 + 域名探测 |
+| `c-end-h5-publish` | push main（`frontend/mini-app/**`）/ 定时 / 手动 | C 端 H5 静态发布（定时只报告，写盘需 `publish=true`） |
+| `worker-h5-publish` / `bmini-h5-publish` | 定时 / 手动 | 静态 H5 发布腿（`/w/` 兼容期旧页、`/b/` 员工端） |
+| `terminal-publish` | 手动（需 Release tag） | 安卓终端安装包发布 |
+| `release` | 手动 | 打 semver tag + Release notes |
+| `deploy-prod` | 手动（生产审批） | 受控发布（尚未启用） |
 
-### 自动触发规则
+- 镜像 tag = git SHA 前 7 位，可追溯；`gh workflow run deploy-<svc>.yml -f image_tag=<tag>` 可回滚。
+- 回滚与发布口径见 [docs/wiki/Deployment.md](docs/wiki/Deployment.md)、
+  [docs/deployment/rollback.md](docs/deployment/rollback.md)。
 
-代码合并到 `main` 分支时，根据变更文件路径自动触发对应工作流：
+## 📖 文档
 
-| 工作流 | 触发 | 构建方式 | 部署目标 |
-|--------|------|---------|---------|
-| `deploy-admin-api` | push main（`backend/admin-api/**`）/ tag v* / 手动 | Maven 单测 + 构建（tag=git SHA） | 测试环境 SWAS（自动） |
-| `deploy-ai-agent-service` | push main（`backend/ai-agent-service/**`）/ tag v* / 手动 | 全量单测 + buildx 构建 | 测试环境 SWAS（自动） |
-| `deploy-frontend` | push main（`frontend/admin-web/**`）/ tag v* / 手动 | tsc + vitest + 构建 | 测试环境 SWAS（自动）+ 部署后域名探测 |
-| `deploy-prod` | 手动（指定版本 + 生产审批） | 拉取已构建镜像 | **生产（未来，受控发布）** |
-| `release` | 手动（patch/minor/major） | 打 semver tag + Release notes | 触发 tag 镜像构建 |
-
-> 镜像 tag 为 git SHA 前 7 位（不可变、可追溯）；手动运行 deploy workflow 填 image_tag 可**回滚到指定版本**。
-> 生产发布流程见 [production-deployment.md](docs/deployment/production-deployment.md)；回滚见 [rollback.md](docs/deployment/rollback.md)。
-
-### 快速部署示例
-
-```bash
-# 1. 创建功能分支
-git checkout -b feat/backend/xxx
-
-# 2. 开发完成后提交
-git add . && git commit -m "feat(backend): xxx"
-git push origin feat/backend/xxx
-
-# 3. 创建 PR 并合并
-gh pr create --title "[backend] xxx" --base main
-gh pr merge --squash --delete-branch
-
-# 4. ✅ GitHub Actions 自动部署，无需额外操作
-```
-
-每个工作流都支持在 GitHub Actions 页面手动触发（`workflow_dispatch`）。
-
-### 详细部署文档
-- [SWAS 迁移踩坑](docs/deployment/swas-migration-lessons.md) — SWAS 部署的 16 个坑与经验
-- [部署检查清单](docs/deployment/deployment-checklist.md) — 历史踩坑记录（可参考）
-- [生产部署方案](docs/deployment/production-deployment.md) — 未来生产环境受控发布设计
-- [回滚 Runbook](docs/deployment/rollback.md) — 快速/手动回滚流程
-- 当前部署以 `deploy/swas/deploy.sh` + [docs/wiki/Deployment.md](docs/wiki/Deployment.md) 为准
-
-## 📖 项目文档
-
-| 类别 | 文档 | 说明 |
-|------|------|------|
-| **架构** | [系统架构](docs/wiki/Architecture.md) | 双微服务拓扑、多租户、Agent 框架 |
-| **API** | [API 参考文档](docs/api/api-reference.md) | 全量接口定义 + SSE 协议 |
-| **设计** | [UI 设计规范](docs/design/ui-design-spec.md) | 色彩、字体、组件、响应式 |
-| | [管理后台设计](docs/design/admin-dashboard-design.md) | 页面路由、权限矩阵、CRM |
-| | [坐席工作台设计](docs/design/agent-workspace-design.md) | 人工坐席流程、WebSocket |
-| | [工具规范](docs/design/skill-spec.md) | AI 工具定义与安全层（数量以 `registry.py` 注册表为单一源） |
-
-## 📊 项目进度
-
-当前整体进度 **~74%**，处于第三阶段（MVP 测试与上线）。
-
-| 阶段 | 进度 | 说明 |
-|------|------|------|
-| 阶段一：基础设施 | 85% | 脚手架、数据库 41 张表、Docker、CI/CD |
-| 阶段二：MVP 核心 | 97% | 商品 CRUD、AI 工具、小程序、SSE |
-| 阶段三：测试上线 | 20% | 单元测试、集成测试、生产部署 |
+| 场景 | 入口 |
+|------|------|
+| **全部文档索引** | [docs/wiki/INDEX.md](docs/wiki/INDEX.md) |
+| **产品定位与能力地图** | [docs/wiki/Product.md](docs/wiki/Product.md) |
+| 系统架构 | [docs/wiki/Architecture.md](docs/wiki/Architecture.md) |
+| 本地搭建 / 运行 | [docs/wiki/Quick-Start.md](docs/wiki/Quick-Start.md) |
+| 开发流程与验证命令 | [docs/wiki/Development.md](docs/wiki/Development.md) |
+| AI 服务 / Agent 能力 | [docs/wiki/AI-Agent.md](docs/wiki/AI-Agent.md) |
+| 前端架构 | [docs/wiki/Frontend.md](docs/wiki/Frontend.md) |
+| 数据库与迁移 | [docs/wiki/Database.md](docs/wiki/Database.md) |
+| CI/CD 与部署 | [docs/wiki/CI-CD.md](docs/wiki/CI-CD.md) · [docs/wiki/Deployment.md](docs/wiki/Deployment.md) |
+| 测试与验收 | [docs/wiki/Testing.md](docs/wiki/Testing.md) · [docs/testing/acceptance-protocol.md](docs/testing/acceptance-protocol.md) |
+| 行业真值源 | [docs/curtain-fabric-quote-rules.md](docs/curtain-fabric-quote-rules.md)（算料）· [docs/curtain-production-process-standard.md](docs/curtain-production-process-standard.md)（工序） |
 
 ## 🤝 贡献指南
 
-欢迎贡献！详细流程见 [CONTRIBUTING.md](CONTRIBUTING.md)（Issue 先行 → 分支 → 测试先行 → PR 门禁）。
+欢迎贡献！流程见 [CONTRIBUTING.md](CONTRIBUTING.md)：Issue 先行 → 分支 → 测试先行 → PR 门禁。
 
-### 分支策略
-
-| 分支 | 用途 |
-|------|------|
-| `main` | 受保护，仅通过 PR 合入 |
-| `feat/frontend/*` | 前端功能 |
-| `feat/backend/*` | 后端功能 |
-| `fix/*` | Bug 修复 |
-| `hotfix/*` | 紧急修复 |
-
-### Commit 规范
-
-```
-feat(frontend): 添加商品批量上架功能
-fix(backend): 修复多租户数据隔离问题
-test: 补充订单状态机单元测试
-```
+- **分支策略**：`main` 受保护，仅通过 PR 合入；`feat/*` / `fix/*` / `hotfix/*` / `docs/*`
+- **PR 必须关联 Issue**（body 写 `Closes #<issue>`），CI 有 `pr-issue-link` 检查
+- **提交前**：`./verify-all.sh gate` + `./check-ui-regression.sh`（跨模块再加 `./contract-check.sh`）
+- **新增 / 修改测试**：文件头声明 `# case_ids:`（对应 `.github/cases/`）
 
 ## 📄 许可证
 
