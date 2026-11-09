@@ -56,9 +56,18 @@ def _bare_builtin_lines(text: str) -> list[str]:
     return [l for l in _code_lines(text) if BUILTIN in l and FALLBACK not in l]
 
 
+#: 只读「有没有这枚 secret」的**存在性比较**（不是把凭据当令牌用）—— 不算裸用。
+_PRESENCE_ONLY = re.compile(r"secrets\.AUTOMERGE_PAT\s*(?:!=|==)\s*''")
+
+
 def _bare_pat_lines(text: str) -> list[str]:
-    """PAT 引用里**没有**内置回落的那些行（= fork PR 会因空 token 全红的形态）。"""
-    return [l for l in _code_lines(text) if PAT in l and FALLBACK not in l]
+    """PAT 引用里**没有**内置回落的那些行（= fork PR 会因空 token 全红的形态）。
+
+    排除「存在性比较」那一类（`secrets.AUTOMERGE_PAT != ''`）：它只产出**非密布尔**，
+    不是把凭据当令牌交给某个步骤（判据 5 要的正是这种读数）。
+    """
+    return [l for l in _code_lines(text)
+            if PAT in l and FALLBACK not in l and not _PRESENCE_ONLY.search(l)]
 
 
 def _token_echo_lines(text: str) -> list[str]:
@@ -116,6 +125,18 @@ def test_github_script_comment_steps_use_the_high_quota_credential():
         assert "github-token:" in head and FALLBACK in head, (
             "github-script 步没有显式给高配额凭据 ⇒ 默认吃内置令牌，限流时评论步 403：\n" + head
         )
+
+
+def test_credential_source_readout_is_present():
+    """凭据**来源**必须可观测：回落形态让 PAT/内置在日志里同形 ⇒ 必须有非密读数（§18.6）。
+
+    没有这条读数时，「PAT 生效了」与「PAT 是空的、一直在回落内置」**长得一模一样** ——
+    #8847 的修法就变成不可验证的。读数只能是布尔，**不许**打凭据本身。
+    """
+    text = CONTRIBUTION.read_text(encoding="utf-8")
+    assert "secrets.AUTOMERGE_PAT != ''" in text, (
+        "contribution-gate.yml 缺「凭据来源」布尔读数 ⇒ 无法判定 PAT 是否生效")
+    assert "凭据来源读数" in text, "读数步被删了 ⇒ 本判据会红（不要静默删掉可观测面）"
 
 
 def test_token_is_never_echoed_into_job_logs():
