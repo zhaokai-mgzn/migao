@@ -8,7 +8,7 @@
 // |---|---|
 // | `https://migaozn.com/download` | **404**（`(corporate)` 下没有该路由，nav / footer 也没有入口） |
 // | 终端更新清单 | 只存在于终端程序的硬编码地址（`app.migaozn.com/terminal/latest.json`）⇒ 商家没有任何可见入口 |
-// | 下载页要展示的身份 | 版本 / SHA-256 / 大小 / 发布时间 / notes / 两个下载按钮 / 安装说明（安卓未知来源、Windows SmartScreen、检查更新） |
+// | 下载页要展示的身份 | 版本 / SHA-256 / 大小 / 发布时间 / 两个下载按钮 / 安装说明（安卓未知来源、Windows SmartScreen、检查更新） |
 //
 // ## 本文件锁什么
 //
@@ -83,7 +83,7 @@ afterEach(() => {
 })
 
 describe('官网下载页：清单正常时逐项展示（issue #8195）', () => {
-  it('Windows：版本 / SHA-256 / 大小 / 发布时间 / notes / 下载按钮', async () => {
+  it('Windows：版本 / SHA-256 / 大小 / 发布时间 / 下载按钮', async () => {
     bothManifests()
     render(<DownloadPage />)
 
@@ -91,7 +91,9 @@ describe('官网下载页：清单正常时逐项展示（issue #8195）', () =>
     expect(screen.getByText('a'.repeat(64))).toBeInTheDocument()
     expect(screen.getByText(/321\.0 KB/)).toBeInTheDocument()
     expect(screen.getAllByText('2026-10-31').length).toBeGreaterThan(0)
-    expect(screen.getByText(/车间一体机裁高终端/)).toBeInTheDocument()
+    // 版本说明走**用户向**固定口径（issue #8868：清单 notes 是终端仓开发日志，不上屏）
+    expect(screen.getAllByText(/正式发布版/).length).toBe(2)
+    expect(screen.getAllByText('查看 SHA-256 校验值').length).toBe(2)
 
     const link = screen.getByRole('link', { name: /下载 Windows 安装包/ })
     expect(link).toHaveAttribute('href', WINDOWS_MANIFEST.download_url)
@@ -115,6 +117,43 @@ describe('官网下载页：清单正常时逐项展示（issue #8195）', () =>
     const urls = fetchMock.mock.calls.map((call) => String(call[0]))
     expect(urls.some((u) => u === '/terminal/latest.json')).toBe(true)
     expect(urls.some((u) => u === '/terminal/android/latest.json')).toBe(true)
+  })
+})
+
+// ── 对外面口径：不摆内部标识、不带品牌名（issue #8868）────────────────────────────
+//
+// 病（2026-11-09 用户逐字，两张截图）：
+//   ① Android 卡副标题写着「车间工人手持终端（**商米**）」⇒「不要有品牌信息」——官网给上游硬件厂商做广告；
+//   ② 卡片红框里把终端仓清单的 `notes` 原文摆上屏：`__CFG__` / `printerMode` / `issue #53/#55`
+//     ⇒「红框信息要优化」。那是**开发改动日志**，不是商家要读的版本说明（§31 P3「不摆内部标识」）。
+describe('对外面口径：不摆内部标识、不带品牌名（issue #8868）', () => {
+  const ENGINEERING_NOTES =
+    '1) __CFG__ 挂到 window 上 + 上报 printerMode：工人端打印能力可判（issue #53/#55)'
+
+  it('🔴 清单 notes（终端仓开发改动日志）一个字都不上屏', async () => {
+    stubFetch((url) =>
+      url.includes('android')
+        ? jsonResponse(url, { ...ANDROID_MANIFEST, notes: ENGINEERING_NOTES })
+        : jsonResponse(url, { ...WINDOWS_MANIFEST, notes: ENGINEERING_NOTES }),
+    )
+    render(<DownloadPage />)
+    expect(await screen.findByText('1.0.1.0')).toBeInTheDocument()
+
+    for (const token of ['__CFG__', 'printerMode', 'issue #53', '挂到 window 上']) {
+      expect(
+        screen.queryByText(new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))),
+        `清单 notes 的内部标识「${token}」被摆上了官网`,
+      ).toBeNull()
+    }
+  })
+
+  it('🔴 品牌名不上屏：Android 副标题与页头 chips 都不含厂商名', () => {
+    bothManifests()
+    render(<DownloadPage />)
+
+    expect(screen.queryByText(/商米/)).toBeNull()
+    // 去的是**品牌**，不是端名：两处「Android 手持机」（页头 chip + 卡片标题）都还在
+    expect(screen.getAllByText('Android 手持机').length).toBeGreaterThanOrEqual(2)
   })
 })
 
