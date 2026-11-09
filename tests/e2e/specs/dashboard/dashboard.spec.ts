@@ -220,11 +220,12 @@ test.describe('仪表盘页面', () => {
     await expect(stamps.first()).toHaveText(datePattern)
   })
 
-  test('3 个经营数据卡片标题正确渲染', async ({ page }) => {
+  test('3 个经营数据卡片标题正确渲染（客单价已按用户 2026-11-09 要求去掉）', async ({ page }) => {
     await expect(page.getByText('今日订单数')).toBeVisible()
     await expect(page.getByText('今日销售额')).toBeVisible()
-    await expect(page.getByText('客单价')).toBeVisible()
     await expect(page.getByText('本月销售额')).toBeVisible()
+    // 负控：「客单价」卡与派生读数一起退场
+    await expect(page.getByText('客单价')).toHaveCount(0)
   })
 
   test('"今日订单数"卡片：数量 + 变化', async ({ page }) => {
@@ -240,11 +241,6 @@ test.describe('仪表盘页面', () => {
     await expect(page.getByText('¥8,900', { exact: true })).toBeVisible()
     // todaySalesChange: 8.3 → 较昨日 +8.3%
     await expect(page.getByText('较昨日 +8.3%')).toBeVisible()
-  })
-
-  test('"客单价"卡片 = 今日销售额 ÷ 今日订单数', async ({ page }) => {
-    // todaySales 8900 / todayOrders 42 = 211.9 → Math.round → 212 → ¥212
-    await expect(page.getByText('¥212')).toBeVisible()
   })
 
   test('"本月销售额"卡片：货币格式化', async ({ page }) => {
@@ -456,7 +452,7 @@ test.describe('仪表盘空数据状态', () => {
   test('经营数据卡片零值正常渲染', async ({ page }) => {
     await expect(page.getByText('今日订单数')).toBeVisible()
     await expect(page.getByText('今日销售额')).toBeVisible()
-    await expect(page.getByText('客单价')).toBeVisible()
     await expect(page.getByText('本月销售额')).toBeVisible()
+    await expect(page.getByText('客单价')).toHaveCount(0)
   })
 })

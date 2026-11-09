@@ -572,11 +572,6 @@ export default function DashboardPage() {
   const processingShipmentState: MetricState = loading ? 'loading' : statsMissing ? DASHBOARD_EMPTY_VALUE : processingShipment
   const overdueTicketsState: MetricState = loading ? 'loading' : statsMissing ? DASHBOARD_EMPTY_VALUE : overdueTickets
   const lowStockState: MetricState = loading ? 'loading' : statsMissing ? DASHBOARD_EMPTY_VALUE : lowStockCount
-  // 客单价 = 今日销售额 ÷ 今日订单数（数字自洽：订单数 × 客单价 ≈ 销售额）。读不到 ⇒ `'—'`（**不是 0**）
-  const avgOrderValue: MetricState = loading || statsMissing
-    ? DASHBOARD_EMPTY_VALUE
-    : stats.todayOrders > 0 ? Math.round(stats.todaySales / stats.todayOrders) : 0
-
   // 销量排行最大值（进度条基准）
   // 销量排行最大值（进度条基准）
   const maxSalesQty = Math.max(...ranking.map(r => r.salesQty || 0), 1)
@@ -693,14 +688,14 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* ② 经营数据卡片（4 卡自洽：订单数 × 客单价 ≈ 销售额） */}
+      {/* ② 经营数据卡片（3 卡：用户 2026-11-09 钉钉「把经营数据里的客单价去掉」） */}
       <div className="mb-6">
         <SectionHeading icon={<TrendingUp className="h-3.5 w-3.5 text-primary-600" />} colorClass="bg-primary-50">经营数据</SectionHeading>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {loading ? (
             /* issue #8012：加载骨架必须是**灰底 + 脉冲**。改前是 `bg-white` + `animate-pulse`
-               ⇒ 白底白块，屏上等于「四格空白」（真栈截图 02-dashboard.png 即此现象）。 */
-            Array.from({ length: 4 }).map((_, i) => (
+               ⇒ 白底白块，屏上等于「空白格」（真栈截图 02-dashboard.png 即此现象）。 */
+            Array.from({ length: 3 }).map((_, i) => (
               <div key={i} data-testid="stats-skeleton" className="rounded-xl border border-neutral-200 bg-white p-5 shadow-card">
                 <div className="h-3 w-16 animate-pulse rounded bg-neutral-200" />
                 <div className="mt-4 h-7 w-24 animate-pulse rounded bg-neutral-200" />
@@ -728,13 +723,6 @@ export default function DashboardPage() {
                 icon={<DollarSign className="w-4 h-4 text-emerald-600" />}
                 sparkline={salesSeries.slice(-14)}
                 chartType="bar"
-              />
-              <BizStatCard
-                metric="month"
-                title="客单价"
-                value={metricText(avgOrderValue, fmtCurrency)}
-                valueTestId="stats-card-avg-order-value"
-                hint={statsMissing ? '经营数据读不到' : avgOrderValue === 0 ? DASHBOARD_EMPTY_VALUE : '今日每单平均消费'}                icon={<TrendingUp className="w-4 h-4 text-accent-600" />}
               />
               <BizStatCard
                 metric="month"
