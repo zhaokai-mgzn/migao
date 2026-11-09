@@ -14,7 +14,7 @@ npx next start -p 3124 &            # 生产构建（dev 模式下 AuthProvider 
 npm --prefix /tmp i playwright      # 仅首次
 npx playwright install chromium     # 仅首次
 
-node scripts/visual-check/reports-page.mjs        # 报表中心（在仓库根跑）
+node scripts/visual-check/reports-page.mjs        # 经营报表页（原报表中心五卡已并入 /dashboard，issue #8852）
 node scripts/visual-check/price-books-page.mjs    # 价格本（SKU 走公共选品器，issue #7567）
 node scripts/visual-check/purchase-orders-page.mjs # 采购单（列表 / 新建弹窗 / 收货弹窗，issue #7567）
 node scripts/visual-check/stocktakes-page.mjs     # 盘点单（issue #7373）

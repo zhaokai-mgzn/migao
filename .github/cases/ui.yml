@@ -5741,3 +5741,43 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+
+  # UI-150（issue #8852）：「经营概览」+「报表中心」合并为一页「经营报表」，按查看 → 分析 → 管理重排
+  - id: UI-150
+    legacy_id: ""
+    title: "经营概览 + 报表中心合并为「经营报表」页：按查看（今日经营）/ 分析（趋势 + 五张报表）/ 管理（明细下钻）三段重排（issue #8852）"
+    domains:
+      - ui
+      - frontend
+      - report
+    tier: normal
+    tags:
+      - ui
+      - layout
+      - information-architecture
+      - business-reports
+    truths_ref:
+      - frontend-fix.layout
+      - frontend-fix.no-api-change
+    user_inputs:
+      - "用户 2026-11-09 钉钉原话：把“经营概览”和“报表中心”两个页面整合为一个页面“经营报表”。整合后的页面展示要符合用户查看、分析、管理逻辑，不要把数据乱七八糟的杂揉在一起。"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "判据 1·**页面唯一**：合并后 `/dashboard` 页标题逐字 =「经营报表」，页内不再出现旧页名「经营概览」「报表中心」；`/reports` 是重定向薄壳 → `/dashboard`（旧深链不 404）。执行点 = frontend/admin-web/tests/unit/pages/business-reports-page.test.tsx、tests/e2e/specs/dashboard/dashboard.spec.ts。"
+      - "判据 2·**三段顺序**：DOM 顺序 = `business-reports-section-overview`（今日经营·查看）→ `business-reports-section-analysis`（经营分析·分析）→ `business-reports-section-records`（经营明细·管理），且各段用途标题/提示同屏可读。执行点 = business-reports-page.test.tsx。"
+      - "判据 3·**原两页内容不丢**：今日经营卡 + 待处理 5 卡 + 经营数据 4 卡在「查看」段；趋势/状态 + 原报表中心五张卡（含区间筛选与「库存滞销/应收账龄是此刻读数」说明）在「分析」段；近期订单 + 商品销量排行在「管理」段。执行点 = business-reports-page.test.tsx + reports.test.tsx（五卡口径原样保留）。"
+      - "判据 4·**单一刷新**：页面级「刷新」同时重取看板与报表段（报表端点多调用一次）。执行点 = business-reports-page.test.tsx。"
+      - "判据 5·**菜单与授权零 delta**：菜单只剩一个「经营报表」节点（key/path/码 = `dashboard` / `/dashboard` / `dashboard:view`），三源同构 + AI 导航 + 页面上下文登记同批收敛；角色/权限码集合不变。执行点 = tests/unit_ci_workflows/test_menu_three_sources_are_isomorphic.py、test_menu_navigator.py、test_agent_permission_parity.py、rbac/manifest.json。"
+    skip_reason: "[backend-contract] 纯前端信息架构合并（无接口/字段/权限码变更），由 vitest 页面判据 + 菜单/权限三源判据 + Playwright 真浏览器判据覆盖，不进入 agent-eval 冒烟"
+    merge_log: "2026-11-09 新增（issue #8852）：用户 2026-11-09 钉钉要求把经营概览与报表中心合并为一个「经营报表」页；按查看/分析/管理三段重排，报表五卡行为口径原样保留。取号 UI-150（`python3 scripts/next_case_id.py UI` 现取）。"
+    traces:
+      tests:
+        - "frontend/admin-web/tests/unit/pages/business-reports-page.test.tsx"
+        - "frontend/admin-web/tests/unit/pages/reports.test.tsx"
+        - "frontend/admin-web/tests/unit/lib/menu-nav.test.ts"
+        - "tests/unit_ci_workflows/test_menu_three_sources_are_isomorphic.py"
+        - "tests/e2e/specs/dashboard/dashboard.spec.ts"
+      ci:
+        - pr-check.yml
+      verifies: []

@@ -121,12 +121,12 @@ TRUTH_SOURCES: Dict[str, TruthSource] = {
         citation="依据：价格本与改价口径说明（优先级与审批）",
         path="backend/admin-api/src/main/java/com/migao/admin/service/PriceBookService.java",
     ),
-    # 报表中心（issue #7376 / #7377）：四条口径（合计 = 明细之和 / 空数据 ≠ 0 / 未知不填 0 /
-    # 数据范围同 P0-4）全部写在服务层 javadoc，不在别处再写一份。
-    "report-center": TruthSource(
-        label="报表中心（毛利 / 滞销 / 业绩 / 质量成本）",
-        citation="依据：报表口径说明（合计与明细可复算；没有数据留空而不写 0；算不出的成本标未知）",
-        path="backend/admin-api/src/main/java/com/migao/admin/service/ReportService.java",
+    # 经营报表（issue #8852）：原「经营概览」+「报表中心」合并为一页 ⇒ 页面上下文也收敛成**一个**真值源，
+    # 口径说明写在设计文档里（看板卡片口径 + 报表四条展示纪律 + 区间作用面），不再分别挂两份。
+    "business-reports": TruthSource(
+        label="经营报表（今日经营 / 趋势 / 毛利 / 滞销 / 业绩 / 质量成本 / 账龄）",
+        citation="依据：经营报表页口径说明（看板卡片口径 + 报表合计可复算 / 空数据留空 / 未知不填 0）",
+        path="docs/design/business-reports-page.md",
     ),
     # 盘点（issue #7373）：账面快照 / 差异必须经审批 / 只改数量不动成本 —— 全部口径在服务层 javadoc。
     "stocktake-counting": TruthSource(
@@ -171,11 +171,6 @@ TRUTH_SOURCES: Dict[str, TruthSource] = {
         label="窗帘生产与计件规则清单（生产 · 工序 · 计件）",
         citation="依据：本店生产与计件规则清单",
         path="docs/curtain-production-rules.md",
-    ),
-    "dashboard-cards": TruthSource(
-        label="经营看板指标卡登记表（口径与显隐）",
-        citation="依据：经营看板指标卡登记表",
-        path="frontend/admin-web/src/lib/dashboard-cards.ts",
     ),
     "sales-shipment": TruthSource(
         label="发货数量口径（下单数量 vs 实发数量，各归其 owner）",
@@ -237,13 +232,9 @@ PAGE_REGISTRY: Tuple[PageEntry, ...] = (
         page_permissions=("order:list",),
         entity_permissions=(),
     ),
-    # 报表中心（issue #7376 / #7377）：问「毛利怎么算 / 为什么是空的 / 质量成本缺哪项」⇒ 引服务层口径。
-    PageEntry(
-        route="/reports",
-        truth_source="report-center",
-        page_permissions=("dashboard:view",),
-        entity_permissions=(),
-    ),
+    # 🔴 2026-11-09（issue #8852）：「报表中心」并入「经营报表」/ `/dashboard` ⇒ 本 route 的 PageEntry
+    # **销账**（`/reports` 只剩重定向薄壳、没有菜单节点；留着就是「登记了不存在的页面」）。
+    # 原报表口径由 `/dashboard` 的 `business-reports` 真值源承载（合并页仍在同一页问同一批口径）。
     # 盘点单（issue #7373）：问「差异为什么没批 / 盘亏怎么调账 / 账面数会不会变」⇒ 引服务层口径。
     PageEntry(
         route="/stocktakes",
@@ -325,9 +316,10 @@ PAGE_REGISTRY: Tuple[PageEntry, ...] = (
     # ⚠️ 上面的 `/orders/*` 是**通配整族**：登记面把它读作「`/orders` 这一族」（含列表页本身，
     #    与既有的 `/products/*` 同式）；`/orders/new`（上面的精确条目）**优先于**它被命中。
     PageEntry(
-        # 经营看板：卡片口径与显隐规则（能力位 gating）
+        # 经营报表（issue #8852：原经营看板 + 报表中心合并）：看板卡片口径与显隐规则（能力位 gating）、
+        # 五张报表的展示纪律与区间作用面 —— 同一页的口径由同一份设计文档承载。
         route="/dashboard",
-        truth_source="dashboard-cards",
+        truth_source="business-reports",
         page_permissions=("dashboard:view",),
         entity_permissions=(),
     ),

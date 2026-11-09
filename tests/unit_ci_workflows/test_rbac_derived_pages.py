@@ -10,15 +10,15 @@ C1 / C2 / C3 / C4 的**码列**（**不动**分组/顺序/icon/keywords）」+ �
 
 「某页面要什么码」这个事实在仓里有 **4 份手写副本**（设计 §1.3 的 C 类）：`menu.ts` 的节点码、
 `MenuController` 的 `MENU_TREE`、`AuthService` 的登录菜单、以及**判据自己的锚点表**
-（`MENU_READ_ENDPOINT_ANCHORS` 的 28 条「页面 → 第一屏调用」+ 两张页面面台账）。P1/P2 把「角色 → 码」
+（`MENU_READ_ENDPOINT_ANCHORS` 的 27 条「页面 → 第一屏调用」+ 两张页面面台账）。P1/P2 把「角色 → 码」
 与「码目录」搬进了清单，**「页面 → 码」当时一处都没进清单** ⇒ 「谁新写一张页面 → 码 的表」不会有东西变红。
 
 P3 做三件事，**都不改行为**（零 delta）：
 
 | 面 | 派生（本文件的被测对象） | 现值（对照） |
 |---|---|---|
-| `pages[]`（**新进清单**） | 28 页：`gate` 菜单可见码 + `units` 第一屏读码 → 端点 + 逐页 `visibility_rule` | 四跳现取（菜单节点 → 页面锚点 → `lib/api.ts` → Java 生效码） |
-| C1 / C3 码列 | `menu_node_codes`（36 节点）/ `auth_menu_codes`（27 条） | `parse_menu_ts_nodes` / `parse_menus()['auth']` |
+| `pages[]`（**新进清单**） | 27 页：`gate` 菜单可见码 + `units` 第一屏读码 → 端点 + 逐页 `visibility_rule` | 四跳现取（菜单节点 → 页面锚点 → `lib/api.ts` → Java 生效码） |
+| C1 / C3 码列 | `menu_node_codes`（35 节点）/ `auth_menu_codes`（26 条） | `parse_menu_ts_nodes` / `parse_menus()['auth']` |
 | C4 守卫码列 | `route_guard_codes`（每页 `path → gate`） | `parse_route_guard`（36 条前缀） |
 | 页面面两张台账 | `multi_code_pages`（一页多码）/ `parity_residual_pages`（节点码 ≠ 页面读码） | `MULTI_READ_ENDPOINT_PAGES`（0）/ `MENU_READ_PARITY_RESIDUALS`（0） |
 | 可见性 | `visibility`（按 `visibility_rule` 把 units 投影成「看得见该菜单的岗位集」） | 现值岗位集（`seed` ∪ `fallback` 的持码者） |
@@ -42,7 +42,7 @@ P3 的派生**必须保留「一页多码」这一结构事实**（一页并发*
 设计 §3.4 问题 3 的结论：`/production/processing` 需要「任一 unit 可用即可见」，而 `/settings` 的语义是
 「整页管理」——「允许半个页面可见」会造出新的「看得见做不了」⇒ **逐页声明 + 默认 `all`（fail-closed）**。
 本判据把「现值要求」机械算出来（`all` ∩ / `any` ∪ 能否复现现值岗位集），并要求清单声明**逐页相等**：
-现取 = `all` **27** 页 / `any` **0** 页 / `node-code` **1** 页（后者 = 投影复现不了现值，进
+现取 = `all` **26** 页 / `any` **0** 页 / `node-code` **1** 页（后者 = 投影复现不了现值，进
 `PAGE_VISIBILITY_GAPS`，只许缩短，出口由 P4 逐条人裁定）。
 ⇒ 任何人把某页改成 `any`（放宽）而现值不要求它 ⇒ **红**。
 
@@ -200,6 +200,16 @@ ROUTE_PREFIX_EXCEPTIONS = {
         "「每日简报」菜单项已移除（issue #7087：结论卡改挂在「经营看板」上、由企业开关驱动）"
         "⇒ 本前缀只作旧深链兼容（重定向薄壳 → `/dashboard`），不属「页面 → 码」面"
         "（判据 11③ 的 `ROUTE_WITHOUT_MENU_NODE['/briefing']` 同款理由）；"
+        "守卫码 = 新入口页的 `dashboard:view`（一字未动，零授权 delta）"
+    ),
+    # 🔴 2026-11-09（issue #8852）：「经营概览」+「报表中心」合并为一页「经营报表」⇒ `/reports`
+    # 只剩重定向薄壳（→ `/dashboard`），不再是任何在册页面的 `path`；守卫前缀与码一字不动。
+    # **不是放宽门禁**：不登记就会变成「地址栏直达不被拦」的静默形态（同 `/briefing`）。
+    # 🔴 **本条目让本账台上限 10 → 11（同 PR 显式、diff 里看得见）**；台账**仍只许缩短**。
+    "/reports": (
+        "「报表中心」菜单项已并入「经营报表」（issue #8852：两页合并为一页）"
+        "⇒ 本前缀只作旧深链兼容（重定向薄壳 → `/dashboard`），不属「页面 → 码」面"
+        "（判据 11③ 的 `ROUTE_WITHOUT_MENU_NODE['/reports']` 同款理由）；"
         "守卫码 = 新入口页的 `dashboard:view`（一字未动，零授权 delta）"
     ),
 }
@@ -455,7 +465,9 @@ FROZEN_CEILINGS: tuple[dict, ...] = (
         # **首次落地时没有侧边栏节点**（本包 = 页面本体；菜单节点牵动前端 C1/C3/C4 三列清单 +
         # 服务端两处菜单源 + 页面上文登记，属独立变更面）⇒ 它不是任何在册页面的 `path`，
         # 只能走例外台账。**同样是具名、不是放宽**：不登记就会变成「地址栏直达不被拦」的静默形态。
-        "ceiling": 10,
+        # 🔴 2026-11-09（issue #8852）10 → 11：新增 `/reports`（报表中心并入经营报表 ⇒ 只剩重定向薄壳、
+        # 不再是任何在册页面的 `path`；守卫前缀保留）—— 同 PR 显式抬界，不是放宽门禁。
+        "ceiling": 11,
         "grew_by": "`route_guard_problems`（『既不是某页 `path`、也没有别名 / 例外登记 ⇒ 新增页面守卫必须先登记』具名报出）",
         "reason": (
             "C4 面里**不以页面 `path` 出现**的前缀（入口在别的页面里 / 旧深链兼容 / 子树父前缀）："
@@ -777,7 +789,7 @@ def menu_column_problems(derived: dict, present: dict) -> list[str]:
          （理由 + 谁的负责 + 码**冻结**：涨跌都要同 PR 更新）；
       ③ **只许缩短**：两张台账里登记了却已对不上 / 已不在码列里 ⇒ 红。
 
-    ⚠️ **节点集不属本面**：C2 只有 **30** 个节点、C3 只有 **27** 个（登录菜单是页面的**子集**）——
+    ⚠️ **节点集不属本面**：C2 只有 **30** 个节点、C3 只有 **26** 个（登录菜单是页面的**子集**）——
     「哪些节点进哪一列」是菜单结构的事实，不由 `pages[]` 决定；本函数只判**码**（逐条点名）。
     """
     node_gates = dict(derived["menu_node_codes"])

@@ -4,13 +4,13 @@
  *
  * ## 与 `SidebarRedesign.test.tsx` 的分工
  *
- * 本文件守**能力面**：28 项一项不少不减（逐项名 + href + `data-menu-key` 序列）、
+ * 本文件守**能力面**：27 项一项不少不减（逐项名 + href + `data-menu-key` 序列）、
  * 图标、`bg-primary-600` 高亮与互斥单高亮、权限过滤正负控、空组整组隐藏、
  * 折叠态不渲染组名。新交互面（默认展开态 / 路由联动 / 折叠态分组锚点 / 移动端抽屉 / ⌘K 入口）
  * 在 `tests/unit/components/SidebarRedesign.test.tsx`。
  *
  * 🔴 issue #7140 起：**8 组 20 项 + 1 个一级项**（最前席位「经营看板」
- * / 尾席位「商品管理」「企业基础设置」）+ 尾部独立项「通知中心」= **28 项**；
+ * / 尾席位「商品管理」「企业基础设置」）+ 尾部独立项「通知中心」= **27 项**；
  * （issue #7369：新增「供应链」组，把入库单 / 供应商 / 采购单 从「仓储与物料」搬出 ⇒ 组数 5 → 6，
  *  组内项总数不变）
  * 「工作台」组整组撤销、「每日简报」菜单项删除（企业开关只驱动经营看板上的结论卡）。
@@ -20,7 +20,7 @@
  * 新 IA 下**分组默认只展开当前路由所在组** ⇒ 想断言「其它组的项在不在」就必须
  * **先展开该组**（`data-testid="sidebar-group-toggle-<key>"`）。因此下列用例里凡断言
  * 非当前组项的，都先调 `expandGroups(...)` / `expandAll()` —— 断言本身**一条没删、没放宽**
- * （有 `expect(links).toHaveLength(28)` 这类**更强**的新钉子作反向证明）。
+ * （有 `expect(links).toHaveLength(27)` 这类**更强**的新钉子作反向证明）。
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor, within, cleanup } from '@testing-library/react'
@@ -164,7 +164,7 @@ const GROUPS: { key: string; name: string; items: [string, string][] }[] = [
  * **最前席位**一级项（`standaloneHeadItems`，issue #7087）：`renderStandaloneBlock` 渲染在
  * **所有分组之前**、块 `data-testid="sidebar-standalone-head"`、**无星标**。
  */
-const STANDALONE_HEAD_KEYS = ['dashboard', 'reports']
+const STANDALONE_HEAD_KEYS = ['dashboard']
 const STANDALONE_HEAD_TESTID = 'sidebar-standalone-head'
 /**
  * 一级项（**不占组**）：#5778 起「商品管理」不再占一个单成员组；
@@ -178,7 +178,7 @@ const STANDALONE_TOP_KEYS = ['settings']
 const TOP_SLOT_KEY = 'supply-chain'
 const GROUP_KEYS = GROUPS.map((g) => g.key)
 /**
- * 展开全部组后应渲染的 **28 项**（**最前席位 → 全部分组 → 尾席位 → 尾部独立项**，== `flattenMenu` 顺序）。
+ * 展开全部组后应渲染的 **27 项**（**最前席位 → 全部分组 → 尾席位 → 尾部独立项**，== `flattenMenu` 顺序）。
  * 🔴 🔊 2026-10-17（issue #7087）：`STANDALONE_HEAD_KEYS`（「经营看板」）在**最前**；
  * 尾席位一级项仍落在**末尾附近**（`TOP_SLOT_KEY` = 最后一个组 ⇒ 通知中心之前）。
  */
@@ -347,7 +347,7 @@ describe('Sidebar', () => {
     expect(screen.queryByAltText('企业 Logo')).not.toBeInTheDocument()
   })
 
-  it('should render all menu items（issue #7140 + #7369 新 IA：8 组 + 1 个一级项 + 独立项 = 28 项）', async () => {
+  it('should render all menu items（issue #7140 + #7369 新 IA：8 组 + 1 个一级项 + 独立项 = 27 项）', async () => {
     render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
     // 🔴 分组标题 = **8 组**（2026-11-06 用户裁定的八大组：客户服务 / 订单/商品 / 生产管理 /
     // 质量管理 / 仓储/物料 / 财务 / 供应链 / 组织管理）
@@ -374,7 +374,7 @@ describe('Sidebar', () => {
 
     // 非当前组（/dashboard 属**最前席位**、不入任何组 ⇒ 默认**全部组收起**）的项必须先展开该组才可见
     expandAll()
-    // 子菜单项：28 项**一项不少不减**
+    // 子菜单项：27 项**一项不少不减**
     expect(menuKeys()).toEqual(ALL_MENU_KEYS)
     for (const [, name] of GROUPS.flatMap((g) => g.items)) {
       expect(screen.getByText(name)).toBeInTheDocument()
@@ -384,8 +384,8 @@ describe('Sidebar', () => {
     expect(screen.queryByText('黄金策 · 在线对话')).not.toBeInTheDocument()
     // 🔴「每日简报」菜单项**已删除**（issue #7087：结论本来就在经营看板上，企业开关只驱动那张卡）
     expect(screen.queryByText('每日简报')).not.toBeInTheDocument()
-    // 最前席位一级项「经营看板」在（不是「跟着旧组一起消失」）
-    expect(screen.getByText('经营概览')).toBeInTheDocument()
+    // 最前席位一级项「经营报表」在（不是「跟着旧组一起消失」）
+    expect(screen.getByText('经营报表')).toBeInTheDocument()
     // #1403: 商品分类管理已移出侧边栏，入口内嵌到新增商品页
     expect(screen.queryByText('商品分类管理')).not.toBeInTheDocument()
     // 旧菜单名（#4490 的合并名，用码点构造以免在源码里再写出它）不再出现在侧边栏（issue #4542 改名）
@@ -396,7 +396,7 @@ describe('Sidebar', () => {
     expect(screen.queryByText('角色权限')).not.toBeInTheDocument()
   })
 
-  it('28 项一项不少不减：`data-menu-key` 序列逐值 == 新 IA（最前席位 → 全部分组 → 尾席位 → 独立项）', async () => {
+  it('27 项一项不少不减：`data-menu-key` 序列逐值 == 新 IA（最前席位 → 全部分组 → 尾席位 → 独立项）', async () => {
     render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
     // 🔴 /dashboard 属**最前席位**（不入任何组）⇒ 冷加载时 6 个组**全部收起**（新形态的直接读数）
     await waitFor(() => expect(screen.getByTestId(STANDALONE_HEAD_TESTID)).toBeInTheDocument())
@@ -408,8 +408,6 @@ describe('Sidebar', () => {
     // 尾席位一级项（商品管理 / 企业基础设置）仍排在**所有分组之后**、通知中心之前。
     expect(menuKeys()).toEqual([
       'dashboard',
-      // 报表中心（#7376）：经营看板之后、分组之前
-      'reports',
       // 客户服务（2026-11-06）：在线接待 → 售后工单 → 知识库
       'human-sessions', 'after-sales', 'knowledge',
       // 订单/商品（2026-11-06）：销售订单 / 商品管理 / 价格本 / 客户列表
@@ -428,21 +426,19 @@ describe('Sidebar', () => {
       'employees', 'roles',
       'notifications',
     ])
-    expect(menuKeys()).toHaveLength(28)
+    expect(menuKeys()).toHaveLength(27)
   })
 
   // ── 🔴 issue #7087 新形态（会红的那几条）────────────────────────────────────────
 
-  it('🔴 最前席位「经营看板 → 报表中心」渲染在**所有分组之前**，且**不渲染星标**（#7087 + #7376）', () => {
+  it('🔴 最前席位「经营报表」渲染在**所有分组之前**，且**不渲染星标**（#7087 + #8852）', () => {
     render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
     const head = screen.getByTestId(STANDALONE_HEAD_TESTID)
-    // ① 块里是**两项**：经营看板 → 报表中心（#7376：同为最前席位、经营数据面）
-    expect(within(head).getByText('经营概览')).toBeInTheDocument()
-    expect(within(head).getByText('报表中心')).toBeInTheDocument()
-    const links = head.querySelectorAll('[data-menu-key]')
-    expect(links).toHaveLength(2)
+    // ① issue #8852：原两页合并 ⇒ 最前席位只剩「经营报表」一项
+    expect(within(head).getByText('经营报表')).toBeInTheDocument()
+        const links = head.querySelectorAll('[data-menu-key]')
+    expect(links).toHaveLength(1)
     expect(links[0].getAttribute('data-menu-key')).toBe('dashboard')
-    expect(links[1].getAttribute('data-menu-key')).toBe('reports')
 
     // ② 位置判据：它在**任何** `[data-group-key]` 之前（DOM 顺序，不是「渲染了就算」）
     const follows = (a: Element, b: Element) =>
@@ -482,7 +478,7 @@ describe('Sidebar', () => {
 
   it('🔴 侧边栏**不再**拉企业简报配置（issue #7087：旧接线回潮 ⇒ 当场红）', async () => {
     render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
-    await waitFor(() => expect(screen.getByText('经营概览')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText('经营报表')).toBeInTheDocument())
     // 旧形态：挂载时调一次 `briefingApi.getConfig()`，用返回值决定「每日简报」是否渲染。
     // 菜单项与菜单级开关机制一起撤掉后，这次请求必须**消失**（企业开关只驱动经营看板上的 BriefingCard）。
     expect(mockBriefingGetConfig).not.toHaveBeenCalled()
@@ -491,7 +487,7 @@ describe('Sidebar', () => {
   it('should render navigation links with correct paths', async () => {
     render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
     expandAll()
-    expect(linkFor('经营概览')).toHaveAttribute('href', '/dashboard')
+    expect(linkFor('经营报表')).toHaveAttribute('href', '/dashboard')
     expect(linkFor('商品管理')).toHaveAttribute('href', '/products')
     // #6580：第二个一级项「企业基础设置」→ /settings（「加工项管理」「工艺配置」已不是菜单项）
     expect(linkFor('企业基础设置')).toHaveAttribute('href', '/settings')
@@ -526,7 +522,7 @@ describe('Sidebar', () => {
     expect(screen.queryByText('观星台')).not.toBeInTheDocument()
     // 菜单名文本同样不渲染（此态下只有图标）
     expect(screen.queryByText('商品列表')).not.toBeInTheDocument()
-    expect(screen.queryByText('经营概览')).not.toBeInTheDocument()
+    expect(screen.queryByText('经营报表')).not.toBeInTheDocument()
   })
 
   it('should show expand button when collapsed', () => {
@@ -554,7 +550,7 @@ describe('Sidebar', () => {
   it('should highlight active menu item for /dashboard', () => {
     mockUsePathname.mockReturnValue('/dashboard')
     render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
-    const link = linkFor('经营概览')
+    const link = linkFor('经营报表')
     expect(getActiveClass(link)).toContain('bg-primary-600')
   })
 
@@ -586,7 +582,7 @@ describe('Sidebar', () => {
   it('should highlight for root path as dashboard', () => {
     mockUsePathname.mockReturnValue('/')
     render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
-    const link = linkFor('经营概览')
+    const link = linkFor('经营报表')
     expect(getActiveClass(link)).toContain('bg-primary-600')
   })
 
@@ -606,9 +602,9 @@ describe('Sidebar', () => {
     mockUsePathname.mockReturnValue('/chat')
     render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
     // /chat 不属于任何菜单项 ⇒ **全部组默认收起**（这本身就是「无高亮」的一种形态）；
-    // 展开全部组后再断言「28 项都在 DOM 里，仍然一个都不高亮」
+    // 展开全部组后再断言「27 项都在 DOM 里，仍然一个都不高亮」
     expandAll()
-    await waitFor(() => expect(document.querySelectorAll('nav a')).toHaveLength(28))
+    await waitFor(() => expect(document.querySelectorAll('nav a')).toHaveLength(27))
     expect(activeKeys()).toEqual([])
   })
 
@@ -831,7 +827,7 @@ describe('Sidebar', () => {
     expect(document.querySelectorAll('[data-group-key]')).toHaveLength(8)
     // ② 原组内两项的去向：经营看板 → 最前席位块；每日简报 → 删除
     const head = screen.getByTestId(STANDALONE_HEAD_TESTID)
-    expect(within(head).getByText('经营概览')).toBeInTheDocument()
+    expect(within(head).getByText('经营报表')).toBeInTheDocument()
     expect(document.querySelector('[data-menu-key="briefing"]')).toBeNull()
     // ③ 它在**所有分组之前**（不是「换个位置藏在某组里」）
     const follows = (a: Element, b: Element) =>
@@ -843,7 +839,7 @@ describe('Sidebar', () => {
     expect(linkFor('在线接待')).toHaveAttribute('href', '/agent-workspace/human-sessions')
   })
 
-  it('（2026-11-07）二级菜单展开态**不渲染**领域图标；同一渲染面里一级菜单图标仍逐一可见（经营概览 BarChart3 / 客户服务组 MessageSquare）', () => {
+  it('（2026-11-07）二级菜单展开态**不渲染**领域图标；同一渲染面里一级菜单图标仍逐一可见（经营报表 BarChart3 / 客户服务组 MessageSquare）', () => {
     render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
     expandGroups('customer-service')
     const humanLink = linkFor('在线接待')
@@ -851,7 +847,7 @@ describe('Sidebar', () => {
     expect(within(humanLink).queryByTestId('icon-headphones')).toBeNull()
     expect(within(humanLink).queryByTestId('icon-bar-chart3')).toBeNull()
     // 负控：图标**不是整体从侧边栏消失** —— 一级项 / 组标题的图标仍在（否则本用例可被「删光图标」喂绿）
-    expect(within(linkFor('经营概览')).getByTestId('icon-bar-chart3')).toBeInTheDocument()
+    expect(within(linkFor('经营报表')).getByTestId('icon-bar-chart3')).toBeInTheDocument()
     expect(within(groupButton('customer-service')).getByTestId('icon-message-square')).toBeInTheDocument()
   })
 
@@ -894,7 +890,7 @@ describe('Sidebar', () => {
     }
   })
 
-  it('（2026-11-07 类级）图标层级按 `menu.ts` **全量**校验：8 个组头 + 4 个直达一级项都有图标；24 个二级菜单展开态都无图标', () => {
+  it('（2026-11-07 类级）图标层级按 `menu.ts` **全量**校验：8 个组头 + 3 个直达一级项都有图标；24 个二级菜单展开态都无图标', () => {
     render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
     expandAll()
     /** lucide 组件名 → 测试桩 testid（`MessageSquare` → `message-square`；`Building2` → `building2`） */
@@ -906,9 +902,9 @@ describe('Sidebar', () => {
     for (const g of menuGroups) {
       expect(within(groupButton(g.key)).getByTestId(`icon-${kebab(g.icon)}`), g.name).toBeInTheDocument()
     }
-    // ② 一级菜单 · 直达项（三个席位共 4 项）：都有图标（具体图标映射由 menu-icons.test.ts 判）
+    // ② 一级菜单 · 直达项（三个席位共 3 项）：都有图标（具体图标映射由 menu-icons.test.ts 判）
     const direct = [...standaloneHeadItems, ...standaloneTopItems, ...standaloneItems]
-    expect(direct).toHaveLength(4)
+    expect(direct).toHaveLength(3)
     for (const item of direct) {
       const link = document.querySelector(`[data-menu-key="${item.key}"]`) as HTMLElement
       expect(link, item.name).toBeInstanceOf(HTMLAnchorElement)
@@ -980,7 +976,7 @@ describe('Sidebar', () => {
       expect(screen.getByText('通知中心')).toBeInTheDocument()
       // UI-005/UI-011: admin 可见智能客服大类及其子菜单（#3094 黄金策·在线对话 入口已移除）
       expect(screen.queryByText('黄金策 · 在线对话')).not.toBeInTheDocument()
-      expect(menuKeys()).toHaveLength(28)
+      expect(menuKeys()).toHaveLength(27)
     })
 
     it('should filter out items user has no permission for', () => {
@@ -988,9 +984,8 @@ describe('Sidebar', () => {
         user: { id: '2', username: 'operator', name: '运营', permissions: ['dashboard:view', 'order:list', 'product:list'], roles: ['operator'] },
       })
       render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
-      // 有权限的：最前席位两项（本权限集持 dashboard:view ⇒ 看板与报表中心同码同可见）
-      expect(screen.getByText('经营概览')).toBeInTheDocument()
-      expect(screen.getByText('报表中心')).toBeInTheDocument()
+      // 有权限的：最前席位一项「经营报表」（持 dashboard:view ⇒ 可见）
+      expect(screen.getByText('经营报表')).toBeInTheDocument()
       // 「订单/商品」组：持 order:list / product:list 的三项可见（客户列表要 customer:view ⇒ 不在）
       expect(screen.getByText('订单/商品')).toBeInTheDocument()
       expandGroups('orders-products')
@@ -1035,7 +1030,7 @@ describe('Sidebar', () => {
       expect(screen.getByText('通知中心')).toBeInTheDocument()
       // 可见项**精确**清单（渲染顺序 = 最前席位 → 各组（展开后按组内序）→ 尾席位 → 通知中心）
       expect(menuKeys()).toEqual([
-        'dashboard', 'reports',
+        'dashboard',
         'orders', 'products', 'price-books',
         'shipments', 'stock-ledger', 'production-saving-board',
         'notifications',
@@ -1054,7 +1049,7 @@ describe('Sidebar', () => {
       // 🔴 #5699 P4：经营看板节点码 = `dashboard:view` ⇒ 零权限时**工作台整组不渲染**
       //（此前它无码 ⇒ 全员可见，而页面/路由守卫都要码 = 「看得见、点进去 403」）。
       expect(screen.queryByText('工作台')).not.toBeInTheDocument()
-      expect(screen.queryByText('经营概览')).not.toBeInTheDocument()
+      expect(screen.queryByText('经营报表')).not.toBeInTheDocument()
       // 分组标题应该都不在（含工作台在内，七组全空 ⇒ 整组剔除）
       for (const name of ['工作台', '客户服务', '订单/商品', '订单管理', '商品与加工项', '智能客服',
         '生产管理', '质量管理', '仓储/物料', '财务', '供应链', '组织管理', '客户管理',
@@ -1177,7 +1172,7 @@ describe('Sidebar', () => {
       expect(screen.queryByText('售后工单')).not.toBeInTheDocument()
       // 旧「商品与加工项」组应完全隐藏
       expect(screen.queryByText('商品与加工项')).not.toBeInTheDocument()
-      // dashboard:view ⇒ 看板 + 报表中心同码同可见（#7376）
+      // dashboard:view ⇒ 经营报表可见（#8852 合并后同码同页）
       // 🔴 issue #8085：本权限下「仓储/物料」只剩「发货单」1 项 ⇒ **提升为一级项**
       //（无组头、恒可见、不靠折叠隐藏）—— 这正是本测试的判据面
       expect(screen.getByText('发货单')).toBeInTheDocument()
@@ -1187,7 +1182,7 @@ describe('Sidebar', () => {
         expect(screen.queryByText(name)).not.toBeInTheDocument()
       }
       expect(menuKeys()).toEqual(
-        ['dashboard', 'reports', 'orders', 'price-books', 'shipments', 'notifications'])
+        ['dashboard', 'orders', 'price-books', 'shipments', 'notifications'])
     })
 
     // ── #5271 新组的权限边界（正负控：菜单可见性与页面门禁同码，不互相顶替）──
@@ -1207,7 +1202,7 @@ describe('Sidebar', () => {
       expect(screen.queryByText('采购单')).not.toBeInTheDocument()
       expect(screen.queryByText('余料台账')).not.toBeInTheDocument()
       expect(screen.queryByText('省料分析')).not.toBeInTheDocument()
-      // #5699 P4：经营概览要 dashboard:view ⇒ 不在（拆码后只剩入库单）
+      // #5699 P4：经营报表要 dashboard:view ⇒ 不在（拆码后只剩入库单）
       expect(menuKeys()).toEqual(['inbound-orders', 'notifications'])
       unmount()
 
@@ -1239,9 +1234,9 @@ describe('Sidebar', () => {
     // 当前路由 /dashboard ⇒ 最前席位「经营看板」带 aria-current
     const dash = document.querySelector('nav a[data-menu-key="dashboard"]') as HTMLAnchorElement
     expect(dash.getAttribute('aria-current')).toBe('page')
-    // 非当前项没有 aria-current
-    const reports = document.querySelector('nav a[data-menu-key="reports"]') as HTMLAnchorElement
-    expect(reports.getAttribute('aria-current')).toBeNull()
+    // 非当前项没有 aria-current（旧 `/reports` 已并入本页 ⇒ 用尾席位项当非当前项）
+    const settings = document.querySelector('nav a[data-menu-key="settings"]') as HTMLAnchorElement
+    expect(settings.getAttribute('aria-current')).toBeNull()
     // 星标与链接是**兄弟**：`<a>` 内嵌 `<button>` 是无效 HTML，键盘会在链接里再落一次焦点
     expandGroups('orders-products')
     const orders = document.querySelector('nav a[data-menu-key="orders"]') as HTMLAnchorElement
@@ -1264,20 +1259,19 @@ describe('Sidebar', () => {
 
   // ── 菜单图标两两不同（issue #5582）─────────────────────────────────────────────
 
-  it('🔴 菜单图标两两不同（渲染面）：28 项的图标互不重复（issue #5582；2026-11-07 起取折叠态图标栏）', async () => {
+  it('🔴 菜单图标两两不同（渲染面）：27 项的图标互不重复（issue #5582；2026-11-07 起取折叠态图标栏）', async () => {
     // 用户实测「左侧菜单栏有部分子菜单的图标完全一样」——数据层去重（menu-icons.test.ts 判据④）
     // 只证明**配置**不重复；这里证明**渲染出来**的图标也不重复（§15.1 结果可见）。
     // 🔴 2026-11-07（用户裁定「二级菜单前面的图标统一去掉」）：展开态的叶子项不再挂图标 ⇒
     //    渲染面的唯一性改为在**折叠态图标栏**判定 —— 折叠态没有文字，图标是每一项**唯一**的可见标识，
-    //    同图冲突在这里恰恰最致命（28 项全渲染，一项不少）。实现取值用 `data-menu-key` 语义锚，
+    //    同图冲突在这里恰恰最致命（27 项全渲染，一项不少）。实现取值用 `data-menu-key` 语义锚，
     //    不按位置/文字取（折叠态没有文字）。
     render(<Sidebar collapsed onToggle={mockOnToggle} />)
-    await waitFor(() => expect(document.querySelectorAll('[data-menu-key]')).toHaveLength(28))
+    await waitFor(() => expect(document.querySelectorAll('[data-menu-key]')).toHaveLength(27))
 
     // 🔴 三个席位都要计入（**最前席位**在 #7087 新增；漏了它这条判据就少判一项）
     const items: [string, string][] = [
-      ['dashboard', '经营概览'],       // 最前席位
-      ['reports', '报表中心'],         // 最前席位（#7376）
+      ['dashboard', '经营报表'],       // 最前席位（issue #8852 合并两页后）
       ['settings', '企业基础设置'],     // 尾席位（#6580；#8086 起商品管理已进「基础资料」组）
       ...GROUPS.flatMap((g) => g.items),
       ['notifications', '通知中心'],
@@ -1297,7 +1291,7 @@ describe('Sidebar', () => {
       .filter(([, names]) => names.length > 1)
       .map(([icon, names]) => `${icon} → ${names.join('、')}`)
 
-    expect(items, '面非空自证：28 项（最前席位 2 + 尾席位 1 + 24 组内项 + 通知中心；#8086 新增基础资料/质量两组）').toHaveLength(28)
+    expect(items, '面非空自证：27 项（最前席位 1 + 尾席位 1 + 24 组内项 + 通知中心；#8852 合并经营数据面两页）').toHaveLength(27)
     expect(
       collisions,
       `以下菜单项在侧边栏里渲染出**同一个图标**（紧挨着出现 = 没有区分度，issue #5582）：\n${collisions.join('\n')}\n`
@@ -1320,7 +1314,7 @@ describe('Sidebar', () => {
     it('未钉任何项 ⇒ **整个「常用」区不渲染**（不留空标题），且每项有一枚可点的星标', async () => {
       render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
       // /dashboard 属最前席位（不入组）⇒ 没有组会展开；只需等菜单本体渲染出来
-      await waitFor(() => expect(screen.getByText('经营概览')).toBeInTheDocument())
+      await waitFor(() => expect(screen.getByText('经营报表')).toBeInTheDocument())
       expect(document.querySelector('[data-group-key="pinned"]')).toBeNull()
       expect(screen.queryByText('常用')).not.toBeInTheDocument()
       // 星标在（当前项恒显、其余 hover 才显 —— 但按钮元素一直在 DOM 里）
@@ -1332,7 +1326,7 @@ describe('Sidebar', () => {
 
     it('点星标 ⇒ 该项进入顶部「常用」区（`data-group-key="pinned"`）+ 计数 `1/6` + 落盘 localStorage', async () => {
       render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
-      await waitFor(() => expect(screen.getByText('经营概览')).toBeInTheDocument())
+      await waitFor(() => expect(screen.getByText('经营报表')).toBeInTheDocument())
       expandGroups('orders-products')
 
       fireEvent.click(screen.getByTestId('sidebar-pin-orders'))
@@ -1347,7 +1341,7 @@ describe('Sidebar', () => {
       // 钉住的项在「常用」区里可点，且 href 正确
       expect(within(pinnedSec).getByText('销售订单')).toBeInTheDocument()
       expect(within(pinnedSec).getByText('销售订单').closest('a')).toHaveAttribute('href', '/orders')
-      // 渲染序（#5877 / #7087）：**常用**区在最顶部 → **最前席位**「经营概览」→ 各分组 → 尾席位 → 尾部独立项
+      // 渲染序（#5877 / #7087）：**常用**区在最顶部 → **最前席位**「经营报表」→ 各分组 → 尾席位 → 尾部独立项
       // 尾席位一级项排在**供应链之后、组织管理之前**（2026-11-06 用户裁定）
       // ⇒ 先展开这两组，再用「供应链组最后一个可见项」与「组织管理组首项」做两端锚点。
       expandGroups('supply-chain', 'org-center')
@@ -1369,7 +1363,7 @@ describe('Sidebar', () => {
 
     it('🔴 取消钉住 ⇒ 「常用」区消失（清单为空）+ 落盘为空表', async () => {
       render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
-      await waitFor(() => expect(screen.getByText('经营概览')).toBeInTheDocument())
+      await waitFor(() => expect(screen.getByText('经营报表')).toBeInTheDocument())
       expandGroups('orders-products')
 
       fireEvent.click(screen.getByTestId('sidebar-pin-orders'))
@@ -1410,11 +1404,11 @@ describe('Sidebar', () => {
       // 正信号：先等「常用」区真的出现（否则下面几条可能是「还没恢复完」的假绿）
       await waitFor(() => expect(document.querySelector('[data-group-key="pinned"]')).toBeTruthy())
       const pinnedSec = document.querySelector('[data-group-key="pinned"]') as HTMLElement
-      expect(within(pinnedSec).queryByText('经营概览')).toBeNull()
+      expect(within(pinnedSec).queryByText('经营报表')).toBeNull()
       expect(within(pinnedSec).getByText('销售订单')).toBeInTheDocument()
       expect(screen.getByTestId('sidebar-pinned-count').textContent).toBe('1/6')
       // 最前席位项本身**照旧渲染一次**（不进「常用」≠ 从侧边栏消失）
-      expect(screen.getAllByText('经营概览')).toHaveLength(1)
+      expect(screen.getAllByText('经营报表')).toHaveLength(1)
       expect(menuKeys().filter((k) => k === 'dashboard')).toHaveLength(1)
     })
 

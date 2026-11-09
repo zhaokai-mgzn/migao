@@ -201,7 +201,7 @@ class TestHowToProjection:
             _ctx(["dashboard:view"]), action="how_to", topic="导出报表"
         )
         assert result.success is False and result.error == "nav_not_registered"
-        assert "/reports" in json.dumps(result.data, ensure_ascii=False)
+        assert "/dashboard" in json.dumps(result.data, ensure_ascii=False)
         assert "没有步骤级指引" in (result.message or "")
         assert "steps" not in (result.data or {})
 

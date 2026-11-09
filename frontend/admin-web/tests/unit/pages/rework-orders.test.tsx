@@ -279,7 +279,7 @@ describe('返工单页面', () => {
     expect(document.body.textContent).not.toContain('¥0.00')
     expect(document.body.textContent).toContain('返工成本按「返工报工」的计件金额计入质量成本')
     // 有出口（去报表中心看质量成本），不是一句空说明
-    expect(screen.getByText('去报表中心看质量成本')).toBeInTheDocument()
+    expect(screen.getByText('去经营报表看质量成本')).toBeInTheDocument()
   })
 
   it('加载失败 ⇒ 常驻失败态 + 可重试出口', async () => {

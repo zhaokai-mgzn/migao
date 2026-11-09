@@ -212,9 +212,10 @@ export function pinnedGroup(
 // ℹ️ 只写**真实存在**的页面；没有归属的（`/chat` 走右下角 FAB，有意不进菜单）不登记。
 const PARENT_ITEM_HINTS: Record<string, string> = {
   '/categories': '/products',
-  // 重定向薄壳：`/briefing` → `/dashboard`；`/processing` → `/production/processing`
-  // （加工项管理已并入「企业基础设置」⇒ 归属项取 `/settings`，不是 `/production`）
+  // 重定向薄壳：`/briefing`、`/reports`（issue #8852 报表中心并入经营报表）→ `/dashboard`；
+  // `/processing` → `/production/processing`（加工项管理已并入「企业基础设置」⇒ 归属项取 `/settings`）
   '/briefing': '/dashboard',
+  '/reports': '/dashboard',
   '/processing': '/settings',
 }
 

@@ -63,7 +63,7 @@ describe('菜单图标注册表（issue #5271 / PR-106 / MC-019）', () => {
     // 2026-10-20（issue #7369 段 4 / 新 IA）：**29 个节点** = **6 组头**（新增「供应链」）+ 19 组内项
     //（+供应商 / +采购单）+ 最前席位 1 项 + 尾席位 2 项 + 尾部独立项 1 项
     //（「工作台」组整组撤销 ⇒ 组头 6→5；issue #7369 新增「供应链」组 ⇒ 组头 5→6；组内项总数不变）
-    expect(allItems().length).toBe(36)
+    expect(allItems().length).toBe(35)
 
     const usedFromSource = Array.from(new Set(iconNamesFromSource(MENU_TS)))
     const usedFromObjects = Array.from(new Set(allItems().map((i) => i.icon)))
@@ -132,12 +132,12 @@ describe('菜单图标注册表（issue #5271 / PR-106 / MC-019）', () => {
       .map(([icon, names]) => `${icon} → ${names.join('、')}`)
   }
 
-  it('🔴 判据④ 图标两两不同：30 个节点（6 组 + 2 最前席位 + 2 尾席位 + 19 子项 + 1 独立项；#7593 撤审批中心）的图标互不重复（issue #5582）', () => {
+  it('🔴 判据④ 图标两两不同：35 个节点（8 组头 + 1 最前席位 + 1 尾席位 + 24 子项 + 1 独立项；#8852 合并经营数据面两页）的图标互不重复（issue #5582）', () => {
     const items = allItems()
     // 面非空自证：解析失灵（0 条）时下面的断言会恒真 ⇒ 先自证，并点名几个已知节点
-    expect(items.length).toBe(36)
+    expect(items.length).toBe(35)
     expect(items.map((i) => i.name)).toEqual(
-      expect.arrayContaining(['经营概览', '省料分析', '售后工单', '岗位权限', '财务对账', '计件工资', '组织管理', '企业基础设置']),
+      expect.arrayContaining(['经营报表', '省料分析', '售后工单', '岗位权限', '财务对账', '计件工资', '组织管理', '企业基础设置']),
     )
 
     const collisions = iconCollisions(items)
@@ -161,6 +161,6 @@ describe('菜单图标注册表（issue #5271 / PR-106 / MC-019）', () => {
     // 注入生效自证 + 判别力落在被注入的那一格上
     const injected = items.map((i) => (i.name === '省料分析' ? { ...i, icon: 'BarChart3' } : i))
     expect(injected.find((i) => i.name === '省料分析')?.icon).toBe('BarChart3')
-    expect(iconCollisions(injected)).toEqual(['BarChart3 → 经营概览、省料分析'])
+    expect(iconCollisions(injected)).toEqual(['BarChart3 → 经营报表、省料分析'])
   })
 })

@@ -38,6 +38,10 @@ vi.mock('@/lib/api', () => ({
 }))
 
 // Mock next/link
+// issue #8852：经营报表页把原报表中心内容嵌进「经营分析」段。dashboard 用例只测看板块
+// （报表五卡的行为判据在 reports.test.tsx / business-reports-page.test.tsx），此处桩掉整段。
+vi.mock('@/components/reports/BusinessReportsSection', () => ({ default: () => null }))
+
 vi.mock('next/link', () => ({
   default: ({ children, href, ...props }: any) => <a href={href} {...props}>{children}</a>,
 }))
@@ -129,26 +133,19 @@ describe('DashboardPage', () => {
   it('should render page heading', async () => {
     render(<DashboardPage />)
     await waitFor(() => {
-      expect(screen.getByText('经营概览')).toBeInTheDocument()
+      expect(screen.getByText('经营报表')).toBeInTheDocument()
     })
   })
 
-  it('两处「数据更新时间」显示**同一个完整时间**，且都不是下标碎片（issue #5792 红证）', async () => {
+  it('「数据更新时间」保持**一处、完整格式**（issue #5792；#8852 合并后只在页头）', async () => {
     render(<DashboardPage />)
-    // 🔴 原判据是 `expect(elements.length).toBeGreaterThanOrEqual(1)` —— **空断言**：
-    // 它只证明「页面上有这句文案」，而缺陷恰恰是其中之一把**已格式化串**再切片
-    // （`formatFullDateTime()` 返回 `2026年9月29日 15:30`，再 `.slice(11, 19)` ⇒ `日 15:3`）。
+    // 🔴 原判据是「两处（页头 + 销售额卡）逐字相等」—— issue #8852 合并成一页后，新鲜度只保留页头
+    // 一处（同页两处时间戳会让商家以为两张图各有一个更新时间）⇒ 判据改为「恰好一处 + 完整格式」。
     await waitFor(() => {
       const els = screen.getAllByText(/数据更新时间：/)
-      // 自证面非空：页头 + 销售额卡两处都在（否则下面的逐条断言在空集上恒真）
-      expect(els.length).toBeGreaterThanOrEqual(2)
-      const texts = els.map((el) => el.textContent ?? '')
-      // ① 两处**逐字相等**（同一份 updateTime，不得一处格式化、一处切片）
-      expect(new Set(texts).size).toBe(1)
-      // ② 且长得像完整日期时间（`YYYY年M月D日 HH:mm`），不是 `日 15:3` 这类碎片
-      for (const t of texts) {
-        expect(t).toMatch(/数据更新时间：\d{4}年\d{1,2}月\d{1,2}日 \d{2}:\d{2}$/)
-      }
+      expect(els).toHaveLength(1)
+      // `formatFullDateTime` 输出 `YYYY年M月D日 HH:mm`；不是 `.slice(11, 19)` 的下标碎片（#5792 红证）
+      expect(els[0].textContent ?? '').toMatch(/数据更新时间：\d{4}年\d{1,2}月\d{1,2}日 \d{2}:\d{2}$/)
     })
   })
 
@@ -607,7 +604,7 @@ describe('DashboardPage', () => {
     mockGetStats.mockRejectedValue(new Error('Network error'))
     render(<DashboardPage />)
     await waitFor(() => {
-      expect(screen.getByText('经营概览')).toBeInTheDocument()
+      expect(screen.getByText('经营报表')).toBeInTheDocument()
     })
   })
 
@@ -771,7 +768,7 @@ describe('DashboardPage', () => {
       sel ? sel({ user: { capabilities: {} } }) : { user: { capabilities: {} } },
     )
     const { unmount } = render(<DashboardPage />)
-    await waitFor(() => expect(screen.getByText('经营概览')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText('经营报表')).toBeInTheDocument())
     expect(screen.queryByTestId('dashboard-card-ai-service-rate')).toBeNull()
     // 反向自证：**不得**用 0 占位冒充「未购买」
     expect(screen.queryByText('AI 接待占比')).toBeNull()
@@ -782,7 +779,7 @@ describe('DashboardPage', () => {
       sel ? sel({ user: { capabilities: { aiService: false } } }) : { user: { capabilities: { aiService: false } } },
     )
     render(<DashboardPage />)
-    await waitFor(() => expect(screen.getByText('经营概览')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText('经营报表')).toBeInTheDocument())
     expect(screen.queryByTestId('dashboard-card-ai-service-rate')).toBeNull()
   })
 
@@ -1071,7 +1068,7 @@ describe('DashboardPage', () => {
     await screen.findByTestId('dashboard-load-failed')
     await waitFor(() => {
       // 屏上确实渲染过（否则下面的否定断言在空页上恒真 —— 空断言）
-      expect(screen.getByText('经营概览')).toBeInTheDocument()
+      expect(screen.getByText('经营报表')).toBeInTheDocument()
     })
     const body = document.body.textContent ?? ''
     // N1：`total = data.reduce(…)` 的初值是 0 ⇒ 改前这里就是「共 0 单」

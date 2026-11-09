@@ -57,7 +57,8 @@ const empty = {
   'receivable-aging': { asOf: '2026-10-23', hasData: false, customerCount: 0, buckets: [], customers: [], totals: null },
 }
 
-// 报表中心页的**视觉验收**脚本（issue #7376 复盘：界面改动必须先在本地看一眼再合）。
+// 经营报表页（原报表中心五卡并入 `/dashboard` 的「经营分析」段，issue #8852）的**视觉验收**脚本
+//（issue #7376 复盘：界面改动必须先在本地看一眼再合）。
 //
 // 用法（在 `frontend/admin-web` 目录先 `npm run build`）：
 //   1) `npx next start -p 3124`
@@ -73,7 +74,7 @@ const BASE = process.env.VISUAL_BASE || 'http://127.0.0.1:3124'
 const browser = await chromium.launch()
 const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 })
 
-async function shoot(payload, out, path = '/reports') {
+async function shoot(payload, out, path = '/dashboard') {
   const page = await ctx.newPage()
   page.on('console', m => { if (m.type() === 'error') console.log('[console]', m.text().slice(0, 160)) })
 
@@ -91,6 +92,20 @@ async function shoot(payload, out, path = '/reports') {
       { id: 1, code: 'WH01', name: '主仓' },
       { id: 2, code: 'WH02', name: '次仓' },
     ] }) }))
+  // issue #8852：报表五卡在同一页的「经营分析」段 ⇒ 同页的看板块也要有稳定数据，否则整页停在上半屏报错态。
+  const dashboardMocks = {
+    '**/api/admin/dashboard/stats': { todayOrders: 12, todayOrdersChange: 25.5, todaySales: 39800, todaySalesChange: -12.3, monthRevenue: 5000000, monthRevenueChange: 15.8, totalCustomers: 1380, newCustomersToday: 8, activeSessions: 15, aiSessionRate: 73, lowStockItems: 2, pendingShipOrders: 8, pendingPaymentOrders: 6, overdueTickets: 4, processingPendingOrders: 3 },
+    '**/api/admin/dashboard/order-trend*': [{ date: '2026-11-03', orders: 5, amount: 1200 }, { date: '2026-11-04', orders: 8, amount: 3200 }, { date: '2026-11-05', orders: 6, amount: 2100 }, { date: '2026-11-06', orders: 12, amount: 6800 }, { date: '2026-11-07', orders: 9, amount: 4300 }, { date: '2026-11-08', orders: 14, amount: 9200 }, { date: '2026-11-09', orders: 12, amount: 39800 }],
+    '**/api/admin/dashboard/recent-orders*': [{ id: '1', orderNo: 'ORD-001', customerName: '张三', totalAmount: 398, status: 'confirmed', createdAt: '2026-11-09T08:00:00Z' }],
+    '**/api/admin/dashboard/product-ranking*': [{ rank: 1, productId: 'p1', productName: '遮光窗帘A款', salesQty: 230, salesAmount: 46000, qtyDisplay: '230', amountDisplay: '¥46,000', dailyChange: 12 }],
+    '**/api/admin/dashboard/order-status*': [{ status: 'pending_ship', label: '待发货', count: 14, color: '#48618f' }],
+    '**/api/admin/briefing/config': { enabled: false },
+    '**/api/admin/briefing/today': { generated: false, verifyStatus: null, content: null },
+  }
+  for (const [pattern, data] of Object.entries(dashboardMocks)) {
+    await page.route(pattern, r => r.fulfill({ status: 200, contentType: 'application/json',
+      body: JSON.stringify({ success: true, data }) }))
+  }
   await page.route('**/api/admin/reports/**', r => {
     const url = r.request().url()
     const key = Object.keys(payload).find(k => url.includes(k))
@@ -138,7 +153,7 @@ await shoot(empty, '/tmp/reports-empty.png')
     r.fulfill({ status: 200, contentType: 'application/json',
       body: JSON.stringify({ success: true, data: breakdown(dim) }) })
   })
-  await page.goto(`${BASE}/reports`, { waitUntil: 'domcontentloaded' })
+  await page.goto(`${BASE}/dashboard`, { waitUntil: 'domcontentloaded' })
   await page.waitForSelector('h1', { timeout: 45000 }).catch(() => {})
   await page.waitForTimeout(1200)
   await page.getByTestId('reports-quality-dim-process').click()

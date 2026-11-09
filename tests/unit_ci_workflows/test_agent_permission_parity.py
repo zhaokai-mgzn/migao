@@ -815,7 +815,7 @@ TOOL_MENU_NODE: dict[str, str] = {
     "sales_attribution": "销售订单",
     "after_sales_manage": "售后工单",
     "customer_manage": "客户列表",
-    "dashboard_stats": "经营概览",
+    "dashboard_stats": "经营报表",
     "finance_api": "财务对账",
     "session_manage": "在线接待",
     "employee_manage": "员工管理",
@@ -849,7 +849,7 @@ TOOL_MENU_NODE: dict[str, str] = {
     "operation_catalog_query": "企业基础设置",   # 端点方法级 processing:manage（#5247 新增，收窄）
     # 🔴 2026-10-17（issue #7087）：「每日简报」菜单项已删除 ⇒ 本工具（码 `dashboard:view`）
     # 的锚点改钉**仍在树上的**「经营看板」节点（该码现在只由它承载，零授权 delta）。
-    "briefing_query": "经营概览",                # dashboard:view
+    "briefing_query": "经营报表",                # dashboard:view
     "craft_calc_config_query": "企业基础设置",   # processing:manage（生产域无专属读码）
     # issue #7514：算料配置**写面**（`processing:manage` = 该页的页内写码，见 PAGE_WRITE_CODES
     # 的 `production:view` 键）⇒ 判据 3 的「写工具可持页内写码」口径成立，零授权面改动。
@@ -2189,12 +2189,9 @@ ROUTE_MENU_ANCHORS: dict[str, str] = {
     # issue #5699（P4）：『经营看板』节点在 P4 之前**无码**（两侧取值不同 ⇒ 曾登记在
     # `ROUTE_WITHOUT_MENU_NODE`）；P4 把节点码补成 `dashboard:view`（= 该页第一屏读码 = 守卫码）
     # ⇒ 销账后回到「有节点锚」这一侧。
-    "/dashboard": "经营概览",
+    "/dashboard": "经营报表",
     # issue #7375 段 3：价格本（`/price-books`）的守卫码锚到它自己的菜单节点（product:list）。
     "/price-books": "价格本",
-    # issue #7376：报表中心（`/reports`）的守卫码锚到它自己的菜单节点（同码 `dashboard:view`，
-    # 与经营看板同一把尺子 —— 报表是看板的下钻）。
-    "/reports": "报表中心",
     "/after-sales": "售后工单",
     "/orders": "销售订单",
     "/products": "商品管理",
@@ -2279,6 +2276,9 @@ ROUTE_WITHOUT_MENU_NODE: dict[str, str] = {
     # 页面已是**重定向薄壳** → `/dashboard`（`briefing/page.tsx`，正文删除）⇒ 旧深链不 404。
     # ⚠️ 判据 11③ 要求「无节点必须逐条带理由」：这条就是那个理由（不许删守卫前缀来「对齐」）。
     "/briefing": "「每日简报」菜单项已移除（issue #7087：结论卡改挂在「经营看板」上、由企业开关驱动）⇒ 本前缀只作旧深链兼容（重定向薄壳 → `/dashboard`），**无菜单节点可钉**（节点归「经营看板」，同码 `dashboard:view`）",
+    # 报表中心（issue #8852，用户 2026-11-09）：「经营概览」+「报表中心」合并为一页「经营报表」
+    # ⇒ `/reports` 只剩重定向薄壳（→ `/dashboard`），无菜单节点可钉；守卫前缀与码一字不动。
+    "/reports": "「报表中心」菜单项已并入「经营报表」（issue #8852）⇒ 本前缀只作旧深链兼容（重定向薄壳 → `/dashboard`），**无菜单节点可钉**（节点归「经营报表」，同码 `dashboard:view`）",
     # 🔴 2026-10-24（issue #7593，用户裁定「审批中心菜单放置到右上角……不要单独搞个菜单」）：
     # 这是**新形态**（不是旧链兼容）—— 页面完整保留、**入口本身**就是顶栏待办入口（`ApprovalBell`），
     # 菜单里没有它、也**不该**有它。守卫前缀与码一字不动（`finance:view`，与「财务对账」同码
@@ -2400,18 +2400,15 @@ class MenuReadAnchor:
 #: `product:list` 混进来，凭空造出并不存在的 403 受害者）。
 #: **每个带 `path` 的节点都必须在这里**（未登记即红）。
 MENU_READ_ENDPOINT_ANCHORS: dict[str, MenuReadAnchor] = {
-    "/dashboard": MenuReadAnchor("经营概览", "dashboard/page.tsx", (
+    "/dashboard": MenuReadAnchor("经营报表", "dashboard/page.tsx", (
         "dashboardApi.getStats", "dashboardApi.getOrderTrend",
         "dashboardApi.getProductRanking", "dashboardApi.getRecentOrders",
         "briefingApi.getConfig")),
-    # 🔴 issue #7376：报表中心（`/reports`）第一屏读四个只读报表端点，全部 `dashboard:view`
-    # ⇒ 节点码与第一屏读码同一把尺子（`dashboard:view`，与经营看板同码 —— 报表是看板的下钻）。
+    # 🔴 issue #8852：报表中心并入「经营报表」后 `/reports` 是重定向薄壳（无菜单节点）⇒ 本锚点销账；
+    # 报表五卡的第一屏读端点随组件进入 `/dashboard`，端点码仍是 `dashboard:view`（与页面码同码）。
     # 🔴 issue #7375 段 3：价格本（`/price-books`）第一屏读 `GET /api/admin/pricing/books`
     # （类级 `order:list`）；节点码取同一把尺子 `order:list`（「每页恰好一个码」）。
     "/price-books": MenuReadAnchor("价格本", "price-books/page.tsx", ("priceBookApi.list",)),
-    "/reports": MenuReadAnchor("报表中心", "reports/page.tsx", (
-        "reportApi.orderMargins", "reportApi.inventoryAging",
-        "reportApi.staffPerformance", "reportApi.qualityCost")),
     # 🔴 2026-10-17（issue #7087）：`/briefing` 的锚点**销账** —— 该页只剩 `redirect('/dashboard')`
     # （正文删除）⇒ **第一屏没有任何读端点调用**，而本台账的每个 `path` 都必须对应一个菜单节点
     # （「节点码 ≡ 该页第一屏读端点码」这条判据在**没有节点**时无从成立）。
@@ -3252,7 +3249,7 @@ AUTHORIZATION_CENSUS: dict[str, AuthorizationCensusEntry] = {
     "dashboard:view": AuthorizationCensusEntry(
         roles=('customer_service', 'finance', 'sales'),
         endpoints=('DELETE /api/admin/files/{}', 'DELETE /api/admin/upload/image', 'GET /api/admin/briefing/config', 'GET /api/admin/briefing/snapshot', 'GET /api/admin/briefing/today', 'GET /api/admin/dashboard/active-sessions', 'GET /api/admin/dashboard/order-status', 'GET /api/admin/dashboard/order-trend', 'GET /api/admin/dashboard/pending-shipment-count', 'GET /api/admin/dashboard/pending-tasks', 'GET /api/admin/dashboard/processing-shipment-count', 'GET /api/admin/dashboard/product-ranking', 'GET /api/admin/dashboard/recent-orders', 'GET /api/admin/dashboard/stats', 'POST /api/admin/files/upload', 'POST /api/admin/files/upload-batch', 'POST /api/admin/upload/image', 'POST /api/admin/upload/images'),
-        menu_nodes=('auth:经营概览', 'controller:经营概览', 'frontend:经营概览'),
+        menu_nodes=('auth:经营报表', 'controller:经营报表', 'frontend:经营报表'),
         tools=('briefing_query', 'dashboard_stats'),
         reachable=('补码前这三岗在回退路径上**零权限**（连「经营看板」都看不见）⇒ 补码后：「经营看板」菜单节点（三处菜单源一致；2026-10-17 issue #7087 起它是**最前席位**一级项，原并列的「每日简报」菜单项已删除）对这些岗位**由不可见变可见**；18 个端点的生效码就是本码 ⇒ 由 403 变可读/可写（DELETE /api/admin/files/{}；DELETE /api/admin/upload/image；GET /api/admin/briefing/config 等）；Agent 侧 2 个工具声明本码 ⇒ 黄金策对这批账号由「权限不足」变为可达（briefing_query / dashboard_stats）。'),
     ),

@@ -215,8 +215,8 @@ export default function ReworkOrdersPage() {
 
         <p className="mb-3 text-xs text-neutral-500">
           返工成本按「返工报工」的计件金额计入质量成本，本页不产生金额；
-          <Link href="/reports" className="ml-1 text-primary-600 hover:underline">
-            去报表中心看质量成本
+          <Link href="/dashboard" className="ml-1 text-primary-600 hover:underline">
+            去经营报表看质量成本
           </Link>
         </p>
 

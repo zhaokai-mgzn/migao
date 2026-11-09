@@ -72,6 +72,12 @@ import ts from 'typescript'
 
 /** 判据面：商家后台页面（官网 / 小程序各有自己的一套） */
 export const SCOPE = 'src/app/(dashboard)'
+/**
+ * issue #8852：原「报表中心」五卡实现从 `(dashboard)/reports/page.tsx` 拆进共享组件
+ * （合并页的「经营分析」段复用）⇒ 它仍是**商家后台读面**，扫描面**显式带上**它。
+ * 不带上 = 拆一次文件就把这类「读失败被吞」的判据悄悄缩窄（假绿）。
+ */
+export const EXTRA_SCAN_FILES = ['src/components/reports/BusinessReportsSection.tsx']
 const SKIP_DIRS = new Set(['node_modules', '.next', 'dist', 'coverage', '__pycache__'])
 
 /** 状态变量「名中含失败语义」即算**表达了失败** */
@@ -192,7 +198,10 @@ export function swallowSitesFromSource(source, { file = '<probe>.tsx', tsModule 
  * `仓库相对路径::符号#该符号内第几个 catch`。
  */
 export function swallowSites(root) {
-  const files = walk(join(root, SCOPE)).sort()
+  const files = [
+    ...walk(join(root, SCOPE)),
+    ...EXTRA_SCAN_FILES.map((f) => join(root, f)).filter((f) => existsSync(f)),
+  ].sort()
   const out = []
   for (const file of files) {
     const rel = relative(root, file)
@@ -326,8 +335,8 @@ export const FAILURE_ANCHORS = [
     anchors: ["testId=\"purchase-form-suppliers-error\"", '供应商清单读取失败', 'onRetry={() => void loadSuppliers()}'],
   },
   {
-    name: '报表中心 · 质量成本维度读失败（issue #8066）',
-    file: 'src/app/(dashboard)/reports/page.tsx',
+    name: '经营报表 · 质量成本维度读失败（issue #8066；#8852 拆入组件）',
+    file: 'src/components/reports/BusinessReportsSection.tsx',
     anchors: ["testId=\"reports-quality-breakdown-error\"", '质量成本维度读取失败', 'onRetry={() => void loadBreakdown(qcDim)}'],
   },
   {

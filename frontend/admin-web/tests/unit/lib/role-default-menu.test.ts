@@ -50,7 +50,7 @@ describe('deriveRoleDefaultMenu（后台 + 手机端 = 一份默认菜单）', (
     )
     // 后台：与侧边栏菜单名逐字一致（真值 = @/config/menu）
     expect(menu.backend).toEqual(
-      expect.arrayContaining(['经营概览', '在线接待', '知识库', '客户列表', '智能派单', '入库单', '售后工单']),
+      expect.arrayContaining(['经营报表', '在线接待', '知识库', '客户列表', '智能派单', '入库单', '售后工单']),
     )
     // 手机端：服务端给什么就是什么（本模块不自造名字）
     // 🔴 2026-10-29（issue #8087，用户裁定 C）：`供应商` 改挂 `supplier:view` ⇒ `inbound:view` 的
@@ -79,7 +79,7 @@ describe('deriveRoleDefaultMenu（后台 + 手机端 = 一份默认菜单）', (
       ...standaloneItems,
     ].filter(i => i.permissionCode)
     expect(menu.backend.length).toBe(allCoded.length)
-    expect(menu.backend).toEqual(expect.arrayContaining(['经营概览', '商品管理', '企业基础设置']))
+    expect(menu.backend).toEqual(expect.arrayContaining(['经营报表', '商品管理', '企业基础设置']))
     expect(menu.mobile).toEqual(expect.arrayContaining(['数据', '坐席', '售后处理', '智能派单', '入库过账']))
   })
 
@@ -96,7 +96,7 @@ describe('deriveRoleDefaultMenu（后台 + 手机端 = 一份默认菜单）', (
 
   it('摘要行把两面放进同一句（§31 P2：同卡不重复摆两套清单）', () => {
     const menu = deriveRoleDefaultMenu(['dashboard:view', 'processing:view'], MOBILE_TITLES)
-    // dashboard:view 承载两个菜单项（经营看板 + 报表中心，#7376）⇒ 后台 3 项
-    expect(roleDefaultMenuSummary(menu)).toBe('默认菜单：后台 3 项 · 手机端 2 个入口')
+    // issue #8852：dashboard:view 只承载一个菜单项（经营报表）⇒ 后台 2 项
+    expect(roleDefaultMenuSummary(menu)).toBe('默认菜单：后台 2 项 · 手机端 2 个入口')
   })
 })

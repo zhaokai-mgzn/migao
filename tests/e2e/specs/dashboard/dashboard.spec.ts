@@ -148,6 +148,42 @@ async function mockDashboardApis(page: import('@playwright/test').Page) {
   })
 }
 
+/**
+ * issue #8852：原「报表中心」五张卡并入本页「经营分析」段 ⇒ 页面会同时请求报表端点。
+ * E2E 只需要报表段**不报错、有稳定形态**（口径判据在单测 / 组件级），故统一返回空数据。
+ */
+async function mockReportApis(page: import('@playwright/test').Page) {
+  const empty = {
+    'order-margins': { hasData: false, rows: [], totals: null, unknownCostOrders: 0 },
+    'inventory-aging': { slowMovingDays: 90, hasData: false, rows: [], totals: null, undeterminedRows: 0 },
+    'staff-performance': { hasData: false, rows: [], totals: null, unattributedOrders: 0 },
+    'quality-cost': { components: [], total: null, complete: true, unknownComponents: [] },
+    'receivable-aging': { asOf: '2026-11-09', hasData: false, customerCount: 0, buckets: [], customers: [], totals: null },
+  }
+  for (const [key, data] of Object.entries(empty)) {
+    await page.route(`**/api/admin/reports/${key}*`, async (route) => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ code: 200, data }) })
+    })
+  }
+  await page.route('**/api/admin/reports/quality-cost/breakdown*', async (route) => {
+    const dim = new URL(route.request().url()).searchParams.get('dimension') || 'customer'
+    await route.fulfill({
+      status: 200, contentType: 'application/json',
+      body: JSON.stringify({ code: 200, data: {
+        dimension: dim, scope: 'x', startDate: null, endDate: null, hasData: false, rows: [], totals: null,
+        unattributed: { rework: 0, reworkLines: 0, compensation: 0, compensationCount: 0, total: 0, reason: '' },
+        notes: [],
+      } }),
+    })
+  })
+  await page.route('**/api/admin/warehouses*', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ code: 200, data: [] }) })
+  })
+  await page.route('**/api/admin/briefing/config', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: { enabled: false } }) })
+  })
+}
+
 test.describe('仪表盘页面', () => {
   test.beforeEach(async ({ page }) => {
     // Mock 全部 auth API（storageState 提供初始认证态，mock 防止任何 API 调用清空）
@@ -158,31 +194,30 @@ test.describe('仪表盘页面', () => {
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: { accessToken: 'e2e-refreshed', refreshToken: 'e2e-refresh' } }) })
     })
     await mockDashboardApis(page)
+    await mockReportApis(page)
     await page.goto('/dashboard')
     // 页面标题出现即表示认证通过 + dashboard 渲染完成
-    await expect(page.getByRole('heading', { name: '经营概览' })).toBeVisible({ timeout: 20_000 })
+    await expect(page.getByRole('heading', { level: 1, name: '经营报表' })).toBeVisible({ timeout: 20_000 })
     // 等待数据加载完成（骨架屏消失）
     await expect(page.locator('.animate-pulse')).toHaveCount(0, { timeout: 10_000 })
   })
 
-  test('页面标题展示"经营概览"', async ({ page }) => {
-    // getByRole('heading') 精确匹配 h1，避免 strict mode violation —
-    // Header 面包屑也渲染"经营概览"（<span>），getByText 会匹配到两个元素
-    await expect(page.getByRole('heading', { name: '经营概览' })).toBeVisible()
+  test('页面标题展示"经营报表"', async ({ page }) => {
+    // issue #8852：页内「经营分析」段里还有一个小标题「经营报表」⇒ 必须用 level:1 锁定页头，
+    // 否则 strict mode violation（两个 heading 同名）。Header 面包屑是 <span>，不进 heading 面。
+    await expect(page.getByRole('heading', { level: 1, name: '经营报表' })).toBeVisible()
+    // 两页合并后旧页名不再出现在页面标题面
+    await expect(page.getByRole('heading', { level: 1, name: '经营概览' })).toHaveCount(0)
+    await expect(page.getByRole('heading', { level: 1, name: '报表中心' })).toHaveCount(0)
   })
 
-  test('两处「数据更新时间」都是**完整格式**且逐字一致（issue #5792）', async ({ page }) => {
+  test('「数据更新时间」保持**完整格式**（issue #5792；#8852 合并后只在页头一处）', async ({ page }) => {
     // `formatFullDateTime` 输出：`YYYY年M月D日 HH:mm`（无星期）⇒ 形如「数据更新时间：2026年6月20日 14:30」
+    // issue #8852：销售额卡里的第二处时间戳随「一条时间轴只留一处新鲜度」撤掉 ⇒ 页头唯一一处。
     const datePattern = /数据更新时间：\d{4}年\d{1,2}月\d{1,2}日 \d{2}:\d{2}$/
-    // 🔴 旧判据是 `expect(page.getByText(/\d{4}年…/)).toBeVisible()`（**单元素**定位）——
-    //    修复前只有页头是完整格式、销售额卡是 `.slice(11,19)` 的碎片，所以旧判据恰好只命中 1 个元素而通过。
-    //    修复后**两处都是完整格式** ⇒ 旧判据当场「strict mode violation: resolved to 2 elements」。
-    //    ⇒ 判据升级为「两处都完整 + 逐字相等」，与单测那条同源（内容级，不是存在性）。
     const stamps = page.getByText(/数据更新时间：/)
-    await expect(stamps).toHaveCount(2)
-    const texts = await stamps.allTextContents()
-    for (const t of texts) expect(t).toMatch(datePattern)
-    expect(new Set(texts).size).toBe(1)
+    await expect(stamps).toHaveCount(1)
+    await expect(stamps.first()).toHaveText(datePattern)
   })
 
   test('3 个经营数据卡片标题正确渲染', async ({ page }) => {
@@ -256,7 +291,7 @@ test.describe('仪表盘页面', () => {
   })
 
   test('近期订单表格显示数据', async ({ page }) => {
-    await expect(page.getByText('近期订单')).toBeVisible()
+    await expect(page.getByRole('heading', { name: '近期订单' })).toBeVisible()
     // 弱断言：表头+数据至少有一个可见
     const tableContent = page.locator('text=/订单号|客户|金额|状态/')
     expect(await tableContent.count()).toBeGreaterThan(0)
@@ -264,7 +299,7 @@ test.describe('仪表盘页面', () => {
 
   test('商品销量排行渲染', async ({ page }) => {
     // 替代了原来的活跃会话列表
-    await expect(page.getByText('商品销量排行')).toBeVisible()
+    await expect(page.getByRole('heading', { name: '商品销量排行' })).toBeVisible()
     // 表头
     await expect(page.getByText('成交量')).toBeVisible()
     // #3000：排行表下方有可见「环比」说明（近7天 vs 前7天），不依赖 hover title
@@ -317,8 +352,9 @@ test.describe('仪表盘页面', () => {
       await page.route('**/api/admin/products/low-stock-by-color*', async (route) => {
         await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ code: 200, data: Array.from({ length: 12 }) }) })
       })
+      await mockReportApis(page)
       await page.goto('/dashboard')
-      await expect(page.getByRole('heading', { name: '经营概览' })).toBeVisible({ timeout: 15_000 })
+      await expect(page.getByRole('heading', { level: 1, name: '经营报表' })).toBeVisible({ timeout: 15_000 })
       await expect(page.locator('.animate-pulse')).toHaveCount(0, { timeout: 10_000 })
     })
 
@@ -380,6 +416,7 @@ test.describe('仪表盘空数据状态', () => {
     await page.route('**/api/admin/notifications/unread-count', async (route) => {
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ code: 200, data: 0 }) })
     })
+    await mockReportApis(page)
     await page.goto('/dashboard')
     await expect(page.locator('.animate-pulse')).toHaveCount(0, { timeout: 10_000 })
   })
