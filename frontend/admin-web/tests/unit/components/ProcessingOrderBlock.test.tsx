@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-// case_ids: PG-001, PG-005, PG-019, PG-090, PG-092, UI-019, UI-030, UI-094, PR-065, UI-115
+// case_ids: PG-001, PG-005, PG-019, PG-090, PG-092, UI-019, UI-030, UI-094, PR-065, UI-115, UI-149
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
@@ -880,5 +880,32 @@ describe('ProcessingOrderBlock 只读（issue #7634）', () => {
     expect(screen.getByTestId('po-go-pool')).toBeInTheDocument()
     expect(document.body.textContent ?? '').not.toContain('outbound')
     expectNoWriteActions()
+  })
+})
+
+/**
+ * 区域外壳承载标题（issue #8838）：订单详情页把「作业单」收进独立区域卡，
+ * 标题归区域卡头（h2），本块不再重复一个同名 h3；「复制全部」是**作业单的局部操作**，
+ * 仍留在块内（贴着作业单信息）。
+ */
+describe('ProcessingOrderBlock 由外层区域承载标题（issue #8838）', () => {
+  beforeEach(() => {
+    vi.setSystemTime(FROZEN_NOW)
+    vi.clearAllMocks()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('不自带「作业单」标题，「复制全部」仍在本块内', async () => {
+    mockedDetail.mockResolvedValueOnce({ data: { data: poIssued } })
+    render(<ProcessingOrderBlock orderId="order-001" orderStatus="producing" workOrderKind="processing" />)
+
+    await screen.findByText('JG-20260912-0001')
+    // 标题只由外层区域卡给一次（块内再印就是同屏两个「作业单」）
+    expect(screen.queryByRole('heading', { name: '作业单' })).toBeNull()
+    // 局部操作不随标题一起退场
+    expect(screen.getByRole('button', { name: '复制全部' })).toBeInTheDocument()
   })
 })

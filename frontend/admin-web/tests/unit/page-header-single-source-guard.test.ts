@@ -67,7 +67,6 @@ const LEGACY_PAGE_HEADER_SNAPSHOT: readonly string[] = [
   'src/app/(dashboard)/after-sales/[id]/AfterSalesDetail.tsx',
   'src/app/(dashboard)/agent-workspace/human-sessions/page.tsx',
   'src/app/(dashboard)/agent-workspace/sessions/page.tsx',
-  'src/app/(dashboard)/orders/[id]/OrderDetail.tsx',
   'src/app/(dashboard)/orders/[id]/ship/ShipOrder.tsx',
   'src/app/(dashboard)/processing-orders/[id]/production/page.tsx',
   'src/app/(dashboard)/products/[id]/ProductDetail.tsx',
@@ -76,8 +75,8 @@ const LEGACY_PAGE_HEADER_SNAPSHOT: readonly string[] = [
 /** 快照的**上界**：只许缩短 ⇒ 现取长度不得大于它（新增不得借快照吸收）。 */
 const SNAPSHOT_UPPER_BOUND = LEGACY_PAGE_HEADER_SNAPSHOT.length  // 现取，随销账自动收紧
 
-/** 「有意不迁」条目的**独立冻结上界**（现取 8；只许缩短，见判据 2 的最后一条）。 */
-const PARKED_UPPER_BOUND = 7
+/** 「有意不迁」条目的**独立冻结上界**（现取 6；只许缩短，见判据 2 的最后一条）。 */
+const PARKED_UPPER_BOUND = 6
 
 /**
  * **有意不迁**的文件 + 逐条理由（issue #7065）。
@@ -94,8 +93,6 @@ const PARKED_WITH_REASON: ReadonlyArray<readonly [string, string]> = [
    '固定高度工具条（`h-14` + `border-b`）嵌在 `h-[calc(100vh-…)]` 的全高工作区里，标题是 `text-base`；PageHeader 的 text-2xl + 外边距会撑破该布局'],
   ['src/app/(dashboard)/agent-workspace/human-sessions/page.tsx',
    '同上（在线接待工作台，同族同布局）'],
-  ['src/app/(dashboard)/orders/[id]/OrderDetail.tsx',
-   '标题行右侧是**页面级唯一的「打印」入口**（issue #7544：打印与订单状态解耦，故不能落进任何状态分支）；且该页首屏还有发货明细读失败告警区，改页头要连带重排版式'],
   ['src/app/(dashboard)/orders/[id]/ship/ShipOrder.tsx',
    '标题行内含 `Zap` 图标，右侧是「打印发货单」+ 确认发货两个动作，与运单号表单是一体的'],
   ['src/app/(dashboard)/processing-orders/[id]/production/page.tsx',
