@@ -44,7 +44,7 @@ export default function DownloadPage() {
         kicker="下载中心"
         title="下载观星台终端"
         lead="车间一体机（Windows）与工人手持机（Android）的正式安装包在此下载。版本号、发布时间与校验值以发布清单为准；尚未发布的终端会明确标注，不以占位版本充数。"
-        chips={['Windows 10 / 11 一体机', 'Android 手持机（商米）', '官网直发 · 不上架应用市场']}
+        chips={['Windows 10 / 11 一体机', 'Android 手持机', '官网直发 · 不上架应用市场']}
       />
 
       <section className="bg-white py-16 sm:py-20">

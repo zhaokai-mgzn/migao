@@ -87,6 +87,12 @@ describe('ServicesPage（官网产品与服务 v4：双 AI + 四终端 + 八能�
     expect(screen.getByText('工人登录、拍照入库、补打标签')).toBeInTheDocument()
   })
 
+  it('商家小程序受众 = 老板 / 员工 / 工人（不含「店长」，issue #8868）', () => {
+    render(<ServicesPage />)
+    expect(screen.getByText('老板 / 员工 / 工人（移动端）')).toBeInTheDocument()
+    expect(screen.queryByText(/店长/)).not.toBeInTheDocument()
+  })
+
   // ── 八个能力域 ──
 
   it('renders 八个能力域与独立入口的全部菜单名', () => {
