@@ -133,12 +133,16 @@ def test_credential_source_readout_is_present():
     没有这条读数时，「PAT 生效了」与「PAT 是空的、一直在回落内置」**长得一模一样** ——
     #8847 的修法就变成不可验证的。读数只能是布尔，**不许**打凭据本身。
     """
-    for path in GUARD_FILES:
-        text = path.read_text(encoding="utf-8")
-        assert "secrets.AUTOMERGE_PAT != ''" in text, (
-            f"{path.name} 缺「凭据来源」布尔读数 ⇒ 无法判定 PAT 是否生效（回落形态下同形）")
-        assert "凭据来源读数" in text, (
-            f"{path.name}：读数步被删了 ⇒ 本判据会红（不要静默删掉可观测面）")
+    # 只挂在 pr-check：contribution-gate 的静态不变式（test_contribution_gate.py::_problems）
+    # 要求**每个** `run` 步都必须经 `.github/scripts/contribution_gate.py retry` 包一层
+    # ⇒ 那里放不了纯读数步（放进去会把 required 检查判红）。读数在 pr-check 已足够：
+    # 它用 `pull_request` 本 PR 的 workflow 文件，引入当轮就能看到。
+    text = PR_CHECK.read_text(encoding="utf-8")
+    assert "secrets.AUTOMERGE_PAT != ''" in text, (
+        "pr-check.yml 缺「凭据来源」布尔读数 ⇒ 无法判定 PAT 是否生效（回落形态下同形）")
+    assert "凭据来源读数" in text, "读数步被删了 ⇒ 本判据会红（不要静默删掉可观测面）"
+    assert "凭据来源读数" not in CONTRIBUTION.read_text(encoding="utf-8"), (
+        "contribution-gate.yml 不许出现读数步：它的每个 run 步都必须经 contribution_gate.py retry")
 
 
 def test_token_is_never_echoed_into_job_logs():

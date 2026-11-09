@@ -50,20 +50,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      # ── 凭据来源读数（issue #8847）：环境静默即缺陷 ─────────────────────────────
-      # 回落形态（`AUTOMERGE_PAT || GITHUB_TOKEN`）让「用了 PAT」与「回落内置」在日志里
-      # **完全同形** ⇒ 无法回答「这枚凭据到底生效了没有」。本步只打一个**非密**布尔。
-      - name: 凭据来源读数（PAT vs 内置）
-        env:
-          PAT_PRESENT: ${{ secrets.AUTOMERGE_PAT != '' }}
-        run: |
-          if [ "$PAT_PRESENT" = "true" ]; then
-            echo "🔑 判定面凭据 = AUTOMERGE_PAT（用户配额 5000/h，与安装令牌不是同一窗口）"
-          else
-            echo "::warning::AUTOMERGE_PAT 不可用（未配置，或本事件不投递 secrets —— 如 fork PR）⇒ 回落内置令牌（每仓 1000/h，可能 exit 3；这是**预期回落**，不是故障）"
-          fi
-      # ⚠️ 只取 base（`ref: main`）。**绝不** checkout PR head，也**绝不**把 PR 内容交给 shell
-      # （判据：tests/unit_ci_workflows/test_contribution_gate.py 的静态不变式）。
       - uses: actions/checkout@v7
         with:
           ref: main
