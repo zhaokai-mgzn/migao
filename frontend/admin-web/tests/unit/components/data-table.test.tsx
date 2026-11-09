@@ -131,6 +131,26 @@ describe('Table Component', () => {
     expect(screen.getByText('暂无数据')).toBeInTheDocument()
   })
 
+  it('stickyRight：该列的表头与数据格都右缘冻结；不传的列不受影响', () => {
+    const columns: TableColumn<TestRecord>[] = [
+      { key: 'name', title: '名称', dataIndex: 'name' },
+      { key: 'status', title: '操作', stickyRight: true, render: (r) => <button>{r.status}</button> },
+    ]
+    const { container } = render(<Table columns={columns} dataSource={testData} rowKey="id" />)
+    const headers = container.querySelectorAll('thead th')
+    const cells = container.querySelectorAll('tbody tr:first-child td')
+    // 冻结列：sticky + right-0 + 不透明底色 + 左分隔线
+    expect(headers[1].className).toMatch(/\bsticky\b/)
+    expect(headers[1].className).toMatch(/\bright-0\b/)
+    expect(headers[1].className).toMatch(/\bbg-neutral-50\b/)
+    expect(cells[1].className).toMatch(/\bsticky\b/)
+    expect(cells[1].className).toMatch(/\bright-0\b/)
+    expect(cells[1].className).toMatch(/\bbg-white\b/)
+    // 默认 false：普通列零影响（不是整表粘住）
+    expect(headers[0].className).not.toMatch(/\bsticky\b/)
+    expect(cells[0].className).not.toMatch(/\bsticky\b/)
+  })
+
   it('should apply correct alignment classes', () => {
     const alignColumns: TableColumn<TestRecord>[] = [
       { key: 'name', title: '名称', dataIndex: 'name', align: 'left' },

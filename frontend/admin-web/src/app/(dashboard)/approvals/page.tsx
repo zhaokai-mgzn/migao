@@ -2,8 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
-import { Button, EmptyState, Input, Modal, PageCard, PageHeader, RowActions, TableSkeleton } from '@/components/ui'
-import type { RowActionItem } from '@/components/ui'
+import { Button, EmptyState, Input, Modal, PageCard, PageHeader, RowActionLink, TableSkeleton } from '@/components/ui'
 import { SELECT_CONTROL_FIELD } from '@/components/ui/Select'
 import { displayEnum } from '@/lib/enum-display'
 // 五类对象显示名的唯一真值源（issue #7593）：顶栏待办入口 `ApprovalBell` 共用同一份，
@@ -188,19 +187,18 @@ export default function ApprovalsPage() {
   }
 
   /**
-   * 行内「⋯」菜单（issue #8039）：主行动「通过」走 `RowActions` 的 children，
-   * 这里只装**其余**动作（驳回 / 撤回）。菜单项照改前的 `disabled={busy}` 与二次确认路径，
+   * 「通过」之外的**其余**动作（2026-11-09 用户裁定：逐条平铺，不再收进「⋯」）。
+   *
+   * 条件与回调**逐条保持改前**（issue #8039）：`disabled={busy}`、驳回 / 撤回的二次确认路径一字未改，
    * 只换容器不换语义。
    */
-  function menuFor(row: ApprovalItem, acts: ReturnType<typeof actionsFor>): RowActionItem[] {
-    const items: RowActionItem[] = []
+  function secondaryActionsFor(row: ApprovalItem, acts: ReturnType<typeof actionsFor>) {
+    const items: Array<{ key: string; label: string; danger?: boolean; onClick: () => void }> = []
     if (acts.includes('reject')) {
       items.push({
         key: 'reject',
         label: '驳回',
         danger: true,
-        disabled: busy,
-        testId: `approval-reject-${row.id}`,
         onClick: () => {
           setDecideError('')
           setDecideNote('')
@@ -212,8 +210,6 @@ export default function ApprovalsPage() {
       items.push({
         key: 'withdraw',
         label: '撤回',
-        disabled: busy,
-        testId: `approval-withdraw-${row.id}`,
         onClick: () => void runWithdraw(row),
       })
     }
@@ -287,7 +283,7 @@ export default function ApprovalsPage() {
         {/* issue #8056：加载态 = 通用表格骨架（#8036 / #8048 已验收口径：页面级三元），与本表 8 列对齐；
             不再印裸「加载中…」+ 空白表体。
             🔴 闸门 = `loading && 列表为空`：裁决 / 撤回 / 筛选都会触发刷新，刷新时已有读数 ⇒
-            表格照旧在场（不换骨架、行内「⋯」菜单与其焦点不被摘掉 —— #8048 直出 `loading` 踩过的回归）。 */}
+            表格照旧在场（不换骨架、行内动作与其焦点不被摘掉 —— #8048 直出 `loading` 踩过的回归）。 */}
         {loading && visible.length === 0 ? (
           <TableSkeleton rows={8} columns={8} />
         ) : loadError ? null : visible.length === 0 ? (
@@ -313,7 +309,7 @@ export default function ApprovalsPage() {
                   <th className="py-2 pr-4 whitespace-nowrap">申请时间</th>
                   <th className="py-2 pr-4 whitespace-nowrap">状态</th>
                   <th className="py-2 pr-4 whitespace-nowrap">裁决</th>
-                  <th className="py-2 text-right whitespace-nowrap sticky right-0 bg-white">操作</th>
+                  <th className="py-2 pl-2 pr-3 text-right whitespace-nowrap sticky right-0 bg-white">操作</th>
                 </tr>
               </thead>
               <tbody>
@@ -372,15 +368,14 @@ export default function ApprovalsPage() {
                           '—'
                         )}
                       </td>
-                      <td className="py-2 text-right sticky right-0 bg-white">
+                      <td className="py-2 pl-2 pr-3 text-right sticky right-0 bg-white">
                         {acts.length === 0 ? (
                           <span className="text-xs text-neutral-400">—</span>
                         ) : (
                           <div className="flex justify-end">
-                            <RowActions
-                              testId={`approval-actions-${row.id}`}
-                              menuTestId={`approval-row-menu-${row.id}`}
-                              items={menuFor(row, acts)}
+                            <div
+                              className="flex items-center gap-1 whitespace-nowrap"
+                              data-testid={`approval-actions-${row.id}`}
                             >
                               {acts.includes('approve') && (
                                 <Button
@@ -396,7 +391,19 @@ export default function ApprovalsPage() {
                                   通过
                                 </Button>
                               )}
-                            </RowActions>
+                              {secondaryActionsFor(row, acts).map((item) => (
+                                <RowActionLink
+                                  key={item.key}
+                                  size="sm"
+                                  disabled={busy}
+                                  tone={item.danger ? 'danger' : 'primary'}
+                                  data-testid={`approval-${item.key}-${row.id}`}
+                                  onClick={item.onClick}
+                                >
+                                  {item.label}
+                                </RowActionLink>
+                              ))}
+                            </div>
                           </div>
                         )}
                       </td>

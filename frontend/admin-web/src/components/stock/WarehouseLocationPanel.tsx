@@ -9,7 +9,7 @@ import {
   Input,
   Modal,
   PageCard,
-  RowActions,
+  RowActionLink,
   Table,
   type TableColumn,
 } from '@/components/ui'
@@ -350,30 +350,13 @@ export default function WarehouseLocationPanel({
     {
       key: 'actions',
       title: '操作',
-      // issue #8038：**1 主行动（编辑）+ ⋯ 菜单**（停用·启用 / 删除）。删除仍是页面既有的
-      // 确认弹框（`setDeleteTarget` ⇒ `Modal`），占用中禁用 + `title` 说明为什么 —— 一字未改。
+      // 行内动作（2026-11-09 用户裁定：**逐条平铺**，不再收进「⋯」）：编辑 / 停用·启用 / 删除。
+      // 删除仍是页面既有的确认弹框（`setDeleteTarget` ⇒ `Modal`），占用中禁用 + `title` 说明为什么 —— 一字未改。
       render: (row) =>
         canWrite ? (
-          <RowActions
-            testId={`warehouse-location-actions-${row.id}`}
-            menuTestId={`warehouse-location-menu-${row.id}`}
-            items={[
-              {
-                key: 'toggle',
-                label: row.status === 'active' ? '停用' : '启用',
-                testId: `warehouse-location-toggle-${row.id}`,
-                onClick: () => void toggleStatus(row),
-              },
-              {
-                key: 'delete',
-                label: '删除',
-                testId: `warehouse-location-delete-${row.id}`,
-                onClick: () => setDeleteTarget(row),
-                danger: true,
-                disabled: row.occupied,
-                title: row.occupied ? '占用中的仓位不能删除：先发货或撤销打包释放' : undefined,
-              },
-            ]}
+          <div
+            className="flex items-center gap-1 whitespace-nowrap"
+            data-testid={`warehouse-location-actions-${row.id}`}
           >
             <Button
               variant="ghost"
@@ -383,7 +366,24 @@ export default function WarehouseLocationPanel({
             >
               编辑
             </Button>
-          </RowActions>
+            <RowActionLink
+              size="sm"
+              data-testid={`warehouse-location-toggle-${row.id}`}
+              onClick={() => void toggleStatus(row)}
+            >
+              {row.status === 'active' ? '停用' : '启用'}
+            </RowActionLink>
+            <RowActionLink
+              size="sm"
+              tone="danger"
+              data-testid={`warehouse-location-delete-${row.id}`}
+              onClick={() => setDeleteTarget(row)}
+              disabled={row.occupied}
+              title={row.occupied ? '占用中的仓位不能删除：先发货或撤销打包释放' : undefined}
+            >
+              删除
+            </RowActionLink>
+          </div>
         ) : (
           <span className="text-neutral-400">—</span>
         ),

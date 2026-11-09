@@ -17,13 +17,13 @@
  * ## 与 `Button` 的分工（写新页面时的取值口径）
  *
  * - **页面级动作**（保存 / 查询 / 新建 / 刷新）⇒ `Button`；
- * - **行内动作**（跳到该行的详情 / 明细）⇒ 本组件（`RowActions` 的**主行动**也用它）。
+ * - **行内动作**（跳到该行的详情 / 明细 / 次要写操作）⇒ 本组件。
  *
- * ⚠️ **销售订单列表的行内动作于 2026-11-07 回到本组件**：用户逐字「操作一列：把订单对应的可操作
- * 按钮直接展示出来，不要收在『...』里面」⇒ 那张表的次要动作**平铺**为 `RowActionLink`（主行动仍是
- * `Button variant="ghost" size="sm"`）。issue #8011 的「1 主行动 + ⋯ 菜单」形态只保留给其它列表页。
- * 本组件仍是「行内**文字**动作」的单一形态；那页的平铺是有据可查的设计例外，见
- * `tests/unit/row-action-density-ledger.json` 的 `flat_by_design`。
+ * ⚠️ **2026-11-09 起全站列表页平铺**：用户逐字「操作一列：把商品对应的可操作按钮直接展示出来，
+ * 不要收在“...”里面」「检查一下观星台的其他所有列表页，操作列按钮逐条平铺、不再收进「⋯」」
+ * ⇒ 主行动 = `Button variant="ghost" size="sm"`，**其余动作逐条本组件同屏**。
+ * 「主行动 + ⋯ 菜单」原语已退役；判据 = `scripts/row-action-flat-scan.mjs` +
+ * `tests/unit/row-action-flat-ledger.json`（`flat_surfaces` 正向锚）。
  *
  * ## 变体（issue #7082 收口时扩展：每个变体都对应一个**真实**消费点，不留投机 API）
  *
@@ -57,6 +57,7 @@ export default function RowActionLink({
   emphasis = false,
   tone = 'primary',
   disabledStyle = 'faint',
+  title,
   'data-testid': testId,
 }: {
   children: React.ReactNode
@@ -76,6 +77,8 @@ export default function RowActionLink({
    *   无写权限时姓名照旧是姓名，不能变成灰色占位。
    */
   disabledStyle?: 'faint' | 'keep'
+  /** 禁用时的原因（原生 `title`，悬停可见）—— 平铺后与旧的 ⋯ 菜单项同一口径 */
+  title?: string
   'data-testid'?: string
 }) {
   const sizes: Record<RowActionLinkSize, string> = { xs: 'text-xs', sm: 'text-sm', md: '' }
@@ -95,6 +98,7 @@ export default function RowActionLink({
       type="button"
       data-testid={testId}
       disabled={disabled}
+      title={title}
       // 行内动作不得触发行点击（列表行将来若加整行点击，这里不会误触）
       onClick={(e) => {
         e.stopPropagation()

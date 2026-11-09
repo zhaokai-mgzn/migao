@@ -71,16 +71,6 @@ const APPROVED = {
 
 const CONSUMED = { ...APPROVED, id: 'ap3', consumedAt: '2026-10-23T11:30:00+08:00', consumedRef: 'SO-1' }
 
-/**
- * 行内「⋯」菜单的开合（issue #8039）：`驳回` / `撤回` 收进菜单，
- * **收起态不进 DOM** —— 页面判据因此必须先点触发器。
- */
-const openRowMenu = (rowId: string) => {
-  fireEvent.click(
-    within(screen.getByTestId(`approval-row-menu-${rowId}`)).getByRole('button', { name: '更多操作' }),
-  )
-}
-
 describe('审批中心页面', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -123,12 +113,10 @@ describe('审批中心页面', () => {
     render(<ApprovalsPage />)
 
     await waitFor(() => expect(screen.getByTestId('approvals-table')).toBeInTheDocument())
-    // 待审行：主行动 = 「通过」（#8039），`驳回` 收进 ⋯ 菜单（收起态不进 DOM）
+    // 待审行：通过 / 驳回 都平铺在行内（2026-11-09 用户裁定）
     expect(screen.getByTestId('approval-approve-ap1')).toBeInTheDocument()
-    expect(screen.queryByTestId('approval-reject-ap1')).toBeNull()
-    openRowMenu('ap1')
     expect(screen.getByTestId('approval-reject-ap1')).toBeInTheDocument()
-    // 已通过（且申请人是本人）⇒ 没有通过/驳回，也没有撤回（不是待审）；连 ⋯ 都不摆
+    // 已通过（且申请人是本人）⇒ 没有通过/驳回，也没有撤回（不是待审）；连动作面都不摆
     expect(screen.queryByTestId('approval-approve-ap2')).toBeNull()
     expect(screen.queryByTestId('approval-actions-ap2')).toBeNull()
     expect(screen.queryByTestId('approval-reject-ap2')).toBeNull()
@@ -151,15 +139,13 @@ describe('审批中心页面', () => {
     render(<ApprovalsPage />)
 
     await waitFor(() => expect(screen.getByTestId('approvals-table')).toBeInTheDocument())
-    // 别人的申请：菜单里没有撤回（展开后才可判 —— 收起态本来就取不到）
-    openRowMenu('ap1')
+    // 别人的申请：平铺动作里没有撤回
     expect(screen.queryByTestId('approval-withdraw-ap1')).toBeNull()
-    // 自己的申请：菜单里有撤回
-    openRowMenu('ap4')
+    // 自己的申请：撤回平铺可见
     expect(screen.getByTestId('approval-withdraw-ap4')).toBeInTheDocument()
   })
 
-  it('🟢 操作列 = 1 主行动 + ⋯ 菜单：每行可点 ≤ 2、收起态菜单项不进 DOM（#8039）', async () => {
+  it('2026-11-09 用户裁定：操作列按钮逐条平铺（通过 / 驳回 / 撤回），不再收进「⋯」', async () => {
     approvalApi.list.mockImplementation(() =>
       wrap([PENDING, { ...PENDING, id: 'ap4', requestedBy: 'u-me' }]),
     )
@@ -167,27 +153,22 @@ describe('审批中心页面', () => {
 
     await waitFor(() => expect(screen.getByTestId('approval-row-ap1')).toBeInTheDocument())
 
-    // 别人的申请：主行动「通过」+ ⋯ 触发器 = 2 个可点（驳回藏在菜单里，不占平级）
+    // 别人的申请：通过 / 驳回 同屏
     const other = screen.getByTestId('approval-actions-ap1')
-    const otherClickable = within(other).getAllByRole('button')
-    expect(otherClickable).toHaveLength(2)
-    expect(otherClickable[0].textContent).toBe('通过')
+    expect(within(other).getAllByRole('button').map((b) => b.textContent)).toEqual(['通过', '驳回'])
+    expect(within(other).queryByRole('button', { name: '更多操作' })).toBeNull()
     expect(within(other).queryByRole('menu')).toBeNull()
 
-    // 本人的申请（可裁决 + 可撤回）：可点数仍是 2
+    // 本人的申请（可裁决 + 可撤回）：撤回也同屏
     const own = screen.getByTestId('approval-actions-ap4')
-    expect(within(own).getAllByRole('button')).toHaveLength(2)
+    expect(within(own).getAllByRole('button').map((b) => b.textContent)).toEqual([
+      '通过',
+      '驳回',
+      '撤回',
+    ])
     expect(within(own).queryByRole('menuitem')).toBeNull()
-    expect(screen.queryByTestId('approval-withdraw-ap4')).toBeNull()
 
-    // 展开后可达：驳回 / 撤回（收起态根本不进 DOM，不是 CSS 隐藏）
-    openRowMenu('ap4')
-    expect(within(own).getByRole('menu')).toBeInTheDocument()
-    expect(within(own).getAllByRole('menuitem')).toHaveLength(2)
-    expect(within(own).getByTestId('approval-reject-ap4')).toBeInTheDocument()
-    expect(within(own).getByTestId('approval-withdraw-ap4')).toBeInTheDocument()
-
-    // 危险动作（撤回）仍走原调用路径：菜单项不是死项
+    // 撤回仍走原调用路径（平铺项不是死项）
     fireEvent.click(within(own).getByTestId('approval-withdraw-ap4'))
     await waitFor(() => expect(approvalApi.withdraw).toHaveBeenCalledWith('ap4'))
   })
@@ -197,8 +178,7 @@ describe('审批中心页面', () => {
     render(<ApprovalsPage />)
 
     await waitFor(() => expect(screen.getByTestId('approval-approve-ap1')).toBeInTheDocument())
-    // 驳回在 ⋯ 菜单里（#8039）：先展开再点；二次确认弹窗（Modal）一字未改
-    openRowMenu('ap1')
+    // 驳回平铺在行内（2026-11-09 用户裁定）；二次确认弹窗（Modal）一字未改
     fireEvent.click(screen.getByTestId('approval-reject-ap1'))
     fireEvent.click(screen.getByTestId('approval-decide-submit'))
 

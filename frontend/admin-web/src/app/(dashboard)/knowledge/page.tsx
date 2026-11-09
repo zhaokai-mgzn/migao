@@ -5,8 +5,8 @@ import { Plus, Pencil, Trash2, Send, Archive, Eye, RotateCcw } from 'lucide-reac
 import { toast } from 'sonner'
 import { knowledgeApi } from '@/lib/api'
 import { extractApiErrorMessage } from '@/lib/api-error'
-import { Table, Pagination, Modal, Button, Badge, SearchBar, PageHeader, SELECT_CONTROL, RowActions, EmptyState } from '@/components/ui'
-import type { TableColumn, RowActionItem } from '@/components/ui'
+import { Table, Pagination, Modal, Button, Badge, SearchBar, PageHeader, SELECT_CONTROL, RowActionLink, EmptyState } from '@/components/ui'
+import type { TableColumn } from '@/components/ui'
 import type { KnowledgeCard, KnowledgeCardStatus, KnowledgeCandidate, KnowledgeTemplateInfo } from '@/types'
 import DateTimeCell from '@/components/common/DateTimeCell'
 import ListLoadError from '@/components/common/ListLoadError'
@@ -339,13 +339,16 @@ export default function KnowledgePage() {
   }
 
   /**
-   * 行内动作（issue #8038）：改前 4 个同级 ghost 按钮（查看/编辑/发布·归档/删除，#8035 审计）。
-   * 现在主行动 = **编辑**（知识卡片最常用的一步），其余收进 ⋯ 菜单。
+   * 行内动作（2026-11-09 用户裁定：**逐条平铺**，不再收进「⋯」）。
+   *
+   * 用户逐字：「检查一下观星台的其他所有列表页，操作列按钮逐条平铺、不再收进「⋯」」。
+   * 主行动 = **编辑**（知识卡片最常用的一步），其余动作（查看 / 发布·归档·重新发布 / 删除）
+   * 逐条以共享原语 `RowActionLink` 同屏展示。
    *
    * 🔴 条件与回调**逐条保持改前**（issue #6392 的写码口径不变：行内写操作同码 `knowledge:manage`；
    * 「归档非终点」#3108 的重新发布分支照旧）。删除仍是 `setDeleteTarget` ⇒ 页面既有的确认弹框照旧。
    */
-  const rowActionsFor = (entry: KnowledgeCard): RowActionItem[] => [
+  const secondaryActionsFor = (entry: KnowledgeCard) => [
     { key: 'view', label: '查看', onClick: () => setViewTarget(entry) },
     entry.status === 'archived'
       ? { key: 'republish', label: '重新发布', onClick: () => publishCard(entry) }
@@ -407,24 +410,33 @@ export default function KnowledgePage() {
     {
       key: 'actions',
       title: '操作',
-      // issue #8038：**1 主行动（编辑）+ ⋯ 菜单**（改前 4 个按钮需要 300px，现在一个按钮 + 触发器足够）
-      width: '160px',
       render: (entry) => (
-        <RowActions
-          testId={`knowledge-actions-${entry.id}`}
-          menuTestId={`knowledge-menu-${entry.id}`}
-          // issue #6392：行内写操作同码（`knowledge:manage`）—— 无码岗位只剩「查看」（没有菜单可开）
-          items={canWrite ? rowActionsFor(entry) : []}
+        <div
+          className="flex items-center gap-1 whitespace-nowrap"
+          data-testid={`knowledge-actions-${entry.id}`}
         >
+          {/* issue #6392：行内写操作同码（`knowledge:manage`）—— 无码岗位只剩「查看」 */}
           {canWrite ? (
-            <Button
-              size="sm"
-              variant="ghost"
-              icon={<Pencil className="h-4 w-4" />}
-              onClick={() => openEdit(entry)}
-            >
-              编辑
-            </Button>
+            <>
+              <Button
+                size="sm"
+                variant="ghost"
+                icon={<Pencil className="h-4 w-4" />}
+                onClick={() => openEdit(entry)}
+              >
+                编辑
+              </Button>
+              {secondaryActionsFor(entry).map((item) => (
+                <RowActionLink
+                  key={item.key}
+                  size="sm"
+                  tone={item.danger ? 'danger' : 'primary'}
+                  onClick={item.onClick}
+                >
+                  {item.label}
+                </RowActionLink>
+              ))}
+            </>
           ) : (
             <Button
               size="sm"
@@ -435,7 +447,7 @@ export default function KnowledgePage() {
               查看
             </Button>
           )}
-        </RowActions>
+        </div>
       ),
     },
   ]

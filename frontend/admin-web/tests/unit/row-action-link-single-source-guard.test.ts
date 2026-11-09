@@ -38,7 +38,7 @@
  *   `suppliers` / 各处页面级链接）不在面内 —— 它们已不是同一份规格，收口要先逐页裁定形态；
  * - 静态文本判据：判不了「渲染是否同色同字号」（原语变体断言 + 真机读图承担）；
  * - 判不了「新页面用 `Button` 手拼行内动作」（意图判不了）—— 那一半由
- *   `row-action-density-scan.mjs`（一行可点 ≤ 2）+ 评审承担。
+ *   `row-action-flat-scan.mjs`（操作列不得折叠成「⋯」）+ 评审承担。
  */
 import { describe, it, expect } from 'vitest'
 
@@ -176,14 +176,13 @@ describe('行内动作链接规格只有一处定义（issue #7082 / MC-150）',
     expect(copiesIn({ [clean]: sourcesOf()[clean] })[clean]).toBeUndefined()
   })
 
-  it('⑦ 形态台账不撒谎（**双读**）：入库单 / 商品有意不走原语 —— 禁止锚不在 + 要求形态在', () => {
+  it('⑦ 形态台账不撒谎（**双读**）：入库单有意保持 ghost 单动作 —— 禁止锚不在 + 要求形态在', () => {
     const report = reportOf()
     // 注入口 A：把入库单的「详情」改成 `<RowActionLink>` 而不改台账 ⇒ 禁止锚命中 ⇒ 红
     // 注入口 B：把入库单行内「详情」的 `variant="ghost"` 改成 `variant="secondary"` ⇒ 形态锚失效 ⇒ 红
     expect(report.conformantBroken.map((c) => c.file)).toEqual([])
     const conformantFiles = report.conformant.map((c) => c.file)
     expect(conformantFiles).toContain('src/app/(dashboard)/inbound-orders/page.tsx')
-    expect(conformantFiles).toContain('src/components/products/ProductTable.tsx')
 
     const sources = sourcesOf()
     for (const entry of report.conformant) {
