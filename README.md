@@ -197,7 +197,7 @@ migao/
 | 工具 | 最低版本 | 用途 |
 |------|---------|------|
 | JDK | 21 | admin-api 编译运行 |
-| Node.js | 18+ | 四个前端包 |
+| Node.js | 20+ | 四个前端包 |
 | Python | 3.11+ | ai-agent-service |
 | Docker + Docker Compose | — | 本地数据库（可选；默认连云 dev） |
 
