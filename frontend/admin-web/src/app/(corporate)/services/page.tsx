@@ -25,7 +25,7 @@ import {
 export const metadata: Metadata = {
   title: '产品与服务 — AI 客服、经营助手与全链路经营平台',
   description:
-    `观星台产品全景：顾客侧元元${AI_ROLES.xiaobu}，经营侧黄金策${AI_ROLES.mibao}；管理后台、顾客小程序、商家小程序、员工端 H5 四个终端，覆盖商品、客户、交易、生产、供应链、仓储、组织七个能力域。`,
+    `观星台产品全景：顾客侧元元${AI_ROLES.xiaobu}，经营侧黄金策${AI_ROLES.mibao}；管理后台、顾客小程序、商家小程序、员工端 H5 四个终端，覆盖客户服务、订单/商品、生产、质量、仓储、财务、供应链与组织八个能力域。`,
 }
 
 const coreProducts = [
@@ -66,7 +66,7 @@ const terminals = [
     icon: Globe,
     title: '管理后台',
     audience: '老板 / 运营 / 客服',
-    description: '浏览器打开即用，七个能力域集中在此；右上角通知中心，右下角悬浮黄金策随时提问。',
+    description: '浏览器打开即用，八个能力域集中在此；右上角通知中心，右下角悬浮黄金策随时提问。',
     points: ['经营看板与每日简报', '商品、订单、售后、财务', '生产、仓储、组织与权限'],
   },
   {
@@ -215,12 +215,12 @@ export default function ServicesPage() {
         </div>
       </section>
 
-      {/* ── 七个能力域（issue #7369 新增「供应链」）────────────────── */}
+      {/* ── 八个能力域（issue #7369 新增「供应链」）────────────────── */}
       <section className="bg-white py-20 sm:py-28">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <SectionHeading
             kicker="能力清单"
-            title="七个能力域，逐项展开"
+            title="八个能力域，逐项展开"
             lead="以下每一项都是后台中可打开的功能入口。"
           />
           <div className="mt-14 space-y-6">

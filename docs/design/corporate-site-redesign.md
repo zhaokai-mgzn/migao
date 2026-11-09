@@ -3,6 +3,13 @@
 > 状态：已实施（2026-10-04）｜ issue [#6291](https://github.com/zhaokai-mgzn/migao/issues/6291) ｜ 承接分支 `feat/corporate-site-redesign`
 > 🔁 **2026-10-10 逐条回写**（issue [#6668](https://github.com/zhaokai-mgzn/migao/issues/6668)）：本文与代码曾有**四处**单向漂移，
 > 已按**现取事实**改正（见 §5「回写记录」）。视觉 token 的真值源 = [design-baseline.md](design-baseline.md)。
+>
+> 🔁 **2026-11-09 首页 v5 回写（issue [#8863](https://github.com/zhaokai-mgzn/migao/issues/8863)）**：首页信息架构改为
+> 「使命 Hero → 经营课题 → 平台架构（四层）→ 双 AI 分工 → 行业纵深 → 能力地图（8 个能力域，仅菜单名矩阵）→
+> 经营价值 → 适用企业 → 关于词元通达 → 平台保障 → 人机协同 / 国标 → 开通流程 → 底部 CTA」；
+> 首页定位改为「把 AI 智能化技术带给每一家中小企业」，能力域计数以 `capabilityDomains` 现取为 **8**。
+> 其余三页与本文 §1 / §2 的口径不变；§3 的首页旧结构行与「六域」计数以本行为准。
+>
 > 范围：`frontend/admin-web/src/app/(corporate)/**`（首页 / 产品与服务 / 关于我们 / 联系我们）+
 > `frontend/admin-web/src/components/corporate/**`（导航 / 页脚 / 共用版式 / 能力地图数据）。**不新增路由。**
 
