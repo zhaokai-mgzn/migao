@@ -78,6 +78,21 @@ s="$STUB_ISSUES"; [ -f "$s" ] || : > "$s"
 cmd="$1 $2"
 case "$cmd" in
   "issue list")
+    # REST 列表（issue #8860/#8861 的去重读面）：`--json number,title` ⇒ 逐行 `编号<TAB>标题`
+    case " $* " in
+      *" --json number,title "*)
+        while IFS=$'\t' read -r n t st; do
+          [ -n "$n" ] || continue
+          [ "$st" = "open" ] || continue
+          printf '%s\t%s\n' "$n" "$t"
+        done < "$s"
+        exit 0 ;;
+    esac
+    # `--search` 读的是 **search 索引（最终一致）**：`STUB_SEARCH_BLIND=1` 复刻「刚开的单
+    # 几秒内搜不到」这个**真实**形态（issue #8860/#8861 的根因），用来判「去重是否只靠 search」。
+    if [ "${STUB_SEARCH_BLIND:-}" = "1" ]; then
+      exit 0
+    fi
     last=""; prev=""
     for a in "$@"; do
       if [ "$prev" = "--search" ]; then last="$a"; fi
@@ -517,6 +532,54 @@ def test_state4_success_clears_only(tmp_path):
     assert "issue comment 7" in calls, f"success + 已有开放单 ⇒ 必须评论清零说明 → {calls!r}"
     assert "issue close 7" in calls, f"success + 已有开放单 ⇒ 必须关闭（清零不靠人记得）→ {calls!r}"
     assert "issue create" not in calls, f"已有开放单时不许重复开单（幂等）→ {calls!r}"
+
+
+def test_dedupe_reads_rest_list_not_the_search_index(tmp_path):
+    """issue #8860/#8861：`--search` 走**最终一致**的 search 索引 ⇒ 同一 job 两个入口各开一单。
+
+    桩把 `--search` 的答案关掉（`STUB_SEARCH_BLIND=1`，复刻「刚开的单几秒内搜不到」这个**真实**
+    形态），只留 REST 列表（`--json number,title`）⇒ 旧实现（只读 `--search`）会**再开一单**；
+    新实现必须**评论**到既有单上。判据 = 修复前红（`issue create` 出现在调用记录里）。
+    """
+    r = React(tmp_path / "run", conclusion="failure", attempt="2",
+              log_text="普通失败：npm ci 超时\n",
+              issues_file=seed_issues(tmp_path / "run", [leg_issue(7, "Build and Deploy admin-api")]),
+              extra_env={"STUB_SEARCH_BLIND": "1"})
+    assert r.proc.returncode == 0, f"反应步必须 rc=0（不许判红）→ {r.proc.returncode}\n{r.out}"
+    calls = r.calls.read_text(encoding="utf-8")
+    assert "issue comment 7" in calls, f"既有单必须被复用（评论），而不是「搜不到」→ {calls!r}"
+    assert "issue create" not in calls, (
+        f"search 索引滞后时**不许**重复开单（issue #8860/#8861）→ {calls!r}")
+
+
+def test_duplicate_open_issues_are_converged(tmp_path):
+    """#8860/#8861 的**已存在**形态：同标题两张开放单 ⇒ 保留最小号、把多余的以 `duplicate` 关掉。"""
+    r = React(tmp_path / "run", conclusion="failure", attempt="2",
+              log_text="普通失败：npm ci 超时\n",
+              issues_file=seed_issues(tmp_path / "run",
+                                      [leg_issue(3, "Build and Deploy admin-api"),
+                                       leg_issue(1, "Build and Deploy admin-api")]))
+    assert r.proc.returncode == 0, f"反应步必须 rc=0（不许判红）→ {r.proc.returncode}\n{r.out}"
+    assert r.closed == [("3", "duplicate")], (
+        f"同标题多单必须收敛：保留 #1、把 #3 以 duplicate 关掉（实得 {r.closed}）→ {r.out}")
+    calls = r.calls.read_text(encoding="utf-8")
+    assert "issue comment 1" in calls, f"应评论到**保留**的那张单 → {calls!r}"
+    assert "issue create" not in calls, f"已有开放单时不许再开 → {calls!r}"
+
+
+def test_no_issue_dedupe_relies_on_the_search_index():
+    """**类级元守卫**：去重只许读 REST 列表；脚本里再出现 `issue list … --search` ⇒ 红。
+
+    为什么是类级：`--search` 的**最终一致性是平台性质**（不是某一处写错）⇒ 任何新加的
+    「先查后建」都会重演 #8860/#8861。钉住**读面**比钉住某一处调用更根本。
+    （只扫**非注释**行：注释里要能自由地讲这条纪律。）
+    """
+    text = SCRIPT.read_text(encoding="utf-8")
+    live = "\n".join(l for l in text.splitlines() if not l.lstrip().startswith("#"))
+    assert "--search" not in live, (
+        "去重读面又用回了 `gh issue list --search`（search 索引最终一致 ⇒ 相邻调用/并发会双开，"
+        "issue #8860/#8861）；改用 `open_issue_numbers_by_title()` 的 REST 列表")
+    assert "open_issue_numbers_by_title" in live, "去重助手被删了 ⇒ 上面那条会变成空断言"
 
 
 def r2_env(r) -> dict:
