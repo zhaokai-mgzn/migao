@@ -343,6 +343,7 @@ describe('CorporateHomePage（官网主页 v5：中小企业 AI 经营平台叙�
 
     const files = [
       'src/app/(corporate)/page.tsx',
+      'src/components/corporate/home-content.ts',
       'src/app/(corporate)/services/page.tsx',
       'src/app/register/page.tsx',
       // #6333 起纳入产品内三处（悬浮助手 / 客服工作台 / 人工会话记录）
