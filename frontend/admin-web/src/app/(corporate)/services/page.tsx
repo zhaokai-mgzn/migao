@@ -79,7 +79,7 @@ const terminals = [
   {
     icon: MessageSquare,
     title: '商家小程序',
-    audience: '老板 / 店长（移动端）',
+    audience: '老板 / 员工 / 工人（移动端）',
     description: '移动端可用：问黄金策、看数据、处理坐席会话，并提供工人登录与拍照入库入口。',
     points: ['问黄金策 / 看数据', '坐席会话处理', '工人登录、拍照入库、补打标签'],
   },
