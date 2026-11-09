@@ -87,7 +87,7 @@ export const capabilityDomains: CapabilityDomain[] = [
   {
     key: 'orders-products',
     name: '订单/商品',
-    summary: '开单链的四个环节：卖什么、什么价、卖给谁、成交。',
+    summary: '从商品与价格配置到订单成交的开单链路。',
     items: [
       {
         name: '销售订单',
@@ -134,7 +134,7 @@ export const capabilityDomains: CapabilityDomain[] = [
   {
     key: 'quality',
     name: '质量管理',
-    summary: '做出来的活合不合格、不合格怎么补。',
+    summary: '成品检验、返工与报废的判定与记录。',
     items: [
       {
         name: '质检记录',
@@ -200,7 +200,7 @@ export const capabilityDomains: CapabilityDomain[] = [
   {
     key: 'finance-center',
     name: '财务',
-    summary: '两头钱一处看：对客户收款、对工人计件。',
+    summary: '对客户收款与对工人计件的财务核算。',
     items: [
       {
         name: '财务对账',
@@ -217,7 +217,7 @@ export const capabilityDomains: CapabilityDomain[] = [
   {
     key: 'supply-chain',
     name: '供应链',
-    summary: '从谁家进的货、买了什么、什么时候到，一处看全。',
+    summary: '采购、到货与供应商账期的统一管理。',
     items: [
       {
         name: '采购单',
