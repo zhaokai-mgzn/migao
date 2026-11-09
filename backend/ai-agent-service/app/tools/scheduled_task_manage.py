@@ -4,7 +4,7 @@
 
 商家说「3 天后提醒我跟进张先生」⇒ 黄金策建一条待办；到点由 admin-api 的扫描腿投递成**站内通知**。
 
-## A 档可逆写（用户 2026-10-07 裁定；留痕 = `docs/wiki/agent-write-boundary.md` §五 + issue #6486）
+## A 档可逆写（用户 2026-10-07 裁定；留痕 = `https://github.com/zhaokai-mgzn/migao/wiki/agent-write-boundary` §五 + issue #6486）
 
 本工具是 `product_update` / `sku_update` / `product_batch_update` 之后**第四条**进 A 档白名单的写能力，
 逐条对齐 A 档口径：

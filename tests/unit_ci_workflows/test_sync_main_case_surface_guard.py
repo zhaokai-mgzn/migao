@@ -401,6 +401,8 @@ def test_script_header_documents_both_layers():
 
 def test_docs_require_rebase_for_case_library_branches():
     """`docs/wiki/DEV-FLOW.md` / `Development.md` 提到 `sync-main.sh` 处必须说清「改用例库要 --rebase」。"""
+    if not all(doc.is_file() for doc in DOCS):
+        pytest.skip("docs/wiki/** 已迁 GitHub wiki ⇒ 文档侧无本地载体（未跑 ≠ 通过）")
     for doc in DOCS:
         text = doc.read_text(encoding="utf-8")
         hits = [ln for ln in text.splitlines() if "sync-main.sh" in ln]

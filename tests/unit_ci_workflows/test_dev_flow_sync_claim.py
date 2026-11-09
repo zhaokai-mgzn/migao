@@ -57,6 +57,10 @@ import pytest
 
 REPO = Path(__file__).resolve().parents[2]
 DEV_FLOW = REPO / "docs" / "wiki" / "DEV-FLOW.md"
+pytestmark = pytest.mark.skipif(
+    not DEV_FLOW.is_file(),
+    reason="docs/wiki/DEV-FLOW.md 已迁 GitHub wiki ⇒ 副本 claim 无本地载体，本判据停用（未跑 ≠ 通过）",
+)
 
 SYNC_COPY_PHRASE = "同步副本"
 # 同行出现这些词 ⇒ 该行是在**说明为何不是**同步副本，不是在 claim

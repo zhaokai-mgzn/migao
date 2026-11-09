@@ -251,8 +251,11 @@ def _live() -> tuple[dict[str, str], dict[str, dict[str, dict]], dict, str, str]
     sources = read_sources()
     scope = scoped_classes(sources)
     ledger = json.loads(LEDGER_PATH.read_text(encoding="utf-8"))
-    return (sources, scope, ledger,
-            CONTRACT_LEDGER_PATH.read_text(encoding="utf-8"),
+    # 2026-11-09：docs/wiki/CONTRACT-LEDGER.md 已迁 GitHub wiki ⇒ 载体缺失时给空串，
+    # 账本侧判据（判据 4/5）各自具名 skip；其余判据（代码/台账 JSON）照旧。
+    ledger_text = (CONTRACT_LEDGER_PATH.read_text(encoding="utf-8")
+                   if CONTRACT_LEDGER_PATH.is_file() else "")
+    return (sources, scope, ledger, ledger_text,
             APP_YML_PATH.read_text(encoding="utf-8"))
 
 
@@ -546,6 +549,8 @@ def test_key_inventory_matches_code_both_ways() -> None:
 
 def test_contract_ledger_carries_registered_frozen_keys() -> None:
     """判据 4 / 5：`docs/wiki/CONTRACT-LEDGER.md`（只读）⇄ 代码，两个方向。"""
+    if not CONTRACT_LEDGER_PATH.is_file():
+        pytest.skip("docs/wiki/CONTRACT-LEDGER.md 已迁 GitHub wiki ⇒ 账本侧无本地载体（未跑 ≠ 通过）")
     _, scope, ledger, ledger_text, _ = _live()
     rows = [line for line in ledger_text.splitlines() if line.startswith("|")]
     print(f"[现取] 账本表格行 = {len(rows)} 行；被点名的冻结键 = "
@@ -657,6 +662,8 @@ def test_red_proof_2_unique_ledger_key_is_red() -> None:
 
 def test_red_proof_2prime_contract_ledger_extra_key_is_red() -> None:
     """红证 ②'：真账本文本锚行注入一个不存在的键 ⇒ 红（账本有、代码无）。"""
+    if not CONTRACT_LEDGER_PATH.is_file():
+        pytest.skip("docs/wiki/CONTRACT-LEDGER.md 已迁 GitHub wiki ⇒ 账本侧无本地载体（未跑 ≠ 通过）")
     _, scope, ledger, ledger_text, _ = _live()
     row = next(line for line in ledger_text.splitlines() if line.startswith("|") and ANCHOR in line)
     mutated = ledger_text.replace(row, row + " 注入：`bogus_key_3721`", 1)
@@ -674,6 +681,8 @@ def test_red_proof_3_missing_ledger_key_is_red() -> None:
 
 def test_red_proof_3prime_contract_ledger_dropped_key_is_red() -> None:
     """红证 ③'：真账本文本锚行删掉 `` `short_code` `` ⇒ 红（代码有、账本无）。"""
+    if not CONTRACT_LEDGER_PATH.is_file():
+        pytest.skip("docs/wiki/CONTRACT-LEDGER.md 已迁 GitHub wiki ⇒ 账本侧无本地载体（未跑 ≠ 通过）")
     row = next(line for line in CONTRACT_LEDGER_PATH.read_text(encoding="utf-8").splitlines()
                if line.startswith("|") and ANCHOR in line)
     mutated_row = row.replace("`short_code`", "`the_short_code`")

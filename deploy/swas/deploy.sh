@@ -53,7 +53,7 @@ if ! flock -n 9; then
     echo "❌ 等待部署锁超时（$((LOCK_WAIT_SECONDS / 60)) 分钟）：$LOCK 仍被另一个部署持有 —— 那是**并发部署在排队**"
     echo "   真因是**排队**，不是「有进程挂住」：单次部署实测可达 ~28 分钟（比等待上限的旧值 600s 长得多）。"
     echo "   这把锁也不会被遗留：flock(2) 的锁挂在「打开文件描述」上 ⇒ 进程以**任何方式**终止（含 SIGKILL）"
-    echo "   内核都会关闭 fd 并释放锁（见 docs/wiki/CI-CD.md 的「远端 flock 与超时强杀的关系」）。"
+    echo "   内核都会关闭 fd 并释放锁（见 https://github.com/zhaokai-mgzn/migao/wiki/CI-CD 的「远端 flock 与超时强杀的关系」）。"
     echo "   ⇒ 处置：**不要**手工清 $LOCK 后重试（它不会被遗留 ⇒ 清了也不会变快），也**不要** kill 占用者"
     echo "     （它多半正在**正常**部署，kill 只会留下半截环境）。等它跑完，下次部署会正常拿到锁。"
     echo "   次要核对（只想知道占用者是谁时）：fuser -v $LOCK"
@@ -414,7 +414,7 @@ pick_cache_window() {
 }
 
 # ACR 登录（**唯一一份**）：1.9 的「回滚点补回」与第 2 步的常规拉取共用 ⇒ 判据/凭据读取不会漂移。
-# ACR 是私有仓库（docs/wiki/CI-CD.md：服务器需凭据拉私有镜像）⇒ 补回前必须先登录，否则必然失败。
+# ACR 是私有仓库（https://github.com/zhaokai-mgzn/migao/wiki/CI-CD：服务器需凭据拉私有镜像）⇒ 补回前必须先登录，否则必然失败。
 # ⚠️ 本函数**在 C′ 本地构建时也照常登录**：虽然本次镜像本地构建、不推 ACR，但 1.9 的
 #    「深度清理后从 ACR 补回回滚点」仍需凭据（回滚点是**上一次**推上去的 tag）⇒ 不能因为
 #    本次走本地构建就跳过登录（那会把「失败即回滚」的能力悄悄砍掉）。
@@ -1034,7 +1034,7 @@ if [ "${DISK_PCT:-0}" -gt 90 ]; then
         echo "  ✅ 回滚点 tag=${RB_BEFORE} 已补回（#4767 的「失败即回滚」可用）"
       else
         echo "  ::warning::回滚点 tag=${RB_BEFORE} **补回失败**（成功 ${PULLED}/3 个服务）"
-        echo "     ⇒ 本次部署若失败，#4767 的自动回滚**没有回滚点**，需人工介入（见 docs/wiki/CI-CD.md）"
+        echo "     ⇒ 本次部署若失败，#4767 的自动回滚**没有回滚点**，需人工介入（见 https://github.com/zhaokai-mgzn/migao/wiki/CI-CD）"
       fi
     fi
   fi
@@ -1071,7 +1071,7 @@ report_rollback_point
 # 实现走 GitHub compare API（**同一张提交图**）而不是本地 `git`：**实测**（2026-09-21）该服务器上
 # `git clone --filter=tree:0 https://github.com/zhaokai-mgzn/migao` 连 `github.com:443` **超时**
 # 32s（git 2.43.7 在，且同一次调用里 `git ls-remote` 成功 ⇒ 时通时不通），而 `api.github.com`
-# 0.6s/HTTP 200 ⇒ 本地没有可用的历史、API 才是可靠判据（复核数据见 docs/wiki/CI-CD.md）。
+# 0.6s/HTTP 200 ⇒ 本地没有可用的历史、API 才是可靠判据（复核数据见 https://github.com/zhaokai-mgzn/migao/wiki/CI-CD）。
 # ⚠️ 未认证 API 限 **60 次/小时/IP** ⇒ 一次部署内同「在跑 tag」**只查一次**（见下面的缓存）；
 # 取不到判据（非 sha tag / 容器没起 / API 取不到 / 分叉）⇒ **fail-open + 告警**（不许静默放行）。
 # 显式回滚（`gh workflow run deploy-*.yml -f image_tag=<tag>`，即 workflow 的 MODE=rollback）

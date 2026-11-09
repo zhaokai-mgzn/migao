@@ -37,7 +37,7 @@
 > [public-operations-and-craft-ui.md](public-operations-and-craft-ui.md)（**#4675**，两层模型 / 行业术语）·
 > [c-end-tenant-domain-routing.md](c-end-tenant-domain-routing.md)（租户域名路由）·
 > `docs/curtain-production-rules.md`（生产/计件规则真值源）·
-> `docs/wiki/CONTRACT-LEDGER.md`（契约账本）· `docs/wiki/RBAC.md`（权限体系）。
+> `https://github.com/zhaokai-mgzn/migao/wiki/CONTRACT-LEDGER`（契约账本）· `https://github.com/zhaokai-mgzn/migao/wiki/RBAC`（权限体系）。
 
 ---
 
@@ -466,7 +466,7 @@ users (role='worker', permissions=[], worker_no=<工号>, password_hash=<PIN 的
 |---|---|
 | 权限被拒 / 无相机 / 非 HTTPS | ② 不可用 ⇒ 页面**显式提示** + 引导到 ①（用扫码工具）或 ④（输短码） |
 | 微信内 `getUserMedia` 不可用 | 同上（**必须显式降级**，不得白屏/静默失败） |
-| 页面内扫码的**依赖** | JS QR 库 = **新依赖** ⇒ 须过「最少代码」阶梯（`docs/wiki/Code-Minimalism.md`）：<br>① YAGNI：**PAD 常驻工位**是真需求 ⇒ 保留；<br>② 复用：优先**复用** `frontend/bmini-app/src/utils/productionQr.ts` 的**解析**逻辑（纯函数，与 Taro 无关）；<br>③ 解码库：选**体积最小**且活跃维护的一个，**不引整个扫码 SDK** |
+| 页面内扫码的**依赖** | JS QR 库 = **新依赖** ⇒ 须过「最少代码」阶梯（`https://github.com/zhaokai-mgzn/migao/wiki/Code-Minimalism`）：<br>① YAGNI：**PAD 常驻工位**是真需求 ⇒ 保留；<br>② 复用：优先**复用** `frontend/bmini-app/src/utils/productionQr.ts` 的**解析**逻辑（纯函数，与 Taro 无关）；<br>③ 解码库：选**体积最小**且活跃维护的一个，**不引整个扫码 SDK** |
 
 ### 4.7 工程前提清单（汇总表）
 
@@ -659,7 +659,7 @@ git ls-tree -r --name-only origin/main backend/admin-api/src/main/resources/db/m
 
 ### 7.4 契约账本（**读面加键必须同步**）
 
-`docs/wiki/CONTRACT-LEDGER.md` 需**追加**（**不改既有行**）：
+`https://github.com/zhaokai-mgzn/migao/wiki/CONTRACT-LEDGER` 需**追加**（**不改既有行**）：
 
 | 新增键 | 值 | 备注 |
 |---|---|---|
@@ -879,7 +879,7 @@ git ls-tree -r --name-only origin/main backend/admin-api/src/main/resources/db/m
 | **后端 · 撤销语义** | **逐字复用 §1.3.1**：撤销 = `token` 置 NULL（**不换新 token**、**不碰 `short_code`**）⇒ `/o/{短码}` 410 | `ProcessingOrderMapper.revokeQrToken` **同一条 `UPDATE`**（`short_code` 与 `qr_token` 同表同行 ⇒ 状态**不存在两处**） |
 | **前端 · admin-web** | ① `ProcessingOrder` 类型追加 `short_code?` / `scan_url?`；② 调用方 `qrValue={processingOrder?.scan_url ?? null}`（**不再回落单号**）；③ `ProcessingDoc` 在 QR **下方**加一行**人可读短码**（形态照 `TaskCardPrint` 的 `task-card-label-short-code-*`，缺码印 `—`、**绝不编**）；④ 组件测试把 `qrValue="PO260926-0007"` 换成 URL 形态 + 加「短码行」判据 | `TaskCardPrint` 的「码 + 短码同行」是**同款范式** |
 | **消费面（H5；小程序是它在微信侧的壳）** | 302 落点 = `/b/?t=<token>`（issue #7879 起；改前 `/w/`），`parseScanInput` 的 `CODE_KEYS` 与四形态解析都不动 | §1.4 / §1.5 |
-| **契约账本** | `docs/wiki/CONTRACT-LEDGER.md` **追加**（**不改既有行**）：`GET /o/{短码}` 一条 + 加工单读面新增两键 | 与 #4802 / #4946 登记同款 |
+| **契约账本** | `https://github.com/zhaokai-mgzn/migao/wiki/CONTRACT-LEDGER` **追加**（**不改既有行**）：`GET /o/{短码}` 一条 + 加工单读面新增两键 | 与 #4802 / #4946 登记同款 |
 | **边缘 / 放行** | `SecurityConfig` 的 `permitAll` **追加一条** `"/o/**"`（漏了 ⇒ 扫码拿到 401，纸上的码等于没用）；`deploy/swas/nginx.conf` **追加** `location /o/`（照 `/i/` 逐行，`proxy_pass` **不带 URI 后缀**；漏了 ⇒ 静默落到 SPA fallback 出 200，线上只有真机扫码才发现） | `location /i/` 的注释已把这两个坑写死 |
 | **类级守卫** | 登记进 `CODE_SPACES`（`tests/unit_ci_workflows/test_public_code_spaces_are_disjoint.py`）⇒ 未登记即红；同时补 **F1~F3 边缘归属登记** | 该守卫的判据 A/B/C/D + F1~F3 |
 

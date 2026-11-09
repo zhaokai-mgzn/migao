@@ -1286,7 +1286,7 @@ def route_by_intent(state: AgentState) -> str:
             # 会连**合法换域**一起拦（#3784 的反例表）；真正的区分需要一个**新的会话状态事实**
             # （"本 skill 在纯文本轮里问过问题"），该事实已被用户裁定不做（误吞合法换域的风险）。
             # 口径与本窗口的可执行证据（逐条复算 + 会红的判据）见：
-            #   docs/wiki/AI-Agent.md「意图路由流程 / 已知窗口：L1 域逃逸的『伪域切换』」
+            #   https://github.com/zhaokai-mgzn/migao/wiki/AI-Agent「意图路由流程 / 已知窗口：L1 域逃逸的『伪域切换』」
             #   backend/ai-agent-service/tests/test_or014_pseudo_domain_switch_window.py
             # 缓解在**下游**（#3782 熔断 + 回锁，见 base_skill 的 `_flow_owner_skill`）。
             logger.info(

@@ -5,7 +5,7 @@
 
 分支保护是 `strict=true` ⇒ 每个 PR 各跑一轮 **28** 个 required job。**5 个 PR = 5×28 job**，
 而**集中合成 1 个 PR = 1×28**。⇒ 多 PR 同批落地时，批次合并是**默认路径**（不是"省事的野路子"）。
-什么时候**不该**用 ⇒ `docs/wiki/Development.md` 的「批次合并（默认路径）」。
+什么时候**不该**用 ⇒ `https://github.com/zhaokai-mgzn/migao/wiki/Development` 的「批次合并（默认路径）」。
 
 ## 今晚人工做过一次（PR #8519），踩的四个坑 = 本工具存在的**全部**理由
 

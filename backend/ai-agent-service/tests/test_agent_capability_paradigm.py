@@ -1,7 +1,7 @@
 # case_ids: HR-009, DF-003
 """Agent 能力研发范式的**元守卫**（issue #7291）。
 
-范式（`docs/wiki/agent-capability-paradigm.md`）的三条不变式：
+范式（`https://github.com/zhaokai-mgzn/migao/wiki/agent-capability-paradigm`）的三条不变式：
 1. **声明 = 投影**：对模型可见的能力 / 权限 / 意图声明，必须由代码从真值源投影生成，
    prompt 文件只放领域知识 —— 不得手写能力矩阵。
 2. **每个投影都有判据**：真值源 → 渲染缝 → 判据，三件套登记在
@@ -12,6 +12,8 @@
 """
 
 from __future__ import annotations
+
+import pytest
 
 import importlib
 import json
@@ -90,6 +92,8 @@ def test_no_handwritten_capability_matrix_in_prompts():
 def test_paradigm_doc_exists_and_is_indexed():
     """范式页必须在，且从 Wiki 索引可达（否则下一个会话读不到）。"""
     doc = _REPO_ROOT / "docs" / "wiki" / "agent-capability-paradigm.md"
-    assert doc.is_file(), "缺少范式页 docs/wiki/agent-capability-paradigm.md"
-    index = (_REPO_ROOT / "docs" / "wiki" / "INDEX.md").read_text(encoding="utf-8")
+    index_path = _REPO_ROOT / "docs" / "wiki" / "INDEX.md"
+    if not doc.is_file() or not index_path.is_file():
+        pytest.skip("docs/wiki/** 已迁 GitHub wiki ⇒ 范式页/索引无本地载体（未跑 ≠ 通过）")
+    index = index_path.read_text(encoding="utf-8")
     assert "agent-capability-paradigm" in index, "范式页未接入 Wiki 索引"

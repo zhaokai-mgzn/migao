@@ -8,7 +8,7 @@
 #       `tests/unit_ci_workflows/test_ontology_source_resolves.py` 机械对账；`status` 枚举 ↔
 #       loader.STATUS_LEXICON ↔ CONTRACT-LEDGER 三向一致（且 `order.status` 是**独立第二侧**，
 #       issue #8686）；`intent_ownership` ↔ skill_registry 由 `app/ontology/contract.py` 校验。
-# 状态枚举铁律来源：docs/wiki/CONTRACT-LEDGER.md §一（勿在此处私自改枚举，
+# 状态枚举铁律来源：https://github.com/zhaokai-mgzn/migao/wiki/CONTRACT-LEDGER §一（勿在此处私自改枚举，
 # 修改必须同步 CONTRACT-LEDGER 与 loader.STATUS_LEXICON，否则加载直接拒绝）。
 # 字段挂载点（source）指向 admin-api Java 实体，供跨端对账。
 #

@@ -36,7 +36,7 @@
 #   ./scripts/package-heavy-entry-ledger.sh count
 #
 # 输出两行（`refused=<n>` / `override=<n>`），各自**现取**。为什么要分两类：本台账正是
-# `docs/wiki/Dev-Mode-Balance.md` §10 那条「批次粒度」优化的**重启条件**（≥5 次批次记录）要用的
+# `https://github.com/zhaokai-mgzn/migao/wiki/Dev-Mode-Balance` §10 那条「批次粒度」优化的**重启条件**（≥5 次批次记录）要用的
 # 读数 —— 把「被拦下的浪费」和「人类明知故犯的放行」混成一个数，两者都读不出来。
 #
 # 退出码：0 = 成功（含「台账里还没有本 id 的记录」这种正常情形）；

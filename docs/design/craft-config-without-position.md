@@ -386,7 +386,7 @@ V71 的矩阵种子是 `routing.py` ↔ `V71` ↔ `docs/sql/schema.sql` **三源
 | 写面 `is_must_finish` | **出现即 422 + 可行动 hint**（POST + PUT） | 沿用 #4641 `name` 的「出现即拒」范式，**不静默落库** |
 | 列与读面键 | **保留**（`POSITION_KEYS` 10 键 / `DELIVERY_KEYS` 9 键相对 `origin/main` **零 diff**），`is_must_finish` **值恒 `false`** | `tests/unit_ci_workflows/test_routing_read_endpoints.py` 零 diff |
 | 数据收敛 | **新增 `V107`**（显式事务 + 幂等谓词 `IS DISTINCT FROM FALSE` + 终态对账 `DO $$` + 回滚与不可复原项登记）；**不碰**三张快照表与软删行 | `tests/unit_ci_workflows/test_must_finish_retire_migration.py` + `migration_fingerprints.json` |
-| 文档真值源 | `docs/wiki/CONTRACT-LEDGER.md` **六处锚点**同步（护栏五⇒四、两个写面 body、三处读面键的「值恒 false」） | 本节 + 账本对应行 |
+| 文档真值源 | `https://github.com/zhaokai-mgzn/migao/wiki/CONTRACT-LEDGER` **六处锚点**同步（护栏五⇒四、两个写面 body、三处读面键的「值恒 false」） | 本节 + 账本对应行 |
 
 ### 14.2 O2 的状态撤回（本轮唯一的「开放项反悔」，逐条留痕）
 

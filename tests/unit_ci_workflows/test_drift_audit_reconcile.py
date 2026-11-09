@@ -171,9 +171,10 @@ def test_fixture_marker_exemption_stays_scoped_to_declaring_files(drift):
             "    # 引用一个不存在的文件（悬空引用）\n"
             "    p = 'no/such/file.py:10'\n"
             "    assert p\n", encoding="utf-8")
-        # 非 tests/** 面：`docs/wiki/` 在受管引用面内（`REF_SURFACE`）⇒ 必须照旧受判。
-        (repo / "docs" / "wiki").mkdir(parents=True)
-        (repo / "docs" / "wiki" / "doc.md").write_text(
+        # 非 tests/** 面：`docs/testing/` 在受管引用面内（`REF_SURFACE`）⇒ 必须照旧受判。
+        # （`docs/wiki/` 已于 2026-11-09 迁出仓库，改用仍在面内的 `docs/testing/`。）
+        (repo / "docs" / "testing").mkdir(parents=True)
+        (repo / "docs" / "testing" / "doc.md").write_text(
             "引用 `no/such/file.py:10` 也是悬空。\n", encoding="utf-8")
         _git(repo, "init", "-q", "-b", "main")
         _git(repo, "config", "user.email", "t@example.com")

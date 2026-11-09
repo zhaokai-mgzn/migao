@@ -20,7 +20,7 @@ name: Publish worker-h5 (app.migaozn.com/w/)
 # `deploy-frontend.yml` 的 workflow 级 `paths` 只认 `frontend/admin-web/**`，而 admin-web 的
 # 构建+部署是分钟级重活；把 worker-h5 变更并进去会让每次改工人端页面都重建 admin-web 镜像并
 # 重新部署商家端（**无关的线上影响**）。独立 workflow = 独立 check 名 + 独立路径面
-# （先例 = `worker-h5-tests.yml`，见 docs/wiki/CI-CD.md 的「变更门控」例外说明）。
+# （先例 = `worker-h5-tests.yml`，见 https://github.com/zhaokai-mgzn/migao/wiki/CI-CD 的「变更门控」例外说明）。
 #
 # ⚠️ 触发面只有 `push: main` 与 `workflow_dispatch` —— **刻意不加 `pull_request`**：
 #    这条腿写的是**线上静态根**，PR 分流内容不该有机会落上去。

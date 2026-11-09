@@ -60,7 +60,7 @@
 > [multi-tenant-wechat.md](multi-tenant-wechat.md)（多租户微信接入）·
 > [tenant-miniapp-launch-and-payment.md](tenant-miniapp-launch-and-payment.md)（多租户小程序发布）·
 > [employee-permission-chain.md](employee-permission-chain.md)（员工权限链）·
-> `docs/wiki/RBAC.md`（权限体系真值源）·
+> `https://github.com/zhaokai-mgzn/migao/wiki/RBAC`（权限体系真值源）·
 > [worker-h5-scan-and-report.md](worker-h5-scan-and-report.md)（写作体例参照）
 
 ---
@@ -176,14 +176,14 @@ git grep -n "agent:chat" origin/main          ⇒ 0 命中（全仓、全文件�
 | `finance` 财务 | ✅ | ❌ | ❌ | ❌ |
 
 ⇒ **在内置岗位种子下，三码集合与 `role='admin'` 恰好等价（集合相等）**。但这是**种子的事实**，不是**逻辑的必然** —— 因为：
-- 「岗位权限」页可创建**任意自定义岗位**（`RoleService` 的 `roleCode` 是开放集合，`docs/wiki/RBAC.md` 逐字：「商户角色码是**开放集合**（「岗位权限」页可创建任意岗位码）」）；
+- 「岗位权限」页可创建**任意自定义岗位**（`RoleService` 的 `roleCode` 是开放集合，`https://github.com/zhaokai-mgzn/migao/wiki/RBAC` 逐字：「商户角色码是**开放集合**（「岗位权限」页可创建任意岗位码）」）；
 - 员工权限是**快照式**（`users.permissions`），员工管理页可**手工增删勾选**，与岗位脱钩。
 
 ⇒ **存在两条「不是 admin 却拿到三码」的合法路径**：① 商家给某自定义岗位勾了这三码；② 商家给某个员工手工勾了这三码。
 
 **问题 C：那「不是 admin 的人拿到了黄金策唤出权」算**预期内**还是**越权**？**
 **判定 = 预期内（不是越权）**，理由是**授权语义的一致性**，不是「三个码看起来很关键」：
-- 本仓的授权真值是**权限码**，不是角色码。`docs/wiki/RBAC.md` 的 JWT `claims.permissions` 与 `ToolContext.permissions` **同一份权限码、不另立口径**；`@RequirePermission` 也**只认码**。若本单改成「按 `role='admin'` 判」，就会引入**第二套身份口径**，直接违反裁定③与 #4104 的「同一份身份口径」纪律。
+- 本仓的授权真值是**权限码**，不是角色码。`https://github.com/zhaokai-mgzn/migao/wiki/RBAC` 的 JWT `claims.permissions` 与 `ToolContext.permissions` **同一份权限码、不另立口径**；`@RequirePermission` 也**只认码**。若本单改成「按 `role='admin'` 判」，就会引入**第二套身份口径**，直接违反裁定③与 #4104 的「同一份身份口径」纪律。
 - 🔴 **真正的护栏不是「谁持有」，而是「谁能授予」**：`PermissionInterceptor.assertGrantable`（issue #4104，**用户 2026-09-26 裁定**）强制 `授予集 ⊆ 操作者自身生效权限`，且**授予集包含「所授角色隐含的生效码」**（逐字：「只看快照数组会被『授予一个比自己权限更大的角色』绕过」）。⇒ 商家**无法**把三码授给一个自己都不持三码的人。**这就是「谁算管理员」这个问题的上游答案：只有已是管理员的人，才能造出新的管理员。**
 - ⇒ 因此「不是 `role='admin'` 的人持三码」= **管理员有意授权的管理员**，与本单语义一致。**预期内。**
 
@@ -239,7 +239,7 @@ ADMIN_PERMISSION_CODES = { "dashboard:view", "employee:create", "agent:chat" }
 |---|---|---|
 | **端点层**（`/api/chat/send`） | ❌ **无端点级权限码** | `backend/ai-agent-service/app/api/chat.py`：注释逐字「其余一律视为**商户员工**并保留原角色码（供 `Tool.allowed_roles` / `required_permissions` 判断）」；全文**无**端点级权限码注解 |
 | **角色层** | 「其余一律视为商户员工」（按 `users.role`，排除 `customer`/`agent`） | `backend/ai-agent-service/app/api/chat.py`；`backend/admin-api/src/main/java/com/migao/admin/security/ServiceTokenFilter.java` 的 C 端角色注释逐字「与商户员工门禁 `role NOT IN ('customer','agent')` 同口径」 |
-| **工具层** | `Tool.allowed_roles` / `Tool.required_permissions`（能调**哪些工具**） | 同上；`docs/wiki/RBAC.md`「工具声明 `required_permissions` 时按权限码放行，`allowed_roles` 只做粗筛与路由」 |
+| **工具层** | `Tool.allowed_roles` / `Tool.required_permissions`（能调**哪些工具**） | 同上；`https://github.com/zhaokai-mgzn/migao/wiki/RBAC`「工具声明 `required_permissions` 时按权限码放行，`allowed_roles` 只做粗筛与路由」 |
 | **小程序端 UI** | ❌ 零门（`pages/chat` 无 permission 检查） | §1（`git grep -n "permission" … pages/chat/ store/` ⇒ 0 命中） |
 
 ⇒ 🔴 **结论：「唤出黄金策」这件事在端点上今天没有任何码，所以「其他员工需授权才能唤出」必然要引入一个新码 —— 不存在「复用既有码」的选项。** 具体地：
@@ -704,7 +704,7 @@ ADMIN_PERMISSION_CODES = { "dashboard:view", "employee:create", "agent:chat" }
 
 ### 6.2 `frontend/worker-h5` —— **与本单无关，不要动**（逐字登记）
 
-`frontend/worker-h5` 是**工人端轻入口**（实测为 5 个 `.mjs` + 1 个 `.css`，**无 Taro、无构建链**：`api.mjs` / `app.mjs` / `render.mjs` / `scan-input.mjs` / `styles.css`）。工人**不是**商户员工、**不持**权限码（`docs/wiki/RBAC.md` 逐字：「**权限码是「商户员工」概念**（issue #5246）」）⇒ 黄金策唤出授权门**不适用于工人端**。
+`frontend/worker-h5` 是**工人端轻入口**（实测为 5 个 `.mjs` + 1 个 `.css`，**无 Taro、无构建链**：`api.mjs` / `app.mjs` / `render.mjs` / `scan-input.mjs` / `styles.css`）。工人**不是**商户员工、**不持**权限码（`https://github.com/zhaokai-mgzn/migao/wiki/RBAC` 逐字：「**权限码是「商户员工」概念**（issue #5246）」）⇒ 黄金策唤出授权门**不适用于工人端**。
 ⇒ **本单不改 `frontend/worker-h5` 任何文件**；工人侧防爆破（`WorkerSessionService` 的 `keyOf("worker", ...)`）也**保持不动**。
 
 ### 6.3 `frontend/admin-web` 的 `agent-workspace` —— 边界（**易混，必须写清**）
@@ -947,14 +947,14 @@ capabilities: { mibaoChat: true | false }
 
 ### 待裁定-2（✅ **已裁定，2026-09-26 = 裁定⑩**）：「授权唤出黄金策」的**粒度**与**权限码**
 
-**裁定结果：粒度 = (a) 员工级**（按原设计单推荐）。理由：`users.permissions` 是**快照式**（`docs/wiki/RBAC.md` 逐字：「员工权限 = 员工管理页保存的勾选（`users.permissions` 快照），与岗位脱钩」）⇒ 「岗位级」**不是生效口径**，说成生效口径会造**第二套真相源**。
+**裁定结果：粒度 = (a) 员工级**（按原设计单推荐）。理由：`users.permissions` 是**快照式**（`https://github.com/zhaokai-mgzn/migao/wiki/RBAC` 逐字：「员工权限 = 员工管理页保存的勾选（`users.permissions` 快照），与岗位脱钩」）⇒ 「岗位级」**不是生效口径**，说成生效口径会造**第二套真相源**。
 ⚠️ **与 §3.2.5 的关系（不矛盾）**：上线当天的「按岗位批量授权」是**一次性初始化动作**（= 按岗位生成待勾名单），**之后一律走员工级勾选**。⇒ 粒度裁定是「**生效口径**」，批量授权是「**上线动作**」。
 
 > ⚠️ **前提已变**：任务给这一条时的假设是「授权的码 = 复用既有码 or 新增码」。**§3.2.1 已实测否掉了「复用既有码」** —— 因为**唯一语义相近的 `agent:session` 承载的是「人工接待工位」，不是「唤出黄金策」**，复用会让两个授权意图焊死。⇒ 本条现在**只剩一个子问题**（粒度），权限码那一栏已经**由 §3.2 定案**。
 
 | 子问题 | 选项 | 代价 | 推荐 |
 |---|---|---|---|
-| **粒度**（第 1 轮曾列为「唯一仍需裁定」；**已由裁定⑩ 定为 (a)**） | (a) **员工级**（该员工可唤）<br>(b) **岗位级**（该岗位默认可唤） | (b) 需岗位默认权限勾选 → 但**本仓权限是快照式**（`docs/wiki/RBAC.md` 逐字：「员工权限 = 员工管理页保存的勾选（`users.permissions` 快照），与岗位脱钩」）⇒ 岗位级**不改变**已有员工的生效权限（只影响**新建**时的预填模板 + 迁移回填那一批） | **(a) 员工级**（✅ 裁定⑩）—— 因为快照式语义下「岗位级」**不是**一个生效口径，把它当成生效口径会造**第二套真相源**。⚠️ 与 §3.2.5 的「按岗位批量授权」**不矛盾**：那是**一次性初始化动作**，**生效口径仍是员工级** |
+| **粒度**（第 1 轮曾列为「唯一仍需裁定」；**已由裁定⑩ 定为 (a)**） | (a) **员工级**（该员工可唤）<br>(b) **岗位级**（该岗位默认可唤） | (b) 需岗位默认权限勾选 → 但**本仓权限是快照式**（`https://github.com/zhaokai-mgzn/migao/wiki/RBAC` 逐字：「员工权限 = 员工管理页保存的勾选（`users.permissions` 快照），与岗位脱钩」）⇒ 岗位级**不改变**已有员工的生效权限（只影响**新建**时的预填模板 + 迁移回填那一批） | **(a) 员工级**（✅ 裁定⑩）—— 因为快照式语义下「岗位级」**不是**一个生效口径，把它当成生效口径会造**第二套真相源**。⚠️ 与 §3.2.5 的「按岗位批量授权」**不矛盾**：那是**一次性初始化动作**，**生效口径仍是员工级** |
 
 🔴 **「授权」到底勾哪个码（已定，不再是待裁定）**：
 - **勾的就是 `agent:chat`**（新码，§3.2.2 的完整清单）。它与 `agent:session`（坐席读码）、`agent:session:manage`（坐席写码）**三者互不蕴含**。

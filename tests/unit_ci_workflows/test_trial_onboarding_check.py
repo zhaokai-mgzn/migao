@@ -416,6 +416,8 @@ def test_runbook_exists_and_commands_point_at_the_real_script():
 
 
 def test_index_links_the_runbook():
+    if not INDEX.is_file():
+        pytest.skip("docs/wiki/INDEX.md 已迁 GitHub wiki ⇒ 索引无本地载体（未跑 ≠ 通过）")
     index = _read(INDEX)
     assert "trial-onboarding.md" in index, "docs/wiki/INDEX.md 里没有 trial-onboarding.md（索引不可达 = 事实上找不到）"
     assert "trial-onboarding" in index, "索引条目缺名"

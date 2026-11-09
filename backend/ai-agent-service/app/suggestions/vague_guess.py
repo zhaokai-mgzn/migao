@@ -33,7 +33,7 @@ B 端同事「不知道自己想要什么」其实是三个不同的问题，本
 
 ## 为什么原话取自工具 description（而不是手写一张清单）
 
-工具 description 按 `docs/wiki/agent-design-standard.md` 的规范必须回答
+工具 description 按 `https://github.com/zhaokai-mgzn/migao/wiki/agent-design-standard` 的规范必须回答
 「何时用 —— 用户说什么时触发」，`【触发】` 段里的引号短语**就是**该能力认得的用户说法。
 从那里取词有两个别处拿不到的性质：
   · **可追溯是构造出来的**，不是标注出来的 —— 短语属于哪个工具，就由哪个工具回答，
@@ -58,7 +58,7 @@ from loguru import logger
 #: → 前端 ChoiceCard），不新造一条下发链路。
 COMPONENT = "choice"
 
-#: 工具 description 的触发段（形态见 `docs/wiki/agent-design-standard.md` 的
+#: 工具 description 的触发段（形态见 `https://github.com/zhaokai-mgzn/migao/wiki/agent-design-standard` 的
 #: 「Tool description 必须回答何时用」）。
 _TRIGGER_RE = re.compile(r"【触发】(.*?)(?=【|\Z)", re.S)
 

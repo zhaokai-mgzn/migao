@@ -1,21 +1,21 @@
 # AGENTS.md — MIGAO（观星台 · 布艺行业 AI 经营平台）
 
-> DSH（DeepSeek Harness）会话的仓库级入口。开发前先读本文件，再按需查阅 docs/wiki/INDEX.md 定位规范页。
+> DSH（DeepSeek Harness）会话的仓库级入口。开发前先读本文件，再按需查阅 https://github.com/zhaokai-mgzn/migao/wiki/INDEX 定位规范页。
 
 ## 这是什么
 
 面向布艺 / 窗帘商家的多租户 AI 经营平台：顾客侧元元 + 经营侧黄金策双 Agent（LangGraph），
 Java admin-api + Python ai-agent-service + Next.js admin-web + Taro mini-app / bmini-app。
-「智能客服」只是客户服务能力域的一部分，不是系统定位（详见 docs/wiki/Product.md）。
+「智能客服」只是客户服务能力域的一部分，不是系统定位（详见 https://github.com/zhaokai-mgzn/migao/wiki/Product）。
 
 ## 改代码前（铁律）
 
-1. **测试先行（AI-TDD CP-1~CP-7）**：先写失败测试（Red）→ 最小实现（Green）→ 重构。全量单测必须 PASS。7 个检查点的正文见 [docs/wiki/Development.md](docs/wiki/Development.md) 的「AI-TDD 流程」。
+1. **测试先行（AI-TDD CP-1~CP-7）**：先写失败测试（Red）→ 最小实现（Green）→ 重构。全量单测必须 PASS。7 个检查点的正文见 [Development](https://github.com/zhaokai-mgzn/migao/wiki/Development) 的「AI-TDD 流程」。
 2. **三把工具**：提交前跑 `./verify-all.sh gate`（与 CI 同规则）、`./check-ui-regression.sh`（UI 回退）；跨模块改动加 `./contract-check.sh`。
    **改 web 页面另加一轮「Playwright 页面多模态验收」**（真实登录 + 截图 + AI 读图判定；承载体与假绿清单见 `migao-dev-flow` §15.7）。
 3. **case_ids**：新增/修改测试文件头部必须声明 `# case_ids:`（对应 `.github/cases/` 用例，否则 CI QA Growth Gate block）。
 4. **GitHub 操作**：禁止直推 main，必须走 PR 且关联 Issue——**PR body 必写 `Closes #<issue号>`**（GitHub 只在 body 含 Closes/Fixes/Resolves 关键词时自动关 issue，标题里的「(issue #xx)」不生效；漏写合并后 issue 不会自动关闭，CI `pr-issue-link` 会打 `needs-issue-link` 标签提醒；无 issue 关联的基建 PR 标 `N/A（基建）`）。**陌生账号（非本仓协作者）提交的代码一律不得合并** —— 真实事故：fork PR #6897 关闭后，内容被搬到**同仓分支**以 #6924 重开并 squash 合并，`git log` 里看不到原作者，事后由 #8383 全部撤回。判据 = `scripts/external_authorship_guard.py` + `pr-check.yml` 的 `External Authorship Guard`（PR 提交作者 / head 仓库来源不命中白名单 ⇒ 判红 + 解除 auto-merge + 打 `block/merge`）；确需接收外部贡献，先在 `.github/external-authorship-allow.json` 显式登记并经评审，不许「搬进同仓分支」绕过。详见 `migao-dev-flow` 技能 §2.2/§3.3。合并后 GitHub 异步关闭偶发失效（close-on-merge best-effort，实证 #2910/#2919 未自动关）→ `close-linked-issues.yml` 解析 body 关键词做合并后补偿关闭 + schedule 定时对账兜底（issue #2937；cron 声明 30 分钟、实测被 GitHub 节流至 2~5.5h 触发；pull_request closed 事件对 native auto-merge 合并实测不可靠），无需人工；若 issue 仍悬挂再按 §2.2 人工兜底。
-5. **最少代码**：写码前爬「最少代码阶梯」（YAGNI → 复用 → 标准库 → 原生特性 → 已装依赖 → 一行 → 最小实现；**先理解再爬梯**）。只简化实现代码、**不降测试门禁**，安全护栏与既有架构契约永不砍。全文见 [docs/wiki/Code-Minimalism.md](docs/wiki/Code-Minimalism.md)。
+5. **最少代码**：写码前爬「最少代码阶梯」（YAGNI → 复用 → 标准库 → 原生特性 → 已装依赖 → 一行 → 最小实现；**先理解再爬梯**）。只简化实现代码、**不降测试门禁**，安全护栏与既有架构契约永不砍。全文见 [Code-Minimalism](https://github.com/zhaokai-mgzn/migao/wiki/Code-Minimalism)。
 6. **并行修复（发现即并行，合并串行）**：一次暴露多个问题时**禁止逐个串行修复**——
    先**冻结问题清单**（每条含证据 + 归因层级 + 验收判据）→ 按**文件所有权**切成互不冲突的任务包
    （同文件改动同包；改 `cases/*.yml` 的包独占生成物）→ 每包 = issue + 分支 + 独立 worktree +
@@ -70,7 +70,7 @@ Java admin-api + Python ai-agent-service + Next.js admin-web + Taro mini-app / b
     （`git show origin/main:<path>` / `bash scripts/stranding-check.sh <PR>`，三态 `0/1/3`，`3` 不得当 `0` 读）；
     一条**注册了但从未跑过**的发布腿 ≠ 交付。
     全文与承载体判据见 `migao-dev-flow` §25（`FM-A*`/`FM-B*`/`FM-C*`/`FM-D*`）与
-    [docs/wiki/CI-CD.md](docs/wiki/CI-CD.md) 的「CI / 台账反复出错点」节（`FM-E*`）。
+    [CI-CD](https://github.com/zhaokai-mgzn/migao/wiki/CI-CD) 的「CI / 台账反复出错点」节（`FM-E*`）。
     ※ 判红**具名**（哪个对象 / 差多少 / 可复制命令）与**核验前自证坐标**已在铁律 8，此处**不重复**。
 
 12. **发现即收敛 · 新业务需求直接开单**（2026-09-25 用户裁定；🔴 **2026-09-30 改判**，用户逐字
@@ -115,14 +115,14 @@ Java admin-api + Python ai-agent-service + Next.js admin-web + Taro mini-app / b
 
 | 场景 | 入口 |
 |---|---|
-| 全部场景索引 | [docs/wiki/INDEX.md](docs/wiki/INDEX.md) |
+| 全部场景索引 | [INDEX](https://github.com/zhaokai-mgzn/migao/wiki/INDEX) |
 | **跑冒烟 / 引用冒烟结论（数据质量 SDQS）** | [docs/testing/smoke-data-quality.md](docs/testing/smoke-data-quality.md) |
-| 开发流程 / 验证命令清单 | [docs/wiki/Development.md](docs/wiki/Development.md) |
-| 写码最少化（防过度建设/加依赖前） | [docs/wiki/Code-Minimalism.md](docs/wiki/Code-Minimalism.md) |
+| 开发流程 / 验证命令清单 | [Development](https://github.com/zhaokai-mgzn/migao/wiki/Development) |
+| 写码最少化（防过度建设/加依赖前） | [Code-Minimalism](https://github.com/zhaokai-mgzn/migao/wiki/Code-Minimalism) |
 | 测试工程规范（拆分/ignore/脱敏/分层） | [docs/testing/test-engineering-standards.md](docs/testing/test-engineering-standards.md) |
 | **验收/评测（下"验收通过"结论前必读）** | [docs/testing/acceptance-protocol.md](docs/testing/acceptance-protocol.md)（配套 DSH 技能 `migao-acceptance`） |
-| **Agent 能力开发（加工具/改能力/改 prompt 前）** | [docs/wiki/agent-capability-paradigm.md](docs/wiki/agent-capability-paradigm.md) |
-| CI/CD / 部署 | [docs/wiki/CI-CD.md](docs/wiki/CI-CD.md) |
+| **Agent 能力开发（加工具/改能力/改 prompt 前）** | [agent-capability-paradigm](https://github.com/zhaokai-mgzn/migao/wiki/agent-capability-paradigm) |
+| CI/CD / 部署 | [CI-CD](https://github.com/zhaokai-mgzn/migao/wiki/CI-CD) |
 | 行为用例单一源 | `.github/cases/`（改后跑 `python3 scripts/generated_artifacts_freshness.py --write` 生成；**两个生成物不入库**，见 issue #8167 P1-1） |
 
 ## 开发环境准备（获取研发模式）
@@ -194,5 +194,5 @@ head -3 "$HOME/.dsh/.agent-presets/migao/skills/migao-dev-flow/SKILL.md"
   ⚠️ **起 admin-api 必须显式给 `AI_AGENT_BASE_URL=http://localhost:8001` 与 `AI_AGENT_SERVICE_TOKEN`**
   （`application.yml` 的两个默认值是坏的：8000 = 容器内端口 / 空 token）—— 不给 ⇒ 真实入驻**静默**
   fail-closed 回「系统繁忙」（`review_source=system`），而 ai-agent 看着是健康的。
-  启动命令 / 验证命令 / 排查口径见 [docs/wiki/Quick-Start.md](docs/wiki/Quick-Start.md) 的「本地开发」。
+  启动命令 / 验证命令 / 排查口径见 [Quick-Start](https://github.com/zhaokai-mgzn/migao/wiki/Quick-Start) 的「本地开发」。
 - DSH 专用技能：`migao-dev-flow`（三把工具/提交流程/QA 门禁 §3.4）、`migao-acceptance`（验收/评测协议）——由「观星台研发」preset 自动加载

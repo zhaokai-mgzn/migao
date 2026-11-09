@@ -255,7 +255,7 @@ def _compute_mibao_reachable_tool_names() -> FrozenSet[str]:
     **只读**工具」并入每个 skill（`settings_skill` 的 `default_persona=mibao` ⇒
     `validate_input` / `settings_manage` / `notification_manage` 对黄金策可达）。
     手搓「skill_names 的 tool_names 并集」会漏掉这条通道 —— 2026-10-19 实证：据此把三条
-    用例误判成「空断言」，方向整个反了（见 docs/wiki/agent-capability-paradigm.md §五）。
+    用例误判成「空断言」，方向整个反了（见 https://github.com/zhaokai-mgzn/migao/wiki/agent-capability-paradigm §五）。
 
     副作用：`create_skill_registry` 会把本轮工具集写进全局 `tool_scope`（A5 设计）——
     本函数是**只读探测**，必须原样还原，否则会把执行域留在最后一个 skill 上，

@@ -34,7 +34,7 @@ name: Worker H5 Tests
 # ⚠️ 防回退锁：`tests/unit_ci_workflows/test_worker_h5_ci_wiring.py`
 #    （删掉 `node --test` 步 / 去掉 paths / 加 `continue-on-error` ⇒ 必红）。
 
-# ── ⚠️ 与仓库既有 CI 纪律的关系（`docs/wiki/CI-CD.md`「变更门控」）──────────────
+# ── ⚠️ 与仓库既有 CI 纪律的关系（`https://github.com/zhaokai-mgzn/migao/wiki/CI-CD`「变更门控」）──────────────
 # 该纪律写着「**不要改回 workflow 级 `paths` 过滤** —— required check 会卡在 "Waiting"
 # 永不报告」，并给它留了一个例外：**信息性（非 required）check** 可以用 workflow 级
 # `paths`（原先例 = `agent-behavior-eval.yml` 只门控零 LLM 的映射 job，#3653/#4034；

@@ -41,7 +41,7 @@ from app.ontology.loader import (
 )
 
 # ── 独立真值来源（2026-09-04 核对）──
-# 核心对象：docs/wiki/CONTRACT-LEDGER.md §一
+# 核心对象：https://github.com/zhaokai-mgzn/migao/wiki/CONTRACT-LEDGER §一
 ORDER_STATUS_LEDGER = [
     "pending", "confirmed", "producing", "shipped", "completed", "cancelled",
 ]
@@ -259,7 +259,7 @@ class TestPropertySourcesMatchRealCarriers:
 # | 原动作（对象） | 承重的那一句 | 去向（新载体） |
 # |---|---|---|
 # | order.order_query | 查询订单（B 端 order_query / C 端 customer_order_query） | schema 的 intent_ownership.order_query.description（逐字保留同一句） |
-# | order.order_create | 创建订单（写工具确认闸，GB-03） | app/tools/order_create.py 的 requires_confirmation = True；GB-03 定义见 docs/wiki/gb47746-2026-compliance.md |
+# | order.order_create | 创建订单（写工具确认闸，GB-03） | app/tools/order_create.py 的 requires_confirmation = True；GB-03 定义见 https://github.com/zhaokai-mgzn/migao/wiki/gb47746-2026-compliance |
 # | order.order_update | preconditions：action ∈ {update_status, update_logistics, confirm_payment, cancel, refund} | app/tools/order_manage.py 的 VALID_ACTIONS（逐字同集合）+ 工具说明里的 PATCH /api/admin/agent/orders/{id} |
 # | product_sku.product_query | 查询商品/SKU（B 端 product / C 端 customer_product） | app/graph/skills/product_skill.py（name=product）与 app/graph/skills/customer_product_skill.py（name=customer_product） |
 # | product_sku.product_create | 创建商品（含图片建品属性求证） | app/tools/product_manage.py 的 action=create；「识别 → 求证」范式见 docs/design/agent-clarification-capability-research.md 的 G7 仲裁与 tests/test_prompt_snapshots.py |

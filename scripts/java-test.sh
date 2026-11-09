@@ -2,7 +2,7 @@
 # =============================================================================
 # java-test.sh — Java 定点判据的**唯一可信入口**（issue #6495）
 #
-# 病（2026-11-03 本机实跑，读数见 docs/wiki/Development.md 的「Java 定点判据」节）：
+# 病（2026-11-03 本机实跑，读数见 https://github.com/zhaokai-mgzn/migao/wiki/Development 的「Java 定点判据」节）：
 #   ① `target/surefire-reports/<fqn>.txt` 的 `Tests run:` 在 @Nested 类上**恒报 0**
 #      （实测：同一次运行 XML/console 15 条，该摘要写 0）⇒ 拿它判「空跑 / 通过」都会误诊，
 #      issue #6495 的原始读数就是这么来的；

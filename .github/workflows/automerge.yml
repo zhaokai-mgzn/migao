@@ -343,7 +343,7 @@ jobs:
   #    ⇒ 要判断 arm 没 arm，看 `gh pr view <PR> --json autoMergeRequest`（非空 = 已 arm），
   #      **不许看本腿颜色**；唯一兜底 = 同文件的 `detect-dangling-prs`（`schedule`，现取小时级
   #      `7 * * * *`；窗口 ≥60min，且**只报警不补 arm**）。
-  #    口径全文（单一来源）= docs/wiki/CI-CD.md 的「口径：几条绿色腿不是它名字读起来的意思」§①。
+  #    口径全文（单一来源）= https://github.com/zhaokai-mgzn/migao/wiki/CI-CD 的「口径：几条绿色腿不是它名字读起来的意思」§①。
   enable-auto-merge-bot-safe:
     name: Enable auto-merge (bot, safe classes only)
     runs-on: ubuntu-latest

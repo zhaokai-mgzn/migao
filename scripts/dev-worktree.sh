@@ -39,7 +39,7 @@
 #   ③ 清理半径：`rm` / `prune` 会命中 **worktree 里的软链与工作区目录** ⇒ 清理前先 `readlink` 活锚目标并
 #      排除它（issue #3956 实证：软链目标被删 ⇒ DSH 静默加载不到研发模式）。
 #   另：机械安全网（别处，互补）—— #3843 的统一审计 `drift_audit --check` 的版本单调性守卫（全库/定时对账）。
-#   详见 docs/wiki/DEV-FLOW.md「预设落后地雷」节（落地单 #3859，事实单 #3851）。
+#   详见 https://github.com/zhaokai-mgzn/migao/wiki/DEV-FLOW「预设落后地雷」节（落地单 #3859，事实单 #3851）。
 #
 # 地雷 B：内容全对，但**到不了加载点**（v1.10，2026-09-17 新增，issue #4026）：
 #   `preset-guard` 原先只判「仓库里的 `.agent-presets/**` 有没有版本下降」——**查不出活锚落后**。
@@ -63,7 +63,7 @@
 #   ② 删除 worktree 的动作**不得**再给它一次机会 —— 本脚本 `rm` 现在**先解链再删**（见下）。
 #   两条口径（**同源**，别处不另写一份）：
 #     · 依赖一律在本工作区内安装（npm ci）；禁止把 node_modules 软链到主工作区或其他工作区
-#       （正确姿势见 docs/wiki/Development.md 的「worktree 依赖准备」节，与 `add` 的输出同源）；
+#       （正确姿势见 https://github.com/zhaokai-mgzn/migao/wiki/Development 的「worktree 依赖准备」节，与 `add` 的输出同源）；
 #     · `rm` 的**顺序即安全顺序**：`unlink_symlinks_before_remove` 必须**先于** `git worktree remove`，
 #       否则删除动作就可能穿过软链打到仓库外。判据 =
 #       tests/unit_ci_workflows/test_dev_worktree_symlink_safety.py（控制流判据 + PATH 垫片见证
@@ -651,7 +651,7 @@ cmd_add() {
   echo "   🔴 依赖一律在本工作区内安装（npm ci）；禁止把 node_modules 软链到主工作区或其他工作区"
   echo "      软链（${path}/tests/node_modules → 主仓库同名目录）会在「删/重建 node_modules」的动作下**打穿目标**："
   echo "      2026-10-01 实测一次 worktree 内的 npm ci 就把主工作区 tests/node_modules 清成空目录（issue #5930）。"
-  echo "      正确姿势见 docs/wiki/Development.md 的「worktree 依赖准备」节（与本提示**同源**，不另写一份）。"
+  echo "      正确姿势见 https://github.com/zhaokai-mgzn/migao/wiki/Development 的「worktree 依赖准备」节（与本提示**同源**，不另写一份）。"
   # 🔴 S4（issue #6020）：本仓**不再承载** `.agent-presets/**` ⇒ 这里既没有「预设快照」要对齐，
   #   也没有「快照挡住 rebase」要处置。预设住在**预设仓**，业务仓只在**加载点**消费它
   #   （活锚软链 → 专职只读镜像 `$HOME/migao-dev-preset-anchor`）；上面那一步已把镜像带到预设仓 main。
@@ -710,7 +710,7 @@ unlink_symlinks_before_remove() {
   echo "✅ 已解链 ${n} 个符号链接（指向仓库外 ${outside} 个 / 指向本仓库工作区 ${inrepo} 个）—— 只删链接本身，未触碰任何目标。"
   if [ "$((outside + inrepo))" -gt 0 ]; then
     echo "   🔴 依赖一律在本工作区内安装（npm ci）；禁止把 node_modules 软链到主工作区或其他工作区"
-    echo "      正确姿势见 docs/wiki/Development.md 的「worktree 依赖准备」节（与本提示同源）。"
+    echo "      正确姿势见 https://github.com/zhaokai-mgzn/migao/wiki/Development 的「worktree 依赖准备」节（与本提示同源）。"
   fi
   return 0
 }

@@ -24,10 +24,15 @@ Java 侧的实现键集另由 `ProcessingSetReadServiceTest.POSITION_KEYS` 钉�
 from __future__ import annotations
 
 import re
+import pytest
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
 LEDGER = REPO / "docs/wiki/CONTRACT-LEDGER.md"
+pytestmark = pytest.mark.skipif(
+    not LEDGER.is_file(),
+    reason="docs/wiki/CONTRACT-LEDGER.md 已迁 GitHub wiki ⇒ 契约台账在仓库内无载体，本判据停用（未跑 ≠ 通过）",
+)
 CASES_DIR = REPO / ".github/cases"
 
 #: `set_overview` 的逐字形状（只吃 `positions[]` 那一层；内层 `operations[]` 另有

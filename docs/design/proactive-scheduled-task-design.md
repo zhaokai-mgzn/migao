@@ -205,7 +205,7 @@ actions = `create` / `list` / `cancel`）。
 
 > **B 端可达的工具并集里不得有白名单外的 `read_only != True` 工具**
 
-而 `docs/wiki/agent-write-boundary.md` 的 A 档白名单 `A_TIER_REVERSIBLE_WRITES` **目前只有**
+而 `https://github.com/zhaokai-mgzn/migao/wiki/agent-write-boundary` 的 A 档白名单 `A_TIER_REVERSIBLE_WRITES` **目前只有**
 `product_update` / `sku_update`，且判据硬性要求它们「**绑在且仅绑在** `product` skill」+ 带
 `requires_confirmation`。⇒ 新工具会**当场判红**。
 
@@ -224,7 +224,7 @@ actions = `create` / `list` / `cancel`）。
 
 扩白名单 = **权限边界放宽** ⇒ 命中铁律 12(c)① 与 §30.1 的「只把五类交人工」中的
 **③ 权限 / 安全边界放宽**。⇒ **AI 不自行改判据**，必须人工裁定 + 留裁定留痕
-（`docs/wiki/agent-write-boundary.md` §五「裁定记录」是留痕面）。
+（`https://github.com/zhaokai-mgzn/migao/wiki/agent-write-boundary` §五「裁定记录」是留痕面）。
 
 ### 7.5 裁定请求（带选项与代价，按铁律 12 要求）
 
@@ -250,7 +250,7 @@ actions = `create` / `list` / `cancel`）。
 🔴 **护栏（本设计硬约束）**：到点的动作**只读 + 通知**。任何写操作（下单 / 改价 / 发货 / 退款）
 **必须回到会话里等人点确认**。
 
-**理由**：与既有「门禁只证明确认过，不证明看过什么」（`docs/wiki/agent-write-boundary.md`
+**理由**：与既有「门禁只证明确认过，不证明看过什么」（`https://github.com/zhaokai-mgzn/migao/wiki/agent-write-boundary`
 的涉钱面确认形态口径）同族 —— 无人监督的定时执行**结构上无法取得确认**。
 
 **L2 的重启条件（本设计有意不做，登记在此防「被读成已解决」）**：需先有可复核的授权模型
@@ -311,7 +311,7 @@ actions = `create` / `list` / `cancel`）。
 | 通知只读工具 | `backend/ai-agent-service/app/tools/notification_manage.py`（`VALID_ACTIONS`） |
 | 通知读端点 | `backend/admin-api/src/main/java/com/migao/admin/controller/NotificationController.java` |
 | 通知表 | `backend/admin-api/src/main/resources/db/init/schema.sql`（`notifications` / `notification_rules` / `notification_templates` / `daily_briefings`） |
-| 写边界（A 档白名单 + 裁定记录） | `docs/wiki/agent-write-boundary.md` |
+| 写边界（A 档白名单 + 裁定记录） | `https://github.com/zhaokai-mgzn/migao/wiki/agent-write-boundary` |
 | B 端只读判据 | `tests/unit_ci_workflows/test_mibao_b_end_readonly.py` |
 | 能力地图（族 1 / 负面清单） | `docs/agent-feature-design.md` |
 | B 端通知面 | `frontend/admin-web/src/components/layout/NotificationBell.tsx`、`frontend/admin-web/src/app/(dashboard)/notifications/page.tsx` |

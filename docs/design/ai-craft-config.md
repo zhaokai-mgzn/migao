@@ -800,7 +800,7 @@ python3 .github/llm_sink_check.py --issue <红例 issue 号>   # 0 = 已下沉 /
 | N6 | **不新增 skill** | 两个只读工具绑进既有 `order_skill`（`ORDER_TOOLS`）；新建 skill = 多一个入口、多一份 prompt 维护面 |
 | N7 | **不给规则表补版本账之外的"配置历史"** | §5.5 的版本账是**回滚前置条件**，不是"配置历史"功能；不做 diff 查看器 / 不做回滚 UI |
 | N8 | **不改 `.github/workflows/**` 与 `.agent-presets/**`** | 本单纪律红线（且本机 token 无 `workflow` scope） |
-| N9 | **不加 `docs/wiki/INDEX.md` 条目** | #4620 §6 N9 已裁定：该索引 `design/` 条目数 = **0** ⇒ 加行是新造约定 |
+| N9 | **不加 `https://github.com/zhaokai-mgzn/migao/wiki/INDEX` 条目** | #4620 §6 N9 已裁定：该索引 `design/` 条目数 = **0** ⇒ 加行是新造约定 |
 | N10 | **不改 `production_route_rules` 的任何一行**（阶段 1/2/3） | 阶段 1 验收判据：「**零迁移**：`production_route_rules` 一行未动」 |
 
 ---

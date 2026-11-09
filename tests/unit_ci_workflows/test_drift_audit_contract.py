@@ -531,7 +531,7 @@ def test_stale_and_bare_line_refs_red(tmp_path):
     越界 = 可证伪的失效引用（`#3787` 第 5 条的形态）；裸行号 = dev-flow §18.1 明令禁止的写法。
     """
     repo = mk_repo(tmp_path, {
-        "docs/wiki/note.md": (
+        "docs/testing/note.md": (
             f"引用甲：`{_PY}:9999`（越界）\n"
             f"引用乙：`{_NOWHERE}:3`（悬空）\n"
             f"引用丙：`{_PY}:2`（行内、无 @sha 限定）\n"
@@ -555,7 +555,7 @@ def test_stale_and_bare_line_refs_red(tmp_path):
 def test_ref_freshness_allows_sha_qualified(tmp_path):
     """修后绿：`第 N 行` + `@<sha>` 是契约允许的写法。"""
     repo = mk_repo(tmp_path, {
-        "docs/wiki/note.md": f"引用：`{_PY}` **第 2 行**，`@d0724892`。\n",
+        "docs/testing/note.md": f"引用：`{_PY}` **第 2 行**，`@d0724892`。\n",
         "order_query.py": "l1\nl2\n",
     })
     rc, out, rep = run(repo, "--check", "--only", "ref-freshness", "--stale-scope", "none")
@@ -1160,7 +1160,7 @@ def test_new_drift_out_of_pr_scope_warns_not_blocks(tmp_path):
     rc2, out2, _ = run(repo, "--check", "--only", "ref-freshness", "--strict-stale")
     assert rc2 == 1, out2
     # 面内：同一个漂移若出在本 PR 改动的文件里 ⇒ 必红
-    _write(repo, COPY_REL, COPY_TMPL.format(version="1.3") + f"\n引用：`{_NOWHERE}:4`\n")
+    _write(repo, "docs/testing/other.md", f"引用：`{_NOWHERE}:3`\n引用：`{_NOWHERE}:4`\n")
     rc3, out3, rep3 = run(repo, "--check", "--only", "ref-freshness")
     assert rc3 == 1, out3
     assert rep3["summary"]["new_drift"] >= 1, out3
@@ -1245,7 +1245,8 @@ def test_dropped_still_violating_entry_blocks(tmp_path):
     _git(repo, "add", "-A")
     _git(repo, "commit", "-q", "-m", "把基线提交进 base（模拟 origin/main 上已有一份）")
     line = f"引用：`{_NOWHERE}:3`\n"          # 新漂移（悬空引用）⇒ 基线会重生成出这条
-    _write(repo, COPY_REL, COPY_TMPL.format(version="1.28") + "\n" + line)
+    _write(repo, COPY_REL, COPY_TMPL.format(version="1.28"))
+    _write(repo, "docs/testing/note.md", line)
     _git(repo, "add", "-A")
     _git(repo, "commit", "-q", "-m", "PR 改动：改对版本戳 + 引入一处新漂移")
     run(repo, "--check", *only, "--regen-baseline", "--reason", "把新漂移记进基线")

@@ -986,7 +986,7 @@ def get_added_files(base="origin/main", strict=False):
 
 
 def _load_blast_radius():
-    """加载**同一份**射程数据（`docs/wiki/Change-Blast-Radius.md` 的人读镜像源）。
+    """加载**同一份**射程数据（`https://github.com/zhaokai-mgzn/migao/wiki/Change-Blast-Radius` 的人读镜像源）。
 
     为什么放在 `.github/scripts/` 而不是本文件里：提示与文档必须**同源**（一份数据、两处消费），
     否则文档说的面与提示说的面会各漂各的（而漂移的两处都不会红）。
@@ -1156,7 +1156,7 @@ def render_pr_comment(payload):
             f"> ❌ **合并被阻塞**。请先按上面 {b} 条清单补齐缺失的测试。",
             "> 仅当**确有正当理由**时才走豁免（`.github/qa-exemptions.yml`）"
             "—— 本仓口径：**豁免面只许缩短**。",
-            "> 详见 [docs/wiki/Testing.md](docs/wiki/Testing.md)",
+            "> 详见 [https://github.com/zhaokai-mgzn/migao/wiki/Testing](https://github.com/zhaokai-mgzn/migao/wiki/Testing)",
         ]
     elif w > 0:
         icon, verdict = "⚠️", "WARNINGS"
@@ -1398,7 +1398,7 @@ def main(argv=None):
     # 哪些 meta 面在射程内。本段把「射程 → 该跑的具名判据」在**提交时**打印出来。
     # 🔴 硬约束：**不许改变 blocker_count 语义**（新提示是独立段 + JSON 新字段 `blast_radius`，
     #    与 blockers/warnings 零交集）。数据源 = `.github/scripts/blast_radius.py`（与
-    #    `docs/wiki/Change-Blast-Radius.md` 同源；行数/命令由 test_blast_radius_registry.py 双向核）。
+    #    `https://github.com/zhaokai-mgzn/migao/wiki/Change-Blast-Radius` 同源；行数/命令由 test_blast_radius_registry.py 双向核）。
     hits = blast_radius_hits(files, args.repo_root)
     hint = _render_blast_radius_hint(hits, args.repo_root)
 

@@ -122,7 +122,7 @@ jobs:
     # mechanism_liveness_problems **逐字要求它不许长回 PR 面**）⇒ 原先这里的
     # `if: github.event_name != 'pull_request'` 是**恒真死条件**，会让人误以为 PR 上会跑到本腿。
     # 2026-10-03（CI 审计 issue #6144 的 P2 ④）**删掉该 `if:`**；保留本条注释说明它是历史残留。
-    # 口径（单一来源）= docs/wiki/CI-CD.md 的「口径：几条绿色腿不是它名字读起来的意思」§④。
+    # 口径（单一来源）= https://github.com/zhaokai-mgzn/migao/wiki/CI-CD 的「口径：几条绿色腿不是它名字读起来的意思」§④。
     steps:
       - uses: actions/checkout@v7
         with:

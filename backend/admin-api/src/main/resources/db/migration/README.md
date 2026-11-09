@@ -80,5 +80,5 @@ min(本目录的版本号) > max(../migration-archive/ 的版本号)
   `../init/schema.sql` 这条基线路径；
 - **不要**为了让本目录「看起来很干净」把纯数据迁移也归档掉（见上面的 V123 登记）。
 
-规范正文：`docs/wiki/Database.md`。判据面（历史链 ∪ 活目录两个载体）的单一事实源：
+规范正文：`https://github.com/zhaokai-mgzn/migao/wiki/Database`。判据面（历史链 ∪ 活目录两个载体）的单一事实源：
 `tests/unit_ci_workflows/_migration_paths.py`。

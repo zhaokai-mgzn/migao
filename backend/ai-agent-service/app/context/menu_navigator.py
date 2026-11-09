@@ -727,7 +727,7 @@ _ROUTE_FEATURES: Dict[str, Tuple[str, ...]] = _route_feature_ids()
 #: 为什么本模块**不 import** `page_registry.normalize_route`：那样会把 `app.tools.base`
 #: （pydantic + 环境变量）拉进**只跑标准库**的静态判据环境 —— 实测 `tests/unit_ci_workflows/**`
 #: 的解释器里直接 `ModuleNotFoundError: pydantic`，而 CI 只装 `pytest pyyaml`（见
-#: `docs/wiki/Change-Blast-Radius.md` 陷阱 1）。⇒ 语料一致性由判据核（两侧同语料判决必须一致），
+#: `https://github.com/zhaokai-mgzn/migao/wiki/Change-Blast-Radius` 陷阱 1）。⇒ 语料一致性由判据核（两侧同语料判决必须一致），
 #: **不是靠共享 import**。
 _ROUTE_RE = re.compile(r"^/[A-Za-z0-9/_.\-]*$")
 _ROUTE_MAX_LEN = 200
