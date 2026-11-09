@@ -248,20 +248,17 @@ export default function ProcessingOrderBlock({
   /** 失败提示：本块唯一的失败面 = 「复制全部」拿不到剪贴板 */
   const errorBlock = <p className="text-xs text-red-500">{error}</p>
 
+  // issue #8838：「作业单」标题由订单详情页的**区域卡头**承载（同屏只出现一次），
+  // 本块不再自带同名 h3；「复制全部」是作业单的局部操作，仍留在这里（贴着作业单信息）。
+  // 「复制全部」是**文本通道**（作业单文本发给加工方 / 贴进 Excel），不是打印通道：
+  // issue #7544 只把**打印**收口到页面级唯一入口，区块内不再有自己的打印按钮。
   return (
-    <div className="mt-6">
-
-      <div className="flex items-center justify-between po-no-print">
-        <h3 className="text-base font-semibold text-neutral-900">作业单</h3>
-        {/* 「复制全部」留在这里：它是**文本通道**（作业单文本发给加工方 / 贴进 Excel），
-            不是打印通道。issue #7544 只把**打印**收口到页面级唯一入口（预览层里选「加工单」），
-            区块内不再有自己的打印按钮 —— 同页两个打印入口正是这张单里要消掉的形态。 */}
-        {po && (
-          <div className="flex gap-2">
-            <Button variant="secondary" size="sm" onClick={handleCopy}>复制全部</Button>
-          </div>
-        )}
-      </div>
+    <div>
+      {po && (
+        <div className="flex justify-end po-no-print">
+          <Button variant="secondary" size="sm" onClick={handleCopy}>复制全部</Button>
+        </div>
+      )}
       {error && <div className="mt-2">{errorBlock}</div>}
 
       {loading && <div className="py-4 text-sm text-neutral-400">加载中…</div>}

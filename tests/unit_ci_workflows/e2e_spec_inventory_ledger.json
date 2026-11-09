@@ -5,6 +5,7 @@
   "_why_this_shape": "「注册了但从未跑过」是一类缺陷：文件在树里、看着像有判据，实际没有任何东西会跑它。仓库里唯一的兜底腿 `nightly-verification.yml` 的 `schedule` 已被注释掉（只剩 workflow_dispatch，注释写明『待失败根因排查 + 本地验证提速落地后再恢复』；其最近 4 次运行 2026-09-14/15 **全部 failure**）⇒ 这 39 个 spec **在 CI 里哪儿都不跑**。",
   "_reason": "载体缺失：PR 侧 `pr-check.yml` 的 E2E 腿跑的是**显式 6 条列表**；兜底腿停用 ⇒ 其余 spec 无 runner。重启条件 = 兜底腿恢复（`nightly-verification.yml` 的 schedule 复启且根因修完），届时本台账应**清空到 0 条**；或逐条被并进 PR 侧显式列表。",
   "_carrier_for_6717_spec": "`e2e/specs/orders/key-columns-reachability.spec.ts`（issue #6717 新增）的**每 PR**载体 = 单元几何判据 `tests/unit/orders-key-column-geometry-guard.test.tsx`（该 spec 的浏览器级运行同样等兜底腿恢复）。",
+  "_carrier_for_8838_spec": "`e2e/specs/orders/order-detail-regions.spec.ts`（issue #8838 新增）的**每 PR**载体 = 页面判据 `frontend/admin-web/tests/unit/pages/order-detail.test.tsx`（三区 / 操作层级 DOM 判据）；浏览器级判据（真实几何 y 序 / 横向溢出）本机已按 fixture 模式实跑，PR CI 未逐字引用，等兜底腿恢复或并入显式列表。",
   "specs": [
     "e2e/specs/admin/employees.spec.ts",
     "e2e/specs/admin/roles.spec.ts",
@@ -25,6 +26,7 @@
     "e2e/specs/customers/customer-list.spec.ts",
     "e2e/specs/orders/key-columns-reachability.spec.ts",
     "e2e/specs/orders/order-create.spec.ts",
+    "e2e/specs/orders/order-detail-regions.spec.ts",
     "e2e/specs/orders/order-detail.spec.ts",
     "e2e/specs/orders/order-lifecycle.spec.ts",
     "e2e/specs/orders/order-list.spec.ts",
