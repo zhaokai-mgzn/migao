@@ -5,7 +5,7 @@ import { Zap } from 'lucide-react'
 import { toast } from 'sonner'
 import { toastRequestError } from '@/lib/api-error'
 import { orderApi } from '@/lib/api'
-import { Badge, Button, Card } from '@/components/ui'
+import { Badge, Button } from '@/components/ui'
 import { cn } from '@/lib/utils'
 import { isUrgentFlag, urgentBadgeText } from '@/lib/order-urgency'
 import type { Order } from '@/types'
@@ -68,10 +68,11 @@ export default function OrderUrgencyPanel({
     }
   }
 
+  // issue #8838：本控件已并入「基础信息」子区 ⇒ 不再自带 Card 外壳（会变成卡内套卡），
+  // 标题仍是控件自己的「加急 / 到货日」—— 操作贴在它要改的那几行旁边。
   return (
-    <Card className="mb-5">
-      <div className="p-6">
-        <div className="flex items-center justify-between mb-4">
+    <div data-testid="order-urgency-panel">
+      <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-1.5 text-sm font-medium text-neutral-900">
             <Zap className="w-4 h-4 text-neutral-500" />
             加急 / 到货日
@@ -160,6 +161,5 @@ export default function OrderUrgencyPanel({
           </span>
         </div>
       </div>
-    </Card>
   )
 }

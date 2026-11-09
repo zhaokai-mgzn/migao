@@ -62,29 +62,39 @@ import {
 // 修后的口径（**不靠字号造层级**：字号阶梯只有 12/14 两档，且 12px 是文字下限，
 // 叶子项不能为了「显小」再降一档）：
 //
-//   ① **组标题**（含「常用」）= 14px/600 亮色 **纯文字标签**（不再挂图标 —— 组图标与组内项
-//      的领域图标本就重复，去掉后「标签 ↔ 条目」靠**缩进**一眼分开；折叠态仍用组图标做锚点）；
+//   ① **组标题**（含「常用」）= 14px/600 亮色 + （2026-11-07 起）名称前 **18px 组图标**
+//      —— 一级菜单统一带图标；折叠态仍用同一枚组图标做锚点。2026-10-28 那条「组标题不挂图标」
+//      的裁定已被本轮改判（当时去图标的理由是「组图标与组内项的领域图标重复」，而叶子图标本轮
+//      已去掉 ⇒ 该理由不再成立）；
 //   ② **一级项**（三个席位）= 14px/600 最亮 + 18px 图标 + **36px 行**（比组标题更高 ⇒
 //      「可点的目的地」比「分类标签」重）；右端**不挂 chevron**（直达项没有展开语义）；
-//   ③ **叶子项** = 14px/400 次级亮度 + 16px 图标（原 20px 偏重）+ **32px 行**，左内距
-//      `pl-7`（28px）⇒ 三级缩进锚点：10（标签）/ 38（一级项）/ 56（叶子）。
+//   ③ **叶子项**（二级菜单）= 14px/400 次级亮度 + **32px 行**，展开态**不挂图标**、左内距
+//      `pl-[2.375rem]`（38px）⇒ 名称文字与一级菜单名称**同一左边界**（2026-11-07 用户追加裁定：
+//      「二级菜单名称缩进太大，把二级菜单名称和一级菜单名称对齐」；层级仍靠图标/字重区分）。
+//      折叠态保留 16px 图标 —— 折叠态没有文字，图标是该行**唯一**可见标识与可点区域依据。
 //
-// 判据（会红）：`tests/unit/components/Sidebar.test.tsx` 的「视觉层次」用例
-// —— 组标题/一级项 `text-sm`（不再是 `text-xs`）+ 叶子项仍 `text-sm`；
-// 一级项行高 `h-9` > 叶子 `h-8`；菜单标题面里只有序号徽标用 `text-xs`。
+// 判据（会红）：`tests/unit/components/Sidebar.test.tsx` 的「视觉层次 / 图标层级」用例
+// —— 组标题/一级项 `text-sm`（不再是 `text-xs`）+ 组标题/一级项 18px 图标 + 叶子项仍 `text-sm`
+// 且展开态无图标；一级项行高 `h-9` > 叶子 `h-8`；菜单标题面里只有序号徽标用 `text-xs`。
 // ══════════════════════════════════════════════════════════════════════════════
 
-/** 组标题 / 「常用」标签行（**无图标**；32px） */
-const SECTION_ROW = 'flex h-8 w-full items-center gap-2 rounded-md px-2.5 text-left'
+/**
+ * 组标题 / 「常用」标签行（32px）。
+ * `gap-2.5` 与一级项同值 ⇒ 组图标（18px）后面的名称文字与直达一级项**对齐**在同一缩进（38px）。
+ */
+const SECTION_ROW = 'flex h-8 w-full items-center gap-2.5 rounded-md px-2.5 text-left'
 const SECTION_LABEL = 'flex-1 text-sm font-semibold transition-colors'
 /** 计数徽标（组内项数 / 「常用」n/6）：**菜单标题面**里唯一的 `text-xs`（搜索框那枚属控件文案，不在菜单行） */
 const SECTION_COUNT = 'text-xs leading-none text-neutral-600'
 /** 一级项行（36px，比组标题更高 ⇒ 目的地重于标签） */
 const TOP_ROW = 'group/item relative flex h-9 items-center gap-2.5 rounded-md px-2.5 transition-colors'
 const TOP_LABEL = 'flex-1 truncate text-sm font-semibold'
-/** 叶子项行（32px；`pl-7` = 三级缩进里的最内层） */
+/**
+ * 叶子项行（32px）。`pl-[2.375rem]` = 38px = `px-2.5` + 18px 图标 + `gap-2.5` ⇒
+ * 展开态名称与一级菜单名称**同一左边界**（2026-11-07 用户追加裁定）；折叠态由 `px-2` 覆盖为图标居中。
+ */
 const LEAF_ROW =
-  'group/item relative flex h-8 items-center gap-2 rounded-md pl-7 pr-2.5 transition-colors'
+  'group/item relative flex h-8 items-center gap-2 rounded-md pl-[2.375rem] pr-2.5 transition-colors'
 
 interface SidebarProps {
   collapsed: boolean
@@ -219,7 +229,8 @@ export default function Sidebar({
     )
   }
 
-  // ── 叶子项（组内项 / 「常用」区）── 三级里最内层：32px 行、16px 图标、`pl-7` 缩进
+  // ── 叶子项（组内项 / 「常用」区）── 32px 行、展开态**无图标**、名称与一级菜单名称同一左边界
+  //    （`pl-[2.375rem]` = 38px）；折叠态保留 16px 图标（没有文字时图标是该行唯一标识）。
   const renderItem = (item: MenuItem, opts: { alwaysShowPin: boolean }) => {
     const Icon = resolveMenuIcon(item.icon)
     const active = isActive(item.path)
@@ -246,9 +257,13 @@ export default function Sidebar({
           {active && (
             <span className="absolute left-0 top-1/2 h-4 w-0.5 -translate-y-1/2 rounded-full bg-white/90" />
           )}
-          <Icon
-            className={cn('h-4 w-4 flex-shrink-0', active ? 'text-white' : 'text-neutral-500')}
-          />
+          {/* 2026-11-07 用户裁定「二级菜单前面的图标统一去掉」：展开态不挂领域图标；
+              折叠态没有文字 ⇒ 图标是唯一可见标识，必须保留。 */}
+          {collapsed && (
+            <Icon
+              className={cn('h-4 w-4 flex-shrink-0', active ? 'text-white' : 'text-neutral-500')}
+            />
+          )}
           {!collapsed && <span className="flex-1 truncate text-sm">{item.name}</span>}
         </Link>
         {!collapsed && renderPinButton(item, { alwaysShow: opts.alwaysShowPin, active })}
@@ -301,7 +316,7 @@ export default function Sidebar({
       <div key={group.key} data-group-key={group.key} className="mb-3">
         {collapsed ? (
           // 折叠态：分组信息**不再丢失** —— 组图标锚点（title = 组名）+ 细分割线
-          // 🔴 组图标**只在这里**渲染（展开态是纯文字标签，见 SECTION_ROW 的注释）
+          // （展开态在组标题名称前渲染同一枚组图标，2026-11-07 起 —— 见下方 button）
           <div
             data-testid={`sidebar-group-anchor-${group.key}`}
             title={group.name}
@@ -318,6 +333,15 @@ export default function Sidebar({
             onClick={() => toggleGroup(group.key)}
             className={cn(SECTION_ROW, 'group mb-0.5 cursor-pointer hover:bg-white/5')}
           >
+            {/* 2026-11-07 用户裁定：一级菜单（分组标题）名称前统一挂**组图标**（与直达一级项同 18px）。
+                颜色略暗于标题文字：让「分类标签」仍弱于「可点的目的地」，但图标本身清晰可辨。 */}
+            <GroupIcon
+              className={cn(
+                'h-[18px] w-[18px] flex-shrink-0',
+                isActiveGroup ? 'text-neutral-300' : 'text-neutral-400',
+                'group-hover:text-neutral-200',
+              )}
+            />
             <span
               className={cn(
                 SECTION_LABEL,
@@ -487,6 +511,9 @@ export default function Sidebar({
                 data-testid={`sidebar-group-label-${PINNED_GROUP_KEY}`}
                 className={cn(SECTION_ROW, 'mb-0.5')}
               >
+                {/* 2026-11-07：一级/分组标题统一带图标后，「常用」是唯一没有图标的标签行
+                    （展开态与折叠态锚点同为 Pin，视觉对齐 38px 名称缩进）。 */}
+                <Pin className="h-[18px] w-[18px] flex-shrink-0 text-neutral-400" />
                 <span className={cn(SECTION_LABEL, 'text-neutral-200')}>{favorites.name}</span>
                 {/* `n/上限`：满额时用户一眼知道为什么再钉不进去（`togglePinned` 是拒绝、不顶替） */}
                 <span data-testid="sidebar-pinned-count" className={SECTION_COUNT}>

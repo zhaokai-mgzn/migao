@@ -15,8 +15,10 @@ import AccessDenied from '@/components/common/AccessDenied'
 // 🔴 纸面 `ProcessingDoc` 自 issue #7274 起**不印**工序（用户裁定「工序细节不用在打印单上」）。
 import { orderApi, productionApi } from '@/lib/api'
 import { useRouteId } from '@/lib/use-route-id'
-import { Button, Loading, Modal } from '@/components/ui'
+import { Button, Loading, Modal, PageHeader, StatusBadge } from '@/components/ui'
 import ListLoadError from '@/components/common/ListLoadError'
+// 订单状态 chip 的单一真值（issue #8838：可操作区域卡头显示当前状态，与列表页同一口径）
+import { chipToneClasses, orderStatusChipFor } from '@/lib/status-chip'
 import { OrderProgressSteps, CloseOrderModal, LogisticsForm, RefundOrderModal, ProcessingOrderBlock, QuotationDoc, SalesDoc, ProcessingDoc, OrderUrgencyPanel, EditOrderContentModal, PrintDocPreview } from '@/components/orders'
 import { PRINT_TARGET_SPECS, printTargetTitle, usePrintBatch, usePrintDoc, type PrintTarget } from '@/lib/print-doc'
 // 洗水唛（issue #7902 从「加工单生产明细」页搬回销售订单页）：**同一份**数据映射与**同一份**纸面
@@ -38,7 +40,7 @@ import { WORK_ORDER_NEEDED_COPY, orderKindOf, workOrderKindOf } from '@/lib/proc
 // 直连才能让**真组件**参与渲染（否则「等式可见」这类判据测的是替身 = 空断言）。
 import OrderFeeBreakdown from '@/components/orders/OrderFeeBreakdown'
 import type { Order, OrderItem, LogisticsFormData, ProcessingOrder, ProductionPosition } from '@/types'
-import { normalizeOrderStatus, displayOrderStatus } from '@/types'
+import { normalizeOrderStatus } from '@/types'
 import { craftRowsWithoutDoorWidth } from '@/lib/order-item-sku'
 // 整卷售卖的分配文案（issue #5846）：**同一份**渲染实现（含负差额告警）——
 // 该函数/组件此前只在明细组件里、**没有任何页面渲染它**（功能是没接线的死代码）。
@@ -435,6 +437,12 @@ export default function OrderDetailPage() {
 
   const productGroups = useMemo(() => groupItems(order?.items), [order?.items])
 
+  /**
+   * 编辑物流是**收货信息**的局部操作（issue #8838）：可见条件与改前同一口径（只有已发货可改），
+   * 位置从顶部整体操作区挪到「收货信息」标题旁 —— 局部操作贴对应信息。
+   */
+  const canEditLogistics = normalizeOrderStatus(order?.status as string) === 'shipped'
+
   // issue #7276：无页面码 ⇒ **直接拒绝态**（服务端同码 403 是第二道；这条只是让商家一眼看懂）
   if (!canViewOrderDetail) {
     return <AccessDenied />
@@ -490,21 +498,10 @@ export default function OrderDetailPage() {
         <span className="text-neutral-900">订单详情</span>
       </div>
 
-      {/* 页面标题 + **本页唯一的打印入口**（issue #7544）。
-          🔴 入口放在页面级、**不在任何状态分支里**：打印与订单状态无关 —— 已关闭 / 退款中的单子
-          同样要能补打报价单或销售单（改前它由 `PRINT_TARGETS_BY_STATUS` 按状态给出，
-          这两个状态一个按钮都没有）。要打哪一份由预览层里的单据标签选。 */}
-      <div className="flex items-center justify-between gap-3 mb-5">
-        <h1 className="text-xl font-semibold text-neutral-900">订单详情</h1>
-        <Button
-          variant="secondary"
-          icon={<Printer className="w-4 h-4" />}
-          data-testid="order-print-entry"
-          onClick={() => openPreview(DEFAULT_ORDER_PRINT_DOC)}
-        >
-          打印
-        </Button>
-      </div>
+      {/* 页面标题统一走 PageHeader 原语（issue #7065 迁移；本页不再手写 h1）。
+          🔴 打印入口**不在**标题行：它属于整体操作，落在下方「订单操作」区卡头 ——
+          与订单状态无关（issue #7544），任何状态都能补打。 */}
+      <PageHeader title="订单详情" className="mb-5" />
 
       {/* 发货明细读失败（issue #6691）：与「还没取到」分开说 —— 这一块读不到时，
           销售单的数量列印的是**订单数量**（不是实发），必须让商家知道 + 给重试出口。 */}
@@ -521,8 +518,11 @@ export default function OrderDetailPage() {
         </div>
       )}
 
-      {/* 订单状态区域 */}
-      <StatusSection
+      {/* ===== 可操作区域（issue #8838）=====
+          整体操作（打印 / 确认付款 / 发货 / 确认收货 / 退款 / 修改订单 / 关闭订单）集中在
+          页面顶部的这一区；局部操作不在这里 —— 它们贴各自的信息（见下方商品信息区域 /
+          作业单区域）。打印入口在本区卡头、不在任何状态分支里（issue #7544）。 */}
+      <OperationSection
         order={order}
         processingOrder={processingOrder}
         onClose={() => setCloseModalOpen(true)}
@@ -530,84 +530,134 @@ export default function OrderDetailPage() {
         onShip={() => router.push(`/orders/${order.id}/ship`)}
         onConfirmPayment={() => setConfirmPaymentOpen(true)}
         onConfirmReceive={() => setConfirmReceiveOpen(true)}
-        onEditLogistics={() => setShowEditLogistics(true)}
         onRefund={() => setRefundModalOpen(true)}
+        onPrint={() => openPreview(DEFAULT_ORDER_PRINT_DOC)}
       />
 
-      {/* 基础信息 */}
-      <SectionCard title="基础信息">
-        <div className="grid grid-cols-3 gap-y-4 gap-x-8 text-sm">
-          <InfoRow label="订单编号" value={order.orderNo} />
-          <InfoRow label="下单时间" value={<DateTimeCell value={order.createdAt} />} />
-          <InfoRow label="支付时间" value={<DateTimeCell value={order.paidAt} />} />
-          {/* issue #7078：原「支付交易号」行已**撤下** —— 系统不走在线支付渠道，没有交易号的真值源，
-              建了也是恒 "-"（#6882「屏幕面读后端未下发的字段」同类）。前端类型面的 `paymentNo`
-              一并删除（编译器成为类级守卫，防再读）。 */}
-          <InfoRow label="发货时间" value={<DateTimeCell value={order.shippedAt} />} />
-          <InfoRow label="确认收货时间" value={<DateTimeCell value={order.receivedAt} />} />
-        </div>
-      </SectionCard>
-
-      {/* 加急 / 要求到货日（issue #5177）—— **订单页上直接改**（不是售后页）；
-          PUT /api/admin/orders/{id}/urgency；保存后 loadOrder 重新拉单，徽标刷新为服务端真值。 */}
-      <OrderUrgencyPanel order={order} onChanged={loadOrder} />
-
-      {/* 商品信息 */}
+      {/* ===== 商品信息区域（issue #8838）=====
+          基础信息 / 商品明细 / 收货信息 同区展示；状态、退款、打印等**整体操作**不穿插进来，
+          只保留贴在各信息旁边的**局部操作**（加急/到货日 → 基础信息；编辑物流 → 收货信息）。 */}
       <SectionCard
         title="商品信息"
+        testId="order-goods-region"
         rightAction={
           <span className="text-sm text-primary-600 font-medium">
             订单实收款：{formatAmount(order.actualAmount)}
           </span>
         }
       >
-        <ProductTable groups={productGroups} />
+        <div className="space-y-6">
+          {/* 基础信息（局部操作：加急 / 到货日） */}
+          <section data-testid="order-basic-info">
+            <SubSectionTitle>基础信息</SubSectionTitle>
+            <div className="grid grid-cols-3 gap-y-4 gap-x-8 text-sm">
+              <InfoRow label="订单编号" value={order.orderNo} />
+              <InfoRow label="下单时间" value={<DateTimeCell value={order.createdAt} />} />
+              <InfoRow label="支付时间" value={<DateTimeCell value={order.paidAt} />} />
+              {/* issue #7078：原「支付交易号」行已**撤下** —— 系统不走在线支付渠道，没有交易号的真值源，
+                  建了也是恒 "-"（#6882「屏幕面读后端未下发的字段」同类）。前端类型面的 `paymentNo`
+                  一并删除（编译器成为类级守卫，防再读）。 */}
+              <InfoRow label="发货时间" value={<DateTimeCell value={order.shippedAt} />} />
+              <InfoRow label="确认收货时间" value={<DateTimeCell value={order.receivedAt} />} />
+            </div>
+            {/* 加急 / 要求到货日（issue #5177）—— **订单页上直接改**（不是售后页）；
+                PUT /api/admin/orders/{id}/urgency；保存后 loadOrder 重新拉单，徽标刷新为服务端真值。
+                局部操作贴在「基础信息」内（issue #8838）。 */}
+            <div className="mt-5 border-t border-neutral-100 pt-4">
+              <OrderUrgencyPanel order={order} onChanged={loadOrder} />
+            </div>
+          </section>
 
-        {/* 费用构成（issue #5843）：商品合计 + 加工费 + 其它构成 = 订单金额 —— 商家照着它对账。
-            `goodsTotal` 取「商品合计」列之和（**同一份**行金额口径），加工费那一侧走共享层。 */}
-        <OrderFeeBreakdown
-          items={order.items ?? []}
-          goodsTotal={productGroups.reduce((sum, group) => sum + group.groupTotal, 0)}
-          orderTotal={order.totalAmount}
-        />
+          {/* 商品明细 */}
+          <section data-testid="order-product-info" className="border-t border-neutral-100 pt-6">
+            <SubSectionTitle>商品明细</SubSectionTitle>
+            <ProductTable groups={productGroups} />
 
-        {/* 加工项表（加工项 | 单价 | 数量 | 金额 | 加工合计）已随 #4882 整表退场：
-            加工项不再有单价/计价方式，逐项金额列即无真值可言 ⇒ 不再渲染。
-            ⚠️ `order.processingItems` 本身**保留** —— 它是「含加工项」判定与发货守卫
-            （下方 `hasProcessing`）的判据源，不是展示物。 */}
+            {/* 费用构成（issue #5843）：商品合计 + 加工费 + 其它构成 = 订单金额 —— 商家照着它对账。
+                `goodsTotal` 取「商品合计」列之和（**同一份**行金额口径），加工费那一侧走共享层。 */}
+            <OrderFeeBreakdown
+              items={order.items ?? []}
+              goodsTotal={productGroups.reduce((sum, group) => sum + group.groupTotal, 0)}
+              orderTotal={order.totalAmount}
+            />
 
-        {/* 金额汇总：订单金额 / 优惠金额 / 已退款 / 实收款 — issue #672 */}
-        <AmountSummary
-          totalAmount={order.totalAmount}
-          discountAmount={order.discountAmount}
-          actualAmount={order.actualAmount}
-          refundAmount={order.refundAmount}
-          refundAt={order.refundAt}
-        />
+            {/* 加工项表（加工项 | 单价 | 数量 | 金额 | 加工合计）已随 #4882 整表退场：
+                加工项不再有单价/计价方式，逐项金额列即无真值可言 ⇒ 不再渲染。
+                ⚠️ `order.processingItems` 本身**保留** —— 它是「含加工项」判定与发货守卫
+                （下方 `hasProcessing`）的判据源，不是展示物。 */}
+
+            {/* 金额汇总：订单金额 / 优惠金额 / 已退款 / 实收款 — issue #672 */}
+            <AmountSummary
+              totalAmount={order.totalAmount}
+              discountAmount={order.discountAmount}
+              actualAmount={order.actualAmount}
+              refundAmount={order.refundAmount}
+              refundAt={order.refundAt}
+            />
+          </section>
+
+          {/* 收货信息（局部操作：编辑物流） */}
+          <section data-testid="order-receiving-info" className="border-t border-neutral-100 pt-6">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+              <SubSectionTitle className="mb-0">收货信息</SubSectionTitle>
+              {canEditLogistics && (
+                <Button variant="secondary" size="sm" onClick={() => setShowEditLogistics(true)}>
+                  编辑物流
+                </Button>
+              )}
+            </div>
+            <div className="grid grid-cols-2 gap-y-4 gap-x-8 text-sm">
+              <InfoRow label="收货人" value={order.customerName} />
+              <InfoRow label="联系电话" value={order.customerPhone} />
+              <div className="col-span-2">
+                <InfoRow label="收货地址" value={order.customerAddress || '-'} />
+              </div>
+              {/* **安装小区**（issue #7856）：与收货地址**并列**（两个事实：货发窗帘店 / 帘子装进客户家）。
+                  缺值 `-` —— 与相邻行同口径（这一片是「读得全」的信息面，不是纸面）。 */}
+              <div className="col-span-2">
+                <InfoRow label="安装小区" value={order.installCommunity || '-'} />
+              </div>
+              {/* 物流类型 / 物流公司（issue #7850）：下单页自 #5840 起把这两项当必填，服务端落在
+                  `orders.logistics_type` / `logistics_company` 两列并随详情读面下发，但本块此前只印
+                  收货人 / 电话 / 地址 ⇒ 商家在详情页看不出这一单走快递还是物流专线、哪家承运。
+                  缺值一律印 `-`（本页既有 `InfoRow` 纪律），**不臆造「快递」**。
+                  术语（issue #8080）：这一格印的是 `logistics_type` ⇒ 叫「物流类型」；
+                  「物流方式」在本系统里专指 `shippingMethod`（物流发货 / 无需物流），不能共用同一个词。 */}
+              <InfoRow label="物流类型" value={logisticsTypeText(order.logisticsType) ?? '-'} />
+              <InfoRow label="物流公司" value={order.logisticsCompany?.trim() || '-'} />
+            </div>
+          </section>
+        </div>
       </SectionCard>
 
-      {/* 工序清单读失败（issue #8066）：屏幕加工单块的工序来自它 —— 读不到时那块是零工序，
-          所以**必须**说出来（不许画成「这单没有工序」），并给只重发这一条读面的重试出口。 */}
-      {canViewProcessingOrder && orderOperationsReadError && (
-        <ListLoadError
-          testId="order-operations-read-error"
-          message="工序清单读取失败 —— 屏幕加工单的工序会显示不全（不是「这单没有工序」），请重新加载"
-          onRetry={() => void loadOperations()}
-        />
+      {/* ===== 作业单区域（issue #8838）=====
+          「作业单」标题归区域卡头（块内不再重复同名 h3）；局部操作（复制全部 / 去生产明细 /
+          去智能派单）留在块内，贴着作业单信息。 */}
+      {canViewProcessingOrder && (
+        <SectionCard title="作业单" testId="order-work-order-region">
+          {/* 工序清单读失败（issue #8066）：屏幕加工单块的工序来自它 —— 读不到时那块是零工序，
+              所以**必须**说出来（不许画成「这单没有工序」），并给只重发这一条读面的重试出口。 */}
+          {orderOperationsReadError && (
+            <ListLoadError
+              testId="order-operations-read-error"
+              message="工序清单读取失败 —— 屏幕加工单的工序会显示不全（不是「这单没有工序」），请重新加载"
+              onRetry={() => void loadOperations()}
+            />
+          )}
+          {/* 加工单（issue #3340）：订单 producing 阶段的子进度。
+              🔴 issue #7634：本块**只读** —— 派单在「智能派单」页、状态流转在生产明细页；
+              订单详情不再传 isUrgent / items（不再直派、不再取批次候选）。 */}
+          <ProcessingOrderBlock
+            orderId={order.id}
+            orderStatus={order.status}
+            // issue #7079 第 5 包：要不要作业 / 要哪一型，一律取服务端读面（`work_order_kind`）——
+            // 旧写法 `processingItems.length > 0` 只覆盖「含加工项」那一半，卖布单被漏掉 ⇒ 没有生成出口。
+            workOrderKind={workOrderKindOf(order)}
+            operations={orderOperations}
+            onStatusChange={setProcessingOrder}
+          />
+        </SectionCard>
       )}
-
-      {/* 加工单（issue #3340）：订单 producing 阶段的子进度。
-          🔴 issue #7634：本块**只读** —— 派单在「智能派单」页、状态流转在生产明细页；
-          订单详情不再传 isUrgent / items（不再直派、不再取批次候选）。 */}
-      {canViewProcessingOrder && <ProcessingOrderBlock
-        orderId={order.id}
-        orderStatus={order.status}
-        // issue #7079 第 5 包：要不要作业 / 要哪一型，一律取服务端读面（`work_order_kind`）——
-        // 旧写法 `processingItems.length > 0` 只覆盖「含加工项」那一半，卖布单被漏掉 ⇒ 没有生成出口。
-        workOrderKind={workOrderKindOf(order)}
-        operations={orderOperations}
-        onStatusChange={setProcessingOrder}
-      />}
 
       {/* 纸质报价单（issue #4965）：屏幕上隐藏，仅打印呈现；照真实报价单 A4 制式
           （每商品行一套 + 金额汇总 + 扫码支付）。页面级挂载一份 —— 与 ShipmentDoc 同范式
@@ -708,30 +758,6 @@ export default function OrderDetailPage() {
           />
         )}
       </PrintDocPreview>
-
-      {/* 收货信息 */}
-      <SectionCard title="收货信息">
-        <div className="grid grid-cols-2 gap-y-4 gap-x-8 text-sm">
-          <InfoRow label="收货人" value={order.customerName} />
-          <InfoRow label="联系电话" value={order.customerPhone} />
-          <div className="col-span-2">
-            <InfoRow label="收货地址" value={order.customerAddress || '-'} />
-          </div>
-          {/* **安装小区**（issue #7856）：与收货地址**并列**（两个事实：货发窗帘店 / 帘子装进客户家）。
-              缺值 `-` —— 与相邻行同口径（这一片是「读得全」的信息面，不是纸面）。 */}
-          <div className="col-span-2">
-            <InfoRow label="安装小区" value={order.installCommunity || '-'} />
-          </div>
-          {/* 物流类型 / 物流公司（issue #7850）：下单页自 #5840 起把这两项当必填，服务端落在
-              `orders.logistics_type` / `logistics_company` 两列并随详情读面下发，但本块此前只印
-              收货人 / 电话 / 地址 ⇒ 商家在详情页看不出这一单走快递还是物流专线、哪家承运。
-              缺值一律印 `-`（本页既有 `InfoRow` 纪律），**不臆造「快递」**。
-              术语（issue #8080）：这一格印的是 `logistics_type` ⇒ 叫「物流类型」；
-              「物流方式」在本系统里专指 `shippingMethod`（物流发货 / 无需物流），不能共用同一个词。 */}
-          <InfoRow label="物流类型" value={logisticsTypeText(order.logisticsType) ?? '-'} />
-          <InfoRow label="物流公司" value={order.logisticsCompany?.trim() || '-'} />
-        </div>
-      </SectionCard>
 
       {/* 备注信息 */}
       {order.remark && (
@@ -879,21 +905,30 @@ function ConfirmModal({ open, title, message, loading, onClose, onConfirm }: Con
 /** 打开打印层时默认选中的单据：销售单（每一单都必然用到的那张） */
 const DEFAULT_ORDER_PRINT_DOC: PrintTarget = 'sales'
 
-interface StatusSectionProps {
+interface OperationSectionProps {
   order: Order
   /** 加工单（ProcessingOrderBlock 上报；null = 无加工单/未生成/查询失败） */
   processingOrder: ProcessingOrder | null
   onClose: () => void
-  /** 修改订单内容（issue #5842）—— **只在「待付款」分支渲染入口**（见 StatusSection 的 pending 段） */
+  /** 修改订单内容（issue #5842）—— **只在「待付款」分支渲染入口**（见本组件的 pending 段） */
   onEditContent: () => void
   onShip: () => void
   onConfirmPayment: () => void
   onConfirmReceive: () => void
-  onEditLogistics: () => void
   onRefund: () => void
+  /** 打印 = 页面级唯一入口（issue #7544），落在本区卡头、不跟订单状态挂钩 */
+  onPrint: () => void
 }
 
-function StatusSection({
+/**
+ * 可操作区域（issue #8838）：**只放订单整体操作** —— 状态推进（确认付款 / 发货 / 确认收货）、
+ * 退款、修改订单、关闭订单、打印。局部操作不在这里：
+ * 编辑物流贴在「收货信息」标题旁、加急/到货日贴在「基础信息」内、作业单动作在「作业单」区。
+ *
+ * 位置在页面顶部（用户 2026-11-07 口径：「整体操作按钮展示在页面顶部或者页面底部悬浮都可以」）——
+ * 选顶部而不是底部悬浮：不遮挡内容、不压住右下角常驻助手，且长页滚动前就能操作。
+ */
+function OperationSection({
   order,
   processingOrder,
   onClose,
@@ -901,12 +936,11 @@ function StatusSection({
   onShip,
   onConfirmPayment,
   onConfirmReceive,
-  onEditLogistics,
   onRefund,
-}: StatusSectionProps) {
+  onPrint,
+}: OperationSectionProps) {
   const status = normalizeOrderStatus(order.status as string)
-  const display = displayOrderStatus(order.status as string)
-  // issue #3889：producing（生产中）从 pending_shipment 展示中独立（醒目 chip，见 pending_shipment 分支）
+  // issue #3889：producing（生产中）从 pending_shipment 展示中独立（向导第 2 步显示「生产中」）
   const producing = (order.status as string) === 'producing'
   // 发货入口守卫（issue #3889；issue #7079 第 5 包扩到卖布单）：**需要作业单**且作业单不是「已完成」
   // → 先引导去做作业单，不渲染可点的「发货」。判据 = 服务端读面键 `work_order_kind`
@@ -916,9 +950,27 @@ function StatusSection({
   const processingBlocked = needsWorkOrder && processingOrder?.status !== 'completed'
   // 退款展示不再依赖 'refund' 状态：refundAmount > 0 即视为已退款（订单保持原状态）
   const refunded = (order.refundAmount ?? 0) > 0
+  // 状态 chip 与列表页同一份口径（producing / packed 的展示分支都在 `lib/status-chip.ts`）
+  const statusChip = orderStatusChipFor(order.status as string)
 
   return (
-    <div className="bg-white rounded-lg border border-neutral-200 shadow-card p-6 mb-5">
+    <SectionCard
+      title="订单操作"
+      testId="order-operation-region"
+      rightAction={
+        <div className="flex items-center gap-2.5">
+          <StatusBadge label={statusChip.label} color={chipToneClasses[statusChip.tone]} dot />
+          <Button
+            variant="secondary"
+            icon={<Printer className="w-4 h-4" />}
+            data-testid="order-print-entry"
+            onClick={onPrint}
+          >
+            打印
+          </Button>
+        </div>
+      }
+    >
       {refunded && (
         <div className="flex items-center gap-2 mb-4">
           <span className="inline-flex items-center px-2.5 py-1 rounded-full bg-red-50 text-red-600 text-xs font-semibold">
@@ -928,11 +980,9 @@ function StatusSection({
         </div>
       )}
       {status === 'pending_payment' && (
-        <div className="flex items-center justify-between">
-          <div>
-            <div className="text-2xl font-semibold text-red-500 mb-3">待买家付款</div>
-          </div>
-          <div className="flex items-center gap-3 shrink-0">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="text-2xl font-semibold text-red-500">待买家付款</div>
+          <div className="flex flex-wrap items-center gap-3">
             {/* 修改订单（issue #5842）：买家未付款（待付款）时的内容编辑入口 ——
                 收货信息 / 商品明细 / 加工项；金额保存时由服务端重算。
                 只在 pending_payment 分支出现：其余状态后端一律 422，界面不给死路。 */}
@@ -960,12 +1010,7 @@ function StatusSection({
             shippedAt={order.shippedAt}
             receivedAt={order.receivedAt}
           />
-          <div className="mt-6 pt-5 border-t border-neutral-100 flex items-center justify-end gap-3">
-            {producing && (
-              <span className="mr-auto inline-flex items-center px-2.5 py-1 rounded-full bg-amber-50 text-amber-600 text-xs font-semibold">
-                {display.label}
-              </span>
-            )}
+          <div className="mt-6 pt-5 border-t border-neutral-100 flex flex-wrap items-center justify-end gap-3">
             {!refunded && (
               <Button variant="secondary" onClick={onRefund}>
                 退款
@@ -995,15 +1040,12 @@ function StatusSection({
             shippedAt={order.shippedAt}
             receivedAt={order.receivedAt}
           />
-          <div className="mt-6 pt-5 border-t border-neutral-100 flex items-center justify-end gap-3">
+          <div className="mt-6 pt-5 border-t border-neutral-100 flex flex-wrap items-center justify-end gap-3">
             {!refunded && (
               <Button variant="secondary" onClick={onRefund}>
                 退款
               </Button>
             )}
-            <Button variant="secondary" onClick={onEditLogistics}>
-              编辑物流
-            </Button>
             <Button onClick={onConfirmReceive} className="gap-1.5">
               确认收货
               <Zap className="w-4 h-4" />
@@ -1020,7 +1062,7 @@ function StatusSection({
             shippedAt={order.shippedAt}
             receivedAt={order.receivedAt}
           />
-          <div className="mt-6 pt-5 border-t border-neutral-100 flex items-center justify-end gap-3">
+          <div className="mt-6 pt-5 border-t border-neutral-100 flex flex-wrap items-center justify-end gap-3">
             {!refunded && (
               <Button variant="secondary" onClick={onRefund}>
                 退款
@@ -1042,7 +1084,7 @@ function StatusSection({
       {status === 'refund' && (
         <div className="text-2xl font-semibold text-amber-600">退款/售后中</div>
       )}
-    </div>
+    </SectionCard>
   )
 }
 
@@ -1050,12 +1092,14 @@ interface SectionCardProps {
   title: string
   rightAction?: React.ReactNode
   children: React.ReactNode
+  /** 区域锚点（issue #8838）：三区判据按 testid 定位，不靠标题文案 */
+  testId?: string
 }
 
-function SectionCard({ title, rightAction, children }: SectionCardProps) {
+function SectionCard({ title, rightAction, children, testId }: SectionCardProps) {
   return (
-    <div className="bg-white rounded-lg border border-neutral-200 shadow-card mb-5">
-      <div className="flex items-center justify-between px-6 py-3.5 border-b border-neutral-100">
+    <div data-testid={testId} className="bg-white rounded-lg border border-neutral-200 shadow-card mb-5">
+      <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-3.5 border-b border-neutral-100">
         <div className="flex items-center gap-2">
           <span className="inline-block w-1 h-4 bg-primary-500 rounded-sm" />
           <h2 className="text-base font-semibold text-neutral-900">{title}</h2>
@@ -1074,6 +1118,14 @@ function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
       <span className="text-neutral-900 break-all">{value}</span>
     </div>
   )
+}
+
+/**
+ * 区域内的子块标题（issue #8838）：比区域标题（h2）低一档，不单独成卡 ——
+ * 「商品信息区域」内的基础信息 / 商品明细 / 收货信息三块共用同一张区域卡，避免卡内套卡。
+ */
+function SubSectionTitle({ children, className }: { children: React.ReactNode; className?: string }) {
+  return <h3 className={cn('text-sm font-semibold text-neutral-700 mb-3', className)}>{children}</h3>
 }
 
 /**

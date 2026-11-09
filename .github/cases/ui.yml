@@ -172,8 +172,10 @@ cases:
       - "链接路径：在线接待 href=/agent-workspace/human-sessions（#3081 起无 /chat/config 链接）"
       - "权限过滤不回归：无 agent:session → 隐藏「在线接待」；无 knowledge:manage → 隐藏「知识库」；均无 → 「智能客服」整组隐藏"
       - "「在线接待」菜单项不再出现旧名「人工客服」（#3109 菜单改名，页面标题/Header 面包屑/权限分配弹窗同步为新名；C 端顾客侧『人工客服』来源标识与转人工文案不变）"
+      - "🔴 2026-11-07（用户裁定「有的一级菜单名称前面有图标，有的没有图标…在一级菜单前面都加上图标，二级菜单前面的图标统一去掉」）改判：**一级菜单图标面统一 + 二级菜单展开态去图标**。① 8 个分组标题在**展开态**名称前渲染各自组图标（18px，与直达一级项同规格；图标单源仍是 `config/menu.ts` 的 `MenuGroup.icon`），「常用」标签行同步补 Pin 图标；② 二级菜单（组内项）**展开态不渲染名称前图标**，**折叠态保留 16px 图标** —— 折叠态没有文字，图标是该行唯一可见标识与可点区域依据（不是「整体删掉图标」）；③ 权限码 / 路径 / 分组与顺序 / 展开与收藏交互零改动。执行点 = frontend/admin-web/tests/unit/components/Sidebar.test.tsx 的「（2026-10-28 层次 + 2026-11-07 图标）…」「（2026-11-07）8 个分组标题全部…」「（2026-11-07）二级菜单展开态不渲染…」「图标层级按 menu.ts 全量校验…」「菜单图标两两不同（渲染面，折叠态）」+ tests/unit/lib/menu-icons.test.ts。"
+      - "🔴 2026-11-07 后续（issue #8835，用户「现在二级菜单名称缩进太大，把二级菜单名称和一级菜单名称对齐看看效果」）：展开态**二级菜单名称左边界与一级菜单名称对齐**（38px = `px-2.5` 10px + 18px 图标 + `gap-2.5` 10px；叶子行 `pl-[2.375rem]` = 38px），不再是 56px。图标层级 / 行高 / 字号 / 权限 / 路由 / 分组顺序零改动；折叠态图标栏不变。执行点 = frontend/admin-web/tests/unit/components/Sidebar.test.tsx 的「（2026-11-07 后续）二级菜单名称与一级菜单名称同一左边界…」+「（2026-10-28 层次 + 2026-11-07 图标）…」+ 真机前后截图（1440×1500/1440×980，一级/二级名称 labelX 差 0px）。"
     skip_reason: "[backend-contract] 纯前端侧边栏菜单/图标/文案由 vitest 单测验证（sidebar/settings/Header.test），非 LLM 行为，不进入 agent-eval 冒烟"
-    merge_log: "2026-08-30 新增：侧边栏智能客服大类分组与菜单图标渲染（issue #2670）；2026-09-09 #3081：AI 客服配置菜单移除、合并进企业基础信息；2026-09-09 #3094：黄金策·在线对话 菜单入口移除，智能体对话入口收敛到右下角 FAB；2026-09-09 #3109：菜单改名「在线接待」（页面标题/面包屑/权限弹窗同步，C 端文案不动）"
+    merge_log: "2026-08-30 新增：侧边栏智能客服大类分组与菜单图标渲染（issue #2670）；2026-09-09 #3081：AI 客服配置菜单移除、合并进企业基础信息；2026-09-09 #3094：黄金策·在线对话 菜单入口移除，智能体对话入口收敛到右下角 FAB；2026-09-09 #3109：菜单改名「在线接待」（页面标题/面包屑/权限弹窗同步，C 端文案不动）；2026-11-07（issue #8833）：图标层级统一——一级菜单（8 个分组标题 + 直达项 + 「常用」标签）都带图标，二级菜单展开态去图标、折叠态保留；2026-11-07 后续（issue #8835）：二级菜单名称缩进收小（56px → 38px），与一级菜单名称同一左边界"
     traces:
       tests:
         - "frontend/admin-web/tests/unit/components/Sidebar.test.tsx"
@@ -5697,6 +5699,45 @@ cases:
     traces:
       tests:
         - "frontend/worker-h5/tests/worker-h5-flex-gap.test.mjs"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  # UI-149（issue #8838）：订单详情三区展示 + 操作按整体/局部层级摆放
+  - id: UI-149
+    legacy_id: ""
+    title: "订单详情页重排为「商品信息 / 作业单 / 订单操作」三区：整体操作上收页面顶部、局部操作贴对应信息（issue #8838）"
+    domains:
+      - ui
+      - frontend
+      - order
+    tier: normal
+    tags:
+      - ui
+      - layout
+      - order-detail
+      - action-hierarchy
+    truths_ref:
+      - frontend-fix.layout
+      - frontend-fix.no-api-change
+    user_inputs:
+      - "用户 2026-11-07 钉钉原话：订单详情页面分成三个区域展示：商品信息区域（基础信息、商品信息、收货信息）、作业单区域、可操作区域（退款、发货、编辑物流、打印、加急/到货日等操作）；不要把其他信息和操作穿插在商品信息中间；操作按钮要分清订单整体操作和局部信息操作，整体操作展示在页面顶部或者页面底部悬浮都可以，对应的操作按钮展示在对应信息的旁边"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "判据 1·**三区齐备且顺序正确**：页面渲染出 `order-operation-region` / `order-goods-region` / `order-work-order-region` 三个区域锚点；真实浏览器里操作区 y < 商品信息区 y < 作业单区 y。执行点 = frontend/admin-web/tests/unit/pages/order-detail.test.tsx::三区展示与操作层级 与 tests/e2e/specs/orders/order-detail-regions.spec.ts。"
+      - "判据 2·**整体操作不穿插**：打印（`order-print-entry`）、退款、发货、确认付款、确认收货、修改订单、关闭订单都只在 `order-operation-region` 内；`order-goods-region` 内查不到上述按钮。执行点 = 同文件 4 条用例（待付款 / 待发货 / 已发货）。"
+      - "判据 3·**局部操作贴对应信息**：`编辑物流` 在 `order-receiving-info` 内、不在操作区；`order-urgency-panel` 在 `order-basic-info` 内、不在操作区；「复制全部」仍留在作业单块内（块不再自带同名「作业单」标题）。执行点 = order-detail.test.tsx 与 ProcessingOrderBlock.test.tsx::由外层区域承载标题。"
+      - "判据 4·**页面头走单一原语**：OrderDetail 改用 `PageHeader`（不再手写 `<h1>`），并从 page-header-single-source-guard 的存量快照/有意不迁清单销账（上界 7→6）。执行点 = frontend/admin-web/tests/unit/page-header-single-source-guard.test.ts。"
+      - "判据 5·**零行为改动**：打印仍是页面级唯一入口、与订单状态无关（#7544）；退款/发货/确认收货/修改订单/关闭订单的可见状态条件与提交语义不变；编辑物流仍只在已发货可见；编辑物流 / 加急保存 / 工序读面失败重试等既有判据全部保持绿。执行点 = 既有 order-detail.test.tsx / OrderDetailShipGuard.test.tsx / OrderUrgencyPanel.test.tsx / ProcessingOrderBlock.test.tsx。"
+    skip_reason: "[backend-contract] 纯前端版式与信息架构调整（无接口/字段变更），由 vitest 页面判据 + Playwright 真浏览器判据覆盖，不进入 agent-eval 冒烟"
+    merge_log: "2026-11-07 新增（issue #8838）：订单详情按用户口径重排三区、整体操作上收顶部、局部操作贴对应信息；页面头迁 PageHeader 并同步销账。取号 UI-149（`python3 scripts/next_case_id.py UI` 现取）。"
+    traces:
+      tests:
+        - "frontend/admin-web/tests/unit/pages/order-detail.test.tsx"
+        - "frontend/admin-web/tests/unit/components/ProcessingOrderBlock.test.tsx"
+        - "frontend/admin-web/tests/unit/page-header-single-source-guard.test.ts"
+        - "tests/e2e/specs/orders/order-detail-regions.spec.ts"
       ci:
         - pr-check.yml
       verifies: []

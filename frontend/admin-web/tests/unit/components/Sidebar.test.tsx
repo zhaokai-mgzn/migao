@@ -63,7 +63,14 @@ vi.mock('@/lib/api', () => ({
 
 import Sidebar from '@/components/layout/Sidebar'
 // #5877：一级项的插入位（席位常量 = 三源同批表达的同一件事）
-import { STANDALONE_TOP_AFTER_GROUP_KEY } from '@/config/menu'
+// 2026-11-07：图标层级类级守卫从 `menu.ts` 现取全量名单（新增菜单项自动进面）
+import {
+  STANDALONE_TOP_AFTER_GROUP_KEY,
+  menuGroups,
+  standaloneHeadItems,
+  standaloneTopItems,
+  standaloneItems,
+} from '@/config/menu'
 
 /**
  * 类名「整词」判定（issue #8025）：`shrink-0` / `min-w-0` / `truncate` 必须**逐词**命中，
@@ -687,16 +694,22 @@ describe('Sidebar', () => {
     expect(STANDALONE_TOP_AFTER_GROUP_KEY).toBe(TOP_SLOT_KEY)
   })
 
-  it('（2026-10-28）**视觉层次不许倒置**：组标题/一级项 14px（修前 12px）+ 叶子项同为 14px 但更轻更暗；菜单标题面里只有徽标用 text-xs', () => {
-    render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
-    // ① 组标题（「大菜单」）：修前 `text-xs`（12px）⇒ **比叶子项（14px）还小**，正是用户说的
-    //    「大菜单字小，叶子菜单字大」。修后 14px/600 亮色。
-    const groupLabel = screen.getByText('客户服务')
+  it('（2026-10-28 层次 + 2026-11-07 图标）组标题/一级项 14px + 名称前 18px 图标；叶子项 14px 更轻更暗、展开态**无图标**、折叠态保留 16px 图标', () => {
+    const { rerender } = render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
+    // ① 组标题（一级菜单的分组形态）：2026-10-28 起 14px/600 亮色（修前 `text-xs` 12px）；
+    //    2026-11-07 用户裁定「一级菜单前面都加上图标」⇒ 名称**前**挂 18px 组图标（与直达一级项同规格）。
+    const header = groupButton('customer-service')
+    const groupLabel = within(header).getByText('客户服务')
     expect(groupLabel.className).toContain('text-sm')
     expect(groupLabel.className).toContain('font-semibold')
     expect(groupLabel.className).not.toContain('text-xs')
-    // 组标题**不挂图标**（组图标只留在折叠态锚点）—— 靠缩进把「标签」与「条目」分开
-    expect(within(groupButton('customer-service')).queryByTestId('icon-message-square')).toBeNull()
+    const groupIcon = within(header).getByTestId('icon-message-square')
+    expect(groupIcon.getAttribute('class')).toContain('h-[18px]')
+    expect(groupIcon.getAttribute('class')).toContain('w-[18px]')
+    // 位置判据（不是存在性）：图标在名称**之前**（DOM 顺序）
+    expect(
+      groupIcon.compareDocumentPosition(groupLabel) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
     // ② 一级项（三个席位同一套）：14px/600 + 18px 图标 + 36px 行（比组标题更高）+ 右端**无** chevron
     const top = linkFor('企业基础设置')
     const topLabel = within(top).getByText('企业基础设置')
@@ -710,17 +723,16 @@ describe('Sidebar', () => {
     expect(topIcon.getAttribute('class')).toContain('w-[18px]')
     // 那枚 chevron 留给「可展开的组」—— 直达项挂它是假示能
     expect(within(top).queryByTestId('icon-chevron-right')).toBeNull()
-    // ③ 叶子项：同为 14px，但 400 字重 + 次级亮度 + 16px 图标 + 32px 行 + `pl-7` 缩进
+    // ③ 叶子项（二级菜单）：图标口径 = 展开态**不挂**领域图标；缩进口径 = 2026-11-07 用户追加裁定
+    //    「二级菜单名称缩进太大，把二级菜单名称和一级菜单名称对齐」⇒ 名称左边界与一级菜单名称一致（38px）。
     expandGroups('customer-service')
     const leaf = linkFor('在线接待')
     expect(within(leaf).getByText('在线接待').className).toContain('text-sm')
     expect(leaf.className).toContain('h-8')
-    expect(leaf.className).toContain('pl-7')
+    expect(leaf.className).toContain('pl-[2.375rem]')
     expect(leaf.className).toContain('text-neutral-300')
     expect(leaf.className).not.toContain('font-semibold')
-    const leafIcon = within(leaf).getByTestId('icon-headphones')
-    expect(leafIcon.getAttribute('class')).toContain('h-4')
-    expect(leafIcon.getAttribute('class')).toContain('w-4')
+    expect(within(leaf).queryByTestId('icon-headphones')).toBeNull()
     // ④ 「通知中心」（尾部独立项）与两个席位**同一套视觉** —— 修前它是叶子规格（14px），
     //    另两个席位却是组头规格（12px）：同一层级两种字号就是「不协调」的来源
     const notifications = linkFor('通知中心')
@@ -739,14 +751,26 @@ describe('Sidebar', () => {
     // 一级项（最前 / 尾席位）不可收藏 ⇒ 无星标
     expect(within(top).queryByTestId('sidebar-pin-products')).toBeNull()
     expect(screen.queryByTestId('sidebar-pin-settings')).toBeNull()
+    // ⑥ 折叠态（`collapsed=true`）：二级菜单没有文字 ⇒ 图标是该行**唯一**可见标识，必须保留（16px）；
+    //    一级菜单的图标同样在（组锚点 + 直达项）。**不是**「二级菜单图标整体删掉」。
+    rerender(<Sidebar collapsed onToggle={mockOnToggle} />)
+    const collapsedLeaf = document.querySelector('[data-menu-key="human-sessions"]') as HTMLElement
+    const collapsedLeafIcon = within(collapsedLeaf).getByTestId('icon-headphones')
+    expect(collapsedLeafIcon.getAttribute('class')).toContain('h-4')
+    expect(collapsedLeafIcon.getAttribute('class')).toContain('w-4')
+    expect(
+      within(screen.getByTestId('sidebar-group-anchor-customer-service')).getByTestId('icon-message-square'),
+    ).toBeInTheDocument()
   })
 
   it('（类级）侧边栏**所有**标签/条目标题都是 14px：只有计数徽标用 text-xs（防止某一级菜单再次单独变小）', () => {
     render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
     expandAll()
     // ① 组标题（「常用」是 div 不是 button，用 data-testid 前缀取全量）：逐个 text-sm
+    // 🔴 2026-11-07：组标题名称前多了一枚**图标 span**（一级菜单统一带图标）⇒ 不能再取 `> span:first-child`
+    //    （那会取到图标），改取标签自己的 `span.flex-1`。
     const sectionLabels = Array.from(
-      document.querySelectorAll('[data-testid^="sidebar-group-toggle-"] > span:first-child'),
+      document.querySelectorAll('[data-testid^="sidebar-group-toggle-"] > span.flex-1'),
     )
     expect(sectionLabels.map((el) => el.textContent)).toEqual(GROUPS.map((g) => g.name))
     for (const el of sectionLabels) {
@@ -819,25 +843,112 @@ describe('Sidebar', () => {
     expect(linkFor('在线接待')).toHaveAttribute('href', '/agent-workspace/human-sessions')
   })
 
-  it('「在线接待」渲染 Headphones 图标，与「经营看板」BarChart3 图标明确区分', () => {
+  it('（2026-11-07）二级菜单展开态**不渲染**领域图标；同一渲染面里一级菜单图标仍逐一可见（经营概览 BarChart3 / 客户服务组 MessageSquare）', () => {
     render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
     expandGroups('customer-service')
     const humanLink = linkFor('在线接待')
-    expect(within(humanLink).getByTestId('icon-headphones')).toBeInTheDocument()
-    expect(within(humanLink).queryByTestId('icon-bar-chart3')).not.toBeInTheDocument()
-    const dashboardLink = linkFor('经营概览')
-    expect(within(dashboardLink).getByTestId('icon-bar-chart3')).toBeInTheDocument()
+    // 用户 2026-11-07 逐字：「二级菜单前面的图标统一去掉」
+    expect(within(humanLink).queryByTestId('icon-headphones')).toBeNull()
+    expect(within(humanLink).queryByTestId('icon-bar-chart3')).toBeNull()
+    // 负控：图标**不是整体从侧边栏消失** —— 一级项 / 组标题的图标仍在（否则本用例可被「删光图标」喂绿）
+    expect(within(linkFor('经营概览')).getByTestId('icon-bar-chart3')).toBeInTheDocument()
+    expect(within(groupButton('customer-service')).getByTestId('icon-message-square')).toBeInTheDocument()
   })
 
-  it('（#5778）「客户服务」组图标 = MessageSquare（#3081 AI 客服配置菜单已移除）', () => {
-    // 🔴 2026-10-28 视觉层次：展开态的组标题是**纯文字标签**（不挂图标），组图标只渲染在
-    // **折叠态锚点**上 ⇒ 图标映射的判据必须在折叠态取（断言强度不变：仍是「组图标 ≠ 组内任一项图标」）。
-    render(<Sidebar collapsed={true} onToggle={mockOnToggle} />)
-    const anchor = screen.getByTestId('sidebar-group-anchor-customer-service')
+  it('（#5778 + 2026-11-07）「客户服务」组图标 = MessageSquare：展开态组标题与折叠态锚点取**同一个**组图标', () => {
+    const { rerender } = render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
+    // 展开态：组标题名称**前**就是组图标（2026-11-07 起；此前只在折叠态锚点）
+    const header = groupButton('customer-service')
+    expect(within(header).getByTestId('icon-message-square')).toBeInTheDocument()
     // ⚠️ 组图标**不得**与组内任一项同图（判据 = 图标两两不同，issue #5582）——
     // 曾用 Headphones（与组内「在线接待」同图）⇒ 实测判红；改用空闲的 MessageSquare。
+    expect(within(header).queryByTestId('icon-headphones')).toBeNull()
+    // 折叠态：组名文本不渲染，组图标是分组锚点（#5271；断言强度不降）
+    rerender(<Sidebar collapsed onToggle={mockOnToggle} />)
+    const anchor = screen.getByTestId('sidebar-group-anchor-customer-service')
     expect(within(anchor).getByTestId('icon-message-square')).toBeInTheDocument()
     expect(within(anchor).queryByTestId('icon-headphones')).not.toBeInTheDocument()
+  })
+
+  it('（2026-11-07）**8 个分组标题全部**在名称前渲染各自组图标（一级菜单图标覆盖，非只「客户服务」）', () => {
+    render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
+    const expected: [string, string][] = [
+      ['customer-service', 'message-square'],
+      ['orders-products', 'shopping-cart'],
+      ['production-center', 'factory'],
+      ['quality', 'shield-alert'],
+      ['inventory-center', 'boxes'],
+      ['finance-center', 'calculator'],
+      ['supply-chain', 'route'],
+      ['org-center', 'building2'],
+    ]
+    // 面非空自证：8 组一个不少（少一个组 ⇒ 本条先红，而不是静默少判一组）
+    expect(expected).toHaveLength(GROUPS.length)
+    for (const [key, icon] of expected) {
+      const header = groupButton(key)
+      const iconEl = within(header).getByTestId(`icon-${icon}`)
+      expect(iconEl, key).toBeInTheDocument()
+      // 位置判据（不是存在性）：图标紧邻名称 span 之前（「名称前面」）
+      const nameSpan = within(header).getByText(GROUPS.find((g) => g.key === key)!.name)
+      expect(iconEl.nextElementSibling).toBe(nameSpan)
+    }
+  })
+
+  it('（2026-11-07 类级）图标层级按 `menu.ts` **全量**校验：8 个组头 + 4 个直达一级项都有图标；24 个二级菜单展开态都无图标', () => {
+    render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
+    expandAll()
+    /** lucide 组件名 → 测试桩 testid（`MessageSquare` → `message-square`；`Building2` → `building2`） */
+    const kebab = (name: string) => name.replace(/([a-z0-9])([A-Z])/g, '$1-$2').toLowerCase()
+    const hasIcon = (el: Element) => el.querySelector('[data-testid^="icon-"]') !== null
+
+    // ① 一级菜单 · 分组标题（名单从 config/menu.ts 现取 ⇒ 新增组/换组图标自动进面）
+    expect(menuGroups).toHaveLength(8)
+    for (const g of menuGroups) {
+      expect(within(groupButton(g.key)).getByTestId(`icon-${kebab(g.icon)}`), g.name).toBeInTheDocument()
+    }
+    // ② 一级菜单 · 直达项（三个席位共 4 项）：都有图标（具体图标映射由 menu-icons.test.ts 判）
+    const direct = [...standaloneHeadItems, ...standaloneTopItems, ...standaloneItems]
+    expect(direct).toHaveLength(4)
+    for (const item of direct) {
+      const link = document.querySelector(`[data-menu-key="${item.key}"]`) as HTMLElement
+      expect(link, item.name).toBeInstanceOf(HTMLAnchorElement)
+      expect(hasIcon(link), `${item.name}（一级项）必须有图标`).toBe(true)
+    }
+    // ③ 二级菜单（组内项）：展开态**一个图标都不许有**（用户 2026-11-07「统一去掉」）
+    const leaves = menuGroups.flatMap((g) => g.children)
+    expect(leaves).toHaveLength(24)
+    for (const item of leaves) {
+      const link = document.querySelector(`[data-menu-key="${item.key}"]`) as HTMLElement
+      expect(link, item.name).toBeInstanceOf(HTMLAnchorElement)
+      expect(hasIcon(link), `${item.name}（二级菜单）展开态不得有名称前图标`).toBe(false)
+    }
+    // 负控（防「全没图标也叫绿」）：同一取法在一级项上为 true —— 上面的 false 不是恒真
+    expect(hasIcon(document.querySelector(`[data-menu-key="${direct[0].key}"]`)!)).toBe(true)
+    expect(hasIcon(document.querySelector(`[data-menu-key="${leaves[0].key}"]`)!)).toBe(false)
+    // 位置：组图标在名称之前
+    const header = groupButton(menuGroups[0].key)
+    const icon = within(header).getByTestId(`icon-${kebab(menuGroups[0].icon)}`)
+    const label = within(header).getByText(menuGroups[0].name)
+    expect(icon.compareDocumentPosition(label) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('（2026-11-07 后续）二级菜单名称与一级菜单名称**同一左边界**：一级 = px-2.5 + 18px 图标 + gap-2.5（38px）；二级 = pl-[2.375rem]（38px）', () => {
+    render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
+    expandAll()
+    // 一级菜单名称的左边距构成（判据钉的是**契约**，不是从实现抄一个数字）：
+    // `px-2.5` 10px + `w-[18px]` 18px + `gap-2.5` 10px = 38px
+    const header = groupButton('customer-service')
+    expect(hasToken(header, 'px-2.5')).toBe(true)
+    expect(hasToken(header, 'gap-2.5')).toBe(true)
+    const groupIcon = within(header).getByTestId('icon-message-square')
+    expect(hasToken(groupIcon, 'w-[18px]')).toBe(true)
+    // 二级菜单名称：同一左边界（`pl-[2.375rem]` = 38px）
+    const leaf = linkFor('在线接待')
+    expect(hasToken(leaf, 'pl-[2.375rem]')).toBe(true)
+    // 负控：旧口径 `pl-14`（56px）在同一量具下必须为 false（证明本断言不是恒真）
+    expect(hasToken(leaf, 'pl-14')).toBe(false)
+    // 只改左内距：行高 / 字号口径不变
+    expect(hasToken(leaf, 'h-8')).toBe(true)
   })
 
   it('「黄金策·在线对话」菜单入口已移除（#3094：智能体对话经右下角浮动按钮进入）', () => {
@@ -1153,15 +1264,15 @@ describe('Sidebar', () => {
 
   // ── 菜单图标两两不同（issue #5582）─────────────────────────────────────────────
 
-  it('🔴 菜单图标两两不同（渲染面）：28 项的图标互不重复（issue #5582）', async () => {
+  it('🔴 菜单图标两两不同（渲染面）：28 项的图标互不重复（issue #5582；2026-11-07 起取折叠态图标栏）', async () => {
     // 用户实测「左侧菜单栏有部分子菜单的图标完全一样」——数据层去重（menu-icons.test.ts 判据④）
     // 只证明**配置**不重复；这里证明**渲染出来**的图标也不重复（§15.1 结果可见）。
-    // 🔴 2026-10-17（issue #7087）：本判据**不再**需要「先打开简报开关」那一步 ——
-    // 「每日简报」菜单项已删除（旧形态下它是异步 effect 驱动的，曾让本判据踩过
-    // `Unable to find text: 每日简报`），现在 28 项**全部**同步渲染。
-    render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
-    await waitFor(() => expect(screen.getByTestId(STANDALONE_HEAD_TESTID)).toBeInTheDocument())
-    expandAll()
+    // 🔴 2026-11-07（用户裁定「二级菜单前面的图标统一去掉」）：展开态的叶子项不再挂图标 ⇒
+    //    渲染面的唯一性改为在**折叠态图标栏**判定 —— 折叠态没有文字，图标是每一项**唯一**的可见标识，
+    //    同图冲突在这里恰恰最致命（28 项全渲染，一项不少）。实现取值用 `data-menu-key` 语义锚，
+    //    不按位置/文字取（折叠态没有文字）。
+    render(<Sidebar collapsed onToggle={mockOnToggle} />)
+    await waitFor(() => expect(document.querySelectorAll('[data-menu-key]')).toHaveLength(28))
 
     // 🔴 三个席位都要计入（**最前席位**在 #7087 新增；漏了它这条判据就少判一项）
     const items: [string, string][] = [
@@ -1172,8 +1283,10 @@ describe('Sidebar', () => {
       ['notifications', '通知中心'],
     ]
     const byIcon = new Map<string, string[]>()
-    for (const [, name] of items) {
-      const link = linkFor(name)
+    for (const [key, name] of items) {
+      const link = document.querySelector(`[data-menu-key="${key}"]`)!
+      // 折叠态没有文字 ⇒ 图标必须在位（缺图标会落进 `(无图标)` 与其它缺项撞车，而不是静默通过）
+      expect(link.textContent, `${name} 在折叠态不得渲染文字（图标是唯一标识）`).toBe('')
       // tests/setup.ts 的 lucide 夹具把每个图标渲染成 `data-testid="icon-<kebab>"` ⇒ 从**渲染结果**反读图标名
       const icon =
         link.querySelector('[data-testid^="icon-"]')?.getAttribute('data-testid')?.replace(/^icon-/, '') ?? '(无图标)'
@@ -1227,6 +1340,9 @@ describe('Sidebar', () => {
       const pinnedSec = document.querySelector('[data-group-key="pinned"]') as HTMLElement
       expect(pinnedSec).toBeTruthy()
       expect(within(pinnedSec).getByText('常用')).toBeInTheDocument()
+      // 2026-11-07：一级/分组标题统一带图标 ⇒ 「常用」标签行也挂自己的 Pin 图标（对齐 38px 名称缩进）
+      const pinnedLabel = screen.getByTestId('sidebar-group-label-pinned')
+      expect(within(pinnedLabel).getByTestId('icon-pin')).toBeInTheDocument()
       expect(screen.getByTestId('sidebar-pinned-count').textContent).toBe('1/6')
       // 钉住的项在「常用」区里可点，且 href 正确
       expect(within(pinnedSec).getByText('销售订单')).toBeInTheDocument()
