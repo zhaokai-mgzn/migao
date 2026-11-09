@@ -521,6 +521,33 @@ def test_red_proof_conflict_resolved_by_ours_fails_the_real_anchor_test(fx):
 # ④ 「是否在合并中」用 MERGE_HEAD（worktree 里 `.git` 是文件）
 # ══════════════════════════════════════════════════════════════════════════════
 
+def test_loading_an_external_module_does_not_leak_sys_path_or_modules(tmp_path):
+    """**隔离层（issue #8872）**：`_load_module()` 执行的外部模块改的 `sys.path` / `sys.modules`
+    必须回滚 —— 否则它把**别的仓库**的实现留在同进程里喂给后续代码。
+
+    红证（改前必红）：夹具模块在**导入时**做 `sys.path.insert(0, <its>/elsewhere)` + `import _leak_dep`
+    ⇒ 加载返回后 `sys.path` 多一条、`sys.modules` 多一个名字 ⇒ 两条断言都红。
+    ⚠️ 为什么不做成"先跑甲再跑乙"的顺序判据：CI 的文件收集顺序与 xdist 分片都会变，靠顺序复现的
+    判据在 CI 上可能**永不触发**（本仓 §19.1「不会红的假绿」）⇒ 本判据在任何顺序下都成立。
+    """
+    wt = tmp_path / "wt"
+    (wt / "elsewhere").mkdir(parents=True)
+    (wt / "elsewhere" / "_leak_dep.py").write_text("X = 1\n", encoding="utf-8")
+    (wt / "probe.py").write_text(
+        "import os, sys\n"
+        "sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'elsewhere'))\n"
+        "import _leak_dep\n"
+        "VALUE = _leak_dep.X\n", encoding="utf-8")
+    path_before = list(sys.path)
+    modules_before = set(sys.modules)
+    mod = lib._load_module(wt / "probe.py", "_external_leak_probe")
+    assert mod.VALUE == 1, "夹具模块没真的被加载（`import _leak_dep` 没生效）⇒ 本判据会静默空跑"
+    assert sys.path == path_before, (
+        f"`_load_module()` 泄漏了 `sys.path` 条目：{sorted(set(sys.path) - set(path_before))}")
+    leaked = sorted(set(sys.modules) - modules_before)
+    assert not leaked, f"`_load_module()` 把模块名留在 `sys.modules` 里：{leaked}"
+
+
 def test_in_merge_progress_uses_merge_head_in_a_worktree(fx):
     """④：worktree 里 `.git` 是**文件** ⇒ 路径判据恒 False；真判据必须为 True。"""
     assert (fx.wt / ".git").is_file(), "夹具必须是 worktree 形态（`.git` 是文件），否则 ④ 测不到真形态"
