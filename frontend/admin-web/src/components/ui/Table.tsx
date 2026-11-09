@@ -20,6 +20,14 @@ export interface TableColumn<T> {
    * 表格过宽由外层 `overflow-x-auto` 横向滚动（与表头同一口径）。
    */
   wrap?: boolean
+  /**
+   * 右缘冻结（`sticky right-0`）：宽表横向滚动时**本列始终可见**。
+   *
+   * 消费点 = 商品列表的「操作」列（2026-11-09 用户裁定平铺后动作变宽，1440 视口下最后几个
+   * 动作会被卡片右缘裁掉）。其余原生表（销售订单 / 审批 / 返工）早已各自 `sticky right-0`，
+   * 本 prop 把同一形态接进共享表；**默认 false = 其它消费方零影响**。
+   */
+  stickyRight?: boolean
   render?: (record: T, index: number) => ReactNode
 }
 
@@ -88,6 +96,8 @@ function Table<T extends Record<string, any>>({
                   'whitespace-nowrap',
                   column.align === 'center' && 'text-center',
                   column.align === 'right' && 'text-right',
+                  // 右缘冻结列：不透明背景 must（否则横滚时下层内容穿透），左分隔线给出边界
+                  column.stickyRight && 'sticky right-0 z-20 border-l border-neutral-200 bg-neutral-50',
                   column.sortable && 'cursor-pointer select-none hover:bg-neutral-100'
                 )}
                 style={{ width: column.width }}
@@ -140,7 +150,9 @@ function Table<T extends Record<string, any>>({
                       'px-4 py-4 text-sm text-neutral-700',
                       !column.wrap && 'whitespace-nowrap',
                       column.align === 'center' && 'text-center',
-                      column.align === 'right' && 'text-right'
+                      column.align === 'right' && 'text-right',
+                      // 右缘冻结：不透明底色（挡住横滚经过的格）+ 与表头同一条左分隔线
+                      column.stickyRight && 'sticky right-0 z-10 border-l border-neutral-200 bg-white'
                     )}
                   >
                     {getCellValue(record, column)}

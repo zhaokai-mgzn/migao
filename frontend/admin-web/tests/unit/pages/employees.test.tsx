@@ -164,16 +164,6 @@ vi.mock('lucide-react', async (importOriginal) => {
 
 import EmployeesPage from '@/app/(dashboard)/employees/page'
 
-/**
- * 行内「⋯」菜单的开合（issue #8039）：`重置密码` / `删除` 收进菜单，
- * **收起态不进 DOM** —— 页面判据因此必须先点触发器。
- */
-const openRowMenu = (rowId: number) => {
-  fireEvent.click(
-    within(screen.getByTestId(`employee-${rowId}`)).getByRole('button', { name: '更多操作' }),
-  )
-}
-
 describe('EmployeesPage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -497,8 +487,7 @@ describe('EmployeesPage', () => {
     await waitFor(() => {
       expect(screen.getByTestId('employee-edit-1')).toBeInTheDocument()
     })
-    // 重置密码在 ⋯ 菜单里（#8039）：收起态不进 DOM，先展开
-    openRowMenu(1)
+    // 2026-11-09 用户裁定：行动作平铺，重置密码直接在行内
     fireEvent.click(screen.getByTestId('employee-reset-password-1'))
     await waitFor(() => {
       expect(screen.getByTestId('modal')).toBeInTheDocument()
@@ -517,7 +506,6 @@ describe('EmployeesPage', () => {
     await waitFor(() => {
       expect(screen.getByTestId('employee-edit-1')).toBeInTheDocument()
     })
-    openRowMenu(1)
     fireEvent.click(screen.getByTestId('employee-reset-password-1'))
     await waitFor(() => {
       expect(screen.getByTestId('modal')).toBeInTheDocument()
@@ -761,30 +749,24 @@ describe('EmployeesPage', () => {
     await waitFor(() => {
       expect(screen.getByTestId('employee-edit-1')).toBeInTheDocument()
     })
-    // 删除在 ⋯ 菜单里（#8039）：收起态不进 DOM，展开后可达
-    expect(screen.queryByText('删除')).toBeNull()
-    openRowMenu(1)
+    // 2026-11-09 用户裁定：删除按钮平铺在行内（不再收进「⋯」）
     expect(screen.getByTestId('employee-delete-1')).toBeInTheDocument()
   })
 
-  it('#8039: 操作列 = 1 主行动 + ⋯ 菜单：每行可点 ≤ 2、删除仍走原确认弹窗', async () => {
+  it('2026-11-09 用户裁定：操作列按钮逐条平铺（编辑 / 重置密码 / 删除），删除仍走原确认弹窗', async () => {
     render(<EmployeesPage />)
     await waitFor(() => expect(screen.getByTestId('employee-1')).toBeInTheDocument())
 
     const cell = within(screen.getByTestId('employee-1')).getByTestId('cell-actions')
-    const clickable = within(cell).getAllByRole('button')
-    expect(clickable).toHaveLength(2)
-    // 主行动 = 编辑（共享件，不再手写 `text-sm` 字面量按钮）
-    expect(clickable[0].textContent).toBe('编辑')
-    // 收起态：重置密码 / 删除 根本不进 DOM（不是 CSS 隐藏）
-    expect(within(cell).queryByText('重置密码')).toBeNull()
-    expect(within(cell).queryByText('删除')).toBeNull()
+    // 三个动作直接同屏（改前是「编辑 + ⋯」）
+    expect(within(cell).getAllByRole('button').map((b) => b.textContent)).toEqual([
+      '编辑',
+      '重置密码',
+      '删除',
+    ])
+    // 旧形态的机器读数归零
+    expect(within(cell).queryByRole('button', { name: '更多操作' })).toBeNull()
     expect(within(cell).queryByRole('menu')).toBeNull()
-
-    // 展开后可达
-    fireEvent.click(within(cell).getByRole('button', { name: '更多操作' }))
-    expect(within(cell).getByTestId('employee-reset-password-1')).toBeInTheDocument()
-    expect(within(cell).getByTestId('employee-delete-1')).toBeInTheDocument()
 
     // 危险动作仍走原有二次确认（Modal 一字未改）：点「删除」只开弹窗
     fireEvent.click(within(cell).getByTestId('employee-delete-1'))

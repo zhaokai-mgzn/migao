@@ -337,10 +337,13 @@ test.describe('商品列表页面', () => {
     expect(page.url()).toContain('sortOrder=asc')
 
     // 验证库存列值严格非递减（#1201: 排序键与显示值必须同源）
-    const stockCells = page.locator('tbody tr td').filter({ hasText: /^\d+$/ })
+    // 🔴 取**库存列**（第 5 列）：`tbody tr td` + 纯数字过滤会同时命中「销量」列，
+    //    两组数字交错后对任何排序都不可能单调（本文件此前的断言就是这么假红的）。
+    const stockCells = page.locator('tbody tr td:nth-child(5)')
     const stockValues = await stockCells.allTextContents()
+    // 库存用千分位展示（`1,000`）⇒ 先去掉逗号再 parse，否则 `parseInt('1,000')` = 1（假红）
     const numericValues = stockValues
-      .map(t => parseInt(t.trim(), 10))
+      .map(t => parseInt(t.replace(/,/g, '').trim(), 10))
       .filter(n => !isNaN(n))
     expect(numericValues.length).toBeGreaterThanOrEqual(2)
     for (let i = 1; i < numericValues.length; i++) {
@@ -363,11 +366,12 @@ test.describe('商品列表页面', () => {
     expect(page.url()).toContain('sortBy=stock')
     expect(page.url()).toContain('sortOrder=desc')
 
-    // 验证库存列值严格非递增
-    const stockCells = page.locator('tbody tr td').filter({ hasText: /^\d+$/ })
+    // 验证库存列值严格非递增（同上：只取库存列，不与销量列混读）
+    const stockCells = page.locator('tbody tr td:nth-child(5)')
     const stockValues = await stockCells.allTextContents()
+    // 库存用千分位展示（`1,000`）⇒ 先去掉逗号再 parse，否则 `parseInt('1,000')` = 1（假红）
     const numericValues = stockValues
-      .map(t => parseInt(t.trim(), 10))
+      .map(t => parseInt(t.replace(/,/g, '').trim(), 10))
       .filter(n => !isNaN(n))
     expect(numericValues.length).toBeGreaterThanOrEqual(2)
     for (let i = 1; i < numericValues.length; i++) {
@@ -626,5 +630,72 @@ test.describe('商品列表页面', () => {
 
     await page.waitForURL(/\/products\/new/, { timeout: 5_000 })
     expect(page.url()).toContain('/products/new')
+  })
+
+  // ========== 整行点击 + 操作按钮平铺（2026-11-09 用户裁定，issue #8849） ==========
+  //
+  // 用户逐字：「一、商品管理列表页：1、需要支持商品非操作区域整行可点击，点击跳转至对应商品的商品详情页；
+  // 2、操作一列：把商品对应的可操作按钮直接展示出来，不要收在“...”里面」。
+  // 本组判据走真浏览器：整行点击是**导航**（jsdom 里只有 `onView` 被调用，验不到地址栏），
+  // 操作按钮平铺是**同屏可见**（验「没有 ⋯ 才看得到」与真机观感）。
+  test('操作按钮平铺：没有「更多操作」，在架行直接露出 编辑/查看/推荐/下架/删除', async ({ page }) => {
+    // 每行都不再有 ⋯ 触发器（旧形态的机器读数）
+    await expect(page.getByRole('button', { name: '更多操作' })).toHaveCount(0)
+
+    const row = page.locator('tbody tr').filter({ hasText: '北欧简约遮光窗帘 灰色系列' })
+    for (const label of ['编辑', '查看', '推荐', '下架', '删除']) {
+      await expect(row.getByRole('button', { name: label, exact: true })).toBeVisible()
+    }
+
+    // 已下架行：上架 / 查看 / 编辑 / 删除 同屏，且不再出现「下架」
+    const offSaleRow = page.locator('tbody tr').filter({ hasText: '日式棉麻窗帘 原木色' })
+    for (const label of ['上架', '查看', '编辑', '删除']) {
+      await expect(offSaleRow.getByRole('button', { name: label, exact: true })).toBeVisible()
+    }
+    await expect(offSaleRow.getByRole('button', { name: '下架', exact: true })).toHaveCount(0)
+  })
+
+  test('点非操作区域（商品标题）⇒ 整行跳对应商品详情', async ({ page }) => {
+    // 详情页会打若干非本判据接口：认证夹具直接按 fixture 回（不依赖 `fallback` 的路由顺序），
+    // 其余返回空成功体 —— 避免 401 把整页踢到登录页 / 通知中心（那样「行点击 → /products/p001」
+    // 会变成与被测行为无关的假红）。
+    await page.route('**/api/**', (route) => {
+      const url = route.request().url()
+      if (url.includes('/api/auth/me')) {
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            success: true,
+            data: {
+              id: '1',
+              username: '13800138000',
+              name: '管理员',
+              roles: ['admin'],
+              capabilities: { mibaoChat: true },
+              tenantId: 1,
+              tenantName: '测试企业',
+            },
+          }),
+        })
+      }
+      if (url.includes('/api/auth/')) return route.fallback()
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ code: 200, data: null }),
+      })
+    })
+
+    await page.getByText('北欧简约遮光窗帘 灰色系列').click()
+    await expect(page).toHaveURL(/\/products\/p001$/, { timeout: 10_000 })
+  })
+
+  test('点行复选框只勾选、不跳详情', async ({ page }) => {
+    const row = page.locator('tbody tr').filter({ hasText: '北欧简约遮光窗帘 灰色系列' })
+    await row.getByRole('checkbox').check()
+    await expect(row.getByRole('checkbox')).toBeChecked()
+    // 仍停在列表页（行点击不得被复选框冒泡触发）
+    await expect(page).toHaveURL(/\/products(\?.*)?$/)
   })
 })

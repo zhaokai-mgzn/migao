@@ -7,8 +7,8 @@ import { workerApi, workerPageCatalogApi } from '@/lib/api'
 import { toastRequestError } from '@/lib/api-error'
 import { displayEnum } from '@/lib/enum-display'
 import ListLoadError from '@/components/common/ListLoadError'
-import { Button, Input, Select, Modal, Table, Badge, Pagination, RowActions, RowActionLink } from '@/components/ui'
-import type { TableColumn, RowActionItem } from '@/components/ui'
+import { Button, Input, Select, Modal, Table, Badge, Pagination, RowActionLink } from '@/components/ui'
+import type { TableColumn } from '@/components/ui'
 import type { EmployeeStatus, WorkerOperationOption, WorkerProfile } from '@/types'
 
 /**
@@ -552,18 +552,24 @@ export default function WorkerProfilesPanel({ canWrite }: WorkerProfilesPanelPro
   }
 
   /**
-   * 行内动作（issue #8038）：**主行动 = 改工序** + ⋯ 菜单。
+   * 行内动作（2026-11-09 用户裁定：**逐条平铺**，不再收进「⋯」）。
    *
-   * 为什么主行动选「改工序」：本页说明段自己写着「绑定工序后扫码直接报那一道，不用再选」——
-   * 那是工人档案里**唯一会改变作业行为**的一项；「改菜单」是收窄可见面的权限步骤，
-   * 「开/关质检」是逐页开关，「重置 PIN」「停用」是低频例外 ⇒ 都进 ⋯。
-   * （改前这 5 个是平级文字动作 = 类级扫描器扫出的最高一页，密度 5。）
+   * 主行动选「改工序」：本页说明段自己写着「绑定工序后扫码直接报那一道，不用再选」——
+   * 那是工人档案里**唯一会改变作业行为**的一项；「改菜单 / 开·关质检 / 重置 PIN / 停用」
+   * 逐条平铺在同一行。
    *
    * 🔴 禁用态与回调**逐条保持改前**：`canWrite` 一档（只读角色看得见但点不动）、
    * `togglingOptional` / `togglingId` 进行中禁用、`menuPages` 为空时「改菜单」入口不出现（#7804）。
    */
-  const rowActionsFor = (record: WorkerProfile): RowActionItem[] => {
-    const items: RowActionItem[] = []
+  type SecondaryAction = {
+    key: string
+    label: string
+    testId?: string
+    onClick: () => void
+    disabled?: boolean
+  }
+  const secondaryActionsFor = (record: WorkerProfile): SecondaryAction[] => {
+    const items: SecondaryAction[] = []
     if (positionOptions.length > 0) {
       items.push({
         key: 'position',
@@ -657,15 +663,13 @@ export default function WorkerProfilesPanel({ canWrite }: WorkerProfilesPanelPro
     {
       key: 'actions',
       title: '操作',
-      // issue #8038：**1 主行动（改工序）+ ⋯ 菜单**。改前是 5 个平级文字动作
-      // （改菜单 / 开·关质检 / 改工序 / 重置 PIN / 停用），nowrap 口径（#7217）不变。
-      width: '140px',
+      // 行内动作（2026-11-09 用户裁定：**逐条平铺**，不再收进「⋯」）。
+      // 改前是 5 个平级文字动作（改菜单 / 开·关质检 / 改工序 / 重置 PIN / 停用），nowrap 口径（#7217）不变。
+      width: '320px',
       render: (record) => (
-        <RowActions
-          testId={`worker-actions-${record.id}`}
-          // ⚠️ 别用 `worker-menu-<id>`：那是「工人端菜单口径」列的既有 testid（同屏会撞）
-          menuTestId={`worker-row-menu-${record.id}`}
-          items={rowActionsFor(record)}
+        <div
+          className="flex items-center gap-1 whitespace-nowrap"
+          data-testid={`worker-actions-${record.id}`}
         >
           <Button
             variant="ghost"
@@ -676,7 +680,18 @@ export default function WorkerProfilesPanel({ canWrite }: WorkerProfilesPanelPro
           >
             改工序
           </Button>
-        </RowActions>
+          {secondaryActionsFor(record).map((action) => (
+            <RowActionLink
+              key={action.key}
+              size="xs"
+              disabled={action.disabled}
+              data-testid={action.testId}
+              onClick={action.onClick}
+            >
+              {action.label}
+            </RowActionLink>
+          ))}
+        </div>
       ),
     },
   ]

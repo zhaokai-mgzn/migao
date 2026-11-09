@@ -196,90 +196,22 @@ describe('ProductTable (#646 — 移除 in_warehouse)', () => {
     })
   })
 
-  describe('操作列 — 「1 主行动 + ⋯ 菜单」（issue #8038）', () => {
-    // issue #8038：行内动作收进共享原语 `ui/RowActions`。**收起态菜单项不进 DOM**
-    // （不是 CSS 隐藏）⇒ 判据必须先点开菜单，再断言菜单项。
-    const openMenu = (id = 'p001') => {
-      fireEvent.click(
-        within(screen.getByTestId(`product-actions-${id}`)).getByRole('button', { name: '更多操作' }),
-      )
-      return screen.getByRole('menu')
-    }
-    const menuLabels = () => screen.getAllByRole('menuitem').map((m) => m.textContent)
-    const primaryOf = (id = 'p001') =>
-      within(screen.getByTestId(`product-actions-${id}`)).getAllByRole('button')[0]
+  describe('操作列 — 平铺（2026-11-09 用户裁定：不再收进「⋯」）', () => {
+    // 用户逐字：「操作一列：把商品对应的可操作按钮直接展示出来，不要收在“...”里面」。
+    // 判据 = 各状态的动作集合**同屏可见**（不是点开才进 DOM），且全表没有 ⋯ 触发器 / role=menu。
+    const cellOf = (id = 'p001') => screen.getByTestId(`product-actions-${id}`)
+    const labelsOf = (id = 'p001') =>
+      within(cellOf(id)).getAllByRole('button').map((b) => b.textContent)
 
-    it('每行可点元素 ≤ 2：1 主行动 + 1 个 ⋯ 触发器（改前在架行是 5 个平级文字链）', () => {
-      const products: Product[] = [
-        { ...baseProduct, id: 'p1', status: 'on_sale' },
-        { ...baseProduct, id: 'p2', status: 'off_sale' },
-        { ...baseProduct, id: 'p3', status: 'draft' },
-        { ...baseProduct, id: 'p4', status: 'under_review' },
-      ]
-      render(<ProductTable {...defaultProps} products={products} total={4} />)
-      for (const id of ['p1', 'p2', 'p3', 'p4']) {
-        const cell = screen.getByTestId(`product-actions-${id}`)
-        expect(
-          within(cell).getAllByRole('button').length,
-          `商品 ${id} 的操作区可点元素 > 2（又回到平铺文字链的形态了）`,
-        ).toBeLessThanOrEqual(2)
-      }
-    })
-
-    it('收起态：菜单项**不进 DOM**（不是 CSS 隐藏），屏上只剩主行动 + ⋯', () => {
+    it('在架行：编辑（主行动）+ 查看 / 推荐 / 下架 / 删除 全部同屏', () => {
       render(<ProductTable {...defaultProps} />)
-      const cell = screen.getByTestId('product-actions-p001')
-      expect(within(cell).queryByRole('menu')).toBeNull()
-      expect(within(cell).queryByText('删除')).toBeNull()
-      expect(within(cell).queryByText('查看')).toBeNull()
-      expect(primaryOf().textContent).toBe('编辑')
-    })
-
-    it('主行动按状态派生：在架→编辑、已下架→上架、审核中→查看、草稿→编辑', () => {
-      const cases: Array<[ProductStatus, string]> = [
-        ['on_sale', '编辑'],
-        ['off_sale', '上架'],
-        ['under_review', '查看'],
-        ['draft', '编辑'],
-      ]
-      for (const [status, expected] of cases) {
-        const { unmount } = render(
-          <ProductTable {...defaultProps} products={[{ ...baseProduct, id: 'x', status }]} />,
-        )
-        expect(primaryOf('x').textContent, `状态 ${status} 的主行动`).toBe(expected)
-        unmount()
-      }
-    })
-
-    it('在架行菜单项：查看 / 推荐 / 下架 / 删除（危险动作进菜单，回调一字未改）', () => {
-      const onView = vi.fn()
-      const onRecommend = vi.fn()
-      const onTakeOffShelf = vi.fn()
-      const onDelete = vi.fn()
-      render(
-        <ProductTable
-          {...defaultProps}
-          onView={onView}
-          onRecommend={onRecommend}
-          onTakeOffShelf={onTakeOffShelf}
-          onDelete={onDelete}
-        />,
-      )
-      openMenu()
-      expect(menuLabels()).toEqual(['查看', '推荐', '下架', '删除'])
-
-      fireEvent.click(screen.getByRole('menuitem', { name: '查看' }))
-      expect(onView).toHaveBeenCalledTimes(1)
-      // 点了就收起（菜单不赖在屏上）
+      expect(labelsOf()).toEqual(['编辑', '查看', '推荐', '下架', '删除'])
+      // 旧形态的机器读数必须归零：不再有触发器、不再有菜单容器
+      expect(screen.queryByRole('button', { name: '更多操作' })).toBeNull()
       expect(screen.queryByRole('menu')).toBeNull()
-
-      openMenu()
-      fireEvent.click(screen.getByRole('menuitem', { name: '删除' }))
-      // 危险动作只换容器：回调仍是页面那一个（二次确认由页面 Modal 承担，见 products.test.tsx）
-      expect(onDelete).toHaveBeenCalledTimes(1)
     })
 
-    it('已推荐商品的菜单项是「取消推荐」（不是两个都出现）', () => {
+    it('已推荐商品的平铺项是「取消推荐」（不是两个都出现）', () => {
       const onUnrecommend = vi.fn()
       render(
         <ProductTable
@@ -288,13 +220,12 @@ describe('ProductTable (#646 — 移除 in_warehouse)', () => {
           onUnrecommend={onUnrecommend}
         />,
       )
-      openMenu()
-      expect(menuLabels()).toEqual(['查看', '取消推荐', '下架', '删除'])
-      fireEvent.click(screen.getByRole('menuitem', { name: '取消推荐' }))
+      expect(labelsOf()).toEqual(['编辑', '查看', '取消推荐', '下架', '删除'])
+      fireEvent.click(within(cellOf()).getByRole('button', { name: '取消推荐' }))
       expect(onUnrecommend).toHaveBeenCalledTimes(1)
     })
 
-    it('已下架行：主行动「上架」，菜单里 查看 / 编辑 / 删除（不再出现「下架」）', () => {
+    it('已下架行：上架（主行动）+ 查看 / 编辑 / 删除；不再出现「下架」', () => {
       const onPutOnShelf = vi.fn()
       render(
         <ProductTable
@@ -303,37 +234,111 @@ describe('ProductTable (#646 — 移除 in_warehouse)', () => {
           onPutOnShelf={onPutOnShelf}
         />,
       )
-      expect(primaryOf().textContent).toBe('上架')
-      fireEvent.click(primaryOf())
+      expect(labelsOf()).toEqual(['上架', '查看', '编辑', '删除'])
+      fireEvent.click(within(cellOf()).getByRole('button', { name: '上架' }))
       expect(onPutOnShelf).toHaveBeenCalledTimes(1)
-
-      openMenu()
-      expect(menuLabels()).toEqual(['查看', '编辑', '删除'])
-      expect(screen.queryByRole('menuitem', { name: '下架' })).toBeNull()
+      expect(within(cellOf()).queryByRole('button', { name: '下架' })).toBeNull()
     })
 
-    it('审核中：只有「查看」，没有 ⋯ 触发器（items 为空不渲染空菜单）', () => {
-      render(<ProductTable {...defaultProps} products={[{ ...baseProduct, status: 'under_review' }]} />)
-      const cell = screen.getByTestId('product-actions-p001')
-      expect(within(cell).getAllByRole('button').map((b) => b.textContent)).toEqual(['查看'])
-      expect(within(cell).queryByRole('button', { name: '更多操作' })).toBeNull()
-    })
+    it('审核中只有「查看」；草稿 = 编辑 + 删除（各状态动作集合与改前一致）', () => {
+      const review = render(
+        <ProductTable {...defaultProps} products={[{ ...baseProduct, status: 'under_review' }]} />,
+      )
+      expect(labelsOf()).toEqual(['查看'])
+      review.unmount()
 
-    it('草稿：主行动「编辑」，菜单里只有「删除」', () => {
       render(<ProductTable {...defaultProps} products={[{ ...baseProduct, status: 'draft' }]} />)
-      expect(primaryOf().textContent).toBe('编辑')
-      openMenu()
-      expect(menuLabels()).toEqual(['删除'])
+      expect(labelsOf()).toEqual(['编辑', '删除'])
     })
 
-    it('危险项红字（`danger`）；行内层级不走实心主色（§32.2）', () => {
+    it('逐条回调不变：每个按钮只触发自己的回调（点删除不连带下架 / 编辑）', () => {
+      const onView = vi.fn()
+      const onEdit = vi.fn()
+      const onRecommend = vi.fn()
+      const onTakeOffShelf = vi.fn()
+      const onDelete = vi.fn()
+      render(
+        <ProductTable
+          {...defaultProps}
+          onView={onView}
+          onEdit={onEdit}
+          onRecommend={onRecommend}
+          onTakeOffShelf={onTakeOffShelf}
+          onDelete={onDelete}
+        />,
+      )
+      fireEvent.click(within(cellOf()).getByRole('button', { name: '查看' }))
+      expect(onView).toHaveBeenCalledTimes(1)
+      fireEvent.click(within(cellOf()).getByRole('button', { name: '编辑' }))
+      expect(onEdit).toHaveBeenCalledTimes(1)
+      fireEvent.click(within(cellOf()).getByRole('button', { name: '推荐' }))
+      expect(onRecommend).toHaveBeenCalledTimes(1)
+      fireEvent.click(within(cellOf()).getByRole('button', { name: '下架' }))
+      expect(onTakeOffShelf).toHaveBeenCalledTimes(1)
+      fireEvent.click(within(cellOf()).getByRole('button', { name: '删除' }))
+      // 危险动作只换容器：回调仍是页面那一个（二次确认由页面 Modal 承担）
+      expect(onDelete).toHaveBeenCalledTimes(1)
+    })
+
+    it('危险项（下架 / 删除）红字；行内层级不走实心主色（§32.2）', () => {
       render(<ProductTable {...defaultProps} />)
-      openMenu()
-      expect(screen.getByRole('menuitem', { name: '删除' }).className).toMatch(/text-red-600/)
+      for (const label of ['下架', '删除']) {
+        expect(within(cellOf()).getByRole('button', { name: label }).className).toMatch(/text-red-500/)
+      }
       // 行内主行动 = ghost：一屏至多一个 primary，那一个是页面头的「新增商品」
-      for (const b of within(screen.getByTestId('product-actions-p001')).getAllByRole('button')) {
+      for (const b of within(cellOf()).getAllByRole('button')) {
         expect(b.className).not.toMatch(/bg-primary-600/)
       }
+    })
+  })
+
+  describe('整行点击进商品详情（2026-11-09 用户裁定）', () => {
+    // 用户逐字：「需要支持商品非操作区域整行可点击，点击跳转至对应商品的商品详情页」。
+    // jsdom 里 `onView` 由页面接到 `router.push('/products/{id}')`（见 products/page.tsx）。
+    const rowOf = () => screen.getByText('北欧简约遮光窗帘').closest('tr') as HTMLElement
+
+    it('点非操作区域（商品标题）⇒ onView(product) 一次', () => {
+      const onView = vi.fn()
+      render(<ProductTable {...defaultProps} onView={onView} />)
+      fireEvent.click(screen.getByText('北欧简约遮光窗帘'))
+      expect(onView).toHaveBeenCalledTimes(1)
+      expect(onView.mock.calls[0][0]).toMatchObject({ id: 'p001' })
+    })
+
+    it('行是 cursor-pointer（可点性可见，不是只有代码里能点）', () => {
+      render(<ProductTable {...defaultProps} />)
+      expect(rowOf().className).toMatch(/\bcursor-pointer\b/)
+    })
+
+    it('点复选框只勾选、不跳详情', () => {
+      const onView = vi.fn()
+      const onSelectChange = vi.fn()
+      render(<ProductTable {...defaultProps} onView={onView} onSelectChange={onSelectChange} />)
+      fireEvent.click(within(rowOf()).getByRole('checkbox'))
+      expect(onView).not.toHaveBeenCalled()
+      expect(onSelectChange).toHaveBeenCalledWith(['p001'])
+    })
+
+    it('操作列右缘冻结（平铺后动作变宽，横滚时仍可见）', () => {
+      const { container } = render(<ProductTable {...defaultProps} />)
+      const header = container.querySelector('thead th:last-child') as HTMLElement
+      const cell = container.querySelector('tbody tr td:last-child') as HTMLElement
+      for (const el of [header, cell]) {
+        expect(el.className).toMatch(/\bsticky\b/)
+        expect(el.className).toMatch(/\bright-0\b/)
+      }
+    })
+
+    it('点操作按钮只执行动作、不跳详情（查看动作自身除外，且只触发一次）', () => {
+      const onView = vi.fn()
+      const onEdit = vi.fn()
+      render(<ProductTable {...defaultProps} onView={onView} onEdit={onEdit} />)
+      fireEvent.click(within(screen.getByTestId('product-actions-p001')).getByRole('button', { name: '编辑' }))
+      expect(onEdit).toHaveBeenCalledTimes(1)
+      expect(onView).not.toHaveBeenCalled()
+
+      fireEvent.click(within(screen.getByTestId('product-actions-p001')).getByRole('button', { name: '查看' }))
+      expect(onView).toHaveBeenCalledTimes(1)
     })
   })
 
@@ -356,32 +361,29 @@ describe('ProductTable (#646 — 移除 in_warehouse)', () => {
     })
   })
 
-  describe('#1400 — 行内动作横排 + whitespace-nowrap（issue #8038 起容器 = 共享原语）', () => {
-    it('动作面容器（`ui/RowActions`）有 flex items-center gap-1 whitespace-nowrap', () => {
+  describe('#1400 — 行内动作横排 + whitespace-nowrap（2026-11-09 起容器 = 平铺动作面）', () => {
+    it('动作面容器有 flex items-center gap-1 whitespace-nowrap', () => {
       render(<ProductTable {...defaultProps} />)
       const cell = screen.getByTestId('product-actions-p001')
-      // 容器 = RowActions 的外层 div（同一行内不折行）
+      // 同一行内不折行（平铺后动作更多，nowrap 口径不变）
       expect(cell.className).toMatch(/\bflex\b/)
       expect(cell.className).toMatch(/\bitems-center\b/)
       expect(cell.className).toMatch(/\bgap-1\b/)
       expect(cell.className).toMatch(/\bwhitespace-nowrap\b/)
     })
 
-    it('主行动走 `Button` ghost（行内层级不用实心主色），不再是自拼文字链', () => {
+    it('主行动走 `Button` ghost，其余平铺动作走共享 `RowActionLink` 文字链', () => {
       render(<ProductTable {...defaultProps} />)
       const primary = within(screen.getByTestId('product-actions-p001')).getAllByRole('button')[0]
       expect(primary.textContent).toBe('编辑')
       // ghost = text-neutral-600；size="sm" = h-8（§32.2）
       expect(primary.className).toMatch(/\btext-neutral-600\b/)
       expect(primary.className).toMatch(/\bh-8\b/)
-    })
 
-    it('删除（危险动作）在菜单里是红字', () => {
-      render(<ProductTable {...defaultProps} />)
-      fireEvent.click(
-        within(screen.getByTestId('product-actions-p001')).getByRole('button', { name: '更多操作' }),
-      )
-      expect(screen.getByRole('menuitem', { name: '删除' }).className).toMatch(/\btext-red-600\b/)
+      // 其余动作 = RowActionLink 的唯一视觉规格（text-primary-600 + hover 下划线）
+      const view = within(screen.getByTestId('product-actions-p001')).getByRole('button', { name: '查看' })
+      expect(view.className).toMatch(/\btext-primary-600\b/)
+      expect(view.className).toMatch(/\bhover:underline\b/)
     })
   })
 
