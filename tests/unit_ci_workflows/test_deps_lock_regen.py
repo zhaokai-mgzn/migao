@@ -136,3 +136,25 @@ def test_script_never_pulls_right_after_update_branch():
     i_ls = src.find("git ls-remote")
     i_merge = src.find("git merge --ff-only")
     assert 0 < i_ls < i_merge, "ls-remote 轮询必须出现在 merge --ff-only 之前（issue #8843）"
+
+
+# ── issue #8843（第二个实测）：提交身份必须来自白名单，不许写死虚构身份 ──────────
+def test_script_does_not_hardcode_a_commit_identity():
+    """脚本**不许**用 `-c user.name/user.email` 写死身份（实测 #8830 被作者守卫判红）。
+
+    红证（注入式）：把 `git -c user.name="migao-deps-lockfix" -c user.email="noreply@migao.local" commit …`
+    加回脚本 ⇒ 本断言当场红，并指名它是 `.github/external-authorship-allow.json` 之外的身份。
+    """
+    src = SCRIPT.read_text(encoding="utf-8")
+    code_lines = [ln.strip() for ln in src.splitlines() if not ln.strip().startswith("#")]
+    offenders = [
+        ln for ln in code_lines
+        if 'user.name="' in ln or 'user.email="' in ln
+    ]
+    assert offenders == [], (
+        "脚本用写死身份提交 ⇒ External Authorship Guard / Contribution Gate 按提交作者判红 "
+        f"（实测 PR #8830）：{offenders!r}"
+    )
+    assert "git config user.email" in src, (
+        "缺前置自证：没有配置 user.email 时必须出声退出，不许静默用虚构身份提交"
+    )

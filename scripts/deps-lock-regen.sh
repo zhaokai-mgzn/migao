@@ -126,7 +126,12 @@ if [ "$MODE" = "--dry-run" ]; then
   exit 0
 fi
 echo "⑥ 提交并推送（补完立刻推：随后立刻合，别再 update-branch）"
-git -c user.name="migao-deps-lockfix" -c user.email="noreply@migao.local" \
-  commit -q -m "chore(deps): 用 npm $NPM_FOR_LOCK 视角重生成 package-lock（CI 用 node 20/npm 10，npm ci 判 EUSAGE）（关联 #7688）"
+# 身份：**不许**用虚构身份提交（issue #8843 第二个实测）。External Authorship Guard / Contribution Gate
+# 按**提交作者**判红 —— 实测 2026-11-09：旧版写死的 `migao-deps-lockfix <noreply@migao.local>`
+# 不在 `.github/external-authorship-allow.json` 白名单里 ⇒ `Contribution Gate` 判红 + 打 block/merge，
+# 于是**脚本自己把 PR 拦死**。改用工作区既有身份（白名单里登记的是 `migao-agent`）。
+git config user.email >/dev/null 2>&1 \
+  || die "本工作区没有配置 git user.email ⇒ 无法提交；且**不许**用白名单外的虚构身份（External Authorship Guard 会判红）"
+git commit -q -m "chore(deps): 用 npm $NPM_FOR_LOCK 视角重生成 package-lock（CI 用 node 20/npm 10，npm ci 判 EUSAGE）（关联 #7688）"
 git push origin "HEAD:$BRANCH" || die "推送失败"
 echo "✅ 已推送（现在去合；别再对它 update-branch）"
