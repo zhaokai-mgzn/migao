@@ -755,3 +755,73 @@ jobs:
             echo "::warning::机制存活读数**本轮无声**（mech=automerge）：发射器不在检出里 ⇒ 本轮读数缺失（**不是**「零动作」）"
           fi
           exit $RC
+
+  # ── 全绿 + 已 arm + `mergeStateStatus=BEHIND` ⇒ 永不合并的收口（关联 #8850，2026-11-09）──
+  # 病（现取读数逐字见 issue #8850）：#8846 的 28 条检查全 pass、`autoMergeRequest` 已 arm，
+  #   却长期停在 `BEHIND`、**永不合并**；实测连续三次 `gh pr update-branch 8846` 才合上
+  #   （每次 update 后 CI 跑 ~12 分钟，期间 main 又前进 ⇒ 再 BEHIND）。三处都指向同一空位：
+  #   ① 分支保护 `strict: true`（要求 up-to-date）+ 仓库 `allow_update_branch=false`
+  #      ⇒ PR 页面**没有** "Update branch" 按钮、GitHub 也不会自动更新；
+  #   ② 仓内没有任何 workflow 跑 `gh pr update-branch`（只有人跑的
+  #      `scripts/pr-merge-when-clean.sh` / `scripts/deps-lock-regen.sh`）；
+  #   ③ 兜底 `scripts/dangling_pr_scan.py` **明确排除 BEHIND** —— 它的理由是「BEHIND 在 PR 页面上
+  #      有显式可行动横幅」，而本仓把这个横幅关掉了 ⇒ **两处都不管**。
+  # 动作：对「同仓 ∧ 非 draft ∧ 非 dependabot ∧ `autoMergeRequest != null` ∧
+  #   `mergeStateStatus == BEHIND` ∧ required **全绿**」的 PR 做**一次** `gh pr update-branch`
+  #   —— 判据本体与三态退出码**全部**在 `scripts/update_behind_prs.py`（单一实现，本机可复跑）：
+  #   `0` = 无待办/已动作；`1` = 机制自身失败（取数/权限）；`3` = 有 PR 需人工（冲突/422）或判不了。
+  #   ⛔ 不 `gh pr merge`、不 `git push`（合并仍由 GitHub 的 native auto-merge 在 required 全绿后完成）。
+  #   ⛔ dependabot 归 #8845 的 `rebase-stale-dependabot` 腿：两条腿**不许**同时命中同一 PR
+  #      （`gh pr update-branch` 会把 main 合进来，对有 npm lock 的分支正会产出坏 lock，#7688 的形态）。
+  # ⚠️ **不动 `detect-dangling-prs`**：它的红证以「最后一步 = 跑判据脚本的那一步」为前提
+  #   （`tests/unit_ci_workflows/test_dangling_pr_scan.py::test_host_workflow_wiring_guard_is_not_vacuous`），
+  #   给它加一步就把那条判据变成空断言 ⇒ 本 job **独立**（判据 =
+  #   `test_update_behind_prs.py::test_dangling_scan_job_keeps_its_last_step`）。
+  # ⚠️ **不新增 cron**：复用本文件既有的 `on.schedule`（`7 * * * *`）与 `workflow_dispatch`（铁律 10）。
+  # 权限为什么是 `contents: write`（**不是**只读）：本动作由内置 `github.token`（= GitHub **App**
+  #   的 installation token）发起，而官方文档对 "Update a pull request branch" 明确写着
+  #   「If making a request on behalf of a GitHub App you must also have permissions to write the
+  #   contents of the head repository」（head 仓库 == 本仓）⇒ 只给 `pull-requests: write` 会 403。
+  #   文档：https://docs.github.com/en/rest/pulls/pulls#update-a-pull-request-branch
+  # 存活读数（机制兜底失败必须可见）：rc **绑定 job 结论**（`READING_RC`），机制自身的三态退出码
+  #   写进 `why` —— 否则「rc=3 ∧ 绿 job」会被看门人判成「读数与事实相反」（#5264 的形态，判据 =
+  #   `scripts/mechanism_liveness.py::judge_watchdog`）。rc=3 的**具名**出处是脚本自己的 `::warning::`
+  #   （每个需人工的 PR 一条），所以「3 不当 0 读」有承载体、而不靠 rc 字段冒充。
+  update-behind-prs:
+    name: Update behind PRs (armed + all required green)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    # 窄权限（**两个都必需**，见上面「权限为什么是 contents: write」）：本 job 不改代码内容，
+    # 只让 update-branch 把 base 合进 head。
+    permissions:
+      contents: write
+      pull-requests: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+
+    steps:
+      # 同既有 job：gh CLI 需要 git 上下文才能解析仓库（issue #2929 的现场）。
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: "Update behind PRs（脚本默认只读 ⇒ 本步显式 --apply；冲突/422 停手出声）"
+        if: always()
+        run: |
+          set +e
+          python3 scripts/update_behind_prs.py --repo "$GITHUB_REPOSITORY" --apply
+          RC=$?
+          set -e
+          # 读数 rc 必须与 job 结论一致：脚本 rc=1 ⇒ 本步 exit 1 ⇒ job 失败 ⇒ 读数 rc=1；
+          # rc ∈ {0,3} ⇒ job 绿 ⇒ 读数 rc=0（**3 的语义在 why 里逐字写明**，不靠 rc 字段冒充）。
+          if [ "$RC" -eq 1 ]; then READING_RC=1; else READING_RC=0; fi
+          # 存活读数（issue #5326 判据 1 / 4）：rc=3 也必须出声（「我有事要说」≠「我没跑」）。
+          # 发射器可能不在检出里（固定 ref / 浅检出）⇒ 降级为 warning，**绝不**让读数把机制判红。
+          if [ -f .github/scripts/mechanism_liveness.sh ]; then
+            bash .github/scripts/mechanism_liveness.sh emit automerge --rc "$READING_RC" \
+              --why "落后分支收口：脚本退出码 ${RC}（0=无待办/已动作 / 1=机制失败 / 3=有 PR 需人工）；rc=3 时本 job 仍绿、具名出处见本步 ::warning::"
+          else
+            echo "::warning::机制存活读数**本轮无声**（mech=automerge）：发射器不在检出里（固定 ref / 浅检出）⇒ 本轮读数缺失（**不是**「零动作」）"
+          fi
+          exit "$READING_RC"
