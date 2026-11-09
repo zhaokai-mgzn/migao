@@ -1,5 +1,5 @@
 # case_ids: UI-082
-"""**品牌文案**守卫（两组判据同处一文件）：
+"""**品牌文案**守卫（三组判据同处一文件）：
 
 ① **产品定位文案**（issue #6463）：观星台不得再被写成「电商管理系统 / 电商管理解决方案」；
 ② **品牌称呼**（issue #6525）：旧称呼（米高 / 米宝 / 小布）不得在用户可见面回流，
@@ -294,3 +294,82 @@ def test_agent_name_guard_discriminating_power():
     assert old_name_violations("// 2026-10-08 改名自米宝\n") == []
     # ⑤ 新称呼零命中（正面对照：守卫不会被自己的新口径喂红）
     assert old_name_violations("const a = '黄金策'\nconst b = '元元'\nconst c = '观星台'\n") == []
+
+
+# ── ③ 文档定位（issue #8857）：README / wiki / 模块 README 不得再自称旧系统名 ──────
+#
+# 病根：定位在**代码面**已有守卫（①），但读的人第一眼看的 README / wiki 首页不在任何判据面内
+# ⇒ 改完代码，文档仍写着已废的系统名，且没有任何东西会红（本单的起因即此）。
+#
+# 判据：
+# | # | 判什么 | 怎么红 |
+# |---|---|---|
+# | 1 | 登记面上零旧系统名 | `AIKF` / `AI 智能客服系统` / `AI智能客服系统` 命中即具名 `文件:行 + 原句` |
+# | 2 | 正向锚 | 每个登记文件必须含「观星台」；产品定位页还必须含「布艺」+「AI 经营平台」 |
+# | 3 | 判别力自证 | 旧标题判红且指到行；「7×24 智能客服」这类**能力名**不假红；扫面为空即红 |
+#
+# 边界：只判**产品定位面**（README / wiki 定位页 / 模块 README / AGENTS / CONTRIBUTING）。
+# 历史文档（CHANGELOG / design / 验收记录）里的旧名是**历史证据**，不在面内 —— 改了就是伪造证据。
+
+#: 旧系统名（本仓已不再用它作为产品定位）
+OLD_SYSTEM_NAMES = ("AIKF", "AI 智能客服系统", "AI智能客服系统")
+
+#: 定位面登记表：文件 ⇒ 必须正向存在的锚
+DOC_POSITIONING_FILES: dict[str, tuple[str, ...]] = {
+    "README.md": ("观星台", "布艺", "AI 经营平台"),
+    "docs/wiki/Home.md": ("观星台", "布艺", "AI 经营平台"),
+    "docs/wiki/Product.md": ("观星台", "布艺", "AI 经营平台"),
+    "docs/wiki/INDEX.md": ("观星台", "布艺"),
+    "AGENTS.md": ("观星台", "布艺"),
+    "CONTRIBUTING.md": ("观星台", "布艺"),
+    "backend/admin-api/README.md": ("观星台", "布艺", "AI 经营平台"),
+    "backend/ai-agent-service/README.md": ("观星台", "布艺", "AI 经营平台"),
+    "frontend/admin-web/README.md": ("观星台", "布艺", "AI 经营平台"),
+    "frontend/mini-app/README.md": ("观星台", "布艺", "AI 经营平台"),
+    "frontend/bmini-app/README.md": ("观星台", "布艺", "AI 经营平台"),
+}
+
+
+def doc_positioning_violations(rel: str, text: str) -> list[str]:
+    """定位面里的旧系统名 ⇒ `文件:行: 原句`（每行只报首个命中，避免同一句刷屏）。"""
+    found: list[str] = []
+    for no, line in enumerate(text.splitlines(), start=1):
+        for term in OLD_SYSTEM_NAMES:
+            if term in line:
+                found.append(f"{rel}:{no}: 旧系统名「{term}」: {line.strip()[:120]}")
+                break
+    return found
+
+
+def test_readme_and_wiki_no_longer_use_the_old_system_name():
+    violations: list[str] = []
+    scanned: list[str] = []
+    for rel, anchors in DOC_POSITIONING_FILES.items():
+        path = REPO_ROOT / rel
+        assert path.is_file(), f"定位面文件不存在（路径漂移？）: {rel}"
+        text = path.read_text(encoding="utf-8")
+        scanned.append(rel)
+        violations.extend(doc_positioning_violations(rel, text))
+        for anchor in anchors:
+            assert anchor in text, f"{rel} 缺产品定位锚「{anchor}」"
+    assert scanned, "扫面为空 —— 守卫的射程断了（登记表为空？）"
+    assert violations == [], (
+        "产品定位面仍在用**已废的**系统名（issue #8857：README/wiki 从「AI 智能客服系统」"
+        "改为「观星台 — 布艺行业 AI 经营平台」）：\n  " + "\n  ".join(violations)
+    )
+
+
+def test_doc_positioning_guard_discriminating_power():
+    """判别力自证：旧系统名会红 / 能力名不假红 / 无空格形态也红。"""
+    old = doc_positioning_violations("sample.md", "# AI 智能客服系统（AIKF）\n")
+    assert len(old) == 1, f"旧标题没被判红 ⇒ 判据是空断言：{old}"
+    assert old[0].startswith("sample.md:"), f"归因不对（应指到合成源）：{old[0]}"
+    assert "AIKF" in old[0]
+    # 新文案 + 能力名（智能客服作为客户服务域的一项能力）**不得假红**
+    benign = (
+        "# 观星台 — 布艺行业 AI 经营平台\n\n"
+        "顾客侧由元元提供 7×24 智能客服；智能客服是客户服务能力域的一项能力。\n"
+    )
+    assert doc_positioning_violations("sample.md", benign) == [], "能力名被误判成旧系统名（假红）"
+    # 无空格形态同样是旧系统名
+    assert len(doc_positioning_violations("sample.md", "# AI智能客服系统\n")) == 1

@@ -157,7 +157,7 @@ cd tests && npm run e2e
 | 模块 | 关键变量 |
 |------|---------|
 | admin-api | DB_URL, REDIS_URL, JWT_PRIVATE_KEY, JWT_PUBLIC_KEY, **AI_AGENT_BASE_URL（本地 `http://localhost:8001`）、AI_AGENT_SERVICE_TOKEN** |
-| ai-agent-service | PRIMARY_API_KEY, PRIMARY_MODEL, DASHVECTOR_*, DB_URL, REDIS_URL, **SERVICE_TOKEN** |
+| ai-agent-service | PRIMARY_API_KEY, PRIMARY_MODEL / VISION_MODEL, DB_URL, REDIS_URL, **SERVICE_TOKEN** |
 | admin-web | NEXT_PUBLIC_API_URL, NEXT_PUBLIC_AI_URL |
 
 > `AI_AGENT_*` 两条**必须显式在启动环境里给**（见前面「先做一次 AI 接线」）：它们不写进 `.env` 时
