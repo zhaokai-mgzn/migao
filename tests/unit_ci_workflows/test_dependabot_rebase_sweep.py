@@ -23,7 +23,7 @@ from lock file`。两侧各自自洽、只有合出来的树坏 ⇒ required 腿
 | 5 | 只动 dependabot / 非 draft / 无 `block/merge` | 把人工闸的 PR 也 rebase |
 | 6 | **同一 head 只请求一次**（幂等） | 每轮重发 ⇒ 无限 rebase 循环（每次一轮全量 CI） |
 | 7 | 每条 PR **最多 2 次**（有界） | 无上限 |
-| 8 | 落后/冲突 ⇒ 直接 rebase；否则看 lock | 只看 lock ⇒ BEHIND 的 PR 永远不动 |
+| 8 | 落后/冲突**按 lock 面分流**：无 npm lock ⇒ update-branch；有 ⇒ 只出声 | 一律 update-branch ⇒ 给 npm 制造坏 lock；一律出声 ⇒ 非 npm 的永远不动 |
 | 9 | 探测失败 ⇒ `unjudgeable`（**不得当 skip**） | 静默当「没问题」 |
 | 10 | 宿主 workflow 的接线（事件 / 权限 / 步骤） | 在 `push` 上跑 / 无写权限 / 不跑脚本 |
 | 11 | **不往分支推提交**（§34.13 单写者） | 脚本里出现 push / update-branch ⇒ 与 dependabot 抢写 |
@@ -160,6 +160,18 @@ def test_stale_or_conflicting_pr_requests_rebase_even_without_probe(state):
     assert state in verdict["reason"]
 
 
+def test_behind_without_npm_lock_uses_update_branch():
+    """非 npm（pip / maven / github-actions）的落后分支：直接 update-branch（无 lock 风险）。
+
+    反过来 npm 面的落后分支**不许**走这条路：`gh pr update-branch` 会把 main 合进来，
+    正是它产出坏 lock（#7688 的形态）—— 所以两种动作必须按 `dir is None` 分流。
+    """
+    verdict = SWEEP.decide(pr(state="BEHIND"), [], {"dir": None, "missing": []})
+    assert verdict["action"] == "update-branch", verdict
+    # 判不出 lock 面（探测失败）⇒ 保守走「只出声」，绝不自动 update-branch
+    assert SWEEP.decide(pr(state="BEHIND"), [], None)["action"] == "rebase"
+
+
 def test_broken_merge_lock_requests_rebase():
     verdict = SWEEP.decide(pr(state="BLOCKED"), [],
                            {"dir": "frontend/admin-web", "missing": [("msw", "^2.15.0")]})
@@ -243,9 +255,12 @@ def test_host_workflow_wiring_guard_is_not_vacuous():
 # ── 11：绝不往分支写 ────────────────────────────────────────────────────────
 def test_sweep_never_pushes_to_the_branch():
     src = SCRIPT.read_text(encoding="utf-8")
-    for forbidden in ("git push", "update-branch", "--force", "gh pr merge"):
+    for forbidden in ("git push", "--force", "gh pr merge"):
         assert forbidden not in src, (
             "%r 会与 dependabot 抢写同一分支（§34.13 单写者），且 GITHUB_TOKEN 的推送不触发 CI" % forbidden)
+    # update-branch 允许，但**必须**由「这个 PR 没有 npm lock」这一条闸住（否则会把 lock 合坏）
+    assert 'lock_report.get("dir") is None' in src, (
+        "update-branch 必须被 `dir is None`（无 npm lock）闸住 —— 否则会给有 lock 的分支制造坏 lock")
 
 
 # ── 端到端（gh 替身）：真发评论、且第二轮幂等 ───────────────────────────────────
@@ -264,6 +279,10 @@ elif args[:2] == ["pr", "view"]:
     detail = dict(state["details"][str(number)])
     detail["comments"] = state["comments"].get(str(number), [])
     print(json.dumps(detail))
+elif args[:2] == ["pr", "update-branch"]:
+    state.setdefault("update_branch", []).append(args[2])
+    (state_dir / "state.json").write_text(json.dumps(state), encoding="utf-8")
+    print("updated")
 elif args[:2] == ["pr", "comment"]:
     number = args[2]
     body = args[args.index("--body") + 1]
@@ -325,6 +344,23 @@ def test_cli_requests_rebase_once_for_broken_merge_lock(tmp_path):
     assert len(bodies) == 1, "必须发出恰好一条评论：%r" % (bodies,)
     assert SWEEP.REBASE_COMMAND in bodies[0]
     assert SWEEP.marker_for("a" * 40) in bodies[0], "评论必须带幂等标记（按 head）"
+
+
+def test_cli_update_branches_non_npm_bot_pr(tmp_path):
+    """pip 类的落后 bot PR：走确定性 update-branch，**不发**评论（不依赖 dependabot 的命令通道）。"""
+    detail = {"number": 8824, "author": {"login": "app/dependabot"}, "isDraft": False,
+              "labels": [], "headRefOid": "e" * 40, "mergeStateStatus": "BEHIND",
+              "title": "chore(deps): bump sqlalchemy", "mergeCommit": {"oid": "f" * 40},
+              "files": [{"path": "backend/ai-agent-service/requirements.txt"}]}
+    proc, state = _run_sweep(
+        tmp_path,
+        prs=[{"number": 8824, "author": {"login": "app/dependabot"}, "isDraft": False,
+              "labels": [], "headRefOid": "e" * 40, "mergeStateStatus": "BEHIND",
+              "title": "chore(deps): bump sqlalchemy"}],
+        details={"8824": detail}, comments={}, files={})
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert state.get("update_branch") == ["8824"], "非 npm 落后 ⇒ 必须走 update-branch"
+    assert state["comments"].get("8824", []) == [], "这类不该再发评论"
 
 
 def test_cli_on_healthy_lock_does_not_comment(tmp_path):
