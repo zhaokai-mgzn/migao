@@ -133,10 +133,12 @@ def test_credential_source_readout_is_present():
     没有这条读数时，「PAT 生效了」与「PAT 是空的、一直在回落内置」**长得一模一样** ——
     #8847 的修法就变成不可验证的。读数只能是布尔，**不许**打凭据本身。
     """
-    text = CONTRIBUTION.read_text(encoding="utf-8")
-    assert "secrets.AUTOMERGE_PAT != ''" in text, (
-        "contribution-gate.yml 缺「凭据来源」布尔读数 ⇒ 无法判定 PAT 是否生效")
-    assert "凭据来源读数" in text, "读数步被删了 ⇒ 本判据会红（不要静默删掉可观测面）"
+    for path in GUARD_FILES:
+        text = path.read_text(encoding="utf-8")
+        assert "secrets.AUTOMERGE_PAT != ''" in text, (
+            f"{path.name} 缺「凭据来源」布尔读数 ⇒ 无法判定 PAT 是否生效（回落形态下同形）")
+        assert "凭据来源读数" in text, (
+            f"{path.name}：读数步被删了 ⇒ 本判据会红（不要静默删掉可观测面）")
 
 
 def test_token_is_never_echoed_into_job_logs():
