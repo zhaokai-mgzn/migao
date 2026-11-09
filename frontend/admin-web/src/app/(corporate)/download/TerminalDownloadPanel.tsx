@@ -27,6 +27,13 @@ type LoadState =
 
 const INITIAL: LoadState = { status: 'loading' }
 
+// 版本说明的**用户向**口径（issue #8868）。
+//
+// 清单里的 `notes` 是终端仓的开发改动日志（`__CFG__` / `printerMode` / `issue #53/#55` 这一族内部标识），
+// 直接上屏就是把研发过程摆给商家看（`migao-dev-flow` §31 P3「不摆内部标识」）。
+// ⇒ 卡片常驻面只写**商家真正需要知道的那一句**：怎么更新、更新后配置丢不丢。
+const RELEASE_NOTE = '正式发布版。终端内「检查更新」可获取新版本，更新后企业号与工号保持不变。'
+
 async function loadRelease(
   url: string,
   parse: (raw: unknown) => TerminalRelease | null,
@@ -47,14 +54,12 @@ function ReleaseCard({
   state,
   linkLabel,
   versionText,
-  versionHint,
 }: {
   title: string
   subtitle: string
   state: LoadState
   linkLabel: string
   versionText: (release: TerminalRelease) => string
-  versionHint: string
 }) {
   return (
     <div className="flex h-full flex-col rounded-2xl border border-neutral-200 bg-white p-8 shadow-sm">
@@ -89,22 +94,18 @@ function ReleaseCard({
               <dt className="text-neutral-500">安装包大小</dt>
               <dd className="mt-1 font-medium text-neutral-900">{formatBytes(state.release.size)}</dd>
             </div>
-            <div>
-              <dt className="text-neutral-500">版本说明</dt>
-              <dd className="mt-1 text-neutral-700">{versionHint}</dd>
-            </div>
           </dl>
 
-          {state.release.notes && (
-            <p className="mt-5 text-sm leading-relaxed text-neutral-600">{state.release.notes}</p>
-          )}
+          <p className="mt-5 text-sm leading-relaxed text-neutral-600">{RELEASE_NOTE}</p>
 
-          <div className="mt-5">
-            <p className="text-sm text-neutral-500">SHA-256 校验值</p>
-            <code className="mt-1 block break-all rounded-lg bg-neutral-50 px-3 py-2 font-mono text-xs text-neutral-600">
+          <details className="mt-5">
+            <summary className="cursor-pointer text-sm text-neutral-500 transition-colors hover:text-neutral-700">
+              查看 SHA-256 校验值
+            </summary>
+            <code className="mt-2 block break-all rounded-lg bg-neutral-50 px-3 py-2 font-mono text-xs text-neutral-600">
               {state.release.sha256}
             </code>
-          </div>
+          </details>
 
           <a
             href={state.release.downloadUrl}
@@ -146,17 +147,15 @@ export default function TerminalDownloadPanel() {
         state={windows}
         linkLabel="下载 Windows 安装包"
         versionText={(release) => release.version}
-        versionHint="一体机版本"
       />
       <ReleaseCard
         title="Android 手持机"
-        subtitle="车间工人手持终端（商米）。下载后用系统安装器安装，不上架应用市场。"
+        subtitle="车间工人手持终端。下载后用系统安装器安装，不上架应用市场。"
         state={android}
         linkLabel="下载 Android 安装包"
         versionText={(release) =>
           release.versionCode ? `${release.version}（versionCode ${release.versionCode}）` : release.version
         }
-        versionHint="versionCode 是系统判断版本高低的依据"
       />
     </div>
   )

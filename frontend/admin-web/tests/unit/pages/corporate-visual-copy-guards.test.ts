@@ -143,3 +143,48 @@ describe('官网对外面：金色单一源 / 中文小标签 / 敬语（issue #
     expect(existsSync(CONFIG), 'tailwind.config.ts 不在预期位置').toBe(true)
   })
 })
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * 第二批病症（issue #8868，2026-11-09 用户逐字）
+ *
+ * > 不要有品牌信息 ／ 第二张图中的红框信息要优化
+ *
+ * 两类串都是**对外面不该出现**的：
+ *   ① **上游硬件厂商名**（`商米` / `SUNMI`）—— 官网给别家做广告，且商家换机型后就失真；
+ *   ② **内部标识**（`__CFG__` / `printerMode` 这类注入键 / 字段名）—— 终端清单的 `notes` 是开发改动日志，
+ *      原样上屏就是「不摆内部标识」（§31 P3）的反面。
+ * 判据面 = 官网对外面的**代码行**（注释里说明来由不算：注释不上屏）。
+ * ──────────────────────────────────────────────────────────────────────────── */
+
+const VENDOR_OR_INTERNAL_TOKENS = ['商米', 'SUNMI', '__CFG__', 'printerMode'] as const
+
+function findVendorOrInternalTokens(src: string): string[] {
+  const hits: string[] = []
+  for (const line of codeLines(src)) {
+    for (const token of VENDOR_OR_INTERNAL_TOKENS) {
+      if (line.includes(token)) hits.push(`${token} ← ${line.trim().slice(0, 70)}`)
+    }
+  }
+  return hits
+}
+
+describe('官网对外面：不出现品牌名与内部标识（issue #8868）', () => {
+  it('源码扫：品牌名 / 内部标识出现在对外面 ⇒ 红（新增页面自动进面）', () => {
+    const offenders: string[] = []
+    for (const rel of SURFACE) {
+      for (const hit of findVendorOrInternalTokens(read(rel))) offenders.push(`${rel}: ${hit}`)
+    }
+    expect(
+      offenders,
+      `官网对外面出现品牌名 / 内部标识：\n${offenders.join('\n')}\n` +
+        `用户裁定（2026-11-09）：官网不出现上游硬件厂商名；内部标识（注入键 / 字段名 / issue 号）不上屏。`,
+    ).toEqual([])
+  })
+
+  it('判别力自证：厂商名与内部标识各自判红、注释里说明来由不报（否则是空断言）', () => {
+    expect(findVendorOrInternalTokens('<p>车间工人手持终端（商米）。</p>')).toHaveLength(1)
+    expect(findVendorOrInternalTokens("notes: '1) __CFG__ 挂到 window 上 + 上报 printerMode'")).toHaveLength(2)
+    expect(findVendorOrInternalTokens('// 商米真机验收：该串是该机型的事实，不上屏')).toEqual([])
+    expect(findVendorOrInternalTokens('<p>车间工人手持终端。下载后用系统安装器安装。</p>')).toEqual([])
+  })
+})
