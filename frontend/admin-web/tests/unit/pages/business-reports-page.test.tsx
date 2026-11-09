@@ -8,7 +8,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
  *
  *   ① 页面标题逐字 =「经营报表」，且**只有一处**（不出现第二个旧页头）；
  *   ② 三个分区按 DOM 顺序排列：今日经营（查看）→ 经营分析（分析）→ 经营明细（管理）；
- *   ③ 「今日经营」段 = 黄金策卡 + 待处理 5 卡 + 经营数据 4 卡（原经营概览的首屏内容，不回退）；
+ *   ③ 「今日经营」段 = 黄金策卡 + 待处理 5 卡 + 经营数据 3 卡（客单价已按用户 2026-11-09 要求去掉）；
  *   ④ 「经营分析」段 = 趋势/状态 + **原报表中心五张卡**（含区间筛选与说明），不是另开一页；
  *   ⑤ 「经营明细」段 = 近期订单 + 商品销量排行（下钻面）；
  *   ⑥ 页面级「刷新」同时重取看板与报表段（合并后只有一个刷新按钮）；
@@ -164,18 +164,18 @@ describe('经营报表页（issue #8852 合并后的信息架构）', () => {
     expect(within(records).getByTestId('business-reports-section-records-hint').textContent).toContain('管理')
   })
 
-  it('③ 今日经营段：黄金策卡 + 待处理 5 卡 + 经营数据 4 卡都在（首屏内容不回退）', async () => {
+  it('③ 今日经营段：黄金策卡 + 待处理 5 卡 + 经营数据 3 卡都在（首屏内容不回退）', async () => {
     render(<DashboardPage />)
     const overview = await screen.findByTestId('business-reports-section-overview')
 
     expect(within(overview).getByTestId('daily-business-card')).toBeInTheDocument()
     expect(within(overview).getByTestId('dashboard-pending-section')).toBeInTheDocument()
     expect(overview.querySelectorAll('[data-testid="pending-card"]')).toHaveLength(5)
-    // 经营数据 4 卡（今日订单/今日销售额/客单价/本月销售额）
+    // 经营数据 3 卡（今日订单/今日销售额/本月销售额）——「客单价」已去掉
     await waitFor(() => expect(within(overview).getByTestId('stats-card-today-orders')).toBeInTheDocument())
     expect(within(overview).getByTestId('stats-card-today-sales')).toBeInTheDocument()
-    expect(within(overview).getByTestId('stats-card-avg-order-value')).toBeInTheDocument()
     expect(within(overview).getByTestId('stats-card-month-revenue')).toBeInTheDocument()
+    expect(within(overview).queryByTestId('stats-card-avg-order-value')).toBeNull()
   })
 
   it('④ 经营分析段：趋势/状态 + 原报表中心五张卡（含区间筛选）都挂在这一段里', async () => {

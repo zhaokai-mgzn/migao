@@ -195,22 +195,17 @@ describe('DashboardPage', () => {
 
   // ── 经营数据 ──
 
-  it('should render business stats section (4 cards)', async () => {
+  it('should render business stats section (3 cards)', async () => {
+    // 用户 2026-11-09 钉钉：「经营报表页面：把『经营数据』里的『客单价』去掉」
     render(<DashboardPage />)
     await waitFor(() => {
       expect(screen.getByText('经营数据')).toBeInTheDocument()
       expect(screen.getByText('今日订单数')).toBeInTheDocument()
       expect(screen.getByText('今日销售额')).toBeInTheDocument()
-      expect(screen.getByText('客单价')).toBeInTheDocument()
       expect(screen.getByText('本月销售额')).toBeInTheDocument()
-    })
-  })
-
-  it('客单价 = 今日销售额 ÷ 今日订单数（数字自洽）', async () => {
-    // mock: todaySales=39800, todayOrders=10 → 客单价 ¥3,980
-    render(<DashboardPage />)
-    await waitFor(() => {
-      expect(screen.getByText('¥3,980')).toBeInTheDocument()
+      // 负控：客单价卡与派生读数一起退场（不是只藏标题）
+      expect(screen.queryByText('客单价')).toBeNull()
+      expect(screen.queryByTestId('stats-card-avg-order-value')).toBeNull()
     })
   })
 
@@ -665,7 +660,6 @@ describe('DashboardPage', () => {
     expect(screen.getByTestId('stats-card-today-sales')).toHaveTextContent(EMPTY)
     expect(screen.getByTestId('stats-card-month-revenue')).toHaveTextContent(EMPTY)
     expect(screen.getByTestId('stats-card-today-orders')).toHaveTextContent(EMPTY)
-    expect(screen.getByTestId('stats-card-avg-order-value')).toHaveTextContent(EMPTY)
 
     // 🔴 核心判据：**金额/读数面不得出现 ¥0**（改前这里是「¥0、¥0」两处 + 洞察句一处，共 3 处）
     // 边界（实测定界）：只查**非 SVG 面** —— `TrendChart` 的 y 轴刻度会画 `¥0` 基线（坐标轴下限，

@@ -290,9 +290,9 @@ describe('经营看板首屏（issue #8012）', () => {
     expect(screen.getAllByTestId('pending-skeleton')).toHaveLength(5)
     cards.forEach((card) => expect(card.textContent || '').not.toContain('…'))
 
-    // 经营数据 4 格：骨架必须是**灰底 + 脉冲**（改前是 bg-white + animate-pulse ⇒ 屏上等于空白）
+    // 经营数据 3 格（客单价已按用户 2026-11-09 要求去掉）：骨架必须是**灰底 + 脉冲**
     const statsSkeletons = screen.getAllByTestId('stats-skeleton')
-    expect(statsSkeletons).toHaveLength(4)
+    expect(statsSkeletons).toHaveLength(3)
     for (const el of statsSkeletons) {
       expect(el.querySelectorAll('.animate-pulse').length).toBeGreaterThan(0)
       expect(el.querySelectorAll('.bg-neutral-200').length).toBeGreaterThan(0)
