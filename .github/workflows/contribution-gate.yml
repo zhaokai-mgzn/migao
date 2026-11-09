@@ -1,5 +1,10 @@
 name: Contribution Gate (authorship + sensitive paths)
 
+# ── 判定面凭据（issue #8847，2026-11-09 owner 裁定①「加凭据」）─────────────────
+# 本 workflow 是 `pull_request_target` 且**只检出 base**（`ref: main`，
+# `persist-credentials: false`）⇒ 被执行的判定代码是**受信的 base 实现**，可以安全地拿高配额凭据。
+# 写法同 `pr-check.yml`：`AUTOMERGE_PAT || GITHUB_TOKEN`（fork / 未配置 secret ⇒ 自动回落）。
+# 判据 = tests/unit_ci_workflows/test_guard_credential_quota.py。
 # issue #8395：**不可伪造**的那条 required —— workflow 定义在 base 分支、只检出 base、
 # 不执行任何 PR 代码，判定只走 REST API。
 #
@@ -58,7 +63,7 @@ jobs:
       # （`::warning::` 具名「本次未判定」）；**真实命中仍 exit 1**（issue #8395 裁定）。
       - name: 外部作者 / fork 来源（base 里的唯一实现）
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.AUTOMERGE_PAT || secrets.GITHUB_TOKEN }}
         run: |
           python3 .github/scripts/contribution_gate.py retry \
             --label "外部作者 / fork 来源" \
@@ -69,7 +74,7 @@ jobs:
                  --no-remediate
       - name: 敏感路径（CI / 部署 / 密钥扫描面）
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.AUTOMERGE_PAT || secrets.GITHUB_TOKEN }}
         run: |
           python3 .github/scripts/contribution_gate.py retry \
             --label "敏感路径" \
