@@ -338,7 +338,12 @@ def main(argv=None):
                 continue
             rc, text = request_update_branch(args.repo, number)
             if rc == 0:
-                actions.append("%s ⇒ 已 update-branch（%s）" % (headline, verdict["reason"]))
+                if any(marker in text.lower() for marker in UP_TO_DATE_MARKERS):
+                    # 现取读数（2026-11-09 本机）：分支未落后时 gh **rc=0** 且打印
+                    # `✓ PR branch already up-to-date` ⇒ 「我做了」与「别人已做」必须长得不一样。
+                    skipped.append("%s ⇒ 已不落后（GitHub 幂等返回 up-to-date，本轮零改动）" % headline)
+                else:
+                    actions.append("%s ⇒ 已 update-branch（%s）" % (headline, verdict["reason"]))
                 continue
             kind, detail = classify_update_failure(rc, text)
             if kind == "benign":

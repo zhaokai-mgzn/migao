@@ -132,7 +132,9 @@ if args[:2] == ["pr", "update-branch"]:
     if fail:
         sys.stderr.write(str(fail.get("stderr") or "stub: update-branch 失败\n"))
         sys.exit(int(fail.get("rc") or 1))
-    print("updated")
+    # 真实读数（2026-11-09 本机现取）：分支未落后时 gh **rc=0** 且打印
+    # `✓ PR branch already up-to-date` ⇒ 桩要能复刻这一形态（否则「已不落后」读不出来）。
+    print((state.get("update_note") or {}).get(number) or "updated")
     sys.exit(0)
 
 sys.stderr.write("stub: unhandled argv=%r\n" % (args,))
@@ -168,10 +170,11 @@ class Out:
 
 
 def run_script(tmp_path, *, state=None, prs=None, checks=None, update_fail=None,
-               extra_args=("--apply",), script=None, list_fail=False):
+               update_note=None, extra_args=("--apply",), script=None, list_fail=False):
     """跑**真脚本**（子进程）对 `gh` 替身；返回 `Out`（含替身记录下的 update-branch 调用）。"""
     if state is None:
-        state = {"prs": prs or [], "checks": checks or {}, "update_fail": update_fail or {}}
+        state = {"prs": prs or [], "checks": checks or {}, "update_fail": update_fail or {},
+                 "update_note": update_note or {}}
     tmp_path.mkdir(parents=True, exist_ok=True)
     stub = tmp_path / "gh"
     stub.write_text(GH_STUB, encoding="utf-8")
@@ -276,6 +279,17 @@ def test_behind_armed_and_green_updates_exactly_once(tmp_path):
     assert out.calls == ["8846"], "必须**恰好一次** update-branch（有界：不重试、不循环）：%r" % (out.calls,)
     assert "已 update-branch" in out.out and "#8846" in out.out, out.out
     assert "动作 1" in out.summary, out.summary
+
+
+def test_up_to_date_success_is_reported_as_noop(tmp_path):
+    """现取读数（2026-11-09 本机）：分支未落后时 `gh pr update-branch` **rc=0** 且打印
+    `✓ PR branch already up-to-date` ⇒ 读数必须与事实一致（「我做了」≠「别人已做」）。"""
+    out = run_script(tmp_path, prs=[pr()], checks={"8846": GREEN_ROWS},
+                     update_note={"8846": "✓ PR branch already up-to-date"})
+    assert out.rc == 0, out.out
+    assert out.calls == ["8846"], out.calls
+    assert "已 update-branch" not in out.out, out.out
+    assert "已不落后" in out.out, out.out
 
 
 def test_dependabot_pr_is_left_to_the_rebase_leg(tmp_path):
