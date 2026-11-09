@@ -169,6 +169,10 @@ def decide(pr, comments, lock_report):
         return {"action": "rebase",
                 "reason": "分支落后/冲突（mergeStateStatus=%s）" % state}
 
+    if state == "UNKNOWN":
+        # GitHub 尚在计算可合并性（#5113 的既有口径：这个窗口里「读不到」不得渲染成红）。
+        # 本轮不动作；下一次 sweep 会看到真读数。
+        return {"action": "skip", "reason": "可合并性尚在计算（mergeStateStatus=UNKNOWN）—— 本轮不动作"}
     if lock_report is None:
         return {"action": "unjudgeable", "reason": "合并结果的 lock 未探测（取数失败）"}
     missing = lock_report.get("missing") or []

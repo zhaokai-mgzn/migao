@@ -173,6 +173,14 @@ def test_probe_failure_is_unjudgeable_not_skip():
     assert verdict["action"] == "unjudgeable", "探测失败 ⇒ 不得当「没问题」静默跳过"
 
 
+def test_unknown_state_is_not_red():
+    verdict = SWEEP.decide(pr(state="UNKNOWN"), [], None)
+    assert verdict["action"] == "skip", (
+        "`mergeStateStatus=UNKNOWN`（GitHub 尚在计算）不得判 unjudgeable/红 —— "
+        "与 automerge.yml 的 #5113 口径同源：可合并性未算完不是缺陷")
+    assert "UNKNOWN" in verdict["reason"]
+
+
 def test_clean_pr_is_skipped():
     assert SWEEP.decide(pr(state="CLEAN"), [], {"dir": "d", "missing": []})["action"] == "skip"
 
