@@ -9,14 +9,18 @@ dependabot（与本机 node 24/npm 11）生成的 `package-lock.json` 比 CI 期
 「修 lock → update-branch → 又红」的死循环。
 
 ⇒ 两件事必须钉在**一条命令**里且**顺序固定**（铁律 10：一晚 ≥3 次的动作串要收敛成命令）：
-① 先 `update-branch`；② 再用 CI 那个 npm 版本重生成 lock；③ 自证 `npm ci --dry-run` 通过才许推。
+① 先 `update-branch`；② **等远端 ref 真的前进**（issue #8843）；③ 快进拉取；④ 用 CI 那个 npm 版本
+重生成 lock；⑤ 自证 `npm ci --dry-run` 通过才许推。
 
 ## 判据（本文件）
 
-1. `--print-plan` 打印的步骤顺序必须 = 上面 ①②③（顺序即安全顺序）；
+1. `--print-plan` 打印的步骤顺序必须 = 上面 ①②③④⑤（顺序即安全顺序）；
 2. 当前分支 ≠ PR head ⇒ 拒绝（不许改到别的工作区）；
 3. PR 没改任何 `package-lock.json` ⇒ 拒绝（不许拿它当通用 update-branch）；
-4. 脚本本身要存在且可执行。
+4. 脚本本身要存在且可执行；
+5. **issue #8843**：`gh pr update-branch` 是**异步**的 ⇒ `--print-plan` 必须含「等远端前进」，
+   且脚本里 `git ls-remote` 轮询必须在 `git merge --ff-only` **之前**；裸 `git pull` 一律不许再出现
+   （实测：它拿到旧 head ⇒ 本地在旧 head 上提交 ⇒ push 被 `(fetch first)` 拒，甚至让 lock 内容冲突）。
 
 零网络：`gh` 用临时 stub（`STUB_BRANCH` / `STUB_DIRS` 注入），`--print-plan` 只读元数据、不写任何东西。
 """
@@ -98,3 +102,59 @@ def test_unknown_mode_is_rejected(tmp_path: Path):
     r = _run(tmp_path, "7107", "--wat", branch="dependabot/x", dirs="frontend/admin-web")
     assert r.returncode == 1, r.stdout + r.stderr
     assert "未知参数" in (r.stdout + r.stderr)
+
+
+# ── issue #8843：`gh pr update-branch` 是**异步**的，必须等远端 ref 前进 ──────────
+def test_plan_includes_remote_advance_wait_before_pull(tmp_path: Path):
+    """顺序：update-branch → **等远端前进** → 快进拉取。
+
+    红证（注入式）：把 `--print-plan` 里那行「git ls-remote 轮询等远端 ref 前进」删掉
+    ⇒ 本断言 `min(i_update, i_wait, i_merge) > 0` 当场红。
+    """
+    r = _run(tmp_path, "8843", "--print-plan", branch="dependabot/x", dirs="frontend/admin-web")
+    assert r.returncode == 0, r.stderr
+    plan = r.stdout
+    i_update = plan.find("gh pr update-branch")
+    i_wait = plan.find("ls-remote")
+    i_merge = plan.find("merge --ff-only")
+    assert min(i_update, i_wait, i_merge) > 0, plan
+    assert i_update < i_wait < i_merge, (
+        "update-branch → **等远端前进** → 快进拉取 的顺序被改了：不等就会拿到旧 head，"
+        "push 必被 `(fetch first)` 拒绝（issue #8843）：\n" + plan
+    )
+
+
+def test_script_never_pulls_right_after_update_branch():
+    """静态守卫：脚本里不许再出现裸 `git pull`（issue #8843 的缺陷形态）。"""
+    src = SCRIPT.read_text(encoding="utf-8")
+    code_lines = [ln.strip() for ln in src.splitlines() if not ln.strip().startswith("#")]
+    offending = [ln for ln in code_lines if ln.startswith("git pull")]
+    assert offending == [], (
+        "脚本里又出现裸 `git pull`：update-branch 是异步的，pull 会拿到旧 head ⇒ push 被拒（issue #8843）："
+        + repr(offending)
+    )
+    i_ls = src.find("git ls-remote")
+    i_merge = src.find("git merge --ff-only")
+    assert 0 < i_ls < i_merge, "ls-remote 轮询必须出现在 merge --ff-only 之前（issue #8843）"
+
+
+# ── issue #8843（第二个实测）：提交身份必须来自白名单，不许写死虚构身份 ──────────
+def test_script_does_not_hardcode_a_commit_identity():
+    """脚本**不许**用 `-c user.name/user.email` 写死身份（实测 #8830 被作者守卫判红）。
+
+    红证（注入式）：把 `git -c user.name="migao-deps-lockfix" -c user.email="noreply@migao.local" commit …`
+    加回脚本 ⇒ 本断言当场红，并指名它是 `.github/external-authorship-allow.json` 之外的身份。
+    """
+    src = SCRIPT.read_text(encoding="utf-8")
+    code_lines = [ln.strip() for ln in src.splitlines() if not ln.strip().startswith("#")]
+    offenders = [
+        ln for ln in code_lines
+        if 'user.name="' in ln or 'user.email="' in ln
+    ]
+    assert offenders == [], (
+        "脚本用写死身份提交 ⇒ External Authorship Guard / Contribution Gate 按提交作者判红 "
+        f"（实测 PR #8830）：{offenders!r}"
+    )
+    assert "git config user.email" in src, (
+        "缺前置自证：没有配置 user.email 时必须出声退出，不许静默用虚构身份提交"
+    )
