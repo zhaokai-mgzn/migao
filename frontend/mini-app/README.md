@@ -1,10 +1,10 @@
 # Mini App
 
-观星台 AI 智能客服 — 微信小程序（Taro）
+观星台 — 布艺行业 AI 经营平台 · 顾客微信小程序（Taro，元元）
 
 ## 技术栈
 
-- Taro 3.6 + React + TypeScript
+- Taro（版本见 `package.json`）+ React + TypeScript
 - 微信小程序原生 API
 
 ## 快速开始

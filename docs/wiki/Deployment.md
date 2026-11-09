@@ -8,11 +8,15 @@
 
 | 变更路径 | 工作流 | 部署方式 |
 |---------|--------|---------|
-| backend/admin-api/** | deploy-admin-api | 云助手触发 SWAS `deploy.sh`（拉 CI 预构建镜像 + up） |
+| backend/admin-api/** / deploy/swas/** | deploy-admin-api | 测试 → 云助手触发 SWAS `deploy.sh`（**服务器侧就地构建** + up） |
 | backend/ai-agent-service/** | deploy-ai-agent-service | 同上 |
 | frontend/admin-web/** | deploy-frontend | 同上 |
+| 定时 / 手动 | worker-h5-publish / bmini-h5-publish | 静态 H5 发布（`/w/` 兼容期旧页、`/b/` 员工端） |
+| frontend/mini-app/** / 定时 / 手动 | c-end-h5-publish | C 端 H5 静态发布（定时只报告，写盘需 `publish=true`） |
+| 手动（Release tag） | terminal-publish | 安卓终端安装包发布 |
 
-三个工作流统一：CI 测试/构建 → `aliyun swas-open RunCommand` 在 SWAS 实例跑 `/opt/migao-deploy/deploy.sh` → post-deploy 冒烟（smoke-test.yml）。
+部署工作流统一：CI 测试 → `aliyun swas-open RunCommand` 在 SWAS 实例跑 `/opt/migao-deploy/deploy.sh`
+（**服务器侧就地构建**，C′；不再推 ACR）→ post-deploy 冒烟（smoke-test.yml）。
 
 ## 生产拓扑（SWAS 单机 4 容器）
 
@@ -37,8 +41,7 @@
 | SWAS 轻量应用服务器 | 托管全部 4 个容器（nginx + 3 应用） |
 | RDS PostgreSQL 15 | 主库 (RLS) |
 | Redis (Tair 公网代理) | 会话/缓存（admin-api 强制 RESP2） |
-| DashVector | 向量库 (RAG) |
-| DeepSeek | LLM推理/视觉 |
+| DeepSeek | LLM 推理 / 视觉 |
 | OSS | 静态资源/文件上传 |
 | ACR | 容器镜像（历史遗留，线上已不消费） |
 
@@ -46,7 +49,7 @@
 
 **admin-api**: RDS_HOST/USER/PASSWORD, REDIS_HOST/PASSWORD, JWT_PRIVATE_KEY, JWT_PUBLIC_KEY, SERVICE_TOKEN_SECRET
 
-**ai-agent-service**: PRIMARY_API_KEY, DASHVECTOR_API_KEY/ENDPOINT, DATABASE_URL, REDIS_URL, OSS_*, SERVICE_TOKEN
+**ai-agent-service**: PRIMARY_API_KEY, PRIMARY_MODEL / VISION_MODEL, DATABASE_URL, REDIS_URL, OSS_*, SERVICE_TOKEN
 
 **admin-web**: PORT（构建时 NEXT_PUBLIC_API_BASE_URL / NEXT_PUBLIC_AI_API_BASE_URL / NEXT_PUBLIC_COOKIE_DOMAIN）
 

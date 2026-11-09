@@ -1,32 +1,42 @@
-# AI Agent 服务
+# AI Agent 服务（元元 / 黄金策）
 
-LangGraph 状态图驱动双 Agent：Plan → Execute → Verify。
+LangGraph 状态图驱动双 Agent：**Plan → Execute → Verify**。两位 persona 共用同一张图，
+工具集由 persona 绑定的 Skill 决定；业务真值始终由 `admin-api` 裁决，AI 只经工具读写。
 
 ## 双 Agent
 
 | Agent | 角色 | 服务对象 | 能力域 |
 |-------|------|---------|--------|
-| 元元 | C端客服 | 小程序用户 | 咨询/订单/售后/知识问答/图片识别 |
-| 黄金策 | B端助手 | 管理后台商家 | 商品管理/订单操作/数据分析/系统配置 |
+| 元元 | C 端顾客服务 | 小程序用户 | 商品咨询 / 算料报价 / 下单 / 订单物流 / 售后 / 知识卡片 / 图片识别 |
+| 黄金策 | B 端经营助手 | 商家管理员与员工 | 经营看板 / 商品与 SKU / 订单与加工单 / 库存 / 生产计件 / 财务客户 / 口径卡 |
+
+能力边界与四端说明见 [Product](Product.md)。
 
 ## 代码结构
 
 ```
 app/
-├── agents/      # 双Agent定义 + System Prompt
+├── agents/      # 双 Agent 定义 + System Prompt / persona
 ├── graph/       # LangGraph StateGraph (builder, nodes, state, plan_executor)
-│   └── skills/  # 19 Skill节点 + references/(SKILL + EXAMPLES).md
-├── tools/       # 30+ 业务工具
-├── router/      # 意图分类 (L1关键词 + L2 LLM)
+│   └── skills/  # Skill 节点 + references/(SKILL + EXAMPLES).md（数量现取）
+├── tools/       # 业务工具（数量以 registry.py 注册表为单一源）
+├── router/      # 意图分类 (L1 关键词 + L2 LLM)
 ├── knowledge/   # 会话知识提炼（LLM WIKI，issue #3051）
-├── llm/         # LLM工厂/模型路由/成本追踪
-├── api/         # SSE流式聊天 + 内部API
+├── llm/         # LLM 工厂 / 模型路由 / 成本追踪
+├── api/         # SSE 流式聊天 + 内部 API
 ├── cache/       # 语义缓存
 ├── memory/      # 会话记忆 (session + user)
 ├── core/        # 熔断器 + 降级策略
 ├── context/     # 请求上下文追踪
 ├── suggestions/ # 主动建议 (follow_up + preference_tracker)
-└── middleware/  # 请求拦截/日志
+└── middleware/  # 请求拦截 / 日志
+```
+
+**数量现取**（本页不写死）：
+
+```bash
+grep -cE '^[[:space:]]*registry\.register\(' backend/ai-agent-service/app/tools/registry.py  # 工具
+ls backend/ai-agent-service/app/graph/skills/*_skill.py | wc -l                              # Skill
 ```
 
 ## 意图路由流程
@@ -87,58 +97,62 @@ skill，能力误宣会被纠正并把会话回锁到在办流程的归属 skill
 「同轮次的换域诉求」分开，并给出 ① 逐条真实文本样本的判定 ② 合法换域红证保持绿
 ③ 纯文本提问后的**非回答**（换域诉求）不被误吞的反例用例（即 #3784 的验收判据 1~4）。
 
-## 30+ Tools
+## 工具（数量现取）
 
-| 域 | Tools |
-|----|-------|
-| 商品 | product_search, product_detail, product_manage, category_manage |
-| 订单 | order_search, order_detail, order_create, order_manage, logistics_track, customer_order_query（含 `recent_address`：下单前预填历史收货信息，原 `customer_address_query`，issue #8726 收敛） |
-| 售后 | aftersale_create, aftersale_query, after_sales_manage |
-| 加工 | processing_item_query, processing_item_manage, processing_items |
-| 库存 | inventory_manage |
-| 客户 | customer_manage |
-| 知识 | knowledge_search, knowledge_upload, knowledge_delete |
-| 数据 | dashboard_stats |
-| 会话 | session_manage |
-| 通知 | notification_manage |
-| 人工 | human_handoff |
-| 交互 | interact (confirm卡片/form/choice) |
-| 员工 | employee_manage |
-| 角色 | role_manage |
-| 设置 | settings_manage |
-| 校验 | validate_input |
+注册表 = `backend/ai-agent-service/app/tools/registry.py`。**注册表只决定「工具存在」；
+可达性由 persona 绑定的 Skill 工具集决定**。下表按域节选（完整清单以注册表为准）：
+
+| 域 | 工具 |
+|----|------|
+| 商品 | `product_search` / `product_detail` / `product_manage` / `product_update` / `sku_update` / `product_batch_update` / `category_manage` / `marketing_poster` / `product_image_generate` |
+| 订单 | `order_query` / `order_create` / `order_manage` / `customer_order_query` / `logistics_track` / `customer_logistics_track` / `payment_qrcode_query` |
+| 售后 | `aftersale_create` / `aftersale_query` / `after_sales_manage` |
+| 加工 / 生产 | `processing_item_query` / `processing_item_manage` / `processing_order_generate` / `processing_order_query` / `processing_order_update` / `processing_order_set_query` / `production_progress_query` / `production_worklog_query` / `piecework_query` / `operation_catalog_query` / `craft_config_query` / `craft_calc_config_query` / `craft_calc_config_update` |
+| 库存 / 仓储 | `inventory_manage` / `batch_stock_query` / `stock_ledger_query` / `inbound_order_query` |
+| 客户 | `customer_manage` / `employee_manage` / `role_manage` |
+| 知识 | `knowledge_search`（只读；已发布知识卡片） |
+| 经营 / 财务 | `dashboard_stats` / `sales_attribution` / `briefing_query` / `finance_api` |
+| 会话 / 设置 | `session_manage` / `notification_manage` / `settings_manage` |
+| 交互 / 输入 | `interact`（confirm / form / choice 卡）/ `validate_input` |
+| 行业工具 | `curtain_calc`（算料报价）/ `image_recognize`（图片识别）/ `nav_guide` |
+| 定时 | `scheduled_task_manage`（可逆写：提醒） |
+
+> `human_handoff` 与 `knowledge_manage` **未注册**：前者按用户 2026-09-19 裁定下线
+> （「以后全是 AI 来判断」），后者随 RAG 移除（issue #3051）。
+> 能力边界与写操作清单见 [agent-write-boundary](agent-write-boundary.md)。
 
 ## Skill 规范
 
 每个 Skill 必须含：
 - `{name}_skill.py` — 节点定义 + System Prompt
 - `references/prompts/{name}.md` — 域提示词（base_skill.py 组装进 system prompt；无对应文件时读空）
-- `references/EXAMPLES-{name}.md` — Few-shot(正确流程 + 反例)
+- `references/EXAMPLES-{name}.md` — Few-shot（正确流程 + 反例）
 
-Tool 铁律：写前校验 → 失败给 suggestion → 写前弹 confirm → 反幻觉规则
+Tool 铁律：写前校验 → 失败给 suggestion → 写前弹 confirm → 反幻觉规则。
 
 ## 知识检索链路（LLM WIKI，issue #3051）
 
-> 旧 RAG Pipeline（BM25 + DashVector + Reranker）已下线（决策 D1）并随 issue #3051 完全移除。当前知识问答两级策略：
-> 1. **知识卡片优先**：`knowledge_search` 工具调 admin-api `GET /api/admin/knowledge/cards/search` 检索本店已发布知识卡片（结构化过滤 + 关键词，无向量库），命中基于卡片回答并注明「📖 来自本店知识库」；
-> 2. **通用兜底**：未命中用 LLM 行业通用知识谨慎回答 + 通用建议免责。
-> 知识卡片来源：行业模板一键套用 / 商品配置派生 / 会话·文档 AI 提炼（待确认队列，商家采纳后生效）。
+> 旧 RAG Pipeline（BM25 + DashVector + Reranker）已下线并随 issue #3051 完全移除。
+> 当前知识问答是**两级策略**：
 
-（历史实现）文档上传 → Chunker分块 → 向量嵌入 → DashVector（已随 RAG 移除，仅存历史参考）
-> `knowledge_search`/`knowledge_manage` 工具已删除（提交 `3215c322`），客服知识问答改用
-> LLM 内置知识（见 `customer_knowledge_skill.py`）。B 端知识管理模块（`KnowledgeController` +
-> `KnowledgeDocument` 表）**预留未启用**；恢复仅需按 `knowledge_skill.py` 头注 uncomment 注册。
+1. **知识卡片优先**：`knowledge_search` 调 admin-api `GET /api/admin/knowledge/cards/search`
+   检索本店**已发布**知识卡片（结构化过滤 + 关键词，**无向量库**）；
+   命中则基于卡片回答并注明「📖 来自本店知识库」。
+2. **通用兜底**：未命中用 LLM 行业通用知识谨慎回答，并给出免责说明。
 
-```
-（历史实现）文档上传 → Chunker分块 → 向量嵌入 → DashVector（已随 RAG 移除，仅存历史参考）
-用户查询 → BM25关键词 + 向量语义 → Reranker重排 → Top-K
-```
+知识卡片来源：行业模板一键套用 / 商品配置派生 / 会话·文档 AI 提炼（进待确认队列，商家采纳后才生效）。
+卡片四态：草稿 / 待审核 / 已发布 / 已归档 —— 只有**已发布**会进入检索面。
 
 ## 模型路由
 
-| 场景 | 模型 | 原因 |
-|------|------|------|
-| 意图分类 | deepseek-flash | 低延迟 |
-| 对话生成 | deepseek-flash | 高质量 |
-| 图片识别 | deepseek-flash | 多模态（V4.1-Flash 原生） |
-| 工具调用 | deepseek-flash | 复杂推理 |
+模型名由环境变量配置（默认 `deepseek-flash`，原生多模态），本页不写死模型版本：
+
+| 场景 | 配置项 | 说明 |
+|------|--------|------|
+| 意图分类 | `LLM_MODEL_FAST` | 低延迟 |
+| 对话生成 | `LLM_MODEL_PRIMARY` | 默认主模型 |
+| 图片识别 | `VISION_MODEL` | 视觉模型（`VISION_ENABLED` 控制开关） |
+| 工具调用 | 主模型 | 复杂推理与多工具协同 |
+
+> 成本口径与降级策略见 `backend/ai-agent-service/app/llm/cost_tracker.py` 与
+> [Observability](Observability.md)。
