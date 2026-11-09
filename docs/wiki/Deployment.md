@@ -12,6 +12,8 @@
 | backend/ai-agent-service/** | deploy-ai-agent-service | 同上 |
 | frontend/admin-web/** | deploy-frontend | 同上 |
 | 定时 / 手动 | worker-h5-publish / bmini-h5-publish | 静态 H5 发布（`/w/` 兼容期旧页、`/b/` 员工端） |
+| frontend/mini-app/** / 定时 / 手动 | c-end-h5-publish | C 端 H5 静态发布（定时只报告，写盘需 `publish=true`） |
+| 手动（Release tag） | terminal-publish | 安卓终端安装包发布 |
 
 部署工作流统一：CI 测试 → `aliyun swas-open RunCommand` 在 SWAS 实例跑 `/opt/migao-deploy/deploy.sh`
 （**服务器侧就地构建**，C′；不再推 ACR）→ post-deploy 冒烟（smoke-test.yml）。

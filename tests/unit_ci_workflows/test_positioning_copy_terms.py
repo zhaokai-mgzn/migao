@@ -322,6 +322,7 @@ DOC_POSITIONING_FILES: dict[str, tuple[str, ...]] = {
     "docs/wiki/INDEX.md": ("观星台", "布艺"),
     "AGENTS.md": ("观星台", "布艺"),
     "CONTRIBUTING.md": ("观星台", "布艺"),
+    "SECURITY.md": ("观星台", "布艺", "AI 经营平台"),
     "backend/admin-api/README.md": ("观星台", "布艺", "AI 经营平台"),
     "backend/ai-agent-service/README.md": ("观星台", "布艺", "AI 经营平台"),
     "frontend/admin-web/README.md": ("观星台", "布艺", "AI 经营平台"),

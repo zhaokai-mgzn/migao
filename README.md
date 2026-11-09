@@ -281,7 +281,9 @@ CI 只跑测试与部署编排。
 | `deploy-admin-api` | push main（`backend/admin-api/**`、`deploy/swas/**`）/ tag | 测试 → 服务器侧构建 → 部署 → post-deploy 冒烟 |
 | `deploy-ai-agent-service` | push main（`backend/ai-agent-service/**`）/ tag | 同上 |
 | `deploy-frontend` | push main（`frontend/admin-web/**`）/ tag | tsc + vitest → 构建 → 部署 + 域名探测 |
-| `worker-h5-publish` / `bmini-h5-publish` | 定时 / 手动 | 静态 H5 发布腿（只报告 / 写入分开） |
+| `c-end-h5-publish` | push main（`frontend/mini-app/**`）/ 定时 / 手动 | C 端 H5 静态发布（定时只报告，写盘需 `publish=true`） |
+| `worker-h5-publish` / `bmini-h5-publish` | 定时 / 手动 | 静态 H5 发布腿（`/w/` 兼容期旧页、`/b/` 员工端） |
+| `terminal-publish` | 手动（需 Release tag） | 安卓终端安装包发布 |
 | `release` | 手动 | 打 semver tag + Release notes |
 | `deploy-prod` | 手动（生产审批） | 受控发布（尚未启用） |
 
