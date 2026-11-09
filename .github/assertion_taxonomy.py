@@ -703,7 +703,7 @@ KNOWN_PRECLEAN_TARGET_FIELDS: dict[str, str | None] = {
 # `extract_seed_catalog` 只收 `_NAME_COLUMNS` 的名字列），其余字段落它的兜底 `return True`
 # ⇒ `ticket_no` / `order_no` / `customer_keyword` 这三格是"**已登记点名目标、但门禁侧尚无可
 # 判定口径**"（登记让它们**可见**，不再靠"表里没有"沉默）。同族残留见
-# `docs/wiki/gate-exemption-ledger.md` 的 `KNOWN_PRECLEAN_TARGET_FIELDS` 行。
+# `https://github.com/zhaokai-mgzn/migao/wiki/gate-exemption-ledger` 的 `KNOWN_PRECLEAN_TARGET_FIELDS` 行。
 # 声明了 `pre_clean` 但类型不在上表 ⇒ 静态**无法**判定其点名目标 ⇒ 不登记（**不是**缺陷的
 # 借口：真值锚点 = `runner._PRECLEAN_TYPES`，两边**必须同步**，且由上面的元守卫判红来保证）。
 # 历史备注：这里曾指向 `UNIMPLEMENTED` 的 `CASE-TRUST-PRECLEAN-UNKNOWN-TYPE`，

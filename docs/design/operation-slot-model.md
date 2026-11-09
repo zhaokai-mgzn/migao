@@ -1059,7 +1059,7 @@ Q1/Q2/Q3 发现偏差
 | N5 | **不回溯历史快照**（不改 `processing_position_operations.operation_name` / `production_work_logs.*`） | 工资凭证（`V49` 表注释「报工记录（明细不可变）」；`docs/design/operation-name-unification.md` §3 红线） |
 | N6 | **不发明业务**（不给"花边占哪槽"下结论、不给"质检是否必做"下结论） | 与「不发明单价」（`backend/admin-api/src/main/resources/db/migration/V71__normalize_routing_model_structure.sql:228` 列注释）同一条纪律 |
 | N7 | **不物理删 `production_route_rules`** | 它是回滚路径（§5.5 R1）；删表是阶段 4 的最后一步 |
-| N8 | **不在 `docs/wiki/INDEX.md` 加索引行** | 实测该索引 `docs/design/` 条目数 = **0**（`git show origin/main:docs/wiki/INDEX.md \| grep -c "docs/design/"` → `0`）⇒ 加一行是**新造约定**（与 `docs/design/operation-name-unification.md` §6 N9 同款判断） |
+| N8 | **不在 `https://github.com/zhaokai-mgzn/migao/wiki/INDEX` 加索引行** | 实测该索引 `docs/design/` 条目数 = **0**（`git show origin/main:https://github.com/zhaokai-mgzn/migao/wiki/INDEX \| grep -c "docs/design/"` → `0`）⇒ 加一行是**新造约定**（与 `docs/design/operation-name-unification.md` §6 N9 同款判断） |
 | N9 | **不改主线的槽内顺序**（含 `打包` 位置） | `V79` 自陈「按 ERP 顺序推断、**待客户确认**」⇒ 借本单改顺序 = 静默改工资 |
 | N10 | **不做"每道工序一个槽"的细粒度建模** | 槽位是**物理阶段**（9 个），不是工序的别名；细到工序 = 把锚点藏进数组下标（§2.2） |
 
@@ -1243,7 +1243,7 @@ git show origin/main:backend/ai-agent-service/app/production/routing.py | sed -n
 
 ```bash
 git rev-parse origin/main                      # 4a8e23bf4
-git show origin/main:docs/wiki/INDEX.md | grep -c "docs/design/"   # 0 ⇒ 不加索引行
+git show origin/main:https://github.com/zhaokai-mgzn/migao/wiki/INDEX | grep -c "docs/design/"   # 0 ⇒ 不加索引行
 ls backend/admin-api/src/main/resources/db/migration/ | sort -V | tail -1   # 最大迁移号（新迁移从它 +1）
 ```
 

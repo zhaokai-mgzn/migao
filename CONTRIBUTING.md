@@ -1,11 +1,11 @@
 # 贡献指南（Contributing Guide）
 
-欢迎参与 MIGAO（观星台 · 布艺行业 AI 经营平台）！本指南面向**外部贡献者**与首次参与的开发者。内部研发流程见 [docs/wiki/Development.md](docs/wiki/Development.md)。
+欢迎参与 MIGAO（观星台 · 布艺行业 AI 经营平台）！本指南面向**外部贡献者**与首次参与的开发者。内部研发流程见 [Development](https://github.com/zhaokai-mgzn/migao/wiki/Development)。
 
 ## 1. 项目速览
 
-- **这是什么**：面向布艺 / 窗帘商家的多租户 AI 经营平台。顾客侧"元元" + 经营侧"黄金策"双 Agent（LangGraph），Java admin-api + Python ai-agent-service + Next.js admin-web + Taro mini-app / bmini-app。产品定位见 [docs/wiki/Product.md](docs/wiki/Product.md)。
-- **文档入口**：先读 [README.md](README.md) 了解架构与技术栈；详细文档索引见 [docs/wiki/INDEX.md](docs/wiki/INDEX.md)。
+- **这是什么**：面向布艺 / 窗帘商家的多租户 AI 经营平台。顾客侧"元元" + 经营侧"黄金策"双 Agent（LangGraph），Java admin-api + Python ai-agent-service + Next.js admin-web + Taro mini-app / bmini-app。产品定位见 [Product](https://github.com/zhaokai-mgzn/migao/wiki/Product)。
+- **文档入口**：先读 [README.md](README.md) 了解架构与技术栈；详细文档索引见 [INDEX](https://github.com/zhaokai-mgzn/migao/wiki/INDEX)。
 - **许可证**：[MIT](LICENSE)。参与贡献即表示同意在 MIT 条款下贡献。
 
 ## 2. 首次运行

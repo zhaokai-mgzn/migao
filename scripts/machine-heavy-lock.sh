@@ -79,13 +79,13 @@
 #
 # ## 治什么
 #
-# 蓝图 `docs/wiki/Dev-Mode-Balance.md` §4 行 4/5 + §10 的 P2 行：**分档准入**与
+# 蓝图 `https://github.com/zhaokai-mgzn/migao/wiki/Dev-Mode-Balance` §4 行 4/5 + §10 的 P2 行：**分档准入**与
 # **「准入被拒 ⇒ 改走 CI」计数**都还是 ⏳。而在分档准入落地之前，本机是「并发 = 1 的重活单槽」——
 # 重活要么拿到锁、要么**安静排队**（实测有排队 45 分钟的先例），**没有任何台账**回答
 # 「到底溢出多少次、每次都等多久、是谁在抢」。没有这份读数，分档容量与批次粒度都只能凭感觉。
 # ⇒ 本块把**事实**记下来，并把「槽满」变成**出声**。**它不改任何准入判定**（见下「旁路」）。
 #
-# ## 五类 kind（判据逐条钉住；语义表也在 `docs/wiki/Development.md`）
+# ## 五类 kind（判据逐条钉住；语义表也在 `https://github.com/zhaokai-mgzn/migao/wiki/Development`）
 #
 #   acquired_nowait       立即拿到（本次调用**一次都没等**）⇒ wait_seconds == 0
 #   acquired_after_wait   **排队等待后**拿到（`--wait` 真排上过队）⇒ wait_seconds > 0
@@ -808,7 +808,7 @@ if as_json:
         "batch_integration": batch_n,
     }, ensure_ascii=False, sort_keys=True))
 else:
-    print("── 机器级重活锁 准入/溢出台账（只读；口径见 docs/wiki/Development.md）──")
+    print("── 机器级重活锁 准入/溢出台账（只读；口径见 https://github.com/zhaokai-mgzn/migao/wiki/Development）──")
     print("台账文件    : %s" % path)
     print("时区        : %s（本机）—— 台账 `ts` 带该偏移；`--since` 不带时区时按它解释" % zone_label())
     if since_display:

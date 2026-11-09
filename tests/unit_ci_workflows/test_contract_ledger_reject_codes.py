@@ -30,11 +30,16 @@ drift 面 `ref-freshness` 与 Case Trust 规则 G 会把裸行号判红（dev-fl
 from __future__ import annotations
 
 import re
+import pytest
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
 
 LEDGER = REPO / "docs" / "wiki" / "CONTRACT-LEDGER.md"
+pytestmark = pytest.mark.skipif(
+    not LEDGER.is_file(),
+    reason="docs/wiki/CONTRACT-LEDGER.md 已迁 GitHub wiki ⇒ 契约账本在仓库内无载体，本判据停用（未跑 ≠ 通过）",
+)
 SERVICE_DIR = REPO / "backend/admin-api/src/main/java/com/migao/admin/service"
 BUSINESS_EXCEPTION = REPO / "backend/admin-api/src/main/java/com/migao/admin/exception/BusinessException.java"
 

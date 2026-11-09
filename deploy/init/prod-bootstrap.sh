@@ -5,7 +5,7 @@
 # 唯一真值源仍是 `backend/admin-api/src/main/resources/db/init/schema.sql`
 # （表 + 索引 + RLS + 终态种子）与 `db/migration/V*.sql`（切点之后的增量）。
 # 本脚本**不复制任何 DDL**：它只负责「顺序 + 前置检查 + 失败即停 + 跑完自证」。
-# 这与 `docs/wiki/Database.md` 的「唯一建库脚本」口径一致（两份真相是本仓最忌讳的形态）。
+# 这与 `https://github.com/zhaokai-mgzn/migao/wiki/Database` 的「唯一建库脚本」口径一致（两份真相是本仓最忌讳的形态）。
 #
 # 用法：
 #   PGHOST=... PGPORT=5432 PGDATABASE=migao PGPASSWORD=... \

@@ -12,7 +12,7 @@
 |---|---|---|
 | 1 | **官网没穿自己的衣服**：企业站通篇 `bg-gradient-to-br from-blue-600 via-blue-700 to-indigo-800` 通用蓝色模板 + blur 光斑 + 白色波浪 SVG；而产品全套是「织物质感」token（`frontend/admin-web/tailwind.config.ts`：primary `#48618f` 靛蓝 / accent `#c06a3e` 陶土 / neutral `#faf7f2` 暖亚麻），Logo 是织金「帘成 M」（`frontend/admin-web/src/components/ui/Logo.tsx`） | 旧 `(corporate)/page.tsx` 的 hero 与四个内页页头逐字可查 |
 | 2 | **文案与系统真实能力脱节**：只讲「商品 / 订单 / 知识库」三件事，布艺纵深（算料、SKU 矩阵、工序、批次、计件）一个字没提；而真实后台有六个能力域共 22 个菜单项（`frontend/admin-web/src/config/menu.ts`） | 旧 `services/page.tsx` 的 5 张卡 vs `config/menu.ts` |
-| 3 | **占位假值**：电话 `400-888-8888`、邮箱 `contact@migao-ai.com`、地址「文一西路000号」、「距地铁5号线创景路站步行10分钟」 | 旧 `contact/page.tsx`、旧 `CorporateFooter.tsx`；合规底稿 `docs/wiki/gb47746-2026-compliance.md` §5 的 GB-05 早已登记 |
+| 3 | **占位假值**：电话 `400-888-8888`、邮箱 `contact@migao-ai.com`、地址「文一西路000号」、「距地铁5号线创景路站步行10分钟」 | 旧 `contact/page.tsx`、旧 `CorporateFooter.tsx`；合规底稿 `https://github.com/zhaokai-mgzn/migao/wiki/gb47746-2026-compliance` §5 的 GB-05 早已登记 |
 
 ## 2. 设计口径
 
@@ -34,7 +34,7 @@
 - **行业纵深用行业正名**：裁剪（裁床）/ 车位（缝制）/ 后整（烫工及后整）。
 - **禁用词（判据钉住）**：拼版（全仓无实现）、质检（工序库有行但不在任何工艺路线）、毫秒级、批量操作库存、
   智能工单流转（`inventory_manage` / `after_sales_manage` 已只读化）、自动学习 / 越用越懂 / 越用越精准（GB-05 已清退）。
-- **合规红线（`docs/wiki/gb47746-2026-compliance.md` §2）**：只写「遵循 / 对标 GB/T 47746-2026 + 具体能力点」；
+- **合规红线（`https://github.com/zhaokai-mgzn/migao/wiki/gb47746-2026-compliance` §2）**：只写「遵循 / 对标 GB/T 47746-2026 + 具体能力点」；
   禁「认证 / 通过检测 / 备案 / 无缝接管」；免责小字为强制配套。黄金策不在该标准宣称范围内。
 - **价格不公示**：`product/pricing-design.md` 明示「方案已定，暂不落地，等 POC 结束后实施」。
 

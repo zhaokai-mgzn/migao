@@ -289,7 +289,10 @@ def truth() -> dict:
 
 @pytest.fixture(scope="module")
 def doc_text() -> str:
-    return _read(DOC)
+    path = REPO / DOC
+    if not path.is_file():
+        pytest.skip("docs/wiki/Quick-Start.md 已迁 GitHub wiki ⇒ 文档侧无本地载体（未跑 ≠ 通过）")
+    return path.read_text(encoding="utf-8")
 
 
 # ── 正向读数 ────────────────────────────────────────────────────────────────────

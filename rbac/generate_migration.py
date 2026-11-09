@@ -149,7 +149,7 @@ def _pairs_literal(pairs) -> str:
 
     🔴 为什么要有它（issue #5652）：**生成物（SQL 迁移）不是人读的文档** —— 迁移里那些
     `-- ── V136 的现取差集 ──` 之类的散文只写「哪些岗位/哪些码」，**不逐个码字面量点名**
-    ⇒ 一个人改错了其中一项，PR 里看不出来。而 `docs/wiki/RBAC.md` 的岗位清单行**必须**逐值
+    ⇒ 一个人改错了其中一项，PR 里看不出来。而 `https://github.com/zhaokai-mgzn/migao/wiki/RBAC` 的岗位清单行**必须**逐值
     点名（`test_rbac_role_list_doc_consistency.py` 守着）⇒ 手抄那份清单就是**第二份会漂的真值**。
     本函数给出「同一实例的两种渲染」中的**文档形态**（值仍只有一处真值 = 清单）。
     """

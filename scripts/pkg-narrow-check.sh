@@ -11,7 +11,7 @@
 #   | 新增 / 修改 Java 测试 | `BusinessClockTestSourceGuardTest.outOfScopeSpellingsPresenceIsFrozen` | `Expecting empty but was: ["覆盖外拼写 \`System.nanoTime(\` 登记 presentInTree=false 而现取=true"]`（#6237） |
 #   | 新增 `[backend-contract]` 用例且 `expectations: []` | `test_case_machine_fail_channel.py::test_i3_anchor_matches_reality_and_is_only_shrinking` | `实测 backend_contract_scoring_zero=117 与锚点 116 不一致`（#6231 / #6226 / #6224 / #6237 各一次） |
 #
-# 而并行修复包按「只跑定点」的纪律（`docs/wiki/Development.md`「批次统一验证」节 / D 口径）
+# 而并行修复包按「只跑定点」的纪律（`https://github.com/zhaokai-mgzn/migao/wiki/Development`「批次统一验证」节 / D 口径）
 # **必然漏掉**这两条 ⇒ 直到 CI 才红，且红因指向**包自己的 diff**（看起来像本包引入的缺陷）。
 # ⇒ 本入口把那两条**必然项**提前到**本地**、并做成**零开关记忆负担**（自动探测）。
 #
@@ -76,7 +76,7 @@ RUN_N=0
 declare -a RUN_LABELS=()
 declare -a SKIP_LABELS=()
 
-#: 两条必然项的**窄跑命令（逐字）** —— 文档（`docs/wiki/Development.md`）与本入口共用同一份文案。
+#: 两条必然项的**窄跑命令（逐字）** —— 文档（`https://github.com/zhaokai-mgzn/migao/wiki/Development`）与本入口共用同一份文案。
 JAVA_CMD_VERBATIM='cd backend/admin-api && MIGAO_REQUIRE_REALDB=1 ./mvnw -q -Dtest=BusinessClockTestSourceGuardTest test'
 CASES_CMD_VERBATIM='MIGAO_REQUIRE_REALDB=1 python3 -m pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py -q -p no:cacheprovider'
 

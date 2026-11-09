@@ -91,7 +91,6 @@ EXIT_LABELS = {
 # 只覆盖「契约性引用」所在的目录；点时效快照类目录（历史审计报告 / 一次性验收报告 /
 # 设计调研）**有意排除**：那里的行号是当时的读数，本来就该陈旧（登记为豁免面）。
 REF_SURFACE = (
-    "docs/wiki/",
     "docs/testing/",
     "tests/unit_ci_workflows/",
     ".github/workflows/",
@@ -786,9 +785,15 @@ def check_sync_copy(a: Audit) -> CheckResult:
             "本机建镜像（`$MIGAO_PRESET_MIRROR` / `~/migao-dev-preset-anchor`）或 CI 检出预设仓",
         )
     if cp_txt is None:
-        r.status = "error"
-        r.error = f"缺文件：{DEV_FLOW_COPY}（副本在本仓，它不该消失）"
-        return r
+        # 2026-11-09：wiki 文档迁到 GitHub wiki（仓库不再维护 docs/wiki/**）⇒
+        # 副本对象结构性不存在。按既有 not_applicable 口径具名声明「没判」，**不当通过**。
+        return not_applicable(
+            r,
+            f"同步副本 {DEV_FLOW_COPY}",
+            "该副本已迁至 GitHub wiki（仓库不再承载 docs/wiki/**）⇒ 本环境没有可比对象"
+            "（evaluated=0；**未跑 ≠ 通过**）",
+            "在 wiki 页上维护正文；版本一致性以预设仓 `skills/migao-dev-flow/SKILL.md` 为唯一权威",
+        )
     r.evaluated = 3
 
     m = FM_VERSION.search(src_txt)
@@ -1570,7 +1575,7 @@ CHECKS: list[Check] = [
     Check(
         id="sync-copy", invariant="I1",
         title="同步副本 diff",
-        judgment="`docs/wiki/DEV-FLOW.md` 声明的『当前版本』必须等于**权威源**（S4 / issue #6020 起 = "
+        judgment="（副本对象已迁 GitHub wiki；存在时）`docs/wiki/DEV-FLOW.md` 声明的『当前版本』必须等于**权威源**（S4 / issue #6020 起 = "
                  "预设仓的 `skills/migao-dev-flow/SKILL.md`，经 `preset_root()` 解析）的 `version:`；"
                  "声明的权威源路径必须在位（预设仓内的相对路径也算在位）；副本不得有权威源没有的章节；"
                  "共有章节归一化后不同的**条数**与基线比较。",

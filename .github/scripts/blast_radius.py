@@ -24,7 +24,7 @@
 
 ## 单一数据源与防漂移
 
-本模块 = 数据源，`docs/wiki/Change-Blast-Radius.md` = 人读镜像。
+本模块 = 数据源，人读镜像 = GitHub wiki 的 `Change-Blast-Radius` 页。
 漂移判据（两个方向，各自会红）：
 - `tests/unit_ci_workflows/test_blast_radius_registry.py::test_every_face_is_reachable_by_some_path`
   —— 注册了却**永远匹配不到**任何仓内文件的面 ⇒ 红（提示会永远沉默）；
@@ -275,6 +275,6 @@ def render_hint(hits, repo_root="."):
         lines.append("")
     lines.append("> 口径：**「窄集」必须由「变更的射程」反推** —— 改了工具源码 ⇒ "
                  "**所有扫工具源码的 meta 面都在射程内**；不是靠回忆清单。")
-    lines.append("> 全表见 `docs/wiki/Change-Blast-Radius.md`。本段**不阻塞合并**"
+    lines.append("> 全表见 `https://github.com/zhaokai-mgzn/migao/wiki/Change-Blast-Radius`。本段**不阻塞合并**"
                  "（`blocker_count` 语义不变）。")
     return "\n".join(lines)

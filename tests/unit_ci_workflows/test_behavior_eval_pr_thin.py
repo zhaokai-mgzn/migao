@@ -107,7 +107,7 @@ EVAL_SLOT = "eval-stack-global"
 # ⚠️ **不**含 `.github/cases/` 与 `tests/agent_eval/`：它们是**纯函数**口径里合法的行为输入
 #    （改了用例库/评测基建 → 跑兜底网复验，`#3502`），只是当初不该触发那次 workflow run。
 NON_BEHAVIOR_PROBE_PATHS = (
-    "docs/wiki/CI-CD.md",
+    "docs/agent-feature-design.md",
     "frontend/worker-h5/src/index.ts",
     "backend/admin-api/src/main/java/A.java",
     "tests/e2e/foo.spec.ts",

@@ -293,6 +293,8 @@ def test_j4_synthetic_nested_unit_would_be_red():
 # ────────────────────────── J5 规范指向入口 ──────────────────────────
 
 def test_j5_development_doc_points_to_the_entry():
+    if not DEV_DOC.is_file():
+        pytest.skip("docs/wiki/Development.md 已迁 GitHub wiki ⇒ 该节无本地载体（未跑 ≠ 通过）")
     doc = DEV_DOC.read_text(encoding="utf-8")
     assert "./scripts/java-test.sh" in doc, (
         "docs/wiki/Development.md 必须逐字给出正解入口 ./scripts/java-test.sh（否则下一个人又去 head .txt）"

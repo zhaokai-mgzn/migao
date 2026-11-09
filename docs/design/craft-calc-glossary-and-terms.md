@@ -25,7 +25,7 @@ frontend/admin-web/src/lib/craft-calc-glossary.ts 并逐条读源守卫。
 > 🔴 **2026-09-21 收口（用户裁定，issue #5030）**：`side_margin` 这个键**整体退场** ——
 > 订单宽高 = **窗户宽高**（净窗宽 / 净窗高）⇒ 成品宽 = 净窗宽 ⇒ **宽方向没有余量**。
 > ⇒ #4940 的「页面文案与引擎口径相反」不再是靠改文案收口，而是**该键连同概念一起删除**
-> （引擎常量 / 配置键 / DB 列 / 页面 / 契约类型六处同删，见 `docs/wiki/CONTRACT-LEDGER.md` 的算料配置键行）。
+> （引擎常量 / 配置键 / DB 列 / 页面 / 契约类型六处同删，见 `https://github.com/zhaokai-mgzn/migao/wiki/CONTRACT-LEDGER` 的算料配置键行）。
 
 ---
 

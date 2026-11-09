@@ -120,6 +120,7 @@ import re
 import shutil
 import subprocess
 
+import pytest
 import yaml
 from pathlib import Path
 from typing import Callable
@@ -315,6 +316,15 @@ def action_ids(ledger: dict) -> set[str]:
     return {e["id"] for e in ledger.get("entries", []) if e.get("kind") == "action"}
 
 
+#: 2026-11-09：`docs/wiki/**` 已迁 GitHub wiki（仓库不再承载）⇒ 指向它的锚是**外部载体**，
+#: 本地无法解析（也不该谎报「文件不存在」）。这是**具名的不判面**，不是通过。
+MOVED_WIKI_PREFIX = "docs/wiki/"
+
+
+def _moved_to_wiki(path: str) -> bool:
+    return path.startswith(MOVED_WIKI_PREFIX) and not (REPO_ROOT / path).is_file()
+
+
 def _resolve_anchor(spec: object, file_text: Callable[[str], str | None]) -> str | None:
     """`<path>` 或 `<path>::<symbol>` ⇒ None（可解析）／违规原因。"""
     if not isinstance(spec, str) or not spec.strip():
@@ -322,6 +332,8 @@ def _resolve_anchor(spec: object, file_text: Callable[[str], str | None]) -> str
     path, _, symbol = spec.partition(ANCHOR_SEP)
     text = file_text(path)
     if text is None:
+        if _moved_to_wiki(path):
+            return None   # 载体已迁 wiki（外部）⇒ 本地不判；见 _moved_to_wiki
         return f"锚点指向的文件不存在：{path}"
     if symbol and symbol not in text:
         return f"锚点在文件里逐字找不到：{spec}"
@@ -421,11 +433,13 @@ def ledger_violations(
             )
 
     # ── 判据 7：CI 面具名出现在 docs/wiki/CI-CD.md + 按 state 分派 ─────────────
+    # 载体已迁 GitHub wiki（仓库无 docs/wiki/**）⇒ 只在载体存在时判「具名出现」这一半；
+    # state / criteria / ledger_ref 的结构校验照旧（它们不依赖文档内容）。
     ci_ids = ids_in(cicd_text, CI_ID_RE)
     findings = ledger.get("ci_findings", [])
     for f in findings:
         fid = f.get("id", "?")
-        if fid not in ci_ids:
+        if cicd_text and fid not in ci_ids:
             bad.append(f"{fid}：未具名出现在 `{CICD_REL}` ⇒ CI 面的纪律没有落点（只写散文）")
         state = f.get("state")
         if state not in {"guarded", "registered", "gap"}:
@@ -565,8 +579,9 @@ def ledger_violations(
         if not fam.strip():
             bad.append(f"{eid}：没有 `same_family` ⇒ 孤立登记会让下一个人读不出它与哪一族同形")
         for mark in sorted(set(re.findall(r"\bFM-[A-Z]\d+\b", fam))):
+            carriers = "技能" if not cicd_text else f"技能与 {CICD_REL}"
             if mark not in skill_text and mark not in cicd_text:
-                bad.append(f"{eid}：`same_family` 点了 `{mark}`，而它在技能与 {CICD_REL} 里都找不到")
+                bad.append(f"{eid}：`same_family` 点了 `{mark}`，而它在{carriers}里都找不到")
         if not e.get("evidence"):
             bad.append(f"{eid}：没有任何 `evidence` ⇒ 这条固化**不可复核**")
         for ev in e.get("evidence") or []:
@@ -719,7 +734,9 @@ def _require(text: str | None, rel: str) -> str:
 
 def _live() -> tuple[str, str, dict]:
     skill_text = _require(real_file_text(SKILL_REL), SKILL_REL)
-    cicd_text = _require(real_file_text(CICD_REL), CICD_REL)
+    # 2026-11-09：docs/wiki/CI-CD.md 已迁 GitHub wiki ⇒ 仓库内无载体。
+    # 空串 = 「清单 E 面未判」，由下面的 `if cicd_text:` 显式跳过；不伪造内容。
+    cicd_text = real_file_text(CICD_REL) or ""
     ledger = json.loads(LEDGER_PATH.read_text(encoding="utf-8"))
     return skill_text, cicd_text, ledger
 
@@ -909,6 +926,8 @@ def registered_anchor_problems(*, ledger: dict,
             continue
         text = file_text(path)
         if text is None:
+            if _moved_to_wiki(path):
+                continue      # 外部载体（已迁 wiki）⇒ 本地判不了，不谎报失效
             bad.append(f"{fid}：`ledger_ref` 的载体不存在：{path}")
             continue
         if anchor not in text:
@@ -944,7 +963,7 @@ def test_registered_anchor_check_has_discriminating_power() -> None:
     assert registered_anchor_problems(ledger=empty) != []
     broken = json.loads(json.dumps(ledger))
     nxt = next(f for f in broken["ci_findings"] if f.get("state") == "registered")
-    nxt["ledger_ref"] = "docs/wiki/NO_SUCH_CARRIER.md::whatever"
+    nxt["ledger_ref"] = "docs/testing/NO_SUCH_CARRIER.md::whatever"
     assert registered_anchor_problems(ledger=broken) != []
 
 
@@ -1092,6 +1111,8 @@ def relay_anchor_problems(*, ledger: dict,
                 continue
             text = file_text(path)
             if text is None:
+                if _moved_to_wiki(path):
+                    continue  # 外部载体（已迁 wiki）⇒ 本地判不了，不谎报失效
                 bad.append(f"{fid}：锚的载体不存在：{path}")
                 continue
             if anchor not in text:
@@ -1799,6 +1820,8 @@ CI_MARKS_WITHOUT_ENTRY_FROZEN = ("FM-E6",)
 
 def unregistered_ci_marks_problems(cicd_text: str, ledger: dict) -> list[str]:
     """判据 23：文档里具名的 `FM-EN` 必须**已登记**或在**只许缩短**的冻结表里。**纯函数**。"""
+    if not cicd_text.strip():
+        return []   # 载体已迁 GitHub wiki ⇒ 「文档 → 台账」方向无本地对象（未跑，不是通过）
     doc_marks = ids_in(cicd_text, CI_ID_RE)
     if not doc_marks:
         return [f"`{CICD_REL}` 里取不到任何 `FM-EN` 记号 ⇒ 判据无从判定"
@@ -1819,6 +1842,8 @@ def unregistered_ci_marks_problems(cicd_text: str, ledger: dict) -> list[str]:
     return bad
 
 
+@pytest.mark.skipif(not (REPO_ROOT / CICD_REL).is_file(),
+                    reason="docs/wiki/CI-CD.md 已迁 GitHub wiki ⇒ 清单 E 在仓库内无载体，本组停用（未跑 ≠ 通过）")
 class TestCiFaceMarkRegistrationIsBidirectional:
     """判据 23 的五条：基线 / 注入红证 / 对照读数 / 只许缩短 / fail-closed。"""
 
@@ -1886,6 +1911,8 @@ def conflict_diagnosis_problems(skill_text: str) -> list[str]:
     ]
 
 
+@pytest.mark.skipif(not (REPO_ROOT / CICD_REL).is_file(),
+                    reason="docs/wiki/CI-CD.md 已迁 GitHub wiki ⇒ 诊断锚在仓库内无载体，本组停用（未跑 ≠ 通过）")
 class TestConflictDiagnosisAnchor:
     """判据 24 的四条：基线 / 删掉即红 / 整节被删即红 / 只加注释不红（对照）。"""
 

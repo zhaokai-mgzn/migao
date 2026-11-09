@@ -875,7 +875,7 @@ grep -n "^ROUTINGS\|^SPECIAL_OPTION_ROUTINGS\|def build_routing" backend/ai-agen
 | N6 | **不给 `POST /operations` 发明默认 `applicable`** | 「该部位做不做」是商家的业务判断；发明默认 = 猜单价/猜工序（issue #4261 同款禁令）。P1 只要求「同时建行 + 必须显式给 applicable」 |
 | N7 | **不在本单改任何生产代码/数据/守卫** | 本单是**评估单**（issue 验收判据最后一条） |
 | N8 | **不改 `.github/workflows/**` 与 `.agent-presets/**`** | 仓库红线（本机 token 无 `workflow` scope） |
-| N9 | **不在 `docs/wiki/INDEX.md` 加索引行** | 实测该索引**不含任何 `docs/design/**` 条目**（`grep -c "design/" docs/wiki/INDEX.md` → `0`）⇒ 加一行是**新造约定**，且会让「design 文档要不要都登记」变成新的漂移面。**最小改动 = 只新增 1 个文件** |
+| N9 | **不在 `https://github.com/zhaokai-mgzn/migao/wiki/INDEX` 加索引行** | 实测该索引**不含任何 `docs/design/**` 条目**（`grep -c "design/" https://github.com/zhaokai-mgzn/migao/wiki/INDEX` → `0`）⇒ 加一行是**新造约定**，且会让「design 文档要不要都登记」变成新的漂移面。**最小改动 = 只新增 1 个文件** |
 | N10 | **不删 `production_routings`（旧路线表）** | P2 后零消费者，但它是历史路线的载体（与 N4 同款） |
 
 ### 6.2 风险清单
@@ -1095,7 +1095,7 @@ grep -c "processing_item" backend/ai-agent-service/app/production/routing.py   #
 | F4 | 映射表只有「`VARIANT_NAMES` / `normalizeOperationName`」一处 | 生产代码 **2 份**（`QueryService` + `SeedTemplateService`），测试夹具 **1 份**（`backend/admin-api/src/test/java/com/migao/admin/service/RoutingModelFixture`），真值源 1 份（`routing.py`）= **共 4 份** | §2.1.1 单列；P3 必须四份一起退场 |
 | F5 | 「写面拒收逻辑名（编辑主线直接保存 422）」（#4609） | 读码实测 `validateMainline`（`ProductionRoutingCommandService:514-560`）**已同时接受两态**（原样查库 → 查不到按 `variantNameOf` 反查）。⇒ **今天的失效形态是「接受变体名但存下来」**，然后在 `buildRoute:1233-1236` **静默丢工序** | §0 与 §2.1.3 按实测口径写；**#4609 的 422 分支需另行复现确认**（本单未跑商家面） |
 | F6 | 工人端要显示「`三边` · 布帘」 | 工人端（bmini-app）与顾客端（mini-app）**读的全是快照**；实测两者对工序库/矩阵/路线端点的引用数 = **0**（`grep -rn "operations-catalog\|operation-positions\|/routings\|route-rules" frontend/bmini-app/src frontend/mini-app/src \| wc -l`）⇒ 拼接只能发生在**实例化写入端**或**展示端** | §2.4 + §6 R5 |
-| F7 | 建议在 `docs/wiki/INDEX.md` 加一行 | 该索引 `design/` 条目数 = **0** ⇒ 加行是新造约定 | §6 N9：**不加**，只新增 1 个文件 |
+| F7 | 建议在 `https://github.com/zhaokai-mgzn/migao/wiki/INDEX` 加一行 | 该索引 `design/` 条目数 = **0** ⇒ 加行是新造约定 | §6 N9：**不加**，只新增 1 个文件 |
 | F8 | 「`position` 列退场」 | 实测唯一读点 = `ProductionOperationQueryService:574`（读面暴露），实例化/计件**不读**它 | §2.1.2：退场低风险，但走「停写 + 注释」而非 DROP（N2） |
 | F9 | 「影响面包含下单页」 | `grep -rn "operation" "frontend/admin-web/src/app/(dashboard)/orders/" \| wc -l` → **`0`** | 下单页**零工序名引用**（只通过 `curtainType` 间接决定路线）⇒ §2.3 表内该行已删 |
 | F10 | 「前端要改转换逻辑」 | 前端**从未**写过「变体名 → 逻辑名」的推导（`grep -rn "endsWith('-布')\|slice(0, -2)" frontend/admin-web/src` → 0）；唯一实现是后端 `normalizeOperationName:333-335` | 前端可删的只有「两把尺的查表与并集」，全在 `frontend/admin-web/src/app/(dashboard)/production/routings/page.tsx` 一个文件（§2.4.1） |

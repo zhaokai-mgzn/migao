@@ -422,7 +422,7 @@ B 端最贵的是**培训成本**，这是唯一能把它降到 0 的形态。
   而应该给出**理解后的猜测 + 可点选项**：
   > 「我理解你想看经营概况，是这个吗？还是 ① 订单异常 ② 库存 ③ 客户」
 - 🔴 **给可点击的猜测，不给空白输入框** —— 把「提不出问题」变成「**点一下就行**」。
-- **术语桥反着用**：`docs/wiki/agent-design-standard.md` 说 Skill Prompt 放「术语映射」——那是用于**理解**用户；
+- **术语桥反着用**：`https://github.com/zhaokai-mgzn/migao/wiki/agent-design-standard` 说 Skill Prompt 放「术语映射」——那是用于**理解**用户；
   反过来，知道用户的口语词就能生成**他看得懂**的引导。
 - **落地**（#5329）：投影在 `backend/ai-agent-service/app/suggestions/vague_guess.py`
   （「选哪些能力」与 `_capability_index` 同一份事实；「怎么说」取自工具 `description` 的

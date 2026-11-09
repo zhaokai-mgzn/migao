@@ -94,7 +94,7 @@ jobs:
           fetch-depth: 0
 
       # ── 路径门控（issue #3507 ①，2026-09-26）────────────────────────────────
-      # 口径 = 本仓既有「**job 内 diff 门控**」范式（`docs/wiki/CI-CD.md`「变更门控」；
+      # 口径 = 本仓既有「**job 内 diff 门控**」范式（`https://github.com/zhaokai-mgzn/migao/wiki/CI-CD`「变更门控」；
       # 同 `ai-agent-tests` / `mini-app` / `bmini-app` / 本文件 `admin-web-test`）：
       # **job 保持运行**（required check 永不悬空），只让实际执行的 step 跳过。
       # ⛔ 不许改成 workflow 级 `paths:` —— 那会让不碰该路径的 PR **永远拿不到这条
@@ -198,7 +198,7 @@ jobs:
     # 🔴 **两条腿的名字不是随便起的**：第一条**逐字保留** `ci workflow helper unit tests`
     #   （= 分支保护里**已有**的那个 required 名）—— 改名会让**所有在飞的 PR** 卡在
     #   `Expected — waiting for status to be reported` 且**不会变红**（顺序铁律见
-    #   docs/wiki/CI-CD.md 的「变更门控」节）。第二条是新名字，**合并后**才加进分支保护
+    #   https://github.com/zhaokai-mgzn/migao/wiki/CI-CD 的「变更门控」节）。第二条是新名字，**合并后**才加进分支保护
     #   （顺序不可换：**先有上报、再设 required**）。
     # 🔴 **不许用「少跑」换快**：分片只切**收集面**，一条断言都不削。「并集 == 全集」「每片库存
     #   不低于**该片**冻结基线」都有判据：tests/unit_ci_workflows/test_helper_leg_execution_shape.py
@@ -446,7 +446,7 @@ jobs:
       # `vitest`）在**每个** PR 上都跑 —— 实测该 job 在纯文档 / 其他模块 PR 上仍耗
       # **251.5s 中位**（n=8，复算见 tests/unit_ci_workflows/ci_cost_ledger.json）。
       # 现改成门控**整条腿**：口径与 `mini-app` / `bmini-app` / `ai-agent-tests` 逐字同款
-      # （`docs/wiki/CI-CD.md`「变更门控」）。
+      # （`https://github.com/zhaokai-mgzn/migao/wiki/CI-CD`「变更门控」）。
       # ⛔ 不许改成 workflow 级 `paths:`（required check 会卡 "Waiting" 永不报告，且**不会变红**）。
       # 常驻判据 = tests/unit_ci_workflows/test_required_check_no_paths_filter.py。
       # 另：`next build` 的防回退锁 = tests/unit_ci_workflows/test_admin_web_next_build_gate.py（本步改名/删条件即红）。
@@ -550,7 +550,7 @@ jobs:
       #     ⇒ 报告腿也只会长出第二个无人看的假信号。
       #   ⇒ **这个信号以后去哪看 = 目前没有通道**；要恢复须**显式开一个通道**（Dependabot 安全告警 /
       #     pip-audit / trivy），**不要**把一条 `continue-on-error` 的步当成它已有。
-      #   口径全文（单一来源）= docs/wiki/CI-CD.md 的「口径：几条绿色腿不是它名字读起来的意思」§③。
+      #   口径全文（单一来源）= https://github.com/zhaokai-mgzn/migao/wiki/CI-CD 的「口径：几条绿色腿不是它名字读起来的意思」§③。
 
   # ── 共用的面判定（本 workflow 的**单一来源**）────────────────────────────────────
   # 为什么单独一个 job（issue #6051）：`e2e-quality-gate` 是**非 required** 腿，此前靠**步骤级**
@@ -637,7 +637,7 @@ jobs:
       # 本 job 在**每个** PR 上都装两份 node_modules 并跑 Playwright（实测中位 **114.5s**，n=8）
       # —— 而它读的对象面只有 `tests/**`（spec / fixture / playwright 配置）与
       # `frontend/admin-web/**`（`webServer` 要真构建 admin-web）。
-      # 口径 = 本仓既有「job 内 diff 门控」范式（`docs/wiki/CI-CD.md`「变更门控」）。
+      # 口径 = 本仓既有「job 内 diff 门控」范式（`https://github.com/zhaokai-mgzn/migao/wiki/CI-CD`「变更门控」）。
       # ⛔ **本 job 不是 required check**（不在分支保护 required 集合里）⇒ 本可整层 `paths:`，
       #   但**仍不用**：一是保持与其余腿同款读法（判据按步骤名定位，见 §23.5），
       #   二是将来若把它翻成 required，**不需要**再改回 job 内门控（那条顺序不可换）。
@@ -854,7 +854,7 @@ jobs:
           echo "❌ QA Growth Gate 发现 ${{ steps.check.outputs.BLOCKERS }} 处缺测，阻塞合并。"
           echo "请按下方 PR 评论里的清单（逐条 file + 缺测文件）补齐测试；"
           echo "仅当确有正当理由时才走豁免（.github/qa-exemptions.yml），且豁免面只许缩短。"
-          echo "详见 docs/wiki/Testing.md"
+          echo "详见 https://github.com/zhaokai-mgzn/migao/wiki/Testing"
           gh pr edit "$PR_NUMBER" --add-label "review/needs-changes" 2>/dev/null || true
           exit 1
 

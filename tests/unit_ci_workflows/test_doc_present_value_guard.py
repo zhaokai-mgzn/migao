@@ -96,7 +96,7 @@ class Claim:
 CLAIMS: tuple[Claim, ...] = (
     Claim(
         id="workflow-count",
-        paths=("README.md", "docs/wiki/CI-CD.md", "docs/wiki/gate-exemption-ledger.md"),
+        paths=("README.md",),
         pattern=r"(?<![\w.])\d+\s*\+?\s*个?\s*(?:GitHub Actions\s*)?(?:工作流|workflow)",
         truth_source=".github/workflows",
         truth_hint="wc -l",
@@ -108,7 +108,7 @@ CLAIMS: tuple[Claim, ...] = (
     ),
     Claim(
         id="tool-count",
-        paths=("README.md", "docs/wiki/Home.md"),
+        paths=("README.md",),
         pattern=r"(?<![\w.])\d+\s*\+?\s*个?\s*(?:业务|AI)?\s*(?:工具|[Tt]ools?)",
         truth_source="backend/ai-agent-service/app/tools/registry.py",
         truth_hint="registry.py",
@@ -122,7 +122,7 @@ CLAIMS: tuple[Claim, ...] = (
     ),
     Claim(
         id="taro-version",
-        paths=("README.md", "docs/wiki/Frontend.md", "docs/wiki/Home.md"),
+        paths=("README.md",),
         pattern=r"Taro\s+\d+(?:\.\d+)+",
         truth_source="frontend/mini-app/package.json",
         truth_hint="package.json",
@@ -135,7 +135,7 @@ CLAIMS: tuple[Claim, ...] = (
     ),
     Claim(
         id="spring-boot-version",
-        paths=("README.md", "docs/wiki/Home.md"),
+        paths=("README.md",),
         pattern=r"Spring Boot\s+\d+(?:\.\d+)+",
         truth_source="backend/admin-api/pom.xml",
         truth_hint="pom.xml",
@@ -147,7 +147,7 @@ CLAIMS: tuple[Claim, ...] = (
     ),
     Claim(
         id="fastapi-version",
-        paths=("README.md", "docs/wiki/Home.md"),
+        paths=("README.md",),
         pattern=r"FastAPI\s+\d+(?:\.\d+)+",
         truth_source="backend/ai-agent-service/requirements.txt",
         truth_hint="requirements.txt",
@@ -159,7 +159,7 @@ CLAIMS: tuple[Claim, ...] = (
     ),
     Claim(
         id="langchain-version",
-        paths=("README.md", "docs/wiki/Home.md"),
+        paths=("README.md",),
         pattern=r"(?:LangChain(?:\s+Core)?|LC)\s+v?\d+(?:\.\d+)+",
         truth_source="backend/ai-agent-service/requirements.txt",
         truth_hint="requirements.txt",
@@ -171,7 +171,7 @@ CLAIMS: tuple[Claim, ...] = (
     ),
     Claim(
         id="langgraph-version",
-        paths=("README.md", "docs/wiki/Home.md"),
+        paths=("README.md",),
         pattern=r"(?:LangGraph|LG)\s+v?\d+(?:\.\d+)+",
         truth_source="backend/ai-agent-service/requirements.txt",
         truth_hint="requirements.txt",

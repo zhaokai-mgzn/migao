@@ -25,7 +25,7 @@
 | 3 | **反向对照**：不带软链的 worktree 仍能正常移除；`--delete-branch` 语义不变 | ——（对照读数，防「为了安全把 rm 弄坏」） |
 | 4 | **危险面钉住**：仍**活着**的跨工作区软链一旦遇上**解引用式删除**，目标被清空 | 断言「清空」确实发生（否则第 2 条的绿可能是空断言） |
 | 5 | **类级元守卫（教法扫描）**：仓内没有任何**脚本/文档**把「软链到主工作区 node_modules」教成步骤 | 内存语料里加一行配方 ⇒ 判红；豁免台账**只许缩短**、**条数现取**、陈旧登记即红 |
-| 6 | **同源**：`add` 输出与 `docs/wiki/Development.md` 必须带**同一句**规范（不许两处各写一份） | 任一侧删掉该句 ⇒ 判红 |
+| 6 | **同源**：`add` 输出必须直接带规范句（文档侧已迁 GitHub wiki，不再由 CI 比对） | 删掉该句 ⇒ 判红 |
 | 7 | **判别力自证**：判据函数在内存构造的坏形态上各自判红、在对照形态上**不红** | 六种坏形态 + 两条对照 |
 | 8 | **可见提示（issue 要求 ①）**：两种危险形态各自**具名**点出 —— 指向**本仓库工作区** / 指向**工作区之外**，且提示里带「路径 → 目标」 | 把「工作区之外」那句 ⚠️ 文案从脚本里**抽掉**（注入变体真跑 `rm`）⇒ 判据 8 当场判红 |
 
@@ -73,15 +73,12 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = REPO_ROOT / "scripts" / "dev-worktree.sh"
-DEV_DOC = REPO_ROOT / "docs" / "wiki" / "Development.md"
 LEDGER = Path(__file__).with_name("worktree_dep_symlink_ledger.json")
 
 UNLINK_FN = "unlink_symlinks_before_remove"
 REMOVE_MARKER = "worktree remove"
 #: `add` 输出与 `docs/wiki/Development.md` 必须**逐字**共用的那一句（同源 ⇒ 不许两处各写一份）。
 CANON_RULE = "依赖一律在本工作区内安装（npm ci）；禁止把 node_modules 软链到主工作区或其他工作区"
-#: 文档侧承载该句的节标题（定位用；取不到即 fail-closed）。
-DOC_SECTION = "### worktree 依赖准备"
 #: 豁免台账**条数上界**（现取：冻结在判据里 ⇒ 台账自己改不大；只许缩短）。
 FROZEN_MAX_EXEMPTIONS = 1
 #: 见证器（PATH 上的 `git` 垫片）落盘的口径。
@@ -147,11 +144,13 @@ def unlink_order_problems(body: str) -> list[str]:
     return []
 
 
-def same_source_problems(script_text: str, doc_text: str) -> list[str]:
-    """判据 6 的判定本体：`add` 输出与文档必须带**同一句**规范（同源，不许两处各写一份）。"""
+def same_source_problems(script_text: str) -> list[str]:
+    """判据 6 的判定本体：`add` 输出必须直接带那句规范。
+
+    文档侧（原 `docs/wiki/Development.md`）已迁至 GitHub wiki（不再随仓库维护）⇒
+    同源比对只剩脚本侧；wiki 页面引用同一句，但不由 CI 读。
+    """
     problems: list[str] = []
-    if CANON_RULE not in doc_text:
-        problems.append(f"`docs/wiki/Development.md` 里缺那句规范（同源句）：{CANON_RULE}")
     if CANON_RULE not in script_text:
         problems.append(f"`scripts/dev-worktree.sh` 里缺那句规范（同源句）：{CANON_RULE}")
     try:
@@ -161,11 +160,6 @@ def same_source_problems(script_text: str, doc_text: str) -> list[str]:
         return problems
     if CANON_RULE not in add_body:
         problems.append("规范句不在 `cmd_add` 的**输出**里（写在别处 = 建工作区的人看不到）")
-    start = doc_text.find(DOC_SECTION)
-    if start < 0:
-        problems.append(f"`docs/wiki/Development.md` 里找不到承载节 `{DOC_SECTION}`（fail-closed）")
-    elif CANON_RULE not in doc_text[start:]:
-        problems.append(f"规范句不在 `docs/wiki/Development.md` 的 `{DOC_SECTION}` 节里")
     return problems
 
 
@@ -493,20 +487,15 @@ def test_teaching_scan_has_teeth_on_injected_corpora() -> None:
     assert teaching_problems(live, exempt) == []  # 对照：真语料 + 现台账 ⇒ 不红
 
 
-def test_add_output_and_development_doc_share_one_canonical_rule() -> None:
-    """判据 6（同源）：`add` 输出与文档带的必须是**同一句**规范，且不许两处各写一份。"""
+def test_add_output_carries_the_canonical_rule() -> None:
+    """判据 6（同源）：`add` 输出必须直接带那句规范（文档侧已迁 wiki，不由 CI 读）。"""
     script_text = SCRIPT.read_text(encoding="utf-8")
-    doc_text = DEV_DOC.read_text(encoding="utf-8")
-    problems = same_source_problems(script_text, doc_text)
+    problems = same_source_problems(script_text)
     assert problems == [], "；".join(problems)
-
-    missing_doc = doc_text.replace(CANON_RULE, "")
-    assert missing_doc != doc_text, "注入没生效（文档侧）"
-    assert same_source_problems(script_text, missing_doc) != []
 
     missing_add = script_text.replace(f'  echo "   🔴 {CANON_RULE}"', "", 1)
     assert missing_add != script_text, "注入没生效（add 输出侧）⇒ 会变成空断言"
-    assert same_source_problems(missing_add, doc_text) != []
+    assert same_source_problems(missing_add) != []
 
 
 def test_add_output_reaches_the_operator_with_the_discouragement(tmp_path: Path) -> None:

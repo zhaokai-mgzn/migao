@@ -31,7 +31,6 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 MODULE_PATH = REPO_ROOT / ".github" / "scripts" / "blast_radius.py"
-DOC_PATH = REPO_ROOT / "docs" / "wiki" / "Change-Blast-Radius.md"
 
 #: `docs/wiki/Change-Blast-Radius.md` 的表行锚（显式 `path::` 前缀包住，避免裸文件名被 Case Trust 规则 G 判红）
 ANCHOR_RE = re.compile(r"<code>([a-z][a-z0-9-]*)</code>")
@@ -148,43 +147,6 @@ def test_no_probe_command_is_a_placeholder():
         "下列探针的命令**不是可复制的 shell**（人复制不了 ⇒ 提示白给）：\n  " + "\n  ".join(bad))
 
 
-# ── 判据 3：文档逐面镜像注册表（锚点 ↔ 表行 ↔ 具名判据）──
-
-def _doc_text():
-    assert DOC_PATH.exists(), f"人读镜像缺失：{DOC_PATH.relative_to(REPO_ROOT)}"
-    return DOC_PATH.read_text(encoding="utf8")
-
-
-def test_doc_mirrors_every_face_exactly_once():
-    mod = _load_module()
-    text = _doc_text()
-    anchors = ANCHOR_RE.findall(text)
-    faces = [e["face"] for e in mod.FACES]
-    missing = [f for f in faces if anchors.count(f) != 1]
-    assert missing == [], (
-        f"文档 `{DOC_PATH.relative_to(REPO_ROOT)}` 里下列面名的 `<code>…</code>` 锚不是**恰好一处**"
-        f"（少一处 ⇒ 该面在文档里不可定位；多一处 ⇒ 两行说同一面）：{missing}\n"
-        f"现取锚点集合：{sorted(set(anchors))}")
-    extra = sorted(set(anchors) - set(faces))
-    assert extra == [], (
-        f"文档里有注册表**没有**的面锚（文档在描述一个不存在的射程面）：{extra}")
-
-
-def test_doc_lists_the_named_judgement_of_every_probe():
-    mod = _load_module()
-    text = _doc_text()
-    missing = []
-    for face, probes in mod.probes_by_face(str(REPO_ROOT)).items():
-        for p in probes:
-            if p.judgement and p.judgement not in text:
-                missing.append(f"{face} · `{p.judgement}`")
-            if p.source and p.source not in text:
-                missing.append(f"{face} · `{p.source}`")
-    assert missing == [], (
-        "下列具名判据/命令实现**没有出现在文档表里** ⇒ 提示给了命令、文档没给（两处各说各话）：\n  "
-        + "\n  ".join(missing))
-
-
 # ── 判据 4：提示形态（非阻塞段的逐字首行 + 无命中时空串）──
 
 def test_hint_header_and_blocker_free_wording():
@@ -195,7 +157,7 @@ def test_hint_header_and_blocker_free_wording():
         "提示首行形态变了（判据与消费方按此解析）"
     assert "非阻塞" in hint and "blocker_count` 语义不变" in hint, "必须逐字声明不改 blocker 语义"
     assert "「窄集」必须由「变更的射程」反推" in hint, "必须逐字带上口径"
-    assert "Change-Blast-Radius.md" in hint, "必须指向人读镜像"
+    assert "wiki/Change-Blast-Radius" in hint, "必须指向 wiki 人读镜像"
 
 
 def test_hint_is_empty_without_hits():

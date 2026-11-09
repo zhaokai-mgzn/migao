@@ -317,9 +317,6 @@ OLD_SYSTEM_NAMES = ("AIKF", "AI 智能客服系统", "AI智能客服系统")
 #: 定位面登记表：文件 ⇒ 必须正向存在的锚
 DOC_POSITIONING_FILES: dict[str, tuple[str, ...]] = {
     "README.md": ("观星台", "布艺", "AI 经营平台"),
-    "docs/wiki/Home.md": ("观星台", "布艺", "AI 经营平台"),
-    "docs/wiki/Product.md": ("观星台", "布艺", "AI 经营平台"),
-    "docs/wiki/INDEX.md": ("观星台", "布艺"),
     "AGENTS.md": ("观星台", "布艺"),
     "CONTRIBUTING.md": ("观星台", "布艺"),
     "SECURITY.md": ("观星台", "布艺", "AI 经营平台"),

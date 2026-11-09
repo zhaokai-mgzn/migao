@@ -507,7 +507,7 @@ class TestDefaultAndEmpty:
 
     def test_no_ai_behavior_file_returns_empty(self):
         assert bm.map_changed_files_to_case_ids(
-            ["frontend/admin-web/src/app/page.tsx", "docs/wiki/Development.md"]) == []
+            ["frontend/admin-web/src/app/page.tsx", "https://github.com/zhaokai-mgzn/migao/wiki/Development"]) == []
 
     def test_empty_and_blank_input_returns_empty(self):
         assert bm.map_changed_files_to_case_ids([]) == []

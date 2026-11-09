@@ -452,7 +452,7 @@ v2 命中：先求 scope=specific 的项；**只要有一项命中**（含「命
 |---|---|---|---|
 | 1 | 裁高配置：**可达** | 一致 | — |
 | 2 | 一体机机台模式：**可达** | 一致 | — |
-| 3 | 「扫码读面补明细键」判**部分可达**，理由 = `set_overview.positions[]` 里没有那 9 键 | 🔴 **误归因**：复核者查的是 `ProcessingSetReadService::setOverview`（**商家端** `processing-order-sets` 那条路径）；**扫码读面**的 `set_overview` 由 `ProductionScanService::scanDetailOverview` 装配（`withPositionDetail` 逐个部位追加，见该文件 `POSITION_DETAIL_KEYS` / `scanDetailOverview` / `withPositionDetail` 三处）⇒ **该路径确实带这 9 键**，与用例 PG-046 的判据同源 | 不解（复核者的**观察**正确、**对象指错**）；两读面形状不同这一点本就**有意**，已登记在 `docs/wiki/CONTRACT-LEDGER.md` §九 |
+| 3 | 「扫码读面补明细键」判**部分可达**，理由 = `set_overview.positions[]` 里没有那 9 键 | 🔴 **误归因**：复核者查的是 `ProcessingSetReadService::setOverview`（**商家端** `processing-order-sets` 那条路径）；**扫码读面**的 `set_overview` 由 `ProductionScanService::scanDetailOverview` 装配（`withPositionDetail` 逐个部位追加，见该文件 `POSITION_DETAIL_KEYS` / `scanDetailOverview` / `withPositionDetail` 三处）⇒ **该路径确实带这 9 键**，与用例 PG-046 的判据同源 | 不解（复核者的**观察**正确、**对象指错**）；两读面形状不同这一点本就**有意**，已登记在 `https://github.com/zhaokai-mgzn/migao/wiki/CONTRACT-LEDGER` §九 |
 | 4 | 工人端页面开关判**部分可达**：后端齐，但 `/api/worker/me` **零消费方** ⇒ 开关不改变工人看到的任何东西 | 🔴 **成立，我认账**（这是我从 P0-E 划走、又还没做的那一半） | **补包**：`frontend/worker-h5` 消费 `/api/worker/me` —— 按 `report` 门控报工主流程、按 `cut_calc` 门控机台模式入口；**取不到页面集时 fail-open + 显式提示**（不把「开关没读到」变成「活干不了」）；`order` / `shipment` 在 `/w/` **暂无对应面** ⇒ 不为它们造 UI，只登记 |
 | 5 | 会话超时一周：**可达**（🔴 2026-10-07 值改为 **30 天**，issue #6473 ⇒ 本行读数对应**改值前**的一周，形态未变） | 一致 | — |
 | a | 本文 §2.7「改 `ProductionScanService.resolve`」与实现形态的描述 | — | **本条更正**（见下） |

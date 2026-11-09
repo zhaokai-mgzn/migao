@@ -5,7 +5,7 @@
 母单 #5188 的首选是「能扩 `inventory_manage.query` 就扩」。核过之后**不能扩**，三条都是硬理由：
 
 1. **权限层直接冲突**：批次读面（`StockBatchController`）全部挂 `@RequirePermission("product:list")`，
-   而 `inventory_manage` 是**双端工具**（`allowed_roles` 含 `customer`）——按 `docs/wiki/CONTRACT-LEDGER.md`
+   而 `inventory_manage` 是**双端工具**（`allowed_roles` 含 `customer`）——按 `https://github.com/zhaokai-mgzn/migao/wiki/CONTRACT-LEDGER`
    §10.1 与 `tests/test_tool_permission_codes.py` 的登记清单，双端工具**不得**声明权限码
    （C 端 JWT 没有权限码，加码会让 C 端 `query` 全量失效 = 判据 6「不损失客户」红）。
    「加码」与「C 端可用」在同一类上不可兼得。

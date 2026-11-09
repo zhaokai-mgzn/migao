@@ -5,7 +5,7 @@ name: Drift Audit (真相源契约)
 #   ① **陈旧快照**（读的副本 ≠ 被测对象的当前状态）⇒ 修的目标是错的；
 #   ② **移动靶**（用名字/序号/位置定位被测对象）⇒ 测的目标是错的。
 # 两者都不报错。本 workflow 是这两件事的**统一判定入口**（一条命令、一个报告）：
-#   scripts/drift_audit.py —— 契约与判据定义见 `docs/wiki/truth-source-contract.md`。
+#   scripts/drift_audit.py —— 契约与判据定义见 `https://github.com/zhaokai-mgzn/migao/wiki/truth-source-contract`。
 #
 # ── 两条腿（缺一层就等于没有）────────────────────────────────────────────────
 #  · PR：`--check` —— **新增**漂移 ⇒ exit 1（fail-closed）；存量漂移打印放行（基线 burn-down）。

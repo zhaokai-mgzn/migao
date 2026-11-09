@@ -140,7 +140,7 @@ jobs:
       #   ⇒ 整轮跳过；② 循环内 `⚠️  额度剩 N < 150，停止本轮（已处理 M 个候选，其余留给下次 run）`
       #   ⇒ 中途停；③ **正常跑完**才在 run 的 Summary 里出现 `posted=… idempotent_skip=…` 汇总行 ——
       #   **`posted=0` 且汇总行在 = 真零动作；汇总行不在 = 没跑到那一步（被闸跳过）**。
-      #   口径全文（单一来源）= docs/wiki/CI-CD.md 的「口径：几条绿色腿不是它名字读起来的意思」§②。
+      #   口径全文（单一来源）= https://github.com/zhaokai-mgzn/migao/wiki/CI-CD 的「口径：几条绿色腿不是它名字读起来的意思」§②。
       - name: API 预算闸（防跑到一半被限流）
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

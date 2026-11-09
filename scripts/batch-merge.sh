@@ -7,7 +7,7 @@
 #
 #   ./scripts/batch-merge.sh <PR号> [<PR号> ...] [--branch batch/<日期>] [--dry-run] [--no-push]
 #
-# 用法/口径/边界见 docs/wiki/Development.md 的「批次合并（默认路径）」与
+# 用法/口径/边界见 https://github.com/zhaokai-mgzn/migao/wiki/Development 的「批次合并（默认路径）」与
 # `python3 scripts/batch_merge_lib.py --help`。
 set -euo pipefail
 

@@ -124,7 +124,7 @@
 #   指向项目根之外的 `node_modules`（`next dev` 先 ✓ Ready 再 FATAL）。故本命令一律**真装**
 #   （`npm ci --prefer-offline`：锁文件决定内容，npm 全局缓存让重复安装变快），并**先摘掉**存量软链
 #   （自愈；`rm -f` 只摘链接本身、不跟随目标）。同一口径见 `scripts/ui_smoke_merchant.sh` 的依赖准备段
-#   与 `docs/wiki/Development.md` 的「worktree 依赖准备」。
+#   与 `https://github.com/zhaokai-mgzn/migao/wiki/Development` 的「worktree 依赖准备」。
 #
 # ## 边界（照实登记）
 #

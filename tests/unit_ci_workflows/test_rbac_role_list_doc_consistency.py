@@ -39,6 +39,8 @@ import json
 import re
 from pathlib import Path
 
+import pytest
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 MANIFEST_PATH = REPO_ROOT / "rbac" / "manifest.json"
 DOC_PATH = REPO_ROOT / "docs" / "wiki" / "RBAC.md"
@@ -123,6 +125,14 @@ def check_role_list_consistency(manifest: dict, doc_text: str) -> list[str]:
 
 
 # ============================== 判据本体 ==============================
+# 2026-11-09：`docs/wiki/**` 迁至 GitHub wiki（仓库不再维护 wiki 文件）⇒ 本判据的文档载体
+# 不在仓库内，判定对象结构性不存在。**未跑 ≠ 通过**：模块级 skip 会在 pytest 输出里显名。
+pytest.skip(
+    "docs/wiki/RBAC.md 已迁至 GitHub wiki（仓库不再承载 docs/wiki/**）⇒ "
+    "「文档清单 ⇄ rbac/manifest.json」对照无本地载体，本判据停用",
+    allow_module_level=True,
+)
+
 
 def test_doc_seed_role_list_matches_manifest():
     """F7 的主判据：`docs/wiki/RBAC.md` 的清单 == `rbac/manifest.json#roles.seed`。"""

@@ -38,5 +38,5 @@ MIGAO（观星台 · 布艺行业 AI 经营平台）重视安全问题。感谢�
 ## 通用安全实践
 
 - 所有密钥（RDS/Redis/OSS/LLM/ACR 等）通过环境变量注入，**禁止**提交 `.env` 与真实密钥（CI 已设 `.env` 提交门禁）。
-- 生产部署请遵循 `docs/wiki/Deployment.md` 与 `docs/deployment/deployment-checklist.md`。
+- 生产部署请遵循 `https://github.com/zhaokai-mgzn/migao/wiki/Deployment` 与 `docs/deployment/deployment-checklist.md`。
 - 报告漏洞时请尽量附上：影响组件、复现步骤、影响的租户/数据范围（如有）、建议修复方向。

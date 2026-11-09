@@ -7,7 +7,7 @@
 ## 🔴 本域是 A 档可逆写（不是只读域）
 
 与黄金策其余域（#5247 起大多只读）不同，本域**有一把写工具**：`scheduled_task_manage`。
-它的准入由用户 2026-10-07 裁定（留痕 = `docs/wiki/agent-write-boundary.md` §五 + issue #6486），
+它的准入由用户 2026-10-07 裁定（留痕 = `https://github.com/zhaokai-mgzn/migao/wiki/agent-write-boundary` §五 + issue #6486），
 白名单与绑定域由 `tests/unit_ci_workflows/test_mibao_b_end_readonly.py` 机械钉住
 （`A_TIER_SKILLS` 里 `scheduled_task_manage → reminder`）。
 

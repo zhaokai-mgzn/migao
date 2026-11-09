@@ -395,7 +395,7 @@ class JavaEndpoint:
     def permission(self) -> str | None:
         """端点的**生效**权限码：方法级优先、其次类级。
 
-        与 `PermissionInterceptor` 的解析顺序同口径（`docs/wiki/RBAC.md`
+        与 `PermissionInterceptor` 的解析顺序同口径（`https://github.com/zhaokai-mgzn/migao/wiki/RBAC`
         「方法级注解优先、其次类级」）—— 本属性是权限对账（issue #5246）的唯一取值口。
         ⚠️ 它**只**反映注解（静态码）；命令式校验见 `checked`（issue #6378）。
         """

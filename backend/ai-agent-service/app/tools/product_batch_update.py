@@ -15,7 +15,7 @@
 
 为什么不复用 `product_update`（有意分开，契约 §四 明写）：单条路径已交付并带自己的
 「改前 → 改后」护栏；批量是**另一类风险**（一键确认 N 条 = 商家实际没看 = 盲签），
-它的准入前置是**撤销**（`docs/wiki/agent-write-boundary.md` §五 裁定 1）。两份实现各自可读、
+它的准入前置是**撤销**（`https://github.com/zhaokai-mgzn/migao/wiki/agent-write-boundary` §五 裁定 1）。两份实现各自可读、
 文件所有权也更干净。
 
 ## 三条机器判据（不靠 prompt 自律）

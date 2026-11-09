@@ -113,7 +113,7 @@ graph TB
 - **AI 服务与 admin-api 共用同一 PostgreSQL**：会话状态 / 记忆落库，但不持有独立业务库；
   业务能力经内部 API + Service Token 访问。
 - **知识问答不用向量库**：知识卡片（结构化过滤 + 关键词）是唯一检索面（RAG 已随 issue #3051 移除）。
-- **部署拓扑**：SWAS 单机容器 + RDS + Redis(Tair) + OSS，见 [docs/wiki/Deployment.md](docs/wiki/Deployment.md)。
+- **部署拓扑**：SWAS 单机容器 + RDS + Redis(Tair) + OSS，见 [Deployment](https://github.com/zhaokai-mgzn/migao/wiki/Deployment)。
 
 ## 🛠️ 技术栈
 
@@ -160,7 +160,7 @@ graph TB
 | **组织管理** | 员工管理 · 岗位权限 |
 | **独立入口** | 企业基础设置 · 通知中心 |
 
-行业纵深与逐项能力说明见 [docs/wiki/Product.md](docs/wiki/Product.md)。
+行业纵深与逐项能力说明见 [Product](https://github.com/zhaokai-mgzn/migao/wiki/Product)。
 
 ## 📁 项目结构
 
@@ -234,7 +234,7 @@ npm run dev
 ```
 
 > 详细排查（RDS 白名单、AI 接线症状、worktree 依赖）见
-> [docs/wiki/Quick-Start.md](docs/wiki/Quick-Start.md)。
+> [Quick-Start](https://github.com/zhaokai-mgzn/migao/wiki/Quick-Start)。
 > 也可以用 `cd deploy && docker-compose up --build` 起数据库与双后端。
 
 ### 其它端
@@ -288,23 +288,23 @@ CI 只跑测试与部署编排。
 | `deploy-prod` | 手动（生产审批） | 受控发布（尚未启用） |
 
 - 镜像 tag = git SHA 前 7 位，可追溯；`gh workflow run deploy-<svc>.yml -f image_tag=<tag>` 可回滚。
-- 回滚与发布口径见 [docs/wiki/Deployment.md](docs/wiki/Deployment.md)、
+- 回滚与发布口径见 [Deployment](https://github.com/zhaokai-mgzn/migao/wiki/Deployment)、
   [docs/deployment/rollback.md](docs/deployment/rollback.md)。
 
 ## 📖 文档
 
 | 场景 | 入口 |
 |------|------|
-| **全部文档索引** | [docs/wiki/INDEX.md](docs/wiki/INDEX.md) |
-| **产品定位与能力地图** | [docs/wiki/Product.md](docs/wiki/Product.md) |
-| 系统架构 | [docs/wiki/Architecture.md](docs/wiki/Architecture.md) |
-| 本地搭建 / 运行 | [docs/wiki/Quick-Start.md](docs/wiki/Quick-Start.md) |
-| 开发流程与验证命令 | [docs/wiki/Development.md](docs/wiki/Development.md) |
-| AI 服务 / Agent 能力 | [docs/wiki/AI-Agent.md](docs/wiki/AI-Agent.md) |
-| 前端架构 | [docs/wiki/Frontend.md](docs/wiki/Frontend.md) |
-| 数据库与迁移 | [docs/wiki/Database.md](docs/wiki/Database.md) |
-| CI/CD 与部署 | [docs/wiki/CI-CD.md](docs/wiki/CI-CD.md) · [docs/wiki/Deployment.md](docs/wiki/Deployment.md) |
-| 测试与验收 | [docs/wiki/Testing.md](docs/wiki/Testing.md) · [docs/testing/acceptance-protocol.md](docs/testing/acceptance-protocol.md) |
+| **全部文档索引** | [INDEX](https://github.com/zhaokai-mgzn/migao/wiki/INDEX) |
+| **产品定位与能力地图** | [Product](https://github.com/zhaokai-mgzn/migao/wiki/Product) |
+| 系统架构 | [Architecture](https://github.com/zhaokai-mgzn/migao/wiki/Architecture) |
+| 本地搭建 / 运行 | [Quick-Start](https://github.com/zhaokai-mgzn/migao/wiki/Quick-Start) |
+| 开发流程与验证命令 | [Development](https://github.com/zhaokai-mgzn/migao/wiki/Development) |
+| AI 服务 / Agent 能力 | [AI-Agent](https://github.com/zhaokai-mgzn/migao/wiki/AI-Agent) |
+| 前端架构 | [Frontend](https://github.com/zhaokai-mgzn/migao/wiki/Frontend) |
+| 数据库与迁移 | [Database](https://github.com/zhaokai-mgzn/migao/wiki/Database) |
+| CI/CD 与部署 | [CI-CD](https://github.com/zhaokai-mgzn/migao/wiki/CI-CD) · [Deployment](https://github.com/zhaokai-mgzn/migao/wiki/Deployment) |
+| 测试与验收 | [Testing](https://github.com/zhaokai-mgzn/migao/wiki/Testing) · [docs/testing/acceptance-protocol.md](docs/testing/acceptance-protocol.md) |
 | 行业真值源 | [docs/curtain-fabric-quote-rules.md](docs/curtain-fabric-quote-rules.md)（算料）· [docs/curtain-production-process-standard.md](docs/curtain-production-process-standard.md)（工序） |
 
 ## 🤝 贡献指南

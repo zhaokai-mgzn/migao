@@ -668,7 +668,10 @@ class TestNeverHangsWhenAnAncestorHoldsTheLock:
 class TestDisciplineIsUpdated:
     def test_docs_register_the_new_lock_face(self):
         """`docs/wiki/Development.md` 的「机器级重活并发准入」节必须登记这条路。"""
-        text = (REPO / "docs/wiki/Development.md").read_text(encoding="utf-8")
+        doc = REPO / "docs/wiki/Development.md"
+        if not doc.is_file():
+            pytest.skip("docs/wiki/Development.md 已迁 GitHub wiki ⇒ 该节无本地载体（未跑 ≠ 通过）")
+        text = doc.read_text(encoding="utf-8")
         head = text.index("## 机器级重活并发准入")
         section = text[head:text.index("## 批次统一验证", head)]
         for needle in ("套件自带", "conftest.py", "pytest_collection", "MIGAO_HEAVY_LOCK_HELD=1",

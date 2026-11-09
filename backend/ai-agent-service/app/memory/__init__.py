@@ -6,7 +6,7 @@ AI 智能客服系统 - Memory 模块
 2. Long-term Memory: 用户画像/历史偏好（PostgreSQL user_memories 表）
 3. Semantic Memory: 领域知识（DashVector 向量数据库，决策 D1 已下线，预留）
 
-详见文档：docs/wiki/Architecture.md
+详见文档：https://github.com/zhaokai-mgzn/migao/wiki/Architecture
 """
 
 from app.memory.session_memory import SessionMemory

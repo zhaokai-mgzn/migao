@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """java_pointed_readings.py — Java「定点判据」的**可信读数**（issue #6495）
 
-## 病（2026-11-03 本机实跑，逐条读数见 docs/wiki/Development.md 的「Java 定点判据」节）
+## 病（2026-11-03 本机实跑，逐条读数见 https://github.com/zhaokai-mgzn/migao/wiki/Development 的「Java 定点判据」节）
 
 ① **`.txt` 摘要不可信**：同一次运行 console/XML 报 **15** 条，而
    `target/surefire-reports/<fqn>.txt` 写 **`Tests run: 0`**（@Nested 类的通例）。

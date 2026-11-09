@@ -635,7 +635,7 @@ class TestPermissionAndAnnotations:
         assert _requires_confirmation(tool, {"action": "revert"}, "确认") is True
 
     def test_description_answers_the_three_questions(self, tool):
-        """设计范式（docs/wiki/agent-design-standard.md）：何时用 / 前置 / 与相似工具的区别。"""
+        """设计范式（https://github.com/zhaokai-mgzn/migao/wiki/agent-design-standard）：何时用 / 前置 / 与相似工具的区别。"""
         d = tool.description
         assert "【触发】" in d and "【前置" in d and "【反例】" in d
         # 与相似工具的区别**必须点名** product_update（单条）与 interact（两段确认的载体）

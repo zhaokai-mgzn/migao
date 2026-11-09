@@ -102,5 +102,5 @@ curl -sL "https://www.renrendoc.com/p-30672040.html" | grep -o "裁床\|物料�
 gh issue view 4673 --comments | grep -n "裁床\|物料分配\|车位\|烫工\|质检\|包装"
 
 # ④ 本文已被 INDEX 登记（应有 1 行命中）
-grep -n "curtain-production-process-standard" docs/wiki/INDEX.md
+grep -n "curtain-production-process-standard" https://github.com/zhaokai-mgzn/migao/wiki/INDEX
 ```
