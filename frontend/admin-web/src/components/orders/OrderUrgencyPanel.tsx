@@ -68,8 +68,8 @@ export default function OrderUrgencyPanel({
     }
   }
 
-  // issue #8838：本控件已并入「基础信息」子区 ⇒ 不再自带 Card 外壳（会变成卡内套卡），
-  // 标题仍是控件自己的「加急 / 到货日」—— 操作贴在它要改的那几行旁边。
+  // 2026-11-09 用户口径：本控件从「基础信息」上收到页面顶部，与「订单操作」同一张区域卡
+  // ⇒ 不自带 Card 外壳（会变成卡内套卡），标题仍是控件自己的「加急 / 到货日」。
   return (
     <div data-testid="order-urgency-panel">
       <div className="flex items-center justify-between mb-4">
