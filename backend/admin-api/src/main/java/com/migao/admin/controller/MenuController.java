@@ -83,7 +83,7 @@ public class MenuController {
         //     只认这一形态（`rbac/manifest.json` 的 `menus.controller` 靠它）；
         //   · `List.of(...)` 里的**内联**节点 —— `test_menu_three_sources_are_isomorphic.py`
         //     的顶层布局序列解析器只认这一形态。
-        MenuNode d1 = new MenuNode("dashboard:view", "经营概览");
+        MenuNode d1 = new MenuNode("dashboard:view", "经营报表");
         // 客户服务（2026-11-06 组内顺序 = 在线接待 → 售后工单 → 知识库，与 menu.ts 逐项一致）
         MenuNode cs1 = new MenuNode("agent:session", "在线接待");
         // issue #5246：售后工单节点码 = **读**码 `after_sales:view`（原写码 `order:refund`）。
@@ -143,13 +143,12 @@ public class MenuController {
         MenuNode iCreate = new MenuNode("inbound:create", "入库单操作");
 
         return List.of(
-            // 🔴 最前席位一级项「经营概览」（前端 `standaloneHeadItems`）—— 三处同批表达同一位置：
+            // 🔴 最前席位一级项「经营报表」（前端 `standaloneHeadItems`）—— 三处同批表达同一位置：
             // 本处（顶层**首个**节点）/ `AuthService` 的**首个**顶层 add / 前端 `standaloneHeadItems`
             // （三源同构守卫按**顶层布局序列**比对，含位置）。
-            new MenuNode("dashboard:view", "经营概览"),
-            // 报表中心（issue #7376 / #7377）：与经营概览同属**经营数据面** ⇒ 紧随其后、同为最前席位；
-            // 码取同一把尺子 `dashboard:view`（报表是看板的下钻，零授权 delta）。
-            new MenuNode("dashboard:view", "报表中心"),
+            // issue #8852（用户 2026-11-09）：「经营概览」+「报表中心」合并为**一个页面**「经营报表」
+            // ⇒ 顶层只剩**一个**经营数据面节点；码 `dashboard:view` 与路径 `/dashboard` 一字不动。
+            new MenuNode("dashboard:view", "经营报表"),
             // 客户服务（#5778 新建；2026-11-06 用户重新给定组内顺序）
             new MenuNode("customer-service", "客户服务", List.of(cs1, o3, cs2)),
             // 订单/商品（2026-11-06 新组）：旧「交易管理」（#5271 收窄为下单 → 收款）+ 旧「基础资料」

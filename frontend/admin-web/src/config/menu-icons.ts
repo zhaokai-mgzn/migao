@@ -15,7 +15,6 @@
 import {
   BadgeCheck,
   BarChart3,
-  FileSpreadsheet,
   Tags,
   Bell,
   Coins,
@@ -60,7 +59,6 @@ export const menuIconMap: Record<string, LucideIcon> = {
   // 质检记录（issue #7140）：质检 = 「合格判定」⇒ 徽章 + 对勾（与其它三枚工序/生产图标互不同形）
   BadgeCheck,
   BarChart3,
-  FileSpreadsheet,
   Tags,
   Bell,
   Coins,

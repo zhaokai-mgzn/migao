@@ -283,12 +283,9 @@ describe('RolesPage', () => {
     // 它带的码 `dashboard:view` 因此仍**可授予**（否则「勾得动 / 看不到」漂移 —— 与 #5895 同一形态）；
     // 同批「每日简报」菜单项**已删除**（功能保留：企业开关仍驱动经营看板上的结论卡）。
     const head = within(tree.getByTestId('perm-standalone-head'))
-    expect(head.getByText('经营概览')).toBeInTheDocument()
-    // 报表中心（issue #7376）与经营看板**同码**（报表就是看板的下钻，零授权 delta）⇒
-    // 权限树里两个节点都渲染同一个码 —— 与既有「入库单 / 供应商 / 采购单 同取 inbound:view」同款，
-    // 勾任一个即授予该码（这是码粒度决定的，不是本页的 bug）。
-    expect(head.getByText('报表中心')).toBeInTheDocument()
-    expect(head.getAllByText('dashboard:view')).toHaveLength(2)
+    // issue #8852：经营概览 + 报表中心合并为一页「经营报表」⇒ 权限树里只剩一个承载节点。
+    expect(head.getByText('经营报表')).toBeInTheDocument()
+    expect(head.getAllByText('dashboard:view')).toHaveLength(1)
     expect(tree.queryByText('每日简报')).not.toBeInTheDocument()
     // #5778：「商品列表」改名「商品管理」（菜单项判据见本文件 #5895 三条：`perm-standalone-top`）
     // 🔴 #6580（2026-10-09 用户裁定）：菜单项「加工项管理」「工艺配置」**已移除**（功能体并入
@@ -448,7 +445,7 @@ describe('RolesPage', () => {
     ].filter(item => item.permissionCode)
     expect(coded.length).toBeGreaterThan(0) // 反空跑：没有可判的对象时本判据不算通过
     // 点名最前席位（避免将来又把它漏掉时这条判据「恰好」还是绿的）
-    expect(coded.map(i => i.name)).toContain('经营概览')
+    expect(coded.map(i => i.name)).toContain('经营报表')
     for (const item of coded) {
       const hit = rows.some(text => text.includes(item.name) && text.includes(item.permissionCode!))
       expect(hit, `菜单节点「${item.name}」(${item.permissionCode}) 未出现在权限树 —— 梯队接线漏了`).toBe(true)
@@ -461,10 +458,8 @@ describe('RolesPage', () => {
     const container = await screen.findByTestId('perm-menu-sections')
     const head = within(container).getByTestId('perm-standalone-head')
     const top = within(container).getByTestId('perm-standalone-top')
-    expect(within(head).getByText('经营概览')).toBeInTheDocument()
-    // 报表中心（#7376）与经营看板同码（报表是看板的下钻）⇒ 同码两节点各自渲染，勾任一即授予该码
-    expect(within(head).getByText('报表中心')).toBeInTheDocument()
-    expect(within(head).getAllByText('dashboard:view')).toHaveLength(2)
+    expect(within(head).getByText('经营报表')).toBeInTheDocument()
+    expect(within(head).getAllByText('dashboard:view')).toHaveLength(1)
     // 尾席位只剩「企业基础设置」（商品管理在「订单/商品」组内）
     expect(within(top).getByText('企业基础设置')).toBeInTheDocument()
     expect(within(top).queryByText('商品管理')).toBeNull()
@@ -543,9 +538,8 @@ describe('RolesPage', () => {
 
     // 锚定：未修形态下「同一个码 = 同一串标注」在**多个**节点上被渲染（同屏重复 §31 P2）
     expect(container.querySelectorAll('[data-testid^="roles-mobile-production:view"]')).toHaveLength(3)
-    // 🔴 issue #7087 + #7376：`dashboard:view` 现有**两个**承载节点（经营看板 + 报表中心，同码）
-    // ⇒ 未修形态下它也变成「同屏重复」的实例之一（与 `production:view` 同族读数）
-    expect(container.querySelectorAll('[data-testid="roles-mobile-dashboard:view"]')).toHaveLength(2)
+    // 🔴 issue #8852：`dashboard:view` 只剩**一个**承载节点（经营报表）⇒ 它不再是「同屏重复」的实例
+    expect(container.querySelectorAll('[data-testid="roles-mobile-dashboard:view"]')).toHaveLength(1)
   })
 
   it('🔴 #6781 修后形态：每个权限码**只**在树序首个承载节点上渲染一处手机端标注（同屏重复与名实不符都归零）', async () => {
@@ -555,7 +549,7 @@ describe('RolesPage', () => {
     const legacyCodes = menuPayload(false).flatMap(g => g.children)
       .filter(c => (c.mobileTitles || []).length > 0).map((c: any) => c.code)
     expect(legacyCodes.filter(c => c === 'production:view')).toHaveLength(3)
-    expect(legacyCodes.filter(c => c === 'dashboard:view')).toHaveLength(2)
+    expect(legacyCodes.filter(c => c === 'dashboard:view')).toHaveLength(1)
     expect(new Set(legacyCodes).size).toBeLessThan(legacyCodes.length)
     const fixedCodes = menuPayload(true).flatMap(g => g.children)
       .filter(c => (c.mobileTitles || []).length > 0).map((c: any) => c.code)
@@ -745,8 +739,8 @@ describe('RolesPage 默认菜单 = 后台 + 手机端（issue #7146）', () => {
       data: [
         {
           code: 'dashboard',
-          label: '经营概览',
-          children: [{ code: 'dashboard:view', label: '经营概览', mobileTitles: titles['dashboard:view'] || [] }],
+          label: '经营报表',
+          children: [{ code: 'dashboard:view', label: '经营报表', mobileTitles: titles['dashboard:view'] || [] }],
         },
         {
           code: 'customer-service',
@@ -770,17 +764,17 @@ describe('RolesPage 默认菜单 = 后台 + 手机端（issue #7146）', () => {
     const card = await screen.findByTestId('role-default-menu-customer_service')
     await waitFor(() =>
       expect(within(card).getByTestId('role-default-menu-summary-customer_service')).toHaveTextContent(
-        '默认菜单：后台 6 项 · 手机端 2 个入口',
+        '默认菜单：后台 5 项 · 手机端 2 个入口',
       ),
     )
     // §31 P1 常驻面克制：折叠态下清单不渲染（不是 CSS 隐藏）
     expect(screen.queryByTestId('role-default-menu-backend-customer_service')).toBeNull()
 
     fireEvent.click(within(card).getByRole('button', { name: /默认菜单/ }))
-    // 报表中心（#7376）与经营看板同码 ⇒ 勾了 dashboard:view 的岗位默认菜单里**两项都在**
-    // 2026-11-06：组内顺序 = 在线接待 → 销售订单 → 价格本；order:list 还带出发货单（共 6 项）
+    // issue #8852：dashboard:view 只承载「经营报表」一项
+    // 2026-11-06：组内顺序 = 在线接待 → 销售订单 → 价格本；order:list 还带出发货单（共 5 项）
     expect(await screen.findByTestId('role-default-menu-backend-customer_service')).toHaveTextContent(
-      '经营概览、报表中心、在线接待、销售订单、价格本、发货单',
+      '经营报表、在线接待、销售订单、价格本、发货单',
     )
     expect(screen.getByTestId('role-default-menu-mobile-customer_service')).toHaveTextContent('数据、坐席')
     expect(within(card).getByRole('button', { name: /默认菜单/ })).toHaveAttribute('aria-expanded', 'true')

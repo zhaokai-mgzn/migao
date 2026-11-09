@@ -1395,15 +1395,13 @@ public class AuthService {
         //   —— `{` 与 `.add` 之间插入任何一行（注释也一样）⇒ 该项**静默从读数里消失**（实测踩过）。
         //   所以每个 `add` 的注释一律写在 `if` **之外**。
 
-        // 经营概览（issue #5699 P4：节点码 = 该页第一屏读码 `dashboard:view`）——
+        // 经营报表（issue #5699 P4：节点码 = 该页第一屏读码 `dashboard:view`）——
         // **最前席位**（本方法**首个**顶层 add；三源同构守卫按顶层布局序列比对，含位置）。
+        // issue #8852（用户 2026-11-09）：「经营概览」+「报表中心」合并为**一个页面**「经营报表」
+        // ⇒ 顶层只剩一个经营数据面节点；key / path / 码一字不动（`dashboard` / `/dashboard` /
+        // `dashboard:view`，登录落点与旧深链都不变，零授权 delta）。
         if (isAll || permissions.contains("dashboard:view")) {
-            menus.add(menuItem("dashboard", "经营概览", "/dashboard"));
-        }
-
-        // 报表中心（issue #7376 / #7377）：与经营概览同属经营数据面 ⇒ 紧随其后；同码零 delta。
-        if (isAll || permissions.contains("dashboard:view")) {
-            menus.add(menuItem("reports", "报表中心", "/reports"));
+            menus.add(menuItem("dashboard", "经营报表", "/dashboard"));
         }
 
         // 客户服务分组（#5778 新建；2026-11-06 用户给定组内顺序 = 在线接待 → 售后工单 → 知识库）

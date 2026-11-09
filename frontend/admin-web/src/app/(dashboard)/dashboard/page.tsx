@@ -15,6 +15,8 @@ import TrendChart from '@/components/dashboard/TrendChart'
 import RecentOrders from '@/components/dashboard/RecentOrders'
 // issue #5792 第二阶段：订单状态分布（端点与组件此前都已写好，但**从未接线** —— 本次接上）
 import OrderStatusChart from '@/components/dashboard/OrderStatusChart'
+// issue #8852：原 /reports「报表中心」内容整段并入本页「经营分析」区（组件自带区间筛选与五张报表）
+import BusinessReportsSection from '@/components/reports/BusinessReportsSection'
 
 // ═══════════════════════════════════════════════════════
 // 格式化
@@ -319,6 +321,29 @@ function SectionHeading({ icon, colorClass, children }: { icon: React.ReactNode;
   )
 }
 
+/**
+ * 页面级分区（issue #8852）：合并「经营概览」+「报表中心」后，商家按**三件事**读这一页 ——
+ * 查看（今天怎么样）/ 分析（钱、货、人、客户的走势与结构）/ 管理（明细下钻）。
+ *
+ * 🔴 为什么要有它：两页原来的块是一串平铺卡片，合并后若只是首尾相接，同一屏会出现
+ * 「今日订单 → 待处理 → 趋势 → 毛利 → 账龄 → 近期订单」这种无层次的流水账 —— 正是用户
+ * 说的「数据乱七八糟地揉在一起」。分区标题把**每块数据的用途**先说清楚，位置本身也是判据
+ * （`business-reports-page.test.tsx` 按 DOM 顺序断言 查看 → 分析 → 管理）。
+ */
+function PageSection({ testId, title, hint, children }: {
+  testId: string; title: string; hint: string; children: React.ReactNode
+}) {
+  return (
+    <section data-testid={testId} className="mb-8">
+      <div className="mb-3 flex flex-wrap items-baseline gap-x-2 gap-y-0.5 border-b border-neutral-100 pb-2">
+        <h2 className="text-base font-semibold text-neutral-800">{title}</h2>
+        <span data-testid={`${testId}-hint`} className="text-xs text-neutral-400">{hint}</span>
+      </div>
+      {children}
+    </section>
+  )
+}
+
 // ═══════════════════════════════════════════════════════
 // 主页面
 // ═══════════════════════════════════════════════════════
@@ -337,6 +362,8 @@ export default function DashboardPage() {
   const [processingShipment, setProcessingShipment] = useState(0)
   const [lowStockCount, setLowStockCount] = useState(0)
   const [trendDays, setTrendDays] = useState(7)
+  // issue #8852：页面级「刷新」要同时重取看板块与报表段（合并成一页后只有一个刷新按钮）
+  const [refreshSeq, setRefreshSeq] = useState(0)
   const [updateTime, setUpdateTime] = useState('--')
   // 🔴 issue #5792（客观缺陷 ④）：**失败态与空数据必须可区分**。
   // 改前：4 个接口任一失败只 `console.error` ⇒ UI 退化成「空态」或「0」，
@@ -578,11 +605,11 @@ export default function DashboardPage() {
       <div className="mb-5 flex items-center justify-between">
         <PageHeader
           className="w-full"
-          title="经营概览"
+          title="经营报表"
           subtitle={`数据更新时间：${updateTime}`}
           actions={
             <button
-              onClick={fetchData}
+              onClick={() => { fetchData(); setRefreshSeq((n) => n + 1) }}
               className="flex items-center gap-1.5 rounded-lg border border-neutral-200 bg-white px-3 py-1.5 text-xs font-medium text-neutral-500 shadow-card transition-colors hover:border-primary-200 hover:text-primary-600"
             >
               <RefreshCw className={cn('w-3.5 h-3.5', loading && 'animate-spin')} />
@@ -623,6 +650,11 @@ export default function DashboardPage() {
         </div>
       )}
 
+      <PageSection
+        testId="business-reports-section-overview"
+        title="今日经营"
+        hint="查看 · 今天卖了多少、还有哪些待处理"
+      >
       {/* 黄金策「今日经营」合并卡（issue #8114）：**一张卡**装原先两块 AI 内容 ——
           收起态 = 速览那一句话；展开态 = 那句话 + 简报（昨日回顾 / 今日必办 / 风险预警 / 优化建议 / 主动检查）。
           简报未开启 / 未生成 / 加载中都由卡内展开态覆盖，卡片本身**恒在**（速览不依赖简报开关）。
@@ -752,6 +784,13 @@ export default function DashboardPage() {
         </div>
       )}
 
+      </PageSection>
+
+      <PageSection
+        testId="business-reports-section-analysis"
+        title="经营分析"
+        hint="分析 · 趋势与结构，以及利润 / 成本 / 库存 / 业绩 / 回款"
+      >
       {/* ④ 趋势图 */}
       <div className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
         {/* 订单趋势 */}
@@ -806,11 +845,8 @@ export default function DashboardPage() {
         <div className="bg-white rounded-xl border border-neutral-200 shadow-card p-5">
           <div className="mb-3 flex items-center justify-between">
             <h3 className="text-sm font-semibold text-neutral-800">销售额数据</h3>
-            {/* 🔴 issue #5792：`updateTime` 是 `formatFullDateTime()` 的**已格式化**结果
-                （`2026年9月29日 15:30`）—— 它**不是** ISO 串，再 `.slice(11, 19)` 切出来的是
-                `日 15:3` 这种下标碎片（页头同一字段显示正常 ⇒ 同页两处不一致）。
-                ⇒ 两处**同源同格式**，不再二次加工。 */}
-            <span className="text-xs text-neutral-400">数据更新时间：{updateTime}</span>
+            {/* issue #8852：合并成一页后，新鲜度只在页头**一处**展示（同页两处时间戳会让商家
+                以为两张图各有一个更新时间；#5792 的「完整格式、不切片」口径仍由页头那处承担）。 */}
           </div>
           <div className="h-[240px]">
             {loading ? (
@@ -854,7 +890,16 @@ export default function DashboardPage() {
 
       </div>
 
+      {/* 经营报表（原 /reports「报表中心」五张卡）：同一页的「分析」段 —— 区间筛选、导出、
+          空数据 ≠ 0、未知不填 0 等口径一字未改（判据在 BusinessReportsSection.test.tsx / BusinessReportsSection）。 */}
+      <BusinessReportsSection refreshSeq={refreshSeq} />
+      </PageSection>
 
+      <PageSection
+        testId="business-reports-section-records"
+        title="经营明细"
+        hint="管理 · 近期订单与商品销量排行，点开处理"
+      >
       {/* ⑤ 列表 */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         {/* 近期订单 — #2544: 复用 RecentOrders 组件（语义色 chips + 空态治理） */}
@@ -930,6 +975,7 @@ export default function DashboardPage() {
           )}
         </div>
       </div>
+      </PageSection>
     </div>
   )
 }

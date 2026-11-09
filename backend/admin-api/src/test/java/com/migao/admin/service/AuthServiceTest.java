@@ -568,7 +568,7 @@ class AuthServiceTest {
     }
 
     @Test
-    @DisplayName("全权账号：最前席位两项（经营概览 / 报表中心）+ 八个组 + 尾席位「企业基础设置」（供应链之后）+ 通知中心**逐组逐项**镜像 menu.ts")
+    @DisplayName("全权账号：最前席位「经营报表」+ 八个组 + 尾席位「企业基础设置」（供应链之后）+ 通知中心**逐组逐项**镜像 menu.ts")
     void currentUserMenusMirrorFrontendIaForAllPermissions() {
         List<com.migao.admin.dto.UserInfoResponse.MenuItem> menus = menusForPermissions("*");
 
@@ -576,8 +576,8 @@ class AuthServiceTest {
         // 一级项「经营看板」（前端 `menu.ts` 的 `standaloneHeadItems` 的对应物），随后才是五个组；
         // 「每日简报」菜单项删除。尾席位沿用 #6457 的口径（**所有分组之后**：商品管理 → 企业基础设置
         // → 通知中心）—— 与前端渲染顺序逐项一致。
-        // 🔴 2026-10-22（issue #7376）：最前席位增至**两项** —— 经营看板 → 报表中心
-        //（同属经营数据面：报表是看板的下钻；同码 `dashboard:view` ⇒ 零授权 delta）。
+        // 🔴 2026-11-09（issue #8852）：「经营概览」+「报表中心」合并为一页「经营报表」⇒
+        // 最前席位只剩**一项**（key / path / 码一字不动 ⇒ 零授权 delta）。
         // 🔴 2026-10-29（issue #8086）：新增「基础资料」（客户服务之后）与「质量」（生产管理之后）；
         // 商品管理降入「基础资料」组 ⇒ 尾席位只剩「企业基础设置」。
         // 🔴 2026-11-06（用户裁定「观星台菜单调整」）：旧「交易管理」+「基础资料」合并为
@@ -585,11 +585,11 @@ class AuthServiceTest {
         // 「质量管理」、「仓储与物料」正名「仓储/物料」；尾席位「企业基础设置」改插在
         // **供应链之后、组织管理之前**（不再是「所有分组之后」）。
         assertThat(keysOf(menus)).containsExactly(
-                "dashboard", "reports", "customer-service", "orders-products",
+                "dashboard", "customer-service", "orders-products",
                 "production-center", "quality", "inventory-center", "finance-center",
                 "supply-chain", "settings", "org-center", "notifications");
         assertThat(namesOf(menus)).containsExactly(
-                "经营概览", "报表中心", "客户服务", "订单/商品",
+                "经营报表", "客户服务", "订单/商品",
                 "生产管理", "质量管理", "仓储/物料", "财务",
                 "供应链", "企业基础设置", "组织管理", "通知中心");
 
@@ -597,7 +597,7 @@ class AuthServiceTest {
         // 且 `children` 为空（旧形态是 `workspace` 组，组内两个节点：经营看板 + 每日简报）。
         var dashboard = menus.get(0);
         assertThat(dashboard.getKey()).isEqualTo("dashboard");
-        assertThat(dashboard.getName()).isEqualTo("经营概览");
+        assertThat(dashboard.getName()).isEqualTo("经营报表");
         assertThat(dashboard.getPath()).isEqualTo("/dashboard");
         assertThat(dashboard.getChildren()).isNullOrEmpty();
         // 反向：旧「工作台」组（含空组形态）与「每日简报」项都不再下发
@@ -727,15 +727,15 @@ class AuthServiceTest {
     }
 
     @Test
-    @DisplayName("🔴 #7087 + #7376：最前席位两项（经营看板 → 报表中心）；持 dashboard:view 时点亮两项 + 通知中心")
+    @DisplayName("🔴 #7087 + #8852：最前席位「经营报表」；持 dashboard:view 时点亮它 + 通知中心")
     void currentUserMenusExposeDashboardAsTopLevelItem() {
         List<com.migao.admin.dto.UserInfoResponse.MenuItem> menus = menusForPermissions("dashboard:view");
 
         // 旧形态 = 「工作台」组（组内 经营看板 + 每日简报）；#7087 起组没了、简报项没了。
-        // 🔴 #7376：`dashboard:view` 现由**两个**最前席位一级项承载（经营看板 + 报表中心）。
-        assertThat(keysOf(menus)).containsExactly("dashboard", "reports", "notifications");
+        // 🔴 #8852：`dashboard:view` 只由一个最前席位一级项承载（经营报表）。
+        assertThat(keysOf(menus)).containsExactly("dashboard", "notifications");
         var dashboard = menus.get(0);
-        assertThat(dashboard.getName()).isEqualTo("经营概览");
+        assertThat(dashboard.getName()).isEqualTo("经营报表");
         assertThat(dashboard.getPath()).isEqualTo("/dashboard");
         assertThat(dashboard.getChildren()).isNullOrEmpty();
         // 反向：不得再有「工作台」组 / 「每日简报」项（也不再是「整组消失」的形态）
@@ -758,7 +758,7 @@ class AuthServiceTest {
         assertThat(keysOf(menus)).containsExactly(
                 "orders-products", "inventory-center", "notifications");
         assertThat(keysOf(groupByKey(menus, "inventory-center").getChildren())).containsExactly("shipments");
-        assertThat(allNames(menus)).doesNotContain("经营概览", "每日简报", "工作台");
+        assertThat(allNames(menus)).doesNotContain("经营报表", "每日简报", "工作台");
         // 负控（整组不出现，不得漏权限门控）
         assertThat(allNames(menus)).doesNotContain(
                 "每日简报", "生产管理", "智能客服", "商品与加工项", "组织管理", "客户服务");

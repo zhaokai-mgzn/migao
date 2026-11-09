@@ -120,16 +120,15 @@ class MenuNode:
     permission_code: str
 
 
-#: `menu.ts` 的**全量导航节点**（现取 2026-11-06：**28 项** = 8 组 24 项 + 一级独立项 4
-#: —— 经营概览 / 报表中心 / 企业基础设置 / 通知中心）。
+#: `menu.ts` 的**全量导航节点**（现取 2026-11-09：**27 项** = 8 组 24 项 + 一级独立项 3
+#: —— 经营报表 / 企业基础设置 / 通知中心；issue #8852 把经营概览 + 报表中心合成一个页面）。
 #: 顺序 = `menu.ts` 的渲染顺序；判据按 `MENU_TREE_ORDER_LOCKED` 比对（**顺序也锁**）。
 #: 🔴 2026-11-06（用户裁定）：组与组内顺序整体重排（客户服务 / 订单/商品 / 生产管理 / 质量管理 /
 #: 仓储/物料 / 财务 / 供应链 / 组织管理）。本镜像**必须**与 `menu.ts` 同批（判据 =
 #: tests/unit_ci_workflows/test_menu_navigator.py 的「MENU_TREE 的顺序与 menu.ts 的顺序不同」）。
 MENU_TREE: Tuple[MenuNode, ...] = (
     # 最前席位一级项（issue #7087）：渲染在**所有分组之前**（登录落点 = 第一个可见菜单项）。
-    MenuNode(STANDALONE_GROUP, "经营概览", "/dashboard", "dashboard:view"),
-    MenuNode(STANDALONE_GROUP, "报表中心", "/reports", "dashboard:view"),
+    MenuNode(STANDALONE_GROUP, "经营报表", "/dashboard", "dashboard:view"),
     # 客户服务（2026-11-06：组内顺序 = 在线接待 → 售后工单 → 知识库）
     MenuNode("customer-service", "在线接待", "/agent-workspace/human-sessions", "agent:session"),
     MenuNode("customer-service", "售后工单", "/after-sales", "after_sales:view"),
@@ -233,17 +232,18 @@ NAV_FEATURES: Tuple[NavFeature, ...] = (
     # 登记项与菜单项必须一一对应 —— 判据 ①「每个菜单节点至少一条可命中的说法」/②「没有空登记」）。
     # ⚠️ 不登记「工作台」这类旧组名当说法：判据「接地」要求说法与所属节点菜单名 / 本功能 label
     # 有包含关系 —— 已不存在的组名既不接地、也会把「说到一个没有的页面」变成可命中路径。
-    NavFeature("dashboard", "经营概览（原经营看板 / 经营数据）", ((STANDALONE_GROUP, "经营概览"),), ("经营概览", "经营看板", "经营数据")),
+    # 经营报表（issue #8852，用户 2026-11-09）：「经营概览」+「报表中心」合并为一个页面。
+    # 说法的括注同时收两件旧叫法（经营概览 / 经营看板 / 经营数据）与原报表中心的四个分区词
+    # （毛利 / 滞销 / 业绩 / 质量成本）+ 账龄 —— 合并后同一页仍能按业务词被问到。
+    # ⚠️ 说法里必须**逐字**含菜单名「经营报表」（判据要求每个菜单节点都有一条能被问到的说法）。
+    NavFeature("dashboard", "经营报表（经营概览 / 经营看板 / 经营数据 / 报表 / 毛利 / 滞销 / 业绩 / 质量成本 / 账龄）",
+               ((STANDALONE_GROUP, "经营报表"),),
+               ("经营报表", "经营概览", "经营看板", "经营数据", "报表", "毛利", "滞销", "业绩", "质量成本", "账龄")),
     # 价格本（issue #7375 段 3）：用户问「这个客户什么价 / 能不能便宜 / 阶梯价怎么设」时引导到这里。
     # ⚠️ 说法里必须**逐字**含菜单名「价格本」（判据要求每个菜单节点都有一条能被问到的说法）。
     NavFeature("price-books", "价格本（协议价 / 等级价 / 阶梯价）",
                (("orders-products", "价格本"),),
                ("价格本", "价格本协议价", "价格本等级价", "价格本阶梯价", "价格本改价")),
-    # 报表中心（issue #7376 / #7377）：经营数据面的「下钻」—— 用户问「毛利多少 / 哪些货压着 /
-    # 谁卖得多 / 质量成本多少」时引导到这里（四张表都在这一页）。
-    NavFeature("reports", "报表中心（毛利 / 滞销 / 业绩 / 质量成本）",
-               ((STANDALONE_GROUP, "报表中心"),),
-               ("报表", "报表中心", "毛利", "滞销", "业绩", "质量成本")),
     NavFeature("human-sessions", "在线接待（人工接待）", (("customer-service", "在线接待"),), ("在线接待", "人工接待")),
     NavFeature("customers", "客户列表（客户）", (("orders-products", "客户列表"),), ("客户列表", "客户")),
     NavFeature("knowledge", "知识库", (("customer-service", "知识库"),), ("知识库",)),

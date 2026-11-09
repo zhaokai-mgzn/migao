@@ -327,8 +327,7 @@
   },
   "menus": {
     "frontend": {
-      "经营概览": "dashboard:view",
-      "报表中心": "dashboard:view",
+      "经营报表": "dashboard:view",
       "客户服务": null,
       "在线接待": "agent:session",
       "售后工单": "after_sales:view",
@@ -365,7 +364,7 @@
       "通知中心": null
     },
     "controller": {
-      "经营概览": "dashboard:view",
+      "经营报表": "dashboard:view",
       "在线接待": "agent:session",
       "售后工单": "after_sales:view",
       "知识库": "knowledge:view",
@@ -397,8 +396,7 @@
       "入库单操作": "inbound:create"
     },
     "auth": {
-      "经营概览": "dashboard:view",
-      "报表中心": "dashboard:view",
+      "经营报表": "dashboard:view",
       "在线接待": "agent:session",
       "售后工单": "after_sales:view",
       "知识库": "knowledge:view",
@@ -430,14 +428,8 @@
   "menu_nodes": [
     {
       "key": "dashboard",
-      "name": "经营概览",
+      "name": "经营报表",
       "path": "/dashboard",
-      "code": "dashboard:view"
-    },
-    {
-      "key": "reports",
-      "name": "报表中心",
-      "path": "/reports",
       "code": "dashboard:view"
     },
     {
@@ -832,7 +824,7 @@
     },
     {
       "key": "dashboard",
-      "name": "经营概览",
+      "name": "经营报表",
       "path": "/dashboard",
       "gate": "dashboard:view",
       "units": {
@@ -1039,21 +1031,6 @@
         "production:inspect": [
           "GET /api/admin/quality-inspections",
           "GET /api/admin/quality-inspections/stats"
-        ]
-      },
-      "visibility_rule": "all"
-    },
-    {
-      "key": "reports",
-      "name": "报表中心",
-      "path": "/reports",
-      "gate": "dashboard:view",
-      "units": {
-        "dashboard:view": [
-          "GET /api/admin/reports/inventory-aging",
-          "GET /api/admin/reports/order-margins",
-          "GET /api/admin/reports/quality-cost",
-          "GET /api/admin/reports/staff-performance"
         ]
       },
       "visibility_rule": "all"

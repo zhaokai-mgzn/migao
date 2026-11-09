@@ -237,7 +237,7 @@ P4_AUTHORIZATION_CENSUS: dict[str, dict[str, object]] = {
             "这不是收窄（该岗位今日尚不存在），是**新增岗位的可见面定义**。"
         ),
         "units_changed": (),
-        "menu_nodes": ("frontend:经营概览", "auth:经营概览", "controller:经营概览"),
+        "menu_nodes": ("frontend:经营报表", "auth:经营报表", "controller:经营报表"),
     },
     "/production/pool": {
         "gate_before": "processing:manage",

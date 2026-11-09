@@ -53,6 +53,10 @@ vi.mock('@/lib/api', () => ({
   },
 }))
 
+// issue #8852：经营报表页把原报表中心内容嵌进「经营分析」段。dashboard 用例只测看板块
+// （报表五卡的行为判据在 BusinessReportsSection.test.tsx / business-reports-page.test.tsx），此处桩掉整段。
+vi.mock('@/components/reports/BusinessReportsSection', () => ({ default: () => null }))
+
 vi.mock('next/link', () => ({
   default: ({ children, href, ...props }: any) => <a href={href} {...props}>{children}</a>,
 }))

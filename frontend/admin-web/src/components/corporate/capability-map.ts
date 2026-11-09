@@ -22,7 +22,6 @@ import {
   ScrollText,
   Settings,
   ShieldCheck,
-  FileSpreadsheet,
   Tags,
   TrendingDown,
   Truck,
@@ -256,17 +255,12 @@ export const capabilityDomains: CapabilityDomain[] = [
 /** 不在 8 组内的独立入口（`config/menu.ts` 的最前席位 / 尾席位 / 尾部项） */
 export const standaloneEntries: CapabilityItem[] = [
   {
-    name: '经营概览',
-    detail: '订单量、销售额、环比与待处理事项一屏可见；无上期可比数据时显示「—」，不以 0 代替。',
-    icon: BarChart3,
-  },
-  {
-    // issue #7376：看板的下钻报表（同属经营数据面）。
+    // issue #8852：原「经营概览」+「报表中心」合并为一页「经营报表」（查看 → 分析 → 管理）。
     // 口径必须与后台一致：「没有数据」显示留空/「—」，不写成 0。
-    name: '报表中心',
+    name: '经营报表',
     detail:
-      '订单毛利、库存滞销、员工业绩、质量成本四张报表；合计与明细可复算，没有数据时留空而不显示 0，算不出的成本明确标「未知」。',
-    icon: FileSpreadsheet,
+      '订单量、销售额、环比与待处理事项一屏可见；下方按趋势、利润、库存、业绩、质量成本、账龄展开分析，再落到订单明细；合计与明细可复算，没有数据时留空而不显示 0，算不出的成本明确标「未知」。',
+    icon: BarChart3,
   },
   {
     // 🔴 issue #6580：本席位原为「参数总览」—— 该一级项已撤掉（内容回到 `/settings`

@@ -1,10 +1,11 @@
 // case_ids: RPT-001, RPT-004, RPT-007, RPT-008
 import { describe, expect, it, beforeEach, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
-import ReportsPage, { presetRange } from '@/app/(dashboard)/reports/page'
+import BusinessReportsSection, { presetRange } from '@/components/reports/BusinessReportsSection'
 
 /**
- * 报表中心页面（issue #7376 / #7377）—— 三条展示纪律的**前端**判据。
+ * 报表五卡（issue #7376 / #7377；issue #8852 起是「经营报表」页「经营分析」段内的组件）——
+ * 三条展示纪律的**前端**判据。
  *
  * 后端已经保证「空数据 totals 为 null」「未知分项不填 0」，但页面如果把 null 渲染成 ¥0.00，
  * 结论就完全反了（「本月毛利 0 元」vs「还没数据」）。所以这里逐个钉：
@@ -59,14 +60,14 @@ const emptyAll = () => {
   )
 }
 
-describe('报表中心页面', () => {
+describe('经营报表 · 报表五卡（组件级判据）', () => {
   beforeEach(() => {
     vi.clearAllMocks()
   })
 
   it('🔴 没有数据时显示「暂无数据」，**不显示 ¥0.00**（空数据 ≠ 0）', async () => {
     emptyAll()
-    render(<ReportsPage />)
+    render(<BusinessReportsSection />)
 
     await waitFor(() => expect(screen.getByTestId('reports-margin-empty')).toBeInTheDocument())
     expect(screen.getByTestId('reports-margin-empty').textContent).toContain('暂无数据')
@@ -88,7 +89,7 @@ describe('报表中心页面', () => {
         unknownCostOrders: 2,
       }),
     )
-    render(<ReportsPage />)
+    render(<BusinessReportsSection />)
 
     await waitFor(() => expect(screen.getByTestId('reports-margin-body')).toBeInTheDocument())
     expect(screen.getByTestId('reports-margin-gross').textContent).toContain('350.00')
@@ -109,7 +110,7 @@ describe('报表中心页面', () => {
         totals: { outstanding: 1200, overdue: 0, orderCount: 1 },
       }),
     )
-    render(<ReportsPage />)
+    render(<BusinessReportsSection />)
 
     // 断言的是「同时」：毛利仍显示加载中，账龄那张已经出了读数
     await waitFor(() => expect(screen.getByTestId('reports-aging-outstanding')).toBeInTheDocument())
@@ -130,7 +131,7 @@ describe('报表中心页面', () => {
         unknownComponents: ['scrap_material'],
       }),
     )
-    render(<ReportsPage />)
+    render(<BusinessReportsSection />)
 
     await waitFor(() => expect(screen.getByTestId('reports-quality-body')).toBeInTheDocument())
     expect(screen.getByTestId('reports-quality-body').textContent).toContain('未采集 / 未知')
@@ -171,7 +172,7 @@ describe('报表中心页面', () => {
         totals: { outstanding: 2000, overdue: 200, orderCount: 4 },
       }),
     )
-    render(<ReportsPage />)
+    render(<BusinessReportsSection />)
 
     await waitFor(() => expect(screen.getByTestId('reports-aging-body')).toBeInTheDocument())
     expect(screen.getByTestId('reports-aging-outstanding').textContent).toContain('2,000.00')
@@ -221,7 +222,7 @@ describe('报表中心页面', () => {
     Object.assign(URL, { createObjectURL, revokeObjectURL })
     const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
 
-    render(<ReportsPage />)
+    render(<BusinessReportsSection />)
     await waitFor(() => expect(screen.getByTestId('reports-aging-body')).toBeInTheDocument())
     fireEvent.click(screen.getByTestId('reports-aging-export'))
 
@@ -241,7 +242,7 @@ describe('报表中心页面', () => {
     reportApi.staffPerformance.mockRejectedValue(new Error('x'))
     reportApi.qualityCost.mockRejectedValue(new Error('x'))
     reportApi.receivableAging.mockRejectedValue(new Error('x'))
-    render(<ReportsPage />)
+    render(<BusinessReportsSection />)
 
     await waitFor(() => expect(screen.getByTestId('reports-load-error')).toBeInTheDocument())
     expect(screen.getByTestId('reports-load-error-retry')).toBeInTheDocument()
@@ -258,7 +259,7 @@ describe('报表中心页面', () => {
         notes: [],
       })
     })
-    render(<ReportsPage />)
+    render(<BusinessReportsSection />)
 
     await waitFor(() => expect(calls).toEqual(['customer']))
     fireEvent.click(screen.getByTestId('reports-quality-dim-process'))
@@ -291,7 +292,7 @@ describe('报表中心页面', () => {
         notes: ['报废料不在本视图：本仓未采集'],
       }),
     )
-    render(<ReportsPage />)
+    render(<BusinessReportsSection />)
 
     await waitFor(() => expect(screen.getAllByTestId('reports-quality-breakdown-row')).toHaveLength(1))
     const row = screen.getAllByTestId('reports-quality-breakdown-row')[0]
@@ -311,7 +312,7 @@ describe('报表中心页面', () => {
 
   it('维度汇总空态：写「暂无数据」，不画 ¥0.00', async () => {
     emptyAll()
-    render(<ReportsPage />)
+    render(<BusinessReportsSection />)
     await waitFor(() => expect(screen.getByTestId('reports-quality-breakdown-empty')).toBeInTheDocument())
     expect(screen.getByTestId('reports-quality-breakdown-empty').textContent).toContain('暂无数据')
     expect(document.body.textContent).not.toContain('¥0.00')
@@ -333,7 +334,7 @@ describe('报表中心页面', () => {
 
   it('🔴 只有「按下单日/报工日」统计的三张表吃区间——库存与账龄是此刻读数，不重取', async () => {
     emptyAll()
-    render(<ReportsPage />)
+    render(<BusinessReportsSection />)
     await waitFor(() => expect(reportApi.orderMargins).toHaveBeenCalledTimes(1))
     expect(reportApi.inventoryAging).toHaveBeenCalledTimes(1)
     expect(reportApi.receivableAging).toHaveBeenCalledTimes(1)
@@ -358,7 +359,7 @@ describe('报表中心页面', () => {
 
   it('点「本月」⇒ 输入框被填成当月 1 号 ~ 今天，并按该区间重取', async () => {
     emptyAll()
-    render(<ReportsPage />)
+    render(<BusinessReportsSection />)
     await waitFor(() => expect(reportApi.orderMargins).toHaveBeenCalledTimes(1))
 
     fireEvent.click(screen.getByTestId('reports-filter-this-month'))
@@ -376,7 +377,7 @@ describe('报表中心页面', () => {
 
   it('🔴 默认区间 = 本月：挂载即带「本月 1 号 ~ 今天」，不是「全部」', async () => {
     emptyAll()
-    render(<ReportsPage />)
+    render(<BusinessReportsSection />)
     const expected = presetRange('thisMonth')
 
     // 首屏请求就带上了本月起止（改回空默认 ⇒ 本判据红）
@@ -398,7 +399,7 @@ describe('报表中心页面', () => {
 
   it('点「全部」⇒ 清空区间，请求不带日期参数（不是传两个空串）', async () => {
     emptyAll()
-    render(<ReportsPage />)
+    render(<BusinessReportsSection />)
     await waitFor(() => expect(reportApi.orderMargins).toHaveBeenCalledTimes(1))
 
     // 默认已填本月，「到」那侧仍有值 ⇒ 只改「从」时请求里仍带 endDate（默认值不许被静默丢掉）
@@ -417,7 +418,7 @@ describe('报表中心页面', () => {
 
   it('🔴 页面上写明「哪些表吃区间」——不写就会出现「我筛了 10 月，滞销怎么没变」', async () => {
     emptyAll()
-    render(<ReportsPage />)
+    render(<BusinessReportsSection />)
     await waitFor(() => expect(screen.getByTestId('reports-filter-note')).toBeInTheDocument())
     const note = screen.getByTestId('reports-filter-note').textContent || ''
     expect(note).toContain('订单毛利')
@@ -435,7 +436,7 @@ describe('报表中心页面', () => {
         rows: [{ batchNo: 'PC-' + (params?.warehouseCode || 'ALL'), skuCode: 'SKU-A', warehouse: '主仓',
           onHand: 10, lastMovementDate: '2026-06-01', daysSince: 120, slowMoving: true }] }))
 
-    render(<ReportsPage />)
+    render(<BusinessReportsSection />)
     await waitFor(() => expect(screen.getByTestId('reports-inventory-warehouse')).toBeInTheDocument())
 
     const marginsBefore = reportApi.orderMargins.mock.calls.length
@@ -457,7 +458,7 @@ describe('报表中心页面', () => {
   it('质量成本维度读失败：常驻失败锚在场 + 不印「暂无数据」+ 重试真的重发读请求', async () => {
     emptyAll()
     reportApi.qualityCostBreakdown.mockRejectedValueOnce(new Error('breakdown down'))
-    render(<ReportsPage />)
+    render(<BusinessReportsSection />)
 
     const anchor = await screen.findByTestId('reports-quality-breakdown-error')
     expect(anchor).toHaveTextContent('质量成本维度读取失败')

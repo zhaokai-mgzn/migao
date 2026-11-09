@@ -776,9 +776,9 @@ class TestJudgementsOnRealObject:
         visible = {n.path for n in nav.visible_nodes(["order:list", "dashboard:view"])}
         # 🔴 2026-10-17（issue #7087）：`/briefing` 的**菜单项已删除**（结论卡改挂在经营看板上）
         # ⇒ 本集合里不再有它；`/dashboard` 仍在（节点码一字未动 = `dashboard:view`，零授权 delta）。
-        # issue #7376：报表中心与经营看板同码 ⇒ `/reports` 也在这批可见项里
+        # issue #8852：报表中心并入经营报表 ⇒ `/reports` 不再有菜单节点（只剩重定向薄壳）；
         # issue #7375 段 3：价格本节点码也是 `order:list` ⇒ `/price-books` 也在本权限集的可见项里
-        assert visible == {"/orders", "/shipments", "/notifications", "/dashboard", "/reports", "/price-books"}
+        assert visible == {"/orders", "/shipments", "/notifications", "/dashboard", "/price-books"}
         # 🔴 2026-10-09（issue #6580）：「工艺配置」「加工项管理」两个菜单项已移除（功能体并入
         # 「企业基础设置」页内的配置域）⇒ 夹具改用合并后的入口 `settings`（其节点 = `/settings`）。
         nodes = nav.nodes_for_feature("settings")
@@ -882,8 +882,8 @@ class TestEveryJudgementCanGoRed:
                 '    MenuNode("customer-service", "售后工单", "/after-sales", "after_sales:view"),\n',
             ),
         )
-        # ⚠️ 前两个节点是最前席位（经营看板 → 报表中心，#7087 + #7376）⇒ 被注入的是紧跟其后的首组两项。
-        assert [n.path for n in mutated.MENU_TREE][3:5] == ["/knowledge", "/after-sales"], (
+        # ⚠️ 第 1 个节点是最前席位（经营报表，#7087 + #8852）⇒ 被注入的是紧跟其后的首组两项。
+        assert [n.path for n in mutated.MENU_TREE][2:4] == ["/knowledge", "/after-sales"], (
             "前提自证失败（注入没生效 ⇒ 红证无信息量）")
         assert problems_coverage(mutated, menu_ts_nodes), "判据 1b 没看见顺序漂移 ⇒ 空断言"
 
@@ -1160,8 +1160,8 @@ class TestEveryJudgementCanGoRed:
             MENU_TREE = (
                 type("N", (), {"group": "org-center", "label": "员工管理",
                                "path": "/employees", "permission_code": "employee:list"})(),
-                # 🔴 2026-10-29（issue #8100）：正名后菜单名 = 「经营概览」—— 红证要与**真**菜单树漂移
-                type("N", (), {"group": "workspace", "label": "经营概览",
+                # 🔴 issue #8852：合并后菜单名 = 「经营报表」—— 红证要与**真**菜单树漂移
+                type("N", (), {"group": "(一级独立项)", "label": "经营报表",
                                "path": "/dashboard", "permission_code": "dashboard:view"})(),
             )
             menu_node = staticmethod(
@@ -1171,7 +1171,7 @@ class TestEveryJudgementCanGoRed:
         problems = problems_feature_map_sync(_Stub, menu_ts_nodes)
         with capsys.disabled():
             print(f"[MC-071][红证9] 镜像漂移 ⇒ problems={len(problems)} :: {problems[:1]}")
-        assert any("经营概览" in p for p in problems), f"未登记的菜单项没被报出：{problems}"
+        assert any("经营报表" in p for p in problems), f"未登记的菜单项没被报出：{problems}"
         assert problems_feature_map_sync(nav, menu_ts_nodes) == [], "对照：真模块必须绿"
 
         # 另一半：登记项**没有**一条逐字等于菜单名的说法（menu.ts 改名没同批改）⇒ 也红
