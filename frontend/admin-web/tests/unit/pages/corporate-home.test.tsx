@@ -22,8 +22,8 @@ describe('CorporateHomePage（官网主页 v5：中小企业 AI 经营平台叙�
 
   it('hero：使命主标 + 企业级 AI 经营平台定位', () => {
     render(<HomePage />)
-    expect(screen.getByText(/把 AI 智能化技术/)).toBeInTheDocument()
-    expect(screen.getByText(/带给每一家中小企业/)).toBeInTheDocument()
+    expect(screen.getByText(/用 AI 数智化/)).toBeInTheDocument()
+    expect(screen.getByText(/赋能每一家中小企业/)).toBeInTheDocument()
     expect(screen.getAllByText(/杭州词元通达科技有限公司/).length).toBeGreaterThanOrEqual(1)
     expect(screen.getByText(/企业级 AI 经营平台/)).toBeInTheDocument()
   })
@@ -314,7 +314,7 @@ describe('CorporateHomePage（官网主页 v5：中小企业 AI 经营平台叙�
       '管住',
       '直说',
     ])
-    expect(findColloquialMarkers('把 AI 智能化技术带给中小企业')).toEqual([])
+    expect(findColloquialMarkers('用 AI 数智化赋能中小企业')).toEqual([])
   })
 
   // ── 双 AI 定位标签的单一源（issue #6330）──

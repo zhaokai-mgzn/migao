@@ -24,7 +24,7 @@ import {
 
 export const metadata: Metadata = {
   title: {
-    absolute: '观星台 — 布艺行业 AI 经营平台｜把 AI 智能化技术带给中小企业',
+    absolute: '观星台 — 布艺行业 AI 经营平台｜用 AI 数智化赋能中小企业',
   },
   description:
     '观星台是杭州词元通达科技有限公司面向布艺 / 窗帘企业的 AI 经营平台。米宝承接顾客咨询、算料报价、下单与售后；黄金策承接商品、订单、生产、库存与财务。AI 自动甄别入驻，分钟级开通；四端协同，数据同源。',
@@ -50,10 +50,10 @@ export default function HomePage() {
               </div>
 
               <h1 className="mt-7 text-3xl font-extrabold leading-tight tracking-tight sm:text-5xl lg:text-[3.4rem]">
-                把 AI 智能化技术
+                用 AI 数智化
                 <br />
                 <span className="bg-gradient-to-r from-gold-300 via-gold-500 to-accent-300 bg-clip-text text-transparent">
-                  带给每一家中小企业
+                  赋能每一家中小企业
                 </span>
               </h1>
 
