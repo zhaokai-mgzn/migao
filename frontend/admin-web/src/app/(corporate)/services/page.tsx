@@ -107,7 +107,7 @@ const delivery = [
   },
   {
     icon: Users,
-    title: '岗位权限开箱可配',
+    title: '岗位权限预置可调',
     description: '七个岗位开箱可用，员工菜单权限逐人可调，权限树即后台菜单本身。',
   },
   {
@@ -123,8 +123,8 @@ export default function ServicesPage() {
     <>
       <PageHero
         kicker="产品与服务"
-        title="米宝与黄金策，以及全链路经营平台"
-        lead="顾客侧由米宝承接服务，经营侧由黄金策承接管理；后端由客户服务、订单/商品、生产管理、质量管理、仓储/物料、财务、供应链、组织管理八个能力域支撑，四个终端共用数据底座。"
+        title="从顾客咨询，到经营决策"
+        lead="顾客侧由米宝承接顾客服务，经营侧由黄金策承接经营问答；客户服务、订单与商品、生产、质量、仓储、财务、供应链与组织八个能力域构成后台底座，四个终端共用数据底座。"
         chips={[
           '2 个 AI：米宝与黄金策',
           `${capabilityDomains.length} 个能力域 · ${menuItemCount} 项功能`,
@@ -220,8 +220,8 @@ export default function ServicesPage() {
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <SectionHeading
             kicker="能力清单"
-            title="八个能力域，逐项展开"
-            lead="以下每一项都是后台中可打开的功能入口。"
+            title="八个能力域，落到功能入口"
+            lead="下列条目均对应后台中可打开的功能入口。"
           />
           <div className="mt-14 space-y-6">
             {capabilityDomains.map((domain) => (
@@ -300,8 +300,8 @@ export default function ServicesPage() {
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <SectionHeading
             kicker="交付与开通"
-            title="开通流程简单，无需自建基础设施"
-            lead="无需自备服务器与 IT 人员：提交申请、AI 自动甄别、即刻开通，行业模板与岗位权限均已预置。"
+            title="无需自建基础设施，开通即可使用"
+            lead="无需自备服务器与 IT 人员：提交申请后由 AI 自动甄别并即刻开通，行业模板与岗位权限均已预置。"
           />
           <div className="mt-14 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
             {delivery.map((item) => (
