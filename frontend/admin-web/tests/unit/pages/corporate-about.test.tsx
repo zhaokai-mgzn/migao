@@ -30,12 +30,16 @@ describe('CorporateAboutPage（官网关于页 v4：产品原则 + 主体事实�
   it('renders mission and vision', () => {
     render(<AboutPage />)
     expect(screen.getByText('我们的使命')).toBeInTheDocument()
+    expect(screen.getByText(/以可负担的成本，让 AI 数智化成为布艺企业经营的基本能力/)).toBeInTheDocument()
     expect(screen.getByText('我们的愿景')).toBeInTheDocument()
+    // 愿景口径（issue #8886）：普惠 + 规模不再是能力边界，两者都必须上屏
+    expect(screen.getByText(/都拥有与大企业同等的经营能力/)).toBeInTheDocument()
+    expect(screen.getByText(/让规模不再是经营能力的边界/)).toBeInTheDocument()
   })
 
   it('renders 产品原则（不编造 / 价格不由模型定 / 敏感事项不做决定 / 边界写明）', () => {
     render(<AboutPage />)
-    expect(screen.getByText('观星台的产品原则')).toBeInTheDocument()
+    expect(screen.getByText('AI 的边界与授权')).toBeInTheDocument()
     expect(screen.getByText('数据之外不作答')).toBeInTheDocument()
     expect(screen.getByText('定价权归属商品库')).toBeInTheDocument()
     expect(screen.getByText('敏感事项不由 AI 决定')).toBeInTheDocument()
@@ -45,7 +49,7 @@ describe('CorporateAboutPage（官网关于页 v4：产品原则 + 主体事实�
   it('renders core values section 与四条价值观', () => {
     render(<AboutPage />)
     expect(screen.getByText('核心价值观')).toBeInTheDocument()
-    for (const name of ['技术驱动', '客户至上', '行业深耕', '数据安全']) {
+    for (const name of ['能力以落地为准', '先解决真问题', '把行业做透', '数据不出租户']) {
       expect(screen.getByText(name)).toBeInTheDocument()
     }
   })

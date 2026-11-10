@@ -18,28 +18,28 @@ import { CallToAction, PageHero, SectionHeading } from '@/components/corporate/C
 export const metadata: Metadata = {
   title: '关于观星台 — 布艺行业的 AI 经营平台',
   description:
-    '杭州词元通达科技有限公司出品的观星台平台：面向布艺 / 窗帘商家的多租户 AI 经营平台，顾客侧米宝、经营侧黄金策，覆盖商品、客户、交易、生产、仓储、组织六个能力域。',
+    '杭州词元通达科技有限公司出品的观星台平台：面向布艺 / 窗帘商家的多租户 AI 经营平台，顾客侧米宝、经营侧黄金策，覆盖商品、客户、交易、生产、仓储与组织等能力域。',
 }
 
 const values = [
   {
     icon: Lightbulb,
-    title: '技术驱动',
-    description: '把大模型能力落到具体动作上：可查询的查询、可计算的算，超出范围的明确说明。',
+    title: '能力以落地为准',
+    description: '大模型只有在能完成具体动作时才算能力：可查询的查询、可计算的算，做不到的明确说明。',
   },
   {
     icon: Heart,
-    title: '客户至上',
+    title: '先解决真问题',
     description: '功能按商家的真实流程排定优先级，不按演示效果排定。',
   },
   {
     icon: Sprout,
-    title: '行业深耕',
-    description: '算料、工序、批次、计件这些布艺行业的基础环节，是投入最多的方向。',
+    title: '把行业做透',
+    description: '算料、工序、批次、计件这些布艺经营的基础环节，是投入最重的方向。',
   },
   {
     icon: Lock,
-    title: '数据安全',
+    title: '数据不出租户',
     description: '租户级数据隔离，员工权限逐人可配，关键操作留痕可追溯。',
   },
 ]
@@ -49,13 +49,13 @@ const techFoundation = [
     icon: Bot,
     title: '两侧 AI 各自独立配置',
     description:
-      '米宝与黄金策是两套独立配置的 Agent：提示词、知识范围与可用工具各不相同，能力边界在页面上逐条标注。',
+      '米宝与黄金策是两套独立配置的 Agent：提示词、知识范围与可用工具各不相同，能力边界逐条标注在页面上。',
   },
   {
     icon: Wrench,
     title: '业务工具层',
     description:
-      'AI 不能直接读写系统里的数据：所有动作都通过已登记的业务工具执行，每一处改动都会逐项核对。可写的只有改价、商品改名、批量改价与批量库存调整、通知标记已读与定时提醒；上下架与删除不做。改价必须带上改前的价格并经确认卡二次确认。',
+      'AI 不直接读写系统数据：所有动作都经由已登记的业务工具执行，逐项核对、全程留痕。可写的限于改价、商品改名、批量改价与批量库存调整、通知标记已读与定时提醒；上下架与删除不做；改价必须带出改前价并经确认卡二次确认。',
   },
   {
     icon: Layers,
@@ -66,8 +66,7 @@ const techFoundation = [
   {
     icon: MonitorSmartphone,
     title: '四个终端，同一数据源',
-    description:
-      '管理后台、顾客小程序、商家小程序与员工端 H5 的数据同源，不各自建账。',
+    description: '管理后台、顾客小程序、商家小程序与员工端 H5 共用同一数据源，不各自建账。',
   },
 ]
 
@@ -75,22 +74,21 @@ const principles = [
   {
     title: '数据之外不作答',
     description:
-      'AI 只按店内真实数据与已发布知识作答：不编造订单、物流与金额，不报库存数量，不展示未上架商品。',
+      'AI 只依据店内真实数据与已发布知识作答：不编造订单、物流与金额，不报库存数量，不展示未上架商品。',
   },
   {
     title: '定价权归属商品库',
     description:
-      '顾客侧成交单价取商品库权威价；经营侧改价须带上改前价并经确认卡确认，系统会逐项核对。',
+      '顾客侧成交单价取商品库权威价；经营侧改价须带出改前价并经确认卡确认，系统逐项核对。',
   },
   {
     title: '敏感事项不由 AI 决定',
     description:
-      '涉及价格、折扣、退款金额、赔偿与法律诉求，AI 只做规则解释与材料收集，申请类动作一律待人工或规范流程确认。',
+      '价格、折扣、退款金额、赔偿与法律诉求，AI 只做规则解释与材料收集；申请类动作一律交由人工或规范流程确认。',
   },
   {
     title: '能力边界公开标注',
-    description:
-      '页面、对话与文档中均写明 AI 能做什么、不做什么，让商家明确可以交付给 AI 的范围。',
+    description: '页面、对话与文档中均写明 AI 能做什么、不做什么，让商家清楚可以交付给 AI 的范围。',
   },
 ]
 
@@ -100,7 +98,7 @@ export default function AboutPage() {
       <PageHero
         kicker="关于我们"
         title="关于观星台"
-        lead="观星台是杭州词元通达科技有限公司旗下的 AI 经营平台。产品目标明确：由 AI 承接客户接待，并协助经营者掌握商品、订单、生产、库存与账目。"
+        lead="观星台是杭州词元通达科技有限公司旗下的 AI 经营平台。我们以布艺行业为起点，把 AI 数智化做成中小企业可负担、可依赖的经营基础设施。"
         chips={['杭州词元通达科技有限公司', '布艺 / 窗帘行业', '多租户 SaaS']}
       />
 
@@ -111,7 +109,7 @@ export default function AboutPage() {
             <p>
               布艺商家的日常经营与标准品零售差异明显：一款窗帘要按颜色 × 售卖方式 × 门幅组合出几十个规格，
               加工费按米与套计算，订单下完还要排工序、派单、报工、计件，布料入库有批次与缸号，裁剪之后还有余料。
-              这些环节一旦依赖 Excel 与微信群接力，信息就会分散在十几个人的手中。
+              这些环节一旦依赖 Excel 与微信群接力，信息就分散在十几个人的手中，经营者看到的往往是滞后于现场的口头汇总。
             </p>
             <p>
               观星台的产品形态是多租户 SaaS 底座，加上顾客侧的米宝与经营侧的黄金策。顾客侧由米宝 7×24 小时接待咨询、
@@ -119,8 +117,8 @@ export default function AboutPage() {
               计件工资与应收对账。两侧读取的数据与后台所见一致。
             </p>
             <p>
-              观星台不将 AI 描述为万能：可查询的查询，可计算的算，可落成工单的落成工单；超出范围的请求，
-              AI 会明确说明，边界同时标注在页面上。这是产品交付的前提。
+              我们不给 AI 许诺万能：可查询的查询，可计算的算，可落成工单的落成工单；超出范围的请求，
+              AI 会明确说明，边界同时标注在页面上。把边界讲清楚，才有资格谈能力。
             </p>
           </div>
         </div>
@@ -136,7 +134,7 @@ export default function AboutPage() {
               </div>
               <h2 className="mt-5 text-xl font-bold text-neutral-900">我们的使命</h2>
               <p className="mt-3 leading-relaxed text-neutral-600">
-                把智能化的成本与门槛降下来，让布艺商家用得起、也用得上 AI。
+                以可负担的成本，让 AI 数智化成为布艺企业经营的基本能力。
               </p>
             </div>
 
@@ -146,8 +144,8 @@ export default function AboutPage() {
               </div>
               <h2 className="mt-5 text-xl font-bold text-neutral-900">我们的愿景</h2>
               <p className="mt-3 leading-relaxed text-neutral-600">
-                让智能化与 AI 走进每一家中小企业。观星台从布艺行业做起，把大企业才用得起的经营能力，
-                交到中小商家手上。
+                让每一家中小企业，都拥有与大企业同等的经营能力。观星台从布艺行业起步，把 AI 数智化带向更多行业，
+                让规模不再是经营能力的边界。
               </p>
             </div>
           </div>
@@ -159,8 +157,8 @@ export default function AboutPage() {
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <SectionHeading
             kicker="产品原则"
-            title="观星台的产品原则"
-            lead="这四条原则界定了观星台 AI 的能力范围与行为方式。"
+            title="AI 的边界与授权"
+            lead="四条原则界定了 AI 的能力范围与行为方式：哪些可以交给 AI，哪些必须交回人。"
           />
           <div className="mt-14 grid grid-cols-1 gap-6 sm:grid-cols-2">
             {principles.map((item) => (
@@ -176,7 +174,7 @@ export default function AboutPage() {
       {/* ── 核心价值观 ───────────────────────────────────────── */}
       <section className="bg-neutral-50 py-20 sm:py-28">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <SectionHeading kicker="核心价值观" title="驱动我们前行的信念" />
+          <SectionHeading kicker="核心价值观" title="我们如何做判断" />
           <div className="mx-auto mt-14 grid max-w-5xl grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
             {values.map((item) => (
               <div
@@ -199,7 +197,7 @@ export default function AboutPage() {
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <SectionHeading
             kicker="技术底座"
-            title="两侧 AI 与多租户底座"
+            title="两侧 AI 与多租户架构"
             lead="顾客侧与经营侧各由独立引擎驱动，运行在同一业务工具层与多租户底座之上；AI 的动作只经由已登记的工具，全部留有记录可查。"
           />
 
