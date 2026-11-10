@@ -7,7 +7,8 @@
 > 🔁 **2026-11-09 首页 v5 回写（issue [#8863](https://github.com/zhaokai-mgzn/migao/issues/8863)）**：首页信息架构改为
 > 「使命 Hero → 经营课题 → 平台架构（四层）→ 双 AI 分工 → 行业纵深 → 能力地图（8 个能力域，仅菜单名矩阵）→
 > 经营价值 → 适用企业 → 关于词元通达 → 平台保障 → 人机协同 / 国标 → 开通流程 → 底部 CTA」；
-> 首页定位改为「把 AI 智能化技术带给每一家中小企业」，能力域计数以 `capabilityDomains` 现取为 **8**。
+> 首页定位改为「用 AI 数智化 / 赋能每一家中小企业」（2026-11-10 改口径，
+> [issue #8884](https://github.com/zhaokai-mgzn/migao/issues/8884)），能力域计数以 `capabilityDomains` 现取为 **8**。
 > 其余三页与本文 §1 / §2 的口径不变；§3 的首页旧结构行与「六域」计数以本行为准。
 >
 > 范围：`frontend/admin-web/src/app/(corporate)/**`（首页 / 产品与服务 / 关于我们 / 联系我们）+
