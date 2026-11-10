@@ -22,7 +22,8 @@ describe('CorporateAboutPage（官网关于页 v4：产品原则 + 主体事实�
 
   it('renders company intro（布艺行业真实流程 + 双 AI 分工）', () => {
     render(<AboutPage />)
-    expect(screen.getByText(/一款窗帘要按颜色 × 售卖方式 × 门幅组合出几十个规格/)).toBeInTheDocument()
+    expect(screen.getByText(/布艺与窗帘是被规格定义的生意/)).toBeInTheDocument()
+    expect(screen.getByText(/这些环节至今大多由 Excel 与微信群承接/)).toBeInTheDocument()
     expect(screen.getByText(/顾客侧由米宝 7×24 小时接待咨询/)).toBeInTheDocument()
     expect(screen.getByText(/经营侧由黄金策以自然语言问答/)).toBeInTheDocument()
   })
