@@ -74,12 +74,12 @@ const businessChallenges = [
   {
     icon: Ruler,
     title: '询价与算料依赖经验',
-    description: '算料规则、工艺参数与加工费组合可配置；报价依据可追溯，未定价项明确提示。',
+    description: '算料规则、工艺参数与加工费组合均可配置；报价依据可追溯，未定价项明确提示。',
   },
   {
     icon: ClipboardList,
     title: '订单与生产各自记账',
-    description: '订单生成加工单，工序进度、报工明细与交付状态在同一链路查看。',
+    description: '订单生成加工单，工序进度、报工明细与交付状态在同一链路内查看。',
   },
   {
     icon: PackageOpen,

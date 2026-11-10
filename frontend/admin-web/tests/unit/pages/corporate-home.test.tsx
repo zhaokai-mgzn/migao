@@ -57,7 +57,7 @@ describe('CorporateHomePage（官网主页 v5：中小企业 AI 经营平台叙�
 
   it('经营课题：四个真实经营环节', () => {
     render(<HomePage />)
-    expect(screen.getByText('AI 的价值，要落在经营现场')).toBeInTheDocument()
+    expect(screen.getByText('智能化的价值，由经营现场检验')).toBeInTheDocument()
     for (const title of [
       '询价与算料依赖经验',
       '订单与生产各自记账',
@@ -72,7 +72,7 @@ describe('CorporateHomePage（官网主页 v5：中小企业 AI 经营平台叙�
 
   it('平台架构：交互 / 智能 / 业务 / 数据与安全四层', () => {
     render(<HomePage />)
-    expect(screen.getByText('智能、业务与数据，共用同一底座')).toBeInTheDocument()
+    expect(screen.getByText('四层架构，共用同一数据底座')).toBeInTheDocument()
     for (const layer of ['交互层', '智能层', '业务层', '数据与安全层']) {
       expect(screen.getByText(layer)).toBeInTheDocument()
     }
@@ -90,7 +90,7 @@ describe('CorporateHomePage（官网主页 v5：中小企业 AI 经营平台叙�
 
   it('双 AI 区块：定位标签 + 能力清单 + 能力边界', () => {
     render(<HomePage />)
-    expect(screen.getByText('顾客侧服务，经营侧管理')).toBeInTheDocument()
+    expect(screen.getByText('顾客侧接待，经营侧决策')).toBeInTheDocument()
     expect(screen.getAllByText('黄金策').length).toBeGreaterThanOrEqual(1)
     expect(screen.getAllByText('企业智能生产管家').length).toBeGreaterThanOrEqual(1)
     expect(screen.getAllByText('米宝').length).toBeGreaterThanOrEqual(1)
@@ -115,7 +115,7 @@ describe('CorporateHomePage（官网主页 v5：中小企业 AI 经营平台叙�
 
   it('行业纵深：从询价到交付的六步链路 + 行业正名', () => {
     render(<HomePage />)
-    expect(screen.getByText('从询价到交付，经营链路完整贯通')).toBeInTheDocument()
+    expect(screen.getByText('从询价到交付，全程在同一平台内完成')).toBeInTheDocument()
     for (const title of ['询价与算料', '下单', '生产', '入库', '发货', '售后与对账']) {
       expect(screen.getByText(title)).toBeInTheDocument()
     }
@@ -140,7 +140,7 @@ describe('CorporateHomePage（官网主页 v5：中小企业 AI 经营平台叙�
 
   it('能力地图：八个能力域与独立入口（菜单名与 config/menu.ts 一致）', () => {
     render(<HomePage />)
-    expect(screen.getByText('覆盖经营全链路的能力域')).toBeInTheDocument()
+    expect(screen.getByText('八个能力域，就是后台的菜单')).toBeInTheDocument()
     for (const domain of [
       '客户服务',
       '订单/商品',
@@ -186,7 +186,7 @@ describe('CorporateHomePage（官网主页 v5：中小企业 AI 经营平台叙�
 
   it('适用企业：四类布艺经营形态，不再列未验证行业', () => {
     render(<HomePage />)
-    expect(screen.getByText('深耕布艺，服务不同经营形态')).toBeInTheDocument()
+    expect(screen.getByText('深耕布艺，服务四种经营形态')).toBeInTheDocument()
     for (const name of ['窗帘定制商', '布艺加工厂', '批零一体企业', '品牌与渠道商']) {
       expect(screen.getByText(name)).toBeInTheDocument()
     }
@@ -212,7 +212,7 @@ describe('CorporateHomePage（官网主页 v5：中小企业 AI 经营平台叙�
   it('平台保障：准入 / 隔离 / 主体 / 审计 / 权限 / 数据同源', () => {
     render(<HomePage />)
     expect(screen.getByText('平台保障')).toBeInTheDocument()
-    expect(screen.getByText('企业级底座，保障数据与权限')).toBeInTheDocument()
+    expect(screen.getByText('企业级底座：隔离、权限与审计')).toBeInTheDocument()
     for (const title of [
       '智能准入审核',
       '租户级数据隔离',
@@ -265,7 +265,7 @@ describe('CorporateHomePage（官网主页 v5：中小企业 AI 经营平台叙�
 
   it('三步开通 + 底部 CTA（免费开通 / 预约演示）', () => {
     render(<HomePage />)
-    expect(screen.getByText('三步开通，快速上线')).toBeInTheDocument()
+    expect(screen.getByText('三步开通，无需自建基础设施')).toBeInTheDocument()
     expect(screen.getByText('提交申请')).toBeInTheDocument()
     expect(screen.getByText('AI 智能甄别')).toBeInTheDocument()
     expect(screen.getByText('即刻开通')).toBeInTheDocument()

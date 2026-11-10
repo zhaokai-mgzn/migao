@@ -121,9 +121,9 @@ export default function HomePage() {
       <section className="bg-white py-20 sm:py-28">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <SectionHeading
-            kicker="中小企业智能化"
-            title="AI 的价值，要落在经营现场"
-            lead="中小企业的智能化，最终要落到询价、下单、生产与服务这些真实环节：数据同源、流程可追踪、责任可界定。"
+            kicker="经营课题"
+            title="智能化的价值，由经营现场检验"
+            lead="询价靠经验、进度靠追问、库存靠台账、服务靠人手：四件事各自成账，正是智能化要解决的起点问题。"
           />
           <div className="mt-14 grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-4">
             {businessChallenges.map((item) => (
@@ -147,8 +147,8 @@ export default function HomePage() {
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <SectionHeading
             kicker="平台架构"
-            title="智能、业务与数据，共用同一底座"
-            lead="四个终端承载不同角色，米宝与黄金策作为智能入口，八个能力域承载业务，多租户与审计构成底座。"
+            title="四层架构，共用同一数据底座"
+            lead="终端承载角色，米宝与黄金策作为智能入口，八个能力域承载业务，多租户与审计构成底座；四层之间不各自建账。"
           />
           <div className="mt-14 grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-4">
             {platformLayers.map((layer) => (
@@ -174,8 +174,8 @@ export default function HomePage() {
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <SectionHeading
             kicker="双 AI 分工"
-            title="顾客侧服务，经营侧管理"
-            lead="米宝与黄金策基于大语言模型理解业务意图，读取同源经营数据；能力边界在页面中明确标注。"
+            title="顾客侧接待，经营侧决策"
+            lead="米宝与黄金策是两套独立配置的 Agent，读取同源经营数据：顾客听到的，与经营者在后台看到的完全一致。"
           />
           <div className="mt-14 grid grid-cols-1 gap-6 lg:grid-cols-2">
             {agents.map((agent) => (
@@ -215,8 +215,8 @@ export default function HomePage() {
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <SectionHeading
             kicker="行业纵深"
-            title="从询价到交付，经营链路完整贯通"
-            lead="布艺经营的关键在算料、工序、批次与计件。观星台把这些环节纳入同一平台，减少跨系统对账与重复录入。"
+            title="从询价到交付，全程在同一平台内完成"
+            lead="算料、工序、批次、计件是布艺经营的四道关口。观星台把它们放进同一平台，减少跨系统对账与重复录入。"
           />
           <div className="mt-14 grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
             {orderJourney.map((item) => (
@@ -241,8 +241,8 @@ export default function HomePage() {
           <div className="mt-16">
             <SectionHeading
               kicker="行业能力"
-              title="布艺经营的四项核心能力"
-              lead="通用客服工具难以覆盖这四项能力，而它们正是观星台产品设计的起点。"
+              title="四项行业能力，通用工具做不到"
+              lead="通用客服工具覆盖不到这四项；而它们正是观星台产品设计的起点。"
             />
             <div className="mt-10 grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-4">
               {industryDepth.map((item) => (
@@ -269,8 +269,8 @@ export default function HomePage() {
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <SectionHeading
             kicker="能力地图"
-            title="覆盖经营全链路的能力域"
-            lead="以下每一项都是后台中可打开的功能入口；菜单名与产品侧边栏同源。"
+            title="八个能力域，就是后台的菜单"
+            lead="下列条目均对应后台中可打开的功能入口，菜单名与产品侧边栏同源。"
           />
           <div className="mt-14 grid grid-cols-1 gap-6 md:grid-cols-2">
             {capabilityDomains.map((domain) => (
@@ -357,7 +357,7 @@ export default function HomePage() {
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <SectionHeading
             kicker="适用企业"
-            title="深耕布艺，服务不同经营形态"
+            title="深耕布艺，服务四种经营形态"
             lead="当前聚焦布艺 / 窗帘企业；行业模板、算料参数与岗位权限可按企业实际配置。"
           />
           <div className="mx-auto mt-14 grid max-w-5xl grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
@@ -385,7 +385,7 @@ export default function HomePage() {
           <SectionHeading
             kicker="关于词元通达"
             title="让 AI 成为中小企业的经营能力"
-            lead="杭州词元通达科技有限公司专注于中小企业智能化经营。AI 不应只属于大型企业：通过产品化、可配置、可审计的方式，把大模型能力带到真实经营现场。"
+            lead="杭州词元通达科技有限公司专注中小企业智能化经营。AI 不应只属于大型企业：以产品化、可配置、可审计的方式，把大模型带到真实经营现场。"
           />
           <div className="mx-auto mt-12 grid max-w-5xl grid-cols-1 gap-6 md:grid-cols-3">
             {principles.map((principle) => (
@@ -413,8 +413,8 @@ export default function HomePage() {
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <SectionHeading
             kicker="平台保障"
-            title="企业级底座，保障数据与权限"
-            lead="从入驻审核到日常操作，平台在隔离、权限与审计上提供企业级保障。"
+            title="企业级底座：隔离、权限与审计"
+            lead="从入驻审核到日常操作，平台在隔离、权限与审计三个面上提供企业级保障。"
           />
           <div className="mt-14 grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
             {platformGuarantees.map((point) => (
@@ -510,8 +510,8 @@ export default function HomePage() {
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <SectionHeading
             kicker="开始使用"
-            title="三步开通，快速上线"
-            lead="提交申请、AI 自动甄别、即刻开通；无需自建服务器与 IT 团队。"
+            title="三步开通，无需自建基础设施"
+            lead="提交申请、AI 自动甄别、即刻开通；无需自备服务器与 IT 团队。"
           />
           <div className="mx-auto mt-14 grid max-w-5xl grid-cols-1 gap-6 md:grid-cols-3">
             {steps.map((item) => (
