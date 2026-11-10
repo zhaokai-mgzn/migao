@@ -21,7 +21,7 @@ describe('ServicesPage（官网产品与服务 v4：双 AI + 四终端 + 八能�
     expect(
       screen.getByRole('heading', {
         level: 1,
-        name: '米宝与黄金策，以及全链路经营平台',
+        name: '从顾客咨询，到经营决策',
       })
     ).toBeInTheDocument()
     expect(screen.getByText(/四个终端共用数据底座/)).toBeInTheDocument()
@@ -31,7 +31,7 @@ describe('ServicesPage（官网产品与服务 v4：双 AI + 四终端 + 八能�
     render(<ServicesPage />)
     expect(screen.getByText('2 个 AI：米宝与黄金策')).toBeInTheDocument()
     expect(screen.getByText(/8 个能力域 · \d+ 项功能/)).toBeInTheDocument()
-    expect(screen.getByText('八个能力域，逐项展开')).toBeInTheDocument()
+    expect(screen.getByText('八个能力域，落到功能入口')).toBeInTheDocument()
     expect(screen.getByText('4 个终端')).toBeInTheDocument()
     expect(screen.getByText('算料 · 工序 · 批次 · 计件')).toBeInTheDocument()
   })
