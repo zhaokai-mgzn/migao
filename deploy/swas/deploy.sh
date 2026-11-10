@@ -1510,7 +1510,7 @@ if [ -n "$_migao_ai_llm" ]; then
   _migao_ai_status="${_migao_ai_status}LLM_API_KEY:set,"
 else
   echo "  ::warning::.env.ai-agent 缺 **LLM_API_KEY**（PRIMARY_API_KEY / VISION_API_KEY 都未设置）"
-  echo "     影响：主推理 + 视觉全部不可用（C 端元元 / B 端黄金策 / 入驻 AI 甄别都会失败）"
+  echo "     影响：主推理 + 视觉全部不可用（C 端米宝 / B 端黄金策 / 入驻 AI 甄别都会失败）"
   echo "     补法：在服务器 ${MIGAO_AI_ENV_FILE} 追加 PRIMARY_API_KEY=<DeepSeek key>（或 VISION_API_KEY=<同一把 key>）"
   _migao_ai_missing=$((_migao_ai_missing + 1))
   _migao_ai_status="${_migao_ai_status}LLM_API_KEY:missing,"

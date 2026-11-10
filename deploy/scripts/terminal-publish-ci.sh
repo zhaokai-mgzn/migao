@@ -427,7 +427,7 @@ PY
 
   say "# 观星台终端静态落位（issue #8195）"
   say ""
-  say "- 目标：\`$EXPECTED_TARGET\`（静态根 = nginx 的 \`root\`，**同时承载 C 端元元 ⇒ 只收敛 $SUBDIR/ 子树**）"
+  say "- 目标：\`$EXPECTED_TARGET\`（静态根 = nginx 的 \`root\`，**同时承载 C 端米宝 ⇒ 只收敛 $SUBDIR/ 子树**）"
   say "- 版本：\`$RELEASE_TAG\`"
   say "- 传输：ACR 镜像 \`$IMAGE\`（实例 \`docker cp\` 取出 /dist ⇒ 线上字节 == Release 里的字节）"
   say "- 本地 \`latest.json\` 哈希：\`$LOCAL_LATEST_SHA\`；\`latest-android.json\` 哈希：\`$LOCAL_ANDROID_SHA\`"

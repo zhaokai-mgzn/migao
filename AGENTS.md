@@ -4,7 +4,7 @@
 
 ## 这是什么
 
-面向布艺 / 窗帘商家的多租户 AI 经营平台：顾客侧元元 + 经营侧黄金策双 Agent（LangGraph），
+面向布艺 / 窗帘商家的多租户 AI 经营平台：顾客侧米宝 + 经营侧黄金策双 Agent（LangGraph），
 Java admin-api + Python ai-agent-service + Next.js admin-web + Taro mini-app / bmini-app。
 「智能客服」只是客户服务能力域的一部分，不是系统定位（详见 https://github.com/zhaokai-mgzn/migao/wiki/Product）。
 

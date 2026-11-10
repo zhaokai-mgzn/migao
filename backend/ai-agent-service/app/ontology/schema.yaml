@@ -57,7 +57,7 @@ intent_ownership:
   # 按 #4196 逐条反转 #3917：registry.py 三行 import/register 取消注释、
   # order_skill.py 的 tool_names/intents 恢复、IntentType 补回此三值（#4027 曾因缺枚举移除声明）
   # ⇒ 黄金策（商家后台）**可达**，故此处恢复 `agents: [mibao]`（#4058 的 `agents: []` 是下线态对齐）。
-  # C 端元元不可达（加工单是 B 端履约单据）——勿加 xiaobu。
+  # C 端米宝不可达（加工单是 B 端履约单据）——勿加 xiaobu。
   processing_order_generate:
     route_key: order
     agents: [mibao]
@@ -126,19 +126,19 @@ intent_ownership:
   system_settings:
     route_key: settings
     # issue #5247：B 端黄金策已解绑 settings skill（用户裁定「系统设置/通知配置不进 B 端对话面」）
-    # ⇒ mibao **不可达**，只保留 C 端（元元 customer_general 仍声明该 intent）。
+    # ⇒ mibao **不可达**，只保留 C 端（米宝 customer_general 仍声明该 intent）。
     agents: [xiaobu]
     description: 系统设置
   ai_config:
     route_key: settings
     # issue #5247：B 端黄金策已解绑 settings skill（用户裁定「系统设置/通知配置不进 B 端对话面」）
-    # ⇒ mibao **不可达**，只保留 C 端（元元 customer_general 仍声明该 intent）。
+    # ⇒ mibao **不可达**，只保留 C 端（米宝 customer_general 仍声明该 intent）。
     agents: [xiaobu]
     description: AI 配置
   notification:
     route_key: settings
     # issue #5247：B 端黄金策已解绑 settings skill（用户裁定「系统设置/通知配置不进 B 端对话面」）
-    # ⇒ mibao **不可达**，只保留 C 端（元元 customer_general 仍声明该 intent）。
+    # ⇒ mibao **不可达**，只保留 C 端（米宝 customer_general 仍声明该 intent）。
     agents: [xiaobu]
     description: 通知管理
   # ── 数据域 ──
@@ -166,7 +166,7 @@ intent_ownership:
   knowledge_faq:
     route_key: knowledge
     agents: [mibao, xiaobu]
-    description: 知识卡片问答（双端：元元 C 端消费者 + 黄金策 B 端员工，issue #3059）
+    description: 知识卡片问答（双端：米宝 C 端消费者 + 黄金策 B 端员工，issue #3059）
   knowledge_manage:
     route_key: knowledge
     agents: [xiaobu]
@@ -175,7 +175,7 @@ intent_ownership:
   quote:
     route_key: quote
     agents: [xiaobu]
-    description: 窗帘算料报价（仅元元 customer_quote）
+    description: 窗帘算料报价（仅米宝 customer_quote）
   # ── 助手域：定时提醒（issue #6486 包 2 引入；#6514 补登记）──
   # 引入者 PR #6499 加了工具 / skill / 活映射，**漏登记本表** ⇒ `contract-check.sh` 第 6 项
   # 在 main 上恒红（活映射侧从 `get_skill_registry()` + `MIBAO_CONFIG` 现取，有它）。

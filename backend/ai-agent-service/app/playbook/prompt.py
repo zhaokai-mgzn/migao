@@ -280,7 +280,7 @@ async def inject_playbook_prompt(
 ) -> str:
     """**B 端**（黄金策 / `mibao`）system prompt 注入出口 ①。
 
-    - 非 B 端（C 端元元）/ 无租户 ⇒ **原样返回同一个字符串**（C 端零回归）；
+    - 非 B 端（C 端米宝）/ 无租户 ⇒ **原样返回同一个字符串**（C 端零回归）；
     - 任何异常都不抛（fire-and-forget，与 `_inject_user_memories` 同口径）；
     - 注入位置：`_build_system_prompt` 之后、其余跨轮注入之前（口径先于临时提示）。
     """

@@ -298,7 +298,7 @@ def _register_all_skills(registry: SkillRegistry):
     从各 Skill 文件导入 SkillConfig 并注册。
     每个 Skill 文件导出一个 SkillConfig 实例（如 ORDER_SKILL_CONFIG）。
 
-    包含黄金策（B 端）和元元（C 端）两套 Skill 配置。
+    包含黄金策（B 端）和米宝（C 端）两套 Skill 配置。
     Agent 通过 AgentConfig.skill_names 选择使用哪些 Skill。
     """
     # 延迟导入避免循环依赖
@@ -316,7 +316,7 @@ def _register_all_skills(registry: SkillRegistry):
     from app.graph.skills.knowledge_skill import KNOWLEDGE_SKILL_CONFIG
     from app.graph.skills.general_agent import GENERAL_SKILL_CONFIG
 
-    # ── 元元（C 端客服）Skill ──
+    # ── 米宝（C 端客服）Skill ──
     from app.graph.skills.customer_order_skill import CUSTOMER_ORDER_SKILL_CONFIG
     from app.graph.skills.customer_product_skill import CUSTOMER_PRODUCT_SKILL_CONFIG
     from app.graph.skills.customer_knowledge_skill import CUSTOMER_KNOWLEDGE_SKILL_CONFIG
@@ -337,7 +337,7 @@ def _register_all_skills(registry: SkillRegistry):
         GENERAL_SKILL_CONFIG,
         REMINDER_SKILL_CONFIG,   # 定时提醒（issue #6486 包 2）
         NOTIFICATION_SKILL_CONFIG,  # 通知中心：查询 + 标记已读（issue #7040 变更能力接线）
-        # 元元 Skill
+        # 米宝 Skill
         CUSTOMER_ORDER_SKILL_CONFIG,
         CUSTOMER_PRODUCT_SKILL_CONFIG,
         CUSTOMER_KNOWLEDGE_SKILL_CONFIG,

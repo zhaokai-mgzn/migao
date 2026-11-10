@@ -222,7 +222,7 @@ cases:
 
   - id: UI-007
     legacy_id: ""
-    title: "元元 C 端输入条 - 单容器语音优先（textarea 常驻 + 带文字标签的宽胶囊「按住 说话」松开发送）"
+    title: "米宝 C 端输入条 - 单容器语音优先（textarea 常驻 + 带文字标签的宽胶囊「按住 说话」松开发送）"
     domains:
       - ui
       - frontend
@@ -235,7 +235,7 @@ cases:
     truths_ref:
       - frontend-fix.xiaobu-voice-holdtalk
     user_inputs:
-      - "元元 C 端（小程序/H5 同源）输入条为单容器语音优先布局：textarea 常驻（语音优先 placeholder「按住说话，也可以打字」），空草稿时右侧主键是带文字标签的宽胶囊「按住 说话」，有草稿时该键位变为发送；上滑取消录音；首访给一条一次性可关闭的语音引导"
+      - "米宝 C 端（小程序/H5 同源）输入条为单容器语音优先布局：textarea 常驻（语音优先 placeholder「按住说话，也可以打字」），空草稿时右侧主键是带文字标签的宽胶囊「按住 说话」，有草稿时该键位变为发送；上滑取消录音；首访给一条一次性可关闭的语音引导"
     expectations:
       - tool: direct_reply
     data_checks:
@@ -322,7 +322,7 @@ cases:
 
   - id: UI-010
     legacy_id: ""
-    title: "元元聊天主页快捷入口改版 - 转人工→查物流、退换货→售后咨询"
+    title: "米宝聊天主页快捷入口改版 - 转人工→查物流、退换货→售后咨询"
     domains:
       - ui
       - frontend
@@ -335,7 +335,7 @@ cases:
     truths_ref:
       - frontend-fix.xiaobu-quick-actions
     user_inputs:
-      - "元元聊天主页四个快捷对话入口：查订单/找产品/售后咨询/查物流"
+      - "米宝聊天主页四个快捷对话入口：查订单/找产品/售后咨询/查物流"
     expectations:
       - tool: direct_reply
     data_checks:
@@ -423,7 +423,7 @@ cases:
 
   - id: UI-013
     legacy_id: ""
-    title: "元元 C 端支持纯图消息发送（拍照识别：无文本仅图片 → 后端 vision 理解）"
+    title: "米宝 C 端支持纯图消息发送（拍照识别：无文本仅图片 → 后端 vision 理解）"
     domains:
       - ui
       - frontend
@@ -438,7 +438,7 @@ cases:
       - frontend-fix.no-api-change
       - frontend-fix.vitest
     user_inputs:
-      - "顾客拍一张窗帘照片直接发送（不带文字），元元应能收到并走视觉理解推荐相似商品"
+      - "顾客拍一张窗帘照片直接发送（不带文字），米宝应能收到并走视觉理解推荐相似商品"
     expectations:
       - tool: direct_reply
     data_checks:
@@ -458,7 +458,7 @@ cases:
 
   - id: UI-014
     legacy_id: ""
-    title: "元元聊天主页快捷入口六格化 - 算料报价与推荐热门商品并列（取消全宽）"
+    title: "米宝聊天主页快捷入口六格化 - 算料报价与推荐热门商品并列（取消全宽）"
     domains:
       - ui
       - frontend
@@ -471,7 +471,7 @@ cases:
     truths_ref:
       - frontend-fix.xiaobu-quick-actions
     user_inputs:
-      - "顾客打开元元聊天主页，快捷入口区六个入口等权排列：算料报价/推荐热门商品/查订单/找产品/售后咨询/查物流"
+      - "顾客打开米宝聊天主页，快捷入口区六个入口等权排列：算料报价/推荐热门商品/查订单/找产品/售后咨询/查物流"
     expectations:
       - tool: direct_reply
     data_checks:
@@ -492,7 +492,7 @@ cases:
 
   - id: UI-044
     legacy_id: ""
-    title: "元元聊天主页空态移除商品推荐卡（NewArrivals），推荐改由文字胶囊/快捷对话入口承载"
+    title: "米宝聊天主页空态移除商品推荐卡（NewArrivals），推荐改由文字胶囊/快捷对话入口承载"
     domains:
       - ui
       - frontend
@@ -505,7 +505,7 @@ cases:
     truths_ref:
       - frontend-fix.xiaobu-quick-actions
     user_inputs:
-      - "顾客打开元元聊天主页空态：顶部三条居中的推荐胶囊（如「📐 按窗尺寸测算用布量与报价」），不再展示热销商品图片与名称"
+      - "顾客打开米宝聊天主页空态：顶部三条居中的推荐胶囊（如「📐 按窗尺寸测算用布量与报价」），不再展示热销商品图片与名称"
     expectations:
       - tool: direct_reply
     data_checks:
@@ -617,7 +617,7 @@ cases:
 
   - id: UI-018
     legacy_id: ""
-    title: "C 端智能客服名称取 botName 配置 — 思考中/空态/导航名去硬编码（默认元元）"
+    title: "C 端智能客服名称取 botName 配置 — 思考中/空态/导航名去硬编码（默认米宝）"
     domains:
       - ui
       - frontend
@@ -629,13 +629,13 @@ cases:
     truths_ref:
       - frontend-fix.no-api-change
     user_inputs:
-      - "C 端「正在思考...」/空态/导航名应使用企业设置里的智能客服名称（TenantAiConfig.botName），未配置默认「元元」"
+      - "C 端「正在思考...」/空态/导航名应使用企业设置里的智能客服名称（TenantAiConfig.botName），未配置默认「米宝」"
     expectations:
       - tool: direct_reply
     data_checks:
       - "admin-api mini/login 与 /api/admin/user/info 返回 botName（camelCase，对齐 User 类型）"
       - "思考中文案 = 「{botName}正在思考...」；空态 = 「你好，我是{botName}」；导航名 = buildBotName(botName)"
-      - "botName 为空/未登录 → 兜底「元元」（buildBotName 默认值）"
+      - "botName 为空/未登录 → 兜底「米宝」（buildBotName 默认值）"
     skip_reason: "[backend-contract] 纯前端文案由 mini-app jest 单测验证（brand.test.ts + message-list），非 LLM 行为"
     merge_log: "2026-09-04 新增：智能客服名称去硬编码 — 思考中/空态/导航名原写死「AI/元元」（issue #2857）"
     traces:
@@ -877,7 +877,7 @@ cases:
       - frontend-fix.no-api-change
       - frontend-fix.vitest
     user_inputs:
-      - "黄金策聊天输入条图标与状态呈现和元元同形：发送键 ↑（ArrowUp）、停止键 ■（Square）、语音键音波线稿（AudioLines 弃用 Mic），录音状态在容器内状态条展示而不占用 placeholder，图片预览缩略图收进输入容器内"
+      - "黄金策聊天输入条图标与状态呈现和米宝同形：发送键 ↑（ArrowUp）、停止键 ■（Square）、语音键音波线稿（AudioLines 弃用 Mic），录音状态在容器内状态条展示而不占用 placeholder，图片预览缩略图收进输入容器内"
     expectations:
       - tool: direct_reply
     data_checks:
@@ -1228,7 +1228,7 @@ cases:
       - tool: direct_reply
     data_checks:
       - "侧边栏「智能客服」组不再有「AI 客服配置」菜单项（#3094 起 在线接待/知识库 共 2 项，黄金策·在线对话 入口已移除）；/chat/config 页面与 /agent-workspace/quick-replies 占位页删除，Header 面包屑无对应残留"
-      - "「企业基础信息」页（/settings）新增「AI 客服设置」tab（#3098 恢复 #3006 之前的左侧 tab 导航布局）：tab 栏 = 基本设置（公司名称+Logo）/ AI 客服设置 / 通知设置；AI 客服设置 tab 副文案说明作用「配置顾客在对话中看到的 AI 客服助手（元元）的名称与欢迎语」，含 AI 客服名称（必填）+ 欢迎语；🔴 **2026-10-01 改判（issue #5899）**：本 tab **不再有「保存」按钮** —— 两个字段**失焦即保存**（调用 /api/admin/tenant/ai-config；名称为空不提交并报错回退；值没变不发请求），成功提示「AI 客服名称已保存」/「欢迎语已保存，顾客侧将按新配置生效」"
+      - "「企业基础信息」页（/settings）新增「AI 客服设置」tab（#3098 恢复 #3006 之前的左侧 tab 导航布局）：tab 栏 = 基本设置（公司名称+Logo）/ AI 客服设置 / 通知设置；AI 客服设置 tab 副文案说明作用「配置顾客在对话中看到的 AI 客服助手（米宝）的名称与欢迎语」，含 AI 客服名称（必填）+ 欢迎语；🔴 **2026-10-01 改判（issue #5899）**：本 tab **不再有「保存」按钮** —— 两个字段**失焦即保存**（调用 /api/admin/tenant/ai-config；名称为空不提交并报错回退；值没变不发请求），成功提示「AI 客服名称已保存」/「欢迎语已保存，顾客侧将按新配置生效」"
       - "企业基础信息页 tab 行为：默认激活「基本设置」tab；点击左侧 tab 切换内容区（AI 客服设置/通知设置内容不默认展示）；URL ?tab=ai 直达 AI 客服设置 tab（旧链接兼容，不再重定向 /chat/config）；修改密码/登录日志 tab 保持 #3006 隐藏；🔴 **2026-10-01 整格改判（issue #5899）** —— 用户逐字：「保存按钮放置的太底端了，用户容易忽略，我建议是如果有办法移除保存按钮就直接移除，通过更优秀的设计来满足配置变更保存的结果」⇒ **基本设置 / AI 客服设置两个 tab 的「保存」按钮整体移除**，改为**变更即保存**（口径与 #3119 通知开关、#3468 简报开关与生成时刻同源）：① 公司名称 / 企业编码 / AI 客服名称 / 欢迎语 —— **失焦即落库**（有改动才发请求）；② Logo —— **上传成功即落库、移除即落库**（改前要再点一次「保存」才生效）；③ 卡片标题下写明「修改后自动保存，无需手动提交」（把「没有保存按钮」这件事说出来，否则商家会去找按钮）；④ 失败沿用既有回退：企业编码 422 展示**服务端** message 并把输入框拉回已落库值，`#3099` 的「保存后刷新用户信息（侧边栏/右上角即时同步）」行为不变。判据 = `frontend/admin-web/tests/unit/pages/settings.test.tsx` 的实例判据 5 条 + **类级元守卫**「基本设置 / AI 客服设置 里每个可编辑字段都变更即保存（漏接线即红，枚举当前 tab 的每个文本框/文本域）」"
       - "通知设置 tab（#3103/#3119）：仅系统通知总开关（启用系统通知，控制订单/客服等重要事件自动站内信；关闭后不再产生新站内信、历史保留）；开关点击即时保存（乐观更新+失败回滚，调用 /api/admin/settings），无独立保存按钮（开关类配置即时生效）；已移除通知邮箱输入框——notification_email 为僵尸字段（站内信无需邮箱、后端无邮件消费逻辑），SystemSettings 类型同步移除该字段"
       - "快捷回复 UI 全部移除：quickReplyApi 与 QuickReply 类型删除，页面不再出现「快捷回复」tab/新建回复/模板列表"
@@ -1439,7 +1439,7 @@ cases:
 
   - id: UI-043
     legacy_id: ""
-    title: "元元选择卡片回传人话 — 点击选项发 label 而非内部编码（proc_item_* 用户看不懂）"
+    title: "米宝选择卡片回传人话 — 点击选项发 label 而非内部编码（proc_item_* 用户看不懂）"
     domains:
       - ui
       - frontend
@@ -1489,7 +1489,7 @@ cases:
     truths_ref:
       - frontend-fix.no-api-change
     user_inputs:
-      - "真机预览实测：元元回复含 **9231 遮光窗帘**、**几米** 等 markdown 加粗符与 - 列表，气泡里原样显示星号与短横线"
+      - "真机预览实测：米宝回复含 **9231 遮光窗帘**、**几米** 等 markdown 加粗符与 - 列表，气泡里原样显示星号与短横线"
     expectations:
       - tool: direct_reply
     data_checks:
@@ -1521,7 +1521,7 @@ cases:
     truths_ref:
       - frontend-fix.no-api-change
     user_inputs:
-      - "顾客在元元对话里收到生产进度卡：显示加工单做到哪一步了（进度百分比）、当前在做哪道工序、还剩几道工序、预计什么时候交付"
+      - "顾客在米宝对话里收到生产进度卡：显示加工单做到哪一步了（进度百分比）、当前在做哪道工序、还剩几道工序、预计什么时候交付"
     expectations:
       - tool: direct_reply
     data_checks:
@@ -3114,11 +3114,11 @@ cases:
       - "判据 4·合规宣称不变（OB-005 口径字面保留）：首页仍渲染 GB/T 47746-2026 区块（标准号 + 4 能力点 + 免责小字），且不含「已通过…认证 / 无缝接管」。执行点 = corporate-home.test.tsx「renders GB/T 47746-2026 遵循国家标准区块」"
       - "判据 5·视觉口径：四页渲染结果的 innerHTML 不含 from-blue-600 / to-indigo-800（旧的通用蓝色渐变模板）。执行点 = 四个页面测试文件各自的「视觉口径」用例"
       - "判据 6·文案口吻（issue #6326 新增）：四页渲染文本不得出现 AI 口语词表（打理 / 管住 / 接住 / 折腾 / 摊开 / 跑完 / 直说 / 兜底 / 一句话 / 问一句 / 谁都不会 / 把时间还给 / 说了算 / 答一遍 / 先说说）。词表单一源 = frontend/admin-web/tests/unit/pages/copy-voice-banlist.ts。执行点 = 四个页面测试文件各自的「文案口吻」用例 + corporate-home.test.tsx 的「判别力自证」（词表必须命中已知口语样本，防空断言）"
-      - "判据 7·品牌称呼反回流（issue #6525，**类级元守卫**）：四个前端包**生产源码的代码面**不得出现旧称呼（米宝 / 小布 / 米高；`米高` 的计量义「2.7 米高窗」豁免、服务端协议标签 `[米宝解读]` 豁免），且新称呼（观星台 / 黄金策 / 元元）在关键落点**正向存在**；守卫自带判别力自证（字符串命中判红 / 计量义不假红 / 注释面不假红）。执行点 = tests/unit_ci_workflows/test_positioning_copy_terms.py 的 `test_old_agent_names_do_not_come_back_in_code_face` / `test_new_agent_names_are_present_at_key_surfaces` / `test_agent_name_guard_discriminating_power`"
+      - "判据 7·品牌称呼反回流（issue #6525 / #8881，**类级元守卫**）：四个前端包**生产源码的代码面**不得出现旧称呼（元元 / 小布 / 米高；`米高` 的计量义「2.7 米高窗」豁免），且新称呼（观星台 / 黄金策 / 米宝）在关键落点**正向存在**；C 端 agent 的用户可见字符串（`C_END_PROMPT_SURFACES`：xiaobu 声明默认名 / 渠道欢迎语 / 六份 customer_* 提示词 / 转人工选项 / 能力否定词表）也不得出现 `元元`；守卫自带判别力自证（字符串命中判红 / 计量义不假红 / 注释面不假红 / 新名与协议标签不误判）。执行点 = tests/unit_ci_workflows/test_positioning_copy_terms.py 的 `test_old_agent_names_do_not_come_back_in_code_face` / `test_c_end_agent_old_name_is_absent_from_user_visible_strings` / `test_new_agent_names_are_present_at_key_surfaces` / `test_agent_name_guard_discriminating_power`"
       - "🔴 红证（改前实测，2026-10-04）：把这 6 个源文件（四页 + 导航 + 页脚）替换回 origin/main 版本后跑本用例的 5 个测试文件 ⇒ **28 failed / 58**；恢复后 **58 passed**。复算命令（在 `frontend/admin-web` 目录下执行）= `npx vitest run --dir tests/unit/pages corporate-home.test services.test corporate-about.test corporate-contact.test` + `npx vitest run --dir tests/unit/components CorporateFooter`（两条合计 52 + 6 = 58；写法用 `--dir` + 文件名过滤，避免在文档里留下包内相对路径字面量 —— M4 只认仓库根相对路径，包内路径会被判成失效路径）"
     skip_reason: "[backend-contract] 纯前端公开页面（无 LLM 行为）：由 vitest 验证；页面级视觉另有 Playwright 截图 + 多模态读图一轮（migao-dev-flow §15.7 口径），不进入 agent-eval 冒烟"
     precondition: "本用例是 [backend-contract] 纯前端页面用例：前置 = `(corporate)` 四页源码与 5 个 vitest 文件同时存在、且被 vitest 正常收集；前置由测试自身持有（页面文件缺失 / 改名 / 选择器被摘即直接红，不表现成「agent 不干活」），不依赖共享夹具 ⇒ agent-eval 栈不跑它"
-    merge_log: "2026-10-04 新增（issue #6291）：官网企业站整体重构 —— 视觉改用产品自身的织物质感 token（frontend/admin-web/tailwind.config.ts 的 primary/accent/neutral + Logo 织金），文案按 config/menu.ts 的六个能力域与两位 AI 的真实工具能力重写；联系页占位假值按用户裁定改为「只保留在线留言」。取号 UI-082（`python3 scripts/next_case_id.py ui`，现取 main 最大 = UI-081）。2026-10-05 补（issue #6326）：四页文案由口语化改为「能力陈述型」书面语（对齐 B 端官网：短标题 + 名词化正文 + 可验证事实 + 克制的 CTA），事实口径一字未动，新增判据 6（AI 口语词表反回退，含判别力自证）。2026-10-07 补（issue #6463，产品定位文案）：登录页 / 首次改密页副标题 + app/layout.tsx 的 title/description 的定位口径由「电商管理」改为「经营管理平台」（用户逐字「这里的定位已经不太对了，我们不单单管理电商了」）；新增类级守卫 tests/unit_ci_workflows/test_positioning_copy_terms.py（生产源码里旧定位串反回退 + 三处正向锚 + 注入式红证与注释面正面对照），traces 同步登记；既有判据 1~6 与 expectations 一字未动。 ｜ 2026-10-08 续（issue #6525，品牌改名 米高→观星台 / 米宝→黄金策 / 小布→元元）：新增判据 7（旧称呼反回流 + 新称呼正向锚 + 判别力自证），与本用例①的定位守卫**同处一份守卫文件**（同一扫面、同一注释剥离实现，不写第二把尺子）；既有判据 1~6 与 expectations 一字未动。"
+    merge_log: "2026-10-04 新增（issue #6291）：官网企业站整体重构 —— 视觉改用产品自身的织物质感 token（frontend/admin-web/tailwind.config.ts 的 primary/accent/neutral + Logo 织金），文案按 config/menu.ts 的六个能力域与两位 AI 的真实工具能力重写；联系页占位假值按用户裁定改为「只保留在线留言」。取号 UI-082（`python3 scripts/next_case_id.py ui`，现取 main 最大 = UI-081）。2026-10-05 补（issue #6326）：四页文案由口语化改为「能力陈述型」书面语（对齐 B 端官网：短标题 + 名词化正文 + 可验证事实 + 克制的 CTA），事实口径一字未动，新增判据 6（AI 口语词表反回退，含判别力自证）。2026-10-07 补（issue #6463，产品定位文案）：登录页 / 首次改密页副标题 + app/layout.tsx 的 title/description 的定位口径由「电商管理」改为「经营管理平台」（用户逐字「这里的定位已经不太对了，我们不单单管理电商了」）；新增类级守卫 tests/unit_ci_workflows/test_positioning_copy_terms.py（生产源码里旧定位串反回退 + 三处正向锚 + 注入式红证与注释面正面对照），traces 同步登记；既有判据 1~6 与 expectations 一字未动。 ｜ 2026-10-08 续（issue #6525，品牌改名 米高→观星台 / 米宝→黄金策 / 小布→元元）：新增判据 7（旧称呼反回流 + 新称呼正向锚 + 判别力自证），与本用例①的定位守卫**同处一份守卫文件**（同一扫面、同一注释剥离实现，不写第二把尺子）；既有判据 1~6 与 expectations 一字未动。 ｜ 2026-11-10 续（issue #8881，C 端称呼 元元→米宝）：判据 7 的旧称呼集合按最近一次改名收窄为 `元元 / 小布 / 米高`（`米宝` 从旧侧移入新侧），并新增 `test_c_end_agent_old_name_is_absent_from_user_visible_strings` 覆盖 `C_END_PROMPT_SURFACES`（Python 字符串字面量按 tokenize 取、Markdown 取原文）；内部标识符 `xiaobu` / `persona` / `agent_type` / 文件名一字未动，`[米宝解读]` 协议标签不改。"
     traces:
       tests:
         - "frontend/admin-web/tests/unit/pages/corporate-home.test.tsx"
@@ -3201,7 +3201,7 @@ cases:
 
   - id: UI-126
     legacy_id: ""
-    title: "手机端（B 端黄金策 / C 端元元）助手消息的 **GFM 表格**渲染 —— 表格成组件（窄屏可横滑 / 表头-数据行逐格 / 列数按分隔行）+ PC 端同族回归判据（用户 2026-10-18 手机端实测：一排 `|---|`）"
+    title: "手机端（B 端黄金策 / C 端米宝）助手消息的 **GFM 表格**渲染 —— 表格成组件（窄屏可横滑 / 表头-数据行逐格 / 列数按分隔行）+ PC 端同族回归判据（用户 2026-10-18 手机端实测：一排 `|---|`）"
     domains:
       - ui
       - frontend

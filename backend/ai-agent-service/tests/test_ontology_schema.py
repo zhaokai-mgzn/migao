@@ -267,7 +267,7 @@ class TestPropertySourcesMatchRealCarriers:
 # | aftersales.aftersales_create | preconditions：创建恒 pending，由商户审核 | 🔴 **已由 rules 承载**：schema 的 rules 逐字保留「售后申请创建恒 pending，由商户审核；…」（本单不动 rules）；写工具确认闸 = app/tools/aftersale_create.py 的 requires_confirmation = True |
 # | aftersales.aftersales_query | C 端强制按本人订单反查 | schema 的 rules「C 端售后查询按 X-User-Id 反查本人订单…」；工具 = app/tools/aftersale_query.py（C 端走 customer_aftersales skill） |
 # | aftersales.aftersales_update | 售后处理（B 端） | ⚠️ **无等价载体**：after_sales_manage 只剩 list / detail（B 端写能力已按 #5247 解绑，工具里没有处理动作） |
-# | customer.customer_query | 查询客户（B 端 customer_query / C 端仅本人） | 工具 = app/tools/customer_manage.py（list / detail / list_tags / profile_view / value_view）；⚠️ 「C 端仅本人」**无等价载体**（C 端没有客户查询工具，元元侧客户数据由 order_query 按 X-User-Id 兜底） |
+# | customer.customer_query | 查询客户（B 端 customer_query / C 端仅本人） | 工具 = app/tools/customer_manage.py（list / detail / list_tags / profile_view / value_view）；⚠️ 「C 端仅本人」**无等价载体**（C 端没有客户查询工具，米宝侧客户数据由 order_query 按 X-User-Id 兜底） |
 # | customer.customer_create | 客户建档（下单自动建档） | admin-api CustomerProfileMapper（建档三写面：下单自动建档 / 手工建档 / 接口重试，撞唯一键不插）；agent 工具层无 create action |
 # | employee.employee_manage | 员工管理（查询/新增/状态变更，B 端 staff skill） | app/graph/skills/staff_skill.py（STAFF_TOOLS）；⚠️ 「新增/状态变更」**无等价载体**（#5247 后 B 端员工写面移除，employee_manage 只剩 list/detail） |
 # | employee.staff_manage | 人事管理（B 端 staff skill） | app/graph/skills/staff_skill.py（intents 含 staff_manage，STAFF_TOOLS 已只读化）—— 本句只有「技能归属」这一层含义，工具名 staff_manage 从来不存在 |

@@ -506,7 +506,7 @@ cases:
       - tool: direct_reply
     data_checks:
       - "发布目标限定在 <静态根>/w 子树；静态根（同时承载线上 C 端 H5）不得被任何 --delete/清空/rm -rf 触碰：远端输出自证 PARENT_INDEX_BEFORE_SHA256 == PARENT_INDEX_AFTER_SHA256，且沙箱行为测试断言父目录 index.html 逐字节不变"
-      - "发布后 GET https://app.migaozn.com/w/ 的 body 哈希 == 仓库 frontend/worker-h5/index.html（同样断言 /w/index.html 与 /w/src/app.mjs），body 含 src/app.mjs 且不含 TARO_ / 元元智能助手 —— 修复前 /w/ 已是 200 的 C 端页面，故 200 本身不是判据"
+      - "发布后 GET https://app.migaozn.com/w/ 的 body 哈希 == 仓库 frontend/worker-h5/index.html（同样断言 /w/index.html 与 /w/src/app.mjs），body 含 src/app.mjs 且不含 TARO_ / 米宝智能助手 —— 修复前 /w/ 已是 200 的 C 端页面，故 200 本身不是判据"
       - "越界子目录（.. / . / 空 / /etc / a/b）必须拒绝且静态根零改动；连跑两次结果一致（幂等），w/ 子树内的陈旧文件被收敛"
       - "🔴 module **闭包加载**判据（issue #6306）：起点 = **发布集内每个 `*.html` 入口**（worker 有两个：`index.html → src/app.mjs`；`machine.html → src/machine-app.mjs`，只从 index 出发会漏掉 `machine.mjs` 那条链），沿**静态 `import … from` + 动态 `import('…')` 字面量**递归取每个依赖，逐个断 `200`；闭包**空集判红**；另断入口引用的 `<link rel=\"stylesheet\" href>` = 200 —— 病根是共享模块曾住仓根 `frontend/shared/`（发布集外）⇒ 线上被 nginx SPA 兜底接成 `200 text/html` ⇒ 浏览器拒绝执行 module script ⇒ 整页白屏，而身份 / 字节哈希 / MIME 三面**条条全绿**。判据 = `tests/unit_ci_workflows/test_worker_h5_module_closure_guard.py`（结构元守卫：按现取腿集合判 + 豁免台账只许缩短 + 四组锚的注入式红证 + 本地静态服务上真跑绿/红两面）"
     skip_reason: "[backend-contract] 部署 workflow / 发布脚本由 pytest 单测 + 沙箱行为测试验证（tests/unit_ci_workflows/test_worker_h5_hosting.py），非 LLM 行为，不进入 agent-eval 冒烟"
@@ -1754,7 +1754,7 @@ cases:
       verifies: []
 
   # ==========================================================================
-  # MC-046（issue #4184）：C 端元元 H5（`frontend/mini-app` 的 `build:h5` 产物）**没有部署通路**。
+  # MC-046（issue #4184）：C 端米宝 H5（`frontend/mini-app` 的 `build:h5` 产物）**没有部署通路**。
   # 病（现取复算，2026-09-27）：线上 `app.migaozn.com/js/app.js` 的 `Last-Modified` = 08-30 06:54 GMT，
   # 而 `frontend/mini-app` 最近改动 = 09-26 ⇒ 落后 ~28 天；而建腿前 `grep -rln '/opt/migao-deploy' .github/workflows/`
   # **0 命中** ⇒ **没有任何东西会因此变红**（「C 端已部署」一直被当真）。
@@ -6117,7 +6117,7 @@ cases:
   # MC-122（issue #8195）：观星台终端（工人端 APK / Windows 一体机 EXE）的**正式发布链路**。
   # 病：终端的更新检查地址早就写死在程序里（app.migaozn.com/terminal/latest.json），
   #     而 nginx 里 `/terminal` 0 命中 ⇒ 请求落进 `location /` 的 SPA fallback：
-  #     200 + 一页 C 端元元 HTML（缺失文件也是 200）；官网 `/download` 404；产物没有任何发布通路。
+  #     200 + 一页 C 端米宝 HTML（缺失文件也是 200）；官网 `/download` 404；产物没有任何发布通路。
   # ==========================================================================
   - id: MC-122
     legacy_id: ""
@@ -6392,7 +6392,7 @@ cases:
     # 由 backend/ai-agent-service/tests/test_llm_health.py 验证；线上「主凭据真的失效」的
     # 真机读数在 issue #8084 正文（2026-10-29 15:29 容器日志逐字）。
     user_inputs:
-      - "DeepSeek 主凭据在供应商侧失效时，黄金策 / 元元每一轮都只回一句兜底话术，而 `/ready`、`/health`、`docker ps` 全绿 —— 凭什么能提前发现，而不是靠用户投诉？"
+      - "DeepSeek 主凭据在供应商侧失效时，黄金策 / 米宝每一轮都只回一句兜底话术，而 `/ready`、`/health`、`docker ps` 全绿 —— 凭什么能提前发现，而不是靠用户投诉？"
     expectations: []
     data_checks:
       - "🔴 **判据 1·失败是可观测事件（会红）**：LLM 调用抛 401（`AuthenticationError` 形态，带 `status_code`）⇒ 进程级 `broken` 标志置位，日志**恰好 1 条** `[llm_health]` ERROR，且带 `error_class=authentication_error` / `status=401` / `PRIMARY_API_KEY` 可行动提示；**连续 3 次**失败仍只有 1 条（跃变语义，不是逐轮刷屏）。402 额度类同口径（`error_class=quota_exceeded`）；超时 / 5xx **不**置标志。执行点 = backend/ai-agent-service/tests/test_llm_health.py::TestCredentialFailureBecomesOneObservableEvent"
@@ -9142,7 +9142,7 @@ cases:
     user_inputs:
       - "商家问「这单的加工单到哪了」「库存还有多少」「员工和岗位分别找谁查」时，模型按生成的小抄选工具，而不是靠 9 处手写速查表"
     expectations:
-      - "小抄由工具注册表 + 本体投影而来，按**本轮 skill 的声明面**渲染；每个 B 端 skill 的组装 system prompt 里都有该段，C 端（元元）prompt 逐字节不含它。"
+      - "小抄由工具注册表 + 本体投影而来，按**本轮 skill 的声明面**渲染；每个 B 端 skill 的组装 system prompt 里都有该段，C 端（米宝）prompt 逐字节不含它。"
       - "小抄条目与声明面**双向一致**：声明面里有而小抄没有 ⇒ 判红并具名该工具；小抄写出未注册的工具名 ⇒ 判红。"
       - "删掉的 5 条手写「不要用 A 做 B」规则，其真值必须落在工具的「不要用于」元数据里、并在小抄行里可见；对应负例仍须留在用例库。"
       - "9 处手写速查表（6 个领域 prompt + 2 处内联 prompt + 财务规则表）全部清零；表里点名过的工具必须仍被渲染（真值不随表消失）。"
@@ -9292,7 +9292,7 @@ cases:
       - "**判据 4（会红）：租户隔离**。把别的租户的卡混进读面返回行（模拟「SQL 漏了租户条件」）⇒ 本租户的读面与 prompt 里一条都不许有；缺租户时读面返回空列表而不是退化成查全表；岗位口径只对命中岗位的会话生效、不知道岗位时只走全企业口径。"
       - "**判据 5（会红）：退役立即生效**。同一个读面实例上，库内状态改成 retired 后**下一次读**必须读不到（退役是一次库内变更，进程无从感知 ⇒ 任何进程内缓存都会让这条红）；同时核 prompt 段里该卡的正解随之消失。"
       - "**判据 6（会红）：反例不是注释**。反例存在但不可执行 ⇒ 写面 422、读面整卡不用、生成器拒绝生成（拒不降级成「少一条断言」）；反例可执行时，负向断言的语境必须**触发仍成立 + 反例命中**（否则「本卡不生效」有两个原因，坏引擎照样能绿）—— 互斥时拒绝生成并具名。"
-      - "**接线判据（会红）**：口径卡注入必须排在 _build_system_prompt 之后；删掉那行调用 ⇒ 红。C 端（元元）传入即原样返回同一个对象（逐字节零回归）。"
+      - "**接线判据（会红）**：口径卡注入必须排在 _build_system_prompt 之后；删掉那行调用 ⇒ 红。C 端（米宝）传入即原样返回同一个对象（逐字节零回归）。"
       - "**状态机与审计（Java 面）**：写面**只**落 draft（请求里写 active 也没用）；draft→active 与 active→retired 用 CAS（影响 0 行 = 冲突，不许静默成功）；每次迁移留一条审计（谁 / 什么动作 / 哪张卡）。"
       - "**未做项（照实登记）**：出口②知识卡（knowledge_search 命中）与出口④工具默认参数**本期不做**；B 端会话的自动落卡管道（P1b）不做（本期允许手工建卡）。重启条件写在 PR body。"
     skip_reason: "[backend-contract] 纯函数 + 结构判据（零网络、零 LLM、零真库），计分通道 = traces.tests；真实 B 端会话的自动落卡管道（P1b）与真库端到端迁移不在本面，不进入 agent-eval 冒烟"

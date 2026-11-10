@@ -29,7 +29,7 @@
 |---|---|---|
 | 意图感知 | 路由/分类器只吃**文本**，图片在路由前被剥离（`nodes.py`） | 图零意图感知：纯图消息=空文本进 L2 |
 | 图片理解 | vision prompt 是**开放描述**（"识别关键信息+回答问题+建议工具"），无结构化输出、无商户关联求证（`base_skill.py`） | 识别即用：从不求证"这张图对应哪个已有商品/订单/客户，用户想让我干什么" |
-| 澄清形态 | 黄金策 B 端 general 澄清=纯文字列选项且 **interact 未绑定**（prompt 要求 interact 但工具不在列表 → LLM 无法兑现）；元元 C 端有 choice/form 卡但无"意图候选澄清" | 无"理解卡片 + 2~4 个可点选候选意图"形态 |
+| 澄清形态 | 黄金策 B 端 general 澄清=纯文字列选项且 **interact 未绑定**（prompt 要求 interact 但工具不在列表 → LLM 无法兑现）；米宝 C 端有 choice/form 卡但无"意图候选澄清" | 无"理解卡片 + 2~4 个可点选候选意图"形态 |
 | 状态记忆 | 无澄清状态机（stage 字段无人读写）；vision 结果不写入 entities；新图覆盖旧图 | 澄清轮次/待确认项无槽位，多图一诉求/图+订单组合求证无支撑 |
 | 评测 | eval 只断言工具序列，无澄清质量断言 | 澄清"越用越准"无闭环 |
 
@@ -52,7 +52,7 @@
 
 ## 三、现状盘点（代码已核实）
 
-代码根：`backend/ai-agent-service/`（下称 AIS）。双 Agent：C 端元元（xiaobu，小程序消费者）+ B 端黄金策（mibao，后台商家）。
+代码根：`backend/ai-agent-service/`（下称 AIS）。双 Agent：C 端米宝（xiaobu，小程序消费者）+ B 端黄金策（mibao，后台商家）。
 
 ### 3.1 澄清机制现状总览
 
@@ -86,7 +86,7 @@
 
 ### 3.3 双端差异（影响方案设计）
 
-| 维度 | 黄金策（B 端商家） | 元元（C 端消费者） |
+| 维度 | 黄金策（B 端商家） | 米宝（C 端消费者） |
 |---|---|---|
 | 技能集 | order/product/aftersales/customer/staff/settings/data（knowledge 禁用）；fallback=general | customer_order/product/quote/aftersales/knowledge；fallback=customer_general |
 | interact 组件 | **不可用**（8 个 skill tool_names 均无 interact，但 prompt 全文在要求它 → G6） | 可用：choice/form/confirm 均已绑定 |
@@ -104,7 +104,7 @@
 | G2 | **vision prompt 无意图/关联求证引导**：开放描述+直接回答，无"先判断用户想干什么、图关联哪些商户信息" | `graph/skills/base_skill.py` |
 | G3 | **无"该不该澄清"显式判定点**：分析成功即无条件进 ReAct；澄清唯一入口是文本低置信 | `base_skill.py` ↔ `intent_router.py` 之间无澄清决定点 |
 | G4 | **无澄清状态机**：SessionStateStore docstring 列了 stage 但全仓无人读写 | `memory/session_state_store.py`；`session_memory.py` |
-| G5 | **无"引导式意图选项"**：黄金策 general 澄清=纯文字要求说出需求；元元 choice 卡无预置意图澄清选项 | `general_agent.py`；`prompts/general.md` |
+| G5 | **无"引导式意图选项"**：黄金策 general 澄清=纯文字要求说出需求；米宝 choice 卡无预置意图澄清选项 | `general_agent.py`；`prompts/general.md` |
 | G6 | **B 端 prompt↔工具不一致**：prompt/EXAMPLES 反复要求 interact，skill 未绑定 → 静默退化文本（而 EXAMPLES 又禁文本序号） | `product_skill.py vs 26,38,43`；`prompts/product.md`；`EXAMPLES-product.md` |
 | G7 | **图片建品话术自相矛盾**："先呈现结果让用户确认" vs "识别结果直接预填"→ 行为漂移 | `product_skill.py` vs `EXAMPLES-product.md` |
 | G8 | **vision 输出无结构化契约**：无字段/无置信度；PROMPT-rules 要"低置信请用户确认"却无置信度可依 | `base_skill.py`；`references/PROMPT-rules.md` |
@@ -179,7 +179,7 @@
 ### Phase 2：图片意图澄清卡（核心形态）
 1. **B 端绑定 interact**（修 G6）：product/order/aftersales/customer/general 等 B 端 skill 的 tool_names 加 `interact`，一次性消除"prompt 要求卡、工具不存在"的静默退化（顺带修 G7 话术矛盾：统一为"识别结果先呈现、批量确认/改"）。
 2. **"理解卡片 + 候选意图"澄清卡**（修 G1/G2/G5）：
-   - C 端元元：customer_general/customer_product 识别图后，用 interact choice 下发"您发这张图是想：A 找同款/推荐 B 量尺寸算料 C 问价格/买这款 D 售后问题 E 其他（说给我听）"，每项带描述。
+   - C 端米宝：customer_general/customer_product 识别图后，用 interact choice 下发"您发这张图是想：A 找同款/推荐 B 量尺寸算料 C 问价格/买这款 D 售后问题 E 其他（说给我听）"，每项带描述。
    - B 端黄金策：general/product skill 图片入站后，choice 下发"这张图我识别为 [X 面料/XX 商品/像某订单的商品]，您是想：A 建/录成商品 B 查它是不是我们已有商品 C 关联某订单/客户 D 其他"。
    - 候选意图文案遵循方向3原则（短句、大白话、可点）。
 3. **候选 grounded 到商户库**：澄清前对商户库做轻量检索（product_search/customer_manage/order 相关只读查询或内存词表），把**命中结果作为候选卡片内容**注入；模型只组织候选列表不编造条目（修 G8 的方向：vision 输出附置信度与"商户库命中"字段）。interact choice 已支持 label/value/description + 分页 + 50 上限（`interact.py`），够用。

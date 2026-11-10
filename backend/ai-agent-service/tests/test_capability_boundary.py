@@ -344,7 +344,7 @@ UNIT_PROSE = {
 def _mibao_prompt_texts() -> dict[str, str]:
     """B 端**实际进模型**的 prompt 文本：markdown 层 + SkillConfig 内联层。
 
-    只收 mibao persona：C 端元元的能力（如创建订单）不在本投影射程内，
+    只收 mibao persona：C 端米宝的能力（如创建订单）不在本投影射程内，
     混进来会把「C 端合法能力」误判成 B 端越界。
     """
     from app.agents.agents.mibao import MIBAO_CONFIG

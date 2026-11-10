@@ -82,7 +82,7 @@ def test_global_rules_forbid_english_in_user_facing_replies(skill):
     """全局规则必须要求「面向用户一律中文」，且覆盖**技术术语（SKU/ID）**而不只是英文枚举。
 
     为什么锁这条：用户（顾客尤其低学历用户、以及商家员工）看不懂英文单词。
-    规则原先只禁「英文枚举」（pending/refund），实测仍漏出 `SKU`（元元 1 次 / 黄金策 3 次）
+    规则原先只禁「英文枚举」（pending/refund），实测仍漏出 `SKU`（米宝 1 次 / 黄金策 3 次）
     与 `ID`（黄金策 1 次）——见 2026-09-14 结论档 run 34841029062 的回复文本。
     ⚠️ 本断言同时防「把规则改回只禁枚举」的回退：只留 ① 会让 ② 类泄漏重新发生。
     """
@@ -506,10 +506,10 @@ def test_snapshot_all_skills():
             )
 
 
-# ============ 元元 C 端售后 few-shot 引导 ============
+# ============ 米宝 C 端售后 few-shot 引导 ============
 
 def test_customer_aftersales_fewshot_guides_aftersale_create():
-    """元元售后必须注入 C 端 few-shot：明确换货/退货诉求 → aftersale_create，
+    """米宝售后必须注入 C 端 few-shot：明确换货/退货诉求 → aftersale_create，
     **且不得再指向已退场的转人工出口**（真实闭环回归：两次新会话 AI 均转人工建 complaint 工单）。
 
     变更沿革（用户裁定 2026-09-19）：「不应该存在 human_handoff 这种东西，以后全是
@@ -552,7 +552,7 @@ def test_customer_aftersales_fewshot_guides_aftersale_create():
 
 
 def test_customer_aftersales_prompt_loaded_with_identity():
-    """元元售后 prompt 组装包含公共身份与原则（无意外污染）"""
+    """米宝售后 prompt 组装包含公共身份与原则（无意外污染）"""
     prompt = _build_system_prompt("customer_aftersales")
     assert "词元通达商家管理后台" in prompt, "缺少公共身份"
     assert "不编造数据" in prompt, "缺少公共原则"
@@ -586,7 +586,7 @@ def test_general_inline_prompt_guides_choice_clarify():
 def test_customer_product_image_clarify_not_default_search():
     """C 端 customer_product 图片段：意图不明时先澄清候选，不默认直接搜相似。
 
-    回归背景：元元 C 端顾客随手发图时，旧 prompt"识别后主动搜相似"会把
+    回归背景：米宝 C 端顾客随手发图时，旧 prompt"识别后主动搜相似"会把
     "想量尺寸/想问价/想做售后"一律当"找同款"处理（G1 缺口）。
     """
     from app.graph.skills.customer_product_skill import CUSTOMER_PRODUCT_SYSTEM_PROMPT
@@ -609,7 +609,7 @@ def test_customer_general_image_clarify_not_default_search():
     )
 
 
-# ============ C 端（元元）Prompt 厚度门禁（issue #3569） ============
+# ============ C 端（米宝）Prompt 厚度门禁（issue #3569） ============
 #
 # 为什么 C 端需要单独一套门禁：
 # 1) 上面 `test_snapshot_all_skills` 只列 8 个 B 端 skill，且调用

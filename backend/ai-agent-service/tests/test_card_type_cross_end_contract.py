@@ -23,7 +23,7 @@
 
 朴素断言 `_detect_card_type` 的**全局值域 ⊆ B端桌面` 无法通过、也不该通过：
 `curtain_calc`（→ `quotation`）是 **C 端专属**工具（`base_skill.py` 写死「C 端专属：`curtain_calc`
-是元元（顾客自助）的报价能力；B 端黄金策有自己的算料链路」，且只出现在
+是米宝（顾客自助）的报价能力；B 端黄金策有自己的算料链路」，且只出现在
 `customer_quote_skill.py::CUSTOMER_QUOTE_TOOLS`）—— B 端黄金策**永远收不到** `quotation` 卡，
 强行要求 B 端桌面渲染它是**过度建设**（无数据形态可依）。
 

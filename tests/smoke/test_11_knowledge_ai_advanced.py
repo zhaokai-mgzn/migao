@@ -1,13 +1,13 @@
 # case_ids: KN-009
 """
-知识库管理与元元高级 AI 对话场景冒烟测试 (P1)
+知识库管理与米宝高级 AI 对话场景冒烟测试 (P1)
 
 覆盖：
 - 知识库文档 CRUD 与同步
-- 元元多轮对话上下文关联
-- 元元复合 Tool 调用 SSE 事件
-- 元元 SSE 异常输入处理（空消息/超长消息/并发会话）
-- 元元快捷操作菜单
+- 米宝多轮对话上下文关联
+- 米宝复合 Tool 调用 SSE 事件
+- 米宝 SSE 异常输入处理（空消息/超长消息/并发会话）
+- 米宝快捷操作菜单
 """
 
 import json
@@ -255,13 +255,13 @@ class TestKnowledgeAPI:
 
 
 # ---------------------------------------------------------------------------
-# 元元多轮对话
+# 米宝多轮对话
 # ---------------------------------------------------------------------------
 
 @pytest.mark.p1
 @pytest.mark.ai_chat
 class TestAIMultiTurn:
-    """元元多轮对话上下文测试"""
+    """米宝多轮对话上下文测试"""
 
     def test_multi_turn_context(self, authed_ai_client: SmokeTestClient):
         """同一会话连续两轮对话，验证第二轮回复仍围绕窗帘话题"""
@@ -302,13 +302,13 @@ class TestAIMultiTurn:
 
 
 # ---------------------------------------------------------------------------
-# 元元复合 Tool 调用
+# 米宝复合 Tool 调用
 # ---------------------------------------------------------------------------
 
 @pytest.mark.p1
 @pytest.mark.ai_chat
 class TestAIToolCalls:
-    """元元复合 Tool 调用 SSE 事件测试"""
+    """米宝复合 Tool 调用 SSE 事件测试"""
 
     def test_compound_tool_call(self, authed_ai_client: SmokeTestClient):
         """组合工具调用：订单+物流，应在 SSE 流中出现 tool 相关事件"""
@@ -344,13 +344,13 @@ class TestAIToolCalls:
 
 
 # ---------------------------------------------------------------------------
-# 元元 SSE 异常处理
+# 米宝 SSE 异常处理
 # ---------------------------------------------------------------------------
 
 @pytest.mark.p1
 @pytest.mark.ai_chat
 class TestAIErrorHandling:
-    """元元 SSE 异常输入处理测试"""
+    """米宝 SSE 异常输入处理测试"""
 
     def test_empty_message(self, authed_ai_client: SmokeTestClient):
         """空消息应返回 4xx 业务错误，不应是 500"""
@@ -466,13 +466,13 @@ class TestAIErrorHandling:
 
 
 # ---------------------------------------------------------------------------
-# 元元快捷操作
+# 米宝快捷操作
 # ---------------------------------------------------------------------------
 
 @pytest.mark.p1
 @pytest.mark.ai_chat
 class TestAIQuickActions:
-    """元元快捷按钮列表测试"""
+    """米宝快捷按钮列表测试"""
 
     def test_get_quick_actions(self, authed_ai_client: SmokeTestClient):
         """GET /api/chat/quick-actions 返回数组"""

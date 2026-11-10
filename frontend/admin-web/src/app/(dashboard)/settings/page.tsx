@@ -999,7 +999,7 @@ function EnterpriseDomainPanel() {
 
 /** 四·企业与账号的 `ai` 域：从「AI 客服设置」tab 原样搬入的编辑面 */
 function AiDomainPanel() {
-  const defaultAiConfig: AiConfig = { botName: '元元', greetingTemplate: '' }
+  const defaultAiConfig: AiConfig = { botName: '米宝', greetingTemplate: '' }
   const [aiConfig, setAiConfig] = useState<AiConfig>(defaultAiConfig)
   const [loadingAiConfig, setLoadingAiConfig] = useState(false)
   const savedAiSnapshot = useRef({ botName: '', greetingTemplate: '' })
@@ -1054,7 +1054,7 @@ function AiDomainPanel() {
         </div>
         <div>
           <p className="text-sm text-neutral-500 mt-0.5">
-            配置顾客在对话中看到的 AI 客服助手（元元）的名称与欢迎语
+            配置顾客在对话中看到的 AI 客服助手（米宝）的名称与欢迎语
           </p>
           {/* #5899：同「基本设置」—— 没有保存按钮，改动即时生效 */}
           <p className="text-xs text-neutral-400 mt-1">修改后自动保存，无需手动提交</p>
@@ -1071,7 +1071,7 @@ function AiDomainPanel() {
             <input
               type="text"
               className="w-full h-9 px-3 rounded border border-neutral-300 text-sm placeholder:text-neutral-400 focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
-              placeholder="元元"
+              placeholder="米宝"
               data-testid="settings-ai-bot-name"
               /* 域写面出口标记（issue #6825）：本域失焦即保存（`commitAiConfig`）⇒ 输入框自身就是写出口 */
               data-write-exit="ai"
@@ -1079,7 +1079,7 @@ function AiDomainPanel() {
               onChange={(e) => setAiConfig({ ...aiConfig, botName: e.target.value })}
               onBlur={() => void commitAiConfig('botName')}
             />
-            <p className="text-xs text-neutral-500 mt-1.5">顾客在对话中看到的 AI 客服助手名称（默认：元元）</p>
+            <p className="text-xs text-neutral-500 mt-1.5">顾客在对话中看到的 AI 客服助手名称（默认：米宝）</p>
           </div>
 
           <div>
@@ -1087,7 +1087,7 @@ function AiDomainPanel() {
             <textarea
               rows={3}
               className="w-full px-3 py-2 rounded border border-neutral-300 text-sm placeholder:text-neutral-400 focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 resize-none"
-              placeholder="您好，我是元元，有什么可以帮您？"
+              placeholder="您好，我是米宝，有什么可以帮您？"
               data-testid="settings-ai-greeting"
               value={aiConfig.greetingTemplate}
               onChange={(e) => setAiConfig({ ...aiConfig, greetingTemplate: e.target.value })}

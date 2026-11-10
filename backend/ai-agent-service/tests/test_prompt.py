@@ -239,7 +239,7 @@ def test_selection_prefers_higher_hits_when_age_is_equal():
 
 @pytest.mark.asyncio
 async def test_c_end_is_untouched_and_returns_the_same_object():
-    prompt = "你是元元"
+    prompt = "你是米宝"
     out = await inject_playbook_prompt(prompt, {"agent_type": "xiaobu", "tenant_id": 1})
     assert out is prompt
 

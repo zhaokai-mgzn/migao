@@ -167,7 +167,7 @@ public class AgentOrderController {
     }
 
     /**
-     * C 端（元元/customer 角色）"我的订单"查询。
+     * C 端（米宝/customer 角色）"我的订单"查询。
      * GET /api/admin/agent/orders/mine?page=1&size=10&status=shipped
      *
      * 数据隔离强制点：无论调用方传什么筛选参数，都强制按当前登录用户（X-User-Id

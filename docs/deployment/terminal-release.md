@@ -14,7 +14,7 @@
 | 静态根 | `/opt/migao-deploy/h5` 下的 `terminal/` 子树 | `deploy/swas/nginx.conf` 的 `root` + `location /terminal/` |
 
 nginx 口径（`deploy/swas/nginx.conf`）：`/terminal/` 有**自己的 location**，`try_files $uri =404`
-⇒ 缺失文件是 404，**不回落**根 `index.html`（回落 = HTTP 200 的一页 C 端元元 HTML，监控不红）；
+⇒ 缺失文件是 404，**不回落**根 `index.html`（回落 = HTTP 200 的一页 C 端米宝 HTML，监控不红）；
 清单 `application/json`、安装包 `application/octet-stream`；**不限流**（批量更新会误伤）。
 
 ## 2. 发布源：终端仓的 GitHub Release

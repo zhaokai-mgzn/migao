@@ -9,7 +9,7 @@
 探针实证（2026-09-14，#3483 T1）：
 - AS-003/AS-005 的 `after_sales_manage or aftersale_create` 是 OR 分支 —— B 端走
   after_sales_manage、C 端走 aftersale_create，两端均可满足，合法；
-- CH-011（跨用户订单查询拒绝，adversarial）期望 `customer_order_query`（元元专属、
+- CH-011（跨用户订单查询拒绝，adversarial）期望 `customer_order_query`（米宝专属、
   无 OR 分支）→ B 端必挂的固定噪音。它本质是 C 端数据隔离用例
   （merge_log: "C 端表单化交互方案"），已修为 `persona: xiaobu`。
 
@@ -280,7 +280,7 @@ class TestMibaoToolsetTruth:
         )
 
     def test_mibao_toolset_excludes_customer_only_tools(self):
-        """B 端工具集不得混入元元专属工具（customer_* 系 / aftersale_create 等）。
+        """B 端工具集不得混入米宝专属工具（customer_* 系 / aftersale_create 等）。
 
         ⚠️ 2026-09-19：`human_handoff` 已按用户裁定退场（模型不可达）⇒ 从"C 端专属工具"
         清单移除 —— 本清单的语义是「**某一端**有、另一端不得混入」，退场后它**两端都没有**，

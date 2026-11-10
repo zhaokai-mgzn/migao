@@ -53,7 +53,7 @@ const agents = [
   },
   {
     icon: MessageSquare,
-    name: '元元',
+    name: '米宝',
     role: AI_ROLES.xiaobu,
     brief: '面向顾客侧：7×24 小时接待咨询，覆盖算料报价、下单、物流查询与售后受理。',
     highlights: [
@@ -89,7 +89,7 @@ const businessChallenges = [
   {
     icon: Headphones,
     title: '服务响应依赖人工',
-    description: '元元 7×24 接待常规咨询；复杂诉求按规则转人工，上下文同步至坐席。',
+    description: '米宝 7×24 接待常规咨询；复杂诉求按规则转人工，上下文同步至坐席。',
   },
 ]
 
@@ -103,7 +103,7 @@ const platformLayers = [
   {
     icon: Bot,
     name: '智能层',
-    description: '元元与黄金策理解业务意图，调用工具完成查询、分析与受控写入。',
+    description: '米宝与黄金策理解业务意图，调用工具完成查询、分析与受控写入。',
   },
   {
     icon: Database,
@@ -283,13 +283,13 @@ const steps = [
     icon: Rocket,
     step: '03',
     title: '即刻开通',
-    description: '开通后即获得管理后台，元元与黄金策同步上线。',
+    description: '开通后即获得管理后台，米宝与黄金策同步上线。',
   },
 ]
 
 const handoffSteps: Array<[string, string]> = [
   ['客户咨询', '顾客通过微信小程序或网页发起咨询'],
-  ['元元 AI 应答', '商品、订单、物流、售后实时应答'],
+  ['米宝 AI 应答', '商品、订单、物流、售后实时应答'],
   ['自动转人工', '识别复杂诉求，或顾客主动要求转人工'],
   ['人工接续', '自动创建会话与工单，上下文同步，无需重复描述'],
   ['留言受理', '非营业时间留言，人工上线后接续处理'],

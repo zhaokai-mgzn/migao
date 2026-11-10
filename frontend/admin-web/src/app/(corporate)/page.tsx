@@ -27,7 +27,7 @@ export const metadata: Metadata = {
     absolute: '观星台 — 布艺行业 AI 经营平台｜把 AI 智能化技术带给中小企业',
   },
   description:
-    '观星台是杭州词元通达科技有限公司面向布艺 / 窗帘企业的 AI 经营平台。元元承接顾客咨询、算料报价、下单与售后；黄金策承接商品、订单、生产、库存与财务。AI 自动甄别入驻，分钟级开通；四端协同，数据同源。',
+    '观星台是杭州词元通达科技有限公司面向布艺 / 窗帘企业的 AI 经营平台。米宝承接顾客咨询、算料报价、下单与售后；黄金策承接商品、订单、生产、库存与财务。AI 自动甄别入驻，分钟级开通；四端协同，数据同源。',
 }
 
 export default function HomePage() {
@@ -58,7 +58,7 @@ export default function HomePage() {
               </h1>
 
               <p className="mt-6 max-w-2xl text-base leading-relaxed text-neutral-300 sm:text-lg">
-                观星台是词元通达面向布艺 / 窗帘企业的 AI 经营平台。元元承接顾客咨询、算料报价、下单与售后；
+                观星台是词元通达面向布艺 / 窗帘企业的 AI 经营平台。米宝承接顾客咨询、算料报价、下单与售后；
                 黄金策承接商品、订单、生产、库存与财务。两者读取同源经营数据，回答与后台记录一致。
               </p>
 
@@ -90,7 +90,7 @@ export default function HomePage() {
               </div>
             </div>
 
-            {/* 右侧：元元与黄金策的分工 */}
+            {/* 右侧：米宝与黄金策的分工 */}
             <div className="space-y-4 lg:col-span-5">
               {agents.map((agent) => (
                 <div
@@ -148,7 +148,7 @@ export default function HomePage() {
           <SectionHeading
             kicker="平台架构"
             title="智能、业务与数据，共用同一底座"
-            lead="四个终端承载不同角色，元元与黄金策作为智能入口，八个能力域承载业务，多租户与审计构成底座。"
+            lead="四个终端承载不同角色，米宝与黄金策作为智能入口，八个能力域承载业务，多租户与审计构成底座。"
           />
           <div className="mt-14 grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-4">
             {platformLayers.map((layer) => (
@@ -175,7 +175,7 @@ export default function HomePage() {
           <SectionHeading
             kicker="双 AI 分工"
             title="顾客侧服务，经营侧管理"
-            lead="元元与黄金策基于大语言模型理解业务意图，读取同源经营数据；能力边界在页面中明确标注。"
+            lead="米宝与黄金策基于大语言模型理解业务意图，读取同源经营数据；能力边界在页面中明确标注。"
           />
           <div className="mt-14 grid grid-cols-1 gap-6 lg:grid-cols-2">
             {agents.map((agent) => (
@@ -443,7 +443,7 @@ export default function HomePage() {
           <SectionHeading
             kicker="人机协同"
             title="AI 优先应答，人工按规则接续"
-            lead="日常咨询由元元直接处理；复杂诉求按规则转接人工，会话记录与上下文同步至坐席，顾客无需重复描述。（协同机制参考推荐性国标 GB/T 47746-2026 设计）"
+            lead="日常咨询由米宝直接处理；复杂诉求按规则转接人工，会话记录与上下文同步至坐席，顾客无需重复描述。（协同机制参考推荐性国标 GB/T 47746-2026 设计）"
           />
 
           <div className="mt-14 grid grid-cols-1 gap-6 lg:grid-cols-2">
@@ -499,7 +499,7 @@ export default function HomePage() {
               }
             />
             <p className="mx-auto mt-8 max-w-3xl text-center text-xs leading-relaxed text-neutral-400">
-              「遵循 / 对标 GB/T 47746-2026」指元元智能客服的人机协同机制功能设计参考该推荐性国家标准；该标准为推荐性标准、无认证或备案机制，本页面不构成任何认证、检测或备案结论。
+              「遵循 / 对标 GB/T 47746-2026」指米宝智能客服的人机协同机制功能设计参考该推荐性国家标准；该标准为推荐性标准、无认证或备案机制，本页面不构成任何认证、检测或备案结论。
             </p>
           </div>
         </div>

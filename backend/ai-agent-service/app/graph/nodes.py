@@ -747,7 +747,7 @@ async def intent_router_node(state: AgentState) -> dict:
     agent_intents = _get_agent_intents(agent_type)
 
     # 商家配置的自动转人工关键词：命中则直接转人工（complaint 意图 → human_handoff）
-    # 仅元元（C 端）生效；商家后台「机器人设置」配置 autoHandoffKeywords。
+    # 仅米宝（C 端）生效；商家后台「机器人设置」配置 autoHandoffKeywords。
     tenant_id = state.get("tenant_id")
     if agent_type == "xiaobu" and tenant_id and user_message:
         try:

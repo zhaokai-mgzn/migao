@@ -174,3 +174,5 @@
 {"id":"1793954381.77477.29598","ts":"2026-11-06T08:39:41Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/8175-playbook-p1","why":"--allow-package-heavy（命令行显式）"}
 {"id":"1793954652.82758.28770","ts":"2026-11-06T08:44:12Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/8175-playbook-p1","why":"--allow-package-heavy（命令行显式）"}
 {"id":"1794198668.14161.14576","ts":"2026-11-09T04:31:09Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/8863-corporate-home-copy","why":"--allow-package-heavy（命令行显式）"}
+{"id":"1794267088.6894.25892","ts":"2026-11-09T23:31:29Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-superagent-wt/rename-customer-agent-d6060836d1e0","why":"子包 worktree 直跑全量（无批次标记）"}
+{"id":"1794267103.7235.23785","ts":"2026-11-09T23:31:43Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-superagent-wt/rename-customer-agent-d6060836d1e0","why":"--allow-package-heavy（命令行显式）"}

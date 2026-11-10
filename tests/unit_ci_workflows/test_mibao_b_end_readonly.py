@@ -1146,7 +1146,7 @@ def problems_cases_expect_unreachable_tools(w: World) -> list[str]:
                 # **任一轮满足即过**（`tests/agent_eval/local_runner.py` 的计分循环）⇒
                 # 「本腿不可达的那个工具」在另一条腿上可能是主流程 ⇒ 在这里判红 = **假红**。
                 # 实例（主会话插单提醒核过，2026-10-16）：`CH-009` 是双端用例，其
-                # `expectations` 含 `order_create`（**C 端元元的主流程**，在
+                # `expectations` 含 `order_create`（**C 端米宝的主流程**，在
                 # `eval_case_filter.XIAOBU_TOOLS` 在册）；`order_create` 在 B 端已解绑 ⇒
                 # 若把双端用例一起判，`CH-009` 会被假红。**故必须排除**（不是"漏判"：
                 # 双端用例的"本腿不可达"是**合法**形态）。

@@ -545,11 +545,11 @@ cases:
       - order
       - product
     # 端别：与同族 OR-010（同为 B 端代客下单、同用 order_create + confirm 门禁）一致。
-    # ⚠️ 判据源 `is_single_leg_by_toolset` 认为「工具集 ⊆ XIAOBU_TOOLS ⇒ 只能跑元元」，
+    # ⚠️ 判据源 `is_single_leg_by_toolset` 认为「工具集 ⊆ XIAOBU_TOOLS ⇒ 只能跑米宝」，
     # 但 order_create / validate_input / product_detail **两端都有**（OR-010 是 mibao 用例
     # 且 must_succeed[order_create] 已在 main）⇒ 该判据对"共享工具"用例是假阳性；
     # 本条按**实际端别**标注，不按该判据反推（判据已于 **#4356** 收紧为
-    # 「元元腿跑得动 ∧ 黄金策腿跑不动」⇒ 本条不再命中规则 d）。
+    # 「米宝腿跑得动 ∧ 黄金策腿跑不动」⇒ 本条不再命中规则 d）。
     # ⚠️ 2026-09-24（issue #5247）：order_create 已从 B 端全部 skill 解绑 ⇒ 本用例退役
     # （条目不删除，理由见 skip_reason）；`persona: mibao` **保持不变**（本场景仍是 B 端
     # 店员代客下单语义，只是写能力已下线）。改判后 expectations 只剩共享只读工具
@@ -1006,8 +1006,8 @@ cases:
       - order
       - chat
     tier: normal
-    # 单端标注（burn-down 销账，随 #4308 的用例面改动一并缴费）：期望工具 order_create ⊆ 元元工具集
-    # ⇒ 本用例**只能跑元元腿**；缺 persona 时黄金策腿必挂（实证「OR-014 mibao 腿假红」，
+    # 单端标注（burn-down 销账，随 #4308 的用例面改动一并缴费）：期望工具 order_create ⊆ 米宝工具集
+    # ⇒ 本用例**只能跑米宝腿**；缺 persona 时黄金策腿必挂（实证「OR-014 mibao 腿假红」，
     # 见 tests/agent_eval/local_runner.py 的接地真值注释：本用例是 C 端下单语义）。
     # 断言面（expectations / data_checks / pre_clean / auto_fill）**一字未动**。 2026-09-19（随 #4308 的用例面改动）：补 `persona: xiaobu`（清 `CASE-TRUST-SINGLE-LEG-NO-PERSONA`，burn-down 整条销账）+ 随之**连锁触发**的 `order_before: [interact[confirm] before order_create]`（C 端写用例必须断言 confirm 卡先行，守卫 test_xiaobu_coverage）—— **断言只增不减**，expectations / data_checks / pre_clean / auto_fill / amount_verify 一字未动。
     persona: xiaobu
@@ -1309,7 +1309,7 @@ cases:
     # 本条是 **B 端黄金策**用例（店员代客下单），此前只在**运行期**被
     # `eval_case_filter.is_customer_facing_case` 的语义过滤（`MIBAO_SEMANTIC_PATTERNS`）
     # 隐式挡在 C 端腿之外 —— 该函数 docstring 原文即点名本用例：
-    # 「OR-016 首轮『给赵凯创建一个订单…』是**店员代客下单**语义，元元（C 端自助、
+    # 「OR-016 首轮『给赵凯创建一个订单…』是**店员代客下单**语义，米宝（C 端自助、
     # 身份固定为本人）无法触发」。种子侧同样只有 B 端腿具备前提：`mibao_eval_seed.sql`
     # 第 1 节标题逐字写着「商品：2699 系列雪尼尔窗帘面料（**OR-016 点名**）」，
     # 而 `xiaobu_eval_seed.sql` 里该名商品 **0 件**。
@@ -1863,7 +1863,7 @@ cases:
       - ai-chat.confirm-required
     # ── 能力下限用例（issue #3389，验收剧本 C-A1 实证）──
     # 实证（run 34743802010）：顾客给齐商品/颜色/门幅/数量/加工项后说「确认下单」，
-    # 元元连续 4 轮回「**下单这个操作元元这边没法直接帮您提交呢**，需要您在小程序里点一下"立即购买"」，
+    # 米宝连续 4 轮回「**下单这个操作米宝这边没法直接帮您提交呢**，需要您在小程序里点一下"立即购买"」，
     # R9 甚至 `human_handoff(reason="顾客需协助下单（智能客服无法代为提交订单）")`
     # （**该工具已于 2026-09-19 按用户裁定退场/模型不可达**；本行是历史实证留档 ——
     #  当时正是"拒绝能力 + 转人工"的组合把转化路径掐断）
@@ -1933,7 +1933,7 @@ cases:
       - "没法直接帮您提交"
       - "没法帮您提交订单"
       - "无法代为提交"
-      # **权限类**能力误宣（issue #3421，验收 C-A1 实证）：`order_create` 就是元元自己的写工具，
+      # **权限类**能力误宣（issue #3421，验收 C-A1 实证）：`order_create` 就是米宝自己的写工具，
       # 以"没权限"为由把顾客推给人工 = 转化路径被自己掐断，比答错更伤。
       - "无下单权限"
       - "没有下单权限"
@@ -1941,7 +1941,7 @@ cases:
       - "无法帮您完成订单"
       - "无法帮您提交订单"
       - "小程序里点"
-      - "元元没法提交"
+      - "米宝没法提交"
       - "无法代为下单"
     amount_verify:
       - tool: order_create
@@ -3244,7 +3244,7 @@ cases:
       - order
       - chat
     tier: normal
-    # 单端标注：期望工具 order_create ⊆ 元元工具集 ⇒ 只能跑元元腿（同 OR-014 口径）。
+    # 单端标注：期望工具 order_create ⊆ 米宝工具集 ⇒ 只能跑米宝腿（同 OR-014 口径）。
     persona: xiaobu
     tags:
       - order_create
@@ -3789,7 +3789,7 @@ cases:
     domains:
       - order
     tier: edge
-    # 单端标注（case-trust 规则 d）：`order_create` 是**元元（C 端）**工具
+    # 单端标注（case-trust 规则 d）：`order_create` 是**米宝（C 端）**工具
     # （`tests/agent_eval/eval_case_filter.py` 的 XIAOBU_TOOLS，真值源 = customer_order_skill.py
     # 的 CUSTOMER_ORDER_TOOLS）；黄金策（B 端）自 issue #5247 起只读、不绑该工具
     # ⇒ 缺 persona 时 B 端腿必挂（假红）。
@@ -3895,7 +3895,7 @@ cases:
     domains:
       - order
     tier: adversarial
-    # 单端标注：同 OR-049（`order_create` 是元元 C 端工具；黄金策自 #5247 起只读）。
+    # 单端标注：同 OR-049（`order_create` 是米宝 C 端工具；黄金策自 #5247 起只读）。
     persona: xiaobu
     tags:
       - order_create

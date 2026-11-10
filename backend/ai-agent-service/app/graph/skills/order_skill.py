@@ -8,8 +8,8 @@
 「怎么办建单/改状态」类请求 = 如实说明 B 端已只读 + 引导用户到后台页面自行操作。
 
 ⚠️ `route_keys` 与 `intents` **有意保持不变**（两层间接路由：全局 intent→route_key 映射仅由
-B 端 skill 构建，C 端元元经 builder 的 `skill_route_map` 重映射）。删 intent 会连带改掉
-元元的意图路由 —— 属「C 端零改动」红线之外的动作，故只改工具面与提示词面。
+B 端 skill 构建，C 端米宝经 builder 的 `skill_route_map` 重映射）。删 intent 会连带改掉
+米宝的意图路由 —— 属「C 端零改动」红线之外的动作，故只改工具面与提示词面。
 """
 
 from app.graph.state import AgentState
@@ -42,7 +42,7 @@ ORDER_TOOLS = [
     # 交互卡片只保留**消歧/选择**（choice）：B 端不再发写确认卡（issue #5247 裁定 2）。
     "interact",
     # Agent 深通道（issue #5368 包 2）：手写单 / 微信截图 → **建单页同页填充**
-    # （客户名 / 电话 / 地址 / 明细 / 数量 / 帘宽帘高）。只读、纯本地；元元不绑。
+    # （客户名 / 电话 / 地址 / 明细 / 数量 / 帘宽帘高）。只读、纯本地；米宝不绑。
     "image_recognize",
 ]
 

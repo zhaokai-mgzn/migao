@@ -5,7 +5,7 @@
  * ## 为什么这条必须存在（缺陷的「类」）
  *
  * `frontend/bmini-app/src/utils/richText.ts`（B 端黄金策）与
- * `frontend/mini-app/src/utils/richText.ts`（C 端元元）是**两份本地实现的同一套口径**
+ * `frontend/mini-app/src/utils/richText.ts`（C 端米宝）是**两份本地实现的同一套口径**
  * （#6306：不建跨 App 共享模块 —— 共享模块落在发布集之外会白屏）。这条架构取舍的代价就是
  * **一端修、一端漏**，而它已经发生过两次：
  *   - 2026-09-15 UI-042 修 C 端（`**` / 列表裸奔）⇒ B 端漏课到 #6346（2026-10-05）才发现；

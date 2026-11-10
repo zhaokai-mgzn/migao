@@ -41,7 +41,7 @@ psql "$DATABASE_URL" -v tenant_id=1 -f docs/deployment/demo-seed.sql
 
 ---
 
-## 1. 第 2 幕 · 元元算料报价（核心，8 分钟）
+## 1. 第 2 幕 · 米宝算料报价（核心，8 分钟）
 
 **顾客机话术（逐字）：**
 1. `3米宽的窗，2倍褶皱，遮光布，帮我算下要多少钱`
@@ -120,7 +120,7 @@ cd tests/agent_eval && PERSONA=mibao python3 acceptance_runner.py scenarios_b.js
 
 ## 4. 第 5 幕 · 图片识别（3 分钟）
 
-**顾客机：** 拍一张真实窗帘/布料照片发元元：`这款有吗？`（或纯图）
+**顾客机：** 拍一张真实窗帘/布料照片发米宝：`这款有吗？`（或纯图）
 
 ### 4.1 预期链路
 | 步 | 期望 |

@@ -96,9 +96,9 @@ def _runner_cleanup_types(src: str) -> set:
 #: （`tests/agent_eval/fixtures/xiaobu_eval_seed.sql` + `mibao_eval_seed.sql`）。
 #: 用**逐条比对**而不是宽正则：本规则判的就是"名字集合的成员关系"。
 SEED_PRODUCT_NAMES = (
-    "遮光窗帘",                # prod_eval_blackout（元元栈）
-    "北欧风窗帘",              # prod_eval_dark_green（元元栈）
-    "夏日清风窗帘",            # prod_eval_summer（元元栈）
+    "遮光窗帘",                # prod_eval_blackout（米宝栈）
+    "北欧风窗帘",              # prod_eval_dark_green（米宝栈）
+    "夏日清风窗帘",            # prod_eval_summer（米宝栈）
     "2699系列雪尼尔窗帘面料",  # prod_eval_2699（黄金策栈）
 )
 

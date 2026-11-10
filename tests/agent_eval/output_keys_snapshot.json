@@ -53,7 +53,7 @@
     "data=response.get('data', {})",
     "ticket_data ← response.get('data', {})"
    ],
-   "source_sha256": "ebf03672c2fe9e015d7b30399f7285b2b70134fd1a5dcc33db98cbc445d0a8e7"
+   "source_sha256": "7d7348407abfdbfc957c391cc962e79c3f6b199802702e97a9a740f4042dec7d"
   },
   "aftersale_query": {
    "actions": {
@@ -103,7 +103,7 @@
     "data=attach_ticket_labels(data)",
     "data=response.get('data', {})"
    ],
-   "source_sha256": "234302a1c7f65bcde704fba1f3b580138f0913453426975e1b2b108c0808cf7f"
+   "source_sha256": "91889a33691e4fb930da4f1aa17336900719701a6bb533503058e15fd9490a9d"
   },
   "batch_stock_query": {
    "actions": null,
@@ -249,7 +249,7 @@
     "**{'panels': panels} if panels is not None else {}",
     "data=(None, meters_fixed_height, f'fixed_height{suffix}', '')"
    ],
-   "source_sha256": "960c85104cb224f9d2904b496df8a78a6084627c181b186901be9cc901f6ded5"
+   "source_sha256": "5c69ee005871ae534946a66672e3a42b7104cbbf1d251a9dc4069a7d4c2721b7"
   },
   "customer_logistics_track": {
    "actions": null,
@@ -270,7 +270,7 @@
     "logistics_list",
     "total"
    ],
-   "source_sha256": "39160323a8a0bafa2ea5a91bd138c532ee74a63169428a9450773f2ad7d27467"
+   "source_sha256": "1f6981f66ad922fd77f8a968b5551f7e23350c5bb3bc197be421fe8e33590777"
   },
   "customer_manage": {
    "actions": {
@@ -382,7 +382,7 @@
     "total",
     "total_pages"
    ],
-   "source_sha256": "8928b5e330e857b3ff5d4e4c54c2f92a3cd70b03b37efc981c5a0d4900d8b9d0"
+   "source_sha256": "a4f4441e5e9aa0e1555f77ecfd2f67fd63c08bebe448082fbd9f65bfeb065b77"
   },
   "dashboard_stats": {
    "actions": {
@@ -636,7 +636,7 @@
    "shape_notes": [
     "data=dict(ticket_data)"
    ],
-   "source_sha256": "3f29ae7ee50e1bd6ec37d9f2d080d7e2461516bc51e9ffa518ed0cff39b8c58a"
+   "source_sha256": "88e637a21de2af60e32924724f6142d91a59d57aa646eec2e177e7eda598688b"
   },
   "image_recognize": {
    "actions": null,
@@ -647,7 +647,7 @@
    "shape_notes": [
     "data=build_page_fill(target_type, result.get('fields') or [], cat"
    ],
-   "source_sha256": "804b1b7219a04451aa1d090eaad39d0691e8ec82442ae9a2ecbaa558a1dd41bb"
+   "source_sha256": "33b6977891bc545da1c24180045b18083e9cf52e1bcb9691ea65b7214373f6ab"
   },
   "inbound_order_query": {
    "actions": null,
@@ -692,7 +692,7 @@
     "title"
    ],
    "literal_keys": [],
-   "source_sha256": "9758af5bf4fa1b2e5442fc2fe70697ecc349d815af60c15826dcec4696bc0380"
+   "source_sha256": "86b648f7551a0bd4a8a5d977f3262af983b4de11251bfe5099282877cca47462"
   },
   "inventory_manage": {
    "actions": null,
@@ -771,7 +771,7 @@
     "copy",
     "product"
    ],
-   "source_sha256": "869cb2cdcec5f5b6cc2576e4f5286297ed397b8188c47ed4118106b70358ca3e"
+   "source_sha256": "c35aa1ef9ba9990ca03492d78713cc20094079540e2dd9e44a98f1a1de5ca7a7"
   },
   "nav_guide": {
    "actions": null,
@@ -888,7 +888,7 @@
     "data=response.get('data', {})",
     "order_data ← response.get('data', {})"
    ],
-   "source_sha256": "0f4e5640e5d7945f24dfd30623bcd34d93fa1d2a3d6053d383e998ae1a6a0678"
+   "source_sha256": "965c47647ac30d5c77503f463ecf6b4e3f392e37143f4801076e5434f6706894"
   },
   "order_manage": {
    "actions": null,
@@ -952,7 +952,7 @@
     "data ← response.get('data', {})",
     "data=response.get('data', {})"
    ],
-   "source_sha256": "9d0172b4210c1889198579bd1287b98db055dd3f535389114e3d7d67d94101af"
+   "source_sha256": "acc2dff8808c8f6a4f4d3354fa4fc812d348b865d18cb95717bb2d72000be680"
   },
   "payment_qrcode_query": {
    "actions": null,
@@ -962,7 +962,7 @@
     "payment_qrcodes"
    ],
    "literal_keys": [],
-   "source_sha256": "72f6860d5cdd5766bb999ddd14b8a6161c144c8cde7cb1c4e93dfb33d4ce1dfa"
+   "source_sha256": "bce8d29d63da972e9fc8347c60e199709e1ceac0fba1040c142642f7f23ea033"
   },
   "piecework_query": {
    "actions": null,
@@ -1055,7 +1055,7 @@
     "total",
     "total_pages"
    ],
-   "source_sha256": "a012ae0f09aa9f34a46e738454c844fe74e98a4385e5068703a0c5175d60a67d"
+   "source_sha256": "1a83e9a695fe05b5a1409b169eded2aae8b851e18187d04fe193f17db4e3f949"
   },
   "processing_order_generate": {
    "actions": null,
@@ -1217,7 +1217,7 @@
     "model",
     "product"
    ],
-   "source_sha256": "44adbc3527be089e186bacd444b7adc270f11220cab39bb37b48b4b90370d08e"
+   "source_sha256": "942dc680b1a13334c57139b56007a92397c5bdbfd7ea5ad66f22ed2480c4c89b"
   },
   "product_manage": {
    "actions": {
@@ -1304,7 +1304,7 @@
     "data ← response.get('data')",
     "data=response.get('data')"
    ],
-   "source_sha256": "8ff89d0e42699483568f94d151a919e5fe836e84787a72dbcb74713497741a8e"
+   "source_sha256": "146f999b67d9279e03bdf66f669209f3152db19faea6d7655c8a30074d950881"
   },
   "production_worklog_query": {
    "actions": null,
@@ -1553,7 +1553,7 @@
     "params",
     "validated"
    ],
-   "source_sha256": "c58e02a793f398d61e1b74234caff7d9acf7c296faec0810f738b634a21c61ef"
+   "source_sha256": "b7695e2d1c6ec5e4bf3025853f6a5f75766cff6fb32e5462d0df9fbdd398a747"
   }
  }
 }
