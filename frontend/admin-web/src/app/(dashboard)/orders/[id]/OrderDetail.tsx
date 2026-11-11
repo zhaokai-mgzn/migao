@@ -541,25 +541,21 @@ export default function OrderDetailPage() {
       <SectionCard
         title="商品信息"
         testId="order-goods-region"
-        rightAction={
-          <span className="text-sm text-primary-600 font-medium">
-            订单实收款：{formatAmount(order.actualAmount)}
-          </span>
-        }
       >
         <div className="space-y-6">
-          {/* 基础信息（只读信息行；加急/到货日已按 2026-11-09 口径上收顶部「订单操作」区） */}
+          {/* 基础信息（只读信息行；加急/到货日已按 2026-11-09 口径上收顶部「订单操作」区）。
+              2026-11-11 用户口径（issue #8897）：时间按「年月日 时分」单行展示、不换行。 */}
           <section data-testid="order-basic-info">
             <SubSectionTitle>基础信息</SubSectionTitle>
             <div className="grid grid-cols-3 gap-y-4 gap-x-8 text-sm">
               <InfoRow label="订单编号" value={order.orderNo} />
-              <InfoRow label="下单时间" value={<DateTimeCell value={order.createdAt} />} />
-              <InfoRow label="支付时间" value={<DateTimeCell value={order.paidAt} />} />
+              <InfoRow label="下单时间" value={<DateTimeCell value={order.createdAt} inline />} />
+              <InfoRow label="支付时间" value={<DateTimeCell value={order.paidAt} inline />} />
               {/* issue #7078：原「支付交易号」行已**撤下** —— 系统不走在线支付渠道，没有交易号的真值源，
                   建了也是恒 "-"（#6882「屏幕面读后端未下发的字段」同类）。前端类型面的 `paymentNo`
                   一并删除（编译器成为类级守卫，防再读）。 */}
-              <InfoRow label="发货时间" value={<DateTimeCell value={order.shippedAt} />} />
-              <InfoRow label="确认收货时间" value={<DateTimeCell value={order.receivedAt} />} />
+              <InfoRow label="发货时间" value={<DateTimeCell value={order.shippedAt} inline />} />
+              <InfoRow label="确认收货时间" value={<DateTimeCell value={order.receivedAt} inline />} />
             </div>
           </section>
 
@@ -568,27 +564,24 @@ export default function OrderDetailPage() {
             <SubSectionTitle>商品明细</SubSectionTitle>
             <ProductTable groups={productGroups} />
 
-            {/* 费用构成（issue #5843）：商品合计 + 加工费 + 其它构成 = 订单金额 —— 商家照着它对账。
-                `goodsTotal` 取「商品合计」列之和（**同一份**行金额口径），加工费那一侧走共享层。 */}
+            {/* 费用明细（issue #5843 → #8896 改版）：商品合计 + 加工费 + 其它构成 = 订单金额，
+                再列优惠 / 已退款，最后实收款 —— **本页唯一**的金额面（卡头「订单实收款」与
+                原横向汇总行已撤）。`goodsTotal` 取「商品合计」列之和（**同一份**行金额口径），
+                加工费那一侧走共享层。 */}
             <OrderFeeBreakdown
               items={order.items ?? []}
               goodsTotal={productGroups.reduce((sum, group) => sum + group.groupTotal, 0)}
               orderTotal={order.totalAmount}
+              discountAmount={order.discountAmount}
+              refundAmount={order.refundAmount}
+              refundAt={order.refundAt}
+              actualAmount={order.actualAmount}
             />
 
             {/* 加工项表（加工项 | 单价 | 数量 | 金额 | 加工合计）已随 #4882 整表退场：
                 加工项不再有单价/计价方式，逐项金额列即无真值可言 ⇒ 不再渲染。
                 ⚠️ `order.processingItems` 本身**保留** —— 它是「含加工项」判定与发货守卫
                 （下方 `hasProcessing`）的判据源，不是展示物。 */}
-
-            {/* 金额汇总：订单金额 / 优惠金额 / 已退款 / 实收款 — issue #672 */}
-            <AmountSummary
-              totalAmount={order.totalAmount}
-              discountAmount={order.discountAmount}
-              actualAmount={order.actualAmount}
-              refundAmount={order.refundAmount}
-              refundAt={order.refundAt}
-            />
           </section>
 
           {/* 收货信息（局部操作：编辑物流） */}
@@ -951,129 +944,151 @@ function OperationSection({
   const refunded = (order.refundAmount ?? 0) > 0
   // 状态 chip 与列表页同一份口径（producing / packed 的展示分支都在 `lib/status-chip.ts`）
   const statusChip = orderStatusChipFor(order.status as string)
+  const activeStatus =
+    status === 'pending_payment' ||
+    status === 'pending_shipment' ||
+    status === 'shipped' ||
+    status === 'completed'
+
+  /**
+   * 主操作 = 这条订单**下一步**该做的事（2026-11-11 用户口径：主/次操作分层）。
+   * 次操作（退款 / 修改 / 关闭）不跟主操作抢同一排。
+   */
+  const primaryAction = (() => {
+    if (status === 'pending_payment') {
+      return (
+        <Button onClick={onConfirmPayment} className="w-full gap-1.5">
+          确认付款
+          <Zap className="w-4 h-4" />
+        </Button>
+      )
+    }
+    if (status === 'pending_shipment') {
+      if (processingBlocked) {
+        // 引导句**按型分岔**（issue #7079 第 5 包）：卖布单要的不是「加工单」而是「出库作业单」，
+        // 套用加工单文案会让商家在错的单子里找那张纸。
+        return (
+          <span className="block text-sm text-amber-600">
+            {WORK_ORDER_NEEDED_COPY[workOrderKindOf(order) ?? 'processing'].shipBlocked}
+          </span>
+        )
+      }
+      return (
+        <Button onClick={onShip} className="w-full gap-1.5">
+          发货
+          <Zap className="w-4 h-4" />
+        </Button>
+      )
+    }
+    if (status === 'shipped') {
+      return (
+        <Button onClick={onConfirmReceive} className="w-full gap-1.5">
+          确认收货
+          <Zap className="w-4 h-4" />
+        </Button>
+      )
+    }
+    return <span className="block text-sm text-neutral-500">订单已完成，无需继续操作</span>
+  })()
+
+  const secondaryActions = (
+    <>
+      {status === 'pending_payment' && (
+        <>
+          {/* 修改订单（issue #5842）：买家未付款（待付款）时的内容编辑入口 ——
+              收货信息 / 商品明细 / 加工项；金额保存时由服务端重算。
+              只在 pending_payment 分支出现：其余状态后端一律 422，界面不给死路。 */}
+          <Button
+            variant="secondary"
+            data-testid="edit-order-content"
+            onClick={onEditContent}
+            className="w-full gap-1.5"
+          >
+            修改订单
+          </Button>
+          <Button variant="secondary" onClick={onClose} className="w-full gap-1.5">
+            关闭订单
+          </Button>
+        </>
+      )}
+      {(status === 'pending_shipment' || status === 'shipped' || status === 'completed') && !refunded && (
+        <Button variant="secondary" onClick={onRefund} className="w-full">
+          退款
+        </Button>
+      )}
+    </>
+  )
 
   return (
     <SectionCard
       title="订单操作"
       testId="order-operation-region"
       rightAction={
-        <div className="flex items-center gap-2.5">
-          <StatusBadge label={statusChip.label} color={chipToneClasses[statusChip.tone]} dot />
-          <Button
-            variant="secondary"
-            icon={<Printer className="w-4 h-4" />}
-            data-testid="order-print-entry"
-            onClick={onPrint}
-          >
-            打印
-          </Button>
-        </div>
+        <Button
+          variant="secondary"
+          icon={<Printer className="w-4 h-4" />}
+          data-testid="order-print-entry"
+          onClick={onPrint}
+        >
+          打印
+        </Button>
       }
     >
       {refunded && (
-        <div className="flex items-center gap-2 mb-4">
-          <span className="inline-flex items-center px-2.5 py-1 rounded-full bg-red-50 text-red-600 text-xs font-semibold">
+        <div className="mb-4 flex items-center gap-2">
+          <span className="inline-flex items-center rounded-full bg-red-50 px-2.5 py-1 text-xs font-semibold text-red-600">
             已退款 {formatAmount(order.refundAmount)}
           </span>
-          {order.refundAt && <span className="text-xs text-neutral-500">退款时间：<DateTimeCell value={order.refundAt} /></span>}
-        </div>
-      )}
-      {status === 'pending_payment' && (
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div className="text-2xl font-semibold text-red-500">待买家付款</div>
-          <div className="flex flex-wrap items-center gap-3">
-            {/* 修改订单（issue #5842）：买家未付款（待付款）时的内容编辑入口 ——
-                收货信息 / 商品明细 / 加工项；金额保存时由服务端重算。
-                只在 pending_payment 分支出现：其余状态后端一律 422，界面不给死路。 */}
-            <Button variant="secondary" data-testid="edit-order-content" onClick={onEditContent} className="gap-1.5">
-              修改订单
-            </Button>
-            <Button variant="secondary" onClick={onClose} className="gap-1.5">
-              关闭订单
-            </Button>
-            <Button onClick={onConfirmPayment} className="gap-1.5">
-              确认付款
-              <Zap className="w-4 h-4" />
-            </Button>
-          </div>
+          {order.refundAt && (
+            <span className="text-xs text-neutral-500">
+              退款时间：<DateTimeCell value={order.refundAt} />
+            </span>
+          )}
         </div>
       )}
 
-      {status === 'pending_shipment' && (
-        <div>
-          <OrderProgressSteps
-            status={status}
-            // issue #3916：producing（生产中）独立真实状态，向导第 2 步显示「生产中」
-            producing={producing}
-            paidAt={order.paidAt}
-            shippedAt={order.shippedAt}
-            receivedAt={order.receivedAt}
-          />
-          <div className="mt-6 pt-5 border-t border-neutral-100 flex flex-wrap items-center justify-end gap-3">
-            {!refunded && (
-              <Button variant="secondary" onClick={onRefund}>
-                退款
-              </Button>
-            )}
-            {processingBlocked ? (
-              // 引导句**按型分岔**（issue #7079 第 5 包）：卖布单要的不是「加工单」而是「出库作业单」，
-              // 套用加工单文案会让商家在错的单子里找那张纸。
-              <span className="text-sm text-amber-600">
-                {WORK_ORDER_NEEDED_COPY[workOrderKindOf(order) ?? 'processing'].shipBlocked}
-              </span>
-            ) : (
-              <Button onClick={onShip} className="gap-1.5">
-                发货
-                <Zap className="w-4 h-4" />
-              </Button>
-            )}
+      {activeStatus && (
+        <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+          {/* 左：当前状态 + 进度步骤（订单动线） */}
+          <div data-testid="order-operation-flow" className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
+              {status === 'pending_payment' ? (
+                <span className="text-2xl font-semibold text-red-500">待买家付款</span>
+              ) : (
+                <StatusBadge label={statusChip.label} color={chipToneClasses[statusChip.tone]} dot />
+              )}
+            </div>
+            <div className="mt-4">
+              <OrderProgressSteps
+                status={status}
+                // issue #3916：producing（生产中）独立真实状态，向导第 2 步显示「生产中」
+                producing={producing}
+                paidAt={order.paidAt}
+                shippedAt={order.shippedAt}
+                receivedAt={order.receivedAt}
+              />
+            </div>
           </div>
-        </div>
-      )}
 
-      {status === 'shipped' && (
-        <div>
-          <OrderProgressSteps
-            status={status}
-            paidAt={order.paidAt}
-            shippedAt={order.shippedAt}
-            receivedAt={order.receivedAt}
-          />
-          <div className="mt-6 pt-5 border-t border-neutral-100 flex flex-wrap items-center justify-end gap-3">
-            {!refunded && (
-              <Button variant="secondary" onClick={onRefund}>
-                退款
-              </Button>
-            )}
-            <Button onClick={onConfirmReceive} className="gap-1.5">
-              确认收货
-              <Zap className="w-4 h-4" />
-            </Button>
-          </div>
-        </div>
-      )}
-
-      {status === 'completed' && (
-        <div>
-          <OrderProgressSteps
-            status={status}
-            paidAt={order.paidAt}
-            shippedAt={order.shippedAt}
-            receivedAt={order.receivedAt}
-          />
-          <div className="mt-6 pt-5 border-t border-neutral-100 flex flex-wrap items-center justify-end gap-3">
-            {!refunded && (
-              <Button variant="secondary" onClick={onRefund}>
-                退款
-              </Button>
-            )}
+          {/* 右：下一步主操作 + 次操作（不与主操作抢同一排） */}
+          <div className="shrink-0 lg:w-60 lg:border-l lg:border-neutral-100 lg:pl-5">
+            <div className="mb-2 text-xs font-medium text-neutral-400">
+              {status === 'completed' ? '订单状态' : '下一步操作'}
+            </div>
+            <div data-testid="order-operation-primary">{primaryAction}</div>
+            <div
+              data-testid="order-operation-secondary"
+              className="mt-3 flex flex-wrap gap-2 empty:hidden lg:flex-col"
+            >
+              {secondaryActions}
+            </div>
           </div>
         </div>
       )}
 
       {status === 'closed' && (
         <div>
-          <div className="text-2xl font-semibold text-neutral-700 mb-2">已关闭</div>
+          <div className="mb-2 text-2xl font-semibold text-neutral-700">已关闭</div>
           {order.closeReason && (
             <div className="text-sm text-neutral-500">关闭原因：{order.closeReason}</div>
           )}
@@ -1291,56 +1306,4 @@ function Th({ children, className }: { children: React.ReactNode; className?: st
 
 function Td({ children, className }: { children: React.ReactNode; className?: string }) {
   return <td className={cn('px-3 py-3 text-neutral-700 text-center', className)}>{children}</td>
-}
-
-// ===== 金额汇总：订单金额 / 优惠金额 / 已退款 / 实收款 — issue #672 =====
-function AmountSummary({
-  totalAmount,
-  discountAmount,
-  actualAmount,
-  refundAmount,
-  refundAt,
-}: {
-  totalAmount: number
-  discountAmount?: number
-  actualAmount: number
-  refundAmount?: number
-  refundAt?: string
-}) {
-  const discount = discountAmount ?? 0
-  const refunded = (refundAmount ?? 0) > 0
-  return (
-    <div className="mt-5 pt-4 border-t border-neutral-100">
-      <div className="flex items-center gap-6 text-sm">
-        <div className="flex items-center gap-2">
-          <span className="text-neutral-500">订单金额</span>
-          <span className="text-neutral-900 font-medium">{formatAmount(totalAmount)}</span>
-        </div>
-        <div className="text-neutral-300">|</div>
-        <div className="flex items-center gap-2">
-          <span className="text-neutral-500">优惠金额</span>
-          <span className={discount > 0 ? 'text-green-600 font-medium' : 'text-neutral-900'}>
-            {discount > 0 ? `-${formatAmount(discount)}` : formatAmount(0)}
-          </span>
-        </div>
-        {refunded && (
-          <>
-            <div className="text-neutral-300">|</div>
-            <div className="flex items-center gap-2">
-              <span className="text-neutral-500">已退款</span>
-              <span className="text-red-600 font-semibold">{formatAmount(refundAmount)}</span>
-              {refundAt && (
-                <span className="text-xs font-normal text-neutral-400">(<DateTimeCell value={refundAt} />)</span>
-              )}
-            </div>
-          </>
-        )}
-        <div className="text-neutral-300">|</div>
-        <div className="flex items-center gap-2">
-          <span className="text-neutral-500">实收款</span>
-          <span className="text-primary-600 font-semibold">{formatAmount(actualAmount)}</span>
-        </div>
-      </div>
-    </div>
-  )
 }
