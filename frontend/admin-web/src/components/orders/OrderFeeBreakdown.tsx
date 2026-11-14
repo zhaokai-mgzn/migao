@@ -1,27 +1,39 @@
 'use client'
 
 /**
- * 订单详情页「费用构成」（issue #5843）—— **只读展示**，数全部来自**落库快照**。
+ * 订单详情页「费用明细」（issue #5843 → issue #8896 改版）—— **只读展示**，数全部来自**落库快照**。
  *
- * 用户 2026-10-01 报障：`商品合计 ¥245.14` 与 `订单金额 ¥368.74` 之间那笔
- * **¥123.60 加工费在页面上任何位置都不出现** —— 详情页「金额 / 商品合计」两列只算商品金额，
- * 而页脚用的是订单级总额（含加工费）⇒ 商家看到两个数对不上、无从对账。
+ * 2026-10-01 用户报障：`商品合计 ¥245.14` 与 `订单金额 ¥368.74` 之间那笔 **¥123.60 加工费**
+ * 在页面上任何位置都不出现 ⇒ 商家看到两个数对不上。当时的修法是补一块「费用构成」等式。
  *
- * 本组件的职责只有一件：把**服务端已算好**的构成摆成**页面上读得出来的等式**
+ * 2026-11-11 用户追加口径（issue #8896）：
+ * > 商品信息顶部有「订单实付款」，商品明细下面又有「费用构成」，底部又有「订单金额」「优惠金额」
+ * > 「实收款」，这个地方信息重复排版混乱，你把商品费用明细相关的这些字段整理一下重新排版展示，
+ * > 要求简单清晰明了，一眼可以看出商品费用明细。
+ *
+ * ⇒ 本组件现在是商品信息里**唯一**的金额面：卡头「订单实收款」与底部横向汇总行都撤掉，
+ * 合成一张「费用明细」：
  * ```
- * 商品合计 + 加工费 + 其它构成 = 订单金额
+ * 商品合计 → 加工费（含逐行算式 / 未定价）→ 其它构成
+ * ─────────────────────────────
+ * 订单金额
+ * 优惠金额（>0 才出现） / 已退款（>0 才出现，带退款时间）
+ * ─────────────────────────────
+ * 实收款
  * ```
- * 三条硬口径（与 `lib/order-fee-display.ts` 同源，判定全在那边）：
+ * 硬口径不变（与 `lib/order-fee-display.ts` 同源）：
  * 1. **只展示、不重算**：加工费合计 = Σ 落库 `items[].processingFee`；行级算式只是复述
- *    服务端的 `processingFeeDetail`（`10.3 米 × ¥12.00/米 = ¥123.60`）—— 详情页是**落库快照**面，
- *    与新增订单页的**试算预览**是两回事（⛔ 不许按单价 × 米数重算出一套新数）；
- * 2. **未定价不渲染 `¥0.00`**：那半按 0 计 ⇒ 显式标「未定价」并**点名组合**（那格写文字，不写钱）；
- * 3. **布料单不出现空行 / `¥0.00` 行**：没有加工是正常、不是缺失 ⇒ 整块不渲染。
+ *    服务端的 `processingFeeDetail` —— 详情页是**落库快照**面，与新增订单页的试算预览是两回事；
+ * 2. **未定价不渲染 `¥0.00`**：那半按 0 计 ⇒ 显式标「未定价」并点名组合（那格写文字，不写钱）；
+ * 3. **布料单不出现加工费空行 / `¥0.00` 行**：没有加工是正常、不是缺失；但商品合计 /
+ *    订单金额 / 实收款仍要显示（费用明细是唯一金额面）；
+ * 4. **零值不占行**：优惠金额 / 已退款为 0 时不渲染（与既有「已退款」口径一致）。
  *
  * ⚠️ 判定与渲染分离：所有「该不该显示、显示多少」都在 `buildOrderFeeComposition` 里，
- * 本文件只做 JSX（判据可脱离页面断言 —— #4434 同族拆法）。
+ * 本文件只做 JSX。
  */
 
+import DateTimeCell from '@/components/common/DateTimeCell'
 import { buildOrderFeeComposition, formatMoney, type OrderFeeLine } from '@/lib/order-fee-display'
 import { cn } from '@/lib/utils'
 import type { OrderItem } from '@/types'
@@ -32,6 +44,13 @@ interface OrderFeeBreakdownProps {
   goodsTotal: number
   /** 订单金额（服务端 `order.totalAmount`；未取到 ⇒ `null` ⇒ 不编差额） */
   orderTotal?: number | null
+  /** 优惠金额（服务端 `order.discountAmount`；缺省 0；>0 才占行） */
+  discountAmount?: number
+  /** 已退款（服务端 `order.refundAmount`；>0 才占行） */
+  refundAmount?: number
+  refundAt?: string
+  /** 实收款（服务端 `order.actualAmount`；页面必须传，组件缺省时不渲染该行） */
+  actualAmount?: number | null
   className?: string
 }
 
@@ -39,13 +58,22 @@ export default function OrderFeeBreakdown({
   items,
   goodsTotal,
   orderTotal,
+  discountAmount,
+  refundAmount,
+  refundAt,
+  actualAmount,
   className,
 }: OrderFeeBreakdownProps) {
   const composition = buildOrderFeeComposition(items, { goodsTotal, orderTotal })
-  // 布料单（无加工费 / 无未定价 / 无差额）⇒ 整块不出现：没有加工是正常，不是缺失
-  if (!composition.visible) return null
+  // 没有商品也没有订单金额 ⇒ 没有费用可读（页面另有「暂无商品」空态）
+  if (items.length === 0 && orderTotal == null) return null
 
-  // 等式（验收硬判据：「商品合计 + 加工费 + 其它构成 = 订单金额」必须在页面上看得见）
+  const discount = discountAmount ?? 0
+  const refunded = (refundAmount ?? 0) > 0
+  // 等式只在「有构成可解释」时出现：布料单只有商品合计=订单金额，再印一行等式就是噪音
+  const showCompositionEquation =
+    composition.showProcessingFee || composition.showRemainder || composition.unpricedCount > 0
+
   const arithmetic = [
     `${formatMoney(composition.goodsTotal)}（商品合计）`,
     composition.showProcessingFee ? `${formatMoney(composition.processingFeeTotal)}（加工费）` : null,
@@ -61,30 +89,26 @@ export default function OrderFeeBreakdown({
     <div
       data-testid="order-fee-breakdown"
       className={cn(
-        'mt-4 rounded-lg border border-neutral-200 bg-neutral-50/60 px-4 py-3',
+        'mt-4 rounded-lg border border-neutral-200 bg-neutral-50/60 px-4 py-3.5',
         className
       )}
     >
-      <div className="text-xs font-semibold text-neutral-500">费用构成</div>
+      <div className="text-sm font-semibold text-neutral-700">费用明细</div>
 
-      <div className="mt-2 space-y-1.5 text-sm">
-        <div className="flex items-baseline justify-between gap-3">
-          <span className="text-neutral-500">商品合计</span>
-          <span data-testid="fee-breakdown-goods" className="text-neutral-900 tabular-nums">
-            {formatMoney(composition.goodsTotal)}
-          </span>
-        </div>
+      <div className="mt-2 text-sm">
+        <FeeRow
+          label="商品合计"
+          testId="fee-breakdown-goods"
+          value={formatMoney(composition.goodsTotal)}
+        />
 
         {composition.showProcessingFee && (
-          <div className="flex items-baseline justify-between gap-3">
-            <span className="text-neutral-500">加工费</span>
-            <span
-              data-testid="fee-breakdown-processing"
-              className="text-amber-700 font-medium tabular-nums"
-            >
-              {formatMoney(composition.processingFeeTotal)}
-            </span>
-          </div>
+          <FeeRow
+            label="加工费"
+            testId="fee-breakdown-processing"
+            value={formatMoney(composition.processingFeeTotal)}
+            valueClass="font-medium text-amber-700"
+          />
         )}
 
         {/* 逐行加工费（只列**有这笔钱**的行与**未定价**行）—— 商家据此对上加工单 */}
@@ -93,28 +117,70 @@ export default function OrderFeeBreakdown({
         ))}
 
         {composition.showRemainder && (
-          <div className="flex items-baseline justify-between gap-3">
-            <span className="text-neutral-500">其它构成</span>
-            <span data-testid="fee-breakdown-other" className="text-neutral-900 tabular-nums">
-              {formatMoney(composition.remainder)}
-            </span>
-          </div>
+          <FeeRow
+            label="其它构成"
+            testId="fee-breakdown-other"
+            value={formatMoney(composition.remainder)}
+          />
         )}
 
-        <div className="flex items-baseline justify-between gap-3 border-t border-neutral-200 pt-1.5">
-          <span className="text-neutral-500">订单金额</span>
-          <span
-            data-testid="fee-breakdown-order-total"
-            className="text-neutral-900 font-semibold tabular-nums"
-          >
-            {composition.orderTotal === null ? '—' : formatMoney(composition.orderTotal)}
-          </span>
-        </div>
+        <div className="my-1.5 border-t border-neutral-200" />
+        <FeeRow
+          label="订单金额"
+          testId="fee-breakdown-order-total"
+          strong
+          value={composition.orderTotal === null ? '—' : formatMoney(composition.orderTotal)}
+        />
+
+        {discount > 0 && (
+          <FeeRow
+            label="优惠金额"
+            testId="fee-breakdown-discount"
+            value={`-${formatMoney(discount)}`}
+            valueClass="text-green-600"
+          />
+        )}
+
+        {refunded && (
+          <FeeRow
+            label="已退款"
+            testId="fee-breakdown-refund"
+            value={
+              <>
+                {formatMoney(refundAmount ?? 0)}
+                {refundAt && (
+                  <span className="ml-1.5 text-xs font-normal text-neutral-400">
+                    (<DateTimeCell value={refundAt} inline />)
+                  </span>
+                )}
+              </>
+            }
+            valueClass="text-red-600"
+          />
+        )}
+
+        {actualAmount != null && (
+          <>
+            <div className="my-1.5 border-t border-neutral-200" />
+            <FeeRow
+              label="实收款"
+              testId="fee-breakdown-actual"
+              labelClass="font-medium text-neutral-700"
+              value={formatMoney(actualAmount)}
+              valueClass="text-base font-semibold text-primary-600"
+            />
+          </>
+        )}
       </div>
 
-      <div data-testid="fee-breakdown-equation" className="mt-2 text-xs text-neutral-500 tabular-nums">
-        {equation}
-      </div>
+      {showCompositionEquation && (
+        <div
+          data-testid="fee-breakdown-equation"
+          className="mt-2 text-xs text-neutral-500 tabular-nums"
+        >
+          {equation}
+        </div>
+      )}
 
       {composition.unpricedCount > 0 && (
         <div
@@ -129,6 +195,39 @@ export default function OrderFeeBreakdown({
   )
 }
 
+/** 一行费用读数：左标签 / 右金额（金额列 nowrap，避免折行）。 */
+function FeeRow({
+  label,
+  value,
+  testId,
+  labelClass,
+  valueClass,
+  strong,
+}: {
+  label: string
+  value: React.ReactNode
+  testId: string
+  labelClass?: string
+  valueClass?: string
+  strong?: boolean
+}) {
+  return (
+    <div className="flex items-baseline justify-between gap-3 py-1.5">
+      <span className={cn('text-neutral-500', labelClass)}>{label}</span>
+      <span
+        data-testid={testId}
+        className={cn(
+          'whitespace-nowrap text-right tabular-nums text-neutral-900',
+          strong && 'font-semibold',
+          valueClass
+        )}
+      >
+        {value}
+      </span>
+    </div>
+  )
+}
+
 /**
  * 一行加工费。
  *
@@ -139,7 +238,7 @@ function FeeLine({ line }: { line: OrderFeeLine }) {
   return (
     <div
       data-testid="fee-breakdown-line"
-      className="flex items-baseline justify-between gap-3 pl-3 text-xs"
+      className="flex items-baseline justify-between gap-3 py-1 pl-3 text-xs"
     >
       <span className="min-w-0 text-neutral-500">
         <span className="text-neutral-600">{line.label}</span>

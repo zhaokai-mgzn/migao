@@ -1,4 +1,4 @@
-// case_ids: OR-001, OR-002, OR-003, OR-046, OR-055, OR-067, OR-068, OR-070, UI-024, UI-040, UI-053, UI-076, UI-090, OR-072, UI-149
+// case_ids: OR-001, OR-002, OR-003, OR-046, OR-055, OR-067, OR-068, OR-070, UI-024, UI-040, UI-053, UI-076, UI-090, OR-072, UI-149, UI-151, UI-152
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { useEffect } from 'react'
 import { render, cleanup, screen, waitFor, fireEvent, within } from '@testing-library/react'
@@ -292,12 +292,46 @@ describe('OrderDetailPage', () => {
     expect(await screen.findByRole('heading', { name: '订单详情', level: 1 })).toBeInTheDocument()
   })
 
-  it('should render amount summary with discount and actual amount', async () => {
+  it('费用明细展示优惠金额与实收款（>0 的优惠才占行）', async () => {
+    mockGetOrder.mockResolvedValue({
+      data: { data: { ...mockOrder, discountAmount: 120, actualAmount: 1879 } },
+    })
     render(<OrderDetailPage />)
     await waitFor(() => {
       expect(screen.getByText('实收款')).toBeInTheDocument()
       expect(screen.getByText('优惠金额')).toBeInTheDocument()
     })
+  })
+
+  it('费用字段单块展示：卡头不再「订单实收款」，订单金额 / 实收款 / 优惠金额各只出现一次', async () => {
+    mockGetOrder.mockResolvedValue({
+      data: { data: { ...mockOrder, discountAmount: 120, actualAmount: 1879 } },
+    })
+    render(<OrderDetailPage />)
+
+    await screen.findByTestId('order-fee-breakdown')
+    // 用户 2026-11-11 报障：三处重复 —— 卡头旧入口必须撤掉，费用明细是唯一金额面
+    expect(screen.queryByText('订单实收款')).not.toBeInTheDocument()
+    expect(screen.getAllByText('订单金额')).toHaveLength(1)
+    expect(screen.getAllByText('实收款')).toHaveLength(1)
+    expect(screen.getAllByText('优惠金额')).toHaveLength(1)
+    // 实收款是明细面板里的最后一行（不是另一个独立汇总块）
+    expect(screen.getByTestId('fee-breakdown-actual')).toHaveTextContent('¥1,879.00')
+  })
+
+  it('基础信息时间单行展示：DateTimeCell inline 输出「YYYY-MM-DD HH:mm」且 whitespace-nowrap', async () => {
+    mockGetOrder.mockResolvedValue({
+      data: { data: { ...mockOrder, paidAt: '2026-11-05T10:30:00+08:00' } },
+    })
+    render(<OrderDetailPage />)
+
+    const label = await screen.findByText('支付时间：')
+    const value = label.parentElement!.querySelector('span.whitespace-nowrap')
+    expect(value).toBeTruthy()
+    // 单行的机制：根是行内 span、没有两个子 div（默认两行版式才有）；具体格式化由 DateTimeCell.test.tsx
+    // 用真 dayjs 钉（本文件 mock 了 dayjs.format，不能在这里断言格式串）
+    expect(value!.children.length).toBe(0)
+    expect((value!.textContent || '').includes('\n')).toBe(false)
   })
 
   // ===== 退款展示（目标契约：退款不再改变订单状态，refundAmount>0 表示已退款） =====
@@ -336,17 +370,16 @@ describe('OrderDetailPage', () => {
     })
   })
 
-  it('amount summary shows 已退款 ¥X row when refundAmount > 0', async () => {
+  it('费用明细在已退款 > 0 时给出扣减行与退款时间', async () => {
     mockGetOrder.mockResolvedValue({
       data: {
         data: { ...mockOrder, status: 'completed', refundAmount: 150, refundAt: '2026-06-21T10:00:00Z' },
       },
     })
     render(<OrderDetailPage />)
-    await waitFor(() => {
-      expect(screen.getByText('已退款')).toBeInTheDocument()
-      expect(screen.getByText('¥150.00')).toBeInTheDocument()
-    })
+    const refundRow = await screen.findByTestId('fee-breakdown-refund')
+    expect(refundRow).toHaveTextContent('¥150.00')
+    expect(refundRow).toHaveTextContent('2026-06-21')
   })
 
   it('does NOT render 已退款 when refundAmount is 0 or undefined', async () => {
@@ -974,7 +1007,7 @@ describe('OrderDetailPage', () => {
       expect(screen.getByTestId('order-fee-breakdown')).toHaveTextContent('人工改价')
     })
 
-    it('布料单（无加工费）：不出现加工费行、不出现 ¥0.00 行', async () => {
+    it('布料单（无加工费）：费用明细仍在，但不出现加工费行、不出现 ¥0.00 行', async () => {
       mockGetOrder.mockResolvedValue({
         data: {
           data: {
@@ -986,9 +1019,12 @@ describe('OrderDetailPage', () => {
         },
       })
       render(<OrderDetailPage />)
-      await screen.findByText('订单金额') // 页面已加载（不是「还没渲染完」的假绿）
-      expect(screen.queryByTestId('order-fee-breakdown')).toBeNull()
+      await screen.findByTestId('order-fee-breakdown') // 页面已加载（不是「还没渲染完」的假绿）
+      expect(screen.getByTestId('fee-breakdown-goods')).toHaveTextContent('¥1,990.00')
+      expect(screen.getByTestId('fee-breakdown-order-total')).toHaveTextContent('¥1,990.00')
+      expect(screen.getByTestId('fee-breakdown-actual')).toHaveTextContent('¥1,990.00')
       expect(screen.queryByTestId('fee-breakdown-processing')).toBeNull()
+      expect(document.body.textContent || '').not.toContain('¥0.00')
     })
 
     it('未定价行：显式「未定价」+ 点名组合，不渲染 ¥0.00', async () => {
@@ -1298,4 +1334,77 @@ describe('OrderDetailPage', () => {
       expect(within(operation).queryByRole('button', { name: '编辑物流' })).toBeNull()
     })
   })
+
+  // ===== 订单操作模块重排（issue #8898）=====
+  // 用户 2026-11-11 口径：状态/进度与操作按钮上下分离、主次操作同排，看不出动线。
+  // 判据 = **分组位置**：左列 flow（状态 + 进度），右列 primary（下一步主操作）+
+  // secondary（退款/修改/关闭）；打印仍在卡头。
+  describe('订单操作模块重排（issue #8898）', () => {
+    it('已发货：状态/进度在左，确认收货是右列主操作，退款在次操作组', async () => {
+      mockGetOrder.mockResolvedValue({
+        data: { data: { ...mockOrder, status: 'shipped', refundAmount: 0 } },
+      })
+      render(<OrderDetailPage />)
+
+      const operation = await screen.findByTestId('order-operation-region')
+      const flow = within(operation).getByTestId('order-operation-flow')
+      const primary = within(operation).getByTestId('order-operation-primary')
+      const secondary = within(operation).getByTestId('order-operation-secondary')
+
+      expect(within(flow).getByText('已发货')).toBeInTheDocument()
+      expect(within(primary).getByRole('button', { name: '确认收货' })).toBeInTheDocument()
+      expect(within(secondary).getByRole('button', { name: '退款' })).toBeInTheDocument()
+      // 打印仍是卡头唯一入口
+      expect(within(operation).getByTestId('order-print-entry')).toBeInTheDocument()
+    })
+
+    it('待付款：确认付款是唯一主操作，修改订单/关闭订单在次操作组', async () => {
+      mockGetOrder.mockResolvedValue({
+        data: { data: { ...mockOrder, status: 'pending', refundAmount: 0 } },
+      })
+      render(<OrderDetailPage />)
+
+      const operation = await screen.findByTestId('order-operation-region')
+      const flow = within(operation).getByTestId('order-operation-flow')
+      const primary = within(operation).getByTestId('order-operation-primary')
+      const secondary = within(operation).getByTestId('order-operation-secondary')
+
+      expect(within(flow).getByText('待买家付款')).toBeInTheDocument()
+      expect(within(primary).getByRole('button', { name: '确认付款' })).toBeInTheDocument()
+      expect(within(secondary).getByRole('button', { name: '修改订单' })).toBeInTheDocument()
+      expect(within(secondary).getByRole('button', { name: '关闭订单' })).toBeInTheDocument()
+    })
+
+    it('待发货：发货是右列主操作，退款在次操作组', async () => {
+      mockGetOrder.mockResolvedValue({
+        data: { data: { ...mockOrder, status: 'confirmed', refundAmount: 0 } },
+      })
+      render(<OrderDetailPage />)
+
+      const operation = await screen.findByTestId('order-operation-region')
+      const flow = within(operation).getByTestId('order-operation-flow')
+      const primary = within(operation).getByTestId('order-operation-primary')
+      const secondary = within(operation).getByTestId('order-operation-secondary')
+
+      expect(within(flow).getByText('待发货')).toBeInTheDocument()
+      expect(within(primary).getByRole('button', { name: '发货' })).toBeInTheDocument()
+      expect(within(secondary).getByRole('button', { name: '退款' })).toBeInTheDocument()
+    })
+
+    it('已完成：右列不再给主操作按钮，只保留退款次操作', async () => {
+      mockGetOrder.mockResolvedValue({
+        data: { data: { ...mockOrder, status: 'completed', refundAmount: 0 } },
+      })
+      render(<OrderDetailPage />)
+
+      const operation = await screen.findByTestId('order-operation-region')
+      const primary = within(operation).getByTestId('order-operation-primary')
+      const secondary = within(operation).getByTestId('order-operation-secondary')
+
+      expect(within(primary).queryByRole('button')).toBeNull()
+      expect(primary).toHaveTextContent('订单已完成')
+      expect(within(secondary).getByRole('button', { name: '退款' })).toBeInTheDocument()
+    })
+  })
+
 })
