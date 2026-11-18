@@ -429,14 +429,30 @@ def check_readings(repo: Path, registry: dict) -> Report:
 # ═══════════════════════════════════════════════════════════════════════════
 # 四、存活看门人（判据 2）—— 纯函数，网络腿与夹具腿**同一判定**
 # ═══════════════════════════════════════════════════════════════════════════
-def parse_readings(lines: list[str], mech: str) -> list[dict]:
-    """从注解 / 日志行里取出某机制的读数行（**只认结构化字段**，不按文案判 —— §17.3 ③）。"""
+def _message_and_job(item) -> tuple[str, str]:
+    """注解项 → (文本, 发射它的 job 键)。注解可以是**裸字符串**（日志回退 / 旧夹具）。"""
+    if isinstance(item, dict):
+        return str(item.get("message") or ""), str(item.get("job") or "")
+    return str(item), ""
+
+
+def parse_readings(lines: list, mech: str) -> list[dict]:
+    """从注解 / 日志行里取出某机制的读数行（**只认结构化字段**，不按文案判 —— §17.3 ③）。
+
+    每条读数额外带 `job`（发射它的 job 的**归一化名**；日志回退 / 旧夹具 ⇒ 空串）。
+    为什么必须带（issue #8919）：同一个 `mech=<id>` 可能被**同一 run 的多个 job** 发射，
+    而它们各自的结论可以不同 ⇒ 拿「整条 run 的结论」去对某一条读数，会把
+    「兄弟 job 判红」伪造成本机制「读数与事实相反」。
+    """
     out = []
     for line in lines:
-        for chunk in str(line).splitlines():
+        message, job = _message_and_job(line)
+        for chunk in message.splitlines():
             m = READING_RE.search(chunk.strip())
             if m and m.group("mech") == mech:
-                out.append(m.groupdict())
+                entry = m.groupdict()
+                entry["job"] = job
+                out.append(entry)
     return out
 
 
@@ -517,18 +533,25 @@ def judge_watchdog(registry: dict, observations: dict[str, dict]) -> Report:
             )
             continue
         reading = live[-1]
-        conclusion = str(obs.get("conclusion") or "")
         rc = reading["rc"]
+        # 🔴 对比对象 = **发射这条读数的那个 job** 的结论（issue #8919）：
+        #   一个 `mech=` 可以被同一 run 的多个 job 发射（实测 `automerge` 由 3 个 job 各发一条），
+        #   拿整条 run 的结论去对某一条 ⇒ 兄弟 job 判红即被伪造成「读数与事实相反」（散文里指的是错的 job）。
+        #   只有**取不到 job 归属**（日志回退 / 旧夹具 / job 名对不上）时才回落到 run 结论（fail-closed 方向不变）。
+        job = str(reading.get("job") or "")
+        job_verdict = str((obs.get("job_conclusions") or {}).get(job) or "") if job else ""
+        conclusion = job_verdict or str(obs.get("conclusion") or "")
+        scope = f"job `{job}`" if job_verdict else f"run {run_id}"
         if conclusion == "success" and rc not in ("0",):
             rep.add(
                 f"watchdog-contradiction:{eid}",
-                f"读数**与事实相反**：run {run_id} 结论 = success，而读数 `rc={rc}`（#5264 的形态）",
+                f"读数**与事实相反**：{scope} 结论 = success，而读数 `rc={rc}`（#5264 的形态）",
                 "watchdog",
             )
         elif conclusion not in ("success", "") and rc == "0":
             rep.add(
                 f"watchdog-contradiction:{eid}",
-                f"读数**与事实相反**：run {run_id} 结论 = {conclusion}，而读数 `rc=0` "
+                f"读数**与事实相反**：{scope} 结论 = {conclusion}，而读数 `rc=0` "
                 f"（机制报成功、事实是失败 —— #5264 的形态）",
                 "watchdog",
             )
@@ -552,24 +575,28 @@ def _gh_json(args: list[str]):
     return json.loads(_gh(args) or "null")
 
 
-def _annotations_of_run(repo_slug: str, run_id: int) -> list[str]:
+def _annotations_of_run(repo_slug: str, run_id: int) -> list[dict]:
     """run 的注解（`::notice::` 的结构化形态）；取不到 ⇒ 退化为日志抓取（**同一语法**）。"""
-    messages: list[str] = []
+    messages: list[dict] = []
     try:
         jobs = _gh_json(["api", f"/repos/{repo_slug}/actions/runs/{run_id}/jobs"])
         for job in (jobs or {}).get("jobs", []):
             url = job.get("check_run_url")
             if not url:
                 continue
+            # 注解属于**它自己的 job**：这里把 job 的归一化名一起带出去（与 job_conclusions 同口径），
+            # 判定时才能「与发射它的 job 比」而不是「与整条 run 比」（issue #8919）。
+            job_key = _normalize_job(str(job.get("name") or ""))
             ann = _gh_json(["api", f"{url}/annotations"])
             for item in ann or []:
-                messages.append(str(item.get("message") or ""))
+                messages.append({"job": job_key, "message": str(item.get("message") or "")})
     except (Undecidable, json.JSONDecodeError):
         messages = []
     if messages:
         return messages
     try:
-        return _gh(["run", "view", str(run_id), "--log"]).splitlines()
+        return [{"job": "", "message": line}
+                for line in _gh(["run", "view", str(run_id), "--log"]).splitlines()]
     except Undecidable:
         return []
 
