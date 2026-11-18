@@ -1,3 +1,4 @@
+// case_ids: UI-151
 // @vitest-environment jsdom
 import { describe, it, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
@@ -11,6 +12,17 @@ describe('DateTimeCell Component', () => {
     expect(outerDiv.childNodes.length).toBe(2)
     expect(outerDiv.textContent).toMatch(/\d{4}-\d{2}-\d{2}/)
     expect(outerDiv.textContent).toMatch(/\d{2}:\d{2}/)
+  })
+
+  // 2026-11-11 用户口径：订单详情「商品信息」里的时间要「年月日时分一行展示不换行」。
+  // 只加可选 inline 模式；默认两行版式（列表页 / 纸面）保持不变（上面那条仍是 2 个子节点）。
+  it('inline 模式：日期与时分在同一个行内元素里，且带 whitespace-nowrap', () => {
+    const { container } = render(<DateTimeCell value="2026-11-05T10:30:00+08:00" inline />)
+    const outer = container.firstChild as HTMLElement
+    expect(outer.tagName).toBe('SPAN')
+    expect(outer.className).toContain('whitespace-nowrap')
+    expect(outer.textContent).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/)
+    expect(outer.children.length).toBe(0) // 单行：没有两个子 div（默认两行版式才有）
   })
 
   it('renders date in first child and time in second child', () => {
