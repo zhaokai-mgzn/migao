@@ -26,7 +26,7 @@
 | # | 判据 | 红证（怎么让它**单独**变红） |
 |---|---|---|
 | G1 | 页面里**不得**再有「状态 → 可打单据」矩阵（打印与状态解耦） | 把 `PRINT_TARGETS_BY_STATUS` 那段加回去 ⇒ 红 |
-| G2 | 「打印」入口**恰好一处**，且**不在**任何 `{status === …}` 状态分支里（挂在页面顶部「订单操作」区卡头，任何状态都能打） | 把入口塞进 `{status === …}` 分支 ⇒ 红；复制成两处 ⇒ 红 |
+| G2 | 「打印」入口**恰好一处**，且挂在「订单操作」区域**卡头**（`rightAction`）—— 不在状态/操作 body 里，任何状态都能打 | 把入口搬进操作 body（含状态分支）⇒ 红；复制成两处 ⇒ 红 |
 | G3 | 页面里**不得**手写打印按钮文案（文案只能来自 `PRINT_TARGET_SPECS[*].title`） | 写回 `<button>打印销售单</button>` ⇒ 红 |
 | G4 | 打印层的单据选择器必须**接线**：`docs={ORDER_PRINT_DOCS}` + `onSelect={selectPreview}`，且清单里每份单据都是**真实 target** | 摘掉 `docs=` ⇒ 红；清单里写 `'sale'`（错键）⇒ 红 |
 | G5 | 「作业单」区块**不再**有第二个打印入口（打印只剩一处） | 在 `ProcessingOrderBlock` 里加回 `onPrintProcessing` ⇒ 红 |
@@ -59,9 +59,12 @@ HANDWRITTEN_LABELS: tuple[str, ...] = ("打印发货单", "打印报价单", "�
 #: 唯一入口的锚点（`data-testid` 是给单测与 e2e 的共同抓手）
 ENTRY_MARKER = 'data-testid="order-print-entry"'
 
-#: G2：状态分支的形态（`{status === 'pending_payment' && (`）。打印入口必须出现在**第一个**
-#: 状态分支之前（= 操作区卡头，任何状态都渲染）；塞进任何一支 ⇒ 位置在分支之后 ⇒ 红。
-STATUS_BRANCH_RE = re.compile(r"\{status === '[a-z_]+' && \(")
+#: G2：订单操作区域的两个结构锚点（2026-11-11 版式，issue #8898）：
+#:   · 卡头 = `rightAction={`（打印入口唯一合法落点，任何状态都渲染）；
+#:   · 卡体 = `{activeStatus && (`（状态 + 进度 + 主/次操作都在这里，按状态条件渲染）。
+#: 打印入口必须落在**两者之间**；搬进 body（或更早的变量定义里）⇒ 红。
+OPERATION_HEADER_MARKER = "rightAction={"
+OPERATION_BODY_MARKER = "{activeStatus && ("
 
 #: 订单详情**任何状态都能打**的两份纸（顺序不钉；集合不齐 ⇒ 商家少一张纸）。
 REQUIRED_ORDER_DOCS: tuple[str, ...] = ("quotation", "sales")
@@ -158,23 +161,25 @@ def entry_count(page_src: str) -> int:
     return strip_comments(page_src).count(ENTRY_MARKER)
 
 
-def entry_inside_status_branch(page_src: str) -> bool:
-    """G2：入口是否落进了任何一个 `{status === …}` 状态分支。
+def entry_in_operation_header(page_src: str) -> bool:
+    """G2：打印入口是否落在「订单操作」区域**卡头**（`rightAction`）里。
 
-    🔴 issue #8838 起页面把「订单操作」收成一张区域卡：打印入口在**卡头**（`rightAction`，
-    任何状态都渲染），状态分支在卡体里（`{status === '…' && (`）。`StatusSection` 这个组件
-    已不存在 ⇒ 判据不再按组件边界，改按**源码位置**：入口必须出现在第一个状态分支**之前**；
-    塞进任何一支 ⇒ 位置在分支之后 ⇒ 红。
+    🔴 2026-11-11 用户口径（issue #8898）把订单操作重排成：卡头（标题 + 打印）→ 卡体
+    （状态/进度/主次操作，`{activeStatus && (` 条件渲染）→ 加急/到货日。打印入口是**页面级**
+    唯一入口、不跟状态走 ⇒ 必须落在 `rightAction={` 与 `{activeStatus && (` 之间；搬进卡体
+    （或更早的 `primaryAction` 等按状态定义里）⇒ 就回到「跟状态走」的形态 ⇒ 红。
 
-    （不按「是否在某个 `status === …` 之后」逐处判定：那会被页面里 `refundAmount` /
-    `workOrderKind` 等状态派生分支误伤；只认 `{status === '…' && (` 这一种分支形态。）
+    fail-closed：结构锚点缺失（版式又改了但没更新判据）⇒ 返回 False ⇒ 红，而不是静默放行。
     """
     code = strip_comments(page_src)
     pos = code.find(ENTRY_MARKER)
     if pos < 0:
         return False
-    first_branch = STATUS_BRANCH_RE.search(code)
-    return bool(first_branch and pos > first_branch.start())
+    header = code.find(OPERATION_HEADER_MARKER)
+    body = code.find(OPERATION_BODY_MARKER)
+    if header < 0 or body < 0:
+        return False
+    return header < pos < body
 
 
 # ============== G3：不手写按钮文案 ==============
@@ -346,10 +351,9 @@ class TestRealSources:
             f"「打印」入口有 {count} 处（应恰好 1 处）—— 多个入口正是 #7544 要消掉的形态；"
             "要打哪一份由打印层里的单据标签选"
         )
-        assert not entry_inside_status_branch(page), (
-            "「打印」入口落进了某个 `{status === …}` 状态分支 —— "
-            "它必须挂在页面顶部「订单操作」区卡头（任何状态都能渲染），"
-            "否则某个状态区又会漏挂/多挂"
+        assert entry_in_operation_header(page), (
+            "「打印」入口不在「订单操作」区域卡头（`rightAction`）—— "
+            "它必须挂在卡头（任何状态都渲染），搬进卡体/状态分支就会回到「跟状态走」的形态"
         )
 
     def test_g3_no_handwritten_labels(self) -> None:
@@ -410,18 +414,17 @@ class TestDiscriminatingPower:
         assert entry_count(duplicated) == 2
         assert entry_count(self.PAGE) == 1  # 对照
 
-    def test_g2_entry_inside_status_branch_is_red(self) -> None:
-        # 把入口从操作区卡头搬进 `{status === …}` 分支（= 回退成「跟状态走」的形态）
+    def test_g2_entry_moved_into_operation_body_is_red(self) -> None:
+        # 把入口从区域卡头搬进卡体（= 回退成「跟状态走」的形态）
         mutated = self.PAGE.replace(ENTRY_MARKER, 'data-testid="moved-away"', 1)
         mutated = mutated.replace(
-            "{status === 'pending_payment' && (",
-            '{status === \'pending_payment\' && (\n'
-            '        <span data-testid="order-print-entry" />',
+            "{activeStatus && (",
+            '{activeStatus && (\n        <span data-testid="order-print-entry" />',
             1,
         )
         assert mutated != self.PAGE, "注入未生效（锚点漂移）"
-        assert entry_inside_status_branch(mutated) is True
-        assert entry_inside_status_branch(self.PAGE) is False  # 对照
+        assert entry_in_operation_header(mutated) is False
+        assert entry_in_operation_header(self.PAGE) is True  # 对照
 
     def test_g3_handwritten_label_is_red(self) -> None:
         mutated = self.PAGE.replace(

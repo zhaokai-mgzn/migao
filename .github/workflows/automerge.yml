@@ -716,6 +716,17 @@ jobs:
   #          ⚠️ 不新增 cron：复用 `on.schedule` 的既有入口（判据 `test_dependabot_rebase_sweep.py`）。
   # 幂等 + 有界：评论带 `<!-- migao:dependabot-rebase:<head sha> -->`，同一 head 只发一次；
   #   每条 PR 累计最多 2 次，到顶只出声（`::warning::` + step summary），不再自动动作。
+  # 🔴 权限：本 job 的 `gh pr update-branch` **必须**有 `contents: write` —— 它不是只读的：
+  #   `updatePullRequestBranch` 的实现是把 base **合进 head 分支**，而官方对 "Update a pull request branch"
+  #   明确要求「以 GitHub App 身份发请求时，还须对 **head 仓库**有写 contents 的权限」
+  #   （https://docs.github.com/en/rest/pulls/pulls#update-a-pull-request-branch）；head 仓库 = 本仓
+  #   ⇒ 只给 `pull-requests: write` 会 403。逐字（2026-11-18T03:33Z run 44231233423，pip PR
+  #   #8902/#8907/#8908/#8910 全中）：`GraphQL: github-actions[bot] does not have permission to
+  #   update this pull request.` ⇒ 依赖 PR 永远停在 `BEHIND`（仓库 `allow_update_branch=false`
+  #   ⇒ 页面上没有按钮可点），而本 job 每小时判红、`automerge.yml` 自此连续 4 天没有 success
+  #   （看门人 #8917 因此报 `watchdog-contradiction:automerge`）。
+  #   同一份权限口径在本文件的 `update-behind-prs` job 里早已写明（那里就是 `contents: write`）。
+  #   判据 = `tests/unit_ci_workflows/test_dependabot_rebase_sweep.py::test_host_workflow_wiring_is_clean`。
   rebase-stale-dependabot:
     name: Unstick stale dependabot PRs (behind main / broken merge lock)
     runs-on: ubuntu-latest
@@ -725,9 +736,11 @@ jobs:
       (github.event_name == 'pull_request_target' &&
        github.event.pull_request.user.login == 'app/dependabot' &&
        github.event.pull_request.draft == false)
-    # 窄权限：读代码 + 发评论（**不**需要 contents: write —— 本 job 一个字节都不写仓库）
+    # 🔴 两个都必需（见上方 🔴 权限段）：`pull-requests: write` 发评论 / 动 PR；
+    #   `contents: write` 是 `update-branch` 的硬要求（它把 base 合进 head 分支 = 写 head 仓库）。
+    #   ⛔ 本 job 仍然**不写代码内容**：动作面只有 `gh pr update-branch` 与 `gh pr comment`。
     permissions:
-      contents: read
+      contents: write
       pull-requests: write
     env:
       GH_TOKEN: ${{ github.token }}
