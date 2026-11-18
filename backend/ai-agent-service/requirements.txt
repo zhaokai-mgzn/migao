@@ -1,5 +1,5 @@
 # FastAPI 核心
-fastapi==0.162.0
+fastapi==0.162.4
 uvicorn[standard]==0.54.0
 pydantic==2.14.3
 pydantic-settings==2.16.2
@@ -49,5 +49,5 @@ pytest-rerunfailures==16.7
 pytest-xdist==3.8.0  # issue #2957: 本地并行提速（run -n auto）
 
 # ASR 语音识别
-dashscope>=2.0.3
+dashscope>=2.0.4
 
