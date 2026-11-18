@@ -87,7 +87,21 @@ export default function CorporateFooter() {
             「遵循 / 对标 GB/T 47746-2026」指元元智能客服的人机协同机制功能设计参考该推荐性国家标准；该标准为推荐性标准、无认证或备案机制，本页面不构成任何认证、检测或备案结论。
           </p>
           <p>本页面展示的功能以实际开通版本为准；报价与交付内容由双方另行确认。</p>
-          <p>© 2026 杭州词元通达科技有限公司 · 观星台 版权所有</p>
+          <p>
+            © 2026 杭州词元通达科技有限公司 · 观星台 版权所有
+          </p>
+          {/* 备案号（合规展示）：工信部要求首页底部展示 ICP 备案号并链接到 beian.miit.gov.cn；
+              公安联网备案通过后，在同一区域追加「浙公网安备 xxxxxxxxxxxx 号」及链接。 */}
+          <p>
+            <a
+              href="https://beian.miit.gov.cn/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="transition-colors hover:text-neutral-400"
+            >
+              浙ICP备2026096585号-2
+            </a>
+          </p>
         </div>
       </div>
     </footer>

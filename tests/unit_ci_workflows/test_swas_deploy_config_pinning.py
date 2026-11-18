@@ -296,7 +296,9 @@ def judge_rails_intact(text: str) -> list:
                 f"（实测 66.5MB @118~345KB/s 需要 ~566s；issue #6550）"
             )
     for token in ("cp src/deploy/swas/docker-compose.yml ./docker-compose.yml",
-                  "cp src/deploy/swas/nginx.conf ./nginx/nginx.conf",
+                  # 域名可参数化（cytda.com）后：落盘的是**原文** `nginx.conf.canonical`，
+                  # 容器挂的那份由它渲染 ⇒ 这里钉的是「仓库原文必须整份落盘」这一条。
+                  "cp src/deploy/swas/nginx.conf ./nginx/nginx.conf.canonical",
                   "cp src/deploy/swas/docker-compose.bluegreen.yml ./docker-compose.bluegreen.yml"):
         if token not in sec:
             v.append(f"canonical 配置落点被改动：找不到 `{token}`")
@@ -1086,7 +1088,7 @@ def test_pre_fix_reconstruction_is_faithful():
     old = _pre_fix_script(text)
     assert judge_config_same_source(old) != [], "还原后判据①竟然还是干净的 ⇒ 判据没有判别力"
     assert judge_rails_intact(old) == [], "还原误伤了护栏面（红证会变成别的原因）"
-    assert old.count("cp src/deploy/swas/nginx.conf ./nginx/nginx.conf") == 1, "还原误伤了配置落点"
+    assert old.count("cp src/deploy/swas/nginx.conf ./nginx/nginx.conf.canonical") == 1, "还原误伤了配置落点"
     assert f'"{CONFIG_URL_PREFIX}{MAIN_REF}"' in old, "还原没换上「取 main」的 URL（红证空跑）"
     assert MARKER_WRITE_TOKEN in old, "还原误伤了「物化 ref」标记那一段"
     assert FETCH_CALLSITE in old and FETCH_ELIF_TOKEN in old, "还原误伤了取配置的调用结构"
