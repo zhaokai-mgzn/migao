@@ -1,4 +1,4 @@
-// case_ids: UI-149
+// case_ids: UI-149, UI-151, UI-152
 /**
  * 订单详情三区与操作层级（issue #8838）—— 真实浏览器判据。
  *
@@ -247,6 +247,21 @@ test.describe('订单详情三区与操作层级（issue #8838 / #8848）', () =
     await expect(operation.getByRole('button', { name: '退款' })).toBeVisible()
     await expect(operation.getByRole('button', { name: /确认收货/ })).toBeVisible()
 
+    // ①b 订单操作分层（issue #8898）：左列状态/进度，右列主操作；退款在次操作组
+    const opFlow = operation.getByTestId('order-operation-flow')
+    const opPrimary = operation.getByTestId('order-operation-primary')
+    const opSecondary = operation.getByTestId('order-operation-secondary')
+    await expect(opFlow).toBeVisible()
+    await expect(opFlow.getByText('已发货')).toBeVisible()
+    await expect(opPrimary.getByRole('button', { name: /确认收货/ })).toBeVisible()
+    await expect(opSecondary.getByRole('button', { name: '退款' })).toBeVisible()
+    const flowBox = await opFlow.boundingBox()
+    const primaryBox = await opPrimary.boundingBox()
+    if (!flowBox || !primaryBox) throw new Error('订单操作分层取不到真实几何 ⇒ 判据在扫空气')
+    expect(primaryBox.x, '主操作列应在状态/进度列右侧（1440 宽下的分层）').toBeGreaterThan(
+      flowBox.x + flowBox.width - 2,
+    )
+
     // ② 商品信息区域 = 基础信息 + 商品明细 + 收货信息，且不夹带整体操作
     await expect(goods.getByTestId('order-basic-info')).toBeVisible()
     await expect(goods.getByTestId('order-product-info')).toBeVisible()
@@ -256,6 +271,26 @@ test.describe('订单详情三区与操作层级（issue #8838 / #8848）', () =
     await expect(goods.getByTestId('order-print-entry')).toHaveCount(0)
     // 加急/到货日已按 2026-11-09 口径上收顶部 ⇒ 商品信息区域（含基础信息）里不该再有它
     await expect(goods.getByTestId('order-urgency-panel')).toHaveCount(0)
+
+    // ②b 费用明细：单块展示（卡头旧「订单实收款」撤掉），商品/加工/优惠/实收同屏
+    const feePanel = goods.getByTestId('order-fee-breakdown')
+    await expect(feePanel).toBeVisible()
+    await expect(feePanel.getByTestId('fee-breakdown-goods')).toHaveText('¥5,520.00')
+    await expect(feePanel.getByTestId('fee-breakdown-processing')).toHaveText('¥600.00')
+    await expect(feePanel.getByTestId('fee-breakdown-discount')).toHaveText('-¥120.00')
+    await expect(feePanel.getByTestId('fee-breakdown-order-total')).toHaveText('¥6,120.00')
+    await expect(feePanel.getByTestId('fee-breakdown-actual')).toHaveText('¥6,000.00')
+    await expect(page.getByText('订单实收款')).toHaveCount(0)
+
+    // ②c 基础信息时间：年月日 + 时分同一行、不换行（真实几何：一行高度，且 computed white-space=nowrap）
+    const payRow = goods.getByTestId('order-basic-info').getByText('支付时间：').locator('..')
+    const payTime = payRow.locator('span.whitespace-nowrap')
+    await expect(payTime).toBeVisible()
+    await expect(payTime).toHaveText(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/)
+    const payTimeBox = await payTime.boundingBox()
+    if (!payTimeBox) throw new Error('支付时间取不到真实几何 ⇒ 判据在扫空气')
+    expect(payTimeBox.height, '时间被折成两行（单行高度应 < 30px）').toBeLessThan(30)
+    expect(await payTime.evaluate((el) => getComputedStyle(el).whiteSpace)).toBe('nowrap')
 
     // ③ 加急/到货日与「订单操作」同区；编辑物流仍贴收货信息
     await expect(
