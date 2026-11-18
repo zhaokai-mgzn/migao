@@ -426,6 +426,62 @@ def test_red_proof_reverse_contradiction_makes_watchdog_red():
     )
 
 
+def test_watchdog_binds_each_reading_to_its_own_job():
+    """**#8919 的回归**：一个 `mech=` 被同一 run 的**多个 job** 发射 ⇒ 各按**自己的**结论判。
+
+    实测形态（run 44285073598）：`automerge` 由 3 个 job 各发一条读数
+    （`detect-dangling-prs` rc=1 / `update-behind-prs` rc=0 / `rebase-stale-dependabot` rc=0），
+    整条 run 结论 = failure。旧实现取「最后一条读数（rc=0）」去对「整条 run（failure）」
+    ⇒ 判「读数与事实相反」，而**文案指的那个对象（机制报成功、事实是失败）对哪个 job 都不成立**。
+    """
+    rep = ML.judge_watchdog(_single(_demo_entry()), {"demo": _obs(
+        conclusion="failure",
+        job_conclusions={"detect-dangling-prs": "failure",
+                         "update-behind-prs": "success",
+                         "rebase-stale-dependabot": "success"},
+        annotations=[
+            {"job": "detect-dangling-prs",
+             "message": f"::warning::MECHANISM-LIVENESS mech=demo run={RUN_ID} rc=1 seen=? acted=? why=有悬空"},
+            {"job": "update-behind-prs",
+             "message": f"::notice::MECHANISM-LIVENESS mech=demo run={RUN_ID} rc=0 seen=? acted=? why=零动作"},
+        ],
+    )})
+    assert not rep.findings, (
+        f"读数各自与自己的 job 一致 ⇒ 不该判红（兄弟 job 判红不得赖到别的 job 的读数上）："
+        f"{[(f.key, f.detail) for f in rep.findings]}"
+    )
+
+
+def test_red_proof_reading_is_still_held_to_its_own_job():
+    """判据不许被上一条放宽成空断言：**同一个 job** 结论失败而它自己发 rc=0 ⇒ 仍必红。"""
+    rep = ML.judge_watchdog(_single(_demo_entry()), {"demo": _obs(
+        conclusion="failure",
+        job_conclusions={"detect-dangling-prs": "failure"},
+        annotations=[
+            {"job": "detect-dangling-prs",
+             "message": f"::notice::MECHANISM-LIVENESS mech=demo run={RUN_ID} rc=0 seen=? acted=? why=看起来很好"},
+        ],
+    )})
+    assert [f.key for f in rep.findings] == ["watchdog-contradiction:demo"], (
+        f"job 失败而它自己的读数报 rc=0 必须判红，实测 {[f.key for f in rep.findings]}"
+    )
+
+
+def test_red_proof_without_job_binding_it_falls_back_and_goes_red():
+    """**注入式红证（不空跑）**：同一条读数**去掉 job 归属**（旧夹具 / 日志回退）⇒ 回落 run 结论 ⇒ 必红。
+
+    它证明上面那条绿是**绑定的功劳**，不是把比较整体关掉了。
+    """
+    rep = ML.judge_watchdog(_single(_demo_entry()), {"demo": _obs(
+        conclusion="failure",
+        job_conclusions={"update-behind-prs": "success"},
+        annotations=[f"::notice::MECHANISM-LIVENESS mech=demo run={RUN_ID} rc=0 seen=? acted=? why=零动作"],
+    )})
+    assert [f.key for f in rep.findings] == ["watchdog-contradiction:demo"], (
+        f"没有 job 归属时必须 fail-closed 回落 run 结论并判红，实测 {[f.key for f in rep.findings]}"
+    )
+
+
 def test_first_run_and_pending_instrumentation_are_notes_not_findings():
     """**监控自己不得自造假红**：首发日 / 读数落点尚未上线 ⇒ **备注**，不是 finding。"""
     first = ML.judge_watchdog(_single(_demo_entry()), {"demo": {"completed_runs": 0}})
