@@ -5781,3 +5781,78 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+
+  # UI-151（issue #8896 / #8897）：订单详情「商品信息」费用明细去重 + 时间单行展示
+  - id: UI-151
+    legacy_id: ""
+    title: "订单详情「商品信息」：三处金额合并为一张费用明细（商品/加工/优惠/实收）+ 基础信息时间「年月日 时分」单行不换行（issue #8896 / #8897）"
+    domains:
+      - ui
+      - frontend
+      - order
+    tier: normal
+    tags:
+      - ui
+      - layout
+      - information-architecture
+      - order-detail
+      - order-fee
+    truths_ref:
+      - frontend-fix.layout
+      - frontend-fix.no-api-change
+    user_inputs:
+      - "用户 2026-11-11 钉钉原话（同批两条）：① 商品信息这个模块，顶部有「订单实付款」，商品明细下面又有「费用构成」，底部又有「订单金额」「优惠金额」「实收款」，信息重复排版混乱，把费用明细相关字段整理重排，要求简单清晰明了、一眼看出商品费用明细；② 商品信息这个模块，时间展示年月日时分一行展示不换行。"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "判据 1·**单一金额面**：商品信息卡头不再有「订单实收款」；`order-fee-breakdown` 一张面板内依次给出商品合计 / 加工费（含逐行算式与未定价提示）/ 其它构成 / 订单金额 / 优惠金额（>0）/ 已退款（>0，带退款时间）/ 实收款；`订单金额`「实收款」「优惠金额」标签在同区域内各只出现一次。执行点 = frontend/admin-web/tests/unit/pages/order-detail.test.tsx、OrderFeeBreakdown.test.tsx、tests/e2e/specs/orders/order-detail-regions.spec.ts。"
+      - "判据 2·**零值不占行、布料单不缺面**：优惠 / 已退款为 0 时不渲染对应行；布料单（无加工费）仍渲染费用明细（商品合计 / 订单金额 / 实收款），但无加工费行、无 ¥0.00、无空洞等式；有加工/其它构成/未定价时保留「商品合计 + 加工费 + 其它构成 = 订单金额」对账等式。执行点 = OrderFeeBreakdown.test.tsx + order-detail.test.tsx。"
+      - "判据 3·**时间单行**：`DateTimeCell` 新增可选 `inline` 模式（`YYYY-MM-DD HH:mm` 同一个行内 span + `whitespace-nowrap`）；订单详情基础信息四处时间用它，真实浏览器读数 = 单行高度 < 30px 且 computed white-space=nowrap；默认两行版式（列表页 / 纸面）保持原样（组件默认用例仍断言 2 个子节点）。执行点 = DateTimeCell.test.tsx + order-detail.test.tsx + order-detail-regions.spec.ts。"
+      - "判据 4·**金额口径零改动**：金额仍全部来自落库快照（`buildOrderFeeComposition` / `formatMoney`），不重算、不改接口/字段/权限；加工费逐行算式与未定价文案沿用既有实现。执行点 = OrderFeeBreakdown.test.tsx 与既有 order-fee-composition-guard / order-fee-source-guard。"
+    skip_reason: "[backend-contract] 纯前端展示层重排（无接口/字段/权限码变更），由 vitest 页面/组件判据 + Playwright 真浏览器判据覆盖，不进入 agent-eval 冒烟"
+    merge_log: "2026-11-11 新增（issue #8896 / #8897）：用户要求商品信息费用字段去重（去卡头「订单实收款」、合并费用构成与底部汇总成一张费用明细）且时间单行展示。取号 UI-151（`python3 scripts/next_case_id.py UI` 现取 main 001-150）。"
+    traces:
+      tests:
+        - "frontend/admin-web/tests/unit/pages/order-detail.test.tsx"
+        - "frontend/admin-web/tests/unit/components/OrderFeeBreakdown.test.tsx"
+        - "frontend/admin-web/tests/unit/components/DateTimeCell.test.tsx"
+        - "tests/e2e/specs/orders/order-detail-regions.spec.ts"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  # UI-152（issue #8898）：订单详情「订单操作」模块重排 —— 状态/进度与主次操作分层
+  - id: UI-152
+    legacy_id: ""
+    title: "订单详情「订单操作」模块重排：状态 chip + 进度在左、下一步主操作在右，退款/修改/关闭独立次操作组（issue #8898）"
+    domains:
+      - ui
+      - frontend
+      - order
+    tier: normal
+    tags:
+      - ui
+      - layout
+      - order-detail
+      - action-hierarchy
+    truths_ref:
+      - frontend-fix.layout
+      - frontend-fix.no-api-change
+    user_inputs:
+      - "用户 2026-11-11 钉钉原话：订单详情页：订单操作模块，订单4个状态上面有当前状态展示和答应按钮，下面有退款、发货等操作按钮，展示不好看。你把订单操作这个模块也重新整理排版一下。让操作更有逻辑动线更完美。"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "判据 1·**状态/进度与操作分层**：`order-operation-flow`（状态 chip / 待买家付款 + OrderProgressSteps）在左，`order-operation-primary`（下一步主操作）在右侧独立列；真实浏览器 x 坐标 primary 在 flow 右侧。执行点 = frontend/admin-web/tests/unit/pages/order-detail.test.tsx、tests/e2e/specs/orders/order-detail-regions.spec.ts。"
+      - "判据 2·**主/次操作分组**：确认付款 / 发货 / 确认收货只在 primary；退款 / 修改订单 / 关闭订单只在 secondary；已完成状态 primary 不再给按钮（说明「订单已完成」）、仅退款次操作。执行点 = order-detail.test.tsx 四条状态用例。"
+      - "判据 3·**零行为改动**：操作可见条件（含作业单拦截的按型引导）、提交语义、打印唯一入口与状态无关（#7544）、加急/到货日仍在同模块底部 —— 既有 OrderDetailShipGuard / order-detail 用例保持绿。执行点 = order-detail.test.tsx / OrderDetailShipGuard.test.tsx。"
+    skip_reason: "[backend-contract] 纯前端版式/分组重排（无接口/字段/权限码变更），由 vitest 页面判据 + Playwright 真浏览器判据覆盖，不进入 agent-eval 冒烟"
+    merge_log: "2026-11-11 新增（issue #8898）：用户要求订单操作模块重排（状态/进度与操作按钮分层、主次操作动线清晰）。取号 UI-152（`python3 scripts/next_case_id.py UI` 现取 main 001-150 + 同批在飞 UI-151）。"
+    traces:
+      tests:
+        - "frontend/admin-web/tests/unit/pages/order-detail.test.tsx"
+        - "frontend/admin-web/tests/unit/components/OrderDetailShipGuard.test.tsx"
+        - "tests/e2e/specs/orders/order-detail-regions.spec.ts"
+      ci:
+        - pr-check.yml
+      verifies: []
