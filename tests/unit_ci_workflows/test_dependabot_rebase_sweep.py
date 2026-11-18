@@ -27,6 +27,7 @@ from lock file`。两侧各自自洽、只有合出来的树坏 ⇒ required 腿
 | 9 | 探测失败 ⇒ `unjudgeable`（**不得当 skip**） | 静默当「没问题」 |
 | 10 | 宿主 workflow 的接线（事件 / 权限 / 步骤） | 在 `push` 上跑 / 无写权限 / 不跑脚本 |
 | 11 | **不往分支推提交**（§34.13 单写者） | 脚本里出现 push / update-branch ⇒ 与 dependabot 抢写 |
+| 12 | `update-branch` 需要 **`contents: write`**（它把 base 合进 head 分支） | 降成 `contents: read` ⇒ 依赖 PR 永远 `BEHIND`、本腿每小时判红（#8917） |
 """
 from __future__ import annotations
 
@@ -216,8 +217,13 @@ def job_wiring_problems(doc):
     perms = job.get("permissions") or {}
     if perms.get("pull-requests") != "write":
         problems.append("缺 pull-requests: write（发不出评论）")
-    if perms.get("contents") == "write":
-        problems.append("contents: write 过大（本 job 只读 + 评论，不需要写代码）")
+    # `gh pr update-branch` 把 base 合进 head 分支 ⇒ App 身份必须对 head 仓库有写 contents 的权限
+    # （官方 REST 文档 "Update a pull request branch"）；只给 pull-requests: write 会 403（#8917）。
+    if perms.get("contents") != "write":
+        problems.append(
+            "缺 contents: write ⇒ `gh pr update-branch` 对依赖 PR 恒被拒"
+            "（GraphQL: github-actions[bot] does not have permission to update this pull request；"
+            "2026-11-18 run 44231233423 实测）⇒ 依赖 PR 永远停在 BEHIND、本腿每小时判红（#8917）")
     runs = [step.get("run") or "" for step in job.get("steps") or []]
     if not any("scripts/dependabot_rebase_sweep.py" in body for body in runs):
         problems.append("没有任何 step 跑 scripts/dependabot_rebase_sweep.py")
@@ -245,6 +251,8 @@ def test_host_workflow_wiring_guard_is_not_vacuous():
          lambda d: d["jobs"][JOB].setdefault("permissions", {}).__setitem__("pull-requests", "read")),
         ("步骤不跑脚本",
          lambda d: d["jobs"][JOB]["steps"][-1].__setitem__("run", "echo noop")),
+        ("内容权限降成 read（update-branch 会 403）",
+         lambda d: d["jobs"][JOB].setdefault("permissions", {}).__setitem__("contents", "read")),
     ]
     for label, mutate in mutations:
         doc = copy.deepcopy(base)
