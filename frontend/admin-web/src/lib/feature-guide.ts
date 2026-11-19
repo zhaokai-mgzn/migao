@@ -21,8 +21,8 @@
 // 不同步**。要跨端同步需要服务端偏好表 + 迁移 + 端点；本轮不做，PR 里如实登记。
 
 import type { User } from '@/types'
-import { menuGroups } from '@/config/menu'
-import { visibleMenuGroups } from '@/lib/menu-nav'
+import { menuGroups, standaloneItems, standaloneTopItems } from '@/config/menu'
+import { filterMenuItems, visibleMenuGroups } from '@/lib/menu-nav'
 
 /** 引导内容版本：改版后想让老用户重新看到，升版本即可自然换新键。 */
 export const FEATURE_GUIDE_VERSION = 1
@@ -177,4 +177,18 @@ export function buildFeatureGuideModules(
     name: group.name,
     items: group.children.map((item) => item.name),
   }))
+}
+
+
+/**
+ * 引导里的「其他入口」：不在分组里的顶层菜单项（企业基础设置 / 通知中心）。
+ * 与功能地图同一套权限过滤（通知中心没有权限码 ⇒ 登录即可见）。
+ */
+export function buildFeatureGuideExtraEntries(
+  permissions: string[] = [],
+  roles: string[] = [],
+): string[] {
+  return filterMenuItems([...standaloneTopItems, ...standaloneItems], { permissions, roles }).map(
+    (item) => item.name,
+  )
 }

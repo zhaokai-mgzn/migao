@@ -4,6 +4,7 @@ import {
   FEATURE_GUIDE_DISMISSED_PREFIX,
   FEATURE_GUIDE_PENDING_KEY,
   FEATURE_GUIDE_SHOWN_KEY,
+  buildFeatureGuideExtraEntries,
   buildFeatureGuideModules,
   dismissFeatureGuide,
   featureGuideDismissedKey,
@@ -151,5 +152,11 @@ describe('feature-guide：功能地图按权限派生', () => {
 
   it('空权限 ⇒ 空地图（页面显示可行动的空态，而不是假装有功能）', () => {
     expect(buildFeatureGuideModules([], [])).toEqual([])
+  })
+
+  it('「其他入口」= 不在分组里的顶层项，按权限裁剪', () => {
+    expect(buildFeatureGuideExtraEntries(['*'], ['admin'])).toEqual(['企业基础设置', '通知中心'])
+    // 客服没有 production:view ⇒ 企业基础设置不可见；通知中心无权限码 ⇒ 仍可见
+    expect(buildFeatureGuideExtraEntries(['agent:session'], ['customer_service'])).toEqual(['通知中心'])
   })
 })

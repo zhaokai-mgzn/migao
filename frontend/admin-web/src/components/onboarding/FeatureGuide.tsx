@@ -6,6 +6,7 @@ import Modal from '@/components/ui/Modal'
 import Button from '@/components/ui/Button'
 import { useAuthStore } from '@/store/auth'
 import {
+  buildFeatureGuideExtraEntries,
   buildFeatureGuideModules,
   dismissFeatureGuide,
   featureGuideUserKey,
@@ -46,6 +47,7 @@ export default function FeatureGuide({ enabled = true }: FeatureGuideProps) {
   const permissions = user.permissions || []
   const roles = user.roles || []
   const modules = buildFeatureGuideModules(permissions, roles)
+  const extraEntries = buildFeatureGuideExtraEntries(permissions, roles)
   const canSeeDashboard = permissions.includes('*') || permissions.includes('dashboard:view')
   const canUseMibao = user.capabilities?.mibaoChat === true
 
@@ -176,6 +178,11 @@ export default function FeatureGuide({ enabled = true }: FeatureGuideProps) {
               className="rounded-lg border border-dashed border-neutral-200 bg-neutral-50 px-3 py-4 text-sm text-neutral-500"
             >
               当前账号还没有可见菜单，请联系企业管理员配置岗位权限。
+            </p>
+          )}
+          {extraEntries.length > 0 && (
+            <p data-testid="feature-guide-extra-entries" className="mt-2 text-xs leading-5 text-neutral-500">
+              其他入口：{extraEntries.join(' · ')}
             </p>
           )}
         </div>

@@ -57,6 +57,8 @@ describe('FeatureGuide 首次登录引导（issue #8925，UI-153）', () => {
     expect(screen.getByText('「关闭」仅本次，下次登录仍会提示')).toBeVisible()
     expect(screen.getAllByTestId('feature-guide-step')).toHaveLength(4)
     expect(screen.getByTestId('feature-guide-module-customer-service')).toHaveTextContent('在线接待')
+    expect(screen.getByTestId('feature-guide-extra-entries')).toHaveTextContent('企业基础设置')
+    expect(screen.getByTestId('feature-guide-extra-entries')).toHaveTextContent('通知中心')
 
     // 展示即消费 pending + 记 shown
     expect(hasFeatureGuideShown()).toBe(true)
