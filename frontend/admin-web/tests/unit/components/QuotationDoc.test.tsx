@@ -1002,7 +1002,10 @@ describe('QuotationDoc — 报价单纸面内容（issue #4965）', () => {
       )
       expect(printBlock).toBeDefined()
       const effective = Array.from(printBlock!.cssRules).map((r) => r.cssText).join('\n')
-      expect(effective).toMatch(/\[data-print-target='quotation'\]/)
+      // jsdom 30 → 31 的 CSS 序列化把属性选择器的引号规范成**双引号**（`cssText` 里
+      // `[data-print-target="quotation"]`）⇒ 只对**引号风格**不可知，结构不放宽：
+      // `data-print-target=quotation` 仍必须出现在**生效规则**里（issue #4965 的护栏不变）。
+      expect(effective).toMatch(/\[data-print-target=['"]quotation['"]\]/)
       expect(effective).not.toMatch(
         /(^|[\s,])\.quotation-print-area,\s*\.quotation-print-area \*\s*\{[^}]*visibility/
       )
