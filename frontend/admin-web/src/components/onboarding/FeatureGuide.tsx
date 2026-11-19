@@ -177,7 +177,7 @@ export default function FeatureGuide({ enabled = true }: FeatureGuideProps) {
               data-testid="feature-guide-no-modules"
               className="rounded-lg border border-dashed border-neutral-200 bg-neutral-50 px-3 py-4 text-sm text-neutral-500"
             >
-              当前账号还没有可见菜单，请联系企业管理员配置岗位权限。
+              当前账号还没有可用的业务菜单，请联系企业管理员配置岗位权限。
             </p>
           )}
           {extraEntries.length > 0 && (
