@@ -33,8 +33,16 @@ const LOGIN_RESPONSE = {
   },
 }
 
+// ⚠️ 身份 mock 用**扁平**形态（与 tests/e2e/fixtures.ts 一致）：store 兼容 `{user:{...},…}` 包装，
+// 但 test_mibao_chat_gate.py 判据 ⑧ 的宿主对象解析只认「最近的 `{`」—— 再嵌一层 `user` 会让它
+// 把 roles 归到 user 对象、误判能力位缺失。扁平既保真又不触发该误判。
 const ADMIN_ME = {
-  user: { id: 'u-guide-e2e', username: 'zhangsan@migao', name: '张三', mustChangePassword: false, tenantId: 1, tenantName: '测试布艺' },
+  id: 'u-guide-e2e',
+  username: 'zhangsan@migao',
+  name: '张三',
+  mustChangePassword: false,
+  tenantId: 1,
+  tenantName: '测试布艺',
   roles: ['admin'],
   permissions: ['*'],
   menus: [],
@@ -42,7 +50,12 @@ const ADMIN_ME = {
 }
 
 const CUSTOMER_SERVICE_ME = {
-  user: { id: 'u-guide-kefu', username: 'kefu@migao', name: '客服小王', mustChangePassword: false, tenantId: 1, tenantName: '测试布艺' },
+  id: 'u-guide-kefu',
+  username: 'kefu@migao',
+  name: '客服小王',
+  mustChangePassword: false,
+  tenantId: 1,
+  tenantName: '测试布艺',
   roles: ['customer_service'],
   permissions: ['agent:session', 'knowledge:view', 'after_sales:view', 'customer:view'],
   menus: [],
