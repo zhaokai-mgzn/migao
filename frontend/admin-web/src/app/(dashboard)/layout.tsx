@@ -9,6 +9,7 @@ import { usePermission } from '@/lib/permission'
 import { useChatStore } from '@/store/chat'
 import { cn } from '@/lib/utils'
 import FloatingAssistant from '@/components/ai-assistant/FloatingAssistant'
+import FeatureGuide from '@/components/onboarding/FeatureGuide'
 import AccessDenied from '@/components/common/AccessDenied'
 
 // 路由 → 所需权限码映射（与后端 @RequirePermission 口径一致，前端作为第二道防线；
@@ -253,6 +254,11 @@ export default function DashboardLayout({
 
       {/* AI 助手悬浮组件 — 聊天相关页面不显示（已有完整对话界面） */}
       {!pathname.startsWith('/chat') && <FloatingAssistant />}
+
+      {/* 首次登录功能使用引导（issue #8925）：登录成功后的首个业务页自动弹出；
+          403 面不弹（用户当前连这一页都进不去）。关闭 / 不再提醒的语义与存储见
+          `frontend/admin-web/src/lib/feature-guide.ts`。放在 FloatingAssistant 之后 ⇒ 弹窗盖在浮球之上。 */}
+      <FeatureGuide enabled={!permissionDenied} />
     </div>
   )
 }

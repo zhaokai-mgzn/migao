@@ -5856,3 +5856,43 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+
+  # UI-153（issue #8925）：首次登录功能使用引导
+  - id: UI-153
+    legacy_id: ""
+    title: "首次登录功能使用引导：「关闭」仅本次、「不再提醒」持久，功能地图按岗位权限派生"
+    domains:
+      - ui
+      - frontend
+      - onboarding
+    tier: normal
+    tags:
+      - ui
+      - onboarding
+      - login
+      - preference
+      - rbac
+    truths_ref:
+      - frontend-fix.layout
+      - frontend-fix.no-api-change
+    user_inputs:
+      - "用户 2026-11-19 钉钉：基于观星台现有功能和使用逻辑，给用户做一个功能使用引导；引导初次登录时跳出，要有「关闭」和「不再提醒」两个操作按钮；点「关闭」后下次登录继续跳出，点「不再提醒」后不再跳出。"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "判据 1·**登录后弹出**：员工密码登录 / 管理员短信登录成功 ⇒ 落 sessionStorage 的「本次登录待展示」标记；业务页布局挂载引导组件时消费标记并弹出（标题「功能使用引导」+「关闭」「不再提醒」两按钮）。执行点 = frontend/admin-web/tests/unit/lib/feature-guide.test.ts、tests/unit/components/FeatureGuide.test.tsx、tests/unit/store/auth.test.ts。"
+      - "判据 2·**关闭仅本次、下次登录再弹**：点「关闭」只保留 sessionStorage shown 标记、不写 localStorage dismissed；同一会话刷新 / 站内跳转不再弹；退出登录清 session 标记后再次登录（pending 重新落下）⇒ 再次弹出。执行点 = 同上三个单测文件 + tests/e2e/specs/onboarding/feature-guide.spec.ts。"
+      - "判据 3·**不再提醒持久**：点「不再提醒」按 `user.id`（缺失回退 username）写 localStorage；刷新、退出重登均不再弹；按用户隔离（A 关掉不影响 B）。执行点 = feature-guide.test.ts / FeatureGuide.test.tsx / feature-guide.spec.ts。"
+      - "判据 4·**功能地图与菜单同源、按权限裁剪**：引导里的分组名 / 子项名直接来自 `config/menu.ts` + `visibleMenuGroups`（与侧边栏同一权限过滤）；无权限的模块与子项不渲染，空权限给可行动空态。执行点 = feature-guide.test.ts / FeatureGuide.test.tsx。"
+      - "判据 5·**不打扰既有流程**：403 面（enabled=false）不弹；未登录不弹；引导只在真正登录成功后触发，深链 / 刷新不单独造 pending。执行点 = FeatureGuide.test.tsx / feature-guide.spec.ts。"
+    skip_reason: "[backend-contract] 纯前端登录后引导（无接口 / 字段 / 权限码变更；偏好按既有 localStorage 模式落在本机），由 vitest 单测 + Playwright 真浏览器判据覆盖，不进入 agent-eval 冒烟"
+    merge_log: "2026-11-19 新增（issue #8925）：首次登录功能使用引导；关闭仅本次、不再提醒持久；功能地图从 config/menu.ts 按权限派生（零新菜单源）。取号 UI-153（scripts/next_case_id.py UI 现取 main 001-152）。"
+    traces:
+      tests:
+        - "frontend/admin-web/tests/unit/lib/feature-guide.test.ts"
+        - "frontend/admin-web/tests/unit/components/FeatureGuide.test.tsx"
+        - "frontend/admin-web/tests/unit/store/auth.test.ts"
+        - "tests/e2e/specs/onboarding/feature-guide.spec.ts"
+      ci:
+        - pr-check.yml
+      verifies: []

@@ -1,4 +1,4 @@
-// case_ids: AU-001, AU-002, AU-006, AU-012, API-010, UI-037
+// case_ids: AU-001, AU-002, AU-006, AU-012, API-010, UI-037, UI-153
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { act } from '@testing-library/react'
 
@@ -23,6 +23,11 @@ vi.mock('@/lib/api', () => ({
 
 // Need to import after mocks
 import { useAuthStore } from '@/store/auth'
+import {
+  FEATURE_GUIDE_PENDING_KEY,
+  FEATURE_GUIDE_SHOWN_KEY,
+  markFeatureGuideShown,
+} from '@/lib/feature-guide'
 
 describe('useAuthStore (Zustand auth store)', () => {
   beforeEach(() => {
@@ -38,6 +43,7 @@ describe('useAuthStore (Zustand auth store)', () => {
         _hasHydrated: true,
       })
     })
+    sessionStorage.clear()
     // Mock document.cookie
     Object.defineProperty(document, 'cookie', {
       writable: true,
@@ -81,6 +87,21 @@ describe('useAuthStore (Zustand auth store)', () => {
       expect(mockEmployeeLogin).toHaveBeenCalledWith('zhangsan@tenant_7478359537', 'Init#12345')
       // 只有两个参数 —— 出现第三个（tenantId/tenantCode）就是前端自行解析租户的回归
       expect(mockEmployeeLogin.mock.calls[0]).toHaveLength(2)
+    })
+
+    it('登录成功 ⇒ 落「本次登录待展示」引导标记（issue #8925 / UI-153）', async () => {
+      mockEmployeeLogin.mockResolvedValue({
+        data: { data: { accessToken: 'emp-token', user: { id: 'u1', mustChangePassword: false } } },
+      })
+      mockGetUserInfo.mockResolvedValue({
+        data: { data: { user: { id: 'u1', username: 'zhangsan', mustChangePassword: false }, roles: ['operator'] } },
+      })
+
+      await act(async () => {
+        await useAuthStore.getState().employeeLogin('zhangsan@migao', 'Init#12345')
+      })
+
+      expect(sessionStorage.getItem(FEATURE_GUIDE_PENDING_KEY)).toBe('1')
     })
 
     it('登录成功：落会话（内存 token + 响应内 user）', async () => {
@@ -411,6 +432,21 @@ describe('useAuthStore (Zustand auth store)', () => {
       expect(state.accessToken).toBeNull()
       expect(state.isAuthenticated).toBe(false)
       expect(state.isLoading).toBe(false)
+    })
+
+    it('同时清掉本次登录的引导 session 标记，但保留「不再提醒」（issue #8925 / UI-153）', () => {
+      localStorage.setItem('migao.feature-guide.dismissed.v1.u1', '1')
+      sessionStorage.setItem(FEATURE_GUIDE_PENDING_KEY, '1')
+      markFeatureGuideShown()
+      sessionStorage.setItem(FEATURE_GUIDE_SHOWN_KEY, '1')
+
+      act(() => {
+        useAuthStore.getState().clearAuth()
+      })
+
+      expect(sessionStorage.getItem(FEATURE_GUIDE_PENDING_KEY)).toBeNull()
+      expect(sessionStorage.getItem(FEATURE_GUIDE_SHOWN_KEY)).toBeNull()
+      expect(localStorage.getItem('migao.feature-guide.dismissed.v1.u1')).toBe('1')
     })
   })
 

@@ -1567,6 +1567,15 @@ worker-h5 纯函数、承运商 4 条 × 两处入口 + 类级单一真值守卫
 
 ## [Unreleased]
 
+### 首次登录弹出功能使用引导：「关闭」仅本次、「不再提醒」后不再自动弹出（2026-11-19，issue #8925）
+
+- 登录成功后的首个业务页弹出引导，提供「关闭」「不再提醒」两个操作；「关闭」只在本次浏览器会话生效
+  （下次登录仍会弹出），「不再提醒」按用户持久化（重登 / 刷新都不再自动弹出，换浏览器或设备不同步）。
+- 引导里的功能地图按当前岗位权限从 `config/menu.ts` 派生（与侧边栏同一套过滤），无权限的模块不出现，
+  不另抄一份菜单；「先看经营报表」「问米宝」两块也按权限 / 能力位显示。
+- 判据：`frontend/admin-web/tests/unit/lib/feature-guide.test.ts`、`tests/unit/components/FeatureGuide.test.tsx`、
+  `tests/unit/store/auth.test.ts`、`tests/e2e/specs/onboarding/feature-guide.spec.ts`（用例 UI-153）。
+
 ### 收款码 / 角色两处「先查后插」改成幂等写：并发保存不再 500，也不会写出第二条（2026-11-03，issue #7255）
 
 - **改前**：`PUT /settings/payment-qrcodes/{type}` 与「新建角色」都是「先查有没有 → 没有就插」。
