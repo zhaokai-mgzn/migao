@@ -652,12 +652,13 @@ def test_admin_web_build_args_keep_the_pre_change_effective_defaults():
     for var, default in ADMIN_WEB_BUILD_DEFAULTS.items():
         # ① deploy.sh 必须传它，且**缺省域名下的有效值**逐字正确（形态：--build-arg "VAR=${VAR:-<expr>}"，
         #    `<expr>` 可以写成 `${MIGAO_PUBLIC_DOMAIN}` 派生 —— 判据只认有效值，见 issue #8932）
-        expr = _deploy_arg_default(d, var)
-        assert expr is not None, f"deploy.sh 构建 admin-web 时没有以 `${{{var}:-<默认>}}` 形态传 {var}"
+        #    取不到时按空串处理：下面是与 `default` 的具体比对，缺行/漂移都会具名红（不用存在性断言兜底）
+        expr = _deploy_arg_default(d, var) or ""
         effective = _effective_default(expr)
         assert effective == default, (
-            f"{var} 的默认值漂移：deploy.sh 给 {expr!r}（缺省域名下 = {effective!r}），改前的有效值是 {default!r}"
-            "（那会把错误的地址 baked 进前端 JS，且**构建/部署全绿**，只有用户点功能才炸）"
+            f"{var} 的默认值漂移或缺失：deploy.sh 给 {expr!r}（缺省域名下 = {effective!r}），"
+            f"改前的有效值是 {default!r} —— 那会把错误的地址 baked 进前端 JS，"
+            "且**构建/部署全绿**，只有用户点功能才炸"
         )
         # ② 与 Dockerfile 的 ARG 缺省值**一致**（同一真值的两个落点 ⇒ 不许各写各的）
         md = re.search(rf"^ARG {re.escape(var)}=(\S+)$", df, re.M)
