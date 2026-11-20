@@ -85,7 +85,7 @@ describe('BatchStockPanel 批次账读面', () => {
     mockReconcile.mockResolvedValue({ data: { data: reconcile() } })
   })
 
-  it('PR-054 余量列表（红证）：批次号/货号/入库量/已消耗/**余量**/收货日期 + 说明「派生（入库量 − 已派工消耗）」', async () => {
+  it('PR-054 余量列表（红证）：批次号/货号/入库量/已消耗/**余量**/收货日期 + 说明「余量 = 入库量 − 已派工消耗（派生值）」', async () => {
     render(<BatchStockPanel productId="prod-1" />)
 
     const table = await screen.findByTestId('batch-remaining-table')
@@ -97,8 +97,8 @@ describe('BatchStockPanel 批次账读面', () => {
     expect(within(table).getByText('7.3')).toBeInTheDocument() // 已消耗
     expect(within(table).getByText('12.7')).toBeInTheDocument() // 余量（派生）
     expect(within(table).getByText('2026-09-01')).toBeInTheDocument()
-    // 文案：说清这是**派生**余量，不是另一份库存数
-    expect(screen.getByText(/派生余量（入库量 − 已派工消耗）/)).toBeInTheDocument()
+    // 文案：说清这是**算出来的**余量 = 入库量 − 已派工消耗（issue #8934 起收成一句，信息不重复）
+    expect(screen.getByText(/余量 = 入库量 − 已派工消耗（这个数是算出来的/)).toBeInTheDocument()
   })
 
   it('PR-054 四档分布（红证）：恒四档都渲染（0 档也在）+ 批次数 + 占比', async () => {

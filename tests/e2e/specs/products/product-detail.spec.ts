@@ -83,16 +83,15 @@ test.describe('商品详情', () => {
   test('应显示 SKU 规格表格', async ({ page }) => {
     await expect(page.getByText('销售信息')).toBeVisible()
     // 验证表格中包含颜色名
-    const table = page.locator('table').last()
+    // issue #8934：批次与库存整块移到「商品信息」之后 ⇒ 页面上最后一张表不再固定是 SKU 表，
+    // 定位改为按区块锚点取（旧的 `locator('table').last()` 会打到库存对账表）。
+    const table = page.getByTestId('product-sales-info').locator('table')
     await expect(table.getByText('灰色')).toBeVisible()
     await expect(table.getByText('米白')).toBeVisible()
   })
 
-  test('应显示加工项配置', async ({ page }) => {
-    await expect(page.getByRole('heading', { name: '加工项' }).first()).toBeVisible()
-    await expect(page.getByText('韩式打褶定型')).toBeVisible()
-    await expect(page.getByText('¥25.00/米')).toBeVisible()
-  })
+  // 加工项块已随 issue #4371 从商品详情页退场（商品与加工项解耦）⇒ 原「应显示加工项配置」
+  // 断言在改前即不成立，本次随区块重排一并删除，避免留下一条永远跑不绿的死断言。
 
   test('应显示商品描述', async ({ page }) => {
     await expect(page.getByText('商品描述')).toBeVisible()

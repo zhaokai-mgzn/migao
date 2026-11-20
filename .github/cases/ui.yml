@@ -5896,3 +5896,44 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+
+  # UI-154（issue #8934）：商品详情重排 —— 商品信息 / 批次与库存两区不穿插
+  - id: UI-154
+    legacy_id: ""
+    title: "商品详情页重排：商品信息一个整体、批次余量与库存对账另一个整体，两区不穿插且层级清晰（issue #8934）"
+    domains:
+      - ui
+      - frontend
+      - product
+    tier: normal
+    tags:
+      - ui
+      - layout
+      - information-architecture
+      - product-detail
+      - batch-stock
+    truths_ref:
+      - frontend-fix.layout
+      - frontend-fix.no-api-change
+    user_inputs:
+      - "用户 2026-11-20 钉钉原话：把商品管理的商品详情页重新整理。商品信息展示作为一个整体展示。商品批次余量、商品批次盘点、剩余量分布、库存对账，也重新整理后作为一个整体展示。两个整体不要穿插展示。展示要有条理，要有层级逻辑。同日追加：还要注意信息不要重复展示，注意简洁明了。"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "判据 1·**两个整体不穿插**：`product-info-region` 只含基本信息 / 商品属性 / 销售信息 / 商品颜色 / 商品描述 / 商品图片；`product-stock-region` 只含库存概览 / 批次余量 / 按批次盘点 / 剩余量分布 / 库存对账；DOM 顺序商品信息在前。执行点 = frontend/admin-web/tests/unit/pages/product-detail-regions.test.tsx、tests/e2e/specs/products/product-detail-regions.spec.ts。"
+      - "判据 2·**层级**：区域标题 h2（商品信息 / 批次与库存）+ 区域内子块标题 h3；真实浏览器几何两区不重叠、商品信息区在上。执行点 = product-detail-regions.test.tsx / product-detail-regions.spec.ts。"
+      - "判据 3·**信息不重复**：商品级库存总量 / 库存扣减方式 / 库存预警阈值只在库存概览出现（商品信息区查不到）；批次余量 / 按批次盘点 / 剩余量分布 / 库存对账标题全页各只有一处。执行点 = product-detail-regions.test.tsx / product-detail-regions.spec.ts。"
+      - "判据 4·**零口径改动**：商品 / 批次余量 / 分布 / 对账仍按原接口原样渲染，SKU 行内改价、盘点提交、空态 / 失败态判据保持绿；无接口、字段、权限码变更。执行点 = 既有 product-detail.test.tsx / product-stock-unit.test.tsx / BatchStockPanel.test.tsx / BatchStocktakeForm.test.tsx。"
+    skip_reason: "[backend-contract] 纯前端信息架构与版式重排（无接口 / 字段 / 权限码变更），由 vitest 页面判据 + Playwright 真浏览器判据覆盖，不进入 agent-eval 冒烟"
+    merge_log: "2026-11-20 新增（issue #8934）：用户要求商品详情页商品信息一个整体、批次余量与库存对账另一个整体且不穿插、去重简洁。取号 UI-154（`python3 scripts/next_case_id.py UI` 现取 main 001-153）。"
+    traces:
+      tests:
+        - "frontend/admin-web/tests/unit/pages/product-detail-regions.test.tsx"
+        - "frontend/admin-web/tests/unit/pages/product-detail.test.tsx"
+        - "frontend/admin-web/tests/unit/components/product-stock-unit.test.tsx"
+        - "frontend/admin-web/tests/unit/components/BatchStockPanel.test.tsx"
+        - "frontend/admin-web/tests/unit/components/BatchStocktakeForm.test.tsx"
+        - "tests/e2e/specs/products/product-detail-regions.spec.ts"
+      ci:
+        - pr-check.yml
+      verifies: []
