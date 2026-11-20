@@ -126,6 +126,43 @@ const STOCK_DEDUCTION_LABELS: Record<string, string> = {
   on_pay: '付款减库存',
 }
 
+/**
+ * 页内一级区域卡（issue #8934，形态与订单详情同源）：
+ * 卡头 = 主色竖条 + 区域标题（h2）；卡体 = 区域内子块。
+ * 层级纪律：区域标题 h2，区域内的子块标题 h3（`SubSection`）—— 不再让所有块平铺成同权重的小灰卡。
+ */
+function DetailRegion({ title, testId, children }: {
+  title: string
+  testId: string
+  children: React.ReactNode
+}) {
+  return (
+    <section data-testid={testId} className="bg-white rounded-lg border border-neutral-200 shadow-card">
+      <div className="flex items-center gap-2 border-b border-neutral-100 px-6 py-3.5">
+        <span className="inline-block w-1 h-4 bg-primary-500 rounded-sm" />
+        <h2 className="text-base font-semibold text-neutral-900">{title}</h2>
+      </div>
+      <div className="px-6 py-5">{children}</div>
+    </section>
+  )
+}
+
+/** 区域内的子块（h3）：比区域标题低一档，不单独成卡（避免卡内套卡）。 */
+function SubSection({ testId, title, divided = true, children }: {
+  testId: string
+  title: string
+  /** 与上一子块之间画分隔线；区域内第一块传 false */
+  divided?: boolean
+  children: React.ReactNode
+}) {
+  return (
+    <section data-testid={testId} className={divided ? 'border-t border-neutral-100 pt-6' : undefined}>
+      <h3 className="text-sm font-semibold text-neutral-700 mb-3">{title}</h3>
+      {children}
+    </section>
+  )
+}
+
 export default function ProductDetailPage() {
   const router = useRouter()
   const productId = useRouteId('id')
@@ -294,269 +331,282 @@ export default function ProductDetailPage() {
         </div>
       </div>
 
-      <div className="flex flex-col gap-6">
-          {/* Basic info */}
-          <div className="bg-neutral-50 rounded-lg p-4">
-            <h3 className="text-sm font-semibold text-neutral-700 mb-3">基本信息</h3>
-            <dl className="grid grid-cols-2 gap-x-6 gap-y-3">
-              <div>
-                <dt className="text-xs text-neutral-500">分类</dt>
-                <dd className="text-sm text-neutral-900 mt-0.5">{product.categoryName || '-'}</dd>
-              </div>
-              <div>
-                <dt className="text-xs text-neutral-500">品牌</dt>
-                <dd className="text-sm text-neutral-900 mt-0.5">{product.brand || '-'}</dd>
-              </div>
-              <div>
-                <dt className="text-xs text-neutral-500">计价方式</dt>
-                <dd className="text-sm text-neutral-900 mt-0.5">
-                  {product.pricingType ? PricingTypeLabels[product.pricingType] : '-'}
-                </dd>
-              </div>
-              <div>
-                <dt className="text-xs text-neutral-500">单价</dt>
-                <dd className="text-sm font-medium text-neutral-900 mt-0.5">{priceText}</dd>
-              </div>
-              {product.costPrice !== undefined && (
-                <div>
-                  <dt className="text-xs text-neutral-500">成本价</dt>
-                  <dd className="text-sm text-neutral-900 mt-0.5">¥{product.costPrice.toFixed(2)}</dd>
-                </div>
-              )}
-              <div>
-                <dt className="text-xs text-neutral-500">库存（{STOCK_UNIT}）</dt>
-                <dd className="text-sm text-neutral-900 mt-0.5">{product.totalStock ?? product.stock ?? '-'}</dd>
-              </div>
-              {stockDeductionLabel && (
-                <div>
-                  <dt className="text-xs text-neutral-500">库存扣减方式</dt>
-                  <dd className="text-sm text-neutral-900 mt-0.5">{stockDeductionLabel}</dd>
-                </div>
-              )}
-              {product.stockWarningThreshold != null && (
-                <div>
-                  <dt className="text-xs text-neutral-500">库存预警阈值</dt>
-                  <dd className="text-sm text-neutral-900 mt-0.5">{product.stockWarningThreshold}</dd>
-                </div>
-              )}
-              {product.skuCode && (
-                <div>
-                  <dt className="text-xs text-neutral-500">货号</dt>
-                  <dd className="text-sm text-neutral-900 mt-0.5 font-mono">{product.skuCode}</dd>
-                </div>
-              )}
-              <div>
-                <dt className="text-xs text-neutral-500">在售颜色</dt>
-                <dd className="text-sm text-neutral-900 mt-0.5">{product.colorCount ?? (product.colors?.length ?? '-')}</dd>
-              </div>
-              {/* 售卖方式（商品级基础属性）与 1 卷米数（商品货号级基础参数） */}
-              {product.sellingMethods && product.sellingMethods.length > 0 && (
-                <div>
-                  <dt className="text-xs text-neutral-500">售卖方式</dt>
-                  <dd className="text-sm text-neutral-900 mt-0.5">
-                    {product.sellingMethods
-                      .map((m) => SellingMethodLabels[m] || m)
-                      .join(' / ')}
-                  </dd>
-                </div>
-              )}
-              <div>
-                <dt className="text-xs text-neutral-500">{ROLL_LENGTH_LABEL}</dt>
-                <dd className="text-sm text-neutral-900 mt-0.5">
-                  {product.rollLengthM != null ? `${product.rollLengthM} 米` : '未配置'}
-                </dd>
-                {/* 副说明与商品表单**同源**（issue #5919）：只作建单默认值与整卷换算 */}
-                <p className="mt-1 text-xs text-neutral-400 leading-relaxed" data-testid="roll-length-hint">
-                  {ROLL_LENGTH_HINT}
-                </p>
-              </div>
-              {product.salesCount != null && (
-                <div>
-                  <dt className="text-xs text-neutral-500">累计销量</dt>
-                  <dd className="text-sm text-neutral-900 mt-0.5">{product.salesCount}</dd>
-                </div>
-              )}
-              {product.salesAmount != null && (
-                <div>
-                  <dt className="text-xs text-neutral-500">累计销售额</dt>
-                  <dd className="text-sm text-neutral-900 mt-0.5">¥{product.salesAmount.toFixed(2)}</dd>
-                </div>
-              )}
-              {product.editedBy && (
-                <div>
-                  <dt className="text-xs text-neutral-500">最后编辑人</dt>
-                  <dd className="text-sm text-neutral-900 mt-0.5">
-                    {product.editedBy === 'internal-service' ? '黄金策机器人' : product.editedBy}
-                  </dd>
-                </div>
-              )}
-              {product.editedAt && (
-                <div>
-                  <dt className="text-xs text-neutral-500">最后编辑时间</dt>
-                  <dd className="text-sm text-neutral-900 mt-0.5">{product.editedAt}</dd>
-                </div>
-              )}
-              <div>
-                <dt className="text-xs text-neutral-500">创建时间</dt>
-                <dd className="text-sm text-neutral-900 mt-0.5">{product.createdAt || '-'}</dd>
-              </div>
-              <div>
-                <dt className="text-xs text-neutral-500">更新时间</dt>
-                <dd className="text-sm text-neutral-900 mt-0.5">{product.updatedAt || '-'}</dd>
-              </div>
-            </dl>
-          </div>
-
-          {/* 商品属性 */}
-          {(specEntries.length > 0 || otherSpecs.length > 0) && (
-            <div className="bg-neutral-50 rounded-lg p-4">
-              <h3 className="text-sm font-semibold text-neutral-700 mb-3">商品属性</h3>
+      <div className="flex flex-col gap-5">
+        {/* ===== 商品信息区域（issue #8934）=====
+            商品是什么 = 一个整体：基础信息 / 商品属性 / 销售信息（SKU）/ 商品颜色 / 商品描述 / 商品图片。
+            🔴 批次与库存（另一个整体）整块放到本区域之后，不再插在「商品属性」和「销售信息」之间。 */}
+        <DetailRegion title="商品信息" testId="product-info-region">
+          <div className="space-y-6">
+            <SubSection testId="product-basic-info" title="基本信息" divided={false}>
               <dl className="grid grid-cols-2 gap-x-6 gap-y-3">
-                {specEntries.map((item) => (
-                  <div key={item.key}>
-                    <dt className="text-xs text-neutral-500">{item.label}</dt>
-                    <dd className="text-sm text-neutral-900 mt-0.5">{item.value}</dd>
+                <div>
+                  <dt className="text-xs text-neutral-500">分类</dt>
+                  <dd className="text-sm text-neutral-900 mt-0.5">{product.categoryName || '-'}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs text-neutral-500">品牌</dt>
+                  <dd className="text-sm text-neutral-900 mt-0.5">{product.brand || '-'}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs text-neutral-500">计价方式</dt>
+                  <dd className="text-sm text-neutral-900 mt-0.5">
+                    {product.pricingType ? PricingTypeLabels[product.pricingType] : '-'}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-xs text-neutral-500">单价</dt>
+                  <dd className="text-sm font-medium text-neutral-900 mt-0.5">{priceText}</dd>
+                </div>
+                {product.costPrice !== undefined && (
+                  <div>
+                    <dt className="text-xs text-neutral-500">成本价</dt>
+                    <dd className="text-sm text-neutral-900 mt-0.5">¥{product.costPrice.toFixed(2)}</dd>
                   </div>
-                ))}
-                {/* 未识别的规格：**一行「其他」**承载全部（键名不进标签位，只进「键：值」文本） */}
-                {otherSpecs.length > 0 && (
-                  <div className="col-span-2">
-                    <dt className="text-xs text-neutral-500">其他</dt>
-                    <dd className="text-sm text-neutral-900 mt-0.5 break-words">
-                      {otherSpecs.map((item) => `${item.key}：${item.value}`).join('；')}
+                )}
+                {/* 库存口径（总量 / 扣减方式 / 预警阈值）统一落在「批次与库存」区域的库存概览，
+                    不在商品信息里重复一遍（用户 2026-11-20 口径：信息不要重复展示）。 */}
+                {product.skuCode && (
+                  <div>
+                    <dt className="text-xs text-neutral-500">货号</dt>
+                    <dd className="text-sm text-neutral-900 mt-0.5 font-mono">{product.skuCode}</dd>
+                  </div>
+                )}
+                <div>
+                  <dt className="text-xs text-neutral-500">在售颜色</dt>
+                  <dd className="text-sm text-neutral-900 mt-0.5">{product.colorCount ?? (product.colors?.length ?? '-')}</dd>
+                </div>
+                {/* 售卖方式（商品级基础属性）与 1 卷米数（商品货号级基础参数） */}
+                {product.sellingMethods && product.sellingMethods.length > 0 && (
+                  <div>
+                    <dt className="text-xs text-neutral-500">售卖方式</dt>
+                    <dd className="text-sm text-neutral-900 mt-0.5">
+                      {product.sellingMethods
+                        .map((m) => SellingMethodLabels[m] || m)
+                        .join(' / ')}
                     </dd>
                   </div>
                 )}
+                <div>
+                  <dt className="text-xs text-neutral-500">{ROLL_LENGTH_LABEL}</dt>
+                  <dd className="text-sm text-neutral-900 mt-0.5">
+                    {product.rollLengthM != null ? `${product.rollLengthM} 米` : '未配置'}
+                  </dd>
+                  {/* 副说明与商品表单**同源**（issue #5919）：只作建单默认值与整卷换算 */}
+                  <p className="mt-1 text-xs text-neutral-400 leading-relaxed" data-testid="roll-length-hint">
+                    {ROLL_LENGTH_HINT}
+                  </p>
+                </div>
+                {product.salesCount != null && (
+                  <div>
+                    <dt className="text-xs text-neutral-500">累计销量</dt>
+                    <dd className="text-sm text-neutral-900 mt-0.5">{product.salesCount}</dd>
+                  </div>
+                )}
+                {product.salesAmount != null && (
+                  <div>
+                    <dt className="text-xs text-neutral-500">累计销售额</dt>
+                    <dd className="text-sm text-neutral-900 mt-0.5">¥{product.salesAmount.toFixed(2)}</dd>
+                  </div>
+                )}
+                {product.editedBy && (
+                  <div>
+                    <dt className="text-xs text-neutral-500">最后编辑人</dt>
+                    <dd className="text-sm text-neutral-900 mt-0.5">
+                      {product.editedBy === 'internal-service' ? '黄金策机器人' : product.editedBy}
+                    </dd>
+                  </div>
+                )}
+                {product.editedAt && (
+                  <div>
+                    <dt className="text-xs text-neutral-500">最后编辑时间</dt>
+                    <dd className="text-sm text-neutral-900 mt-0.5">{product.editedAt}</dd>
+                  </div>
+                )}
+                <div>
+                  <dt className="text-xs text-neutral-500">创建时间</dt>
+                  <dd className="text-sm text-neutral-900 mt-0.5">{product.createdAt || '-'}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs text-neutral-500">更新时间</dt>
+                  <dd className="text-sm text-neutral-900 mt-0.5">{product.updatedAt || '-'}</dd>
+                </div>
               </dl>
-            </div>
-          )}
+            </SubSection>
 
-          {/* 批次账读面（V116 / issue #5145 阶段 1）：批次余量（派生）+ 剩余量分布（恒四档）+ 对账。
-              紧接「基本信息」的库存字段 —— 差额该怎么读就写在旁边（差额 = 已售未派 + 台账外存量，不是异常）。
-              ⚠️ 位置有意**放在「销售信息」SKU 表之前**：detail 页 e2e 用 `locator('table').last()`
-              定位 SKU 表，本组表格若排在它之后会把那个定位打偏。 */}
-          {productId && <BatchStockPanel productId={productId} />}
-
-          {/* 销售信息（SKU 组合 = 颜色 × 门幅；售卖方式 / 卷长是商品级基础属性，见「基本信息」） */}
-          {skus.length > 0 && (
-            <div className="bg-neutral-50 rounded-lg p-4">
-              <h3 className="text-sm font-semibold text-neutral-700 mb-3">销售信息</h3>
-              <div className="overflow-x-auto rounded-md border border-neutral-200 bg-white">
-                <table className="min-w-full text-sm">
-                  <thead className="bg-neutral-50 text-neutral-600">
-                    <tr>
-                      <th className="px-3 py-2 text-left font-medium">颜色</th>
-                      <th className="px-3 py-2 text-left font-medium">门幅</th>
-                      <th className="px-3 py-2 text-left font-medium">货号</th>
-                      <th className="px-3 py-2 text-right font-medium">库存（{STOCK_UNIT}）</th>
-                      <th className="px-3 py-2 text-right font-medium">价格</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-neutral-100">
-                    {skus.map((sku) => (
-                      <tr key={sku.id} className="text-neutral-900">
-                        <td className="px-3 py-2">{sku.colorName || '-'}</td>
-                        <td className="px-3 py-2">{sku.doorWidth || '-'}</td>
-                        <td className="px-3 py-2 font-mono text-xs">{sku.skuCode || '-'}</td>
-                        <td className="px-3 py-2 text-right tabular-nums">{sku.stock ?? '-'}</td>
-                        <td className="px-3 py-2 text-right tabular-nums">
-                          <SkuPriceCell
-                            productId={product.id}
-                            sku={sku}
-                            onUpdated={loadProduct}
-                          />
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-
-          {/* 颜色列表 */}
-          {product.colors && product.colors.length > 0 && (
-            <div className="bg-neutral-50 rounded-lg p-4">
-              <h3 className="text-sm font-semibold text-neutral-700 mb-3">商品颜色</h3>
-              <div className="flex flex-wrap gap-2">
-                {product.colors.map((c) => (
-                  <div
-                    key={c.id}
-                    className="flex items-center gap-2 px-3 py-1.5 rounded-full border border-neutral-200 bg-white text-sm"
-                  >
-                    {c.mainColorHex && (
-                      <span
-                        className="w-4 h-4 rounded-full border border-neutral-300 shrink-0"
-                        style={{ backgroundColor: c.mainColorHex }}
-                      />
-                    )}
-                    <span>{c.colorName}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Description */}
-          {product.description && (
-            <div className="bg-neutral-50 rounded-lg p-4">
-              <h3 className="text-sm font-semibold text-neutral-700 mb-2">商品描述</h3>
-              {/^\s*</.test(product.description) ? (
-                <div
-                  className="product-description text-sm text-neutral-700 leading-relaxed"
-                  dangerouslySetInnerHTML={{ __html: sanitizeHtml(product.description) }}
-                />
-              ) : (
-                <p className="text-sm text-neutral-600 whitespace-pre-wrap">{product.description}</p>
-              )}
-            </div>
-          )}
-
-          {/* 商品图片 */}
-          <div className="bg-neutral-50 rounded-lg p-4">
-            <h3 className="text-sm font-semibold text-neutral-700 mb-3">商品图片</h3>
-            {allImages.length > 0 ? (
-              <div className="space-y-3">
-                {/* Main image */}
-                {product.images?.[0] && (
-                  <div
-                    className="w-full max-w-sm aspect-square rounded-lg overflow-hidden bg-white cursor-pointer"
-                    onClick={() => setPreviewImg(product.images[0])}
-                  >
-                    <Image src={resolveImageUrl(product.images[0])} alt={product.name} width={400} height={400} className="w-full h-full object-cover" unoptimized />
-                  </div>
-                )}
-                {/* Detail images grid */}
-                {(product.detailImages?.length ?? 0) > 0 && (
-                  <div className="grid grid-cols-3 gap-2">
-                    {product.detailImages!.map((url, i) => (
-                      <div
-                        key={i}
-                        className="aspect-square rounded-md overflow-hidden bg-white cursor-pointer"
-                        onClick={() => setPreviewImg(url)}
-                      >
-                        <Image src={resolveImageUrl(url)} alt={`详情图 ${i + 1}`} width={200} height={200} className="w-full h-full object-cover" unoptimized />
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            ) : (
-              // 空态说清「去哪补」（issue #8057 第 2 条）：裸「暂无图片」不说下一步。
-              // 🔴 这里**有意不配失败锚点**（issue #8062 裁定，台账 `EMPTY_STATE_LEDGER` 保留这一条）：
-              //    图集随商品载荷一起下发（`product.images`），**没有独立读接口** ⇒ 不存在
-              //    「图片没读到 vs 商品真的没有图」的分歧：能走到这里就说明商品详情本身读到了
-              //    （详情读失败走 `product-detail-load-error` 那一支，根本不渲染这一块）。
-              //    归零判据 = 将来图集接入独立读接口时，同批补失败锚并删台账条目。
-              <div
-                className="w-full aspect-square rounded-lg bg-neutral-200 flex flex-col items-center justify-center gap-1 text-neutral-400"
-                data-testid="product-images-empty"
-              >
-                <span>暂无图片</span>
-                <span className="text-xs">在「编辑商品」里上传主图或详情图</span>
-              </div>
+            {/* 商品属性 */}
+            {(specEntries.length > 0 || otherSpecs.length > 0) && (
+              <SubSection testId="product-attributes" title="商品属性">
+                <dl className="grid grid-cols-2 gap-x-6 gap-y-3">
+                  {specEntries.map((item) => (
+                    <div key={item.key}>
+                      <dt className="text-xs text-neutral-500">{item.label}</dt>
+                      <dd className="text-sm text-neutral-900 mt-0.5">{item.value}</dd>
+                    </div>
+                  ))}
+                  {/* 未识别的规格：**一行「其他」**承载全部（键名不进标签位，只进「键：值」文本） */}
+                  {otherSpecs.length > 0 && (
+                    <div className="col-span-2">
+                      <dt className="text-xs text-neutral-500">其他</dt>
+                      <dd className="text-sm text-neutral-900 mt-0.5 break-words">
+                        {otherSpecs.map((item) => `${item.key}：${item.value}`).join('；')}
+                      </dd>
+                    </div>
+                  )}
+                </dl>
+              </SubSection>
             )}
+
+            {/* 销售信息（SKU 组合 = 颜色 × 门幅；售卖方式 / 卷长是商品级基础属性，见「基本信息」） */}
+            {skus.length > 0 && (
+              <SubSection testId="product-sales-info" title="销售信息">
+                <div className="overflow-x-auto rounded-md border border-neutral-200 bg-white">
+                  <table className="min-w-full text-sm" data-testid="sales-sku-table">
+                    <thead className="bg-neutral-50 text-neutral-600">
+                      <tr>
+                        <th className="px-3 py-2 text-left font-medium">颜色</th>
+                        <th className="px-3 py-2 text-left font-medium">门幅</th>
+                        <th className="px-3 py-2 text-left font-medium">货号</th>
+                        <th className="px-3 py-2 text-right font-medium">库存（{STOCK_UNIT}）</th>
+                        <th className="px-3 py-2 text-right font-medium">价格</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-neutral-100">
+                      {skus.map((sku) => (
+                        <tr key={sku.id} className="text-neutral-900">
+                          <td className="px-3 py-2">{sku.colorName || '-'}</td>
+                          <td className="px-3 py-2">{sku.doorWidth || '-'}</td>
+                          <td className="px-3 py-2 font-mono text-xs">{sku.skuCode || '-'}</td>
+                          <td className="px-3 py-2 text-right tabular-nums">{sku.stock ?? '-'}</td>
+                          <td className="px-3 py-2 text-right tabular-nums">
+                            <SkuPriceCell
+                              productId={product.id}
+                              sku={sku}
+                              onUpdated={loadProduct}
+                            />
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </SubSection>
+            )}
+
+            {/* 颜色列表 */}
+            {product.colors && product.colors.length > 0 && (
+              <SubSection testId="product-colors" title="商品颜色">
+                <div className="flex flex-wrap gap-2">
+                  {product.colors.map((c) => (
+                    <div
+                      key={c.id}
+                      className="flex items-center gap-2 px-3 py-1.5 rounded-full border border-neutral-200 bg-white text-sm"
+                    >
+                      {c.mainColorHex && (
+                        <span
+                          className="w-4 h-4 rounded-full border border-neutral-300 shrink-0"
+                          style={{ backgroundColor: c.mainColorHex }}
+                        />
+                      )}
+                      <span>{c.colorName}</span>
+                    </div>
+                  ))}
+                </div>
+              </SubSection>
+            )}
+
+            {/* 商品描述 */}
+            {product.description && (
+              <SubSection testId="product-description" title="商品描述">
+                {/^\s*</.test(product.description) ? (
+                  <div
+                    className="product-description text-sm text-neutral-700 leading-relaxed"
+                    dangerouslySetInnerHTML={{ __html: sanitizeHtml(product.description) }}
+                  />
+                ) : (
+                  <p className="text-sm text-neutral-600 whitespace-pre-wrap">{product.description}</p>
+                )}
+              </SubSection>
+            )}
+
+            {/* 商品图片 */}
+            <SubSection testId="product-images" title="商品图片">
+              {allImages.length > 0 ? (
+                <div className="space-y-3">
+                  {/* Main image */}
+                  {product.images?.[0] && (
+                    <div
+                      className="w-full max-w-sm aspect-square rounded-lg overflow-hidden bg-white cursor-pointer"
+                      onClick={() => setPreviewImg(product.images[0])}
+                    >
+                      <Image src={resolveImageUrl(product.images[0])} alt={product.name} width={400} height={400} className="w-full h-full object-cover" unoptimized />
+                    </div>
+                  )}
+                  {/* Detail images grid */}
+                  {(product.detailImages?.length ?? 0) > 0 && (
+                    <div className="grid grid-cols-3 gap-2">
+                      {product.detailImages!.map((url, i) => (
+                        <div
+                          key={i}
+                          className="aspect-square rounded-md overflow-hidden bg-white cursor-pointer"
+                          onClick={() => setPreviewImg(url)}
+                        >
+                          <Image src={resolveImageUrl(url)} alt={`详情图 ${i + 1}`} width={200} height={200} className="w-full h-full object-cover" unoptimized />
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                // 空态说清「去哪补」（issue #8057 第 2 条）：裸「暂无图片」不说下一步。
+                // 🔴 这里**有意不配失败锚点**（issue #8062 裁定，台账 `EMPTY_STATE_LEDGER` 保留这一条）：
+                //    图集随商品载荷一起下发（`product.images`），**没有独立读接口** ⇒ 不存在
+                //    「图片没读到 vs 商品真的没有图」的分歧：能走到这里就说明商品详情本身读到了
+                //    （详情读失败走 `product-detail-load-error` 那一支，根本不渲染这一块）。
+                //    归零判据 = 将来图集接入独立读接口时，同批补失败锚并删台账条目。
+                <div
+                  className="w-full aspect-square rounded-lg bg-neutral-200 flex flex-col items-center justify-center gap-1 text-neutral-400"
+                  data-testid="product-images-empty"
+                >
+                  <span>暂无图片</span>
+                  <span className="text-xs">在「编辑商品」里上传主图或详情图</span>
+                </div>
+              )}
+            </SubSection>
           </div>
+        </DetailRegion>
+
+        {/* ===== 批次与库存区域（issue #8934）=====
+            有多少、批次账怎么对 = 另一个整体：库存概览 / 批次余量 / 按批次盘点 / 剩余量分布 / 库存对账。
+            位置固定在商品信息区域之后（两区不穿插）；库存总量 / 扣减方式 / 预警阈值只在这里出现一次。 */}
+        <DetailRegion title="批次与库存" testId="product-stock-region">
+          <div className="space-y-6">
+            <SubSection testId="product-stock-summary" title="库存概览" divided={false}>
+              <dl className="grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-3">
+                <div>
+                  <dt className="text-xs text-neutral-500">库存（{STOCK_UNIT}）</dt>
+                  <dd className="text-sm text-neutral-900 mt-0.5 tabular-nums" data-testid="stock-total">
+                    {product.totalStock ?? product.stock ?? '-'}
+                  </dd>
+                </div>
+                {stockDeductionLabel && (
+                  <div>
+                    <dt className="text-xs text-neutral-500">库存扣减方式</dt>
+                    <dd className="text-sm text-neutral-900 mt-0.5">{stockDeductionLabel}</dd>
+                  </div>
+                )}
+                {product.stockWarningThreshold != null && (
+                  <div>
+                    <dt className="text-xs text-neutral-500">库存预警阈值</dt>
+                    <dd className="text-sm text-neutral-900 mt-0.5">{product.stockWarningThreshold}</dd>
+                  </div>
+                )}
+              </dl>
+            </SubSection>
+
+            {/* 批次账四块（余量 / 盘点 / 分布 / 对账）自带子块标题与分隔线 */}
+            {productId && <BatchStockPanel productId={productId} />}
+          </div>
+        </DetailRegion>
       </div>
 
       {/* Image preview */}

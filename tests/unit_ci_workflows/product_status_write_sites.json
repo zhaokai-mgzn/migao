@@ -124,6 +124,9 @@
       "path": "tests/e2e/specs/products/product-detail.spec.ts"
     },
     {
+      "path": "tests/e2e/specs/products/product-detail-regions.spec.ts"
+    },
+    {
       "path": "tests/e2e/specs/products/product-edit.spec.ts"
     },
     {

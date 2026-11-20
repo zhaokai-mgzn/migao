@@ -7,14 +7,16 @@ import type { BatchDistribution, BatchReconcile, BatchRemaining } from '@/types'
 import BatchStocktakeForm from '@/components/products/BatchStocktakeForm'
 
 /**
- * 批次账读面（V116 / issue #5145 阶段 1）——挂在商品详情的库存区。
+ * 批次账读面（V116 / issue #5145 阶段 1）——挂在商品详情「批次与库存」区域里（issue #8934）。
  *
- * 三个读面：① 批次余量（**派生** = 入库量 − 已派工消耗）；② 剩余量分布（恒四档）；
- * ③ 对账（`product_skus.stock` vs Σ批次余量）。
+ * 四个读面：① 批次余量（**派生** = 入库量 − 已派工消耗）；② 按批次盘点（写面，V143 / issue #5865）；
+ * ③ 剩余量分布（恒四档）；④ 对账（`product_skus.stock` vs Σ批次余量）。
  *
- * 本组件自身**只读**；写面（按批次盘点，V143 / issue #5865）由 {@link BatchStocktakeForm} 承载，
- * 挂在批次余量表下方：盘点提交成功 ⇒ 本组件重新拉三个读面 ⇒ 「差异已落账」当场看得见
+ * 本组件自身**只读**；盘点提交成功 ⇒ 本组件重新拉三个读面 ⇒ 「差异已落账」当场看得见
  * （不是「提交成功但列表还是旧值」）。
+ *
+ * 版式（issue #8934）：本组件不再自成一张小灰卡，而是宿主区域卡里的**四个子块**（h3 + 分隔线）；
+ * 区域标题（h2「批次与库存」）与库存概览由宿主 `ProductDetail` 承载。
  *
  * 口径单一真值 = 后端 `BatchStockViews` 的 javadoc；本组件只渲染、不重算：
  * - 余量**不是**另立一份库存数，而是「这批还有多少」的派生值；
@@ -59,17 +61,16 @@ export default function BatchStockPanel({ productId, skuId }: Props) {
 
   useEffect(() => { load() }, [load])
 
-  if (loading) return <div className="bg-neutral-50 rounded-lg p-4 text-sm text-neutral-400">批次账加载中…</div>
-  if (failed) return <div className="bg-neutral-50 rounded-lg p-4 text-sm text-neutral-400">批次账加载失败</div>
+  if (loading) return <div className="border-t border-neutral-100 pt-6 text-sm text-neutral-400" data-testid="batch-stock-panel">批次账加载中…</div>
+  if (failed) return <div className="border-t border-neutral-100 pt-6 text-sm text-neutral-400" data-testid="batch-stock-panel">批次账加载失败</div>
 
   return (
-    <div className="bg-neutral-50 rounded-lg p-4 space-y-4" data-testid="batch-stock-panel">
+    <div className="space-y-6" data-testid="batch-stock-panel">
       {/* ① 批次余量（派生） */}
-      <div>
+      <section data-testid="batch-remaining-section" className="border-t border-neutral-100 pt-6">
         <h3 className="text-sm font-semibold text-neutral-700">批次余量</h3>
         <p className="mt-1 text-xs text-neutral-500">
-          这是派生余量（入库量 − 已派工消耗）：入库时按批次记账，生成加工单指定批次时扣减、作废回补。
-          它不另立一份库存数 —— 与 SKU 库存的差额见下方对账。
+          余量 = 入库量 − 已派工消耗（这个数是算出来的，不另立一份库存数）。与 SKU 库存的差额见下方「库存对账」。
         </p>
         {batches.length === 0 ? (
           <p className="mt-2 text-xs text-neutral-400">暂无批次（批次由入库单过账产生）</p>
@@ -101,17 +102,17 @@ export default function BatchStockPanel({ productId, skuId }: Props) {
             </table>
           </div>
         )}
-      </div>
+      </section>
 
-      {/* ①-b 按批次盘点（V143 / issue #5865）：实盘录入 + 差异预览 + 一次提交 ⇒ 提交后刷新上面三个读面 */}
+      {/* ② 按批次盘点（V143 / issue #5865）：实盘录入 + 差异预览 + 一次提交 ⇒ 提交后刷新上面三个读面 */}
       <BatchStocktakeForm productId={productId} batches={batches} onApplied={() => { void load() }} />
 
-      {/* ② 剩余量分布（恒四档） */}
+      {/* ③ 剩余量分布（恒四档） */}
       {distribution && (
-        <div>
+        <section data-testid="batch-distribution-section" className="border-t border-neutral-100 pt-6">
           <h3 className="text-sm font-semibold text-neutral-700">剩余量分布</h3>
           <p className="mt-1 text-xs text-neutral-500">
-            按余量分四档（恒四档，余量为 0 的档也列出来）：共
+            按余量分四档（余量为 0 的档也列出）：共
             <span data-testid="distribution-total" className="mx-1 tabular-nums text-neutral-700">
               {distribution.totalBatches}
             </span>
@@ -137,16 +138,16 @@ export default function BatchStockPanel({ productId, skuId }: Props) {
               </tbody>
             </table>
           </div>
-        </div>
+        </section>
       )}
 
-      {/* ③ 对账（差额可读出、可解释） */}
+      {/* ④ 对账（差额可读出、可解释） */}
       {reconcile && (
-        <div>
-          <h3 className="text-sm font-semibold text-neutral-700">库存对账（SKU 库存 vs 批次余量）</h3>
+        <section data-testid="batch-reconcile-section" className="border-t border-neutral-100 pt-6">
+          <h3 className="text-sm font-semibold text-neutral-700">库存对账</h3>
           <p data-testid="reconcile-legend" className="mt-1 text-xs text-neutral-500">
-            差额 = 已售未派（顾客已付款、销售账已扣，加工单还没派，实物账还没动）+ 台账外存量（本功能上线前
-            就有的库存 / 建品时直接写的库存）。差额是口径差异，不是异常；只有差额无法由这两项解释时才需排查。
+            SKU 库存 vs 批次余量：差额 = 已售未派 + 台账外存量（本功能上线前就有的库存 / 建品时直接写的库存）。
+            差额是口径差异，不是异常；只有差额无法由这两项解释时才需排查。
           </p>
           {reconcile.unreconciledCount > 0 && (
             <p className="mt-1 text-xs text-red-600" data-testid="reconcile-unbalanced">
@@ -197,7 +198,7 @@ export default function BatchStockPanel({ productId, skuId }: Props) {
               </table>
             </div>
           )}
-        </div>
+        </section>
       )}
     </div>
   )

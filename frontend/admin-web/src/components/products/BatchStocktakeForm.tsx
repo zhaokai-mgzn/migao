@@ -111,20 +111,17 @@ export default function BatchStocktakeForm({ productId, batches, onApplied }: Pr
   }, [changed, onApplied, productId])
 
   return (
-    <div className="mt-4 rounded-md border border-neutral-200 bg-white" data-testid="batch-stocktake">
-      <div className="border-b border-neutral-100 px-3 py-2">
-        <h3 className="text-sm font-semibold text-neutral-700">按批次盘点（实盘录入）</h3>
-        <p className="mt-1 text-xs text-neutral-500">
-          录「这一批现在实际还剩多少米」⇒ 差异 = 实盘 − 余量（正 = 盘盈、负 = 盘亏）。
-          提交后：差异落一条盘点分录（入库量不动），SKU 库存按合计差异对齐 —— 两本账一起变，
-          「这批为什么少了 1.5 米」在批次台账里查得到。实盘与余量相同 ⇒ 不写任何东西。
-        </p>
-      </div>
+    <section className="border-t border-neutral-100 pt-6" data-testid="batch-stocktake">
+      <h3 className="text-sm font-semibold text-neutral-700">按批次盘点</h3>
+      <p className="mt-1 text-xs text-neutral-500">
+        录每批实际还剩多少米：差异 = 实盘 − 余量（正 = 盘盈、负 = 盘亏）。提交后差异落一条盘点分录
+        （入库量不动），SKU 库存按合计差异对齐；实盘与余量相同 ⇒ 不写任何东西。
+      </p>
 
       {batches.length === 0 ? (
-        <p className="px-3 py-3 text-xs text-neutral-400">暂无批次可盘（批次由入库单过账产生）</p>
+        <p className="mt-2 text-xs text-neutral-400">暂无批次可盘（批次由入库单过账产生）</p>
       ) : (
-        <div className="overflow-x-auto">
+        <div className="mt-2 overflow-x-auto rounded-md border border-neutral-200 bg-white">
           <table className="min-w-full text-sm" data-testid="stocktake-table">
             <thead className="bg-neutral-50 text-neutral-600">
               <tr>
@@ -170,7 +167,7 @@ export default function BatchStocktakeForm({ productId, batches, onApplied }: Pr
         </div>
       )}
 
-      <div className="flex flex-wrap items-center justify-between gap-2 border-t border-neutral-100 px-3 py-2">
+      <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
         <p className="text-xs text-neutral-600">
           合计差异：
           <span className="mx-1 font-medium tabular-nums" data-testid="stocktake-total">
@@ -190,18 +187,18 @@ export default function BatchStocktakeForm({ productId, batches, onApplied }: Pr
       </div>
 
       {error && (
-        <p className="border-t border-neutral-100 px-3 py-2 text-xs text-red-600" data-testid="stocktake-error">
+        <p className="mt-2 text-xs text-red-600" data-testid="stocktake-error">
           {error}
         </p>
       )}
 
       {result && (
-        <div className="border-t border-neutral-100 px-3 py-2 text-xs text-neutral-600" data-testid="stocktake-result">
+        <div className="mt-2 text-xs text-neutral-600" data-testid="stocktake-result">
           上次提交：已更新 {result.changedCount} 个批次（合计差异 {result.totalDelta} 米）
           {result.unchangedCount > 0 && `，${result.unchangedCount} 个与余量相同（未写入）`}
           {result.replayedCount > 0 && `，${result.replayedCount} 个本次已记过（跳过）`}
         </div>
       )}
-    </div>
+    </section>
   )
 }
