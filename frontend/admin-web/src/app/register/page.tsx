@@ -565,7 +565,7 @@ export default function RegisterPage() {
                           <MessageCircle className="w-4 h-4 text-green-600" />
                         </div>
                         <div className="text-left">
-                          <p className="text-sm font-medium text-neutral-900">{`元元 · ${AI_ROLES.xiaobu}`}</p>
+                          <p className="text-sm font-medium text-neutral-900">{`米宝 · ${AI_ROLES.xiaobu}`}</p>
                           <p className="text-xs text-neutral-500">7×24小时AI客服，精准服务您的客户</p>
                         </div>
                       </div>

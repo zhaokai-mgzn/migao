@@ -4,7 +4,7 @@
  * 覆盖: 导航副标题品牌名来源（企业设置租户名，非硬编码）
  *
  * UI-016: C 端品牌名去硬编码 — 导航副标题企业名取自企业设置（租户名）
- * UI-018: C 端智能客服名称去硬编码 — 思考中/空态/导航名取 botName，未配置默认「元元」
+ * UI-018: C 端智能客服名称去硬编码 — 思考中/空态/导航名取 botName，未配置默认「米宝」
  */
 // case_ids: UI-016, UI-018
 import { buildBrandSubtitle, buildBotName } from '../src/utils/brand'
@@ -30,11 +30,11 @@ describe('buildBotName', () => {
     expect(buildBotName('小云')).toBe('小云')
   })
 
-  // UI-018: 未配置/为空 → 兜底「元元」（不硬编码 AI 等通用词）
-  it('botName 为空/未配置 → 兜底「元元」', () => {
-    expect(buildBotName(undefined)).toBe('元元')
-    expect(buildBotName(null)).toBe('元元')
-    expect(buildBotName('')).toBe('元元')
-    expect(buildBotName('   ')).toBe('元元')
+  // UI-018: 未配置/为空 → 兜底「米宝」（不硬编码 AI 等通用词）
+  it('botName 为空/未配置 → 兜底「米宝」', () => {
+    expect(buildBotName(undefined)).toBe('米宝')
+    expect(buildBotName(null)).toBe('米宝')
+    expect(buildBotName('')).toBe('米宝')
+    expect(buildBotName('   ')).toBe('米宝')
   })
 })

@@ -1,5 +1,5 @@
 """
-AI 智能客服系统 - C 端"我的订单"查询 Tool（元元专用）
+AI 智能客服系统 - C 端"我的订单"查询 Tool（米宝专用）
 
 与 B 端 order_query 物理隔离：
 - 仅 customer 角色可用（allowed_roles=["customer"]，商户员工不可用）
@@ -39,7 +39,7 @@ RECENT_ADDRESS_ACTION = "recent_address"
 
 
 class CustomerOrderQueryTool(BaseTool):
-    """C 端"我的订单"查询 Tool（元元专用，强制用户级隔离）
+    """C 端"我的订单"查询 Tool（米宝专用，强制用户级隔离）
 
     仅查询当前登录用户的订单；不支持跨用户搜索，不支持任何写操作。
     """
@@ -93,7 +93,7 @@ class CustomerOrderQueryTool(BaseTool):
 
     # 物理隔离：仅 C 端顾客可用；商户员工/管理员一律拒绝（用 B 端 order_query）
     allowed_roles = ["customer"]
-    # 无权限码：C 端专属工具 —— C 端 JWT 没有 permissions claim（加码会让元元全量失效）。
+    # 无权限码：C 端专属工具 —— C 端 JWT 没有 permissions claim（加码会让米宝全量失效）。
     required_permissions = []
     read_only = True   # 只读（BaseTool 默认值，显式声明以便权限面自检）
 

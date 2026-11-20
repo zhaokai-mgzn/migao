@@ -5,7 +5,7 @@
 
 DeepSeek 主凭据在供应商侧失效（一轮 10 条 `401 AuthenticationError`、0 条 `LLM done`）时：
 
-- 黄金策 / 元元 / 意图分类 / 会话标题 / 视觉识别**共用一把** `Settings.PRIMARY_API_KEY`
+- 黄金策 / 米宝 / 意图分类 / 会话标题 / 视觉识别**共用一把** `Settings.PRIMARY_API_KEY`
   ⇒ 一把 key 失效 = 全 AI 面 100% 不可用；
 - 主循环把它当「不可重试」（正确），但**每轮**只落一条普通 ERROR、**没有告警面**；
 - `/ready` 只探 DB + Redis ⇒ 200 全绿、容器 `healthy`、`docker ps` 一路绿；

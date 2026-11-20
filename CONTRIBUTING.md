@@ -4,7 +4,7 @@
 
 ## 1. 项目速览
 
-- **这是什么**：面向布艺 / 窗帘商家的多租户 AI 经营平台。顾客侧"元元" + 经营侧"黄金策"双 Agent（LangGraph），Java admin-api + Python ai-agent-service + Next.js admin-web + Taro mini-app / bmini-app。产品定位见 [Product](https://github.com/zhaokai-mgzn/migao/wiki/Product)。
+- **这是什么**：面向布艺 / 窗帘商家的多租户 AI 经营平台。顾客侧"米宝" + 经营侧"黄金策"双 Agent（LangGraph），Java admin-api + Python ai-agent-service + Next.js admin-web + Taro mini-app / bmini-app。产品定位见 [Product](https://github.com/zhaokai-mgzn/migao/wiki/Product)。
 - **文档入口**：先读 [README.md](README.md) 了解架构与技术栈；详细文档索引见 [INDEX](https://github.com/zhaokai-mgzn/migao/wiki/INDEX)。
 - **许可证**：[MIT](LICENSE)。参与贡献即表示同意在 MIT 条款下贡献。
 

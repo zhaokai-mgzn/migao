@@ -66,7 +66,7 @@ export default function ContactPage() {
       <PageHero
         kicker="联系方式"
         title="联系我们"
-        lead="产品咨询、演示预约、成本评估或合作洽谈，按下面四类诉求说明您的情况即可；开通本身不需要等回复。"
+        lead="产品咨询、演示预约、成本评估与合作洽谈，请按下列四类诉求说明情况。"
         chips={['按业务场景演示', '不公示价格 · 按需报价', 'AI 自动甄别 · 秒级开通']}
       />
 
@@ -105,7 +105,7 @@ export default function ContactPage() {
 
             {/* 右：常见问题 */}
             <div>
-              <SectionHeading kicker="常见问题" title="常见问题解答" align="left" />
+              <SectionHeading kicker="常见问题" title="关于开通、成本与 AI 的边界" align="left" />
               <div className="mt-8 grid grid-cols-1 gap-5">
                 {faqs.map((faq) => (
                   <div key={faq.question} className="rounded-2xl border border-neutral-200 bg-white p-6">
@@ -121,7 +121,7 @@ export default function ContactPage() {
           <div className="mx-auto mt-14 max-w-3xl rounded-2xl border border-primary-100 bg-primary-50/60 p-6 sm:flex sm:items-center sm:justify-between sm:gap-8">
             <div>
               <p className="text-sm font-semibold text-neutral-900">
-                可直接开通，无需等待回复
+                开通无需等待回复
               </p>
               <p className="mt-2 text-sm leading-relaxed text-neutral-600">
                 提交入驻申请并完成手机验证后，AI 会自动核验企业信息与合规性，通过即自动开通账号。

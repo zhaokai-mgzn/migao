@@ -44,7 +44,7 @@ public class OrderCreateRequest {
      * <p>🔴 <b>为什么必填判在 Controller 而不是本 DTO 的 {@code @NotBlank}</b>（实测踩过）：
      * agent 路径（{@code createOrderForAgent}）是<b>手工 new 本类</b>再调 service，而
      * {@code OrderDtoContractTest}（「校验双写消除」）钉着一条契约 ——
-     * <b>「工具侧合法载荷在服务端必须零违规」</b>。C 端元元/黄金策的自助下单<b>不采集</b>地址与物流
+     * <b>「工具侧合法载荷在服务端必须零违规」</b>。C 端米宝/黄金策的自助下单<b>不采集</b>地址与物流
      * （{@code order_create} 工具 schema 的 required 只有 name/phone/items）⇒ 在本 DTO 上加
      * {@code @NotBlank} 会让「合法 agent 载荷」当场变成非法（判据实跑：{@code legalAgentPayloadHasNoViolations}
      * 与 {@code legalWirePayloadFromToolDeserializesAndValidates} 双双判红，外加 12 条既有建单用例）。
@@ -83,7 +83,7 @@ public class OrderCreateRequest {
     private String remark;
 
     /**
-     * 下单用户 ID（可选；C 端元元下单时绑定真实用户，供数据隔离查询）
+     * 下单用户 ID（可选；C 端米宝下单时绑定真实用户，供数据隔离查询）
      */
     private String userId;
 
@@ -151,7 +151,7 @@ public class OrderCreateRequest {
      * 一个空格、≤40 字；超长 **422**。{@code null} / 空白 ⇒ <b>不落键</b>（缺值不印）。</p>
      *
      * <p>⚠️ <b>单侧字段（wire 契约）</b>：ai-agent 的 {@code order_create} 工具 schema 不采集它
-     * （C 端元元澄清清单里没有这个问题）⇒ 登记在 {@code OrderDtoContractTest} 的
+     * （C 端米宝澄清清单里没有这个问题）⇒ 登记在 {@code OrderDtoContractTest} 的
      * {@code REGISTERED_SINGLE_SIDED_FIELDS}（不登记 ⇒ 「未登记的单侧字段」判红）。</p>
      */
     private String installCommunity;

@@ -54,7 +54,7 @@ MIBAO_CONFIG = AgentConfig(
         # ── admin-api 商户员工角色码（角色码漂移修复，POC 审查 D 项）──
         # admin-api 实际签发: admin/operator/product_manager/knowledge_editor/customer_service
         # （RegistrationService + RoleService）。此前缺失导致这些角色认证通过后
-        # 仍被路由到元元（C 端人格），无法使用黄金策 B 端能力。
+        # 仍被路由到米宝（C 端人格），无法使用黄金策 B 端能力。
         "operator",
         "knowledge_editor",
         "customer_service",

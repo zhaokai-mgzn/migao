@@ -918,12 +918,12 @@ LOCAL_ONLY_TOOLS: dict[str, str] = {
     # 调一次 vision 模型 + 跑 `app/vision/**` 的纯函数（识别 / 消歧 / 解读），
     # 产出「同页填充计划」交给 `chat.py` 的瞬时 SSE 事件；**没有任何 admin-api HTTP 调用点**
     # ⇒ 没有可对账的端点码（与 `interact` 同一豁免口径）。可达性只由 B 端两个 skill 的
-    # 工具集决定（`product` / `order`；元元不绑 ⇒ C 端零改动）。
+    # 工具集决定（`product` / `order`；米宝不绑 ⇒ C 端零改动）。
     "image_recognize": "纯本地图片识别 + 同页填充计划构造（只调 vision 模型与 app/vision 纯函数）：无 admin-api 调用点",
     # issue #5989（P1 导航类指引）：`nav_guide` 的答案来自**仓内登记表**
     # `app/context/menu_navigator.py`（`config/menu.ts` 的镜像 + 显式登记的意图表）
     # ⇒ **没有任何 admin-api HTTP 调用点**，没有可对账的端点码（与 `interact` 同一豁免口径）。
-    # 可达性只由 B 端 `general` 兜底 skill 的工具集决定（元元不绑 ⇒ C 端零改动）。
+    # 可达性只由 B 端 `general` 兜底 skill 的工具集决定（米宝不绑 ⇒ C 端零改动）。
     "nav_guide": "纯本地导航指引（功能 ⇄ 菜单路径 ⇄ 权限码的仓内登记表 + 会话权限裁剪）：无 admin-api 调用点",
 }
 
@@ -1422,7 +1422,7 @@ def _by_name(w: World) -> dict[str, ToolDecl]:
 
 
 def _c_end_reachable(w: World) -> frozenset[str]:
-    """C 端可达工具集（**推导**：元元的 skill_names + fallback → 各自 `*_TOOLS`）。"""
+    """C 端可达工具集（**推导**：米宝的 skill_names + fallback → 各自 `*_TOOLS`）。"""
     return w.c_end_tools
 
 
@@ -1846,7 +1846,7 @@ def problems_role_list_hygiene(w: World) -> list[str]:
 
 
 def problems_c_end_flag(w: World) -> list[str]:
-    """判据 7：`c_end_reachable` ≡ 「被元元（C 端）的 skill 绑定」（不得手写）。"""
+    """判据 7：`c_end_reachable` ≡ 「被米宝（C 端）的 skill 绑定」（不得手写）。"""
     out: list[str] = []
     derived = _c_end_reachable(w)
     for t in w.tools:

@@ -2,7 +2,7 @@
  * 品牌文案工具测试（B 端商家版，issue #2977）
  *
  * 覆盖: 导航副标题品牌名来源（企业设置租户名，非硬编码）
- * B 端语义：面向商家员工，副标题「· 商家经营助手」，AI 名默认「黄金策」（与 C 端「元元」区分）
+ * B 端语义：面向商家员工，副标题「· 商家经营助手」，AI 名默认「黄金策」（与 C 端「米宝」区分）
  */
 // case_ids: UI-016, UI-018
 import { buildBrandSubtitle, buildBotName } from '../src/utils/brand'
@@ -28,7 +28,7 @@ describe('buildBotName', () => {
     expect(buildBotName('小云')).toBe('小云')
   })
 
-  // UI-018: 未配置/为空 → 兜底「黄金策」（B 端口径，与 C 端「元元」区分）
+  // UI-018: 未配置/为空 → 兜底「黄金策」（B 端口径，与 C 端「米宝」区分）
   it('botName 为空/未配置 → 兜底「黄金策」', () => {
     expect(buildBotName(undefined)).toBe('黄金策')
     expect(buildBotName(null)).toBe('黄金策')

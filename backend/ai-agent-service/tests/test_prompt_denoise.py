@@ -37,7 +37,7 @@ P1-1 包合并后空出），渲染后读数因此 **130 → 0**。⇒ 判据仍
 
 ## 边界（照实登记）
 
-- **C 端（元元 / `xiaobu`）不在本判据射程**：本包只清 B 端 mibao 面的编号（源文件面
+- **C 端（米宝 / `xiaobu`）不在本判据射程**：本包只清 B 端 mibao 面的编号（源文件面
   `references/**` 53 → 5 处、Python prompt 常量 31 → 0 处）。C 端仍有同形态编号
   （`prompts/customer_knowledge.md` 2、`prompts/customer_quote.md` 2、
   `EXAMPLES-customer_knowledge.md` 1、`customer_order_skill.py` 12、`customer_quote_skill.py` 1），

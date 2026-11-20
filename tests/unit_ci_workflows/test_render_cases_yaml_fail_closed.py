@@ -64,6 +64,7 @@ import os
 import re
 import subprocess
 import sys
+import types
 from pathlib import Path
 
 import pytest
@@ -383,6 +384,40 @@ def test_both_legs_resolve_the_same_shared_loader():
             == from_drift.strict_error.__code__.co_filename
             == str(SHARED.resolve())), (
         "两条腿调的不是同一份实现（co_filename 不同 ⇒ 又分叉了）")
+
+
+def test_cases_yaml_is_resolved_by_its_own_path_not_by_sys_modules(monkeypatch, tmp_path):
+    """**定点回归（issue #8872）**：`sys.modules` 里被塞了**别处的**同名 `cases_yaml` ⇒ 渲染腿
+    仍必须取**本仓**那份实现（`_cases_yaml()` 的加载对象 = 它自己旁边的 `.github/cases_yaml.py`）。
+
+    红证（改前必红）：`_cases_yaml()` 走的是 `import cases_yaml` ⇒ 命中下面这条**预置**的同名模块，
+    于是 `__file__` 变成 `<tmp>/elsewhere/.github/cases_yaml.py`（不是本仓的 `.github/cases_yaml.py`）。
+
+    现场的来源（main 侧守护腿 run 42579150387 / sha 76fadf1c2，**不是构造样例**）：
+    `scripts/batch_merge_lib.py::_load_module()` 把**临时 worktree** 里的判据模块拉进同一进程，
+    它在导入时把 `<tmp>/wt/.github` 插到 `sys.path` 最前 ⇒ 之后任何按名字的 `import cases_yaml`
+    都拿到临时副本。本判据**不依赖谁先跑**（CI 的收集顺序 / xdist 分片都会变），直接把污染
+    预置进来 —— 否则它又是一条"在 CI 上永不触发"的判据（本仓 §19.1）。
+    """
+    elsewhere = tmp_path / "elsewhere" / ".github"
+    elsewhere.mkdir(parents=True)
+    (elsewhere / "cases_yaml.py").write_text("# 别的仓库的同名模块（假货）\n", encoding="utf-8")
+    fake = types.ModuleType("cases_yaml")
+    fake.__file__ = str(elsewhere / "cases_yaml.py")
+    fake.strict_error = lambda path: "FAKE: 不是本仓的实现"   # type: ignore[assignment]
+    monkeypatch.setitem(sys.modules, "cases_yaml", fake)
+
+    render_mod = _by_path("render_cases_for_pollution", RENDER)
+    shared = render_mod._cases_yaml()
+    assert Path(shared.__file__).resolve() == SHARED.resolve(), (
+        f"渲染腿拿到的是**别处**的 cases_yaml（被 `sys.modules` 顶替了）：{shared.__file__}")
+    assert shared.strict_error is not fake.strict_error, (
+        "严格判定还是 `sys.modules` 里别人加载的那份实现")
+    legit = sorted(CASES.glob("*.yml"))[0]
+    assert shared.strict_error(legit) is None, (
+        f"本仓的合法用例文件被**假货**判红了（{legit.name}）⇒ 判定没走本仓实现")
+    assert Path(sys.modules["cases_yaml"].__file__).resolve() == SHARED.resolve(), (
+        "加载后没有把 `sys.modules` 里的同名条目修正回本仓实现 ⇒ 同进程的其它消费者仍拿得到假货")
 
 
 def test_no_leg_reimplements_the_strict_parse():

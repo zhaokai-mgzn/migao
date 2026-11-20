@@ -248,7 +248,7 @@ class TestPersonaBoundaryIsHard:
         🔴 **2026-09-21 改判（本 PR rebase 到当时 main 后实测，非放宽）**：
         ① 原写 5 把且含 `processing_item_query` —— 该工具**现已是两端共有**
            （实测 `mibao=True xiaobu=True`：#4371 把加工项与商品解耦、事实源改为**店铺级目录**之后，
-           C 端元元也能查加工项）⇒ 它**不再是** B 端专属，留在见证清单里就是**假见证**；
+           C 端米宝也能查加工项）⇒ 它**不再是** B 端专属，留在见证清单里就是**假见证**；
         ② main 后续新增两把 B 端专属只读工具（`processing_order_query` / `production_worklog_query`）
            ⇒ 真实数量 5 → **6**。
         **判据由 `<=` 收紧为 `==`**（增强，不是放宽）：原 `<=` 只要求「清单里那几把都在」，
@@ -281,7 +281,7 @@ class TestPersonaBoundaryIsHard:
         🔴 **2026-09-24 改判（issue #5368 包 2 进场，实测；Agent 深通道）**：23 → **24**，
         进场的是 `image_recognize`（图片识别 → **同页填充计划**：只调 vision 模型与
         `app/vision/**` 的纯函数，**无 admin-api 调用点**、不读也不写业务数据）。
-        它绑在 B 端 `product` / `order` 两个 skill 上，**元元（C 端）一个都不绑**
+        它绑在 B 端 `product` / `order` 两个 skill 上，**米宝（C 端）一个都不绑**
         ⇒ 按本见证的既有口径（`(mibao 可达 - xiaobu 可达) ∩ read_only`）自然进场。
         口径一字未改；「C 端零改动」由此**量化**：C 端域里出现本工具 ⇒ 本用例红。
 
@@ -291,7 +291,7 @@ class TestPersonaBoundaryIsHard:
         它按本见证的既有口径（`(mibao 可达 - xiaobu 可达) ∩ read_only`）自然进场，三条逐条成立：
         ① `read_only = True`（无任何写 action，与同族只读工具一致）；
         ② 只绑 B 端 `product` skill（`app/graph/skills/product_skill.py` 的 `PRODUCT_TOOLS`），
-           **元元（C 端）一个 skill 都不绑**；
+           **米宝（C 端）一个 skill 都不绑**；
         ③ 声明生产域**读**码 `production:view`（C 端 JWT 无权限码 ⇒ 即便可达也会被工具层拒绝）。
         口径一字未改；「C 端零改动」同样由此**量化**：C 端任一域的 `set_tool_scope` 里出现
         `craft_config_query` ⇒ 本用例红。
@@ -304,7 +304,7 @@ class TestPersonaBoundaryIsHard:
         🔴 **2026-10-02 改判（issue #5989 P1 进场，实测；导航类指引真值源）**：25 → **26**，
         进场的是 `nav_guide`（功能 ⇄ 菜单路径 ⇄ 权限码的**仓内**登记表 + 按会话权限裁剪；
         **零 admin-api 调用点**、不读也不写业务数据）。它绑在 B 端 `general` 兜底 skill 上，
-        **元元（C 端）一个 skill 都不绑** ⇒ 按本见证的既有口径自然进场，三条逐条成立：
+        **米宝（C 端）一个 skill 都不绑** ⇒ 按本见证的既有口径自然进场，三条逐条成立：
         ① `read_only = True`（无任何写 action）；② C 端零绑定；
         ③ 与 `interact` / `image_recognize` 同口径**不声明权限码**（授权面落在**答案级**裁剪）。
         口径一字未改；「C 端零改动」同样由此**量化**：C 端任一域的 `set_tool_scope` 里出现
@@ -312,12 +312,12 @@ class TestPersonaBoundaryIsHard:
 
         🔴 **2026-10-19 改判（issue #7351 进场，实测；营销海报工具）**：26 → **27**，
         进场的是 `marketing_poster`（商品事实 + 操作员确认的文案 → 前端渲染 750×1000 PNG）。
-        它绑在 B 端 `product` / `general` 两个 skill 上，元元（C 端）一个都不绑，且声明
+        它绑在 B 端 `product` / `general` 两个 skill 上，米宝（C 端）一个都不绑，且声明
         `product:list` ⇒ 按本见证既有口径自然进场；「C 端零改动」同样由此量化。
 
         🔴 **2026-10-23 改判（issue #7541 进场，实测；商品图生成工具）**：27 → **28**，
         进场的是 `product_image_generate`（取该商品主图做样图 → 既有生图内核出图 → 商品图卡）。
-        它绑在 B 端 `product` / `general` 两个 skill 上，元元（C 端）一个都不绑，且声明
+        它绑在 B 端 `product` / `general` 两个 skill 上，米宝（C 端）一个都不绑，且声明
         `product:list` ⇒ 按本见证既有口径自然进场；「C 端零改动」同样由此量化。
         """
         by_persona = _tools_by_persona()
@@ -362,11 +362,11 @@ class TestPersonaBoundaryIsHard:
             "craft_config_query",
             # ── #5989（P1 导航类指引）进场：**纯本地**只读（仓内登记表，零 admin-api 调用点），
             #    只绑 B 端 `general` 兜底 skill ⇒ 按本见证既有口径自然进场；
-            #    ① `read_only = True`；② 元元（C 端）一个 skill 都不绑；
+            #    ① `read_only = True`；② 米宝（C 端）一个 skill 都不绑；
             #    ③ 不声明权限码（与 `interact` / `image_recognize` 同口径）⇒ 授权靠**答案级**裁剪。
             "nav_guide",
             # ── #7351 进场（营销海报）：只读，绑 B 端 product / general；C 端零绑定 ──
-            # 三条逐条成立：① `read_only = True`；② 只绑 B 端两个 skill（元元一个都不绑）；
+            # 三条逐条成立：① `read_only = True`；② 只绑 B 端两个 skill（米宝一个都不绑）；
             # ③ 声明 `product:list`（C 端 JWT 无权限码 ⇒ 即便可达也会被工具层拒绝）。
             "marketing_poster",
             # ── #7541 进场（商品图生成）：只读，绑 B 端 product / general；C 端零绑定 ──
@@ -375,7 +375,7 @@ class TestPersonaBoundaryIsHard:
             "product_image_generate",
             # ── #8157 进场（商品归因）：只读，绑 B 端 order；C 端零绑定 ──
             # 三条逐条成立：① `read_only = True`（只读订单，不写库）；② 只绑 B 端 order
-            # （元元一个都不绑）；③ 声明 `order:list`（C 端 JWT 无权限码 ⇒ 即便可达也会被工具层拒绝）。
+            # （米宝一个都不绑）；③ 声明 `order:list`（C 端 JWT 无权限码 ⇒ 即便可达也会被工具层拒绝）。
             "sales_attribution",
         }, (
             f"B 端专属只读工具集实测 {sorted(b_only_readonly)} —— 与见证集（27 把）不等，口径漂移"

@@ -8,6 +8,24 @@
       "owner": "#3548"
     },
     {
+      "path": "backend/ai-agent-service/tests/test_base_skill_slice_structure_guard.py",
+      "guards": "`base_skill.py` 切片后的**结构面**（issue #8725）：四个搬出的单元（capability_denial / order_flow_guard / phone_masking / injection_blocks）必须与登记表双向相等 —— ① base_skill 从哪个 skills 子模块 import，那个子模块就必须登记（多一个未登记即红）；② 每个登记符号在该单元里恰好定义 1 次；③ base_skill.py 一处都不许再定义它们（防「搬完又抄回来」）；④ 再导出列表 == 登记全集且来源单元正确（删一条会让 `from ... import X` 与 `patch(\"app.graph.skills.base_skill.X\")` **静默失效**）；⑤ 单元不得在模块顶层 import base_skill（加载期成环）；⑥ 模块头必须声明单一职责 + 依赖方向 + patch 缝口径，且文件 < 800 行；⑦ **patch 接缝不得被同族内部调用绕过**（机械提取全仓 `patch(...base_skill.X)` / `patch.object(base_skill, X)`）。另有真 patch + 真调用 + `mock.called` 的 logger 接缝判据。",
+      "red_proof": "① 在 `app/graph/skills/capability_denial.py` 里再写一份 `def _registry_has_tool(` ⇒ ::TestStructure::test_base_skill_no_longer_defines_any_moved_symbol 与 ::test_each_symbol_is_defined_exactly_once_in_its_unit 具名红；② 删掉 base_skill.py 里一条再导出 ⇒ ::test_reexport_list_equals_the_registered_set 红并点名符号；③ 在 `phone_masking.py` 顶层写 `from app.graph.skills.base_skill import logger` ⇒ ::test_unit_never_imports_base_skill_at_module_level 红；④ 把 `_masked_phone_block_result` 的 `logger = _base.logger` 改成模块顶层 import ⇒ ::test_logger_seam_is_resolved_at_call_time_not_frozen 红（`mock.called` 为假）；⑤ **真实踩中过一次**：`_order_capability_available` 与 `_tool_registered_globally` 同属 capability_denial，桩打回 base_skill 后 patch 静默失效 ⇒ ::TestPatchSeamsAreNotBypassed::test_no_moved_symbol_is_both_patched_and_intra_unit_called 具名报出该三元组（负例 ::test_guard_reports_a_planted_violation 自证它不是空判据）；⑥ 把某单元写到 ≥800 行 ⇒ ::test_unit_declares_single_responsibility_and_stays_under_800_lines 红。",
+      "owner": "#8725"
+    },
+    {
+      "path": "backend/ai-agent-service/tests/test_briefing_verdict_direction_guard.py",
+      "guards": "指标判定的**方向**：`_verdict(metric, ...)` 的方向从 `METRIC_DIRECTIONS` 查，不由调用方传（缺陷 #8280：毛利方向反了而那条单测也一起写反，CI 全绿）。三层：① 未登记指标 ⇒ KeyError 点名；② 调用点 AST 扫描（第一实参必须是字面量且在表里，不许再用 higher_is_better= 关键字）；③ 极值双向断言（改表里的方向 ⇒ 立刻红）",
+      "red_proof": "① 把 `backend/ai-agent-service/app/briefing/product_judgement.py` 的 `METRIC_DIRECTIONS[\"gross_margin\"]` 从 True 改成 False ⇒ `test_gross_margin_is_higher_is_better` + `test_positive_margin_uses_the_peer_baseline` 双红（本机实测 2 failed / 21）；② 把调用点改成 `_m = \"gross_margin\"; _verdict(_m, ...)` ⇒ `test_every_call_site_passes_a_string_literal` + `test_every_literal_metric_is_registered` 双红（实测 2 failed / 6）",
+      "owner": "#8293"
+    },
+    {
+      "path": "backend/ai-agent-service/tests/test_capability_boundary.py",
+      "guards": "B 端能力边界的投影必须等于工具注册表真值：每个可达写工具都要被探针覆盖、prompt 里不许手写能力主张（10 份 prompt 里 9 处曾与 action enum 相反）、边界只注入米宝、探针不得泄漏工具作用域",
+      "red_proof": "把 prompt 里一条「✅ 支持」改回与 registry 矛盾（如 employee_manage 无 create 却写支持）⇒ test_capability_prose_matches_registry_state 红；把某可达写工具从探针表移除 ⇒ test_every_reachable_write_tool_is_probed 红",
+      "owner": "#7291"
+    },
+    {
       "path": "backend/ai-agent-service/tests/test_capability_denial_guard.py",
       "guards": "「能力自我否定该不该纠正」必须由「在办下单流程状态（跨轮 pending 锁 / 已接地商品 / 已校验下单参数）× 工具注册表事实」决定，禁止读 skill 名字面量；并锁住执行族源码里不得出现 skill 名常量",
       "red_proof": "① 把 customer_order 流程的就绪判定改成「本轮消息含下单关键词才算 in_progress」⇒ test_pending_lock_plus_grounded_is_in_progress_without_keywords 红；② 在任一守卫判定函数里写 `if skill_name == \"product\":` ⇒ test_no_guard_predicate_takes_a_skill_name 红",
@@ -86,6 +104,12 @@
       "owner": "#4109"
     },
     {
+      "path": "tests/agent_eval/test_craft_calc_config_restore.py",
+      "guards": "算料口径复位（`craft_calc_config_restore`）的契约：只写声明键（PUT 全量替换不得清空其它键）/ 声明键已等值即不发 PUT / 回读不符 fail-closed / 缺 keys 判配置错误 / 浮点噪声按 1e-9 容差",
+      "red_proof": "把 `_restore_craft_calc_config` 的载荷从 `{**current, **keys}` 改成只发 `keys` ⇒「只写声明键」判据红；去掉回读比对 ⇒「回读不符即 fail-closed」判据红；去掉幂等短路 ⇒「已等值不发 PUT」判据红",
+      "owner": "#8116"
+    },
+    {
       "path": "tests/unit_ci_workflows/test_admin_role_read_surface_guard.py",
       "guards": "岗位目录读端点必须带权限注解且已登记在 RBAC 控制器注册表里，注解码必须在权限目录内；豁免重加即红，注释/幽灵码不算命中",
       "red_proof": "从某个 /admin/roles 端点方法上删掉 @RequirePermission ⇒ TestGuardDiscriminates::test_removing_an_annotation_is_red 红；把该端点加回豁免台账 ⇒ test_readding_exempt_is_red 红",
@@ -122,6 +146,12 @@
       "owner": "#3571"
     },
     {
+      "path": "tests/unit_ci_workflows/test_capability_projection_seam_guard.py",
+      "guards": "进程级缓存不得经**测试替身接缝**取值（形态 #8125）：扫 backend/ai-agent-service/app/agents/** 与 app/graph/skills/** 里所有被 @lru_cache/@cache 缓存的函数，沿**同模块调用链**收集取值来源；命中「从登记接缝 PATCH_SEAMS（现取 = app.graph.skills.base_skill）import」或「使用模块级从接缝导入的符号」即具名报红 —— 否则替身期间算出的退化值（空集）会被冻进进程级缓存，表现为「能力真值变了」",
+      "red_proof": "把 backend/ai-agent-service/app/agents/capability_boundary.py 的 create_skill_registry 来源从 app.graph.skills.tool_selection 改回 app.graph.skills.base_skill ⇒ tests/unit_ci_workflows/test_capability_projection_seam_guard.py::test_no_cached_projection_reads_through_a_test_double_seam 红并具名到 capability_boundary.py::mibao_reachable_tool_names._compute_mibao_reachable_tool_names（本机实测 3 failed / 2 passed）；把扫描面 CAPABILITY_BOUNDARY 指向别处 ⇒ ::test_scan_surface_is_not_empty 红（fail-closed）",
+      "owner": "#8125"
+    },
+    {
       "path": "tests/unit_ci_workflows/test_chat_richtext_surface_guard.py",
       "guards": "聊天气泡的富文本渲染接线普查：每个气泡包必须真接 markdown（remark-breaks 等），气泡面清单冻结只许缩短，行为判据本身不得被删",
       "red_proof": "把 frontend/admin-web/src/components/chat/MessageList.tsx 的 markdown 渲染换成纯文本 ⇒ test_bubble_packages_wire_rich_text 红；从冻结面清单删一个气泡包 ⇒ test_bubble_surface_census_is_frozen 红",
@@ -138,6 +168,12 @@
       "guards": "classpath 上存在而源码树没有的陈旧构建产物（build 目录里的迁移/类）必须被源码树枚举器覆盖，枚举器不许为空",
       "red_proof": "往 backend/admin-api/target/classes 放一个源码树里不存在的 .class（或删掉一条源码枚举根）⇒ test_build_artifacts_are_covered_by_the_source_tree 红",
       "owner": "#5981"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_craft_calc_config_contract.py",
+      "guards": "算料配置的五个源（引擎默认 / V80 迁移列 / schema.sql / Java 实体 / 写面 CONFIG_KEYS）逐键一致——少一列即「商家改了没生效」或「读回静默用默认」；已退场键 side_margin 与提案键 default_fabric_width 不得出现在任何源",
+      "red_proof": "从 V80__create_craft_calc_configs.sql 删掉 hem_margin 列 ⇒ test_migration_columns_match_engine_keys 红；把 sideMargin 字段加回 Java 实体 ⇒ test_java_entity_side_margin_is_gone_everywhere 红",
+      "owner": "#4528"
     },
     {
       "path": "tests/unit_ci_workflows/test_credential_login_has_failure_guard.py",
@@ -188,6 +224,18 @@
       "owner": "#6318"
     },
     {
+      "path": "tests/unit_ci_workflows/test_external_authorship_guard.py",
+      "guards": "外部账号提交的代码不得直接进本仓：PR 的提交作者（账号 / 邮箱 / GitHub noreply）与 head 仓库来源必须命中 .github/external-authorship-allow.json 白名单；命中即判红、解除已 arm 的 auto-merge 并打 block/merge（真实形态：#6897 fork PR 关闭后被搬到同仓分支以 #6924 重开并 squash 合并）",
+      "red_proof": "把 scripts/external_authorship_guard.py 的 classify() 白名单比对删掉 ⇒ tests/unit_ci_workflows/test_external_authorship_guard.py::test_real_incident_commit_is_flagged 红（夹具 = 5e1c56f74 llwand1）；删掉 head 仓库比较 ⇒ ::test_cli_flags_fork_head_repo 红；删掉 pr-check.yml 的 job ⇒ ::test_workflow_wires_the_guard 红",
+      "owner": "#8386"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_guard_credential_quota.py",
+      "guards": "判定面凭据：pr-check / contribution-gate 里每个 GitHub API 调用点必须写 `AUTOMERGE_PAT || 内置 GITHUB_TOKEN`（内置令牌每仓 1000 次/小时，3 条 PR 并发即打穿 ⇒ 5 条互不相干的守卫同时 exit 3、与真红同形，issue #8847）；PAT 不许裸用（fork PR 拿不到 secrets ⇒ 空 token 全红）；凭据不许进日志（public 仓日志全员可见）",
+      "red_proof": "把 .github/workflows/pr-check.yml 与 contribution-gate.yml 换回 origin/main 版（判据文件不动）⇒ test_every_builtin_token_reference_has_the_pat_fallback / test_both_guard_workflows_actually_carry_the_high_quota_credential / test_github_script_comment_steps_use_the_high_quota_credential 红（实跑 6 failed, 2 passed）；三条 test_red_proof_* 用 injection.inject 造坏形态（裸内置凭据 / 裸 PAT / echo 凭据）⇒ 对应判据红",
+      "owner": "#8847"
+    },
+    {
       "path": "tests/unit_ci_workflows/test_guard_ledger.py",
       "guards": "本台账自身：`path` 集合必须等于「现取枚举」（缺一条 / 多一条都具名报出），每条文本不许空话且 red_proof 必须点名具体对象，owner 可追溯；并自证判别力（五种内存坏台账各自红）",
       "red_proof": "从 `tests/guard_ledger.json` 删掉任一条 entry（如本文件那条）⇒ test_ledger_matches_the_live_enumeration 红并具名「漏登记：<path>」；把某条 red_proof 改成「同类缺陷出现时它会红」⇒ test_judge_has_discriminating_power 红",
@@ -228,6 +276,12 @@
       "guards": "六个失败上报 workflow 在 issue create 前必须做同日同标题去重（存在则评论而非新建），且必须用存在的 search API 方法名",
       "red_proof": "把某 workflow 的 dedup 搜索步骤删掉 ⇒ test_create_step_contains_dedup_search 红；把 api 方法改成不存在的 search_issues ⇒ test_no_nonexistent_search_issues_method 红",
       "owner": "#2746"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_java_nested_pointed_run_guard.py",
+      "guards": "Java 定点判据的两条「空跑 / 读数」形态（issue #6495）：① 把 target/surefire-reports/<fqn>.txt 的 Tests run: 当读数源 —— 该摘要在 @Nested 类上恒报 0（实测同一次运行 XML/console 15，摘要 0）；② -Dtest=<外层类>#<方法> 而该方法声明在 @Nested 内 ⇒ Tests run: 0 / BUILD SUCCESS / exit=0 且不产出 XML。仓内 durable 面出现形态②即具名报红并给正解 <外层类>$<嵌套类>#<方法>；读 .txt 的机具未登记即红、且其定点类必须现取不含 @Nested（前提一变即红）",
+      "red_proof": "把 scripts/java_pointed_readings.py 的 class_bodies() 里 @Nested 判定改成 nested = False ⇒ tests/unit_ci_workflows/test_java_nested_pointed_run_guard.py::test_j1_scanner_is_not_blind / ::test_j2_synthetic_bad_form_is_red_and_good_forms_are_not / ::test_j4_synthetic_nested_unit_would_be_red / ::test_j6_mask_makes_the_decision 四条同时红（本机实测 4 failed / 7 passed）；在 scripts/ 放一个未登记的 .txt 读数机具 ⇒ ::test_j3_every_txt_reading_engine_is_registered_and_precondition_holds 红；把台账 tests/unit_ci_workflows/java_pointed_run_ledger.json 的定点类换成含 @Nested 的 OssConfigTest ⇒ 同一条判据红（前提失效）",
+      "owner": "#6495"
     },
     {
       "path": "tests/unit_ci_workflows/test_l0_reachability_guards.py",
@@ -300,6 +354,12 @@
       "guards": "落库/持久化调用外层不得有裸 `except: pass` / `except: continue`（静默吞掉写失败）；带 trace 的 fail-open 放行，非持久化函数体不误判",
       "red_proof": "把 app/memory/session_memory.py 的 save_message 外层 except 改成 pass ⇒ test_flags_bare_pass_around_save_message 红；把某处落库包在只有 docstring 的 handler 里 ⇒ test_flags_docstring_only_handler 红",
       "owner": "#4084"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_piecework_unnamed_recon_guard.py",
+      "guards": "计件 A0b「逐人比对」的假红形态（issue #7030）：验收工装按**原始 worker_name** 与接口 per_worker 逐字比对，而接口把无署名那笔钱归进**服务端下发的展示文案** ⇒「名不同、钱相同」稳定假红（实测误导出一张错的钱面单）。守卫三面：① 夹具判据（有未分配行 ⇒ 不判红 / 真实工人错 1 分 ⇒ 必红 / 勾稽被断言）必须**真跑**；② 注入式红证（删掉无署名特殊处理 ⇒ 夹具判据① 必红）；③ 接线（famA-money.mjs 必须用 judgePiecework，旧的 perWorker.get 逐字比对回潮即红）+ 判定模块**代码**里不许写死服务端文案",
+      "red_proof": "把 acceptance/2026-10-03/finance-stock-time-sweep/harness/piecework-recon.mjs 的 isUnassignedWorker 函数体改成 return false ⇒ tests/unit_ci_workflows/test_piecework_unnamed_recon_guard.py::test_red_proof_removing_unassigned_special_case_turns_case_one_red 判红（注入副本上 node --test 报 not ok 1 - 判据①；本机实测 # pass 4 / # fail 4）；把 famA-money.mjs 的 import 摘掉 / 把 perWorker.get(...) 写回 ⇒ ::test_famA_wiring_uses_the_structural_judgement 与 ::test_wiring_guard_has_discriminating_power 判红；把 `未分配` 写成一行代码 ⇒ ::test_judgement_never_hardcodes_the_server_label 判红",
+      "owner": "#7030"
     },
     {
       "path": "tests/unit_ci_workflows/test_plaintext_credential_guard.py",
@@ -392,6 +452,12 @@
       "owner": "#5651"
     },
     {
+      "path": "tests/unit_ci_workflows/test_state_write_face_metaguard.py",
+      "guards": "**状态列写面**的族级元守卫（issue #6953 的 SW-100）：每张有 `status` 列的表 × 每个写它的入口（Service 成员 / mapper 手写 SQL / builder）必须登记在 `state_write_face_ledger.json`；违者判红（未登记即红 / 台账陈旧即红 / 裸字符串写状态列即红 / 每张状态表须声明合法集合来源）。现取 = 53 张表 / 134 条写点（Java 108 + SQL 26），不靠手抄清单。",
+      "red_proof": "① 往真实 Service 里加一条未登记的状态写（例：`InboundOrderService` 加 `sw100InjectedWrite(InboundOrder)`）⇒ tests/unit_ci_workflows/test_state_write_face_metaguard.py::test_every_status_write_is_registered 红并具名该写点与文件:行；② 把 `order.setStatus(InboundOrder.STATUS_POSTED)` 改成裸字符串 ⇒ ::test_status_literals_have_a_single_source 红并具名；③ 把 `unregistered()` / `bare_literal_sites()` 摘掉 ⇒ ::test_detector_has_teeth 当场红（内建内存变异体）。",
+      "owner": "#6953"
+    },
+    {
       "path": "tests/unit_ci_workflows/test_swas_bootstrap_same_source_guard.py",
       "guards": "swas-deploy-ci.sh bootstrap 的部署脚本与镜像 tag 必须同源：fetch 到的脚本不许是 main 的、回滚要取自己的 ref、404 必须 fail-closed、curl 护栏不许摘",
       "red_proof": "让 bootstrap 的 fetch 固定取 main（忽略 ref）⇒ crit_fetched_is_not_main 与 crit_same_source 红；把 fetch 的 404 分支改成继续执行 ⇒ crit_fetch_404_fails_closed 红",
@@ -434,6 +500,12 @@
       "owner": "#5646"
     },
     {
+      "path": "tests/unit_ci_workflows/test_waybill_p0_guards.py",
+      "guards": "物流取号 P0（issue #8698）的四类跨端形态：① 取号路径（waybill/**.java 剥注释后）不得出现任何订单状态写入口（取号 ≠ 发货）；② 设置域 logistics 的登记 / 面板挂载 / requiredCode 与写面端点权限码逐字一致；③ 生产承运商目录零过声明（P0 不接任何第三方）；④ 前端源码零承运商域名 / 零凭据键。每条都带内存注入式判别力自证（坏形态必红、干净语料不报）。",
+      "red_proof": "① 往 WaybillService 的 create 里加一行 orderMapper.updateById ⇒ test_waybill_package_has_no_order_status_write_entry 红并具名 WaybillService.java::OrderMapper；② 从 CONFIG_DOMAINS 删掉 logistics 域 ⇒ test_logistics_domain_is_registered_and_mounted 红；③ 把 CarrierCatalogue 的 sf 行 canCreate 改 true ⇒ test_production_catalogue_declares_no_capability 红并具名 sf；④ 往前端 src/lib/waybill.ts 塞承运商域名 ⇒ test_frontend_has_no_carrier_secret_or_direct_host 红。",
+      "owner": "#8698"
+    },
+    {
       "path": "tests/unit_ci_workflows/test_worker_h5_module_closure_guard.py",
       "guards": "工人端发布自检腿必须有 module 闭包加载判据（入口 glob、dynamic import 扫描、空集合分支、样式表四件），坐标必须是活的、豁免必须点名理由",
       "red_proof": "从该腿的 run 正文删掉 entry glob 那一行 ⇒ test_red_proof_dropping_the_entry_glob_is_reported 同形红（该腿不再能判定闭包）；删掉 dynamic import 扫描 ⇒ 对应 red proof 判据红",
@@ -444,72 +516,6 @@
       "guards": "「墙钟期望值」守卫的实现体（本文件不是测试，pytest 收集为 0）：墙钟污点传播 + 冻结/停表豁免 + `--check` 三态退出码（0/1/3），由兄弟文件 test_time_flaky_guard.py 驱动",
       "red_proof": "删掉 analyze_taint 里的停表豁免（_has_stopwatch_operand 分支）⇒ 合法的时长断言被误判 ⇒ test_time_flaky_guard.py::test_stopwatch_duration_is_not_red 红；把 main 的不可判定分支返回 0 ⇒ test_time_flaky_guard.py 的 CLI 三态判据红",
       "owner": "#4717"
-    },
-    {
-      "path": "backend/ai-agent-service/tests/test_capability_boundary.py",
-      "guards": "B 端能力边界的投影必须等于工具注册表真值：每个可达写工具都要被探针覆盖、prompt 里不许手写能力主张（10 份 prompt 里 9 处曾与 action enum 相反）、边界只注入米宝、探针不得泄漏工具作用域",
-      "red_proof": "把 prompt 里一条「✅ 支持」改回与 registry 矛盾（如 employee_manage 无 create 却写支持）⇒ test_capability_prose_matches_registry_state 红；把某可达写工具从探针表移除 ⇒ test_every_reachable_write_tool_is_probed 红",
-      "owner": "#7291"
-    },
-    {
-      "path": "tests/unit_ci_workflows/test_craft_calc_config_contract.py",
-      "guards": "算料配置的五个源（引擎默认 / V80 迁移列 / schema.sql / Java 实体 / 写面 CONFIG_KEYS）逐键一致——少一列即「商家改了没生效」或「读回静默用默认」；已退场键 side_margin 与提案键 default_fabric_width 不得出现在任何源",
-      "red_proof": "从 V80__create_craft_calc_configs.sql 删掉 hem_margin 列 ⇒ test_migration_columns_match_engine_keys 红；把 sideMargin 字段加回 Java 实体 ⇒ test_java_entity_side_margin_is_gone_everywhere 红",
-      "owner": "#4528"
-    },
-    {
-      "path": "tests/agent_eval/test_craft_calc_config_restore.py",
-      "guards": "算料口径复位（`craft_calc_config_restore`）的契约：只写声明键（PUT 全量替换不得清空其它键）/ 声明键已等值即不发 PUT / 回读不符 fail-closed / 缺 keys 判配置错误 / 浮点噪声按 1e-9 容差",
-      "red_proof": "把 `_restore_craft_calc_config` 的载荷从 `{**current, **keys}` 改成只发 `keys` ⇒「只写声明键」判据红；去掉回读比对 ⇒「回读不符即 fail-closed」判据红；去掉幂等短路 ⇒「已等值不发 PUT」判据红",
-      "owner": "#8116"
-    },
-    {
-      "path": "backend/ai-agent-service/tests/test_briefing_verdict_direction_guard.py",
-      "guards": "指标判定的**方向**：`_verdict(metric, ...)` 的方向从 `METRIC_DIRECTIONS` 查，不由调用方传（缺陷 #8280：毛利方向反了而那条单测也一起写反，CI 全绿）。三层：① 未登记指标 ⇒ KeyError 点名；② 调用点 AST 扫描（第一实参必须是字面量且在表里，不许再用 higher_is_better= 关键字）；③ 极值双向断言（改表里的方向 ⇒ 立刻红）",
-      "red_proof": "① 把 `backend/ai-agent-service/app/briefing/product_judgement.py` 的 `METRIC_DIRECTIONS[\"gross_margin\"]` 从 True 改成 False ⇒ `test_gross_margin_is_higher_is_better` + `test_positive_margin_uses_the_peer_baseline` 双红（本机实测 2 failed / 21）；② 把调用点改成 `_m = \"gross_margin\"; _verdict(_m, ...)` ⇒ `test_every_call_site_passes_a_string_literal` + `test_every_literal_metric_is_registered` 双红（实测 2 failed / 6）",
-      "owner": "#8293"
-    },
-    {
-      "path": "tests/unit_ci_workflows/test_external_authorship_guard.py",
-      "guards": "外部账号提交的代码不得直接进本仓：PR 的提交作者（账号 / 邮箱 / GitHub noreply）与 head 仓库来源必须命中 .github/external-authorship-allow.json 白名单；命中即判红、解除已 arm 的 auto-merge 并打 block/merge（真实形态：#6897 fork PR 关闭后被搬到同仓分支以 #6924 重开并 squash 合并）",
-      "red_proof": "把 scripts/external_authorship_guard.py 的 classify() 白名单比对删掉 ⇒ tests/unit_ci_workflows/test_external_authorship_guard.py::test_real_incident_commit_is_flagged 红（夹具 = 5e1c56f74 llwand1）；删掉 head 仓库比较 ⇒ ::test_cli_flags_fork_head_repo 红；删掉 pr-check.yml 的 job ⇒ ::test_workflow_wires_the_guard 红",
-      "owner": "#8386"
-    },
-    {
-      "path": "tests/unit_ci_workflows/test_capability_projection_seam_guard.py",
-      "guards": "进程级缓存不得经**测试替身接缝**取值（形态 #8125）：扫 backend/ai-agent-service/app/agents/** 与 app/graph/skills/** 里所有被 @lru_cache/@cache 缓存的函数，沿**同模块调用链**收集取值来源；命中「从登记接缝 PATCH_SEAMS（现取 = app.graph.skills.base_skill）import」或「使用模块级从接缝导入的符号」即具名报红 —— 否则替身期间算出的退化值（空集）会被冻进进程级缓存，表现为「能力真值变了」",
-      "red_proof": "把 backend/ai-agent-service/app/agents/capability_boundary.py 的 create_skill_registry 来源从 app.graph.skills.tool_selection 改回 app.graph.skills.base_skill ⇒ tests/unit_ci_workflows/test_capability_projection_seam_guard.py::test_no_cached_projection_reads_through_a_test_double_seam 红并具名到 capability_boundary.py::mibao_reachable_tool_names._compute_mibao_reachable_tool_names（本机实测 3 failed / 2 passed）；把扫描面 CAPABILITY_BOUNDARY 指向别处 ⇒ ::test_scan_surface_is_not_empty 红（fail-closed）",
-      "owner": "#8125"
-    },
-    {
-      "path": "tests/unit_ci_workflows/test_java_nested_pointed_run_guard.py",
-      "guards": "Java 定点判据的两条「空跑 / 读数」形态（issue #6495）：① 把 target/surefire-reports/<fqn>.txt 的 Tests run: 当读数源 —— 该摘要在 @Nested 类上恒报 0（实测同一次运行 XML/console 15，摘要 0）；② -Dtest=<外层类>#<方法> 而该方法声明在 @Nested 内 ⇒ Tests run: 0 / BUILD SUCCESS / exit=0 且不产出 XML。仓内 durable 面出现形态②即具名报红并给正解 <外层类>$<嵌套类>#<方法>；读 .txt 的机具未登记即红、且其定点类必须现取不含 @Nested（前提一变即红）",
-      "red_proof": "把 scripts/java_pointed_readings.py 的 class_bodies() 里 @Nested 判定改成 nested = False ⇒ tests/unit_ci_workflows/test_java_nested_pointed_run_guard.py::test_j1_scanner_is_not_blind / ::test_j2_synthetic_bad_form_is_red_and_good_forms_are_not / ::test_j4_synthetic_nested_unit_would_be_red / ::test_j6_mask_makes_the_decision 四条同时红（本机实测 4 failed / 7 passed）；在 scripts/ 放一个未登记的 .txt 读数机具 ⇒ ::test_j3_every_txt_reading_engine_is_registered_and_precondition_holds 红；把台账 tests/unit_ci_workflows/java_pointed_run_ledger.json 的定点类换成含 @Nested 的 OssConfigTest ⇒ 同一条判据红（前提失效）",
-      "owner": "#6495"
-    },
-    {
-      "path": "tests/unit_ci_workflows/test_piecework_unnamed_recon_guard.py",
-      "guards": "计件 A0b「逐人比对」的假红形态（issue #7030）：验收工装按**原始 worker_name** 与接口 per_worker 逐字比对，而接口把无署名那笔钱归进**服务端下发的展示文案** ⇒「名不同、钱相同」稳定假红（实测误导出一张错的钱面单）。守卫三面：① 夹具判据（有未分配行 ⇒ 不判红 / 真实工人错 1 分 ⇒ 必红 / 勾稽被断言）必须**真跑**；② 注入式红证（删掉无署名特殊处理 ⇒ 夹具判据① 必红）；③ 接线（famA-money.mjs 必须用 judgePiecework，旧的 perWorker.get 逐字比对回潮即红）+ 判定模块**代码**里不许写死服务端文案",
-      "red_proof": "把 acceptance/2026-10-03/finance-stock-time-sweep/harness/piecework-recon.mjs 的 isUnassignedWorker 函数体改成 return false ⇒ tests/unit_ci_workflows/test_piecework_unnamed_recon_guard.py::test_red_proof_removing_unassigned_special_case_turns_case_one_red 判红（注入副本上 node --test 报 not ok 1 - 判据①；本机实测 # pass 4 / # fail 4）；把 famA-money.mjs 的 import 摘掉 / 把 perWorker.get(...) 写回 ⇒ ::test_famA_wiring_uses_the_structural_judgement 与 ::test_wiring_guard_has_discriminating_power 判红；把 `未分配` 写成一行代码 ⇒ ::test_judgement_never_hardcodes_the_server_label 判红",
-      "owner": "#7030"
-    },
-    {
-      "path": "tests/unit_ci_workflows/test_state_write_face_metaguard.py",
-      "guards": "**状态列写面**的族级元守卫（issue #6953 的 SW-100）：每张有 `status` 列的表 × 每个写它的入口（Service 成员 / mapper 手写 SQL / builder）必须登记在 `state_write_face_ledger.json`；违者判红（未登记即红 / 台账陈旧即红 / 裸字符串写状态列即红 / 每张状态表须声明合法集合来源）。现取 = 53 张表 / 134 条写点（Java 108 + SQL 26），不靠手抄清单。",
-      "red_proof": "① 往真实 Service 里加一条未登记的状态写（例：`InboundOrderService` 加 `sw100InjectedWrite(InboundOrder)`）⇒ tests/unit_ci_workflows/test_state_write_face_metaguard.py::test_every_status_write_is_registered 红并具名该写点与文件:行；② 把 `order.setStatus(InboundOrder.STATUS_POSTED)` 改成裸字符串 ⇒ ::test_status_literals_have_a_single_source 红并具名；③ 把 `unregistered()` / `bare_literal_sites()` 摘掉 ⇒ ::test_detector_has_teeth 当场红（内建内存变异体）。",
-      "owner": "#6953"
-    },
-    {
-      "path": "tests/unit_ci_workflows/test_waybill_p0_guards.py",
-      "guards": "物流取号 P0（issue #8698）的四类跨端形态：① 取号路径（waybill/**.java 剥注释后）不得出现任何订单状态写入口（取号 ≠ 发货）；② 设置域 logistics 的登记 / 面板挂载 / requiredCode 与写面端点权限码逐字一致；③ 生产承运商目录零过声明（P0 不接任何第三方）；④ 前端源码零承运商域名 / 零凭据键。每条都带内存注入式判别力自证（坏形态必红、干净语料不报）。",
-      "red_proof": "① 往 WaybillService 的 create 里加一行 orderMapper.updateById ⇒ test_waybill_package_has_no_order_status_write_entry 红并具名 WaybillService.java::OrderMapper；② 从 CONFIG_DOMAINS 删掉 logistics 域 ⇒ test_logistics_domain_is_registered_and_mounted 红；③ 把 CarrierCatalogue 的 sf 行 canCreate 改 true ⇒ test_production_catalogue_declares_no_capability 红并具名 sf；④ 往前端 src/lib/waybill.ts 塞承运商域名 ⇒ test_frontend_has_no_carrier_secret_or_direct_host 红。",
-      "owner": "#8698"
-    },
-    {
-      "path": "backend/ai-agent-service/tests/test_base_skill_slice_structure_guard.py",
-      "guards": "`base_skill.py` 切片后的**结构面**（issue #8725）：四个搬出的单元（capability_denial / order_flow_guard / phone_masking / injection_blocks）必须与登记表双向相等 —— ① base_skill 从哪个 skills 子模块 import，那个子模块就必须登记（多一个未登记即红）；② 每个登记符号在该单元里恰好定义 1 次；③ base_skill.py 一处都不许再定义它们（防「搬完又抄回来」）；④ 再导出列表 == 登记全集且来源单元正确（删一条会让 `from ... import X` 与 `patch(\"app.graph.skills.base_skill.X\")` **静默失效**）；⑤ 单元不得在模块顶层 import base_skill（加载期成环）；⑥ 模块头必须声明单一职责 + 依赖方向 + patch 缝口径，且文件 < 800 行；⑦ **patch 接缝不得被同族内部调用绕过**（机械提取全仓 `patch(...base_skill.X)` / `patch.object(base_skill, X)`）。另有真 patch + 真调用 + `mock.called` 的 logger 接缝判据。",
-      "red_proof": "① 在 `app/graph/skills/capability_denial.py` 里再写一份 `def _registry_has_tool(` ⇒ ::TestStructure::test_base_skill_no_longer_defines_any_moved_symbol 与 ::test_each_symbol_is_defined_exactly_once_in_its_unit 具名红；② 删掉 base_skill.py 里一条再导出 ⇒ ::test_reexport_list_equals_the_registered_set 红并点名符号；③ 在 `phone_masking.py` 顶层写 `from app.graph.skills.base_skill import logger` ⇒ ::test_unit_never_imports_base_skill_at_module_level 红；④ 把 `_masked_phone_block_result` 的 `logger = _base.logger` 改成模块顶层 import ⇒ ::test_logger_seam_is_resolved_at_call_time_not_frozen 红（`mock.called` 为假）；⑤ **真实踩中过一次**：`_order_capability_available` 与 `_tool_registered_globally` 同属 capability_denial，桩打回 base_skill 后 patch 静默失效 ⇒ ::TestPatchSeamsAreNotBypassed::test_no_moved_symbol_is_both_patched_and_intra_unit_called 具名报出该三元组（负例 ::test_guard_reports_a_planted_violation 自证它不是空判据）；⑥ 把某单元写到 ≥800 行 ⇒ ::test_unit_declares_single_responsibility_and_stays_under_800_lines 红。",
-      "owner": "#8725"
     }
   ]
 }

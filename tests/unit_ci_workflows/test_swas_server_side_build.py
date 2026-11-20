@@ -761,11 +761,20 @@ def _run_build_block(tmp_path, *, sleep_for: int, timeout_secs: int = 2):
 
 
 def test_build_call_is_actually_wrapped_by_the_explicit_bound(tmp_path):
-    """🔴 上界**作用在构建命令上**：桩 `timeout` 收到的 argv 必须逐字是 `<上界> docker build …`。"""
-    proc, out, tlog = _run_build_block(tmp_path, sleep_for=0, timeout_secs=2)
+    """🔴 上界**作用在构建命令上**：桩 `timeout` 收到的 argv 必须逐字是 `<上界> docker build …`。
+
+    ⚠️ **上界取 30s 是刻意的，与负载无关**（issue #8859）：本判据钉的是「上界这个**数字**被逐字
+    传到构建命令上」（`startswith("30 docker build ")`），**不是**「正常构建有多快」。取 2s 时，
+    机器负载高（本机 gate 实测）`bash` 启动 + 桩执行就可能吃掉 2s ⇒ 真 `timeout` 把**正常路径**
+    杀掉 ⇒ `rc=124` ⇒ 误红（空载单独复跑 1 passed，证明它红的是负载）。30s 远高于任何负载下的
+    「`bash` 启动 + 桩执行」（空载实测量级 = 毫秒）⇒ 本断言不再被调度抖动触发；而「挂住的构建
+    被上界杀掉」由下一条（`sleep_for=30, timeout_secs=2` ⇒ rc=124 + 点名「服务器侧构建超时」）
+    **单独**钉住，那一条**不许**放宽。
+    """
+    proc, out, tlog = _run_build_block(tmp_path, sleep_for=0, timeout_secs=30)
     assert proc.returncode == 0, f"正常构建应 rc=0 → {out}"
     assert tlog.strip(), "桩 `timeout` 一次都没被调用 ⇒ 构建**没有**被 `timeout` 包住（上界是装饰）"
-    assert tlog.strip().startswith("2 docker build "), (
+    assert tlog.strip().startswith("30 docker build "), (
         f"`timeout` 收到的应是 `<上界> docker build …`，实得 {tlog.strip()!r}"
         "（上界必须作用在**构建命令**上，而不是包住别的命令）"
     )

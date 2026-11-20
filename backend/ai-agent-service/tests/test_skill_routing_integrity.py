@@ -89,7 +89,7 @@ def test_all_mibao_skills_registered():
 
 
 def test_all_xiaobu_skills_registered():
-    """元元的 3 个 C 端 Skill 全部注册"""
+    """米宝的 3 个 C 端 Skill 全部注册"""
     registry = get_skill_registry()
     agent = get_agent_config("xiaobu")
     names = agent.get_all_skill_names()
@@ -200,7 +200,7 @@ def test_mibao_has_fallback():
 
 
 def test_xiaobu_has_fallback():
-    """元元必须有兜底 Skill"""
+    """米宝必须有兜底 Skill"""
     agent = get_agent_config("xiaobu")
     assert agent.fallback_skill is not None
     registry = get_skill_registry()

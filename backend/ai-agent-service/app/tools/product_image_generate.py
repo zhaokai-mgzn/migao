@@ -43,7 +43,7 @@
 跨端契约判据 = `tests/test_card_type_cross_end_contract.py`。
 
 权限：`GET /api/admin/products/{id}` 的读码 `product:list`（与 `product_detail` 同码）。
-只读、仅 B 端（`c_end_reachable=False`）—— 商品图是商家素材，元元（顾客）没有这个面。
+只读、仅 B 端（`c_end_reachable=False`）—— 商品图是商家素材，米宝（顾客）没有这个面。
 """
 
 from typing import Any, Dict, Optional
@@ -150,7 +150,7 @@ class ProductImageGenerateTool(BaseTool):
     # 与 `GET /api/admin/products/{id}` 的读码逐字同码（与 product_detail / marketing_poster 同族）。
     required_permissions = ["product:list"]
     read_only = True
-    # 仅 B 端：商品图是商家素材，元元（顾客）没有这个面。
+    # 仅 B 端：商品图是商家素材，米宝（顾客）没有这个面。
     c_end_reachable = False
 
     parameters = {

@@ -1158,7 +1158,7 @@ public class AuthService {
      * 查询智能客服名称（TenantAiConfig.botName，C 端思考中/空态/导航名展示）
      *
      * @param tenantId 租户ID
-     * @return 智能客服名称，未配置或查询失败返回 null（前端兜底「元元」）
+     * @return 智能客服名称，未配置或查询失败返回 null（前端兜底「米宝」）
      */
     private String getBotName(Long tenantId) {
         if (tenantId == null || tenantId == -1L) {

@@ -185,7 +185,7 @@ export default function HumanAgentSessionsPage() {
               icon="inbox"
               testId="human-sessions-empty"
               title="暂无转人工会话"
-              description="顾客在元元对话里点「转人工」后，会话会出现在这里。"
+              description="顾客在米宝对话里点「转人工」后，会话会出现在这里。"
               className="py-6"
             />
           )}
@@ -267,7 +267,7 @@ export default function HumanAgentSessionsPage() {
                   <div className="rounded-xl border border-primary-200/70 bg-primary-50/60 p-3 space-y-2">
                     <div className="flex items-center gap-1.5 text-xs font-semibold text-primary-700">
                       <Bot className="w-3.5 h-3.5" />
-                      <span>顾客与 AI 客服（元元）的对话 · 转人工前</span>
+                      <span>顾客与 AI 客服（米宝）的对话 · 转人工前</span>
                     </div>
                     {detail.aiContextSummary && (
                       <div className="text-xs text-neutral-600 bg-white/80 border border-primary-100 rounded-lg px-2.5 py-1.5">
@@ -290,7 +290,7 @@ export default function HumanAgentSessionsPage() {
                               turn.role === 'assistant' ? 'text-accent-500' : 'text-neutral-400',
                             )}
                           >
-                            {turn.role === 'assistant' ? `元元 · ${AI_ROLES.xiaobu}` : '顾客'}
+                            {turn.role === 'assistant' ? `米宝 · ${AI_ROLES.xiaobu}` : '顾客'}
                           </div>
                           <div className="whitespace-pre-wrap break-words">{turn.content}</div>
                         </div>

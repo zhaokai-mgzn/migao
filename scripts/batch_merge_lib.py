@@ -61,6 +61,7 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import datetime as _dt
 import json
 import os
@@ -438,14 +439,42 @@ def render(repo) -> str:
     return p.stdout.strip()
 
 
+@contextlib.contextmanager
+def _isolated_module_state():
+    """执行 / 使用**从别的仓库加载来的模块**期间，把 `sys.path` 与 `sys.modules` 滚回进入前的状态。
+
+    ⚠️ **为什么需要**（issue #8872）：被加载的判据模块（`test_case_machine_fail_channel.py`）在
+    **模块级**执行 `sys.path.insert(0, REPO_ROOT/".github")`，而这里的 `REPO_ROOT` 是**临时
+    worktree** ⇒ 那份 `<tmp>/wt/.github` 会留在 `sys.path` 最前，随后**同进程**任何
+    `import cases_yaml` 都命中临时副本（main 侧守护腿 `test_render_cases_yaml_fail_closed`
+    因此恒红：断言里出现 `/tmp/pytest-of-runner/.../wt/.github/cases_yaml.py`）。它顺带注册的
+    模块名（`render_cases` / `cases_yaml` / `assertion_taxonomy` …）同理会把**别的仓库**的实现
+    留在 `sys.modules` 里 ⇒ 同进程后续消费者静默用错实现。
+    ⇒ 快照 / 恢复这两处；被加载模块的对象仍由调用方持有，功能不受影响。
+
+    ⚠️ **必须包住"exec 之后的调用"**：判据模块取的用例要**惰性**再 `import cases_yaml`
+    （在 `_load_module` 返回**之后**才发生）—— 只包住 `exec_module` 会漏掉后半段。
+    """
+    path_before = list(sys.path)
+    modules_before = set(sys.modules)
+    try:
+        yield
+    finally:
+        sys.path[:] = path_before
+        for added in set(sys.modules) - modules_before:
+            sys.modules.pop(added, None)
+
+
 def _load_module(path: Path, name: str):
+    """按路径加载模块；**执行期间 `sys.path` / `sys.modules` 的副作用不外泄**（#8872）。"""
     import importlib.util
     spec = importlib.util.spec_from_file_location(name, str(path))
     if spec is None or spec.loader is None:
         raise BatchError(f"无法加载模块：{path}")
     mod = importlib.util.module_from_spec(spec)
-    sys.modules[name] = mod
-    spec.loader.exec_module(mod)
+    with _isolated_module_state():
+        sys.modules[name] = mod
+        spec.loader.exec_module(mod)
     return mod
 
 
@@ -457,12 +486,13 @@ def measure_anchor(repo) -> dict:
     test = Path(repo) / ANCHOR_TEST
     if not test.is_file():
         raise BatchError(f"找不到锚点判据 {ANCHOR_TEST} ⇒ 无法取实测读数（拒绝按「猜」重锚）")
-    mod = _load_module(test, "_batch_merge_anchor_probe")
-    cases = mod._real_cases()                                # 判据自己的读法（含 fail-closed 断言）
-    return {
-        "no_channel_total": len(mod.no_channel_cases(cases, mod.REPO_ROOT)),
-        "backend_contract_scoring_zero": mod.scoring_zero_total(cases),
-    }
+    with _isolated_module_state():                           # 整段隔离（#8872，见该函数注释）
+        mod = _load_module(test, "_batch_merge_anchor_probe")
+        cases = mod._real_cases()                            # 判据自己的读法（含 fail-closed 断言）
+        return {
+            "no_channel_total": len(mod.no_channel_cases(cases, mod.REPO_ROOT)),
+            "backend_contract_scoring_zero": mod.scoring_zero_total(cases),
+        }
 
 
 def reanchor(anchor: dict, measured: dict, note: str, sha: str, day: str) -> dict:

@@ -207,7 +207,7 @@ def judge_nginx_headers(text: str) -> list[str]:
     else:
         for header in (HSTS_DIRECTIVE, "X-Content-Type-Options"):
             if not has_header(app_root, header):
-                v.append(f"app.migaozn.com 的 `location /` 缺 `add_header {header}`（C 端元元页面面）")
+                v.append(f"app.migaozn.com 的 `location /` 缺 `add_header {header}`（C 端米宝页面面）")
     for face in ("/w/", "/b/", "/b/report/"):
         loc = app_locations.get(face)
         if loc is None:

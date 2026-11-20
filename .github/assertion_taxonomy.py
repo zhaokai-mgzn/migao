@@ -1188,12 +1188,12 @@ def check_reference_freshness(refs: list[dict], read_lines) -> dict:
 # 六、persona 规则（单端用例的标注与跨腿窄跑）
 # ══════════════════════════════════════════════════════════════════════════════
 
-# C 端（元元）工具集真值 —— **单一源** = `tests/agent_eval/eval_case_filter.XIAOBU_TOOLS`
+# C 端（米宝）工具集真值 —— **单一源** = `tests/agent_eval/eval_case_filter.XIAOBU_TOOLS`
 # （该模块零第三方依赖，自身的一致性由 `test_xiaobu_case_set.py::TestXiaobuToolsetTruth`
 #  与后端 `CUSTOMER_*_TOOLS` 锁定）。本模块只做转发，**不复制**一份平行清单
 # （复制 = 双源漂移，正是本模块 header 反对的）。
 # B 端（黄金策）工具集真值同理转发 `eval_case_filter.mibao_real_toolset()`（#4356）：
-# 收紧后的单端判据**必须**同时看两端 —— 旧形态只看元元，隐含「两端不相交」这个**假**前提。
+# 收紧后的单端判据**必须**同时看两端 —— 旧形态只看米宝，隐含「两端不相交」这个**假**前提。
 try:  # pragma: no cover - 导入失败时降级为「未实装」，不静默恒真
     import os as _os
     import sys as _sys
@@ -1262,13 +1262,13 @@ def case_can_run_on(case: dict, available) -> bool:
 
 
 def is_single_leg_by_toolset(case: dict) -> bool:
-    """**纯静态**判定：该用例是否只能跑单端（元元腿跑得动、黄金策腿跑不动）。
+    """**纯静态**判定：该用例是否只能跑单端（米宝腿跑得动、黄金策腿跑不动）。
 
-    ⚠️ 判据形态于 **#4356** 收紧 —— 旧形态「工具集 ⊆ `XIAOBU_TOOLS` ⇒ 只可能是元元」
+    ⚠️ 判据形态于 **#4356** 收紧 —— 旧形态「工具集 ⊆ `XIAOBU_TOOLS` ⇒ 只可能是米宝」
     的前提「**黄金策工具集与之不相交**」是**假的**：两端实测共享 7 个工具
     （`order_create` / `product_detail` / `product_search` / `validate_input` /
     `interact` / `knowledge_search` / `production_progress_query`）⇒ 共享工具用例
-    （如 `OR-010`，`persona: mibao` 且已在 main）被同一判据判成「只可能是元元」。
+    （如 `OR-010`，`persona: mibao` 且已在 main）被同一判据判成「只可能是米宝」。
 
     为什么这不是「判据不够精确」而已：照该判据反推 persona 写成 `xiaobu` ⇒
       · `render_cases.filter_by_persona` 跑黄金策腿时跳过 `persona == "xiaobu"`
@@ -1277,7 +1277,7 @@ def is_single_leg_by_toolset(case: dict) -> bool:
       · `eval_case_filter.select_cases_for_persona` 对**显式** `persona: xiaobu`
         无条件保留 ⇒ 该用例反而在 C 端腿跑起来（绕过语义过滤）= 假红。
 
-    正确形态 = 「元元腿**跑得动** ∧ 黄金策腿**跑不动**」：
+    正确形态 = 「米宝腿**跑得动** ∧ 黄金策腿**跑不动**」：
       · 黄金策腿只有 persona 过滤、**没有**工具集过滤
         （`eval_case_filter.select_cases_for_persona`）⇒ 工具集 ⊄ 黄金策的用例在黄金策腿
         **必挂** —— 那才是需要 persona 标注的一类；
@@ -1665,7 +1665,7 @@ RULES: tuple[dict, ...] = (
             "单端用例缺标注 ⇒ 被另一条腿选中 ⇒ 该腿必挂（假红）；且 `case_ids` 窄跑时"
             "另一腿「禁止静默少跑」守卫会红，**配对不豁免**（#3822，run 34907040543）。"
         ),
-        "counterexample": "（存量：按工具集可判定的纯元元用例中，缺 `persona` 标注者见基线清单）",
+        "counterexample": "（存量：按工具集可判定的纯米宝用例中，缺 `persona` 标注者见基线清单）",
         "implemented": True,
         "fix": "在该用例上加 `persona: xiaobu`（或 `mibao`）。",
     },
@@ -2212,7 +2212,7 @@ def judge_case(case: dict, *, catalog: dict[str, set[str]] | None = None,
     if missing_persona_annotation(case):
         tools = sorted({t for t, _ in expectation_tools(case) if t})
         add("CASE-TRUST-SINGLE-LEG-NO-PERSONA",
-            f"期望工具 {tools} ⊆ 元元工具集（黄金策工具集与之不相交）"
+            f"期望工具 {tools} ⊆ 米宝工具集（黄金策工具集与之不相交）"
             f"⇒ 只能跑单端，但 persona 未标注"
             f"（缺 persona 的另一条腿必挂；`case_ids` 窄跑还会触发"
             f"「{SILENT_SKIP_GUARD_ANCHOR}」守卫，#3822）")

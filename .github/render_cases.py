@@ -113,6 +113,9 @@ def _yaml():
     return load_file
 
 
+_CASES_YAML_MOD = None
+
+
 def _cases_yaml():
     """用例源文件的**唯一严格 loader**（与判据腿 `scripts/drift_audit.py` 同一处实现）。
 
@@ -120,10 +123,30 @@ def _cases_yaml():
     的用例源文件**照旧渲染成功**、生成物新鲜度也照旧绿 = **零信号**（#5147 实测：判据腿那边
     整条抛错、9 条合法豁免差点被 `--regen-baseline` 永久删掉）。现在"合法/非法"的结论只由
     `.github/cases_yaml.py` 的 `strict_error()` 给出，**两条腿共用这一处**（不许各自再写一份）。
+
+    ⚠️ **按自己的文件路径加载，不按名字 `import`**（issue #8872）：`import cases_yaml` 会命中
+    `sys.modules` 里**别人**加载的同名模块。实测（main 侧守护腿 run 42579150387 / sha 76fadf1c2）：
+    `scripts/batch_merge_lib.py::_load_module()` 把**临时 worktree** 里的判据模块拉进同一进程，
+    那个模块在**导入时**把 `<tmp>/wt/.github` 插到 `sys.path` 最前 ⇒ 之后的 `import cases_yaml`
+    拿到的是**临时副本** ⇒ 渲染腿的"严格判定"指向别的仓库的文件（断言如实变红，但红的是环境，
+    不是用例）。⇒ 加载对象 = **本文件旁边**的 `.github/cases_yaml.py`（与判据腿
+    `drift_audit._load_cases_yaml()` 同一手法：`spec_from_file_location`）；已登记的条目**只有**
+    指向同一份文件时才复用，否则以本仓实现覆盖它（把被顶替的条目修正回来）。
     """
-    _bootstrap_path()
-    import cases_yaml
-    return cases_yaml
+    global _CASES_YAML_MOD
+    if _CASES_YAML_MOD is None:
+        path = os.path.realpath(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                             "cases_yaml.py"))
+        mod = sys.modules.get("cases_yaml")
+        if mod is None or os.path.realpath(getattr(mod, "__file__", "") or "") != path:
+            spec = importlib.util.spec_from_file_location("cases_yaml", path)
+            if spec is None or spec.loader is None:      # pragma: no cover —— 路径算错才会发生
+                raise RuntimeError(f"加载不了用例严格 loader 的单一真相源：{path}")
+            mod = importlib.util.module_from_spec(spec)
+            sys.modules["cases_yaml"] = mod              # 加载前登记（注解 / dataclass 解析需要它）
+            spec.loader.exec_module(mod)
+        _CASES_YAML_MOD = mod
+    return _CASES_YAML_MOD
 
 
 def load_case_dicts(cases_dir):
@@ -572,8 +595,8 @@ def to_md(cases):
             # 缺行 = YAML 未声明 = 双端（与 `filter_by_persona` 的缺省语义一致，不额外落字面量）。
             if c.get("persona"):
                 _persona = _one_line(c["persona"])
-                _leg = {"mibao": "单端 —— 仅黄金策腿跑，元元腿跳过",
-                        "xiaobu": "单端 —— 仅元元腿跑，黄金策腿跳过"}.get(
+                _leg = {"mibao": "单端 —— 仅黄金策腿跑，米宝腿跳过",
+                        "xiaobu": "单端 —— 仅米宝腿跑，黄金策腿跳过"}.get(
                             _persona, "两腿都跑（非 mibao/xiaobu 的取值按缺省处理）")
                 lines.append(f"端: {_persona}（{_leg}）")
             # 历史轮次（issue #5482）：与 `pre_clean` / `post_clean` 同因同形 —— 声明了

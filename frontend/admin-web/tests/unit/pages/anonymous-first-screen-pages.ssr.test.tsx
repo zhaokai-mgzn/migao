@@ -114,7 +114,7 @@ describe('匿名可见面首屏：真实根布局 + 真实页面 ⇒ 必须有 h
   it('正文确实进了首屏（以 /contact 为例逐字锚定：H1 标题 + 页头导语）', () => {
     const html = firstScreen('/contact', ContactPage)
     expect(html).toContain('联系我们')
-    expect(html).toContain('常见问题解答')
+    expect(html).toContain('关于开通、成本与 AI 的边界')
   })
 
   it('负控：受保护业务页的首屏仍不得吐业务正文（登录门控一条不放宽）', () => {

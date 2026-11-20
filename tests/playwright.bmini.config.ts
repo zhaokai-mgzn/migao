@@ -7,7 +7,7 @@ import { defineConfig, devices } from '@playwright/test'
  *
  * ## 为什么要有它
  *
- * C 端（元元）早在 `mini-app.yml` 里有 `xiaobu-h5-visual`；**B 端一条 e2e 都没有** ⇒
+ * C 端（米宝）早在 `mini-app.yml` 里有 `xiaobu-h5-visual`；**B 端一条 e2e 都没有** ⇒
  * #5754 的「底部 tabBar 是否真的居中」只能靠人眼 + 手工量（那次连着踩了两条 tabbar 病灶 + 一次构建陷阱）。
  * 本腿把「底栏几何」变成机器判据：`tests/e2e/specs/bmini/bmini-tabbar.spec.ts`。
  *

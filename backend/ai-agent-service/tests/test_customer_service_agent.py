@@ -298,7 +298,7 @@ class TestBuildInitialState:
     def _ctx():
         return AgentContext(
             user_id="u1", tenant_id=1, session_id="s1",
-            role="customer", user_name="元元",
+            role="customer", user_name="米宝",
         )
 
     @pytest.mark.asyncio
@@ -374,7 +374,7 @@ class TestBuildInitialState:
         assert state["agent_type"] == "xiaobu"
         assert state["tenant_id"] == 1
         assert state["user_id"] == "u1"
-        assert state["user_name"] == "元元"
+        assert state["user_name"] == "米宝"
         assert state["session_id"] == "s1"
         assert state["role"] == "customer"
         assert state["permissions"] == []
@@ -462,14 +462,14 @@ class TestAchat:
 
     @pytest.mark.asyncio
     async def test_returns_final_answer_as_text(self):
-        agent = self._agent({"final_answer": "你好，我是元元"})
+        agent = self._agent({"final_answer": "你好，我是米宝"})
         with patch("app.memory.session_memory.SessionMemory") as mock_sm:
             mem = mock_sm.return_value
             mem.get_plan_state = AsyncMock(return_value=None)
             mem.get_pending_skill = AsyncMock(return_value="")
             resp = await agent.achat("你好", self._ctx())
         assert resp.type == "text"
-        assert resp.content == "你好，我是元元"
+        assert resp.content == "你好，我是米宝"
         agent.graph.ainvoke.assert_awaited_once()
 
     @pytest.mark.asyncio

@@ -184,16 +184,16 @@ leg_title() {
 # ── 通知臂（任何失败类结论）──────────────────────────────────────────────────
 NOTIFY_OK=0
 notify() {   # $1=动作描述（写进评论，幂等：同标题已开 ⇒ 评论，不重复开单）【事件快路径专用】
-  local act="$1" n body
-  n="$(ghc issue list --state open --search "${TITLE} in:title" --json number --jq '.[0].number // empty')" || return 0
-  n="$(printf '%s' "$n" | tr -dc '0-9')"
+  local act="$1" n
+  n="$(open_issue_of_title "$TITLE")"
   # ⚠️ 正文一律走 `--body-file -`（stdin）：调用记录保持**单行**，且不用 `--body "…"` 背多行/引号。
   if [ -z "$n" ]; then
     n="$(issue_body "$act" | ghc issue create --title "$TITLE" --body-file - --label "priority/P1" | grep -oE '[0-9]+$' | tail -1)"
   else
     issue_body "$act" | ghc issue comment "$n" --body-file - >/dev/null || :
   fi
-  [ -n "$n" ] && NOTIFY_OK=1
+  if [ -n "$n" ]; then NOTIFY_OK=1; fi
+  converge_duplicate_issues "$TITLE"
   return 0
 }
 
@@ -210,10 +210,60 @@ CLOSE_REASON_ENUM=("completed" "not planned" "duplicate")
 #: 状态兜底（该 commit 已上线）用的取值 —— 显式常量而不是内联字面量：内联那处曾经写成 `not_planned`。
 CLOSE_REASON_NOT_PLANNED="not planned"
 
-open_issue_of_title() {   # $1=标题 ⇒ 该标题下**开放**单的编号（无 ⇒ 空）
-  local n
-  n="$(ghc issue list --state open --search "$1 in:title" --json number --jq '.[0].number // empty')" || n=""
-  printf '%s' "$n" | tr -dc '0-9'
+# ── 去重读面（issue #8860/#8861）：**不许读 search 索引** ──────────────────────
+# 实测（2026-11-09 04:12:59 / 04:13:01 / 04:13:03）：同一 job 的两个入口（事件快路径 +
+# 状态兜底）相隔数秒，「先查后建」却各开了一单（#8860 与 #8861 正文逐字相同）。根因 =
+# `issue list --search` 读的是 **search 索引（最终一致）** —— 刚开的单几秒内**搜不到**，
+# 于是第二个入口看到「无开放单」⇒ 再开一张。这不是判据写错，也不是并发 job。
+# 修法两层：
+#   ① 读 **REST 列表**（`--json number,title`，立即可见）+ 本地**逐字**标题比较；
+#   ② 开单后**收敛一次**（同标题多单 ⇒ 只留最小号、其余以 `duplicate` 关闭）——
+#      覆盖「两个 job 真的同时跑」这个 REST 也挡不住的窗口（幂等，可重复执行）。
+# 判据 = tests/unit_ci_workflows/test_deploy_leg_failure_reaction.py
+#        ::test_dedupe_reads_rest_list_not_the_search_index
+#        ::test_duplicate_open_issues_are_converged
+#        ::test_no_issue_dedupe_relies_on_the_search_index（类级元守卫）
+open_issue_numbers_by_title() {   # $1=标题 ⇒ 该标题下**开放**单的编号（升序、空格分隔）
+  local t="$1" n title
+  ghc issue list --state open --limit 200 --json number,title \
+      --jq '.[] | [.number, .title] | @tsv' 2>/dev/null \
+    | while IFS=$'\t' read -r n title; do
+        if [ "$title" = "$t" ]; then printf '%s\n' "$n"; fi
+      done | sort -n | tr '\n' ' '
+}
+
+open_issue_numbers_matching() {   # $1=标题**子串** ⇒ 开放单的编号（升序、空格分隔）
+  # 只给「按族匹配」的读面用（`[deploy-watchdog]` 的单标题带腿名，不是定值）。
+  local needle="$1" n title
+  ghc issue list --state open --limit 200 --json number,title \
+      --jq '.[] | [.number, .title] | @tsv' 2>/dev/null \
+    | while IFS=$'\t' read -r n title; do
+        case "$title" in *"$needle"*) printf '%s\n' "$n" ;; esac
+      done | sort -n | tr '\n' ' '
+}
+
+converge_duplicate_issues() {   # $1=标题：同标题多单 ⇒ 只留**最小号**，其余以 `duplicate` 关闭
+  local t="$1" nums keep n
+  nums="$(open_issue_numbers_by_title "$t")"
+  keep="$(printf '%s' "$nums" | awk '{print $1}')"
+  if [ -z "$keep" ]; then return 0; fi
+  for n in $nums; do
+    if [ "$n" = "$keep" ]; then continue; fi
+    # ⚠️ 这句**不许**出现清零声明语（`自动关闭` 那类）：`deploy_leg_close_claim_audit.py`
+    #    会把开放单上的那种句子读成「已关」（issue #7075 的假绿形态）。本句只陈述**重复关系**。
+    printf '重复值守单（同一形态并发开单）；正文与证据同 #%s。后续跟进统一在 #%s。\n' "$keep" "$keep" \
+      | ghc issue comment "$n" --body-file - >/dev/null || :
+    if ghc issue close "$n" --reason duplicate >/dev/null; then
+      echo "🧹 关闭重复值守单 #${n}（保留 #${keep}）"
+    else
+      echo "::warning::重复值守单 #${n} 关闭失败 ⇒ 仍开着（保留 #${keep}）；复算：\`gh issue view ${n} --json state -q .state\`"
+    fi
+  done
+  return 0
+}
+
+open_issue_of_title() {   # $1=标题 ⇒ 该标题下**开放**单的编号（无 ⇒ 空；多单 ⇒ 取**最小**号）
+  open_issue_numbers_by_title "$1" | awk '{print $1}'
 }
 
 # 把一条腿的单**清零**（状态驱动，issue #6556）。只关**本出口**那一族（`[deploy-leg]`）——
@@ -278,7 +328,9 @@ notify_terminal_leg() {   # $1=服务键 $2=状态依据
     echo "🔁 腿 ${key} 仍为 terminal ⇒ 已在单 #${n} 上追加（不重复开单）"
     return 0
   fi
-  wd="$(open_issue_of_title "$WATCHDOG_TITLE_PREFIX")"
+  # ⚠️ 这里必须按**子串**匹配（`[deploy-watchdog]` 的单标题带腿名，不是定值）—— 用精确标题
+  #    会在「值守面已经在叫这条腿」时**看不见它** ⇒ 重复开一条 `[deploy-leg]`（有判据钉住）。
+  wd="$(open_issue_numbers_matching "$WATCHDOG_TITLE_PREFIX" | awk '{print $1}')"
   if [ -n "$wd" ]; then
     echo "ℹ️ 腿 ${key} 为 terminal，但已有开放的 \`${WATCHDOG_TITLE_PREFIX}\` 单 #${wd} ⇒ 不重复出声（去重，issue #6556）"
     return 0
@@ -290,6 +342,7 @@ notify_terminal_leg() {   # $1=服务键 $2=状态依据
     issue_body "**状态兜底判红**（issue #6556）：对账步把这条腿判成 \`terminal\` —— 该 commit 的部署落在不可恢复终态、**不会再自动重试**，而 \`workflow_run\` 事件面在 **cron 触发的完成**上**不投递**（实测 2/2 条 schedule 完成零触发）⇒ 本单由**状态兜底**这条入口补开。"
   } | ghc issue create --title "$t" --body-file - --label "priority/P1" >/dev/null || :
   echo "🔴 腿 ${key} 判到 terminal 且无开放单 ⇒ 已由状态兜底开单（标题：${t}）"
+  converge_duplicate_issues "$t"
   return 0
 }
 

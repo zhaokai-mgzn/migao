@@ -24,6 +24,7 @@
     "e2e/specs/chat/mibao-minimize-layout.spec.ts",
     "e2e/specs/customers/customer-detail.spec.ts",
     "e2e/specs/customers/customer-list.spec.ts",
+    "e2e/specs/onboarding/feature-guide.spec.ts",
     "e2e/specs/orders/key-columns-reachability.spec.ts",
     "e2e/specs/orders/order-create.spec.ts",
     "e2e/specs/orders/order-detail-regions.spec.ts",
@@ -48,5 +49,6 @@
     "e2e/specs/warehouse/inbound-orders-table-geometry.spec.ts",
     "e2e/specs/warehouse/stock-ledger-batch-view.spec.ts",
     "e2e/specs/xiaobu/xiaobu-h5.spec.ts"
-  ]
+  ],
+  "_carrier_for_8925_spec": "`e2e/specs/onboarding/feature-guide.spec.ts`（issue #8925 新增）的**每 PR**载体 = 单测 `frontend/admin-web/tests/unit/components/FeatureGuide.test.tsx` + `tests/unit/lib/feature-guide.test.ts` + `tests/unit/store/auth.test.ts`（弹窗 / 存储语义 / 登录接线）；浏览器级判据（真实 UI 登录、关闭/重登/不再提醒、权限裁剪）本机已按 fixture 模式实跑，PR CI 未逐字引用，等兜底腿恢复或并入显式列表。"
 }

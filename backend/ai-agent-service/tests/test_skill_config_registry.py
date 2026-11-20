@@ -68,7 +68,7 @@ class TestSkillConfig:
             tool_names=["tool_a", "tool_b"],
             route_keys=["test"],
             intents=["intent_a", "intent_b"],
-            system_prompts={"mibao": "黄金策 Prompt", "xiaobu": "元元 Prompt"},
+            system_prompts={"mibao": "黄金策 Prompt", "xiaobu": "米宝 Prompt"},
             default_persona="mibao",
         )
         assert config.name == "test"
@@ -146,9 +146,9 @@ class TestCreateSkillConfig:
             display_name="订单",
             tool_names=["order_query"],
             mibao_prompt="黄金策订单",
-            xiaobu_prompt="元元订单",
+            xiaobu_prompt="米宝订单",
         )
-        assert config.system_prompts == {"mibao": "黄金策订单", "xiaobu": "元元订单"}
+        assert config.system_prompts == {"mibao": "黄金策订单", "xiaobu": "米宝订单"}
         assert config.route_keys == ["order"]  # 默认用 domain
 
     def test_extra_prompts(self):
@@ -334,7 +334,7 @@ class TestAgentConfig:
             allowed_roles={"admin", "agent"},
         ))
         register_agent(AgentConfig(
-            name="xiaobu", display_name="元元", persona="xiaobu",
+            name="xiaobu", display_name="米宝", persona="xiaobu",
             allowed_roles={"customer"},
         ))
         assert find_agent_for_role("admin") == "mibao"
@@ -355,7 +355,7 @@ class TestAgentRouter:
             allowed_roles={"admin", "agent"},
         ))
         register_agent(AgentConfig(
-            name="xiaobu", display_name="元元", persona="xiaobu",
+            name="xiaobu", display_name="米宝", persona="xiaobu",
             allowed_roles={"customer"},
         ))
 
@@ -388,7 +388,7 @@ class TestAgentRouter:
         assert result in ("mibao", "xiaobu")
 
 
-# ────────────── 元元 C 端售后 skill 引导（闭环回归） ──────────────
+# ────────────── 米宝 C 端售后 skill 引导（闭环回归） ──────────────
 
 
 def test_customer_aftersales_prompt_self_handles_aftersale_requests():
@@ -887,7 +887,7 @@ def test_customer_skills_only_bind_tools_customer_role_can_use():
 
     根因（CH-012/OR-014/OR-017/CH-010 实测 2026-09-11，run 34620594324）：
     `ValidateInputTool.allowed_roles = ["admin","agent","tenant_admin"]` —— **不含 customer**
-    → 元元的 `customer_order` / `customer_aftersales` 都绑了它，但顾客调用一律返回
+    → 米宝的 `customer_order` / `customer_aftersales` 都绑了它，但顾客调用一律返回
     `权限不足`。而 `base_skill` 的「确认-执行链」依赖 `validate_input` **成功**才持久化
     「已校验待执行」状态：
 
@@ -1307,7 +1307,7 @@ class TestGlobalAgentRegistryNotPolluted:
                 f"会 skill_names=[] 静默空转。检查 test 级 teardown 恢复是否还在"
                 f"（_isolate_global_agent_registry）。"
             )
-        # stub 的 fallback 是默认值 "general"，真实元元是 "customer_general" —— 用它区分真值
+        # stub 的 fallback 是默认值 "general"，真实米宝是 "customer_general" —— 用它区分真值
         assert get_agent_config("xiaobu").fallback_skill == "customer_general", (
             "全局 xiaobu 配置不是真实声明（被测试 stub 覆盖）"
         )

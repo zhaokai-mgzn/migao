@@ -57,7 +57,7 @@ export default function DownloadPage() {
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <span className="corporate-kicker">安装说明</span>
           <h2 className="mt-3 text-2xl font-bold tracking-tight text-neutral-900 sm:text-3xl">
-            安装前请先看这三条
+            安装前的三项确认
           </h2>
           <div className="mt-10 grid grid-cols-1 gap-6 md:grid-cols-3">
             {INSTALL_NOTES.map((item) => (
@@ -74,10 +74,10 @@ export default function DownloadPage() {
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <span className="corporate-kicker">校验</span>
           <h2 className="mt-3 text-2xl font-bold tracking-tight text-neutral-900 sm:text-3xl">
-            用 SHA-256 确认安装包没有被改过
+            用 SHA-256 核对安装包完整性
           </h2>
           <p className="mt-4 max-w-3xl text-sm leading-relaxed text-neutral-600">
-            每个安装包都有唯一的 SHA-256 值，页面上显示的值与您在命令行算出的值一致，说明文件完整、没有被替换。
+            每个安装包都有唯一的 SHA-256 值；页面上公布的值与命令行算出的值一致，即说明文件完整、未被替换。
             终端软件本身也会在启动日志里记录自身的 SHA-256，便于事后核对。
           </p>
           <div className="mt-8 grid grid-cols-1 gap-4 md:grid-cols-3">

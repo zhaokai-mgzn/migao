@@ -193,7 +193,7 @@
 
 | 通路 | 入口 | 谁在调 | `panels` 口径（逐字读源） |
 |---|---|---|---|
-| **A 黄金策下单通路** | `calculate_fabric_meters()` 定宽分支（`curtain_calc.py`） | `build_quote` 的**兜底分支**（`formula='pleat'` 且 `mounting != s_hook` 等未命中前两支时）⇒ `CurtainCalcTool` ⇒ 黄金策/元元 Agent | `ceil(窗宽 × 褶倍 ÷ 门幅)` —— **无任何宽方向余量**（issue #5030 改判后） |
+| **A 黄金策下单通路** | `calculate_fabric_meters()` 定宽分支（`curtain_calc.py`） | `build_quote` 的**兜底分支**（`formula='pleat'` 且 `mounting != s_hook` 等未命中前两支时）⇒ `CurtainCalcTool` ⇒ 黄金策/米宝 Agent | `ceil(窗宽 × 褶倍 ÷ 门幅)` —— **无任何宽方向余量**（issue #5030 改判后） |
 | **B1 试算通路（倍数法）** | `build_quote()` 的 `formula='fullness'` 分支 | 商家手工下单页（`orders/new` → `POST /api/admin/orders/craft-calc` → `internal.py::craft_calc`）；`craft='打孔'` 由 `resolve_craft_rule` 派生成此式 | `ceil(ceil_to_step(窗宽 × 褶倍, 0.1) ÷ 门幅)` —— **与 A 同式**（中间那道 `ceil_to_step` 在门幅为 0.1 整数倍时**恒不改判**，实测见下） |
 | **B2 试算通路（褶数法）** | `build_quote()` 的 `pleat_mode` 分支 | 同上（`craft='韩褶'` / 默认档） | `ceil(褶数法总用料 ÷ 门幅)` —— 用料 = `0.25×褶数 + 余量`；这里的余量是**开数余量**（`margin_single` / `margin_multi`，**保留**），与已退场的宽方向余量**不是一回事**（它是另一支公式，不是同一量的第二个口径） |
 
@@ -353,7 +353,7 @@
 1. **超高/超宽判据是推理**（§3.2）：未从 ERP 供应商取得定义。已给默认值 + 商家可配 + `source='推算'`。
 2. **`docs/sql/schema.sql` 的同步面**：包 D/F 都要动它（bootstrap 路径不跑迁移链的**终态**）。
    谁最终持有它由集成时决定；**未同步 = bootstrap 库缺列/缺行**（须显式登记）。
-3. **agent 路径不注入租户配置**（包 E）：元元/黄金策走同一份 `curtain_calc.py`，但 agent 侧冻结 ⇒
+3. **agent 路径不注入租户配置**（包 E）：米宝/黄金策走同一份 `curtain_calc.py`，但 agent 侧冻结 ⇒
    **agent 仍用默认值，商家配置只在 web 路径生效** ⇒ 两条路径会算出不同米数。**已知且已登记的偏差**，待 agent 统一重构时收口。
 4. **黄金策路径不推导自动特征**（同 `processing-fee-and-option-pricing.md` §8 包 B 边界）⇒ 组合键缺项 ⇒ `unpriced`；与 #4408 同族。
 5. **公式参数可配后的「口径漂移」风险**：商家改参数 ⇒ 同一张单在不同时间算出不同米数。

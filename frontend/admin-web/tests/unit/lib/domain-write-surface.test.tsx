@@ -95,7 +95,7 @@ vi.mock('@/lib/api', () => ({
     getSettings: () =>
       Promise.resolve(ok({ companyName: '测试企业', logo: '', notificationEnabled: true, code: 'migao' })),
     updateSettings: () => Promise.resolve(ok(null)),
-    getAiConfig: () => Promise.resolve(ok({ botName: '元元', greetingTemplate: '您好' })),
+    getAiConfig: () => Promise.resolve(ok({ botName: '米宝', greetingTemplate: '您好' })),
     updateAiConfig: () => Promise.resolve(ok(null)),
   },
   uploadApi: { uploadImage: () => Promise.resolve(ok({ url: '' })) },

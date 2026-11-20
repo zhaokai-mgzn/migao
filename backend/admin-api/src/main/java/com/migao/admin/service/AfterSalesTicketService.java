@@ -75,7 +75,7 @@ public class AfterSalesTicketService extends ServiceImpl<AfterSalesTicketMapper,
     //   · SOURCE_AGENT    —— 同上（既有唯一硬编码值）
     //   · SOURCE_MERCHANT —— 本 issue 补：人工（后台表单）建单。前端同步补渲染分支
     // 消费方只有前端工单详情一处（已 grep 全仓库：无报表/统计/导出按 source 取值分组）。
-    /** 顾客发起（C 端元元 / 顾客自助） */
+    /** 顾客发起（C 端米宝 / 顾客自助） */
     public static final String SOURCE_CUSTOMER = "customer";
     /** AI 建单（黄金策等 Agent 工具） */
     public static final String SOURCE_AGENT = "agent";
@@ -357,7 +357,7 @@ public class AfterSalesTicketService extends ServiceImpl<AfterSalesTicketMapper,
      * 创建售后工单
      *
      * <p>issue #3686：`source` 表示工单的**真实来源**，不再无条件硬编码（原实现恒写 "agent"，
-     * 导致 C 端元元顾客工单被误标 agent、DDL `DEFAULT 'customer'` 成死默认）。
+     * 导致 C 端米宝顾客工单被误标 agent、DDL `DEFAULT 'customer'` 成死默认）。
      * 取值集合（代码中已存在，勿臆造第四个值）：{@link #SOURCE_CUSTOMER} / {@link #SOURCE_AGENT}
      * / {@link #SOURCE_MERCHANT}。唯一消费方是前端工单详情
      * （`AfterSalesDetail.tsx` 按其渲染 客户提交 / 客服创建 / 商家创建）。

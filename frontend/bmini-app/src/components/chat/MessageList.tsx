@@ -43,7 +43,7 @@ export default function MessageList({ messages, isStreaming, onInteract, onScrol
             你的商家经营助手{'\n'}经营、订单交付、库存、商品、售后、客户，都可以问我
           </Text>
           {/* 🔴 B 端空态**不铺商品**（issue #5747）：C 端旧版的商品推荐卡（拉
-              `/api/chat/products/new-arrivals`、提示「点一下问问元元」）已整块删除 ——
+              `/api/chat/products/new-arrivals`、提示「点一下问问米宝」）已整块删除 ——
               商家端不该出现顾客端的商品展示，更不该出现**顾客端 agent 名**。 */}
         </View>
       </View>

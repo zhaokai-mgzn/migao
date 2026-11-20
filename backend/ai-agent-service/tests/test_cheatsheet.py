@@ -40,7 +40,7 @@
 
 - **不判**「小抄里那把工具业务上真的最合适」—— 那是评测/评审；本文件判的是
   **注册表 ⇄ 小抄的双向一致**与**删掉的手写规则是否被元数据接手**。
-- **不判** C 端（元元）的速查表：`prompts/customer_quote.md` / `prompts/customer_knowledge.md`
+- **不判** C 端（米宝）的速查表：`prompts/customer_quote.md` / `prompts/customer_knowledge.md`
   的表格本包**有意保留**（C 端提示词逐字节不变，与 #7291 的 persona 门控同口径）。
 - 字符数只判**结构面**（手写表已清零 + 小抄块有预算）；总量读数在 PR body 里连命令一起给。
 """
@@ -427,7 +427,7 @@ def _clear_cache():
 
 
 def test_cheatsheet_is_injected_for_mibao_only():
-    """B 端每个 skill 的组装 prompt 都要有小抄；C 端（元元）**逐字节**不含该段。"""
+    """B 端每个 skill 的组装 prompt 都要有小抄；C 端（米宝）**逐字节**不含该段。"""
     missing = [s for s in MIBAO_SKILLS if cs.MARKER not in _build_system_prompt(s)]
     assert missing == [], f"{missing} 的 system prompt 里没有【选工具小抄】"
     leaking = [cfg.name for cfg in get_skill_registry().get_all()

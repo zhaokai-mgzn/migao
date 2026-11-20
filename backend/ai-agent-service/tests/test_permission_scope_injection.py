@@ -574,7 +574,7 @@ class TestWiredIntoTheRealPromptAssembly:
             state=_make_state(agent_type="xiaobu", role="customer", permissions=[]),
             skill_name="customer_order",
             tool_names=[],
-            system_prompt="你是元元",
+            system_prompt="你是米宝",
         )
         text = self._system_text(captured)
         assert "【权限范围】" not in text

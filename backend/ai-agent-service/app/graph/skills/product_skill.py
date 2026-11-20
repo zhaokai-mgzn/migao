@@ -14,7 +14,7 @@ issue #5314 批量更新 → 2026-10-16 裁定「上下架都 ❌」/ #7334 裁�
 机械判据 = `tests/unit_ci_workflows/test_mibao_b_end_readonly.py` 的
 `A_TIER_REVERSIBLE_WRITES` 白名单（新增成员必须显式改判）。
 
-⚠️ `route_keys` / `intents` 有意保持不变（改 intent 会连带改元元的意图路由 —— 见 order_skill 说明）。
+⚠️ `route_keys` / `intents` 有意保持不变（改 intent 会连带改米宝的意图路由 —— 见 order_skill 说明）。
 """
 
 from app.graph.state import AgentState
@@ -26,10 +26,10 @@ PRODUCT_TOOLS = [
     "product_search",
     "product_detail",
     # 营销海报（issue #7351）：**只读** —— 查商品事实 + 回传操作员确认过的文案。
-    # 海报卡只由 B 端渲染（黄金策 product / general；元元不绑）。
+    # 海报卡只由 B 端渲染（黄金策 product / general；米宝不绑）。
     "marketing_poster",
     # 商品图生成（issue #7541）：**只读** —— 取该商品主图做样图，交既有生图内核出图。
-    # 卡片只由 B 端渲染（黄金策 product / general；元元不绑）。
+    # 卡片只由 B 端渲染（黄金策 product / general；米宝不绑）。
     "product_image_generate",
     "inventory_manage",        # 只读化后仅剩 query / low_stock_alert（#5247）
     # 批次账 / 省料度量只读（issue #5188）：商品/库存域的「哪些批次快用尽了 / 剩料分布 /
@@ -66,7 +66,7 @@ PRODUCT_TOOLS = [
     "sku_update",                # 单规格调价（product_skus.price）
     "interact",                  # 交互卡：choice 消歧 + **改价确认卡**（before → after 预览）
     # Agent 深通道（issue #5368 包 2）：图 → **同页填充计划**（识别 + 消歧候选 + 领域解读）。
-    # 只读、纯本地；可达性只给 B 端（元元不绑 ⇒ C 端零改动）。
+    # 只读、纯本地；可达性只给 B 端（米宝不绑 ⇒ C 端零改动）。
     "image_recognize",
 ]
 

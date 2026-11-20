@@ -5,7 +5,7 @@
 🔴 建单 / 改状态（关闭、拒绝）已按用户裁定 2026-09-23 从 B 端移除：本 skill 不绑任何写工具。
 
 ⚠️ `route_keys` / `intents` 有意保持不变（`after_sales_create` intent 仍由本 skill 声明，
-理由见 order_skill：全局 intent→route_key 映射影响元元路由，删 intent 属 C 端改动）。
+理由见 order_skill：全局 intent→route_key 映射影响米宝路由，删 intent 属 C 端改动）。
 商家说「帮我建个售后单」→ 路由仍落到本 skill，由提示词如实说明并引导去页面。
 """
 

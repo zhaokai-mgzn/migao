@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { authApi } from '@/lib/api'
 import type { LoginResponse, User } from '@/types'
 import { toast } from 'sonner'
+import { markFeatureGuidePending, resetFeatureGuideSession } from '@/lib/feature-guide'
 
 // ⚠️ 审计 07 P1-F1/P1-5：JWT 一律不落 localStorage、不写 JS 可读 cookie。
 // access_token/refresh_token 均由后端 HttpOnly+Secure cookie 承载（withCredentials 自动携带），
@@ -93,6 +94,9 @@ export const useAuthStore = create<AuthState>()((set, get) => {
       try {
         const response = await authApi.employeeLogin(identifier, password)
         const outcome = await applySession(response.data?.data)
+        // 首次登录引导（issue #8925）：只在**真正登录成功**时落「本次待展示」标记；
+        // 刷新 / 站内跳转不会重新写，保证「关闭后下次登录继续弹出」而不打扰本次会话。
+        markFeatureGuidePending()
         toast.success('登录成功')
         return outcome
       } catch (error) {
@@ -107,6 +111,8 @@ export const useAuthStore = create<AuthState>()((set, get) => {
       try {
         const response = await authApi.smsLogin(phone, code)
         const outcome = await applySession(response.data?.data)
+        // 同上：短信登录成功同样进入首次登录引导。
+        markFeatureGuidePending()
         toast.success('登录成功')
         return outcome
       } catch (error) {
@@ -225,6 +231,9 @@ export const useAuthStore = create<AuthState>()((set, get) => {
 
     // 清除认证状态（仅内存；cookie 由后端登出接口清除）
     clearAuth: () => {
+      // 退出登录 / 会话失效：清掉「本次登录」的两枚 session 标记，
+      // 但**保留**按用户持久化的「不再提醒」（issue #8925）。
+      resetFeatureGuideSession()
       set({
         user: null,
         accessToken: null,

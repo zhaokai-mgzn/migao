@@ -93,7 +93,7 @@ final class OrderLineCraftFields {
     /**
      * 写路径：把 {@code processing_info} 顶层的工艺规格键**物化**到 {@code order_items} 的列上。
      *
-     * <p>这是两个采集端（C 端元元 {@code curtain_checklist} → 会话 → {@code order_create}；
+     * <p>这是两个采集端（C 端米宝 {@code curtain_checklist} → 会话 → {@code order_create}；
      * B 端黄金策 {@code order_create}）落库的**唯一汇聚点** —— {@link OrderService#createOrder}
      * 是表单 / Agent / 程序化三条路径的共享入口，判在这里才无死角。</p>
      */

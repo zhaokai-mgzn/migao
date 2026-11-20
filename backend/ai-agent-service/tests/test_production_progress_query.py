@@ -38,7 +38,7 @@ def tool():
 
 @pytest.fixture
 def customer_context():
-    """C 端顾客（元元）上下文 —— 查自己的订单进度"""
+    """C 端顾客（米宝）上下文 —— 查自己的订单进度"""
     return ToolContext(tenant_id=1, user_id="customer_001", session_id="sess_pp_1", role="customer")
 
 

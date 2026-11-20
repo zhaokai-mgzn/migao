@@ -6,7 +6,7 @@
 商家在「工艺配置 → 算料配置」改口径（`per_fold_single` / `margin_*` / `min_fullness` /
 `default_formula` / `hem_margin` / `meters_rounding_step`）后，**服务端下单路径读它**
 （`CraftCalcClient#withTenantConfig` → `craftCalcConfigMapper.selectActiveByTenant`），
-而黄金策/元元的 `CurtainCalcTool.execute` **从不传 `config`** ⇒ 引擎回落模块级
+而黄金策/米宝的 `CurtainCalcTool.execute` **从不传 `config`** ⇒ 引擎回落模块级
 `DEFAULT_CRAFT_CALC_CONFIG` ⇒ **同一张单两个米数/两个金额**（口径的每一项都直接改米数 = 改钱）。
 
 ## 判据（每条都独立可红，互不掩盖）

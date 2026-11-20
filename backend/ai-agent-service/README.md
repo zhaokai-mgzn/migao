@@ -1,6 +1,6 @@
 # AI Agent Service
 
-观星台 — 布艺行业 AI 经营平台 · Python AI 服务（元元 + 黄金策双 Agent）
+观星台 — 布艺行业 AI 经营平台 · Python AI 服务（米宝 + 黄金策双 Agent）
 
 ## 技术栈
 
@@ -36,7 +36,7 @@ python -m uvicorn app.main:app --port 8001 --reload
 
 ```
 app/
-├── agents/      # 双 Agent 定义（黄金策/元元）
+├── agents/      # 双 Agent 定义（黄金策/米宝）
 ├── graph/       # LangGraph 状态图 + Skill（数量现取：ls app/graph/skills/*_skill.py）
 │   ├── skills/  # Skill 节点定义
 │   └── nodes.py # Graph 节点逻辑

@@ -151,7 +151,7 @@ def _flow_owner_skill(state: dict | None = None,
     """**声明了**该写工具的 skill 名 —— 判据取自注册表声明（`SkillConfig.tool_names`）+ 当前 persona 可达集。
 
     为什么必须 derive（#3571 族第 6 次复发，OR-014 实证）：`_relock_order_skill` 曾写死
-    `"customer_order"` —— 那是**只存在于元元（C 端）图**里的节点名。黄金策（B 端）图只有
+    `"customer_order"` —— 那是**只存在于米宝（C 端）图**里的节点名。黄金策（B 端）图只有
     `order/product/…`（`MIBAO_CONFIG.skill_names`）⇒ B 端会话回锁后会指向一个
     **图中不存在的节点**（`route_by_intent` 把 pending 名原样返回，条件边映射缺失）——
     即"恢复了能力"的那一步自己先把会话打坏。
@@ -200,7 +200,7 @@ async def _relock_order_skill(session_id: str | None, state: dict | None = None,
     """顾客在办下单但当前轮在别的 skill → 把会话**锁回下单流程**（issue #3477）。
 
     为什么必要（C-A1 run 34791767013 实证）：会话被 choice 卡锁在 `customer_product`，
-    顾客「确认下单」后元元说"没权限"并转人工 —— 该 skill 没有 `order_create`，
+    顾客「确认下单」后米宝说"没权限"并转人工 —— 该 skill 没有 `order_create`，
     而守卫（能力误宣/转人工）此前只认 customer_order/customer_aftersales。
     把 `pending_interact_skill` 锁回**声明了该写工具的那个 skill** 后，**下一轮**路由会走下单
     流程，订单才能真的落下（这是恢复路径，不是口头承诺）。目标由 `_flow_owner_skill` 从

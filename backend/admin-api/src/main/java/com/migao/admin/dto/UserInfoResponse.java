@@ -159,7 +159,7 @@ public class UserInfoResponse {
         private String tenantName;
 
         /**
-         * 智能客服名称（TenantAiConfig.botName，C 端思考中/空态/导航名展示；未配置为 null → 前端兜底「元元」）
+         * 智能客服名称（TenantAiConfig.botName，C 端思考中/空态/导航名展示；未配置为 null → 前端兜底「米宝」）
          */
         private String botName;
 

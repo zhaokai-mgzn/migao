@@ -394,7 +394,7 @@ class AfterSalesTicketServiceTest {
     }
 
     // ======================== issue #3686：source 按真实来源落库 ========================
-    // 原实现 :348 无条件 setSource("agent") ⇒ C 端元元顾客工单被误标 agent、DDL DEFAULT 'customer' 成死默认。
+    // 原实现 :348 无条件 setSource("agent") ⇒ C 端米宝顾客工单被误标 agent、DDL DEFAULT 'customer' 成死默认。
     // 取值集合（不臆造）：customer/agent/merchant —— 前两值代码中已存在（实体注释 + 前端渲染），
     // merchant = 人工建单（表单入口）。全仓库唯一消费方 AfterSalesDetail.tsx:387。
 

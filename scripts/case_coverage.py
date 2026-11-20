@@ -284,7 +284,7 @@ def action_enum(tool: str) -> set | None:
 
 
 def registered_tools() -> set:
-    """两端注册表并集（B 端黄金策 + C 端元元）—— 未注册工具由 `dangling_cases` 判据管。"""
+    """两端注册表并集（B 端黄金策 + C 端米宝）—— 未注册工具由 `dangling_cases` 判据管。"""
     return set(lr.mibao_real_toolset()) | set(lr.XIAOBU_TOOLS)
 
 
@@ -533,7 +533,7 @@ def _attach_baseline(rep: CoverageReport, baseline: dict) -> CoverageReport:
 
 
 PERSONA_LABELS = {
-    "xiaobu": "C 端元元",
+    "xiaobu": "C 端米宝",
     "mibao": "B 端黄金策",
 }
 

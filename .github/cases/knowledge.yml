@@ -1,7 +1,7 @@
 # 知识问答评测用例（LLM WIKI 板块，issue #3051/#3059）
 #
 # 覆盖双端知识卡片检索（词条优先）：
-# - 元元（C 端消费者）：knowledge_faq → customer_knowledge skill → knowledge_search
+# - 米宝（C 端消费者）：knowledge_faq → customer_knowledge skill → knowledge_search
 # - 黄金策（B 端员工）：knowledge_faq → knowledge skill → knowledge_search（issue #3059 启用）
 #
 # 断言设计（环境无关、防 LLM 波动误报）：
@@ -12,7 +12,7 @@
 cases:
   - id: KN-001
     legacy_id: ""
-    title: "元元知识问答 - 面料问题先检索本店知识卡片（query 必填）"
+    title: "米宝知识问答 - 面料问题先检索本店知识卡片（query 必填）"
     domains:
       - knowledge
       - chat
@@ -44,7 +44,7 @@ cases:
 
   - id: KN-002
     legacy_id: ""
-    title: "元元知识问答 - 清洗保养类问题走知识卡片检索"
+    title: "米宝知识问答 - 清洗保养类问题走知识卡片检索"
     domains:
       - knowledge
       - chat
@@ -229,7 +229,7 @@ cases:
 
   - id: KN-009
     legacy_id: ""
-    title: "C 端知识问答**活栈**冒烟（元元）：多轮上下文 + 复合 Tool 的 SSE 事件 + 异常输入 + 快捷操作菜单"
+    title: "C 端知识问答**活栈**冒烟（米宝）：多轮上下文 + 复合 Tool 的 SSE 事件 + 异常输入 + 快捷操作菜单"
     domains:
       - knowledge
       - chat
@@ -240,7 +240,7 @@ cases:
       - live-stack
     truths_ref: []
     user_inputs:
-      - "对**已部署**的 C 端客服（元元）跑知识库与高级 AI 对话冒烟：多轮上下文关联 / 复合 Tool 调用的 SSE 事件 / 空消息·超长消息·并发会话 / 快捷操作菜单"
+      - "对**已部署**的 C 端客服（米宝）跑知识库与高级 AI 对话冒烟：多轮上下文关联 / 复合 Tool 调用的 SSE 事件 / 空消息·超长消息·并发会话 / 快捷操作菜单"
     expectations:
       - tool: direct_reply
     data_checks:

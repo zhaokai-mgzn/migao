@@ -1,7 +1,7 @@
 """
 AI 智能客服系统 - 窗帘算料报价 Tool
 
-面向元元（C 端客服）的窗帘用布量计算与报价工具。
+面向米宝（C 端客服）的窗帘用布量计算与报价工具。
 **纯计算**（确定性公式）+ 唯一一处外部读取：**本租户的算料口径**（issue #4922）——
 `GET /api/admin/production/craft-calc-config`（缺行 ⇒ 不传 `config`；服务端答复了却读不通 ⇒
 fail-closed；服务端不可达 ⇒ 显式降级 + 留痕，见 `load_tenant_craft_calc_config`）。
@@ -2406,7 +2406,7 @@ class CurtainCalcTool(BaseTool):
     idempotent = True
     allowed_roles = ["customer", "admin", "agent", "tenant_admin"]
     # 无权限码：纯本地算料工具（不调 admin-api，只读算料口径）且**双端都要用** ——
-    # C 端 JWT 没有 permissions claim（加码会让元元全量失效）⇒ 保留角色层把关。
+    # C 端 JWT 没有 permissions claim（加码会让米宝全量失效）⇒ 保留角色层把关。
     required_permissions = []
 
     parameters = {

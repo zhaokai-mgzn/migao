@@ -733,7 +733,7 @@ def create_default_registry() -> ToolRegistry:
     # 导航类指引（issue #5989 · P1）：**纯本地**只读 —— 答案来自仓内登记表
     # `app/context/menu_navigator.py`（`config/menu.ts` 的镜像 + 显式登记的意图表），
     # **没有任何 admin-api 调用点** ⇒ 登记进 test_agent_permission_parity 的 `LOCAL_ONLY_TOOLS`。
-    # 可达性由 persona 的 skill 工具集决定（黄金策 general；C 端一律不绑 ⇒ 元元零改动）。
+    # 可达性由 persona 的 skill 工具集决定（黄金策 general；C 端一律不绑 ⇒ 米宝零改动）。
     from app.tools.nav_guide import NavGuideTool
 
     registry = ToolRegistry()
@@ -793,7 +793,7 @@ def create_default_registry() -> ToolRegistry:
     registry.register(CurtainCalcTool())
     # 生产进度 / 计件（issue #3996，M4-I）：消费 M4-G-2 冻结契约端点。
     # 注册表只决定「工具存在」；可达性由 persona 的 skill 工具集决定
-    # （生产进度：元元 customer_order + 黄金策 order；计件：仅黄金策 order/staff，不对顾客开放）。
+    # （生产进度：米宝 customer_order + 黄金策 order；计件：仅黄金策 order/staff，不对顾客开放）。
     registry.register(ProductionProgressQueryTool())
     registry.register(PieceworkQueryTool())
     # 加工单过程明细（issue #4201）：工序实例（做到哪一步）+ 报工明细（谁报的/合格-返工-报废）
@@ -802,7 +802,7 @@ def create_default_registry() -> ToolRegistry:
     registry.register(ProductionWorklogQueryTool())
     # 收款二维码查询（issue #4085 第 1 项，M3-F-3/#3990 的发射点）：只读、C 端专属
     # （allowed_roles=["customer"]），可达性仍由 persona 的 skill 工具集决定
-    # （元元 customer_order；商家设置端走 SettingsController，不经 Agent）。
+    # （米宝 customer_order；商家设置端走 SettingsController，不经 Agent）。
     registry.register(PaymentQrcodeQueryTool())
     # 批次账 / 省料度量只读查询（issue #5188；数据面 #5145 / #5158 / #5159）：四个端点
     # 全部挂 `@RequirePermission("product:list")` ⇒ 工具声明同一码（不加角色白名单）。
@@ -823,7 +823,7 @@ def create_default_registry() -> ToolRegistry:
     registry.register(CraftConfigQueryTool())
 
     # Agent 深通道（issue #5368 包 2）：可达性由 persona 的 skill 工具集决定
-    # （黄金策 product / order 各绑一条；C 端一律不绑 ⇒ 元元零改动）。
+    # （黄金策 product / order 各绑一条；C 端一律不绑 ⇒ 米宝零改动）。
     registry.register(ImageRecognizeTool())
 
     # 导航类指引（issue #5989 · P1）：纯本地只读；可达性由 persona 的 skill 工具集决定

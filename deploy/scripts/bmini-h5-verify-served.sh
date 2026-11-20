@@ -4,9 +4,9 @@
 #
 # 🔴 为什么不能只看 `/b/` = 200、也不能只看「页面标题/文案」：
 #    · 修复**前** `/b/` 就已经是 200 —— nginx 的 `location /` 是 `try_files $uri $uri/ /index.html`，
-#      `/b/` 不存在时**静默回落**到根 index.html（C 端元元）；
+#      `/b/` 不存在时**静默回落**到根 index.html（C 端米宝）；
 #    · 更隐蔽的是：bmini 与 C 端**同为 Taro h5 产物**，实测两者 `dist/index.html` 的
-#      `<title>` 都是「观星台窗帘 · 元元智能助手」、都带 `window.TARO_ENV = 'h5'`，连资源名
+#      `<title>` 都是「观星台窗帘 · 米宝智能助手」、都带 `window.TARO_ENV = 'h5'`，连资源名
 #      （`js/app.js` / `css/app.css`）都一样 ⇒ **标记法区分不了这两端**。
 #    ⇒ 可判的只有两样：**字节哈希**（线上 body == 本仓库 `frontend/bmini-app/dist/index.html`）
 #      与**资源命名空间**（index.html 的引用必须落在 `/b/` 内，不许引用根级 `/js/…`）。
@@ -20,7 +20,7 @@
 #      判定，避免两套真相源）；另加 `/s/<短码面>` 仍被代理（不是静态页）。
 #   ⑤ **入库标签面不串端**（issue #5052 §7.1 的 nginx 面）：`GET /i/<不可能存在的短码>` **必须**走到
 #      admin-api（未知短码 ⇒ 404），**不得**返回根页 —— 少了 nginx 的 `location /i/` 时它会静默
-#      落到 `location /` 的 SPA fallback（200 + C 端元元首页；2026-09-27 线上实测正是这一形态）。
+#      落到 `location /` 的 SPA fallback（200 + C 端米宝首页；2026-09-27 线上实测正是这一形态）。
 #      ⚠️ 判据**不是**「状态码是 302」（未知短码本来就 404）—— 判据是「**到了 admin-api**」与
 #      「**落到了 SPA**」可判：落 SPA 时 body 与 `GET /` 同哈希。
 #   ⑥ **入口脚本的 MIME**（issue #6293）：`dist/index.html` 引用的入口脚本的 Content-Type 必须 ∈
@@ -31,7 +31,7 @@
 #   默认 https://app.migaozn.com 与 frontend/bmini-app/dist
 #   ⑧ **加工单级短码面**（issue #6867）：`GET /o/<不可能存在的短码>` **必须**走到 admin-api
 #      （形态不合法 / 查不到 ⇒ 404、已撤销 ⇒ 410），**不得**落到 `location /` 的 SPA fallback
-#      （那会 200 + C 端元元首页）。与 ⑤ 同款判据、共用同一套等待窗口（同一个 nginx 生效前提）。
+#      （那会 200 + C 端米宝首页）。与 ⑤ 同款判据、共用同一套等待窗口（同一个 nginx 生效前提）。
 #      判定落在 `bmini_o_face_verdict`（纯函数）；`O_PROBE` 是 8 位 Crockford Base32 里一个固定串。
 #      ⇒ 本腿覆盖的公开短码前缀：`/i/`（⑤）、`/o/`（⑧）；`/s/` 那一面由 ④ 复用的工人端脚本承担。
 #
@@ -185,7 +185,7 @@ else
     done
   fi
   if [ "$( [ -s "$TMPDIR_RUN/spa.html" ] && file_sha256 "$TMPDIR_RUN/spa.html" || echo '(空)' )" != "$EXPECTED_INDEX_SHA" ]; then
-    bad "GET $SPA_PROBE 没有返回 bmini 的 index.html（HTTP ${CODE}）—— nginx 的 \`location /${SUBDIR}/\` 缺少落在 /${SUBDIR}/index.html 的 fallback（会静默回落根 index.html = C 端元元）"
+    bad "GET $SPA_PROBE 没有返回 bmini 的 index.html（HTTP ${CODE}）—— nginx 的 \`location /${SUBDIR}/\` 缺少落在 /${SUBDIR}/index.html 的 fallback（会静默回落根 index.html = C 端米宝）"
     echo "     处置：确认 \`deploy/swas/nginx.conf\` 的 \`location /${SUBDIR}/\` 已在**本次合并的 commit** 上；"
     echo "           等 deploy-* 跑完（它才会 cp nginx.conf + reload）后用 \`gh run rerun <run-id>\` 重跑本 job。"
   fi
@@ -193,7 +193,7 @@ fi
 echo ""
 
 # ── ③ 不劫持根：/ 与根级子路由仍是 C 端页面 ──────────────────────────────────
-echo "③ GET $BASE/ 与 ${ROOT_PROBE}（根仍必须是 C 端元元，不能被 /${SUBDIR}/ 规则吃掉）"
+echo "③ GET $BASE/ 与 ${ROOT_PROBE}（根仍必须是 C 端米宝，不能被 /${SUBDIR}/ 规则吃掉）"
 for path in "/" "$ROOT_PROBE"; do
   out="$TMPDIR_RUN/root.html"
   CODE=$(fetch "$BASE$path" "$out")
@@ -288,7 +288,7 @@ else
     I_SHA=$( [ -s "$TMPDIR_RUN/i.html" ] && file_sha256 "$TMPDIR_RUN/i.html" || echo '(空)' )
   done
   if [ "$I_SHA" = "$ROOT_SHA" ]; then
-    bad "GET ${I_PROBE} → HTTP ${CODE} 且 body 与 \`GET /\` 同哈希 = 落到了 location / 的 SPA fallback（C 端元元）：\`location /i/\` 没随 nginx 配置生效（扫标签会看到错页面；HTTP 200 不是错误码，监控不会红）"
+    bad "GET ${I_PROBE} → HTTP ${CODE} 且 body 与 \`GET /\` 同哈希 = 落到了 location / 的 SPA fallback（C 端米宝）：\`location /i/\` 没随 nginx 配置生效（扫标签会看到错页面；HTTP 200 不是错误码，监控不会红）"
     echo "     处置：确认 \`deploy/swas/nginx.conf\` 的 \`location /i/\` 已在**本次合并的 commit** 上；"
     echo "           等 deploy-* 跑完（它才会 cp nginx.conf + reload）后用 \`gh run rerun <run-id>\` 重跑本 job。"
   elif [ "$CODE" -ge 500 ] 2>/dev/null; then
@@ -329,7 +329,7 @@ echo ""
 
 # ── ⑧ 加工单级短码面：/o/<短码> 必须到 admin-api（不得落到 location / 的 SPA fallback）────────
 # issue #6867：`/o/<短码>`（加工单纸上的码）是**与 `/i/` 同族的第三个公开短码前缀**。
-# 缺 `location /o/` 时它会落到 `location /` 的 `try_files … /index.html` ⇒ **200 + C 端元元首页**
+# 缺 `location /o/` 时它会落到 `location /` 的 `try_files … /index.html` ⇒ **200 + C 端米宝首页**
 # （2026-09-27 在 `/i/` 上实测过的同款静默串端）：HTTP 200 不是错误码 ⇒ 监控不红、只有真机扫码才发现。
 # 🔴 判据**不是**「状态码是 302」——探针用的是**不存在**的短码，按设计本来就回 404（§11.6）；
 #    关键是 ① **body 不是根页**（落到 SPA 才会是）② 不是 5xx（那说明代理面坏了，不是「码不存在」）。
@@ -353,7 +353,7 @@ else
       ok "GET ${O_PROBE} → HTTP ${CODE}（到了 admin-api：短码不存在 / 形态不合法 ⇒ 404，已撤销 ⇒ 410）"
       ;;
     spa-fallback:*)
-      bad "GET ${O_PROBE} → HTTP ${CODE} 且 body 与 \`GET /\` 同哈希 = 落到了 location / 的 SPA fallback（C 端元元）：\`location /o/\` 没随 nginx 配置生效（扫加工单纸会看到错页面；HTTP 200 不是错误码，监控不会红）"
+      bad "GET ${O_PROBE} → HTTP ${CODE} 且 body 与 \`GET /\` 同哈希 = 落到了 location / 的 SPA fallback（C 端米宝）：\`location /o/\` 没随 nginx 配置生效（扫加工单纸会看到错页面；HTTP 200 不是错误码，监控不会红）"
       echo "     处置：确认 \`deploy/swas/nginx.conf\` 的 \`location /o/\` 已在**本次合并的 commit** 上；"
       echo "           等 deploy-* 跑完（它才会 cp nginx.conf + reload）后用 \`gh run rerun <run-id>\` 重跑本 job。"
       ;;

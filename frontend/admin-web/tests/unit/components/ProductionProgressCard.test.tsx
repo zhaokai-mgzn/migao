@@ -4,7 +4,7 @@
  *
  * ## 为什么 B 端桌面也要有这一端
  *
- * `production_progress_query` 同时绑在**两个 persona** 的 Skill 上（C 端元元 + B 端黄金策，
+ * `production_progress_query` 同时绑在**两个 persona** 的 Skill 上（C 端米宝 + B 端黄金策，
  * 评测用例 CH-039/CH-040）⇒ 契约不变式「后端能发到这一端的卡型 ⊆ 这一端能渲染的卡型」
  * 要求三端都有渲染分支。**红证**：只补后端映射、不补本端分支时，
  * `test_card_type_cross_end_contract.py` 实测报

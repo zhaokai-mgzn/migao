@@ -25,12 +25,12 @@ import {
 export const metadata: Metadata = {
   title: '产品与服务 — AI 客服、经营助手与全链路经营平台',
   description:
-    `观星台产品全景：顾客侧元元${AI_ROLES.xiaobu}，经营侧黄金策${AI_ROLES.mibao}；管理后台、顾客小程序、商家小程序、员工端 H5 四个终端，覆盖客户服务、订单/商品、生产、质量、仓储、财务、供应链与组织八个能力域。`,
+    `观星台产品全景：顾客侧米宝${AI_ROLES.xiaobu}，经营侧黄金策${AI_ROLES.mibao}；管理后台、顾客小程序、商家小程序、员工端 H5 四个终端，覆盖客户服务、订单/商品、生产、质量、仓储、财务、供应链与组织八个能力域。`,
 }
 
 const coreProducts = [
   {
-    title: `元元 · ${AI_ROLES.xiaobu}`,
+    title: `米宝 · ${AI_ROLES.xiaobu}`,
     icon: MessageSquare,
     tagline: '顾客侧：从规格咨询到下单、物流查询与售后受理',
     features: [
@@ -73,7 +73,7 @@ const terminals = [
     icon: Smartphone,
     title: '顾客小程序',
     audience: '终端消费者',
-    description: '在微信内直接咨询元元、下单、查询物流与提交售后，无需额外下载。',
+    description: '在微信内直接咨询米宝、下单、查询物流与提交售后，无需额外下载。',
     points: ['7×24 咨询与下单', '订单与物流进度', '售后申请与进度'],
   },
   {
@@ -107,7 +107,7 @@ const delivery = [
   },
   {
     icon: Users,
-    title: '岗位权限开箱可配',
+    title: '岗位权限预置可调',
     description: '七个岗位开箱可用，员工菜单权限逐人可调，权限树即后台菜单本身。',
   },
   {
@@ -123,23 +123,23 @@ export default function ServicesPage() {
     <>
       <PageHero
         kicker="产品与服务"
-        title="元元与黄金策，以及全链路经营平台"
-        lead="顾客侧由元元承接服务，经营侧由黄金策承接管理；后端由客户服务、订单/商品、生产管理、质量管理、仓储/物料、财务、供应链、组织管理八个能力域支撑，四个终端共用数据底座。"
+        title="从顾客咨询，到经营决策"
+        lead="顾客侧由米宝承接顾客服务，经营侧由黄金策承接经营问答；客户服务、订单与商品、生产、质量、仓储、财务、供应链与组织八个能力域构成后台底座，四个终端共用数据底座。"
         chips={[
-          '2 个 AI：元元与黄金策',
+          '2 个 AI：米宝与黄金策',
           `${capabilityDomains.length} 个能力域 · ${menuItemCount} 项功能`,
           '4 个终端',
           '算料 · 工序 · 批次 · 计件',
         ]}
       />
 
-      {/* ── 元元与黄金策 ──────────────────────────────────────── */}
+      {/* ── 米宝与黄金策 ──────────────────────────────────────── */}
       <section className="bg-white py-20 sm:py-28">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <SectionHeading
             kicker="核心 AI 产品"
-            title="元元服务顾客，黄金策管理经营"
-            lead="元元与黄金策读取真实经营数据：顾客问到的商品、订单与库存，与经营者在后台看到的完全一致。"
+            title="米宝服务顾客，黄金策管理经营"
+            lead="米宝与黄金策读取真实经营数据：顾客问到的商品、订单与库存，与经营者在后台看到的完全一致。"
           />
 
           <div className="mt-14 space-y-8">
@@ -220,8 +220,8 @@ export default function ServicesPage() {
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <SectionHeading
             kicker="能力清单"
-            title="八个能力域，逐项展开"
-            lead="以下每一项都是后台中可打开的功能入口。"
+            title="八个能力域，落到功能入口"
+            lead="下列条目均对应后台中可打开的功能入口。"
           />
           <div className="mt-14 space-y-6">
             {capabilityDomains.map((domain) => (
@@ -300,8 +300,8 @@ export default function ServicesPage() {
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <SectionHeading
             kicker="交付与开通"
-            title="开通流程简单，无需自建基础设施"
-            lead="无需自备服务器与 IT 人员：提交申请、AI 自动甄别、即刻开通，行业模板与岗位权限均已预置。"
+            title="无需自建基础设施，开通即可使用"
+            lead="无需自备服务器与 IT 人员：提交申请后由 AI 自动甄别并即刻开通，行业模板与岗位权限均已预置。"
           />
           <div className="mt-14 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
             {delivery.map((item) => (
