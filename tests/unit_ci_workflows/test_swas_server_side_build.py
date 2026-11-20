@@ -610,6 +610,32 @@ ADMIN_WEB_BUILD_DEFAULTS = {
     "NEXT_PUBLIC_BMINI_H5_URL": "https://app.migaozn.com/b/",
 }
 
+#: 站点域名在 deploy.sh 里的参数形态（issue #8932：生产 cytda.com / 测试 migaozn.com 共用一份构建脚本）。
+#: 默认值允许由它派生，但**缺省域名下必须逐字还原成上表的改前值** —— 判据只认「有效值」，不认写法。
+DOMAIN_PLACEHOLDER = "${MIGAO_PUBLIC_DOMAIN}"
+
+
+def _effective_default(expr: str) -> str:
+    """把 deploy.sh 的默认值表达式还原成「缺省域名（migaozn.com）」下的有效值。
+
+    例：`https://api.${MIGAO_PUBLIC_DOMAIN}` ⇒ `https://api.migaozn.com`；
+    写死字面量的（`https://api.migaozn.com`）原样返回。
+    """
+    return expr.replace(DOMAIN_PLACEHOLDER, "migaozn.com")
+
+
+#: `<expr>` 允许**内嵌**一个 `${MIGAO_PUBLIC_DOMAIN}`（`[^}}]*` 会在内层 `}` 处截断 ⇒ 必须显式允许成对花括号）
+_DEFAULT_EXPR = r"((?:[^{}]|\$\{[^{}]*\})*)"
+
+
+def _deploy_arg_default(deploy: str, var: str) -> "str | None":
+    """取 `--build-arg "VAR=${VAR:-<expr>}"` 里的 `<expr>`（保留参数形态，不还原）。"""
+    m = re.search(
+        rf'--build-arg "?{re.escape(var)}=\$\{{{re.escape(var)}:-{_DEFAULT_EXPR}\}}"',
+        deploy,
+    )
+    return m.group(1) if m else None
+
 
 def test_admin_web_build_args_keep_the_pre_change_effective_defaults():
     """🔴 **默认值不许丢/不许漂移**：deploy.sh 传的默认值必须**逐字等于**改前的有效值，
@@ -624,12 +650,15 @@ def test_admin_web_build_args_keep_the_pre_change_effective_defaults():
         if (AI_DOCKERFILE.parent.parent.parent / "frontend/admin-web/Dockerfile").is_file() else ""
     assert df, "读不到 frontend/admin-web/Dockerfile（判据会退化成空断言）"
     for var, default in ADMIN_WEB_BUILD_DEFAULTS.items():
-        # ① deploy.sh 必须传它，且默认值逐字正确（形态：--build-arg "VAR=${VAR:-<默认>}"）
-        m = re.search(rf'--build-arg "?{re.escape(var)}=\$\{{{re.escape(var)}:-([^}}]*)\}}"', d)
-        assert m, f"deploy.sh 构建 admin-web 时没有以 `${{{var}:-<默认>}}` 形态传 {var}"
-        assert m.group(1) == default, (
-            f"{var} 的默认值漂移：deploy.sh 给 {m.group(1)!r}，改前的有效值是 {default!r}"
-            "（那会把错误的地址 baked 进前端 JS，且**构建/部署全绿**，只有用户点功能才炸）"
+        # ① deploy.sh 必须传它，且**缺省域名下的有效值**逐字正确（形态：--build-arg "VAR=${VAR:-<expr>}"，
+        #    `<expr>` 可以写成 `${MIGAO_PUBLIC_DOMAIN}` 派生 —— 判据只认有效值，见 issue #8932）
+        #    取不到时按空串处理：下面是与 `default` 的具体比对，缺行/漂移都会具名红（不用存在性断言兜底）
+        expr = _deploy_arg_default(d, var) or ""
+        effective = _effective_default(expr)
+        assert effective == default, (
+            f"{var} 的默认值漂移或缺失：deploy.sh 给 {expr!r}（缺省域名下 = {effective!r}），"
+            f"改前的有效值是 {default!r} —— 那会把错误的地址 baked 进前端 JS，"
+            "且**构建/部署全绿**，只有用户点功能才炸"
         )
         # ② 与 Dockerfile 的 ARG 缺省值**一致**（同一真值的两个落点 ⇒ 不许各写各的）
         md = re.search(rf"^ARG {re.escape(var)}=(\S+)$", df, re.M)
@@ -652,8 +681,8 @@ def test_admin_web_defaults_red_proofs():
     def problems(deploy: str, dockerfile: str) -> list[str]:
         out = []
         for var, default in ADMIN_WEB_BUILD_DEFAULTS.items():
-            m = re.search(rf'--build-arg "?{re.escape(var)}=\$\{{{re.escape(var)}:-([^}}]*)\}}"', deploy)
-            if not m or m.group(1) != default:
+            expr = _deploy_arg_default(deploy, var)
+            if expr is None or _effective_default(expr) != default:
                 out.append(f"deploy:{var}")
             md = re.search(rf"^ARG {re.escape(var)}=(\S+)$", dockerfile, re.M)
             if not md or md.group(1) != default:
@@ -661,9 +690,11 @@ def test_admin_web_defaults_red_proofs():
         return out
 
     assert problems(d, df) == [], "前提：真值先绿"
-    # ① 默认值被改坏 ⇒ 红
-    assert problems(d.replace("NEXT_PUBLIC_API_BASE_URL:-https://api.migaozn.com",
-                              "NEXT_PUBLIC_API_BASE_URL:-https://api.example.com"), df), \
+    # ① 默认值被改坏 ⇒ 红（变异落在真实行上，且**先自证变异生效** —— 否则红证可能是空跑）
+    api_line = next(line for line in d.splitlines() if "--build-arg \"NEXT_PUBLIC_API_BASE_URL=" in line)
+    mutated = d.replace(api_line, api_line.replace("api.${MIGAO_PUBLIC_DOMAIN}", "api.example.com"))
+    assert mutated != d, "前提：变异必须真的落上（否则下面这条红证是空跑）"
+    assert problems(mutated, df), \
         "把 API 域名默认值改坏后没红 ⇒ 默认值契约是空断言"
     # ② 整行被删掉 ⇒ 红
     assert problems(re.sub(r'\s*_build_args\+=\(--build-arg "NEXT_PUBLIC_COOKIE_DOMAIN=[^\n]*\n', "\n", d), df), \

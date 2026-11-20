@@ -2,14 +2,14 @@
   "miniprogramRoot": "./dist",
   "projectname": "migao-mini",
   "description": "AI智能客服微信小程序",
-  "appid": "touristappid",
+  "appid": "wx6ee2f682c1b4822c",
   "setting": {
     "urlCheck": false,
-    "es6": false,
+    "es6": true,
     "enhance": false,
     "compileHotReLoad": false,
     "postcss": false,
-    "minified": false
+    "minified": true
   },
   "compileType": "miniprogram"
 }

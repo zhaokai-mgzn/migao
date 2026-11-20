@@ -3,9 +3,8 @@ package com.migao.admin.service;
 import com.migao.admin.config.SmsConfig;
 import com.migao.admin.time.BusinessClock;
 import com.aliyun.dysmsapi20170525.Client;
-// TODO: 接入阿里云短信服务后恢复以下导入
-// import com.aliyun.dysmsapi20170525.models.SendSmsRequest;
-// import com.aliyun.dysmsapi20170525.models.SendSmsResponse;
+import com.aliyun.dysmsapi20170525.models.SendSmsRequest;
+import com.aliyun.dysmsapi20170525.models.SendSmsResponse;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -117,22 +116,65 @@ public class SmsService {
 
         // TODO: 接入阿里云短信服务后移除硬编码验证码
         // 当前阶段不调用阿里云短信 API，统一使用万能验证码 123456 通过校验
-        // 关联决策：阿里云短信服务暂缓集成-标记TODO
         // ⚠️ 不得在日志中打印生成的验证码（凭据泄露），手机号一律脱敏
-        String bypassLabel = bypassCode != null && !bypassCode.isEmpty() ? bypassCode : "(未启用)";
-        log.warn("[测试模式] 短信发送已 bypass，请使用万能验证码 {} 完成校验。phone={}",
-                bypassLabel, maskPhone(phone));
+        if (bypassCode != null && !bypassCode.isEmpty()) {
+            // 开发/测试环境：固定短码模式，**不调用**阿里云短信
+            log.warn("[测试模式] 短信发送已 bypass，请使用万能验证码 {} 完成校验。phone={}",
+                    bypassCode, maskPhone(phone));
+            return;
+        }
 
-        // 以下为接入真实短信服务的预留代码（暂不执行）
-        // if (smsClient != null && smsConfig.getAccessKeyId() != null
-        //         && !smsConfig.getAccessKeyId().isEmpty()) {
-        //     SendSmsRequest request = new SendSmsRequest()
-        //             .setPhoneNumbers(phone)
-        //             .setSignName(smsConfig.getSignName())
-        //             .setTemplateCode(smsConfig.getTemplateCode())
-        //             .setTemplateParam("{\"code\":\"" + code + "\"}");
-        //     SendSmsResponse response = smsClient.sendSms(request);
-        // }
+        // 正式环境：调用阿里云短信发送真实验证码。失败即抛错（fail-closed），
+        // 不允许「悄悄成功」——否则用户收不到码却看到「已发送」。
+        try {
+            sendRealSms(phone, code);
+        } catch (RuntimeException e) {
+            // 发送失败：清掉刚写入的验证码与 60s 限流标记，让用户可以立即重试
+            redisTemplate.delete(codeKey);
+            redisTemplate.delete(limitKey);
+            throw e;
+        }
+    }
+
+    /**
+     * 调用阿里云短信服务发送 6 位验证码（仅正式环境路径）。
+     *
+     * <p>前置条件：`aliyun.sms.access-key-id/secret`、`sign-name`、`template-code` 均非空。
+     * 任一缺失即 fail-closed 抛错——生产环境配错时应当**显式失败**，而不是静默不发。</p>
+     */
+    private void sendRealSms(String phone, String code) {
+        if (smsClient == null
+                || isBlank(smsConfig.getAccessKeyId())
+                || isBlank(smsConfig.getAccessKeySecret())
+                || isBlank(smsConfig.getSignName())
+                || isBlank(smsConfig.getTemplateCode())) {
+            throw new IllegalStateException(
+                    "短信服务未配置完整（需要 ALIYUN_SMS_ACCESS_KEY_ID/SECRET、ALIYUN_SMS_SIGN_NAME、"
+                            + "ALIYUN_SMS_TEMPLATE_CODE），已拒绝发送；开发环境请改用 SMS_BYPASS_CODE");
+        }
+        try {
+            SendSmsRequest request = new SendSmsRequest()
+                    .setPhoneNumbers(phone)
+                    .setSignName(smsConfig.getSignName())
+                    .setTemplateCode(smsConfig.getTemplateCode())
+                    .setTemplateParam("{\"code\":\"" + code + "\"}");
+            SendSmsResponse response = smsClient.sendSms(request);
+            String respCode = response == null || response.getBody() == null ? null : response.getBody().getCode();
+            if (!"OK".equals(respCode)) {
+                String msg = response == null || response.getBody() == null ? "无响应体" : response.getBody().getMessage();
+                throw new IllegalStateException("短信发送失败：code=" + respCode + "，message=" + msg);
+            }
+            log.info("短信已提交至阿里云：phone={} template={}", maskPhone(phone), smsConfig.getTemplateCode());
+        } catch (IllegalStateException e) {
+            throw e;
+        } catch (Exception e) {
+            // SDK 抛的是受检 Exception（网络/签名/限流等）
+            throw new IllegalStateException("短信发送异常：" + e.getMessage(), e);
+        }
+    }
+
+    private static boolean isBlank(String s) {
+        return s == null || s.isBlank();
     }
 
     /**
