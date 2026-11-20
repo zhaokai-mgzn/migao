@@ -4,11 +4,16 @@ package com.migao.admin.service;
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
+import com.aliyun.dysmsapi20170525.Client;
+import com.aliyun.dysmsapi20170525.models.SendSmsRequest;
+import com.aliyun.dysmsapi20170525.models.SendSmsResponse;
+import com.aliyun.dysmsapi20170525.models.SendSmsResponseBody;
 import com.migao.admin.config.SmsConfig;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -23,6 +28,7 @@ import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
@@ -43,12 +49,17 @@ class SmsServiceTest {
     @Mock
     private ValueOperations<String, String> valueOps;
 
+    @Mock
+    private Client smsClient;
+
     @InjectMocks
     private SmsService smsService;
 
     @BeforeEach
     void setUp() {
         when(redisTemplate.opsForValue()).thenReturn(valueOps);
+        // 既有用例默认跑「开发/测试环境固定短码」路径（不触达真实短信）
+        ReflectionTestUtils.setField(smsService, "bypassCode", "999999");
     }
 
     @Test
@@ -226,5 +237,71 @@ class SmsServiceTest {
         ch.qos.logback.classic.Logger logger =
                 (ch.qos.logback.classic.Logger) LoggerFactory.getLogger(SmsService.class);
         logger.detachAppender(appender);
+    }
+
+    @Test
+    @DisplayName("正式环境：调用阿里云短信发送，模板参数含 6 位验证码")
+    void sendVerificationCode_ProductionMode_SendsViaAliyun() throws Exception {
+        String phone = "13800138000";
+        ReflectionTestUtils.setField(smsService, "bypassCode", "");
+        when(smsConfig.getAccessKeyId()).thenReturn("ak");
+        when(smsConfig.getAccessKeySecret()).thenReturn("sk");
+        when(smsConfig.getSignName()).thenReturn("观星台");
+        when(smsConfig.getTemplateCode()).thenReturn("SMS_123456");
+        when(smsClient.sendSms(any(SendSmsRequest.class))).thenReturn(
+                new SendSmsResponse().setBody(new SendSmsResponseBody().setCode("OK").setMessage("OK")));
+
+        smsService.sendVerificationCode(phone);
+
+        ArgumentCaptor<SendSmsRequest> captor = ArgumentCaptor.forClass(SendSmsRequest.class);
+        verify(smsClient).sendSms(captor.capture());
+        SendSmsRequest req = captor.getValue();
+        assertThat(req.getPhoneNumbers()).isEqualTo(phone);
+        assertThat(req.getSignName()).isEqualTo("观星台");
+        assertThat(req.getTemplateCode()).isEqualTo("SMS_123456");
+        assertThat(req.getTemplateParam()).matches("\\{\"code\":\"\\d{6}\"}");
+    }
+
+    @Test
+    @DisplayName("正式环境：短信返回非 OK ⇒ 抛错且清掉验证码/限流标记（不静默成功）")
+    void sendVerificationCode_ProductionMode_AliyunError_ThrowsAndCleansUp() throws Exception {
+        String phone = "13800138000";
+        ReflectionTestUtils.setField(smsService, "bypassCode", "");
+        when(smsConfig.getAccessKeyId()).thenReturn("ak");
+        when(smsConfig.getAccessKeySecret()).thenReturn("sk");
+        when(smsConfig.getSignName()).thenReturn("观星台");
+        when(smsConfig.getTemplateCode()).thenReturn("SMS_123456");
+        when(smsClient.sendSms(any(SendSmsRequest.class))).thenReturn(
+                new SendSmsResponse().setBody(new SendSmsResponseBody()
+                        .setCode("isv.BUSINESS_LIMIT_CONTROL").setMessage("触发限流")));
+
+        assertThatThrownBy(() -> smsService.sendVerificationCode(phone))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("短信发送失败");
+
+        verify(redisTemplate).delete("sms:code:" + phone);
+        verify(redisTemplate).delete("sms:limit:" + phone);
+    }
+
+    @Test
+    @DisplayName("正式环境：短信配置缺失 ⇒ fail-closed 抛错，不调用 SDK")
+    void sendVerificationCode_ProductionMode_MissingConfig_Throws() throws Exception {
+        ReflectionTestUtils.setField(smsService, "bypassCode", "");
+
+        assertThatThrownBy(() -> smsService.sendVerificationCode("13800138000"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("短信服务未配置完整");
+
+        verify(smsClient, never()).sendSms(any());
+    }
+
+    @Test
+    @DisplayName("开发环境：固定短码模式下不调用阿里云短信")
+    void sendVerificationCode_BypassMode_DoesNotCallAliyun() throws Exception {
+        ReflectionTestUtils.setField(smsService, "bypassCode", "123456");
+
+        smsService.sendVerificationCode("13800138000");
+
+        verify(smsClient, never()).sendSms(any());
     }
 }

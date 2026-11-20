@@ -447,15 +447,18 @@ describe('CorporateHomePage（官网主页 v5：中小企业 AI 经营平台叙�
   })
 
   it('官网源码不得出现无出处的年份（issue #6382）', () => {
-    const ALLOWED_LINE = /GB\/T|gb47746|实施|©/
+    // 第四类白名单：`ICP备<数字>号` 是工信部的**备案编号**（编号本身含年份数字），不是时间陈述；
+    // 官网页脚依法必须展示备案号并链到 beian.miit.gov.cn（出处 = 该编号本身，issue #8932）。
+    const ALLOWED_LINE = /GB\/T|gb47746|实施|©|ICP备\d+号/
     const yearOffenders = (src: string) =>
       src.split('\n').filter((line) => /20\d\d/.test(line) && !ALLOWED_LINE.test(line))
 
-    // 判别力自证：病症样本必须被检出、三类白名单样本必须零命中（否则本判据是空断言）
+    // 判别力自证：病症样本必须被检出、四类白名单样本必须零命中（否则本判据是空断言）
     expect(yearOffenders("    period: '2024 Q1',")).toEqual(["    period: '2024 Q1',"])
     expect(yearOffenders('协同机制参考推荐性国标 GB/T 47746-2026 设计')).toEqual([])
     expect(yearOffenders('《顾客联络服务…》（2026-09-01 实施）')).toEqual([])
     expect(yearOffenders('<p>© 2026 杭州词元通达科技有限公司</p>')).toEqual([])
+    expect(yearOffenders('<a href="https://beian.miit.gov.cn/">浙ICP备2026096585号-2</a>')).toEqual([])
 
     const roots = [
       'frontend/admin-web/src/app/(corporate)',

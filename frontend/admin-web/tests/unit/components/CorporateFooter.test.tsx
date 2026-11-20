@@ -50,4 +50,11 @@ describe('CorporateFooter（官网页脚 v4：主体事实 + 能力入口，issu
     expect(screen.queryByText(/contact@migao-ai\.com/)).not.toBeInTheDocument()
     expect(screen.queryByText(/文一西路000号/)).not.toBeInTheDocument()
   })
+
+  it('备案合规：首页底部展示 ICP 备案号并链接到工信部（公安联网备案会实访核验）', () => {
+    render(<CorporateFooter />)
+    const link = screen.getByText('浙ICP备2026096585号-2').closest('a')
+    expect(link).toHaveAttribute('href', 'https://beian.miit.gov.cn/')
+    expect(link).toHaveAttribute('target', '_blank')
+  })
 })

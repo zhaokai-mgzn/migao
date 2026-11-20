@@ -2,74 +2,163 @@ name: Deploy Production (受控发布)
 permissions:
   contents: read
 
-# ⚠️ 未来生产环境发布入口（当前生产环境尚未就绪，见 docs/deployment/production-deployment.md）
-# 启用条件：
-#   1. 生产服务器/集群就绪后，在仓库 Secrets 配置 PROD_* 系列凭据
-#   2. 在 GitHub 创建 production Environment（推荐配置 required reviewers 人工审批）
-#   3. 生产 ACR 命名空间/仓库与测试隔离，只接收 release tag 镜像
+# 生产发布入口（cytda.com · 轻量应用服务器 4C8G · C′ 服务器侧构建）
+#
+# 与测试环境三条 deploy-*.yml 的关系：
+#   · 代码同源、配置分离：本 workflow 只碰**生产实例**（PROD_*），测试腿只碰旧账号实例；
+#   · 生产只允许**手动 / tag** 发布：本文件只有 workflow_dispatch（push main 不会碰生产）；
+#   · 与测试腿共用 `deploy/scripts/swas-deploy-ci.sh`（RunCommand 通道 + 轮询 + 失败自动回滚），
+#     但必须传第 8/9/10 位参数（BUILD_SERVICE / BUILD_SHA / BUILT_AT）——否则 C′ 形态下服务器会去
+#     ACR 找一个**不存在的镜像**（改前这个 workflow 就缺这三个参数，见部署方案 §5.1）。
+#
+# 启用前的准备（一次性）：
+#   1. GitHub 仓库设置 → Environments → 新建 `production`，配 required reviewers ≥1（非触发人）；
+#   2. Environment secrets：PROD_ALIYUN_ACCESS_KEY_ID / PROD_ALIYUN_ACCESS_KEY_SECRET（RAM 部署用户）；
+#      ACR 凭据可选（C′ 本地构建不需要；只有「从 ACR 拉镜像」的路径才要）；
+#   3. Environment variables：PROD_SWAS_INSTANCE_ID（或 PROD_SWAS_INSTANCE_IDS）、PROD_SWAS_REGION、
+#      PROD_HEALTH_URLS（可选，缺省为 cytda.com 的 6 个面）；
+#   4. 生产机 `/opt/migao-deploy/.env.site` 写 `MIGAO_PUBLIC_DOMAIN=cytda.com`（缺省 = 测试域名）。
+#
+# 部署 identity：`BUILD_SHA` / `BUILT_AT` 会被烘焙进镜像，`/api/version` 读到的就是**产物身份**
+# （不是「这次想部署什么」）。所以这两个值必须由本 workflow 从**被部署的那个 ref** 现取。
 on:
   workflow_dispatch:
     inputs:
       version:
-        description: '要发布的版本：semver tag（v1.2.3）或镜像 tag（sha-xxxxxxx）。必须已由 CI 构建推送到生产 ACR'
+        description: '要发布的版本：semver tag（v1.2.3）或镜像 tag（sha-xxxxxxx）'
         required: true
       services:
-        description: '发布模块，逗号分隔（admin-api, ai-agent, admin-web）'
+        description: '发布模块，逗号分隔（admin-api,ai-agent,admin-web）'
         default: 'admin-api,ai-agent,admin-web'
+        required: false
+      allow_downgrade:
+        description: '允许降级发布（回滚用）：填 1 才生效，其它值一律当 0'
+        default: '0'
         required: false
 
 jobs:
   deploy-prod:
     runs-on: ubuntu-latest
-    environment: production   # GitHub Environments：可配 required reviewers（人工审批）+ 部署保护
+    environment: production   # required reviewers 人工审批 + 部署保护
     concurrency:
       group: deploy-prod
       cancel-in-progress: false
+    # 与 deploy.sh 的预算对齐：锁等待 1800s + 冷构上界 2400s + 余量 300s = 4500s（75min）
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v7
 
       - name: Validate inputs
+        id: input
         run: |
+          set -euo pipefail
           VERSION="${{ inputs.version }}"
           case "$VERSION" in
             v*|sha-*) echo "✅ 版本格式合法: $VERSION" ;;
             *) echo "❌ 版本必须是 vX.Y.Z 或 sha-xxxxxxx 格式"; exit 1 ;;
           esac
-          echo "services: ${{ inputs.services }}"
+          SERVICES=$(printf '%s' "${{ inputs.services }}" | tr ',' '\n' | sed '/^[[:space:]]*$/d')
+          for S in $SERVICES; do
+            case "$S" in
+              admin-api|ai-agent|admin-web) ;;
+              *) echo "❌ 未知服务：$S（只允许 admin-api / ai-agent / admin-web）"; exit 1 ;;
+            esac
+          done
+          echo "services<<EOF" >> "$GITHUB_OUTPUT"
+          printf '%s\n' "$SERVICES" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+          echo "已解析服务：$(echo $SERVICES)"
 
-      # 部署到生产（配置见 production-deployment.md）：
-      # 生产服务器/集群通过 RunCommand 或 ssh 执行 pull + up（与测试环境 deploy.sh 相同模式）
-      - name: Deploy to production servers
+      - name: Resolve build identity (被部署 ref 的 sha + 当前时间)
+        id: identity
+        run: |
+          set -euo pipefail
+          VERSION="${{ inputs.version }}"
+          git fetch --tags --force --quiet origin || true
+          if git rev-parse --verify --quiet "${VERSION}^{commit}" >/dev/null; then
+            SHA=$(git rev-parse "${VERSION}^{commit}")
+          else
+            # 镜像 tag（sha-xxxxxxx）不是 ref：退化为当前 checkout 的 sha，并在日志里出声
+            SHA=$(git rev-parse HEAD)
+            echo "::warning::${VERSION} 不是本仓的 ref ⇒ BUILD_SHA 退回当前 checkout（${SHA}）"
+          fi
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          echo "built_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+          echo "构建身份：sha=$SHA built_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+      - name: Preflight (生产凭据与实例)
+        env:
+          AK: ${{ secrets.PROD_ALIYUN_ACCESS_KEY_ID }}
+          SK: ${{ secrets.PROD_ALIYUN_ACCESS_KEY_SECRET }}
+          INSTANCES: ${{ vars.PROD_SWAS_INSTANCE_ID }} ${{ vars.PROD_SWAS_INSTANCE_IDS }}
+        run: |
+          set -euo pipefail
+          if [ -z "${AK:-}" ] || [ -z "${SK:-}" ]; then
+            echo "❌ 生产凭据未配置（PROD_ALIYUN_ACCESS_KEY_ID / PROD_ALIYUN_ACCESS_KEY_SECRET）"
+            echo "   在 GitHub → Settings → Environments → production → Environment secrets 配置"
+            exit 1
+          fi
+          if [ -z "${INSTANCES:-}" ]; then
+            echo "❌ 生产实例未配置（Environment variable：PROD_SWAS_INSTANCE_ID 或 PROD_SWAS_INSTANCE_IDS）"
+            exit 1
+          fi
+          echo "目标实例：$INSTANCES"
+
+      - name: Deploy to production (逐服务，C′ 服务器侧构建)
         env:
           AK: ${{ secrets.PROD_ALIYUN_ACCESS_KEY_ID }}
           SK: ${{ secrets.PROD_ALIYUN_ACCESS_KEY_SECRET }}
           ACR_U: ${{ secrets.PROD_ACR_USERNAME }}
           ACR_P: ${{ secrets.PROD_ACR_PASSWORD }}
-          PROD_INSTANCES: ${{ vars.PROD_SWAS_INSTANCE_IDS }}
+          INSTANCES: ${{ vars.PROD_SWAS_INSTANCE_ID }} ${{ vars.PROD_SWAS_INSTANCE_IDS }}
+          REGION: ${{ vars.PROD_SWAS_REGION || 'cn-hangzhou' }}
+          VERSION: ${{ inputs.version }}
+          BUILD_SHA: ${{ steps.identity.outputs.sha }}
+          BUILT_AT: ${{ steps.identity.outputs.built_at }}
+          SERVICES: ${{ steps.input.outputs.services }}
+          ALLOW_DOWNGRADE: ${{ inputs.allow_downgrade == '1' && '1' || '0' }}
         run: |
-          if [ -z "$AK" ] || [ -z "$PROD_INSTANCES" ]; then
-            echo "❌ 生产凭据未配置（PROD_ALIYUN_ACCESS_KEY_ID / PROD_SWAS_INSTANCE_IDS）。"
-            echo "   生产环境就绪后按 docs/deployment/production-deployment.md 配置。"
-            exit 1
-          fi
-          for INSTANCE in $PROD_INSTANCES; do
-            echo "== 部署到生产实例 $INSTANCE（version=${{ inputs.version }}）=="
-            bash deploy/scripts/swas-deploy-ci.sh \
-              "$INSTANCE" "${{ vars.PROD_SWAS_REGION || 'cn-hangzhou' }}" \
-              "$AK" "$SK" "$ACR_U" "$ACR_P" "${{ inputs.version }}"
+          set -euo pipefail
+          for INSTANCE in $INSTANCES; do
+            for SVC in $SERVICES; do
+              echo "== 部署 ${SVC} → 实例 ${INSTANCE}（version=${VERSION} / sha=${BUILD_SHA}）=="
+              # 第 8/9/10 位参数 = C′ 的构建身份；缺失 ⇒ 服务器会去 ACR 拉不存在的镜像
+              ALLOW_DOWNGRADE="$ALLOW_DOWNGRADE" \
+              bash deploy/scripts/swas-deploy-ci.sh \
+                "$INSTANCE" "$REGION" "$AK" "$SK" \
+                "${ACR_U:-}" "${ACR_P:-}" "$VERSION" \
+                "$SVC" "$BUILD_SHA" "$BUILT_AT"
+            done
           done
 
-      - name: Post-deploy production smoke
+      - name: Post-deploy production smoke (cytda.com)
+        env:
+          HEALTH_URLS: ${{ vars.PROD_HEALTH_URLS }}
         run: |
-          echo "== 生产冒烟（生产域名）=="
-          for URL in ${{ vars.PROD_HEALTH_URLS }}; do
-            CODE=$(curl -s -o /dev/null -w "%{http_code}" -m 15 "$URL" || echo 000)
+          set -euo pipefail
+          URLS="${HEALTH_URLS:-https://api.cytda.com/api/version https://ai-api.cytda.com/version https://merchant.cytda.com/login https://app.cytda.com/b/}"
+          FAIL=0
+          for URL in $URLS; do
+            CODE=$(curl -s -o /dev/null -w "%{http_code}" -m 20 "$URL" || echo 000)
             echo "$URL -> $CODE"
-            if [ "$CODE" != "200" ]; then echo "❌ 生产健康检查失败: $URL"; exit 1; fi
+            if [ "$CODE" != "200" ]; then
+              echo "::error::生产冒烟失败：$URL -> $CODE"
+              FAIL=1
+            fi
           done
-          echo "✅ 生产发布完成（version=${{ inputs.version }}）"
+          # 生产构建正确性：页面必须打到 cytda.com，绝不能回到测试域名（部署方案 §5.6）
+          echo "== 产物域名断言 =="
+          BODY=$(curl -fsS -m 20 https://merchant.cytda.com/login || true)
+          if printf '%s' "$BODY" | grep -q 'api\.migaozn\.com'; then
+            echo "::error::生产页面里出现了 api.migaozn.com —— 构建成了测试环境，立即回滚"
+            FAIL=1
+          fi
+          if [ "$FAIL" != "0" ]; then exit 1; fi
+          echo "✅ 生产发布完成（version=${VERSION:-${{ inputs.version }}}）"
 
       - name: Rollback hint
+        if: always()
         run: |
-          echo "回滚：重新运行本 workflow，version 填上一稳定版本（镜像 tag 不可变，ACR 中始终存在）。"
-          echo "详见 docs/deployment/rollback.md"
+          echo "回滚：重跑本 workflow，version 填上一稳定版本，allow_downgrade 填 1。"
+          echo "镜像 tag 不可变 ⇒ 上一版始终可回；服务器侧另有 .last-good-tag 可用。"
+          echo "详见 docs/deployment/rollback.md 与 docs/deployment/prod-cytda-runbook.md"

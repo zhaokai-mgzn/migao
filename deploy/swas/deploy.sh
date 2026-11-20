@@ -94,6 +94,35 @@ TAG=${1:-latest}
 REGISTRY=${ACR_REGISTRY:-crpi-qdcgkzwx9p9zckga.cn-hangzhou.personal.cr.aliyuncs.com}
 
 # ══════════════════════════════════════════════════════════════════════════════
+# 站点对外域名（生产 cytda.com / 测试 migaozn.com）
+#
+# 唯一真值源仍是 `deploy/swas/nginx.conf`（560 行里 400+ 行是安全口径：限流五档 / 日志脱敏 /
+# HSTS / CSP / 静态缓存）。生产**不再抄一份 nginx.conf**，只替换域名这一维：
+#   盘上 `nginx/nginx.conf.canonical` = 仓库原文；`nginx/nginx.conf` = 渲染产物（挂进容器的那份）。
+# 为什么不做 `deploy/prod/nginx.conf`：抄一份就多一处漂移面，而漂移的症状恰恰是「生产漏了
+#   HSTS/限流」——静默且不可归因。渲染是纯替换 ⇒ 两边不可能只改一边。
+#
+# 配置来源（按顺序）：环境变量 > `/opt/migao-deploy/.env.site` > 默认 `migaozn.com`。
+# 生产机写 `.env.site` 一行即可：`MIGAO_PUBLIC_DOMAIN=cytda.com`。
+# 缺省值 = `migaozn.com` ⇒ 测试环境渲染结果与改前**逐字相同**（default 分支是纯 cp，不跑 sed）。
+# 判据：tests/unit_ci_workflows/test_prod_domain_rendering.py
+# ══════════════════════════════════════════════════════════════════════════════
+MIGAO_SITE_ENV_FILE=${MIGAO_SITE_ENV_FILE:-.env.site}
+if [ -f "$MIGAO_SITE_ENV_FILE" ]; then
+  # shellcheck disable=SC1090
+  set -a; . "./$MIGAO_SITE_ENV_FILE"; set +a
+  echo "  ℹ️  已加载 ${MIGAO_SITE_ENV_FILE}（站点域名覆盖口）"
+fi
+MIGAO_PUBLIC_DOMAIN=${MIGAO_PUBLIC_DOMAIN:-migaozn.com}
+# fail-closed：域名会进 sed 替换串与 server_name，畸形值必须在这里停住（而不是在 nginx -t）
+case "$MIGAO_PUBLIC_DOMAIN" in
+  '' | .* | *. | *[!a-z0-9.-]*)
+    echo "❌ MIGAO_PUBLIC_DOMAIN 非法：'${MIGAO_PUBLIC_DOMAIN}'（只允许小写字母/数字/点/连字符，且不以点开头或结尾）" >&2
+    exit 1
+    ;;
+esac
+
+# ══════════════════════════════════════════════════════════════════════════════
 # C′ 参数（issue #5814）：`BUILD_SERVICE=<admin-api|ai-agent|admin-web>`（空 = 走既有「拉镜像」路径）
 #
 # | 变量 | 默认 | 作用 |
@@ -695,7 +724,8 @@ else
   fi
   mkdir -p nginx certbot-www
   cp src/deploy/swas/docker-compose.yml ./docker-compose.yml
-  cp src/deploy/swas/nginx.conf ./nginx/nginx.conf
+  # nginx.conf 的**原文**（渲染输入；容器挂的是下面渲染出来的 `nginx.conf`）
+  cp src/deploy/swas/nginx.conf ./nginx/nginx.conf.canonical
   # 蓝绿 override（issue #4785）：**只新增** green 探针服务，不改既有服务定义
   cp src/deploy/swas/docker-compose.bluegreen.yml ./docker-compose.bluegreen.yml
   # TLS 自动续期脚本（issue #8201）：与配置同批落盘，供宿主 cron（/etc/cron.d/migao-tls-renew）调用。
@@ -709,6 +739,32 @@ else
   # ⇒ 直接复用、不再下一次 66.5MB 整仓。三份文件**都落到盘上之后**才写标记 ⇒ 标记不会先于配置落地。
   printf '%s\n' "$CONFIG_REF_RESOLVED" > "$CONFIG_REF_MARKER_FILE"
 fi
+
+# ── 1.2.2 站点域名渲染（生产 cytda.com；缺省 migaozn.com ⇒ 与改前逐字相同）──────────────
+# 输入永远是 `nginx.conf.canonical`（仓库原文），所以「域名变更」和「配置复用」都不会把
+# 上一轮渲染过的产物再渲染一遍（那是幂等的，但更重要的是它不会让 A→B 改名悄悄失效）。
+if [ ! -f ./nginx/nginx.conf.canonical ] && [ -f ./nginx/nginx.conf ]; then
+  # 旧版本机器上只有渲染前落盘的 nginx.conf（第一版部署脚本没有 canonical 概念）。
+  # 默认域名口径下它与仓库原文逐字相同 ⇒ 直接升格为 canonical，不重新下载整仓。
+  cp -f ./nginx/nginx.conf ./nginx/nginx.conf.canonical
+  echo "  ℹ️ 盘上没有 nginx.conf.canonical（旧版本升级）⇒ 以现有 nginx.conf 作为渲染输入"
+fi
+if [ ! -f ./nginx/nginx.conf.canonical ]; then
+  echo "  ❌ 既没有 nginx.conf.canonical 也没有 nginx.conf —— 无法渲染站点域名 ⇒ **中止部署**"
+  exit 1
+fi
+if [ "$MIGAO_PUBLIC_DOMAIN" = "migaozn.com" ]; then
+  # 测试环境：纯拷贝，不跑 sed ⇒ 产物与改前逐字相同（含注释里的域名）
+  cp -f ./nginx/nginx.conf.canonical ./nginx/nginx.conf
+else
+  # `migaozn.com` 在文件里只作为**域名**出现（`migao` / `migao-deploy` 等不含该串）⇒ 全局替换安全；
+  # server_name / 注释 / 日志格式内的域名引用一次性对齐，避免出现「配置说 A、注释说 B」。
+  sed "s/migaozn\.com/${MIGAO_PUBLIC_DOMAIN}/g" ./nginx/nginx.conf.canonical > ./nginx/nginx.conf.render.tmp
+  mv -f ./nginx/nginx.conf.render.tmp ./nginx/nginx.conf
+fi
+_conf_sha=$(sha256sum ./nginx/nginx.conf 2>/dev/null | cut -d' ' -f1 || shasum -a 256 ./nginx/nginx.conf | cut -d' ' -f1)
+echo "  站点域名：${MIGAO_PUBLIC_DOMAIN}（nginx.conf sha256=${_conf_sha:-unknown}）"
+grep -E '^[[:space:]]*server_name[[:space:]]' ./nginx/nginx.conf | sed 's/^/    /' || true
 
 # ── 1.3.1 微信「扫普通链接二维码打开小程序」校验文件落位（issue #8196）────────────
 # 微信后台生成的是一个**根下随机的 `<一串字符>.txt`**（文件名/内容都由微信给，仓库不编、不改）。
@@ -854,10 +910,11 @@ if [ -n "$BUILD_SERVICE" ] && [ -z "$LOCAL_IMAGE_REF" ]; then
     echo "  ℹ️  已加载 .env.build（构建期变量覆盖口）"
   fi
   if [ "$_svc" = "admin-web" ]; then
-    _build_args+=(--build-arg "NEXT_PUBLIC_API_BASE_URL=${NEXT_PUBLIC_API_BASE_URL:-https://api.migaozn.com}")
-    _build_args+=(--build-arg "NEXT_PUBLIC_AI_API_BASE_URL=${NEXT_PUBLIC_AI_API_BASE_URL:-https://ai-api.migaozn.com}")
-    _build_args+=(--build-arg "NEXT_PUBLIC_COOKIE_DOMAIN=${NEXT_PUBLIC_COOKIE_DOMAIN:-.migaozn.com}")
-    _build_args+=(--build-arg "NEXT_PUBLIC_BMINI_H5_URL=${NEXT_PUBLIC_BMINI_H5_URL:-https://app.migaozn.com/b/}")
+    # 默认值 = 站点域名派生（缺省 migaozn.com ⇒ 与改前逐字相同）；服务器侧 `.env.build` 优先级更高。
+    _build_args+=(--build-arg "NEXT_PUBLIC_API_BASE_URL=${NEXT_PUBLIC_API_BASE_URL:-https://api.${MIGAO_PUBLIC_DOMAIN}}")
+    _build_args+=(--build-arg "NEXT_PUBLIC_AI_API_BASE_URL=${NEXT_PUBLIC_AI_API_BASE_URL:-https://ai-api.${MIGAO_PUBLIC_DOMAIN}}")
+    _build_args+=(--build-arg "NEXT_PUBLIC_COOKIE_DOMAIN=${NEXT_PUBLIC_COOKIE_DOMAIN:-.${MIGAO_PUBLIC_DOMAIN}}")
+    _build_args+=(--build-arg "NEXT_PUBLIC_BMINI_H5_URL=${NEXT_PUBLIC_BMINI_H5_URL:-https://app.${MIGAO_PUBLIC_DOMAIN}/b/}")
   fi
   echo "  构建命令：timeout ${BUILD_TIMEOUT_SECS} docker build -f ${_df} -t ${LOCAL_IMAGE_REF} ${_build_args[*]} src/${_ctx}"
   if timeout "$BUILD_TIMEOUT_SECS" docker build -f "src/$_df" -t "$LOCAL_IMAGE_REF" "${_build_args[@]}" "src/$_ctx"; then

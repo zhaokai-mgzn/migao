@@ -197,6 +197,10 @@ class BusinessClockCallSiteAgreementTest {
 
             SmsService smsService = new SmsService(redisTemplate, mock(SmsConfig.class), null);
             ReflectionTestUtils.setField(smsService, "businessClock", pinned(instant));
+            // 本用例只验证「每日计数 TTL 对齐业务日零点」，不涉及短信传输 ⇒ 走 bypass 档。
+            // 正式路径自 #8932 起 fail-closed（AK/签名/模板缺一即抛错），不配 bypass 会在发码前中止，
+            // 那条失败与 TTL 无关（会误导成时钟缺陷）。
+            ReflectionTestUtils.setField(smsService, "bypassCode", "999999");
             smsService.sendVerificationCode("13800000000");
 
             var ttl = org.mockito.ArgumentCaptor.forClass(Duration.class);

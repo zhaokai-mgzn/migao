@@ -5,6 +5,17 @@
 > 原因 = 单文件涨到 512KB 越过扫描上限，详见存档文件头与 issue #6404。
 > **后续条目继续在本文件 `## [Unreleased]
 
+### 生产环境按站点域名发布（cytda.com）· 短信走阿里云 · 官网页脚展示 ICP 备案号（2026-11-20，issue #8932）
+
+- **域名只参数化一维**：`deploy/swas/deploy.sh` 新增 `MIGAO_PUBLIC_DOMAIN`（来源：环境变量 > `/opt/migao-deploy/.env.site` > 缺省 `migaozn.com`）。仓库原文落成 `nginx/nginx.conf.canonical`，容器挂载的 `nginx/nginx.conf` 由它渲染；**缺省域名走纯 `cp`、不跑 sed** ⇒ 测试环境产物与改前逐字相同，也不会多出一份生产专用 nginx 副本（避免「生产漏了 HSTS / 限流」这类静默漂移）。域名做字符集校验，畸形值在进 sed 前停住。
+- **构建期域名同源**：`NEXT_PUBLIC_API_BASE_URL` / `AI_API_BASE_URL` / `COOKIE_DOMAIN` / `BMINI_H5_URL` 的默认值改由同一个变量派生（缺省值与改前逐字相同）。
+- **短信**：`bypass-code` 非空仍走固定短码（不调 SDK）；为空则调用阿里云 `SendSms`，AK / 签名 / 模板任一缺失即抛错（不再静默「已发送」）；发送失败清理验证码与 60s 限流标记，可立即重试。
+- **生产上传修复**：admin-api 挂 `./uploads:/app/uploads` 卷（容器 uid 100 对 `/app` 属 root ⇒ `AccessDeniedException` ⇒ 所有图片上传 500）；服务器 `.env.admin-api` 补 `SERVICE_TOKEN_SECRET`（ai-agent 代理上传恒 401）。
+- **生产发布入口**：`deploy-prod.yml` 补 C′ 形态必需的 `BUILD_SERVICE/BUILD_SHA/BUILT_AT`（缺了会在服务器去买一个不存在的镜像）、`allow_downgrade` 输入、实例变量兼容、90 分钟上限与产物域名断言。
+- **官网页脚**：展示「浙ICP备2026096585号-2」并链接工信部；公安联网备案通过后在同一区域追加。
+- 判据：`tests/unit_ci_workflows/test_prod_domain_rendering.py`（9 例，含 4 条注入式红证）、`tests/unit_ci_workflows/test_swas_deploy_config_pinning.py`（49 例）、`SmsServiceTest`（15 例）、`frontend/admin-web/tests/unit/components/CorporateFooter.test.tsx`（7 例）。
+- 边界（照实登记）：只覆盖「代码侧具备生产发布能力」；线上实际部署与备案审核不在本条目判据内。
+
 ### 关于我们页「我们是谁」内容重写：换论点而非换句式（2026-11-10，issue #8894）
 
 - 用户 2026-11-10 逐字：「是让你把内容重写，不是换个格式」（针对 #8892 只改句式与段落结构）。
