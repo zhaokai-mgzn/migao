@@ -4,6 +4,8 @@
 覆盖：Settings 默认值 / LLM_* & DASHSCOPE_* 统一读取（原 MINIMAX_* 语义，已去品牌命名）/
 validate_production_secrets。
 """
+from pathlib import Path
+
 import pytest
 
 from app.config import Settings
@@ -133,3 +135,80 @@ class TestValidateProductionSecrets:
         s = _make_settings(DEBUG=False, JWT_PUBLIC_KEY="k", SERVICE_TOKEN="t")
         assert s.JWT_PUBLIC_KEY == "k"
         assert s.SERVICE_TOKEN == "t"
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# `JWT_PUBLIC_KEY` 支持 `file:<路径>`（issue #8976）
+#
+# 病（2026-11-21 生产实测）：admin-api 用 `.env.admin-api` 的 `JWT_*`
+# （`file:/opt/migao-deploy/jwt/*.pem`）签发，ai-agent 用 compose 里**硬编码的 PEM** 验签
+# ⇒ 同一个 token 两把钥匙 ⇒ 生产 AI 接口**全部 401**（`TOKEN_INVALID: Signature verification failed`），
+# 且两侧都不报错、永远不会自己好。修法 = 密钥**单一来源**：ai-agent 也只给路径。
+#
+# 判据（每条都能单独变红）：
+#   ① `file:` 解析成**内容**（= 那份文件里的 PEM）—— 删掉解析器 ⇒ 值是字面量 `file:…` ⇒ 红；
+#   ② **兼容**：直接给 PEM 内容（本地 .env / CI 的既有形态）必须**原样**返回 —— 顺手改坏 ⇒ 红；
+#   ③ **fail-closed**：文件不存在 / 不是公钥 PEM ⇒ 启动即抛 —— 静默放行 ⇒ 红
+#      （放行 = 拿着一把错钥匙继续给所有请求回 401，那读起来像产品鉴权缺陷）。
+# ⚠️ 判据用的是**入仓**的 admin-api 公钥（`backend/admin-api/src/main/resources/rsa/public.pem`）
+#    —— 它就是两侧必须对齐的那份真值，不另造夹具（造一份就等于又长出第二个来源）。
+# ══════════════════════════════════════════════════════════════════════════
+
+REPO_ROOT = Path(__file__).resolve().parents[3]
+COMMITTED_PUBLIC_PEM = REPO_ROOT / "backend" / "admin-api" / "src" / "main" / "resources" / "rsa" / "public.pem"
+
+
+def _committed_public_pem() -> str:
+    assert COMMITTED_PUBLIC_PEM.is_file(), (
+        f"入仓公钥不存在：{COMMITTED_PUBLIC_PEM} —— 判据无从行使（不得读成通过）"
+    )
+    return COMMITTED_PUBLIC_PEM.read_text(encoding="utf-8")
+
+
+class TestJwtPublicKeyFilePrefix:
+    def test_file_prefix_resolves_to_pem_content(self, tmp_path):
+        """判据 ①：`file:<路径>` ⇒ 值是**文件内容**（且是公钥 PEM）。"""
+        pem = _committed_public_pem()
+        key_file = tmp_path / "public.pem"
+        key_file.write_text(pem, encoding="utf-8")
+
+        s = _make_settings(JWT_PUBLIC_KEY=f"file:{key_file}")
+
+        assert "BEGIN PUBLIC KEY" in s.JWT_PUBLIC_KEY, (
+            f"`file:` 没有被解析：值仍是 {s.JWT_PUBLIC_KEY[:24]!r} ⇒ ai-agent 会拿这个字符串去验签 ⇒ 全 401"
+        )
+        assert s.JWT_PUBLIC_KEY.strip() == pem.strip()
+
+    def test_inline_pem_is_kept_verbatim(self):
+        """判据 ②：直接给 PEM 内容（既有部署形态）⇒ **原样**返回，行为不变。"""
+        pem = _committed_public_pem()
+        assert _make_settings(JWT_PUBLIC_KEY=pem).JWT_PUBLIC_KEY == pem
+        # 非 PEM 的历史值也不许被改写（既有单测用 "jwt-key" 这类占位值）
+        assert _make_settings(JWT_PUBLIC_KEY="jwt-key").JWT_PUBLIC_KEY == "jwt-key"
+
+    def test_missing_file_fails_closed(self, tmp_path):
+        """判据 ③（a）：文件不存在 ⇒ **启动即失败**（不许静默降级）。"""
+        missing = tmp_path / "nope" / "public.pem"
+        with pytest.raises(ValueError) as exc:
+            _make_settings(JWT_PUBLIC_KEY=f"file:{missing}")
+        assert str(missing) in str(exc.value), f"报错必须点名那个路径（可行动）：{exc.value}"
+
+    def test_non_pem_file_fails_closed(self, tmp_path):
+        """判据 ③（b）：文件在、但不是公钥 PEM ⇒ **启动即失败**。"""
+        bad = tmp_path / "public.pem"
+        bad.write_text("not a pem\n", encoding="utf-8")
+        with pytest.raises(ValueError):
+            _make_settings(JWT_PUBLIC_KEY=f"file:{bad}")
+
+    def test_private_pem_is_rejected(self, tmp_path):
+        """判据 ③（c）：把**私钥**当公钥挂进来 ⇒ 判红（那是密钥泄漏面，不是「配错了也没事」）。"""
+        # gitleaks 的 `private-key` 规则**只认 PEM 形状、不认内容真假**（`AAAA` 也命中）
+        # ⇒ 标志必须**运行时拼**，源码里不得出现连续的一整段（也不许往 .gitleaksignore 塞指纹：
+        #   那会让这条判据以后对真泄漏也失明）。
+        dash5 = "-" * 5
+        tag = dash5 + "BEGIN" + " " + "PRIVATE" + " KEY" + dash5
+        end_tag = dash5 + "END" + " " + "PRIVATE" + " KEY" + dash5
+        key_file = tmp_path / "public.pem"
+        key_file.write_text(f"{tag}\nAAAA\n{end_tag}\n", encoding="utf-8")
+        with pytest.raises(ValueError):
+            _make_settings(JWT_PUBLIC_KEY=f"file:{key_file}")

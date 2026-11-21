@@ -4,28 +4,32 @@ permissions:
 
 # 生产发布入口（cytda.com · 轻量应用服务器 4C8G · C′ 服务器侧构建）
 #
+# 口径（用户 2026-11-21 裁定 A）：**main 收 PR，部署只认 `release` 发布线**。本文件把这条口径
+# 变成机械判据，而不是靠记性 —— 见下面「发布线纪律」那一步。
+#
 # 与测试环境三条 deploy-*.yml 的关系：
 #   · 代码同源、配置分离：本 workflow 只碰**生产实例**（PROD_*），测试腿只碰旧账号实例；
-#   · 生产只允许**手动 / tag** 发布：本文件只有 workflow_dispatch（push main 不会碰生产）；
+#   · 生产只允许**手动**发布：本文件只有 workflow_dispatch（push main 不会碰生产）；
 #   · 与测试腿共用 `deploy/scripts/swas-deploy-ci.sh`（RunCommand 通道 + 轮询 + 失败自动回滚），
 #     但必须传第 8/9/10 位参数（BUILD_SERVICE / BUILD_SHA / BUILT_AT）——否则 C′ 形态下服务器会去
-#     ACR 找一个**不存在的镜像**（改前这个 workflow 就缺这三个参数，见部署方案 §5.1）。
+#     ACR 找一个**不存在的镜像**。
 #
-# 启用前的准备（一次性）：
-#   1. GitHub 仓库设置 → Environments → 新建 `production`，配 required reviewers ≥1（非触发人）；
+# 启用前的准备（一次性，2026-11-21 已就位）：
+#   1. GitHub 仓库设置 → Environments → `production`（可配 required reviewers ≥1）；
 #   2. Environment secrets：PROD_ALIYUN_ACCESS_KEY_ID / PROD_ALIYUN_ACCESS_KEY_SECRET（RAM 部署用户）；
-#      ACR 凭据可选（C′ 本地构建不需要；只有「从 ACR 拉镜像」的路径才要）；
-#   3. Environment variables：PROD_SWAS_INSTANCE_ID（或 PROD_SWAS_INSTANCE_IDS）、PROD_SWAS_REGION、
-#      PROD_HEALTH_URLS（可选，缺省为 cytda.com 的 6 个面）；
+#      ACR 凭据**不需要**（C′ 在服务器上构建，镜像不推仓库）；
+#   3. Environment variables：PROD_SWAS_INSTANCE_IDS、PROD_SWAS_REGION（默认 cn-hangzhou）；
 #   4. 生产机 `/opt/migao-deploy/.env.site` 写 `MIGAO_PUBLIC_DOMAIN=cytda.com`（缺省 = 测试域名）。
 #
 # 部署 identity：`BUILD_SHA` / `BUILT_AT` 会被烘焙进镜像，`/api/version` 读到的就是**产物身份**
-# （不是「这次想部署什么」）。所以这两个值必须由本 workflow 从**被部署的那个 ref** 现取。
+# （不是「这次想部署什么」）。所以这两个值必须由本 workflow 从**被部署的那个 commit** 现取，
+# 且部署后要**回读校验**（见「部署后冒烟」与 `deploy/scripts/prod-smoke.sh`）。
 on:
   workflow_dispatch:
     inputs:
       version:
-        description: '要发布的版本：semver tag（v1.2.3）或镜像 tag（sha-xxxxxxx）'
+        description: '要发布的版本：release 线上的 ref（推荐 `release` 本身；也接受命中 release 的 vX.Y.Z 或 sha-xxxxxxxx）'
+        default: 'release'
         required: true
       services:
         description: '发布模块，逗号分隔（admin-api,ai-agent,admin-web）'
@@ -35,6 +39,10 @@ on:
         description: '允许降级发布（回滚用）：填 1 才生效，其它值一律当 0'
         default: '0'
         required: false
+      dry_run:
+        description: '只做前置校验（发布线纪律 + 凭据 + 身份解析），不部署、不探活'
+        type: boolean
+        default: false
 
 jobs:
   deploy-prod:
@@ -47,16 +55,13 @@ jobs:
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
       - name: Validate inputs
         id: input
         run: |
           set -euo pipefail
-          VERSION="${{ inputs.version }}"
-          case "$VERSION" in
-            v*|sha-*) echo "✅ 版本格式合法: $VERSION" ;;
-            *) echo "❌ 版本必须是 vX.Y.Z 或 sha-xxxxxxx 格式"; exit 1 ;;
-          esac
           SERVICES=$(printf '%s' "${{ inputs.services }}" | tr ',' '\n' | sed '/^[[:space:]]*$/d')
           for S in $SERVICES; do
             case "$S" in
@@ -69,22 +74,50 @@ jobs:
           echo "EOF" >> "$GITHUB_OUTPUT"
           echo "已解析服务：$(echo $SERVICES)"
 
-      - name: Resolve build identity (被部署 ref 的 sha + 当前时间)
-        id: identity
+      # ── 发布线纪律：只认 release ────────────────────────────────────────────────
+      # 判据：被部署的 commit **必须是 release 的祖先**（release 自己、release 上的 tag、
+      # release 历史上的 sha 都满足）。main 上「尚未发布」的提交、或任何游离 sha ⇒ 拒绝。
+      # 为什么必须在这一步拦：BUILD_SHA 会被烘焙进镜像并被 `/api/version` 读回来 ⇒
+      # 若允许部署 release 之外的提交，「线上到底跑的是哪版」再次变得不可信。
+      - name: 发布线纪律（只认 release）
+        id: rel
         run: |
           set -euo pipefail
+          # 显式取远端 release（actions/checkout 不保证存在本地 `release` 分支名）
+          git fetch --quiet --tags --force origin '+refs/heads/release:refs/remotes/origin/release'
           VERSION="${{ inputs.version }}"
-          git fetch --tags --force --quiet origin || true
+          # 分级解析：本地 ref/tag → origin/<name> → sha-<前缀>（在 release 历史里找）
+          TARGET=""
           if git rev-parse --verify --quiet "${VERSION}^{commit}" >/dev/null; then
-            SHA=$(git rev-parse "${VERSION}^{commit}")
+            TARGET=$(git rev-parse "${VERSION}^{commit}")
+          elif git rev-parse --verify --quiet "origin/${VERSION}^{commit}" >/dev/null; then
+            TARGET=$(git rev-parse "origin/${VERSION}^{commit}")
           else
-            # 镜像 tag（sha-xxxxxxx）不是 ref：退化为当前 checkout 的 sha，并在日志里出声
-            SHA=$(git rev-parse HEAD)
-            echo "::warning::${VERSION} 不是本仓的 ref ⇒ BUILD_SHA 退回当前 checkout（${SHA}）"
+            case "$VERSION" in
+              sha-*)
+                PREFIX="${VERSION#sha-}"
+                TARGET=$(git rev-list origin/release | grep -m1 "^${PREFIX}" || true)
+                ;;
+            esac
           fi
-          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
-          echo "built_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
-          echo "构建身份：sha=$SHA built_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          if [ -z "${TARGET:-}" ]; then
+            echo "::error::取不到「${VERSION}」对应的 commit（支持 release 线上的 ref / tag / sha-<前缀>）"
+            exit 1
+          fi
+          if ! git rev-parse --verify --quiet origin/release >/dev/null; then
+            echo "::error::仓库里没有 origin/release 分支（发布线未建立）"
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor "$TARGET" origin/release; then
+            echo "::error::${TARGET:0:7} 不在 release 发布线上。口径：main 收 PR、部署只认 release。"
+            echo "::error::出口：本地跑 scripts/cut-release.sh 把 release 快进到 main，再用 version=release 发布。"
+            exit 1
+          fi
+          {
+            echo "sha=$TARGET"
+            echo "built_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } >> "$GITHUB_OUTPUT"
+          echo "发布身份：${TARGET}（release 线内 ✅）"
 
       - name: Preflight (生产凭据与实例)
         env:
@@ -98,13 +131,14 @@ jobs:
             echo "   在 GitHub → Settings → Environments → production → Environment secrets 配置"
             exit 1
           fi
-          if [ -z "${INSTANCES:-}" ]; then
+          if [ -z "${INSTANCES// /}" ]; then
             echo "❌ 生产实例未配置（Environment variable：PROD_SWAS_INSTANCE_ID 或 PROD_SWAS_INSTANCE_IDS）"
             exit 1
           fi
           echo "目标实例：$INSTANCES"
 
       - name: Deploy to production (逐服务，C′ 服务器侧构建)
+        if: ${{ !inputs.dry_run }}
         env:
           AK: ${{ secrets.PROD_ALIYUN_ACCESS_KEY_ID }}
           SK: ${{ secrets.PROD_ALIYUN_ACCESS_KEY_SECRET }}
@@ -112,16 +146,18 @@ jobs:
           ACR_P: ${{ secrets.PROD_ACR_PASSWORD }}
           INSTANCES: ${{ vars.PROD_SWAS_INSTANCE_ID }} ${{ vars.PROD_SWAS_INSTANCE_IDS }}
           REGION: ${{ vars.PROD_SWAS_REGION || 'cn-hangzhou' }}
-          VERSION: ${{ inputs.version }}
-          BUILD_SHA: ${{ steps.identity.outputs.sha }}
-          BUILT_AT: ${{ steps.identity.outputs.built_at }}
+          BUILD_SHA: ${{ steps.rel.outputs.sha }}
+          BUILT_AT: ${{ steps.rel.outputs.built_at }}
           SERVICES: ${{ steps.input.outputs.services }}
           ALLOW_DOWNGRADE: ${{ inputs.allow_downgrade == '1' && '1' || '0' }}
         run: |
           set -euo pipefail
+          # 镜像 tag 一律由**被部署的 sha** 推导 ⇒ 版本身份唯一、不靠人填
+          VERSION="sha-${BUILD_SHA:0:7}"
+          echo "目标镜像 tag：$VERSION（sha=$BUILD_SHA）"
           for INSTANCE in $INSTANCES; do
             for SVC in $SERVICES; do
-              echo "== 部署 ${SVC} → 实例 ${INSTANCE}（version=${VERSION} / sha=${BUILD_SHA}）=="
+              echo "== 部署 ${SVC} → 实例 ${INSTANCE}（tag=${VERSION}）=="
               # 第 8/9/10 位参数 = C′ 的构建身份；缺失 ⇒ 服务器会去 ACR 拉不存在的镜像
               ALLOW_DOWNGRADE="$ALLOW_DOWNGRADE" \
               bash deploy/scripts/swas-deploy-ci.sh \
@@ -131,34 +167,18 @@ jobs:
             done
           done
 
-      - name: Post-deploy production smoke (cytda.com)
+      # ── 部署后冒烟：八面 / 版本身份 / 域名泄漏（失败即判红，见脚本头部口径）────────
+      - name: 部署后冒烟（生产冒烟判据）
+        if: ${{ !inputs.dry_run }}
         env:
-          HEALTH_URLS: ${{ vars.PROD_HEALTH_URLS }}
-        run: |
-          set -euo pipefail
-          URLS="${HEALTH_URLS:-https://api.cytda.com/api/version https://ai-api.cytda.com/version https://merchant.cytda.com/login https://app.cytda.com/b/}"
-          FAIL=0
-          for URL in $URLS; do
-            CODE=$(curl -s -o /dev/null -w "%{http_code}" -m 20 "$URL" || echo 000)
-            echo "$URL -> $CODE"
-            if [ "$CODE" != "200" ]; then
-              echo "::error::生产冒烟失败：$URL -> $CODE"
-              FAIL=1
-            fi
-          done
-          # 生产构建正确性：页面必须打到 cytda.com，绝不能回到测试域名（部署方案 §5.6）
-          echo "== 产物域名断言 =="
-          BODY=$(curl -fsS -m 20 https://merchant.cytda.com/login || true)
-          if printf '%s' "$BODY" | grep -q 'api\.migaozn\.com'; then
-            echo "::error::生产页面里出现了 api.migaozn.com —— 构建成了测试环境，立即回滚"
-            FAIL=1
-          fi
-          if [ "$FAIL" != "0" ]; then exit 1; fi
-          echo "✅ 生产发布完成（version=${VERSION:-${{ inputs.version }}}）"
+          REL_SHA: ${{ steps.rel.outputs.sha }}
+          SMOKE_BASE: cytda.com
+          SMOKE_SERVICES: ${{ inputs.services }}
+        run: bash deploy/scripts/prod-smoke.sh
 
       - name: Rollback hint
         if: always()
         run: |
-          echo "回滚：重跑本 workflow，version 填上一稳定版本，allow_downgrade 填 1。"
+          echo "回滚：重跑本 workflow，version 填上一稳定版本（release 线上的 tag 或 sha），allow_downgrade 填 1。"
           echo "镜像 tag 不可变 ⇒ 上一版始终可回；服务器侧另有 .last-good-tag 可用。"
           echo "详见 docs/deployment/rollback.md 与 docs/deployment/prod-cytda-runbook.md"

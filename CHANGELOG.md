@@ -5,6 +5,50 @@
 > 原因 = 单文件涨到 512KB 越过扫描上限，详见存档文件头与 issue #6404。
 > **后续条目继续在本文件 `## [Unreleased]
 
+### JWT 验签公钥与 admin-api 同源：ai-agent 改读同一份密钥文件，部署期不一致即判红（2026-11-21，issue #8976）
+
+- **形态**：`deploy/swas/docker-compose.yml` 的 ai-agent 不再硬编码 PEM，改成
+  `JWT_PUBLIC_KEY=file:/opt/migao-deploy/jwt/public.pem` + 挂 `/opt/migao-deploy/jwt:ro`
+  （与 admin-api 的签名密钥**同一份文件**）；`backend/ai-agent-service/app/config.py` 支持 `file:` 前缀，
+  且**仍接受**直接给 PEM 内容（既有 `.env` 部署不用改）。缺文件 ⇒ ai-agent 起不来（fail-closed）。
+- **之前**：admin-api 用 `.env.admin-api` 的 `file:/opt/migao-deploy/jwt/*.pem` 签发，ai-agent 用 compose 里
+  硬编码的另一对 PEM 验签 ⇒ 生产 AI 接口**全部 401**（`TOKEN_INVALID: Signature verification failed`），
+  而两侧都不报错、**永远不会自己好**（2026-11-21 实测两把钥匙指纹 `c58e54d6…` vs `ba01a29f…`）。
+- **部署期硬断言**：`deploy/swas/deploy.sh` 新增 `== 2.5.9`，比对两侧容器内**实际生效**的公钥指纹 ——
+  `JWT_KEY_SAME_SOURCE=OK` / `=MISMATCH`（打印两侧指纹 + 排查口 + `exit 1`）/ `=SKIPPED`（取不到 ⇒
+  **不判绿**）。
+- **同时修**：① `JwtTokenProvider` 的 classpath 兜底改成**只读流**（`jar:nested:/app/app.jar/!BOOT-INF/classes/`
+  这类资源没有「文件」可指，先问 `exists()` / 用 `getFile()` 就永远读不到 —— 实测「去掉 `JWT_*` 就起不来」）；
+  ② 凡重建容器之后必须 `nginx -s reload` **并**探测本机上游回 200，否则判红（实测重建换 IP + nginx 缓存旧 IP
+  = 全站 502 约 90 秒）；③ compose/`.env*` 里任何 `file:` 路径都必须被卷覆盖（类级判据扩到 `environment:`）。
+- 判据：`tests/unit_ci_workflows/test_swas_jwt_same_source.py`（含桩化 docker/curl 跑真实 `deploy.sh` 的
+  执行式红证）、`tests/unit_ci_workflows/test_swas_container_runtime.py`（12b 类级挂载）、
+  `backend/ai-agent-service/tests/test_config.py::TestJwtPublicKeyFilePrefix`、
+  `backend/admin-api/src/test/java/.../JwtTokenProviderClasspathResourceTest.java`。
+- **不变**：`.env*` 文件内容、镜像、端口与域名；不改任何测试门禁的通过条件。
+
+### 部署 compose 补回 admin-api 的 jwt / uploads 宿主挂载，蓝绿 green 同步挂卷（2026-11-21，issue #8969）
+
+- **形态**：canonical `deploy/swas/docker-compose.yml` 的 admin-api 补 `jwt:ro`
+  （`.env.admin-api` 的文件式私钥 `JWT_PRIVATE_KEY=file:/opt/migao-deploy/jwt/private.pem`）与
+  `/opt/migao-deploy/uploads:/app/uploads`（上传图片的落盘面）；`docker-compose.bluegreen.yml` 的每个
+  green 补**逐字相同**的卷。
+- **之前**：仓库 compose 里这两条挂载根本不存在（生产旧容器上的挂载来自历史手工创建）⇒ 只要「按仓库
+  compose 重建容器」就会 `JWT RSA 密钥加载失败` 起来即崩；且 green 从不挂卷 ⇒ 蓝绿预验证对 admin-api
+  **必然**失败（2026-11-21 实测 `admin-api-green -> 000000 ×10`，`api.cytda.com` 502 约 3 分钟）。
+- **判据**：parity 守卫把 `volumes` 纳入逐字一致（删卷 / 改 `:ro` 判红），并新增「`.env*` 里所有 `file:`
+  路径必须被卷的容器目标覆盖」的类级判据（取不到 env 文件 ⇒ SKIPPED 不可判定，不判绿）。
+- **不变**：`.env*` 文件、镜像与端口；不改 `deploy/swas/deploy.sh`。
+
+### 入库标签二维码的 origin 改为构建期可覆盖：生产标签不再指向测试服务器（2026-11-21，issue #8942）
+
+- **缺陷（已验收确认）**：B 端 H5 打印的入库标签，二维码内容来自 `frontend/bmini-app/src/utils/inbound/truth.ts` 里写死的 `https://app.migaozn.com`；生产落地面是 `app.cytda.com` ⇒ **生产打印出来的标签把扫码请求送到测试服务器**（线上 `/b/js/app.js` 里能读到 `w="https://app.migaozn.com",b="/i/"`，与常量逐字吻合）。页面上一切正常，只有工人扫了才会发现。
+- **改法**：origin 改成 `process.env.TARO_APP_PUBLIC_APP_ORIGIN || 'https://app.migaozn.com'`，并在 `frontend/bmini-app/config/index.ts` 的 `defineConstants` **显式登记**该键（缺省回落空串；不登记则无 `.env` 的构建会残留 `process.env` ⇒ 浏览器端白屏，issue #2693）。**缺省值逐字不变** ⇒ 不传 env 的构建（测试环境 / 既有产物）行为不变；minify 时 `''||'https://app.migaozn.com'` 折叠为同一个字符串字面量（terser 实测）。
+- **写读同源**：解析侧（`frontend/bmini-app/src/utils/inbound/codeSpace.ts`）继续用**同一个常量**取主机名 ⇒ 换 origin 时写侧与解析侧一起跟着走，不另写域名。
+- 判据：`frontend/bmini-app/tests/inbound-label-origin-env.test.ts`（O1 缺省逐字不变 / O2 覆盖生效 / O3 写读同源 / O4 defineConstants 接线，含两条注入式红证）；既有断言（`inbound-print-geometry-single-source.test.ts` C5 等）在缺省下**零改动通过**。
+- **联调口径**：构建 B 端 H5 时传 `TARO_APP_PUBLIC_APP_ORIGIN=https://app.cytda.com`；不传 ⇒ `https://app.migaozn.com`。关联 #8932（生产按 `cytda.com` 域名发布；bmini 的标签 origin 是那一轮剩下的缺口）。
+- 边界（照实登记）：解析侧只认**当前构建**的 origin ⇒ 切 origin 之前打印的旧 origin 标签在新构建里判 `foreign`（它们的二维码本身也仍指向旧环境）；是否加「多主机白名单」是后续迁移决策，不在本条目内静默扩大范围。
+
 ### 小程序端不再直连蓝牙标签机：出纸只走手持标签机（2026-11-21，issue #8939）
 
 - **用户裁定**：2026-11-21 逐字「可以理解为都有手持标签机」（回答「每个班组都有标签机，还是部分工人只有手机？」）。
@@ -1585,6 +1629,14 @@ worker-h5 纯函数、承运商 4 条 × 两处入口 + 类级单一真值守卫
 
 
 ## [Unreleased]
+
+### 生产域 cytda.com：官网导航 / canonical / sitemap / 域名分流按构建期域名生成（2026-11-21，issue #8941）
+
+- **生产验收（P0-3 / P1-1）**：同一份 admin-web 产物部署到测试域 `migaozn.com` 与生产域 `cytda.com`，但有 5 处把测试域写死 ⇒ 生产环境三件静默错事：官网「商家登录」把用户送去 `merchant.migaozn.com`；canonical / og:image / sitemap 把生产页登记成测试域；`merchant.cytda.com/` 不跳登录页、`cytda.com/dashboard` 不跳商家域（`src/proxy.ts` 的 host 分支不认识生产域，未知域直接放行）。
+- **改后**：站点域名只有一个构建期来源 `NEXT_PUBLIC_SITE_DOMAIN`（缺省 `migaozn.com`），驱动 www→裸域 301、proxy 三面分流（apex / www / merchant）、`metadataBase`、官网两处「商家登录」、`/sitemap.xml` 与 `/robots.txt`；抓取指引由 `public/` 静态文件改为 `src/app/sitemap.ts` / `src/app/robots.ts`（`public/` 不参与构建期替换）。未知域仍放行（本地开发 / 预览语义不变）。
+- **缺省值下与改前一致**：不传 env 时全部落点仍是 `migaozn.com` / `www.migaozn.com` / `merchant.migaozn.com`；产物内容等价（sitemap 5 条 loc、robots 的 Disallow 列表逐条不变；差异只有 robots 的 `User-agent` 大小写与两处说明性注释——均非抓取语义）。
+- **部署口径**：生产构建传 `NEXT_PUBLIC_SITE_DOMAIN=cytda.com`；`deploy/swas/deploy.sh` 已按 `MIGAO_PUBLIC_DOMAIN` 派生同一条 `--build-arg`（测试环境不传 ⇒ 与改前逐字相同）。
+- 判据：`frontend/admin-web/tests/unit/pages/site-domain.test.ts`（缺省 / 生产两态 + 类级元守卫）、`frontend/admin-web/tests/unit/pages/corporate-metadata-single-source.test.ts`（route 形式内容等价）、`frontend/admin-web/tests/unit/components/CorporateNav.test.tsx`（桌面 + 移动）、`tests/unit_ci_workflows/test_prod_domain_rendering.py`（构建期接线 + 3 条注入式红证）。
 
 ### 商品详情页重排：商品信息 / 批次与库存两个整体不穿插、不重复（2026-11-20，issue #8934）
 

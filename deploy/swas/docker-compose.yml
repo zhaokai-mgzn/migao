@@ -42,6 +42,24 @@ services:
       # 判据 = tests/unit_ci_workflows/test_wechat_bmini_env_wiring.py
     ports:
       - "127.0.0.1:8080:8080"
+    # ── 宿主挂载（issue #8969，2026-11-21 生产 `api.cytda.com` 502 约 3min 的事故）────────────
+    # 这两条**不是可选优化**：删掉任何一条 = 容器起来即崩 / 用户上传数据丢。
+    # ① `/opt/migao-deploy/jwt`：`.env.admin-api` 用的是**文件式**私钥
+    #    `JWT_PRIVATE_KEY=file:/opt/migao-deploy/jwt/private.pem`（PEM 内容型 `JWT_PRIVATE_KEY_PEM`
+    #    只在本地/CI 用）⇒ 容器里没有这个路径时，`JwtTokenProvider` 的 RS256 fail-closed 分支
+    #    直接抛 `IllegalStateException`（「JWT RSA 密钥加载失败，无法启用 RS256 签名」）⇒ 重启循环。
+    #    🔴 生产旧容器**看起来有**这两个挂载（`docker inspect` 可见 `/opt/migao-deploy/jwt`、
+    #    `/opt/migao-deploy/uploads`），但它们来自**历史手工创建** —— 仓库 compose 从来没有
+    #    ⇒ 只要「按仓库 compose 重建容器」就必然炸（实测：手工 `docker run` 补上挂载 ⇒ healthy）。
+    # ② `/app/uploads`：`LocalFileStorageService.UPLOAD_DIR = "uploads"` 是**相对路径**
+    #    （`WebConfig` 也以 `file:uploads/` 暴露静态面），而 Dockerfile 的 `WORKDIR /app`
+    #    ⇒ 实际落盘 `/app/uploads`。不挂宿主卷 ⇒ 容器一重建，用户上传的图片**全丢**，且没有读数为红。
+    # ⚠️ 判据（会红）：tests/unit_ci_workflows/test_swas_deploy_blue_green.py（green 与正式服务
+    #    volumes 逐字一致）与 tests/unit_ci_workflows/test_swas_container_runtime.py（这两条卷在位 +
+    #    `.env.*` 里所有 `file:` 路径都被某个卷的容器目标覆盖；取不到 env ⇒ SKIPPED 不可判定）。
+    volumes:
+      - /opt/migao-deploy/jwt:/opt/migao-deploy/jwt:ro
+      - /opt/migao-deploy/uploads:/app/uploads
     mem_limit: 1536m
     cpus: 1.0
     logging: *migao-logging
@@ -69,19 +87,24 @@ services:
       EVAL_TENANT_ID: "1"
       # 统一时区 UTC+8（业务时间均为北京时间）
       TZ: Asia/Shanghai
-      # 校验 admin-api 签发的 JWT 所需的公开密钥（非敏感，可入仓）
-      JWT_PUBLIC_KEY: |
-        -----BEGIN PUBLIC KEY-----
-        MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAyDkix6IDMt3wkCAY1Phk
-        O56ihiAu9deWNU/kfRn0dnc/iKC3sqmjlE7Te854xOuy1EjvIbDAXDFbaKHMOM76
-        itKKIvSpOzGsSaEuerNsQH6+il9KgnO2rk4z9fDEoX9ZYnzIjr3n/oM6mv3Nfh+x
-        17QMdMo9n29cHlznQAVc4kAJ1ACu4eYJVxiH6WZNtXLu6PkiU+YqsaPOGchvp1Xy
-        PmZXyJJl0r+xDEVCgfXLsStFTau/9B5YxMv28N5gg1JbwpZNBpBYZ00J90lQkT+5
-        Lpl0Tto5k/R08bFvAn8uf0PcbpOQ70Ibs9R7T/MHfK0NKyBrwZnzEdcIEQ6Pdn9g
-        RwIDAQAB
-        -----END PUBLIC KEY-----
+      # ── 验签公钥与 admin-api 的**签名密钥**同源（issue #8976；2026-11-21 生产 AI 接口全 401）──────
+      # 改前这里是**硬编码的 PEM**，而 admin-api 用 `.env.admin-api` 的 `JWT_*`
+      # （`file:/opt/migao-deploy/jwt/*.pem`）签发 ⇒ 同一个 token 配了两把钥匙 ⇒ 生产 AI 接口**全部 401**
+      # （`TOKEN_INVALID: Signature verification failed`；实测公钥指纹 ai-agent=ba01a29f… vs
+      #  admin-api=c58e54d6…），而且**两侧都不报错、永远不会自己好**。
+      # 现在只给**路径**、不给内容：内容就是 admin-api 私钥那一对的 public 半份（服务器同一份文件）
+      # ⇒ 「换钥匙」只换那一份，两处同时跟上（单一来源）。**本行故意放在 `environment:`**（优先级高于
+      # `env_file`）：`.env.ai-agent` 里若残留旧 PEM，被这里覆盖掉，不会再悄悄回到两把钥匙。
+      # ⚠️ 文件缺失 ⇒ ai-agent **起不来**（fail-closed）：宁可这次部署失败，也不许它拿错钥匙继续全 401。
+      JWT_PUBLIC_KEY: file:/opt/migao-deploy/jwt/public.pem
     ports:
       - "127.0.0.1:8000:8000"
+    # 宿主挂载（issue #8976）：`JWT_PUBLIC_KEY` 是**文件式**取值 ⇒ 容器里必须真有这个路径。
+    # 与 admin-api **同一份**卷源（同目录、同样 `:ro`）—— 这就是「单一来源」的唯一实体面。
+    # ⚠️ 判据（会红）：tests/unit_ci_workflows/test_swas_jwt_same_source.py（值 = file: + 卷在位）；
+    # 同目录 test_swas_container_runtime.py 的类级判据另扫 `environment:` 里的 `file:` 路径。
+    volumes:
+      - /opt/migao-deploy/jwt:/opt/migao-deploy/jwt:ro
     mem_limit: 1024m
     cpus: 1.0
     logging: *migao-logging
