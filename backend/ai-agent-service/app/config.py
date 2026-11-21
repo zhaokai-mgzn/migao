@@ -125,6 +125,17 @@ class Settings(BaseSettings):
         "wss://token-plan.cn-beijing.maas.aliyuncs.com/api-ws/v1/inference"
     )                                                      # 空 ⇒ 用 SDK 默认端点（回滚口）
     ASR_LANGUAGE_HINTS: str = "zh"                         # 默认语言/方言
+    # ── 语音识别通道形态（issue #8987，2026-11-21 生产实测）──────────────────
+    # Token Plan 订阅（`sk-sp-` key）里唯一可用的语音识别模型 `qwen-audio-3.0-asr-flash`
+    # 是**非实时**的：它走与生图**完全相同**的多模态端点（HTTP），不接 WebSocket 实时识别。
+    #   realtime = 既有实时流式通道（**默认**，缺省不改变既有部署行为；回滚口）
+    #   http     = Token Plan 非实时通道（生产切这个，只需 `ASR_MODE=http`）
+    ASR_MODE: str = "realtime"
+    ASR_HTTP_MODEL: str = "qwen-audio-3.0-asr-flash"       # 非实时通道模型（与实时模型不同名）
+    ASR_HTTP_URL: str = (
+        "https://token-plan.cn-beijing.maas.aliyuncs.com/api/v1/services/aigc/"
+        "multimodal-generation/generation"
+    )                                                      # 与 IMAGE_GEN_BASE_URL 同一端点形态
 
     # 商品图生成（issue #7335）— MaaS 图生图（qwen-image 系列，原生多模态端点）。
     # Key 未单独配置时复用 ASR_API_KEY（同一个 MaaS 账号）；**不回落 PRIMARY_API_KEY**（DeepSeek Key）。

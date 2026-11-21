@@ -5,6 +5,22 @@
 > 原因 = 单文件涨到 512KB 越过扫描上限，详见存档文件头与 issue #6404。
 > **后续条目继续在本文件 `## [Unreleased]
 
+### 语音识别接入 Token Plan 非实时通道（`ASR_MODE=http`），端点与生图相同（2026-11-21，issue #8987）
+
+- **背景（生产实测）**：生产用阿里云百炼 **Token Plan 订阅**（`sk-sp-` key），订阅里唯一可用的语音识别模型
+  `qwen-audio-3.0-asr-flash` 是**非实时**的 —— 它走**与商品生图完全相同**的多模态端点，不接 WebSocket 实时识别。
+  既有 `app/api/asr.py` 只有实时流式通道 ⇒ 生图通、**语音不通**（不是 key 问题，是协议不匹配）。
+- **形态**：`app/config.py` 新增 `ASR_MODE`（缺省 `realtime`，**不改变既有部署行为**）+ `ASR_HTTP_MODEL`
+  （`qwen-audio-3.0-asr-flash`）+ `ASR_HTTP_URL`（可 env 覆盖）；`app/api/asr.py` 的 `_transcribe_audio` 按 `ASR_MODE`
+  分派，`http` 分支 = base64 data-URI + `parameters.format/sample_rate/language_hints`，文本读 `output.text`
+  （兜底 `output.sentence.text` / 顶层 `text`），空文本沿用「未识别到语音内容」。
+- **🔴 记下来的坑**：`parameters.format` **必填** —— 少了它网关回 `400 {}`（**空 body**、~90ms 拒单，无 message 可读）。
+  形态与排查口径见 `docs/deployment/voice-asr-token-plan.md`。
+- **不变**：缺省 `realtime` 时行为逐字不变；实时流式通道保留为回滚口；生图逻辑未动；错误口径沿用既有
+  401/403 不可用 · 429 配额 · 5xx 暂时不可用；日志不记 key、不记响应体。
+- **生产切换（部署侧，不在本 PR）**：`.env.ai-agent` 写 `ASR_MODE=http`。
+- 判据：`backend/ai-agent-service/tests/test_asr_http_mode.py`（`API-024`，含「删掉 `parameters` ⇒ 判据必红」的注入式红证）。
+
 ### 部署 compose 补回 admin-api 的 jwt / uploads 宿主挂载，蓝绿 green 同步挂卷（2026-11-21，issue #8969）
 
 - **形态**：canonical `deploy/swas/docker-compose.yml` 的 admin-api 补 `jwt:ro`
