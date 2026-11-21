@@ -82,6 +82,10 @@ env:
 jobs:
   publish:
     name: publish terminal → /terminal/ + identity assertions
+    # 🔴 生产凭据（PROD_ALIYUN_* / PROD_ACR_*）挂在 `production` environment 上（与 deploy-prod.yml 同源），
+    #    不声明 environment 时它们解析为空 ⇒ ACR 登录「成功」但 docker push 401、RunCommand 也拿不到实例。
+    #    该环境当前**无审批规则**（实测 protection_rules 为空），所以不引入人工闸；对 test 目标无功能影响。
+    environment: production
     runs-on: ubuntu-latest
     # 下载 + 打包 + 推镜像 + 发布 + served 断言（含容器拉取与 curl 重试）
     timeout-minutes: 30
