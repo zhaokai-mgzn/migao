@@ -83,10 +83,25 @@ jobs:
         id: rel
         run: |
           set -euo pipefail
-          git fetch --quiet --tags --force origin
+          # 显式取远端 release（actions/checkout 不保证存在本地 `release` 分支名）
+          git fetch --quiet --tags --force origin '+refs/heads/release:refs/remotes/origin/release'
           VERSION="${{ inputs.version }}"
-          if ! TARGET=$(git rev-parse --verify --quiet "${VERSION}^{commit}"); then
-            echo "::error::取不到「${VERSION}」对应的 commit"
+          # 分级解析：本地 ref/tag → origin/<name> → sha-<前缀>（在 release 历史里找）
+          TARGET=""
+          if git rev-parse --verify --quiet "${VERSION}^{commit}" >/dev/null; then
+            TARGET=$(git rev-parse "${VERSION}^{commit}")
+          elif git rev-parse --verify --quiet "origin/${VERSION}^{commit}" >/dev/null; then
+            TARGET=$(git rev-parse "origin/${VERSION}^{commit}")
+          else
+            case "$VERSION" in
+              sha-*)
+                PREFIX="${VERSION#sha-}"
+                TARGET=$(git rev-list origin/release | grep -m1 "^${PREFIX}" || true)
+                ;;
+            esac
+          fi
+          if [ -z "${TARGET:-}" ]; then
+            echo "::error::取不到「${VERSION}」对应的 commit（支持 release 线上的 ref / tag / sha-<前缀>）"
             exit 1
           fi
           if ! git rev-parse --verify --quiet origin/release >/dev/null; then
