@@ -23,7 +23,7 @@ MODE="${1:-push}"
 
 git fetch --quiet "$REMOTE" "+refs/heads/$MAIN_BRANCH:refs/remotes/$REMOTE/$MAIN_BRANCH" \
                            "+refs/heads/$RELEASE_BRANCH:refs/remotes/$REMOTE/$RELEASE_BRANCH" 2>/dev/null || {
-  git fetch --quiet "$REMOTE" || { echo "✗ 取不到远端 $REMOTE（不得当 0 读）" >&2; exit 3; }
+  git fetch --quiet "$REMOTE" || { echo "✗ 取不到远端 ${REMOTE}（不得当 0 读）" >&2; exit 3; }
 }
 
 main_sha=$(git rev-parse "$REMOTE/$MAIN_BRANCH" 2>/dev/null) || { echo "✗ 取不到 $REMOTE/$MAIN_BRANCH" >&2; exit 3; }
