@@ -194,6 +194,9 @@ jobs:
           # 🔴 **执行体 ref**（issue #6124）：引导**按它**从 codeload 取回
           #    `deploy/swas/terminal-publish-remote.sh` 并执行；发布逻辑**不进**命令内容。
           #    = 本 workflow 跑的那个 commit ⇒ 它的 tarball 必定含远端执行体。
+          # 实例未登录 ACR 时（生产机从不 pull 镜像）由这里传凭据，脚本在远端 docker login
+          ACR_USERNAME: ${{ inputs.target == 'prod' && secrets.PROD_ACR_USERNAME || secrets.ACR_USERNAME }}
+          ACR_PASSWORD: ${{ inputs.target == 'prod' && secrets.PROD_ACR_PASSWORD || secrets.ACR_PASSWORD }}
           TERMINAL_PUBLISHED_COMMIT: ${{ github.sha }}
           INPUT_TAG: ${{ inputs.release_tag }}
         run: |
