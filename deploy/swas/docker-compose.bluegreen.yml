@@ -18,8 +18,11 @@
 # 健康检查判据不在这里：由 deploy.sh 的 `wait_healthy()` **统一给出**，与正式容器**同一份函数**
 # ⇒ 判据不可能漂移（「两套判据 / 判据过严导致回滚抖动」由此排除）。
 #
-# ⚠️ 抗漂移红线：本文件里每个 green 的 image / env_file / environment / mem_limit / cpus / healthcheck
-#    必须与 docker-compose.yml 里对应服务**逐字一致**（green 跑的就是同一份配置）。
+# ⚠️ 抗漂移红线：本文件里每个 green 的 image / env_file / environment / mem_limit / cpus /
+#    healthcheck / **volumes** 必须与 docker-compose.yml 里对应服务**逐字一致**（green 跑的就是同一份配置）。
+#    🔴 volumes 是 2026-11-21 补的（issue #8969）：改前本文件里 `volumes:` 出现 **0 次** ⇒ 依赖宿主挂载的
+#    服务（admin-api 的 JWT 私钥 / uploads）在 green 里那个路径根本不存在 ⇒ 预验证**必然**失败
+#    （实测 `admin-api-green -> 000000 ×10`），等于蓝绿对这类服务**永久失效**。漏卷 / 改 ro 标志都判红。
 #    守卫 = tests/unit_ci_workflows/test_swas_deploy_blue_green.py（不一致即判红，含注入式自证）。
 #    第二端口的默认值必须与 deploy.sh 的 `BG_*_PORT` 默认值一致（同一守卫钉住）。
 #
@@ -49,6 +52,12 @@ services:
       AI_AGENT_BASE_URL: http://ai-agent:8000
     ports:
       - "127.0.0.1:${BG_ADMIN_API_PORT:-18080}:8080"
+    # 与 docker-compose.yml 的 admin-api **逐字一致**（issue #8969）：green 是**探针容器**，
+    # 它要在不动旧容器的前提下证明「新镜像能起」；少了这两个宿主挂载，JWT 私钥在容器里不存在
+    # ⇒ fail-closed 直接退出 ⇒ green 永远不 healthy ⇒ 蓝绿预验证对 admin-api 永久失效。
+    volumes:
+      - /opt/migao-deploy/jwt:/opt/migao-deploy/jwt:ro
+      - /opt/migao-deploy/uploads:/app/uploads
     mem_limit: 1536m
     cpus: 1.0
     logging: *migao-logging
