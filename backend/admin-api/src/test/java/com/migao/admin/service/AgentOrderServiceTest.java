@@ -60,6 +60,13 @@ class AgentOrderServiceTest {
 
     private Order testOrder;
 
+    @org.junit.jupiter.api.AfterEach
+    void clearTenantContext() {
+        // ThreadLocal 必须清：否则本类的租户会被**后续测试类**继承（同 JVM / 同线程），
+        // 把它们也变成顺序依赖的 flaky 用例（同上注释）。
+        com.migao.admin.config.TenantContext.clear();
+    }
+
     /**
      * 建单编排的实现点（issue #8681，P2-1e 第五批）：门面的 {@code createOrder} 转发已删除 ⇒ 驱动对象换成
      * 门面<b>自己懒构造的那一份</b>（同一条调用链、同一份协作者），断言一字未改。
@@ -69,6 +76,12 @@ class AgentOrderServiceTest {
 
     @BeforeEach
     void setUp() {
+        // 🔴 `TenantContext` 是 **ThreadLocal**：`OrderLifecycleService` 的物流写面用的是
+        // `TenantContext.getTenantId()`（不是门面入参）⇒ 不显式设置时，本类每个用例的读数取决于
+        // 「同一线程上一个测试留下了什么」。实测同一份代码两次跑分别得到 `1L` / `null`
+        // ⇒ 那两条 `updateShippingDetails` 判据本身是 flaky 的（2026-11-21，issue #8986 现场）。
+        // 这里显式钉成 1L（= 本类各个门面调用里传的租户），`@AfterEach` 再清掉，杜绝外溢。
+        com.migao.admin.config.TenantContext.setTenantId(1L);
         // issue #8681（P2-1e 第八批）：改单编排已整体搬到 OrderAgentFacade ⇒ 用**门面自己懒构造的那一份**
         // 生命周期 / 查询实现点构造它（同一条调用链、同一份协作者），断言一字未改。
         // issue #4406：取价点用**真实**对象（只桩价目表 Mapper）—— 金额算法仍走生产代码。
@@ -729,7 +742,8 @@ class AgentOrderServiceTest {
 
             // then: 发货人保持 null（宁可空白显示「-」，也不把当次操作人写成历史经手人）
             // 发货人传 null = 本次没说 ⇒ SQL 侧保留原值（历史行本来就是 null ⇒ 仍是 null，不猜一个经手人）
-            // tenantId 由 TenantContext 提供，本用例没设上下文 ⇒ 入参为 null（与旧实现同款，不是本单的判定对象）
+            // tenantId = 当前 TenantContext 的 1L（`setUp()` 显式钉住，`@AfterEach` 清掉）——
+            // 物流写面走 `OrderLifecycleService` 的 `TenantContext.getTenantId()` ⇒ 这是**租户隔离**的可判读数
             verify(orderLogisticsMapper).updateShippingDetails(org.mockito.ArgumentMatchers.eq(1L),
                     org.mockito.ArgumentMatchers.eq("order-uuid-001"),
                     org.mockito.ArgumentMatchers.eq("中通"),
