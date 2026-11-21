@@ -498,7 +498,7 @@ cases:
       verifies: []
   - id: BM-015
     legacy_id: ""
-    title: "打印能力缺口 - 每种失败各有可行动文案，且动手前上屏（iOS / 非 HTTPS / 无蓝牙 / 非 h5 / SDK 缺失 / 取消 / 连不上 / 机型不支持）"
+    title: "打印能力缺口 - 每种失败各有可行动文案，且动手前上屏（iOS / 非 HTTPS / 无蓝牙 / 小程序→手持标签机 / SDK 缺失 / 取消 / 连不上 / 机型不支持）"
     domains:
       - bmini
       - inbound
@@ -515,12 +515,12 @@ cases:
     expectations:
       - tool: direct_reply
     data_checks:
-      - "判据 1·**逐种文案两两不同、非空、可行动**（红证：合并成一条通用文案 ⇒ 判据红，实测退出码 1）：iOS ⇒ 点名 iPhone/iPad 并给「换安卓或电脑端补打」；非 HTTPS ⇒ 点名 https 入口；无 API ⇒ 点名 Android/桌面 Chrome；非 h5 ⇒ 点名小程序链路搁置 + 换 Chrome；SDK 缺失 ⇒ 保持联网刷新；取消 ⇒ 说明计数已记一次；连不上 ⇒ 开机/3 米内/别被占用；机型不支持 ⇒ 选 DP 开头；打印失败 ⇒ 查纸仓；渲染失败 ⇒ 不会打空白标签。证据：frontend/bmini-app/tests/inbound-print-channel.test.ts"
+      - "判据 1·**逐种文案两两不同、非空、可行动**（红证：合并成一条通用文案 ⇒ 判据红，实测退出码 1）：iOS ⇒ 点名 iPhone/iPad 并给「换安卓或电脑端补打」；非 HTTPS ⇒ 点名 https 入口；无 API ⇒ 点名 Android/桌面 Chrome；小程序 ⇒ 点名**用手持标签机**（蓝牙直连通道 2026-11-21 退役，issue #8939）；其它非 h5 ⇒ 换 Chrome；SDK 缺失 ⇒ 保持联网刷新；取消 ⇒ 说明计数已记一次；连不上 ⇒ 开机/3 米内/别被占用；机型不支持 ⇒ 选 DP 开头；打印失败 ⇒ 查纸仓；渲染失败 ⇒ 不会打空白标签。证据：frontend/bmini-app/tests/inbound-print-channel.test.ts + frontend/bmini-app/tests/inbound-print-weapp.test.ts"
       - "判据 2·**探测顺序**：iOS 判在「无 Web Bluetooth」**之前**（iPhone 上换任何浏览器都不行 ⇒ 先判无 API 会把人引向走不通的动作）；`isSecureContext` 缺失按**不安全**处理（fail-closed）。"
       - "判据 3·**动手前上屏**：页面在拍照步之前就渲染能力探测结论（`data-testid=inbound-print-capability` 出现在 step 分支之外）；iOS 环境下一进页面（**零操作**）就能看到该文案，且此时未调用任何服务端端点（红证：把横幅挪进「打完失败后」⇒ 判据红）。证据：frontend/bmini-app/tests/worker-inbound-page.test.tsx + tests/inbound-page-platform-gaps.test.ts（判据 G5 按源码位置断言）"
       - "⚠️ 真机（DP30S）打印**未验证**（本机无该机型 / 无 Android 蓝牙环境）⇒ 传输层做成可注入接口，判据全部跑在替身上；重启条件见 PR 正文。"
     skip_reason: "[backend-contract] 确定性能力缺口判据（jest: frontend/bmini-app/tests/inbound-print-channel.test.ts + worker-inbound-page.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟"
-    merge_log: "2026-09-27 新增（issue #5052 P4）：打印通道的能力探测与失败分类（每种一句可行动文案 + 动手前上屏）。"
+    merge_log: "2026-09-27 新增（issue #5052 P4）：打印通道的能力探测与失败分类（每种一句可行动文案 + 动手前上屏）。2026-11-21 追加（issue #8939，用户逐字「可以理解为都有手持标签机」）：小程序蓝牙直连通道退役 ⇒ 新增 `weapp-no-printer`（出口 = 用手持标签机，与 not-h5 的「换浏览器」分开）；判据 1 的「非 h5」一格拆成「小程序 ⇒ 手持标签机」与「其它非 h5 ⇒ 换 Chrome」。"
     traces:
       tests:
         - "frontend/bmini-app/tests/inbound-print-channel.test.ts"
