@@ -21,7 +21,9 @@ r"""验签公钥失配**不得伪装成产品失败**：admin-api 签发密钥 �
     INFO    | … - GET /api/chat/sessions completed | status=401 | duration=3.1ms
 
     # 同一枚真 token（admin-api :8090 /api/auth/sms/login 现场签发），只换校验公钥：
-    KEY A = backend/admin-api/src/main/resources/rsa/public.pem（入仓；prod swas compose 同源）→ SIGNATURE VALID
+    KEY A = backend/admin-api/src/main/resources/rsa/public.pem（入仓；本机/CI 的 classpath 兜底）→ SIGNATURE VALID
+    # ⚠️ 生产（swas）**不是**这一对：两侧都读 `/opt/migao-deploy/jwt` 那一份文件（issue #8976），
+    #    本文件只裁**本机**起栈时的 `.env` 失配（它的真值面 = gitignored 的本地文件）。
     KEY B = 本机 backend/ai-agent-service/.env 的 JWT_PUBLIC_KEY（gitignored）           → InvalidSignature
 
 **为什么本机能静默陈旧**：两个键**各自独立下发** —— admin-api 走 `classpath:rsa/public.pem`（入仓），

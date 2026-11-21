@@ -6,6 +6,7 @@ import { usePathname } from 'next/navigation'
 import { Menu, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import Logo from '@/components/ui/Logo'
+import { merchantLoginUrl } from '@/lib/site-domain'
 
 const navItems = [
   { name: '首页', href: '/' },
@@ -20,6 +21,9 @@ export default function CorporateNav() {
   const pathname = usePathname()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [scrolled, setScrolled] = useState(false)
+  // 「商家登录」落点跟着站点域名走（issue #8941）：写死 merchant.migaozn.com 会把
+  // 生产环境的商家送去**测试域**登录（桌面 + 移动两处共用这一个值）。
+  const merchantLogin = merchantLoginUrl()
 
   useEffect(() => {
     const handleScroll = () => {
@@ -78,7 +82,7 @@ export default function CorporateNav() {
           {/* Desktop CTA Buttons */}
           <div className="hidden items-center gap-3 md:flex">
             <a
-              href="https://merchant.migaozn.com/login"
+              href={merchantLogin}
               className="px-4 py-2 text-sm font-medium text-neutral-700 transition-colors hover:text-neutral-900"
             >
               商家登录
@@ -124,7 +128,7 @@ export default function CorporateNav() {
             ))}
             <div className="mt-3 space-y-2 border-t border-neutral-200 pt-3">
               <a
-                href="https://merchant.migaozn.com/login"
+                href={merchantLogin}
                 onClick={() => setMobileMenuOpen(false)}
                 className="block rounded-lg px-4 py-2.5 text-center text-sm font-medium text-neutral-700 transition-colors hover:bg-neutral-100"
               >
