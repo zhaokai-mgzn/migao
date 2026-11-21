@@ -104,6 +104,7 @@ describe('W4 源码面：退役通道不许留在依赖与配置里', () => {
   it('W4 package.json 不再依赖 lpapi-ble-wx（浏览器 SDK 仍在）', () => {
     const deps = { ...pkg.dependencies, ...pkg.devDependencies }
     expect(deps['lpapi-ble-wx']).toBeUndefined()
-    expect(deps['lpapi-ble']).toBeDefined()
+    // 浏览器 SDK 仍在：断言**版本串的具体形态**（`^1.7.260618`），不是「存在」这种弱断言
+    expect(String(deps['lpapi-ble'])).toMatch(/^[\^~]?\d+\.\d+\.\d+/)
   })
 })
