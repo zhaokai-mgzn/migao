@@ -28,10 +28,17 @@
  *
  * ## 认主机、不认 scheme
  *
- * 纸上的码是 URL，**主机名就是身份**：`app.migaozn.com` 上的 `/i/` 才是观星台的入库标签；
+ * 纸上的码是 URL，**主机名就是身份**：**当前部署 origin**（缺省 `app.migaozn.com`，生产由构建期
+ * `TARO_APP_PUBLIC_APP_ORIGIN` 覆盖，issue #8942）上的 `/i/` 才是观星台的入库标签；
  * 别人域名上的 `/i/<8 位>` 与我们无关（当观星台标签去查 = 拿陌生码打自家接口）。
  * 故 `https://evil.example/i/ABCD2345` ⇒ `foreign`（明确告知「这不是观星台的标签」），
  * scheme 本身（http/https）不参与判定 —— 换 scheme 不改变「这是不是观星台的码」。
+ *
+ * 🔴 **主机名的真值只有一处**：本模块取 `./truth` 的 `INBOUND_LABEL_CODE_ORIGIN` 解析 host，
+ * **不另写域名** ⇒ 写侧（码内容）与解析侧同源，覆盖 origin 时两侧一起跟着走。
+ * ⚠️ 照实登记的迁移缺口：解析侧只认**当前构建**的 origin ⇒ 切 origin 之前打印的旧 origin 标签
+ * 在新构建里判 `foreign`（它们的二维码本身也仍指向旧环境）。是否加「多主机白名单」是后续迁移决策，
+ * 不在本单静默扩大范围（判据：frontend/bmini-app/tests/inbound-label-origin-env.test.ts）。
  *
  * ## 五个空间的边界（每个都对应一种真实结局，不许合并）
  *

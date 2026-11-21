@@ -2,7 +2,9 @@
 AI 智能客服系统 - AI Agent 服务配置
 """
 
-from pydantic import model_validator
+from pathlib import Path
+
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings
 
 
@@ -98,7 +100,37 @@ class Settings(BaseSettings):
     # 内部服务通信（由 main.tf locals 管理）
     ADMIN_API_BASE_URL: str = "http://localhost:8080"
     SERVICE_TOKEN: str
+    # ── 验签公钥（issue #8976，2026-11-21 生产 AI 接口全 401）─────────────────────────
+    # 两种形态都认，**既有部署不炸**：
+    #   ① `file:<路径>` —— 生产的形态（`deploy/swas/docker-compose.yml` 让本服务挂上
+    #      `/opt/migao-deploy/jwt` 并把本键配成 `file:/opt/migao-deploy/jwt/public.pem`）
+    #      ⇒ 与 admin-api 的 `JWT_PRIVATE_KEY` 是**同一份**文件里的那一对（单一来源）；
+    #   ② **PEM 内容**（本地 `.env` / CI 的既有形态）—— 原样返回，行为一字未变。
+    # ⚠️ `file:` 读不到 / 内容不是公钥 PEM ⇒ **启动即失败**（fail-closed）：宁可起不来，
+    #    也不许拿着一把错的钥匙继续给所有请求回 401（那读起来像产品鉴权缺陷，实测排查了一晚上）。
     JWT_PUBLIC_KEY: str
+
+    @field_validator("JWT_PUBLIC_KEY")
+    @classmethod
+    def _resolve_jwt_public_key_file(cls, value: str) -> str:
+        """把 `file:<路径>` 解析成 PEM 内容（其余形态原样返回 —— 兼容既有部署）。"""
+        text = (value or "").strip()
+        if not text.startswith("file:"):
+            return value
+        path = Path(text[len("file:"):].strip())
+        try:
+            pem = path.read_text(encoding="utf-8")
+        except OSError as exc:
+            raise ValueError(
+                f"JWT_PUBLIC_KEY=file:{path} 读不到（{exc}）—— 容器里必须挂载该文件所在目录"
+                "（deploy/swas/docker-compose.yml 的 ai-agent.volumes 挂 /opt/migao-deploy/jwt）"
+            ) from exc
+        if "BEGIN PUBLIC KEY" not in pem:
+            raise ValueError(
+                f"JWT_PUBLIC_KEY=file:{path} 里没有 `BEGIN PUBLIC KEY`（不是公钥 PEM）—— "
+                "该文件必须与 admin-api 的 JWT_PRIVATE_KEY 成对（public 半份）"
+            )
+        return pem
 
     # 物流查询 API（由 main.tf locals 管理）
     LOGISTICS_API_URL: str

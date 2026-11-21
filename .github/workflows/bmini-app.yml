@@ -199,6 +199,22 @@ jobs:
         working-directory: ${{ env.WORKING_DIR }}
         run: npm run build:weapp
 
+      # ── weapp 产物断言（issue #8980）─────────────────────────────────────────────
+      # 为什么接在这里：`npm run build:weapp` 只证明「**编译过了**」，证明不了产物能用 ——
+      #   ① 域名错了：三个 `TARO_APP_*` 少注入一个，产物静默指向测试域 / localhost，
+      #      上传照样成功、真机连不上（2026-11-21 首次手工发体验版差点就这么发出去）；
+      #   ② 包超了：主包只剩 17KB 余量（2,079,753 / 2,097,152），本地构建不报、上传那一刻才爆（#8979）；
+      #   ③ 结构缺件：少一张 `.wxml` 只有微信开发者工具上传时才报。
+      # 🔴 口径：CI 的构建**不注入**生产常量（既有行为一字不改）⇒ 产物就该是**测试域** ⇒ `--env test`。
+      #   真正的生产包由 `scripts/bmini-experience.sh build --env prod` 在发布时构建并断言 ——
+      #   同一条判据、**同一份实现**（本步只是把它接到 PR 上，不新写第二份判定）。
+      # 判据（脚本存在 + 本步真的调它 + 排在 Build weapp 之后）=
+      #   tests/unit_ci_workflows/test_bmini_dist_assert.py::test_workflow_runs_the_assert_after_the_weapp_build
+      # 红证 = 摘掉本步 / 改成 `--env prod` / 挪到 Build weapp 之前，各自判红。
+      - name: Assert weapp dist (domain / structure / size)
+        if: steps.detect.outputs.run_build == 'true'
+        run: bash deploy/scripts/bmini-assert-dist.sh frontend/bmini-app/dist --env test
+
   # ── 底部 tabBar 的**几何 / 结构** e2e 腿（issue #5759）──────────────────────────
   # 为什么要有：C 端早有 `xiaobu-h5-visual`（`mini-app.yml`），而 B 端**零 e2e** ⇒
   #   #5754 的「底栏是否真的居中」只能人眼 + 手工量（那次连着两条 tabbar 病灶 + 一次构建陷阱）。
