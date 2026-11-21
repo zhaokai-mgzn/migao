@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next'
 import CorporateNav from '@/components/corporate/CorporateNav'
 import CorporateFooter from '@/components/corporate/CorporateFooter'
+import { siteOrigin } from '@/lib/site-domain'
 
 export const viewport: Viewport = {
   width: 'device-width',
@@ -12,7 +13,9 @@ export const metadata: Metadata = {
   // 站点级绝对地址的**唯一真值源**（issue #6665 第 4 条）：
   // 在此之前全仓 `metadataBase` 命中数为 0，而 `www.migaozn.com` 与裸域都能 200 ⇒ 两份内容。
   // 归一动作在 next.config.mjs 的 `redirects()`（www → 裸域 301）。
-  metadataBase: new URL('https://www.migaozn.com'),
+  // 域名来源 = `src/lib/site-domain.ts`（issue #8941）：写死 www.migaozn.com 会让生产页
+  // 的 canonical / og:image 全部落在**测试域**（SEO 把生产页登记成另一个站）。
+  metadataBase: new URL(siteOrigin()),
   title: {
     default: '观星台 — 布艺行业的 AI 经营平台',
     template: '%s — 观星台',

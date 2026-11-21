@@ -26,11 +26,16 @@ ARG NEXT_PUBLIC_COOKIE_DOMAIN=.migaozn.com
 # B 端 h5 手机端入口（issue #5668）：二维码的**唯一**地址来源（前端不硬编码域名）。
 # 缺省即线上落位；置空 = 页面显示「移动端地址未配置」且不画码（不是画一个空码）。
 ARG NEXT_PUBLIC_BMINI_H5_URL=https://app.migaozn.com/b/
+# 站点域名（issue #8941）：商家登录跳转 / canonical / og:image / sitemap / robots /
+# www→裸域 301 / proxy 的 host 分流的**唯一**构建期来源。
+# 缺省 = 测试域（缺省值下产物与改前逐字相同）；生产构建传 cytda.com。
+ARG NEXT_PUBLIC_SITE_DOMAIN=migaozn.com
 
 ENV NEXT_PUBLIC_API_BASE_URL=${NEXT_PUBLIC_API_BASE_URL}
 ENV NEXT_PUBLIC_AI_API_BASE_URL=${NEXT_PUBLIC_AI_API_BASE_URL}
 ENV NEXT_PUBLIC_COOKIE_DOMAIN=${NEXT_PUBLIC_COOKIE_DOMAIN}
 ENV NEXT_PUBLIC_BMINI_H5_URL=${NEXT_PUBLIC_BMINI_H5_URL}
+ENV NEXT_PUBLIC_SITE_DOMAIN=${NEXT_PUBLIC_SITE_DOMAIN}
 ENV NODE_ENV=production
 
 # ── 构建身份注入面（issue #6611）──────────────────────────────────────────────
