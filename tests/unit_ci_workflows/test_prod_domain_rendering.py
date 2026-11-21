@@ -642,22 +642,34 @@ def test_red_proof_image_gate_blinded(tmp_path) -> None:
 
 
 # ── 三道闸门的**落位顺序**（顺序错了闸门就是空转）──────────────────────────────
+#
+# ⚠️ 锚点只许是**代码面**符号（issue #6802 同族「中文/注释级文案不得当结构位置」，判据 =
+# `test_cjk_position_anchor_guard.py`）⇒ 这里用「渲染输入的消费行 / 那条 `sed` / `docker build`」
+# 三处**代码行**定位，不碰任何 `echo "…文案…"` 输出串。
+RENDER_INPUT_ANCHOR = "if [ ! -f ./nginx/nginx.conf.canonical ] && [ -f ./nginx/nginx.conf ]; then"
+RENDER_SED_ANCHOR = 'sed "s/migaozn\\.com/${MIGAO_PUBLIC_DOMAIN}/g"'
+BUILD_CALL_ANCHOR = 'if timeout "$BUILD_TIMEOUT_SECS" docker build'
+
+
 def judge_gate_order(text: str) -> list[str]:
     v: list[str] = []
     try:
         selfsync = text.index(f"# >>> {SELFSYNC_GATE}")
         render = text.index(f"# >>> {RENDER_GATE}")
         image = text.index(f"# >>> {IMAGE_GATE}")
+        render_input = text.index(RENDER_INPUT_ANCHOR)
+        render_sed = text.index(RENDER_SED_ANCHOR)
+        build_call = text.index(BUILD_CALL_ANCHOR)
     except ValueError:
-        return ["三道闸门的锚点不全（判据已过期）"]
+        return ["闸门锚点/结构锚点不全（判据已过期）"]
     if [selfsync, render, image] != sorted([selfsync, render, image]):
         v.append("闸门顺序不对：必须是 自同步 → 渲染断言 → 构建断言")
-    if selfsync > text.index('echo "  站点域名：'):
-        v.append("自同步落在渲染之后 ⇒ 本次仍由旧逻辑渲染（闸门空转）")
-    if render < text.index('echo "  站点域名：'):
-        v.append("渲染断言落在渲染之前 ⇒ 断言的是上一轮/不存在的产物")
-    if image < text.index('if timeout "$BUILD_TIMEOUT_SECS" docker build'):
-        v.append("产物断言落在构建之前 ⇒ 断言的是上一轮的镜像")
+    if selfsync > render_input:
+        v.append("自同步落在渲染输入被消费之后 ⇒ 本次仍由旧逻辑渲染（闸门空转）")
+    if render < render_sed:
+        v.append("渲染断言落在那条 `sed` 渲染之前 ⇒ 断言的是上一轮/不存在的产物")
+    if image < build_call:
+        v.append("产物断言落在 `docker build` 之前 ⇒ 断言的是上一轮的镜像")
     return v
 
 
@@ -666,12 +678,11 @@ def test_the_three_gates_are_placed_in_the_only_order_that_can_work() -> None:
 
 
 def test_red_proof_gate_order() -> None:
-    """红证：把渲染断言的锚点挪到**渲染之前** ⇒ 顺序判据必须红。"""
+    """红证：把渲染断言的锚点挪到**渲染输入被消费之前** ⇒ 顺序判据必须红。"""
     text = read_deploy_sh()
     marker = f"# >>> {RENDER_GATE}\n"
-    anchor = 'if [ "$MIGAO_PUBLIC_DOMAIN" = "migaozn.com" ]; then'
-    broken = text.replace(marker, "", 1).replace(anchor, marker + anchor, 1)
+    broken = text.replace(marker, "", 1).replace(RENDER_INPUT_ANCHOR, marker + RENDER_INPUT_ANCHOR, 1)
     assert broken != text, "前提：变异必须真的落上"
-    assert broken.index(marker) < broken.index('echo "  站点域名：'), "前提：变异后锚点必须在渲染之前"
+    assert broken.index(marker) < broken.index(RENDER_SED_ANCHOR), "前提：变异后锚点必须在渲染之前"
     assert judge_gate_order(broken) != []
 
