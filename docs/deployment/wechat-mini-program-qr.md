@@ -126,20 +126,26 @@ python3 -m pytest tests/unit_ci_workflows/test_wechat_verify_route.py -q
 
 ## 5. 构建 / 上传 / 提审（用户侧）
 
+🔴 **构建/上传的唯一入口 = [`scripts/bmini-experience.sh`](../../scripts/bmini-experience.sh)**（issue #8980）：
+它一处决定注入哪三个 `TARO_APP_*`、构建完**立刻**跑产物断言、断言不过**拒绝上传**。逐步口径见
+[bmini-experience-release.md](bmini-experience-release.md)。三条命令：
+
 ```bash
-cd frontend/bmini-app
-npm ci                 # 与 main 同一份 package-lock
-TARO_APP_API_URL=https://app.migaozn.com npm run build:weapp   # 生产值**必须显式给**（见下）
-# Taro 4.2.1 ⇒ dist/（project.config.json 的 miniprogramRoot = ./dist）
+./scripts/cut-release.sh                                        # 生产包从 release 构建
+scripts/bmini-experience.sh build  --env prod                  # 注入 cytda 三件套 → build:weapp → 断言
+scripts/bmini-experience.sh upload --version 1.0.0 --desc "…"  # 先断言、再上传
 ```
 
-> 🔴 `TARO_APP_API_URL` 是**构建期**注入（`config/index.ts` 的 `defineConstants`）：不给就烘进
-> `http://localhost:8080` ⇒ 真机 / 体验版一律连不上，而开发者工具勾了「不校验合法域名」时**看不出**这个错。
+> 🔴 三个 `TARO_APP_*`（`TARO_APP_API_URL` / `TARO_APP_AI_API_URL` / `TARO_APP_PUBLIC_APP_ORIGIN`）都是
+> **构建期**注入（`config/index.ts` 的 `defineConstants`）：少给一个就回落到 `http://localhost:8080` / `:8001`
+> ⇒ 真机 / 体验版一律连不上，而开发者工具勾了「不校验合法域名」时**看不出**这个错。
+> 手工拼 `TARO_APP_API_URL=… npm run build:weapp` **已不是**发布路径 —— 2026-11-21 差点用停在旧特性分支的
+> 工作区发出去（那份 `truth.ts` 还写死 origin），根因就是常量靠人手记。
 
 1. 微信开发者工具 → 导入项目 → 选 **`frontend/bmini-app` 目录**（不是 `dist/`），appid 填**自己的**。
 2. 确认「不校验合法域名」**只在开发时**勾选；真机必须在小程序后台
    **开发管理 → 开发设置 → 服务器域名 → request 合法域名** 里加上实际 API 域名
-   （线上 = `https://app.migaozn.com`，即上面 `TARO_APP_API_URL` 的值；⚠️ 用户侧配置，仓库不代填）。
+   （生产 = `https://app.cytda.com`，测试 = `https://app.migaozn.com`；⚠️ 用户侧配置，仓库不代填）。
 3. 上传：开发者工具「上传」（需要你有该小程序的开发权限 / 上传私钥走 CI 时由你放
    `private.<appid>.key`，**绝不入库**）→ 后台 **版本管理** 里设为体验版。
 4. 提审 → 发布。审核通过前，A 档规则用「测试链接」先验（测试链接也要先过校验文件）。
