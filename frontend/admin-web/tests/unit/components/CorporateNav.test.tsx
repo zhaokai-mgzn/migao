@@ -1,5 +1,5 @@
 // case_ids: UI-003
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, act } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
@@ -39,6 +39,11 @@ describe('CorporateNav', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockUsePathname.mockReturnValue('/')
+  })
+
+  afterEach(() => {
+    // 站点域名参数化（issue #8941）：逐格给 env 的用例必须还原，否则会污染同进程的其它用例
+    vi.unstubAllEnvs()
   })
 
 
@@ -94,6 +99,25 @@ describe('CorporateNav', () => {
       l.getAttribute('href') === 'https://merchant.migaozn.com/login'
     )
     expect(loginLink).toBeTruthy()
+  })
+
+  // issue #8941（生产验收 P0-3）：「商家登录」落点由构建期域名 `NEXT_PUBLIC_SITE_DOMAIN` 派生。
+  // 上面那条钉住**缺省值**（未配置时与改前逐字相同）；这条钉住**生产值**（cytda.com）——
+  // 写死 merchant.migaozn.com 时它会红：生产用户会被送去测试域登录。
+  it('商家登录链接跟着 NEXT_PUBLIC_SITE_DOMAIN 走（桌面 + 移动两处）', async () => {
+    vi.stubEnv('NEXT_PUBLIC_SITE_DOMAIN', 'cytda.com')
+    render(<CorporateNav />)
+
+    const deskLogin = screen.getAllByRole('link', { name: '商家登录' })[0]
+    expect(deskLogin).toHaveAttribute('href', 'https://merchant.cytda.com/login')
+
+    await user.click(screen.getByRole('button', { name: '打开菜单' }))
+    const loginLinks = screen.getAllByRole('link', { name: '商家登录' })
+    expect(loginLinks.length).toBe(2) // 桌面 + 移动
+    expect(loginLinks.map(l => l.getAttribute('href'))).toEqual([
+      'https://merchant.cytda.com/login',
+      'https://merchant.cytda.com/login',
+    ])
   })
 
   // ── 激活状态 ──

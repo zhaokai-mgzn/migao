@@ -915,6 +915,10 @@ if [ -n "$BUILD_SERVICE" ] && [ -z "$LOCAL_IMAGE_REF" ]; then
     _build_args+=(--build-arg "NEXT_PUBLIC_AI_API_BASE_URL=${NEXT_PUBLIC_AI_API_BASE_URL:-https://ai-api.${MIGAO_PUBLIC_DOMAIN}}")
     _build_args+=(--build-arg "NEXT_PUBLIC_COOKIE_DOMAIN=${NEXT_PUBLIC_COOKIE_DOMAIN:-.${MIGAO_PUBLIC_DOMAIN}}")
     _build_args+=(--build-arg "NEXT_PUBLIC_BMINI_H5_URL=${NEXT_PUBLIC_BMINI_H5_URL:-https://app.${MIGAO_PUBLIC_DOMAIN}/b/}")
+    # 站点域名（issue #8941）：商家登录 / canonical / sitemap / robots / proxy host 分流的唯一来源。
+    # 与上面四条同源派生（缺省域名下 = `migaozn.com` ⇒ 测试环境产物与改前逐字相同）；
+    # 服务器侧 `.env.build` 仍可显式覆盖。
+    _build_args+=(--build-arg "NEXT_PUBLIC_SITE_DOMAIN=${NEXT_PUBLIC_SITE_DOMAIN:-${MIGAO_PUBLIC_DOMAIN}}")
   fi
   echo "  构建命令：timeout ${BUILD_TIMEOUT_SECS} docker build -f ${_df} -t ${LOCAL_IMAGE_REF} ${_build_args[*]} src/${_ctx}"
   if timeout "$BUILD_TIMEOUT_SECS" docker build -f "src/$_df" -t "$LOCAL_IMAGE_REF" "${_build_args[@]}" "src/$_ctx"; then
