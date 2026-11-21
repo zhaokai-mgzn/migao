@@ -21,6 +21,11 @@ export default defineConfig(async (merge) => {
     defineConstants: {
       'process.env.TARO_APP_API_URL': JSON.stringify(process.env.TARO_APP_API_URL || ''),
       'process.env.TARO_APP_AI_API_URL': JSON.stringify(process.env.TARO_APP_AI_API_URL || ''),
+      // 入库标签二维码的 origin（issue #8942）：码要指**当前部署的落地面**，不能再写死。
+      // 缺省空串 ⇒ `frontend/bmini-app/src/utils/inbound/truth.ts` 里的
+      // `|| 'https://app.migaozn.com'` 生效 ⇒ 不传 env 的构建与既有产物**逐字不变**。
+      // 判据：frontend/bmini-app/tests/inbound-label-origin-env.test.ts
+      'process.env.TARO_APP_PUBLIC_APP_ORIGIN': JSON.stringify(process.env.TARO_APP_PUBLIC_APP_ORIGIN || ''),
     },
     copy: {
       patterns: [],
