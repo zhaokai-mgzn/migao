@@ -5,6 +5,14 @@
 > 原因 = 单文件涨到 512KB 越过扫描上限，详见存档文件头与 issue #6404。
 > **后续条目继续在本文件 `## [Unreleased]
 
+### 小程序端不再直连蓝牙标签机：出纸只走手持标签机（2026-11-21，issue #8939）
+
+- **用户裁定**：2026-11-21 逐字「可以理解为都有手持标签机」（回答「每个班组都有标签机，还是部分工人只有手机？」）。
+- **改前**：工人端有三条打印通道 —— 小程序（`lpapi-ble-wx` + `wx.*BLE`）/ 浏览器 Web Bluetooth / 手持标签机（机身内置打印机）。小程序那条**真机从未验证**（#7802 关闭时自述「小程序侧真机未验，判据全部跑替身」），却在小程序里被判成「可用」⇒ 工人点下去才知道能不能打；它还要求为「蓝牙搜索」声明 `scope.userLocation`。
+- **改后**：小程序判**不可用**并给出专属出口「请用手持标签机直接打印；不在身边时到电脑端补打」（原因 `weapp-no-printer`，与「换浏览器」那条分开）；`lpapi-ble-wx` 依赖、`LPAPIFactory` 适配、`app.config.ts` 的 `scope.userLocation` 一并删除。浏览器通道、手持标签机通道、出纸页面与「打印必留痕」红线**一个字节没动**。
+- 判据：`frontend/bmini-app/tests/inbound-print-weapp.test.ts`（W1~W4）、`frontend/bmini-app/tests/inbound-print-channel.test.ts`（D3 文案两两不同，含新原因）、`frontend/bmini-app/tests/inbound-print-capability-terminal.test.ts`（T6）。
+- **运营侧配套（不在代码内）**：小程序后台「用户隐私保护指引」去掉「位置信息 / 蓝牙 / 设备信息」勾选后重提；顺序 = **先合入本改动、再改声明**（反过来就是「声明与代码不符」）。
+
 ### 生产环境按站点域名发布（cytda.com）· 短信走阿里云 · 官网页脚展示 ICP 备案号（2026-11-20，issue #8932）
 
 - **域名只参数化一维**：`deploy/swas/deploy.sh` 新增 `MIGAO_PUBLIC_DOMAIN`（来源：环境变量 > `/opt/migao-deploy/.env.site` > 缺省 `migaozn.com`）。仓库原文落成 `nginx/nginx.conf.canonical`，容器挂载的 `nginx/nginx.conf` 由它渲染；**缺省域名走纯 `cp`、不跑 sed** ⇒ 测试环境产物与改前逐字相同，也不会多出一份生产专用 nginx 副本（避免「生产漏了 HSTS / 限流」这类静默漂移）。域名做字符集校验，畸形值在进 sed 前停住。

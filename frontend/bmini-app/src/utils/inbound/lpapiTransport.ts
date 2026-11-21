@@ -1,13 +1,13 @@
 /**
  * 真实打印通道：**浏览器 Web Bluetooth（`lpapi-ble`，德佟 DothanTech）**（issue #5052 P4 / CP-1；设计 §8.3 分支 B）
  *
- * ## 为什么是它，以及**未来形态**下的复用面（2026-09-29 补充）
+ * ## 只服务浏览器（2026-11-21 定稿）
  *
  * 用户裁定（2026-09-26）：**只做 h5**（小程序链路搁置）⇒ 取 `lpapi-ble`。
- * 2026-09-29 用户补充产品形态 = **一端双编译（形态 A：小程序走原生页，不用 web-view）**
- * ⇒ 小程序侧接打印时**只需换 SDK**（`lpapi-ble-wx`，它本身就依赖 `lpapi-ble` 核心包、API 同形：
- * `getInstance` / `requestDevice` / `openPrinter` / `printImageData` / `getPrinterInfo`）
- * ⇒ 本文件的**回执判定、打印参数、状态面三层可原样复用**，页面与判据都不用重写。
+ * 2026-09-29 曾计划「小程序侧接打印只需换 SDK（`lpapi-ble-wx`，它本身就依赖 `lpapi-ble` 核心包、
+ * API 同形）」并按 #7802 接了线；🔴 **2026-11-21 用户裁定「可以理解为都有手持标签机」⇒ 该通道退役
+ * （issue #8939）**：工人出纸走手持标签机的机身内置打印机（`./terminalTransport`），
+ * 小程序不再直连德佟蓝牙机 ⇒ 本文件收敛为**一条**通道（浏览器 Web Bluetooth）。
  *
  * ## 五条实测口径（2026-09-29，读本机已装 `lpapi-ble@1.7.260618` 的 `libs/*.d.ts` 与 `libs/index.umd.js`）
  *
@@ -30,8 +30,8 @@
  *
  * ## 边界（照实登记，不粉饰）
  *
- * - **只 h5**：weapp 端 `loadLpapi()` 返回 `null`（那一侧打印能力在 `printCapability` 里显式判，
- *   给的是可行动文案，不是静默失败）。
+ * - **只 h5**：weapp 端不会走到这里 —— `printCapability` 先把小程序判成 `weapp-no-printer`
+ *   并给出可行动文案（「请用手持标签机直接打印」），不是静默失败。
  * - **真机实测（2026-10-06，本机 macOS + Chrome 153 + 德佟 DP235S；issue #6439）**：BLE 口**开放**
  *   （`requestDevice` 能列出 `DP235S-Y608220585`）⇒ §14.2 那条「唯一支点」成立。据此还查出一处
  *   **恒失败**缺陷：`openPrinter()` **空参**会走 SDK 自己的 `searchPrinter()` 重扫，而 Web Bluetooth
@@ -42,7 +42,7 @@
  *   **真实回执包络形状**。重启条件（拿到安卓机后跑一次）：① 打出的点阵 1:1（不被缩放/居中）
  *   ② 整幅在 30mm 纸内 ③ 服务端 `print_count` +1 ④ 状态行显示「已连接」，机器关机后再打显示「未连上」。
  */
-import { getPlatformEnv, isH5, isWeapp } from '../platform'
+import { isH5 } from '../platform'
 import { LabelTransportError, type LabelTransport } from './labelPrint'
 import type { RenderedLabel } from './labelCanvas'
 import {
@@ -101,53 +101,17 @@ export interface LpapiModuleLike {
 }
 
 /**
- * `lpapi-ble-wx`（小程序 SDK）→ 本模块的窄接口。
- *
- * 🔴 **入口名不同**：h5 的包导出 `LPAPI` 类（静态 `getInstance`），小程序包导出的是
- * **`LPAPIFactory`**（`LPAPIFactory.getInstance()`），两者**返回的实例同形**（`openPrinter` /
- * `printImageData` / `getPrinterInfo` 一致 —— 因为小程序包本身就是以 `lpapi-ble` 为核心包）。
- * 只认 `LPAPI` 会得到一个「模块存在但拿不到实例」的假象 ⇒ 打印恒失败且没人看得出来。
- *
- * `getPrintableMessage`（缺纸 / 开盖的中文）挂在核心包的 `LPAPI` 静态方法上；小程序包
- * `export * from "lpapi-ble"` 把它一并导出 ⇒ 这里透传，取不到就空串（**不自造第二份文案表**）。
- */
-export function adaptWeappLpapi(mod: any): LpapiModuleLike | null {
-  const candidate = mod?.LPAPIFactory ?? mod?.default?.LPAPIFactory ?? null
-  if (!candidate || typeof candidate.getInstance !== 'function') return null
-  const core = mod?.LPAPI ?? mod?.default?.LPAPI ?? null
-  return {
-    getInstance: (options?: Record<string, unknown>) => candidate.getInstance(options),
-    getPrintableMessage: (code: number) => String(core?.getPrintableMessage?.(code) ?? ''),
-  }
-}
-
-/**
- * 加载打印 SDK（**按编译目标分两条**）。
+ * 加载打印 SDK（**只有浏览器一条**）。
  *
  * | 目标 | 包 | 通道 |
  * |---|---|---|
  * | h5 | `lpapi-ble`（Web Bluetooth） | 安卓 Chrome / 桌面 Chrome |
- * | **weapp** | **`lpapi-ble-wx`**（微信原生 BLE） | 微信小程序（安卓 + iOS 都能打） |
- * | 其它 | — | `null` ⇒ `sdk-unavailable` 文案 |
+ * | 其它（含 weapp） | — | `null` ⇒ 上层给「请用手持标签机 / 换浏览器」的可行动文案 |
  *
- * 返回 `null` 的三种情况都**不是异常**，而是「这条通道在当前环境不存在」：
- * ① 既非 h5 也非 weapp；② 动态加载失败（离线 / 被拦截）；③ 包结构对不上（见 `adaptWeappLpapi`）。
+ * 返回 `null` 的两种情况都**不是异常**，而是「这条通道在当前环境不存在」：
+ * ① 非 h5；② 动态加载失败（离线 / 被拦截）。
  */
 export async function loadLpapi(): Promise<LpapiModuleLike | null> {
-  // 🔴 weapp 必须先判：h5 分支的 `!isH5() ⇒ null` 会把小程序整个挡在门外
-  if (isWeapp()) {
-    try {
-      // 🔴 直接指向 **ESM 入口**：该包的 `package.json` 写的是 `"main": "lib/index.umd.js"`，
-      //    而发布物里**没有**这个文件（实测 1.8.261015：`lib/` 只有 `index.js` / `index.d.ts` / `adapter/`）
-      //    ⇒ 按 `main` 解析会 MODULE_NOT_FOUND。指到真实文件后 `main`/`module` 谁先被选都不影响。
-      const mod: any = await import(
-        /* webpackChunkName: "lpapi-ble-wx" */ 'lpapi-ble-wx/lib/index.js'
-      )
-      return adaptWeappLpapi(mod)
-    } catch {
-      return null
-    }
-  }
   if (!isH5()) return null
   try {
     const mod: any = await import(/* webpackChunkName: "lpapi-ble" */ 'lpapi-ble')
@@ -229,13 +193,10 @@ export function createLpapiTransport(options: {
   lpapi: LpapiModuleLike
   model?: string
   link?: PrinterLinkStore
-  /** 编译目标（默认 `process.env.TARO_ENV`；测试注入，避免依赖全局环境） */
-  platform?: string
 }): LabelTransport {
   const { lpapi } = options
   const model = options.model || LPAPI_MODEL
   const link = options.link || printerLink
-  const weapp = (options.platform ?? getPlatformEnv()) === 'weapp'
   let printer: LpapiPrinterLike | null = null
 
   const ensurePrinter = (): LpapiPrinterLike => {
@@ -243,8 +204,7 @@ export function createLpapiTransport(options: {
     const factory = lpapi.getInstance || lpapi.create
     if (!factory) throw new LabelTransportError('sdk-unavailable', 'LPAPI 模块没有 getInstance/create')
     // 🔴 **不传 `models`**：写死型号会把别的德佟机器判成「不支持的打印机设备」（文件头第 4 条）
-    // 小程序侧没有 `webBLE` 这个概念（走 `wx.*BLE`）⇒ 不传，免得 SDK 去挑浏览器适配器
-    printer = factory.call(lpapi, weapp ? {} : { webBLE: true })
+    printer = factory.call(lpapi, { webBLE: true })
     if (!printer || typeof printer.printImageData !== 'function') {
       throw new LabelTransportError('sdk-unavailable', 'LPAPI 实例没有 printImageData')
     }
@@ -252,61 +212,42 @@ export function createLpapiTransport(options: {
   }
 
   return {
-    id: weapp ? 'weapp-native-ble' : 'web-bluetooth-lpapi',
-    label: `德佟 ${model}（${weapp ? '微信小程序蓝牙' : '浏览器蓝牙'}）`,
+    id: 'web-bluetooth-lpapi',
+    label: `德佟 ${model}（浏览器蓝牙）`,
     async print(label: RenderedLabel, context: { printCount: number }): Promise<void> {
       const api = ensurePrinter()
       const before = link.get()
       link.set({ status: 'connecting' })
 
-      // ① 取设备
-      //    h5：系统弹窗选设备；取消是 **resolve 回来** 的 `statusCode=25`，不是异常
-      //    weapp：**没有系统弹窗** —— 先试一次 SDK 自己的搜索（拿到名字好显示/留痕），
-      //           搜不到就降级给 ② 的 `autoScan`，**不把「取不到设备列表」当失败**
+      // ① 取设备（系统弹窗选设备；取消是 **resolve 回来** 的 `statusCode=25`，不是异常）
       let deviceName = ''
       let deviceId = ''
-      if (weapp) {
-        try {
-          const found = ensureOk(await api.requestDevice(), 'connect-failed')
-          deviceName = firstDeviceName(found.resultInfo)
-          deviceId = firstDeviceId(found.resultInfo)
-        } catch {
-          // 小程序侧取不到列表是**常态**（没有用户手势的选设备弹窗），交给 ② 自己扫
+      let device: LpaEnvelope
+      try {
+        device = ensureOk(await api.requestDevice(), 'connect-failed')
+      } catch (error) {
+        if (error instanceof LabelTransportError) {
+          link.set(linkStateAfterFailure(error.reason, before))
+        } else {
+          link.set({ status: 'disconnected' })
         }
-      } else {
-        let device: LpaEnvelope
-        try {
-          device = ensureOk(await api.requestDevice(), 'connect-failed')
-        } catch (error) {
-          if (error instanceof LabelTransportError) {
-            link.set(linkStateAfterFailure(error.reason, before))
-          } else {
-            link.set({ status: 'disconnected' })
-          }
-          throw toTransportError(error, 'connect-failed')
-        }
-        deviceName = firstDeviceName(device.resultInfo)
-        deviceId = firstDeviceId(device.resultInfo)
+        throw toTransportError(error, 'connect-failed')
       }
+      deviceName = firstDeviceName(device.resultInfo)
+      deviceId = firstDeviceId(device.resultInfo)
 
       // ② 连接 —— 🔴 **h5 必须把弹框选中的设备显式喂进去 + 关掉 `autoScan`**：
       //    空参 ⇒ SDK 回去走自己的 `searchPrinter()`，而 Web Bluetooth 没有用户手势扫不了
       //    ⇒ 恒回 `ERROR_NO_PRINTER`（真机实测，见文件头）。`checkDeviceName:false` 是同一分支的
       //    前置条件：SDK 只在它是布尔 `false` 时才肯用调用方给的设备兜底。
-      //    小程序相反：**没有**手势限制 ⇒ 没拿到设备时**显式** `autoScan:true` 让 SDK 自己扫
-      //    （漏了这个 `true` 会走「未指定目标打印机」那条恒失败分支）。
       try {
         ensureOk(
-          await api.openPrinter(
-            weapp
-              ? { name: deviceName, deviceId, autoScan: deviceId === '' }
-              : {
-                  name: deviceName,
-                  deviceId,
-                  checkDeviceName: false,
-                  autoScan: false,
-                },
-          ),
+          await api.openPrinter({
+            name: deviceName,
+            deviceId,
+            checkDeviceName: false,
+            autoScan: false,
+          }),
           'connect-failed',
         )
       } catch (error) {

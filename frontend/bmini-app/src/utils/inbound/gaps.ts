@@ -16,7 +16,7 @@
  * |---|---|---|
  * | 拍照 | `Taro.chooseImage`（taro-h5 **有真实实现**，走 `<input type=file accept=image/*>`） | 同左 |
  * | 本机解码 | `<img>` + canvas `getImageData` + `jsQR` | 需 `Taro.createOffscreenCanvas`（**h5 里是 stub**，且本机**未实测**） |
- * | 打印 | Web Bluetooth（**Android / 桌面 Chrome**；iOS 任何浏览器都不行） | **支持**（`lpapi-ble-wx` + `wx.*BLE`；入口见 `lpapiTransport.ts` 的 `loadLpapi`）—— 2026-10-26 接线（issue #7802），**真机待验** |
+ * | 打印 | Web Bluetooth（**Android / 桌面 Chrome**；iOS 任何浏览器都不行） | **不接**（2026-11-21 用户裁定「都有手持标签机」，issue #8939 ⇒ 小程序蓝牙直连通道退役；出纸走手持标签机的机身内置打印机） |
  */
 import { WEAPP_DECODE_UNAVAILABLE_HINT } from './barcodeDecode'
 import { PRINT_FAILURE_HINTS, type PrintFailureReason } from './printCapability'
@@ -359,6 +359,9 @@ export const INBOUND_PAGE_SCOPE_FILES: string[] = [
  * 且文案两两不同（合并成一句通用文案 ⇒ 红）。
  */
 export const INBOUND_PRINT_GAP_WIRING: { reason: PrintFailureReason; wiredBy: string }[] = [
+  // 2026-11-21（issue #8939）：小程序不再直连蓝牙标签机 ⇒ 它的出口是「去用手持标签机」，
+  // 与 `not-h5`（换浏览器）**不是**同一条，故单列。
+  { reason: 'weapp-no-printer', wiredBy: 'src/utils/inbound/printCapability.ts' },
   { reason: 'not-h5', wiredBy: 'src/utils/inbound/printCapability.ts' },
   { reason: 'insecure-context', wiredBy: 'src/utils/inbound/printCapability.ts' },
   { reason: 'no-bluetooth-api', wiredBy: 'src/utils/inbound/printCapability.ts' },

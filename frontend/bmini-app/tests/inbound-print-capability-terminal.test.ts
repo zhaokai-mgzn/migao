@@ -184,9 +184,13 @@ describe('T5 读路径接线：readPrintEnv() 从原生注入的 __CFG__.printer
 })
 
 describe('T6 回归控制：其它平台分支一字未动（新判定没漏到 h5 / weapp）', () => {
-  it('weapp 仍报能打（小程序 BLE，issue #7802）', () => {
+  // 2026-11-21 改（issue #8939）：小程序不再直连蓝牙标签机 ⇒ weapp 判**不可用**，
+  // 出口是「去用手持标签机」（不是「换浏览器」）。
+  it('weapp 报不可用并给手持标签机出口（蓝牙直连通道已退役）', () => {
     const cap = probePrintCapability({ platform: 'weapp', hasBluetoothApi: false })
-    expect(cap.ok).toBe(true)
+    expect(cap.ok).toBe(false)
+    expect(cap.reason).toBe('weapp-no-printer')
+    expect(cap.hint).toContain('手持标签机')
   })
 
   it('h5 + Web Bluetooth 就绪仍报能打', () => {

@@ -1,13 +1,8 @@
 export default defineAppConfig({
-  // 🔴 小程序蓝牙**搜索**权限（issue #7802）：`lpapi-ble-wx` 在安卓上靠 `wx.startBluetoothDevicesDiscovery`
-  // 找打印机，而该接口要求**已声明位置权限**，否则一台都搜不到（厂商 SDK README「二、权限配置」）。
-  // 只声明用途文案，**不主动请求定位**：工人在蓝牙授权弹窗里看到的是「用于搜索蓝牙标签打印机」。
-  // 另需在小程序后台「管理 → 账号设置 → 用户隐私保护指引」勾选：位置信息（蓝牙搜索）/ 设备信息 / 蓝牙。
-  permission: {
-    'scope.userLocation': {
-      desc: '用于搜索蓝牙标签打印机',
-    },
-  },
+  // 🔴 2026-11-21（issue #8939）：小程序**不再**直连蓝牙标签机 ⇒ 原来为「蓝牙搜索」声明的
+  // `permission['scope.userLocation']`（文案「用于搜索蓝牙标签打印机」）已整块删除 ——
+  // 出纸载体 = 手持标签机（机身内置打印机）。小程序后台「用户隐私保护指引」里的
+  // 「位置信息 / 蓝牙 / 设备信息」勾选也要同步去掉；否则声明与代码不符（反向同样是驳回理由）。
   pages: [
     'pages/chat/index/index',
     'pages/dashboard/index/index',

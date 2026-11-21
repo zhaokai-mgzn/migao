@@ -4,6 +4,11 @@
  * 用户已裁定（2026-09-26）：**标签打印只在 Android / 桌面 Chrome 可用**（Web Bluetooth），
  * iOS Safari 打不了 ⇒ h5 上必须在**动手前**就把这个能力缺口说清楚，**不是打完才失败**。
  *
+ * 🔴 **2026-11-21 改判（用户逐字「可以理解为都有手持标签机」，issue #8939）**：小程序（weapp）的
+ * 蓝牙直连通道**退役** —— 出纸载体收敛为「手持标签机（机身内置打印机）+ 浏览器 Web Bluetooth」。
+ * 该通道真机从未验证过（#7802 关闭时自述「判据全部跑替身」），却在小程序里被判成「可用」
+ * ⇒ 工人点下去才知道能不能打，比明确「不支持」更糟。
+ *
  * ## 为什么每个失败原因都要**各自**的文案（验收判据 9）
  *
  * 「打印失败」这一句话对工人**不可行动**：他不知道是换浏览器、换手机、开蓝牙、还是叫文员。
@@ -20,6 +25,9 @@ import { isH5 } from '../platform'
 
 /** 打印失败 / 不可用的原因（**分类即文案**：每一类一个去处） */
 export type PrintFailureReason =
+  // 小程序（weapp）：2026-11-21 用户裁定「都有手持标签机」⇒ 蓝牙直连通道退役（issue #8939）。
+  // 与 `not-h5` **分开**：出口不同 —— 前者是「去用手持标签机」，后者是「换浏览器」。
+  | 'weapp-no-printer'
   | 'not-h5'
   | 'insecure-context'
   | 'no-bluetooth-api'
@@ -42,8 +50,14 @@ export type PrintFailureReason =
  * 🔴 要求：说清「为什么」+「现在能做什么」。空值 / 两两相同 / 少于 10 字 ⇒ 守卫判红。
  */
 export const PRINT_FAILURE_HINTS: Record<PrintFailureReason, string> = {
+  // 2026-11-21 改（issue #8939）：小程序**不再**落进这一条（它有专属的 `weapp-no-printer`）⇒
+  // 原句「小程序端暂不支持打印标签」已删 —— 留着会让 alipay / tt 的用户读到一句与自己无关的话。
   'not-h5':
-    '小程序端暂不支持打印标签。请用安卓手机或电脑的 Chrome 打开本页再打印；标签仍可在电脑端补打。',
+    '当前环境不支持直接连蓝牙打印机。请用安卓手机或电脑的 Chrome 打开本页再打印；标签仍可在电脑端补打。',
+  // 🔴 小程序里**唯一的出纸载体 = 手持标签机**（2026-11-21 用户裁定「都有手持标签机」）。
+  //    出口必须是「去用手持标签机」，**不是**「换浏览器」—— 人在小程序里换了浏览器也没有打印机。
+  'weapp-no-printer':
+    '小程序里不接蓝牙标签打印机。请用手持标签机直接打印；标签机不在身边时到电脑端补打，已生成的标签不会丢。',
   'insecure-context':
     '当前网页地址不是 https://，浏览器不让连蓝牙打印机。请把地址栏里的 http:// 改成 https:// 后重新打开本站打印（公司内网的 http 地址都打不了）。',
   'no-bluetooth-api':
@@ -189,11 +203,16 @@ export interface PrintCapability {
  * 那句话会把人引向一个走不通的动作（这正是本单要防的「一句通用文案」）。
  */
 export function probePrintCapability(env: PrintEnv = readPrintEnv()): PrintCapability {
-  // 🔴 小程序（weapp）**排在最前**：它有原生 BLE（`wx.*BLE`），既不需要 Web Bluetooth，
-  //    也不需要 https，iOS 也照样能打（小程序 BLE 在 iOS 是开放的）—— 拿 h5 那三条判据去卡它，
-  //    会把唯一能在「微信里不跳出去」打标签的载体判成不可用（issue #7802）。
+  // 🔴 小程序（weapp）**仍排在最前**，但结论反了（2026-11-21 用户裁定「都有手持标签机」，issue #8939）：
+  //    工人出纸一律走手持标签机（机身内置打印机，终端桥），小程序不再直连蓝牙标签机。
+  //    排在最前**仍必要**：否则会落进下面的 `platform !== 'h5'`，出口变成「换浏览器」——
+  //    而工人在小程序里换浏览器也没有打印机，正确的出口是「去用手持标签机」。
   if (env.platform === 'weapp') {
-    return { ok: true, hint: '', readyHint: PRINT_READY_HINT_WX }
+    return {
+      ok: false,
+      reason: 'weapp-no-printer',
+      hint: PRINT_FAILURE_HINTS['weapp-no-printer'],
+    }
   }
   // 观星台手持标签机：页面跑在 Android WebView 里，打印走终端的商米内置打印机桥，
   // 不依赖 Web Bluetooth（WebView 也没有这个接口）。
@@ -262,13 +281,6 @@ export function printFailureText(hint: string, printRecorded: boolean): string {
  * 文案里的按钮名必须与页面**逐字**相同（判据见 `tests/inbound-print-weapp.test.ts` 的 W1）。
  */
 export const PRINT_READY_HINT = '点「打印标签」，在系统弹出的设备列表里选择标签打印机。'
-
-/**
- * 小程序侧的正向说法 —— 与 h5 **不同**：小程序**没有系统设备弹窗**，SDK 自己搜自己连，
- * 工人唯一要做的是把机器开机并放在近处（多台机器的选择见 `lpapiTransport` 的边界登记）。
- */
-export const PRINT_READY_HINT_WX =
-  '点「打印标签」即可：小程序会自己搜索附近的标签机（请先把打印机开机、放在 1~3 米内）'
 
 /**
  * 手持标签机（观星台 Android 终端）的正向说法：打印走机身内置打印机，不需要选设备。
