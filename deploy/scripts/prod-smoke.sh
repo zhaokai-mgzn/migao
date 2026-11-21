@@ -44,7 +44,7 @@ while IFS='|' read -r url expect; do
   if [ "$code" = "$expect" ]; then
     say "$url" "✅ $code"
   else
-    say "$url" "❌ $code（期望 $expect）"
+    say "$url" "❌ ${code}（期望 ${expect}）"
     FAILED=$((FAILED + 1))
   fi
 done <<EOF
