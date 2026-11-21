@@ -1795,9 +1795,12 @@ def test_anchor_scripts_stay_quiet_when_the_live_anchor_is_absent_or_unrelated(t
 # 链到一个**不存在**的路径 ⇒ 活锚解析失败（DSH 读不到预设，且**不报错**，只是「模式不见了」#3956 同族）。
 # 另一处同源载体是根 `AGENTS.md`「开发环境准备」的 ② ~ ⑤ —— **两处口径必须一致**（本组一起钉）。
 
-#: 正确的「建镜像 + 换链」两行（软链目标 = **镜像仓根**，不是 `<镜像>/.agent-presets/migao`）。
+#: 正确的「建镜像 + 换链」两行（软链目标 = **镜像里的某个 preset 目录** `presets/<name>/`）。
 _HINT_CLONE_LINE = r'git clone --no-checkout "${REPO_URL}" "\$HOME/migao-dev-preset-anchor"'
-_HINT_LINK_ROOT = r'ln -sfn "\$HOME/migao-dev-preset-anchor" "\$HOME/.dsh/.agent-presets/migao"'
+_HINT_LINK_ROOT = r'ln -sfn "\$HOME/migao-dev-preset-anchor/presets/migao-dev" "\$HOME/.dsh/.agent-presets/migao"'
+#: **旧拓扑**（#8959 之前）：软链指向镜像**仓根** —— 新布局下仓根没有 preset.yml ⇒ 活锚解析失败。
+_HINT_LINK_OLD_ROOT = (r'ln -sfn "\$HOME/migao-dev-preset-anchor"'
+                       r' "\$HOME/.dsh/.agent-presets/migao"')
 _HINT_LINK_SUBTARGET = (r'ln -sfn "\$HOME/migao-dev-preset-anchor/.agent-presets/migao"'
                         r' "\$HOME/.dsh/.agent-presets/migao"')
 #: 备份必须**只对真目录**做（活锚是软链时 `mv` 它 = 把软链挪成一堆 `.bak`；实测清出过两个无主 .bak）。
@@ -1805,7 +1808,7 @@ _HINT_BACKUP_GATE = (r'if [ -d "\$HOME/.dsh/.agent-presets/migao" ]'
                      r' && [ ! -L "\$HOME/.dsh/.agent-presets/migao" ]; then')
 _AGENTS_BACKUP_GATE = ('if [ -d "$HOME/.dsh/.agent-presets/migao" ]'
                        ' && [ ! -L "$HOME/.dsh/.agent-presets/migao" ]; then')
-_AGENTS_LINK_LINE = 'ln -sfn "$MIRROR" "$HOME/.dsh/.agent-presets/migao"'
+_AGENTS_LINK_LINE = 'ln -sfn "$MIRROR/presets/migao-dev" "$HOME/.dsh/.agent-presets/migao"'
 _OLD_MIRROR_NAME = "migao-preset-anchor"
 
 
@@ -1832,7 +1835,7 @@ def _bootstrap_hint_problems(hint: str) -> list[str]:
     if _OLD_MIRROR_NAME in hint.replace("migao-dev-preset-anchor", ""):
         bad.append(f"还留着**旧**镜像路径 `{_OLD_MIRROR_NAME}`")
     if _HINT_LINK_ROOT not in hint:
-        bad.append("软链目标不是**镜像仓根**（`ln -sfn \"$HOME/migao-dev-preset-anchor\" …`）")
+        bad.append("软链目标不是**preset 目录**（`ln -sfn \"$HOME/migao-dev-preset-anchor/presets/migao-dev\" …`）")
     if _HINT_LINK_SUBTARGET in hint:
         bad.append("软链目标是 `<镜像>/.agent-presets/migao` —— S4 后**该路径不存在** ⇒ 活锚解析失败")
     if _HINT_BACKUP_GATE not in hint:
@@ -1842,7 +1845,7 @@ def _bootstrap_hint_problems(hint: str) -> list[str]:
 
 
 def test_bootstrap_hint_teaches_the_current_topology():
-    """本机空镜像时打印的上手路径必须指向**预设仓 + 镜像仓根**，且备份只对真目录做。
+    """本机空镜像时打印的上手路径必须指向**预设仓 + 某个 preset 目录**，且备份只对真目录做。
 
     改前形态（S4 之前的提示）：`clone <业务仓>` + `ln -sfn <镜像>/.agent-presets/migao` ——
     照做 ⇒ 链到不存在的路径 ⇒ DSH 静默读不到预设。
@@ -1850,7 +1853,7 @@ def test_bootstrap_hint_teaches_the_current_topology():
     hint = _bootstrap_hint()
 
     assert _bootstrap_hint_problems(hint) == [], "\n".join(_bootstrap_hint_problems(hint))
-    assert "预设仓仓根" in hint, "提示必须写明「软链指向仓根，不再有 `.agent-presets/migao` 这一层」"
+    assert "presets/migao-dev" in hint, "提示必须写明「软链指向 preset 目录（presets/migao-dev）」"
 
 
 def test_bootstrap_hint_problems_have_discriminating_power():
@@ -1864,7 +1867,8 @@ def test_bootstrap_hint_problems_have_discriminating_power():
     mutations = {
         "旧克隆源（业务仓）": hint.replace(_HINT_CLONE_LINE,
                                     'git clone --no-checkout "git@github.com:zhaokai-mgzn/migao.git"'),
-        "旧软链目标（子路径）": hint.replace(_HINT_LINK_ROOT, _HINT_LINK_SUBTARGET),
+        "旧软链目标（仓根）": hint.replace(_HINT_LINK_ROOT, _HINT_LINK_OLD_ROOT),
+        "更旧软链目标（子路径）": hint.replace(_HINT_LINK_ROOT, _HINT_LINK_SUBTARGET),
         "旧镜像路径名": hint.replace("migao-dev-preset-anchor", _OLD_MIRROR_NAME),
         "无条件备份（软链也 mv）": hint.replace(_HINT_BACKUP_GATE,
                                         r'if [ -d "\$HOME/.dsh/.agent-presets/migao" ]; then'),
