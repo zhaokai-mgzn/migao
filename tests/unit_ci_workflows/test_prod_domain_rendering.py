@@ -175,6 +175,79 @@ def test_rendering_is_pure_substitution() -> None:
     assert judge_rendering_is_pure_substitution(read_nginx_conf()) == []
 
 
+# ── ⑤ admin-web 的**构建期**域名接线（issue #8941）─────────────────────────────
+#
+# 病根（本段要防的形态）：只把域名参数化进前端源码 = **假交付**。`NEXT_PUBLIC_*` 是**构建期
+# 文本替换**：生产构建必须真的收到 `NEXT_PUBLIC_SITE_DOMAIN=cytda.com`，否则产物里的商家登录
+# 跳转 / canonical / sitemap 仍是缺省测试域 —— 而构建、部署、页面全绿，只有用户被送去别的站。
+#
+# 三处必须**同源**，缺一处就断链：
+#   ① `deploy/swas/deploy.sh` 把它作为 `--build-arg` 透传，缺省值由 `MIGAO_PUBLIC_DOMAIN` 派生；
+#   ② `frontend/admin-web/Dockerfile` 声明 `ARG`（否则 `--build-arg` 无处落地、docker 静默忽略）；
+#   ③ `Dockerfile` 再 `ENV` 透传（缺省值 = 测试域 ⇒ 缺省域名下产物与改前逐字相同）。
+FE_SITE_DOMAIN_VAR = "NEXT_PUBLIC_SITE_DOMAIN"
+ADMIN_WEB_DOCKERFILE = ROOT / "frontend" / "admin-web" / "Dockerfile"
+#: 期望的透传形态：缺省值由**同一个** `MIGAO_PUBLIC_DOMAIN` 派生（缺省域名下 = migaozn.com）
+FE_SITE_DOMAIN_BUILD_ARG = (
+    f'--build-arg "{FE_SITE_DOMAIN_VAR}=${{{FE_SITE_DOMAIN_VAR}:-${{MIGAO_PUBLIC_DOMAIN}}}}"'
+)
+#: 期望的 deploy.sh 整行（红证按同一字面量删/改，避免「变异没落上」的空跑）
+FE_SITE_DOMAIN_BUILD_ARG_LINE = f"    _build_args+=({FE_SITE_DOMAIN_BUILD_ARG})"
+
+
+def read_admin_web_dockerfile() -> str:
+    return ADMIN_WEB_DOCKERFILE.read_text(encoding="utf-8")
+
+
+def judge_admin_web_site_domain_wiring(deploy: str, dockerfile: str) -> list[str]:
+    """⑤ deploy.sh 透传 + Dockerfile ARG/ENV 三处同源（任一处缺失 ⇒ 生产构建拿不到域名）。"""
+    v: list[str] = []
+    # ① deploy.sh 的透传：缺省值必须由 MIGAO_PUBLIC_DOMAIN 派生（缺省域名下逐字 = migaozn.com）
+    if FE_SITE_DOMAIN_BUILD_ARG not in deploy:
+        v.append(
+            f"deploy.sh 没有透传 `{FE_SITE_DOMAIN_BUILD_ARG}` —— "
+            f"生产构建收不到站点域名，前端参数化变成假交付（产物里仍是 {TEST_DOMAIN}）"
+        )
+    # ② Dockerfile 的 ARG 缺省值 = 测试域（与 deploy.sh 的有效默认值同源；两处都在就必须一致）
+    m = re.search(rf"^ARG {re.escape(FE_SITE_DOMAIN_VAR)}=(\S+)$", dockerfile, re.M)
+    if not m:
+        v.append(
+            f"frontend/admin-web/Dockerfile 缺 `ARG {FE_SITE_DOMAIN_VAR}=…` —— "
+            "`--build-arg` 没有落点（docker 对未声明的 build-arg 静默忽略）"
+        )
+    elif m.group(1) != TEST_DOMAIN:
+        v.append(
+            f"Dockerfile 的 `ARG {FE_SITE_DOMAIN_VAR}` 缺省值 {m.group(1)!r} 不是 {TEST_DOMAIN!r} —— "
+            "缺省域名下产物会与改前不同（测试环境在跑，不许有行为变化）"
+        )
+    # ③ Dockerfile 的 ENV 透传（ARG 只进 RUN 的 shell；`next start` 与构建脚本读的是 ENV）
+    if not re.search(rf"^ENV {re.escape(FE_SITE_DOMAIN_VAR)}=\$\{{{re.escape(FE_SITE_DOMAIN_VAR)}\}}$", dockerfile, re.M):
+        v.append(
+            f"Dockerfile 缺 `ENV {FE_SITE_DOMAIN_VAR}=${{{FE_SITE_DOMAIN_VAR}}}` —— "
+            "只声明 ARG 不会把它变成构建进程可见的环境变量"
+        )
+    return v
+
+
+def test_admin_web_site_domain_is_wired_into_the_server_side_build() -> None:
+    assert judge_admin_web_site_domain_wiring(read_deploy_sh(), read_admin_web_dockerfile()) == []
+
+
+def test_admin_web_site_domain_default_follows_the_domain_source() -> None:
+    """缺省值必须**派生自** MIGAO_PUBLIC_DOMAIN（不是另写一个测试域字面量）。"""
+    m = re.search(
+        rf'--build-arg "{re.escape(FE_SITE_DOMAIN_VAR)}=\$\{{{re.escape(FE_SITE_DOMAIN_VAR)}:-'
+        rf'(\$\{{MIGAO_PUBLIC_DOMAIN\}})\}}"',
+        read_deploy_sh(),
+    )
+    expr = m.group(1) if m else ""
+    assert expr == "${MIGAO_PUBLIC_DOMAIN}", (
+        f"{FE_SITE_DOMAIN_VAR} 的缺省值表达式是 {expr!r}，不是由 `${{MIGAO_PUBLIC_DOMAIN}}` 派生 —— "
+        "两处域名来源会各自漂移"
+    )
+    assert expr.replace("${MIGAO_PUBLIC_DOMAIN}", TEST_DOMAIN) == TEST_DOMAIN
+
+
 # ── 反空跑（红证）：把正确形态做坏一处，判据必须变红 ───────────────────────────
 def test_red_proof_single_source() -> None:
     """把 cytda.com 硬编码进 canonical nginx.conf ⇒ ① 必须红。"""
@@ -205,3 +278,30 @@ def test_red_proof_wrong_rendering_rule() -> None:
         "server_name migaozn.com www.migaozn.com;",
     )
     assert judge_rendered_server_names(broken) != []
+
+
+def test_red_proof_site_domain_build_arg_missing() -> None:
+    """删掉 `NEXT_PUBLIC_SITE_DOMAIN` 的透传行 ⇒ ⑤ 必须红（生产构建拿不到域名）。"""
+    deploy = read_deploy_sh()
+    broken = deploy.replace(FE_SITE_DOMAIN_BUILD_ARG_LINE, "")
+    assert broken != deploy, "前提：变异必须真的落上（否则这条红证是空跑）"
+    assert judge_admin_web_site_domain_wiring(broken, read_admin_web_dockerfile()) != []
+
+
+def test_red_proof_site_domain_default_hardcoded() -> None:
+    """把缺省值从 `MIGAO_PUBLIC_DOMAIN` 派生改回硬编码测试域 ⇒ ⑤ 必须红。"""
+    deploy = read_deploy_sh()
+    broken = deploy.replace(
+        f"{FE_SITE_DOMAIN_VAR}:-${{MIGAO_PUBLIC_DOMAIN}}",
+        f"{FE_SITE_DOMAIN_VAR}:-{TEST_DOMAIN}",
+    )
+    assert broken != deploy, "前提：变异必须真的落上"
+    assert judge_admin_web_site_domain_wiring(broken, read_admin_web_dockerfile()) != []
+
+
+def test_red_proof_dockerfile_env_missing() -> None:
+    """删掉 Dockerfile 的 ENV 透传 ⇒ ⑤ 必须红（ARG 不会成为构建进程可见的环境变量）。"""
+    dockerfile = read_admin_web_dockerfile()
+    broken = dockerfile.replace(f"ENV {FE_SITE_DOMAIN_VAR}=${{{FE_SITE_DOMAIN_VAR}}}\n", "")
+    assert broken != dockerfile, "前提：变异必须真的落上"
+    assert judge_admin_web_site_domain_wiring(read_deploy_sh(), broken) != []

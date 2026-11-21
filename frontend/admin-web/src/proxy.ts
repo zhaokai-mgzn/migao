@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
+import { merchantHost, siteDomain, wwwHost } from '@/lib/site-domain'
 
 // ── Path lists ──────────────────────────────────────────────────
 
@@ -84,8 +85,15 @@ function handleRequest(hostname: string, pathname: string, request: NextRequest)
     return NextResponse.next()
   }
 
-  // ── merchant.migaozn.com ─────────────────────────────────────
-  if (hostname === 'merchant.migaozn.com') {
+  // ── 站点域名（issue #8941）：三个面由**一个**构建期来源派生 ──────
+  // 写死 `*.migaozn.com` 会让生产域（cytda.com）落到末段 `next()`：商家域不跳登录、
+  // 官网 dashboard 前缀不跳商家域 —— 线上看起来「页面打得开」，只是分流全部失效。
+  const apex = siteDomain()
+  const www = wwwHost()
+  const merchant = merchantHost()
+
+  // ── merchant.<domain> ────────────────────────────────────────
+  if (hostname === merchant) {
     // 根路径 → 登录页（auth guard 会在登录后跳转到 dashboard）
     if (pathname === '/') {
       return NextResponse.redirect(new URL('/login', request.url))
@@ -93,8 +101,8 @@ function handleRequest(hostname: string, pathname: string, request: NextRequest)
     return NextResponse.next()
   }
 
-  // ── migaozn.com (bare domain) ────────────────────────────────
-  if (hostname === 'migaozn.com' || hostname === 'www.migaozn.com') {
+  // ── apex 域（裸域）──────────────────────────────────────────
+  if (hostname === apex || hostname === www) {
     // Allow API auth for SMS login
     if (isApiAuth(pathname)) {
       return NextResponse.next()
@@ -103,7 +111,7 @@ function handleRequest(hostname: string, pathname: string, request: NextRequest)
     // Dashboard paths → redirect to merchant
     if (startsWithAny(pathname, DASHBOARD_PREFIXES)) {
       const merchantUrl = new URL(request.url)
-      merchantUrl.hostname = 'merchant.migaozn.com'
+      merchantUrl.hostname = merchant
       merchantUrl.port = '' // 去掉内部端口号，由 CDN/SLB 处理
       merchantUrl.protocol = 'https' // 强制 HTTPS
       return NextResponse.redirect(merchantUrl)
