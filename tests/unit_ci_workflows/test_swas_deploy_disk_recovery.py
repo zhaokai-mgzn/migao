@@ -940,15 +940,29 @@ def rebase_tmp_paths(text: str, root: Path) -> str:
     return out
 
 
-def make_src_tar(dest: Path) -> None:
-    """造一个**真**源码包（含 4 个 canonical 配置）⇒ 第 1 段的自检能通过，脚本能走到构建段。"""
+def make_src_tar(dest: Path, deploy_text: str | None = None) -> None:
+    """造一个**真**源码包（含 4 个 canonical 配置）⇒ 第 1 段的自检能通过，脚本能走到构建段。
+
+    ⚠️ 两处必须是**真身**（issue #8966 起）：
+      · `deploy/swas/deploy.sh` = **正在被执行的那份文本**（沙箱会改写绝对路径 ⇒ 直接拷仓里那份
+        就不再是「同 ref 同源」，自同步段会判「不同」并当场停住 —— 真实部署里盘上脚本就是
+        bootstrap 从同 ref 装的那份，两侧逐字节相同）；
+      · `deploy/swas/nginx.conf` = 真 canonical（含 6 行 `server_name`）：渲染后的 fail-closed
+        断言读的就是它，拿 `worker_processes 1;` 当夹具会让判据红在夹具上、而不是红在产品上。
+    """
     stage = dest.parent / "stage" / "migao-main"
-    for rel in ("deploy/swas/docker-compose.yml", "deploy/swas/deploy.sh"):
+    for rel in ("deploy/swas/docker-compose.yml",):
         (stage / rel).parent.mkdir(parents=True, exist_ok=True)
         shutil.copy(REPO_ROOT / rel, stage / rel)
+    script = stage / "deploy/swas/deploy.sh"
+    script.parent.mkdir(parents=True, exist_ok=True)
+    if deploy_text is None:
+        shutil.copy(REPO_ROOT / "deploy/swas/deploy.sh", script)
+    else:
+        script.write_text(deploy_text, encoding="utf-8")
     (stage / "deploy/swas/docker-compose.bluegreen.yml").write_text(
         "services: {}\n", encoding="utf-8")
-    (stage / "deploy/swas/nginx.conf").write_text("worker_processes 1;\n", encoding="utf-8")
+    shutil.copy(REPO_ROOT / "deploy/swas/nginx.conf", stage / "deploy/swas/nginx.conf")
     # 最小构建上下文（`src/backend/admin-api/Dockerfile`）：1.4 段在构建前会自检它
     (stage / "backend/admin-api").mkdir(parents=True, exist_ok=True)
     (stage / "backend/admin-api/Dockerfile").write_text("FROM scratch\n", encoding="utf-8")
@@ -973,7 +987,9 @@ def _run_deploy(tmp_path: Path, *, df_seq: str, cache_size: str = "",
     script = work / "deploy.sh"
     script.write_text(text, encoding="utf-8")
     tar_path = tmp_path / "src.tar.gz"
-    make_src_tar(tar_path)
+    # `src/` 里那份 deploy.sh == **正在执行的这份文本**（同 ref 同源：真实部署里 bootstrap
+    # 就是拿同 ref 的 tarball 装盘再执行 ⇒ 自同步段比对相等、不动作；issue #8966）
+    make_src_tar(tar_path, deploy_text=text)
     for env_file in (".env.admin-api", ".env.ai-agent", ".env.registry"):
         (work / env_file).write_text("SMS_BYPASS_CODE=1\n", encoding="utf-8")
     state = tmp_path / "state"

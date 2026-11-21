@@ -48,6 +48,15 @@ rollback.md 回滚（重新发布上一稳定版本）
 2. 仓库 Secrets 增加 `PROD_ALIYUN_ACCESS_KEY_ID/SECRET`、`PROD_ACR_USERNAME/PASSWORD`（生产最小权限 RAM 子账号，仅 SWAS/ACR 相关权限）
 3. Variables：`PROD_SWAS_INSTANCE_IDS`、`PROD_SWAS_REGION`、`PROD_HEALTH_URLS`（生产健康检查地址）
 4. 生产服务器部署脚本沿用 `deploy/swas/deploy.sh`（flock 串行 + 健康检查），由 `deploy-prod.yml` 触发
+   - **`deploy.sh` 现在自同步**（issue #8966）：第 1 段取到同源源码树（`src/`）后，会把它自己的
+     `src/deploy/swas/deploy.sh` 与盘上 `/opt/migao-deploy/deploy.sh` 比对，不同则备份
+     `deploy.sh.bak-<时间戳>` 后**原地覆盖**（`cat >` 保 inode）并打印两侧 sha256 前 8 位
+     ⇒ **盘上版本随 target ref 走**，不再需要人工覆盖（2026-11-21 的「旧脚本 + 新配置」事故：
+     旧脚本不读 `.env.site` ⇒ 域名静默回落 `migaozn.com` ⇒ 全站 401）。
+     覆盖后**本次运行会立刻停下**（bash 按字节偏移续读脚本，换内容后继续执行会读到错位内容）⇒
+     再跑一次即由新脚本执行（CI 会自动重试一次）。同日还加了两道 fail-closed 断言：nginx 渲染后
+     `server_name` 必须含站点域名、构建后产物不得含 `migaozn.com`（取不到产物 = 不可判定，不判绿）。
+     自查：`sha256sum /opt/migao-deploy/deploy.sh` 与 `git show <ref>:deploy/swas/deploy.sh | sha256sum` 对齐
 
 ### 3.3 首次发布
 1. 测试环境全量验证通过
