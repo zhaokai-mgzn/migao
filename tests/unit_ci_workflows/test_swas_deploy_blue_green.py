@@ -450,10 +450,14 @@ def test_injection_green_volume_ro_drift_goes_red():
     assert "/opt/migao-deploy/jwt:/opt/migao-deploy/jwt:ro" in [str(v) for v in vols], (
         "反空跑锚点：卷不在位（判据已过期）"
     )
+    before = [str(v) for v in vols]
     drifted["services"]["admin-api-green"]["volumes"] = [
-        str(v).replace("/opt/migao-deploy/jwt:/opt/migao-deploy/jwt:ro", "/opt/migao-deploy/jwt:/opt/migao-deploy/jwt")
-        for v in vols
+        "/opt/migao-deploy/jwt:/opt/migao-deploy/jwt"
+        if v == "/opt/migao-deploy/jwt:/opt/migao-deploy/jwt:ro"
+        else v
+        for v in before
     ]
+    assert drifted["services"]["admin-api-green"]["volumes"] != before, "注入没有真的改掉 ro 标志（空跑）"
     assert judge_bg_compose_antidrift(base, drifted, read_deploy_sh()), "ro 标志漂移后没红（判据无判别力）"
 
 
