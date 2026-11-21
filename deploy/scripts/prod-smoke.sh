@@ -4,6 +4,9 @@
 # 用法：
 #   REL_SHA=<40位> bash deploy/scripts/prod-smoke.sh
 #   REL_SHA=... SMOKE_BASE=cytda.com bash deploy/scripts/prod-smoke.sh   # 换域名（演练/测试）
+#   REL_SHA=... SMOKE_SERVICES=admin-api bash deploy/scripts/prod-smoke.sh
+#     ⇒ **只校验本次部署模块的身份**（按模块发布时，没发的模块必然还是旧 sha；
+#        无条件比全部模块会把「部分发布」判成假红）。不传 = 校验全部模块。
 #
 # 退出码：0 = 全通过；1 = 有面失败；3 = 无法判定（如版本身份取不到）——**3 不得当 0 读**。
 #
@@ -50,12 +53,17 @@ EOF
 
 echo
 echo "== ② 版本身份（必须 == 发布身份）=="
+SERVICES="${SMOKE_SERVICES:-admin-api,ai-agent}"
 if [ -z "$REL_SHA" ]; then
   say "REL_SHA" "⚠️ 未提供 ⇒ 本项**不可判定**（不当通过）"
   UNKNOWN=$((UNKNOWN + 1))
 else
-  for pair in "api.${BASE}/api/version|${REL_SHA}" "ai-api.${BASE}/version|${REL_SHA}"; do
-    host="${pair%%|*}"; want="${pair##*|}"
+  for pair in "api.${BASE}/api/version|${REL_SHA}|admin-api" "ai-api.${BASE}/version|${REL_SHA}|ai-agent"; do
+    IFS='|' read -r host want svc <<<"$pair"
+    case ",${SERVICES}," in
+      *",${svc},"*) ;;
+      *) say "https://${host}" "⏭️ 本次未部署 ${svc} ⇒ 不校验身份（不是通过）"; continue ;;
+    esac
     got=$(curl -s -m 20 "https://${host}" 2>/dev/null | tr -d ' \n' | grep -o '"sha":"[a-f0-9]\{7,40\}"' | head -1 | cut -d'"' -f4)
     if [ -z "$got" ]; then
       say "https://${host}" "⚠️ 取不到 sha ⇒ 不可判定"

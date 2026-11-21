@@ -173,6 +173,7 @@ jobs:
         env:
           REL_SHA: ${{ steps.rel.outputs.sha }}
           SMOKE_BASE: cytda.com
+          SMOKE_SERVICES: ${{ inputs.services }}
         run: bash deploy/scripts/prod-smoke.sh
 
       - name: Rollback hint
