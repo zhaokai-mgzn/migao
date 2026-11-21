@@ -660,3 +660,38 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+
+  - id: API-024
+    legacy_id: ""
+    title: "语音识别 Token Plan 非实时通道（HTTP 多模态端点，parameters.format 必填）（#8987）"
+    domains:
+      - api
+      - chat
+    tier: normal
+    tags:
+      - asr
+      - voice
+      - token-plan
+      - http
+      - error-handling
+    truths_ref: []
+      # ⚠️ 真值缺口：Token Plan 语音契约暂未写入模板，由 data_checks 承载
+    user_inputs:
+      - "生产用 Token Plan 订阅（sk-sp- key）时，语音转写走报错过的非实时模型 qwen-audio-3.0-asr-flash"
+    expectations: []
+    data_checks:
+      - "实例：mock 200 + output.text ⇒ 返回该文本（模型 ASR_HTTP_MODEL、端点 ASR_HTTP_URL、Bearer ASR_API_KEY、data:audio/wav;base64 前缀齐全）"
+      - "🔴 注入式红证：发出去的请求体必须带 parameters.format=wav（缺 ⇒ 网关回 400 空 body，实测 ~90ms 拒单）；删掉实现里的 parameters 块 ⇒ 本判据必须红"
+      - "output.text 为空白 ⇒ ASRNoSpeechError「未识别到语音内容」，端点层仍映射 400（沿用既有语义）"
+      - "错误映射：401/403 ⇒ ASRAuthError、429 ⇒ ASRQuotaError、5xx/网络/非 JSON ⇒ ASRUnavailableError（端点层 503），各是各的下一个动作"
+      - "日志不泄漏：失败路径的日志既不含 API key，也不含响应体"
+      - "默认值：ASR_MODE 缺省 = realtime，且 realtime 模式不构造 HTTP 客户端（既有部署行为不变、回滚口仍在）"
+    skip_reason: "[backend-contract] HTTP 通道契约由 ai-agent 单测（tests/test_asr_http_mode.py）验证，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-11-21 新增（issue #8987）：生产实测 Token Plan 订阅唯一可用语音模型 qwen-audio-3.0-asr-flash 是非实时多模态端点（与生图同一个），既有 asr.py 只有 WebSocket 实时通道 ⇒ 语音不通；落 ASR_MODE 分派 + parameters.format 必填的注入式红证"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_asr_http_mode.py"
+        - "backend/ai-agent-service/tests/test_config.py"
+      ci:
+        - ai-agent-tests.yml
+      verifies: []
