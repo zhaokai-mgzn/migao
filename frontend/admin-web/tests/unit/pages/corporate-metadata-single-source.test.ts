@@ -18,8 +18,14 @@ import { readFileSync, readdirSync, existsSync, statSync } from 'fs'
 import { join, relative } from 'path'
 
 import { metadata as corporateMetadata } from '@/app/(corporate)/layout'
+import sitemap from '@/app/sitemap'
+import robots from '@/app/robots'
 
-/** 站点真值源（唯一：`(corporate)/layout.tsx`；本测试文件是它的判据，不是第二份真值）。 */
+/**
+ * 站点真值源（唯一：`(corporate)/layout.tsx`；本测试文件是它的判据，不是第二份真值）。
+ * 字面量 = **缺省域名**下的取值（issue #8941：域名由 `NEXT_PUBLIC_SITE_DOMAIN` 参数化，
+ * 缺省 `migaozn.com` ⇒ 这里逐字钉住「缺省值下产物与改前一致」）。
+ */
 const SITE_ORIGIN = 'https://www.migaozn.com'
 
 const APP_DIR = join(process.cwd(), 'src/app')
@@ -99,23 +105,60 @@ describe('官网元数据单一真值源 + og/robots/canonical/sitemap（issue #
     expect(size).toEqual({ width: image.width, height: image.height })
   })
 
-  it('robots.txt / sitemap.xml 真在 public/ 且内容指向唯一站点真值源', () => {
-    const robots = readFileSync(join(process.cwd(), 'public', 'robots.txt'), 'utf-8')
-    expect(robots).toContain(`Sitemap: ${SITE_ORIGIN}/sitemap.xml`)
+  it('robots.txt / sitemap.xml 是 route 形式（读同一域名来源），public/ 下不再有静态副本', () => {
+    // issue #8941：`public/` 是静态文件、构建期不做替换 ⇒ 留着它就会把测试域 baked 进生产产物，
+    // 而且会盖住 route 形式（Next 的同名冲突）。⇒ 两份静态副本必须消失。
+    expect(
+      existsSync(join(process.cwd(), 'public', 'robots.txt')),
+      'public/robots.txt 还在 ⇒ 静态副本会盖住 src/app/robots.ts，生产域的 Sitemap 指引又变回测试域',
+    ).toBe(false)
+    expect(
+      existsSync(join(process.cwd(), 'public', 'sitemap.xml')),
+      'public/sitemap.xml 还在 ⇒ 静态副本会盖住 src/app/sitemap.ts，生产域的 <loc> 又变回测试域',
+    ).toBe(false)
 
-    const sitemap = readFileSync(join(process.cwd(), 'public', 'sitemap.xml'), 'utf-8')
-    // 站点真值源只在一处：sitemap 里的每条 loc 都必须用 SITE_ORIGIN 前缀
-    const locs = [...sitemap.matchAll(/<loc>([^<]+)<\/loc>/g)].map((m) => m[1])
-    expect(locs.length, 'sitemap 里一条 <loc> 都没有 —— 面为空，判据没有判别力').toBeGreaterThan(0)
+    // robots：Disallow 列表与改前**逐条一致**（顺序也一致），抓取指引指向站点真值源
+    const r = robots()
+    const rules = Array.isArray(r.rules) ? r.rules : [r.rules]
+    expect(rules.length, 'robots 规则必须恰好一条（多条会让 Disallow 列表出现第二份口径）').toBe(1)
+    expect(rules[0].userAgent).toBe('*')
+    expect(rules[0].allow).toBe('/')
+    expect(rules[0].disallow).toEqual([
+      '/dashboard',
+      '/products',
+      '/orders',
+      '/customers',
+      '/chat',
+      '/finance',
+      '/settings',
+      '/login',
+      '/register',
+    ])
+    expect(r.sitemap).toBe(`${SITE_ORIGIN}/sitemap.xml`)
+
+    // sitemap：5 条 loc（官网公开面）逐条一致，且全部落在站点真值源域名下
+    const entries = sitemap()
+    const locs = entries.map((entry) => entry.url)
+    expect(locs, 'sitemap 的条目集合与改前不一致').toEqual([
+      `${SITE_ORIGIN}/`,
+      `${SITE_ORIGIN}/about/`,
+      `${SITE_ORIGIN}/services/`,
+      `${SITE_ORIGIN}/contact/`,
+      `${SITE_ORIGIN}/download/`,
+    ])
+    expect(entries.map((entry) => entry.changeFrequency)).toEqual([
+      'weekly',
+      'monthly',
+      'monthly',
+      'monthly',
+      'weekly',
+    ])
+    expect(entries.map((entry) => entry.priority)).toEqual([1.0, 0.8, 0.9, 0.8, 0.9])
     const offDomain = locs.filter((loc) => !loc.startsWith(`${SITE_ORIGIN}/`))
     expect(
       offDomain,
       `sitemap 里的 loc 不在站点真值源域名下（裸域/别的域会各生成一份内容）：${offDomain.join(', ')}`,
     ).toEqual([])
-    // 官网四页必须都在（都是匿名可见面）
-    for (const path of ['/', '/about/', '/services/', '/contact/']) {
-      expect(locs, `sitemap 缺 ${path}`).toContain(`${SITE_ORIGIN}${path}`)
-    }
   })
 
   it('判别力自证：尺寸读取器对真实 PNG 与伪造文件给出不同读数', () => {
