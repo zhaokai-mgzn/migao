@@ -45,10 +45,27 @@ export const INBOUND_LABEL_MEDIA_ID = 'label-50x80'
 export const SHIP_LABEL_MEDIA_ID = 'label-50x70'
 
 /**
- * 标签码形态（设计 §7.1，**一次定死**）：`https://app.migaozn.com/i/<8 位短码>`。
- * 码一旦打印就是 URL ⇒ 换域名 / 改路径会让**已打印的码全部失效**，故它是常量、不接受环境变量覆盖。
+ * 标签码形态（设计 §7.1）：`<origin>/i/<8 位短码>`，**路径 `/i/` 一次定死，origin 构建期可覆盖**。
+ *
+ * | 组成 | 可覆盖？ | 为什么 |
+ * |---|---|---|
+ * | 路径 `/i/` | ❌ 常量 | 它是服务端 `GET /i/{短码}` 的路由（`InboundLabelShortLinkController`） |
+ * | origin | ✅ `TARO_APP_PUBLIC_APP_ORIGIN`（构建期，Taro 的 `TARO_APP_*` 注入面） | 印出来的码必须指**当前部署的落地面** |
+ *
+ * 🔴 为什么 origin 必须可覆盖（issue #8942 的实测缺陷）：origin 曾写死成 `https://app.migaozn.com`，
+ * 而生产落地面是 `app.cytda.com` ⇒ **生产打印出来的标签把扫码请求送到测试服务器**，
+ * 而页面上一切正常（只有工人扫了才会发现）。它**不能**跟随运行时配置（如 admin-web 的部署 env）：
+ * 码是**印在纸上的契约**，运行时漂移 = 已打印的码悄悄失效。
+ *
+ * 覆盖方式 = 构建期注入 `TARO_APP_PUBLIC_APP_ORIGIN`，接线在
+ * frontend/bmini-app/config/index.ts 的 `defineConstants`（**必须**显式登记：CI 无 `.env` 时
+ * Taro 的 dotenv 不注入 ⇒ 产物残留 `process.env` 引用 ⇒ 浏览器端 `process is not defined` 白屏，issue #2693）。
+ * **缺省值逐字不变**（`https://app.migaozn.com`）⇒ 不传 env 的构建（测试环境 / 既有产物）行为逐字不变。
+ *
+ * ⚠️ 换 origin 是**有意的、带迁移的部署决策**（不是随手改）：已打印的码仍指向旧环境。
+ * 解析侧 `./codeSpace.ts` 用**同一个常量**取主机名 ⇒ 写侧与解析侧天然同源，不另写域名。
  */
-export const INBOUND_LABEL_CODE_ORIGIN = 'https://app.migaozn.com'
+export const INBOUND_LABEL_CODE_ORIGIN = process.env.TARO_APP_PUBLIC_APP_ORIGIN || 'https://app.migaozn.com'
 export const INBOUND_LABEL_CODE_PATH = '/i/'
 
 /** 203dpi 热敏头的**像素口径**（矩阵里的 `dotGeometry`；本接口只是它的类型面） */

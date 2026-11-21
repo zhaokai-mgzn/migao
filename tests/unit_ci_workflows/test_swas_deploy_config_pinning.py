@@ -127,6 +127,15 @@ NEW_TAG = "sha-ccccccc"      # main 已前进后新部署的 tag（= 当前在�
 MARKER_OLD = "OLD"
 MARKER_MAIN = "MAIN"
 
+#: 「现盘 nginx.conf」夹具（#6551 ② 复用场景）：**真 canonical 内容** + 标记行。
+#: 为什么不能用一行桩文本（issue #8966）：渲染后有一条 fail-closed 断言读 `server_name`
+#: （生产域名 0 处 ⇒ 中止部署），而真实的现盘配置**一定**带 6 行 `server_name` ——
+#: 桩文本会让判据红在夹具上，而不是红在产品上。
+SEED_ON_DISK_NGINX = (
+    (DEPLOY_SH.parent / "nginx.conf").read_text(encoding="utf-8")
+    + "\n# CONFIG_MARKER=ON_DISK-nginx\n"
+)
+
 
 # ══════════════════════════════════════════════════════════════════════════
 # 读源 + 反空跑锚点
@@ -1188,7 +1197,7 @@ def test_exec_rollback_reuses_on_disk_config_without_download(tmp_path):
     seed = {
         ".config-ref": f"{OLD_TAG.removeprefix('sha-')}\n",
         "docker-compose.yml": "# CONFIG_MARKER=ON_DISK-compose\n",
-        "nginx/nginx.conf": "# CONFIG_MARKER=ON_DISK-nginx\n",
+        "nginx/nginx.conf": SEED_ON_DISK_NGINX,
         "docker-compose.bluegreen.yml": "# CONFIG_MARKER=ON_DISK-bluegreen\n",
     }
     proc, log, urls, work = _run(tmp_path, read_deploy_sh(), tag=OLD_TAG, fixtures={}, seed=seed)
@@ -1207,7 +1216,7 @@ def test_exec_reuse_disabled_falls_back_to_download_and_fails_closed(tmp_path):
     seed = {
         ".config-ref": f"{OLD_TAG.removeprefix('sha-')}\n",
         "docker-compose.yml": "# CONFIG_MARKER=ON_DISK-compose\n",
-        "nginx/nginx.conf": "# CONFIG_MARKER=ON_DISK-nginx\n",
+        "nginx/nginx.conf": SEED_ON_DISK_NGINX,
         "docker-compose.bluegreen.yml": "# CONFIG_MARKER=ON_DISK-bluegreen\n",
     }
     injected = _inject(read_deploy_sh(), REUSE_REF_TOKEN + " || return 1", "return 1")
@@ -1225,7 +1234,7 @@ def test_exec_reuse_requires_same_ref(tmp_path):
     seed = {
         ".config-ref": "ccccccc\n",
         "docker-compose.yml": "# CONFIG_MARKER=ON_DISK-compose\n",
-        "nginx/nginx.conf": "# CONFIG_MARKER=ON_DISK-nginx\n",
+        "nginx/nginx.conf": SEED_ON_DISK_NGINX,
         "docker-compose.bluegreen.yml": "# CONFIG_MARKER=ON_DISK-bluegreen\n",
     }
     fixtures = {MAIN_REF: MARKER_MAIN, "aaaaaaa": MARKER_OLD}
@@ -1242,7 +1251,7 @@ def test_exec_reuse_with_incomplete_on_disk_config_warns_and_downloads(tmp_path)
     seed = {
         ".config-ref": f"{OLD_TAG.removeprefix('sha-')}\n",
         "docker-compose.yml": "# CONFIG_MARKER=ON_DISK-compose\n",
-        "nginx/nginx.conf": "# CONFIG_MARKER=ON_DISK-nginx\n",
+        "nginx/nginx.conf": SEED_ON_DISK_NGINX,
         # 故意缺 docker-compose.bluegreen.yml（半套现盘配置）
     }
     fixtures = {MAIN_REF: MARKER_MAIN, "aaaaaaa": MARKER_OLD}
@@ -1263,7 +1272,7 @@ def _cprime_reuse_seed() -> dict:
     return {
         ".config-ref": f"{OLD_TAG.removeprefix('sha-')}\n",
         "docker-compose.yml": "# CONFIG_MARKER=ON_DISK-compose\n",
-        "nginx/nginx.conf": "# CONFIG_MARKER=ON_DISK-nginx\n",
+        "nginx/nginx.conf": SEED_ON_DISK_NGINX,
         "docker-compose.bluegreen.yml": "# CONFIG_MARKER=ON_DISK-bluegreen\n",
     }
 
@@ -1295,6 +1304,6 @@ def test_exec_cprime_rollback_without_local_image_falls_back_and_fails_closed(tm
     assert proc.returncode != 0, f"本地没有镜像竟然还成功（红证空跑）：\n{proc.stdout}"
     assert urls != [], "应当回到下载路径（URL 流水为空 ⇒ 红证空跑）"
     assert "取不到 tag=sha-aaaaaaa 对应的配置" in proc.stdout, proc.stdout
-    assert _landed_nginx(work) == "# CONFIG_MARKER=ON_DISK-nginx\n", (
+    assert _landed_nginx(work) == SEED_ON_DISK_NGINX, (
         "拒绝复用之后不该改写现盘配置（fail-closed）"
     )

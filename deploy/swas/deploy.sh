@@ -740,6 +740,54 @@ else
   printf '%s\n' "$CONFIG_REF_RESOLVED" > "$CONFIG_REF_MARKER_FILE"
 fi
 
+# ── 1.2.1 部署脚本**自同步**（issue #8966）────────────────────────────────────
+# 病根（**2026-11-21 生产实测**）：上面那段只同步 compose / nginx / tls-renew.sh，**不同步 deploy.sh 自己**
+# ⇒ 盘上脚本一旦落后于 target ref 就**永远停在旧版**（没有任何东西会更新它）：旧版不读 `.env.site`、
+# 不认识 `NEXT_PUBLIC_SITE_DOMAIN` ⇒ 它按**自己的旧逻辑**把 nginx 渲染回 canonical 原文（`migaozn.com`）
+# 并少传一个 build-arg，全程**零报错**（日志只有一行「站点域名：migaozn.com」）⇒ 所有 `cytda.com`
+# 请求落到 default server 被代理到 API ⇒ **全站 401**。
+# 同源：`src/` 就是本次 target ref（`$CONFIG_REF_RESOLVED`）的仓库树 ⇒ 装上去的脚本与镜像 tag 同源。
+# 幂等：内容相同 ⇒ 不覆盖、不备份、不产生任何新文件（连跑两次盘面逐字节一致）。
+# ⚠️ 覆盖的是**正在运行的这个脚本文件** ⇒ 用「写临时文件 + `cat >` 原地覆盖」**保 inode**；
+#    绝不用 `mv`（换 inode，某些挂载/执行场景会读到半截）。
+# ⚠️ 覆盖完必须**当场停住**，不许接着往下跑：bash 是**按字节偏移**从同一个 fd 续读脚本的 ⇒
+#    原地换掉内容后继续执行，读到的是**错位**的下一段（本机实测：覆盖后下一条命令变成
+#    `p: command not found`）⇒ 那就是「半截执行」，比停在原地更坏。
+#    ⇒ 覆盖后 `exit 1`，**不落任何派生配置**（nginx.conf 还没渲染、容器一个都没动）；
+#      下一次（CI 的自动重试 / 人工复跑）执行的就是同源脚本，幂等、不再备份/覆盖。
+#      CI 的 bootstrap 本来就先装同源脚本再执行（`swas-deploy-ci.sh`）⇒ 正常路径走不到这里。
+# >>> deploy-selfsync
+MIGAO_DEPLOY_SRC_FILE=${MIGAO_DEPLOY_SRC_FILE:-src/deploy/swas/deploy.sh}
+MIGAO_DEPLOY_SELF=${MIGAO_DEPLOY_SELF:-./deploy.sh}
+if [ ! -f "$MIGAO_DEPLOY_SRC_FILE" ]; then
+  echo "  ⏭️ 跳过 deploy.sh 自同步：盘上没有 ${MIGAO_DEPLOY_SRC_FILE}（本次未取源码树 / 同 ref 复用配置）—— **部署不受影响**；盘上脚本保持现版本（issue #8966）"
+elif [ ! -f "$MIGAO_DEPLOY_SELF" ]; then
+  echo "  ⏭️ 跳过 deploy.sh 自同步：找不到盘上脚本 ${MIGAO_DEPLOY_SELF} —— **部署不受影响**（issue #8966）"
+else
+  _self_src_sha=$(sha256sum "$MIGAO_DEPLOY_SRC_FILE" 2>/dev/null | cut -d' ' -f1 || shasum -a 256 "$MIGAO_DEPLOY_SRC_FILE" | cut -d' ' -f1)
+  _self_dst_sha=$(sha256sum "$MIGAO_DEPLOY_SELF" 2>/dev/null | cut -d' ' -f1 || shasum -a 256 "$MIGAO_DEPLOY_SELF" | cut -d' ' -f1)
+  if [ -z "$_self_src_sha" ] || [ -z "$_self_dst_sha" ]; then
+    # 两侧 sha 算不出来 ⇒ **不可判定**：不覆盖（否则每次都会「不同」⇒ 每次都备份 + 每次都 exit 1 的循环）
+    echo "  ⏭️ 跳过 deploy.sh 自同步：算不出 sha256（src=${_self_src_sha:-?} / 盘上=${_self_dst_sha:-?}）—— **部署不受影响**（issue #8966）"
+  elif [ "$_self_src_sha" = "$_self_dst_sha" ]; then
+    echo "  ✅ deploy.sh 与 ref=${CONFIG_REF_RESOLVED} 同源（sha256=${_self_src_sha:0:8}）⇒ 不覆盖、不备份"
+  else
+    _self_bak="${MIGAO_DEPLOY_SELF}.bak-$(date +%Y%m%d-%H%M%S)"
+    _self_tmp=$(mktemp "${TMPDIR:-/tmp}/migao-deploy-self.XXXXXX")
+    cp -p "$MIGAO_DEPLOY_SELF" "$_self_bak"
+    cat "$MIGAO_DEPLOY_SRC_FILE" > "$_self_tmp"
+    # 🔴 原地覆盖（保 inode）：`cat >` 复用同一个文件；**不**用 `mv`（换 inode）
+    cat "$_self_tmp" > "$MIGAO_DEPLOY_SELF"
+    rm -f "$_self_tmp"
+    chmod +x "$MIGAO_DEPLOY_SELF"
+    echo "  🔄 deploy.sh 自同步（ref=${CONFIG_REF_RESOLVED}）：sha256 ${_self_dst_sha:0:8} → ${_self_src_sha:0:8}；旧版备份 $(basename "$_self_bak")"
+    echo "  ⛔ 本次运行仍是**旧脚本进程**（覆盖后继续执行会读到错位的脚本内容）⇒ 停在这里：nginx.conf 未渲染、容器未动、回滚点未推进。"
+    echo "     ⇒ 处置：**再跑一次部署**（CI 会自动重试一次，人工重跑等价）——下一次执行的就是同源脚本（幂等，不再备份/覆盖）。"
+    exit 1
+  fi
+fi
+# <<< deploy-selfsync
+
 # ── 1.2.2 站点域名渲染（生产 cytda.com；缺省 migaozn.com ⇒ 与改前逐字相同）──────────────
 # 输入永远是 `nginx.conf.canonical`（仓库原文），所以「域名变更」和「配置复用」都不会把
 # 上一轮渲染过的产物再渲染一遍（那是幂等的，但更重要的是它不会让 A→B 改名悄悄失效）。
@@ -765,6 +813,26 @@ fi
 _conf_sha=$(sha256sum ./nginx/nginx.conf 2>/dev/null | cut -d' ' -f1 || shasum -a 256 ./nginx/nginx.conf | cut -d' ' -f1)
 echo "  站点域名：${MIGAO_PUBLIC_DOMAIN}（nginx.conf sha256=${_conf_sha:-unknown}）"
 grep -E '^[[:space:]]*server_name[[:space:]]' ./nginx/nginx.conf | sed 's/^/    /' || true
+
+# ── 1.2.3 渲染后 **fail-closed 断言**（issue #8966）──────────────────────────────
+# 改前这里只打印一行「站点域名：…」就继续 ⇒ 那一行打的是**期望值**，与盘上配置的真实内容无关：
+# 只要渲染输入或替换规则错了（旧脚本的「纯 cp canonical」分支正是），日志照样好看，而 nginx 里
+# `server_name` 一个生产域名都没有 ⇒ 所有生产域请求落到 default server（实测形态 = 被代理到 API
+# ⇒ **全站 401**）。⇒ 断言对象必须是**渲染产物本身**，不是变量、不是意图。
+# 判据：`server_name` 里至少出现一处 `$MIGAO_PUBLIC_DOMAIN`（6 个面里任一命中即可；0 处 = 静默失效）。
+# >>> nginx-domain-assert
+_ngx_server_names=$(grep -E '^[[:space:]]*server_name[[:space:]]' ./nginx/nginx.conf || true)
+if ! grep -qF "$MIGAO_PUBLIC_DOMAIN" <<<"$_ngx_server_names"; then
+  echo "  ❌ nginx.conf 渲染后 \`server_name\` 里**没有**站点域名 ${MIGAO_PUBLIC_DOMAIN} ⇒ **中止部署**（issue #8966）"
+  echo "     当前 server_name 清单（渲染产物 ./nginx/nginx.conf）："
+  printf '%s\n' "${_ngx_server_names:-<空：一行 server_name 都没有>}" | sed 's/^/       /'
+  echo "     后果：${MIGAO_PUBLIC_DOMAIN} 的请求会全部落到 default server（实测 = 被代理到 API ⇒ 全站 401）"
+  echo "     排查：① 渲染输入 ./nginx/nginx.conf.canonical 是否来自 ref=${CONFIG_REF_RESOLVED}；"
+  echo "           ② MIGAO_PUBLIC_DOMAIN 是否真读到了 .env.site（当前值=${MIGAO_PUBLIC_DOMAIN}）"
+  exit 1
+fi
+echo "  ✅ nginx.conf 自证：server_name 含站点域名 ${MIGAO_PUBLIC_DOMAIN}"
+# <<< nginx-domain-assert
 
 # ── 1.3.1 微信「扫普通链接二维码打开小程序」校验文件落位（issue #8196）────────────
 # 微信后台生成的是一个**根下随机的 `<一串字符>.txt`**（文件名/内容都由微信给，仓库不编、不改）。
@@ -915,6 +983,10 @@ if [ -n "$BUILD_SERVICE" ] && [ -z "$LOCAL_IMAGE_REF" ]; then
     _build_args+=(--build-arg "NEXT_PUBLIC_AI_API_BASE_URL=${NEXT_PUBLIC_AI_API_BASE_URL:-https://ai-api.${MIGAO_PUBLIC_DOMAIN}}")
     _build_args+=(--build-arg "NEXT_PUBLIC_COOKIE_DOMAIN=${NEXT_PUBLIC_COOKIE_DOMAIN:-.${MIGAO_PUBLIC_DOMAIN}}")
     _build_args+=(--build-arg "NEXT_PUBLIC_BMINI_H5_URL=${NEXT_PUBLIC_BMINI_H5_URL:-https://app.${MIGAO_PUBLIC_DOMAIN}/b/}")
+    # 站点域名（issue #8941）：商家登录 / canonical / sitemap / robots / proxy host 分流的唯一来源。
+    # 与上面四条同源派生（缺省域名下 = `migaozn.com` ⇒ 测试环境产物与改前逐字相同）；
+    # 服务器侧 `.env.build` 仍可显式覆盖。
+    _build_args+=(--build-arg "NEXT_PUBLIC_SITE_DOMAIN=${NEXT_PUBLIC_SITE_DOMAIN:-${MIGAO_PUBLIC_DOMAIN}}")
   fi
   echo "  构建命令：timeout ${BUILD_TIMEOUT_SECS} docker build -f ${_df} -t ${LOCAL_IMAGE_REF} ${_build_args[*]} src/${_ctx}"
   if timeout "$BUILD_TIMEOUT_SECS" docker build -f "src/$_df" -t "$LOCAL_IMAGE_REF" "${_build_args[@]}" "src/$_ctx"; then
@@ -935,6 +1007,41 @@ if [ -n "$BUILD_SERVICE" ] && [ -z "$LOCAL_IMAGE_REF" ]; then
     echo "❌ 构建报成功但 ${LOCAL_IMAGE_REF} **不在本地** ⇒ 中止（拒绝静默回落到 ACR）"
     exit 1
   fi
+  # ── 产物域名**自证**（issue #8966）────────────────────────────────────────────
+  # 病根：`docker build` 少一个 build-arg 时 Next **静默**把缺省域烤进产物（首页 / sitemap / robots
+  # 全指向测试域），而构建、部署、健康检查**全绿** —— 只有用户被送去另一个站。
+  # 口径：站点域名 != 测试域时，产物里的关键件**不得**含 `migaozn.com`。
+  # ⚠️ 取不到那个文件 ⇒ **不可判定**（打印 SKIPPED），**不判绿也不判红**（不许拿「没读到」冒充「干净」）。
+  # >>> image-domain-guard
+  if [ "$_svc" = "admin-web" ] && [ "$MIGAO_PUBLIC_DOMAIN" != "migaozn.com" ]; then
+    _guard_path=${MIGAO_DOMAIN_GUARD_FILE:-.next/server/app/sitemap.xml.body}
+    _guard_dir=$(mktemp -d "${TMPDIR:-/tmp}/migao-domain-guard.XXXXXX" 2>/dev/null || true)
+    _guard_cid=""
+    _guard_got=0
+    if [ -n "$_guard_dir" ] && _guard_cid=$(docker create "$LOCAL_IMAGE_REF" 2>/dev/null) && [ -n "$_guard_cid" ]; then
+      if docker cp "${_guard_cid}:${_guard_path}" "${_guard_dir}/" >/dev/null 2>&1; then
+        _guard_got=1
+      fi
+      docker rm -f "$_guard_cid" >/dev/null 2>&1 || true
+    fi
+    _guard_file="${_guard_dir}/${_guard_path##*/}"
+    if [ "$_guard_got" = "1" ] && [ -f "$_guard_file" ]; then
+      if grep -qF 'migaozn.com' "$_guard_file"; then
+        echo "  ❌ 产物残留测试域 migaozn.com（站点域名=${MIGAO_PUBLIC_DOMAIN}，镜像=${LOCAL_IMAGE_REF}）⇒ **中止部署**（issue #8966）"
+        echo "     命中行（前 3 条，${_guard_path}）："
+        grep -nF 'migaozn.com' "$_guard_file" | head -3 | sed 's/^/       /' || true
+        echo "     真因多半是 build-arg 没送到：核对 --build-arg NEXT_PUBLIC_SITE_DOMAIN=${MIGAO_PUBLIC_DOMAIN} 与 Dockerfile 的 ARG/ENV 透传"
+        if [ -n "$_guard_dir" ]; then rm -rf "$_guard_dir"; fi
+        exit 1
+      fi
+      echo "  ✅ 产物自证：${_guard_path} 不含测试域 migaozn.com（站点域名=${MIGAO_PUBLIC_DOMAIN}）"
+    else
+      echo "  ⏭️ SKIPPED（**不可判定**）：取不到镜像里的 ${_guard_path}（${LOCAL_IMAGE_REF}）—— 产物域名**未验证**，不判绿"
+      echo "     判据要求（issue #8966）：站点域名=${MIGAO_PUBLIC_DOMAIN} 时产物不得含 migaozn.com ⇒ 本次无法验证"
+    fi
+    if [ -n "$_guard_dir" ]; then rm -rf "$_guard_dir"; fi
+  fi
+  # <<< image-domain-guard
   # ── 构建后回收（**只碰构建缓存**，铁律 10 口径：不删带 tag 的镜像、不碰保留集）──────
   # 缺口（issue #6508 ②）：Build Cache 此前**完全不在保留策略里**（只增不减，实测 12.44GB /
   # 184 条 / 100% RECLAIMABLE）⇒ 这里按**水位**回收（`builder_cache_recover`：清到门槛以上为止），
@@ -1333,6 +1440,51 @@ wait_healthy() {
   return 1
 }
 
+# ── nginx 上游断言（issue #8976 ④；2026-11-21 生产实测全站 502 约 90s）──────────────
+# 病：`docker compose up -d` 会**重建**容器（新 IP），而 nginx 在**启动 / reload 时**解析
+#     `proxy_pass http://admin-api:8080` 这类 compose DNS 名并**缓存**该 IP ⇒ 重建后不 reload
+#     ⇒ 请求继续打到**已经消失的**旧 IP ⇒ 502，直到下一次 reload（实测窗口 90s）。
+# 判据（会红）：reload 之后**本机**上游必须回 200。**取不到读数是判红**（不是「没问题」）：
+#     连不上 / 超时 / 非 200 / 取不到 => exit 1。
+# ⚠️ 为什么探 https + `--resolve` 而不是字面的 `http://127.0.0.1/api/version`：
+#     `deploy/swas/nginx.conf` 的 **:80 面是按设计 301 跳 https** 的
+#     （`location / { return 301 https://$host$request_uri; }`）⇒ 按 :80 探**永远**不是 200，
+#     那会变成一条恒红的空断言。`--resolve` 把 `api.<站点域>` 钉回 127.0.0.1:443
+#     ⇒ 走的仍是 nginx **真实的** upstream 解析，且不出本机。
+NGINX_PROBE_TRIES=${NGINX_PROBE_TRIES:-12}
+NGINX_PROBE_INTERVAL=${NGINX_PROBE_INTERVAL:-2}
+nginx_expect_upstream_ok() {
+  local why=$1 code="" i api_host
+  api_host="api.${MIGAO_PUBLIC_DOMAIN}"
+  echo "  ── nginx 上游断言（${why}）"
+  if [ -z "$(docker compose ps -q nginx 2>/dev/null || true)" ]; then
+    # 首装 / 被清掉：先让入口存在（幂等）。否则探到的是「本机没有入口」，不是「上游没切换」。
+    echo "     nginx 不在运行 ⇒ 先起它（幂等；否则本条断言证明不了 upstream 解析）"
+    docker compose up -d --no-deps nginx
+  fi
+  # reload 优先（优雅：旧 worker 把在途请求做完再退），失败回落 restart（= 改动前行为）。
+  if ! docker compose exec -T nginx nginx -s reload; then
+    docker compose restart nginx
+  fi
+  for i in $(seq 1 "${NGINX_PROBE_TRIES}"); do
+    code=$(curl -sk -o /dev/null -w "%{http_code}" -m 5 \
+      --resolve "${api_host}:443:127.0.0.1" "https://${api_host}/api/version" 2>/dev/null) || code="000"
+    if [ "${code}" = "200" ]; then
+      echo "     ✅ 本机上游 200（https://${api_host}/api/version → nginx → admin-api）"
+      echo "     NGINX_UPSTREAM=OK"
+      return 0
+    fi
+    echo "     本机上游 -> ${code}（第 ${i}/${NGINX_PROBE_TRIES} 次）"
+    sleep "${NGINX_PROBE_INTERVAL}"
+  done
+  echo "     NGINX_UPSTREAM=FAIL"
+  echo "     ❌ nginx 上游未回 200（最后读数 ${code}）⇒ 入口仍指向重建前的旧上游 IP（站点正在 502）"
+  echo "        排查：docker compose ps；docker compose exec -T nginx nginx -T | grep -n proxy_pass"
+  echo "              docker compose logs --tail 50 nginx；curl -sk https://127.0.0.1/api/version -m 5"
+  echo "        处置：docker compose restart nginx 后再跑一次本断言；上游自己起不来见各容器日志"
+  exit 1
+}
+
 echo "== 2.5 严格蓝绿预验证（新容器先起 + 健康检查通过再切流量）=="
 BG_VERIFIED=""
 BG_SKIP=0
@@ -1402,6 +1554,10 @@ for svc in $UP_SERVICES; do
     echo "     交给 CI 侧 #4767 的「失败即回滚」（回滚到 .last-good-tag）兜底"
     exit 1
   fi
+  # 🔴 重建 = 换 IP ⇒ **必须**让 nginx 重新解析上游，并当场证明它回 200（issue #8976 ④）。
+  # 这一步不能靠「2.6 稍后会 reload」：切换循环里每个服务之间可能隔几分钟健康检查，
+  # 期间入口一直指着旧 IP ⇒ 生产实测就这样 502 了 90 秒。
+  nginx_expect_upstream_ok "${svc} 重建后"
 
   # ── ③ 正式容器接棒 ⇒ 删掉 green 探针（不长期占内存/端口）──
   if [ "$BG_SKIP" = "0" ]; then
@@ -1415,12 +1571,108 @@ else
   echo "  ✅ 蓝绿预验证结束：${BG_VERIFIED:-（无待更新服务）}"
 fi
 
+# ══════════════════════════════════════════════════════════════════════════
+# 2.5.9 JWT 验签同源硬断言（issue #8976 ①；2026-11-21 生产 AI 接口**全 401**）
+#
+# 病：admin-api 用 `.env.admin-api` 的 `JWT_PRIVATE_KEY/JWT_PUBLIC_KEY`（`file:/opt/migao-deploy/jwt/*.pem`）
+# 签发，ai-agent 用 compose 里**硬编码的 PEM** 验签 ⇒ 同一个 token 配了两把钥匙 ⇒
+# `TOKEN_INVALID: Signature verification failed`，生产 AI 接口全 401。
+# 这类不一致**永远不会自己好**（两侧都不报错、也没有任何读数为红）⇒ 只能拦在部署链上。
+#
+# 判据（三态，**`3` 不得当 `0` 读**）：
+#   ① 两侧指纹一致          => ✅ 打印两侧**来源 + 指纹**；
+#   ② 两侧指纹不一致        => ❌ 打印两侧来源 + 指纹 + 排查口 => **exit 1**；
+#   ③ 任一侧取不到          => ⏭️ **SKIPPED（不可判定）**，**不判绿**（不许拿「读不到」冒充「已对齐」）。
+# 指纹口径 = sha256(PEM 公钥体) 前 16 位，与 scripts/align_agent_jwt_key.py **同一口径**
+# （对拍判据 = tests/unit_ci_workflows/test_swas_jwt_same_source.py）。
+# ══════════════════════════════════════════════════════════════════════════
+echo "== 2.5.9 JWT 验签同源断言（admin-api 签发 ⇄ ai-agent 校验，issue #8976）=="
+
+_sha256_hex() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum | cut -d' ' -f1
+  else
+    shasum -a 256 | cut -d' ' -f1
+  fi
+}
+
+# stdin: PEM 文本 → 公钥体指纹（sha256 前 16）。取不到 / 不是公钥 PEM ⇒ 非零退出（不可判定）。
+jwt_pubkey_fingerprint() {
+  local body
+  body=$(awk '/-----BEGIN PUBLIC KEY-----/{f=1; next} /-----END PUBLIC KEY-----/{f=0} f' | tr -d ' \t\r\n')
+  if [ -z "${body}" ]; then
+    return 1
+  fi
+  printf '%s' "${body}" | _sha256_hex | cut -c1-16
+}
+
+# 取某服务容器里**实际生效**的公钥：输出 "<指纹>|<来源说明>"；指纹为空 = 不可判定。
+# 优先级照 Spring / pydantic 两支的取值顺序：`*_PEM`（内容） > `JWT_*`（可能是 file: 路径 / 内容）。
+jwt_key_fingerprint_of() {
+  local svc=$1 pem raw path content fp
+  pem=$(docker compose exec -T "${svc}" sh -c 'printf %s "${JWT_PUBLIC_KEY_PEM:-}"' 2>/dev/null) || pem=""
+  if [ -n "${pem}" ]; then
+    fp=$(printf '%s' "${pem}" | jwt_pubkey_fingerprint) || fp=""
+    printf '%s|env JWT_PUBLIC_KEY_PEM（PEM 内容）' "${fp}"
+    return 0
+  fi
+  raw=$(docker compose exec -T "${svc}" sh -c 'printf %s "${JWT_PUBLIC_KEY:-}"' 2>/dev/null) || raw=""
+  case "${raw}" in
+    "")
+      printf '|env 未设置 JWT_PUBLIC_KEY（走 classpath 默认，容器内取不到内容）'
+      ;;
+    file:*)
+      path=${raw#file:}
+      content=$(docker compose exec -T "${svc}" cat "${path}" 2>/dev/null) || content=""
+      if [ -z "${content}" ]; then
+        printf '|file:%s（容器内读不到 ⇒ 挂载缺失 / 路径写错）' "${path}"
+        return 0
+      fi
+      fp=$(printf '%s' "${content}" | jwt_pubkey_fingerprint) || fp=""
+      printf '%s|file:%s' "${fp}" "${path}"
+      ;;
+    *)
+      fp=$(printf '%s' "${raw}" | jwt_pubkey_fingerprint) || fp=""
+      printf '%s|env JWT_PUBLIC_KEY（内联 PEM 内容）' "${fp}"
+      ;;
+  esac
+}
+
+_JWT_API=$(jwt_key_fingerprint_of admin-api)
+_JWT_AGENT=$(jwt_key_fingerprint_of ai-agent)
+_JWT_API_FP=${_JWT_API%%|*}
+_JWT_API_SRC=${_JWT_API#*|}
+_JWT_AGENT_FP=${_JWT_AGENT%%|*}
+_JWT_AGENT_SRC=${_JWT_AGENT#*|}
+echo "  admin-api（签发）: 指纹=${_JWT_API_FP:-<不可判定>} 来源=${_JWT_API_SRC}"
+echo "  ai-agent（验签）: 指纹=${_JWT_AGENT_FP:-<不可判定>} 来源=${_JWT_AGENT_SRC}"
+if [ -z "${_JWT_API_FP}" ] || [ -z "${_JWT_AGENT_FP}" ]; then
+  echo "  JWT_KEY_SAME_SOURCE=SKIPPED"
+  echo "  ⏭️  JWT 同源断言：**SKIPPED（不可判定）** ⇒ **不判绿**（这不是「已对齐」，只是这次读不到）"
+  echo "     ::warning::JWT 同源断言 SKIPPED：admin-api=${_JWT_API_SRC} / ai-agent=${_JWT_AGENT_SRC}"
+  echo "     让它可以判定：两侧都显式配 `JWT_*`（生产 = `file:/opt/migao-deploy/jwt/…`，见"
+  echo "     docs/deployment/production-deployment.md §5.5）后重跑本部署"
+elif [ "${_JWT_API_FP}" != "${_JWT_AGENT_FP}" ]; then
+  echo "  JWT_KEY_SAME_SOURCE=MISMATCH"
+  echo "  ❌ JWT 验签**不同源**：admin-api=${_JWT_API_FP} / ai-agent=${_JWT_AGENT_FP}"
+  echo "     后果：admin-api 签的 token ai-agent 一把都验不过 ⇒ AI 接口**全部 401**（TOKEN_INVALID）"
+  echo "     口径：两侧必须读**同一份**公钥（ai-agent 的 JWT_PUBLIC_KEY=file:/opt/migao-deploy/jwt/public.pem，"
+  echo "           与 admin-api 的 JWT_PRIVATE_KEY 成对）；见 docs/deployment/production-deployment.md §5.5"
+  echo "     排查：docker compose exec -T admin-api env | grep '^JWT'；docker compose exec -T ai-agent env | grep '^JWT'"
+  exit 1
+else
+  echo "  JWT_KEY_SAME_SOURCE=OK"
+  echo "  ✅ JWT 验签同源（指纹 ${_JWT_API_FP}）—— admin-api 签发的 token ai-agent 能验"
+fi
+
 # ── 2.6 nginx（流量入口本身：独占 80/443、只有一个，不参与蓝绿）──────────────
 docker compose up -d --no-deps nginx
 # 上游容器重建后 IP 可能变化，nginx 启动时缓存旧上游 IP ⇒ 必须让它重新解析，否则 502。
 # 用 **reload**（优雅：旧 worker 把在途请求做完再退）而不是 restart（硬重启 ⇒ 当场丢弃在途连接）；
 # reload 不可用/失败 ⇒ 回落 restart（= 改动前的行为，不引入新的坏路径）。
 docker compose exec -T nginx nginx -s reload || docker compose restart nginx
+# 🔴 reload 只说明「命令发出去了」；入口是否真的指向**新**上游，只能靠探一次本机上游（issue #8976 ④）。
+nginx_expect_upstream_ok "nginx 重建后"
 
 # ── 2.6.1 TLS 证书自动续期（宿主 cron；issue #8201）──────────────────────────
 # 幂等：/etc/cron.d/migao-tls-renew 内容未变则不重写（`--install-cron` 自己判）。
@@ -1601,8 +1853,15 @@ fi
 if [ "$_migao_ai_missing" -gt 0 ]; then
   echo "  📋 补齐动作（缺 key **不判失败**：本次部署已按流程走完，凭据缺失是运维态）"
   echo "     1) 在服务器改 ${MIGAO_AI_ENV_FILE}（本脚本**不写**它 —— 人工维护、不入库）"
-  echo "     2) 改完必须 recreate（env_file 变更不重读）："
+  echo "     2) 改完必须 recreate（env_file 变更不重读），**并且**让 nginx 重新解析上游"
+  echo "        （重建换 IP ⇒ 不 reload 就是全站 502，实测 90 秒；issue #8976）："
   echo "        docker compose -f docker-compose.yml -f docker-compose.bluegreen.yml up -d --no-deps --force-recreate ai-agent"
+  echo "        docker compose exec -T nginx nginx -s reload || docker compose restart nginx"
+  echo "        自证（站点域 = \${MIGAO_PUBLIC_DOMAIN}，本机探测，必须 200）："
+  # ⚠️ `$` 必须**转义**（只打印给人抄）：本探针块会被判据**单独 source** 执行
+  #    （tests/unit_ci_workflows/test_ai_agent_key_probe.py），那里没有 MIGAO_PUBLIC_DOMAIN
+  #    ⇒ 真展开会 `set -u` 当场 unbound variable（实测 5 条判据红）。
+  echo "        curl -sk -o /dev/null -w '%{http_code}\\n' --resolve \"api.\${MIGAO_PUBLIC_DOMAIN}:443:127.0.0.1\" \"https://api.\${MIGAO_PUBLIC_DOMAIN}/api/version\""
   echo "     3) 自证：容器内 ASR_API_KEY 指纹应为 sk-sp-…（MaaS）而不是 35 字节的旧百炼 key；curl -fsS http://127.0.0.1:8000/health"
   echo "     4) 密钥来源 / 轮换流程见 issue #7718（含 2026-10-25 的线上热修记录）"
 fi
