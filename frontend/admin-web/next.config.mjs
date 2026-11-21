@@ -25,6 +25,21 @@
 const DEV_DIST_DIR = '.next-dev'
 const BUILD_DIST_DIR = '.next'
 
+/**
+ * ── 站点域名：**一个构建期来源**（issue #8941）──────────────────────────────────
+ * 同一份产物部署到测试域 `migaozn.com` 与生产域 `cytda.com` ⇒ 站点级绝对地址必须参数化，
+ * 否则生产环境会出现「商家登录跳测试域 / canonical 登记测试域 / proxy 不认生产域」三件静默错事。
+ * 缺省 `migaozn.com` ⇒ 缺省值下产物与改前**逐字相同**（测试环境在跑，不许有行为变化）。
+ * ⚠️ 本文件是 `.mjs`、无法 import `src/lib/site-domain.ts` ⇒ 这里读**同一个** env；
+ *    两处缺省字面量的一致性由 `tests/unit/pages/site-domain.test.ts` 钉住（不等即红）。
+ * ⚠️ 读值写在 `redirects()` 内（Next 在构建期调用它）⇒ 单测可以 `vi.stubEnv` 逐格给值。
+ */
+function siteDomain() {
+  const raw = (process.env.NEXT_PUBLIC_SITE_DOMAIN || '').trim()
+  const host = raw.replace(/^https?:\/\//i, '').replace(/\/.*$/, '').toLowerCase()
+  return host || 'migaozn.com'
+}
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   // issue #6692：dev 与 build 各写各的目录（整段理由见上方注释）。
@@ -43,11 +58,12 @@ const nextConfig = {
   // `www` → 裸域 301 归一（issue #6665 第 4 条）：两个主机名都能 200 ⇒ 同一份内容两个地址。
   // 301（而非 308）是长期规范：让浏览器与搜索引擎把这层归一缓存下来。
   async redirects() {
+    const apex = siteDomain()
     return [
       {
         source: '/:path*',
-        has: [{ type: 'host', value: 'www.migaozn.com' }],
-        destination: 'https://migaozn.com/:path*',
+        has: [{ type: 'host', value: `www.${apex}` }],
+        destination: `https://${apex}/:path*`,
         permanent: true,
       },
     ]

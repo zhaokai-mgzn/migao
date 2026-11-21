@@ -1586,6 +1586,14 @@ worker-h5 纯函数、承运商 4 条 × 两处入口 + 类级单一真值守卫
 
 ## [Unreleased]
 
+### 生产域 cytda.com：官网导航 / canonical / sitemap / 域名分流按构建期域名生成（2026-11-21，issue #8941）
+
+- **生产验收（P0-3 / P1-1）**：同一份 admin-web 产物部署到测试域 `migaozn.com` 与生产域 `cytda.com`，但有 5 处把测试域写死 ⇒ 生产环境三件静默错事：官网「商家登录」把用户送去 `merchant.migaozn.com`；canonical / og:image / sitemap 把生产页登记成测试域；`merchant.cytda.com/` 不跳登录页、`cytda.com/dashboard` 不跳商家域（`src/proxy.ts` 的 host 分支不认识生产域，未知域直接放行）。
+- **改后**：站点域名只有一个构建期来源 `NEXT_PUBLIC_SITE_DOMAIN`（缺省 `migaozn.com`），驱动 www→裸域 301、proxy 三面分流（apex / www / merchant）、`metadataBase`、官网两处「商家登录」、`/sitemap.xml` 与 `/robots.txt`；抓取指引由 `public/` 静态文件改为 `src/app/sitemap.ts` / `src/app/robots.ts`（`public/` 不参与构建期替换）。未知域仍放行（本地开发 / 预览语义不变）。
+- **缺省值下与改前一致**：不传 env 时全部落点仍是 `migaozn.com` / `www.migaozn.com` / `merchant.migaozn.com`；产物内容等价（sitemap 5 条 loc、robots 的 Disallow 列表逐条不变；差异只有 robots 的 `User-agent` 大小写与两处说明性注释——均非抓取语义）。
+- **部署口径**：生产构建传 `NEXT_PUBLIC_SITE_DOMAIN=cytda.com`；`deploy/swas/deploy.sh` 已按 `MIGAO_PUBLIC_DOMAIN` 派生同一条 `--build-arg`（测试环境不传 ⇒ 与改前逐字相同）。
+- 判据：`frontend/admin-web/tests/unit/pages/site-domain.test.ts`（缺省 / 生产两态 + 类级元守卫）、`frontend/admin-web/tests/unit/pages/corporate-metadata-single-source.test.ts`（route 形式内容等价）、`frontend/admin-web/tests/unit/components/CorporateNav.test.tsx`（桌面 + 移动）、`tests/unit_ci_workflows/test_prod_domain_rendering.py`（构建期接线 + 3 条注入式红证）。
+
 ### 商品详情页重排：商品信息 / 批次与库存两个整体不穿插、不重复（2026-11-20，issue #8934）
 
 - 用户 2026-11-20 逐字：「商品信息展示作为一个整体展示。商品批次余量、商品批次盘点、剩余量分布、库存对账，
