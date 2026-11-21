@@ -7,10 +7,16 @@ POST /api/chat/transcribe
 端点与凭据（issue #7661，用户 2026-10-24 裁定）：语音面切到 MaaS（token-plan）host，
 `ASR_API_KEY` 与 `ASR_WEBSOCKET_BASE_URL` 都由环境注入；**不再回落 PRIMARY_API_KEY**
 （那是 DeepSeek 的 key，打到百炼只会 401 —— 缺 key 必须 fail-closed，不能静默拿错 key）。
+
+两条通道（issue #8987，按 `ASR_MODE` 分派，默认 realtime 不改既有部署行为）：
+  · `realtime` = WebSocket 实时流式识别（`Recognition`），既有通道，保留为回滚口；
+  · `http`     = Token Plan **非实时**识别（`qwen-audio-3.0-asr-flash`），走与生图
+                 **完全相同**的多模态端点。🔴 `parameters.format` 必填（见 `_transcribe_http`）。
 """
 
 from __future__ import annotations
 
+import base64
 import subprocess
 import tempfile
 import time
@@ -18,6 +24,7 @@ from pathlib import Path
 from typing import Optional
 
 import dashscope
+import httpx
 from dashscope.audio.asr.recognition import Recognition, RecognitionCallback
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from loguru import logger
@@ -41,6 +48,37 @@ MAX_AUDIO_DURATION_S = 60          # 最长 60 秒
 # #2984：低于该大小视为无效/空录音（浏览器空口语录音的 webm 容器最小也有几 KB，
 # 前置拦截避免空音频裸 500 与白白消耗 ASR 免费额度）
 MIN_AUDIO_SIZE = 1024
+
+# Token Plan 非实时识别的等待上限（issue #8987）：单次音频 ≤5 分钟，识别本身是秒级；
+# 30s 已够长。**别照抄生图的 240s** —— 那是「生成」耗时，识别不是。
+ASR_HTTP_TIMEOUT_S = 30.0
+
+# 非实时通道的音频封装形态（`parameters.format` 必填，必须与实际载荷一致）
+ASR_HTTP_FORMAT = "wav"
+ASR_HTTP_SAMPLE_RATE = 16000
+
+
+class ASRError(RuntimeError):
+    """语音识别失败的**语义分类**基类（对外仍按 `transcribe_audio` 的既有口径映射）。
+
+    全部继承 RuntimeError：端点层与既有调用方/测试都按 RuntimeError 处理。
+    """
+
+
+class ASRAuthError(ASRError):
+    """凭证 / 权限失败（HTTP 401/403）—— **账号级**问题，重试永远不会好（换 Key 才会）。"""
+
+
+class ASRQuotaError(ASRError):
+    """配额 / 限流（HTTP 429）—— 等额度或换套餐才会好。"""
+
+
+class ASRUnavailableError(ASRError):
+    """上游暂时不可用（5xx / 网络失败 / 非 JSON 响应）—— 可以稍后重试。"""
+
+
+class ASRNoSpeechError(ASRError):
+    """没有识别出文本（静音 / 无有效语音）⇒ 端点映射 400「未识别到语音内容」。"""
 
 
 def _log_reject(reason: str, tenant_id, size: int, filename: Optional[str], content_type: Optional[str]) -> None:
@@ -144,6 +182,97 @@ def _apply_asr_endpoint() -> None:
         dashscope.base_websocket_api_url = url
 
 
+def _extract_http_text(data: dict) -> str:
+    """从 Token Plan 非实时响应里取识别文本（issue #8987）。
+
+    主口径 = **`output.text`**（官方契约）；`output.sentence.text` 是句子级形态；
+    2026-11-21 实测打印的响应里顶层也出现过 `text` ⇒ 三者按此顺序取，取不到再判「没识别到」。
+    """
+    output = data.get("output") if isinstance(data, dict) else None
+    output = output if isinstance(output, dict) else {}
+    sentence = output.get("sentence") if isinstance(output.get("sentence"), dict) else {}
+    for candidate in (output.get("text"), sentence.get("text"), data.get("text")):
+        text = str(candidate or "").strip()
+        if text:
+            return text
+    return ""
+
+
+async def _transcribe_http(
+    audio_data: bytes,
+    format: str,
+    language_hints: list[str],
+    api_key: str,
+) -> str:
+    """Token Plan **非实时**识别（issue #8987）：端点与生图**完全相同**。
+
+    形态（官方契约 + 2026-11-21 生产实测，见 docs/deployment/voice-asr-token-plan.md）：
+      POST <ASR_HTTP_URL>
+      {"model": "qwen-audio-3.0-asr-flash",
+       "input": {"messages": [{"role": "user", "content": [
+           {"type": "input_audio", "input_audio": {"data": "data:audio/wav;base64,…"}}]}]},
+       "parameters": {"format": "wav", "sample_rate": 16000, "language_hints": ["zh"]}}
+
+    🔴 **`parameters.format` 必填** —— 少了它网关直接回 `400 {}`（**空 body**，实测 ~90ms 拒单，
+    没有 message 可读，极难排查）。判据 = tests/test_asr_http_mode.py 的请求体断言。
+    """
+    # 统一转 16kHz mono WAV：`parameters.format` 必须与实际载荷一致（不同格式会 400）
+    wav_data = _convert_to_wav(audio_data, format)
+    body = {
+        "model": settings.ASR_HTTP_MODEL,
+        "input": {"messages": [{"role": "user", "content": [
+            {
+                "type": "input_audio",
+                "input_audio": {
+                    "data": "data:audio/wav;base64," + base64.b64encode(wav_data).decode("ascii"),
+                },
+            },
+        ]}]},
+        "parameters": {
+            "format": ASR_HTTP_FORMAT,
+            "sample_rate": ASR_HTTP_SAMPLE_RATE,
+            "language_hints": language_hints,
+        },
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=ASR_HTTP_TIMEOUT_S) as client:
+            resp = await client.post(
+                settings.ASR_HTTP_URL,
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
+                json=body,
+            )
+    except Exception as e:
+        # 只记**异常类型**：httpx 的异常消息可能带完整请求（含 Bearer 头）
+        logger.error(f"ASR HTTP 通道网络失败: {type(e).__name__}")
+        raise ASRUnavailableError("语音识别服务暂时不可用，请稍后重试") from e
+
+    if resp.status_code != 200:
+        # 🔴 只记状态码：**不记 key、不记响应体**（响应体可能回显请求片段）
+        logger.warning(f"ASR HTTP 通道失败: status={resp.status_code}")
+        if resp.status_code in (401, 403):
+            raise ASRAuthError(f"语音识别凭证无效（HTTP {resp.status_code}）")
+        if resp.status_code == 429:
+            raise ASRQuotaError("语音识别配额已用尽（HTTP 429），请稍后重试")
+        if resp.status_code == 400:
+            logger.warning("ASR HTTP 通道 400：先查 parameters.format 是否缺失（契约必填）")
+        raise ASRUnavailableError(f"语音识别服务暂时不可用（HTTP {resp.status_code}）")
+
+    try:
+        data = resp.json()
+    except Exception as e:
+        logger.error(f"ASR HTTP 通道响应不是 JSON: {type(e).__name__}")
+        raise ASRUnavailableError("语音识别服务暂时不可用，请稍后重试") from e
+
+    text = _extract_http_text(data)
+    if not text:
+        raise ASRNoSpeechError("未识别到语音内容，请检查音频输入")
+    return text
+
+
 async def _transcribe_audio(
     audio_data: bytes,
     format: str,
@@ -168,6 +297,14 @@ async def _transcribe_audio(
     api_key = settings.ASR_API_KEY
     if not api_key:
         raise ValueError("ASR_API_KEY 未配置")
+
+    # 通道分派（issue #8987）：默认 realtime = 既有实时流式识别，行为**逐字不变**；
+    # `http` = Token Plan 非实时通道（与生图同一个多模态端点）。实时通道保留为回滚口。
+    if settings.ASR_MODE == "http":
+        return await _transcribe_http(
+            audio_data, format=format, language_hints=language_hints, api_key=api_key,
+        )
+
     _apply_asr_endpoint()
 
     callback = _CollectorCallback()
