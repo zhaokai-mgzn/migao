@@ -689,8 +689,11 @@ class AgentOrderServiceTest {
             // （改运单号/纠错 ≠ 换发货人；agent 本次操作人不该顶替首发的经手人）
             // 显式给了承运商与运单号 ⇒ 这两个值原样传给条件更新；
             // 发货人**不传**（null）=「本次没说这件事」⇒ SQL 侧 COALESCE 保留「李四」，不被本次操作人顶替
-            // tenantId 由 TenantContext 提供，本用例没设上下文 ⇒ 入参为 null（与旧实现同款，不是本单的判定对象）
-            verify(orderLogisticsMapper).updateShippingDetails(org.mockito.ArgumentMatchers.<Long>isNull(),
+            // tenantId = 本用例调用时显式传的 1L（`updateOrderForAgent(orderId, req, 1L)`），
+            // 由 `OrderLogisticsWriter.upsert` 原样透传给条件更新的 WHERE 面 ⇒ 这里是**租户隔离的可判读数**，
+            // 不是 null。⚠️ 2026-11-21 更正（issue #8976 的链上顺带修复，main 上已红）：
+            // 该期望停留在「tenantId 由 TenantContext 隐式提供 ⇒ 入参 null」的旧实现，自 #8461 起不成立。
+            verify(orderLogisticsMapper).updateShippingDetails(org.mockito.ArgumentMatchers.eq(1L),
                     org.mockito.ArgumentMatchers.eq("order-uuid-001"),
                     org.mockito.ArgumentMatchers.eq("中通"),
                     org.mockito.ArgumentMatchers.eq("ZT123456"),
@@ -727,7 +730,7 @@ class AgentOrderServiceTest {
             // then: 发货人保持 null（宁可空白显示「-」，也不把当次操作人写成历史经手人）
             // 发货人传 null = 本次没说 ⇒ SQL 侧保留原值（历史行本来就是 null ⇒ 仍是 null，不猜一个经手人）
             // tenantId 由 TenantContext 提供，本用例没设上下文 ⇒ 入参为 null（与旧实现同款，不是本单的判定对象）
-            verify(orderLogisticsMapper).updateShippingDetails(org.mockito.ArgumentMatchers.<Long>isNull(),
+            verify(orderLogisticsMapper).updateShippingDetails(org.mockito.ArgumentMatchers.eq(1L),
                     org.mockito.ArgumentMatchers.eq("order-uuid-001"),
                     org.mockito.ArgumentMatchers.eq("中通"),
                     org.mockito.ArgumentMatchers.eq("ZT123456"),

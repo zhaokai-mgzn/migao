@@ -69,6 +69,8 @@ from pathlib import Path
 import pytest
 import yaml
 
+from unit_ci_workflows.injection import inject
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEPLOY_SH = REPO_ROOT / "deploy" / "swas" / "deploy.sh"
 BASE_COMPOSE = REPO_ROOT / "deploy" / "swas" / "docker-compose.yml"
@@ -280,10 +282,12 @@ def test_real_files_satisfy_every_judgement():
 
 
 def _inject(text: str, old: str, new: str, *, count: int = 1) -> str:
-    assert old in text, f"注入锚点不存在（判据已过期）：{old[:60]!r}"
-    out = text.replace(old, new, count)
-    assert out != text, "注入没有改变文本（空跑）"
-    return out
+    """注入 = 仓库唯一原语 `inject()`（issue #7017）：**不许**裸 `str.replace`。
+
+    裸 replace 的失效形态是「锚点漂了 ⇒ 静默返回原串 ⇒ 红证没生效，却被读成『判据没牙』」；
+    `inject()` 对 0 命中 / 不唯一 / 空操作**一律抛错**（判据 = tests/unit_ci_workflows/test_red_proof_anchor_liveness.py）。
+    """
+    return inject(text, old, new, count=count, where="deploy/swas/deploy.sh")
 
 
 def test_injection_inline_pem_back_goes_red():
