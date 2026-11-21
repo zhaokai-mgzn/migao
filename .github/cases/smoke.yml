@@ -7,25 +7,29 @@ domain: smoke
 cases:
   - id: SMK-001
     legacy_id: ""
-    title: "SMOKE_ENV=production 必须打到生产实例 cytda，不得落到测试实例 migaozn"
+    title: "SMOKE_ENV=production 必须打到生产实例 cytda，不得落到测试实例 migaozn（#8992）"
     domains:
       - smoke
-    tier: critical
+    tier: normal
     tags:
       - smoke
       - config
       - prod-safety
-    given: "production 档配置未用环境变量覆盖基址"
-    when: "调用 tests.smoke.config.get_config() 且 SMOKE_ENV=production"
-    then:
-      - "admin_api_url 含 cytda.com 且不含 migaozn"
-      - "ai_agent_url 含 cytda.com 且不含 migaozn"
-      - "staging 档仍指向测试实例（回归保护）"
-    verify:
-      kind: pytest
-      file: tests/smoke/test_config_production_urls.py
-      selectors:
-        - test_production_env_targets_cytda_not_test_instance
-        - test_staging_env_keeps_test_instance
-    status: active
-    issue: 8992
+    truths_ref: []
+      # 真值缺口：这是「套件自身配置」的元判据，不是对话行为，无 LLM 真值可引
+    user_inputs:
+      - "以 SMOKE_ENV=production 跑生产冒烟（未用环境变量覆盖基址）"
+    expectations: []
+    data_checks:
+      - "断言 production 档 admin_api_url 必含 cytda.com —— 机器可判：字符串包含判定，失败时打印实际值"
+      - "断言 production 档 ai_agent_url 必含 cytda.com —— 同上"
+      - "断言 production 档两处均不含 migaozn（防止复制 staging 段复发）"
+      - "回归保护：staging 档仍指向 migaozn（避免有人把 staging 一起改掉）"
+    skip_reason: "[backend-contract] 套件配置契约由 tests/smoke/test_config_production_urls.py 纯静态断言，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-11-21 新增（issue #8992）：production 档曾整段复制 staging 的 migaozn 基址 ⇒ SMOKE_ENV=production 静默打到测试实例（假绿 + 误写）；红证实测：还原 config.py 后 test_production_env_targets_cytda_not_test_instance 必红（1 failed）"
+    traces:
+      tests:
+        - "tests/smoke/test_config_production_urls.py"
+      ci:
+        - pr-check.yml
+      verifies: []
