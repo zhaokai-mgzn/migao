@@ -48,6 +48,15 @@ rollback.md 回滚（重新发布上一稳定版本）
 2. 仓库 Secrets 增加 `PROD_ALIYUN_ACCESS_KEY_ID/SECRET`、`PROD_ACR_USERNAME/PASSWORD`（生产最小权限 RAM 子账号，仅 SWAS/ACR 相关权限）
 3. Variables：`PROD_SWAS_INSTANCE_IDS`、`PROD_SWAS_REGION`、`PROD_HEALTH_URLS`（生产健康检查地址）
 4. 生产服务器部署脚本沿用 `deploy/swas/deploy.sh`（flock 串行 + 健康检查），由 `deploy-prod.yml` 触发
+   - **`deploy.sh` 现在自同步**（issue #8966）：第 1 段取到同源源码树（`src/`）后，会把它自己的
+     `src/deploy/swas/deploy.sh` 与盘上 `/opt/migao-deploy/deploy.sh` 比对，不同则备份
+     `deploy.sh.bak-<时间戳>` 后**原地覆盖**（`cat >` 保 inode）并打印两侧 sha256 前 8 位
+     ⇒ **盘上版本随 target ref 走**，不再需要人工覆盖（2026-11-21 的「旧脚本 + 新配置」事故：
+     旧脚本不读 `.env.site` ⇒ 域名静默回落 `migaozn.com` ⇒ 全站 401）。
+     覆盖后**本次运行会立刻停下**（bash 按字节偏移续读脚本，换内容后继续执行会读到错位内容）⇒
+     再跑一次即由新脚本执行（CI 会自动重试一次）。同日还加了两道 fail-closed 断言：nginx 渲染后
+     `server_name` 必须含站点域名、构建后产物不得含 `migaozn.com`（取不到产物 = 不可判定，不判绿）。
+     自查：`sha256sum /opt/migao-deploy/deploy.sh` 与 `git show <ref>:deploy/swas/deploy.sh | sha256sum` 对齐
 
 ### 3.3 首次发布
 1. 测试环境全量验证通过
@@ -143,6 +152,39 @@ rollback.md 回滚（重新发布上一稳定版本）
 
 判据 = `tests/unit_ci_workflows/test_ops_readouts.py`（替身 `psql` + 离线 CSV，零网络、零真库；
 另核 `deploy/ops/db-growth-readout.sql` 的只读性：可执行面出现任何写 / DDL 动词 ⇒ 红）。
+
+### 5.4 宿主挂载契约：compose 的卷必须覆盖 env 里所有 `file:` 路径（issue #8969）
+
+**病（2026-11-21 生产实测）**：`.env.admin-api` 用**文件式** JWT 私钥
+（`JWT_PRIVATE_KEY=file:/opt/migao-deploy/jwt/private.pem`），而 canonical `deploy/swas/docker-compose.yml`
+的 admin-api **没有 `volumes:`** ⇒ 容器里那个路径不存在 ⇒ `JwtTokenProvider` 的 RS256 fail-closed
+直接打死进程（`api.cytda.com` 502 约 3 分钟，报「JWT RSA 密钥加载失败，无法启用 RS256 签名」）。
+生产旧容器**看起来**有挂载，只因那份挂载来自**历史手工创建**（`docker inspect` 可见
+`/opt/migao-deploy/jwt`、`/opt/migao-deploy/uploads`），仓库里从来没有 ⇒「按仓库 compose 重建容器」必然炸。
+
+**口径（一条）**：**每个服务的 `volumes` 必须覆盖它 `env_file` 指向的 `.env*` 里所有 `file:<容器内路径>`，
+以及运行期写盘的目录**。新增一条 `file:` 路径而不补卷 ⇒ 守卫判红（见下）。
+
+| 服务 | 必须挂的卷 | 为什么 |
+|---|---|---|
+| `admin-api` | `/opt/migao-deploy/jwt:/opt/migao-deploy/jwt:ro` | `.env.admin-api` 的 `JWT_PRIVATE_KEY=file:…/private.pem`（RS256 fail-closed：缺了容器起来即崩） |
+| `admin-api` | `/opt/migao-deploy/uploads:/app/uploads` | `LocalFileStorageService.UPLOAD_DIR="uploads"` + Dockerfile `WORKDIR /app` ⇒ 上传图片的落盘面（不挂卷 = 容器一重建就丢） |
+| `nginx` | `./nginx/nginx.conf` · `/etc/letsencrypt` · `./certbot-www` · `./h5` | 配置 / 证书 / ACME / C 端静态文件（既有，未变） |
+
+**ai-agent / admin-web 逐个核对过，今天不需要卷**：ai-agent 的图片与文件走 OSS 双 bucket
+（`.env.ai-agent` 里没有 `file:` 路径），admin-web 是 Next standalone（无运行期落盘目录）。
+它们的 `.env*` 将来若出现 `file:` 路径，判据 12 会当场判红（不需要改守卫）。
+
+**守卫（会红）**：
+
+- `tests/unit_ci_workflows/test_swas_deploy_blue_green.py` —— `docker-compose.bluegreen.yml` 的每个
+  green 与正式服务的 `volumes` **逐字一致**（删一个卷 / 改 `:ro` 标志 ⇒ 红；含注入式红证）；
+- `tests/unit_ci_workflows/test_swas_container_runtime.py::test_admin_api_host_mounts_are_present`
+  —— 上表 admin-api 的两条卷逐字在位；
+- 同文件 `::test_env_file_referenced_paths_are_mounted` —— **类级**：扫 `.env.admin-api` /
+  `.env.ai-agent` / `.env.admin-web` 里所有 `file:` 前缀路径，断言对应服务的卷**容器目标**覆盖它。
+  **取不到 env 文件 ⇒ SKIPPED 不可判定，不判绿**（env 不入仓 ⇒ CI 里通常是 SKIPPED；在服务器上只读复核：
+  `MIGAO_SWAS_ENV_DIR=/opt/migao-deploy python3 -m pytest tests/unit_ci_workflows/test_swas_container_runtime.py -q -k env_file`）。
 
 ## 6. 与测试环境的差异提醒
 
