@@ -42,6 +42,24 @@ services:
       # 判据 = tests/unit_ci_workflows/test_wechat_bmini_env_wiring.py
     ports:
       - "127.0.0.1:8080:8080"
+    # ── 宿主挂载（issue #8969，2026-11-21 生产 `api.cytda.com` 502 约 3min 的事故）────────────
+    # 这两条**不是可选优化**：删掉任何一条 = 容器起来即崩 / 用户上传数据丢。
+    # ① `/opt/migao-deploy/jwt`：`.env.admin-api` 用的是**文件式**私钥
+    #    `JWT_PRIVATE_KEY=file:/opt/migao-deploy/jwt/private.pem`（PEM 内容型 `JWT_PRIVATE_KEY_PEM`
+    #    只在本地/CI 用）⇒ 容器里没有这个路径时，`JwtTokenProvider` 的 RS256 fail-closed 分支
+    #    直接抛 `IllegalStateException`（「JWT RSA 密钥加载失败，无法启用 RS256 签名」）⇒ 重启循环。
+    #    🔴 生产旧容器**看起来有**这两个挂载（`docker inspect` 可见 `/opt/migao-deploy/jwt`、
+    #    `/opt/migao-deploy/uploads`），但它们来自**历史手工创建** —— 仓库 compose 从来没有
+    #    ⇒ 只要「按仓库 compose 重建容器」就必然炸（实测：手工 `docker run` 补上挂载 ⇒ healthy）。
+    # ② `/app/uploads`：`LocalFileStorageService.UPLOAD_DIR = "uploads"` 是**相对路径**
+    #    （`WebConfig` 也以 `file:uploads/` 暴露静态面），而 Dockerfile 的 `WORKDIR /app`
+    #    ⇒ 实际落盘 `/app/uploads`。不挂宿主卷 ⇒ 容器一重建，用户上传的图片**全丢**，且没有读数为红。
+    # ⚠️ 判据（会红）：tests/unit_ci_workflows/test_swas_deploy_blue_green.py（green 与正式服务
+    #    volumes 逐字一致）与 tests/unit_ci_workflows/test_swas_container_runtime.py（这两条卷在位 +
+    #    `.env.*` 里所有 `file:` 路径都被某个卷的容器目标覆盖；取不到 env ⇒ SKIPPED 不可判定）。
+    volumes:
+      - /opt/migao-deploy/jwt:/opt/migao-deploy/jwt:ro
+      - /opt/migao-deploy/uploads:/app/uploads
     mem_limit: 1536m
     cpus: 1.0
     logging: *migao-logging

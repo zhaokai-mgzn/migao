@@ -5,6 +5,19 @@
 > 原因 = 单文件涨到 512KB 越过扫描上限，详见存档文件头与 issue #6404。
 > **后续条目继续在本文件 `## [Unreleased]
 
+### 部署 compose 补回 admin-api 的 jwt / uploads 宿主挂载，蓝绿 green 同步挂卷（2026-11-21，issue #8969）
+
+- **形态**：canonical `deploy/swas/docker-compose.yml` 的 admin-api 补 `jwt:ro`
+  （`.env.admin-api` 的文件式私钥 `JWT_PRIVATE_KEY=file:/opt/migao-deploy/jwt/private.pem`）与
+  `/opt/migao-deploy/uploads:/app/uploads`（上传图片的落盘面）；`docker-compose.bluegreen.yml` 的每个
+  green 补**逐字相同**的卷。
+- **之前**：仓库 compose 里这两条挂载根本不存在（生产旧容器上的挂载来自历史手工创建）⇒ 只要「按仓库
+  compose 重建容器」就会 `JWT RSA 密钥加载失败` 起来即崩；且 green 从不挂卷 ⇒ 蓝绿预验证对 admin-api
+  **必然**失败（2026-11-21 实测 `admin-api-green -> 000000 ×10`，`api.cytda.com` 502 约 3 分钟）。
+- **判据**：parity 守卫把 `volumes` 纳入逐字一致（删卷 / 改 `:ro` 判红），并新增「`.env*` 里所有 `file:`
+  路径必须被卷的容器目标覆盖」的类级判据（取不到 env 文件 ⇒ SKIPPED 不可判定，不判绿）。
+- **不变**：`.env*` 文件、镜像与端口；不改 `deploy/swas/deploy.sh`。
+
 ### 入库标签二维码的 origin 改为构建期可覆盖：生产标签不再指向测试服务器（2026-11-21，issue #8942）
 
 - **缺陷（已验收确认）**：B 端 H5 打印的入库标签，二维码内容来自 `frontend/bmini-app/src/utils/inbound/truth.ts` 里写死的 `https://app.migaozn.com`；生产落地面是 `app.cytda.com` ⇒ **生产打印出来的标签把扫码请求送到测试服务器**（线上 `/b/js/app.js` 里能读到 `w="https://app.migaozn.com",b="/i/"`，与常量逐字吻合）。页面上一切正常，只有工人扫了才会发现。

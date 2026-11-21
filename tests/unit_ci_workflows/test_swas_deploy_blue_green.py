@@ -25,9 +25,13 @@ docker compose up -d --no-deps $UP_SERVICES     # 先替换，健康检查在第
    应急开关 / 内存预检 fail-closed / 残留 green 清理 / nginx 优雅重载（含 restart 回落）各就位；
    新增的 override 文件必须被同步到服务器。
 2. **抗漂移判据**：`docker-compose.bluegreen.yml` 的每个 green 服务与 `docker-compose.yml` 对应服务的
-   `image / env_file / environment / mem_limit / cpus / healthcheck` **逐字一致**，端口是**第二端口**
-   （同容器端口、不同宿主端口），`restart: "no"`；且 `docker-compose.yml` **既有服务定义未被改动**
-   （里面不得出现任何 `*-green`）。
+   `image / env_file / environment / mem_limit / cpus / healthcheck / volumes` **逐字一致**，端口是
+   **第二端口**（同容器端口、不同宿主端口），`restart: "no"`；且 `docker-compose.yml` **既有服务定义
+   未被改动**（里面不得出现任何 `*-green`）。
+   🔴 `volumes` 是 2026-11-21 补的（issue #8969）：改前 `docker-compose.bluegreen.yml` 里 `volumes:`
+   出现 **0 次** ⇒ green 漏挂 `.env.admin-api` 指向的 JWT 私钥 ⇒ 预验证**必然**失败（实测
+   `admin-api-green -> 000000 ×10`）⇒ 蓝绿对依赖宿主挂载的服务**永久失效**。红证见
+   `test_injection_green_volume_removed_goes_red` / `test_injection_green_volume_ro_drift_goes_red`。
 3. **注入式红证**（每条判据各自可独立判红，且**注入必须真的落到文本上**，否则显式失败）。
 4. **执行式红证**（桩 `docker` / `curl` / `flock` / `timeout`，跑**真实** `deploy.sh` 的**真实码路**）：
    - 注入「新容器（green）健康检查失败」⇒ 断言 docker 桩日志里**没有**任何正式容器替换、
@@ -255,7 +259,7 @@ def judge_bg_compose_antidrift(base: dict, bg: dict, deploy_text: str) -> list:
             v.append(f"docker-compose.yml 里找不到 {s}")
             continue
         b, x = base["services"][s], bg["services"][g]
-        for key in ("image", "env_file", "environment", "mem_limit", "cpus", "healthcheck"):
+        for key in ("image", "env_file", "environment", "mem_limit", "cpus", "healthcheck", "volumes"):
             if b.get(key) != x.get(key):
                 v.append(f"{g}.{key} 与 {s} 不一致（green 跑的就是同一份配置，漂移即判红）")
         if x.get("restart") != "no":
@@ -420,6 +424,37 @@ def test_injection_green_restart_policy_goes_red():
     drifted = yaml.safe_load(yaml.safe_dump(bg))
     drifted["services"]["admin-api-green"]["restart"] = "unless-stopped"
     assert judge_bg_compose_antidrift(base, drifted, read_deploy_sh()), "restart 策略漂移后没红（判据无判别力）"
+
+
+def test_injection_green_volume_removed_goes_red():
+    """注入⑩：删掉 green 的一个卷（issue #8969 的原形态：green 漏挂 JWT 私钥目录）⇒ 必红。"""
+    base, bg = read_yaml(BASE_COMPOSE), read_yaml(BG_COMPOSE)
+    vols = bg["services"]["admin-api-green"].get("volumes") or []
+    assert "/opt/migao-deploy/jwt:/opt/migao-deploy/jwt:ro" in vols, (
+        "反空跑锚点：green 本来就没有这个卷（判据已过期或实现被回退）"
+    )
+    drifted = yaml.safe_load(yaml.safe_dump(bg))
+    drifted["services"]["admin-api-green"]["volumes"] = [
+        v for v in drifted["services"]["admin-api-green"]["volumes"]
+        if not str(v).startswith("/opt/migao-deploy/jwt:")
+    ]
+    assert len(drifted["services"]["admin-api-green"]["volumes"]) == len(vols) - 1, "注入没有真的删掉卷（空跑）"
+    assert judge_bg_compose_antidrift(base, drifted, read_deploy_sh()), "green 漏卷后没红（判据无判别力）"
+
+
+def test_injection_green_volume_ro_drift_goes_red():
+    """注入⑪：把 green 的 `:ro` 去掉（密钥目录变成可写挂载）⇒ 必红。"""
+    base, bg = read_yaml(BASE_COMPOSE), read_yaml(BG_COMPOSE)
+    drifted = yaml.safe_load(yaml.safe_dump(bg))
+    vols = drifted["services"]["admin-api-green"].get("volumes") or []
+    assert "/opt/migao-deploy/jwt:/opt/migao-deploy/jwt:ro" in [str(v) for v in vols], (
+        "反空跑锚点：卷不在位（判据已过期）"
+    )
+    drifted["services"]["admin-api-green"]["volumes"] = [
+        str(v).replace("/opt/migao-deploy/jwt:/opt/migao-deploy/jwt:ro", "/opt/migao-deploy/jwt:/opt/migao-deploy/jwt")
+        for v in vols
+    ]
+    assert judge_bg_compose_antidrift(base, drifted, read_deploy_sh()), "ro 标志漂移后没红（判据无判别力）"
 
 
 # ══════════════════════════════════════════════════════════════════════════
