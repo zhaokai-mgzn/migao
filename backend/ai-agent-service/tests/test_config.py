@@ -64,6 +64,9 @@ class TestDefaults:
         """
         s = _make_settings()
         assert s.ASR_MODEL == "qwen-audio-3.0-realtime-plus"
+        # issue #8987：通道形态缺省必须是 realtime（切通道只能靠 env 显式改，
+        # 不许因为「加了个新配置」就悄悄改掉既有部署的识别通道）
+        assert s.ASR_MODE == "realtime"
         assert s.ASR_WEBSOCKET_BASE_URL == (
             "wss://token-plan.cn-beijing.maas.aliyuncs.com/api-ws/v1/inference"
         )
