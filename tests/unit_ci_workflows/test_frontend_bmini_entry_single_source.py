@@ -74,11 +74,13 @@ SOLE_READER = "frontend/admin-web/src/lib/bmini-h5-url.ts"
 #: 不再出现域名 ⇒ 红）。没有这条，豁免台账只会越积越长，最后变成一份自我复制的历史文档。
 ALLOWED_DOMAIN_SITES: dict[str, str] = {
     "frontend/bmini-app/src/utils/inbound/truth.ts": (
-        "入库标签二维码的**码形态一次定死**（#5052 P3；设计 §7.1）：这个域名是**印在纸上的契约**，"
-        "刻意**不跟随** admin-web 的 `NEXT_PUBLIC_BMINI_H5_URL` 部署配置 —— 码一旦打出去，"
-        "换域名会让**已打印的标签全部失效**（必须是一次有意的、带迁移的决策，不能随发布漂移）。"
+        "入库标签二维码的 **origin 缺省值**（#5052 P3；#8942；设计 §7.1）：这个域名是**印在纸上的契约**的"
+        "缺省形态，刻意**不跟随** admin-web 的 `NEXT_PUBLIC_BMINI_H5_URL` 部署配置"
+        "（按运行时/发布配置漂移 ⇒ 已打印的码悄悄失效，必须是一次有意的、带迁移的决策）。"
+        "#8942 起它是**构建期**可覆盖的缺省值（`TARO_APP_PUBLIC_APP_ORIGIN`；生产传实际落地面域名，"
+        "不传则逐字回落到这里）—— 仍然不随运行时漂移。"
         "⚠️ 它 ≠ 手机端入口地址：那条真值仍然只读 `frontend/admin-web/src/lib/bmini-h5-url.ts`；"
-        "本文件的取值形态另由 frontend/bmini-app/tests/inbound-print-geometry-single-source.test.ts 的 C5 钉住。"
+        "取值形态与「缺省逐字不变」由 frontend/bmini-app/tests/inbound-label-origin-env.test.ts 的 O1~O4 钉住。"
     ),
 }
 DOMAIN_RE = re.compile(r"\bapp\.migaozn\.com\b")
