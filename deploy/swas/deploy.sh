@@ -740,6 +740,54 @@ else
   printf '%s\n' "$CONFIG_REF_RESOLVED" > "$CONFIG_REF_MARKER_FILE"
 fi
 
+# ── 1.2.1 部署脚本**自同步**（issue #8966）────────────────────────────────────
+# 病根（**2026-11-21 生产实测**）：上面那段只同步 compose / nginx / tls-renew.sh，**不同步 deploy.sh 自己**
+# ⇒ 盘上脚本一旦落后于 target ref 就**永远停在旧版**（没有任何东西会更新它）：旧版不读 `.env.site`、
+# 不认识 `NEXT_PUBLIC_SITE_DOMAIN` ⇒ 它按**自己的旧逻辑**把 nginx 渲染回 canonical 原文（`migaozn.com`）
+# 并少传一个 build-arg，全程**零报错**（日志只有一行「站点域名：migaozn.com」）⇒ 所有 `cytda.com`
+# 请求落到 default server 被代理到 API ⇒ **全站 401**。
+# 同源：`src/` 就是本次 target ref（`$CONFIG_REF_RESOLVED`）的仓库树 ⇒ 装上去的脚本与镜像 tag 同源。
+# 幂等：内容相同 ⇒ 不覆盖、不备份、不产生任何新文件（连跑两次盘面逐字节一致）。
+# ⚠️ 覆盖的是**正在运行的这个脚本文件** ⇒ 用「写临时文件 + `cat >` 原地覆盖」**保 inode**；
+#    绝不用 `mv`（换 inode，某些挂载/执行场景会读到半截）。
+# ⚠️ 覆盖完必须**当场停住**，不许接着往下跑：bash 是**按字节偏移**从同一个 fd 续读脚本的 ⇒
+#    原地换掉内容后继续执行，读到的是**错位**的下一段（本机实测：覆盖后下一条命令变成
+#    `p: command not found`）⇒ 那就是「半截执行」，比停在原地更坏。
+#    ⇒ 覆盖后 `exit 1`，**不落任何派生配置**（nginx.conf 还没渲染、容器一个都没动）；
+#      下一次（CI 的自动重试 / 人工复跑）执行的就是同源脚本，幂等、不再备份/覆盖。
+#      CI 的 bootstrap 本来就先装同源脚本再执行（`swas-deploy-ci.sh`）⇒ 正常路径走不到这里。
+# >>> deploy-selfsync
+MIGAO_DEPLOY_SRC_FILE=${MIGAO_DEPLOY_SRC_FILE:-src/deploy/swas/deploy.sh}
+MIGAO_DEPLOY_SELF=${MIGAO_DEPLOY_SELF:-./deploy.sh}
+if [ ! -f "$MIGAO_DEPLOY_SRC_FILE" ]; then
+  echo "  ⏭️ 跳过 deploy.sh 自同步：盘上没有 ${MIGAO_DEPLOY_SRC_FILE}（本次未取源码树 / 同 ref 复用配置）—— **部署不受影响**；盘上脚本保持现版本（issue #8966）"
+elif [ ! -f "$MIGAO_DEPLOY_SELF" ]; then
+  echo "  ⏭️ 跳过 deploy.sh 自同步：找不到盘上脚本 ${MIGAO_DEPLOY_SELF} —— **部署不受影响**（issue #8966）"
+else
+  _self_src_sha=$(sha256sum "$MIGAO_DEPLOY_SRC_FILE" 2>/dev/null | cut -d' ' -f1 || shasum -a 256 "$MIGAO_DEPLOY_SRC_FILE" | cut -d' ' -f1)
+  _self_dst_sha=$(sha256sum "$MIGAO_DEPLOY_SELF" 2>/dev/null | cut -d' ' -f1 || shasum -a 256 "$MIGAO_DEPLOY_SELF" | cut -d' ' -f1)
+  if [ -z "$_self_src_sha" ] || [ -z "$_self_dst_sha" ]; then
+    # 两侧 sha 算不出来 ⇒ **不可判定**：不覆盖（否则每次都会「不同」⇒ 每次都备份 + 每次都 exit 1 的循环）
+    echo "  ⏭️ 跳过 deploy.sh 自同步：算不出 sha256（src=${_self_src_sha:-?} / 盘上=${_self_dst_sha:-?}）—— **部署不受影响**（issue #8966）"
+  elif [ "$_self_src_sha" = "$_self_dst_sha" ]; then
+    echo "  ✅ deploy.sh 与 ref=${CONFIG_REF_RESOLVED} 同源（sha256=${_self_src_sha:0:8}）⇒ 不覆盖、不备份"
+  else
+    _self_bak="${MIGAO_DEPLOY_SELF}.bak-$(date +%Y%m%d-%H%M%S)"
+    _self_tmp=$(mktemp "${TMPDIR:-/tmp}/migao-deploy-self.XXXXXX")
+    cp -p "$MIGAO_DEPLOY_SELF" "$_self_bak"
+    cat "$MIGAO_DEPLOY_SRC_FILE" > "$_self_tmp"
+    # 🔴 原地覆盖（保 inode）：`cat >` 复用同一个文件；**不**用 `mv`（换 inode）
+    cat "$_self_tmp" > "$MIGAO_DEPLOY_SELF"
+    rm -f "$_self_tmp"
+    chmod +x "$MIGAO_DEPLOY_SELF"
+    echo "  🔄 deploy.sh 自同步（ref=${CONFIG_REF_RESOLVED}）：sha256 ${_self_dst_sha:0:8} → ${_self_src_sha:0:8}；旧版备份 $(basename "$_self_bak")"
+    echo "  ⛔ 本次运行仍是**旧脚本进程**（覆盖后继续执行会读到错位的脚本内容）⇒ 停在这里：nginx.conf 未渲染、容器未动、回滚点未推进。"
+    echo "     ⇒ 处置：**再跑一次部署**（CI 会自动重试一次，人工重跑等价）——下一次执行的就是同源脚本（幂等，不再备份/覆盖）。"
+    exit 1
+  fi
+fi
+# <<< deploy-selfsync
+
 # ── 1.2.2 站点域名渲染（生产 cytda.com；缺省 migaozn.com ⇒ 与改前逐字相同）──────────────
 # 输入永远是 `nginx.conf.canonical`（仓库原文），所以「域名变更」和「配置复用」都不会把
 # 上一轮渲染过的产物再渲染一遍（那是幂等的，但更重要的是它不会让 A→B 改名悄悄失效）。
@@ -765,6 +813,26 @@ fi
 _conf_sha=$(sha256sum ./nginx/nginx.conf 2>/dev/null | cut -d' ' -f1 || shasum -a 256 ./nginx/nginx.conf | cut -d' ' -f1)
 echo "  站点域名：${MIGAO_PUBLIC_DOMAIN}（nginx.conf sha256=${_conf_sha:-unknown}）"
 grep -E '^[[:space:]]*server_name[[:space:]]' ./nginx/nginx.conf | sed 's/^/    /' || true
+
+# ── 1.2.3 渲染后 **fail-closed 断言**（issue #8966）──────────────────────────────
+# 改前这里只打印一行「站点域名：…」就继续 ⇒ 那一行打的是**期望值**，与盘上配置的真实内容无关：
+# 只要渲染输入或替换规则错了（旧脚本的「纯 cp canonical」分支正是），日志照样好看，而 nginx 里
+# `server_name` 一个生产域名都没有 ⇒ 所有生产域请求落到 default server（实测形态 = 被代理到 API
+# ⇒ **全站 401**）。⇒ 断言对象必须是**渲染产物本身**，不是变量、不是意图。
+# 判据：`server_name` 里至少出现一处 `$MIGAO_PUBLIC_DOMAIN`（6 个面里任一命中即可；0 处 = 静默失效）。
+# >>> nginx-domain-assert
+_ngx_server_names=$(grep -E '^[[:space:]]*server_name[[:space:]]' ./nginx/nginx.conf || true)
+if ! grep -qF "$MIGAO_PUBLIC_DOMAIN" <<<"$_ngx_server_names"; then
+  echo "  ❌ nginx.conf 渲染后 \`server_name\` 里**没有**站点域名 ${MIGAO_PUBLIC_DOMAIN} ⇒ **中止部署**（issue #8966）"
+  echo "     当前 server_name 清单（渲染产物 ./nginx/nginx.conf）："
+  printf '%s\n' "${_ngx_server_names:-<空：一行 server_name 都没有>}" | sed 's/^/       /'
+  echo "     后果：${MIGAO_PUBLIC_DOMAIN} 的请求会全部落到 default server（实测 = 被代理到 API ⇒ 全站 401）"
+  echo "     排查：① 渲染输入 ./nginx/nginx.conf.canonical 是否来自 ref=${CONFIG_REF_RESOLVED}；"
+  echo "           ② MIGAO_PUBLIC_DOMAIN 是否真读到了 .env.site（当前值=${MIGAO_PUBLIC_DOMAIN}）"
+  exit 1
+fi
+echo "  ✅ nginx.conf 自证：server_name 含站点域名 ${MIGAO_PUBLIC_DOMAIN}"
+# <<< nginx-domain-assert
 
 # ── 1.3.1 微信「扫普通链接二维码打开小程序」校验文件落位（issue #8196）────────────
 # 微信后台生成的是一个**根下随机的 `<一串字符>.txt`**（文件名/内容都由微信给，仓库不编、不改）。
@@ -939,6 +1007,41 @@ if [ -n "$BUILD_SERVICE" ] && [ -z "$LOCAL_IMAGE_REF" ]; then
     echo "❌ 构建报成功但 ${LOCAL_IMAGE_REF} **不在本地** ⇒ 中止（拒绝静默回落到 ACR）"
     exit 1
   fi
+  # ── 产物域名**自证**（issue #8966）────────────────────────────────────────────
+  # 病根：`docker build` 少一个 build-arg 时 Next **静默**把缺省域烤进产物（首页 / sitemap / robots
+  # 全指向测试域），而构建、部署、健康检查**全绿** —— 只有用户被送去另一个站。
+  # 口径：站点域名 != 测试域时，产物里的关键件**不得**含 `migaozn.com`。
+  # ⚠️ 取不到那个文件 ⇒ **不可判定**（打印 SKIPPED），**不判绿也不判红**（不许拿「没读到」冒充「干净」）。
+  # >>> image-domain-guard
+  if [ "$_svc" = "admin-web" ] && [ "$MIGAO_PUBLIC_DOMAIN" != "migaozn.com" ]; then
+    _guard_path=${MIGAO_DOMAIN_GUARD_FILE:-.next/server/app/sitemap.xml.body}
+    _guard_dir=$(mktemp -d "${TMPDIR:-/tmp}/migao-domain-guard.XXXXXX" 2>/dev/null || true)
+    _guard_cid=""
+    _guard_got=0
+    if [ -n "$_guard_dir" ] && _guard_cid=$(docker create "$LOCAL_IMAGE_REF" 2>/dev/null) && [ -n "$_guard_cid" ]; then
+      if docker cp "${_guard_cid}:${_guard_path}" "${_guard_dir}/" >/dev/null 2>&1; then
+        _guard_got=1
+      fi
+      docker rm -f "$_guard_cid" >/dev/null 2>&1 || true
+    fi
+    _guard_file="${_guard_dir}/${_guard_path##*/}"
+    if [ "$_guard_got" = "1" ] && [ -f "$_guard_file" ]; then
+      if grep -qF 'migaozn.com' "$_guard_file"; then
+        echo "  ❌ 产物残留测试域 migaozn.com（站点域名=${MIGAO_PUBLIC_DOMAIN}，镜像=${LOCAL_IMAGE_REF}）⇒ **中止部署**（issue #8966）"
+        echo "     命中行（前 3 条，${_guard_path}）："
+        grep -nF 'migaozn.com' "$_guard_file" | head -3 | sed 's/^/       /' || true
+        echo "     真因多半是 build-arg 没送到：核对 --build-arg NEXT_PUBLIC_SITE_DOMAIN=${MIGAO_PUBLIC_DOMAIN} 与 Dockerfile 的 ARG/ENV 透传"
+        if [ -n "$_guard_dir" ]; then rm -rf "$_guard_dir"; fi
+        exit 1
+      fi
+      echo "  ✅ 产物自证：${_guard_path} 不含测试域 migaozn.com（站点域名=${MIGAO_PUBLIC_DOMAIN}）"
+    else
+      echo "  ⏭️ SKIPPED（**不可判定**）：取不到镜像里的 ${_guard_path}（${LOCAL_IMAGE_REF}）—— 产物域名**未验证**，不判绿"
+      echo "     判据要求（issue #8966）：站点域名=${MIGAO_PUBLIC_DOMAIN} 时产物不得含 migaozn.com ⇒ 本次无法验证"
+    fi
+    if [ -n "$_guard_dir" ]; then rm -rf "$_guard_dir"; fi
+  fi
+  # <<< image-domain-guard
   # ── 构建后回收（**只碰构建缓存**，铁律 10 口径：不删带 tag 的镜像、不碰保留集）──────
   # 缺口（issue #6508 ②）：Build Cache 此前**完全不在保留策略里**（只增不减，实测 12.44GB /
   # 184 条 / 100% RECLAIMABLE）⇒ 这里按**水位**回收（`builder_cache_recover`：清到门槛以上为止），
