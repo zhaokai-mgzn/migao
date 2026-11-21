@@ -326,9 +326,18 @@ class JwtTokenProviderTest {
     @Test
     @DisplayName("RSA 密钥缺失时 init 必须 fail-fast，禁止静默回退 HS256")
     void init_WhenRsaKeysMissing_ThrowsInsteadOfSilentHmacFallback() {
-        // 模拟生产环境 RSA 密钥加载失败（资源不存在）
+        // 模拟生产环境 RSA 密钥加载失败（资源不存在）。
+        // 🔴 issue #8976：加载器改成**只读流**、不再先问 `Resource#exists()`（嵌套 jar 下那个判据不可靠）
+        // ⇒ 「资源取不到」必须表达成**流读不到**（这里显式抛 FileNotFoundException），
+        //    并**删掉**原来的 `when(mockResource.exists()).thenReturn(false)` ——
+        //    它现在已经**不消费**，留着会触发 Mockito 的 UnnecessaryStubbing（严格桩）而红。
         when(resourceLoader.getResource(anyString())).thenReturn(mockResource);
-        when(mockResource.exists()).thenReturn(false);
+        try {
+            when(mockResource.getInputStream()).thenThrow(
+                    new java.io.FileNotFoundException("BOOT-INF/classes/rsa/public.pem (No such file or directory)"));
+        } catch (java.io.IOException e) {
+            throw new AssertionError("桩设置失败（不应发生）", e);
+        }
 
         JwtTokenProvider provider = new JwtTokenProvider(resourceLoader);
         ReflectionTestUtils.setField(provider, "privateKeyPath", "classpath:rsa/private.pem");

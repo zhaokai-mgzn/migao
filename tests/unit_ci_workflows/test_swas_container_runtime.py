@@ -31,6 +31,7 @@
 | 10 | 执行式：`container_log_footprint_mb()` 在替身 `docker` 上算出「MB + 容器数」 | 改成按容器名硬编码 ⇒ 红 |
 | 11 | `docker-compose.yml` 的 admin-api **逐字**带 `/opt/migao-deploy/jwt:/opt/migao-deploy/jwt:ro` 与 `/opt/migao-deploy/uploads:/app/uploads`（issue #8969） | 删一条 / 去掉 `:ro` / 改容器目标 ⇒ 红（容器起来即崩 / 上传数据丢） |
 | 12 | **类级**：`.env.*` 里每个 `file:<路径>` 都必须被该服务某个卷的**容器目标**覆盖（issue #8969） | env 指了容器内某路径而 volumes 没覆盖 ⇒ 红；**取不到 env 文件 ⇒ SKIPPED 不可判定（不判绿）** |
+| 12b | **类级**：compose 的 `environment:` 值里出现 `file:<路径>` 时，同样必须被卷覆盖（issue #8976） | `JWT_PUBLIC_KEY: file:/…` 而该服务没挂那个目录 ⇒ 红（起来即崩 / 与 `.env` 侧不同源）；相对路径 ⇒ 红 |
 | 13 | 判据 1~9 / 11~12 的注入式自证（在内存里变异文本，必须被检出并指名） | 任一注入**没被检出** ⇒ 红（判据自己空转） |
 
 ## 红证（改前，逐条可复算）
@@ -254,6 +255,12 @@ REQUIRED_VOLUMES: dict[str, tuple[str, ...]] = {
         "/opt/migao-deploy/jwt:/opt/migao-deploy/jwt:ro",
         "/opt/migao-deploy/uploads:/app/uploads",
     ),
+    # 🔴 issue #8976（2026-11-21 生产 AI 接口全 401）：ai-agent 的 `JWT_PUBLIC_KEY` 改成
+    # **文件式**取值（`file:/opt/migao-deploy/jwt/public.pem`，与 admin-api 签名密钥同一份）
+    # ⇒ 容器里必须真有那个路径。删掉/改成 `:rw`/改容器目标 ⇒ 红（起不来，或凭空多出一个可写密钥面）。
+    "ai-agent": (
+        "/opt/migao-deploy/jwt:/opt/migao-deploy/jwt:ro",
+    ),
 }
 
 #: 取 `.env.*` 的目录：默认 = compose 所在目录（`env_file: .env.admin-api` 是**相对 compose 文件**的）。
@@ -338,6 +345,40 @@ def judge_env_file_paths_covered(compose_text: str, env_texts: dict[str, str]) -
     return v
 
 
+def judge_compose_env_file_paths_covered(compose_text: str) -> list[str]:
+    """判据 12b（**类级**）：compose `environment:` 的值里出现 `file:<路径>` 时，同样必须被卷覆盖。
+
+    为什么这条必须有（issue #8976）：判据 12 只扫 **env 文件**（`.env.*`），而「密钥单一来源」的
+    落法是把 `JWT_PUBLIC_KEY` 直接写在 compose 的 `environment:` 里（`file:/opt/migao-deploy/jwt/public.pem`，
+    **只给路径不给内容**）⇒ 只扫 env 文件的判据**看不到**它：漏挂卷时 ai-agent 起来即崩，
+    而判据全绿。⇒ 同一份口径扩到 `environment:`，把「指了没挂的路径」这个形态**整体**关掉。
+
+    取不到对象不算通过：`environment:` 里没有 `file:` 值 ⇒ 本判据无对象（真阴性）；
+    判据逻辑本身由注入式红证保证有判别力（`test_injection_compose_env_file_path_not_covered_is_caught`）。
+    """
+    v: list[str] = []
+    for name, svc in _services(compose_text).items():
+        env = (svc or {}).get("environment") or {}
+        if not isinstance(env, dict):
+            # 列表形态（`- K=V`）也支持：规范化成 dict
+            env = dict(str(item).split("=", 1) for item in env if "=" in str(item))
+        targets = [t.rstrip("/") or "/" for _, t, _ in _volume_triplets(svc or {})]
+        for key, value in env.items():
+            m = FILE_PATH_RE.match(str(value).strip().strip('"').strip("'"))
+            if not m:
+                continue
+            path = m.group(1).strip()
+            if not path.startswith("/"):
+                v.append(f"{name}.environment.{key} 用了**相对**路径 `file:{path}` ⇒ 宿主前缀无从判定（不接受）")
+                continue
+            if not any(path == tgt or path.startswith(tgt + "/") for tgt in targets):
+                v.append(
+                    f"{name}.environment.{key} 指向容器内 `{path}`，但 {name}.volumes 的容器目标 {targets} "
+                    "都没覆盖它（compose 里指了路径却没挂进容器 ⇒ 起来就崩，且与 `.env` 那一侧不同源）"
+                )
+    return v
+
+
 def _read_env_files(compose_text: str) -> tuple[dict[str, str], list[str]]:
     """按 compose 的 `env_file:` **现取** env 文件（不硬编码文件名 ⇒ 新增服务自动纳入判据）。"""
     env_dir = Path(os.environ.get(ENV_DIR_ENV_VAR) or (REPO_ROOT / "deploy" / "swas"))
@@ -405,6 +446,7 @@ def all_violations(base_text: str, bg_text: str, deploy_text: str, nginx_text: s
         + judge_healthchecks(base_text, deploy_text, nginx_text)
         + judge_green_parity(base_text, bg_text)
         + judge_host_mounts(base_text)
+        + judge_compose_env_file_paths_covered(base_text)
         + judge_watermark_reading(deploy_text)
     )
 
@@ -642,6 +684,42 @@ def test_injection_env_file_path_outside_volumes_is_caught():
 def test_injection_env_file_relative_path_is_not_green():
     env = {"admin-api": "JWT_PRIVATE_KEY=file:private.pem\n"}
     assert judge_env_file_paths_covered(_read(BASE_COMPOSE), env), "相对路径被当成可判定（假绿）"
+
+
+def test_ai_agent_jwt_volume_is_present():
+    """判据 11（issue #8976）：ai-agent 必须有 jwt 卷（`file:` 取值的宿主面）。"""
+    svc = _services(_read(BASE_COMPOSE))["ai-agent"]
+    entries = [str(e) for e in (svc.get("volumes") or [])]
+    assert "/opt/migao-deploy/jwt:/opt/migao-deploy/jwt:ro" in entries, (
+        f"ai-agent 缺 jwt 卷：{entries} ⇒ `JWT_PUBLIC_KEY=file:/opt/migao-deploy/jwt/public.pem` "
+        "在容器里不存在，ai-agent 起不来（或验签用的是别的钥匙）"
+    )
+
+
+def test_injection_compose_env_file_path_not_covered_is_caught():
+    """判据 12b 的判别力：删掉 ai-agent 的 jwt 卷 ⇒ `environment: file:` 覆盖判据必红。"""
+    base = _read(BASE_COMPOSE)
+    assert not judge_compose_env_file_paths_covered(base), "反空跑锚点：当前 compose 应当覆盖 `environment:` 的 file: 值"
+    mutated = _inject(
+        base,
+        "    # 与 admin-api **同一份**卷源（同目录、同样 `:ro`）—— 这就是「单一来源」的唯一实体面。\n"
+        "    # ⚠️ 判据（会红）：tests/unit_ci_workflows/test_swas_jwt_same_source.py（值 = file: + 卷在位）；\n"
+        "    # 同目录 test_swas_container_runtime.py 的类级判据另扫 `environment:` 里的 `file:` 路径。\n"
+        "    volumes:\n"
+        "      - /opt/migao-deploy/jwt:/opt/migao-deploy/jwt:ro\n",
+        "    # （注入：删掉 volumes）\n",
+    )
+    assert judge_compose_env_file_paths_covered(mutated), "删掉 ai-agent 的 jwt 卷后判据没红（判据无判别力）"
+
+
+def test_injection_compose_env_file_relative_path_is_not_green():
+    """判据 12b：`environment:` 里用相对路径 ⇒ 不可判定（不许当通过）。"""
+    mutated = _inject(
+        _read(BASE_COMPOSE),
+        "JWT_PUBLIC_KEY: file:/opt/migao-deploy/jwt/public.pem",
+        "JWT_PUBLIC_KEY: file:public.pem",
+    )
+    assert judge_compose_env_file_paths_covered(mutated), "相对路径被当成可判定（假绿）"
 
 
 if __name__ == "__main__":  # pragma: no cover - 手工复算入口

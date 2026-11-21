@@ -15,6 +15,7 @@ import org.springframework.core.io.ResourceLoader;
 import org.springframework.stereotype.Component;
 
 import java.io.BufferedReader;
+import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.security.KeyFactory;
@@ -167,12 +168,9 @@ public class JwtTokenProvider {
      */
     private PrivateKey loadPrivateKeyFromResource(String location) {
         try {
-            Resource resource = resourceLoader.getResource(location);
-            if (resource.exists()) {
-                String content = readKeyContent(resource);
-                if (content != null && !content.isEmpty()) {
-                    return loadPrivateKey(content);
-                }
+            String content = readKeyContent(resourceLoader.getResource(location));
+            if (content != null && !content.isEmpty()) {
+                return loadPrivateKey(content);
             }
         } catch (Exception e) {
             log.warn("从资源路径加载 RSA 私钥失败 {}: {}", location, e.getMessage());
@@ -185,12 +183,9 @@ public class JwtTokenProvider {
      */
     private PublicKey loadPublicKeyFromResource(String location) {
         try {
-            Resource resource = resourceLoader.getResource(location);
-            if (resource.exists()) {
-                String content = readKeyContent(resource);
-                if (content != null && !content.isEmpty()) {
-                    return loadPublicKey(content);
-                }
+            String content = readKeyContent(resourceLoader.getResource(location));
+            if (content != null && !content.isEmpty()) {
+                return loadPublicKey(content);
             }
         } catch (Exception e) {
             log.warn("从资源路径加载 RSA 公钥失败 {}: {}", location, e.getMessage());
@@ -199,11 +194,20 @@ public class JwtTokenProvider {
     }
 
     /**
-     * 读取密钥文件内容
+     * 读取密钥内容（**只走流**，issue #8976）。
+     *
+     * <p>为什么不能先问 `Resource#exists()`、更不能 `getFile()`：Spring Boot 的可执行 jar 把资源放在
+     * {@code jar:nested:/app/app.jar/!BOOT-INF/classes/rsa/public.pem} 这类**嵌套 URL** 下 ——
+     * 那里没有「文件」可指（`getFile()` 必失败），而 `exists()` 的实现各资源类型口径不一
+     * （能不能解析成文件/URL 不是「内容读不读得到」的判据）。2026-11-21 生产实测：把
+     * `JWT_*` 环境变量去掉、退回 `classpath:rsa/*.pem` 兜底时，启动直接报
+     * 「JWT RSA 密钥加载失败」⇒ **兜底本身是坏的**，只剩 file: 一条路。</p>
+     *
+     * <p>读不到 ⇒ 抛（由调用方 {@code warn} 后 fail-fast），**不做任何静默回退**。</p>
      */
     private String readKeyContent(Resource resource) throws Exception {
-        try (BufferedReader reader = new BufferedReader(
-                new InputStreamReader(resource.getInputStream(), StandardCharsets.UTF_8))) {
+        try (InputStream in = resource.getInputStream();
+             BufferedReader reader = new BufferedReader(new InputStreamReader(in, StandardCharsets.UTF_8))) {
             return reader.lines().collect(Collectors.joining("\n"));
         }
     }
