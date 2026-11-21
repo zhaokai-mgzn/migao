@@ -1,0 +1,31 @@
+# cases/smoke.yml — 生产冒烟套件自身的契约用例（issue #8992）
+# 这里放的是「冒烟套件打哪儿」这类元判据：套件打错环境的代价是假绿 + 误写，故单列域。
+
+schema: "case-contract/1.0"
+domain: smoke
+
+cases:
+  - id: SMK-001
+    legacy_id: ""
+    title: "SMOKE_ENV=production 必须打到生产实例 cytda，不得落到测试实例 migaozn"
+    domains:
+      - smoke
+    tier: critical
+    tags:
+      - smoke
+      - config
+      - prod-safety
+    given: "production 档配置未用环境变量覆盖基址"
+    when: "调用 tests.smoke.config.get_config() 且 SMOKE_ENV=production"
+    then:
+      - "admin_api_url 含 cytda.com 且不含 migaozn"
+      - "ai_agent_url 含 cytda.com 且不含 migaozn"
+      - "staging 档仍指向测试实例（回归保护）"
+    verify:
+      kind: pytest
+      file: tests/smoke/test_config_production_urls.py
+      selectors:
+        - test_production_env_targets_cytda_not_test_instance
+        - test_staging_env_keeps_test_instance
+    status: active
+    issue: 8992
