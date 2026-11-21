@@ -21,6 +21,28 @@
 - **生产切换（部署侧，不在本 PR）**：`.env.ai-agent` 写 `ASR_MODE=http`。
 - 判据：`backend/ai-agent-service/tests/test_asr_http_mode.py`（`API-024`，含「删掉 `parameters` ⇒ 判据必红」的注入式红证）。
 
+### JWT 验签公钥与 admin-api 同源：ai-agent 改读同一份密钥文件，部署期不一致即判红（2026-11-21，issue #8976）
+
+- **形态**：`deploy/swas/docker-compose.yml` 的 ai-agent 不再硬编码 PEM，改成
+  `JWT_PUBLIC_KEY=file:/opt/migao-deploy/jwt/public.pem` + 挂 `/opt/migao-deploy/jwt:ro`
+  （与 admin-api 的签名密钥**同一份文件**）；`backend/ai-agent-service/app/config.py` 支持 `file:` 前缀，
+  且**仍接受**直接给 PEM 内容（既有 `.env` 部署不用改）。缺文件 ⇒ ai-agent 起不来（fail-closed）。
+- **之前**：admin-api 用 `.env.admin-api` 的 `file:/opt/migao-deploy/jwt/*.pem` 签发，ai-agent 用 compose 里
+  硬编码的另一对 PEM 验签 ⇒ 生产 AI 接口**全部 401**（`TOKEN_INVALID: Signature verification failed`），
+  而两侧都不报错、**永远不会自己好**（2026-11-21 实测两把钥匙指纹 `c58e54d6…` vs `ba01a29f…`）。
+- **部署期硬断言**：`deploy/swas/deploy.sh` 新增 `== 2.5.9`，比对两侧容器内**实际生效**的公钥指纹 ——
+  `JWT_KEY_SAME_SOURCE=OK` / `=MISMATCH`（打印两侧指纹 + 排查口 + `exit 1`）/ `=SKIPPED`（取不到 ⇒
+  **不判绿**）。
+- **同时修**：① `JwtTokenProvider` 的 classpath 兜底改成**只读流**（`jar:nested:/app/app.jar/!BOOT-INF/classes/`
+  这类资源没有「文件」可指，先问 `exists()` / 用 `getFile()` 就永远读不到 —— 实测「去掉 `JWT_*` 就起不来」）；
+  ② 凡重建容器之后必须 `nginx -s reload` **并**探测本机上游回 200，否则判红（实测重建换 IP + nginx 缓存旧 IP
+  = 全站 502 约 90 秒）；③ compose/`.env*` 里任何 `file:` 路径都必须被卷覆盖（类级判据扩到 `environment:`）。
+- 判据：`tests/unit_ci_workflows/test_swas_jwt_same_source.py`（含桩化 docker/curl 跑真实 `deploy.sh` 的
+  执行式红证）、`tests/unit_ci_workflows/test_swas_container_runtime.py`（12b 类级挂载）、
+  `backend/ai-agent-service/tests/test_config.py::TestJwtPublicKeyFilePrefix`、
+  `backend/admin-api/src/test/java/.../JwtTokenProviderClasspathResourceTest.java`。
+- **不变**：`.env*` 文件内容、镜像、端口与域名；不改任何测试门禁的通过条件。
+
 ### 部署 compose 补回 admin-api 的 jwt / uploads 宿主挂载，蓝绿 green 同步挂卷（2026-11-21，issue #8969）
 
 - **形态**：canonical `deploy/swas/docker-compose.yml` 的 admin-api 补 `jwt:ro`
