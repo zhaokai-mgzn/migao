@@ -158,6 +158,9 @@
   &__input--code {
     flex: 1;
     min-width: 0;
+    // 🔴 必须覆盖父级 `width: 100%`（issue #8983 真机实测）：weapp 的原生 <input> 按 CSS `width` 铺开，
+    // 100% 会让它顶到整行宽、把右侧「获取验证码」按钮压住一条（H5 下 flex 生效顺序不同，看不出来）。
+    width: auto;
   }
 }
 
@@ -194,6 +197,8 @@
 .login-code-btn {
   flex-shrink: 0;
   margin-left: 20px;
+  // 与验证码输入框同一盒模型（输入框已是 border-box）⇒ 否则按钮总高 96+2rpx，比输入框高一条（issue #8983）
+  box-sizing: border-box;
   height: 96px;
   padding: 0 28px;
   display: flex;
