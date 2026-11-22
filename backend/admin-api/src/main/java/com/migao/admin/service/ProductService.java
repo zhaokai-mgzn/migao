@@ -961,6 +961,30 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
         }
     }
 
+    /**
+     * 颜色名称**非空准入**（issue #9012）—— `product_colors.color_name` 是 **NOT NULL** 列，
+     * 而 `ProductColorInput` 里拼错的字段名会被 Jackson **静默丢弃**
+     * （`FAIL_ON_UNKNOWN_PROPERTIES=false` = Spring Boot 缺省；本仓 application.yml 未改这一项）。
+     *
+     * <h3>病（生产实抓，requestId {@code req_809f888b9ae44438}，tenant 1）</h3>
+     * `colors:[{"name":"米白","code":"#F5F5DC"}]`（字段名猜错，正确是 `colorName` / `mainColorHex`）
+     * ⇒ `colorName` 为 null ⇒ service 照常 insert ⇒
+     * `ERROR: null value in column "color_name" of relation "product_colors" violates not-null constraint`
+     * ⇒ 全局处理器兜底 **500**「服务器内部错误」—— 客户端连「哪个字段错了」都拿不到。
+     *
+     * <h3>为什么判在这里（而不是 DTO 上的 {@code @NotBlank}）</h3>
+     * 建品 / 改品 / Excel 导入 / Agent 四条路径写颜色都经过 {@link #saveColorsAndSkus}（**唯一收口**，
+     * 与同段落的 {@link ColumnTextLength} 长度准入同一位置、同一理由）：Agent 与导入是手工 new DTO，
+     * **不走 Bean Validation** ⇒ 只加 DTO 注解会漏掉它们（#6302 已实测出同一结论）。
+     * 只有空白（`"  "`）同样拒绝：库列是 NOT NULL，落进去等于用空白冒充「有颜色名」。
+     */
+    private static void requireColorName(ProductColorInput input, int index) {
+        if (!StringUtils.hasText(input.getColorName())) {
+            throw BusinessException.validationError("颜色名称 colorName 不能为空（colors[" + index + "]）："
+                    + "请用 colorName 传颜色名称 —— name / code 之类的字段名会被忽略，不会代替 colorName");
+        }
+    }
+
     private void saveColorsAndSkus(String productId, String productSkuCode, Long tenantId,
                                     List<ProductColorInput> colorInputs,
                                     List<String> sellingMethods,
@@ -1030,6 +1054,9 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
         if (colorInputs != null) {
             for (ProductColorInput input : colorInputs) {
                 if (input == null) continue;
+                // 非空准入（issue #9012）：`product_colors.color_name` 是 NOT NULL 列 ⇒ 判在**任何颜色写之前**
+                // （含下面 upsert 循环里的 updateById / insert）。
+                requireColorName(input, colorNames.size());
                 colorNames.add(StringUtils.hasText(input.getColorName()) ? input.getColorName() : "");
             }
         }

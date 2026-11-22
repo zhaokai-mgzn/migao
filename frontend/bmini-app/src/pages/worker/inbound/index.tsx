@@ -106,6 +106,7 @@ import {
 import '../../../styles/admin-surfaces.scss'
 import './index.scss'
 import { WorkerBackLink } from '../../../components/WorkerBackLink'
+import PrivacyPopup from '../../../components/privacy/PrivacyPopup'
 
 /** 画布工厂 / 组件缺失文案 / 预览渲染 = **共用件**（`utils/inbound/labelPageKit`）。
  * 补打页（`pages/worker/reprint/index.tsx`）是**同族页面**，两页必须引用同一份 ——
@@ -694,6 +695,8 @@ export default function WorkerInboundPage() {
           </View>
         )}
       </View>
+      {/* 微信隐私授权弹窗：本页会（直接或经工具模块）触发隐私接口，弹窗挂在本页才显示得出来 */}
+      <PrivacyPopup />
     </ScrollView>
   )
 }
