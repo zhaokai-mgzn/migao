@@ -1663,6 +1663,19 @@ worker-h5 纯函数、承运商 4 条 × 两处入口 + 类级单一真值守卫
 
 ## [Unreleased]
 
+### 加工单号改为「库内当日最大号取号 + 撞号换号重试」，撞号不再谎报「已生成」（2026-11-22，issue #9021）
+
+- **改前（集群 P0-5）**：`ProcessingOrderService` 用**进程内** `AtomicInteger`（`ThreadLocalRandom` 随机起点）
+  发号，取号与占号分成两条语句；撞 `uk_processing_orders_no` 时 `DuplicateKeyException` 被一律翻成
+  「加工单已生成（并发操作）」—— 而单子其实**没落库** ⇒ 运营以为已派出、不再重试，订单永远没有作业单（静默漏单）。
+- **改后形态**：与入库/出库单号**同一范式** —— 起点 = 库内当日最大号 + 1（不依赖进程内状态，跨副本/重启一致），
+  用一条 `INSERT … ON CONFLICT DO NOTHING` 原子占号；0 行 ⇒ 换候选重试（上限 20，同族口径），耗尽显式 409。
+- **诊断修正**：只有**确实查到**该订单已有活跃加工单时才报「已生成」（并带出真实单号）；取号冲突耗尽报
+  `PROCESSING_ORDER_NO_CONFLICT` +「加工单号生成冲突，请重试（requestId=…）」，可追踪、可行动。
+- **不改**：加工单业务字段、派单/状态机流程、扣批次与工序实例化的时序。
+- 判据：`ProcessingOrderServiceTest`（P0-5 四条：换号重试并落库 / 耗尽文案 / 双线程并发 / 库内最大号起点）+
+  `ProcessingOrderNoConflictRealDbTest`（真库：`ON CONFLICT` 0 行、JSONB 快照、活跃单唯一键冲突）。
+
 ### 生产域 cytda.com：官网导航 / canonical / sitemap / 域名分流按构建期域名生成（2026-11-21，issue #8941）
 
 - **生产验收（P0-3 / P1-1）**：同一份 admin-web 产物部署到测试域 `migaozn.com` 与生产域 `cytda.com`，但有 5 处把测试域写死 ⇒ 生产环境三件静默错事：官网「商家登录」把用户送去 `merchant.migaozn.com`；canonical / og:image / sitemap 把生产页登记成测试域；`merchant.cytda.com/` 不跳登录页、`cytda.com/dashboard` 不跳商家域（`src/proxy.ts` 的 host 分支不认识生产域，未知域直接放行）。
