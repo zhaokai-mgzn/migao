@@ -117,6 +117,14 @@ stage_payload() {
   command -v docker >/dev/null 2>&1 \
     || die "实例上没有 docker —— 无法从传输镜像里取出载荷（见 deploy/terminal-dist/Dockerfile）"
   echo "SOURCE_IMAGE=${IMAGE}"
+  # 实例不一定已登录 ACR（生产机从不 pull 镜像 —— 它一直是服务器侧构建）。
+  # 凭据由 CI 以 base64 传入（密码不落命令内容明文），登录失败即 die（不静默继续）。
+  if [ -n "${TERMINAL_ACR_B64:-}" ] && [ -n "${TERMINAL_ACR_USERNAME:-}" ] && [ -n "${TERMINAL_ACR_REGISTRY:-}" ]; then
+    printf '%s' "$TERMINAL_ACR_B64" | base64 -d \
+      | docker login --username "$TERMINAL_ACR_USERNAME" --password-stdin "$TERMINAL_ACR_REGISTRY" >&2 \
+      || die "ACR 登录失败：'$TERMINAL_ACR_REGISTRY'（凭据来自 CI secret）"
+    echo "ACR_LOGIN=ok registry=${TERMINAL_ACR_REGISTRY}"
+  fi
   docker pull "$IMAGE" >&2 || die "拉取传输镜像失败：'$IMAGE'（实例是否已 docker login ACR？）"
   local cid
   cid=$(docker create "$IMAGE") || die "创建临时容器失败：'$IMAGE'"
