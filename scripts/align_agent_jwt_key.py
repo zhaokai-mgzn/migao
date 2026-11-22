@@ -13,7 +13,7 @@ admin-api 与 ai-agent 的验签公钥是**各自独立下发**的：
 ⚠️ **本表只描述本机 / CI 的起栈形态**。生产（swas）两侧读的是**同一份文件**
 （`/opt/migao-deploy/jwt`：admin-api 的 `JWT_PRIVATE_KEY` 与 ai-agent 的
 `JWT_PUBLIC_KEY=file:/opt/migao-deploy/jwt/public.pem`），且 `deploy/swas/deploy.sh` 在部署期
-比对两侧指纹（`JWT_KEY_SAME_SOURCE=OK|MISMATCH|SKIPPED`）—— issue #8976。
+比对两侧指纹（`JWT_KEY_SAME_SOURCE=OK|MISMATCH|SKIPPED|INCOMPLETE`，读**宿主**权威源）—— issue #8976 / #8989。
 
 ⇒ 仓库里**换过密钥对**之后，本地那份 `.env` 会**静默陈旧**，而两侧都不报错。真栈形态是
 `06-agent-sessions` / `07-chat` 收到 `401`（ai-agent 日志逐字
