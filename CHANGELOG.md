@@ -5,6 +5,19 @@
 > 原因 = 单文件涨到 512KB 越过扫描上限，详见存档文件头与 issue #6404。
 > **后续条目继续在本文件 `## [Unreleased]
 
+### 微信 access_token 外置到 Redis：全实例共用一把，多实例不再互踢（2026-11-22，issue #9018）
+
+- **背景（集群就绪审计 P0-1）**：token 原先缓存在 `WechatService` 的**进程内字段**里（注释原文「进程内缓存（单实例足够）」）。
+  微信侧对一个 appid 只维持一把有效凭证 ⇒ 实例 A 刷新后实例 B 手里那把立即作废，B 却按自己算的 TTL 继续用
+  （最长约 2 小时）⇒ **一半流量间歇性登录 / 换手机号失败（40001）**，而且没有任何读数会先变红。
+- **改后**：token 落 Redis（`wechat:access_token:{appid}`，TTL = `expires_in - 300`），全实例一把；
+  刷新由 `SET NX` 锁串行化（拿不到锁的实例短轮询复用别人的 token，超时不刷新、回落旧 token 并记 WARN）；
+  本地只保留 ≤60s 的短缓存；换号接口回 `40001 / 42001` 时清本地缓存 + 换掉共享存储里的坏 token 并重试一次。
+- **降级**：Redis 未接线 / 不可用 ⇒ 退回原进程内行为（WARN + 60s 静默期），**不会**把 Redis 故障放大成登录失败。
+- **单机行为不变**：没有 Redis 时与改前等价（同一把 token、同样的 7200s / 提前 300s 刷新口径）。
+- 判据：`backend/admin-api/src/test/java/com/migao/admin/service/WechatAccessTokenProviderTest.java`（用例 `API-025`；
+  离线两实例 + 共享 Redis 替身：改前供应商侧 2 次 / 改后 1 次；含「主代码不得再出现进程内 access_token 缓存字段」的类级元守卫）。
+
 ### 部署期 JWT 同源断言真正可判：读宿主权威源 + `\n` 形态归一化 + `file:` 缺失前置 fail-closed（2026-11-22，issue #8989）
 
 - **之前（2026-11-21 真实部署实测）**：`== 2.5.9` 的 JWT 同源断言**永远 SKIPPED** —— 它用
