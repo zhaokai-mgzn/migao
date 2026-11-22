@@ -2303,7 +2303,6 @@ cases:
         - bmini-app.yml
       verifies: []
 
-<<<<<<< HEAD
   # ── issue #8983：登录页验证码行布局（真机实测按钮被输入框压住）─────────────────────────────
   - id: MC-341
     legacy_id: ""
@@ -2327,7 +2326,6 @@ cases:
     traces:
       tests:
         - "frontend/bmini-app/tests/login-code-row-layout.test.ts"
-=======
   - id: BM-067
     legacy_id: ""
     title: "B 端小程序微信隐私授权弹窗：未同意的工人扫码 / 拍照 / 语音不再全挂（照片 / 摄像头 / 麦克风三类）"
@@ -2353,7 +2351,6 @@ cases:
     traces:
       tests:
         - "frontend/bmini-app/tests/privacy-authorization.test.tsx"
->>>>>>> origin/main
       ci:
         - bmini-app.yml
       verifies: []
