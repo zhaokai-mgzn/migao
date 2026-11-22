@@ -3,6 +3,7 @@ package com.migao.admin.mapper;
 import com.baomidou.mybatisplus.annotation.InterceptorIgnore;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.migao.admin.entity.ProcessingOrder;
+import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.ResultMap;
@@ -345,4 +346,72 @@ public interface ProcessingOrderMapper extends BaseMapper<ProcessingOrder> {
             + "WHERE id = #{id} AND tenant_id = #{tenantId} AND deleted = 0")
     int fillMissingQrToken(@Param("id") String id, @Param("tenantId") Long tenantId,
                            @Param("qrToken") String qrToken, @Param("updatedAt") OffsetDateTime updatedAt);
+
+    /**
+     * <b>取号 + 落库的一条语句</b>（P0-5，与 {@code InboundOrderMapper#insertIgnoreInboundNoConflict} /
+     * {@code OutboundOrderMapper#insertIgnoreOutboundNoConflict} 同一范式）：唯一键冲突时该语句
+     * <b>不报错、返回 0 行</b>，调用方据此换候选重来（重试骨架 = {@code AtomicNoAllocator}）。
+     *
+     * <p>🔴 <b>为什么不能沿用 {@code BaseMapper#insert}</b>：那条路把「取号」与「占用」分成两条语句
+     * （进程内计数器先给号 ⇒ 之后才 insert）⇒ 多实例 / 重启 / 并发下同一候选被两个事务同时取到，
+     * 后到者撞 {@code uk_processing_orders_no} 抛 {@code DuplicateKeyException}。改前它被
+     * {@code ProcessingOrderService#commit} 一律翻成「加工单已生成（并发操作）」⇒ <b>单子没生成却报成功</b>
+     * （静默漏单）。{@code ON CONFLICT … DO NOTHING} 把「判号是否被占」与「占用它」并成一条语句，
+     * 冲突时 PG 的<b>当前事务不会进入 aborted 状态</b> ⇒ 可以在同一事务里安全换号重试。</p>
+     *
+     * <p>🔴 <b>为什么冲突目标不写列名</b>：本表有<b>两个</b>可能被撞的唯一索引 ——
+     * {@code uk_processing_orders_no}（单号，全局唯一）与 {@code uk_processing_orders_active}
+     * （同一订单至多一张活跃单）。{@code ON CONFLICT (processing_order_no)} 只吞前者，撞后者仍抛异常
+     * ⇒ 事务被标坏，连「到底是不是已有单」都查不了（查询会报 current transaction is aborted），
+     * 只能继续撒谎或回 500。无目标 {@code DO NOTHING} 把两种冲突都变成「0 行」，
+     * 调用方在第一行零结果时就回查活跃单 ⇒ 能给出<b>真诊断</b>（已有单 ⇒ 报「已生成」并带单号；
+     * 没有 ⇒ 换号重试）。{@code qr_token} / {@code short_code} 是建单不写的列（部分唯一索引带
+     * {@code IS NOT NULL} 谓词）⇒ 不参与冲突。</p>
+     *
+     * <p>⚠️ <b>列清单显式</b>（issue #4608 纪律），与「建单会写的列」同界：{@code created_at} /
+     * {@code updated_at}（DB 默认 {@code NOW()}）、{@code deleted}（默认 0）不在此。新增「建单即写」的列
+     * 必须同步到这里（判据 = {@code ProcessingOrderServiceTest#generateSuccess} 的插入实参断言 +
+     * 号段冲突判据）。{@code items_snapshot} 是 JSONB，且 JSONB 的 typeHandler 在手写 {@code @Insert}
+     * 里不自动生效 ⇒ 显式传**已序列化的 JSON 文本** + {@code CAST(… AS jsonb)}
+     * （与 {@code ProcessingOrderSetMapper#insertIgnoreConflict} 同形态）。</p>
+     *
+     * <p>{@code @InterceptorIgnore(tenantLine = "true")} 是必须的：{@code tenant_id} 由本语句
+     * <b>显式</b>写入（多租户拦截器会给 INSERT 追加列，手写整行插入不能让它再插一份）。</p>
+     *
+     * @param order             待落库的加工单（{@code id} 由服务端生成；{@code processingOrderNo} = 本次候选）
+     * @param itemsSnapshotJson 快照的 JSON 文本
+     * @return 影响行数：{@code 1} = 号归我（单据已落库）；{@code 0} = 撞唯一键（换号重试或回查诊断）
+     */
+    @InterceptorIgnore(tenantLine = "true")
+    @Insert("INSERT INTO processing_orders (id, tenant_id, order_id, processing_order_no, processor,"
+            + " processor_supplier_id, expected_delivery_date, status, items_snapshot, remark,"
+            + " template_version, generated_by, generated_at, print_count, route_key, route_requested_key,"
+            + " route_source)"
+            + " VALUES (#{o.id}, #{o.tenantId}, #{o.orderId}, #{o.processingOrderNo},"
+            + " #{o.processor,jdbcType=VARCHAR}, #{o.processorSupplierId,jdbcType=VARCHAR},"
+            + " #{o.expectedDeliveryDate,jdbcType=DATE}, #{o.status}, CAST(#{itemsSnapshotJson} AS jsonb),"
+            + " #{o.remark,jdbcType=VARCHAR}, #{o.templateVersion}, #{o.generatedBy}, #{o.generatedAt},"
+            + " #{o.printCount}, #{o.routeKey,jdbcType=VARCHAR}, #{o.routeRequestedKey,jdbcType=VARCHAR},"
+            + " #{o.routeSource,jdbcType=VARCHAR}) ON CONFLICT DO NOTHING")
+    int insertIgnoreProcessingNoConflict(@Param("o") ProcessingOrder order,
+                                        @Param("itemsSnapshotJson") String itemsSnapshotJson);
+
+    /**
+     * 当日已用的最大加工单号（取号起点，P0-5）—— 让候选**不依赖进程内状态**：
+     * 服务重启 / 换副本后不会再从同一个随机起点重复发号。
+     *
+     * <p>🔴 <b>不带 {@code tenant_id}、带 {@code @InterceptorIgnore}</b>：{@code uk_processing_orders_no}
+     * 是<b>跨租户</b>的全局唯一索引（{@code ON processing_orders (processing_order_no)}，V43）⇒
+     * 号池是全局的；若只在本租户内取最大值，两个租户会各自从 1 开始发号、每次都撞同一条唯一索引。</p>
+     *
+     * <p>🔴 <b>不带 {@code deleted = 0}</b>：该唯一索引**没有** {@code deleted} 谓词 ⇒ 软删行的号
+     * 仍然被占用，过滤掉它就会反复生成同一个已废号（重试有上限，最终报冲突）。</p>
+     *
+     * @param prefix 当日前缀（{@code JG-yyyyMMdd-}）
+     * @return 最大单号（无行 ⇒ {@code null}）；行按字符串取 MAX，同一前缀下与数字序等价（4 位左零补齐）
+     */
+    @InterceptorIgnore(tenantLine = "true")
+    @Select("SELECT MAX(processing_order_no) FROM processing_orders "
+            + "WHERE processing_order_no LIKE (CAST(#{prefix} AS VARCHAR) || '%')")
+    String selectMaxProcessingOrderNo(@Param("prefix") String prefix);
 }

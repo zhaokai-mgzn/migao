@@ -40,7 +40,6 @@ import java.time.Duration;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.temporal.ChronoUnit;
-import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -50,7 +49,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
-import java.util.concurrent.ThreadLocalRandom;
 
 /**
  * 加工单服务（issue #3340，设计文档 docs/design/processing-order-design.md）
@@ -703,11 +701,8 @@ public class ProcessingOrderService {
         return from != null && to != null && STATUS_TRANSITIONS.getOrDefault(from, Set.of()).contains(to);
     }
 
-    /** 加工单号序号（JG-YYYYMMDD-XXXX） */
-    private static final java.util.concurrent.atomic.AtomicInteger PO_SEQ =
-            new java.util.concurrent.atomic.AtomicInteger(ThreadLocalRandom.current().nextInt(1000, 9999));
-
-    private static final DateTimeFormatter PO_DATE_FMT = DateTimeFormatter.ofPattern("yyyyMMdd");
+    // 加工单号取号（P0-5，issue #9021）在 ProcessingOrderNoAllocator —— 本类已进体量棘轮的冻结清单
+    // （只许变短），新增逻辑不再往这里堆；见该类注释的「病根 / 为什么不能捕获异常」。
 
     // ============================================================ 池化（issue #5169 = 阶段 2b-1）
 
@@ -1575,7 +1570,8 @@ public class ProcessingOrderService {
         ProcessingOrder po = ProcessingOrder.builder()
                 .tenantId(tenantId)
                 .orderId(order.getId())
-                .processingOrderNo(generateOrderNo())
+                // 单号**不在这里生成**（P0-5）：取号必须与「占用它」同一条语句，见 commit() →
+                // ProcessingOrderNoAllocator.insertWithFresh（撞号 ⇒ 换候选重试；不依赖进程内计数器）。
                 .status("generated")
                 .itemsSnapshot(snapshot)
                 // 承接方 / 回厂日（V193，issue #7723）：**派单即写**（不再是作业单页上的「发加工」）。
@@ -1646,12 +1642,11 @@ public class ProcessingOrderService {
             orderService.lifecycleService().updateOrderStatus(order.getId(), OrderStatusTransitions.PRODUCING, orderService.sharedParts());
         }
         try {
-            try {
-                processingOrderMapper.insert(p.po());
-            } catch (org.springframework.dao.DuplicateKeyException e) {
-                throw BusinessException.validationError(
-                        "订单 " + order.getOrderNo() + " 加工单已生成（并发操作），请刷新后重试");
-            }
+            // 🔴 P0-5：单号在**落库那一刻**取（一条 INSERT … ON CONFLICT DO NOTHING 占号），
+            // 撞号就换候选重试。改前是「进程内随机起点计数器先给号、之后再 insert」⇒ 并发/重启撞号时
+            // 一律报「已生成」，而单子其实**没落库**（静默漏单）。实现见 ProcessingOrderNoAllocator。
+            ProcessingOrderNoAllocator.insertWithFresh(
+                    processingOrderMapper, objectMapper, businessClock, order, p.po());
             log.info("生成加工单: no={}, orderId={}, tenantId={}, operator={}",
                     p.po().getProcessingOrderNo(), order.getId(), tenantId, operator);
         // 派工扣批次库存（issue #5145 判据 1）：与加工单生成**同一事务** ——
@@ -2103,12 +2098,6 @@ public class ProcessingOrderService {
                 .eq(Order::getOrderNo, rawId)
                 .eq(Order::getDeleted, 0)
                 .last("LIMIT 1"));
-    }
-
-    private String generateOrderNo() {
-        String base = "JG-" + businessClock.today().format(PO_DATE_FMT) + "-";
-        // DB 唯一约束兜底；此处随机化降低同秒碰撞概率
-        return base + String.format("%04d", PO_SEQ.incrementAndGet());
     }
 
     // ============================================================ 状态更新

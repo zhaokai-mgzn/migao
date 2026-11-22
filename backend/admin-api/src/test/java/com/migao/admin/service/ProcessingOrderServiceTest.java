@@ -460,7 +460,7 @@ class ProcessingOrderServiceTest {
         java.util.concurrent.atomic.AtomicReference<ProcessingOrder> poRef =
                 new java.util.concurrent.atomic.AtomicReference<>();
         when(processingOrderMapper.selectActiveByOrderId("order-001", TENANT)).thenAnswer(inv -> poRef.get());
-        when(processingOrderMapper.insert(any(ProcessingOrder.class))).thenAnswer(inv -> {
+        when(processingOrderMapper.insertIgnoreProcessingNoConflict(any(ProcessingOrder.class), anyString())).thenAnswer(inv -> {
             ProcessingOrder inserted = inv.getArgument(0);
             inserted.setId("po-001");
             poRef.set(inserted);
@@ -539,13 +539,13 @@ class ProcessingOrderServiceTest {
         assertThat(results).hasSize(1);
         assertThat(results.get(0).isSuccess()).isTrue();
         ArgumentCaptor<ProcessingOrder> poCaptor = ArgumentCaptor.forClass(ProcessingOrder.class);
-        verify(processingOrderMapper).insert(poCaptor.capture());
+        verify(processingOrderMapper).insertIgnoreProcessingNoConflict(poCaptor.capture(), anyString());
         // 快照的 `batchNo` 空插座（V63 白名单早有该键、此前全仓零写入方）被填上人工最终选择
         assertThat(capturedSnapshot(poCaptor).get(0)).containsEntry("batchNo", "PC-20260923-0001");
 
         var ordered = inOrder(stockBatchConsumptionService, processingOrderMapper);
         ordered.verify(stockBatchConsumptionService).plan(eq(TENANT), anyList());
-        ordered.verify(processingOrderMapper).insert(any(ProcessingOrder.class));
+        ordered.verify(processingOrderMapper).insertIgnoreProcessingNoConflict(any(ProcessingOrder.class), anyString());
         ordered.verify(stockBatchConsumptionService)
                 .apply(eq(TENANT), anyString(), eq("ORD-20260912-0001"), anyList());
     }
@@ -575,7 +575,7 @@ class ProcessingOrderServiceTest {
                 .as("建议里要同时说清「待付款 / 加急也去派单页」——不再有直派例外")
                 .contains("待付款")
                 .contains("加急");
-        verify(processingOrderMapper, never()).insert(any(ProcessingOrder.class));
+        verify(processingOrderMapper, never()).insertIgnoreProcessingNoConflict(any(ProcessingOrder.class), anyString());
     }
 
     @Test
@@ -589,7 +589,7 @@ class ProcessingOrderServiceTest {
         assertThat(results).hasSize(1);
         assertThat(results.get(0).isSuccess()).as("加急单改在派单页插队区单派（能力不丢）").isFalse();
         assertThat(results.get(0).getCode()).isEqualTo(ProcessingOrderService.ERR_DIRECT_DISPATCH_POOL_REQUIRED);
-        verify(processingOrderMapper, never()).insert(any(ProcessingOrder.class));
+        verify(processingOrderMapper, never()).insertIgnoreProcessingNoConflict(any(ProcessingOrder.class), anyString());
     }
 
     @Test
@@ -612,7 +612,7 @@ class ProcessingOrderServiceTest {
                 .isFalse();
         assertThat(results.get(1).getCode()).isEqualTo(ProcessingOrderService.ERR_DIRECT_DISPATCH_POOL_REQUIRED);
         // 整批**一行都没写**（不静默少派、也不留半成品）
-        verify(processingOrderMapper, never()).insert(any(ProcessingOrder.class));
+        verify(processingOrderMapper, never()).insertIgnoreProcessingNoConflict(any(ProcessingOrder.class), anyString());
     }
 
     // ── 部位级备注（issue #5685）：订单行 processing_info.remark ⇒ 加工单快照（固化真相）────────
@@ -634,7 +634,7 @@ class ProcessingOrderServiceTest {
         assertThat(results).hasSize(1);
         assertThat(results.get(0).isSuccess()).isTrue();
         ArgumentCaptor<ProcessingOrder> poCaptor = ArgumentCaptor.forClass(ProcessingOrder.class);
-        verify(processingOrderMapper).insert(poCaptor.capture());
+        verify(processingOrderMapper).insertIgnoreProcessingNoConflict(poCaptor.capture(), anyString());
         assertThat(capturedSnapshot(poCaptor).get(0))
                 .as("`remark` 进了白名单 ⇒ 快照逐行带上（把它从 CRAFT_SPEC_SNAPSHOT_KEYS 删掉 ⇒ 本断言红）")
                 .containsEntry("remark", "公式--48个折");
@@ -650,7 +650,7 @@ class ProcessingOrderServiceTest {
 
         assertThat(results.get(0).isSuccess()).isTrue();
         ArgumentCaptor<ProcessingOrder> poCaptor = ArgumentCaptor.forClass(ProcessingOrder.class);
-        verify(processingOrderMapper).insert(poCaptor.capture());
+        verify(processingOrderMapper).insertIgnoreProcessingNoConflict(poCaptor.capture(), anyString());
         assertThat(capturedSnapshot(poCaptor).get(0))
                 .as("没填备注 ⇒ 快照不含 `remark`（copyIfPresent 语义：缺键就缺，不落 null / 空串）")
                 .doesNotContainKey("remark");
@@ -677,7 +677,7 @@ class ProcessingOrderServiceTest {
 
         assertThat(results.get(0).isSuccess()).isTrue();
         ArgumentCaptor<ProcessingOrder> poCaptor = ArgumentCaptor.forClass(ProcessingOrder.class);
-        verify(processingOrderMapper).insert(poCaptor.capture());
+        verify(processingOrderMapper).insertIgnoreProcessingNoConflict(poCaptor.capture(), anyString());
         assertThat(capturedSnapshot(poCaptor).get(0))
                 .as("两个键都在 CRAFT_SPEC_SNAPSHOT_KEYS 里 ⇒ 快照逐行带上（删掉任一 ⇒ 本断言红）")
                 .containsEntry("installCommunity", "春江花园 3栋2单元")
@@ -694,7 +694,7 @@ class ProcessingOrderServiceTest {
 
         assertThat(results.get(0).isSuccess()).isTrue();
         ArgumentCaptor<ProcessingOrder> poCaptor = ArgumentCaptor.forClass(ProcessingOrder.class);
-        verify(processingOrderMapper).insert(poCaptor.capture());
+        verify(processingOrderMapper).insertIgnoreProcessingNoConflict(poCaptor.capture(), anyString());
         assertThat(capturedSnapshot(poCaptor).get(0))
                 .as("缺值不落键（copyIfPresent 语义）：不落 null / 空串，前端据此不印")
                 .doesNotContainKey("installCommunity")
@@ -720,7 +720,7 @@ class ProcessingOrderServiceTest {
         verify(stockBatchConsumptionService, times(1)).plan(eq(TENANT), anyList());
         verify(stockBatchConsumptionService, times(1))
                 .apply(eq(TENANT), anyString(), anyString(), anyList());
-        verify(processingOrderMapper, times(1)).insert(any(ProcessingOrder.class));
+        verify(processingOrderMapper, times(1)).insertIgnoreProcessingNoConflict(any(ProcessingOrder.class), anyString());
     }
 
     @Test
@@ -744,7 +744,7 @@ class ProcessingOrderServiceTest {
         assertThat(results.get(0).getMessage()).contains("余量不足").contains("0.5");
         assertThat(results.get(0).getSuggestion()).contains("PC-2");
         // 不留半成品：加工单没插、台账没扣（校验在任何写库之前跑完）
-        verify(processingOrderMapper, never()).insert(any(ProcessingOrder.class));
+        verify(processingOrderMapper, never()).insertIgnoreProcessingNoConflict(any(ProcessingOrder.class), anyString());
         verify(stockBatchConsumptionService, never()).apply(any(), any(), any(), anyList());
     }
 
@@ -759,7 +759,7 @@ class ProcessingOrderServiceTest {
         assertThat(results.get(0).isSuccess()).isTrue();
         verifyNoInteractions(stockBatchConsumptionService);
         ArgumentCaptor<ProcessingOrder> poCaptor = ArgumentCaptor.forClass(ProcessingOrder.class);
-        verify(processingOrderMapper).insert(poCaptor.capture());
+        verify(processingOrderMapper).insertIgnoreProcessingNoConflict(poCaptor.capture(), anyString());
         assertThat(capturedSnapshot(poCaptor).get(0)).doesNotContainKey("batchNo");
     }
 
@@ -775,7 +775,7 @@ class ProcessingOrderServiceTest {
         assertThat(results.get(0).isSuccess()).isFalse();
         assertThat(results.get(0).getMessage()).contains("不在本订单的加工单快照里");
         verify(stockBatchConsumptionService, never()).plan(any(), anyList());
-        verify(processingOrderMapper, never()).insert(any(ProcessingOrder.class));
+        verify(processingOrderMapper, never()).insertIgnoreProcessingNoConflict(any(ProcessingOrder.class), anyString());
     }
 
     @Test
@@ -789,7 +789,7 @@ class ProcessingOrderServiceTest {
                 List.of(assignment), TENANT, "文员"))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("不在本次生成范围内");
-        verify(processingOrderMapper, never()).insert(any(ProcessingOrder.class));
+        verify(processingOrderMapper, never()).insertIgnoreProcessingNoConflict(any(ProcessingOrder.class), anyString());
         verifyNoInteractions(stockBatchConsumptionService);
     }
 
@@ -893,7 +893,7 @@ class ProcessingOrderServiceTest {
         verify(stockBatchConsumptionService, never())
                 .suggestedBatchNo(any(), any(), any(), any(), any());
         verify(stockBatchConsumptionService, never()).plan(any(), anyList());
-        verify(processingOrderMapper, never()).insert(any(ProcessingOrder.class));
+        verify(processingOrderMapper, never()).insertIgnoreProcessingNoConflict(any(ProcessingOrder.class), anyString());
     }
 
     @Test
@@ -922,7 +922,7 @@ class ProcessingOrderServiceTest {
                 StockBatchConsumptionService.Designation::meters)
                 .allSatisfy(m -> assertThat(m).isEqualByComparingTo("2.7"));
         ArgumentCaptor<ProcessingOrder> poCaptor = ArgumentCaptor.forClass(ProcessingOrder.class);
-        verify(processingOrderMapper).insert(poCaptor.capture());
+        verify(processingOrderMapper).insertIgnoreProcessingNoConflict(poCaptor.capture(), anyString());
         assertThat(capturedSnapshot(poCaptor).get(0)).as("快照固化真相里记的是**补位后**的批次")
                 .containsEntry("batchNo", "PC-LATE");
     }
@@ -987,7 +987,7 @@ class ProcessingOrderServiceTest {
                 .doesNotContain("item-1")
                 .doesNotContain("指派规则");
         verify(stockBatchConsumptionService, never()).plan(any(), anyList());
-        verify(processingOrderMapper, never()).insert(any(ProcessingOrder.class));
+        verify(processingOrderMapper, never()).insertIgnoreProcessingNoConflict(any(ProcessingOrder.class), anyString());
     }
 
     @Test
@@ -1000,7 +1000,7 @@ class ProcessingOrderServiceTest {
                 .hasMessageContaining("未知的批次指派规则")
                 .hasFieldOrPropertyWithValue("code", "ASSIGNMENT_RULE_UNKNOWN");
         verifyNoInteractions(stockBatchConsumptionService);
-        verify(processingOrderMapper, never()).insert(any(ProcessingOrder.class));
+        verify(processingOrderMapper, never()).insertIgnoreProcessingNoConflict(any(ProcessingOrder.class), anyString());
     }
 
     @Test
@@ -1414,7 +1414,7 @@ class ProcessingOrderServiceTest {
         when(processingOrderMapper.selectActiveByOrderId("order-001", TENANT)).thenReturn(null);
         ProcessingItem pi = ProcessingItem.builder().id("p1").name("打孔").unit("米").options(List.of("四爪钩")).build();
         when(processingItemMapper.selectById("p1")).thenReturn(pi);
-        when(processingOrderMapper.insert(any(ProcessingOrder.class))).thenReturn(1);
+        when(processingOrderMapper.insertIgnoreProcessingNoConflict(any(ProcessingOrder.class), anyString())).thenReturn(1);
 
         var results = processingOrderService.generate(List.of("order-001"), TENANT, "u1");
 
@@ -1423,7 +1423,7 @@ class ProcessingOrderServiceTest {
         assertThat(results.get(0).getProcessingOrderNo()).startsWith("JG-");
 
         ArgumentCaptor<ProcessingOrder> captor = ArgumentCaptor.forClass(ProcessingOrder.class);
-        verify(processingOrderMapper).insert(captor.capture());
+        verify(processingOrderMapper).insertIgnoreProcessingNoConflict(captor.capture(), anyString());
         ProcessingOrder inserted = captor.getValue();
         assertThat(inserted.getStatus()).isEqualTo("generated");
         assertThat(inserted.getTenantId()).isEqualTo(TENANT);
@@ -1450,6 +1450,171 @@ class ProcessingOrderServiceTest {
         // 从「发加工」（#4305）挪到「派单」。红证：改前这里是 never ⇒ 本断言必红。
         verify(orderLifecycleService).updateOrderStatus("order-001", "producing", orderService.sharedParts());
         verify(orderLifecycleService, never()).revertProducingToConfirmed(anyString(), anyString());
+    }
+
+    // ══════════════════ 加工单号取号（P0-5：撞号 ⇒ 换号重试，不许谎报「已生成」）══════════════════
+    //
+    // 病根：改前用**进程内** AtomicInteger（随机起点）发号，取号与占号分成两条语句 ⇒ 并发 / 重启
+    // 撞 uk_processing_orders_no 时 insert 抛 DuplicateKeyException，被 catch 一律翻成「加工单已生成
+    // （并发操作）」—— 而单子其实没落库（静默漏单）。改后与 InboundOrderService / OutboundOrderService
+    // 同一范式：库内当日最大号算起点 + 一条 INSERT … ON CONFLICT DO NOTHING 占号 + 有界换候选重试。
+    //
+    // 红证（改前，同一注入；临时用例跑完即删，输出存档见 PR #9022 正文）：第一次落库撞唯一键时
+    // 改前返回 code=VALIDATION_ERROR message=订单 ORD-20260912-0001 加工单已生成（并发操作），请刷新后重试
+    // —— 而那张单**没有落库**（要求「换号重试成功」的断言当场变红）。
+
+    @Test
+    @DisplayName("P0-5 判据 1：首个候选号被占 ⇒ 自动换号重试，新单真的落库（不再误诊「已生成」）")
+    void generateRetriesWithFreshNoWhenFirstCandidateTaken() {
+        stubLibrary();
+        when(orderMapper.selectById("order-001")).thenReturn(confirmedOrder);
+        when(orderItemMapper.selectList(any())).thenReturn(List.of(orderItemWithProcessing("米白")));
+        when(processingOrderMapper.selectActiveByOrderId("order-001", TENANT)).thenReturn(null);
+        when(processingOrderMapper.selectMaxProcessingOrderNo(anyString())).thenReturn(null);
+        String occupied = "JG-20260101-0001";
+        // 「库」= 单号唯一索引：putIfAbsent 成功 ⇒ 1 行；号已被占 ⇒ 0 行（与 ON CONFLICT DO NOTHING 同语义）
+        Map<String, ProcessingOrder> table = new java.util.concurrent.ConcurrentHashMap<>();
+        table.put(occupied, ProcessingOrder.builder()
+                .id("po-occupied").orderId("order-999").processingOrderNo(occupied).build());
+        when(processingOrderMapper.insertIgnoreProcessingNoConflict(any(ProcessingOrder.class), anyString()))
+                .thenAnswer(inv -> {
+                    ProcessingOrder po = inv.getArgument(0);
+                    return table.putIfAbsent(po.getProcessingOrderNo(), po) == null ? 1 : 0;
+                });
+        ProcessingOrderNoAllocator.setProbeFirstCandidateForTest(occupied);
+        try {
+            var results = processingOrderService.generate(List.of("order-001"), TENANT, "u1");
+
+            assertThat(results.get(0).isSuccess())
+                    .as("撞号必须换号重试成功；实际 code=%s message=%s",
+                            results.get(0).getCode(), results.get(0).getMessage())
+                    .isTrue();
+            String freshNo = results.get(0).getProcessingOrderNo();
+            assertThat(freshNo).isNotEqualTo(occupied).matches("JG-\\d{8}-\\d{4}");
+            assertThat(table).as("新单必须真的落库（不是只换了响应里的字符串）").containsKey(freshNo);
+            assertThat(table.get(freshNo).getOrderId()).isEqualTo("order-001");
+        } finally {
+            ProcessingOrderNoAllocator.setProbeFirstCandidateForTest(null);
+        }
+    }
+
+    @Test
+    @DisplayName("P0-5 判据 2：连续撞号到上限 ⇒ 报「取号冲突，请重试」+ requestId，绝不报「已生成」")
+    void generateNoExhaustedReportsActionableConflict() {
+        stubLibrary();
+        when(orderMapper.selectById("order-001")).thenReturn(confirmedOrder);
+        when(orderItemMapper.selectList(any())).thenReturn(List.of(orderItemWithProcessing("米白")));
+        when(processingOrderMapper.selectActiveByOrderId("order-001", TENANT)).thenReturn(null);
+        when(processingOrderMapper.selectMaxProcessingOrderNo(anyString())).thenReturn(null);
+        // 每次占号都 0 行、且回查**查不到**已有单 ⇒ 是取号冲突，不是「已生成」
+        when(processingOrderMapper.insertIgnoreProcessingNoConflict(any(ProcessingOrder.class), anyString()))
+                .thenReturn(0);
+
+        var results = processingOrderService.generate(List.of("order-001"), TENANT, "u1");
+
+        assertThat(results.get(0).isSuccess()).isFalse();
+        assertThat(results.get(0).getCode()).isEqualTo("PROCESSING_ORDER_NO_CONFLICT");
+        assertThat(results.get(0).getMessage())
+                .as("必须给可行动文案 + 可追踪 requestId，且不得复用「已生成」")
+                .contains("加工单号生成冲突").contains("requestId=").doesNotContain("已生成");
+        verify(processingOrderMapper, times(20))
+                .insertIgnoreProcessingNoConflict(any(ProcessingOrder.class), anyString());
+        // #7723：取号耗尽同样走失败回退，不留「订单生产中、作业单没生成」
+        verify(orderLifecycleService).revertProducingToConfirmed(eq("order-001"), anyString());
+    }
+
+    @Test
+    @DisplayName("P0-5 判据 3：两个线程同时建单（同一 DB 起点）⇒ 两张单号不同且都成功")
+    void generateConcurrentTwoOrdersGetDistinctNos() throws Exception {
+        stubLibrary();
+        when(orderMapper.selectById(anyString())).thenAnswer(inv -> {
+            String id = inv.getArgument(0);
+            return Order.builder().id(id).tenantId(TENANT).orderNo("ORD-" + id).status("confirmed").build();
+        });
+        // 明细按**调用线程**给（两个订单各自的行，不串单）
+        ThreadLocal<List<OrderItem>> threadItems = new ThreadLocal<>();
+        when(orderItemMapper.selectList(any())).thenAnswer(inv -> threadItems.get());
+        when(processingOrderMapper.selectActiveByOrderId(anyString(), eq(TENANT))).thenReturn(null);
+        // 两个「实例」读到**同一个**库内起点（进程内计数器已不存在 ⇒ 起点相同是常态）
+        when(processingOrderMapper.selectMaxProcessingOrderNo(anyString())).thenReturn(null);
+        Map<String, ProcessingOrder> table = new java.util.concurrent.ConcurrentHashMap<>();
+        when(processingOrderMapper.insertIgnoreProcessingNoConflict(any(ProcessingOrder.class), anyString()))
+                .thenAnswer(inv -> {
+                    ProcessingOrder po = inv.getArgument(0);
+                    return table.putIfAbsent(po.getProcessingOrderNo(), po) == null ? 1 : 0;
+                });
+
+        List<String> orderIds = List.of("order-001", "order-002");
+        Map<String, String> noByOrder = new java.util.concurrent.ConcurrentHashMap<>();
+        List<Throwable> errors = new java.util.concurrent.CopyOnWriteArrayList<>();
+        java.util.concurrent.CyclicBarrier barrier = new java.util.concurrent.CyclicBarrier(2);
+        List<java.util.concurrent.Callable<Void>> tasks = new ArrayList<>();
+        for (String orderId : orderIds) {
+            tasks.add(() -> {
+                TenantContext.setTenantId(TENANT);
+                threadItems.set(List.of(orderItemForOrder(orderId)));
+                try {
+                    barrier.await(5, java.util.concurrent.TimeUnit.SECONDS);
+                    var results = processingOrderService.generate(List.of(orderId), TENANT, "u1");
+                    if (!results.get(0).isSuccess()) {
+                        errors.add(new AssertionError(orderId + " 建单失败: "
+                                + results.get(0).getCode() + " / " + results.get(0).getMessage()));
+                    } else {
+                        noByOrder.put(orderId, results.get(0).getProcessingOrderNo());
+                    }
+                } catch (Throwable t) {
+                    errors.add(t);
+                } finally {
+                    threadItems.remove();
+                    TenantContext.clear();
+                }
+                return null;
+            });
+        }
+        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(2);
+        try {
+            for (java.util.concurrent.Future<Void> f : pool.invokeAll(tasks)) {
+                f.get(10, java.util.concurrent.TimeUnit.SECONDS);
+            }
+        } finally {
+            pool.shutdownNow();
+        }
+
+        assertThat(errors).as("并发建单不得有人失败（撞号必须自己换号重试）").isEmpty();
+        assertThat(noByOrder).hasSize(2).doesNotContainValue(null);
+        assertThat(noByOrder.values()).doesNotHaveDuplicates();
+        assertThat(table.keySet()).containsExactlyInAnyOrderElementsOf(noByOrder.values());
+    }
+
+    @Test
+    @DisplayName("P0-5 判据 4：取号起点取**库内当日最大号**（不依赖进程内计数器）")
+    void generateNextNoStartsFromDbMax() {
+        stubLibrary();
+        when(orderMapper.selectById("order-001")).thenReturn(confirmedOrder);
+        when(orderItemMapper.selectList(any())).thenReturn(List.of(orderItemWithProcessing("米白")));
+        when(processingOrderMapper.selectActiveByOrderId("order-001", TENANT)).thenReturn(null);
+        String today = businessClock.today().format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd"));
+        when(processingOrderMapper.selectMaxProcessingOrderNo("JG-" + today + "-"))
+                .thenReturn("JG-" + today + "-0041");
+        when(processingOrderMapper.insertIgnoreProcessingNoConflict(any(ProcessingOrder.class), anyString()))
+                .thenReturn(1);
+
+        var results = processingOrderService.generate(List.of("order-001"), TENANT, "u1");
+
+        assertThat(results.get(0).isSuccess()).isTrue();
+        assertThat(results.get(0).getProcessingOrderNo())
+                .as("下一个号 = 库内当日最大号 + 1（换进程 / 换副本都不会重号）")
+                .isEqualTo("JG-" + today + "-0042");
+    }
+
+    /** 并发用例的明细：行归属由 orderId 决定（与生产 loadOrderItems 的租户/订单过滤同构）。 */
+    private OrderItem orderItemForOrder(String orderId) {
+        return OrderItem.builder()
+                .id("item-" + orderId).tenantId(TENANT).orderId(orderId)
+                .productName("布艺遮光帘A").quantity(BigDecimal.valueOf(2))
+                .width(new BigDecimal("2.5")).height(new BigDecimal("2.8"))
+                .processingInfo(processingInfo("米白"))
+                .build();
     }
 
     // ── issue #4116（P0 断链第一环）：生成加工单即实例化工序 → qr_token 非空 ──
@@ -1882,7 +2047,7 @@ class ProcessingOrderServiceTest {
         assertThat(results.get(0).getMessage()).contains("不回退订单数量");
 
         // fail-closed 的完整语义：**不落半成品**（加工单行、工序实例、订单状态三者都不动）
-        verify(processingOrderMapper, never()).insert(any(ProcessingOrder.class));
+        verify(processingOrderMapper, never()).insertIgnoreProcessingNoConflict(any(ProcessingOrder.class), anyString());
         verify(positionOperationMapper, never()).insert(any(ProcessingPositionOperation.class));
         verify(orderLifecycleService, never()).updateOrderStatus(anyString(), anyString(), any());
     }
@@ -2092,7 +2257,7 @@ class ProcessingOrderServiceTest {
         assertThat(results.get(0).getSuggestion())
                 .as("不得泄漏内部端点（§31 P3；改前挂着 operations-catalog 端点从句）")
                 .doesNotContain("查看入口").doesNotContain("/api/").doesNotContain("operations-catalog");
-        verify(processingOrderMapper, never()).insert(any(ProcessingOrder.class));
+        verify(processingOrderMapper, never()).insertIgnoreProcessingNoConflict(any(ProcessingOrder.class), anyString());
         verify(positionOperationMapper, never()).insert(any(ProcessingPositionOperation.class));
     }
 
@@ -2126,7 +2291,7 @@ class ProcessingOrderServiceTest {
                 .as("真边界仍在（suggestion 说清去哪补工序）").contains("工序库")
                 .as("且不得泄漏内部端点（§31 P3；改前这里挂着 operations-catalog 端点从句）")
                 .doesNotContain("查看入口").doesNotContain("/api/").doesNotContain("operations-catalog");
-        verify(processingOrderMapper, never()).insert(any(ProcessingOrder.class));
+        verify(processingOrderMapper, never()).insertIgnoreProcessingNoConflict(any(ProcessingOrder.class), anyString());
         verify(positionOperationMapper, never()).insert(any(ProcessingPositionOperation.class));
     }
 
@@ -2457,7 +2622,7 @@ class ProcessingOrderServiceTest {
                 .doesNotContain("工艺配置").doesNotContain("查看入口")
                 .doesNotContain("/api/").doesNotContain("production/routings");
         // 不落半成品：一行不写、订单状态不动（否则会留下「有加工单、无工序、无 qr_token」的孤儿态）
-        verify(processingOrderMapper, never()).insert(any(ProcessingOrder.class));
+        verify(processingOrderMapper, never()).insertIgnoreProcessingNoConflict(any(ProcessingOrder.class), anyString());
         verify(orderLifecycleService, never()).updateOrderStatus(anyString(), anyString(), any());
         verify(productionService, never()).instantiate(anyString(), any(), anyLong());
     }
@@ -2484,7 +2649,7 @@ class ProcessingOrderServiceTest {
         assertThat(results.get(0).getSuggestion()).contains("工序库")
                 .as("不得泄漏内部端点（§31 P3；改前挂着 /api/admin/production/operations-catalog）")
                 .doesNotContain("查看入口").doesNotContain("/api/").doesNotContain("operations-catalog");
-        verify(processingOrderMapper, never()).insert(any(ProcessingOrder.class));
+        verify(processingOrderMapper, never()).insertIgnoreProcessingNoConflict(any(ProcessingOrder.class), anyString());
     }
 
     // ══════════════ 实例化不再静默丢（issue #4609，P0 的实例化半边）══════════════
@@ -2513,7 +2678,7 @@ class ProcessingOrderServiceTest {
         java.util.concurrent.atomic.AtomicReference<ProcessingOrder> poRef =
                 new java.util.concurrent.atomic.AtomicReference<>();
         when(processingOrderMapper.selectActiveByOrderId("order-001", TENANT)).thenAnswer(inv -> poRef.get());
-        lenient().when(processingOrderMapper.insert(any(ProcessingOrder.class))).thenAnswer(inv -> {
+        lenient().when(processingOrderMapper.insertIgnoreProcessingNoConflict(any(ProcessingOrder.class), anyString())).thenAnswer(inv -> {
             ProcessingOrder inserted = inv.getArgument(0);
             inserted.setId("po-001");
             poRef.set(inserted);
@@ -2532,7 +2697,7 @@ class ProcessingOrderServiceTest {
         assertThat(results.get(0).getSuggestion())
                 .as("不得泄漏内部端点（§31 P3；改前挂着 operations-catalog 端点从句）")
                 .doesNotContain("查看入口").doesNotContain("/api/").doesNotContain("operations-catalog");
-        verify(processingOrderMapper, never()).insert(any(ProcessingOrder.class));
+        verify(processingOrderMapper, never()).insertIgnoreProcessingNoConflict(any(ProcessingOrder.class), anyString());
         verify(positionOperationMapper, never()).insert(any(ProcessingPositionOperation.class));
     }
 
@@ -2664,7 +2829,7 @@ class ProcessingOrderServiceTest {
         verify(productionOperationQueryService, never()).routeSignals(TENANT);
 
         ArgumentCaptor<ProcessingOrder> poCaptor = ArgumentCaptor.forClass(ProcessingOrder.class);
-        verify(processingOrderMapper).insert(poCaptor.capture());
+        verify(processingOrderMapper).insertIgnoreProcessingNoConflict(poCaptor.capture(), anyString());
         assertThat(poCaptor.getValue().getRouteKey())
                 .as("P2b：route_key = 实际使用的路线（具名模板）")
                 .isEqualTo(RoutingModelFixture.TEMPLATE_NAME);
@@ -2739,7 +2904,7 @@ class ProcessingOrderServiceTest {
 
         assertThat(results.get(0).isSuccess()).isFalse();
         assertThat(results.get(0).getCode()).isEqualTo(ProcessingOrderService.ERR_ROUTING_NOT_FOUND);
-        verify(processingOrderMapper, never()).insert(any(ProcessingOrder.class));
+        verify(processingOrderMapper, never()).insertIgnoreProcessingNoConflict(any(ProcessingOrder.class), anyString());
         verify(productionService, never()).instantiate(anyString(), any(), anyLong());
     }
 
@@ -2753,7 +2918,7 @@ class ProcessingOrderServiceTest {
 
         assertThat(results.get(0).isSuccess()).isTrue();
         ArgumentCaptor<ProcessingOrder> poCaptor = ArgumentCaptor.forClass(ProcessingOrder.class);
-        verify(processingOrderMapper).insert(poCaptor.capture());
+        verify(processingOrderMapper).insertIgnoreProcessingNoConflict(poCaptor.capture(), anyString());
         assertThat(poCaptor.getValue().getRouteKey())
                 .as("P2b：route_key = 实际使用的路线（具名模板）")
                 .isEqualTo(RoutingModelFixture.TEMPLATE_NAME);
@@ -2837,7 +3002,7 @@ class ProcessingOrderServiceTest {
 
         // 固化真相：快照两条，**同 craftLineId**（樘窗 = 分组层级，事后可归属套级工序/加工费）
         ArgumentCaptor<ProcessingOrder> poCaptor = ArgumentCaptor.forClass(ProcessingOrder.class);
-        verify(processingOrderMapper).insert(poCaptor.capture());
+        verify(processingOrderMapper).insertIgnoreProcessingNoConflict(poCaptor.capture(), anyString());
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> snapshot = (List<Map<String, Object>>) poCaptor.getValue().getItemsSnapshot();
         assertThat(snapshot).hasSize(2);
@@ -3551,12 +3716,12 @@ class ProcessingOrderServiceTest {
         when(orderItemMapper.selectList(any()))
                 .thenReturn(List.of(orderItemWithFullCraftSpec("米白"), orderItemWithoutCraftSpec()));
         when(processingOrderMapper.selectActiveByOrderId("order-001", TENANT)).thenReturn(null);
-        when(processingOrderMapper.insert(any(ProcessingOrder.class))).thenReturn(1);
+        when(processingOrderMapper.insertIgnoreProcessingNoConflict(any(ProcessingOrder.class), anyString())).thenReturn(1);
 
         processingOrderService.generate(List.of("order-001"), TENANT, "u1");
 
         ArgumentCaptor<ProcessingOrder> poCaptor = ArgumentCaptor.forClass(ProcessingOrder.class);
-        verify(processingOrderMapper).insert(poCaptor.capture());
+        verify(processingOrderMapper).insertIgnoreProcessingNoConflict(poCaptor.capture(), anyString());
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> snapshot = (List<Map<String, Object>>) poCaptor.getValue().getItemsSnapshot();
         assertThat(snapshot).hasSize(2);
@@ -3646,7 +3811,7 @@ class ProcessingOrderServiceTest {
 
         assertThat(results.get(0).isSuccess()).isFalse();
         assertThat(results.get(0).getMessage()).contains("已有加工单");
-        verify(processingOrderMapper, never()).insert(any(ProcessingOrder.class));
+        verify(processingOrderMapper, never()).insertIgnoreProcessingNoConflict(any(ProcessingOrder.class), anyString());
         verify(orderLifecycleService, never()).updateOrderStatus(anyString(), anyString(), any());
     }
 
@@ -3663,7 +3828,7 @@ class ProcessingOrderServiceTest {
 
         assertThat(results.get(0).isSuccess()).isFalse();
         assertThat(results.get(0).getMessage()).contains("无加工项");
-        verify(processingOrderMapper, never()).insert(any(ProcessingOrder.class));
+        verify(processingOrderMapper, never()).insertIgnoreProcessingNoConflict(any(ProcessingOrder.class), anyString());
     }
 
     // ── PG-004 未确认订单 ──────────────────────────────────────────
@@ -3679,7 +3844,7 @@ class ProcessingOrderServiceTest {
         when(orderItemMapper.selectList(any()))
                 .thenReturn(List.of(orderItemWithProcessing("米白")));
         when(processingOrderMapper.selectActiveByOrderId("order-pending", TENANT)).thenReturn(null);
-        when(processingOrderMapper.insert(any(ProcessingOrder.class))).thenReturn(1);
+        when(processingOrderMapper.insertIgnoreProcessingNoConflict(any(ProcessingOrder.class), anyString())).thenReturn(1);
 
         var results = processingOrderService.generate(List.of("order-pending"), TENANT, "u1");
 
@@ -3710,7 +3875,7 @@ class ProcessingOrderServiceTest {
         when(orderItemMapper.selectList(any()))
                 .thenReturn(List.of(orderItemWithProcessing("米白")));
         when(processingOrderMapper.selectActiveByOrderId("order-001", TENANT)).thenReturn(null);
-        when(processingOrderMapper.insert(any(ProcessingOrder.class))).thenReturn(1);
+        when(processingOrderMapper.insertIgnoreProcessingNoConflict(any(ProcessingOrder.class), anyString())).thenReturn(1);
 
         var results = processingOrderService.generate(List.of("ORD-20260912-0001"), TENANT, "u1");
 
@@ -4080,7 +4245,7 @@ class ProcessingOrderServiceTest {
     @SuppressWarnings("unchecked")
     private Map<String, Object> insertedSnapshotEntry() {
         ArgumentCaptor<ProcessingOrder> captor = ArgumentCaptor.forClass(ProcessingOrder.class);
-        verify(processingOrderMapper).insert(captor.capture());
+        verify(processingOrderMapper).insertIgnoreProcessingNoConflict(captor.capture(), anyString());
         List<Map<String, Object>> snapshot = (List<Map<String, Object>>) captor.getValue().getItemsSnapshot();
         assertThat(snapshot).hasSize(1);
         return snapshot.get(0);
@@ -4181,13 +4346,13 @@ class ProcessingOrderServiceTest {
         when(orderItemMapper.selectList(any())).thenReturn(List.of(item));
         when(processingOrderMapper.selectActiveByOrderId("order-001", TENANT)).thenReturn(null);
         when(processingItemMapper.selectById("p1")).thenReturn(null);
-        when(processingOrderMapper.insert(any(ProcessingOrder.class))).thenReturn(1);
+        when(processingOrderMapper.insertIgnoreProcessingNoConflict(any(ProcessingOrder.class), anyString())).thenReturn(1);
 
         var results = processingOrderService.generate(List.of("order-001"), TENANT, "u1");
 
         assertThat(results.get(0).isSuccess()).isTrue();
         ArgumentCaptor<ProcessingOrder> captor = ArgumentCaptor.forClass(ProcessingOrder.class);
-        verify(processingOrderMapper).insert(captor.capture());
+        verify(processingOrderMapper).insertIgnoreProcessingNoConflict(captor.capture(), anyString());
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> snapshot = (List<Map<String, Object>>) captor.getValue().getItemsSnapshot();
         assertThat(snapshot).hasSize(1);
@@ -4195,20 +4360,28 @@ class ProcessingOrderServiceTest {
     }
 
     @Test
-    @DisplayName("并发重复生成（DuplicateKeyException）→ 幂等失败结果；订单联动**回退**（#7723）")
+    @DisplayName("并发重复生成（占号 0 行后回查**确实**已有单）→ 幂等失败结果；订单联动**回退**（#7723）")
     void generateConcurrentDuplicateRejectedIdempotently() {
         stubLibrary();
         when(orderMapper.selectById("order-001")).thenReturn(confirmedOrder);
         when(orderItemMapper.selectList(any()))
                 .thenReturn(List.of(orderItemWithProcessing("米白")));
-        when(processingOrderMapper.selectActiveByOrderId("order-001", TENANT)).thenReturn(null);
-        when(processingOrderMapper.insert(any(ProcessingOrder.class)))
-                .thenThrow(new org.springframework.dao.DuplicateKeyException("uk_processing_orders_active"));
+        // 第一次（prepare 的幂等预检）看不到；占号 0 行后回查才看到 —— 并发窗口的真实形态。
+        // 关键：只有**确实查到**这张单才报「已生成」（P0-5 改前是无论哪种冲突都报）。
+        ProcessingOrder existing = ProcessingOrder.builder()
+                .id("po-existing").orderId("order-001").processingOrderNo("JG-20260101-0007")
+                .status("generated").build();
+        when(processingOrderMapper.selectActiveByOrderId("order-001", TENANT)).thenReturn(null, existing);
+        when(processingOrderMapper.selectMaxProcessingOrderNo(anyString())).thenReturn(null);
+        when(processingOrderMapper.insertIgnoreProcessingNoConflict(any(ProcessingOrder.class), anyString()))
+                .thenReturn(0);
 
         var results = processingOrderService.generate(List.of("order-001"), TENANT, "u1");
 
         assertThat(results.get(0).isSuccess()).isFalse();
-        assertThat(results.get(0).getMessage()).contains("已生成");
+        assertThat(results.get(0).getMessage())
+                .as("确实已有单 ⇒ 报「已生成」，并带出真实单号（可行动的下一步）")
+                .contains("已生成").contains("JG-20260101-0007");
         // #7723：联动先行（confirmed→producing）+ 落库失败 ⇒ 回退，杜绝「订单生产中、作业单没生成」
         verify(orderLifecycleService).updateOrderStatus("order-001", "producing", orderService.sharedParts());
         verify(orderLifecycleService).revertProducingToConfirmed(eq("order-001"), anyString());
@@ -4222,7 +4395,7 @@ class ProcessingOrderServiceTest {
         when(orderItemMapper.selectList(any()))
                 .thenReturn(List.of(orderItemWithProcessing("米白")));
         when(processingOrderMapper.selectActiveByOrderId("order-001", TENANT)).thenReturn(null);
-        when(processingOrderMapper.insert(any(ProcessingOrder.class)))
+        when(processingOrderMapper.insertIgnoreProcessingNoConflict(any(ProcessingOrder.class), anyString()))
                 .thenThrow(new RuntimeException("db down"));
 
         assertThatThrownBy(() -> processingOrderService.generate(List.of("order-001"), TENANT, "u1"))
@@ -4564,7 +4737,7 @@ class ProcessingOrderServiceTest {
                 .thenAnswer(inv -> firstRef.get());
         when(processingOrderMapper.selectActiveByOrderId(ORDER_2, TENANT))
                 .thenAnswer(inv -> secondRef.get());
-        when(processingOrderMapper.insert(any(ProcessingOrder.class))).thenAnswer(inv -> {
+        when(processingOrderMapper.insertIgnoreProcessingNoConflict(any(ProcessingOrder.class), anyString())).thenAnswer(inv -> {
             ProcessingOrder inserted = inv.getArgument(0);
             inserted.setId("po-" + inserted.getOrderId());
             if ("order-001".equals(inserted.getOrderId())) {
@@ -4670,7 +4843,7 @@ class ProcessingOrderServiceTest {
         assertThat(first.add(second)).as("🔴 两单合计 3 米（不是 6 米）").isEqualByComparingTo("3");
         // 快照盖的是**本单**的那一笔（批次号 + 两个米数），不是池级合计、也不是别单的行
         ArgumentCaptor<ProcessingOrder> poCaptor = ArgumentCaptor.forClass(ProcessingOrder.class);
-        verify(processingOrderMapper, times(2)).insert(poCaptor.capture());
+        verify(processingOrderMapper, times(2)).insertIgnoreProcessingNoConflict(poCaptor.capture(), anyString());
         List<ProcessingOrder> inserted = poCaptor.getAllValues();
         assertThat(inserted).hasSize(2);
         List<String> ownItem = List.of("item-1", "item-2");
@@ -4726,7 +4899,7 @@ class ProcessingOrderServiceTest {
         assertThat(preview.poolingGainMeters()).as("池化**新增**收益 = 6 − 3（不把 #5158 的旧收益算进来）")
                 .isEqualByComparingTo("3");
         // 预览是只读的：不建加工单、不落台账
-        verify(processingOrderMapper, never()).insert(any(ProcessingOrder.class));
+        verify(processingOrderMapper, never()).insertIgnoreProcessingNoConflict(any(ProcessingOrder.class), anyString());
         verify(stockBatchConsumptionService, never()).apply(any(), any(), any(), anyList());
 
         var results = realChainService().generate(List.of("order-001", ORDER_2), assignments,
@@ -4920,7 +5093,7 @@ class ProcessingOrderServiceTest {
         assertThat(results.get(0).isSuccess()).isFalse();
         assertThat(results.get(0).getMessage()).contains("外发加工").contains("承接方");
         assertThat(results.get(0).getSuggestion()).as("出口必须可行动").contains("外发");
-        verify(processingOrderMapper, never()).insert(any(ProcessingOrder.class));
+        verify(processingOrderMapper, never()).insertIgnoreProcessingNoConflict(any(ProcessingOrder.class), anyString());
     }
 
     @Test
@@ -4933,7 +5106,7 @@ class ProcessingOrderServiceTest {
                 TENANT, "u1", null, true, null, null))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("外发单不参与合并派单");
-        verify(processingOrderMapper, never()).insert(any(ProcessingOrder.class));
+        verify(processingOrderMapper, never()).insertIgnoreProcessingNoConflict(any(ProcessingOrder.class), anyString());
     }
 
     // ============================================================ 状态机锚点（issue #4695 / D13）
@@ -4992,7 +5165,7 @@ class ProcessingOrderServiceTest {
         when(orderMapper.selectById("order-001")).thenReturn(confirmedOrder);
         when(orderItemMapper.selectList(any())).thenReturn(List.of(orderItemWithProcessing("米白")));
         when(processingOrderMapper.selectActiveByOrderId("order-001", TENANT)).thenReturn(null);
-        when(processingOrderMapper.insert(any(ProcessingOrder.class))).thenReturn(1);
+        when(processingOrderMapper.insertIgnoreProcessingNoConflict(any(ProcessingOrder.class), anyString())).thenReturn(1);
         when(supplierMapper.selectById("sup-1"))
                 .thenReturn(supplier("sup-1", "朝阳加工厂", "active", "processor"));
         LocalDate returnDate = businessClock.today().plusDays(3);
@@ -5002,7 +5175,7 @@ class ProcessingOrderServiceTest {
 
         assertThat(results.get(0).isSuccess()).isTrue();
         ArgumentCaptor<ProcessingOrder> captor = ArgumentCaptor.forClass(ProcessingOrder.class);
-        verify(processingOrderMapper).insert(captor.capture());
+        verify(processingOrderMapper).insertIgnoreProcessingNoConflict(captor.capture(), anyString());
         ProcessingOrder written = captor.getValue();
         assertThat(written.getProcessor()).as("名称快照").isEqualTo("朝阳加工厂");
         assertThat(written.getProcessorSupplierId()).as("档案引用").isEqualTo("sup-1");
@@ -5020,7 +5193,7 @@ class ProcessingOrderServiceTest {
                 "u1", null, false, "sup-1", null))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("不是加工厂");
-        verify(processingOrderMapper, never()).insert(any(ProcessingOrder.class));
+        verify(processingOrderMapper, never()).insertIgnoreProcessingNoConflict(any(ProcessingOrder.class), anyString());
         verify(orderLifecycleService, never()).updateOrderStatus(anyString(), anyString(), any());
     }
 
@@ -5035,7 +5208,7 @@ class ProcessingOrderServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("已停用")
                 .hasMessageContaining("朝阳加工厂");
-        verify(processingOrderMapper, never()).insert(any(ProcessingOrder.class));
+        verify(processingOrderMapper, never()).insertIgnoreProcessingNoConflict(any(ProcessingOrder.class), anyString());
     }
 
     @Test
@@ -5045,7 +5218,7 @@ class ProcessingOrderServiceTest {
                 "u1", null, false, null, businessClock.today().minusDays(1)))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("回厂日不能早于今天");
-        verify(processingOrderMapper, never()).insert(any(ProcessingOrder.class));
+        verify(processingOrderMapper, never()).insertIgnoreProcessingNoConflict(any(ProcessingOrder.class), anyString());
     }
 
     @Test
@@ -5071,7 +5244,7 @@ class ProcessingOrderServiceTest {
 
         assertThat(results.get(0).isSuccess()).isFalse();
         assertThat(results.get(0).getMessage()).contains("不支持外发加工厂");
-        verify(processingOrderMapper, never()).insert(any(ProcessingOrder.class));
+        verify(processingOrderMapper, never()).insertIgnoreProcessingNoConflict(any(ProcessingOrder.class), anyString());
     }
 
     @Test
