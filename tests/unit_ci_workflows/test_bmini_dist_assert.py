@@ -1,4 +1,4 @@
-# case_ids: MC-341
+# case_ids: BM-068
 r"""B 端小程序 weapp 产物断言 + 体验版发布入口 + CI 接线的判据（issue #8980）。
 
 ## 病（2026-11-21 首次手工发体验版，AppID `wx6ee2f682c1b4822c`）
