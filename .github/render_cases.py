@@ -62,6 +62,7 @@ SKILL_MAP = {
     "chat": "MULTI_TURN",
     # ── 以下域显式映射到 GENERAL：后端 / 单测契约域，不属任何 LLM skill ──
     "auth": "GENERAL",   # issue #5485 登录/认证域：后端单测契约域，显式映射（不靠缺省兜底）
+    "smoke": "GENERAL",  # issue #8992 生产冒烟套件自身的元判据域：非 LLM 行为，显式映射
     "defense": "GENERAL",
     "hr": "GENERAL",
     "settings": "GENERAL",
@@ -97,6 +98,7 @@ DOMAIN_TITLES = {
     "registry": "工具注册器域", "token-refresh": "令牌刷新域", "ui": "前端 UI 域",
     "utils": "跨切面工具域", "auth": "登录认证域",
     "migration": "客户主数据迁移域",
+    "smoke": "生产冒烟套件域",
 }
 
 
