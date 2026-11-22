@@ -48,24 +48,39 @@ class TestHealthCheck:
         assert data.get("status") in ("healthy", "ok"), f"Service not healthy: {data}"
 
     def test_admin_api_db_connection(self, admin_client: SmokeTestClient):
-        """admin-api 数据库连接正常（通过 health 检查）"""
+        """admin-api 数据库连接正常（通过 health 检查）
+
+        ⚠️ issue #8994 ④：**部署形态**下 `/actuator/health` 被 nginx 屏蔽返回 404
+        （= `test_admin_api_health` 里那条安全断言），此时 DB 健康**不可判定** ⇒
+        显式 `pytest.skip`。此前的写法 `if resp.status_code == 200:` 没有 else 分支
+        ⇒ 404 时**零断言 PASSED**（SDQS DQ-4 假绿）。
+        """
         resp = admin_client.get("/actuator/health")
-        if resp.status_code == 200:
-            data = resp.json()
-            # Spring Boot Actuator 详细健康检查
-            components = data.get("components", {})
-            if "db" in components:
-                assert components["db"]["status"] == "UP", (
-                    f"Database not UP: {components['db']}"
-                )
+        if resp.status_code != 200:
+            pytest.skip(
+                f"/actuator/health 在部署形态不可达（status={resp.status_code}，"
+                f"nginx 屏蔽）⇒ DB 健康不可判定（issue #8994 ④）"
+            )
+        components = resp.json().get("components", {})
+        db = components.get("db")
+        if not isinstance(db, dict):
+            pytest.skip("health 未暴露 db 组件明细 ⇒ DB 健康不可判定（issue #8994 ④）")
+        assert db.get("status") == "UP", f"Database not UP: {db}"
 
     def test_admin_api_redis_connection(self, admin_client: SmokeTestClient):
-        """admin-api Redis 连接正常（通过 health 检查）"""
+        """admin-api Redis 连接正常（通过 health 检查）
+
+        同 `test_admin_api_db_connection`：404 / 无组件明细 ⇒ 显式 skip（issue #8994 ④），
+        不许零断言 PASSED。
+        """
         resp = admin_client.get("/actuator/health")
-        if resp.status_code == 200:
-            data = resp.json()
-            components = data.get("components", {})
-            if "redis" in components:
-                assert components["redis"]["status"] == "UP", (
-                    f"Redis not UP: {components['redis']}"
-                )
+        if resp.status_code != 200:
+            pytest.skip(
+                f"/actuator/health 在部署形态不可达（status={resp.status_code}，"
+                f"nginx 屏蔽）⇒ Redis 健康不可判定（issue #8994 ④）"
+            )
+        components = resp.json().get("components", {})
+        redis = components.get("redis")
+        if not isinstance(redis, dict):
+            pytest.skip("health 未暴露 redis 组件明细 ⇒ Redis 健康不可判定（issue #8994 ④）")
+        assert redis.get("status") == "UP", f"Redis not UP: {redis}"
