@@ -101,7 +101,11 @@ public class ProductUpdateRequest {
     private BigDecimal rollLengthM;
 
     /**
-     * 规格尺寸列表（如 2.8m / 3.2m / 3.4m）
+     * 门幅（规格尺寸）清单（如 2.8m / 3.2m / 3.4m）—— 商家声明的**可售门幅**。
+     *
+     * <p>与建品同口径（V214 / issue #9005）：传了才写（{@code null} = 不改，空数组 = 清空），
+     * 落 {@code products.door_widths}；有 SKU 时读面仍以 {@code product_skus.door_width}
+     * 派生值为准（门幅是 SKU 维度，用户裁定 2026-09-21）。</p>
      */
     private List<String> doorWidths;
 
