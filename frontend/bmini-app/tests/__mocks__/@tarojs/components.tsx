@@ -42,7 +42,29 @@ export const Textarea = React.forwardRef<any, any>(({ onInput, ...rest }, ref) =
 })
 Textarea.displayName = 'Textarea'
 
-export const Button = createComponent('button')
+export const Button = React.forwardRef<any, any>(
+  ({ children, onClick, onAgreePrivacyAuthorization, openType, ...rest }, ref) => {
+    // `open-type='agreePrivacyAuthorization'` 的按钮：小程序在用户点按后回调
+    // `bindagreeprivacyauthorization`（Taro 侧 = `onAgreePrivacyAuthorization`）。DOM 没有这个事件
+    // ⇒ mock 在同一次点击里补上，否则「点同意 ⇒ resolve({event:'agree',buttonId})」这条判据
+    // 只能靠读源码（假绿）。issue #9011。
+    return React.createElement(
+      'button',
+      {
+        ref,
+        ...rest,
+        // 与 WXML 同名（`open-type`）：写成 `openType` 会触发 React 的 unknown-prop 告警
+        ...(openType ? { 'open-type': openType } : {}),
+        onClick: (e: any) => {
+          onClick?.(e)
+          onAgreePrivacyAuthorization?.(e)
+        },
+      },
+      children,
+    )
+  },
+)
+Button.displayName = 'Button'
 export const Navigator = createComponent('a')
 export const Swiper = createComponent('div')
 export const SwiperItem = createComponent('div')
