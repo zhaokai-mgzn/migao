@@ -66,7 +66,7 @@ import static org.mockito.Mockito.when;
  * {@code derived}）——「有损聚合」没有红证就等于没有判据。
  *
  * <h2>红证（注入式）</h2>
- * 本文件断言的是**落库行**（{@code processingOrderMapper.insert} 的实参），不是桩的返回值 ——
+ * 本文件断言的是**落库行**（{@code processingOrderMapper.insertIgnoreProcessingNoConflict} 的实参），不是桩的返回值 ——
  * 把 {@code deriveRouteKey} 的库读取改回常量表、把 {@code resolveRoute} 的来源降级去掉、
  * 把 roll-up 的取最需关注改成取第一条，本文件分别变红（逐条见用例 javadoc）。
  */
@@ -243,7 +243,7 @@ class ProcessingOrderRouteSourceTest {
         when(orderItemMapper.selectList(any())).thenReturn(items);
         AtomicReference<ProcessingOrder> poRef = new AtomicReference<>();
         when(processingOrderMapper.selectActiveByOrderId("order-001", TENANT)).thenAnswer(inv -> poRef.get());
-        when(processingOrderMapper.insert(any(ProcessingOrder.class))).thenAnswer(inv -> {
+        when(processingOrderMapper.insertIgnoreProcessingNoConflict(any(ProcessingOrder.class), anyString())).thenAnswer(inv -> {
             ProcessingOrder inserted = inv.getArgument(0);
             inserted.setId("po-001");
             poRef.set(inserted);
@@ -513,7 +513,7 @@ class ProcessingOrderRouteSourceTest {
      *
      * <p>形态与上面 PG-063 用的是**同一个真库夹具**（卖布行无 `processingItems`）：卖布单今天会
      * 生成一张只有 `裁剪`/`打包` 两道工序的加工单，但用户裁定它**不该叫加工单** —— 它是
-     * **出库作业单**（2026-10-17 / issue #7079）。本用例断言的是 `processingOrderMapper.insert`
+     * **出库作业单**（2026-10-17 / issue #7079）。本用例断言的是 `processingOrderMapper.insertIgnoreProcessingNoConflict`
      * 的**实参**，即「生成那一刻冻结并随行落库」这件事本身。</p>
      */
     @Test
