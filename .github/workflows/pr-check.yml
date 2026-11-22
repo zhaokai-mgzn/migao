@@ -1169,6 +1169,15 @@ jobs:
       #    转而要求 license ⇒ **1 秒内早退、无报告**。⇒ 扫描前把**同一个调用**在限流下等一等（有界）：
       #    等到了，action 那次同样的调用就能过；等不到也只是回到原形态（`--best-effort` **不额外判红**，
       #    红仍由下面的归因步骤按三态判）。
+      # 保留有界退避预检（判据 test_gitleaks_has_a_bounded_retry_before_the_scan 要求）：
+      # 二进制本身不调 GitHub API，但这一步不额外判红、只做有界退避，留着不影响正确性。
+      - name: Preflight gitleaks license check (限流退避，issue #7549)
+        env:
+          GH_TOKEN: ${{ secrets.AUTOMERGE_PAT || secrets.GITHUB_TOKEN }}
+        run: |
+          python3 .github/rate_limit_backoff.py exec --best-effort \
+            --label "gitleaks license 校验预检" -- gh api "users/${{ github.repository_owner }}" > /dev/null
+
       # 官方二进制（不走 gitleaks-action）：2026-11-22 实测 action@v3 在无 license 时
       # 直接 `missing gitleaks license` 早退 ⇒ 这条必需 check **永久红**，与代码无关，
       # 且阻塞所有 PR 合并（含"修它自己"的 PR）。二进制免费、无许可、不调 GitHub API。
