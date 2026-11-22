@@ -5,6 +5,17 @@
 > 原因 = 单文件涨到 512KB 越过扫描上限，详见存档文件头与 issue #6404。
 > **后续条目继续在本文件 `## [Unreleased]
 
+### B 端小程序补上微信隐私授权弹窗（照片 / 摄像头 / 麦克风）：未同意的工人扫码 / 拍照 / 语音不再全挂（2026-11-22，issue #9011）
+
+- **病灶**：小程序后台已申报《用户隐私保护指引》三类（选中的照片或视频信息 / 摄像头 / 麦克风），但端侧**一处**隐私授权流程都没有（`onNeedPrivacyAuthorization` / `requirePrivacyAuthorize` 全仓 0 命中）⇒ 未同步过同意的用户调 `chooseImage` / `scanCode` / `getRecorderManager` 直接被微信拦下（`fail privacy permission is not authorized`）：工人**拍照入库 / 补打 / 发货 / 库存修正**、**扫码报工 / 裁高 / 精裁 / 质检**、**按住说话**全部失败，且没有任何判据会变红（接口调用本身写得没问题）。
+- **形态**：新增 `frontend/bmini-app/src/utils/privacy.ts`（幂等注册 `Taro.onNeedPrivacyAuthorization`；`resolve` **入队**（多个隐私接口同时 pending 时逐个回应）+ 通知订阅者；`resolvePrivacy(agree)` 的 `agree` **必带 `buttonId='agree-btn'`** —— 官方字段名，缺了微信不认、pending 接口不会继续）+ `frontend/bmini-app/src/components/privacy/PrivacyPopup`（自定义弹窗：三类用途逐字等于后台申报、`查看完整《隐私保护指引》` 走 `Taro.openPrivacyContract`、「同意并继续」是唯一的 `open-type='agreePrivacyAuthorization'` 按钮、「暂不同意」走普通按钮）。
+- **挂载**：`app.tsx` 里注册一次；`<PrivacyPopup />` 挂在**会（直接或经依赖传递）触发隐私接口的 9 个页面**（聊天页 + 工人报工 / 入库 / 补打 / 发货 / 库存 / 裁高 / 精裁 / 质检）—— 页面集合由判据**现取**（新增触发页不挂弹窗即判红），不是手抄清单。小程序端**不能**把它挂在 `App` 里（App 里多渲染的节点没有页面归属，界面看不到）。
+- **为什么用自定义弹窗而不是等微信官方弹窗**：官方兜底弹窗（开发者不响应 `onNeedPrivacyAuthorization` 时微信自动弹）只有「允许 / 拒绝」，没有三类用途说明、打不开指引全文；而《用户隐私保护指引》5.2 要求「变更用途时以弹窗、站内消息等显著方式告知」⇒ 自己的弹窗是**可复用**的告知面，官方弹窗只作兜底。
+- **h5 降级**：taro-h5 把 `onNeedPrivacyAuthorization` / `openPrivacyContract` 实现成 `temporarilyNotSupport(...)` 的 stub（**函数存在但非真实现**）⇒ 按编译目标（`isH5()`）判；h5 下注册即 no-op、指引改走说明弹窗（不留点了没反应的死链），h5 构建与既有单测不受影响。两个 API 已登记进 `utils/platform.ts` 的 h5 台账。
+- **`__usePrivacyCheck__` 不加**：官方《小程序隐私协议开发指南》「2023.09.14 更新」—— 隐私相关功能原定 2023-09-15 默认启用、后延期至 **2023-10-17**，**该日之后不论 app.json 里有没有配置 `__usePrivacyCheck__`，隐私相关功能都会启用**（写在 `app.config.ts` 的注释里）。
+- **零业务改动**：扫码 / 拍照 / 录音的调用方式一字未动（授权由微信在调用时自动触发）。
+- 判据：`frontend/bmini-app/tests/privacy-authorization.test.tsx`（幂等 / payload 含 `buttonId` / 多 pending 队列 / h5 no-op / 文案逐字 / 按钮唯一性 / 页面挂载类级守卫 / 注册点唯一）+ `frontend/bmini-app/tests/h5-platform-api-guard.test.ts`（台账射程同步）。
+
 ### 到期待办在多实例部署下不再重复提醒：扫描改数据库原子领取 + 通知补稳定幂等键（2026-11-22，issue #9019）
 
 - **现象**：两个 admin-api 实例同秒扫到同一批到期 `pending` ⇒ 各写一条站内通知（员工收到重复的到点提醒），
@@ -1706,6 +1717,36 @@ worker-h5 纯函数、承运商 4 条 × 两处入口 + 类级单一真值守卫
 
 
 ## [Unreleased]
+
+### 商品门幅清单落库并可回读；建品接口对非 0 库存改为 422 显式拒绝（2026-11-22，issue #9005 / #9006）
+
+- **门幅（`doorWidths`）落库（#9005，P1）**：`products` 新增 `door_widths JSONB`（迁移 V214）+ 实体 / DTO / 响应映射。
+  改前：`POST /api/admin/products` 带 `doorWidths:["2.8","3.2"]` ⇒ **200 创建成功**，但该列不存在、
+  `GET /{id}` **读不回来**（生产只读 SQL 实测 `column "door_widths" does not exist`；响应里的门幅是从 SKU 派生的，
+  没有 SKU 时派生不出任何东西）。改后：建品 / 改品都落库，`GET` 回读逐字一致。
+  ⚠️ **有 SKU 时读面仍以 `product_skus.door_width` 派生值为准** —— 门幅是 SKU 组合维度（用户裁定 2026-09-21），
+  本列只承载「还没有 SKU 时」的同一份声明，不替换派生口径、也不作为下单/算料权威。
+  存量回填：只填**空数组**行（从既有 SKU 去重聚合），已有值一律不覆盖；回滚 = `ALTER TABLE products DROP COLUMN IF EXISTS door_widths`。
+- **建品库存（`stock`）改为显式拒绝（#9006，P2）**：库存口径**不变**（#7597 / 用户裁定 2026-10-24：只由真实单据产生），
+  变的是**失败可见性** —— 改前带 `stock:100` ⇒ 200 且落 0（静默偏差），改后**非 0 ⇒ 422** + 可行动文案（去入库单过账）；
+  不传 / 传 0 照常（落库值本来就是 0）。**改品**的 `stock` 仍是合法绝对调整写面，未受影响。
+- 判据：`ProductDoorWidthsRoundTripRealDbTest`（真库往返 + V214 回填幂等）、`ProductDoorWidthsMigrationTest`（列/映射/回滚契约）、
+  `ProductCreateRequestFieldPersistenceMetaGuardTest`（类级元守卫：入参 DTO 字段无落点即红）、
+  `ProductCreateStockIgnoredTest`（422 语义 + `skus[].stock` 仍忽略）。
+
+### 商品颜色入参字段名不合法 ⇒ 422 并点名 `colorName`（不再是 500「服务器内部错误」）（2026-11-22，issue #9012）
+
+- **病（生产实抓，requestId `req_809f888b9ae44438`，tenant 1）**：`POST /api/admin/products` 传
+  `colors:[{"name":"米白","code":"#F5F5DC"}]`（字段名猜错，正确是 `colorName` / `mainColorHex`）⇒
+  Jackson `FAIL_ON_UNKNOWN_PROPERTIES=false` **静默丢弃**未知字段 ⇒ `colorName` 为 null ⇒ service 照常 insert ⇒
+  `null value in column "color_name" of relation "product_colors" violates not-null constraint` ⇒
+  HTTP **500**「服务器内部错误」—— 商家既看不到「哪个字段错了」，也无从自救。
+- **改后**：① **颜色名称准入**落在建品 / 改品 / Excel 导入 / Agent 四条写颜色路径的**唯一收口**
+  （与 #6302 的文本长度准入同一位置）⇒ 缺 `colorName`（含只有空白）**422** + 中文文案**点名 `colorName`**，
+  且在写 `product_colors` **之前**拒绝（不是撞库后回滚）；② 全局异常处理器把**非空约束违例**
+  （`SQLState 23502`）也归口 **422「参数不合法」+ requestId**（响应体与日志都不带列名 / 表名）——
+  兜住同族（其它表、其它漏校验字段）的 500 冒充；唯一约束违例仍保持既有 5xx 契约
+  （`MerchantShipmentAtomicityTest` 不受影响）。
 
 ### 加工单号改为「库内当日最大号取号 + 撞号换号重试」，撞号不再谎报「已生成」（2026-11-22，issue #9021）
 

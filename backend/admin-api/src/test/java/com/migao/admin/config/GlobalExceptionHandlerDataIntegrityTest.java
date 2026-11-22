@@ -14,7 +14,10 @@ import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
 
 import jakarta.servlet.http.HttpServletRequest;
 
@@ -58,6 +61,10 @@ class GlobalExceptionHandlerDataIntegrityTest {
     /** PG 的 SQLState（沿用 JDBC 标准码，取其字面值以免依赖驱动类）。 */
     private static final String FK_SQLSTATE = "23503";
     private static final String UNIQUE_SQLSTATE = "23505";
+    /** PG 非空违例（issue #9012：`product_colors.color_name` 的 NOT NULL）。 */
+    private static final String NOT_NULL_SQLSTATE = "23502";
+    /** 判据⑤绑在请求属性上的追踪 id（形状同生产：`req_` + 16 位）。 */
+    private static final String NOT_NULL_REQUEST_ID = "req_9012offline01";
 
     private GlobalExceptionHandler handler;
     private Logger handlerLogger;
@@ -204,20 +211,69 @@ class GlobalExceptionHandlerDataIntegrityTest {
                 handler.handleDataIntegrityViolationException(ex, request());
 
         // 既有契约（MerchantShipmentAtomicityTest / MerchantShipmentRouteTest）：建单写面注入唯一键失败
-        // ⇒ **必须仍 5xx**（那两条判的是回滚，但状态码断言也在那儿）⇒ 本单射程刻意收到「外键」。
+        // ⇒ **必须仍 5xx**（那两条判的是回滚，但状态码断言也在那儿）⇒ 射程刻意**不含**唯一约束。
         assertThat(response.getStatusCode())
-                .as("唯一 / 非空 / 检查约束违例是基础设施级失败 ⇒ 保持既有 500，不由本单改口径")
+                .as("唯一 / 检查约束违例是基础设施级失败 ⇒ 保持既有 500，不由本单改口径")
                 .isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR);
         assertThat(response.getBody().getError().getCode()).isEqualTo("INTERNAL_ERROR");
 
         ILoggingEvent event = lastEvent();
         assertThat(event.getFormattedMessage())
-                .as("非外键路径的**日志形状**与原兜底逐字节相同（端点坐标 + type + msg）")
+                .as("不劫持路径的**日志形状**与原兜底逐字节相同（端点坐标 + type + msg）")
                 .contains("系统异常: method=")
                 .contains("type=org.springframework.dao.DataIntegrityViolationException");
         assertThat(event.getThrowableProxy())
                 .as("仍带堆栈 ⇒ 排障线索不因本单受损")
                 .isNotNull();
+    }
+
+    // ========== 判据⑤（类级固化，issue #9012）：非空违例同归 4xx，且不泄漏列名 / 表名 ==========
+
+    @Test
+    @DisplayName("非空约束违例（23502，商品颜色入参）⇒ 422「参数不合法」+ requestId，响应/日志均不带列名表名")
+    void notNullViolationMapsToClientErrorWithoutLeakingColumnOrTableName() {
+        DataIntegrityViolationException ex = withSqlState(NOT_NULL_SQLSTATE,
+                "ERROR: null value in column \"color_name\" of relation \"product_colors\" "
+                        + "violates not-null constraint");
+
+        // 生产里 requestId 由 RequestIdFilter 绑在**请求属性**上（issue #6957）⇒ 这里同样绑一个：
+        // 非 HTTP 面两次 `RequestId.current()` 会各生成一个新 id，「逐字相同」那条就测不到（会假红）。
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setAttribute(RequestId.ATTRIBUTE, NOT_NULL_REQUEST_ID);
+        RequestContextHolder.setRequestAttributes(new ServletRequestAttributes(request));
+        try {
+            ResponseEntity<ApiResponse<Void>> response =
+                    handler.handleDataIntegrityViolationException(ex, request);
+
+            assertThat(response.getStatusCode())
+                    .as("必填值为空 = 入参不合法（生产 requestId req_809f888b9ae44438 实测是 500）⇒ 必须 4xx")
+                    .isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
+
+            ApiResponse<Void> body = response.getBody();
+            assertThat(body).isNotNull();
+            assertThat(body.getError().getCode()).isEqualTo("VALIDATION_ERROR");
+            assertThat(body.getError().getMessage())
+                    .as("中文「参数不合法」文案（商家可读），不回声 PG 原文")
+                    .contains("参数不合法")
+                    .doesNotContain("color_name")
+                    .doesNotContain("product_colors")
+                    .doesNotContain("null value in column");
+
+            // requestId 与日志逐字相同（issue #6957）：商家截图里的编号能反查到这一行
+            assertThat(body.getRequestId()).isEqualTo(NOT_NULL_REQUEST_ID);
+            ILoggingEvent event = singleEvent();
+            assertThat(event.getFormattedMessage())
+                    .contains("kind=NOT_NULL")
+                    .contains("requestId=" + NOT_NULL_REQUEST_ID);
+            assertThat(event.getThrowableProxy())
+                    .as("这一类不得带异常链 —— 列名 / 表名就在原始异常消息里")
+                    .isNull();
+            assertThat(event.getFormattedMessage())
+                    .doesNotContain("color_name")
+                    .doesNotContain("product_colors");
+        } finally {
+            RequestContextHolder.resetRequestAttributes();
+        }
     }
 
     // ======================== 夹具 ========================

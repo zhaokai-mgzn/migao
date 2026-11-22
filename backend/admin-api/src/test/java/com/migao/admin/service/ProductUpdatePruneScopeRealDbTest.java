@@ -174,7 +174,7 @@ class ProductUpdatePruneScopeRealDbTest {
     @Test
     @DisplayName("判据1·只带 skus（点名单条 = 改价的真实形态）、不带 colors ⇒ SKU 行数不变（改前 2 → 0）")
     void skusOnlyUpdateKeepsSkuRows() throws Exception {
-        String productId = createTwoColorProduct("SG-5515-A", "30");
+        String productId = createTwoColorProduct("SG-5515-A");
         long skuA = skuIdOf(productId, COLOR_A);
         long skuB = skuIdOf(productId, COLOR_B);
         assertThat(skuRowCount(productId)).as("夹具前提：2 色 × 1 门幅 ⇒ 2 条 SKU 行").isEqualTo(2);
@@ -205,7 +205,7 @@ class ProductUpdatePruneScopeRealDbTest {
     @Test
     @DisplayName("判据1b·只带 skus 且两条都给（集合给全但没声明 colors）⇒ 同样一行不删（改前 2 → 0）")
     void skusOnlyFullSetUpdateKeepsSkuRows() throws Exception {
-        String productId = createTwoColorProduct("SG-5515-A2", "30");
+        String productId = createTwoColorProduct("SG-5515-A2");
         long skuA = skuIdOf(productId, COLOR_A);
         long skuB = skuIdOf(productId, COLOR_B);
 
@@ -236,7 +236,7 @@ class ProductUpdatePruneScopeRealDbTest {
     @Test
     @DisplayName("判据2·显式声明 colors（缺席者 = 删色意图）⇒ 既有删色能力未被破坏（不回归）")
     void explicitColorsStillPrune() throws Exception {
-        String productId = createTwoColorProduct("SG-5515-B", "30");
+        String productId = createTwoColorProduct("SG-5515-B");
         long skuA = skuIdOf(productId, COLOR_A);
         long colorA = colorIdOf(productId, COLOR_A);
         assertThat(colorRowCount(productId)).as("夹具前提：2 条颜色行").isEqualTo(2);
@@ -260,7 +260,7 @@ class ProductUpdatePruneScopeRealDbTest {
     @Test
     @DisplayName("判据3·显式 colors: [] = 「明确声明没有颜色了」⇒ 删色照旧生效（与判据1 的未声明分道扬镳）")
     void explicitEmptyColorsStillPrune() throws Exception {
-        String productId = createTwoColorProduct("SG-5515-C", "30");
+        String productId = createTwoColorProduct("SG-5515-C");
         long skuA = skuIdOf(productId, COLOR_A);
 
         // When：显式空数组（= 声明「颜色集合为空」），而不是「没提颜色这回事」
@@ -281,7 +281,7 @@ class ProductUpdatePruneScopeRealDbTest {
     @Test
     @DisplayName("判据4·只声明 sellingMethods（Agent 侧可达：该 DTO 没有 skus 字段）⇒ 两个维度都不许删")
     void undeclaredDimensionsAreNeverPruned() throws Exception {
-        String productId = createTwoColorProduct("SG-5515-D", "30");
+        String productId = createTwoColorProduct("SG-5515-D");
         assertThat(skuRowCount(productId)).as("夹具前提：2 条 SKU 行").isEqualTo(2);
 
         // When：请求既没声明 colors，也没给出 SKU 集合（只有售卖方式）
@@ -301,14 +301,18 @@ class ProductUpdatePruneScopeRealDbTest {
 
     // ══════════════════════════════════ 夹具与读数
 
-    /** 建品（表单路径：2 色 × 1 门幅 ⇒ SKU 由笛卡尔积生成，与商家在商品页建档同一条路径）。 */
-    private static String createTwoColorProduct(String skuCode, String stock) {
+    /**
+     * 建品（表单路径：2 色 × 1 门幅 ⇒ SKU 由笛卡尔积生成，与商家在商品页建档同一条路径）。
+     *
+     * <p>🔴 **不带商品级 `stock`**：issue #9006 起建品请求里非 0 库存 ⇒ 422 显式拒绝
+     * （本文件测的是「改品时哪些维度不许删」，与库存无关；且库存从来不由建品建立，见 #7597）。</p>
+     */
+    private static String createTwoColorProduct(String skuCode) {
         ProductCreateRequest request = new ProductCreateRequest();
         request.setName("SG-5515 测试商品 " + skuCode);
         request.setSkuCode(skuCode);
         request.setStatus("draft");
         request.setBasePrice(new BigDecimal("168"));
-        request.setStock(new BigDecimal(stock));
         request.setColors(List.of(colorInput(COLOR_A), colorInput(COLOR_B)));
         request.setDoorWidths(List.of(DOOR_WIDTH));
         return productService.createProduct(request, TENANT_ID).getId();
