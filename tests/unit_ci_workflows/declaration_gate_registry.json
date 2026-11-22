@@ -141,7 +141,8 @@
         "Setup Node.js",
         "Install dependencies",
         "Build H5",
-        "Build weapp"
+        "Build weapp",
+        "Assert weapp dist (domain / structure / size)"
       ],
       "job_gate": {
         "needs": "detect",

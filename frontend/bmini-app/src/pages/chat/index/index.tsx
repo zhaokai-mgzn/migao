@@ -18,6 +18,7 @@ import QuickActions from '../../../components/chat/QuickActions'
 import MibaoAccessGate from '../../../components/chat/MibaoAccessGate'
 // 底栏（issue #6574）：按岗位权限裁剪，端侧自绘 + 收起原生条
 import MerchantTabBar from '../../../components/MerchantTabBar'
+import PrivacyPopup from '../../../components/privacy/PrivacyPopup'
 import { getUserInfo } from '../../../services/userService'
 import './index.scss'
 
@@ -243,6 +244,8 @@ export default function ChatPage() {
 
       {/* 底栏（issue #6574）：按岗位权限裁剪（服务端下发 `mobileTabs`），原生的静态 4 项被收起 */}
       <MerchantTabBar current='chat' />
+      {/* 微信隐私授权弹窗：本页会（直接或经工具模块）触发隐私接口，弹窗挂在本页才显示得出来 */}
+      <PrivacyPopup />
     </View>
   )
 }

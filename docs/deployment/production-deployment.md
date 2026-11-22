@@ -169,11 +169,19 @@ rollback.md 回滚（重新发布上一稳定版本）
 |---|---|---|
 | `admin-api` | `/opt/migao-deploy/jwt:/opt/migao-deploy/jwt:ro` | `.env.admin-api` 的 `JWT_PRIVATE_KEY=file:…/private.pem`（RS256 fail-closed：缺了容器起来即崩） |
 | `admin-api` | `/opt/migao-deploy/uploads:/app/uploads` | `LocalFileStorageService.UPLOAD_DIR="uploads"` + Dockerfile `WORKDIR /app` ⇒ 上传图片的落盘面（不挂卷 = 容器一重建就丢） |
+| `ai-agent` | `/opt/migao-deploy/jwt:/opt/migao-deploy/jwt:ro` | `JWT_PUBLIC_KEY=file:/opt/migao-deploy/jwt/public.pem`（issue #8976：验签公钥与 admin-api 签名密钥**同一份文件** ⇒ 单一来源；缺卷 = 起不来，见 §5.5） |
 | `nginx` | `./nginx/nginx.conf` · `/etc/letsencrypt` · `./certbot-www` · `./h5` | 配置 / 证书 / ACME / C 端静态文件（既有，未变） |
 
-**ai-agent / admin-web 逐个核对过，今天不需要卷**：ai-agent 的图片与文件走 OSS 双 bucket
-（`.env.ai-agent` 里没有 `file:` 路径），admin-web 是 Next standalone（无运行期落盘目录）。
-它们的 `.env*` 将来若出现 `file:` 路径，判据 12 会当场判红（不需要改守卫）。
+**ai-agent 的卷是 2026-11-21 补的（issue #8976）**：改前它不需要卷（图片与文件走 OSS 双 bucket、
+`.env.ai-agent` 里没有 `file:` 路径）；现在它的 `JWT_PUBLIC_KEY` 是 **`file:` 取值**（与 admin-api 的
+签名密钥同一份文件，见 §5.5）⇒ 必须挂 `/opt/migao-deploy/jwt:ro`。**admin-web 仍不需要卷**
+（Next standalone，无运行期落盘目录）。
+`.env*` 或 compose `environment:` 里将来若出现**新的** `file:` 路径，判据 12 / 12b 会当场判红
+（不需要改守卫）。
+
+> 上传存储形态（本地盘 vs OSS）、「多实例 + 缺 OSS ⇒ 拒绝启动」的判据与读数、以及存量本地文件
+> 迁到 OSS 的步骤，见 [upload-storage-and-multi-instance.md](upload-storage-and-multi-instance.md)。
+> ⚠️ 上表那条 `uploads` 卷只解决「单实例重建不丢图」；**多实例必须切 OSS**（本地盘在多实例下必然 404）。
 
 **守卫（会红）**：
 
@@ -183,6 +191,52 @@ rollback.md 回滚（重新发布上一稳定版本）
   —— 上表 admin-api 的两条卷逐字在位；
 - 同文件 `::test_env_file_referenced_paths_are_mounted` —— **类级**：扫 `.env.admin-api` /
   `.env.ai-agent` / `.env.admin-web` 里所有 `file:` 前缀路径，断言对应服务的卷**容器目标**覆盖它。
+- 同文件 `::test_injection_compose_env_file_path_not_covered_is_caught` —— **类级（12b）**：compose
+  `environment:` 的值里出现 `file:<路径>` 时同样必须被卷覆盖（issue #8976 的落法就是把路径写在
+  `environment:` 里 ⇒ 只扫 `.env*` 的判据**看不到**它）。
+
+### 5.5 JWT 验签**同源**：ai-agent 只认路径，部署期硬断言（issue #8976）
+
+**病（2026-11-21 生产实测）**：admin-api 用 `.env.admin-api` 的 `JWT_PRIVATE_KEY/JWT_PUBLIC_KEY`
+（`file:/opt/migao-deploy/jwt/*.pem`，公钥指纹 `c58e54d6…`）签发，而 ai-agent 用
+`deploy/swas/docker-compose.yml` 里**硬编码的 PEM**（指纹 `ba01a29f…`）验签 ⇒ 同一个 token 配了两把钥匙
+⇒ 生产 AI 接口**全部 401**（`TOKEN_INVALID: Signature verification failed`）。两侧都不报错，
+**这类不一致永远不会自己好**。
+
+**口径（三条）**：
+
+1. **单一来源**：ai-agent 的 `JWT_PUBLIC_KEY` **只给路径**
+   （`file:/opt/migao-deploy/jwt/public.pem`），不给内容；内容 = admin-api 私钥那一对的 public 半份
+   ⇒ 换钥匙只换那一份文件，两侧同时跟上。缺文件 ⇒ ai-agent **起不来**（fail-closed：宁可这次部署失败，
+   也不许拿错钥匙继续全 401）。
+2. **兼容**：`backend/ai-agent-service/app/config.py` 仍接受**直接给 PEM 内容**（本地 `.env` / CI 的形态）
+   —— 既有部署一行不改也能起。
+3. **部署期硬断言**：`deploy/swas/deploy.sh` 在切完流量之后（`== 2.5.9`）比对两侧**宿主权威源**的
+   公钥指纹（`.env.admin-api` / compose 的 `environment` / `file:` 指向的宿主文件；
+   **不读** `docker compose exec` —— 容器没重建时读到的是旧容器），四态写进部署日志：
+
+   | 读数 | 含义 | 部署结果 |
+   |---|---|---|
+   | `JWT_KEY_SAME_SOURCE=OK` | 两侧同一把公钥（打印指纹 + 来源） | 继续 |
+   | `JWT_KEY_SAME_SOURCE=MISMATCH` | 两侧都有指纹但不同源（打印两侧指纹 + 来源 + 排查口） | **`exit 1`** |
+   | `JWT_KEY_SAME_SOURCE=SKIPPED` | **两侧都走 classpath 默认**（宿主面没有配置可判） | 继续，但**不判绿** |
+   | `JWT_KEY_SAME_SOURCE=INCOMPLETE` | 只有一侧可判 / 读到非公钥形态（配置不完整） | **`exit 1`** |
+
+   ⚠️ `SKIPPED` **不是通过**：它是**唯一**允许「不判绿但不判红」的形态（两侧都没显式配）。
+   只有一侧有值 ⇒ `INCOMPLETE` 判红，**不许**把「读不到」当放过。
+   让它可判定的办法 = 两侧都显式配 `JWT_*`（就是上面第 1 条）。
+   指纹口径 = `sha256(公钥体)` 前 16 位，与 `scripts/align_agent_jwt_key.py` **同口径**
+   （对拍判据 = `tests/unit_ci_workflows/test_swas_jwt_same_source.py`）。
+
+4. **部署前的 fail-closed 硬校验（issue #8989 ④）**：任何服务的 `JWT_PRIVATE_KEY` / `JWT_PUBLIC_KEY`
+   是 `file:` 形态时，宿主路径必须存在且可读；否则在**任何 `docker compose up` 之前** `exit 1`
+   （挡的正是「ai-agent 重建时读不到文件 ⇒ 起不来 ⇒ AI 接口全挂」）。
+
+**判据（会红）**：`tests/unit_ci_workflows/test_swas_jwt_same_source.py` —— compose 侧「只给路径 + 卷在位 +
+无内联 PEM」、`deploy.sh` 侧「四态齐备 + 不一致/不完整 `exit 1` + SKIPPED 只限两侧 classpath 默认 +
+指纹口径与工具同源」，
+外加桩化 docker/curl 跑**真实** `deploy.sh` 的执行式红证（一致 ⇒ 绿 / 不一致 ⇒ 红 / 两侧都没配 ⇒ SKIPPED /
+一侧有值 ⇒ INCOMPLETE 红 / `file:` 缺失 ⇒ 前置红且零 `up -d`）。
   **取不到 env 文件 ⇒ SKIPPED 不可判定，不判绿**（env 不入仓 ⇒ CI 里通常是 SKIPPED；在服务器上只读复核：
   `MIGAO_SWAS_ENV_DIR=/opt/migao-deploy python3 -m pytest tests/unit_ci_workflows/test_swas_container_runtime.py -q -k env_file`）。
 

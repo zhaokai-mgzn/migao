@@ -147,6 +147,13 @@ export const H5_API_OUTLET_LEDGER: Record<string, string> = {
   // 页面靠 {@link canUseNativeScan} 决定**摆不摆**这个按钮（不摆 = 手输码仍可用，不是死路）。
   scanCode:
     'h5 不暴露原生扫码：`canUseNativeScan()` 为假 ⇒ 页面**不渲染**「扫一扫」，只给手输码（短码 / 加工单号 / 订单号）这一条降级路径；小程序端走原生扫码（能力探测见本文件）',
+  // issue #9011（B 端微信隐私授权弹窗）：两个隐私 API 在 taro-h5 里都是 `temporarilyNotSupport`
+  // 的 stub（**函数存在但非真实现**）⇒ 调用点 `src/utils/privacy.ts` 按编译目标（`isH5()`）分支，
+  // 不是按 `typeof` 判。
+  onNeedPrivacyAuthorization:
+    'h5 是未实现的 stub ⇒ 不注册隐私授权监听、不弹自定义隐私弹窗（注册即 no-op）；浏览器侧的拍照/录音授权由浏览器自身的权限提示承担',
+  openPrivacyContract:
+    'h5 打不开小程序侧的《隐私保护指引》：降级为说明弹窗（PRIVACY_CONTRACT_UNAVAILABLE_HINT，指路微信「···」→「隐私保护指引」），不留一个点了没反应的死链',
   createOffscreenCanvas:
     'h5 不调用它（未实现的 stub）：拍照入库的**本机解码**在 h5 走 <img> + canvas 取像素，只有小程序端才用它；小程序端取不到像素时明说「已改用服务端识别」（src/utils/inbound/barcodeDecode.ts 的平台分支）',
 }

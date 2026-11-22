@@ -44,7 +44,8 @@
     {"site": "backend/admin-api/src/test/java/com/migao/admin/service/TenantIsolationTest.java", "trust": "mocked", "reason": "跨租户隔离断言走 mocked mapper（SQL 未执行）+ 拦截器装配；mocked 级覆盖不到「谓词写错 / 列不存在 / 表未纳管」三类真问题", "gap": "#5327", "issue": "#5327"},
     {"site": "backend/admin-api/src/test/java/com/migao/admin/service/ConcurrentTenantIsolationTest.java", "trust": "mocked", "reason": "并发下跨租户隔离断言走 mocked ProductMapper/OrderMapper（SQL 未执行）", "gap": "#5327", "issue": "#5327"},
     {"site": "backend/admin-api/src/test/java/com/migao/admin/service/AuthServiceTest.java", "trust": "mocked", "reason": "refresh / logout 的吊销语义依赖 StringRedisTemplate 的 mock 行为；真 Redis 的过期/网络异常形态不在本文件内", "gap": "#4866", "issue": "#4866"},
-    {"site": "backend/admin-api/src/test/java/com/migao/admin/service/AgentBatchServiceTest.java", "trust": "mocked", "reason": "#5327 主动登记的边界：跨租户三条判据（execute / revert / get）用 mocked mapper ⇒ confirm 只到「服务层第二道闸」，SQL 层不可见", "gap": "#5327", "realdb_counterpart": "backend/admin-api/src/test/java/com/migao/admin/service/AgentBatchCrossTenantRealDbTest.java", "issue": "#5327"}
+    {"site": "backend/admin-api/src/test/java/com/migao/admin/service/AgentBatchServiceTest.java", "trust": "mocked", "reason": "#5327 主动登记的边界：跨租户三条判据（execute / revert / get）用 mocked mapper ⇒ confirm 只到「服务层第二道闸」，SQL 层不可见", "gap": "#5327", "realdb_counterpart": "backend/admin-api/src/test/java/com/migao/admin/service/AgentBatchCrossTenantRealDbTest.java", "issue": "#5327"},
+    {"site": "backend/admin-api/src/test/java/com/migao/admin/security/JwtTokenProviderClasspathResourceTest.java", "trust": "unit", "reason": "纯资源加载判据（issue #8976）：在 JVM 内构造「嵌套 jar 形态（exists()=false、无 File）」与「真 jar（jar:…!/rsa/public.pem）」两种资源，断言只靠流就能加载并完成签名/验签，且 verify(never()).exists()；不触碰数据访问层（无 Mapper/SqlSession/DataSource/@SpringBootTest）⇒ unit 级即可，不需要真库对等判据", "issue": "#8976"}
   ],
   "security_degradation": {
     "surface": [

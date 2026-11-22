@@ -1,13 +1,23 @@
 """ReAct Smartness Test — 6 scenarios, 35 turns"""
+# case_ids: KN-009
 import json, os, subprocess, sys, time
 from dataclasses import dataclass, field
 from typing import Optional
+
+import pytest
 
 AI_AGENT_URL = os.getenv("AI_AGENT_URL", "https://ai-api.migaozn.com")
 SERVICE_TOKEN = os.getenv("SERVICE_TOKEN", os.getenv("SMOKE_SERVICE_TOKEN", ""))
 
 if not SERVICE_TOKEN:
-    print("SERVICE_TOKEN not set"); exit(1)
+    # issue #8994 ⑤：凭据未注入 ⇒ **显式 skip**（allow_module_level）。
+    # 原先是 import 期 `exit(1)`：在 `pytest tests/smoke` 下升级成 INTERNALERROR，
+    # 把**整个会话**打断（其它文件的读数一个都拿不到）；单独跑也只是个进程退出码。
+    # 两种都不是可归因的读数 ⇒ 改成 skip，且不许变成零断言的 PASSED。
+    pytest.skip(
+        "SERVICE_TOKEN 未注入 ⇒ 内部服务凭据缺失，ReAct 智能度脚本不可判定（issue #8994 ⑤）",
+        allow_module_level=True,
+    )
 
 _TOKEN_HDR = "/tmp/smoke_hdr"
 with open(os.open(_TOKEN_HDR, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), "w") as f:

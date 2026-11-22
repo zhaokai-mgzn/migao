@@ -1125,6 +1125,82 @@ if [ -f .env.ai-agent ] && ! grep -q '^SMS_BYPASS_CODE=' .env.ai-agent; then
   echo "    · 生产环境：显式追加 SMS_BYPASS_CODE= 置空禁用万能码（技术债 Issue #2616 关闭前不允许缺省）"
   exit 1
 fi
+# ══════════════════════════════════════════════════════════════════════════
+# 1.6c JWT 文件式取值宿主路径预检（issue #8989 ④，fail-closed）
+#
+# 病（issue #8989 ③ 的破坏形态）：compose 把 ai-agent 的 `JWT_PUBLIC_KEY` 改成
+# `file:/opt/migao-deploy/jwt/public.pem` 后，只有**重建 ai-agent** 时才真正读这个文件；
+# 而 `app/config.py` 对 `file:` 是 fail-closed ⇒ 宿主文件缺失时 ai-agent **起不来** ⇒ AI 接口全挂。
+# 旧断言此刻是 SKIPPED（它读的是**旧容器**）⇒ 拦不住。⇒ 在**任何 `docker compose up` 之前**
+# 逐条校验宿主路径：存在 + 可读；任一不满足 ⇒ exit 1（旧容器保持不动）。
+# 判据 = tests/unit_ci_workflows/test_swas_jwt_same_source.py 的注入式红证 b。
+# ══════════════════════════════════════════════════════════════════════════
+echo "== 1.6c JWT 文件式取值宿主路径预检（issue #8989 ④，fail-closed）=="
+
+# 部署根：生产 = `/opt/migao-deploy`。抽成变量只为让测试能把同构目录指到临时目录
+# （生产不设该变量 ⇒ 逐字一致、零行为变化）；`file:` 值里的绝对路径经它映射。
+MIGAO_DEPLOY_ROOT=${MIGAO_DEPLOY_ROOT:-/opt/migao-deploy}
+
+jwt_host_path() {
+  case "$1" in
+    /opt/migao-deploy/*) printf '%s' "${MIGAO_DEPLOY_ROOT}/${1#/opt/migao-deploy/}" ;;
+    *) printf '%s' "$1" ;;
+  esac
+}
+
+# stdin: `.env` 文本 → 每个 `JWT_PRIVATE_KEY` / `JWT_PUBLIC_KEY` 的 `file:` 宿主路径（每行一条）
+jwt_file_paths_of_env() {
+  # ⚠️ 不用 BRE 的 `\|` 交替（BSD/macOS sed 不支持，会让本函数静默返回空 ⇒ 预检形同虚设）
+  sed -n \
+    -e 's/^[[:space:]]*export[[:space:]]*JWT_PRIVATE_KEY[[:space:]]*=[[:space:]]*//p' \
+    -e 's/^[[:space:]]*export[[:space:]]*JWT_PUBLIC_KEY[[:space:]]*=[[:space:]]*//p' \
+    -e 's/^[[:space:]]*JWT_PRIVATE_KEY[[:space:]]*=[[:space:]]*//p' \
+    -e 's/^[[:space:]]*JWT_PUBLIC_KEY[[:space:]]*=[[:space:]]*//p' \
+    | tr -d '\r' \
+    | sed -e 's/^"//' -e 's/"$//' -e "s/^'//" -e "s/'$//" \
+    | sed -n 's/^file://p'
+}
+
+# compose 里直接写死的 `JWT_*: file:`（ai-agent 的公钥就是这条；compose 的 environment
+# 优先级高于 env_file ⇒ 它才是下次重建真正生效的取值）
+jwt_file_paths_of_compose() {
+  sed -n \
+    -e 's/^[[:space:]]*JWT_PRIVATE_KEY:[[:space:]]*file:\(.*\)$/\1/p' \
+    -e 's/^[[:space:]]*JWT_PUBLIC_KEY:[[:space:]]*file:\(.*\)$/\1/p' \
+    "$@" 2>/dev/null
+}
+
+_JWT_FILE_CHECK_FAILED=0
+_JWT_FILE_PATHS_SEEN=" "
+while IFS= read -r _jwt_path; do
+  _jwt_path=${_jwt_path%$'\r'}
+  [ -n "${_jwt_path}" ] || continue
+  case "${_JWT_FILE_PATHS_SEEN}" in *" ${_jwt_path} "*) continue ;; esac
+  _JWT_FILE_PATHS_SEEN="${_JWT_FILE_PATHS_SEEN}${_jwt_path} "
+  _jwt_host_path=$(jwt_host_path "${_jwt_path}")
+  if [ ! -e "${_jwt_host_path}" ]; then
+    echo "  ❌ JWT 文件式取值指向的宿主路径**不存在**：${_jwt_path}"
+    _JWT_FILE_CHECK_FAILED=1
+  elif [ ! -r "${_jwt_host_path}" ]; then
+    echo "  ❌ JWT 文件式取值指向的宿主路径**不可读**：${_jwt_path}（权限或挂载问题）"
+    _JWT_FILE_CHECK_FAILED=1
+  else
+    echo "  ✅ JWT 文件式取值宿主路径可读：${_jwt_path}"
+  fi
+done < <(
+  for _jwt_env_file in .env.admin-api .env.ai-agent; do
+    [ -f "${_jwt_env_file}" ] && jwt_file_paths_of_env < "${_jwt_env_file}"
+  done
+  jwt_file_paths_of_compose docker-compose.yml docker-compose.bluegreen.yml
+)
+if [ "${_JWT_FILE_CHECK_FAILED}" -ne 0 ]; then
+  echo "  ⇒ **中止部署**（fail-closed）：这些路径缺失时，重建对应容器会起不来（AI 接口全挂）。"
+  echo "     处置：把该文件放回宿主（与签发密钥成对），或修正 .env.* 的 JWT_* 取值后重跑。"
+  echo "     本次**未做任何 docker compose up**（旧容器保持不动）。"
+  exit 1
+fi
+echo "  JWT_FILE_PATHS_CHECK=OK（${_JWT_FILE_PATHS_SEEN# }）"
+
 # 1.7 模型名 canonical 自愈（#3483 / 官方命名）：DeepSeek 官方模型名为 deepseek-flash，
 # 旧名 deepseek-v4-flash / deepseek-v4-flash-vision-exp 仅临时路由且随时下线——
 # 部署时把服务器 .env.ai-agent 的旧名归一化，防旧值回滚（2026-09-14 云端修复实证）。
@@ -1440,6 +1516,51 @@ wait_healthy() {
   return 1
 }
 
+# ── nginx 上游断言（issue #8976 ④；2026-11-21 生产实测全站 502 约 90s）──────────────
+# 病：`docker compose up -d` 会**重建**容器（新 IP），而 nginx 在**启动 / reload 时**解析
+#     `proxy_pass http://admin-api:8080` 这类 compose DNS 名并**缓存**该 IP ⇒ 重建后不 reload
+#     ⇒ 请求继续打到**已经消失的**旧 IP ⇒ 502，直到下一次 reload（实测窗口 90s）。
+# 判据（会红）：reload 之后**本机**上游必须回 200。**取不到读数是判红**（不是「没问题」）：
+#     连不上 / 超时 / 非 200 / 取不到 => exit 1。
+# ⚠️ 为什么探 https + `--resolve` 而不是字面的 `http://127.0.0.1/api/version`：
+#     `deploy/swas/nginx.conf` 的 **:80 面是按设计 301 跳 https** 的
+#     （`location / { return 301 https://$host$request_uri; }`）⇒ 按 :80 探**永远**不是 200，
+#     那会变成一条恒红的空断言。`--resolve` 把 `api.<站点域>` 钉回 127.0.0.1:443
+#     ⇒ 走的仍是 nginx **真实的** upstream 解析，且不出本机。
+NGINX_PROBE_TRIES=${NGINX_PROBE_TRIES:-12}
+NGINX_PROBE_INTERVAL=${NGINX_PROBE_INTERVAL:-2}
+nginx_expect_upstream_ok() {
+  local why=$1 code="" i api_host
+  api_host="api.${MIGAO_PUBLIC_DOMAIN}"
+  echo "  ── nginx 上游断言（${why}）"
+  if [ -z "$(docker compose ps -q nginx 2>/dev/null || true)" ]; then
+    # 首装 / 被清掉：先让入口存在（幂等）。否则探到的是「本机没有入口」，不是「上游没切换」。
+    echo "     nginx 不在运行 ⇒ 先起它（幂等；否则本条断言证明不了 upstream 解析）"
+    docker compose up -d --no-deps nginx
+  fi
+  # reload 优先（优雅：旧 worker 把在途请求做完再退），失败回落 restart（= 改动前行为）。
+  if ! docker compose exec -T nginx nginx -s reload; then
+    docker compose restart nginx
+  fi
+  for i in $(seq 1 "${NGINX_PROBE_TRIES}"); do
+    code=$(curl -sk -o /dev/null -w "%{http_code}" -m 5 \
+      --resolve "${api_host}:443:127.0.0.1" "https://${api_host}/api/version" 2>/dev/null) || code="000"
+    if [ "${code}" = "200" ]; then
+      echo "     ✅ 本机上游 200（https://${api_host}/api/version → nginx → admin-api）"
+      echo "     NGINX_UPSTREAM=OK"
+      return 0
+    fi
+    echo "     本机上游 -> ${code}（第 ${i}/${NGINX_PROBE_TRIES} 次）"
+    sleep "${NGINX_PROBE_INTERVAL}"
+  done
+  echo "     NGINX_UPSTREAM=FAIL"
+  echo "     ❌ nginx 上游未回 200（最后读数 ${code}）⇒ 入口仍指向重建前的旧上游 IP（站点正在 502）"
+  echo "        排查：docker compose ps；docker compose exec -T nginx nginx -T | grep -n proxy_pass"
+  echo "              docker compose logs --tail 50 nginx；curl -sk https://127.0.0.1/api/version -m 5"
+  echo "        处置：docker compose restart nginx 后再跑一次本断言；上游自己起不来见各容器日志"
+  exit 1
+}
+
 echo "== 2.5 严格蓝绿预验证（新容器先起 + 健康检查通过再切流量）=="
 BG_VERIFIED=""
 BG_SKIP=0
@@ -1509,6 +1630,10 @@ for svc in $UP_SERVICES; do
     echo "     交给 CI 侧 #4767 的「失败即回滚」（回滚到 .last-good-tag）兜底"
     exit 1
   fi
+  # 🔴 重建 = 换 IP ⇒ **必须**让 nginx 重新解析上游，并当场证明它回 200（issue #8976 ④）。
+  # 这一步不能靠「2.6 稍后会 reload」：切换循环里每个服务之间可能隔几分钟健康检查，
+  # 期间入口一直指着旧 IP ⇒ 生产实测就这样 502 了 90 秒。
+  nginx_expect_upstream_ok "${svc} 重建后"
 
   # ── ③ 正式容器接棒 ⇒ 删掉 green 探针（不长期占内存/端口）──
   if [ "$BG_SKIP" = "0" ]; then
@@ -1522,12 +1647,191 @@ else
   echo "  ✅ 蓝绿预验证结束：${BG_VERIFIED:-（无待更新服务）}"
 fi
 
+# ══════════════════════════════════════════════════════════════════════════
+# 2.5.9 JWT 验签同源硬断言（issue #8976 ①；2026-11-21 生产 AI 接口**全 401**）
+#
+# 病：admin-api 用 `.env.admin-api` 的 `JWT_PRIVATE_KEY/JWT_PUBLIC_KEY`（`file:/opt/migao-deploy/jwt/*.pem`）
+# 签发，ai-agent 用 compose 里**硬编码的 PEM** 验签 ⇒ 同一个 token 配了两把钥匙 ⇒
+# `TOKEN_INVALID: Signature verification failed`，生产 AI 接口全 401。
+# 这类不一致**永远不会自己好**（两侧都不报错、也没有任何读数为红）⇒ 只能拦在部署链上。
+#
+# 判据（四态，**`3` 不得当 `0` 读**；issue #8989 补齐第 ④ 态）：
+#   ① 两侧指纹一致          => ✅ 打印两侧**来源 + 指纹**；
+#   ② 两侧指纹不一致        => ❌ 打印两侧来源 + 指纹 + 排查口 => **exit 1**；
+#   ③ 两侧都走 classpath 默认 => ⏭️ **SKIPPED**（**唯一**允许 SKIPPED 的形态），不判绿；
+#   ④ 只有一侧可判 / 读到非公钥形态 => ❌ **INCOMPLETE** => **exit 1**（「读不到」不许当放过）。
+# 🔴 读数源（issue #8989 ③）：只读**宿主权威源**（`.env.*` / compose 的 environment / `file:` 指向的
+#    宿主文件），**不**读 `docker compose exec` —— 容器没被重建时读到的是旧容器，那正是 2026-11-21
+#    那次部署「admin-api 不可判定、ai-agent 读到旧内联 PEM」的一半原因。
+# 指纹口径 = sha256(PEM 公钥体) 前 16 位，与 scripts/align_agent_jwt_key.py **同一口径**
+# （对拍判据 = tests/unit_ci_workflows/test_swas_jwt_same_source.py）。
+# ══════════════════════════════════════════════════════════════════════════
+echo "== 2.5.9 JWT 验签同源断言（admin-api 签发 ⇄ ai-agent 校验，issue #8976）=="
+
+_sha256_hex() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum | cut -d' ' -f1
+  else
+    shasum -a 256 | cut -d' ' -f1
+  fi
+}
+
+# stdin: PEM 文本 → 公钥体指纹（sha256 前 16）。取不到 / 不是公钥 PEM ⇒ 非零退出（不可判定）。
+# 🔴 issue #8989 ②：`.env.*` 里的 PEM 是**单行 + 字面 `\n`** 形态（awk 按行匹配永远取不到 body）。
+# ⇒ 先把字面 `\n` 还原成真换行、去掉 `\r`，再走 awk；否则断言恒 SKIPPED（比不加断言更糟：
+#   它给了「已守护」的错觉，而真实部署里这条断言**等于不存在**）。
+jwt_pubkey_fingerprint() {
+  local raw body
+  raw=$(cat)
+  raw=${raw//$'\r'/}
+  raw=${raw//\\n/$'\n'}
+  body=$(printf '%s\n' "${raw}" | awk '/-----BEGIN PUBLIC KEY-----/{f=1; next} /-----END PUBLIC KEY-----/{f=0} f' | tr -d ' \t\r\n')
+  if [ -z "${body}" ]; then
+    return 1
+  fi
+  printf '%s' "${body}" | _sha256_hex | cut -c1-16
+}
+
+# 取 `.env` 里某键的**最后一条**取值（同名以最后一次为准；去 CR / 成对引号）
+jwt_env_value_of() {
+  local env_file=$1 key=$2 val
+  [ -f "${env_file}" ] || return 0
+  val=$(sed -n -e "s/^[[:space:]]*export[[:space:]]*${key}[[:space:]]*=[[:space:]]*//p" \
+    -e "s/^[[:space:]]*${key}[[:space:]]*=[[:space:]]*//p" "${env_file}" | tr -d '\r' | tail -1)
+  val=${val%\"}; val=${val#\"}
+  val=${val%\'}; val=${val#\'}
+  printf '%s' "${val}"
+}
+
+# 取 compose `environment:` 里某服务**写死**的取值（优先级高于 env_file；ai-agent 的公钥走这条）
+jwt_compose_value_of() {
+  local compose_file=$1 svc=$2 key=$3 val
+  [ -f "${compose_file}" ] || return 0
+  val=$(awk -v svc="${svc}" -v key="${key}" '
+    /^[[:space:]]*#/ { next }
+    /^services:[[:space:]]*$/ { in_services=1; next }
+    in_services && /^  [A-Za-z0-9_.-]+:[[:space:]]*$/ { cur=$1; sub(/:$/, "", cur); next }
+    cur == svc && index($0, key ":") > 0 { sub(/^[[:space:]]*[^:]+:[[:space:]]*/, ""); print; exit }
+  ' "${compose_file}")
+  val=${val%\"}; val=${val#\"}
+  printf '%s' "${val}"
+}
+
+# 值的**形态**描述（提取失败时写进输出 ⇒ 可归因，不再只有 `<不可判定>`；issue #8989 ②）
+jwt_value_shape_of() {
+  local raw=$1 bytes
+  bytes=$(printf '%s' "${raw}" | wc -c | tr -d ' ')
+  case "${raw}" in
+    *"BEGIN PRIVATE KEY"*) printf '私钥 PEM（%s 字节，不能当公钥验签）' "${bytes}" ;;
+    *"BEGIN PUBLIC KEY"*)
+      if [ "${raw#*$'\n'}" != "${raw}" ]; then
+        printf '公钥 PEM（%s 字节，含真换行）' "${bytes}"
+      else
+        printf '公钥 PEM（%s 字节，单行 + 字面 \\n 形态）' "${bytes}"
+      fi
+      ;;
+    *) printf '非 PEM 文本（%s 字节，首 40 字：%s）' "${bytes}" "$(printf '%s' "${raw}" | cut -c1-40)" ;;
+  esac
+}
+
+# 取某服务**下次重建会实际生效**的公钥：输出 "<指纹>|<状态>|<来源说明>"。
+# 状态：`ok` = 已算出指纹；`absent` = 宿主未配置（走 classpath 默认）；`unjudgeable` = 有值但取不到指纹。
+# 🔴 issue #8989 ③：只读**宿主权威源**（`.env.*` / compose 声明 / `file:` 指向的宿主文件）。
+# 旧实现用 `docker compose exec` 读**运行中的容器** —— 容器没被重建时读到的是旧容器，
+# 那正是 2026-11-21 那次部署「admin-api 不可判定、ai-agent 读到旧内联 PEM」的一半原因。
+jwt_key_fingerprint_of() {
+  local svc=$1 raw src path content fp
+  case "${svc}" in
+    admin-api)
+      # env_file = .env.admin-api；compose 的 environment 里没有 JWT_* 覆盖。
+      raw=$(jwt_env_value_of .env.admin-api JWT_PUBLIC_KEY)
+      src=".env.admin-api 的 JWT_PUBLIC_KEY"
+      ;;
+    ai-agent)
+      # compose 的 environment **优先于** env_file ⇒ 先读它；没有才回落 .env.ai-agent。
+      raw=$(jwt_compose_value_of docker-compose.yml ai-agent JWT_PUBLIC_KEY)
+      src="docker-compose.yml 的 ai-agent.environment.JWT_PUBLIC_KEY"
+      if [ -z "${raw}" ]; then
+        raw=$(jwt_env_value_of .env.ai-agent JWT_PUBLIC_KEY)
+        src=".env.ai-agent 的 JWT_PUBLIC_KEY"
+      fi
+      ;;
+    *)
+      printf '|unjudgeable|未知服务 %s（断言只认 admin-api / ai-agent）' "${svc}"
+      return 0
+      ;;
+  esac
+  case "${raw}" in
+    "")
+      printf '|absent|%s（宿主未设置 ⇒ 下次重建走镜像 classpath 默认，宿主面无内容可判）' "${src}"
+      ;;
+    file:*)
+      path=$(jwt_host_path "${raw#file:}")
+      content=$(cat "${path}" 2>/dev/null) || content=""
+      if [ -z "${content}" ]; then
+        printf '|unjudgeable|%s = %s（宿主读不到该文件）' "${src}" "${raw}"
+        return 0
+      fi
+      fp=$(printf '%s' "${content}" | jwt_pubkey_fingerprint) || fp=""
+      if [ -z "${fp}" ]; then
+        printf '|unjudgeable|%s = %s（提取指纹失败：读到了 %s）' "${src}" "${raw}" "$(jwt_value_shape_of "${content}")"
+      else
+        printf '%s|ok|%s = %s（宿主文件）' "${fp}" "${src}" "${raw}"
+      fi
+      ;;
+    *)
+      fp=$(printf '%s' "${raw}" | jwt_pubkey_fingerprint) || fp=""
+      if [ -z "${fp}" ]; then
+        printf '|unjudgeable|%s（提取指纹失败：读到了 %s）' "${src}" "$(jwt_value_shape_of "${raw}")"
+      else
+        printf '%s|ok|%s（内联 PEM 内容）' "${fp}" "${src}"
+      fi
+      ;;
+  esac
+}
+
+_JWT_API=$(jwt_key_fingerprint_of admin-api)
+_JWT_AGENT=$(jwt_key_fingerprint_of ai-agent)
+IFS='|' read -r _JWT_API_FP _JWT_API_STATE _JWT_API_SRC <<< "${_JWT_API}"
+IFS='|' read -r _JWT_AGENT_FP _JWT_AGENT_STATE _JWT_AGENT_SRC <<< "${_JWT_AGENT}"
+echo "  admin-api（签发）: 指纹=${_JWT_API_FP:-<不可判定>} 来源=${_JWT_API_SRC}"
+echo "  ai-agent（验签）: 指纹=${_JWT_AGENT_FP:-<不可判定>} 来源=${_JWT_AGENT_SRC}"
+if [ "${_JWT_API_STATE}" = "absent" ] && [ "${_JWT_AGENT_STATE}" = "absent" ]; then
+  # 唯一允许 SKIPPED 的形态（issue #8989 验收口径）：两侧都走 classpath 默认，宿主面没有配置可判。
+  echo "  JWT_KEY_SAME_SOURCE=SKIPPED"
+  echo "  ⏭️  JWT 同源断言：**SKIPPED（两侧都走 classpath 默认，宿主面没有配置可判）** ⇒ **不判绿**"
+  echo "     ::warning::JWT 同源断言 SKIPPED：admin-api=${_JWT_API_SRC} / ai-agent=${_JWT_AGENT_SRC}"
+  echo "     让它可以判定：两侧都显式配「JWT_*」（生产 =「file:/opt/migao-deploy/jwt/…」，见"
+  echo "     docs/deployment/production-deployment.md §5.5）后重跑本部署"
+elif [ "${_JWT_API_STATE}" != "ok" ] || [ "${_JWT_AGENT_STATE}" != "ok" ]; then
+  # 只有一侧可判 / 读到了非公钥形态 ⇒ **不是**「取不到就放过」：那是下一次全 401 的入口。
+  echo "  JWT_KEY_SAME_SOURCE=INCOMPLETE"
+  echo "  ❌ JWT 同源断言**无法完成**：admin-api=${_JWT_API_STATE}（${_JWT_API_SRC}）/ ai-agent=${_JWT_AGENT_STATE}（${_JWT_AGENT_SRC}）"
+  echo "     口径：SKIPPED 只允许「两侧都走 classpath 默认」；一侧有值而另一侧读不到 = 配置不完整，**不得放行**。"
+  echo "     排查（只读宿主权威源，不读运行中的容器）：grep '^JWT' /opt/migao-deploy/.env.admin-api /opt/migao-deploy/.env.ai-agent；grep JWT_PUBLIC_KEY docker-compose.yml"
+  echo "     修好上面任一处后重跑本部署"
+  exit 1
+elif [ "${_JWT_API_FP}" != "${_JWT_AGENT_FP}" ]; then
+  echo "  JWT_KEY_SAME_SOURCE=MISMATCH"
+  echo "  ❌ JWT 验签**不同源**：admin-api=${_JWT_API_FP} / ai-agent=${_JWT_AGENT_FP}"
+  echo "     后果：admin-api 签的 token ai-agent 一把都验不过 ⇒ AI 接口**全部 401**（TOKEN_INVALID）"
+  echo "     口径：两侧必须读**同一份**公钥（ai-agent 的 JWT_PUBLIC_KEY=file:/opt/migao-deploy/jwt/public.pem，"
+  echo "           与 admin-api 的 JWT_PRIVATE_KEY 成对）；见 docs/deployment/production-deployment.md §5.5"
+  echo "     排查：grep '^JWT' /opt/migao-deploy/.env.admin-api /opt/migao-deploy/.env.ai-agent；grep JWT_PUBLIC_KEY docker-compose.yml"
+  exit 1
+else
+  echo "  JWT_KEY_SAME_SOURCE=OK"
+  echo "  ✅ JWT 验签同源（指纹 ${_JWT_API_FP}）—— admin-api 签发的 token ai-agent 能验"
+fi
+
 # ── 2.6 nginx（流量入口本身：独占 80/443、只有一个，不参与蓝绿）──────────────
 docker compose up -d --no-deps nginx
 # 上游容器重建后 IP 可能变化，nginx 启动时缓存旧上游 IP ⇒ 必须让它重新解析，否则 502。
 # 用 **reload**（优雅：旧 worker 把在途请求做完再退）而不是 restart（硬重启 ⇒ 当场丢弃在途连接）；
 # reload 不可用/失败 ⇒ 回落 restart（= 改动前的行为，不引入新的坏路径）。
 docker compose exec -T nginx nginx -s reload || docker compose restart nginx
+# 🔴 reload 只说明「命令发出去了」；入口是否真的指向**新**上游，只能靠探一次本机上游（issue #8976 ④）。
+nginx_expect_upstream_ok "nginx 重建后"
 
 # ── 2.6.1 TLS 证书自动续期（宿主 cron；issue #8201）──────────────────────────
 # 幂等：/etc/cron.d/migao-tls-renew 内容未变则不重写（`--install-cron` 自己判）。
@@ -1708,8 +2012,15 @@ fi
 if [ "$_migao_ai_missing" -gt 0 ]; then
   echo "  📋 补齐动作（缺 key **不判失败**：本次部署已按流程走完，凭据缺失是运维态）"
   echo "     1) 在服务器改 ${MIGAO_AI_ENV_FILE}（本脚本**不写**它 —— 人工维护、不入库）"
-  echo "     2) 改完必须 recreate（env_file 变更不重读）："
+  echo "     2) 改完必须 recreate（env_file 变更不重读），**并且**让 nginx 重新解析上游"
+  echo "        （重建换 IP ⇒ 不 reload 就是全站 502，实测 90 秒；issue #8976）："
   echo "        docker compose -f docker-compose.yml -f docker-compose.bluegreen.yml up -d --no-deps --force-recreate ai-agent"
+  echo "        docker compose exec -T nginx nginx -s reload || docker compose restart nginx"
+  echo "        自证（站点域 = \${MIGAO_PUBLIC_DOMAIN}，本机探测，必须 200）："
+  # ⚠️ `$` 必须**转义**（只打印给人抄）：本探针块会被判据**单独 source** 执行
+  #    （tests/unit_ci_workflows/test_ai_agent_key_probe.py），那里没有 MIGAO_PUBLIC_DOMAIN
+  #    ⇒ 真展开会 `set -u` 当场 unbound variable（实测 5 条判据红）。
+  echo "        curl -sk -o /dev/null -w '%{http_code}\\n' --resolve \"api.\${MIGAO_PUBLIC_DOMAIN}:443:127.0.0.1\" \"https://api.\${MIGAO_PUBLIC_DOMAIN}/api/version\""
   echo "     3) 自证：容器内 ASR_API_KEY 指纹应为 sk-sp-…（MaaS）而不是 35 字节的旧百炼 key；curl -fsS http://127.0.0.1:8000/health"
   echo "     4) 密钥来源 / 轮换流程见 issue #7718（含 2026-10-25 的线上热修记录）"
 fi
