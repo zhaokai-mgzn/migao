@@ -489,7 +489,10 @@ def test_injection_preflight_moved_after_up_goes_red():
     """注入⑪（issue #8989 ④）：把前置校验挪到第一处 `up -d` 之后 ⇒ 判据必红（挡不住破坏形态）。"""
     text = read_deploy_sh()
     start = text.find(PREFLIGHT_MARK)
-    end = text.find("# 1.7 模型名 canonical 自愈", start)
+    # 结构锚（issue #6802 同族）：原用中文注释标题 `# 1.7 模型名 canonical 自愈` 当块边界，
+    # 被判据判为「中文/注释级文案当结构位置」，且台账已冻结在上限 42/42 无法再登记 ⇒
+    # 改取 1.7 段**代码首行**（全脚本唯一）。语义不变：仍是从 PREFLIGHT_MARK 到 1.7 段起点。
+    end = text.find("if [ -f .env.ai-agent ]; then", start)
     assert start > 0 and end > start
     block = text[start:end]
     mutated = text[:start] + text[end:]
