@@ -123,6 +123,18 @@ public class Product {
     private List<String> sellingMethods;
 
     /**
+     * 门幅（规格尺寸）清单 —— 商家声明的**可售门幅**，JSONB 数组存库（V214，issue #9005）。
+     *
+     * <p>⚠️ 与 {@link #sellingMethods} 不同：门幅**是** SKU 组合维度（用户裁定 2026-09-21：
+     * 「商品的 SKU 由颜色+门幅组成即可」）⇒ **有 SKU 时读面仍以 {@code product_skus.door_width}
+     * 的派生值为准**（{@code ProductService.getProductById} 用派生值覆盖本字段）；
+     * 本列承载的是「**还没有 SKU**」时（先填门幅、后配颜色的草稿态）的同一份声明 ——
+     * 否则建品收下的门幅会被无声丢弃，且 {@code GET /{id}} 读不回来（issue #9005 的病灶）。</p>
+     */
+    @TableField(typeHandler = com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler.class)
+    private List<String> doorWidths;
+
+    /**
      * 1 卷 = 多少米（**商品货号级基础参数**，V111 迁移）。
      *
      * <p>{@code null} = 未配置/未知 ⇒ 订单侧**禁止**推算整卷发货分配

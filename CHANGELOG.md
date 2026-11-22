@@ -1718,6 +1718,22 @@ worker-h5 纯函数、承运商 4 条 × 两处入口 + 类级单一真值守卫
 
 ## [Unreleased]
 
+### 商品门幅清单落库并可回读；建品接口对非 0 库存改为 422 显式拒绝（2026-11-22，issue #9005 / #9006）
+
+- **门幅（`doorWidths`）落库（#9005，P1）**：`products` 新增 `door_widths JSONB`（迁移 V214）+ 实体 / DTO / 响应映射。
+  改前：`POST /api/admin/products` 带 `doorWidths:["2.8","3.2"]` ⇒ **200 创建成功**，但该列不存在、
+  `GET /{id}` **读不回来**（生产只读 SQL 实测 `column "door_widths" does not exist`；响应里的门幅是从 SKU 派生的，
+  没有 SKU 时派生不出任何东西）。改后：建品 / 改品都落库，`GET` 回读逐字一致。
+  ⚠️ **有 SKU 时读面仍以 `product_skus.door_width` 派生值为准** —— 门幅是 SKU 组合维度（用户裁定 2026-09-21），
+  本列只承载「还没有 SKU 时」的同一份声明，不替换派生口径、也不作为下单/算料权威。
+  存量回填：只填**空数组**行（从既有 SKU 去重聚合），已有值一律不覆盖；回滚 = `ALTER TABLE products DROP COLUMN IF EXISTS door_widths`。
+- **建品库存（`stock`）改为显式拒绝（#9006，P2）**：库存口径**不变**（#7597 / 用户裁定 2026-10-24：只由真实单据产生），
+  变的是**失败可见性** —— 改前带 `stock:100` ⇒ 200 且落 0（静默偏差），改后**非 0 ⇒ 422** + 可行动文案（去入库单过账）；
+  不传 / 传 0 照常（落库值本来就是 0）。**改品**的 `stock` 仍是合法绝对调整写面，未受影响。
+- 判据：`ProductDoorWidthsRoundTripRealDbTest`（真库往返 + V214 回填幂等）、`ProductDoorWidthsMigrationTest`（列/映射/回滚契约）、
+  `ProductCreateRequestFieldPersistenceMetaGuardTest`（类级元守卫：入参 DTO 字段无落点即红）、
+  `ProductCreateStockIgnoredTest`（422 语义 + `skus[].stock` 仍忽略）。
+
 ### 商品颜色入参字段名不合法 ⇒ 422 并点名 `colorName`（不再是 500「服务器内部错误」）（2026-11-22，issue #9012）
 
 - **病（生产实抓，requestId `req_809f888b9ae44438`，tenant 1）**：`POST /api/admin/products` 传

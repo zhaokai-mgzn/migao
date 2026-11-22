@@ -173,7 +173,14 @@ public class ProductResponse {
     private BigDecimal rollLengthM;
 
     /**
-     * 规格尺寸列表（详情接口返回，去重后从 SKU 派生）
+     * 门幅（规格尺寸）清单 —— **两个来源，主次分明**（V214 / issue #9005）：
+     * <ol>
+     *   <li><b>有 SKU</b> ⇒ {@code product_skus.door_width} 去重派生值（门幅是 SKU 组合维度，
+     *       用户裁定 2026-09-21）；</li>
+     *   <li><b>还没有 SKU</b> ⇒ {@code products.door_widths}（商家在商品上声明的门幅清单）。
+     *       改前这一路缺失 ⇒ 建品收下的门幅**读不回来**（响应里没有该字段），
+     *       编辑页也就无法回填门幅矩阵。</li>
+     * </ol>
      */
     private List<String> doorWidths;
 
