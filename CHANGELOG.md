@@ -5,6 +5,19 @@
 > 原因 = 单文件涨到 512KB 越过扫描上限，详见存档文件头与 issue #6404。
 > **后续条目继续在本文件 `## [Unreleased]
 
+### 到期待办在多实例部署下不再重复提醒：扫描改数据库原子领取 + 通知补稳定幂等键（2026-11-22，issue #9019）
+
+- **现象**：两个 admin-api 实例同秒扫到同一批到期 `pending` ⇒ 各写一条站内通知（员工收到重复的到点提醒），
+  且两行最后都是 `fired`，事后从数据上分辨不出重复。根因 = 扫描腿是纯 read-modify-write（无占位）+ 通知未传 `dedupeKey`
+  ⇒ V187 的 `uk_notifications_dedupe` 对这条写入不生效。
+- **改后**：扫描腿改成**一条**数据库原子领取（`UPDATE … SET status='firing', claimed_by/claimed_at …
+  WHERE status='pending' … RETURNING`，同一行只有一个实例领得到）；投递带稳定 `dedupeKey = scheduled_task:{taskId}`
+  （重复插入撞唯一索引 ⇒ 当「已发」，不报错）；领取后实例崩溃时，超过 **5 分钟**的 `firing` 由每轮扫描先放回 `pending`
+  （租约回收，不永久卡死）。**通知内容 / 模板 / 触发规则一字未改**（单实例行为不变，只是不再重复）。
+- 判据：`ScheduledTaskMultiInstanceClaimRealDbTest`（真 PG 两实例并发：改前 12 条通知 ⇒ 改后 6 条）、
+  `ScheduledTaskServiceTest`、`ScheduledTaskMapperTest`。
+- 迁移：`V215__add_scheduled_task_claim_lease.sql`（加 `claimed_by`/`claimed_at` + 部分索引；回滚见文件头）。
+
 ### 下单幂等键改为确定性派生：滚动部署断流 / 重试落到另一实例 / 进程重启后不再重复下单（2026-11-22，issue #9017）
 
 - **形态**：ai-agent 下发的 `X-Client-Request-Id` 改成由「租户 + 会话作用域 + 操作 + 订单业务事实 + 时间窗」
