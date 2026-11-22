@@ -16,7 +16,7 @@
   （租约回收，不永久卡死）。**通知内容 / 模板 / 触发规则一字未改**（单实例行为不变，只是不再重复）。
 - 判据：`ScheduledTaskMultiInstanceClaimRealDbTest`（真 PG 两实例并发：改前 12 条通知 ⇒ 改后 6 条）、
   `ScheduledTaskServiceTest`、`ScheduledTaskMapperTest`。
-- 迁移：`V214__add_scheduled_task_claim_lease.sql`（加 `claimed_by`/`claimed_at` + 部分索引；回滚见文件头）。
+- 迁移：`V215__add_scheduled_task_claim_lease.sql`（加 `claimed_by`/`claimed_at` + 部分索引；回滚见文件头）。
 
 ### 语音识别接入 Token Plan 非实时通道（`ASR_MODE=http`），端点与生图相同（2026-11-21，issue #8987）
 

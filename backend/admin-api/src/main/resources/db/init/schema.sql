@@ -4080,7 +4080,7 @@ CREATE TABLE IF NOT EXISTS scheduled_tasks (
     status       VARCHAR(32) NOT NULL DEFAULT 'pending',
     dedup_key    VARCHAR(128) NOT NULL,
     fired_at     TIMESTAMP WITH TIME ZONE,
-    -- 领取标记（V214，集群 P0-2）：只由「原子领取」那条 UPDATE 写；终态后保留作审计痕迹
+    -- 领取标记（V215，集群 P0-2）：只由「原子领取」那条 UPDATE 写；终态后保留作审计痕迹
     claimed_by   VARCHAR(64),
     claimed_at   TIMESTAMP WITH TIME ZONE,
     created_at   TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
@@ -4095,7 +4095,7 @@ CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_due
 CREATE UNIQUE INDEX IF NOT EXISTS uk_scheduled_tasks_tenant_dedup
     ON scheduled_tasks (tenant_id, dedup_key)
     WHERE deleted = 0;
--- 租约回收器的取数面（V214，集群 P0-2）：只覆盖 firing 那一小片
+-- 租约回收器的取数面（V215，集群 P0-2）：只覆盖 firing 那一小片
 CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_firing_lease
     ON scheduled_tasks (claimed_at)
     WHERE status = 'firing' AND deleted = 0;
@@ -4112,12 +4112,12 @@ COMMENT ON COLUMN scheduled_tasks.dedup_key IS
     '缺省由服务端按「收件人 + 任务类型 + 触发时刻（秒）」派生。';
 COMMENT ON COLUMN scheduled_tasks.status IS
     'pending / firing / fired / cancelled / failed / dismissed。只有 pending 会被扫描器**领取**；'
-    'firing = 已被某实例领走、尚未终态（V214）；fired 后不重投（疲劳控制之一）。';
+    'firing = 已被某实例领走、尚未终态（V215）；fired 后不重投（疲劳控制之一）。';
 COMMENT ON COLUMN scheduled_tasks.source IS 'user（米宝委托）/ system（规则派生）。';
 COMMENT ON COLUMN scheduled_tasks.claimed_by IS
-    '领取者标识（实例 id；终态 CAS 的 fencing token，V214 集群 P0-2）。只由原子领取语句写。';
+    '领取者标识（实例 id；终态 CAS 的 fencing token，V215 集群 P0-2）。只由原子领取语句写。';
 COMMENT ON COLUMN scheduled_tasks.claimed_at IS
-    '领取时刻（V214 集群 P0-2）。超过租约超时仍 firing ⇒ 领取实例已死，回收成 pending。';
+    '领取时刻（V215 集群 P0-2）。超过租约超时仍 firing ⇒ 领取实例已死，回收成 pending。';
 
 -- ================================================
 -- 计件结算单（V156，issue #5653；本轮 = 结算 + 留痕）
