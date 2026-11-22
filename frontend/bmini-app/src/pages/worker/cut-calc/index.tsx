@@ -63,6 +63,7 @@ import {
 } from '../../../utils/workerReadFaces'
 import { WorkerReadScanEntry } from '../../../components/WorkerReadEntry'
 import { WorkerBackLink } from '../../../components/WorkerBackLink'
+import PrivacyPopup from '../../../components/privacy/PrivacyPopup'
 import './index.scss'
 
 /** 页面标题（与 `/w/` 机台屏同一句话：2026-10-10 用户裁定「屏上/入口一律叫『裁高计算』」）。 */
@@ -287,6 +288,8 @@ export default function WorkerCutCalcPage() {
           </Button>
         </View>
       ) : null}
+      {/* 微信隐私授权弹窗：本页会（直接或经工具模块）触发隐私接口，弹窗挂在本页才显示得出来 */}
+      <PrivacyPopup />
     </View>
   )
 }
