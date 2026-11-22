@@ -27,14 +27,18 @@ ai-agent 日志逐字 `verify_jwt_token: JWT verification failed: invalid token 
 | # | 判据 | 回归时会怎么红 |
 |---|---|---|
 | 1 | **密钥单一来源**：ai-agent 的 `JWT_PUBLIC_KEY` 必须是 `file:/opt/migao-deploy/jwt/public.pem`（**只给路径**），ai-agent 服务里**不得**再出现内联 PEM，且该服务挂同一份 `jwt:ro` 卷 | 把 PEM 写回 compose / 改回内容值 / 删卷 ⇒ 红 |
-| 2 | **部署期硬断言接线**：`deploy.sh` 有唯一一份指纹函数 + 唯一一份断言段，段里三态齐备（`JWT_KEY_SAME_SOURCE` 取 `OK` / `MISMATCH` / `SKIPPED`），不一致分支必须 `exit 1`，且**排在 2.6 nginx 之前**（切完流量立刻判） | 删掉断言段 / 去掉 `exit 1` / 把 SKIPPED 写成 OK ⇒ 红 |
+| 2 | **部署期硬断言接线**：`deploy.sh` 有唯一一份指纹函数 + 唯一一份断言段，段里四态齐备（`JWT_KEY_SAME_SOURCE` 取 `OK` / `MISMATCH` / `SKIPPED` / `INCOMPLETE`），不一致分支必须 `exit 1`，且**排在 2.6 nginx 之前**（切完流量立刻判） | 删掉断言段 / 去掉 `exit 1` / 把 SKIPPED 写成 OK ⇒ 红 |
 | 3 | **指纹口径同源**：shell 侧 `jwt_pubkey_fingerprint()` 与 `scripts/align_agent_jwt_key.py::fingerprint` 对同一份 PEM 必须给出**同一个**指纹（两份实现漂了 ⇒ 断言与处置工具互相打架） | 改成截 8 位 / 含换行 / 换算法 ⇒ 红 |
 | 4 | **执行式：一致 ⇒ 绿**（桩 docker / curl，跑**真实** `deploy.sh`） | `JWT_KEY_SAME_SOURCE=OK` 不出现 ⇒ 红 |
 | 5 | **执行式：不一致 ⇒ 判红且两个指纹都印出来** | 只有一句「401」不说差在哪 ⇒ 红 |
-| 6 | **执行式：取不到 ⇒ SKIPPED（不可判定）且**不得**印 OK** | 空值当成「已对齐」⇒ 红（假绿） |
+| 6 | **执行式：两侧都走 classpath 默认 ⇒ SKIPPED**（这是**唯一**允许 SKIPPED 的形态）且**不得**印 OK；只有一侧有值时 ⇒ `INCOMPLETE` + `exit 1`（不完整**不得**当「不可判定就放过」） | 空值/缺一侧当成「已对齐」⇒ 红（假绿） |
 | 7 | **执行式：nginx 上游非 200 ⇒ 判红**（且**先**真的试过 reload） | 探不到也 exit 0 ⇒ 红 |
 | 8 | **类级元守卫**：`deploy.sh` 里**每一个**会重建「被 nginx 代理的服务」的 `up -d --no-deps` 之后，必须在附近调用上游断言；唯一豁免 = green 探针容器（豁免的**依据** = nginx.conf 里没有任何 `*-green` 上游，同文件另判） | 新增一处裸 `up -d` ⇒ 红 |
 | 9 | **手工路径同样带断言**：提到 `--force-recreate` 的**可复制提示**必须紧跟 reload + 探测 200 的命令 | 只给 recreate、不给 reload ⇒ 红（正是本次 502 的现实入口） |
+| 10 | **`\n` 转义形态的 PEM 也能算出指纹**（issue #8989 ②）：`.env.*` 的单行 + 字面 `\n` 形态必须先归一化；提取失败要把「读到了什么形态」写进输出 | 退回按行 awk ⇒ `\n` 形态恒 `<不可判定>` ⇒ 红 |
+| 11 | **宿主 `file:` 路径缺失 ⇒ 部署前置校验 `exit 1`**（issue #8989 ④）：挡在**任何** `docker compose up` 之前，且不碰旧容器 | 部署到一半才炸 / ai-agent 起不来 ⇒ 红 |
+| 12 | **反引号回归检测**（issue #8989 ①）：双引号 `echo` 里出现会触发命令替换的裸反引号 ⇒ 红 | 提示行再写 `` `JWT_*` `` ⇒ 部署日志出现 `command not found` |
+| 13 | **断言读宿主权威源**（issue #8989 ③）：`jwt_key_fingerprint_of()` 不得再依赖 `docker compose exec`（容器没重建 ⇒ 读旧容器） | 改回读容器 ⇒ 红 |
 
 ## 红证（改前，逐条可复算）
 
@@ -42,6 +46,10 @@ ai-agent 日志逐字 `verify_jwt_token: JWT verification failed: invalid token 
 grep -c 'JWT_PUBLIC_KEY: |' deploy/swas/docker-compose.yml   # 改前 1（内联 PEM）
 grep -c 'JWT_KEY_SAME_SOURCE' deploy/swas/deploy.sh          # 改前 0（部署期没有任何断言）
 grep -c 'NGINX_UPSTREAM=' deploy/swas/deploy.sh              # 改前 0（reload 之后不探测）
+# issue #8989 三条（本文件新判据；改前必红、改后转绿）：
+sed -n '/^jwt_pubkey_fingerprint()/,/^}/p' deploy/swas/deploy.sh | grep -cF 'raw//\\\\n'   # 改前 0（不归一化）
+grep -c 'JWT_FILE_PATHS_CHECK=OK' deploy/swas/deploy.sh                            # 改前 0（无前置校验）
+python3 -m pytest tests/unit_ci_workflows/test_swas_jwt_same_source.py -q -k backtick  # 改前红（提示行有裸反引号）
 ```
 
 ## 边界（照实登记，§19.1）
@@ -84,12 +92,19 @@ JWT_FILE_VALUE = "file:/opt/migao-deploy/jwt/public.pem"
 JWT_DIR = "/opt/migao-deploy/jwt"
 JWT_VOLUME = "/opt/migao-deploy/jwt:/opt/migao-deploy/jwt:ro"
 
-#: 机器可读三态（ASCII 锚点 —— 判据不拿中文文案当结构锚）
+#: 机器可读四态（ASCII 锚点 —— 判据不拿中文文案当结构锚）
 STATE_OK = "JWT_KEY_SAME_SOURCE=OK"
 STATE_MISMATCH = "JWT_KEY_SAME_SOURCE=MISMATCH"
 STATE_SKIPPED = "JWT_KEY_SAME_SOURCE=SKIPPED"
+#: 第四态（issue #8989）：只有一侧可判 / 读到非公钥形态 ⇒ 配置不完整，**不放过**。
+STATE_INCOMPLETE = "JWT_KEY_SAME_SOURCE=INCOMPLETE"
+PREFLIGHT_OK = "JWT_FILE_PATHS_CHECK=OK"
+PREFLIGHT_MARK = "== 1.6c JWT 文件式取值宿主路径预检"
 NGINX_OK = "NGINX_UPSTREAM=OK"
 NGINX_FAIL = "NGINX_UPSTREAM=FAIL"
+
+#: 测试用 `file:` 值（脚本内 `/opt/migao-deploy` 会被 `_prepare` 映射到临时 work 目录）
+JWT_AGENT_FILE_VALUE = "file:/opt/migao-deploy/jwt/agent.pem"
 
 _BASH = shutil.which("bash") or "/bin/bash"
 
@@ -170,11 +185,11 @@ def judge_single_source(base: dict, bg: dict) -> list:
 
 
 def judge_deploy_assertion(text: str) -> list:
-    """判据 2：部署期硬断言存在、唯一、三态齐备、不一致必须 `exit 1`、且在 2.6 nginx 之前。"""
+    """判据 2 / 6 / 13：部署期硬断言存在、唯一、四态齐备、不一致必须 `exit 1`、读宿主权威源。"""
     v = []
-    for state in (STATE_OK, STATE_MISMATCH, STATE_SKIPPED):
+    for state in (STATE_OK, STATE_MISMATCH, STATE_SKIPPED, STATE_INCOMPLETE):
         if text.count(state) != 1:
-            v.append(f"`{state}` 出现 {text.count(state)} 次（必须恰好 1 次 —— 三态各一条机器可读行）")
+            v.append(f"`{state}` 出现 {text.count(state)} 次（必须恰好 1 次 —— 四态各一条机器可读行）")
     if text.count("jwt_key_fingerprint_of() {") != 1:
         v.append(f"`jwt_key_fingerprint_of()` 定义出现 {text.count('jwt_key_fingerprint_of() {')} 次（必须恰好 1 次）")
     if text.count("jwt_pubkey_fingerprint() {") != 1:
@@ -185,18 +200,43 @@ def judge_deploy_assertion(text: str) -> list:
     for svc in ("admin-api", "ai-agent"):
         if f"jwt_key_fingerprint_of {svc}" not in text:
             v.append(f"断言没有取 `{svc}` 侧的公钥（少取一侧 = 断言无从比较）")
+    # 判据 13（issue #8989 ③）：只读宿主权威源，**不许**读运行中的容器（旧容器会让断言失真）
+    if "jwt_key_fingerprint_of() {" in text:
+        body = function_body(text, "jwt_key_fingerprint_of")
+        if "docker compose exec" in body:
+            v.append("`jwt_key_fingerprint_of()` 还在 `docker compose exec` 读容器（容器未重建 ⇒ 读到旧容器）")
+        for token in (".env.admin-api", "docker-compose.yml", "jwt_env_value_of"):
+            if token not in body:
+                v.append(f"`jwt_key_fingerprint_of()` 没有读宿主权威源 {token!r}（issue #8989 ③）")
+    # 判据 10（issue #8989 ②）：`\n` 转义形态必须先归一化
+    if "jwt_pubkey_fingerprint() {" in text:
+        fp_body = function_body(text, "jwt_pubkey_fingerprint")
+        if "raw//\\\\n" not in fp_body:
+            v.append("`jwt_pubkey_fingerprint()` 没有归一化字面 `\\n`（单行 .env 形态会恒 `<不可判定>`）")
+        if "jwt_value_shape_of" not in text:
+            v.append("提取失败时没有把「读到了什么形态」写进输出（不可归因）")
     # 不一致分支必须 fail-closed
     m = re.search(rf"{re.escape(STATE_MISMATCH)}(.*?)(?:else\n|^fi$)", text, re.S | re.M)
     if not m:
         v.append("找不到不一致分支（`JWT_KEY_SAME_SOURCE=MISMATCH` 之后到 else/fi 之间）")
     elif "exit 1" not in m.group(1):
         v.append("不一致分支没有 `exit 1`（不一致会被当成部署成功 —— 正是本单要拦的形态）")
-    # SKIPPED 分支不得印 OK（「取不到」不许判绿）
+    # 不完整分支必须 fail-closed（只有一侧有值 ≠ 可以放过）
+    m = re.search(rf"{re.escape(STATE_INCOMPLETE)}(.*?)(?:^elif |^fi$)", text, re.S | re.M)
+    if not m:
+        v.append("找不到 INCOMPLETE 分支（一侧有值 / 取不到指纹时没有判红出口）")
+    elif "exit 1" not in m.group(1):
+        v.append("INCOMPLETE 分支没有 `exit 1`（配置不完整被当成部署成功）")
+    # SKIPPED 分支不得印 OK（「取不到」不许判绿），且只允许「两侧都 absent」这一种形态
     m = re.search(rf"{re.escape(STATE_SKIPPED)}(.*?)(?:^elif |^fi$)", text, re.S | re.M)
     if not m:
         v.append("找不到 SKIPPED 分支")
-    elif STATE_OK in m.group(1):
-        v.append("SKIPPED 分支里印了 OK（取不到对象却判绿 = 假绿）")
+    else:
+        if STATE_OK in m.group(1):
+            v.append("SKIPPED 分支里印了 OK（取不到对象却判绿 = 假绿）")
+        guard = text[max(0, m.start() - 500):m.start()]
+        if guard.count('= "absent"') < 2:
+            v.append("SKIPPED 分支没有「两侧都 absent」的前置条件（SKIPPED 只允许两侧都走 classpath 默认）")
     # 位置：断言必须在 2.6 nginx **之前**（切完流量立刻判，不是收尾才判）
     i_jwt = text.find("== 2.5.9")
     # 取**最后一处** `up -d nginx`：断言函数体里还有一处「幂等起 nginx」（在 2.5.9 之前）
@@ -205,6 +245,53 @@ def judge_deploy_assertion(text: str) -> list:
         v.append("deploy.sh 里找不到 JWT 同源断言段（`== 2.5.9`）")
     elif i_nginx_up >= 0 and i_jwt > i_nginx_up:
         v.append("JWT 同源断言排在 nginx 更新之后（应当在切完流量、收尾之前）")
+    return v
+
+
+def judge_preflight_wiring(text: str) -> list:
+    """判据 11（issue #8989 ④）：`file:` 宿主路径预检必须在**任何** `up -d` 之前，且不读容器。"""
+    v = []
+    if text.count(PREFLIGHT_OK) != 1:
+        v.append(f"`{PREFLIGHT_OK}` 出现 {text.count(PREFLIGHT_OK)} 次（缺前置校验 / 重复实现）")
+    if text.count(PREFLIGHT_MARK) != 1:
+        v.append(f"找不到唯一的前置校验段（`{PREFLIGHT_MARK}`）")
+    for token in ("jwt_file_paths_of_env", "jwt_file_paths_of_compose", "jwt_host_path"):
+        if token not in text:
+            v.append(f"前置校验缺少 {token!r}（宿主路径来源会漏检）")
+    start = text.find(PREFLIGHT_MARK)
+    if start < 0:
+        return v
+    end = text.find('echo "  JWT_FILE_PATHS_CHECK=OK', start)
+    body = text[start:end + 200 if end > start else start + 4000]
+    if "docker compose exec" in body:
+        v.append("前置校验在读运行中的容器（`docker compose exec`）—— 它要判的是**宿主**路径")
+    # 位置：必须在第一处会执行到的 `up -d` 之前（蓝绿 green 的 up 也算）
+    first_up = None
+    for i, ln in enumerate(text.splitlines(), 1):
+        if ln.lstrip().startswith("#"):
+            continue
+        if "up -d" in ln:
+            first_up = i
+            break
+    pre_line = text[:start].count("\n") + 1
+    if first_up is None:
+        v.append("deploy.sh 里找不到任何 `up -d`（判据坐标没了）")
+    elif first_up < pre_line:
+        v.append(f"前置校验在第 {pre_line} 行，晚于第一处 `up -d`（第 {first_up} 行）—— 挡不住 recreate")
+    return v
+
+
+def judge_no_command_substitution_in_echo(text: str) -> list:
+    """判据 12（issue #8989 ①）：双引号 `echo` 里不得出现裸反引号（会被当命令替换）。"""
+    v = []
+    for i, ln in enumerate(text.splitlines(), 1):
+        s = ln.strip()
+        if s.startswith("#") or not s.startswith('echo "'):
+            continue
+        if re.search(r"(?<!\\)`", s):
+            v.append(
+                f"第 {i} 行 echo 的双引号里有裸反引号（命令替换 ⇒ 日志出现 command not found / 提示语被吃）：{s[:110]}"
+            )
     return v
 
 
@@ -266,6 +353,8 @@ def all_violations(text: str, base: dict, bg: dict, nginx_text: str) -> list:
     return (
         judge_single_source(base, bg)
         + judge_deploy_assertion(text)
+        + judge_preflight_wiring(text)
+        + judge_no_command_substitution_in_echo(text)
         + judge_upstream_assertion_wiring(text, nginx_text)
     )
 
@@ -311,7 +400,7 @@ def test_injection_volume_removed_goes_red():
 
 
 def test_injection_assertion_removed_goes_red():
-    """注入③：把 `JWT_KEY_SAME_SOURCE=OK` 那一行删掉 ⇒ 判据 2 必红（三态不齐）。"""
+    """注入③：把 `JWT_KEY_SAME_SOURCE=OK` 那一行删掉 ⇒ 判据 2 必红（四态不齐）。"""
     mutated = _inject(read_deploy_sh(), f'echo "  {STATE_OK}"\n', "")
     assert judge_deploy_assertion(mutated), "删掉 OK 行后判据没红（判据无判别力）"
 
@@ -357,6 +446,59 @@ def test_injection_force_recreate_hint_without_reload_goes_red():
     )
     v = judge_upstream_assertion_wiring(mutated, NGINX_CONF.read_text(encoding="utf-8"))
     assert any("reload" in x for x in v), v
+
+
+def test_no_bare_backtick_in_echo_hints():
+    """判据 12 / 红证 c（issue #8989 ①）：仓内**现状**的双引号 echo 里不得有裸反引号。"""
+    v = judge_no_command_substitution_in_echo(read_deploy_sh())
+    assert not v, "部署提示行里有会被 shell 当命令执行的裸反引号：\n- " + "\n- ".join(v)
+
+
+def test_injection_bare_backtick_in_hint_goes_red():
+    """注入⑧（issue #8989 ① 红证 c）：提示行再出现裸反引号 ⇒ 判据必红（真会被 shell 执行）。"""
+    mutated = _inject(
+        read_deploy_sh(),
+        'echo "     让它可以判定：两侧都显式配「JWT_*」',
+        'echo "     让它可以判定：两侧都显式配 `JWT_*`',
+    )
+    v = judge_no_command_substitution_in_echo(mutated)
+    assert any("裸反引号" in x for x in v), v
+
+
+def test_injection_assertion_reads_container_goes_red():
+    """注入⑨（issue #8989 ③）：断言改回 `docker compose exec` ⇒ 判据必红（旧容器会失真）。"""
+    text = read_deploy_sh()
+    mutated = _inject(
+        text,
+        "      raw=$(jwt_env_value_of .env.admin-api JWT_PUBLIC_KEY)",
+        "      raw=$(docker compose exec -T admin-api sh -c 'printf %s \"$JWT_PUBLIC_KEY\"')",
+    )
+    v = judge_deploy_assertion(mutated)
+    assert any("docker compose exec" in x for x in v), v
+
+
+def test_injection_escaped_newline_normalization_removed_goes_red():
+    """注入⑩（issue #8989 ②）：删掉字面 `\\n` 归一化 ⇒ 判据必红（单行 .env 形态恒不可判定）。"""
+    text = read_deploy_sh()
+    mutated = _inject(text, "  raw=${raw//\\\\n/$'\\n'}\n", "")
+    v = judge_deploy_assertion(mutated)
+    assert any("归一化" in x for x in v), v
+
+
+def test_injection_preflight_moved_after_up_goes_red():
+    """注入⑪（issue #8989 ④）：把前置校验挪到第一处 `up -d` 之后 ⇒ 判据必红（挡不住破坏形态）。"""
+    text = read_deploy_sh()
+    start = text.find(PREFLIGHT_MARK)
+    end = text.find("# 1.7 模型名 canonical 自愈", start)
+    assert start > 0 and end > start
+    block = text[start:end]
+    mutated = text[:start] + text[end:]
+    anchor = "# ── 2.6 nginx（流量入口本身"
+    mutated = _inject(mutated, anchor, block + anchor)
+    v = judge_preflight_wiring(mutated)
+    assert any("晚于第一处" in x for x in v), v
+
+
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -415,6 +557,45 @@ def test_shell_fingerprint_discriminates_and_rejects_non_pem():
     assert good and bad and good != bad, f"换一把公钥却印同一个指纹（判据退化）：{good!r} / {bad!r}"
     junk = _run_shell_fingerprint("not a pem")
     assert junk.returncode != 0, f"非公钥文本必须非零退出（否则「读不到」会被当成「对齐」）：{junk.stdout!r}"
+
+
+def test_shell_fingerprint_accepts_escaped_newline_env_form():
+    """判据 10 / 红证 a（issue #8989 ②）：`.env` 的**单行 + 字面 `\\n`** 形态也必须算出指纹。
+
+    改前实现用 awk 按行匹配 `-----BEGIN PUBLIC KEY-----` ⇒ 单行 `.env` 形态取不到 body ⇒
+    返回 `<不可判定>` ⇒ 生产上这条断言**永远 SKIPPED**（比不加更糟：给了已守护的错觉）。
+    """
+    pem = PUBLIC_PEM.read_text(encoding="utf-8")
+    assert "\n" in pem, "反空跑锚点：入仓公钥不是多行 PEM，本判据无从构造单行形态"
+    escaped = pem.replace("\n", "\\n")
+    assert "\\n" in escaped and "\n" not in escaped
+    proc = _run_shell_fingerprint(escaped)
+    assert proc.returncode == 0, (
+        f"单行 + 字面 \\n 形态取不到指纹（改前的病）：{proc.stdout}{proc.stderr}"
+    )
+    assert proc.stdout.strip() == _python_fingerprint(pem), (
+        f"归一化后的指纹与 Python 工具口径不一致：shell={proc.stdout.strip()!r} "
+        f"python={_python_fingerprint(pem)!r}"
+    )
+
+
+def test_shell_fingerprint_shape_is_attributable_on_failure():
+    """判据 10（可归因）：提取失败时能说出「读到了什么形态」，不再只有 `<不可判定>`。"""
+    text = read_deploy_sh()
+    script = (
+        "set -uo pipefail\n"
+        "jwt_value_shape_of() {" + function_body(text, "jwt_value_shape_of") + "\n}\n"
+        'jwt_value_shape_of "not a pem"\n'
+        'printf "\\n"\n'
+        'jwt_value_shape_of "-----BEGIN PRIVATE KEY-----\\nAAAA\\n-----END PRIVATE KEY-----"\n'
+    )
+    proc = subprocess.run(
+        [_BASH, "-c", script], capture_output=True, text=True, timeout=60, cwd=str(REPO_ROOT)
+    )
+    assert proc.returncode == 0, proc.stderr
+    assert "非 PEM 文本" in proc.stdout and "首 40 字" in proc.stdout, proc.stdout
+    assert "私钥 PEM" in proc.stdout, proc.stdout
+
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -481,16 +662,32 @@ def _write_exe(path: Path, body: str) -> None:
     path.chmod(0o755)
 
 
-def _make_src_tar(dest: Path) -> None:
+_UNSET = object()
+COMPOSE_AGENT_KEY_LINE = "      JWT_PUBLIC_KEY: file:/opt/migao-deploy/jwt/public.pem\n"
+
+
+def _make_src_tar(dest: Path, agent_compose_raw=_UNSET) -> None:
     stage = dest.parent / "stage" / "migao-main" / "deploy" / "swas"
     stage.mkdir(parents=True, exist_ok=True)
-    for name in ("docker-compose.yml", "docker-compose.bluegreen.yml", "nginx.conf"):
-        shutil.copy(REPO_ROOT / "deploy" / "swas" / name, stage / name)
+    work = dest.parent / "opt-migao-deploy"
+    compose_text = (REPO_ROOT / "deploy" / "swas" / "docker-compose.yml").read_text(encoding="utf-8")
+    if agent_compose_raw is not _UNSET:
+        assert compose_text.count(COMPOSE_AGENT_KEY_LINE) == 1, (
+            "反空跑锚点：compose 里 ai-agent 的 JWT_PUBLIC_KEY 行已变（本判据的注入坐标漂了）"
+        )
+        repl = "" if agent_compose_raw is None else f"      JWT_PUBLIC_KEY: {agent_compose_raw}\n"
+        compose_text = compose_text.replace(COMPOSE_AGENT_KEY_LINE, repl)
+    # 生产根 `/opt/migao-deploy` → 本用例 work（与 deploy.sh 文本替换同口径）
+    compose_text = compose_text.replace("/opt/migao-deploy", str(work))
+    (stage / "docker-compose.yml").write_text(compose_text, encoding="utf-8")
+    for name in ("docker-compose.bluegreen.yml", "nginx.conf"):
+        text = (REPO_ROOT / "deploy" / "swas" / name).read_text(encoding="utf-8")
+        (stage / name).write_text(text.replace("/opt/migao-deploy", str(work)), encoding="utf-8")
     with tarfile.open(dest, "w:gz") as tf:
         tf.add(dest.parent / "stage" / "migao-main", arcname="migao-main")
 
 
-def _prepare(tmp_path: Path) -> tuple:
+def _prepare(tmp_path: Path, *, agent_compose_raw=_UNSET) -> tuple:
     work = tmp_path / "opt-migao-deploy"
     work.mkdir(exist_ok=True)
     text = DEPLOY_SH.read_text(encoding="utf-8")
@@ -502,7 +699,7 @@ def _prepare(tmp_path: Path) -> tuple:
     (work / ".env.admin-api").write_text("SMS_BYPASS_CODE=123456\n", encoding="utf-8")
     (work / ".env.ai-agent").write_text("SMS_BYPASS_CODE=123456\n", encoding="utf-8")
     tar_path = tmp_path / "src.tar.gz"
-    _make_src_tar(tar_path)
+    _make_src_tar(tar_path, agent_compose_raw=agent_compose_raw)
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir(exist_ok=True)
     _write_exe(bin_dir / "curl", CURL_STUB)
@@ -517,12 +714,27 @@ def _prepare(tmp_path: Path) -> tuple:
 
 
 def _run(tmp_path: Path, *, admin_raw: str, agent_raw: str, admin_pem: str = "",
-         agent_pem: str = "", probe_code: int = 200, extra_env: dict | None = None):
-    work, script, bin_dir, state, tar_path, keys = _prepare(tmp_path)
+         agent_pem: str = "", probe_code: int = 200, extra_env: dict | None = None,
+         agent_compose_raw=_UNSET):
+    work, script, bin_dir, state, tar_path, keys = _prepare(tmp_path, agent_compose_raw=agent_compose_raw)
+    # 生产根 `/opt/migao-deploy` → 本用例 work（与 deploy.sh / compose 的文本替换同口径）
+    admin_raw = admin_raw.replace("/opt/migao-deploy", str(work))
+    agent_raw = agent_raw.replace("/opt/migao-deploy", str(work))
+    # 宿主权威源（issue #8989 ③）：断言读这里，**不**读容器。
+    (work / ".env.admin-api").write_text(
+        f"SMS_BYPASS_CODE=123456\nJWT_PUBLIC_KEY={admin_raw}\n", encoding="utf-8"
+    )
+    (work / ".env.ai-agent").write_text(
+        f"SMS_BYPASS_CODE=123456\nJWT_PUBLIC_KEY={agent_raw}\n", encoding="utf-8"
+    )
+    jwt_dir = work / "jwt"
+    jwt_dir.mkdir(exist_ok=True)
+    if admin_pem:
+        (jwt_dir / "public.pem").write_text(admin_pem, encoding="utf-8")
+    if agent_pem:
+        (jwt_dir / "agent.pem").write_text(agent_pem, encoding="utf-8")
     (keys / "admin-api.env").write_text(admin_raw, encoding="utf-8")
     (keys / "ai-agent.env").write_text(agent_raw, encoding="utf-8")
-    (keys / "admin-api.pem").write_text(admin_pem, encoding="utf-8")
-    (keys / "ai-agent.pem").write_text(agent_pem, encoding="utf-8")
     docker_log = tmp_path / "docker.log"
     docker_log.write_text("", encoding="utf-8")
     env = {
@@ -575,8 +787,9 @@ def test_exec_mismatched_keys_fail_deploy_with_both_fingerprints(tmp_path, commi
     proc, _ = _run(
         tmp_path,
         admin_raw=JWT_FILE_VALUE,
-        agent_raw=JWT_FILE_VALUE,
+        agent_raw="",
         admin_pem=committed_pem,
+        agent_compose_raw=JWT_AGENT_FILE_VALUE,
         agent_pem=other,
     )
     assert proc.returncode != 0, f"不同源却返回 0（假绿）：\n{proc.stdout}"
@@ -587,14 +800,55 @@ def test_exec_mismatched_keys_fail_deploy_with_both_fingerprints(tmp_path, commi
     assert STATE_OK not in proc.stdout, "不一致的部署里不得同时出现 OK"
 
 
-def test_exec_unjudgeable_is_skipped_not_green(tmp_path, committed_pem):
-    """判据 6：任一侧取不到 ⇒ `JWT_KEY_SAME_SOURCE=SKIPPED`、**不得**印 OK，且不因此判红。"""
-    proc, _ = _run(tmp_path, admin_raw=JWT_FILE_VALUE, agent_raw="", admin_pem=committed_pem)
-    assert STATE_SKIPPED in proc.stdout, f"取不到却没有任何 SKIPPED 读数：\n{proc.stdout}"
-    assert STATE_OK not in proc.stdout, "取不到对象却判绿（假绿）"
-    assert proc.returncode == 0, (
-        f"不可判定不得当成部署失败（本仓口径 = SKIPPED 但不判绿）：\n{proc.stdout}"
+def test_exec_both_classpath_default_is_skipped_not_green(tmp_path, committed_pem):
+    """判据 6：**两侧都走 classpath 默认** ⇒ `SKIPPED`、**不得**印 OK，且不因此判红（唯一允许形态）。"""
+    # 宿主的 public.pem 仍在（bluegreen 里还声明着 file:），但两侧**候选源**都没配
+    proc, _ = _run(
+        tmp_path, admin_raw="", agent_raw="", admin_pem=committed_pem, agent_compose_raw=None
     )
+    assert STATE_SKIPPED in proc.stdout, f"两侧都没配却没有任何 SKIPPED 读数：\n{proc.stdout}"
+    assert STATE_OK not in proc.stdout, "取不到对象却判绿（假绿）"
+    assert STATE_INCOMPLETE not in proc.stdout, "两侧都没配就不该报「配置不完整」"
+    assert "classpath 默认" in proc.stdout, "SKIPPED 必须打印可归因原因（不是空口的「取不到」）"
+    assert proc.returncode == 0, (
+        f"两侧都没配不得当成部署失败（本仓口径 = SKIPPED 但不判绿）：\n{proc.stdout}"
+    )
+
+
+def test_exec_one_sided_key_is_incomplete_and_fails(tmp_path, committed_pem):
+    """判据 6b：只有一侧有值 ⇒ `INCOMPLETE` + exit 1（「不可判定」不许当放过）。"""
+    proc, _ = _run(
+        tmp_path,
+        admin_raw=JWT_FILE_VALUE,
+        agent_raw="",
+        admin_pem=committed_pem,
+        agent_compose_raw=None,
+    )
+    assert proc.returncode != 0, f"一侧有钥匙另一侧没有却部署成功：\n{proc.stdout}"
+    assert STATE_INCOMPLETE in proc.stdout, proc.stdout
+    assert STATE_SKIPPED not in proc.stdout, "一侧有值不许报 SKIPPED（那会被读成「只是这次读不到」）"
+    assert STATE_OK not in proc.stdout
+
+
+def test_exec_missing_host_jwt_file_fails_before_any_up(tmp_path, committed_pem):
+    """判据 11 / 红证 b（issue #8989 ④）：宿主 `file:` 路径缺失 ⇒ **前置校验** exit 1，且零 `up -d`。
+
+    改前：这条路径只在**重建容器**时才被读 ⇒ ai-agent fail-closed 起不来（AI 接口全挂），
+    而断言此刻 SKIPPED ⇒ 拦不住。改后：在任何 `docker compose up` 之前就判红。
+    """
+    proc, docker_log = _run(
+        tmp_path,
+        admin_raw=JWT_FILE_VALUE,
+        agent_raw="",
+        admin_pem=committed_pem,
+        agent_compose_raw="file:/opt/migao-deploy/jwt/absent.pem",
+    )
+    assert proc.returncode != 0, f"宿主文件缺失却部署成功：\n{proc.stdout}"
+    assert "absent.pem" in proc.stdout, f"没把缺失的路径印出来（不可归因）：\n{proc.stdout}"
+    assert "不存在" in proc.stdout, proc.stdout
+    assert PREFLIGHT_OK not in proc.stdout, "缺失却被判 OK（假绿）"
+    assert "up -d" not in docker_log, f"前置校验之后仍发生了容器重建（顺序错了）：\n{docker_log}"
+    assert "JWT_KEY_SAME_SOURCE" not in proc.stdout, "前置校验就该中止，不该走到同源断言"
 
 
 def test_exec_nginx_upstream_not_200_fails(tmp_path, committed_pem):
