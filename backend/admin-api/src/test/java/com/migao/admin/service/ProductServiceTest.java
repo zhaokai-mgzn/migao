@@ -360,7 +360,7 @@ class ProductServiceTest {
         request.setName("测试商品");
         request.setCategoryId("cat-001");
         request.setBasePrice(new BigDecimal("68.00"));
-        request.setStock(BigDecimal.valueOf(100));
+        // issue #9006：建品不再接受非 0 商品级库存（422）⇒ 本夹具不带 stock（本用例测的是 SKU 编码前缀）
         request.setSkuCode("2699"); // 货号
         ProductColorInput c1 = new ProductColorInput();
         c1.setColorName("黑色");
@@ -409,7 +409,7 @@ class ProductServiceTest {
         request.setName("无货号商品");
         request.setCategoryId("cat-001");
         request.setBasePrice(new BigDecimal("50.00"));
-        request.setStock(BigDecimal.valueOf(50));
+        // issue #9006：建品不再接受非 0 商品级库存（422）⇒ 本夹具不带 stock（本用例测的是 ID 前缀兜底）
         // skuCode 不设置
         ProductColorInput c1 = new ProductColorInput();
         c1.setColorName("红色");
@@ -1518,9 +1518,10 @@ class ProductServiceTest {
         request.setName("库存口径测试帘");
         request.setCategoryId("cat-001");
         request.setBasePrice(new BigDecimal("68.00"));
-        // issue #7597：建品请求里的 stock 与 skus[].stock 都已被忽略 ⇒ 本判据改钉为
-        // 「派生列 = SKU 汇总」这条不变量本身（两边都是 0，且请求值 999 / 30 / 70 一个都不许漏进库）
-        request.setStock(BigDecimal.valueOf(999));
+        // issue #7597：建品不建立库存（skus[].stock 同样被忽略）⇒ 本判据钉的是
+        // 「派生列 = SKU 汇总」这条不变量本身（SKU 合计 0，请求值 30 / 70 一个都不许漏进库）。
+        // issue #9006：**商品级** stock 改为 422 显式拒绝（见 ProductCreateStockIgnoredTest 判据 1）
+        // ⇒ 本夹具不再带商品级 stock：带了会在建品入口就被拒，与本判据要测的不变量无关。
         ProductSkuInput s1 = new ProductSkuInput();
         s1.setDoorWidth("2.8米");
         s1.setStock(BigDecimal.valueOf(30));
@@ -1572,8 +1573,8 @@ class ProductServiceTest {
         request.setName("无规格商品");
         request.setCategoryId("cat-001");
         request.setBasePrice(new BigDecimal("50.00"));
-        request.setStock(BigDecimal.valueOf(50));
-
+        // issue #9006：建品不再接受非 0 商品级库存（422）⇒ 请求不带 stock；
+        // 本判据要保的是**库里既有**的商品级库存（下面 stub 的 50），不是请求值
         when(categoryMapper.selectById("cat-001")).thenReturn(testCategory);
         when(productMapper.insert(any(Product.class))).thenAnswer(invocation -> {
             ((Product) invocation.getArgument(0)).setId("prod-no-sku");
