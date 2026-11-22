@@ -505,7 +505,7 @@ class ProcessingRouteSourceDeclarationTest {
         when(orderItemMapper.selectList(any())).thenReturn(items);
         AtomicReference<ProcessingOrder> poRef = new AtomicReference<>();
         when(processingOrderMapper.selectActiveByOrderId("order-001", TENANT)).thenAnswer(inv -> poRef.get());
-        when(processingOrderMapper.insert(any(ProcessingOrder.class))).thenAnswer(inv -> {
+        when(processingOrderMapper.insertIgnoreProcessingNoConflict(any(ProcessingOrder.class), anyString())).thenAnswer(inv -> {
             ProcessingOrder inserted = inv.getArgument(0);
             inserted.setId("po-001");
             poRef.set(inserted);

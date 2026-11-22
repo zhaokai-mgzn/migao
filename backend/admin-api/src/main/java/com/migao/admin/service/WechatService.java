@@ -6,7 +6,9 @@ import com.migao.admin.exception.BusinessException;
 import jakarta.annotation.PostConstruct;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -71,11 +73,35 @@ public class WechatService {
     private static final String GET_PHONE_URL =
             "https://api.weixin.qq.com/wxa/business/getuserphonenumber?access_token=%s";
 
-    /** access_token 进程内缓存（有效期 7200s，提前 300s 刷新）——按小程序渠道分开缓存 */
-    private volatile String cachedAccessToken;
-    private volatile long accessTokenExpireAt;
-    private volatile String bminiCachedAccessToken;
-    private volatile long bminiAccessTokenExpireAt;
+    /**
+     * access_token 的**跨实例共享**缓存（集群就绪审计 P0-1，issue #9018）。
+     *
+     * <p>原先缓存在本类的 4 个 {@code volatile} 实例字段里（注释「进程内缓存（单实例足够）」）：
+     * 多实例时每个实例各自刷新，微信侧只保留最后一把 ⇒ 实例 A 刷新后实例 B 手里那把立即作废，
+     * B 仍按自己算的 TTL 继续用（最长约 2 小时）⇒ 一半流量间歇性 40001。现在 token 存在 Redis
+     * （全实例一把）+ 刷新串行化 + 40001 失效自愈；Redis 不可用时降级回进程内行为。
+     * 详见 {@link WechatAccessTokenProvider}。</p>
+     */
+    private volatile WechatAccessTokenProvider accessTokens;
+
+    /** 共享存储（Redis）。未接线 / 不可用 ⇒ 自动降级为进程内缓存，不影响登录 */
+    @Autowired(required = false)
+    private StringRedisTemplate redisTemplate;
+
+    /** 懒建：字段注入的 redisTemplate → 首次取 token 时装配（单机行为不变） */
+    private WechatAccessTokenProvider accessTokens() {
+        WechatAccessTokenProvider provider = accessTokens;
+        if (provider == null) {
+            synchronized (this) {
+                provider = accessTokens;
+                if (provider == null) {
+                    provider = new WechatAccessTokenProvider(redisTemplate, this::fetchAccessToken);
+                    accessTokens = provider;
+                }
+            }
+        }
+        return provider;
+    }
 
     /**
      * 启动期**出声**：B 端小程序（bmini）凭据缺失（issue #8196 的 ① 面）。
@@ -176,29 +202,26 @@ public class WechatService {
     }
 
     /**
-     * 真实模式：先取（缓存）access_token，再 POST getuserphonenumber 换号。
+     * 真实模式：先取（共享缓存的）access_token，再 POST getuserphonenumber 换号。
+     *
+     * <p>微信回 {@code 40001 / 42001}（凭证失效）时**失效自愈**：清本地短缓存（必要时连共享存储
+     * 里那把坏 token 一起删掉）→ 重取 → 用新 token 重试一次。治的形态见 issue #9018：多实例下
+     * 别的实例刷新后本地这把已被作废，原先会一路 40001 到本进程 TTL 到期（最长约 2 小时）。</p>
      */
     private PhoneNumberResult realGetPhoneNumber(String channelAppId, String channelAppSecret,
                                                  String code, String channelLabel) {
         try {
             String accessToken = obtainAccessToken(channelAppId, channelAppSecret, channelLabel);
-            String url = String.format(GET_PHONE_URL, accessToken);
-            log.info("调用微信 getuserphonenumber 换号: appId={}（{}渠道）", channelAppId, channelLabel);
-
-            // 换号接口请求体：{"code": "xxx"}（新规范动态令牌）
-            Map<String, String> payload = new HashMap<>();
-            payload.put("code", code);
-            HttpHeaders headers = new HttpHeaders();
-            headers.setContentType(MediaType.APPLICATION_JSON);
-            ResponseEntity<String> response = restTemplate.postForEntity(
-                    url, new org.springframework.http.HttpEntity<>(payload, headers), String.class);
-            String body = response.getBody();
-            if (body == null || body.isBlank()) {
-                throw new BusinessException("WECHAT_API_ERROR", "微信 API 返回为空");
-            }
-
-            JsonNode root = OBJECT_MAPPER.readTree(body);
+            JsonNode root = postGetPhoneNumber(accessToken, code, channelAppId, channelLabel);
             int errcode = root.path("errcode").asInt(0);
+            if (errcode == 40001 || errcode == 42001) {
+                log.warn("微信 access_token 已失效（errcode={}），清本地缓存并从共享存储重取后重试一次: "
+                        + "appId={}（{}渠道）", errcode, channelAppId, channelLabel);
+                accessTokens().invalidate(channelAppId, accessToken);
+                accessToken = obtainAccessToken(channelAppId, channelAppSecret, channelLabel);
+                root = postGetPhoneNumber(accessToken, code, channelAppId, channelLabel);
+                errcode = root.path("errcode").asInt(0);
+            }
             if (errcode != 0) {
                 String errmsg = root.path("errmsg").asText("");
                 log.error("微信 getuserphonenumber 失败: errcode={}, errmsg={}", errcode, errmsg);
@@ -235,58 +258,65 @@ public class WechatService {
         }
     }
 
+    /** POST getuserphonenumber 并按 String 解析 JSON（微信错误响应是 text/plain，必须手动解析） */
+    private JsonNode postGetPhoneNumber(String accessToken, String code, String channelAppId,
+                                        String channelLabel) throws Exception {
+        String url = String.format(GET_PHONE_URL, accessToken);
+        log.info("调用微信 getuserphonenumber 换号: appId={}（{}渠道）", channelAppId, channelLabel);
+
+        // 换号接口请求体：{"code": "xxx"}（新规范动态令牌）
+        Map<String, String> payload = new HashMap<>();
+        payload.put("code", code);
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        ResponseEntity<String> response = restTemplate.postForEntity(
+                url, new HttpEntity<>(payload, headers), String.class);
+        String body = response.getBody();
+        if (body == null || body.isBlank()) {
+            throw new BusinessException("WECHAT_API_ERROR", "微信 API 返回为空");
+        }
+        return OBJECT_MAPPER.readTree(body);
+    }
+
     /**
-     * 获取（带缓存）小程序全局 access_token——按渠道（mini/bmini）分开缓存，互不污染。
-     * 有效期 7200s，提前 300s 视为过期自动刷新；进程内缓存（单实例足够）。
+     * 获取小程序全局 access_token——**全实例共享一把**（Redis，按 appid 区分 mini/bmini 渠道）。
+     *
+     * <p>有效期 7200s / 提前 300s 刷新；刷新串行化、40001 失效自愈、Redis 不可用降级的具体口径
+     * 见 {@link WechatAccessTokenProvider}（本方法只是接线，不含缓存逻辑）。</p>
      */
     private String obtainAccessToken(String channelAppId, String channelAppSecret, String channelLabel) {
-        long now = System.currentTimeMillis();
-        boolean bmini = channelLabel.contains("bmini");
-        String cached = bmini ? bminiCachedAccessToken : cachedAccessToken;
-        long expireAt = bmini ? bminiAccessTokenExpireAt : accessTokenExpireAt;
-        if (StringUtils.hasText(cached) && now < expireAt) {
-            return cached;
+        return accessTokens().obtain(channelAppId, channelAppSecret, channelLabel);
+    }
+
+    /** 真正去微信换 token（唯一发出 {@code cgi-bin/token} 请求的地方，由 {@link WechatAccessTokenProvider} 按需调用） */
+    private WechatAccessTokenProvider.Token fetchAccessToken(String channelAppId, String channelAppSecret,
+                                                            String channelLabel) {
+        String url = String.format(ACCESS_TOKEN_URL, channelAppId, channelAppSecret);
+        log.info("刷新微信 access_token（写入共享存储）: appId={}（{}渠道）", channelAppId, channelLabel);
+        ResponseEntity<String> response = restTemplate.getForEntity(url, String.class);
+        String body = response.getBody();
+        if (body == null || body.isBlank()) {
+            throw new BusinessException("WECHAT_API_ERROR", "微信 API 返回为空");
         }
-        synchronized (this) {
-            String cachedAgain = bmini ? bminiCachedAccessToken : cachedAccessToken;
-            long expireAtAgain = bmini ? bminiAccessTokenExpireAt : accessTokenExpireAt;
-            if (StringUtils.hasText(cachedAgain) && System.currentTimeMillis() < expireAtAgain) {
-                return cachedAgain;
+        try {
+            JsonNode root = OBJECT_MAPPER.readTree(body);
+            int errcode = root.path("errcode").asInt(0);
+            if (errcode != 0) {
+                String errmsg = root.path("errmsg").asText("");
+                log.error("微信 access_token 获取失败: errcode={}, errmsg={}", errcode, errmsg);
+                throw new BusinessException("WECHAT_API_ERROR", "微信 access_token 获取失败: " + errmsg);
             }
-            String url = String.format(ACCESS_TOKEN_URL, channelAppId, channelAppSecret);
-            log.info("刷新微信 access_token: appId={}（{}渠道）", channelAppId, channelLabel);
-            ResponseEntity<String> response = restTemplate.getForEntity(url, String.class);
-            String body = response.getBody();
-            if (body == null || body.isBlank()) {
-                throw new BusinessException("WECHAT_API_ERROR", "微信 API 返回为空");
+            String token = root.path("access_token").asText(null);
+            if (!StringUtils.hasText(token)) {
+                throw new BusinessException("WECHAT_API_ERROR", "微信 API 未返回 access_token");
             }
-            try {
-                JsonNode root = OBJECT_MAPPER.readTree(body);
-                int errcode = root.path("errcode").asInt(0);
-                if (errcode != 0) {
-                    String errmsg = root.path("errmsg").asText("");
-                    log.error("微信 access_token 获取失败: errcode={}, errmsg={}", errcode, errmsg);
-                    throw new BusinessException("WECHAT_API_ERROR", "微信 access_token 获取失败: " + errmsg);
-                }
-                String token = root.path("access_token").asText(null);
-                if (!StringUtils.hasText(token)) {
-                    throw new BusinessException("WECHAT_API_ERROR", "微信 API 未返回 access_token");
-                }
-                int expiresIn = root.path("expires_in").asInt(7200);
-                if (bmini) {
-                    bminiCachedAccessToken = token;
-                    bminiAccessTokenExpireAt = now + (expiresIn - 300L) * 1000L;
-                } else {
-                    cachedAccessToken = token;
-                    accessTokenExpireAt = now + (expiresIn - 300L) * 1000L;
-                }
-                return token;
-            } catch (BusinessException e) {
-                throw e;
-            } catch (Exception e) {
-                log.error("解析 access_token 响应异常: {}", e.getMessage(), e);
-                throw new BusinessException("WECHAT_API_ERROR", "微信 access_token 响应解析异常");
-            }
+            return new WechatAccessTokenProvider.Token(token,
+                    root.path("expires_in").asInt((int) WechatAccessTokenProvider.DEFAULT_EXPIRES_IN_SECONDS));
+        } catch (BusinessException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("解析 access_token 响应异常: {}", e.getMessage(), e);
+            throw new BusinessException("WECHAT_API_ERROR", "微信 access_token 响应解析异常");
         }
     }
 
