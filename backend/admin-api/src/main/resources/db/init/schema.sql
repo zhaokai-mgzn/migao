@@ -190,6 +190,8 @@ CREATE TABLE products (
     -- 售卖方式基础属性（商品级，**非** SKU 组合维度）+ 1 卷多少米（来自 V113，用户裁定 2026-09-21）
     selling_methods JSONB DEFAULT '["bulk_cut", "full_roll"]'::jsonb,  -- 该货号支持哪些售卖方式（bulk_cut 散剪 / full_roll 整卷）
     roll_length_m NUMERIC(8,2),                              -- 1 卷 = 多少米（货号级基础参数）；NULL = 未配置 ⇒ 禁止推算整卷分配
+    -- 门幅（规格尺寸）清单（来自 V214，issue #9005）：商家声明的**可售门幅**
+    door_widths JSONB DEFAULT '[]'::jsonb,                   -- 门幅清单（JSONB 数组）；有 SKU 时读面仍以 product_skus.door_width 派生值为准
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     deleted INTEGER DEFAULT 0
@@ -205,6 +207,7 @@ COMMENT ON COLUMN products.sales_count IS '累计销量';
 COMMENT ON COLUMN products.sales_amount IS '累计销售额';
 COMMENT ON COLUMN products.allow_return_restock IS '是否允许退货回补库存（窗帘行业定制退货不可再售，默认不回补）';
 COMMENT ON COLUMN products.detail_images IS '商品详情图URL列表（JSONB数组）';
+COMMENT ON COLUMN products.door_widths IS '商家声明的门幅（规格尺寸）清单（JSONB数组，V214/issue #9005）；有 SKU 时读面以 product_skus.door_width 派生为准';
 
 -- ================================================
 -- 商品 SKU 矩阵相关表 (来自 008_product_sku_matrix.sql)

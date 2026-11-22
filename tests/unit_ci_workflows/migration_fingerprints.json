@@ -208,6 +208,7 @@
     "V211__add_playbooks_conflict_key.sql": "sha256:8c6a840724d1e999e730138492e8721d91a2b54a7deb3a4d5393fee844a1d1f1",
     "V212__add_playbook_lifecycle.sql": "sha256:7bad58c832457631458e6787ed435c3e5a7252ef01450b5d5ca1d26ae4c11837",
     "V213__rename_c_end_agent_display_name.sql": "sha256:0f2e0c6a7f8b2e7386b6d1fdb13fd4e62ba672075ed166b536fed977895f6afb",
-    "schema.sql": "sha256:0ad9c0e36ffc7f45ffc3a35d0e063f09b8a6870b739227603a196c9e0cb72ebc"
+    "V214__add_product_door_widths.sql": "sha256:8788ff15258bbd76c29c691b1e003d337629e91d2de247ebd389c49ba1579165",
+    "schema.sql": "sha256:e8d1de215a5c96765f856646f441fcc72a8f903ab9d42079b997fe9775d789f4"
   }
 }

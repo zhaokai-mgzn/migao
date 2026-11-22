@@ -626,9 +626,12 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
      */
     @Transactional(rollbackFor = Exception.class)
     public ProductResponse doCreateProduct(ProductCreateRequest request, Long tenantId) {
-        // 🔴 issue #7597（用户裁定 2026-10-24）：商品档案不再设置库存数值 —— 建品请求里的 `stock`
-        // 一律**不使用**（不校验、不落库），新建 SKU 从 0 起算；库存只由真实单据产生
-        // （入库单过账 / 订单扣减 / 售后回补 / 批次盘点）。
+        // 🔴 issue #7597（用户裁定 2026-10-24）：商品档案不再设置库存数值 —— 新建 SKU 从 0 起算；
+        // 库存只由真实单据产生（入库单过账 / 订单扣减 / 售后回补 / 批次盘点）。
+        // 🔴 issue #9006（P2）：**不再静默丢弃** —— 改前带 `stock:100` ⇒ 200 创建成功、落库 0
+        // （生产冒烟实测，调用方以为设上了初始库存）。现在「非 0 库存」⇒ 422 显式拒绝；
+        // 不传 / 传 0 照常（落库值本来就是 0 ⇒ 没有偏差）。判在**任何写之前**（与下面几条准入同口径）。
+        requireNoInitialStockOnCreate(request.getStock());
         request.setStock(BigDecimal.ZERO);
         // 金额精度准入（issue #6228）：`products.base_price` / `product_skus.price` 是 NUMERIC(·,2)，
         // 超 2 位有效小数会被 PG 静默四舍五入。**判在入口**（本方法会先 insert `products` 行、
@@ -688,6 +691,13 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
             product.setDetailImages(request.getDetailImages());
         }
 
+        // 门幅清单（V214 / issue #9005）：**必须落库** —— 改前只有「颜色 × 门幅 自动建 SKU」这一条
+        // 路径消费它，没有颜色/SKU 时被无声丢弃，`GET /{id}` 也读不回（响应里的 doorWidths 从 SKU 派生）。
+        // 显式赋值（不靠 BeanUtils 隐式同名拷贝）是为了让「收了却没人落库」这类缺陷在评审里一眼可见。
+        if (request.getDoorWidths() != null) {
+            product.setDoorWidths(new ArrayList<>(request.getDoorWidths()));
+        }
+
         // 设置默认状态
         if (!StringUtils.hasText(product.getStatus())) {
             product.setStatus("draft");
@@ -713,6 +723,35 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
         log.info("创建商品成功: id={}, name={}", product.getId(), product.getName());
 
         return getProductById(product.getId(), tenantId);
+    }
+
+    /**
+     * 建品**不接受**初始库存数值（issue #9006，P2）：库存口径未变（issue #7597 / 用户裁定 2026-10-24：
+     * 库存只由真实入库/出库单据产生），变的是**失败可见性** —— 改前带 {@code stock:100} 会
+     * 「200 创建成功、落库 0」（2026-11-22 生产冒烟实测），调用方无法从响应里看出偏差。
+     *
+     * <p>判据（{@code ProductCreateStockIgnoredTest} 判据 1/4）：</p>
+     * <ul>
+     *   <li>非 0 ⇒ {@link BusinessException} 422（含本次读数 + 可行动出口「用入库单过账」）；</li>
+     *   <li>{@code null} / {@code 0} ⇒ 放行（落库值本来就是 0，不存在被丢弃的意图；把 0 也判 422
+     *       只会打断「老客户端回传整个对象」这类无害形态，换不到任何信息量）。</li>
+     * </ul>
+     *
+     * <p>⚠️ 只裁**建品**。改品的 {@code stock} 仍是合法写面（批量库存调整 / Agent 调整的
+     * 「把该商品现有 SKU 统一置为该绝对值」，见 {@code updateProduct} 的库存分支与
+     * {@code ProductStockNonNegativeGateTest}）—— 两条路口径不同是**有意**的：建品时没有 SKU
+     * 可调，只能凭空建立库存；改品时 SKU 已存在，调库存是**调整**而不是「建档」。</p>
+     */
+    private static void requireNoInitialStockOnCreate(BigDecimal stock) {
+        if (stock == null || stock.compareTo(BigDecimal.ZERO) == 0) {
+            return;
+        }
+        throw BusinessException.validationError(
+                "商品档案不设置库存数值：本次请求带了 stock=" + stock.toPlainString()
+                        + "，而建品不会建立库存（库存只由真实入库/出库单据产生）",
+                null,
+                "去掉 stock 字段（或传 0）后重试；需要初始库存请先用入库单过账"
+                        + "（管理端「入库单」/ POST /api/admin/inbound-orders），库存由单据推导、不手填。");
     }
 
     /**
@@ -805,6 +844,12 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
         // 详情图列表（允许传空数组清空）
         if (request.getDetailImages() != null) {
             product.setDetailImages(request.getDetailImages());
+        }
+
+        // 门幅清单（V214 / issue #9005）：与建品同口径 —— 传了才写（null = 不改，空数组 = 清空）。
+        // 与 SKU 维度的关系不变：有 SKU 时读面仍以 SKU 派生为准（本列只承载声明）。
+        if (request.getDoorWidths() != null) {
+            product.setDoorWidths(new ArrayList<>(request.getDoorWidths()));
         }
 
         // 更新编辑信息
@@ -1568,6 +1613,9 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
         setIfPresent(wrapper, Product::getStockWarningThreshold, product.getStockWarningThreshold());
         setIfPresent(wrapper, Product::getAllowReturnRestock, product.getAllowReturnRestock());
         setIfPresentWithHandler(wrapper, Product::getSellingMethods, product.getSellingMethods(), JSON_TYPE_HANDLER);
+        // 门幅清单（V214 / issue #9005）：JSON 列同样**必须带 typeHandler**（见上一条注释），
+        // 少了它 PG 拿不到 javaType ⇒ Can't infer the SQL type
+        setIfPresentWithHandler(wrapper, Product::getDoorWidths, product.getDoorWidths(), JSON_TYPE_HANDLER);
         setIfPresent(wrapper, Product::getRollLengthM, product.getRollLengthM());
         setIfPresent(wrapper, Product::getEditedBy, product.getEditedBy());
         setIfPresent(wrapper, Product::getEditedAt, product.getEditedAt());
