@@ -18,6 +18,23 @@
 - 判据：`backend/admin-api/src/test/java/com/migao/admin/service/WechatAccessTokenProviderTest.java`（用例 `API-025`；
   离线两实例 + 共享 Redis 替身：改前供应商侧 2 次 / 改后 1 次；含「主代码不得再出现进程内 access_token 缓存字段」的类级元守卫）。
 
+### 部署期 JWT 同源断言真正可判：读宿主权威源 + `\n` 形态归一化 + `file:` 缺失前置 fail-closed（2026-11-22，issue #8989）
+
+- **之前（2026-11-21 真实部署实测）**：`== 2.5.9` 的 JWT 同源断言**永远 SKIPPED** —— 它用
+  `docker compose exec` 读**运行中的容器**（容器没重建 ⇒ 读到旧容器），且 `.env.*` 里是**单行 + 字面 `\n`**
+  的 PEM，按行 awk 取不到 body ⇒ 两侧都 `<不可判定>`。也就是说这条断言在生产上**等于不存在**，
+  却让人以为已经守护。提示行还写了裸反引号 ⇒ 部署日志真的出现 `JWT_*: command not found` 与
+  `file:/opt/…: No such file or directory`，提示语被吃成残缺文本。
+- **改后**：断言只读**宿主权威源**（`.env.admin-api` / `compose` 的 `environment` / `file:` 指向的宿主文件），
+  PEM 提取前先把字面 `\n`、`\r` 归一化，提取失败时打印「读到了什么形态」；
+  `SKIPPED` **只允许**「两侧都走 classpath 默认」这一种形态，只有一侧可判 ⇒ `INCOMPLETE` + `exit 1`。
+- **部署破坏性风险（本单 ④）**：任何服务的 `JWT_PRIVATE_KEY/JWT_PUBLIC_KEY` 是 `file:` 形态时，
+  宿主路径必须在**任何 `docker compose up` 之前**校验存在且可读，否则 `exit 1` —— 挡住
+  「ai-agent 重建时起不来 ⇒ AI 接口全挂」。
+- 判据：`tests/unit_ci_workflows/test_swas_jwt_same_source.py`（含 3 条注入式红证：`\n` 形态指纹 /
+  宿主 `file:` 缺失前置判红 / 反引号回归检测），并把 PR #8978 整体重排的
+  `tests/unit_ci_workflows/declared_effective_registry.json` 恢复成 compact 单行格式（只保留 1 条语义新增）。
+
 ### 语音识别接入 Token Plan 非实时通道（`ASR_MODE=http`），端点与生图相同（2026-11-21，issue #8987）
 
 - **背景（生产实测）**：生产用阿里云百炼 **Token Plan 订阅**（`sk-sp-` key），订阅里唯一可用的语音识别模型
@@ -1658,6 +1675,19 @@ worker-h5 纯函数、承运商 4 条 × 两处入口 + 类级单一真值守卫
 
 
 ## [Unreleased]
+
+### 加工单号改为「库内当日最大号取号 + 撞号换号重试」，撞号不再谎报「已生成」（2026-11-22，issue #9021）
+
+- **改前（集群 P0-5）**：`ProcessingOrderService` 用**进程内** `AtomicInteger`（`ThreadLocalRandom` 随机起点）
+  发号，取号与占号分成两条语句；撞 `uk_processing_orders_no` 时 `DuplicateKeyException` 被一律翻成
+  「加工单已生成（并发操作）」—— 而单子其实**没落库** ⇒ 运营以为已派出、不再重试，订单永远没有作业单（静默漏单）。
+- **改后形态**：与入库/出库单号**同一范式** —— 起点 = 库内当日最大号 + 1（不依赖进程内状态，跨副本/重启一致），
+  用一条 `INSERT … ON CONFLICT DO NOTHING` 原子占号；0 行 ⇒ 换候选重试（上限 20，同族口径），耗尽显式 409。
+- **诊断修正**：只有**确实查到**该订单已有活跃加工单时才报「已生成」（并带出真实单号）；取号冲突耗尽报
+  `PROCESSING_ORDER_NO_CONFLICT` +「加工单号生成冲突，请重试（requestId=…）」，可追踪、可行动。
+- **不改**：加工单业务字段、派单/状态机流程、扣批次与工序实例化的时序。
+- 判据：`ProcessingOrderServiceTest`（P0-5 四条：换号重试并落库 / 耗尽文案 / 双线程并发 / 库内最大号起点）+
+  `ProcessingOrderNoConflictRealDbTest`（真库：`ON CONFLICT` 0 行、JSONB 快照、活跃单唯一键冲突）。
 
 ### 生产域 cytda.com：官网导航 / canonical / sitemap / 域名分流按构建期域名生成（2026-11-21，issue #8941）
 
