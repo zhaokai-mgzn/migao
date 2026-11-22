@@ -60,8 +60,11 @@ def get_config() -> EnvConfig:
         ),
         "production": EnvConfig(
             name="production",
-            admin_api_url=admin_api_url or "https://api.migaozn.com",
-            ai_agent_url=ai_agent_url or "https://ai-api.migaozn.com",
+            # 生产实例（cytda.com）。issue #8992：这里曾整段复制 staging 的 migaozn 基址，
+            # 导致 `SMOKE_ENV=production` 静默打到**测试实例** —— 既会产出假绿结论，
+            # 也会让写类用例误写测试环境。改这里必须同步 tests/smoke/test_config_production_urls.py。
+            admin_api_url=admin_api_url or "https://api.cytda.com",
+            ai_agent_url=ai_agent_url or "https://ai-api.cytda.com",
             admin_phone=os.getenv("ADMIN_PHONE", "13900001025"),
             admin_sms_code=os.getenv("ADMIN_SMS_CODE", "123456"),
             tenant_id=int(os.getenv("TENANT_ID", CLOUD_TENANT_ID)),
