@@ -211,23 +211,32 @@ rollback.md 回滚（重新发布上一稳定版本）
    也不许拿错钥匙继续全 401）。
 2. **兼容**：`backend/ai-agent-service/app/config.py` 仍接受**直接给 PEM 内容**（本地 `.env` / CI 的形态）
    —— 既有部署一行不改也能起。
-3. **部署期硬断言**：`deploy/swas/deploy.sh` 在切完流量之后（`== 2.5.9`）比对两侧容器内**实际生效**的
-   公钥指纹，三态写进部署日志：
+3. **部署期硬断言**：`deploy/swas/deploy.sh` 在切完流量之后（`== 2.5.9`）比对两侧**宿主权威源**的
+   公钥指纹（`.env.admin-api` / compose 的 `environment` / `file:` 指向的宿主文件；
+   **不读** `docker compose exec` —— 容器没重建时读到的是旧容器），四态写进部署日志：
 
    | 读数 | 含义 | 部署结果 |
    |---|---|---|
    | `JWT_KEY_SAME_SOURCE=OK` | 两侧同一把公钥（打印指纹 + 来源） | 继续 |
-   | `JWT_KEY_SAME_SOURCE=MISMATCH` | 不同源（打印两侧指纹 + 来源 + 排查口） | **`exit 1`** |
-   | `JWT_KEY_SAME_SOURCE=SKIPPED` | 取不到（env 未设置 / `file:` 读不到 / 不是公钥 PEM） | 继续，但**不判绿** |
+   | `JWT_KEY_SAME_SOURCE=MISMATCH` | 两侧都有指纹但不同源（打印两侧指纹 + 来源 + 排查口） | **`exit 1`** |
+   | `JWT_KEY_SAME_SOURCE=SKIPPED` | **两侧都走 classpath 默认**（宿主面没有配置可判） | 继续，但**不判绿** |
+   | `JWT_KEY_SAME_SOURCE=INCOMPLETE` | 只有一侧可判 / 读到非公钥形态（配置不完整） | **`exit 1`** |
 
-   ⚠️ `SKIPPED` **不是通过**：它只说明这次读不到（例如容器里走 classpath 默认、本脚本读不到 jar 内资源）。
+   ⚠️ `SKIPPED` **不是通过**：它是**唯一**允许「不判绿但不判红」的形态（两侧都没显式配）。
+   只有一侧有值 ⇒ `INCOMPLETE` 判红，**不许**把「读不到」当放过。
    让它可判定的办法 = 两侧都显式配 `JWT_*`（就是上面第 1 条）。
    指纹口径 = `sha256(公钥体)` 前 16 位，与 `scripts/align_agent_jwt_key.py` **同口径**
    （对拍判据 = `tests/unit_ci_workflows/test_swas_jwt_same_source.py`）。
 
+4. **部署前的 fail-closed 硬校验（issue #8989 ④）**：任何服务的 `JWT_PRIVATE_KEY` / `JWT_PUBLIC_KEY`
+   是 `file:` 形态时，宿主路径必须存在且可读；否则在**任何 `docker compose up` 之前** `exit 1`
+   （挡的正是「ai-agent 重建时读不到文件 ⇒ 起不来 ⇒ AI 接口全挂」）。
+
 **判据（会红）**：`tests/unit_ci_workflows/test_swas_jwt_same_source.py` —— compose 侧「只给路径 + 卷在位 +
-无内联 PEM」、`deploy.sh` 侧「三态齐备 + 不一致 `exit 1` + SKIPPED 不判绿 + 指纹口径与工具同源」，
-外加桩化 docker/curl 跑**真实** `deploy.sh` 的执行式红证（一致 ⇒ 绿 / 不一致 ⇒ 红 / 取不到 ⇒ SKIPPED）。
+无内联 PEM」、`deploy.sh` 侧「四态齐备 + 不一致/不完整 `exit 1` + SKIPPED 只限两侧 classpath 默认 +
+指纹口径与工具同源」，
+外加桩化 docker/curl 跑**真实** `deploy.sh` 的执行式红证（一致 ⇒ 绿 / 不一致 ⇒ 红 / 两侧都没配 ⇒ SKIPPED /
+一侧有值 ⇒ INCOMPLETE 红 / `file:` 缺失 ⇒ 前置红且零 `up -d`）。
   **取不到 env 文件 ⇒ SKIPPED 不可判定，不判绿**（env 不入仓 ⇒ CI 里通常是 SKIPPED；在服务器上只读复核：
   `MIGAO_SWAS_ENV_DIR=/opt/migao-deploy python3 -m pytest tests/unit_ci_workflows/test_swas_container_runtime.py -q -k env_file`）。
 

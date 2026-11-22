@@ -5,6 +5,23 @@
 > 原因 = 单文件涨到 512KB 越过扫描上限，详见存档文件头与 issue #6404。
 > **后续条目继续在本文件 `## [Unreleased]
 
+### 部署期 JWT 同源断言真正可判：读宿主权威源 + `\n` 形态归一化 + `file:` 缺失前置 fail-closed（2026-11-22，issue #8989）
+
+- **之前（2026-11-21 真实部署实测）**：`== 2.5.9` 的 JWT 同源断言**永远 SKIPPED** —— 它用
+  `docker compose exec` 读**运行中的容器**（容器没重建 ⇒ 读到旧容器），且 `.env.*` 里是**单行 + 字面 `\n`**
+  的 PEM，按行 awk 取不到 body ⇒ 两侧都 `<不可判定>`。也就是说这条断言在生产上**等于不存在**，
+  却让人以为已经守护。提示行还写了裸反引号 ⇒ 部署日志真的出现 `JWT_*: command not found` 与
+  `file:/opt/…: No such file or directory`，提示语被吃成残缺文本。
+- **改后**：断言只读**宿主权威源**（`.env.admin-api` / `compose` 的 `environment` / `file:` 指向的宿主文件），
+  PEM 提取前先把字面 `\n`、`\r` 归一化，提取失败时打印「读到了什么形态」；
+  `SKIPPED` **只允许**「两侧都走 classpath 默认」这一种形态，只有一侧可判 ⇒ `INCOMPLETE` + `exit 1`。
+- **部署破坏性风险（本单 ④）**：任何服务的 `JWT_PRIVATE_KEY/JWT_PUBLIC_KEY` 是 `file:` 形态时，
+  宿主路径必须在**任何 `docker compose up` 之前**校验存在且可读，否则 `exit 1` —— 挡住
+  「ai-agent 重建时起不来 ⇒ AI 接口全挂」。
+- 判据：`tests/unit_ci_workflows/test_swas_jwt_same_source.py`（含 3 条注入式红证：`\n` 形态指纹 /
+  宿主 `file:` 缺失前置判红 / 反引号回归检测），并把 PR #8978 整体重排的
+  `tests/unit_ci_workflows/declared_effective_registry.json` 恢复成 compact 单行格式（只保留 1 条语义新增）。
+
 ### 语音识别接入 Token Plan 非实时通道（`ASR_MODE=http`），端点与生图相同（2026-11-21，issue #8987）
 
 - **背景（生产实测）**：生产用阿里云百炼 **Token Plan 订阅**（`sk-sp-` key），订阅里唯一可用的语音识别模型
