@@ -2304,7 +2304,7 @@ cases:
       verifies: []
 
   # ── issue #8983：登录页验证码行布局（真机实测按钮被输入框压住）─────────────────────────────
-  - id: MC-341
+  - id: BM-068
     legacy_id: ""
     title: "登录页「获取验证码」按钮不得被输入框压住（weapp 原生 input 按 width:100% 铺开）"
     domains:
