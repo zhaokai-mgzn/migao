@@ -38,11 +38,11 @@
 **证据**
 - `backend/admin-api/src/main/java/com/migao/admin/service/WechatService.java:74-79` —— 四个 `volatile` 实例字段
   （`cachedAccessToken` / `accessTokenExpireAt` / `bminiCachedAccessToken` / `bminiAccessTokenExpireAt`）。
-- `WechatService.java:240-283` —— `obtainAccessToken(...)`：命中则返回本进程缓存，否则 `synchronized (this)` 内
+- `backend/admin-api/src/main/java/com/migao/admin/service/WechatService.java:240-283` —— `obtainAccessToken(...)`：命中则返回本进程缓存，否则 `synchronized (this)` 内
   **再取一次新 token**（注释：`进程内缓存（单实例足够）`）。
-- 消费方（登录主链路）：`WechatService.java:184` → `GET_PHONE_URL`
-  （`https://api.weixin.qq.com/wxa/business/getuserphonenumber?access_token=%s`，`WechatService.java:71-72`）；
-  调用链 `MiniPhoneBindService.java:20-22,36`、`AuthController.java:176,200`。
+- 消费方（登录主链路）：`backend/admin-api/src/main/java/com/migao/admin/service/WechatService.java:184` → `GET_PHONE_URL`
+  （`https://api.weixin.qq.com/wxa/business/getuserphonenumber?access_token=%s`，`backend/admin-api/src/main/java/com/migao/admin/service/WechatService.java:71-72`）；
+  调用链 `backend/admin-api/src/main/java/com/migao/admin/service/MiniPhoneBindService.java:20-22,36`、`backend/admin-api/src/main/java/com/migao/admin/controller/AuthController.java:176,200`。
 
 **多实例下会发生什么**
 微信侧对一个 appid **只维持一把有效调用凭证**（新 token 签发后旧 token 仅剩短暂过渡期，具体秒数以官方文档为准 —— 本仓**未证实**）。
@@ -112,18 +112,18 @@ token 必须收敛成**全实例一份**：落 Redis（`SET NX` + `TTL = expires
 - 静态托管：`backend/admin-api/src/main/java/com/migao/admin/config/WebConfig.java:74-75`
   （`addResourceHandler("/api/files/static/**").addResourceLocations("file:uploads/")` —— **只认本机磁盘**）。
 - 生产挂载：`deploy/swas/docker-compose.yml:60-62`（`/opt/migao-deploy/uploads:/app/uploads`）。
-- 只有**配齐 OSS 三项凭据**时才改走 OSS：`OssService.java:43-46`（`@Primary` + `@ConditionalOnExpression`）、
-  `OssConfig.java:57-70`（`endpoint` / `access-key-id` / `access-key-secret` 全非空才注册）。
+- 只有**配齐 OSS 三项凭据**时才改走 OSS：`backend/admin-api/src/main/java/com/migao/admin/service/OssService.java:43-46`（`@Primary` + `@ConditionalOnExpression`）、
+  `backend/admin-api/src/main/java/com/migao/admin/config/OssConfig.java:57-70`（`endpoint` / `access-key-id` / `access-key-secret` 全非空才注册）。
   ⇒ **生产到底走哪条腿取决于 `.env.admin-api`（本审计未读）⇒ 「生产是否已启用 OSS」= 未证实。**
 - `ai-agent` 侧无本地落盘：`backend/ai-agent-service/app/api/asr.py:134-170` 的 `tempfile.NamedTemporaryFile`
-  是**请求内临时文件**（`finally` 里 `unlink`，两条分支都清）⇒ **无害**；`app/api/upload.py:1-9`（聊天图片
+  是**请求内临时文件**（`finally` 里 `unlink`，两条分支都清）⇒ **无害**；`backend/ai-agent-service/app/api/upload.py:1-9`（聊天图片
   **代理转发** admin-api，不在 Python 侧落盘）⇒ 也无害。
 
 **多实例下会发生什么**
 ① 上传被负载均衡打到实例 A，A 写 `/app/uploads/...`；随后图片 GET 被路由到实例 B ⇒
 `/api/files/static/**` 在 B 的磁盘上**不存在** ⇒ 404 / 商品图裂 / 作业照片打不开。
 ② 更隐蔽的一半：**即使不分实例**，`deploy.sh` 的 `docker compose up -d` 会**重建**容器 —— 只要漏了那条宿主卷，
-用户上传的图片就**全丢**（`docker-compose.yml:47-56` 已把这条事故写进注释，说明踩过）。
+用户上传的图片就**全丢**（`deploy/swas/docker-compose.yml:47-56` 已把这条事故写进注释，说明踩过）。
 ③ 多机房时两台机器各自的 `/opt/migao-deploy/uploads` 是**两份互不可见的目录** ⇒ 跨机房 100% 读不到。
 
 **最小改造建议**
@@ -147,13 +147,13 @@ token 必须收敛成**全实例一份**：落 Redis（`SET NX` + `TTL = expires
 - `backend/ai-agent-service/app/tools/order_create.py:193-213`
   （`@lru_cache(maxsize=_IDEMPOTENCY_CACHE_SIZE)` 装饰 `_window_id(window, scope, *, op)`；返回值
   `f"{window}-{scope_token}-{op_token}-{uuid.uuid4().hex[:12]}"` —— **随机成分**）。
-- 窗口与容量：`order_create.py:143`（`_IDEMPOTENCY_WINDOW_SECONDS = 600.0`）、`:157-159`（`_IDEMPOTENCY_CACHE_SIZE = 12288`）、
+- 窗口与容量：`backend/ai-agent-service/app/tools/order_create.py:143`（`_IDEMPOTENCY_WINDOW_SECONDS = 600.0`）、`:157-159`（`_IDEMPOTENCY_CACHE_SIZE = 12288`）、
   `:226-231`（`window = int(time.time() // _IDEMPOTENCY_WINDOW_SECONDS)`）。
 - 服务端（**这一半是集群安全的**）：`backend/admin-api/src/main/java/com/migao/admin/service/ClientRequestIdService.java:96-110`
   （`INSERT … ON CONFLICT (tenant_id, client_request_id) DO NOTHING`，按影响行数判首次）、`:127`（`replay` 回放快照）；
   表与唯一约束：`backend/admin-api/src/main/resources/db/init/schema.sql:3934-3943`
   （`UNIQUE (tenant_id, client_request_id)`）。
-- 三个写路径共用一把键入口：`order_create.py:216-231`（`_request_window_id`）。
+- 三个写路径共用一把键入口：`backend/ai-agent-service/app/tools/order_create.py:216-231`（`_request_window_id`）。
 
 **多实例下会发生什么（具体触发场景）**
 1. **滚动部署中途断流（最常见）**：顾客说「下单」→ 实例 A 的 `order_create` 已让服务端**落库并写入快照** →
@@ -170,7 +170,7 @@ token 必须收敛成**全实例一份**：落 Redis（`SET NX` + `TTL = expires
 
 **最小改造建议**
 把键改成**可重算**的：`hash(session_id + op + 确认卡 id / 本轮 turn_id)`（同一轮重试必然同键，跨实例也同键），
-窗口语义保留在服务端（`created_at` + 陈旧占位回收，`ClientRequestIdService.java:65` 已有 30 分钟口径）。
+窗口语义保留在服务端（`created_at` + 陈旧占位回收，`backend/admin-api/src/main/java/com/migao/admin/service/ClientRequestIdService.java:65` 已有 30 分钟口径）。
 或者退一步：把 `_window_id` 的结果写 Redis（`SET NX` + 10min TTL），让「同键」跨实例成立 —— 但这只是把
 「进程内」换成「共享」，仍不解决 LRU/重启，**首选确定性键**。
 
@@ -189,14 +189,14 @@ token 必须收敛成**全实例一份**：落 Redis（`SET NX` + `TTL = expires
 **证据**
 - 序列本体：`backend/admin-api/src/main/java/com/migao/admin/service/ProcessingOrderService.java:707-708`
   （`PO_SEQ = new AtomicInteger(ThreadLocalRandom.current().nextInt(1000, 9999))`）。
-- 生成：`ProcessingOrderService.java:2108-2112`（`"JG-" + yyyyMMdd + "-" + format("%04d", PO_SEQ.incrementAndGet())`，
+- 生成：`backend/admin-api/src/main/java/com/migao/admin/service/ProcessingOrderService.java:2108-2112`（`"JG-" + yyyyMMdd + "-" + format("%04d", PO_SEQ.incrementAndGet())`，
   注释：「DB 唯一约束兜底」）。
 - 唯一约束：`backend/admin-api/src/main/resources/db/init/schema.sql:917-918`（`uk_processing_orders_no (processing_order_no)`）。
-- 撞号后的处置：`ProcessingOrderService.java:1650-1655` —— `catch (DuplicateKeyException) { throw
+- 撞号后的处置：`backend/admin-api/src/main/java/com/migao/admin/service/ProcessingOrderService.java:1650-1655` —— `catch (DuplicateKeyException) { throw
   BusinessException.validationError("订单 … 加工单已生成（并发操作），请刷新后重试") }`。
-- **同族已有正确修法，但没传染到这里**：`InboundOrderMapper.java:126-140`（原子取号 + `ON CONFLICT … DO NOTHING`）、
-  `InboundOrderService.java:1176-1192`（`INBOUND_NO_ATTEMPTS = 20` 换号重来）、
-  `OutboundOrderService.java:64-65,357-365`（同一范式）。三个单据族里**只有加工单还留着旧写法**。
+- **同族已有正确修法，但没传染到这里**：`backend/admin-api/src/main/java/com/migao/admin/mapper/InboundOrderMapper.java:126-140`（原子取号 + `ON CONFLICT … DO NOTHING`）、
+  `backend/admin-api/src/main/java/com/migao/admin/service/InboundOrderService.java:1176-1192`（`INBOUND_NO_ATTEMPTS = 20` 换号重来）、
+  `backend/admin-api/src/main/java/com/migao/admin/service/OutboundOrderService.java:64-65,357-365`（同一范式）。三个单据族里**只有加工单还留着旧写法**。
 
 **多实例下会发生什么**
 每个实例（以及**每次容器重建**）都从 `[1000, 9999)` 里随机取起点，两段递增区间一旦重叠，重叠区的号会**被两边都用到**；
@@ -229,7 +229,7 @@ token 必须收敛成**全实例一份**：落 Redis（`SET NX` + `TTL = expires
 **多实例下**：两实例同时起 ⇒ 都读到「未执行」⇒ 都执行同一份 DDL。幂等 SQL 两边都成功 ⇒ 第二个
 `recordMigration` 撞主键 ⇒ 被 `catch (Exception)` 收成 **内容类失败**（`:295-318`）⇒ 记 ERROR + `lastFailedRealCount++`
 + **应用照常启动**（`:230-235`）。后果不是坏数据，而是**归因被污染**：一次正常的并发启动长得像「迁移失败」。
-更坏的边角：`getAppliedMigrations` 异常时 `return List.of()`（`MigrationRunner.java:907-913`）⇒ 瞬时报错会让整条链
+更坏的边角：`getAppliedMigrations` 异常时 `return List.of()`（`backend/admin-api/src/main/java/com/migao/admin/config/MigrationRunner.java:907-913`）⇒ 瞬时报错会让整条链
 **被当成全未执行重跑**。
 **最小改造**：`migrate()` 外层包一把 `SELECT pg_advisory_lock(hashtextextended('migao:migrate',0))`（仓内已有
 `pg_advisory_xact_lock` 先例：`backend/admin-api/src/main/java/com/migao/admin/mapper/WarehouseLocationMapper.java:86`），
@@ -276,8 +276,8 @@ token 必须收敛成**全实例一份**：落 Redis（`SET NX` + `TTL = expires
 
 ## P1-5 加工单/出库单的「唯一约束兜底」只在单实例成立（P0-5 的同类残留）
 
-**证据**：`ProcessingOrderService.java:2110`（注释「DB 唯一约束兜底」）、
-`OrderSharedParts.java:68,391-398`（订单号 = 日期 + 5 位随机 + 4 位原子序列，**无取号重试**，靠概率避碰）。
+**证据**：`backend/admin-api/src/main/java/com/migao/admin/service/ProcessingOrderService.java:2110`（注释「DB 唯一约束兜底」）、
+`backend/admin-api/src/main/java/com/migao/admin/service/OrderSharedParts.java:68,391-398`（订单号 = 日期 + 5 位随机 + 4 位原子序列，**无取号重试**，靠概率避碰）。
 **多实例下**：订单号（`ORD`/`JG` 主单）碰撞是**小概率**（1e5 × 1e4 组合），但一旦撞上同样是 4xx；
 加工单已在 P0-5 单列。
 **最小改造**：把「取号 + 落库」统一收敛到 P0-5 引入的那个 `insertWithFreshNo` 帮助函数，三个单据族共用一份。
@@ -289,14 +289,14 @@ token 必须收敛成**全实例一份**：落 Redis（`SET NX` + `TTL = expires
 
 | 项 | 证据 | 多实例下的实际影响 | 备注 |
 |---|---|---|---|
-| 五条定时腿**每实例都跑** | `AdminApiApplication.java:17-18`（`@EnableScheduling`）、`BriefingScheduler.java:23`、`AutoBatchDueScanScheduler.java:52`、`AutoCompleteShippedScanScheduler.java:52`、`AgentBatchLeaseRecoveryScheduler.java:54`、`ScheduledTaskScanScheduler.java:43` | 只有 P0-2 那条会重复投递；其余四条靠**原子 UPDATE 裁行**（`AutoCompleteShippedScanService` 类注释 + `AgentBatchLeaseService:106`）或 **Redis 锁 + DB 唯一键**（`DailyBriefingService:399-449`）⇒ 重复扫描只是空转 | 建议给每条腿加「本轮扫描租户数 / 命中行数」读数，便于确认「重复扫描但 0 副作用」 |
-| 会话自动关闭/清理**每实例都跑** | `backend/ai-agent-service/app/main.py:38-43,51-113,116`（`_session_auto_close_loop`）、`session_memory.py:1065-1090,1098-1169` | `UPDATE … WHERE status='active' AND last_activity < cutoff` + `DELETE … WHERE status='closed' AND updated_at < cutoff` ⇒ 幂等，重复执行同结果 | 有 600s 启动宽限（`main.py:43`），重启风暴不会误杀 |
-| 进程内限流 | `backend/admin-api/src/main/java/com/migao/admin/security/ClientErrorRateLimiter.java:54,65` | 额度 = 实例数 × 上限（注释已登记）；nginx 的 `limit_req_zone`（`deploy/swas/nginx.conf:104-114`）同理，每机一份 | 若要做「真·全局限流」再上 Redis 计数 |
-| 进程内熔断 / 供应商健康标志 | `backend/ai-agent-service/app/core/circuit_breaker.py:213`、`app/utils/llm_health.py:98-189` | 各实例独立开合 ⇒ 局部降级不一致，属**预期行为** | 只影响体验一致性 |
-| 只读常量级 `lru_cache` | `app/graph/skills/cheatsheet.py:104`（`_ontology`）、`app/agents/capability_boundary.py:295`（工具可达集）、`app/graph/nodes.py:352`（意图表）、`app/tools/registry.py:601-613`（注册表单例） | 缓存对象是**代码里的静态事实**（不读 DB、不随租户变）⇒ 无害 | 与「进程内可变状态」区分清楚：这些**不是**问题 |
+| 五条定时腿**每实例都跑** | `backend/admin-api/src/main/java/com/migao/admin/AdminApiApplication.java:17-18`（`@EnableScheduling`）、`backend/admin-api/src/main/java/com/migao/admin/config/BriefingScheduler.java:23`、`backend/admin-api/src/main/java/com/migao/admin/config/AutoBatchDueScanScheduler.java:52`、`backend/admin-api/src/main/java/com/migao/admin/config/AutoCompleteShippedScanScheduler.java:52`、`backend/admin-api/src/main/java/com/migao/admin/config/AgentBatchLeaseRecoveryScheduler.java:54`、`backend/admin-api/src/main/java/com/migao/admin/config/ScheduledTaskScanScheduler.java:43` | 只有 P0-2 那条会重复投递；其余四条靠**原子 UPDATE 裁行**（`AutoCompleteShippedScanService` 类注释 + `AgentBatchLeaseService:106`）或 **Redis 锁 + DB 唯一键**（`DailyBriefingService:399-449`）⇒ 重复扫描只是空转 | 建议给每条腿加「本轮扫描租户数 / 命中行数」读数，便于确认「重复扫描但 0 副作用」 |
+| 会话自动关闭/清理**每实例都跑** | `backend/ai-agent-service/app/main.py:38-43,51-113,116`（`_session_auto_close_loop`）、`backend/ai-agent-service/app/memory/session_memory.py:1065-1090,1098-1169` | `UPDATE … WHERE status='active' AND last_activity < cutoff` + `DELETE … WHERE status='closed' AND updated_at < cutoff` ⇒ 幂等，重复执行同结果 | 有 600s 启动宽限（`backend/ai-agent-service/app/main.py:43`），重启风暴不会误杀 |
+| 进程内限流 | `backend/admin-api/src/main/java/com/migao/admin/security/ClientErrorRateLimiter.java` | 额度 = 实例数 × 上限（注释已登记）；nginx 的 `limit_req_zone`（`deploy/swas/nginx.conf:104-114`）同理，每机一份 | 若要做「真·全局限流」再上 Redis 计数 |
+| 进程内熔断 / 供应商健康标志 | `backend/ai-agent-service/app/core/circuit_breaker.py:213`、`backend/ai-agent-service/app/utils/llm_health.py:98-189` | 各实例独立开合 ⇒ 局部降级不一致，属**预期行为** | 只影响体验一致性 |
+| 只读常量级 `lru_cache` | `backend/ai-agent-service/app/graph/skills/cheatsheet.py:104`（`_ontology`）、`backend/ai-agent-service/app/agents/capability_boundary.py:295`（工具可达集）、`backend/ai-agent-service/app/graph/nodes.py:352`（意图表）、`backend/ai-agent-service/app/tools/registry.py:601-613`（注册表单例） | 缓存对象是**代码里的静态事实**（不读 DB、不随租户变）⇒ 无害 | 与「进程内可变状态」区分清楚：这些**不是**问题 |
 | 租户配置 60s TTL 本地缓存 | `backend/ai-agent-service/app/agents/tenant_config.py:23,31,53-64` | 改配置后各实例最多 60s 不一致 | 纯展示/话术面 |
-| DB 连接池**线性放大** | `backend/admin-api/src/main/resources/application.yml:52-57`（Hikari `maximum-pool-size: 20`）、`backend/ai-agent-service/app/utils/database.py:26-43`（asyncpg `pool_size=20, max_overflow=10`） | N 个 admin-api = 20N；N 个 ai-agent = 最多 30N ⇒ 4+4 实例即 **200** 连接 | **RDS 的 `max_connections` 本审计未证实**，上集群前必须先核算 |
-| 时钟依赖 | `backend/admin-api/src/main/java/com/migao/admin/time/BusinessClock.java:42-45`（`Clock.system(Asia/Shanghai)`）、`ScheduledTaskService.java:193`（`now` 由应用给）、`order_create.py:226`（窗口由 `time.time()` 给） | 各机墙钟漂移 ⇒ 到期判定早/晚、单号日期段跨零点分叉、幂等窗口边界错位 | 要求 NTP 强同步；更稳的做法是到期判定改用 DB `NOW()` |
+| DB 连接池**线性放大** | `backend/admin-api/src/main/resources/application.yml:52-57`（Hikari `maximum-pool-size: 20`）、`backend/ai-agent-service/app/utils/database.py`（asyncpg `pool_size=20, max_overflow=10`） | N 个 admin-api = 20N；N 个 ai-agent = 最多 30N ⇒ 4+4 实例即 **200** 连接 | **RDS 的 `max_connections` 本审计未证实**，上集群前必须先核算 |
+| 时钟依赖 | `backend/admin-api/src/main/java/com/migao/admin/time/BusinessClock.java:42-45`（`Clock.system(Asia/Shanghai)`）、`backend/admin-api/src/main/java/com/migao/admin/service/ScheduledTaskService.java:193`（`now` 由应用给）、`backend/ai-agent-service/app/tools/order_create.py:226`（窗口由 `time.time()` 给） | 各机墙钟漂移 ⇒ 到期判定早/晚、单号日期段跨零点分叉、幂等窗口边界错位 | 要求 NTP 强同步；更稳的做法是到期判定改用 DB `NOW()` |
 | 记忆抽取「在途表」 | `backend/ai-agent-service/app/memory/extraction_tasks.py:39`（`_inflight`） | 关闭会话时只能 drain **本实例**的在途任务，别的实例上的抽取不会被等 | 最多丢一次画像抽取，不涉及业务数据 |
 
 ---
@@ -306,7 +306,7 @@ token 必须收敛成**全实例一份**：落 Redis（`SET NX` + `TTL = expires
 ### 1. 跨机房写同一套 RDS：延迟会放大**锁持有时间**
 
 - 现状：所有写都在应用侧开事务（例如 `ProcessingOrderService.commit` 里「加工单 + 批次扣减 + 工序实例化」同一事务，
-  `ProcessingOrderService.java:1650-1673`），行锁/`uk_processing_orders_active` 等唯一索引竞争随 RTT 变长。
+  `backend/admin-api/src/main/java/com/migao/admin/service/ProcessingOrderService.java:1650-1673`），行锁/`uk_processing_orders_active` 等唯一索引竞争随 RTT 变长。
 - 跨机房 RTT（10–40ms）下，同一事务的持锁时间近似**按语句数线性放大** ⇒ 同租户并发派单更容易互相等锁，
   表现为「偶发 5s+ 的派单延迟」。
 - 若用**跨机房悲观锁**（`pg_advisory_lock`、`FOR UPDATE SKIP LOCKED`）：锁的持有时间包含跨机房往返 ⇒
@@ -315,14 +315,14 @@ token 必须收敛成**全实例一份**：落 Redis（`SET NX` + `TTL = expires
 
 ### 2. 跨机房 Redis：只能「单写主」，读副本不能服务安全/验证码
 
-- JWT 黑名单查询（`JwtAuthenticationFilter.java:190-202`）与验证码校验（`order_create.py:1496-1506`）
+- JWT 黑名单查询（`backend/admin-api/src/main/java/com/migao/admin/security/JwtAuthenticationFilter.java:190-202`）与验证码校验（`backend/ai-agent-service/app/tools/order_create.py:1496-1506`）
   **都要求读到最新值**；一旦就近读副本，会出现「刚登出的 token 还能用」「刚发的验证码说错」。
-- ⇒ 这两类 key 必须走**写主**；只有 `admin_api_cache`（`app/core/admin_api_cache.py:1-30`，商品搜索/分类树，
+- ⇒ 这两类 key 必须走**写主**；只有 `admin_api_cache`（`backend/ai-agent-service/app/core/admin_api_cache.py:1-30`，商品搜索/分类树，
   TTL 5/30min）这类**纯缓存**才可以就近读。
 
 ### 3. 对象存储「就近」：不要为了低延迟回退本地盘
 
-- `OssService` 是单 region 客户端（`OssConfig.java:57-70` 只吃一个 `endpoint`）⇒ 跨机房的**上传**走公网/内网回源，
+- `OssService` 是单 region 客户端（`backend/admin-api/src/main/java/com/migao/admin/config/OssConfig.java:57-70` 只吃一个 `endpoint`）⇒ 跨机房的**上传**走公网/内网回源，
   延迟是**一次上传**的量级（可接受）；但**图片读取**会被每个页面放大 ⇒ 建议上 CDN / OSS 传输加速，
   而不是把图片再放回本地盘（那会退回 P0-3）。
 
@@ -334,7 +334,7 @@ token 必须收敛成**全实例一份**：落 Redis（`SET NX` + `TTL = expires
   ⇒ 多机时**只有 DNS 指向的那台**能应答 `/.well-known/acme-challenge/`；两台各自续期会**互相抢**同一个域名，
   且 Let's Encrypt 有速率限制。
 - ⇒ 最小改造：改 **DNS-01**（或只在一台续期、把证书目录**只读**分发到其它机器），并把「证书到期天数」做成读数。
-- DNS 切换：客户端持有的是**长连接**（SSE 最长 180s，`chat.py:314`）⇒ 切 DNS 后旧机房仍会收完在途请求，
+- DNS 切换：客户端持有的是**长连接**（SSE 最长 180s，`backend/ai-agent-service/app/api/chat.py:314`）⇒ 切 DNS 后旧机房仍会收完在途请求，
   新请求进新机房；不需要 sticky，但**要接受**「切换瞬间两机房同时在服务」。
 
 ### 5. nginx 现在是「一台机器 + Docker DNS」，**没有 upstream**
@@ -358,7 +358,7 @@ token 必须收敛成**全实例一份**：落 Redis（`SET NX` + `TTL = expires
 | 部署锁是**宿主本地**文件 | `deploy/swas/deploy.sh:39-44`（`LOCK=/tmp/migao-deploy.lock` + `flock`） | 锁只在同一台机器内串行 ⇒ 两台机器可同时部署；要么串行到一台「发布机」，要么换成外部锁 |
 | 端口绑 `127.0.0.1` | `deploy/swas/docker-compose.yml:44,101,126`（8080/8000/3001 全绑回环） | 单机是对的（只让 nginx 访问）；跨机则需要**机房间私有网络** + LB，而不是把端口暴露公网 |
 | 蓝绿是「同机第二端口」 | `deploy/swas/docker-compose.bluegreen.yml:1-30,45-70`（`green` 绑 `127.0.0.1:18080` 等） | 跨机蓝绿 = 新机房整体起来 + GSLB 切权重；同机第二端口那套只能用于**单机房内**灰度 |
-| `.env.*` 与密钥是**每机一份手工文件** | `deploy/swas/docker-compose.yml:27`（`env_file: .env.admin-api`）、`deploy.sh:745,1097-1112`（自愈补齐 `.env.admin-api`）、证书与 JWT 私钥在 `/opt/migao-deploy/jwt`（`:60-62,106-107`） | 必须收敛成**一个受控来源**（密钥管理/配置中心）+ 一致性校验；否则「两台机器两把钥匙」会重现 `#8976`（AI 接口全 401） |
+| `.env.*` 与密钥是**每机一份手工文件** | `deploy/swas/docker-compose.yml:27`（`env_file: .env.admin-api`）、`deploy/swas/deploy.sh:745,1097-1112`（自愈补齐 `.env.admin-api`）、证书与 JWT 私钥在 `/opt/migao-deploy/jwt`（`:60-62,106-107`） | 必须收敛成**一个受控来源**（密钥管理/配置中心）+ 一致性校验；否则「两台机器两把钥匙」会重现 `#8976`（AI 接口全 401） |
 | 静态发布面在**本机磁盘** | `deploy/swas/docker-compose.yml:164-169`（`./h5:/opt/migao-deploy/h5:ro`） | 多机要改成对象存储/CDN 发布，或每台都跑一遍发布腿 |
 
 ---
@@ -393,9 +393,9 @@ token 必须收敛成**全实例一份**：落 Redis（`SET NX` + `TTL = expires
 
 | 事项 | 为什么未证实 | 建议的核实方式（零代码改动） |
 |---|---|---|
-| 生产是否已启用 OSS | `OssService` 需三项凭据齐备才 `@Primary`（`OssService.java:43-46`），值在 `.env.admin-api` | `docker compose exec -T admin-api printenv | grep '^OSS_'`（只看键是否存在，不打印值） |
+| 生产是否已启用 OSS | `OssService` 需三项凭据齐备才 `@Primary`（`backend/admin-api/src/main/java/com/migao/admin/service/OssService.java:43-46`），值在 `.env.admin-api` | `docker compose exec -T admin-api printenv | grep '^OSS_'`（只看键是否存在，不打印值） |
 | 生产 Redis 是容器还是云实例 | `deploy/swas/docker-compose.yml` 里**没有** redis 服务 | `docker compose exec -T admin-api printenv | grep '^REDIS_'`；确认是否跨机共享 |
 | RDS `max_connections` / 是否 PgBouncer | 仓内无该读数 | `SELECT setting FROM pg_settings WHERE name='max_connections';` |
 | 微信 `access_token` 旧令牌过渡期的**确切秒数** | 属供应商行为，仓内无证据 | 官方文档 + 一次双实例实测（见 P0-1 的验证方式） |
 | 生产实例数 / 是否已有第二副本 | 仓外编排面 | `docker compose ps` + 服务器清单 |
-| 是否存在仓外定时任务（crontab / 云函数） | 仓内 `deploy/` 只看到 TLS 续期一条 cron（`deploy.sh:1678-1685`） | 服务器 `crontab -l` + `/etc/cron.d/*` |
+| 是否存在仓外定时任务（crontab / 云函数） | 仓内 `deploy/` 只看到 TLS 续期一条 cron（`deploy/swas/deploy.sh:1678-1685`） | 服务器 `crontab -l` + `/etc/cron.d/*` |
