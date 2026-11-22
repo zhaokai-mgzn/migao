@@ -5738,11 +5738,11 @@ cases:
       verifies: []
 
   # ==========================================================================
-  # PR-134（issue #9012，P2·入参健壮性）：商品颜色入参**字段名不合法** ⇒ 422 点名 colorName（不是 500）
+  # PR-134（issue #9012，P2·入参健壮性）：商品颜色入参**字段名不合法** ⇒ 422 点名 colors[].colorName（不是 500）
   # ==========================================================================
   - id: PR-134
     legacy_id: ""
-    title: "商品颜色入参字段名不合法（name/code）⇒ 422 点名 colorName（不是 500）+ 非空约束违例归口 4xx"
+    title: "商品颜色入参字段名不合法（name/code）⇒ 422 点名 colors[].colorName（不是 500）+ 非空约束违例归口 4xx"
     domains:
       - product
       - backend
@@ -5755,16 +5755,16 @@ cases:
     truths_ref:
       - product-sku-stock.create-flow
     user_inputs:
-      - "建品 / 改品时把颜色字段名猜成 `name` / `code`（正确是 `colorName` / `mainColorHex`），例如 colors:[{\"name\":\"米白\",\"code\":\"#F5F5DC\"}]"
+      - "建品 / 改品时把颜色字段名猜成 `name` / `code`（正确字段是 colors[].colorName / colors[].mainColorHex），例如 colors:[{\"name\":\"米白\",\"code\":\"#F5F5DC\"}]"
     expectations:
       - tool: direct_reply
     data_checks:
-      - "**病（生产实抓，2026-11-22，requestId req_809f888b9ae44438，tenant 1）**：`POST /api/admin/products` 传 `colors:[{\"name\":\"米白\",\"code\":\"#F5F5DC\"}]` ⇒ Jackson（`FAIL_ON_UNKNOWN_PROPERTIES=false`，Spring Boot 缺省）静默丢弃未知字段 ⇒ `colorName` 为 null ⇒ service 照常 insert ⇒ `ERROR: null value in column \"color_name\" of relation \"product_colors\" violates not-null constraint` ⇒ HTTP **500** INTERNAL_ERROR「服务器内部错误」——商家拿不到「哪个字段错了」。"
-      - "**判据 1（靶心：422 + 点名 + 零写入）**：上述载荷 ⇒ **422**、`$.error.code = VALIDATION_ERROR`、文案含「颜色名称」「colorName」，响应体不含 `color_name` / `product_colors` / `服务器内部错误`，且 `productColorMapper.insert` **一次都没被调用**。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/ProductColorNameAdmissionTest.java 的 `unknownColorFieldNamesAreRejectedWithFieldNameNotServerError`。"
+      - "**病（生产实抓，2026-11-22，requestId req_809f888b9ae44438，tenant 1）**：`POST /api/admin/products` 传 `colors:[{\"name\":\"米白\",\"code\":\"#F5F5DC\"}]` ⇒ Jackson（`FAIL_ON_UNKNOWN_PROPERTIES=false`，Spring Boot 缺省）静默丢弃未知字段 ⇒ `colors[].colorName` 为 null ⇒ service 照常 insert ⇒ `ERROR: null value in column \"color_name\" of relation \"product_colors\" violates not-null constraint` ⇒ HTTP **500** INTERNAL_ERROR「服务器内部错误」——商家拿不到「哪个字段错了」。"
+      - "**判据 1（靶心：422 + 点名 + 零写入）**：上述载荷 ⇒ **422**、`$.error.code = VALIDATION_ERROR`、文案含「颜色名称」「colors[].colorName」，响应体不含 `color_name` / `product_colors` / `服务器内部错误`，且 `productColorMapper.insert` **一次都没被调用**。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/ProductColorNameAdmissionTest.java 的 `unknownColorFieldNamesAreRejectedWithFieldNameNotServerError`。"
       - "**判据 2（空白同拒）**：`colors:[{\"colorName\":\"   \"}]` ⇒ 同一道准入 422（NOT NULL 列不接受空白）。执行点 = 同文件 `blankColorNameIsRejectedWithTheSameFieldName`。"
-      - "**判据 3（边界正对照）**：合法 `colorName` + `mainColorHex` 必须**放行到写面**（插入行里两值原样）——准入是 fail-closed，不是 fail-all。执行点 = 同文件 `validColorNamePassesTheGate`。"
+      - "**判据 3（边界正对照）**：合法 `colors[].colorName` + `mainColorHex` 必须**放行到写面**（插入行里两值原样）——准入是 fail-closed，不是 fail-all。执行点 = 同文件 `validColorNamePassesTheGate`。"
       - "**判据 4（改品路径同源）**：`PUT /api/admin/products/{id}` 传 `colors:[{\"name\":\"米白\"}]` ⇒ 422 + colorName，颜色表零写入。执行点 = 同文件 `updatePathUsesTheSameGate`。"
-      - "**判据 5（家族覆盖：不走 Bean Validation 的路径）**：agent / Excel 导入是手工 new DTO + 直调 `ProductService#createProduct`（不经 `@Valid`）⇒ 同样 `VALIDATION_ERROR` + 点名 colorName + 颜色表零写入 —— 只给 DTO 加 `@NotBlank` 会漏掉它们（与 #6302 同一结论）。执行点 = 同文件 `nonHttpPathsAreGatedTooEvenThoughTheySkipBeanValidation`。"
+      - "**判据 5（家族覆盖：不走 Bean Validation 的路径）**：agent / Excel 导入是手工 new DTO + 直调 `ProductService#createProduct`（不经 `@Valid`）⇒ 同样 `VALIDATION_ERROR` + 点名 colors[].colorName + 颜色表零写入 —— 只给 DTO 加 `@NotBlank` 会漏掉它们（与 #6302 同一结论）。执行点 = 同文件 `nonHttpPathsAreGatedTooEvenThoughTheySkipBeanValidation`。"
       - "**判据 6（类级固化：非空约束违例归口 4xx）**：`DataIntegrityViolationException` + SQLState `23502` ⇒ **422** `VALIDATION_ERROR`、文案含「参数不合法」、响应体与日志均不带列名/表名、日志 `kind=NOT_NULL` 且 `requestId` 与响应体逐字相同；**反向对照**：唯一约束（`23505`）仍 500 且仍带堆栈（`MerchantShipmentAtomicityTest` 的既有契约不被动）。执行点 = backend/admin-api/src/test/java/com/migao/admin/config/GlobalExceptionHandlerDataIntegrityTest.java 的 `notNullViolationMapsToClientErrorWithoutLeakingColumnOrTableName` / `uniqueViolationKeepsTheExistingFiveHundredContract`。"
     skip_reason: "[backend-contract] 入参健壮性 + 完整性约束归口（无 LLM 环节 ⇒ 不进 agent-eval 冒烟）：admin-api 单测面（桩 mapper + standalone MockMvc，离线可跑；真库 NOT NULL 真值见 docs/sql/schema.sql）"
     merge_log: "2026-11-22 新增（issue #9012，P2·入参健壮性：颜色字段名猜错 ⇒ 500）。取号 = `scripts/next_case_id.py PR` 现取建议 PR-134（现取最大号 + 1）。**红→绿**：修前 `ProductColorNameAdmissionTest` 判据 1/2/4 = `Status expected:<422> but was:<500>`（与生产同形）、判据 5 = 无声通过（没有准入，直接落桩 mapper）⇒ 修后 5 条全绿；非法载荷在生产里再也走不到 `product_colors` 的 insert。**类级固化** = 非空约束违例（23502）归口 422（`GlobalExceptionHandlerDataIntegrityTest#notNullViolationMapsToClientErrorWithoutLeakingColumnOrTableName`）+ 反向对照（唯一约束仍 5xx）。"
