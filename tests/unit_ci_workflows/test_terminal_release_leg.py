@@ -502,6 +502,17 @@ REMOTE_REQUIRED_TOKENS = (
 )
 
 
+def _is_served_step(step):
+    """落地面断言步骤的判定（检测与变异**同源**，否则变异删不掉它 ⇒ 判据自欺）。
+
+    issue #8996 起清单基址由 `${{ env.TERMINAL_BASE_URL }}` 派生（test=app.migaozn.com / prod=app.cytda.com），
+    源码里不再出现字面量 `https://…/terminal/latest.json` ⇒ 判据认「含 /latest.json 且含 curl」。
+    不放宽到「只要有 curl」：否则一个无关 curl（如下载资产）就能骗过它。
+    """
+    text = _run_text(step)
+    return "/latest.json" in text and "curl" in text
+
+
 def _workflow_problems(wf, ci_src=None, remote_src=None) -> list:
     if ci_src is None:
         ci_src = _read(CI_SCRIPT)
@@ -548,7 +559,11 @@ def _workflow_problems(wf, ci_src=None, remote_src=None) -> list:
     steps = _steps(wf)
     prepare_steps = [s for s in steps if "terminal-publish-ci.sh prepare" in _run_text(s)]
     publish_steps = [s for s in steps if "terminal-publish-ci.sh publish" in _run_text(s)]
-    served_steps = [s for s in steps if "/terminal/latest.json" in _run_text(s) and "curl" in _run_text(s)]
+    # 断言 step 的判定：既要 curl、又要拼出清单地址。
+    # issue #8996 起清单基址由 `${{ env.TERMINAL_BASE_URL }}` 派生（test=app.migaozn.com / prod=app.cytda.com），
+    # 所以源码里不再出现字面量 `https://…/terminal/latest.json` ⇒ 判据放宽到「含 /latest.json 且含 curl」，
+    # 但不能放宽到「只要有 curl」—— 否则一个无关的 curl（例如下载资产）就足以骗过它。
+    served_steps = [s for s in steps if _is_served_step(s)]
     login_steps = [s for s in steps if "scripts/acr_login.sh" in _run_text(s)]
     if len(prepare_steps) != 1:
         problems.append(f"job `{JOB}` 里必须有且只有 1 个 prepare step，实际 {len(prepare_steps)}")
@@ -641,9 +656,7 @@ def test_workflow_mutations_are_all_detected():
         mut["jobs"][JOB]["steps"] = [s for s in _steps(mut) if "terminal-publish-ci.sh prepare" not in _run_text(s)]
 
     def drop_served(mut):
-        mut["jobs"][JOB]["steps"] = [
-            s for s in _steps(mut) if not ("/terminal/latest.json" in _run_text(s) and "curl" in _run_text(s))
-        ]
+        mut["jobs"][JOB]["steps"] = [s for s in _steps(mut) if not _is_served_step(s)]
 
     def add_push(mut):
         _triggers(mut)["push"] = {"branches": ["main"]}

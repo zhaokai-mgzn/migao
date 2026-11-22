@@ -57,14 +57,6 @@ def agent_ctx():
     return ToolContext(tenant_id=1, user_id="agent_001", session_id="sess_1", role="agent")
 
 
-@pytest.fixture(autouse=True)
-def _reset_window_id():
-    """清掉窗口号缓存（缓存键是窗口号本身，见 `_window_id` 的注释）。"""
-    _window_id.cache_clear()
-    yield
-    _window_id.cache_clear()
-
-
 def _with_library(client, price=168):
     async def _get(path, params=None, **kwargs):
         if path.rstrip("/").endswith("/products"):
@@ -114,16 +106,18 @@ class TestRequestWindowId:
             "跨窗仍复用同一幂等键 ⇒ 正常复购会被误判为重复提交")
 
     def test_current_window_follows_clock(self, agent_ctx):
-        """`_request_window_id(context, op=...)` 必须**跟着时钟走**（不是启动时定格的那个窗）。"""
-        scope = _idempotency_scope(agent_ctx)
-        with patch("app.tools.order_create.time.time", return_value=1_700_000_000.0):
-            assert _request_window_id(agent_ctx, op=ORDER_CREATE_OP) == _window_id(
-                1_700_000_000 // 600, scope, op=ORDER_CREATE_OP)
-        with patch("app.tools.order_create.time.time",
-                   return_value=1_700_000_000.0 + _IDEMPOTENCY_WINDOW_SECONDS * 3):
-            assert _request_window_id(agent_ctx, op=ORDER_CREATE_OP) == _window_id(
-                int((1_700_000_000.0 + _IDEMPOTENCY_WINDOW_SECONDS * 3) // 600), scope,
-                op=ORDER_CREATE_OP)
+        """`_request_window_id(context, op=...)` 必须**跟着时钟走**（不是启动时定格的那个窗）。
+
+        判据只钉「窗口号 = `floor(now / 窗口宽)`」这一条（键的其余维度是 token，不必在此展开）：
+        改前把窗口号缓存在 `@lru_cache` 无参函数里 ⇒ 首次算出的窗口号被永久冻结（R2 破）。
+        """
+        for offset in (0.0, _IDEMPOTENCY_WINDOW_SECONDS * 3):
+            now = 1_700_000_000.0 + offset
+            with patch("app.tools.order_create.time.time", return_value=now):
+                key = _request_window_id(agent_ctx, op=ORDER_CREATE_OP)
+            assert key.split("-")[0] == str(int(now // _IDEMPOTENCY_WINDOW_SECONDS)), (
+                f"钉在 {now} 取到的键是 {key!r} —— 窗口号不是 floor(now / 窗口宽)"
+                "（幂等键没跟着时钟走 ⇒ 合法复购会被永久当成重试吞掉）")
 
 
 class TestOrderCreateSendsIdempotencyKey:

@@ -16,7 +16,6 @@ import os
 import re
 import time
 import uuid
-from functools import lru_cache
 from typing import Any, Dict, List, Optional
 from loguru import logger
 
@@ -124,7 +123,11 @@ SMS_BYPASS_CODE = os.getenv("SMS_BYPASS_CODE", "")
 # ——同进程 10 分钟窗内所有会话共用一个 `X-Client-Request-Id`，服务端便把第 2 位顾客的下单
 # 当成第 1 位的重试**回放**（判定 run 35295494688：OR-011/OR-014/OR-028 都拿到 OR-010 的
 # 订单号「20260918485580004 / 张三 / 13812345678」，OR-017/018/019 同样拿到别人的单）。
-# 修法：键 = 窗口 + **作用域 token**（`session_id`，缺省回退 `user_id`）+ 每窗随机串。
+# 修法：键 = 窗口 + **作用域 token**（`session_id`，缺省回退 `user_id`）+ 每窗一个值。
+# ⚠️ 那个「每窗一个值」在 #4195 时是 `uuid4` 随机串（进程内 `lru_cache` 冻结）——
+# **集群 P0-4 / issue #9017 已改掉**：键必须由「租户 + 作用域 + 操作 + 业务事实 + 时间窗」
+# **确定性派生**，否则滚动部署断流 / 重试落到另一实例 / 进程重启都会算出新键 ⇒ 服务端
+# 无从去重 ⇒ 重复下单（资金级）。
 # F19 语义不变：**同一会话**内的重试仍在同一窗内取到同一键 ⇒ 服务端仍只落一单。
 #
 # ⚠️ 键还必须标识「**哪一次逻辑写请求**」（issue #4212）—— 服务端去重键 = `(tenant_id,
@@ -140,8 +143,35 @@ SMS_BYPASS_CODE = os.getenv("SMS_BYPASS_CODE", "")
 # ⚠️ 三个常量是**单一事实源**：另两条写路径 `from app.tools.order_create import <常量>`
 #    （就地定义/写字面量 = 三处口径各自漂移，接线锁在
 #    `tests/test_idempotency_key_session_scope.py`）。
-_IDEMPOTENCY_WINDOW_SECONDS = 600.0
+#: 重试窗宽度（秒）。**默认沿用 10 分钟语义**（issue #4037 上线以来的口径不变），
+#: 可经 `IDEMPOTENCY_WINDOW_SECONDS` 调整：窗口越宽 ⇒「同一次点击的重试」越保险；
+#: 越窄 ⇒ 顾客的**合法复购**越早被允许（两害相权，取舍见 `_request_window_id` 的「跨桶边界」）。
+_DEFAULT_IDEMPOTENCY_WINDOW_SECONDS = 600.0
+
+
+def _idempotency_window_seconds() -> float:
+    """读 `IDEMPOTENCY_WINDOW_SECONDS`（非法/非正 ⇒ 回落 600s 并告警，**不让一个环境变量错字起不来服务**）。"""
+    raw = os.getenv("IDEMPOTENCY_WINDOW_SECONDS", "")
+    try:
+        value = float(raw) if raw.strip() else _DEFAULT_IDEMPOTENCY_WINDOW_SECONDS
+    except (TypeError, ValueError):
+        value = 0.0
+    if value <= 0:
+        if raw.strip():
+            logger.warning(
+                f"[idempotency] IDEMPOTENCY_WINDOW_SECONDS={raw!r} 非法 ⇒ 回落 "
+                f"{_DEFAULT_IDEMPOTENCY_WINDOW_SECONDS}s")
+        return _DEFAULT_IDEMPOTENCY_WINDOW_SECONDS
+    return value
+
+
+_IDEMPOTENCY_WINDOW_SECONDS = _idempotency_window_seconds()
 CLIENT_REQUEST_ID_HEADER = "X-Client-Request-Id"
+
+#: 业务意图 token 的长度（24 hex = 96 bit）：抗碰撞余量足够，又让键长稳定落在服务端
+#: `client_request_keys.client_request_id VARCHAR(128)` 之内（`ClientRequestIdService.normalize()`
+#: 对 >128 **抛错拒绝**，不是静默截断）。
+_INTENT_TOKEN_LEN = 24
 
 #: 幂等键的**操作维度**取值（issue #4212）。改这些值 = 部署窗口内同一次重试的键轮换
 #: （旧 pod 与新 pod 算出不同键 ⇒ 灰度期间那一笔可能重复落库）——不是随手可改的字面量。
@@ -151,12 +181,6 @@ CLIENT_REQUEST_ID_HEADER = "X-Client-Request-Id"
 ORDER_CREATE_OP = "order"
 AFTERSALE_CREATE_OP = "aftersale"
 HUMAN_HANDOFF_OP = "handoff"
-
-#: `_window_id` 的缓存容量。作用域/操作进缓存键后条目数 ≈ 一个窗口内的活跃会话数 × 3
-#: （三个写路径各一份）；容量不足 ⇒ 同窗内旧条目被 LRU 挤出 ⇒ 重试取到**新键** ⇒ 服务端
-#: 无从去重（F19 静默失效）。故容量随操作维度**同步 ×3**（4096 → 12288 ≈ 1.2 MB 级）：
-#: 「每窗可容纳的**写请求数**」这才与 #4195 时一致 —— 沿用旧值等于把 F19 的余量静默缩到 1/3。
-_IDEMPOTENCY_CACHE_SIZE = 12288
 
 #: 无身份（`context` 缺失 / 两端都为空）时键里的回退标记 —— 见 `_request_window_id`：
 #: 该分支**不去重**（每次一个新键），故它绝不是一个可被两个调用方共用的作用域值。
@@ -190,38 +214,82 @@ def _idempotency_scope(context: Optional[ToolContext]) -> Optional[str]:
     return (context.session_id or "").strip() or (context.user_id or "").strip() or None
 
 
-@lru_cache(maxsize=_IDEMPOTENCY_CACHE_SIZE)
-def _window_id(window: int, scope: str, *, op: str) -> str:
-    """某个 (重试窗, 作用域, 操作) 的幂等键（缓存键是**这三个** ⇒ 同窗同作用域同操作取值相同、跨窗换新）。
+def _intent_token(tenant_id: Any, intent: str) -> str:
+    """「租户 + 业务意图」→ 定长 token（幂等键的**内容维度**，issue #9017 / 集群 P0-4）。
 
-    ⚠️ 缓存键缺一不可（三条都是实测踩过的形态）：
-    - 漏掉窗口号（写成 `@lru_cache` 无参函数：lru_cache 的键是"调用参数"、不是返回值）
-      ⇒ **首次**算出的键被永久冻结 ⇒ 幂等键永不轮换 ⇒ 顾客的合法复购全被当成重试吞掉；
-    - 漏掉作用域（issue #4195 的病灶）⇒ 键**进程全局** ⇒ 同一进程内跨会话串单
-      （把别人的订单号/姓名/手机号回放给顾客）；
-    - 漏掉操作（issue #4212 的病灶）⇒ 同一会话内跨端点共用一把键 ⇒ 服务端按**本端点类型**
-      回放别人端点的快照 ⇒ 409「本次未重复建单」（用户只请求了一次却被拒）。
-
-    ⚠️ `op` 是**关键字限定**参数：`lru_cache` 把 `f(w, s, op)` 与 `f(w, s, op=op)` 当成**两条
-    不同条目** ⇒ 两种调用形态并存时同一次重试会取到两把键（F19 静默失效）。关键字限定让这个
-    形态**不可表达**（生产调用点与判据一律写 `op=`）。
+    意图串由调用方给（下单路径 = `order_facts_of({"customer_phone": …, "items": […]})`，
+    与 F22 的「顾客确认过的事实」**同一口径**），本函数只做规范化后的 sha256 ——
+    同一份业务事实在**任何进程、任何实例、任何时间点**上都算出同一个 token。
     """
-    return f"{window}-{_scope_token(scope)}-{_scope_token(op)}-{uuid.uuid4().hex[:12]}"
+    canonical = f"{tenant_id if tenant_id is not None else ''}\n{intent or ''}"
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:_INTENT_TOKEN_LEN]
 
 
-def _request_window_id(context: Optional[ToolContext] = None, *, op: str) -> str:
-    """当前 (重试窗, 会话作用域, 操作) 的幂等键 —— 三个写路径（订单/售后/转人工）的**唯一入口**。
+def _window_id(window: int, scope: str, *, op: str, intent: str = "") -> str:
+    """(重试窗, 作用域, 操作, 业务意图) → 幂等键 —— **纯函数，键的唯一取值式**。
+
+    四个维度缺一不可（每条都是实测踩过的形态）：
+    - **窗口号**（`floor(now / 窗口)`）⇒ 跨窗换新键（R2）：顾客**真的**想再下一单时不会被
+      当成重试吞掉。漏掉它（写成无参函数 / 永久冻结）⇒ 合法复购全被独吞；
+    - **作用域**（issue #4195 的病灶）⇒ 漏掉就退回**进程全局**键：同一进程内跨会话串单
+      （把别人的订单号/姓名/手机号回放给顾客，资金 / 信任级）；
+    - **操作**（issue #4212 的病灶）⇒ 漏掉则同一会话跨端点共用一把键：服务端按**本端点类型**
+      回放别人端点的快照 ⇒ 409「本次未重复建单」（用户只请求一次却被拒）；
+    - **业务意图**（issue #9017，集群 P0-4）⇒ 决定「哪一笔单算同一次点击」：同意图 ⇒ 同键
+      （重试只落一单），不同意图 ⇒ 不同键（两笔单不得被折叠成一次回放）。
+
+    🔴 **不得再引入随机数或进程内缓存来「记住」键**（这正是 #9017 修掉的病灶）：
+    `uuid4()` ⇒ 另一实例 / 重启后算出新键（漏判重复）；`lru_cache` ⇒ 键只在「本进程本窗口」
+    成立，且容量不足被挤出时静默失效。sha256 单次 <10µs、每个写请求只算一次 ⇒ 既不需要缓存，
+    也不该让缓存承担正确性。
+
+    ⚠️ `op` / `intent` 都是**关键字限定**参数：`f(w, s, op)` 与 `f(w, s, op=op)` 一旦并存就是
+    两把键（F19 静默失效）—— 关键字限定让这个形态**不可表达**（生产调用点与判据一律写 `op=`）。
+
+    键长 ≈ 10 + 12 + 12 + 24 + 3 个分隔符 ≈ 61 字符，字符集 `[0-9a-f-]`，恒 ≤128。
+    """
+    return f"{window}-{_scope_token(scope)}-{_scope_token(op)}-{intent}"
+
+
+def _request_window_id(context: Optional[ToolContext] = None, *, op: str,
+                       intent: str = "") -> str:
+    """当前 (租户, 会话作用域, 操作, 业务意图, 重试窗) 的幂等键 —— 三个写路径的**唯一入口**。
 
     三个调用点都必须把本会话的 `ToolContext` **和本文件的操作常量**递进来（接线锁：
     `tests/test_idempotency_key_session_scope.py`）。`op` 刻意**无默认值**：新增写路径必须
     声明自己的操作维度，否则 TypeError（fail-closed）—— 给个默认值会让新端点静默继承
     `"order"` 的键，正是 #4212 的形态原地复发。
 
+    **确定性（issue #9017 / 集群 P0-4，本函数的核心不变量）**：键 = f(租户, 作用域, 操作,
+    业务事实, 窗口)，**没有任何随机成分、不读任何进程内状态** ⇒ 同一份业务意图在**任何实例**
+    上都算出同一个键：滚动部署断流后重发、重试被负载均衡打到另一 pod、进程重启后重试，服务端
+    都能按 `(tenant_id, client_request_id)` 命中既有占位并**回放首次结果**（只落一单）。
+
+    **业务事实（`intent`）的口径**：下单路径传 `order_facts_of({...})` —— 手机号 + 每行
+    名称 / 数量 / 单价 / 加工费 + 合计（与 F22「顾客确认过的事实」同一口径）。刻意**不纳入**
+    1) 地址 / 备注 / 安装小区：确认后补地址、模型重试时把备注换个说法都是**正常流程**，
+       纳入 = 把同一次点击的重试判成新单 = **改动本身制造新漏判**；
+    2) `subtotal` / `totalAmount` 的声明值：服务端本就按 `quantity × unitPrice` 重算（#4882 后
+       加工项无单价），声明值漂移不该换键。
+    其余写路径（售后 / 转人工）暂不传 `intent`（默认空串 = 只按「会话 × 操作 × 窗口」分段），
+    语义与改前一致 —— 但它们同样继承了「跨实例确定性」这一收益。
+
     **缺省回退口径（显式登记，禁止静默退回旧行为）**：拿不到任何身份（`context` 缺失、
-    或 `session_id`/`user_id` 都为空）⇒ **不去重**：每次调用一个新键。取舍是"两害相权"——
-    缺身份时复用一把键 = 把别人的订单回放给顾客（#4195 的 P0，资金/信任级）；
-    而"不去重"最坏只是这次重试多落一单，且三个生产调用点都传 context（该分支不可达）。
-    `op` 同样进该分支的键（否则键的构成随"有无身份"而变，是下一处漂移源）。
+    或 `session_id`/`user_id` 都为空）⇒ **不去重**：每次调用一个新键。取舍是「两害相权」——
+    缺身份时复用一把键 = 把别人的订单回放给顾客（#4195 的 P0，资金 / 信任级）；
+    而「不去重」最坏只是这次重试多落一单，且三个生产调用点都传 context（该分支不可达）。
+    这是**唯一**保留随机成分的分支，且它刻意**不参与去重**（判据：
+    `tests/test_order_idempotency_key_deterministic.py` 把 uuid4 打成抛异常后，有身份的调用必须
+    照常取键）。`op` 同样进该分支的键（否则键的构成随「有无身份」而变，是下一处漂移源）。
+
+    🔴 **跨桶边界（取舍显式登记，issue #9017）**：窗口按 `floor(now / 窗口宽)` 分桶 ——
+    同一次点击的**重试**若正好跨过桶边界（例：599s 发起、601s 重试），两次落在相邻桶 ⇒
+    两把键 ⇒ 服务端认不出是重试 ⇒ 仍可能重复下单。这是「纯确定性 + 定期轮换」的**数学残差**：
+    若要两个时刻总同桶，函数就得对整个时间轴恒定（= 永久内容去重 ⇒ 合法复购被永久吞掉，R2）。
+    故本单选择：**确定性与跨实例一致优先**，边界残差 = 重试延迟 ÷ 窗口宽度（默认 600s；
+    实测重试半径 ≈ 一次工具超时 30s ⇒ ≲5%）。要消掉它需要**共享状态锚**（Redis `SET NX` + TTL
+    固定「首次见到该意图」的桶，或把确认卡 / 轮次 id 递进 `ToolContext` —— 当前无该字段）——
+    已在 issue #9017 登记为后续项，不在本包内动 admin-api / 会话协议。
     """
     window = int(time.time() // _IDEMPOTENCY_WINDOW_SECONDS)
     scope = _idempotency_scope(context)
@@ -230,7 +298,8 @@ def _request_window_id(context: Optional[ToolContext] = None, *, op: str) -> str
             "[idempotency] 拿不到会话/用户身份 ⇒ 本次**不去重**（每次新键）："
             "调用方应把本会话的 ToolContext 递进来（issue #4195）")
         return f"{window}-{_NO_IDENTITY_TOKEN}-{_scope_token(op)}-{uuid.uuid4().hex[:12]}"
-    return _window_id(window, scope, op=op)
+    return _window_id(window, scope, op=op,
+                      intent=_intent_token(getattr(context, "tenant_id", ""), intent))
 
 
 # ══ 确认卡↔落库一致性（issue #4037 / F22）—— 纯函数，零 LLM、零 IO ══════════
@@ -2044,11 +2113,18 @@ class OrderCreateTool(BaseTool):
                 tenant_id=context.tenant_id,
                 user_id=context.user_id,
                 # 幂等键（issue #4037 / F19；作用域 = **会话**，issue #4195；维度 = **操作**，
-                # issue #4212）：服务端按 `(tenant_id, clientRequestId)` 去重（**不含 endpoint**）。
-                # 同一会话同一重试窗内取值相同 ⇒ 「落库了但报失败」后模型重试 ⇒ **只落一单**
-                # （回放首次结果，见 admin-api `ClientRequestIdService`）；不同会话取值不同 ⇒
-                # 不再把别人的订单当重试回放；`op=ORDER_CREATE_OP` ⇒ 不再与售后/转人工端点撞键。
-                headers={CLIENT_REQUEST_ID_HEADER: _request_window_id(context, op=ORDER_CREATE_OP)},
+                # issue #4212；**业务意图 + 确定性派生**，issue #9017 / 集群 P0-4）：
+                # 服务端按 `(tenant_id, clientRequestId)` 去重（**不含 endpoint**）。
+                # 键 = f(租户, 会话, 操作, 订单业务事实, 10 分钟窗) —— **无随机、无进程内状态**
+                # ⇒ 同一份意图在任何实例 / 任何重启后都算出同一个键：滚动部署断流重发、重试
+                # 被打到另一 pod 时，服务端仍能命中占位并**回放首次结果**（只落一单）。
+                # 业务事实（`intent`）= `order_facts_of` 的同一口径：手机号 + 每行 名称/数量/
+                # 单价/加工费 + 合计；**刻意不纳入**地址/备注/安装小区（确认后补、重试可能改写
+                # ⇒ 纳入会把合法重试判成新单）与 subtotal/totalAmount（服务端按 q×p 重算）。
+                headers={CLIENT_REQUEST_ID_HEADER: _request_window_id(
+                    context, op=ORDER_CREATE_OP,
+                    intent=order_facts_of({"customer_phone": customer_phone, "items": items}),
+                )},
             )
 
             if not response.get("success"):

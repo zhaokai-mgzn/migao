@@ -5,6 +5,67 @@
 > 原因 = 单文件涨到 512KB 越过扫描上限，详见存档文件头与 issue #6404。
 > **后续条目继续在本文件 `## [Unreleased]
 
+### 到期待办在多实例部署下不再重复提醒：扫描改数据库原子领取 + 通知补稳定幂等键（2026-11-22，issue #9019）
+
+- **现象**：两个 admin-api 实例同秒扫到同一批到期 `pending` ⇒ 各写一条站内通知（员工收到重复的到点提醒），
+  且两行最后都是 `fired`，事后从数据上分辨不出重复。根因 = 扫描腿是纯 read-modify-write（无占位）+ 通知未传 `dedupeKey`
+  ⇒ V187 的 `uk_notifications_dedupe` 对这条写入不生效。
+- **改后**：扫描腿改成**一条**数据库原子领取（`UPDATE … SET status='firing', claimed_by/claimed_at …
+  WHERE status='pending' … RETURNING`，同一行只有一个实例领得到）；投递带稳定 `dedupeKey = scheduled_task:{taskId}`
+  （重复插入撞唯一索引 ⇒ 当「已发」，不报错）；领取后实例崩溃时，超过 **5 分钟**的 `firing` 由每轮扫描先放回 `pending`
+  （租约回收，不永久卡死）。**通知内容 / 模板 / 触发规则一字未改**（单实例行为不变，只是不再重复）。
+- 判据：`ScheduledTaskMultiInstanceClaimRealDbTest`（真 PG 两实例并发：改前 12 条通知 ⇒ 改后 6 条）、
+  `ScheduledTaskServiceTest`、`ScheduledTaskMapperTest`。
+- 迁移：`V215__add_scheduled_task_claim_lease.sql`（加 `claimed_by`/`claimed_at` + 部分索引；回滚见文件头）。
+
+### 下单幂等键改为确定性派生：滚动部署断流 / 重试落到另一实例 / 进程重启后不再重复下单（2026-11-22，issue #9017）
+
+- **形态**：ai-agent 下发的 `X-Client-Request-Id` 改成由「租户 + 会话作用域 + 操作 + 订单业务事实 + 时间窗」
+  **确定性派生**（sha256）；`uuid4` 随机串与 `lru_cache` 都不再参与键的取值。业务事实口径 = `order_facts_of`
+  （手机号 + 每行 名称/数量/单价/加工费 + 合计），**不含**地址/备注/安装小区（确认后补、重试可改写）与
+  `subtotal`（服务端按 数量×单价 重算）。窗口默认仍是 10 分钟（`IDEMPOTENCY_WINDOW_SECONDS` 可调）。
+- **之前（资金级）**：键在**进程内**生成（`@lru_cache` + `uuid4` + 10 分钟窗）⇒ 实例 A 已落库并写完快照、
+  SSE 未推完被滚动部署重建 ⇒ 顾客重发落到实例 B ⇒ B 的缓存里没有这条记录 ⇒ 全新随机键 ⇒ 服务端按
+  `(tenant_id, client_request_id)` 查不到 ⇒ **再落一单**（同手机号/同 SKU/同数量）。同形还有：重试被负载均衡
+  打到另一 pod、进程重启、同窗活跃写请求超 12288 条把旧条目挤出缓存。
+- **取舍（显式登记）**：「纯确定性 + 定期轮换」在跨桶边界上有数学残差（599s 发起、601s 重试会落在相邻桶
+  ⇒ 两把键）。本单选择确定性与跨实例一致优先；要消掉残差需要共享状态锚（Redis `SET NX` + TTL 或确认卡/
+  轮次 id 进 `ToolContext`），已在 issue #9017 登记为后续项。
+- **不变**：服务端 `ClientRequestIdService`（DB 去重 + 回放）+ 头名 + ≤128 长度约束未动；单次下单行为与
+  话术逐字不变；`replayed=true` 的回放话术不变；会话作用域（#4195）与操作维度（#4212）语义不变。
+- 判据：`backend/ai-agent-service/tests/test_order_idempotency_key_deterministic.py`（两个**独立 OS 进程**
+  同一意图 ⇒ 同一个键；不同数量/金额/顾客 ⇒ 不同键；`uuid4` 打成抛异常后取键照常 —— 前两条改前必红）。
+
+### 微信 access_token 外置到 Redis：全实例共用一把，多实例不再互踢（2026-11-22，issue #9018）
+
+- **背景（集群就绪审计 P0-1）**：token 原先缓存在 `WechatService` 的**进程内字段**里（注释原文「进程内缓存（单实例足够）」）。
+  微信侧对一个 appid 只维持一把有效凭证 ⇒ 实例 A 刷新后实例 B 手里那把立即作废，B 却按自己算的 TTL 继续用
+  （最长约 2 小时）⇒ **一半流量间歇性登录 / 换手机号失败（40001）**，而且没有任何读数会先变红。
+- **改后**：token 落 Redis（`wechat:access_token:{appid}`，TTL = `expires_in - 300`），全实例一把；
+  刷新由 `SET NX` 锁串行化（拿不到锁的实例短轮询复用别人的 token，超时不刷新、回落旧 token 并记 WARN）；
+  本地只保留 ≤60s 的短缓存；换号接口回 `40001 / 42001` 时清本地缓存 + 换掉共享存储里的坏 token 并重试一次。
+- **降级**：Redis 未接线 / 不可用 ⇒ 退回原进程内行为（WARN + 60s 静默期），**不会**把 Redis 故障放大成登录失败。
+- **单机行为不变**：没有 Redis 时与改前等价（同一把 token、同样的 7200s / 提前 300s 刷新口径）。
+- 判据：`backend/admin-api/src/test/java/com/migao/admin/service/WechatAccessTokenProviderTest.java`（用例 `API-025`；
+  离线两实例 + 共享 Redis 替身：改前供应商侧 2 次 / 改后 1 次；含「主代码不得再出现进程内 access_token 缓存字段」的类级元守卫）。
+
+### 部署期 JWT 同源断言真正可判：读宿主权威源 + `\n` 形态归一化 + `file:` 缺失前置 fail-closed（2026-11-22，issue #8989）
+
+- **之前（2026-11-21 真实部署实测）**：`== 2.5.9` 的 JWT 同源断言**永远 SKIPPED** —— 它用
+  `docker compose exec` 读**运行中的容器**（容器没重建 ⇒ 读到旧容器），且 `.env.*` 里是**单行 + 字面 `\n`**
+  的 PEM，按行 awk 取不到 body ⇒ 两侧都 `<不可判定>`。也就是说这条断言在生产上**等于不存在**，
+  却让人以为已经守护。提示行还写了裸反引号 ⇒ 部署日志真的出现 `JWT_*: command not found` 与
+  `file:/opt/…: No such file or directory`，提示语被吃成残缺文本。
+- **改后**：断言只读**宿主权威源**（`.env.admin-api` / `compose` 的 `environment` / `file:` 指向的宿主文件），
+  PEM 提取前先把字面 `\n`、`\r` 归一化，提取失败时打印「读到了什么形态」；
+  `SKIPPED` **只允许**「两侧都走 classpath 默认」这一种形态，只有一侧可判 ⇒ `INCOMPLETE` + `exit 1`。
+- **部署破坏性风险（本单 ④）**：任何服务的 `JWT_PRIVATE_KEY/JWT_PUBLIC_KEY` 是 `file:` 形态时，
+  宿主路径必须在**任何 `docker compose up` 之前**校验存在且可读，否则 `exit 1` —— 挡住
+  「ai-agent 重建时起不来 ⇒ AI 接口全挂」。
+- 判据：`tests/unit_ci_workflows/test_swas_jwt_same_source.py`（含 3 条注入式红证：`\n` 形态指纹 /
+  宿主 `file:` 缺失前置判红 / 反引号回归检测），并把 PR #8978 整体重排的
+  `tests/unit_ci_workflows/declared_effective_registry.json` 恢复成 compact 单行格式（只保留 1 条语义新增）。
+
 ### 语音识别接入 Token Plan 非实时通道（`ASR_MODE=http`），端点与生图相同（2026-11-21，issue #8987）
 
 - **背景（生产实测）**：生产用阿里云百炼 **Token Plan 订阅**（`sk-sp-` key），订阅里唯一可用的语音识别模型
@@ -1659,6 +1720,19 @@ worker-h5 纯函数、承运商 4 条 × 两处入口 + 类级单一真值守卫
   （`SQLState 23502`）也归口 **422「参数不合法」+ requestId**（响应体与日志都不带列名 / 表名）——
   兜住同族（其它表、其它漏校验字段）的 500 冒充；唯一约束违例仍保持既有 5xx 契约
   （`MerchantShipmentAtomicityTest` 不受影响）。
+
+### 加工单号改为「库内当日最大号取号 + 撞号换号重试」，撞号不再谎报「已生成」（2026-11-22，issue #9021）
+
+- **改前（集群 P0-5）**：`ProcessingOrderService` 用**进程内** `AtomicInteger`（`ThreadLocalRandom` 随机起点）
+  发号，取号与占号分成两条语句；撞 `uk_processing_orders_no` 时 `DuplicateKeyException` 被一律翻成
+  「加工单已生成（并发操作）」—— 而单子其实**没落库** ⇒ 运营以为已派出、不再重试，订单永远没有作业单（静默漏单）。
+- **改后形态**：与入库/出库单号**同一范式** —— 起点 = 库内当日最大号 + 1（不依赖进程内状态，跨副本/重启一致），
+  用一条 `INSERT … ON CONFLICT DO NOTHING` 原子占号；0 行 ⇒ 换候选重试（上限 20，同族口径），耗尽显式 409。
+- **诊断修正**：只有**确实查到**该订单已有活跃加工单时才报「已生成」（并带出真实单号）；取号冲突耗尽报
+  `PROCESSING_ORDER_NO_CONFLICT` +「加工单号生成冲突，请重试（requestId=…）」，可追踪、可行动。
+- **不改**：加工单业务字段、派单/状态机流程、扣批次与工序实例化的时序。
+- 判据：`ProcessingOrderServiceTest`（P0-5 四条：换号重试并落库 / 耗尽文案 / 双线程并发 / 库内最大号起点）+
+  `ProcessingOrderNoConflictRealDbTest`（真库：`ON CONFLICT` 0 行、JSONB 快照、活跃单唯一键冲突）。
 
 ### 生产域 cytda.com：官网导航 / canonical / sitemap / 域名分流按构建期域名生成（2026-11-21，issue #8941）
 
