@@ -5,6 +5,17 @@
 > 原因 = 单文件涨到 512KB 越过扫描上限，详见存档文件头与 issue #6404。
 > **后续条目继续在本文件 `## [Unreleased]
 
+### B 端小程序补上微信隐私授权弹窗（照片 / 摄像头 / 麦克风）：未同意的工人扫码 / 拍照 / 语音不再全挂（2026-11-22，issue #9011）
+
+- **病灶**：小程序后台已申报《用户隐私保护指引》三类（选中的照片或视频信息 / 摄像头 / 麦克风），但端侧**一处**隐私授权流程都没有（`onNeedPrivacyAuthorization` / `requirePrivacyAuthorize` 全仓 0 命中）⇒ 未同步过同意的用户调 `chooseImage` / `scanCode` / `getRecorderManager` 直接被微信拦下（`fail privacy permission is not authorized`）：工人**拍照入库 / 补打 / 发货 / 库存修正**、**扫码报工 / 裁高 / 精裁 / 质检**、**按住说话**全部失败，且没有任何判据会变红（接口调用本身写得没问题）。
+- **形态**：新增 `frontend/bmini-app/src/utils/privacy.ts`（幂等注册 `Taro.onNeedPrivacyAuthorization`；`resolve` **入队**（多个隐私接口同时 pending 时逐个回应）+ 通知订阅者；`resolvePrivacy(agree)` 的 `agree` **必带 `buttonId='agree-btn'`** —— 官方字段名，缺了微信不认、pending 接口不会继续）+ `frontend/bmini-app/src/components/privacy/PrivacyPopup`（自定义弹窗：三类用途逐字等于后台申报、`查看完整《隐私保护指引》` 走 `Taro.openPrivacyContract`、「同意并继续」是唯一的 `open-type='agreePrivacyAuthorization'` 按钮、「暂不同意」走普通按钮）。
+- **挂载**：`app.tsx` 里注册一次；`<PrivacyPopup />` 挂在**会（直接或经依赖传递）触发隐私接口的 9 个页面**（聊天页 + 工人报工 / 入库 / 补打 / 发货 / 库存 / 裁高 / 精裁 / 质检）—— 页面集合由判据**现取**（新增触发页不挂弹窗即判红），不是手抄清单。小程序端**不能**把它挂在 `App` 里（App 里多渲染的节点没有页面归属，界面看不到）。
+- **为什么用自定义弹窗而不是等微信官方弹窗**：官方兜底弹窗（开发者不响应 `onNeedPrivacyAuthorization` 时微信自动弹）只有「允许 / 拒绝」，没有三类用途说明、打不开指引全文；而《用户隐私保护指引》5.2 要求「变更用途时以弹窗、站内消息等显著方式告知」⇒ 自己的弹窗是**可复用**的告知面，官方弹窗只作兜底。
+- **h5 降级**：taro-h5 把 `onNeedPrivacyAuthorization` / `openPrivacyContract` 实现成 `temporarilyNotSupport(...)` 的 stub（**函数存在但非真实现**）⇒ 按编译目标（`isH5()`）判；h5 下注册即 no-op、指引改走说明弹窗（不留点了没反应的死链），h5 构建与既有单测不受影响。两个 API 已登记进 `utils/platform.ts` 的 h5 台账。
+- **`__usePrivacyCheck__` 不加**：官方《小程序隐私协议开发指南》「2023.09.14 更新」—— 隐私相关功能原定 2023-09-15 默认启用、后延期至 **2023-10-17**，**该日之后不论 app.json 里有没有配置 `__usePrivacyCheck__`，隐私相关功能都会启用**（写在 `app.config.ts` 的注释里）。
+- **零业务改动**：扫码 / 拍照 / 录音的调用方式一字未动（授权由微信在调用时自动触发）。
+- 判据：`frontend/bmini-app/tests/privacy-authorization.test.tsx`（幂等 / payload 含 `buttonId` / 多 pending 队列 / h5 no-op / 文案逐字 / 按钮唯一性 / 页面挂载类级守卫 / 注册点唯一）+ `frontend/bmini-app/tests/h5-platform-api-guard.test.ts`（台账射程同步）。
+
 ### 到期待办在多实例部署下不再重复提醒：扫描改数据库原子领取 + 通知补稳定幂等键（2026-11-22，issue #9019）
 
 - **现象**：两个 admin-api 实例同秒扫到同一批到期 `pending` ⇒ 各写一条站内通知（员工收到重复的到点提醒），

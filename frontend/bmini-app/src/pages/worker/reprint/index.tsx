@@ -74,6 +74,7 @@ import { getInboundLabel, recordInboundLabelPrint } from '../../../services/work
 import '../../../styles/admin-surfaces.scss'
 import './index.scss'
 import { WorkerBackLink } from '../../../components/WorkerBackLink'
+import PrivacyPopup from '../../../components/privacy/PrivacyPopup'
 
 type Step = 'photo' | 'manual' | 'detail'
 
@@ -434,6 +435,8 @@ export default function WorkerReprintPage() {
           </View>
         )}
       </View>
+      {/* 微信隐私授权弹窗：本页会（直接或经工具模块）触发隐私接口，弹窗挂在本页才显示得出来 */}
+      <PrivacyPopup />
     </ScrollView>
   )
 }

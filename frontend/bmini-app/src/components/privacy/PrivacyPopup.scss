@@ -1,0 +1,123 @@
+/* 微信隐私授权弹窗（照片 / 摄像头 / 麦克风）—— 见 `PrivacyPopup.tsx` 文件头与 `utils/privacy.ts`。
+   设计尺度（750 设计宽，`1px = 1/40rem`，见 `src/index.html` 的 root font-size 接线）：
+   `font-size` 一律 ≥ 24px（判据 = `tests/unit_ci_workflows/test_bmini_mobile_typography_floor.py`）。
+   颜色**必须**走语义 token（判据 = `tests/bmini-pc-palette-parity.test.ts`：hex 只许 PC 调色板白名单）。
+   层级：自绘底栏 `.merchant-tabbar` = 100（原生 tabBar 已由它 `hideTabBar` 收起，见 `components/MerchantTabBar.tsx`）
+   ⇒ 本遮罩取 1000，压住底栏与页面内的一切浮层；工人页没有底栏，同样成立。 */
+@use '../../styles/variables.scss' as *;
+
+.privacy-popup {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.privacy-popup__mask {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  background: rgba(25, 31, 49, 0.55);
+}
+
+.privacy-popup__panel {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 640px;
+  max-height: 80vh;
+  overflow-y: auto;
+  padding: 44px 36px 32px;
+  border-radius: $radius-lg;
+  background: $bg-primary;
+  box-shadow: $shadow-pop;
+}
+
+.privacy-popup__title {
+  margin-bottom: 20px;
+  color: $text-primary;
+  font-size: 36px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.privacy-popup__intro {
+  margin-bottom: 16px;
+  color: $text-secondary;
+  font-size: 28px;
+  line-height: 1.6;
+}
+
+.privacy-popup__item {
+  margin-bottom: 14px;
+  padding: 16px 18px;
+  border-radius: $radius-sm;
+  background: $bg-secondary;
+}
+
+.privacy-popup__item-text {
+  color: $text-primary;
+  font-size: 26px;
+  line-height: 1.6;
+}
+
+.privacy-popup__contract {
+  margin-top: 6px;
+  color: $brand-blue;
+  font-size: 26px;
+  line-height: 1.6;
+  text-decoration: underline;
+}
+
+.privacy-popup__refuse-note {
+  margin-top: 14px;
+  color: $text-tertiary;
+  font-size: 24px;
+  line-height: 1.55;
+}
+
+/* 两个按钮：同意 = 主色实心（唯一带 open-type 的按钮）；拒绝 = 无底色次级按钮 */
+.privacy-popup__agree {
+  margin-top: 26px;
+  width: 100%;
+  height: 88px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: $radius-full;
+  background: $brand-blue;
+  color: $bg-primary;
+  font-size: 30px;
+  line-height: 88px;
+
+  &::after {
+    border: none;
+  }
+}
+
+.privacy-popup__disagree {
+  margin-top: 12px;
+  width: 100%;
+  height: 76px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: $radius-full;
+  background: transparent;
+  color: $text-secondary;
+  font-size: 28px;
+  line-height: 76px;
+
+  &::after {
+    border: none;
+  }
+}
