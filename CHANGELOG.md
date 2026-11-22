@@ -1718,6 +1718,20 @@ worker-h5 纯函数、承运商 4 条 × 两处入口 + 类级单一真值守卫
 
 ## [Unreleased]
 
+### 商品颜色入参字段名不合法 ⇒ 422 并点名 `colorName`（不再是 500「服务器内部错误」）（2026-11-22，issue #9012）
+
+- **病（生产实抓，requestId `req_809f888b9ae44438`，tenant 1）**：`POST /api/admin/products` 传
+  `colors:[{"name":"米白","code":"#F5F5DC"}]`（字段名猜错，正确是 `colorName` / `mainColorHex`）⇒
+  Jackson `FAIL_ON_UNKNOWN_PROPERTIES=false` **静默丢弃**未知字段 ⇒ `colorName` 为 null ⇒ service 照常 insert ⇒
+  `null value in column "color_name" of relation "product_colors" violates not-null constraint` ⇒
+  HTTP **500**「服务器内部错误」—— 商家既看不到「哪个字段错了」，也无从自救。
+- **改后**：① **颜色名称准入**落在建品 / 改品 / Excel 导入 / Agent 四条写颜色路径的**唯一收口**
+  （与 #6302 的文本长度准入同一位置）⇒ 缺 `colorName`（含只有空白）**422** + 中文文案**点名 `colorName`**，
+  且在写 `product_colors` **之前**拒绝（不是撞库后回滚）；② 全局异常处理器把**非空约束违例**
+  （`SQLState 23502`）也归口 **422「参数不合法」+ requestId**（响应体与日志都不带列名 / 表名）——
+  兜住同族（其它表、其它漏校验字段）的 500 冒充；唯一约束违例仍保持既有 5xx 契约
+  （`MerchantShipmentAtomicityTest` 不受影响）。
+
 ### 加工单号改为「库内当日最大号取号 + 撞号换号重试」，撞号不再谎报「已生成」（2026-11-22，issue #9021）
 
 - **改前（集群 P0-5）**：`ProcessingOrderService` 用**进程内** `AtomicInteger`（`ThreadLocalRandom` 随机起点）
