@@ -1169,18 +1169,22 @@ jobs:
       #    转而要求 license ⇒ **1 秒内早退、无报告**。⇒ 扫描前把**同一个调用**在限流下等一等（有界）：
       #    等到了，action 那次同样的调用就能过；等不到也只是回到原形态（`--best-effort` **不额外判红**，
       #    红仍由下面的归因步骤按三态判）。
-      - name: Preflight gitleaks license check (限流退避，issue #7549)
-        env:
-          GH_TOKEN: ${{ secrets.AUTOMERGE_PAT || secrets.GITHUB_TOKEN }}
-        run: |
-          python3 .github/rate_limit_backoff.py exec --best-effort \
-            --label "gitleaks license 校验预检" -- gh api "users/${{ github.repository_owner }}" > /dev/null
-
-      - name: Run gitleaks secret scan
+      # 官方二进制（不走 gitleaks-action）：2026-11-22 实测 action@v3 在无 license 时
+      # 直接 `missing gitleaks license` 早退 ⇒ 这条必需 check **永久红**，与代码无关，
+      # 且阻塞所有 PR 合并（含"修它自己"的 PR）。二进制免费、无许可、不调 GitHub API。
+      - name: Run gitleaks secret scan (official binary)
         id: gitleaks
-        uses: gitleaks/gitleaks-action@v3
-        env:
-          GITHUB_TOKEN: ${{ secrets.AUTOMERGE_PAT || secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -uo pipefail
+          V=8.30.1
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${V}/gitleaks_${V}_linux_x64.tar.gz" \
+            | tar -xz gitleaks
+          ./gitleaks version
+          BASE="origin/${{ github.base_ref }}"
+          ./gitleaks detect --source . --redact --no-banner \
+            --log-opts="${BASE}..HEAD" \
+            --report-format sarif --report-path results.sarif --exit-code 1
 
       - name: Upload gitleaks report
         if: always()
