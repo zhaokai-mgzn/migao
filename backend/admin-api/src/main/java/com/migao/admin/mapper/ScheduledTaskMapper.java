@@ -3,9 +3,12 @@ package com.migao.admin.mapper;
 import com.baomidou.mybatisplus.annotation.InterceptorIgnore;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
+import com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler;
 import com.migao.admin.entity.ScheduledTask;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
+import org.apache.ibatis.annotations.Result;
+import org.apache.ibatis.annotations.Results;
 import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
 
@@ -70,6 +73,12 @@ public interface ScheduledTaskMapper extends BaseMapper<ScheduledTask> {
      * @return 本次**真正被本实例领走**的行（0 行 = 本轮无到期 / 全被别的实例先领走）
      */
     @InterceptorIgnore(tenantLine = "true")
+    // JSONB 字段必须显式绑 typeHandler：手写 select 不绑 ⇒ 列落成字符串 ⇒ instanceof 判据静默为假
+    //（issue #3340 / #4865 同根因；判据见 JacksonTypeHandlerMappingGuardTest）
+    @Results(id = "scheduledTaskClaim", value = {
+            @Result(column = "impact", property = "impact", typeHandler = JacksonTypeHandler.class),
+            @Result(column = "payload", property = "payload", typeHandler = JacksonTypeHandler.class)
+    })
     @Select("WITH picked AS ("
             + "SELECT id FROM scheduled_tasks "
             + "WHERE tenant_id = #{tenantId} AND status = 'pending' AND deleted = 0 AND fire_at <= #{now} "
