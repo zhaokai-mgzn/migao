@@ -21,6 +21,12 @@ import java.util.List;
 @TableName(value = "products", autoResultMap = true)
 public class Product {
 
+    // ⚠️ 这三个字段**不再有 Java 侧初始值**（issue #9045）：给定初始值后，任何
+    // `new Product()` + `updateById`（部分更新）都会把「自己没打算改」的列写成默认值
+    // —— 实测：建品后 SKU 同步走 `syncProductStock()`，把用户设的 stockWarningThreshold=7
+    // 覆写成 10。DB 三列都有 DEFAULT（stock=0 / threshold=10 / mode='on_order'），
+    // 建品路径由 `BeanUtils.copyProperties(request, …)` 提供值 ⇒ 去掉初始值不改变建品行为。
+
     @TableId(type = IdType.ASSIGN_UUID)
     private String id;
 
@@ -68,18 +74,18 @@ public class Product {
      * 库存数量
      */
     @TableField("stock")
-    private BigDecimal stock = BigDecimal.ZERO;
+    private BigDecimal stock;
 
     /**
      * 库存预警阈值
      */
     @TableField("stock_warning_threshold")
-    private Integer stockWarningThreshold = 10;
+    private Integer stockWarningThreshold;
 
     /**
      * 库存扣减模式：sku/product
      */
-    private String stockDeductionMode = "on_order";
+    private String stockDeductionMode;
 
     /**
      * 累计销量
