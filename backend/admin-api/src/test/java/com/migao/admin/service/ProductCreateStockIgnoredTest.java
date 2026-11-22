@@ -120,6 +120,25 @@ class ProductCreateStockIgnoredTest {
     }
 
     @Test
+    @DisplayName("issue #9045：部分更新不得携带 Java 侧初始值（否则建品的 stockWarningThreshold 被 SKU 同步覆写回 10）")
+    void partialUpdateMustNotCarryJavaSideDefaults() {
+        // 真实病灶（2026-11-22 生产实测）：建品传 stockWarningThreshold=7 ⇒ 给了 skus 时
+        // syncProductStock() 走 `new Product()` + updateById（只打算改 stock），而实体上
+        // threshold=10 / mode='on_order' 的**字段初始值**让 MyBatis-Plus 把这两列一并写回
+        // ⇒ 用户设的 7 被静默改成 10（DB 只读核对确认）。
+        Product partial = new Product();
+        partial.setId("p-9045");
+        partial.setStock(new java.math.BigDecimal("3"));
+
+        assertThat(partial.getStockWarningThreshold())
+                .as("实体不得给 stockWarningThreshold 初始值：部分更新会把它当「要改的值」写回（DB 默认 10 已兜底）")
+                .isNull();
+        assertThat(partial.getStockDeductionMode())
+                .as("实体不得给 stockDeductionMode 初始值：同上（DB 默认 on_order 已兜底）")
+                .isNull();
+    }
+
+    @Test
     @DisplayName("判据1（#9006）：stock=500 ⇒ 422 显式拒绝，且一行都不写（改前：200 + 静默落 0）")
     void createRejectsNonZeroRequestStock() {
         ProductCreateRequest request = new ProductCreateRequest();
