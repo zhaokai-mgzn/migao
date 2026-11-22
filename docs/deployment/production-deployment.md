@@ -179,6 +179,10 @@ rollback.md 回滚（重新发布上一稳定版本）
 `.env*` 或 compose `environment:` 里将来若出现**新的** `file:` 路径，判据 12 / 12b 会当场判红
 （不需要改守卫）。
 
+> 上传存储形态（本地盘 vs OSS）、「多实例 + 缺 OSS ⇒ 拒绝启动」的判据与读数、以及存量本地文件
+> 迁到 OSS 的步骤，见 [upload-storage-and-multi-instance.md](upload-storage-and-multi-instance.md)。
+> ⚠️ 上表那条 `uploads` 卷只解决「单实例重建不丢图」；**多实例必须切 OSS**（本地盘在多实例下必然 404）。
+
 **守卫（会红）**：
 
 - `tests/unit_ci_workflows/test_swas_deploy_blue_green.py` —— `docker-compose.bluegreen.yml` 的每个
