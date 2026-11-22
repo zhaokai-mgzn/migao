@@ -374,7 +374,7 @@ class ProcessingOrderRouteCharacterizationTest {
         AtomicReference<ProcessingOrder> inserted = new AtomicReference<>();
         when(processingOrderMapper.selectActiveByOrderId(ORDER_ID, TENANT))
                 .thenAnswer(inv -> inserted.get());
-        when(processingOrderMapper.insert(any(ProcessingOrder.class))).thenAnswer(inv -> {
+        when(processingOrderMapper.insertIgnoreProcessingNoConflict(any(ProcessingOrder.class), anyString())).thenAnswer(inv -> {
             ProcessingOrder po = inv.getArgument(0);
             po.setId("po-001");
             inserted.set(po);
