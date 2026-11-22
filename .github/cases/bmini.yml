@@ -2323,7 +2323,7 @@ cases:
       - "判据 3·h5 no-op：taro-h5 把 onNeedPrivacyAuthorization / openPrivacyContract 实现成 temporarilyNotSupport 的 stub（**函数存在但非真实现**）⇒ 必须按编译目标判；h5 下注册不调 API、不抛错、指引降级为说明弹窗。执行点 = 同文件#④"
       - "判据 4·文案逐字等于后台申报（标题 / 正文 / 三条用途 / 拒绝说明 / 指引链接）；同意按钮 `id='agree-btn'` + `open-type='agreePrivacyAuthorization'`，拒绝按钮**不是** open-type 按钮；点同意 ⇒ 弹窗收起。执行点 = 同文件#⑤/#⑥/#⑦/#⑧"
       - "判据 5·🔴 类级守卫（页面集合**现取**，不手抄清单）：会经依赖传递触发 chooseImage / scanCode / getRecorderManager 的页面必须渲染 `<PrivacyPopup />`；注册点只有 `app.tsx` 一处。执行点 = 同文件#⑨/#⑩"
-    skip_reason: "[no-llm] 纯端侧接入面（jest 判据 + taro 构建）；真机授权链路属于验收面读数，由人工在开发者工具「清除授权数据」复核"
+    skip_reason: "[frontend-contract] 纯端侧接入面（jest 判据 + taro 构建）；真机授权链路属于验收面读数，由人工在开发者工具「清除授权数据」复核"
     merge_log: "2026-11-22 新增（issue #9011）。不加 __usePrivacyCheck__ = 官方《小程序隐私协议开发指南》2023.09.14 更新：2023-10-17 之后不论 app.json 是否配置，隐私相关功能都会启用。用自定义弹窗而非等官方兜底弹窗：官方弹窗只有允许/拒绝，没有三类用途说明、打不开指引全文。"
     traces:
       tests:
