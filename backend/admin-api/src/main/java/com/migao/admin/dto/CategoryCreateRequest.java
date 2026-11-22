@@ -1,6 +1,6 @@
 package com.migao.admin.dto;
 
-import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.annotation.JsonAlias;
 import jakarta.validation.constraints.NotBlank;
 import lombok.Data;
 
@@ -27,10 +27,13 @@ public class CategoryCreateRequest {
     private Integer level = 1;
 
     /**
-     * 排序号（JSON 契约字段名为 sort，DB 列 sort_order）。
+     * 排序号（JSON 字段名 sortOrder，DB 列 sort_order）。
      * 未传（null）时服务端自动追加到列表末尾
+     *
+     * <p>issue #9007：此前只认 {@code sort}，`{"sortOrder": 88}` 被 Jackson 当未知字段**静默丢弃**
+     * （仍回 200），落库值变成「追加到末尾」。现以 {@code sortOrder} 为主名、{@code sort} 为兼容别名。
      */
-    @JsonProperty("sort")
+    @JsonAlias("sort")
     private Integer sortOrder;
 
     /**

@@ -19,6 +19,15 @@ import java.util.List;
 /**
  * 商品分类管理控制器
  * 提供分类的扁平列表管理接口（issue #2905 — 无父子概念，支持上下移动排序）
+ *
+ * <p><b>读面只有列表（有意设计，issue #9007 核实）</b>：分类**没有**详情端点 ——
+ * {@code GET /api/admin/categories/{id}} 命中 {@code /{id}} 的 PUT/DELETE 映射但无 GET ⇒ **405**
+ * （{@code METHOD_NOT_ALLOWED}）。单条分类的回读一律走列表 {@code GET /api/admin/categories}
+ * （{@code /tree} 与它是同一实现），按 {@code id} 过滤即可；**不要**为验一条分类新加详情端点。
+ * 判据：{@code CategoryControllerTest$ReadBackIsListOnly#getCategoryById_isMethodNotAllowed}。
+ *
+ * <p>字段口径（issue #9007）：排序号在响应里以 {@code sortOrder} 下发（主名，与 entity 同名），
+ * {@code sort} 仅作为历史兼容别名保留。
  */
 @Slf4j
 @RequirePermission("product:category")
@@ -30,7 +39,7 @@ public class CategoryController {
     private final CategoryService categoryService;
 
     /**
-     * 获取分类列表（扁平结构，按 sort 升序）
+     * 获取分类列表（扁平结构，按 sortOrder 升序 + id 兜底），**也是分类唯一的读面**
      *
      * GET /api/admin/categories
      * GET /api/admin/categories/tree

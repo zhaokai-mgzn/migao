@@ -1,7 +1,7 @@
 package com.migao.admin.dto;
 
 import com.fasterxml.jackson.annotation.JsonFormat;
-import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.annotation.JsonGetter;
 import lombok.Data;
 
 import java.time.OffsetDateTime;
@@ -34,9 +34,11 @@ public class CategoryResponse {
     private Integer level;
 
     /**
-     * 排序号（JSON 契约字段名为 sort，DB 列 sort_order）
+     * 排序号（DB 列 sort_order；JSON 字段名 sortOrder —— 与 entity 同名字段/仓库既有 camelCase 风格一致）
+     *
+     * <p>issue #9007：此前该字段被 {@code @JsonProperty("sort")} 改名为 {@code sort}，导致
+     * 全字段冒烟 / 已记录的生产响应夹具里按 {@code sortOrder} 读不到排序值（列表与创建响应都缺）。
      */
-    @JsonProperty("sort")
     private Integer sortOrder;
 
     /**
@@ -65,4 +67,16 @@ public class CategoryResponse {
      */
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
     private OffsetDateTime updatedAt;
+
+    /**
+     * {@code sort} 兼容别名（只出现在序列化结果里，与 {@link #sortOrder} 同值）。
+     *
+     * <p>issue #2755 曾把本字段的 JSON 名改成 {@code sort} 以对齐当时的 admin-web 读面；
+     * issue #9007 把主名改回 {@code sortOrder}，但**不删** {@code sort} —— 已发布客户端
+     * （admin-web `Category.sort`、e2e 夹具、第三方调用方）仍按旧名读，删字段是破坏性变更。
+     */
+    @JsonGetter("sort")
+    public Integer getSortAlias() {
+        return sortOrder;
+    }
 }

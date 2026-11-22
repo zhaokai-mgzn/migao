@@ -18,6 +18,11 @@
 camelCase。全仓 `src/main` 里这样的类**恰好 5 个**（`ProcessingOrderResponse` + 其嵌套
 `ProcessingOrderItemBrief`、`CategoryCreateRequest` / `CategoryResponse` / `CategoryUpdateRequest`），
 共 **13** 个显式键，**全部** snake_case。
+🔴 **2026-11-22（issue #9007）**：分类三件 DTO（`CategoryCreateRequest` / `CategoryResponse` /
+`CategoryUpdateRequest`）摘掉了 `@JsonProperty("sort")` —— 它们的排序号改为**仓库默认 camelCase 主名
+`sortOrder`**（`sort` 退化为 `@JsonGetter` / `@JsonAlias` 兼容别名），故**退出本判据射程**，
+台账里对应的 `classes` / `nullable_key_forms` 条目同步销账（台账只许缩短）。现取读数以 `-s` 打印为准，
+上面的「5 个类 / 13 个键」是该次改动**之前**的快照，留作历史。
 反过来的依据同样现取：`com.migao.admin.dto` 下 109 个 DTO 文件里 **96** 个含 camelCase 键 ——
 把整个 DTO 包当射程会立刻大范围假红，因为**未冻结**面的既有契约就是 camelCase
 （前端按 camelCase 消费 `orderNo` / `isTenant` 这一类键），那不是缺陷。⇒ 射程按「**有没有冻结键声明**」划。

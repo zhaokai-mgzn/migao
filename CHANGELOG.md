@@ -5,6 +5,21 @@
 > 原因 = 单文件涨到 512KB 越过扫描上限，详见存档文件头与 issue #6404。
 > **后续条目继续在本文件 `## [Unreleased]
 
+### 分类响应补 `sortOrder`（主名）+ 创建/更新接受 `sortOrder`，`sort` 降为兼容别名（2026-11-22，issue #9007）
+
+- **背景（生产全字段冒烟）**：`POST /api/admin/categories {"sortOrder":88}` 回 200，但 `GET /api/admin/categories`
+  的节点里**没有 `sortOrder`**（DB `sort_order` 列确实存在）。根因两层：① issue #2755 把响应字段的 JSON 名
+  改成了 `sort`（`@JsonProperty("sort")`）⇒ 按 `sortOrder` 读的冒烟/客户端读不到；② 创建/更新请求 DTO 也只认 `sort`
+  ⇒ 提交的 `sortOrder: 88` 被 Jackson 当未知字段**静默丢弃**（仍回 200），落库值是「追加到末尾」。
+- **形态**：响应（列表 + 创建/更新回读）以 **`sortOrder` 为主名**（与 entity 同名、仓库默认 camelCase 口径），
+  **`sort` 保留为同值兼容别名**（已发布客户端不破）；创建/更新请求以 `sortOrder` 为主名、`sort` 保留为
+  `@JsonAlias` 兼容别名 —— 两种名字都能绑上，不再静默丢弃。
+- **同时核实（不改行为）**：分类**没有详情端点**是有意设计 —— `GET /api/admin/categories/{id}` 命中 `/{id}` 的
+  PUT/DELETE 映射但无 GET ⇒ **405**；单条回读一律走列表。已写进 `CategoryController` 类注释并落一条判据钉住。
+- 判据：`CategoryControllerTest`（`$.data[0].sortOrder` / 创建-更新请求绑定 `sortOrder` / `sort` 别名仍在 /
+  详情 405）+ `CategoryServiceTest`（建→列表回读 88 一致）；红证 = 改前 4 条断言红（`No value at JSON path
+  "$.data[0].sortOrder"` 等）。
+
 ### 语音识别接入 Token Plan 非实时通道（`ASR_MODE=http`），端点与生图相同（2026-11-21，issue #8987）
 
 - **背景（生产实测）**：生产用阿里云百炼 **Token Plan 订阅**（`sk-sp-` key），订阅里唯一可用的语音识别模型

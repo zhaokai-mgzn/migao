@@ -121,8 +121,8 @@ class CategoryControllerTest extends BaseControllerTest {
         }
 
         @Test
-        @DisplayName("分类列表响应节点携带 sort 字段（契约字段名为 sort）")
-        void getCategoryTree_returnsSortField() throws Exception {
+        @DisplayName("分类列表响应节点携带 sortOrder（主名，issue #9007）")
+        void getCategoryTree_returnsSortOrderField() throws Exception {
             CategoryResponse resp = buildCategoryResponse();
             resp.setSortOrder(7);
             when(categoryService.getCategoryTree(TEST_TENANT_ID))
@@ -130,7 +130,40 @@ class CategoryControllerTest extends BaseControllerTest {
 
             mockMvc.perform(get("/api/admin/categories"))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.data[0].sort").value(7));
+                    .andExpect(jsonPath("$.data[0].sortOrder").value(7));
+        }
+
+        @Test
+        @DisplayName("分类列表响应仍携带 sort 兼容别名（与 sortOrder 同值，旧读面不破）")
+        void getCategoryTree_returnsSortAlias() throws Exception {
+            CategoryResponse resp = buildCategoryResponse();
+            resp.setSortOrder(7);
+            when(categoryService.getCategoryTree(TEST_TENANT_ID))
+                    .thenReturn(List.of(resp));
+
+            mockMvc.perform(get("/api/admin/categories"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data[0].sort").value(7))
+                    // 别名只许出现在 "sort" 名下；不得把 Java 方法名泄漏成第三个键 sortAlias
+                    .andExpect(jsonPath("$.data[0].sortAlias").doesNotExist());
+        }
+    }
+
+    /**
+     * 读面只有列表 —— **分类没有详情端点是有意设计**（issue #9007）。
+     *
+     * 本用例把「405 是设计而非漏做」钉成判据：后续想加详情端点的人会先看到它变红，
+     * 从而必须同步改注释/文档（接口注释已写明「分类只能列表回读」）。
+     */
+    @Nested
+    @DisplayName("GET /api/admin/categories/{id}（分类无详情端点，设计如此）")
+    class ReadBackIsListOnly {
+
+        @Test
+        @DisplayName("分类详情路径 -> 405（回读一律走列表 /tree）")
+        void getCategoryById_isMethodNotAllowed() throws Exception {
+            mockMvc.perform(get("/api/admin/categories/cat-1"))
+                    .andExpect(status().isMethodNotAllowed());
         }
     }
 
@@ -156,7 +189,7 @@ class CategoryControllerTest extends BaseControllerTest {
         }
 
         @Test
-        @DisplayName("创建分类 - 请求体 sort 字段绑定到 sortOrder 并持久化")
+        @DisplayName("创建分类 - 请求体 sort（兼容别名）绑定到 sortOrder 并持久化")
         void createCategory_withSortField() throws Exception {
             when(categoryService.createCategory(any(CategoryCreateRequest.class), eq(TEST_TENANT_ID)))
                     .thenReturn(buildCategoryResponse());
@@ -172,6 +205,40 @@ class CategoryControllerTest extends BaseControllerTest {
             ArgumentCaptor<CategoryCreateRequest> captor = ArgumentCaptor.forClass(CategoryCreateRequest.class);
             verify(categoryService).createCategory(captor.capture(), eq(TEST_TENANT_ID));
             assertThat(captor.getValue().getSortOrder()).isEqualTo(10);
+        }
+
+        @Test
+        @DisplayName("创建分类 - 请求体 sortOrder 绑定到 sortOrder（issue #9007：不再被静默丢弃）")
+        void createCategory_withSortOrderField() throws Exception {
+            when(categoryService.createCategory(any(CategoryCreateRequest.class), eq(TEST_TENANT_ID)))
+                    .thenReturn(buildCategoryResponse());
+
+            String body = "{\"name\":\"冒烟-分类\",\"sortOrder\":88}";
+
+            mockMvc.perform(post("/api/admin/categories")
+                            .contentType("application/json")
+                            .content(body))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.success").value(true));
+
+            ArgumentCaptor<CategoryCreateRequest> captor = ArgumentCaptor.forClass(CategoryCreateRequest.class);
+            verify(categoryService).createCategory(captor.capture(), eq(TEST_TENANT_ID));
+            assertThat(captor.getValue().getSortOrder()).isEqualTo(88);
+        }
+
+        @Test
+        @DisplayName("创建分类响应携带 sortOrder（与列表回读同口径）")
+        void createCategory_responseCarriesSortOrder() throws Exception {
+            CategoryResponse resp = buildCategoryResponse();
+            resp.setSortOrder(88);
+            when(categoryService.createCategory(any(CategoryCreateRequest.class), eq(TEST_TENANT_ID)))
+                    .thenReturn(resp);
+
+            mockMvc.perform(post("/api/admin/categories")
+                            .contentType("application/json")
+                            .content("{\"name\":\"冒烟-分类\",\"sortOrder\":88}"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.sortOrder").value(88));
         }
 
         @Test
@@ -240,7 +307,24 @@ class CategoryControllerTest extends BaseControllerTest {
         }
 
         @Test
-        @DisplayName("更新分类 - 请求体 sort 字段绑定到 sortOrder 并持久化")
+        @DisplayName("更新分类 - 请求体 sortOrder 绑定到 sortOrder（issue #9007）")
+        void updateCategory_withSortOrderField() throws Exception {
+            when(categoryService.updateCategory(eq("cat-1"), any(CategoryUpdateRequest.class), eq(TEST_TENANT_ID)))
+                    .thenReturn(buildCategoryResponse());
+
+            mockMvc.perform(put("/api/admin/categories/cat-1")
+                            .contentType("application/json")
+                            .content("{\"name\":\"已更新\",\"sortOrder\":88}"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.success").value(true));
+
+            ArgumentCaptor<CategoryUpdateRequest> captor = ArgumentCaptor.forClass(CategoryUpdateRequest.class);
+            verify(categoryService).updateCategory(eq("cat-1"), captor.capture(), eq(TEST_TENANT_ID));
+            assertThat(captor.getValue().getSortOrder()).isEqualTo(88);
+        }
+
+        @Test
+        @DisplayName("更新分类 - 请求体 sort（兼容别名）绑定到 sortOrder 并持久化")
         void updateCategory_withSortField() throws Exception {
             when(categoryService.updateCategory(eq("cat-1"), any(CategoryUpdateRequest.class), eq(TEST_TENANT_ID)))
                     .thenReturn(buildCategoryResponse());

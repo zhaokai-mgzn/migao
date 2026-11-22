@@ -20,6 +20,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.List;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -126,6 +127,35 @@ class CategoryServiceTest {
 
         // then
         assertThat(tree).hasSize(3);
+    }
+
+    @Test
+    @DisplayName("建 → 列表回读 - sortOrder 一致（issue #9007：请求 88 回读 88）")
+    void createThenList_keepsSortOrder() {
+        // given —— 创建时显式给 sortOrder=88
+        CategoryCreateRequest request = new CategoryCreateRequest();
+        request.setName("冒烟-分类");
+        request.setSortOrder(88);
+
+        AtomicReference<Category> persisted = new AtomicReference<>();
+        when(categoryMapper.insert(any(Category.class))).thenAnswer(invocation -> {
+            Category c = invocation.getArgument(0);
+            c.setId("cat-smoke");
+            persisted.set(c);
+            return 1;
+        });
+
+        CategoryResponse created = categoryService.createCategory(request, 1L);
+        assertThat(created.getSortOrder()).isEqualTo(88);
+
+        // when —— 列表回读（DB 里就是刚插入的那条）
+        when(categoryMapper.selectList(any(LambdaQueryWrapper.class)))
+                .thenReturn(List.of(persisted.get()));
+        List<CategoryResponse> list = categoryService.getCategoryTree(1L);
+
+        // then —— 回读值与创建值一致
+        assertThat(list).singleElement()
+                .satisfies(c -> assertThat(c.getSortOrder()).isEqualTo(88));
     }
 
     // ======================== 创建分类测试 ========================

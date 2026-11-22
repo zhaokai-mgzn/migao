@@ -1,6 +1,6 @@
 package com.migao.admin.dto;
 
-import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.annotation.JsonAlias;
 import jakarta.validation.constraints.NotBlank;
 import lombok.Data;
 
@@ -27,9 +27,11 @@ public class CategoryUpdateRequest {
     private Integer level;
 
     /**
-     * 排序号（JSON 契约字段名为 sort，DB 列 sort_order）
+     * 排序号（JSON 字段名 sortOrder，DB 列 sort_order）
+     *
+     * <p>issue #9007：与创建请求同口径 —— 主名 {@code sortOrder}，{@code sort} 保留为兼容别名。
      */
-    @JsonProperty("sort")
+    @JsonAlias("sort")
     private Integer sortOrder;
 
     /**
