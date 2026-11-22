@@ -63,6 +63,7 @@ import {
 } from '../../../utils/workerStockRecognize'
 import './index.scss'
 import { WorkerBackLink } from '../../../components/WorkerBackLink'
+import PrivacyPopup from '../../../components/privacy/PrivacyPopup'
 
 /** 空态文案（说清「怎么才会有批次」——只说「没有」等于没说）。 */
 export const EMPTY_HINT = '没有匹配的批次：换个关键词（批次号 / 货号 / 缸号 / 入库单号任一段），或清空后直接看最近入库的批次'
@@ -552,6 +553,8 @@ export default function WorkerStockPage() {
           </Text>
         </View>
       ) : null}
+      {/* 微信隐私授权弹窗：本页会（直接或经工具模块）触发隐私接口，弹窗挂在本页才显示得出来 */}
+      <PrivacyPopup />
     </View>
   )
 }
