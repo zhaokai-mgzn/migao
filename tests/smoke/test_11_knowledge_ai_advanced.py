@@ -3,7 +3,8 @@
 知识库管理与米宝高级 AI 对话场景冒烟测试 (P1)
 
 覆盖：
-- 知识库文档 CRUD 与同步
+- 知识库文档 CRUD 与同步（⚠️ `GET /api/admin/knowledge/documents` 在 admin-api **不存在**，
+  只有 `POST /api/admin/knowledge/distill/documents` ⇒ 列表用例显式跳过，issue #8994 ②）
 - 米宝多轮对话上下文关联
 - 米宝复合 Tool 调用 SSE 事件
 - 米宝 SSE 异常输入处理（空消息/超长消息/并发会话）
@@ -130,18 +131,18 @@ class TestKnowledgeAPI:
     """知识库管理接口测试"""
 
     def test_list_knowledge(self, authed_admin_client: SmokeTestClient):
-        """GET 知识库文档列表"""
-        resp = authed_admin_client.get("/api/admin/knowledge/documents", params={
-            "page": 1,
-            "size": 10,
-        })
-        if resp.status_code == 404:
-            pytest.skip("Knowledge documents API 未实现")
-        assert resp.status_code == 200, f"List knowledge failed: {resp.status_code} {resp.text[:300]}"
-        data = resp.json()
-        page_data = data.get("data", data)
-        records = page_data.get("records", page_data.get("items", []))
-        assert isinstance(records, list), f"Expected list, got {type(records)}"
+        """GET 知识库文档列表 —— **路由不存在，显式跳过**（issue #8994 ②）
+
+        admin-api 只注册了
+        `/api/admin/knowledge/{candidates,cards,distill,templates}`，**没有** `documents`；
+        未认证时 401 会掩盖这一点，带 token 实测 404 ⇒ 该用例结构上永远不可能通过。
+        显式 skip（理由写清），不做「404 分支条件 skip」式的半假绿，也不许 `return`。
+        """
+        pytest.skip(
+            "admin-api 无 GET /api/admin/knowledge/documents 路由"
+            "（只有 POST /api/admin/knowledge/distill/documents）⇒ 结构上不可通过"
+            "（issue #8994 ②）"
+        )
 
     def test_create_knowledge_document(self, authed_admin_client: SmokeTestClient):
         """POST 创建知识库文档"""

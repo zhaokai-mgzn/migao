@@ -1,3 +1,4 @@
+# case_ids: CT-002, MC-006
 """
 管理模块 API 冒烟测试 (P1)
 
@@ -5,7 +6,9 @@
 - 商品分类管理 (/api/admin/categories)
 - 加工分类管理 (/api/admin/processing-categories)
 - 角色管理 (/api/admin/roles)
-- 快速回复模板 (/api/admin/quick-replies)
+- ~~快速回复模板 (/api/admin/quick-replies)~~ —— **未实现，跳过**（issue #8994 ③）：
+  admin-api 里**没有**这个路由（仓库只有 `TenantAiConfig` 的 `quickReplies` 字段，没有控制器），
+  生产带 token 实测认证后恒 404 ⇒ 对应用例结构上永远不可能通过，改为显式 `pytest.skip`。
 """
 
 import time
@@ -295,102 +298,28 @@ class TestRoleAPI:
 @pytest.mark.p1
 @pytest.mark.business
 class TestQuickReplyAPI:
-    """快速回复模板 API 测试"""
+    """快速回复模板 API 测试 —— **未实现，全部跳过**（issue #8994 ③）
 
-    def _create_one(self, client: SmokeTestClient, suffix: str):
-        return client.post("/api/admin/quick-replies", json={
-            "category": "smoke测试",
-            "title": f"smoke快回_{suffix}",
-            "content": f"这是 smoke 测试创建的快捷回复内容 {suffix}",
-            "shortcut": f"/smk{suffix[-4:]}",
-            "isPublic": True,
-        })
+    admin-api 里**没有** `/api/admin/quick-replies` 控制器（仓库只有 `TenantAiConfig.quickReplies`
+    字段）；生产带 token 实测认证后恒 404 ⇒ 这些用例结构上永远不可能通过。
+    改为**显式 skip**（理由写清、不制造零断言的 PASSED；SDQS DQ-4）：
+    路由一旦真落地，这四条应恢复成真断言，而不是继续 skip。
+    """
+
+    _SKIP_REASON = "admin-api 无 /api/admin/quick-replies 路由（issue #8994 ③）"
 
     def test_create_quick_reply(self, authed_admin_client: SmokeTestClient):
-        """创建快速回复"""
-        suffix = _unique_suffix()
-        resp = self._create_one(authed_admin_client, suffix)
-        if resp.status_code == 404:
-            pytest.skip("快速回复创建接口不存在")
-        assert resp.status_code in (200, 201), (
-            f"创建快速回复失败: status={resp.status_code}, body={resp.text[:300]}"
-        )
-        data = _extract_data(resp)
-        assert data.get("id") is not None, f"创建快速回复未返回 id: {data}"
-        assert data.get("title") == f"smoke快回_{suffix}", (
-            f"创建快速回复 title 不一致: {data}"
-        )
-
-        # 清理
-        authed_admin_client.delete(f"/api/admin/quick-replies/{data['id']}")
+        """创建快速回复（路由不存在 ⇒ 跳过）"""
+        pytest.skip(self._SKIP_REASON)
 
     def test_list_quick_replies(self, authed_admin_client: SmokeTestClient):
-        """获取快速回复列表"""
-        resp = authed_admin_client.get("/api/admin/quick-replies", params={
-            "page": 1,
-            "size": 20,
-        })
-        if resp.status_code == 404:
-            pytest.skip("快速回复列表接口不存在")
-        assert resp.status_code == 200, (
-            f"快速回复列表查询失败: status={resp.status_code}"
-        )
-        data = _extract_data(resp)
-        if isinstance(data, dict):
-            records = data.get("records", data.get("items", data.get("list", [])))
-            assert isinstance(records, list), (
-                f"快速回复列表结构异常: {list(data.keys())}"
-            )
-        else:
-            assert isinstance(data, list), f"期望数组，实际: {type(data)}"
+        """获取快速回复列表（路由不存在 ⇒ 跳过）"""
+        pytest.skip(self._SKIP_REASON)
 
     def test_update_quick_reply(self, authed_admin_client: SmokeTestClient):
-        """更新快速回复"""
-        suffix = _unique_suffix()
-        create_resp = self._create_one(authed_admin_client, suffix)
-        if create_resp.status_code == 404:
-            pytest.skip("快速回复创建接口不存在")
-        if create_resp.status_code not in (200, 201):
-            pytest.skip(f"前置创建失败: {create_resp.status_code}")
-
-        reply_id = _extract_data(create_resp).get("id")
-        assert reply_id, "前置创建未返回 id"
-
-        try:
-            new_title = f"smoke快回已更新_{suffix}"
-            update_resp = authed_admin_client.put(
-                f"/api/admin/quick-replies/{reply_id}",
-                json={
-                    "category": "smoke测试",
-                    "title": new_title,
-                    "content": "已更新的快速回复内容",
-                    "isPublic": True,
-                },
-            )
-            assert update_resp.status_code == 200, (
-                f"更新快速回复失败: status={update_resp.status_code}, "
-                f"body={update_resp.text[:300]}"
-            )
-            data = _extract_data(update_resp)
-            assert data.get("title") == new_title, (
-                f"更新后 title 不一致: {data}"
-            )
-        finally:
-            authed_admin_client.delete(f"/api/admin/quick-replies/{reply_id}")
+        """更新快速回复（路由不存在 ⇒ 跳过）"""
+        pytest.skip(self._SKIP_REASON)
 
     def test_delete_quick_reply(self, authed_admin_client: SmokeTestClient):
-        """删除快速回复"""
-        suffix = _unique_suffix()
-        create_resp = self._create_one(authed_admin_client, suffix)
-        if create_resp.status_code == 404:
-            pytest.skip("快速回复创建接口不存在")
-        if create_resp.status_code not in (200, 201):
-            pytest.skip(f"前置创建失败: {create_resp.status_code}")
-
-        reply_id = _extract_data(create_resp).get("id")
-        assert reply_id, "前置创建未返回 id"
-
-        del_resp = authed_admin_client.delete(f"/api/admin/quick-replies/{reply_id}")
-        assert del_resp.status_code in (200, 204), (
-            f"删除快速回复失败: status={del_resp.status_code}, body={del_resp.text[:300]}"
-        )
+        """删除快速回复（路由不存在 ⇒ 跳过）"""
+        pytest.skip(self._SKIP_REASON)
