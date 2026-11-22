@@ -10,6 +10,7 @@ import com.migao.admin.dto.ProductColorInput;
 import com.migao.admin.dto.ProductCreateRequest;
 import com.migao.admin.dto.ProductSkuInput;
 import com.migao.admin.dto.ProductUpdateRequest;
+import com.migao.admin.exception.BusinessException;
 import com.migao.admin.mapper.CategoryMapper;
 import com.migao.admin.mapper.ProductAttributeMapper;
 import com.migao.admin.mapper.ProductColorMapper;
@@ -43,6 +44,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * 🔴 <b>真库判据：建品/改品直写 SKU 库存**必须落账**（issue #4157）</b>。
@@ -161,18 +163,32 @@ class ProductStockLedgerRealDbTest {
     // ══════════════════════════════════ 判据 1：建品不再建立库存（issue #7597）
 
     @Test
-    @DisplayName("判据1·建品 ⇒ 不建立库存、不落基线行（历史口径「建档写 stock」已下线）")
+    @DisplayName("判据1·建品带非 0 库存 ⇒ 422 且一行不写（#9006）；不带 ⇒ SKU 从 0 起算、不落基线行（#7597）")
     void createProductDoesNotEstablishStock() throws Exception {
-        // 🔴 issue #7597（用户裁定 2026-10-24）：商品档案不再设置库存 ⇒ 建品请求里的 stock 被忽略，
+        // 🔴 issue #7597（用户裁定 2026-10-24）：商品档案不再设置库存 ⇒ 建品**不建立**库存，
         // 新 SKU 从 0 起算；库存只能由真实单据（入库单 / 订单 / 售后回补 / 批次盘点）产生。
-        // 改前本判据断言的是反面（建品 stock=30 落一条基线行 0→30）—— 那是被下线的那条路径。
-        String productId = createProduct("SG-4157-A", "30");
-        long skuId = skuIdOf(productId);
+        // 🔴 issue #9006（P2）：改前带 stock=30 是「200 + 静默忽略」（调用方以为设上了初始库存）
+        // ⇒ 现在**非 0 ⇒ 422 显式拒绝**，且必须发生在任何写之前（不留半截商品）。
+        ProductCreateRequest withStock = createRequest("SG-4157-A");
+        withStock.setStock(new BigDecimal("30"));
+        assertThatThrownBy(() -> productService.createProduct(withStock, TENANT_ID))
+                .as("建品带非 0 库存必须显式拒绝（改前：200 且落 0 —— 生产冒烟实测的静默偏差）")
+                .isInstanceOfSatisfying(BusinessException.class, e -> {
+                    assertThat(e.getHttpStatus()).as("422 = 可行动拒绝，不是 400/500").isEqualTo(422);
+                    assertThat(e.getMessage()).contains("不设置库存").contains("30");
+                    assertThat(e.getSuggestion()).as("必须给出可行动出口（入库单过账）").contains("入库");
+                });
+        assertThat(productRowsOfSkuCode("SG-4157-A"))
+                .as("422 必须发生在任何写之前 —— 不许留下一条「库存没设上」的半截商品")
+                .isZero();
 
+        // 不带商品级库存 ⇒ 回到 #7597 的口径：SKU 从 0 起算，且不落「初始库存基线行」
+        String productId = createProduct("SG-4157-A2");
+        long skuId = skuIdOf(productId);
         List<LedgerRow> rows = ledgerOf(skuId);
-        System.out.println("[#7597 判据1] 建品后 SKU 行 = " + skuRowsOf(productId) + "，台账行 = " + rows);
+        System.out.println("[#7597/#9006 判据1] 建品后 SKU 行 = " + skuRowsOf(productId) + "，台账行 = " + rows);
         assertThat(stockOf(skuId))
-                .as("建品请求里的库存必须被忽略（新商品从 0 起算）")
+                .as("建品不建立库存（新商品从 0 起算）")
                 .isEqualByComparingTo("0");
         assertThat(rows).as("建品不建立库存 ⇒ 不得落「初始库存基线行」（0 变更 = 噪声行）").isEmpty();
     }
@@ -201,7 +217,7 @@ class ProductStockLedgerRealDbTest {
     @Test
     @DisplayName("判据2·改品 stock 分支 ⇒ 每次变更一条行，且 before == 上一行 after（链条不断）")
     void updateProductStockChainsLedgerRows() throws Exception {
-        String productId = createProduct("SG-4157-B", "30");
+        String productId = createProduct("SG-4157-B");
         long skuId = skuIdOf(productId);
 
         updateStock(productId, "12.5");
@@ -225,7 +241,7 @@ class ProductStockLedgerRealDbTest {
     @Test
     @DisplayName("判据3·同一库存重复提交 ⇒ 台账不增行（重试 / 重复调用不重复落账）")
     void repeatedSaveWithSameStockAddsNoRow() throws Exception {
-        String productId = createProduct("SG-4157-C", "30");
+        String productId = createProduct("SG-4157-C");
         long skuId = skuIdOf(productId);
 
         updateStock(productId, "12.5");
@@ -246,31 +262,52 @@ class ProductStockLedgerRealDbTest {
 
     // ══════════════════════════════════ 夹具与读数
 
-    /** 建品（表单路径：只给颜色 + 门幅，SKU 由笛卡尔积生成 —— 与商家在商品页建档同一条路径）。 */
-    private static String createProduct(String skuCode, String stock) {
+    /**
+     * 建品请求（表单路径：只给颜色 + 门幅，SKU 由笛卡尔积生成 —— 与商家在商品页建档同一条路径）。
+     *
+     * <p>🔴 **不带商品级 `stock`**：issue #9006 起建品请求里非 0 库存 ⇒ 422 显式拒绝
+     * （#7597 起建品本来就不建立库存）。判据 1 的「422」半边自己往返回的请求上塞 stock。</p>
+     */
+    private static ProductCreateRequest createRequest(String skuCode) {
         ProductCreateRequest request = new ProductCreateRequest();
         request.setName("SG-4157 测试商品 " + skuCode);
         request.setSkuCode(skuCode);
         request.setStatus("draft");
         request.setBasePrice(new BigDecimal("168"));
-        request.setStock(new BigDecimal(stock));
         ProductColorInput color = new ProductColorInput();
         color.setColorName(COLOR_NAME);
         request.setColors(List.of(color));
         request.setDoorWidths(List.of(DOOR_WIDTH));
-        return productService.createProduct(request, TENANT_ID).getId();
+        return request;
     }
 
-    /** 建品（表单路径：显式 SKU 行 —— 库存值原样落库，不经「0/未填 ⇒ 默认 100」的生成分支）。 */
+    /** 建品 + 返回 id（不带商品级 stock，见 {@link #createRequest(String)}）。 */
+    private static String createProduct(String skuCode) {
+        return productService.createProduct(createRequest(skuCode), TENANT_ID).getId();
+    }
+
+    /** 建品（表单路径：显式 SKU 行；SKU 入参里的 stock 自 #7597 起被忽略 ⇒ 本夹具只覆盖「显式 SKU」形态）。 */
     private static String createProductWithSku(String skuCode, String stock) {
         ProductCreateRequest request = new ProductCreateRequest();
         request.setName("SG-4157 测试商品 " + skuCode);
         request.setSkuCode(skuCode);
         request.setStatus("draft");
         request.setBasePrice(new BigDecimal("168"));
-        request.setStock(new BigDecimal(stock));
         request.setSkus(List.of(skuInput(null, stock)));
         return productService.createProduct(request, TENANT_ID).getId();
+    }
+
+    /** 读数：按货号数商品行（判据 1 的「422 一行都不写」靠它，而不是靠捕获异常的种类）。 */
+    private static long productRowsOfSkuCode(String skuCode) throws SQLException {
+        try (Connection conn = dataSource.getConnection();
+             PreparedStatement ps = conn.prepareStatement(
+                     "SELECT count(*) FROM products WHERE sku_code = ? AND tenant_id = ?")) {
+            ps.setString(1, skuCode);
+            ps.setLong(2, TENANT_ID);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next() ? rs.getLong(1) : -1L;
+            }
+        }
     }
 
     private static ProductSkuInput skuInput(Long skuId, String stock) {

@@ -54,6 +54,7 @@ import type { PendingPhoto } from '../../../utils/inbound/barcodeDecode'
 import '../../../styles/admin-surfaces.scss'
 import './index.scss'
 import { WorkerBackLink } from '../../../components/WorkerBackLink'
+import PrivacyPopup from '../../../components/privacy/PrivacyPopup'
 
 /** 物流单位三选一（与后端 `parseDetails` 的话术同名：米 / 套 / 件）。 */
 const SHIPMENT_UNITS = ['米', '套', '件']
@@ -506,6 +507,8 @@ export default function WorkerShipmentPage() {
           </View>
         )}
       </View>
+      {/* 微信隐私授权弹窗：本页会（直接或经工具模块）触发隐私接口，弹窗挂在本页才显示得出来 */}
+      <PrivacyPopup />
     </ScrollView>
   )
 }

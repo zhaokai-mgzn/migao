@@ -2,6 +2,7 @@ import { useEffect, useRef, PropsWithChildren } from 'react'
 import Taro from '@tarojs/taro'
 import { useAuthStore } from './store/authStore'
 import { setupErrorHandler, setupNetworkListener } from './utils/errorHandler'
+import { setupPrivacyAuthorization } from './utils/privacy'
 import { reprintLandingUrl, reportLandingUrl } from './utils/inbound/deepLink'
 import { currentEntryLanding } from './utils/reportEntry'
 import './app.scss'
@@ -18,6 +19,12 @@ function App({ children }: PropsWithChildren) {
 
     // 初始化网络状态监听
     setupNetworkListener()
+
+    // 微信隐私授权（选中的照片或视频信息 / 摄像头 / 麦克风）：**只注册一次**（幂等）。
+    // 弹窗本体不在这里 —— 小程序端 App 里多渲染的节点没有页面归属、界面看不到，
+    // 故 `<PrivacyPopup />` 挂在会触发隐私接口的页面里（判据现取那一组页面，
+    // 见 tests/privacy-authorization.test.tsx）。h5 下本调用是 no-op（utils/privacy.ts 文件头）。
+    setupPrivacyAuthorization()
 
     // 初始化认证状态（异步：exp 过期时先续期，issue #7249）
     void useAuthStore.getState().initialize()

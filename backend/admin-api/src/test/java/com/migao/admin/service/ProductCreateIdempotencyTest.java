@@ -126,7 +126,7 @@ class ProductCreateIdempotencyTest {
         request.setName("线②验收重复提交");
         request.setCategoryId(CATEGORY_ID);
         request.setBasePrice(new BigDecimal("9.00"));
-        request.setStock(new BigDecimal("1.0"));
+        // issue #9006：建品不再接受非 0 商品级库存（422）⇒ 本夹具不带 stock（幂等判据与库存无关）
         request.setUnit("米");
         request.setPricingType("per_meter");
         request.setStatus("draft");
