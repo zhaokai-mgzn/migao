@@ -435,10 +435,22 @@ PY
   # ── 组装远端命令 = **极小的引导**（远端执行体**不进**命令内容；issue #6124）──────
   REMOTE_FETCH='WORK=$(mktemp -d) && T=$(mktemp) && die() { echo "❌ 引导失败：$1 —— 未做任何发布动作" >&2; exit 1; } && trap '"'"'rc=$?; rm -rf "$WORK"; rm -f "$T"; exit $rc'"'"' EXIT && curl -fsSL --retry 3 --retry-delay 5 --connect-timeout 15 --max-time 180 -o "$T" "https://codeload.github.com/zhaokai-mgzn/migao/tar.gz/'"$SCRIPT_SHA"'" || die "取不到远端执行体（codeload tar.gz/'"$SCRIPT_SHA"'）" && tar xzf "$T" -C "$WORK" --strip-components=1 || die "解不开远端执行体（$T）" && bash "$WORK/deploy/swas/terminal-publish-remote.sh"'
 
+  # ACR 登录材料（可选）：实例没登录过 ACR 时（生产机就是）必须由这里传。
+  # 密码走 base64 ⇒ 命令内容与 SWAS 调用记录里不出现明文。
+  ACR_LOGIN_EXPORTS=""
+  if [ -n "${ACR_USERNAME:-}" ] && [ -n "${ACR_PASSWORD:-}" ]; then
+    ACR_REGISTRY_FROM_IMAGE=${IMAGE%%/*}
+    ACR_B64=$(printf '%s' "$ACR_PASSWORD" | base64 | tr -d '\n')
+    ACR_LOGIN_EXPORTS="export TERMINAL_ACR_REGISTRY=$ACR_REGISTRY_FROM_IMAGE
+export TERMINAL_ACR_USERNAME=$ACR_USERNAME
+export TERMINAL_ACR_B64=$ACR_B64"
+  fi
+
   COMMAND_CONTENT="export TERMINAL_STATIC_ROOT=$STATIC_ROOT
 export TERMINAL_SUBDIR=$SUBDIR
 export TERMINAL_PUBLISH_IMAGE=$IMAGE
 export TERMINAL_RELEASE_TAG=$RELEASE_TAG
+$ACR_LOGIN_EXPORTS
 $REMOTE_FETCH"
 
   # ── 字节前置断言（**在发起任何云调用之前**）──────────────────────────────

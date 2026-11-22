@@ -19,8 +19,10 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 
 import java.time.OffsetDateTime;
 import java.util.HashMap;
@@ -62,6 +64,34 @@ public class NotificationService {
      */
     @Transactional(rollbackFor = Exception.class)
     public NotificationDTO createNotification(Long tenantId, CreateNotificationRequest request) {
+        return createNotification(tenantId, request, null);
+    }
+
+    /**
+     * 创建通知（带**幂等键**）—— 集群 P0-2 / issue #9019：到期待办投递的落点。
+     *
+     * <p><b>为什么需要这个重载</b>：{@code notifications} 的唯一索引
+     * {@code uk_notifications_dedupe (tenant_id, dedupe_key) WHERE dedupe_key IS NOT NULL} 只对
+     * <b>传了 key 的写入</b>生效。改前到期待办投递没传 key ⇒ 索引形同虚设 ⇒ 多实例各写一条站内信、
+     * 租约回收重投还会再写一条（员工收到重复提醒）。</p>
+     *
+     * <p><b>冲突即「已发」</b>：同一 {@code (tenant_id, dedupe_key)} 第二次插入撞唯一索引 ⇒
+     * 捕获 {@link DuplicateKeyException} 当**成功**返回 {@code null}（不抛 500）。语义与
+     * 「先查后插」的幂等命中完全一致：这件事已经通知过了。</p>
+     *
+     * <p>⚠️ 边界（如实登记）：捕获唯一冲突后本事务的语句已失败（PG 会把事务标成 aborted），
+     * 因此<b>本重载只用于「单条投递 = 本方法自己的事务」的调用方</b>，不要塞进一个更大的事务里
+     * （那样外层后续语句会失败）。当前唯一调用方 = {@code ScheduledTaskService#deliver}。</p>
+     *
+     * @param tenantId  租户ID
+     * @param request   创建请求
+     * @param dedupeKey 稳定幂等键（如 {@code scheduled_task:{taskId}}）；{@code null}/空 = 不去重
+     *                  （与两参重载逐字同行为）
+     * @return 新建的通知 DTO；幂等命中（键已存在 / 并发撞唯一索引）⇒ {@code null}（= 已发，不是失败）
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public NotificationDTO createNotification(Long tenantId, CreateNotificationRequest request,
+                                              String dedupeKey) {
         Notification notification = Notification.builder()
                 .tenantId(tenantId)
                 .recipientId(request.getRecipientId())
@@ -70,12 +100,25 @@ public class NotificationService {
                 .content(request.getContent())
                 .channel(request.getChannel())
                 .templateId(request.getTemplateId())
+                .dedupeKey(StringUtils.hasText(dedupeKey) ? dedupeKey : null)
                 .status("sent")
                 .sentAt(OffsetDateTime.now())
                 .retryCount(0)
                 .build();
 
-        notificationMapper.insert(notification);
+        try {
+            notificationMapper.insert(notification);
+        } catch (DuplicateKeyException e) {
+            // 并发/重放：唯一索引是**最终保证**（预检查在并发下必然有窗口，故不做预检查）。
+            // 映射成「已发」—— 重复投递不是业务错误，不能冒泡成 500。
+            // 判据：NotificationServiceTest / ScheduledTaskMultiInstanceClaimRealDbTest 的幂等用例。
+            if (StringUtils.hasText(dedupeKey)) {
+                log.info("通知幂等命中（撞唯一索引），视为已发: tenantId={}, dedupeKey={}",
+                        tenantId, dedupeKey);
+                return null;
+            }
+            throw e;
+        }
         log.info("创建通知成功: id={}, recipientId={}, title={}", notification.getId(), request.getRecipientId(), request.getTitle());
 
         return convertToDTO(notification);

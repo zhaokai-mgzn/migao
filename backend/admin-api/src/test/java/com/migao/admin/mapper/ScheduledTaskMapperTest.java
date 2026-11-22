@@ -1,17 +1,21 @@
 // case_ids: AG-010
 package com.migao.admin.mapper;
 
+import com.baomidou.mybatisplus.annotation.InterceptorIgnore;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.conditions.AbstractWrapper;
 import com.baomidou.mybatisplus.core.conditions.Wrapper;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.migao.admin.entity.ScheduledTask;
+import org.apache.ibatis.annotations.Select;
+import org.apache.ibatis.annotations.Update;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.lang.reflect.Method;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
@@ -27,15 +31,20 @@ import static org.mockito.Mockito.when;
  *
  * <p>守的判据 = 三个查询方法的**口径**（它们把 where 条件只写一处 —— 扫描器与商家读面共用）：</p>
  * <ul>
- *   <li>{@code selectDueByTenant}：{@code tenant_id} + {@code status='pending'} + {@code deleted=0}
- *       + {@code fire_at <= now}，且**有界**（{@code LIMIT}）—— 少了 {@code deleted=0} ⇒
- *       软删行被当生效待办（投递一条已取消的提醒）；少了 {@code status='pending'} ⇒
- *       {@code fired} 行被**重投**（疲劳控制失效）；少了 {@code LIMIT} ⇒ 一次扫描把全租户
- *       积压拉进内存；</li>
- *   <li>{@code selectByDedupKey}：{@code tenant_id} + {@code dedup_key} + {@code deleted=0}
- *       —— 少了 {@code tenant_id} 会跨租户串键；少了 {@code deleted=0} ⇒ 软删行占住幂等位
- *       （建单被误判「已存在」而静默不建）。</li>
+ *   <li>{@code claimDueByTenant}（集群 P0-2）：<b>一条</b>语句 = 判定（{@code tenant_id} +
+ *       {@code status='pending'} + {@code deleted=0} + {@code fire_at<=now}，有界 + {@code SKIP LOCKED}）
+ *       + 占位（{@code status='firing'} + {@code claimed_by/claimed_at}）+ 取回（{@code RETURNING}）
+ *       —— 少了 {@code status='pending'} ⇒ 已投递的行被**重领重投**；少了 {@code deleted=0} ⇒
+ *       软删行被当成生效待办；少了 {@code LIMIT} ⇒ 一次扫描把全租户积压拉进内存；少了
+ *       {@code SKIP LOCKED} ⇒ 输家阻塞在赢家行锁上（跨机房 RTT 下放大成串行点）；</li>
+ *   <li>{@code markFiredIfClaimed} / {@code markFailedIfClaimed}：终态 CAS **必须**带
+ *       {@code status='firing' AND claimed_by}（fencing token）—— 少了它 ⇒ 租约被回收后的僵尸实例
+ *       会覆盖别人的投递结果；</li>
+ *   <li>{@code reclaimStaleClaims}：跨租户 + <b>时效谓词</b>（{@code claimed_at < 死线}）⇒ 放回
+ *       {@code pending} 并清空领取标记 —— 少了时效谓词 ⇒ 活实例的领取被误回收。</li>
  * </ul>
+ * <p>{@code selectByDedupKey}：{@code tenant_id} + {@code dedup_key} + {@code deleted=0}
+ * —— 少了 {@code tenant_id} 会跨租户串键；少了 {@code deleted=0} ⇒ 软删行占住幂等位（建单被误判「已存在」而静默不建）。</p>
  */
 @DisplayName("ScheduledTaskMapper 验证（V149 / issue #6486 包 1）")
 class ScheduledTaskMapperTest {
@@ -62,37 +71,70 @@ class ScheduledTaskMapperTest {
     }
 
     @Test
-    @DisplayName("selectDueByTenant：pending + deleted=0 + fire_at<=now，且**有界**（LIMIT）")
-    @SuppressWarnings("unchecked")
-    void selectDueByTenantFiltersPendingNotDeletedDueAndBounded() {
-        ScheduledTaskMapper mapper = mock(ScheduledTaskMapper.class, CALLS_REAL_METHODS);
-        // 捕获实际下发的 wrapper（不用 `verify(captor)`：`when(...)` 本身也是一次调用，
-        // verify 会因「调用 2 次」而红 —— 那是测试写法问题，不是被测行为问题）
-        AtomicReference<Wrapper<ScheduledTask>> captured = new AtomicReference<>();
-        when(mapper.selectList(any())).thenAnswer(inv -> {
-            captured.set(inv.getArgument(0));
-            return List.of();
-        });
+    @DisplayName("claimDueByTenant：一条语句完成判定+占位+取回（pending / deleted=0 / 到期 / 有界 / SKIP LOCKED / RETURNING firing）")
+    void claimDueByTenantIsOneAtomicStatement() throws Exception {
+        Method m = ScheduledTaskMapper.class.getMethod("claimDueByTenant",
+                Long.class, OffsetDateTime.class, int.class, String.class);
+        String sql = annotationSql(m);
+        String upper = sql.toUpperCase();
 
-        mapper.selectDueByTenant(20L, NOW, 37);
+        assertThat(upper).as("必须是写面（UPDATE）—— 改前的前半段是普通 SELECT，无任何占位")
+                .contains("UPDATE SCHEDULED_TASKS");
+        assertThat(upper).as("且仍然只有**一条**语句（CTE 内 UPDATE + SELECT 同一事务）")
+                .contains("WITH PICKED AS");
+        assertThat(sql).as("领取条件：只领 pending（fired 不得重投）").contains("status = 'pending'");
+        assertThat(sql).as("软删行不是生效待办").contains("deleted = 0");
+        assertThat(sql).as("到期判定 fire_at <= now").contains("fire_at <= #{now}");
+        assertThat(sql).as("有界（疲劳控制）：一次不把全租户积压拉进内存")
+                .containsIgnoringCase("LIMIT #{limit}");
+        assertThat(sql).as("输家不阻塞：SKIP LOCKED（跨机房 RTT 下不变成串行点）")
+                .containsIgnoringCase("FOR UPDATE SKIP LOCKED");
+        assertThat(sql).as("占位 = firing + 领取者/时刻（同一行只有一个实例领得到）")
+                .contains("status = 'firing'")
+                .contains("claimed_by = #{claimedBy}")
+                .contains("claimed_at = #{now}");
+        assertThat(upper).as("只回本次真领到的行（副作用绑定「真正改了行」）").contains("RETURNING");
+        assertThat(sql).as("租户条件**显式**写出（不靠拦截器替我加）").contains("tenant_id = #{tenantId}");
+        assertThat(m.getAnnotation(InterceptorIgnore.class))
+                .as("定制 SQL 必须标 @InterceptorIgnore（显式 tenant_id 已写）").isNotNull();
+    }
 
-        Wrapper<ScheduledTask> wrapper = captured.get();
-        assertThat(wrapper).as("selectDueByTenant 必须下发查询条件").isNotNull();
-        String sql = wrapper.getSqlSegment();
-        assertThat(sql).as("租户维：不跨租户").contains("tenant_id");
-        assertThat(sql).as("只扫待投递：fired 不得重投（疲劳控制）").contains("status");
-        assertThat(sql).as("软删行不是生效待办").contains("deleted");
-        assertThat(sql).as("到期判定：fire_at <= now").contains("fire_at");
-        assertThat(sql).as("紧急度排序：越早到期越先投").containsIgnoringCase("order by");
-        // 🔴 有界：一次扫描不许把全租户积压拉进内存（超出的下轮再投，不丢只延后）。
-        // 用反射读 `AbstractWrapper.lastSql`：MP **没有**把 `.last(...)` 的内容暴露进
-        // `getSqlSegment()`，也没有 public getter（`getLastSql()` 在 3.5.16 上不存在）——
-        // 反射是唯一能机械读到 LIMIT 的口径。
-        assertThat(readLastSql(wrapper)).as("必须带 LIMIT（有界）")
-                .containsIgnoringCase("limit").contains("37");
-        // 参数值逐值：租户 20 + deleted 0 + status 'pending' + 到期时刻
-        assertThat(((AbstractWrapper<?, ?, ?>) wrapper).getParamNameValuePairs().values())
-                .contains(20L, 0, "pending", NOW);
+    @Test
+    @DisplayName("markFired/markFailed：终态 CAS 带 status='firing' + claimed_by（fencing token，防僵尸覆盖）")
+    void terminalCasIsFencedByClaimOwner() throws Exception {
+        Method fired = ScheduledTaskMapper.class.getMethod("markFiredIfClaimed",
+                String.class, Long.class, String.class, OffsetDateTime.class);
+        Method failed = ScheduledTaskMapper.class.getMethod("markFailedIfClaimed",
+                String.class, Long.class, String.class, OffsetDateTime.class);
+
+        String firedSql = annotationSql(fired);
+        assertThat(firedSql).as("终态 = fired").contains("status = 'fired'");
+        assertThat(firedSql).as("只改「我领到且仍在 firing」的行").contains("status = 'firing'")
+                .contains("claimed_by = #{claimedBy}");
+        assertThat(firedSql).as("租户条件显式").contains("tenant_id = #{tenantId}");
+
+        String failedSql = annotationSql(failed);
+        assertThat(failedSql).as("失败终态 = failed（不留在 pending 反复重投）").contains("status = 'failed'");
+        assertThat(failedSql).as("同样带 fencing 谓词").contains("status = 'firing'")
+                .contains("claimed_by = #{claimedBy}");
+    }
+
+    @Test
+    @DisplayName("reclaimStaleClaims：跨租户 + 时效谓词（claimed_at < 死线）⇒ 放回 pending 并清空领取标记")
+    void reclaimStaleClaimsIsTimePredicated() throws Exception {
+        Method m = ScheduledTaskMapper.class.getMethod("reclaimStaleClaims",
+                OffsetDateTime.class, OffsetDateTime.class);
+        String sql = annotationSql(m);
+
+        assertThat(sql).as("回收对象 = 超时的 firing").contains("status = 'firing'");
+        assertThat(sql).as("时效谓词：领取还新鲜 ⇒ 0 行（活实例不被误回收）")
+                .contains("claimed_at < #{staleBefore}");
+        assertThat(sql).as("放回 pending，等下一轮重新领取").contains("status = 'pending'");
+        assertThat(sql).as("清空领取标记（否则僵尸 token 还在）")
+                .contains("claimed_by = NULL").contains("claimed_at = NULL");
+        assertThat(m.getAnnotation(InterceptorIgnore.class))
+                .as("回收跑在无租户上下文的调度线程上 ⇒ 必须标 @InterceptorIgnore")
+                .isNotNull();
     }
 
     @Test
@@ -136,15 +178,11 @@ class ScheduledTaskMapperTest {
         assertThat(sql).as("缺省 status ⇒ 不按状态过滤（全量读面）").doesNotContain("status");
     }
 
-    /** 读 `AbstractWrapper.lastSql`（MP 只把它存在受保护字段里，无 public getter）。 */
-    private static String readLastSql(Wrapper<ScheduledTask> wrapper) {
-        try {
-            java.lang.reflect.Field f = AbstractWrapper.class.getDeclaredField("lastSql");
-            f.setAccessible(true);
-            Object lastSql = f.get(wrapper);
-            return lastSql == null ? "" : lastSql.toString();
-        } catch (ReflectiveOperationException e) {
-            throw new AssertionError("读不到 lastSql（MyBatis-Plus 版本变了？同步本判据）", e);
-        }
+    /** 读 {@code @Select}/{@code @Update} 的 SQL 文本（静态口径判据用；多段字符串按空格拼）。 */
+    private static String annotationSql(Method m) {
+        String[] parts = m.isAnnotationPresent(Select.class)
+                ? m.getAnnotation(Select.class).value()
+                : m.getAnnotation(Update.class).value();
+        return String.join(" ", parts);
     }
 }

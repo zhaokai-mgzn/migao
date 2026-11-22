@@ -17,9 +17,11 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
+import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 /**
  * 定时任务（用户「预约」）服务 —— issue #6486 包 1。
@@ -43,6 +45,20 @@ import java.util.Map;
  * 只有 {@code status='pending'} 会被投递；投递后置 {@code fired}（<b>不重投</b>）、可被
  * {@link #cancel} 置 {@code cancelled}；单轮每租户有条数上限（超出的下轮再投，<b>不丢，只延后</b>）。
  *
+ * <h2>多实例（集群 P0-2 / issue #9019）：原子领取 + 通知幂等 + 租约回收</h2>
+ * 本类的扫描腿**不是**「读 pending → 发通知 → 改状态」的 read-modify-write（那样 N 个实例会发 N 条
+ * 重复提醒）。三层合起来才有「恰好一次」的**可观察效果**：
+ * <ol>
+ *   <li><b>原子领取</b>（{@code ScheduledTaskMapper#claimDueByTenant}）：一条
+ *       {@code UPDATE … WHERE status='pending' … RETURNING} 完成「判定 + 占位（{@code firing}）+ 取回」
+ *       ⇒ 同一行只有一个实例领得到，输家 0 行静默跳过；</li>
+ *   <li><b>通知幂等</b>：投递带稳定 {@code dedupeKey = scheduled_task:{taskId}}（V187 的唯一索引兜底）
+ *       ⇒ 租约回收后的**重投**、或崩溃前已插入但未置终态的重放，都不会变成第二条站内信；</li>
+ *   <li><b>租约回收</b>（{@link #CLAIM_LEASE_TIMEOUT}）：领取后实例崩溃 ⇒ 行停在 {@code firing}；
+ *       每轮扫描先把超过租约仍未终态的行放回 {@code pending}，下次重新领取（不永久卡死）。</li>
+ * </ol>
+ * ⇒ 语义是「**至少投递一次 + 幂等**」，员工侧看到的就是「恰好一条」。
+ *
  * <h2>fail-soft</h2>
  * 与 {@code AutoBatchDueScanService} / {@code DailyBriefingService} 同款：单条失败不拖垮整轮、
  * 单租户失败不拖垮其它租户。incident 常量可 grep：
@@ -59,6 +75,22 @@ public class ScheduledTaskService {
     /** 单条投递失败（可 grep）。 */
     public static final String INCIDENT_DELIVER_FAILED = "SCHEDULED_TASK_DELIVER_FAILED";
 
+    /** 租约回收失败（可 grep）：回收腿自身出错不拖垮本轮扫描。 */
+    public static final String INCIDENT_LEASE_RECLAIM_FAILED = "SCHEDULED_TASK_LEASE_RECLAIM_FAILED";
+
+    /** 领取租约已失效（可 grep）：投递完成了但终态写不进去（行已被回收/被别的实例领走）。 */
+    public static final String INCIDENT_CLAIM_LOST = "SCHEDULED_TASK_CLAIM_LOST";
+
+    /**
+     * 领取租约超时：领取后超过这么久仍停在 {@code firing} ⇒ 视为领取实例已死，回收成 {@code pending}。
+     *
+     * <p>定 5 分钟的理由：扫描周期是 1 分钟，一条投递是「一次 insert + 一次 update」的量级
+     * （毫秒级）；5 分钟 ≫ 正常投递耗时，又 ≪ 「用户能忍多久没收到提醒」的尺度
+     * ⇒ 崩溃后最迟约 5~6 分钟自动重投。**不能定得太小**：活得慢的实例会被误回收
+     * （虽然通知幂等键会兜住重复提醒，但会白白多打一轮）。</p>
+     */
+    static final Duration CLAIM_LEASE_TIMEOUT = Duration.ofMinutes(5);
+
     /**
      * 单轮单租户最多投递条数。
      *
@@ -74,6 +106,14 @@ public class ScheduledTaskService {
     private final TenantMapper tenantMapper;
     private final NotificationService notificationService;
     private final BusinessClock businessClock;
+
+    /**
+     * 本实例的领取者标识（写进 {@code claimed_by}；同时是终态 CAS 的 fencing token）。
+     *
+     * <p>每实例一个随机值（不是 hostname：同机多进程也要区分）。不持久化 —— 实例重启就是新的领取者，
+     * 旧领取留下的 {@code firing} 行走租约回收（这正是回收存在的理由）。</p>
+     */
+    private final String claimOwner = "sched-" + UUID.randomUUID();
 
     // ==================== 写面（建单 / 取消） ====================
 
@@ -191,6 +231,9 @@ public class ScheduledTaskService {
      */
     public int scanDue() {
         OffsetDateTime now = businessClock.nowOffset();
+        // 补偿腿：先把「领取后实例崩溃」的超时 firing 放回 pending（跨租户一条原子 UPDATE）。
+        // 放在逐租户循环**之前**：回收对象是「所有租户里已超时的领取」，不需要租户上下文。
+        reclaimStaleClaims(now);
         List<Tenant> tenants = tenantMapper.selectList(new LambdaQueryWrapper<>());
         int delivered = 0;
         for (Tenant tenant : tenants) {
@@ -213,12 +256,16 @@ public class ScheduledTaskService {
     }
 
     private int deliverDueForTenant(Long tenantId, OffsetDateTime now) {
-        List<ScheduledTask> due = scheduledTaskMapper.selectDueByTenant(tenantId, now, SCAN_BATCH_LIMIT);
+        // 🔴 原子领取（集群 P0-2）：判定 + 占位 + 取回同一条语句 ⇒ 同一行只有一个实例领得到。
+        // 拿不到行 = 本轮无到期，或全被别的实例先领走 —— 都不是错误，静默跳过（下一轮再看）。
+        List<ScheduledTask> due = scheduledTaskMapper.claimDueByTenant(
+                tenantId, now, SCAN_BATCH_LIMIT, claimOwner);
         int delivered = 0;
         for (ScheduledTask task : due) {
             try {
-                deliver(task, now);
-                delivered++;
+                if (deliver(task, now)) {
+                    delivered++;
+                }
             } catch (Exception e) {
                 log.error("{} taskId={} tenantId={}: {}",
                         INCIDENT_DELIVER_FAILED, task.getId(), tenantId, e.getMessage(), e);
@@ -233,8 +280,14 @@ public class ScheduledTaskService {
      *
      * <p>🔴 <b>本方法是「只读投递」的落点</b>：它只想 {@code notifications}，不做任何业务写。
      * 加业务写 = 越过 L1 边界（见类 javadoc 不变量 3）。</p>
+     *
+     * <p>通知带**稳定幂等键**（{@code scheduled_task:{taskId}}）：租约回收后的重投、崩溃前插入但未置
+     * 终态的重放，都只会落一条站内信（V187 的 {@code uk_notifications_dedupe} 是最终保证，
+     * {@link NotificationService} 把唯一冲突映射成「已发」）。</p>
+     *
+     * @return {@code true} = 本次投递成功且终态写入成功；{@code false} = 租约已失效（不算投递成功）
      */
-    private void deliver(ScheduledTask task, OffsetDateTime now) {
+    private boolean deliver(ScheduledTask task, OffsetDateTime now) {
         CreateNotificationRequest request = new CreateNotificationRequest();
         request.setRecipientId(task.getSubjectId());
         request.setRecipientType(StringUtils.hasText(task.getSubjectType())
@@ -242,22 +295,57 @@ public class ScheduledTaskService {
         request.setTitle(task.getActionLabel());
         request.setContent(task.getCriterion());
         request.setChannel("internal");
-        notificationService.createNotification(task.getTenantId(), request);
+        notificationService.createNotification(task.getTenantId(), request, notificationDedupeKey(task));
 
-        scheduledTaskMapper.updateById(task.toBuilder()
-                .status(ScheduledTask.STATUS_FIRED)
-                .firedAt(now)
-                .updatedAt(now)
-                .build());
+        int updated = scheduledTaskMapper.markFiredIfClaimed(
+                task.getId(), task.getTenantId(), claimOwner, now);
+        if (updated == 0) {
+            // 行已被回收（租约超时）或被我之外的领取者重新领走 ⇒ 终态不该由我写。
+            // 通知那条已被幂等键挡住，不会重复提醒；这里只留可 grep 的痕迹。
+            log.warn("{} taskId={}：租约已失效，跳过置 fired", INCIDENT_CLAIM_LOST, task.getId());
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * 投递幂等键：一条待办只允许落**一条**站内通知。
+     *
+     * <p>稳定的原因：{@code scheduled_tasks.id} 是建单期生成的 UUID，投递/重投/回收重放都指向同一行
+     * ⇒ 同一个键。V187 的唯一索引 {@code uk_notifications_dedupe} 只对非 NULL 键生效。</p>
+     */
+    static String notificationDedupeKey(ScheduledTask task) {
+        return "scheduled_task:" + task.getId();
+    }
+
+    /**
+     * 租约回收一轮：把「领取后实例崩溃」留下的 {@code firing} 行放回 {@code pending}。
+     *
+     * <p>一条跨租户原子 UPDATE（时效谓词在 SQL 里，见
+     * {@code ScheduledTaskMapper#reclaimStaleClaims}）⇒ 幂等、活实例不被误回收。</p>
+     *
+     * @return 本轮回收行数（0 = 没有僵尸领取）
+     */
+    int reclaimStaleClaims(OffsetDateTime now) {
+        try {
+            int reclaimed = scheduledTaskMapper.reclaimStaleClaims(
+                    now.minus(CLAIM_LEASE_TIMEOUT), now);
+            if (reclaimed > 0) {
+                log.warn("[ScheduledTask] 租约回收：{} 条 firing 超过 {} 未终态，已放回 pending",
+                        reclaimed, CLAIM_LEASE_TIMEOUT);
+            }
+            return reclaimed;
+        } catch (Exception e) {
+            // 补偿腿失败**不拖垮**本轮扫描（fail-soft）：回收是兜底，不是投递的前提。
+            log.error("{} : {}", INCIDENT_LEASE_RECLAIM_FAILED, e.getMessage(), e);
+            return 0;
+        }
     }
 
     /** 单条投递失败 ⇒ 置 {@code failed}（可归因；不静默留 pending 反复重试打扰用户）。 */
     private void markFailed(ScheduledTask task, OffsetDateTime now) {
         try {
-            scheduledTaskMapper.updateById(task.toBuilder()
-                    .status(ScheduledTask.STATUS_FAILED)
-                    .updatedAt(now)
-                    .build());
+            scheduledTaskMapper.markFailedIfClaimed(task.getId(), task.getTenantId(), claimOwner, now);
         } catch (Exception e) {
             log.error("{} 置 failed 亦失败 taskId={}: {}",
                     INCIDENT_DELIVER_FAILED, task.getId(), e.getMessage());

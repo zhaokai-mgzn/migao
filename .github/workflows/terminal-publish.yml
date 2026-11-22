@@ -1,4 +1,4 @@
-name: Publish terminal (app.migaozn.com/terminal/)
+name: Publish terminal (/terminal/ → app.migaozn.com 或 app.cytda.com)
 
 # ── 为什么需要这条腿（issue #8195）─────────────────────────────────────────────
 # 观星台终端（车间一体机 Windows EXE / 工人手持机 Android APK）此前**没有任何发布通路**：
@@ -45,6 +45,14 @@ on:
         description: '版本说明（展示在下载页；留空则以 tag 作为说明）'
         required: false
         type: string
+      target:
+        description: '发布目标：test（app.migaozn.com）或 prod（app.cytda.com）'
+        required: false
+        default: test
+        type: choice
+        options:
+          - test
+          - prod
 
 permissions:
   contents: read
@@ -61,18 +69,23 @@ env:
   TERMINAL_STATIC_ROOT: /opt/migao-deploy/h5
   TERMINAL_SUBDIR: terminal
   # 清单里 download_url 的前缀（终端与下载页都读这个地址）
-  TERMINAL_BASE_URL: https://app.migaozn.com/terminal
+  # 清单里 download_url 的前缀：按发布目标切换（prod = 生产 cytda，终端只读这里）
+  TERMINAL_BASE_URL: ${{ inputs.target == 'prod' && 'https://app.cytda.com/terminal' || 'https://app.migaozn.com/terminal' }}
   # 传输镜像的仓库（与 deploy-frontend.yml 同域同命名空间 ⇒ 不新增 ACR secret）
   ACR_REGISTRY: crpi-qdcgkzwx9p9zckga.cn-hangzhou.personal.cr.aliyuncs.com
   ACR_NAMESPACE: ai-customer-service
   IMAGE_NAME: terminal-dist
-  # 与 deploy-frontend.yml / bmini-h5-publish.yml 同一台 SWAS 实例
-  SWAS_INSTANCE_ID: b23c69e599524b1da719734f72e6a0e3
+  # 发布目标实例：test = 与 deploy-frontend 同一台；prod = 生产实例（issue #8996）
+  SWAS_INSTANCE_ID: ${{ inputs.target == 'prod' && 'c0080f77c8e24ad99f3eb3ebff753c18' || 'b23c69e599524b1da719734f72e6a0e3' }}
   SWAS_REGION: cn-hangzhou
 
 jobs:
   publish:
     name: publish terminal → /terminal/ + identity assertions
+    # 🔴 生产凭据（PROD_ALIYUN_* / PROD_ACR_*）挂在 `production` environment 上（与 deploy-prod.yml 同源），
+    #    不声明 environment 时它们解析为空 ⇒ ACR 登录「成功」但 docker push 401、RunCommand 也拿不到实例。
+    #    该环境当前**无审批规则**（实测 protection_rules 为空），所以不引入人工闸；对 test 目标无功能影响。
+    environment: production
     runs-on: ubuntu-latest
     # 下载 + 打包 + 推镜像 + 发布 + served 断言（含容器拉取与 curl 重试）
     timeout-minutes: 30
@@ -138,7 +151,7 @@ jobs:
       # 判据 = tests/unit_ci_workflows/test_acr_login_not_load_bearing.py（双向）。
       - name: Docker login ACR (retry, fatal)
         if: ${{ hashFiles('scripts/acr_login.sh') != '' }}
-        run: bash scripts/acr_login.sh ${{ env.ACR_REGISTRY }} "${{ secrets.ACR_USERNAME }}" "${{ secrets.ACR_PASSWORD }}" --fatal
+        run: bash scripts/acr_login.sh ${{ env.ACR_REGISTRY }} "${{ inputs.target == 'prod' && secrets.PROD_ACR_USERNAME || secrets.ACR_USERNAME }}" "${{ inputs.target == 'prod' && secrets.PROD_ACR_PASSWORD || secrets.ACR_PASSWORD }}" --fatal
 
       - name: Pack payload into transport image and push
         # 推送的显式墙钟上界（同 bmini-h5-publish / issue #5814：`docker push` 会无上界地挂住）
@@ -176,11 +189,14 @@ jobs:
 
       - name: Publish to SWAS (/terminal/ subtree) and assert identity
         env:
-          ALIYUN_ACCESS_KEY_ID: ${{ secrets.ALIYUN_ACCESS_KEY_ID }}
-          ALIYUN_ACCESS_KEY_SECRET: ${{ secrets.ALIYUN_ACCESS_KEY_SECRET }}
+          ALIYUN_ACCESS_KEY_ID: ${{ inputs.target == 'prod' && secrets.PROD_ALIYUN_ACCESS_KEY_ID || secrets.ALIYUN_ACCESS_KEY_ID }}
+          ALIYUN_ACCESS_KEY_SECRET: ${{ inputs.target == 'prod' && secrets.PROD_ALIYUN_ACCESS_KEY_SECRET || secrets.ALIYUN_ACCESS_KEY_SECRET }}
           # 🔴 **执行体 ref**（issue #6124）：引导**按它**从 codeload 取回
           #    `deploy/swas/terminal-publish-remote.sh` 并执行；发布逻辑**不进**命令内容。
           #    = 本 workflow 跑的那个 commit ⇒ 它的 tarball 必定含远端执行体。
+          # 实例未登录 ACR 时（生产机从不 pull 镜像）由这里传凭据，脚本在远端 docker login
+          ACR_USERNAME: ${{ inputs.target == 'prod' && secrets.PROD_ACR_USERNAME || secrets.ACR_USERNAME }}
+          ACR_PASSWORD: ${{ inputs.target == 'prod' && secrets.PROD_ACR_PASSWORD || secrets.ACR_PASSWORD }}
           TERMINAL_PUBLISHED_COMMIT: ${{ github.sha }}
           INPUT_TAG: ${{ inputs.release_tag }}
         run: |
@@ -193,8 +209,9 @@ jobs:
       - name: Assert served manifests, sha256, MIME and 404 (/terminal/)
         run: |
           set -euo pipefail
-          WIN_MANIFEST="https://app.migaozn.com/terminal/latest.json"
-          ANDROID_MANIFEST="https://app.migaozn.com/terminal/android/latest.json"
+          BASE="${{ env.TERMINAL_BASE_URL }}"
+          WIN_MANIFEST="$BASE/latest.json"
+          ANDROID_MANIFEST="$BASE/android/latest.json"
           fail=0
 
           check_manifest() {
@@ -227,9 +244,9 @@ jobs:
           esac
 
           # 缺失文件必须 404 —— 修复前这里是 200 + C 端 HTML（假 200，监控不红）
-          missing_code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 30 "https://app.migaozn.com/terminal/__absent__.exe")
+          missing_code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 30 "$BASE/__absent__.exe")
           if [ "$missing_code" != "404" ]; then
-            echo "::error::/terminal/__absent__.exe 返回 $missing_code，必须是 404（缺失文件不许回落 SPA）"
+            echo "::error::$BASE/__absent__.exe 返回 $missing_code，必须是 404（缺失文件不许回落 SPA）"
             fail=1
           fi
           exit "$fail"
