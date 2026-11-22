@@ -208,6 +208,7 @@
     "V211__add_playbooks_conflict_key.sql": "sha256:8c6a840724d1e999e730138492e8721d91a2b54a7deb3a4d5393fee844a1d1f1",
     "V212__add_playbook_lifecycle.sql": "sha256:7bad58c832457631458e6787ed435c3e5a7252ef01450b5d5ca1d26ae4c11837",
     "V213__rename_c_end_agent_display_name.sql": "sha256:0f2e0c6a7f8b2e7386b6d1fdb13fd4e62ba672075ed166b536fed977895f6afb",
-    "schema.sql": "sha256:0ad9c0e36ffc7f45ffc3a35d0e063f09b8a6870b739227603a196c9e0cb72ebc"
+    "V214__add_scheduled_task_claim_lease.sql": "sha256:5726c7a382b7176a5d6ee5a533b67b9f9d4bec7f6cce1c42d0ddd659df154cfb",
+    "schema.sql": "sha256:3234a1ebd51c365e93674ad496a2394552e1116642700dcdb11165dc0bd31cd7"
   }
 }
