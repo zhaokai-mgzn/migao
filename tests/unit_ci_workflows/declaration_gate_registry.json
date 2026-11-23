@@ -634,6 +634,13 @@
       "issue": "#6968",
       "criterion": "tests/unit_ci_workflows/test_post_merge_verify_credential_probe.py::test_negative_control_probe_is_green_on_the_real_tree",
       "note": "注释声称与 `tests/unit_ci_workflows/test_case_id_claims.py::TOKEN_ENVS` 同源（driver 交给判据解释器的凭据键 ⟺ 判据自己取凭据的键）⇒ 由该判据的 ④ 腿**真读两侧模块**逐字比对（判据改成读第三个键 / 驱动侧少一个键 ⇒ 当场红）；同腿另判「凭据键 ⊆ JUDGING_ENV_KEYS」⇒ 读数不会看不见它们"
+    },
+    {
+      "file": "tests/unit_ci_workflows/test_bmini_dist_budget.py",
+      "symbol": "SHELL_CORPUS_EXCLUDE_DIRS",
+      "issue": "#8981",
+      "criterion": "tests/unit_ci_workflows/test_guard_scope_declaration.py::test_declared_range_equals_actually_scanned_path_set",
+      "note": "注释声称 `.sh` 语料的剪枝与 `test_guard_scope_declaration.py` 的冻结值逐字一致（#5284 的射程口径）⇒ 由该判据钉住：它要求 `declaration.exclude_dirs` == 该文件冻结的 `CENSUS_EXCLUDE_DIRS`、被测模块的 `GUARD_SCOPE` 与台账 `declaration` 逐字相同、枚举结果集必须相等。收窄射程或扩大剪枝 ⇒ 两边同时红。"
     }
   ],
   "frozen_declarations": [
