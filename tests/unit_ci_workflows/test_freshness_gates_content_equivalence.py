@@ -112,9 +112,9 @@ def test_every_caller_uses_the_shared_confirm_script(gate):
         assert gate["confirm_script"] in text, (
             f"{caller} 没有走 {gate['confirm_script']}（内容等价复核）⇒ 这条腿又会「代理说旧就判红」"
         )
-        bare = re.search(r"python3\s+" + re.escape(gate["script"]), text)
-        assert bare is None, (
-            f"{caller} 里仍有**直接**跑 {gate['script']} 的裸调用（绕过了内容等价复核）"
+        bare = re.findall(r"python3\s+" + re.escape(gate["script"]), text)
+        assert bare == [], (
+            f"{caller} 里仍有 {len(bare)} 处**直接**跑 {gate['script']} 的裸调用（绕过了内容等价复核）"
         )
 
 
