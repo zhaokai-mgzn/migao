@@ -27,7 +27,11 @@ git fetch --quiet "$REMOTE" "+refs/heads/$MAIN_BRANCH:refs/remotes/$REMOTE/$MAIN
 }
 
 main_sha=$(git rev-parse "$REMOTE/$MAIN_BRANCH" 2>/dev/null) || { echo "✗ 取不到 $REMOTE/$MAIN_BRANCH" >&2; exit 3; }
-release_sha=$(git rev-parse "$REMOTE/$RELEASE_BRANCH" 2>/dev/null || true)
+# 🔴 必须 `--verify --quiet`：裸 `git rev-parse <ref>` 在 ref 不存在时会把 **ref 名本身**
+#    打到 stdout（退出码 128，被 `|| true` 吞掉）⇒ release_sha 非空但不是一个 sha，
+#    「发布线尚不存在」（下面那条分支）永远走不到，而被误报成「发布线被旁路」。
+#    判据 = tests/unit_ci_workflows/test_bmini_release_one_command.py::test_cut_release_reports_a_missing_release_line_instead_of_a_fake_bypass
+release_sha=$(git rev-parse --verify --quiet "$REMOTE/$RELEASE_BRANCH" 2>/dev/null || true)
 
 if [ -z "$release_sha" ]; then
   echo "ℹ️  $RELEASE_BRANCH 尚不存在；将按 $MAIN_BRANCH 创建（${main_sha:0:7}）"
