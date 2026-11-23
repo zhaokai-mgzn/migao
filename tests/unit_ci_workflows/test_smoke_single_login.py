@@ -61,23 +61,33 @@ REFRESH_COOKIE = "refresh_token=rt-from-login; Path=/; HttpOnly; Secure; SameSit
 
 
 def _install_httpx_stub():
-    """本文件**自己**装 httpx 替身（不借别的判据的注入；L0 CI 只装 pytest+pyyaml）。
+    """保证 `httpx.Response` 名字可用（`helpers.py` 的注解需要），**不依赖别人注入了什么**。
 
-    只用到 import 期的 `Response` 名字（`helpers.py` 的注解）—— 本文件从不真实发起 HTTP：
-    transport 一律是下面的 `_RecordingClient` 记录器。
+    L0 CI 只装 pytest+pyyaml（没有真 httpx）；而同一 xdist worker 里可能已有**别的判据**
+    注入的半成品 stub（实测 shard 2：`module 'httpx' has no attribute 'Response'` ⇒ 直接
+    `setdefault` 会让本判据的绿**依赖别人的注入**，正是
+    `test_sys_modules_cross_file_independence.py` 要禁的形态）⇒ 这里「**自己的替代实现 + 补齐缺失名字**」：
+    没有真 httpx 时自己装；已有模块缺 `Response`/`Client` 时补上（additive，不删别人的名字）。
+    本文件从不真实发起 HTTP：transport 一律是 `_RecordingClient` 记录器。
     """
-    stub = types.ModuleType("httpx")
+    module = sys.modules.get("httpx")
+    if module is None:
+        try:
+            import httpx as module  # noqa: F401  —— 真依赖可用就复用（本文件仍不发请求）
+        except ImportError:
+            module = types.ModuleType("httpx")
+            sys.modules["httpx"] = module
+    if not hasattr(module, "Response"):
+        class Response:
+            """`helpers.py` 的类型注解只需要这个名字存在（本文件从不构造真实响应）。"""
 
-    class _Client:  # pragma: no cover - 构造即失败：本文件不得真实发起 HTTP
-        def __init__(self, *args, **kwargs):
-            raise AssertionError("httpx 替身：本判据不得真实发起 HTTP")
+        module.Response = Response
+    if not hasattr(module, "Client"):
+        class _Client:  # pragma: no cover - 构造即失败：本文件不得真实发起 HTTP
+            def __init__(self, *args, **kwargs):
+                raise AssertionError("httpx 替身：本判据不得真实发起 HTTP")
 
-    class Response:
-        """`helpers.py` 的类型注解只需要这个名字存在（本文件从不构造真实响应）。"""
-
-    stub.Client = _Client
-    stub.Response = Response
-    sys.modules.setdefault("httpx", stub)
+        module.Client = _Client
 
 
 def _load_smoke_module(stem: str):
@@ -93,7 +103,12 @@ def _load_smoke_module(stem: str):
     spec = importlib.util.spec_from_file_location(name, SMOKE_DIR / f"{stem}.py")
     module = importlib.util.module_from_spec(spec)
     sys.modules[name] = module
-    spec.loader.exec_module(module)
+    try:
+        spec.loader.exec_module(module)
+    except BaseException:
+        # 半成品模块留在 sys.modules 会被后续用例当成「已加载」⇒ 报「不是 fixture」的假红
+        sys.modules.pop(name, None)
+        raise
     return module
 
 
