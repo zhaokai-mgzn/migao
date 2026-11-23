@@ -10673,3 +10673,56 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+
+  - id: MC-349
+    legacy_id: ""
+    title: "生产发布唯一入口在部署机（与 GitHub 解耦）：只读盘点 / 默认 dry-run / 发后同源自检 / 切换盲区度量"
+    domains:
+      - misc
+      - deploy
+      - ci
+    tier: normal
+    tags:
+      - deploy
+      - release
+      - prod
+      - one-command
+      - host-gate
+      - release-line
+      - blindspot
+      - red-proof
+    truths_ref: []
+    # 真值缺省说明：这是**部署契约**（不是 LLM / 业务真值）—— 判据落在**真 git 沙箱**（本地 bare origin +
+      # 检出，发布线/侧分支的相对关系按用例摆位）、`aliyun` 云助手桩（记录每次 argv、按命令内容回放输出）、
+      # 443 `curl` 桩上：零网络、零真发布、零云调用、零 LLM。
+    precondition:
+      - "2026-11-23 用户裁定逐字：「为什么部署生产环境还要依赖 github 的 ci？不可以直接走部署机吗？**生产环境需要和 github 的能力解耦**」；追加裁定：「另外要考虑未来做集群部署时如何不影响用户，让用户无感」「磁盘先不用管，未来要考虑做集群的磁盘告警，可以依赖阿里云的能力」。"
+      - "通道事实：生产实例（SWAS 轻量 `c0080f77c8e24ad99f3eb3ebff753c18` / `8.136.134.44` / `cn-hangzhou`）**22 端口只对办公出口开放**（部署机连不上）、**443 通**；凭证只在**部署机本地** `~/.aliyun/config.json` 的 `prod` profile ⇒ 运维通道 = OpenAPI 云助手 `swas-open run-command` / `describe-invocation-result`（部署机已装 `~/bin/aliyun` v3.5.4 arm64 + `aliyun-cli-swas-open`）。GitHub runner 拿不到现场。"
+      - "通道三坑（写进 `scripts/lib/prod-swas-run.sh` 头部）：`--command-content` 是**明文**（给 base64 会被当成一个超长文件名 ⇒ 远端 `exit 127`）；回读 `Output` 是 **base64**；返回结构有 `InvocationResult` / `InvocationResults.InvocationResult` 两种形态。"
+      - "远端执行体是**盘上既有** `/opt/migao-deploy/deploy.sh`（严格蓝绿，issue #4785：green 到第二端口 → 同一份健康判据 → 通过才替换正式容器；有意不走 nginx upstream 切换，切换 = 重建正式容器 + `nginx -s reload`）。本仓**不重写**部署逻辑、**不复制**内存预检。"
+      - "发布线口径不变：目标版本必须是 `origin/release` 的祖先（`release` 上有 `main` 没有的提交**允许**并记账；`main` 领先 `release` 的部分**报数**、本次不发）。"
+    user_inputs:
+      - "生产今天刚**发成半截**（11:32–11:39 只更新 admin-api：`sha-26ff9f7` 起于 11-23 11:39，而 `admin-web=sha-caf01e4` 停在 11-21 22:52、`ai-agent=sha-0dced39` 停在 11-22 18:25）；而 GitHub 那条腿先天拿不到现场。怎么把「生产发布」收敛成**部署机上的唯一入口**，并把「同源」与「切换无感」变成会红 / 会量的判据？"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "判据 1·**只读白名单**：`prod-inspect.sh` 的远端载荷逐条拆开（`sec <名字> '<命令>'`，落在 `# READONLY-PAYLOAD-BEGIN/END` 之间），每个管道段**首词必须在白名单**内，`docker` 只许 `ps` / `system`，载荷里不许出现重定向（写面）。执行点 = tests/unit_ci_workflows/test_prod_release_decoupled.py::test_inspect_payload_is_readonly_whitelisted"
+      - "判据 2·**发布脚本不得自带写面**：`prod-release.sh` 里不许出现 `docker restart/rm/stop/kill/prune`、`systemctl start/stop/restart/reload`、`rm -rf`、`nginx -s reload`、`docker compose up/down`、`docker build` —— 发布只能通过盘上 `deploy.sh`；出现 ⇒ 判红**并点名行号**。执行点 = 同文件 ::test_release_script_has_no_write_verbs"
+      - "判据 3·**`--apply` 闸门（静态 + 行为）**：dry-run 的出口（`DRY-RUN=OK`）必须排在真发入口之前（照行号判）＋ 有 `$APPLY` 守卫；行为桩 = `aliyun` 桩记录每次 argv，实跑 `--dry-run` ⇒ **0 次 run-command**、不写台账、不出现 `SWITCH-BLINDSPOT`。执行点 = 同文件 ::test_apply_gate_is_static / ::test_dry_run_never_calls_run_command / ::test_dry_run_does_not_start_the_blindspot_probe"
+      - "判据 4·**机器闸门**：本机身份 == `ssh -G migao-deploy` 的 `HostName`（**禁写死 IP**）；非部署机 ⇒ 退 **1** + 三出口 + **0 次 run-command**；读数拿不到 ⇒ 退 **3**；身份相等 ⇒ `--host-assert` 退 0 且零副作用。执行点 = 同文件 ::test_machine_gate_refuses_off_the_deploy_box / ::test_machine_gate_is_undecidable_when_the_reading_is_unavailable / ::test_host_assert_passes_on_the_deploy_box"
+      - "判据 5·**版本闸门（三态，本地 bare 仓不真连网）**：侧分支上的提交（不是 `origin/release` 祖先）⇒ 退 **1** 具名 + 打印 `release..target` 的提交；`origin/release` 上的提交 ⇒ 通过并报「main 领先 N 个提交（本次不发）」；取不到 origin ⇒ 退 **3**。执行点 = 同文件 ::test_version_gate_refuses_a_sha_not_on_the_release_line / ::test_version_gate_accepts_a_commit_on_the_release_line / ::test_version_gate_is_undecidable_when_origin_is_unreachable"
+      - "判据 6·**发后同源自检 + 台账**：全桩 happy path ⇒ 退 0、三服务同源、`SWITCH-BLINDSPOT failures=0 max_gap_ms=<n>`、恰好一行可粘贴 `PROD-RELEASE rc=0 version=… api=… web=… ai=… at=… operator=…`、台账**恰好追加一次**（`>>`，不是覆写）；自检不同源（admin-web 停在 `caf01e4`）⇒ 退 **1**、**点名 web**、写「≠ 目标」、台账**0 次**。执行点 = 同文件 ::test_apply_happy_path_reports_blindspot_and_appends_the_ledger_once / ::test_self_check_names_the_mismatched_service_and_skips_the_ledger"
+      - "判据 7·**切换盲区（无感发布的度量）**：`curl` 桩每 2 次给一次 `000` ⇒ 打印 `SWITCH-BLINDSPOT failures>0` + `::warning::`，**但**发布整体仍退 0（改造 `deploy.sh` 不在本包范围）；未配置 `MIGAO_PROD_SSE_PROBE_URL` ⇒ 必须打印 `SSE-PROBE=SKIPPED`（不假装在探）。执行点 = 同文件 ::test_blindspot_reports_failures_without_failing_the_release"
+      - "判据 8·**`deploy.sh --help` 现读**：`--help` 里没有版本参数 ⇒ 退 **3** + 打印原文片段（不猜）；`--help` 给 `--ref` ⇒ 真发命令里就用 `--ref`（证明跟随而非写死）。执行点 = 同文件 ::test_missing_help_is_undecidable / ::test_version_flag_is_read_from_help_not_hardcoded"
+      - "判据 9·**只读盘点三态**：全段 rc=0 ⇒ `READONLY-INSPECT=OK` 退 0；某段失败 ⇒ `INCOMPLETE failed=[…]` 退 1；某段**缺失**（回读被截断）⇒ `INCOMPLETE missing=[…]` 退 1；CLI 缺 ⇒ 退 **3** + 出口。容量读数（`df`/`free`/`docker system df`/`uptime`）**只作信息**、不参与 rc。执行点 = 同文件 ::test_inspect_reports_ok / ::test_inspect_reports_a_failed_section / ::test_inspect_reports_a_missing_section / ::test_inspect_is_undecidable_without_the_cli"
+      - "判据 10·**文档接线**：`docs/deployment/production-release.md` 必须写清「为什么与 GitHub 解耦（22 / 443 / 凭证在部署机）」「inspect / dry-run / apply 怎么跑」「闸门与自检含义」「失败怎么读」「无感发布的现状与缺口（四条：nginx 服务名解析 + 优雅退出未验证 + DB expand/contract + 集群还需要的东西）」「资源告警走阿里云云监控」「`deploy-prod.yml` 降级为备用」。执行点 = 同文件 ::test_docs_cover_decoupling_gates_and_the_seamless_boundary / ::test_scripts_are_executable_and_parse"
+      - "**注入式红证（实跑，PR body 有全表）**：12 个变异各摘掉一道闸门 ⇒ 对应判据全红（机器闸门放行 / 发布线闸门恒真 / dry-run 继续真发 / 版本参数写死 / 自检不同源也往下走 / 盲区读数不打印 / 成功时不打印记录行 / 台账追加两次 / 发布脚本加 `docker restart` / 盘点载荷加 `rm -rf` / 缺失段不报 / 通道判不了当 0（3 写成 1） / dry-run 偷发 run-command）。"
+      - "**边界（照实登记）**：没有执行任何真实 `--apply`（云凭证与生产现场都在部署机上）；`InvocationResults.InvocationResult` 那种返回形态由库的解析分支承担、本文件只覆盖 `InvocationResult`；判不了盘上 `deploy.sh --help` 的真实参数面（脚本**现读**，读不到退 3）；`SWITCH-BLINDSPOT` 是**度量**不是承诺；SSE 探针需显式端点（不给 ⇒ `SKIPPED` 登记为缺口）。"
+    skip_reason: "[backend-contract] 部署 / 发布契约判据（真 git 沙箱 + 云助手指令桩 + 443 读数桩）：零网络、零真发布、零云调用、零 LLM，不进 agent-eval 冒烟"
+    merge_log: "2026-11-23 新增（issue #9085，用户 2026-11-23「生产环境需要和 github 的能力解耦」「现在开工」「集群无感」「磁盘先不用管」）。取号 = `python3 scripts/next_case_id.py MC` 现取（main ∪ 全部 open PR ∪ 本工作区）⇒ **MC-349**（取号撞号史：MC-346 与 #9083 撞、MC-347 与 #9089 撞、MC-348 被在飞 #9087 占；每次都用 `scripts/next_case_id.py MC` 重取）。同批落地：scripts/prod-inspect.sh（只读盘点）、scripts/prod-release.sh（生产发布唯一入口）、scripts/lib/prod-swas-run.sh（云助手通道唯一实现）、docs/deployment/production-release.md、tests/unit_ci_workflows/test_prod_release_decoupled.py（22 条判据）。现场证据：2026-11-23 11:32–11:39 的「只更新 admin-api 的手工发布」⇒ 三服务身份不自洽（关联 #9075）。"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_prod_release_decoupled.py"
+      ci:
+        - pr-check.yml
+      verifies: []
