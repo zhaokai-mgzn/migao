@@ -206,21 +206,16 @@ jobs:
       # 🔴 **只判一件事**：线上产物是否落后于 `frontend/mini-app` 的最近改动 —— 判据本体 =
       #    `scripts/h5_freshness_guard.py`（**单一实现**，与 `h5-freshness-guard.yml` 跑的是同一份；
       #    本腿**不**再写第二份口径）。落后 ⇒ 判红 + 给出可复制的手动发布命令（这就是兜底面的意义）。
-      # ⚠️ 为什么**不**比 `frontend/mini-app/dist/index.html`：`dist/` 在 `.gitignore` 里
-      #    （`.gitignore:42`）⇒ CI 检出里根本没有它，那样写出来的判定会**恒走「没跑」分支** = 空转的兜底面。
+      # 🔴 **时间戳只是代理**（issue #8924）：源码改动不影响产物字节时（devDependency 升级等），
+      #    时间戳会判「陈旧」，而发布出来的字节与线上**完全相同** ⇒ 周期性假红。复核 = 构建一次 +
+      #    逐字节比对（`deploy/scripts/h5-freshness-confirm.sh`，两条腿共用**同一份**实现）：
+      #    等价 ⇒ 放行；有差异 ⇒ 仍判红并印出差异清单。构建确定性实测见 guard 的 docstring。
+      # ⚠️ 为什么**不**直接比 `dist/index.html`：纯净检出里没有 `dist/`（`.gitignore:42`）⇒
+      #    复核必须**自己构建**（本步只在时间戳判「陈旧」时才构建，常见路径零额外成本）。
       # 判据：`tests/unit_ci_workflows/test_c_end_h5_hosting.py::TestNotifyAndPublishModes`
-      - name: Notify（线上产物是否落后本仓库；**只报告不发布**）
+      #      + `tests/unit_ci_workflows/test_freshness_gates_content_equivalence.py`（类级元守卫）
+      - name: Notify（线上产物是否落后本仓库；**只报告不发布**；陈旧 ⇒ 内容等价复核）
         if: steps.mode.outputs.mode != 'publish'
         run: |
-          set +e
-          python3 scripts/h5_freshness_guard.py --url https://app.migaozn.com/js/app.js --ref origin/main
-          rc=$?
-          set -e
-          if [ "$rc" -eq 0 ]; then
-            echo "✅ 线上产物不落后于 frontend/mini-app 的最近改动（判据本体 = scripts/h5_freshness_guard.py）"
-            exit 0
-          fi
-          echo "::error::线上产物落后 / 无法判定（判据本体 rc=$rc；rc=2 陈旧、rc=3 无法判定、rc=1 参数错）。"
-          echo "   本腿**不会**自动发布（用户 2026-09-27 裁定 B：首次发布由人手动触发）。要发布（人手动）："
-          echo "     gh workflow run c-end-h5-publish.yml --ref main -f publish=true"
-          exit "$rc"
+          bash deploy/scripts/h5-freshness-confirm.sh \
+            https://app.migaozn.com/js/app.js origin/main

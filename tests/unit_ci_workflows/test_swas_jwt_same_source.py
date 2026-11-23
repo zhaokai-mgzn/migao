@@ -669,7 +669,7 @@ _UNSET = object()
 COMPOSE_AGENT_KEY_LINE = "      JWT_PUBLIC_KEY: file:/opt/migao-deploy/jwt/public.pem\n"
 
 
-def _make_src_tar(dest: Path, agent_compose_raw=_UNSET) -> None:
+def _make_src_tar(dest: Path, agent_compose_raw=_UNSET, classpath_pem: str = "") -> None:
     stage = dest.parent / "stage" / "migao-main" / "deploy" / "swas"
     stage.mkdir(parents=True, exist_ok=True)
     work = dest.parent / "opt-migao-deploy"
@@ -686,11 +686,16 @@ def _make_src_tar(dest: Path, agent_compose_raw=_UNSET) -> None:
     for name in ("docker-compose.bluegreen.yml", "nginx.conf"):
         text = (REPO_ROOT / "deploy" / "swas" / name).read_text(encoding="utf-8")
         (stage / name).write_text(text.replace("/opt/migao-deploy", str(work)), encoding="utf-8")
+    if classpath_pem:
+        repo_tree = dest.parent / "stage" / "migao-main"
+        pub = repo_tree / "backend" / "admin-api" / "src" / "main" / "resources" / "rsa"
+        pub.mkdir(parents=True, exist_ok=True)
+        (pub / "public.pem").write_text(classpath_pem, encoding="utf-8")
     with tarfile.open(dest, "w:gz") as tf:
         tf.add(dest.parent / "stage" / "migao-main", arcname="migao-main")
 
 
-def _prepare(tmp_path: Path, *, agent_compose_raw=_UNSET) -> tuple:
+def _prepare(tmp_path: Path, *, agent_compose_raw=_UNSET, classpath_pem: str = "") -> tuple:
     work = tmp_path / "opt-migao-deploy"
     work.mkdir(exist_ok=True)
     text = DEPLOY_SH.read_text(encoding="utf-8")
@@ -701,8 +706,13 @@ def _prepare(tmp_path: Path, *, agent_compose_raw=_UNSET) -> tuple:
     script.write_text(text, encoding="utf-8")
     (work / ".env.admin-api").write_text("SMS_BYPASS_CODE=123456\n", encoding="utf-8")
     (work / ".env.ai-agent").write_text("SMS_BYPASS_CODE=123456\n", encoding="utf-8")
+    if classpath_pem:
+        # 部署树里的 admin-api classpath 公钥（1.3c 在 1.4 构建前读取它；构建成功后 `src/` 被删）
+        pub = work / "src" / "backend" / "admin-api" / "src" / "main" / "resources" / "rsa"
+        pub.mkdir(parents=True, exist_ok=True)
+        (pub / "public.pem").write_text(classpath_pem, encoding="utf-8")
     tar_path = tmp_path / "src.tar.gz"
-    _make_src_tar(tar_path, agent_compose_raw=agent_compose_raw)
+    _make_src_tar(tar_path, agent_compose_raw=agent_compose_raw, classpath_pem=classpath_pem)
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir(exist_ok=True)
     _write_exe(bin_dir / "curl", CURL_STUB)
@@ -718,8 +728,9 @@ def _prepare(tmp_path: Path, *, agent_compose_raw=_UNSET) -> tuple:
 
 def _run(tmp_path: Path, *, admin_raw: str, agent_raw: str, admin_pem: str = "",
          agent_pem: str = "", probe_code: int = 200, extra_env: dict | None = None,
-         agent_compose_raw=_UNSET):
-    work, script, bin_dir, state, tar_path, keys = _prepare(tmp_path, agent_compose_raw=agent_compose_raw)
+         agent_compose_raw=_UNSET, classpath_pem: str = ""):
+    work, script, bin_dir, state, tar_path, keys = _prepare(
+        tmp_path, agent_compose_raw=agent_compose_raw, classpath_pem=classpath_pem)
     # 生产根 `/opt/migao-deploy` → 本用例 work（与 deploy.sh / compose 的文本替换同口径）
     admin_raw = admin_raw.replace("/opt/migao-deploy", str(work))
     agent_raw = agent_raw.replace("/opt/migao-deploy", str(work))
@@ -883,6 +894,124 @@ def test_exec_nginx_upstream_200_is_green(tmp_path, committed_pem):
     assert NGINX_OK in proc.stdout, proc.stdout
     assert log.count("up -d --no-deps nginx") >= 1, log
     assert "compose exec -T nginx nginx -s reload" in log, "nginx 没有走优雅重载"
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# 五、宿主公钥**物化**（issue #9051）：引入宿主文件依赖必须同时回答「谁创建它」
+# ══════════════════════════════════════════════════════════════════════════
+#
+# 现场（2026-11-23，测试环境 api.migaozn.com；run 45106135656）：
+#   `❌ JWT 文件式取值指向的宿主路径**不存在**：/opt/migao-deploy/jwt/public.pem`
+#   两次尝试同一读数；同 sha 在 17:55 / 23:32 的 schedule「success」是 `skip=true`（Deploy 步 skipped，
+#   **没有部署**）的档 ⇒ 那不是「瞬时抖动后恢复」，是「从未部署成功」。
+# 改前：这条宿主路径**没有任何一步负责创建** ⇒ 1.6c 自 2026-11-22T08:48Z 起每次都红（部署腿恒红）。
+
+def test_exec_missing_host_pubkey_is_materialized_from_inline_env_pem(tmp_path, committed_pem):
+    """内联 PEM 是宿主权威源 ⇒ 缺失的 `file:` 公钥由它**物化**，部署继续（1.6c + 2.5.9 仍然复核）。
+
+    红证：摘掉 `deploy.sh` 的 1.6d 段 ⇒ 本用例当场红（`JWT_FILE_SELFHEAL=created` 不出现 +
+    1.6c 判「不存在」）。
+    """
+    work = tmp_path / "opt-migao-deploy"
+    proc, docker_log = _run(
+        tmp_path,
+        admin_raw=committed_pem.replace("\n", "\\n"),   # `.env` 的单行 + 字面 \n 形态（真实宿主形态）
+        agent_raw="",
+    )
+    assert proc.returncode == 0, f"宿主权威源（内联 PEM）在，却仍然部署失败：\n{proc.stdout}\n{proc.stderr}"
+    written = work / "jwt" / "public.pem"
+    assert written.is_file(), f"缺失的公钥没有被物化：\n{proc.stdout}"
+    assert written.read_text(encoding="utf-8").strip() == committed_pem.strip(), "物化出来的不是权威源那一份"
+    assert f"JWT_FILE_SELFHEAL=created path={work}/jwt/public.pem" in proc.stdout, proc.stdout
+    assert PREFLIGHT_OK in proc.stdout, "物化之后 1.6c 仍应逐条校验并给出 OK"
+    assert STATE_OK in proc.stdout, "2.5.9 必须复核两侧同源（物化不是放宽）"
+    assert "up -d" in docker_log, "物化之后部署必须继续（否则等于把红换成了静默不部署）"
+
+
+def test_exec_missing_host_pubkey_is_materialized_from_deploy_tree_classpath(tmp_path, committed_pem):
+    """`.env.admin-api` **没配**公钥时，权威源 = 部署树里 admin-api 的 classpath 公钥。
+
+    ⇒ 物化该文件 **并且**把 `.env.admin-api` 钉成同一条 `file:` 路径 —— 否则 2.5.9 只能报 INCOMPLETE
+    （一侧有值、另一侧「未配置」），部署腿会以另一个红收场。
+    """
+    work = tmp_path / "opt-migao-deploy"
+    proc, docker_log = _run(
+        tmp_path,
+        admin_raw="",
+        agent_raw="",
+        classpath_pem=committed_pem,
+    )
+    assert proc.returncode == 0, f"部署树里有 classpath 公钥，却仍然部署失败：\n{proc.stdout}\n{proc.stderr}"
+    written = work / "jwt" / "public.pem"
+    assert written.is_file() and written.read_text(encoding="utf-8").strip() == committed_pem.strip()
+    assert f"JWT_FILE_SELFHEAL=created path={work}/jwt/public.pem" in proc.stdout, proc.stdout
+    env_admin = (work / ".env.admin-api").read_text(encoding="utf-8")
+    assert f"JWT_PUBLIC_KEY=file:{work}/jwt/public.pem" in env_admin, (
+        f"没有把 .env.admin-api 钉到同一份文件 ⇒ 2.5.9 无法判定两侧同源：\n{env_admin}"
+    )
+    assert STATE_OK in proc.stdout, proc.stdout
+    assert "up -d" in docker_log
+
+
+def test_exec_missing_host_pubkey_without_authority_still_fails_closed(tmp_path):
+    """**真缺失仍然是红**：三条权威源都没有 ⇒ 一个字节都不写，1.6c 前置校验 exit 1、零 `up -d`。
+
+    这是「物化」不降低判别力的承重用例（红证：把 1.6d 的失败分支改成放行 ⇒ 本用例红）。
+    """
+    proc, docker_log = _run(tmp_path, admin_raw="", agent_raw="")
+    assert proc.returncode != 0, f"没有任何权威源却部署成功（假绿）：\n{proc.stdout}"
+    assert "public.pem" in proc.stdout and "不存在" in proc.stdout, proc.stdout
+    assert "JWT_FILE_SELFHEAL=created" not in proc.stdout, "没有权威源却报了「已物化」"
+    assert PREFLIGHT_OK not in proc.stdout
+    assert "up -d" not in docker_log
+    assert "JWT_KEY_SAME_SOURCE" not in proc.stdout, "前置校验就该中止，不该走到同源断言"
+
+
+HOST_FILE_LEDGER = REPO_ROOT / "deploy" / "swas" / "host-file-provisioning.json"
+
+
+def test_every_compose_file_style_host_path_is_registered():
+    """**类级元守卫**（issue #9051）：compose 里每个 `file:` 宿主路径都必须登记「谁创建它」。
+
+    口径（让**这一类**进不来，不是只修这一处）：
+      - 新加一条 `X: file:/…`（= 又引入一个宿主文件依赖）却没登记 ⇒ 本判据红，逼作者回答
+        「谁物化它 / 缺失时哪条判据兜住 / 人怎么处置」；
+      - 登记的 `provisioned_by` 指向 `deploy.sh::1.6d` 时，deploy.sh 里必须真有那个锚点
+        （`JWT_FILE_SELFHEAL=created`）⇒ 表与实现不许漂；
+      - 私钥类只能登记为「人工」，**不许**由仓库物化。
+
+    红证（实跑）：往 `deploy/swas/docker-compose.yml` 加一行 `JWT_PUBLIC_KEY: file:/opt/x/absent.pem` ⇒ 本判据红。
+    """
+    import json
+    ledger = json.loads(HOST_FILE_LEDGER.read_text(encoding="utf-8"))
+    registered = {e["path"]: e for e in ledger["paths"]}
+    referenced: set[str] = set()
+    for name in ("docker-compose.yml", "docker-compose.bluegreen.yml"):
+        text = (REPO_ROOT / "deploy" / "swas" / name).read_text(encoding="utf-8")
+        for line in text.splitlines():
+            stripped = line.strip()
+            if stripped.startswith("#"):
+                continue
+            key, _, value = stripped.partition(":")
+            if key.strip() in ("JWT_PUBLIC_KEY", "JWT_PRIVATE_KEY") and value.strip().startswith("file:"):
+                referenced.add(value.strip()[len("file:"):].strip())
+    assert referenced, "反空跑锚点：compose 里一条 file: 取值都没扫到（判据扫描面漂了）"
+    unregistered = sorted(referenced - set(registered))
+    assert not unregistered, (
+        "compose 引用了未登记的宿主文件路径（引入宿主依赖必须同时回答「谁创建它」）："
+        f"{unregistered} ⇒ 到 deploy/swas/host-file-provisioning.json 登记 provisioned_by / fail_closed_by / remediation"
+    )
+    deploy_sh = DEPLOY_SH.read_text(encoding="utf-8")
+    for path, entry in registered.items():
+        anchor = entry.get("evidence_anchor", "")
+        if "::1.6d" in entry.get("provisioned_by", ""):
+            assert anchor in deploy_sh, (
+                f"登记表说 {path} 由 1.6d 物化，但 deploy.sh 里找不到锚点 {anchor!r}（表与实现漂了）"
+            )
+        if entry.get("kind") == "secret":
+            assert "manual" in entry.get("provisioned_by", ""), (
+                f"{path} 是私钥 ⇒ 只能登记为人工提供（仓库不许物化私钥）"
+            )
 
 
 if __name__ == "__main__":  # pragma: no cover - 手工复算入口

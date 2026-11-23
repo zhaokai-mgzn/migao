@@ -135,7 +135,9 @@ def problems(workflow_docs: dict[str, dict], ledger: dict) -> list[str]:
             if not isinstance(job, dict):
                 continue
             for script, spec in scripts.items():
-                if not _runs_script(job, script):
+                if not _runs_script(job, script) and not any(
+                    _runs_script(job, alias) for alias in spec.get("invoked_via") or []
+                ):
                     continue
                 hits.setdefault(wf_rel, []).append(job_name)
                 need = spec.get("required_fetch_depth")
@@ -149,6 +151,19 @@ def problems(workflow_docs: dict[str, dict], ledger: dict) -> list[str]:
                     f"不判路径、直接回 HEAD，会把 HEAD 的提交时间当成「源码最近改动」而**恒判陈旧**"
                     f"（issue #7073 的假红）。出口 = 给该 checkout 步加 `with: fetch-depth: {need}`，"
                     f"或在 `{LEDGER_PATH.name}` 的 `exemptions` 里逐字登记 `why`"
+                )
+
+    # ①.5 别名不许空转：`invoked_via` 里的脚本必须**真的**调用该判据（否则「间接调用面」是假的，
+    #     这把锁会以为有人替它盯着、实际谁都没跑）
+    for script, spec in scripts.items():
+        for alias in spec.get("invoked_via") or []:
+            alias_path = REPO_ROOT / alias
+            if not alias_path.is_file():
+                out.append(f"`invoked_via` 登记的 {alias} 不存在（该判据的间接调用面已消失）⇒ 台账只许缩短")
+            elif script not in alias_path.read_text(encoding="utf-8", errors="replace"):
+                out.append(
+                    f"`invoked_via` 登记的 {alias} **没有**调用 {script} ⇒ 别名是空转："
+                    "要么删掉这条登记，要么把调用接回来（判据本体必须真的被跑）"
                 )
 
     # ② 台账只许缩短：豁免条目必须被兑现（该 workflow 真在跑该判据），且条数 ≤ 现取上限
@@ -197,8 +212,11 @@ def test_c_end_h5_publish_checkout_has_full_history():
     found = problems({"c-end-h5-publish.yml": wf}, _load_ledger())
     assert found == [], "\n".join(found)
     # 不是空断言：两条读数都要能指认「谁跑的、检出了多少历史」
-    assert _runs_script(_jobs(wf)["publish"], "scripts/h5_freshness_guard.py"), \
-        "c-end-h5-publish 的 publish job 已经不跑 h5_freshness_guard.py ⇒ 本判据需同批改（面变了）"
+    job = _jobs(wf)["publish"]
+    assert (_runs_script(job, "scripts/h5_freshness_guard.py")
+            or _runs_script(job, "deploy/scripts/h5-freshness-confirm.sh")), \
+        ("c-end-h5-publish 的 publish job 已经不跑 h5_freshness_guard.py（也不跑内容等价复核脚本）"
+         " ⇒ 本判据需同批改（面变了）")
     assert _checkout_depth(_jobs(wf)["publish"]) == 0, \
         f"检出深度必须是 0（全 history），现取 {_checkout_depth(_jobs(wf)['publish'])!r}"
 
