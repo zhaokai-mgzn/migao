@@ -327,9 +327,15 @@ def test_red_proof_nginx_types_block_is_reported():
 def test_red_proof_server_level_default_type_is_reported():
     """域级兜底被改 ⇒ 波及所有未知扩展名 ⇒ 红。"""
     conf = NGINX_CONF.read_text(encoding="utf-8")
+    # 注入点必须是 **server 块直接指令**（判据 5 守的正是这一层）。
+    # 2026-11-23 修：原锚 `root /opt/migao-deploy/h5;` 的首现已随 #8999 落进 `location /terminal/`
+    # 内部 ⇒ 注入变成「location 内 default_type」，服务级判据自然看不见（红证成了空断言）。
+    # 必须是 **443 server 块**（`app_server()` 找的是它；80 端口的跳转 server 不算）。
+    # 锚必须是 **app 域那个 443 server** 的直接指令行（`ssl_protocols` 在 4 个 server 里都有，
+    # 用首个会把变异注入到 api/ai-api 的块里 ⇒ 判据看不见，红证成空断言）。
     mutated = conf.replace(
-        "    root /opt/migao-deploy/h5;\n",
-        "    root /opt/migao-deploy/h5;\n    default_type application/javascript;\n",
+        f"    server_name {APP_DOMAIN};\n    ssl_certificate",
+        f"    server_name {APP_DOMAIN};\n    default_type application/javascript;\n    ssl_certificate",
         1,
     )
     assert mutated != conf, "变异注入未生效（自证失败 ⇒ 下面的红证是空断言）"

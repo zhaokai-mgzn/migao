@@ -530,10 +530,16 @@ def _workflow_problems(wf, remote_src=None, ci_src=None, verify_src=None, wf_src
         if NOTIFY_IF not in _if_text(nt):
             problems.append(f"Notify 步的 `if` 必须是 `{NOTIFY_IF}`（只在非发布模式跑）")
         nrun = _run_text(nt)
-        for token in ("::error::", "gh workflow run c-end-h5-publish.yml",
-                      "scripts/h5_freshness_guard.py", "--ref origin/main", 'exit "$rc"'):
+        # 判据本体（时间戳代理 + **内容等价复核**）只有一份实现 = deploy/scripts/h5-freshness-confirm.sh；
+        # 本步只调它（issue #8924：裸跑 python 判据 = 代理说旧就判红，等价也红）。
+        for token in ("deploy/scripts/h5-freshness-confirm.sh", "app.migaozn.com/js/app.js", "origin/main"):
             if token not in nrun:
-                problems.append(f"Notify 步的 run 缺 `{token}`（判红 / 可复制命令 / 事实基准 / 「没跑≠通过」）")
+                problems.append(f"Notify 步的 run 缺 `{token}`（复核实现 / 事实基准 / 对比 ref）")
+        if "python3 scripts/h5_freshness_guard.py" in nrun:
+            problems.append(
+                "Notify 步**直接**跑 `python3 scripts/h5_freshness_guard.py` ⇒ 绕过了内容等价复核"
+                "（代理说旧就判红，等价也红：issue #8924 的假红形态）"
+            )
         if nt.get("continue-on-error"):
             problems.append("Notify 步带 continue-on-error ⇒ 线上落后也不会红（兜底面变空转）")
 
