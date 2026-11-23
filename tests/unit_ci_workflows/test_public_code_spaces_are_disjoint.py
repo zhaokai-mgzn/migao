@@ -739,10 +739,24 @@ def _inject(conf: str, needle: str, replacement: str) -> str:
 
 
 def _location_span(conf: str, prefix: str) -> tuple[int, int]:
-    """`location <prefix> { … }` 的 `[start, end)` 区间（引号 / 注释感知的花括号配平）。"""
-    match = re.search(rf"^[ \t]*location\s+{re.escape(prefix)}\s*\{{", conf, re.M)
+    """`location <prefix> { … }` 的 `[start, end)` 区间（引号 / 注释感知的花括号配平）。
+
+    ⚠️ **只在 `app.migaozn.com` 的 server 段内**定位（2026-11-23 修）：同一份 nginx.conf 里
+    `migaozn.com/www/merchant` 那个 server 也有一条 `location /terminal/`（#8999 加的），
+    全文件 `re.search` 会先命中它 ⇒ 变异注入了**别的 server**，判据对象（app server）纹丝不动，
+    红证变成空断言。
+    """
+    server = app_server(conf)
+    head = conf.find("server_name", 0)
+    # 取 app server 在原文里的位置：以 `server_name APP_DOMAIN;` 的 443 段为准
+    anchor = re.search(rf"^[ \t]*server_name\s+{re.escape(APP_DOMAIN)};\s*$", conf, re.M)
+    assert anchor, f"nginx.conf 里找不到 `server_name {APP_DOMAIN};`"
+    scope = conf[anchor.start():]
+    match = re.search(rf"^[ \t]*location\s+{re.escape(prefix)}\s*\{{", scope, re.M)
+    if match:
+        match_start = anchor.start() + match.start()
     assert match, f"注入点定位失败（fail-closed）：配置里没有 `location {prefix} {{`"
-    start = match.start()
+    start = match_start
     index = conf.index("{", start)
     depth = 0
     quote = ""

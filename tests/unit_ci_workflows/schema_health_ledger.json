@@ -50,6 +50,7 @@
     "production_routing_versions.operations",
     "production_routings.operations",
     "products.detail_images",
+    "products.door_widths",
     "products.images",
     "products.selling_methods",
     "scheduled_tasks.impact",

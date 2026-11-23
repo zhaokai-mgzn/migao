@@ -208,12 +208,8 @@
     "V211__add_playbooks_conflict_key.sql": "sha256:8c6a840724d1e999e730138492e8721d91a2b54a7deb3a4d5393fee844a1d1f1",
     "V212__add_playbook_lifecycle.sql": "sha256:7bad58c832457631458e6787ed435c3e5a7252ef01450b5d5ca1d26ae4c11837",
     "V213__rename_c_end_agent_display_name.sql": "sha256:0f2e0c6a7f8b2e7386b6d1fdb13fd4e62ba672075ed166b536fed977895f6afb",
-<<<<<<< HEAD
     "V214__add_product_door_widths.sql": "sha256:8788ff15258bbd76c29c691b1e003d337629e91d2de247ebd389c49ba1579165",
-    "schema.sql": "sha256:e8d1de215a5c96765f856646f441fcc72a8f903ab9d42079b997fe9775d789f4"
-=======
-    "schema.sql": "sha256:2f06b121322032e5f97d1b27327a9642d180f3908bb0235206877b9c41425c4a",
-    "V215__add_scheduled_task_claim_lease.sql": "sha256:cfef892329ec232891ed6987261f9dc15732a9e637b4442b27585e78293d4681"
->>>>>>> origin/main
+    "V215__add_scheduled_task_claim_lease.sql": "sha256:cfef892329ec232891ed6987261f9dc15732a9e637b4442b27585e78293d4681",
+    "schema.sql": "sha256:9462486ebf5b7c9effff53f2fbc923b614db8c42978b40b1fbf80ffc33d621c2"
   }
 }

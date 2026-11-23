@@ -167,6 +167,11 @@ BUILD_INPUTS: dict[str, tuple[tuple[str, str], ...]] = {
             "发布链路第一层：把 CI 构建的 dist 推成不可变 sha（远端按 sha 取回）",
         ),
         (
+            "deploy/scripts/h5-freshness-confirm.sh",
+            "本腿 notify 档的**复核实现体**（issue #8924）：时间戳只是代理 ⇒ 判「陈旧」后构建并与线上"
+            "逐字节比对；改了它，这条腿的判红口径就变了 ⇒ 必须随腿一起落地",
+        ),
+        (
             "deploy/scripts/c-end-h5-publish-ci.sh",
             "CI 侧发布驱动：对账 dispatch 出去的 run 走这条（只报告、不发布）",
         ),
@@ -183,11 +188,6 @@ NOT_BUILD_INPUTS: dict[str, str] = {
     "scripts/acr_login.sh": (
         "纯凭据登录辅助（`docker login --password-stdin`）：既不进产物、也不出线上读数，"
         "且它坏了是部署腿**当场红** —— 不属于本单要治的「静默假绿」"
-    ),
-    "scripts/h5_freshness_guard.py": (
-        "线上产物新鲜度的旁观判据：它有**自己的常驻触发面**（`.github/workflows/h5-freshness-guard.yml` "
-        "每天跑同一份实现）⇒ 不需要靠 c-end-h5 那条腿兑现；而该腿是**手动发布**腿，"
-        "为它 dispatch 只会产生一条「不发布任何东西」的红"
     ),
 }
 

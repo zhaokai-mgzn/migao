@@ -97,6 +97,14 @@ def _is_true(value) -> bool:
     return value is True or str(value).strip().lower() == "true"
 
 
+def _is_scan_step(step: dict) -> bool:
+    """一步是否**真的在跑 gitleaks**：action 形态，或 run 里调用官方二进制的 detect/version。"""
+    if ACTION in str(step.get("uses") or ""):
+        return True
+    run = str(step.get("run") or "")
+    return BINARY in run and ("detect" in run or "version" in run)
+
+
 def _problems(doc: dict, snapshot: dict) -> list:
     """纯函数判据：结构问题清单（空 = 成立）。变异样本据此判红。"""
     problems: list[str] = []
@@ -130,15 +138,20 @@ def _problems(doc: dict, snapshot: dict) -> list:
 
     # ④ 有一步真的用 gitleaks action；⑤ 不得被静默化
     steps = [s for s in (job.get("steps") or []) if isinstance(s, dict)]
-    scan = [s for s in steps if ACTION in str(s.get("uses") or "")]
+    # ④ 判定「真有一把 gitleaks 在扫」——两种合法形态（2026-11-23 起 action 因缺 license 永久红，
+    #    已改用官方二进制，见 PR #9036）：
+    #    甲) `uses: gitleaks/gitleaks-action`；乙) `run` 里真的调 `gitleaks detect` / 官方二进制。
+    scan = [s for s in steps if _is_scan_step(s)]
     if not scan:
         uses = [str(s.get("uses") or "") for s in steps]
+        runs = [str(s.get("run") or "")[:60] for s in steps]
         problems.append(
-            f"job `{JOB}` 里没有任何一步用 `{ACTION}`（现有 uses={uses!r}）—— "
-            f"腿名还在、扫描没了（`.github/scripts/danger_scan` 那一类替代必须显式改判据）"
+            f"job `{JOB}` 里没有任何一步**真的跑 gitleaks**（既无 `{ACTION}`，也无 `gitleaks detect`）"
+            f"—— 现有 uses={uses!r} runs={runs!r}；腿名还在、扫描没了"
+            f"（`.github/scripts/danger_scan` 那一类替代必须显式改判据）"
         )
     else:
-        named = [s for s in scan if str(s.get("name") or "") == STEP]
+        named = [s for s in scan if str(s.get("name") or "").startswith(STEP)]
         if not named:
             problems.append(
                 f"用 `{ACTION}` 的那一步不叫 `{STEP}`（实为 "
@@ -222,8 +235,9 @@ def test_red_proof_action_replaced():
     """④ 把 `gitleaks/gitleaks-action` 换掉 ⇒ 必红（腿名在、扫描不在）。"""
     def mut(doc, snap):
         for s in doc["jobs"][JOB]["steps"]:
-            if ACTION in str(s.get("uses") or ""):
+            if _is_scan_step(s):
                 s["uses"] = "some/other-action@v1"
+                s.pop("run", None)   # 二进制形态：抹掉 run 才等价于「扫描没了」
 
     problems = _mutate(mut)
     assert any(ACTION in p for p in problems), f"应判红却得到 {problems!r}"
@@ -233,7 +247,7 @@ def test_red_proof_continue_on_error_swallows_red():
     """⑤ 给扫描步加 `continue-on-error` ⇒ 必红（红被吞）。"""
     def mut(doc, snap):
         for s in doc["jobs"][JOB]["steps"]:
-            if ACTION in str(s.get("uses") or ""):
+            if _is_scan_step(s):
                 s["continue-on-error"] = True
 
     problems = _mutate(mut)
@@ -244,7 +258,7 @@ def test_red_proof_always_false_if():
     """⑤b 给扫描步加恒假 `if` ⇒ 必红（该步永不执行）。"""
     def mut(doc, snap):
         for s in doc["jobs"][JOB]["steps"]:
-            if ACTION in str(s.get("uses") or ""):
+            if _is_scan_step(s):
                 s["if"] = "false"
 
     problems = _mutate(mut)
@@ -258,7 +272,7 @@ def test_benign_filter_does_not_red():
     """
     def mut(doc, snap):
         for s in doc["jobs"][JOB]["steps"]:
-            if ACTION in str(s.get("uses") or ""):
+            if _is_scan_step(s):
                 s["with"] = {"args": "--redact"}
 
     problems = _mutate(mut)

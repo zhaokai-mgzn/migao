@@ -51,6 +51,10 @@ DECLARED_NOT_COVERED = {
     "backend/admin-api":
         "同上（Java 侧）。注意：已发布的**迁移目录**是单独纳入判定面的"
         "（`backend/admin-api/src/main/resources/db/migration/`，见 `REF_SURFACE` 内的注释）。",
+    "docs/deployment":
+        "部署/集群**审计与运维文档**：里面的 `文件:行号` 是当次审计的**现场读数**（时间点快照），"
+        "不是跨端契约引用 —— 它们会随代码自然漂移，硬纳入判定面等于把审计报告变成维护负担。"
+        "（2026-11-23 由 #9015 引入，本轮显式裁定「不判」。）",
     "frontend/mini-app":
         "e2e 规格 / `e2e/lib` 里的选择器与组件位置引用（e2e 自述，非契约引用）。",
     "frontend/admin-web":
