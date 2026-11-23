@@ -1,4 +1,4 @@
-# case_ids: MC-349
+# case_ids: MC-350
 r"""生产发布与 GitHub 解耦：`prod-inspect.sh` / `prod-release.sh` 的判据（issue #9119）。
 
 ## 病（2026-11-23 用户裁定逐字）
@@ -80,7 +80,7 @@ READONLY_WHITELIST = {
     "hostname", "date", "uptime", "df", "free", "docker", "cat", "ls", "du",
     "nginx", "crontab", "systemctl",
     # 只读过滤器（管道下游）
-    "grep", "sort", "tail", "head", "awk", "sed", "cut", "wc", "egrep", "tr",
+    "grep", "sort", "tail", "head", "awk", "sed", "cut", "wc", "egrep", "tr", "xargs",
 }
 #: `docker` 只许这两个子命令（`ps` / `system df`），其余一律判红
 ALLOWED_DOCKER_SUBCOMMANDS = {"ps", "system"}
@@ -216,13 +216,26 @@ if service == "describe-invocation-result":
     if os.path.exists(path):
         content = open(path, encoding="utf-8").read()
     out, rc = render(content)
-    print(json.dumps({
-        "InvocationResult": {
-            "InvokeStatus": "Success",
-            "ExitCode": rc,
-            "Output": base64.b64encode(out.encode("utf-8")).decode("ascii"),
-        }
-    }, ensure_ascii=False))
+    shape = os.environ.get("STUB_DESCRIBE_SHAPE", "singular")
+    output_b64 = base64.b64encode(out.encode("utf-8")).decode("ascii")
+    # 真机形态（2026-11-23 部署机实测）= 单数 `InvocationResult` dict + 状态键 `InvocationStatus`
+    singular = {"InvocationStatus": "Success", "ExitCode": rc, "Output": output_b64}
+    if shape == "singular":
+        print(json.dumps({"RequestId": "req", "InvocationResult": singular}, ensure_ascii=False))
+    elif shape == "plural":                      # 另一种形态：InvocationResults.InvocationResult = [ ... ]
+        print(json.dumps({"RequestId": "req", "InvocationResults": {"InvocationResult": [singular]}},
+                         ensure_ascii=False))
+    elif shape == "inferred":                    # 状态键缺失但有 ExitCode / Output ⇒ 推断「已结束」
+        print(json.dumps({"RequestId": "req", "InvocationResult": {"ExitCode": 0, "Output": output_b64}},
+                         ensure_ascii=False))
+    elif shape == "failed_no_exit":               # 失败但云端没给 ExitCode ⇒ 不许读成 0
+        print(json.dumps({"RequestId": "req", "InvocationResult": {
+            "InvocationStatus": "Failed", "Output": output_b64}}, ensure_ascii=False))
+    elif shape == "running":                      # 永远 Running ⇒ 轮询超时（判不了，且必须说清为什么）
+        print(json.dumps({"RequestId": "req", "InvocationResult": {"InvocationStatus": "Running"}},
+                         ensure_ascii=False))
+    else:                                         # junk：字段全缺
+        print(json.dumps({"RequestId": "req", "InvocationResult": {"Foo": "bar"}}, ensure_ascii=False))
     sys.exit(0)
 
 sys.stderr.write("桩不认识这个子命令：%s\n" % " ".join(argv))
@@ -358,6 +371,7 @@ class Sandbox:
     def env(self, *, host_id: str | None = DEPLOY_HOST, ssh_config: Path | str | None = None,
             postcheck: str = "match", deploy_rc: int = 0, inspect: str = "ok",
             curl_mode: str = "ok", streams: str = "0", run_fail: int = 0, deploy_sleep: float = 0.0,
+            describe_shape: str = "singular", poll_attempts: int = 40,
             sse_url: str | None = None) -> dict[str, str]:
         env = os.environ.copy()
         env["PATH"] = f"{self.bin}{os.pathsep}{env.get('PATH', '')}"
@@ -382,6 +396,8 @@ class Sandbox:
         env["STUB_POSTCHECK"] = postcheck
         env["STUB_DEPLOY_RC"] = str(deploy_rc)
         env["STUB_DEPLOY_SLEEP"] = str(deploy_sleep)
+        env["STUB_DESCRIBE_SHAPE"] = describe_shape
+        env["MIGAO_PROD_POLL_ATTEMPTS"] = str(poll_attempts)
         env["STUB_INSPECT"] = inspect
         env["STUB_HELP"] = self.help_text
         env["STUB_STREAMS"] = streams
@@ -454,8 +470,13 @@ def test_inspect_payload_is_readonly_whitelisted():
             assert word in READONLY_WHITELIST, f"非白名单命令 '{word}'：{segment}"
             if word == "docker":
                 parts = segment.split()
-                assert len(parts) > 1 and parts[1] in ALLOWED_DOCKER_SUBCOMMANDS, \
-                    f"docker 子命令不在白名单（只许 ps / system df）：{segment}"
+                assert len(parts) > 1, segment
+                # `exec` 只许进容器**跑只读的 `nginx -T`**（2026-11-23 真机：宿主没有 nginx 二进制）
+                if parts[1] == "exec":
+                    assert "nginx -T" in segment, f"docker exec 只许只读 nginx -T：{segment}"
+                else:
+                    assert parts[1] in ALLOWED_DOCKER_SUBCOMMANDS, \
+                        f"docker 子命令不在白名单（只许 ps / system df）：{segment}"
             checked += 1
     assert checked >= 10, checked
 
@@ -710,6 +731,65 @@ def test_inspect_is_undecidable_without_the_cli(tmp_path: Path):
     assert proc.returncode == 3, proc.stdout + proc.stderr
     assert "不可判定" in proc.stderr
     assert "MIGAO_PROD_ALIYUN_BIN" in proc.stderr
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ⑪b 轮询/解析：**真机形态必须读成成功**（2026-11-23 22:45 部署机真跑出来的缺陷）
+# ══════════════════════════════════════════════════════════════════════════════
+#
+# 现场：`scripts/prod-inspect.sh` 在部署机上 rc=3「等不到执行结果（状态=未知，轮询 40 次）」，
+# 而同一个 invoke-id 用独立脚本查是 `InvocationResult.InvocationStatus = Success / ExitCode = 0`。
+# 根因 = 解析只认 `InvokeStatus`/`Status`，**没认 `InvocationStatus`** ⇒ 明明成功却判「未知」⇒ 轮询到超时。
+# ⇒ 三条判据分别钉：单数形态（真机）/ 复数 list 形态 / 状态键缺失但有输出（推断），外加「超时要说清为什么」。
+
+@pytest.mark.parametrize("shape", ["singular", "plural", "inferred"])
+def test_poll_reads_the_real_shapes_as_success(tmp_path: Path, shape: str):
+    """三种「执行已结束」形态都必须判**成功**（不许把 Success 读成「未知」）。
+
+    `singular` = 真机形态（`InvocationResult` dict + `InvocationStatus`）；
+    `plural`   = `InvocationResults.InvocationResult = [...]`；
+    `inferred` = 状态键缺失但有 `ExitCode`/`Output` ⇒ 记为 `Success(推断)` 并照常返回。
+    """
+    box = Sandbox(tmp_path)
+    proc = box.run_inspect(env=box.env(describe_shape=shape))
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "READONLY-INSPECT=OK" in proc.stdout
+
+
+def test_failed_status_without_exit_code_is_not_read_as_success(tmp_path: Path):
+    """`InvocationStatus=Failed` 但云端**没给 `ExitCode``** ⇒ 不许读成 0（这条同时钉住「状态键认 `InvocationStatus`」）。
+
+    没有状态键时，`Output` 非空会走「推断已结束」⇒ 返回 0 —— 正是 2026-11-23 真机缺陷的同族形态：
+    **成功判不出来只是退 3，失败判成成功才是把半成品当交付**。
+    """
+    box = Sandbox(tmp_path)
+    proc = box.run_inspect(env=box.env(describe_shape="failed_no_exit"))
+    assert proc.returncode != 0, proc.stdout + proc.stderr
+    assert "远端执行状态 = Failed" in proc.stderr, proc.stderr
+
+
+def test_poll_timeout_prints_the_response_body_excerpt(tmp_path: Path):
+    """轮询超时 ⇒ 退 **3**，且**必须**打印最后一轮返回体片段（否则「判不了」说不出为什么）。"""
+    box = Sandbox(tmp_path)
+    env = box.env(describe_shape="running", poll_attempts=2)
+    env["MIGAO_PROD_POLL_INTERVAL"] = "0"
+    proc = box.run_inspect(env=env)
+    assert proc.returncode == 3, proc.stdout + proc.stderr
+    err = proc.stderr
+    assert "不可判定" in err and "等不到执行结果" in err
+    assert "最后一轮返回体前 400 字节" in err, f"超时没打印返回体片段：{err}"
+    assert "Running" in err, f"返回体片段里应能看到真实状态：{err}"
+
+
+def test_missing_status_fields_is_undecidable_and_prints_the_body(tmp_path: Path):
+    """返回体里既没有状态键也没有输出（`{"Foo": "bar"}`）⇒ 退 **3** + 打印返回体片段。"""
+    box = Sandbox(tmp_path)
+    env = box.env(describe_shape="junk", poll_attempts=2)
+    env["MIGAO_PROD_POLL_INTERVAL"] = "0"
+    proc = box.run_inspect(env=env)
+    assert proc.returncode == 3, proc.stdout + proc.stderr
+    assert "最后一轮返回体前 400 字节" in proc.stderr
+    assert '"Foo"' in proc.stderr or "Foo" in proc.stderr, f"没把返回体打出来：{proc.stderr}"
 
 
 # ══════════════════════════════════════════════════════════════════════════════

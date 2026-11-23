@@ -76,6 +76,8 @@ build_remote_script() {
   cat <<'REMOTE'
 set -u
 sec() { printf '@@SEC:%s@@\n' "$1"; eval "$2" 2>&1; printf '@@END:%s@@ rc=%s\n' "$1" "$?"; }
+# 生产上 **nginx 在容器里**（2026-11-23 实测：宿主既无 nginx 二进制也无 /etc/nginx；
+# 容器 = `migao-deploy-nginx-1`）⇒ 读配置必须进容器；只读（`nginx -T` 只 dump 配置）。
 # READONLY-PAYLOAD-BEGIN
 sec host 'hostname; date -u +%FT%TZ; uptime'
 sec disk_root 'df -h /'
@@ -86,7 +88,7 @@ sec docker_df 'docker system df'
 sec env_site 'cat /opt/migao-deploy/.env.site'
 sec deploy_dir 'ls -l /opt/migao-deploy/ | head -30'
 sec deploy_usage 'du -sh /opt/migao-deploy/* 2>/dev/null | sort -h | tail -10'
-sec nginx "nginx -T 2>/dev/null | grep -E 'server_name|proxy_pass'"
+sec nginx "docker ps --format '{{.Names}}' | grep -i nginx | head -1 | xargs -I{} docker exec {} nginx -T 2>/dev/null | grep -E 'server_name|proxy_pass'"
 sec cron 'crontab -l 2>&1; ls -l /etc/cron.d/ 2>&1'
 sec timers 'systemctl list-timers --all --no-pager 2>&1 | head -40'
 # READONLY-PAYLOAD-END
@@ -144,6 +146,12 @@ print("@@SUMMARY@@ failed=%s missing=%s ok=%d" % (",".join(failed), ",".join(mis
   missing=$(printf '%s' "$summary" | sed -n 's/.*missing=\([^ ]*\) .*/\1/p')
   ok_count=$(printf '%s' "$summary" | sed -n 's/.*ok=\([0-9]*\)$/\1/p')
 
+  # 远端整体退出码也是读数的一部分：段全绿但远端 rc≠0（例如 `InvocationStatus=Failed` 却没给 ExitCode）
+  # ⇒ **不许**宣布 `OK`（实测形态：状态 Failed 时 `prod_swas_run` 退 1，段标记却可能都在）。
+  if [ "$rc" -ne 0 ]; then
+    echo "READONLY-INSPECT=INCOMPLETE remote_rc=${rc} failed=[${failed}] missing=[${missing}] —— 远端执行没干净收尾，不当通过" >&2
+    exit 1
+  fi
   if [ -z "$failed" ] && [ -z "$missing" ]; then
     echo "READONLY-INSPECT=OK sections=${ok_count} instance=${PROD_INSTANCE_ID}"
     exit 0
