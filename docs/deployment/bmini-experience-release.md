@@ -1,10 +1,38 @@
 # B 端小程序（黄金策商家端）怎么发体验版
 
 > 定于 2026-11-21（issue #8980）。AppID `wx6ee2f682c1b4822c`（主体：杭州词元通达科技有限公司）。
-> 本页是**唯一入口**：`scripts/bmini-experience.sh` 三条子命令。手工拼 `npm run build:weapp` 的旧写法见
+> **发布路径 = 一条命令** `scripts/bmini-release.sh`（2026-11-23 起，issue #9069）：它把下面「底层三步」按
+> 安全顺序串起来，并把**三处人肉记忆**（顺序 / 只在部署机 / 上传后回填 `TOTAL`）变成判据。
+> 底层三步仍是**判据本体**（`scripts/cut-release.sh` / `scripts/bmini-experience.sh` /
+> `deploy/scripts/bmini-assert-dist.sh`），一条命令只编排、不自造。手工拼 `npm run build:weapp` 的旧写法见
 > [wechat-mini-program-qr.md](wechat-mini-program-qr.md) §5，**已不作为发布路径**（那正是「忘一个常量就静默发错包」的来源）。
 
-## 三行命令
+## 一条命令（底层三步仍在）
+
+在**部署机**上（`ssh migao-deploy`；生产包只在部署机构建 + 上传 —— 2026-11-23 用户裁定，见 §一）：
+
+```bash
+scripts/bmini-release.sh --upload --version 1.0.3 --desc "这次发了什么"
+```
+
+它按**顺序即安全顺序**走六道关，任一道不成立就当场拒绝（不猜、不自动放行）：
+
+| # | 关 | 判据 | 不满足时 |
+|---|---|---|---|
+| ① | **机器闸门** | 本机身份 == `ssh -G migao-deploy` 解析出的 `HostName`（**不写死 IP**：那台机器走 DHCP） | 退 **1**，具名打出两台机器的读数 + 三个出口（`ssh migao-deploy` 去部署机 / 改 ssh 别名 / 只构建不发布）；读数拿不到 ⇒ 退 **3** |
+| ② | **顺序闸门** | `origin/release` ⊆ `origin/main`（复算 = `scripts/cut-release.sh --check`，退 2 即旁路）**且** 本检出 `HEAD == origin/release` **且** 无未提交改动 | 退 **1**，出口 = 在部署机上跑 `./scripts/cut-release.sh`（**cut 是显式动作，本脚本永不自己 cut**）；取不到远端 ⇒ 退 **3** |
+| ③ | **构建** | 复用 `scripts/bmini-experience.sh build --env prod`（三个 `TARO_APP_*` 注入 + `build:weapp` + 产物断言，全是它的实现） | 退 1 |
+| ④ | **上传前断言** | 再跑一次 `deploy/scripts/bmini-assert-dist.sh <dist> --env prod`（dist 可能是上一次留下的） | 不过 ⇒ **拒绝上传**（1 / 不可判定 3） |
+| ⑤ | **上传** | 复用 `scripts/bmini-experience.sh upload --env prod --version <显式给的版本号>` | 退 1 |
+| ⑥ | **回读 + 记录行** | 从上传日志抓 `TOTAL` 字节；`dist ÷ TOTAL` 必须落在「`deploy/scripts/bmini-dist-budget.json` 的 `calibration` 台账比值 ±3%」内 | 打印**可直接粘贴**进 §六 发布记录表的 Markdown 行；比值越界 ⇒ 警告并退 **3**（不静默通过）；抓不到 `TOTAL` ⇒ 退 **3** |
+
+- **不带 `--upload`** ⇒ 只做 ①~④（构建 + 断言），明确打「未上传」，**不产出**记录行（没有 `TOTAL` 就不猜读数）。
+  只想要「一个生产域产物 + 断言」也用它：`scripts/bmini-release.sh`。
+- `--host-assert`：只判「本机是不是部署机」（零副作用，排障用）。
+- 退出码沿用仓库三态：`0` 成功 / `1` 判红 / `3` **不可判定**（`3` 不得当 `0` 读）；用法错误 = `2`。
+- 没有 `--env`：这是**发布**路径，恒为 `prod`（test 包那条腿是 `bmini-experience.sh build --env test`，不是发布）。
+
+### 底层三步（一条命令调的就是它们；手工排障时按这个顺序）
 
 ```bash
 ./scripts/cut-release.sh                                                # ① 生产包从发布线构建（release ⊆ main）
@@ -12,10 +40,13 @@ scripts/bmini-experience.sh build  --env prod                           # ② �
 scripts/bmini-experience.sh upload --version 1.0.0 --desc "首个体验版"    # ③ 先断言、再上传（断言不过拒绝上传）
 ```
 
-- `build` + `upload` 想一条命令跑完：`scripts/bmini-experience.sh all --version 1.0.0 --desc "…"`。
+- `build` + `upload` 想一条命令跑完（**仍会跳过机器闸门与顺序闸门**，只在排障时用）：
+  `scripts/bmini-experience.sh all --version 1.0.0 --desc "…"`。
 - 版本号**必须显式给**（脚本不自动递增、不从 `package.json` 猜）。
 - 上传完成后到**微信后台 → 版本管理 → 选为体验版** —— 这一步命令行做不了
   （`miniprogram-ci` 只提供上传/预览，提审/发布是后台动作）。
+- 上传成功后，⑥ 打印的那一行**直接粘进 §六 发布记录表**（版本 / 时间 / 部署机与 `origin/release` sha /
+  `TOTAL` 字节 / dist 字节 / 比值）；审核列与发布者列照旧人手填。
 
 ## 需要什么（一次配好，之后不用再想）
 
@@ -115,8 +146,11 @@ deploy/scripts/bmini-assert-dist.sh frontend/bmini-app/dist --env prod   # 也�
 ```bash
 python3 -m pytest tests/unit_ci_workflows/test_bmini_dist_assert.py -q     # 结构 / 域名 / 不可判定 / 发布入口
 python3 -m pytest tests/unit_ci_workflows/test_bmini_dist_budget.py -q     # 体积判据 + 口径等价 + 单一来源元守卫
+python3 -m pytest tests/unit_ci_workflows/test_bmini_release_one_command.py -q  # 一条命令的六道关（机器 / 顺序 / 断言 / 上传 / 回读 / 默认不上传）
 bash -n deploy/scripts/bmini-assert-dist.sh
 bash -n scripts/bmini-experience.sh
+bash -n scripts/bmini-release.sh
+bash -n scripts/cut-release.sh
 ```
 
 ## 边界 / 未固化项（照实登记）
@@ -159,6 +193,9 @@ bash -n scripts/bmini-experience.sh
 
 ```bash
 # 以下命令在部署机上执行（本机用 ssh migao-deploy 进去；别记 IP）
+scripts/bmini-release.sh --upload --version X.Y.Z --desc "…"   # 一条命令：机器闸门 → 顺序闸门 → 构建 → 断言 → 上传 → 回读
+
+# 底层三步（排障时分开跑；见上文「底层三步」）
 ./scripts/cut-release.sh                        # 发布线 ⊆ main
 scripts/bmini-experience.sh build  --env prod   # 四条断言全绿
 scripts/bmini-experience.sh upload --version X.Y.Z --desc "…"

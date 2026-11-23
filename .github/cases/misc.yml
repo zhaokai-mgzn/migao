@@ -10507,3 +10507,58 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+  - id: MC-344
+    legacy_id: ""
+    title: "B 端小程序「发一版 = 一条命令」：机器闸门 / 顺序闸门 / 上传前断言 / 上传后回读记录行（编排层不复刻判据）"
+    domains:
+      - misc
+      - ci
+      - bmini
+      - deploy
+    tier: normal
+    tags:
+      - ci
+      - bmini
+      - deploy
+      - release
+      - one-command
+      - host-gate
+      - release-line
+      - red-proof
+    truths_ref: []
+    # 真值缺省说明：这是**部署契约**（不是 LLM / 业务真值）—— 判据落在**真 git 沙箱**（bare origin + 检出，
+    # 发布线/主线的相对关系按用例摆位）、桩掉的 `npm`/`npx`、以及**经代理转发到真实现**的产物断言脚本上：
+    # 零网络、零真构建、零真上传、零 LLM。
+    precondition:
+      - "部署机的**唯一标识** = SSH 别名（`~/.ssh/config` 的 `Host migao-deploy` → `HostName guangzhenzkdeMacBook-Pro.local`）：那台机器走 DHCP、地址会变 ⇒ 命令 / 文档 / 判据都**只认别名，禁写死 IP**。机器闸门 = 本机身份（缺省 `scutil --get LocalHostName` / `hostname -s`，可被 `MIGAO_BMINI_HOST_ID` 注入**读数**）与 `ssh -G <别名>` 解析出的 `HostName` 归一（小写 / 去尾点 / 去 `.local`）后相等。"
+      - "2026-11-23 用户裁定：**生产包只在部署机构建 + 上传**（本机误跑产出指向 `localhost` 的漂移包 ⇒ 真机 `request:fail errcode:-102`，1.0.1 即此形态；见 `docs/deployment/bmini-experience-release.md` §一）。"
+      - "发布线口径**不变**：`origin/release ⊆ origin/main`，复算 = `scripts/cut-release.sh --check`（`0` 合规 / `2` 旁路 / `3` 取不到远端）；**cut 是显式动作**，一条命令只许调 `--check`。"
+      - "「从 release 构建」的机械条件 = 本检出 `HEAD == origin/release` **且** 工作区无未提交改动（2026-11-21 差点用「停在旧特性分支的工作区」构建）。"
+      - "口径单一来源：包体上限 / 域名常量 / `dist↔TOTAL` 等价比值**都不在**本脚本里 —— 前两者分别住在 `deploy/scripts/bmini-dist-budget.json` 与 `scripts/bmini-experience.sh`，比值带**现读**预算文件的 `calibration` 台账 ±3‰（容差）。"
+    user_inputs:
+      - "B 端小程序已上线 v1.0.2，但发一版仍是三步手打（cut-release → `build --env prod` → `upload --version X.Y.Z`）＋三处人肉记忆（顺序 / 只在部署机 / 上传后把 `TOTAL` 抄进发布记录表）。怎么让「顺序即安全顺序」与「机器闸门」变成会红的判据，并让上传后那一行记录不用手抄？"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "判据 1·**机器闸门**：非部署机 ⇒ 退 **1** 且**一步都不往下走**（`npm` / `assert` / `npx` 桩全未被调用），stderr 必须同时给出本机读数 + 部署机 `HostName` + 三个出口（`ssh migao-deploy` 去部署机 / 改 ssh 别名 / 只构建不发布 `bmini-experience.sh build --env prod`）；身份相等 ⇒ `--host-assert` 退 0 且零副作用；**读数拿不到**（`MIGAO_BMINI_SSH_CONFIG` 指向不存在的文件）⇒ 退 **3**（不可判定，不许冒充 1 也不许当 0）。执行点 = tests/unit_ci_workflows/test_bmini_release_one_command.py::test_machine_gate_refuses_before_doing_anything / ::test_machine_gate_passes_when_the_identity_matches / ::test_machine_gate_is_undecidable_when_the_reading_is_unavailable"
+      - "判据 2·**顺序闸门（发布线）**：`origin/release` 上有 `origin/main` 没有的提交 ⇒ `cut-release.sh --check` 退 2 ⇒ 本脚本退 **1** 具名「发布线被旁路」，**且远端 release ref 逐字不变**（cut 是显式动作）；`origin/release` 不存在 ⇒ 退 1；远端不可达 ⇒ 退 **3**。执行点 = 同文件 ::test_bypassed_release_line_is_a_named_refusal_and_never_cuts / ::test_missing_release_branch_is_refused / ::test_unreachable_origin_is_undecidable / ::test_cut_release_reports_a_missing_release_line_instead_of_a_fake_bypass"
+      - "判据 3·**「从 release 构建」的机械条件**：发布线合规但本检出 `HEAD ≠ origin/release` ⇒ 退 1「本检出不是发布线」；工作区有未提交改动 ⇒ 退 1；两种情况 `npm` 桩都未被调用。执行点 = 同文件 ::test_checkout_not_on_the_release_line_is_refused / ::test_dirty_worktree_is_refused"
+      - "判据 4·**上传前断言真的会拦**（复用 `deploy/scripts/bmini-assert-dist.sh`，探针 = 只多记一行日志的代理、判据本体仍是真脚本）：① 产物是测试域却按 prod ⇒ 退 1 且 `npx` 未被调用；② 构建产物干净、但在**第 2 次**断言调用前被注入 `localhost` ⇒ 上传前断言当场判红、上传不发生。执行点 = 同文件 ::test_assert_failure_blocks_the_upload / ::test_a_drifted_dist_detected_by_the_pre_upload_assert_blocks_the_upload"
+      - "判据 5·**顺序实测**（三条判据写同一份 marker 日志）：`npm → assert → assert → assert → npx`（构建内断言 / 本脚本的上传前断言 / upload 自己的断言）—— 少一次 ⇒ 「上传前断言」被摘掉 ⇒ 红。执行点 = 同文件 ::test_ordering_is_build_then_asserts_then_upload"
+      - "判据 6·**版本号必须显式给**（不自动递增、不从 package.json 猜）：`--upload` 缺 `--version` / 形态非 `X.Y.Z` / 给了版本号却没 `--upload`：三种都退 **2**（用法错误）且**不构建、不上传**（`calls == []`）。执行点 = 同文件 ::test_upload_requires_an_explicit_version（三个参数面）"
+      - "判据 7·**上传后回读 + 可粘贴行**：从上传日志抓 `TOTAL`（取**最后一行**含 `TOTAL` 的——前面几道断言的口径交代行里也有 `TOTAL 1,461,748` 这种读数，取首行实测会抓到年份 2026），打印**恰好一行** 6 列 Markdown（版本 / 时间 / 部署机 alias + `origin/release` sha / `TOTAL` 字节 / dist 字节 / 比值），读数逐值可复算；抓不到 `TOTAL`（如 `--key` 走 miniprogram-ci 通道）⇒ 退 **3** 且**不产出**记录行（不猜）。执行点 = 同文件 ::test_upload_prints_a_pasteable_record_row / ::test_missing_total_in_the_log_is_undecidable"
+      - "判据 8·**比值三态**：`dist ÷ TOTAL` 必须落在预算文件 `calibration` 台账比值 ±3‰ 内；越界 ⇒ **警告 + 退 3**，且可疑行只进 stderr（不进 stdout，避免被直接粘进台账）；把台账的 `wechatBytes` 改成 `distBytes//2`（中心比值 2.0）⇒ 同一份产物改判「越界退 3」——证明比值带**现读**单一来源，不是另存一份尺子。执行点 = 同文件 ::test_ratio_out_of_band_exits_3 / ::test_ratio_band_is_read_from_the_budget_not_hardcoded"
+      - "判据 9·**默认安全**：不带 `--upload` ⇒ 只做 ①~④（`calls == [npm, assert, assert]`），明确打「未上传」，且**不产出**记录行。执行点 = 同文件 ::test_default_run_builds_and_asserts_but_never_uploads"
+      - "判据 10·**编排层不复刻判据（第二把尺子的实例面）**：脚本里**不得**出现域名常量（`cytda` / `migaozn`）/ 包体上限常量（读预算文件的 `wechatPackageCapBytes` 现算比对）/ `build:weapp` / `TARO_APP_`（按**代码行**判，注释里引用历史形态不算）；`cut-release.sh` 的唯一执行形态是 `--check`。红证 = 往脚本里抄一行生产域常量 ⇒ 红。执行点 = 同文件 ::test_script_reuses_instead_of_reimplementing"
+      - "判据 11·**文档接线**：`docs/deployment/bmini-experience-release.md` 必须指向这条命令，且**底层三步仍在**（`./scripts/cut-release.sh` / `bmini-experience.sh build  --env prod` / `bmini-experience.sh upload --version` 三条命令 + 「提审前检查清单」+「发布记录」表 + 部署机裁定段都不得被删）。执行点 = 同文件 ::test_docs_point_at_the_one_command_and_keep_the_three_steps / ::test_script_parses（`bash -n`）"
+      - "**注入式红证（实跑，PR body 有全表）**：11 个变异各摘掉一条闸门 ⇒ 对应判据全红（例：删 `gate_machine` ⇒ 机器闸门那条红；删 `gate_release` ⇒ 5 条红；删 `gate_assert` ⇒ 3 条红；比值带写死 970~1030 ⇒ 单一来源那条红；把 `cut-release` 的 ref 读取退回裸 `rev-parse` ⇒ 顺带修的两条红；TOTAL 取首行 ⇒ 回读两条红；docs 删掉三步之一 ⇒ 文档那条红）。"
+      - "**边界（照实登记）**：没有执行任何真实上传 / 发布（部署机登录态不在研发机手上）：真通道行为（devtools 打印 `TOTAL` 的真实形态、`--key` 通道不打印 `TOTAL`）由**日志桩**覆盖；判不了「产物能不能跑起来」与微信后台的域名白名单 / 提审状态。机器闸门是**防误跑**、不是权限边界（它读的是人用的同一份 ssh 配置）。**类级元守卫未固化**：`git rev-parse <ref>` 缺 `--verify` 这一形态的跨仓扫描没做 ⇒ 登记为缺口（重启条件 = 再出现一次同族假读数）。"
+    skip_reason: "[backend-contract] 部署 / 发布契约判据（真 git 沙箱 + 桩 npm/npx + 真断言脚本经代理）：零网络、零真构建、零真上传、零 LLM，不进 agent-eval 冒烟"
+    merge_log: "2026-11-23 新增（issue #9069，用户 2026-11-23「不碰C端，先把B端做夯实」）。取号 = `python3 scripts/next_case_id.py MC` 现取（main ∪ 全部 open PR ∪ 本工作区）⇒ MC-344（原取 MC-343 与同日已合并的冒烟面用例撞号 ⇒ 重取）。同批落地：scripts/bmini-release.sh（编排层）、tests/unit_ci_workflows/test_bmini_release_one_command.py（23 条判据）、docs/deployment/bmini-experience-release.md（「三行命令」→「一条命令 + 底层三步仍在」）。顺带链内修：scripts/cut-release.sh 的 `git rev-parse <ref>` 缺 `--verify` ⇒ ref 不存在时把 **ref 名本身**打到 stdout（退出码 128 被 `|| true` 吞掉）⇒「发布线尚不存在」分支不可达、被误报成「发布线被旁路（origin/）」并再退 128。"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_bmini_release_one_command.py"
+      ci:
+        - pr-check.yml
+        - bmini-app.yml
+      verifies: []
