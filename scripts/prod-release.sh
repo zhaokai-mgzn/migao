@@ -553,10 +553,14 @@ main() {
 
   POSTCHECK_FAILED=0
   BLIND_FAILURES=0
-  local probe_log sse_log probe_stop deadline probe_pid sse_pid
-  probe_log="$(mktemp -t migao-prod-probe)" || die_undecidable "建不了探针日志（mktemp 失败）"
-  probe_stop="${probe_log}.stop"   # 存在即停：发布一结束探针立刻收（不空跑满 120s）
-  sse_log="$(mktemp -t migao-prod-sse)" || die_undecidable "建不了流式探针日志（mktemp 失败）"
+  local probe_tmp probe_log sse_log probe_stop deadline probe_pid sse_pid
+  # 临时目录口径要**跨平台**：`mktemp -t <前缀>` 只有 BSD 认（GNU 要求模板里带 XXXXXX，实测算 CI Linux 上
+  # 报 «mktemp: too few X's in template» ⇒ 真发路径直接退 3）。⇒ 一律用显式模板 + `mktemp -d`。
+  probe_tmp="$(mktemp -d "${TMPDIR:-/tmp}/migao-prod-probe.XXXXXX")" \
+    || die_undecidable "建不了探针临时目录（mktemp -d 失败）"
+  probe_log="${probe_tmp}/probe.log"
+  sse_log="${probe_tmp}/sse.log"
+  probe_stop="${probe_tmp}/stop"   # 存在即停：发布一结束探针立刻收（不空跑满 120s）
   deadline=$(( $(ms_now) + PROBE_SECONDS * 1000 ))
 
   echo ""
