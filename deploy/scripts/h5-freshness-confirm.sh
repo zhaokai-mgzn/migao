@@ -34,7 +34,7 @@ cd "$ROOT" || exit 1
 SITE=$(printf '%s' "$URL" | sed -e 's#^\(https\?://[^/]*\)/.*#\1#')
 case "$SITE" in
   http*) : ;;
-  *) echo "::error::h5-freshness-confirm：URL 里取不到站点根（$URL）⇒ 无法复核" >&2; exit 2 ;;
+  *) echo "::error::h5-freshness-confirm：URL 里取不到站点根（${URL}）⇒ 无法复核" >&2; exit 2 ;;
 esac
 
 OUT=$(python3 scripts/h5_freshness_guard.py --url "$URL" --ref "$REF" "$@")
