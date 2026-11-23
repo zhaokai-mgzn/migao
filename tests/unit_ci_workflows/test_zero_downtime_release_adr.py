@@ -38,11 +38,15 @@ redis 从「本机容器」变成「云实例」。这类文档腐烂**不会让
 from __future__ import annotations
 
 import re
+import sys
 from pathlib import Path
 
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))   # tests/ ⇒ `unit_ci_workflows` 可导入
+from unit_ci_workflows.injection import inject  # noqa: E402
+
 DOC = REPO_ROOT / "docs" / "deployment" / "zero-downtime-release.md"
 COMPOSE_BG = REPO_ROOT / "deploy" / "swas" / "docker-compose.bluegreen.yml"
 COMPOSE = REPO_ROOT / "deploy" / "swas" / "docker-compose.yml"
@@ -362,8 +366,13 @@ def test_injection_dropping_any_m2_item_goes_red() -> None:
 
 def test_injection_port_18081_goes_red() -> None:
     original = _doc_text()
-    assert "18080" in original, "基线文档里没有 18080 ⇒ 注入无从下手（判据已与配置脱节）"
-    mutated = original.replace("18080", "18081")
+    mutated = inject(
+        original,
+        "第二端口 `18080` / `18000` / `13001`），`wait_healthy` + 迁移闸门",
+        "第二端口 `18081` / `18000` / `13001`），`wait_healthy` + 迁移闸门",
+        where="docs/deployment/zero-downtime-release.md",
+        count=1,
+    )
     assert mutated != original, "注入未生效：`18080` → `18081` 没有改变文本"
     violations = _port_violations(
         mutated,
@@ -380,7 +389,13 @@ def test_injection_port_18081_goes_red() -> None:
 def test_reverse_drift_config_port_change_without_doc_update_goes_red() -> None:
     """反向：配置侧把默认端口改掉、文档不动 ⇒ 同样判红（判据不是「只盯文档」）。"""
     bg = COMPOSE_BG.read_text(encoding="utf-8")
-    mutated = bg.replace("BG_ADMIN_API_PORT:-18080", "BG_ADMIN_API_PORT:-18081")
+    mutated = inject(
+        bg,
+        "BG_ADMIN_API_PORT:-18080",
+        "BG_ADMIN_API_PORT:-18081",
+        where="deploy/swas/docker-compose.bluegreen.yml",
+        count=1,
+    )
     assert mutated != bg, "注入未生效：compose 的 `BG_ADMIN_API_PORT:-18080` 没被改到"
     violations = _port_violations(_doc_text(), mutated, DEPLOY.read_text(encoding="utf-8"))
     assert violations, "配置侧端口漂移、文档未同步时判据仍然绿 ⇒ 交叉校验只做了单向"
