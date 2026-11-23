@@ -144,6 +144,12 @@ print("@@SUMMARY@@ failed=%s missing=%s ok=%d" % (",".join(failed), ",".join(mis
   missing=$(printf '%s' "$summary" | sed -n 's/.*missing=\([^ ]*\) .*/\1/p')
   ok_count=$(printf '%s' "$summary" | sed -n 's/.*ok=\([0-9]*\)$/\1/p')
 
+  # 远端整体退出码也是读数的一部分：段全绿但远端 rc≠0（例如 `InvocationStatus=Failed` 却没给 ExitCode）
+  # ⇒ **不许**宣布 `OK`（实测形态：状态 Failed 时 `prod_swas_run` 退 1，段标记却可能都在）。
+  if [ "$rc" -ne 0 ]; then
+    echo "READONLY-INSPECT=INCOMPLETE remote_rc=${rc} failed=[${failed}] missing=[${missing}] —— 远端执行没干净收尾，不当通过" >&2
+    exit 1
+  fi
   if [ -z "$failed" ] && [ -z "$missing" ]; then
     echo "READONLY-INSPECT=OK sections=${ok_count} instance=${PROD_INSTANCE_ID}"
     exit 0

@@ -135,10 +135,18 @@ if not result:
     if isinstance(items, dict):
         items = [items]
     result = items[0] if items else {}
-status = result.get("InvokeStatus") or result.get("Status") or ""
+# 状态键：**三种都认**（实测 2026-11-23 真机返回的是 `InvocationStatus`；只认 `InvokeStatus`/`Status`
+# 会把它读成「未知」⇒ 轮询到超时 ⇒ 明明成功却退 3 —— 这就是本包修的真缺陷）。
+status = (result.get("InvocationStatus") or result.get("InvokeStatus")
+          or result.get("Status") or "")
 exit_code = result.get("ExitCode")
 exit_code = "" if exit_code is None else str(exit_code)
-sys.stdout.write("%s\t%s\t%s\n" % (status, exit_code, result.get("Output") or ""))
+output = result.get("Output") or ""
+# 兜底：状态键缺失但**已有 ExitCode / Output** ⇒ 这次执行已经结束了（远端不会给「还在跑」的输出）。
+# 只把这种情况记成 `Success(推断)`，让调用方看得见「不是按状态键判的」；仍打印返回体片段。
+if not status and (output or exit_code != ""):
+    status = "Success(inferred)"
+sys.stdout.write("%s\t%s\t%s\n" % (status, exit_code, output))
 '
 }
 
@@ -172,12 +180,15 @@ $(printf '%s' "$out" | head -c 400)"
     exit_code=$(printf '%s' "$row" | cut -f2)
     payload=$(printf '%s' "$row" | cut -f3)
     case "$status" in
-      Success|Failed|Stopped|Timeout|Cancelled) break ;;
+      Success|Success\(inferred\)|Failed|Stopped|Timeout|Cancelled) break ;;
     esac
     attempt=$((attempt + 1))
     if [ "$attempt" -ge "$PROD_POLL_ATTEMPTS" ]; then
+      # 判不了时必须**说出为什么**：把最后一轮返回体前 400 字节打出来（否则「未知」是无线索的判不了）。
       prod_undecidable "等不到执行结果（invoke-id=${invoke_id}，状态=${status:-未知}，轮询 ${PROD_POLL_ATTEMPTS} 次）——
-   退 3 不当 0 读：远端可能仍在跑，重跑一次本命令看结果"
+   退 3 不当 0 读：远端可能仍在跑，重跑一次本命令看结果
+   最后一轮返回体前 400 字节：
+$(printf '%s' "$out" | head -c 400)"
       return 3
     fi
     sleep "$PROD_POLL_INTERVAL"
@@ -194,7 +205,12 @@ sys.stdout.write(base64.b64decode(raw).decode("utf-8", "replace"))
   printf '%s' "$decoded"
   [ -n "$exit_code" ] || exit_code=0
   case "$status" in
-    Success) return "$exit_code" ;;
-    *) return "$exit_code" ;;
+    Success|"Success(inferred)") return "$exit_code" ;;
+    *)
+      # 状态是失败/超时/停止，但云端没给 ExitCode ⇒ **不许当 0 读**（否则把 Failed 读成成功）
+      [ "$exit_code" -ne 0 ] && return "$exit_code"
+      printf '✗ 远端执行状态 = %s（没有 ExitCode）—— 按失败处理\n' "$status" >&2
+      return 1
+      ;;
   esac
 }
