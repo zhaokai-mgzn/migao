@@ -781,9 +781,20 @@ else
     rm -f "$_self_tmp"
     chmod +x "$MIGAO_DEPLOY_SELF"
     echo "  🔄 deploy.sh 自同步（ref=${CONFIG_REF_RESOLVED}）：sha256 ${_self_dst_sha:0:8} → ${_self_src_sha:0:8}；旧版备份 $(basename "$_self_bak")"
-    echo "  ⛔ 本次运行仍是**旧脚本进程**（覆盖后继续执行会读到错位的脚本内容）⇒ 停在这里：nginx.conf 未渲染、容器未动、回滚点未推进。"
-    echo "     ⇒ 处置：**再跑一次部署**（CI 会自动重试一次，人工重跑等价）——下一次执行的就是同源脚本（幂等，不再备份/覆盖）。"
-    exit 1
+    # 覆盖后**不许**在本进程里接着往下读（bash 按字节偏移续读同一个 fd ⇒ 会读到错位的下一段）。
+    # 旧做法 = `exit 1` 让调用方「再跑一次」（issue #8966）；代价是**单次部署必然空跑一次**
+    # —— 2026-11-22 实测：三次人工部署全部要靠「再跑一次」才生效，容易被误读成部署失败。
+    # 新做法 = **exec 原地重入**：同一 PID 换成同源脚本从头执行，一次调用就完成部署；
+    # 锁在重入时会重新 open fd 9（旧 fd 关闭即释放），不会自锁。
+    # 防环：哨兵置位后再遇到「不同源」⇒ 说明源与盘上 sha 在自我漂移 ⇒ fail-closed 停住。
+    if [ "${MIGAO_DEPLOY_SELF_REEXEC:-0}" = "1" ]; then
+      echo "  ⛔ 自同步后**仍不同源**（src=${_self_src_sha:0:8} / 盘上=${_self_dst_sha:0:8}）⇒ 重入保护触发，停在这里："
+      echo "     nginx.conf 未渲染、容器未动、回滚点未推进。处置：核对 ${MIGAO_DEPLOY_SRC_FILE} 是否在两次读取之间被改写。"
+      exit 1
+    fi
+    export MIGAO_DEPLOY_SELF_REEXEC=1
+    echo "  ↗️ 以同源脚本**原地重入**（exec，同一 PID）—— 单次调用即可完成本次部署，无需再跑一次"
+    exec bash "$MIGAO_DEPLOY_SELF" "$@"
   fi
 fi
 # <<< deploy-selfsync
