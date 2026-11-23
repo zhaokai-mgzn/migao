@@ -10612,8 +10612,10 @@ cases:
       - red-proof
     truths_ref: []
     user_inputs:
-      - "用户 2026-11-23（逐字）「我们是 ai native 公司，冒烟都需要 AI 跑」；追加裁定「以后还是需要先在测试机器上做充分验证，只有要发布生产的时候才在发布前走一次生产环境的冒烟」"
-      - "`scripts/smoke-prod-ai.sh --env prod` 跑只读子集：缺 MIGAO_SMOKE_IDENTIFIER / MIGAO_SMOKE_PASSWORD ⇒ 退 3 并点名变量；假凭据 ⇒ 退 1 且只打 HTTP 状态与 message"
+      # 单条（不是多轮对话用例）：本用例是**静态契约**判据，`user_inputs` 只承载需求出处。
+      # ⚠️ 拆成两条会被 `needs_precondition_assertion`（n_rounds>=2）读成「多轮用例」而要求前置断言
+      #    —— 本用例没有 agent 轮次，前置不成立这件事由判据自己的语义承担（见 data_checks）。
+      - "用户 2026-11-23（逐字）「我们是 ai native 公司，冒烟都需要 AI 跑」+「以后还是需要先在测试机器上做充分验证，只有要发布生产的时候才在发布前走一次生产环境的冒烟」⇒ `scripts/smoke-prod-ai.sh --env prod` 跑只读子集：缺 MIGAO_SMOKE_IDENTIFIER / MIGAO_SMOKE_PASSWORD ⇒ 退 3 并点名变量；假凭据 ⇒ 退 1 且只打 HTTP 状态与 message（不打印密码/token）"
     expectations: []
     data_checks:
       - "判据 ①·**profile 每条 node id 真实存在**：AST 解 tests/smoke/** 的函数表；改名/删除后具名红（防只读档静默少跑）。执行点 = tests/unit_ci_workflows/test_smoke_prod_readonly_profile.py::test_profile_is_read_only_and_every_node_id_exists / ::test_renamed_node_id_turns_red"
