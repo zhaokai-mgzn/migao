@@ -1,5 +1,5 @@
-# case_ids: MC-346
-# （tests/unit_ci_workflows/** 的 CI/部署契约类判据；用例登记见 .github/cases/misc.yml 的 MC-346）
+# case_ids: MC-348
+# （tests/unit_ci_workflows/** 的 CI/部署契约类判据；用例登记见 .github/cases/misc.yml 的 MC-348）
 """零停机发布 ADR 的**静态守卫**（issue #9084，用户 2026-11-23 裁定「集群部署不影响用户，让用户无感」）。
 
 ## 病（为什么文档也要判据）

@@ -2,7 +2,7 @@
 
 > 裁定出处：用户 2026-11-23 20:39 逐字「**另外要考虑未来做集群部署时如何不影响用户，让用户无感**」；
 > 同日 20:43 追加「**磁盘先不用管，未来要考虑做集群的磁盘告警，可以依赖阿里云的能力**」。
-> 关联 issue #9084。判据 = `tests/unit_ci_workflows/test_zero_downtime_release_adr.py`（MC-346）。
+> 关联 issue #9084。判据 = `tests/unit_ci_workflows/test_zero_downtime_release_adr.py`（MC-348）。
 >
 > **本页的增量只有两块**：① **零停机的切换模型**（M1：怎么切、按什么顺序、失败怎么退）；
 > ② **单机 → 集群的迁移路径**（M2：每一步的前置与回退点）。
@@ -416,10 +416,10 @@ WHERE name='max_connections';`。若算式不成立：① 降 `pool_max`（首�
 
 ## 附：本页的判据（防「文档空话」）
 
-- 判据文件：`tests/unit_ci_workflows/test_zero_downtime_release_adr.py`（`# case_ids: MC-346`）。
+- 判据文件：`tests/unit_ci_workflows/test_zero_downtime_release_adr.py`（`# case_ids: MC-348`）。
 - 它锁三件事：① M1 六项 / M2 五项关键字必须在**各自小节**里（删任一项 ⇒ 判红并点名）；
   ② 本页的**事实性断言**必须与仓内真实配置一致（`18080` / `18000` / `13001`、
   `proxy_pass http://admin-api:8080`、`/opt/migao-deploy/uploads`、redis 本机容器且 compose 未定义、
   graceful「未配置」）⇒ 配置一改，文档不同步就红；
   ③ 注入式红证：删 M1 任一项 ⇒ 红；把 `18080` 改成 `18081` ⇒ 红。
-- 用例登记：`.github/cases/misc.yml` 的 `MC-346`（QA Growth Gate 的 G5 追溯要求声明号存在于用例库）。
+- 用例登记：`.github/cases/misc.yml` 的 `MC-348`（QA Growth Gate 的 G5 追溯要求声明号存在于用例库）。
