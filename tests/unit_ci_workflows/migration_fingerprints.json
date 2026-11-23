@@ -209,6 +209,7 @@
     "V212__add_playbook_lifecycle.sql": "sha256:7bad58c832457631458e6787ed435c3e5a7252ef01450b5d5ca1d26ae4c11837",
     "V213__rename_c_end_agent_display_name.sql": "sha256:0f2e0c6a7f8b2e7386b6d1fdb13fd4e62ba672075ed166b536fed977895f6afb",
     "V214__add_product_door_widths.sql": "sha256:8788ff15258bbd76c29c691b1e003d337629e91d2de247ebd389c49ba1579165",
+    "V215__add_scheduled_task_claim_lease.sql": "sha256:cfef892329ec232891ed6987261f9dc15732a9e637b4442b27585e78293d4681",
     "schema.sql": "sha256:9462486ebf5b7c9effff53f2fbc923b614db8c42978b40b1fbf80ffc33d621c2"
   }
 }

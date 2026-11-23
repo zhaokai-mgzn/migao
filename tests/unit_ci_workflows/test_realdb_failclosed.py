@@ -94,6 +94,9 @@ REALDB_FILES: dict[str, str] = {
     # `#{createdBy} IS NULL` 的**主语位**（issue #5975 形态）：NULL 实参在 PG 上推不出类型 ⇒ 500。
     # 单元测试把 Mapper 全 mock 掉，这类故障只有真 PG 能现形 ⇒ 必须留在真库族（不许退化）。
     _SVC + "ReceivableAgingScopeRealDbTest.java": "direct",
+    _SVC + "ScheduledTaskMultiInstanceClaimRealDbTest.java": "direct",
+    _SVC + "ProductDoorWidthsRoundTripRealDbTest.java": "direct",
+    _SVC + "ProcessingOrderNoConflictRealDbTest.java": "direct",
     # issue #5939：发货单**列表**读面（GET /api/admin/shipments）的真库判据 —— 只真 PG 能证的四条：
     # 跨租户不可见（+ 反向自证对方租户自己读得到）/ 软删明细不计进 itemCount / 客户名取自 orders 连接 /
     # 未发货按 packed_at 参与排序，以及 LIMIT 生效。
