@@ -7946,6 +7946,40 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+  - id: MC-344
+    legacy_id: ''
+    title: "冒烟套件「一次登录」契约（issue #8977）：短信码单次消费 ⇒ P0 整档只许 fixture 登录一次，注入 token 复跑不再发码"
+    domains:
+      - misc
+      - ci
+    tier: normal
+    tags:
+      - smoke
+      - auth
+      - one-login
+      - red-proof
+    truths_ref: []
+    # 真值缺省说明：这是「冒烟套件自身」的行为契约（不是 LLM/业务真值）—— 判据落在桩化 transport
+    # 与源码面，零网络、零真短信、零 LLM。
+    user_inputs:
+      - "生产（未配 SMS_BYPASS_CODE）`SMOKE_ENV=production pytest -m p0` 整跑：test_login_success 自己发一次短信码，session fixture 再用同一个码登录 ⇒ 401，依赖它的 10 条全 ERROR；现行规避是手工 --deselect。"
+    expectations: []
+    data_checks:
+      - "判据 ①：设置 SMOKE_ADMIN_TOKEN ⇒ auth_token fixture **一条登录请求都不发**（桩化 transport 记录请求集合，断言不含 /api/auth/sms/login），并直接把注入 token 装进 client。执行点 = tests/unit_ci_workflows/test_smoke_single_login.py::test_injected_token_never_posts_sms_login"
+      - "判据 ②：未设置 SMOKE_ADMIN_TOKEN ⇒ 仍按原逻辑发码登录**恰好一次**（防止「为了绿而永远不登录」），请求体 = 配置里的手机号 + 短信码。执行点 = ::test_without_injected_token_logs_in_exactly_once"
+      - "判据 ③：test_login_success **复用** auth_token 的同一次登录 —— 行为：总登录数仍为 1；静态：入参无 admin_client/config、函数体无 /api/auth/sms/login 字面量。执行点 = ::test_login_success_reuses_fixture_login / ::test_login_success_has_no_own_login_call"
+      - "判据 ④（类级元守卫）：tests/smoke/test_*.py 里任何标了 p0 的用例，函数体不得同时出现 /api/auth/sms/login 与 admin_sms_code（= 有效码消费者）⇒ 新增同类用例即红。执行点 = ::test_p0_has_no_valid_code_consumer_outside_fixture"
+      - "判据 ⑤（台账）：P0 之外的有效码消费者必须逐条登记在 tests/unit_ci_workflows/smoke_login_consumers.json —— 未登记即红、多登记也红（只许缩短）；现役仅 tests/smoke/test_06_perf.py::test_login_latency（P1/performance 档，`-m p0` 不收集）。执行点 = ::test_valid_code_consumer_ledger_is_exact"
+      - "判据 ⑥：SMOKE_ADMIN_TOKEN 注入模式没有 refresh cookie ⇒ refresh 用例**显式 skip**（不可判定，不是通过），且 skip 只以 login_response 为条件（真登录的跑法里仍覆盖 refresh）。执行点 = ::test_refresh_skips_only_in_injected_token_mode"
+      - "判据 ⑦：fixture 不许读 bypass 环境变量弱化登录（SMS_BYPASS_CODE 逻辑不动）。执行点 = ::test_fixture_does_not_introduce_sms_bypass"
+    skip_reason: "[backend-contract] 纯静态 + 桩化 transport 判据（零网络、零真短信、零 LLM），不进入 agent-eval 冒烟；真机真短信的一次整跑需在部署机执行（命令与判据见 tests/smoke/README.md「生产复跑」节）"
+    merge_log: "2026-11-23 新增（issue #8977）。取号 = python3 scripts/next_case_id.py MC 现取（main ∪ 全部 open PR ∪ 本工作区）⇒ MC-344。修前红：带「短信码单次消费」的本地 stub API 真跑 tests/smoke/test_02_auth.py -m p0 ⇒ 7 passed, 2 errors（fixture 第二次登录 401）；修后绿：9 passed，有效码只登录一次；注入 token 模式 8 passed, 1 skipped、登录请求 0 次。新判据自身首次跑 = 7 failed, 1 passed（插桩式红），实现后 8 passed。"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_smoke_single_login.py"
+      ci:
+        - pr-check.yml
+      verifies: []
   - id: MC-189
     legacy_id: ""
     title: "配置就绪度端点 GET /api/admin/config-readiness（issue #6579）：服务端聚合七步事实（含孤儿工序单一真值口径）、跨码步骤按调用方权限整个省略、前端主线只发这一个请求就画出七步"
