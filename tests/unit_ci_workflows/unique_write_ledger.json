@@ -57,10 +57,6 @@
       "table": "processing_fee_combinations",
       "handling": "none"
     },
-    "backend/admin-api/src/main/java/com/migao/admin/service/ProcessingOrderService.java::processingOrderMapper": {
-      "table": "processing_orders",
-      "handling": "backend/admin-api/src/main/java/com/migao/admin/service/ProcessingOrderService.java"
-    },
     "backend/admin-api/src/main/java/com/migao/admin/service/ProcessingOrderSetAllocator.java::orderSetMapper": {
       "table": "processing_order_sets",
       "handling": "backend/admin-api/src/main/java/com/migao/admin/mapper/ProcessingOrderSetMapper.java"
@@ -215,6 +211,11 @@
       "table": "tenant_logistics_configs",
       "handling": "none",
       "note": "issue #8698 P0 新表（V209）：单行/租户的部分唯一索引 uk_tenant_logistics_configs_tenant（WHERE deleted = 0）。写面口径 = 「先 selectActiveByTenant 判空 → insert / updateById」，并发同租户双写撞唯一键时异常冒泡成 5xx。当前无原子写（P0 只是设置页的选择，冲突面极低），按台账登记为已观测缺口；收敛方向 = 改成 ON CONFLICT (tenant_id) WHERE deleted = 0 DO UPDATE 的 mapper 原子 upsert（与 TenantPaymentQrcodeMapper#upsertActive 同款）。"
+    },
+    "backend/admin-api/src/main/java/com/migao/admin/service/ProcessingOrderNoAllocator.java::mapper": {
+      "table": "processing_orders",
+      "handling": "backend/admin-api/src/main/java/com/migao/admin/mapper/ProcessingOrderMapper.java",
+      "note": "issue #9022（P0-5 加工单号并发重复）：单号分配不再「查最大号 + 1 再 insert」，改为 `INSERT … ON CONFLICT (processing_order_no) DO NOTHING` 按影响行数判首次（ProcessingOrderMapper#insertWithFresh），撞号则重算重试 ≤20 次，耗尽回 409 PROCESSING_ORDER_NO_CONFLICT。生产实测两次并发派单得到连续且唯一的单号。"
     }
   }
 }

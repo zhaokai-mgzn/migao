@@ -38,7 +38,7 @@ import java.util.concurrent.TimeUnit;
  *
  * <p>本类不直接发 HTTP：真正去微信换 token 的动作由 {@link Refresher} 注入（{@link WechatService}
  * 提供），这样多实例 / 降级 / 失效自愈都能离线判（见
- * {@code WechatServiceAccessTokenClusterTest}）。</p>
+ * {@code WechatAccessTokenProviderTest}）。</p>
  */
 @Slf4j
 class WechatAccessTokenProvider {

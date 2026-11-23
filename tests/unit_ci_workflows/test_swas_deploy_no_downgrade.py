@@ -835,7 +835,9 @@ def _make_src_tar(dest: Path) -> None:
     stage = dest.parent / "stage" / "migao-main" / "deploy" / "swas"
     stage.mkdir(parents=True, exist_ok=True)
     for name in ("docker-compose.yml", "docker-compose.bluegreen.yml", "nginx.conf"):
-        shutil.copy(REPO_ROOT / "deploy" / "swas" / name, stage / name)
+        # 沙箱一致性：脚本副本已把 `/opt/migao-deploy` 改写成 tmp 路径，打包的 compose/nginx 同步改写
+        _txt = (REPO_ROOT / "deploy" / "swas" / name).read_text(encoding="utf-8")
+        (stage / name).write_text(_txt.replace("/opt/migao-deploy", str(dest.parent / "opt-migao-deploy")), encoding="utf-8")
     with tarfile.open(dest, "w:gz") as tf:
         tf.add(dest.parent / "stage" / "migao-main", arcname="migao-main")
 
@@ -853,8 +855,19 @@ def _prepare(tmp_path: Path, script_text: str) -> tuple:
     script = work / "deploy.sh"
     script.write_text(text, encoding="utf-8")
     # 配置 fail-closed 前置：显式声明 SMS_BYPASS_CODE（否则脚本按设计中止）
-    (work / ".env.admin-api").write_text("SMS_BYPASS_CODE=123456\n", encoding="utf-8")
-    (work / ".env.ai-agent").write_text("SMS_BYPASS_CODE=123456\n", encoding="utf-8")
+    # 1.6c/1.6d（issue #8989 ④）：脚本在任何 up 之前校验 JWT `file:` 宿主路径并要求两侧同源
+    # ⇒ 沙箱必须同构地造出 pem 并在两侧 .env 都声明（否则执行式判据全部停在预检）。
+    _jwt_dir = work / "jwt"
+    _jwt_dir.mkdir(exist_ok=True)
+    (_jwt_dir / "public.pem").write_text("-----BEGIN PUBLIC KEY-----\nstub\n-----END PUBLIC KEY-----\n", encoding="utf-8")
+    (_jwt_dir / "private.pem").write_text("-----BEGIN PRIVATE KEY-----\nstub\n-----END PRIVATE KEY-----\n", encoding="utf-8")
+    _jwt_env = (
+        "SMS_BYPASS_CODE=123456\n"
+        f"JWT_PRIVATE_KEY=file:{work}/jwt/private.pem\n"
+        f"JWT_PUBLIC_KEY=file:{work}/jwt/public.pem\n"
+    )
+    (work / ".env.admin-api").write_text(_jwt_env, encoding="utf-8")
+    (work / ".env.ai-agent").write_text(_jwt_env, encoding="utf-8")
     tar_path = tmp_path / "src.tar.gz"
     _make_src_tar(tar_path)
     bin_dir = tmp_path / "bin"

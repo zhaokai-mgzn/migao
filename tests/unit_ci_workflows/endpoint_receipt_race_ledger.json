@@ -69,6 +69,12 @@
       "table": "inbound_orders",
       "reason": "issue #7255 顺带暴露（**不是本单引入的缺口**）：归因顺序改成「mapper 原子写优先」之后，本写入点首次被认成原子闸族 —— 它的闸其实一直在（InboundOrderMapper#insertIgnoreInboundNoConflict：ON CONFLICT (tenant_id, inbound_no) WHERE deleted = 0 DO NOTHING，创建路径把它 catch 成 409）。缺的是**端点级**并发判据：现有承载体是服务级真库竞态判据（backend/admin-api/src/test/java/com/migao/admin/service/InboundNoTakeRaceRealDbTest.java），它跑的是服务方法而不是 MockMvc 端点回执。本单不扩射程，按机制如实登记 deferred。",
       "restart_condition": "补入库单端点级并发判据时（并发两次建单 ⇒ 一方 201 / 一方 409，绝不 500）从 deferred 移入 sites。"
+    },
+    "backend/admin-api/src/main/java/com/migao/admin/service/ProcessingOrderNoAllocator.java::mapper": {
+      "table": "processing_orders",
+      "reason": "issue #9022（P0-5 加工单号并发重复）：mapper 内已是原子闸（INSERT … ON CONFLICT (processing_order_no) DO NOTHING 按影响行数判首次）。**端点级**并发判据尚未建 —— 缺的是「同一端点并发两次派单 ⇒ 两个不同单号且都成功」这条真库赛道（现有 ProcessingOrderNoAllocatorTest 是服务级，替不了端点契约）。同单重复派单的 409 回执口径由既有活跃单闸负责，与本闸正交。",
+      "restart_condition": "在 realdb 端点赛道里补 `POST /api/admin/processing-orders` 并发两条 ⇒ 断言两张单号互不相同、HTTP 均 2xx（红证：把 insertWithFresh 换回「查最大号+1」⇒ 撞号 409/500）",
+      "case_ids": ""
     }
   }
 }
