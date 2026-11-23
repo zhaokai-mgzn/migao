@@ -52,14 +52,23 @@ jobs:
   h5-freshness:
     name: h5-freshness
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # 15min：时间戳判「陈旧」时要起一次构建做**内容等价**复核（npm ci + build:h5 ≈ 1~2min，
+    # 只在判「陈旧」时才跑 ⇒ 常见路径仍是秒级）。issue #8924。
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
         with:
           # 判据要 `git log -1 -- frontend/mini-app` ⇒ 需要真实历史（浅检出会让它取不到 ⇒ 判「无法判定」）
           fetch-depth: 0
 
-      - name: 判据（线上 Last-Modified vs 源码最近改动）+ 计数声明
+      # 内容等价复核要构建（issue #8924）⇒ 需要 node + 依赖缓存；构建只在时间戳判「陈旧」时发生。
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/mini-app/package-lock.json
+
+      - name: 判据（线上 Last-Modified vs 源码最近改动 ⇒ 陈旧时做内容等价复核）+ 计数声明
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -67,12 +76,15 @@ jobs:
           source .github/scripts/mechanism_liveness.sh
 
           # 默认判红（gate，用户 2026-09-27 裁定 B）；只有显式勾 no_gate 才退回报告型。
+          # 🔴 时间戳只是代理 ⇒ 陈旧时由 confirm 脚本**构建并逐字节比对**（issue #8924）；
+          #    等价 ⇒ 不判红，有差异 ⇒ 仍判红（真陈旧的判别力不降）。
           GATE_FLAG=""
           if [ "${{ github.event.inputs.no_gate }}" = "true" ]; then
             GATE_FLAG="--no-gate"
           fi
 
-          OUT="$(python3 scripts/h5_freshness_guard.py ${GATE_FLAG})"
+          OUT="$(bash deploy/scripts/h5-freshness-confirm.sh \
+            https://app.migaozn.com/js/app.js origin/main ${GATE_FLAG})"
           RC=$?
           printf '%s\n' "${OUT}"
           SEEN="$(printf '%s\n' "${OUT}" | sed -n 's/^MIGAO-H5FRESH-SUMMARY seen=\([0-9]*\).*/\1/p' | tail -1)"

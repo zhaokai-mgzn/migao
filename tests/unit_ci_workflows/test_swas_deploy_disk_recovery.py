@@ -953,7 +953,10 @@ def make_src_tar(dest: Path, deploy_text: str | None = None) -> None:
     stage = dest.parent / "stage" / "migao-main"
     for rel in ("deploy/swas/docker-compose.yml",):
         (stage / rel).parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy(REPO_ROOT / rel, stage / rel)
+        # 沙箱一致性：脚本副本已把 `/opt/migao-deploy` 改写成 tmp 路径（本文件的沙箱根），
+        # 打包的 compose 也同步改写 —— 否则 JWT `file:` 预检读到的仍是宿主绝对路径（必判不存在）。
+        _txt = (REPO_ROOT / rel).read_text(encoding="utf-8")
+        (stage / rel).write_text(_txt.replace("/opt/migao-deploy", str(dest.parent / "opt-migao-deploy")), encoding="utf-8")
     script = stage / "deploy/swas/deploy.sh"
     script.parent.mkdir(parents=True, exist_ok=True)
     if deploy_text is None:
@@ -990,8 +993,18 @@ def _run_deploy(tmp_path: Path, *, df_seq: str, cache_size: str = "",
     # `src/` 里那份 deploy.sh == **正在执行的这份文本**（同 ref 同源：真实部署里 bootstrap
     # 就是拿同 ref 的 tarball 装盘再执行 ⇒ 自同步段比对相等、不动作；issue #8966）
     make_src_tar(tar_path, deploy_text=text)
+    # 1.6c/1.6d（issue #8989 ④）：JWT 文件式取值预检要求 pem 真存在且两侧同源 ⇒ 沙箱同构造出，
+    # 否则所有执行式判据都停在预检（表现为「健康部署不该失败」）。
+    _jwt_dir = work / "jwt"
+    _jwt_dir.mkdir(exist_ok=True)
+    (_jwt_dir / "public.pem").write_text("-----BEGIN PUBLIC KEY-----\nstub\n-----END PUBLIC KEY-----\n", encoding="utf-8")
+    (_jwt_dir / "private.pem").write_text("-----BEGIN PRIVATE KEY-----\nstub\n-----END PRIVATE KEY-----\n", encoding="utf-8")
+    _jwt_env = (
+        f"SMS_BYPASS_CODE=1\nJWT_PRIVATE_KEY=file:{work}/jwt/private.pem\n"
+        f"JWT_PUBLIC_KEY=file:{work}/jwt/public.pem\n"
+    )
     for env_file in (".env.admin-api", ".env.ai-agent", ".env.registry"):
-        (work / env_file).write_text("SMS_BYPASS_CODE=1\n", encoding="utf-8")
+        (work / env_file).write_text(_jwt_env, encoding="utf-8")
     state = tmp_path / "state"
     state.mkdir(exist_ok=True)
     (state / "pulls").write_text("", encoding="utf-8")

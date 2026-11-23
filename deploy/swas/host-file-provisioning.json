@@ -1,0 +1,27 @@
+{
+  "schema": "host-file-provisioning/v1",
+  "what": "部署期**宿主文件依赖**登记表（issue #9051）。`deploy/swas/docker-compose*.yml` 里每一个 `file:` 取值都把一个宿主路径变成「部署/重建容器必需」，而 compose 本身**没有**创建它的能力 ⇒ 缺了就是「部署腿恒红」或「容器起来即崩」。本表逐条登记这个路径**由谁提供**，未登记即红 —— 判据 = tests/unit_ci_workflows/test_swas_jwt_same_source.py::test_every_compose_file_style_host_path_is_registered",
+  "why": "2026-11-23 实测（issue #9051）：compose 的 ai-agent `JWT_PUBLIC_KEY: file:/opt/migao-deploy/jwt/public.pem` 指的路径在测试环境宿主上**从未被创建**，而 1.6c 的前置校验自 2026-11-22T08:48Z 起每次都判红 ⇒ 部署腿自那以后**没有一次**真正部署过（schedule 的 success 是 `skip=true` 不部署的档）。⇒ 「引入宿主文件依赖」必须同时回答「谁创建它」，否则就是把判据写成了恒红的死胡同。",
+  "paths": [
+    {
+      "path": "/opt/migao-deploy/jwt/public.pem",
+      "kind": "public-key",
+      "provisioned_by": "deploy/swas/deploy.sh::1.6d",
+      "evidence_anchor": "JWT_FILE_SELFHEAL=created",
+      "sources": [
+        ".env.admin-api / .env.ai-agent 的内联 JWT_PUBLIC_KEY（PEM 内容）",
+        "部署树 src/backend/admin-api/src/main/resources/rsa/public.pem（admin-api 未显式配置时的签发公钥来源；同时把 .env.admin-api 钉成同一路径）"
+      ],
+      "fail_closed_by": "deploy/swas/deploy.sh::1.6c",
+      "remediation": "三条权威源都取不到 ⇒ 1.6c 判红（真缺失仍是红）；处置 = 把与签发私钥成对的 public.pem 放回宿主，或修正 .env.* 的 JWT_* 取值后重跑"
+    },
+    {
+      "path": "/opt/migao-deploy/jwt/private.pem",
+      "kind": "secret",
+      "provisioned_by": "manual（签发密钥：只能由人成对放入宿主，仓库**不得**物化私钥）",
+      "evidence_anchor": "deploy/swas/deploy.sh::1.6d 只物化公钥（私钥不在枚举面里）",
+      "fail_closed_by": "deploy/swas/deploy.sh::1.6c",
+      "remediation": "私钥只经 `.env.admin-api` 的 file: 取值被引用；缺失 ⇒ 1.6c 判红并要求人工成对补齐"
+    }
+  ]
+}

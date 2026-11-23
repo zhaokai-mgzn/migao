@@ -33,8 +33,9 @@
     },
     {
       "path": "backend/admin-api/src/main/java/com/migao/admin/service/ProductService.java",
-      "lines": 3043,
-      "frozen_at": "2026-10-30"
+      "lines": 3118,
+      "frozen_at": "2026-11-23",
+      "note": "裁定：P0 修复（#9022 加工单号原子分配 + #9009 门幅/库存 + #9014 颜色准入）落在既有服务里，+75 行；拆文件会打断事务边界与既有契约，故显式抬高冻结值（单独裁定，diff 可见）。"
     },
     {
       "path": "backend/ai-agent-service/app/api/chat.py",
@@ -63,8 +64,9 @@
     },
     {
       "path": "backend/ai-agent-service/app/tools/order_create.py",
-      "lines": 2110,
-      "frozen_at": "2026-10-30"
+      "lines": 2186,
+      "frozen_at": "2026-11-23",
+      "note": "裁定：P0-4（#9024 下单幂等键窗口）在既有工具内新增 _request_window_id/order_facts_of 等 76 行；拆文件会跨模块拆散幂等口径，故显式抬高。"
     }
   ],
   "frozen_count_max": 12,

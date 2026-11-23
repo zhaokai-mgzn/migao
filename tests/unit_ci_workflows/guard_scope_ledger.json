@@ -116,6 +116,31 @@
                 "uncovered_faces": []
             },
             "uncovered_faces_frozen": 0
+        },
+        "tests/unit_ci_workflows/test_bmini_dist_budget.py": {
+            "kind": "scans",
+            "issue": "#8981",
+            "reason": "B 端小程序包体上限常量的「第二把尺子」元守卫（issue #8979 / #8981）：`.sh` 语料按全仓射程扫代码位置的字面量（注释剥掉），另外扫 workflow / 判据 / 前端 config 的非 shell 载体；上限常量只许住在 deploy/scripts/bmini-dist-budget.json。收全仓是因为「新加一份 shell」正是这类缺陷最容易复发的形态（#5284 同族）。",
+            "declaration": {
+                "roots": [
+                    "."
+                ],
+                "glob": "*.sh",
+                "exclude_dirs": [
+                    ".git",
+                    "node_modules",
+                    ".venv",
+                    "venv",
+                    "site-packages",
+                    ".next",
+                    "dist",
+                    "build",
+                    "coverage"
+                ],
+                "enumerator": "scanned_shell_carriers",
+                "uncovered_faces": []
+            },
+            "uncovered_faces_frozen": 0
         }
     }
 }

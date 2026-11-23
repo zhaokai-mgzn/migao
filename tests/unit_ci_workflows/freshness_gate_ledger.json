@@ -1,0 +1,21 @@
+{
+  "schema": "freshness-gate-ledger/v1",
+  "what": "**产物新鲜度 / 陈旧**类闸门登记表（issue #8924）。口径：这类闸门的判据天然只能读到**代理**（线上 Last-Modified、裸哈希、发布时间戳），而「代理说旧」**不等于**「内容真落后」。⇒ 每个这类闸门必须登记：① 它的代理读数是什么 ② 它用**哪一条内容等价判定**把代理转成结论 ③ 哪些调用面在用同一份复核实现。未登记即红 —— 判据 = tests/unit_ci_workflows/test_freshness_gates_content_equivalence.py",
+  "why": "2026-11-19 ~ 2026-11-23 实测（issue #8924 / 前序 #8860 #8861 #8862）：`Publish C-end H5` 的 notify 档连续红，读数逐字 `线上产物陈旧：2026-11-18T09:38Z 早于 frontend/mini-app 最近改动 2026-11-19T01:45Z`，而「重跑只会再命中同一条闸门」。⇒ 代理读数（发布时间）驱动的判红必须能回答「内容到底有没有差异」，否则要么周期假红（devDependency 升级），要么永远红（没人发布）。",
+  "gates": [
+    {
+      "name": "C 端产物陈旧判定",
+      "anchor": "线上产物（app.migaozn.com/js/app.js 的 Last-Modified）",
+      "script": "scripts/h5_freshness_guard.py",
+      "proxy_reading": "线上 Last-Modified vs origin/main 上 frontend/mini-app 最近改动 − 宽限期",
+      "content_proof_flag": "--dist-dir",
+      "content_proof": "把线上每个产物文件与本次构建产物**逐字节**比对（只规范化 BOM / CRLF）；全部一致 ⇒ equivalent（exit 0），有差异 ⇒ stale（exit 2，印差异文件清单），取不到 ⇒ 不当等价（fail-closed）",
+      "confirm_script": "deploy/scripts/h5-freshness-confirm.sh",
+      "callers": [
+        ".github/workflows/c-end-h5-publish.yml",
+        ".github/workflows/h5-freshness-guard.yml"
+      ],
+      "determinism_evidence": "2026-11-23 实测：同一份源码连跑两次 npm run build:h5 ⇒ js/app.js=c60722d3…、index.html=e4ab045f… 逐字节一致；线上 index.html / css/app.css 与本机 HEAD 构建一致（e4ab045f… / a328eb9b…），仅 js/app.js 不同（258451 vs 258552 字节，来自 zustand 5.0.15→5.1.0）⇒ 那次的红是真陈旧"
+    }
+  ]
+}

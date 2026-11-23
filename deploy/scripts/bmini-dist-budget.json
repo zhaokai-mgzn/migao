@@ -1,0 +1,41 @@
+{
+  "_doc": [
+    "B 端小程序包体预算的**唯一来源**（issue #8979 / #8981）。",
+    "消费者：deploy/scripts/bmini-assert-dist.sh（python3 读）与 tests/unit_ci_workflows/_bmini_dist.py（判据读）。",
+    "别处出现第二份上限常量 ⇒ tests/unit_ci_workflows/test_bmini_dist_budget.py::test_no_second_ruler_and_the_allowlist_only_shrinks 判红。",
+    "改这里的数 = 改闸门：同一 PR 必须同时更新 docs/deployment/bmini-experience-release.md 的「体积判据」节。"
+  ],
+  "wechatPackageCapBytes": 2097152,
+  "wechatTotalCapBytes": 20971520,
+  "mainPackageReserveBytes": 307200,
+  "_口径": [
+    "判的是 **dist 字节**（微信开发者工具上传后报的 TOTAL 与 dist 字节**等价**，实测比值 0.998 ⇒ 用 dist 判是偏严方向）。",
+    "主包预算 = wechatPackageCapBytes − mainPackageReserveBytes（预留 = issue #8979 要求的 ≥300KB 余量）；每个分包各自 ≤ wechatPackageCapBytes；总包 ≤ wechatTotalCapBytes。",
+    "**不叠折算系数**：历史上「×1.425」的读数见 unreproducibleReadings（找不到可复算的产物），据它收紧闸门会制造假红。"
+  ],
+  "calibration": [
+    {
+      "date": "2026-11-23",
+      "distBytes": 1465245,
+      "wechatBytes": 1461748,
+      "source": "部署机 ssh migao-deploy ~/prod/migao-bmini-main（HEAD = origin/release f78dff52c）：frontend/bmini-app/dist 的 find 字节合计 vs `scripts/bmini-experience.sh all --version 1.0.2 --env prod` 上传后开发者工具报的 TOTAL；记录见 docs/deployment/bmini-experience-release.md 的发布记录 1.0.2"
+    }
+  ],
+  "unreproducibleReadings": [
+    {
+      "date": "2026-11-21",
+      "reading": 2079753,
+      "pairedDistBytes": 1459140,
+      "ratio": 1.4253,
+      "why": "部署机上能查到的四份产物（见 measurements）都量不出 2,079,753；开发者工具日志里也没有留下带该数字的回执 ⇒ 无法配对到任何一份可复算的 dist，按「不可复现读数」登记，不据此叠折算系数",
+      "issue": 8981
+    }
+  ],
+  "measurements": [
+    {"path": "~/migao-bmini-experience/dist.bak-11222310", "bytes": 1459203, "domains": "cytda=1 migaozn=0 localhost=0", "note": "2026-11-22 23:10 备份的生产域产物：与 #8981 记的 dist 1,459,140 只差 63 字节"},
+    {"path": "~/migao-bmini-experience/dist", "bytes": 1465247, "domains": "migaozn=1 localhost=1", "note": "2026-11-22 23:06 的漂移包（指 localhost，真机 errcode:-102 那次）"},
+    {"path": "~/prod/migao/frontend/bmini-app/dist", "bytes": 1840656, "domains": "cytda=1 migaozn=1", "note": "存量混域产物（两份域同时命中，1.84MB）"},
+    {"path": "~/prod/migao-bmini-main/frontend/bmini-app/dist", "bytes": 1465245, "domains": "cytda=1 migaozn=0", "note": "2026-11-23 10:06 上传 v1.0.2 的那一份"},
+    {"path": "本机度量（origin/main 26ff9f716 的 worktree，--env test）", "bytes": 1465251, "domains": "migaozn=3 cytda=0 localhost=0", "note": "非发布候选；与上面那份差 6 字节 = 三处域名字符串长度差（cytda 5 字 vs migaozn 7 字）"}
+  ]
+}

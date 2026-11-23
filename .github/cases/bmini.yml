@@ -2321,7 +2321,7 @@ cases:
       - "判据 1·验证码输入框必须覆盖父级宽度：`.login-field__input--code` 内含 `width: auto`（否则 weapp 原生 input 按 `width:100%` 铺满整行、压住右侧按钮）。执行点 = frontend/bmini-app/tests/login-code-row-layout.test.ts#①"
       - "判据 2·按钮与输入框同盒模型：`.login-code-btn` 内含 `box-sizing: border-box`（否则总高 96+2rpx，比输入框高一条）。执行点 = 同文件#②"
       - "判据 3·父级 `width:100%` 必须保留（防「为修判据 1 而删父级宽度」污染其它输入面）。执行点 = 同文件#③"
-    skip_reason: "[ui-structural] 判的是 SCSS 源码结构（非渲染像素）；像素级复核在真机体验版人工确认，不进 agent-eval 冒烟"
+    skip_reason: "[frontend-contract] 判的是 SCSS 源码结构（非渲染像素）；像素级复核在真机体验版人工确认，不进 agent-eval 冒烟"
     merge_log: "2026-11-21 新增（issue #8983，用户逐字「获取验证码的按钮有点问题吧，被遮住了」）。生产体验版 1.0.0 iPhone 实测：按钮左边框不可见、左侧被输入框盖住 ⇒ 推测 weapp 原生 input 按 CSS width 铺开。"
     traces:
       tests:
