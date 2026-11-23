@@ -191,8 +191,8 @@ M1-f 今天就能做（不需要动 nginx）；M1-b/c 只有在 M1-a 落地后�
 
 | 服务 | 现在探什么 | 目标 |
 |---|---|---|
-| admin-api | compose healthcheck 与 `wait_healthy` 都探**聚合** `/actuator/health`（`docker-compose.yml:74`） | 开 `management.endpoint.health.probes.enabled=true` ⇒ `/actuator/health/readiness`（依赖：DB/Redis/存储自检）+ `/actuator/health/liveness`（只判进程该不该重启）；**nginx/SLB 只按 readiness 摘挂** |
-| ai-agent | `/ready`（DB + Redis，`backend/ai-agent-service/app/main.py:218`）与 `/health` | 保持 `/ready` 作为 readiness；把 `/health` 明确为 liveness（只判进程），**不要把供应商健康塞进 readiness**（`main.py:235-236` 已记录这条口径） |
+| admin-api | compose healthcheck 与 `wait_healthy` 都探**聚合** `/actuator/health`（`deploy/swas/docker-compose.yml:74`） | 开 `management.endpoint.health.probes.enabled=true` ⇒ `/actuator/health/readiness`（依赖：DB/Redis/存储自检）+ `/actuator/health/liveness`（只判进程该不该重启）；**nginx/SLB 只按 readiness 摘挂** |
+| ai-agent | `/ready`（DB + Redis，`backend/ai-agent-service/app/main.py:218`）与 `/health` | 保持 `/ready` 作为 readiness；把 `/health` 明确为 liveness（只判进程），**不要把供应商健康塞进 readiness**（`backend/ai-agent-service/app/main.py:235-236` 已记录这条口径） |
 | nginx | `/healthz`（自身进程） | 不变：nginx 不参与上游健康判断（它是入口，不是 LB） |
 
 **注意**：readiness **不通过**时应当「摘流量但不重启」，liveness 不通过才「重启」；当前没有 autoheal，
@@ -310,8 +310,8 @@ readiness 不受影响（防止两条线互相污染）。
 
 ### M2-c 数据面：连接池算式模板（**上第 2 个实例前必须算**）
 
-现状（代码事实）：admin-api Hikari `maximum-pool-size: 20`（`application.yml:52-57`）；
-ai-agent asyncpg `pool_size=20` + `max_overflow=10`（`app/utils/database.py:39-40`）。
+现状（代码事实）：admin-api Hikari `maximum-pool-size: 20`（`backend/admin-api/src/main/resources/application.yml:52-57`）；
+ai-agent asyncpg `pool_size=20` + `max_overflow=10`（`backend/ai-agent-service/app/utils/database.py:39-40`）。
 
 **算式模板**（把读数填进去，不要背数字）：
 
