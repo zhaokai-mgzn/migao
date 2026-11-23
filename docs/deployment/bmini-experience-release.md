@@ -55,23 +55,54 @@ deploy/scripts/bmini-assert-dist.sh frontend/bmini-app/dist --env prod   # 也�
 |---|---|---|---|
 | ① | 结构 | `app.json` 的 `pages` 非空、`app.js` 在、每页 `.js` / `.wxml` / `.json` 齐备（`.wxss` **允许缺省**，Taro 对无样式页面本就不产出） | 重新构建；持续缺件看 Taro 编译日志 |
 | ② | 域名策略 | `prod` ⇒ `migaozn.com` 出现 **0** 次、`cytda.com` **≥1** 次、**无 `localhost`**；`test` ⇒ 反向 | 别手拼构建：三个常量必须一起注入（`build --env prod`） |
-| ③ | 体积 | 全部文件合计 < `2097152 × 90% = 1887436` 字节；超限打印顶层条目占比 top5 | 先看 top5 归因；根治是分包（[#8979](https://github.com/zhaokai-mgzn/migao/issues/8979)） |
+| ③ | 体积 | **主包** ≤ 单包上限 − 主包预留（预留 = #8979 的 ≥300KB 余量）、**每个分包** ≤ 单包上限、**总包** ≤ 总包上限；常量**唯一来源** = `deploy/scripts/bmini-dist-budget.json`（主包上限 2,097,152 / 总包上限 20,971,520 / 主包预留 307,200） | 先看归因（哪个包 / 超多少字节 / 该包最大的文件 / 复算命令）；真的要降主包先看 §体积读数的 top 表 |
 | ④ | 不可判定 | dist 不存在 / 不是目录 / 不可读 / **空目录** / 缺 `python3` ⇒ 退 **3** | 先构建；`3` **不得当 `0` 读** |
 
 退出码：`0` 全绿 / `1` 有判据不成立 / `2` 用法错误 / `3` **不可判定**。
 
-### ⚠️ 体积判据的边界（实测，必须一起读）
+### 体积判据的口径（#8981 的收口：**等价**，不是 ×1.425）
 
-dist 字节和**微信后台报的包体**不是同一个数。2026-11-21 同一份产物实测：
+判的是 **dist 字节**，它与微信开发者工具上传后报的 `TOTAL` **等价** —— 2026-11-23 部署机实测：
 
-| 读数 | 值 |
-|---|---|
-| `dist` 字节合计 | 1,459,140 |
-| 微信后台报的主包 | **2,079,753** / 上限 2,097,152（余量 **17KB**） |
+| 读数 | 值 | 怎么取的 |
+|---|---|---|
+| `frontend/bmini-app/dist` 字节合计 | **1,465,245** | `find frontend/bmini-app/dist -type f -exec cat {} + \| wc -c`（`~/prod/migao-bmini-main`，HEAD = `origin/release` `f78dff52c`） |
+| 开发者工具上传后报的 `TOTAL` | **1,461,748** | 同一台机器 `scripts/bmini-experience.sh all --version 1.0.2 --env prod` 的输出 |
 
-折算比 ≈ **1.425**。⇒ **闸门绿 ≠ 微信还有余量**（那次闸门还剩 428,296 字节，而真实余量只有 17KB）。
-因此脚本在体积段额外交代一行「参考折算」读数（**不是判据**，不改变退出码）；口径不一致本身已开单
-[#8981](https://github.com/zhaokai-mgzn/migao/issues/8981)，在做分包（#8979）之前**别把闸门绿读成安全**。
+比值 **0.998** ⇒ dist 字节**略大于**上传读数，用 dist 判是**偏严**方向，**不叠折算系数**。
+旁证：`~/migao-bmini-experience/dist.bak-11222310`（11-22 23:10 备份的生产域产物）字节合计 1,459,203，
+与 [#8981](https://github.com/zhaokai-mgzn/migao/issues/8981) 记的 dist 1,459,140 只差 63 字节。
+
+🔴 **那 `2,079,753` 是怎么回事**：它在部署机四份产物（1,459,203 / 1,465,247 / 1,840,656 / 1,465,245）里
+一个都对不上；开发者工具日志（`~/Library/Application Support/微信开发者工具/**`；检索面 = `find … -newermt "2026-11-20"` 命中的
+88 个文件，逐份 `grep -a "TOTAL\|2079753\|1461748\|包体\|包大小"`）里也没有留下带该数字的回执 ⇒ 登记为**不可复现读数**
+（见 `deploy/scripts/bmini-dist-budget.json` 的 `unreproducibleReadings`）。
+按它推出来的「×1.425」若当成口径，会把闸门错误压到 ≈1.47MB、**制造假红** ⇒ 已整块删掉，
+原来那行「参考折算」读数也一并删除（它曾在 1,465,251 字节的产物上报出「余量 9,170 字节」这种假读数）。
+
+### 体积读数（2026-11-23 实跑，用于判断「要不要分包」）
+
+`./scripts/bmini-experience.sh build --env test` → `frontend/bmini-app/dist`，合计 **1,465,251 字节**（25 页 / 122 文件）：
+
+| 组成 | 字节 | 占比 |
+|---|---|---|
+| `vendors.js`（webpack 第三方依赖） | 519,832 | 35.5% |
+| `common.js` | 183,244 | 12.5% |
+| `taro.js` + `app.js` + `runtime.js` | 237,232 | 16.2% |
+| `base.wxml` + `common.wxss` + `utils.wxs` + `app-origin.wxss` | 72,821 | 5.0% |
+| `pages/**`（25 页合计） | 433,509 | 29.6% |
+| `assets/`（tabBar 图标等） | 14,770 | 1.0% |
+| 其余（`app.json` / `*.LICENSE.txt` / `project.config.json` / `comp.*` / `app.wxss`） | 3,843 | 0.3% |
+
+页面侧最大的几组：`pages/chat/index` 124,485（AI 对话）· `pages/worker/stock` 28,816 ·
+`pages/worker/inbound` 24,291 · `pages/worker/shipment` 23,614。
+被 #8979 点名的**四个管理页**（`pages/admin/{pool,inbound,after-sales,piecework}`）合计 **30,866 字节（2.1%）**。
+
+⇒ **余量**：对 2MB 上限还有 **631,901 字节（30.1%）**，扣掉 300KB 预留后仍余 **324,701 字节**。
+⇒ 按「不为拆分而拆分」：**本次不拆分包**。拆 4 个管理页只挪走 31KB（对 940KB 的 JS 主体无影响），
+而主包离上限还有 30% —— 真正会撞线的是 JS 主体，那是「加依赖 / 加页」时才会发生的事。
+分包判据**已就绪**（`subPackages[].root` 已实现并有真实形状红证），重启条件 = 主包余量 < 300KB
+（判据会在那一刻先红，见 [#8979](https://github.com/zhaokai-mgzn/migao/issues/8979)）。
 
 ## CI 侧接线
 
@@ -82,7 +113,8 @@ dist 字节和**微信后台报的包体**不是同一个数。2026-11-21 同一
 ## 判据（本地可复算，零网络）
 
 ```bash
-python3 -m pytest tests/unit_ci_workflows/test_bmini_dist_assert.py -q
+python3 -m pytest tests/unit_ci_workflows/test_bmini_dist_assert.py -q     # 结构 / 域名 / 不可判定 / 发布入口
+python3 -m pytest tests/unit_ci_workflows/test_bmini_dist_budget.py -q     # 体积判据 + 口径等价 + 单一来源元守卫
 bash -n deploy/scripts/bmini-assert-dist.sh
 bash -n scripts/bmini-experience.sh
 ```
@@ -94,15 +126,20 @@ bash -n scripts/bmini-experience.sh
     `~/prod/migao-bmini-main`，HEAD = `origin/release` `f78dff52c`）执行
     `scripts/bmini-experience.sh all --version 1.0.2 --env prod`：四条断言全绿 →
     `✔ Using AppID: wx6ee2f682c1b4822c` → `✔ upload`，开发者工具侧包体读数 **TOTAL 1,461,748 字节**
-    （同日 dist 1,465,245）。**注意**：这个读数 ≈ dist 字节数，与 2026-11-21 记的 ×1.425 折算（2,079,753）
-    不符 ⇒ 体积折算口径待复核（[#8981](https://github.com/zhaokai-mgzn/migao/issues/8981) 的一部分）。
+    （同日 dist 1,465,245）。**这两个读数的关系已收口**（等价，比值 0.998）——见上文「体积判据的口径」节；
+    2026-11-21 记的那个 ×1.425（2,079,753）已登记为**不可复现读数**
+    （[#8981](https://github.com/zhaokai-mgzn/migao/issues/8981)；台账 = `deploy/scripts/bmini-dist-budget.json` 的 `unreproducibleReadings`）。
   - `miniprogram-ci` 通道（私钥）：**仍未真跑过**，参数面由桩判据钉住
     （`--upload-version` 而不是 `--version`；`--appid` / `--project-path` / `--private-key-path`）。
     重启条件 = 首次真用时把 `upload` 的实际输出贴进发布记录。
-- **体积口径**不一致见上文 + [#8981](https://github.com/zhaokai-mgzn/migao/issues/8981)（本页不假装已解决）。
+- **体积口径**已收口（等价，见上文「体积判据的口径」）；`2,079,753` 登记为不可复现读数
+  （[#8981](https://github.com/zhaokai-mgzn/migao/issues/8981) 的缺陷面 = 当时没人钉口径；现由预算文件的
+  `calibration` 台账 + 元守卫（第二把尺子判红）承接）。判据 = `tests/unit_ci_workflows/test_bmini_dist_budget.py`。
 - 判不了「产物能不能跑起来」（要真机/模拟器），也判不了微信后台的域名白名单。
-- 分包（[#8979](https://github.com/zhaokai-mgzn/migao/issues/8979)）落地后，`bmini-assert-dist.sh` 的体积段须按
-  `app.json` 的 `subPackages[].root` 剔除子包，否则闸门会比微信更严（会误红）。
+- **分包（[#8979](https://github.com/zhaokai-mgzn/migao/issues/8979)）本次不拆**（照实登记）：实测主包余量
+  631,901 字节（≥300KB 地板）、拆 4 个管理页只挪走 30,866 字节 ⇒ 不为拆分而拆分。
+  判据侧**已就绪**（`app.json` 的 `subPackages[].root` 已实现：主包剔除子包、每包各自判、总包判，
+  真实形状红证见上）；重启条件 = 主包余量 < 300KB（那时闸门会先红，读数与拆法都在本节）。
 
 ## 提审前检查清单（2026-11-23 实战沉淀）
 
