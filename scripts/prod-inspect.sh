@@ -76,6 +76,8 @@ build_remote_script() {
   cat <<'REMOTE'
 set -u
 sec() { printf '@@SEC:%s@@\n' "$1"; eval "$2" 2>&1; printf '@@END:%s@@ rc=%s\n' "$1" "$?"; }
+# 生产上 **nginx 在容器里**（2026-11-23 实测：宿主既无 nginx 二进制也无 /etc/nginx；
+# 容器 = `migao-deploy-nginx-1`）⇒ 读配置必须进容器；只读（`nginx -T` 只 dump 配置）。
 # READONLY-PAYLOAD-BEGIN
 sec host 'hostname; date -u +%FT%TZ; uptime'
 sec disk_root 'df -h /'
@@ -86,7 +88,7 @@ sec docker_df 'docker system df'
 sec env_site 'cat /opt/migao-deploy/.env.site'
 sec deploy_dir 'ls -l /opt/migao-deploy/ | head -30'
 sec deploy_usage 'du -sh /opt/migao-deploy/* 2>/dev/null | sort -h | tail -10'
-sec nginx "nginx -T 2>/dev/null | grep -E 'server_name|proxy_pass'"
+sec nginx "docker ps --format '{{.Names}}' | grep -i nginx | head -1 | xargs -I{} docker exec {} nginx -T 2>/dev/null | grep -E 'server_name|proxy_pass'"
 sec cron 'crontab -l 2>&1; ls -l /etc/cron.d/ 2>&1'
 sec timers 'systemctl list-timers --all --no-pager 2>&1 | head -40'
 # READONLY-PAYLOAD-END

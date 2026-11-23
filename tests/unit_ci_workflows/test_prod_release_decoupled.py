@@ -80,7 +80,7 @@ READONLY_WHITELIST = {
     "hostname", "date", "uptime", "df", "free", "docker", "cat", "ls", "du",
     "nginx", "crontab", "systemctl",
     # 只读过滤器（管道下游）
-    "grep", "sort", "tail", "head", "awk", "sed", "cut", "wc", "egrep", "tr",
+    "grep", "sort", "tail", "head", "awk", "sed", "cut", "wc", "egrep", "tr", "xargs",
 }
 #: `docker` 只许这两个子命令（`ps` / `system df`），其余一律判红
 ALLOWED_DOCKER_SUBCOMMANDS = {"ps", "system"}
@@ -470,8 +470,13 @@ def test_inspect_payload_is_readonly_whitelisted():
             assert word in READONLY_WHITELIST, f"非白名单命令 '{word}'：{segment}"
             if word == "docker":
                 parts = segment.split()
-                assert len(parts) > 1 and parts[1] in ALLOWED_DOCKER_SUBCOMMANDS, \
-                    f"docker 子命令不在白名单（只许 ps / system df）：{segment}"
+                assert len(parts) > 1, segment
+                # `exec` 只许进容器**跑只读的 `nginx -T`**（2026-11-23 真机：宿主没有 nginx 二进制）
+                if parts[1] == "exec":
+                    assert "nginx -T" in segment, f"docker exec 只许只读 nginx -T：{segment}"
+                else:
+                    assert parts[1] in ALLOWED_DOCKER_SUBCOMMANDS, \
+                        f"docker 子命令不在白名单（只许 ps / system df）：{segment}"
             checked += 1
     assert checked >= 10, checked
 
