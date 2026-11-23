@@ -188,3 +188,4 @@
 {"id":"1795408393.13467.11438","ts":"2026-11-23T04:33:14Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/8979-bmini-subpackage","why":"--allow-package-heavy（命令行显式）"}
 {"id":"1795409302.90128.26381","ts":"2026-11-23T04:48:22Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/8979-bmini-subpackage","why":"--allow-package-heavy（命令行显式）"}
 {"id":"1795419220.52056.15360","ts":"2026-11-23T07:33:40Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-superagent-wt/naming-candidates-a07670c94f93","why":"子包 worktree 直跑全量（无批次标记）"}
+{"id":"1795424987.21019.3839","ts":"2026-11-23T09:09:48Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/bmini-rel","why":"子包 worktree 直跑全量（无批次标记）"}
