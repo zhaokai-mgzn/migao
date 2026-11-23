@@ -21,6 +21,8 @@ import {
   steps,
   valuePoints,
 } from '@/components/corporate/home-content'
+// 内测期隐藏自助入驻入口（issue #9066）：开关单一来源见 @/config/onboarding
+import { SELF_SERVICE_ONBOARDING_OPEN } from '@/config/onboarding'
 
 export const metadata: Metadata = {
   title: {
@@ -63,13 +65,15 @@ export default function HomePage() {
               </p>
 
               <div className="mt-9 flex flex-col gap-3 sm:flex-row">
-                <Link
-                  href="/register"
-                  className="group inline-flex items-center justify-center gap-2 rounded-xl bg-white px-7 py-3.5 text-base font-semibold text-neutral-900 transition-colors hover:bg-neutral-100"
-                >
-                  免费开通
-                  <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
-                </Link>
+                {SELF_SERVICE_ONBOARDING_OPEN && (
+                  <Link
+                    href="/register"
+                    className="group inline-flex items-center justify-center gap-2 rounded-xl bg-white px-7 py-3.5 text-base font-semibold text-neutral-900 transition-colors hover:bg-neutral-100"
+                  >
+                    免费开通
+                    <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+                  </Link>
+                )}
                 <Link
                   href="/contact"
                   className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/25 px-7 py-3.5 text-base font-semibold text-white transition-colors hover:bg-white/10"
@@ -542,16 +546,20 @@ export default function HomePage() {
             把 AI 带进经营现场
           </h2>
           <p className="mx-auto mt-4 max-w-2xl text-base leading-relaxed text-neutral-300">
-            提交申请，AI 自动甄别后即可开通；也可以预约演示，按您的业务流程逐项确认。
+            {SELF_SERVICE_ONBOARDING_OPEN
+              ? '提交申请，AI 自动甄别后即可开通；也可以预约演示，按您的业务流程逐项确认。'
+              : '预约演示，按您的业务流程逐项确认；开通方式由平台顾问与您确认。'}
           </p>
           <div className="mt-9 flex flex-col items-center justify-center gap-3 sm:flex-row">
-            <Link
-              href="/register"
-              className="group inline-flex items-center gap-2 rounded-xl bg-white px-7 py-3.5 text-base font-semibold text-neutral-900 transition-colors hover:bg-neutral-100"
-            >
-              免费开通
-              <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
-            </Link>
+            {SELF_SERVICE_ONBOARDING_OPEN && (
+              <Link
+                href="/register"
+                className="group inline-flex items-center gap-2 rounded-xl bg-white px-7 py-3.5 text-base font-semibold text-neutral-900 transition-colors hover:bg-neutral-100"
+              >
+                免费开通
+                <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+              </Link>
+            )}
             <Link
               href="/contact"
               className="inline-flex items-center gap-2 rounded-xl border border-white/25 px-7 py-3.5 text-base font-semibold text-white transition-colors hover:bg-white/10"

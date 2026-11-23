@@ -5,6 +5,16 @@
 > 原因 = 单文件涨到 512KB 越过扫描上限，详见存档文件头与 issue #6404。
 > **后续条目继续在本文件 `## [Unreleased]
 
+### 内测期官网隐藏自助入驻入口：官网不再露出「商家入驻 / 免费开通」，`/register` 保留为内部入口（2026-11-23，issue #9066）
+
+- **形态**：官网导航 / 页脚 / 首页 / 关于 / 产品服务 / 联系页不再出现「商家入驻 / 免费开通 / 立即入驻 / 提交入驻申请」入口，
+  引导文案收口为「预约演示 / 联系我们」；`/register` 页面与 `POST /api/auth/register` **原样保留**
+  （内测期内部入口 = 内部同事直接访问 URL 自助开通测试租户；`robots.txt` 一直 Disallow `/register`）。
+- **开关**：单一来源 `frontend/admin-web/src/config/onboarding.ts` 的 `SELF_SERVICE_ONBOARDING_OPEN = false`；
+  内测结束改回 `true` 即整体恢复（判据会当场变红，按提示同步断言）。
+- 判据：`frontend/admin-web/tests/unit/onboarding-entry-hidden.test.tsx`（6 个官网面零 `/register` 链接与四类入口文案 /
+  `/register` 内部入口保留 / 类级元守卫：官网面任何 `/register` 出处必须引用开关，含注入式红证）+ 各页既有断言同步。
+
 ### B 端小程序补上微信隐私授权弹窗（照片 / 摄像头 / 麦克风）：未同意的工人扫码 / 拍照 / 语音不再全挂（2026-11-22，issue #9011）
 
 - **病灶**：小程序后台已申报《用户隐私保护指引》三类（选中的照片或视频信息 / 摄像头 / 麦克风），但端侧**一处**隐私授权流程都没有（`onNeedPrivacyAuthorization` / `requirePrivacyAuthorize` 全仓 0 命中）⇒ 未同步过同意的用户调 `chooseImage` / `scanCode` / `getRecorderManager` 直接被微信拦下（`fail privacy permission is not authorized`）：工人**拍照入库 / 补打 / 发货 / 库存修正**、**扫码报工 / 裁高 / 精裁 / 质检**、**按住说话**全部失败，且没有任何判据会变红（接口调用本身写得没问题）。

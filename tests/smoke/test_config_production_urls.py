@@ -5,7 +5,7 @@
 下面两条断言会红；修掉后转绿。
 """
 
-from tests.smoke.config import get_config
+from .config import get_config
 
 
 def test_production_env_targets_cytda_not_test_instance(monkeypatch):

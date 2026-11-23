@@ -1,5 +1,7 @@
 import Link from 'next/link'
 import Logo from '@/components/ui/Logo'
+// 内测期隐藏自助入驻入口（issue #9066）：开关单一来源见 @/config/onboarding
+import { SELF_SERVICE_ONBOARDING_OPEN } from '@/config/onboarding'
 
 const quickLinks = [
   { name: '首页', href: '/' },
@@ -41,13 +43,15 @@ export default function CorporateFooter() {
           <div>
             <h3 className="mb-4 text-sm font-semibold tracking-wider text-white">快速链接</h3>
             <ul className="space-y-2.5">
-              {quickLinks.map((link) => (
-                <li key={link.href}>
-                  <Link href={link.href} className="text-sm text-neutral-400 transition-colors hover:text-white">
-                    {link.name}
-                  </Link>
-                </li>
-              ))}
+              {quickLinks
+                .filter((link) => SELF_SERVICE_ONBOARDING_OPEN || link.href !== '/register')
+                .map((link) => (
+                  <li key={link.href}>
+                    <Link href={link.href} className="text-sm text-neutral-400 transition-colors hover:text-white">
+                      {link.name}
+                    </Link>
+                  </li>
+                ))}
             </ul>
           </div>
 
@@ -69,16 +73,22 @@ export default function CorporateFooter() {
           <div>
             <h3 className="mb-4 text-sm font-semibold tracking-wider text-white">开始使用</h3>
             <ul className="space-y-2.5 text-sm text-neutral-400">
-              <li>提交入驻申请并完成手机验证</li>
+              <li>
+                {SELF_SERVICE_ONBOARDING_OPEN
+                  ? '提交入驻申请并完成手机验证'
+                  : '联系平台顾问确认开通范围与交付内容'}
+              </li>
               <li>AI 自动核验企业信息与合规性</li>
               <li>通过后即刻开通管理后台，米宝与黄金策同步上线</li>
             </ul>
-            <Link
-              href="/register"
-              className="mt-5 inline-flex rounded-lg bg-white px-5 py-2.5 text-sm font-semibold text-neutral-900 transition-colors hover:bg-neutral-100"
-            >
-              商家入驻
-            </Link>
+            {SELF_SERVICE_ONBOARDING_OPEN && (
+              <Link
+                href="/register"
+                className="mt-5 inline-flex rounded-lg bg-white px-5 py-2.5 text-sm font-semibold text-neutral-900 transition-colors hover:bg-neutral-100"
+              >
+                商家入驻
+              </Link>
+            )}
           </div>
         </div>
 
