@@ -7,6 +7,8 @@ import { Menu, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import Logo from '@/components/ui/Logo'
 import { merchantLoginUrl } from '@/lib/site-domain'
+// 内测期隐藏自助入驻入口（issue #9066）：开关单一来源见 @/config/onboarding
+import { SELF_SERVICE_ONBOARDING_OPEN } from '@/config/onboarding'
 
 const navItems = [
   { name: '首页', href: '/' },
@@ -87,12 +89,14 @@ export default function CorporateNav() {
             >
               商家登录
             </a>
-            <Link
-              href="/register"
-              className="rounded-lg bg-primary-600 px-5 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-primary-700"
-            >
-              商家入驻
-            </Link>
+            {SELF_SERVICE_ONBOARDING_OPEN && (
+              <Link
+                href="/register"
+                className="rounded-lg bg-primary-600 px-5 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-primary-700"
+              >
+                商家入驻
+              </Link>
+            )}
           </div>
 
           {/* Mobile Menu Toggle */}
@@ -134,13 +138,15 @@ export default function CorporateNav() {
               >
                 商家登录
               </a>
-              <Link
-                href="/register"
-                onClick={() => setMobileMenuOpen(false)}
-                className="block rounded-lg bg-primary-600 px-4 py-2.5 text-center text-sm font-medium text-white transition-colors hover:bg-primary-700"
-              >
-                商家入驻
-              </Link>
+              {SELF_SERVICE_ONBOARDING_OPEN && (
+                <Link
+                  href="/register"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="block rounded-lg bg-primary-600 px-4 py-2.5 text-center text-sm font-medium text-white transition-colors hover:bg-primary-700"
+                >
+                  商家入驻
+                </Link>
+              )}
             </div>
           </div>
         </div>
