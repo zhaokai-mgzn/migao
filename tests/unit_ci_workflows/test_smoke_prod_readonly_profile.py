@@ -431,10 +431,16 @@ def test_script_uses_the_profile_as_the_single_source():
     """只读档是**单点来源**：脚本按它组参数，不许内联第二份清单，也不许内置任何默认凭据。"""
     text = SCRIPT.read_text(encoding="utf-8")
     assert "prod_readonly_profile.json" in text, "脚本没有引用只读档 ⇒ 出现第二份清单（两份必然漂移）"
-    # 只扫**可执行行**（注释里写「不跑 `-m p0`」是文档，不是运行指令）
-    code_lines = [line.split("#", 1)[0] for line in text.splitlines() if not line.lstrip().startswith("#")]
-    code = "\n".join(code_lines)
-    assert "-m p0" not in code, "脚本里出现了 `-m p0` 整档：写类用例会跑进生产"
+    # 只扫**可执行行**（注释里写「不跑 `-m p0`」是文档，不是运行指令）。
+    # ⚠️ 不做 `line.split("#")` 那种朴素截断（字符串里的 `#` 会吃掉行尾 ⇒ 假绿；
+    #   判据 = tests/unit_ci_workflows/test_guard_parsing_is_comment_aware.py）：
+    #   这里按「整行以 # 开头」筛注释，并按**结构**（`run_pytest` 调用行）定位真正的调用。
+    code = "\n".join(line for line in text.splitlines() if not line.lstrip().startswith("#"))
+    invocation_lines = [line for line in text.splitlines() if line.strip().startswith("run_pytest")]
+    assert invocation_lines, "找不到 pytest 调用行（脚本结构变了？本判据的定位方式要跟着改）"
+    assert not any("-m p0" in line for line in invocation_lines), (
+        "pytest 调用行里出现了 `-m p0` 整档：写类用例会跑进生产"
+    )
     for variable in ("MIGAO_SMOKE_IDENTIFIER", "MIGAO_SMOKE_PASSWORD"):
         assert variable in text, f"脚本没读 {variable}"
         # `${VAR:-}`（空默认）是 `set -u` 下的空值判断，不算默认值；**非空默认**才是内置凭据
