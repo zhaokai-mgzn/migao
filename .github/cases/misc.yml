@@ -10475,3 +10475,35 @@ cases:
         - bmini-app.yml
         - pr-check.yml
       verifies: []
+  - id: MC-343
+    legacy_id: ""
+    title: "冒烟面不许绝对导入 `tests` 包：`cd tests/smoke && pytest -m p0` 下会 ModuleNotFoundError，整条部署腿判红"
+    domains:
+      - misc
+      - smoke
+    tier: normal
+    tags:
+      - smoke
+      - import-form
+      - deploy-leg
+      - meta-guard
+    truths_ref: []
+    # 真值缺省说明：这是「冒烟套件自身的导入形态」元判据（不是 LLM / 业务真值）—— 纯静态扫描 + 判别力自证，零网络。
+    precondition:
+      - "冒烟腿的执行形态 = `cd tests/smoke && pytest -m \"p0\" …`（`.github/workflows/smoke-test.yml` 的 `P0 Smoke Test` 步）；仓库里 `tests/__init__.py` **不存在**（只有 `tests/smoke/__init__.py`）⇒ `tests` 不是包，绝对导入 `from tests.smoke.…` 在采集阶段即 `ModuleNotFoundError: No module named 'tests'`。"
+      - "现场（2026-11-23 实测）：run 45120925452 部署本体成功（`JWT_KEY_SAME_SOURCE=OK`、`✅ SWAS 部署成功 admin-api=sha-4ca4f19`），但 `Post-Deploy Smoke Test` 因采集错误 exit 2 ⇒ 整条腿 `failure`。该绝对导入由 #8993（2026-11-22）引入，被上游 JWT 红（#9051/#9059）遮了 24 小时以上。"
+    user_inputs:
+      - "部署后冒烟一直红在 `ModuleNotFoundError: No module named 'tests'`，而部署本体已经成功 —— 怎么断定是「冒烟面的导入形态」而不是环境/依赖问题？"
+    data_checks:
+      - "判据 1·**禁止绝对导入**：`tests/smoke/**/*.py` 出现 `^\\s*(from|import)\\s+tests\\.` ⇒ 判红，输出**具名**「文件:行: 原文」。注入式红证（实测）：把 `tests/smoke/test_config_production_urls.py` 改回 `from tests.smoke.config import get_config` ⇒ 1 failed；改回 `from .config import get_config` ⇒ 2 passed。执行点 = tests/unit_ci_workflows/test_smoke_import_form.py::test_no_absolute_tests_import_in_smoke_face"
+      - "判据 2·**判别力自证**：扫描面必须非空（≥5 个 .py）且包含现场文件 `tests/smoke/test_config_production_urls.py` ⇒ 否则「绿」是零命中假绿。执行点 = 同文件 ::test_the_scanner_actually_sees_the_face"
+      - "绿证（人工/CI 复核，不在判据里跑子进程）：`cd tests/smoke && python3 -m pytest -m p0 --collect-only -q` 必须 `0 error`（修前实测 `21/105 tests collected (84 deselected), 1 error`；修后 `21/107 tests collected, 0 error`）。"
+    skip_reason: "[backend-contract] 冒烟面导入形态的元判据（纯静态扫描 + 判别力自证）：零网络、零真跑冒烟、零 LLM，不进 agent-eval 冒烟"
+    merge_log: "2026-11-23 新增（issue #9062）。取号 = `python3 scripts/next_case_id.py MC` 现取 MC-343。同批落地：tests/smoke/test_config_production_urls.py（绝对 ⇒ 相对导入）、tests/unit_ci_workflows/test_smoke_import_form.py（类级元守卫）。"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_smoke_import_form.py"
+        - "tests/smoke/test_config_production_urls.py"
+      ci:
+        - pr-check.yml
+      verifies: []
