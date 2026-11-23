@@ -10726,3 +10726,44 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+  - id: MC-348
+    legacy_id: ""
+    title: "零停机发布 ADR 守卫：M1 六项 / M2 五项关键字必须在各自小节，事实断言（端口 / proxy_pass / uploads / redis / graceful「未配置」）与真实部署配置一致，删项或改端口即红"
+    domains:
+      - misc
+      - ci
+      - deploy
+    tier: normal
+    tags:
+      - deploy
+      - zero-downtime
+      - adr
+      - doc-contract
+      - red-proof
+    truths_ref: []
+    # 真值缺省说明：这是**部署契约 + 设计文档一致性**（不是 LLM / 业务真值）—— 纯静态读文本，
+    # 零网络、零部署、零 LLM。
+    precondition:
+      - "docs/deployment/zero-downtime-release.md 是本单交付的设计 ADR；事实侧来源 = deploy/swas/docker-compose.yml（uploads 卷、4 个服务键、无 redis）、deploy/swas/docker-compose.bluegreen.yml（第二端口默认值）、deploy/swas/deploy.sh（BG_*_PORT 默认值、切换动作）、deploy/swas/nginx.conf（proxy_pass 服务名、无 upstream 块）、backend/admin-api/src/main/resources/application.yml 与 backend/ai-agent-service/Dockerfile（优雅退出当前未配置）。"
+      - "用户裁定（2026-11-23 20:39）「另外要考虑未来做集群部署时如何不影响用户，让用户无感」；20:43 追加「磁盘先不用管，未来要考虑做集群的磁盘告警，可以依赖阿里云的能力」⇒ ADR 的资源面告警写「交给阿里云云监控、不自建采集」，且指标名未核对到即标「待核对」。"
+    user_inputs:
+      - "未来做集群部署时，怎么保证加机器 / 滚动升级期间用户无感？现在的蓝绿只是「先验证新镜像能起」，成功路径仍然是重建正式容器 + reload，用户仍会撞上秒级窗口；而 2026-11-23 还出现过「只更新了 admin-api、admin-web 停在两天前」的半截发布。"
+    expectations: []
+    data_checks:
+      - "判据 1·**M1 六项各自小节 + 关键字**（缺一项即红、点名是哪一项哪个关键字）：M1-a 含 upstream / nginx -s reload / `proxy_pass http://admin-api:8080` / 「nginx.conf 没有 upstream 块」；M1-b 含 `server.shutdown=graceful` / `spring.lifecycle.timeout-per-shutdown-phase=30s` / `--timeout-graceful-shutdown` / 「未配置」；M1-c 含 `/actuator/health/readiness` 与 `/actuator/health/liveness`；M1-d 含 `Last-Event-ID` 与 drain；M1-e 含 expand / contract / 「不得与发版同批」；M1-f 含 `EFFECTIVE_TAG` / `/api/version` / 「同源」。执行点 = tests/unit_ci_workflows/test_zero_downtime_release_adr.py::test_each_milestone_item_has_its_keywords（参数化 6+5 项）+ ::test_all_items_are_green_together"
+      - "判据 2·**M2 五项各自小节 + 关键字**：M2-a 含 uploads / OSS / redis / 本机容器 / 「compose 未定义 redis」/ 会话 / JWT / 单例锁；M2-b 含 SLB / 健康检查 / 灰度 / connection-drain；M2-c 含 `max_connections` / `maximum-pool-size` / 算式；M2-d 含 CloudMonitor / 待核对 / 不自建采集；M2-e 含 影子 / 灰度 / 回退点。执行点 = 同文件 ::test_each_milestone_item_has_its_keywords[M2-*]"
+      - "判据 3·**端口三方一致**：第二端口 18080 / 18000 / 13001 必须同时等于 compose.bluegreen 的 `${BG_*_PORT:-…}` 默认值、deploy.sh 的 `BG_*_PORT=${BG_*_PORT:-…}` 默认值、ADR 的 M1-a 读数 —— 任一漂移即红并点名「配置=… / 文档=… / 多出哪一项」。执行点 = 同文件 ::test_second_ports_match_compose_and_deploy_defaults + ::test_reverse_drift_config_port_change_without_doc_update_goes_red（反向：只改配置不改文档 ⇒ 红）"
+      - "判据 4·**proxy_pass / upstream 事实**：nginx.conf 里存在逐字 `proxy_pass http://admin-api:8080` 且全文件无 `upstream`；ADR 两处断言都写了 ⇒ 三面同时成立才绿；nginx 一旦改成 upstream 而 ADR 未同步 ⇒ 红并指名「ADR 的 M1-a 现状断言已过期」。执行点 = 同文件 ::test_proxy_pass_and_no_upstream_claims_match_nginx"
+      - "判据 5·**uploads 宿主路径**：compose 的 volumes 里存在逐字 `/opt/migao-deploy/uploads:/app/uploads`，且 ADR 的 M2-a 点明该路径（外置对象）。执行点 = 同文件 ::test_uploads_host_path_claim_matches_compose"
+      - "判据 6·**redis 承载面**：仓库 compose 的顶层服务键恰好 {admin-api, ai-agent, admin-web, nginx}（redis 不在其中），且 ADR 写明「redis 是本机容器」+「compose 未定义 redis」；compose 里出现 redis 服务 ⇒ 红（ADR 的现状断言过期）。执行点 = 同文件 ::test_redis_is_a_host_container_and_not_in_repo_compose"
+      - "判据 7·**「未配置」是机械事实**：ADR 的 M1-b 标注「未配置」，且 application.yml 无 server.shutdown / timeout-per-shutdown-phase、ai-agent Dockerfile 无 --timeout-graceful-shutdown；一旦仓内真的配上而 ADR 不同步 ⇒ 红并列出漂移点（配置好后把 ADR 改成「已配置 + 位置 + 实测」即转绿）。执行点 = 同文件 ::test_graceful_shutdown_is_still_unconfigured_as_the_adr_claims"
+      - "**注入式红证（实跑，PR body 有全表）**：① 删 M1 任一小节 ⇒ 对应项红（6 项各自可单独红）；② 把 ADR 的 18080 改成 18081 ⇒ 端口判据红且点名 18080/18081；③ 删 M2 任一小节 ⇒ 对应项红；④ 反向漂移：只把 compose 的 BG_ADMIN_API_PORT 默认值改 18081、ADR 不动 ⇒ 红。注入前都自证 `mutated != original`（否则显式失败，防「注入没落上 ⇒ 判据空转」）。执行点 = 同文件 ::test_injection_dropping_any_m1_item_goes_red / ::test_injection_port_18081_goes_red / ::test_injection_dropping_any_m2_item_goes_red / ::test_reverse_drift_config_port_change_without_doc_update_goes_red"
+      - "**边界（照实登记）**：判据只读文本 —— 证「设计文档与仓库配置一致」，**不证**线上零停机（要 M1 演练 + M2 灰度读数）；ADR 里的一次性现场读数（磁盘/内存/Swap/11-23 半截发布事故）无 durable 交叉载体，不在判据射程内。"
+    skip_reason: "[backend-contract] 部署契约 / 设计文档一致性判据（纯静态文本 + 注入式红证）：零网络、零部署、零 LLM，不进 agent-eval 冒烟"
+    merge_log: "2026-11-23 新增（issue #9084，用户 20:39 裁定「另外要考虑未来做集群部署时如何不影响用户，让用户无感」）。取号：原取 MC-346，与已合入的 #9083（冒烟双档）撞号；MC-347 已被在飞 PR #9088/#9089 占用 ⇒ 按 #6017 / 后合入者让号口径**让号到 MC-348**，并落 claim（.github/cases/claims/9087-MC-348.json）。同批落地：docs/deployment/zero-downtime-release.md（M1 六项 / M2 五项 / 取舍与不做什么 / 未固化清单）、tests/unit_ci_workflows/test_zero_downtime_release_adr.py（22 条判据）。增量口径：只做「零停机切换模型 + 单机→集群迁移路径」，不重复 docs/deployment/cluster-readiness-audit.md 的代码级 P0/P1 取证。"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_zero_downtime_release_adr.py"
+      ci:
+        - pr-check.yml
+      verifies: []
