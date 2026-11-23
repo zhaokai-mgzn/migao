@@ -14,6 +14,8 @@ import {
   Wrench,
 } from 'lucide-react'
 import { CallToAction, PageHero, SectionHeading } from '@/components/corporate/CorporateSection'
+// 内测期隐藏自助入驻入口（issue #9066）：开关单一来源见 @/config/onboarding
+import { SELF_SERVICE_ONBOARDING_OPEN } from '@/config/onboarding'
 
 export const metadata: Metadata = {
   title: '关于观星台 — 布艺行业的 AI 经营平台',
@@ -219,15 +221,21 @@ export default function AboutPage() {
 
       <CallToAction
         title="了解观星台在您的企业如何运行"
-        lead="提交入驻申请，AI 自动甄别后即刻开通；也欢迎先留言说明业务场景，我们将按您的流程安排演示。"
+        lead={
+          SELF_SERVICE_ONBOARDING_OPEN
+            ? '提交入驻申请，AI 自动甄别后即刻开通；也欢迎先留言说明业务场景，我们将按您的流程安排演示。'
+            : '欢迎先预约演示，说明业务场景，我们将按您的流程安排逐项确认；开通方式由平台顾问与您确认。'
+        }
         primary={
-          <Link
-            href="/register"
-            className="group inline-flex items-center gap-2 rounded-xl bg-white px-7 py-3.5 text-base font-semibold text-neutral-900 transition-colors hover:bg-neutral-100"
-          >
-            立即入驻
-            <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
-          </Link>
+          SELF_SERVICE_ONBOARDING_OPEN ? (
+            <Link
+              href="/register"
+              className="group inline-flex items-center gap-2 rounded-xl bg-white px-7 py-3.5 text-base font-semibold text-neutral-900 transition-colors hover:bg-neutral-100"
+            >
+              立即入驻
+              <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+            </Link>
+          ) : undefined
         }
         secondary={
           <Link

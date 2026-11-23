@@ -1,4 +1,4 @@
-// case_ids: UI-082
+// case_ids: UI-082, OB-008
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 
@@ -65,9 +65,9 @@ describe('CorporateAboutPage（官网关于页 v4：产品原则 + 主体事实�
     expect(screen.queryByText(/20\d\d/)).not.toBeInTheDocument()
   })
 
-  it('renders 底部 CTA', () => {
+  it('renders 底部 CTA（内测期不露出立即入驻，OB-008）', () => {
     render(<AboutPage />)
-    expect(screen.getByText('立即入驻')).toBeInTheDocument()
+    expect(screen.queryByText('立即入驻')).not.toBeInTheDocument()
     expect(screen.getByText('联系我们')).toBeInTheDocument()
   })
 

@@ -1,4 +1,4 @@
-// case_ids: OB-004, OB-005
+// case_ids: OB-004, OB-005, OB-008
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 
@@ -46,9 +46,9 @@ describe('CorporateHomePage（官网主页 v5：中小企业 AI 经营平台叙�
     expect(screen.getByText('人机协同机制参考 GB/T 47746-2026 设计')).toBeInTheDocument()
   })
 
-  it('CTA：免费开通 + 预约演示', () => {
+  it('CTA：内测期只留预约演示，不露出免费开通入口（OB-008）', () => {
     render(<HomePage />)
-    expect(screen.getAllByText('免费开通')).toHaveLength(2)
+    expect(screen.queryByText('免费开通')).not.toBeInTheDocument()
     expect(screen.getByText('预约产品演示')).toBeInTheDocument()
     expect(screen.getByText('预约演示')).toBeInTheDocument()
   })
@@ -263,7 +263,7 @@ describe('CorporateHomePage（官网主页 v5：中小企业 AI 经营平台叙�
 
   // ── 开通流程 + 底部 CTA ──
 
-  it('三步开通 + 底部 CTA（免费开通 / 预约演示）', () => {
+  it('三步开通 + 底部 CTA（内测期只留预约演示，OB-008）', () => {
     render(<HomePage />)
     expect(screen.getByText('三步开通，无需自建基础设施')).toBeInTheDocument()
     expect(screen.getByText('提交申请')).toBeInTheDocument()
@@ -273,7 +273,9 @@ describe('CorporateHomePage（官网主页 v5：中小企业 AI 经营平台叙�
     expect(screen.queryByText('1-3 个工作日内完成审核')).not.toBeInTheDocument()
 
     expect(screen.getByText('把 AI 带进经营现场')).toBeInTheDocument()
-    expect(screen.getByText(/提交申请，AI 自动甄别后即可开通/)).toBeInTheDocument()
+    // 内测期引导文案不再指示「提交申请」（OB-008）
+    expect(screen.getByText(/预约演示，按您的业务流程逐项确认/)).toBeInTheDocument()
+    expect(screen.queryByText(/提交申请，AI 自动甄别后即可开通/)).not.toBeInTheDocument()
   })
 
   // ── 宣传真实性（issue #6291 新增判据，本单保留）──
