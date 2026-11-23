@@ -8,7 +8,7 @@
 import pytest
 
 from .config import EnvConfig
-from .helpers import SmokeTestClient, assert_success_response
+from .helpers import SmokeTestClient
 
 
 @pytest.mark.p0
@@ -16,19 +16,23 @@ from .helpers import SmokeTestClient, assert_success_response
 class TestAuthLogin:
     """登录认证测试"""
 
-    def test_login_success(self, admin_client: SmokeTestClient, config: EnvConfig):
-        """管理员 SMS 验证码登录获取 JWT Token"""
-        resp = admin_client.post("/api/auth/sms/login", json={
-            "phone": config.admin_phone,
-            "code": config.admin_sms_code,
-        })
-        data = assert_success_response(resp)
-        token_data = data.get("data", data)
+    def test_login_success(self, auth_token: dict):
+        """管理员 SMS 验证码登录获取 JWT Token。
 
-        # 验证返回 Token
-        access_token = token_data.get("accessToken", token_data.get("access_token"))
-        assert access_token, f"No accessToken in response: {token_data.keys()}"
+        **复用** session 级 `auth_token` 的**同一次**登录结果（issue #8977）：短信号**单次消费**，
+        本用例原来自己再发一次码 ⇒ 之后 fixture 拿同一个码登录必 401、依赖它的 10 条全 ERROR。
+        响应级断言（refresh token 不进 body / HttpOnly cookie）用 fixture 留下的 `login_response` 做；
+        注入 token 模式（`SMOKE_ADMIN_TOKEN`）没有发生登录 ⇒ 只校验凭据形态。
+        """
+        access_token = auth_token.get("access_token")
+        assert access_token, f"No accessToken from auth_token fixture: {sorted(auth_token)}"
         assert access_token.startswith("eyJ"), f"Token should be JWT but got: {access_token[:20]}..."
+
+        resp = auth_token.get("login_response")
+        if resp is None:
+            # 注入 token 模式：本轮没有发生登录 ⇒ 没有响应级读数可判（覆盖由「真登录一次」的跑法承担）
+            return
+        token_data = auth_token.get("login_body") or {}
 
         # 审计 07 P1-5：refresh token 仅经 HttpOnly cookie 下发，响应体不得再携带
         assert "refreshToken" not in token_data or token_data.get("refreshToken") is None, (
@@ -79,6 +83,10 @@ class TestTokenRefresh:
 
     def test_refresh_token(self, admin_client: SmokeTestClient, auth_token: dict):
         """使用 HttpOnly refresh_token cookie 获取新的 access token（审计 07 P1-5）"""
+        if auth_token.get("login_response") is None:
+            # issue #8977：SMOKE_ADMIN_TOKEN 注入模式**没有发生登录** ⇒ 没有 refresh_token cookie
+            # ⇒ 本用例**不可判定**（显式 skip 出声，不冒充通过；覆盖需真登录一次）。
+            pytest.skip("SMOKE_ADMIN_TOKEN 注入模式：未登录 ⇒ 无 refresh_token cookie（本用例不可判定）")
         # 登录时 Set-Cookie 已存入 httpx client cookie jar，无需在 body 传 refresh token。
         # ⚠️ 本地直起形态是 **http**，而刷新 cookie 带 `Secure` ⇒ httpx **不发送**非 https 上的
         #    Secure cookie（浏览器对 localhost 有例外，httpx 没有）⇒ 本地**恒 401「缺少 Refresh Token」**

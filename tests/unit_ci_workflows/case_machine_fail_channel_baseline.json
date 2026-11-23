@@ -7,7 +7,7 @@
   "_anchor_note": "读数取自该 sha 的 `origin/main`（本判据首次落地时的基线）。它只是**出处留档**，不是判据 —— 判据只比对实测值与 `entries`。",
   "entries": {
     "no_channel_total": 0,
-    "backend_contract_scoring_zero": 338
+    "backend_contract_scoring_zero": 339
   },
   "history": [
     {
@@ -1581,6 +1581,13 @@
       "no_channel_total": 0,
       "backend_contract_scoring_zero": 338,
       "note": "issue #9062 新增 MC-343（冒烟面导入形态的类级元判据：skip_reason 标 [backend-contract]、expectations 为空 ⇒ 按定义计入本读数）⇒ 337→338"
+    },
+    {
+      "sha": "pending-pr-9077",
+      "date": "2026-11-23",
+      "no_channel_total": 0,
+      "backend_contract_scoring_zero": 339,
+      "note": "issue #8977 新增 MC-345（冒烟登录「一次登录」契约的类级/实例判据：skip_reason 标 [backend-contract]、expectations 为空 ⇒ 按定义计入本读数）⇒ 338→339；真债务 no_channel_total 仍为 0。"
     }
   ]
 }
