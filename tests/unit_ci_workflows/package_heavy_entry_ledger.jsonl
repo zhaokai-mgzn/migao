@@ -183,3 +183,5 @@
 {"id":"1795149559.48082.6650","ts":"2026-11-20T04:39:19Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-superagent-wt/rework-product-detail-d0c4365c3b27","why":"--allow-package-heavy（命令行显式）"}
 {"id":"1795150988.43405.5623","ts":"2026-11-20T05:03:08Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-superagent-wt/rework-product-detail-d0c4365c3b27","why":"--allow-package-heavy（命令行显式）"}
 {"id":"1795313556.42447.25752","ts":"2026-11-22T02:12:36Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/9005-9006-product-doorwidths-stock","why":"子包 worktree 直跑全量（无批次标记）"}
+{"id":"1795406994.65553.19344","ts":"2026-11-23T04:09:55Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/8979-bmini-subpackage","why":"子包 worktree 直跑全量（无批次标记）"}
+{"id":"1795407007.65657.23346","ts":"2026-11-23T04:10:07Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/8979-bmini-subpackage","why":"--allow-package-heavy（命令行显式）"}

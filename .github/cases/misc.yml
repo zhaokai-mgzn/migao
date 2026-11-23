@@ -10414,14 +10414,14 @@ cases:
     data_checks:
       - "判据 1·**结构**：`app.json` 的 `pages` 非空、`app.js` 在、每页 `.js` / `.wxml` / `.json` 齐备（`.wxss` **允许缺省** —— Taro 对不含样式的页面本就不产出）。红证 = 删掉某页的任一页文件 ⇒ 退 1；整个拿掉 `app.json` ⇒ 退 1；`pages` 为空数组 ⇒ 退 1。执行点 = tests/unit_ci_workflows/test_bmini_dist_assert.py::test_missing_page_file_is_red / ::test_missing_app_json_is_red / ::test_empty_pages_list_is_red"
       - "判据 2·**域名策略**（本单核心）：`--env prod` ⇒ 产物内 `migaozn.com` 出现 **0** 次、`cytda.com` **≥1** 次、且**不得残留 `localhost`**；`--env test` ⇒ 反向。红证 = prod 模式喂含 `migaozn.com` 的同形树 ⇒ 退 1；只给了 label origin 而 API 仍是 `http://localhost:8080` ⇒ 退 1（**前两条在这一形态上都会绿**，故 localhost 是独立判据）；test 模式喂含 `cytda.com` 的树 ⇒ 退 1。执行点 = 同文件 ::test_prod_rejects_test_domain_leak / ::test_prod_rejects_missing_prod_domain / ::test_prod_rejects_localhost_leftover / ::test_test_env_rejects_prod_domain_leak"
-      - "判据 3·**体积闸门**：全部文件合计 < 微信上限 `2097152` 的 **90% = 1887436** 字节（bash 无浮点 ⇒ 整数运算 `2097152*90/100`），超限即红并打印顶层条目占比 top5；边界从严（`= 闸门` 也红）。红证 = 塞一个把总量顶过闸门的文件 ⇒ 退 1 且输出含闸门数字与 `top5`；恰好等于闸门 ⇒ 退 1。执行点 = 同文件 ::test_oversized_package_is_red_and_prints_top_entries / ::test_at_the_gate_is_red_not_green"
+      - "判据 3·**体积闸门**（issue #8979 / #8981 起改口径）：常量**唯一来源** = `deploy/scripts/bmini-dist-budget.json`（本文件不再写死 2097152 / 90%）；主包 ≤ 单包上限 − 主包预留，超限即红并打印归因（哪个包 / 超多少字节 / 该包最大文件 top5 / 复算命令 + 常量文件）。边界 = 「主包 + 预留 ≤ 上限」⇒ 恰好等于预算仍绿（#8979 要的是 **≥**300KB），+1 字节即红。红证 = 把主包顶到预算 +1 ⇒ 退 1 且输出含「主包」「超预算」「padding.bin」「复算」；恰好等于预算 ⇒ 退 0。执行点 = 同文件 ::test_oversized_package_is_red_and_prints_top_entries / ::test_at_the_gate_is_green_and_one_byte_over_is_red（体积预算的完整判据并入 MC-342）"
       - "判据 4·**不可判定 ≠ 通过**：dist 不存在 / 空目录 / 不是目录 ⇒ 退 **3**（`0` 不许冒充；「没构建」与「产物合格」是两件事），且原因出声。执行点 = 同文件 ::test_undecidable_shapes_exit_3；用法错误（缺参数 / `--env` 非法 / 未知参数）⇒ 退 2 = ::test_usage_errors_exit_2"
       - "判据 5·**顺序即安全顺序**：`scripts/bmini-experience.sh upload` **先跑产物断言、后上传**；断言红 ⇒ **一次上传都不发生**（沙箱里 `npx` 桩的标记文件不存在）。对照臂：产物合规 ⇒ 真走到 `miniprogram-ci`（桩被调用）。执行点 = 同文件 ::test_upload_refuses_when_the_assert_fails / ::test_upload_reaches_miniprogram_ci_with_the_verified_flags"
       - "判据 6·**注入的常量是哪一个**（不读源码、只看行为）：桩掉 `npm` 读三个 `TARO_APP_*` ⇒ `--env prod` 三个都是 `https://app.cytda.com`、`--env test` 三个都是 `https://app.migaozn.com`；且 `build` 不许上传。执行点 = 同文件 ::test_build_injects_the_three_constants"
       - "判据 7·**上传命令的形态**：`miniprogram-ci` 通道必须用 `--upload-version`（该 CLI 的 `--version` 是「显示版本号」的**布尔开关**，写成 `--version 1.0.0` 会被吞掉、版本号不上传），四件参数（`--appid` / `--project-path` / `--private-key-path` / `--upload-version`）逐件断言；版本号必须显式给（缺 ⇒ 退 2，不自动递增）。执行点 = 同文件 ::test_upload_reaches_miniprogram_ci_with_the_verified_flags / ::test_upload_requires_an_explicit_version"
       - "判据 8·**CI 接线 + 判别力自证**：`.github/workflows/bmini-app.yml` 里真的有一个 step 调 `deploy/scripts/bmini-assert-dist.sh`，且 `--env test`（CI 构建不注入生产常量）、排在 `npm run build:weapp` **之后**、与构建步同一个 `if:`（否则构建被跳过时拿不存在的 dist 判红）、不带 `continue-on-error` / `|| true`。注入式红证 = 摘掉 step / 改成 `--env prod` / 挪到构建前 / 加 `continue-on-error` / 摘掉 `if`，五种各自判红。执行点 = 同文件 ::test_workflow_runs_the_assert_after_the_weapp_build / ::test_wiring_judge_has_teeth"
-      - "判据 3′·**体积口径的边界读数**（本单实测出来的缺陷，另开 #8981）：dist 字节与微信后台报的包体**不是同一个数**（2026-11-21 同一份产物 dist 1,459,140 → 微信 2,079,753，≈ ×1.425）⇒ 「闸门绿」不等于「微信还有余量」（那次闸门还剩 428,296 字节，真实余量只有 17KB）。体积段因此额外交代一行**参考折算**读数（**不是判据**，不改变退出码）；判据 = 折算超上限时必须有 ⚠️ 提示且退出码仍为 0。执行点 = tests/unit_ci_workflows/test_bmini_dist_assert.py::test_wechat_folded_readout_warns_without_faking_the_gate"
-      - "**边界（照实登记）**：判的是本仓 dist 的字节，不是微信后台的包体读数（无分包时二者同向，分包（#8979）落地后须按 `subPackages[].root` 剔除）；判不了「产物能否跑起来」（要真机/模拟器）与微信后台「服务器域名」白名单（仓库侧无从取证 ⇒ 写在 docs/deployment/bmini-experience-release.md 的前置条件里）。「对真实构建产物判绿」由 CI 那条腿自己承担（同一条命令、同一份实现），单测用同形 fixture 覆盖绿/红两侧。"
+      - "判据 3′·**体积口径**（本单实测出来的缺陷，另开 #8981，已由 MC-342 收口）：dist 字节与微信上传读数**等价**（2026-11-23 部署机实测 dist 1,465,245 → TOTAL 1,461,748，比值 0.998）；原先按 11-21 那个 `2,079,753`（≈×1.425）写的「参考折算」读数已被整块删除 —— 该读数在部署机四份产物与 devtool 日志里都复现不出来，据它收紧闸门会制造假红。判据 = 脚本打印等价读数与其出处、且**不含** ×1.425 折算行。执行点 = tests/unit_ci_workflows/test_bmini_dist_assert.py::test_wechat_readout_is_equivalence_not_a_fold_factor + tests/unit_ci_workflows/test_bmini_dist_budget.py::test_calibration_proves_dist_and_wechat_readings_are_equivalent"
+      - "**边界（照实登记）**：判的是本仓 dist 的字节（与微信上传读数等价，比值由预算文件的 calibration 台账现算，见 MC-342）；判不了「产物能否跑起来」（要真机/模拟器）与微信后台「服务器域名」白名单（仓库侧无从取证 ⇒ 写在 docs/deployment/bmini-experience-release.md 的前置条件里）。「对真实构建产物判绿」由 CI 那条腿自己承担（同一条命令、同一份实现），单测用同形 fixture 覆盖绿/红两侧。"
     skip_reason: "[backend-contract] 部署 / CI 契约判据（真实脚本 + 同形 fixture + npm/npx 桩）：零网络、零真构建、零真上传、零 LLM，不进 agent-eval 冒烟"
     merge_log: "2026-11-21 新增（issue #8980）。取号 = `python3 scripts/next_case_id.py MC` 现取（main ∪ 全部 open PR ∪ 本工作区）⇒ MC-341。同批落地：deploy/scripts/bmini-assert-dist.sh（断言本体）、scripts/bmini-experience.sh（build/upload/all 唯一入口）、.github/workflows/bmini-app.yml 的 weapp 产物断言步、docs/deployment/bmini-experience-release.md。"
     traces:
@@ -10429,4 +10429,49 @@ cases:
         - "tests/unit_ci_workflows/test_bmini_dist_assert.py"
       ci:
         - bmini-app.yml
+      verifies: []
+
+  - id: MC-342
+    legacy_id: ""
+    title: "B 端小程序包体预算判据（微信口径**等价**、常量单一来源）：主包 ≤ 单包上限 − 300KB 预留 / 每个分包各自 ≤ 单包上限 / 总包 ≤ 20MB，第二把尺子判红"
+    domains:
+      - misc
+      - deploy
+    tier: normal
+    tags:
+      - ci
+      - bmini
+      - weapp
+      - dist-assert
+      - package-size-budget
+      - single-source
+      - meta-guard
+    truths_ref: []
+    # 真值缺省说明：这是**部署 / CI 契约**（不是 LLM / 业务真值）—— 判据落在真实脚本 + 同形夹具 +
+    # 真实构建产物的读数台账上，零网络、零真上传、零 LLM。
+    precondition:
+      - "包体预算的**唯一来源** = `deploy/scripts/bmini-dist-budget.json`（`wechatPackageCapBytes` / `wechatTotalCapBytes` / `mainPackageReserveBytes` + `calibration` / `unreproducibleReadings` / `measurements` 台账）。脚本（python3 读）与判据（`tests/unit_ci_workflows/_bmini_dist.py` 读）都只读它；第二份上限常量（代码位置）即判红。"
+      - "口径证据 = 2026-11-23 部署机实测（`ssh migao-deploy`，`~/prod/migao-bmini-main`，HEAD = `origin/release` `f78dff52c`）：`frontend/bmini-app/dist` 1,465,245 字节 ↔ `scripts/bmini-experience.sh all --version 1.0.2 --env prod` 上传后开发者工具报的 TOTAL 1,461,748（比值 0.998）⇒ 两套口径**等价**，用 dist 判即偏严。旁证 = `~/migao-bmini-experience/dist.bak-11222310`（生产域备份）1,459,203 字节，与 #8981 记的 dist 1,459,140 只差 63 字节。"
+      - "`2,079,753`（#8981 记的「微信后台主包」）在部署机四份产物（1,459,203 / 1,465,247 / 1,840,656 / 1,465,245）与开发者工具日志里**都复现不出来** ⇒ 登记为不可复现读数（`unreproducibleReadings`），**不据此叠折算系数**（叠了会把闸门压到 ≈1.47MB、制造假红）。"
+    user_inputs:
+      - "B 端小程序首次体验版（2026-11-21，AppID wx6ee2f682c1b4822c）报「主包 2,079,753 / 上限 2,097,152，余量 17KB」，而仓库当时的体积闸门（dist 字节 < 2097152×90%）还剩 43 万字节 —— 闸门绿、上传却会爆。怎么让体积判据真的判「会不会因超限失败」，并且主包 / 分包 / 总包各判各的？"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "判据 1·**主包按预算判且可归因**：主包（dist 全量剔除 `subPackages[].root`）≤ 单包上限 − 主包预留；恰好等于预算 ⇒ 绿（余量恰好 300KB）；+1 字节 ⇒ 退 1，且输出**具名**「主包 / 超多少字节 / 该包最大文件 top5 / 复算命令 + 常量文件路径」。实测注入（真实 dist 复制后加 400,000 字节）⇒ 主包 1,865,251 字节 / 超预算 75,299 / 退 1。执行点 = tests/unit_ci_workflows/test_bmini_dist_budget.py::test_main_package_budget_is_enforced_and_attributable + tests/unit_ci_workflows/test_bmini_dist_assert.py::test_oversized_package_is_red_and_prints_top_entries / ::test_at_the_gate_is_green_and_one_byte_over_is_red"
+      - "判据 2·**分包各自判（不折进主包）**：`app.json` 的 `subPackages[].root` 覆盖的字节从主包剔除，每包各自 ≤ 单包上限；某分包 = 上限 +1 ⇒ 退 1 且**点名那个分包**（主包读数仍在，不许把分包超限说成主包超限）。真实形状：把真实 dist 的 `pages/admin` 声明成分包 ⇒ 主包 1,434,587 / 分包[pages/admin] 30,866，拆开判仍绿。执行点 = 同文件 ::test_subpackage_is_judged_separately_from_the_main_package"
+      - "判据 3·**总包上限**：主包 + 全部分包合计 ≤ 20,971,520 字节；每个分包都在单包上限内但合计越线 ⇒ 退 1 且点名「总包」+ 超多少字节 + 复算命令。执行点 = 同文件 ::test_total_package_budget_caps_the_sum"
+      - "判据 4·**余量地板（#8979 的 ≥300KB）**：主包预留 ≥ 300×1024 字节，且台账里**最近一次实测产物**按预算判完仍留 ≥300KB（实测 1,465,251 ⇒ 预算内余量 324,701；对 2MB 上限余量 631,901 ≥ 307,200）；改小预留或改大台账读数 ⇒ 红。执行点 = 同文件 ::test_reserve_floor_meets_8979_and_the_last_real_reading"
+      - "判据 5·**口径等价（不许回流 ×1.425）**：`calibration` 每条必须有 `date` / `distBytes` / `wechatBytes` / `source`，且 `wechatBytes / distBytes` 落在 0.97~1.03；脚本输出必须打印该出处的等价读数，且**不得**再出现 ×1.425 折算行。执行点 = 同文件 ::test_calibration_proves_dist_and_wechat_readings_are_equivalent + test_bmini_dist_assert.py::test_wechat_readout_is_equivalence_not_a_fold_factor"
+      - "判据 6·**类级元守卫（单一来源）**：任何执行载体（`deploy/scripts` / `scripts` / `.github/workflows` / `tests/unit_ci_workflows` / `frontend/bmini-app` 的 config·scripts）在**代码位置**出现上限常量（第二把尺子）⇒ 红并点名 `file: literal`；`.py` 走 `ast`（跳过注释与文档字符串 —— 引用历史读数是该留的证据，参与判定的常量才是病灶）。豁免台账 `tests/unit_ci_workflows/bmini_dist_budget_allowlist.json` 每条必须**仍命中**（失效即红 ⇒ 只许缩短）。注入式红证（实测）：往 `scripts/bmini-experience.sh` 追加 `LIMIT_SECOND_RULER=1887436` ⇒ 判红并点名该文件。执行点 = 同文件 ::test_no_second_ruler_and_the_allowlist_only_shrinks / ::test_single_source_is_really_the_only_reader_of_the_numbers"
+      - "**边界（照实登记）**：判的是本仓 dist 的字节（与微信上传读数等价，比值由台账现算）；判不了「产物能否跑起来」与后台域名白名单。**分包（#8979）本次未拆**（实测余量 631,901 字节 ⇒ 不为拆分而拆分；拆 4 个管理页只挪走 30,866 字节，主体是 940,308 字节的 JS），判据侧已就绪，重启条件 = 主包余量 < 300KB（那时闸门先红）。"
+    skip_reason: "[backend-contract] 部署 / CI 契约判据（真实脚本 + 同形 fixture + ast 词法走查）：零网络、零真构建、零上传、零 LLM，不进 agent-eval 冒烟"
+    merge_log: "2026-11-23 新增（issue #8979 + #8981，**部分交付**：#8979 的分包降级为「只钉判据 + 留重启条件」，不写关闭关键词）。取号 = `python3 scripts/next_case_id.py MC` 现取 MC-342。同批落地：deploy/scripts/bmini-dist-budget.json（单一来源）、deploy/scripts/bmini-assert-dist.sh（体积段重写：主包 / 分包 / 总包 + 归因）、tests/unit_ci_workflows/_bmini_dist.py（夹具与读口）、tests/unit_ci_workflows/test_bmini_dist_budget.py、tests/unit_ci_workflows/bmini_dist_budget_allowlist.json、docs/deployment/bmini-experience-release.md（口径证据链 + 体积读数表）。"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_bmini_dist_budget.py"
+        - "tests/unit_ci_workflows/test_bmini_dist_assert.py"
+      ci:
+        - bmini-app.yml
+        - pr-check.yml
       verifies: []
