@@ -444,4 +444,10 @@ def test_script_uses_the_profile_as_the_single_source():
     assert PROD_BANNER in text, "生产闸门档的醒目横幅被删了（它是「时机是判据」的唯一可 grep 证据）"
     # mktemp 的 X 必须在结尾：`…XXXXXX.log` 在 macOS 上原样返回（XXXXXX 不展开）⇒ 并发共用同一日志名
     assert "XXXXXX.log" not in code, "mktemp 模板把随机位埋在中间：macOS 不展开 ⇒ 并发跑会撞同一个日志文件"
+    # 正向：随机位必须**在结尾**（`mktemp "...XXXX"`）。只挡反向会漏掉「换一种埋法」的形态；
+    # 这条与「同一台机器并发跑两次冒烟」的真实场景对齐：两次跑必须落在**两个**日志文件上。
+    assert re.search(r'mktemp\s+"[^"]*X{6,}"', code), (
+        "mktemp 模板必须让随机位落在结尾（`mktemp \"$dir/name.XXXXXXXX\"`）—— 否则日志名不唯一，"
+        "并发跑会互相覆盖，判红时读到的是别人的日志"
+    )
     assert '--env test' in text or "ENV_KIND=\"test\"" in text, "脚本没有测试机常态档"
