@@ -608,7 +608,7 @@ def test_apply_happy_path_reports_blindspot_and_appends_the_ledger_once(tmp_path
         assert key in row, f"记录行缺 {key}：{row}"
 
     ledger = box.marker("ledger-appended")
-    assert ledger is not None, "没有追加台账"
+    assert "release-ledger.jsonl" in (ledger or ""), "没有追加台账"
     ledger_cmds = [cmd for cmd in box.commands_sent() if "release-ledger.jsonl" in cmd]
     assert len(ledger_cmds) == 1, f"台账只许追加**一次**，实得 {len(ledger_cmds)} 次"
     assert ">>" in ledger_cmds[0], f"台账不是追加（用了覆写？）：{ledger_cmds[0]}"

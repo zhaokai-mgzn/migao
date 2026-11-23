@@ -177,7 +177,7 @@ $(printf '%s' "$out" | head -c 400)"
     attempt=$((attempt + 1))
     if [ "$attempt" -ge "$PROD_POLL_ATTEMPTS" ]; then
       prod_undecidable "等不到执行结果（invoke-id=${invoke_id}，状态=${status:-未知}，轮询 ${PROD_POLL_ATTEMPTS} 次）——
-   `3` 不当 `0` 读：远端可能仍在跑，重跑一次本命令看结果"
+   退 3 不当 0 读：远端可能仍在跑，重跑一次本命令看结果"
       return 3
     fi
     sleep "$PROD_POLL_INTERVAL"

@@ -191,3 +191,4 @@
 {"id":"1795424987.21019.3839","ts":"2026-11-23T09:09:48Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/bmini-rel","why":"子包 worktree 直跑全量（无批次标记）"}
 {"id":"1795427127.30941.11426","ts":"2026-11-23T09:45:28Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/smoke-one-login-8977","why":"子包 worktree 直跑全量（无批次标记）"}
 {"id":"1795437489.50447.14696","ts":"2026-11-23T12:38:09Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/smoke-prod-ai","why":"子包 worktree 直跑全量（无批次标记）"}
+{"id":"1795438629.99983.1221","ts":"2026-11-23T12:57:10Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/prod-release","why":"子包 worktree 直跑全量（无批次标记）"}
