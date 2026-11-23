@@ -411,8 +411,15 @@ def judge_selfsync(proc, work: Path, target: Path, inode_before: int) -> list[st
         v.append("覆盖换了 inode（必须「临时文件 + `cat >` 原地写」，`mv` 会换 inode）")
     if not os.access(target, os.X_OK):
         v.append("覆盖后可执行位丢了（盘上脚本下次跑不起来）")
-    if proc.returncode == 0:
-        v.append("覆盖后没有当场停住（bash 按字节偏移续读，继续执行会读到错位脚本）")
+    # 停住的两种**合法**形态（2026-11-23 起）：
+    #   甲) exit≠0 当场停住（旧形态）；
+    #   乙) exec 原地重入到新脚本 —— 只要**没有**拿旧字节继续往下跑就行。
+    #      判据 = 输出里有重入横幅，且**真的**跑到了新脚本（new-script 标记）。
+    if "原地重入" in proc.stdout:
+        if "new-script" not in proc.stdout:
+            v.append("声明重入却没跑到新脚本（exec 没生效 ⇒ 仍是旧字节在跑）")
+    elif proc.returncode == 0:
+        v.append("覆盖后既没停住也没重入（bash 按字节偏移续读，继续执行会读到错位脚本）")
     return v
 
 
@@ -433,7 +440,11 @@ def test_selfsync_is_idempotent(tmp_path) -> None:
     """同内容再跑一次 ⇒ 不覆盖、不备份、不产生新文件（连跑两次盘面逐字节一致）。"""
     work, target = _selfsync_fixture(tmp_path)
     first = _run_selfsync(tmp_path, work)
-    assert first.returncode != 0, "第一次（旧版 → 新版）必须停住"
+    # 第一次（旧版 → 新版）必须「停住或重入」，不许拿旧字节继续跑：
+    #  · exec 重入形态 ⇒ rc 由新脚本决定（stub 里是 0），输出里有「原地重入」+ new-script；
+    #  · exit 形态 ⇒ rc≠0。
+    assert ("原地重入" in first.stdout and "new-script" in first.stdout) or first.returncode != 0, (
+        "第一次（旧版 → 新版）既没停住也没重入：\n" + first.stdout)
     content_after_first = target.read_text(encoding="utf-8")
     inode_after_first = target.stat().st_ino
     backups_after_first = _backups(work)
@@ -486,12 +497,12 @@ def test_red_proof_selfsync_using_mv_breaks_inode(tmp_path) -> None:
 def test_red_proof_selfsync_continues_after_overwrite(tmp_path) -> None:
     """红证③：覆盖后**不停住**（把 exit 删掉）⇒ 必须判红（那就是「半截执行」的形态）。"""
     body = _region(SELFSYNC_GATE)
-    broken = body.replace("\n    exit 1\n", "\n    :\n")
+    # 停住点 = `exec … 原地重入`；删掉它 ⇒ 覆盖后**继续按旧字节往下跑**（半截执行形态）
+    broken = body.replace('exec bash "$MIGAO_DEPLOY_SELF" "$@"', ':')
     assert broken != body, "前提：变异必须真的落上"
     work, target = _selfsync_fixture(tmp_path)
     inode_before = target.stat().st_ino
     proc = _run_selfsync(tmp_path, work, body=broken)
-    assert proc.returncode == 0, "前提：删掉 exit 后应当继续跑下去"
     assert judge_selfsync(proc, work, target, inode_before) != [], "覆盖后继续执行却判不出（判据无判别力）"
 
 

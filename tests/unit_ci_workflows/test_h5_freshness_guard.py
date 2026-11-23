@@ -19,6 +19,10 @@
 | 5 | `--no-gate` ⇒ 报告型（`::warning::` + exit 0），**仅**人工诊断用 | 把 `--no-gate` 也判红 ⇒ 本组红 |
 | 6 | **只改 `frontend/mini-app/tests/**`** ⇒ **不算**源码改动（不判陈旧、不逼生产发布，issue #6672） | 把排除项去掉 ⇒ 第 6 条红（实测：真仓库里造"只改测试"的提交） |
 | 7 | 真改 `frontend/mini-app/src/**` ⇒ **仍**算源码改动（收窄不漏报） | 把 `path` 改空 ⇒ 第 7 条红 |
+| 8 | **内容等价**（issue #8924）：给 `--dist-dir` 时，线上与本次构建**逐字节等价** ⇒ `equivalent` + exit **0**（时间戳旧但内容一致 ⇒ 不需要发布） | 把等价复核去掉 ⇒ 第 8 条红（退回「裸时间戳判红」） |
+| 9 | **真陈旧仍是红**：有任一文件不同 ⇒ exit **2**，且把**差异文件清单**印出来 | 把不等价也判绿（假绿）⇒ 第 9 条红 |
+| 10 | 等价复核**取不到 → 不当等价**：`--dist-dir` 不存在 / 目录空 / 线上 404 ⇒ exit **2** 并点名原因 | 把「读不到」当等价 ⇒ 第 10 条红 |
+| 11 | 规范化只做无争议的两件（BOM / CRLF）；等价判定**不得**用它放过真差异 | 去掉 BOM/CRLF 规范化 ⇒ 第 8 条红；把 `.rstrip()` 之外再做「标准化」⇒ 第 9 条红 |
 
 ## 口径沿革（issue #4184，用户 2026-09-27 裁定 B）
 
@@ -329,3 +333,152 @@ def test_unknown_level_keeps_the_three_states_apart():
     """等级口径：浅克隆 ⇒ `error`（接线缺口）；其它取不到 ⇒ `warning`（网络/ref 面）。"""
     assert mod.unknown_level("检出是**浅克隆**（…）⇒ …") == "error"
     assert mod.unknown_level("取不到线上产物的 Last-Modified ⇒ 无法判定") == "warning"
+
+# ── 8~11) **内容等价**复核（issue #8924）─────────────────────────────────────
+#
+# 现场（2026-11-19 ~ 11-23）：`Publish C-end H5` 的 notify 档连续红，读数逐字
+# `线上产物陈旧：2026-11-18T09:38Z 早于 frontend/mini-app 最近改动 2026-11-19T01:45Z`，
+# 而「重跑只会再命中同一条闸门」。时间戳只是**代理**：源码改动不影响产物字节时（devDep 升级等），
+# 它照样判红，而发布出来的字节与线上**完全相同** ⇒ 判「陈旧」之后必须再做**内容等价**判定。
+
+import functools
+import http.server as _http
+
+class _FilesHandler(_http.SimpleHTTPRequestHandler):
+    """按目录回放「线上产物」，`Last-Modified` 固定成旧时间 ⇒ 时间戳判据必然判「陈旧」。"""
+
+    last_modified = "Sun, 30 Aug 2026 06:54:48 GMT"
+
+    def send_header(self, keyword, value):
+        # SimpleHTTPRequestHandler 会用**文件 mtime** 发 `Last-Modified`（这里 = 刚才），
+        # 本夹具要的是「线上产物发布于很久以前」⇒ 在发送口把它改成固定旧时间。
+        if keyword.lower() == "last-modified":
+            value = self.last_modified
+        super().send_header(keyword, value)
+
+    def log_message(self, *a):
+        return
+
+
+def _serve_dir(directory: Path):
+    handler = functools.partial(_FilesHandler, directory=str(directory))
+    httpd = _http.ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    port = httpd.server_address[1]
+    return httpd, f"http://127.0.0.1:{port}/js/app.js"
+
+
+def _write(path: Path, content: bytes | str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(content if isinstance(content, bytes) else content.encode("utf-8"))
+
+
+def _dist_fixture(root: Path, *, app_js: bytes | str = "console.log('c-end');\n") -> Path:
+    dist = root / "dist"
+    _write(dist / "index.html", "<!doctype html><html><body><div id=\"app\"></div></body></html>\n")
+    _write(dist / "js" / "app.js", app_js)
+    _write(dist / "css" / "app.css", "body{margin:0}\n")
+    return dist
+
+
+def test_dist_equivalence_is_green_when_bytes_match(tmp_path):
+    """判据 8：线上与本次构建**逐字节一致** ⇒ `equivalent` + exit 0（时间戳旧，但不需要发布）。
+
+    红证（注入）：把 `main()` 里的等价复核分支摘掉 ⇒ 本用例当场红（退回 rc=2 的裸时间戳判红）。
+    """
+    repo = _repo_with_mini_app_commit(tmp_path, "2026-09-21T06:13:46+00:00")
+    served = tmp_path / "served"
+    dist = _dist_fixture(tmp_path)
+    for f in dist.rglob("*"):
+        if f.is_file():
+            _write(served / f.relative_to(dist), f.read_bytes())
+    httpd, url = _serve_dir(served)
+    try:
+        out = _run_cli(repo, url, "--dist-dir", str(dist))
+    finally:
+        httpd.shutdown()
+    assert out.returncode == 0, (out.returncode, out.stdout, out.stderr)
+    assert "等价" in out.stdout, out.stdout
+    assert "MIGAO-H5FRESH-SUMMARY seen=1 acted=0 rc=0" in out.stdout, out.stdout
+    assert "::error::" not in out.stdout, f"等价却仍判红（假红）：{out.stdout}"
+
+
+def test_dist_equivalence_is_red_when_a_file_differs(tmp_path):
+    """判据 9（**真陈旧的判别力不许降**）：任一文件不同 ⇒ exit 2 + 差异文件清单。"""
+    repo = _repo_with_mini_app_commit(tmp_path, "2026-09-21T06:13:46+00:00")
+    served = tmp_path / "served"
+    dist = _dist_fixture(tmp_path, app_js="console.log('new');\n")
+    for f in dist.rglob("*"):
+        if f.is_file():
+            _write(served / f.relative_to(dist), f.read_bytes())
+    _write(served / "js" / "app.js", "console.log('old');\n")     # 只有这一个文件不同
+    httpd, url = _serve_dir(served)
+    try:
+        out = _run_cli(repo, url, "--dist-dir", str(dist))
+    finally:
+        httpd.shutdown()
+    assert out.returncode == 2, (out.returncode, out.stdout, out.stderr)
+    assert "js/app.js" in out.stdout, f"差异文件没被具名（不可归因）：{out.stdout}"
+    assert "不等价" in out.stdout, out.stdout
+    assert "MIGAO-H5FRESH-SUMMARY seen=1 acted=1 rc=2" in out.stdout, out.stdout
+
+
+def test_dist_equivalence_normalises_bom_and_crlf(tmp_path):
+    """判据 11：BOM / CRLF 这类**无争议**的平台差异算等价（否则 Windows 检出会恒假红）。"""
+    repo = _repo_with_mini_app_commit(tmp_path, "2026-09-21T06:13:46+00:00")
+    served = tmp_path / "served"
+    dist = _dist_fixture(tmp_path, app_js="console.log('x');\n")
+    for f in dist.rglob("*"):
+        if f.is_file():
+            _write(served / f.relative_to(dist), f.read_bytes())
+    _write(served / "js" / "app.js", b"\xef\xbb\xbfconsole.log('x');\r\n")
+    httpd, url = _serve_dir(served)
+    try:
+        out = _run_cli(repo, url, "--dist-dir", str(dist))
+    finally:
+        httpd.shutdown()
+    assert out.returncode == 0, (out.returncode, out.stdout, out.stderr)
+    assert "等价" in out.stdout, out.stdout
+
+
+def test_dist_equivalence_fails_closed_when_dist_dir_missing(tmp_path):
+    """判据 10a：`--dist-dir` 不存在 ⇒ **不得**当等价（exit 2，点名原因）。"""
+    repo = _repo_with_mini_app_commit(tmp_path, "2026-09-21T06:13:46+00:00")
+    httpd, url = _serve(tmp_path, "Sun, 30 Aug 2026 06:54:48 GMT")
+    try:
+        out = _run_cli(repo, url, "--dist-dir", str(tmp_path / "no-such-dist"))
+    finally:
+        httpd.shutdown()
+    assert out.returncode == 2, (out.returncode, out.stdout, out.stderr)
+    assert "不可用" in out.stdout and "no-such-dist" in out.stdout, out.stdout
+
+
+def test_dist_equivalence_fails_closed_when_dist_dir_empty(tmp_path):
+    """判据 10b：空目录 ⇒ **不得**「0 个文件全一致」这种空真 ⇒ exit 2。"""
+    repo = _repo_with_mini_app_commit(tmp_path, "2026-09-21T06:13:46+00:00")
+    empty = tmp_path / "empty-dist"
+    empty.mkdir()
+    httpd, url = _serve(tmp_path, "Sun, 30 Aug 2026 06:54:48 GMT")
+    try:
+        out = _run_cli(repo, url, "--dist-dir", str(empty))
+    finally:
+        httpd.shutdown()
+    assert out.returncode == 2, (out.returncode, out.stdout, out.stderr)
+    assert "没有任何文件" in out.stdout, out.stdout
+
+
+def test_dist_equivalence_reports_missing_live_file_as_difference(tmp_path):
+    """判据 10c：线上**取不到**某个产物文件（404）⇒ 算差异（不是「跳过」）。"""
+    repo = _repo_with_mini_app_commit(tmp_path, "2026-09-21T06:13:46+00:00")
+    served = tmp_path / "served"
+    dist = _dist_fixture(tmp_path)
+    for f in dist.rglob("*"):
+        if f.is_file() and f.name != "app.css":          # 线上缺 css/app.css
+            _write(served / f.relative_to(dist), f.read_bytes())
+    httpd, url = _serve_dir(served)
+    try:
+        out = _run_cli(repo, url, "--dist-dir", str(dist))
+    finally:
+        httpd.shutdown()
+    assert out.returncode == 2, (out.returncode, out.stdout, out.stderr)
+    assert "css/app.css" in out.stdout, out.stdout

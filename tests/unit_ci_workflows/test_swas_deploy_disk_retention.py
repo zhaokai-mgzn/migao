@@ -471,8 +471,10 @@ def _write_exe(path: Path, body: str) -> None:
 def _make_src_tar(dest: Path) -> None:
     stage = dest.parent / "stage" / "migao-main" / "deploy" / "swas"
     stage.mkdir(parents=True, exist_ok=True)
+    _root = dest.parent / "opt-migao-deploy"
     for name in ("docker-compose.yml", "docker-compose.bluegreen.yml", "nginx.conf"):
-        shutil.copy(REPO_ROOT / "deploy" / "swas" / name, stage / name)
+        _txt = (REPO_ROOT / "deploy" / "swas" / name).read_text(encoding="utf-8")
+        (stage / name).write_text(_txt.replace("/opt/migao-deploy", str(_root)), encoding="utf-8")
     with tarfile.open(dest, "w:gz") as tf:
         tf.add(dest.parent / "stage" / "migao-main", arcname="migao-main")
 
@@ -501,8 +503,19 @@ def _run(tmp_path: Path, script_text: str, *, images: str, running_tag: str,
     text = text.replace("/tmp/hc_", f"{work}/hc_")
     script = work / "deploy.sh"
     script.write_text(text, encoding="utf-8")
-    (work / ".env.admin-api").write_text("SMS_BYPASS_CODE=123456\n", encoding="utf-8")
-    (work / ".env.ai-agent").write_text("SMS_BYPASS_CODE=123456\n", encoding="utf-8")
+    # 1.6c/1.6d（issue #8989 ④）：脚本在**任何 up 之前**校验 JWT `file:` 宿主路径，并要求两侧同源
+    # ⇒ 沙箱必须同构地造出 pem 并在两侧 .env 都声明（否则所有执行式判据都停在预检）。
+    _jwt_dir = work / "jwt"
+    _jwt_dir.mkdir(exist_ok=True)
+    (_jwt_dir / "public.pem").write_text("-----BEGIN PUBLIC KEY-----\nstub\n-----END PUBLIC KEY-----\n", encoding="utf-8")
+    (_jwt_dir / "private.pem").write_text("-----BEGIN PRIVATE KEY-----\nstub\n-----END PRIVATE KEY-----\n", encoding="utf-8")
+    _jwt_env = (
+        "SMS_BYPASS_CODE=123456\n"
+        f"JWT_PRIVATE_KEY=file:{work}/jwt/private.pem\n"
+        f"JWT_PUBLIC_KEY=file:{work}/jwt/public.pem\n"
+    )
+    (work / ".env.admin-api").write_text(_jwt_env, encoding="utf-8")
+    (work / ".env.ai-agent").write_text(_jwt_env, encoding="utf-8")
     (work / ".env.registry").write_text("ACR_USERNAME=u\nACR_PASSWORD=p\n", encoding="utf-8")
     tar_path = tmp_path / "src.tar.gz"
     _make_src_tar(tar_path)

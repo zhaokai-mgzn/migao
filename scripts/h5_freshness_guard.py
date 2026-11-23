@@ -45,6 +45,29 @@ CI run `38971606256`（`schedule` / sha `2f4b8b84b`）判「线上 `2026-10-09T1
 按 `::error::` 上报）——**绝不**塌成 `rc=2`（确实陈旧）。两处修：调用面的 checkout 给
 `fetch-depth: 0`（`.github/workflows/c-end-h5-publish.yml`）+ 本脚本能判「读不到历史」（下一个调用面的兜底）。
 
+## 🔴 时间戳只是**代理** ⇒ 判「陈旧」前必须做**内容等价**复核（issue #8924）
+
+`Last-Modified` 判的是「发布时间」，不是「内容是否真的落后」。两者会分叉：
+源码改动**不影响产物字节**时（devDependency 升级 / 只动 lint 配置 / 注释），时间戳会判「陈旧」，
+而要人跑一次发布，发布出来的字节与线上**完全相同**（issue #6672 已经因为 `tests/**` 修过一次口径，
+但那只是**一个**特例：把「哪些改动不影响产物」写成白名单，永远会漏）。
+
+⇒ 判「陈旧」之后，**如果手里有本次构建产物**（`--dist-dir`），就把线上产物与它**逐字节比对**：
+
+- 全部等价 ⇒ `verdict=equivalent` ⇒ **exit 0**（读数写明「仅发布时间戳旧，内容无差异 ⇒ 不需要发布」）；
+- 有差异 ⇒ 仍 `stale` ⇒ **exit 2**，并把**差异文件清单**印出来（哪几个文件、各多大）——
+  「真陈旧」的判别力**一分不降**，只是不再为「等价」付一次无意义的发布；
+- `--dist-dir` 指向的目录不存在 / 读不出 ⇒ **不得**当等价（fail-closed，仍 exit 2 并点名原因）。
+
+构建**确定性**是这条判据成立的前提，实测（2026-11-23，本机 + 线上同一份工具链）：
+同一份源码连跑两次 `npm run build:h5` ⇒ `js/app.js` / `index.html` 的 sha256 **逐字节一致**
+（`c60722d3…` / `e4ab045f…`）；且**线上** `index.html` / `css/app.css` 与本机 HEAD 构建**完全一致**
+（`e4ab045f…` / `a328eb9b…`）—— 只有 `js/app.js` 不同（线上 258451 vs 构建 258576 字节；
+构建须与发布腿同 env —— `TARO_APP_API_URL` / `TARO_APP_AI_API_URL` 会被 baked 进产物，
+差这两个变量时字节数会再偏 24 字节 —— 差异本身来自 11-18 的 `zustand 5.0.15→5.1.0`
+运行时依赖升级）⇒ 那一天的红是**真陈旧**，不是假红。
+规范化只做两件无争议的事（BOM / CRLF），**不做**「标准化后再比」这种会放过真差异的处理。
+
 ## 读数（本仓机制协议）
 
 `scripts/mechanism_liveness.sh` 是**唯一**发射器；本脚本只交一行
@@ -57,6 +80,7 @@ import os
 import subprocess
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
@@ -71,6 +95,57 @@ SOURCE_PATH = "frontend/mini-app"
 # 就把 main 上这条腿判红，并要求人工跑一次 `c-end-h5-publish.yml` —— 发布出来的字节与上一版**完全一样**（纯浪费）。
 SOURCE_EXCLUDES = ("frontend/mini-app/tests",)
 EXIT_OK, EXIT_USAGE, EXIT_STALE, EXIT_UNKNOWN = 0, 1, 2, 3
+
+#: `dist/index.html` 对应站点**根**（其余文件按相对路径拼）
+DIST_INDEX = "index.html"
+
+
+def _normalise(raw: bytes) -> bytes:
+    """只做两件无争议的规范化（BOM / CRLF）；**不**做任何会放过真差异的「标准化」。"""
+    if raw.startswith(b"\xef\xbb\xbf"):
+        raw = raw[3:]
+    return raw.replace(b"\r\n", b"\n").rstrip(b"\n")
+
+
+def _root_of(url: str) -> str:
+    """由产物 URL 求出站点根（`.../js/app.js` ⇒ `https://host`）；取不到 ⇒ 空串。"""
+    parts = urllib.parse.urlsplit(url)
+    if not parts.scheme or not parts.netloc:
+        return ""
+    return f"{parts.scheme}://{parts.netloc}"
+
+
+def served_equivalence(dist_dir: Path, url: str, timeout: int = 20) -> tuple[bool, list[str], str]:
+    """本次构建产物 ⇄ 线上产物**逐字节等价**判定（issue #8924）。
+
+    返回 `(equal, diffs, detail)`：
+      - `equal=True` 只在**每个**文件都能取到线上对应物且规范化后字节相同；
+      - 任一个取不到（404 / 网络 / 空）⇒ 放进 `diffs` ⇒ **不算等价**（fail-closed）；
+      - `detail` 是给出可归因读数的短句（文件数 / 差异数）。
+    """
+    root = _root_of(url)
+    if not root:
+        return False, ["<无法从 URL 求出站点根>"], f"URL 不合法：{url!r}"
+    files = sorted(p for p in dist_dir.rglob("*") if p.is_file() and p.name != ".DS_Store")
+    if not files:
+        return False, [f"<{dist_dir} 里没有任何文件>"], f"构建产物目录为空：{dist_dir}"
+    diffs: list[str] = []
+    for path in files:
+        rel = path.relative_to(dist_dir).as_posix()
+        target = root + ("/" if rel == DIST_INDEX else "/" + rel)
+        try:
+            with urllib.request.urlopen(  # noqa: S310（URL 由调用方给定）
+                urllib.request.Request(target, method="GET"), timeout=timeout
+            ) as resp:
+                live = resp.read()
+        except (urllib.error.URLError, OSError, ValueError) as exc:
+            diffs.append(f"{rel}（线上取不到：{exc}）")
+            continue
+        if _normalise(live) != _normalise(path.read_bytes()):
+            diffs.append(f"{rel}（线上 {len(live)} 字节 ≠ 构建 {path.stat().st_size} 字节）")
+    if diffs:
+        return False, diffs, f"比对 {len(files)} 个文件，差异 {len(diffs)} 个"
+    return True, [], f"{len(files)} 个文件逐字节一致"
 
 
 def fetch_last_modified(url: str, timeout: int = 20) -> datetime | None:
@@ -164,6 +239,9 @@ def main(argv: list[str] | None = None, cwd: Path | None = None) -> int:
     ap.add_argument("--url", default=os.environ.get(URL_ENV) or DEFAULT_URL)
     ap.add_argument("--ref", default="origin/main")
     ap.add_argument("--grace-hours", type=int, default=6)
+    ap.add_argument("--dist-dir", default=None,
+                    help="本次构建产物目录（**做内容等价复核**用）。给了它且判「陈旧」时，"
+                         "线上与产物**逐字节等价** ⇒ exit 0（不需要发布）；有差异 ⇒ 仍 exit 2（真陈旧）")
     ap.add_argument("--no-gate", dest="gate", action="store_false",
                     help="只 ::warning:: 并 exit 0（**仅**人工诊断用；默认是判红）")
     args = ap.parse_args(argv)
@@ -173,6 +251,22 @@ def main(argv: list[str] | None = None, cwd: Path | None = None) -> int:
     verdict, why = judge(live, source, grace_hours=args.grace_hours)
     if verdict == "unknown" and source is None and reason:
         why = f"{reason} ⇒ 无法判定（**不等于**新鲜）"
+
+    # 🔴 判「陈旧」之前先做**内容等价**复核（issue #8924）：时间戳旧 ≠ 内容落后。
+    if verdict == "stale" and args.dist_dir:
+        dist = Path(args.dist_dir)
+        if not dist.is_dir():
+            why = f"{why}；内容等价复核**不可用**（--dist-dir 不存在：{dist}）⇒ 仍判红（fail-closed）"
+        else:
+            equal, diffs, detail = served_equivalence(dist, args.url)
+            if equal:
+                verdict = "equivalent"
+                why = (f"线上产物与本次构建**逐字节等价**（{detail}）—— 仅发布时间戳旧"
+                       f"（线上 {live:%Y-%m-%dT%H:%MZ} 早于源码改动 {source:%Y-%m-%dT%H:%MZ}），"
+                       f"内容没有差异 ⇒ **不需要发布**")
+            else:
+                head = "、".join(diffs[:5]) + (f" 等 {len(diffs)} 个" if len(diffs) > 5 else "")
+                why = f"{why}；内容复核**不等价**：{head}"
 
     seen, acted = 1, 0
     if verdict == "unknown":
@@ -187,7 +281,7 @@ def main(argv: list[str] | None = None, cwd: Path | None = None) -> int:
         level = "warning" if not args.gate else "error"
         print(f"::{level}:: {why}（URL={args.url}；发布通路 = .github/workflows/c-end-h5-publish.yml，"
               f"人工发布：gh workflow run c-end-h5-publish.yml --ref main -f publish=true）")
-    print(f"{'✅' if verdict == 'fresh' else '⚠️ '} {why}")
+    print(f"{'✅' if verdict in ('fresh', 'equivalent') else '⚠️ '} {why}")
     if verdict == "stale" and args.gate:
         summarise(EXIT_STALE, seen, acted, why)
         return EXIT_STALE

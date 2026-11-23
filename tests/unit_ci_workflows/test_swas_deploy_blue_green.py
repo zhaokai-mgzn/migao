@@ -517,8 +517,13 @@ def _make_src_tar(dest: Path) -> None:
     """造一个 `migao-main/deploy/swas/*` 的 tar（配合 `--strip-components=1`）。"""
     stage = dest.parent / "stage" / "migao-main" / "deploy" / "swas"
     stage.mkdir(parents=True, exist_ok=True)
+    # 沙箱一致性：脚本副本已把 `/opt/migao-deploy` 改写成 tmp 路径（见 `_prepare`），
+    # 打包进 tar 的 compose/nginx 也必须同步改写 —— 否则脚本里的 `jwt_host_path` 映射
+    # 只认改写后的前缀，而 compose 里仍是宿主绝对路径 ⇒ 1.6c 预检永远判「不存在」。
+    _root = dest.parent / "opt-migao-deploy"
     for name in ("docker-compose.yml", "docker-compose.bluegreen.yml", "nginx.conf"):
-        shutil.copy(REPO_ROOT / "deploy" / "swas" / name, stage / name)
+        _txt = (REPO_ROOT / "deploy" / "swas" / name).read_text(encoding="utf-8")
+        (stage / name).write_text(_txt.replace("/opt/migao-deploy", str(_root)), encoding="utf-8")
     with tarfile.open(dest, "w:gz") as tf:
         tf.add(dest.parent / "stage" / "migao-main", arcname="migao-main")
 
@@ -535,8 +540,15 @@ def _prepare(tmp_path: Path, script_text: str) -> tuple:
     script = work / "deploy.sh"
     script.write_text(text, encoding="utf-8")
     # 配置自愈/fail-closed 前置：显式声明 SMS_BYPASS_CODE（否则脚本按设计中止）
-    (work / ".env.admin-api").write_text("SMS_BYPASS_CODE=123456\n", encoding="utf-8")
-    (work / ".env.ai-agent").write_text("SMS_BYPASS_CODE=123456\n", encoding="utf-8")
+    # 1.6d「JWT 同源断言」要求两侧都声明 `file:` 取值才判得下去（生产就是这样：
+    # admin-api 与 ai-agent 共用同一对 pem）⇒ 沙箱也按同构写，宿主路径用改写后的根。
+    _jwt_env = (
+        "SMS_BYPASS_CODE=123456\n"
+        f"JWT_PRIVATE_KEY=file:{work}/jwt/private.pem\n"
+        f"JWT_PUBLIC_KEY=file:{work}/jwt/public.pem\n"
+    )
+    (work / ".env.admin-api").write_text(_jwt_env, encoding="utf-8")
+    (work / ".env.ai-agent").write_text(_jwt_env, encoding="utf-8")
     tar_path = tmp_path / "src.tar.gz"
     _make_src_tar(tar_path)
     bin_dir = tmp_path / "bin"
@@ -553,6 +565,10 @@ def _prepare(tmp_path: Path, script_text: str) -> tuple:
 def _run(tmp_path: Path, script_text: str, *, hc: dict, extra_env: dict | None = None):
     """跑脚本；`hc` = {端口: 状态码}（未列出的端口一律 200）。"""
     work, script, bin_dir, state, tar_path = _prepare(tmp_path, script_text)
+    _jwt_dir = work / "jwt"
+    _jwt_dir.mkdir(parents=True, exist_ok=True)
+    (_jwt_dir / "public.pem").write_text("-----BEGIN PUBLIC KEY-----\nstub\n-----END PUBLIC KEY-----\n", encoding="utf-8")
+    (_jwt_dir / "private.pem").write_text("-----BEGIN PRIVATE KEY-----\nstub\n-----END PRIVATE KEY-----\n", encoding="utf-8")
     for port, code in hc.items():
         (state / f"hc-{port}").write_text(str(code), encoding="utf-8")
     docker_log = tmp_path / "docker.log"
@@ -569,6 +585,9 @@ def _run(tmp_path: Path, script_text: str, *, hc: dict, extra_env: dict | None =
         # 「预检不足即中止」由独立场景（BG_MEM_NEED_MB=999999）覆盖。
         "BG_MEM_NEED_MB": "0",
         "BG_OFF_FILE": str(work / ".blue-green-off"),
+        # 1.6c JWT 文件式取值预检（issue #8989 ④）要**真文件**：把派生根指到 tmp 并造出
+        # public/private.pem，否则编排判据全部停在预检（green 根本起不来）。
+        "MIGAO_DEPLOY_ROOT": str(work),
         **(extra_env or {}),
     }
     proc = subprocess.run(

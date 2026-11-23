@@ -691,14 +691,6 @@
       "anchor": "\"UPDATE processing_orders SET status = 'in_processing', completed_at = NULL, \" + \"updated_at = #{updatedAt} \" + \"WHERE id = #{id} AND tenant_id = #{tenantId} AN"
     },
     {
-      "table": "processing_orders",
-      "file": "backend/admin-api/src/main/java/com/migao/admin/service/ProcessingOrderService.java",
-      "symbol": "prepare",
-      "form": "builder",
-      "params": "String rawId, List<BatchAssignment> assignments, Long tenantId, String operator, String rule, Consignee consignee",
-      "anchor": "ProcessingOrder.builder() .tenantId(tenantId) .orderId(order.getId()) .p"
-    },
-    {
       "table": "processing_position_operations",
       "file": "backend/admin-api/src/main/java/com/migao/admin/mapper/ProcessingPositionOperationMapper.java",
       "symbol": "advanceDoneQtyIfUnchanged",
@@ -1097,6 +1089,38 @@
       "form": "setStatus",
       "params": "WarehouseCreateRequest request, Long tenantId",
       "anchor": ".setStatus(\"active\"); warehouse.setRemark(request.getRemark()); try { warehouseMapper.insert"
+    },
+    {
+      "table": "processing_orders",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/ProcessingOrderService.java",
+      "symbol": "prepare",
+      "form": "builder",
+      "params": "String rawId, List<BatchAssignment> assignments, Long tenantId, String operator, String rule, Consignee consignee",
+      "anchor": "ProcessingOrder.builder() .tenantId(tenantId) .orderId(order.getId())"
+    },
+    {
+      "table": "scheduled_tasks",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/mapper/ScheduledTaskMapper.java",
+      "symbol": "markFailedIfClaimed",
+      "form": "sql",
+      "params": "",
+      "anchor": "\"UPDATE scheduled_tasks SET status = 'failed', updated_at = #{now} \" + \"WHERE id = #{id} AND tenant_id = #{tenantId} AND status = 'firing' \" + \"AND claimed_by ="
+    },
+    {
+      "table": "scheduled_tasks",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/mapper/ScheduledTaskMapper.java",
+      "symbol": "markFiredIfClaimed",
+      "form": "sql",
+      "params": "",
+      "anchor": "\"UPDATE scheduled_tasks SET status = 'fired', fired_at = #{now}, updated_at = #{now} \" + \"WHERE id = #{id} AND tenant_id = #{tenantId} AND status = 'firing' \" +"
+    },
+    {
+      "table": "scheduled_tasks",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/mapper/ScheduledTaskMapper.java",
+      "symbol": "reclaimStaleClaims",
+      "form": "sql",
+      "params": "",
+      "anchor": "\"UPDATE scheduled_tasks SET status = 'pending', claimed_by = NULL, claimed_at = NULL, \" + \"updated_at = #{now} \" + \"WHERE status = 'firing' AND deleted = 0 \" + "
     }
   ],
   "bare_literal_baseline": {

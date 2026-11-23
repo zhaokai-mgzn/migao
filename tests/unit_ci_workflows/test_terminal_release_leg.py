@@ -399,7 +399,12 @@ def test_nginx_terminal_surface_has_no_problems():
 def _terminal_body_span(conf: str) -> tuple[int, int]:
     """`location /terminal/ { … }` 的**块内**区间（花括号配平）。"""
     head = f"location /{SUBDIR}/ {{"
-    start = conf.index(head)
+    # ⚠️ 只在 **app.migaozn.com 的 443 server** 段内定位（2026-11-23 修）：同一份 conf 的
+    # `migaozn.com/www/merchant` 段也有 `location /terminal/`（#8999），全文件 `index()` 会先命中它
+    # ⇒ 变异注入到别的 server，判据对象纹丝不动，红证退化成空断言。
+    _app = _app_server_block(conf)
+    _app_at = conf.index(_app)
+    start = conf.index(head, _app_at)
     open_brace = conf.index("{", start)
     depth, j = 0, open_brace
     while j < len(conf):
@@ -425,8 +430,12 @@ def _replace_in_terminal(conf: str, old: str, new: str) -> str:
     body = conf[a:b]
     if old in body:
         return conf[:a] + body.replace(old, new, 1) + conf[b:]
-    assert old in conf, f"变异注入未生效（找不到 {old!r}）"
-    return conf.replace(old, new, 1)
+    # 块头（如 `location /terminal/ {`）不在块内 ⇒ 在 **app server 段内**替换首个命中；
+    # 不许全文 `replace(..., 1)`（那会命中 merchant 段的同名块，红证空转）。
+    _app_at = conf.index(_app_server_block(conf))
+    idx = conf.find(old, _app_at)
+    assert idx >= 0, f"变异注入未生效（app server 段里找不到 {old!r}）"
+    return conf[:idx] + new + conf[idx + len(old):]
 
 
 def test_nginx_mutations_are_all_detected():
