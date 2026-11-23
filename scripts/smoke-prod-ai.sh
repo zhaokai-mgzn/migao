@@ -217,8 +217,12 @@ PY
 run_pytest() {
   local label="$1"
   shift
-  local log_file counts passed skipped failed pytest_rc rc
-  log_file="${MIGAO_SMOKE_LOG:-$(mktemp "${TMPDIR:-/tmp}/migao-smoke.XXXXXX.log")}"
+  local log_file tmp_dir counts passed skipped failed pytest_rc rc
+  # ⚠️ mktemp 模板的 X 必须在**结尾**：`…XXXXXX.log` 在 macOS 上会原样返回（`XXXXXX` 不展开）
+  # ⇒ 并发跑共用同一个文件名（2026-11-23 实跑发现）。这里先取随机名，后缀交给调用方。
+  tmp_dir="${TMPDIR:-/tmp}"
+  tmp_dir="${tmp_dir%/}"
+  log_file="${MIGAO_SMOKE_LOG:-$(mktemp "${tmp_dir}/migao-smoke.XXXXXXXX")}"
   say "ℹ️ 档=${label} SMOKE_ENV=${SMOKE_ENV_VALUE} target=${TARGET}（凭据只从环境变量读，不入库）"
   ( cd "$SMOKE_DIR" && "$PYTHON_BIN" -m pytest "$@" -q --tb=short --timeout=120 -p no:cacheprovider ) 2>&1 | tee "$log_file"
   pytest_rc=${PIPESTATUS[0]}
