@@ -15,6 +15,8 @@ import {
 } from 'lucide-react'
 import { CallToAction, PageHero, SectionHeading } from '@/components/corporate/CorporateSection'
 import { AI_ROLES } from '@/config/ai-roles'
+// 内测期隐藏自助入驻入口（issue #9066）：开关单一来源见 @/config/onboarding
+import { SELF_SERVICE_ONBOARDING_OPEN } from '@/config/onboarding'
 import {
   capabilityDomains,
   industryDepth,
@@ -114,7 +116,7 @@ const delivery = [
     icon: Wallet,
     title: '价格与合同另行沟通',
     description:
-      '本页面不公示价格；套餐、开通范围与交付内容请在入驻申请中说明，由团队与您确认。',
+      '本页面不公示价格；套餐、开通范围与交付内容请与团队确认。',
   },
 ]
 
@@ -301,7 +303,7 @@ export default function ServicesPage() {
           <SectionHeading
             kicker="交付与开通"
             title="无需自建基础设施，开通即可使用"
-            lead="无需自备服务器与 IT 人员：提交申请后由 AI 自动甄别并即刻开通，行业模板与岗位权限均已预置。"
+            lead="无需自备服务器与 IT 人员：开通即用，行业模板与岗位权限均已预置。"
           />
           <div className="mt-14 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
             {delivery.map((item) => (
@@ -320,15 +322,21 @@ export default function ServicesPage() {
 
       <CallToAction
         title="了解观星台是否适配您的业务"
-        lead="提交入驻申请，AI 自动甄别后即刻开通；也可先留言说明业务场景，我们将按您的流程安排演示。"
+        lead={
+          SELF_SERVICE_ONBOARDING_OPEN
+            ? '提交入驻申请，AI 自动甄别后即刻开通；也可先留言说明业务场景，我们将按您的流程安排演示。'
+            : '可先预约演示并说明业务场景，我们将按您的流程安排逐项确认；套餐与开通方式由团队与您确认。'
+        }
         primary={
-          <Link
-            href="/register"
-            className="group inline-flex items-center gap-2 rounded-xl bg-white px-7 py-3.5 text-base font-semibold text-neutral-900 transition-colors hover:bg-neutral-100"
-          >
-            立即入驻
-            <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
-          </Link>
+          SELF_SERVICE_ONBOARDING_OPEN ? (
+            <Link
+              href="/register"
+              className="group inline-flex items-center gap-2 rounded-xl bg-white px-7 py-3.5 text-base font-semibold text-neutral-900 transition-colors hover:bg-neutral-100"
+            >
+              立即入驻
+              <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+            </Link>
+          ) : undefined
         }
         secondary={
           <Link
