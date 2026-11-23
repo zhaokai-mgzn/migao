@@ -886,12 +886,21 @@ else
 fi
 # <<< wechat-verify
 
-# ── 1.3c JWT classpath 公钥快照（issue #9051；供 1.6d 物化用）──────────────────
+# ── 1.3c JWT classpath 公钥快照 + 持久缓存（issue #9051 / #9059）───────────────
 # `src/` 是本次 ref 的仓库树，**1.4 构建成功后按磁盘策略删掉**（`rm -rf src`）⇒
-# 需要它的地方必须在 1.4 之前把内容取走。这里只取**公钥**（不取私钥：私钥永不物化）。
+# 需要它的地方必须在 1.4 之前把内容取走。而 2.5.9 的同源断言在 1.4 **之后**跑，且
+# 「配置复用 / 回滚」档盘上根本没有 `src/` ⇒ 光有变量不够，还要在部署根落一份**持久缓存**
+# （公钥不涉密、幂等覆盖），否则 `.env.admin-api` 的 `classpath:rsa/public.pem` 会恒被
+# 判成 unjudgeable ⇒ 部署恒定中止（issue #9059 的实测形态）。
+_MIGAO_CLASSPATH_PUBKEY_REL=${MIGAO_CLASSPATH_PUBKEY_REL:-rsa/public.pem}
+_MIGAO_CLASSPATH_PUBKEY_CACHE=${MIGAO_CLASSPATH_PUBKEY_CACHE:-.migao-admin-api-classpath-public.pem}
+if [ -f "src/backend/admin-api/src/main/resources/${_MIGAO_CLASSPATH_PUBKEY_REL}" ]; then
+  cp -f "src/backend/admin-api/src/main/resources/${_MIGAO_CLASSPATH_PUBKEY_REL}" \
+        "${_MIGAO_CLASSPATH_PUBKEY_CACHE}"
+fi
 _MIGAO_CLASSPATH_PUBKEY=""
-if [ -f src/backend/admin-api/src/main/resources/rsa/public.pem ]; then
-  _MIGAO_CLASSPATH_PUBKEY=$(cat src/backend/admin-api/src/main/resources/rsa/public.pem)
+if [ -f "${_MIGAO_CLASSPATH_PUBKEY_CACHE}" ]; then
+  _MIGAO_CLASSPATH_PUBKEY=$(cat "${_MIGAO_CLASSPATH_PUBKEY_CACHE}")
 fi
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1198,6 +1207,26 @@ jwt_env_value_of() {
   val=${val%\"}; val=${val#\"}
   val=${val%\'}; val=${val#\'}
   printf '%s' "${val}"
+}
+
+# `classpath:<rel>` ⇒ 该资源的**内容**（只解析 admin-api 的资源面）。取不到 ⇒ 非零（不可判定）。
+# 解析源（按可信度）：① 本次部署树 `src/backend/admin-api/src/main/resources/<rel>`
+#                     ② 仓检出形态 `backend/admin-api/src/main/resources/<rel>`（本地/判据用）
+#                     ③ 1.3c 落盘的**持久缓存**（供「配置复用 / 回滚」档：那时盘上已没有 `src/`）
+# 🔴 三条都取不到 ⇒ 调用方必须报 `unjudgeable`（**不得**判绿）：`classpath:` 解析不了不等于同源。
+jwt_classpath_resource_of() {
+  local rel=$1 root
+  case "${rel}" in
+    ""|*..*|/*) return 1 ;;
+  esac
+  for root in "src/backend/admin-api/src/main/resources" "backend/admin-api/src/main/resources"; do
+    if [ -f "${root}/${rel}" ]; then cat "${root}/${rel}"; return 0; fi
+  done
+  if [ "${rel}" = "${_MIGAO_CLASSPATH_PUBKEY_REL:-rsa/public.pem}" ] \
+     && [ -f "${_MIGAO_CLASSPATH_PUBKEY_CACHE:-.migao-admin-api-classpath-public.pem}" ]; then
+    cat "${_MIGAO_CLASSPATH_PUBKEY_CACHE}"; return 0
+  fi
+  return 1
 }
 
 # stdin: `.env` 文本 → 只取 `JWT_PUBLIC_KEY` 的 `file:` 宿主路径（1.6d 物化只补公钥；私钥永不物化）
@@ -1865,6 +1894,21 @@ jwt_key_fingerprint_of() {
   case "${raw}" in
     "")
       printf '|absent|%s（宿主未设置 ⇒ 下次重建走镜像 classpath 默认，宿主面无内容可判）' "${src}"
+      ;;
+    classpath:*)
+      # issue #9059：`classpath:<rel>` 是 admin-api 的**默认取值形态**（`.env.admin-api` 里写的就是它）
+      # ⇒ 必须能解析成**同一份**公钥再比指纹；解析不到仍判 `unjudgeable`（fail-closed，不许放行）。
+      content=$(jwt_classpath_resource_of "${raw#classpath:}") || content=""
+      if [ -z "${content}" ]; then
+        printf '|unjudgeable|%s = %s（部署树 / 持久缓存里都解析不到该 classpath 资源 ⇒ 不可判定；取值形态已登记在 deploy/swas/jwt-value-forms.json）' "${src}" "${raw}"
+        return 0
+      fi
+      fp=$(printf '%s' "${content}" | jwt_pubkey_fingerprint) || fp=""
+      if [ -z "${fp}" ]; then
+        printf '|unjudgeable|%s = %s（classpath 资源读到了但提取指纹失败：%s）' "${src}" "${raw}" "$(jwt_value_shape_of "${content}")"
+      else
+        printf '%s|ok|%s = %s（classpath 资源 backend/admin-api/src/main/resources/%s）' "${fp}" "${src}" "${raw}" "${raw#classpath:}"
+      fi
       ;;
     file:*)
       path=$(jwt_host_path "${raw#file:}")
