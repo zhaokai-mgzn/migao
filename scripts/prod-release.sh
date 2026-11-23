@@ -573,9 +573,28 @@ main() {
   probe_pid=$!
   [ -n "$SSE_PROBE_URL" ] && { probe_sse_loop "$sse_log" "$deadline" "$probe_stop" & sse_pid=$!; } || sse_pid=""
 
-  echo "  · 远端执行：bash ${REMOTE_DEPLOY} ${DEPLOY_FLAG} ${TARGET_SHA}"
-  deploy_out=$(prod_swas_run "bash ${REMOTE_DEPLOY} ${DEPLOY_FLAG} ${TARGET_SHA}" "$DEPLOY_TIMEOUT" migao-prod-deploy)
-  deploy_rc=$?
+  # ── 真发：**逐服务 C′ 构建**（issue #5814 之后 CI 不构建、不推 ACR）──
+  # 病根（2026-11-24 07:23 真机实测）：不带 `BUILD_SERVICE` 时 deploy.sh 走「拉镜像」路径，
+  #   ACR 里没有该 tag ⇒ 三个服务全部 `跳过该服务` ⇒ `EFFECTIVE_TAG` 全是旧值 ⇒ 健康检查查的是
+  #   **旧容器** ⇒ `deploy.sh 完成` 且 rc=0 —— 一次**一个服务都没换**的「假绿」。
+  #   （本次 = `PROD-RELEASE rc=1`，是被本脚本 ⑤ 的同源自检抓回来的，不是 deploy.sh 自己报的。）
+  PROD_SERVICES=${PROD_SERVICES:-admin-api ai-agent admin-web}
+  BUILT_AT_NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  deploy_rc=0
+  deploy_out=""
+  for svc in $PROD_SERVICES; do
+    if [ "${DEPLOY_FORM:-flag}" = "positional" ]; then
+      deploy_cmd="BUILD_SERVICE=${svc} BUILD_SHA=${TARGET_SHA} BUILT_AT=${BUILT_AT_NOW} bash ${REMOTE_DEPLOY} sha-$(printf '%s' "$TARGET_SHA" | cut -c1-7)"
+    else
+      deploy_cmd="bash ${REMOTE_DEPLOY} ${DEPLOY_FLAG} ${TARGET_SHA}"
+    fi
+    echo "  · [${svc}] 远端执行：${deploy_cmd}"
+    out_one=$(prod_swas_run "$deploy_cmd" "$DEPLOY_TIMEOUT" "migao-prod-deploy-${svc}")
+    rc_one=$?
+    deploy_out="${deploy_out}${out_one}
+"
+    if [ "$rc_one" -ne 0 ]; then deploy_rc=$rc_one; break; fi
+  done
   : > "$probe_stop"     # 停探针（发布已结束，不需要再采样）
   wait "$probe_pid" 2>/dev/null
   [ -n "$sse_pid" ] && wait "$sse_pid" 2>/dev/null
