@@ -886,6 +886,14 @@ else
 fi
 # <<< wechat-verify
 
+# ── 1.3c JWT classpath 公钥快照（issue #9051；供 1.6d 物化用）──────────────────
+# `src/` 是本次 ref 的仓库树，**1.4 构建成功后按磁盘策略删掉**（`rm -rf src`）⇒
+# 需要它的地方必须在 1.4 之前把内容取走。这里只取**公钥**（不取私钥：私钥永不物化）。
+_MIGAO_CLASSPATH_PUBKEY=""
+if [ -f src/backend/admin-api/src/main/resources/rsa/public.pem ]; then
+  _MIGAO_CLASSPATH_PUBKEY=$(cat src/backend/admin-api/src/main/resources/rsa/public.pem)
+fi
+
 # ══════════════════════════════════════════════════════════════════════════════
 # 1.4 C′ 服务器侧构建（issue #5814）—— **在本脚本已持有的 flock 之内**
 #
@@ -1180,6 +1188,99 @@ jwt_file_paths_of_compose() {
     -e 's/^[[:space:]]*JWT_PUBLIC_KEY:[[:space:]]*file:\(.*\)$/\1/p' \
     "$@" 2>/dev/null
 }
+
+# 取 `.env` 里某键的**最后一条**取值（同名以最后一次为准；去 CR / 成对引号）
+jwt_env_value_of() {
+  local env_file=$1 key=$2 val
+  [ -f "${env_file}" ] || return 0
+  val=$(sed -n -e "s/^[[:space:]]*export[[:space:]]*${key}[[:space:]]*=[[:space:]]*//p" \
+    -e "s/^[[:space:]]*${key}[[:space:]]*=[[:space:]]*//p" "${env_file}" | tr -d '\r' | tail -1)
+  val=${val%\"}; val=${val#\"}
+  val=${val%\'}; val=${val#\'}
+  printf '%s' "${val}"
+}
+
+# stdin: `.env` 文本 → 只取 `JWT_PUBLIC_KEY` 的 `file:` 宿主路径（1.6d 物化只补公钥；私钥永不物化）
+jwt_public_file_paths_of_env() {
+  sed -n \
+    -e 's/^[[:space:]]*export[[:space:]]*JWT_PUBLIC_KEY[[:space:]]*=[[:space:]]*//p' \
+    -e 's/^[[:space:]]*JWT_PUBLIC_KEY[[:space:]]*=[[:space:]]*//p' \
+    | tr -d '\r' \
+    | sed -e 's/^"//' -e 's/"$//' -e "s/^'//" -e "s/'$//" \
+    | sed -n 's/^file://p'
+}
+
+# compose 里写死的**公钥** `file:`（ai-agent 的单一来源就是这条）
+jwt_public_file_paths_of_compose() {
+  sed -n -e 's/^[[:space:]]*JWT_PUBLIC_KEY:[[:space:]]*file:\(.*\)$/\1/p' "$@" 2>/dev/null
+}
+
+# ──────────────────────────────────────────────────────────────────────────────
+# 1.6d JWT 宿主**公钥**补齐（issue #9051；判据 = 同文件 c 组）
+#
+# 病（2026-11-23 实测）：compose 把 ai-agent 的 `JWT_PUBLIC_KEY` 改成
+# `file:/opt/migao-deploy/jwt/public.pem`（#8976 单一来源）之后，这条宿主路径**没有任何一步
+# 负责创建**它 ⇒ 1.6c 的前置校验在测试环境宿主上**恒红**：
+#     ❌ JWT 文件式取值指向的宿主路径**不存在**：/opt/migao-deploy/jwt/public.pem
+# 自 1.6c 落地（2026-11-22T08:48Z）起，**每一次** push / dispatch 部署都在这里中止（两次尝试同一读数），
+# 而 schedule 触发走的是 `skip=true`（**不做部署**）⇒ 那些 success **不是**「部署成功」。
+#
+# 修法 = **补齐**，不是放宽：缺失时从宿主**已有的权威源**把 public 半份物化到 compose 指的位置，
+# 之后仍由 1.6c 逐条校验、2.5.9 两侧指纹同源断言兜底 ⇒ 判别力一分不降。来源优先级：
+#   ① `.env.admin-api` 的**内联** `JWT_PUBLIC_KEY`（admin-api 真正在用的 public 半份）
+#   ② `.env.ai-agent` 的内联 `JWT_PUBLIC_KEY`
+#   ③ 部署树里 admin-api 的 classpath 公钥（`src/backend/admin-api/src/main/resources/rsa/public.pem`；
+#      admin-api 未显式配置时的签发公钥来源）⇒ 同时把 `.env.admin-api` 钉成
+#      `JWT_PUBLIC_KEY=file:<同一路径>`（否则 2.5.9 只能报 INCOMPLETE：一侧有值一侧「未配置」）
+# 三条都取不到 ⇒ **什么都不写**，交回 1.6c 的 fail-closed（**真缺失仍然红**）。
+# 私钥永不物化（它不是「配置」而是签发密钥：只能由人成对放入宿主）。
+# ──────────────────────────────────────────────────────────────────────────────
+echo "== 1.6d JWT 宿主公钥补齐（缺失 ⇒ 从宿主权威源物化；issue #9051）=="
+_JWT_SELFHEAL_SEEN=" "
+while IFS= read -r _jwt_pub_path; do
+  _jwt_pub_path=${_jwt_pub_path%$'\r'}
+  [ -n "${_jwt_pub_path}" ] || continue
+  case "${_JWT_SELFHEAL_SEEN}" in *" ${_jwt_pub_path} "*) continue ;; esac
+  _JWT_SELFHEAL_SEEN="${_JWT_SELFHEAL_SEEN}${_jwt_pub_path} "
+  _jwt_pub_host=$(jwt_host_path "${_jwt_pub_path}")
+  [ -e "${_jwt_pub_host}" ] && continue          # 已存在 ⇒ 不动（宿主权威源优先）
+  _jwt_src=""
+  _jwt_pem=""
+  _jwt_pin_env=""
+  for _jwt_env_file in .env.admin-api .env.ai-agent; do
+    _jwt_pem=$(jwt_env_value_of "${_jwt_env_file}" JWT_PUBLIC_KEY)
+    _jwt_pem=${_jwt_pem//\\n/$'\n'}
+    case "${_jwt_pem}" in
+      *"BEGIN PUBLIC KEY"*) _jwt_src="${_jwt_env_file} 的内联 JWT_PUBLIC_KEY"; break ;;
+      *) _jwt_pem="" ;;
+    esac
+  done
+  if [ -z "${_jwt_pem}" ] && [ -n "${_MIGAO_CLASSPATH_PUBKEY:-}" ]; then
+    _jwt_pem=${_MIGAO_CLASSPATH_PUBKEY}
+    _jwt_src="部署树 classpath 公钥（backend/admin-api/src/main/resources/rsa/public.pem）"
+    _jwt_pin_env="1"
+  fi
+  if [ -z "${_jwt_pem}" ]; then
+    echo "  ⚠️ 无法物化 ${_jwt_pub_path}：宿主权威源里**也没有**内联公钥 / 部署树公钥 ⇒ 交回 1.6c 判红"
+    continue
+  fi
+  mkdir -p "$(dirname "${_jwt_pub_host}")"
+  printf '%s\n' "${_jwt_pem}" > "${_jwt_pub_host}"
+  chmod 0644 "${_jwt_pub_host}"     # 容器以非 root 读 :ro 卷 ⇒ 不能 0600
+  echo "  🔧 JWT 公钥已物化：${_jwt_pub_path}（${#_jwt_pem} 字节）⇐ ${_jwt_src}"
+  # 只有当 `.env.admin-api` **没有可用公钥**（行缺失或空值）时才钉：已有值属宿主权威源，不动它
+  _jwt_cur_admin_pub=$(jwt_env_value_of .env.admin-api JWT_PUBLIC_KEY)
+  if [ "${_jwt_pin_env:-}" = "1" ] && [ -f .env.admin-api ] && [ -z "${_jwt_cur_admin_pub}" ]; then
+    printf 'JWT_PUBLIC_KEY=file:%s\n' "${_jwt_pub_path}" >> .env.admin-api
+    echo "  🔧 .env.admin-api 已钉上 JWT_PUBLIC_KEY=file:${_jwt_pub_path}（两侧同源可判；2.5.9 会复核指纹）"
+  fi
+  echo "  JWT_FILE_SELFHEAL=created path=${_jwt_pub_path}"
+done < <(
+  for _jwt_env_file in .env.admin-api .env.ai-agent; do
+    [ -f "${_jwt_env_file}" ] && jwt_public_file_paths_of_env < "${_jwt_env_file}"
+  done
+  jwt_public_file_paths_of_compose docker-compose.yml docker-compose.bluegreen.yml
+)
 
 _JWT_FILE_CHECK_FAILED=0
 _JWT_FILE_PATHS_SEEN=" "
@@ -1701,17 +1802,6 @@ jwt_pubkey_fingerprint() {
     return 1
   fi
   printf '%s' "${body}" | _sha256_hex | cut -c1-16
-}
-
-# 取 `.env` 里某键的**最后一条**取值（同名以最后一次为准；去 CR / 成对引号）
-jwt_env_value_of() {
-  local env_file=$1 key=$2 val
-  [ -f "${env_file}" ] || return 0
-  val=$(sed -n -e "s/^[[:space:]]*export[[:space:]]*${key}[[:space:]]*=[[:space:]]*//p" \
-    -e "s/^[[:space:]]*${key}[[:space:]]*=[[:space:]]*//p" "${env_file}" | tr -d '\r' | tail -1)
-  val=${val%\"}; val=${val#\"}
-  val=${val%\'}; val=${val#\'}
-  printf '%s' "${val}"
 }
 
 # 取 compose `environment:` 里某服务**写死**的取值（优先级高于 env_file；ai-agent 的公钥走这条）
