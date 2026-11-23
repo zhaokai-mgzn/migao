@@ -10633,3 +10633,43 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+
+  # ==========================================================================
+  # MC-347（issue #9086，2026-11-23 用户批准）：「部署只认 release」此前只钉在 CI 侧
+  # （`deploy-prod.yml` 的「发布线纪律」步骤），主机上手工跑 `deploy/swas/deploy.sh` 能**整段绕过**它
+  # —— 实测 2026-11-23 11:32–11:39 那次绕过只更新了 admin-api（admin-web 还是两天前的镜像），
+  # 脚本自己的结论却是绿的。缺陷形态 = **闸门没覆盖到手敲那条路径**，而它不会自己变红。
+  # ==========================================================================
+  - id: MC-347
+    legacy_id: ""
+    title: "主机 deploy.sh 的发布线自检（手工路径也拦得住 release 之外的目标；判不了即拒绝 + 明面逃生口记账）"
+    domains:
+      - misc
+      - ci
+    tier: normal
+    tags:
+      - deploy
+      - release-line
+      - fail-closed
+      - nightly
+    truths_ref: []
+    # ⚠️ 真值暂缺：部署脚本的结构/编排不变式（非 LLM/业务真值），由 tests/unit_ci_workflows/ 单测验证。
+    user_inputs:
+      - "部署生产不要用 main 分支（只认 release）。但这个口径此前只有 CI 那条腿在判：有人在主机上直接敲 ./deploy.sh sha-xxxxxxx 就绕过去了（只更新了一半服务、零报错）。能不能让脚本自己也拦？"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "判据 1·**段存在且可静态定位**：`deploy/swas/deploy.sh` 必须有 `# >>> release-line-assert` / `# <<< release-line-assert` 成对标记（与 nginx 段的 `# >>> nginx-domain-assert` 同族）⇒ 判据据此精确切段。执行点 = tests/unit_ci_workflows/test_swas_deploy_release_line.py::test_section_exists_with_static_markers"
+      - "判据 2·**该段必须真的判**：段内必须有 `git merge-base --is-ancestor`（提交图祖先关系，不是字符串前缀/时间戳）、`git fetch` 取 `+refs/heads/release:refs/remotes/origin/release`、非祖先 `exit 2`、判不了 `exit 3`、逃生口 `ALLOW_UNVERIFIABLE_RELEASE` + `::warning::RELEASE-LINE=UNVERIFIED` + 追加 `release-ledger.jsonl`（`decision=unverified-release`，含 at/target/reason 三键）+ `git rev-list --count` 差多少提交 + `cut-release.sh` 指引。执行点 = 同文件 ::test_required_calls_present"
+      - "判据 3·**顺序（本单核心）**：该段的结束行号必须**小于**第一处**真实**部署动作（`registry_login` 调用 / `docker compose pull` / `docker compose up` / `docker build`）的行号 —— 检查晚于部署 = 没检查（那时容器已被换掉，日志里那句「拦住了」是假的）；锚点必须跳过注释与 `echo` 说明文字（脚本里确有 `echo \"恢复：… docker compose pull …\"` 这种文案，吃进去会让顺序判据恒真）。执行点 = 同文件 ::test_section_runs_before_any_deploy_action / ::test_order_anchor_really_skips_echo_and_comment_lines"
+      - "判据 4·**行为（抽段真跑，桩化 git/docker；不给脚本加测试专用钩子）**：① 目标 commit 是 release 祖先 ⇒ rc=0 + `RELEASE-LINE=OK target=<sha7> release=<sha7>` + 后续部署动作照常发生、不写台账；② 非祖先 ⇒ rc=2 + 打印两个 40 位 sha + 「N 个提交」+ `cut-release.sh` 指引 + **零** docker 写调用；③ 判不了（fetch 连续 3 次失败 / fetch 成功但拿不到 release ref / 追不到 target commit）⇒ rc=3 + **零** docker 写调用、不落账；④ 判不了 + `ALLOW_UNVERIFIABLE_RELEASE=1` ⇒ rc=0 + `::warning::` + 台账**恰好一行**且可 JSON 解析（`at` 是 UTC ISO8601）。另有参数面判据：`merge-base --is-ancestor` 收到的 target 是**完整 40 位 sha**、release 侧是 `refs/remotes/origin/release`（不许错位）。执行点 = 同文件 ::test_ancestor_passes_and_deploy_proceeds / ::test_non_ancestor_refuses_with_exit_2_and_no_docker_write / ::test_fetch_retries_three_times_then_refuses_with_exit_3 / ::test_unresolvable_release_ref_is_unverifiable / ::test_unresolvable_target_is_unverifiable / ::test_escape_hatch_continues_and_writes_ledger / ::test_merge_base_receives_target_and_release_ref"
+      - "判据 5·**注入式红证（实跑，四条，每次复原后必绿）**：① 把该段挪到 `docker compose up` 之后 ⇒ 顺序判据红；② 删掉 `exit 2` ⇒ 必填项判据红**且**非祖先场景实测 rc≠2、继续部署（正是要拦的形态）；③ 去掉逃生口的 `>> \"$RELEASE_LEDGER_FILE\"` ⇒ 必填项判据红**且**逃生口场景台账为空；④ `merge-base --is-ancestor` 换成 `git rev-parse` ⇒ 必填项判据红**且**非祖先被误放行（rc=0）。执行点 = 同文件 ::test_red_proof_1_section_after_deploy_is_red / ::test_red_proof_2_dropping_exit_2_is_red / ::test_red_proof_3_dropping_ledger_append_is_red / ::test_red_proof_4_is_ancestor_replaced_by_rev_parse_is_red"
+      - "**边界（照实登记）**：① **新检查从「下一次部署」起生效** —— 主机盘上跑的是旧脚本，脚本自同步（`# >>> deploy-selfsync`）先把同源脚本落到盘上再 `exec` 重入，才执行得到本段；手工跑旧脚本那一轮不受保护；② 生产机到 github.com:443 时通时不通（#4852 实测 `git clone --filter=tree:0` 超时 32s）⇒ 本段判不了就 **exit 3**（有意 fail-closed，不接受静默放行）；逃生口必须显式给且会落账；③ 不验「release 上的提交都过了 CI」也不验镜像是否存在（那是别的闸门/步骤的对象）；④ 既有执行式守卫（blue-green / no-downgrade / disk-recovery 等）通过共享桩 tests/unit_ci_workflows/deploy_release_line_stub.py 模拟「目标提交是 release 祖先」的正常形态 —— 桩补的是沙箱本来就该模拟的那一面，既有断言一字未改。"
+    skip_reason: "[backend-contract] 部署脚本结构/编排判据（抽段真跑 + 桩化 git/docker）：零网络、零真部署、零 LLM，不进 agent-eval 冒烟"
+    merge_log: "2026-11-23 新增（issue #9086，用户 2026-11-23 20:45 批准「即使有人绕过 prod-release.sh 直接敲 deploy.sh 也拦得住」）。取号 = `python3 scripts/next_case_id.py MC` 现取 ⇒ MC-347。同批落地：deploy/swas/deploy.sh 的 1.0.1 段（发布线自检 + 三态 + 逃生口台账）、tests/unit_ci_workflows/test_swas_deploy_release_line.py（15 条判据，含 4 条注入式红证）、tests/unit_ci_workflows/deploy_release_line_stub.py（既有 8 个执行式沙箱的 git 桩）、docs/deployment/release-branch.md 的「手工路径也有判据」一节。"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_swas_deploy_release_line.py"
+      ci:
+        - pr-check.yml
+      verifies: []
