@@ -2354,3 +2354,32 @@ cases:
       ci:
         - bmini-app.yml
       verifies: []
+
+  # ── issue #9072：B 端上线值守（一条只读命令看全 5 个面；C 端面一个都不探）───────────────
+  - id: BM-069
+    legacy_id: ""
+    title: "B 端上线值守：一条只读命令看全健康 / 版本身份 / 域名泄漏 / 包体预算 / 客户端错误（判不了就说判不了，不当绿）"
+    domains:
+      - bmini
+      - ci
+      - red-proof
+    tier: normal
+    tags: [bmini, golive, read-only, no-schedule, fail-closed]
+    truths_ref: []
+    user_inputs:
+      - "不碰C端，先把B端做夯实"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "判据 1·五个面各自一行 PASS/FAIL/SKIP：健康（5 个 B 端面 200）/ 版本身份（线上 sha == origin/release）/ 域名泄漏（migaozn 0 命中）/ 包体预算（最近生产域 dist 读数 ≤ 主包预算）/ 客户端错误（载体缺失 ⇒ SKIP）。执行点 = tests/unit_ci_workflows/test_bmini_golive_watch.py::test_full_run_is_honest_about_the_missing_client_error_carrier"
+      - "判据 2·网络失败 ⇒ SKIP 不是 PASS：桩表摘掉 https://app.cytda.com/b/ ⇒ 该行 SKIP、无 PASS、rc=3。执行点 = 同文件::test_network_failure_is_skip_not_pass"
+      - "判据 3·三态退出码：全绿子集 ⇒ 0 / 有 FAIL（优先于 SKIP）⇒ 1 / 只有 SKIP ⇒ 3；空面清单 / 未知面 ⇒ 3 + ::error::（空跑 = 假绿）。执行点 = 同文件::test_subset_four_faces_all_green_exits_zero / ::test_unknown_face_is_red_not_green"
+      - "判据 4·无 C 端面：脚本正文的 URL 字面量不得含 app.* 的 h5 根 / `/w/` / 测试域；行为侧 faces=health|leak 实际请求的 URL 集合逐值等于五个健康面 / 四个泄漏面。执行点 = 同文件::test_script_contains_no_c_end_url / ::test_behaviour_probes_only_b_end_faces"
+      - "判据 5·复用既有判据本体（身份 = served-version-verify.sh + admin-web-version-probe.sh；泄漏 = prod-smoke.sh 的 SMOKE_ONLY=leak；预算 = bmini-dist-budget.json），脚本里不得出现第二份上限常量。执行点 = 同文件::test_reuses_existing_carriers_and_has_no_second_cap_constant"
+      - "判据 6·改既有载体不许改部署腿语义：SMOKE_ONLY 缺省 = all（不传时身份段仍跑，缺 REL_SHA ⇒ 仍报不可判定 + rc=3）。执行点 = 同文件::test_prod_smoke_section_filter_keeps_default_semantics"
+      - "判据 7·只读：静态禁令（无写盘工具 / 无定时排程 / 不变更 git / 不触发部署）+ 实跑后工作树逐字节不变。执行点 = 同文件::test_script_is_read_only_and_unscheduled"
+    skip_reason: "[dev-tooling] 纯只读值守脚本 + 桩判据（pytest 真跑脚本、不触网）；无 LLM 行为、无前端渲染，不进 agent-eval 冒烟"
+    merge_log: "2026-11-23 新增（issue #9072，用户 2026-11-23 逐字「不碰C端，先把B端做夯实」）。v1.0.2 上线（2026-11-23 10:49:54）后没有「一眼看全」的 B 端只读读数：要分别跑冒烟 / 两个身份探针 / 域名泄漏段 / 包体台账，漏一面就以为没事。本单把它们编排成一条命令，判据本体全部复用。2026-11-23 16:0x 本机实测：五面 200 全绿；api sha == origin/release 26ff9f7 而 merchant 仍是 caf01e4（2026-11-21T05:11:25Z 构建）⇒ 线上落后发布线（正是本命令要暴露的形态）；域名泄漏 0 命中；dist 1,465,245 ≤ 主包预算 1,789,952（余量 324,707）；客户端错误面载体缺失 ⇒ 常态 rc=3。"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_bmini_golive_watch.py"
