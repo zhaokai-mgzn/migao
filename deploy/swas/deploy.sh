@@ -90,6 +90,20 @@ if [ "${1:-}" = "--probe-running-tag" ]; then
 fi
 
 cd /opt/migao-deploy
+# 发布线自检的**显式逃生口**（段内正文见 1.0.1 / issue #9086）：`--allow-unverified-release` ≡
+# `ALLOW_UNVERIFIABLE_RELEASE=1`。放在这里（`$TAG` 之前的**唯一**参数解析点）⇒ 两种写法行为逐字相同。
+ALLOW_UNVERIFIABLE_RELEASE=${ALLOW_UNVERIFIABLE_RELEASE:-0}
+_rl_rest_args=""
+for _a in "$@"; do
+  if [ "$_a" = "--allow-unverified-release" ]; then
+    ALLOW_UNVERIFIABLE_RELEASE=1
+  else
+    _rl_rest_args="${_rl_rest_args}${_rl_rest_args:+ }${_a}"
+  fi
+done
+# ⚠️ 不用数组重建（bash 3.2 下 `set -u` + 空数组展开会报 unbound）：tag 形态**不含空格**（sha-<hex> /
+#    版本 tag），所以这里按空格拆回是安全的；`set --` 无参也合法（⇒ 落到默认 `latest`）。
+if [ -n "$_rl_rest_args" ]; then set -- $_rl_rest_args; else set --; fi
 TAG=${1:-latest}
 REGISTRY=${ACR_REGISTRY:-crpi-qdcgkzwx9p9zckga.cn-hangzhou.personal.cr.aliyuncs.com}
 
@@ -631,6 +645,193 @@ if [ -z "$CONFIG_REF_RESOLVED" ]; then
   echo "   修法：改用 \`sha-<7位hex>\` 形态的 tag（= CI 部署的正常形态）"
   exit 1
 fi
+
+# ══════════════════════════════════════════════════════════════════════════
+# 1.0.1 **发布线自检**（issue #9086）：手工敲 deploy.sh 也不许绕过「部署只认 release」
+#
+# 病根（**2026-11-23 生产实测**，人工路径）：上面第 0 段只保证「配置 ref 与镜像 tag **同源**」，
+#   **不判断这个 tag 属不属于 `release`**。而发布线闸门此前只有一处：`deploy-prod.yml` 的
+#   「发布线纪律（只认 release）」步骤（判据 = test_deploy_prod_release_discipline.py）
+#   ⇒ 有人在主机上直接敲 `./deploy.sh sha-xxxxxxx` 就**完全绕过**它。2026-11-23 11:32–11:39
+#   实测那次正是如此：只更新了 admin-api，admin-web 还是两天前的镜像（**发成半截**），
+#   全程零报错 —— 脚本自己的结论是绿的。
+# 口径（= AGENTS.md「发布线」一节；机械可查）：目标 commit 必须是 `origin/release` 的**祖先**。
+#   否则「生产跑的代码在发布线上找不到」⇒ 回滚点 / `/api/version` 自证 / 发布记录三处同时失效。
+# 位置**必须在这里**（已解析出 `$TAG` 与目标 commit，任何下载 / 构建 / 拉镜像 / 切流之前）：
+#   检查晚于部署 = 没检查（那时容器已被换掉，日志里那句「拦住了」是假的）。
+#   顺序判据 = tests/unit_ci_workflows/test_swas_deploy_release_line.py（行号比较）。
+# 三态（**判不了也拒绝**，fail-closed —— 与 2.05 那条 #4852 闸门的 fail-open **有意不同**：
+#   那条判的是「往不往回走」（判不了可以放行），这条判的是「该不该发」，判不了放行 = 闸门消失）：
+#   祖先   ⇒ 打印 `RELEASE-LINE=OK target=<sha7> release=<sha7>` 后继续；
+#   非祖先 ⇒ 打印两个 sha + 差多少提交 + 可行动指引，**exit 2**；
+#   判不了 ⇒ **exit 3**（不是 git 仓 / fetch 三次都失败 / 拿不到 release ref / 追不到 target commit）。
+#   ⚠️ 逃生口留在**明面上**：`ALLOW_UNVERIFIABLE_RELEASE=1`（或 `--allow-unverified-release`）⇒
+#      `::warning::RELEASE-LINE=UNVERIFIED …` + 追加一行到 `release-ledger.jsonl` 后继续。
+#      为什么必须有：生产机到 github.com:443 时通时不通（#4852 实测 `git clone --filter=tree:0`
+#      超时 32s，而同一刻 `git ls-remote` 成功），**没有逃生口的 fail-closed 会被绕成「把这段删掉」**；
+#      有逃生口 + 落账 ⇒ 绕过是**可见的**（谁在什么时候绕的，台账里有）。
+# 🔴 段内**自包含**（不依赖第 0 段的 `tag_to_sha`：那条只验形态、不解析提交；这里要的是**提交图**）
+#    ⇒ 判据可以只抽这一段字节、配桩化的 `git` 真跑，**不需要给脚本加测试专用钩子**。
+# >>> release-line-assert
+RELEASE_LINE_GIT_DIR=${RELEASE_LINE_GIT_DIR:-/opt/migao-deploy/.release-line.git}
+RELEASE_LINE_REMOTE=${RELEASE_LINE_REMOTE:-https://github.com/zhaokai-mgzn/migao}
+RELEASE_LINE_FETCH_ATTEMPTS=${RELEASE_LINE_FETCH_ATTEMPTS:-3}
+RELEASE_LINE_FETCH_DELAY_SECONDS=${RELEASE_LINE_FETCH_DELAY_SECONDS:-5}
+# 逃生口台账（**只在**走逃生口时追加一行；正常部署不写盘）
+RELEASE_LEDGER_FILE=${RELEASE_LEDGER_FILE:-/opt/migao-deploy/release-ledger.jsonl}
+RELEASE_LINE_TARGET=""
+RELEASE_LINE_HEAD=""
+RELEASE_LINE_WHY=""
+
+# 所有 git 调用都打在**发布线专用的裸仓库**里：`/opt/migao-deploy` 本身**不是** git 仓
+# （盘上是解包出来的源码树 `src/`，没有 `.git`）⇒ 不能指望 `git -C .` 能查到历史。
+rl_git() { git --git-dir="$RELEASE_LINE_GIT_DIR" "$@"; }
+
+# 取远端 ref 的**唯一形态**（三处调用共用 ⇒ 形态不会漂移）：
+#   `GIT_TERMINAL_PROMPT=0` —— 生产机没有交互终端凭据，**缺了它就可能在 https 认证提示上永久挂住**
+#     （挂住比失败更坏：部署锁被占着，别的部署只能等到 `LOCK_WAIT_SECONDS` 超时）；
+#   `http.lowSpeedTime=60 / http.lowSpeedLimit=1000` —— 速率低于 1KB/s 持续 60s 就放弃本轮
+#     （与脚本既有的「**不许无上界地挂住**」同族：`BUILD_TIMEOUT_SECS` 那段的口径）；
+#   `--filter=tree:0` —— 只取**提交图**（merge-base 只看提交）。
+rl_git_fetch() {
+  GIT_TERMINAL_PROMPT=0 rl_git -c http.lowSpeedTime=60 -c http.lowSpeedLimit=1000 \
+    fetch --quiet --force --no-tags --filter=tree:0 "$@"
+}
+
+# 建（一次性）发布线判据用的裸仓库。建不出来 ⇒ 判不了（fail-closed，原因具名）。
+rl_ensure_repo() {
+  [ -d "$RELEASE_LINE_GIT_DIR" ] && return 0
+  if git init --quiet --bare "$RELEASE_LINE_GIT_DIR" >/dev/null 2>&1; then
+    return 0
+  fi
+  RELEASE_LINE_WHY="建不出判据用的裸仓库（${RELEASE_LINE_GIT_DIR} 写不进去 / git 不可用）"
+  return 1
+}
+
+# 取 `origin/release`：**显式重试 + 每轮出声**（沿用第 0 段 `config_fetch_tarball` 的既有风格：
+# 事故里「参数面写了重试、到底有没有触发没人知道」本身就是病的一部分）。
+# `--filter=tree:0` 只取**提交图**（merge-base 只看提交）⇒ 不拉 blob/tree：生产机磁盘
+# （本脚本有水位阈值）+ 带宽都按最小量走；GitHub 支持 partial clone。
+rl_fetch_release() {
+  local try=0 rc=0
+  while [ "$try" -lt "$RELEASE_LINE_FETCH_ATTEMPTS" ]; do
+    try=$((try + 1))
+    echo "  ⏱ 第 ${try}/${RELEASE_LINE_FETCH_ATTEMPTS} 次取 origin/release（只取提交图，--filter=tree:0）"
+    if rl_git_fetch "$RELEASE_LINE_REMOTE" '+refs/heads/release:refs/remotes/origin/release' >/dev/null 2>&1; then
+      return 0
+    else
+      rc=$?
+    fi
+    if [ "$try" -lt "$RELEASE_LINE_FETCH_ATTEMPTS" ]; then
+      echo "  ⚠️ 第 ${try}/${RELEASE_LINE_FETCH_ATTEMPTS} 次取 origin/release 失败（git exit=${rc}）⇒ **马上重试（第 $((try + 1)) 轮）**（${RELEASE_LINE_FETCH_DELAY_SECONDS}s 后）"
+      sleep "$RELEASE_LINE_FETCH_DELAY_SECONDS"
+    else
+      echo "  ⚠️ 第 ${try}/${RELEASE_LINE_FETCH_ATTEMPTS} 次取 origin/release 失败（git exit=${rc}）⇒ 重试预算用尽"
+    fi
+  done
+  RELEASE_LINE_WHY="git fetch 连续 ${RELEASE_LINE_FETCH_ATTEMPTS} 次失败（${RELEASE_LINE_REMOTE} 不可达 / 无凭据）"
+  return 1
+}
+
+# 解析 target（本次要部署的那个提交）：
+#   `sha-<hex>`（≥7 位）⇒ 该提交；不在本地历史里 ⇒ **按 sha 补取一次**（GitHub 允许按 sha 取）；
+#   其它形态（v1.2.3 / 非十六进制的 `sha-xxx` 这类）⇒ `refs/tags/<tag>`
+#   —— **与第 0 段 `config_ref_for_tag` 同一口径**（配置那边已经把这类 tag 当 tag 解析，
+#   这里若另立口径，同一个 tag 会在两处指向不同对象）。
+# ⚠️ 取不到就**判不了**（不猜、不用字符串前缀凑）：短 sha 撞号与「提交不在 history 里」都不可当祖先。
+rl_resolve_target() {
+  local t=$1 short sha
+  case "$t" in
+    sha-*) short=${t#sha-} ;;
+    *) short="" ;;
+  esac
+  case "$short" in
+    *[!0-9a-f]*|"") short="" ;;
+  esac
+  if [ -n "$short" ] && [ "${#short}" -ge 7 ]; then
+    sha=$(rl_git rev-parse --verify --quiet "${short}^{commit}" 2>/dev/null || true)
+    if [ -z "$sha" ]; then
+      rl_git_fetch "$RELEASE_LINE_REMOTE" "$short" >/dev/null 2>&1 || true
+      sha=$(rl_git rev-parse --verify --quiet "${short}^{commit}" 2>/dev/null || true)
+    fi
+    if [ -z "$sha" ]; then
+      RELEASE_LINE_WHY="追不到 tag=${t} 指向的提交（该 sha 不在 release 历史里，按 sha 补取也失败）"
+      return 1
+    fi
+    RELEASE_LINE_TARGET=$sha
+    return 0
+  fi
+  rl_git_fetch "$RELEASE_LINE_REMOTE" "+refs/tags/${t}:refs/tags/${t}" >/dev/null 2>&1 || true
+  sha=$(rl_git rev-parse --verify --quiet "refs/tags/${t}^{commit}" 2>/dev/null || true)
+  if [ -z "$sha" ]; then
+    RELEASE_LINE_WHY="追不到 tag=${t} 指向的提交（仓库上没有这个 tag / 取不到）"
+    return 1
+  fi
+  RELEASE_LINE_TARGET=$sha
+  return 0
+}
+
+RELEASE_LINE_VERDICT=unverified
+if rl_ensure_repo && rl_fetch_release; then
+  RELEASE_LINE_HEAD=$(rl_git rev-parse --verify --quiet 'refs/remotes/origin/release^{commit}' 2>/dev/null || true)
+  if [ -z "$RELEASE_LINE_HEAD" ]; then
+    RELEASE_LINE_WHY="取不到 origin/release 的 ref（fetch 报成功但 rev-parse 为空）"
+  elif rl_resolve_target "$TAG"; then
+    if rl_git merge-base --is-ancestor "$RELEASE_LINE_TARGET" 'refs/remotes/origin/release'; then
+      RELEASE_LINE_VERDICT=ancestor
+    else
+      _rl_rc=$?
+      if [ "$_rl_rc" = "1" ]; then
+        RELEASE_LINE_VERDICT=not-ancestor
+      else
+        RELEASE_LINE_WHY="git merge-base --is-ancestor 说不清（git exit=${_rl_rc}）"
+      fi
+    fi
+  fi
+fi
+
+case "$RELEASE_LINE_VERDICT" in
+  ancestor)
+    echo "  ✅ RELEASE-LINE=OK target=${RELEASE_LINE_TARGET:0:7} release=${RELEASE_LINE_HEAD:0:7}（目标 commit 是 origin/release 的祖先）"
+    ;;
+  not-ancestor)
+    _rl_ahead=$(rl_git rev-list --count 'refs/remotes/origin/release..'"$RELEASE_LINE_TARGET" 2>/dev/null || true)
+    echo "  ❌ RELEASE-LINE=VIOLATION ⇒ **拒绝部署**（issue #9086）"
+    echo "     · target  = ${RELEASE_LINE_TARGET}（本次要部署的提交）"
+    echo "     · release = ${RELEASE_LINE_HEAD}（origin/release 的当前提交）"
+    echo "     · 差 ${_rl_ahead:-?} 个提交（可复算：git rev-list --count origin/release..target）"
+    echo "     · 为什么拦：「生产跑的代码在发布线上找不到」⇒ 回滚点 / /api/version 自证 / 发布记录同时失效"
+    echo "     · 处置：先在任意工作区跑 ./scripts/cut-release.sh 把 release **快进**到该提交（它只允许快进，"
+    echo "       并打出 REL_SHA=<40位>），再用那个 REL_SHA 部署（CI 走 prod-release；主机手工跑也用 REL_SHA）。"
+    exit 2
+    ;;
+  *)
+    if [ "${ALLOW_UNVERIFIABLE_RELEASE:-0}" = "1" ]; then
+      echo "  ::warning::RELEASE-LINE=UNVERIFIED 判不了发布线归属，但**已显式放行**（ALLOW_UNVERIFIABLE_RELEASE=1）"
+      echo "     · 原因：${RELEASE_LINE_WHY:-未知}"
+      echo "     · target=${RELEASE_LINE_TARGET:-<未解析>} release=${RELEASE_LINE_HEAD:-<未取到>}"
+      _rl_ledger=$(_rl_at=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
+        printf '{"at":"%s","decision":"unverified-release","target":"%s","reason":"%s"}' \
+          "$_rl_at" "${TAG:-}" "${RELEASE_LINE_WHY:-unknown}")
+      if printf '%s\n' "$_rl_ledger" >> "$RELEASE_LEDGER_FILE" 2>/dev/null; then
+        echo "     · 已记账：${RELEASE_LEDGER_FILE}（decision=unverified-release，谁绕过都留痕）"
+      else
+        echo "  ::warning::RELEASE-LINE=UNVERIFIED 的台账写不进去（${RELEASE_LEDGER_FILE}）⇒ 本次绕过**没有留痕**，请人工补记"
+      fi
+    else
+      echo "  ❌ RELEASE-LINE=UNVERIFIED ⇒ **拒绝部署**（fail-closed，issue #9086）"
+      echo "     · 原因：${RELEASE_LINE_WHY:-未知}"
+      echo "     · target=${RELEASE_LINE_TARGET:-<未解析>} release=${RELEASE_LINE_HEAD:-<未取到>}"
+      echo "     · 处置：① 到 github.com 不通 ⇒ 修网络/凭据后重跑（本段已重试 ${RELEASE_LINE_FETCH_ATTEMPTS} 次）；"
+      echo "       ② tag 不是 sha-<7位hex> ⇒ 改用 CI 给的 sha tag；"
+      echo "       ③ **确认本次就该发**、且判据确实取不到 ⇒ 显式带逃生口重跑："
+      echo "          ALLOW_UNVERIFIABLE_RELEASE=1 ./deploy.sh ${TAG}（会打 ::warning:: 并记 ${RELEASE_LEDGER_FILE}）"
+      exit 3
+    fi
+    ;;
+esac
+# <<< release-line-assert
+
 # 本腿那个服务的**本地镜像 ref**（唯一一份推导，issue #5814）：让 compose 自己求值，不在脚本里重抄
 # `${ACR_REGISTRY}/ai-customer-service/<svc>:${IMAGE_TAG}`（后者会在有人改 compose 时**静默漂移**）。
 # 两个消费点：1.4 的构建，以及 #6551 ② 的「源码树不在盘上 ⇒ 能否改用本地已有的镜像」。

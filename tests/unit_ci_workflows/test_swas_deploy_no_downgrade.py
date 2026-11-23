@@ -65,6 +65,11 @@ from pathlib import Path
 import pytest
 import yaml
 
+# ── 发布线自检的 `git` 桩（issue #9086）────────────────────────────────────
+# 本文件跑的是**真实 deploy.sh**：1.0.1 段现在会问 git「目标提交是不是 origin/release 的祖先」。
+# 桩补的是沙箱本来就该模拟的那一面（口径与该模块 docstring 一致），既有断言一字未改。
+from unit_ci_workflows import deploy_release_line_stub as rl_stub  # noqa: E402
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEPLOY_SH = REPO_ROOT / "deploy" / "swas" / "deploy.sh"
 CI_SCRIPT = REPO_ROOT / "deploy" / "scripts" / "swas-deploy-ci.sh"
@@ -871,6 +876,7 @@ def _prepare(tmp_path: Path, script_text: str) -> tuple:
     tar_path = tmp_path / "src.tar.gz"
     _make_src_tar(tar_path)
     bin_dir = tmp_path / "bin"
+    rl_stub.install(bin_dir)  # 发布线自检要问 git（issue #9086）：补桩，既有断言不受影响
     bin_dir.mkdir(exist_ok=True)
     _write_exe(bin_dir / "curl", CURL_STUB)
     _write_exe(bin_dir / "docker", DOCKER_STUB)
