@@ -646,6 +646,25 @@ python3 -m pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py -q
 python3 -m pytest tests/unit_ci_workflows/test_case_id_exclusive_ledger.py -q -k "cross_machine or offline"
 ```
 
+### 14.6 收尾：`case-lease/*` tag 会**累积** —— 清理命令（不删也不错）
+
+每次取号发布一个 `refs/tags/case-lease/<前缀>-<号>` ⇒ 它们会一路累积。清理是**可选**的：
+
+```bash
+# ① 现取还剩多少（形态 = 已发布过的号；预期只有「还在飞的包」那些）
+git ls-remote --tags origin 'refs/tags/case-lease/*'
+# ② 批量清理（集合为空时 while 不执行 ⇒ 安全；不要用 `xargs -r`，BSD/macOS 没有 -r）
+git ls-remote --tags origin 'refs/tags/case-lease/*' | awk '{print $2}' \
+  | while read -r r; do git push origin --delete "${r#refs/tags/}"; done
+```
+
+- **删不掉不影响正确性**：号只增不减，tag 只是「这个号发布过」的占位；删了也不会让旧号变得可用
+  （号一旦进语料就永久占用，分配器只往后走）。
+- **只在号落地后删**：还在飞的包靠它做跨机仲裁；删早了 → 那台机器上的包可能在发布时被误判「被占」而白跑一次顺延。
+- **本单读数**（issue #9093 的写法同源）：`git ls-remote --tags origin 'refs/tags/case-lease/*'` 现取 = **0 条**
+  （判据 10 只在**本地 bare 仓**里跑，全程没往真 origin 推过任何 `case-lease/*`）。
+
+
 ### 14.5 边界（照实登记，别把它读成覆盖面更大的东西）
 
 - ❌ 租约台账是**机器级**的（`MIGAO_CASE_ID_LEASE_DIR`，默认 `~/.migao-case-id-leases`）⇒ 本机面；

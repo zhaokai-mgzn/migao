@@ -436,6 +436,14 @@ def test_cross_machine_second_publish_of_the_same_number_is_rejected(tmp_path):
     assert sorted(p.name for p in (tmp_path / "lease-b").glob("MC-*.json")) == ["MC-352.json"], (
         "被拒的号没有撤回本地租约 ⇒ 本机永久占着一个用不上的号")
 
+    # 时间序（A 先成功、B 后被拒）：B 的撤回**只许撤自己的**，A 的号与 A 的远端占位都必须还在
+    assert (tmp_path / "lease-a" / "MC-351.json").is_file(), (
+        "B 的顺延把 A 的租约撤掉了 ⇒ 撤回逻辑误伤别人（A 先发布成功，号应当仍归 A）")
+    assert _git(_origin, "show-ref", "refs/tags/case-lease/MC-351", check=False).returncode == 0, (
+        "A 发布的 351 ref 消失了 ⇒ 跨机仲裁的占位被别人的失败清掉")
+    state_a, _detail_a = _lease_module().publish_state(a, "MC-351")
+    assert state_a == "taken", f"A 再发布自己的 351 竟然不是「已占」：{state_a}"
+
 
 def test_offline_reserve_still_works_but_says_cross_machine_is_not_guaranteed(tmp_path):
     """判据 11：没有远端 ⇒ 照常给号，但**必须出声**「跨机互斥不保证」（离线不能冒充已发布）。"""
