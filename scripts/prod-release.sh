@@ -384,7 +384,7 @@ detect_deploy_flag() {
   [ "$rc" -eq 3 ] && die_undecidable "读不到 ${REMOTE_DEPLOY} --help（通道判不了）"
   flag=$(printf '%s' "$out" | grep -oE -- '--(version|ref|sha|target|release|git-sha|runtime-sha)[a-z-]*' | head -1)
   if [ -z "$flag" ]; then
-    # 兜底：**规范契约**是位置参数 `TAG=${1:-latest}`（`deploy/swas/deploy.sh` 第 107 行）。
+    # 兜底：**规范契约**是位置参数 `TAG=${1:-latest}`（`deploy/swas/deploy.sh` 的 `TAG=${1:-latest}` 契约）。
     # 盘上脚本若是旧版，`--help` 会被当成 **tag** ⇒ 退出非零、输出的是拒绝文本而不是帮助
     # （2026-11-24 11:16 真机实测：`追不到 tag=--help 指向的提交`）⇒ 此时**按契约判位置参数**，
     # 不再「不猜就停」：停在这里等于「发布永远发不出去」，而契约是脚本自己写着的。

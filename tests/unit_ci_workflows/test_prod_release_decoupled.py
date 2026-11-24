@@ -678,7 +678,7 @@ def test_missing_help_falls_back_to_the_positional_contract(tmp_path: Path):
     旧实现在这里 `die_undecidable` ⇒ **发布永远发不出去**（而契约就写在脚本第 107 行 `TAG=${1:-latest}`）。
     """
     box = Sandbox(tmp_path, help_text="用法：bash deploy.sh [--dry-run]\n  没有版本参数\n")
-    # 沙箱里补上**仓库契约**那一份（真实仓里 `deploy/swas/deploy.sh:107` 就是 `TAG=${1:-latest}`）
+    # 沙箱里补上**仓库契约**那一份（真实仓里 `deploy/swas/deploy.sh` 里的 `TAG=${1:-latest}` 就是 `TAG=${1:-latest}`）
     contract = box.root / "deploy" / "swas" / "deploy.sh"
     contract.parent.mkdir(parents=True, exist_ok=True)
     contract.write_text("#!/bin/bash\nTAG=${1:-latest}\n", encoding="utf-8")

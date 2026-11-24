@@ -565,7 +565,7 @@ WHERE name='max_connections';`。若算式不成立：① 降 `pool_max`（首�
 ⇒ 写在 `deploy/swas/nginx.conf` 里**任何位置都非法**。实测（测试腿 run 45307260452）：
 
 ```
-[emerg] "worker_shutdown_timeout" directive is not allowed here in /etc/nginx/conf.d/default.conf:162
+[emerg] "worker_shutdown_timeout" directive is not allowed here in /etc/nginx/conf.d/default.conf（运行时路径，行号随渲染变化）
 ❌ nginx -t 不通过 ⇒ 已恢复备份、**未 reload**（入口一字未变）
 ##[error]部署失败（tag=sha-a98ffc8）—— 已自动回滚到 sha-b702bfe
 ```
