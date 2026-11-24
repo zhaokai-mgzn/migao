@@ -194,3 +194,5 @@
 {"id":"1795438629.99983.1221","ts":"2026-11-23T12:57:10Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/prod-release","why":"子包 worktree 直跑全量（无批次标记）"}
 {"id":"1795479236.12501.21195","ts":"2026-11-24T00:13:56Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/9090-case-id-ledger","why":"子包 worktree 直跑全量（无批次标记）"}
 {"id":"1795484583.76360.4640","ts":"2026-11-24T01:43:04Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/9102-shard-budget","why":"子包 worktree 直跑全量（无批次标记）"}
+{"id":"1795504982.16188.7065","ts":"2026-11-24T07:23:03Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/corporate-download-copy-9129","why":"子包 worktree 直跑全量（无批次标记）"}
+{"id":"1795505106.17146.7105","ts":"2026-11-24T07:25:06Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/corporate-download-copy-9129","why":"--allow-package-heavy（命令行显式）"}

@@ -5541,12 +5541,16 @@ cases:
       - "**缺失 / 坏 / 网络失败 ⇒ 「暂未发布」（会红）**：两个清单都 404 / 返回坏 JSON / 字段类型不对（`versionCode: 'seven'`、`sha256: 'not-a-hash'`）/ fetch reject ⇒ 两处「暂未发布」、**没有**下载按钮、页面不出现任何版本号；只有一端发布时另一端单独显示「暂未发布」（互不牵连）。"
       - "**安全（会红）**：清单是外部输入，`download_url` 为 `javascript:` ⇒ 该端按「暂未发布」处理、不渲染 href。"
       - "**首屏（会红）**：页面是服务端组件（正文进初始 HTML）——渲染出 h1「下载生意管家终端」、三段安装说明（未知来源 / SmartScreen / 检查更新）与 SHA-256 校验方法，且不含「加载中...」骨架。"
+      - "**公开性（会红，issue #9136）**：`/download` 必须在 `src/lib/auth-redirect.ts` 的 `PUBLIC_ROUTES` 与 `src/proxy.ts` 的 `CORPORATE_PREFIXES` **两处**都登记 —— 匿名访客直接打开该页不得被判成受保护页（实测漏登记 ⇒ 浏览器导航 `…/download → …/login`）。类级判据从 `src/app/(corporate)/**/page.tsx` 现取路由表逐条核对，新增官网页面漏登记即红。执行点 = frontend/admin-web/tests/unit/pages/corporate-public-routes.test.ts。"
       - "**结构（会红）**：`next.config.mjs` 有 `/terminal/:path*` → `app.migaozn.com` 的同源转发（浏览器直连会被 CORS 挡）；`src/proxy.ts` 的官网白名单含 `/download`；`CorporateNav` / `CorporateFooter` 都有 `/download` 入口；sitemap 含 `/download/`。"
+      - "**对外面口径（会红，issue #9129）**：官网对外面不摆**运营内部事实与内部路由** —— Windows 证书采购现状（`代码签名证书` / `未购买` / `证书补齐` / `自证哈希`）与内部发布清单路由（`发布清单` / `latest.json` / `/terminal/`）出现在 `src/app/(corporate)/**` 或 `src/components/corporate/**` 的**代码行** ⇒ 红（新增页面自动进面，带判别力自证）。下载页只写商家要做的动作：SmartScreen 怎么过、怎么更新、怎么用 SHA-256 核对；采购现状留在 `docs/deployment/terminal-release.md` §6。执行点 = frontend/admin-web/tests/unit/pages/corporate-visual-copy-guards.test.ts。"
     skip_reason: "[backend-contract] 纯前端契约（mock fetch，不经过 LLM 对话/工具），由 admin-web vitest 执行，不进入 agent-eval 冒烟"
-    merge_log: "2026-10-31 新增（issue #8195）：官网 `(corporate)/download` 下载页 + 客户端清单读取（`src/lib/terminal-manifest.ts` 的解析真值源）+ 类级守卫接入（服务端组件 / 元数据单一源 / 文案口吻 / proxy 白名单 / 按钮规范）。取号 UI-144（python3 scripts/next_case_id.py UI 现取 main 001-143 + 在飞 PR 面 ⇒ 返回 UI-144）。 ｜ 2026-11-09（issue #8868）：第 1 条 data_check 按**改后的对外口径**改钉 —— 清单 `notes` 不再上屏（内部标识不上官网）、SHA-256 改可展开展示、上游硬件厂商名不上屏（端名保留）；`user_inputs` / `expectations` / `title` / `traces` 一字未动，判据强度只增不减（新增「notes 一个字都不上屏」「品牌名不上屏」两条断言）。"
+    merge_log: "2026-10-31 新增（issue #8195）：官网 `(corporate)/download` 下载页 + 客户端清单读取（`src/lib/terminal-manifest.ts` 的解析真值源）+ 类级守卫接入（服务端组件 / 元数据单一源 / 文案口吻 / proxy 白名单 / 按钮规范）。取号 UI-144（python3 scripts/next_case_id.py UI 现取 main 001-143 + 在飞 PR 面 ⇒ 返回 UI-144）。 ｜ 2026-11-09（issue #8868）：第 1 条 data_check 按**改后的对外口径**改钉 —— 清单 `notes` 不再上屏（内部标识不上官网）、SHA-256 改可展开展示、上游硬件厂商名不上屏（端名保留）；`user_inputs` / `expectations` / `title` / `traces` 一字未动，判据强度只增不减（新增「notes 一个字都不上屏」「品牌名不上屏」两条断言）。 ｜ 2026-11-24（issue #9129）：新增第 6 条 data_check「对外面不摆运营内部事实与内部路由」（用户逐字「这种信息不适合放到官网」「这种也不适合放上去」）；traces 补 `corporate-visual-copy-guards.test.ts`。 ｜ 2026-11-24（issue #9136）：新增第 7 条 data_check「公开性」（`/download` 必须在 `PUBLIC_ROUTES` 与 proxy 的 `CORPORATE_PREFIXES` 两处登记；漏登记实测会把匿名访客弹去登录页），traces 补 `corporate-public-routes.test.ts`。"
     traces:
       tests:
         - "frontend/admin-web/tests/unit/pages/corporate-download.test.tsx"
+        - "frontend/admin-web/tests/unit/pages/corporate-visual-copy-guards.test.ts"
+        - "frontend/admin-web/tests/unit/pages/corporate-public-routes.test.ts"
 
   - id: UI-145
     legacy_id: ""

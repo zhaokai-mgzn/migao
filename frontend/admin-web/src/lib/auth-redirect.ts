@@ -16,8 +16,14 @@
  * 当受保护页执行 initialize() → 无 cookie 时 401 → axios 拦截器强制跳 /login
  * （生产实测：首页先渲染再被跳走）。放宽的只是首页/官网公开页，
  * **受保护业务页的跳转一条不放宽**。
+ *
+ * ⚠️ **`/download` 必须在内**（2026-11-24 现场取证）：官网终端下载页是公开面。缺它 ⇒
+ * 无 cookie 打开 `https://migaozn.com/download` 会被 AuthGuard 判成受保护页 →
+ * `nav` 实测 `…/download → …/login`，商家看到的是登录框。它与 issue #4903 是同一个病：
+ * 官网路由要在**两处**登记（本表的 `PUBLIC_ROUTES` + `src/proxy.ts` 的 `CORPORATE_PREFIXES`）。
+ * ⇒ 类级判据 = `tests/unit/pages/corporate-public-routes.test.ts`（新增官网页面漏登记即红）。
  */
-export const PUBLIC_ROUTES = ['/', '/login', '/register', '/about', '/services', '/contact']
+export const PUBLIC_ROUTES = ['/', '/login', '/register', '/about', '/services', '/contact', '/download']
 
 /** 是否公开路由（无需认证即可访问；精确匹配 + 子路径前缀；容忍 query string） */
 export function isPublicRoute(pathname: string): boolean {
