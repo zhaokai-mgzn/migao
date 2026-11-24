@@ -11014,3 +11014,22 @@ cases:
       tests:
         - "tests/unit_ci_workflows/test_ui_regression_leg_stays_shallow.py"
     merge_log: "2026-11-24 新增（issue #9120 成本追因）。实测构成：该腿整腿 p90 21–30s，其中 **checkout 17s**（`fetch-depth: 0` 全史克隆 401 MiB）、判据步仅 **1s**，而冻结预算只有 12s ⇒ 光是拿代码就超预算。脚本只用 `git show HEAD:<f>` / `git show origin/main:<f>` 且自己 `git fetch origin main`（L54）⇒ 默认浅克隆足够。红证实跑：把 `fetch-depth: 0` 加回 ⇒ 判据 1 FAILED；还原 ⇒ 2 passed；脚本本地 `--head` 仍绿（`✅ UI 无回退`）。取号 = `next_case_id.py MC` ⇒ **MC-357**。"
+  - id: MC-358
+    legacy_id: ""
+    title: "`check-ui-regression.sh` 的 origin/main fetch 必须 depth-aware（否则浅仓库拉全史，减负变增负）"
+    domains:
+      - misc
+      - ci
+    tier: normal
+    tags:
+      - ci
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "**判据 1·浅仓库取 tip 要 depth=1**：脚本必须按 `git rev-parse --is-shallow-repository` **分支**——浅仓库 `git fetch --depth=1 origin main`、全史仓库普通 fetch（不许无条件 depth，会把本地全史仓库变浅）。命即通过、缺即红。纯静态：`未被调用`。执行点 = `test_ui_regression_fetch_is_shallow_aware.py::test_script_fetches_the_tip_with_depth_when_shallow`"
+      - "**判据 2·job 里不许第二次全史 fetch**：`UI Regression Check` job 块（去注释后）不得出现裸的 `git fetch origin main`（脚本自己会取）。这样才不会把「checkout 减负 10–14s」被「fetch 全史 +25s」吃掉。纯静态：`未被调用`。执行点 = `::test_job_does_not_do_a_second_full_fetch`"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_ui_regression_fetch_is_shallow_aware.py"
+        - "tests/unit_ci_workflows/test_ui_regression_leg_stays_shallow.py"
+    merge_log: "2026-11-24 新增（issue #9120）。实测（CI run 45398756938，去掉 fetch-depth: 0 之后）：checkout **6s**（原 16–20s）、判据步 **26s**（原 1s，其中就是 bash 里那次不带 depth 的 `git fetch origin main` 拉了全史）、整腿 **36s**（原 21–30s ⇒ 反而更慢）。修法：脚本按仓库形态分支 depth=1，并删掉 job 里那次重复 fetch。红证：把脚本改回裸 fetch ⇒ 判据 1 FAILED。取号 = `next_case_id.py MC` ⇒ **MC-358**。"

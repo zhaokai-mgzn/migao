@@ -778,7 +778,7 @@ jobs:
 
       - name: Check UI token regression vs origin/main
         run: |
-          git fetch origin main --quiet
+          # 脚本自己会按仓库形态选择 `git fetch --depth=1`（浅）/ 普通 fetch（全史）
           chmod +x check-ui-regression.sh
           ./check-ui-regression.sh --head
         shell: bash
