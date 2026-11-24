@@ -12,7 +12,7 @@
 
 1. CI 的安装行含 `pytest-timeout`；
 2. pytest 命令行（**单一来源** `scripts/ci_helper_scope.py::CANONICAL_ARGV` + CI 全量档 +
-   `verify-all.sh` 四片）都带 `--timeout=<N>` 且 `--timeout-method=thread`；
+   `verify-all.sh` 四片）都带 `--timeout=<N>` 且 `--timeout-method=signal`；
 3. `N` 必须落在 `[120, 600]`：小于 120 会把合法慢用例（依赖真实数据库的用例要现起本地实例）假红；
    大于 600 又会「先被 job 上限掐死」（与 MC-355 同一条口径）。
 """
@@ -91,8 +91,8 @@ def test_every_pytest_entrypoint_passes_the_timeout_flag():
         if seconds is None:
             problems.append(f"{label} 缺 `--timeout=`")
             continue
-        if method != "thread":
-            problems.append(f"{label} 的 `--timeout-method` 应为 thread，实得 {method!r}")
+        if method != "signal":
+            problems.append(f"{label} 的 `--timeout-method` 应为 signal，实得 {method!r}")
         if not 120 <= int(seconds) <= 600:
             problems.append(f"{label} 的 `--timeout={seconds}` 不在 [120, 600]")
     assert not problems, "pytest 超时参数不一致/缺失：\n  " + "\n  ".join(problems)
