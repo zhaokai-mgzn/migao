@@ -330,7 +330,11 @@ def test_scanner_discriminates_code_from_comment_and_literal_only():
     红证：代码面（含双引号内部 —— 病灶正在双引号里）出现该形态 ⇒ 必须命中；
     负例（防假红）：整行注释、行内注释、单引号字面量 ⇒ 必须零命中。
     """
-    assert find_unbraced_var_before_non_ascii('echo "❌ 未知参数: $arg（支持）" >&2') == ["第 1 行 $arg（"]
+    # 不写死行号（issue #9150：行号不是稳定标识）：判「恰好命中 1 处、且命中片段以病灶结尾」；
+    # 「行号可定位」由本文件最后那条 `.startswith("第 2 行 ")` 覆盖（它比的是偏移、不是常量）。
+    hits = find_unbraced_var_before_non_ascii('echo "❌ 未知参数: $arg（支持）" >&2')
+    assert len(hits) == 1, f"单行夹具应恰好命中 1 处，实得 {hits}"
+    assert hits[0].endswith("$arg（"), f"命中片段的尾巴不对（应止于病灶），实得 {hits}"
     # 同形态写成 ${arg} ⇒ 合法（#5241 修法 / 本 PR 形态）
     assert find_unbraced_var_before_non_ascii('echo "❌ 未知参数: ${arg}（支持）" >&2') == []
     # 负例 ①整行注释 ②行内注释 ③单引号字面量（后者 `$` 不展开，是纯文本）
