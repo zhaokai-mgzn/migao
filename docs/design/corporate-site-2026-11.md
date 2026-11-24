@@ -1,3 +1,5 @@
+> 🔁 **2026-11-24 二次改版**：本文记录的是「按产品 / 能力 / 价值 / 优势精简」的上一版；同日用户要求参考校宝 ERP 产品页重排版式，现行方案见 `docs/design/corporate-site-product-layout-2026-11.md`。
+
 # 官网（企业站）2026-11 精简重构
 
 > 状态：已实施（2026-11-24，issue #9121）｜ 范围：`frontend/admin-web/src/app/(corporate)/**` + `components/corporate/**`

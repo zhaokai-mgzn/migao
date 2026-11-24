@@ -89,10 +89,16 @@ export default function CorporateNav() {
             >
               商家登录
             </a>
+            <Link
+              href="/contact"
+              className="rounded-lg bg-primary-600 px-5 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-primary-700"
+            >
+              预约演示
+            </Link>
             {SELF_SERVICE_ONBOARDING_OPEN && (
               <Link
                 href="/register"
-                className="rounded-lg bg-primary-600 px-5 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-primary-700"
+                className="rounded-lg border border-primary-200 px-5 py-2 text-sm font-medium text-primary-700 transition-colors hover:bg-primary-50"
               >
                 商家入驻
               </Link>
@@ -131,6 +137,13 @@ export default function CorporateNav() {
               </Link>
             ))}
             <div className="mt-3 space-y-2 border-t border-neutral-200 pt-3">
+              <Link
+                href="/contact"
+                onClick={() => setMobileMenuOpen(false)}
+                className="block rounded-lg bg-primary-600 px-4 py-2.5 text-center text-sm font-medium text-white transition-colors hover:bg-primary-700"
+              >
+                预约演示
+              </Link>
               <a
                 href={merchantLogin}
                 onClick={() => setMobileMenuOpen(false)}
