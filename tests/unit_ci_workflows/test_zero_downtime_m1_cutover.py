@@ -401,6 +401,11 @@ def judge_switch_function(text: str) -> list[str]:
         ):
             if forbidden in stripped:
                 bad.append(f"`nginx_upstream_switch()` 第 {lineno} 行出现 `{forbidden}`：{why}")
+        if re.search(r"(?:^|[;&|({]|\bthen\b|\belse\b|\bdo\b)\s*mv\s", stripped):
+            bad.append(
+                f"`nginx_upstream_switch()` 第 {lineno} 行用 `mv` 更新配置"
+                " ⇒ 换 inode ⇒ 容器里还是旧文件（`nginx -t` 校验的是旧配置，切换静默不生效）"
+            )
     # 恢复动作：任一失败分支都要把备份拷回去
     if body.count("cp -f") < 2:
         bad.append("`nginx_upstream_switch()` 的失败分支没有把备份拷回（改了配置却不回退 = 入口留在坏形态）")
@@ -1151,6 +1156,24 @@ def test_injection_mv_on_a_single_file_mount_goes_red():
     )
     bad = judge_single_file_mounts(mutated)
     assert any("必须原地写" in b for b in bad), f"`mv` 落地却判绿。实得：{bad}"
+
+
+def test_injection_real_mv_inside_the_switch_goes_red():
+    """红证：切换函数里真的执行 `mv`（而不是只在提示语里说）⇒ 判据红并点名行号。
+
+    为什么专测这条：`echo`/`printf` 提示语被排除在禁止项之外（提示里可以写「处置：restart nginx」），
+    所以必须证明「排除提示语」没有顺带把**真的命令行**也放过。
+    """
+    mutated = inject(
+        read(DEPLOY),
+        '  if ! docker compose exec -T nginx nginx -t; then\n',
+        '  mv -f "$NGINX_CONF_FILE" "$NGINX_CONF_FILE.tmp"  # 注入：换 inode\n'
+        '  if ! docker compose exec -T nginx nginx -t; then\n',
+        where="deploy/swas/deploy.sh",
+        count=1,
+    )
+    bad = judge_switch_function(mutated)
+    assert any("用 `mv` 更新配置" in b for b in bad), f"切换面里的真 `mv` 没被判红。实得：{bad}"
 
 
 def test_injection_rename_writes_go_red():

@@ -515,6 +515,37 @@ WHERE name='max_connections';`。若算式不成立：① 降 `pool_max`（首�
 
 ---
 
+## 6.1 已知失效模式：切换窗口内宿主重启（**接受**，不是忽略）
+
+M1-a 把「稳态只写一条成员」当硬约束，代价是**切换窗口内**磁盘上的 `nginx.conf` 会临时引用
+`<svc>-green` 成员（green 容器 `restart: "no"`）。如果宿主恰好在窗口内重启（整机重启 / 宿主机故障）：
+
+- **后果**：nginx 起不来（`[emerg] host not found in upstream "admin-api-green"`）⇒ **全站不可用**，
+  直到有人处理。这比改前的 502 窗口（秒级、自动恢复）**更坏**，所以必须写清楚而不是塞进脚注。
+- **触发条件**（双重故障）：① 正处于某个服务的切换窗口（②切 upstream → ⑥切回 之间）；
+  ② 此时宿主重启。三个服务串行 ⇒ 窗口不重叠，任一时刻最多一个 upstream 处于双成员形态。
+- **窗口长度**：**上界 486 秒/服务**（= ②切换 <2s + ③入口探测 `12×(5s curl + 2s 间隔)`=84s +
+  ④drain 上限 200s（`UPSTREAM_DRAIN_TIMEOUT`）+ ⑤重建后健康检查 `10×(10s curl + 10s 间隔)`=200s；
+  常量见 deploy.sh 的 `NGINX_PROBE_TRIES/NGINX_PROBE_INTERVAL/UPSTREAM_DRAIN_TIMEOUT/HC_RETRIES`），
+  三个服务串行 ⇒ 全量最坏 ~24 分钟；**典型 ≈ 5–15 秒/服务**（drain 通常 1–3s 就退、探测首次即 200、
+  镜像已在本地）——典型值**待真机读数**（见 M1-a 读数表）。
+- **修复（一条命令，分钟级）**：
+  ```bash
+  cd /opt/migao-deploy && bash ./deploy.sh <tag>     # 1.1/1.2.2 会按 canonical 重渲染（**原地写**）并 reload/重启入口
+  # 或只救入口（不部署）：
+  cat nginx/nginx.conf.canonical > nginx/nginx.conf && docker compose restart nginx
+  ```
+  （`nginx.conf.canonical` 每次发布都会从仓库整份落盘 ⇒ 它永远是「无 green 成员」的形态。）
+- **为什么接受它**：窗口短（秒级~分钟级）+ 需要双重故障（窗口内恰好整机重启），而彻底消除要靠
+  **常驻占位容器**（green 名字永远可解析）或 M2 的 SLB —— 前者给每次发布加一个常驻容器成本、
+  后者是下一里程碑。**不在 M1 里做**。
+- **评估过但决定不做的「保险」**：把 nginx 启动命令改成
+  `sh -c 'nginx -t || cp default.conf.safe default.conf; exec nginx -g "daemon off;"'`。
+  **不做**，理由：① 它把「配置坏了起不来」（响亮的、可行动的失败）换成「静默用旧配置起来」
+  —— 正是本单在 inode 那条里刚堵掉的**同类假绿**（`-t` 失败也照跑，部署侧打印全绿而入口在用旧配置）；
+  ② `default.conf.safe` 本身又是单文件挂载（同一个 inode 问题）+ 多一份要与 canonical 同步的副本；
+  ③ 真出事时的恢复成本已经是「一条命令」（上面那条），保险带来的收益远小于它引入的新失效模式。
+
 ## 7. 未固化 / 未证实（照实登记，不粉饰）
 
 | 项 | 现状 | 核实方式 / 出口 |
