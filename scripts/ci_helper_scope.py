@@ -43,8 +43,13 @@ DEV_FACE_PREFIXES = (".github/", "tests/unit_ci_workflows/")
 MIN_WHY = 10
 #: 全量命令的 argv（**单一来源**：CI 的 `Run ci workflow helper tests` 在 full 档用的就是它，
 #: 同源契约判据 = tests/unit_ci_workflows/test_ci_helper_leg.py；narrow 档只是**追加** `--ignore=`）。
+# `--timeout=300 --timeout-method=thread`（issue #9144）：逐用例看门狗。没有它，单条用例挂住时
+# 唯一兜底是 job 的 `timeout-minutes: 20`，而 **cancelled job 不上传日志**（#9114）⇒ 归因不出来。
+# 300 的出处：合法最慢用例（真库族要起 `initdb`）实测 < 60s，CI/local ≈ 1⇒ 300 留 ≥4× 余量；
+# 上限 600（= job 上限的一半）由 `test_ci_helper_timeouts_are_bounded.py` 的同一条口径约束。
 CANONICAL_ARGV = ("python", "-m", "pytest", TEST_DIR_REL, "-q", "--tb=short",
-                  "-p", "no:cacheprovider", "-n", "4")
+                  "-p", "no:cacheprovider", "-n", "4",
+                  "--timeout=300", "--timeout-method=thread")
 
 
 def load_ledger(path: pathlib.Path | None = None) -> dict:
