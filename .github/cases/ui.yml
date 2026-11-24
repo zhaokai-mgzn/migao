@@ -5542,11 +5542,13 @@ cases:
       - "**安全（会红）**：清单是外部输入，`download_url` 为 `javascript:` ⇒ 该端按「暂未发布」处理、不渲染 href。"
       - "**首屏（会红）**：页面是服务端组件（正文进初始 HTML）——渲染出 h1「下载生意管家终端」、三段安装说明（未知来源 / SmartScreen / 检查更新）与 SHA-256 校验方法，且不含「加载中...」骨架。"
       - "**结构（会红）**：`next.config.mjs` 有 `/terminal/:path*` → `app.migaozn.com` 的同源转发（浏览器直连会被 CORS 挡）；`src/proxy.ts` 的官网白名单含 `/download`；`CorporateNav` / `CorporateFooter` 都有 `/download` 入口；sitemap 含 `/download/`。"
+      - "**对外面口径（会红，issue #9129）**：官网对外面不摆**运营内部事实与内部路由** —— Windows 证书采购现状（`代码签名证书` / `未购买` / `证书补齐` / `自证哈希`）与内部发布清单路由（`发布清单` / `latest.json` / `/terminal/`）出现在 `src/app/(corporate)/**` 或 `src/components/corporate/**` 的**代码行** ⇒ 红（新增页面自动进面，带判别力自证）。下载页只写商家要做的动作：SmartScreen 怎么过、怎么更新、怎么用 SHA-256 核对；采购现状留在 `docs/deployment/terminal-release.md` §6。执行点 = frontend/admin-web/tests/unit/pages/corporate-visual-copy-guards.test.ts。"
     skip_reason: "[backend-contract] 纯前端契约（mock fetch，不经过 LLM 对话/工具），由 admin-web vitest 执行，不进入 agent-eval 冒烟"
-    merge_log: "2026-10-31 新增（issue #8195）：官网 `(corporate)/download` 下载页 + 客户端清单读取（`src/lib/terminal-manifest.ts` 的解析真值源）+ 类级守卫接入（服务端组件 / 元数据单一源 / 文案口吻 / proxy 白名单 / 按钮规范）。取号 UI-144（python3 scripts/next_case_id.py UI 现取 main 001-143 + 在飞 PR 面 ⇒ 返回 UI-144）。 ｜ 2026-11-09（issue #8868）：第 1 条 data_check 按**改后的对外口径**改钉 —— 清单 `notes` 不再上屏（内部标识不上官网）、SHA-256 改可展开展示、上游硬件厂商名不上屏（端名保留）；`user_inputs` / `expectations` / `title` / `traces` 一字未动，判据强度只增不减（新增「notes 一个字都不上屏」「品牌名不上屏」两条断言）。"
+    merge_log: "2026-10-31 新增（issue #8195）：官网 `(corporate)/download` 下载页 + 客户端清单读取（`src/lib/terminal-manifest.ts` 的解析真值源）+ 类级守卫接入（服务端组件 / 元数据单一源 / 文案口吻 / proxy 白名单 / 按钮规范）。取号 UI-144（python3 scripts/next_case_id.py UI 现取 main 001-143 + 在飞 PR 面 ⇒ 返回 UI-144）。 ｜ 2026-11-09（issue #8868）：第 1 条 data_check 按**改后的对外口径**改钉 —— 清单 `notes` 不再上屏（内部标识不上官网）、SHA-256 改可展开展示、上游硬件厂商名不上屏（端名保留）；`user_inputs` / `expectations` / `title` / `traces` 一字未动，判据强度只增不减（新增「notes 一个字都不上屏」「品牌名不上屏」两条断言）。 ｜ 2026-11-24（issue #9129）：新增第 6 条 data_check「对外面不摆运营内部事实与内部路由」（用户逐字「这种信息不适合放到官网」「这种也不适合放上去」）；traces 补 `corporate-visual-copy-guards.test.ts`。"
     traces:
       tests:
         - "frontend/admin-web/tests/unit/pages/corporate-download.test.tsx"
+        - "frontend/admin-web/tests/unit/pages/corporate-visual-copy-guards.test.ts"
 
   - id: UI-145
     legacy_id: ""

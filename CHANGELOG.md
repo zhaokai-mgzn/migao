@@ -25,7 +25,7 @@
 
 - **形态**：`/download` 的 SHA-256 段尾不再写「尚未购买商业代码签名证书 / 不签名 / 由安装程序自证哈希 / 证书补齐后再说明」，
   改成一句用户向的核对口径（算出的值与页面公布的一致即完整；不一致请勿安装并找我们复核）；「检查更新」卡不再露出
-  `/terminal/latest.json` / `/terminal/android/latest.json`，只写「自动获取新版本提示，按提示下载安装，不覆盖企业号与工号」；
+  `/terminal/latest.json` / `/terminal/android/latest.json`，只写「点『检查更新』出现更高版本时按提示安装，不覆盖企业号与工号」；
   Windows 安装卡不再写「安装包未购买商业代码签名证书」；页头 lead 的「以发布清单为准」改「以本页显示为准」。
   采购现状只留在内部文档 `docs/deployment/terminal-release.md` §6。
 - 判据：`corporate-visual-copy-guards.test.ts`「不摆运营内部事实与内部路由」（7 个串出现在官网对外面即红，含判别力自证）。
