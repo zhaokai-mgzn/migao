@@ -21,6 +21,16 @@
 - **登录有效期**：PC 与商家小程序共用的 `jwt.refresh-token-expiration` 由 30 天改为 **7 天**（604800 秒；access token 仍 2 小时，续期接线不变）。判据 `tests/unit_ci_workflows/test_refresh_token_lifetime.py` 同步改口径。
 - 判据：`frontend/admin-web/tests/unit/components/Logo.test.tsx`（UI-082）、`frontend/bmini-app/tests/brand-logo.test.ts`（BM-064）、`tests/unit_ci_workflows/test_positioning_copy_terms.py`（UI-082；旧称呼集合加入 `观星台`、新锚改 `生意管家`）、四页官网测试（UI-082 / OB-005 / OB-008）与 `tests/unit_ci_workflows/test_refresh_token_lifetime.py`（AU-013）。
 
+### 官网下载页恢复匿名可访问：`/download` 补进认证守卫的公开路由（2026-11-24，issue #9136）
+
+- **病（现场取证）**：无 cookie 的全新浏览器打开 `migaozn.com/download`，导航实测 `…/download → …/login`
+  （服务端 SSR 返回的是下载页，水合后被弹走）—— `src/lib/auth-redirect.ts` 的 `PUBLIC_ROUTES` 漏了 `/download`，
+  `AuthGuard` 把它当受保护页 ⇒ `/api/auth/me` 401 ⇒ 拦截器强制跳登录页。商家点「下载」看到的是登录框。
+- **形态**：`PUBLIC_ROUTES` 补 `/download`（只放宽官网公开面，受保护业务页的跳转一条不放宽）。
+- 判据：`frontend/admin-web/tests/unit/pages/corporate-public-routes.test.ts` —— 类级：从 `src/app/(corporate)/**/page.tsx`
+  现取路由表，逐条判「在 `PUBLIC_ROUTES`」与「在 proxy 的 `CORPORATE_PREFIXES`」，新增官网页面漏登记即红；
+  用例 UI-144 补公开性 data_check。
+
 ### 官网下载页只说商家要做的动作：去掉 Windows 证书采购现状与内部发布清单路由（2026-11-24，issue #9129）
 
 - **形态**：`/download` 的 SHA-256 段尾不再写「尚未购买商业代码签名证书 / 不签名 / 由安装程序自证哈希 / 证书补齐后再说明」，
