@@ -28,6 +28,7 @@ r"""生产发布与 GitHub 解耦：`prod-inspect.sh` / `prod-release.sh` 的判
 | ⑪ | **盘点三态**：全部段 `rc=0` ⇒ `READONLY-INSPECT=OK` 且退 0；某段失败 ⇒ `INCOMPLETE failed=[…]` 且退 1；某段**缺失**（回读被截断）⇒ `INCOMPLETE missing=[…]` 且退 1；CLI 缺 ⇒ 退 **3** | `::test_inspect_reports_ok` / `::test_inspect_reports_a_failed_section` / `::test_inspect_reports_a_missing_section` / `::test_inspect_is_undecidable_without_the_cli` |
 | ⑫ | **文档接线**：`docs/deployment/production-release.md` 必须写清「为什么与 GitHub 解耦」「inspect / dry-run / apply 怎么跑」「闸门与自检含义」「失败怎么读」「无感发布的现状与缺口（四条）」「资源告警走阿里云云监控」 | `::test_docs_cover_decoupling_gates_and_the_seamless_boundary` |
 | ⑬ | 两个脚本都必须 `100755` 且 `bash -n` 通过（语法坏了的闸门等于没有闸门） | `::test_scripts_are_executable_and_parse` |
+| ⑭ | **真发必须逐服务 C′ 构建**（issue #5814 之后 CI 不构建、不推 ACR）：`--apply` 的循环里必须有 `BUILD_SERVICE=${svc}` / `BUILD_SHA=${TARGET_SHA}` / `BUILT_AT=` 与 `sha-<7位>`；缺失 ⇒ 服务器走「拉镜像」⇒ 三服务全跳过 ⇒ **rc=0 假绿**（2026-11-24 07:23 生产实测） | `::test_apply_passes_build_service_so_the_host_builds_instead_of_pulling` |
 
 ## 沙箱怎么造（零网络 / 零真发布 / 零云调用 / 零 LLM）
 
@@ -826,3 +827,26 @@ def test_scripts_are_executable_and_parse():
         proc = subprocess.run(["bash", "-n", str(path)], capture_output=True, text=True)
         assert proc.returncode == 0, f"{path.name} 语法错：{proc.stderr}"
     assert LIB.is_file(), f"缺少通道实现 {LIB}"
+
+
+def test_apply_passes_build_service_so_the_host_builds_instead_of_pulling():
+    """C′（issue #5814）之后 **CI 不构建、不推 ACR** ⇒ 不带 `BUILD_SERVICE` 的 `deploy.sh` 走「拉镜像」路径：
+    ACR 里没有该 tag ⇒ 三个服务全部 `跳过该服务` ⇒ 健康检查查的是**旧容器** ⇒ 打印「deploy.sh 完成」并 **rc=0**
+    —— 一次**一个服务都没换**的「假绿」（2026-11-24 07:23 生产实测：`EFFECTIVE_TAG` 三行全是旧值）。
+
+    ⇒ `--apply` 必须**逐服务**下发 `BUILD_SERVICE=<svc>` / `BUILD_SHA=<sha>` / `BUILT_AT=<ts>`
+    （与 CI 的 `deploy-admin-api.yml` 等三条腿同口径）。
+    红证（已实跑）：删掉循环里的 `BUILD_SERVICE=${svc}` ⇒ 本条判红。
+    """
+    text = RELEASE.read_text(encoding="utf-8")
+    assert re.search(r"PROD_SERVICES=\$\{PROD_SERVICES:-(?:admin-api ai-agent admin-web)\}", text), (
+        "没有可覆盖的服务清单 `PROD_SERVICES` ⇒ 逐服务构建无从谈起"
+    )
+    loop = re.search(r"for svc in \$PROD_SERVICES; do(.*?)\n\s*done", text, re.S)
+    assert loop, "没有「逐服务」循环 —— 一次性 `deploy.sh <sha>` 正是产生假绿的那个形态"
+    segment = loop.group(1)
+    for token in ("BUILD_SERVICE=${svc}", "BUILD_SHA=${TARGET_SHA}", "BUILT_AT="):
+        assert token in segment, f"逐服务循环里缺 `{token}` ⇒ 服务器仍走「拉镜像」路径（服务被跳过 + rc=0 假绿）"
+    assert re.search(r"sha-\$\(printf '%s' \"\$TARGET_SHA\" \| cut -c1-7\)", segment), (
+        "逐服务循环里没有 `sha-<7位>` 的 tag 形态（配置 ref 与镜像 tag 必须同源）"
+    )
