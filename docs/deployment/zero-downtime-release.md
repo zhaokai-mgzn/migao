@@ -181,19 +181,24 @@ M1-f 今天就能做（不需要动 nginx）；M1-b/c 只有在 M1-a 落地后�
 > curl -sk -o /dev/null -w '%{http_code}\n' --resolve api.<站点域>:443:127.0.0.1 https://api.<站点域>/api/version
 > ```
 >
-> **真机读数（本次发布）** —— 占位；填法 = 把命令输出原样粘进「值」列：
+> **真机读数 —— 测试环境 `api.migaozn.com`，2026-11-24 02:40:46Z（10:40 +08），run 45313680373**
+> （`gh workflow run deploy-admin-api.yml --ref main -f image_tag=sha-628ae70`，强制重部署同一 commit 以走完整切换链）。
+> 填法 = 把发布日志原样粘进「值」列；**不写「已通过」**：
 >
 > | 读数 | 命令 | 值 |
 > |---|---|---|
-> | 配置挂载一致性 | 发布日志 `NGINX_CONF_MOUNT=`（`OK` / `STALE`+自愈 / `STILL_STALE`） | **待填** |
-> | 稳态 upstream 成员 | `docker exec migao-deploy-nginx-1 nginx -T`（看 `upstream migao_admin_api` 段） | **待填** |
-> | 切换中 upstream 成员（应两条：green 主 + 正式 backup） | 发布日志 `UPSTREAM_MEMBERS=migao_admin_api:2` + 同一时刻的 `nginx -T` | **待填** |
-> | `nginx -t` 结果 | `docker exec migao-deploy-nginx-1 nginx -t` | **待填**（期望 `test is successful`） |
-> | 切换期入口 5xx 计数（发布前后差值） | `docker exec migao-deploy-nginx-1 tail -n 100000 /var/log/nginx/access.log` | **待填** |
-> | drain 读数 | 发布日志里的 `DRAIN=OK（… 等待 Ns）` | **待填** |
+> | 配置挂载一致性 | 发布日志 `NGINX_CONF_MOUNT=` | `NGINX_CONF_MOUNT=OK（盘上与容器内一致）` |
+> | 稳态 upstream 成员 | 发布日志 `UPSTREAM_MEMBERS=`（切换完成后） | `UPSTREAM_MEMBERS=migao_admin_api:1` |
+> | 切换中 upstream 成员（应两条） | 发布日志 `UPSTREAM_MEMBERS=`（切换中） | `UPSTREAM_MEMBERS=migao_admin_api:2` |
+> | `nginx -t` 结果 | 发布日志（容器内 `nginx -t`） | `nginx: configuration file /etc/nginx/nginx.conf test is successful` |
+> | drain 读数 | 发布日志 `DRAIN=` | `✅ DRAIN=OK（旧 worker 已退出，在途请求已收尾；等待 1s）` |
+> | 生效版本 | 发布日志 `EFFECTIVE_TAG=` | `admin-api:sha-628ae70`（同批 `admin-web:sha-628ae70`；ai-agent 本腿未发 `sha-b702bfe`） |
+> | 环境闸门 | 发布日志 `RELEASE-LINE=` | `⏭️ RELEASE-LINE=SKIPPED reason=non-prod（MIGAO_PUBLIC_DOMAIN=migaozn.com）` |
+> | 切换期入口 5xx 计数（发布前后差值） | `docker exec migao-deploy-nginx-1 tail -n 100000 /var/log/nginx/access.log` | **待填**（测试机 access.log 需在主机内取；外网探针在发布后 3 个面均 `200/200/307`，但**不是**窗口内读数） |
 > | 回退演练耗时（成员切回旧实例） | 改回 `server <svc>:<port> …;` → `nginx -t` → `nginx -s reload` | **待填** |
 >
-> ⚠️ 本 PR **未实测**这些读数（需要测试环境 `api.migaozn.com` 的发布通道）。空着 = 未验证。
+> ⚠️ **口径**：上表是**测试环境**读数 ⇒ 它证明「形态在真机成立」（2 成员切换 / drain / nginx -t / 挂载一致）；
+> **生产读数仍未取**（第一次发布会有一次 nginx 重启做 inode 自愈，那次**不是**零停机），取数时同样只填原文。
 
 
 **改动前的现状（历史事实，详见 §1.2）**：`deploy/swas/nginx.conf` 里 `proxy_pass http://admin-api:8080` 走 compose DNS
@@ -514,6 +519,31 @@ WHERE name='max_connections';`。若算式不成立：① 降 `pool_max`（首�
 | M2-e | 单机→影子→灰度→下线 | 中（机器 + 演练时间） | 每步回退点可执行且 < 30s | 人 + 包 |
 
 ---
+
+## 6.2 已知失效模式：**main 上下文**指令写进 `conf.d`（**已修**，2026-11-24 真机踩中）
+
+`worker_shutdown_timeout` 属于 `ngx_core_module`，上下文是 **`main`**；而 `conf.d/*.conf` 被 `include` 在 `http {}` 里
+⇒ 写在 `deploy/swas/nginx.conf` 里**任何位置都非法**。实测（测试腿 run 45307260452）：
+
+```
+[emerg] "worker_shutdown_timeout" directive is not allowed here in /etc/nginx/conf.d/default.conf:162
+❌ nginx -t 不通过 ⇒ 已恢复备份、**未 reload**（入口一字未变）
+##[error]部署失败（tag=sha-a98ffc8）—— 已自动回滚到 sha-b702bfe
+```
+
+- **失败模式是可接受的**：`nginx -t` 在 reload 之前拦住 ⇒ 入口未变、站点仍服务、自动回滚；
+- **但盘上那份坏配置会让「下一次 nginx 重启」失败** ⇒ 必须当缺陷修，不能靠回滚兜；
+- **修法**：该指令只允许出现在 `-g`（compose 的 nginx `command:`），且覆盖 `command` 时必须自带 `daemon off;`；
+- **判据**：`test_zero_downtime_m1_cutover.py` 现在是「**conf.d 里出现即红**」+「compose 的 `-g` 缺失即红」（方向相反、互为反证）。
+
+## 6.3 已知失效模式：护栏**缺环境作用域**（**已修**，2026-11-24 真机踩中）
+
+发布线自检（#9086）首次上线时对**每一次**部署都要求「目标提交是 `origin/release` 的祖先」，
+而**测试环境发的是 `main` 线上的分支提交** ⇒ 测试腿被自己的闸门拒（`RELEASE-LINE=UNVERIFIED ⇒ 拒绝部署`，run 45302667932 两次）。
+
+- **类级教训**：任何「fail-closed 的护栏」都必须同时回答「**非生产怎么走通**」，否则护栏会把开发流程锁死；
+- **修法**：`MIGAO_RELEASE_LINE=auto|enforce|off`（auto 按站点域判定；非生产 = `off` 且**出声** `RELEASE-LINE=SKIPPED`）；
+- **判据**：测试域跳过 / 生产域照判 / 测试域 + `enforce` 也判 / 显式 `off` 出声（4 条，红证都实跑）。
 
 ## 6.1 已知失效模式：切换窗口内宿主重启（**接受**，不是忽略）
 
