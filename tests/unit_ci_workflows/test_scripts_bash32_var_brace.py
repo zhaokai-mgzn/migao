@@ -348,7 +348,7 @@ def test_repo_root_face_is_inside_range_and_mutation_is_detected():
 
     红证：把 `GUARD_SCOPE['roots']` 从 `["."]` 收窄成 `["scripts"]` ⇒
     「仓库根在射程内」这半条立即红（元守卫 `test_guard_scope_declaration.py` 另有独立一条钉死同一形态）。
-    变异自证：注入 `$f（` 后必须 `mutated != src`，且扫描器报出的正是第 73 行。
+    变异自证：注入 `$f（` 后必须 `mutated != src`，且扫描器报出的行号**与现取源文件一致**（行号现算，不写死）。
     """
     rel = {p.relative_to(REPO_ROOT).as_posix() for p in scanned_shell_files()}
     root_face = {p.name for p in REPO_ROOT.glob("*.sh")}
@@ -363,7 +363,11 @@ def test_repo_root_face_is_inside_range_and_mutation_is_detected():
     assert needle in src, f"定位告警分支失败（fail-closed，别静默跳过）：找不到 {needle!r}"
     mutated = src.replace(needle, 'echo "⚠️ UI token 减少: $f（')
     assert mutated != src, "变异注入未生效（自证失败 ⇒ 本判据的红证是空断言）"
-    assert find_unbraced_var_before_non_ascii(mutated) == ["第 73 行 $f（"], (
+    # 期望行号**现算**，不写死（2026-11-24：`check-ui-regression.sh` 加了 8 行注释后，
+    # 写死的 `第 73 行` 让这条判据在 4/4 片红 —— 而它判的是「扫描器能不能定位到那一行」，
+    # 与「那一行排第几」无关；写死行号等于把「文件行数」这条无关变量钉进判据）。
+    expected_line = src[: src.index(needle)].count("\n") + 1
+    assert find_unbraced_var_before_non_ascii(mutated) == [f"第 {expected_line} 行 $f（"], (
         "把告警分支改回坏形态后扫描器没抓到 ⇒ 判据 1 对「仓库根」这一面没有判别力"
     )
 

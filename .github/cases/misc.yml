@@ -10978,7 +10978,7 @@ cases:
     merge_log: "2026-11-24 新增（issue #9105 家族）。现场：`ci workflow helper unit tests（中后段）`(3/4) 在 CI 上 4 次烧满 20 分钟被 cancel，同日诊断（只读、判据式）确认**不是 runner 卡死**：job 前 6 步全 success、step 7 有 started_at 无 completed_at、三次挂死分布三台不同 runner、CI/local≈0.96 ⇒ 纯慢做不到 4.5× 中位。病灶两处：① `test_reconcile_no_silent_skip.py` 的 `yes | grep -q`（无限 producer，`subprocess.run` 无 timeout）——consumer 不早退就永久挂死；② 全包 >600s 的内部看门狗**全落在 3/4**（1800/900×4/600，其它片最大 300s）⇒ 挂住先被 job 掐死，而 cancelled job 不上传日志（#9114）⇒ 不可归因。修法：补 timeout（60/120/300）、6 处 900/1800 → 600、加类级判据（看门狗 ≤ job 上限一半 + 该文件每个 subprocess 必带 timeout），并改判 `shard_budget_ledger.json` 里原先「判为 runner 卡死」的结论。取号 = `next_case_id.py MC` ⇒ **MC-355**。"
   - id: MC-356
     legacy_id: ""
-    title: "CI 装 pytest-timeout 并给分片腿传 `--timeout=300 --timeout-method=thread`：单条用例挂住 ⇒ 具名红（不再靠 job cancel）"
+    title: "CI 装 pytest-timeout 并给分片腿传 `--timeout=300 --timeout-method=signal`：单条用例挂住 ⇒ 具名红（不再靠 job cancel）"
     domains:
       - misc
       - ci
@@ -10995,7 +10995,7 @@ cases:
       tests:
         - "tests/unit_ci_workflows/test_pytest_timeout_is_installed_and_passed.py"
         - "tests/unit_ci_workflows/test_ci_helper_leg.py"
-    merge_log: "2026-11-24 新增（issue #9144）。现场：helper 腿只装 `pytest pytest-xdist pyyaml` ⇒ 单条用例挂住时唯一兜底是 job 的 20 分钟上限，而 cancelled job 不上传日志（#9114）⇒ 3/4 片 4 次烧满却查不出是哪条（#9141 诊断）。修法：装 `pytest-timeout`、给单一来源常量 + CI 全量档 + 本地四片统一加 `--timeout=300 --timeout-method=thread`。实测（本机 3/4 片，带新参数）：**2263 passed / 13 skipped / 303.48s**，最慢单测 39.25s ⇒ 7.6× 余量，无合法慢用例被假红。取号 = `next_case_id.py MC` ⇒ **MC-356**。"
+    merge_log: "2026-11-24 新增（issue #9144）。现场：helper 腿只装 `pytest pytest-xdist pyyaml` ⇒ 单条用例挂住时唯一兜底是 job 的 20 分钟上限，而 cancelled job 不上传日志（#9114）⇒ 3/4 片 4 次烧满却查不出是哪条（#9141 诊断）。修法：装 `pytest-timeout`、给单一来源常量 + CI 全量档 + 本地四片统一加 `--timeout=300 --timeout-method=signal`。实测（本机 3/4 片，带新参数）：**2263 passed / 13 skipped / 303.48s**，最慢单测 39.25s ⇒ 7.6× 余量，无合法慢用例被假红。取号 = `next_case_id.py MC` ⇒ **MC-356**。"
   - id: MC-357
     legacy_id: ""
     title: "`UI Regression Check` 腿不许全史克隆（`fetch-depth: 0` 白花 10–14s，已超该腿 12s 预算）"
@@ -11014,3 +11014,22 @@ cases:
       tests:
         - "tests/unit_ci_workflows/test_ui_regression_leg_stays_shallow.py"
     merge_log: "2026-11-24 新增（issue #9120 成本追因）。实测构成：该腿整腿 p90 21–30s，其中 **checkout 17s**（`fetch-depth: 0` 全史克隆 401 MiB）、判据步仅 **1s**，而冻结预算只有 12s ⇒ 光是拿代码就超预算。脚本只用 `git show HEAD:<f>` / `git show origin/main:<f>` 且自己 `git fetch origin main`（L54）⇒ 默认浅克隆足够。红证实跑：把 `fetch-depth: 0` 加回 ⇒ 判据 1 FAILED；还原 ⇒ 2 passed；脚本本地 `--head` 仍绿（`✅ UI 无回退`）。取号 = `next_case_id.py MC` ⇒ **MC-357**。"
+  - id: MC-358
+    legacy_id: ""
+    title: "`check-ui-regression.sh` 的 origin/main fetch 必须 depth-aware（否则浅仓库拉全史，减负变增负）"
+    domains:
+      - misc
+      - ci
+    tier: normal
+    tags:
+      - ci
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "**判据 1·浅仓库取 tip 要 depth=1**：脚本必须按 `git rev-parse --is-shallow-repository` **分支**——浅仓库 `git fetch --depth=1 origin main`、全史仓库普通 fetch（不许无条件 depth，会把本地全史仓库变浅）。命即通过、缺即红。纯静态：`未被调用`。执行点 = `test_ui_regression_fetch_is_shallow_aware.py::test_script_fetches_the_tip_with_depth_when_shallow`"
+      - "**判据 2·job 里不许第二次全史 fetch**：`UI Regression Check` job 块（去注释后）不得出现裸的 `git fetch origin main`（脚本自己会取）。这样才不会把「checkout 减负 10–14s」被「fetch 全史 +25s」吃掉。纯静态：`未被调用`。执行点 = `::test_job_does_not_do_a_second_full_fetch`"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_ui_regression_fetch_is_shallow_aware.py"
+        - "tests/unit_ci_workflows/test_ui_regression_leg_stays_shallow.py"
+    merge_log: "2026-11-24 新增（issue #9120）。实测（CI run 45398756938，去掉 fetch-depth: 0 之后）：checkout **6s**（原 16–20s）、判据步 **26s**（原 1s，其中就是 bash 里那次不带 depth 的 `git fetch origin main` 拉了全史）、整腿 **36s**（原 21–30s ⇒ 反而更慢）。修法：脚本按仓库形态分支 depth=1，并删掉 job 里那次重复 fetch。红证：把脚本改回裸 fetch ⇒ 判据 1 FAILED。取号 = `next_case_id.py MC` ⇒ **MC-358**。"

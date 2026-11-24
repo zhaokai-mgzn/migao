@@ -51,7 +51,15 @@ get_content() {
 }
 
 # 确保有 origin/main 可对比
-git fetch origin main --quiet 2>/dev/null || true
+# ⚠️ **浅仓库必须 `--depth=1`**（2026-11-24 实测）：不带 depth 的 `git fetch origin main` 会把
+# main 的**全史**拉下来 —— 在 `fetch-depth: 0` 被去掉之后（issue #9120 的减负），
+# 这一步实测要 **26s**（判据本体只要 1s），反而把整腿从 ~21s 抬到 36s。
+# 本脚本只需要**两个 tip**（`git show HEAD:<f>` / `git show origin/main:<f>`）⇒ 浅仓库一律 depth=1。
+if [ "$(git rev-parse --is-shallow-repository 2>/dev/null)" = "true" ]; then
+  git fetch --depth=1 origin main --quiet 2>/dev/null || true
+else
+  git fetch origin main --quiet 2>/dev/null || true
+fi
 if ! git rev-parse origin/main >/dev/null 2>&1; then
   echo "⚠️ 无 origin/main 可对比，跳过"
   exit 0
