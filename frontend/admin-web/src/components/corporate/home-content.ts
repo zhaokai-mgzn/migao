@@ -5,108 +5,116 @@ import {
   Building2,
   Calculator,
   Factory,
-  Heart,
+  Headphones,
   Layers,
-  Lightbulb,
-  Lock,
   MessageSquare,
   PackageOpen,
   Ruler,
   ShieldCheck,
   ShoppingBag,
+  Sparkles,
   Truck,
+  Users,
 } from 'lucide-react'
-import { AI_ROLES } from '@/config/ai-roles'
 
-/** Hero 事实标签：每一条都能在代码或文档里找到出处，不写形容词 */
+/** Hero 能力标签：与下方分节一一对应，不写形容词 */
+export const heroChips = [
+  '智能接待',
+  '算料报价',
+  '订单生产',
+  '库存批次',
+  '计件对账',
+  '经营决策',
+]
+
 export const heroFacts = [
-  '双 AI 分工 · 各守边界',
-  '四端同源 · 数据一致',
+  '双 AI 分工',
+  '四端同源',
   '布艺行业原生',
   '企业级隔离与审计',
 ]
 
-export const agents = [
+/** 四个经营场景 = 参考站的分节结构；每节配一张产品界面示意 */
+export const featureBlocks = [
   {
-    icon: Bot,
-    name: '黄金策',
-    role: AI_ROLES.mibao,
-    brief: '面向经营侧：用自然语言查询经营数据，处理商品、订单、生产、库存与财务事项。',
-    highlights: [
-      '经营看板与每日简报：订单量、销售额、环比与待处理事项',
-      '商品与价格：资料维护、批量改价、批量库存调整（可撤销）',
-      '订单与交付：订单、物流、加工单进度与报工明细',
-      '库存与成本：批次库存、库存台账、入库单与批次成本',
-      '生产与计件：工序库、工艺路线、计件工资与报工明细',
-      '财务与客户：资金流水、收支汇总、应收对账、客户档案与售后工单',
+    id: 'customer',
+    kicker: '顾客经营 · 米宝',
+    title: '从顾客开口，到订单成交',
+    cardTitle: '接待、算料与下单，走同一链路',
+    lead: '咨询、算料、报价、下单与售后在同一链路上完成；米宝按店内真实商品与价格作答。',
+    tabs: ['智能接待', '算料报价', '下单转化'],
+    tabDetails: [
+      '按已上架商品回答颜色、门幅与加工项，不展示未上架商品。',
+      '按尺寸与工艺计算用料，报价明确标注为估算。',
+      '短信验证码校验后下单，成交单价取商品库权威价。',
     ],
-    boundary:
-      '可写：改价、商品改名、批量改价与批量库存调整、通知标记已读、定时提醒；上下架与删除不做。改价须带改前价并经确认卡确认；AI 不创建订单与商品。',
-  },
-  {
-    icon: MessageSquare,
-    name: '米宝',
-    role: AI_ROLES.xiaobu,
-    brief: '面向顾客侧：7×24 小时接待咨询，覆盖算料报价、下单、物流查询与售后受理。',
-    highlights: [
-      '商品咨询：颜色、门幅与加工项，按店内已上架商品作答',
-      '算料报价：按尺寸与工艺计算用料，输出估算报价',
-      '下单：短信验证码校验，成交单价取商品库权威价',
-      '订单与物流：订单进度、物流轨迹与收货地址',
-      '售后受理：咨询与申请，工单恒为待商家审核',
-      '知识卡片与图片识别：按已发布知识作答，支持图片解读',
+    bullets: [
+      '按已上架商品回答颜色、门幅与加工项，不展示未上架商品',
+      '按尺寸与工艺计算用料，报价明确标注为估算',
+      '短信验证码校验后下单，成交单价取商品库权威价',
+      '售后工单恒为「待商家审核」，处理进度可查',
     ],
-    boundary:
-      '不改价、不取消订单、不退款、不承诺优惠折扣，也不报库存数量；报价一律说明为估算。',
-  },
-]
-
-/** 经营价值：四件最耗人的日常，交付后用户能看到的形态（不写百分比） */
-export const valuePoints = [
-  {
-    icon: MessageSquare,
-    title: '咨询有回应',
-    description: '常规咨询由米宝即时接待；复杂诉求按规则交人工，沟通记录同步，无需重复描述。',
+    visual: 'customer' as const,
   },
   {
-    icon: Calculator,
-    title: '报价有依据',
-    description: '算料公式、工艺参数与加工费组合可配置；未定价项明确提示，成交价取商品库权威价。',
+    id: 'decision',
+    kicker: '经营决策 · 黄金策',
+    title: '问经营，不用等报表',
+    cardTitle: '看板、简报与问答，读同源数据',
+    lead: '看板、每日简报与自然语言问答读同源数据；商品、订单、生产、库存与财务都能追问到明细。',
+    tabs: ['经营看板', '每日简报', '数据问答'],
+    tabDetails: [
+      '订单量、销售额、环比与待处理事项按日汇总。',
+      '每日自动生成简报，异常事项可下钻到明细。',
+      '自然语言追问，回答带数据依据。',
+    ],
+    bullets: [
+      '订单量、销售额、环比与待处理事项按日汇总',
+      '商品与价格、订单与交付、库存与成本按主题下钻',
+      '生产与计件、资金流水与应收对账支持追问',
+      '写操作有边界：改价须带改前价并经确认卡确认',
+    ],
+    visual: 'decision' as const,
   },
   {
-    icon: Truck,
-    title: '交付有进度',
-    description: '订单生成加工单，裁剪、车位与后整逐道报工；进度、返工与报废在同一链路可查。',
+    id: 'production',
+    kicker: '生产与交付',
+    title: '订单到交付，进度在同一链路',
+    cardTitle: '加工单、报工与发货，进度可查',
+    lead: '订单生成加工单，裁剪、车位与后整逐道报工；进度、返工与发货在同一处查看。',
+    tabs: ['加工单', '工序报工', '发货'],
+    tabDetails: [
+      '订单生成加工单，工艺路线驱动裁剪、车位与后整。',
+      '工人扫码报工，合格、返工与报废按件记录。',
+      '发货单记录来源与实发数量，支持按真实尺寸补打。',
+    ],
+    bullets: [
+      '工艺路线驱动裁剪（裁床）→ 车位（缝制）→ 后整（烫工及后整）',
+      '工人扫码报工，合格、返工与报废按件记录',
+      '发货单记录来源与实发数量，支持按真实尺寸补打',
+      '订单、加工单、报工与发货共用数据，不各自建账',
+    ],
+    visual: 'production' as const,
   },
   {
-    icon: BarChart3,
-    title: '账目有明细',
-    description: '入库批次、库存台账、计件工资、收支与应收逐笔记录，差异可追溯、可复核。',
-  },
-]
-
-/** 三条产品能力线：顾客经营 / 经营决策 / 业务全链路 */
-export const capabilityLines = [
-  {
-    icon: MessageSquare,
-    title: '顾客经营',
-    subtitle: '米宝 · 顾客侧 AI',
-    description: '从规格咨询到下单、物流查询与售后受理，覆盖顾客会问到的完整链路。',
-    points: ['商品与加工项咨询', '算料与估算报价', '下单、物流与售后'],
-  },
-  {
-    icon: Bot,
-    title: '经营决策',
-    subtitle: '黄金策 · 经营侧 AI',
-    description: '用自然语言查经营数据、跟订单与生产进度，处理商品、库存与财务事项。',
-    points: ['看板与每日简报', '订单、生产与库存查询', '受控写入与确认卡'],
-  },
-  {
-    icon: Layers,
-    title: '业务全链路',
-    subtitle: '共用业务底座',
-    description: '商品、订单、生产、仓储与财务在同一数据上流转，四个终端不各自建账。',
-    points: ['商品与价格本', '订单与加工单', '批次、计件与对账'],
+    id: 'inventory',
+    kicker: '库存与对账',
+    title: '批次、库存、计件与收支，逐笔可查',
+    cardTitle: '批次、计件与对账，逐笔可查',
+    lead: '入库过账生成批次，库存变动逐笔记录；计件工资与财务对账落到人、工序与期间。',
+    tabs: ['批次库存', '计件工资', '财务对账'],
+    tabDetails: [
+      '入库过账生成批次，库存变动逐笔记录。',
+      '按人、工序、部位与套汇总计件明细。',
+      '资金流水、收支汇总与应收对账支持复核。',
+    ],
+    bullets: [
+      '入库按批次与缸号记账，成本按移动加权平均核算',
+      '库存台账记录入库、出库、盘点与余料变动',
+      '计件工资按人、工序、部位与套下钻',
+      '资金流水、收支汇总与应收对账支持复核',
+    ],
+    visual: 'inventory' as const,
   },
 ]
 
@@ -120,12 +128,12 @@ export const advantages = [
   {
     icon: Bot,
     title: '双 AI 分工',
-    description: '顾客侧与经营侧独立配置，能做什么、不能做什么逐条标注，不让 AI 越界。',
+    description: '米宝与黄金策独立配置，能做什么、不能做什么逐项标注，不让 AI 越界。',
   },
   {
     icon: PackageOpen,
     title: '数据同源',
-    description: 'AI 的回答取自后台同一经营数据，顾客听到的与经营者看到的保持一致。',
+    description: 'AI 的回答取自后台同源数据，顾客听到的与经营者看到的保持一致。',
   },
   {
     icon: ShieldCheck,
@@ -134,37 +142,8 @@ export const advantages = [
   },
 ]
 
-/** 适用企业：收窄到真实现阶段的布艺 / 窗帘经营形态 */
-export const enterpriseTypes = [
-  { icon: Ruler, name: '窗帘定制商' },
-  { icon: Factory, name: '布艺加工厂' },
-  { icon: ShoppingBag, name: '批零一体企业' },
-  { icon: Building2, name: '品牌与渠道商' },
-]
-
-/** 能力边界：首页「把 AI 能做什么、不能做什么写在明处」三条 */
-export const principles = [
-  {
-    icon: Lightbulb,
-    title: '数据之外不作答',
-    description:
-      'AI 只依据店内真实数据与已发布知识作答：不编造订单、物流与金额，不报库存数量，不展示未上架商品。',
-  },
-  {
-    icon: Lock,
-    title: '定价权归属商品库',
-    description:
-      '顾客侧成交单价取商品库权威价；经营侧改价须带出改前价并经确认卡确认。',
-  },
-  {
-    icon: Heart,
-    title: '敏感事项不由 AI 决定',
-    description: '价格、折扣、退款金额、赔偿与法律诉求，AI 只解释规则与收集材料，不作决定。',
-  },
-]
-
-/** 平台保障：四条可核实的企业级事实 */
-export const guarantees = [
+/** 六格平台保障（参考站「全面服务支持」的版式，内容只写真实能力） */
+export const supportItems = [
   {
     icon: BadgeCheck,
     title: '正规运营主体',
@@ -176,14 +155,63 @@ export const guarantees = [
     description: '数据按企业隔离，租户身份取自登录凭证，跨企业访问一律拒绝。',
   },
   {
-    icon: Layers,
+    icon: Users,
     title: '岗位权限可控',
     description: '员工菜单与操作权限逐人可配，权限树与后台菜单同源。',
+  },
+  {
+    icon: Layers,
+    title: '四端数据同源',
+    description: '管理后台、顾客小程序、商家小程序与员工端 H5 共用数据底座。',
+  },
+  {
+    icon: Headphones,
+    title: '行业模板预置',
+    description: '布艺行业通用知识模板与常用岗位开箱可用，再按企业话术补充。',
   },
   {
     icon: BarChart3,
     title: '操作全程可追溯',
     description: '关键写操作留有记录，AI 的受控写入同样进入审计链。',
+  },
+]
+
+/** 适用企业：收窄到真实现阶段的布艺 / 窗帘经营形态 */
+export const industries = [
+  {
+    icon: Ruler,
+    name: '窗帘定制商',
+    description: '规格多、询价频繁，需要统一的报价口径与可追溯的算料依据。',
+  },
+  {
+    icon: Factory,
+    name: '布艺加工厂',
+    description: '订单、工序与计件管理复杂，需要透明的生产进度与报工明细。',
+  },
+  {
+    icon: ShoppingBag,
+    name: '批零一体企业',
+    description: '销售、库存与财务需要同源，减少跨系统对账与重复录入。',
+  },
+]
+
+/** 能力边界：首页「把 AI 能做什么、不能做什么写在明处」三条 */
+export const principles = [
+  {
+    icon: Sparkles,
+    title: '数据之外不作答',
+    description:
+      'AI 只依据店内真实数据与已发布知识作答：不编造订单、物流与金额，不报库存数量，不展示未上架商品。',
+  },
+  {
+    icon: Calculator,
+    title: '定价权归属商品库',
+    description: '顾客侧成交单价取商品库权威价；经营侧改价须带出改前价并经确认卡确认。',
+  },
+  {
+    icon: ShieldCheck,
+    title: '敏感事项不由 AI 决定',
+    description: '价格、折扣、退款金额、赔偿与法律诉求，AI 只解释规则与收集材料，不作决定。',
   },
 ]
 
@@ -208,5 +236,64 @@ export const steps = [
   {
     title: '开通上线',
     description: '完成账号与基础配置，员工即可登录使用。',
+  },
+]
+
+/** 能力域图标（只用于官网排版；名称与摘要真值在 capability-map.ts） */
+export const domainIcons = {
+  'customer-service': Headphones,
+  'orders-products': ShoppingBag,
+  'production-center': Factory,
+  quality: ShieldCheck,
+  'inventory-center': PackageOpen,
+  'finance-center': Calculator,
+  'supply-chain': Truck,
+  'org-center': Users,
+} as const
+
+/** 交付与开通（产品能力页用） */
+export const deliveryItems = [
+  {
+    icon: Sparkles,
+    title: '行业模板预置',
+    description: '布艺行业通用知识模板已预置，开通后即可套用，再按企业话术补充。',
+  },
+  {
+    icon: Users,
+    title: '岗位权限预置可调',
+    description: '常用岗位开箱可用，员工菜单权限逐人可调，权限树与后台菜单同源。',
+  },
+  {
+    icon: Headphones,
+    title: '按场景确认交付',
+    description: '开通模块、数据衔接与培训方式按企业流程逐项确认；价格与合同另行沟通。',
+  },
+]
+
+/** 四端（产品能力页用） */
+export const terminals = [
+  {
+    icon: Building2,
+    title: '管理后台',
+    audience: '老板 / 运营 / 客服',
+    description: '浏览器打开即用，经营数据与业务功能集中在后台。',
+  },
+  {
+    icon: MessageSquare,
+    title: '顾客小程序',
+    audience: '终端消费者',
+    description: '在微信内咨询米宝、下单、查询物流与提交售后。',
+  },
+  {
+    icon: Headphones,
+    title: '商家小程序',
+    audience: '老板 / 员工 / 工人',
+    description: '移动端问黄金策、看数据、处理会话，并提供工人登录入口。',
+  },
+  {
+    icon: Ruler,
+    title: '员工端 H5',
+    audience: '车间工人',
+    description: '扫码即开，扫码报工、拍照入库与发货。',
   },
 ]

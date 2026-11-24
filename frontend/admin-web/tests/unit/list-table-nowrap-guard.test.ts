@@ -95,14 +95,13 @@ const TABLE_BASELINE = 17
 
 /**
  * 存量台账·规则 ②（手写药丸）：同上，冻结于 2026-10-06（issue #6398），**改前** 6 条 → **5**。
- * 2026-11-24（issue #9121）：官网首页精简删掉「经营价值」旧药丸一处 ⇒ 5 → **4**，同批删除死条目。
+ * 2026-11-24（issue #9121）：官网首页改版，旧深色 hero 药丸与「经营价值」药丸均已移除 ⇒ 4 → **2**，同批删除死条目。
  */
 const FROZEN_PILLS: string[] = [
-  'src/app/(corporate)/page.tsx::<div className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-4 py-1.5 text-xs text-neutral-200 sm:text-sm">',
   'src/app/(dashboard)/after-sales/page.tsx::className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-800 transition-colors hover:bg-amber-100"',
   'src/components/orders/EditOrderContentModal.tsx::\'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-xs cursor-pointer\',',
 ]
-const PILL_BASELINE = 3
+const PILL_BASELINE = 2
 
 const stripTags = (s: string): string =>
   s
