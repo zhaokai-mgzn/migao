@@ -1,16 +1,10 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" fill="none">
   <defs>
     <linearGradient id="fb" x1="3" y1="3" x2="45" y2="45" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#48618f"/>
-      <stop offset="1" stop-color="#2e3d5c"/>
-    </linearGradient>
-    <linearGradient id="fg" x1="16" y1="17" x2="34" y2="35" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#f6d27a"/>
-      <stop offset="1" stop-color="#d48806"/>
+      <stop offset="0" stop-color="#48618f"/><stop offset="1" stop-color="#2e3d5c"/>
     </linearGradient>
   </defs>
-  <rect x="2" y="2" width="44" height="44" rx="13.5" fill="url(#fb)"/>
-  <path d="M13.4 33.2 C13.4 25.4 16.9 19.8 24 19.8 C31.1 19.8 34.6 25.4 34.6 33.2 Z" fill="url(#fg)"/>
-  <circle cx="24" cy="17.2" r="2.3" fill="#f6d27a"/>
-  <rect x="11" y="34" width="26" height="3.2" rx="1.6" fill="#faf7f2"/>
+  <rect x="1" y="1" width="46" height="46" rx="14" fill="url(#fb)"/>
+  <circle cx="24" cy="20.5" r="8" fill="#f6d27a"/>
+  <path d="M9 34.5 H39" stroke="#f6d27a" stroke-width="4.6" stroke-linecap="round"/>
 </svg>

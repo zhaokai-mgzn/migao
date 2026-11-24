@@ -59,6 +59,11 @@ function makeCanvas() {
 }
 
 function fillRect(px, x0, y0, w, h, rgb, alpha = 1) {
+  // 坐标取整：Logo 的圆心 / 线端是小数，不取整会写到数组的非整数下标（静默不落像素）
+  x0 = Math.round(x0)
+  y0 = Math.round(y0)
+  w = Math.round(w)
+  h = Math.round(h)
   for (let y = Math.max(0, y0); y < Math.min(HEIGHT, y0 + h); y++) {
     for (let x = Math.max(0, x0); x < Math.min(WIDTH, x0 + w); x++) {
       const i = (y * WIDTH + x) * 3
@@ -168,7 +173,7 @@ function drawCjk(px, text, x, y, scale, rgb) {
   return cx
 }
 
-/** 管家铃 Logo（与站点 Logo 同构图、同色）：深靛圆角方印 + 织金铃身 + 米白底座 + 星芒。 */
+/** 「旦」字方印（与站点 Logo 同构图、同色）：深靛圆角方印 + 织金日圆 + 地平线。 */
 function drawLogo(px, x, y, size) {
   const r = size * 0.28
   const half = size / 2
@@ -185,42 +190,16 @@ function drawLogo(px, x, y, size) {
       ])
     }
   }
+  // 「旦」字方印：金圆（日/词元） + 金线（地平线/基座）
   const cx = x + size / 2
-  const baseY = y + size * 0.71
-  const bellR = size * 0.235
-  for (let j = 0; j < size; j++) {
-    for (let i = 0; i < size; i++) {
-      const dx = x + i - cx
-      const dy = y + j - baseY
-      if (dy <= 0 && dx * dx + dy * dy <= bellR * bellR) {
-        const t = (i / size) * 0.6
-        fillRect(px, x + i, y + j, 1, 1, [
-          clamp255(0xf6 + (0xd4 - 0xf6) * t),
-          clamp255(0xd2 + (0x88 - 0xd2) * t),
-          clamp255(0x7a + (0x06 - 0x7a) * t),
-        ])
-      }
+  const cy = y + size * 0.43
+  const dotR = size * 0.16
+  for (let j = -dotR; j <= dotR; j++) {
+    for (let i = -dotR; i <= dotR; i++) {
+      if (i * i + j * j <= dotR * dotR) fillRect(px, cx + i, cy + j, 1, 1, GOLD)
     }
   }
-  // 顶钮
-  const knobR = size * 0.055
-  const knobY = baseY - bellR - size * 0.035
-  for (let j = -knobR; j <= knobR; j++) {
-    for (let i = -knobR; i <= knobR; i++) {
-      if (i * i + j * j <= knobR * knobR) fillRect(px, cx + i, knobY + j, 1, 1, GOLD)
-    }
-  }
-  // 底座
-  fillRect(px, cx - size * 0.29, baseY + size * 0.015, size * 0.58, size * 0.065, WHITE)
-  // 星芒（四角菱形）
-  const sx = x + size * 0.79
-  const sy = y + size * 0.25
-  const sr = size * 0.075
-  for (let j = -sr; j <= sr; j++) {
-    for (let i = -sr; i <= sr; i++) {
-      if (Math.abs(i) + Math.abs(j) <= sr) fillRect(px, sx + i, sy + j, 1, 1, GOLD)
-    }
-  }
+  fillRect(px, x + size * 0.21, y + size * 0.7, size * 0.58, size * 0.09, GOLD)
 }
 
 const px = makeCanvas()
