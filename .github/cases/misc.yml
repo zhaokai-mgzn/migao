@@ -10956,3 +10956,23 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+  - id: MC-355
+    legacy_id: ""
+    title: "CI helper 分片挂死：无界等待（无限 producer 的 pipe）+ 内部看门狗 > job 上限 ⇒ 类级判据「看门狗 ≤ 600s」"
+    domains:
+      - misc
+      - ci
+    tier: normal
+    tags:
+      - ci
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "**判据 1·看门狗不得越过 job 上限的一半**：现取 `tests/unit_ci_workflows/**` 的 AST ⇒ 任何 `subprocess.<run|call|check_call|check_output|Popen>(timeout=<int>)` 的常量必须 `≤ 600`（`pr-check.yml` 的 `timeout-minutes: 20` 的一半）；否则具名打 `文件:N timeout=X > 600`。这一层是**纯静态**的：不执行任何被测命令，`subprocess` 侧的工具/args 一律 `未被调用`。执行点 = `test_ci_helper_timeouts_are_bounded.py::test_no_inner_watchdog_exceeds_half_of_the_ci_job_cap`"
+      - "**判据 2·无限 producer 的 pipe 必须带看门狗**：`tests/unit_ci_workflows/test_reconcile_no_silent_skip.py` 里每个 `subprocess.run(...)` 的关键字必须含 `timeout=`（该文件的 producer 是 `yes` 无限流，只在 consumer 早退时结束）；缺失即具名红 `文件:N 无 timeout`。同样纯静态：`未被调用`。执行点 = `::test_the_infinite_producer_pipe_always_has_a_timeout`"
+      - "**判据 3·上限本身有出处、且不随 job 上限漂移**：用例正文必须同时写清 `1200s` 与「一半」；且现取 `pr-check.yml` 仍含 `timeout-minutes: 20`、`600 × 2 ≤ 1200` ⇒ job 上限一改，本判据自己红（防止 600 变魔法数字）。执行点 = `::test_the_cap_is_documented_and_below_the_real_job_cap`"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_ci_helper_timeouts_are_bounded.py"
+        - "tests/unit_ci_workflows/test_reconcile_no_silent_skip.py"
+    merge_log: "2026-11-24 新增（issue #9105 家族）。现场：`ci workflow helper unit tests（中后段）`(3/4) 在 CI 上 4 次烧满 20 分钟被 cancel，同日诊断（只读、判据式）确认**不是 runner 卡死**：job 前 6 步全 success、step 7 有 started_at 无 completed_at、三次挂死分布三台不同 runner、CI/local≈0.96 ⇒ 纯慢做不到 4.5× 中位。病灶两处：① `test_reconcile_no_silent_skip.py` 的 `yes | grep -q`（无限 producer，`subprocess.run` 无 timeout）——consumer 不早退就永久挂死；② 全包 >600s 的内部看门狗**全落在 3/4**（1800/900×4/600，其它片最大 300s）⇒ 挂住先被 job 掐死，而 cancelled job 不上传日志（#9114）⇒ 不可归因。修法：补 timeout（60/120/300）、6 处 900/1800 → 600、加类级判据（看门狗 ≤ job 上限一半 + 该文件每个 subprocess 必带 timeout），并改判 `shard_budget_ledger.json` 里原先「判为 runner 卡死」的结论。取号 = `next_case_id.py MC` ⇒ **MC-355**。"

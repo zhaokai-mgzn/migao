@@ -185,7 +185,7 @@ def git(repo: Path, *args: str) -> str:
     out = subprocess.run(
         ["git", "-c", "user.email=ci@example.com", "-c", "user.name=ci",
          "-c", "commit.gpgsign=false", *args],
-        cwd=repo, capture_output=True, text=True, check=True,
+        cwd=repo, capture_output=True, text=True, check=True, timeout=GIT_CALL_TIMEOUT,
     )
     return out.stdout.strip()
 
@@ -307,7 +307,7 @@ def run_reconcile(tmp_path: Path, repo: Path, runs_by_wf: dict, *,
         env["STUB_GH_LIST_FAIL"] = "1"
     env["STUB_HEAD7"] = head7  # 供桩/断言侧引用（HEAD7 由被测脚本自己算，这里只做旁证）
     proc = subprocess.run(BASH_SHELL + [str(script)], cwd=repo, env=env,
-                          capture_output=True, text=True)
+                          capture_output=True, text=True, timeout=WORKFLOW_BODY_TIMEOUT)
     summary = summary_path.read_text(encoding="utf-8") if summary_path.exists() else ""
     dispatches = dispatch_log.read_text(encoding="utf-8").split() if dispatch_log.exists() else []
     return proc, summary, dispatches
@@ -344,6 +344,16 @@ PRE_FIX_PIPELINE = 'git log --oneline -10 --name-only origin/main | grep -qE "^b
 #     consumer 侧仍是 `grep -q` 本体；且它不碰磁盘、不依赖 git 输出量。
 #     反面（consumer 不早退）由 `test_pre_fix_sigpipe_reading_is_not_vacuous` 的 `grep -c` 夹住 ——
 #     那条**不在**本垫片下跑（用真 git），故不会被无限 producer 挂死。
+# 🔴 **无界等待是构造出来的**（issue #9105 家族 / 2026-11-24 分片挂死诊断）：本文件的 pipe 里
+# producer 是 `yes`（无限流），它**只**在 consumer 早退（`grep -q` 命中即退 ⇒ SIGPIPE）时才结束。
+# 命中一旦不成立，双方都不退 ⇒ `subprocess.run` 会**永久挂住**（CI 上表现为 3/4 片烧满 20 分钟被 cancel，
+# 日志因为 cancelled 而不上传 ⇒ 归因不出来）。所以每条 pipe 都必须带**有界**看门狗：
+# 到点没结束 ⇒ 判据红（带读数），而不是让整片挂死。
+PRE_FIX_PIPELINE_TIMEOUT = 60
+# 普通 git 调用与「workflow `run:` 正文」的看门狗：它们本身不该慢，给足余量只为**不挂死**
+# （2026-11-24：本文件的 pipe 曾因无限 producer 无界等待 ⇒ 3/4 片在 CI 上烧满 20 分钟被 cancel）。
+GIT_CALL_TIMEOUT = 120
+WORKFLOW_BODY_TIMEOUT = 300
 KEEPALIVE_INFINITE = "yes"             # 无限 producer ⇒ 「写不完」是构造性事实，不是概率
 KEEPALIVE_TAIL_LINES = 300000          # 有限尾巴（`tail="finite"`）：给「consumer 不早退」
                                        # 的两条用 —— 那里需要 producer 能自然收尾，无限流会挂住。
@@ -410,7 +420,7 @@ def make_shallow_repo(tmp_path: Path) -> Path:
 
     dst = tmp_path / "shallow"
     subprocess.run(["git", "clone", "-q", "--depth=1", f"file://{src}", str(dst)],
-                   capture_output=True, text=True, check=True)
+                   capture_output=True, text=True, check=True, timeout=GIT_CALL_TIMEOUT)
     return dst
 
 
@@ -433,8 +443,15 @@ def run_pre_fix(repo: Path, set_line: str, tmp_path: Path, *,
     github_env = tmp_path / f"github_env-{name}"
     run_env = dict(env) if env is not None else os.environ.copy()
     run_env["GITHUB_ENV"] = str(github_env)
-    proc = subprocess.run([*shell, str(script)], cwd=repo, env=run_env,
-                          capture_output=True, text=True)
+    try:
+        proc = subprocess.run([*shell, str(script)], cwd=repo, env=run_env,
+                              capture_output=True, text=True, timeout=PRE_FIX_PIPELINE_TIMEOUT)
+    except subprocess.TimeoutExpired as exc:
+        pytest.fail(
+            f"[{tag or 'default'}] 改前正文在 {PRE_FIX_PIPELINE_TIMEOUT}s 内没跑完 ⇒ pipe 挂死"
+            f"（producer 是无限流、consumer 没早退）。这不是「慢」，是不能再用挂钟判读："
+            f"stdout 前 200 字节={ (exc.stdout or b'')[:200]!r}（issue #9105 家族）"
+        )
     marker = github_env.read_text(encoding="utf-8") if github_env.exists() else ""
     return proc, marker
 
@@ -449,7 +466,8 @@ def test_pre_fix_shallow_repo_premises_hold(shallow_repo):
     repo = shallow_repo
     assert git(repo, "rev-parse", "--is-shallow-repository") == "true", "fixture 不是浅克隆 ⇒ 红证无效"
     log = subprocess.run(["git", "log", "--oneline", "-10", "--name-only", "origin/main"],
-                         cwd=repo, capture_output=True, text=True, check=True).stdout
+                         cwd=repo, capture_output=True, text=True, check=True,
+                         timeout=GIT_CALL_TIMEOUT).stdout
     assert "backend/admin-api/a.py" in log, "fixture 前提不成立：窗口里没有代码路径文件"
 
 
@@ -486,10 +504,17 @@ def test_pre_fix_pipeline_dies_with_sigpipe_under_pipefail(shallow_repo, tmp_pat
     producer 必然还有数据要写），**不是**「夹具历史恰好很大」—— 后者是环境常量：本机 30/30 = 141，
     CI run `37101030830` 两次都是 0（issue #6202）。
     """
-    pipe = subprocess.run(
-        BASH_SHELL + ["-c", PRE_FIX_PIPELINE],
-        cwd=shallow_repo, env=keepalive_git_env(tmp_path), capture_output=True, text=True,
-    )
+    try:
+        pipe = subprocess.run(
+            BASH_SHELL + ["-c", PRE_FIX_PIPELINE],
+            cwd=shallow_repo, env=keepalive_git_env(tmp_path), capture_output=True, text=True,
+            timeout=PRE_FIX_PIPELINE_TIMEOUT,
+        )
+    except subprocess.TimeoutExpired:
+        pytest.fail(
+            f"pipeline 在 {PRE_FIX_PIPELINE_TIMEOUT}s 内没结束 ⇒ consumer 没有早退"
+            f"（无限的 producer 一直在写）⇒ 141 这个读数**取不到**，判据不能挂死（issue #9105 家族）"
+        )
     assert pipe.returncode == 141, (
         f"期望 SIGPIPE(141)，实得 {pipe.returncode} —— 前提已构造化仍非 141 ⇒ 被测机制变了"
     )
@@ -504,12 +529,14 @@ def test_pre_fix_sigpipe_reading_is_not_vacuous(shallow_repo, tmp_path):
     """
     env = keepalive_git_env(tmp_path, tail="finite")
     no_pf = subprocess.run(["bash", "--noprofile", "--norc", "-e", "-c", PRE_FIX_PIPELINE],
-                           cwd=shallow_repo, env=env, capture_output=True, text=True)
+                           cwd=shallow_repo, env=env, capture_output=True, text=True,
+                           timeout=PRE_FIX_PIPELINE_TIMEOUT)
     assert no_pf.returncode != 141, "去掉 pipefail 仍得 141 ⇒ 该断言与 pipefail 无关（假红证）"
     assert no_pf.returncode == 0, f"去掉 pipefail 后状态应由 `grep` 决定(=0)，实得 {no_pf.returncode}"
     counted = subprocess.run(
         BASH_SHELL + ["-c", 'git log --oneline -10 --name-only origin/main | grep -cE "^backend/"'],
         cwd=shallow_repo, env=env, capture_output=True, text=True,
+        timeout=PRE_FIX_PIPELINE_TIMEOUT,
     )
     assert counted.returncode != 141, (
         f"consumer 不早退（`grep -c` 读到 EOF）时 producer 不该丢 SIGPIPE → {counted.returncode}"

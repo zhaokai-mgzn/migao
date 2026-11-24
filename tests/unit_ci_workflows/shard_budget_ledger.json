@@ -569,7 +569,7 @@
     "attempt": 1,
     "status": "cancelled",
     "seconds": 1519,
-    "why": "跑满 20 分钟被 cancel；**但这不是权重、也不是判据挂起**：同一片在同一 commit 上第 2 次尝试（新 runner）= **322s success**，本机 CI 等价 env 也是 **277.65s / 2263 passed / rc=0**⇒ 判为 **runner 卡死（infra）**。注意被 cancel 的 job 日志拿不到（`BlobNotFound`）⇒ 无法自证卡在哪一步，这也是 issue #9114 的实例。"
+    "why": "跑满 20 分钟被 cancel；**但这不是权重、也不是判据挂起**：同一片在同一 commit 上第 2 次尝试（新 runner）= **322s success**，本机 CI 等价 env 也是 **277.65s / 2263 passed / rc=0**⇒ **2026-11-24 诊断改判：不是 runner 卡死，是该片内部的「无界等待」**（job 前 6 步全 success、step 7 有 started_at 无 completed_at；三次挂死分布在三台不同 runner；CI/local ≈ 0.96 ⇒ 撞 1200s 需 4.5× 中位，纯慢做不到）。病灶：全包 **>600s 的内部看门狗全落在 3/4**（1800/900×4/600，其它片最大 300s）⇒ 挂住时不会自己判红，而是烧满 20 分钟被 cancel，而 **cancelled job 不上传日志**（issue #9114）⇒ 归因不出来。已由 MC-355 收口：无限 producer 的 pipe 补 `timeout=`、内部看门狗一律 ≤600s、并加类级判据 `test_ci_helper_timeouts_are_bounded.py`。"
    },
    "4/4": {
     "check_name": "ci workflow helper unit tests（后半）",
