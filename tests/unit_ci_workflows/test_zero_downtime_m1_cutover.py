@@ -1231,3 +1231,23 @@ def test_worker_shutdown_timeout_lives_in_the_main_context_g_flag():
     assert m and int(m.group(1)) >= SSE_MAX_SECONDS, (
         f"`worker_shutdown_timeout` 必须 ≥ SSE 最长流 {SSE_MAX_SECONDS}s（切换期不许切断长流）"
     )
+
+
+def test_sse_probe_is_reachable_through_nginx_on_the_user_path():
+    """SSE 长流探针必须能**穿过 nginx**（用户路径）—— 直连容器端口测不到 upstream 摘挂。
+
+    2026-11-24 实测：直连 `http://ai-agent:8000` 的探针在容器替换瞬间报 5 次连接失败，
+    而同一窗口外网盲测 `failures=0` ⇒ 直连探针会把「没人受影响」误判成「断了」。
+    判据：`/internal/stream-probe` 只对 `127.0.0.1`/`::1` 开放、其余 `deny all`，且 `proxy_pass` 指向
+    **upstream 名**（不是 `ai-agent:8000` 直连），并关掉缓冲（否则 ping 会被攒着不发）。
+    """
+    text = read_nginx()
+    m = re.search(r"location = /internal/stream-probe \{(.*?)\n    \}", text, re.S)
+    assert m, "nginx.conf 里没有 `location = /internal/stream-probe`（探针只能直连容器，测不到用户路径）"
+    body = m.group(1)
+    assert "allow 127.0.0.1;" in body, "探针入口没有限定来源（公网可打 = 白送一个长连接口）"
+    assert "deny all;" in body, "探针入口缺 `deny all` ⇒ 没限住非本机来源"
+    assert re.search(r"proxy_pass\s+http://migao_\w+;", body), (
+        "探针入口必须 proxy_pass 到 **upstream 名**（直连服务名就绕过了摘挂机制，测不到用户路径）"
+    )
+    assert "proxy_buffering off;" in body, "探针入口没关缓冲 ⇒ ping 会被 nginx 攒着，读数会假"
