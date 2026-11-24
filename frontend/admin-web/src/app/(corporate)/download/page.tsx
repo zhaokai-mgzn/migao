@@ -19,7 +19,7 @@ export const metadata: Metadata = {
 const INSTALL_NOTES = [
   {
     title: 'Windows：首次运行的系统提示',
-    body: '安装包未购买商业代码签名证书，Windows 10 / 11 首次运行可能弹出 SmartScreen 提示「Windows 已保护您的电脑」。选择「更多信息」后点「仍要运行」即可完成安装；安装包是否被篡改，请对照本页公布的 SHA-256 校验值。',
+    body: 'Windows 10 / 11 首次运行时，系统可能弹出 SmartScreen 提示「Windows 已保护您的电脑」。依次点「更多信息」→「仍要运行」即可继续安装；如需确认安装包未被替换，可对照本页公布的 SHA-256 校验值。',
   },
   {
     title: 'Android：允许安装未知来源应用',
@@ -27,7 +27,7 @@ const INSTALL_NOTES = [
   },
   {
     title: '检查更新',
-    body: '终端内「检查更新」读取的是发布清单（Windows 读 /terminal/latest.json，Android 读 /terminal/android/latest.json）；清单出现更高版本时按提示下载安装，不覆盖已配置的企业号与工号。',
+    body: '终端内「检查更新」会自动获取新版本提示，按提示下载安装即可；更新不会覆盖已配置的企业号与工号。',
   },
 ]
 
@@ -43,7 +43,7 @@ export default function DownloadPage() {
       <PageHero
         kicker="下载中心"
         title="下载生意管家终端"
-        lead="车间一体机（Windows）与工人手持机（Android）的正式安装包在此下载。版本号、发布时间与校验值以发布清单为准；尚未发布的终端会明确标注，不以占位版本充数。"
+        lead="车间一体机（Windows）与工人手持机（Android）的正式安装包在此下载。版本号、发布时间与校验值以本页显示为准；尚未发布的终端会明确标注，不以占位版本充数。"
         chips={['Windows 10 / 11 一体机', 'Android 手持机', '官网直发 · 不上架应用市场']}
       />
 
@@ -89,8 +89,7 @@ export default function DownloadPage() {
             ))}
           </div>
           <p className="mt-8 text-sm leading-relaxed text-neutral-500">
-            Windows 版尚未购买商业代码签名证书，这是当前口径：不签名、公布 SHA-256、由安装程序自证哈希。
-            证书补齐后会在这里同步说明。
+            算出的值与页面公布的一致，说明安装包完整、未被替换；不一致请勿安装，并把安装包文件名与校验值发给我们复核。
           </p>
         </div>
       </section>

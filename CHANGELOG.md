@@ -14,6 +14,15 @@
 - **登录有效期**：PC 与商家小程序共用的 `jwt.refresh-token-expiration` 由 30 天改为 **7 天**（604800 秒；access token 仍 2 小时，续期接线不变）。判据 `tests/unit_ci_workflows/test_refresh_token_lifetime.py` 同步改口径。
 - 判据：`frontend/admin-web/tests/unit/components/Logo.test.tsx`（UI-082）、`frontend/bmini-app/tests/brand-logo.test.ts`（BM-064）、`tests/unit_ci_workflows/test_positioning_copy_terms.py`（UI-082；旧称呼集合加入 `观星台`、新锚改 `生意管家`）、四页官网测试（UI-082 / OB-005 / OB-008）与 `tests/unit_ci_workflows/test_refresh_token_lifetime.py`（AU-013）。
 
+### 官网下载页只说商家要做的动作：去掉 Windows 证书采购现状与内部发布清单路由（2026-11-24，issue #9129）
+
+- **形态**：`/download` 的 SHA-256 段尾不再写「尚未购买商业代码签名证书 / 不签名 / 由安装程序自证哈希 / 证书补齐后再说明」，
+  改成一句用户向的核对口径（算出的值与页面公布的一致即完整；不一致请勿安装并找我们复核）；「检查更新」卡不再露出
+  `/terminal/latest.json` / `/terminal/android/latest.json`，只写「自动获取新版本提示，按提示下载安装，不覆盖企业号与工号」；
+  Windows 安装卡不再写「安装包未购买商业代码签名证书」；页头 lead 的「以发布清单为准」改「以本页显示为准」。
+  采购现状只留在内部文档 `docs/deployment/terminal-release.md` §6。
+- 判据：`corporate-visual-copy-guards.test.ts`「不摆运营内部事实与内部路由」（7 个串出现在官网对外面即红，含判别力自证）。
+
 ### 发布切换改为 nginx upstream 摘挂（正式容器在流量移走后才重建）＋ admin-api / ai-agent 优雅退出 ＋ 只读长流探针（2026-11-24，issue #9098）
 
 - **形态**：生产/测试的发布从「`docker compose up -d` 重建容器 → 换 IP → 再 `nginx -s reload`」改成
