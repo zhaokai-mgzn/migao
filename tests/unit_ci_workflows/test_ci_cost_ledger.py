@@ -39,6 +39,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import math
+import sys
 from pathlib import Path
 
 import yaml
@@ -347,3 +348,78 @@ def test_skeleton_lists_every_rendered_check_name() -> None:
     assert not [lid for lid, leg in skeleton.items() if not str(leg.get("check_name") or "").strip()], (
         "骨架里有检查名为空的腿 ⇒ 采样与 required 口径都会对不上"
     )
+
+
+# ────────────────────────────────────────────── 判据 6：`--allow-partial`（issue #9120）
+
+class TestAllowPartialWritesOnlyCompliantLegs:
+    """一条超预算就**整仓拒写** ⇒ 任何新腿都无法合法登记（issue #9120 的病根在工具，不在那 9 条腿）。
+
+    `--allow-partial` 的口径：**合规腿照常刷新**；超预算的腿在台账里**原封不动**（预算 / 实测 / basis
+    一个字段都不动）；**退出码仍是 1**（红不许消失）。默认（不带该开关）行为不变：拒绝写盘。
+    """
+
+    def _run(self, monkeypatch, tmp_path, argv: list[str], legs_skeleton: dict, samples: dict):
+        mod = _script()
+        ledger_file = tmp_path / "ledger.json"
+        previous = {
+            "alpha": {"id": "alpha", "workflow": "pr-check.yml", "check_name": "alpha",
+                      "budget_seconds": 10, "measured": {"p90_seconds": 10.0, "n": 8},
+                      "budget_basis": "frozen-before", "required": True,
+                      "hard_kill_seconds": 1200, "status": "measured"},
+            "beta": {"id": "beta", "workflow": "pr-check.yml", "check_name": "beta",
+                     "budget_seconds": 10, "measured": {"p90_seconds": 10.0, "n": 8},
+                     "budget_basis": "frozen-before", "required": True,
+                     "hard_kill_seconds": 1200, "status": "measured"},
+        }
+        ledger_file.write_text(json.dumps({"legs": list(previous.values())}, ensure_ascii=False), encoding="utf-8")
+        monkeypatch.setattr(mod, "LEDGER_PATH", ledger_file)
+        # 脚本收尾要 `LEDGER_PATH.relative_to(REPO)` 打路径 ⇒ REPO 也指到 tmp（否则 ValueError）
+        monkeypatch.setattr(mod, "REPO", tmp_path)
+        monkeypatch.setattr(mod, "_required_names", lambda: {"alpha", "beta"})
+        monkeypatch.setattr(mod, "_legs_skeleton", lambda: legs_skeleton)
+        monkeypatch.setattr(mod, "_previous_legs", lambda: previous)
+        monkeypatch.setattr(mod, "_sample_legs", lambda n: (samples, {}))
+        monkeypatch.setattr(sys, "argv", ["ci_cost_ledger.py", "--measure", *argv])
+        rc = mod.main()
+        return rc, json.loads(ledger_file.read_text(encoding="utf-8"))
+
+    def _skeleton(self):
+        return {
+            "alpha": {"workflow": "pr-check.yml", "check_name": "alpha", "required": True, "hard_kill_seconds": 1200},
+            "beta": {"workflow": "pr-check.yml", "check_name": "beta", "required": True, "hard_kill_seconds": 1200},
+        }
+
+    def test_partial_keeps_breaching_leg_frozen_and_exits_nonzero(self, monkeypatch, tmp_path):
+        # alpha 变快（合规：p90 6s ≤ 预算 10s）；beta 变慢（超预算：p90 40s > 10s）
+        samples = {
+            ("pr-check.yml", "alpha"): [6.0, 6.0, 6.0, 6.0],
+            ("pr-check.yml", "beta"): [40.0, 40.0, 40.0, 40.0],
+        }
+        rc, ledger = self._run(monkeypatch, tmp_path, ["--allow-partial"], self._skeleton(), samples)
+        assert rc == 1, "有腿仍超预算 ⇒ 必须非零退出（红不许因为「写了盘」而消失）"
+        by_id = {leg["id"]: leg for leg in ledger["legs"]}
+        assert by_id["beta"]["budget_seconds"] == 10, "超预算腿的预算被悄悄抬了 —— 这正是 fail-closed 要防的"
+        assert by_id["beta"]["budget_basis"] == "frozen-before", "超预算腿的 basis 被改写了"
+        assert by_id["beta"]["measured"]["p90_seconds"] == 10.0, "超预算腿的实测被覆盖了（应原封不动）"
+        assert by_id["alpha"]["budget_seconds"] == 6, "合规腿应被刷新为现取 p90（6s）"
+
+    def test_default_still_refuses_to_write_anything(self, monkeypatch, tmp_path):
+        samples = {
+            ("pr-check.yml", "alpha"): [6.0, 6.0, 6.0, 6.0],
+            ("pr-check.yml", "beta"): [40.0, 40.0, 40.0, 40.0],
+        }
+        rc, ledger = self._run(monkeypatch, tmp_path, [], self._skeleton(), samples)
+        assert rc == 1
+        by_id = {leg["id"]: leg for leg in ledger["legs"]}
+        assert by_id["alpha"]["budget_seconds"] == 10, "不带 --allow-partial 时必须**一个都不写**（行为不变）"
+
+    def test_accept_raise_still_refreezes_everything(self, monkeypatch, tmp_path):
+        samples = {
+            ("pr-check.yml", "alpha"): [6.0, 6.0, 6.0, 6.0],
+            ("pr-check.yml", "beta"): [40.0, 40.0, 40.0, 40.0],
+        }
+        rc, ledger = self._run(monkeypatch, tmp_path, ["--accept-raise"], self._skeleton(), samples)
+        assert rc == 0, "显式 --accept-raise 是合法出口 ⇒ 应成功"
+        by_id = {leg["id"]: leg for leg in ledger["legs"]}
+        assert by_id["beta"]["budget_seconds"] == 40, "--accept-raise 应把预算重冻结为现取 p90"
