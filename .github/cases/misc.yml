@@ -10976,3 +10976,23 @@ cases:
         - "tests/unit_ci_workflows/test_ci_helper_timeouts_are_bounded.py"
         - "tests/unit_ci_workflows/test_reconcile_no_silent_skip.py"
     merge_log: "2026-11-24 新增（issue #9105 家族）。现场：`ci workflow helper unit tests（中后段）`(3/4) 在 CI 上 4 次烧满 20 分钟被 cancel，同日诊断（只读、判据式）确认**不是 runner 卡死**：job 前 6 步全 success、step 7 有 started_at 无 completed_at、三次挂死分布三台不同 runner、CI/local≈0.96 ⇒ 纯慢做不到 4.5× 中位。病灶两处：① `test_reconcile_no_silent_skip.py` 的 `yes | grep -q`（无限 producer，`subprocess.run` 无 timeout）——consumer 不早退就永久挂死；② 全包 >600s 的内部看门狗**全落在 3/4**（1800/900×4/600，其它片最大 300s）⇒ 挂住先被 job 掐死，而 cancelled job 不上传日志（#9114）⇒ 不可归因。修法：补 timeout（60/120/300）、6 处 900/1800 → 600、加类级判据（看门狗 ≤ job 上限一半 + 该文件每个 subprocess 必带 timeout），并改判 `shard_budget_ledger.json` 里原先「判为 runner 卡死」的结论。取号 = `next_case_id.py MC` ⇒ **MC-355**。"
+  - id: MC-356
+    legacy_id: ""
+    title: "CI 装 pytest-timeout 并给分片腿传 `--timeout=300 --timeout-method=thread`：单条用例挂住 ⇒ 具名红（不再靠 job cancel）"
+    domains:
+      - misc
+      - ci
+    tier: normal
+    tags:
+      - ci
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "**判据 1·CI 必须装插件**：现取 `pr-check.yml` 所有 `pip install` 行，以 `pytest-xdist` 为锚定位分片腿的安装行，必须含 `pytest-timeout`；缺失即红并打出实际安装行。理由：没有插件时单条用例挂住只能靠 job 的 `timeout-minutes: 20`，而 cancelled job **不上传日志**（#9114）⇒ 归因不出来（#9141 的 3/4 片曾 4 次如此）。这一层是纯静态的：`subprocess` 侧一律 `未被调用`。执行点 = `test_pytest_timeout_is_installed_and_passed.py::test_ci_installs_pytest_timeout`"
+      - "**判据 2·三个入口逐一同源**：`scripts/ci_helper_scope.py::CANONICAL_ARGV`（单一来源）+ CI 分片腿命令行（`-n 4` 全量档）+ `verify-all.sh` 的**四片**命令行，都必须带 `--timeout=<N>` 与 `--timeout-method=thread`，且 N 一致；任一处漏/不一致即具名红（续行 `\\` 先合并再判，避免「看见半条命令」的假红）。纯静态：`未被调用`。执行点 = `::test_every_pytest_entrypoint_passes_the_timeout_flag`"
+      - "**判据 3·N 的上下界**：`120 ≤ N ≤ 600`。下界理由：合法最慢用例（真库族起 `initdb`）实测 < 60s、CI/local ≈ 1 ⇒ 120 以下会假红；上界理由与 MC-355 同一口径（= job 上限的一半，否则挂住先被 job 掐死）。执行点 = `::test_the_timeout_is_not_a_magic_number` + `::test_every_pytest_entrypoint_passes_the_timeout_flag` 的范围断言"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_pytest_timeout_is_installed_and_passed.py"
+        - "tests/unit_ci_workflows/test_ci_helper_leg.py"
+    merge_log: "2026-11-24 新增（issue #9144）。现场：helper 腿只装 `pytest pytest-xdist pyyaml` ⇒ 单条用例挂住时唯一兜底是 job 的 20 分钟上限，而 cancelled job 不上传日志（#9114）⇒ 3/4 片 4 次烧满却查不出是哪条（#9141 诊断）。修法：装 `pytest-timeout`、给单一来源常量 + CI 全量档 + 本地四片统一加 `--timeout=300 --timeout-method=thread`。实测（本机 3/4 片，带新参数）：**2263 passed / 13 skipped / 303.48s**，最慢单测 39.25s ⇒ 7.6× 余量，无合法慢用例被假红。取号 = `next_case_id.py MC` ⇒ **MC-356**。"

@@ -416,7 +416,9 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.AUTOMERGE_PAT || secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
-          pip install -q pytest pytest-xdist pyyaml
+          # `pytest-timeout`（issue #9144）：没有插件时单条用例挂住只能靠 job cancel，
+          # 而 cancelled job **不上传日志**（#9114）⇒ 3/4 片曾 4 次烧满 20 分钟却查不出是哪条。
+          pip install -q pytest pytest-xdist pyyaml pytest-timeout
           # ── 并行度 `-n 4`（issue #5814，2026-09-30）────────────────────────────────
           # 病灶（实测，不是估算）：本 job 是 PR 反馈时长的**唯一关键路径** —— run
           # `36689037058` 本 job **997s**，其中 `Run ci workflow helper tests` 一步 **989s**，
@@ -443,7 +445,7 @@ jobs:
             echo "⏭️ 未命中研发面 ⇒ 只跑 always-run 判据；**dev-only 判据未跑**：$(python3 scripts/ci_helper_scope.py --count) 条（这不是「通过」）"
             python3 scripts/ci_helper_scope.py --run-narrow
           else
-            python -m pytest tests/unit_ci_workflows -q --tb=short -p no:cacheprovider -n 4
+            python -m pytest tests/unit_ci_workflows -q --tb=short -p no:cacheprovider -n 4 --timeout=300 --timeout-method=thread
           fi
 
       # ── `[deploy-leg]` 清零声明的**类级元守卫**（issue #7075）──────────────────────
