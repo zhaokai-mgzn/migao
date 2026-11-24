@@ -1000,6 +1000,18 @@ else
 fi
 # <<< deploy-selfsync
 
+# ── 1.2.1b 单文件 bind mount 清单（issue #9098 / #9101；**机器校验**，新增未登记即红）──
+# 下面这些宿主文件是 compose 的**单文件** bind mount：docker 按 **inode** 挂载 ⇒ 更新只能用
+# **原地写**（`cat > file` / `open(path,"w")`）；`mv` / `rename` / `os.replace` 一律禁用 ——
+# 换了 inode 之后容器里看到的还是**旧文件**，而宿主侧的 `grep` / sha256 断言看的是新文件 ⇒ **假绿**。
+# 判据：tests/unit_ci_workflows/test_zero_downtime_m1_cutover.py::
+#       test_every_single_file_bind_mount_is_written_in_place（取 compose 的 volumes 与本清单比对）
+# >>> single-file-mounts-inventory
+#   ./nginx/nginx.conf  → /etc/nginx/conf.d/default.conf:ro
+#       （站点域名 server_name / 全部 location / upstream 成员；发布期由 nginx_upstream_switch 原地改写）
+# <<< single-file-mounts-inventory
+# 目录挂载（`./certbot-www` / `./h5`）不受影响：目录内文件是新建/覆盖，容器每次读路径；
+# 但**新增单文件挂载必须登记到上面那份清单**，否则判据会红（这就是把「假绿」堵在入口）。
 # ── 1.2.2 站点域名渲染（生产 cytda.com；缺省 migaozn.com ⇒ 与改前逐字相同）──────────────
 # 输入永远是 `nginx.conf.canonical`（仓库原文），所以「域名变更」和「配置复用」都不会把
 # 上一轮渲染过的产物再渲染一遍（那是幂等的，但更重要的是它不会让 A→B 改名悄悄失效）。

@@ -162,8 +162,15 @@ M1-f 今天就能做（不需要动 nginx）；M1-b/c 只有在 M1-a 落地后�
 >    渲染与成员改写一律原地写；1.2.2b 核对「盘上 sha == 容器内 sha」（不一致 ⇒ 出声
 >    `NGINX_CONF_MOUNT=STALE` + 重启一次 nginx 重新挂载，一次性自愈）；切换函数写完后同样核对，
 >    不一致 ⇒ **不 reload**、恢复备份、回落重建路径（`return 3`）。
->    判据：`tests/unit_ci_workflows/test_zero_downtime_m1_cutover.py::test_config_is_written_in_place_so_the_bind_mount_sees_it`
->    （静态 + **真跑改写器断言 inode 不变**）+ 两条注入式红证（`mv` / `os.replace`）。
+>    判据：`test_config_is_written_in_place_so_the_bind_mount_sees_it`（静态 + **真跑改写器断言 inode 不变**）、
+>    **类级** `test_every_single_file_bind_mount_is_written_in_place`（从 compose 的 `volumes` **现取**单文件挂载集合，
+>    与 deploy.sh 的挂载清单比对：新增单文件挂载不登记即红；命令行走 `mv` / `os.replace` 即红并点名行号），
+>    外加注入式红证（删清单登记 / 用 `mv` 落地 / 改写器加 `os.replace`）。
+>
+> ⚠️ **自愈那一次是用户可见的中断，所以「第一次发布」不是零停机**：`docker compose restart nginx` 只重启
+> **nginx 这一个容器**（业务容器一律不动，in-flight 请求会被断开，实测数百 ms 级）——只在「改前用 `mv` 渲染过」
+> 的机器上发生**一次**，之后原地写不再触发。⇒ 合并后第一次生产发布按「有一次 nginx 重启」预期，
+> **从第二次起的发布才具备零停机形态**。别把第一次当成结论。
 >
 > **怎么验证**（真机 = nginx 跑在**容器** `migao-deploy-nginx-1` 里；宿主**没有** nginx 二进制、没有 `/etc/nginx`）：
 > ```bash

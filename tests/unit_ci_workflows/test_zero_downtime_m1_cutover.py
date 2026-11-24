@@ -601,6 +601,86 @@ def judge_config_mount_inode(text: str) -> list[str]:
     return bad
 
 
+
+MOUNT_INVENTORY_BEGIN = "# >>> single-file-mounts-inventory"
+MOUNT_INVENTORY_END = "# <<< single-file-mounts-inventory"
+
+
+def single_file_mounts() -> dict[str, str]:
+    """compose 里的**单文件** bind mount：归一化宿主路径 → 容器内路径。
+
+    目录挂载（`./certbot-www` / `./h5`）不受 inode 语义影响（容器每次按路径读），这里只取单文件。
+    """
+    out: dict[str, str] = {}
+    for compose in (COMPOSE, COMPOSE_BG):
+        data = yaml.safe_load(read(compose)) or {}
+        for _svc, conf in (data.get("services") or {}).items():
+            for vol in (conf or {}).get("volumes") or []:
+                if not isinstance(vol, str):
+                    continue
+                parts = vol.split(":")
+                host = parts[0].strip()
+                if len(parts) < 2 or not host.startswith("."):
+                    continue
+                if host.endswith("/") or "*" in host or "?" in host:
+                    continue  # 目录挂载 / 通配
+                # 不带扩展名的挂载点 = **目录**（`./h5` → `/opt/migao-deploy/h5`、`./certbot-www`；
+                # 服务器上它们是目录，仓库里没有）。带扩展名的（`nginx.conf`）= 单文件 ⇒ 按 inode 挂载。
+                base_host = host.rsplit("/", 1)[-1]
+                base_ctr = parts[1].rstrip("/").rsplit("/", 1)[-1]
+                if "." not in base_host and "." not in base_ctr:
+                    continue
+                out[host.lstrip("./")] = parts[1]
+    return out
+
+
+def judge_single_file_mounts(deploy_text: str) -> list[str]:
+    """判据 9（**类级**）：凡是 compose 的单文件 bind mount，deploy.sh 只能**原地写**。
+
+    这条不是「只保 nginx.conf」：`mv`/`rename`/`os.replace` 落到任何单文件挂载上都是同一个病
+    （容器停在旧 inode ⇒ reload 加载旧配置 ⇒ 宿主断言假绿）。所以判据从 **compose 的 volumes 现取**
+    挂载集合、再要求 deploy.sh 的清单登记它，最后扫 deploy.sh 的**命令**行。
+    """
+    bad: list[str] = []
+    mounts = single_file_mounts()
+    if not mounts:
+        bad.append("compose 里一个单文件 bind mount 都没解析出来（判据退化成空转，先修解析）")
+        return bad
+    begin = deploy_text.find(MOUNT_INVENTORY_BEGIN)
+    finish = deploy_text.find(MOUNT_INVENTORY_END)
+    if begin < 0 or finish < begin:
+        bad.append(
+            f"deploy.sh 里找不到单文件挂载清单标记 `{MOUNT_INVENTORY_BEGIN}` / `{MOUNT_INVENTORY_END}`"
+            "（新增单文件挂载必须登记，否则「只能原地写」这条约束会被人忘掉）"
+        )
+        inventory = ""
+    else:
+        inventory = deploy_text[begin:finish]
+    for host in sorted(mounts):
+        if f"./{host}" not in inventory:
+            bad.append(
+                f"compose 的单文件挂载 `./{host}` 没有登记到 deploy.sh 的挂载清单"
+                f"（`{MOUNT_INVENTORY_BEGIN}` 段）⇒ 新增挂载必须先回答「怎么原地写」"
+            )
+    for lineno, line in _code_lines(deploy_text, 1):
+        if not re.search(r"(?:^|[;&|({]|\bthen\b|\belse\b|\bdo\b)\s*mv\s", line):
+            continue
+        for host in mounts:
+            target = f"./{host}"
+            if target in line or "NGINX_CONF_FILE" in line:
+                bad.append(
+                    f"deploy.sh 第 {lineno} 行用 `mv` 更新单文件挂载（{target}）"
+                    " ⇒ 换 inode ⇒ 容器里还是旧文件（宿主的 grep/sha 断言会假绿）。必须原地写。"
+                )
+    for lineno, line in _code_lines(deploy_text, 1):
+        if re.search(r"os\.(replace|rename)\s*\(", line):
+            bad.append(
+                f"deploy.sh 第 {lineno} 行用了 `os.replace`/`os.rename`（改名 = 换 inode）"
+                " ⇒ 单文件挂载的容器看不到新内容。必须原地写。"
+            )
+    return bad
+
+
 def judge_doc(text: str) -> list[str]:
     """判据 6：M1-a / M1-b 必须写「已实施 + 怎么验证 + 真实读数占位（未填即标未实测）」。"""
     bad: list[str] = []
@@ -1038,6 +1118,40 @@ def test_injection_probe_unregistered_goes_red():
     )
     bad = judge_stream_probe(read(AI_AGENT_MAIN), mutated)
     assert any("登记" in b for b in bad), f"探针未登记却判绿。实得：{bad}"
+
+def test_every_single_file_bind_mount_is_written_in_place():
+    """判据 9（类级）：compose 的每个单文件挂载都只能原地写（不只 nginx.conf）。"""
+    mounts = single_file_mounts()
+    assert "nginx/nginx.conf" in mounts, f"compose 的单文件挂载解析不对：{mounts}"
+    bad = judge_single_file_mounts(read(DEPLOY))
+    assert not bad, "单文件挂载的写入方式不安全（容器会停在旧 inode）：\n" + "\n".join(f"  - {b}" for b in bad)
+
+
+def test_injection_mount_inventory_dropped_goes_red():
+    """红证：把挂载清单里的登记删掉（新增单文件挂载就能悄悄绕过）⇒ 判据红。"""
+    mutated = inject(
+        read(DEPLOY),
+        "#   ./nginx/nginx.conf  → /etc/nginx/conf.d/default.conf:ro\n",
+        "",
+        where="deploy/swas/deploy.sh",
+        count=1,
+    )
+    bad = judge_single_file_mounts(mutated)
+    assert any("没有登记" in b for b in bad), f"清单删了却判绿。实得：{bad}"
+
+
+def test_injection_mv_on_a_single_file_mount_goes_red():
+    """红证：用 `mv` 落地单文件挂载（换 inode）⇒ 判据红并点名行号。"""
+    mutated = inject(
+        read(DEPLOY),
+        "  cat ./nginx/nginx.conf.render.tmp > ./nginx/nginx.conf\n",
+        "  mv -f ./nginx/nginx.conf.render.tmp ./nginx/nginx.conf\n",
+        where="deploy/swas/deploy.sh",
+        count=1,
+    )
+    bad = judge_single_file_mounts(mutated)
+    assert any("必须原地写" in b for b in bad), f"`mv` 落地却判绿。实得：{bad}"
+
 
 def test_injection_rename_writes_go_red():
     """红证：把渲染改回 `mv -f`（换 inode）⇒ 判据红（单文件 bind mount 会停在旧配置）。"""
