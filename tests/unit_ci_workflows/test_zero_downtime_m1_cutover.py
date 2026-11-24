@@ -249,12 +249,13 @@ def judge_upstream_shape(text: str) -> list[str]:
     if len(targets) < len(UPSTREAMS):
         bad.append(f"proxy_pass 只有 {len(targets)} 处 ⇒ 有面没接到 upstream 上（判据已过期？）")
 
-    m = re.search(r"^worker_shutdown_timeout\s+(\d+)s;", text, re.MULTILINE)
-    if not m:
-        bad.append("nginx.conf 缺 `worker_shutdown_timeout`（reload 时旧 worker 的兜底上限）")
-    elif int(m.group(1)) < SSE_MAX_SECONDS:
+    # `worker_shutdown_timeout` 是 **main 上下文**指令（ngx_core_module）；`conf.d/*.conf` 被 include 在
+    # `http {}` 里 ⇒ 写在这里**必然** `[emerg] ... is not allowed here`（2026-11-24 测试机实测：run 45307260452
+    # 的 `nginx -t` 直接失败 ⇒ 部署中止 ⇒ 自动回滚）。它只允许出现在 `-g`（compose 的 nginx `command:`）。
+    if re.search(r"^worker_shutdown_timeout\s+\d+s;", text, re.MULTILINE):
         bad.append(
-            f"`worker_shutdown_timeout {m.group(1)}s` < SSE 最长流 {SSE_MAX_SECONDS}s ⇒ 切换期会把长流切断"
+            "nginx.conf 里出现了 `worker_shutdown_timeout` —— 它是 **main 上下文**指令，"
+            "在 conf.d（http 上下文）里必然 [emerg]；必须挪到 compose 的 nginx `command:` 的 `-g`"
         )
     return bad
 
@@ -1026,12 +1027,18 @@ def test_injection_proxy_pass_back_to_service_name_goes_red():
     assert any("服务名直连" in b for b in bad), f"proxy_pass 改回服务名却判绿。实得：{bad}"
 
 
-def test_injection_drop_worker_shutdown_timeout_goes_red():
+def test_injection_worker_shutdown_timeout_back_in_confd_goes_red():
+    """注入：把 main 上下文的指令**塞回** conf.d（2026-11-24 真机就是这么挂的）⇒ 判红。"""
     text = read_nginx()
-    m = re.search(r"^worker_shutdown_timeout .*\n", text, re.MULTILINE)
-    assert m, "反空跑锚点：nginx.conf 里没有 `worker_shutdown_timeout`（注入无从下手 ⇒ 判据已过期）"
-    bad = judge_upstream_shape(text[: m.start()] + text[m.end():])
-    assert any("worker_shutdown_timeout" in b for b in bad), f"删掉 worker_shutdown_timeout 却判绿。实得：{bad}"
+    mutated = inject(
+        text,
+        "\n# HTTP -> HTTPS\n",
+        "\nworker_shutdown_timeout 200s;\n\n# HTTP -> HTTPS\n",
+        where="nginx.conf",
+        count=1,
+    )
+    bad = judge_upstream_shape(mutated)
+    assert any("worker_shutdown_timeout" in b for b in bad), f"把 main 上下文指令塞回 conf.d 却判绿。实得：{bad}"
 
 
 def test_injection_drop_shutdown_graceful_goes_red():
@@ -1206,3 +1213,21 @@ def test_injection_rewriter_using_os_replace_goes_red():
     with pytest.raises(AssertionError, match="inode"):
         extract_rewriter(mutated)
 
+
+
+def test_worker_shutdown_timeout_lives_in_the_main_context_g_flag():
+    """`worker_shutdown_timeout` 是 main 上下文指令 ⇒ 只能写在 compose 的 `nginx -g` 里。
+
+    2026-11-24 真机实测（run 45307260452）：它被写在 `deploy/swas/nginx.conf`（= conf.d，http 上下文）
+    ⇒ 测试机 `nginx -t` 报 `[emerg] "worker_shutdown_timeout" directive is not allowed here` ⇒ 部署中止并回滚。
+    红证（已实跑）：把 compose 里的 `-g` 那段拿掉 ⇒ 本条红。
+    """
+    compose = (REPO_ROOT / "deploy" / "swas" / "docker-compose.yml").read_text(encoding="utf-8")
+    assert re.search(r"-g.*worker_shutdown_timeout", compose), (
+        "compose 的 nginx `command:` 里缺 `-g ...worker_shutdown_timeout ...`（main 上下文的唯一正确位置）"
+    )
+    assert "daemon off;" in compose, "覆盖 command 后必须自带 `daemon off;`（entrypoint 不再补）"
+    m = re.search(r"worker_shutdown_timeout\s+(\d+)s", compose)
+    assert m and int(m.group(1)) >= SSE_MAX_SECONDS, (
+        f"`worker_shutdown_timeout` 必须 ≥ SSE 最长流 {SSE_MAX_SECONDS}s（切换期不许切断长流）"
+    )
