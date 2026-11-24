@@ -285,11 +285,16 @@ def judge_rendered(canonical: str, domain: str = "cytda.com") -> list[str]:
 
 
 def _loop_region(text: str) -> tuple[int, int]:
-    """2.5 的 per-service 切换循环区间（`for svc in $UP_SERVICES; do` → 2.5.9 分节线）。"""
+    """2.5 的 per-service 切换循环区间（`for svc in $UP_SERVICES; do` → 2.5 段收尾 banner）。
+
+    边界锚用**代码结构**（循环收尾 `done`，本段内恰出现 1 次），不用中文注释标题、也不用
+    `# ══` 这类制表符 banner 做结构位置（issue #6802：`test_cjk_position_anchor_guard.py` 抓
+    「把中文/注释级/非 ASCII 文案当结构位置」——两种都被它点过名）。
+    """
     start = text.find("for svc in $UP_SERVICES; do")
     assert start >= 0, "反空跑锚点：deploy.sh 里找不到 `for svc in $UP_SERVICES; do`"
-    end = text.find("2.5.9 JWT 验签同源硬断言", start)
-    assert end > start, "反空跑锚点：找不到 2.5.9 分节线（切换循环的边界）"
+    end = text.find("\ndone\n", start)
+    assert end > start, "反空跑锚点：切换循环没有收尾 `done`（找不到循环边界）"
     return start, end
 
 
