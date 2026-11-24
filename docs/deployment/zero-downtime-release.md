@@ -197,6 +197,45 @@ M1-f 今天就能做（不需要动 nginx）；M1-b/c 只有在 M1-a 落地后�
 > | 切换期入口 5xx 计数（发布前后差值） | `docker exec migao-deploy-nginx-1 tail -n 100000 /var/log/nginx/access.log` | **待填**（测试机 access.log 需在主机内取；外网探针在发布后 3 个面均 `200/200/307`，但**不是**窗口内读数） |
 > | 回退演练耗时（成员切回旧实例） | 改回 `server <svc>:<port> …;` → `nginx -t` → `nginx -s reload` | **待填** |
 >
+> ### 生产读数（2026-11-24 11:17–13:01 +08，`a2c3386`，三服务逐服务 C′ 构建）
+>
+> | 读数 | 值（原文） |
+> |---|---|
+> | 三服务同源 | `✓ api/web/ai 同源 a2c3386`；`PROD-RELEASE rc=0 version=a2c3386 api=a2c3386 web=a2c3386 ai=a2c3386` |
+> | 切换期入口失败 | `SWITCH-BLINDSPOT failures=0 max_gap_ms=351`（窗口 `109918ms` / `333` 采样）⇒ 工具自身判「**切换窗口内 0 次失败请求 ⇒ 这次切换对用户无感**」 |
+> | 另两次窗口 | `failures=0 max_gap_ms=357` / `failures=0 max_gap_ms=364`（admin-api、ai-agent 重试窗口） |
+> | `nginx -t` | `nginx: configuration file /etc/nginx/nginx.conf test is successful` |
+> | 盘上 vs 容器内 | `md5 9782a0ed6e3c71e90cc8bc294157b582` **两侧相同**（≠ `STALE`） |
+> | 稳态 upstream | 每服务**一条**成员（`server admin-web:3001 …` 形态） |
+> | SSE 探针端点 | 线上可用：`data: 1` / `event: ping` / `data: 2`（`/internal/stream-probe?seconds=3`） |
+> | 已知非零成本 | ai-agent 首两次构建被 `timeout 2400` 杀掉（默认 apt 源 >40 分钟）⇒ 换 `mirrors.aliyun.com` 后 ~9 分钟完成；已固化进发布入口 |
+>
+> ### SSE 长流跨切换（**已实测**，2026-11-24 16:52–16:56 +08，`3482e76`）
+>
+> 探针经 **nginx 用户路径**（`https://127.0.0.1/internal/stream-probe` + `Host: ai-api.<域名>`，
+> 也就是真实用户走的那条：nginx → upstream → ai-agent），部署期间连续不停地开 200s 流：
+>
+> | 读数 | 值 |
+> |---|---|
+> | 跨切换的那条流 | `seq=1697`：`08:52:55` 建立（**容器启动前 2 秒**，容器 `StartedAt=08:52:57`）→ `08:56:14` 正常结束 |
+> | 事件数 / 事件间最大间隔 | **400 个事件**（200 `event: ping` + 200 `data:`）；**max gap = 1s**（= 正常心跳间隔，**无中断**） |
+> | 该窗口错误 | **0**（`ERR` 计数 0；前一段 403 是 nginx 尚未重载新 `allow` 列表时的自伤，重载后即 200） |
+> | 同窗口入口盲测 | `SWITCH-BLINDSPOT failures=0 max_gap_ms=353`（窗口 110812ms / 338 采样） |
+> | `nginx -t` | `test is successful` |
+> | 三服务身份 | `ai 同源 3482e76`（本轮只发 ai-agent；api/web 仍是 `a2c3386`，发布入口因此判 `PROD-RELEASE rc=1` —— 见下） |
+>
+> **读法**：`max gap = 1s` 说明这条流在容器被替换的那一瞬间**没有断开**，而是照常按心跳节奏继续 ——
+> 这正是 M1-a（upstream 摘挂）+ M1-b（uvicorn/Spring 优雅退出）一起生效的结果。
+>
+> **仍未取**：回退演练耗时；以及「三服务同一 sha 的完整发布」本次没有一次做完（见下）。
+>
+> ### 本次发布暴露的入口缺陷（已修，PR #9125 待合）
+>
+> - `PROD-RELEASE rc=1` 不是发布失败，而是**入口的同一性检查按「全量三服务」判**，而本次用了 `PROD_SERVICES=ai-agent`
+>   只发一个服务 ⇒ api/web 仍是旧 sha ⇒ 它如实判「不一致」。**该口径需要按 `PROD_SERVICES` 收窄**（否则「部分发布」永远红）。
+> **仍未取**：**SSE 长流跨切换**（本次发布的旧容器还没有探针端点，端点是本次才上线的）⇒ 需要**下一次发布**在切换期间挂一条 200s 流来量；
+> 以及「回退演练耗时」。
+>
 > ⚠️ **口径**：上表是**测试环境**读数 ⇒ 它证明「形态在真机成立」（2 成员切换 / drain / nginx -t / 挂载一致）；
 > **生产读数仍未取**（第一次发布会有一次 nginx 重启做 inode 自愈，那次**不是**零停机），取数时同样只填原文。
 
