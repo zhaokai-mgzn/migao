@@ -384,12 +384,23 @@ detect_deploy_flag() {
   [ "$rc" -eq 3 ] && die_undecidable "读不到 ${REMOTE_DEPLOY} --help（通道判不了）"
   flag=$(printf '%s' "$out" | grep -oE -- '--(version|ref|sha|target|release|git-sha|runtime-sha)[a-z-]*' | head -1)
   if [ -z "$flag" ]; then
-    die_undecidable "读不到 ${REMOTE_DEPLOY} 接受的**版本参数** ⇒ 不知道该怎样把目标版本传进去（**不猜**）
+    # 兜底：**规范契约**是位置参数 `TAG=${1:-latest}`（`deploy/swas/deploy.sh` 第 107 行）。
+    # 盘上脚本若是旧版，`--help` 会被当成 **tag** ⇒ 退出非零、输出的是拒绝文本而不是帮助
+    # （2026-11-24 11:16 真机实测：`追不到 tag=--help 指向的提交`）⇒ 此时**按契约判位置参数**，
+    # 不再「不猜就停」：停在这里等于「发布永远发不出去」，而契约是脚本自己写着的。
+    # 判据放在**本地仓库**里（`deploy/swas/deploy.sh` 就是会被自同步到主机的那一份）⇒ 不必再开一次远端调用。
+    if grep -qF 'TAG=${1:-' "$SELF_DIR/../deploy/swas/deploy.sh" 2>/dev/null; then
+      DEPLOY_FORM=positional
+      ok "版本参数 = **位置参数**（盘上 ${REMOTE_DEPLOY} 是 \`TAG=\${1:-latest}\` 契约；--help 不可用 ⇒ 不猜 flag）"
+    else
+      die_undecidable "读不到 ${REMOTE_DEPLOY} 接受的**版本参数** ⇒ 不知道该怎样把目标版本传进去（**不猜**）
    --help 原文片段（前 20 行）：
 $(printf '%s' "$out" | head -20 | sed 's/^/     /')"
+    fi
+  else
+    ok "版本参数 = ${flag}"
+    DEPLOY_FLAG="$flag"
   fi
-  ok "版本参数 = ${flag}"
-  DEPLOY_FLAG="$flag"
 }
 
 postcheck_script() {
@@ -579,12 +590,16 @@ main() {
   #   **旧容器** ⇒ `deploy.sh 完成` 且 rc=0 —— 一次**一个服务都没换**的「假绿」。
   #   （本次 = `PROD-RELEASE rc=1`，是被本脚本 ⑤ 的同源自检抓回来的，不是 deploy.sh 自己报的。）
   PROD_SERVICES=${PROD_SERVICES:-admin-api ai-agent admin-web}
+  # 🔴 apt 源：宿主机在阿里云内网，用 `deb.debian.org` 实测 **>40 分钟没装完**（2026-11-24 11:37–12:38 两次被
+  #    `timeout 2400 docker build` 杀掉 ⇒ ai-agent 发布失败两次）。deploy.sh 自己的注释就写了「服务器侧应传
+  #    mirrors.aliyun.com」。换源后同一条构建 ~9 分钟完成（06:39→06:49 实测）。
+  PROD_APT_MIRROR=${MIGAO_PROD_APT_MIRROR:-mirrors.aliyun.com}
   BUILT_AT_NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
   deploy_rc=0
   deploy_out=""
   for svc in $PROD_SERVICES; do
     if [ "${DEPLOY_FORM:-flag}" = "positional" ]; then
-      deploy_cmd="MIGAO_RELEASE_LINE=enforce BUILD_SERVICE=${svc} BUILD_SHA=${TARGET_SHA} BUILT_AT=${BUILT_AT_NOW} bash ${REMOTE_DEPLOY} sha-$(printf '%s' "$TARGET_SHA" | cut -c1-7)"
+      deploy_cmd="MIGAO_RELEASE_LINE=enforce APT_MIRROR=${PROD_APT_MIRROR} BUILD_SERVICE=${svc} BUILD_SHA=${TARGET_SHA} BUILT_AT=${BUILT_AT_NOW} bash ${REMOTE_DEPLOY} sha-$(printf '%s' "$TARGET_SHA" | cut -c1-7)"
     else
       deploy_cmd="bash ${REMOTE_DEPLOY} ${DEPLOY_FLAG} ${TARGET_SHA}"
     fi

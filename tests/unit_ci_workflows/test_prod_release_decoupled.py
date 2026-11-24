@@ -671,14 +671,35 @@ def test_blindspot_reports_failures_without_failing_the_release(tmp_path: Path):
 # ⑩ deploy.sh --help 现读
 # ══════════════════════════════════════════════════════════════════════════════
 
-def test_missing_help_is_undecidable(tmp_path: Path):
-    """`--help` 里没有版本参数 ⇒ 退 **3** 并打印 `--help` 原文片段（不猜参数名）。"""
+def test_missing_help_falls_back_to_the_positional_contract(tmp_path: Path):
+    """`--help` 读不到版本参数 ⇒ **按仓库里的规范契约（位置参数）发**，而不是停在这里。
+
+    2026-11-24 11:16 真机实测：生产盘上 `deploy.sh` 是旧版，`--help` 被当成 tag ⇒ 输出的是拒绝文本，
+    旧实现在这里 `die_undecidable` ⇒ **发布永远发不出去**（而契约就写在脚本第 107 行 `TAG=${1:-latest}`）。
+    """
     box = Sandbox(tmp_path, help_text="用法：bash deploy.sh [--dry-run]\n  没有版本参数\n")
+    # 沙箱里补上**仓库契约**那一份（真实仓里 `deploy/swas/deploy.sh:107` 就是 `TAG=${1:-latest}`）
+    contract = box.root / "deploy" / "swas" / "deploy.sh"
+    contract.parent.mkdir(parents=True, exist_ok=True)
+    contract.write_text("#!/bin/bash\nTAG=${1:-latest}\n", encoding="utf-8")
+    proc = box.run_release("--apply")
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "位置参数" in (proc.stdout + proc.stderr), proc.stdout + proc.stderr
+    deploy = box.marker("deploy-ran") or ""
+    assert "sha-" in deploy and "BUILD_SERVICE=" in deploy, deploy
+
+
+def test_missing_help_and_no_positional_contract_is_undecidable(tmp_path: Path):
+    """**两个契约都读不到**时必须退 3（不猜、不发）——这条防的是「兜底兜成瞎发」。"""
+    box = Sandbox(tmp_path, help_text="用法：bash deploy.sh [--dry-run]\n  没有版本参数\n")
+    # 把仓库里的 `deploy/swas/deploy.sh` 换成不含位置参数契约的版本（只改这一份判据用的副本）
+    repo_script = box.root / "deploy" / "swas" / "deploy.sh"
+    repo_script.parent.mkdir(parents=True, exist_ok=True)
+    repo_script.write_text("#!/bin/bash\necho no-contract\n", encoding="utf-8")
     proc = box.run_release("--apply")
     assert proc.returncode == 3, proc.stdout + proc.stderr
     assert "不可判定" in proc.stderr
-    assert "没有版本参数" in proc.stderr, "没打印 --help 原文片段"
-    assert box.marker("deploy-ran") is None, "不知道版本参数却已经发了"
+    assert box.marker("deploy-ran") is None, "两个契约都读不到却已经发了"
 
 
 def test_version_flag_is_read_from_help_not_hardcoded(tmp_path: Path):
@@ -850,3 +871,31 @@ def test_apply_passes_build_service_so_the_host_builds_instead_of_pulling():
     assert re.search(r"sha-\$\(printf '%s' \"\$TARGET_SHA\" \| cut -c1-7\)", segment), (
         "逐服务循环里没有 `sha-<7位>` 的 tag 形态（配置 ref 与镜像 tag 必须同源）"
     )
+
+
+def test_release_pins_aliyun_apt_mirror_for_host_side_builds():
+    """宿主机在阿里云内网 ⇒ 发布入口必须传 `APT_MIRROR=mirrors.aliyun.com`。
+
+    2026-11-24 实测（11:37–12:38）：用默认 `deb.debian.org` 构建 ai-agent，**两次**被
+    `timeout 2400 docker build` 杀掉（ai-agent 发布失败两次）；换 `mirrors.aliyun.com` 后同一条构建 ~9 分钟完成。
+    `deploy/swas/deploy.sh` 自己的注释就写了「服务器侧传 mirrors.aliyun.com（否则 apt >1h）」
+    ⇒ 发布入口不给这个参数，等于每次发布都在赌外网 apt。
+    """
+    text = (REPO_ROOT / "scripts" / "prod-release.sh").read_text(encoding="utf-8")
+    assert "PROD_APT_MIRROR=${MIGAO_PROD_APT_MIRROR:-mirrors.aliyun.com}" in text, (
+        "发布入口没有把 apt 源钉成 `mirrors.aliyun.com`（可覆盖的 env 名是 MIGAO_PROD_APT_MIRROR）"
+    )
+    assert "APT_MIRROR=${PROD_APT_MIRROR}" in text, "deploy_cmd 里没有把 APT_MIRROR 传下去 ⇒ 远端仍用默认源"
+
+
+def test_poll_budget_follows_the_remote_timeout_not_a_fixed_40():
+    """轮询预算必须跟着**远端超时**走：固定 40×2s=80s 会在 `docker build`（分钟级）时误判「等不到」。
+
+    2026-11-24 11:17 实测：admin-api 正在 `docker build`，`prod_swas_run` 80s 就退 3
+    ⇒ 上层判「部署通道判不了」，而**远端仍在跑**（部署继续、读数全丢、blindspot 窗口只剩 92s）。
+    """
+    text = (REPO_ROOT / "scripts" / "lib" / "prod-swas-run.sh").read_text(encoding="utf-8")
+    assert "timeout / _interval" in text, (
+        "轮询预算没有从 timeout 派生（仍在用固定次数）⇒ 长构建会被误判为「等不到」"
+    )
+    assert 'if [ "$attempt" -ge "$attempts" ]' in text, "轮询循环没有用派生出来的 attempts"
