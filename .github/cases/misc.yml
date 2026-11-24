@@ -10996,3 +10996,21 @@ cases:
         - "tests/unit_ci_workflows/test_pytest_timeout_is_installed_and_passed.py"
         - "tests/unit_ci_workflows/test_ci_helper_leg.py"
     merge_log: "2026-11-24 新增（issue #9144）。现场：helper 腿只装 `pytest pytest-xdist pyyaml` ⇒ 单条用例挂住时唯一兜底是 job 的 20 分钟上限，而 cancelled job 不上传日志（#9114）⇒ 3/4 片 4 次烧满却查不出是哪条（#9141 诊断）。修法：装 `pytest-timeout`、给单一来源常量 + CI 全量档 + 本地四片统一加 `--timeout=300 --timeout-method=thread`。实测（本机 3/4 片，带新参数）：**2263 passed / 13 skipped / 303.48s**，最慢单测 39.25s ⇒ 7.6× 余量，无合法慢用例被假红。取号 = `next_case_id.py MC` ⇒ **MC-356**。"
+  - id: MC-357
+    legacy_id: ""
+    title: "`UI Regression Check` 腿不许全史克隆（`fetch-depth: 0` 白花 10–14s，已超该腿 12s 预算）"
+    domains:
+      - misc
+      - ci
+    tier: normal
+    tags:
+      - ci
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "**判据 1·job 不得全史克隆**：现取 `pr-check.yml` 里 `name: UI Regression Check` 那个 job 块（到下一个顶层 `name:` 为止），**去掉注释行后**不得出现 `fetch-depth: 0`；命即红并给出「该腿只 `git show` 两个 tip」的理由与代价。注释里写「不要 fetch-depth: 0」不算违规（本 job 就有这样一段说明）。纯静态：`未被调用`。执行点 = `test_ui_regression_leg_stays_shallow.py::test_ui_regression_checkout_is_not_full_history`"
+      - "**判据 2·浅克隆的前提**：`check-ui-regression.sh` 不得出现 `git log|rev-list|blame|describe|shortlog`（需要历史的命令）；出现即红（浅克隆下会静默读不到，逼改动方显式把 fetch-depth 加回并说明代价）。纯静态：`未被调用`。执行点 = `::test_ui_regression_script_needs_no_history`"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_ui_regression_leg_stays_shallow.py"
+    merge_log: "2026-11-24 新增（issue #9120 成本追因）。实测构成：该腿整腿 p90 21–30s，其中 **checkout 17s**（`fetch-depth: 0` 全史克隆 401 MiB）、判据步仅 **1s**，而冻结预算只有 12s ⇒ 光是拿代码就超预算。脚本只用 `git show HEAD:<f>` / `git show origin/main:<f>` 且自己 `git fetch origin main`（L54）⇒ 默认浅克隆足够。红证实跑：把 `fetch-depth: 0` 加回 ⇒ 判据 1 FAILED；还原 ⇒ 2 passed；脚本本地 `--head` 仍绿（`✅ UI 无回退`）。取号 = `next_case_id.py MC` ⇒ **MC-357**。"

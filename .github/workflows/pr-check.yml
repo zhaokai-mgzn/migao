@@ -770,9 +770,11 @@ jobs:
     timeout-minutes: 3
     if: github.event_name == 'pull_request'
     steps:
+      # ⚡ **不要** `fetch-depth: 0`（2026-11-24 成本追因，issue #9120）：本 job 只做
+      # `git show HEAD:<f>` 与 `git show origin/main:<f>`（脚本自己 `git fetch origin main`）⇒ 只要两个 tip。
+      # 全史克隆实测白花 **10–14s**（该腿 p95 21–30s，其中 checkout 17s、判据步只有 1s），
+      # 而它的冻结预算只有 12s —— 「预算不现实」的一半原因就在这里。
       - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
 
       - name: Check UI token regression vs origin/main
         run: |
