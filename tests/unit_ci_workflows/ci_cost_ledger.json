@@ -662,6 +662,34 @@
       "budget_seconds": null,
       "budget_status": "无读数：不编预算（显式留白）",
       "budget_basis": "新增腿，现取 n=0 < 3 ⇒ **不编预算**，保持显式留白（有读数后由 `scripts/ci_cost_ledger.py --measure` 按预算=ceil(实测 p90) 重算）"
+    },
+    {
+      "id": "pr-check.yml::ci-workflow-tests#3",
+      "workflow": "pr-check.yml",
+      "job": "ci-workflow-tests",
+      "check_name": "ci workflow helper unit tests（中前段）",
+      "hard_kill_seconds": 1200,
+      "hard_kill_source": "workflow `timeout-minutes: 20`",
+      "required": true,
+      "measured": null,
+      "measure_status": "四片重切新增的片（issue #9102，2026-11-24）：**尚无 ≥3 次历史读数** ⇒ 按判据 3 不登记为 measured（单次读数不足以成分布）。现取的两轮 CI 单次读数只作证据、不入 measured：job 355s（run 45311964768）/ 448s（run 45312922596）。`required: true` 与分支保护**同批**生效（2026-11-24T02:40Z 已把该检查名加进 main 的 required，现取 18 条；snapshot 同批刷新 —— 顺序不可换：**先有上报、再设 required**）。",
+      "budget_seconds": null,
+      "budget_status": "无读数：不编预算（显式留白）",
+      "budget_basis": null
+    },
+    {
+      "id": "pr-check.yml::ci-workflow-tests#4",
+      "workflow": "pr-check.yml",
+      "job": "ci-workflow-tests",
+      "check_name": "ci workflow helper unit tests（中后段）",
+      "hard_kill_seconds": 1200,
+      "hard_kill_source": "workflow `timeout-minutes: 20`",
+      "required": true,
+      "measured": null,
+      "measure_status": "四片重切新增的片（issue #9102，2026-11-24）：**尚无 ≥3 次历史读数** ⇒ 按判据 3 不登记为 measured（单次读数不足以成分布）。现取的两轮 CI 单次读数只作证据、不入 measured：job 324s（run 45311964768）/ 459s（run 45312922596）。`required: true` 与分支保护**同批**生效（2026-11-24T02:40Z 已把该检查名加进 main 的 required，现取 18 条；snapshot 同批刷新 —— 顺序不可换：**先有上报、再设 required**）。",
+      "budget_seconds": null,
+      "budget_status": "无读数：不编预算（显式留白）",
+      "budget_basis": null
     }
   ],
   "eval_cadence": {
