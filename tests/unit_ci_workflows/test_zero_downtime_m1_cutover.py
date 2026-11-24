@@ -385,15 +385,22 @@ def judge_switch_function(text: str) -> list[str]:
         ("nginx -s reload", "切换动作必须是 reload（优雅：旧 worker 把在途请求做完）"),
         ("cp -f", "必须备份一份再改（回退要能秒级完成）"),
         ('docker compose ps -q nginx', "必须检查 nginx 在运行（入口不在时无从 reload）"),
+        ("sha256sum", "写完必须核对「容器内 sha == 盘上 sha」（单文件 bind mount 按 inode 挂载，不核对就会假绿）"),
+        ("NGINX_CONF_MOUNT=STALE", "挂载不一致必须**出声**（否则切换静默不生效、入口 200 断言照样绿）"),
     ):
         if token not in body:
             bad.append(f"`nginx_upstream_switch()` 缺 `{token}`：{why}")
-    for forbidden, why in (
-        ("docker compose up -d", "切换面**不许**重建任何容器（那就是窗口本身）"),
-        ("docker compose restart", "切换面**不许** restart（硬重启 = 当场丢弃在途连接）"),
-    ):
-        if forbidden in body:
-            bad.append(f"`nginx_upstream_switch()` 里出现 `{forbidden}`：{why}")
+    base = text[:start].count("\n") + 1
+    for lineno, line in _code_lines(body, base):
+        stripped = line.strip()
+        if stripped.startswith("echo") or stripped.startswith("printf"):
+            continue  # 提示语里可以**说**「处置：restart nginx」，只要不真的执行
+        for forbidden, why in (
+            ("docker compose up -d", "切换面**不许**重建任何容器（那就是窗口本身）"),
+            ("docker compose restart", "切换面**不许** restart（硬重启 = 当场丢弃在途连接）"),
+        ):
+            if forbidden in stripped:
+                bad.append(f"`nginx_upstream_switch()` 第 {lineno} 行出现 `{forbidden}`：{why}")
     # 恢复动作：任一失败分支都要把备份拷回去
     if body.count("cp -f") < 2:
         bad.append("`nginx_upstream_switch()` 的失败分支没有把备份拷回（改了配置却不回退 = 入口留在坏形态）")
@@ -566,6 +573,34 @@ def judge_stream_probe(main_text: str, ledger_text: str) -> list[str]:
     return bad
 
 
+
+def judge_config_mount_inode(text: str) -> list[str]:
+    """判据 8：单文件 bind mount 按 **inode** 挂载 —— 配置只能原地写（issue #9098）。
+
+    病：compose 把 `./nginx/nginx.conf` 单文件挂进容器（`…:/etc/nginx/conf.d/default.conf:ro`），
+    docker 按 **inode** 挂载：`mv` / `rename` 换掉宿主侧 inode ⇒ 容器里看到的还是**旧文件**，
+    `nginx -t` / `nginx -s reload` 全在加载旧配置；而宿主侧 `grep server_name` / sha256 打印断言
+    看的是新文件 ⇒ **假绿**（改前 1.2.2 的生产域分支正是 `mv -f`，测不出是因为只 grep 了宿主文件）。
+    """
+    bad: list[str] = []
+    if "cat ./nginx/nginx.conf.render.tmp > ./nginx/nginx.conf" not in text:
+        bad.append(
+            "域名渲染没有**原地写**（缺 `cat ./nginx/nginx.conf.render.tmp > ./nginx/nginx.conf`）"
+            " ⇒ 换了 inode，容器看不到新配置"
+        )
+    if "mv -f ./nginx/nginx.conf.render.tmp ./nginx/nginx.conf" in text:
+        bad.append(
+            "域名渲染还在用 `mv -f ./nginx/nginx.conf.render.tmp ./nginx/nginx.conf`"
+            " ⇒ `rename` 换 inode ⇒ 单文件 bind mount 的容器停在旧配置（切换会静默不生效）"
+        )
+    if "NGINX_CONF_MOUNT=STALE" not in text:
+        bad.append(
+            "缺少「盘上 sha ≠ 容器内 sha」的自检与自愈（`NGINX_CONF_MOUNT=STALE`）"
+            " ⇒ 改前用 mv 渲染过的机器上，切换会静默加载旧配置"
+        )
+    return bad
+
+
 def judge_doc(text: str) -> list[str]:
     """判据 6：M1-a / M1-b 必须写「已实施 + 怎么验证 + 真实读数占位（未填即标未实测）」。"""
     bad: list[str] = []
@@ -692,7 +727,14 @@ def extract_rewriter(deploy_text: str) -> str:
     m = re.search(r"<<'PY_UPSTREAM_MEMBERS'\n(.*?)\nPY_UPSTREAM_MEMBERS\n", region, re.S)
     assert m, "改写器区域里找不到 `<<'PY_UPSTREAM_MEMBERS' … PY_UPSTREAM_MEMBERS` heredoc"
     body = m.group(1)
-    assert "os.replace" in body, "改写器没有原子写入（`os.replace`）⇒ 存在半截文件风险"
+    # 🔴 目标是**单文件 bind mount** 的源（issue #9098）：tmpfile + rename 换 inode ⇒
+    #    容器里看到的还是旧文件 ⇒ `nginx -t` / `reload` 全在加载旧配置 ⇒ 切换静默不生效。
+    code = "\n".join(ln for ln in body.splitlines() if not ln.lstrip().startswith("#"))
+    assert "os.replace" not in code and "os.rename" not in code, (
+        "改写器用 `os.replace` / `os.rename` 换掉了 inode ⇒ 单文件 bind mount 的容器看不到新配置"
+        "（`nginx -t`/`reload` 会加载旧内容 ⇒ 切换静默不生效）。必须原地写。"
+    )
+    assert 'open(path, "w"' in body, '改写器必须**原地写**（`open(path, "w")`）以保住 inode'
     return body
 
 
@@ -822,6 +864,27 @@ def test_stream_probe_is_readonly_gated_and_declared():
     assert "# case_ids: MC-351" in probe_test, "行为判据文件头部必须声明 `# case_ids: MC-351`"
     for marker in ("401", "event: notice", "event: ping", "is_disconnected"):
         assert marker in probe_test, f"行为判据文件没覆盖 `{marker}`（判据面缺一块）"
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# 判据 8：单文件 bind mount ⇒ 配置只能**原地写**（保住 inode）
+# ══════════════════════════════════════════════════════════════════════════
+
+def test_config_is_written_in_place_so_the_bind_mount_sees_it(tmp_path: Path):
+    bad = judge_config_mount_inode(read(DEPLOY))
+    assert not bad, "配置写入会换 inode（容器看不到 / 静默回落旧配置）：\n" + "\n".join(f"  - {b}" for b in bad)
+    # 行为面：真跑改写器 ⇒ inode 必须一字节不变（bind mount 按 inode 挂载就是这个理由）
+    for svc, (name, _port) in UPSTREAMS.items():
+        conf = tmp_path / f"inode-{svc}.conf"
+        conf.write_text(read_nginx(), encoding="utf-8")
+        before = conf.stat().st_ino
+        proc = run_rewriter(tmp_path, conf, name, green_members(svc))
+        assert proc.returncode == 0, proc.stderr
+        after = conf.stat().st_ino
+        assert after == before, (
+            f"改写 `upstream {name}` 换了 inode（{before} → {after}）⇒ "
+            "单文件 bind mount 的 nginx 容器会继续看旧文件（切换静默不生效）"
+        )
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -975,4 +1038,29 @@ def test_injection_probe_unregistered_goes_red():
     )
     bad = judge_stream_probe(read(AI_AGENT_MAIN), mutated)
     assert any("登记" in b for b in bad), f"探针未登记却判绿。实得：{bad}"
+
+def test_injection_rename_writes_go_red():
+    """红证：把渲染改回 `mv -f`（换 inode）⇒ 判据红（单文件 bind mount 会停在旧配置）。"""
+    mutated = inject(
+        read(DEPLOY),
+        "  cat ./nginx/nginx.conf.render.tmp > ./nginx/nginx.conf\n",
+        "  mv -f ./nginx/nginx.conf.render.tmp ./nginx/nginx.conf\n",
+        where="deploy/swas/deploy.sh",
+        count=1,
+    )
+    bad = judge_config_mount_inode(mutated)
+    assert any("inode" in b for b in bad), f"渲染换回 `mv` 却判绿。实得：{bad}"
+
+
+def test_injection_rewriter_using_os_replace_goes_red():
+    """红证：改写器里加一行 `os.replace`（tmpfile + rename 老写法）⇒ 判据红。"""
+    mutated = inject(
+        read(DEPLOY),
+        "    os.fsync(fh.fileno())\n",
+        '    os.fsync(fh.fileno())\n    os.replace(path + ".tmp", path)  # 注入：换 inode\n',
+        where="deploy/swas/deploy.sh",
+        count=1,
+    )
+    with pytest.raises(AssertionError, match="inode"):
+        extract_rewriter(mutated)
 

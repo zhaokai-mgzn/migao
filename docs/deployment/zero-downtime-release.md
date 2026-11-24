@@ -147,13 +147,23 @@ M1-f 今天就能做（不需要动 nginx）；M1-b/c 只有在 M1-a 落地后�
 > - 判据 = `tests/unit_ci_workflows/test_zero_downtime_m1_cutover.py`（MC-351）。**红证**：把切换改回
 >   「`docker compose up -d` 重建 + reload」⇒ 判据红（`test_injection_revert_cutover_to_recreate_plus_reload_goes_red`）。
 >
-> **两条实现约束（踩过就是全站挂，别改）**：
+> **三条实现约束（踩过就是全站挂 / 静默失效，别改）**：
 > 1. **稳态只写现行实例一条成员**。nginx 在**解析配置时**就对 upstream 里的服务名做 DNS 解析，green
 >    容器没在跑时写它的名字 ⇒ `[emerg] host not found in upstream` ⇒ **nginx 起不来 ⇒ 全站挂**。
 >    所以 green 成员只在发布期由 `deploy.sh` 写入（写完**立刻** `nginx -t`），成功/失败都会恢复成稳态那一条。
 >    「切换后每个 upstream 恰有两个后端」因此由**行为判据**证明（真跑改写器），而不是静态数 `server` 行。
 > 2. 成员一律写 **容器名:容器内端口**（`admin-api-green:8080`），**不写宿主第二端口**
 >    （`18080`/`18000`/`13001` 只在宿主侧可达，nginx 在容器里连不上）。
+> 3. **配置只能原地写（不许 `mv` / `rename`）**。compose 把 `./nginx/nginx.conf` **单文件**挂进容器
+>    （`…:/etc/nginx/conf.d/default.conf:ro`），docker 按 **inode** 挂载 ⇒ 换掉宿主侧 inode 之后，
+>    容器里看到的还是**旧文件**：`nginx -t` / `nginx -s reload` 全在加载旧配置，而宿主侧的
+>    `grep server_name` / sha256 打印看的是新文件 ⇒ **假绿**。改前 1.2.2 的**生产域**分支正是 `mv -f`
+>    （测试域分支是 `cp -f`，所以只有生产会中）—— 这是本单顺手修掉的一个**既有静默 bug**。现在：
+>    渲染与成员改写一律原地写；1.2.2b 核对「盘上 sha == 容器内 sha」（不一致 ⇒ 出声
+>    `NGINX_CONF_MOUNT=STALE` + 重启一次 nginx 重新挂载，一次性自愈）；切换函数写完后同样核对，
+>    不一致 ⇒ **不 reload**、恢复备份、回落重建路径（`return 3`）。
+>    判据：`tests/unit_ci_workflows/test_zero_downtime_m1_cutover.py::test_config_is_written_in_place_so_the_bind_mount_sees_it`
+>    （静态 + **真跑改写器断言 inode 不变**）+ 两条注入式红证（`mv` / `os.replace`）。
 >
 > **怎么验证**（真机 = nginx 跑在**容器** `migao-deploy-nginx-1` 里；宿主**没有** nginx 二进制、没有 `/etc/nginx`）：
 > ```bash
@@ -168,6 +178,7 @@ M1-f 今天就能做（不需要动 nginx）；M1-b/c 只有在 M1-a 落地后�
 >
 > | 读数 | 命令 | 值 |
 > |---|---|---|
+> | 配置挂载一致性 | 发布日志 `NGINX_CONF_MOUNT=`（`OK` / `STALE`+自愈 / `STILL_STALE`） | **待填** |
 > | 稳态 upstream 成员 | `docker exec migao-deploy-nginx-1 nginx -T`（看 `upstream migao_admin_api` 段） | **待填** |
 > | 切换中 upstream 成员（应两条：green 主 + 正式 backup） | 发布日志 `UPSTREAM_MEMBERS=migao_admin_api:2` + 同一时刻的 `nginx -T` | **待填** |
 > | `nginx -t` 结果 | `docker exec migao-deploy-nginx-1 nginx -t` | **待填**（期望 `test is successful`） |
@@ -204,7 +215,7 @@ M1-f 今天就能做（不需要动 nginx）；M1-b/c 只有在 M1-a 落地后�
    用户看不到 5xx —— 这就是「加进 upstream」与「摘出旧实例」之间的安全垫。
 5. 回退 = 把备份拷回 + reload（**秒级**，不重建任何容器）；`nginx -t` 失败时**根本不 reload**
    （入口一字未变），reload 失败时同样回退并重试一次。备份在成功后即删（不留垃圾）。
-6. 🔻 **偏离设想 2（新增约束）**：稳态**只写一条成员**（原因见上方「两条实现约束」）；
+6. 🔻 **偏离设想 2（新增约束）**：稳态**只写一条成员**（原因见上方「三条实现约束」）；
    green 成员只在发布期存在，写它之前先 `nginx -t`、写完立刻校验。
 
 **顺序（顺序即安全顺序，逐步可停；下表 = `deploy.sh` 2.5 段的真实顺序，行号由判据打印）**：
@@ -258,7 +269,8 @@ docker compose stop -t 45 admin-api && docker compose logs --tail 40 admin-api
 —— 加它之前，这一格**不可判定**：真正会写库的 `/api/chat/send` 要鉴权 + 落库 + 调 LLM，不能当探针反复打；
 而「应该不断流」不是判据。**为什么它只读安全**（三条硬约束，判据逐条钉住）：
 ① 只发 `event: ping`（每秒一条），**不碰 DB / 不调 LLM / 不建会话 / 不落历史**；
-② 鉴权沿用内部服务 token（`X-Service-Token`，与 `/internal/tools/execute` 同一份 `verify_service_token`）——
+② 鉴权沿用内部服务 token（头名 `X-Service-Token` —— **来自既有内部鉴权实现** `app/utils/auth.py::verify_service_token`，
+不是为这条探针新造的头名；值与 `/internal/tools/execute` 同一把 `SERVICE_TOKEN`）——
 缺 / 错 ⇒ **401**，不许匿名可达；
 ③ 时长夹在 `[1, 200]`（= nginx `worker_shutdown_timeout 200s` / uvicorn `--timeout-graceful-shutdown 200`
 同一个预算），被夹时先发一条 `event: notice` 自报（不静默）。
@@ -272,7 +284,9 @@ curl -N -H "X-Service-Token: $TOKEN" "https://ai-api.<站点域>/internal/stream
 判据：`backend/ai-agent-service/tests/test_stream_probe.py`（行为：401 / 夹取 + notice / ≥1 个 ping / 断开即结束）
 + `tests/unit_ci_workflows/test_zero_downtime_m1_cutover.py::test_stream_probe_is_readonly_gated_and_declared`
 （静态：handler 内不许出现写库 / LLM 符号并**点名行号**，必须挂鉴权与夹取，且登记到 `APP_LEVEL_PROBES`）。
-⚠️ 本 PR **未实测**这条流（需要测试环境发布通道）⇒ 上表那一行仍是**待填**。
+⚠️ 本 PR **未实测**这条流，且**测试环境缺 token 通道**：测试实例属于旧账号、集成侧手上的 AK 只能看到生产实例
+⇒ 拿不到测试机的 `.env.ai-agent` / `SERVICE_TOKEN`。**⇒ SSE 这一格记在「下一次生产发布」验收**（在云主机内部执行，
+token 从环境变量读、**不回显**；命令形状见上）；不写成「已通过」，也不写成「不可判定」。
 
 ⚠️ **「配置了」≠「生效了」**：`docker compose stop` 默认 10s 后 `SIGKILL` ⇒ 应用配 30s 也只会被砍在 10s。
 三处必须**同时**配（应用 + compose + 编排脚本用 `stop` 而非 `kill`），且发布期用一个**长请求**实测：

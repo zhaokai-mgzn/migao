@@ -1020,7 +1020,35 @@ else
   # `migaozn.com` 在文件里只作为**域名**出现（`migao` / `migao-deploy` 等不含该串）⇒ 全局替换安全；
   # server_name / 注释 / 日志格式内的域名引用一次性对齐，避免出现「配置说 A、注释说 B」。
   sed "s/migaozn\.com/${MIGAO_PUBLIC_DOMAIN}/g" ./nginx/nginx.conf.canonical > ./nginx/nginx.conf.render.tmp
-  mv -f ./nginx/nginx.conf.render.tmp ./nginx/nginx.conf
+  # 🔴 **原地写**（`cat >`），**不要** `mv`/`rename`（issue #9098）：`./nginx/nginx.conf` 是
+  # **单文件 bind mount** 的源（`…:/etc/nginx/conf.d/default.conf:ro`），docker 按 **inode** 挂载
+  # ⇒ 换掉 inode 后容器里看到的还是**旧文件**，于是 `nginx -t` / `nginx -s reload` 全在加载旧配置，
+  # 而宿主侧的 `grep server_name` 断言看的是新文件 ⇒ **假绿**（改前生产域分支正是 `mv -f`）。
+  cat ./nginx/nginx.conf.render.tmp > ./nginx/nginx.conf
+  rm -f ./nginx/nginx.conf.render.tmp
+fi
+# ── 1.2.2b 单文件 bind mount 的 **inode 一致性**（issue #9098）──────────────────────
+# 病（上面那条注释是本体）：容器按 inode 挂载，宿主侧换过 inode ⇒ 容器停在旧配置，
+# 而所有判据（`grep server_name` / sha256 打印）看的都是**宿主文件** ⇒ 看不到这件事。
+# 这里做**一次性自愈**：盘上 sha ≠ 容器内 sha ⇒ 重启一次 nginx 让它重新挂载，并**出声**。
+# 之后本脚本一律原地写 ⇒ 不会再出现（这条只在「改前用 mv 渲染过」的机器上触发一次）。
+if [ -n "$(docker compose ps -q nginx 2>/dev/null || true)" ]; then
+  _host_sha=$(sha256sum ./nginx/nginx.conf 2>/dev/null | cut -d' ' -f1 || shasum -a 256 ./nginx/nginx.conf | cut -d' ' -f1)
+  _ctr_sha=$(docker compose exec -T nginx sha256sum /etc/nginx/conf.d/default.conf 2>/dev/null | cut -d' ' -f1 || true)
+  if [ -n "$_host_sha" ] && [ -n "$_ctr_sha" ] && [ "$_host_sha" != "$_ctr_sha" ]; then
+    echo "  ⚠️ NGINX_CONF_MOUNT=STALE（盘上 ${_host_sha:0:12}… ≠ 容器内 ${_ctr_sha:0:12}…）"
+    echo "     原因：单文件 bind mount 按 inode 挂载，宿主侧换过 inode ⇒ 容器停在旧配置（reload 会加载旧内容）"
+    echo "     ⇒ 重启一次 nginx 让它重新挂载（一次性自愈；此后本脚本一律原地写，不再发生）"
+    docker compose restart nginx >/dev/null 2>&1 || true
+    _ctr_sha=$(docker compose exec -T nginx sha256sum /etc/nginx/conf.d/default.conf 2>/dev/null | cut -d' ' -f1 || true)
+    if [ "$_host_sha" = "$_ctr_sha" ]; then
+      echo "     ✅ NGINX_CONF_MOUNT=OK（自愈后一致）"
+    else
+      echo "     ❌ NGINX_CONF_MOUNT=STILL_STALE（重启后仍不一致 ⇒ 后续 upstream 切换会拒绝执行并回落重建路径）"
+    fi
+  else
+    echo "     NGINX_CONF_MOUNT=OK（盘上与容器内一致）"
+  fi
 fi
 _conf_sha=$(sha256sum ./nginx/nginx.conf 2>/dev/null | cut -d' ' -f1 || shasum -a 256 ./nginx/nginx.conf | cut -d' ' -f1)
 echo "  站点域名：${MIGAO_PUBLIC_DOMAIN}（nginx.conf sha256=${_conf_sha:-unknown}）"
@@ -1927,10 +1955,13 @@ if len(opens) != 1 or len(closes) != 1 or opens[0] > closes[0]:
         f"（begin={len(opens)} end={len(closes)}）"
     )
 new = lines[: opens[0] + 1] + ["    " + m for m in members] + lines[closes[0]:]
-fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path) or ".", prefix=".nginx.conf.")
-with os.fdopen(fd, "w", encoding="utf-8") as fh:
+# 🔴 **原地写**：目标是**单文件 bind mount** 的源（`…:/etc/nginx/conf.d/default.conf:ro`），
+#    docker 按 **inode** 挂载 ⇒ 用 tmpfile + os.replace 换 inode 之后，容器里看到的还是**旧文件**，
+#    `nginx -t` / `reload` 全在加载旧配置 ⇒ 切换**静默不生效**（判据：inode 必须不变）。
+with open(path, "w", encoding="utf-8") as fh:
     fh.write("\n".join(new) + "\n")
-os.replace(tmp, path)
+    fh.flush()
+    os.fsync(fh.fileno())
 print(f"UPSTREAM_MEMBERS={target}:{len(members)}")
 PY_UPSTREAM_MEMBERS
 }
@@ -1954,6 +1985,19 @@ nginx_upstream_switch() {
     cp -f "$bak" "$NGINX_CONF_FILE"
     echo "     ❌ 改写 upstream 成员失败 ⇒ 已恢复 ${bak}（入口未变）"
     return 1
+  fi
+  # 🔴 单文件 bind mount 按 inode 挂载：**必须**确认容器里看到的就是刚写的那份。
+  #    不一致 ⇒ 说明容器挂在旧 inode 上（历史上用过 mv/rename 渲染）⇒ 此时 reload 只会加载旧配置，
+  #    切换会**静默不生效**（入口 200 断言也照样绿）—— 宁可回落重建路径，也不许假绿。
+  local host_sha ctr_sha
+  host_sha=$(sha256sum "$NGINX_CONF_FILE" 2>/dev/null | cut -d' ' -f1 || shasum -a 256 "$NGINX_CONF_FILE" | cut -d' ' -f1)
+  ctr_sha=$(docker compose exec -T nginx sha256sum /etc/nginx/conf.d/default.conf 2>/dev/null | cut -d' ' -f1 || true)
+  if [ -n "$host_sha" ] && [ -n "$ctr_sha" ] && [ "$host_sha" != "$ctr_sha" ]; then
+    cp -f "$bak" "$NGINX_CONF_FILE"
+    echo "     ❌ NGINX_CONF_MOUNT=STALE（盘上 ${host_sha:0:12}… ≠ 容器内 ${ctr_sha:0:12}…）"
+    echo "        容器挂在旧 inode 上 ⇒ reload 只会加载旧配置（切换会静默不生效）⇒ 已恢复 ${bak}、**不 reload**"
+    echo "        处置：docker compose restart nginx 后重跑本段（1.2.2b 的自愈只会做一次）"
+    return 3
   fi
   if ! docker compose exec -T nginx nginx -t; then
     cp -f "$bak" "$NGINX_CONF_FILE"
