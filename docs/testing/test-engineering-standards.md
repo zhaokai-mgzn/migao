@@ -606,7 +606,7 @@ python3 scripts/case_id_lease.py reserve MC --pr <本 PR 号> --title "<本 PR �
   **不再按实测重锚**（分支根本不写锚点 ⇒ 正常批次没有收尾提交）。
 
 ⇒ 加用例时**你不用再动** `case_machine_fail_channel_baseline.json`（本单自己就是证据：
-MC-351 让派生读数 341 → 342，而锚点文件**只改了 `entries` 与四个 `_note` 键**）。
+新增一条 `[backend-contract]` 用例 ⇒ 派生读数由语料**现算**（本 PR 前 341 ⇒ 本 PR 后 342），而锚点文件**只改了 `entries` 与四个 `_note` 键**、`history` 一行没动）。
 
 ### 14.4 判据（每条都能单独变红）
 

@@ -1,4 +1,4 @@
-# case_ids: MC-351
+# case_ids: MC-352
 """「加用例」在并行包里**不再需要人肉让号、也不再冲同一个数字**（issue #9090）。
 
 ## 两个病（2026-11-23 一晚上 5 次 rebase 的现场）
@@ -97,7 +97,7 @@ def _run(script: Path, args: list[str], env: dict, cwd: Path = REPO_ROOT) -> sub
 
 
 def _answer(stdout: str) -> str:
-    """取分配行里的号（`… → 取 MC-351`）；没有分配行 ⇒ 空串。"""
+    """取分配行里的号（`… → 取 MC-352`）；没有分配行 ⇒ 空串。"""
     hits = re.findall(r"→ 取 ([A-Z]{2,4}-\d{3,})", stdout)
     assert hits, f"输出里没有分配行（`→ 取 <号>`）：\n{stdout[-1500:]}"
     return hits[-1]

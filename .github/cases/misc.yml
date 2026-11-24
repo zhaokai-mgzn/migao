@@ -10824,7 +10824,7 @@ cases:
         - pr-check.yml
       verifies: []
 
-  - id: MC-351
+  - id: MC-352
     legacy_id: ""
     title: "「加用例」在并行包里不再人肉让号、也不再冲同一个数字：号段租约（离线原子占位）+ 台账派生读数"
     domains:
@@ -10859,7 +10859,7 @@ cases:
       - "**兼容性**：既有 287 条用例、既有 138 份 claim 继续有效（`test_case_id_claims.py` 的判据 1~7 全绿）；`history` 既有 234 行逐字节未改（本 PR diff 里该文件只动 `entries` 与四个 `_note` 键）。"
       - "**边界（照实登记）**：租约台账是**机器级**的（`MIGAO_CASE_ID_LEASE_DIR`，默认 `~/.migao-case-id-leases`）⇒ 只覆盖**同一台机器**上的并行包（多 worktree / 多克隆）；**跨机器**仍靠 `.github/cases/claims/**` + `test_case_id_claims.py` 的判据 2/7。不清理陈旧租约（放弃的号只让尾部前进一位）。同一语料文件**尾部追加**仍可能文本冲突（issue #6255 的面，不在本单射程）。"
     skip_reason: "[backend-contract] 研发工具链契约判据（真子进程并发 + 真 git 合并 + 隔离租约目录）：零网络、零 LLM，不进 agent-eval 冒烟"
-    merge_log: "2026-11-24 新增（issue #9090）。取号 = `python3 scripts/next_case_id.py MC`（main ∪ 全部 open PR ∪ 本工作区 ∪ 租约）⇒ **MC-351**。同批落地：scripts/case_id_lease.py（号段预占写面，`O_CREAT|O_EXCL` 原子占位 + 撞车顺延）、scripts/next_case_id.py（新增只读的 `read_leases()` 来源）、case_machine_fail_channel_baseline.json（`entries.backend_contract_scoring_zero` 退役；`history` 转只增归档）、test_case_machine_fail_channel.py（I3 改为「只放不变量」+ 红证）、scripts/batch_merge_lib.py（批次合并**不再重锚**：取 main 版 + 复核）、docs/testing/test-engineering-standards.md §14。"
+    merge_log: "2026-11-24 新增（issue #9090）。取号 = `python3 scripts/next_case_id.py MC`（main ∪ 全部 open PR ∪ 本工作区 ∪ 租约）先取 **MC-351**，与在飞 PR #9100 撞号 ⇒ 按「后合入者让号」用 `python3 scripts/case_id_lease.py reserve MC` 让到 **MC-352**（本单自己的工具：离线原子占位）。同批落地：scripts/case_id_lease.py（号段预占写面，`O_CREAT|O_EXCL` 原子占位 + 撞车顺延）、scripts/next_case_id.py（新增只读的 `read_leases()` 来源）、case_machine_fail_channel_baseline.json（`entries.backend_contract_scoring_zero` 退役；`history` 转只增归档）、test_case_machine_fail_channel.py（I3 改为「只放不变量」+ 红证）、scripts/batch_merge_lib.py（批次合并**不再重锚**：取 main 版 + 复核）、docs/testing/test-engineering-standards.md §14。"
     traces:
       tests:
         - "tests/unit_ci_workflows/test_case_id_exclusive_ledger.py"
