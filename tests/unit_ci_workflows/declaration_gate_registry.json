@@ -403,6 +403,7 @@
         "Setup Node.js",
         "Install test deps",
         "Install admin-web deps (for Playwright webServer)",
+        "Cache Playwright browsers",
         "Run quality specs (fixture-only)"
       ],
       "job_gate": {

@@ -11053,3 +11053,22 @@ cases:
       tests:
         - "tests/unit_ci_workflows/test_ci_cost_ledger.py"
     merge_log: "2026-11-24 新增（issue #9120）。病根不在那几条腿，而在工具形状：`--measure` 是全量重写 ⇒ **一条超预算就整仓拒写** ⇒ 任何新增腿都无法合法登记（只能留白）。修法：加 `--allow-partial`——超预算腿整条沿用上一版（预算/实测/basis 都不动）、合规腿照常刷新、**仍非零退出**；默认与 `--accept-raise` 行为不变。实证：本机以 30 次窗口现取，`--allow-partial` 写入 35 条腿（34 条有实测），刷新 12 条合规腿，落 22 条超预算腿并 exit 1。取号 = `next_case_id.py MC` ⇒ **MC-359**。"
+  - id: MC-360
+    legacy_id: ""
+    title: "贵腿给「按次下载」上暖缓存：e2e 的 npm（两份 lockfile）+ Playwright 浏览器 + gitleaks 二进制（键钉版本）"
+    domains:
+      - misc
+      - ci
+    tier: normal
+    tags:
+      - ci
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "**判据 1·npm 缓存覆盖两份 lockfile**：现取 `e2e-quality-gate` 的 `Setup Node.js` 步骤 ⇒ `with.cache == npm` 且 `cache-dependency-path` 同时含 `tests/package-lock.json` 与 `frontend/admin-web/package-lock.json`；缺任一即红。理由：该腿两次 `npm ci` 实测合计 ~56s（admin-web 55s），是本腿最大单项。纯静态：`未被调用`。执行点 = `test_costly_legs_warm_their_caches.py::test_e2e_npm_cache_covers_both_lockfiles`"
+      - "**判据 2·Playwright 浏览器缓存**：e2e 腿必须有 `actions/cache` 且 `path` 含 `ms-playwright`；缺即红（未命中时每次重下 chromium）。纯静态：`未被调用`。执行点 = `::test_e2e_caches_playwright_browsers`"
+      - "**判据 3·gitleaks 二进制缓存 + 版本钉进键 + 未命中才下载**：缓存 `path` 含 gitleaks、`key` 含 `8.30.1`（版本升级不得命中旧二进制）、下载体必须有 `if [ ! -x ./gitleaks ]` 守卫（否则缓存在也照下）。纯静态：`未被调用`。执行点 = `::test_gitleaks_binary_is_cached_and_keyed_by_version`"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_costly_legs_warm_their_caches.py"
+    merge_log: "2026-11-25 新增（issue #9120 三刀减负之二）。追因读数：e2e 腿 `npm ci` 两次合计 ~56s（`tests` 1s + `frontend/admin-web` **55s**）、Playwright chromium 未缓存、gitleaks 每 PR 一次 Release 下载（版本钉死 8.30.1）。修法：setup-node 开 `cache: npm` + 双 lockfile 路径；`actions/cache` 缓存 `~/.cache/ms-playwright`；`actions/cache` 缓存 `./gitleaks`（key 钉 8.30.1）+ 未命中才 curl。红证实跑：精确删掉 e2e 的 `cache: npm` ⇒ 判据 1 FAILED；还原 ⇒ 3 passed。⚠️ 第一次红证因 `cache: npm` 在文件里有**两处**（admin-web-test 也有）而误删了别处 —— 已按块精确定位重做。取号 = `next_case_id.py MC` ⇒ **MC-360**。"
