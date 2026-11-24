@@ -584,7 +584,7 @@ main() {
   deploy_out=""
   for svc in $PROD_SERVICES; do
     if [ "${DEPLOY_FORM:-flag}" = "positional" ]; then
-      deploy_cmd="BUILD_SERVICE=${svc} BUILD_SHA=${TARGET_SHA} BUILT_AT=${BUILT_AT_NOW} bash ${REMOTE_DEPLOY} sha-$(printf '%s' "$TARGET_SHA" | cut -c1-7)"
+      deploy_cmd="MIGAO_RELEASE_LINE=enforce BUILD_SERVICE=${svc} BUILD_SHA=${TARGET_SHA} BUILT_AT=${BUILT_AT_NOW} bash ${REMOTE_DEPLOY} sha-$(printf '%s' "$TARGET_SHA" | cut -c1-7)"
     else
       deploy_cmd="bash ${REMOTE_DEPLOY} ${DEPLOY_FLAG} ${TARGET_SHA}"
     fi

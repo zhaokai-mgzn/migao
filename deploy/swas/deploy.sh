@@ -771,8 +771,30 @@ rl_resolve_target() {
   return 0
 }
 
-RELEASE_LINE_VERDICT=unverified
-if rl_ensure_repo && rl_fetch_release; then
+# ── 环境作用域（2026-11-24 修 P0：本闸门此前**无环境判别**，把测试环境锁死了）─────────
+# 事故事实：PR #9100 的测试腿（`deploy-admin-api.yml --ref m1-zero-downtime`）在测试机上被
+#   `❌ RELEASE-LINE=UNVERIFIED ⇒ 拒绝部署` 拦死（run 45302667932，01:21:10Z / 01:23:30Z 两次）
+#   —— 测试环境发的是 **main 线上的分支提交**，它永远不可能是 `origin/release` 的祖先；
+#   把只该约束生产的闸门无条件套到测试腿 = **测试环境再也发不出去**。
+# 口径：`MIGAO_RELEASE_LINE=auto`（默认）| `enforce` | `off`
+#   auto    ⇒ 生产域名 `cytda.com` = enforce；其它（测试 `migaozn.com`）= off
+#   enforce ⇒ 无论域名都判（生产侧显式加保险；`scripts/prod-release.sh` 会传这个值）
+#   off     ⇒ 跳过，但**必须出声**（静默跳过 = 这条判据等于没有）
+RELEASE_LINE_MODE=${MIGAO_RELEASE_LINE:-auto}
+if [ "$RELEASE_LINE_MODE" = "auto" ]; then
+  case "${MIGAO_PUBLIC_DOMAIN:-migaozn.com}" in
+    cytda.com) RELEASE_LINE_MODE=enforce ;;
+    *)         RELEASE_LINE_MODE=off ;;
+  esac
+fi
+if [ "$RELEASE_LINE_MODE" = "off" ]; then
+  echo "  ⏭️  RELEASE-LINE=SKIPPED reason=non-prod（MIGAO_PUBLIC_DOMAIN=${MIGAO_PUBLIC_DOMAIN:-migaozn.com}；"
+  echo "     测试环境发 main 线提交，本闸门只约束生产。生产要么域名是 cytda.com，要么显式 MIGAO_RELEASE_LINE=enforce）"
+  RELEASE_LINE_VERDICT=skipped
+fi
+
+RELEASE_LINE_VERDICT=${RELEASE_LINE_VERDICT:-unverified}
+if [ "$RELEASE_LINE_MODE" != "off" ] && rl_ensure_repo && rl_fetch_release; then
   RELEASE_LINE_HEAD=$(rl_git rev-parse --verify --quiet 'refs/remotes/origin/release^{commit}' 2>/dev/null || true)
   if [ -z "$RELEASE_LINE_HEAD" ]; then
     RELEASE_LINE_WHY="取不到 origin/release 的 ref（fetch 报成功但 rev-parse 为空）"
@@ -791,6 +813,8 @@ if rl_ensure_repo && rl_fetch_release; then
 fi
 
 case "$RELEASE_LINE_VERDICT" in
+  skipped)
+    : ;;   # 已在上面出声（RELEASE-LINE=SKIPPED reason=non-prod）；这里是**非生产**的显式分支
   ancestor)
     echo "  ✅ RELEASE-LINE=OK target=${RELEASE_LINE_TARGET:0:7} release=${RELEASE_LINE_HEAD:0:7}（目标 commit 是 origin/release 的祖先）"
     ;;
