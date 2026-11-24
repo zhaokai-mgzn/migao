@@ -1,6 +1,6 @@
 #!/bin/bash
 # ══════════════════════════════════════════════════════════════════════════════
-# 生意管家终端（Windows EXE / Android APK）发布腿 —— **CI 侧**（issue #8195）
+# 观星台终端（Windows EXE / Android APK）发布腿 —— **CI 侧**（issue #8195）
 #
 # 两个子命令，**同一份实现**覆盖「生成清单」与「发布 + 验收」：
 #
@@ -425,7 +425,7 @@ if problems:
 print("✅ 本地清单与载荷一致（%s）" % dist)
 PY
 
-  say "# 生意管家终端静态落位（issue #8195）"
+  say "# 观星台终端静态落位（issue #8195）"
   say ""
   say "- 目标：\`$EXPECTED_TARGET\`（静态根 = nginx 的 \`root\`，**同时承载 C 端米宝 ⇒ 只收敛 $SUBDIR/ 子树**）"
   say "- 版本：\`$RELEASE_TAG\`"
