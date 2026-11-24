@@ -309,6 +309,9 @@ def run_section(tmp_path: Path, body: str | None = None, *, extra_env: dict | No
         "RELEASE_LINE_FETCH_DELAY_SECONDS": "0",
         "RELEASE_LEDGER_FILE": str(ledger),
         "ALLOW_UNVERIFIABLE_RELEASE": "0",
+        # 本文件的行为面默认按**生产**口径跑（2026-11-24 起闸门有环境作用域）：
+        # 显式 `enforce` 让既有用例的语义不受域名默认值影响；域名的三态由专门用例覆盖。
+        "MIGAO_RELEASE_LINE": "enforce",
         "STUB_LOG": str(stub_log),
         "DOCKER_LOG": str(docker_log),
         "STUB_TARGET_SHA": TARGET_FULL,
@@ -505,3 +508,46 @@ def test_red_proof_4_is_ancestor_replaced_by_rev_parse_is_red(tmp_path):
     r = run_section(tmp_path, section_body(mutated), extra_env={"STUB_ANCESTOR": "0"})
     assert r["rc"] == 0, f"换成 rev-parse 后本应**误放行**（rc=0），实测 rc={r['rc']}\n{r['out']}"
     assert r["docker_log"].strip(), "换成 rev-parse 后应当错误地继续部署"
+
+
+# ── 环境作用域（2026-11-24 修 P0：闸门此前无环境判别，把测试环境锁死）─────────────
+
+def test_non_prod_domain_skips_the_gate_loudly_and_touches_no_network(tmp_path):
+    """测试环境（`migaozn.com`）发的是 **main 线上的分支提交** ⇒ 闸门必须**跳过并出声**，
+    且**一次 git 调用都不发**（连 fetch 都不该试）。
+
+    事故现场：run **45302667932**，`01:21:10Z` / `01:23:30Z` 两次
+    `❌ RELEASE-LINE=UNVERIFIED ⇒ 拒绝部署`（PR #9100 的测试腿被自己的闸门锁死）。
+    """
+    r = run_section(tmp_path, extra_env={"MIGAO_RELEASE_LINE": "auto", "MIGAO_PUBLIC_DOMAIN": "migaozn.com"})
+    assert r["rc"] == 0, r["out"]
+    assert "RELEASE-LINE=SKIPPED reason=non-prod" in r["out"], r["out"]
+    assert r["git_log"] == "", f"测试环境不该去取发布线；git 调用：{r['git_log']}"
+    assert "SECTION-PASSED" in r["out"], "跳过闸门后部署应继续（否则测试环境发不出去）"
+
+
+def test_prod_domain_auto_still_enforces(tmp_path):
+    """生产域名（`cytda.com`）+ `auto` ⇒ 照旧判：非祖先 ⇒ rc=2（跳过的只是非生产）。"""
+    r = run_section(tmp_path, extra_env={
+        "MIGAO_RELEASE_LINE": "auto", "MIGAO_PUBLIC_DOMAIN": "cytda.com",
+        "STUB_ANCESTOR": "0", "STUB_AHEAD": "12",
+    })
+    assert r["rc"] == 2, r["out"]
+    assert "RELEASE-LINE=VIOLATION" in r["out"], r["out"]
+    assert r["docker_log"] == "", f"非祖先却动了 docker：{r['docker_log']}"
+
+
+def test_explicit_enforce_on_a_test_domain_also_checks(tmp_path):
+    """显式 `enforce` ⇒ 即使域名是测试域也照判（生产侧加保险的口径）。"""
+    r = run_section(tmp_path, extra_env={
+        "MIGAO_RELEASE_LINE": "enforce", "MIGAO_PUBLIC_DOMAIN": "migaozn.com", "STUB_ANCESTOR": "0",
+    })
+    assert r["rc"] == 2, r["out"]
+    assert "RELEASE-LINE=VIOLATION" in r["out"], r["out"]
+
+
+def test_explicit_off_is_loud_not_silent(tmp_path):
+    """显式 `off` ⇒ 跳过，但必须**出声**（静默跳过 = 这条判据等于没有）。"""
+    r = run_section(tmp_path, extra_env={"MIGAO_RELEASE_LINE": "off", "MIGAO_PUBLIC_DOMAIN": "cytda.com"})
+    assert r["rc"] == 0, r["out"]
+    assert "RELEASE-LINE=SKIPPED" in r["out"], r["out"]
