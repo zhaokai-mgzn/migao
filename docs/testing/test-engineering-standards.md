@@ -610,7 +610,7 @@ MC-351 让派生读数 341 → 342，而锚点文件**只改了 `entries` 与四
 
 ### 14.4 判据（每条都能单独变红）
 
-判据 = `tests/unit_ci_workflows/test_case_id_exclusive_ledger.py`（9 条）+ `test_case_machine_fail_channel.py`
+判据 = `tests/unit_ci_workflows/test_case_id_exclusive_ledger.py`（12 条）+ `test_case_machine_fail_channel.py`
 的 I3 改造。红证（都可在本机跑）：
 
 ```bash

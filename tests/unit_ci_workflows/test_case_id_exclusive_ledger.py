@@ -196,15 +196,22 @@ def test_red_proof_without_the_atomic_lease_two_racers_share_one_number(tmp_path
     assert mod.reserve("MC", occupied, lease) != mod.reserve("MC", occupied, lease)
 
 
-def test_red_proof_the_compute_only_allocator_answers_the_same_number_twice():
-    """判据 3：只读分配器**单独**跑两次 ⇒ 同一个号（旧路径的撞号现场，判据 2 的判别力基线）。"""
+def test_red_proof_the_compute_only_allocator_answers_the_same_number_twice(tmp_path):
+    """判据 3：只读分配器**单独**跑两次 ⇒ 同一个号（旧路径的撞号现场，判据 2 的判别力基线）。
+
+    对照臂：42 号是「把 41 号**独占**出去」之后的下一个答案 —— 独占只多花一次原子创建，
+    换掉的是「两个包同时拿到 41」这一整类事故。
+    """
     occupied = {"MC": set(range(1, 41))}
     alloc = _nci_module().allocate
     first, second = alloc(occupied, ["MC"])["MC"], alloc(occupied, ["MC"])["MC"]
     assert first == second == 41, (
         f"只读分配器在**同一份候选集**上给出了不同号（{first} / {second}）⇒ 本判据的前提变了")
-    # 对照：带上租约来源的合并集 ⇒ 与「只读结果」不同（这就是独占要买的那一步）
-    assert 41 not in {42}, "对照臂自证"
+    reserved = _lease_module().reserve("MC", occupied, tmp_path / "leases")
+    assert reserved == 41, f"租约占的号与该轮的候选不一致：{reserved}"
+    occupied_after = _nci_module().merge_ids(occupied, {"MC": {reserved}})
+    assert alloc(occupied_after, ["MC"])["MC"] == 42, (
+        "租约占了号却看不到它 ⇒ 独占等于没做")
 
 
 def test_allocator_never_hands_out_a_reserved_number(tmp_path):
