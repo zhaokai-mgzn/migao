@@ -731,6 +731,12 @@ jobs:
         uses: actions/setup-node@v7
         with:
           node-version: '20'
+          # ⚡ 依赖暖缓存（2026-11-25，issue #9120 成本追因）：本腿两次 `npm ci` 实测合计 ~56s
+          # （`tests` 1s + `frontend/admin-web` **55s**），是本腿最大单项；命中缓存后 `npm ci` 走离线包。
+          cache: npm
+          cache-dependency-path: |
+            tests/package-lock.json
+            frontend/admin-web/package-lock.json
 
       - name: Install test deps
         if: steps.detect_e2e.outputs.run_tests == 'true'
@@ -741,6 +747,16 @@ jobs:
         if: steps.detect_e2e.outputs.run_tests == 'true'
         working-directory: frontend/admin-web
         run: npm ci
+
+      # ⚡ Playwright 浏览器暖缓存：未命中时每次都要下载 chromium（实测数十秒且吃网络）
+      - name: Cache Playwright browsers
+        if: steps.detect_e2e.outputs.run_tests == 'true'
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('tests/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-playwright-
 
       - name: Run quality specs (fixture-only)
         if: steps.detect_e2e.outputs.run_tests == 'true'
@@ -1213,14 +1229,25 @@ jobs:
       # 官方二进制（不走 gitleaks-action）：2026-11-22 实测 action@v3 在无 license 时
       # 直接 `missing gitleaks license` 早退 ⇒ 这条必需 check **永久红**，与代码无关，
       # 且阻塞所有 PR 合并（含"修它自己"的 PR）。二进制免费、无许可、不调 GitHub API。
+      # ⚡ 二进制暖缓存（2026-11-25，issue #9120）：版本是**钉死**的定值 ⇒ 缓存键只跟版本走，
+      # 命中后免掉每 PR 一次的 GitHub Release 下载（实测下载+解包是这条腿除 checkout 外唯一开销）。
+      - name: Cache gitleaks binary
+        id: gitleaks-cache
+        uses: actions/cache@v4
+        with:
+          path: ./gitleaks
+          key: ${{ runner.os }}-gitleaks-8.30.1
+
       - name: Run gitleaks secret scan (official binary)
         id: gitleaks
         shell: bash
         run: |
           set -uo pipefail
           V=8.30.1
-          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${V}/gitleaks_${V}_linux_x64.tar.gz" \
-            | tar -xz gitleaks
+          if [ ! -x ./gitleaks ]; then
+            curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${V}/gitleaks_${V}_linux_x64.tar.gz" \
+              | tar -xz gitleaks
+          fi
           ./gitleaks version
           BASE="origin/${{ github.base_ref }}"
           ./gitleaks detect --source . --redact --no-banner \
