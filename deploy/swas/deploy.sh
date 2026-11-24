@@ -1794,12 +1794,17 @@ done
 # → 用**与第 3 步完全同一份判据**做健康检查 → 通过才替换正式容器；不通过 ⇒ 删 green、exit 1，
 # **旧容器一动不动**（失败窗口 = 0）。#4767 的「失败即回滚」（CI 侧）仍是**外层**兜底，本段是**内层**。
 #
-# 取舍（issue #4785 要求逐条说明）：走**第二端口**而不是 **nginx upstream 切换** ——
-# nginx.conf 里 `proxy_pass http://admin-api:8080` 走 compose DNS 名，nginx 在**启动/reload 时**
-# 解析并缓存上游 IP；改 nginx.conf 写坏 = **全站所有域名同时挂**（正是「部署脚本改坏 = 停掉
-# 所有人的部署」的形态）⇒ 本单不碰它。代价（如实登记）：**成功路径**仍有「替换正式容器 +
-# 启动 + reload」的秒级窗口 —— 与改动前**同量级、未变差**，且此刻镜像已被证明能起；
-# **失败路径**（坏镜像）的窗口已被打到 **0**。
+# 取舍（issue #4785 要求逐条说明）：**过去**刻意走第二端口而不碰 nginx upstream ——
+# nginx.conf 的 `proxy_pass http://admin-api:8080` 走 compose DNS 名，改 nginx.conf 写坏 =
+# **全站所有域名同时挂**（「部署脚本改坏 = 停掉所有人的部署」的形态）。
+# 🔴 **M1-a（issue #9098）把成功路径的窗口也消掉了**：nginx.conf 现在是 **upstream 模型**
+# （`migao_admin_api` / `migao_ai_agent` / `migao_admin_web`），发布期 `nginx_upstream_switch()`
+# **只改成员行 + `nginx -t` + reload**，正式容器是在流量移走**之后**才重建的（下方 ④ 在 ②③ 之后）。
+# 「写坏 = 全站挂」的四道锁：① 成员块有标记（只改那几行，其余一字不动）② 改完**先** `nginx -t`
+# ③ `-t` 失败 ⇒ 当场把备份拷回、**不 reload**（入口一字未变）④ reload 失败 ⇒ 同样回退 + 重试一次。
+# 失败路径（坏镜像）的窗口仍是 **0**（#4785 语义未变）；成功路径的窗口现在是 **0**
+#（改动前是「替换 + 启动 + reload」的秒级～分钟级）。判据（会红）：见铁律 8 的固化声明；
+# 承载体 = tests/unit_ci_workflows/test_zero_downtime_m1_cutover.py。
 # ══════════════════════════════════════════════════════════════════════════
 
 # green 的**第二端口**：与 deploy/swas/docker-compose.bluegreen.yml 的默认值必须一致
@@ -1842,6 +1847,157 @@ svc_health_path() {
     *)         echo "" ;;
   esac
 }
+# ══════════════════════════════════════════════════════════════════════════
+# M1-a nginx **upstream 摘挂**（issue #9098）—— 切换动作 = 只改 upstream 成员 + reload
+#
+# 这段存在的理由：下方 ⑤ 的「重建正式容器」（`up -d --no-deps <svc>`，compose 的**替换**语义：
+# 停旧 → 删旧 → 建新 → 起新）只要发生在流量还指着旧容器的时候，中间就一定有一段
+# 「没有进程在服务」的窗口（改动前实测 90s 的 502）。所以顺序改成：
+#   ① green 起来且健康 → ② **只切 upstream**（green 主 + 正式容器 backup）+ `nginx -t` + reload
+#   → ③ 入口 200 断言 → ④ drain（等旧 worker 把在途请求做完）→ ⑤ **现在才**重建正式容器
+#   → ⑥ upstream 切回正式容器 → ⑦ 删 green。
+# ⚠️ 稳态**只写现行实例一条成员**：nginx 解析配置时就会对 upstream 服务名做 DNS 解析，green 没在跑
+#    时写它的名字 ⇒ `[emerg] host not found in upstream` ⇒ 全站起不来。green 成员只在发布期存在，
+#    成功/失败都会恢复（`nginx_upstream_switch <svc> formal`）。
+# ⚠️ 真机事实：nginx 跑在**容器**里（`migao-deploy-nginx-1`），宿主没有 nginx 二进制、没有
+#    `/etc/nginx` ⇒ 一切测试/reload 都经 `docker compose exec -T nginx`。
+# 判据（会红）：tests/unit_ci_workflows/test_zero_downtime_m1_cutover.py（含注入式红证：
+#    把这里改回「重建 + reload」⇒ 判据红）。
+# ══════════════════════════════════════════════════════════════════════════
+NGINX_CONF_FILE=${NGINX_CONF_FILE:-./nginx/nginx.conf}
+UPSTREAM_MEMBERS_BEGIN="# >>> migao-upstream-members"
+UPSTREAM_MEMBERS_END="# <<< migao-upstream-members"
+# drain 的上限：与 nginx.conf 的 `worker_shutdown_timeout 200s` 同值（= SSE 最长流 180s + 余量）
+UPSTREAM_DRAIN_TIMEOUT=${UPSTREAM_DRAIN_TIMEOUT:-200}
+
+upstream_name_of() {
+  case "$1" in
+    admin-api) echo migao_admin_api ;;
+    ai-agent)  echo migao_ai_agent ;;
+    admin-web) echo migao_admin_web ;;
+    *)         echo "" ;;
+  esac
+}
+
+# 成员行（**唯一一份口径**）：正式容器的稳态形态必须与 nginx.conf 里 checked-in 的那一行**逐字相同**
+# （切回去要和原文逐字节一致 —— 否则每次发布都会在服务器上留下漂移）。
+upstream_members_for() {
+  local svc=$1 role=$2 port
+  port=$(svc_port "$svc")
+  case "$role" in
+    green)
+      # 发布期：green 主、正式容器 backup（主不可用时才回落 ⇒ 新镜像刚起就崩也不会打到用户）
+      printf 'server %s-green:%s max_fails=2 fail_timeout=10s;\n' "$svc" "$port"
+      printf 'server %s:%s backup;\n' "$svc" "$port" ;;
+    formal)
+      printf 'server %s:%s max_fails=2 fail_timeout=10s;\n' "$svc" "$port" ;;
+    *) return 1 ;;
+  esac
+}
+
+# >>> upstream-members-rewrite（判据会从本段抽出这段 python 单独跑：行为式证明「切换后两个后端」）
+rewrite_upstream_members() {
+  UPSTREAM_FILE="$1" UPSTREAM_TARGET="$2" UPSTREAM_MEMBERS="$3" \
+  UPSTREAM_BEGIN="$UPSTREAM_MEMBERS_BEGIN" UPSTREAM_END="$UPSTREAM_MEMBERS_END" \
+  python3 - <<'PY_UPSTREAM_MEMBERS'
+import os
+import sys
+import tempfile
+
+path = os.environ["UPSTREAM_FILE"]
+target = os.environ["UPSTREAM_TARGET"]
+members = [ln for ln in os.environ["UPSTREAM_MEMBERS"].splitlines() if ln.strip()]
+begin = os.environ["UPSTREAM_BEGIN"].strip()
+end = os.environ["UPSTREAM_END"].strip()
+if not members:
+    sys.exit("rewrite_upstream_members: 成员清单为空（不写出一个没有任何后端的 upstream）")
+with open(path, encoding="utf-8") as fh:
+    lines = fh.read().splitlines()
+head = next((i for i, ln in enumerate(lines) if ln.strip() == f"upstream {target} {{"), None)
+if head is None:
+    sys.exit(f"rewrite_upstream_members: 找不到 `upstream {target} {{`")
+tail = next((j for j in range(head + 1, len(lines)) if lines[j].strip() == "}"), None)
+if tail is None:
+    sys.exit(f"rewrite_upstream_members: `upstream {target}` 没有配对的 `}}`")
+opens = [k for k in range(head + 1, tail) if lines[k].strip() == begin]
+closes = [k for k in range(head + 1, tail) if lines[k].strip() == end]
+if len(opens) != 1 or len(closes) != 1 or opens[0] > closes[0]:
+    sys.exit(
+        f"rewrite_upstream_members: `upstream {target}` 的成员标记不是恰好一对"
+        f"（begin={len(opens)} end={len(closes)}）"
+    )
+new = lines[: opens[0] + 1] + ["    " + m for m in members] + lines[closes[0]:]
+fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path) or ".", prefix=".nginx.conf.")
+with os.fdopen(fd, "w", encoding="utf-8") as fh:
+    fh.write("\n".join(new) + "\n")
+os.replace(tmp, path)
+print(f"UPSTREAM_MEMBERS={target}:{len(members)}")
+PY_UPSTREAM_MEMBERS
+}
+# <<< upstream-members-rewrite
+
+# 只切 upstream：改成员 → `nginx -t` → reload。**不重建、不 restart 任何容器**（那就是窗口本身）。
+# 失败一律回退到备份并返回非零 ⇒ 入口停在**改动之前**的形态。
+# 返回码：0 = 已切换；1 = 失败（已回退）；3 = 入口不在运行（无从 reload ⇒ 调用方回落重建路径）
+nginx_upstream_switch() {
+  local svc=$1 role=$2 target members bak
+  target=$(upstream_name_of "$svc")
+  [ -n "$target" ] || { echo "     ❌ 未知服务 ${svc}：没有对应的 upstream 名"; return 1; }
+  members=$(upstream_members_for "$svc" "$role") || { echo "     ❌ 未知角色 ${role}（只允许 green|formal）"; return 1; }
+  if [ -z "$(docker compose ps -q nginx 2>/dev/null || true)" ]; then
+    echo "     ⏭️  nginx 不在运行 ⇒ 无从「只切 upstream」"
+    return 3
+  fi
+  bak="${NGINX_CONF_FILE}.bak-$(date +%Y%m%d-%H%M%S)"
+  cp -f "$NGINX_CONF_FILE" "$bak" || { echo "     ❌ 备份 ${NGINX_CONF_FILE} 失败（不改入口）"; return 1; }
+  if ! rewrite_upstream_members "$NGINX_CONF_FILE" "$target" "$members"; then
+    cp -f "$bak" "$NGINX_CONF_FILE"
+    echo "     ❌ 改写 upstream 成员失败 ⇒ 已恢复 ${bak}（入口未变）"
+    return 1
+  fi
+  if ! docker compose exec -T nginx nginx -t; then
+    cp -f "$bak" "$NGINX_CONF_FILE"
+    echo "     ❌ nginx -t 不通过 ⇒ 已恢复 ${bak}、**未 reload**（入口一字未变）"
+    return 1
+  fi
+  if ! docker compose exec -T nginx nginx -s reload; then
+    cp -f "$bak" "$NGINX_CONF_FILE"
+    echo "     ❌ reload 失败 ⇒ 已恢复 ${bak} 并重试一次 reload（旧 worker 仍在服务，不 restart）"
+    docker compose exec -T nginx nginx -s reload || true
+    return 1
+  fi
+  rm -f -- "$bak"
+  echo "     ✅ upstream 已切换：${target} → $(printf '%s' "$members" | tr '\n' ' ')"
+  return 0
+}
+
+# drain：等旧 nginx worker 把**在途请求**做完再重建正式容器（不是盲睡固定秒数）。
+# 读数 = nginx 自己的 worker 标题：reload 后旧 worker 变成 `nginx: worker process is shutting down`
+# （空闲连接它当场就关，只有**真在跑**的请求会留住它）⇒ 这个标题消失 = 在途请求收尾完毕。
+# 读不到 worker 标题 ⇒ 明说「不可判定」，**不假装等过**；到上限只告警、不中止（nginx 会按
+# worker_shutdown_timeout 强制收尾 —— 宁可慢，也不许把用户的长流砍了）。
+upstream_drain_wait() {
+  local svc=$1 limit=${UPSTREAM_DRAIN_TIMEOUT:-200} i ps_out
+  echo "  ── ${svc} drain：等旧 nginx worker 收尾（上限 ${limit}s）"
+  for i in $(seq 1 "$limit"); do
+    if ! ps_out=$(docker compose exec -T nginx ps 2>/dev/null); then
+      echo "     ⚠️ DRAIN=UNDECIDABLE（读不到 nginx worker 列表）⇒ 不做等待，也不假装等过"
+      return 0
+    fi
+    if ! printf '%s' "$ps_out" | grep -q "worker process"; then
+      echo "     ⚠️ DRAIN=UNDECIDABLE（\`ps\` 输出里没有 nginx worker 标题）⇒ 不做等待，也不假装等过"
+      return 0
+    fi
+    if ! printf '%s' "$ps_out" | grep -q "worker process is shutting down"; then
+      echo "     ✅ DRAIN=OK（旧 worker 已退出，在途请求已收尾；等待 ${i}s）"
+      return 0
+    fi
+    sleep 1
+  done
+  echo "     ⚠️ DRAIN=TIMEOUT（${limit}s 内旧 worker 未全退，长流仍在跑）⇒ 交给 worker_shutdown_timeout 兜底"
+  return 0
+}
+
 # 健康检查判据（**全脚本唯一一份**）：green 与正式容器共用同一函数 ⇒ 判据不可能漂移
 # （推演项「两套判据 / 判据过严导致回滚抖动」正是靠这一点排除的）。
 wait_healthy() {
@@ -1934,6 +2090,9 @@ for svc in $UP_SERVICES; do
   GREEN="$svc-green"
   GPORT=$(bg_port "$svc")
   GPATH=$(svc_health_path "$svc")
+  # 本次是否真的「切了 upstream」：0 = 是（重建后要切回正式容器）
+  # 2 = 应急开关跳过；3 = 入口 nginx 不在运行；1 = 切换失败 ⇒ 三者都回落老路径（但 2/3 **不是失败**）
+  SWITCH_RC=2
 
   # ── ① 蓝绿预验证：先起 green（新容器名 + 第二端口），**旧容器完全不动** ──
   if [ "$BG_SKIP" = "1" ]; then
@@ -1965,19 +2124,57 @@ for svc in $UP_SERVICES; do
     echo "  ✅ $svc green 健康 ⇒ 新镜像已被证明能起，现在才替换正式容器"
   fi
 
-  # ── ② 切换：替换正式容器（走过蓝绿 ⇒ 该镜像刚刚已被证明能起）──
+  # ── ② M1-a：**只切 nginx upstream**（green 主 + 正式容器 backup）→ `nginx -t` → reload ──
+  # 这一步是「零停机」的本体：流量移走**之后**（⑤）才重建正式容器。
+  # 应急开关 / 入口不在运行 ⇒ 不切（`SWITCH_RC` 非 0）⇒ 境界明确地回落到老路径。
+  if [ "$BG_SKIP" = "0" ]; then
+    SWITCH_RC=0
+    nginx_upstream_switch "$svc" green || SWITCH_RC=$?
+  fi
+  if [ "$SWITCH_RC" != "0" ]; then
+    if [ "$SWITCH_RC" = "2" ]; then
+      echo "  ── ${svc}：应急开关生效 ⇒ **不走 upstream 摘挂**（本次**不是零停机**；旧容器仍在服务）"
+    elif [ "$SWITCH_RC" = "3" ]; then
+      echo "  ⏭️  ${svc} 入口 nginx 未运行 ⇒ 本次退回「重建 + reload」老路径：**不是零停机**（旧容器仍在服务）"
+    else
+      echo "  ❌ ${svc} upstream 切换失败 ⇒ **不重建正式容器**（旧容器继续服务、入口保持切换前形态）"
+      $BG_COMPOSE rm -sf "$GREEN" >/dev/null 2>&1 || true
+      exit 1
+    fi
+  else
+    # ── ③ 入口断言：nginx → green 这条路**真的通**（不是只看 reload 命令有没有报错）──
+    nginx_expect_upstream_ok "${svc} 切到 green 后"
+    # ── ④ drain：等旧 nginx worker 把在途请求做完（读的是 worker 状态，不是盲睡）──
+    upstream_drain_wait "$svc"
+    echo "  ✅ ${svc} 流量已切到 green 且旧 worker 已收尾（正式容器**尚未重建**）"
+  fi
+
+  # ── ⑤ 现在才重建正式容器（流量已不在它身上；M1-b 的优雅退出让它在途请求自然收尾）──
   docker compose up -d --no-deps "$svc"
   if ! wait_healthy "$(svc_port "$svc")" "$svc" "$GPATH"; then
     echo "  ❌ $svc 正式容器替换后健康检查未通过 ⇒ 中止"
     echo "     交给 CI 侧 #4767 的「失败即回滚」（回滚到 .last-good-tag）兜底"
     exit 1
   fi
-  # 🔴 重建 = 换 IP ⇒ **必须**让 nginx 重新解析上游，并当场证明它回 200（issue #8976 ④）。
-  # 这一步不能靠「2.6 稍后会 reload」：切换循环里每个服务之间可能隔几分钟健康检查，
-  # 期间入口一直指着旧 IP ⇒ 生产实测就这样 502 了 90 秒。
-  nginx_expect_upstream_ok "${svc} 重建后"
 
-  # ── ③ 正式容器接棒 ⇒ 删掉 green 探针（不长期占内存/端口）──
+  # ── ⑥ upstream 切回正式容器（green 退回 backup 后即可回收）；未切过 ⇒ 老路径 reload 一次 ──
+  if [ "$SWITCH_RC" = "0" ]; then
+    if ! nginx_upstream_switch "$svc" formal; then
+      echo "  ❌ ${svc} upstream 切回正式容器失败 ⇒ **不删 green**（入口仍指向它，服务不中断）"
+      echo "     恢复：docker exec migao-deploy-nginx-1 nginx -T | grep -n -A3 'upstream $(upstream_name_of "$svc")'"
+      echo "           把成员块改回 `server ${svc}:$(svc_port "$svc") max_fails=2 fail_timeout=10s;`，然后："
+      echo "           docker exec migao-deploy-nginx-1 nginx -t && docker exec migao-deploy-nginx-1 nginx -s reload"
+      exit 1
+    fi
+    nginx_expect_upstream_ok "${svc} 切回正式容器后"
+  else
+    # 🔴 重建 = 换 IP ⇒ **必须**让 nginx 重新解析上游，并当场证明它回 200（issue #8976 ④）。
+    # 这一步不能靠「2.6 稍后会 reload」：切换循环里每个服务之间可能隔几分钟健康检查，
+    # 期间入口一直指着旧 IP ⇒ 生产实测就这样 502 了 90 秒。
+    nginx_expect_upstream_ok "${svc} 重建后"
+  fi
+
+  # ── ⑦ 正式容器接棒 ⇒ 删掉 green 探针（不长期占内存/端口）──
   if [ "$BG_SKIP" = "0" ]; then
     $BG_COMPOSE rm -sf "$GREEN" >/dev/null 2>&1 || true
     BG_VERIFIED="$BG_VERIFIED $svc"

@@ -10824,6 +10824,49 @@ cases:
         - pr-check.yml
       verifies: []
 
+  - id: MC-351
+    legacy_id: ""
+    title: "M1 零停机切换：nginx upstream 摘挂（成员=容器名:容器内端口、稳态只写一条、发布期只改成员+nginx -t+reload、drain 后才重建正式容器）+ 应用优雅退出（Spring graceful/30s、uvicorn 200s、stop_grace_period 45s/210s）"
+    domains:
+      - misc
+      - deploy
+      - ci
+    tier: normal
+    tags:
+      - deploy
+      - zero-downtime
+      - nginx
+      - upstream
+      - graceful-shutdown
+      - red-proof
+      - m1
+    truths_ref: []
+    # 真值缺省说明：这是**部署契约**（不是 LLM / 业务真值）—— 判据落在仓库文本 + 真跑改写器上：
+      # 零网络、零 docker、零真发布、零 LLM。
+    precondition:
+      - "issue #9098 标题「M1 零停机：nginx upstream 摘挂 + 应用优雅退出」；ADR = docs/deployment/zero-downtime-release.md（M1-a / M1-b，MC-348 的守卫）。"
+      - "改动前的形态（已实测）：`deploy/swas/nginx.conf` 的 `proxy_pass http://admin-api:8080` 直连 compose DNS 服务名（全文件 upstream 0 次）⇒ 发布期 `docker compose up -d --no-deps <svc>` 重建容器 = 换 IP ⇒ 实测 502 窗口 90s；严格蓝绿（#4785）只把**失败路径**打到 0。"
+      - "真机事实：生产/测试的 nginx 跑在容器 `migao-deploy-nginx-1` 里，宿主没有 nginx 二进制、没有 `/etc/nginx` ⇒ 一切 `nginx -t` / `nginx -s reload` 必须经 `docker compose exec -T nginx`。"
+      - "nginx 的硬约束（ADR 未写、实测常识）：配置**解析期**就对 upstream 里的服务名做 DNS 解析，green 容器没在跑时写它的名字 ⇒ `[emerg] host not found in upstream` ⇒ 全站起不来 ⇒ **稳态只能写现行实例一条成员**，green 成员只在发布期写入并由行为判据证明「切换后恰两个后端」。"
+    user_inputs:
+      - "把生产发布从「有 502 窗口」做到「用户无感」：M1-a（nginx 改 upstream 摘挂，正式容器不在窗口期重建）+ M1-b（admin-api / ai-agent 优雅退出）必须**同批**交付，并给出会红的判据与红证。"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "判据 1·**upstream 形态**：`deploy/swas/nginx.conf` 有三个 upstream（`migao_admin_api` / `migao_ai_agent` / `migao_admin_web`），非 backup 成员恰 1 个且是**容器名:容器内端口**（8080/8000/3001，不是宿主 18080/18000/13001）；`proxy_pass` 8 处全部指 upstream 名；upstream 段在第一个 `server {` 之前（http 上下文）；`worker_shutdown_timeout` ≥ 180s。执行点 = tests/unit_ci_workflows/test_zero_downtime_m1_cutover.py::test_upstream_shape_is_add_remove_not_direct_dns"
+      - "判据 2·**渲染不退化**：`MIGAO_PUBLIC_DOMAIN` 的整文件 `sed` 渲染后 `server_name api.<站点域>;` 仍在、无 `migaozn.com` 残留、upstream 块与成员逐字不变（渲染语义 = deploy.sh 里那条 sed，判据先确认它还在）。执行点 = 同文件 ::test_domain_rendering_keeps_server_name_and_upstreams"
+      - "判据 3·**切换顺序（点名行号）**：green 起 → green 健康 → 只切 upstream → 入口 200 断言 → drain → **现在才**重建正式容器 → 切回正式容器；`up -d --no-deps \"$svc\"` 在切换循环里恰 1 次；切换失败分支 `exit 1` 且**不重建**；切回失败分支 `exit 1` 且**不删 green**；回落路径必须喊「不是零停机」。执行点 = 同文件 ::test_cutover_sequence_switches_upstream_before_recreating_the_formal_container"
+      - "判据 3b·**切换面不许重建/restart**：`nginx_upstream_switch()` 必须含 `nginx -t` / `nginx -s reload` / `cp -f` 备份 / `docker compose ps -q nginx` 三态出口，且出现 `up -d` 或 `restart` 即红。执行点 = 同文件 ::test_switch_function_only_reloads_and_restores_on_failure"
+      - "判据 4·**改写器行为式**（真跑 deploy.sh 里那段 python）：三个服务切换后各**恰两个后端**（green 主 + 正式 backup）、其它 upstream 一字未动；切回后与原文**逐字节一致**且幂等；未知 upstream / 标记缺失 / 空成员 ⇒ 非零退出且**文件不动**。执行点 = 同文件 ::test_rewriter_switches_each_service_to_two_backends / ::test_rewriter_restores_byte_identical_and_is_idempotent / ::test_rewriter_refuses_unknown_upstream_and_missing_markers"
+      - "判据 5·**优雅退出在生效位置**：`application.yml` 的 `server.shutdown: graceful` + `spring.lifecycle.timeout-per-shutdown-phase: 30s`；ai-agent Dockerfile CMD 含 `--timeout-graceful-shutdown 200`（≥ SSE 最长流 180s）且 compose **没有** `command:` 覆盖；compose 两侧 `stop_grace_period`：admin-api 45s（≥30s 预算）、ai-agent 210s（≥200s），green 与正式同值。执行点 = 同文件 ::test_graceful_shutdown_is_configured_where_it_actually_takes_effect"
+      - "判据 6·**文档已实施 + 怎么验证 + 读数占位**：ADR 的 M1-a/M1-b 必须标「已实施」、点名真实 upstream 名与配置键、给出容器侧验证命令（`docker exec migao-deploy-nginx-1 nginx -t`）、留「真机读数（**待填**）」表，并显式写「未实测」。执行点 = 同文件 ::test_doc_moved_m1a_m1b_from_gap_to_implemented_with_verification"
+      - "**注入式红证（实跑）**：把切换改回「`docker compose up -d` 重建 + reload」⇒ 判据红（点名「切换面消失 / 重建出现两次」）；成员写宿主 18080 ⇒ 红；proxy_pass 改回服务名 ⇒ 红；删 `worker_shutdown_timeout` / `server.shutdown` / `--timeout-graceful-shutdown` / `stop_grace_period` ⇒ 各自红；文档「已实施」整体降级 ⇒ 红；渲染丢站点域 ⇒ 红。执行点 = 同文件 8 条 `test_injection_*`"
+      - "**边界（照实登记）**：本用例**不执行** `deploy.sh`、不连 docker、不连测试/生产 ⇒ 证的是「配置与顺序是零停机形态」，**不证**「线上这次发布真的零 5xx」；后者是 ADR 的「真机读数」表（本 PR **未填**，待测试环境通道）。ai-agent 的 SSE 长流收尾**当前不可判定**：没有只读流式端点（`/api/chat/send` 要鉴权且落库）⇒ 出口 = ① 测试租户写面演练，或 ② 另开单加只读心跳流端点。"
+    skip_reason: "[backend-contract] 部署 / 发布契约判据（静态文本 + 行为式改写器 + 注入式红证）：零网络、零 docker、零真发布、零 LLM，不进 agent-eval 冒烟"
+    merge_log: "2026-11-24 新增（issue #9098，用户裁定「生产发布要做到用户无感」「M1-a/M1-b 必须同批」）。取号 = `python3 scripts/next_case_id.py MC` 现取（main ∪ 全部 open PR ∪ 本工作区）⇒ **MC-351**。同批落地：deploy/swas/nginx.conf（三个 upstream + 标记块 + 8 处 proxy_pass + worker_shutdown_timeout 200s）、deploy/swas/deploy.sh（upstream_name_of / upstream_members_for / rewrite_upstream_members / nginx_upstream_switch / upstream_drain_wait + 2.5 段切换循环重排）、backend/admin-api/.../application.yml（server.shutdown: graceful + spring.lifecycle.timeout-per-shutdown-phase: 30s）、backend/ai-agent-service/Dockerfile（--timeout-graceful-shutdown 200）、deploy/swas/docker-compose*.yml（stop_grace_period 45s/210s）、docs/deployment/zero-downtime-release.md（M1-a/M1-b 从缺口改「已实施 + 怎么验证 + 读数占位」）、tests/unit_ci_workflows/test_zero_downtime_m1_cutover.py（19 条判据，含 8 条红证）。顺带同步的两条既有事实断言：`test_zero_downtime_release_adr.py`（无 upstream/graceful 未配置 → 已实施，判据语义保持「文档 ⇄ 配置双向一致不松」）与 `test_public_code_spaces_are_disjoint.py`（upstream 名 → 主成员 host:port 解析，登记表语义不变）。"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_zero_downtime_m1_cutover.py"
   - id: MC-352
     legacy_id: ""
     title: "「加用例」在并行包里不再人肉让号、也不再冲同一个数字：号段租约（离线原子占位）+ 台账派生读数"
