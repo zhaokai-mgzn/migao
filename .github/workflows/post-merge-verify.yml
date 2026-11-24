@@ -108,7 +108,9 @@ env:
   #    （`tests/unit_ci_workflows/ci_cost_ledger.json` 的 `hard_kill_seconds` == 现取 `timeout-minutes × 60`，
   #    由 `tests/unit_ci_workflows/test_ci_cost_ledger.py` 逐条复比）⇒ 表达式会让那套判据**取不到整数**。
   #    本值必须**逐字等于** job 的 `timeout-minutes`（两边分叉 ⇒ 判据当场红；这两个数字就写在隔壁几行）。
-  MIGAO_JOB_TIMEOUT_MINUTES: '45'
+  #    🔴 issue #9102（2026-11-24）：对等腿由**两片 → 四片** ⇒ 工作量上界 = 4 × 20 = **80**（派生式
+  #    在 `scripts/post_merge_verify.py`，判据现取 `pr-check.yml` 的 matrix 片数复比，不同步即红）。
+  MIGAO_JOB_TIMEOUT_MINUTES: '80'
 
 concurrency:
   # **不取消**：每次触发都要算（水位只在成功时前进 ⇒ 取消不会丢覆盖，但排队比互相取消更好读）
@@ -123,15 +125,16 @@ jobs:
     runs-on: ubuntu-24.04
     # 上限（**不是判据**）：最坏情形 = 水位取不到退回 40 个提交的窗口，而该窗口实测命中
     # `tests/unit_ci_workflows` 的**绝大部分**（现取 371 个判据文件里 296 个）⇒ 本腿在**一个** runner 上
-    # 要干 `pr-check.yml` **两片**的活（`ci workflow helper unit tests` 两个 matrix 分片各自
-    # `timeout-minutes: 20`）⇒ 上界 = 两片上限之和；这里取 **45**（还含 checkout / 装依赖 /
-    # 漂移兜底 / 出结论的开销）。理由与实测读数见上面「上限必须按本腿自己的工作量上界算出来」段。
+    # 要干 `pr-check.yml` **四片**的活（`ci workflow helper unit tests` 四个 matrix 分片各自
+    # `timeout-minutes: 20`；片数 2 → 4 见 issue #9102）⇒ 上界 = 四片上限之和 = **80**（还含 checkout /
+    # 装依赖 / 漂移兜底 / 出结论的开销）。理由与实测读数见上面「上限必须按本腿自己的工作量上界算出来」段。
     # ⛔ 这不是"抬上限当成本已治理"（`pr-check.yml` 那条 #5365 的口径说的是**别把抬上限当结论**）：
-    #    本条拆的是一个**确定的假红**（143 / SIGTERM ⇒ 无结论），与 #5534 追认 12 → 20 同族。
+    #    本条拆的是一个**确定的假红**（143 / SIGTERM ⇒ 无结论），与 #5534 追认 12 → 20 同族；
+    #    45 → 80 是**派生式跟着片数走**的结果（不是"这次跑得慢所以放宽"）。
     # 🔴 取值必须与上面 `env.MIGAO_JOB_TIMEOUT_MINUTES` **逐字相同**（判定本体按那个值自证上限够用；
     #    两边分叉 ⇒ `tests/unit_ci_workflows/test_post_merge_verify_leg.py` 的上限族当场红）。
     #    ⚠️ 这里**只能**写字面整数：本字段是全仓成本台账的读数字段（理由见 `env:` 段的说明）。
-    timeout-minutes: 45
+    timeout-minutes: 80
     steps:
       - name: Checkout main（判定基准 = main 的当前状态，**不是** PR 的 head）
         uses: actions/checkout@v7

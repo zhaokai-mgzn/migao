@@ -10912,3 +10912,47 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+
+  - id: MC-354
+    legacy_id: ""
+    title: "CI 分片预算台账：required 腿 `ci workflow helper unit tests` 三片重切 + 每片预算 80% 判红 + timeout 只许缩短"
+    domains:
+      - misc
+      - ci
+    tier: normal
+    tags:
+      - ci
+      - shard
+      - budget
+      - timeout
+      - red-proof
+    truths_ref: []
+    # 真值缺省说明：这是**CI 执行形态契约**（不是 LLM / 业务真值）—— 判据全部落在仓内文件上
+      # （`pr-check.yml` 的 matrix / `timeout-minutes`、`shard_budget_ledger.json`、`conftest.shard_of`）：
+      # 零网络、零 LLM、零 DB。
+    precondition:
+      - "现场读数（2026-11-24）：required job `ci workflow helper unit tests`（`pr-check.yml` 的 `ci-workflow-tests`，matrix `shard: 1/2 | 2/2`）的**后半片连续两次跑满上限被 cancel** —— run `45291734491` / job `138117410585`，GitHub 注释逐字 `The job has exceeded the maximum execution time of 20m0s`（`started_at=00:20:04Z` / `completed_at=00:45:04Z`，含排队）；同一 run 的第一片 `success` 8m15s。required ⇒ **所有在飞 PR 卡死**。"
+      - "同一批对照：拆腿刚上线时（2026-10-03）全量档两片 step 中位 316s；2026-11-23 多轮的**后半片** job 已到 525~790s（`gh api …/runs/<id>/jobs` 逐条现取），而判据文件从当时的 ~400 涨到 **536** 份 ⇒ 权重在涨、分片规则（`crc32` 哈希）成员关系稳定但**不等重**。"
+      - "既有口径（`pr-check.yml` 该 job 上方 + #5203 / #5365）：⛔ **不许拿抬 `timeout-minutes` 交差**（上限是值班判据、不是成本成绩单）；⛔ 不许把 required 改成非 required；⛔ 不许把判据移出 `tests/unit_ci_workflows` 绕过。"
+    user_inputs:
+      - "2026-11-24 用户/issue #9102 要求逐字：① **先量**（`pytest --durations` 按分片跑，列出最重的 3~5 个文件，读数贴 issue）② **再切**（2 片 → 3 片，或按文件耗时手工分桶，要求**最重片的上界 ≤ 现在的 60%**）③ **判据**（分片预算台账：每片测得的最长耗时 + 预算上限，**超过预算 80% ⇒ 判红或开单**，不许靠「这次运气好」过）④ 第一片名字 `ci workflow helper unit tests`（不带后缀）**逐字不变**。"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "**判据 1·台账形态**：`tests/unit_ci_workflows/shard_budget_ledger.json` 的 schema / issue / judged_by / unit / policy 四项 / `shards` 非空 / 每片正数实测与预算齐备 ⇒ 缺任一即红（台账被删空 = 成本面无对象可判）。执行点 = tests/unit_ci_workflows/test_shard_budget.py::test_ledger_shape_is_complete_and_non_vacuous"
+      - "**判据 2·片名三方一致**：台账 `shards` 的键 == 现取 `pr-check.yml::jobs.ci-workflow-tests.strategy.matrix.include[].shard` == `verify-all.sh::ci_helper_leg()` 的 `MIGAO_CI_HELPER_SHARD=` 取值。执行点 = test_shard_budget.py::test_shard_names_are_the_live_matrix + test_helper_leg_execution_shape.py::test_shards_are_declared_consistently_everywhere"
+      - "**判据 3·`timeout-minutes` 只许缩短**（issue #9102 的「不许调大超时」落成判据）：现取 `timeout-minutes × 60` 逐值等于台账 `hard_kill_seconds`，且 `hard_kill_seconds ≤ HARD_KILL_FROZEN_SECONDS`（1200）⇒ **只抬 workflow** 或 **连台账一起抬** 都红（两条独立锁）。执行点 = test_shard_budget.py::test_timeout_may_only_shrink + ::test_red_proof_raising_the_timeout_turns_red"
+      - "**判据 4·每片预算只许缩短且 ≤ 拆片前最重片的 60%**：`budget_seconds ≤ BUDGET_FROZEN_SECONDS` 且 `≤ 0.6 × pre_split.heaviest_seconds` ⇒ 手抬预算 / 重切没切够 各能单独红。执行点 = ::test_red_proof_raising_a_budget_past_the_frozen_ceiling_turns_red"
+      - "**判据 5·实测与预测都不得越过预算的 80%**：`max(measured_seconds, predicted_seconds) > 0.8 × budget_seconds` ⇒ 红并**点名该片最重的 3 个文件**；`predicted` 由现取语料 + `conftest.shard_of` + 冻结的逐文件读数聚合（与负载无关的工作量读数，§23 G6：不钉挂钟）。执行点 = ::test_ledger_shape_is_complete_and_non_vacuous"
+      - "**判据 6·判别力自证（注入式红证 + 对照）**：① 重文件落进**最重片** ⇒ 红；② **同一个**重文件落进**最轻片** ⇒ 不红（单变量差分，证明判的是「分配」不是「重就红」）；③ 台账/matrix 片名对不上、台账 `shards` 被删空、某片缺实测 ⇒ 各能单独红；④ 真读数 ⇒ 绿。执行点 = ::test_red_proof_a_heavy_file_landing_in_the_heaviest_shard_turns_red / ::test_red_proof_a_stale_matrix_or_a_vacuous_ledger_turns_red"
+      - "**重切本体**：`conftest.SHARD_SALT` 与片数改为三片（`shard_of` 仍是 `crc32(\"salt<salt>:\" + 文件名) % 片数 + 1` 的**确定性全函数**，不随机）；`pr-check.yml` matrix 三片且**名字逐字稳定**（`\"\"` 与 `\"（后半）\"` 都保留 —— 分支保护里已有的两条 required 名不受影响，新片 `\"（中段）\"` 合并后再登记）；`verify-all.sh` 逐片显式三行。执行点 = test_helper_leg_execution_shape.py::test_shard_partition_is_recomputed_from_the_live_corpus"
+      - "**权重选法（可复算）**：`MIGAO_CI_HELPER_SHARD=N/2 python3 -m pytest tests/unit_ci_workflows -q -n 4 --durations=0` ⇒ 按文件聚合**逐用例自耗秒数**，在盐 1~4000 上按「最重片工作量最小、其次片间用例数最平」搜出盐；读数与新盐一起冻结进台账 `balance_measured`。"
+    skip_reason: "[backend-contract] 纯静态 CI 结构判据（零 LLM / 零网络 / 零 DB）：不进 agent-eval 冒烟；机器判红通道 = traces.tests 的 pytest（pr-check 的 ci workflow helper unit tests 全量跑 tests/unit_ci_workflows）"
+    merge_log: "2026-11-24 新增（issue #9102，用户要求「先量再切」「不许调大超时」「超过预算 80% ⇒ 红或开单」）。取号 = `python3 scripts/next_case_id.py MC` 现取（main ∪ 全部 open PR ∪ 本工作区）⇒ **MC-354**；`scripts/case_id_lease.py`（issue #9090 的取号工具）**尚未合并**，故未走 lease 流程。同批落地：pr-check.yml（matrix 四片 + 口径注释）、conftest.py（`SHARD_SALT`）、verify-all.sh（四片逐片显式）、helper_leg_shape_ledger.json（片名/冻结基线/平衡读数）、shard_budget_ledger.json（新台账）、test_shard_budget.py（新判据）、scripts/post_merge_verify.py + 合并后守护腿的上限（片数派生式 2 → 4 ⇒ 45 → 80 分）。⚠️ 顺带发现并**另开单**（不在本 PR 修，避免写面扩大）：`pytest … -n 4` 直连整目录时**不拿机器级准入锁**（`conftest.pytest_collection` 在 xdist 控制器上不触发 / worker 早退）⇒ issue #9105。"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_shard_budget.py"
+        - "tests/unit_ci_workflows/test_helper_leg_execution_shape.py"
+      ci:
+        - pr-check.yml
+      verifies: []

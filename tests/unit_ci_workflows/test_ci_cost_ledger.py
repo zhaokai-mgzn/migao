@@ -294,6 +294,13 @@ def test_external_blockers_are_registered_with_command_and_restart_condition() -
     assert not problems, "外部阻塞登记不完整：\n" + "\n".join("  " + p for p in problems)
 
 
+def _live_shard_values() -> list[str]:
+    """现取 `pr-check.yml::ci-workflow-tests` 的 matrix `shard` 取值（重切后本判据自动跟随）。"""
+    doc = yaml.safe_load((WORKFLOWS_DIR / "pr-check.yml").read_text(encoding="utf-8")) or {}
+    matrix = (((doc.get("jobs") or {}).get("ci-workflow-tests") or {}).get("strategy") or {}).get("matrix") or {}
+    return [str(entry["shard"]) for entry in (matrix.get("include") or [])
+            if isinstance(entry, dict) and entry.get("shard")]
+
 def test_skeleton_lists_every_rendered_check_name() -> None:
     """判据 7（issue #6164）：骨架必须按**渲染后的检查名**逐条登记（matrix 展开）。
 
@@ -325,14 +332,18 @@ def test_skeleton_lists_every_rendered_check_name() -> None:
 
     skeleton = mod._legs_skeleton()
     helper = {lid: leg for lid, leg in skeleton.items() if leg.get("job") == "ci-workflow-tests"}
-    assert len(helper) == 2, (
-        f"现取骨架里 `ci-workflow-tests` 只登记了 {len(helper)} 条腿（拆腿后应为 2 片）：{sorted(helper)}"
-        " ⇒ 第二片进分支保护后，判据 3 必红且无法修对"
+    # 片数**现取**（issue #9102 切到四片）：不写死数字 —— 否则每次重切都要回来改这条。
+    # 现取 YAML 的**渲染结果**（GitHub 会按 matrix 每个取值各渲染一次 `name:`）——
+    # 不写死名字，重切后本判据自动跟随；`ci_shard_values()` 给出与它独立的第二根轴（matrix 条目数）。
+    doc = yaml.safe_load((WORKFLOWS_DIR / "pr-check.yml").read_text(encoding="utf-8")) or {}
+    declared_shards = mod.check_names(
+        ((doc.get("jobs") or {}).get("ci-workflow-tests") or {}), "ci-workflow-tests")
+    assert len(helper) == len(_live_shard_values()), (
+        f"现取骨架里 `ci-workflow-tests` 只登记了 {len(helper)} 条腿，而现取 matrix 有 "
+        f"{len(declared_shards)} 片：{sorted(helper)} ⇒ 新片进分支保护后，判据 3 必红且无法修对"
     )
-    assert sorted(leg["check_name"] for leg in helper.values()) == [
-        "ci workflow helper unit tests",
-        "ci workflow helper unit tests（后半）",
-    ], "骨架登记下来的检查名与现取 YAML 的渲染结果不一致"
+    assert sorted(leg["check_name"] for leg in helper.values()) == sorted(declared_shards), (
+        "骨架登记下来的检查名与现取 YAML 的渲染结果不一致")
     assert not [lid for lid, leg in skeleton.items() if not str(leg.get("check_name") or "").strip()], (
         "骨架里有检查名为空的腿 ⇒ 采样与 required 口径都会对不上"
     )

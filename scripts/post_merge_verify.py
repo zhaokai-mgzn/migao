@@ -116,16 +116,17 @@ XDIST_MISSING_NOTE = (f"⚠️ 没有 pytest-xdist ⇒ 退回**串行**跑（本
 
 # ── 上限的**派生式**（issue #6312）────────────────────────────────────────────────────
 # 口径：上限不许是口味 —— 它 = 本腿**自己的工作量的上界**。工作量的口径是结构性的：本腿在**一个**
-# runner 上要干对等腿（`pr-check.yml` 的 `ci workflow helper unit tests`）**两片**的活 ——
-# 同一个判定面、同一个 runner 规格，那边每片各自 `timeout-minutes: 20`。
+# runner 上要干对等腿（`pr-check.yml` 的 `ci workflow helper unit tests`）**四片**的活 ——
+# 同一个判定面、同一个 runner 规格，那边每片各自 `timeout-minutes: 20`（片数见 issue #9102：
+# 两片吃顶 ⇒ 切成四片；本常量随之 2 → 4，判据会现取 `pr-check.yml` 的 matrix 复比，不同步即红）。
 # ⇒ 上界 = 片数 × 单片上限。这三个常量**只在这里声明一次**，workflow 的 job `timeout-minutes`
 #    必须 ≥ `MIN_TIMEOUT_MINUTES`，且判据现取 `pr-check.yml` 复算片数与单片上限 ——
 #    **单改任一边都红**（判据 = `tests/unit_ci_workflows/test_post_merge_verify_leg.py` 的上限族）。
 # ⚠️ 它不是挂钟读数：片数 / 单片上限都是**声明值**（YAML 里的 `timeout-minutes` 与 matrix 条目）。
 PEER_HELPER_JOB = "ci workflow helper unit tests"
 PEER_HELPER_JOB_TIMEOUT_MINUTES = 20
-WORKLOAD_BOUND_SHARDS = 2
-MIN_TIMEOUT_MINUTES = PEER_HELPER_JOB_TIMEOUT_MINUTES * 2
+WORKLOAD_BOUND_SHARDS = 4
+MIN_TIMEOUT_MINUTES = PEER_HELPER_JOB_TIMEOUT_MINUTES * 4
 #: 判定步把**它自己声明的上限**经环境传进来 ⇒ 本脚本能在运行期自证「上限 ≥ 工作量上界」。
 TIMEOUT_ENV = "MIGAO_JOB_TIMEOUT_MINUTES"
 

@@ -845,17 +845,17 @@ class TestUpperBoundIsDerivedFromWorkload:
     #: 变异锚点 ⇒（脚本文本, 期望红）。锚点**逐字只出现一次**（下方断言把关）。
     BOUND_MUTATIONS = {
         # ① 把上限改回病态值 15（本单的主诉：15 = 掐死点）
-        "timeout_back_to_15": ("    timeout-minutes: 45", "    timeout-minutes: 15"),
+        "timeout_back_to_15": ("    timeout-minutes: 80", "    timeout-minutes: 15"),
         # ② 摘掉上限读数源（判定本体拿不到数 ⇒ 自证退化成没数据可判）
-        "timeout_env_removed": ("  MIGAO_JOB_TIMEOUT_MINUTES: '45'\n", ""),
-        # ③ 两边分叉（job 45 / env 30）⇒ 自证的是另一个数
-        "timeout_env_diverges": ("  MIGAO_JOB_TIMEOUT_MINUTES: '45'", "  MIGAO_JOB_TIMEOUT_MINUTES: '30'"),
-        # ④ 把派生式拉低到低于上界（`* 2` → `* 1` = 只算一片）
-        "bound_shrunk_to_one_shard": ("MIN_TIMEOUT_MINUTES = PEER_HELPER_JOB_TIMEOUT_MINUTES * 2",
+        "timeout_env_removed": ("  MIGAO_JOB_TIMEOUT_MINUTES: '80'\n", ""),
+        # ③ 两边分叉（job 80 / env 30）⇒ 自证的是另一个数
+        "timeout_env_diverges": ("  MIGAO_JOB_TIMEOUT_MINUTES: '80'", "  MIGAO_JOB_TIMEOUT_MINUTES: '30'"),
+        # ④ 把派生式拉低到低于上界（`* 4` → `* 1` = 只算一片）
+        "bound_shrunk_to_one_shard": ("MIN_TIMEOUT_MINUTES = PEER_HELPER_JOB_TIMEOUT_MINUTES * 4",
                                       "MIN_TIMEOUT_MINUTES = PEER_HELPER_JOB_TIMEOUT_MINUTES * 1"),
         # ⑤ 派生式改成裸数字（脚本与 workflow 各说各话）
-        "bound_becomes_a_bare_number": ("MIN_TIMEOUT_MINUTES = PEER_HELPER_JOB_TIMEOUT_MINUTES * 2",
-                                        "MIN_TIMEOUT_MINUTES = 45"),
+        "bound_becomes_a_bare_number": ("MIN_TIMEOUT_MINUTES = PEER_HELPER_JOB_TIMEOUT_MINUTES * 4",
+                                        "MIN_TIMEOUT_MINUTES = 80"),
         # ⑥ 运行期自证被摘掉（声明值不再流到判定本体 ⇒ 「上限 ≥ 上界」退回纸面约定）
         "self_check_unwired": ("    problem = _check_declared_timeout()", "    problem = None"),
     }
