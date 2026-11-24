@@ -11,6 +11,10 @@
 > [`upload-storage-and-multi-instance.md`](upload-storage-and-multi-instance.md)。
 >
 > 时间口径：本页所有读数均为 **Asia/Shanghai（UTC+8）**；引用 CI/云侧时间戳时已注明换算。
+>
+> 🔴 **落地状态（2026-11-24，issue #9098）**：**M1-a（upstream 摘挂）与 M1-b（应用优雅退出）已实施**，
+> 代码位置 / 实现约束 / 怎么验证见各小节；每小节的「真机读数」表是**占位**——本 PR 合并前
+> **未在真机实测**（需要测试环境发布通道），空着 = 未验证，不许读成已验证。
 
 ---
 
@@ -59,10 +63,13 @@
 「改 nginx.conf 写坏 = 全站所有域名同时挂」，所以先不碰。**本 ADR 认这个判断（它救了 2026-11-21 那次），
 但把它作为 M1 要跨过去的一步，并用 `nginx -t` + 单文件 include + 秒级回滚把风险降下来。**
 
-**nginx 现状（事实）**：`deploy/swas/nginx.conf` 里 `proxy_pass http://admin-api:8080`（172/491/516/541/574 行
-等多处）、`proxy_pass http://ai-agent:8000`（210/554 行）—— **走 compose DNS 服务名、nginx.conf 没有 upstream 块**
-（全文件 `upstream` 出现 0 次）。启动/reload 时解析并缓存 IP ⇒ **重建容器 = 换 IP = 不 reload 就 502**
-（实测窗口 90s，`deploy/swas/deploy.sh` 1661-1663 记录了这件事）。
+**nginx 现状（2026-11-24 更新，M1-a 落地后）**：`deploy/swas/nginx.conf` 顶部有三个 `upstream`
+（`migao_admin_api` / `migao_ai_agent` / `migao_admin_web`），`proxy_pass` 一律指 upstream 名
+（`proxy_pass http://migao_admin_api;` 等 8 处）—— 发布期由 `deploy.sh` 只改成员行 + `nginx -t` + reload。
+**改动前**是 `proxy_pass http://admin-api:8080`（172/491/516/541/574 行等多处）、
+`proxy_pass http://ai-agent:8000`（210/554 行）—— **走 compose DNS 服务名、nginx.conf 没有 upstream 块**
+（全文件 `upstream` 出现 0 次）；启动/reload 时解析并缓存 IP ⇒ **重建容器 = 换 IP = 不 reload 就 502**
+（实测窗口 90s）。两段的实现约束与验证方式见 M1-a 小节。
 
 **域名事实（校正一处转述）**：仓库里的 `deploy/swas/nginx.conf` 的 `server_name` 是**测试域**
 `*.migaozn.com`；生产域 `cytda.com` 是部署时 `deploy/swas/deploy.sh` 802-845 用
@@ -128,37 +135,107 @@
 落地顺序（依赖关系即安全顺序）：**M1-f → M1-a → M1-b/M1-c → M1-d → M1-e**。
 M1-f 今天就能做（不需要动 nginx）；M1-b/c 只有在 M1-a 落地后才有意义（否则「优雅退出」退的是马上要消失的容器）。
 
-### M1-a 切换模型：nginx **upstream 摘挂**，而不是「重建正式容器」
+### M1-a 切换模型：nginx **upstream 摘挂**，而不是「重建正式容器」（已实施，issue #9098）
 
-**现状前提（事实，详见 §1.2）**：`deploy/swas/nginx.conf` 里 `proxy_pass http://admin-api:8080` 走 compose DNS
+> **落地状态：已实施。** 实现位置（两处，加起来 ≈ 120 行）：
+> - `deploy/swas/nginx.conf` 顶部的三个 upstream —— `upstream migao_admin_api` / `upstream migao_ai_agent` /
+>   `upstream migao_admin_web`，成员带标记块（`# >>> migao-upstream-members` / `# <<< …`）；
+>   `proxy_pass` 已全部改成 `proxy_pass http://migao_admin_api;` 这类 **upstream 名**；
+>   另加 `worker_shutdown_timeout 200s;`（reload 时旧 worker 的兜底上限 = SSE 180s + 余量）。
+> - `deploy/swas/deploy.sh` 的 `upstream_name_of()` / `upstream_members_for()` /
+>   `rewrite_upstream_members()` / `nginx_upstream_switch()` / `upstream_drain_wait()` + 2.5 段的切换循环。
+> - 判据 = `tests/unit_ci_workflows/test_zero_downtime_m1_cutover.py`（MC-351）。**红证**：把切换改回
+>   「`docker compose up -d` 重建 + reload」⇒ 判据红（`test_injection_revert_cutover_to_recreate_plus_reload_goes_red`）。
+>
+> **三条实现约束（踩过就是全站挂 / 静默失效，别改）**：
+> 1. **稳态只写现行实例一条成员**。nginx 在**解析配置时**就对 upstream 里的服务名做 DNS 解析，green
+>    容器没在跑时写它的名字 ⇒ `[emerg] host not found in upstream` ⇒ **nginx 起不来 ⇒ 全站挂**。
+>    所以 green 成员只在发布期由 `deploy.sh` 写入（写完**立刻** `nginx -t`），成功/失败都会恢复成稳态那一条。
+>    「切换后每个 upstream 恰有两个后端」因此由**行为判据**证明（真跑改写器），而不是静态数 `server` 行。
+> 2. 成员一律写 **容器名:容器内端口**（`admin-api-green:8080`），**不写宿主第二端口**
+>    （`18080`/`18000`/`13001` 只在宿主侧可达，nginx 在容器里连不上）。
+> 3. **配置只能原地写（不许 `mv` / `rename`）**。compose 把 `./nginx/nginx.conf` **单文件**挂进容器
+>    （`…:/etc/nginx/conf.d/default.conf:ro`），docker 按 **inode** 挂载 ⇒ 换掉宿主侧 inode 之后，
+>    容器里看到的还是**旧文件**：`nginx -t` / `nginx -s reload` 全在加载旧配置，而宿主侧的
+>    `grep server_name` / sha256 打印看的是新文件 ⇒ **假绿**。改前 1.2.2 的**生产域**分支正是 `mv -f`
+>    （测试域分支是 `cp -f`，所以只有生产会中）—— 这是本单顺手修掉的一个**既有静默 bug**。现在：
+>    渲染与成员改写一律原地写；1.2.2b 核对「盘上 sha == 容器内 sha」（不一致 ⇒ 出声
+>    `NGINX_CONF_MOUNT=STALE` + 重启一次 nginx 重新挂载，一次性自愈）；切换函数写完后同样核对，
+>    不一致 ⇒ **不 reload**、恢复备份、回落重建路径（`return 3`）。
+>    判据：`test_config_is_written_in_place_so_the_bind_mount_sees_it`（静态 + **真跑改写器断言 inode 不变**）、
+>    **类级** `test_every_single_file_bind_mount_is_written_in_place`（从 compose 的 `volumes` **现取**单文件挂载集合，
+>    与 deploy.sh 的挂载清单比对：新增单文件挂载不登记即红；命令行走 `mv` / `os.replace` 即红并点名行号），
+>    外加注入式红证（删清单登记 / 用 `mv` 落地 / 改写器加 `os.replace`）。
+>
+> ⚠️ **自愈那一次是用户可见的中断，所以「第一次发布」不是零停机**：`docker compose restart nginx` 只重启
+> **nginx 这一个容器**（业务容器一律不动，in-flight 请求会被断开，实测数百 ms 级）——只在「改前用 `mv` 渲染过」
+> 的机器上发生**一次**，之后原地写不再触发。⇒ 合并后第一次生产发布按「有一次 nginx 重启」预期，
+> **从第二次起的发布才具备零停机形态**。别把第一次当成结论。
+>
+> **怎么验证**（真机 = nginx 跑在**容器** `migao-deploy-nginx-1` 里；宿主**没有** nginx 二进制、没有 `/etc/nginx`）：
+> ```bash
+> # ① 稳态成员（应只有一条，且是现行实例容器名）
+> docker exec migao-deploy-nginx-1 nginx -T
+> docker exec migao-deploy-nginx-1 nginx -t          # ② 配置合法性（改之前必须先过这关）
+> # ③ 入口自证：走真实 nginx 解析、钉回本机、不出网
+> curl -sk -o /dev/null -w '%{http_code}\n' --resolve api.<站点域>:443:127.0.0.1 https://api.<站点域>/api/version
+> ```
+>
+> **真机读数（本次发布）** —— 占位；填法 = 把命令输出原样粘进「值」列：
+>
+> | 读数 | 命令 | 值 |
+> |---|---|---|
+> | 配置挂载一致性 | 发布日志 `NGINX_CONF_MOUNT=`（`OK` / `STALE`+自愈 / `STILL_STALE`） | **待填** |
+> | 稳态 upstream 成员 | `docker exec migao-deploy-nginx-1 nginx -T`（看 `upstream migao_admin_api` 段） | **待填** |
+> | 切换中 upstream 成员（应两条：green 主 + 正式 backup） | 发布日志 `UPSTREAM_MEMBERS=migao_admin_api:2` + 同一时刻的 `nginx -T` | **待填** |
+> | `nginx -t` 结果 | `docker exec migao-deploy-nginx-1 nginx -t` | **待填**（期望 `test is successful`） |
+> | 切换期入口 5xx 计数（发布前后差值） | `docker exec migao-deploy-nginx-1 tail -n 100000 /var/log/nginx/access.log` | **待填** |
+> | drain 读数 | 发布日志里的 `DRAIN=OK（… 等待 Ns）` | **待填** |
+> | 回退演练耗时（成员切回旧实例） | 改回 `server <svc>:<port> …;` → `nginx -t` → `nginx -s reload` | **待填** |
+>
+> ⚠️ 本 PR **未实测**这些读数（需要测试环境 `api.migaozn.com` 的发布通道）。空着 = 未验证。
+
+
+**改动前的现状（历史事实，详见 §1.2）**：`deploy/swas/nginx.conf` 里 `proxy_pass http://admin-api:8080` 走 compose DNS
 服务名、**nginx.conf 没有 upstream 块**（全文件 0 次）⇒ 重建容器换 IP 就必须 reload 才不 502（实测 90s）。
-本项要做的正是**新建** upstream 成员文件（不是改造已有 upstream）。
+本项做的就是**新建** upstream（不是改造已有 upstream）。
 
-**目标形态**（要点，不是完整 patch；实际落地是独立包，需评审）：
+**落地形态**（已落地；下面逐条给「实现位置 + 为什么这么写」，与最初的设想有两处**有意的偏离**）：
 
-1. `deploy/swas/nginx.conf` 里把 `proxy_pass http://admin-api:8080` / `http://ai-agent:8000` 改成
-   **upstream 名**（如 `proxy_pass http://admin_api;`），upstream 定义抽到**单独一个 include 文件**
-   （例如 `conf.d/upstream.migao.conf`），**其余 server/location 一字不动**——这是把「改 nginx.conf 可能全站挂」
-   的爆炸半径压到「一个只有 3 行成员的文件」。
-2. 成员写成**容器名:容器内端口**：`admin-api-blue:8080` / `admin-api-green:8080` /
-   `ai-agent-blue:8000`；**不要写宿主第二端口**（`18080` / `18000` / `13001` 只是宿主侧探针端口，
-   nginx 容器与它们在同一个 compose 网络里，直接走容器内 8080/8000）。
-3. 切流量 = **改 include 文件 + `nginx -t` + `nginx -s reload`**；reload 是优雅的：旧 worker 继续把
-   **在途请求**做完再退（配合 M1-b 的 `worker_shutdown_timeout`，见下）。
-4. 新容器 healthy 之前**不进 upstream**；进入后先用 `proxy_next_upstream` 兜住极短的竞态（可选）。
-5. 回退 = 把 include 文件换回上一份 + reload（**秒级**，不重建任何容器）—— 比现在的「重建旧镜像」快一个量级。
+1. `proxy_pass` 改成 **upstream 名**：`proxy_pass http://migao_admin_api;` / `http://migao_ai_agent;` /
+   `http://migao_admin_web;`（8 处，含 `/s/` `/i/` `/o/` `/api/` `/api/chat/` 等面）。
+   🔻 **偏离设想 1**：upstream 定义**留在 `nginx.conf` 顶部**，没有抽成单独 include 文件 ——
+   单独 include 会多一条「服务器上文件缺失 ⇒ nginx 起不来」的失效路径，而标记块方案把改动半径
+   压到**同样几行**（成员块），却不引入新文件/新挂载/新同步面。其余 server/location **一字不动**
+   （改动 diff 只有：顶部新增 upstream 段、8 行 `proxy_pass`、1 行 `worker_shutdown_timeout`）。
+2. 成员写成**容器名:容器内端口**：`admin-api:8080` / `admin-api-green:8080` / `ai-agent:8000` /
+   `ai-agent-green:8000` / `admin-web:3001` / `admin-web-green:3001`；**不写宿主第二端口**
+   （`18080` / `18000` / `13001` 只是宿主侧探针端口，nginx 容器与它们在同一个 compose 网络里，
+   直接走容器内 8080/8000/3001）。
+3. 切流量 = **改成员块 + `nginx -t` + `nginx -s reload`**（`deploy.sh::nginx_upstream_switch()`）；
+   reload 是优雅的：旧 worker 继续把**在途请求**做完再退（`worker_shutdown_timeout 200s` 兜底）。
+   reload 之后**再等 drain**（`upstream_drain_wait()` 读 nginx worker 标题
+   `worker process is shutting down`，不是盲睡固定秒数）。
+4. 新容器 healthy 之前**不进 upstream**；进入时写成 **green 主 + 正式容器 backup**
+   （`server admin-api-green:8080 max_fails=2 fail_timeout=10s;` + `server admin-api:8080 backup;`）
+   ⇒ 新镜像即使刚起就崩，nginx 的默认 `proxy_next_upstream error timeout` 也会回落到**旧容器**，
+   用户看不到 5xx —— 这就是「加进 upstream」与「摘出旧实例」之间的安全垫。
+5. 回退 = 把备份拷回 + reload（**秒级**，不重建任何容器）；`nginx -t` 失败时**根本不 reload**
+   （入口一字未变），reload 失败时同样回退并重试一次。备份在成功后即删（不留垃圾）。
+6. 🔻 **偏离设想 2（新增约束）**：稳态**只写一条成员**（原因见上方「三条实现约束」）；
+   green 成员只在发布期存在，写它之前先 `nginx -t`、写完立刻校验。
 
-**顺序（顺序即安全顺序，逐步可停）**：
+**顺序（顺序即安全顺序，逐步可停；下表 = `deploy.sh` 2.5 段的真实顺序，行号由判据打印）**：
 
 | # | 动作 | 失败时的样子 / 处置 |
 |---|---|---|
-| 1 | 备份当前 include（`.bak-<时间>`）并 `nginx -t` 基线自检 | 基线不通过 ⇒ **停**（说明当前入口配置本身有问题） |
+| 1 | 备份当前 `nginx.conf`（`.bak-<时间>`）并 `nginx -t` 基线自检（`nginx_upstream_switch` 内） | 基线不通过 ⇒ **停**（说明当前入口配置本身有问题） |
 | 2 | 起 `*-green`（同镜像/env/卷，第二端口 `18080` / `18000` / `13001`），`wait_healthy` + 迁移闸门 | 失败 ⇒ 删 green、**upstream 未动**、旧容器继续服务（现有 #4785 语义） |
-| 3 | 写新 include（成员切到 green）→ `nginx -t` | `-t` 失败 ⇒ 恢复 `.bak`、**不 reload**、删 green（entry 未受影响） |
-| 4 | `nginx -s reload`（**摘旧**：新连接只进 green；旧 worker 继续手里的请求） | reload 失败 ⇒ 恢复 `.bak` 再 reload；仍失败 ⇒ 保留旧 worker（不 restart） |
+| 3 | 改写成员块（`rewrite_upstream_members`：green 主 + 正式 backup）→ `nginx -t` | `-t` 失败 ⇒ 恢复 `.bak`、**不 reload**、删 green（entry 未受影响） |
+| 4 | `nginx -s reload`（**摘旧**：新连接只进 green；旧 worker 继续手里的请求）→ 入口 200 断言 | reload 失败 ⇒ 恢复 `.bak` 再 reload；仍失败 ⇒ 保留旧 worker（不 restart） |
 | 5 | 逐秒探活 `https://<站点域>/api/version` **并核对 sha**（不是只看 200） | 读数不是新 sha ⇒ 回退 include + reload（旧容器还在） |
-| 6 | **等 drain**：等到「旧容器的在途请求」结束（>= SSE 最长流时长，见 M1-d；用 `worker_shutdown_timeout` 兜底） | 提前停 = 断流；宁可多等 |
-| 7 | `docker compose stop`（不是 `up -d`）旧容器 → `rm` → 下一轮角色互换 | 停旧后才发现问题 ⇒ 回退 include 到 green（此时 green 已是唯一健康面），再起旧镜像 |
+| 6 | **等 drain**：`upstream_drain_wait` 等到旧 nginx worker 收尾（上限 `worker_shutdown_timeout` 200s，见 M1-d） | 提前停 = 断流；宁可多等 |
+| 7 | 现在才 `docker compose up -d --no-deps <svc>` 重建正式容器（流量已在 green）→ 成员切回正式容器 | 停旧后才发现问题 ⇒ 回退 include 到 green（此时 green 已是唯一健康面），再起旧镜像 |
 | 8 | 三服务同源自检（M1-f）+ 一致性读数入日志 | 不一致 ⇒ 判定「半截发布」，**当场补发或回退**，不许绿 |
 
 **代价**：① 改的是流量入口（历史上最危险的改动面）⇒ 用「单文件 include + `nginx -t` + 备份 + 秒级回退」四道锁，
@@ -169,23 +246,66 @@ M1-f 今天就能做（不需要动 nginx）；M1-b/c 只有在 M1-a 落地后�
 ③ 回退演练：把 include 换回上一份 ⇒ 30 秒内入口恢复旧 sha（记录耗时）；④ `nginx -t` 失败注入 ⇒ 不改入口。
 **谁来做**：**包**（改 compose/nginx.conf/upstream include + `deploy.sh` 切换段 + 判据），评审后**人**在测试机演练一次。
 
-### M1-b 应用优雅退出（Spring Boot / uvicorn）
+### M1-b 应用优雅退出（Spring Boot / uvicorn）（已实施，issue #9098）
 
 | 侧 | 目标配置 | 当前是否已配置 |
 |---|---|---|
-| admin-api（Spring Boot **3.5.16**） | `server.shutdown=graceful` + `spring.lifecycle.timeout-per-shutdown-phase=30s` | **未配置**（`backend/admin-api/src/main/resources/application.yml` 全文没有 `shutdown` / `lifecycle` 键；Boot 3.5 原生支持，只差这两行） |
-| ai-agent（uvicorn **0.54.0**） | `--timeout-graceful-shutdown 200`（>= SSE 最长流时长） | **未配置**（`backend/ai-agent-service/Dockerfile:76` 的 CMD 只有 `--workers 1 --timeout-keep-alive 65`） |
-| compose（两侧） | `stop_grace_period`（>= 应用的优雅退出预算；**docker 默认只有 10s**） | **未配置**（`deploy/swas/docker-compose.yml` 与 `docker-compose.bluegreen.yml` 里 `stop_grace_period` 出现 0 次） |
+| admin-api（Spring Boot **3.5.16**） | `server.shutdown=graceful` + `spring.lifecycle.timeout-per-shutdown-phase=30s` | **已实施**：`application.yml` 的 `server.shutdown: graceful` + `spring.lifecycle.timeout-per-shutdown-phase: 30s`（30s 的理由写在该键上方：常规请求长尾数秒级 → ~10× 余量；SSE 不在这里，由 ai-agent 承载；且必须 < compose 的 45s） |
+| ai-agent（uvicorn **0.54.0**） | `--timeout-graceful-shutdown 200`（>= SSE 最长流时长） | **已实施**：`backend/ai-agent-service/Dockerfile` 的 CMD 追加 `--timeout-graceful-shutdown 200`（200 = SSE 最长流 180s + 20s 余量）；compose **没有** `command:` 覆盖它（覆盖了就是死配置，判据钉住） |
+| compose（两侧） | `stop_grace_period`（>= 应用的优雅退出预算；**docker 默认只有 10s**） | **已实施**：`docker-compose.yml` 与 `docker-compose.bluegreen.yml` 里 admin-api `stop_grace_period: 45s`（> 30s 应用预算 + 15s 收尾余量）、ai-agent `stop_grace_period: 210s`（> 200s uvicorn 预算） |
+
+**怎么验证**（真机；宿主没有 nginx 无关 —— 这一项要的是「SIGTERM 下的行为」）：
+```bash
+  # ① 配置真的在容器里生效（不是只在仓库里）
+docker inspect $(docker compose ps -q admin-api) --format '{{.Config.Cmd}} {{.Config.Env}}'   # 看 StopTimeout
+docker compose exec -T admin-api printenv | grep -iE 'SHUTDOWN|LIFECYCLE' || echo '（无 env 覆盖 ⇒ 用 application.yml 的值）'
+docker inspect $(docker compose ps -q ai-agent) --format '{{.Config.Cmd}}'                    # 应含 --timeout-graceful-shutdown 200
+  # ② SIGTERM 行为：停容器，读日志里有没有 graceful 收尾
+docker compose stop -t 45 admin-api && docker compose logs --tail 40 admin-api
+```
+**真机读数（本次发布）** —— 占位；未填 = 未验证：
+| 读数 | 命令 | 值 |
+|---|---|---|
+| admin-api 生效配置 | `docker compose exec -T admin-api printenv`（找 override）/ `docker inspect` 的 StopTimeout | **待填** |
+| ai-agent 生效 CMD | `docker inspect $(docker compose ps -q ai-agent) --format '{{.Config.Cmd}}'` | **待填** |
+| admin-api 在途请求收尾 | 发一个慢请求（>10s）同时 `docker compose stop`，看它是否 200 收尾 | **待填** |
+| ai-agent SSE 长流收尾 | `curl -N -H "X-Service-Token: <内部 token>" `https://ai-api.<站点域>/internal/stream-probe?seconds=200``（**发布前发出、切换期观察是否被切断**） | **待填** |
+| compose `stop_grace_period` 生效 | `docker inspect` 的 `StopTimeout`（45 / 210） | **待填** |
+
+**SSE 那一格现在可判定了：只读流式探针 `GET /internal/stream-probe?seconds=N`（issue #9098）**
+—— 加它之前，这一格**不可判定**：真正会写库的 `/api/chat/send` 要鉴权 + 落库 + 调 LLM，不能当探针反复打；
+而「应该不断流」不是判据。**为什么它只读安全**（三条硬约束，判据逐条钉住）：
+① 只发 `event: ping`（每秒一条），**不碰 DB / 不调 LLM / 不建会话 / 不落历史**；
+② 鉴权沿用内部服务 token（头名 `X-Service-Token` —— **来自既有内部鉴权实现** `app/utils/auth.py::verify_service_token`，
+不是为这条探针新造的头名；值与 `/internal/tools/execute` 同一把 `SERVICE_TOKEN`）——
+缺 / 错 ⇒ **401**，不许匿名可达；
+③ 时长夹在 `[1, 200]`（= nginx `worker_shutdown_timeout 200s` / uvicorn `--timeout-graceful-shutdown 200`
+同一个预算），被夹时先发一条 `event: notice` 自报（不静默）。
+
+怎么用（测试/生产都行；token 在服务器 `.env.ai-agent` 的 `SERVICE_TOKEN`）：
+```bash
+TOKEN=$(docker compose exec -T ai-agent printenv SERVICE_TOKEN)   # 只在本机读，别贴日志
+curl -N -H "X-Service-Token: $TOKEN" "https://ai-api.<站点域>/internal/stream-probe?seconds=200"
+# 发布窗口内保持这条流：① 不断流 ⇒ M1-b 的优雅退出 + drain 生效；② 断了 ⇒ 记下断在第几秒（归因到哪一步）
+```
+判据：`backend/ai-agent-service/tests/test_stream_probe.py`（行为：401 / 夹取 + notice / ≥1 个 ping / 断开即结束）
++ `tests/unit_ci_workflows/test_zero_downtime_m1_cutover.py::test_stream_probe_is_readonly_gated_and_declared`
+（静态：handler 内不许出现写库 / LLM 符号并**点名行号**，必须挂鉴权与夹取，且登记到 `APP_LEVEL_PROBES`）。
+⚠️ 本 PR **未实测**这条流，且**测试环境缺 token 通道**：测试实例属于旧账号、集成侧手上的 AK 只能看到生产实例
+⇒ 拿不到测试机的 `.env.ai-agent` / `SERVICE_TOKEN`。**⇒ SSE 这一格记在「下一次生产发布」验收**（在云主机内部执行，
+token 从环境变量读、**不回显**；命令形状见上）；不写成「已通过」，也不写成「不可判定」。
 
 ⚠️ **「配置了」≠「生效了」**：`docker compose stop` 默认 10s 后 `SIGKILL` ⇒ 应用配 30s 也只会被砍在 10s。
 三处必须**同时**配（应用 + compose + 编排脚本用 `stop` 而非 `kill`），且发布期用一个**长请求**实测：
 发一个 ≥60s 的 SSE，在流未结束时切换 ⇒ 流必须自然收尾（不是断流），日志里出现 graceful 字样。
 
-**代价**：低（配置面）；风险是「退出变慢」⇒ 部署总时长增加（可接受，用并发/超时兜底）。
-**判据**：① 配置存在且 CI 判据钉住（未配置即红——本页的判据文件已经把「**当前未配置**」这个事实钉住，
-配置一改就必须同步改文档，否则判红）；② 长请求实测：切换期 SSE 完整收尾；③ 超过 `stop_grace_period` 仍不退
-⇒ 记 ERROR（这是「优雅退出没生效」，不是正常路径）。
-**谁来做**：**包**（配置 + compose + 判据 + 演练脚本）；**人**只做一次「真发一版看长请求」。
+**代价**：低（配置面）；风险是「退出变慢」⇒ 部署总时长增加（可接受：drain 与优雅退出都**有上限**，
+且只在上限内等待）。
+**判据**：① 配置存在且 CI 判据钉住（`tests/unit_ci_workflows/test_zero_downtime_m1_cutover.py`：三处缺任一处即红；
+`test_zero_downtime_release_adr.py` 再钉「本页口径与仓内配置同进」——任一侧先动都判红）；
+② 长流实测（用只读探针 `GET /internal/stream-probe?seconds=200`）：切换期 SSE 完整收尾（**本 PR 未实测**，见上方「真机读数」表）；
+③ 超过 `stop_grace_period` 仍不退 ⇒ 记 ERROR（这是「优雅退出没生效」，不是正常路径）。
+**谁来做**：**包**已落地（配置 + compose + 判据）；**人**只做一次「真发一版看长请求」（测试环境）。
 
 ### M1-c 就绪 / 存活分离（readiness vs liveness）
 
@@ -395,13 +515,44 @@ WHERE name='max_connections';`。若算式不成立：① 降 `pool_max`（首�
 
 ---
 
+## 6.1 已知失效模式：切换窗口内宿主重启（**接受**，不是忽略）
+
+M1-a 把「稳态只写一条成员」当硬约束，代价是**切换窗口内**磁盘上的 `nginx.conf` 会临时引用
+`<svc>-green` 成员（green 容器 `restart: "no"`）。如果宿主恰好在窗口内重启（整机重启 / 宿主机故障）：
+
+- **后果**：nginx 起不来（`[emerg] host not found in upstream "admin-api-green"`）⇒ **全站不可用**，
+  直到有人处理。这比改前的 502 窗口（秒级、自动恢复）**更坏**，所以必须写清楚而不是塞进脚注。
+- **触发条件**（双重故障）：① 正处于某个服务的切换窗口（②切 upstream → ⑥切回 之间）；
+  ② 此时宿主重启。三个服务串行 ⇒ 窗口不重叠，任一时刻最多一个 upstream 处于双成员形态。
+- **窗口长度**：**上界 486 秒/服务**（= ②切换 <2s + ③入口探测 `12×(5s curl + 2s 间隔)`=84s +
+  ④drain 上限 200s（`UPSTREAM_DRAIN_TIMEOUT`）+ ⑤重建后健康检查 `10×(10s curl + 10s 间隔)`=200s；
+  常量见 deploy.sh 的 `NGINX_PROBE_TRIES/NGINX_PROBE_INTERVAL/UPSTREAM_DRAIN_TIMEOUT/HC_RETRIES`），
+  三个服务串行 ⇒ 全量最坏 ~24 分钟；**典型 ≈ 5–15 秒/服务**（drain 通常 1–3s 就退、探测首次即 200、
+  镜像已在本地）——典型值**待真机读数**（见 M1-a 读数表）。
+- **修复（一条命令，分钟级）**：
+  ```bash
+  cd /opt/migao-deploy && bash ./deploy.sh <tag>     # 1.1/1.2.2 会按 canonical 重渲染（**原地写**）并 reload/重启入口
+  # 或只救入口（不部署）：
+  cat nginx/nginx.conf.canonical > nginx/nginx.conf && docker compose restart nginx
+  ```
+  （`nginx.conf.canonical` 每次发布都会从仓库整份落盘 ⇒ 它永远是「无 green 成员」的形态。）
+- **为什么接受它**：窗口短（秒级~分钟级）+ 需要双重故障（窗口内恰好整机重启），而彻底消除要靠
+  **常驻占位容器**（green 名字永远可解析）或 M2 的 SLB —— 前者给每次发布加一个常驻容器成本、
+  后者是下一里程碑。**不在 M1 里做**。
+- **评估过但决定不做的「保险」**：把 nginx 启动命令改成
+  `sh -c 'nginx -t || cp default.conf.safe default.conf; exec nginx -g "daemon off;"'`。
+  **不做**，理由：① 它把「配置坏了起不来」（响亮的、可行动的失败）换成「静默用旧配置起来」
+  —— 正是本单在 inode 那条里刚堵掉的**同类假绿**（`-t` 失败也照跑，部署侧打印全绿而入口在用旧配置）；
+  ② `default.conf.safe` 本身又是单文件挂载（同一个 inode 问题）+ 多一份要与 canonical 同步的副本；
+  ③ 真出事时的恢复成本已经是「一条命令」（上面那条），保险带来的收益远小于它引入的新失效模式。
+
 ## 7. 未固化 / 未证实（照实登记，不粉饰）
 
 | 项 | 现状 | 核实方式 / 出口 |
 |---|---|---|
-| 生产 admin-api **是否已优雅退出** | 仓内**未配置**（`application.yml` 无 `server.shutdown`）；生产 `.env.admin-api` 是否会注入 `SERVER_SHUTDOWN` 等覆盖 = **未证实** | `docker compose exec -T admin-api printenv | grep -iE 'SHUTDOWN|LIFECYCLE'` |
-| ai-agent graceful 退出参数 | 仓内 CMD **未配置** `--timeout-graceful-shutdown`；uvicorn 0.54.0 支持该参数 | `docker inspect <cid> --format '{{.Config.Cmd}}'` |
-| compose `stop_grace_period` | **未配置**（默认 10s ⇒ 会砍在应用优雅退出之前） | `docker inspect` 的 `StopTimeout` / compose 文件 |
+| 生产 admin-api **是否已优雅退出** | 仓内**已配置**（`server.shutdown: graceful` + `spring.lifecycle.timeout-per-shutdown-phase: 30s`）；生产运行时**未实测**（`.env.admin-api` 是否注入 `SERVER_SHUTDOWN` 覆盖 = 未证实） | `docker compose exec -T admin-api printenv | grep -iE 'SHUTDOWN|LIFECYCLE'` |
+| ai-agent graceful 退出参数 | 仓内 CMD **已配置** `--timeout-graceful-shutdown 200`（uvicorn 0.54.0 支持）；运行时**未实测** | `docker inspect <cid> --format '{{.Config.Cmd}}'` |
+| compose `stop_grace_period` | **已配置**（admin-api 45s / ai-agent 210s，两侧 compose 同值）；运行时 `StopTimeout` **未实测** | `docker inspect` 的 `StopTimeout` / compose 文件 |
 | 生产 redis 的启动参数 / 版本 / 卷 | **无仓库承载**（compose 未定义）；只知是**本机容器** | `docker inspect $(docker compose ps -q redis 2>/dev/null || docker ps -q -f name=redis)`；确认有无持久化卷 |
 | 生产是否已启用 OSS | **未证实**（凭据在 `.env.admin-api`） | 见 `upload-storage-and-multi-instance.md` §2/§4：`GET /api/version/storage`，或 `printenv | grep '^OSS_'`（只看键） |
 | RDS `max_connections` | **未证实**（仓内无读数） | `SELECT setting FROM pg_settings WHERE name='max_connections';` |
@@ -410,7 +561,7 @@ WHERE name='max_connections';`。若算式不成立：① 降 `pool_max`（首�
 | SSE `Last-Event-ID` 续流 | **未实现**（生产代码 `backend/`、`frontend/` 检索 0 命中） | 需单独立项（依赖增量落库 + 幂等键，见审计 P0-4）；本页只定语义 |
 | admin-web 构建身份 | **无端点** ⇒ 同源自检对 admin-web 只到「镜像 tag」层 | 若要补：加一个静态 `version.json` 烘进镜像（后续包） |
 | nginx `worker_shutdown_timeout` 可用性 | `nginx:alpine` 版本未登记 | `docker exec <nginx> nginx -V`（>= 1.11.11 即支持）；旧版本回退 = 停旧前**睡满** 200s |
-| M1 的真实演练 | 本页是**设计**，未在生产演练 | 落地包必须在测试机演练一次「切换 + 回退」，记录耗时与 5xx 读数 |
+| M1 的真实演练 | M1-a / M1-b **已实施**，但**未在真机演练**（缺测试环境发布通道） | 测试机 `api.migaozn.com` 演练一次「切换 + 回退」，把耗时与 5xx 读数填进 M1-a/M1-b 的「真机读数」表 |
 
 ---
 
@@ -419,7 +570,8 @@ WHERE name='max_connections';`。若算式不成立：① 降 `pool_max`（首�
 - 判据文件：`tests/unit_ci_workflows/test_zero_downtime_release_adr.py`（`# case_ids: MC-348`）。
 - 它锁三件事：① M1 六项 / M2 五项关键字必须在**各自小节**里（删任一项 ⇒ 判红并点名）；
   ② 本页的**事实性断言**必须与仓内真实配置一致（`18080` / `18000` / `13001`、
-  `proxy_pass http://admin-api:8080`、`/opt/migao-deploy/uploads`、redis 本机容器且 compose 未定义、
-  graceful「未配置」）⇒ 配置一改，文档不同步就红；
+  **upstream 已落地**（`proxy_pass http://migao_admin_api` + 三个 `upstream` 块）、
+  `/opt/migao-deploy/uploads`、redis 本机容器且 compose 未定义、
+  **graceful「已实施」**（`server.shutdown` / `--timeout-graceful-shutdown`））⇒ 配置一改，文档不同步就红；
   ③ 注入式红证：删 M1 任一项 ⇒ 红；把 `18080` 改成 `18081` ⇒ 红。
 - 用例登记：`.github/cases/misc.yml` 的 `MC-348`（QA Growth Gate 的 G5 追溯要求声明号存在于用例库）。

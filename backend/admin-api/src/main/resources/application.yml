@@ -27,12 +27,29 @@ server:
     threads:
       max: 200
     accept-count: 100
+  # ── 优雅退出（M1-b，issue #9098）────────────────────────────────────────────
+  # 病：Spring Boot 默认 `shutdown: immediate` ⇒ SIGTERM 时**当场关连接**，在途请求被硬切
+  # （用户侧看到 5xx / 半个响应）。发布期这正好撞在「容器重建」那一刻。
+  # 现在：先停接入（不再接新请求），把**已经在跑的请求做完**再退出。
+  # ⚠️ 「配了」≠「生效了」：docker 的 `stop` 默认 10s 后 SIGKILL ⇒ compose 侧必须同时给
+  #    `stop_grace_period: 45s`（见 deploy/swas/docker-compose.yml），否则这里配多少都被砍在 10s。
+  # 判据（会红）：tests/unit_ci_workflows/test_zero_downtime_m1_cutover.py
+  shutdown: graceful
 
 spring:
   config:
     import: optional:file:.env[.properties]
   application:
     name: admin-api
+
+  # 优雅退出的**时间预算**（M1-b，issue #9098）—— 取值理由（不是拍的数）：
+  #   · 本服务最慢的**常规**请求（报表 / 导出 / 批量查询）现网长尾在数秒级 ⇒ 30s 有 ~10× 余量；
+  #   · 最长的那种请求（SSE 流，最长 180s）**不走这里** —— 它们由 ai-agent 的
+  #     `--timeout-graceful-shutdown 200` 承载，本服务只是转发（代理连接），不必按 180s 取；
+  #   · 预算必须 **< compose 的 `stop_grace_period`**（45s）：docker 从 SIGTERM 起算等到
+  #     stop_grace_period 就 SIGKILL ⇒ 应用预算留 15s 给 JVM/连接池收尾与 docker 的观测误差。
+  lifecycle:
+    timeout-per-shutdown-phase: 30s
   
   # 404 异常抛出配置
   mvc:

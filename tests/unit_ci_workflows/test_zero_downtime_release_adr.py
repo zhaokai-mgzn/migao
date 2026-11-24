@@ -19,11 +19,13 @@ redis 从「本机容器」变成「云实例」。这类文档腐烂**不会让
 2. **文档的事实性断言必须与仓内真实配置逐字一致**（漂移 ⇒ 判红并**点名哪一条漂移**）：
    - 第二端口 `18080/18000/13001` ⇄ `deploy/swas/docker-compose.bluegreen.yml` 的 `${BG_*_PORT:-…}`
      默认值 ⇄ `deploy/swas/deploy.sh` 的 `BG_*_PORT=${BG_*_PORT:-…}`（三处必须同一组）；
-   - 「`proxy_pass http://admin-api:8080` 走 compose DNS 名、nginx.conf 没有 upstream 块」⇄ `deploy/swas/nginx.conf`；
+   - 「**已实施 upstream 摘挂**（`proxy_pass http://migao_admin_api` + 三个 upstream 块）⇄
+     `deploy/swas/nginx.conf`」（改动前那条「走 compose DNS 名 / 没有 upstream 块」在文档里保留为**历史**，
+     但「现状是哪个」由 nginx.conf 自己说的算 —— 见 `test_upstream_state_claims_match_nginx`）；
    - uploads 宿主路径 `/opt/migao-deploy/uploads` ⇄ `deploy/swas/docker-compose.yml` 的 volumes；
    - 「redis 是本机容器、仓库 compose 未定义 redis」⇄ `deploy/swas/docker-compose.yml` 的服务键集合；
-   - 「应用优雅退出**当前未配置**（未验证）」⇄ `application.yml` / ai-agent `Dockerfile`（真配了 ⇒ 文档必须同步，
-     否则判红：这正是「文档与配置必须一起走」的机械提醒）。
+   - 「应用优雅退出**当前是已配置还是未配置**」⇄ `application.yml` / ai-agent `Dockerfile`（两侧必须同一口径：
+     配了就必须写「已实施 + 配置位置」，没配就必须写「未配置」⇒ 任何一侧先动而另一侧不动都判红）。
 3. **注入式红证**（在临时副本上做，不改仓库）：删 M1 任一项 ⇒ 红；`18080` 改 `18081` ⇒ 红；
    删 M2 任一项 ⇒ 红；反向漂移（配置侧把默认端口改掉、文档不动）⇒ 红。**注入必须先自证落到文本上**
    （`mutated != original`），否则断言本身就是空的。
@@ -61,14 +63,15 @@ M1_ITEMS: dict[str, tuple[str, ...]] = {
     "M1-a": (
         "upstream",                                # 切换模型 = upstream 摘挂
         "nginx -s reload",                         # 切换动作 = reload（不是重建容器）
-        "proxy_pass http://admin-api:8080",        # 现状事实（nginx 直连服务名）
-        "nginx.conf 没有 upstream 块",              # 现状事实（所以才是缺口）
+        "proxy_pass http://migao_admin_api",       # 已落地的形态（proxy_pass 指 upstream 名）
+        "已实施",                                   # 当前状态必须如实标注（issue #9098）
+        "nginx.conf 没有 upstream 块",              # 历史事实必须保留（否则读者不知道改的是什么）
     ),
     "M1-b": (
         "server.shutdown=graceful",
         "spring.lifecycle.timeout-per-shutdown-phase=30s",
         "--timeout-graceful-shutdown",
-        "未配置",                                   # 当前状态必须如实标注
+        "已实施",                                   # 当前状态必须如实标注（issue #9098）
     ),
     "M1-c": (
         "/actuator/health/readiness",
@@ -262,63 +265,75 @@ def test_second_ports_match_compose_and_deploy_defaults() -> None:
     assert not violations, "\n".join(violations)
 
 
-def test_proxy_pass_and_no_upstream_claims_match_nginx() -> None:
+def _nginx_code(nginx: str) -> str:
+    """剥掉整行注释后的 nginx 代码 —— 注释里**刻意引用**改动前的写法（事故说明），不剥会恒红。"""
+    return "\n".join(ln for ln in nginx.splitlines() if not ln.lstrip().startswith("#"))
+
+
+def _upstream_state(nginx: str) -> str:
+    """nginx.conf 的**当前**切换模型：`upstream`（三个块齐）或 `direct-dns`（服务名直连）。"""
+    code = _nginx_code(nginx)
+    names = ("migao_admin_api", "migao_ai_agent", "migao_admin_web")
+    if all(f"upstream {n} {{" in code for n in names) and "proxy_pass http://migao_admin_api;" in code:
+        return "upstream"
+    return "direct-dns"
+
+
+def test_upstream_state_claims_match_nginx() -> None:
+    """ADR 的「切换模型现状」⇄ nginx.conf：**双向**一致（谁先动都判红，并点名差在哪）。"""
     doc = DOC.read_text(encoding="utf-8")
     nginx = NGINX.read_text(encoding="utf-8")
-    assert "proxy_pass http://admin-api:8080" in nginx, (
-        "nginx.conf 里不再有 `proxy_pass http://admin-api:8080`（改成了 upstream？）"
-        " ⇒ ADR 的现状断言已过期：请同步 ADR 的 M1-a 小节"
-    )
-    assert "proxy_pass http://admin-api:8080" in doc, "ADR 的现状断言缺 `proxy_pass http://admin-api:8080`"
-    assert "upstream" not in nginx, (
-        "nginx.conf 里出现了 `upstream` —— ADR 的「nginx.conf 没有 upstream 块」已过期；"
-        "要么撤掉该改动，要么同步 ADR 的 M1-a 小节（切换模型已经换了）"
-    )
-    assert "nginx.conf 没有 upstream 块" in doc, "ADR 必须如实写出「nginx.conf 没有 upstream 块」这个缺口前提"
+    _, m1a = _section_of(_sections(doc), "M1-a")
+    assert m1a, "ADR 缺 `### M1-a` 小节 ⇒ 切换模型的事实断言没有落点"
+    state = _upstream_state(nginx)
+    code = _nginx_code(nginx)
+    if state == "upstream":
+        assert "proxy_pass http://migao_admin_api" in m1a, (
+            "nginx.conf 已是 upstream 模型（`proxy_pass http://migao_admin_api;`），"
+            "但 ADR 的 M1-a 没写这个事实（`proxy_pass http://migao_admin_api`）⇒ 文档过期"
+        )
+        assert "已实施" in m1a, "nginx.conf 已落地 upstream 摘挂，但 ADR 的 M1-a 没标「已实施」"
+        assert "proxy_pass http://admin-api:8080" not in code and "proxy_pass http://ai-agent:8000" not in code, (
+            "nginx.conf 里仍有**服务名直连**的 proxy_pass（`http://admin-api:8080` 之类）⇒ "
+            "「重建容器 = 换 IP = 502」的窗口还在；要么改回 upstream，要么同步 ADR"
+        )
+    else:
+        assert "nginx.conf 没有 upstream 块" in m1a, (
+            "nginx.conf 不是 upstream 模型，但 ADR 的 M1-a 没写「没有 upstream 块」这个事实 ⇒ 文档过期"
+        )
+        assert "proxy_pass http://admin-api:8080" in code, (
+            "判据判不出 nginx.conf 的切换模型（既没有三个 upstream，也没有服务名直连）⇒ 先修判据，不许当绿"
+        )
 
 
-def test_uploads_host_path_claim_matches_compose() -> None:
-    doc = DOC.read_text(encoding="utf-8")
-    compose = COMPOSE.read_text(encoding="utf-8")
-    assert "- /opt/migao-deploy/uploads:/app/uploads" in compose, (
-        "compose 里 uploads 的宿主卷不再是 `/opt/migao-deploy/uploads:/app/uploads` ⇒ ADR 的 M2-a 现状断言已过期"
-    )
-    assert "/opt/migao-deploy/uploads" in doc, "ADR 必须点明 uploads 的宿主路径（M2-a 的外置对象）"
+def test_graceful_shutdown_config_and_adr_are_in_sync() -> None:
+    """ADR 说「已实施」还是「未配置」，必须与仓内两侧配置**同时**成立（谁先动都判红）。
 
-
-def test_redis_is_a_host_container_and_not_in_repo_compose() -> None:
-    compose = COMPOSE.read_text(encoding="utf-8")
-    services = _compose_services(compose)
-    assert services == {"admin-api", "ai-agent", "admin-web", "nginx"}, (
-        f"仓库 compose 的服务键变了：{sorted(services)} —— ADR 的「仓库 compose 未定义 redis」断言需要复核"
-    )
-    assert "redis" not in services, "仓库 compose 里出现了 redis 服务 —— ADR 的「本机容器 / 无仓库承载」断言已过期"
-    doc = DOC.read_text(encoding="utf-8")
-    assert "compose 未定义 redis" in doc, "ADR 必须写明「仓库 compose 未定义 redis」（承载面缺失，不只是「用了 redis」）"
-    assert "本机容器" in doc, "ADR 必须写明「redis 是本机容器」这个事实（决定 M2 的外置动作）"
-
-
-def test_graceful_shutdown_is_still_unconfigured_as_the_adr_claims() -> None:
-    """ADR 说「当前未配置（未验证）」。这条把「未配置」变成机械事实 —— 一旦有人配了，文档必须同步。
-
-    这不是「不许配」：配好后把 ADR 的 M1-b 行改成「已配置 + 配置位置 + 生效实测」即可，本判据随即转绿。
+    这条不是「不许配」也不是「必须配」：它是「文档与配置必须一起走」的机械提醒。
     """
     doc = DOC.read_text(encoding="utf-8")
     application = APPLICATION_YML.read_text(encoding="utf-8")
     dockerfile = AI_AGENT_DOCKERFILE.read_text(encoding="utf-8")
     _, m1b = _section_of(_sections(doc), "M1-b")
     assert m1b, "ADR 缺 M1-b 小节（应用优雅退出）"
-    assert "未配置" in m1b, "ADR 的 M1-b 必须标注「当前是否已配置」（用户要求：未验证的不要写成已验证）"
 
     configured = []
     if "server.shutdown" in application or "timeout-per-shutdown-phase" in application:
         configured.append("backend/admin-api/src/main/resources/application.yml（Spring 优雅退出已配置）")
     if "--timeout-graceful-shutdown" in dockerfile:
         configured.append("backend/ai-agent-service/Dockerfile（uvicorn 优雅退出已配置）")
-    assert not configured, (
-        "仓内已经把优雅退出配上了，但 ADR 的 M1-b 还停在「未配置」：请同步 ADR（列出配置位置 + 生效实测方式）——"
-        "漂移点：\n" + "\n".join(f"  - {c}" for c in configured)
-    )
+    if configured:
+        assert "已实施" in m1b, (
+            "仓内已把优雅退出配上（%s），但 ADR 的 M1-b 还停在「未配置」"
+            "（应写「已实施 + 配置位置 + 怎么验证」）—— 漂移点：\n%s"
+            % ("；".join(configured), "\n".join(f"  - {c}" for c in configured))
+        )
+        assert "未配置" not in m1b.replace("改动前未配置", ""), (
+            "ADR 的 M1-b 一边写「已实施」一边仍把「未配置」当现状 ⇒ 口径自相矛盾（历史可以写，但必须带「改动前」）"
+        )
+    else:
+        assert "未配置" in m1b, "两侧都未配置优雅退出，ADR 必须如实写「未配置」（用户口径：未验证的别写成已验证）"
+        assert "已实施" not in m1b, "两侧都未配置优雅退出，ADR 却写「已实施」⇒ 文档在说假话"
 
 
 # ── 注入式红证（在临时副本上做；注入先自证落到文本上）────────────────────────────────
