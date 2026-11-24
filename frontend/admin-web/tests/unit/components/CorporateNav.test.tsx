@@ -52,21 +52,21 @@ describe('CorporateNav', () => {
   it('should render logo and brand name', () => {
     render(<CorporateNav />)
     expect(screen.getByTestId('logo')).toBeInTheDocument()
-    expect(screen.getByText('观星台')).toBeInTheDocument()
+    expect(screen.getByText('生意管家')).toBeInTheDocument()
   })
 
   it('should render logo link pointing to root', () => {
     render(<CorporateNav />)
-    const brandLink = screen.getByText('观星台').closest('a')
+    const brandLink = screen.getByText('生意管家').closest('a')
     expect(brandLink).toHaveAttribute('href', '/')
   })
 
   it('should render all 4 desktop navigation links', () => {
     render(<CorporateNav />)
-    // Note: 观星台 appears in both logo area and nav — use getAllByText for nav items
+    // Note: 生意管家 appears in both logo area and nav — use getAllByText for nav items
     // Desktop nav is rendered inside md:flex hidden container
     const homeLinks = screen.getAllByText('首页')
-    const servicesLinks = screen.getAllByText('产品服务')
+    const servicesLinks = screen.getAllByText('产品能力')
     const aboutLinks = screen.getAllByText('关于我们')
     const contactLinks = screen.getAllByText('联系方式')
 
@@ -130,10 +130,10 @@ describe('CorporateNav', () => {
     expect(activeLink).toBeTruthy()
   })
 
-  it('should highlight 产品服务 when on /services', () => {
+  it('should highlight 产品能力 when on /services', () => {
     mockUsePathname.mockReturnValue('/services')
     render(<CorporateNav />)
-    const servicesLinks = screen.getAllByText('产品服务')
+    const servicesLinks = screen.getAllByText('产品能力')
     const activeLink = servicesLinks.find(
       el => el.closest('a')?.className.includes('text-primary-600')
     )
@@ -173,7 +173,7 @@ describe('CorporateNav', () => {
   it('should highlight 产品服务 for nested route /services/curtains', () => {
     mockUsePathname.mockReturnValue('/services/curtains')
     render(<CorporateNav />)
-    const servicesLinks = screen.getAllByText('产品服务')
+    const servicesLinks = screen.getAllByText('产品能力')
     const activeLink = servicesLinks.find(
       el => el.closest('a')?.className.includes('text-primary-600')
     )
@@ -220,7 +220,7 @@ describe('CorporateNav', () => {
     // All nav items appear in mobile menu (getAllByText since desktop versions also exist)
     const homeItems = screen.getAllByText('首页')
     expect(homeItems.length).toBeGreaterThanOrEqual(1) // at least desktop + mobile
-    const servicesItems = screen.getAllByText('产品服务')
+    const servicesItems = screen.getAllByText('产品能力')
     expect(servicesItems.length).toBeGreaterThanOrEqual(1)
   })
 

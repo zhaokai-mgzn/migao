@@ -229,8 +229,8 @@ class TestErrorRecovery:
 class TestXiaobu:
     async def test_warm_greeting(self):
         async def s(msg, ctx, hist):
-            yield AgentResponse("您好呀！我是米宝，观星台窗帘的智能客服~", "text")
-        await _run(AH, s, verify_text=["米宝", "观星台窗帘"])
+            yield AgentResponse("您好呀！我是米宝，生意管家的智能客服~", "text")
+        await _run(AH, s, verify_text=["米宝", "生意管家"])
 
     async def test_logistics_with_warm_tone(self):
         async def s(msg, ctx, hist):

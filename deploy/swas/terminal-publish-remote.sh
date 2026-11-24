@@ -1,6 +1,6 @@
 #!/bin/bash
 # ══════════════════════════════════════════════════════════════════════════════
-# 观星台终端（Windows EXE / Android APK）静态落位 —— **远端执行体**（issue #8195）
+# 生意管家终端（Windows EXE / Android APK）静态落位 —— **远端执行体**（issue #8195）
 #
 # 落位：`app.migaozn.com` 静态根（nginx `root` = `/opt/migao-deploy/h5`）下的 **`terminal/`** 子树：
 #   `<静态根>/terminal/latest.json`           ← Windows 更新清单（终端 Program.cs 硬编码读取）

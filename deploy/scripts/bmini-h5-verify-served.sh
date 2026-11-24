@@ -6,7 +6,7 @@
 #    · 修复**前** `/b/` 就已经是 200 —— nginx 的 `location /` 是 `try_files $uri $uri/ /index.html`，
 #      `/b/` 不存在时**静默回落**到根 index.html（C 端米宝）；
 #    · 更隐蔽的是：bmini 与 C 端**同为 Taro h5 产物**，实测两者 `dist/index.html` 的
-#      `<title>` 都是「观星台窗帘 · 米宝智能助手」、都带 `window.TARO_ENV = 'h5'`，连资源名
+#      `<title>` 都是「生意管家 · 米宝智能助手」、都带 `window.TARO_ENV = 'h5'`，连资源名
 #      （`js/app.js` / `css/app.css`）都一样 ⇒ **标记法区分不了这两端**。
 #    ⇒ 可判的只有两样：**字节哈希**（线上 body == 本仓库 `frontend/bmini-app/dist/index.html`）
 #      与**资源命名空间**（index.html 的引用必须落在 `/b/` 内，不许引用根级 `/js/…`）。

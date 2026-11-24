@@ -238,14 +238,14 @@ describe('Sidebar', () => {
     render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
     // 顶部主位：逐字只有企业名（品牌不再作为第二行与企业名并列）
     expect(screen.getByText('测试企业').parentElement?.textContent).toBe('测试企业')
-    // 底部署名：逐字「观星台」，且整栏只出现这一次
-    expect(screen.getByTestId('sidebar-brand-name').textContent).toBe('观星台')
-    expect(screen.getAllByText('观星台')).toHaveLength(1)
+    // 底部署名：逐字「生意管家」，且整栏只出现这一次
+    expect(screen.getByTestId('sidebar-brand-name').textContent).toBe('生意管家')
+    expect(screen.getAllByText('生意管家')).toHaveLength(1)
   })
 
   it('企业名缺失时品牌占主位，且全栏只出现一次（issue #7476）', () => {
     render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
-    expect(screen.getAllByText('观星台')).toHaveLength(1)
+    expect(screen.getAllByText('生意管家')).toHaveLength(1)
     // 主位已经是品牌名 ⇒ 底部不再重复署名
     expect(screen.queryByTestId('sidebar-brand')).toBeNull()
   })
@@ -265,7 +265,7 @@ describe('Sidebar', () => {
     expect(brand.nextElementSibling).toBe(collapse)
     // 品牌图形在位**且取品牌金**（删掉星标 / 改色都会红 —— 不写成「非空」那种空断言）
     expect(brand.querySelector('svg path')?.getAttribute('fill')).toBe(gold[400])
-    expect(within(brand).getByTestId('sidebar-brand-name').textContent).toBe('观星台')
+    expect(within(brand).getByTestId('sidebar-brand-name').textContent).toBe('生意管家')
     // issue #7487：MIGAO 已移除（观星台 = 米高，同一个名字不说两遍）
     expect(within(footer).queryByText('MIGAO')).toBeNull()
     // issue #7491：公司法定名**撤出侧边栏**（侧边栏是租户的地盘，不挂供应商名）——
@@ -310,7 +310,7 @@ describe('Sidebar', () => {
 
     // ④ 负控（本次不动的东西）：文案与折叠入口逐字不变（版式修复不许顺手改文案/删按钮文字）
     expect(collapse.textContent).toContain('收起')
-    expect(name.textContent).toBe('观星台')
+    expect(name.textContent).toBe('生意管家')
   })
 
   it('折叠态不渲染品牌文本（issue #7476）', () => {
@@ -320,10 +320,10 @@ describe('Sidebar', () => {
     render(<Sidebar collapsed={true} onToggle={mockOnToggle} />)
     expect(screen.queryByTestId('sidebar-brand')).toBeNull()
     expect(screen.queryByTestId('sidebar-company')).toBeNull()
-    expect(screen.queryByText('观星台')).toBeNull()
+    expect(screen.queryByText('生意管家')).toBeNull()
   })
 
-  it('未设置企业 Logo 时回退观星台默认 Logo', () => {
+  it('未设置企业 Logo 时回退生意管家默认 Logo', () => {
     mockUseAuthStore.mockReturnValue({
       user: { id: '1', username: 'admin', name: '管理员', roles: ['admin'], permissions: ['*'], tenantName: '测试企业' },
     })
@@ -519,7 +519,7 @@ describe('Sidebar', () => {
     for (const g of GROUPS) {
       expect(screen.queryByText(g.name)).not.toBeInTheDocument()
     }
-    expect(screen.queryByText('观星台')).not.toBeInTheDocument()
+    expect(screen.queryByText('生意管家')).not.toBeInTheDocument()
     // 菜单名文本同样不渲染（此态下只有图标）
     expect(screen.queryByText('商品列表')).not.toBeInTheDocument()
     expect(screen.queryByText('经营报表')).not.toBeInTheDocument()

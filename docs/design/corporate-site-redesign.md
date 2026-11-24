@@ -1,3 +1,5 @@
+> 🔁 **2026-11-24 更新**：本文是 2026-10-04 / 2026-11-09 的官网重构记录。产品更名「生意管家」后，官网按「产品 / 能力 / 价值 / 优势」再次精简；现行方案见 `docs/design/corporate-site-2026-11.md`。
+
 # 官网（企业站）整体重构设计 — 织物质感 + 按真实能力写文案
 
 > 状态：已实施（2026-10-04）｜ issue [#6291](https://github.com/zhaokai-mgzn/migao/issues/6291) ｜ 承接分支 `feat/corporate-site-redesign`

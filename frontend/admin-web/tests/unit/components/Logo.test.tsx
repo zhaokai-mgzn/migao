@@ -1,16 +1,15 @@
 // case_ids: UI-082
 //
-// 判据：**Logo 的织金渐变取自单一真值源**（issue #6665 第 6 条）。
+// 判据：**生意管家品牌标**的结构与配色（issue #9121）。
 //
-// 病根：Logo 此前在 SVG 里写死 `#FFC53D` → `#D48806`，而三份官网页面又各写一份金色任意值
-// ⇒ 四个金各写各的；改一处必然漂移。
-// 现口径：色值只在 `src/lib/brand-palette.ts`（`tailwind.config.ts` 也读它，页面用 token 类）。
+// 病根：旧标是「帘成 M」（米高 / 观星台时代），与产品名「生意管家」和跨行业定位都不再相符；
+// 新标 = 管家铃（服务）+ 底座（经营台面）+ 星芒（词元 / AI）。金色仍只取自 brand-palette。
 import { describe, it, expect } from 'vitest'
 import { render } from '@testing-library/react'
 import Logo from '@/components/ui/Logo'
 import { gold } from '@/lib/brand-palette'
 
-describe('Logo：尺寸与织金渐变口径（issue #6665）', () => {
+describe('Logo：管家铃结构与织金口径（issue #9121）', () => {
   it('三档尺寸逐值确定（small/medium/large = 28/36/56），默认 medium', () => {
     const { container: small } = render(<Logo size="small" />)
     const { container: medium } = render(<Logo />)
@@ -20,15 +19,27 @@ describe('Logo：尺寸与织金渐变口径（issue #6665）', () => {
     expect(large.querySelector('svg')?.getAttribute('width')).toBe('56')
   })
 
-  it('渐变色 = brand-palette 的 gold[400] → gold[600]（不是本文件里的第二份字面量）', () => {
+  it('金色渐变 = brand-palette 的 gold[300] → gold[600]（不是本文件里的第二份字面量）', () => {
     const { container } = render(<Logo />)
-    // 读 HTML 字面量：React 会把 SVG 属性序列化成 kebab-case（`stop-color`），
-    // 且 jsdom 对 SVG stop 的 DOM 查询在不同版本下行为不一（实测 querySelectorAll 返回空）。
     const stopColors = [...container.innerHTML.matchAll(/stop-color="([^"]+)"/g)].map((m) => m[1])
-    expect(stopColors).toEqual([gold[400], gold[600]])
-    // 判别力自证：这两个值不等于「随手写一个金色」也能过 —— 它们就是 palette 里的键
-    expect(gold[400]).toBe('#ffc53d')
+    // 背景是靛蓝渐变（两段），铃身是金色渐变（两段）—— 金色必须来自 palette
+    expect(stopColors).toContain(gold[300])
+    expect(stopColors).toContain(gold[600])
+    // 判别力自证：palette 真值变化时本断言会跟着变
+    expect(gold[300]).toBe('#f6d27a')
     expect(gold[600]).toBe('#d48806')
+  })
+
+  it('管家铃：铃身 / 底座 / 顶钮 / 星芒都在，且不再是旧的「帘成 M」路径', () => {
+    const { container } = render(<Logo />)
+    const html = container.innerHTML
+    // 旧标的 M 形波浪底摆路径特征串
+    expect(html).not.toContain('C35.2 33.4 32.8 29.8 30.2 30.4')
+    // 新标的四个可核对形状：铃身曲线 / 顶钮 / 底座 / 星芒
+    expect(html).toContain('M13.4 33.2 C13.4 25.4')
+    expect(html).toContain('<circle cx="24" cy="17.2" r="2.3"')
+    expect(html).toContain('x="11" y="34" width="26"')
+    expect(html).toContain('M36.2 11.4 C36.6 13.6')
   })
 
   it('className 透传到 svg（外层布局要能调间距，且不得丢掉 flex-shrink-0）', () => {

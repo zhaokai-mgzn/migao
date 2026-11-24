@@ -1957,7 +1957,7 @@ def _make_dist(tmp_path: Path, ref: str = "/js/app.js", app_js: str = "// C 端�
     (dist / "js").mkdir(parents=True, exist_ok=True)
     (dist / "css").mkdir(exist_ok=True)
     (dist / "index.html").write_text(
-        f'<!doctype html><title>观星台窗帘 · 米宝智能助手</title><script defer src="{ref}"></script>'
+        f'<!doctype html><title>生意管家 · 米宝智能助手</title><script defer src="{ref}"></script>'
         '<link href="/css/app.css" rel="stylesheet">',
         encoding="utf-8",
     )
@@ -2149,7 +2149,7 @@ def test_reserved_subtree_digest_really_moves_when_touched(tmp_path):
 # 「上一版线上产物」的一页（08-30 那次发布的形态：结构相同、标题与注释不同 ⇒ 哈希不同）
 STALE_C_END_PAGE = (
     '<!doctype html><html lang="zh-CN"><head><meta charset="UTF-8"/>'
-    "<title>观星台窗帘 · 米宝智能助手</title>"
+    "<title>生意管家 · 米宝智能助手</title>"
     "<script>window.TARO_ENV = 'h5'</script>"
     '<script defer="defer" src="/js/2.js"></script>'
     '<script defer="defer" src="/js/app.js"></script>'

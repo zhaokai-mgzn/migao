@@ -5,7 +5,7 @@ import { SELF_SERVICE_ONBOARDING_OPEN } from '@/config/onboarding'
 
 const quickLinks = [
   { name: '首页', href: '/' },
-  { name: '产品服务', href: '/services' },
+  { name: '产品能力', href: '/services' },
   // 终端下载页（issue #8195）
   { name: '下载中心', href: '/download' },
   { name: '关于我们', href: '/about' },
@@ -15,11 +15,11 @@ const quickLinks = [
 
 /** 能力域入口（都落在「产品服务」页的能力清单上） */
 const capabilityLinks = [
-  '经营看板与每日简报',
-  '商品、订单与售后工单',
-  '生产工序与计件工资',
-  '入库批次与余料台账',
-  '客户档案与岗位权限',
+  '顾客服务',
+  '订单与商品',
+  '生产与质量',
+  '仓储与物料',
+  '财务与计件',
 ]
 
 export default function CorporateFooter() {
@@ -31,11 +31,11 @@ export default function CorporateFooter() {
           <div className="space-y-4">
             <div className="flex items-center gap-2.5">
               <Logo size="small" />
-              <span className="text-lg font-semibold tracking-tight text-white">观星台</span>
+              <span className="text-lg font-semibold tracking-tight text-white">生意管家</span>
             </div>
             <p className="max-w-xs text-sm leading-relaxed text-neutral-400">
-              杭州词元通达科技有限公司出品的观星台平台：面向布艺 / 窗帘商家的多租户 AI
-              经营平台，顾客侧米宝、经营侧黄金策，共用数据底座。
+              杭州词元通达科技有限公司出品的生意管家平台：面向布艺 / 窗帘企业的 AI 经营平台，
+              顾客侧米宝、经营侧黄金策，共用数据底座。
             </p>
           </div>
 
@@ -78,8 +78,8 @@ export default function CorporateFooter() {
                   ? '提交入驻申请并完成手机验证'
                   : '联系平台顾问确认开通范围与交付内容'}
               </li>
-              <li>AI 自动核验企业信息与合规性</li>
-              <li>通过后即刻开通管理后台，米宝与黄金策同步上线</li>
+              <li>确认开通模块、岗位权限与流程衔接</li>
+              <li>完成基础配置后，米宝与黄金策同步上线</li>
             </ul>
             {SELF_SERVICE_ONBOARDING_OPEN && (
               <Link
@@ -98,7 +98,7 @@ export default function CorporateFooter() {
           </p>
           <p>本页面展示的功能以实际开通版本为准；报价与交付内容由双方另行确认。</p>
           <p>
-            © 2026 杭州词元通达科技有限公司 · 观星台 版权所有
+            © 2026 杭州词元通达科技有限公司 · 生意管家 版权所有
           </p>
           {/* 备案号（合规展示）：工信部要求首页底部展示 ICP 备案号并链接到 beian.miit.gov.cn；
               公安联网备案通过后，在同一区域追加「浙公网安备 xxxxxxxxxxxx 号」及链接。 */}

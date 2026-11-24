@@ -31,7 +31,7 @@ class ChannelConfig:
 
 DEFAULT_CHANNEL_CONFIGS: Dict[str, ChannelConfig] = {
     CHANNEL_WECHAT_MINI: ChannelConfig(
-        greeting="您好！我是{bot_name}，观星台窗帘的智能客服。我可以为您查订单、看物流、了解商品，有什么可以帮您的吗？",
+        greeting="您好！我是{bot_name}，生意管家的智能客服。我可以为您查订单、看物流、了解商品，有什么可以帮您的吗？",
         capabilities=(
             "🔍 **商品咨询** - 搜索商品、查看详情\n"
             "📦 **订单查询** - 查订单、追踪物流\n"
@@ -40,13 +40,13 @@ DEFAULT_CHANNEL_CONFIGS: Dict[str, ChannelConfig] = {
         ),
     ),
     CHANNEL_WECHAT_H5: ChannelConfig(
-        greeting="您好！我是{bot_name}，观星台窗帘的智能客服。有什么可以帮您的吗？",
+        greeting="您好！我是{bot_name}，生意管家的智能客服。有什么可以帮您的吗？",
     ),
     CHANNEL_DOUYIN_MINI: ChannelConfig(
-        greeting="您好！我是{bot_name}，观星台窗帘的智能客服。有什么可以帮您的吗？",
+        greeting="您好！我是{bot_name}，生意管家的智能客服。有什么可以帮您的吗？",
     ),
     CHANNEL_WEB: ChannelConfig(
-        greeting="您好！我是{bot_name}，观星台窗帘在线客服。有什么可以帮您的吗？",
+        greeting="您好！我是{bot_name}，生意管家在线客服。有什么可以帮您的吗？",
     ),
 }
 

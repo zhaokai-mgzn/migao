@@ -95,7 +95,7 @@ DESTRUCTIVE_RE = re.compile(r"(rm\s+-[A-Za-z]*[rf][A-Za-z]*\b|--delete\b|-delete
 # 这正是本单不能靠标记判身份的原因，见模块 docstring 判据 3）
 C_END_PAGE = (
     '<!doctype html><html lang="zh-CN"><head><meta charset="UTF-8"/>'
-    "<title>观星台窗帘 · 米宝智能助手</title>"
+    "<title>生意管家 · 米宝智能助手</title>"
     "<script>window.TARO_ENV = 'h5'</script>"
     '<script defer="defer" src="/js/app.js"></script></head>'
     '<body><div id="app"></div></body></html>'
@@ -107,7 +107,7 @@ def _bmini_page(legacy: bool = False) -> bytes:
     prefix = "" if legacy else f"/{SUBDIR}"
     return (
         '<!doctype html><html lang="zh-CN"><head><meta charset="UTF-8"/>'
-        "<title>观星台窗帘 · 米宝智能助手</title>"
+        "<title>生意管家 · 米宝智能助手</title>"
         "<script>window.TARO_ENV = 'h5'</script>"
         f'<script defer="defer" src="{prefix}/js/app.js"></script>'
         f'<link href="{prefix}/css/app.css" rel="stylesheet"></head>'
@@ -862,7 +862,7 @@ class _NginxishServer:
             if self.mode == "no_b_location":
                 return c_end
             if self.mode == "stale_b":
-                return '<!doctype html><title>观星台窗帘 · 米宝智能助手</title><script>// 旧产物</script>'.encode("utf-8")
+                return '<!doctype html><title>生意管家 · 米宝智能助手</title><script>// 旧产物</script>'.encode("utf-8")
             if path in (f"/{SUBDIR}/", f"/{SUBDIR}/index.html"):
                 return bmini
             # 子资源（`/b/js/**` 等）在静态根上真实存在 ⇒ 按文件伺候（⑥ 要判它们的 MIME，issue #6293）；

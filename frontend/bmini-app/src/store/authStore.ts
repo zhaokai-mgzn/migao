@@ -71,7 +71,7 @@ export const useAuthStore = create<AuthState>()(
        * 初始化：从本地存储恢复状态。
        *
        * 🔴 access token 只有 2 小时（issue #7249）⇒ exp 过期时**先续期**（HttpOnly
-       * `refresh_token` cookie，30 天）再决定去留：改前这里直接 `logout()` ⇒
+       * `refresh_token` cookie，7 天）再决定去留：改前这里直接 `logout()` ⇒
        * 隔一段时间打开 `/b/` 必被踢回登录页（续期失败才登出，与改前一致）。
        */
       initialize: async () => {

@@ -112,7 +112,7 @@ function lengthGateProblems(classify: (raw: string) => { shortCode: string | nul
 function loosePathProblems(classify: (raw: string) => { space: string }): string[] {
   const foreign = 'https://example.com/i/ABCD2345'
   return classify(foreign).space === 'inbound-label'
-    ? [`别的域名里的 /i/ 被当成了观星台标签：${foreign} ⇒ 会去查一次入库详情`]
+    ? [`别的域名里的 /i/ 被当成了生意管家标签：${foreign} ⇒ 会去查一次入库详情`]
     : []
 }
 
@@ -273,12 +273,12 @@ describe('拍照补打：码空间判定与手输兜底（issue #5640）', () =>
     expect(spaceGateProblems(gatedShortCode)).toEqual([])
   })
 
-  it('S3 非观星台二维码 ⇒ 明确告知「这不是观星台的标签」（别的域名 / 纯文本 / 空）', () => {
+  it('S3 非观星台二维码 ⇒ 明确告知「这不是生意管家的标签」（别的域名 / 纯文本 / 空）', () => {
     for (const raw of ['https://example.com/i/ABCD2345', 'https://app.migaozn.com/x/ABCD2345', 'MG-1001']) {
       const reading = classifyScannedCode(raw)
       expect({ raw, space: reading.space }).toEqual({ raw, space: 'foreign' })
       expect(reading.message).toBe(FOREIGN_CODE_MESSAGE)
-      expect(reading.message).toContain('不是观星台的标签')
+      expect(reading.message).toContain('不是生意管家的标签')
       expect(reading.shortCode).toBeNull()
     }
     // 红证（注入式）：靠「路径里有 /i/ 就当入库」的宽松口径会把**别人域名**的 /i/ 当成自家标签

@@ -1,15 +1,15 @@
 # case_ids: UI-082
 """**品牌文案**守卫（三组判据同处一文件）：
 
-① **产品定位文案**（issue #6463）：观星台不得再被写成「电商管理系统 / 电商管理解决方案」；
-② **品牌称呼**（issue #6525 / #8881）：旧称呼（元元 / 小布 / 米高）不得在用户可见面回流，
-   新称呼（观星台 / 黄金策 / 米宝）必须在关键落点**正向存在** —— 见文末「品牌称呼」一节。
+① **产品定位文案**（issue #6463）：生意管家不得再被写成「电商管理系统 / 电商管理解决方案」；
+② **品牌称呼**（issue #6525 / #8881 / #9121）：旧称呼（元元 / 小布 / 米高 / 观星台）不得在用户可见面回流，
+   新称呼（生意管家 / 黄金策 / 米宝）必须在关键落点**正向存在** —— 见文末「品牌称呼」一节。
    ⚠️ 沿革：「米宝」在 2026-10-08 的改名里是旧 B 端称呼（→黄金策），2026-11-10 起是**新 C 端称呼**
    （元元→米宝）⇒ 同一字面量在两次改名里先旧后新，旧名集合**按最近一次改名现取**。
 
 ── ① 的正文 ────────────────────────────────────────────────────────────────
 
-**产品定位文案**守卫：观星台不得再被写成「电商管理系统 / 电商管理解决方案」（issue #6463）。
+**产品定位文案**守卫：生意管家不得再被写成「电商管理系统 / 电商管理解决方案」（issue #6463）。
 
 用户 2026-10-07 逐字：「观星台 / 企业级AI电商管理解决方案，这里的定位已经不太对了，我们不单单管理电商了，
 你想个更贴切的」⇒ 定位统一为 **企业级AI经营管理平台**。
@@ -50,7 +50,7 @@ sys.path.insert(0, str(REPO_ROOT / "tests"))
 
 from unit_ci_workflows._source_parsing import java_code  # noqa: E402
 
-#: 旧定位串（观星台**自身**被写成电商管理系统的两种形态）
+#: 旧定位串（生意管家**自身**被写成电商管理系统的两种形态）
 BANNED_IN_CODE_FACE = ("AI电商管理系统", "电商管理解决方案")
 
 #: 改后的定位锚（正向：三处用户可见落点都必须含它）
@@ -84,12 +84,20 @@ def code_face(source: str) -> str:
     return java_code(source)
 
 
+def is_comment_line(face_line: str) -> bool:
+    """`code_face` 理论上已抹掉注释；但 JS 模板串会让词法器漏掉少量块注释行
+    （worker-h5 的 `.mjs` 实测）⇒ 再按行首形态兜一层，避免把历史注释当成代码面。"""
+    return face_line.lstrip().startswith(("//", "/*", "*", "<!--", "{/*"))
+
+
 def violations_in(name: str, source: str) -> list[str]:
     """代码面里的旧定位串 ⇒ `名字:行: 原句`（原句取**原文**那一行，便于照抄去改）。"""
     face_lines = code_face(source).splitlines()
     raw_lines = source.splitlines()
     found: list[str] = []
     for index, line in enumerate(face_lines, start=1):
+        if is_comment_line(line):
+            continue
         if any(term in line for term in BANNED_IN_CODE_FACE):
             raw = raw_lines[index - 1].strip() if index - 1 < len(raw_lines) else ""
             found.append(f"{name}:{index}: {raw[:100]}")
@@ -123,7 +131,7 @@ def test_no_stale_positioning_in_code_face():
     violations, scanned = scan_repo()
     assert scanned, "扫面为空 —— 守卫的射程断了（SCAN_ROOTS 路径写错？）"
     assert violations == [], (
-        "生产源码里出现了旧定位串（用户 2026-10-07 裁定：观星台定位改「企业级AI经营管理平台」）：\n  "
+        "生产源码里出现了旧定位串（用户 2026-10-07 裁定：产品定位改「企业级AI经营管理平台」）：\n  "
         + "\n  ".join(violations)
     )
 
@@ -148,7 +156,7 @@ def test_user_facing_surfaces_now_use_the_new_tagline():
 
 def test_injection_turns_red_with_attribution():
     """把旧串放进**字符串 / JSX 文本** ⇒ 必须判红，且**指到行**（可归因）。"""
-    sample = "const title = '观星台 - AI电商管理系统'\nconst ok = '企业级AI经营管理平台'\n"
+    sample = "const title = '生意管家 - AI电商管理系统'\nconst ok = '企业级AI经营管理平台'\n"
     found = violations_in("sample.tsx", sample)
     assert len(found) == 1, f"注入没被判红 ⇒ 判据是空断言：{found}"
     # ⚠️ 这里**不写**「合成文件名 + 冒号 + 行号」的字面量：`sample.tsx` 是**合成**源（按定义不存在），
@@ -165,7 +173,7 @@ def test_comment_mention_is_not_a_violation():
     sample = (
         "// 2026-10-07：本页副标题原为「企业级AI电商管理解决方案」（issue #6463）\n"
         "/* 改名自 AI电商管理系统 */\n"
-        "const title = '观星台 - AI经营管理平台'\n"
+        "const title = '生意管家 - AI经营管理平台'\n"
     )
     assert violations_in("sample.tsx", sample) == [], "注释面被误判成违规（假红）"
 
@@ -180,11 +188,13 @@ def test_string_with_double_slash_is_not_eaten_as_a_comment():
 
 # ── ② 品牌称呼（issue #6525 / #8881）：旧名不得回流 + 新名正向存在 ────────────
 #
-# 沿革（两次改名，旧名集合随最近一次收窄）：
+# 沿革（三次改名，旧名集合随最近一次收窄）：
 #   · 2026-10-08（issue #6525）：米高→观星台 / 米宝→黄金策 / 小布→元元；
 #   · 2026-11-10（issue #8881）：C 端顾客客服 **元元→米宝**（只改称呼；内部标识符
-#     `xiaobu` / `persona` / `agent_type` / 文件名 / 接口参数一字未动）。
-# ⇒ 本轮旧称呼 = 元元 / 小布 / 米高；新称呼 = 观星台 / 黄金策 / 米宝。
+#     `xiaobu` / `persona` / `agent_type` / 文件名 / 接口参数一字未动）；
+#   · 2026-11-24（issue #9121）：产品名 **观星台 / 词元观星台→生意管家**（内部标识符 /
+#     域名 / 历史迁移 / 历史记录一字未动）。
+# ⇒ 本轮旧称呼 = 元元 / 小布 / 米高 / 观星台；新称呼 = 生意管家 / 黄金策 / 米宝。
 #
 # 为什么要有这条（而不是改完 321 个文件就算完）：
 # 改名是**一次性的批量动作**，而「旧名回流」会以两种形态持续发生 ——
@@ -195,7 +205,7 @@ def test_string_with_double_slash_is_not_eaten_as_a_comment():
 # 判据（逐条可红）：
 # | # | 判什么 | 怎么红 |
 # |---|---|---|
-# | 1 | 四个前端包生产源码的**代码面**零旧称呼 | `元元` / `小布` 命中即具名；`米高` 命中且**非计量义**即具名 |
+# | 1 | 四个前端包生产源码的**代码面**零旧称呼 | `元元` / `小布` / `观星台` 命中即具名；`米高` 命中且**非计量义**即具名 |
 # | 2 | C 端 agent 的**用户可见字符串**零旧称呼（`C_END_PROMPT_SURFACES`） | 逐文件取 Python 字符串字面量（tokenize）/ Markdown 原文，命中 `元元` / `小布` 即具名 |
 # | 3 | **正向锚**：agent 定义、默认客服名、提示词与三个前端品牌工具都已是新名 | 任一锚缺失 ⇒ 红（防「删掉旧词」被当成「改完了」） |
 # | 4 | **判别力自证**：字符串里的旧名判红 / 注释与计量义不假红 / 新名零命中 | 判据不是空断言，也不会被领域文案喂红 |
@@ -213,7 +223,7 @@ def test_string_with_double_slash_is_not_eaten_as_a_comment():
 #   不改（改了会破接口与数据）。本文件判的是**中文称呼字面量**，与标识符无关。
 
 #: 旧称呼（最近一次改名后的口径）；回流 = 称呼又漂了
-OLD_AGENT_NAMES = ("元元", "小布", "米高")
+OLD_AGENT_NAMES = ("元元", "小布", "米高", "观星台")
 
 #: 计量义的合法前导字符（`米高` 专用）
 _MEASURE_PREFIX = tuple("0123456789.．０１２３４５６７８９米")
@@ -240,14 +250,18 @@ C_END_PROMPT_SURFACES = (
 
 #: 新称呼必须**正向存在**的落点（防「只删旧词就算改完」）
 NEW_NAME_ANCHORS = (
-    ("frontend/admin-web/src/app/(corporate)/page.tsx", ("米宝", "黄金策")),
+    ("frontend/admin-web/src/app/(corporate)/page.tsx", ("生意管家", "米宝", "黄金策")),
+    ("frontend/admin-web/src/app/login/page.tsx", ("生意管家",)),
+    ("frontend/bmini-app/src/pages/auth/login/index.tsx", ("生意管家",)),
+    ("frontend/mini-app/src/pages/auth/login/index.tsx", ("生意管家",)),
     ("frontend/bmini-app/src/utils/brand.ts", ("黄金策",)),
     ("frontend/mini-app/src/utils/brand.ts", ("米宝",)),
     ("backend/ai-agent-service/app/agents/agents/xiaobu.py", ('display_name="米宝"', 'DEFAULT_BOT_NAME = "米宝"')),
     ("backend/ai-agent-service/app/agents/agents/mibao.py", ('display_name="黄金策"',)),
-    ("backend/ai-agent-service/app/agents/channel_config.py", ('bot_name: str = "米宝"',)),
-    ("backend/ai-agent-service/app/graph/skills/customer_order_skill.py", ('你是"米宝"',)),
+    ("backend/ai-agent-service/app/agents/channel_config.py", ('bot_name: str = "米宝"', "生意管家")),
+    ("backend/ai-agent-service/app/graph/skills/customer_order_skill.py", ('你是"米宝"', "生意管家")),
     ("backend/ai-agent-service/app/graph/handoff_offer.py", ("继续咨询米宝",)),
+    ("backend/admin-api/src/main/java/com/migao/admin/service/RegistrationService.java", ("欢迎入驻生意管家平台",)),
 )
 
 
@@ -267,6 +281,8 @@ def old_name_violations(source: str) -> list[tuple[int, str, str]]:
     raw_lines = source.splitlines()
     found: list[tuple[int, str, str]] = []
     for index, line in enumerate(face_lines, start=1):
+        if is_comment_line(line):
+            continue
         for name in OLD_AGENT_NAMES:
             pos = line.find(name)
             while pos >= 0:
@@ -308,7 +324,7 @@ def surface_name_violations(rel: str, text: str) -> list[tuple[int, str]]:
     )
     found: list[tuple[int, str]] = []
     for line_no, literal in literals:
-        for name in ("元元", "小布"):
+        for name in ("元元", "小布", "观星台"):
             if name in literal:
                 found.append((line_no, name))
                 break
@@ -334,7 +350,8 @@ def test_old_agent_names_do_not_come_back_in_code_face():
     assert scanned, "扫面为空 —— 守卫的射程断了（SCAN_ROOTS 路径写错？）"
     assert violations == [], (
         "用户可见面出现**已废的**品牌称呼（issue #6525 / #8881："
-        "米高→观星台 / 米宝→黄金策 / 小布→元元（2026-10-08）；元元→米宝（2026-11-10））：\n  "
+        "米高→观星台 / 米宝→黄金策 / 小布→元元（2026-10-08）；元元→米宝（2026-11-10）；"
+        "观星台→生意管家（2026-11-24））：\n  "
         + "\n  ".join(violations)
     )
 
@@ -353,7 +370,7 @@ def test_c_end_agent_old_name_is_absent_from_user_visible_strings():
     assert scanned, "扫面为空 —— 守卫的射程断了（C_END_PROMPT_SURFACES 为空？）"
     assert violations == [], (
         "C 端 agent 的用户可见字符串里仍有旧称呼（issue #8881：元元→米宝；"
-        "内部标识符 xiaobu / persona / agent_type 未改）：\n  " + "\n  ".join(violations)
+        "issue #9121：观星台→生意管家；内部标识符 xiaobu / persona / agent_type 未改）：\n  " + "\n  ".join(violations)
     )
 
 
@@ -371,13 +388,14 @@ def test_agent_name_guard_discriminating_power():
     """判别力自证：会红 / 不假红 / 不误判。"""
     # ① 字符串里的旧称呼 ⇒ 判红且**指到行**
     assert old_name_violations("const a = '元元'\n") == [(1, "元元", "const a = '元元'")]
+    assert old_name_violations("const p = '观星台'\n") == [(1, "观星台", "const p = '观星台'")]
     # ② 计量义**不得假红**（算料领域文案：「2.7 米高窗」是尺寸不是品牌）
     assert old_name_violations("const q = '2.7 米高窗报价'\n") == []
     assert old_name_violations("const q = '宽2米高2.5米'\n") == []
     # ③ 注释面豁免（历史沿革照旧保留）
     assert old_name_violations("// 2026-11-10 改名自元元\n") == []
     # ④ 新称呼零命中（正面对照：守卫不会被自己的新口径喂红；协议值 [米宝解读] 也不是旧称呼）
-    assert old_name_violations("const a = '黄金策'\nconst b = '米宝'\nconst c = '观星台'\n") == []
+    assert old_name_violations("const a = '黄金策'\nconst b = '米宝'\nconst c = '生意管家'\n") == []
     assert old_name_violations("const SOURCE = '[米宝解读]'\n") == []
     # ⑤ C 端字符串面：字符串字面量里的旧名判红（含 docstring）；注释不假红
     assert surface_name_violations("sample.py", 'DEFAULT_BOT_NAME = "元元"\n') == [(1, "元元")]
@@ -396,7 +414,7 @@ def test_agent_name_guard_discriminating_power():
 # | # | 判什么 | 怎么红 |
 # |---|---|---|
 # | 1 | 登记面上零旧系统名 | `AIKF` / `AI 智能客服系统` / `AI智能客服系统` 命中即具名 `文件:行 + 原句` |
-# | 2 | 正向锚 | 每个登记文件必须含「观星台」；产品定位页还必须含「布艺」+「AI 经营平台」 |
+# | 2 | 正向锚 | 每个登记文件必须含「生意管家」；产品定位页还必须含「布艺」+「AI 经营平台」 |
 # | 3 | 判别力自证 | 旧标题判红且指到行；「7×24 智能客服」这类**能力名**不假红；扫面为空即红 |
 #
 # 边界：只判**产品定位面**（README / wiki 定位页 / 模块 README / AGENTS / CONTRIBUTING）。
@@ -407,15 +425,15 @@ OLD_SYSTEM_NAMES = ("AIKF", "AI 智能客服系统", "AI智能客服系统")
 
 #: 定位面登记表：文件 ⇒ 必须正向存在的锚
 DOC_POSITIONING_FILES: dict[str, tuple[str, ...]] = {
-    "README.md": ("观星台", "布艺", "AI 经营平台"),
-    "AGENTS.md": ("观星台", "布艺"),
-    "CONTRIBUTING.md": ("观星台", "布艺"),
-    "SECURITY.md": ("观星台", "布艺", "AI 经营平台"),
-    "backend/admin-api/README.md": ("观星台", "布艺", "AI 经营平台"),
-    "backend/ai-agent-service/README.md": ("观星台", "布艺", "AI 经营平台"),
-    "frontend/admin-web/README.md": ("观星台", "布艺", "AI 经营平台"),
-    "frontend/mini-app/README.md": ("观星台", "布艺", "AI 经营平台"),
-    "frontend/bmini-app/README.md": ("观星台", "布艺", "AI 经营平台"),
+    "README.md": ("生意管家", "布艺", "AI 经营平台"),
+    "AGENTS.md": ("生意管家", "布艺"),
+    "CONTRIBUTING.md": ("生意管家", "布艺"),
+    "SECURITY.md": ("生意管家", "布艺", "AI 经营平台"),
+    "backend/admin-api/README.md": ("生意管家", "布艺", "AI 经营平台"),
+    "backend/ai-agent-service/README.md": ("生意管家", "布艺", "AI 经营平台"),
+    "frontend/admin-web/README.md": ("生意管家", "布艺", "AI 经营平台"),
+    "frontend/mini-app/README.md": ("生意管家", "布艺", "AI 经营平台"),
+    "frontend/bmini-app/README.md": ("生意管家", "布艺", "AI 经营平台"),
 }
 
 
@@ -444,7 +462,7 @@ def test_readme_and_wiki_no_longer_use_the_old_system_name():
     assert scanned, "扫面为空 —— 守卫的射程断了（登记表为空？）"
     assert violations == [], (
         "产品定位面仍在用**已废的**系统名（issue #8857：README/wiki 从「AI 智能客服系统」"
-        "改为「观星台 — 布艺行业 AI 经营平台」）：\n  " + "\n  ".join(violations)
+        "改为「生意管家 — 布艺行业 AI 经营平台」）：\n  " + "\n  ".join(violations)
     )
 
 
@@ -456,7 +474,7 @@ def test_doc_positioning_guard_discriminating_power():
     assert "AIKF" in old[0]
     # 新文案 + 能力名（智能客服作为客户服务域的一项能力）**不得假红**
     benign = (
-        "# 观星台 — 布艺行业 AI 经营平台\n\n"
+        "# 生意管家 — 布艺行业 AI 经营平台\n\n"
         "顾客侧由米宝提供 7×24 智能客服；智能客服是客户服务能力域的一项能力。\n"
     )
     assert doc_positioning_violations("sample.md", benign) == [], "能力名被误判成旧系统名（假红）"

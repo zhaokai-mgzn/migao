@@ -1,4 +1,4 @@
-# 观星台（MIGAO）— 布艺行业 AI 经营平台
+# 生意管家（MIGAO）— 布艺行业 AI 经营平台
 
 [![CI](https://github.com/zhaokai-mgzn/migao/actions/workflows/pr-check.yml/badge.svg)](https://github.com/zhaokai-mgzn/migao/actions/workflows/pr-check.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -14,7 +14,7 @@
 
 | 维度 | 事实 |
 |------|------|
-| **产品名** | 观星台 |
+| **产品名** | 生意管家 |
 | **定位** | 布艺 / 窗帘行业的企业级 AI 经营管理平台 |
 | **使用者** | 商家管理员与员工、终端顾客、车间工人 |
 | **AI 分工** | 米宝（C 端顾客服务）+ 黄金策（B 端经营助手） |
@@ -27,7 +27,7 @@
 ## ✨ 核心亮点
 
 - **双 Agent** — 米宝（顾客侧，LangGraph）+ 黄金策（经营侧），工具与 Skill 注册表驱动
-- **四端协同** — 观星台后台、顾客微信小程序、商家小程序、员工端 H5 / 安卓终端
+- **四端协同** — 生意管家后台、顾客微信小程序、商家小程序、员工端 H5 / 安卓终端
 - **全链路经营** — 从算料报价、下单、生产报工、入库过账到发货、售后与财务对账
 - **行业纵深** — 窗帘算料、工序路线、批次成本、余料台账、计件工资不是外挂，是主模型
 - **多租户与权限** — JWT 派生租户 → MyBatis 拦截器 → PostgreSQL RLS → 字段脱敏；岗位权限逐人可配
@@ -40,7 +40,7 @@
 
 | 端 | 代码 | 使用者 | 主要能力 |
 |----|------|--------|----------|
-| **观星台管理后台** | `frontend/admin-web` | 商家管理员 / 员工 | 经营概览、报表、客户服务、订单商品、生产、质量、仓储、财务、供应链、组织 |
+| **生意管家管理后台** | `frontend/admin-web` | 商家管理员 / 员工 | 经营概览、报表、客户服务、订单商品、生产、质量、仓储、财务、供应链、组织 |
 | **顾客微信小程序** | `frontend/mini-app` | 终端顾客 | 米宝对话、算料报价、下单、订单与物流、售后、知识卡片、图片识别 |
 | **商家小程序** | `frontend/bmini-app` | 商家 / 员工 | 黄金策移动版、经营一屏、移动坐席、工人工作台（H5 `/b/` 与小程序双编译） |
 | **员工端 H5 / 安卓终端** | `frontend/bmini-app` 的 H5 编译 | 车间工人 | 扫码报工、入库、发货、返工、计件；安卓一体机 / 手持标签机 |
@@ -79,7 +79,7 @@ graph TB
     subgraph terminals["终端"]
         A["顾客微信小程序<br/>Taro"]
         B["商家小程序 + 员工端 H5<br/>Taro 双编译"]
-        C["观星台管理后台<br/>Next.js"]
+        C["生意管家管理后台<br/>Next.js"]
         D["安卓一体机 / 手持终端"]
     end
 
@@ -178,7 +178,7 @@ migao/
 │       ├── app/router/            # 意图分类（规则 + LLM）
 │       └── tests/
 ├── frontend/
-│   ├── admin-web/                 # 观星台后台 + 官网（Next.js）
+│   ├── admin-web/                 # 生意管家后台 + 官网（Next.js）
 │   ├── mini-app/                  # 顾客微信小程序（Taro）
 │   ├── bmini-app/                 # 商家小程序 + 员工端 H5（Taro 双编译）
 │   └── worker-h5/                 # 兼容期旧工人端静态页（/w/，不再新增功能）
@@ -227,7 +227,7 @@ export AI_AGENT_BASE_URL=http://localhost:8001
 export AI_AGENT_SERVICE_TOKEN="$(grep -E '^SERVICE_TOKEN=' ../ai-agent-service/.env | cut -d= -f2- | tr -d '\"')"
 ./mvnw spring-boot:run
 
-# 3. 观星台后台（:3001）
+# 3. 生意管家后台（:3001）
 cd frontend/admin-web
 npm install
 npm run dev

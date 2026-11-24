@@ -11,9 +11,9 @@ import TerminalDownloadPanel from './TerminalDownloadPanel'
 // 版本 / 校验值 / 发布时间一律**来自清单**（读不到就写「暂未发布」，不写死任何版本号）。
 
 export const metadata: Metadata = {
-  title: '下载中心 — 观星台终端（车间一体机 / 工人手持机）',
+  title: '下载中心 — 生意管家终端（车间一体机 / 工人手持机）',
   description:
-    '观星台终端安装包下载：车间一体机 Windows 版与工人手持机 Android 版，含版本号、SHA-256 校验值与安装说明（未知来源安装、SmartScreen 提示、检查更新）。',
+    '生意管家终端安装包下载：车间一体机 Windows 版与工人手持机 Android 版，含版本号、SHA-256 校验值与安装说明（未知来源安装、SmartScreen 提示、检查更新）。',
 }
 
 const INSTALL_NOTES = [
@@ -42,7 +42,7 @@ export default function DownloadPage() {
     <>
       <PageHero
         kicker="下载中心"
-        title="下载观星台终端"
+        title="下载生意管家终端"
         lead="车间一体机（Windows）与工人手持机（Android）的正式安装包在此下载。版本号、发布时间与校验值以发布清单为准；尚未发布的终端会明确标注，不以占位版本充数。"
         chips={['Windows 10 / 11 一体机', 'Android 手持机', '官网直发 · 不上架应用市场']}
       />

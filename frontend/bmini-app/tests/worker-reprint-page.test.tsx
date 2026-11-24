@@ -237,12 +237,12 @@ describe('工人拍照补打页', () => {
     expect(mockGetLabel).not.toHaveBeenCalled()
   })
 
-  it('P4 非观星台二维码 ⇒ 明确告知「不是观星台的标签」，也不查详情', async () => {
+  it('P4 非观星台二维码 ⇒ 明确告知「不是生意管家的标签」，也不查详情', async () => {
     mockDecode.mockResolvedValueOnce({ text: 'https://example.com/x/1', source: 'h5-dom-canvas', hint: '' })
     render(<WorkerReprintPage />)
     await shootAndRecognize()
     await waitFor(() => expect(screen.getByTestId('reprint-foreign')).toBeTruthy())
-    expect(screen.getByTestId('reprint-foreign').textContent).toContain('不是观星台的标签')
+    expect(screen.getByTestId('reprint-foreign').textContent).toContain('不是生意管家的标签')
     expect(mockGetLabel).not.toHaveBeenCalled()
   })
 
@@ -438,7 +438,7 @@ describe('落地页深链的页面侧（`?code=` 被消费且按码空间分流�
     expect(screen.getByTestId('reprint-wash-code').textContent).toContain('报工页')
   })
 
-  it('R3 🔴 别域名 / 纯文本 ⇒ 「这不是观星台的标签」；空值 ⇒ 「8 位短码」提示（都不查详情）', async () => {
+  it('R3 🔴 别域名 / 纯文本 ⇒ 「这不是生意管家的标签」；空值 ⇒ 「8 位短码」提示（都不查详情）', async () => {
     for (const [raw, testId] of [
       ['https://evil.example/i/ABCD2345', 'reprint-foreign'],
       ['MG-1001', 'reprint-foreign'],

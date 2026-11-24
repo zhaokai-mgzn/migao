@@ -4,7 +4,7 @@
 #
 # 🔴 为什么不能只看 `curl -sI https://app.migaozn.com/w/` = 200：
 #    修复**前**它就已经是 200 —— nginx 的 `location /` 是 `try_files $uri $uri/ /index.html`，
-#    `/w/` 不存在时**静默回落**到 C 端 Taro H5 的 index.html（「观星台窗帘 · 米宝智能助手」）。
+#    `/w/` 不存在时**静默回落**到 C 端 Taro H5 的 index.html（「生意管家 · 米宝智能助手」）。
 #    ⇒ 200 是**恒真**的（空断言）。本脚本断言的是**页面身份**：
 #      ① `GET /w/` 与 `GET /w/index.html` 的 body 哈希 == **本仓库** `frontend/worker-h5/index.html`；
 #      ② body 含工人端入口 `src/app.mjs`；**不含** C 端标识（`TARO_` / `米宝智能助手`）；
