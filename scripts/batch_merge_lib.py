@@ -271,9 +271,9 @@ def resolve_conflicts(repo, paths) -> "list[str]":
             (Path(repo) / path).write_text(text, encoding="utf-8")
             notes.append(f"{path}: 生成物 ⇒ 保留 ours 占位，最后**重渲染**")
         elif path == ANCHOR:
-            text = stage_text(repo, 2, path)                # main 侧；稍后按**实测**重锚
+            text = stage_text(repo, 2, path)                # main 侧；最后**取 main 版**（不重锚）
             (Path(repo) / path).write_text(text, encoding="utf-8")
-            notes.append(f"{path}: 锚点 ⇒ 取 main 版占位，最后按**实测读数**重锚")
+            notes.append(f"{path}: 锚点 ⇒ 取 main 版占位（派生读数已退役：不重锚）")
         else:
             unknown.append(path)
     if unknown:
@@ -425,7 +425,7 @@ def sync_declarations(repo, renames, files) -> "list[str]":
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 5. 生成物重渲染 + 锚点按**实测**重锚
+# 5. 生成物重渲染 + 锚点**取 main 版**（派生读数已退役：不重锚）+ 跑判据复核
 # ══════════════════════════════════════════════════════════════════════════════
 
 def render(repo) -> str:
@@ -514,7 +514,7 @@ def verify_anchor(repo) -> str:
     """以**实测为准**的收口断言：跑锚点判据（非零 ⇒ 不许推送）。"""
     p = run([sys.executable, "-m", "pytest", ANCHOR_TEST, "-q"], cwd=repo, check=False)
     if p.returncode != 0:
-        raise BatchError("锚点判据复核失败（实测与重锚结果对不上）：\n"
+        raise BatchError("锚点判据复核失败（锚点与语料的真值对不上）：\n"
                          f"{p.stdout[-4000:]}{p.stderr[-2000:]}")
     return p.stdout.strip().splitlines()[-1] if p.stdout.strip() else "ok"
 

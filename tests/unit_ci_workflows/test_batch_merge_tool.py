@@ -14,7 +14,7 @@
 |---|---|---|
 | ① | 两个 PR 各加一条用例 ⇒ 合批后**两条都在**、全语料**无重复 id** | 把让号逻辑删掉（`plan_renames → []`）⇒ ② 的「无重复 id」当场红 |
 | ② | 两个 PR 同占一个用例号 ⇒ **后合入者让号**，claim 文件名/内容、测试文件头 `# case_ids:`、渲染物**同步** | 同 ①（删让号 ⇒ claim/文件头/渲染三条断言同时红） |
-| ③ | 锚点「**从 origin/main 重建 + 实测重锚**」⇒ 产出能过**真**判据 `test_case_machine_fail_channel.py` | 把锚点换成 main 版（= `--ours` 解冲突的产物）⇒ 真判据必红 |
+| ③ | 锚点「**取 main 版**（派生读数已退役 ⇒ 不重锚）」⇒ 产出能过**真**判据 `test_case_machine_fail_channel.py` | 把**分支自己重锚的那一版**（entries 写死读数）落进锚点 ⇒ 真判据必红 |
 | ④ | 「是否在合并中」用 `git rev-parse -q --verify MERGE_HEAD` | 夹具是 **worktree**（`.git` 是文件）⇒ `Path(".git")/"MERGE_HEAD"` **恒不存在**（同一现场实测 False） |
 | ⑤ | 生成的 PR body **零关闭关键词**（且 body 里确实带 `#NNNN` 引用 ⇒ 不是空断言） | 用 `pr_body_guard.find_close_keywords` **同一实现**断言 = 0；负控 = body 含 `#9001` 却不命中 |
 | ⑥ | `--dry-run` **零落盘**（不建分支/不提交/不动远端） | 正控 = 去掉 `--dry-run` 后同一夹具的分支表与提交数**确实**变了（否则"没变"是空断言） |
@@ -486,7 +486,7 @@ def test_red_proof_without_renumbering_duplicate_ids_survive(fx, monkeypatch):
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# ③ 锚点：从 origin/main 重建 + **实测**重锚 ⇒ 产出能过真判据
+# ③ 锚点：**取 main 版**（不重锚）⇒ 产出能过真判据
 # ══════════════════════════════════════════════════════════════════════════════
 
 def test_anchor_is_taken_from_main_and_never_reanchored(fx):
