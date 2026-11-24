@@ -10968,6 +10968,12 @@ cases:
     steps:
       - "跑 `python3 -m pytest tests/unit_ci_workflows/test_ci_helper_timeouts_are_bounded.py -q`"
     expected: "两条判据绿：① 全目录 subprocess `timeout=` 常量 ≤ 600s；② 无限 producer 那个文件的每个 `subprocess.run` 都带 `timeout=`"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "**判据 1·看门狗不得越过 job 上限的一半**：现取 `tests/unit_ci_workflows/**` 的 AST ⇒ 任何 `subprocess.<run|call|check_call|check_output|Popen>(timeout=<int>)` 的常量必须 `≤ 600`（`pr-check.yml` 的 `timeout-minutes: 20` 的一半）；否则具名打 `文件:N timeout=X > 600`。这一层是**纯静态**的：不执行任何被测命令，`subprocess` 侧的工具/args 一律 `未被调用`。执行点 = `test_ci_helper_timeouts_are_bounded.py::test_no_inner_watchdog_exceeds_half_of_the_ci_job_cap`"
+      - "**判据 2·无限 producer 的 pipe 必须带看门狗**：`tests/unit_ci_workflows/test_reconcile_no_silent_skip.py` 里每个 `subprocess.run(...)` 的关键字必须含 `timeout=`（该文件的 producer 是 `yes` 无限流，只在 consumer 早退时结束）；缺失即具名红 `文件:N 无 timeout`。同样纯静态：`未被调用`。执行点 = `::test_the_infinite_producer_pipe_always_has_a_timeout`"
+      - "**判据 3·上限本身有出处、且不随 job 上限漂移**：用例正文必须同时写清 `1200s` 与「一半」；且现取 `pr-check.yml` 仍含 `timeout-minutes: 20`、`600 × 2 ≤ 1200` ⇒ job 上限一改，本判据自己红（防止 600 变魔法数字）。执行点 = `::test_the_cap_is_documented_and_below_the_real_job_cap`"
     traces:
       tests:
         - "tests/unit_ci_workflows/test_ci_helper_timeouts_are_bounded.py"
