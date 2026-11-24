@@ -10823,3 +10823,47 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+
+  - id: MC-352
+    legacy_id: ""
+    title: "「加用例」在并行包里不再人肉让号、也不再冲同一个数字：号段租约（离线原子占位）+ 台账派生读数"
+    domains:
+      - misc
+      - ci
+    tier: normal
+    tags:
+      - case-id
+      - concurrency
+      - exclusion
+      - ledger
+      - derived-reading
+      - offline
+      - red-proof
+    truths_ref: []
+    precondition:
+      - "2026-11-23 一晚实测：多个并行包同时加用例 ⇒ ① `python3 scripts/next_case_id.py MC` **不保证独占**（两个包同时拿到 MC-346 之类），必须人肉让号；② `case_machine_fail_channel_baseline.json` 的 `entries.backend_contract_scoring_zero` 是**硬编码入库读数**，每加一条 `[backend-contract]` 用例就得改这个数字并追加 `history` 行 ⇒ 并行包 100% 冲突。合计一晚上 **5 次 rebase**，每次都要「按本地报错原文重锚」。"
+      - "工具自己早就登记了这条缺口：`scripts/next_case_id.py` 文件头「覆盖面」写「❌ **不是互斥锁**：两个包在**同一瞬间**调用仍会拿到同一个号」——缺的是**独占动作**，不是更聪明的启发式。"
+    user_inputs:
+      - "怎么让「加用例」在并行包里不再需要人肉让号、不再冲同一个数字，并且**判据能红**（模拟两个并行包 ⇒ 撞号/撞锚点就判红）？"
+    expectations: []
+    data_checks:
+      - "判据 1·**离线独占取号**：`scripts/case_id_lease.py reserve MC` 在 `NCI_GH_BIN=<不存在>` 时也给出一个号（rc=0）；同一环境下只读分配器必须 `exit 3`（三态一点没松）。执行点 = tests/unit_ci_workflows/test_case_id_exclusive_ledger.py::test_reserve_works_offline_while_the_readonly_allocator_refuses"
+      - "判据 2·**并发必不撞（核心牙齿）**：6 个 `reserve` 同时起来 ⇒ 6 个**互不相同**的号、都不在语料里、租约文件数恰 6；红证 = 把原子占位换成不排他的写（注入 `create=no-op`）⇒ 两个 racer **同号**。执行点 = 同文件 ::test_concurrent_reservations_are_mutually_distinct / ::test_red_proof_without_the_atomic_lease_two_racers_share_one_number"
+      - "判据 3·**旧路径的撞号现场**（判别力基线）：只读分配器**单独**跑两次 ⇒ 同一份候选集两次都答同一个号（= 人肉让号的成因）。执行点 = 同文件 ::test_red_proof_the_compute_only_allocator_answers_the_same_number_twice"
+      - "判据 4·**分配器读租约**：租约占掉的号不得再被 `next_case_id.py` 发出去，且证据行点出租约来源。执行点 = 同文件 ::test_allocator_never_hands_out_a_reserved_number"
+      - "判据 5·**台账只放不变量**：`entries` == `{no_channel_total: 0}`；把派生读数写回 `entries`（改动前的形态）⇒ 锚点判据 `anchor_drift()` **必红**。执行点 = 同文件 ::test_anchor_stores_only_the_invariant_not_the_reading / ::test_red_proof_restoring_the_stored_reading_reds_the_judge + tests/unit_ci_workflows/test_case_machine_fail_channel.py::TestInjectionRedProofs::test_i3_injection_stored_reading_reds"
+      - "判据 6·**加一条用例不动台账**：语料 +1 条 `[backend-contract]` 用例 ⇒ 锚点**一字不用改**；对照臂 = 旧口径（entries 存读数）在同一场景下必然「实测 ≠ 锚点」。执行点 = 同文件 ::test_adding_a_case_no_longer_touches_the_anchor + test_case_machine_fail_channel.py::test_i3_adding_a_case_no_longer_needs_a_reanchor"
+      - "判据 7·🔴 **两个并行包不再相撞（真 git，两个临时分支）**：旧形态（两分支各改 `entries` 里同一个数字）⇒ 真 `git merge` **冲突**；新形态（锚点零改动、语料落在不同文件）⇒ **零冲突**。执行点 = 同文件 ::test_red_proof_two_parallel_branches_collide_on_the_stored_reading / ::test_two_parallel_branches_no_longer_touch_a_shared_number"
+      - "判据 8·**归档只增不改**：`history` 的 234 行既有历史不许清空（地板现取比对）、首行仍是 #5079 的 53、`no_channel_total` 恒 0。执行点 = 同文件 ::test_history_archive_is_preserved_and_stays_zero"
+      - "判据 9·**`--pr` 一次性动作 + 幂等**：`reserve MC --pr N --title …` 一次落租约 + claim（字段最小集齐全）；同一 PR 重跑**不新占号**。执行点 = 同文件 ::test_reserve_with_pr_writes_a_claim_and_is_idempotent"
+      - "**兼容性**：既有 287 条用例、既有 138 份 claim 继续有效（`test_case_id_claims.py` 的判据 1~7 全绿）；`history` 既有 234 行逐字节未改（本 PR diff 里该文件只动 `entries` 与四个 `_note` 键）。"
+      - "**边界（照实登记）**：租约台账是**机器级**的（`MIGAO_CASE_ID_LEASE_DIR`，默认 `~/.migao-case-id-leases`）⇒ 只覆盖**同一台机器**上的并行包（多 worktree / 多克隆）；**跨机器**仍靠 `.github/cases/claims/**` + `test_case_id_claims.py` 的判据 2/7。不清理陈旧租约（放弃的号只让尾部前进一位）。同一语料文件**尾部追加**仍可能文本冲突（issue #6255 的面，不在本单射程）。"
+    skip_reason: "[backend-contract] 研发工具链契约判据（真子进程并发 + 真 git 合并 + 隔离租约目录）：零网络、零 LLM，不进 agent-eval 冒烟"
+    merge_log: "2026-11-24 新增（issue #9090）。取号 = `python3 scripts/next_case_id.py MC`（main ∪ 全部 open PR ∪ 本工作区 ∪ 租约）先取 **MC-351**，与在飞 PR #9100 撞号 ⇒ 按「后合入者让号」用 `python3 scripts/case_id_lease.py reserve MC` 让到 **MC-352**（本单自己的工具：离线原子占位）。同批落地：scripts/case_id_lease.py（号段预占写面，`O_CREAT|O_EXCL` 原子占位 + 撞车顺延）、scripts/next_case_id.py（新增只读的 `read_leases()` 来源）、case_machine_fail_channel_baseline.json（`entries.backend_contract_scoring_zero` 退役；`history` 转只增归档）、test_case_machine_fail_channel.py（I3 改为「只放不变量」+ 红证）、scripts/batch_merge_lib.py（批次合并**不再重锚**：取 main 版 + 复核）、docs/testing/test-engineering-standards.md §14。"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_case_id_exclusive_ledger.py"
+        - "tests/unit_ci_workflows/test_case_machine_fail_channel.py"
+      ci:
+        - pr-check.yml
+      verifies: []
