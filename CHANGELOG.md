@@ -10,6 +10,7 @@
 - **更名**：产品名「观星台 / 词元观星台」统一改为「**生意管家**」——PC 管理后台（登录页、侧边栏、页脚、首次改密页、注册页、官网四页与下载页）、顾客小程序（登录页头衔与 H5 标题）、商家小程序（登录页头衔、隐私文案、码空间提示）、后端用户可见文案（入驻审核欢迎语、平台管理员租户名、米宝渠道欢迎语与六份 customer_* 提示词）。公司名「词元通达」保留；内部标识符、域名、历史迁移、历史记录与活环境数据名不改（沿用 issue #6525 的口径）。
 - **品牌标**：换成「**管家铃**」——深靛圆角方印 + 织金铃身 + 米白底座 + 右上星芒（铃 = 随叫随到的服务；底座 = 经营台面；星芒 = 词元 / AI）。PC Logo、favicon、分享图（1200×630）、商家小程序 144/288、顾客小程序登录页与文档资产同批替换；旧「帘成 M」不再回流。
 - **官网**：按「我们是什么产品 / 提供什么产品能力 / 给用户带来什么价值 / 为什么选择我们」重组。首页从 14 个区块收到 8 个（价值四卡前置、能力三线、优势四卡、八个能力域只到域级、行业纵深、能力边界 + 国标 + 平台保障、三步开通）；产品能力页不再逐条摊开内部菜单；关于页删掉「技术底座」；联系页保持无表单。合规口径（GB/T 47746-2026 与免责小字）不变。
+- **存量数据**：`V216__rename_product_brand_display_value.sql` 把 `product_attributes` 中精确等于「观星台」的品牌值回填为「生意管家」（自定义品牌不动；带旧值谓词 ⇒ 幂等，回滚见文件头）。
 - **登录有效期**：PC 与商家小程序共用的 `jwt.refresh-token-expiration` 由 30 天改为 **7 天**（604800 秒；access token 仍 2 小时，续期接线不变）。判据 `tests/unit_ci_workflows/test_refresh_token_lifetime.py` 同步改口径。
 - 判据：`frontend/admin-web/tests/unit/components/Logo.test.tsx`（UI-082）、`frontend/bmini-app/tests/brand-logo.test.ts`（BM-064）、`tests/unit_ci_workflows/test_positioning_copy_terms.py`（UI-082；旧称呼集合加入 `观星台`、新锚改 `生意管家`）、四页官网测试（UI-082 / OB-005 / OB-008）与 `tests/unit_ci_workflows/test_refresh_token_lifetime.py`（AU-013）。
 
