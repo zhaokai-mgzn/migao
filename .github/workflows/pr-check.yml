@@ -248,20 +248,48 @@ jobs:
     #   走不通 —— pytest 的 `testpaths` 在**命令行给了路径**时被整个忽略（`testpaths = tests/agent_eval`
     #   + `pytest tests/unit_ci_workflows` ⇒ 收集数**逐值不变**），而 `addopts` 只是另一种"往 argv 贴东西"。
     #   ⇒ 收集面在本仓只有两个落点：argv（禁）或**判据目录**（本包走后者）。
+    # ── **四片**（issue #9102，2026-11-24）：两片吃顶 ⇒ 按实测权重重切 ─────────────────────
+    # 病（现取读数）：后半片**跑满 20 分钟上限被 cancel**（run 45291734491 / job 138117410585，
+    #   GitHub 注释逐字 `The job has exceeded the maximum execution time of 20m0s`）⇒ 这条 required
+    #   腿卡住**所有**在飞 PR。⛔ **不许抬 `timeout-minutes` 交差**（#5203 / #5365 既有口径：
+    #   上限是值班判据、不是成本成绩单）⇒ 唯一不动断言的解法 = **按实测权重重切**。
+    # 📐 **为什么是四片**（不是三片）：拆前总工作量 3706.6s（1/2 = 1742.5 / 2/2 = 1887.8 的逐用例
+    #   自耗秒数之和）；三片下界 ⌈3706.6/3⌉ = 1236s = 旧最重片的 **65.8%**，**到不了** #9102 要求的
+    #   「≤ 现在最重片的 60%」；四片下界 927s = **49.1%** ⇒ 四片是满足该目标的最小片数。读数与搜法
+    #   （盐 891，四片 906/921/933/947s、文件 126/131/138/141）见台账 `helper_leg_shape_ledger.json`
+    #   的 `shape.shards.balance_measured`。
+    # 🔴 **名字逐字稳定**（顺序不能换）：`""`（第一片，分支保护里**已有**的 required 名）与
+    #   `"（后半）"`（**已有**的第二条 required 名）**都保留**，新片 `"（中前段）"` / `"（中后段）"`
+    #   是**新增**名 ⇒ 合并后**再**把它们加进分支保护（先有上报、再设 required）。反过来（改名/删名）
+    #   会让在飞 PR 永久卡在 `Expected — waiting for status to be reported` 且**不会变红**。
+    # 📌 2026-10-03「停在两片」的裁定**只针对当时的 250s 目标**（#6164 收口），本单是**新的**吃顶
+    #   incident（2026-11-24）⇒ 按本单要求重切；代价 = 新增 2 条 required context（合并后登记）。
+    # 💰 每片的**成本面**判据（会红）：`tests/unit_ci_workflows/test_shard_budget.py`（预算台账
+    #   `shard_budget_ledger.json`：实测/预测 > 预算 80% ⇒ 红；`timeout-minutes` 调大 ⇒ 红；
+    #   预算只许缩短）+ `test_helper_leg_execution_shape.py`（片名三方一致 / 全划分 / 每片冻结基线）。
+    # ⚠️ **下游耦合**：`scripts/post_merge_verify.py::WORKLOAD_BOUND_SHARDS` 必须 == 现取 matrix 片数
+    #   （判据现取复比），而它的工作量上界 = 片数 × 每片上限 ⇒ 本 job 改片数必须同批改那一处
+    #   （合并后守护腿自己的 `timeout-minutes` 随之 45 → 80）。
     name: ci workflow helper unit tests${{ matrix.shard_suffix }}
     # 钉版（issue #7365）：ubuntu-latest 已滚到 26.04，不再自带 PG 二进制（initdb/pg_ctl）
     # ⇒ 真库判据的前置断言会失败。装 PG 不可行（apt 装到 18，BIN_DIRS 只认 14/15/16）。
     runs-on: ubuntu-24.04
     strategy:
-      # 两片**各自独立报告**：一片红不得让另一片被 cancel（否则红因只剩一半信息）
+      # 每片**各自独立报告**：一片红不得让别片被 cancel（否则红因只剩一部分信息）
       fail-fast: false
       matrix:
         include:
           # ⚠️ 第一片的 `shard_suffix` **必须为空串**：它决定分支保护里那条**已有** required 名的
           #    逐字形态（见上）。改它 = 改 required 名 = 卡住在飞的 PR。
-          - shard: "1/2"
+          - shard: "1/4"
             shard_suffix: ""
-          - shard: "2/2"
+          # 新片（issue #9102）：合并后**再**登记进分支保护（顺序：先有上报、再设 required）。
+          - shard: "2/4"
+            shard_suffix: "（中前段）"
+          - shard: "3/4"
+            shard_suffix: "（中后段）"
+          # ⚠️ 第四片**沿用**已有的 required 名「（后半）」：改名 = 卡住所有在飞 PR（见上）。
+          - shard: "4/4"
             shard_suffix: "（后半）"
     # ── 超时上限（当前 20 分钟）：口径 = **追认合法**，判据 = 本段，裁定载体 = issue #5365 ──
     # 沿革（历史事实，不改写）：3 → 8（#4793，2026-09-20）→ 12（#5203，2026-09-23）
