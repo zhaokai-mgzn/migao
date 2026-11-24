@@ -55692,6 +55692,148 @@
       "requires_follow_up": null,
       "failing_tests": [],
       "unknown_reason": "**部署腿不重跑**（重跑会真的部署 ⇒ 既有裁定的红线）⇒ 这条失败**没有第二次尝试**：「同 SHA 重跑绿」这条 flaky 判据**结构上取不到**，infra 也没有凭据 ⇒ 按 #5088 的 fail-closed 口径记 `kind=unknown`（**不归因**），只记录事实（哪条腿 · 哪个 job · 哪个失败步骤 · 哪次 run）"
+    },
+    {
+      "workflow": "Build and Deploy admin-api",
+      "job": "build-and-deploy",
+      "run_id": 45302667932,
+      "run_attempt": 1,
+      "run_url": "https://github.com/zhaokai-mgzn/migao/actions/runs/45302667932",
+      "pr": null,
+      "head_sha": "557b06d7e7400362efc48ec3baed4aac91d9ad12",
+      "head_branch": "m1-zero-downtime",
+      "first_failure_step": "Deploy to SWAS (测试环境)",
+      "rerun_result": "not_rerun",
+      "kind": "unknown",
+      "attempts": [
+        {
+          "attempt": 1,
+          "job": "build-and-deploy",
+          "step": "Deploy to SWAS (测试环境)",
+          "assertion": null,
+          "timestamp": "2026-11-24T01:25:39Z"
+        }
+      ],
+      "failed_at": "",
+      "rerun_at": "",
+      "failed_bucket": null,
+      "rerun_bucket": null,
+      "rerun_bucket_verdict": null,
+      "observed_at": "2026-11-24T01:25:40Z",
+      "reason": "**部署腿不重跑**（重跑会真的部署 ⇒ 既有裁定的红线）⇒ 这条失败**没有第二次尝试**：「同 SHA 重跑绿」这条 flaky 判据**结构上取不到**，infra 也没有凭据 ⇒ 按 #5088 的 fail-closed 口径记 `kind=unknown`（**不归因**），只记录事实（哪条腿 · 哪个 job · 哪个失败步骤 · 哪次 run）",
+      "remedy": "按条目的 `first_failure_step` / `failing_tests` 定位机制：同一 SHA 的 PR 腿是否**同一条用例**失败？本机复跑是否复现？确认后给红证并修根因。本条**不会**自动重跑、**不会**放行任何 PR —— 它的全部作用是把「部署腿的偶发失败」写进台账，让次数**可数**（此前 365 条里一条都没有）",
+      "status": "open",
+      "follow_up": null,
+      "requires_follow_up": null,
+      "failing_tests": [],
+      "unknown_reason": "**部署腿不重跑**（重跑会真的部署 ⇒ 既有裁定的红线）⇒ 这条失败**没有第二次尝试**：「同 SHA 重跑绿」这条 flaky 判据**结构上取不到**，infra 也没有凭据 ⇒ 按 #5088 的 fail-closed 口径记 `kind=unknown`（**不归因**），只记录事实（哪条腿 · 哪个 job · 哪个失败步骤 · 哪次 run）"
+    },
+    {
+      "workflow": "Build and Deploy ai-agent-service",
+      "job": "build-and-deploy",
+      "run_id": 45304287557,
+      "run_attempt": 1,
+      "run_url": "https://github.com/zhaokai-mgzn/migao/actions/runs/45304287557",
+      "pr": null,
+      "head_sha": "f97f78fc74659561a2a738769ced9d8b133039a7",
+      "head_branch": "main",
+      "first_failure_step": "Run unit tests",
+      "rerun_result": "not_rerun",
+      "kind": "unknown",
+      "attempts": [
+        {
+          "attempt": 1,
+          "job": "build-and-deploy",
+          "step": "Run unit tests",
+          "assertion": null,
+          "timestamp": "2026-11-24T01:27:11Z"
+        }
+      ],
+      "failed_at": "",
+      "rerun_at": "",
+      "failed_bucket": null,
+      "rerun_bucket": null,
+      "rerun_bucket_verdict": null,
+      "observed_at": "2026-11-24T01:27:12Z",
+      "reason": "**部署腿不重跑**（重跑会真的部署 ⇒ 既有裁定的红线）⇒ 这条失败**没有第二次尝试**：「同 SHA 重跑绿」这条 flaky 判据**结构上取不到**，infra 也没有凭据 ⇒ 按 #5088 的 fail-closed 口径记 `kind=unknown`（**不归因**），只记录事实（哪条腿 · 哪个 job · 哪个失败步骤 · 哪次 run）",
+      "remedy": "按条目的 `first_failure_step` / `failing_tests` 定位机制：同一 SHA 的 PR 腿是否**同一条用例**失败？本机复跑是否复现？确认后给红证并修根因。本条**不会**自动重跑、**不会**放行任何 PR —— 它的全部作用是把「部署腿的偶发失败」写进台账，让次数**可数**（此前 365 条里一条都没有）",
+      "status": "open",
+      "follow_up": null,
+      "requires_follow_up": null,
+      "failing_tests": [
+        "tests/test_stream_probe.py::test_http_stream_emits_pings_and_is_sse"
+      ],
+      "unknown_reason": "**部署腿不重跑**（重跑会真的部署 ⇒ 既有裁定的红线）⇒ 这条失败**没有第二次尝试**：「同 SHA 重跑绿」这条 flaky 判据**结构上取不到**，infra 也没有凭据 ⇒ 按 #5088 的 fail-closed 口径记 `kind=unknown`（**不归因**），只记录事实（哪条腿 · 哪个 job · 哪个失败步骤 · 哪次 run）"
+    },
+    {
+      "workflow": "Build and Deploy admin-api",
+      "job": "build-and-deploy",
+      "run_id": 45304287636,
+      "run_attempt": 1,
+      "run_url": "https://github.com/zhaokai-mgzn/migao/actions/runs/45304287636",
+      "pr": null,
+      "head_sha": "f97f78fc74659561a2a738769ced9d8b133039a7",
+      "head_branch": "main",
+      "first_failure_step": "Deploy to SWAS (测试环境)",
+      "rerun_result": "not_rerun",
+      "kind": "unknown",
+      "attempts": [
+        {
+          "attempt": 1,
+          "job": "build-and-deploy",
+          "step": "Deploy to SWAS (测试环境)",
+          "assertion": null,
+          "timestamp": "2026-11-24T01:35:59Z"
+        }
+      ],
+      "failed_at": "",
+      "rerun_at": "",
+      "failed_bucket": null,
+      "rerun_bucket": null,
+      "rerun_bucket_verdict": null,
+      "observed_at": "2026-11-24T01:36:00Z",
+      "reason": "**部署腿不重跑**（重跑会真的部署 ⇒ 既有裁定的红线）⇒ 这条失败**没有第二次尝试**：「同 SHA 重跑绿」这条 flaky 判据**结构上取不到**，infra 也没有凭据 ⇒ 按 #5088 的 fail-closed 口径记 `kind=unknown`（**不归因**），只记录事实（哪条腿 · 哪个 job · 哪个失败步骤 · 哪次 run）",
+      "remedy": "按条目的 `first_failure_step` / `failing_tests` 定位机制：同一 SHA 的 PR 腿是否**同一条用例**失败？本机复跑是否复现？确认后给红证并修根因。本条**不会**自动重跑、**不会**放行任何 PR —— 它的全部作用是把「部署腿的偶发失败」写进台账，让次数**可数**（此前 365 条里一条都没有）",
+      "status": "open",
+      "follow_up": null,
+      "requires_follow_up": null,
+      "failing_tests": [],
+      "unknown_reason": "**部署腿不重跑**（重跑会真的部署 ⇒ 既有裁定的红线）⇒ 这条失败**没有第二次尝试**：「同 SHA 重跑绿」这条 flaky 判据**结构上取不到**，infra 也没有凭据 ⇒ 按 #5088 的 fail-closed 口径记 `kind=unknown`（**不归因**），只记录事实（哪条腿 · 哪个 job · 哪个失败步骤 · 哪次 run）"
+    },
+    {
+      "workflow": "Build and Deploy admin-api",
+      "job": "build-and-deploy",
+      "run_id": 45307260452,
+      "run_attempt": 1,
+      "run_url": "https://github.com/zhaokai-mgzn/migao/actions/runs/45307260452",
+      "pr": null,
+      "head_sha": "a98ffc826c4adbffc214ac852596d54f6b1a8161",
+      "head_branch": "main",
+      "first_failure_step": "Deploy to SWAS (测试环境)",
+      "rerun_result": "not_rerun",
+      "kind": "unknown",
+      "attempts": [
+        {
+          "attempt": 1,
+          "job": "build-and-deploy",
+          "step": "Deploy to SWAS (测试环境)",
+          "assertion": null,
+          "timestamp": "2026-11-24T02:00:16Z"
+        }
+      ],
+      "failed_at": "",
+      "rerun_at": "",
+      "failed_bucket": null,
+      "rerun_bucket": null,
+      "rerun_bucket_verdict": null,
+      "observed_at": "2026-11-24T02:00:17Z",
+      "reason": "**部署腿不重跑**（重跑会真的部署 ⇒ 既有裁定的红线）⇒ 这条失败**没有第二次尝试**：「同 SHA 重跑绿」这条 flaky 判据**结构上取不到**，infra 也没有凭据 ⇒ 按 #5088 的 fail-closed 口径记 `kind=unknown`（**不归因**），只记录事实（哪条腿 · 哪个 job · 哪个失败步骤 · 哪次 run）",
+      "remedy": "按条目的 `first_failure_step` / `failing_tests` 定位机制：同一 SHA 的 PR 腿是否**同一条用例**失败？本机复跑是否复现？确认后给红证并修根因。本条**不会**自动重跑、**不会**放行任何 PR —— 它的全部作用是把「部署腿的偶发失败」写进台账，让次数**可数**（此前 365 条里一条都没有）",
+      "status": "open",
+      "follow_up": null,
+      "requires_follow_up": null,
+      "failing_tests": [],
+      "unknown_reason": "**部署腿不重跑**（重跑会真的部署 ⇒ 既有裁定的红线）⇒ 这条失败**没有第二次尝试**：「同 SHA 重跑绿」这条 flaky 判据**结构上取不到**，infra 也没有凭据 ⇒ 按 #5088 的 fail-closed 口径记 `kind=unknown`（**不归因**），只记录事实（哪条腿 · 哪个 job · 哪个失败步骤 · 哪次 run）"
     }
   ]
 }
