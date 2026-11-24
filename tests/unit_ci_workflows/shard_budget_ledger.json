@@ -545,5 +545,50 @@
  "work_to_wall_ratio": 0.3163,
  "work_to_wall_ratio_basis": "由**拆片前两片**的实测推导：1/2 = 523.61s 墙钟 / 1742.5s 工作量 = 0.3005；2/2 = 597.04s 墙钟 / 1887.8s 工作量 = 0.3163 ⇒ 取较大者 0.3163（保守：预测偏高 ⇒ 更容易红）。用途：`predicted_seconds` = 该片**工作量**（逐文件读数之和）× 本系数 ⇒ 与 `measured_seconds` 同单位（本机墙钟秒），且**不随其它片的增减而稀释**（份额归一化会让「把重文件塞进最重片」只抬高一点点 —— 那是假牙）。",
  "measure_recompute": "逐片：`MIGAO_CI_HELPER_SHARD=<片> python3 -m pytest tests/unit_ci_workflows -q -n 4 -p no:cacheprovider`（墙钟）；逐文件权重：同一条命令加 `--durations=0` 后按文件聚合 `call` 行。",
- "shards_note": "预算 = 该片实测墙钟的 1.5×（向上取整到 10s）⇒ 80% 红线留 ~20% 增长余量；🔻 **只许缩短**（冻结值 = 判据文件里的 `BUDGET_FROZEN_SECONDS`）。实测四片 326/342/322/299s ⇒ 最重片是旧最重片（597.04s）的 **57.3%**（predict 口径 50.2%）—— 满足 issue #9102 的 ≤60%。"
+ "shards_note": "预算 = 该片实测墙钟的 1.5×（向上取整到 10s）⇒ 80% 红线留 ~20% 增长余量；🔻 **只许缩短**（冻结值 = 判据文件里的 `BUDGET_FROZEN_SECONDS`）。实测四片 326/342/322/299s ⇒ 最重片是旧最重片（597.04s）的 **57.3%**（predict 口径 50.2%）—— 满足 issue #9102 的 ≤60%。",
+ "ci_readings": {
+  "why": "CI 侧读数**只作证据、不参与判定**（runner 噪声：同一片一次 1519s 后 cancel、重跑 322s；另两片同一次 run 里 340~497s）⇒ 判定用台账冻结的 `measured_seconds` + `file_seconds` 预测（§23 G6）。",
+  "source": "`gh api repos/<repo>/actions/runs/<id>/jobs` 现取（job 墙钟 = started_at → completed_at）",
+  "run": 45307686370,
+  "shards": {
+   "1/4": {
+    "check_name": "ci workflow helper unit tests",
+    "attempt": 1,
+    "status": "success",
+    "seconds": 340
+   },
+   "2/4": {
+    "check_name": "ci workflow helper unit tests（中前段）",
+    "attempt": 1,
+    "status": "success",
+    "seconds": 497
+   },
+   "3/4": {
+    "check_name": "ci workflow helper unit tests（中后段）",
+    "job": 138155419427,
+    "attempt": 1,
+    "status": "cancelled",
+    "seconds": 1519,
+    "why": "跑满 20 分钟被 cancel；**但这不是权重、也不是判据挂起**：同一片在同一 commit 上第 2 次尝试（新 runner）= **322s success**，本机 CI 等价 env 也是 **277.65s / 2263 passed / rc=0**⇒ 判为 **runner 卡死（infra）**。注意被 cancel 的 job 日志拿不到（`BlobNotFound`）⇒ 无法自证卡在哪一步，这也是 issue #9114 的实例。"
+   },
+   "4/4": {
+    "check_name": "ci workflow helper unit tests（后半）",
+    "attempt": 1,
+    "status": "success",
+    "seconds": 413
+   },
+   "3/4_attempt2": {
+    "check_name": "ci workflow helper unit tests（中后段）",
+    "attempt": 2,
+    "status": "success",
+    "seconds": 322
+   }
+  },
+  "heaviest_successful": {
+   "shard": "2/4",
+   "seconds": 497,
+   "vs_pre_split": "改前同一 job 的 CI 读数 425~510s（第一片）/ 525~790s（后半片，两次吃顶再 cancel）⇒ 497s = 旧最重片好读数的 **63%**、旧读数上限的 95%；相对 incident（>1200s 被 cancel）≈ 41%"
+  },
+  "note": "四片里三片 340~497s、一片（3/4）重跑后 322s ⇒ 最重片 497s 对 20 分钟上限仍有 **58% 余量**；本机口径（判定用的那根轴）最重片 342s = 旧最重片 597.04s 的 **57.3%**。"
+ }
 }
