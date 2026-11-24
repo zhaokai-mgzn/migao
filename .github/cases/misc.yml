@@ -11072,3 +11072,21 @@ cases:
       tests:
         - "tests/unit_ci_workflows/test_costly_legs_warm_their_caches.py"
     merge_log: "2026-11-25 新增（issue #9120 三刀减负之二）。追因读数：e2e 腿 `npm ci` 两次合计 ~56s（`tests` 1s + `frontend/admin-web` **55s**）、Playwright chromium 未缓存、gitleaks 每 PR 一次 Release 下载（版本钉死 8.30.1）。修法：setup-node 开 `cache: npm` + 双 lockfile 路径；`actions/cache` 缓存 `~/.cache/ms-playwright`；`actions/cache` 缓存 `./gitleaks`（key 钉 8.30.1）+ 未命中才 curl。红证实跑：精确删掉 e2e 的 `cache: npm` ⇒ 判据 1 FAILED；还原 ⇒ 3 passed。⚠️ 第一次红证因 `cache: npm` 在文件里有**两处**（admin-web-test 也有）而误删了别处 —— 已按块精确定位重做。取号 = `next_case_id.py MC` ⇒ **MC-360**。"
+  - id: MC-361
+    legacy_id: ""
+    title: "CI 里的 `npm ci` 统一带 `--prefer-offline --no-audit --no-fund`（admin-web 实测 54s，npm 缓存已命中仍慢）"
+    domains:
+      - misc
+      - ci
+    tier: normal
+    tags:
+      - ci
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "**判据 1·每条 npm ci 都带三个参数**：现取 `pr-check.yml` 所有以 `npm ci` 开头的 `run:` ⇒ 必须同时含 `--prefer-offline` / `--no-audit` / `--no-fund`；缺失即**具名**打出 `job::step 缺 [...]`。纯静态：`未被调用`。执行点 = `test_npm_install_uses_offline_flags.py::test_every_npm_ci_pins_the_offline_flags`"
+      - "**判据 2·理由可查**：判据正文必须写清 `54s` 的实测与参数含义，且 workflow 里确实出现这些参数（否则判据在「一处都没有」时空跑成绿）。执行点 = `::test_the_reason_is_recorded_next_to_the_flags`"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_npm_install_uses_offline_flags.py"
+    merge_log: "2026-11-25 新增（issue #9153 ①）。现场：`admin-web-test` 的 `Install dependencies`（`npm ci`）实测 **54s**，而 `setup-node` 已配 `cache: npm` + 正确 `cache-dependency-path` ⇒ 省不下来的不是下载，是网络探测/audit 解析这些每次固定动作。本仓 `scripts/batch_gate.py --install-deps` 早有 `--prefer-offline` 先例（`test_batch_gate.py` 判据 23 钉着）。改法：pr-check.yml 三处 `npm ci` 统一加 `--prefer-offline --no-audit --no-fund`。红证实跑：去掉一处参数 ⇒ 判据 1 FAILED；恢复 ⇒ 2 passed。取号 = `next_case_id.py MC` ⇒ **MC-361**。"

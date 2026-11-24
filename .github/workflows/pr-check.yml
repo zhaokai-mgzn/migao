@@ -569,7 +569,7 @@ jobs:
       - name: Install dependencies
         if: steps.detect_aw.outputs.run_web == 'true'
         working-directory: frontend/admin-web
-        run: npm ci
+        run: npm ci --prefer-offline --no-audit --no-fund
 
       - name: TypeScript type check
         if: steps.detect_aw.outputs.run_web == 'true'
@@ -741,12 +741,12 @@ jobs:
       - name: Install test deps
         if: steps.detect_e2e.outputs.run_tests == 'true'
         working-directory: tests
-        run: npm ci
+        run: npm ci --prefer-offline --no-audit --no-fund
 
       - name: Install admin-web deps (for Playwright webServer)
         if: steps.detect_e2e.outputs.run_tests == 'true'
         working-directory: frontend/admin-web
-        run: npm ci
+        run: npm ci --prefer-offline --no-audit --no-fund
 
       # ⚡ Playwright 浏览器暖缓存：未命中时每次都要下载 chromium（实测数十秒且吃网络）
       - name: Cache Playwright browsers
