@@ -741,17 +741,13 @@ ci_helper_leg() {
   #    在文本上不可读（判据也就只能猜）。显式写下 = 判据能逐字现取。
   local ci_helper_rc=0
   MIGAO_CI_HELPER_SHARD=1/4 \
-    python3 -m pytest tests/unit_ci_workflows -q --tb=short -p no:cacheprovider -n 4 \
-      --timeout=300 --timeout-method=thread || ci_helper_rc=1
+    python3 -m pytest tests/unit_ci_workflows -q --tb=short -p no:cacheprovider -n 4 --timeout=300 --timeout-method=thread || ci_helper_rc=1
   MIGAO_CI_HELPER_SHARD=2/4 \
-    python3 -m pytest tests/unit_ci_workflows -q --tb=short -p no:cacheprovider -n 4 \
-      --timeout=300 --timeout-method=thread || ci_helper_rc=1
+    python3 -m pytest tests/unit_ci_workflows -q --tb=short -p no:cacheprovider -n 4 --timeout=300 --timeout-method=thread || ci_helper_rc=1
   MIGAO_CI_HELPER_SHARD=3/4 \
-    python3 -m pytest tests/unit_ci_workflows -q --tb=short -p no:cacheprovider -n 4 \
-      --timeout=300 --timeout-method=thread || ci_helper_rc=1
+    python3 -m pytest tests/unit_ci_workflows -q --tb=short -p no:cacheprovider -n 4 --timeout=300 --timeout-method=thread || ci_helper_rc=1
   MIGAO_CI_HELPER_SHARD=4/4 \
-    python3 -m pytest tests/unit_ci_workflows -q --tb=short -p no:cacheprovider -n 4 \
-      --timeout=300 --timeout-method=thread || ci_helper_rc=1
+    python3 -m pytest tests/unit_ci_workflows -q --tb=short -p no:cacheprovider -n 4 --timeout=300 --timeout-method=thread || ci_helper_rc=1
   return "$ci_helper_rc"
 }
 

@@ -13,7 +13,7 @@
 1. CI 的安装行含 `pytest-timeout`；
 2. pytest 命令行（**单一来源** `scripts/ci_helper_scope.py::CANONICAL_ARGV` + CI 全量档 +
    `verify-all.sh` 四片）都带 `--timeout=<N>` 且 `--timeout-method=thread`；
-3. `N` 必须落在 `[120, 600]`：小于 120 会把合法慢用例（真库族要起 `initdb`）假红；
+3. `N` 必须落在 `[120, 600]`：小于 120 会把合法慢用例（依赖真实数据库的用例要现起本地实例）假红；
    大于 600 又会「先被 job 上限掐死」（与 MC-355 同一条口径）。
 """
 
@@ -102,4 +102,4 @@ def test_the_timeout_is_not_a_magic_number():
     """`--timeout=300` 必须有出处：判据自己写清上下界与理由，改值要连带解释。"""
     text = pathlib.Path(__file__).read_text(encoding="utf-8")
     assert "120" in text and "600" in text, "判据正文没写清上下界"
-    assert "initdb" in text, "没写「下界为什么不能太小」（真库族要起 initdb）"
+    assert "下界" in text and "假红" in text, "没写「下界为什么不能太小」（现起本地数据库实例耗时数十秒）"
