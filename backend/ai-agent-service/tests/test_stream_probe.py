@@ -50,6 +50,13 @@ URL = "/internal/stream-probe"
 def _instant_heartbeat(monkeypatch):
     """心跳间隔 patch 成 0：否则每条用例都要真等 N 秒（判据不该挂挂钟时长）。"""
     monkeypatch.setattr(main_module, "STREAM_PROBE_INTERVAL_SECONDS", 0)
+    # 🔴 鉴权判据必须**环境无关**：`conftest.py` 用的是 `os.environ.setdefault(...)`，
+    #    它**不会**覆盖已存在的值 —— 而部署腿（`deploy-ai-agent-service.yml` 的 `Run unit tests`）
+    #    的 shell 里**已经带着真实 `SERVICE_TOKEN`** ⇒ `settings.SERVICE_TOKEN` 是真实凭据，
+    #    而本文件发的是常量 `TOKEN` ⇒ `assert 401 == 200`（2026-11-24 run 45309272831 实测）。
+    #    ⇒ 在这里**强制对齐**，让鉴权判据不随 CI 环境漂移。
+    from app.config import settings
+    monkeypatch.setattr(settings, "SERVICE_TOKEN", TOKEN)
 
 
 @pytest.fixture()
