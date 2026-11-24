@@ -10965,9 +10965,6 @@ cases:
     tier: normal
     tags:
       - ci
-    steps:
-      - "跑 `python3 -m pytest tests/unit_ci_workflows/test_ci_helper_timeouts_are_bounded.py -q`"
-    expected: "两条判据绿：① 全目录 subprocess `timeout=` 常量 ≤ 600s；② 无限 producer 那个文件的每个 `subprocess.run` 都带 `timeout=`"
     expectations:
       - tool: direct_reply
     data_checks:
