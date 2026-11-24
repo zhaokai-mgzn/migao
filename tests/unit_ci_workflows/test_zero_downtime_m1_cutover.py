@@ -1251,3 +1251,9 @@ def test_sse_probe_is_reachable_through_nginx_on_the_user_path():
         "探针入口必须 proxy_pass 到 **upstream 名**（直连服务名就绕过了摘挂机制，测不到用户路径）"
     )
     assert "proxy_buffering off;" in body, "探针入口没关缓冲 ⇒ ping 会被 nginx 攒着，读数会假"
+    # 必须挂在**ai-api** 那个 server 上：`api.<域名>` 只代理到 admin-api（打过去拿到的是 Spring 的 401，
+    # 不是探针的 401 —— 2026-11-24 实测一度被误读成「token 不对」）。
+    ai_server = re.search(r"server_name ai-api\.[^;]+;.{0,4000}?location = /internal/stream-probe", text, re.S)
+    assert ai_server, "探针入口没有挂在 `ai-api` 的 server 上 ⇒ 走的是 admin-api，测不到 ai-agent 的长流"
+    assert text.count("location = /internal/stream-probe") >= 2, "探针入口应同时存在于 :80 默认 server 与 ai-api server"
+    assert "X-Service-Token $http_x_service_token" in text, "没有显式转发 `X-Service-Token` 头（默认转发不可依赖，实测会 401）"
