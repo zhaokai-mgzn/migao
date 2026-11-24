@@ -251,16 +251,28 @@ docker compose stop -t 45 admin-api && docker compose logs --tail 40 admin-api
 | admin-api 生效配置 | `docker compose exec -T admin-api printenv`（找 override）/ `docker inspect` 的 StopTimeout | **待填** |
 | ai-agent 生效 CMD | `docker inspect $(docker compose ps -q ai-agent) --format '{{.Config.Cmd}}'` | **待填** |
 | admin-api 在途请求收尾 | 发一个慢请求（>10s）同时 `docker compose stop`，看它是否 200 收尾 | **待填** |
-| ai-agent SSE 长流收尾 | 见下方「SSE 那一格」——**当前不可判定**（无只读流式端点） | **待填 / 不可判定** |
+| ai-agent SSE 长流收尾 | `curl -N -H "X-Service-Token: <内部 token>" `https://ai-api.<站点域>/internal/stream-probe?seconds=200``（**发布前发出、切换期观察是否被切断**） | **待填** |
 | compose `stop_grace_period` 生效 | `docker inspect` 的 `StopTimeout`（45 / 210） | **待填** |
 
-⚠️ **SSE 那一格为什么现在还判不了（照实登记，不用「应该不断流」充数）**：ai-agent **没有**只读的长流式端点
-—— `/api/chat/send` 是 `POST` 且需要鉴权、会落库（写面）；`_proactive_noop_stream` 是 `/send` 的**短分支**
-（一个 `done` 事件立刻结束），观感上不是「长流」。所以 `MIGAO_PROD_SSE_PROBE_URL` 现在**指不到**一个
-零写、可反复跑的端点。**出口（二选一，需裁定）**：① 演练时用**测试租户**的 token 发一条长生成请求
-（有写面：会落一条会话记录）；② 另开一单给 ai-agent 加一个**只读心跳流**端点
-（`GET /internal/stream-probe?seconds=N`：只发 `heartbeat`，不碰 DB / LLM / 历史），才能把这条读数变成
-可重复判据。**本 PR 不擅自新增公开端点** ⇒ 这一格保持「不可判定」，不许写成已验证。
+**SSE 那一格现在可判定了：只读流式探针 `GET /internal/stream-probe?seconds=N`（issue #9098）**
+—— 加它之前，这一格**不可判定**：真正会写库的 `/api/chat/send` 要鉴权 + 落库 + 调 LLM，不能当探针反复打；
+而「应该不断流」不是判据。**为什么它只读安全**（三条硬约束，判据逐条钉住）：
+① 只发 `event: ping`（每秒一条），**不碰 DB / 不调 LLM / 不建会话 / 不落历史**；
+② 鉴权沿用内部服务 token（`X-Service-Token`，与 `/internal/tools/execute` 同一份 `verify_service_token`）——
+缺 / 错 ⇒ **401**，不许匿名可达；
+③ 时长夹在 `[1, 200]`（= nginx `worker_shutdown_timeout 200s` / uvicorn `--timeout-graceful-shutdown 200`
+同一个预算），被夹时先发一条 `event: notice` 自报（不静默）。
+
+怎么用（测试/生产都行；token 在服务器 `.env.ai-agent` 的 `SERVICE_TOKEN`）：
+```bash
+TOKEN=$(docker compose exec -T ai-agent printenv SERVICE_TOKEN)   # 只在本机读，别贴日志
+curl -N -H "X-Service-Token: $TOKEN" "https://ai-api.<站点域>/internal/stream-probe?seconds=200"
+# 发布窗口内保持这条流：① 不断流 ⇒ M1-b 的优雅退出 + drain 生效；② 断了 ⇒ 记下断在第几秒（归因到哪一步）
+```
+判据：`backend/ai-agent-service/tests/test_stream_probe.py`（行为：401 / 夹取 + notice / ≥1 个 ping / 断开即结束）
++ `tests/unit_ci_workflows/test_zero_downtime_m1_cutover.py::test_stream_probe_is_readonly_gated_and_declared`
+（静态：handler 内不许出现写库 / LLM 符号并**点名行号**，必须挂鉴权与夹取，且登记到 `APP_LEVEL_PROBES`）。
+⚠️ 本 PR **未实测**这条流（需要测试环境发布通道）⇒ 上表那一行仍是**待填**。
 
 ⚠️ **「配置了」≠「生效了」**：`docker compose stop` 默认 10s 后 `SIGKILL` ⇒ 应用配 30s 也只会被砍在 10s。
 三处必须**同时**配（应用 + compose + 编排脚本用 `stop` 而非 `kill`），且发布期用一个**长请求**实测：
@@ -270,7 +282,7 @@ docker compose stop -t 45 admin-api && docker compose logs --tail 40 admin-api
 且只在上限内等待）。
 **判据**：① 配置存在且 CI 判据钉住（`tests/unit_ci_workflows/test_zero_downtime_m1_cutover.py`：三处缺任一处即红；
 `test_zero_downtime_release_adr.py` 再钉「本页口径与仓内配置同进」——任一侧先动都判红）；
-② 长请求实测：切换期 SSE 完整收尾（**本 PR 未实测**，见上方「真机读数」表与 SSE 那条出口）；
+② 长流实测（用只读探针 `GET /internal/stream-probe?seconds=200`）：切换期 SSE 完整收尾（**本 PR 未实测**，见上方「真机读数」表）；
 ③ 超过 `stop_grace_period` 仍不退 ⇒ 记 ERROR（这是「优雅退出没生效」，不是正常路径）。
 **谁来做**：**包**已落地（配置 + compose + 判据）；**人**只做一次「真发一版看长请求」（测试环境）。
 

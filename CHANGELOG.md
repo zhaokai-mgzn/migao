@@ -5,14 +5,15 @@
 > 原因 = 单文件涨到 512KB 越过扫描上限，详见存档文件头与 issue #6404。
 > **后续条目继续在本文件 `## [Unreleased]
 
-### 发布期不再有 5xx 窗口：nginx 改 upstream 摘挂（只改成员 + reload，正式容器在流量移走后才重建）＋ admin-api / ai-agent 优雅退出（2026-11-24，issue #9098）
+### 发布切换改为 nginx upstream 摘挂（正式容器在流量移走后才重建）＋ admin-api / ai-agent 优雅退出 ＋ 只读长流探针（2026-11-24，issue #9098）
 
 - **形态**：生产/测试的发布从「`docker compose up -d` 重建容器 → 换 IP → 再 `nginx -s reload`」改成
   **upstream 摘挂**：`deploy/swas/nginx.conf` 新增 `upstream migao_admin_api` / `migao_ai_agent` /
   `migao_admin_web`（`proxy_pass` 8 处全部改指 upstream 名，不再直连 compose DNS 服务名）。
   发布期顺序 = green 起 → green 健康 → **只改 upstream 成员 + `nginx -t` + reload**（green 主、旧容器兜底）
   → 入口 200 断言 → **drain**（等旧 nginx worker 收尾）→ **现在才**重建正式容器 → 成员切回正式容器 → 删 green。
-  ⇒ 用户侧不再有「容器已停、上游未切」的空窗（改动前生产实测 502 窗口 90s）。
+  ⇒ 结构上不再出现「容器已停、上游未切」的窗口（改动前生产实测 502 窗口 90s）。**是否真的零 5xx 以真机读数为准**
+  （见下一条「未实测」）。
 - **口径（两条硬约束）**：① upstream 成员写**容器名:容器内端口**（8080/8000/3001），宿主第二端口
   （18080/18000/13000 系列）只在宿主侧可达、nginx 在容器里连不上；② 稳态**只写现行实例一条成员** ——
   nginx 解析配置时就会对 upstream 服务名做 DNS 解析，green 没跑时写它的名字 ⇒ `host not found in upstream`
@@ -21,7 +22,10 @@
   （30s = 常规请求长尾 ~10× 余量；SSE 不在这条链上）；ai-agent 启动参数加 `--timeout-graceful-shutdown 200`
   （= SSE 最长流 180s + 余量）；两侧 compose 补 `stop_grace_period`（admin-api 45s / ai-agent 210s）——
   否则 docker 默认 10s 就 SIGKILL，应用侧配了也白配。
-- **未实测（照实登记）**：真机读数（切换期 5xx、drain 耗时、SIGTERM 行为）在 ADR 的「真机读数」表里是
+- **只读长流探针**：ai-agent 新增 `GET /internal/stream-probe?seconds=N`（`X-Service-Token` 鉴权，缺/错 ⇒ 401；
+  时长夹到 1..200，被夹时先发 `event: notice` 自报；只发 `event: ping` 心跳，**不碰 DB / 不调 LLM / 不落库**）
+  —— 让「发布期长流是否被切断」从「不可判定」变成可重复读数（原来只有会写库的 `/api/chat/send` 能测）。
+- **未实测（照实登记）**：真机读数（切换期 5xx、drain 耗时、SIGTERM 行为、长流收尾）在 ADR 的「真机读数」表里是
   **待填**占位，本 PR 合并前未在测试机跑发布；ai-agent 的 SSE 长流收尾**当前不可判定**（没有只读流式端点）。
 - 判据：`tests/unit_ci_workflows/test_zero_downtime_m1_cutover.py`（19 条，含 8 条注入式红证：把切换改回
   「重建 + reload」⇒ 判红）。设计/验证口径见 `docs/deployment/zero-downtime-release.md` 的 M1-a / M1-b。

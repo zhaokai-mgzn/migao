@@ -71,6 +71,16 @@ COMPOSE = REPO_ROOT / "deploy" / "swas" / "docker-compose.yml"
 COMPOSE_BG = REPO_ROOT / "deploy" / "swas" / "docker-compose.bluegreen.yml"
 APPLICATION_YML = REPO_ROOT / "backend" / "admin-api" / "src" / "main" / "resources" / "application.yml"
 AI_AGENT_DOCKERFILE = REPO_ROOT / "backend" / "ai-agent-service" / "Dockerfile"
+AI_AGENT_MAIN = REPO_ROOT / "backend" / "ai-agent-service" / "app" / "main.py"
+AI_AGENT_PROBE_TEST = REPO_ROOT / "backend" / "ai-agent-service" / "tests" / "test_stream_probe.py"
+AI_AGENT_PROBE_LEDGER = REPO_ROOT / "backend" / "ai-agent-service" / "tests" / "test_llm_health.py"
+PROBE_PATH = "/internal/stream-probe"
+#: 探针 handler 里**不许出现**的符号（写库 / LLM / 会话存储 / 外部服务调用）——
+#: 只读探针一旦带上写面，就再也不能在发布期反复跑（那正是本端点存在的理由）。
+PROBE_FORBIDDEN = (
+    "AsyncSession", "SessionService", "SessionStateStore", "get_db", "LLMFactory",
+    "openai", "langchain", "admin_api", ".commit(", ".execute(", ".insert(", ".update(",
+)
 DOC = REPO_ROOT / "docs" / "deployment" / "zero-downtime-release.md"
 
 #: 服务 → (upstream 名, 容器内端口)。端口 = **容器端口**（宿主第二端口 18080/18000/13001 只在宿主侧）。
@@ -487,6 +497,75 @@ def _duration_seconds(value: object) -> int | None:
     return {"ms": max(1, n // 1000), None: n, "s": n, "m": n * 60, "h": n * 3600}[m.group(2)]
 
 
+
+def _probe_region(main_text: str) -> str:
+    """`app/main.py` 里 `# >>> stream-probe` / `# <<< stream-probe` 之间的实现段（夹取 + 事件生成）。"""
+    begin = main_text.find("# >>> stream-probe")
+    finish = main_text.find("# <<< stream-probe")
+    assert begin >= 0 and finish > begin, (
+        "app/main.py 里找不到 `# >>> stream-probe` / `# <<< stream-probe` 标记"
+        "（判据要取这一段做静态判据，别把逻辑挪走）"
+    )
+    return main_text[begin:finish]
+
+
+def _probe_route(main_text: str) -> str:
+    """`@app.get("/internal/stream-probe")` 那个路由段（到下一个 `@app.` 为止）。"""
+    start = main_text.find(f'@app.get("{PROBE_PATH}")')
+    assert start >= 0, f'app/main.py 里找不到 `@app.get("{PROBE_PATH}")`'
+    end = main_text.find("\n    @app.", start + 10)
+    return main_text[start:end if end > 0 else len(main_text)]
+
+
+def _code_lines(block: str, base_lineno: int) -> list[tuple[int, str]]:
+    """(行号, 代码行)：剥掉整行注释（注释里**刻意写着**「不碰 DB / 不调 LLM」这类说明）。"""
+    out: list[tuple[int, str]] = []
+    for i, line in enumerate(block.splitlines(), start=base_lineno):
+        if line.lstrip().startswith("#"):
+            continue
+        out.append((i, line))
+    return out
+
+
+def judge_stream_probe(main_text: str, ledger_text: str) -> list[str]:
+    """判据 7：只读流式探针（M1-b 的可重复读数面，issue #9098）。"""
+    bad: list[str] = []
+    region = _probe_region(main_text)
+    route = _probe_route(main_text)
+    for token, where, why in (
+        ("Depends(verify_service_token)", "路由", "必须挂内部服务 token 鉴权（缺/错 ⇒ 401，不许匿名可达）"),
+        ("_probe_limit(seconds)", "路由", "路由必须用**同一个**夹取函数（另写一份 = 两套语义）"),
+        ("_probe_events(", "路由", "路由必须用**同一个**事件生成器（判据测的就是它）"),
+        ("text/event-stream", "路由", "响应类型必须是 SSE"),
+        ("min(int(seconds), STREAM_PROBE_MAX_SECONDS)", "实现段", "`seconds` 必须夹到上限（否则能开一条跑几小时的流）"),
+        ("max(1,", "实现段", "`seconds` 必须有下限 1（0 会变成空流）"),
+        ("event: notice", "实现段", "被夹取时必须**自报**（不静默）"),
+        ("event: ping", "实现段", "必须真的发心跳事件"),
+        ("is_disconnected", "实现段", "客户端断开必须立刻结束（否则上限时长会跑满）"),
+    ):
+        haystack = route if where == "路由" else region
+        if token not in haystack:
+            bad.append(f"`{PROBE_PATH}` 的{where}缺 `{token}`：{why}")
+    for token in ("STREAM_PROBE_MAX_SECONDS = 200", "STREAM_PROBE_DEFAULT_SECONDS = 30"):
+        if token not in main_text:
+            bad.append(f"app/main.py 缺 `{token}`（预算必须与 nginx worker_shutdown_timeout 200s 同源）")
+    for label, block in (("实现段", region), ("路由", route)):
+        base = main_text[: main_text.find(block)].count("\n") + 1
+        for lineno, line in _code_lines(block, base):
+            for symbol in PROBE_FORBIDDEN:
+                if symbol in line:
+                    bad.append(
+                        f"`{PROBE_PATH}` 的{label}第 {lineno} 行出现 `{symbol}`（写库 / LLM / 外部服务）"
+                        " ⇒ 探针不再是只读的（发布期就不敢反复跑了）"
+                    )
+    if f'"{PROBE_PATH}"' not in ledger_text:
+        bad.append(
+            "`app/main.py` 的探针**没有登记**到 `tests/test_llm_health.py` 的 `APP_LEVEL_PROBES`"
+            "（类级元守卫：每个探针都要回答「它到底探什么」）"
+        )
+    return bad
+
+
 def judge_doc(text: str) -> list[str]:
     """判据 6：M1-a / M1-b 必须写「已实施 + 怎么验证 + 真实读数占位（未填即标未实测）」。"""
     bad: list[str] = []
@@ -729,6 +808,23 @@ def test_doc_moved_m1a_m1b_from_gap_to_implemented_with_verification():
 
 
 # ══════════════════════════════════════════════════════════════════════════
+# 判据 7：只读流式探针（M1-b 的可重复读数面）
+# ══════════════════════════════════════════════════════════════════════════
+
+def test_stream_probe_is_readonly_gated_and_declared():
+    bad = judge_stream_probe(read(AI_AGENT_MAIN), read(AI_AGENT_PROBE_LEDGER))
+    assert not bad, "只读流式探针不满足「零写 + 有鉴权 + 有夹取 + 已登记」：\n" + "\n".join(
+        f"  - {b}" for b in bad
+    )
+    # 行为判据必须在 ai-agent 自己的测试套里（本文件只做静态面，避免把 AI 服务的依赖拖进来）
+    assert AI_AGENT_PROBE_TEST.is_file(), f"缺行为判据文件：{AI_AGENT_PROBE_TEST}"
+    probe_test = read(AI_AGENT_PROBE_TEST)
+    assert "# case_ids: MC-351" in probe_test, "行为判据文件头部必须声明 `# case_ids: MC-351`"
+    for marker in ("401", "event: notice", "event: ping", "is_disconnected"):
+        assert marker in probe_test, f"行为判据文件没覆盖 `{marker}`（判据面缺一块）"
+
+
+# ══════════════════════════════════════════════════════════════════════════
 # 注入式红证（在临时字符串上做；注入必须先自证落到文本上）
 # ══════════════════════════════════════════════════════════════════════════
 
@@ -827,3 +923,56 @@ def test_injection_rendering_dropped_domain_goes_red():
     mutated = inject(text, "server_name api.migaozn.com;", "server_name api.other.example;", where="nginx.conf", count=1)
     bad = judge_rendered(mutated)
     assert any("站点域" in b for b in bad), f"渲染后 server_name 丢站点域却判绿。实得：{bad}"
+
+
+def test_injection_probe_without_auth_goes_red():
+    """红证：摘掉 `Depends(verify_service_token)` ⇒ 匿名可达 ⇒ 判据红。"""
+    mutated = inject(
+        read(AI_AGENT_MAIN),
+        "        authorized: bool = Depends(verify_service_token),\n",
+        "",
+        where="backend/ai-agent-service/app/main.py",
+        count=1,
+    )
+    bad = judge_stream_probe(mutated, read(AI_AGENT_PROBE_LEDGER))
+    assert any("鉴权" in b for b in bad), f"摘掉鉴权却判绿。实得：{bad}"
+
+
+def test_injection_probe_without_clamp_goes_red():
+    """红证：去掉时长夹取 ⇒ 调用方能开一条跑几小时的流 ⇒ 判据红。"""
+    mutated = inject(
+        read(AI_AGENT_MAIN),
+        "    return max(1, min(int(seconds), STREAM_PROBE_MAX_SECONDS))\n",
+        "    return int(seconds)\n",
+        where="backend/ai-agent-service/app/main.py",
+        count=1,
+    )
+    bad = judge_stream_probe(mutated, read(AI_AGENT_PROBE_LEDGER))
+    assert any("夹到上限" in b or "下限 1" in b for b in bad), f"去掉夹取却判绿。实得：{bad}"
+
+
+def test_injection_probe_touching_the_db_goes_red():
+    """红证：handler 里塞一条写库调用 ⇒ 不再只读 ⇒ 判据红并**点名行号**。"""
+    mutated = inject(
+        read(AI_AGENT_MAIN),
+        "        if await is_disconnected():\n",
+        "        await SessionService().commit()  # 注入：写面\n        if await is_disconnected():\n",
+        where="backend/ai-agent-service/app/main.py",
+        count=1,
+    )
+    bad = judge_stream_probe(mutated, read(AI_AGENT_PROBE_LEDGER))
+    assert any("写库" in b for b in bad), f"handler 里出现写库调用却判绿。实得：{bad}"
+
+
+def test_injection_probe_unregistered_goes_red():
+    """红证：探针不登记到 APP_LEVEL_PROBES（类级元守卫被绕过）⇒ 判据红。"""
+    mutated = inject(
+        read(AI_AGENT_PROBE_LEDGER),
+        '    "/internal/stream-probe":',
+        '    "/internal/stream-probe-unregistered":',
+        where="backend/ai-agent-service/tests/test_llm_health.py",
+        count=1,
+    )
+    bad = judge_stream_probe(read(AI_AGENT_MAIN), mutated)
+    assert any("登记" in b for b in bad), f"探针未登记却判绿。实得：{bad}"
+

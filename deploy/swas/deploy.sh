@@ -2157,21 +2157,22 @@ for svc in $UP_SERVICES; do
     exit 1
   fi
 
-  # ── ⑥ upstream 切回正式容器（green 退回 backup 后即可回收）；未切过 ⇒ 老路径 reload 一次 ──
+  # 🔴 重建 = 换 IP ⇒ **必须**让 nginx 重新解析上游，并当场证明它回 200（issue #8976 ④）。
+  # 这一步不能靠「2.6 稍后会 reload」：切换循环里每个服务之间可能隔几分钟健康检查，
+  # 期间入口一直指着旧 IP ⇒ 生产实测就这样 502 了 90 秒。
+  # （M1-a：正式容器此时在 upstream 里是 **backup** 成员，它的 IP 同样要重新解析。）
+  nginx_expect_upstream_ok "${svc} 重建后"
+
+  # ── ⑥ upstream 切回正式容器（green 退回 backup 后即可回收）──
   if [ "$SWITCH_RC" = "0" ]; then
     if ! nginx_upstream_switch "$svc" formal; then
       echo "  ❌ ${svc} upstream 切回正式容器失败 ⇒ **不删 green**（入口仍指向它，服务不中断）"
       echo "     恢复：docker exec migao-deploy-nginx-1 nginx -T | grep -n -A3 'upstream $(upstream_name_of "$svc")'"
-      echo "           把成员块改回 `server ${svc}:$(svc_port "$svc") max_fails=2 fail_timeout=10s;`，然后："
+      echo "           把成员块改回 \`server ${svc}:$(svc_port "$svc") max_fails=2 fail_timeout=10s;\`，然后："
       echo "           docker exec migao-deploy-nginx-1 nginx -t && docker exec migao-deploy-nginx-1 nginx -s reload"
       exit 1
     fi
     nginx_expect_upstream_ok "${svc} 切回正式容器后"
-  else
-    # 🔴 重建 = 换 IP ⇒ **必须**让 nginx 重新解析上游，并当场证明它回 200（issue #8976 ④）。
-    # 这一步不能靠「2.6 稍后会 reload」：切换循环里每个服务之间可能隔几分钟健康检查，
-    # 期间入口一直指着旧 IP ⇒ 生产实测就这样 502 了 90 秒。
-    nginx_expect_upstream_ok "${svc} 重建后"
   fi
 
   # ── ⑦ 正式容器接棒 ⇒ 删掉 green 探针（不长期占内存/端口）──

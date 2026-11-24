@@ -457,7 +457,10 @@ MIG_GATE_PRE = "# 迁移失败闸门（issue #5792）"
 #: 收尾兜底门的标记
 MIG_GATE_POST = "# 迁移失败闸门兜底（issue #5792）"
 #: 切流量那一步的注释锚点（顺序判据用）
-SWITCH_ANCHOR = "# ── ② 切换：替换正式容器"
+#: 切流量那一步的注释锚点（顺序判据用）。
+#: ⚠️ M1-a（issue #9098）起「切流量」= **只切 nginx upstream**（不再重建正式容器）
+#:    ⇒ 锚点跟着换到 ② 的 upstream 切换步；判据语义不变：迁移失败必须拦在**流量切走之前**。
+SWITCH_ANCHOR = "# ── ② M1-a："
 
 
 def judge_migration_failure_gate(text: str) -> list:
