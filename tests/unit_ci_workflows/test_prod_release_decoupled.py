@@ -899,3 +899,27 @@ def test_poll_budget_follows_the_remote_timeout_not_a_fixed_40():
         "轮询预算没有从 timeout 派生（仍在用固定次数）⇒ 长构建会被误判为「等不到」"
     )
     assert 'if [ "$attempt" -ge "$attempts" ]' in text, "轮询循环没有用派生出来的 attempts"
+
+
+def test_partial_deploy_only_checks_the_services_it_deployed():
+    """`PROD_SERVICES` 子集发布时，**没发的服务不参与同一性判据**（否则「部分发布」永远 rc=1）。
+
+    2026-11-24 实测：`PROD_SERVICES=ai-agent` 的发布完全成功（ai 同源、盲测 0 失败），
+    但 ⑤ 自检仍判 `api/web ≠ 目标` ⇒ `PROD-RELEASE rc=1`。把成功写成失败，会训练人忽略这个退出码
+    （而它正是当年抓出「发成半截」的那条判据）。
+    """
+    text = (REPO_ROOT / "scripts" / "prod-release.sh").read_text(encoding="utf-8")
+    assert "deployed_svcs()" in text, "没有从 PROD_SERVICES 派生「本次该发哪几个服务」"
+    assert 'want=" $(deployed_svcs) "' in text, "postcheck 没有用派生集合收窄判据"
+    assert "本次未发（不在 PROD_SERVICES）" in text, "未发的服务没有出声（沉默的部分发布 = 看不见的半截）"
+    # 未发的服务必须**不进入** mismatch 汇总
+    seg = text[text.index("postcheck() {"):text.index("record_row()")]
+    assert 'skipped="${skipped} ${svc}(${dsha:-?})"' in seg, "未发的服务没有被单独记账"
+
+
+def test_full_deploy_still_requires_all_three_identical():
+    """默认（不设 `PROD_SERVICES`）仍是三服务全量 ⇒ 判据不放宽。"""
+    text = (REPO_ROOT / "scripts" / "prod-release.sh").read_text(encoding="utf-8")
+    assert 'for s in ${PROD_SERVICES:-admin-api ai-agent admin-web}; do' in text, (
+        "默认值必须仍是三服务全量（否则「发成半截」这条判据会被削弱）"
+    )

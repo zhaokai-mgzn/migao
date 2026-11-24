@@ -457,15 +457,37 @@ for svc in ("api", "web", "ai"):
 ' "$1"
 }
 
+# `PROD_SERVICES` 决定「本次该发哪几个」：部分发布时，**没发的服务不参与同一性判据**
+# （2026-11-24 实测：只发 ai-agent 时本函数判 api/web ≠ 目标 ⇒ `PROD-RELEASE rc=1`，
+#  但那次发布其实完全成功 —— 把「部分发布」写成失败，会训练人忽略这个退出码）。
+deployed_svcs() {
+  local s out=""
+  for s in ${PROD_SERVICES:-admin-api ai-agent admin-web}; do
+    case "$s" in
+      admin-api) out="$out api" ;;
+      ai-agent)  out="$out ai" ;;
+      admin-web) out="$out web" ;;
+      *)         out="$out $s" ;;
+    esac
+  done
+  printf '%s' "$out"
+}
+
 postcheck() {
-  local out rc idents svc dsha asha dist mismatch="" missing=""
-  echo "== ⑤ 发后自检（三服务必须同源同一 sha == ${SHA7}）=="
+  local out rc idents svc dsha asha dist mismatch="" missing="" skipped="" want
+  want=" $(deployed_svcs) "
+  echo "== ⑤ 发后自检（本次应发的服务必须同源同一 sha == ${SHA7}）=="
   out=$(prod_swas_run "$(postcheck_script)" 300 migao-prod-postcheck)
   rc=$?
   [ "$rc" -eq 3 ] && die_undecidable "发后自检读不到（通道判不了）—— 发布是否成功不可判定，不许当成功"
   idents=$(printf '%s' "$out" | postcheck_parse "$TARGET_SHA")
   while read -r tag svc dsha asha; do
     [ "$tag" = "IDENT" ] || continue
+    case "$want" in
+      *" $svc "*) : ;;
+      *) skipped="${skipped} ${svc}(${dsha:-?})"
+         printf '· %s 本次未发（不在 PROD_SERVICES）⇒ 仍是 %s，不作判据\n' "$svc" "${dsha:-?}" ; continue ;;
+    esac
     [ "$dsha" = "$SHA7" ] && [ "$asha" = "$SHA7" ] && { ok "${svc} 同源 ${SHA7}（docker=${dsha} app=${asha}）"; continue; }
     if [ "$dsha" = "-" ] && [ "$asha" = "-" ]; then missing="${missing} ${svc}"; else
       dist=$(git -C "$ROOT" cat-file -e "${dsha:-$asha}" 2>/dev/null && git -C "$ROOT" rev-list --count "${dsha:-$asha}..${TARGET_SHA}" 2>/dev/null || echo "?")
@@ -478,6 +500,7 @@ postcheck() {
   APP_AI=$(printf '%s' "$idents" | awk '$1=="IDENT" && $2=="ai" {print $4}')
   [ -n "$missing" ] && mismatch="${mismatch}
    ✗ 缺失（docker ps 里找不到）：${missing}"
+  [ -n "$skipped" ] && printf '· 本次未发的服务（保持原版本）：%s\n' "$skipped"
   if [ -n "$mismatch" ]; then
     warn "三服务身份不同源 —— 这就是「发成半截」的形态（2026-11-23 11:32–11:39 的现场）"
     printf '%s\n' "$mismatch" >&2
