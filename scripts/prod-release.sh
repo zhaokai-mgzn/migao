@@ -384,12 +384,23 @@ detect_deploy_flag() {
   [ "$rc" -eq 3 ] && die_undecidable "读不到 ${REMOTE_DEPLOY} --help（通道判不了）"
   flag=$(printf '%s' "$out" | grep -oE -- '--(version|ref|sha|target|release|git-sha|runtime-sha)[a-z-]*' | head -1)
   if [ -z "$flag" ]; then
-    die_undecidable "读不到 ${REMOTE_DEPLOY} 接受的**版本参数** ⇒ 不知道该怎样把目标版本传进去（**不猜**）
+    # 兜底：**规范契约**是位置参数 `TAG=${1:-latest}`（`deploy/swas/deploy.sh` 的 `TAG=${1:-latest}` 契约）。
+    # 盘上脚本若是旧版，`--help` 会被当成 **tag** ⇒ 退出非零、输出的是拒绝文本而不是帮助
+    # （2026-11-24 11:16 真机实测：`追不到 tag=--help 指向的提交`）⇒ 此时**按契约判位置参数**，
+    # 不再「不猜就停」：停在这里等于「发布永远发不出去」，而契约是脚本自己写着的。
+    # 判据放在**本地仓库**里（`deploy/swas/deploy.sh` 就是会被自同步到主机的那一份）⇒ 不必再开一次远端调用。
+    if grep -qF 'TAG=${1:-' "$SELF_DIR/../deploy/swas/deploy.sh" 2>/dev/null; then
+      DEPLOY_FORM=positional
+      ok "版本参数 = **位置参数**（盘上 ${REMOTE_DEPLOY} 是 \`TAG=\${1:-latest}\` 契约；--help 不可用 ⇒ 不猜 flag）"
+    else
+      die_undecidable "读不到 ${REMOTE_DEPLOY} 接受的**版本参数** ⇒ 不知道该怎样把目标版本传进去（**不猜**）
    --help 原文片段（前 20 行）：
 $(printf '%s' "$out" | head -20 | sed 's/^/     /')"
+    fi
+  else
+    ok "版本参数 = ${flag}"
+    DEPLOY_FLAG="$flag"
   fi
-  ok "版本参数 = ${flag}"
-  DEPLOY_FLAG="$flag"
 }
 
 postcheck_script() {
@@ -446,15 +457,37 @@ for svc in ("api", "web", "ai"):
 ' "$1"
 }
 
+# `PROD_SERVICES` 决定「本次该发哪几个」：部分发布时，**没发的服务不参与同一性判据**
+# （2026-11-24 实测：只发 ai-agent 时本函数判 api/web ≠ 目标 ⇒ `PROD-RELEASE rc=1`，
+#  但那次发布其实完全成功 —— 把「部分发布」写成失败，会训练人忽略这个退出码）。
+deployed_svcs() {
+  local s out=""
+  for s in ${PROD_SERVICES:-admin-api ai-agent admin-web}; do
+    case "$s" in
+      admin-api) out="$out api" ;;
+      ai-agent)  out="$out ai" ;;
+      admin-web) out="$out web" ;;
+      *)         out="$out $s" ;;
+    esac
+  done
+  printf '%s' "$out"
+}
+
 postcheck() {
-  local out rc idents svc dsha asha dist mismatch="" missing=""
-  echo "== ⑤ 发后自检（三服务必须同源同一 sha == ${SHA7}）=="
+  local out rc idents svc dsha asha dist mismatch="" missing="" skipped="" want
+  want=" $(deployed_svcs) "
+  echo "== ⑤ 发后自检（本次应发的服务必须同源同一 sha == ${SHA7}）=="
   out=$(prod_swas_run "$(postcheck_script)" 300 migao-prod-postcheck)
   rc=$?
   [ "$rc" -eq 3 ] && die_undecidable "发后自检读不到（通道判不了）—— 发布是否成功不可判定，不许当成功"
   idents=$(printf '%s' "$out" | postcheck_parse "$TARGET_SHA")
   while read -r tag svc dsha asha; do
     [ "$tag" = "IDENT" ] || continue
+    case "$want" in
+      *" $svc "*) : ;;
+      *) skipped="${skipped} ${svc}(${dsha:-?})"
+         printf '· %s 本次未发（不在 PROD_SERVICES）⇒ 仍是 %s，不作判据\n' "$svc" "${dsha:-?}" ; continue ;;
+    esac
     [ "$dsha" = "$SHA7" ] && [ "$asha" = "$SHA7" ] && { ok "${svc} 同源 ${SHA7}（docker=${dsha} app=${asha}）"; continue; }
     if [ "$dsha" = "-" ] && [ "$asha" = "-" ]; then missing="${missing} ${svc}"; else
       dist=$(git -C "$ROOT" cat-file -e "${dsha:-$asha}" 2>/dev/null && git -C "$ROOT" rev-list --count "${dsha:-$asha}..${TARGET_SHA}" 2>/dev/null || echo "?")
@@ -467,6 +500,7 @@ postcheck() {
   APP_AI=$(printf '%s' "$idents" | awk '$1=="IDENT" && $2=="ai" {print $4}')
   [ -n "$missing" ] && mismatch="${mismatch}
    ✗ 缺失（docker ps 里找不到）：${missing}"
+  [ -n "$skipped" ] && printf '· 本次未发的服务（保持原版本）：%s\n' "$skipped"
   if [ -n "$mismatch" ]; then
     warn "三服务身份不同源 —— 这就是「发成半截」的形态（2026-11-23 11:32–11:39 的现场）"
     printf '%s\n' "$mismatch" >&2
@@ -579,12 +613,16 @@ main() {
   #   **旧容器** ⇒ `deploy.sh 完成` 且 rc=0 —— 一次**一个服务都没换**的「假绿」。
   #   （本次 = `PROD-RELEASE rc=1`，是被本脚本 ⑤ 的同源自检抓回来的，不是 deploy.sh 自己报的。）
   PROD_SERVICES=${PROD_SERVICES:-admin-api ai-agent admin-web}
+  # 🔴 apt 源：宿主机在阿里云内网，用 `deb.debian.org` 实测 **>40 分钟没装完**（2026-11-24 11:37–12:38 两次被
+  #    `timeout 2400 docker build` 杀掉 ⇒ ai-agent 发布失败两次）。deploy.sh 自己的注释就写了「服务器侧应传
+  #    mirrors.aliyun.com」。换源后同一条构建 ~9 分钟完成（06:39→06:49 实测）。
+  PROD_APT_MIRROR=${MIGAO_PROD_APT_MIRROR:-mirrors.aliyun.com}
   BUILT_AT_NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
   deploy_rc=0
   deploy_out=""
   for svc in $PROD_SERVICES; do
     if [ "${DEPLOY_FORM:-flag}" = "positional" ]; then
-      deploy_cmd="MIGAO_RELEASE_LINE=enforce BUILD_SERVICE=${svc} BUILD_SHA=${TARGET_SHA} BUILT_AT=${BUILT_AT_NOW} bash ${REMOTE_DEPLOY} sha-$(printf '%s' "$TARGET_SHA" | cut -c1-7)"
+      deploy_cmd="MIGAO_RELEASE_LINE=enforce APT_MIRROR=${PROD_APT_MIRROR} BUILD_SERVICE=${svc} BUILD_SHA=${TARGET_SHA} BUILT_AT=${BUILT_AT_NOW} bash ${REMOTE_DEPLOY} sha-$(printf '%s' "$TARGET_SHA" | cut -c1-7)"
     else
       deploy_cmd="bash ${REMOTE_DEPLOY} ${DEPLOY_FLAG} ${TARGET_SHA}"
     fi

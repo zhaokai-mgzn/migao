@@ -227,7 +227,11 @@ M1-f 今天就能做（不需要动 nginx）；M1-b/c 只有在 M1-a 落地后�
 > **读法**：`max gap = 1s` 说明这条流在容器被替换的那一瞬间**没有断开**，而是照常按心跳节奏继续 ——
 > 这正是 M1-a（upstream 摘挂）+ M1-b（uvicorn/Spring 优雅退出）一起生效的结果。
 >
-> **仍未取**：回退演练耗时；以及「三服务同一 sha 的完整发布」本次没有一次做完（见下）。
+> **收口发布（2026-11-24 18:27–18:32 +08）**：`PROD-RELEASE rc=0 version=3482e76 api=3482e76 web=3482e76 ai=3482e76`，
+> `SWITCH-BLINDSPOT failures=0 max_gap_ms=766`（窗口 113226ms / 339 采样）⇒ **三服务同源**，不再是部分发布状态。
+>
+> **仍未取**：**回退演练耗时**（= 把某个服务降级回旧 tag 并计时；`deploy.sh` 需要 `ALLOW_DOWNGRADE=1`，
+> 属于**降级发布**，今天已在生产上连发 6 次，故留到下一次约定的维护窗口再演练，不在本轮硬做）。
 >
 > ### 本次发布暴露的入口缺陷（已修，PR #9125 待合）
 >
@@ -565,7 +569,7 @@ WHERE name='max_connections';`。若算式不成立：① 降 `pool_max`（首�
 ⇒ 写在 `deploy/swas/nginx.conf` 里**任何位置都非法**。实测（测试腿 run 45307260452）：
 
 ```
-[emerg] "worker_shutdown_timeout" directive is not allowed here in /etc/nginx/conf.d/default.conf:162
+[emerg] "worker_shutdown_timeout" directive is not allowed here in /etc/nginx/conf.d/default.conf（运行时路径，行号随渲染变化）
 ❌ nginx -t 不通过 ⇒ 已恢复备份、**未 reload**（入口一字未变）
 ##[error]部署失败（tag=sha-a98ffc8）—— 已自动回滚到 sha-b702bfe
 ```

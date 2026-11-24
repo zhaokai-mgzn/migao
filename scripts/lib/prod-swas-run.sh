@@ -153,7 +153,19 @@ sys.stdout.write("%s\t%s\t%s\n" % (status, exit_code, output))
 # 远端执行一段**明文**脚本：stdout = 远端输出（已解 base64）；返回值 = 远端退出码，通道判不了 ⇒ 3
 prod_swas_run() {
   local command_content="$1" timeout="${2:-$PROD_REMOTE_TIMEOUT}" name="${3:-migao-prod}"
-  local out invoke_id attempt row status exit_code payload decoded
+  local out invoke_id attempt row status exit_code payload decoded attempts
+  # 🔴 轮询预算必须跟着**远端超时**走：C′ 构建单服务上限 2400s，而默认 40×2s = 80s。
+  #    2026-11-24 11:17 真机事故：admin-api 正在 `docker build`（约 4 分钟），本函数 80s 就判「等不到」
+  #    ⇒ 上层退 3，但**远端仍在跑**（部署继续，读数全丢，blindspot 探针提前收工）。
+  #    ⇒ attempts = timeout / interval + 30（余量），且不低于原默认值。
+  local _interval=$PROD_POLL_INTERVAL
+  # 判据里会把间隔设成 0（为了让用例不真睡）⇒ 除法必须先把下限夹到 1，否则 `division by 0`。
+  [ "$_interval" -ge 1 ] 2>/dev/null || _interval=1
+  attempts=$PROD_POLL_ATTEMPTS
+  case "$timeout" in
+    ''|*[!0-9]*) : ;;
+    *) [ $(( timeout / _interval + 30 )) -gt "$attempts" ] && attempts=$(( timeout / _interval + 30 )) ;;
+  esac
 
   out=$("$PROD_ALIYUN_BIN" swas-open run-command \
         --region "$PROD_REGION" --biz-region-id "$PROD_BIZ_REGION" \
@@ -183,9 +195,9 @@ $(printf '%s' "$out" | head -c 400)"
       Success|Success\(inferred\)|Failed|Stopped|Timeout|Cancelled) break ;;
     esac
     attempt=$((attempt + 1))
-    if [ "$attempt" -ge "$PROD_POLL_ATTEMPTS" ]; then
+    if [ "$attempt" -ge "$attempts" ]; then
       # 判不了时必须**说出为什么**：把最后一轮返回体前 400 字节打出来（否则「未知」是无线索的判不了）。
-      prod_undecidable "等不到执行结果（invoke-id=${invoke_id}，状态=${status:-未知}，轮询 ${PROD_POLL_ATTEMPTS} 次）——
+      prod_undecidable "等不到执行结果（invoke-id=${invoke_id}，状态=${status:-未知}，轮询 ${attempts} 次（timeout=${timeout}s / interval=${PROD_POLL_INTERVAL}s））——
    退 3 不当 0 读：远端可能仍在跑，重跑一次本命令看结果
    最后一轮返回体前 400 字节：
 $(printf '%s' "$out" | head -c 400)"
