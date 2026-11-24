@@ -53,5 +53,5 @@
 ## 6. 视觉
 
 - 沿用产品 token：暖亚麻 `neutral-50`、靛蓝 `primary`、陶土 `accent`、织金 `gold`；不引入新色。
-- 品牌标换成管家铃（见 `docs/brand/identity-2026-11.md`）；导航与页脚使用新标 + 「生意管家」字标。
+- 品牌标换成「旦」字方印（见 `docs/brand/identity-2026-11.md`）；导航与页脚使用新标 + 「生意管家」字标。
 - 字体、圆角、阴影、间距沿用 `docs/design/design-baseline.md`；不写任意值。
