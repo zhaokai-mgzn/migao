@@ -584,14 +584,35 @@ python3 scripts/case_id_lease.py reserve MC --pr <本 PR 号> --title "<本 PR �
 #    claim：.github/cases/claims/<PR号>-MC-352.json
 ```
 
-口径（三条）：
+### 14.2.1 两层互斥（缺一层都只保住一半）
 
-1. **独占 = `O_CREAT|O_EXCL`**：两个进程同时创建同一个租约文件，内核保证恰好一个成功、
-   另一个拿到 `FileExistsError` ⇒ **顺延**再试。⇒ 「两个包同时 reserve」**必然**拿到不同的号。
-2. **离线**：候选集 = main（本地 ref）∪ 本工作区 ∪ **既有租约**，**不读 GitHub**。
-   （联网面（在飞 PR）仍归只读工具 `scripts/next_case_id.py`；两者是**同一次判定**的两面：
-   分配器读租约，所以它不会把别人刚独点的号当空闲发出去。）
+| 层 | 机制 | 保什么 | 保不住什么 |
+|---|---|---|---|
+| **同机** | 租约文件 `O_CREAT \| O_EXCL`（`~/.migao-case-id-leases/`，机器级、不入库） | 同一台机器上的**所有** worktree / 克隆 | 另一台机器上的并行包 |
+| **跨机** | 把号发布成 git ref `refs/tags/case-lease/<前缀>-<号>`（`reserve` 里 **1 次 `git push`**） | 「同一个号只能被**新建**一次」——git 服务器的 ref 唯一性是**原子判定**，无需任何常驻服务 | 远端不可达时（下面第 ③ 条：**出声**，本地独占仍成立） |
+
+`reserve` 的循环 = **本地原子占位 → 远端发布 → 被拒就撤回本地租约、顺延一号**。
+被拒（`! [rejected]` / `! [remote rejected]` / **`= [up to date]`**）都算「别人先占了」：
+⚠️ up-to-date 也当被占 —— 两台机器**恰好在同一个提交**时 git 只会回 up-to-date（不是「我发布成功」），
+若当成成功就会两台机器同时认领同一个号（判据 10 里钉住了这一条）。
+
+硬规矩（这条是**入口**，不是建议）：
+
+> **新包取号必须用 `python3 scripts/case_id_lease.py reserve <前缀>`；
+> `python3 scripts/next_case_id.py <前缀>` 只剩「只读 / 复核 / 看候选」用途 —— 它给的是候选，不保证独占。**
+
+（2026-11-24 这次撞号就是因为它直接调 `next_case_id.allocate()`：两个包各算一次，答案当然一样。）
+
+口径（四条）：
+
+1. **同机独占 = `O_CREAT|O_EXCL`**：两个进程同时创建同一个租约文件，内核保证恰好一个成功、
+   另一个拿到 `FileExistsError` ⇒ **顺延**再试。
+2. **离线可跑**：候选集 = main（本地 ref）∪ 本工作区 ∪ **既有租约**，**不读 GitHub**；
+   没有远端 / 推送没权限 ⇒ 照常给号，但输出**必须**打印「**跨机互斥不保证**」（判据 11）——
+   离线不能冒充「已发布」。
 3. **`--pr` 幂等**：同一 PR 重跑 ⇒ 打印已登记的那个号，**不新占号**（否则号白白泄漏）。
+4. **远端 tag 收尾**：合并后可 `git push origin --delete case-lease/<号>`；**删不掉不影响正确性**
+   （号只增不减，tag 只是「这个号发布过」的占位）。
 
 无 `--pr` 时只落租约；PR 号拿到后再跑一次带 `--pr` 的命令即可（同一条命令，顺序即安全顺序）。
 
@@ -620,13 +641,21 @@ python3 -m pytest tests/unit_ci_workflows/test_case_id_exclusive_ledger.py -q
 # ③ 两个并行包的锚点：**真 git 两个临时分支** —— 旧形态真冲突 / 新形态零冲突
 # ④ 读数写回 entries ⇒ anchor_drift() 必红
 python3 -m pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py -q
+# ⑤ 跨机互斥：本地 bare origin + 两个克隆 ⇒ 同号第二次 push 被拒、reserve 自动顺延
+#    离线（无远端）⇒ 照常给号但打印「跨机互斥不保证」
+python3 -m pytest tests/unit_ci_workflows/test_case_id_exclusive_ledger.py -q -k "cross_machine or offline"
 ```
 
 ### 14.5 边界（照实登记，别把它读成覆盖面更大的东西）
 
-- ❌ 租约台账是**机器级**的（`MIGAO_CASE_ID_LEASE_DIR`，默认 `~/.migao-case-id-leases`）⇒ 只覆盖
-  **同一台机器**上的并行包（多 worktree / 多克隆）；**跨机器**仍靠 `.github/cases/claims/**` +
-  `tests/unit_ci_workflows/test_case_id_claims.py` 的判据 2/7（PR 面）。
+- ❌ 租约台账是**机器级**的（`MIGAO_CASE_ID_LEASE_DIR`，默认 `~/.migao-case-id-leases`）⇒ 本机面；
+  **跨机器**靠上面那层 git ref（`refs/tags/case-lease/<号>`）+ `.github/cases/claims/**`
+  （`test_case_id_claims.py` 判据 2/7）。**只读分配器不读已发布的 ref**（它仍是离线计算 + 租约目录）
+  ⇒ 别人机器上的号它看不到；真仲裁在 `reserve` 的 push 被拒那一步。
+- ❌ **跨机层需要推送权限**：没有权限 / 离线 ⇒ 输出明说「跨机互斥不保证」（判据 11），
+  此时只剩 claim 台账 + 判据 2/7 兜底（与改前同口径，不承诺更强）。
+- ⚠️ **tag 命名空间**：用 `refs/tags/case-lease/*` 而**不是**自造的 `refs/case-lease/*` ——
+  GitHub 只接受常规命名空间（自造 ref 会被拒成 `deny updating a hidden ref`）。
 - ❌ **不清理陈旧租约**：被放弃的号只让尾部前进一位（不误伤）；回收要人判「是不是真弃了」。
 - ❌ 租约是**自愿遵守**的台账：没跑 `reserve` 的包看不见它（与只读分配器「看不到未 push 分支」同一缺口）。
 - ❌ **同一语料文件尾部追加**仍可能文本冲突（issue #6255 的面）；本单只消掉「号」与「锚点数字」两处。

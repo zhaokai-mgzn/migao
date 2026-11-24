@@ -24,6 +24,8 @@
 | 7 | 🔴 **两个并行包的锚点不再相撞**（真 git） | `tmp_path` 里 `git init` + 两条分支 + 真 `git merge` | 旧形态（两分支各改同一个数字）⇒ **真冲突**；新形态 ⇒ 零冲突 |
 | 8 | **归档只增不减**：`history` 234 行既有的历史**不许清空**、`no_channel_total` 恒 0 | 现取 | 清空 / 抬 `no_channel_total` ⇒ 红 |
 | 9 | **`--pr` 顺带落 claim**（一次性动作）+ 幂等：同一 PR 重跑不新占号 | 临时 git 仓库（零污染本仓） | 同一个 PR 跑两次占两个号 ⇒ 红 |
+| 10 | 🔴 **跨机互斥 = git ref 唯一性**：两台机器（本地 bare origin + 两个克隆）各自 reserve ⇒ 同号**第二次 push 被服务器拒绝**、自动顺延到下一个号 | 真 `git push` 到 `refs/tags/case-lease/<号>` | 用同一个号连推两次都成功 ⇒ 判红 |
+| 11 | **离线仍可跑但要出声**：没有远端 ⇒ 照常给号 + 打印「跨机互斥不保证」 | 临时仓库（无 origin） | 静默给号（不打印那句）⇒ 红 |
 
 ## 边界（照实登记，别把它读成覆盖面更大的东西）
 
@@ -34,6 +36,10 @@
 - ❌ **看不到未 push 的别人的分支**（与只读分配器同一缺口）：租约是**自愿遵守**的台账 ——
   没跑 `reserve` 的包看不见。
 - ❌ **同一语料文件尾部追加**仍可能文本冲突（issue #6255 的面，不在本单射程）。
+- ❌ **只读分配器不读已发布的 ref**（它仍是离线计算 + 租约目录）⇒ 别人机器上的号它看不到；
+  真仲裁在 `reserve` 的 **push 被拒**那一步（所以「取号必须走 reserve」是硬规矩，见 docs §14.2）。
+- ❌ **跨机层需要推送权限**：没有权限 / 离线 ⇒ 输出里明说「跨机互斥不保证」（判据 11），
+  此时只剩 claim 台账 + `test_case_id_claims.py` 判据 2/7 兜底（与改前同口径）。
 - ❌ 本判据**不改任何门禁的通过条件、不新增豁免**；既有 287 条用例、既有 claim 文件继续有效。
 """
 from __future__ import annotations
@@ -82,11 +88,18 @@ def _nci_module():
     return _load(TOOL, "nci_under_test")
 
 
-def _env(lease_dir: Path, gh_bin: str | None = None) -> dict:
-    """隔离环境：主线段走 `HEAD`（CI 是 fetch-depth: 1）、租约目录隔离、`gh` **默认不可用**。"""
+PUBLISH_ENV = "MIGAO_CASE_ID_LEASE_PUBLISH"
+
+
+def _env(lease_dir: Path, gh_bin: str | None = None, publish: bool = False) -> dict:
+    """隔离环境：主线段走 `HEAD`（CI 是 fetch-depth: 1）、租约目录隔离、`gh` **默认不可用**。
+
+    `publish=False`（默认）⇒ 关掉跨机层：**判据绝不把 tag 推到真远端**（跨机面用本地 bare 仓判）。
+    """
     env = dict(os.environ)
     env["NCI_MAIN_REF"] = "HEAD"
     env[LEASE_DIR_ENV] = str(lease_dir)
+    env[PUBLISH_ENV] = "1" if publish else "0"
     env["NCI_GH_BIN"] = gh_bin or str(Path(lease_dir) / "no-such-gh")
     return env
 
@@ -190,10 +203,12 @@ def test_red_proof_without_the_atomic_lease_two_racers_share_one_number(tmp_path
     lease = tmp_path / "leases"
     lease.mkdir()
     occupied = {"MC": set(range(1, 41))}
-    racer = lambda: mod.reserve("MC", occupied, lease, create=lambda path, body: None)  # noqa: E731
+    racer = lambda: mod.reserve("MC", occupied, lease, create=lambda path, body: None,  # noqa: E731
+                                publish=False)[0]
     assert racer() == racer(), "注入的「不排他写」竟然给出了不同号 ⇒ 判据抓不到撞号形态"
     # 对照臂：真 `O_CREAT|O_EXCL` ⇒ 两次必不同
-    assert mod.reserve("MC", occupied, lease) != mod.reserve("MC", occupied, lease)
+    assert mod.reserve("MC", occupied, lease, publish=False)[0] != \
+        mod.reserve("MC", occupied, lease, publish=False)[0]
 
 
 def test_red_proof_the_compute_only_allocator_answers_the_same_number_twice(tmp_path):
@@ -207,8 +222,9 @@ def test_red_proof_the_compute_only_allocator_answers_the_same_number_twice(tmp_
     first, second = alloc(occupied, ["MC"])["MC"], alloc(occupied, ["MC"])["MC"]
     assert first == second == 41, (
         f"只读分配器在**同一份候选集**上给出了不同号（{first} / {second}）⇒ 本判据的前提变了")
-    reserved = _lease_module().reserve("MC", occupied, tmp_path / "leases")
+    reserved, state = _lease_module().reserve("MC", occupied, tmp_path / "leases", publish=False)
     assert reserved == 41, f"租约占的号与该轮的候选不一致：{reserved}"
+    assert state == "unpublished", "发布被注入关闭时状态必须是 unpublished（不许谎报 published）"
     occupied_after = _nci_module().merge_ids(occupied, {"MC": {reserved}})
     assert alloc(occupied_after, ["MC"])["MC"] == 42, (
         "租约占了号却看不到它 ⇒ 独占等于没做")
@@ -359,6 +375,78 @@ def test_two_parallel_branches_no_longer_touch_a_shared_number(tmp_path):
 # ══════════════════════════════════════════════════════════════════════════════
 # 判据 9：`--pr` 顺带落 claim（一次性动作）+ 幂等
 # ══════════════════════════════════════════════════════════════════════════════
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 判据 10/11：跨机互斥 = git ref 唯一性（本地 bare origin 模拟两台机器）
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _two_machines(tmp_path: Path, max_id: int = 350):
+    """**两台机器**的现场：本地 bare `origin` + 两个独立克隆（各自独立的租约目录）。"""
+    origin = tmp_path / "origin.git"
+    subprocess.run(["git", "init", "--bare", "-q", str(origin)], check=True, capture_output=True)
+    _git(origin, "symbolic-ref", "HEAD", "refs/heads/main")
+    seed = tmp_path / "seed"
+    seed.mkdir()
+    subprocess.run(["git", "init", "-q", "-b", "main", str(seed)], check=True, capture_output=True)
+    cases = seed / ".github" / "cases"
+    cases.mkdir(parents=True)
+    (cases / "misc.yml").write_text(
+        "".join(f"  - id: MC-{n:03d}\n" for n in range(1, max_id + 1)), encoding="utf-8")
+    _git(seed, "add", "-A")
+    _git(seed, "commit", "-qm", "base")
+    _git(seed, "remote", "add", "origin", str(origin))
+    _git(seed, "push", "-q", "-u", "origin", "main")
+    machines = []
+    for name in ("machine-a", "machine-b"):
+        clone = tmp_path / name
+        subprocess.run(["git", "clone", "-q", str(origin), str(clone)], check=True,
+                       capture_output=True)
+        machines.append(clone)
+    return origin, machines
+
+
+def test_cross_machine_second_publish_of_the_same_number_is_rejected(tmp_path):
+    """判据 10：同号**第二次 push 必被服务器拒**；`reserve` 被拒后自动顺延到下一个号。"""
+    _origin, (a, b) = _two_machines(tmp_path)
+    first = _run(LEASE_TOOL, ["reserve", "MC"], _env(tmp_path / "lease-a", publish=True), cwd=a)
+    assert first.returncode == 0, f"{first.stdout}\n{first.stderr}"
+    assert _first_id(first.stdout) == "MC-351", first.stdout
+    assert "已发布" in first.stdout and "refs/tags/case-lease/MC-351" in first.stdout, (
+        f"发布成功却没有打印跨机证据行：{first.stdout}")
+
+    # 现实形态：B 机器上有**自己的提交** ⇒ 用同一个号再推就是 non-FF ⇒ 服务器必拒
+    (b / "work.txt").write_text("machine-b 自己的工作\n", encoding="utf-8")
+    _git(b, "add", "-A")
+    _git(b, "commit", "-qm", "b 自己的改动")
+    dup = _git(b, "push", "--porcelain", "origin", "HEAD:refs/tags/case-lease/MC-351", check=False)
+    both = (dup.stdout or "") + (dup.stderr or "")
+    assert dup.returncode != 0 and ("[rejected]" in both or "already exists" in both), (
+        f"同一个号**第二次** push 竟然成功了 ⇒ 跨机互斥不存在：{both}")
+
+    # 边界（照实钉住）：两台机器**恰好在同一个提交**时，git 只回 `[up to date]`（不算新建）
+    # ⇒ 实现必须把它当「被占」（否则同号会被两台机器同时认领）。
+    state, detail = _lease_module().publish_state(a, "MC-351")
+    assert state == "taken" and "up-to-date" in detail, (
+        f"up-to-date 被当成了「发布成功」⇒ 同提交的两台机器会同时认领一个号：{state} / {detail}")
+
+    second = _run(LEASE_TOOL, ["reserve", "MC"], _env(tmp_path / "lease-b", publish=True), cwd=b)
+    assert second.returncode == 0, f"{second.stdout}\n{second.stderr}"
+    assert _first_id(second.stdout) != "MC-351", f"被拒的号又被发出来 ⇒ 顺延没生效：{second.stdout}"
+    assert _first_id(second.stdout) == "MC-352", second.stdout
+    assert sorted(p.name for p in (tmp_path / "lease-b").glob("MC-*.json")) == ["MC-352.json"], (
+        "被拒的号没有撤回本地租约 ⇒ 本机永久占着一个用不上的号")
+
+
+def test_offline_reserve_still_works_but_says_cross_machine_is_not_guaranteed(tmp_path):
+    """判据 11：没有远端 ⇒ 照常给号，但**必须出声**「跨机互斥不保证」（离线不能冒充已发布）。"""
+    repo = tmp_path / "repo"
+    _init_repo(repo, {".github/cases/misc.yml": "  - id: MC-001\n"})
+    out = _run(LEASE_TOOL, ["reserve", "MC"], _env(tmp_path / "leases", publish=True), cwd=repo)
+    assert out.returncode == 0, f"{out.stdout}\n{out.stderr}"
+    assert _first_id(out.stdout) == "MC-002", out.stdout
+    assert "跨机互斥不保证" in out.stdout, f"离线给了号却没说「跨机不保证」⇒ 静默假绿：{out.stdout}"
+    assert "已发布" not in out.stdout, out.stdout
+
 
 def test_reserve_with_pr_writes_a_claim_and_is_idempotent(tmp_path):
     """判据 9：`reserve MC --pr N --title …` 一次动作 = 租约 + claim；同一 PR 重跑**不新占号**。"""
