@@ -260,6 +260,9 @@ def main() -> int:
     parser.add_argument("--runs-per-workflow", type=int, default=8)
     parser.add_argument("--accept-raise", action="store_true",
                         help="超预算时**显式**同意把预算重冻结为现取 p90（默认拒绝并退出 1）")
+    parser.add_argument("--allow-partial", action="store_true",
+                        help=("超预算时**只刷新合规腿**：超预算的腿在台账里**原封不动**（预算/实测都不动），"
+                              "仍然非零退出（红不许消失）。用途：让新腿能合法登记，而超预算腿继续红（issue #9120）"))
     args = parser.parse_args()
     if not args.measure:
         parser.print_help()
@@ -280,7 +283,7 @@ def main() -> int:
     frozen_budgets = {lid: leg["budget_seconds"] for lid, leg in previous.items()
                       if isinstance(leg.get("budget_seconds"), int)}
     breaches = budget_breaches(frozen_budgets, {lid: st["p90_seconds"] for lid, st in fresh.items()})
-    if breaches and not args.accept_raise:
+    if breaches and not args.accept_raise and not args.allow_partial:
         print("❌ 超预算（预算 = 台账里已冻结的实测 p90 上取整）—— 本命令**不写台账**：", file=sys.stderr)
         for row in breaches:
             print(f"   · {row['id']}：预算 {row['budget_seconds']}s / 现取 p90 {row['new_p90_seconds']}s"
@@ -290,10 +293,21 @@ def main() -> int:
               file=sys.stderr)
         return 1
 
+    breach_ids = {row["id"] for row in breaches}
+    if breach_ids:
+        print("⚠️ 超预算腿在台账里**原封不动**（--allow-partial：只刷新合规腿，红不消失）：", file=sys.stderr)
+        for row in breaches:
+            print(f"   · {row['id']}：预算 {row['budget_seconds']}s / 现取 p90 {row['new_p90_ceil']}s", file=sys.stderr)
+
     legs = []
     for leg_id, base in sorted(skeleton.items()):
         samples = per_leg.get((base["workflow"], base["check_name"])) or []
         stats = fresh.get(leg_id)
+        if leg_id in breach_ids and args.allow_partial:
+            # 超预算腿：**整条沿用上一版**（预算、measured、budget_basis 全不动）⇒ 台账里看不到任何「悄悄抬预算」
+            if leg_id in previous:
+                legs.append(previous[leg_id])
+                continue
         if stats:
             budget, status = ceil_budget(stats["p90_seconds"]), BUDGET_STATUS_MEASURED
             basis = f"budget = ceil(measured.p90_seconds={stats['p90_seconds']}) @ {now}"
@@ -395,11 +409,15 @@ def main() -> int:
         ],
     }
     LEDGER_PATH.write_text(json.dumps(ledger, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    partial_exit = bool(breach_ids) and not args.accept_raise
+    if partial_exit:
+        print(f"❌ 仍有 {len(breach_ids)} 条腿超预算（**已写入合规腿**；超预算腿原封不动）⇒ 退出 1（红不消失）",
+              file=sys.stderr)
     with_measure = sum(1 for leg in legs if leg["measured"])
     print(f"✅ 已重写 {LEDGER_PATH.relative_to(REPO)}：腿 {len(legs)} 条"
           f"（其中有实测读数 {with_measure} 条 / 有预算 {sum(1 for x in legs if x['budget_seconds'])} 条）"
           f"/ required {sum(1 for leg in legs if leg['required'])} 条 @ {now}")
-    return 0
+    return 1 if partial_exit else 0
 
 
 if __name__ == "__main__":

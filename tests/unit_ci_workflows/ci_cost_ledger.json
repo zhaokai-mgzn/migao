@@ -4,84 +4,72 @@
   "what": "每条 PR 触发的 CI 腿：**实测**近期时长 + 显式上限 + 目标预算 + required 口径。上限 = 该腿自己声明的 `timeout-minutes`（硬杀开关，见 `hard_kill_source`）；预算 = 该腿**实测 p90 向上取整**（owner 裁定 2026-09-26）；两者都由 tests/unit_ci_workflows/test_ci_cost_ledger.py 与现取 YAML / 读数复比。",
   "judged_by": "tests/unit_ci_workflows/test_ci_cost_ledger.py",
   "measured": {
-    "at": "2026-09-26T04:16:13Z",
+    "at": "2026-11-24T14:50:38Z",
     "source": "gh api repos/zhaokai-mgzn/migao/actions/runs?event=pull_request&status=completed",
     "event": "pull_request",
-    "runs_per_workflow": 8,
+    "runs_per_workflow": 30,
     "recompute": "python3 scripts/ci_cost_ledger.py --measure"
   },
   "attribution_policy": {
     "rule": "某腿**超出预算**（新实测 p90 上取整 > 台账里已冻结的预算）⇒ `--measure` **非零退出且不写台账**（不许静默抬预算；预算是读数的函数，不是人手填的数）",
     "what_to_check_first": "先查**新增**开销 —— 钉与负载无关的计数：新判据文件数 / 真库 `initdb` 次数 / 语料真解析次数 / 新增依赖安装；**不要**用抬 `timeout-minutes` 交差（与 #5365 同源口径：上限是值班判据，不是成本成绩单）",
-    "how_to_raise": "确有必要抬预算 ⇒ 显式 `python3 scripts/ci_cost_ledger.py --measure --accept-raise`（把该腿预算重冻结为现取 p90，改动在 diff 里可见），并在 PR / 追踪单上写明为什么",
+    "how_to_raise": "确有必要抬预算 ⇒ 显式 `python3 scripts/ci_cost_ledger.py --measure --accept-raise`（把该腿预算重冻结为现取 p90，改动在 diff 里可见），并在 PR / 追踪单上写明为什么。**只想登记新腿 / 刷新合规腿**（不是抬预算）⇒ `--measure --allow-partial`：超预算的腿在台账里**原封不动**、仍然非零退出（红不消失），合规腿照常刷新（issue #9120）",
     "enforced_where": "超预算判红在**能读 Actions API 的环境**（本机 / attended）生效；CI 的 `ci workflow helper unit tests` 读不到历史时长 ⇒ 它只锁「预算 == 实测 p90 上取整」这条**文件不变式**（判据 = tests/unit_ci_workflows/test_ci_cost_ledger.py）"
   },
   "workflow_totals": {
     "ai-agent-tests.yml": {
-      "n": 8,
-      "median_seconds": 265.5,
-      "p90_seconds": 277.0,
-      "max_seconds": 280.0
+      "n": 30,
+      "median_seconds": 424.5,
+      "p90_seconds": 522.0,
+      "max_seconds": 534.0
     },
     "bmini-app.yml": {
-      "n": 8,
-      "median_seconds": 122.5,
-      "p90_seconds": 128.0,
-      "max_seconds": 128.0
+      "n": 30,
+      "median_seconds": 479.0,
+      "p90_seconds": 543.0,
+      "max_seconds": 784.0
     },
     "demo-evidence.yml": {
-      "n": 6,
-      "median_seconds": 157.0,
-      "p90_seconds": 161.0,
-      "max_seconds": 169.0
+      "n": 12,
+      "median_seconds": 173.0,
+      "p90_seconds": 197.0,
+      "max_seconds": 202.0
     },
     "deploy-reconcile.yml": {
-      "n": 7,
-      "median_seconds": 47.0,
-      "p90_seconds": 48.0,
-      "max_seconds": 53.0
-    },
-    "drift-audit.yml": {
-      "n": 8,
-      "median_seconds": 24.5,
-      "p90_seconds": 28.0,
-      "max_seconds": 34.0
+      "n": 18,
+      "median_seconds": 68.5,
+      "p90_seconds": 81.0,
+      "max_seconds": 106.0
     },
     "flaky-ledger-reconcile.yml": {
-      "n": 7,
-      "median_seconds": 25.0,
-      "p90_seconds": 26.0,
-      "max_seconds": 27.0
-    },
-    "mechanism-liveness.yml": {
-      "n": 8,
-      "median_seconds": 18.5,
-      "p90_seconds": 24.0,
-      "max_seconds": 26.0
+      "n": 17,
+      "median_seconds": 48.0,
+      "p90_seconds": 56.0,
+      "max_seconds": 109.0
     },
     "mini-app.yml": {
-      "n": 8,
-      "median_seconds": 249.0,
-      "p90_seconds": 279.0,
-      "max_seconds": 281.0
+      "n": 30,
+      "median_seconds": 358.0,
+      "p90_seconds": 400.0,
+      "max_seconds": 676.0
     },
     "post-merge-verify.yml": {
-      "n": 7,
-      "median_seconds": 365.0,
-      "p90_seconds": 518.0,
-      "max_seconds": 560.0
+      "n": 17,
+      "median_seconds": 85.0,
+      "p90_seconds": 129.0,
+      "max_seconds": 627.0
     },
     "pr-check.yml": {
-      "n": 8,
-      "median_seconds": 1316.0,
-      "p90_seconds": 1410.0,
-      "max_seconds": 1429.0
+      "n": 30,
+      "median_seconds": 2112.0,
+      "p90_seconds": 2891.0,
+      "max_seconds": 3604.0
     },
     "pr-issue-link.yml": {
-      "n": 8,
-      "median_seconds": 3.0,
-      "p90_seconds": 5.0,
-      "max_seconds": 6.0
+      "n": 20,
+      "median_seconds": 5.0,
+      "p90_seconds": 11.0,
+      "max_seconds": 13.0
     }
   },
   "legs": [
@@ -105,6 +93,63 @@
       "budget_basis": "budget = ceil(measured.p90_seconds=277.0) @ 2026-09-26T04:16:13Z"
     },
     {
+      "id": "bmini-app.yml::build",
+      "workflow": "bmini-app.yml",
+      "job": "build",
+      "check_name": "bmini-app build (h5 + weapp)",
+      "hard_kill_seconds": 900,
+      "hard_kill_source": "workflow `timeout-minutes: 15`",
+      "required": false,
+      "measured": {
+        "n": 29,
+        "median_seconds": 140.0,
+        "p90_seconds": 171.0,
+        "max_seconds": 181.0
+      },
+      "measure_status": "ok",
+      "budget_seconds": 171,
+      "budget_status": "已裁定：预算 = 实测 p90（向上取整）",
+      "budget_basis": "budget = ceil(measured.p90_seconds=171.0) @ 2026-11-24T14:50:38Z"
+    },
+    {
+      "id": "bmini-app.yml::detect",
+      "workflow": "bmini-app.yml",
+      "job": "detect",
+      "check_name": "bmini H5 面判定（决定哪些腿跑）",
+      "hard_kill_seconds": 300,
+      "hard_kill_source": "workflow `timeout-minutes: 5`",
+      "required": false,
+      "measured": {
+        "n": 30,
+        "median_seconds": 21.0,
+        "p90_seconds": 26.0,
+        "max_seconds": 35.0
+      },
+      "measure_status": "ok",
+      "budget_seconds": 26,
+      "budget_status": "已裁定：预算 = 实测 p90（向上取整）",
+      "budget_basis": "budget = ceil(measured.p90_seconds=26.0) @ 2026-11-24T14:50:38Z"
+    },
+    {
+      "id": "bmini-app.yml::tabbar-geometry",
+      "workflow": "bmini-app.yml",
+      "job": "tabbar-geometry",
+      "check_name": "bmini H5 tabBar geometry (e2e)",
+      "hard_kill_seconds": 900,
+      "hard_kill_source": "workflow `timeout-minutes: 15`",
+      "required": false,
+      "measured": {
+        "n": 29,
+        "median_seconds": 171.0,
+        "p90_seconds": 191.0,
+        "max_seconds": 423.0
+      },
+      "measure_status": "ok",
+      "budget_seconds": 191,
+      "budget_status": "已裁定：预算 = 实测 p90（向上取整）",
+      "budget_basis": "budget = ceil(measured.p90_seconds=191.0) @ 2026-11-24T14:50:38Z"
+    },
+    {
       "id": "bmini-app.yml::typecheck-and-test",
       "workflow": "bmini-app.yml",
       "job": "typecheck-and-test",
@@ -122,20 +167,6 @@
       "budget_seconds": 128,
       "budget_status": "已裁定：预算 = 实测 p90（向上取整）",
       "budget_basis": "budget = ceil(measured.p90_seconds=128.0) @ 2026-09-26T04:16:13Z"
-    },
-    {
-      "id": "bmini-app.yml::build",
-      "workflow": "bmini-app.yml",
-      "job": "build",
-      "check_name": "bmini-app build (h5 + weapp)",
-      "hard_kill_seconds": 900,
-      "hard_kill_source": "workflow `timeout-minutes: 15`",
-      "required": false,
-      "measured": null,
-      "measure_status": "样本不足（本腿由 issue #5650 新增，尚无历史 run）",
-      "budget_seconds": null,
-      "budget_status": "无读数：不编预算（显式留白）",
-      "budget_basis": "新增腿，现取 n=0 < 3 ⇒ **不编预算**，保持显式留白（有读数后由 `scripts/ci_cost_ledger.py --measure` 按预算=ceil(实测 p90) 重算）"
     },
     {
       "id": "demo-evidence.yml::admin-web-demo-path",
@@ -195,25 +226,6 @@
       "budget_basis": "budget = ceil(measured.p90_seconds=48.0) @ 2026-09-26T04:16:13Z"
     },
     {
-      "id": "drift-audit.yml::audit",
-      "workflow": "drift-audit.yml",
-      "job": "audit",
-      "check_name": "Drift Audit (真相源契约)",
-      "hard_kill_seconds": 900,
-      "hard_kill_source": "workflow `timeout-minutes: 15`",
-      "required": false,
-      "measured": {
-        "n": 8,
-        "median_seconds": 24.5,
-        "p90_seconds": 28.0,
-        "max_seconds": 34.0
-      },
-      "measure_status": "ok",
-      "budget_seconds": 28,
-      "budget_status": "已裁定：预算 = 实测 p90（向上取整）",
-      "budget_basis": "budget = ceil(measured.p90_seconds=28.0) @ 2026-09-26T04:16:13Z"
-    },
-    {
       "id": "flaky-ledger-reconcile.yml::reconcile",
       "workflow": "flaky-ledger-reconcile.yml",
       "job": "reconcile",
@@ -233,37 +245,23 @@
       "budget_basis": "budget = ceil(measured.p90_seconds=26.0) @ 2026-09-26T04:16:13Z"
     },
     {
-      "id": "mechanism-liveness.yml::registry",
-      "workflow": "mechanism-liveness.yml",
-      "job": "registry",
-      "check_name": "Mechanism Liveness Registry (登记完整性 + 读数落点)",
-      "hard_kill_seconds": 600,
-      "hard_kill_source": "workflow `timeout-minutes: 10`",
+      "id": "mini-app.yml::detect",
+      "workflow": "mini-app.yml",
+      "job": "detect",
+      "check_name": "mini-app 面判定（决定哪些腿跑）",
+      "hard_kill_seconds": 300,
+      "hard_kill_source": "workflow `timeout-minutes: 5`",
       "required": false,
       "measured": {
-        "n": 8,
-        "median_seconds": 18.5,
-        "p90_seconds": 24.0,
-        "max_seconds": 26.0
+        "n": 30,
+        "median_seconds": 22.0,
+        "p90_seconds": 26.0,
+        "max_seconds": 28.0
       },
       "measure_status": "ok",
-      "budget_seconds": 24,
+      "budget_seconds": 26,
       "budget_status": "已裁定：预算 = 实测 p90（向上取整）",
-      "budget_basis": "budget = ceil(measured.p90_seconds=24.0) @ 2026-09-26T04:16:13Z"
-    },
-    {
-      "id": "mechanism-liveness.yml::watchdog",
-      "workflow": "mechanism-liveness.yml",
-      "job": "watchdog",
-      "check_name": "Mechanism Liveness Watchdog (最近一次成功处置是否新鲜)",
-      "hard_kill_seconds": 900,
-      "hard_kill_source": "workflow `timeout-minutes: 15`",
-      "required": false,
-      "measured": null,
-      "measure_status": "样本不足（现取 n=0）",
-      "budget_seconds": null,
-      "budget_status": "无读数：不编预算（显式留白）",
-      "budget_basis": "现取 n=0 < 3（本腿多为 skipped/未触发）⇒ **不编预算**，保持显式留白"
+      "budget_basis": "budget = ceil(measured.p90_seconds=26.0) @ 2026-11-24T14:50:38Z"
     },
     {
       "id": "mini-app.yml::typecheck-and-test",
@@ -309,18 +307,18 @@
       "job": "verify",
       "check_name": "Post-Merge Verify (定向跑判据面)",
       "hard_kill_seconds": 4800,
-      "hard_kill_source": "workflow `timeout-minutes: 80`（issue #6312：按本腿自己的工作量上界抬高；上界 = 对等腿片数 × 每片 20 分 ⇒ issue #9102 两片→四片，45 → 80 = 4×20）",
+      "hard_kill_source": "workflow `timeout-minutes: 80`",
       "required": false,
       "measured": {
-        "n": 7,
-        "median_seconds": 365.0,
-        "p90_seconds": 518.0,
-        "max_seconds": 560.0
+        "n": 17,
+        "median_seconds": 85.0,
+        "p90_seconds": 129.0,
+        "max_seconds": 627.0
       },
       "measure_status": "ok",
-      "budget_seconds": 518,
+      "budget_seconds": 129,
       "budget_status": "已裁定：预算 = 实测 p90（向上取整）",
-      "budget_basis": "budget = ceil(measured.p90_seconds=518.0) @ 2026-09-26T04:16:13Z"
+      "budget_basis": "budget = ceil(measured.p90_seconds=129.0) @ 2026-11-24T14:50:38Z"
     },
     {
       "id": "pr-check.yml::admin-api-test",
@@ -445,29 +443,72 @@
       "hard_kill_source": "workflow `timeout-minutes: 20`",
       "required": true,
       "measured": {
-        "n": 8,
-        "median_seconds": 699.0,
-        "p90_seconds": 751.0,
-        "max_seconds": 760.0
+        "n": 30,
+        "median_seconds": 365.0,
+        "p90_seconds": 536.0,
+        "max_seconds": 559.0
       },
-      "measure_status": "ok；⚠️ #6164 拆腿后本行对应**第一片**（同名保留的那条 required）；第二片见 id 尾号 #2",
-      "budget_seconds": 751,
+      "measure_status": "ok",
+      "budget_seconds": 536,
       "budget_status": "已裁定：预算 = 实测 p90（向上取整）",
-      "budget_basis": "budget = ceil(measured.p90_seconds=751.0) @ 2026-09-26T04:16:13Z；⚠️ 该读数是**拆腿前**的形态（2026-09-26 冻结）：#6164 起本腿只是两片中的一片，关键路径读数已由 ~500s 降到 ~330s；预算**刻意不手改**（预算是读数的函数 ⇒ 等下一次 --measure 复算）"
+      "budget_basis": "budget = ceil(measured.p90_seconds=536.0) @ 2026-11-24T14:50:38Z"
     },
     {
       "id": "pr-check.yml::ci-workflow-tests#2",
+      "workflow": "pr-check.yml",
+      "job": "ci-workflow-tests",
+      "check_name": "ci workflow helper unit tests（中前段）",
+      "hard_kill_seconds": 1200,
+      "hard_kill_source": "workflow `timeout-minutes: 20`",
+      "required": true,
+      "measured": {
+        "n": 30,
+        "median_seconds": 357.5,
+        "p90_seconds": 410.0,
+        "max_seconds": 478.0
+      },
+      "measure_status": "ok",
+      "budget_seconds": 410,
+      "budget_status": "已裁定：预算 = 实测 p90（向上取整）",
+      "budget_basis": "budget = ceil(measured.p90_seconds=410.0) @ 2026-11-24T14:50:38Z"
+    },
+    {
+      "id": "pr-check.yml::ci-workflow-tests#3",
+      "workflow": "pr-check.yml",
+      "job": "ci-workflow-tests",
+      "check_name": "ci workflow helper unit tests（中后段）",
+      "hard_kill_seconds": 1200,
+      "hard_kill_source": "workflow `timeout-minutes: 20`",
+      "required": true,
+      "measured": {
+        "n": 30,
+        "median_seconds": 321.0,
+        "p90_seconds": 465.0,
+        "max_seconds": 1500.0
+      },
+      "measure_status": "ok",
+      "budget_seconds": 465,
+      "budget_status": "已裁定：预算 = 实测 p90（向上取整）",
+      "budget_basis": "budget = ceil(measured.p90_seconds=465.0) @ 2026-11-24T14:50:38Z"
+    },
+    {
+      "id": "pr-check.yml::ci-workflow-tests#4",
       "workflow": "pr-check.yml",
       "job": "ci-workflow-tests",
       "check_name": "ci workflow helper unit tests（后半）",
       "hard_kill_seconds": 1200,
       "hard_kill_source": "workflow `timeout-minutes: 20`",
       "required": true,
-      "measured": null,
-      "measure_status": "拆腿新增的第二片（issue #6164，2026-10-03）：**尚无 ≥3 次历史读数** ⇒ 按判据 3 不登记为 measured（单次读数不足以成分布）。现取首轮 CI 的单次读数只作证据、不入 measured：job 322s / step 292s（run 37099748568）。`required: true` 与分支保护**同批**生效（2026-10-03T05:45Z 已把该检查名加进 main 的 required_status_checks，现取 16 条；snapshot 同批刷新 —— 顺序不可换：**先有上报、再设 required**）。",
-      "budget_seconds": null,
-      "budget_status": "无读数：不编预算（显式留白）",
-      "budget_basis": null
+      "measured": {
+        "n": 30,
+        "median_seconds": 368.0,
+        "p90_seconds": 486.0,
+        "max_seconds": 495.0
+      },
+      "measure_status": "ok",
+      "budget_seconds": 486,
+      "budget_status": "已裁定：预算 = 实测 p90（向上取整）",
+      "budget_basis": "budget = ceil(measured.p90_seconds=486.0) @ 2026-11-24T14:50:38Z"
     },
     {
       "id": "pr-check.yml::clear-needs-changes",
@@ -508,6 +549,25 @@
       "budget_basis": "budget = ceil(measured.p90_seconds=16.0) @ 2026-09-26T04:16:13Z"
     },
     {
+      "id": "pr-check.yml::detect",
+      "workflow": "pr-check.yml",
+      "job": "detect",
+      "check_name": "E2E 面判定（决定 e2e 门禁是否跑）",
+      "hard_kill_seconds": 300,
+      "hard_kill_source": "workflow `timeout-minutes: 5`",
+      "required": false,
+      "measured": {
+        "n": 30,
+        "median_seconds": 21.0,
+        "p90_seconds": 24.0,
+        "max_seconds": 45.0
+      },
+      "measure_status": "ok",
+      "budget_seconds": 24,
+      "budget_status": "已裁定：预算 = 实测 p90（向上取整）",
+      "budget_basis": "budget = ceil(measured.p90_seconds=24.0) @ 2026-11-24T14:50:38Z"
+    },
+    {
       "id": "pr-check.yml::e2e-quality-gate",
       "workflow": "pr-check.yml",
       "job": "e2e-quality-gate",
@@ -525,6 +585,25 @@
       "budget_seconds": 129,
       "budget_status": "已裁定：预算 = 实测 p90（向上取整）",
       "budget_basis": "budget = ceil(measured.p90_seconds=129.0) @ 2026-09-26T04:16:13Z"
+    },
+    {
+      "id": "pr-check.yml::external-authorship-guard",
+      "workflow": "pr-check.yml",
+      "job": "external-authorship-guard",
+      "check_name": "External Authorship Guard",
+      "hard_kill_seconds": 300,
+      "hard_kill_source": "workflow `timeout-minutes: 5`",
+      "required": false,
+      "measured": {
+        "n": 30,
+        "median_seconds": 11.0,
+        "p90_seconds": 18.0,
+        "max_seconds": 23.0
+      },
+      "measure_status": "ok",
+      "budget_seconds": 18,
+      "budget_status": "已裁定：预算 = 实测 p90（向上取整）",
+      "budget_basis": "budget = ceil(measured.p90_seconds=18.0) @ 2026-11-24T14:50:38Z"
     },
     {
       "id": "pr-check.yml::gitleaks-scan",
@@ -551,13 +630,18 @@
       "job": "label-needs-changes",
       "check_name": "Label needs-changes on any CI failure",
       "hard_kill_seconds": 600,
-      "hard_kill_source": "workflow `timeout-minutes: 2`",
+      "hard_kill_source": "workflow `timeout-minutes: 10`",
       "required": false,
-      "measured": null,
-      "measure_status": "样本不足（现取 n=2）",
-      "budget_seconds": null,
-      "budget_status": "无读数：不编预算（显式留白）",
-      "budget_basis": "现取 n=2 < 3（本腿多为 skipped/未触发）⇒ **不编预算**，保持显式留白"
+      "measured": {
+        "n": 30,
+        "median_seconds": 3.5,
+        "p90_seconds": 5.0,
+        "max_seconds": 6.0
+      },
+      "measure_status": "ok",
+      "budget_seconds": 5,
+      "budget_status": "已裁定：预算 = 实测 p90（向上取整）",
+      "budget_basis": "budget = ceil(measured.p90_seconds=5.0) @ 2026-11-24T14:50:38Z"
     },
     {
       "id": "pr-check.yml::llm-sink-ledger",
@@ -648,48 +732,6 @@
       "budget_seconds": null,
       "budget_status": "无读数：不编预算（显式留白）",
       "budget_basis": "现取 n=0 < 3（本腿多为 skipped/未触发）⇒ **不编预算**，保持显式留白"
-    },
-    {
-      "id": "pr-check.yml::external-authorship-guard",
-      "workflow": "pr-check.yml",
-      "job": "external-authorship-guard",
-      "check_name": "External Authorship Guard",
-      "hard_kill_seconds": 300,
-      "hard_kill_source": "workflow `timeout-minutes: 5`",
-      "required": false,
-      "measured": null,
-      "measure_status": "样本不足（本腿由 issue #8386 新增，尚无历史 run）",
-      "budget_seconds": null,
-      "budget_status": "无读数：不编预算（显式留白）",
-      "budget_basis": "新增腿，现取 n=0 < 3 ⇒ **不编预算**，保持显式留白（有读数后由 `scripts/ci_cost_ledger.py --measure` 按预算=ceil(实测 p90) 重算）"
-    },
-    {
-      "id": "pr-check.yml::ci-workflow-tests#3",
-      "workflow": "pr-check.yml",
-      "job": "ci-workflow-tests",
-      "check_name": "ci workflow helper unit tests（中前段）",
-      "hard_kill_seconds": 1200,
-      "hard_kill_source": "workflow `timeout-minutes: 20`",
-      "required": true,
-      "measured": null,
-      "measure_status": "四片重切新增的片（issue #9102，2026-11-24）：**尚无 ≥3 次历史读数** ⇒ 按判据 3 不登记为 measured（单次读数不足以成分布）。现取的两轮 CI 单次读数只作证据、不入 measured：job 355s（run 45311964768）/ 448s（run 45312922596）。`required: true` 与分支保护**同批**生效（2026-11-24T02:40Z 已把该检查名加进 main 的 required，现取 18 条；snapshot 同批刷新 —— 顺序不可换：**先有上报、再设 required**）。",
-      "budget_seconds": null,
-      "budget_status": "无读数：不编预算（显式留白）",
-      "budget_basis": null
-    },
-    {
-      "id": "pr-check.yml::ci-workflow-tests#4",
-      "workflow": "pr-check.yml",
-      "job": "ci-workflow-tests",
-      "check_name": "ci workflow helper unit tests（中后段）",
-      "hard_kill_seconds": 1200,
-      "hard_kill_source": "workflow `timeout-minutes: 20`",
-      "required": true,
-      "measured": null,
-      "measure_status": "四片重切新增的片（issue #9102，2026-11-24）：**尚无 ≥3 次历史读数** ⇒ 按判据 3 不登记为 measured（单次读数不足以成分布）。现取的两轮 CI 单次读数只作证据、不入 measured：job 324s（run 45311964768）/ 459s（run 45312922596）。`required: true` 与分支保护**同批**生效（2026-11-24T02:40Z 已把该检查名加进 main 的 required，现取 18 条；snapshot 同批刷新 —— 顺序不可换：**先有上报、再设 required**）。",
-      "budget_seconds": null,
-      "budget_status": "无读数：不编预算（显式留白）",
-      "budget_basis": null
     }
   ],
   "eval_cadence": {
@@ -698,14 +740,16 @@
     "runs_per_month": {
       "agent-eval.yml": {
         "2026-08": 21,
-        "2026-09": 3
+        "2026-09": 3,
+        "2026-10": 4
       },
       "agent-eval-adversarial.yml": {
         "2026-08": 3,
         "2026-09": 2
       },
       "xiaobu-acceptance.yml": {
-        "2026-09": 100
+        "2026-09": 98,
+        "2026-10": 2
       }
     }
   },

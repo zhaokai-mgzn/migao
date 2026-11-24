@@ -11033,3 +11033,23 @@ cases:
         - "tests/unit_ci_workflows/test_ui_regression_fetch_is_shallow_aware.py"
         - "tests/unit_ci_workflows/test_ui_regression_leg_stays_shallow.py"
     merge_log: "2026-11-24 新增（issue #9120）。实测（CI run 45398756938，去掉 fetch-depth: 0 之后）：checkout **6s**（原 16–20s）、判据步 **26s**（原 1s，其中就是 bash 里那次不带 depth 的 `git fetch origin main` 拉了全史）、整腿 **36s**（原 21–30s ⇒ 反而更慢）。修法：脚本按仓库形态分支 depth=1，并删掉 job 里那次重复 fetch。红证：把脚本改回裸 fetch ⇒ 判据 1 FAILED。取号 = `next_case_id.py MC` ⇒ **MC-358**。"
+  - id: MC-359
+    legacy_id: ""
+    title: "成本台账 `--measure --allow-partial`：合规腿照常刷新、超预算腿原封不动且仍非零退出（不再整仓拒写）"
+    domains:
+      - misc
+      - ci
+    tier: normal
+    tags:
+      - ci
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "**判据 1·超预算腿一个字段都不动**：构造「alpha 合规、beta 超预算」的合成读数后调用 `main(--allow-partial)` ⇒ 台账里 **beta 的 `budget_seconds` / `budget_basis` / `measured` 与上一版逐字相同**，`alpha` 被刷新为现取 p90。这是「红不许消失」与「不许悄悄抬预算」两条口径同时成立的唯一形态。执行点 = `test_ci_cost_ledger.py::TestAllowPartialWritesOnlyCompliantLegs::test_partial_keeps_breaching_leg_frozen_and_exits_nonzero`"
+      - "**判据 2·默认行为不变**：不带开关 ⇒ **一个都不写**（仍整仓拒写、exit 1）。执行点 = `::test_default_still_refuses_to_write_anything`"
+      - "**判据 3·显式 --accept-raise 仍是合法出口**：exit 0 且预算重冻结为现取 p90。执行点 = `::test_accept_raise_still_refreezes_everything`"
+      - "**判据 4·退出码极性**：有腿仍超预算时**写了盘也必须非零退出**（否则「写了盘」会被读成「全绿」）；判据 1 的 `rc == 1` 断言即此项。执行点同上"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_ci_cost_ledger.py"
+    merge_log: "2026-11-24 新增（issue #9120）。病根不在那几条腿，而在工具形状：`--measure` 是全量重写 ⇒ **一条超预算就整仓拒写** ⇒ 任何新增腿都无法合法登记（只能留白）。修法：加 `--allow-partial`——超预算腿整条沿用上一版（预算/实测/basis 都不动）、合规腿照常刷新、**仍非零退出**；默认与 `--accept-raise` 行为不变。实证：本机以 30 次窗口现取，`--allow-partial` 写入 35 条腿（34 条有实测），刷新 12 条合规腿，落 22 条超预算腿并 exit 1。取号 = `next_case_id.py MC` ⇒ **MC-359**。"
