@@ -559,3 +559,76 @@ return 1 if conclusive_findings else 0
 **边界（照实登记）**：射程只到 `scripts/drift_audit.py` 这一族 ——「别的脚本 / 别的台账也把
 `not_applicable` 当违规」**判不了**；`unknown` 在**未声明** `--fail-on-unknown` 时仍只报告（`0`），
 这是既有语义、不放宽（CI runner 上活锚天然不存在，无条件折非零 = 每个 PR 常红）。
+
+## 14. 「加用例」不再撞号、也不撞锚点：号段租约 + 派生读数（2026-11-24 固化，issue #9090）
+
+### 14.1 病根（一晚上 **5 次 rebase**，两处）
+
+| # | 形态 | 为什么并行下必然发生 |
+|---|---|---|
+| 1 | `python3 scripts/next_case_id.py MC` 只**计算**一个号（候选 = main ∪ open PR ∪ 本工作区） | 两个包同时调用拿到**同一个号**；工具自己的 docstring 就登记了「❌ 不是互斥锁」⇒ 让号靠人肉 |
+| 2 | `case_machine_fail_channel_baseline.json` 的 `entries.backend_contract_scoring_zero` 是**入库读数** | 每加一条 `[backend-contract]` 用例（`expectations: []`）它 +1 ⇒ 必须改**同一个 key** 并往 `history` **同一个尾部**追加一行 ⇒ 两个并行包 100% 冲突 |
+
+两者都不是「判据写错了」，是**取号/记数这两件事本身需要一个独占动作**。⇒ 本节的改动：
+
+- **号**：加一个**写面**动作（`scripts/case_id_lease.py reserve`），用文件系统的原子创建做独占；
+- **数**：把读数从「入库的一份存根」改成「判据**每次现算**」—— 存根才是冲突源。
+
+### 14.2 取号：一次动作（离线、并发安全）
+
+```bash
+# 在**自己的分支 / worktree** 里跑；不需要联网、不需要 GitHub 凭据
+python3 scripts/case_id_lease.py reserve MC --pr <本 PR 号> --title "<本 PR 的用例标题>"
+# ⇒ 🔒 已独占：MC-352
+#    租约：~/.migao-case-id-leases（机器级台账，不入库）
+#    claim：.github/cases/claims/<PR号>-MC-352.json
+```
+
+口径（三条）：
+
+1. **独占 = `O_CREAT|O_EXCL`**：两个进程同时创建同一个租约文件，内核保证恰好一个成功、
+   另一个拿到 `FileExistsError` ⇒ **顺延**再试。⇒ 「两个包同时 reserve」**必然**拿到不同的号。
+2. **离线**：候选集 = main（本地 ref）∪ 本工作区 ∪ **既有租约**，**不读 GitHub**。
+   （联网面（在飞 PR）仍归只读工具 `scripts/next_case_id.py`；两者是**同一次判定**的两面：
+   分配器读租约，所以它不会把别人刚独点的号当空闲发出去。）
+3. **`--pr` 幂等**：同一 PR 重跑 ⇒ 打印已登记的那个号，**不新占号**（否则号白白泄漏）。
+
+无 `--pr` 时只落租约；PR 号拿到后再跑一次带 `--pr` 的命令即可（同一条命令，顺序即安全顺序）。
+
+### 14.3 台账：读数**现算**，不入库；`history` 只增不改
+
+- `entries` **只放不变量**：`{"no_channel_total": 0}`（真债务度量，恒 0，不随语料漂移）。
+  `backend_contract_scoring_zero` 是**派生量** —— 判据每次从 `.github/cases/**` 现算，
+  **不再入库**；`entries` 里再出现这个 key ⇒ `anchor_drift()` **判红**（让同类进不来）。
+- `history` 是**归档**：既有 234 行逐字节保留（审计链，不许清空/改写）；**新增用例不再追加行**
+  ——只有**口径 / 结构**变更才写一行（必须带 `note`）。
+- **批次合并**（`scripts/batch_merge_lib.py`）随之简化：锚点**取 main 版 + 跑判据复核**即可，
+  **不再按实测重锚**（分支根本不写锚点 ⇒ 正常批次没有收尾提交）。
+
+⇒ 加用例时**你不用再动** `case_machine_fail_channel_baseline.json`（本单自己就是证据：
+MC-351 让派生读数 341 → 342，而锚点文件**只改了 `entries` 与四个 `_note` 键**）。
+
+### 14.4 判据（每条都能单独变红）
+
+判据 = `tests/unit_ci_workflows/test_case_id_exclusive_ledger.py`（9 条）+ `test_case_machine_fail_channel.py`
+的 I3 改造。红证（都可在本机跑）：
+
+```bash
+# ① 并发独占：6 个 reserve 同时跑 ⇒ 6 个不同的号；把原子占位换成不排他的写 ⇒ 两个 racer 同号
+python3 -m pytest tests/unit_ci_workflows/test_case_id_exclusive_ledger.py -q
+# ② 旧路径的撞号现场：只读分配器单独两次 ⇒ 同一个号（人肉让号的成因）
+# ③ 两个并行包的锚点：**真 git 两个临时分支** —— 旧形态真冲突 / 新形态零冲突
+# ④ 读数写回 entries ⇒ anchor_drift() 必红
+python3 -m pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py -q
+```
+
+### 14.5 边界（照实登记，别把它读成覆盖面更大的东西）
+
+- ❌ 租约台账是**机器级**的（`MIGAO_CASE_ID_LEASE_DIR`，默认 `~/.migao-case-id-leases`）⇒ 只覆盖
+  **同一台机器**上的并行包（多 worktree / 多克隆）；**跨机器**仍靠 `.github/cases/claims/**` +
+  `tests/unit_ci_workflows/test_case_id_claims.py` 的判据 2/7（PR 面）。
+- ❌ **不清理陈旧租约**：被放弃的号只让尾部前进一位（不误伤）；回收要人判「是不是真弃了」。
+- ❌ 租约是**自愿遵守**的台账：没跑 `reserve` 的包看不见它（与只读分配器「看不到未 push 分支」同一缺口）。
+- ❌ **同一语料文件尾部追加**仍可能文本冲突（issue #6255 的面）；本单只消掉「号」与「锚点数字」两处。
+- ⚠️ 旧用例正文里若写着「必须同批重锚 `backend_contract_scoring_zero`」，那是**当时的口径**（已退役）；
+  新写法一律按本节。

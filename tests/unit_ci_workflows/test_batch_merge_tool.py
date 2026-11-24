@@ -181,11 +181,12 @@ cases:
       verifies: []
 """
 
-#: 基线锚点：`entries` 必须与实测一致（MC-001/002/003 + PG-002 = 4 条 scoring==0）
+#: 基线锚点：`entries` **只放不变量**（issue #9090：派生读数已退役、不入库）；
+#: `history` 是**归档**（当年读数只供审计，不再要求新 PR 对齐）。
 ANCHOR_BASE = {
     "_note": "夹具：复刻 #5079 的「53 条读数 + traces.tests 分流」出处说明（只为满足锚点出处判据）。",
     "_anchor_sha": "0000000000000000000000000000000000000000",
-    "entries": {"no_channel_total": 0, "backend_contract_scoring_zero": 2},
+    "entries": {"no_channel_total": 0},
     "history": [{"sha": "000000000000", "date": TODAY, "no_channel_total": 0,
                  "backend_contract_scoring_zero": 2, "note": "夹具基线"}],
 }
@@ -256,7 +257,8 @@ class Fixture:
         return self.git("rev-parse", "HEAD").stdout.strip()
 
     def commit_count(self) -> int:
-        """集成分支上**新增**的提交数（`origin/main..HEAD`；两支 merge + 一次清理 = 3）。"""
+        """集成分支上**新增**的提交数（`origin/main..HEAD`：2 支线 + 2 merge = 4；
+        收尾提交只在**锚点真被分支改过**时才出现 —— issue #9090 之后正常批次没有它）。"""
         return int(self.git("rev-list", "--count", "origin/main..HEAD").stdout.strip())
 
     def branches(self) -> "set[str]":
@@ -328,7 +330,10 @@ def _claim(pr: int, cid: str) -> str:
 
 
 def _anchor_with_row(n: int) -> str:
-    """分支侧像**单个 PR**那样自己重锚一行（这正是合批时要被「取 main 版 + 实测重锚」取代的东西）。"""
+    """**旧口径**的分支侧锚点：单支 PR 自己把读数写回 `entries`（issue #9090 的冲突源）。
+
+    合批时必须被「取 main 版」取代；直接采用它 ⇒ 真锚点判据红（见 ③ 的红证）。
+    """
     data = json.loads(json.dumps(ANCHOR_BASE))
     data["entries"] = {"no_channel_total": 0, "backend_contract_scoring_zero": n}
     data["history"] = data["history"] + [{
@@ -456,13 +461,14 @@ def test_batch_lands_both_prs_and_renumbers_the_later_one(fx):
     rendered = (fx.wt / lib.EVAL_OUT / "misc.py").read_text(encoding="utf-8")
     assert "MC-140" in rendered and "MC-141" in rendered
 
-    # 每支都必须成功提交（= 2 个 merge commit）+ 收尾一次清理提交；
-    # 集成分支上新增的提交总数 = 2 个被合入的支线提交 + 2 个 merge + 1 个清理 = 5
+    # 每支都必须成功提交（= 2 个 merge commit）。
+    # ⚠️ 夹具的两支都**按旧口径改了锚点**（`_anchor_with_row`）⇒ 收尾时要把它换回 main 版，
+    # 于是多一次提交：2 条支线 + 2 merge + 1 收尾 = 5。真实现里改后分支根本不写锚点 ⇒ 没有收尾提交。
     merges = [ln for ln in fx.git("rev-list", "--merges", "origin/main..HEAD").stdout.splitlines() if ln]
     assert len(merges) == 2, f"merge commit 数不对：{len(merges)}（每支都必须成功提交）"
-    assert fx.commit_count() == 5, f"提交总数不对：{fx.commit_count()}（2 支线 + 2 merge + 1 清理）"
-    assert fx.git("log", "-1", "--format=%s").stdout.startswith("chore(batch)"), \
-        "收尾提交（重渲染 + 实测重锚）缺失"
+    assert fx.commit_count() == 5, f"提交总数不对：{fx.commit_count()}（2 支线 + 2 merge + 1 锚点收尾）"
+    assert fx.git("log", "-1", "--format=%s").stdout.startswith("chore(batch): 锚点取 main 版"), \
+        "收尾提交应当是「锚点取 main 版」（不再按实测重锚）"
 
 
 def test_red_proof_without_renumbering_duplicate_ids_survive(fx, monkeypatch):
@@ -483,8 +489,8 @@ def test_red_proof_without_renumbering_duplicate_ids_survive(fx, monkeypatch):
 # ③ 锚点：从 origin/main 重建 + **实测**重锚 ⇒ 产出能过真判据
 # ══════════════════════════════════════════════════════════════════════════════
 
-def test_anchor_is_rebuilt_from_main_and_reanchored_by_measurement(fx):
-    """③：锚点取 main 版 + 实测重锚 ⇒ `test_case_machine_fail_channel.py` 全绿。"""
+def test_anchor_is_taken_from_main_and_never_reanchored(fx):
+    """③：锚点**取 main 版**（不重锚）⇒ 真判据全绿，且 `history` 归档不被改写（issue #9090）。"""
     assert run_tool(fx) == 0
 
     # 锚点是**合法 JSON**（不是 `--ours/--theirs` 留下的冲突标记）
@@ -492,29 +498,25 @@ def test_anchor_is_rebuilt_from_main_and_reanchored_by_measurement(fx):
     assert "<<<<<<<" not in text and ">>>>>>>" not in text, "锚点里残留冲突标记 ⇒ 用 --ours 解冲突了"
     anchor = json.loads(text)
 
-    # entries == 实测（2 条基线 + 2 条新增 = 4），且 history 末行同步
-    assert anchor["entries"] == {"no_channel_total": 0, "backend_contract_scoring_zero": 4}, \
-        f"锚点没有按**实测**重锚：{anchor['entries']}"
-    assert anchor["history"][-1]["backend_contract_scoring_zero"] == 4
-    assert anchor["history"][-1].get("note"), "重锚那一行缺 note ⇒ `anchor_drift` 会判红"
-    # 分支自己那行（5）不该被留下 —— 合批取的是 **main 版 + 一行实测**
-    assert [row["backend_contract_scoring_zero"] for row in anchor["history"]] == [2, 4]
+    # entries 只有不变量（分支按旧口径写进去的读数**不许**被采纳）
+    assert anchor["entries"] == {"no_channel_total": 0}, f"锚点被重锚了：{anchor['entries']}"
+    # 分支自己那行（3）不该被留下 —— 合批取的是 **main 版**
+    assert [row["backend_contract_scoring_zero"] for row in anchor["history"]] == [2]
 
     p = run_anchor_test(fx)
     assert p.returncode == 0, f"锚点判据在合批产出上判红：\n{p.stdout[-4000:]}"
 
 
-def test_red_proof_conflict_resolved_by_ours_fails_the_real_anchor_test(fx):
-    """③ 的红证：把锚点换成 **main 版**（= `git checkout --ours` 解冲突的产物）⇒ 真判据必红。"""
+def test_red_proof_adopting_the_branch_anchor_fails_the_real_anchor_test(fx):
+    """③ 的红证：把**分支自己重锚的那一版**（entries 里写死派生读数）落进锚点 ⇒ 真判据必红。"""
     assert run_tool(fx) == 0
     assert run_anchor_test(fx).returncode == 0, "前置：正常产出必须先是绿的，否则红证不成立"
 
-    ours = _sh(["git", "-C", str(fx.wt), "show", f"origin/main:{lib.ANCHOR}"]).stdout
-    (fx.wt / lib.ANCHOR).write_text(ours, encoding="utf-8")
+    (fx.wt / lib.ANCHOR).write_text(_anchor_with_row(3), encoding="utf-8")
     p = run_anchor_test(fx)
-    assert p.returncode != 0, "拿 main 版锚点（未按实测重锚）竟然还能过 ⇒ ③ 的断言是空断言"
-    assert "不一致" in p.stdout or "实测读数" in p.stdout, \
-        f"红得不对（应当是实测与 entries 不一致）：\n{p.stdout[-2000:]}"
+    assert p.returncode != 0, "采用分支自己重锚的锚点竟然还能过 ⇒ ③ 的断言是空断言"
+    assert "backend_contract_scoring_zero" in p.stdout or "不许入库" in p.stdout, \
+        f"红得不对（应当是「派生读数不许入库」）：\n{p.stdout[-2000:]}"
 
 
 # ══════════════════════════════════════════════════════════════════════════════
