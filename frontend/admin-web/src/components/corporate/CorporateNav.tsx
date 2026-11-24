@@ -12,7 +12,7 @@ import { SELF_SERVICE_ONBOARDING_OPEN } from '@/config/onboarding'
 
 const navItems = [
   { name: '首页', href: '/' },
-  { name: '产品服务', href: '/services' },
+  { name: '产品能力', href: '/services' },
   // 终端下载页（issue #8195）：终端安装包是商家真正要拿到手的东西，必须有常驻入口
   { name: '下载中心', href: '/download' },
   { name: '关于我们', href: '/about' },
@@ -59,7 +59,7 @@ export default function CorporateNav() {
           <Link href="/" className="flex shrink-0 items-center gap-2.5">
             <Logo size="small" />
             <span className="text-lg font-semibold tracking-tight text-neutral-900">
-              观星台
+              生意管家
             </span>
           </Link>
 

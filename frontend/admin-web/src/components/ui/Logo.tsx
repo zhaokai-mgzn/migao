@@ -12,7 +12,13 @@ interface LogoProps {
   className?: string
 }
 
-/** 米高品牌 Logo — 帘成 M：织金暖底 + 窗帘杆 + 垂帘 M + 波浪底摆 */
+/**
+ * 生意管家品牌标 ——「管家铃」。
+ *
+ * 语义（不是字面画「管家」）：铃 = 随叫随到的服务；底座 = 经营台面；
+ * 右上角星芒 = 词元 / AI 的底座。深靛方印承接企业级稳重感，织金铃身只在 token 里取色。
+ * 16px 下保留铃身 + 底座 + 顶钮，去掉高光与星芒（见 public/favicon.svg）。
+ */
 export default function Logo({ size = 'medium', className }: LogoProps) {
   const s = sizeMap[size]
   return (
@@ -23,23 +29,35 @@ export default function Logo({ size = 'medium', className }: LogoProps) {
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
       className={cn('flex-shrink-0', className)}
+      aria-hidden="true"
     >
       <defs>
-        <linearGradient id="logo-grad" x1="2" y1="2" x2="46" y2="46" gradientUnits="userSpaceOnUse">
-          <stop offset="0%" stopColor={gold[400]} />
+        <linearGradient id="logo-bg" x1="3" y1="3" x2="45" y2="45" gradientUnits="userSpaceOnUse">
+          <stop offset="0" stopColor="#48618f" />
+          <stop offset="1" stopColor="#2e3d5c" />
+        </linearGradient>
+        <linearGradient id="logo-gold" x1="16" y1="17" x2="34" y2="35" gradientUnits="userSpaceOnUse">
+          <stop offset="0%" stopColor={gold[300]} />
           <stop offset="100%" stopColor={gold[600]} />
         </linearGradient>
       </defs>
-      {/* 织金暖底 */}
-      <rect x="2" y="2" width="44" height="44" rx="13.5" fill="url(#logo-grad)" />
-      {/* 窗帘杆 + 吊环 */}
-      <rect x="11" y="8.6" width="26" height="2.4" rx="1.2" fill="white" fillOpacity="0.35" />
-      <circle cx="12.8" cy="9.8" r="1.8" stroke="white" strokeOpacity="0.55" strokeWidth="1.1" fill="none" />
-      <circle cx="35.2" cy="9.8" r="1.8" stroke="white" strokeOpacity="0.55" strokeWidth="1.1" fill="none" />
-      {/* 垂帘 M — 波浪底摆如窗帘下缘 */}
+      <rect x="2" y="2" width="44" height="44" rx="13.5" fill="url(#logo-bg)" />
       <path
-        fill="white"
-        d="M10.8 31.8 L10.8 15.8 Q10.8 13.6 13 13.6 L18.2 13.6 L21.6 27.2 L24 13.6 L26.4 27.2 L29.8 13.6 L35 13.6 Q37.2 13.6 37.2 15.8 L37.2 31.8 C35.2 33.4 32.8 29.8 30.2 30.4 C27.6 31 25.6 33.4 23 32.8 C20.4 32.2 18 29.8 15.2 30.4 C13 30.8 11.6 31.6 10.8 31.8 Z"
+        d="M13.4 33.2 C13.4 25.4 16.9 19.8 24 19.8 C31.1 19.8 34.6 25.4 34.6 33.2 Z"
+        fill="url(#logo-gold)"
+      />
+      <path
+        d="M16.9 30.6 C17.3 24.6 19.8 21.4 23.2 20.4"
+        stroke="#faf7f2"
+        strokeOpacity="0.55"
+        strokeWidth="1.2"
+        strokeLinecap="round"
+      />
+      <circle cx="24" cy="17.2" r="2.3" fill={gold[300]} />
+      <rect x="11" y="34" width="26" height="3.2" rx="1.6" fill="#faf7f2" />
+      <path
+        d="M36.2 11.4 C36.6 13.6 37.9 14.9 40.1 15.3 C37.9 15.7 36.6 17 36.2 19.2 C35.8 17 34.5 15.7 32.3 15.3 C34.5 14.9 35.8 13.6 36.2 11.4 Z"
+        fill={gold[300]}
       />
     </svg>
   )

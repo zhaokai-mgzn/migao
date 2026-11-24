@@ -1,18 +1,14 @@
 // case_ids: BM-064
 /**
- * 类级守卫：**观星台的品牌标必须真的挂在登录页上，且规格/配色/缩得下去都成立**。
+ * 类级守卫：**生意管家的品牌标必须真的挂在登录页上，且规格/配色/缩得下去都成立**（issue #9121）。
  *
- * ## 需求（用户 2026-11-04）
+ * 需求沿革：用户 2026-11-04「我们还需要给观星台设计一个 logo」→ 2026-11-24 产品更名「生意管家」，
+ * 品牌标同步换成「管家铃」：铃 = 随叫随到的服务，底座 = 经营台面，星芒 = 词元 / AI。
  *
- * 「我们还需要给观星台设计一个 logo」→ 选定 C1 方案（取景角=扫码入口，星芒=AI 中枢）。
- * 用户原话纠正过一次方向：「不要根据字面意思设计，要根据我们的系统能力去设计」
- * —— 所以这个标不画星星/天文台，画的是**扫码 + AI** 这两项真实能力。
- *
- * ## 为什么要有判据（不是「看一眼图就行」）
- *
+ * 为什么要有判据（不是「看一眼图就行」）：
  * 1. 图标是**图片资源**：改名/删文件/导错尺寸，编译期不报错，只有真机上白块 —— 必须有断言；
  * 2. 微信小程序头像要 144×144，登录页要 288 以内的清晰版；导出尺寸错了肉眼在电脑上看不出来；
- * 3. 配色必须留在设计令牌内（`#2e3d5c/#48618f/#faf7f2/#c06a3e`），否则「移动端统一到 PC」白做；
+ * 3. 配色必须留在设计令牌内（`#2e3d5c/#48618f/#faf7f2/#d48806`），否则「移动端统一到 PC」白做；
  * 4. 登录页曾经是**文字占位**（一个「米」字），换图最常见的回归是「只加了图没删占位」⇒ 两个标并排。
  */
 
@@ -30,7 +26,7 @@ function pngSize(file: string): { width: number; height: number } {
   return { width: buf.readUInt32BE(16), height: buf.readUInt32BE(20) }
 }
 
-describe('观星台品牌标（issue #8600 后续）', () => {
+describe('生意管家品牌标（issue #9121）', () => {
   it('① 素材齐全：矢量源 + 微信头像 144 + 登录页 288', () => {
     for (const f of ['logo.svg', 'logo-144.png', 'logo-288.png']) {
       expect(existsSync(join(ASSETS, f))).toBe(true)
@@ -42,18 +38,17 @@ describe('观星台品牌标（issue #8600 后续）', () => {
     expect(pngSize(join(ASSETS, 'logo-288.png'))).toEqual({ width: 288, height: 288 })
   })
 
-  it('③ 矢量源用的是设计令牌里的颜色（不是自造色）', () => {
+  it('③ 矢量源用的是设计令牌里的颜色，且是新的管家铃（不是旧的取景角 / 帘成 M）', () => {
     const svg = readFileSync(join(ASSETS, 'logo.svg'), 'utf8').toLowerCase()
-    // 背景渐变 = PC brand-navy → brand-blue
-    expect(svg).toContain('#2e3d5c')
+    // 背景渐变 = primary-500 → primary-700
     expect(svg).toContain('#48618f')
-    // 取景角 = 织物米白
+    expect(svg).toContain('#2e3d5c')
+    // 底座 = 织物米白；铃身 = 织金
     expect(svg).toContain('#faf7f2')
-    // 星芒 = 陶土金
-    expect(svg).toContain('#c06a3e')
-    // 冷蓝（改前那套 #0a2540/#1a73e8）一个都不许回来
-    expect(svg).not.toContain('#0a2540')
-    expect(svg).not.toContain('#1a73e8')
+    expect(svg).toContain('#d48806')
+    // 旧标的特征：取景角 / 帘成 M 的波浪底摆 —— 一个都不许回来
+    expect(svg).not.toContain('取景角')
+    expect(svg).not.toContain('C35.2 33.4 32.8 29.8 30.2 30.4')
   })
 
   it('④ 登录页真的挂了这张图，且占位字已删（两个标并排 = 回归）', () => {
@@ -62,6 +57,7 @@ describe('观星台品牌标（issue #8600 后续）', () => {
     expect(tsx).toMatch(/<Image[^>]*className='login-brand__icon-img'[^>]*src=\{brandLogo\}/)
     expect(tsx).not.toContain('login-brand__icon-text')
     expect(tsx).not.toMatch(/<Text className='login-brand__icon-text'>米<\/Text>/)
+    expect(tsx).toContain('生意管家')
   })
 
   it('⑤ 样式里有对应的尺寸，否则图按 0 高渲染（真机白块）', () => {

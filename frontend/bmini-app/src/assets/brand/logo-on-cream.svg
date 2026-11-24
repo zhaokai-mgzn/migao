@@ -1,12 +1,22 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img" aria-label="观星台">
-  <title>观星台（浅底版）</title>
-  <rect width="1024" height="1024" rx="228" fill="#faf7f2"/>
-  <g fill="none" stroke="#3a4e75" stroke-width="66" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M344 250 H246 V348"/>
-    <path d="M680 250 H778 V348"/>
-    <path d="M344 774 H246 V676"/>
-    <path d="M680 774 H778 V676"/>
-  </g>
-  <rect x="196" y="497" width="632" height="14" rx="7" fill="#3a4e75" opacity="0.18"/>
-  <path d="M512 340 C527 445 561 479 666 494 C561 509 527 543 512 648 C497 543 463 509 358 494 C463 479 497 445 512 340 Z" fill="#c06a3e"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" fill="none">
+  <defs>
+    <linearGradient id="bb-bg" x1="3" y1="3" x2="45" y2="45" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#48618f"/>
+      <stop offset="1" stop-color="#2e3d5c"/>
+    </linearGradient>
+    <linearGradient id="bb-gold" x1="16" y1="17" x2="34" y2="35" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#f6d27a"/>
+      <stop offset="1" stop-color="#d48806"/>
+    </linearGradient>
+  </defs>
+  <!-- 深靛方印：企业级底座的稳重感 -->
+  <rect x="2" y="2" width="44" height="44" rx="13.5" fill="#faf7f2"/>
+  <rect x="2" y="2" width="44" height="44" rx="13.5" fill="url(#bb-bg)" fill-opacity="0.92"/>
+  <!-- 管家铃：铃身 = 随叫随到的服务；底座 = 经营台面 -->
+  <path d="M13.4 33.2 C13.4 25.4 16.9 19.8 24 19.8 C31.1 19.8 34.6 25.4 34.6 33.2 Z" fill="url(#bb-gold)"/>
+  <path d="M16.9 30.6 C17.3 24.6 19.8 21.4 23.2 20.4" stroke="#faf7f2" stroke-opacity="0.55" stroke-width="1.2" stroke-linecap="round"/>
+  <circle cx="24" cy="17.2" r="2.3" fill="#f6d27a"/>
+  <rect x="11" y="34" width="26" height="3.2" rx="1.6" fill="#faf7f2"/>
+  <!-- 右上角星芒：词元 / AI 的底座，不抢铃的主体 -->
+  <path d="M36.2 11.4 C36.6 13.6 37.9 14.9 40.1 15.3 C37.9 15.7 36.6 17 36.2 19.2 C35.8 17 34.5 15.7 32.3 15.3 C34.5 14.9 35.8 13.6 36.2 11.4 Z" fill="#f6d27a"/>
 </svg>

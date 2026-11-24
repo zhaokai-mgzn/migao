@@ -1,8 +1,9 @@
 import { useEffect, useCallback } from 'react'
-import { View, Text } from '@tarojs/components'
+import { View, Text, Image } from '@tarojs/components'
 import Taro from '@tarojs/taro'
 import { useAuthStore } from '../../../store/authStore'
 import { DEFAULT_TENANT_ID } from '../../../utils/constants'
+import brandLogo from '../../../assets/brand/logo-144.png'
 import './index.scss'
 
 export default function LoginPage() {
@@ -51,13 +52,11 @@ export default function LoginPage() {
     <View className='login-page'>
       {/* 顶部品牌区域 */}
       <View className='login-brand'>
-        <View className='login-brand__icon'>
-          <Text className='login-brand__icon-text'>AI</Text>
-        </View>
+        <Image className='login-brand__icon-img' src={brandLogo} mode='aspectFit' />
         {/* AI 角色标签口径见 frontend/admin-web/src/config/ai-roles.ts（issue #6330/#6333）；
             本 App 是独立工程，不跨 App 引共享模块（#6306 教训：落在发布集外 ⇒ 白屏）⇒ 本地字面量 + 测试钉值。
             注意：buildBrandSubtitle 的「{企业名} · 智能购物助手」是**店铺描述**，不是 AI 角色，不动。 */}
-        <Text className='login-brand__title'>米宝 · 企业智能客服</Text>
+        <Text className='login-brand__title'>生意管家 · 米宝智能客服</Text>
         <Text className='login-brand__subtitle'>您的专属智能购物助手</Text>
       </View>
 

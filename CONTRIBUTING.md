@@ -1,6 +1,6 @@
 # 贡献指南（Contributing Guide）
 
-欢迎参与 MIGAO（观星台 · 布艺行业 AI 经营平台）！本指南面向**外部贡献者**与首次参与的开发者。内部研发流程见 [Development](https://github.com/zhaokai-mgzn/migao/wiki/Development)。
+欢迎参与 MIGAO（生意管家 · 布艺行业 AI 经营平台）！本指南面向**外部贡献者**与首次参与的开发者。内部研发流程见 [Development](https://github.com/zhaokai-mgzn/migao/wiki/Development)。
 
 ## 1. 项目速览
 

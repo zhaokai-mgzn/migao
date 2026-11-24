@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 232 64" fill="none">
+  <defs>
+    <linearGradient id="lb-bg" x1="6" y1="6" x2="58" y2="58" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#48618f"/><stop offset="1" stop-color="#2e3d5c"/>
+    </linearGradient>
+    <linearGradient id="lb-gold" x1="22" y1="23" x2="44" y2="45" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#f6d27a"/><stop offset="1" stop-color="#d48806"/>
+    </linearGradient>
+  </defs>
+  <rect x="4" y="4" width="56" height="56" rx="17" fill="url(#lb-bg)"/>
+  <path d="M18.6 42.4 C18.6 32.6 22.9 25.8 32 25.8 C41.1 25.8 45.4 32.6 45.4 42.4 Z" fill="url(#lb-gold)"/>
+  <path d="M23 39.1 C23.5 31.7 26.6 27.8 30.9 26.5" stroke="#faf7f2" stroke-opacity="0.55" stroke-width="1.5" stroke-linecap="round"/>
+  <circle cx="32" cy="22.5" r="2.9" fill="#f6d27a"/>
+  <rect x="15.5" y="43.4" width="33" height="4" rx="2" fill="#faf7f2"/>
+  <path d="M47.8 16.3 C48.3 19.1 49.9 20.7 52.7 21.2 C49.9 21.7 48.3 23.3 47.8 26.1 C47.3 23.3 45.7 21.7 42.9 21.2 C45.7 20.7 47.3 19.1 47.8 16.3 Z" fill="#f6d27a"/>
+  <text x="72" y="31" font-family="'PingFang SC','Hiragino Sans GB','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="24" font-weight="700" fill="#2e3d5c">生意管家</text>
+  <text x="72.5" y="47" font-family="'Helvetica Neue',Arial,sans-serif" font-size="9" font-weight="600" letter-spacing="3.2" fill="#8c7f6b">词元通达 · AI 经营平台</text>
+</svg>

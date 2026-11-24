@@ -1,4 +1,4 @@
-# AGENTS.md — MIGAO（观星台 · 布艺行业 AI 经营平台）
+# AGENTS.md — MIGAO（生意管家 · 布艺行业 AI 经营平台）
 
 > DSH（DeepSeek Harness）会话的仓库级入口。开发前先读本文件，再按需查阅 https://github.com/zhaokai-mgzn/migao/wiki/INDEX 定位规范页。
 

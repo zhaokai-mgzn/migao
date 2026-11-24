@@ -809,7 +809,7 @@ function EnterpriseDomainPanel() {
                 </div>
                 <input ref={fileInputRef} type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={handleLogoUpload} />
                 <p className="text-xs text-neutral-400 mt-1.5">
-                  未设置时展示观星台默认 Logo；上传或移除后自动保存，将展示在后台侧边栏企业名旁
+                  未设置时展示生意管家默认 Logo；上传或移除后自动保存，将展示在后台侧边栏企业名旁
                 </p>
               </div>
             </div>

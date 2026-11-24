@@ -29,7 +29,7 @@ export default function GlobalError({
         <ErrorFallback
           error={error}
           reset={reset}
-          title="观星台暂时无法加载"
+          title="生意管家暂时无法加载"
           description="页面渲染出现异常，已经记录。可以点「重试」重新加载；仍然不行就回首页重新进入。"
           homeHref="/"
           homeLabel="回到首页"

@@ -21,7 +21,7 @@ describe('CorporateFooter（官网页脚 v4：主体事实 + 能力入口，issu
   it('renders quick links（内测期不含商家入驻入口，OB-008）', () => {
     render(<CorporateFooter />)
     expect(screen.getByText('首页')).toBeInTheDocument()
-    expect(screen.getByText('产品服务')).toBeInTheDocument()
+    expect(screen.getAllByText('产品能力').length).toBeGreaterThanOrEqual(1)
     expect(screen.queryByText('商家入驻')).not.toBeInTheDocument()
     const registerLinks = screen
       .queryAllByRole('link')
@@ -31,8 +31,8 @@ describe('CorporateFooter（官网页脚 v4：主体事实 + 能力入口，issu
 
   it('renders 产品能力入口（都指向 /services 的能力清单）', () => {
     render(<CorporateFooter />)
-    expect(screen.getByText('产品能力')).toBeInTheDocument()
-    const capabilityLink = screen.getByText('生产工序与计件工资').closest('a')
+    expect(screen.getAllByText('产品能力').length).toBeGreaterThanOrEqual(1)
+    const capabilityLink = screen.getByText('顾客服务').closest('a')
     expect(capabilityLink).toHaveAttribute('href', '/services')
   })
 
@@ -44,7 +44,7 @@ describe('CorporateFooter（官网页脚 v4：主体事实 + 能力入口，issu
   it('renders copyright with legal company name', () => {
     render(<CorporateFooter />)
     expect(
-      screen.getByText(/© 2026 杭州词元通达科技有限公司 · 观星台 版权所有/)
+      screen.getByText(/© 2026 杭州词元通达科技有限公司 · 生意管家 版权所有/)
     ).toBeInTheDocument()
   })
 

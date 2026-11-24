@@ -125,7 +125,7 @@ export default function FeatureGuide({ enabled = true }: FeatureGuideProps) {
               <Sparkles className="h-5 w-5" aria-hidden />
             </span>
             <div>
-              <h4 className="text-base font-semibold text-neutral-900">欢迎使用观星台</h4>
+              <h4 className="text-base font-semibold text-neutral-900">欢迎使用生意管家</h4>
               <p className="mt-1 text-sm leading-6 text-neutral-600">
                 这是一份按你的岗位权限生成的功能地图，帮你快速找到要用的功能。
               </p>
