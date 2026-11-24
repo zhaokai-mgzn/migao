@@ -1247,6 +1247,9 @@ def test_sse_probe_is_reachable_through_nginx_on_the_user_path():
     body = m.group(1)
     assert "allow 127.0.0.1;" in body, "探针入口没有限定来源（公网可打 = 白送一个长连接口）"
     assert "deny all;" in body, "探针入口缺 `deny all` ⇒ 没限住非本机来源"
+    # 私有网段必须放行：宿主网络模式的容器打过来时源 IP 不在 127.0.0.1（2026-11-24 实测 403）
+    assert "allow 172.16.0.0/12;" in body, "漏了 compose 私有网段 ⇒ 探测容器会被 `deny all` 拦在门外"
+    assert "allow 10.0.0.0/8;" in body, "漏了宿主内网段 ⇒ 宿主侧探测会被拦"
     assert re.search(r"proxy_pass\s+http://migao_\w+;", body), (
         "探针入口必须 proxy_pass 到 **upstream 名**（直连服务名就绕过了摘挂机制，测不到用户路径）"
     )
