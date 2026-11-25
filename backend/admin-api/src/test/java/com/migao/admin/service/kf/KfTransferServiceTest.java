@@ -22,6 +22,7 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -85,5 +86,23 @@ class KfTransferServiceTest {
                 .isInstanceOf(KfApiException.class);
         verify(agentSessionMapper).deleteById("a1");
         verify(remoteMapper, never()).updateState(anyString(), anyInt());
+    }
+
+    @Test
+    @DisplayName("结束人工：trans(4) + closeSession；已关闭则幂等返回")
+    void endHuman() {
+        when(remoteMapper.selectBySessionId("s1")).thenReturn(KfSessionRemote.builder()
+                .sessionId("s1").openKfid("wk").externalUserid("wm").build());
+        when(channelMapper.selectByOpenKfid("wk")).thenReturn(KfChannel.builder().corpId("corp").build());
+        when(tokenService.token(any(KfChannel.class))).thenReturn("tok");
+
+        service.endHumanSession(1L, "s1", "human_end");
+        verify(client).transServiceState("tok", "wk", "wm", 4);
+        verify(remoteMapper).closeSession("s1", "human_end");
+
+        when(remoteMapper.selectBySessionId("s1")).thenReturn(KfSessionRemote.builder()
+                .sessionId("s1").closedAt(java.time.OffsetDateTime.now()).build());
+        service.endHumanSession(1L, "s1", "human_end");
+        verify(client, times(1)).transServiceState(anyString(), anyString(), anyString(), anyInt());
     }
 }

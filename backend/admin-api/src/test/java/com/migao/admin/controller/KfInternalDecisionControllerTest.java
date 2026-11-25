@@ -26,5 +26,7 @@ class KfInternalDecisionControllerTest {
         when(transfer.transferToHuman(1L, "s1", "r")).thenReturn("a1");
         assertThat(controller.transfer(new KfInternalDecisionController.TransferRequest(1L, "s1", "r"))
                 .getBody()).containsEntry("agent_session_id", "a1");
+        assertThat(controller.end(new KfInternalDecisionController.TransferRequest(1L, "s1", "human_end"))
+                .getBody()).containsEntry("ended", true);
     }
 }

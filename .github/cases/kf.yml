@@ -490,3 +490,24 @@ cases:
         - "backend/admin-api/src/test/java/com/migao/admin/service/kf/KfCardRendererTest.java"
       ci: [pr-check.yml]
       verifies: []
+
+  - id: KF-024
+    legacy_id: ""
+    title: "KfTransferService — 人工结束 trans(4) + 关闭当前段"
+    domains: [kf]
+    tier: normal
+    tags: [kf, transfer]
+    truths_ref: [kf.end-human]
+    user_inputs:
+      - "调用 endHumanSession；再对已关闭会话重复调用"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "trans(4) 一次 + closeSession 一次；已关闭会话幂等不再调 trans"
+    skip_reason: "[backend-contract] 纯单元测试，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-11-25 新增：微信客服 PR3d（issue #9192）"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/kf/KfTransferServiceTest.java"
+      ci: [pr-check.yml]
+      verifies: []
