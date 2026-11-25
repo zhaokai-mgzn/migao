@@ -1,0 +1,177 @@
+# cases/kf.yml — 微信客服通道层用例（issue #9171）
+schema: "case-contract/1.0"
+domain: kf
+
+cases:
+  - id: KF-001
+    legacy_id: ""
+    title: "SecretCipher — AES-GCM 往返 + 篡改/错 key 必失败"
+    domains: [kf]
+    tier: normal
+    tags: [kf, crypto]
+    truths_ref: [kf.secret-cipher]
+    user_inputs:
+      - "加密一段凭据明文，再用同一主密钥解密"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "roundtrip 明文逐字相等；密文以 v1: 开头"
+      - "篡改密文任意一位 ⇒ 解密抛异常；换主密钥 ⇒ 解密抛异常"
+    skip_reason: "[backend-contract] 纯单元测试，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-11-25 新增：微信客服通道层 PR2（issue #9171）"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/kf/SecretCipherTest.java"
+      ci: [pr-check.yml]
+      verifies: []
+
+  - id: KF-002
+    legacy_id: ""
+    title: "企微回调 — 签名校验 + AES 解密 + receiveid 校验"
+    domains: [kf]
+    tier: normal
+    tags: [kf, callback, crypto]
+    truths_ref: [kf.callback-crypto]
+    user_inputs:
+      - "构造一条带合法 msg_signature 的回调密文，解密得到明文与 receiveid"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "合法签名 + 合法密文 ⇒ 明文逐字相等"
+      - "签名错 / 密文篡改 / receiveid 不匹配 ⇒ 抛异常"
+    skip_reason: "[backend-contract] 纯单元测试，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-11-25 新增：微信客服通道层 PR2（issue #9171）"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/kf/WeChatKfCryptoTest.java"
+      ci: [pr-check.yml]
+      verifies: []
+
+  - id: KF-003
+    legacy_id: ""
+    title: "WechatKfClient — gettoken/sync_msg/send_msg 解析 + errcode 抛错"
+    domains: [kf]
+    tier: normal
+    tags: [kf, client]
+    truths_ref: [kf.client]
+    user_inputs:
+      - "调用 gettoken、sync_msg、send_msg，并模拟 95014 错误"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "正常响应解析出 access_token / has_more / msgid"
+      - "errcode=95014 ⇒ KfApiException.errcode=95014"
+    skip_reason: "[backend-contract] 纯单元测试，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-11-25 新增：微信客服通道层 PR2（issue #9171）"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/kf/WechatKfClientTest.java"
+      ci: [pr-check.yml]
+      verifies: []
+
+  - id: KF-004
+    legacy_id: ""
+    title: "KfCallbackService — 验签/解密/落 inbox/置 dirty"
+    domains: [kf]
+    tier: normal
+    tags: [kf, callback]
+    truths_ref: [kf.callback-inbox]
+    user_inputs:
+      - "构造合法回调、重复回调、坏签名、未知渠道四种输入"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "合法 ⇒ insertIgnore 一次 + markDirty 一次"
+      - "重复（insert 返回 0）⇒ markDirty 仍一次"
+      - "坏签名 ⇒ 抛异常且不落库；未知渠道 ⇒ 200 受理但不落库"
+    skip_reason: "[backend-contract] 纯单元测试，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-11-25 新增：微信客服通道层 PR2（issue #9171）"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/kf/KfCallbackServiceTest.java"
+      ci: [pr-check.yml]
+      verifies: []
+
+  - id: KF-005
+    legacy_id: ""
+    title: "KfCallbackController — 未配置 503 / GET 明文 / POST 200"
+    domains: [kf]
+    tier: normal
+    tags: [kf, callback, controller]
+    truths_ref: [kf.callback-controller]
+    user_inputs:
+      - "未配置、GET 验证、POST 回调三种请求"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "未配置 ⇒ 503；GET ⇒ 200 + echostr 明文；POST ⇒ 200 空串且 service.handle 被调用"
+    skip_reason: "[backend-contract] 纯单元测试，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-11-25 新增：微信客服通道层 PR2（issue #9171）"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/controller/KfCallbackControllerTest.java"
+      ci: [pr-check.yml]
+      verifies: []
+
+  - id: KF-006
+    legacy_id: ""
+    title: "KF-006 — 渠道反查 SQL 与租户拦截豁免"
+    domains: [kf]
+    tier: normal
+    tags: [kf, mapper]
+    truths_ref: [kf.mapper-contract]
+    user_inputs:
+      - "反射读取 Mapper 注解 SQL 并断言关键片段"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "SQL 含目标表/冲突键；租户拦截 tenantLine=true"
+    skip_reason: "[backend-contract] 纯单元测试，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-11-25 新增：微信客服通道层 PR2（issue #9171）"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/mapper/KfChannelMapperTest.java"
+      ci: [pr-check.yml]
+      verifies: []
+
+  - id: KF-007
+    legacy_id: ""
+    title: "KF-007 — inbox 幂等 INSERT 与 jsonb 转换"
+    domains: [kf]
+    tier: normal
+    tags: [kf, mapper]
+    truths_ref: [kf.mapper-contract]
+    user_inputs:
+      - "反射读取 Mapper 注解 SQL 并断言关键片段"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "SQL 含目标表/冲突键；租户拦截 tenantLine=true"
+    skip_reason: "[backend-contract] 纯单元测试，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-11-25 新增：微信客服通道层 PR2（issue #9171）"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/mapper/KfInboxMapperTest.java"
+      ci: [pr-check.yml]
+      verifies: []
+
+  - id: KF-008
+    legacy_id: ""
+    title: "KF-008 — dirty upsert 语义"
+    domains: [kf]
+    tier: normal
+    tags: [kf, mapper]
+    truths_ref: [kf.mapper-contract]
+    user_inputs:
+      - "反射读取 Mapper 注解 SQL 并断言关键片段"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "SQL 含目标表/冲突键；租户拦截 tenantLine=true"
+    skip_reason: "[backend-contract] 纯单元测试，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-11-25 新增：微信客服通道层 PR2（issue #9171）"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/mapper/KfSyncCursorMapperTest.java"
+      ci: [pr-check.yml]
+      verifies: []

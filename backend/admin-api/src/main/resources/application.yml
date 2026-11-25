@@ -204,6 +204,13 @@ wechat:
   # Mock 模式（审计 07 P1-1）：默认 false = 生产 fail-closed。
   # 仅 dev/CI 显式设置 WECHAT_MOCK_ENABLED=true；生产未配 appid/secret 时 mini 登录直接拒绝。
   mock-enabled: ${WECHAT_MOCK_ENABLED:false}
+  # 微信客服（qyapi kf）回调：第三方应用为 suite 级 Token/AESKey；receive-id = suiteid。
+  # 未配置 ⇒ 回调端点 503（fail-closed），不影响其他功能。
+  kf:
+    enabled: ${WECHAT_KF_ENABLED:false}
+    token: ${WECHAT_KF_TOKEN:}
+    encoding-aes-key: ${WECHAT_KF_ENCODING_AES_KEY:}
+    receive-id: ${WECHAT_KF_RECEIVE_ID:}
 
 # 日志配置
 logging:
