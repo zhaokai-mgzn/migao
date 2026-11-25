@@ -12,6 +12,10 @@ import org.apache.ibatis.annotations.Update;
 public interface KfSessionRemoteMapper {
 
     @InterceptorIgnore(tenantLine = "true")
+    @Select("SELECT * FROM kf_session_remote WHERE session_id = #{sessionId} LIMIT 1")
+    KfSessionRemote selectBySessionId(@Param("sessionId") String sessionId);
+
+    @InterceptorIgnore(tenantLine = "true")
     @Select("SELECT * FROM kf_session_remote WHERE tenant_id = #{tenantId} AND open_kfid = #{openKfid} "
             + "AND external_userid = #{externalUserid} AND closed_at IS NULL LIMIT 1")
     KfSessionRemote selectCurrent(@Param("tenantId") Long tenantId,

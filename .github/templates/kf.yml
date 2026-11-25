@@ -5,6 +5,11 @@ business_truths:
   - [kf.secret-cipher] SecretCipher 用 AES-256-GCM 加密凭据明文；密文格式 v1:<keyId>:base64(iv|ct|tag)；同一主密钥可往返，篡改密文或换主密钥必失败；空主密钥构造即失败
   - [kf.callback-crypto] 企业微信回调用 msg_signature = sha1(sort(token,timestamp,nonce,encrypt)) 校验；AES-256-CBC/PKCS7 解密后按 16 字节随机数 + 4 字节 msg_len + msg + receiveid 解析；receiveid 不匹配必失败
   - [kf.client] WechatKfClient 封装 gettoken/sync_msg/send_msg/service_state；errcode!=0 抛 KfApiException；connect 2s / read 8s；msgid 由调用方生成并原样返回
+  - [kf.send] 回复入队：校验 wechat_kf 会话 → 48h/5 条预算原子扣减 → 写 kf_outbox；预算耗尽抛异常
+  - [kf.outbox-sender] sender claim pending/sending 超时 → sendText（同 msgid）→ accepted/failed；失败落 fail_type
+  - [kf.outbox-mapper] outbox claim 用 FOR UPDATE SKIP LOCKED，parts 从 jsonb 转 text
+  - [kf.budget] kf_send_budget 单行原子扣减：48h 窗口重置 + used<5
+  - [kf.reply-controller] /api/internal/kf/reply 返回 msgid；预算耗尽 429
   - [kf.ingest] sync_msg 的 origin=3 客户消息落 sessions/session_messages；msgid 幂等；origin=5 回显忽略
   - [kf.sync-worker] dirty 游标 claim（SKIP LOCKED）→ sync_msg 循环（has_more 空列表也推进）→ ingest → 清 dirty；失败只释放 claim
   - [kf.session-remote-mapper] 同一 (open_kfid, external_userid) 当前段唯一，并发建会话用部分索引冲突静默忽略

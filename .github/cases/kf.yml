@@ -301,3 +301,108 @@ cases:
         - "backend/admin-api/src/test/java/com/migao/admin/config/KfClientConfigTest.java"
       ci: [pr-check.yml]
       verifies: []
+
+  - id: KF-015
+    legacy_id: ""
+    title: "KfSendService — 校验会话/预算扣减/入队"
+    domains: [kf]
+    tier: normal
+    tags: [kf, outbox]
+    truths_ref: [kf.send]
+    user_inputs:
+      - "按用例名构造输入"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "断言与用例标题一致"
+    skip_reason: "[backend-contract] 纯单元测试，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-11-25 新增：微信客服 PR3b（issue #9181）"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/kf/KfSendServiceTest.java"
+      ci: [pr-check.yml]
+      verifies: []
+
+  - id: KF-016
+    legacy_id: ""
+    title: "KfOutboxSender — claim/sendText/accepted/fail_type"
+    domains: [kf]
+    tier: normal
+    tags: [kf, outbox]
+    truths_ref: [kf.outbox-sender]
+    user_inputs:
+      - "按用例名构造输入"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "断言与用例标题一致"
+    skip_reason: "[backend-contract] 纯单元测试，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-11-25 新增：微信客服 PR3b（issue #9181）"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/kf/KfOutboxSenderTest.java"
+      ci: [pr-check.yml]
+      verifies: []
+
+  - id: KF-017
+    legacy_id: ""
+    title: "KfOutboxMapper — SKIP LOCKED claim"
+    domains: [kf]
+    tier: normal
+    tags: [kf, outbox]
+    truths_ref: [kf.outbox-mapper]
+    user_inputs:
+      - "按用例名构造输入"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "断言与用例标题一致"
+    skip_reason: "[backend-contract] 纯单元测试，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-11-25 新增：微信客服 PR3b（issue #9181）"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/mapper/KfOutboxMapperTest.java"
+      ci: [pr-check.yml]
+      verifies: []
+
+  - id: KF-018
+    legacy_id: ""
+    title: "KfSendBudgetMapper — 48h/5 条原子扣减"
+    domains: [kf]
+    tier: normal
+    tags: [kf, outbox]
+    truths_ref: [kf.budget]
+    user_inputs:
+      - "按用例名构造输入"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "断言与用例标题一致"
+    skip_reason: "[backend-contract] 纯单元测试，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-11-25 新增：微信客服 PR3b（issue #9181）"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/mapper/KfSendBudgetMapperTest.java"
+      ci: [pr-check.yml]
+      verifies: []
+
+  - id: KF-019
+    legacy_id: ""
+    title: "KfInternalReplyController — 200/429"
+    domains: [kf]
+    tier: normal
+    tags: [kf, outbox]
+    truths_ref: [kf.reply-controller]
+    user_inputs:
+      - "按用例名构造输入"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "断言与用例标题一致"
+    skip_reason: "[backend-contract] 纯单元测试，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-11-25 新增：微信客服 PR3b（issue #9181）"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/controller/KfInternalReplyControllerTest.java"
+      ci: [pr-check.yml]
+      verifies: []

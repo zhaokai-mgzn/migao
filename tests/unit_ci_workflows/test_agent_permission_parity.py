@@ -1207,6 +1207,9 @@ UNANNOTATED_ENDPOINTS: dict[str, str] = {
     # 不读租户/业务数据，只落 kf_inbox 并置 sync dirty；加权限码 = 平台回调全 401 = 消息全丢。
     "GET /api/kf/callback": "企微回调验证：`permitAll` 有意放行（msg_signature + receiveid；未配置 503）",
     "POST /api/kf/callback": "企微回调收件：同上（验签解密后只落 inbox，不读业务数据）",
+    # issue #9181：AI/工作台 → 回复入队（内部服务面，ServiceTokenFilter 保护；
+    # 无用户会话 ⇒ 不能加权限码，准入靠 X-Service-Token fail-closed）。
+    "POST /api/internal/kf/reply": "内部回复入队：Service Token 保护；只入队 outbox，不直接发",
     "GET /api/admin/notifications*": "自助通知中心：收件人一律取 `SecurityContext` 当前用户（#4727 第 4 行）",
     "PUT /api/admin/notifications*": "同上（标记已读）",
     "DELETE /api/admin/notifications*": "同上（删除自己的通知）",

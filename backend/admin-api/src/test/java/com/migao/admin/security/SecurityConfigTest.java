@@ -515,6 +515,10 @@ class SecurityConfigTest {
     private com.migao.admin.mapper.KfSyncCursorMapper kfSyncCursorMapper;
     @MockBean
     private com.migao.admin.mapper.KfSessionRemoteMapper kfSessionRemoteMapper;
+    @MockBean
+    private com.migao.admin.mapper.KfOutboxMapper kfOutboxMapper;
+    @MockBean
+    private com.migao.admin.mapper.KfSendBudgetMapper kfSendBudgetMapper;
 
     // 生产报工（issue #3995，V49）：新增的 Mapper / Service 同样没有 sqlSessionFactory，
     // 必须在此 mock，否则整个上下文起不来（安全用例连坐失败）。
