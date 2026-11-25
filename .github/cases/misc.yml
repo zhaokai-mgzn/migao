@@ -11163,3 +11163,23 @@ cases:
       tests:
         - "tests/unit_ci_workflows/test_ci_cost_ledger.py"
     merge_log: "2026-11-25 新增（#9159 的连带发现）。现场：MC-364 剔除门控跳过跑次后，10 条腿 n 掉到 3 以下，`--measure --allow-partial` 把它们的 `budget_seconds` 写成 null ⇒ 那些腿从此没有「超了红」的口径。修法：n<3 且上一版有预算 ⇒ 整条沿用（并逐腿打印「保留」），留白只给从未有过读数的腿。红证：把保留分支短路成 `elif False:` ⇒ 判据 FAILED；还原 ⇒ 17 passed。取号 = next_case_id.py MC ⇒ MC-365。"
+  - id: MC-366
+    legacy_id: ""
+    title: "xdist 控制器也必须拿机器级准入锁（-n N 曾能绕过「重活串行」）"
+    domains:
+      - misc
+      - ci
+    tier: normal
+    tags:
+      - ci
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "**判据 1·控制器拿锁**：直接驱动 `pytest_configure`（伪造 `numprocesses=2`、无 `workerinput`）⇒ 必须调 `acquire_suite_lock`；不调即红。理由：`-n` 下收集由 worker 做，控制器**不调用** `pytest_collection` ⇒ 挂在那里的拿锁点不触发。合成 config：`未被调用`。执行点 = `test_suite_self_lock.py::TestXdistControllerTakesTheLock::test_configure_hook_acquires_on_the_controller`"
+      - "**判据 2·worker 不抢锁**：`PYTEST_XDIST_WORKER` 已设 ⇒ 不得调 `acquire_suite_lock`（N 个 worker 互抢 = 互相拒绝）。执行点 = `::test_worker_never_acquires`"
+      - "**判据 3·同进程幂等**：连续两次 `acquire_suite_lock` ⇒ 锁脚本只能被调 **1 次**（第二次走幂等短路）。否则真机上 `pytest_configure` 与 `pytest_collection` 各 acquire 一次 ⇒ 锁脚本把「自己」当活持有者 ⇒ 自锁。执行点 = `::test_acquire_is_idempotent_within_one_process`"
+      - "**判据 4·真子进程拒绝**：活持有者 + `-n 2 --collect-only` ⇒ rc≠0 且报文含 `6019`/`准入被拒`。执行点 = `::test_xdist_controller_is_refused_before_any_collection`"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_suite_self_lock.py"
+    merge_log: "2026-11-25 新增（issue #9105）。现场：`pytest tests/unit_ci_workflows -q -n 4` 全程无锁文件、无排队、无拒绝报文，而同刻在跑 536 个判据文件 ⇒ 加 `-n` 即可绕过「重活串行」（#6019 射程洞）。根因：拿锁钩子挂在 `pytest_collection`，`-n` 下收集由 worker 执行、控制器不调用它。修法：新增 `pytest_configure` 拿锁点（控制器一定触发、早于收集）+ `PYTEST_XDIST_WORKER` 跳过 worker + `acquire_suite_lock` 同进程幂等（`_SUITE_LOCK_HELD`），`pytest_collection` 保留作兜底。红证实跑：摘掉 configure 里的 acquire ⇒ 判据 1 FAILED；删掉幂等短路 ⇒ 判据 3 FAILED（锁脚本被调 2 次）。取号 = next_case_id.py MC ⇒ MC-366。"

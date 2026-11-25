@@ -683,3 +683,81 @@ class TestDisciplineIsUpdated:
         assert "那一路没有锁" not in section, (
             "「机器级重活并发准入」节仍写着旧读数「直连整目录那一路没有锁」⇒ 文档与实现脱钩"
         )
+
+
+# ────────────────────────── ④ xdist 控制器拿锁（issue #9105 的射程洞）
+
+class TestXdistControllerTakesTheLock:
+    """`-n N`（xdist）下**控制器**必须拿锁 —— 挂在 `pytest_collection` 上的拿锁点不触发（收集由 worker 做）。
+
+    现场（issue #9105）：`pytest tests/unit_ci_workflows -q -n 4` 全程没有锁文件、没有排队、没有拒绝报文，
+    而同一时刻它在跑 536 个判据文件 ⇒ 加一个 `-n` 就能绕过「重活串行」。
+    """
+
+    def test_configure_hook_acquires_on_the_controller(self, monkeypatch):
+        """直接驱动钩子：控制器（`numprocesses=2`、无 `workerinput`）⇒ **必须**调 `acquire_suite_lock`。"""
+        calls: list[dict] = []
+
+        def fake_acquire(env=None):
+            calls.append({"env": dict(env or {})})
+            return True, "ok"
+
+        monkeypatch.delenv("PYTEST_XDIST_WORKER", raising=False)
+        monkeypatch.setattr(suite_conftest, "acquire_suite_lock", fake_acquire)
+
+        class _Opt:
+            numprocesses = 2
+
+        class _Cfg:
+            option = _Opt()
+            invocation_params = type("P", (), {"args": [str(SUITE)]})()
+
+        suite_conftest.pytest_configure(_Cfg())
+        assert calls, (
+            "控制器上 `pytest_configure` 没有拿锁 —— 而 `-n` 下 `pytest_collection` 不触发，"
+            "等于「加一个 -n 就能绕过重活串行」（issue #9105）"
+        )
+
+    def test_worker_never_acquires(self, monkeypatch):
+        """xdist worker（`PYTEST_XDIST_WORKER` 已设）⇒ **不得**拿锁（N 个 worker 互抢 = 死锁）。"""
+        calls: list[int] = []
+        monkeypatch.setenv("PYTEST_XDIST_WORKER", "gw0")
+        monkeypatch.setattr(suite_conftest, "acquire_suite_lock", lambda env=None: calls.append(1) or (True, "ok"))
+
+        class _Cfg:
+            option = type("O", (), {"numprocesses": 2})()
+            invocation_params = type("P", (), {"args": [str(SUITE)]})()
+
+        suite_conftest.pytest_configure(_Cfg())
+        assert not calls, "worker 也去抢锁了 —— 控制器已拿，worker 再抢只会互相拒绝"
+
+    def test_acquire_is_idempotent_within_one_process(self, tmp_path):
+        """同进程第二次 `acquire_suite_lock` **不得**再调锁脚本（否则锁脚本把「自己」当活持有者 ⇒ 自锁）。"""
+        log = tmp_path / "stub.log"
+        stub = tmp_path / "stub-lock.sh"
+        stub.write_text(f'#!/bin/bash\necho call >> "{log}"\nexit 0\n', encoding="utf-8")
+        stub.chmod(0o755)
+        env = {"MIGAO_HEAVY_LOCK_SCRIPT": str(stub), "MIGAO_HEAVY_LOCK_FILE": str(tmp_path / "l.lock"),
+               "MIGAO_HEAVY_ROOTS": str(tmp_path / "no-roots"), "MIGAO_HEAVY_LOCK_HELD": ""}
+        env.pop("MIGAO_HEAVY_LOCK_HELD")
+        try:
+            ok1, _ = suite_conftest.acquire_suite_lock(env)
+            ok2, detail2 = suite_conftest.acquire_suite_lock(env)
+        finally:
+            suite_conftest.release_suite_lock(env)
+        assert ok1 and ok2, f"同进程二次 acquire 必须成功（幂等），实得 {ok1=} {ok2=} {detail2=}"
+        assert log.read_text().count("call") == 1, (
+            "锁脚本被调了不止一次 —— 第二次 acquire 没有走幂等短路（真机上这会变成「自己占着自己」的自锁）"
+        )
+
+    def test_xdist_controller_is_refused_before_any_collection(self, tmp_path):
+        """真子进程：活持有者 + `-n 2` ⇒ 必须在**收集之前**被拒（rc≠0 + 具名报文）。"""
+        lock = tmp_path / "heavy.lock"
+        holder = _unrelated_live_holder(lock)
+        try:
+            r = _run_pytest([SUITE], lock, extra_args=["--collect-only", "-q", "-n", "2"])
+        finally:
+            holder.kill()
+        out = r.stdout + r.stderr
+        assert r.returncode != 0, f"`-n 2` 下锁被占用却没被拒 ⇒ 准入在 xdist 形态失效：\n{out[-1200:]}"
+        assert "6019" in out or "准入被拒" in out, f"拒绝报文没有具名标识（issue #6019）：\n{out[-1200:]}"
