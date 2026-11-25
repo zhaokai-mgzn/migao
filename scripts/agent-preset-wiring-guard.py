@@ -53,6 +53,7 @@ import yaml
 
 PRESET_PLUGIN = "@deepseek-ai/dsh-agent-preset"
 SKILL_PLUGIN = "@deepseek-ai/dsh-skill-filesystem"
+INCLUDE_PLUGIN = "cordis:include"
 JS_TAG = "tag:yaml.org,2002:js"
 
 #: `!!js` 表达式的求值上下文与 Loader 一致（`with (ctx) { eval(expr) }`，见 vendor/loader）；
@@ -98,10 +99,50 @@ def find_preset_row(document: object, preset_id: str) -> dict | None:
     return None
 
 
-def skill_rows(preset_row: dict) -> list[dict]:
-    config = preset_row.get("config") or {}
-    plugins = config.get("plugins") or []
-    return [row for row in plugins if isinstance(row, dict) and row.get("name") == SKILL_PLUGIN]
+def expand_rows(rows: list, base_dir: Path, depth: int = 0) -> tuple[list[tuple[dict, Path]], list[str]]:
+    """展开 `cordis:include` 行，返回（技能行, 该行所属目录）与 include 错误。
+
+    `cordis:include` 的 `path` 是**字面量**（Loader 文档口径），相对路径按**引用它的那份组合文件**所在目录解析；
+    被 include 的文件里再写相对技能根时，也按**那个文件**的目录解析（Loader 会把 `ctx.baseUrl` 换成它）。
+    """
+    found: list[tuple[dict, Path]] = []
+    errors: list[str] = []
+    if depth > 3:
+        errors.append(f"include 嵌套过深（>3 层）：{base_dir}")
+        return found, errors
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        name = row.get("name")
+        if name == SKILL_PLUGIN:
+            found.append((row, base_dir))
+        elif name == INCLUDE_PLUGIN:
+            raw = (row.get("config") or {}).get("path")
+            if not isinstance(raw, str) or not raw:
+                errors.append(f"include 行 {row.get('id')!r} 缺字面量 path（{raw!r}）⇒ 组合装配不了")
+                continue
+            target = Path(os.path.expanduser(raw))
+            if not target.is_absolute():
+                target = base_dir / target
+            if not target.is_file():
+                errors.append(f"include 指向的组合文件不存在：{target}（{row.get('id')}）")
+                continue
+            try:
+                document = load_document(target)
+            except Exception as exc:  # noqa: BLE001
+                errors.append(f"读不了 include 的组合文件 {target}：{exc}")
+                continue
+            nested = document if isinstance(document, list) else [document]
+            sub, sub_errors = expand_rows(nested, target.parent, depth + 1)
+            found += sub
+            errors += sub_errors
+    return found, errors
+
+
+def skill_rows(preset_row: dict, patch_path: Path) -> tuple[list[tuple[dict, Path]], list[str]]:
+    """声明行里的技能行（**跟着 `cordis:include` 走**），返回（行, 所属目录）与错误。"""
+    plugins = (preset_row.get("config") or {}).get("plugins") or []
+    return expand_rows(plugins, patch_path.parent)
 
 
 def evaluate(expression: str, base_url: str, dsh_home: Path) -> str:
@@ -119,11 +160,11 @@ def evaluate(expression: str, base_url: str, dsh_home: Path) -> str:
     return proc.stdout
 
 
-def wiring_roots(rows: list[dict], base_url: str, dsh_home: Path) -> tuple[list[tuple[str, str]], list[str]]:
-    """返回（根路径, 来源说明）与**表达式错误**清单。"""
+def wiring_roots(rows: list[tuple[dict, Path]], dsh_home: Path) -> tuple[list[tuple[str, str]], list[str]]:
+    """返回（根路径, 来源说明）与**表达式/配置错误**清单；相对根按**该行所属组合文件**的目录解析。"""
     roots: list[tuple[str, str]] = []
     errors: list[str] = []
-    for row in rows:
+    for row, base_dir in rows:
         config = row.get("config") or {}
         row_id = row.get("id") or SKILL_PLUGIN
         for key in ("customSkillDirs", "bundledSkillDir"):
@@ -134,7 +175,7 @@ def wiring_roots(rows: list[dict], base_url: str, dsh_home: Path) -> tuple[list[
             for item in values:
                 try:
                     if isinstance(item, dict) and "__jsExpr" in item:
-                        resolved = evaluate(str(item["__jsExpr"]), base_url, dsh_home)
+                        resolved = evaluate(str(item["__jsExpr"]), base_dir.as_uri() + "/", dsh_home)
                     elif isinstance(item, str):
                         resolved = item
                     else:
@@ -143,7 +184,10 @@ def wiring_roots(rows: list[dict], base_url: str, dsh_home: Path) -> tuple[list[
                 except Exception as exc:  # noqa: BLE001 — 判据要对任何求值失败 fail-closed
                     errors.append(f"{row_id}.{key}：{exc}")
                     continue
-                roots.append((resolved, f"{row_id}.{key}"))
+                path = Path(os.path.expanduser(resolved))
+                if not path.is_absolute():
+                    path = base_dir / path
+                roots.append((str(path), f"{row_id}.{key}"))
     return roots, errors
 
 
@@ -194,14 +238,14 @@ def judge(profile_patch: Path, anchor: Path, preset_id: str, dsh_home: Path,
         say("   ⇒ 可能仍在用目录 preset，或本机未接线；**不得当 0 读**。")
         return 3
 
-    rows = skill_rows(preset_row)
-    problems: list[str] = []
-    if expected and not rows:
+    rows, include_errors = skill_rows(preset_row, profile_patch)
+    problems: list[str] = list(include_errors)
+    if expected and not rows and not include_errors:
         problems.append(
-            f"声明行 id={preset_id} 没有任何 {SKILL_PLUGIN} 行，而活锚里有 {len(expected)} 个技能"
-            f"（{', '.join(sorted(expected))}）⇒ 技能无处加载"
+            f"声明行 id={preset_id} 没有任何 {SKILL_PLUGIN} 行（含 cordis:include 展开后），"
+            f"而活锚里有 {len(expected)} 个技能（{', '.join(sorted(expected))}）⇒ 技能无处加载"
         )
-    roots, errors = wiring_roots(rows, base_url=(profile_patch.parent.as_uri() + "/"), dsh_home=dsh_home)
+    roots, errors = wiring_roots(rows, dsh_home=dsh_home)
     problems.extend(errors)
     if not roots and not problems:
         problems.append("声明行的 skill 行既没有 customSkillDirs 也没有 bundledSkillDir ⇒ 没接任何技能根")

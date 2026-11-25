@@ -191,3 +191,69 @@ def test_other_preset_only_is_three(guard, env):
     patch.write_text(patch.read_text(encoding="utf-8").replace("id: migao", "id: someone-else"), encoding="utf-8")
     code, out = judge(guard, dsh, anchor)
     assert code == 3, out
+
+
+# ── `cordis:include` 形态（2026-11-25 起 profile 声明行改用 include 引用活锚组合）──────────
+
+def write_include_patch(dsh: Path, include_path: str) -> Path:
+    """写一份「声明行只有一条 `cordis:include`」的 profile patch。"""
+    patch = dsh / "profiles" / "web" / "cordis.patch.yml"
+    patch.write_text(
+        "\n".join([
+            "- insert:",
+            "    - id: preset-migao",
+            "      name: '@deepseek-ai/dsh-agent-preset'",
+            "      config:",
+            "        id: migao",
+            "        plugins:",
+            "          - id: migao-composition",
+            "            name: 'cordis:include'",
+            "            config:",
+            f"              path: {include_path}",
+        ]) + "\n",
+        encoding="utf-8",
+    )
+    return patch
+
+
+def write_composition(path: Path, skill_root: str) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        "\n".join([
+            "- id: skill-filesystem",
+            "  name: '@deepseek-ai/dsh-skill-filesystem'",
+            "  config:",
+            "    providerName: migao",
+            "    includeDefaultRoots: false",
+            f"    bundledSkillDir: '{skill_root}'",
+        ]) + "\n",
+        encoding="utf-8",
+    )
+    return path
+
+
+def test_include_row_is_followed(guard, env, tmp_path: Path):
+    """声明行的技能行在 `cordis:include` 指向的组合里 ⇒ 必须跟进去判（否则改单源后自检会假红）。"""
+    dsh, anchor = env
+    composition = write_composition(tmp_path / "composition.yml", str(anchor / "skills"))
+    write_include_patch(dsh, str(composition))
+    code, out = judge(guard, dsh, anchor)
+    assert code == 0, out
+
+
+def test_relative_include_path_is_resolved(guard, env, tmp_path: Path):
+    """include 的相对 path 按**引用它的组合文件目录**解析（Loader 的 baseUrl 口径）。"""
+    dsh, anchor = env
+    write_composition(dsh / "profiles" / "web" / "nested" / "composition.yml", str(anchor / "skills"))
+    write_include_patch(dsh, "nested/composition.yml")
+    code, out = judge(guard, dsh, anchor)
+    assert code == 0, out
+
+
+def test_include_missing_file_is_red(guard, env, tmp_path: Path):
+    """红证：include 指向的组合文件不存在 ⇒ 红（组合装配不了，技能无处加载）。"""
+    dsh, anchor = env
+    write_include_patch(dsh, str(tmp_path / "gone.yml"))
+    code, out = judge(guard, dsh, anchor)
+    assert code == 1, out
+    assert "不存在" in out
