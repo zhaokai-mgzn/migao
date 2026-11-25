@@ -45,6 +45,8 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+          # ⚡ 只取 tree（issue #9120）：本腿 git 用法只有 `git diff --name-only`（tree 级）
+          filter: blob:none
 
       - name: Detect bmini-app face
         id: face
@@ -89,6 +91,8 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+          # ⚡ 只取 tree（issue #9120）：本腿 git 用法只有 `git diff --name-only`（tree 级）
+          filter: blob:none
 
       - name: Detect bmini-app changes
         id: detect
@@ -152,6 +156,8 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+          # ⚡ 只取 tree（issue #9120）：本腿 git 用法只有 `git diff --name-only`（tree 级）
+          filter: blob:none
 
       - name: Detect bmini-app changes
         id: detect
@@ -234,6 +240,8 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+          # ⚡ 只取 tree（issue #9120）：本腿 git 用法只有 `git diff --name-only`（tree 级）
+          filter: blob:none
 
       - name: Detect bmini-app changes
         id: detect
