@@ -480,3 +480,41 @@ class TestGatedOffRunsAreNotSamples:
         per_leg, _ = mod._sample_legs(10)
         samples = per_leg[("pr-check.yml", "leg")]
         assert samples == [600.0, 600.0, 600.0], f"门控跳过的 27s 样本必须被剔除，实得 {samples}"
+
+
+# ──────────────── 判据 8：样本不足**不得**清空已冻结预算（#9159 的连带发现）
+
+class TestLowSampleKeepsFrozenBudget:
+    """剔除「门控跳过」样本后，很多腿的 n 会掉到 3 以下 —— 此时**必须保留**上一版冻结预算。
+
+    病（2026-11-25 实测）：`--measure --allow-partial` 在 n<3 时把 `budget_seconds` 写成 **null**，
+    10 条腿的冻结预算一夜清空 ⇒ 那些腿从此**没有「超了红」的口径**（比预算过期更糟：过期还能查，清空等于放弃值班）。
+    留白只适用于**从未有过读数**的腿。
+    """
+
+    def test_low_sample_keeps_previous_budget(self, monkeypatch, tmp_path):
+        mod = _script()
+        prev = {"alpha": {"id": "alpha", "workflow": "pr-check.yml", "check_name": "alpha",
+                          "budget_seconds": 42, "measured": {"p90_seconds": 42.0, "n": 8},
+                          "budget_basis": "frozen-before", "required": True,
+                          "hard_kill_seconds": 1200, "status": "measured"}}
+        skeleton = {"alpha": {"workflow": "pr-check.yml", "check_name": "alpha", "required": True,
+                              "hard_kill_seconds": 1200}}
+
+        def fake_gh(args):
+            return {"workflow_runs": []}
+
+        monkeypatch.setattr(mod, "gh_json", fake_gh)
+        monkeypatch.setattr(mod, "_required_names", lambda: {"alpha"})
+        monkeypatch.setattr(mod, "_legs_skeleton", lambda: skeleton)
+        monkeypatch.setattr(mod, "_previous_legs", lambda: prev)
+        monkeypatch.setattr(mod, "_sample_legs", lambda n: ({}, {}))
+        monkeypatch.setattr(mod, "REPO", tmp_path)
+        out = tmp_path / "ledger.json"
+        out.write_text(json.dumps({"legs": list(prev.values())}), encoding="utf-8")
+        monkeypatch.setattr(mod, "LEDGER_PATH", out)
+        monkeypatch.setattr(sys, "argv", ["ci_cost_ledger.py", "--measure"])
+        assert mod.main() == 0
+        leg = {l["id"]: l for l in json.loads(out.read_text(encoding="utf-8"))["legs"]}["alpha"]
+        assert leg["budget_seconds"] == 42, "n<3 时预算被清成 null —— 值班判据被丢掉（比预算过期更糟）"
+        assert leg["budget_basis"] == "frozen-before", "保留时 basis 也必须原样（否则读不出「这是旧读数」）"

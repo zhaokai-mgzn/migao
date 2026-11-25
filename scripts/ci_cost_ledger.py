@@ -338,6 +338,14 @@ def main() -> int:
         if stats:
             budget, status = ceil_budget(stats["p90_seconds"]), BUDGET_STATUS_MEASURED
             basis = f"budget = ceil(measured.p90_seconds={stats['p90_seconds']}) @ {now}"
+        elif leg_id in previous and previous[leg_id].get("budget_seconds"):
+            # 样本不足 **但已有冻结预算** ⇒ **原样保留**（issue #9159 的连带发现）。
+            # 早先的 n 是被「门控跳过」的跑次灌水的；剔除后若把预算清成 null，等于**丢掉值班判据**
+            # （这条腿从此不再有「超了红」的口径，比预算过期更糟）。留白只适用于**从未有过读数**的腿。
+            legs.append(previous[leg_id])
+            print(f"ℹ️ {leg_id}：现取 n={len(samples)} < 3 ⇒ **保留上一版冻结预算**"
+                  f"（{previous[leg_id]['budget_seconds']}s），不清空", file=sys.stderr)
+            continue
         else:
             budget, status = None, BUDGET_STATUS_NO_READING
             basis = (f"现取 n={len(samples)} < 3（本腿多为 skipped/未触发）⇒ **不编预算**，"
