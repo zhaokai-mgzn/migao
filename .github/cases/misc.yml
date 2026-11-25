@@ -11146,3 +11146,20 @@ cases:
       tests:
         - "tests/unit_ci_workflows/test_ci_cost_ledger.py"
     merge_log: "2026-11-25 新增（issue #9153 的读数缺陷）。现场：`pr-check.yml::admin-web-test` 台账 p90 = 600s，而最近一次真实跑 = 237s —— 同一批样本里混着「job 成功但工作步骤被 `if:` 跳过」的跑次（27s，只有 checkout）。真实跑占比低的腿，p90 会落到门控档 ⇒ 预算钉在几十秒、永远红。修法：`_is_gated_off()`（除 Set up/Post/Complete 外的步骤有任何 skipped 即判门控）+ 剔除时逐腿打印次数。红证：把过滤器短路成 `if False and …` ⇒ 判据 3 FAILED；还原 ⇒ 16 passed。取号 = next_case_id.py MC ⇒ MC-364。"
+  - id: MC-365
+    legacy_id: ""
+    title: "成本台账：现取 n<3 不得清空已冻结预算（清空 = 丢掉值班判据，比预算过期更糟）"
+    domains:
+      - misc
+      - ci
+    tier: normal
+    tags:
+      - ci
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "**判据·样本不足不清空预算**：现取 n<3 且上一版已有 `budget_seconds` ⇒ 必须**整条沿用上一版**（预算与 `budget_basis` 都不动）；清成 null 即红。理由：剔除门控样本后 n 会掉档，清空等于丢掉「超了红」的值班判据。合成夹具：`未被调用`。执行点 = `test_ci_cost_ledger.py::TestLowSampleKeepsFrozenBudget::test_low_sample_keeps_previous_budget`"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_ci_cost_ledger.py"
+    merge_log: "2026-11-25 新增（#9159 的连带发现）。现场：MC-364 剔除门控跳过跑次后，10 条腿 n 掉到 3 以下，`--measure --allow-partial` 把它们的 `budget_seconds` 写成 null ⇒ 那些腿从此没有「超了红」的口径。修法：n<3 且上一版有预算 ⇒ 整条沿用（并逐腿打印「保留」），留白只给从未有过读数的腿。红证：把保留分支短路成 `elif False:` ⇒ 判据 FAILED；还原 ⇒ 17 passed。取号 = next_case_id.py MC ⇒ MC-365。"
