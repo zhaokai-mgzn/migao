@@ -512,6 +512,54 @@ cases:
       ci: [pr-check.yml]
       verifies: []
 
+  - id: KF-026
+    legacy_id: ""
+    title: "工作台会话装饰 — 渠道标识 / 最新发送状态 / 48h 预算（普通会话字段不变）"
+    domains: [kf]
+    tier: normal
+    tags: [kf, workspace, status]
+    truths_ref: [kf.decision]
+    user_inputs:
+      - "构造三条会话：微信客服会话、普通人工会话、无 aiSessionId 的会话"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "微信客服会话 ⇒ channel=wechat_kf、sendStatus 与 kf_outbox 最新一条一致、budgetUsed/budgetLimit=5"
+      - "普通人工会话 ⇒ channel/sendStatus/budgetUsed 全为 null（不得伪造渠道标识）"
+      - "预算行缺失 ⇒ budgetUsed=0；outbox 无记录 ⇒ sendStatus=unknown"
+      - "无 aiSessionId ⇒ 零查询"
+    skip_reason: "[backend-contract] 纯单元测试，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-11-25 新增：微信客服增强包B1（issue #9198，母单 #9194 子项 2）"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/kf/KfSessionStatusProviderTest.java"
+      ci: [pr-check.yml]
+      verifies: []
+
+  - id: KF-027
+    legacy_id: ""
+    title: "人工会话结束联动 — 仅人工段 trans(4)，失败不冒泡"
+    domains: [kf]
+    tier: normal
+    tags: [kf, workspace, end]
+    truths_ref: [kf.decision]
+    user_inputs:
+      - "分别构造：人工中会话结束、非微信客服会话结束、AI 段会话结束、联动抛错"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "state=2 ⇒ endHumanSession 恰好一次，close_reason=human_end"
+      - "无镜像行 / 无 aiSessionId ⇒ 零联动"
+      - "state≠2 ⇒ 零联动"
+      - "联动抛错 ⇒ 不冒泡，且租户上下文被清理"
+    skip_reason: "[backend-contract] 纯单元测试，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-11-25 新增：微信客服增强包B1（issue #9198，母单 #9194 子项 5）"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/kf/KfSessionEndListenerTest.java"
+      ci: [pr-check.yml]
+      verifies: []
+
   - id: KF-025
     legacy_id: ""
     title: "语义判定 — 规则优先/升级并集/判定失败回退规则"

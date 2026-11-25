@@ -55,4 +55,9 @@ public interface KfOutboxMapper {
     int markFailed(@Param("id") Long id,
                    @Param("status") String status,
                    @Param("failType") Integer failType);
+
+    /** 工作台展示用：该会话最新一条发送状态（无记录 ⇒ null）。issue #9198。 */
+    @InterceptorIgnore(tenantLine = "true")
+    @Select("SELECT status FROM kf_outbox WHERE session_id = #{sessionId} ORDER BY id DESC LIMIT 1")
+    String selectLatestStatus(@Param("sessionId") String sessionId);
 }

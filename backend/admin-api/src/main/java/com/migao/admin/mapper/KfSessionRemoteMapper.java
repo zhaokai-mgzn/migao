@@ -15,6 +15,13 @@ public interface KfSessionRemoteMapper {
     @Select("SELECT * FROM kf_session_remote WHERE session_id = #{sessionId} LIMIT 1")
     KfSessionRemote selectBySessionId(@Param("sessionId") String sessionId);
 
+    /** 工作台批量装饰用：按会话 ID 批量取镜像行（issue #9198）。 */
+    @InterceptorIgnore(tenantLine = "true")
+    @Select("<script>SELECT * FROM kf_session_remote WHERE session_id IN "
+            + "<foreach collection='ids' item='id' open='(' separator=',' close=')'>#{id}</foreach>"
+            + "</script>")
+    java.util.List<KfSessionRemote> selectBySessionIds(@Param("ids") java.util.List<String> ids);
+
     @InterceptorIgnore(tenantLine = "true")
     @Select("SELECT * FROM kf_session_remote WHERE tenant_id = #{tenantId} AND open_kfid = #{openKfid} "
             + "AND external_userid = #{externalUserid} AND closed_at IS NULL LIMIT 1")
