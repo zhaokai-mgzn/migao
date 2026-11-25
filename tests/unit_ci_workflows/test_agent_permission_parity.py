@@ -1202,6 +1202,11 @@ UNANNOTATED_ENDPOINTS: dict[str, str] = {
     # 判据 = 本文件 `test_every_judgement_is_green`
     #        + `backend/admin-api/src/test/java/com/migao/admin/controller/ClientErrorControllerTest.java`。
     "POST /api/client-errors": "白屏上报面：`permitAll` **有意放行**（8 KiB / 每 IP 30·分钟⁻¹ + 全局 600 / 三道去敏；不读业务数据）",
+    # issue #9171：企业微信「微信客服」回调（公开面）。企业微信服务器没有登录态，
+    # 准入靠 msg_signature + AES 解密 + receiveid 校验；未配置 token/aesKey ⇒ 503。
+    # 不读租户/业务数据，只落 kf_inbox 并置 sync dirty；加权限码 = 平台回调全 401 = 消息全丢。
+    "GET /api/kf/callback": "企微回调验证：`permitAll` 有意放行（msg_signature + receiveid；未配置 503）",
+    "POST /api/kf/callback": "企微回调收件：同上（验签解密后只落 inbox，不读业务数据）",
     "GET /api/admin/notifications*": "自助通知中心：收件人一律取 `SecurityContext` 当前用户（#4727 第 4 行）",
     "PUT /api/admin/notifications*": "同上（标记已读）",
     "DELETE /api/admin/notifications*": "同上（删除自己的通知）",

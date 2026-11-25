@@ -152,7 +152,10 @@ LEDGER_CEILINGS = {
     # `PermissionInterceptor.requirePermission(...)`）⇒ 图片识别的两条命令式端点不再是「无校验端点」，
     # 从 `UNANNOTATED_ENDPOINTS` 删除 ⇒ **26 → 24**。🔴 这是**收窄**（读数口径收紧 + 台账条目减少），
     # 不是放宽：上限跟着降到现值 24，回涨即红；新增「既无注解又无命令式」的端点照旧把它顶高。
-    "UNANNOTATED_ENDPOINTS": 24,
+    # issue #9171（2026-11-25）：新增微信客服回调 GET/POST `/api/kf/callback`（`permitAll`，
+    # 企业微信服务器无登录态；准入靠 msg_signature + AES + receiveid，未配置 503）
+    # ⇒ 24 → 26。**显式放宽**（diff 里看得见）：增长原因是「确实新增了两条刻意公开的回调入口」。
+    "UNANNOTATED_ENDPOINTS": 26,
 
     # issue #4923（2026-10-02）：`craft_config_query` 是**跨码工具**（6 个读端点分属三档生效码，
     # 工具声明生产域读码 `production:view`）⇒ 判据 2 的具名出口 `CODE_DIVERGENCE_EXCEPTIONS`

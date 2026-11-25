@@ -1,0 +1,22 @@
+name: kf
+description: 微信客服通道层真值域（issue #9171）—— 加解密、回调入站、服务端 API 客户端
+
+business_truths:
+  - [kf.secret-cipher] SecretCipher 用 AES-256-GCM 加密凭据明文；密文格式 v1:<keyId>:base64(iv|ct|tag)；同一主密钥可往返，篡改密文或换主密钥必失败；空主密钥构造即失败
+  - [kf.callback-crypto] 企业微信回调用 msg_signature = sha1(sort(token,timestamp,nonce,encrypt)) 校验；AES-256-CBC/PKCS7 解密后按 16 字节随机数 + 4 字节 msg_len + msg + receiveid 解析；receiveid 不匹配必失败
+  - [kf.client] WechatKfClient 封装 gettoken/sync_msg/send_msg/service_state；errcode!=0 抛 KfApiException；connect 2s / read 8s；msgid 由调用方生成并原样返回
+  - [kf.mapper-contract] KF Mapper 的注解 SQL 必须含目标表、幂等冲突键，并显式 tenantLine 豁免（回调无租户上下文）
+  - [kf.callback-controller] 回调控制器未配置时 503（fail-closed）；GET 返回 echostr 明文；POST 回 200 空串并转交 service
+  - [kf.callback-inbox] 合法回调落 kf_inbox（msg_signature 唯一）并置 kf_sync_cursor.dirty_at；重复回调仍置 dirty；坏签名拒绝；未登记渠道 200 受理但不落库
+
+reviewer_asserts:
+  - mvn: cd backend/admin-api && ./mvnw -Dtest=SecretCipherTest,WeChatKfCryptoTest,WechatKfClientTest,KfCallbackServiceTest test
+    expect: 全部通过（9 条单测）
+
+confidence_required: 100%
+
+common_pitfalls:
+  - 用空主密钥加密 → 看似加密、实则无保护
+  - 只验签不解密 receiveid → 跨套件伪造回调
+  - 重复回调不置 dirty → 消息丢失且无人知晓
+  - 未登记渠道直接 500 → 企业微信重试风暴
