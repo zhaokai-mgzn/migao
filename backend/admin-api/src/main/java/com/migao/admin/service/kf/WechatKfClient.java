@@ -4,7 +4,9 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.web.client.RestTemplate;
 
@@ -98,6 +100,45 @@ public class WechatKfClient {
         JsonNode node = post(accessToken, "/cgi-bin/kf/service_state/get", body);
         check(node);
         return node;
+    }
+
+    /**
+     * 下载媒体（issue #9200）：`/cgi-bin/media/get` 按 media_id 取二进制。
+     *
+     * <p>🔴 两条必须分清：**真二进制** 与 **微信的 JSON 错误体**。后者 HTTP 也可能是 200，
+     * Content-Type 是 `application/json` —— 当字节直接落盘就会把 `{"errcode":40007}`
+     * 存成一张坏图片，而且没有任何东西会红。⇒ 先判 Content-Type，再按 errcode 抛。</p>
+     */
+    public MediaFile getMedia(String accessToken, String mediaId) {
+        if (accessToken == null || accessToken.isBlank()) {
+            throw new IllegalArgumentException("access_token 为空");
+        }
+        if (mediaId == null || mediaId.isBlank()) {
+            throw new IllegalArgumentException("media_id 为空");
+        }
+        String url = baseUrl + "/cgi-bin/media/get?access_token={token}&media_id={mediaId}";
+        ResponseEntity<byte[]> resp;
+        try {
+            resp = restTemplate.exchange(url, HttpMethod.GET, null, byte[].class, accessToken, mediaId);
+        } catch (Exception e) {
+            throw new IllegalStateException("下载媒体失败: mediaId=" + mediaId, e);
+        }
+        byte[] body = resp.getBody();
+        MediaType contentType = resp.getHeaders().getContentType();
+        if (body == null || body.length == 0) {
+            throw new KfApiException(-1, "下载媒体返回空响应: mediaId=" + mediaId);
+        }
+        if (contentType != null && MediaType.APPLICATION_JSON.includes(contentType)) {
+            JsonNode err = parse(new String(body, java.nio.charset.StandardCharsets.UTF_8));
+            check(err);
+            throw new KfApiException(-1, "下载媒体返回 JSON 而非二进制: mediaId=" + mediaId);
+        }
+        String mime = contentType == null ? "application/octet-stream" : contentType.toString();
+        return new MediaFile(body, mime);
+    }
+
+    /** 媒体下载结果（字节 + 服务端给的 mime）。 */
+    public record MediaFile(byte[] bytes, String mime) {
     }
 
     private JsonNode get(String url, Object... vars) {

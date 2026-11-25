@@ -36,6 +36,7 @@ public class KfSyncWorker {
     private final WechatKfClient client;
     private final KfSessionIngestService ingestService;
     private final KfOutboxMapper outboxMapper;
+    private final KfMediaService mediaService;
     private final String instanceId;
     private final int claimStaleSeconds;
 
@@ -45,6 +46,7 @@ public class KfSyncWorker {
                         WechatKfClient client,
                         KfSessionIngestService ingestService,
                         KfOutboxMapper outboxMapper,
+                        KfMediaService mediaService,
                         @Value("${wechat.kf.sync.claim-stale-seconds:300}") int claimStaleSeconds) {
         this.cursorMapper = cursorMapper;
         this.channelMapper = channelMapper;
@@ -52,8 +54,31 @@ public class KfSyncWorker {
         this.client = client;
         this.ingestService = ingestService;
         this.outboxMapper = outboxMapper;
+        this.mediaService = mediaService;
         this.instanceId = "kf-" + UUID.randomUUID().toString().substring(0, 8);
         this.claimStaleSeconds = claimStaleSeconds;
+    }
+
+    /**
+     * 媒体消息归档（issue #9200）：**消息优先** —— 归档失败只留日志，绝不把已落库的消息判成失败
+     * （否则游标不前进，同一条消息会被反复重放）。
+     */
+    private void archiveMedia(Long tenantId, String openKfid, JsonNode msg, String accessToken) {
+        String type = msg.path("msgtype").asText("text");
+        if (!"image".equals(type) && !"voice".equals(type)
+                && !"video".equals(type) && !"file".equals(type)) {
+            return;
+        }
+        String mediaId = msg.path(type).path("media_id").asText("");
+        if (mediaId.isBlank()) {
+            return;
+        }
+        try {
+            mediaService.archiveInbound(tenantId, openKfid, mediaId, accessToken);
+        } catch (Exception e) {
+            log.warn("[kf-sync] 媒体归档失败（消息已落库，游标照常前进）msgid={} type={} err={}",
+                    msg.path("msgid").asText(""), type, e.getMessage());
+        }
     }
 
     @Scheduled(fixedDelayString = "${wechat.kf.sync-interval-ms:30000}", scheduler = "kfScheduler")
@@ -116,7 +141,9 @@ public class KfSyncWorker {
                                 handleEvent(msg);
                                 continue;
                             }
-                            ingestService.ingest(tenantId, openKfid, msg);
+                            if (ingestService.ingest(tenantId, openKfid, msg)) {
+                                archiveMedia(tenantId, openKfid, msg, accessToken);
+                            }
                         } catch (Exception e) {
                             log.error("[kf-sync] 单条消息落库失败 msgid={}", msg.path("msgid").asText(""), e);
                         }

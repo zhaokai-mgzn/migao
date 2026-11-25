@@ -176,6 +176,13 @@ class SecurityConfigTest {
     private com.migao.admin.mapper.PrintLogMapper printLogMapper;
 
     /**
+     * 微信客服媒体归档（issue #9200）：同上（本上下文排除 MyBatis 自动配置 ⇒ mapper 必须顶替；
+     * 未顶替时**整棵上下文起不来**，实测 59 条全 ERROR）。
+     */
+    @MockBean
+    private com.migao.admin.mapper.KfMediaMapper kfMediaMapper;
+
+    /**
      * 客户档案身份收敛（issue #7711）：本上下文**排除了 DataSource auto-config** ⇒ 没有
      * {@code JdbcTemplate} bean，而该服务构造依赖它（与 {@code PriceBookService} 同款）⇒ 必须在这里顶替。
      */

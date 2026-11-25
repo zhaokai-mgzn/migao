@@ -585,3 +585,29 @@ cases:
         - "backend/ai-agent-service/tests/test_kf_judge.py"
       ci: [pr-check.yml]
       verifies: []
+
+  - id: KF-028
+    legacy_id: ""
+    title: "入站媒体 — 下载/归档/幂等/路径净化/失败容忍"
+    domains: [kf]
+    tier: normal
+    tags: [kf, media]
+    truths_ref: [kf.decision]
+    user_inputs:
+      - "构造图片/文件消息、JSON 错误体、路径跳转 media_id、不可写归档根、下载抛错五类输入"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "二进制响应 ⇒ 字节与 mime 原样返回；JSON 错误体 ⇒ 抛 KfApiException（不落盘）"
+      - "归档成功 ⇒ 文件字节与响应一致、kf_media 行含 mime/size/storage_key"
+      - "media_id 含 ../ ⇒ 净化后仍落在归档根内"
+      - "下载失败/归档根不可写 ⇒ 抛 KfMediaException，且同步游标照常前进（消息已落库）"
+    skip_reason: "[backend-contract] 纯单元测试，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-11-25 新增：微信客服增强包C（issue #9200，母单 #9194 子项 4）"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/kf/KfMediaServiceTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/kf/WechatKfMediaTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/kf/KfSyncWorkerTest.java"
+      ci: [pr-check.yml]
+      verifies: []

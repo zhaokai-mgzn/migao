@@ -1795,6 +1795,13 @@ worker-h5 纯函数、承运商 4 条 × 两处入口 + 类级单一真值守卫
 
 ## [Unreleased]
 
+### 微信客服：客户发的图片/语音/文件会归档，失败不影响消息可见（2026-11-25，issue #9200）
+
+- 客户发媒体消息时，同步链路按 `media_id` 下载并归档到 `${WECHAT_KF_MEDIA_DIR:-uploads/kf-media}/<租户>/`，`kf_media` 记 mime / 字节数 / 归档路径；会话里仍保留 `[图片]` 等文本占位，两者并存。
+- **消息优先**：下载 / 落盘失败只留日志并照常推进同步游标 —— 不会因为一张图片存不下就让客户消息卡在重放里。
+- `media_id` 来自回调 JSON，按白名单净化后才拼路径（`../` 无法逃出归档根）；重复投递按 `(direction, media_id)` 唯一约束不产生重复行。
+- 语音本单**保留原格式**（AMR 不转 wav：ffmpeg 属真机阶段，见 #9194 子项 3）。
+- 判据：`backend/admin-api/src/test/java/com/migao/admin/service/kf/KfMediaServiceTest.java`、`WechatKfMediaTest.java`、`backend/admin-api/src/test/java/com/migao/admin/service/kf/KfSyncWorkerTest.java`（用例 KF-028）。
 ### 微信客服：判定接入语义层（规则优先 + 800ms 超时回退），高风险不再只靠关键词（2026-11-25，issue #9196）
 
 - `/api/internal/kf/decide` 在规则未命中时调 ai-agent 的 `POST /api/internal/kf/judge`（温度 0，返回 intent / risk / emotion / confidence / escalate）；升级仍取并集 —— 人工词 / 风险词命中先短路且**不发起**模型调用，语义判定要升级则升级。
