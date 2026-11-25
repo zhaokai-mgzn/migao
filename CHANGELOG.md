@@ -5,6 +5,12 @@
 > 原因 = 单文件涨到 512KB 越过扫描上限，详见存档文件头与 issue #6404。
 > **后续条目继续在本文件 `## [Unreleased]
 
+### B 端「停用」能力边界不再自相矛盾：停用仅限加工项（2026-11-25，issue #9215）
+
+- **病**：能力边界段同一段里既有「✅ 改加工项（含启用 / 停用）」，又有「❌ 删除 / 停用 / 作废」⇒ 模型对「把打孔加工项停用」可能误拒。
+- **形态**：`delete_object` 单元标签收窄为「删除 / 停用 / 作废（整对象；停用仅限加工项）」；商品上下架仍由 `single_status_toggle` / `batch_status_toggle` 两条 ❌ 单元表达，加工项停用仍走 `update_item(status=…)` 的确认门禁。
+- **判据**：`backend/ai-agent-service/tests/test_capability_boundary.py::test_stop_verb_is_scoped_to_processing_items`（注入式红证：改回旧标签即红）；用例 MC-194 的 `traces.tests` 同步钉住。
+
 ### C 端米宝身份层与 B 端黄金策分流：顾客侧不再自称「黄金策 / 商家后台助手」（2026-11-25，issue #7292）
 
 - **形态**：身份层按 persona 分流 —— `base/identity.md`（黄金策，B 端）/ `base/identity-xiaobu.md`（米宝，C 端）；选哪条由 skill 的 `SkillConfig.system_prompts` 决定。C 端 6 个 skill 的 System Prompt 首段由「你是黄金策…商家后台的 AI 管家」改为米宝的顾客客服身份；B 端逐字不变。

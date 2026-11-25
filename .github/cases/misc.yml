@@ -8178,6 +8178,7 @@ cases:
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_bend_write_tools_8618.py"
+        - "backend/ai-agent-service/tests/test_capability_boundary.py"
         - "backend/ai-agent-service/tests/test_tools_processing_item_manage.py"
         - "backend/ai-agent-service/tests/test_tools_category_manage.py"
         - "backend/ai-agent-service/tests/test_customer_manage.py"
