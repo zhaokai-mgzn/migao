@@ -120,8 +120,7 @@ jobs:
       - name: Install dependencies
         if: steps.mode.outputs.mode == 'publish'
         working-directory: frontend/mini-app
-        run: npm ci
-
+        run: npm ci --prefer-offline --no-audit --no-fund
       # 🔴 API 面必须**同源**（照 #5721 / #5668 实测的教训）：`app.migaozn.com` 的 nginx 已把
       # `/api/` 代理到 admin-api、`/api/chat/` 代理到 ai-agent ⇒ 同源**完全不经过 CORS**。
       # 漏了这两个变量 ⇒ `frontend/mini-app/src/utils/constants.ts` 的兜底

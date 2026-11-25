@@ -121,8 +121,7 @@ jobs:
       - name: Install dependencies
         if: steps.detect.outputs.run_tests == 'true'
         working-directory: ${{ env.WORKING_DIR }}
-        run: npm ci
-
+        run: npm ci --prefer-offline --no-audit --no-fund
       - name: TypeScript type check
         if: steps.detect.outputs.run_tests == 'true'
         working-directory: ${{ env.WORKING_DIR }}
@@ -186,8 +185,7 @@ jobs:
       - name: Install dependencies
         if: steps.detect.outputs.run_build == 'true'
         working-directory: ${{ env.WORKING_DIR }}
-        run: npm ci
-
+        run: npm ci --prefer-offline --no-audit --no-fund
       # 先 h5：它是唯一的用户可达形态（构建坏了就没人能访问）⇒ 失败时先报这一条
       - name: Build H5
         if: steps.detect.outputs.run_build == 'true'
@@ -268,13 +266,12 @@ jobs:
       - name: Install bmini-app deps
         if: steps.detect.outputs.run_tests == 'true'
         working-directory: ${{ env.WORKING_DIR }}
-        run: npm ci
-
+        run: npm ci --prefer-offline --no-audit --no-fund
       - name: Install Playwright deps
         if: steps.detect.outputs.run_tests == 'true'
         working-directory: tests
         run: |
-          npm ci
+          npm ci --prefer-offline --no-audit --no-fund
           npx playwright install chromium --with-deps
 
       # 🔴 这里**没有**单独的 Build H5 步骤：本腿的配置在加载期用 `tests/xiaobu_dist_freshness.py ensure`

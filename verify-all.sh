@@ -814,7 +814,7 @@ bmini_leg() {
     && echo '▶ npm run build:weapp' && npm run build:weapp" \
   && bash -c "cd '$ROOT/tests' \
     && echo '▶ npm ci（tests 依赖）' \
-    && npm ci
+    && npm ci --prefer-offline --no-audit --no-fund
 npx playwright install chromium --with-deps \
     && echo '▶ npx playwright test specs/bmini/ --config=playwright.bmini.config.ts' \
     && npx playwright test specs/bmini/ --config=playwright.bmini.config.ts"
