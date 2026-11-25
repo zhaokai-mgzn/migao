@@ -423,3 +423,60 @@ class TestAllowPartialWritesOnlyCompliantLegs:
         assert rc == 0, "显式 --accept-raise 是合法出口 ⇒ 应成功"
         by_id = {leg["id"]: leg for leg in ledger["legs"]}
         assert by_id["beta"]["budget_seconds"] == 40, "--accept-raise 应把预算重冻结为现取 p90"
+
+
+# ────────────────────────────────────────────── 判据 7：门控跳过不算样本（issue #9153 读数缺陷）
+
+class TestGatedOffRunsAreNotSamples:
+    """「job 成功、但核心步骤被 `if:` 跳过」的跑次**不是**「这条腿跑得快」，必须剔除。
+
+    ## 病（2026-11-25 现取）
+
+    `pr-check.yml::admin-web-test` 的台账 p90 = **600s**，而它最近一次真实跑是 **237s**；
+    原因是同一批样本里混着「门控跳过」的跑次（约 27s，只有 checkout）。混样会让 p90 在
+    「真实跑」与「只用 checkout」两档之间随机取一档 ⇒ 真实跑占比低的腿，预算被钉到几十秒，**永远红**。
+    """
+
+    def test_gated_off_job_is_detected(self):
+        mod = _script()
+        gated = {"name": "x", "steps": [
+            {"name": "Set up job", "conclusion": "success"},
+            {"name": "Run actions/checkout@v7", "conclusion": "success"},
+            {"name": "Run unit tests", "conclusion": "skipped"},
+            {"name": "Post Run actions/checkout@v7", "conclusion": "success"},
+            {"name": "Complete job", "conclusion": "success"},
+        ]}
+        assert mod._is_gated_off(gated) is True, "核心步骤被 skip 的 job 必须判成门控跳过"
+
+    def test_real_run_is_not_mistaken_for_gated(self):
+        mod = _script()
+        real = {"name": "x", "steps": [
+            {"name": "Set up job", "conclusion": "success"},
+            {"name": "Run unit tests", "conclusion": "success"},
+            {"name": "Post Run actions/checkout@v7", "conclusion": "skipped"},
+            {"name": "Complete job", "conclusion": "success"},
+        ]}
+        assert mod._is_gated_off(real) is False, (
+            "只有 `Post …` 步骤被跳过时**不得**判成门控跳过 —— 那会误删真实样本（预算被抬高 = 假绿）"
+        )
+
+    def test_mixed_samples_drop_the_fast_gated_ones(self, monkeypatch):
+        """混样场景：3 次真实跑（600s）+ 7 次门控跳过（27s）⇒ 预算必须按 600s 取，不能是 27s。"""
+        mod = _script()
+        real = {"name": "leg", "started_at": "2026-11-25T00:00:00Z", "completed_at": "2026-11-25T00:10:00Z",
+                "conclusion": "success", "steps": [{"name": "Run tests", "conclusion": "success"}]}
+        gated = {"name": "leg", "started_at": "2026-11-25T00:00:00Z", "completed_at": "2026-11-25T00:00:27Z",
+                 "conclusion": "success", "steps": [{"name": "Run tests", "conclusion": "skipped"}]}
+        runs = [{"id": i, "path": ".github/workflows/pr-check.yml", "created_at": "2026-11-25T00:00:00Z"}
+                for i in range(10)]
+        payloads = {i: {"jobs": [real if i < 3 else gated]} for i in range(10)}
+        def fake_gh_json(args):
+            path = args[0]
+            if "/jobs" in path:
+                return payloads[int(path.split("/runs/")[1].split("/")[0])]
+            return {"workflow_runs": [dict(r, head_branch="x") for r in runs]}
+
+        monkeypatch.setattr(mod, "gh_json", fake_gh_json)
+        per_leg, _ = mod._sample_legs(10)
+        samples = per_leg[("pr-check.yml", "leg")]
+        assert samples == [600.0, 600.0, 600.0], f"门控跳过的 27s 样本必须被剔除，实得 {samples}"

@@ -11127,3 +11127,22 @@ cases:
       tests:
         - "tests/unit_ci_workflows/test_admin_web_tests_are_sharded.py"
     merge_log: "2026-11-25 新增（issue #9153 ②）。现场：`admin-web typecheck + unit tests` 635s，其中 `Run unit tests` **455s**（三轮 295→426→455，现取 518 个测试文件），预算 295s。修法：`vitest --shard=1/2` 留在原腿、`--shard=2/2` 单开一条 required 腿（required 18→19：分支保护 + `required_status_snapshot.json` + 台账腿 + 门禁登记册四处同批）。判据钉三种假绿：两片跑同一半 / 两片谓词不同 / 第 2 片带 job 级门控。红证实跑：把第 2 片也写成 `--shard=1/2` ⇒ 判据 1 FAILED。⚠️ 途中 `git checkout -- .github/workflows/pr-check.yml` 把**未提交**的 workflow 改动冲掉（今晚第二次踩同款），已重放并复算。取号 = next_case_id.py MC ⇒ MC-363。"
+  - id: MC-364
+    legacy_id: ""
+    title: "成本台账采样剔除「门控跳过」的跑次（job 成功但工作步骤被 if 跳过 ≠ 这条腿跑得快）"
+    domains:
+      - misc
+      - ci
+    tier: normal
+    tags:
+      - ci
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "**判据 1·门控跳过被识别**：job 成功但工作步骤 `conclusion == skipped` ⇒ `_is_gated_off` 必须为 True。纯静态（合成 job 字典）：`未被调用`。执行点 = `test_ci_cost_ledger.py::TestGatedOffRunsAreNotSamples::test_gated_off_job_is_detected`"
+      - "**判据 2·真实跑不被误剔**：只有 `Post …` 步骤被跳过时**不得**判成门控跳过（否则误删真实样本 ⇒ 预算被抬高 = 假绿）。执行点 = `::test_real_run_is_not_mistaken_for_gated`"
+      - "**判据 3·混样取真实那一档**：3 次真实跑（600s）+ 7 次门控跳过（27s）⇒ 样本只能是 `[600,600,600]`。执行点 = `::test_mixed_samples_drop_the_fast_gated_ones`"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_ci_cost_ledger.py"
+    merge_log: "2026-11-25 新增（issue #9153 的读数缺陷）。现场：`pr-check.yml::admin-web-test` 台账 p90 = 600s，而最近一次真实跑 = 237s —— 同一批样本里混着「job 成功但工作步骤被 `if:` 跳过」的跑次（27s，只有 checkout）。真实跑占比低的腿，p90 会落到门控档 ⇒ 预算钉在几十秒、永远红。修法：`_is_gated_off()`（除 Set up/Post/Complete 外的步骤有任何 skipped 即判门控）+ 剔除时逐腿打印次数。红证：把过滤器短路成 `if False and …` ⇒ 判据 3 FAILED；还原 ⇒ 16 passed。取号 = next_case_id.py MC ⇒ MC-364。"
