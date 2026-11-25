@@ -11221,3 +11221,22 @@ cases:
       tests:
         - "tests/unit_ci_workflows/test_ci_cost_ledger.py"
     merge_log: "2026-11-25 新增（MC-364 的回归修复 + #9120 裁决发现）。① 回归：`_is_gated_off` 第一版按「任一步骤 skipped 即门控」判，而 `if: failure()` / `if: always() && <条件>` 步骤在成功跑次**必然** skipped ⇒ 10 条腿 n=0，其中 Case Coverage Gate / QA Growth Gate / Secret Scan 三条是 required；叠加「n<3 保留冻结预算」= 永久不可测。修法：只有「除 setup/complete/post/checkout/detect 外的步骤**全被 skip**」才算门控。② 数据面：`hard_kill_source` 写着 `timeout-minutes: 2` 而值是 600/900（真值来自 0ce83cee74 的上限调整）⇒ 新增判据 3 把 source 数字与值对齐，否则 policy「不得靠抬 timeout-minutes 交差」在数据面失效。红证：把规则退回旧版 ⇒ 判据 2 FAILED；还原 ⇒ 19 passed。取号 = next_case_id.py MC ⇒ MC-367。"
+  - id: MC-369
+    legacy_id: ""
+    title: "只要 tree 的 CI 腿不得拉全史 blob（filter: blob:none）；要内容的腿反而不得抽 blob"
+    domains:
+      - misc
+      - ci
+    tier: normal
+    tags:
+      - ci
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "**判据 1·只读 tree 的腿必须 `filter: blob:none`**：现取所有 job，凡 body 里出现 `git diff --name-only` / `--diff-filter`（tree 级）且不在 `NEEDS_BLOB_JOBS` 清单里的，`fetch-depth: 0` 必须配 `filter: blob:none`；缺即具名红。纯静态：`未被调用`。执行点 = `test_checkout_does_not_pull_history_blobs.py::test_tree_only_jobs_use_blobless_partial_clone`"
+      - "**判据 2·需要内容的腿不得抽 blob**：`NEEDS_BLOB_JOBS`（现取 = `gitleaks-scan`，要逐 commit 的 diff 内容）若用了 `blob:none`，partial clone 会把每次读变成懒拉取 ⇒ 具名红。执行点 = `::test_content_reading_jobs_never_use_blobless`"
+      - "**判据 3·清单不腐烂**：`NEEDS_BLOB_JOBS` 里的腿必须**真的**跑内容级 git（`gitleaks detect` / `git log -p` / `git grep`），否则要从清单删掉。执行点 = `::test_the_needs_blob_list_is_not_stale`；另有 `::test_the_known_content_leg_is_still_full_blob` 直接钉 gitleaks 保持全 blob。"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_checkout_does_not_pull_history_blobs.py"
+    merge_log: "2026-11-25 新增（issue #9120 A 类减负）。现场：8 条 A 类腿预算（8–26s）低于固定成本，大头是 `actions/checkout@v7` 的 `fetch-depth: 0`（实测 14–24s，`.git` 462 MiB），而它们的 git 用法只有 `git diff --name-only`（tree 级，不需要历史 blob）。修法：给 10 条只读 tree 的腿加 `filter: blob:none`；`gitleaks-scan` **保持全 blob**（`gitleaks detect --log-opts` 要逐 commit diff 内容，抽 blob 会变逐对象懒拉取）。红证：去掉 `block-env-files` 的 filter ⇒ 判据 1 红；给 gitleaks 加 filter ⇒ 判据 2/3 红。取号 = next_case_id.py MC ⇒ MC-369。"

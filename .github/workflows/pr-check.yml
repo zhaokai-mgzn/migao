@@ -54,6 +54,8 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+          # ⚡ 只取 tree、不取历史 blob（issue #9120 A 类减负）：本腿 git 用法只有 `git diff --name-only`（tree 级）
+          filter: blob:none
       - name: Check for forbidden .env files
         run: |
           # ⚠️ `--diff-filter=ACMR`（issue #5083）：`git diff --name-only` **会列出被删除的文件**
@@ -122,6 +124,8 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+          # ⚡ 只取 tree、不取历史 blob（issue #9120）：本腿 git 用法只有 `git diff --name-only`（tree 级）
+          filter: blob:none
 
       # ── 路径门控（issue #3507 ①，2026-09-26）────────────────────────────────
       # 口径 = 本仓既有「**job 内 diff 门控**」范式（`https://github.com/zhaokai-mgzn/migao/wiki/CI-CD`「变更门控」；
@@ -330,6 +334,8 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+          # ⚡ 只取 tree、不取历史 blob（issue #9120）：本腿 git 用法只有 `git diff --name-only`（tree 级）
+          filter: blob:none
       - uses: actions/setup-python@v7
         with:
           python-version: '3.11'
@@ -509,6 +515,8 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+          # ⚡ 只取 tree、不取历史 blob（issue #9120）：本腿 git 用法只有 `git diff --name-only`（tree 级）
+          filter: blob:none
       - name: Detect admin-web changes
         id: detect_aw2
         run: |
@@ -585,6 +593,8 @@ jobs:
         with:
           # 路径门控（下面 Detect admin-web changes）要 diff origin/main...HEAD，浅克隆拿不到 merge-base
           fetch-depth: 0
+          # ⚡ 只取 tree、不取历史 blob（issue #9120）：本腿 git 用法只有 `git diff --name-only`（tree 级）
+          filter: blob:none
 
       # ── 路径门控（issue #3507 ①，2026-09-26）────────────────────────────────
       # 本步原先**只**门控 `next build`（#4412），其余步骤（`npm ci` / `tsc` / `eslint` /
@@ -721,6 +731,8 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+          # ⚡ 只取 tree、不取历史 blob（issue #9120 A 类减负）：本腿 git 用法只有 `git diff --name-only`（tree 级）
+          filter: blob:none
 
       - name: Detect e2e face
         id: face
@@ -779,6 +791,8 @@ jobs:
         with:
           # 路径门控（下面 Detect e2e changes）要 diff origin/main...HEAD，浅克隆拿不到 merge-base
           fetch-depth: 0
+          # ⚡ 只取 tree、不取历史 blob（issue #9120）：本腿 git 用法只有 `git diff --name-only`（tree 级）
+          filter: blob:none
 
       # ── 路径门控（issue #3507 ①，2026-09-26）────────────────────────────────
       # 本 job 在**每个** PR 上都装两份 node_modules 并跑 Playwright（实测中位 **114.5s**，n=8）
@@ -960,6 +974,8 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+          # ⚡ 只取 tree、不取历史 blob（issue #9120 A 类减负）：本腿 git 用法只有 `git diff --name-only`（tree 级）
+          filter: blob:none
 
       - name: Check test coverage in diff (data-driven)
         id: check
@@ -1113,6 +1129,8 @@ jobs:
         with:
           # `FM-E22` 的合并探测要算 merge-base / `origin/main...HEAD` ⇒ 浅克隆不够
           fetch-depth: 0
+          # ⚡ 只取 tree、不取历史 blob（issue #9120 A 类减负）：本腿 git 用法只有 `git diff --name-only`（tree 级）
+          filter: blob:none
 
       - name: Verify case truths_ref resolve
         run: |
@@ -1406,6 +1424,8 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+          # ⚡ 只取 tree、不取历史 blob（issue #9120 A 类减负）：本腿 git 用法只有 `git diff --name-only`（tree 级）
+          filter: blob:none
 
       # ── 删除 workflow 的人工确认通道（#4295）───────────────────────────────────
       # 为什么需要：danger-scan 对「删除 workflow」是 BLOCK，文案写「需人工确认」，
