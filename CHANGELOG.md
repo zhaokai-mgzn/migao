@@ -1802,6 +1802,11 @@ worker-h5 纯函数、承运商 4 条 × 两处入口 + 类级单一真值守卫
 - `media_id` 来自回调 JSON，按白名单净化后才拼路径（`../` 无法逃出归档根）；重复投递按 `(direction, media_id)` 唯一约束不产生重复行。
 - 语音本单**保留原格式**（AMR 不转 wav：ffmpeg 属真机阶段，见 #9194 子项 3）。
 - 判据：`backend/admin-api/src/test/java/com/migao/admin/service/kf/KfMediaServiceTest.java`、`WechatKfMediaTest.java`、`backend/admin-api/src/test/java/com/migao/admin/service/kf/KfSyncWorkerTest.java`（用例 KF-028）。
+### 微信客服：判定接入语义层（规则优先 + 800ms 超时回退），高风险不再只靠关键词（2026-11-25，issue #9196）
+
+- `/api/internal/kf/decide` 在规则未命中时调 ai-agent 的 `POST /api/internal/kf/judge`（温度 0，返回 intent / risk / emotion / confidence / escalate）；升级仍取并集 —— 人工词 / 风险词命中先短路且**不发起**模型调用，语义判定要升级则升级。
+- 判定读超时默认 **800ms**（`WECHAT_KF_JUDGE_TIMEOUT_MS` 可配）；超时 / 异常 / 响应不可解析 ⇒ **回退规则结论**，接口仍返回 200 —— 判定服务故障不会让客户收不到回复。
+- 判据：`backend/admin-api/src/test/java/com/migao/admin/service/kf/KfDecisionServiceTest.java`、`backend/admin-api/src/test/java/com/migao/admin/service/kf/KfJudgeClientTest.java`、`backend/ai-agent-service/tests/test_kf_judge.py`（用例 KF-025）。
 ### 微信客服：工作台能看到渠道 / 发送状态 / 48h 余量，结束人工会话自动关微信侧（2026-11-25，issue #9198）
 
 - 工作台人工会话列表：微信客服来源的会话带 `channel=wechat_kf`、最新一条发送状态（pending / sending / accepted / failed / unknown）与 48h 五条预算的已用/上限；普通人工会话字段不变（不伪造渠道标识）。装饰失败不影响列表返回。

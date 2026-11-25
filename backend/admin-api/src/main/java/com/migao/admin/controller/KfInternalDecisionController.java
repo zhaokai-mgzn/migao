@@ -25,7 +25,9 @@ public class KfInternalDecisionController {
 
     @PostMapping("/decide")
     public ResponseEntity<Map<String, Object>> decide(@RequestBody DecideRequest request) {
-        KfDecisionService.Decision d = decisionService.decide(request.state(), request.text());
+        KfDecisionService.Decision d = decisionService.decide(
+                request.tenantId() == null ? 0L : request.tenantId(),
+                request.sessionId(), request.state(), request.text());
         return ResponseEntity.ok(Map.of("decision", d.decision(), "reason", d.reason()));
     }
 
