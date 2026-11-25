@@ -2851,7 +2851,7 @@ cases:
       - "两轮回复都必须给出**后台落点**：至少出现「组织管理」与「员工管理」（真实侧边栏节点；真值 = backend/ai-agent-service/app/agents/capability_boundary.py 的 UNITS，2026-10-19 渲染实测逐字为「员工账号的创建与变更 → 后台「组织管理 → 员工管理」」）"
       - "不得用承诺代办的措辞替代落点（机器断言 = forbidden_text）：允许「我这边办不了 / 没有这个能力」，不允许「已在为您创建」"
       - "工具面：employee_manage 只剩 list/detail（写 action 随 #5247 只读化下线）⇒ 任何写调用都不可能成功；本用例只判「不承诺 + 给落点」，**不要求**必须调工具"
-    skip_reason: ""
+    skip_reason: "[stale-truth] 2026-11-25 复核：employee_manage.VALID_ACTIONS 已含 create/update（能力边界 employee_write 可用、HR-010 正向对照「持 employee:create 必须真执行」）⇒ 本用例「不得承诺代办员工账号」的前提失效，退役不删条目；删除/建品拒绝覆盖见 category.yml / chat.yml 的对应用例（#9220）。"
     merge_log: "2026-10-19 新增（issue #7027 的用例补齐）：当天 B 端基线 65/69 绿，但**没有一条用例**钉住「被问到做不了的事时怎么答」—— 而这正是 #7291 能力边界投影段要防的形态（旧 prompt 里 9 处写「非单据对象创建 ✅ 支持」，模型承诺后办不成）。取号 = 现取 chat.yml 最大号 CH-048 + 1。 ｜ 2026-10-19（issue #7334 二次审计）：补 `want_text`（两轮都要给「后台」落点、首轮要「员工管理」）+ 更多禁词（正在创建 / 我这就帮您建 / 已经安排 / 暂未接线 等）；此前「路径」只写在自然语义 data_checks 里，模型回一句「我办不了」也能过。"
     traces:
       tests:
