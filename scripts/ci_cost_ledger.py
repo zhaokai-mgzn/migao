@@ -163,6 +163,7 @@ def _sample_legs(runs_per_workflow: int) -> tuple[dict[tuple[str, str], list[flo
             bucket.append(run)
     per_leg: dict[tuple[str, str], list[float]] = {}
     per_flow: dict[str, list[float]] = {}
+    gated_off: dict[tuple[str, str], int] = {}
     for path, bucket in seen.items():
         for run in bucket:
             payload = gh_json([f"repos/{REPO_SLUG}/actions/runs/{run['id']}/jobs?per_page=100"])
@@ -171,13 +172,39 @@ def _sample_legs(runs_per_workflow: int) -> tuple[dict[tuple[str, str], list[flo
                 started, done, conclusion = job.get("started_at"), job.get("completed_at"), job.get("conclusion")
                 if not started or not done or conclusion == "skipped":
                     continue
+                if _is_gated_off(job):
+                    # **门控跳过**的跑次不是「这条腿跑得快」，而是「这条腿没跑」（issue #9153 的读数缺陷）。
+                    # 混进来会让 p90 在「真实跑」与「只用 checkout」两档之间随机取一档 ⇒ 预算要么虚高、要么永远红。
+                    gated_off[(Path(path).name, str(job["name"]))] = gated_off.get((Path(path).name, str(job["name"])), 0) + 1
+                    continue
                 seconds = (datetime.strptime(done, "%Y-%m-%dT%H:%M:%SZ")
                            - datetime.strptime(started, "%Y-%m-%dT%H:%M:%SZ")).total_seconds()
                 total += seconds
                 per_leg.setdefault((Path(path).name, str(job["name"])), []).append(seconds)
             if total > 0:
                 per_flow.setdefault(Path(path).name, []).append(total)
+    if gated_off:
+        print("ℹ️ 已剔除**门控跳过**的跑次（job 成功但核心步骤被 `if:` 跳过）——它们不是「这条腿跑得快」：",
+              file=sys.stderr)
+        for (wf, name), count in sorted(gated_off.items()):
+            print(f"   · {wf}::{name}：剔除 {count} 次", file=sys.stderr)
     return per_leg, per_flow
+
+
+def _is_gated_off(job: dict) -> bool:
+    """这条 job 是**门控跳过**吗（job 成功、但核心步骤全被 `if:` 挡掉）？
+
+    判据：除 `Set up job` / `Post …` / `Complete job` 之外的步骤里，**有任何一个**是 `skipped`。
+    取「任何一个」而不是「全部」：门控通常只挡**工作步骤**，而失败/上传/通知步另有可能被跳过；
+    多剔除几次样本只会让预算更保守（宁可少算，不把「没跑」当「跑得快」）。
+    """
+    for step in job.get("steps") or []:
+        name = str(step.get("name") or "")
+        if name in ("Set up job", "Complete job") or name.startswith("Post "):
+            continue
+        if step.get("conclusion") == "skipped":
+            return True
+    return False
 
 
 def _stats(values: list[float]) -> dict:
