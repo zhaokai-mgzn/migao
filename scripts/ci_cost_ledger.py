@@ -191,20 +191,42 @@ def _sample_legs(runs_per_workflow: int) -> tuple[dict[tuple[str, str], list[flo
     return per_leg, per_flow
 
 
-def _is_gated_off(job: dict) -> bool:
-    """这条 job 是**门控跳过**吗（job 成功、但核心步骤全被 `if:` 挡掉）？
+#: 这些步骤名（或其前缀）在**每一次跑次**里都会执行 —— 只有它们执行过，才可能是「门控跳过」。
+_WORK_NEUTRAL_STEP_NAMES = frozenset({
+    "Set up job", "Complete job", "Post Run actions/checkout@v7",
+})
+_WORK_NEUTRAL_PREFIXES = ("Post ", "Run actions/checkout", "Detect ")
 
-    判据：除 `Set up job` / `Post …` / `Complete job` 之外的步骤里，**有任何一个**是 `skipped`。
-    取「任何一个」而不是「全部」：门控通常只挡**工作步骤**，而失败/上传/通知步另有可能被跳过；
-    多剔除几次样本只会让预算更保守（宁可少算，不把「没跑」当「跑得快」）。
+
+def _is_gated_off(job: dict) -> bool:
+    """这条 job 是**门控跳过**吗（job 成功、但**承载工作**的步骤全被 `if:` 挡掉）？
+
+    ## 判据：除「每次都会执行」的步骤外，**没有任何**步骤跑过
+
+    「每次都会执行」= `Set up job` / `Complete job` / `Post …` / `Run actions/checkout…` / `Detect …`
+    （检测步总是跑，正因为它要算触发面）。剩下的步骤（跑测试 / 构建 / 扫描）只要**有一个**成功执行过，
+    这条跑次就是**真跑**。
+
+    ## 为什么不能像第一版那样「任一步骤 skipped 就算门控」（issue #9159 的回归，实测）
+
+    `if: failure()` / `if: always() && <条件>` 这类步骤在**成功跑次里必然 skipped**
+    （例：`Label on failure`、`Secret Scan` 的 `Classify … outcome`、`QA Growth Gate` 的 `Fail on blocking violations`）。
+    按「任一步骤 skipped」判，会把这些腿的**真跑样本整批剔掉**：实测 10 条腿 n=0，其中
+    `Case Coverage Gate` / `QA Growth Gate` / `Secret Scan` **三条是 required** ⇒
+    再叠加「n<3 保留冻结预算」，这些腿就**永久不可测、预算永久冻结、超预算永久不可见**。
     """
+    saw_work_step = False
     for step in job.get("steps") or []:
         name = str(step.get("name") or "")
-        if name in ("Set up job", "Complete job") or name.startswith("Post "):
+        if name in _WORK_NEUTRAL_STEP_NAMES or name.startswith(_WORK_NEUTRAL_PREFIXES):
             continue
-        if step.get("conclusion") == "skipped":
-            return True
-    return False
+        if step.get("conclusion") != "skipped":
+            saw_work_step = True
+            break
+    if saw_work_step:
+        return False
+    # 没有任何工作步骤跑过 ⇒ 再看是不是真的「有步骤被跳过」（否则是空 job，按门控处理同样是错的）
+    return any(step.get("conclusion") == "skipped" for step in job.get("steps") or [])
 
 
 def _stats(values: list[float]) -> dict:

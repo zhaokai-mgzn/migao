@@ -11163,3 +11163,22 @@ cases:
       tests:
         - "tests/unit_ci_workflows/test_ci_cost_ledger.py"
     merge_log: "2026-11-25 新增（#9159 的连带发现）。现场：MC-364 剔除门控跳过跑次后，10 条腿 n 掉到 3 以下，`--measure --allow-partial` 把它们的 `budget_seconds` 写成 null ⇒ 那些腿从此没有「超了红」的口径。修法：n<3 且上一版有预算 ⇒ 整条沿用（并逐腿打印「保留」），留白只给从未有过读数的腿。红证：把保留分支短路成 `elif False:` ⇒ 判据 FAILED；还原 ⇒ 17 passed。取号 = next_case_id.py MC ⇒ MC-365。"
+  - id: MC-367
+    legacy_id: ""
+    title: "成本台账：门控判定只认工作步骤（修 #9159 误剔 required 腿）+ hard_kill_source 数字自洽"
+    domains:
+      - misc
+      - ci
+    tier: normal
+    tags:
+      - ci
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "**判据 1·门控判定只认「工作步骤」**：除 `Set up job`/`Complete job`/`Post …`/`Run actions/checkout…`/`Detect …` 之外的步骤**全被 skip** ⇒ 判门控；其中任一真跑过 ⇒ 不是门控。合成 job 字典：`未被调用`。执行点 = `test_ci_cost_ledger.py::TestGatedOffRunsAreNotSamples::test_gated_off_job_is_detected`"
+      - "**判据 2·`if: failure()` 类步骤不得误剔（回归）**：工作步骤真跑过、而 `Fail on blocking violations`（`if: BLOCKERS != '0'`）与 `Label needs-changes on failure`（`if: failure()`）被 skip ⇒ **不得**判门控。实测受害：`Case Coverage Gate` / `QA Growth Gate` / `Secret Scan` 三条 required 腿 n=0。执行点 = `::test_failure_only_steps_are_not_mistaken_for_gating`"
+      - "**判据 3·`hard_kill_source` 的数字必须自洽**：source 里 `timeout-minutes: N` × 60 必须等于 `hard_kill_seconds`；不等即红（现取曾出现 600s 对 `timeout-minutes: 2`、900s 对 `2`）。执行点 = `test_hard_kill_source_number_matches_the_value`"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_ci_cost_ledger.py"
+    merge_log: "2026-11-25 新增（MC-364 的回归修复 + #9120 裁决发现）。① 回归：`_is_gated_off` 第一版按「任一步骤 skipped 即门控」判，而 `if: failure()` / `if: always() && <条件>` 步骤在成功跑次**必然** skipped ⇒ 10 条腿 n=0，其中 Case Coverage Gate / QA Growth Gate / Secret Scan 三条是 required；叠加「n<3 保留冻结预算」= 永久不可测。修法：只有「除 setup/complete/post/checkout/detect 外的步骤**全被 skip**」才算门控。② 数据面：`hard_kill_source` 写着 `timeout-minutes: 2` 而值是 600/900（真值来自 0ce83cee74 的上限调整）⇒ 新增判据 3 把 source 数字与值对齐，否则 policy「不得靠抬 timeout-minutes 交差」在数据面失效。红证：把规则退回旧版 ⇒ 判据 2 FAILED；还原 ⇒ 19 passed。取号 = next_case_id.py MC ⇒ MC-367。"

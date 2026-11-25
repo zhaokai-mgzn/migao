@@ -360,7 +360,7 @@
       "job": "block-env-files",
       "check_name": "Block .env files (except .env.example)",
       "hard_kill_seconds": 600,
-      "hard_kill_source": "workflow `timeout-minutes: 2`",
+      "hard_kill_source": "workflow `timeout-minutes: 10`",
       "required": true,
       "measured": {
         "n": 8,
@@ -417,7 +417,7 @@
       "job": "case-truth-check",
       "check_name": "Case Contract (truths_ref)",
       "hard_kill_seconds": 900,
-      "hard_kill_source": "workflow `timeout-minutes: 2`",
+      "hard_kill_source": "workflow `timeout-minutes: 15`",
       "required": true,
       "measured": {
         "n": 8,
