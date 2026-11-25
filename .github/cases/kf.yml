@@ -611,3 +611,27 @@ cases:
         - "backend/admin-api/src/test/java/com/migao/admin/service/kf/KfSyncWorkerTest.java"
       ci: [pr-check.yml]
       verifies: []
+
+  - id: KF-029
+    legacy_id: ""
+    title: "工作台渲染 — 微信客服标识/发送状态/48h 余量（普通会话不出现）"
+    domains: [kf]
+    tier: normal
+    tags: [kf, workspace, ui]
+    truths_ref: [kf.decision]
+    user_inputs:
+      - "构造微信客服会话、普通人工会话、sendStatus=unknown、额度用尽四类列表数据"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "微信客服会话 ⇒ 显示「微信客服」+ 发送状态文案 + 额度 2/5"
+      - "普通人工会话 ⇒ 页面不出现「微信客服」任何标识"
+      - "sendStatus=unknown ⇒ 显示「状态未知」，不留空白"
+      - "额度 5/5 ⇒ 输入框禁用 + 明确文案"
+    skip_reason: "[frontend-unit] jsdom 渲染判据，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-11-25 新增：微信客服增强包B2（issue #9202，母单 #9194 子项 2 前端面）"
+    traces:
+      tests:
+        - "frontend/admin-web/tests/unit/pages/human-sessions-kf.test.tsx"
+      ci: [pr-check.yml]
+      verifies: []
