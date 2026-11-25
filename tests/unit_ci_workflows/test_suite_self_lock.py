@@ -703,6 +703,10 @@ class TestXdistControllerTakesTheLock:
             return True, "ok"
 
         monkeypatch.delenv("PYTEST_XDIST_WORKER", raising=False)
+        # ⚠️ 判据必须**自带环境**：CI 上 `CI=true` ⇒ `suite_self_lock_wanted()` 第 ③ 条按设计返回 False
+        #    （托管 runner 不占本机资源），不清掉它，这条判据在 CI 里会假红（实测过一次）。
+        monkeypatch.delenv("CI", raising=False)
+        monkeypatch.delenv("MIGAO_HEAVY_LOCK_HELD", raising=False)
         monkeypatch.setattr(suite_conftest, "acquire_suite_lock", fake_acquire)
 
         class _Opt:
@@ -722,6 +726,9 @@ class TestXdistControllerTakesTheLock:
         """xdist worker（`PYTEST_XDIST_WORKER` 已设）⇒ **不得**拿锁（N 个 worker 互抢 = 死锁）。"""
         calls: list[int] = []
         monkeypatch.setenv("PYTEST_XDIST_WORKER", "gw0")
+        # 同样自带环境：否则 CI 上会被第 ③ 条（`CI=true`）顺带挡掉，这条判据就成了假绿
+        monkeypatch.delenv("CI", raising=False)
+        monkeypatch.delenv("MIGAO_HEAVY_LOCK_HELD", raising=False)
         monkeypatch.setattr(suite_conftest, "acquire_suite_lock", lambda env=None: calls.append(1) or (True, "ok"))
 
         class _Cfg:
