@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.migao.admin.entity.KfChannel;
 import com.migao.admin.entity.KfSyncCursor;
 import com.migao.admin.mapper.KfChannelMapper;
+import com.migao.admin.mapper.KfOutboxMapper;
 import com.migao.admin.mapper.KfSyncCursorMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -33,6 +34,7 @@ class KfSyncWorkerTest {
     private KfAccessTokenService tokenService;
     private WechatKfClient client;
     private KfSessionIngestService ingestService;
+    private KfOutboxMapper outboxMapper;
     private KfSyncWorker worker;
 
     @BeforeEach
@@ -42,7 +44,8 @@ class KfSyncWorkerTest {
         tokenService = mock(KfAccessTokenService.class);
         client = mock(WechatKfClient.class);
         ingestService = mock(KfSessionIngestService.class);
-        worker = new KfSyncWorker(cursorMapper, channelMapper, tokenService, client, ingestService, 300);
+        outboxMapper = mock(KfOutboxMapper.class);
+        worker = new KfSyncWorker(cursorMapper, channelMapper, tokenService, client, ingestService, outboxMapper, 300);
     }
 
     @Test
@@ -94,5 +97,22 @@ class KfSyncWorkerTest {
         assertThat(worker.syncOnce()).isZero();
         verify(cursorMapper).releaseClaim(eq(1L), eq("wk"), anyString());
         verify(cursorMapper, never()).clearDirty(anyLong(), anyString(), anyString());
+    }
+
+    @Test
+    @DisplayName("msg_send_fail 事件 ⇒ 按 sent_msgid 回写 outbox")
+    void msgSendFailEvent() throws Exception {
+        when(cursorMapper.claimDue(any(), anyInt(), anyString()))
+                .thenReturn(List.of(KfSyncCursor.builder().tenantId(1L).openKfid("wk").cursor("c0").build()));
+        when(channelMapper.selectByOpenKfid("wk")).thenReturn(KfChannel.builder().corpId("corp").build());
+        when(tokenService.token(any(KfChannel.class))).thenReturn("tok");
+        when(client.syncMsg("tok", "wk", "c0", null, 100)).thenReturn(mapper.readTree("""
+                {"has_more":0,"next_cursor":"c1","msg_list":[
+                  {"msgtype":"event","event_type":"msg_send_fail","fail_msgid":"sent-1","fail_type":6}]}
+                """));
+
+        assertThat(worker.syncOnce()).isEqualTo(1);
+        verify(outboxMapper).markFailedBySentMsgid("sent-1", 6);
+        verify(cursorMapper).clearDirty(1L, "wk", "c1");
     }
 }

@@ -36,4 +36,9 @@ public interface KfSessionRemoteMapper {
     @Update("UPDATE kf_session_remote SET last_msg_at = NOW(), last_sync_at = NOW(), updated_at = NOW() "
             + "WHERE session_id = #{sessionId}")
     int touch(@Param("sessionId") String sessionId);
+
+    @InterceptorIgnore(tenantLine = "true")
+    @Update("UPDATE kf_session_remote SET state = #{state}, version = version + 1, updated_at = NOW() "
+            + "WHERE session_id = #{sessionId}")
+    int updateState(@Param("sessionId") String sessionId, @Param("state") int state);
 }
