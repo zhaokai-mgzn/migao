@@ -26,6 +26,7 @@
 
 from __future__ import annotations
 
+import ast
 import json
 import re
 from pathlib import Path
@@ -109,9 +110,22 @@ def test_supported_types_match_runner_source():
 
     ⚠️ 静态反解而非 import：helper job 只装 pytest + pyyaml，import runner 会 ImportError。
     """
-    src = RUNNER.read_text(encoding="utf-8")
-    m = re.search(r"SUPPORTED_CHECK_TYPES\s*=\s*\{(.*?)\}", src, re.S)
-    assert m, "acceptance_runner.py 里找不到 SUPPORTED_CHECK_TYPES（判据真相源消失，fail-closed）"
-    runner_types = set(re.findall(r'"([a-z_]+)"', m.group(1)))
+    tree = ast.parse(RUNNER.read_text(encoding="utf-8"), filename=str(RUNNER))
+    runner_types = None
+    for node in tree.body:
+        if not isinstance(node, ast.Assign):
+            continue
+        if not any(isinstance(t, ast.Name) and t.id == "SUPPORTED_CHECK_TYPES"
+                   for t in node.targets):
+            continue
+        assert isinstance(node.value, (ast.Set, ast.List, ast.Tuple)), (
+            "SUPPORTED_CHECK_TYPES 不是字面量集合 —— 本判据不能用 ast 取真值，fail-closed")
+        runner_types = {
+            e.value for e in node.value.elts
+            if isinstance(e, ast.Constant) and isinstance(e.value, str)
+        }
+        break
+    assert runner_types is not None, (
+        "acceptance_runner.py 里找不到 SUPPORTED_CHECK_TYPES（判据真相源消失，fail-closed）")
     assert runner_types == SUPPORTED_TYPES, (
         f"断言类型集与 runner 不一致：runner={sorted(runner_types)} / 本文件={sorted(SUPPORTED_TYPES)}")
