@@ -11240,3 +11240,22 @@ cases:
       tests:
         - "tests/unit_ci_workflows/test_checkout_does_not_pull_history_blobs.py"
     merge_log: "2026-11-25 新增（issue #9120 A 类减负）。现场：8 条 A 类腿预算（8–26s）低于固定成本，大头是 `actions/checkout@v7` 的 `fetch-depth: 0`（实测 14–24s，`.git` 462 MiB），而它们的 git 用法只有 `git diff --name-only`（tree 级，不需要历史 blob）。修法：给 10 条只读 tree 的腿加 `filter: blob:none`；`gitleaks-scan` **保持全 blob**（`gitleaks detect --log-opts` 要逐 commit diff 内容，抽 blob 会变逐对象懒拉取）。红证：去掉 `block-env-files` 的 filter ⇒ 判据 1 红；给 gitleaks 加 filter ⇒ 判据 2/3 红。取号 = next_case_id.py MC ⇒ MC-369。"
+  - id: MC-370
+    legacy_id: ""
+    title: "case-trust-gate 的 L0 退化守卫并行（-n 4，且单文件目标不许 -dist loadfile）"
+    domains:
+      - misc
+      - ci
+    tier: normal
+    tags:
+      - ci
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "**判据 1·L0 守卫必须并行**：跑 `test_case_trust_gate.py` 的步骤必须含 `-n N`（N∈[2,8]）；缺即红（CI 单步实测 70s）。纯静态：`未被调用`。执行点 = `test_case_trust_l0_guards_run_in_parallel.py::test_l0_guards_use_xdist`"
+      - "**判据 2·xdist 与 pytest 同装**：该步的 `pip install` 行必须含 `pytest-xdist`，否则 `-n` 只会 fail 成 unrecognized arguments。执行点 = `::test_pytest_xdist_is_installed_in_the_same_step`"
+      - "**判据 3·单文件目标不得用 `--dist loadfile`**：该步只指定一个文件，`loadfile` 会把整文件压到同一 worker ⇒ 等于串行 + xdist 开销（实测 loadfile 50.8s > 串行 43.6s > load 29.6s）。判据**剥注释行**后再判，避免被「为什么不许用」的说明文字误触。执行点 = `::test_distribution_is_load_not_loadfile_for_a_single_file_target`"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_case_trust_l0_guards_run_in_parallel.py"
+    merge_log: "2026-11-25 新增（issue #9120）。现场：Case Trust Gate 的 `L0 degenerate guards` 步跑 180 条判据，CI 单步实测 **70s**（该腿共 98s），慢的是几条端到端驱动门禁脚本的用例（10.6s / 9.1s / 3.4s）。修法：`pytest -n 4`（默认 `load` 分布）+ 同装 `pytest-xdist`。**关键实测**：`--dist loadfile` 在本步反而更慢（50.8s > 串行 43.6s），因为该步只指定一个文件、loadfile 会把整文件压到同一 worker ⇒ 判据 3 专门钉这条。红证：去掉 `-n` ⇒ 1 failed；去掉 `pytest-xdist` ⇒ 1 failed（第一次变异打偏到 helper 腿的同名字符串，已按 L0 那行精确重做）；改成 `--dist loadfile` ⇒ 1 failed。取号 = next_case_id.py MC ⇒ MC-370。"

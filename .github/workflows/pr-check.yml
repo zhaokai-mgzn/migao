@@ -1241,9 +1241,12 @@ jobs:
         run: |
           # 判据自身的红证与退化守卫：写工具集合/效果层集合非空、判据不恒真/恒假、
           # 机器计分口径与 local_runner 同源、基线不得包含「已不再命中」的项。
-          pip install -q pytest
+          # ⚡ 并行（issue #9120）：这 180 条判据 CI 单步实测 **70s**（本机串行 39–43s），是本腿第二大开销。
+          #    ⚠️ 用默认 `--dist load`，**不要** `--dist loadfile`：本步只指定**一个文件**，
+          #    `loadfile` 会把整文件压到同一个 worker ⇒ 等于串行还多付 xdist 启动开销（实测 50.8s vs 29.6s）。
+          pip install -q pytest pytest-xdist
           python3 -m pytest tests/unit_ci_workflows/test_case_trust_gate.py -q \
-            --tb=short -p no:cacheprovider
+            --tb=short -p no:cacheprovider -n 4
 
   # ============ LLM 红例 → 确定性下沉台账（纯静态、零 LLM、零网络）============
   # 为什么需要它（用户裁定 4′，承载 issue #4034 ← #4009）：
