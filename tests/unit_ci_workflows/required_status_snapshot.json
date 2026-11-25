@@ -3,7 +3,7 @@
   "what": "分支保护 required 检查名的**只读快照**（issue #3507 ①）。用途：CI 里读不到 `GET /branches/main/protection`（需 admin）时，判据仍能对「已知 required 名」执行「不得被 workflow 级 paths 过滤遮住」这条类级锁。",
   "repo": "zhaokai-mgzn/migao",
   "branch": "main",
-  "captured_at": "2026-11-24T02:40:49Z",
+  "captured_at": "2026-11-25T00:50:00Z",
   "capture_command": "gh api repos/zhaokai-mgzn/migao/branches/main/protection --jq '.required_status_checks.contexts[]'",
   "refresh_command": "python3 tests/unit_ci_workflows/test_required_check_no_paths_filter.py --refresh",
   "contexts": [
@@ -18,6 +18,7 @@
     "UI Regression Check",
     "admin-api unit tests",
     "admin-web typecheck + unit tests",
+    "admin-web unit tests (2/2)",
     "ai-agent-service unit tests",
     "bmini-app typecheck + unit tests",
     "ci workflow helper unit tests",
