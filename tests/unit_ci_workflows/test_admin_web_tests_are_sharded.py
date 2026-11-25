@@ -54,7 +54,10 @@ def test_both_shards_share_one_detect_predicate():
     preds = {}
     for job in SHARD_JOBS:
         step = next((s for s in jobs[job]["steps"] if s.get("name") == "Detect admin-web changes"), None)
-        assert step is not None, f"{job} 缺 `Detect admin-web changes` 步（没有它就没法把未命中面挡在门外）"
+        assert step and "grep -E" in str(step.get("run") or ""), (
+            f"{job} 的 `Detect admin-web changes` 步缺失或不再用 `grep -E` 判触发面"
+            "（没有它就挡不住未命中面，本腿会在每个 PR 上整段真跑）"
+        )
         preds[job] = "\n".join(str(step.get("run") or "").split("\n") if isinstance(step.get("run"), str) else [])
     a, b = preds["admin-web-test"], preds["admin-web-tests-2"]
     pat_a = re.search(r"grep -E '([^']+)'", a)

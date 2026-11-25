@@ -503,7 +503,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
+      # ⚠️ 本腿必须 `fetch-depth: 0`：下面的 detect 用 `origin/main...HEAD`（**三点**）算触发面，需要 merge-base；
+      # 浅克隆里没有 merge-base ⇒ 步骤直接失败（CI 实测过一次）。改用两点 diff 会把「main 侧前进」也算进来 ⇒
+      # 不相关 PR 上也会跑本腿（多花 ~230s），比 18s 的 clone 更贵。
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
       - name: Detect admin-web changes
         id: detect_aw2
         run: |
