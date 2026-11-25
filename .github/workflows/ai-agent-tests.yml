@@ -31,6 +31,8 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+          # ⚡ 只取 tree（issue #9120）：detect 步只用 `git diff --name-only`（tree 级）
+          filter: blob:none
 
       - name: Detect ai-agent-related changes
         id: detect

@@ -11239,7 +11239,7 @@ cases:
     traces:
       tests:
         - "tests/unit_ci_workflows/test_checkout_does_not_pull_history_blobs.py"
-    merge_log: "2026-11-25 新增（issue #9120 A 类减负）。现场：8 条 A 类腿预算（8–26s）低于固定成本，大头是 `actions/checkout@v7` 的 `fetch-depth: 0`（实测 14–24s，`.git` 462 MiB），而它们的 git 用法只有 `git diff --name-only`（tree 级，不需要历史 blob）。修法：给 10 条只读 tree 的腿加 `filter: blob:none`；`gitleaks-scan` **保持全 blob**（`gitleaks detect --log-opts` 要逐 commit diff 内容，抽 blob 会变逐对象懒拉取）。红证：去掉 `block-env-files` 的 filter ⇒ 判据 1 红；给 gitleaks 加 filter ⇒ 判据 2/3 红。取号 = next_case_id.py MC ⇒ MC-369。"
+    merge_log: "2026-11-25 扩面（issue #9120）：判据原来只扫 `pr-check.yml`；现取口径改成**全仓工作流** —— bmini-app/mini-app 的 7 个 job（PR 路径，checkout 实测 17–21s）与 ai-agent 腿同样是 `git diff --name-only`（tree 级）。原记录：2026-11-25 新增（issue #9120 A 类减负）。现场：8 条 A 类腿预算（8–26s）低于固定成本，大头是 `actions/checkout@v7` 的 `fetch-depth: 0`（实测 14–24s，`.git` 462 MiB），而它们的 git 用法只有 `git diff --name-only`（tree 级，不需要历史 blob）。修法：给 10 条只读 tree 的腿加 `filter: blob:none`；`gitleaks-scan` **保持全 blob**（`gitleaks detect --log-opts` 要逐 commit diff 内容，抽 blob 会变逐对象懒拉取）。红证：去掉 `block-env-files` 的 filter ⇒ 判据 1 红；给 gitleaks 加 filter ⇒ 判据 2/3 红。取号 = next_case_id.py MC ⇒ MC-369。"
   - id: MC-370
     legacy_id: ""
     title: "case-trust-gate 的 L0 退化守卫并行（-n 4，且单文件目标不许 -dist loadfile）"

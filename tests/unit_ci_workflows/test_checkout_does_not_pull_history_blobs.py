@@ -1,5 +1,5 @@
 # case_ids: MC-369
-"""只要 tree 的腿**不得**拉全史 blob（issue #9120 A 类减负）。
+"""只要 tree 的腿**不得**拉全史 blob（issue #9120 A 类减负；现取口径 = **全仓**工作流）。
 
 ## 病（现取）
 
@@ -23,7 +23,7 @@ import re
 import yaml
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
-PR_CHECK = REPO_ROOT / ".github" / "workflows" / "pr-check.yml"
+WORKFLOWS = REPO_ROOT / ".github" / "workflows"
 
 #: 只读 tree 的 git 用法（不需要历史 blob）
 TREE_ONLY = re.compile(r"git diff\s+(?:--diff-filter=\w+\s+)?(?:--name-only|--name-status)")
@@ -34,8 +34,14 @@ TREE_ONLY = re.compile(r"git diff\s+(?:--diff-filter=\w+\s+)?(?:--name-only|--na
 NEEDS_BLOB_JOBS = {"gitleaks-scan"}
 
 
-def _jobs() -> dict:
-    return yaml.safe_load(PR_CHECK.read_text(encoding="utf-8")).get("jobs") or {}
+def _jobs() -> dict[tuple[str, str], dict]:
+    """现取全仓工作流的每个 job ⇒ {(文件, job_id): job}。"""
+    out: dict[tuple[str, str], dict] = {}
+    for path in sorted(WORKFLOWS.glob("*.yml")):
+        doc = yaml.safe_load(path.read_text(encoding="utf-8"))
+        for jid, job in (doc.get("jobs") or {}).items():
+            out[(path.name, jid)] = job or {}
+    return out
 
 
 def _body(job: dict) -> str:
@@ -44,7 +50,7 @@ def _body(job: dict) -> str:
 
 def test_tree_only_jobs_use_blobless_partial_clone():
     offenders: list[str] = []
-    for jid, job in _jobs().items():
+    for (fname, jid), job in _jobs().items():
         body = _body(job)
         if jid in NEEDS_BLOB_JOBS or not TREE_ONLY.search(body):
             continue
@@ -54,7 +60,7 @@ def test_tree_only_jobs_use_blobless_partial_clone():
             continue                     # 浅克隆本来就快
         if with_.get("filter") != "blob:none":
             offenders.append(
-                f"{jid}：只做 `git diff --name-only`（tree 级）却拉全史 blob"
+                f"{fname}::{jid}：只做 `git diff --name-only`（tree 级）却拉全史 blob"
                 f"（fetch-depth={with_.get('fetch-depth')}, filter={with_.get('filter')}）"
             )
     assert not offenders, (
@@ -65,14 +71,14 @@ def test_tree_only_jobs_use_blobless_partial_clone():
 
 def test_content_reading_jobs_never_use_blobless():
     offenders: list[str] = []
-    for jid, job in _jobs().items():
+    for (fname, jid), job in _jobs().items():
         if jid not in NEEDS_BLOB_JOBS:
             continue
         checkout = (job.get("steps") or [{}])[0]
         with_ = checkout.get("with") or {}
         if with_.get("filter") == "blob:none":
             offenders.append(
-                f"{jid}：跑内容级 git 命令（`git log -p` / patch `git diff` / `git grep`）却用 `filter: blob:none`"
+                f"{fname}::{jid}：跑内容级 git 命令（`git log -p` / patch `git diff` / `git grep`）却用 `filter: blob:none`"
                 " ⇒ partial clone 会把每次读 blob 变成懒拉取（比全史更慢，且要联网）"
             )
     assert not offenders, "\n  ".join(offenders)
@@ -80,14 +86,15 @@ def test_content_reading_jobs_never_use_blobless():
 
 def test_the_needs_blob_list_is_not_stale():
     """反向锁：清单里的腿必须**真的**跑内容级 git 命令，否则清单会腐烂成「永远不用动」的借口。"""
+    live = {jid: job for (_f, jid), job in _jobs().items()}
     stale = [jid for jid in NEEDS_BLOB_JOBS
-             if jid not in _jobs() or not re.search(r"gitleaks\s+detect|git log -p|git grep", _body(_jobs().get(jid) or {}))]
+             if jid not in live or not re.search(r"gitleaks\s+detect|git log -p|git grep", _body(live.get(jid) or {}))]
     assert not stale, f"这些腿在清单里但已不再跑内容级 git 命令 ⇒ 从 NEEDS_BLOB_JOBS 删掉：{stale}"
 
 
 def test_the_known_content_leg_is_still_full_blob():
     """回归锁：`gitleaks-scan` 必须保持**全 blob**（它要逐 commit 的 diff 内容）。"""
-    job = _jobs()["gitleaks-scan"]
+    job = _jobs()[("pr-check.yml", "gitleaks-scan")]
     with_ = (job.get("steps") or [{}])[0].get("with") or {}
     assert with_.get("filter") != "blob:none", (
         "gitleaks 把历史 blob 抽掉后，`gitleaks detect --log-opts` 会逐对象懒拉取 ⇒ 比现在更慢且要联网；"
