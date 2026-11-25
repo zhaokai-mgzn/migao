@@ -15,4 +15,8 @@ public interface KfChannelMapper extends BaseMapper<KfChannel> {
     @InterceptorIgnore(tenantLine = "true")
     @Select("SELECT * FROM kf_channels WHERE corp_id = #{corpId} AND open_kfid = #{openKfid} LIMIT 1")
     KfChannel selectByCorpAndOpenKfid(@Param("corpId") String corpId, @Param("openKfid") String openKfid);
+
+    @InterceptorIgnore(tenantLine = "true")
+    @Select("SELECT * FROM kf_channels WHERE open_kfid = #{openKfid} AND status = 'active' LIMIT 1")
+    KfChannel selectByOpenKfid(@Param("openKfid") String openKfid);
 }

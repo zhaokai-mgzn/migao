@@ -211,6 +211,11 @@ wechat:
     token: ${WECHAT_KF_TOKEN:}
     encoding-aes-key: ${WECHAT_KF_ENCODING_AES_KEY:}
     receive-id: ${WECHAT_KF_RECEIVE_ID:}
+    # 凭据信封加密主密钥（SecretCipher；必填，未配置则启用时启动失败 = fail-closed）
+    secret-master-key: ${WECHAT_KF_SECRET_MASTER_KEY:}
+    sync:
+      claim-stale-seconds: ${WECHAT_KF_CLAIM_STALE_SECONDS:300}
+    sync-interval-ms: ${WECHAT_KF_SYNC_INTERVAL_MS:30000}
 
 # 日志配置
 logging:
