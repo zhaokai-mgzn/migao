@@ -339,7 +339,10 @@ jobs:
           DATABASE_URL: postgresql+asyncpg://${{ secrets.RDS_USER }}:${{ secrets.RDS_PASSWORD }}@${{ secrets.RDS_HOST }}:${{ secrets.RDS_PORT }}/${{ secrets.RDS_DB }}
         run: |
           pip install -r requirements.txt -q
-          python -m pytest tests/ -v --tb=short -q -m "not integration"
+          # ⚡ 并行（issue #9153 读数：本步单跑实测 459s，是本腿唯一大头；`pytest-xdist` 早已在
+          #   requirements.txt 里（#2957 本地并行提速），CI 只是没用）。`--dist loadfile` 保证
+          #   **同一文件的用例落在同一 worker**（夹具/模块级状态不被跨 worker 打散）。
+          python -m pytest tests/ -v --tb=short -q -m "not integration" -n 4 --dist loadfile
 
       # ── C′ 服务器侧构建（issue #5814）：CI **不再构建、不再推 ACR** ──────────────
       # 用户 2026-09-30 裁定 C′（服务器侧构建），推翻旧铁律「构建跑在 CI，服务器只拉预构建产物」。

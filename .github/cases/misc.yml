@@ -11183,3 +11183,22 @@ cases:
       tests:
         - "tests/unit_ci_workflows/test_suite_self_lock.py"
     merge_log: "2026-11-25 新增（issue #9105）。现场：`pytest tests/unit_ci_workflows -q -n 4` 全程无锁文件、无排队、无拒绝报文，而同刻在跑 536 个判据文件 ⇒ 加 `-n` 即可绕过「重活串行」（#6019 射程洞）。根因：拿锁钩子挂在 `pytest_collection`，`-n` 下收集由 worker 执行、控制器不调用它。修法：新增 `pytest_configure` 拿锁点（控制器一定触发、早于收集）+ `PYTEST_XDIST_WORKER` 跳过 worker + `acquire_suite_lock` 同进程幂等（`_SUITE_LOCK_HELD`），`pytest_collection` 保留作兜底。红证实跑：摘掉 configure 里的 acquire ⇒ 判据 1 FAILED；删掉幂等短路 ⇒ 判据 3 FAILED（锁脚本被调 2 次）。取号 = next_case_id.py MC ⇒ MC-366。"
+  - id: MC-368
+    legacy_id: ""
+    title: "ai-agent 单测必须真开 xdist（-n 4 --dist loadfile）：单步曾 459s，全仓最大一笔"
+    domains:
+      - misc
+      - ci
+    tier: normal
+    tags:
+      - ci
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "**判据 1·两处调用都带 `-n N`（N∈[2,8]）**：现取 `ai-agent-tests.yml` 与 `deploy-ai-agent-service.yml` 的运行 `tests/` 的 pytest 行；缺 `-n` 或 N 越界即具名红。纯静态：`未被调用`。执行点 = `test_ai_agent_tests_run_in_parallel.py::test_both_invocations_use_xdist`"
+      - "**判据 2·必须 `--dist loadfile`**：`load` 会把同一文件摊到多个 worker（模块级状态会串）。执行点 = `::test_dist_is_loadfile`"
+      - "**判据 3·两处命令逐字同源 + xdist 已安装**：PR 腿与部署腿的 pytest 行必须完全相同；`requirements.txt` 里必须有 `pytest-xdist`。执行点 = `::test_both_legs_use_the_same_command` 与 `::test_xdist_is_installed_by_requirements`"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_ai_agent_tests_run_in_parallel.py"
+    merge_log: "2026-11-25 新增（issue #9153 逐腿裁决的第一大项）。现场：PR 腿与部署腿都是 `python -m pytest tests/ -v --tb=short -q -m \"not integration\"`，**没有 `-n`** ⇒ 8210 条用例单进程跑，CI step 实测 **459s**；而 `pytest-xdist==3.8.0` 早在 `backend/ai-agent-service/requirements.txt`（注释「#2957 本地并行提速」）⇒ CI 只是没用。修法：两处命令统一加 `-n 4 --dist loadfile`（同文件落同 worker）。本机实测对照：串行 **282.7s** / 并行 **164.2s**（1.72×，8210 passed 一致）。红证：去掉 `-n` ⇒ 3 failed；把 `--dist loadfile` 改成 `--dist load` ⇒ 2 failed。取号 = next_case_id.py MC ⇒ MC-368。"
