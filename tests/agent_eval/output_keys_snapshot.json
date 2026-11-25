@@ -188,7 +188,7 @@
     "keys",
     "source_before"
    ],
-   "source_sha256": "a29b6ab1b2fb7c24cd75527bab3793906f3879cb0087f6f7226973018f48b026"
+   "source_sha256": "23e2f38f3ff7755875cfceeb0584d406bec18fd28dac19e2961d2b79b15f2890"
   },
   "craft_config_query": {
    "actions": null,
@@ -1217,7 +1217,7 @@
     "model",
     "product"
    ],
-   "source_sha256": "942dc680b1a13334c57139b56007a92397c5bdbfd7ea5ad66f22ed2480c4c89b"
+   "source_sha256": "6e7c79ebec0ee11dd9507e8c6d0ecf65283d68db5a44a8f32754eb8a84c4273c"
   },
   "product_manage": {
    "actions": {
