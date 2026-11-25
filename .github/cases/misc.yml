@@ -11108,3 +11108,22 @@ cases:
       tests:
         - "tests/unit_ci_workflows/test_hardcoded_line_numbers_burn_down.py"
     merge_log: "2026-11-25 新增（issue #9150）。现场：`check-ui-regression.sh` 加 8 行注释 ⇒ `test_scripts_bash32_var_brace.py` 里那条「扫描器读数 == 含行号前缀的列表」立刻红、4/4 片整片失败（本机复算 2242 passed 证明不是 infra 抖动）。**逐条分类 40 处后的口径修正**：全仓「第 N 行」字面量绝大多数是文档串/报错文案/夹具文本，**不是**对仓内文件行号的期望 ⇒ 不做全量 burn-down（那会把无害文案也当成债），只拦危险那一类 = **比较右侧**。同批把唯一一条夹具里的行号字面量改写成 len==1 + endswith（原意不变，「行号可定位」仍由下一条 startswith 覆盖）。取号 = next_case_id.py MC ⇒ MC-362。"
+  - id: MC-363
+    legacy_id: ""
+    title: "admin-web 单测按 vitest --shard 拆两片（455s 且还在涨；两片互补 + 谓词同源 + 无 job 级门控）"
+    domains:
+      - misc
+      - ci
+    tier: normal
+    tags:
+      - ci
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "**判据 1·两片必须互补**：`admin-web-test` 的 `vitest run --shard=1/2` 与 `admin-web-tests-2` 的 `--shard=2/2` 逐条现取比对；两片写同一半即红（否则另一半永远没人跑，而两条腿都绿）。纯静态：`未被调用`。执行点 = `test_admin_web_tests_are_sharded.py::test_two_shards_are_complementary`"
+      - "**判据 2·触发谓词逐字同源**：两片的 `Detect admin-web changes` 步里 `grep -E '<谓词>'` 必须完全一致；不同则「只改某一面」的 PR 上另一片整段跳过、仍绿（未跑 ≠ 通过）。执行点 = `::test_both_shards_share_one_detect_predicate`"
+      - "**判据 3·第 2 片不得有 job 级门控**：required 腿带 `needs:`/`if:` ⇒ 检查永久悬空且**不会变红**；只许把 `if:` 放在步骤上。执行点 = `::test_second_shard_has_no_job_level_gate`"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_admin_web_tests_are_sharded.py"
+    merge_log: "2026-11-25 新增（issue #9153 ②）。现场：`admin-web typecheck + unit tests` 635s，其中 `Run unit tests` **455s**（三轮 295→426→455，现取 518 个测试文件），预算 295s。修法：`vitest --shard=1/2` 留在原腿、`--shard=2/2` 单开一条 required 腿（required 18→19：分支保护 + `required_status_snapshot.json` + 台账腿 + 门禁登记册四处同批）。判据钉三种假绿：两片跑同一半 / 两片谓词不同 / 第 2 片带 job 级门控。红证实跑：把第 2 片也写成 `--shard=1/2` ⇒ 判据 1 FAILED。⚠️ 途中 `git checkout -- .github/workflows/pr-check.yml` 把**未提交**的 workflow 改动冲掉（今晚第二次踩同款），已重放并复算。取号 = next_case_id.py MC ⇒ MC-363。"
