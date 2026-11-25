@@ -14,7 +14,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from app.api.kf_judge import _parse_json, judge_text
+from app.api.kf_judge import KfJudgeResult, _parse_json, judge_text
 from app.config import settings
 
 
@@ -66,7 +66,7 @@ class TestJudgeText:
         ):
             result = await judge_text("我要投诉，转人工")
 
-        assert result is not None
+        assert isinstance(result, KfJudgeResult)
         assert result.intent == "human_request"
         assert result.risk == "high"
         assert result.emotion == "angry"
@@ -83,7 +83,7 @@ class TestJudgeText:
             return_value=_llm_returning(json.dumps(payload)),
         ):
             result = await judge_text("你们这什么破质量")
-        assert result is not None
+        assert isinstance(result, KfJudgeResult)
         assert result.escalate is True
 
     @pytest.mark.asyncio
