@@ -10966,6 +10966,7 @@ cases:
     tier: normal
     tags:
       - ci
+    skip_reason: "[backend-contract] 纯静态 CI 结构判据（零 LLM / 零网络 / 零 DB）：不进 agent-eval 冒烟；机器判红通道 = traces.tests 的 pytest（pr-check 的 ci workflow helper unit tests 全量跑 tests/unit_ci_workflows）；2026-11-25 run 45647252503 实测：缺本字段会被 normal 档当行为用例跑并必然红（#9220）"
     expectations:
       - tool: direct_reply
     data_checks:
@@ -10986,6 +10987,7 @@ cases:
     tier: normal
     tags:
       - ci
+    skip_reason: "[backend-contract] 纯静态 CI 结构判据（零 LLM / 零网络 / 零 DB）：不进 agent-eval 冒烟；机器判红通道 = traces.tests 的 pytest（pr-check 的 ci workflow helper unit tests 全量跑 tests/unit_ci_workflows）；2026-11-25 run 45647252503 实测：缺本字段会被 normal 档当行为用例跑并必然红（#9220）"
     expectations:
       - tool: direct_reply
     data_checks:
@@ -11006,6 +11008,7 @@ cases:
     tier: normal
     tags:
       - ci
+    skip_reason: "[backend-contract] 纯静态 CI 结构判据（零 LLM / 零网络 / 零 DB）：不进 agent-eval 冒烟；机器判红通道 = traces.tests 的 pytest（pr-check 的 ci workflow helper unit tests 全量跑 tests/unit_ci_workflows）；2026-11-25 run 45647252503 实测：缺本字段会被 normal 档当行为用例跑并必然红（#9220）"
     expectations:
       - tool: direct_reply
     data_checks:
@@ -11024,6 +11027,7 @@ cases:
     tier: normal
     tags:
       - ci
+    skip_reason: "[backend-contract] 纯静态 CI 结构判据（零 LLM / 零网络 / 零 DB）：不进 agent-eval 冒烟；机器判红通道 = traces.tests 的 pytest（pr-check 的 ci workflow helper unit tests 全量跑 tests/unit_ci_workflows）；2026-11-25 run 45647252503 实测：缺本字段会被 normal 档当行为用例跑并必然红（#9220）"
     expectations:
       - tool: direct_reply
     data_checks:
@@ -11043,6 +11047,7 @@ cases:
     tier: normal
     tags:
       - ci
+    skip_reason: "[backend-contract] 纯静态 CI 结构判据（零 LLM / 零网络 / 零 DB）：不进 agent-eval 冒烟；机器判红通道 = traces.tests 的 pytest（pr-check 的 ci workflow helper unit tests 全量跑 tests/unit_ci_workflows）；2026-11-25 run 45647252503 实测：缺本字段会被 normal 档当行为用例跑并必然红（#9220）"
     expectations:
       - tool: direct_reply
     data_checks:
@@ -11063,6 +11068,7 @@ cases:
     tier: normal
     tags:
       - ci
+    skip_reason: "[backend-contract] 纯静态 CI 结构判据（零 LLM / 零网络 / 零 DB）：不进 agent-eval 冒烟；机器判红通道 = traces.tests 的 pytest（pr-check 的 ci workflow helper unit tests 全量跑 tests/unit_ci_workflows）；2026-11-25 run 45647252503 实测：缺本字段会被 normal 档当行为用例跑并必然红（#9220）"
     expectations:
       - tool: direct_reply
     data_checks:
@@ -11082,6 +11088,7 @@ cases:
     tier: normal
     tags:
       - ci
+    skip_reason: "[backend-contract] 纯静态 CI 结构判据（零 LLM / 零网络 / 零 DB）：不进 agent-eval 冒烟；机器判红通道 = traces.tests 的 pytest（pr-check 的 ci workflow helper unit tests 全量跑 tests/unit_ci_workflows）；2026-11-25 run 45647252503 实测：缺本字段会被 normal 档当行为用例跑并必然红（#9220）"
     expectations:
       - tool: direct_reply
     data_checks:
@@ -11100,6 +11107,7 @@ cases:
     tier: normal
     tags:
       - ci
+    skip_reason: "[backend-contract] 纯静态 CI 结构判据（零 LLM / 零网络 / 零 DB）：不进 agent-eval 冒烟；机器判红通道 = traces.tests 的 pytest（pr-check 的 ci workflow helper unit tests 全量跑 tests/unit_ci_workflows）；2026-11-25 run 45647252503 实测：缺本字段会被 normal 档当行为用例跑并必然红（#9220）"
     expectations:
       - tool: direct_reply
     data_checks:
@@ -11118,6 +11126,7 @@ cases:
     tier: normal
     tags:
       - ci
+    skip_reason: "[backend-contract] 纯静态 CI 结构判据（零 LLM / 零网络 / 零 DB）：不进 agent-eval 冒烟；机器判红通道 = traces.tests 的 pytest（pr-check 的 ci workflow helper unit tests 全量跑 tests/unit_ci_workflows）；2026-11-25 run 45647252503 实测：缺本字段会被 normal 档当行为用例跑并必然红（#9220）"
     expectations:
       - tool: direct_reply
     data_checks:
@@ -11137,6 +11146,7 @@ cases:
     tier: normal
     tags:
       - ci
+    skip_reason: "[backend-contract] 纯静态 CI 结构判据（零 LLM / 零网络 / 零 DB）：不进 agent-eval 冒烟；机器判红通道 = traces.tests 的 pytest（pr-check 的 ci workflow helper unit tests 全量跑 tests/unit_ci_workflows）；2026-11-25 run 45647252503 实测：缺本字段会被 normal 档当行为用例跑并必然红（#9220）"
     expectations:
       - tool: direct_reply
     data_checks:
@@ -11156,6 +11166,7 @@ cases:
     tier: normal
     tags:
       - ci
+    skip_reason: "[backend-contract] 纯静态 CI 结构判据（零 LLM / 零网络 / 零 DB）：不进 agent-eval 冒烟；机器判红通道 = traces.tests 的 pytest（pr-check 的 ci workflow helper unit tests 全量跑 tests/unit_ci_workflows）；2026-11-25 run 45647252503 实测：缺本字段会被 normal 档当行为用例跑并必然红（#9220）"
     expectations:
       - tool: direct_reply
     data_checks:
@@ -11173,6 +11184,7 @@ cases:
     tier: normal
     tags:
       - ci
+    skip_reason: "[backend-contract] 纯静态 CI 结构判据（零 LLM / 零网络 / 零 DB）：不进 agent-eval 冒烟；机器判红通道 = traces.tests 的 pytest（pr-check 的 ci workflow helper unit tests 全量跑 tests/unit_ci_workflows）；2026-11-25 run 45647252503 实测：缺本字段会被 normal 档当行为用例跑并必然红（#9220）"
     expectations:
       - tool: direct_reply
     data_checks:
@@ -11193,6 +11205,7 @@ cases:
     tier: normal
     tags:
       - ci
+    skip_reason: "[backend-contract] 纯静态 CI 结构判据（零 LLM / 零网络 / 零 DB）：不进 agent-eval 冒烟；机器判红通道 = traces.tests 的 pytest（pr-check 的 ci workflow helper unit tests 全量跑 tests/unit_ci_workflows）；2026-11-25 run 45647252503 实测：缺本字段会被 normal 档当行为用例跑并必然红（#9220）"
     expectations:
       - tool: direct_reply
     data_checks:
@@ -11212,6 +11225,7 @@ cases:
     tier: normal
     tags:
       - ci
+    skip_reason: "[backend-contract] 纯静态 CI 结构判据（零 LLM / 零网络 / 零 DB）：不进 agent-eval 冒烟；机器判红通道 = traces.tests 的 pytest（pr-check 的 ci workflow helper unit tests 全量跑 tests/unit_ci_workflows）；2026-11-25 run 45647252503 实测：缺本字段会被 normal 档当行为用例跑并必然红（#9220）"
     expectations:
       - tool: direct_reply
     data_checks:
@@ -11231,6 +11245,7 @@ cases:
     tier: normal
     tags:
       - ci
+    skip_reason: "[backend-contract] 纯静态 CI 结构判据（零 LLM / 零网络 / 零 DB）：不进 agent-eval 冒烟；机器判红通道 = traces.tests 的 pytest（pr-check 的 ci workflow helper unit tests 全量跑 tests/unit_ci_workflows）；2026-11-25 run 45647252503 实测：缺本字段会被 normal 档当行为用例跑并必然红（#9220）"
     expectations:
       - tool: direct_reply
     data_checks:
@@ -11250,6 +11265,7 @@ cases:
     tier: normal
     tags:
       - ci
+    skip_reason: "[backend-contract] 纯静态 CI 结构判据（零 LLM / 零网络 / 零 DB）：不进 agent-eval 冒烟；机器判红通道 = traces.tests 的 pytest（pr-check 的 ci workflow helper unit tests 全量跑 tests/unit_ci_workflows）；2026-11-25 run 45647252503 实测：缺本字段会被 normal 档当行为用例跑并必然红（#9220）"
     expectations:
       - tool: direct_reply
     data_checks:
