@@ -22,11 +22,18 @@ from __future__ import annotations
 
 import importlib.util
 import io
+import sys
 from pathlib import Path
 
 import pytest
 
-SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "agent-preset-wiring-guard.py"
+REPO_ROOT = Path(__file__).resolve().parents[2]
+SCRIPT = REPO_ROOT / "scripts" / "agent-preset-wiring-guard.py"
+
+# 注入走共用原语（issue #7017）：`str.replace` 0 命中会**静默返回原串** ⇒ 把「锚点漂移」误报成
+# 「判据没牙」。`inject()` 0 命中抛 AnchorDrift，不唯一抛 AmbiguousAnchor。
+sys.path.append(str(REPO_ROOT / "tests"))
+from unit_ci_workflows.injection import inject  # noqa: E402
 
 
 @pytest.fixture(scope="module")
@@ -140,11 +147,12 @@ def test_js_expression_root_is_evaluated(guard, env):
     """`!!js` 表达式（`dshHomePath`）能求值 ⇒ 绿：证明判据读的是**求值后的路径**。"""
     dsh, anchor = env
     patch = write_patch(dsh, [])
+    source = patch.read_text(encoding="utf-8")
     patch.write_text(
-        patch.read_text(encoding="utf-8").replace(
-            "              customSkillDirs:\n",
-            "              customSkillDirs:\n                - !!js \"dshHomePath('..', 'anchor', 'skills')\"\n",
-        ),
+        inject(source,
+               "              customSkillDirs:\n",
+               "              customSkillDirs:\n                - !!js \"dshHomePath('..', 'anchor', 'skills')\"\n",
+               where="cordis.patch.yml"),
         encoding="utf-8",
     )
     code, out = judge(guard, dsh, anchor)
@@ -155,11 +163,12 @@ def test_broken_expression_is_red(guard, env):
     """表达式求值失败 ⇒ 红（fail-closed，不许当成「没有这个根」静默通过）。"""
     dsh, anchor = env
     patch = write_patch(dsh, [])
+    source = patch.read_text(encoding="utf-8")
     patch.write_text(
-        patch.read_text(encoding="utf-8").replace(
-            "              customSkillDirs:\n",
-            "              customSkillDirs:\n                - !!js \"process.nope.boom\"\n",
-        ),
+        inject(source,
+               "              customSkillDirs:\n",
+               "              customSkillDirs:\n                - !!js \"process.nope.boom\"\n",
+               where="cordis.patch.yml"),
         encoding="utf-8",
     )
     code, out = judge(guard, dsh, anchor)
@@ -188,7 +197,8 @@ def test_other_preset_only_is_three(guard, env):
     """三态：patch 里没有该 preset 的声明行 ⇒ 3（不得当 0 读）。"""
     dsh, anchor = env
     patch = write_patch(dsh, [str(anchor / "skills")])
-    patch.write_text(patch.read_text(encoding="utf-8").replace("id: migao", "id: someone-else"), encoding="utf-8")
+    source = patch.read_text(encoding="utf-8")
+    patch.write_text(inject(source, "id: migao", "id: someone-else", where="cordis.patch.yml"), encoding="utf-8")
     code, out = judge(guard, dsh, anchor)
     assert code == 3, out
 
