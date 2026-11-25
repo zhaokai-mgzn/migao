@@ -257,7 +257,7 @@ export default function HumanAgentSessionsPage() {
                   <span className="text-neutral-500" data-testid={`kf-send-status-${s.id}`}>
                     {kfSendStatusLabel(s.sendStatus)}
                   </span>
-                  <span className="text-neutral-400" data-testid={`kf-budget-${s.id}`}>
+                  <span className="text-neutral-500" data-testid={`kf-budget-${s.id}`}>
                     额度 {s.budgetUsed ?? 0}/{s.budgetLimit ?? KF_BUDGET_LIMIT_FALLBACK}
                   </span>
                 </div>
