@@ -857,13 +857,22 @@ def _env_truthy(value) -> bool:
     return text not in ("", "0", "false", "no", "off")
 
 
+#: 本进程是否**已经**拿到机器级锁（issue #9105：`pytest_configure` 与 `pytest_collection` 两处都可能调
+#: `acquire_suite_lock`；同进程第二次调用必须**直接返回已持有**，否则锁脚本会把「自己」当成活持有者 ⇒ 自锁死）。
+_SUITE_LOCK_HELD = False
+
+
 def acquire_suite_lock(env=None) -> tuple[bool, str]:
     """拿套件自己的机器级锁。返回 `(是否拿到, 失败时的人类可读报文)`。
 
     ⚠️ 只**报告**，不在这里判红：拿不到时由 `pytest_collection` 钩子 `pytest.exit`（fail-closed），
     这样「拿不到 ⇒ 非零退出」这条路对任何调用者都成立，且判据可以直接调本函数看读数。
     """
+    global _SUITE_LOCK_HELD
     env = os.environ if env is None else env
+    if _SUITE_LOCK_HELD:
+        # 同进程幂等：`pytest_configure`（issue #9105 起）先拿过 ⇒ `pytest_collection` 兜底那次不得再 acquire
+        return True, "本进程已持有机器级锁（幂等）"
     lock_file = env.get("MIGAO_HEAVY_LOCK_FILE") or "<$HOME/.migao-heavy.lock>"
     # 🔴 **纵深防御（issue #6074）**：无论豁免是否生效（= 祖先有没有设 `MIGAO_HEAVY_LOCK_HELD=1`），
     #    这条路都**不得无限阻塞**。两条出口，按顺序：
@@ -917,6 +926,7 @@ def acquire_suite_lock(env=None) -> tuple[bool, str]:
         )
     finally:
         if acquired:
+            _SUITE_LOCK_HELD = True
             # acquire 记的持有者是**本进程**（锁脚本用 `$PPID`）⇒ 本进程被 Ctrl-C / 被杀也必须放掉，
             # 否则一次中断就把机器级锁永久占住（§27 的「一次异常退出就死锁」）。
             atexit.register(release_suite_lock, env)
@@ -936,11 +946,43 @@ def acquire_suite_lock(env=None) -> tuple[bool, str]:
 
 def release_suite_lock(env=None) -> None:
     """释放**自己**持有的那份（非法持有者由锁脚本自己拒绝，本函数不让异常逃出去）。"""
+    global _SUITE_LOCK_HELD
+    _SUITE_LOCK_HELD = False
     try:
         subprocess.run([str(LOCK_SCRIPT), "release"], capture_output=True, text=True,
                        cwd=str(REPO_ROOT), env=os.environ if env is None else env)
     except OSError:
         pass
+
+
+def pytest_configure(config) -> None:
+    """套件自带准入的**主拿锁点**（issue #9105）。
+
+    ## 为什么必须在 `pytest_configure` 里拿（而不是只挂在 `pytest_collection`）
+
+    `-n N`（xdist）下**收集由 worker 执行**，控制器（`DSession`）**不调用** `pytest_collection`
+    ⇒ 挂在 collection 上的拿锁点根本不触发。实测（2026-11-24）：`pytest tests/unit_ci_workflows -q -n 4`
+    全程**没有锁文件、没有排队、没有拒绝报文**，而同一时刻它在跑 536 个判据文件 ——
+    任何人加一个 `-n` 就能绕过「重活串行」（#6019 的射程洞）。
+
+    `pytest_configure` 在**控制器上一定触发**（且早于收集 ⇒ 拒绝发生在烧 CPU 之前）。
+
+    ⚠️ worker 必须跳过：`PYTEST_XDIST_WORKER` 在 worker 的 conftest 导入时**已经**设好
+    （比 `config.workerinput` 更早、更可靠）；worker 各自抢锁会 N 路互抢。
+    ⚠️ 与 `pytest_collection` 的关系：那个钩子**保留**作兜底（例如插件把收集挪走的情形），
+    靠 `acquire_suite_lock` 的**同进程幂等**保证不会二次 acquire 而自锁。
+    """
+    if os.environ.get("PYTEST_XDIST_WORKER") or hasattr(config, "workerinput"):
+        return                     # xdist worker：由控制器统一拿锁
+    try:
+        args = list(config.invocation_params.args)
+    except Exception:  # noqa: BLE001 —— 取不到参数 = 不可判定 ⇒ 按**最宽**面判（fail-closed）
+        args = [SUITE_DIR]
+    if not suite_self_lock_wanted(args, config=config, env=os.environ):
+        return
+    ok, detail = acquire_suite_lock(os.environ)
+    if not ok:
+        raise pytest.exit.Exception(detail, returncode=1)
 
 
 def pytest_collection(session):  # noqa: ARG001 —— 只需 session.config；钩子体在 collection 之前
