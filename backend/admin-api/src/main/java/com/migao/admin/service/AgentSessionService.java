@@ -11,6 +11,7 @@ import com.migao.admin.mapper.AgentEmployeeMapper;
 import com.migao.admin.mapper.AgentMessageMapper;
 import com.migao.admin.mapper.AgentSessionMapper;
 import com.migao.admin.mapper.CustomerProfileMapper;
+import com.migao.admin.service.kf.KfSendService;
 import com.migao.admin.time.BusinessClock;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
@@ -40,6 +41,10 @@ public class AgentSessionService extends ServiceImpl<AgentSessionMapper, AgentSe
      * 默认实例（同为 +08 口径，行为一致），不因引入时钟让任何既有上下文启动失败（实测 OssEmptyConfigContextTest）。 */
     @Autowired(required = false)
     private BusinessClock businessClock = new BusinessClock();
+
+    /** 微信客服通道（issue #9187）：工作台坐席回复同步入 kf_outbox；未启用时为 null。 */
+    @Autowired(required = false)
+    private KfSendService kfSendService;
 
     private final AgentSessionMapper agentSessionMapper;
     private final AgentMessageMapper agentMessageMapper;
@@ -586,6 +591,24 @@ public class AgentSessionService extends ServiceImpl<AgentSessionMapper, AgentSe
                 .isInternal(Boolean.TRUE.equals(isInternal))
                 .build();
         agentMessageMapper.insert(msg);
+
+        // 微信客服：坐席回复同步入 outbox（异步 send_msg）；失败不阻塞工作台，但必须留日志
+        if ("agent".equals(senderType) && !Boolean.TRUE.equals(isInternal)
+                && session.getAiSessionId() != null && kfSendService != null) {
+            Long prevTenant = TenantContext.getTenantId();
+            try {
+                kfSendService.enqueueReply(session.getTenantId(), session.getAiSessionId(), content);
+            } catch (Exception e) {
+                log.warn("[agent-session] 微信客服回复入队失败 sessionId={} aiSessionId={}: {}",
+                        sessionId, session.getAiSessionId(), e.getMessage());
+            } finally {
+                if (prevTenant == null) {
+                    TenantContext.clear();
+                } else {
+                    TenantContext.setTenantId(prevTenant);
+                }
+            }
+        }
 
         // 客服首次回复：waiting → active
         if ("agent".equals(senderType) && "waiting".equals(session.getStatus())) {

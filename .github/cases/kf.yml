@@ -469,3 +469,24 @@ cases:
         - "backend/admin-api/src/test/java/com/migao/admin/controller/KfInternalDecisionControllerTest.java"
       ci: [pr-check.yml]
       verifies: []
+
+  - id: KF-023
+    legacy_id: ""
+    title: "KfCardRenderer — 卡片降级为文本/链接/选项"
+    domains: [kf]
+    tier: normal
+    tags: [kf, card]
+    truths_ref: [kf.card-renderer]
+    user_inputs:
+      - "商品卡、支付卡、快捷按钮、表单四种输入"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "商品卡含标题/摘要/链接；支付卡含扫码 URL；按钮卡含编号选项；表单提示直接回复文字"
+    skip_reason: "[backend-contract] 纯单元测试，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-11-25 新增：微信客服 PR4（issue #9187）"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/kf/KfCardRendererTest.java"
+      ci: [pr-check.yml]
+      verifies: []
