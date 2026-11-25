@@ -111,7 +111,7 @@ def test_supported_types_match_runner_source():
     ⚠️ 静态反解而非 import：helper job 只装 pytest + pyyaml，import runner 会 ImportError。
     """
     tree = ast.parse(RUNNER.read_text(encoding="utf-8"), filename=str(RUNNER))
-    runner_types = None
+    runner_types = set()
     for node in tree.body:
         if not isinstance(node, ast.Assign):
             continue
@@ -125,7 +125,8 @@ def test_supported_types_match_runner_source():
             if isinstance(e, ast.Constant) and isinstance(e.value, str)
         }
         break
-    assert runner_types is not None, (
-        "acceptance_runner.py 里找不到 SUPPORTED_CHECK_TYPES（判据真相源消失，fail-closed）")
+    if not runner_types:
+        raise AssertionError(
+            "acceptance_runner.py 里找不到字面量 SUPPORTED_CHECK_TYPES（判据真相源消失，fail-closed）")
     assert runner_types == SUPPORTED_TYPES, (
         f"断言类型集与 runner 不一致：runner={sorted(runner_types)} / 本文件={sorted(SUPPORTED_TYPES)}")
