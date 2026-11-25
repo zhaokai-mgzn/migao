@@ -4,7 +4,7 @@
   "what": "每条 PR 触发的 CI 腿：**实测**近期时长 + 显式上限 + 目标预算 + required 口径。上限 = 该腿自己声明的 `timeout-minutes`（硬杀开关，见 `hard_kill_source`）；预算 = 该腿**实测 p90 向上取整**（owner 裁定 2026-09-26）；两者都由 tests/unit_ci_workflows/test_ci_cost_ledger.py 与现取 YAML / 读数复比。",
   "judged_by": "tests/unit_ci_workflows/test_ci_cost_ledger.py",
   "measured": {
-    "at": "2026-11-25T00:47:06Z",
+    "at": "2026-11-25T01:26:44Z",
     "source": "gh api repos/zhaokai-mgzn/migao/actions/runs?event=pull_request&status=completed",
     "event": "pull_request",
     "runs_per_workflow": 30,
@@ -36,37 +36,37 @@
       "max_seconds": 202.0
     },
     "deploy-reconcile.yml": {
-      "n": 18,
-      "median_seconds": 69.5,
+      "n": 19,
+      "median_seconds": 69.0,
       "p90_seconds": 81.0,
       "max_seconds": 106.0
     },
     "flaky-ledger-reconcile.yml": {
-      "n": 18,
-      "median_seconds": 48.5,
+      "n": 19,
+      "median_seconds": 49.0,
       "p90_seconds": 73.0,
       "max_seconds": 109.0
     },
     "mini-app.yml": {
       "n": 30,
       "median_seconds": 360.0,
-      "p90_seconds": 392.0,
-      "max_seconds": 400.0
+      "p90_seconds": 393.0,
+      "max_seconds": 414.0
     },
     "post-merge-verify.yml": {
-      "n": 17,
-      "median_seconds": 88.0,
+      "n": 18,
+      "median_seconds": 88.5,
       "p90_seconds": 129.0,
       "max_seconds": 865.0
     },
     "pr-check.yml": {
       "n": 30,
-      "median_seconds": 2082.0,
+      "median_seconds": 2104.0,
       "p90_seconds": 2905.0,
       "max_seconds": 3604.0
     },
     "pr-issue-link.yml": {
-      "n": 19,
+      "n": 20,
       "median_seconds": 5.0,
       "p90_seconds": 7.0,
       "max_seconds": 12.0
@@ -101,15 +101,15 @@
       "hard_kill_source": "workflow `timeout-minutes: 15`",
       "required": false,
       "measured": {
-        "n": 29,
-        "median_seconds": 146.0,
+        "n": 30,
+        "median_seconds": 143.0,
         "p90_seconds": 170.0,
         "max_seconds": 172.0
       },
       "measure_status": "ok",
       "budget_seconds": 170,
       "budget_status": "已裁定：预算 = 实测 p90（向上取整）",
-      "budget_basis": "budget = ceil(measured.p90_seconds=170.0) @ 2026-11-25T00:47:06Z"
+      "budget_basis": "budget = ceil(measured.p90_seconds=170.0) @ 2026-11-25T01:26:44Z"
     },
     {
       "id": "bmini-app.yml::detect",
@@ -139,15 +139,15 @@
       "hard_kill_source": "workflow `timeout-minutes: 15`",
       "required": false,
       "measured": {
-        "n": 29,
-        "median_seconds": 170.0,
+        "n": 30,
+        "median_seconds": 171.0,
         "p90_seconds": 188.0,
         "max_seconds": 204.0
       },
       "measure_status": "ok",
       "budget_seconds": 188,
       "budget_status": "已裁定：预算 = 实测 p90（向上取整）",
-      "budget_basis": "budget = ceil(measured.p90_seconds=188.0) @ 2026-11-25T00:47:06Z"
+      "budget_basis": "budget = ceil(measured.p90_seconds=188.0) @ 2026-11-25T01:26:44Z"
     },
     {
       "id": "bmini-app.yml::typecheck-and-test",
@@ -256,12 +256,12 @@
         "n": 30,
         "median_seconds": 21.0,
         "p90_seconds": 25.0,
-        "max_seconds": 28.0
+        "max_seconds": 36.0
       },
       "measure_status": "ok",
       "budget_seconds": 25,
       "budget_status": "已裁定：预算 = 实测 p90（向上取整）",
-      "budget_basis": "budget = ceil(measured.p90_seconds=25.0) @ 2026-11-25T00:47:06Z"
+      "budget_basis": "budget = ceil(measured.p90_seconds=25.0) @ 2026-11-25T01:26:44Z"
     },
     {
       "id": "mini-app.yml::typecheck-and-test",
@@ -310,15 +310,15 @@
       "hard_kill_source": "workflow `timeout-minutes: 80`",
       "required": false,
       "measured": {
-        "n": 17,
-        "median_seconds": 88.0,
+        "n": 18,
+        "median_seconds": 88.5,
         "p90_seconds": 129.0,
         "max_seconds": 865.0
       },
       "measure_status": "ok",
       "budget_seconds": 129,
       "budget_status": "已裁定：预算 = 实测 p90（向上取整）",
-      "budget_basis": "budget = ceil(measured.p90_seconds=129.0) @ 2026-11-25T00:47:06Z"
+      "budget_basis": "budget = ceil(measured.p90_seconds=129.0) @ 2026-11-25T01:26:44Z"
     },
     {
       "id": "pr-check.yml::admin-api-test",
@@ -367,10 +367,10 @@
       "hard_kill_source": "workflow `timeout-minutes: 15`",
       "required": true,
       "measured": null,
-      "measure_status": "样本不足（现取 n=0）",
+      "measure_status": "样本不足（现取 n=2）",
       "budget_seconds": null,
       "budget_status": "无读数：不编预算（显式留白）",
-      "budget_basis": "现取 n=0 < 3（本腿多为 skipped/未触发）⇒ **不编预算**，保持显式留白"
+      "budget_basis": "现取 n=2 < 3（本腿多为 skipped/未触发）⇒ **不编预算**，保持显式留白"
     },
     {
       "id": "pr-check.yml::block-env-files",
@@ -458,14 +458,14 @@
       "required": true,
       "measured": {
         "n": 30,
-        "median_seconds": 388.0,
+        "median_seconds": 365.0,
         "p90_seconds": 536.0,
         "max_seconds": 559.0
       },
       "measure_status": "ok",
       "budget_seconds": 536,
       "budget_status": "已裁定：预算 = 实测 p90（向上取整）",
-      "budget_basis": "budget = ceil(measured.p90_seconds=536.0) @ 2026-11-25T00:47:06Z"
+      "budget_basis": "budget = ceil(measured.p90_seconds=536.0) @ 2026-11-25T01:26:44Z"
     },
     {
       "id": "pr-check.yml::ci-workflow-tests#2",
@@ -496,14 +496,14 @@
       "required": true,
       "measured": {
         "n": 30,
-        "median_seconds": 322.0,
+        "median_seconds": 319.5,
         "p90_seconds": 465.0,
         "max_seconds": 1500.0
       },
       "measure_status": "ok",
       "budget_seconds": 465,
       "budget_status": "已裁定：预算 = 实测 p90（向上取整）",
-      "budget_basis": "budget = ceil(measured.p90_seconds=465.0) @ 2026-11-25T00:47:06Z"
+      "budget_basis": "budget = ceil(measured.p90_seconds=465.0) @ 2026-11-25T01:26:44Z"
     },
     {
       "id": "pr-check.yml::ci-workflow-tests#4",
@@ -515,14 +515,14 @@
       "required": true,
       "measured": {
         "n": 30,
-        "median_seconds": 368.0,
+        "median_seconds": 369.5,
         "p90_seconds": 482.0,
         "max_seconds": 495.0
       },
       "measure_status": "ok",
       "budget_seconds": 482,
       "budget_status": "已裁定：预算 = 实测 p90（向上取整）",
-      "budget_basis": "budget = ceil(measured.p90_seconds=482.0) @ 2026-11-25T00:47:06Z"
+      "budget_basis": "budget = ceil(measured.p90_seconds=482.0) @ 2026-11-25T01:26:44Z"
     },
     {
       "id": "pr-check.yml::clear-needs-changes",
@@ -650,12 +650,12 @@
         "n": 30,
         "median_seconds": 3.0,
         "p90_seconds": 5.0,
-        "max_seconds": 6.0
+        "max_seconds": 7.0
       },
       "measure_status": "ok",
       "budget_seconds": 5,
       "budget_status": "已裁定：预算 = 实测 p90（向上取整）",
-      "budget_basis": "budget = ceil(measured.p90_seconds=5.0) @ 2026-11-25T00:47:06Z"
+      "budget_basis": "budget = ceil(measured.p90_seconds=5.0) @ 2026-11-25T01:26:44Z"
     },
     {
       "id": "pr-check.yml::llm-sink-ledger",
