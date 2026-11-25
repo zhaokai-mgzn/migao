@@ -39,6 +39,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import math
+import re
 import sys
 from pathlib import Path
 
@@ -103,6 +104,34 @@ def test_ledger_is_wellformed_and_non_empty() -> None:
           f"{sum(1 for leg in legs if leg.get('budget_seconds'))} 条）/ "
           f"required={sum(1 for leg in legs if leg.get('required'))} 条 / measured.at={measured.get('at')}")
     assert len(with_readings) > 0, "一条实测读数都没有 ⇒ 台账没有承担'实测'这件事"
+
+
+def test_hard_kill_source_number_matches_the_value() -> None:
+    """**数据面**也要拦「抬上限」痕迹：`hard_kill_source` 里写的 `timeout-minutes: N` 必须 ×60 == 值。
+
+    病（2026-11-25 现取，issue #9120 裁决时发现）：`block-env-files` 的值是 **600s**、source 却写
+    `timeout-minutes: 2`（=120s）；`case-truth-check` 是 **900s** 对 `2`（=120s）—— 真值是 2026-11-04
+    的 `0ce83cee74`（issue #8605）把这两条 required 腿从 2 分钟抬到 10/15 分钟。
+    判据 2 只核「值 == 现取 YAML×60」+「source 非空」，**不核 source 里的数字** ⇒
+    `attribution_policy` 想堵的「靠抬 `timeout-minutes` 交差」就在数据面失效（只能靠人去点开 commit 才看得见）。
+    """
+    problems: list[str] = []
+    checked = 0
+    for leg in _legs():
+        src = str(leg.get("hard_kill_source") or "")
+        m = re.search(r"timeout-minutes:\s*(\d+)", src)
+        if not m:
+            continue
+        checked += 1
+        want = int(m.group(1)) * 60
+        got = leg.get("hard_kill_seconds")
+        if got != want:
+            problems.append(
+                f"{leg.get('id')}：`hard_kill_source` 写 `timeout-minutes: {m.group(1)}`（={want}s）"
+                f"但 `hard_kill_seconds` = {got}s ⇒ 台账在**掩盖一次上限调整**"
+            )
+    assert checked > 0, "台账里没有任何 `timeout-minutes: N` 形态的 source ⇒ 本判据会空跑成绿"
+    assert not problems, "「抬上限」痕迹必须自洽（policy：不得靠抬 timeout-minutes 交差）：\n  " + "\n  ".join(problems)
 
 
 def test_hard_kill_ceiling_matches_workflow_verbatim() -> None:
@@ -442,11 +471,38 @@ class TestGatedOffRunsAreNotSamples:
         gated = {"name": "x", "steps": [
             {"name": "Set up job", "conclusion": "success"},
             {"name": "Run actions/checkout@v7", "conclusion": "success"},
+            {"name": "Detect admin-web changes", "conclusion": "success"},
+            {"name": "Set up Node.js 22", "conclusion": "skipped"},
+            {"name": "Install dependencies", "conclusion": "skipped"},
             {"name": "Run unit tests", "conclusion": "skipped"},
             {"name": "Post Run actions/checkout@v7", "conclusion": "success"},
             {"name": "Complete job", "conclusion": "success"},
         ]}
-        assert mod._is_gated_off(gated) is True, "核心步骤被 skip 的 job 必须判成门控跳过"
+        assert mod._is_gated_off(gated) is True, (
+            "承载工作的步骤（Node/Install/tests）全被 skip、只剩 setup+checkout+detect ⇒ 必须判成门控跳过"
+        )
+
+    def test_failure_only_steps_are_not_mistaken_for_gating(self):
+        """**回归判据（issue #9159 的真红）**：`if: failure()` 类步骤在成功跑次**必然** skipped。
+
+        实测受害：`Case Coverage Gate`（`Print/Label on failure` 30/30 全剔）、`QA Growth Gate`
+        （`if: BLOCKERS != '0'` 30/30）、`Secret Scan`（`if: always() && outcome == 'failure'` 30/30）——
+        **三条都是 required**，被剔后 n=0 ⇒ 再叠加「n<3 保留冻结预算」= 永久不可测、超预算永久不可见。
+        """
+        mod = _script()
+        real = {"name": "x", "steps": [
+            {"name": "Set up job", "conclusion": "success"},
+            {"name": "Run actions/checkout@v7", "conclusion": "success"},
+            {"name": "Check test coverage in diff (data-driven)", "conclusion": "success"},
+            {"name": "Fail on blocking violations", "conclusion": "skipped"},      # if: BLOCKERS != '0'
+            {"name": "Label needs-changes on failure", "conclusion": "skipped"},   # if: failure()
+            {"name": "Post Run actions/checkout@v7", "conclusion": "success"},
+            {"name": "Complete job", "conclusion": "success"},
+        ]}
+        assert mod._is_gated_off(real) is False, (
+            "工作步骤（Check test coverage）**真的跑过** ⇒ 不得因为 failure-only 步骤被 skip 就整次剔除"
+            "（这正是 #9159 的回归：10 条腿 n=0，其中 3 条 required）"
+        )
 
     def test_real_run_is_not_mistaken_for_gated(self):
         mod = _script()
