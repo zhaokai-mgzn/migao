@@ -1795,6 +1795,13 @@ worker-h5 纯函数、承运商 4 条 × 两处入口 + 类级单一真值守卫
 
 ## [Unreleased]
 
+### 微信客服：工作台能看到渠道 / 发送状态 / 48h 余量，结束人工会话自动关微信侧（2026-11-25，issue #9198）
+
+- 工作台人工会话列表：微信客服来源的会话带 `channel=wechat_kf`、最新一条发送状态（pending / sending / accepted / failed / unknown）与 48h 五条预算的已用/上限；普通人工会话字段不变（不伪造渠道标识）。装饰失败不影响列表返回。
+- 结束人工会话 ⇒ 自动联动 `trans(4)` 并关闭当前段（走既有 `SessionEndedEvent`，不再需要人工调内部接口）；只对人工中的段生效，联动失败只留日志、不回滚已结束的主流程。
+- 判据：`backend/admin-api/src/test/java/com/migao/admin/service/kf/KfSessionStatusProviderTest.java`（KF-026）、`backend/admin-api/src/test/java/com/migao/admin/service/kf/KfSessionEndListenerTest.java`（KF-027）。
+
+
 ### 商品门幅清单落库并可回读；建品接口对非 0 库存改为 422 显式拒绝（2026-11-22，issue #9005 / #9006）
 
 - **门幅（`doorWidths`）落库（#9005，P1）**：`products` 新增 `door_widths JSONB`（迁移 V214）+ 实体 / DTO / 响应映射。
