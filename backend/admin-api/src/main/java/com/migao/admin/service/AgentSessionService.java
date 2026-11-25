@@ -12,6 +12,7 @@ import com.migao.admin.mapper.AgentMessageMapper;
 import com.migao.admin.mapper.AgentSessionMapper;
 import com.migao.admin.mapper.CustomerProfileMapper;
 import com.migao.admin.service.kf.KfSendService;
+import com.migao.admin.service.kf.KfSessionStatusProvider;
 import com.migao.admin.time.BusinessClock;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
@@ -45,6 +46,10 @@ public class AgentSessionService extends ServiceImpl<AgentSessionMapper, AgentSe
     /** 微信客服通道（issue #9187）：工作台坐席回复同步入 kf_outbox；未启用时为 null。 */
     @Autowired(required = false)
     private KfSendService kfSendService;
+
+    /** 微信客服会话状态装饰（issue #9198）：渠道标识 / 发送状态 / 48h 预算；未启用时为 null。 */
+    @Autowired(required = false)
+    private KfSessionStatusProvider kfSessionStatusProvider;
 
     private final AgentSessionMapper agentSessionMapper;
     private final AgentMessageMapper agentMessageMapper;
@@ -143,6 +148,16 @@ public class AgentSessionService extends ServiceImpl<AgentSessionMapper, AgentSe
                             .build();
                 })
                 .collect(Collectors.toList());
+
+        // 微信客服来源的会话补渠道标识 / 发送状态 / 48h 预算余量（issue #9198）。
+        // 装饰失败**不得**让工作台列表打不开 —— 列表可用性优先于附加状态。
+        if (kfSessionStatusProvider != null) {
+            try {
+                kfSessionStatusProvider.decorate(responses);
+            } catch (Exception e) {
+                log.warn("微信客服状态装饰失败（列表照常返回）: {}", e.getMessage());
+            }
+        }
 
         return PageResponse.of(resultPage.getTotal(), resultPage.getCurrent(), resultPage.getSize(), responses);
     }
