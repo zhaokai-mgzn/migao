@@ -5,6 +5,12 @@
 > 原因 = 单文件涨到 512KB 越过扫描上限，详见存档文件头与 issue #6404。
 > **后续条目继续在本文件 `## [Unreleased]
 
+### C 端米宝身份层与 B 端黄金策分流：顾客侧不再自称「黄金策 / 商家后台助手」（2026-11-25，issue #7292）
+
+- **形态**：身份层按 persona 分流 —— `base/identity.md`（黄金策，B 端）/ `base/identity-xiaobu.md`（米宝，C 端）；选哪条由 skill 的 `SkillConfig.system_prompts` 决定。C 端 6 个 skill 的 System Prompt 首段由「你是黄金策…商家后台的 AI 管家」改为米宝的顾客客服身份；B 端逐字不变。
+- **判据**：`backend/ai-agent-service/tests/test_persona_identity_split.py`（元判据：身份文件不得点名另一端；行为判据：C 端 6 个 skill 组装后 prompt 含「米宝」、不含「黄金策 / 商家后台」）+ `backend/ai-agent-service/tests/test_prompt_snapshots.py` 的 C 端身份组；用例 AG-012。
+- **未做（照实登记）**：共享 `base/principles.md` 仍是 B 端语气（「同事间协作语气」/ emoji 规范）—— 该层对 C 端的影响单独立单跟踪，不在本单混改。
+
 ### 官网改版：参考教育 SaaS 产品页重排版式与内容展示（2026-11-24，issue #9139）
 
 - **版式**：官网首页与产品能力页改成产品长页节奏 —— 浅色产品页头 + 工作台示意 → 八个能力域 → 四个场景分节（顾客经营 / 经营决策 / 生产与交付 / 库存与对账，左文右图 / 左图右文交替，标签可切换一句说明）→ 优势 / 平台保障六格 / 适用企业三卡 / 交付三步 → 能力边界 + 国标 → 深色 CTA。导航新增「预约演示」主 CTA。
