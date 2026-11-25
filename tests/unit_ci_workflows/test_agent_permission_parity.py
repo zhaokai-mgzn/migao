@@ -1210,6 +1210,8 @@ UNANNOTATED_ENDPOINTS: dict[str, str] = {
     # issue #9181：AI/工作台 → 回复入队（内部服务面，ServiceTokenFilter 保护；
     # 无用户会话 ⇒ 不能加权限码，准入靠 X-Service-Token fail-closed）。
     "POST /api/internal/kf/reply": "内部回复入队：Service Token 保护；只入队 outbox，不直接发",
+    "POST /api/internal/kf/decide": "内部介入判定：Service Token 保护；只读文本/状态，返回 decision",
+    "POST /api/internal/kf/transfer": "内部转人工：Service Token 保护；建 working 会话 + trans(2)",
     "GET /api/admin/notifications*": "自助通知中心：收件人一律取 `SecurityContext` 当前用户（#4727 第 4 行）",
     "PUT /api/admin/notifications*": "同上（标记已读）",
     "DELETE /api/admin/notifications*": "同上（删除自己的通知）",

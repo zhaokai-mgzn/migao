@@ -43,6 +43,12 @@ public interface KfOutboxMapper {
             + "WHERE id = #{id} AND status = 'sending'")
     int markAccepted(@Param("id") Long id, @Param("sentMsgid") String sentMsgid);
 
+    /** msg_send_fail 事件：按企微返回的 sent_msgid 回写终态；找不到返回 0（调用方记孤儿事件）。 */
+    @InterceptorIgnore(tenantLine = "true")
+    @Update("UPDATE kf_outbox SET status = 'failed', fail_type = #{failType} "
+            + "WHERE sent_msgid = #{sentMsgid} AND status = 'accepted'")
+    int markFailedBySentMsgid(@Param("sentMsgid") String sentMsgid, @Param("failType") Integer failType);
+
     @InterceptorIgnore(tenantLine = "true")
     @Update("UPDATE kf_outbox SET status = #{status}, fail_type = #{failType} "
             + "WHERE id = #{id} AND status = 'sending'")

@@ -406,3 +406,66 @@ cases:
         - "backend/admin-api/src/test/java/com/migao/admin/controller/KfInternalReplyControllerTest.java"
       ci: [pr-check.yml]
       verifies: []
+
+  - id: KF-020
+    legacy_id: ""
+    title: "KfDecisionService — 非 AI 态/人工/风险/默认"
+    domains: [kf]
+    tier: normal
+    tags: [kf, decision]
+    truths_ref: [kf.decision]
+    user_inputs:
+      - "按用例名构造输入"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "断言与用例标题一致"
+    skip_reason: "[backend-contract] 纯单元测试，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-11-25 新增：微信客服 PR3c（issue #9185）"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/kf/KfDecisionServiceTest.java"
+      ci: [pr-check.yml]
+      verifies: []
+
+  - id: KF-021
+    legacy_id: ""
+    title: "KfTransferService — trans(2) + 工作台会话 + 回滚"
+    domains: [kf]
+    tier: normal
+    tags: [kf, decision]
+    truths_ref: [kf.transfer]
+    user_inputs:
+      - "按用例名构造输入"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "断言与用例标题一致"
+    skip_reason: "[backend-contract] 纯单元测试，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-11-25 新增：微信客服 PR3c（issue #9185）"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/kf/KfTransferServiceTest.java"
+      ci: [pr-check.yml]
+      verifies: []
+
+  - id: KF-022
+    legacy_id: ""
+    title: "KfInternalDecisionController — decide/transfer"
+    domains: [kf]
+    tier: normal
+    tags: [kf, decision]
+    truths_ref: [kf.decision-controller]
+    user_inputs:
+      - "按用例名构造输入"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "断言与用例标题一致"
+    skip_reason: "[backend-contract] 纯单元测试，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-11-25 新增：微信客服 PR3c（issue #9185）"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/controller/KfInternalDecisionControllerTest.java"
+      ci: [pr-check.yml]
+      verifies: []

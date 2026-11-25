@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.migao.admin.entity.KfChannel;
 import com.migao.admin.entity.KfSyncCursor;
 import com.migao.admin.mapper.KfChannelMapper;
+import com.migao.admin.mapper.KfOutboxMapper;
 import com.migao.admin.mapper.KfSyncCursorMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -34,6 +35,7 @@ public class KfSyncWorker {
     private final KfAccessTokenService tokenService;
     private final WechatKfClient client;
     private final KfSessionIngestService ingestService;
+    private final KfOutboxMapper outboxMapper;
     private final String instanceId;
     private final int claimStaleSeconds;
 
@@ -42,12 +44,14 @@ public class KfSyncWorker {
                         KfAccessTokenService tokenService,
                         WechatKfClient client,
                         KfSessionIngestService ingestService,
+                        KfOutboxMapper outboxMapper,
                         @Value("${wechat.kf.sync.claim-stale-seconds:300}") int claimStaleSeconds) {
         this.cursorMapper = cursorMapper;
         this.channelMapper = channelMapper;
         this.tokenService = tokenService;
         this.client = client;
         this.ingestService = ingestService;
+        this.outboxMapper = outboxMapper;
         this.instanceId = "kf-" + UUID.randomUUID().toString().substring(0, 8);
         this.claimStaleSeconds = claimStaleSeconds;
     }
@@ -74,6 +78,17 @@ public class KfSyncWorker {
         return ok;
     }
 
+    private void handleEvent(JsonNode msg) {
+        if ("msg_send_fail".equals(msg.path("event_type").asText())) {
+            String failMsgid = msg.path("fail_msgid").asText("");
+            int failType = msg.path("fail_type").asInt(0);
+            int updated = outboxMapper.markFailedBySentMsgid(failMsgid, failType);
+            if (updated == 0) {
+                log.warn("[kf-sync] msg_send_fail 找不到 outbox（孤儿事件） fail_msgid={}", failMsgid);
+            }
+        }
+    }
+
     private boolean syncCursor(KfSyncCursor cursor) {
         Long tenantId = cursor.getTenantId();
         String openKfid = cursor.getOpenKfid();
@@ -97,6 +112,10 @@ public class KfSyncWorker {
                 if (list.isArray()) {
                     for (JsonNode msg : list) {
                         try {
+                            if ("event".equals(msg.path("msgtype").asText())) {
+                                handleEvent(msg);
+                                continue;
+                            }
                             ingestService.ingest(tenantId, openKfid, msg);
                         } catch (Exception e) {
                             log.error("[kf-sync] 单条消息落库失败 msgid={}", msg.path("msgid").asText(""), e);

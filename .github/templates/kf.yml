@@ -5,6 +5,9 @@ business_truths:
   - [kf.secret-cipher] SecretCipher 用 AES-256-GCM 加密凭据明文；密文格式 v1:<keyId>:base64(iv|ct|tag)；同一主密钥可往返，篡改密文或换主密钥必失败；空主密钥构造即失败
   - [kf.callback-crypto] 企业微信回调用 msg_signature = sha1(sort(token,timestamp,nonce,encrypt)) 校验；AES-256-CBC/PKCS7 解密后按 16 字节随机数 + 4 字节 msg_len + msg + receiveid 解析；receiveid 不匹配必失败
   - [kf.client] WechatKfClient 封装 gettoken/sync_msg/send_msg/service_state；errcode!=0 抛 KfApiException；connect 2s / read 8s；msgid 由调用方生成并原样返回
+  - [kf.decision] 判定短路：state 非 0/1 → SILENT；人工/投诉退款等 → ESCALATE_HUMAN；默认 AI_REPLY
+  - [kf.transfer] 转人工先建 agent_sessions(waiting) 再 trans(2)；trans 失败回滚工作台会话、不更新 remote
+  - [kf.decision-controller] /api/internal/kf/decide|transfer 返回 decision/agent_session_id
   - [kf.send] 回复入队：校验 wechat_kf 会话 → 48h/5 条预算原子扣减 → 写 kf_outbox；预算耗尽抛异常
   - [kf.outbox-sender] sender claim pending/sending 超时 → sendText（同 msgid）→ accepted/failed；失败落 fail_type
   - [kf.outbox-mapper] outbox claim 用 FOR UPDATE SKIP LOCKED，parts 从 jsonb 转 text

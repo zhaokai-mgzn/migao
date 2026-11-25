@@ -79,6 +79,17 @@ public class WechatKfClient {
         return node.path("msgid").asText(msgId);
     }
 
+    /** 变更会话状态：target 2=接待池 / 3=人工 / 4=结束（1 官方未文档化，MVP 不用）。 */
+    public JsonNode transServiceState(String accessToken, String openKfId, String externalUserId, int target) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("open_kfid", openKfId);
+        body.put("external_userid", externalUserId);
+        body.put("service_state", target);
+        JsonNode node = post(accessToken, "/cgi-bin/kf/service_state/trans", body);
+        check(node);
+        return node;
+    }
+
     /** 查询会话状态：0 未处理 / 1 智能助手 / 2 排队 / 3 人工 / 4 结束。 */
     public JsonNode getServiceState(String accessToken, String openKfId, String externalUserId) {
         Map<String, Object> body = new LinkedHashMap<>();
