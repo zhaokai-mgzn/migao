@@ -628,7 +628,7 @@ cases:
       - "普通人工会话 ⇒ 页面不出现「微信客服」任何标识"
       - "sendStatus=unknown ⇒ 显示「状态未知」，不留空白"
       - "额度 5/5 ⇒ 输入框禁用 + 明确文案"
-    skip_reason: "[frontend-unit] jsdom 渲染判据，非 LLM 行为，不进入 agent-eval 冒烟"
+    skip_reason: "[frontend-contract] jsdom 渲染判据，非 LLM 行为，不进入 agent-eval 冒烟"
     merge_log: "2026-11-25 新增：微信客服增强包B2（issue #9202，母单 #9194 子项 2 前端面）"
     traces:
       tests:

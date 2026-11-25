@@ -28,6 +28,12 @@ import Button from '@/components/ui/Button'
 import EmptyState from '@/components/ui/EmptyState'
 import DateTimeCell from '@/components/common/DateTimeCell'
 import type { AgentMessageItem, AgentSession, AgentSessionDetail } from '@/lib/api'
+import {
+  KF_CHANNEL,
+  isKfBudgetExhausted,
+  kfBudgetLabel,
+  kfSendStatusLabel,
+} from '@/lib/kf-session-status'
 
 const STATUS_LABEL: Record<string, string> = {
   waiting: '待接待',
@@ -39,23 +45,6 @@ const STATUS_LABEL: Record<string, string> = {
 /** 未知状态**不裸奔英文原值**（issue #6664 第 5 条口径），落人话兜底 */
 function statusLabel(status: string): string {
   return STATUS_LABEL[status] ?? '未知状态'
-}
-
-/** 微信客服渠道标识：服务端只在**真有镜像行**时下发，前端**不得**兜底成默认渠道（issue #9202） */
-const KF_CHANNEL = 'wechat_kf'
-/** 48h 发送预算上限（与服务端 kf_send_budget 的 CHECK 同源，仅作缺失兜底展示） */
-const KF_BUDGET_LIMIT_FALLBACK = 5
-const KF_SEND_STATUS_LABEL: Record<string, string> = {
-  pending: '待发送',
-  sending: '发送中',
-  accepted: '已接收',
-  failed: '发送失败',
-  unknown: '状态未知',
-}
-
-/** 发送状态未知时不留空白（空白会被读成「没问题」） */
-function kfSendStatusLabel(status?: string | null): string {
-  return KF_SEND_STATUS_LABEL[status ?? ''] ?? '状态未知'
 }
 
 export default function HumanAgentSessionsPage() {
@@ -165,9 +154,7 @@ export default function HumanAgentSessionsPage() {
   // 选中会话的 48h 额度（issue #9202）：额度用尽 ⇒ 微信侧发不出去，必须在输入区就拦住，
   // 不能让坐席写完一大段才看到失败
   const selectedSession = sessions.find(s => s.id === selectedId) ?? null
-  const kfBudgetExhausted =
-    selectedSession?.channel === KF_CHANNEL &&
-    (selectedSession.budgetUsed ?? 0) >= (selectedSession.budgetLimit ?? KF_BUDGET_LIMIT_FALLBACK)
+  const kfBudgetExhausted = isKfBudgetExhausted(selectedSession)
 
   return (
     <div className="h-[calc(100vh-180px)] flex flex-col">
@@ -258,7 +245,7 @@ export default function HumanAgentSessionsPage() {
                     {kfSendStatusLabel(s.sendStatus)}
                   </span>
                   <span className="text-neutral-500" data-testid={`kf-budget-${s.id}`}>
-                    额度 {s.budgetUsed ?? 0}/{s.budgetLimit ?? KF_BUDGET_LIMIT_FALLBACK}
+                    额度 {kfBudgetLabel(s)}
                   </span>
                 </div>
               )}
@@ -408,9 +395,8 @@ export default function HumanAgentSessionsPage() {
                     data-testid="kf-budget-exhausted"
                     className="mb-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700"
                   >
-                    微信客服 48 小时额度已用完（{selectedSession?.budgetUsed ?? 0}/
-                    {selectedSession?.budgetLimit ?? KF_BUDGET_LIMIT_FALLBACK}
-                    ），客户下条消息后可重新计算；如需现在回复，请改用其他方式联系客户。
+                    微信客服 48 小时额度已用完（{kfBudgetLabel(selectedSession)}），
+                    客户下条消息后可重新计算；如需现在回复，请改用其他方式联系客户。
                   </div>
                 )}
                 <div className="flex items-center gap-2">
