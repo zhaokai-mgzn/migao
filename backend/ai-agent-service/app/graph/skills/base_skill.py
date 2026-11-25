@@ -428,7 +428,7 @@ _CAPABILITY_INDEX_HEADER_TRIMMED = (
 # `app/graph/skills/tool_selection.py`（issue #8174：本文件受 LOC 棘轮 4356 行约束，裁剪逻辑
 # 只能搬出去再加）。下方 import 是**re-export** —— 既有调用点与 `patch(...base_skill.X)` 接缝
 # 逐字保持可用（`prepare_turn` 仍按 `_base.create_skill_registry` 取值）。
-from app.graph.skills.persona_identity import identity_rel_for  # noqa: E402
+from app.graph.skills.persona_identity import IDENTITY_FILES, identity_rel_for  # noqa: E402,F401
 from app.graph.skills.tool_selection import (  # noqa: E402,F401 — re-export（#8174）
     _all_skill_configs,
     _family_personas,

@@ -2,8 +2,9 @@
 
 身份层原先是**所有 persona 共用的** `base/identity.md` ⇒ C 端每轮都带
 「你是黄金策，商家后台的 AI 管家」开场，而米宝身份只排在 Layer 4 inline。
-本模块只回答「这个 persona 该读哪个身份文件」；读取与 fail-loud 仍由
-`base_skill._build_system_prompt` 的 `_read_cached(..., required=True)` 负责。
+单一职责：只回答「这个 persona 该读哪个身份文件」，不做读取、不做渲染。
+依赖方向：无（纯映射 + 纯函数）；`base_skill` 单向 import 本模块，
+本模块**不得**在顶层 import `base_skill`（加载期成环）。
 
 判据：`tests/test_persona_identity_split.py`（身份文件不得点名另一端 + C 端组装面）。
 """
