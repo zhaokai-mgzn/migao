@@ -11090,3 +11090,21 @@ cases:
       tests:
         - "tests/unit_ci_workflows/test_npm_install_uses_offline_flags.py"
     merge_log: "2026-11-25 新增（issue #9153 ①）。现场：`admin-web-test` 的 `Install dependencies`（`npm ci`）实测 **54s**，而 `setup-node` 已配 `cache: npm` + 正确 `cache-dependency-path` ⇒ 省不下来的不是下载，是网络探测/audit 解析这些每次固定动作。本仓 `scripts/batch_gate.py --install-deps` 早有 `--prefer-offline` 先例（`test_batch_gate.py` 判据 23 钉着）。改法：pr-check.yml 三处 `npm ci` 统一加 `--prefer-offline --no-audit --no-fund`。红证实跑：去掉一处参数 ⇒ 判据 1 FAILED；恢复 ⇒ 2 passed。取号 = `next_case_id.py MC` ⇒ **MC-361**。"
+  - id: MC-362
+    legacy_id: ""
+    title: "断言**比较右侧**不得写死「第 N 行」（行号不是稳定标识；2026-11-25 曾因此让 4/4 片整片假红）"
+    domains:
+      - misc
+      - ci
+    tier: normal
+    tags:
+      - ci
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "**判据 1·比较右侧无行号常量**：AST 扫 `tests/unit_ci_workflows/test_*.py` 的每个 `ast.Compare`，其 **comparators 子树**不得出现匹配 `第 N 行` 的字符串常量；命中即具名红 `文件:行`。纯静态：`未被调用`。执行点 = `test_hardcoded_line_numbers_burn_down.py::test_no_assert_compares_against_a_hardcoded_line_number`"
+      - "**判据 2·判别力（合成 AST 红证）**：历史真实形态（扫描器读数 == 含行号前缀的列表）必须被判出；而**左侧入参**里的行号字面量（夹具）与**错误消息**里的行号（给人读）**不得**被判红。执行点 = `::test_guard_has_teeth`"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_hardcoded_line_numbers_burn_down.py"
+    merge_log: "2026-11-25 新增（issue #9150）。现场：`check-ui-regression.sh` 加 8 行注释 ⇒ `test_scripts_bash32_var_brace.py` 里那条「扫描器读数 == 含行号前缀的列表」立刻红、4/4 片整片失败（本机复算 2242 passed 证明不是 infra 抖动）。**逐条分类 40 处后的口径修正**：全仓「第 N 行」字面量绝大多数是文档串/报错文案/夹具文本，**不是**对仓内文件行号的期望 ⇒ 不做全量 burn-down（那会把无害文案也当成债），只拦危险那一类 = **比较右侧**。同批把唯一一条夹具里的行号字面量改写成 len==1 + endswith（原意不变，「行号可定位」仍由下一条 startswith 覆盖）。取号 = next_case_id.py MC ⇒ MC-362。"
