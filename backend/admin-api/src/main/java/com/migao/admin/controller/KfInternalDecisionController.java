@@ -29,6 +29,12 @@ public class KfInternalDecisionController {
         return ResponseEntity.ok(Map.of("decision", d.decision(), "reason", d.reason()));
     }
 
+    @PostMapping("/end")
+    public ResponseEntity<Map<String, Object>> end(@RequestBody TransferRequest request) {
+        transferService.endHumanSession(request.tenantId(), request.sessionId(), request.reason());
+        return ResponseEntity.ok(Map.of("ended", true));
+    }
+
     @PostMapping("/transfer")
     public ResponseEntity<Map<String, Object>> transfer(@RequestBody TransferRequest request) {
         String agentSessionId = transferService.transferToHuman(

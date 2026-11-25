@@ -33,6 +33,29 @@ public class KfTransferService {
     private final AgentSessionService agentSessionService;
     private final AgentSessionMapper agentSessionMapper;
 
+    /** 人工/接口结束：trans(4) + 关闭当前段；下条客户消息 ingest 会建新会话。 */
+    public void endHumanSession(Long tenantId, String sessionId, String reason) {
+        TenantContext.setTenantId(tenantId);
+        try {
+            KfSessionRemote remote = remoteMapper.selectBySessionId(sessionId);
+            if (remote == null || remote.getClosedAt() != null) {
+                return;
+            }
+            KfChannel channel = channelMapper.selectByOpenKfid(remote.getOpenKfid());
+            if (channel == null) {
+                throw new IllegalStateException("渠道不存在: " + remote.getOpenKfid());
+            }
+            String token = tokenService.token(channel);
+            if (token == null) {
+                throw new IllegalStateException("渠道 secret 不可用");
+            }
+            client.transServiceState(token, remote.getOpenKfid(), remote.getExternalUserid(), 4);
+            remoteMapper.closeSession(sessionId, reason == null || reason.isBlank() ? "human_end" : reason);
+        } finally {
+            TenantContext.clear();
+        }
+    }
+
     public String transferToHuman(Long tenantId, String sessionId, String reason) {
         TenantContext.setTenantId(tenantId);
         try {

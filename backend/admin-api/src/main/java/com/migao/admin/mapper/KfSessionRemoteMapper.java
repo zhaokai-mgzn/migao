@@ -41,4 +41,11 @@ public interface KfSessionRemoteMapper {
     @Update("UPDATE kf_session_remote SET state = #{state}, version = version + 1, updated_at = NOW() "
             + "WHERE session_id = #{sessionId}")
     int updateState(@Param("sessionId") String sessionId, @Param("state") int state);
+
+    /** 人工/接口结束当前段：state=4 + closed_at；下条客户消息会建新 epoch 会话。 */
+    @InterceptorIgnore(tenantLine = "true")
+    @Update("UPDATE kf_session_remote SET state = 4, closed_at = NOW(), close_reason = #{reason}, "
+            + "version = version + 1, updated_at = NOW() "
+            + "WHERE session_id = #{sessionId} AND closed_at IS NULL")
+    int closeSession(@Param("sessionId") String sessionId, @Param("reason") String reason);
 }
