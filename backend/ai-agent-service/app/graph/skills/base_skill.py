@@ -576,10 +576,29 @@ _PROMPT_CACHE: dict = {}
 # 磁盘存在性由 L0 用例 `tests/unit_ci_workflows/test_ai_agent_prompt_reference_guard.py` 锁
 # （删文件 ⇒ CI 红），本处的清单必须与它逐字一致。
 _REQUIRED_PROMPT_FILES = (
-    "base/identity.md",     # Layer 1 公共身份
+    "base/identity.md",     # Layer 1 公共身份（mibao）
     "base/principles.md",   # Layer 2 公共行为准则
     "PROMPT-rules.md",      # Layer 2.5 共享 Prompt 规则（Certainty Tagging / P&E / 确认卡铁律）
 )
+
+#: persona → 身份层文件（issue #7292）：身份层原先**所有 persona 共用** `base/identity.md`
+#: ⇒ C 端每轮都带着「你是黄金策，商家后台的 AI 管家」开场，而米宝身份只排在 Layer 4 inline。
+#: 判据 = `tests/test_persona_identity_split.py`（每个身份文件点名自己、不得点名另一端）。
+_IDENTITY_FILES = {
+    "mibao": "base/identity.md",
+    "xiaobu": "base/identity-xiaobu.md",
+}
+
+
+def _persona_for_skill(skill_name: str) -> str:
+    """该 skill 的 persona（唯一依据 = SkillConfig.system_prompts 的键）。
+
+    绑定面是静态代码事实：B 端各 skill 只声明 `mibao`，C 端只声明 `xiaobu`。
+    取不到配置 / 无法判定时回落到 mibao（与 `_capability_boundary` 的 persona 门控同向）。
+    """
+    cfg = _skill_config(skill_name)
+    personas = set(getattr(cfg, "system_prompts", None) or {})
+    return "xiaobu" if personas == {"xiaobu"} else "mibao"
 
 # ────────────────────── Vision 图片意图澄清引导（Phase 1, issue #2777）──────────────────────
 # 背景：目标用户可能是初中/高中文化、不熟悉与 AI 沟通（随手发图、带口语短句/不带文字）。
@@ -702,7 +721,7 @@ def _build_system_prompt(skill_name: str, inline_prompt: str = "",
     """分层组装 System Prompt
 
     层级（从底到顶）：
-      1. base/identity.md     — 公共身份描述（所有 Skill 共享）
+      1. base/identity.md     — 身份描述（按 persona 分流：mibao / xiaobu，issue #7292）
       2. base/principles.md   — 公共行为准则（所有 Skill 共享）
       2.5 PROMPT-rules.md     — 公共 Prompt 规则（所有 Skill 共享）
       2.6 能力索引            — 域 → 该域可执行的写工具（**事实 derive**，见 #4125）
@@ -727,7 +746,10 @@ def _build_system_prompt(skill_name: str, inline_prompt: str = "",
     parts = []
 
     # Layer 1+2+2.5: 公共基础（身份 + 原则 + 共享 Prompt 规则）—— **必需层**，缺失即响亮失败
-    identity_rel, principles_rel, prompt_rules_rel = _REQUIRED_PROMPT_FILES
+    # 身份层按 persona 分流（issue #7292）：C 端不得再带 B 端身份。清单本身保持三条不变
+    # （L0 守卫 `test_ai_agent_prompt_reference_guard.py` 按清单逐字核），选中哪一条由本行决定。
+    _, principles_rel, prompt_rules_rel = _REQUIRED_PROMPT_FILES
+    identity_rel = _IDENTITY_FILES[_persona_for_skill(skill_name)]
     identity = _read_cached(_os.path.join(_ref_dir, identity_rel), required=True)
     if identity:
         parts.append(identity)
