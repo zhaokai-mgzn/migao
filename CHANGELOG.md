@@ -1795,6 +1795,13 @@ worker-h5 纯函数、承运商 4 条 × 两处入口 + 类级单一真值守卫
 
 ## [Unreleased]
 
+### 微信客服：判定接入语义层（规则优先 + 800ms 超时回退），高风险不再只靠关键词（2026-11-25，issue #9196）
+
+- `/api/internal/kf/decide` 在规则未命中时调 ai-agent 的 `POST /api/internal/kf/judge`（温度 0，返回 intent / risk / emotion / confidence / escalate）；升级仍取并集 —— 人工词 / 风险词命中先短路且**不发起**模型调用，语义判定要升级则升级。
+- 判定读超时默认 **800ms**（`WECHAT_KF_JUDGE_TIMEOUT_MS` 可配）；超时 / 异常 / 响应不可解析 ⇒ **回退规则结论**，接口仍返回 200 —— 判定服务故障不会让客户收不到回复。
+- 判据：`backend/admin-api/src/test/java/com/migao/admin/service/kf/KfDecisionServiceTest.java`、`backend/admin-api/src/test/java/com/migao/admin/service/kf/KfJudgeClientTest.java`、`backend/ai-agent-service/tests/test_kf_judge.py`（用例 KF-025）。
+
+
 ### 商品门幅清单落库并可回读；建品接口对非 0 库存改为 422 显式拒绝（2026-11-22，issue #9005 / #9006）
 
 - **门幅（`doorWidths`）落库（#9005，P1）**：`products` 新增 `door_widths JSONB`（迁移 V214）+ 实体 / DTO / 响应映射。

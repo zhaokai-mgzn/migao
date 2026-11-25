@@ -1,22 +1,107 @@
-// case_ids: KF-020
+// case_ids: KF-020, KF-025
 package com.migao.admin.service.kf;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.util.Optional;
+import java.util.concurrent.atomic.AtomicInteger;
+
 import static org.assertj.core.api.Assertions.assertThat;
 
+/**
+ * /api/internal/kf/decide 判定服务测试（issue #9185 规则短路 + issue #9196 语义判定）。
+ *
+ * <p>三条不可退让的口径：① **规则优先** —— 非 AI 态 / 人工词 / 风险词命中时**不发起**
+ * 任何出站判定请求（省钱也省延迟，且高风险不漏）；② **升级取并集** —— 规则未命中而
+ * 语义判定要求升级时取升级；③ **判定失败回退规则** —— 客户端异常/空结果不得让
+ * /decide 抛错（客户消息必须有兜底）。</p>
+ */
 class KfDecisionServiceTest {
 
-    private final KfDecisionService service = new KfDecisionService();
+    /** 计数桩：记录 judge 被调用次数 —— 判据「不出站」必须可断言，而不是靠日志。 */
+    static class CountingJudgeClient extends KfJudgeClient {
+        final AtomicInteger calls = new AtomicInteger();
+        private final Optional<Verdict> result;
+        private final RuntimeException failure;
+
+        CountingJudgeClient(Optional<Verdict> result) {
+            this.result = result;
+            this.failure = null;
+        }
+
+        CountingJudgeClient(RuntimeException failure) {
+            this.result = Optional.empty();
+            this.failure = failure;
+        }
+
+        @Override
+        public Optional<Verdict> judge(long tenantId, String sessionId, String text) {
+            calls.incrementAndGet();
+            if (failure != null) {
+                throw failure;
+            }
+            return result;
+        }
+    }
+
+    private static KfJudgeClient.Verdict verdict(boolean escalate) {
+        return new KfJudgeClient.Verdict("price", "none", "calm", 0.9, escalate, "询价");
+    }
 
     @Test
-    @DisplayName("非 AI 态 ⇒ SILENT；要人工/高风险 ⇒ ESCALATE_HUMAN；默认 AI_REPLY")
-    void decisions() {
-        assertThat(service.decide(2, "你好").decision()).isEqualTo("SILENT");
-        assertThat(service.decide(3, "你好").decision()).isEqualTo("SILENT");
-        assertThat(service.decide(0, "我要转人工").decision()).isEqualTo("ESCALATE_HUMAN");
-        assertThat(service.decide(1, "我要投诉退款").decision()).isEqualTo("ESCALATE_HUMAN");
-        assertThat(service.decide(0, "这款多少钱").decision()).isEqualTo("AI_REPLY");
+    @DisplayName("非 AI 态 ⇒ SILENT，且不发起语义判定")
+    void nonAiStateIsSilentWithoutJudge() {
+        CountingJudgeClient judge = new CountingJudgeClient(Optional.of(verdict(true)));
+        KfDecisionService service = new KfDecisionService(judge);
+
+        assertThat(service.decide(1L, "s-1", 2, "你好").decision()).isEqualTo("SILENT");
+        assertThat(service.decide(1L, "s-1", 3, "你好").decision()).isEqualTo("SILENT");
+        assertThat(judge.calls.get()).isZero();
+    }
+
+    @Test
+    @DisplayName("人工词 / 风险词 ⇒ ESCALATE_HUMAN，且不发起语义判定（规则优先）")
+    void rulesWinWithoutJudge() {
+        CountingJudgeClient judge = new CountingJudgeClient(Optional.of(verdict(false)));
+        KfDecisionService service = new KfDecisionService(judge);
+
+        assertThat(service.decide(1L, "s-1", 0, "我要转人工").decision()).isEqualTo("ESCALATE_HUMAN");
+        assertThat(service.decide(1L, "s-1", 1, "我要投诉退款").decision()).isEqualTo("ESCALATE_HUMAN");
+        assertThat(judge.calls.get()).isZero();
+    }
+
+    @Test
+    @DisplayName("规则未命中 + 语义判定要升级 ⇒ ESCALATE_HUMAN（并集）")
+    void judgeEscalatesWhenRulesMiss() {
+        CountingJudgeClient judge = new CountingJudgeClient(Optional.of(verdict(true)));
+        KfDecisionService service = new KfDecisionService(judge);
+
+        KfDecisionService.Decision d = service.decide(1L, "s-1", 0, "你们这做工我很失望");
+        assertThat(d.decision()).isEqualTo("ESCALATE_HUMAN");
+        assertThat(d.reason()).contains("语义判定");
+        assertThat(judge.calls.get()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("规则未命中 + 语义判定不升级 ⇒ AI_REPLY")
+    void judgeDoesNotEscalate() {
+        CountingJudgeClient judge = new CountingJudgeClient(Optional.of(verdict(false)));
+        KfDecisionService service = new KfDecisionService(judge);
+
+        assertThat(service.decide(1L, "s-1", 0, "这款多少钱").decision()).isEqualTo("AI_REPLY");
+        assertThat(judge.calls.get()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("语义判定不可用（空结果 / 异常）⇒ 回退规则 AI_REPLY，不抛错")
+    void judgeFailureFallsBackToRules() {
+        KfDecisionService emptyJudge = new KfDecisionService(
+                new CountingJudgeClient(Optional.empty()));
+        assertThat(emptyJudge.decide(1L, "s-1", 0, "这款多少钱").decision()).isEqualTo("AI_REPLY");
+
+        KfDecisionService failingJudge = new KfDecisionService(
+                new CountingJudgeClient(new IllegalStateException("timeout")));
+        assertThat(failingJudge.decide(1L, "s-1", 0, "这款多少钱").decision()).isEqualTo("AI_REPLY");
     }
 }

@@ -511,3 +511,29 @@ cases:
         - "backend/admin-api/src/test/java/com/migao/admin/service/kf/KfTransferServiceTest.java"
       ci: [pr-check.yml]
       verifies: []
+
+  - id: KF-025
+    legacy_id: ""
+    title: "语义判定 — 规则优先/升级并集/判定失败回退规则"
+    domains: [kf]
+    tier: normal
+    tags: [kf, decision, llm]
+    truths_ref: [kf.decision]
+    user_inputs:
+      - "构造四类输入：规则命中人工词/风险词、规则未命中且 LLM 要求升级、规则未命中且 LLM 不升级、LLM 不可用"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "规则命中的两类输入 ⇒ ESCALATE_HUMAN 且判定客户端零调用（不出站）"
+      - "规则未命中 + LLM escalate=true ⇒ ESCALATE_HUMAN；escalate=false ⇒ AI_REPLY"
+      - "LLM 超时/异常/空结果 ⇒ AI_REPLY（回退规则），/decide 不抛错"
+      - "ai-agent /api/internal/kf/judge：LLM 异常 ⇒ success=false + KF_JUDGE_UNAVAILABLE（HTTP 200）"
+    skip_reason: "[backend-contract] 纯单元测试，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-11-25 新增：微信客服增强包A（issue #9196，母单 #9194 子项 1）"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/kf/KfDecisionServiceTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/kf/KfJudgeClientTest.java"
+        - "backend/ai-agent-service/tests/test_kf_judge.py"
+      ci: [pr-check.yml]
+      verifies: []

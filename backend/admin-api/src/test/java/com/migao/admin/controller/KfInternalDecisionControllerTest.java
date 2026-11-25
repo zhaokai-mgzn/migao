@@ -19,7 +19,7 @@ class KfInternalDecisionControllerTest {
         KfTransferService transfer = mock(KfTransferService.class);
         KfInternalDecisionController controller = new KfInternalDecisionController(decision, transfer);
 
-        when(decision.decide(0, "转人工")).thenReturn(new KfDecisionService.Decision("ESCALATE_HUMAN", "明确要人工"));
+        when(decision.decide(1L, "s1", 0, "转人工")).thenReturn(new KfDecisionService.Decision("ESCALATE_HUMAN", "明确要人工"));
         assertThat(controller.decide(new KfInternalDecisionController.DecideRequest(1L, "s1", 0, "转人工"))
                 .getBody()).containsEntry("decision", "ESCALATE_HUMAN");
 
