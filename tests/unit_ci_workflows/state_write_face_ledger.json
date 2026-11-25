@@ -1738,6 +1738,61 @@
         "posted"
       ]
     },
+    "kf_agents": {
+      "authority": "schema_check",
+      "file": "backend/admin-api/src/main/resources/db/init/schema.sql",
+      "symbol": "CHECK (status IN (…))",
+      "values": [
+        "busy",
+        "offline",
+        "online"
+      ]
+    },
+    "kf_channels": {
+      "authority": "schema_check",
+      "file": "backend/admin-api/src/main/resources/db/init/schema.sql",
+      "symbol": "CHECK (status IN (…))",
+      "values": [
+        "active",
+        "expired",
+        "revoked",
+        "unauthorized"
+      ]
+    },
+    "kf_handoff": {
+      "authority": "schema_check",
+      "file": "backend/admin-api/src/main/resources/db/init/schema.sql",
+      "symbol": "CHECK (status IN (…))",
+      "values": [
+        "cancelled",
+        "created",
+        "failed",
+        "pending"
+      ]
+    },
+    "kf_inbox": {
+      "authority": "schema_check",
+      "file": "backend/admin-api/src/main/resources/db/init/schema.sql",
+      "symbol": "CHECK (status IN (…))",
+      "values": [
+        "done",
+        "failed",
+        "pending",
+        "processing"
+      ]
+    },
+    "kf_outbox": {
+      "authority": "schema_check",
+      "file": "backend/admin-api/src/main/resources/db/init/schema.sql",
+      "symbol": "CHECK (status IN (…))",
+      "values": [
+        "accepted",
+        "failed",
+        "pending",
+        "sending",
+        "unknown"
+      ]
+    },
     "knowledge_candidates": {
       "authority": "none",
       "file": "",
