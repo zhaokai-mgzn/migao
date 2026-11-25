@@ -518,6 +518,7 @@ CREATE TABLE session_messages (
     role VARCHAR(32) NOT NULL,  -- user / assistant / system / tool
     content_type VARCHAR(32) DEFAULT 'text',  -- text / image / card / order / quick_actions
     content TEXT NOT NULL,
+    external_msg_id VARCHAR(128),  -- 微信客服 msgid（幂等键；其他通道为空）
     metadata JSONB DEFAULT '{}',  -- 消息元数据（推荐商品列表、订单卡片数据等）
     token_count INTEGER DEFAULT 0,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
@@ -2727,6 +2728,9 @@ CREATE INDEX idx_sessions_deleted ON sessions(deleted);
 
 -- session_messages 索引
 CREATE INDEX idx_session_messages_session ON session_messages(session_id, created_at);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_session_messages_external_msg_id
+    ON session_messages (tenant_id, external_msg_id)
+    WHERE external_msg_id IS NOT NULL AND deleted = 0;
 CREATE INDEX idx_session_messages_tenant ON session_messages(tenant_id);
 CREATE INDEX idx_session_messages_role ON session_messages(role);
 CREATE INDEX idx_session_messages_deleted ON session_messages(deleted);
@@ -4844,12 +4848,17 @@ CREATE TABLE IF NOT EXISTS kf_sync_cursor (
     cursor VARCHAR(128),
     dirty_at TIMESTAMP WITH TIME ZONE,
     last_success_at TIMESTAMP WITH TIME ZONE,
+    claimed_by VARCHAR(128),
+    claimed_at TIMESTAMP WITH TIME ZONE,
     updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
     PRIMARY KEY (tenant_id, open_kfid)
 );
 CREATE INDEX IF NOT EXISTS idx_kf_sync_cursor_dirty
     ON kf_sync_cursor (dirty_at)
     WHERE dirty_at IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_kf_sync_cursor_claimed_at
+    ON kf_sync_cursor (claimed_at)
+    WHERE claimed_at IS NOT NULL;
 COMMENT ON TABLE kf_sync_cursor IS 'sync_msg 游标 + 新鲜度；回调无论是否重复都置 dirty_at';
 
 CREATE TABLE IF NOT EXISTS kf_session_remote (

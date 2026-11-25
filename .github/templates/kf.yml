@@ -5,6 +5,12 @@ business_truths:
   - [kf.secret-cipher] SecretCipher 用 AES-256-GCM 加密凭据明文；密文格式 v1:<keyId>:base64(iv|ct|tag)；同一主密钥可往返，篡改密文或换主密钥必失败；空主密钥构造即失败
   - [kf.callback-crypto] 企业微信回调用 msg_signature = sha1(sort(token,timestamp,nonce,encrypt)) 校验；AES-256-CBC/PKCS7 解密后按 16 字节随机数 + 4 字节 msg_len + msg + receiveid 解析；receiveid 不匹配必失败
   - [kf.client] WechatKfClient 封装 gettoken/sync_msg/send_msg/service_state；errcode!=0 抛 KfApiException；connect 2s / read 8s；msgid 由调用方生成并原样返回
+  - [kf.ingest] sync_msg 的 origin=3 客户消息落 sessions/session_messages；msgid 幂等；origin=5 回显忽略
+  - [kf.sync-worker] dirty 游标 claim（SKIP LOCKED）→ sync_msg 循环（has_more 空列表也推进）→ ingest → 清 dirty；失败只释放 claim
+  - [kf.session-remote-mapper] 同一 (open_kfid, external_userid) 当前段唯一，并发建会话用部分索引冲突静默忽略
+  - [kf.token-service] 渠道 secret 解密后换 access_token，进程内缓存 7000s；secret 缺失/解不开返回 null
+  - [kf.scheduler] kfScheduler 独立线程池（2 线程，kf-scheduler- 前缀），不共用默认单线程池
+  - [kf.client-config] wechat.kf.enabled=true 时装配 WechatKfClient + SecretCipher
   - [kf.mapper-contract] KF Mapper 的注解 SQL 必须含目标表、幂等冲突键，并显式 tenantLine 豁免（回调无租户上下文）
   - [kf.callback-controller] 回调控制器未配置时 503（fail-closed）；GET 返回 echostr 明文；POST 回 200 空串并转交 service
   - [kf.callback-inbox] 合法回调落 kf_inbox（msg_signature 唯一）并置 kf_sync_cursor.dirty_at；重复回调仍置 dirty；坏签名拒绝；未登记渠道 200 受理但不落库
