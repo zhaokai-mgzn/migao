@@ -1,4 +1,4 @@
-// case_ids: KF-010
+// case_ids: KF-010, KF-028
 package com.migao.admin.service.kf;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -20,6 +20,7 @@ import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -35,6 +36,7 @@ class KfSyncWorkerTest {
     private WechatKfClient client;
     private KfSessionIngestService ingestService;
     private KfOutboxMapper outboxMapper;
+    private KfMediaService mediaService;
     private KfSyncWorker worker;
 
     @BeforeEach
@@ -45,7 +47,9 @@ class KfSyncWorkerTest {
         client = mock(WechatKfClient.class);
         ingestService = mock(KfSessionIngestService.class);
         outboxMapper = mock(KfOutboxMapper.class);
-        worker = new KfSyncWorker(cursorMapper, channelMapper, tokenService, client, ingestService, outboxMapper, 300);
+        mediaService = mock(KfMediaService.class);
+        worker = new KfSyncWorker(cursorMapper, channelMapper, tokenService, client, ingestService,
+                outboxMapper, mediaService, 300);
     }
 
     @Test
@@ -64,6 +68,44 @@ class KfSyncWorkerTest {
 
         assertThat(worker.syncOnce()).isEqualTo(1);
         verify(ingestService).ingest(eq(1L), eq("wk"), any(JsonNode.class));
+        verify(cursorMapper).clearDirty(1L, "wk", "c1");
+    }
+
+    @Test
+    @DisplayName("图片消息落库后归档媒体（issue #9200）")
+    void archivesMediaAfterIngest() throws Exception {
+        when(cursorMapper.claimDue(any(), anyInt(), anyString()))
+                .thenReturn(List.of(KfSyncCursor.builder().tenantId(1L).openKfid("wk").cursor("c0").build()));
+        when(channelMapper.selectByOpenKfid("wk"))
+                .thenReturn(KfChannel.builder().tenantId(1L).openKfid("wk").corpId("corp").build());
+        when(tokenService.token(any(KfChannel.class))).thenReturn("tok");
+        when(client.syncMsg("tok", "wk", "c0", null, 100)).thenReturn(mapper.readTree("""
+                {"has_more":0,"next_cursor":"c1","msg_list":[
+                  {"origin":3,"msgid":"m1","external_userid":"wm","msgtype":"image","image":{"media_id":"mid-1"}}]}
+                """));
+        when(ingestService.ingest(eq(1L), eq("wk"), any(JsonNode.class))).thenReturn(true);
+
+        assertThat(worker.syncOnce()).isEqualTo(1);
+        verify(mediaService).archiveInbound(1L, "wk", "mid-1", "tok");
+    }
+
+    @Test
+    @DisplayName("媒体归档失败 ⇒ 消息不回滚、游标照常前进（消息优先）")
+    void mediaFailureDoesNotBlockSync() throws Exception {
+        when(cursorMapper.claimDue(any(), anyInt(), anyString()))
+                .thenReturn(List.of(KfSyncCursor.builder().tenantId(1L).openKfid("wk").cursor("c0").build()));
+        when(channelMapper.selectByOpenKfid("wk"))
+                .thenReturn(KfChannel.builder().tenantId(1L).openKfid("wk").corpId("corp").build());
+        when(tokenService.token(any(KfChannel.class))).thenReturn("tok");
+        when(client.syncMsg("tok", "wk", "c0", null, 100)).thenReturn(mapper.readTree("""
+                {"has_more":0,"next_cursor":"c1","msg_list":[
+                  {"origin":3,"msgid":"m1","external_userid":"wm","msgtype":"file","file":{"media_id":"mid-2"}}]}
+                """));
+        when(ingestService.ingest(eq(1L), eq("wk"), any(JsonNode.class))).thenReturn(true);
+        doThrow(new KfMediaException("媒体下载失败"))
+                .when(mediaService).archiveInbound(1L, "wk", "mid-2", "tok");
+
+        assertThat(worker.syncOnce()).isEqualTo(1);
         verify(cursorMapper).clearDirty(1L, "wk", "c1");
     }
 

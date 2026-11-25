@@ -1795,6 +1795,15 @@ worker-h5 纯函数、承运商 4 条 × 两处入口 + 类级单一真值守卫
 
 ## [Unreleased]
 
+### 微信客服：客户发的图片/语音/文件会归档，失败不影响消息可见（2026-11-25，issue #9200）
+
+- 客户发媒体消息时，同步链路按 `media_id` 下载并归档到 `${WECHAT_KF_MEDIA_DIR:-uploads/kf-media}/<租户>/`，`kf_media` 记 mime / 字节数 / 归档路径；会话里仍保留 `[图片]` 等文本占位，两者并存。
+- **消息优先**：下载 / 落盘失败只留日志并照常推进同步游标 —— 不会因为一张图片存不下就让客户消息卡在重放里。
+- `media_id` 来自回调 JSON，按白名单净化后才拼路径（`../` 无法逃出归档根）；重复投递按 `(direction, media_id)` 唯一约束不产生重复行。
+- 语音本单**保留原格式**（AMR 不转 wav：ffmpeg 属真机阶段，见 #9194 子项 3）。
+- 判据：`backend/admin-api/src/test/java/com/migao/admin/service/kf/KfMediaServiceTest.java`、`WechatKfMediaTest.java`、`backend/admin-api/src/test/java/com/migao/admin/service/kf/KfSyncWorkerTest.java`（用例 KF-028）。
+
+
 ### 商品门幅清单落库并可回读；建品接口对非 0 库存改为 422 显式拒绝（2026-11-22，issue #9005 / #9006）
 
 - **门幅（`doorWidths`）落库（#9005，P1）**：`products` 新增 `door_widths JSONB`（迁移 V214）+ 实体 / DTO / 响应映射。
