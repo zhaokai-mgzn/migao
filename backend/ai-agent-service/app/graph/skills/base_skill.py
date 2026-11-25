@@ -101,7 +101,6 @@ safe_exc_message = _err_inc.safe_exc_message
 _current_request_id = _err_inc.current_request_id
 
 
-
 def _strip_think_tags(text: str) -> str:
     """移除 <think>...</think> 标签及其内容"""
     if not isinstance(text, str):
@@ -429,6 +428,7 @@ _CAPABILITY_INDEX_HEADER_TRIMMED = (
 # `app/graph/skills/tool_selection.py`（issue #8174：本文件受 LOC 棘轮 4356 行约束，裁剪逻辑
 # 只能搬出去再加）。下方 import 是**re-export** —— 既有调用点与 `patch(...base_skill.X)` 接缝
 # 逐字保持可用（`prepare_turn` 仍按 `_base.create_skill_registry` 取值）。
+from app.graph.skills.persona_identity import identity_rel_for  # noqa: E402
 from app.graph.skills.tool_selection import (  # noqa: E402,F401 — re-export（#8174）
     _all_skill_configs,
     _family_personas,
@@ -581,25 +581,6 @@ _REQUIRED_PROMPT_FILES = (
     "PROMPT-rules.md",      # Layer 2.5 共享 Prompt 规则（Certainty Tagging / P&E / 确认卡铁律）
 )
 
-#: persona → 身份层文件（issue #7292）：身份层原先**所有 persona 共用** `base/identity.md`
-#: ⇒ C 端每轮都带着「你是黄金策，商家后台的 AI 管家」开场，而米宝身份只排在 Layer 4 inline。
-#: 判据 = `tests/test_persona_identity_split.py`（每个身份文件点名自己、不得点名另一端）。
-_IDENTITY_FILES = {
-    "mibao": "base/identity.md",
-    "xiaobu": "base/identity-xiaobu.md",
-}
-
-
-def _persona_for_skill(skill_name: str) -> str:
-    """该 skill 的 persona（唯一依据 = SkillConfig.system_prompts 的键）。
-
-    绑定面是静态代码事实：B 端各 skill 只声明 `mibao`，C 端只声明 `xiaobu`。
-    取不到配置 / 无法判定时回落到 mibao（与 `_capability_boundary` 的 persona 门控同向）。
-    """
-    cfg = _skill_config(skill_name)
-    personas = set(getattr(cfg, "system_prompts", None) or {})
-    return "xiaobu" if personas == {"xiaobu"} else "mibao"
-
 # ────────────────────── Vision 图片意图澄清引导（Phase 1, issue #2777）──────────────────────
 # 背景：目标用户可能是初中/高中文化、不熟悉与 AI 沟通（随手发图、带口语短句/不带文字）。
 # 图片可能与商户已有信息（商品库/面料/订单/客户）关联，但意图多样（找同款/查订单/建品/售后）。
@@ -746,11 +727,8 @@ def _build_system_prompt(skill_name: str, inline_prompt: str = "",
     parts = []
 
     # Layer 1+2+2.5: 公共基础（身份 + 原则 + 共享 Prompt 规则）—— **必需层**，缺失即响亮失败
-    # 身份层按 persona 分流（issue #7292）：C 端不得再带 B 端身份。清单本身保持三条不变
-    # （L0 守卫 `test_ai_agent_prompt_reference_guard.py` 按清单逐字核），选中哪一条由本行决定。
     _, principles_rel, prompt_rules_rel = _REQUIRED_PROMPT_FILES
-    identity_rel = _IDENTITY_FILES[_persona_for_skill(skill_name)]
-    identity = _read_cached(_os.path.join(_ref_dir, identity_rel), required=True)
+    identity = _read_cached(_os.path.join(_ref_dir, identity_rel_for(getattr(_skill_config(skill_name), "system_prompts", None))), required=True)
     if identity:
         parts.append(identity)
 
