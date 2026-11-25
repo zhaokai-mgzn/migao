@@ -5775,3 +5775,40 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+
+  - id: PR-135
+    legacy_id: ""
+    title: "商品图生成 - 单商品主图（product_image_generate 正向，按商品名定位后只读生成）"
+    domains:
+      - product
+    tier: normal
+    persona: mibao
+    tags:
+      - product
+      - image
+      - read-only
+    truths_ref:
+      - ai-chat.tool-classes
+    user_inputs:
+      - "给「夏日清风窗帘」生成一张主图"
+    expectations:
+      - tool: product_search
+      - tool: product_image_generate
+    must_succeed:
+      - tool: product_image_generate
+    required_args:
+      - tool: product_image_generate
+        fields: [product_id]
+    data_checks:
+      - "必须先按商品名定位 product_id（product_search / product_detail），不得猜 id 试"
+      - "product_image_generate 成功返回商品图卡（success=true）；图 URL 取自商品档案主图，不得编造图片 URL"
+      - "本工具只读：不写库、不改商品主图（商家要换主图到后台「商品管理」自行上传）"
+      - "商品不明确时应先澄清/发 choice 卡，不得随机挑一个商品生成"
+    skip_reason: ""
+    merge_log: "2026-11-26 新增（issue #9227，审计 goal ③ 薄覆盖优先）：`product_image_generate` 原只有 1 条用例，且「按商品名定位 → 生成主图」的 read-only 正向链路没有覆盖；本用例补该链路（种子商品 夏日清风窗帘）。纯只读，无前置复位。"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_product_image_generate.py"
+      ci:
+        - agent-eval.yml
+      verifies: []

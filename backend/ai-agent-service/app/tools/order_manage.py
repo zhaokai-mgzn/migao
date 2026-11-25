@@ -24,6 +24,8 @@ VALID_ACTIONS = {"update_status", "update_logistics", "cancel", "confirm_payment
 ACTION_PERMISSIONS = {"refund": "order:refund"}
 
 
+# 未绑定任何 skill（capability_boundary 的 write-boundary 保留清单）：模型不可达，
+# 不要据此认为 B/C 端能办；如要恢复绑定，先过 capability_boundary 的探针与用例。
 class OrderManageTool(BaseTool):
     """订单管理 Tool"""
 
