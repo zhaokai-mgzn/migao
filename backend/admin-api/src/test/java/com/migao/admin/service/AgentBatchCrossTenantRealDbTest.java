@@ -119,7 +119,7 @@ class AgentBatchCrossTenantRealDbTest {
      * 新增一张豁免 = 该表**静默脱离**租户隔离（不报错、只是不再过滤）⇒ 必须在这一行留痕并被评审看见。
      */
     private static final List<String> EXEMPT_TABLES_LEDGER = List.of(
-            "notification_rules", "notification_templates", "platform_admins",
+            "kf_suites", "notification_rules", "notification_templates", "platform_admins",
             "tenant_applications", "tenants");
 
     /**

@@ -36,7 +36,10 @@ public class MybatisPlusConfig {
             // 静默过滤掉（生产实证：种子可查但 API total=0、事件触发匹配不到模板）。
             // notifications 仍保留租户过滤（纯租户数据，见 NotificationService）。
             "notification_templates",
-            "notification_rules"
+            "notification_rules",
+            // 微信客服套件级凭证（V217，issue #9161）：一个 suite 服务多个租户，
+            // 不属于任何单一租户；无 tenant_id 列，也不应被租户谓词改写。
+            "kf_suites"
     );
 
     /**
