@@ -1,4 +1,5 @@
 import request from './request'
+import type { KfSessionStatus } from './kf-session-status'
 import {
   buildProductPayload,
   buildLogisticsPayload,
@@ -2085,7 +2086,7 @@ export const registrationApi = {
 // ==================== 客服工作台类型 ====================
 
 /** 客服工作台会话（内部客服人员接待C端消费者的人工服务会话） */
-export interface AgentSession {
+export interface AgentSession extends KfSessionStatus {
   id: string
   customerId: string
   customerName?: string
@@ -2100,15 +2101,6 @@ export interface AgentSession {
   startedAt: string
   endedAt?: string
   createdAt: string
-  // ── 微信客服状态（issue #9202 / 母单 #9194 子项 2；非微信客服会话恒为 null/undefined）──
-  /** 渠道标识：微信客服来源为 `wechat_kf`，普通人工会话为 null。 */
-  channel?: 'wechat_kf' | string | null
-  /** 该会话最新一条微信客服发送状态。 */
-  sendStatus?: 'pending' | 'sending' | 'accepted' | 'failed' | 'unknown' | string | null
-  /** 48h 窗口内已用条数（窗口过期或无记录 ⇒ 0）。 */
-  budgetUsed?: number | null
-  /** 48h 窗口上限（恒 5）。 */
-  budgetLimit?: number | null
 }
 
 /** 客服工作台会话详情 */
