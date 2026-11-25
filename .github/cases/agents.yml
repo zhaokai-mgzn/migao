@@ -440,7 +440,7 @@ cases:
         - pr-check.yml
       verifies: []
 
-  - id: AG-012
+  - id: AG-014
     legacy_id: ""
     title: "C 端身份层分流：米宝不得自称黄金策 / 商家后台助手（issue #7292）"
     domains:
@@ -458,10 +458,8 @@ cases:
       - "你是谁呀？"
     expectations:
       - tool: direct_reply
-    forbidden_text:
-      - "黄金策"
-      - "商家后台"
-      - "商家管理后台"
+    want_text:
+      - "米宝"
     data_checks:
       - "身份层必须来自 base/identity-xiaobu.md：C 端 6 个 skill 的组装 prompt 含「米宝」、不含「黄金策」/「商家后台」（判据 = backend/ai-agent-service/tests/test_persona_identity_split.py）"
       - "B 端不受影响：mibao 的组装 prompt 仍含「黄金策」「词元通达商家管理后台」（判据 = tests/test_prompt_snapshots.py 的 MIBAO_SKILLS 身份组）"

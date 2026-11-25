@@ -1,4 +1,4 @@
-# case_ids: AG-012
+# case_ids: AG-014
 """persona 身份层分流（issue #7292）。
 
 病根（2026-10-19 立案，2026-11-25 现取复现）：`base/identity.md` 被**所有 persona 共用**

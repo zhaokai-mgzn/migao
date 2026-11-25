@@ -1,4 +1,4 @@
-# case_ids: PG-012, PR-013, PR-024, KN-001, KN-002, OR-013, AG-012
+# case_ids: PG-012, PR-013, PR-024, KN-001, KN-002, OR-013, AG-014
 """
 防线 2: Prompt 黄金快照测试
 
