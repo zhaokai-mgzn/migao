@@ -97,6 +97,17 @@
 
 ### 3.2 小程序连接小店 —— 一个平台小程序服务 N 个商户
 
+> **⚠️ 2026-11-25 更正（本节结论有一处不成立）**：官方开发指南与组件文档明确
+> 「小程序连接小店的能力**依赖关联关系**」—— `<store-product>` 商品卡（基础库 **3.7.0**）**要求**
+> 「小程序 ↔ 小店」关联关系（小店发起邀请 → 小程序接受，`status=1`）；
+> `<store-home>` 店铺卡（3.5.5）与 `<store-coupon>` 优惠券（3.8.3）**不要求**。
+> 故下文 §3.2 表中「商品卡不要求关联」一条**作废**，「店铺卡/优惠券不要求」成立。
+> 影响：**「零配置展示任意商户商品卡」不成立**，M0 应改为「店铺卡（无需关联）+ 关联后补商品卡」。
+> 依据：[小程序连接小店（开发指南）](https://developers.weixin.qq.com/doc/store/shop/guide/connect/miniprogram)、
+> [store-product](https://developers.weixin.qq.com/miniprogram/dev/component/store-product.md)、
+> [store-home](https://developers.weixin.qq.com/miniprogram/dev/component/store-home.md)；
+> 完整分析见 [youzan-model-and-store-entry-research.md](youzan-model-and-store-entry-research.md) §8.1。
+
 来源：[《微信小店「小程序连接小店」功能指引》2025-01-22](https://store.weixin.qq.com/chengzhang/webdoc/wiki/7296/99bdb51e4787f776/growth_center_manual_for_store)、
 [开发指南](https://developers.weixin.qq.com/doc/store/shop/guide/connect/miniprogram.html)、
 [官方 API 目录](https://developers.weixin.qq.com/doc/store/shop/API/)。
