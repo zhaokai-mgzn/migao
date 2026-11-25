@@ -56,12 +56,10 @@ jobs:
 
       - name: Install test deps
         working-directory: tests
-        run: npm ci
-
+        run: npm ci --prefer-offline --no-audit --no-fund
       - name: Install admin-web deps (for Playwright webServer)
         working-directory: frontend/admin-web
-        run: npm ci
-
+        run: npm ci --prefer-offline --no-audit --no-fund
       # 空跑护栏（migao-acceptance「空跑」）：清单为空 / 列出的 spec 不存在时**拒绝执行**。
       # 否则 `npx playwright test` 收到空实参会跑**全部** spec（389 条，含已知红的），
       # 或静默跑 0 条却 success —— 两种都不是信号。

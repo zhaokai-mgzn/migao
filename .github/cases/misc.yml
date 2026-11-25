@@ -11089,7 +11089,7 @@ cases:
     traces:
       tests:
         - "tests/unit_ci_workflows/test_npm_install_uses_offline_flags.py"
-    merge_log: "2026-11-25 新增（issue #9153 ①）。现场：`admin-web-test` 的 `Install dependencies`（`npm ci`）实测 **54s**，而 `setup-node` 已配 `cache: npm` + 正确 `cache-dependency-path` ⇒ 省不下来的不是下载，是网络探测/audit 解析这些每次固定动作。本仓 `scripts/batch_gate.py --install-deps` 早有 `--prefer-offline` 先例（`test_batch_gate.py` 判据 23 钉着）。改法：pr-check.yml 三处 `npm ci` 统一加 `--prefer-offline --no-audit --no-fund`。红证实跑：去掉一处参数 ⇒ 判据 1 FAILED；恢复 ⇒ 2 passed。取号 = `next_case_id.py MC` ⇒ **MC-361**。"
+    merge_log: "2026-11-25 扩面（issue #9120）：判据原来只扫 `pr-check.yml`（第一次改的场景），而全仓另有 16 处 `npm ci`（bmini/mini-app 的 Taro 依赖树、h5 发布、demo-evidence、nightly、redproof 巡检）。实测 `bmini-app`/`mini-app` 的 `npm ci` 59–124s 且双峰（缓存命中率不稳）⇒ 同一把参数对它们成立。现取口径 = 全仓 20 条 / 10 个文件，floor 钉 20 防口径回退。原记录：2026-11-25 新增（issue #9153 ①）。现场：`admin-web-test` 的 `Install dependencies`（`npm ci`）实测 **54s**，而 `setup-node` 已配 `cache: npm` + 正确 `cache-dependency-path` ⇒ 省不下来的不是下载，是网络探测/audit 解析这些每次固定动作。本仓 `scripts/batch_gate.py --install-deps` 早有 `--prefer-offline` 先例（`test_batch_gate.py` 判据 23 钉着）。改法：pr-check.yml 三处 `npm ci` 统一加 `--prefer-offline --no-audit --no-fund`。红证实跑：去掉一处参数 ⇒ 判据 1 FAILED；恢复 ⇒ 2 passed。取号 = `next_case_id.py MC` ⇒ **MC-361**。"
   - id: MC-362
     legacy_id: ""
     title: "断言**比较右侧**不得写死「第 N 行」（行号不是稳定标识；2026-11-25 曾因此让 4/4 片整片假红）"
