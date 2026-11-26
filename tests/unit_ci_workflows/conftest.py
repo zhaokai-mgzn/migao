@@ -352,16 +352,20 @@ install_corpus_memo()
 # 选**哈希**而不是「按排序名次的奇偶」：哈希的成员关系**稳定** —— 新增一个判据文件只会让
 # **它自己**落进某一半，**不会把已有文件在两半之间搬家**（奇偶法会：中间插入一个文件就翻转
 # 它之后全部文件的归属）⇒ 各片冻结的库存基线不会因无关新增而失效。
-# 盐 `N`（现取 **130**）：选法 = 在 1~4000 里按「**墙钟代理**最大者最小」搜，代理 =
-#   本片重判据的**实测耗时** + k × 本片**用例数**（k = 未实测质量的每用例均值 ≈ 0.23s）。
-#   为什么不是按字节量、也不是只平重判据：
-#     · 旧盐 74 的文件数几乎相等（172/170）却把重判据堆在片 1（实测 388s vs 234s，CI 上片 1 恒慢 30~110s）；
-#     · 只平重判据（如候选盐 845：重判据 311/311）会把重判据文件的**大量参数化用例**整体挪到另一边
-#       （用例数 3057/3476）⇒ 未实测的那部分反而偏了。
-#   盐 130：重判据 **316 / 305**（下界 ⌈621/2⌉ = 311）、用例数 **3241 / 3292**（差 51）—— 两根轴都平。
-#   读数与搜法（含候选对比）记在台账 `shape.shards.balance_measured`。
-# 🔴 盐是**分片规则的一部分**：改它 = 改分片 ⇒ 必须同步台账 `shape.shards.salt` 并复算读数
-# （判据 = `test_helper_leg_execution_shape.py`，两边逐字比）。
+# 盐 `N`（现取 **891**）与片数（现取 **4**）—— issue #9102（2026-11-24 吃顶 incident）重切：
+#   病：required 腿的后半片**两次跑满 20 分钟上限被 cancel**（run 45291734491 / job 138117410585，
+#   GitHub 注释逐字 `The job has exceeded the maximum execution time of 20m0s`）⇒ 所有在飞 PR 卡死；
+#   而 ⛔ **不许抬 `timeout-minutes`**（#5203 / #5365 既有口径）⇒ 只能按**实测权重**重切。
+#   选法（与旧盐 130 同一套搜法，只换权重来源）：`-n 4 --durations=0` 按文件聚合**逐用例自耗秒数**
+#   （= 与负载无关的工作量读数，不是挂钟），在盐 1~4000 里搜「最重片工作量最小、其次片间文件数差最小」。
+#   **为什么是四片、不是三片**：拆前总工作量 3706.6s（1/2 = 1742.5 / 2/2 = 1887.8），
+#   三片下界 ⌈3706.6/3⌉ = 1236s = 最重片的 **65.8%**（> #9102 要求的 60%）；
+#   四片下界 927s = **49.1%** ⇒ 四片是满足该目标的最小片数。
+#   现取：四片工作量 906 / 921 / 933 / 947s，文件数 126 / 131 / 138 / 141（旧两片：1743 / 1888s）。
+#   读数与搜法（含候选对比）记在台账 `shape.shards.balance_measured`；旧的两片读数留在
+#   `balance_measured_2026_10_03`（别删 —— 它是"为什么还要再切"的依据）。
+# 🔴 盐与片数**都是分片规则的一部分**：改它 = 改分片 ⇒ 必须同步台账 `shape.shards.salt` /
+#   `count` / `names` / 逐片冻结基线并复算读数（判据 = `test_helper_leg_execution_shape.py`，逐字比）。
 #
 # ## 🔴 分片最容易出的坏形态：「**整套**」判定跟着失效（本包的主要风险）
 #
@@ -375,14 +379,14 @@ install_corpus_memo()
 #
 # - 分片**只影响收集面**（哪些用例进本轮），不改变任何一条断言的覆盖面；
 # - xdist 的 worker 分配仍然非确定（各片内部照旧 `-n 4`）；
-# - 两片**互相不知道对方跑了什么** ⇒ 「并集 == 全集」由**规则**保证（`shard_of` 是全函数，
+# - 各片**互相不知道对方跑了什么** ⇒ 「并集 == 全集」由**规则**保证（`shard_of` 是全函数，
 #   每个文件恰好落进一片），判据在 `test_helper_leg_execution_shape.py` 里按**现取语料**复算。
 SHARD_ENV = "MIGAO_CI_HELPER_SHARD"
 #: 分片盐（与台账 `shape.shards.salt` 逐字相等；判据两边比）
-SHARD_SALT = 130
+SHARD_SALT = 891
 
 
-def shard_of(name: str, count: int = 2) -> int:
+def shard_of(name: str, count: int = 4) -> int:
     """判据文件 `name` 归属第几片（**1-based**）。全函数 ⇒ 每个文件恰好一片（并集 == 全集）。"""
     return zlib.crc32(f"salt{SHARD_SALT}:{name}".encode("utf-8")) % int(count) + 1
 
@@ -853,13 +857,22 @@ def _env_truthy(value) -> bool:
     return text not in ("", "0", "false", "no", "off")
 
 
+#: 本进程是否**已经**拿到机器级锁（issue #9105：`pytest_configure` 与 `pytest_collection` 两处都可能调
+#: `acquire_suite_lock`；同进程第二次调用必须**直接返回已持有**，否则锁脚本会把「自己」当成活持有者 ⇒ 自锁死）。
+_SUITE_LOCK_HELD = False
+
+
 def acquire_suite_lock(env=None) -> tuple[bool, str]:
     """拿套件自己的机器级锁。返回 `(是否拿到, 失败时的人类可读报文)`。
 
     ⚠️ 只**报告**，不在这里判红：拿不到时由 `pytest_collection` 钩子 `pytest.exit`（fail-closed），
     这样「拿不到 ⇒ 非零退出」这条路对任何调用者都成立，且判据可以直接调本函数看读数。
     """
+    global _SUITE_LOCK_HELD
     env = os.environ if env is None else env
+    if _SUITE_LOCK_HELD:
+        # 同进程幂等：`pytest_configure`（issue #9105 起）先拿过 ⇒ `pytest_collection` 兜底那次不得再 acquire
+        return True, "本进程已持有机器级锁（幂等）"
     lock_file = env.get("MIGAO_HEAVY_LOCK_FILE") or "<$HOME/.migao-heavy.lock>"
     # 🔴 **纵深防御（issue #6074）**：无论豁免是否生效（= 祖先有没有设 `MIGAO_HEAVY_LOCK_HELD=1`），
     #    这条路都**不得无限阻塞**。两条出口，按顺序：
@@ -913,6 +926,7 @@ def acquire_suite_lock(env=None) -> tuple[bool, str]:
         )
     finally:
         if acquired:
+            _SUITE_LOCK_HELD = True
             # acquire 记的持有者是**本进程**（锁脚本用 `$PPID`）⇒ 本进程被 Ctrl-C / 被杀也必须放掉，
             # 否则一次中断就把机器级锁永久占住（§27 的「一次异常退出就死锁」）。
             atexit.register(release_suite_lock, env)
@@ -932,11 +946,43 @@ def acquire_suite_lock(env=None) -> tuple[bool, str]:
 
 def release_suite_lock(env=None) -> None:
     """释放**自己**持有的那份（非法持有者由锁脚本自己拒绝，本函数不让异常逃出去）。"""
+    global _SUITE_LOCK_HELD
+    _SUITE_LOCK_HELD = False
     try:
         subprocess.run([str(LOCK_SCRIPT), "release"], capture_output=True, text=True,
                        cwd=str(REPO_ROOT), env=os.environ if env is None else env)
     except OSError:
         pass
+
+
+def pytest_configure(config) -> None:
+    """套件自带准入的**主拿锁点**（issue #9105）。
+
+    ## 为什么必须在 `pytest_configure` 里拿（而不是只挂在 `pytest_collection`）
+
+    `-n N`（xdist）下**收集由 worker 执行**，控制器（`DSession`）**不调用** `pytest_collection`
+    ⇒ 挂在 collection 上的拿锁点根本不触发。实测（2026-11-24）：`pytest tests/unit_ci_workflows -q -n 4`
+    全程**没有锁文件、没有排队、没有拒绝报文**，而同一时刻它在跑 536 个判据文件 ——
+    任何人加一个 `-n` 就能绕过「重活串行」（#6019 的射程洞）。
+
+    `pytest_configure` 在**控制器上一定触发**（且早于收集 ⇒ 拒绝发生在烧 CPU 之前）。
+
+    ⚠️ worker 必须跳过：`PYTEST_XDIST_WORKER` 在 worker 的 conftest 导入时**已经**设好
+    （比 `config.workerinput` 更早、更可靠）；worker 各自抢锁会 N 路互抢。
+    ⚠️ 与 `pytest_collection` 的关系：那个钩子**保留**作兜底（例如插件把收集挪走的情形），
+    靠 `acquire_suite_lock` 的**同进程幂等**保证不会二次 acquire 而自锁。
+    """
+    if os.environ.get("PYTEST_XDIST_WORKER") or hasattr(config, "workerinput"):
+        return                     # xdist worker：由控制器统一拿锁
+    try:
+        args = list(config.invocation_params.args)
+    except Exception:  # noqa: BLE001 —— 取不到参数 = 不可判定 ⇒ 按**最宽**面判（fail-closed）
+        args = [SUITE_DIR]
+    if not suite_self_lock_wanted(args, config=config, env=os.environ):
+        return
+    ok, detail = acquire_suite_lock(os.environ)
+    if not ok:
+        raise pytest.exit.Exception(detail, returncode=1)
 
 
 def pytest_collection(session):  # noqa: ARG001 —— 只需 session.config；钩子体在 collection 之前

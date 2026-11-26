@@ -103,7 +103,7 @@
 | 安装包 | `https://app.migaozn.com/terminal/<清单里的 download_url 文件名>` | app 域 |
 
 > 🔴 **`/download` 只有裸域是对的**。`app.migaozn.com/download` 回 200 但内容是 C 端米宝那页 ——
-> 只看状态码的验收会在这里**假绿**（脚本用「正文含『观星台终端』」判它，不是只看 200）。
+> 只看状态码的验收会在这里**假绿**（脚本用「正文含『生意管家终端』」判它，不是只看 200）。
 > 🔴 `/terminal` 裸前缀必须 301，否则同样落 SPA fallback ⇒ **缺失文件也回 200**，客户端把 HTML 当清单解析。
 
 ### 2.2 校验：**没有 `SHA256SUMS.txt` 这回事**（口径更正）
@@ -284,7 +284,7 @@ python3 scripts/trial_onboarding_check.py \
 | 判据 | 面 | 通过形态 |
 |---|---|---|
 | `enterprise-code` | 入参 | 符合 `^[a-z0-9][a-z0-9_-]{1,31}$` 且非 10 个保留字之一 |
-| `download-page` | `{site}/download` | 200 + `text/html` + 正文含「观星台终端」（挡 SPA fallback 假 200） |
+| `download-page` | `{site}/download` | 200 + `text/html` + 正文含「生意管家终端」（挡 SPA fallback 假 200） |
 | `terminal-dir-redirect` | `{app}/terminal` | **301** → `/terminal/` |
 | `windows-manifest` | `{app}/terminal/latest.json` | 字段齐 + `sha256` 64 位 + `size`>0 + 载荷 200 且大小一致 |
 | `android-manifest` | `{app}/terminal/android/latest.json` | 同上 + `versionCode` 正整数 |
@@ -299,7 +299,7 @@ python3 scripts/trial_onboarding_check.py \
 
 ```
 ✅ enterprise-code          trial-acme
-✅ download-page            200 text/html，正文含「观星台终端」（29600 bytes）
+✅ download-page            200 text/html，正文含「生意管家终端」（29600 bytes）
 ✅ terminal-dir-redirect    301 → https://app.migaozn.com/terminal/
 ???? windows-manifest       /terminal/latest.json 404 未发布（先跑 terminal-publish.yml，见 §2）
 ???? android-manifest       /terminal/android/latest.json 404 未发布

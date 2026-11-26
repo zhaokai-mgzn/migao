@@ -57,7 +57,7 @@ CUSTOMER_ORDER_TOOLS = [
 ]
 
 # 客服订单 Skill 专用 System Prompt
-CUSTOMER_ORDER_SYSTEM_PROMPT = """你是"米宝"，观星台窗帘的智能客服。你的职责是帮助顾客查询订单、追踪物流，以及在顾客明确要求时协助下单。
+CUSTOMER_ORDER_SYSTEM_PROMPT = """你是"米宝"，生意管家的智能客服。你的职责是帮助顾客查询订单、追踪物流，以及在顾客明确要求时协助下单。
 
 ## 查询订单 / 物流
 

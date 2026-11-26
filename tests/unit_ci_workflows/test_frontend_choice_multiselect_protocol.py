@@ -54,7 +54,8 @@ STORE_REL = "src/store/chatStore.ts"
 CARD_GLOB = f"*/{CARD_REL}"
 
 #: 冻结的普查集合（**两边一起收窄也逃不掉**：现取必须等于本常量，新包须连同本判据一起登记）
-EXPECTED_PACKAGES = ("bmini-app", "mini-app")
+#: 2026-11-26（issue #9233）：C 端 `mini-app` 整目录删除 ⇒ 收窄为 1 项（等号口径不变）。
+EXPECTED_PACKAGES = ("bmini-app",)
 
 #: 四个协议字段（`interact.py` 在 multiSelect=true 时**必然**下发；缺一个就是断线）
 PROTOCOL_FIELDS = (
@@ -92,13 +93,6 @@ def test_census_matches_frozen_package_set():
     assert discovered == list(EXPECTED_PACKAGES), (
         "带 ChoiceCard 的前端包集合与冻结声明不一致（新包须连同本判据一起登记，"
         f"不得静默收窄或扩张）：现取={discovered} 冻结={list(EXPECTED_PACKAGES)}"
-    )
-
-
-def test_census_covers_both_personas():
-    discovered = _card_packages()
-    assert len(discovered) >= 2, (
-        f"ChoiceCard 普查面只剩 {discovered} —— 射程被收窄到单点（C 端/B 端同族缺陷会漏掉一侧）"
     )
 
 

@@ -1,0 +1,6 @@
+{
+  "id": "MC-354",
+  "pr": 9111,
+  "title": "CI 分片预算台账：required 腿 ci workflow helper unit tests 四片重切 + 每片预算 80% 判红 + timeout 只许缩短（issue #9102）",
+  "claimed_at": "2026-11-24"
+}

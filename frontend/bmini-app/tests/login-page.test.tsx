@@ -81,9 +81,9 @@ describe('LoginPage', () => {
   it('应渲染品牌、账号密码两个输入框与登录按钮', () => {
     render(<LoginPage />)
 
-    // issue #8614：登录页头衔改为小程序实名「词元观星台」（原「黄金策 · 企业智能生产管家」是
+    // issue #8614：登录页头衔改为小程序实名「生意管家」（原「黄金策 · 企业智能生产管家」是
     // AI 助手名写在头条位置；黄金策仍是对话里的助手名，见 utils/brand.ts 的 buildBotName）
-    expect(screen.getByText('词元观星台')).toBeTruthy()
+    expect(screen.getByText('生意管家')).toBeTruthy()
     expect(screen.getByText('经营数据 · AI 客服 · 移动坐席')).toBeTruthy()
     expect(screen.getByText('员工账号')).toBeTruthy()
     expect(screen.getByText('密码')).toBeTruthy()

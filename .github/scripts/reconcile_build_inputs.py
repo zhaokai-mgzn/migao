@@ -157,29 +157,6 @@ BUILD_INPUTS: dict[str, tuple[tuple[str, str], ...]] = {
             "线上产物身份 + 不串端自证",
         ),
     ),
-    "c-end-h5": (
-        (
-            ".github/workflows/c-end-h5-publish.yml",
-            "本腿的定义（手动发布 gate + `scripts/h5_freshness_guard.py` 的调用面）",
-        ),
-        (
-            "deploy/scripts/c-end-h5-dist-push.sh",
-            "发布链路第一层：把 CI 构建的 dist 推成不可变 sha（远端按 sha 取回）",
-        ),
-        (
-            "deploy/scripts/h5-freshness-confirm.sh",
-            "本腿 notify 档的**复核实现体**（issue #8924）：时间戳只是代理 ⇒ 判「陈旧」后构建并与线上"
-            "逐字节比对；改了它，这条腿的判红口径就变了 ⇒ 必须随腿一起落地",
-        ),
-        (
-            "deploy/scripts/c-end-h5-publish-ci.sh",
-            "CI 侧发布驱动：对账 dispatch 出去的 run 走这条（只报告、不发布）",
-        ),
-        (
-            "deploy/scripts/c-end-h5-verify-served.sh",
-            "线上产物身份自证",
-        ),
-    ),
 }
 
 #: **有意不算构建输入**的路径 → 理由。判据会要求：① 每条确实被某条腿引用 ② 每条确实**没**被覆盖

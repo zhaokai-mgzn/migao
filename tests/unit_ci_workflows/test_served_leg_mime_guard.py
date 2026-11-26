@@ -250,7 +250,7 @@ def test_real_repo_has_no_problems():
 
 def test_coordinates_are_live_not_scanning_air():
     """坐标自证：腿集合、`.mjs` 集合、app server 段、JS MIME location 都**真的**取到了。"""
-    assert len(leg_files()) >= 3, f"只取到 {len(leg_files())} 条发布自检腿（worker / bmini / c-end 三端）"
+    assert len(leg_files()) >= 2, f"只取到 {len(leg_files())} 条发布自检腿（worker / bmini 两端；C 端 c-end 已随 issue #9233 下线）"
     assert worker_mjs_urls(), "取不到工人端 module script 的线上路径 ⇒ 覆盖判据在扫空气"
     assert app_server(NGINX_CONF.read_text(encoding="utf-8")) is not None, "找不到 app.migaozn.com 的 443 server 段"
 

@@ -321,8 +321,7 @@ jobs:
       - name: npm ci
         if: steps.tag.outputs.MODE == 'build' && steps.sync.outputs.skip != 'true'
         working-directory: frontend/admin-web
-        run: npm ci
-
+        run: npm ci --prefer-offline --no-audit --no-fund
       - name: Type check
         if: steps.tag.outputs.MODE == 'build' && steps.sync.outputs.skip != 'true'
         working-directory: frontend/admin-web

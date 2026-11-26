@@ -188,3 +188,70 @@ describe('官网对外面：不出现品牌名与内部标识（issue #8868）',
     expect(findVendorOrInternalTokens('<p>车间工人手持终端。下载后用系统安装器安装。</p>')).toEqual([])
   })
 })
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * 第三批病症（2026-11-24 用户逐字，两张截图）
+ *
+ * > 这种信息不适合放到官网 ／ 这种也不适合放上去
+ *
+ * 两张红框都在下载页：
+ *   ① 「Windows 版**尚未购买商业代码签名证书**，这是当前口径：不签名、公布 SHA-256、由安装程序自证哈希。
+ *      证书**补齐后**会在这里同步说明。」—— 这是**采购进度 + 风控现状**，属于运营内部事实：
+ *      商家读不出该做什么，还把「我们没买证书」当成产品资质摆到官网首页级页面上；
+ *   ② 「终端内『检查更新』读取的是**发布清单**（Windows 读 `/terminal/latest.json`，
+ *      Android 读 `/terminal/android/latest.json`）」—— **内部部署路由**，商家既不用也不该知道。
+ *
+ * 口径：官网只说**商家要做什么**（怎么装、怎么更新、怎么校验）；采购 / 部署 / 口径内部事实不上屏
+ * （同 §31 P3「不摆内部标识」）。要留档就写进内部文档，不写进对外页面。
+ * 判据面 = 官网对外面的**代码行**（注释里说明来由不算）。
+ * ──────────────────────────────────────────────────────────────────────────── */
+
+const OPS_INTERNAL_TOKENS = [
+  '代码签名证书',
+  '未购买',
+  '证书补齐',
+  '自证哈希',
+  '发布清单',
+  'latest.json',
+  '/terminal/',
+] as const
+
+function findOpsInternalTokens(src: string): string[] {
+  const hits: string[] = []
+  for (const line of codeLines(src)) {
+    for (const token of OPS_INTERNAL_TOKENS) {
+      if (line.includes(token)) hits.push(`${token} ← ${line.trim().slice(0, 70)}`)
+    }
+  }
+  return hits
+}
+
+describe('官网对外面：不摆运营内部事实与内部路由（2026-11-24 用户逐字）', () => {
+  it('源码扫：证书采购进度 / 内部发布路由出现在对外面 ⇒ 红（新增页面自动进面）', () => {
+    const offenders: string[] = []
+    for (const rel of SURFACE) {
+      for (const hit of findOpsInternalTokens(read(rel))) offenders.push(`${rel}: ${hit}`)
+    }
+    expect(
+      offenders,
+      `官网对外面出现运营内部事实 / 内部路由：\n${offenders.join('\n')}\n` +
+        `用户裁定（2026-11-24，两张截图）：官网只说商家要做什么（怎么装 / 怎么更新 / 怎么校验）；` +
+        `采购进度（证书买没买）与部署路径（/terminal/latest.json 这类）不上屏，要留档写内部文档。`,
+    ).toEqual([])
+  })
+
+  it('判别力自证：内部事实与内部路由各自判红、用户向文案不报（否则是空断言）', () => {
+    expect(
+      findOpsInternalTokens('Windows 版尚未购买商业代码签名证书，这是当前口径：不签名、由安装程序自证哈希。'),
+    ).toHaveLength(3)
+    expect(
+      findOpsInternalTokens("body: '终端内「检查更新」读取的是发布清单（Windows 读 /terminal/latest.json）'"),
+    ).toHaveLength(3)
+    expect(findOpsInternalTokens('// 内部运维说明：证书补齐后再说，latest.json 不上屏')).toEqual([])
+    expect(
+      findOpsInternalTokens(
+        'body: \'点「更多信息」→「仍要运行」即可继续安装；可对照本页公布的 SHA-256 校验值。\'',
+      ),
+    ).toEqual([])
+  })
+})

@@ -1,0 +1,9 @@
+{
+  "why": "issue #8977：短信验证码**单次消费** ⇒ P0 冒烟整档只允许 fixture `auth_token` 登录一次。本台账登记「P0 之外、确实要用**有效短信码**真登录」的用例；未登记即红（判据 = tests/unit_ci_workflows/test_smoke_single_login.py::test_valid_code_consumer_ledger_is_exact），台账条目只许缩短（删了用例就同步删条目，否则多登记也红）。",
+  "allowed": [
+    {
+      "test": "tests/smoke/test_06_perf.py::test_login_latency",
+      "why": "P1/performance 档（`-m p0` 不收集）：性能基线必须真发一次登录才能量延迟，无法复用 session token。生产跑 P1 档需要**另发一条**短信码 —— 这是登记在案的缺口（P0 整跑不受影响）。"
+    }
+  ]
+}

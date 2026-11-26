@@ -74,9 +74,9 @@ if [ ! -d "$ADMIN_WEB_DIR/node_modules" ]; then
     exit 1
   fi
 fi
-# 注：本脚本不碰 frontend/mini-app 的依赖 —— 本冒烟只跑 admin-web 的 31 旅程（spec.mjs 无 mini-app
-#     消费方），旧版这里也给 mini-app 软链主仓库 node_modules，属同形态的死代码（issue #5241）⇒ 删除。
-#     将来真要在 worktree 里跑 mini-app，按上面 admin-web 同法真装（Taro 不走 Turbopack，但软链同样无收益）。
+# 注：本冒烟只跑 admin-web 的 31 旅程（spec.mjs 无 C 端小程序消费方；该工程已于 2026-11-26 删除，issue #9233）——
+#     旧版这里也给该工程软链主仓库 node_modules，属同形态的死代码（issue #5241）⇒ 删除。
+#     将来真要在 worktree 里跑小程序工程，按上面 admin-web 同法真装（Taro 不走 Turbopack，但软链同样无收益）。
 # admin-api 本地密钥/gitignored 文件补齐（worktree 形态）
 if [ ! -f "$REPO_ROOT/backend/admin-api/.env" ] && [ -f "$MAIN_REPO/backend/admin-api/.env" ]; then
   cp "$MAIN_REPO/backend/admin-api/.env" "$REPO_ROOT/backend/admin-api/.env"

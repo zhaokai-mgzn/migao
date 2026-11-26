@@ -1202,6 +1202,17 @@ UNANNOTATED_ENDPOINTS: dict[str, str] = {
     # 判据 = 本文件 `test_every_judgement_is_green`
     #        + `backend/admin-api/src/test/java/com/migao/admin/controller/ClientErrorControllerTest.java`。
     "POST /api/client-errors": "白屏上报面：`permitAll` **有意放行**（8 KiB / 每 IP 30·分钟⁻¹ + 全局 600 / 三道去敏；不读业务数据）",
+    # issue #9171：企业微信「微信客服」回调（公开面）。企业微信服务器没有登录态，
+    # 准入靠 msg_signature + AES 解密 + receiveid 校验；未配置 token/aesKey ⇒ 503。
+    # 不读租户/业务数据，只落 kf_inbox 并置 sync dirty；加权限码 = 平台回调全 401 = 消息全丢。
+    "GET /api/kf/callback": "企微回调验证：`permitAll` 有意放行（msg_signature + receiveid；未配置 503）",
+    "POST /api/kf/callback": "企微回调收件：同上（验签解密后只落 inbox，不读业务数据）",
+    # issue #9181：AI/工作台 → 回复入队（内部服务面，ServiceTokenFilter 保护；
+    # 无用户会话 ⇒ 不能加权限码，准入靠 X-Service-Token fail-closed）。
+    "POST /api/internal/kf/reply": "内部回复入队：Service Token 保护；只入队 outbox，不直接发",
+    "POST /api/internal/kf/decide": "内部介入判定：Service Token 保护；只读文本/状态，返回 decision",
+    "POST /api/internal/kf/transfer": "内部转人工：Service Token 保护；建 working 会话 + trans(2)",
+    "POST /api/internal/kf/end": "内部结束人工：Service Token 保护；trans(4) + 关闭当前段",
     "GET /api/admin/notifications*": "自助通知中心：收件人一律取 `SecurityContext` 当前用户（#4727 第 4 行）",
     "PUT /api/admin/notifications*": "同上（标记已读）",
     "DELETE /api/admin/notifications*": "同上（删除自己的通知）",
@@ -2270,6 +2281,7 @@ ROUTE_WITHOUT_MENU_NODE: dict[str, str] = {
     # 本条的用途不变（该前缀没有菜单节点可钉），但不许再把「部分重定向」写成「整体重定向」。
     "/production/routings": "「工艺配置」菜单项已移除（issue #6580：功能体并入 `/settings`）⇒ 本前缀没有菜单节点可钉、节点归「企业基础设置」；⚠️ **只有** `?tab=calc` 这一支是旧链兼容重定向（issue #6825 → `/settings?domain=calc`），其余形态仍在 `/production/routings` 渲染本页功能体",
     "/settings/params": "「参数总览」一级项已撤掉（issue #6580：内容回到 `/settings` 页内的配置域）⇒ 本前缀只作旧链兼容（重定向 `/settings`），节点归「企业基础设置」",
+    "/settings/wechat-kf": "微信客服接入（issue #9230）是设置子页，入口从 `/settings` 进入、无独立侧边栏节点；守卫码 `system:manage` 与页面写面（secret 加密落库）同源",
     # 🔴 2026-10-17（issue #7087）：「每日简报」**菜单项已删除** ⇒ 本前缀**不再有菜单节点可钉**
     # （与上面四条同族形态 = 「旧入口保留、菜单项移除」）。守卫前缀 `/briefing` 仍在
     # `(dashboard)/layout.tsx` 的 `ROUTE_PERMISSION_MAP` 里、码一字不动（`dashboard:view`），

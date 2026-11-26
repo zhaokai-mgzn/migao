@@ -109,6 +109,8 @@ const ROUTE_PERMISSION_MAP: Array<{ prefix: string; code: string }> = [
   // product_manager 持该读码、不持 `system:manage`）。经营域（企业信息 / AI 客服 /
   // 通知设置）仍由各自的 `system:manage` **域级**门控 —— 该有意不一致已具名登记在
   // `tests/unit_ci_workflows/test_agent_permission_parity.py` 的 `MENU_READ_PARITY_RESIDUALS`。
+  // 微信客服接入（issue #9230）：设置子页，无侧边栏节点；写/读 secret 属系统设置权限。
+  { prefix: '/settings/wechat-kf', code: 'system:manage' },
   { prefix: '/settings', code: 'production:view' },
   // issue #5246：知识库页同理 —— 页面本身的守卫用读码 knowledge:view
   //（增删改/发布/归档等写动作由后端 knowledge:manage 拦截，前端不重复表达写权限）。

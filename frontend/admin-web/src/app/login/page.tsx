@@ -200,7 +200,7 @@ export default function LoginPage() {
       <div className="w-full max-w-[420px] relative z-10">
         <div className="flex flex-col items-center mb-8">
           <Logo size="large" className="mb-4" />
-          <h1 className="text-2xl font-bold text-neutral-900">观星台</h1>
+          <h1 className="text-2xl font-bold text-neutral-900">生意管家</h1>
           <p className="mt-1.5 text-sm text-neutral-500">企业级AI经营管理平台</p>
         </div>
 
@@ -332,7 +332,7 @@ export default function LoginPage() {
           )}
         </div>
 
-        <p className="mt-6 text-center text-xs text-neutral-400">© 2026 杭州词元通达科技有限公司 · 观星台</p>
+        <p className="mt-6 text-center text-xs text-neutral-400">© 2026 杭州词元通达科技有限公司 · 生意管家</p>
       </div>
     </div>
   )

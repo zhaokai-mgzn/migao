@@ -45,18 +45,20 @@ import HomePage from '@/app/(corporate)/page'
 import AboutPage from '@/app/(corporate)/about/page'
 import ServicesPage from '@/app/(corporate)/services/page'
 import ContactPage from '@/app/(corporate)/contact/page'
+import DownloadPage from '@/app/(corporate)/download/page'
 import LoginPage from '@/app/login/page'
 import RegisterPage from '@/app/register/page'
 
 /** 骨架字面量（`frontend/admin-web/src/components/providers/AuthProvider.tsx` 的加载态）。 */
 const SHELL_LITERAL = '加载中...'
 
-/** 匿名可见面 = 官网四页 + 登录 / 注册（实测六页首屏可见 DOM 均为 6 字符）。 */
+/** 匿名可见面 = 官网五页（含终端下载页，issue #9136）+ 登录 / 注册。 */
 const ANONYMOUS_SURFACE: Array<{ pathname: string; Page: ComponentType }> = [
   { pathname: '/', Page: HomePage },
   { pathname: '/about', Page: AboutPage },
   { pathname: '/services', Page: ServicesPage },
   { pathname: '/contact', Page: ContactPage },
+  { pathname: '/download', Page: DownloadPage },
   { pathname: '/login', Page: LoginPage },
   { pathname: '/register', Page: RegisterPage },
 ]
@@ -72,12 +74,13 @@ function firstScreen(pathname: string, Page: ComponentType): string {
 }
 
 describe('匿名可见面首屏：真实根布局 + 真实页面 ⇒ 必须有 h1 与正文（issue #6665）', () => {
-  it('面自证：六条匿名可见路由都在面内（校举不能是空集，也不能只覆盖官网四页）', () => {
+  it('面自证：七条匿名可见路由都在面内（校举不能是空集，也不能只覆盖官网四页）', () => {
     expect(ANONYMOUS_SURFACE.map((r) => r.pathname)).toEqual([
       '/',
       '/about',
       '/services',
       '/contact',
+      '/download',
       '/login',
       '/register',
     ])
@@ -137,7 +140,7 @@ describe('匿名可见面首屏：真实根布局 + 真实页面 ⇒ 必须有 h
     ).toBe(false)
   })
 
-  it('（有 next build 产物时）六条路由的**静态预渲染 HTML** 里就有 h1 与正文、且没有「加载中...」', () => {
+  it('（有 next build 产物时）七条路由的**静态预渲染 HTML** 里就有 h1 与正文、且没有「加载中...」', () => {
     // 这是 `next build` 那一层的判据：`renderToString` 证明不了「静态预渲染是否成功」——
     // 实测（issue #6665）：门控放行公开面后 `next build` 直接失败在
     // `Error occurred prerendering page "/login"`（`/login` 用了 useSearchParams），

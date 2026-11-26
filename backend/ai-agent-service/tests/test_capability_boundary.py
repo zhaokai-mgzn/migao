@@ -1,4 +1,4 @@
-# case_ids: HR-009, DF-003, HR-002, AG-008
+# case_ids: HR-009, DF-003, HR-002, AG-008, MC-194
 """B 端能力边界的**投影判据**（issue #7291；#7334 二次审计收口）。
 
 为什么需要它：能力边界原先靠人工抄写在 10 个 prompt 文件里，其中 9 处与工具真值相反
@@ -729,3 +729,20 @@ def test_every_mibao_skill_projects_its_own_scope():
         )
     # 反向对照：写面不同的两个域必须渲染不同 —— 漏传 skill_name 时两者逐字相同，本行先红。
     assert _capability_boundary("order") != _capability_boundary("product")
+
+
+def test_stop_verb_is_scoped_to_processing_items():
+    """「停用」不得在 ✅/❌ 两段里互斥（issue #9215）。
+
+    红证：把 `delete_object` 的标签改回「删除 / 停用 / 作废」⇒ 本用例红
+    （❌ 段出现「停用」但无「停用仅限加工项」限定）。
+    """
+    text = render_capability_boundary(skill_name="product")
+    allow = [l for l in text.splitlines() if l.startswith("- ✅")]
+    deny = [l for l in text.splitlines() if l.startswith("- ❌")]
+    assert any("改加工项（含启用 / 停用）" in l for l in allow), (
+        "✅ 段丢了「改加工项（含启用 / 停用）」—— 与 #8618 工具真值相反")
+    for line in deny:
+        if "停用" in line:
+            assert "停用仅限加工项" in line, (
+                f"❌ 段出现无限定的「停用」，与 ✅ 段互斥：{line}")

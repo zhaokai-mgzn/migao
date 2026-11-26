@@ -33,8 +33,7 @@ jobs:
 
       - name: Install test deps
         working-directory: tests
-        run: npm ci
-
+        run: npm ci --prefer-offline --no-audit --no-fund
       - name: Re-record fixtures from dev API
         working-directory: tests
         env:

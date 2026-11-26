@@ -461,7 +461,7 @@ export default function Sidebar({
           {!collapsed && (
             <div className="min-w-0">
               <div className="truncate text-sm font-semibold leading-tight text-white">
-                {user?.tenantName || '观星台'}
+                {user?.tenantName || '生意管家'}
               </div>
             </div>
           )}
@@ -562,14 +562,14 @@ export default function Sidebar({
 
       {/* 页脚（issue #7476 / #7480 / #7482 / #7487 / #7491）：**星标 + 品牌署名**。
           #7491 起公司法定名**撤出侧边栏**（用户 2026-10-22：「我们的公司名？放左下角用户会有想法的吧」
-          —— 侧边栏是租户的地盘，不挂供应商名）⇒ 公司名改到顶栏用户菜单「关于观星台」按需查看。
-          用户 2026-10-22：「移除米高的叫法，观星台=米高了，这样太丑了，你设计的好看些」
+          —— 侧边栏是租户的地盘，不挂供应商名）⇒ 公司名改到顶栏用户菜单「关于生意管家」按需查看。
+          用户 2026-10-22：「移除米高的叫法，生意管家=米高了，这样太丑了，你设计的好看些」
           ⇒ 去掉 MIGAO（同一个名字说两遍）与圆角小牌（方框把署名做成了「按钮」形状），
-          上「观星台」、下「杭州词元通达科技有限公司」—— 公司名成为 lockup 的第二行。
+          上「生意管家」、下「杭州词元通达科技有限公司」—— 公司名成为 lockup 的第二行。
           企业名缺失时品牌已占顶部主位 ⇒ 此处不渲染；折叠态只留展开图标（桌面端）。
           🔴 issue #8025（2026-10-28 真栈截图：左下角只剩「N 星台」）：本行是 flex，品牌块与收起按钮
           原先**两边都可压缩**（品牌无 `min-w-0`、名称无截断、按钮无 `shrink-0`）⇒ 窄侧栏里按钮把
-          「观星台」压住。⇒ 品牌块 `min-w-0`（可收缩）+ 名称 `truncate`（超出走省略号）+ 按钮 `shrink-0`
+          「生意管家」压住。⇒ 品牌块 `min-w-0`（可收缩）+ 名称 `truncate`（超出走省略号）+ 按钮 `shrink-0`
           （永远完整可点）。只改可压缩性，折叠逻辑 / 文案 / 侧栏宽度都不动。 */}
       <div data-testid="sidebar-footer" className="relative border-t border-white/5 px-3 py-2.5">
         {/* 页脚细线在品牌一侧透一层金（不是整条金线 —— 只是让署名有个「压印」的落点） */}
@@ -581,7 +581,7 @@ export default function Sidebar({
           {!collapsed && user?.tenantName && (
             <div
               data-testid="sidebar-brand"
-              title="观星台 · AI 经营平台"
+              title="生意管家 · AI 经营平台"
               className="flex min-w-0 items-center gap-2.5"
             >
               {/* 四角星 = 「观星」的星；刻意不用通用 sparkle 图标（那是 AI 语义，不是品牌语义） */}
@@ -595,7 +595,7 @@ export default function Sidebar({
                 data-testid="sidebar-brand-name"
                 className="truncate text-[13px] font-medium leading-none tracking-[0.2em] text-[#ded7c7]"
               >
-                观星台
+                生意管家
               </span>
             </div>
           )}

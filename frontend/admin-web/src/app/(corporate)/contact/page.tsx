@@ -1,6 +1,8 @@
 import Link from 'next/link'
 import { ArrowRight, Building2, MessagesSquare, Sparkles, Users } from 'lucide-react'
 import { PageHero, SectionHeading } from '@/components/corporate/CorporateSection'
+// 内测期隐藏自助入驻入口（issue #9066）：开关单一来源见 @/config/onboarding
+import { SELF_SERVICE_ONBOARDING_OPEN } from '@/config/onboarding'
 
 // 本页必须是**服务端组件**（不要在这里加 'use client'，issue #6307）：
 // 根 layout 里的门控对公开路由不渲染骨架，页面正文在服务端渲染进初始 HTML；
@@ -35,7 +37,7 @@ export const helpItems = [
     icon: Building2,
     title: '合作与代理',
     description:
-      '区域合作、行业模板共建、渠道代理等合作事项，请说明合作形式与所在地区；提交入驻申请时一并说明即可。',
+      '区域合作、行业模板共建、渠道代理等合作事项，请说明合作形式与所在地区，预约时一并说明即可。',
   },
 ]
 
@@ -47,7 +49,7 @@ export const faqs = [
   },
   {
     question: '需要我们自己准备服务器吗？',
-    answer: '不需要。观星台是多租户 SaaS，浏览器打开就能用；员工端 H5 扫码即开，工人不必安装 App。',
+    answer: '不需要。生意管家在浏览器打开就能用；员工端 H5 扫码即开，工人不必安装 App。',
   },
   {
     question: 'AI 会替我做主退款、改价或取消订单吗？',
@@ -56,7 +58,7 @@ export const faqs = [
   },
   {
     question: '价格在哪里查看？',
-    answer: '观星台不公示价格。企业规模、开通模块与场景不同，报价随方案一并给出。',
+    answer: '生意管家不公示价格。企业规模、开通模块与场景不同，报价随方案一并给出。',
   },
 ]
 
@@ -117,24 +119,26 @@ export default function ContactPage() {
             </div>
           </div>
 
-          {/* 入驻通道：本页唯一的行动号召（不重复页头已说过的内容） */}
-          <div className="mx-auto mt-14 max-w-3xl rounded-2xl border border-primary-100 bg-primary-50/60 p-6 sm:flex sm:items-center sm:justify-between sm:gap-8">
-            <div>
-              <p className="text-sm font-semibold text-neutral-900">
-                开通无需等待回复
-              </p>
-              <p className="mt-2 text-sm leading-relaxed text-neutral-600">
-                提交入驻申请并完成手机验证后，AI 会自动核验企业信息与合规性，通过即自动开通账号。
-              </p>
+          {/* 入驻通道：本页唯一的行动号召（内测期隐藏，issue #9066） */}
+          {SELF_SERVICE_ONBOARDING_OPEN && (
+            <div className="mx-auto mt-14 max-w-3xl rounded-2xl border border-primary-100 bg-primary-50/60 p-6 sm:flex sm:items-center sm:justify-between sm:gap-8">
+              <div>
+                <p className="text-sm font-semibold text-neutral-900">
+                  开通无需等待回复
+                </p>
+                <p className="mt-2 text-sm leading-relaxed text-neutral-600">
+                  提交入驻申请并完成手机验证后，AI 会自动核验企业信息与合规性，通过即自动开通账号。
+                </p>
+              </div>
+              <Link
+                href="/register"
+                className="group mt-5 inline-flex shrink-0 items-center gap-2 rounded-xl bg-primary-600 px-6 py-3 text-sm font-semibold text-white transition-colors hover:bg-primary-700 sm:mt-0"
+              >
+                提交入驻申请
+                <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+              </Link>
             </div>
-            <Link
-              href="/register"
-              className="group mt-5 inline-flex shrink-0 items-center gap-2 rounded-xl bg-primary-600 px-6 py-3 text-sm font-semibold text-white transition-colors hover:bg-primary-700 sm:mt-0"
-            >
-              提交入驻申请
-              <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
-            </Link>
-          </div>
+          )}
         </div>
       </section>
     </>
