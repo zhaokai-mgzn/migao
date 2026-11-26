@@ -18,7 +18,7 @@ import { SELF_SERVICE_ONBOARDING_OPEN } from '@/config/onboarding'
 export const metadata: Metadata = {
   title: '产品能力 — 顾客经营、经营决策与业务全链路',
   description:
-    '生意管家产品能力：顾客侧米宝承接咨询、算料报价、下单与售后；经营侧黄金策承接商品、订单、生产、库存与财务；管理后台、顾客小程序、商家小程序与员工端 H5 四个终端。',
+    '生意管家产品能力：顾客侧米宝承接咨询、算料报价、下单与售后；经营侧黄金策承接商品、订单、生产、库存与财务；管理后台、微信客服、商家小程序与员工端 H5 四个终端。',
 }
 
 export default function ServicesPage() {
@@ -46,7 +46,7 @@ export default function ServicesPage() {
               </h1>
               <p className="mt-5 max-w-2xl text-base leading-relaxed text-neutral-600 sm:text-lg">
                 顾客侧由米宝承接服务，经营侧由黄金策承接经营问答；商品、订单、生产、仓储与财务在同一业务系统上流转，
-                管理后台、顾客小程序、商家小程序与员工端 H5 共用数据。
+                管理后台、微信客服、商家小程序与员工端 H5 共用数据。
               </p>
               <div className="mt-8 flex flex-col gap-3 sm:flex-row">
                 <Link

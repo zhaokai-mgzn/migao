@@ -757,13 +757,13 @@ function EnterpriseDomainPanel() {
             <input
               type="text"
               className="w-full h-9 px-3 rounded border border-neutral-300 text-sm placeholder:text-neutral-400 focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
-              placeholder="如 migao"
+              placeholder="如 caiyuan"
               value={settings.code || ''}
               onChange={(e) => setSettings({ ...settings, code: e.target.value })}
               onBlur={commitCode}
             />
             <p className="text-xs text-neutral-400 mt-1">
-              员工用它登录：<span className="text-neutral-500">用户名@企业编码</span>（例如 zhangsan@{settings.code || 'migao'}）。
+              员工用它登录：<span className="text-neutral-500">用户名@企业编码</span>（例如 zhangsan@{settings.code || 'caiyuan'}）。
               全平台唯一，只能用 2~32 位小写字母、数字、连字符与下划线；格式或占用不合规时会提示原因。
             </p>
             <p className="text-xs text-amber-600 mt-1">

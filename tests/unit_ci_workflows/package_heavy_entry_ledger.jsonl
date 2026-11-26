@@ -196,3 +196,5 @@
 {"id":"1795484583.76360.4640","ts":"2026-11-24T01:43:04Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/9102-shard-budget","why":"子包 worktree 直跑全量（无批次标记）"}
 {"id":"1795504982.16188.7065","ts":"2026-11-24T07:23:03Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/corporate-download-copy-9129","why":"子包 worktree 直跑全量（无批次标记）"}
 {"id":"1795505106.17146.7105","ts":"2026-11-24T07:25:06Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/corporate-download-copy-9129","why":"--allow-package-heavy（命令行显式）"}
+{"id":"1795653065.7822.26154","ts":"2026-11-26T00:31:06Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/9229-brand-legacy-cleanup","why":"子包 worktree 直跑全量（无批次标记）"}
+{"id":"1795653071.7892.27913","ts":"2026-11-26T00:31:11Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/9229-brand-legacy-cleanup","why":"--allow-package-heavy（命令行显式）"}

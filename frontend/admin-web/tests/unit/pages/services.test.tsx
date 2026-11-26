@@ -18,7 +18,7 @@ describe('ServicesPage（官网产品能力：浅色页头 + 场景分节 + 能�
     render(<ServicesPage />)
     expect(screen.getByText(/两条 AI/)).toBeInTheDocument()
     expect(screen.getByText('共用业务底座')).toBeInTheDocument()
-    expect(screen.getByText(/管理后台、顾客小程序、商家小程序与员工端 H5 共用数据/)).toBeInTheDocument()
+    expect(screen.getByText(/管理后台、微信客服、商家小程序与员工端 H5 共用数据/)).toBeInTheDocument()
   })
 
   it('renders 页头能力标签（六个经营动作）', () => {
@@ -45,7 +45,7 @@ describe('ServicesPage（官网产品能力：浅色页头 + 场景分节 + 能�
       expect(screen.getAllByText(title).length).toBeGreaterThanOrEqual(1)
     }
     expect(screen.getAllByText('界面示意').length).toBeGreaterThanOrEqual(5)
-    expect(screen.getByText('顾客小程序 · 米宝')).toBeInTheDocument()
+    expect(screen.getByText('微信客服 · 米宝')).toBeInTheDocument()
     expect(screen.getByText('管理后台 · 经营报表')).toBeInTheDocument()
     expect(screen.getByText('加工单 · 生产进度')).toBeInTheDocument()
     expect(screen.getByText('库存台账 · 批次')).toBeInTheDocument()
@@ -71,7 +71,7 @@ describe('ServicesPage（官网产品能力：浅色页头 + 场景分节 + 能�
 
   it('四个终端', () => {
     render(<ServicesPage />)
-    for (const name of ['管理后台', '顾客小程序', '商家小程序', '员工端 H5']) {
+    for (const name of ['管理后台', '微信客服', '商家小程序', '员工端 H5']) {
       expect(screen.getByText(name)).toBeInTheDocument()
     }
     expect(screen.getByText('老板 / 员工 / 工人')).toBeInTheDocument()

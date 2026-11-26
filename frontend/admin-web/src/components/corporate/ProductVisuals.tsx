@@ -105,7 +105,7 @@ export function WorkbenchMock() {
 /** 顾客经营：微信对话框 + 估算报价卡 */
 export function CustomerChatMock() {
   return (
-    <Frame title="顾客小程序 · 米宝">
+    <Frame title="微信客服 · 米宝">
       <div className="space-y-3 bg-neutral-50/60 p-4 sm:p-5">
         <div className="flex justify-end">
           <p className="max-w-[85%] rounded-2xl rounded-br-sm bg-primary-600 px-3.5 py-2 text-xs leading-relaxed text-white">

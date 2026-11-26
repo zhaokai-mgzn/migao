@@ -97,7 +97,7 @@ describe('CorporateHomePage（官网首页：产品页版式 + 场景分节，is
     }
     // 每节的标签与产品示意（4 节 + hero = 至少 5 处「界面示意」）
     expect(screen.getAllByText('界面示意').length).toBeGreaterThanOrEqual(5)
-    expect(screen.getByText('顾客小程序 · 米宝')).toBeInTheDocument()
+    expect(screen.getByText('微信客服 · 米宝')).toBeInTheDocument()
     expect(screen.getByText('管理后台 · 经营报表')).toBeInTheDocument()
     expect(screen.getByText('加工单 · 生产进度')).toBeInTheDocument()
     expect(screen.getByText('库存台账 · 批次')).toBeInTheDocument()
