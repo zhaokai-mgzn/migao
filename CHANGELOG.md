@@ -5,6 +5,12 @@
 > 原因 = 单文件涨到 512KB 越过扫描上限，详见存档文件头与 issue #6404。
 > **后续条目继续在本文件 `## [Unreleased]
 
+### 根面不再对已下线的 C 端 H5 做 SPA 回落：缺失路径回 404，不再把任意路径变成 500（2026-11-26，issue #9249）
+
+- **形态**：C 端米宝 H5 随 issue #9233 下线后，它的产物按自己的托管台账从静态根清走；而 nginx 的 `location /` 仍回落 `/index.html`（此时已不存在的文件）⇒ nginx 内部重定向又落回同一块 ⇒ `internal redirection cycle` ⇒ **任意缺失路径 500**（线上实测：`/` 403、`/js/app.js` 500、`/css/app.css` 500）。5xx 比 404 更糟 —— 监控把它当「服务挂了」。现在根面缺失一律 `=404`。
+- **根页**：`/` 由仓库里那页纯静态退役占位承担（`deploy/swas/h5-root/index.html`，无任何脚本），`deploy.sh` **只在目标缺失时**把它落到静态根（不覆盖既有落地面）。`/b/`（商家端）/ `/w/`（工人报工）/ `/terminal/` 三个命名空间语义**不变**。
+- **判据**：`tests/unit_ci_workflows/test_c_end_removed_guard.py`（根面 `try_files` 必须是 `$uri $uri/ =404` + 退役说明点名 #9249 + 占位页无脚本 + 落地步只在缺失时写；三条注入式红证）；`test_wechat_verify_route.py` 与 `test_bmini_h5_hosting.py` 的 nginx 语义模拟同批改到新口径（根级子路由 404、`/b/` 自己的 fallback 不动）。
+
 ### C 端顾客小程序下线：`frontend/mini-app` 与 C 端 H5 发布腿整体删除（2026-11-26，issue #9233）
 
 - **形态**：用户逐字「`frontend/mini-app` 这个可以彻底删除了，以后不需要用到 c 端小程序」⇒ 该 Taro 工程 138 个跟踪文件整体删除；C 端主入口改为**微信客服**（issue #9229）。商家小程序 / 工人端 H5（`frontend/bmini-app`）与兼容期旧工人页（`frontend/worker-h5`）**不动**。

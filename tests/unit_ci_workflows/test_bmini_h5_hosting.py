@@ -566,13 +566,20 @@ def test_bmini_subroute_is_served_by_own_fallback():
     assert _serve(_block(), files, f"/{SUBDIR}/index.html") == f"{SUBDIR}/index.html"
 
 
-def test_root_still_served_by_c_end_and_not_hijacked():
-    """判据 4 反面：根与根级子路由仍由 C 端承担（`/b/` 规则不许吃掉根）。"""
+def test_root_serves_no_spa_and_is_not_hijacked():
+    """判据 4 反面：根面**已无 SPA 回落**（issue #9249），且 `/b/` 的规则不许吃掉根。
+
+    历史：本判据原先钉的是「根级子路由仍由 C 端 `index.html` 承担」。C 端 H5 于 2026-11-26
+    随 #9233 下线 ⇒ 根面只剩一页退役占位（由 `index index.html` 兜住 `/` 本身），
+    **任何根级子路由必须是 404**：若又落回某个 `index.html`，说明有人把 SPA 兜底写回去了 ——
+    那正是 issue #9249 的病灶（末位目标不存在 ⇒ 内部重定向成环 ⇒ 任意缺失路径 500）。
+    """
     files = _static_fs()
     assert _serve(_block(), files, "/") == "index.html"
     served = _serve(_block(), files, "/some/c-end/spa/route")
-    assert served == "index.html", (
-        f"根级子路由落到 `{served}` —— 期望 C 端的 `index.html`（`/b/` 的规则劫持了根？）"
+    assert served == "404", (
+        f"根级子路由落到 `{served}` —— 期望 `404`（根面无 SPA 回落，issue #9249）；"
+        "落到 `index.html` 说明兜底被写回去了，那会让任意缺失路径重新变成 500"
     )
 
 
@@ -624,15 +631,18 @@ def test_nginx_mutations_are_all_detected():
     drop_location = original.replace(f"location /{SUBDIR}/ {{", "location /__removed__/ {")
     assert drop_location != original, "变异注入未生效（找不到 `/b/` 的 location）"
 
+    # 根面已按 issue #9249 收成 `=404` ⇒ 变异锚点跟着换（不再有 `/index.html` 兜底可改）
     hijack_root = original.replace(
-        "        try_files $uri $uri/ /index.html;\n    }\n", f"        try_files $uri $uri/ /{SUBDIR}/index.html;\n    }}\n", 1
+        "        try_files $uri $uri/ =404;\n    }\n", f"        try_files $uri $uri/ /{SUBDIR}/index.html;\n    }}\n", 1
     )
-    assert hijack_root != original, "变异注入未生效（找不到根 location 的 fallback）"
+    assert hijack_root != original, "变异注入未生效（找不到根 location 的 try_files）"
 
     cases = {
         "去掉 /b/ 自己的 fallback（改回根 index.html）": (drop_own_fallback, f"/{SUBDIR}/deep/route", f"{SUBDIR}/index.html"),
         "删掉 /b/ 的 location": (drop_location, f"/{SUBDIR}/deep/route", f"{SUBDIR}/index.html"),
-        "让 /b/ 的规则吃掉根": (hijack_root, "/some/c-end/route", "index.html"),
+        # expected = **未变异**时的正确读数（根面无 SPA 回落 ⇒ 根级子路由 404）；
+        # 变异把它变成 `b/index.html` ⇒ 与 expected 不等 ⇒ 判为「已检测到」
+        "让 /b/ 的规则吃掉根": (hijack_root, "/some/c-end/route", "404"),
     }
     undetected = []
     for name, (mutant, path, expected) in cases.items():

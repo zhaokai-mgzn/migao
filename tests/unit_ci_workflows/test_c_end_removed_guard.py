@@ -295,3 +295,91 @@ def test_history_reference_ledger_is_honest():
     for rel, meta in entries.items():
         assert isinstance(meta, dict) and meta.get("kind") in ("keep", "history"), f"台账条目 {rel} 的 kind 非法"
         assert str(meta.get("why") or "").strip(), f"台账条目 {rel} 缺说明（为什么不改它）"
+
+
+# ── 判据 7：根面不再对已退役对象做 SPA 回落（issue #9249，2026-11-26 线上 500 实证）────
+#
+# 病灶（现取）：C 端产物按它自己的托管台账被清走之后，`location /` 的 `try_files … /index.html`
+# 末位指向一个**不存在的文件** ⇒ nginx 内部重定向又落回同一块 ⇒ `internal redirection cycle`
+# ⇒ **任意缺失路径都 500**（`/` 403、`/js/app.js` 500、`/css/app.css` 500）。
+# 5xx 比 404 更糟（监控当成服务挂了），所以这条必须是**判据**，不能靠「记得别清磁盘」。
+
+NGINX_CONF = REPO_ROOT / "deploy" / "swas" / "nginx.conf"
+ROOT_PLACEHOLDER = REPO_ROOT / "deploy" / "swas" / "h5-root" / "index.html"
+DEPLOY_SH = REPO_ROOT / "deploy" / "swas" / "deploy.sh"
+
+
+def _root_location_block() -> str:
+    """取出**静态根**那个 `location / {` 的原文（含注释）；取不到 / 不唯一即判红。
+
+    锚点不能取「文件里第一个 `location /`」：本文件有多处 `location /`（HTTP→HTTPS 301、
+    admin-api / ai-agent 的 proxy 段、admin-web 段…）。实测按「第一个 root 之后」取会落到
+    **admin-web 的 proxy 块**（`root /opt/migao-deploy/h5;` 在 `/terminal/` 段也出现过一次）⇒
+    判据指向错的对象、并且在真回归时**恒绿**。
+    ⇒ 判据形态：在全部 `location / { … }` 里，按「带 Strict-Transport-Security **且** 没有 proxy_pass」
+    选出静态根那一块，并要求**恰好一块**（不唯一 = 判据失效，不是通过）。
+    """
+    text = NGINX_CONF.read_text(encoding="utf-8")
+    blocks = []
+    for m in re.finditer(r"\n    location / \{", text):
+        end_at = text.find("\n    }", m.start())
+        if end_at > m.start():
+            blocks.append(text[m.start():end_at])
+    picked = [b for b in blocks if "Strict-Transport-Security" in b and "proxy_pass" not in b]
+    assert len(picked) == 1, (
+        f"{NGINX_CONF.name} 里「静态根 location /」应当恰好一块（带 HSTS、不带 proxy_pass），"
+        f"现取 {len(picked)} 块 —— 判据锚点漂移，先修判据"
+    )
+    block = picked[0]
+    # 退役说明写在块**上方**（紧邻的注释段）⇒ 一并带上，否则「点名 #9249」这条判据永远够不着它
+    lines = text.splitlines()
+    first = text[: text.index(block)].count("\n")
+    lead = []
+    i = first - 1
+    while i >= 0 and (lines[i].strip().startswith("#") or not lines[i].strip()):
+        lead.insert(0, lines[i])
+        i -= 1
+    return "\n".join(lead) + "\n" + block
+
+
+def _directives(block: str) -> list:
+    """去掉注释行后的指令行（nginx 注释以 `#` 起；本块内没有把 `#` 放进引号值的形态）。"""
+    out = []
+    for line in block.splitlines():
+        code = line.split("#", 1)[0].strip()
+        if code and code != "location / {":
+            out.append(code)
+    return out
+
+
+def test_root_location_has_no_retired_spa_fallback():
+    block = _root_location_block()
+    tries = [d for d in _directives(block) if d.startswith("try_files")]
+    assert tries == ["try_files $uri $uri/ =404;"], (
+        "根面 `location /` 的 try_files 必须是 `$uri $uri/ =404`（issue #9249）："
+        "末位指向已删对象（如 `/index.html`）时，nginx 会内部重定向回本块 ⇒ **任意缺失路径 500**。"
+        f"现取 {tries}"
+    )
+    assert "#9249" in block, (
+        "根面块必须留退役说明并点名 issue #9249 —— 否则下一个人会把 `=404` 读成「漏写兜底」再补回去"
+    )
+    assert "=404" in block and "SPA" in block, "说明里要写清「不再做 SPA 回落」的结论，而不只是一个 issue 号"
+
+
+def test_root_placeholder_page_is_shipped_and_script_free():
+    assert ROOT_PLACEHOLDER.is_file(), (
+        "根面占位页必须入库（deploy/swas/h5-root/index.html）：仓库里没有它，任何干净实例 / 重建后 "
+        "`/` 都会直接 403，且没有任何东西会因此变红"
+    )
+    html = ROOT_PLACEHOLDER.read_text(encoding="utf-8").lower()
+    assert "<script" not in html, (
+        "占位页不许带任何脚本 —— 它只是一页「入口已迁移」的静态说明；带脚本等于把退役面重新变成应用入口"
+    )
+    installer = DEPLOY_SH.read_text(encoding="utf-8")
+    assert "deploy/swas/h5-root/index.html" in installer, (
+        "deploy.sh 必须把占位页落到静态根（`src/deploy/swas/h5-root/index.html` → `./h5/index.html`）："
+        "只入库不落地 = 干净实例上仍然 403"
+    )
+    assert "[ ! -f ./h5/index.html ]" in installer, (
+        "落地步必须**只在目标缺失时写** —— 无条件覆盖会毁掉别人放在根面的落地面 / 将来的着陆页"
+    )
