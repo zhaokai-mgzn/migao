@@ -2281,6 +2281,7 @@ ROUTE_WITHOUT_MENU_NODE: dict[str, str] = {
     # 本条的用途不变（该前缀没有菜单节点可钉），但不许再把「部分重定向」写成「整体重定向」。
     "/production/routings": "「工艺配置」菜单项已移除（issue #6580：功能体并入 `/settings`）⇒ 本前缀没有菜单节点可钉、节点归「企业基础设置」；⚠️ **只有** `?tab=calc` 这一支是旧链兼容重定向（issue #6825 → `/settings?domain=calc`），其余形态仍在 `/production/routings` 渲染本页功能体",
     "/settings/params": "「参数总览」一级项已撤掉（issue #6580：内容回到 `/settings` 页内的配置域）⇒ 本前缀只作旧链兼容（重定向 `/settings`），节点归「企业基础设置」",
+    "/settings/wechat-kf": "微信客服接入（issue #9230）是设置子页，入口从 `/settings` 进入、无独立侧边栏节点；守卫码 `system:manage` 与页面写面（secret 加密落库）同源",
     # 🔴 2026-10-17（issue #7087）：「每日简报」**菜单项已删除** ⇒ 本前缀**不再有菜单节点可钉**
     # （与上面四条同族形态 = 「旧入口保留、菜单项移除」）。守卫前缀 `/briefing` 仍在
     # `(dashboard)/layout.tsx` 的 `ROUTE_PERMISSION_MAP` 里、码一字不动（`dashboard:view`），

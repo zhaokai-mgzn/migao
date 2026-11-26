@@ -18,6 +18,12 @@ import java.time.OffsetDateTime;
 @TableName("kf_channels")
 public class KfChannel {
 
+    /** 合法状态集合（与 V217 的 ck_kf_channels_status 同源；写面必须用常量，禁止裸字符串）。 */
+    public static final String STATUS_ACTIVE = "active";
+    public static final String STATUS_UNAUTHORIZED = "unauthorized";
+    public static final String STATUS_EXPIRED = "expired";
+    public static final String STATUS_REVOKED = "revoked";
+
     @TableId(type = IdType.ASSIGN_UUID)
     private String id;
 

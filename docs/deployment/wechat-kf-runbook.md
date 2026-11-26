@@ -33,6 +33,17 @@ WECHAT_KF_OUTBOX_STALE_SECONDS=120
 - 主密钥轮换：新 key 加密新凭据；旧密文用旧 key 解密（`SecretCipher` 密文内带 keyId；当前实现默认 keyId=`default`，轮换需同批迁移）。
 - 回调 Token/AESKey 与企微后台**逐字一致**；不一致表现为 URL 验证 400/签名失败。
 
+## 2.5 产品内自助接入（2026-11-26，issue #9230）
+
+管理后台 → 设置 → 微信客服接入（`/settings/wechat-kf`，需 `system:manage`）：
+
+1. 填企业微信 `corp_id`、微信客服账号 `open_kfid`、应用 `Secret`（只提交一次，加密落库）；
+2. 保存即自检：`gettoken` + 客服账号列表必须包含该 `open_kfid`；失败会保留渠道并显示原因；
+3. 接通后「生成客服链接」得到 URL/二维码（可带 `scene_param` 做一店一码）；
+4. 停用 = `status=revoked`，不再接收新会话。
+
+> 回调 Token / EncodingAESKey 仍是部署级配置（下方第 4 节）；页面只显示回调 URL，值向平台管理员索取后填到企微后台。手工 SQL 仅作为排障兜底。
+
 ## 3. 数据库
 
 ```bash

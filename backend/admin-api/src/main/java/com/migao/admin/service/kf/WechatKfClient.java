@@ -92,6 +92,32 @@ public class WechatKfClient {
         return node;
     }
 
+    /** 客服账号列表（接入自检：确认 open_kfid 确实属于这个 corp）。 */
+    public JsonNode listAccounts(String accessToken) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("offset", 0);
+        body.put("limit", 100);
+        JsonNode node = post(accessToken, "/cgi-bin/kf/account/list", body);
+        check(node);
+        return node;
+    }
+
+    /** 生成客服账号链接（「一店一码」：scene_param ≤128B；返回 url，前端转二维码）。 */
+    public String createContactWay(String accessToken, String openKfId, String sceneParam) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("open_kfid", openKfId);
+        if (sceneParam != null && !sceneParam.isBlank()) {
+            body.put("scene_param", sceneParam);
+        }
+        JsonNode node = post(accessToken, "/cgi-bin/kf/add_contact_way", body);
+        check(node);
+        String url = node.path("url").asText(null);
+        if (url == null || url.isBlank()) {
+            throw new KfApiException(-1, "add_contact_way 未返回 url");
+        }
+        return url;
+    }
+
     /** 查询会话状态：0 未处理 / 1 智能助手 / 2 排队 / 3 人工 / 4 结束。 */
     public JsonNode getServiceState(String accessToken, String openKfId, String externalUserId) {
         Map<String, Object> body = new LinkedHashMap<>();
