@@ -50,8 +50,8 @@ def _npm_ci_steps() -> list[tuple[str, str, dict]]:
 
 def test_every_npm_ci_pins_the_offline_flags():
     steps = _npm_ci_steps()
-    assert len(steps) >= 20, (
-        f"现取口径回了退：全仓应有 ≥20 条 `npm ci`（2026-11-25 实测 20 条 / 10 个文件），只找到 {len(steps)} 条"
+    assert len(steps) >= 16, (
+        f"现取口径回了退：全仓应有 ≥16 条 `npm ci`（2026-11-26 C 端小程序下线后实测 16 条；原 20 条含 mini-app 腿），只找到 {len(steps)} 条"
     )
     offenders = []
     for fname, job_id, step in steps:

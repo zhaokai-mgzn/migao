@@ -155,12 +155,6 @@
       "issue": "#7017"
     },
     {
-      "path": "tests/unit_ci_workflows/test_c_end_h5_hosting.py",
-      "hits": 14,
-      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
-      "issue": "#7017"
-    },
-    {
       "path": "tests/unit_ci_workflows/test_case_prose_test_names.py",
       "hits": 2,
       "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",

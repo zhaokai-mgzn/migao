@@ -96,13 +96,6 @@ def test_census_matches_frozen_package_set():
     )
 
 
-def test_census_covers_both_personas():
-    discovered = _card_packages()
-    assert len(discovered) >= 2, (
-        f"ChoiceCard 普查面只剩 {discovered} —— 射程被收窄到单点（C 端/B 端同族缺陷会漏掉一侧）"
-    )
-
-
 def test_each_card_consumes_full_multiselect_protocol():
     missing = {}
     for pkg in EXPECTED_PACKAGES:
