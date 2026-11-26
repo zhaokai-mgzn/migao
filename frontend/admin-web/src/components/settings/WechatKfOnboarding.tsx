@@ -190,8 +190,8 @@ export function WechatKfOnboarding() {
               </p>
             ) : null}
           </Step>
-          <Step n={4} title="建客服账号，拿到 open_kfid">
-            <p>微信客服 → 客服账号 → 添加客服账号；在账号详情复制 <b>open_kfid</b>（以 wk 开头）。</p>
+          <Step n={4} title="建客服账号，拿到客服账号 ID">
+            <p>微信客服 → 客服账号 → 添加客服账号；在账号详情复制 <b>客服账号 ID</b>（以 wk 开头）。</p>
             <p className="text-neutral-500">
               给这个账号加接待人员，并确保至少一名接待人员登录过企业微信 —— 否则客户消息发不出去。
             </p>
@@ -217,7 +217,7 @@ export function WechatKfOnboarding() {
       <section className="rounded-lg border border-neutral-200">
         <div className="border-b border-neutral-100 px-4 py-3">
           <h2 className="text-base font-semibold text-neutral-900">最后一步：把三个值填回来</h2>
-          <p className="mt-1 text-sm text-neutral-500">企业 ID、应用 Secret、客服账号 open_kfid；保存后立即自检，通过后即为「已接通」。</p>
+          <p className="mt-1 text-sm text-neutral-500">企业 ID、应用 Secret、客服账号 ID；保存后立即自检，通过后即为「已接通」。</p>
         </div>
         <div className="grid gap-4 px-4 py-4 sm:grid-cols-2">
           <label className="block text-sm">

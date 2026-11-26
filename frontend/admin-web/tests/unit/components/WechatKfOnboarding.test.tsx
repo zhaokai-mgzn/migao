@@ -61,7 +61,7 @@ describe('WechatKfOnboarding（微信客服自助接入）', () => {
     expect(guide).toHaveTextContent('准备企业微信')
     expect(guide).toHaveTextContent('创建一个自建应用')
     expect(guide).toHaveTextContent('开通权限、配回调与可信 IP')
-    expect(guide).toHaveTextContent('建客服账号，拿到 open_kfid')
+    expect(guide).toHaveTextContent('建客服账号，拿到客服账号 ID')
     expect(screen.getByTestId('kf-callback-url')).toHaveTextContent('https://api.example/api/kf/callback')
     expect(screen.getByTestId('kf-callback-token')).toHaveTextContent('tok-123')
     expect(screen.getByTestId('kf-callback-aeskey')).toHaveTextContent('aes-456')
