@@ -56,7 +56,6 @@ LEDGER_DIR = Path(__file__).resolve().parent
 TRACKED = (
     "flaky-triage.yml",
     "stale-report-reaper.yml",
-    "h5-freshness-guard.yml",
     "pr-issue-link.yml",
     "mechanism-liveness.yml",
     "drift-audit.yml",
@@ -307,9 +306,6 @@ def _add_pr_type(name: str):
     return mutate
 
 
-def _restore_mini_app_upstream(doc: dict) -> None:
-    _with_on(doc, lambda o: o["workflow_run"]["workflows"].append("Mini-App CI"))
-
 
 #: 现取语料（模块级一次读盘）。
 WORKFLOW_DOCS: dict[str, dict] = {p.name: _load(p) for p in sorted(WORKFLOWS_DIR.glob("*.yml"))}
@@ -433,47 +429,6 @@ def test_stale_report_reaper_red_proofs() -> None:
         mutate(doc)
         assert stale_reaper_problems(doc), f"注入「{label}」后仍判绿 ⇒ 该判据是空断言"
     assert stale_reaper_problems(base) == [], "先决条件：未变异的真文件必须合规"
-
-
-# ── ③ h5-freshness-guard：上游收窄到「发布腿」（保留 push + dispatch） ─────────
-
-def h5_freshness_problems(wf: object) -> list[str]:
-    bad: list[str] = []
-    ups = tuple(str(x) for x in (_nested(on_block(wf), "workflow_run", "workflows") or []))
-    pubblish = [u for u in ups if u.startswith("Publish ")]
-    if len(pubblish) < 2:
-        bad.append(f"`workflow_run` 上游必须保留两条**发布腿**（发布完成即重判新鲜度），实际 {ups}")
-    pr_ci = [u for u in ups if "Mini-App CI" in u]
-    if pr_ci:
-        bad.append(
-            f"上游 {pr_ci} 是 **PR 面** CI 腿，而本腿判定的是「线上产物 vs main 源码」⇒ 与上游结论无关，"
-            f"它的每一次 PR 完成都白跑一次（实测 3 日 210 run 里绝大多数是这一半）")
-    if "push" not in on_block(wf):
-        bad.append("`push: main` 面被删 ⇒ main 有新合并时的新鲜度判定面丢失")
-    if "workflow_dispatch" not in on_block(wf):
-        bad.append("`workflow_dispatch` 面被删 ⇒ 一次性诊断（`no_gate`）失去入口")
-    if "schedule" in on_block(wf):
-        bad.append("本腿被加了 `schedule` ⇒ 违反既有裁定（用户 2026-09-21：⛔ 无 cron）")
-    return bad
-
-
-def test_h5_freshness_guard_narrows_upstreams_to_publish_legs() -> None:
-    """③ 实例：上游只剩两条发布腿 + `push` + `workflow_dispatch`，且⛔ 无 cron。"""
-    assert h5_freshness_problems(WORKFLOW_DOCS["h5-freshness-guard.yml"]) == []
-
-
-def test_h5_freshness_guard_red_proofs() -> None:
-    base = WORKFLOW_DOCS["h5-freshness-guard.yml"]
-    mutations = {
-        "把 Mini-App CI 加回上游": _restore_mini_app_upstream,
-        "删 push 面": _drop_push,
-        "加 cron": _add_cron,
-    }
-    for label, mutate in mutations.items():
-        doc = _fresh("h5-freshness-guard.yml")
-        mutate(doc)
-        assert h5_freshness_problems(doc), f"注入「{label}」后仍判绿 ⇒ 该判据是空断言"
-    assert h5_freshness_problems(base) == [], "先决条件：未变异的真文件必须合规"
 
 
 # ── ④ pr-issue-link：PR 事件类型收窄到「body 会变」的那几种 ──────────────────
@@ -798,14 +753,13 @@ def test_ledgers_are_wellformed() -> None:
 
 
 def test_comment_only_change_does_not_turn_anything_red() -> None:
-    """对照读数（防空断言）：**只改注释**的九个 YAML ⇒ 九条实例判据与两条守卫都**不红**。
+    """对照读数（防空断言）：**只改注释**的八个 YAML ⇒ 各条实例判据与两条守卫都**不红**。
 
     做法：在真源码文本里插一行注释、重新解析，再跑同一组纯函数。
     """
     checkers = {
         "flaky-triage.yml": flaky_triage_problems,
         "stale-report-reaper.yml": stale_reaper_problems,
-        "h5-freshness-guard.yml": h5_freshness_problems,
         "pr-issue-link.yml": pr_issue_link_problems,
         "mechanism-liveness.yml": mechanism_liveness_problems,
         "automerge.yml": automerge_problems,

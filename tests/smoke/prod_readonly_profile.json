@@ -1,0 +1,109 @@
+{
+  "profile": "production-readonly",
+  "env": "production",
+  "_why": [
+    "生产只读冒烟的**单一来源**：`scripts/smoke-prod-ai.sh` 只按本文件组 pytest 参数，不认 `-m p0` 整档。",
+    "整档 `-m p0` 不能上生产：`test_04_ai_chat` 会建会话（写）、`test_09_order_lifecycle` 会建单（写），",
+    "AI 面还会烧 LLM 成本；而生产没有 bypass，写类用例一旦半途失败就会留下脏数据。",
+    "每条都必须写 `why`（一句「为什么这条只读」）—— 判据 = tests/unit_ci_workflows/test_smoke_prod_readonly_profile.py：",
+    "  · 每条的 node id 必须真实存在（改名后不许静默少跑）；",
+    "  · 每条的函数体**及其 fixture 链**不得对非 auth 端点发 post/put/delete/patch（静态 AST 判红并点名）。",
+    "写动词只对 `/api/auth/**` 放行（登录/刷新的参数校验类请求不碰业务数据）。"
+  ],
+  "tests": [
+    {
+      "id": "tests/smoke/test_01_health.py::TestHealthCheck::test_admin_api_health",
+      "why": "只 GET /actuator/health；唯一的写动词是 POST /api/auth/sms/login 空 body（auth 面参数校验，400/422 即服务在线）"
+    },
+    {
+      "id": "tests/smoke/test_01_health.py::TestHealthCheck::test_ai_agent_health",
+      "why": "只 GET /health（ai-agent 存活）"
+    },
+    {
+      "id": "tests/smoke/test_01_health.py::TestHealthCheck::test_admin_api_db_connection",
+      "why": "只 GET /actuator/health；部署形态被 nginx 屏蔽（404）时显式 skip「不可判定」，不冒充通过"
+    },
+    {
+      "id": "tests/smoke/test_01_health.py::TestHealthCheck::test_admin_api_redis_connection",
+      "why": "只 GET /actuator/health；同 DB 一条，读不到组件明细即 skip"
+    },
+    {
+      "id": "tests/smoke/test_02_auth.py::TestAuthLogin::test_login_success",
+      "why": "注入 token 模式（SMOKE_ADMIN_TOKEN）下只断言 JWT 形态，不登录、不发码、不消耗短信"
+    },
+    {
+      "id": "tests/smoke/test_02_auth.py::TestAuthLogin::test_login_missing_fields",
+      "why": "POST /api/auth/sms/login 空 body ⇒ 期望 400/422，纯参数校验，不触达任何账号"
+    },
+    {
+      "id": "tests/smoke/test_02_auth.py::TestAuthLogin::test_password_login_disabled",
+      "why": "POST /api/auth/admin/login（#375 已禁用的端点）⇒ 只读「密码登录已禁用」文案，不产生会话"
+    },
+    {
+      "id": "tests/smoke/test_02_auth.py::TestTokenRefresh::test_refresh_invalid_token",
+      "why": "POST /api/auth/refresh 带无效 token ⇒ 期望 401，不换发、不落库"
+    },
+    {
+      "id": "tests/smoke/test_02_auth.py::TestUnauthorizedAccess::test_unauthenticated_returns_401",
+      "why": "不带 token GET /api/admin/products ⇒ 期望 401/403（认证边界只读探测）"
+    },
+    {
+      "id": "tests/smoke/test_02_auth.py::TestUnauthorizedAccess::test_invalid_token_returns_401",
+      "why": "带无效 token GET /api/admin/products ⇒ 期望 401/403"
+    },
+    {
+      "id": "tests/smoke/test_02_auth.py::TestUnauthorizedAccess::test_get_current_user",
+      "why": "GET /api/auth/me（读当前用户）"
+    },
+    {
+      "id": "tests/smoke/test_03_business.py::TestProductAPI::test_product_list",
+      "why": "GET /api/admin/products 列表（读）"
+    },
+    {
+      "id": "tests/smoke/test_03_business.py::TestProductAPI::test_product_list_with_keyword",
+      "why": "GET /api/admin/products?keyword=（读，搜索不改数据）"
+    },
+    {
+      "id": "tests/smoke/test_03_business.py::TestProductAPI::test_product_detail",
+      "why": "GET 列表取首条 + GET 详情（读；库里无商品时显式 skip）"
+    },
+    {
+      "id": "tests/smoke/test_03_business.py::TestOrderAPI::test_order_list",
+      "why": "GET /api/admin/orders 列表（读）"
+    },
+    {
+      "id": "tests/smoke/test_03_business.py::TestOrderAPI::test_order_list_filter_by_status",
+      "why": "GET /api/admin/orders?status=（读，过滤不改状态）"
+    },
+    {
+      "id": "tests/smoke/test_03_business.py::TestOrderAPI::test_order_detail",
+      "why": "GET 列表取首条 + GET 详情（读；无订单时显式 skip）"
+    },
+    {
+      "id": "tests/smoke/test_03_business.py::TestCustomerAPI::test_customer_list",
+      "why": "GET /api/admin/customers 列表（读）"
+    },
+    {
+      "id": "tests/smoke/test_03_business.py::TestCustomerAPI::test_customer_list_with_filter",
+      "why": "GET /api/admin/customers?keyword=（读）"
+    }
+  ],
+  "excluded": [
+    {
+      "id": "tests/smoke/test_04_ai_chat.py::TestAIChatSSE::test_create_session",
+      "why": "写：POST /api/chat/sessions 建会话（生产会留下脏会话，AI 面还烧 LLM 成本）—— 也是类级元守卫的注入式红证样本"
+    },
+    {
+      "id": "tests/smoke/test_09_order_lifecycle.py::TestOrderCreation::test_create_order",
+      "why": "写：建单（涉钱面 + 生产脏数据），只读档一律不跑"
+    },
+    {
+      "id": "tests/smoke/test_02_auth.py::TestAuthLogin::test_login_wrong_code",
+      "why": "对生产账号发错误验证码会累计风控失败计数（可能锁号）；且它不是只读断言面，认证链路真覆盖由「真登录一次」承担"
+    },
+    {
+      "id": "tests/smoke/test_02_auth.py::TestTokenRefresh::test_refresh_token",
+      "why": "注入 token 模式没有 refresh cookie ⇒ 恒 skip（不可判定）；放进常态档只会制造一条常驻 skip"
+    }
+  ]
+}

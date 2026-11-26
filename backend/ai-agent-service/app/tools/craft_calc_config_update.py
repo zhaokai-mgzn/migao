@@ -162,6 +162,8 @@ class CraftCalcConfigUpdateTool(BaseTool):
         "（要恢复默认请到后台「企业基础设置 → 工艺与路线 → 算料口径」页操作）；"
         "算具体一单的用布量/报价请引导商家到后台算料页填尺寸计算。"
         "【纪律】不要把内部键名 / 内部标识摆给商家：确认卡与人话一律用中文字段名。"
+        "【反例】只查当前值用 craft_calc_config_query；算某一单的用布量/报价到后台算料页填尺寸计算"
+        "（本工具只改店铺口径，不接单次算料）。"
         "【标注】WRITE|IDEMPOTENT — 变更类写操作（同一 changes/before 重放结果一致），必须先确认再执行"
         "｜【键名】" + "、".join(f"{alias}→{key}" for alias, key in KEY_ALIASES.items())
         + "；用商家说法当键也接受，**禁止自造英文键名**"

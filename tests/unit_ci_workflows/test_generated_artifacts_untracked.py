@@ -82,7 +82,7 @@ def _mini_repo(root: Path, *, generate: bool = True) -> Path:
 def _run(repo: Path, *extra: str) -> tuple[int, str]:
     """跑 CLI（真 subprocess）⇒ `(rc, 输出)`。"""
     proc = subprocess.run([sys.executable, str(SCRIPT), "--repo", str(repo), *extra],
-                          capture_output=True, text=True, timeout=900)
+                          capture_output=True, text=True, timeout=600)
     return proc.returncode, (proc.stdout or "") + (proc.stderr or "")
 
 

@@ -8,6 +8,7 @@ import com.migao.admin.dto.OutboundOrderView;
 import com.migao.admin.security.RequirePermission;
 import com.migao.admin.service.OutboundOrderService;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -16,6 +17,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
+import org.springframework.security.core.context.SecurityContextHolder;
 
 import java.lang.reflect.Method;
 import java.util.List;
@@ -42,6 +44,16 @@ class OutboundOrderControllerTest {
     @Mock private OutboundOrderService outboundOrderService;
 
     @InjectMocks private OutboundOrderController controller;
+
+    /**
+     * 本类断言「无认证上下文 = 操作人 system」⇒ 不依赖同一 fork 里上一个类有没有清过
+     * {@link SecurityContextHolder}（{@code forkCount=2} 会改变类顺序；实证被
+     * {@code AuthControllerTest} 留下的「微信用户」喂红过）。前置清空，判据自己负责自己的前置。
+     */
+    @BeforeEach
+    void clearSecurityContext() {
+        SecurityContextHolder.clearContext();
+    }
 
     @AfterEach
     void tearDown() {

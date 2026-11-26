@@ -16,13 +16,14 @@ AI 智能客服系统 - AI Agent 服务入口
 from contextlib import asynccontextmanager
 import asyncio
 import time
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from loguru import logger
 
 from app.config import settings
 from app.log_config import setup_logging
 from app.api.routes import router as api_router
+from app.utils.auth import verify_service_token
 from app.middleware.logging_middleware import RequestLoggingMiddleware
 from app.utils.database import init_db, close_db
 from app.utils.redis_client import init_redis, close_redis
@@ -32,6 +33,40 @@ SESSION_AUTO_CLOSE_MINUTES = 720    # 空闲超时分钟数（12 小时；用户
 SESSION_CLEANUP_INTERVAL = 300      # 后台扫描间隔（秒）
 SESSION_RETENTION_DAYS = 90         # 已关闭会话保留天数
 SESSION_STARTUP_GRACE_S = 600       # 启动宽限期（秒）：进程启动后 N 秒内不执行关闭扫描（issue #2915）
+
+# 只读流式探针的时长预算（M1-b，issue #9098）：与 nginx 的 `worker_shutdown_timeout 200s`
+# 和 uvicorn 的 `--timeout-graceful-shutdown 200` **同一个预算**（SSE 最长流 180s + 余量）。
+# ⚠️ 三处是同一条链：探针跑得比它们长 ⇒ 读数会被它们先切断（就测不出「谁切的」）。
+# 判据（会红）：tests/unit_ci_workflows/test_zero_downtime_m1_cutover.py 静态钉住这两个数。
+STREAM_PROBE_MAX_SECONDS = 200
+STREAM_PROBE_DEFAULT_SECONDS = 30
+#: 心跳间隔（秒）。测试把它 patch 成 0（否则每个用例都要真等 N 秒）。
+STREAM_PROBE_INTERVAL_SECONDS = 1.0
+
+# >>> stream-probe（判据：tests/unit_ci_workflows/test_zero_downtime_m1_cutover.py 取这一段做静态判据）
+def _probe_limit(seconds: int) -> int:
+    """`seconds` 夹到 `[1, STREAM_PROBE_MAX_SECONDS]`（0 / 负数 ⇒ 1；超上限 ⇒ 上限）。"""
+    return max(1, min(int(seconds), STREAM_PROBE_MAX_SECONDS))
+
+
+async def _probe_events(limit: int, requested: int, is_disconnected):
+    """只读心跳事件流：**只 yield**，不碰 DB / 不调 LLM / 不落库。
+
+    · 被夹取时**先**发一条 `event: notice` 自报（不静默）；
+    · 客户端断开（`is_disconnected()` 为真）⇒ 立刻结束，不把剩下的时长跑完。
+    """
+    if limit != requested:
+        yield (
+            "event: notice\n"
+            f"data: seconds clamped to {limit} "
+            f"(requested {requested}, allowed 1..{STREAM_PROBE_MAX_SECONDS})\n\n"
+        )
+    for i in range(limit):
+        if await is_disconnected():
+            break
+        yield f"event: ping\ndata: {i}\n\n"
+        await asyncio.sleep(STREAM_PROBE_INTERVAL_SECONDS)
+# <<< stream-probe
 
 
 async def _session_auto_close_loop():
@@ -251,6 +286,34 @@ def create_app() -> FastAPI:
         return JSONResponse(
             status_code=200 if snapshot["ok"] else 503,
             content=snapshot,
+        )
+
+    # ── 只读流式探针（M1-b / issue #9098）──────────────────────────────────────
+    # 用途：给「发布期切 upstream / 重建容器时，**正在生成的 SSE 流会不会被切断**」一个
+    # **可重复、零写**的读数面。M1-b 原来只有静态配置判据（`--timeout-graceful-shutdown`），
+    # 因为真正会写库的 `/api/chat/send` 不能拿来当探针（要鉴权 + 落库）。
+    #
+    # 为什么只读安全（三条硬约束，判据逐条钉住）：
+    #   ① 只 yield `event: ping`（每秒一条）：**不碰 DB / 不调 LLM / 不建会话 / 不落历史**；
+    #   ② 鉴权沿用内部服务 token（`X-Service-Token`，`Depends(verify_service_token)`）：
+    #      缺 / 错 ⇒ **401**，不许匿名可达（与 `/internal/tools/execute` 同一份实现）；
+    #   ③ 时长夹在 [1, 200]（= 上面那条三处同源的预算）；**被夹时先发一条 `event: notice` 说明**，
+    #      不静默（否则调用方会以为自己的入参生效了）。
+    # 判据（会红）：backend/ai-agent-service/tests/test_stream_probe.py（行为：401 / 夹取 / 事件流）
+    #   + tests/unit_ci_workflows/test_zero_downtime_m1_cutover.py（静态：handler 内不许出现写库/LLM 符号，
+    #   且必须挂 `Depends(verify_service_token)`、不许绕开夹取）。
+    @app.get("/internal/stream-probe")
+    async def internal_stream_probe(
+        request: Request,
+        seconds: int = STREAM_PROBE_DEFAULT_SECONDS,
+        authorized: bool = Depends(verify_service_token),
+    ):
+        from fastapi.responses import StreamingResponse
+
+        return StreamingResponse(
+            _probe_events(_probe_limit(seconds), seconds, request.is_disconnected),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
 
     # 构建身份探针（issue #8203；审计 P1-01：改前 `ai-api.migaozn.com/api/version|/version|/build-info`

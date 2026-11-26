@@ -299,7 +299,7 @@ class PositionDetailFieldsTest {
         when(processingOrderSetMapper.selectCount(any())).thenReturn(1L);
         when(productAttributeMapper.selectList(any())).thenReturn(List.of(
                 ProductAttribute.builder().tenantId(TENANT).productId("p-1")
-                        .attrKey("brand").attrValue("观星台").build()));
+                        .attrKey("brand").attrValue("生意管家").build()));
 
         Map<String, Object> out = cuttingHeightService.read(CODE, TENANT);
         @SuppressWarnings("unchecked")

@@ -175,23 +175,27 @@ def test_red_proof_second_shard_argv_drift() -> None:
     verify_text = (REPO / VERIFY_REL).read_text(encoding="utf-8")
     ci_text = (REPO / CI_REL).read_text(encoding="utf-8")
     all_local = _local_pytest_argv_all(verify_text)
-    assert len(all_local) == 2, (
-        f"本地腿现取到的 pytest 行数 = {len(all_local)}（拆腿后应为 2）⇒ 本红证无对象；先核对分片形态"
+    import json as _json
+    _ledger = _json.loads((REPO / "tests/unit_ci_workflows/helper_leg_shape_ledger.json")
+                          .read_text(encoding="utf-8"))
+    expected = len(_ledger["shape"]["shards"]["names"])       # 片数**现取**（issue #9102 起是四片）
+    assert len(all_local) == expected, (
+        f"本地腿现取到的 pytest 行数 = {len(all_local)}（台账声明 {expected} 片）⇒ 本红证无对象；先核对分片形态"
     )
-    assert all_local[0] == all_local[1], "两片的 argv 本来就不一致 ⇒ 真语料已经红了（先修语料）"
+    assert len(set(all_local)) == 1, "各片的 argv 本来就不一致 ⇒ 真语料已经红了（先修语料）"
     # **只动第二片**：先把 `ci_helper_leg()` 函数体里**真正那两条** pytest 行找出来（不能用裸
     # 字符串 `-n 4` 找 —— 注释里也写着 `-n 4`，会改错行），再改第二条的 `-n`。
     idx = verify_text.find("ci_helper_leg()")
     assert idx >= 0, "找不到本地腿函数（注入点漂移）"
     body = verify_text[idx:]
     matches = list(re.finditer(rf"-m\s+pytest\s+{re.escape(PYTEST_TARGET)}[^\n]*", body))
-    assert len(matches) == 2, f"本地腿里现取到 {len(matches)} 条 pytest 行（应为 2）"
-    second = matches[1]
+    assert len(matches) == expected, f"本地腿里现取到 {len(matches)} 条 pytest 行（应为 {expected}）"
+    second = matches[-1]                                  # 改**最后一片**（片数现取）
     at = second.start() + second.group(0).rfind("-n 4")
-    assert at > second.start(), f"第二条 pytest 行里找不到 `-n 4`：{second.group(0)!r}"
+    assert at > second.start(), f"最后一条 pytest 行里找不到 `-n 4`：{second.group(0)!r}"
     mutated = verify_text[:idx] + body[:at] + "-n 8" + body[at + len("-n 4"):]
     hit = _local_pytest_argv_all(mutated)
-    assert hit[0] == all_local[0] and hit[1] != all_local[0], f"变异点没命中第二片：{hit}"
+    assert hit[:-1] == all_local[:-1] and hit[-1] != all_local[-1], f"变异点没命中最后一片：{hit}"
     problems = leg_problems(mutated, ci_text)
     assert any("argv" in p for p in problems), (
         "只改第二片的 argv ⇒ 没有报红 ⇒ 并行度/同源契约只钉住了两片中的一片（#6164 的真退化）"

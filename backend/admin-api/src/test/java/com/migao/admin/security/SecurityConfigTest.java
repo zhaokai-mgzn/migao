@@ -176,6 +176,13 @@ class SecurityConfigTest {
     private com.migao.admin.mapper.PrintLogMapper printLogMapper;
 
     /**
+     * 微信客服媒体归档（issue #9200）：同上（本上下文排除 MyBatis 自动配置 ⇒ mapper 必须顶替；
+     * 未顶替时**整棵上下文起不来**，实测 59 条全 ERROR）。
+     */
+    @MockBean
+    private com.migao.admin.mapper.KfMediaMapper kfMediaMapper;
+
+    /**
      * 客户档案身份收敛（issue #7711）：本上下文**排除了 DataSource auto-config** ⇒ 没有
      * {@code JdbcTemplate} bean，而该服务构造依赖它（与 {@code PriceBookService} 同款）⇒ 必须在这里顶替。
      */
@@ -505,6 +512,20 @@ class SecurityConfigTest {
     private com.migao.admin.mapper.RolePermissionMapper rolePermissionMapper;
     @MockBean
     private com.migao.admin.mapper.TenantApplicationMapper tenantApplicationMapper;
+    // 微信客服通道层（issue #9171）：回调无租户上下文；本上下文无 SqlSessionFactory，
+    // @MapperScan 仍会尝试创建这三个 Mapper ⇒ 不 mock 则本类 59 条全部 error。
+    @MockBean
+    private com.migao.admin.mapper.KfChannelMapper kfChannelMapper;
+    @MockBean
+    private com.migao.admin.mapper.KfInboxMapper kfInboxMapper;
+    @MockBean
+    private com.migao.admin.mapper.KfSyncCursorMapper kfSyncCursorMapper;
+    @MockBean
+    private com.migao.admin.mapper.KfSessionRemoteMapper kfSessionRemoteMapper;
+    @MockBean
+    private com.migao.admin.mapper.KfOutboxMapper kfOutboxMapper;
+    @MockBean
+    private com.migao.admin.mapper.KfSendBudgetMapper kfSendBudgetMapper;
 
     // 生产报工（issue #3995，V49）：新增的 Mapper / Service 同样没有 sqlSessionFactory，
     // 必须在此 mock，否则整个上下文起不来（安全用例连坐失败）。

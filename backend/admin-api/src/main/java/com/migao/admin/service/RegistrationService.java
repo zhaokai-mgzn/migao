@@ -188,7 +188,7 @@ public class RegistrationService {
             return RegistrationResponse.builder()
                     .applicationId(application.getId())
                     .status("approved")
-                    .message("AI 甄别通过，欢迎入驻观星台平台")
+                    .message("AI 甄别通过，欢迎入驻生意管家平台")
                     .build();
         }
 

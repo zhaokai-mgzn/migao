@@ -121,7 +121,7 @@ jobs:
         continue-on-error: true
         run: |
           cd frontend/admin-web
-          npm ci --no-audit --no-fund || echo "::warning::npm ci 失败 ⇒ web 那条会被巡检按「缺目录」**具名跳过**（跳过 ≠ 通过）"
+          npm ci --prefer-offline --no-audit --no-fund || echo "::warning::npm ci 失败 ⇒ web 那条会被巡检按「缺目录」**具名跳过**（跳过 ≠ 通过）"
 
       - name: 红证实跑巡检（登记册逐条：注入 → 断言必红 → 还原）
         id: sweep

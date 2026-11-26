@@ -20,6 +20,8 @@ import java.time.OffsetDateTime;
 @TableName(value = "session_messages", autoResultMap = true)
 public class SessionMessage {
 
+    public static final String ROLE_USER = "user";
+
     @TableId(type = IdType.ASSIGN_UUID)
     private String id;
 
@@ -32,6 +34,9 @@ public class SessionMessage {
     private String contentType;
 
     private String content;
+
+    /** 微信客服 msgid（幂等键）；其他通道为空。 */
+    private String externalMsgId;
 
     @TableField(typeHandler = com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler.class)
     private Object metadata;

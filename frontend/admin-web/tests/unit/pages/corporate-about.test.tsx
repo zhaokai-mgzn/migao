@@ -1,4 +1,4 @@
-// case_ids: UI-082
+// case_ids: UI-082, OB-008
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 
@@ -13,19 +13,20 @@ import {
   findQuantifierRhetoric,
 } from './copy-voice-banlist'
 
-describe('CorporateAboutPage（官网关于页 v4：产品原则 + 主体事实，issue #6291 / #6326）', () => {
+describe('CorporateAboutPage（官网关于页：主体事实 + 产品原则，issue #9121）', () => {
   it('renders page header', () => {
     render(<AboutPage />)
-    expect(screen.getByRole('heading', { level: 1, name: '关于观星台' })).toBeInTheDocument()
-    expect(screen.getByText(/观星台是杭州词元通达科技有限公司旗下的 AI 经营平台/)).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 1, name: '关于生意管家' })).toBeInTheDocument()
+    expect(screen.getByText(/生意管家是杭州词元通达科技有限公司旗下的 AI 经营平台/)).toBeInTheDocument()
   })
 
-  it('renders company intro（布艺行业真实流程 + 双 AI 分工）', () => {
+  it('renders company intro（布艺行业真实流程 + 双 AI 分工 + 公司名含义）', () => {
     render(<AboutPage />)
     expect(screen.getByText(/布艺经营的多数知识，至今仍存放在人身上/)).toBeInTheDocument()
     expect(screen.getByText(/系统里留下的，往往只有开单与记账/)).toBeInTheDocument()
     expect(screen.getByText(/米宝在顾客侧、黄金策在经营侧/)).toBeInTheDocument()
     expect(screen.getByText(/都要能落回系统里的真实记录/)).toBeInTheDocument()
+    expect(screen.getByText(/词元是 AI 的底座，通达是把能力送到经营现场/)).toBeInTheDocument()
   })
 
   it('renders mission and vision', () => {
@@ -33,7 +34,6 @@ describe('CorporateAboutPage（官网关于页 v4：产品原则 + 主体事实�
     expect(screen.getByText('我们的使命')).toBeInTheDocument()
     expect(screen.getByText(/以可负担的成本，让 AI 数智化成为布艺企业经营的基本能力/)).toBeInTheDocument()
     expect(screen.getByText('我们的愿景')).toBeInTheDocument()
-    // 愿景口径（issue #8886）：普惠 + 规模不再是能力边界，两者都必须上屏
     expect(screen.getByText(/都拥有与大企业同等的经营能力/)).toBeInTheDocument()
     expect(screen.getByText(/让规模不再是经营能力的边界/)).toBeInTheDocument()
   })
@@ -41,33 +41,28 @@ describe('CorporateAboutPage（官网关于页 v4：产品原则 + 主体事实�
   it('renders 产品原则（不编造 / 价格不由模型定 / 敏感事项不做决定 / 边界写明）', () => {
     render(<AboutPage />)
     expect(screen.getByText('AI 的边界与授权')).toBeInTheDocument()
-    expect(screen.getByText('数据之外不作答')).toBeInTheDocument()
-    expect(screen.getByText('定价权归属商品库')).toBeInTheDocument()
-    expect(screen.getByText('敏感事项不由 AI 决定')).toBeInTheDocument()
-    expect(screen.getByText('能力边界公开标注')).toBeInTheDocument()
-  })
-
-  it('renders core values section 与四条价值观', () => {
-    render(<AboutPage />)
-    expect(screen.getByText('核心价值观')).toBeInTheDocument()
-    for (const name of ['能力以落地为准', '先解决真问题', '把行业做透', '数据不出租户']) {
-      expect(screen.getByText(name)).toBeInTheDocument()
-    }
-  })
-
-  it('renders 技术底座 section 与四张卡', () => {
-    render(<AboutPage />)
-    expect(screen.getByText('技术底座')).toBeInTheDocument()
-    for (const title of ['两侧 AI 各自独立配置', '业务工具层', '多租户底座', '四个终端，同一数据源']) {
+    for (const title of ['数据之外不作答', '定价权归属商品库', '敏感事项不由 AI 决定', '能力边界公开标注']) {
       expect(screen.getByText(title)).toBeInTheDocument()
     }
-    // 查无出处的年份不得回流（issue #6382：原「发展历程」的 2024 Q1~2025 早于仓史两年）
+  })
+
+  it('renders 我们的选择（行业先行 / 数据同源 / 边界公开），不再展开技术底座', () => {
+    render(<AboutPage />)
+    expect(screen.getByText('行业先行，数据同源，边界公开')).toBeInTheDocument()
+    for (const title of ['行业先行', '数据同源', '边界公开']) {
+      expect(screen.getByText(title)).toBeInTheDocument()
+    }
+    // 用户 2026-11-24 裁定：官网不再泄露底层架构
+    expect(screen.queryByText('技术底座')).not.toBeInTheDocument()
+    expect(screen.queryByText(/业务工具层/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/多租户底座/)).not.toBeInTheDocument()
+    // 查无出处的年份不得回流（issue #6382）
     expect(screen.queryByText(/20\d\d/)).not.toBeInTheDocument()
   })
 
-  it('renders 底部 CTA', () => {
+  it('renders 底部 CTA（内测期不露出立即入驻，OB-008）', () => {
     render(<AboutPage />)
-    expect(screen.getByText('立即入驻')).toBeInTheDocument()
+    expect(screen.queryByText('立即入驻')).not.toBeInTheDocument()
     expect(screen.getByText('联系我们')).toBeInTheDocument()
   })
 
@@ -86,32 +81,22 @@ describe('CorporateAboutPage（官网关于页 v4：产品原则 + 主体事实�
     expect(container.innerHTML).not.toContain('to-indigo-800')
   })
 
-  // ── 文案口吻（issue #6326：去 AI 口语，改「能力陈述型」书面语）──
-
   it('文案口吻：关于我们页渲染文本不含 AI 口语词表', () => {
     const { container } = render(<AboutPage />)
     const hits = findColloquialMarkers(container.textContent ?? '')
     expect(hits, `关于我们页渲染文本出现 AI 口语词：${hits.join(' / ')}`).toEqual([])
   })
-  // ── 文案质感：量化排比与拟人量词（issue #6366）──
 
   it('文案质感：关于我们页渲染文本无量化排比、无拟人量词', () => {
     const { container } = render(<AboutPage />)
     const text = container.textContent ?? ''
 
-    // 判别力自证：病症样本必须被检出、合规样本必须零命中（否则本判据是空断言）
     expect(findQuantifierRhetoric('一套经营平台，一次咨询，一张订单')).toEqual(['一套', '一次', '一张'])
     expect(findPersonifiedAi('两位 AI 助手')).toEqual(['两位 AI'])
     expect(findQuantifierRhetoric('六个能力域 · 4 个终端 · 至少10个字符')).toEqual([])
     expect(findPersonifiedAi('米宝与黄金策')).toEqual([])
 
-    // 真实语料
-    const quantifiers = findQuantifierRhetoric(text)
-    expect(
-      quantifiers,
-      `关于我们页渲染文本出现量化排比：${quantifiers.join(' / ')}`,
-    ).toEqual([])
-    const personified = findPersonifiedAi(text)
-    expect(personified, `关于我们页渲染文本出现拟人量词：${personified.join(' / ')}`).toEqual([])
+    expect(findQuantifierRhetoric(text)).toEqual([])
+    expect(findPersonifiedAi(text)).toEqual([])
   })
 })

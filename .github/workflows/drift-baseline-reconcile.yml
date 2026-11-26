@@ -7,9 +7,9 @@ name: Drift Baseline Reconcile (归零基线条目自动销账)
 # `<wf>|paused` / `<wf>|never-succeeded` / `<wf>|stale`）—— 某个 workflow 首次成功 / 被解停 /
 # 恢复心跳 ⇒ 条目**归零**，而**没有任何提交**会去删它 ⇒ 该腿此后每次 run 都红，每次都往 P1
 # 值班 issue 追一条评论。
-# 实测（2026-10-17）：`c-end-h5-publish.yml|never-succeeded` 在 2026-10-17 06:57 +08 该
+# 实测（2026-10-17，对象是现已随 issue #9233 删除的 C 端 H5 发布腿）：`……|never-succeeded` 在 2026-10-17 06:57 +08 该
 # workflow 首次发布成功（`workflow_dispatch` success）后归零，此后近 40 次 run **39 红**，
-# 逐字报 `❌ 基线条目已归零但未删（全量对账）：c-end-h5-publish.yml|never-succeeded`。
+# 逐字报 `❌ 基线条目已归零但未删（全量对账）：<已删腿>|never-succeeded`。
 # ⇒ 本腿给这条**外部事件驱动的归零**一个机械出口：**只剩归零条目时，开 bot PR + auto-merge**
 # （用户裁定「仅剩归零条目时开 bot PR + auto-merge」）。形态照既有范式
 # （`flaky-ledger-reconcile.yml` / `flaky-triage.yml`）：**单写者** + `GITHUB_TOKEN` 建 PR +

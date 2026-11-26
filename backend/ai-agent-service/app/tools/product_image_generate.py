@@ -142,7 +142,9 @@ class ProductImageGenerateTool(BaseTool):
         "【返回】商品图卡（一张 1440×1440 的图 + 商品名），商家可在电脑上下载、手机上保存到相册。"
         "【本工具不写库、不改商品】不会把新图设成主图，也不写任何表单 —— "
         "商家要换主图请在「商品管理」里自行上传。"
-        "【文案】本工具不写任何营销文案；要做海报/宣传图（带标题与卖点）请用 marketing_poster。"
+        "【反例】找商品/看详情用 product_search / product_detail；做海报/宣传图（带标题与卖点）"
+        "用 marketing_poster；本工具只生成商品样图。"
+        "【文案】本工具不写任何营销文案。"
         "【标注】READONLY"
         "【不要用于】营销海报（用 marketing_poster）；商品改名改价（用 product_update）"
     )

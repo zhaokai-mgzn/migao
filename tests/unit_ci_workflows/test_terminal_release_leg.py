@@ -1,5 +1,5 @@
 # case_ids: MC-122
-r"""观星台终端（工人端 APK / Windows 一体机 EXE）**正式发布链路**的常驻判据（issue #8195）。
+r"""生意管家终端（工人端 APK / Windows 一体机 EXE）**正式发布链路**的常驻判据（issue #8195）。
 
 ## 病（开工前现取）
 
@@ -826,7 +826,7 @@ def _make_static_root(tmp_path: Path) -> Path:
     (root / "js").mkdir(parents=True)
     (root / "w").mkdir()
     (root / "terminal" / "android").mkdir(parents=True)
-    (root / "index.html").write_text("<!doctype html><title>观星台 · 米宝</title>", encoding="utf-8")
+    (root / "index.html").write_text("<!doctype html><title>生意管家 · 米宝</title>", encoding="utf-8")
     (root / "js" / "app.js").write_text("// C 端 Taro 产物", encoding="utf-8")
     (root / "w" / "index.html").write_text("<!doctype html><title>报工</title>", encoding="utf-8")
     (root / "terminal" / "stale.txt").write_text("上一版留下的陈旧文件，发布后必须消失", encoding="utf-8")

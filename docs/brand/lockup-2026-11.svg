@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 232 64" fill="none">
+  <defs>
+    <linearGradient id="lk-bg" x1="6" y1="6" x2="58" y2="58" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#48618f"/><stop offset="1" stop-color="#2e3d5c"/>
+    </linearGradient>
+    <linearGradient id="lk-gold" x1="18" y1="14" x2="46" y2="50" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#f6d27a"/><stop offset="1" stop-color="#d48806"/>
+    </linearGradient>
+  </defs>
+  <rect x="4" y="4" width="56" height="56" rx="17" fill="url(#lk-bg)"/>
+  <circle cx="32" cy="27.5" r="9.6" fill="url(#lk-gold)"/>
+  <path d="M14.5 44.5 H49.5" stroke="url(#lk-gold)" stroke-width="5.2" stroke-linecap="round"/>
+  <text x="72" y="31" font-family="'PingFang SC','Hiragino Sans GB','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="24" font-weight="700" fill="#2e3d5c">生意管家</text>
+  <text x="72.5" y="47" font-family="'Helvetica Neue',Arial,sans-serif" font-size="9" font-weight="600" letter-spacing="3.2" fill="#8c7f6b">词元通达 · AI 经营平台</text>
+</svg>

@@ -231,3 +231,27 @@ def test_descriptions_only_name_registered_tools():
     assert not ghosts, (
         f"工具描述点名的工具不存在/未注册（LLM 会照着去调一个不存在的工具）：{ghosts}"
     )
+
+
+def test_every_registered_tool_description_has_trigger_counterexample_and_tag():
+    """所有注册工具的 LLM 可见 description 必须含【触发】/【反例】/READONLY|WRITE。
+
+    出处 = `agent-design-standard.md` §一（何时用 / 前置条件 / 与相似 tool 的区别）。
+    红证：补段前 `craft_calc_config_update` / `product_image_generate` 两条具名红；
+    补段后全绿。
+    """
+    missing = {}
+    for tool in get_tool_registry().get_all_tools():
+        desc = _llm_visible_description(tool)
+        gaps = []
+        if "【触发】" not in desc:
+            gaps.append("【触发】")
+        if "【反例】" not in desc:
+            gaps.append("【反例】")
+        if not ("READONLY" in desc or "WRITE" in desc):
+            gaps.append("READONLY|WRITE")
+        if gaps:
+            missing[tool.name] = gaps
+    assert not missing, (
+        f"工具 description 缺设计范式段（agent-design-standard §一）：{missing}"
+    )

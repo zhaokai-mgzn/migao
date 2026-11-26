@@ -29,7 +29,7 @@
         <bouncy-castle.version>1.86</bouncy-castle.version>
         <aliyun-oss.version>3.18.5</aliyun-oss.version>
         <aliyun-dysmsapi.version>4.6.0</aliyun-dysmsapi.version>
-        <springdoc.version>2.10.0</springdoc.version>
+        <springdoc.version>2.10.1</springdoc.version>
         <mapstruct.version>1.6.3</mapstruct.version>
         <lombok.version>1.18.48</lombok.version>
     </properties>
@@ -202,11 +202,18 @@
 
                  ⚠️ 这是**基础设施兜底**，不是治本：回溯型正则仍在（见 #8356 的残留清单），
                  本项只保证「输入再长也不会因为栈小而假红」。 -->
+            <!-- 单测并行（issue #9120 减负）：713 个测试类 / 6053 条用例，串行本机 207s、CI p90 248s。
+                 forkCount=2（reuseForks=true，默认）在本机实测 115s（−45%）。
+                 真库族（69 个测试类各自 initdb + 随机端口 + 独立临时目录，见 PgCluster）已验证
+                 两 fork 并跑不冲突；不用 `parallel=classes`（同 JVM 共享静态态 / Spring 上下文缓存，
+                 隔离边界太薄）。回退守卫 = 成本台账：预算按新 p90 冻结后，退回串行会超预算。 -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <configuration>
                     <argLine>-Xss2m</argLine>
+                    <forkCount>2</forkCount>
+                    <reuseForks>true</reuseForks>
                 </configuration>
             </plugin>
             <!-- Maven 版本强制检查：maven-compiler-plugin 3.11+ 要求 Maven ≥ 3.6.3 -->

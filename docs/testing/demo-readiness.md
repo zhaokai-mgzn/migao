@@ -30,7 +30,7 @@ API 层 8/8 ≠ UI 层可用；**只跑 6 个文件的 E2E gate ≠ 全量 UI �
 
 | 演示面 | 证据等级 | 证据 | 未覆盖的部分 | 演示前建议 |
 |---|---|---|---|---|
-| 小程序 · 对话 / 商品卡 / 下单卡 / 售后 / 转人工（旅程） | **UA 级** | `acceptance/2026-09-14/mini-app-e2e/REPORT.md` + `COLD-RUN.md`（冷环境复跑 38/38，09-14 21:53–21:56；截图 `screenshots-cold-run4/`）。**跑不进 GitHub CI**（需 macOS 微信开发者工具 + 登录 + 开放服务端口），故本轮起由 CI 做静态契约预检（见下两行）+ 人工 runbook §3 | ① 该轮 `dist` 构建指纹对应 **≤09-14 21:05 的 src**，其后 2 次 `frontend/mini-app/src` 改动未覆盖：`4d020423`（User 类型 `tenant_id` 谎报修正）、`5fa2c67d`（输入条单行重设计 #3759）；② **真实微信登录链路**（`Taro.login` → `/api/auth/mini/login`）在模拟器里被后端判 `WECHAT_API_ERROR: code 无效` ⇒ 恒不可自动化验证（环境限制，非产品缺陷）；③ 一张截图已标注**不可引用**（并发窗口，见 `COLD-RUN.md`） | 按 §3 runbook 走一遍（**只需人做启动+截图**，判据已写死）；重点看**输入条**（#3759 后的新形态） |
+| 小程序 · 对话 / 商品卡 / 下单卡 / 售后 / 转人工（旅程） | **已退场**（C 端小程序 2026-11-26 删除，issue #9233） | 历史证据：`acceptance/2026-09-14/mini-app-e2e/REPORT.md` + `COLD-RUN.md`（冷环境复跑 38/38，09-14 21:53–21:56；截图 `screenshots-cold-run4/`）。**跑不进 GitHub CI**（需 macOS 微信开发者工具 + 登录 + 开放服务端口），故本轮起由 CI 做静态契约预检（见下两行）+ 人工 runbook §3 | ① 该轮 `dist` 构建指纹对应 **≤09-14 21:05 的 src**，其后 2 次 `frontend/mini-app/src` 改动未覆盖：`4d020423`（User 类型 `tenant_id` 谎报修正）、`5fa2c67d`（输入条单行重设计 #3759）；② **真实微信登录链路**（`Taro.login` → `/api/auth/mini/login`）在模拟器里被后端判 `WECHAT_API_ERROR: code 无效` ⇒ 恒不可自动化验证（环境限制，非产品缺陷）；③ 一张截图已标注**不可引用**（并发窗口，见 `COLD-RUN.md`） | 按 §3 runbook 走一遍（**只需人做启动+截图**，判据已写死）；重点看**输入条**（#3759 后的新形态） |
 | 小程序 · e2e harness 契约（选择器 / storage 注入键） | **机器级（部分）** | 新门禁 `Demo Evidence Gate` job `Mini-app e2e static contract preflight`（run [`34913343797`](https://github.com/zhaokai-mgzn/migao/actions/runs/34913343797)，详见 §5）：`node e2e/preflight-selectors.js`（正向）+ `--redproof`（改名 ⇒ 必红）。本地与 CI 实测：正向 exit 0；红证 2/2 通过（`硬依赖类名改名` / `storage 键改名` 各 1 处 ⇒ 预检红） | **只证明「harness 依赖的名字还在」**，不渲染、不点按、不调后端 ⇒ **不是旅程证据** | 演示前看一眼该 job 是否绿；它是"人工 e2e 之前"的唯一自动信号 |
 | 小程序 · H5 形态视觉回归（无会话 UX / 新品 / OrderCard） | **机器级** | `mini-app.yml` job `xiaobu H5 visual regression`（`build:h5` + Playwright `playwright.xiaobu.config.ts` 基线比对）。⚠️ 该 job 有 **diff 门控**：非 mini-app 相关变更会**整段跳过却 success**（实测 run `34912300454`：`⏭️ 无 mini-app 相关变更…跳过视觉回归空跑`，job 12 秒"成功"） | 仅 H5 形态 + mock 数据；**不是**小程序真机/模拟器形态 | 演示前若改过 mini-app，确认真跑过（看日志有没有那句 `⏭️`） |
 
@@ -75,14 +75,14 @@ API 层 8/8 ≠ UI 层可用；**只跑 6 个文件的 E2E gate ≠ 全量 UI �
 
 ## 3. mini-app 真实 e2e runbook（**UA 级**；人只做启动/截图，判据写死）
 
-**为什么是 UA 级而不是机器级**：`frontend/mini-app/e2e` 用 `miniprogram-automator` 驱动**微信开发者工具模拟器**（`harness.js` 里 `CLI_PATH=/Applications/wechatwebdevtools.app/...`），需要 macOS + 已登录 + 安全设置里开启服务端口 ⇒ **GitHub 托管 runner 上不可能跑**（不是"还没配"，是形态限制）。本包因此**没有**伪造一个"能绿"的 CI 形态，改为：① CI 只做静态契约预检（§1.1 第二行）；② 旅程证据走下面这份清单。
+**为什么是 UA 级而不是机器级**（历史口径，该 e2e 已随工程删除）：C 端小程序 e2e 用 `miniprogram-automator` 驱动**微信开发者工具模拟器**（`harness.js` 里 `CLI_PATH=/Applications/wechatwebdevtools.app/...`），需要 macOS + 已登录 + 安全设置里开启服务端口 ⇒ **GitHub 托管 runner 上不可能跑**（不是"还没配"，是形态限制）。本包因此**没有**伪造一个"能绿"的 CI 形态，改为：① CI 只做静态契约预检（§1.1 第二行）；② 旅程证据走下面这份清单。
 
 ### 3.1 人做的动作（仅此三件，约 3 分钟）
 
 ```bash
 # ① 前置（一次性，只能人做）：微信开发者工具 → 设置 → 安全设置 → 开启「服务端口」
 # ② 构建产物（陈旧构建会被失败关闭护栏拦下，不会"旧脚本配旧构建自洽地绿"）
-cd frontend/mini-app && npm run build:weapp
+cd <已删除的 C 端小程序工程> && npm run build:weapp
 # ③ 冷环境复跑（清空模拟器 storage → 从零建立登录态；避免"环境残留给的绿"）
 E2E_COLD_LOGIN=1 npm run test:e2e
 ```
@@ -153,7 +153,7 @@ job 2  Mini-app e2e static contract preflight
   - 收录三判据（缺一不收）：① 属演示面；② **fixture 模式真能跑绿**（依据 = nightly run `34911052034` 同 SHA 读数 + 本地复跑 + 本 run）；③ **不在** pr-check 那 6 个文件里（不重复占 runner）。
   - **空跑护栏**（`migao-acceptance`「空跑」）：清单为空 / 列出的 spec 不存在 ⇒ 直接 `exit 1`；否则空实参会让 Playwright 跑全量 389 条或静默 0 条还 success。
   - 失败即上传 `tests/test-results/` + `tests/playwright-report/`（trace/截图），不"失败即丢证据"。
-- **job 2 `Mini-app e2e static contract preflight`**：`frontend/mini-app/e2e/preflight-selectors.js`
+- **job 2 `Mini-app e2e static contract preflight`（已随工程删除，issue #9233）**：静态预检脚本
   （正向 + `--redproof`）。它只回答"harness 依赖的选择器 / storage 注入键是否还被 src 产出"，
   **不是**旅程证据 —— 旅程仍是 §3 的 UA 级。
   - 脚本首版曾把**有意保留的作废契约探针**（`__mode-btn`/`__hold-btn`，`probeInputBar` 注释写明"不应存在"）当硬依赖 ⇒ 自己造了一个**假红**；已改为"只对 `waitForElement` 实参判红，探针仅登记"。

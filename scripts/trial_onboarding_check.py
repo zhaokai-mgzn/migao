@@ -92,7 +92,7 @@ UNKNOWN_SHORT_CODE = "00000000"
 # `/download` 的真正文标记：页面的 title / lead 都含它（`frontend/admin-web/src/app/(corporate)/download/page.tsx`）。
 # 用「正文标记」而不是「长度阈值」：app 域的 `/download` 会落 SPA fallback 拿到 **200 的一页 C 端 HTML**
 # ⇒ 只看状态码会把假 200 读成通过（同族实证：nginx.conf 里 `/terminal` 必须 301、`/i/` 曾与根同哈希）。
-DOWNLOAD_MARKER = "观星台终端"
+DOWNLOAD_MARKER = "生意管家终端"
 
 OK, FAIL, UNKNOWN = "OK", "FAIL", "UNKNOWN"
 

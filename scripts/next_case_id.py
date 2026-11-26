@@ -37,7 +37,10 @@
 
 ⚠️ `3` **不得当 `0` 读**，也**不得**当成"没有在飞 PR" —— 本仓「空跑 = 假绿」同族。
 
-## 零写（结构性保证，不是纪律）
+## 零写（结构性保证，不是纪律；写面 = `scripts/case_id_lease.py`，单列）
+
+本工具**不写任何文件**，取号独占需要写的东西（机器级租约 / claim）全部由写面搭档承担 ——
+那条判据（`test_next_case_id_allocator.py::read_only_problems`）因此一点没松。
 
 - `gh` 只走**只读白名单**（`GH_READ_ONLY`）：`gh api` 走默认 GET，出现 `-X/--method` 写动词 ⇒ 直接报错；
 - `git` 只走**只读白名单**（`GIT_READ_ONLY`）：`rev-parse` / `ls-tree` / `grep` / `show` / `cat-file`；
@@ -55,8 +58,11 @@
 
 - ❌ **看不到未 push 的本地分支**（别人的工作区）：工具只看得见 main + open PR 的分支 + **自己**的工作区；
 - ❌ **看不到 force-push 之前的旧状态**：读的是 ref 的**当前**内容；
-- ❌ **不是互斥锁**：两个包在**同一瞬间**调用仍会拿到同一个号 —— 本工具消灭的是
-  「**看不到在飞面**」这一层（那才是 5~6 次撞号的直接成因），**不是**「并发互斥」；
+- ⚠️ **本工具本身仍不是互斥锁**（职责分离，issue #9090）：它只**计算**一个号 ⇒ 两个包同时调用
+  仍会拿到同一个号。**独占**由写面搭档 `scripts/case_id_lease.py reserve <前缀>` 提供
+  （`O_CREAT|O_EXCL` 原子占位 + 撞车顺延；**离线**、不读 GitHub）⇒ 并行包请用它取号。
+  本工具**读**那份租约台账（见 `read_leases`），所以联网面与离线租约是**同一次判定**的两面；
+  跨机器仍只靠 `.github/cases/claims/**`（`test_case_id_claims.py` 的判据 2/7）；
 - ❌ **号"空闲"≠「号在语义上合适」**：最小空闲号可能落在**历史空档**（现取如 `PP-001` / `DF-019`），
   取号方仍须判断该空档是不是「刻意保留 / 已废弃」；
 - ❌ **本地 `origin/main` ref 过期时 main 侧读数是下界**（本工具刻意**不** `fetch`）；
@@ -88,6 +94,7 @@ import re
 import subprocess
 import sys
 from datetime import datetime, timezone
+from pathlib import Path
 
 #: 本模块是「取号」的**唯一实现点**。判据
 #: `tests/unit_ci_workflows/test_next_case_id_allocator.py` 按这个记号做**双向**核对
@@ -117,6 +124,13 @@ GIT_READ_ONLY = ("rev-parse", "ls-tree", "grep", "show", "cat-file")
 
 #: `gh pr list` 的分页上限；取满即认为「可能截断」⇒ fail-closed（不许拿残缺的在飞面给号）。
 PR_LIST_LIMIT = 200
+
+#: 机器级「号段租约」目录（注入点；与写面 `scripts/case_id_lease.py` 同一个环境变量）。
+LEASE_DIR_ENV = "MIGAO_CASE_ID_LEASE_DIR"
+#: 默认位置：`$HOME` 下（**不入库** ⇒ 不会变成并行包的第二个冲突源）。
+DEFAULT_LEASE_DIR = Path.home() / ".migao-case-id-leases"
+#: 租约文件名形态（写面按它命名；读面只认这一种，别的一律忽略）。
+LEASE_FILE_RE = re.compile(r"^([A-Z]{2,4})-(\d{3,})\.json$")
 
 
 class Undecidable(Exception):
@@ -383,13 +397,48 @@ def read_worktree() -> Source:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# 机器级租约台账（只读这一面；**写**它的是 `scripts/case_id_lease.py` —— 见文件头「零写」）
+# ─────────────────────────────────────────────────────────────────────────────
+def lease_dir() -> Path:
+    """租约目录：`MIGAO_CASE_ID_LEASE_DIR` 覆盖，默认 `~/.migao-case-id-leases`（机器级、不入库）。"""
+    raw = (os.environ.get(LEASE_DIR_ENV) or "").strip()
+    return Path(raw) if raw else DEFAULT_LEASE_DIR
+
+
+def read_leases(directory: Path | None = None) -> Source:
+    """读「号段租约」：并行包**离线互相看见**的那一面（issue #9090）。
+
+    为什么要读它：本工具消灭的是「看不到在飞面」，**并发互斥**在写面（`case_id_lease.py` 用
+    `O_CREAT|O_EXCL` 原子占位）。分配器若**不读**租约，就会把别的包刚独占的号当空闲发出去
+    —— 那样租约等于白写。目录不存在 ⇒ 空集（合法：没人用过；不是错误）。
+    """
+    directory = Path(directory) if directory is not None else lease_dir()
+    ids: dict[str, set[int]] = {}
+    n_files = 0
+    if directory.is_dir():
+        for p in sorted(directory.iterdir()):
+            m = LEASE_FILE_RE.match(p.name)
+            if m is None:
+                continue
+            n_files += 1
+            ids.setdefault(m.group(1), set()).add(int(m.group(2)))
+    src = Source("lease", "租约",
+                 f"读 {directory}/<前缀>-<号>.json（机器级台账；写面 = scripts/case_id_lease.py）",
+                 str(directory), ids)
+    src.note = f"{n_files} 条租约"
+    return src
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # CLI
 # ─────────────────────────────────────────────────────────────────────────────
 def render(sources: list[Source], baseline: dict[str, set[int]], occupied: dict[str, set[int]],
            result: dict[str, int], stamp: str, warnings: list[str] | None = None) -> str:
     """人可复算的输出：来源（命令 + ref + 读数）+ 逐前缀「已占来源 → 现取最小空闲号」。"""
-    out = [f"🔢 下一个用例号（只读；候选 = main ∪ 全部 open PR 的分支 ∪ 本工作区）",
-           f"   时点 {stamp} · 工具 {ALLOCATION_SITE}（取号口径的单一实现）", "",
+    out = [f"🔢 下一个用例号（只读；候选 = main ∪ 全部 open PR 的分支 ∪ 本工作区 ∪ 租约）",
+           f"   时点 {stamp} · 工具 {ALLOCATION_SITE}（取号口径的单一实现）",
+           f"   🔒 并行包请用**写面**独占取号（离线、并发安全）："
+           f"python3 scripts/case_id_lease.py reserve <前缀> —— 租约 {lease_dir()}", "",
            "── 候选来源（取法 + ref + 读数）" + "─" * 30]
     for s in sources:
         out.append(f"   [{s.label}] {s.command}")
@@ -431,7 +480,7 @@ def main(argv: list[str] | None = None) -> int:
     stamp = datetime.now(timezone.utc).astimezone().strftime("%F %T %z")
     try:
         main_src, main_blobs = read_main(ref)
-        sources = [main_src, *read_open_prs(main_blobs), read_worktree()]
+        sources = [main_src, *read_open_prs(main_blobs), read_worktree(), read_leases()]
     except Undecidable as exc:
         print("❌ 无法判定 ⇒ 不许取号")
         print(f"   原因：{exc}")

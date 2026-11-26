@@ -46,6 +46,11 @@ from pathlib import Path
 import pytest
 import yaml
 
+# ── 发布线自检的 `git` 桩（issue #9086）────────────────────────────────────
+# 本文件跑的是**真实 deploy.sh**：1.0.1 段现在会问 git「目标提交是不是 origin/release 的祖先」。
+# 桩补的是沙箱本来就该模拟的那一面（口径与该模块 docstring 一致），既有断言一字未改。
+from unit_ci_workflows import deploy_release_line_stub as rl_stub  # noqa: E402
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = REPO_ROOT / "deploy" / "scripts" / "swas-deploy-ci.sh"
 WORKFLOWS_DIR = REPO_ROOT / ".github" / "workflows"
@@ -336,6 +341,7 @@ def _prepare(tmp_path: Path, script_text: str | None):
     script = tmp_path / "swas-deploy-ci.sh"
     script.write_text(text, encoding="utf-8")
     bin_dir = tmp_path / "bin"
+    rl_stub.install(bin_dir)  # 发布线自检要问 git（issue #9086）：补桩，既有断言不受影响
     bin_dir.mkdir(exist_ok=True)
     _write_exe(bin_dir / "curl", CURL_STUB)
     _write_exe(bin_dir / "file", FILE_STUB)
@@ -805,11 +811,7 @@ SVC_TO_DEPLOY_WORKFLOW = {
     # ⚠️ 腿名与发布腿的**传输镜像**名（`bmini-h5`）有意不同：同名会让判据 ①（镜像已存在）在
     #    「发布失败但镜像已推」时命中 ⇒ 静默不补发布（见 deploy-reconcile.yml 该腿的注释）。
     "bmini-h5-hosting": "bmini-h5-publish.yml",
-    # c-end-h5（issue #4184）：**第三条静态落地面腿**（发布 `frontend/mini-app/**` 的 h5 产物到
-    # `app.migaozn.com` 的**静态根本身** —— 此前这条腿不存在，线上落后源码 28 天而无人知道）。
-    # 无镜像 ⇒ 同样走漂移判据 ②。⚠️ 它的**发布步骤**只在 `workflow_dispatch` + `inputs.publish=='true'`
-    # 时执行（用户裁定 B：首次发布由人手动触发）⇒ 本对账的兜底 dispatch **只报告、不发布**。
-    "c-end-h5": "c-end-h5-publish.yml",
+    # 2026-11-26（issue #9233）：原第三条静态落地面腿 `c-end-h5` 随 C 端小程序整目录删除而退场。
 }
 
 

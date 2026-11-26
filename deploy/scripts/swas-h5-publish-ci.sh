@@ -183,7 +183,7 @@ say "- 本地 \`frontend/worker-h5/index.html\` 哈希：\`$LOCAL_SHA\`"
 #   发生在**发布那一刻**（云上 `SDKError 400 / CmdContent.ExceedLimit`，PR 里看不见）。
 #   现在命令内容只做「按**不可变 sha** 取回执行体并执行」；发布逻辑仍只在远端脚本里（单一出处）。
 #
-# 🔴 **本腿的两个 ref 天然是同一个**（与 C 端 `deploy/scripts/c-end-h5-publish-ci.sh` 不同）：
+# 🔴 **本腿的两个 ref 天然是同一个**（与已删除的 C 端发布包装不同，issue #9233）：
 #   本腿的**产物就是源码树**（`frontend/worker-h5/` 零依赖零构建、发布 = 逐字拷贝）⇒ `$SHA` 这个
 #   commit 既是远端取**产物**的 ref（`export H5_PUBLISH_SHA=$SHA`），也是引导取**执行体**的 ref
 #   （`deploy/swas/h5-publish-remote.sh` 就在同一个 commit 里）⇒ 刻意**只用一个变量**，C 端第五层

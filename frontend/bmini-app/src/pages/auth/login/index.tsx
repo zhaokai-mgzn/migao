@@ -233,7 +233,7 @@ export default function LoginPage() {
   const handleTerms = useCallback(() => {
     Taro.showModal({
       title: '服务条款',
-      content: '本应用面向观星台平台商家员工，使用即表示同意平台服务条款。',
+      content: '本应用面向生意管家平台商家员工，使用即表示同意平台服务条款。',
       showCancel: false,
       confirmText: '我知道了',
     })
@@ -257,7 +257,7 @@ export default function LoginPage() {
         <Image className='login-brand__icon-img' src={brandLogo} mode='aspectFit' />
         {/* AI 角色标签口径见 frontend/admin-web/src/config/ai-roles.ts（issue #6330/#6333）；
             本 App 是独立工程，不跨 App 引共享模块（#6306 教训：落在发布集外 ⇒ 白屏）⇒ 本地字面量 + 测试钉值。 */}
-        <Text className='login-brand__title'>词元观星台</Text>
+        <Text className='login-brand__title'>生意管家</Text>
         <Text className='login-brand__subtitle'>经营数据 · AI 客服 · 移动坐席</Text>
       </View>
 

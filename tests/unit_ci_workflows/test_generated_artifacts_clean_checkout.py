@@ -90,7 +90,7 @@ def _pytest_in(tree: Path, target: str) -> subprocess.CompletedProcess:
     env = {k: v for k, v in os.environ.items()
            if k not in ("PYTHONPATH", "PYTEST_ADDOPTS") and not k.startswith("MIGAO_")}
     return subprocess.run([sys.executable, "-m", "pytest", target, "-q", "-p", "no:cacheprovider"],
-                          cwd=str(tree), capture_output=True, text=True, env=env, timeout=1800)
+                          cwd=str(tree), capture_output=True, text=True, env=env, timeout=600)
 
 
 def test_clean_checkout_runs_a_consuming_test(tmp_path):

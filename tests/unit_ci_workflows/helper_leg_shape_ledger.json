@@ -17,73 +17,13 @@
       "issue": "#6164",
       "env": "MIGAO_CI_HELPER_SHARD",
       "value_form": "N/M（1-based）；**不设 ⇒ 不切片**（= 整套形态，研发日常的子集运行与拆腿前逐字同口径）",
-      "count": 2,
-      "salt": 130,
+      "count": 4,
+      "salt": 891,
       "rule": "shard_of(判据文件名) = crc32(\"salt<salt>:\" + 文件名) % <片数> + 1（1-based，全函数）",
       "rule_impl": "tests/unit_ci_workflows/conftest.py::shard_of",
       "ci_source": ".github/workflows/pr-check.yml::jobs.ci-workflow-tests.strategy.matrix.include[].shard（同一个 job id 的 matrix ⇒ pytest 命令行**一字不改**，由 env 选片）",
       "local_source": "verify-all.sh::ci_helper_leg()（两片**逐片显式**写出）",
       "why_hash": "选哈希而不是「按排序名次的奇偶」：哈希的成员关系**稳定** —— 新增一个判据文件只会让**它自己**落进某一半，不会把已有文件在两半之间搬家（奇偶法会：中间插入一个文件就翻转它之后全部文件的归属）⇒ 各片冻结的库存基线不因无关新增而失效。",
-      "balance_measured": {
-        "at": "2026-10-03T13:00+08",
-        "commit": "0595f4762",
-        "files_total": 342,
-        "files_per_shard": {
-          "1/2": 171,
-          "2/2": 171
-        },
-        "bytes_skew": 0.0317,
-        "tests_recompute": "MIGAO_CI_HELPER_SHARD=1/2 python3 -m pytest tests/unit_ci_workflows -q --collect-only -p no:cacheprovider | tail -1（**最终**读数：本机 3255 / 3273，合计 **6528** == 整套；CI 首轮汇总行逐字 `3255/6528` 与 `3273/6528` ⇒ 两边一致）",
-        "note": "字节量只作**粗略**工作量代理：真正的平衡读数（两片墙钟）在 PR body 里，且**刻意不进判据**（§23 G6：降成本的固化禁挂墙钟）。",
-        "ci_first_round": {
-          "at": "2026-10-03T05:12Z（= 13:12 +08）",
-          "run": "37099094827",
-          "shard_1_2": {
-            "check": "ci workflow helper unit tests",
-            "job_seconds": 345,
-            "step_seconds": 319
-          },
-          "shard_2_2": {
-            "check": "ci workflow helper unit tests（后半）",
-            "job_seconds": 227,
-            "step_seconds": 209
-          },
-          "pre_split_step_median": 500,
-          "reading": "关键路径 500s → **319s（−36%）**；两片并不等重（319 vs 209）⇒ 若平衡到等重 ≈ 264s（−47%）。",
-          "why_not_balanced": "盐是按**字节量**选的（0.08% 偏斜），而墙钟由少数重判据的**子进程等待**主导 ⇒ 字节量不是好代理。⚠️ **刻意不用本机逐判据耗时去调盐**：本机 8 核（且常被别的会话占着）≠ runner 4 vCPU —— 「本机 −20% 没迁移到 CI」这一课刚在 #6164 的第一件读数里上过。⇒ 重平衡要用 **CI 自己的读数**，留作后续杠杆（机制已在位：改 `salt` + 复算本台账的两个读数，判据会强制两边同步）。"
-        },
-        "readings_history": [
-          {
-            "at": "2026-10-03T13:00+08",
-            "commit": "0595f4762",
-            "per_shard": "3252 / 3273（合计 6525）",
-            "why_stale": "那时**分片判据本身还没写进去**（本包在同一天先后两次测量）；差 3 条 = 后来加入 test_helper_leg_execution_shape.py 的 3 条分片判据（都落在 1/2 片）"
-          },
-          {
-            "at": "2026-10-03T13:20+08",
-            "commit": "65d04584",
-            "per_shard": "3255 / 3273（合计 6528）",
-            "why_final": "= 冻结基线所依据的那次读数（CI 与本机逐值相同）"
-          },
-          {
-            "at": "2026-10-03T15:30+08",
-            "commit": "72831715d（+ 本分支未合并改动）",
-            "per_shard": "3241 / 3292（合计 6533）",
-            "why": "**改用平衡盐 130**：重判据实测 388/234（盐 74）⇒ 316/305；用例数 3241/3292（差 51）。冻结基线随之重锚（读数是分片成员的函数）。"
-          }
-        ],
-        "tests_per_shard": {
-          "1/2": 3241,
-          "2/2": 3292
-        },
-        "heavy_seconds_per_shard": {
-          "1/2": 316,
-          "2/2": 305
-        },
-        "selection_method": "在盐 1~4000 上按「**墙钟代理**最大者最小」搜；代理 = 本片**重判据实测耗时**（安静机时代的 `-n 4 --durations=30` 读数，19 个文件 / 621s）+ k × 本片**用例数**（k = 未实测质量的每用例均值 ≈ 0.23s）。候选对比（同一次搜法）：盐 74（旧）→ 重判据 388/234、用例 3260/3273（**片 1 恒慢**）；盐 845 → 重判据 311/311 但用例 3057/3476（平了重判据、歪了用例）；**盐 130（现用）→ 重判据 316/305、用例 3241/3292**（两根轴都平）。",
-        "why_hash": " 盐是规则的**参数**（改盐 = 改分片 ⇒ 判据强制 conftest 与台账同步）。",
-        "selection_boundary": "🔴 选盐用的是**本机安静时段**的重判据耗时 + 用例数**代理**，不是 CI 的逐文件读数（CI 侧拿不到逐文件读数：canonical argv 不许加 `--durations`）。⇒ 这是**有据的改进**，不是精确最优；**验收口径 = CI 的两片读数**（改后要连看几轮，别拿单轮当结论 —— 同一片两轮之间实测差 40%）。"
-      },
       "coverage_rule": "`crc32` 是全函数 ⇒ 每个 `test_*.py` **恰好**落进一片（并集 == 目录全集、两两不相交）；判据按**现取语料**复算（test_helper_leg_execution_shape.py），不写死清单 ⇒ 新增判据文件自动进面、不可能「不属于任何片」。",
       "boundary": [
         "只切**收集面**（哪些用例进本轮），一条断言都不削；两片内部的 worker 分配仍由 xdist 非确定地决定。",
@@ -93,11 +33,15 @@
         "两片**不等重**是已知的、有读数的边界（见 balance_measured.ci_first_round）：拆腿拿到的是 −36% 而不是 −47%，差在分配不均；重平衡的机制已就位（盐 + 台账读数），但**必须用 CI 的读数**去调，不许拿本机逐判据耗时猜。",
         "**skip 读数不逐片**（照实登记的缺口，别读成已覆盖）：`frozen_inventory.skipped_reading` 是**整套**口径，运行期的收口判定（`conftest.collection_floor_problems`）只判**逐片库存**、**不判 skip**；`helper_leg_shape_problems` 里的「skip 逐值相等」这条不变式**运行时没有消费点**（全仓只有 test_helper_leg_execution_shape.py 用**注入值**调它）。⇒ 而且它在分片形态下**结构上不可能同时成立**：冻结的整套 skip = 1，而那条 skip 只由片 2/2 里的文件产生（片 1/2 的 skip = 0）。要真接上，必须先把读数改成「逐片 × 逐环境」的表 —— 本包**没做**，登记为缺口。",
         "**本地腿的墙钟≈翻倍**（同一套件跑两遍，两个进程各付一次启动 / xdist 启动）：这是拆腿的**本机成本**，换的是 CI 上关键路径减半与本机「一次跑完两片 == 覆盖全部判据」。（CI 的总 runner 秒数也没降 —— 见 ci_first_round。）",
-        "**跨片进程状态**：判据面里专门有 test_sys_modules_cross_file_independence.py 守「跨文件借用 sys.modules 注入」；它的射程**前提**在拆腿后已更正（跨片不再共享进程 ⇒ 借用会在**某一半**里 fail-loud，而不是静默绿）。射程本身是目录级的 ⇒ 不变。"
+        "**跨片进程状态**：判据面里专门有 test_sys_modules_cross_file_independence.py 守「跨文件借用 sys.modules 注入」；它的射程**前提**在拆腿后已更正（跨片不再共享进程 ⇒ 借用会在**某一半**里 fail-loud，而不是静默绿）。射程本身是目录级的 ⇒ 不变。",
+        "**四片**（issue #9102，2026-11-24）：三片的下界仍是最重片的 65.8%（> 60% 目标）⇒ 取四片（49.1%）。代价 = 合并后要**再**把新片 `（中前段）`/`（中后段）` 两条检查名登记进分支保护（顺序：先有上报、再设 required）；两条**已有**的 required 名（`ci workflow helper unit tests` / `…（后半）`）逐字保留 ⇒ 在飞 PR 不会卡 `Expected`。",
+        "**下游耦合（同批改）**：`scripts/post_merge_verify.py::WORKLOAD_BOUND_SHARDS` 是「对等腿片数」的声明值，判据要求它 == 现取 matrix 片数 ⇒ 切片必须同批改它；而工作量上界 = 片数 × 每片 20 分 ⇒ `post-merge-verify.yml` 的 `timeout-minutes` 同批 45 → 80（那是**上限声明值**、不是挂钟读数；该腿报告型、非 required）。"
       ],
       "names": [
-        "1/2",
-        "2/2"
+        "1/4",
+        "2/4",
+        "3/4",
+        "4/4"
       ],
       "ci_readings": {
         "issue": "#6164",
@@ -164,6 +108,100 @@
           "verdict": "关键路径 **~500s（拆腿前）→ 316s（换盐后中位，N=3）≈ −37%**；换盐把「片 1 恒慢」的系统偏差消掉了（一轮 gap 110s → 5s），但**绝对数**的改进受总时长波动支配（同一份工作两轮差 40%）⇒ N=3 只作指示，**继续按 recompute 命令累加**。",
           "target_250s": "两片**到不了** 250s：以现取总 step（528~635s）算，两片下界 = 总量/2 ≈ 264~318s。要到 ~250s 需要**第 3 片**（总量/3 + 固定开销 ≈ 215~250s）⇒ 代价 = 第 3 条 required context + 在飞 PR 需再推一次。**2026-10-03 用户裁定：停在两片**，目标收口为「两片 + 已平衡」。"
         }
+      },
+      "balance_measured_2026_10_03": {
+        "at": "2026-10-03T13:00+08",
+        "commit": "0595f4762",
+        "files_total": 342,
+        "files_per_shard": {
+          "1/2": 171,
+          "2/2": 171
+        },
+        "bytes_skew": 0.0317,
+        "tests_recompute": "MIGAO_CI_HELPER_SHARD=1/2 python3 -m pytest tests/unit_ci_workflows -q --collect-only -p no:cacheprovider | tail -1（**最终**读数：本机 3255 / 3273，合计 **6528** == 整套；CI 首轮汇总行逐字 `3255/6528` 与 `3273/6528` ⇒ 两边一致）",
+        "note": "字节量只作**粗略**工作量代理：真正的平衡读数（两片墙钟）在 PR body 里，且**刻意不进判据**（§23 G6：降成本的固化禁挂墙钟）。",
+        "ci_first_round": {
+          "at": "2026-10-03T05:12Z（= 13:12 +08）",
+          "run": "37099094827",
+          "shard_1_2": {
+            "check": "ci workflow helper unit tests",
+            "job_seconds": 345,
+            "step_seconds": 319
+          },
+          "shard_2_2": {
+            "check": "ci workflow helper unit tests（后半）",
+            "job_seconds": 227,
+            "step_seconds": 209
+          },
+          "pre_split_step_median": 500,
+          "reading": "关键路径 500s → **319s（−36%）**；两片并不等重（319 vs 209）⇒ 若平衡到等重 ≈ 264s（−47%）。",
+          "why_not_balanced": "盐是按**字节量**选的（0.08% 偏斜），而墙钟由少数重判据的**子进程等待**主导 ⇒ 字节量不是好代理。⚠️ **刻意不用本机逐判据耗时去调盐**：本机 8 核（且常被别的会话占着）≠ runner 4 vCPU —— 「本机 −20% 没迁移到 CI」这一课刚在 #6164 的第一件读数里上过。⇒ 重平衡要用 **CI 自己的读数**，留作后续杠杆（机制已在位：改 `salt` + 复算本台账的两个读数，判据会强制两边同步）。"
+        },
+        "readings_history": [
+          {
+            "at": "2026-10-03T13:00+08",
+            "commit": "0595f4762",
+            "per_shard": "3252 / 3273（合计 6525）",
+            "why_stale": "那时**分片判据本身还没写进去**（本包在同一天先后两次测量）；差 3 条 = 后来加入 test_helper_leg_execution_shape.py 的 3 条分片判据（都落在 1/2 片）"
+          },
+          {
+            "at": "2026-10-03T13:20+08",
+            "commit": "65d04584",
+            "per_shard": "3255 / 3273（合计 6528）",
+            "why_final": "= 冻结基线所依据的那次读数（CI 与本机逐值相同）"
+          },
+          {
+            "at": "2026-10-03T15:30+08",
+            "commit": "72831715d（+ 本分支未合并改动）",
+            "per_shard": "3241 / 3292（合计 6533）",
+            "why": "**改用平衡盐 130**：重判据实测 388/234（盐 74）⇒ 316/305；用例数 3241/3292（差 51）。冻结基线随之重锚（读数是分片成员的函数）。"
+          }
+        ],
+        "tests_per_shard": {
+          "1/2": 3241,
+          "2/2": 3292
+        },
+        "heavy_seconds_per_shard": {
+          "1/2": 316,
+          "2/2": 305
+        },
+        "selection_method": "在盐 1~4000 上按「**墙钟代理**最大者最小」搜；代理 = 本片**重判据实测耗时**（安静机时代的 `-n 4 --durations=30` 读数，19 个文件 / 621s）+ k × 本片**用例数**（k = 未实测质量的每用例均值 ≈ 0.23s）。候选对比（同一次搜法）：盐 74（旧）→ 重判据 388/234、用例 3260/3273（**片 1 恒慢**）；盐 845 → 重判据 311/311 但用例 3057/3476（平了重判据、歪了用例）；**盐 130（现用）→ 重判据 316/305、用例 3241/3292**（两根轴都平）。",
+        "why_hash": " 盐是规则的**参数**（改盐 = 改分片 ⇒ 判据强制 conftest 与台账同步）。",
+        "selection_boundary": "🔴 选盐用的是**本机安静时段**的重判据耗时 + 用例数**代理**，不是 CI 的逐文件读数（CI 侧拿不到逐文件读数：canonical argv 不许加 `--durations`）。⇒ 这是**有据的改进**，不是精确最优；**验收口径 = CI 的两片读数**（改后要连看几轮，别拿单轮当结论 —— 同一片两轮之间实测差 40%）。"
+      },
+      "balance_measured": {
+        "at": "2026-11-24T09:15+08",
+        "commit": "7eddf8269（origin/main）+ 本分支改动",
+        "issue": "#9102（吃顶 incident：后半片两次跑满 20 分钟被 cancel）",
+        "files_total": 536,
+        "files_per_shard": {
+          "1/4": 126,
+          "2/4": 141,
+          "3/4": 138,
+          "4/4": 131
+        },
+        "work_seconds_per_shard": {
+          "1/4": 920.9,
+          "2/4": 932.9,
+          "3/4": 906.1,
+          "4/4": 946.8
+        },
+        "weights_recompute": "MIGAO_CI_HELPER_SHARD=N/2 python3 -m pytest tests/unit_ci_workflows -q -n 4 --durations=0 ⇒ 按文件聚合 call 时长（串行工作量读数）",
+        "selection_method": "在盐 1~4000 上搜「最重片工作量最小、其次片间文件数差最小」；前 4 名 = 盐 2028（951.2s/文件差 13）/ 891（946.8s/差 15）/ 413（946.6s/差 20）/ 383（947.9s/差 25）⇒ 选 **891**（最重片 946.8s、文件 126/141/138/131）。",
+        "why_four_not_three": "三片**数学上到不了** ≤60%：拆片前总工作量 3706.6s（1/2 = 1742.5 / 2/2 = 1887.8），三片下界 ⌈3706.6/3⌉ = 1236s = 最重片 1887.8s 的 **65.8%**；四片下界 ⌈3706.6/4⌉ = 927s = **49.1%** ⇒ 四片是满足 #9102「最重片 ≤ 现在 60%」的最小片数。",
+        "old_shards_2026_11_24": {
+          "1/2": {
+            "work_seconds": 1742.5,
+            "wall_seconds": 523.61,
+            "files": 240
+          },
+          "2/2": {
+            "work_seconds": 1887.8,
+            "wall_seconds": 597.04,
+            "files": 238
+          }
+        },
+        "note": "工作量读数与墙钟的关系实测 ≈ 3.2×（`-n 4`）；旧最重片 = 2/2（1887.8s 工作量 / 597s 墙钟）。新片的逐片墙钟见 `shard_budget_ledger.json` 的 `measured_seconds`。"
       }
     }
   },
@@ -178,20 +216,32 @@
     "recompute": "MIGAO_REQUIRE_REALDB=1 python3 -m pytest tests/unit_ci_workflows -q --collect-only -p no:cacheprovider | tail -2",
     "note": "`collected_total` 是判据**库存**（收集面），与负载无关 ⇒ 它是这条腿「有没有悄悄少跑」的机械读数：**只许涨**（新增判据文件必然抬高它；低于它 = 收集面被截断 / worker 崩 / 整批判据消失）。\n`skipped_reading` 按当前环境选键：`MIGAO_REQUIRE_REALDB` 为真（= CI 的形态，见 `tests/unit_ci_workflows/test_realdb_failclosed.py`）⇒ **1**，否则 ⇒ **1**（两条读数本机实测相同：本机有 PG 二进制 ⇒ 真库族两个形态都真跑；那 1 条是本机的 `test_roundtrip_report.py::test_zstd_frame_without_decompressor_is_not_silent`，本机装了 `zstandard` ⇒ 走不到「无解压器」分支，CI 无该模块 ⇒ 那里真跑）。判定要求 skip 读数**逐值相等**：变多 = 静默跳过（真库族退回 skip 一族）；变少 = 有判据没被收集（同上）。\n基线时点 = `56db10be8`（`origin/main`）+ 本用例文件新增的 **7** 条判据（`test_helper_leg_execution_shape.py`）；改前（不含该文件）实测 **5760**。复算口径里的「+7」= 该文件的贡献（其中 2 条是 `-n` / 控制器早退正在接线上的补充）。",
     "shards": {
-      "1/2": {
-        "collected_total": 3231,
-        "measured_at": "2026-10-03T15:30+08",
-        "measured_reading": 3241,
-        "recompute": "MIGAO_CI_HELPER_SHARD=1/2 python3 -m pytest tests/unit_ci_workflows -q --collect-only -p no:cacheprovider | tail -1"
+      "1/4": {
+        "collected_total": 2130,
+        "measured_at": "2026-11-24T09:23~09:38+08",
+        "recompute": "MIGAO_CI_HELPER_SHARD=1/4 python3 -m pytest tests/unit_ci_workflows -q -n 4 -p no:cacheprovider ⇒ 读汇总行的 `passed + skipped`（= 本片**切片后**的收集数；⚠️ pytest 8.3 的 `--collect-only` 汇总行**不按片切片**（报整套 9155），只有列出的 node id 是切片的）",
+        "measured_reading": 2140
       },
-      "2/2": {
-        "collected_total": 3282,
-        "measured_at": "2026-10-03T15:30+08",
-        "measured_reading": 3292,
-        "recompute": "MIGAO_CI_HELPER_SHARD=2/2 python3 -m pytest tests/unit_ci_workflows -q --collect-only -p no:cacheprovider | tail -1"
+      "2/4": {
+        "collected_total": 2479,
+        "measured_at": "2026-11-24T09:23~09:38+08",
+        "recompute": "MIGAO_CI_HELPER_SHARD=2/4 python3 -m pytest tests/unit_ci_workflows -q -n 4 -p no:cacheprovider ⇒ 读汇总行的 `passed + skipped`（= 本片**切片后**的收集数；⚠️ pytest 8.3 的 `--collect-only` 汇总行**不按片切片**（报整套 9155），只有列出的 node id 是切片的）",
+        "measured_reading": 2489
+      },
+      "3/4": {
+        "collected_total": 2254,
+        "measured_at": "2026-11-24T09:23~09:38+08",
+        "recompute": "MIGAO_CI_HELPER_SHARD=3/4 python3 -m pytest tests/unit_ci_workflows -q -n 4 -p no:cacheprovider ⇒ 读汇总行的 `passed + skipped`（= 本片**切片后**的收集数；⚠️ pytest 8.3 的 `--collect-only` 汇总行**不按片切片**（报整套 9155），只有列出的 node id 是切片的）",
+        "measured_reading": 2264
+      },
+      "4/4": {
+        "collected_total": 2256,
+        "measured_at": "2026-11-24T09:23~09:38+08",
+        "recompute": "MIGAO_CI_HELPER_SHARD=4/4 python3 -m pytest tests/unit_ci_workflows -q -n 4 -p no:cacheprovider ⇒ 读汇总行的 `passed + skipped`（= 本片**切片后**的收集数；⚠️ pytest 8.3 的 `--collect-only` 汇总行**不按片切片**（报整套 9155），只有列出的 node id 是切片的）",
+        "measured_reading": 2266
       }
     },
-    "shards_note": "**分片的冻结基线**（issue #6164）：运行期牙齿按**本片**的下界判（`conftest.collection_floor_problems` → `_frozen_floor`），不是拿整套的 5767 去撞每一片（那样两片**都**会红）。🟢 **本片基线 = 本片实测读数 − 10**（现取 3241 / 3292 ⇒ 3231 / 3282）：CI 与本机在**收集面**历史上逐值相同（3269 那次也是），差 10 是给「新增/删除一两条用例」留的余量。🔴 **读数是分片成员的函数**：改盐（= 改分片）必须**同批重锚**这两个数 —— 实测过：只改盐不同步 ⇒ 片 1 立刻判红（`本轮收集 3057 < 冻结基线 3245`，fail-closed 生效）。",
+    "shards_note": "**分片的冻结基线**（issue #6164；**四片** = issue #9102）：运行期牙齿按**本片**的下界判（`conftest.collection_floor_problems` → `_frozen_floor`），不是拿整套的去撞每一片。🟢 **本片基线 = 本片实测读数 − 10**（实测 2140 / 2489 / 2264 / 2266 ⇒ 基线 2130 / 2479 / 2254 / 2256）。⚠️ 四片读数之和 9159 比整套 `--collect-only` 的 9155 多 4：整套那条读数**不按片切片**（pytest 8.3 的 `--collect-only` 汇总行是整套口径，只有列出的 node id 切了片）⇒ 判定用的是**运行期** `session.testscollected`（`perform_collect` 在 `pytest_collection_modifyitems` **之后**才赋值 ⇒ 是切片后的数），逐片读数取真跑汇总行。🔴 **读数是分片成员的函数**：改盐/改片数（= 改分片）必须**同批重锚**这些数 —— 实测过只改盐不同步 ⇒ 片 1 立刻判红（`本轮收集 3057 < 冻结基线 3245`，fail-closed 生效）。",
     "sync_2026_10_16": {
       "issue": "#7048",
       "what": "**收集面新增一份套件**（`tests/unit_ci_workflows/test_eval_fixture_case_contract_leg.py`，把 `tests/agent_eval` 的评测夹具判据并进这条腿 —— 详见该文件 docstring）。本节点记新读数，并说明**为什么冻结下界不跟着改**。",
@@ -199,7 +249,10 @@
         "at": "2026-10-16T17:19+08",
         "branch_head": "本分支（基于 origin/main `71b46f83e`）+ 本包改动",
         "whole_suite": 7409,
-        "shards": {"1/2": 3636, "2/2": 3773},
+        "shards": {
+          "1/2": 3636,
+          "2/2": 3773
+        },
         "recompute": "python3 -m pytest tests/unit_ci_workflows -q --collect-only -p no:cacheprovider | tail -1（分片：前缀 MIGAO_CI_HELPER_SHARD=N/2）",
         "which_shard_got_the_new_file": "1/2（`shard_of(test_eval_fixture_case_contract_leg.py)` = 1）—— 片 1 由 3627 → 3636（**+9**：再导出的 8 条 + 本文件自己的「再导出不许漏」1 条），片 2 不变（3773）。"
       },

@@ -54,6 +54,8 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+          # ⚡ 只取 tree、不取历史 blob（issue #9120 A 类减负）：本腿 git 用法只有 `git diff --name-only`（tree 级）
+          filter: blob:none
       - name: Check for forbidden .env files
         run: |
           # ⚠️ `--diff-filter=ACMR`（issue #5083）：`git diff --name-only` **会列出被删除的文件**
@@ -122,6 +124,8 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+          # ⚡ 只取 tree、不取历史 blob（issue #9120）：本腿 git 用法只有 `git diff --name-only`（tree 级）
+          filter: blob:none
 
       # ── 路径门控（issue #3507 ①，2026-09-26）────────────────────────────────
       # 口径 = 本仓既有「**job 内 diff 门控**」范式（`https://github.com/zhaokai-mgzn/migao/wiki/CI-CD`「变更门控」；
@@ -248,20 +252,48 @@ jobs:
     #   走不通 —— pytest 的 `testpaths` 在**命令行给了路径**时被整个忽略（`testpaths = tests/agent_eval`
     #   + `pytest tests/unit_ci_workflows` ⇒ 收集数**逐值不变**），而 `addopts` 只是另一种"往 argv 贴东西"。
     #   ⇒ 收集面在本仓只有两个落点：argv（禁）或**判据目录**（本包走后者）。
+    # ── **四片**（issue #9102，2026-11-24）：两片吃顶 ⇒ 按实测权重重切 ─────────────────────
+    # 病（现取读数）：后半片**跑满 20 分钟上限被 cancel**（run 45291734491 / job 138117410585，
+    #   GitHub 注释逐字 `The job has exceeded the maximum execution time of 20m0s`）⇒ 这条 required
+    #   腿卡住**所有**在飞 PR。⛔ **不许抬 `timeout-minutes` 交差**（#5203 / #5365 既有口径：
+    #   上限是值班判据、不是成本成绩单）⇒ 唯一不动断言的解法 = **按实测权重重切**。
+    # 📐 **为什么是四片**（不是三片）：拆前总工作量 3706.6s（1/2 = 1742.5 / 2/2 = 1887.8 的逐用例
+    #   自耗秒数之和）；三片下界 ⌈3706.6/3⌉ = 1236s = 旧最重片的 **65.8%**，**到不了** #9102 要求的
+    #   「≤ 现在最重片的 60%」；四片下界 927s = **49.1%** ⇒ 四片是满足该目标的最小片数。读数与搜法
+    #   （盐 891，四片 906/921/933/947s、文件 126/131/138/141）见台账 `helper_leg_shape_ledger.json`
+    #   的 `shape.shards.balance_measured`。
+    # 🔴 **名字逐字稳定**（顺序不能换）：`""`（第一片，分支保护里**已有**的 required 名）与
+    #   `"（后半）"`（**已有**的第二条 required 名）**都保留**，新片 `"（中前段）"` / `"（中后段）"`
+    #   是**新增**名 ⇒ 合并后**再**把它们加进分支保护（先有上报、再设 required）。反过来（改名/删名）
+    #   会让在飞 PR 永久卡在 `Expected — waiting for status to be reported` 且**不会变红**。
+    # 📌 2026-10-03「停在两片」的裁定**只针对当时的 250s 目标**（#6164 收口），本单是**新的**吃顶
+    #   incident（2026-11-24）⇒ 按本单要求重切；代价 = 新增 2 条 required context（合并后登记）。
+    # 💰 每片的**成本面**判据（会红）：`tests/unit_ci_workflows/test_shard_budget.py`（预算台账
+    #   `shard_budget_ledger.json`：实测/预测 > 预算 80% ⇒ 红；`timeout-minutes` 调大 ⇒ 红；
+    #   预算只许缩短）+ `test_helper_leg_execution_shape.py`（片名三方一致 / 全划分 / 每片冻结基线）。
+    # ⚠️ **下游耦合**：`scripts/post_merge_verify.py::WORKLOAD_BOUND_SHARDS` 必须 == 现取 matrix 片数
+    #   （判据现取复比），而它的工作量上界 = 片数 × 每片上限 ⇒ 本 job 改片数必须同批改那一处
+    #   （合并后守护腿自己的 `timeout-minutes` 随之 45 → 80）。
     name: ci workflow helper unit tests${{ matrix.shard_suffix }}
     # 钉版（issue #7365）：ubuntu-latest 已滚到 26.04，不再自带 PG 二进制（initdb/pg_ctl）
     # ⇒ 真库判据的前置断言会失败。装 PG 不可行（apt 装到 18，BIN_DIRS 只认 14/15/16）。
     runs-on: ubuntu-24.04
     strategy:
-      # 两片**各自独立报告**：一片红不得让另一片被 cancel（否则红因只剩一半信息）
+      # 每片**各自独立报告**：一片红不得让别片被 cancel（否则红因只剩一部分信息）
       fail-fast: false
       matrix:
         include:
           # ⚠️ 第一片的 `shard_suffix` **必须为空串**：它决定分支保护里那条**已有** required 名的
           #    逐字形态（见上）。改它 = 改 required 名 = 卡住在飞的 PR。
-          - shard: "1/2"
+          - shard: "1/4"
             shard_suffix: ""
-          - shard: "2/2"
+          # 新片（issue #9102）：合并后**再**登记进分支保护（顺序：先有上报、再设 required）。
+          - shard: "2/4"
+            shard_suffix: "（中前段）"
+          - shard: "3/4"
+            shard_suffix: "（中后段）"
+          # ⚠️ 第四片**沿用**已有的 required 名「（后半）」：改名 = 卡住所有在飞 PR（见上）。
+          - shard: "4/4"
             shard_suffix: "（后半）"
     # ── 超时上限（当前 20 分钟）：口径 = **追认合法**，判据 = 本段，裁定载体 = issue #5365 ──
     # 沿革（历史事实，不改写）：3 → 8（#4793，2026-09-20）→ 12（#5203，2026-09-23）
@@ -302,6 +334,8 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+          # ⚡ 只取 tree、不取历史 blob（issue #9120）：本腿 git 用法只有 `git diff --name-only`（tree 级）
+          filter: blob:none
       - uses: actions/setup-python@v7
         with:
           python-version: '3.11'
@@ -388,7 +422,9 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.AUTOMERGE_PAT || secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
-          pip install -q pytest pytest-xdist pyyaml
+          # `pytest-timeout`（issue #9144）：没有插件时单条用例挂住只能靠 job cancel，
+          # 而 cancelled job **不上传日志**（#9114）⇒ 3/4 片曾 4 次烧满 20 分钟却查不出是哪条。
+          pip install -q pytest pytest-xdist pyyaml pytest-timeout
           # ── 并行度 `-n 4`（issue #5814，2026-09-30）────────────────────────────────
           # 病灶（实测，不是估算）：本 job 是 PR 反馈时长的**唯一关键路径** —— run
           # `36689037058` 本 job **997s**，其中 `Run ci workflow helper tests` 一步 **989s**，
@@ -415,7 +451,7 @@ jobs:
             echo "⏭️ 未命中研发面 ⇒ 只跑 always-run 判据；**dev-only 判据未跑**：$(python3 scripts/ci_helper_scope.py --count) 条（这不是「通过」）"
             python3 scripts/ci_helper_scope.py --run-narrow
           else
-            python -m pytest tests/unit_ci_workflows -q --tb=short -p no:cacheprovider -n 4
+            python -m pytest tests/unit_ci_workflows -q --tb=short -p no:cacheprovider -n 4 --timeout=300 --timeout-method=signal
           fi
 
       # ── `[deploy-leg]` 清零声明的**类级元守卫**（issue #7075）──────────────────────
@@ -460,6 +496,93 @@ jobs:
           esac
 
 
+  # ─────────────────────────────────────────────────────────────────────────
+  # `admin-web` 单测第 2 片（issue #9153 ②）
+  #
+  # 为什么单开一条 **required** 腿：`Run unit tests` 实测 455s（三轮 295→426→455），是 635s 里的绝对大头；
+  # `vitest --shard=N/2` 是 vitest 原生能力，不改断言、不 skip。
+  # ⛔ 不许给本 job 加 `needs:`/`if:` **job 级**门控：required 腿被 job 级跳过 ⇒ 检查永久悬空、且**不会变红**
+  #    （判据 = `test_gate_coverage_and_same_source` 的「required 不得带 job 级门控」）。
+  #    ⇒ 与第 1 片同形：job **永远创建**，只把**步骤**用 `if:` 门控（未命中面 ≈ 一个 checkout 的成本）。
+  admin-web-tests-2:
+    name: admin-web unit tests (2/2)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      # ⚠️ 本腿必须 `fetch-depth: 0`：下面的 detect 用 `origin/main...HEAD`（**三点**）算触发面，需要 merge-base；
+      # 浅克隆里没有 merge-base ⇒ 步骤直接失败（CI 实测过一次）。改用两点 diff 会把「main 侧前进」也算进来 ⇒
+      # 不相关 PR 上也会跑本腿（多花 ~230s），比 18s 的 clone 更贵。
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          # ⚡ 只取 tree、不取历史 blob（issue #9120）：本腿 git 用法只有 `git diff --name-only`（tree 级）
+          filter: blob:none
+      - name: Detect admin-web changes
+        id: detect_aw2
+        run: |
+          # 仅 PR 事件用 diff 门控；push main / workflow_dispatch 全量跑
+          # （origin/main 与 HEAD 相同，diff 无意义）—— 同 ai-agent-tests.yml 既有写法
+          if [ "$GITHUB_EVENT_NAME" != "pull_request" ]; then
+            echo "run_web=true" >> "$GITHUB_OUTPUT"
+            echo "✅ 非 PR 事件，执行 admin-web 全量（deps/tsc/eslint/next build/vitest）"
+            exit 0
+          fi
+          git fetch origin main --quiet
+          CHANGED=$(git diff --name-only origin/main...HEAD)
+          # 触发面 = 本 job 断言**真读**的对象面 ∪ 本 job 自身。
+          # ① `frontend/admin-web/**`：本腿的 `npm ci` / `tsc --noEmit` / `eslint` /
+          #    `next build` / `vitest` **全部**以 `frontend/admin-web` 为根（vitest root=该目录、
+          #    `setupFiles: ./tests/setup.ts` 也在其内；包依赖全是 npm 公共包，无仓内 workspace 依赖）。
+          # ② `frontend/worker-h5/src/**`：本腿**有**跨包断言 ——
+          #    `frontend/admin-web/tests/unit/lib/copy-no-markdown-emphasis.test.ts` 的 `SRC_DIRS`
+          #    同时扫 `../worker-h5/src`（商家可见文案的 markdown 强调必须经渲染器上屏，issue #5194）。
+          #    ⚠️ 原文本行写的是「⇒ 不存在『改了仓内别处而本腿该跑』的形态」——那句话**已被证伪**
+          #    （issue #6684）：`#6675` 只改 `frontend/worker-h5/**` ⇒ 本腿整段跳过 ⇒ 那条守卫在 PR 上是
+          #    绿的、合并后在 main 上红（`machine.mjs` 的模板串带字面 markdown 强调），红只交给**下一个**
+          #    碰 admin-web 的 PR。当初的推理只看了**执行根**（cwd），漏了**读取面**（`SRC_DIRS` 里的
+          #    `../worker-h5/src`）—— 保留这段是为了让下一个人看到「为什么会写错」，别再照它推理。
+          #    常驻判据 = tests/unit_ci_workflows/test_admin_web_gate_reads_worker_h5.py
+          #    （从守卫源码现取 `SRC_DIRS` ⇄ 本谓词的覆盖率：漏一条即红；负控 = 本包面丢了也红）。
+          # ③ `\.github/workflows/pr-check\.yml$` = 本 job 自己的定义（改这条腿的 PR 必须能验证它自己）。
+          # 登记册（谓词逐字 + must_cover 覆盖 + 未登记即红）=
+          #   tests/unit_ci_workflows/declaration_gate_registry.json
+          HITS=$(echo "$CHANGED" | grep -E '^(frontend/admin-web/|frontend/worker-h5/src/|\.github/workflows/pr-check\.yml$)' || true)
+          if [ -n "$HITS" ]; then
+            echo "run_web=true" >> "$GITHUB_OUTPUT"
+            echo "✅ 检测到本腿触发面变更（admin-web / worker-h5/src / 本腿定义），执行 typecheck / lint / build / 单测"
+          else
+            echo "run_web=false" >> "$GITHUB_OUTPUT"
+            echo "⏭️ 无本腿触发面变更（admin-web / worker-h5/src / 本腿定义）—— typecheck/lint/build/单测**未跑**（「没跑」不是「通过」）"
+          fi
+
+      # 🔴 Node 必须是 **≥22.22.2**（不能是 20）：本腿的 `npx vitest run` 跑在 jsdom 30 上，
+      # 而 jsdom 30.1.1 声明 `engines.node = ^22.22.2 || ^24.15.0 || >=26.0.0`，
+      # 它带入的 undici 8.11.0 又要求 `>=22.19.0`。Node 20 上的实际形态（PR #5617 实证，2026-09-28）：
+      # undici 的 `lib/web/cache/cachestorage.js` 在**模块装载期**调 `webidl.util.markAsUncloneable`
+      # （实为 `node:worker_threads.markAsUncloneable`，Node 22 才有；Node 20.20.2 上是 `undefined`）
+      # ⇒ **每个**测试文件都在环境装载期崩：`Test Files 238 (238) / Tests no tests / Errors 238`。
+      # 只抬**测试腿**，不动生产：jsdom 是 devDependency、`next build` 不加载它，
+      # Dockerfile 的 node:20-alpine 与 `@types/node ^20` 保持原样（无 engine-strict ⇒ `npm ci` 只告警）。
+      # ⚠️ 改这个步骤名要同改 `tests/unit_ci_workflows/declaration_gate_registry.json` 的
+      #    `pr-check-admin-web-tests.gated_steps`（`test_gate_coverage_and_same_source.py` 按步骤名逐字校验）。
+      - name: Set up Node.js 22
+        if: steps.detect_aw2.outputs.run_web == 'true'
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/admin-web/package-lock.json
+
+      - name: Install dependencies
+        if: steps.detect_aw2.outputs.run_web == 'true'
+        working-directory: frontend/admin-web
+        run: npm ci --prefer-offline --no-audit --no-fund
+
+      - name: Run unit tests (shard 2/2)
+        if: steps.detect_aw2.outputs.run_web == 'true'
+        working-directory: frontend/admin-web
+        run: npx vitest run --shard=2/2
+
   admin-web-test:
     name: admin-web typecheck + unit tests
     runs-on: ubuntu-latest
@@ -470,6 +593,8 @@ jobs:
         with:
           # 路径门控（下面 Detect admin-web changes）要 diff origin/main...HEAD，浅克隆拿不到 merge-base
           fetch-depth: 0
+          # ⚡ 只取 tree、不取历史 blob（issue #9120）：本腿 git 用法只有 `git diff --name-only`（tree 级）
+          filter: blob:none
 
       # ── 路径门控（issue #3507 ①，2026-09-26）────────────────────────────────
       # 本步原先**只**门控 `next build`（#4412），其余步骤（`npm ci` / `tsc` / `eslint` /
@@ -539,7 +664,7 @@ jobs:
       - name: Install dependencies
         if: steps.detect_aw.outputs.run_web == 'true'
         working-directory: frontend/admin-web
-        run: npm ci
+        run: npm ci --prefer-offline --no-audit --no-fund
 
       - name: TypeScript type check
         if: steps.detect_aw.outputs.run_web == 'true'
@@ -565,10 +690,12 @@ jobs:
         working-directory: frontend/admin-web
         run: npm run build
 
-      - name: Run unit tests
+      - name: Run unit tests (shard 1/2)
         if: steps.detect_aw.outputs.run_web == 'true'
         working-directory: frontend/admin-web
-        run: npx vitest run
+        # ⚡ 拆片（issue #9153 ②）：单测实测 455s 且还在涨（三轮 295→426→455），是本腿 635s 里的绝对大头。
+        # 第 2 片跑在独立 required 腿 `admin-web unit tests (2/2)` 上；两片都绿才算过。
+        run: npx vitest run --shard=1/2
 
       # ── 这里原有一步 `Security audit (deps)`（`npm audit --production --audit-level=high`）──
       # 已于 2026-10-03 按 CI 审计（issue #6144 的 P2 ③）**删除**。删除理由（三选一里选了「删」）：
@@ -604,6 +731,8 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+          # ⚡ 只取 tree、不取历史 blob（issue #9120 A 类减负）：本腿 git 用法只有 `git diff --name-only`（tree 级）
+          filter: blob:none
 
       - name: Detect e2e face
         id: face
@@ -662,6 +791,8 @@ jobs:
         with:
           # 路径门控（下面 Detect e2e changes）要 diff origin/main...HEAD，浅克隆拿不到 merge-base
           fetch-depth: 0
+          # ⚡ 只取 tree、不取历史 blob（issue #9120）：本腿 git 用法只有 `git diff --name-only`（tree 级）
+          filter: blob:none
 
       # ── 路径门控（issue #3507 ①，2026-09-26）────────────────────────────────
       # 本 job 在**每个** PR 上都装两份 node_modules 并跑 Playwright（实测中位 **114.5s**，n=8）
@@ -701,16 +832,32 @@ jobs:
         uses: actions/setup-node@v7
         with:
           node-version: '20'
+          # ⚡ 依赖暖缓存（2026-11-25，issue #9120 成本追因）：本腿两次 `npm ci` 实测合计 ~56s
+          # （`tests` 1s + `frontend/admin-web` **55s**），是本腿最大单项；命中缓存后 `npm ci` 走离线包。
+          cache: npm
+          cache-dependency-path: |
+            tests/package-lock.json
+            frontend/admin-web/package-lock.json
 
       - name: Install test deps
         if: steps.detect_e2e.outputs.run_tests == 'true'
         working-directory: tests
-        run: npm ci
+        run: npm ci --prefer-offline --no-audit --no-fund
 
       - name: Install admin-web deps (for Playwright webServer)
         if: steps.detect_e2e.outputs.run_tests == 'true'
         working-directory: frontend/admin-web
-        run: npm ci
+        run: npm ci --prefer-offline --no-audit --no-fund
+
+      # ⚡ Playwright 浏览器暖缓存：未命中时每次都要下载 chromium（实测数十秒且吃网络）
+      - name: Cache Playwright browsers
+        if: steps.detect_e2e.outputs.run_tests == 'true'
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('tests/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-playwright-
 
       - name: Run quality specs (fixture-only)
         if: steps.detect_e2e.outputs.run_tests == 'true'
@@ -740,13 +887,15 @@ jobs:
     timeout-minutes: 3
     if: github.event_name == 'pull_request'
     steps:
+      # ⚡ **不要** `fetch-depth: 0`（2026-11-24 成本追因，issue #9120）：本 job 只做
+      # `git show HEAD:<f>` 与 `git show origin/main:<f>`（脚本自己 `git fetch origin main`）⇒ 只要两个 tip。
+      # 全史克隆实测白花 **10–14s**（该腿 p95 21–30s，其中 checkout 17s、判据步只有 1s），
+      # 而它的冻结预算只有 12s —— 「预算不现实」的一半原因就在这里。
       - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
 
       - name: Check UI token regression vs origin/main
         run: |
-          git fetch origin main --quiet
+          # 脚本自己会按仓库形态选择 `git fetch --depth=1`（浅）/ 普通 fetch（全史）
           chmod +x check-ui-regression.sh
           ./check-ui-regression.sh --head
         shell: bash
@@ -825,6 +974,8 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+          # ⚡ 只取 tree、不取历史 blob（issue #9120 A 类减负）：本腿 git 用法只有 `git diff --name-only`（tree 级）
+          filter: blob:none
 
       - name: Check test coverage in diff (data-driven)
         id: check
@@ -978,6 +1129,8 @@ jobs:
         with:
           # `FM-E22` 的合并探测要算 merge-base / `origin/main...HEAD` ⇒ 浅克隆不够
           fetch-depth: 0
+          # ⚡ 只取 tree、不取历史 blob（issue #9120 A 类减负）：本腿 git 用法只有 `git diff --name-only`（tree 级）
+          filter: blob:none
 
       - name: Verify case truths_ref resolve
         run: |
@@ -1088,9 +1241,12 @@ jobs:
         run: |
           # 判据自身的红证与退化守卫：写工具集合/效果层集合非空、判据不恒真/恒假、
           # 机器计分口径与 local_runner 同源、基线不得包含「已不再命中」的项。
-          pip install -q pytest
+          # ⚡ 并行（issue #9120）：这 180 条判据 CI 单步实测 **70s**（本机串行 39–43s），是本腿第二大开销。
+          #    ⚠️ 用默认 `--dist load`，**不要** `--dist loadfile`：本步只指定**一个文件**，
+          #    `loadfile` 会把整文件压到同一个 worker ⇒ 等于串行还多付 xdist 启动开销（实测 50.8s vs 29.6s）。
+          pip install -q pytest pytest-xdist
           python3 -m pytest tests/unit_ci_workflows/test_case_trust_gate.py -q \
-            --tb=short -p no:cacheprovider
+            --tb=short -p no:cacheprovider -n 4
 
   # ============ LLM 红例 → 确定性下沉台账（纯静态、零 LLM、零网络）============
   # 为什么需要它（用户裁定 4′，承载 issue #4034 ← #4009）：
@@ -1181,14 +1337,25 @@ jobs:
       # 官方二进制（不走 gitleaks-action）：2026-11-22 实测 action@v3 在无 license 时
       # 直接 `missing gitleaks license` 早退 ⇒ 这条必需 check **永久红**，与代码无关，
       # 且阻塞所有 PR 合并（含"修它自己"的 PR）。二进制免费、无许可、不调 GitHub API。
+      # ⚡ 二进制暖缓存（2026-11-25，issue #9120）：版本是**钉死**的定值 ⇒ 缓存键只跟版本走，
+      # 命中后免掉每 PR 一次的 GitHub Release 下载（实测下载+解包是这条腿除 checkout 外唯一开销）。
+      - name: Cache gitleaks binary
+        id: gitleaks-cache
+        uses: actions/cache@v6
+        with:
+          path: ./gitleaks
+          key: ${{ runner.os }}-gitleaks-8.30.1
+
       - name: Run gitleaks secret scan (official binary)
         id: gitleaks
         shell: bash
         run: |
           set -uo pipefail
           V=8.30.1
-          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${V}/gitleaks_${V}_linux_x64.tar.gz" \
-            | tar -xz gitleaks
+          if [ ! -x ./gitleaks ]; then
+            curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${V}/gitleaks_${V}_linux_x64.tar.gz" \
+              | tar -xz gitleaks
+          fi
           ./gitleaks version
           BASE="origin/${{ github.base_ref }}"
           ./gitleaks detect --source . --redact --no-banner \
@@ -1260,6 +1427,8 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+          # ⚡ 只取 tree、不取历史 blob（issue #9120 A 类减负）：本腿 git 用法只有 `git diff --name-only`（tree 级）
+          filter: blob:none
 
       # ── 删除 workflow 的人工确认通道（#4295）───────────────────────────────────
       # 为什么需要：danger-scan 对「删除 workflow」是 BLOCK，文案写「需人工确认」，

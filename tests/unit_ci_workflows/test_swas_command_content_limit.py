@@ -204,12 +204,11 @@ def test_real_repo_has_no_problems():
 
 
 def test_scope_is_not_empty_and_contains_the_four_known_legs():
-    """射程不许空（空射程 ⇒ 上面那条判据变成恒真）—— 并钉住四条已知腿。"""
+    """射程不许空（空射程 ⇒ 上面那条判据变成恒真）—— 并钉住三条已知腿（C 端腿已随 issue #9233 删除）。"""
     scope = _scope_paths(_repo_scripts(), _repo_workflows())
     assert {"deploy/scripts/swas-deploy-ci.sh",
             "deploy/scripts/swas-h5-publish-ci.sh",
-            "deploy/scripts/bmini-h5-publish-ci.sh",
-            "deploy/scripts/c-end-h5-publish-ci.sh"} <= set(scope), f"射程少了已知腿：{scope}"
+            "deploy/scripts/bmini-h5-publish-ci.sh"} <= set(scope), f"射程少了已知腿：{scope}"
     # 人跑的一次性向导**不在**射程（它不被任何 workflow 调用）—— 这条是上面那条的对照面
     assert "deploy/scripts/wx-mini-test-env-setup.sh" not in scope, (
         "人跑的向导进了射程 ⇒ 射程规则（被 workflow 调用）没生效"

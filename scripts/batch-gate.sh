@@ -360,7 +360,7 @@ else:
     if not data:
         print("EMPTY"); raise SystemExit(0)
     # ⚠️ `skipping` **不是红**（issue #6216）：本仓 CI 按变更面**有意跳过**无关腿
-    # （`E2E 面判定` / `bmini H5 面判定` / `mini-app 面判定`，见 #6160/#6170）——
+    # （`E2E 面判定` / `bmini H5 面判定`，见 #6160/#6170）——
     # 任何只动单一模块的包都必然带 skipping，把它当红 ⇒ 该包**恒不就绪** ⇒ 「一批一次全量」
     # （D 口径、issue #6012）**永远启动不了**。头注释（第 33 行）与引入该判定的 PR #6056 说明
     # 都只写 `fail`/`pending` ⇒ 判定式里的 `"skipping"` 是引入笔误。
