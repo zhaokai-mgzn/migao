@@ -758,6 +758,10 @@
       "production:view"
     ],
     [
+      "/settings/wechat-kf",
+      "system:manage"
+    ],
+    [
       "/settings",
       "production:view"
     ],
