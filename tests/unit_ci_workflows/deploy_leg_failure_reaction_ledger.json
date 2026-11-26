@@ -43,11 +43,6 @@
       "name": "Publish bmini h5 (app.migaozn.com/b/)",
       "rerun": false,
       "reason": "**本轮按用户 2026-10-08 裁定：只通知、不自动重跑**（原口径是允许重跑一次）。背景：同 worker-h5（静态落地面腿，重跑幂等）；注意它的**登录**是承重态（把产物装进传输镜像推到 ACR）⇒ `scripts/acr_login.sh --fatal`。**重启条件**：把本行的 `rerun` 改成 `true`（同样要确认「重跑 = 再发布一次」可接受）。"
-    },
-    {
-      "name": "Publish C-end H5 (app.migaozn.com 根)",
-      "rerun": false,
-      "reason": "**本轮按用户 2026-10-08 裁定：只通知、不自动重跑**。**这一条即使将来放开**也有独立的**更硬**理由阻止自动重跑：本腿的发布步骤只在 `workflow_dispatch` **且** `inputs.publish == 'true'` 时执行 —— 发布由**人手动**触发（用户 2026-09-27 裁定 B，见 `.github/workflows/c-end-h5-publish.yml` 的 Manual gate 与 `publish_leg_fallback_ledger.json` 的 `c-end-h5` 条）。自动重跑不会有任何发布效果，只会再判一次「Manual gate」红 ⇒ 纯噪声；失败仍**照常通知**。**重启条件（本腿特有）**：不止改 `rerun=true`，还必须先改变「发布由人手动」这条裁定，否则重跑只是噪声。"
     }
   ],
   "coverage_boundary": [

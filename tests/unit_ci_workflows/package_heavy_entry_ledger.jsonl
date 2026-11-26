@@ -182,3 +182,19 @@
 {"id":"1795149248.25604.24535","ts":"2026-11-20T04:34:08Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-superagent-wt/rework-product-detail-d0c4365c3b27","why":"--allow-package-heavy（命令行显式）"}
 {"id":"1795149559.48082.6650","ts":"2026-11-20T04:39:19Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-superagent-wt/rework-product-detail-d0c4365c3b27","why":"--allow-package-heavy（命令行显式）"}
 {"id":"1795150988.43405.5623","ts":"2026-11-20T05:03:08Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-superagent-wt/rework-product-detail-d0c4365c3b27","why":"--allow-package-heavy（命令行显式）"}
+{"id":"1795313556.42447.25752","ts":"2026-11-22T02:12:36Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/9005-9006-product-doorwidths-stock","why":"子包 worktree 直跑全量（无批次标记）"}
+{"id":"1795406994.65553.19344","ts":"2026-11-23T04:09:55Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/8979-bmini-subpackage","why":"子包 worktree 直跑全量（无批次标记）"}
+{"id":"1795407007.65657.23346","ts":"2026-11-23T04:10:07Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/8979-bmini-subpackage","why":"--allow-package-heavy（命令行显式）"}
+{"id":"1795408393.13467.11438","ts":"2026-11-23T04:33:14Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/8979-bmini-subpackage","why":"--allow-package-heavy（命令行显式）"}
+{"id":"1795409302.90128.26381","ts":"2026-11-23T04:48:22Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/8979-bmini-subpackage","why":"--allow-package-heavy（命令行显式）"}
+{"id":"1795419220.52056.15360","ts":"2026-11-23T07:33:40Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-superagent-wt/naming-candidates-a07670c94f93","why":"子包 worktree 直跑全量（无批次标记）"}
+{"id":"1795424987.21019.3839","ts":"2026-11-23T09:09:48Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/bmini-rel","why":"子包 worktree 直跑全量（无批次标记）"}
+{"id":"1795427127.30941.11426","ts":"2026-11-23T09:45:28Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/smoke-one-login-8977","why":"子包 worktree 直跑全量（无批次标记）"}
+{"id":"1795437489.50447.14696","ts":"2026-11-23T12:38:09Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/smoke-prod-ai","why":"子包 worktree 直跑全量（无批次标记）"}
+{"id":"1795438629.99983.1221","ts":"2026-11-23T12:57:10Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/prod-release","why":"子包 worktree 直跑全量（无批次标记）"}
+{"id":"1795479236.12501.21195","ts":"2026-11-24T00:13:56Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/9090-case-id-ledger","why":"子包 worktree 直跑全量（无批次标记）"}
+{"id":"1795484583.76360.4640","ts":"2026-11-24T01:43:04Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/9102-shard-budget","why":"子包 worktree 直跑全量（无批次标记）"}
+{"id":"1795504982.16188.7065","ts":"2026-11-24T07:23:03Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/corporate-download-copy-9129","why":"子包 worktree 直跑全量（无批次标记）"}
+{"id":"1795505106.17146.7105","ts":"2026-11-24T07:25:06Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/corporate-download-copy-9129","why":"--allow-package-heavy（命令行显式）"}
+{"id":"1795653065.7822.26154","ts":"2026-11-26T00:31:06Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/9229-brand-legacy-cleanup","why":"子包 worktree 直跑全量（无批次标记）"}
+{"id":"1795653071.7892.27913","ts":"2026-11-26T00:31:11Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/9229-brand-legacy-cleanup","why":"--allow-package-heavy（命令行显式）"}

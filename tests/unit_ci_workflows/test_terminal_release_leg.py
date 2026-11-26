@@ -1,5 +1,5 @@
 # case_ids: MC-122
-r"""观星台终端（工人端 APK / Windows 一体机 EXE）**正式发布链路**的常驻判据（issue #8195）。
+r"""生意管家终端（工人端 APK / Windows 一体机 EXE）**正式发布链路**的常驻判据（issue #8195）。
 
 ## 病（开工前现取）
 
@@ -399,7 +399,12 @@ def test_nginx_terminal_surface_has_no_problems():
 def _terminal_body_span(conf: str) -> tuple[int, int]:
     """`location /terminal/ { … }` 的**块内**区间（花括号配平）。"""
     head = f"location /{SUBDIR}/ {{"
-    start = conf.index(head)
+    # ⚠️ 只在 **app.migaozn.com 的 443 server** 段内定位（2026-11-23 修）：同一份 conf 的
+    # `migaozn.com/www/merchant` 段也有 `location /terminal/`（#8999），全文件 `index()` 会先命中它
+    # ⇒ 变异注入到别的 server，判据对象纹丝不动，红证退化成空断言。
+    _app = _app_server_block(conf)
+    _app_at = conf.index(_app)
+    start = conf.index(head, _app_at)
     open_brace = conf.index("{", start)
     depth, j = 0, open_brace
     while j < len(conf):
@@ -425,8 +430,12 @@ def _replace_in_terminal(conf: str, old: str, new: str) -> str:
     body = conf[a:b]
     if old in body:
         return conf[:a] + body.replace(old, new, 1) + conf[b:]
-    assert old in conf, f"变异注入未生效（找不到 {old!r}）"
-    return conf.replace(old, new, 1)
+    # 块头（如 `location /terminal/ {`）不在块内 ⇒ 在 **app server 段内**替换首个命中；
+    # 不许全文 `replace(..., 1)`（那会命中 merchant 段的同名块，红证空转）。
+    _app_at = conf.index(_app_server_block(conf))
+    idx = conf.find(old, _app_at)
+    assert idx >= 0, f"变异注入未生效（app server 段里找不到 {old!r}）"
+    return conf[:idx] + new + conf[idx + len(old):]
 
 
 def test_nginx_mutations_are_all_detected():
@@ -502,6 +511,17 @@ REMOTE_REQUIRED_TOKENS = (
 )
 
 
+def _is_served_step(step):
+    """落地面断言步骤的判定（检测与变异**同源**，否则变异删不掉它 ⇒ 判据自欺）。
+
+    issue #8996 起清单基址由 `${{ env.TERMINAL_BASE_URL }}` 派生（test=app.migaozn.com / prod=app.cytda.com），
+    源码里不再出现字面量 `https://…/terminal/latest.json` ⇒ 判据认「含 /latest.json 且含 curl」。
+    不放宽到「只要有 curl」：否则一个无关 curl（如下载资产）就能骗过它。
+    """
+    text = _run_text(step)
+    return "/latest.json" in text and "curl" in text
+
+
 def _workflow_problems(wf, ci_src=None, remote_src=None) -> list:
     if ci_src is None:
         ci_src = _read(CI_SCRIPT)
@@ -548,7 +568,11 @@ def _workflow_problems(wf, ci_src=None, remote_src=None) -> list:
     steps = _steps(wf)
     prepare_steps = [s for s in steps if "terminal-publish-ci.sh prepare" in _run_text(s)]
     publish_steps = [s for s in steps if "terminal-publish-ci.sh publish" in _run_text(s)]
-    served_steps = [s for s in steps if "/terminal/latest.json" in _run_text(s) and "curl" in _run_text(s)]
+    # 断言 step 的判定：既要 curl、又要拼出清单地址。
+    # issue #8996 起清单基址由 `${{ env.TERMINAL_BASE_URL }}` 派生（test=app.migaozn.com / prod=app.cytda.com），
+    # 所以源码里不再出现字面量 `https://…/terminal/latest.json` ⇒ 判据放宽到「含 /latest.json 且含 curl」，
+    # 但不能放宽到「只要有 curl」—— 否则一个无关的 curl（例如下载资产）就足以骗过它。
+    served_steps = [s for s in steps if _is_served_step(s)]
     login_steps = [s for s in steps if "scripts/acr_login.sh" in _run_text(s)]
     if len(prepare_steps) != 1:
         problems.append(f"job `{JOB}` 里必须有且只有 1 个 prepare step，实际 {len(prepare_steps)}")
@@ -641,9 +665,7 @@ def test_workflow_mutations_are_all_detected():
         mut["jobs"][JOB]["steps"] = [s for s in _steps(mut) if "terminal-publish-ci.sh prepare" not in _run_text(s)]
 
     def drop_served(mut):
-        mut["jobs"][JOB]["steps"] = [
-            s for s in _steps(mut) if not ("/terminal/latest.json" in _run_text(s) and "curl" in _run_text(s))
-        ]
+        mut["jobs"][JOB]["steps"] = [s for s in _steps(mut) if not _is_served_step(s)]
 
     def add_push(mut):
         _triggers(mut)["push"] = {"branches": ["main"]}
@@ -804,7 +826,7 @@ def _make_static_root(tmp_path: Path) -> Path:
     (root / "js").mkdir(parents=True)
     (root / "w").mkdir()
     (root / "terminal" / "android").mkdir(parents=True)
-    (root / "index.html").write_text("<!doctype html><title>观星台 · 米宝</title>", encoding="utf-8")
+    (root / "index.html").write_text("<!doctype html><title>生意管家 · 米宝</title>", encoding="utf-8")
     (root / "js" / "app.js").write_text("// C 端 Taro 产物", encoding="utf-8")
     (root / "w" / "index.html").write_text("<!doctype html><title>报工</title>", encoding="utf-8")
     (root / "terminal" / "stale.txt").write_text("上一版留下的陈旧文件，发布后必须消失", encoding="utf-8")

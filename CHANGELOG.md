@@ -5,6 +5,248 @@
 > 原因 = 单文件涨到 512KB 越过扫描上限，详见存档文件头与 issue #6404。
 > **后续条目继续在本文件 `## [Unreleased]
 
+### C 端顾客小程序下线：`frontend/mini-app` 与 C 端 H5 发布腿整体删除（2026-11-26，issue #9233）
+
+- **形态**：用户逐字「`frontend/mini-app` 这个可以彻底删除了，以后不需要用到 c 端小程序」⇒ 该 Taro 工程 138 个跟踪文件整体删除；C 端主入口改为**微信客服**（issue #9229）。商家小程序 / 工人端 H5（`frontend/bmini-app`）与兼容期旧工人页（`frontend/worker-h5`）**不动**。
+- **发布腿**：C 端 H5 发布链（`c-end-h5-publish` / `h5-freshness-guard` + `deploy/scripts/c-end-h5-*` / `deploy/swas/c-end-h5-publish-remote.sh` / `scripts/h5_freshness_guard.py`）同批删除 —— 它发布的唯一产物就是该工程的 `build:h5` 输出；对账腿里对应的 `c-end-h5` 一并摘除。静态根下的 `w/`（工人端）与 `b/`（商家端）产物**未受影响**。
+- **required 检查**：分支保护的 `mini-app typecheck + unit tests` **保留同名 no-op**（`.github/workflows/mini-app.yml` 只 echo 说明并 success）——直接删 workflow 会让该 context 永不上报、所有 PR 永久 BLOCKED；重启条件写在该文件头。
+- **判据**：`tests/unit_ci_workflows/test_c_end_removed_guard.py`（目录/跟踪文件为零 + 机器面零引用 + 用例 `traces` 零幽灵引用 + 同名 required 仍上报 + 发布链成员不许长回来）；历史叙述（design / acceptance / 用例 merge_log）逐文件登记在 `c_end_history_refs_allowlist.json`（未登记即红、空豁免即红、只许缩短）。
+- **历史**：`acceptance/**`、`.github/cases/**` 的 `merge_log` 与旧 CHANGELOG 归档里的相关记录按「不删历史」保留。
+### 微信客服接入页补成四步手动配置引导，回调 URL / Token / AESKey / 可信 IP 可直接复制（2026-11-26，issue #9238）
+
+- **形态**：`设置 → 微信客服接入` 从「一个表单」补成四步流程 —— 准备企业微信 / 建自建应用 / 开权限+配回调+可信 IP / 建客服账号；每步写清在企微后台点哪里、要复制什么。最后一步把企业 ID、Secret、`open_kfid` 填回本页，保存即自检。
+- **省事**：页面直接给出并支持一键复制回调 URL、Token、EncodingAESKey 与可信 IP（来自部署级配置），客户不用再向平台管理员逐个索取；平台配置读不到时明确提示「联系平台管理员」，不谎报已配置。
+- **接口**：新增 `GET /api/admin/kf/channels/setup-info`（`system:manage`），只回部署级回调值，**不回任何商户 Secret**；页面仍不依赖服务商资质。
+- **判据**：`frontend/admin-web/tests/unit/components/WechatKfOnboarding.test.tsx`（四步引导 / 配置复制 / 读不到回退）、`KfChannelAdminServiceTest` / `KfChannelAdminControllerTest`（setup-info 不含 secret）；用例 KF-030。
+
+### 微信客服可在产品内自助接入：填 corp_id / open_kfid / secret → 自检 → 生成客服链接（2026-11-26，issue #9230）
+
+- **形态**：设置新增「微信客服接入」子页（`/settings/wechat-kf`，仅 `system:manage` 可见）。商户填写企业微信 corp_id、客服账号 open_kfid 与应用 Secret，保存即自检（gettoken + 客服账号列表必须命中该 open_kfid）；命中 ⇒ 已接通，不命中 ⇒ 待自检 + 可执行原因。接通后可生成客服链接/二维码（`add_contact_way`，支持 scene_param），可停用（revoked）。
+- **安全**：Secret 只提交一次，服务端 `SecretCipher` 加密落库；所有读面不回传 secret/cipher/callback token；渠道按租户隔离。
+- **边界**：回调 Token / EncodingAESKey 仍是部署级配置，页面给出回调 URL 与「向平台管理员索取」说明；第三方应用扫码授权不在本版（需服务商资质），自建应用先跑通。
+- **判据**：`KfChannelAdminServiceTest` / `KfChannelAdminControllerTest` / `WechatKfOnboarding.test.tsx`（KF-030）；密钥不回显、自检不命中不置 active、链接与停用均有断言。
+
+### B 端「停用」能力边界不再自相矛盾：停用仅限加工项（2026-11-25，issue #9215）
+
+- **病**：能力边界段同一段里既有「✅ 改加工项（含启用 / 停用）」，又有「❌ 删除 / 停用 / 作废」⇒ 模型对「把打孔加工项停用」可能误拒。
+- **形态**：`delete_object` 单元标签收窄为「删除 / 停用 / 作废（整对象；停用仅限加工项）」；商品上下架仍由 `single_status_toggle` / `batch_status_toggle` 两条 ❌ 单元表达，加工项停用仍走 `update_item(status=…)` 的确认门禁。
+- **判据**：`backend/ai-agent-service/tests/test_capability_boundary.py::test_stop_verb_is_scoped_to_processing_items`（注入式红证：改回旧标签即红）；用例 MC-194 的 `traces.tests` 同步钉住。
+
+### C 端米宝身份层与 B 端黄金策分流：顾客侧不再自称「黄金策 / 商家后台助手」（2026-11-25，issue #7292）
+
+- **形态**：身份层按 persona 分流 —— `base/identity.md`（黄金策，B 端）/ `base/identity-xiaobu.md`（米宝，C 端）；选哪条由 skill 的 `SkillConfig.system_prompts` 决定。C 端 6 个 skill 的 System Prompt 首段由「你是黄金策…商家后台的 AI 管家」改为米宝的顾客客服身份；B 端逐字不变。
+- **判据**：`backend/ai-agent-service/tests/test_persona_identity_split.py`（元判据：身份文件不得点名另一端；行为判据：C 端 6 个 skill 组装后 prompt 含「米宝」、不含「黄金策 / 商家后台」）+ `backend/ai-agent-service/tests/test_prompt_snapshots.py` 的 C 端身份组；用例 AG-012。
+- **未做（照实登记）**：共享 `base/principles.md` 仍是 B 端语气（「同事间协作语气」/ emoji 规范）—— 该层对 C 端的影响单独立单跟踪，不在本单混改。
+
+### 官网改版：参考教育 SaaS 产品页重排版式与内容展示（2026-11-24，issue #9139）
+
+- **版式**：官网首页与产品能力页改成产品长页节奏 —— 浅色产品页头 + 工作台示意 → 八个能力域 → 四个场景分节（顾客经营 / 经营决策 / 生产与交付 / 库存与对账，左文右图 / 左图右文交替，标签可切换一句说明）→ 优势 / 平台保障六格 / 适用企业三卡 / 交付三步 → 能力边界 + 国标 → 深色 CTA。导航新增「预约演示」主 CTA。
+- **视觉**：保留现有色系与设计规范（primary 靛蓝 / accent 陶土 / gold 织金 / neutral 暖亚麻；字号 / 圆角 / 阴影走 design-baseline），不引入新色；产品界面用纯 CSS/SVG 示意并统一标「界面示意」。
+- **不借参考站内容**：客户 logo / 客户证言 / 具体经营数字 / 认证类宣称一律不复制；能力域仍只到域级，不展开内部菜单。
+- 判据：`frontend/admin-web/tests/unit/pages/corporate-home.test.tsx` / `services.test.tsx` / `list-table-nowrap-guard.test.ts` / `corporate-visual-copy-guards.test.ts`；视觉证据见 `docs/design/corporate-site-layout-2026-11-evidence/`。
+
+### logo 二次重做：「旦」字方印（2026-11-24，issue #9121）
+
+- **形态**：第一版「管家铃」按用户「重新设计 logo 要求简洁 有设计感又立意深远」收敛为「**旦**」字方印 —— 深靛圆角方印 + 织金日圆 + 地平线；日 = 词元 / 每一天的经营数据，线 = 经营的地平线 / 管家基座，合起来 = 天明、日复一日、生意如日初升。两笔，28px 仍可读。
+- **落点**：PC Logo / favicon / 分享图、商家小程序 144/288、顾客小程序登录页、文档资产与锁屏组合同批替换；旧「帘成 M」「管家铃」与五笔「生」都不再使用。
+- 判据：`frontend/admin-web/tests/unit/components/Logo.test.tsx`（UI-082）与 `frontend/bmini-app/tests/brand-logo.test.ts`（BM-064）同步；旧标路径回流即红。
+- 视觉证据：`docs/design/logo-v2-evidence/`（bell → 旦，同视口 / 同页面）。
+
+### 生意管家：PC / 小程序 / 官网统一更名 + 管家铃品牌标 + 官网精简 + 登录有效期 7 天（2026-11-24，issue #9121）
+
+- **更名**：产品名「观星台 / 词元观星台」统一改为「**生意管家**」——PC 管理后台（登录页、侧边栏、页脚、首次改密页、注册页、官网四页与下载页）、顾客小程序（登录页头衔与 H5 标题）、商家小程序（登录页头衔、隐私文案、码空间提示）、后端用户可见文案（入驻审核欢迎语、平台管理员租户名、米宝渠道欢迎语与六份 customer_* 提示词）。公司名「词元通达」保留；内部标识符、域名、历史迁移、历史记录与活环境数据名不改（沿用 issue #6525 的口径）。
+- **品牌标**：换成「**管家铃**」——深靛圆角方印 + 织金铃身 + 米白底座 + 右上星芒（铃 = 随叫随到的服务；底座 = 经营台面；星芒 = 词元 / AI）。PC Logo、favicon、分享图（1200×630）、商家小程序 144/288、顾客小程序登录页与文档资产同批替换；旧「帘成 M」不再回流。
+- **官网**：按「我们是什么产品 / 提供什么产品能力 / 给用户带来什么价值 / 为什么选择我们」重组。首页从 14 个区块收到 8 个（价值四卡前置、能力三线、优势四卡、八个能力域只到域级、行业纵深、能力边界 + 国标 + 平台保障、三步开通）；产品能力页不再逐条摊开内部菜单；关于页删掉「技术底座」；联系页保持无表单。合规口径（GB/T 47746-2026 与免责小字）不变。
+- **存量数据**：`V216__rename_product_brand_display_value.sql` 把 `product_attributes` 中精确等于「观星台」的品牌值回填为「生意管家」（自定义品牌不动；带旧值谓词 ⇒ 幂等，回滚见文件头）。
+- **登录有效期**：PC 与商家小程序共用的 `jwt.refresh-token-expiration` 由 30 天改为 **7 天**（604800 秒；access token 仍 2 小时，续期接线不变）。判据 `tests/unit_ci_workflows/test_refresh_token_lifetime.py` 同步改口径。
+- 判据：`frontend/admin-web/tests/unit/components/Logo.test.tsx`（UI-082）、`frontend/bmini-app/tests/brand-logo.test.ts`（BM-064）、`tests/unit_ci_workflows/test_positioning_copy_terms.py`（UI-082；旧称呼集合加入 `观星台`、新锚改 `生意管家`）、四页官网测试（UI-082 / OB-005 / OB-008）与 `tests/unit_ci_workflows/test_refresh_token_lifetime.py`（AU-013）。
+
+### 官网下载页恢复匿名可访问：`/download` 补进认证守卫的公开路由（2026-11-24，issue #9136）
+
+- **病（现场取证）**：无 cookie 的全新浏览器打开 `migaozn.com/download`，导航实测 `…/download → …/login`
+  （服务端 SSR 返回的是下载页，水合后被弹走）—— `src/lib/auth-redirect.ts` 的 `PUBLIC_ROUTES` 漏了 `/download`，
+  `AuthGuard` 把它当受保护页 ⇒ `/api/auth/me` 401 ⇒ 拦截器强制跳登录页。商家点「下载」看到的是登录框。
+- **形态**：`PUBLIC_ROUTES` 补 `/download`（只放宽官网公开面，受保护业务页的跳转一条不放宽）。
+- 判据：`frontend/admin-web/tests/unit/pages/corporate-public-routes.test.ts` —— 类级：从 `src/app/(corporate)/**/page.tsx`
+  现取路由表，逐条判「在 `PUBLIC_ROUTES`」与「在 proxy 的 `CORPORATE_PREFIXES`」，新增官网页面漏登记即红；
+  用例 UI-144 补公开性 data_check。
+
+### 官网下载页只说商家要做的动作：去掉 Windows 证书采购现状与内部发布清单路由（2026-11-24，issue #9129）
+
+- **形态**：`/download` 的 SHA-256 段尾不再写「尚未购买商业代码签名证书 / 不签名 / 由安装程序自证哈希 / 证书补齐后再说明」，
+  改成一句用户向的核对口径（算出的值与页面公布的一致即完整；不一致请勿安装并找我们复核）；「检查更新」卡不再露出
+  `/terminal/latest.json` / `/terminal/android/latest.json`，只写「点『检查更新』出现更高版本时按提示安装，不覆盖企业号与工号」；
+  Windows 安装卡不再写「安装包未购买商业代码签名证书」；页头 lead 的「以发布清单为准」改「以本页显示为准」。
+  采购现状只留在内部文档 `docs/deployment/terminal-release.md` §6。
+- 判据：`corporate-visual-copy-guards.test.ts`「不摆运营内部事实与内部路由」（7 个串出现在官网对外面即红，含判别力自证）。
+
+### 发布切换改为 nginx upstream 摘挂（正式容器在流量移走后才重建）＋ admin-api / ai-agent 优雅退出 ＋ 只读长流探针（2026-11-24，issue #9098）
+
+- **形态**：生产/测试的发布从「`docker compose up -d` 重建容器 → 换 IP → 再 `nginx -s reload`」改成
+  **upstream 摘挂**：`deploy/swas/nginx.conf` 新增 `upstream migao_admin_api` / `migao_ai_agent` /
+  `migao_admin_web`（`proxy_pass` 8 处全部改指 upstream 名，不再直连 compose DNS 服务名）。
+  发布期顺序 = green 起 → green 健康 → **只改 upstream 成员 + `nginx -t` + reload**（green 主、旧容器兜底）
+  → 入口 200 断言 → **drain**（等旧 nginx worker 收尾）→ **现在才**重建正式容器 → 成员切回正式容器 → 删 green。
+  ⇒ 结构上不再出现「容器已停、上游未切」的窗口（改动前生产实测 502 窗口 90s）。**是否真的零 5xx 以真机读数为准**
+  （见下一条「未实测」）。
+- **口径（两条硬约束）**：① upstream 成员写**容器名:容器内端口**（8080/8000/3001），宿主第二端口
+  （18080/18000/13000 系列）只在宿主侧可达、nginx 在容器里连不上；② 稳态**只写现行实例一条成员** ——
+  nginx 解析配置时就会对 upstream 服务名做 DNS 解析，green 没跑时写它的名字 ⇒ `host not found in upstream`
+  ⇒ 全站起不来；green 成员只在发布期写入，成功/失败都恢复。
+- **优雅退出**：admin-api 加 `server.shutdown: graceful` + `spring.lifecycle.timeout-per-shutdown-phase: 30s`
+  （30s = 常规请求长尾 ~10× 余量；SSE 不在这条链上）；ai-agent 启动参数加 `--timeout-graceful-shutdown 200`
+  （= SSE 最长流 180s + 余量）；两侧 compose 补 `stop_grace_period`（admin-api 45s / ai-agent 210s）——
+  否则 docker 默认 10s 就 SIGKILL，应用侧配了也白配。
+- **只读长流探针**：ai-agent 新增 `GET /internal/stream-probe?seconds=N`（`X-Service-Token` 鉴权，缺/错 ⇒ 401；
+  时长夹到 1..200，被夹时先发 `event: notice` 自报；只发 `event: ping` 心跳，**不碰 DB / 不调 LLM / 不落库**）
+  —— 让「发布期长流是否被切断」从「不可判定」变成可重复读数（原来只有会写库的 `/api/chat/send` 能测）。
+- **未实测（照实登记）**：真机读数（切换期 5xx、drain 耗时、SIGTERM 行为、长流收尾）在 ADR 的「真机读数」表里是
+  **待填**占位，本 PR 合并前未在测试机跑发布；ai-agent 的 SSE 长流收尾**当前不可判定**（没有只读流式端点）。
+- 判据：`tests/unit_ci_workflows/test_zero_downtime_m1_cutover.py`（19 条，含 8 条注入式红证：把切换改回
+  「重建 + reload」⇒ 判红）。设计/验证口径见 `docs/deployment/zero-downtime-release.md` 的 M1-a / M1-b。
+
+### 内测期官网隐藏自助入驻入口：官网不再露出「商家入驻 / 免费开通」，`/register` 保留为内部入口（2026-11-23，issue #9066）
+
+- **形态**：官网导航 / 页脚 / 首页 / 关于 / 产品服务 / 联系页不再出现「商家入驻 / 免费开通 / 立即入驻 / 提交入驻申请」入口，
+  引导文案收口为「预约演示 / 联系我们」；`/register` 页面与 `POST /api/auth/register` **原样保留**
+  （内测期内部入口 = 内部同事直接访问 URL 自助开通测试租户；`robots.txt` 一直 Disallow `/register`）。
+- **开关**：单一来源 `frontend/admin-web/src/config/onboarding.ts` 的 `SELF_SERVICE_ONBOARDING_OPEN = false`；
+  内测结束改回 `true` 即整体恢复（判据会当场变红，按提示同步断言）。
+- 判据：`frontend/admin-web/tests/unit/onboarding-entry-hidden.test.tsx`（6 个官网面零 `/register` 链接与四类入口文案 /
+  `/register` 内部入口保留 / 类级元守卫：官网面任何 `/register` 出处必须引用开关，含注入式红证）+ 各页既有断言同步。
+
+### B 端小程序补上微信隐私授权弹窗（照片 / 摄像头 / 麦克风）：未同意的工人扫码 / 拍照 / 语音不再全挂（2026-11-22，issue #9011）
+
+- **病灶**：小程序后台已申报《用户隐私保护指引》三类（选中的照片或视频信息 / 摄像头 / 麦克风），但端侧**一处**隐私授权流程都没有（`onNeedPrivacyAuthorization` / `requirePrivacyAuthorize` 全仓 0 命中）⇒ 未同步过同意的用户调 `chooseImage` / `scanCode` / `getRecorderManager` 直接被微信拦下（`fail privacy permission is not authorized`）：工人**拍照入库 / 补打 / 发货 / 库存修正**、**扫码报工 / 裁高 / 精裁 / 质检**、**按住说话**全部失败，且没有任何判据会变红（接口调用本身写得没问题）。
+- **形态**：新增 `frontend/bmini-app/src/utils/privacy.ts`（幂等注册 `Taro.onNeedPrivacyAuthorization`；`resolve` **入队**（多个隐私接口同时 pending 时逐个回应）+ 通知订阅者；`resolvePrivacy(agree)` 的 `agree` **必带 `buttonId='agree-btn'`** —— 官方字段名，缺了微信不认、pending 接口不会继续）+ `frontend/bmini-app/src/components/privacy/PrivacyPopup`（自定义弹窗：三类用途逐字等于后台申报、`查看完整《隐私保护指引》` 走 `Taro.openPrivacyContract`、「同意并继续」是唯一的 `open-type='agreePrivacyAuthorization'` 按钮、「暂不同意」走普通按钮）。
+- **挂载**：`app.tsx` 里注册一次；`<PrivacyPopup />` 挂在**会（直接或经依赖传递）触发隐私接口的 9 个页面**（聊天页 + 工人报工 / 入库 / 补打 / 发货 / 库存 / 裁高 / 精裁 / 质检）—— 页面集合由判据**现取**（新增触发页不挂弹窗即判红），不是手抄清单。小程序端**不能**把它挂在 `App` 里（App 里多渲染的节点没有页面归属，界面看不到）。
+- **为什么用自定义弹窗而不是等微信官方弹窗**：官方兜底弹窗（开发者不响应 `onNeedPrivacyAuthorization` 时微信自动弹）只有「允许 / 拒绝」，没有三类用途说明、打不开指引全文；而《用户隐私保护指引》5.2 要求「变更用途时以弹窗、站内消息等显著方式告知」⇒ 自己的弹窗是**可复用**的告知面，官方弹窗只作兜底。
+- **h5 降级**：taro-h5 把 `onNeedPrivacyAuthorization` / `openPrivacyContract` 实现成 `temporarilyNotSupport(...)` 的 stub（**函数存在但非真实现**）⇒ 按编译目标（`isH5()`）判；h5 下注册即 no-op、指引改走说明弹窗（不留点了没反应的死链），h5 构建与既有单测不受影响。两个 API 已登记进 `utils/platform.ts` 的 h5 台账。
+- **`__usePrivacyCheck__` 不加**：官方《小程序隐私协议开发指南》「2023.09.14 更新」—— 隐私相关功能原定 2023-09-15 默认启用、后延期至 **2023-10-17**，**该日之后不论 app.json 里有没有配置 `__usePrivacyCheck__`，隐私相关功能都会启用**（写在 `app.config.ts` 的注释里）。
+- **零业务改动**：扫码 / 拍照 / 录音的调用方式一字未动（授权由微信在调用时自动触发）。
+- 判据：`frontend/bmini-app/tests/privacy-authorization.test.tsx`（幂等 / payload 含 `buttonId` / 多 pending 队列 / h5 no-op / 文案逐字 / 按钮唯一性 / 页面挂载类级守卫 / 注册点唯一）+ `frontend/bmini-app/tests/h5-platform-api-guard.test.ts`（台账射程同步）。
+
+### 到期待办在多实例部署下不再重复提醒：扫描改数据库原子领取 + 通知补稳定幂等键（2026-11-22，issue #9019）
+
+- **现象**：两个 admin-api 实例同秒扫到同一批到期 `pending` ⇒ 各写一条站内通知（员工收到重复的到点提醒），
+  且两行最后都是 `fired`，事后从数据上分辨不出重复。根因 = 扫描腿是纯 read-modify-write（无占位）+ 通知未传 `dedupeKey`
+  ⇒ V187 的 `uk_notifications_dedupe` 对这条写入不生效。
+- **改后**：扫描腿改成**一条**数据库原子领取（`UPDATE … SET status='firing', claimed_by/claimed_at …
+  WHERE status='pending' … RETURNING`，同一行只有一个实例领得到）；投递带稳定 `dedupeKey = scheduled_task:{taskId}`
+  （重复插入撞唯一索引 ⇒ 当「已发」，不报错）；领取后实例崩溃时，超过 **5 分钟**的 `firing` 由每轮扫描先放回 `pending`
+  （租约回收，不永久卡死）。**通知内容 / 模板 / 触发规则一字未改**（单实例行为不变，只是不再重复）。
+- 判据：`ScheduledTaskMultiInstanceClaimRealDbTest`（真 PG 两实例并发：改前 12 条通知 ⇒ 改后 6 条）、
+  `ScheduledTaskServiceTest`、`ScheduledTaskMapperTest`。
+- 迁移：`V215__add_scheduled_task_claim_lease.sql`（加 `claimed_by`/`claimed_at` + 部分索引；回滚见文件头）。
+
+### 下单幂等键改为确定性派生：滚动部署断流 / 重试落到另一实例 / 进程重启后不再重复下单（2026-11-22，issue #9017）
+
+- **形态**：ai-agent 下发的 `X-Client-Request-Id` 改成由「租户 + 会话作用域 + 操作 + 订单业务事实 + 时间窗」
+  **确定性派生**（sha256）；`uuid4` 随机串与 `lru_cache` 都不再参与键的取值。业务事实口径 = `order_facts_of`
+  （手机号 + 每行 名称/数量/单价/加工费 + 合计），**不含**地址/备注/安装小区（确认后补、重试可改写）与
+  `subtotal`（服务端按 数量×单价 重算）。窗口默认仍是 10 分钟（`IDEMPOTENCY_WINDOW_SECONDS` 可调）。
+- **之前（资金级）**：键在**进程内**生成（`@lru_cache` + `uuid4` + 10 分钟窗）⇒ 实例 A 已落库并写完快照、
+  SSE 未推完被滚动部署重建 ⇒ 顾客重发落到实例 B ⇒ B 的缓存里没有这条记录 ⇒ 全新随机键 ⇒ 服务端按
+  `(tenant_id, client_request_id)` 查不到 ⇒ **再落一单**（同手机号/同 SKU/同数量）。同形还有：重试被负载均衡
+  打到另一 pod、进程重启、同窗活跃写请求超 12288 条把旧条目挤出缓存。
+- **取舍（显式登记）**：「纯确定性 + 定期轮换」在跨桶边界上有数学残差（599s 发起、601s 重试会落在相邻桶
+  ⇒ 两把键）。本单选择确定性与跨实例一致优先；要消掉残差需要共享状态锚（Redis `SET NX` + TTL 或确认卡/
+  轮次 id 进 `ToolContext`），已在 issue #9017 登记为后续项。
+- **不变**：服务端 `ClientRequestIdService`（DB 去重 + 回放）+ 头名 + ≤128 长度约束未动；单次下单行为与
+  话术逐字不变；`replayed=true` 的回放话术不变；会话作用域（#4195）与操作维度（#4212）语义不变。
+- 判据：`backend/ai-agent-service/tests/test_order_idempotency_key_deterministic.py`（两个**独立 OS 进程**
+  同一意图 ⇒ 同一个键；不同数量/金额/顾客 ⇒ 不同键；`uuid4` 打成抛异常后取键照常 —— 前两条改前必红）。
+
+### 微信 access_token 外置到 Redis：全实例共用一把，多实例不再互踢（2026-11-22，issue #9018）
+
+- **背景（集群就绪审计 P0-1）**：token 原先缓存在 `WechatService` 的**进程内字段**里（注释原文「进程内缓存（单实例足够）」）。
+  微信侧对一个 appid 只维持一把有效凭证 ⇒ 实例 A 刷新后实例 B 手里那把立即作废，B 却按自己算的 TTL 继续用
+  （最长约 2 小时）⇒ **一半流量间歇性登录 / 换手机号失败（40001）**，而且没有任何读数会先变红。
+- **改后**：token 落 Redis（`wechat:access_token:{appid}`，TTL = `expires_in - 300`），全实例一把；
+  刷新由 `SET NX` 锁串行化（拿不到锁的实例短轮询复用别人的 token，超时不刷新、回落旧 token 并记 WARN）；
+  本地只保留 ≤60s 的短缓存；换号接口回 `40001 / 42001` 时清本地缓存 + 换掉共享存储里的坏 token 并重试一次。
+- **降级**：Redis 未接线 / 不可用 ⇒ 退回原进程内行为（WARN + 60s 静默期），**不会**把 Redis 故障放大成登录失败。
+- **单机行为不变**：没有 Redis 时与改前等价（同一把 token、同样的 7200s / 提前 300s 刷新口径）。
+- 判据：`backend/admin-api/src/test/java/com/migao/admin/service/WechatAccessTokenProviderTest.java`（用例 `API-025`；
+  离线两实例 + 共享 Redis 替身：改前供应商侧 2 次 / 改后 1 次；含「主代码不得再出现进程内 access_token 缓存字段」的类级元守卫）。
+
+### 部署期 JWT 同源断言真正可判：读宿主权威源 + `\n` 形态归一化 + `file:` 缺失前置 fail-closed（2026-11-22，issue #8989）
+
+- **之前（2026-11-21 真实部署实测）**：`== 2.5.9` 的 JWT 同源断言**永远 SKIPPED** —— 它用
+  `docker compose exec` 读**运行中的容器**（容器没重建 ⇒ 读到旧容器），且 `.env.*` 里是**单行 + 字面 `\n`**
+  的 PEM，按行 awk 取不到 body ⇒ 两侧都 `<不可判定>`。也就是说这条断言在生产上**等于不存在**，
+  却让人以为已经守护。提示行还写了裸反引号 ⇒ 部署日志真的出现 `JWT_*: command not found` 与
+  `file:/opt/…: No such file or directory`，提示语被吃成残缺文本。
+- **改后**：断言只读**宿主权威源**（`.env.admin-api` / `compose` 的 `environment` / `file:` 指向的宿主文件），
+  PEM 提取前先把字面 `\n`、`\r` 归一化，提取失败时打印「读到了什么形态」；
+  `SKIPPED` **只允许**「两侧都走 classpath 默认」这一种形态，只有一侧可判 ⇒ `INCOMPLETE` + `exit 1`。
+- **部署破坏性风险（本单 ④）**：任何服务的 `JWT_PRIVATE_KEY/JWT_PUBLIC_KEY` 是 `file:` 形态时，
+  宿主路径必须在**任何 `docker compose up` 之前**校验存在且可读，否则 `exit 1` —— 挡住
+  「ai-agent 重建时起不来 ⇒ AI 接口全挂」。
+- 判据：`tests/unit_ci_workflows/test_swas_jwt_same_source.py`（含 3 条注入式红证：`\n` 形态指纹 /
+  宿主 `file:` 缺失前置判红 / 反引号回归检测），并把 PR #8978 整体重排的
+  `tests/unit_ci_workflows/declared_effective_registry.json` 恢复成 compact 单行格式（只保留 1 条语义新增）。
+
+### 语音识别接入 Token Plan 非实时通道（`ASR_MODE=http`），端点与生图相同（2026-11-21，issue #8987）
+
+- **背景（生产实测）**：生产用阿里云百炼 **Token Plan 订阅**（`sk-sp-` key），订阅里唯一可用的语音识别模型
+  `qwen-audio-3.0-asr-flash` 是**非实时**的 —— 它走**与商品生图完全相同**的多模态端点，不接 WebSocket 实时识别。
+  既有 `app/api/asr.py` 只有实时流式通道 ⇒ 生图通、**语音不通**（不是 key 问题，是协议不匹配）。
+- **形态**：`app/config.py` 新增 `ASR_MODE`（缺省 `realtime`，**不改变既有部署行为**）+ `ASR_HTTP_MODEL`
+  （`qwen-audio-3.0-asr-flash`）+ `ASR_HTTP_URL`（可 env 覆盖）；`app/api/asr.py` 的 `_transcribe_audio` 按 `ASR_MODE`
+  分派，`http` 分支 = base64 data-URI + `parameters.format/sample_rate/language_hints`，文本读 `output.text`
+  （兜底 `output.sentence.text` / 顶层 `text`），空文本沿用「未识别到语音内容」。
+- **🔴 记下来的坑**：`parameters.format` **必填** —— 少了它网关回 `400 {}`（**空 body**、~90ms 拒单，无 message 可读）。
+  形态与排查口径见 `docs/deployment/voice-asr-token-plan.md`。
+- **不变**：缺省 `realtime` 时行为逐字不变；实时流式通道保留为回滚口；生图逻辑未动；错误口径沿用既有
+  401/403 不可用 · 429 配额 · 5xx 暂时不可用；日志不记 key、不记响应体。
+- **生产切换（部署侧，不在本 PR）**：`.env.ai-agent` 写 `ASR_MODE=http`。
+- 判据：`backend/ai-agent-service/tests/test_asr_http_mode.py`（`API-024`，含「删掉 `parameters` ⇒ 判据必红」的注入式红证）。
+
+### JWT 验签公钥与 admin-api 同源：ai-agent 改读同一份密钥文件，部署期不一致即判红（2026-11-21，issue #8976）
+
+- **形态**：`deploy/swas/docker-compose.yml` 的 ai-agent 不再硬编码 PEM，改成
+  `JWT_PUBLIC_KEY=file:/opt/migao-deploy/jwt/public.pem` + 挂 `/opt/migao-deploy/jwt:ro`
+  （与 admin-api 的签名密钥**同一份文件**）；`backend/ai-agent-service/app/config.py` 支持 `file:` 前缀，
+  且**仍接受**直接给 PEM 内容（既有 `.env` 部署不用改）。缺文件 ⇒ ai-agent 起不来（fail-closed）。
+- **之前**：admin-api 用 `.env.admin-api` 的 `file:/opt/migao-deploy/jwt/*.pem` 签发，ai-agent 用 compose 里
+  硬编码的另一对 PEM 验签 ⇒ 生产 AI 接口**全部 401**（`TOKEN_INVALID: Signature verification failed`），
+  而两侧都不报错、**永远不会自己好**（2026-11-21 实测两把钥匙指纹 `c58e54d6…` vs `ba01a29f…`）。
+- **部署期硬断言**：`deploy/swas/deploy.sh` 新增 `== 2.5.9`，比对两侧容器内**实际生效**的公钥指纹 ——
+  `JWT_KEY_SAME_SOURCE=OK` / `=MISMATCH`（打印两侧指纹 + 排查口 + `exit 1`）/ `=SKIPPED`（取不到 ⇒
+  **不判绿**）。
+- **同时修**：① `JwtTokenProvider` 的 classpath 兜底改成**只读流**（`jar:nested:/app/app.jar/!BOOT-INF/classes/`
+  这类资源没有「文件」可指，先问 `exists()` / 用 `getFile()` 就永远读不到 —— 实测「去掉 `JWT_*` 就起不来」）；
+  ② 凡重建容器之后必须 `nginx -s reload` **并**探测本机上游回 200，否则判红（实测重建换 IP + nginx 缓存旧 IP
+  = 全站 502 约 90 秒）；③ compose/`.env*` 里任何 `file:` 路径都必须被卷覆盖（类级判据扩到 `environment:`）。
+- 判据：`tests/unit_ci_workflows/test_swas_jwt_same_source.py`（含桩化 docker/curl 跑真实 `deploy.sh` 的
+  执行式红证）、`tests/unit_ci_workflows/test_swas_container_runtime.py`（12b 类级挂载）、
+  `backend/ai-agent-service/tests/test_config.py::TestJwtPublicKeyFilePrefix`、
+  `backend/admin-api/src/test/java/.../JwtTokenProviderClasspathResourceTest.java`。
+- **不变**：`.env*` 文件内容、镜像、端口与域名；不改任何测试门禁的通过条件。
+
+### 部署 compose 补回 admin-api 的 jwt / uploads 宿主挂载，蓝绿 green 同步挂卷（2026-11-21，issue #8969）
+
+- **形态**：canonical `deploy/swas/docker-compose.yml` 的 admin-api 补 `jwt:ro`
+  （`.env.admin-api` 的文件式私钥 `JWT_PRIVATE_KEY=file:/opt/migao-deploy/jwt/private.pem`）与
+  `/opt/migao-deploy/uploads:/app/uploads`（上传图片的落盘面）；`docker-compose.bluegreen.yml` 的每个
+  green 补**逐字相同**的卷。
+- **之前**：仓库 compose 里这两条挂载根本不存在（生产旧容器上的挂载来自历史手工创建）⇒ 只要「按仓库
+  compose 重建容器」就会 `JWT RSA 密钥加载失败` 起来即崩；且 green 从不挂卷 ⇒ 蓝绿预验证对 admin-api
+  **必然**失败（2026-11-21 实测 `admin-api-green -> 000000 ×10`，`api.cytda.com` 502 约 3 分钟）。
+- **判据**：parity 守卫把 `volumes` 纳入逐字一致（删卷 / 改 `:ro` 判红），并新增「`.env*` 里所有 `file:`
+  路径必须被卷的容器目标覆盖」的类级判据（取不到 env 文件 ⇒ SKIPPED 不可判定，不判绿）。
+- **不变**：`.env*` 文件、镜像与端口；不改 `deploy/swas/deploy.sh`。
+
+### 入库标签二维码的 origin 改为构建期可覆盖：生产标签不再指向测试服务器（2026-11-21，issue #8942）
+
+- **缺陷（已验收确认）**：B 端 H5 打印的入库标签，二维码内容来自 `frontend/bmini-app/src/utils/inbound/truth.ts` 里写死的 `https://app.migaozn.com`；生产落地面是 `app.cytda.com` ⇒ **生产打印出来的标签把扫码请求送到测试服务器**（线上 `/b/js/app.js` 里能读到 `w="https://app.migaozn.com",b="/i/"`，与常量逐字吻合）。页面上一切正常，只有工人扫了才会发现。
+- **改法**：origin 改成 `process.env.TARO_APP_PUBLIC_APP_ORIGIN || 'https://app.migaozn.com'`，并在 `frontend/bmini-app/config/index.ts` 的 `defineConstants` **显式登记**该键（缺省回落空串；不登记则无 `.env` 的构建会残留 `process.env` ⇒ 浏览器端白屏，issue #2693）。**缺省值逐字不变** ⇒ 不传 env 的构建（测试环境 / 既有产物）行为不变；minify 时 `''||'https://app.migaozn.com'` 折叠为同一个字符串字面量（terser 实测）。
+- **写读同源**：解析侧（`frontend/bmini-app/src/utils/inbound/codeSpace.ts`）继续用**同一个常量**取主机名 ⇒ 换 origin 时写侧与解析侧一起跟着走，不另写域名。
+- 判据：`frontend/bmini-app/tests/inbound-label-origin-env.test.ts`（O1 缺省逐字不变 / O2 覆盖生效 / O3 写读同源 / O4 defineConstants 接线，含两条注入式红证）；既有断言（`inbound-print-geometry-single-source.test.ts` C5 等）在缺省下**零改动通过**。
+- **联调口径**：构建 B 端 H5 时传 `TARO_APP_PUBLIC_APP_ORIGIN=https://app.cytda.com`；不传 ⇒ `https://app.migaozn.com`。关联 #8932（生产按 `cytda.com` 域名发布；bmini 的标签 origin 是那一轮剩下的缺口）。
+- 边界（照实登记）：解析侧只认**当前构建**的 origin ⇒ 切 origin 之前打印的旧 origin 标签在新构建里判 `foreign`（它们的二维码本身也仍指向旧环境）；是否加「多主机白名单」是后续迁移决策，不在本条目内静默扩大范围。
+
 ### 小程序端不再直连蓝牙标签机：出纸只走手持标签机（2026-11-21，issue #8939）
 
 - **用户裁定**：2026-11-21 逐字「可以理解为都有手持标签机」（回答「每个班组都有标签机，还是部分工人只有手机？」）。
@@ -1585,6 +1827,83 @@ worker-h5 纯函数、承运商 4 条 × 两处入口 + 类级单一真值守卫
 
 
 ## [Unreleased]
+
+### 微信客服：工作台看得见渠道、发送状态与 48h 余量（2026-11-25，issue #9202）
+
+- 在线接待工作台的会话列表：微信客服来源的会话多一行状态 —— 「微信客服」标识 + 最新一条发送状态（待发送 / 发送中 / 已接收 / 发送失败 / 状态未知）+ `额度 2/5`；普通人工会话**不出现**任何微信客服标识（服务端不给 `channel` 就不画，不兜底默认渠道）。
+- 48 小时 5 条额度用尽时，输入框直接禁用并说明「客户下条消息后可重新计算」，不让坐席写完一大段才看到发送失败。
+- 判据：`frontend/admin-web/tests/unit/pages/human-sessions-kf.test.tsx`（用例 KF-029）。
+
+
+### 微信客服：客户发的图片/语音/文件会归档，失败不影响消息可见（2026-11-25，issue #9200）
+
+- 客户发媒体消息时，同步链路按 `media_id` 下载并归档到 `${WECHAT_KF_MEDIA_DIR:-uploads/kf-media}/<租户>/`，`kf_media` 记 mime / 字节数 / 归档路径；会话里仍保留 `[图片]` 等文本占位，两者并存。
+- **消息优先**：下载 / 落盘失败只留日志并照常推进同步游标 —— 不会因为一张图片存不下就让客户消息卡在重放里。
+- `media_id` 来自回调 JSON，按白名单净化后才拼路径（`../` 无法逃出归档根）；重复投递按 `(direction, media_id)` 唯一约束不产生重复行。
+- 语音本单**保留原格式**（AMR 不转 wav：ffmpeg 属真机阶段，见 #9194 子项 3）。
+- 判据：`backend/admin-api/src/test/java/com/migao/admin/service/kf/KfMediaServiceTest.java`、`WechatKfMediaTest.java`、`backend/admin-api/src/test/java/com/migao/admin/service/kf/KfSyncWorkerTest.java`（用例 KF-028）。
+### 微信客服：判定接入语义层（规则优先 + 800ms 超时回退），高风险不再只靠关键词（2026-11-25，issue #9196）
+
+- `/api/internal/kf/decide` 在规则未命中时调 ai-agent 的 `POST /api/internal/kf/judge`（温度 0，返回 intent / risk / emotion / confidence / escalate）；升级仍取并集 —— 人工词 / 风险词命中先短路且**不发起**模型调用，语义判定要升级则升级。
+- 判定读超时默认 **800ms**（`WECHAT_KF_JUDGE_TIMEOUT_MS` 可配）；超时 / 异常 / 响应不可解析 ⇒ **回退规则结论**，接口仍返回 200 —— 判定服务故障不会让客户收不到回复。
+- 判据：`backend/admin-api/src/test/java/com/migao/admin/service/kf/KfDecisionServiceTest.java`、`backend/admin-api/src/test/java/com/migao/admin/service/kf/KfJudgeClientTest.java`、`backend/ai-agent-service/tests/test_kf_judge.py`（用例 KF-025）。
+### 微信客服：工作台能看到渠道 / 发送状态 / 48h 余量，结束人工会话自动关微信侧（2026-11-25，issue #9198）
+
+- 工作台人工会话列表：微信客服来源的会话带 `channel=wechat_kf`、最新一条发送状态（pending / sending / accepted / failed / unknown）与 48h 五条预算的已用/上限；普通人工会话字段不变（不伪造渠道标识）。装饰失败不影响列表返回。
+- 结束人工会话 ⇒ 自动联动 `trans(4)` 并关闭当前段（走既有 `SessionEndedEvent`，不再需要人工调内部接口）；只对人工中的段生效，联动失败只留日志、不回滚已结束的主流程。
+- 判据：`backend/admin-api/src/test/java/com/migao/admin/service/kf/KfSessionStatusProviderTest.java`（KF-026）、`backend/admin-api/src/test/java/com/migao/admin/service/kf/KfSessionEndListenerTest.java`（KF-027）。
+
+
+### 商品门幅清单落库并可回读；建品接口对非 0 库存改为 422 显式拒绝（2026-11-22，issue #9005 / #9006）
+
+- **门幅（`doorWidths`）落库（#9005，P1）**：`products` 新增 `door_widths JSONB`（迁移 V214）+ 实体 / DTO / 响应映射。
+  改前：`POST /api/admin/products` 带 `doorWidths:["2.8","3.2"]` ⇒ **200 创建成功**，但该列不存在、
+  `GET /{id}` **读不回来**（生产只读 SQL 实测 `column "door_widths" does not exist`；响应里的门幅是从 SKU 派生的，
+  没有 SKU 时派生不出任何东西）。改后：建品 / 改品都落库，`GET` 回读逐字一致。
+  ⚠️ **有 SKU 时读面仍以 `product_skus.door_width` 派生值为准** —— 门幅是 SKU 组合维度（用户裁定 2026-09-21），
+  本列只承载「还没有 SKU 时」的同一份声明，不替换派生口径、也不作为下单/算料权威。
+  存量回填：只填**空数组**行（从既有 SKU 去重聚合），已有值一律不覆盖；回滚 = `ALTER TABLE products DROP COLUMN IF EXISTS door_widths`。
+- **建品库存（`stock`）改为显式拒绝（#9006，P2）**：库存口径**不变**（#7597 / 用户裁定 2026-10-24：只由真实单据产生），
+  变的是**失败可见性** —— 改前带 `stock:100` ⇒ 200 且落 0（静默偏差），改后**非 0 ⇒ 422** + 可行动文案（去入库单过账）；
+  不传 / 传 0 照常（落库值本来就是 0）。**改品**的 `stock` 仍是合法绝对调整写面，未受影响。
+- 判据：`ProductDoorWidthsRoundTripRealDbTest`（真库往返 + V214 回填幂等）、`ProductDoorWidthsMigrationTest`（列/映射/回滚契约）、
+  `ProductCreateRequestFieldPersistenceMetaGuardTest`（类级元守卫：入参 DTO 字段无落点即红）、
+  `ProductCreateStockIgnoredTest`（422 语义 + `skus[].stock` 仍忽略）。
+
+### 商品颜色入参字段名不合法 ⇒ 422 并点名 `colorName`（不再是 500「服务器内部错误」）（2026-11-22，issue #9012）
+
+- **病（生产实抓，requestId `req_809f888b9ae44438`，tenant 1）**：`POST /api/admin/products` 传
+  `colors:[{"name":"米白","code":"#F5F5DC"}]`（字段名猜错，正确是 `colorName` / `mainColorHex`）⇒
+  Jackson `FAIL_ON_UNKNOWN_PROPERTIES=false` **静默丢弃**未知字段 ⇒ `colorName` 为 null ⇒ service 照常 insert ⇒
+  `null value in column "color_name" of relation "product_colors" violates not-null constraint` ⇒
+  HTTP **500**「服务器内部错误」—— 商家既看不到「哪个字段错了」，也无从自救。
+- **改后**：① **颜色名称准入**落在建品 / 改品 / Excel 导入 / Agent 四条写颜色路径的**唯一收口**
+  （与 #6302 的文本长度准入同一位置）⇒ 缺 `colorName`（含只有空白）**422** + 中文文案**点名 `colorName`**，
+  且在写 `product_colors` **之前**拒绝（不是撞库后回滚）；② 全局异常处理器把**非空约束违例**
+  （`SQLState 23502`）也归口 **422「参数不合法」+ requestId**（响应体与日志都不带列名 / 表名）——
+  兜住同族（其它表、其它漏校验字段）的 500 冒充；唯一约束违例仍保持既有 5xx 契约
+  （`MerchantShipmentAtomicityTest` 不受影响）。
+
+### 加工单号改为「库内当日最大号取号 + 撞号换号重试」，撞号不再谎报「已生成」（2026-11-22，issue #9021）
+
+- **改前（集群 P0-5）**：`ProcessingOrderService` 用**进程内** `AtomicInteger`（`ThreadLocalRandom` 随机起点）
+  发号，取号与占号分成两条语句；撞 `uk_processing_orders_no` 时 `DuplicateKeyException` 被一律翻成
+  「加工单已生成（并发操作）」—— 而单子其实**没落库** ⇒ 运营以为已派出、不再重试，订单永远没有作业单（静默漏单）。
+- **改后形态**：与入库/出库单号**同一范式** —— 起点 = 库内当日最大号 + 1（不依赖进程内状态，跨副本/重启一致），
+  用一条 `INSERT … ON CONFLICT DO NOTHING` 原子占号；0 行 ⇒ 换候选重试（上限 20，同族口径），耗尽显式 409。
+- **诊断修正**：只有**确实查到**该订单已有活跃加工单时才报「已生成」（并带出真实单号）；取号冲突耗尽报
+  `PROCESSING_ORDER_NO_CONFLICT` +「加工单号生成冲突，请重试（requestId=…）」，可追踪、可行动。
+- **不改**：加工单业务字段、派单/状态机流程、扣批次与工序实例化的时序。
+- 判据：`ProcessingOrderServiceTest`（P0-5 四条：换号重试并落库 / 耗尽文案 / 双线程并发 / 库内最大号起点）+
+  `ProcessingOrderNoConflictRealDbTest`（真库：`ON CONFLICT` 0 行、JSONB 快照、活跃单唯一键冲突）。
+
+### 生产域 cytda.com：官网导航 / canonical / sitemap / 域名分流按构建期域名生成（2026-11-21，issue #8941）
+
+- **生产验收（P0-3 / P1-1）**：同一份 admin-web 产物部署到测试域 `migaozn.com` 与生产域 `cytda.com`，但有 5 处把测试域写死 ⇒ 生产环境三件静默错事：官网「商家登录」把用户送去 `merchant.migaozn.com`；canonical / og:image / sitemap 把生产页登记成测试域；`merchant.cytda.com/` 不跳登录页、`cytda.com/dashboard` 不跳商家域（`src/proxy.ts` 的 host 分支不认识生产域，未知域直接放行）。
+- **改后**：站点域名只有一个构建期来源 `NEXT_PUBLIC_SITE_DOMAIN`（缺省 `migaozn.com`），驱动 www→裸域 301、proxy 三面分流（apex / www / merchant）、`metadataBase`、官网两处「商家登录」、`/sitemap.xml` 与 `/robots.txt`；抓取指引由 `public/` 静态文件改为 `src/app/sitemap.ts` / `src/app/robots.ts`（`public/` 不参与构建期替换）。未知域仍放行（本地开发 / 预览语义不变）。
+- **缺省值下与改前一致**：不传 env 时全部落点仍是 `migaozn.com` / `www.migaozn.com` / `merchant.migaozn.com`；产物内容等价（sitemap 5 条 loc、robots 的 Disallow 列表逐条不变；差异只有 robots 的 `User-agent` 大小写与两处说明性注释——均非抓取语义）。
+- **部署口径**：生产构建传 `NEXT_PUBLIC_SITE_DOMAIN=cytda.com`；`deploy/swas/deploy.sh` 已按 `MIGAO_PUBLIC_DOMAIN` 派生同一条 `--build-arg`（测试环境不传 ⇒ 与改前逐字相同）。
+- 判据：`frontend/admin-web/tests/unit/pages/site-domain.test.ts`（缺省 / 生产两态 + 类级元守卫）、`frontend/admin-web/tests/unit/pages/corporate-metadata-single-source.test.ts`（route 形式内容等价）、`frontend/admin-web/tests/unit/components/CorporateNav.test.tsx`（桌面 + 移动）、`tests/unit_ci_workflows/test_prod_domain_rendering.py`（构建期接线 + 3 条注入式红证）。
 
 ### 商品详情页重排：商品信息 / 批次与库存两个整体不穿插、不重复（2026-11-20，issue #8934）
 

@@ -140,18 +140,18 @@ RETIRED_FACES: tuple[str, ...] = (
 #: 面必须 import 的符号（C2 的反空跑锚点：面文件真的在用那一份实现）
 REQUIRED_IMPORT = "operationDisplayName"
 
-#: 工序显示名的四份实现（issue #4963）：**逐值等价**由 C7 钉住。
+#: 工序显示名的三份实现（issue #4963）：**逐值等价**由 C7 钉住。
+#: 2026-11-26（issue #9233）：C 端小程序 `frontend/mini-app` 整目录删除 ⇒ 第四份（C 端副本）退场。
 #: ① admin-web 的 .ts（web 面唯一口径）；② worker-h5 直接 import 的共享 .mjs
 #: （🔴 issue #6306 已把它从仓根 `frontend/shared/` **迁进 worker-h5 树内**
 #: `src/shared/` —— 住发布集之外会让线上相对说明符落到 SPA 兜底 ⇒ `200 text/html` ⇒ 整页白屏）；
-#: ③ bmini（tsconfig rootDir 约束 ⇒ 逐字复制）；④ mini-app（同因）。
+#: ③ bmini（tsconfig rootDir 约束 ⇒ 逐字复制）。
 #: 为什么不是「一份实现 + 三个 import」：`@/*` 别名各自指向自身 `src`，且两个 Taro 包的
 #: `tsconfig.include` 只含 `./src` ⇒ 跨包 import 会让 tsc 报 TS6059（见各文件头注释）。
 IMPLEMENTATIONS: tuple[str, ...] = (
     HELPER,
     "frontend/worker-h5/src/shared/operation-display.mjs",
     "frontend/bmini-app/src/utils/operationDisplayName.ts",
-    "frontend/mini-app/src/components/cards/operationDisplayName.ts",
 )
 
 #: worker-h5 必须 import 共享模块的那一行（C6 的反空跑锚点）。
@@ -621,13 +621,13 @@ def test_c6_worker_h5_imports_the_shared_module():
 # ── C7：四份实现喂同一张输入表逐值等价 ──────────────────────────────────────
 
 def test_c7_all_implementations_agree_value_by_value():
-    """C7：四份实现（admin-web / shared / bmini / mini-app）**逐值等价**（issue #4963）。
+    """C7：三份实现（admin-web / shared / bmini）**逐值等价**（issue #4963）。
 
     为什么必须「真跑 + 逐值」而不是文本比对：跨包 import 不可行（tsconfig rootDir）⇒ 复制是
     **有意**的；但「靠纪律保证两份不漂移」= 没有任何东西会因此变红（同 `_LOGICAL_NAME_PAIRS`
     三副本的病）。本判据把四份实现**编译出来喂同一张表**，改任一份而不同步 ⇒ 必红。
     """
-    assert len(IMPLEMENTATIONS) >= 4, "实现清单被清空 ⇒ 本判据会空跑通过"
+    assert len(IMPLEMENTATIONS) >= 3, "实现清单被清空 ⇒ 本判据会空跑通过"
     for rel in IMPLEMENTATIONS:
         actual = _parity(rel)
         assert actual == list(_EXPECTED), (
@@ -637,7 +637,7 @@ def test_c7_all_implementations_agree_value_by_value():
                 for (name, _), exp, act in zip(_NAMES, _EXPECTED, actual)
                 if exp != act
             )
-            + "\n四份实现（admin-web / shared / bmini / mini-app）必须逐值一致："
+            + "\n三份实现（admin-web / shared / bmini）必须逐值一致："
             "跨包 import 不可行 ⇒ 复制是有意的，但**漂移必须变红**"
         )
 

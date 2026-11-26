@@ -18,8 +18,11 @@
 # 健康检查判据不在这里：由 deploy.sh 的 `wait_healthy()` **统一给出**，与正式容器**同一份函数**
 # ⇒ 判据不可能漂移（「两套判据 / 判据过严导致回滚抖动」由此排除）。
 #
-# ⚠️ 抗漂移红线：本文件里每个 green 的 image / env_file / environment / mem_limit / cpus / healthcheck
-#    必须与 docker-compose.yml 里对应服务**逐字一致**（green 跑的就是同一份配置）。
+# ⚠️ 抗漂移红线：本文件里每个 green 的 image / env_file / environment / mem_limit / cpus /
+#    healthcheck / **volumes** 必须与 docker-compose.yml 里对应服务**逐字一致**（green 跑的就是同一份配置）。
+#    🔴 volumes 是 2026-11-21 补的（issue #8969）：改前本文件里 `volumes:` 出现 **0 次** ⇒ 依赖宿主挂载的
+#    服务（admin-api 的 JWT 私钥 / uploads）在 green 里那个路径根本不存在 ⇒ 预验证**必然**失败
+#    （实测 `admin-api-green -> 000000 ×10`），等于蓝绿对这类服务**永久失效**。漏卷 / 改 ro 标志都判红。
 #    守卫 = tests/unit_ci_workflows/test_swas_deploy_blue_green.py（不一致即判红，含注入式自证）。
 #    第二端口的默认值必须与 deploy.sh 的 `BG_*_PORT` 默认值一致（同一守卫钉住）。
 #
@@ -49,8 +52,19 @@ services:
       AI_AGENT_BASE_URL: http://ai-agent:8000
     ports:
       - "127.0.0.1:${BG_ADMIN_API_PORT:-18080}:8080"
+    # 与 docker-compose.yml 的 admin-api **逐字一致**（issue #8969）：green 是**探针容器**，
+    # 它要在不动旧容器的前提下证明「新镜像能起」；少了这两个宿主挂载，JWT 私钥在容器里不存在
+    # ⇒ fail-closed 直接退出 ⇒ green 永远不 healthy ⇒ 蓝绿预验证对 admin-api 永久失效。
+    volumes:
+      - /opt/migao-deploy/jwt:/opt/migao-deploy/jwt:ro
+      - /opt/migao-deploy/uploads:/app/uploads
     mem_limit: 1536m
     cpus: 1.0
+    # 优雅退出（M1-b，issue #9098）：docker 从 SIGTERM 起算等到本值就 SIGKILL。
+    # 必须 > application.yml 的 `spring.lifecycle.timeout-per-shutdown-phase`（30s）
+    # —— 45s = 30s 应用预算 + 15s 给 JVM/连接池收尾与 docker 的观测误差。
+    # 判据（会红）：tests/unit_ci_workflows/test_zero_downtime_m1_cutover.py
+    stop_grace_period: 45s
     logging: *migao-logging
     # 与 docker-compose.yml 的 admin-api **逐字一致**（抗漂移红线，issue #8197 P1-12 +
     # tests/unit_ci_workflows/test_swas_deploy_blue_green.py 的 parity 判据比对 healthcheck）。
@@ -70,20 +84,20 @@ services:
       # 里可能残留的旧 EVAL_TENANT_ID=25（compose 的 environment 优先于 env_file）。
       EVAL_TENANT_ID: "1"
       TZ: Asia/Shanghai
-      JWT_PUBLIC_KEY: |
-        -----BEGIN PUBLIC KEY-----
-        MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAyDkix6IDMt3wkCAY1Phk
-        O56ihiAu9deWNU/kfRn0dnc/iKC3sqmjlE7Te854xOuy1EjvIbDAXDFbaKHMOM76
-        itKKIvSpOzGsSaEuerNsQH6+il9KgnO2rk4z9fDEoX9ZYnzIjr3n/oM6mv3Nfh+x
-        17QMdMo9n29cHlznQAVc4kAJ1ACu4eYJVxiH6WZNtXLu6PkiU+YqsaPOGchvp1Xy
-        PmZXyJJl0r+xDEVCgfXLsStFTau/9B5YxMv28N5gg1JbwpZNBpBYZ00J90lQkT+5
-        Lpl0Tto5k/R08bFvAn8uf0PcbpOQ70Ibs9R7T/MHfK0NKyBrwZnzEdcIEQ6Pdn9g
-        RwIDAQAB
-        -----END PUBLIC KEY-----
+      # 与 docker-compose.yml 的 ai-agent **逐字一致**（issue #8976：公钥只给路径、与 admin-api 同源）
+      JWT_PUBLIC_KEY: file:/opt/migao-deploy/jwt/public.pem
     ports:
       - "127.0.0.1:${BG_AI_AGENT_PORT:-18000}:8000"
+    # 与 docker-compose.yml 的 ai-agent **逐字一致**（issue #8976）：green 若漏挂这一卷，
+    # `file:` 取不到 ⇒ ai-agent-green 起不来 ⇒ 蓝绿预验证对 ai-agent 永久失效（同 #8969 的形态）。
+    volumes:
+      - /opt/migao-deploy/jwt:/opt/migao-deploy/jwt:ro
     mem_limit: 1024m
     cpus: 1.0
+    # 优雅退出（M1-b，issue #9098）：uvicorn 的 `--timeout-graceful-shutdown 200`（SSE 最长流
+    # 180s + 余量）必须 **≤** 本值 ⇒ 210s；否则 docker 会把还没收尾的长流 SIGKILL。
+    # 判据（会红）：tests/unit_ci_workflows/test_zero_downtime_m1_cutover.py
+    stop_grace_period: 210s
     logging: *migao-logging
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/ready', timeout=3)"]

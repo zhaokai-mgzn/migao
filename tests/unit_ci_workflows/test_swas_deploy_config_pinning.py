@@ -82,6 +82,11 @@ from pathlib import Path
 
 import pytest
 
+# ── 发布线自检的 `git` 桩（issue #9086）────────────────────────────────────
+# 本文件跑的是**真实 deploy.sh**：1.0.1 段现在会问 git「目标提交是不是 origin/release 的祖先」。
+# 桩补的是沙箱本来就该模拟的那一面（口径与该模块 docstring 一致），既有断言一字未改。
+from unit_ci_workflows import deploy_release_line_stub as rl_stub  # noqa: E402
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEPLOY_SH = REPO_ROOT / "deploy" / "swas" / "deploy.sh"
 
@@ -126,6 +131,15 @@ OLD_TAG = "sha-aaaaaaa"      # 「旧」tag（= 回滚目标 / 排到后面的�
 NEW_TAG = "sha-ccccccc"      # main 已前进后新部署的 tag（= 当前在跑）
 MARKER_OLD = "OLD"
 MARKER_MAIN = "MAIN"
+
+#: 「现盘 nginx.conf」夹具（#6551 ② 复用场景）：**真 canonical 内容** + 标记行。
+#: 为什么不能用一行桩文本（issue #8966）：渲染后有一条 fail-closed 断言读 `server_name`
+#: （生产域名 0 处 ⇒ 中止部署），而真实的现盘配置**一定**带 6 行 `server_name` ——
+#: 桩文本会让判据红在夹具上，而不是红在产品上。
+SEED_ON_DISK_NGINX = (
+    (DEPLOY_SH.parent / "nginx.conf").read_text(encoding="utf-8")
+    + "\n# CONFIG_MARKER=ON_DISK-nginx\n"
+)
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -767,7 +781,9 @@ def _make_config_tar(dest: Path, marker: str, *, with_bluegreen: bool = True) ->
     if with_bluegreen:
         names.append("docker-compose.bluegreen.yml")
     for name in names:
-        shutil.copy(REPO_ROOT / "deploy" / "swas" / name, stage / name)
+        # 沙箱一致性：脚本副本已把 `/opt/migao-deploy` 改写成 tmp 路径，打包的 compose/nginx 同步改写
+        _txt = (REPO_ROOT / "deploy" / "swas" / name).read_text(encoding="utf-8")
+        (stage / name).write_text(_txt.replace("/opt/migao-deploy", str(dest.parent.parent / "opt-migao-deploy")), encoding="utf-8")
     nginx = stage / "nginx.conf"
     nginx.write_text(nginx.read_text(encoding="utf-8") + f"\n# CONFIG_MARKER={marker}\n", encoding="utf-8")
     with tarfile.open(dest, "w:gz") as tf:
@@ -818,8 +834,19 @@ def _prepare(tmp_path: Path, script_text: str, fixtures: dict, *,
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_text(body, encoding="utf-8")
     # 配置 fail-closed 前置：显式声明 SMS_BYPASS_CODE（否则脚本按设计中止）
-    (work / ".env.admin-api").write_text("SMS_BYPASS_CODE=123456\n", encoding="utf-8")
-    (work / ".env.ai-agent").write_text("SMS_BYPASS_CODE=123456\n", encoding="utf-8")
+    # 1.6c/1.6d（issue #8989 ④）：脚本在任何 up 之前校验 JWT `file:` 宿主路径并要求两侧同源
+    # ⇒ 沙箱必须同构地造出 pem 并在两侧 .env 都声明（否则执行式判据全部停在预检）。
+    _jwt_dir = work / "jwt"
+    _jwt_dir.mkdir(exist_ok=True)
+    (_jwt_dir / "public.pem").write_text("-----BEGIN PUBLIC KEY-----\nstub\n-----END PUBLIC KEY-----\n", encoding="utf-8")
+    (_jwt_dir / "private.pem").write_text("-----BEGIN PRIVATE KEY-----\nstub\n-----END PRIVATE KEY-----\n", encoding="utf-8")
+    _jwt_env = (
+        "SMS_BYPASS_CODE=123456\n"
+        f"JWT_PRIVATE_KEY=file:{work}/jwt/private.pem\n"
+        f"JWT_PUBLIC_KEY=file:{work}/jwt/public.pem\n"
+    )
+    (work / ".env.admin-api").write_text(_jwt_env, encoding="utf-8")
+    (work / ".env.ai-agent").write_text(_jwt_env, encoding="utf-8")
     config_dir = tmp_path / "config"
     config_dir.mkdir(exist_ok=True)
     for ref, marker in fixtures.items():
@@ -827,6 +854,7 @@ def _prepare(tmp_path: Path, script_text: str, fixtures: dict, *,
         _make_config_tar(config_dir / f"{safe}.tar.gz", marker,
                          with_bluegreen=(marker != "NOBLUEGREEN"))
     bin_dir = tmp_path / "bin"
+    rl_stub.install(bin_dir)  # 发布线自检要问 git（issue #9086）：补桩，既有断言不受影响
     bin_dir.mkdir(exist_ok=True)
     _write_exe(bin_dir / "curl", curl_body)
     _write_exe(bin_dir / "docker", DOCKER_STUB)
@@ -1188,7 +1216,7 @@ def test_exec_rollback_reuses_on_disk_config_without_download(tmp_path):
     seed = {
         ".config-ref": f"{OLD_TAG.removeprefix('sha-')}\n",
         "docker-compose.yml": "# CONFIG_MARKER=ON_DISK-compose\n",
-        "nginx/nginx.conf": "# CONFIG_MARKER=ON_DISK-nginx\n",
+        "nginx/nginx.conf": SEED_ON_DISK_NGINX,
         "docker-compose.bluegreen.yml": "# CONFIG_MARKER=ON_DISK-bluegreen\n",
     }
     proc, log, urls, work = _run(tmp_path, read_deploy_sh(), tag=OLD_TAG, fixtures={}, seed=seed)
@@ -1207,7 +1235,7 @@ def test_exec_reuse_disabled_falls_back_to_download_and_fails_closed(tmp_path):
     seed = {
         ".config-ref": f"{OLD_TAG.removeprefix('sha-')}\n",
         "docker-compose.yml": "# CONFIG_MARKER=ON_DISK-compose\n",
-        "nginx/nginx.conf": "# CONFIG_MARKER=ON_DISK-nginx\n",
+        "nginx/nginx.conf": SEED_ON_DISK_NGINX,
         "docker-compose.bluegreen.yml": "# CONFIG_MARKER=ON_DISK-bluegreen\n",
     }
     injected = _inject(read_deploy_sh(), REUSE_REF_TOKEN + " || return 1", "return 1")
@@ -1225,7 +1253,7 @@ def test_exec_reuse_requires_same_ref(tmp_path):
     seed = {
         ".config-ref": "ccccccc\n",
         "docker-compose.yml": "# CONFIG_MARKER=ON_DISK-compose\n",
-        "nginx/nginx.conf": "# CONFIG_MARKER=ON_DISK-nginx\n",
+        "nginx/nginx.conf": SEED_ON_DISK_NGINX,
         "docker-compose.bluegreen.yml": "# CONFIG_MARKER=ON_DISK-bluegreen\n",
     }
     fixtures = {MAIN_REF: MARKER_MAIN, "aaaaaaa": MARKER_OLD}
@@ -1242,7 +1270,7 @@ def test_exec_reuse_with_incomplete_on_disk_config_warns_and_downloads(tmp_path)
     seed = {
         ".config-ref": f"{OLD_TAG.removeprefix('sha-')}\n",
         "docker-compose.yml": "# CONFIG_MARKER=ON_DISK-compose\n",
-        "nginx/nginx.conf": "# CONFIG_MARKER=ON_DISK-nginx\n",
+        "nginx/nginx.conf": SEED_ON_DISK_NGINX,
         # 故意缺 docker-compose.bluegreen.yml（半套现盘配置）
     }
     fixtures = {MAIN_REF: MARKER_MAIN, "aaaaaaa": MARKER_OLD}
@@ -1263,7 +1291,7 @@ def _cprime_reuse_seed() -> dict:
     return {
         ".config-ref": f"{OLD_TAG.removeprefix('sha-')}\n",
         "docker-compose.yml": "# CONFIG_MARKER=ON_DISK-compose\n",
-        "nginx/nginx.conf": "# CONFIG_MARKER=ON_DISK-nginx\n",
+        "nginx/nginx.conf": SEED_ON_DISK_NGINX,
         "docker-compose.bluegreen.yml": "# CONFIG_MARKER=ON_DISK-bluegreen\n",
     }
 
@@ -1295,6 +1323,6 @@ def test_exec_cprime_rollback_without_local_image_falls_back_and_fails_closed(tm
     assert proc.returncode != 0, f"本地没有镜像竟然还成功（红证空跑）：\n{proc.stdout}"
     assert urls != [], "应当回到下载路径（URL 流水为空 ⇒ 红证空跑）"
     assert "取不到 tag=sha-aaaaaaa 对应的配置" in proc.stdout, proc.stdout
-    assert _landed_nginx(work) == "# CONFIG_MARKER=ON_DISK-nginx\n", (
+    assert _landed_nginx(work) == SEED_ON_DISK_NGINX, (
         "拒绝复用之后不该改写现盘配置（fail-closed）"
     )

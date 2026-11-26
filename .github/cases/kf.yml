@@ -1,0 +1,665 @@
+# cases/kf.yml — 微信客服通道层用例（issue #9171）
+schema: "case-contract/1.0"
+domain: kf
+
+cases:
+  - id: KF-001
+    legacy_id: ""
+    title: "SecretCipher — AES-GCM 往返 + 篡改/错 key 必失败"
+    domains: [kf]
+    tier: normal
+    tags: [kf, crypto]
+    truths_ref: [kf.secret-cipher]
+    user_inputs:
+      - "加密一段凭据明文，再用同一主密钥解密"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "roundtrip 明文逐字相等；密文以 v1: 开头"
+      - "篡改密文任意一位 ⇒ 解密抛异常；换主密钥 ⇒ 解密抛异常"
+    skip_reason: "[backend-contract] 纯单元测试，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-11-25 新增：微信客服通道层 PR2（issue #9171）"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/kf/SecretCipherTest.java"
+      ci: [pr-check.yml]
+      verifies: []
+
+  - id: KF-002
+    legacy_id: ""
+    title: "企微回调 — 签名校验 + AES 解密 + receiveid 校验"
+    domains: [kf]
+    tier: normal
+    tags: [kf, callback, crypto]
+    truths_ref: [kf.callback-crypto]
+    user_inputs:
+      - "构造一条带合法 msg_signature 的回调密文，解密得到明文与 receiveid"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "合法签名 + 合法密文 ⇒ 明文逐字相等"
+      - "签名错 / 密文篡改 / receiveid 不匹配 ⇒ 抛异常"
+    skip_reason: "[backend-contract] 纯单元测试，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-11-25 新增：微信客服通道层 PR2（issue #9171）"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/kf/WeChatKfCryptoTest.java"
+      ci: [pr-check.yml]
+      verifies: []
+
+  - id: KF-003
+    legacy_id: ""
+    title: "WechatKfClient — gettoken/sync_msg/send_msg 解析 + errcode 抛错"
+    domains: [kf]
+    tier: normal
+    tags: [kf, client]
+    truths_ref: [kf.client]
+    user_inputs:
+      - "调用 gettoken、sync_msg、send_msg，并模拟 95014 错误"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "正常响应解析出 access_token / has_more / msgid"
+      - "errcode=95014 ⇒ KfApiException.errcode=95014"
+    skip_reason: "[backend-contract] 纯单元测试，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-11-25 新增：微信客服通道层 PR2（issue #9171）"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/kf/WechatKfClientTest.java"
+      ci: [pr-check.yml]
+      verifies: []
+
+  - id: KF-004
+    legacy_id: ""
+    title: "KfCallbackService — 验签/解密/落 inbox/置 dirty"
+    domains: [kf]
+    tier: normal
+    tags: [kf, callback]
+    truths_ref: [kf.callback-inbox]
+    user_inputs:
+      - "构造合法回调、重复回调、坏签名、未知渠道四种输入"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "合法 ⇒ insertIgnore 一次 + markDirty 一次"
+      - "重复（insert 返回 0）⇒ markDirty 仍一次"
+      - "坏签名 ⇒ 抛异常且不落库；未知渠道 ⇒ 200 受理但不落库"
+    skip_reason: "[backend-contract] 纯单元测试，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-11-25 新增：微信客服通道层 PR2（issue #9171）"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/kf/KfCallbackServiceTest.java"
+      ci: [pr-check.yml]
+      verifies: []
+
+  - id: KF-005
+    legacy_id: ""
+    title: "KfCallbackController — 未配置 503 / GET 明文 / POST 200"
+    domains: [kf]
+    tier: normal
+    tags: [kf, callback, controller]
+    truths_ref: [kf.callback-controller]
+    user_inputs:
+      - "未配置、GET 验证、POST 回调三种请求"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "未配置 ⇒ 503；GET ⇒ 200 + echostr 明文；POST ⇒ 200 空串且 service.handle 被调用"
+    skip_reason: "[backend-contract] 纯单元测试，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-11-25 新增：微信客服通道层 PR2（issue #9171）"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/controller/KfCallbackControllerTest.java"
+      ci: [pr-check.yml]
+      verifies: []
+
+  - id: KF-006
+    legacy_id: ""
+    title: "KF-006 — 渠道反查 SQL 与租户拦截豁免"
+    domains: [kf]
+    tier: normal
+    tags: [kf, mapper]
+    truths_ref: [kf.mapper-contract]
+    user_inputs:
+      - "反射读取 Mapper 注解 SQL 并断言关键片段"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "SQL 含目标表/冲突键；租户拦截 tenantLine=true"
+    skip_reason: "[backend-contract] 纯单元测试，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-11-25 新增：微信客服通道层 PR2（issue #9171）"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/mapper/KfChannelMapperTest.java"
+      ci: [pr-check.yml]
+      verifies: []
+
+  - id: KF-007
+    legacy_id: ""
+    title: "KF-007 — inbox 幂等 INSERT 与 jsonb 转换"
+    domains: [kf]
+    tier: normal
+    tags: [kf, mapper]
+    truths_ref: [kf.mapper-contract]
+    user_inputs:
+      - "反射读取 Mapper 注解 SQL 并断言关键片段"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "SQL 含目标表/冲突键；租户拦截 tenantLine=true"
+    skip_reason: "[backend-contract] 纯单元测试，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-11-25 新增：微信客服通道层 PR2（issue #9171）"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/mapper/KfInboxMapperTest.java"
+      ci: [pr-check.yml]
+      verifies: []
+
+  - id: KF-008
+    legacy_id: ""
+    title: "KF-008 — dirty upsert 语义"
+    domains: [kf]
+    tier: normal
+    tags: [kf, mapper]
+    truths_ref: [kf.mapper-contract]
+    user_inputs:
+      - "反射读取 Mapper 注解 SQL 并断言关键片段"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "SQL 含目标表/冲突键；租户拦截 tenantLine=true"
+    skip_reason: "[backend-contract] 纯单元测试，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-11-25 新增：微信客服通道层 PR2（issue #9171）"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/mapper/KfSyncCursorMapperTest.java"
+      ci: [pr-check.yml]
+      verifies: []
+
+  - id: KF-009
+    legacy_id: ""
+    title: "KfSessionIngestService — 建会话/消息幂等/忽略客服回显"
+    domains: [kf]
+    tier: normal
+    tags: [kf, sync]
+    truths_ref: [kf.ingest]
+    user_inputs:
+      - "按用例名构造输入"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "断言与用例标题一致"
+    skip_reason: "[backend-contract] 纯单元测试，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-11-25 新增：微信客服 PR3（issue #9176）"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/kf/KfSessionIngestServiceTest.java"
+      ci: [pr-check.yml]
+      verifies: []
+
+  - id: KF-010
+    legacy_id: ""
+    title: "KfSyncWorker — claim/sync/ingest/空列表推进/失败保留 dirty"
+    domains: [kf]
+    tier: normal
+    tags: [kf, sync]
+    truths_ref: [kf.sync-worker]
+    user_inputs:
+      - "按用例名构造输入"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "断言与用例标题一致"
+    skip_reason: "[backend-contract] 纯单元测试，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-11-25 新增：微信客服 PR3（issue #9176）"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/kf/KfSyncWorkerTest.java"
+      ci: [pr-check.yml]
+      verifies: []
+
+  - id: KF-011
+    legacy_id: ""
+    title: "KfSessionRemoteMapper — 当前段并发唯一"
+    domains: [kf]
+    tier: normal
+    tags: [kf, sync]
+    truths_ref: [kf.session-remote-mapper]
+    user_inputs:
+      - "按用例名构造输入"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "断言与用例标题一致"
+    skip_reason: "[backend-contract] 纯单元测试，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-11-25 新增：微信客服 PR3（issue #9176）"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/mapper/KfSessionRemoteMapperTest.java"
+      ci: [pr-check.yml]
+      verifies: []
+
+  - id: KF-012
+    legacy_id: ""
+    title: "KfAccessTokenService — secret 解密 + token 缓存"
+    domains: [kf]
+    tier: normal
+    tags: [kf, sync]
+    truths_ref: [kf.token-service]
+    user_inputs:
+      - "按用例名构造输入"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "断言与用例标题一致"
+    skip_reason: "[backend-contract] 纯单元测试，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-11-25 新增：微信客服 PR3（issue #9176）"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/kf/KfAccessTokenServiceTest.java"
+      ci: [pr-check.yml]
+      verifies: []
+
+  - id: KF-013
+    legacy_id: ""
+    title: "KfSchedulerConfig — 独立 2 线程池"
+    domains: [kf]
+    tier: normal
+    tags: [kf, sync]
+    truths_ref: [kf.scheduler]
+    user_inputs:
+      - "按用例名构造输入"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "断言与用例标题一致"
+    skip_reason: "[backend-contract] 纯单元测试，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-11-25 新增：微信客服 PR3（issue #9176）"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/config/KfSchedulerConfigTest.java"
+      ci: [pr-check.yml]
+      verifies: []
+
+  - id: KF-014
+    legacy_id: ""
+    title: "KfClientConfig — client/SecretCipher bean"
+    domains: [kf]
+    tier: normal
+    tags: [kf, sync]
+    truths_ref: [kf.client-config]
+    user_inputs:
+      - "按用例名构造输入"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "断言与用例标题一致"
+    skip_reason: "[backend-contract] 纯单元测试，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-11-25 新增：微信客服 PR3（issue #9176）"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/config/KfClientConfigTest.java"
+      ci: [pr-check.yml]
+      verifies: []
+
+  - id: KF-015
+    legacy_id: ""
+    title: "KfSendService — 校验会话/预算扣减/入队"
+    domains: [kf]
+    tier: normal
+    tags: [kf, outbox]
+    truths_ref: [kf.send]
+    user_inputs:
+      - "按用例名构造输入"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "断言与用例标题一致"
+    skip_reason: "[backend-contract] 纯单元测试，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-11-25 新增：微信客服 PR3b（issue #9181）"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/kf/KfSendServiceTest.java"
+      ci: [pr-check.yml]
+      verifies: []
+
+  - id: KF-016
+    legacy_id: ""
+    title: "KfOutboxSender — claim/sendText/accepted/fail_type"
+    domains: [kf]
+    tier: normal
+    tags: [kf, outbox]
+    truths_ref: [kf.outbox-sender]
+    user_inputs:
+      - "按用例名构造输入"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "断言与用例标题一致"
+    skip_reason: "[backend-contract] 纯单元测试，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-11-25 新增：微信客服 PR3b（issue #9181）"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/kf/KfOutboxSenderTest.java"
+      ci: [pr-check.yml]
+      verifies: []
+
+  - id: KF-017
+    legacy_id: ""
+    title: "KfOutboxMapper — SKIP LOCKED claim"
+    domains: [kf]
+    tier: normal
+    tags: [kf, outbox]
+    truths_ref: [kf.outbox-mapper]
+    user_inputs:
+      - "按用例名构造输入"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "断言与用例标题一致"
+    skip_reason: "[backend-contract] 纯单元测试，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-11-25 新增：微信客服 PR3b（issue #9181）"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/mapper/KfOutboxMapperTest.java"
+      ci: [pr-check.yml]
+      verifies: []
+
+  - id: KF-018
+    legacy_id: ""
+    title: "KfSendBudgetMapper — 48h/5 条原子扣减"
+    domains: [kf]
+    tier: normal
+    tags: [kf, outbox]
+    truths_ref: [kf.budget]
+    user_inputs:
+      - "按用例名构造输入"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "断言与用例标题一致"
+    skip_reason: "[backend-contract] 纯单元测试，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-11-25 新增：微信客服 PR3b（issue #9181）"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/mapper/KfSendBudgetMapperTest.java"
+      ci: [pr-check.yml]
+      verifies: []
+
+  - id: KF-019
+    legacy_id: ""
+    title: "KfInternalReplyController — 200/429"
+    domains: [kf]
+    tier: normal
+    tags: [kf, outbox]
+    truths_ref: [kf.reply-controller]
+    user_inputs:
+      - "按用例名构造输入"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "断言与用例标题一致"
+    skip_reason: "[backend-contract] 纯单元测试，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-11-25 新增：微信客服 PR3b（issue #9181）"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/controller/KfInternalReplyControllerTest.java"
+      ci: [pr-check.yml]
+      verifies: []
+
+  - id: KF-020
+    legacy_id: ""
+    title: "KfDecisionService — 非 AI 态/人工/风险/默认"
+    domains: [kf]
+    tier: normal
+    tags: [kf, decision]
+    truths_ref: [kf.decision]
+    user_inputs:
+      - "按用例名构造输入"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "断言与用例标题一致"
+    skip_reason: "[backend-contract] 纯单元测试，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-11-25 新增：微信客服 PR3c（issue #9185）"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/kf/KfDecisionServiceTest.java"
+      ci: [pr-check.yml]
+      verifies: []
+
+  - id: KF-021
+    legacy_id: ""
+    title: "KfTransferService — trans(2) + 工作台会话 + 回滚"
+    domains: [kf]
+    tier: normal
+    tags: [kf, decision]
+    truths_ref: [kf.transfer]
+    user_inputs:
+      - "按用例名构造输入"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "断言与用例标题一致"
+    skip_reason: "[backend-contract] 纯单元测试，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-11-25 新增：微信客服 PR3c（issue #9185）"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/kf/KfTransferServiceTest.java"
+      ci: [pr-check.yml]
+      verifies: []
+
+  - id: KF-022
+    legacy_id: ""
+    title: "KfInternalDecisionController — decide/transfer"
+    domains: [kf]
+    tier: normal
+    tags: [kf, decision]
+    truths_ref: [kf.decision-controller]
+    user_inputs:
+      - "按用例名构造输入"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "断言与用例标题一致"
+    skip_reason: "[backend-contract] 纯单元测试，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-11-25 新增：微信客服 PR3c（issue #9185）"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/controller/KfInternalDecisionControllerTest.java"
+      ci: [pr-check.yml]
+      verifies: []
+
+  - id: KF-023
+    legacy_id: ""
+    title: "KfCardRenderer — 卡片降级为文本/链接/选项"
+    domains: [kf]
+    tier: normal
+    tags: [kf, card]
+    truths_ref: [kf.card-renderer]
+    user_inputs:
+      - "商品卡、支付卡、快捷按钮、表单四种输入"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "商品卡含标题/摘要/链接；支付卡含扫码 URL；按钮卡含编号选项；表单提示直接回复文字"
+    skip_reason: "[backend-contract] 纯单元测试，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-11-25 新增：微信客服 PR4（issue #9187）"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/kf/KfCardRendererTest.java"
+      ci: [pr-check.yml]
+      verifies: []
+
+  - id: KF-024
+    legacy_id: ""
+    title: "KfTransferService — 人工结束 trans(4) + 关闭当前段"
+    domains: [kf]
+    tier: normal
+    tags: [kf, transfer]
+    truths_ref: [kf.end-human]
+    user_inputs:
+      - "调用 endHumanSession；再对已关闭会话重复调用"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "trans(4) 一次 + closeSession 一次；已关闭会话幂等不再调 trans"
+    skip_reason: "[backend-contract] 纯单元测试，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-11-25 新增：微信客服 PR3d（issue #9192）"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/kf/KfTransferServiceTest.java"
+      ci: [pr-check.yml]
+      verifies: []
+
+  - id: KF-026
+    legacy_id: ""
+    title: "工作台会话装饰 — 渠道标识 / 最新发送状态 / 48h 预算（普通会话字段不变）"
+    domains: [kf]
+    tier: normal
+    tags: [kf, workspace, status]
+    truths_ref: [kf.decision]
+    user_inputs:
+      - "构造三条会话：微信客服会话、普通人工会话、无 aiSessionId 的会话"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "微信客服会话 ⇒ channel=wechat_kf、sendStatus 与 kf_outbox 最新一条一致、budgetUsed/budgetLimit=5"
+      - "普通人工会话 ⇒ channel/sendStatus/budgetUsed 全为 null（不得伪造渠道标识）"
+      - "预算行缺失 ⇒ budgetUsed=0；outbox 无记录 ⇒ sendStatus=unknown"
+      - "无 aiSessionId ⇒ 零查询"
+    skip_reason: "[backend-contract] 纯单元测试，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-11-25 新增：微信客服增强包B1（issue #9198，母单 #9194 子项 2）"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/kf/KfSessionStatusProviderTest.java"
+      ci: [pr-check.yml]
+      verifies: []
+
+  - id: KF-027
+    legacy_id: ""
+    title: "人工会话结束联动 — 仅人工段 trans(4)，失败不冒泡"
+    domains: [kf]
+    tier: normal
+    tags: [kf, workspace, end]
+    truths_ref: [kf.decision]
+    user_inputs:
+      - "分别构造：人工中会话结束、非微信客服会话结束、AI 段会话结束、联动抛错"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "state=2 ⇒ endHumanSession 恰好一次，close_reason=human_end"
+      - "无镜像行 / 无 aiSessionId ⇒ 零联动"
+      - "state≠2 ⇒ 零联动"
+      - "联动抛错 ⇒ 不冒泡，且租户上下文被清理"
+    skip_reason: "[backend-contract] 纯单元测试，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-11-25 新增：微信客服增强包B1（issue #9198，母单 #9194 子项 5）"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/kf/KfSessionEndListenerTest.java"
+      ci: [pr-check.yml]
+      verifies: []
+
+  - id: KF-025
+    legacy_id: ""
+    title: "语义判定 — 规则优先/升级并集/判定失败回退规则"
+    domains: [kf]
+    tier: normal
+    tags: [kf, decision, llm]
+    truths_ref: [kf.decision]
+    user_inputs:
+      - "构造四类输入：规则命中人工词/风险词、规则未命中且 LLM 要求升级、规则未命中且 LLM 不升级、LLM 不可用"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "规则命中的两类输入 ⇒ ESCALATE_HUMAN 且判定客户端零调用（不出站）"
+      - "规则未命中 + LLM escalate=true ⇒ ESCALATE_HUMAN；escalate=false ⇒ AI_REPLY"
+      - "LLM 超时/异常/空结果 ⇒ AI_REPLY（回退规则），/decide 不抛错"
+      - "ai-agent /api/internal/kf/judge：LLM 异常 ⇒ success=false + KF_JUDGE_UNAVAILABLE（HTTP 200）"
+    skip_reason: "[backend-contract] 纯单元测试，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-11-25 新增：微信客服增强包A（issue #9196，母单 #9194 子项 1）"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/kf/KfDecisionServiceTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/kf/KfJudgeClientTest.java"
+        - "backend/ai-agent-service/tests/test_kf_judge.py"
+      ci: [pr-check.yml]
+      verifies: []
+
+  - id: KF-028
+    legacy_id: ""
+    title: "入站媒体 — 下载/归档/幂等/路径净化/失败容忍"
+    domains: [kf]
+    tier: normal
+    tags: [kf, media]
+    truths_ref: [kf.decision]
+    user_inputs:
+      - "构造图片/文件消息、JSON 错误体、路径跳转 media_id、不可写归档根、下载抛错五类输入"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "二进制响应 ⇒ 字节与 mime 原样返回；JSON 错误体 ⇒ 抛 KfApiException（不落盘）"
+      - "归档成功 ⇒ 文件字节与响应一致、kf_media 行含 mime/size/storage_key"
+      - "media_id 含 ../ ⇒ 净化后仍落在归档根内"
+      - "下载失败/归档根不可写 ⇒ 抛 KfMediaException，且同步游标照常前进（消息已落库）"
+    skip_reason: "[backend-contract] 纯单元测试，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-11-25 新增：微信客服增强包C（issue #9200，母单 #9194 子项 4）"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/kf/KfMediaServiceTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/kf/WechatKfMediaTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/kf/KfSyncWorkerTest.java"
+      ci: [pr-check.yml]
+      verifies: []
+
+  - id: KF-029
+    legacy_id: ""
+    title: "工作台渲染 — 微信客服标识/发送状态/48h 余量（普通会话不出现）"
+    domains: [kf]
+    tier: normal
+    tags: [kf, workspace, ui]
+    truths_ref: [kf.decision]
+    user_inputs:
+      - "构造微信客服会话、普通人工会话、sendStatus=unknown、额度用尽四类列表数据"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "微信客服会话 ⇒ 显示「微信客服」+ 发送状态文案 + 额度 2/5"
+      - "普通人工会话 ⇒ 页面不出现「微信客服」任何标识"
+      - "sendStatus=unknown ⇒ 显示「状态未知」，不留空白"
+      - "额度 5/5 ⇒ 输入框禁用 + 明确文案"
+    skip_reason: "[frontend-contract] jsdom 渲染判据，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-11-25 新增：微信客服增强包B2（issue #9202，母单 #9194 子项 2 前端面）"
+    traces:
+      tests:
+        - "frontend/admin-web/tests/unit/pages/human-sessions-kf.test.tsx"
+      ci: [pr-check.yml]
+      verifies: []
+
+  - id: KF-030
+    legacy_id: ""
+    title: "微信客服自助接入 — 四步引导 / 渠道加密登记 / 自检 / 客服链接 / 停用（issue #9230）"
+    domains: [kf]
+    tier: normal
+    tags: [kf, onboarding, admin-web]
+    truths_ref: [kf.onboarding]
+    user_inputs:
+      - "商户在「设置 → 微信客服接入」填入 corp_id / open_kfid / secret，保存并自检"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "接入页按四步给出企微后台路径（准备企业微信 / 建自建应用 / 开权限+配回调+可信IP / 建客服账号）；回调 URL/Token/AESKey/可信 IP 可一键复制，平台配置读不到时回退本页地址并提示联系管理员"
+      - "secret 只提交一次：服务端用 SecretCipher 加密落库；列表/详情/自检/setup-info 响应都不得回传商户 secret"
+      - "自检 = gettoken + 客服账号列表必须包含该 open_kfid；命中 ⇒ status=active，不命中 ⇒ unauthorized + 可执行原因（不谎报已接通）"
+      - "接入成功后可生成客服链接（add_contact_way，scene_param ≤128B）；链接返回 url 供二维码/复制"
+      - "停用 ⇒ status=revoked，渠道不再接收新会话；历史会话保留"
+      - "端点权限 = system:manage；租户隔离 = 只查/只改当前租户的渠道；setup-info 只回部署级回调值（不含商户 secret）"
+    skip_reason: "[backend-contract] 确定性契约/前端渲染判据（MockMvc + Mockito + jsdom），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-11-26 新增（issue #9230）：微信客服产品侧自助接入 MVP —— 后端渠道管理 + 官网/设置页表单 + 自检/客服链接/停用；把原先只能手工 SQL 的接入变成商户可操作流程。2026-11-26 增强（issue #9238）：接入页补四步手动配置引导 + 回调 URL/Token/AESKey/可信 IP 可复制（setup-info 端点）。"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/kf/KfChannelAdminServiceTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/controller/KfChannelAdminControllerTest.java"
+        - "frontend/admin-web/tests/unit/components/WechatKfOnboarding.test.tsx"
+      ci: [pr-check.yml]
+      verifies: []

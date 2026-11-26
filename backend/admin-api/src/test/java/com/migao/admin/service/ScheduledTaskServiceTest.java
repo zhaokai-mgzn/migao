@@ -233,29 +233,86 @@ class ScheduledTaskServiceTest {
     // ==================== 真值 1 / 3 / 5：扫描投递 ====================
 
     @Test
-    @DisplayName("投递：到期待办 ⇒ 调通知服务一次（内容 = 三件套）+ 置 fired")
+    @DisplayName("投递：原子领取到的到期任务 ⇒ 调通知服务一次（内容 = 三件套 + 幂等键）+ 置 fired")
     void deliversDueTask() {
         when(businessClock.nowOffset()).thenReturn(NOW);
         when(tenantMapper.selectList(any())).thenReturn(List.of(tenant(20L)));
-        when(scheduledTaskMapper.selectDueByTenant(eq(20L), any(), anyInt()))
+        when(scheduledTaskMapper.claimDueByTenant(eq(20L), any(), anyInt(), any()))
                 .thenReturn(List.of(task("st-due", ScheduledTask.STATUS_PENDING)));
+        when(scheduledTaskMapper.markFiredIfClaimed(eq("st-due"), eq(20L), any(), any()))
+                .thenReturn(1);
 
         int delivered = service.scanDue();
 
         assertThat(delivered).isEqualTo(1);
         ArgumentCaptor<CreateNotificationRequest> notif =
                 ArgumentCaptor.forClass(CreateNotificationRequest.class);
-        verify(notificationService).createNotification(eq(20L), notif.capture());
+        ArgumentCaptor<String> dedupeKey = ArgumentCaptor.forClass(String.class);
+        verify(notificationService).createNotification(eq(20L), notif.capture(), dedupeKey.capture());
         assertThat(notif.getValue().getRecipientId()).isEqualTo("u-1");
         assertThat(notif.getValue().getTitle()).isEqualTo("去跟进张先生");
         assertThat(notif.getValue().getContent())
                 .isEqualTo("你说过：等王总回复后再跟进张先生");
         assertThat(notif.getValue().getChannel()).isEqualTo("internal");
+        // 集群 P0-2：稳定幂等键 ⇒ V187 的唯一索引真正生效（同一待办只落一条站内信）
+        assertThat(dedupeKey.getValue()).isEqualTo("scheduled_task:st-due");
 
-        ArgumentCaptor<ScheduledTask> upd = ArgumentCaptor.forClass(ScheduledTask.class);
-        verify(scheduledTaskMapper).updateById(upd.capture());
-        assertThat(upd.getValue().getStatus()).isEqualTo(ScheduledTask.STATUS_FIRED);
-        assertThat(upd.getValue().getFiredAt()).isNotNull();
+        verify(scheduledTaskMapper).markFiredIfClaimed(eq("st-due"), eq(20L), any(), eq(NOW));
+        // 改前那套「无状态谓词的 updateById」在本路径上**不再出现**（否则多实例会互相覆盖）
+        verify(scheduledTaskMapper, never()).updateById(any(ScheduledTask.class));
+    }
+
+    @Test
+    @DisplayName("领取不到行（被别的实例先领走 / 本轮无到期）⇒ 一条通知都不发（多实例输家静默跳过）")
+    void nothingDeliveredWhenClaimLosesRace() {
+        when(businessClock.nowOffset()).thenReturn(NOW);
+        when(tenantMapper.selectList(any())).thenReturn(List.of(tenant(20L)));
+        when(scheduledTaskMapper.claimDueByTenant(eq(20L), any(), anyInt(), any()))
+                .thenReturn(List.of());
+
+        assertThat(service.scanDue()).isZero();
+        verify(notificationService, never()).createNotification(anyLong(), any(), any());
+    }
+
+    @Test
+    @DisplayName("终态 CAS 落空（租约被回收 / 被重新领走）⇒ 不计入 delivered（僵尸实例不覆盖别人的结果）")
+    void lostClaimDoesNotCountAsDelivered() {
+        when(businessClock.nowOffset()).thenReturn(NOW);
+        when(tenantMapper.selectList(any())).thenReturn(List.of(tenant(20L)));
+        when(scheduledTaskMapper.claimDueByTenant(eq(20L), any(), anyInt(), any()))
+                .thenReturn(List.of(task("st-zombie", ScheduledTask.STATUS_PENDING)));
+        when(scheduledTaskMapper.markFiredIfClaimed(eq("st-zombie"), eq(20L), any(), any()))
+                .thenReturn(0);
+
+        assertThat(service.scanDue()).isZero();
+        // 通知照发（幂等键会挡住重复），但「投递成功」的读数必须是 0 —— 否则运维读数是假的
+        verify(notificationService).createNotification(eq(20L), any(), eq("scheduled_task:st-zombie"));
+    }
+
+    @Test
+    @DisplayName("租约回收：每轮扫描先用「现在 − 5 分钟」死线回收超时 firing（跨租户一条原子 UPDATE）")
+    void reclaimsLeasesBeforeEachScan() {
+        when(businessClock.nowOffset()).thenReturn(NOW);
+        when(tenantMapper.selectList(any())).thenReturn(List.of(tenant(20L)));
+
+        service.scanDue();
+
+        verify(scheduledTaskMapper).reclaimStaleClaims(NOW.minusMinutes(5), NOW);
+    }
+
+    @Test
+    @DisplayName("租约回收失败 ⇒ 不拖垮本轮扫描（补偿腿是兜底，不是投递前提）")
+    void reclaimFailureIsFailSoft() {
+        when(businessClock.nowOffset()).thenReturn(NOW);
+        when(tenantMapper.selectList(any())).thenReturn(List.of(tenant(20L)));
+        when(scheduledTaskMapper.reclaimStaleClaims(any(), any()))
+                .thenThrow(new RuntimeException("回收腿抖动"));
+        when(scheduledTaskMapper.claimDueByTenant(eq(20L), any(), anyInt(), any()))
+                .thenReturn(List.of(task("st-ok", ScheduledTask.STATUS_PENDING)));
+        when(scheduledTaskMapper.markFiredIfClaimed(eq("st-ok"), eq(20L), any(), any()))
+                .thenReturn(1);
+
+        assertThat(service.scanDue()).isEqualTo(1);
     }
 
     @Test
@@ -279,20 +336,23 @@ class ScheduledTaskServiceTest {
     void singleFailureDoesNotBreakRound() {
         when(businessClock.nowOffset()).thenReturn(NOW);
         when(tenantMapper.selectList(any())).thenReturn(List.of(tenant(20L)));
-        when(scheduledTaskMapper.selectDueByTenant(eq(20L), any(), anyInt()))
+        when(scheduledTaskMapper.claimDueByTenant(eq(20L), any(), anyInt(), any()))
                 .thenReturn(List.of(
                         task("st-bad", ScheduledTask.STATUS_PENDING),
                         task("st-good", ScheduledTask.STATUS_PENDING)));
-        when(notificationService.createNotification(eq(20L), any()))
+        when(scheduledTaskMapper.markFiredIfClaimed(eq("st-good"), eq(20L), any(), any()))
+                .thenReturn(1);
+        when(notificationService.createNotification(eq(20L), any(), any()))
                 .thenThrow(new RuntimeException("通知服务抖动"))
                 .thenReturn(null);
 
         int delivered = service.scanDue();
 
-        // 第一条失败、第二条成功 ⇒ 本轮投递数 = 1；两条都被 update（failed / fired）
+        // 第一条失败、第二条成功 ⇒ 本轮投递数 = 1；失败那条走 fencing 的 failed CAS
         assertThat(delivered).isEqualTo(1);
-        verify(notificationService, times(2)).createNotification(eq(20L), any());
-        verify(scheduledTaskMapper, times(2)).updateById(any(ScheduledTask.class));
+        verify(notificationService, times(2)).createNotification(eq(20L), any(), any());
+        verify(scheduledTaskMapper).markFailedIfClaimed(eq("st-bad"), eq(20L), any(), any());
+        verify(scheduledTaskMapper).markFiredIfClaimed(eq("st-good"), eq(20L), any(), any());
     }
 
     @Test
@@ -300,7 +360,7 @@ class ScheduledTaskServiceTest {
     void restoresTenantContext() {
         when(businessClock.nowOffset()).thenReturn(NOW);
         when(tenantMapper.selectList(any())).thenReturn(List.of(tenant(20L)));
-        when(scheduledTaskMapper.selectDueByTenant(anyLong(), any(), anyInt()))
+        when(scheduledTaskMapper.claimDueByTenant(anyLong(), any(), anyInt(), any()))
                 .thenReturn(List.of());
 
         TenantContext.setTenantId(7L);

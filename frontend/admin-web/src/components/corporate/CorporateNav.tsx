@@ -6,10 +6,13 @@ import { usePathname } from 'next/navigation'
 import { Menu, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import Logo from '@/components/ui/Logo'
+import { merchantLoginUrl } from '@/lib/site-domain'
+// 内测期隐藏自助入驻入口（issue #9066）：开关单一来源见 @/config/onboarding
+import { SELF_SERVICE_ONBOARDING_OPEN } from '@/config/onboarding'
 
 const navItems = [
   { name: '首页', href: '/' },
-  { name: '产品服务', href: '/services' },
+  { name: '产品能力', href: '/services' },
   // 终端下载页（issue #8195）：终端安装包是商家真正要拿到手的东西，必须有常驻入口
   { name: '下载中心', href: '/download' },
   { name: '关于我们', href: '/about' },
@@ -20,6 +23,9 @@ export default function CorporateNav() {
   const pathname = usePathname()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [scrolled, setScrolled] = useState(false)
+  // 「商家登录」落点跟着站点域名走（issue #8941）：写死 merchant.migaozn.com 会把
+  // 生产环境的商家送去**测试域**登录（桌面 + 移动两处共用这一个值）。
+  const merchantLogin = merchantLoginUrl()
 
   useEffect(() => {
     const handleScroll = () => {
@@ -53,7 +59,7 @@ export default function CorporateNav() {
           <Link href="/" className="flex shrink-0 items-center gap-2.5">
             <Logo size="small" />
             <span className="text-lg font-semibold tracking-tight text-neutral-900">
-              观星台
+              生意管家
             </span>
           </Link>
 
@@ -78,17 +84,25 @@ export default function CorporateNav() {
           {/* Desktop CTA Buttons */}
           <div className="hidden items-center gap-3 md:flex">
             <a
-              href="https://merchant.migaozn.com/login"
+              href={merchantLogin}
               className="px-4 py-2 text-sm font-medium text-neutral-700 transition-colors hover:text-neutral-900"
             >
               商家登录
             </a>
             <Link
-              href="/register"
+              href="/contact"
               className="rounded-lg bg-primary-600 px-5 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-primary-700"
             >
-              商家入驻
+              预约演示
             </Link>
+            {SELF_SERVICE_ONBOARDING_OPEN && (
+              <Link
+                href="/register"
+                className="rounded-lg border border-primary-200 px-5 py-2 text-sm font-medium text-primary-700 transition-colors hover:bg-primary-50"
+              >
+                商家入驻
+              </Link>
+            )}
           </div>
 
           {/* Mobile Menu Toggle */}
@@ -123,20 +137,29 @@ export default function CorporateNav() {
               </Link>
             ))}
             <div className="mt-3 space-y-2 border-t border-neutral-200 pt-3">
+              <Link
+                href="/contact"
+                onClick={() => setMobileMenuOpen(false)}
+                className="block rounded-lg bg-primary-600 px-4 py-2.5 text-center text-sm font-medium text-white transition-colors hover:bg-primary-700"
+              >
+                预约演示
+              </Link>
               <a
-                href="https://merchant.migaozn.com/login"
+                href={merchantLogin}
                 onClick={() => setMobileMenuOpen(false)}
                 className="block rounded-lg px-4 py-2.5 text-center text-sm font-medium text-neutral-700 transition-colors hover:bg-neutral-100"
               >
                 商家登录
               </a>
-              <Link
-                href="/register"
-                onClick={() => setMobileMenuOpen(false)}
-                className="block rounded-lg bg-primary-600 px-4 py-2.5 text-center text-sm font-medium text-white transition-colors hover:bg-primary-700"
-              >
-                商家入驻
-              </Link>
+              {SELF_SERVICE_ONBOARDING_OPEN && (
+                <Link
+                  href="/register"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="block rounded-lg bg-primary-600 px-4 py-2.5 text-center text-sm font-medium text-white transition-colors hover:bg-primary-700"
+                >
+                  商家入驻
+                </Link>
+              )}
             </div>
           </div>
         </div>

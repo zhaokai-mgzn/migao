@@ -31,10 +31,11 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
-#: 三端副本路径（唯一真相源；`craft-display.ts` 的同步纪律见其文件头注释）
+#: 副本路径（唯一真相源；`craft-display.ts` 的同步纪律见其文件头注释）
+#: 2026-11-26（issue #9233）：C 端小程序 `frontend/mini-app` 整目录删除 ⇒ 三端收窄为两端
+#: （`admin-web` / `bmini-app`）；逐字节相等 + 逐值等价口径一字未松。
 COPIES: tuple[str, ...] = (
     "frontend/admin-web/src/lib/craft-display.ts",
-    "frontend/mini-app/src/utils/craft-display.ts",
     "frontend/bmini-app/src/utils/craft-display.ts",
 )
 

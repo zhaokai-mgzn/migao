@@ -350,7 +350,7 @@ export default function Header({ title, breadcrumbs, onOpenMobileNav }: HeaderPr
                 className="flex w-full items-center gap-2 border-t border-neutral-100 px-4 py-2.5 text-sm text-neutral-600 transition-colors hover:bg-neutral-50"
               >
                 <Info className="h-4 w-4 text-neutral-400" />
-                关于观星台
+                关于生意管家
               </a>
 
               <button

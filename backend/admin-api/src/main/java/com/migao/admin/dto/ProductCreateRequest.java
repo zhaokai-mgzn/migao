@@ -75,9 +75,18 @@ public class ProductCreateRequest {
     private String status = "draft";
 
     /**
-     * 🔴 已下线（issue #7597，用户裁定 2026-10-24）：商品档案不再设置库存数值。
-     * 建品时该字段**被忽略**，新建 SKU 一律从 0 起算；库存只由真实单据产生
-     * （入库单过账 / 订单扣减 / 售后回补 / 批次盘点）。保留字段仅为兼容旧客户端载荷。
+     * 🔴 已下线（issue #7597，用户裁定 2026-10-24）：商品档案不再设置库存数值 ——
+     * 新建 SKU 一律从 0 起算；库存只由真实单据产生
+     * （入库单过账 / 订单扣减 / 售后回补 / 批次盘点）。
+     *
+     * <p>🔴 issue #9006（P2）：**不再静默忽略**。改前带 {@code stock: 100} ⇒ 200 创建成功却落 0
+     * （2026-11-22 生产冒烟实测，调用方以为设上了初始库存）。现在**非 0 ⇒ 422 显式拒绝**
+     * （收口 = {@code ProductService.requireNoInitialStockOnCreate} + 可行动文案）；不传 / 传 0 照常
+     * （落库值本来就是 0，不存在被丢弃的意图）。</p>
+     *
+     * <p>字段保留的唯一目的是**看得见它并拒绝它**：Spring 默认忽略未知字段
+     * （{@code FAIL_ON_UNKNOWN_PROPERTIES=false}），删掉字段反而会让老客户端传的 100 重新变成
+     * **静默丢弃** —— 那正是本 issue 的病灶形态。</p>
      */
     private BigDecimal stock = BigDecimal.ZERO;
 
@@ -105,7 +114,12 @@ public class ProductCreateRequest {
     private BigDecimal rollLengthM;
 
     /**
-     * 规格尺寸列表（如 2.8m / 3.2m / 3.4m）
+     * 门幅（规格尺寸）清单（如 2.8m / 3.2m / 3.4m）—— 商家声明的**可售门幅**。
+     *
+     * <p>两个消费面（V214 / issue #9005）：① 与 {@link #colors} 做笛卡尔积自动生成 SKU 矩阵
+     * （颜色 × 门幅，用户裁定 2026-09-21）；② **落 {@code products.door_widths}**（本单修复的正是
+     * 这一面缺失：改前没有颜色/SKU 时被无声丢弃，{@code GET /{id}} 也读不回来）。
+     * 有 SKU 时读面仍以 SKU 派生值为准（门幅是 SKU 维度）；本列承载「还没有 SKU」时的同一份声明。</p>
      */
     private List<String> doorWidths;
 

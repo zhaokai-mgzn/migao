@@ -55,10 +55,15 @@ describe('类级守卫：小程序专有 API 必须同时给 h5 去处（issue #
     // 🔴 2026-10-26（issue #7812 P2a）：报工页**回到**小程序（收口方向见 #7806），页内「扫一扫」
     // 重新成为本仓的 `Taro.scanCode` 用法 ⇒ 命中集合四处在射程内。
     // 2026-10-14 曾因该页整页下架而少这一条（历史口径），现在恢复。
+    // 2026-11-22（issue #9011）：微信隐私授权接入层用到两个 taro-h5 **未实现**的 API
+    // （`onNeedPrivacyAuthorization` / `openPrivacyContract`，都是 `temporarilyNotSupport` 的 stub）
+    // ⇒ 进射程；调用点唯一 = `src/utils/privacy.ts`（已按 `isH5()` 分支 + 台账登记）。
     expect(Array.from(new Set(hazardous.map((u) => u.api))).sort()).toEqual([
       'createOffscreenCanvas',
       'getRecorderManager',
       'login',
+      'onNeedPrivacyAuthorization',
+      'openPrivacyContract',
       'scanCode',
     ])
   })

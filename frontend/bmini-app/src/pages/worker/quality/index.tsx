@@ -68,6 +68,7 @@ import {
 } from '../../../utils/workerReadFaces'
 import { WorkerReadLegacyPicker, WorkerReadScanEntry } from '../../../components/WorkerReadEntry'
 import { WorkerBackLink } from '../../../components/WorkerBackLink'
+import PrivacyPopup from '../../../components/privacy/PrivacyPopup'
 import './index.scss'
 
 /** 页面标题（工人这里说的是「质检记录」：这一件做过什么，不是「质量判定」这个研发词）。 */
@@ -325,6 +326,8 @@ export default function WorkerQualityPage() {
           </Button>
         </View>
       ) : null}
+      {/* 微信隐私授权弹窗：本页会（直接或经工具模块）触发隐私接口，弹窗挂在本页才显示得出来 */}
+      <PrivacyPopup />
     </View>
   )
 }

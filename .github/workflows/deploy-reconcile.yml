@@ -120,7 +120,7 @@ on:
   workflow_run:
     workflows: ["Build and Deploy admin-api", "Build and Deploy ai-agent-service",
                 "Build and Deploy frontend (admin-web)", "Publish worker-h5 (app.migaozn.com/w/)",
-                "Publish bmini h5 (app.migaozn.com/b/)", "Publish C-end H5 (app.migaozn.com 根)"]
+                "Publish bmini h5 (app.migaozn.com/b/)"]
     types: [completed]
     branches: [main]
   workflow_dispatch:
@@ -367,16 +367,10 @@ jobs:
           # 与 worker-h5 同形：同一条 `GITHUB_TOKEN` 抑制 ⇒ 不补发布就**静默停在旧产物**。
           # ⚠️ 腿名**有意**不叫 `bmini-h5`：同名会让判据 ① 在「镜像已推、`b/` 未更新」时命中 ⇒ 静默不补发布。
           reconcile_one bmini-h5-hosting bmini-h5-publish.yml frontend/bmini-app ""
-          # c-end-h5（issue #4184）—— 第三条静态落地面腿：`frontend/mini-app/**` 的 h5 产物 → 静态根**本身**。
-          # 🔴 本腿的方向是安全的（#4184 用户裁定 B：首次发布由人手动触发）：发布步骤只在
-          #    `workflow_dispatch` + `inputs.publish == 'true'` 时执行 ⇒ 本对账 dispatch 出去的 run
-          #    只会走「Manual gate」判红并说明「没有发布任何东西」，**不会发布**（本仓唯一允许的
-          #    「dispatch 了但什么都不会发生」形态）。
-          # 发布链路自身的路径（本 workflow / `deploy/scripts/c-end-h5-*`）由**构建输入面**覆盖，
-          # 而**永不进**触发面（见 `reconcile_trigger_paths_ledger.json` 的 `never_in_trigger`）
-          # ⇒ 改链路会 dispatch 一次**可归因**的红（文案直接给出「要发布请手动 -f publish=true」）。
-          # ⚠️ 必须**单行**：`test_swas_deploy_ci_hardening.py::parse_reconcile_calls` 按行解析。
-          reconcile_one c-end-h5 c-end-h5-publish.yml frontend/mini-app ""
+          # C 端小程序已下线（issue #9233，2026-11-26）：原第三条静态落地面腿 `c-end-h5`
+          # （C 端小程序工程的 h5 产物 → 静态根本身）随工程整目录删除而**退场**，
+          # 连同 `workflow_run` 上游 `Publish C-end H5 (app.migaozn.com 根)` 一起摘掉
+          # （上游 workflow 已删除 ⇒ 留着就是永不到来的兜底面）。
 
           if [ "$SKIPPED" -gt 0 ]; then
             echo "⛔ ${SKIPPED} 个服务被断路器跳过（该 commit 的部署已失败）—— 不自动重试坏 commit"
@@ -447,7 +441,7 @@ jobs:
           # `reconcile_one` 调用 / 本行两个列表 / tests/unit_ci_workflows/deploy_watchdog_ledger.json
           # —— 新加一条 deploy 腿却忘了接值守 ⇒ 判据当场红（铁律 8 的类级元守卫）。
           WATCHED_LEGS="admin-api ai-agent-service admin-web worker-h5 bmini-h5-hosting"
-          EXEMPT_LEGS="c-end-h5"
+          EXEMPT_LEGS=""
 
           if [ "${EVENT_NAME:-}" = "pull_request" ]; then
             echo "ℹ️ 值守面不适用：事件=${EVENT_NAME}（PR 面没有 main HEAD 的部署对象；main 侧由 schedule 兜）"

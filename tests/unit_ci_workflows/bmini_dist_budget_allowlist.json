@@ -1,0 +1,9 @@
+{
+  "_doc": [
+    "包体上限常量的**豁免台账**（issue #8981 的类级元守卫，判据 = tests/unit_ci_workflows/test_bmini_dist_budget.py::test_no_second_ruler_and_the_allowlist_only_shrinks）。",
+    "默认应为空：上限常量只许住在 deploy/scripts/bmini-dist-budget.json，脚本与判据都从那里读。",
+    "确需在执行载体里写死（例如某个外部工具只吃字面量）⇒ 加一条 {path, literal, why, issue}；",
+    "每条必须**仍然命中**（不再命中即红）⇒ 豁免台账只许缩短，不许留着凑数。"
+  ],
+  "entries": []
+}

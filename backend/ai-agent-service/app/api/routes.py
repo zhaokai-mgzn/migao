@@ -9,6 +9,7 @@ from fastapi import APIRouter
 from app.api.asr import router as asr_router
 from app.api.chat import router as chat_router
 from app.api.internal import router as internal_router
+from app.api.kf_judge import router as kf_judge_router
 from app.api.migration import router as migration_router
 from app.api.payments import router as payments_router
 from app.api.products import router as products_router
@@ -38,6 +39,14 @@ router.include_router(internal_router, prefix="/internal", tags=["internal"])
 router.include_router(
     registration_review_router,
     prefix="/internal/registration",
+    tags=["internal"],
+)
+
+# 微信客服语义判定（issue #9196 / 母单 #9194 子项 1）：admin-api 的 KfDecisionService 在
+# 规则未命中时调用它补召回；失败即回退规则（本端点不抛 500）。
+router.include_router(
+    kf_judge_router,
+    prefix="/internal/kf",
     tags=["internal"],
 )
 

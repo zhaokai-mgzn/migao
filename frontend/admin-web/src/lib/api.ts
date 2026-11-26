@@ -1,4 +1,5 @@
 import request from './request'
+import type { KfSessionStatus } from './kf-session-status'
 import {
   buildProductPayload,
   buildLogisticsPayload,
@@ -2085,7 +2086,7 @@ export const registrationApi = {
 // ==================== 客服工作台类型 ====================
 
 /** 客服工作台会话（内部客服人员接待C端消费者的人工服务会话） */
-export interface AgentSession {
+export interface AgentSession extends KfSessionStatus {
   id: string
   customerId: string
   customerName?: string

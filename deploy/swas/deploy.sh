@@ -90,6 +90,20 @@ if [ "${1:-}" = "--probe-running-tag" ]; then
 fi
 
 cd /opt/migao-deploy
+# 发布线自检的**显式逃生口**（段内正文见 1.0.1 / issue #9086）：`--allow-unverified-release` ≡
+# `ALLOW_UNVERIFIABLE_RELEASE=1`。放在这里（`$TAG` 之前的**唯一**参数解析点）⇒ 两种写法行为逐字相同。
+ALLOW_UNVERIFIABLE_RELEASE=${ALLOW_UNVERIFIABLE_RELEASE:-0}
+_rl_rest_args=""
+for _a in "$@"; do
+  if [ "$_a" = "--allow-unverified-release" ]; then
+    ALLOW_UNVERIFIABLE_RELEASE=1
+  else
+    _rl_rest_args="${_rl_rest_args}${_rl_rest_args:+ }${_a}"
+  fi
+done
+# ⚠️ 不用数组重建（bash 3.2 下 `set -u` + 空数组展开会报 unbound）：tag 形态**不含空格**（sha-<hex> /
+#    版本 tag），所以这里按空格拆回是安全的；`set --` 无参也合法（⇒ 落到默认 `latest`）。
+if [ -n "$_rl_rest_args" ]; then set -- $_rl_rest_args; else set --; fi
 TAG=${1:-latest}
 REGISTRY=${ACR_REGISTRY:-crpi-qdcgkzwx9p9zckga.cn-hangzhou.personal.cr.aliyuncs.com}
 
@@ -631,6 +645,217 @@ if [ -z "$CONFIG_REF_RESOLVED" ]; then
   echo "   修法：改用 \`sha-<7位hex>\` 形态的 tag（= CI 部署的正常形态）"
   exit 1
 fi
+
+# ══════════════════════════════════════════════════════════════════════════
+# 1.0.1 **发布线自检**（issue #9086）：手工敲 deploy.sh 也不许绕过「部署只认 release」
+#
+# 病根（**2026-11-23 生产实测**，人工路径）：上面第 0 段只保证「配置 ref 与镜像 tag **同源**」，
+#   **不判断这个 tag 属不属于 `release`**。而发布线闸门此前只有一处：`deploy-prod.yml` 的
+#   「发布线纪律（只认 release）」步骤（判据 = test_deploy_prod_release_discipline.py）
+#   ⇒ 有人在主机上直接敲 `./deploy.sh sha-xxxxxxx` 就**完全绕过**它。2026-11-23 11:32–11:39
+#   实测那次正是如此：只更新了 admin-api，admin-web 还是两天前的镜像（**发成半截**），
+#   全程零报错 —— 脚本自己的结论是绿的。
+# 口径（= AGENTS.md「发布线」一节；机械可查）：目标 commit 必须是 `origin/release` 的**祖先**。
+#   否则「生产跑的代码在发布线上找不到」⇒ 回滚点 / `/api/version` 自证 / 发布记录三处同时失效。
+# 位置**必须在这里**（已解析出 `$TAG` 与目标 commit，任何下载 / 构建 / 拉镜像 / 切流之前）：
+#   检查晚于部署 = 没检查（那时容器已被换掉，日志里那句「拦住了」是假的）。
+#   顺序判据 = tests/unit_ci_workflows/test_swas_deploy_release_line.py（行号比较）。
+# 三态（**判不了也拒绝**，fail-closed —— 与 2.05 那条 #4852 闸门的 fail-open **有意不同**：
+#   那条判的是「往不往回走」（判不了可以放行），这条判的是「该不该发」，判不了放行 = 闸门消失）：
+#   祖先   ⇒ 打印 `RELEASE-LINE=OK target=<sha7> release=<sha7>` 后继续；
+#   非祖先 ⇒ 打印两个 sha + 差多少提交 + 可行动指引，**exit 2**；
+#   判不了 ⇒ **exit 3**（不是 git 仓 / fetch 三次都失败 / 拿不到 release ref / 追不到 target commit）。
+#   ⚠️ 逃生口留在**明面上**：`ALLOW_UNVERIFIABLE_RELEASE=1`（或 `--allow-unverified-release`）⇒
+#      `::warning::RELEASE-LINE=UNVERIFIED …` + 追加一行到 `release-ledger.jsonl` 后继续。
+#      为什么必须有：生产机到 github.com:443 时通时不通（#4852 实测 `git clone --filter=tree:0`
+#      超时 32s，而同一刻 `git ls-remote` 成功），**没有逃生口的 fail-closed 会被绕成「把这段删掉」**；
+#      有逃生口 + 落账 ⇒ 绕过是**可见的**（谁在什么时候绕的，台账里有）。
+# 🔴 段内**自包含**（不依赖第 0 段的 `tag_to_sha`：那条只验形态、不解析提交；这里要的是**提交图**）
+#    ⇒ 判据可以只抽这一段字节、配桩化的 `git` 真跑，**不需要给脚本加测试专用钩子**。
+# >>> release-line-assert
+RELEASE_LINE_GIT_DIR=${RELEASE_LINE_GIT_DIR:-/opt/migao-deploy/.release-line.git}
+RELEASE_LINE_REMOTE=${RELEASE_LINE_REMOTE:-https://github.com/zhaokai-mgzn/migao}
+RELEASE_LINE_FETCH_ATTEMPTS=${RELEASE_LINE_FETCH_ATTEMPTS:-3}
+RELEASE_LINE_FETCH_DELAY_SECONDS=${RELEASE_LINE_FETCH_DELAY_SECONDS:-5}
+# 逃生口台账（**只在**走逃生口时追加一行；正常部署不写盘）
+RELEASE_LEDGER_FILE=${RELEASE_LEDGER_FILE:-/opt/migao-deploy/release-ledger.jsonl}
+RELEASE_LINE_TARGET=""
+RELEASE_LINE_HEAD=""
+RELEASE_LINE_WHY=""
+
+# 所有 git 调用都打在**发布线专用的裸仓库**里：`/opt/migao-deploy` 本身**不是** git 仓
+# （盘上是解包出来的源码树 `src/`，没有 `.git`）⇒ 不能指望 `git -C .` 能查到历史。
+rl_git() { git --git-dir="$RELEASE_LINE_GIT_DIR" "$@"; }
+
+# 取远端 ref 的**唯一形态**（三处调用共用 ⇒ 形态不会漂移）：
+#   `GIT_TERMINAL_PROMPT=0` —— 生产机没有交互终端凭据，**缺了它就可能在 https 认证提示上永久挂住**
+#     （挂住比失败更坏：部署锁被占着，别的部署只能等到 `LOCK_WAIT_SECONDS` 超时）；
+#   `http.lowSpeedTime=60 / http.lowSpeedLimit=1000` —— 速率低于 1KB/s 持续 60s 就放弃本轮
+#     （与脚本既有的「**不许无上界地挂住**」同族：`BUILD_TIMEOUT_SECS` 那段的口径）；
+#   `--filter=tree:0` —— 只取**提交图**（merge-base 只看提交）。
+rl_git_fetch() {
+  GIT_TERMINAL_PROMPT=0 rl_git -c http.lowSpeedTime=60 -c http.lowSpeedLimit=1000 \
+    fetch --quiet --force --no-tags --filter=tree:0 "$@"
+}
+
+# 建（一次性）发布线判据用的裸仓库。建不出来 ⇒ 判不了（fail-closed，原因具名）。
+rl_ensure_repo() {
+  [ -d "$RELEASE_LINE_GIT_DIR" ] && return 0
+  if git init --quiet --bare "$RELEASE_LINE_GIT_DIR" >/dev/null 2>&1; then
+    return 0
+  fi
+  RELEASE_LINE_WHY="建不出判据用的裸仓库（${RELEASE_LINE_GIT_DIR} 写不进去 / git 不可用）"
+  return 1
+}
+
+# 取 `origin/release`：**显式重试 + 每轮出声**（沿用第 0 段 `config_fetch_tarball` 的既有风格：
+# 事故里「参数面写了重试、到底有没有触发没人知道」本身就是病的一部分）。
+# `--filter=tree:0` 只取**提交图**（merge-base 只看提交）⇒ 不拉 blob/tree：生产机磁盘
+# （本脚本有水位阈值）+ 带宽都按最小量走；GitHub 支持 partial clone。
+rl_fetch_release() {
+  local try=0 rc=0
+  while [ "$try" -lt "$RELEASE_LINE_FETCH_ATTEMPTS" ]; do
+    try=$((try + 1))
+    echo "  ⏱ 第 ${try}/${RELEASE_LINE_FETCH_ATTEMPTS} 次取 origin/release（只取提交图，--filter=tree:0）"
+    if rl_git_fetch "$RELEASE_LINE_REMOTE" '+refs/heads/release:refs/remotes/origin/release' >/dev/null 2>&1; then
+      return 0
+    else
+      rc=$?
+    fi
+    if [ "$try" -lt "$RELEASE_LINE_FETCH_ATTEMPTS" ]; then
+      echo "  ⚠️ 第 ${try}/${RELEASE_LINE_FETCH_ATTEMPTS} 次取 origin/release 失败（git exit=${rc}）⇒ **马上重试（第 $((try + 1)) 轮）**（${RELEASE_LINE_FETCH_DELAY_SECONDS}s 后）"
+      sleep "$RELEASE_LINE_FETCH_DELAY_SECONDS"
+    else
+      echo "  ⚠️ 第 ${try}/${RELEASE_LINE_FETCH_ATTEMPTS} 次取 origin/release 失败（git exit=${rc}）⇒ 重试预算用尽"
+    fi
+  done
+  RELEASE_LINE_WHY="git fetch 连续 ${RELEASE_LINE_FETCH_ATTEMPTS} 次失败（${RELEASE_LINE_REMOTE} 不可达 / 无凭据）"
+  return 1
+}
+
+# 解析 target（本次要部署的那个提交）：
+#   `sha-<hex>`（≥7 位）⇒ 该提交；不在本地历史里 ⇒ **按 sha 补取一次**（GitHub 允许按 sha 取）；
+#   其它形态（v1.2.3 / 非十六进制的 `sha-xxx` 这类）⇒ `refs/tags/<tag>`
+#   —— **与第 0 段 `config_ref_for_tag` 同一口径**（配置那边已经把这类 tag 当 tag 解析，
+#   这里若另立口径，同一个 tag 会在两处指向不同对象）。
+# ⚠️ 取不到就**判不了**（不猜、不用字符串前缀凑）：短 sha 撞号与「提交不在 history 里」都不可当祖先。
+rl_resolve_target() {
+  local t=$1 short sha
+  case "$t" in
+    sha-*) short=${t#sha-} ;;
+    *) short="" ;;
+  esac
+  case "$short" in
+    *[!0-9a-f]*|"") short="" ;;
+  esac
+  if [ -n "$short" ] && [ "${#short}" -ge 7 ]; then
+    sha=$(rl_git rev-parse --verify --quiet "${short}^{commit}" 2>/dev/null || true)
+    if [ -z "$sha" ]; then
+      rl_git_fetch "$RELEASE_LINE_REMOTE" "$short" >/dev/null 2>&1 || true
+      sha=$(rl_git rev-parse --verify --quiet "${short}^{commit}" 2>/dev/null || true)
+    fi
+    if [ -z "$sha" ]; then
+      RELEASE_LINE_WHY="追不到 tag=${t} 指向的提交（该 sha 不在 release 历史里，按 sha 补取也失败）"
+      return 1
+    fi
+    RELEASE_LINE_TARGET=$sha
+    return 0
+  fi
+  rl_git_fetch "$RELEASE_LINE_REMOTE" "+refs/tags/${t}:refs/tags/${t}" >/dev/null 2>&1 || true
+  sha=$(rl_git rev-parse --verify --quiet "refs/tags/${t}^{commit}" 2>/dev/null || true)
+  if [ -z "$sha" ]; then
+    RELEASE_LINE_WHY="追不到 tag=${t} 指向的提交（仓库上没有这个 tag / 取不到）"
+    return 1
+  fi
+  RELEASE_LINE_TARGET=$sha
+  return 0
+}
+
+# ── 环境作用域（2026-11-24 修 P0：本闸门此前**无环境判别**，把测试环境锁死了）─────────
+# 事故事实：PR #9100 的测试腿（`deploy-admin-api.yml --ref m1-zero-downtime`）在测试机上被
+#   `❌ RELEASE-LINE=UNVERIFIED ⇒ 拒绝部署` 拦死（run 45302667932，01:21:10Z / 01:23:30Z 两次）
+#   —— 测试环境发的是 **main 线上的分支提交**，它永远不可能是 `origin/release` 的祖先；
+#   把只该约束生产的闸门无条件套到测试腿 = **测试环境再也发不出去**。
+# 口径：`MIGAO_RELEASE_LINE=auto`（默认）| `enforce` | `off`
+#   auto    ⇒ 生产域名 `cytda.com` = enforce；其它（测试 `migaozn.com`）= off
+#   enforce ⇒ 无论域名都判（生产侧显式加保险；`scripts/prod-release.sh` 会传这个值）
+#   off     ⇒ 跳过，但**必须出声**（静默跳过 = 这条判据等于没有）
+RELEASE_LINE_MODE=${MIGAO_RELEASE_LINE:-auto}
+if [ "$RELEASE_LINE_MODE" = "auto" ]; then
+  case "${MIGAO_PUBLIC_DOMAIN:-migaozn.com}" in
+    cytda.com) RELEASE_LINE_MODE=enforce ;;
+    *)         RELEASE_LINE_MODE=off ;;
+  esac
+fi
+if [ "$RELEASE_LINE_MODE" = "off" ]; then
+  echo "  ⏭️  RELEASE-LINE=SKIPPED reason=non-prod（MIGAO_PUBLIC_DOMAIN=${MIGAO_PUBLIC_DOMAIN:-migaozn.com}；"
+  echo "     测试环境发 main 线提交，本闸门只约束生产。生产要么域名是 cytda.com，要么显式 MIGAO_RELEASE_LINE=enforce）"
+  RELEASE_LINE_VERDICT=skipped
+fi
+
+RELEASE_LINE_VERDICT=${RELEASE_LINE_VERDICT:-unverified}
+if [ "$RELEASE_LINE_MODE" != "off" ] && rl_ensure_repo && rl_fetch_release; then
+  RELEASE_LINE_HEAD=$(rl_git rev-parse --verify --quiet 'refs/remotes/origin/release^{commit}' 2>/dev/null || true)
+  if [ -z "$RELEASE_LINE_HEAD" ]; then
+    RELEASE_LINE_WHY="取不到 origin/release 的 ref（fetch 报成功但 rev-parse 为空）"
+  elif rl_resolve_target "$TAG"; then
+    if rl_git merge-base --is-ancestor "$RELEASE_LINE_TARGET" 'refs/remotes/origin/release'; then
+      RELEASE_LINE_VERDICT=ancestor
+    else
+      _rl_rc=$?
+      if [ "$_rl_rc" = "1" ]; then
+        RELEASE_LINE_VERDICT=not-ancestor
+      else
+        RELEASE_LINE_WHY="git merge-base --is-ancestor 说不清（git exit=${_rl_rc}）"
+      fi
+    fi
+  fi
+fi
+
+case "$RELEASE_LINE_VERDICT" in
+  skipped)
+    : ;;   # 已在上面出声（RELEASE-LINE=SKIPPED reason=non-prod）；这里是**非生产**的显式分支
+  ancestor)
+    echo "  ✅ RELEASE-LINE=OK target=${RELEASE_LINE_TARGET:0:7} release=${RELEASE_LINE_HEAD:0:7}（目标 commit 是 origin/release 的祖先）"
+    ;;
+  not-ancestor)
+    _rl_ahead=$(rl_git rev-list --count 'refs/remotes/origin/release..'"$RELEASE_LINE_TARGET" 2>/dev/null || true)
+    echo "  ❌ RELEASE-LINE=VIOLATION ⇒ **拒绝部署**（issue #9086）"
+    echo "     · target  = ${RELEASE_LINE_TARGET}（本次要部署的提交）"
+    echo "     · release = ${RELEASE_LINE_HEAD}（origin/release 的当前提交）"
+    echo "     · 差 ${_rl_ahead:-?} 个提交（可复算：git rev-list --count origin/release..target）"
+    echo "     · 为什么拦：「生产跑的代码在发布线上找不到」⇒ 回滚点 / /api/version 自证 / 发布记录同时失效"
+    echo "     · 处置：先在任意工作区跑 ./scripts/cut-release.sh 把 release **快进**到该提交（它只允许快进，"
+    echo "       并打出 REL_SHA=<40位>），再用那个 REL_SHA 部署（CI 走 prod-release；主机手工跑也用 REL_SHA）。"
+    exit 2
+    ;;
+  *)
+    if [ "${ALLOW_UNVERIFIABLE_RELEASE:-0}" = "1" ]; then
+      echo "  ::warning::RELEASE-LINE=UNVERIFIED 判不了发布线归属，但**已显式放行**（ALLOW_UNVERIFIABLE_RELEASE=1）"
+      echo "     · 原因：${RELEASE_LINE_WHY:-未知}"
+      echo "     · target=${RELEASE_LINE_TARGET:-<未解析>} release=${RELEASE_LINE_HEAD:-<未取到>}"
+      _rl_ledger=$(_rl_at=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
+        printf '{"at":"%s","decision":"unverified-release","target":"%s","reason":"%s"}' \
+          "$_rl_at" "${TAG:-}" "${RELEASE_LINE_WHY:-unknown}")
+      if printf '%s\n' "$_rl_ledger" >> "$RELEASE_LEDGER_FILE" 2>/dev/null; then
+        echo "     · 已记账：${RELEASE_LEDGER_FILE}（decision=unverified-release，谁绕过都留痕）"
+      else
+        echo "  ::warning::RELEASE-LINE=UNVERIFIED 的台账写不进去（${RELEASE_LEDGER_FILE}）⇒ 本次绕过**没有留痕**，请人工补记"
+      fi
+    else
+      echo "  ❌ RELEASE-LINE=UNVERIFIED ⇒ **拒绝部署**（fail-closed，issue #9086）"
+      echo "     · 原因：${RELEASE_LINE_WHY:-未知}"
+      echo "     · target=${RELEASE_LINE_TARGET:-<未解析>} release=${RELEASE_LINE_HEAD:-<未取到>}"
+      echo "     · 处置：① 到 github.com 不通 ⇒ 修网络/凭据后重跑（本段已重试 ${RELEASE_LINE_FETCH_ATTEMPTS} 次）；"
+      echo "       ② tag 不是 sha-<7位hex> ⇒ 改用 CI 给的 sha tag；"
+      echo "       ③ **确认本次就该发**、且判据确实取不到 ⇒ 显式带逃生口重跑："
+      echo "          ALLOW_UNVERIFIABLE_RELEASE=1 ./deploy.sh ${TAG}（会打 ::warning:: 并记 ${RELEASE_LEDGER_FILE}）"
+      exit 3
+    fi
+    ;;
+esac
+# <<< release-line-assert
+
 # 本腿那个服务的**本地镜像 ref**（唯一一份推导，issue #5814）：让 compose 自己求值，不在脚本里重抄
 # `${ACR_REGISTRY}/ai-customer-service/<svc>:${IMAGE_TAG}`（后者会在有人改 compose 时**静默漂移**）。
 # 两个消费点：1.4 的构建，以及 #6551 ② 的「源码树不在盘上 ⇒ 能否改用本地已有的镜像」。
@@ -740,6 +965,77 @@ else
   printf '%s\n' "$CONFIG_REF_RESOLVED" > "$CONFIG_REF_MARKER_FILE"
 fi
 
+# ── 1.2.1 部署脚本**自同步**（issue #8966）────────────────────────────────────
+# 病根（**2026-11-21 生产实测**）：上面那段只同步 compose / nginx / tls-renew.sh，**不同步 deploy.sh 自己**
+# ⇒ 盘上脚本一旦落后于 target ref 就**永远停在旧版**（没有任何东西会更新它）：旧版不读 `.env.site`、
+# 不认识 `NEXT_PUBLIC_SITE_DOMAIN` ⇒ 它按**自己的旧逻辑**把 nginx 渲染回 canonical 原文（`migaozn.com`）
+# 并少传一个 build-arg，全程**零报错**（日志只有一行「站点域名：migaozn.com」）⇒ 所有 `cytda.com`
+# 请求落到 default server 被代理到 API ⇒ **全站 401**。
+# 同源：`src/` 就是本次 target ref（`$CONFIG_REF_RESOLVED`）的仓库树 ⇒ 装上去的脚本与镜像 tag 同源。
+# 幂等：内容相同 ⇒ 不覆盖、不备份、不产生任何新文件（连跑两次盘面逐字节一致）。
+# ⚠️ 覆盖的是**正在运行的这个脚本文件** ⇒ 用「写临时文件 + `cat >` 原地覆盖」**保 inode**；
+#    绝不用 `mv`（换 inode，某些挂载/执行场景会读到半截）。
+# ⚠️ 覆盖完必须**当场停住**，不许接着往下跑：bash 是**按字节偏移**从同一个 fd 续读脚本的 ⇒
+#    原地换掉内容后继续执行，读到的是**错位**的下一段（本机实测：覆盖后下一条命令变成
+#    `p: command not found`）⇒ 那就是「半截执行」，比停在原地更坏。
+#    ⇒ 覆盖后 `exit 1`，**不落任何派生配置**（nginx.conf 还没渲染、容器一个都没动）；
+#      下一次（CI 的自动重试 / 人工复跑）执行的就是同源脚本，幂等、不再备份/覆盖。
+#      CI 的 bootstrap 本来就先装同源脚本再执行（`swas-deploy-ci.sh`）⇒ 正常路径走不到这里。
+# >>> deploy-selfsync
+MIGAO_DEPLOY_SRC_FILE=${MIGAO_DEPLOY_SRC_FILE:-src/deploy/swas/deploy.sh}
+MIGAO_DEPLOY_SELF=${MIGAO_DEPLOY_SELF:-./deploy.sh}
+if [ ! -f "$MIGAO_DEPLOY_SRC_FILE" ]; then
+  echo "  ⏭️ 跳过 deploy.sh 自同步：盘上没有 ${MIGAO_DEPLOY_SRC_FILE}（本次未取源码树 / 同 ref 复用配置）—— **部署不受影响**；盘上脚本保持现版本（issue #8966）"
+elif [ ! -f "$MIGAO_DEPLOY_SELF" ]; then
+  echo "  ⏭️ 跳过 deploy.sh 自同步：找不到盘上脚本 ${MIGAO_DEPLOY_SELF} —— **部署不受影响**（issue #8966）"
+else
+  _self_src_sha=$(sha256sum "$MIGAO_DEPLOY_SRC_FILE" 2>/dev/null | cut -d' ' -f1 || shasum -a 256 "$MIGAO_DEPLOY_SRC_FILE" | cut -d' ' -f1)
+  _self_dst_sha=$(sha256sum "$MIGAO_DEPLOY_SELF" 2>/dev/null | cut -d' ' -f1 || shasum -a 256 "$MIGAO_DEPLOY_SELF" | cut -d' ' -f1)
+  if [ -z "$_self_src_sha" ] || [ -z "$_self_dst_sha" ]; then
+    # 两侧 sha 算不出来 ⇒ **不可判定**：不覆盖（否则每次都会「不同」⇒ 每次都备份 + 每次都 exit 1 的循环）
+    echo "  ⏭️ 跳过 deploy.sh 自同步：算不出 sha256（src=${_self_src_sha:-?} / 盘上=${_self_dst_sha:-?}）—— **部署不受影响**（issue #8966）"
+  elif [ "$_self_src_sha" = "$_self_dst_sha" ]; then
+    echo "  ✅ deploy.sh 与 ref=${CONFIG_REF_RESOLVED} 同源（sha256=${_self_src_sha:0:8}）⇒ 不覆盖、不备份"
+  else
+    _self_bak="${MIGAO_DEPLOY_SELF}.bak-$(date +%Y%m%d-%H%M%S)"
+    _self_tmp=$(mktemp "${TMPDIR:-/tmp}/migao-deploy-self.XXXXXX")
+    cp -p "$MIGAO_DEPLOY_SELF" "$_self_bak"
+    cat "$MIGAO_DEPLOY_SRC_FILE" > "$_self_tmp"
+    # 🔴 原地覆盖（保 inode）：`cat >` 复用同一个文件；**不**用 `mv`（换 inode）
+    cat "$_self_tmp" > "$MIGAO_DEPLOY_SELF"
+    rm -f "$_self_tmp"
+    chmod +x "$MIGAO_DEPLOY_SELF"
+    echo "  🔄 deploy.sh 自同步（ref=${CONFIG_REF_RESOLVED}）：sha256 ${_self_dst_sha:0:8} → ${_self_src_sha:0:8}；旧版备份 $(basename "$_self_bak")"
+    # 覆盖后**不许**在本进程里接着往下读（bash 按字节偏移续读同一个 fd ⇒ 会读到错位的下一段）。
+    # 旧做法 = `exit 1` 让调用方「再跑一次」（issue #8966）；代价是**单次部署必然空跑一次**
+    # —— 2026-11-22 实测：三次人工部署全部要靠「再跑一次」才生效，容易被误读成部署失败。
+    # 新做法 = **exec 原地重入**：同一 PID 换成同源脚本从头执行，一次调用就完成部署；
+    # 锁在重入时会重新 open fd 9（旧 fd 关闭即释放），不会自锁。
+    # 防环：哨兵置位后再遇到「不同源」⇒ 说明源与盘上 sha 在自我漂移 ⇒ fail-closed 停住。
+    if [ "${MIGAO_DEPLOY_SELF_REEXEC:-0}" = "1" ]; then
+      echo "  ⛔ 自同步后**仍不同源**（src=${_self_src_sha:0:8} / 盘上=${_self_dst_sha:0:8}）⇒ 重入保护触发，停在这里："
+      echo "     nginx.conf 未渲染、容器未动、回滚点未推进。处置：核对 ${MIGAO_DEPLOY_SRC_FILE} 是否在两次读取之间被改写。"
+      exit 1
+    fi
+    export MIGAO_DEPLOY_SELF_REEXEC=1
+    echo "  ↗️ 以同源脚本**原地重入**（exec，同一 PID）—— 单次调用即可完成本次部署，无需再跑一次"
+    exec bash "$MIGAO_DEPLOY_SELF" "$@"
+  fi
+fi
+# <<< deploy-selfsync
+
+# ── 1.2.1b 单文件 bind mount 清单（issue #9098 / #9101；**机器校验**，新增未登记即红）──
+# 下面这些宿主文件是 compose 的**单文件** bind mount：docker 按 **inode** 挂载 ⇒ 更新只能用
+# **原地写**（`cat > file` / `open(path,"w")`）；`mv` / `rename` / `os.replace` 一律禁用 ——
+# 换了 inode 之后容器里看到的还是**旧文件**，而宿主侧的 `grep` / sha256 断言看的是新文件 ⇒ **假绿**。
+# 判据：tests/unit_ci_workflows/test_zero_downtime_m1_cutover.py::
+#       test_every_single_file_bind_mount_is_written_in_place（取 compose 的 volumes 与本清单比对）
+# >>> single-file-mounts-inventory
+#   ./nginx/nginx.conf  → /etc/nginx/conf.d/default.conf:ro
+#       （站点域名 server_name / 全部 location / upstream 成员；发布期由 nginx_upstream_switch 原地改写）
+# <<< single-file-mounts-inventory
+# 目录挂载（`./certbot-www` / `./h5`）不受影响：目录内文件是新建/覆盖，容器每次读路径；
+# 但**新增单文件挂载必须登记到上面那份清单**，否则判据会红（这就是把「假绿」堵在入口）。
 # ── 1.2.2 站点域名渲染（生产 cytda.com；缺省 migaozn.com ⇒ 与改前逐字相同）──────────────
 # 输入永远是 `nginx.conf.canonical`（仓库原文），所以「域名变更」和「配置复用」都不会把
 # 上一轮渲染过的产物再渲染一遍（那是幂等的，但更重要的是它不会让 A→B 改名悄悄失效）。
@@ -760,11 +1056,59 @@ else
   # `migaozn.com` 在文件里只作为**域名**出现（`migao` / `migao-deploy` 等不含该串）⇒ 全局替换安全；
   # server_name / 注释 / 日志格式内的域名引用一次性对齐，避免出现「配置说 A、注释说 B」。
   sed "s/migaozn\.com/${MIGAO_PUBLIC_DOMAIN}/g" ./nginx/nginx.conf.canonical > ./nginx/nginx.conf.render.tmp
-  mv -f ./nginx/nginx.conf.render.tmp ./nginx/nginx.conf
+  # 🔴 **原地写**（`cat >`），**不要** `mv`/`rename`（issue #9098）：`./nginx/nginx.conf` 是
+  # **单文件 bind mount** 的源（`…:/etc/nginx/conf.d/default.conf:ro`），docker 按 **inode** 挂载
+  # ⇒ 换掉 inode 后容器里看到的还是**旧文件**，于是 `nginx -t` / `nginx -s reload` 全在加载旧配置，
+  # 而宿主侧的 `grep server_name` 断言看的是新文件 ⇒ **假绿**（改前生产域分支正是 `mv -f`）。
+  cat ./nginx/nginx.conf.render.tmp > ./nginx/nginx.conf
+  rm -f ./nginx/nginx.conf.render.tmp
+fi
+# ── 1.2.2b 单文件 bind mount 的 **inode 一致性**（issue #9098）──────────────────────
+# 病（上面那条注释是本体）：容器按 inode 挂载，宿主侧换过 inode ⇒ 容器停在旧配置，
+# 而所有判据（`grep server_name` / sha256 打印）看的都是**宿主文件** ⇒ 看不到这件事。
+# 这里做**一次性自愈**：盘上 sha ≠ 容器内 sha ⇒ 重启一次 nginx 让它重新挂载，并**出声**。
+# 之后本脚本一律原地写 ⇒ 不会再出现（这条只在「改前用 mv 渲染过」的机器上触发一次）。
+if [ -n "$(docker compose ps -q nginx 2>/dev/null || true)" ]; then
+  _host_sha=$(sha256sum ./nginx/nginx.conf 2>/dev/null | cut -d' ' -f1 || shasum -a 256 ./nginx/nginx.conf | cut -d' ' -f1)
+  _ctr_sha=$(docker compose exec -T nginx sha256sum /etc/nginx/conf.d/default.conf 2>/dev/null | cut -d' ' -f1 || true)
+  if [ -n "$_host_sha" ] && [ -n "$_ctr_sha" ] && [ "$_host_sha" != "$_ctr_sha" ]; then
+    echo "  ⚠️ NGINX_CONF_MOUNT=STALE（盘上 ${_host_sha:0:12}… ≠ 容器内 ${_ctr_sha:0:12}…）"
+    echo "     原因：单文件 bind mount 按 inode 挂载，宿主侧换过 inode ⇒ 容器停在旧配置（reload 会加载旧内容）"
+    echo "     ⇒ 重启一次 nginx 让它重新挂载（一次性自愈；此后本脚本一律原地写，不再发生）"
+    docker compose restart nginx >/dev/null 2>&1 || true
+    _ctr_sha=$(docker compose exec -T nginx sha256sum /etc/nginx/conf.d/default.conf 2>/dev/null | cut -d' ' -f1 || true)
+    if [ "$_host_sha" = "$_ctr_sha" ]; then
+      echo "     ✅ NGINX_CONF_MOUNT=OK（自愈后一致）"
+    else
+      echo "     ❌ NGINX_CONF_MOUNT=STILL_STALE（重启后仍不一致 ⇒ 后续 upstream 切换会拒绝执行并回落重建路径）"
+    fi
+  else
+    echo "     NGINX_CONF_MOUNT=OK（盘上与容器内一致）"
+  fi
 fi
 _conf_sha=$(sha256sum ./nginx/nginx.conf 2>/dev/null | cut -d' ' -f1 || shasum -a 256 ./nginx/nginx.conf | cut -d' ' -f1)
 echo "  站点域名：${MIGAO_PUBLIC_DOMAIN}（nginx.conf sha256=${_conf_sha:-unknown}）"
 grep -E '^[[:space:]]*server_name[[:space:]]' ./nginx/nginx.conf | sed 's/^/    /' || true
+
+# ── 1.2.3 渲染后 **fail-closed 断言**（issue #8966）──────────────────────────────
+# 改前这里只打印一行「站点域名：…」就继续 ⇒ 那一行打的是**期望值**，与盘上配置的真实内容无关：
+# 只要渲染输入或替换规则错了（旧脚本的「纯 cp canonical」分支正是），日志照样好看，而 nginx 里
+# `server_name` 一个生产域名都没有 ⇒ 所有生产域请求落到 default server（实测形态 = 被代理到 API
+# ⇒ **全站 401**）。⇒ 断言对象必须是**渲染产物本身**，不是变量、不是意图。
+# 判据：`server_name` 里至少出现一处 `$MIGAO_PUBLIC_DOMAIN`（6 个面里任一命中即可；0 处 = 静默失效）。
+# >>> nginx-domain-assert
+_ngx_server_names=$(grep -E '^[[:space:]]*server_name[[:space:]]' ./nginx/nginx.conf || true)
+if ! grep -qF "$MIGAO_PUBLIC_DOMAIN" <<<"$_ngx_server_names"; then
+  echo "  ❌ nginx.conf 渲染后 \`server_name\` 里**没有**站点域名 ${MIGAO_PUBLIC_DOMAIN} ⇒ **中止部署**（issue #8966）"
+  echo "     当前 server_name 清单（渲染产物 ./nginx/nginx.conf）："
+  printf '%s\n' "${_ngx_server_names:-<空：一行 server_name 都没有>}" | sed 's/^/       /'
+  echo "     后果：${MIGAO_PUBLIC_DOMAIN} 的请求会全部落到 default server（实测 = 被代理到 API ⇒ 全站 401）"
+  echo "     排查：① 渲染输入 ./nginx/nginx.conf.canonical 是否来自 ref=${CONFIG_REF_RESOLVED}；"
+  echo "           ② MIGAO_PUBLIC_DOMAIN 是否真读到了 .env.site（当前值=${MIGAO_PUBLIC_DOMAIN}）"
+  exit 1
+fi
+echo "  ✅ nginx.conf 自证：server_name 含站点域名 ${MIGAO_PUBLIC_DOMAIN}"
+# <<< nginx-domain-assert
 
 # ── 1.3.1 微信「扫普通链接二维码打开小程序」校验文件落位（issue #8196）────────────
 # 微信后台生成的是一个**根下随机的 `<一串字符>.txt`**（文件名/内容都由微信给，仓库不编、不改）。
@@ -806,6 +1150,23 @@ else
   fi
 fi
 # <<< wechat-verify
+
+# ── 1.3c JWT classpath 公钥快照 + 持久缓存（issue #9051 / #9059）───────────────
+# `src/` 是本次 ref 的仓库树，**1.4 构建成功后按磁盘策略删掉**（`rm -rf src`）⇒
+# 需要它的地方必须在 1.4 之前把内容取走。而 2.5.9 的同源断言在 1.4 **之后**跑，且
+# 「配置复用 / 回滚」档盘上根本没有 `src/` ⇒ 光有变量不够，还要在部署根落一份**持久缓存**
+# （公钥不涉密、幂等覆盖），否则 `.env.admin-api` 的 `classpath:rsa/public.pem` 会恒被
+# 判成 unjudgeable ⇒ 部署恒定中止（issue #9059 的实测形态）。
+_MIGAO_CLASSPATH_PUBKEY_REL=${MIGAO_CLASSPATH_PUBKEY_REL:-rsa/public.pem}
+_MIGAO_CLASSPATH_PUBKEY_CACHE=${MIGAO_CLASSPATH_PUBKEY_CACHE:-.migao-admin-api-classpath-public.pem}
+if [ -f "src/backend/admin-api/src/main/resources/${_MIGAO_CLASSPATH_PUBKEY_REL}" ]; then
+  cp -f "src/backend/admin-api/src/main/resources/${_MIGAO_CLASSPATH_PUBKEY_REL}" \
+        "${_MIGAO_CLASSPATH_PUBKEY_CACHE}"
+fi
+_MIGAO_CLASSPATH_PUBKEY=""
+if [ -f "${_MIGAO_CLASSPATH_PUBKEY_CACHE}" ]; then
+  _MIGAO_CLASSPATH_PUBKEY=$(cat "${_MIGAO_CLASSPATH_PUBKEY_CACHE}")
+fi
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 1.4 C′ 服务器侧构建（issue #5814）—— **在本脚本已持有的 flock 之内**
@@ -915,6 +1276,10 @@ if [ -n "$BUILD_SERVICE" ] && [ -z "$LOCAL_IMAGE_REF" ]; then
     _build_args+=(--build-arg "NEXT_PUBLIC_AI_API_BASE_URL=${NEXT_PUBLIC_AI_API_BASE_URL:-https://ai-api.${MIGAO_PUBLIC_DOMAIN}}")
     _build_args+=(--build-arg "NEXT_PUBLIC_COOKIE_DOMAIN=${NEXT_PUBLIC_COOKIE_DOMAIN:-.${MIGAO_PUBLIC_DOMAIN}}")
     _build_args+=(--build-arg "NEXT_PUBLIC_BMINI_H5_URL=${NEXT_PUBLIC_BMINI_H5_URL:-https://app.${MIGAO_PUBLIC_DOMAIN}/b/}")
+    # 站点域名（issue #8941）：商家登录 / canonical / sitemap / robots / proxy host 分流的唯一来源。
+    # 与上面四条同源派生（缺省域名下 = `migaozn.com` ⇒ 测试环境产物与改前逐字相同）；
+    # 服务器侧 `.env.build` 仍可显式覆盖。
+    _build_args+=(--build-arg "NEXT_PUBLIC_SITE_DOMAIN=${NEXT_PUBLIC_SITE_DOMAIN:-${MIGAO_PUBLIC_DOMAIN}}")
   fi
   echo "  构建命令：timeout ${BUILD_TIMEOUT_SECS} docker build -f ${_df} -t ${LOCAL_IMAGE_REF} ${_build_args[*]} src/${_ctx}"
   if timeout "$BUILD_TIMEOUT_SECS" docker build -f "src/$_df" -t "$LOCAL_IMAGE_REF" "${_build_args[@]}" "src/$_ctx"; then
@@ -935,6 +1300,41 @@ if [ -n "$BUILD_SERVICE" ] && [ -z "$LOCAL_IMAGE_REF" ]; then
     echo "❌ 构建报成功但 ${LOCAL_IMAGE_REF} **不在本地** ⇒ 中止（拒绝静默回落到 ACR）"
     exit 1
   fi
+  # ── 产物域名**自证**（issue #8966）────────────────────────────────────────────
+  # 病根：`docker build` 少一个 build-arg 时 Next **静默**把缺省域烤进产物（首页 / sitemap / robots
+  # 全指向测试域），而构建、部署、健康检查**全绿** —— 只有用户被送去另一个站。
+  # 口径：站点域名 != 测试域时，产物里的关键件**不得**含 `migaozn.com`。
+  # ⚠️ 取不到那个文件 ⇒ **不可判定**（打印 SKIPPED），**不判绿也不判红**（不许拿「没读到」冒充「干净」）。
+  # >>> image-domain-guard
+  if [ "$_svc" = "admin-web" ] && [ "$MIGAO_PUBLIC_DOMAIN" != "migaozn.com" ]; then
+    _guard_path=${MIGAO_DOMAIN_GUARD_FILE:-.next/server/app/sitemap.xml.body}
+    _guard_dir=$(mktemp -d "${TMPDIR:-/tmp}/migao-domain-guard.XXXXXX" 2>/dev/null || true)
+    _guard_cid=""
+    _guard_got=0
+    if [ -n "$_guard_dir" ] && _guard_cid=$(docker create "$LOCAL_IMAGE_REF" 2>/dev/null) && [ -n "$_guard_cid" ]; then
+      if docker cp "${_guard_cid}:${_guard_path}" "${_guard_dir}/" >/dev/null 2>&1; then
+        _guard_got=1
+      fi
+      docker rm -f "$_guard_cid" >/dev/null 2>&1 || true
+    fi
+    _guard_file="${_guard_dir}/${_guard_path##*/}"
+    if [ "$_guard_got" = "1" ] && [ -f "$_guard_file" ]; then
+      if grep -qF 'migaozn.com' "$_guard_file"; then
+        echo "  ❌ 产物残留测试域 migaozn.com（站点域名=${MIGAO_PUBLIC_DOMAIN}，镜像=${LOCAL_IMAGE_REF}）⇒ **中止部署**（issue #8966）"
+        echo "     命中行（前 3 条，${_guard_path}）："
+        grep -nF 'migaozn.com' "$_guard_file" | head -3 | sed 's/^/       /' || true
+        echo "     真因多半是 build-arg 没送到：核对 --build-arg NEXT_PUBLIC_SITE_DOMAIN=${MIGAO_PUBLIC_DOMAIN} 与 Dockerfile 的 ARG/ENV 透传"
+        if [ -n "$_guard_dir" ]; then rm -rf "$_guard_dir"; fi
+        exit 1
+      fi
+      echo "  ✅ 产物自证：${_guard_path} 不含测试域 migaozn.com（站点域名=${MIGAO_PUBLIC_DOMAIN}）"
+    else
+      echo "  ⏭️ SKIPPED（**不可判定**）：取不到镜像里的 ${_guard_path}（${LOCAL_IMAGE_REF}）—— 产物域名**未验证**，不判绿"
+      echo "     判据要求（issue #8966）：站点域名=${MIGAO_PUBLIC_DOMAIN} 时产物不得含 migaozn.com ⇒ 本次无法验证"
+    fi
+    if [ -n "$_guard_dir" ]; then rm -rf "$_guard_dir"; fi
+  fi
+  # <<< image-domain-guard
   # ── 构建后回收（**只碰构建缓存**，铁律 10 口径：不删带 tag 的镜像、不碰保留集）──────
   # 缺口（issue #6508 ②）：Build Cache 此前**完全不在保留策略里**（只增不减，实测 12.44GB /
   # 184 条 / 100% RECLAIMABLE）⇒ 这里按**水位**回收（`builder_cache_recover`：清到门槛以上为止），
@@ -1018,6 +1418,195 @@ if [ -f .env.ai-agent ] && ! grep -q '^SMS_BYPASS_CODE=' .env.ai-agent; then
   echo "    · 生产环境：显式追加 SMS_BYPASS_CODE= 置空禁用万能码（技术债 Issue #2616 关闭前不允许缺省）"
   exit 1
 fi
+# ══════════════════════════════════════════════════════════════════════════
+# 1.6c JWT 文件式取值宿主路径预检（issue #8989 ④，fail-closed）
+#
+# 病（issue #8989 ③ 的破坏形态）：compose 把 ai-agent 的 `JWT_PUBLIC_KEY` 改成
+# `file:/opt/migao-deploy/jwt/public.pem` 后，只有**重建 ai-agent** 时才真正读这个文件；
+# 而 `app/config.py` 对 `file:` 是 fail-closed ⇒ 宿主文件缺失时 ai-agent **起不来** ⇒ AI 接口全挂。
+# 旧断言此刻是 SKIPPED（它读的是**旧容器**）⇒ 拦不住。⇒ 在**任何 `docker compose up` 之前**
+# 逐条校验宿主路径：存在 + 可读；任一不满足 ⇒ exit 1（旧容器保持不动）。
+# 判据 = tests/unit_ci_workflows/test_swas_jwt_same_source.py 的注入式红证 b。
+# ══════════════════════════════════════════════════════════════════════════
+echo "== 1.6c JWT 文件式取值宿主路径预检（issue #8989 ④，fail-closed）=="
+
+# 部署根：生产 = `/opt/migao-deploy`。抽成变量只为让测试能把同构目录指到临时目录
+# （生产不设该变量 ⇒ 逐字一致、零行为变化）；`file:` 值里的绝对路径经它映射。
+MIGAO_DEPLOY_ROOT=${MIGAO_DEPLOY_ROOT:-/opt/migao-deploy}
+
+jwt_host_path() {
+  case "$1" in
+    /opt/migao-deploy/*) printf '%s' "${MIGAO_DEPLOY_ROOT}/${1#/opt/migao-deploy/}" ;;
+    *) printf '%s' "$1" ;;
+  esac
+}
+
+# stdin: `.env` 文本 → 每个 `JWT_PRIVATE_KEY` / `JWT_PUBLIC_KEY` 的 `file:` 宿主路径（每行一条）
+jwt_file_paths_of_env() {
+  # ⚠️ 不用 BRE 的 `\|` 交替（BSD/macOS sed 不支持，会让本函数静默返回空 ⇒ 预检形同虚设）
+  sed -n \
+    -e 's/^[[:space:]]*export[[:space:]]*JWT_PRIVATE_KEY[[:space:]]*=[[:space:]]*//p' \
+    -e 's/^[[:space:]]*export[[:space:]]*JWT_PUBLIC_KEY[[:space:]]*=[[:space:]]*//p' \
+    -e 's/^[[:space:]]*JWT_PRIVATE_KEY[[:space:]]*=[[:space:]]*//p' \
+    -e 's/^[[:space:]]*JWT_PUBLIC_KEY[[:space:]]*=[[:space:]]*//p' \
+    | tr -d '\r' \
+    | sed -e 's/^"//' -e 's/"$//' -e "s/^'//" -e "s/'$//" \
+    | sed -n 's/^file://p'
+}
+
+# compose 里直接写死的 `JWT_*: file:`（ai-agent 的公钥就是这条；compose 的 environment
+# 优先级高于 env_file ⇒ 它才是下次重建真正生效的取值）
+jwt_file_paths_of_compose() {
+  sed -n \
+    -e 's/^[[:space:]]*JWT_PRIVATE_KEY:[[:space:]]*file:\(.*\)$/\1/p' \
+    -e 's/^[[:space:]]*JWT_PUBLIC_KEY:[[:space:]]*file:\(.*\)$/\1/p' \
+    "$@" 2>/dev/null
+}
+
+# 取 `.env` 里某键的**最后一条**取值（同名以最后一次为准；去 CR / 成对引号）
+jwt_env_value_of() {
+  local env_file=$1 key=$2 val
+  [ -f "${env_file}" ] || return 0
+  val=$(sed -n -e "s/^[[:space:]]*export[[:space:]]*${key}[[:space:]]*=[[:space:]]*//p" \
+    -e "s/^[[:space:]]*${key}[[:space:]]*=[[:space:]]*//p" "${env_file}" | tr -d '\r' | tail -1)
+  val=${val%\"}; val=${val#\"}
+  val=${val%\'}; val=${val#\'}
+  printf '%s' "${val}"
+}
+
+# `classpath:<rel>` ⇒ 该资源的**内容**（只解析 admin-api 的资源面）。取不到 ⇒ 非零（不可判定）。
+# 解析源（按可信度）：① 本次部署树 `src/backend/admin-api/src/main/resources/<rel>`
+#                     ② 仓检出形态 `backend/admin-api/src/main/resources/<rel>`（本地/判据用）
+#                     ③ 1.3c 落盘的**持久缓存**（供「配置复用 / 回滚」档：那时盘上已没有 `src/`）
+# 🔴 三条都取不到 ⇒ 调用方必须报 `unjudgeable`（**不得**判绿）：`classpath:` 解析不了不等于同源。
+jwt_classpath_resource_of() {
+  local rel=$1 root
+  case "${rel}" in
+    ""|*..*|/*) return 1 ;;
+  esac
+  for root in "src/backend/admin-api/src/main/resources" "backend/admin-api/src/main/resources"; do
+    if [ -f "${root}/${rel}" ]; then cat "${root}/${rel}"; return 0; fi
+  done
+  if [ "${rel}" = "${_MIGAO_CLASSPATH_PUBKEY_REL:-rsa/public.pem}" ] \
+     && [ -f "${_MIGAO_CLASSPATH_PUBKEY_CACHE:-.migao-admin-api-classpath-public.pem}" ]; then
+    cat "${_MIGAO_CLASSPATH_PUBKEY_CACHE}"; return 0
+  fi
+  return 1
+}
+
+# stdin: `.env` 文本 → 只取 `JWT_PUBLIC_KEY` 的 `file:` 宿主路径（1.6d 物化只补公钥；私钥永不物化）
+jwt_public_file_paths_of_env() {
+  sed -n \
+    -e 's/^[[:space:]]*export[[:space:]]*JWT_PUBLIC_KEY[[:space:]]*=[[:space:]]*//p' \
+    -e 's/^[[:space:]]*JWT_PUBLIC_KEY[[:space:]]*=[[:space:]]*//p' \
+    | tr -d '\r' \
+    | sed -e 's/^"//' -e 's/"$//' -e "s/^'//" -e "s/'$//" \
+    | sed -n 's/^file://p'
+}
+
+# compose 里写死的**公钥** `file:`（ai-agent 的单一来源就是这条）
+jwt_public_file_paths_of_compose() {
+  sed -n -e 's/^[[:space:]]*JWT_PUBLIC_KEY:[[:space:]]*file:\(.*\)$/\1/p' "$@" 2>/dev/null
+}
+
+# ──────────────────────────────────────────────────────────────────────────────
+# 1.6d JWT 宿主**公钥**补齐（issue #9051；判据 = 同文件 c 组）
+#
+# 病（2026-11-23 实测）：compose 把 ai-agent 的 `JWT_PUBLIC_KEY` 改成
+# `file:/opt/migao-deploy/jwt/public.pem`（#8976 单一来源）之后，这条宿主路径**没有任何一步
+# 负责创建**它 ⇒ 1.6c 的前置校验在测试环境宿主上**恒红**：
+#     ❌ JWT 文件式取值指向的宿主路径**不存在**：/opt/migao-deploy/jwt/public.pem
+# 自 1.6c 落地（2026-11-22T08:48Z）起，**每一次** push / dispatch 部署都在这里中止（两次尝试同一读数），
+# 而 schedule 触发走的是 `skip=true`（**不做部署**）⇒ 那些 success **不是**「部署成功」。
+#
+# 修法 = **补齐**，不是放宽：缺失时从宿主**已有的权威源**把 public 半份物化到 compose 指的位置，
+# 之后仍由 1.6c 逐条校验、2.5.9 两侧指纹同源断言兜底 ⇒ 判别力一分不降。来源优先级：
+#   ① `.env.admin-api` 的**内联** `JWT_PUBLIC_KEY`（admin-api 真正在用的 public 半份）
+#   ② `.env.ai-agent` 的内联 `JWT_PUBLIC_KEY`
+#   ③ 部署树里 admin-api 的 classpath 公钥（`src/backend/admin-api/src/main/resources/rsa/public.pem`；
+#      admin-api 未显式配置时的签发公钥来源）⇒ 同时把 `.env.admin-api` 钉成
+#      `JWT_PUBLIC_KEY=file:<同一路径>`（否则 2.5.9 只能报 INCOMPLETE：一侧有值一侧「未配置」）
+# 三条都取不到 ⇒ **什么都不写**，交回 1.6c 的 fail-closed（**真缺失仍然红**）。
+# 私钥永不物化（它不是「配置」而是签发密钥：只能由人成对放入宿主）。
+# ──────────────────────────────────────────────────────────────────────────────
+echo "== 1.6d JWT 宿主公钥补齐（缺失 ⇒ 从宿主权威源物化；issue #9051）=="
+_JWT_SELFHEAL_SEEN=" "
+while IFS= read -r _jwt_pub_path; do
+  _jwt_pub_path=${_jwt_pub_path%$'\r'}
+  [ -n "${_jwt_pub_path}" ] || continue
+  case "${_JWT_SELFHEAL_SEEN}" in *" ${_jwt_pub_path} "*) continue ;; esac
+  _JWT_SELFHEAL_SEEN="${_JWT_SELFHEAL_SEEN}${_jwt_pub_path} "
+  _jwt_pub_host=$(jwt_host_path "${_jwt_pub_path}")
+  [ -e "${_jwt_pub_host}" ] && continue          # 已存在 ⇒ 不动（宿主权威源优先）
+  _jwt_src=""
+  _jwt_pem=""
+  _jwt_pin_env=""
+  for _jwt_env_file in .env.admin-api .env.ai-agent; do
+    _jwt_pem=$(jwt_env_value_of "${_jwt_env_file}" JWT_PUBLIC_KEY)
+    _jwt_pem=${_jwt_pem//\\n/$'\n'}
+    case "${_jwt_pem}" in
+      *"BEGIN PUBLIC KEY"*) _jwt_src="${_jwt_env_file} 的内联 JWT_PUBLIC_KEY"; break ;;
+      *) _jwt_pem="" ;;
+    esac
+  done
+  if [ -z "${_jwt_pem}" ] && [ -n "${_MIGAO_CLASSPATH_PUBKEY:-}" ]; then
+    _jwt_pem=${_MIGAO_CLASSPATH_PUBKEY}
+    _jwt_src="部署树 classpath 公钥（backend/admin-api/src/main/resources/rsa/public.pem）"
+    _jwt_pin_env="1"
+  fi
+  if [ -z "${_jwt_pem}" ]; then
+    echo "  ⚠️ 无法物化 ${_jwt_pub_path}：宿主权威源里**也没有**内联公钥 / 部署树公钥 ⇒ 交回 1.6c 判红"
+    continue
+  fi
+  mkdir -p "$(dirname "${_jwt_pub_host}")"
+  printf '%s\n' "${_jwt_pem}" > "${_jwt_pub_host}"
+  chmod 0644 "${_jwt_pub_host}"     # 容器以非 root 读 :ro 卷 ⇒ 不能 0600
+  echo "  🔧 JWT 公钥已物化：${_jwt_pub_path}（${#_jwt_pem} 字节）⇐ ${_jwt_src}"
+  # 只有当 `.env.admin-api` **没有可用公钥**（行缺失或空值）时才钉：已有值属宿主权威源，不动它
+  _jwt_cur_admin_pub=$(jwt_env_value_of .env.admin-api JWT_PUBLIC_KEY)
+  if [ "${_jwt_pin_env:-}" = "1" ] && [ -f .env.admin-api ] && [ -z "${_jwt_cur_admin_pub}" ]; then
+    printf 'JWT_PUBLIC_KEY=file:%s\n' "${_jwt_pub_path}" >> .env.admin-api
+    echo "  🔧 .env.admin-api 已钉上 JWT_PUBLIC_KEY=file:${_jwt_pub_path}（两侧同源可判；2.5.9 会复核指纹）"
+  fi
+  echo "  JWT_FILE_SELFHEAL=created path=${_jwt_pub_path}"
+done < <(
+  for _jwt_env_file in .env.admin-api .env.ai-agent; do
+    [ -f "${_jwt_env_file}" ] && jwt_public_file_paths_of_env < "${_jwt_env_file}"
+  done
+  jwt_public_file_paths_of_compose docker-compose.yml docker-compose.bluegreen.yml
+)
+
+_JWT_FILE_CHECK_FAILED=0
+_JWT_FILE_PATHS_SEEN=" "
+while IFS= read -r _jwt_path; do
+  _jwt_path=${_jwt_path%$'\r'}
+  [ -n "${_jwt_path}" ] || continue
+  case "${_JWT_FILE_PATHS_SEEN}" in *" ${_jwt_path} "*) continue ;; esac
+  _JWT_FILE_PATHS_SEEN="${_JWT_FILE_PATHS_SEEN}${_jwt_path} "
+  _jwt_host_path=$(jwt_host_path "${_jwt_path}")
+  if [ ! -e "${_jwt_host_path}" ]; then
+    echo "  ❌ JWT 文件式取值指向的宿主路径**不存在**：${_jwt_path}"
+    _JWT_FILE_CHECK_FAILED=1
+  elif [ ! -r "${_jwt_host_path}" ]; then
+    echo "  ❌ JWT 文件式取值指向的宿主路径**不可读**：${_jwt_path}（权限或挂载问题）"
+    _JWT_FILE_CHECK_FAILED=1
+  else
+    echo "  ✅ JWT 文件式取值宿主路径可读：${_jwt_path}"
+  fi
+done < <(
+  for _jwt_env_file in .env.admin-api .env.ai-agent; do
+    [ -f "${_jwt_env_file}" ] && jwt_file_paths_of_env < "${_jwt_env_file}"
+  done
+  jwt_file_paths_of_compose docker-compose.yml docker-compose.bluegreen.yml
+)
+if [ "${_JWT_FILE_CHECK_FAILED}" -ne 0 ]; then
+  echo "  ⇒ **中止部署**（fail-closed）：这些路径缺失时，重建对应容器会起不来（AI 接口全挂）。"
+  echo "     处置：把该文件放回宿主（与签发密钥成对），或修正 .env.* 的 JWT_* 取值后重跑。"
+  echo "     本次**未做任何 docker compose up**（旧容器保持不动）。"
+  exit 1
+fi
+echo "  JWT_FILE_PATHS_CHECK=OK（${_JWT_FILE_PATHS_SEEN# }）"
+
 # 1.7 模型名 canonical 自愈（#3483 / 官方命名）：DeepSeek 官方模型名为 deepseek-flash，
 # 旧名 deepseek-v4-flash / deepseek-v4-flash-vision-exp 仅临时路由且随时下线——
 # 部署时把服务器 .env.ai-agent 的旧名归一化，防旧值回滚（2026-09-14 云端修复实证）。
@@ -1269,12 +1858,17 @@ done
 # → 用**与第 3 步完全同一份判据**做健康检查 → 通过才替换正式容器；不通过 ⇒ 删 green、exit 1，
 # **旧容器一动不动**（失败窗口 = 0）。#4767 的「失败即回滚」（CI 侧）仍是**外层**兜底，本段是**内层**。
 #
-# 取舍（issue #4785 要求逐条说明）：走**第二端口**而不是 **nginx upstream 切换** ——
-# nginx.conf 里 `proxy_pass http://admin-api:8080` 走 compose DNS 名，nginx 在**启动/reload 时**
-# 解析并缓存上游 IP；改 nginx.conf 写坏 = **全站所有域名同时挂**（正是「部署脚本改坏 = 停掉
-# 所有人的部署」的形态）⇒ 本单不碰它。代价（如实登记）：**成功路径**仍有「替换正式容器 +
-# 启动 + reload」的秒级窗口 —— 与改动前**同量级、未变差**，且此刻镜像已被证明能起；
-# **失败路径**（坏镜像）的窗口已被打到 **0**。
+# 取舍（issue #4785 要求逐条说明）：**过去**刻意走第二端口而不碰 nginx upstream ——
+# nginx.conf 的 `proxy_pass http://admin-api:8080` 走 compose DNS 名，改 nginx.conf 写坏 =
+# **全站所有域名同时挂**（「部署脚本改坏 = 停掉所有人的部署」的形态）。
+# 🔴 **M1-a（issue #9098）把成功路径的窗口也消掉了**：nginx.conf 现在是 **upstream 模型**
+# （`migao_admin_api` / `migao_ai_agent` / `migao_admin_web`），发布期 `nginx_upstream_switch()`
+# **只改成员行 + `nginx -t` + reload**，正式容器是在流量移走**之后**才重建的（下方 ④ 在 ②③ 之后）。
+# 「写坏 = 全站挂」的四道锁：① 成员块有标记（只改那几行，其余一字不动）② 改完**先** `nginx -t`
+# ③ `-t` 失败 ⇒ 当场把备份拷回、**不 reload**（入口一字未变）④ reload 失败 ⇒ 同样回退 + 重试一次。
+# 失败路径（坏镜像）的窗口仍是 **0**（#4785 语义未变）；成功路径的窗口现在是 **0**
+#（改动前是「替换 + 启动 + reload」的秒级～分钟级）。判据（会红）：见铁律 8 的固化声明；
+# 承载体 = tests/unit_ci_workflows/test_zero_downtime_m1_cutover.py。
 # ══════════════════════════════════════════════════════════════════════════
 
 # green 的**第二端口**：与 deploy/swas/docker-compose.bluegreen.yml 的默认值必须一致
@@ -1317,6 +1911,173 @@ svc_health_path() {
     *)         echo "" ;;
   esac
 }
+# ══════════════════════════════════════════════════════════════════════════
+# M1-a nginx **upstream 摘挂**（issue #9098）—— 切换动作 = 只改 upstream 成员 + reload
+#
+# 这段存在的理由：下方 ⑤ 的「重建正式容器」（`up -d --no-deps <svc>`，compose 的**替换**语义：
+# 停旧 → 删旧 → 建新 → 起新）只要发生在流量还指着旧容器的时候，中间就一定有一段
+# 「没有进程在服务」的窗口（改动前实测 90s 的 502）。所以顺序改成：
+#   ① green 起来且健康 → ② **只切 upstream**（green 主 + 正式容器 backup）+ `nginx -t` + reload
+#   → ③ 入口 200 断言 → ④ drain（等旧 worker 把在途请求做完）→ ⑤ **现在才**重建正式容器
+#   → ⑥ upstream 切回正式容器 → ⑦ 删 green。
+# ⚠️ 稳态**只写现行实例一条成员**：nginx 解析配置时就会对 upstream 服务名做 DNS 解析，green 没在跑
+#    时写它的名字 ⇒ `[emerg] host not found in upstream` ⇒ 全站起不来。green 成员只在发布期存在，
+#    成功/失败都会恢复（`nginx_upstream_switch <svc> formal`）。
+# ⚠️ 真机事实：nginx 跑在**容器**里（`migao-deploy-nginx-1`），宿主没有 nginx 二进制、没有
+#    `/etc/nginx` ⇒ 一切测试/reload 都经 `docker compose exec -T nginx`。
+# 判据（会红）：tests/unit_ci_workflows/test_zero_downtime_m1_cutover.py（含注入式红证：
+#    把这里改回「重建 + reload」⇒ 判据红）。
+# ══════════════════════════════════════════════════════════════════════════
+NGINX_CONF_FILE=${NGINX_CONF_FILE:-./nginx/nginx.conf}
+UPSTREAM_MEMBERS_BEGIN="# >>> migao-upstream-members"
+UPSTREAM_MEMBERS_END="# <<< migao-upstream-members"
+# drain 的上限：与 nginx.conf 的 `worker_shutdown_timeout 200s` 同值（= SSE 最长流 180s + 余量）
+UPSTREAM_DRAIN_TIMEOUT=${UPSTREAM_DRAIN_TIMEOUT:-200}
+
+upstream_name_of() {
+  case "$1" in
+    admin-api) echo migao_admin_api ;;
+    ai-agent)  echo migao_ai_agent ;;
+    admin-web) echo migao_admin_web ;;
+    *)         echo "" ;;
+  esac
+}
+
+# 成员行（**唯一一份口径**）：正式容器的稳态形态必须与 nginx.conf 里 checked-in 的那一行**逐字相同**
+# （切回去要和原文逐字节一致 —— 否则每次发布都会在服务器上留下漂移）。
+upstream_members_for() {
+  local svc=$1 role=$2 port
+  port=$(svc_port "$svc")
+  case "$role" in
+    green)
+      # 发布期：green 主、正式容器 backup（主不可用时才回落 ⇒ 新镜像刚起就崩也不会打到用户）
+      printf 'server %s-green:%s max_fails=2 fail_timeout=10s;\n' "$svc" "$port"
+      printf 'server %s:%s backup;\n' "$svc" "$port" ;;
+    formal)
+      printf 'server %s:%s max_fails=2 fail_timeout=10s;\n' "$svc" "$port" ;;
+    *) return 1 ;;
+  esac
+}
+
+# >>> upstream-members-rewrite（判据会从本段抽出这段 python 单独跑：行为式证明「切换后两个后端」）
+rewrite_upstream_members() {
+  UPSTREAM_FILE="$1" UPSTREAM_TARGET="$2" UPSTREAM_MEMBERS="$3" \
+  UPSTREAM_BEGIN="$UPSTREAM_MEMBERS_BEGIN" UPSTREAM_END="$UPSTREAM_MEMBERS_END" \
+  python3 - <<'PY_UPSTREAM_MEMBERS'
+import os
+import sys
+import tempfile
+
+path = os.environ["UPSTREAM_FILE"]
+target = os.environ["UPSTREAM_TARGET"]
+members = [ln for ln in os.environ["UPSTREAM_MEMBERS"].splitlines() if ln.strip()]
+begin = os.environ["UPSTREAM_BEGIN"].strip()
+end = os.environ["UPSTREAM_END"].strip()
+if not members:
+    sys.exit("rewrite_upstream_members: 成员清单为空（不写出一个没有任何后端的 upstream）")
+with open(path, encoding="utf-8") as fh:
+    lines = fh.read().splitlines()
+head = next((i for i, ln in enumerate(lines) if ln.strip() == f"upstream {target} {{"), None)
+if head is None:
+    sys.exit(f"rewrite_upstream_members: 找不到 `upstream {target} {{`")
+tail = next((j for j in range(head + 1, len(lines)) if lines[j].strip() == "}"), None)
+if tail is None:
+    sys.exit(f"rewrite_upstream_members: `upstream {target}` 没有配对的 `}}`")
+opens = [k for k in range(head + 1, tail) if lines[k].strip() == begin]
+closes = [k for k in range(head + 1, tail) if lines[k].strip() == end]
+if len(opens) != 1 or len(closes) != 1 or opens[0] > closes[0]:
+    sys.exit(
+        f"rewrite_upstream_members: `upstream {target}` 的成员标记不是恰好一对"
+        f"（begin={len(opens)} end={len(closes)}）"
+    )
+new = lines[: opens[0] + 1] + ["    " + m for m in members] + lines[closes[0]:]
+# 🔴 **原地写**：目标是**单文件 bind mount** 的源（`…:/etc/nginx/conf.d/default.conf:ro`），
+#    docker 按 **inode** 挂载 ⇒ 用 tmpfile + os.replace 换 inode 之后，容器里看到的还是**旧文件**，
+#    `nginx -t` / `reload` 全在加载旧配置 ⇒ 切换**静默不生效**（判据：inode 必须不变）。
+with open(path, "w", encoding="utf-8") as fh:
+    fh.write("\n".join(new) + "\n")
+    fh.flush()
+    os.fsync(fh.fileno())
+print(f"UPSTREAM_MEMBERS={target}:{len(members)}")
+PY_UPSTREAM_MEMBERS
+}
+# <<< upstream-members-rewrite
+
+# 只切 upstream：改成员 → `nginx -t` → reload。**不重建、不 restart 任何容器**（那就是窗口本身）。
+# 失败一律回退到备份并返回非零 ⇒ 入口停在**改动之前**的形态。
+# 返回码：0 = 已切换；1 = 失败（已回退）；3 = 入口不在运行（无从 reload ⇒ 调用方回落重建路径）
+nginx_upstream_switch() {
+  local svc=$1 role=$2 target members bak
+  target=$(upstream_name_of "$svc")
+  [ -n "$target" ] || { echo "     ❌ 未知服务 ${svc}：没有对应的 upstream 名"; return 1; }
+  members=$(upstream_members_for "$svc" "$role") || { echo "     ❌ 未知角色 ${role}（只允许 green|formal）"; return 1; }
+  if [ -z "$(docker compose ps -q nginx 2>/dev/null || true)" ]; then
+    echo "     ⏭️  nginx 不在运行 ⇒ 无从「只切 upstream」"
+    return 3
+  fi
+  bak="${NGINX_CONF_FILE}.bak-$(date +%Y%m%d-%H%M%S)"
+  cp -f "$NGINX_CONF_FILE" "$bak" || { echo "     ❌ 备份 ${NGINX_CONF_FILE} 失败（不改入口）"; return 1; }
+  if ! rewrite_upstream_members "$NGINX_CONF_FILE" "$target" "$members"; then
+    cp -f "$bak" "$NGINX_CONF_FILE"
+    echo "     ❌ 改写 upstream 成员失败 ⇒ 已恢复 ${bak}（入口未变）"
+    return 1
+  fi
+  # 🔴 单文件 bind mount 按 inode 挂载：**必须**确认容器里看到的就是刚写的那份。
+  #    不一致 ⇒ 说明容器挂在旧 inode 上（历史上用过 mv/rename 渲染）⇒ 此时 reload 只会加载旧配置，
+  #    切换会**静默不生效**（入口 200 断言也照样绿）—— 宁可回落重建路径，也不许假绿。
+  local host_sha ctr_sha
+  host_sha=$(sha256sum "$NGINX_CONF_FILE" 2>/dev/null | cut -d' ' -f1 || shasum -a 256 "$NGINX_CONF_FILE" | cut -d' ' -f1)
+  ctr_sha=$(docker compose exec -T nginx sha256sum /etc/nginx/conf.d/default.conf 2>/dev/null | cut -d' ' -f1 || true)
+  if [ -n "$host_sha" ] && [ -n "$ctr_sha" ] && [ "$host_sha" != "$ctr_sha" ]; then
+    cp -f "$bak" "$NGINX_CONF_FILE"
+    echo "     ❌ NGINX_CONF_MOUNT=STALE（盘上 ${host_sha:0:12}… ≠ 容器内 ${ctr_sha:0:12}…）"
+    echo "        容器挂在旧 inode 上 ⇒ reload 只会加载旧配置（切换会静默不生效）⇒ 已恢复 ${bak}、**不 reload**"
+    echo "        处置：docker compose restart nginx 后重跑本段（1.2.2b 的自愈只会做一次）"
+    return 3
+  fi
+  if ! docker compose exec -T nginx nginx -t; then
+    cp -f "$bak" "$NGINX_CONF_FILE"
+    echo "     ❌ nginx -t 不通过 ⇒ 已恢复 ${bak}、**未 reload**（入口一字未变）"
+    return 1
+  fi
+  if ! docker compose exec -T nginx nginx -s reload; then
+    cp -f "$bak" "$NGINX_CONF_FILE"
+    echo "     ❌ reload 失败 ⇒ 已恢复 ${bak} 并重试一次 reload（旧 worker 仍在服务，不 restart）"
+    docker compose exec -T nginx nginx -s reload || true
+    return 1
+  fi
+  rm -f -- "$bak"
+  echo "     ✅ upstream 已切换：${target} → $(printf '%s' "$members" | tr '\n' ' ')"
+  return 0
+}
+
+# drain：等旧 nginx worker 把**在途请求**做完再重建正式容器（不是盲睡固定秒数）。
+# 读数 = nginx 自己的 worker 标题：reload 后旧 worker 变成 `nginx: worker process is shutting down`
+# （空闲连接它当场就关，只有**真在跑**的请求会留住它）⇒ 这个标题消失 = 在途请求收尾完毕。
+# 读不到 worker 标题 ⇒ 明说「不可判定」，**不假装等过**；到上限只告警、不中止（nginx 会按
+# worker_shutdown_timeout 强制收尾 —— 宁可慢，也不许把用户的长流砍了）。
+upstream_drain_wait() {
+  local svc=$1 limit=${UPSTREAM_DRAIN_TIMEOUT:-200} i ps_out
+  echo "  ── ${svc} drain：等旧 nginx worker 收尾（上限 ${limit}s）"
+  for i in $(seq 1 "$limit"); do
+    if ! ps_out=$(docker compose exec -T nginx ps 2>/dev/null); then
+      echo "     ⚠️ DRAIN=UNDECIDABLE（读不到 nginx worker 列表）⇒ 不做等待，也不假装等过"
+      return 0
+    fi
+    if ! printf '%s' "$ps_out" | grep -q "worker process"; then
+      echo "     ⚠️ DRAIN=UNDECIDABLE（\`ps\` 输出里没有 nginx worker 标题）⇒ 不做等待，也不假装等过"
+      return 0
+    fi
+    if ! printf '%s' "$ps_out" | grep -q "worker process is shutting down"; then
+      echo "     ✅ DRAIN=OK（旧 worker 已退出，在途请求已收尾；等待 ${i}s）"
+      return 0
+    fi
+    sleep 1
+  done
+  echo "     ⚠️ DRAIN=TIMEOUT（${limit}s 内旧 worker 未全退，长流仍在跑）⇒ 交给 worker_shutdown_timeout 兜底"
+  return 0
+}
+
 # 健康检查判据（**全脚本唯一一份**）：green 与正式容器共用同一函数 ⇒ 判据不可能漂移
 # （推演项「两套判据 / 判据过严导致回滚抖动」正是靠这一点排除的）。
 wait_healthy() {
@@ -1331,6 +2092,51 @@ wait_healthy() {
   done
   echo "  ❌ $name 健康检查未通过（重试 $HC_RETRIES 次仍未就绪）"
   return 1
+}
+
+# ── nginx 上游断言（issue #8976 ④；2026-11-21 生产实测全站 502 约 90s）──────────────
+# 病：`docker compose up -d` 会**重建**容器（新 IP），而 nginx 在**启动 / reload 时**解析
+#     `proxy_pass http://admin-api:8080` 这类 compose DNS 名并**缓存**该 IP ⇒ 重建后不 reload
+#     ⇒ 请求继续打到**已经消失的**旧 IP ⇒ 502，直到下一次 reload（实测窗口 90s）。
+# 判据（会红）：reload 之后**本机**上游必须回 200。**取不到读数是判红**（不是「没问题」）：
+#     连不上 / 超时 / 非 200 / 取不到 => exit 1。
+# ⚠️ 为什么探 https + `--resolve` 而不是字面的 `http://127.0.0.1/api/version`：
+#     `deploy/swas/nginx.conf` 的 **:80 面是按设计 301 跳 https** 的
+#     （`location / { return 301 https://$host$request_uri; }`）⇒ 按 :80 探**永远**不是 200，
+#     那会变成一条恒红的空断言。`--resolve` 把 `api.<站点域>` 钉回 127.0.0.1:443
+#     ⇒ 走的仍是 nginx **真实的** upstream 解析，且不出本机。
+NGINX_PROBE_TRIES=${NGINX_PROBE_TRIES:-12}
+NGINX_PROBE_INTERVAL=${NGINX_PROBE_INTERVAL:-2}
+nginx_expect_upstream_ok() {
+  local why=$1 code="" i api_host
+  api_host="api.${MIGAO_PUBLIC_DOMAIN}"
+  echo "  ── nginx 上游断言（${why}）"
+  if [ -z "$(docker compose ps -q nginx 2>/dev/null || true)" ]; then
+    # 首装 / 被清掉：先让入口存在（幂等）。否则探到的是「本机没有入口」，不是「上游没切换」。
+    echo "     nginx 不在运行 ⇒ 先起它（幂等；否则本条断言证明不了 upstream 解析）"
+    docker compose up -d --no-deps nginx
+  fi
+  # reload 优先（优雅：旧 worker 把在途请求做完再退），失败回落 restart（= 改动前行为）。
+  if ! docker compose exec -T nginx nginx -s reload; then
+    docker compose restart nginx
+  fi
+  for i in $(seq 1 "${NGINX_PROBE_TRIES}"); do
+    code=$(curl -sk -o /dev/null -w "%{http_code}" -m 5 \
+      --resolve "${api_host}:443:127.0.0.1" "https://${api_host}/api/version" 2>/dev/null) || code="000"
+    if [ "${code}" = "200" ]; then
+      echo "     ✅ 本机上游 200（https://${api_host}/api/version → nginx → admin-api）"
+      echo "     NGINX_UPSTREAM=OK"
+      return 0
+    fi
+    echo "     本机上游 -> ${code}（第 ${i}/${NGINX_PROBE_TRIES} 次）"
+    sleep "${NGINX_PROBE_INTERVAL}"
+  done
+  echo "     NGINX_UPSTREAM=FAIL"
+  echo "     ❌ nginx 上游未回 200（最后读数 ${code}）⇒ 入口仍指向重建前的旧上游 IP（站点正在 502）"
+  echo "        排查：docker compose ps；docker compose exec -T nginx nginx -T | grep -n proxy_pass"
+  echo "              docker compose logs --tail 50 nginx；curl -sk https://127.0.0.1/api/version -m 5"
+  echo "        处置：docker compose restart nginx 后再跑一次本断言；上游自己起不来见各容器日志"
+  exit 1
 }
 
 echo "== 2.5 严格蓝绿预验证（新容器先起 + 健康检查通过再切流量）=="
@@ -1364,6 +2170,9 @@ for svc in $UP_SERVICES; do
   GREEN="$svc-green"
   GPORT=$(bg_port "$svc")
   GPATH=$(svc_health_path "$svc")
+  # 本次是否真的「切了 upstream」：0 = 是（重建后要切回正式容器）
+  # 2 = 应急开关跳过；3 = 入口 nginx 不在运行；1 = 切换失败 ⇒ 三者都回落老路径（但 2/3 **不是失败**）
+  SWITCH_RC=2
 
   # ── ① 蓝绿预验证：先起 green（新容器名 + 第二端口），**旧容器完全不动** ──
   if [ "$BG_SKIP" = "1" ]; then
@@ -1395,7 +2204,32 @@ for svc in $UP_SERVICES; do
     echo "  ✅ $svc green 健康 ⇒ 新镜像已被证明能起，现在才替换正式容器"
   fi
 
-  # ── ② 切换：替换正式容器（走过蓝绿 ⇒ 该镜像刚刚已被证明能起）──
+  # ── ② M1-a：**只切 nginx upstream**（green 主 + 正式容器 backup）→ `nginx -t` → reload ──
+  # 这一步是「零停机」的本体：流量移走**之后**（⑤）才重建正式容器。
+  # 应急开关 / 入口不在运行 ⇒ 不切（`SWITCH_RC` 非 0）⇒ 境界明确地回落到老路径。
+  if [ "$BG_SKIP" = "0" ]; then
+    SWITCH_RC=0
+    nginx_upstream_switch "$svc" green || SWITCH_RC=$?
+  fi
+  if [ "$SWITCH_RC" != "0" ]; then
+    if [ "$SWITCH_RC" = "2" ]; then
+      echo "  ── ${svc}：应急开关生效 ⇒ **不走 upstream 摘挂**（本次**不是零停机**；旧容器仍在服务）"
+    elif [ "$SWITCH_RC" = "3" ]; then
+      echo "  ⏭️  ${svc} 入口 nginx 未运行 ⇒ 本次退回「重建 + reload」老路径：**不是零停机**（旧容器仍在服务）"
+    else
+      echo "  ❌ ${svc} upstream 切换失败 ⇒ **不重建正式容器**（旧容器继续服务、入口保持切换前形态）"
+      $BG_COMPOSE rm -sf "$GREEN" >/dev/null 2>&1 || true
+      exit 1
+    fi
+  else
+    # ── ③ 入口断言：nginx → green 这条路**真的通**（不是只看 reload 命令有没有报错）──
+    nginx_expect_upstream_ok "${svc} 切到 green 后"
+    # ── ④ drain：等旧 nginx worker 把在途请求做完（读的是 worker 状态，不是盲睡）──
+    upstream_drain_wait "$svc"
+    echo "  ✅ ${svc} 流量已切到 green 且旧 worker 已收尾（正式容器**尚未重建**）"
+  fi
+
+  # ── ⑤ 现在才重建正式容器（流量已不在它身上；M1-b 的优雅退出让它在途请求自然收尾）──
   docker compose up -d --no-deps "$svc"
   if ! wait_healthy "$(svc_port "$svc")" "$svc" "$GPATH"; then
     echo "  ❌ $svc 正式容器替换后健康检查未通过 ⇒ 中止"
@@ -1403,7 +2237,25 @@ for svc in $UP_SERVICES; do
     exit 1
   fi
 
-  # ── ③ 正式容器接棒 ⇒ 删掉 green 探针（不长期占内存/端口）──
+  # 🔴 重建 = 换 IP ⇒ **必须**让 nginx 重新解析上游，并当场证明它回 200（issue #8976 ④）。
+  # 这一步不能靠「2.6 稍后会 reload」：切换循环里每个服务之间可能隔几分钟健康检查，
+  # 期间入口一直指着旧 IP ⇒ 生产实测就这样 502 了 90 秒。
+  # （M1-a：正式容器此时在 upstream 里是 **backup** 成员，它的 IP 同样要重新解析。）
+  nginx_expect_upstream_ok "${svc} 重建后"
+
+  # ── ⑥ upstream 切回正式容器（green 退回 backup 后即可回收）──
+  if [ "$SWITCH_RC" = "0" ]; then
+    if ! nginx_upstream_switch "$svc" formal; then
+      echo "  ❌ ${svc} upstream 切回正式容器失败 ⇒ **不删 green**（入口仍指向它，服务不中断）"
+      echo "     恢复：docker exec migao-deploy-nginx-1 nginx -T | grep -n -A3 'upstream $(upstream_name_of "$svc")'"
+      echo "           把成员块改回 \`server ${svc}:$(svc_port "$svc") max_fails=2 fail_timeout=10s;\`，然后："
+      echo "           docker exec migao-deploy-nginx-1 nginx -t && docker exec migao-deploy-nginx-1 nginx -s reload"
+      exit 1
+    fi
+    nginx_expect_upstream_ok "${svc} 切回正式容器后"
+  fi
+
+  # ── ⑦ 正式容器接棒 ⇒ 删掉 green 探针（不长期占内存/端口）──
   if [ "$BG_SKIP" = "0" ]; then
     $BG_COMPOSE rm -sf "$GREEN" >/dev/null 2>&1 || true
     BG_VERIFIED="$BG_VERIFIED $svc"
@@ -1415,12 +2267,195 @@ else
   echo "  ✅ 蓝绿预验证结束：${BG_VERIFIED:-（无待更新服务）}"
 fi
 
+# ══════════════════════════════════════════════════════════════════════════
+# 2.5.9 JWT 验签同源硬断言（issue #8976 ①；2026-11-21 生产 AI 接口**全 401**）
+#
+# 病：admin-api 用 `.env.admin-api` 的 `JWT_PRIVATE_KEY/JWT_PUBLIC_KEY`（`file:/opt/migao-deploy/jwt/*.pem`）
+# 签发，ai-agent 用 compose 里**硬编码的 PEM** 验签 ⇒ 同一个 token 配了两把钥匙 ⇒
+# `TOKEN_INVALID: Signature verification failed`，生产 AI 接口全 401。
+# 这类不一致**永远不会自己好**（两侧都不报错、也没有任何读数为红）⇒ 只能拦在部署链上。
+#
+# 判据（四态，**`3` 不得当 `0` 读**；issue #8989 补齐第 ④ 态）：
+#   ① 两侧指纹一致          => ✅ 打印两侧**来源 + 指纹**；
+#   ② 两侧指纹不一致        => ❌ 打印两侧来源 + 指纹 + 排查口 => **exit 1**；
+#   ③ 两侧都走 classpath 默认 => ⏭️ **SKIPPED**（**唯一**允许 SKIPPED 的形态），不判绿；
+#   ④ 只有一侧可判 / 读到非公钥形态 => ❌ **INCOMPLETE** => **exit 1**（「读不到」不许当放过）。
+# 🔴 读数源（issue #8989 ③）：只读**宿主权威源**（`.env.*` / compose 的 environment / `file:` 指向的
+#    宿主文件），**不**读 `docker compose exec` —— 容器没被重建时读到的是旧容器，那正是 2026-11-21
+#    那次部署「admin-api 不可判定、ai-agent 读到旧内联 PEM」的一半原因。
+# 指纹口径 = sha256(PEM 公钥体) 前 16 位，与 scripts/align_agent_jwt_key.py **同一口径**
+# （对拍判据 = tests/unit_ci_workflows/test_swas_jwt_same_source.py）。
+# ══════════════════════════════════════════════════════════════════════════
+echo "== 2.5.9 JWT 验签同源断言（admin-api 签发 ⇄ ai-agent 校验，issue #8976）=="
+
+_sha256_hex() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum | cut -d' ' -f1
+  else
+    shasum -a 256 | cut -d' ' -f1
+  fi
+}
+
+# stdin: PEM 文本 → 公钥体指纹（sha256 前 16）。取不到 / 不是公钥 PEM ⇒ 非零退出（不可判定）。
+# 🔴 issue #8989 ②：`.env.*` 里的 PEM 是**单行 + 字面 `\n`** 形态（awk 按行匹配永远取不到 body）。
+# ⇒ 先把字面 `\n` 还原成真换行、去掉 `\r`，再走 awk；否则断言恒 SKIPPED（比不加断言更糟：
+#   它给了「已守护」的错觉，而真实部署里这条断言**等于不存在**）。
+jwt_pubkey_fingerprint() {
+  local raw body
+  raw=$(cat)
+  raw=${raw//$'\r'/}
+  raw=${raw//\\n/$'\n'}
+  body=$(printf '%s\n' "${raw}" | awk '/-----BEGIN PUBLIC KEY-----/{f=1; next} /-----END PUBLIC KEY-----/{f=0} f' | tr -d ' \t\r\n')
+  if [ -z "${body}" ]; then
+    return 1
+  fi
+  printf '%s' "${body}" | _sha256_hex | cut -c1-16
+}
+
+# 取 compose `environment:` 里某服务**写死**的取值（优先级高于 env_file；ai-agent 的公钥走这条）
+jwt_compose_value_of() {
+  local compose_file=$1 svc=$2 key=$3 val
+  [ -f "${compose_file}" ] || return 0
+  val=$(awk -v svc="${svc}" -v key="${key}" '
+    /^[[:space:]]*#/ { next }
+    /^services:[[:space:]]*$/ { in_services=1; next }
+    in_services && /^  [A-Za-z0-9_.-]+:[[:space:]]*$/ { cur=$1; sub(/:$/, "", cur); next }
+    cur == svc && index($0, key ":") > 0 { sub(/^[[:space:]]*[^:]+:[[:space:]]*/, ""); print; exit }
+  ' "${compose_file}")
+  val=${val%\"}; val=${val#\"}
+  printf '%s' "${val}"
+}
+
+# 值的**形态**描述（提取失败时写进输出 ⇒ 可归因，不再只有 `<不可判定>`；issue #8989 ②）
+jwt_value_shape_of() {
+  local raw=$1 bytes
+  bytes=$(printf '%s' "${raw}" | wc -c | tr -d ' ')
+  case "${raw}" in
+    *"BEGIN PRIVATE KEY"*) printf '私钥 PEM（%s 字节，不能当公钥验签）' "${bytes}" ;;
+    *"BEGIN PUBLIC KEY"*)
+      if [ "${raw#*$'\n'}" != "${raw}" ]; then
+        printf '公钥 PEM（%s 字节，含真换行）' "${bytes}"
+      else
+        printf '公钥 PEM（%s 字节，单行 + 字面 \\n 形态）' "${bytes}"
+      fi
+      ;;
+    *) printf '非 PEM 文本（%s 字节，首 40 字：%s）' "${bytes}" "$(printf '%s' "${raw}" | cut -c1-40)" ;;
+  esac
+}
+
+# 取某服务**下次重建会实际生效**的公钥：输出 "<指纹>|<状态>|<来源说明>"。
+# 状态：`ok` = 已算出指纹；`absent` = 宿主未配置（走 classpath 默认）；`unjudgeable` = 有值但取不到指纹。
+# 🔴 issue #8989 ③：只读**宿主权威源**（`.env.*` / compose 声明 / `file:` 指向的宿主文件）。
+# 旧实现用 `docker compose exec` 读**运行中的容器** —— 容器没被重建时读到的是旧容器，
+# 那正是 2026-11-21 那次部署「admin-api 不可判定、ai-agent 读到旧内联 PEM」的一半原因。
+jwt_key_fingerprint_of() {
+  local svc=$1 raw src path content fp
+  case "${svc}" in
+    admin-api)
+      # env_file = .env.admin-api；compose 的 environment 里没有 JWT_* 覆盖。
+      raw=$(jwt_env_value_of .env.admin-api JWT_PUBLIC_KEY)
+      src=".env.admin-api 的 JWT_PUBLIC_KEY"
+      ;;
+    ai-agent)
+      # compose 的 environment **优先于** env_file ⇒ 先读它；没有才回落 .env.ai-agent。
+      raw=$(jwt_compose_value_of docker-compose.yml ai-agent JWT_PUBLIC_KEY)
+      src="docker-compose.yml 的 ai-agent.environment.JWT_PUBLIC_KEY"
+      if [ -z "${raw}" ]; then
+        raw=$(jwt_env_value_of .env.ai-agent JWT_PUBLIC_KEY)
+        src=".env.ai-agent 的 JWT_PUBLIC_KEY"
+      fi
+      ;;
+    *)
+      printf '|unjudgeable|未知服务 %s（断言只认 admin-api / ai-agent）' "${svc}"
+      return 0
+      ;;
+  esac
+  case "${raw}" in
+    "")
+      printf '|absent|%s（宿主未设置 ⇒ 下次重建走镜像 classpath 默认，宿主面无内容可判）' "${src}"
+      ;;
+    classpath:*)
+      # issue #9059：`classpath:<rel>` 是 admin-api 的**默认取值形态**（`.env.admin-api` 里写的就是它）
+      # ⇒ 必须能解析成**同一份**公钥再比指纹；解析不到仍判 `unjudgeable`（fail-closed，不许放行）。
+      content=$(jwt_classpath_resource_of "${raw#classpath:}") || content=""
+      if [ -z "${content}" ]; then
+        printf '|unjudgeable|%s = %s（部署树 / 持久缓存里都解析不到该 classpath 资源 ⇒ 不可判定；取值形态已登记在 deploy/swas/jwt-value-forms.json）' "${src}" "${raw}"
+        return 0
+      fi
+      fp=$(printf '%s' "${content}" | jwt_pubkey_fingerprint) || fp=""
+      if [ -z "${fp}" ]; then
+        printf '|unjudgeable|%s = %s（classpath 资源读到了但提取指纹失败：%s）' "${src}" "${raw}" "$(jwt_value_shape_of "${content}")"
+      else
+        printf '%s|ok|%s = %s（classpath 资源 backend/admin-api/src/main/resources/%s）' "${fp}" "${src}" "${raw}" "${raw#classpath:}"
+      fi
+      ;;
+    file:*)
+      path=$(jwt_host_path "${raw#file:}")
+      content=$(cat "${path}" 2>/dev/null) || content=""
+      if [ -z "${content}" ]; then
+        printf '|unjudgeable|%s = %s（宿主读不到该文件）' "${src}" "${raw}"
+        return 0
+      fi
+      fp=$(printf '%s' "${content}" | jwt_pubkey_fingerprint) || fp=""
+      if [ -z "${fp}" ]; then
+        printf '|unjudgeable|%s = %s（提取指纹失败：读到了 %s）' "${src}" "${raw}" "$(jwt_value_shape_of "${content}")"
+      else
+        printf '%s|ok|%s = %s（宿主文件）' "${fp}" "${src}" "${raw}"
+      fi
+      ;;
+    *)
+      fp=$(printf '%s' "${raw}" | jwt_pubkey_fingerprint) || fp=""
+      if [ -z "${fp}" ]; then
+        printf '|unjudgeable|%s（提取指纹失败：读到了 %s）' "${src}" "$(jwt_value_shape_of "${raw}")"
+      else
+        printf '%s|ok|%s（内联 PEM 内容）' "${fp}" "${src}"
+      fi
+      ;;
+  esac
+}
+
+_JWT_API=$(jwt_key_fingerprint_of admin-api)
+_JWT_AGENT=$(jwt_key_fingerprint_of ai-agent)
+IFS='|' read -r _JWT_API_FP _JWT_API_STATE _JWT_API_SRC <<< "${_JWT_API}"
+IFS='|' read -r _JWT_AGENT_FP _JWT_AGENT_STATE _JWT_AGENT_SRC <<< "${_JWT_AGENT}"
+echo "  admin-api（签发）: 指纹=${_JWT_API_FP:-<不可判定>} 来源=${_JWT_API_SRC}"
+echo "  ai-agent（验签）: 指纹=${_JWT_AGENT_FP:-<不可判定>} 来源=${_JWT_AGENT_SRC}"
+if [ "${_JWT_API_STATE}" = "absent" ] && [ "${_JWT_AGENT_STATE}" = "absent" ]; then
+  # 唯一允许 SKIPPED 的形态（issue #8989 验收口径）：两侧都走 classpath 默认，宿主面没有配置可判。
+  echo "  JWT_KEY_SAME_SOURCE=SKIPPED"
+  echo "  ⏭️  JWT 同源断言：**SKIPPED（两侧都走 classpath 默认，宿主面没有配置可判）** ⇒ **不判绿**"
+  echo "     ::warning::JWT 同源断言 SKIPPED：admin-api=${_JWT_API_SRC} / ai-agent=${_JWT_AGENT_SRC}"
+  echo "     让它可以判定：两侧都显式配「JWT_*」（生产 =「file:/opt/migao-deploy/jwt/…」，见"
+  echo "     docs/deployment/production-deployment.md §5.5）后重跑本部署"
+elif [ "${_JWT_API_STATE}" != "ok" ] || [ "${_JWT_AGENT_STATE}" != "ok" ]; then
+  # 只有一侧可判 / 读到了非公钥形态 ⇒ **不是**「取不到就放过」：那是下一次全 401 的入口。
+  echo "  JWT_KEY_SAME_SOURCE=INCOMPLETE"
+  echo "  ❌ JWT 同源断言**无法完成**：admin-api=${_JWT_API_STATE}（${_JWT_API_SRC}）/ ai-agent=${_JWT_AGENT_STATE}（${_JWT_AGENT_SRC}）"
+  echo "     口径：SKIPPED 只允许「两侧都走 classpath 默认」；一侧有值而另一侧读不到 = 配置不完整，**不得放行**。"
+  echo "     排查（只读宿主权威源，不读运行中的容器）：grep '^JWT' /opt/migao-deploy/.env.admin-api /opt/migao-deploy/.env.ai-agent；grep JWT_PUBLIC_KEY docker-compose.yml"
+  echo "     修好上面任一处后重跑本部署"
+  exit 1
+elif [ "${_JWT_API_FP}" != "${_JWT_AGENT_FP}" ]; then
+  echo "  JWT_KEY_SAME_SOURCE=MISMATCH"
+  echo "  ❌ JWT 验签**不同源**：admin-api=${_JWT_API_FP} / ai-agent=${_JWT_AGENT_FP}"
+  echo "     后果：admin-api 签的 token ai-agent 一把都验不过 ⇒ AI 接口**全部 401**（TOKEN_INVALID）"
+  echo "     口径：两侧必须读**同一份**公钥（ai-agent 的 JWT_PUBLIC_KEY=file:/opt/migao-deploy/jwt/public.pem，"
+  echo "           与 admin-api 的 JWT_PRIVATE_KEY 成对）；见 docs/deployment/production-deployment.md §5.5"
+  echo "     排查：grep '^JWT' /opt/migao-deploy/.env.admin-api /opt/migao-deploy/.env.ai-agent；grep JWT_PUBLIC_KEY docker-compose.yml"
+  exit 1
+else
+  echo "  JWT_KEY_SAME_SOURCE=OK"
+  echo "  ✅ JWT 验签同源（指纹 ${_JWT_API_FP}）—— admin-api 签发的 token ai-agent 能验"
+fi
+
 # ── 2.6 nginx（流量入口本身：独占 80/443、只有一个，不参与蓝绿）──────────────
 docker compose up -d --no-deps nginx
 # 上游容器重建后 IP 可能变化，nginx 启动时缓存旧上游 IP ⇒ 必须让它重新解析，否则 502。
 # 用 **reload**（优雅：旧 worker 把在途请求做完再退）而不是 restart（硬重启 ⇒ 当场丢弃在途连接）；
 # reload 不可用/失败 ⇒ 回落 restart（= 改动前的行为，不引入新的坏路径）。
 docker compose exec -T nginx nginx -s reload || docker compose restart nginx
+# 🔴 reload 只说明「命令发出去了」；入口是否真的指向**新**上游，只能靠探一次本机上游（issue #8976 ④）。
+nginx_expect_upstream_ok "nginx 重建后"
 
 # ── 2.6.1 TLS 证书自动续期（宿主 cron；issue #8201）──────────────────────────
 # 幂等：/etc/cron.d/migao-tls-renew 内容未变则不重写（`--install-cron` 自己判）。
@@ -1601,8 +2636,15 @@ fi
 if [ "$_migao_ai_missing" -gt 0 ]; then
   echo "  📋 补齐动作（缺 key **不判失败**：本次部署已按流程走完，凭据缺失是运维态）"
   echo "     1) 在服务器改 ${MIGAO_AI_ENV_FILE}（本脚本**不写**它 —— 人工维护、不入库）"
-  echo "     2) 改完必须 recreate（env_file 变更不重读）："
+  echo "     2) 改完必须 recreate（env_file 变更不重读），**并且**让 nginx 重新解析上游"
+  echo "        （重建换 IP ⇒ 不 reload 就是全站 502，实测 90 秒；issue #8976）："
   echo "        docker compose -f docker-compose.yml -f docker-compose.bluegreen.yml up -d --no-deps --force-recreate ai-agent"
+  echo "        docker compose exec -T nginx nginx -s reload || docker compose restart nginx"
+  echo "        自证（站点域 = \${MIGAO_PUBLIC_DOMAIN}，本机探测，必须 200）："
+  # ⚠️ `$` 必须**转义**（只打印给人抄）：本探针块会被判据**单独 source** 执行
+  #    （tests/unit_ci_workflows/test_ai_agent_key_probe.py），那里没有 MIGAO_PUBLIC_DOMAIN
+  #    ⇒ 真展开会 `set -u` 当场 unbound variable（实测 5 条判据红）。
+  echo "        curl -sk -o /dev/null -w '%{http_code}\\n' --resolve \"api.\${MIGAO_PUBLIC_DOMAIN}:443:127.0.0.1\" \"https://api.\${MIGAO_PUBLIC_DOMAIN}/api/version\""
   echo "     3) 自证：容器内 ASR_API_KEY 指纹应为 sk-sp-…（MaaS）而不是 35 字节的旧百炼 key；curl -fsS http://127.0.0.1:8000/health"
   echo "     4) 密钥来源 / 轮换流程见 issue #7718（含 2026-10-25 的线上热修记录）"
 fi

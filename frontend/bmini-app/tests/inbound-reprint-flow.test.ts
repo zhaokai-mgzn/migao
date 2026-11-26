@@ -201,7 +201,7 @@ describe('拍照补打主链：解码优先 / 码空间门禁 / 404-410 分开 /
     const state = await loadReprintDetail({ reading, lookup: server.lookup })
     expect(server.state.detailCalls).toEqual([])
     expect(state.kind).toBe('blocked')
-    if (state.kind === 'blocked') expect(state.message).toContain('不是观星台的标签')
+    if (state.kind === 'blocked') expect(state.message).toContain('不是生意管家的标签')
   })
 
   it('F4 解码失败 ⇒ 走手输（不猜单、不预填）+ 重拍提示', async () => {

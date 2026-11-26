@@ -97,7 +97,6 @@ DEPLOY_WF = {
     "admin-web": "deploy-frontend.yml",
     "worker-h5": "worker-h5-publish.yml",
     "bmini-h5-hosting": "bmini-h5-publish.yml",
-    "c-end-h5": "c-end-h5-publish.yml",
 }
 
 RECONCILE_CALL = re.compile(r"^\s*reconcile_one\s+(\S+)\s+(\S+)\s+", re.M)
@@ -584,7 +583,7 @@ def test_breaker_terminal_state_is_red(tmp_path):
     fx = make_repo(tmp_path, head_age_secs=2700 + 600, drift=True)
     ex = Exec(tmp_path, fx, {wf: runs(fx["head"], "failure") for wf in DEPLOY_WF.values()})
     assert ex.reconcile().returncode == 0
-    assert "断路器跳过=6" in ex.summary_text, f"前置条件：断路器必须跳闸 → {ex.summary_text}"
+    assert "断路器跳过=5" in ex.summary_text, f"前置条件：断路器必须跳闸 → {ex.summary_text}"
     _assert_red_with_issue(ex, ex.watchdog())
 
 
@@ -669,15 +668,15 @@ def test_repeated_red_tick_does_not_spam_the_same_commit(tmp_path):
 
 
 def test_alarm_surface_is_exactly_the_watched_legs(tmp_path):
-    """**可归因 + 豁免腿不进告警面**：六条腿全都「没上线」时，计入告警的必须是**5 条**
-    （受值守的腿），豁免的 `c-end-h5`（发布由人手动，用户裁定 B）不计入、也不能让它把噪声带进来。"""
+    """**可归因 + 豁免面**：五条腿全都「没上线」时，计入告警的必须是**5 条**
+    （受值守的腿）；`c-end-h5` 已随 C 端小程序下线删除（issue #9233），豁免面因此归零。"""
     fx = make_repo(tmp_path, head_age_secs=2700 + 600, drift=True)
     ex = Exec(tmp_path, fx, {wf: runs(fx["head"], "failure") for wf in DEPLOY_WF.values()})
     assert ex.reconcile().returncode == 0
     wd = ex.watchdog()
     blob = wd.stdout + ex.summary_text
     assert "计入告警=5" in blob and "机制故障=0" in blob, f"告警面口径不对 →\n{blob}"
-    assert "豁免腿" in blob and "c-end-h5" in blob, "豁免必须有具名说明（不是静默漏掉）"
+    assert "豁免腿" in blob, "豁免面必须被具名说明（不是静默漏掉）"
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -722,27 +721,20 @@ def test_red_proof_ledger_and_lists_are_discriminating(tmp_path, monkeypatch):
     broken = copy.deepcopy(ledger)
     broken["entries"] = [e for e in broken["entries"] if e["svc"] != "admin-api"]
     assert problems(broken, real_body) != []
-    # ③ 台账把某条腿标成 watchdog，而值守面里它在豁免列表
+    # ④ 台账把某条腿的 `why` 清空（豁免/值守都不许匿名）
+    broken = copy.deepcopy(ledger)
+    broken["entries"][0].pop("why", None)
+    assert problems(broken, real_body) != []
+    # ⑤ 台账多出一条 workflow 里不存在的腿（陈旧登记）
+    broken = copy.deepcopy(ledger)
+    broken["entries"].append({"svc": "ghost-leg", "wf": "ghost.yml", "watchdog": True, "why": "x"})
+    assert problems(broken, real_body) != []
+    # ⑥ 把某条值守腿降级成「豁免」却不给豁免理由/锚（2026-11-26 起豁免面为空 ⇒ 用降级表达）
     broken = copy.deepcopy(ledger)
     for e in broken["entries"]:
-        if e["svc"] == "c-end-h5":
-            e["watchdog"] = True
-            e.pop("exempt_why", None)
-    assert problems(broken, real_body) != []
-    # ④ 豁免没写理由
-    broken = copy.deepcopy(ledger)
-    for e in broken["entries"]:
-        e.pop("exempt_why", None)
-    assert problems(broken, real_body) != []
-    # ⑤ 豁免锚在 workflow 里找不到（依据被删/改名）
-    broken = copy.deepcopy(ledger)
-    for e in broken["entries"]:
-        if not e["watchdog"]:
-            e["anchor"] = "这句话在 workflow 里不存在"
-    assert problems(broken, real_body) != []
-    # ⑥ 豁免条数上涨（超过冻结上限）
-    broken = copy.deepcopy(ledger)
-    broken["frozen_max_exempt"] = 0
+        if e["svc"] == "worker-h5":
+            e["watchdog"] = False
+            e.pop("why", None)
     assert problems(broken, real_body) != []
 
 
@@ -1001,7 +993,7 @@ def test_terminal_state_does_not_redispatch(tmp_path):
     assert rc.returncode == 0, f"前置条件：对账步必须成功 → {rc.stderr}"
     dispatched = [c for c in ex.gh_calls if c.startswith("workflow run")]
     assert not dispatched, f"断路器跳闸后**不得**再 dispatch → {dispatched}"
-    assert "断路器跳过=6" in ex.summary_text, f"前置条件：六条腿都必须被断路器挡住 → {ex.summary_text}"
+    assert "断路器跳过=5" in ex.summary_text, f"前置条件：五条腿都必须被断路器挡住 → {ex.summary_text}"
 
 
 # ── 类级元守卫：`workflow_run` 的上游清单未登记即红 ──────────────────────────────────────

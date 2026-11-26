@@ -33,7 +33,7 @@ jobs:
   # 面口径 = 与各腿既有内联判定**同一份面**（变更路径的**首段** ∈ { frontend tests .github }，
   #   与既有锚定正则的交替逐值等价）。⚠️ 刻意不用 `grep -E` 把交替写进命令行：管道库存判据
   #   （tests/unit_ci_workflows/test_step_exit_code_propagation.py）把**引号内的裸竖线**也保守计成管道，
-  #   在 28+10 零余量下会把新步骤误判成「新增真管道」；首段比对避开这层误报且行为等价（含 frontend/bmini-app 与 frontend/mini-app 两类改动均命中 → 更保守）。
+  #   在 28+10 零余量下会把新步骤误判成「新增真管道」；首段比对避开这层误报且行为等价（含 frontend/bmini-app 与前端其它包的改动均命中 → 更保守）。
   # 登记册 = tests/unit_ci_workflows/declaration_gate_registry.json（未登记即红）。
   detect:
     name: bmini H5 面判定（决定哪些腿跑）
@@ -45,6 +45,8 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+          # ⚡ 只取 tree（issue #9120）：本腿 git 用法只有 `git diff --name-only`（tree 级）
+          filter: blob:none
 
       - name: Detect bmini-app face
         id: face
@@ -89,6 +91,8 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+          # ⚡ 只取 tree（issue #9120）：本腿 git 用法只有 `git diff --name-only`（tree 级）
+          filter: blob:none
 
       - name: Detect bmini-app changes
         id: detect
@@ -121,8 +125,7 @@ jobs:
       - name: Install dependencies
         if: steps.detect.outputs.run_tests == 'true'
         working-directory: ${{ env.WORKING_DIR }}
-        run: npm ci
-
+        run: npm ci --prefer-offline --no-audit --no-fund
       - name: TypeScript type check
         if: steps.detect.outputs.run_tests == 'true'
         working-directory: ${{ env.WORKING_DIR }}
@@ -136,7 +139,7 @@ jobs:
   # ── 构建腿（issue #5650）──────────────────────────────────────────────────────────
   # 为什么必须有：用户 2026-09-26 裁定「暂时只做 H5 浏览器访问，小程序链路先搁置」
   #   ⇒ **h5 编译产物 = 唯一用户可达形态**，而本 workflow 此前**两端都不构建**
-  #   （全仓唯一 `build:h5` 在 `frontend/mini-app`，与本端无关）⇒ 编译坏了没有任何东西会红。
+  #   （C 端小程序的 `build:h5` 已随 issue #9233 删除，与本端无关）⇒ 编译坏了没有任何东西会红。
   # 为什么两端都构建：h5 的平台分支改动会同时压到 weapp 侧（本次改的就是 `utils/platform.ts` 的判别），
   #   只构建 h5 会让「h5 绿、weapp 编译坏了」这种形态溜过去。
   # 为什么合成**一个** job 而不是两条：`npm ci`（bmini-app 依赖树重）的成本远大于一次 `taro build`，
@@ -153,6 +156,8 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+          # ⚡ 只取 tree（issue #9120）：本腿 git 用法只有 `git diff --name-only`（tree 级）
+          filter: blob:none
 
       - name: Detect bmini-app changes
         id: detect
@@ -186,8 +191,7 @@ jobs:
       - name: Install dependencies
         if: steps.detect.outputs.run_build == 'true'
         working-directory: ${{ env.WORKING_DIR }}
-        run: npm ci
-
+        run: npm ci --prefer-offline --no-audit --no-fund
       # 先 h5：它是唯一的用户可达形态（构建坏了就没人能访问）⇒ 失败时先报这一条
       - name: Build H5
         if: steps.detect.outputs.run_build == 'true'
@@ -198,6 +202,26 @@ jobs:
         if: steps.detect.outputs.run_build == 'true'
         working-directory: ${{ env.WORKING_DIR }}
         run: npm run build:weapp
+
+      # ── weapp 产物断言（issue #8980）─────────────────────────────────────────────
+      # 为什么接在这里：`npm run build:weapp` 只证明「**编译过了**」，证明不了产物能用 ——
+      #   ① 域名错了：三个 `TARO_APP_*` 少注入一个，产物静默指向测试域 / localhost，
+      #      上传照样成功、真机连不上（2026-11-21 首次手工发体验版差点就这么发出去）；
+      #   ② 包超了：本地构建不报、上传那一刻才爆（#8979）。🔴 判**主包 ≤ 单包上限 − 300KB 预留**、
+      #      每个分包各自 ≤ 单包上限、总包 ≤ 20MB；常量唯一来源 = `deploy/scripts/bmini-dist-budget.json`
+      #      （本文件与脚本都不写死上限）。口径 = **dist 字节 ≈ 微信上传读数**（2026-11-23 实测
+      #      1,465,245 → TOTAL 1,461,748，比值 0.998）⇒ 不叠折算系数 —— #8981 收口：历史上那个
+      #      ×1.425 读数在部署机四份产物与 devtool 日志里都复现不出来，不许当口径用；
+      #   ③ 结构缺件：少一张 `.wxml` 只有微信开发者工具上传时才报。
+      # 🔴 口径：CI 的构建**不注入**生产常量（既有行为一字不改）⇒ 产物就该是**测试域** ⇒ `--env test`。
+      #   真正的生产包由 `scripts/bmini-experience.sh build --env prod` 在发布时构建并断言 ——
+      #   同一条判据、**同一份实现**（本步只是把它接到 PR 上，不新写第二份判定）。
+      # 判据（脚本存在 + 本步真的调它 + 排在 Build weapp 之后）=
+      #   tests/unit_ci_workflows/test_bmini_dist_assert.py::test_workflow_runs_the_assert_after_the_weapp_build
+      # 红证 = 摘掉本步 / 改成 `--env prod` / 挪到 Build weapp 之前，各自判红。
+      - name: Assert weapp dist (domain / structure / size)
+        if: steps.detect.outputs.run_build == 'true'
+        run: bash deploy/scripts/bmini-assert-dist.sh frontend/bmini-app/dist --env test
 
   # ── 底部 tabBar 的**几何 / 结构** e2e 腿（issue #5759）──────────────────────────
   # 为什么要有：C 端早有 `xiaobu-h5-visual`（`mini-app.yml`），而 B 端**零 e2e** ⇒
@@ -216,6 +240,8 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+          # ⚡ 只取 tree（issue #9120）：本腿 git 用法只有 `git diff --name-only`（tree 级）
+          filter: blob:none
 
       - name: Detect bmini-app changes
         id: detect
@@ -248,13 +274,12 @@ jobs:
       - name: Install bmini-app deps
         if: steps.detect.outputs.run_tests == 'true'
         working-directory: ${{ env.WORKING_DIR }}
-        run: npm ci
-
+        run: npm ci --prefer-offline --no-audit --no-fund
       - name: Install Playwright deps
         if: steps.detect.outputs.run_tests == 'true'
         working-directory: tests
         run: |
-          npm ci
+          npm ci --prefer-offline --no-audit --no-fund
           npx playwright install chromium --with-deps
 
       # 🔴 这里**没有**单独的 Build H5 步骤：本腿的配置在加载期用 `tests/xiaobu_dist_freshness.py ensure`

@@ -1,11 +1,12 @@
-# AGENTS.md — MIGAO（观星台 · 布艺行业 AI 经营平台）
+# AGENTS.md — MIGAO（生意管家 · 布艺行业 AI 经营平台）
 
 > DSH（DeepSeek Harness）会话的仓库级入口。开发前先读本文件，再按需查阅 https://github.com/zhaokai-mgzn/migao/wiki/INDEX 定位规范页。
 
 ## 这是什么
 
 面向布艺 / 窗帘商家的多租户 AI 经营平台：顾客侧米宝 + 经营侧黄金策双 Agent（LangGraph），
-Java admin-api + Python ai-agent-service + Next.js admin-web + Taro mini-app / bmini-app。
+Java admin-api + Python ai-agent-service + Next.js admin-web + Taro bmini-app（商家小程序 / 工人端 H5）。
+C 端顾客小程序 `frontend/mini-app` 已于 2026-11-26 整目录删除（issue #9233），顾客侧主入口改为微信客服。
 「智能客服」只是客户服务能力域的一部分，不是系统定位（详见 https://github.com/zhaokai-mgzn/migao/wiki/Product）。
 
 ## 改代码前（铁律）
@@ -45,7 +46,7 @@ Java admin-api + Python ai-agent-service + Next.js admin-web + Taro mini-app / b
     🔻 **适用范围已于 2026-09-27 收窄**（用户裁定「按你建议的执行即可」；**只收窄，不取消**禁令）：禁令的**对象**是
     **无人值守的删除 / 破坏性动作**；**非破坏性 · 幂等 · 带自证断言**的**重发布 / 只读心跳**类周期任务**可以**新增，
     四条**同时**成立才算：① **远端执行体不做删除**（有**机械自证**：拒绝在静态根上清理 + 发布前后父目录
-    `index.html` 哈希一致）——🔻（**由 PR #5733 的实例校准**：① 的**加强形态**，**不是**原裁定另立的第五条）
+    `index.html` 哈希一致）——🔻（**由 C 端 H5 只读心跳实例校准**（该腿已于 2026-11-26 随 C 端小程序下线）：① 的**加强形态**，**不是**原裁定另立的第五条）
     **周期档自身不得是写盘档**：只读 / 通知档与写盘档必须是**显式两态**，默认档**不写盘**，写盘要人显式输入
     ② **幂等**（同一输入连跑两次结果逐字节一致）③ **失败可见**（判红有承接面，不许静默半成品）
     ④ **在本 PR body 显式声明「这是新增 schedule，判据 = 上述四条」**。
@@ -56,8 +57,7 @@ Java admin-api + Python ai-agent-service + Next.js admin-web + Taro mini-app / b
     凡"每天都要看"的必须有**值守面**（判红**自己开单** + 清零判据）—— 靠"记得去看"不算机制。
     📌 已批准具名实例（`schedule` 窄例外）：PR #5731（2026-09-27，批准人 = 用户）—— **重发布**两条：
     `.github/workflows/worker-h5-publish.yml` 的 `23 18 * * *` · `.github/workflows/bmini-h5-publish.yml` 的 `43 18 * * *`；
-    PR #5733（2026-09-27，**在飞**）—— 第三条：C 端 H5 发布腿的 `53 18 * * *`（**只读心跳**：该腿的 cron 只走
-    `notify`「只报告、绝不写盘」，写盘档要 `workflow_dispatch` + 显式 `publish=true`）。
+    （C 端 H5 发布腿已于 2026-11-26 随 C 端小程序下线，不再作为实例。）
     全文见 `migao-dev-flow` §23.9（C1~C4）。
 
 11. **转述即未核实 · 声明存在 ≠ 可达**（2026-09-27 用户裁定「**发现容易犯的问题就应该固化到研发模式中避免再犯，
@@ -143,7 +143,7 @@ DSH 从 root `~/.dsh/.agent-presets/`（`USER_PRESET_DIR = '.agent-presets'`）�
 MIRROR="${MIGAO_PRESET_MIRROR:-$HOME/migao-dev-preset-anchor}"
 git clone --no-checkout <预设仓 URL> "$MIRROR"     # 默认 git@github.com:zhaokai-mgzn/migao-agent-presets.git
 git -C "$MIRROR" checkout --detach origin/main
-ls "$MIRROR/preset.yml"     # preset.yml 在预设仓 == 镜像的**根**（不在 `.agent-presets/migao` 下），可读才继续
+ls "$MIRROR/presets/migao-dev/preset.yml"   # 2026-11-21 起预设仓是 `presets/<name>/` 布局（仓根**不再是** preset），可读才继续
 
 # ② 摘掉旧目录 / 旧软链：**只在活锚是真目录时**才备份（新拓扑下活锚就是**软链**，
 #    `mv` 它只会把软链挪成一堆无主 `.bak`；实测清出过两个 6 周前的）
@@ -151,8 +151,8 @@ if [ -d "$HOME/.dsh/.agent-presets/migao" ] && [ ! -L "$HOME/.dsh/.agent-presets
   mv "$HOME/.dsh/.agent-presets/migao" "$HOME/.dsh/.agent-presets/migao.bak-$(date +%Y%m%d-%H%M%S)"
 fi
 
-# ③ 换链：软链目标 = 镜像的**仓根**；-s 建软链 / -f 覆盖已存在项 / -n 不跟随已存在的软链目录
-ln -sfn "$MIRROR" "$HOME/.dsh/.agent-presets/migao"
+# ③ 换链：软链目标 = 镜像里**某个 preset 目录**（presets/<name>/）；-s 建软链 / -f 覆盖已存在项 / -n 不跟随已存在的软链目录
+ln -sfn "$MIRROR/presets/migao-dev" "$HOME/.dsh/.agent-presets/migao"   # 软链目标 = **某个 preset 目录**
 
 # ④ 校验：应能读到 preset 元数据与技能
 cat "$HOME/.dsh/.agent-presets/migao/preset.yml"
@@ -181,12 +181,19 @@ head -3 "$HOME/.dsh/.agent-presets/migao/skills/migao-dev-flow/SKILL.md"
 - **权威源 = [zhaokai-mgzn/migao-agent-presets](https://github.com/zhaokai-mgzn/migao-agent-presets)（裁定 2026-10-02：复用并复活该仓；issue #6020 是迁移单）**；
   本业务仓已不再承载 `.agent-presets/**`。预设仓的接线与运维说明见其 [`README.md`](https://github.com/zhaokai-mgzn/migao-agent-presets/blob/main/README.md)。
 - **过渡期已结束（issue #6020）**：换链（把活锚改指到上面的新镜像路径）是 `S3`，**已于 2026-10-02 执行**
-  ⇒ 活锚 = `$HOME/migao-dev-preset-anchor`（**预设仓检出的仓根**），`./scripts/preset-anchor-check.sh`
+  ⇒ 活锚 = `$HOME/migao-dev-preset-anchor/presets/migao-dev`（**预设仓里研发模式那个目录**；2026-11-21 改布局），`./scripts/preset-anchor-check.sh`
   的默认调用落在**拓扑 A** 并给出真判定（预置内容随预设仓 PR 演进，合并后跑 `preset-anchor-refresh.sh`）。
   🔴 **口径要点**：自检**按拓扑自动选判定**（拓扑 A = 仓根检出 / 拓扑 B = 业务仓内的
   `.agent-presets/migao` 子树，兼容窗口）；**基线仓已无该前缀（空集）时判 `3` 无法判定**，
   **绝不许**输出「✅ 新鲜（0 个文件）」—— 空集比空集是**恒等**，那种绿是**假绿**。
   但 `~/.dsh/.agent-presets/migao` **任何时刻都必须可解析**（悬空 ⇒ DSH 静默加载不到研发模式，见下面 ②）。
+
+## 发布线（部署只认 `release`）
+
+- `main` = **集成线**：PR / CI / 评审 / auto-merge 照旧（不变）；
+- `release` = **发布线**：生产部署机**只认它**，发布身份 = `git rev-parse origin/release`；
+- 发布 = 一次显式动作：`./scripts/cut-release.sh`（**只允许快进**，旁路即退出码 2）；
+- 口径与边界见 [docs/deployment/release-branch.md](docs/deployment/release-branch.md)。
 
 ## 环境
 

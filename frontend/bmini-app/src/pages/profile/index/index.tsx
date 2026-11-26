@@ -35,7 +35,7 @@ export default function ProfilePage() {
   const handleAbout = () => {
     Taro.showModal({
       title: '关于我们',
-      content: '黄金策商家助手 v1.0.0\n面向商家员工的 AI 经营助手',
+      content: '生意管家 v1.0.0\n面向商家员工的 AI 经营助手',
       showCancel: false,
     })
   }

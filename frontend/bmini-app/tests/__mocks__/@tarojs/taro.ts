@@ -70,6 +70,12 @@ const Taro = {
     userInfo: { nickName: 'TestUser', avatarUrl: '' },
   })),
 
+  // 隐私授权（issue #9011）：B 端小程序申报的三类（照片 / 摄像头 / 麦克风）对应的接入面。
+  // ⚠️ 真实现里 h5 把这两个 API 实现成 `temporarilyNotSupport(...)` 的 stub（**函数存在但非真实现**）
+  // ⇒ 平台分支必须按编译目标判（`src/utils/privacy.ts` 的 `isH5()`），测试用 `process.env.TARO_ENV` 注入那一态。
+  onNeedPrivacyAuthorization: jest.fn(),
+  openPrivacyContract: jest.fn(),
+
   // System
   getSystemInfoSync: jest.fn(() => ({
     platform: 'devtools',

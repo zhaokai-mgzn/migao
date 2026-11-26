@@ -10,6 +10,10 @@
    「写不进去」），而**没有任何读数会先变红**。
 2. **P1-12 假活**：只有 ai-agent 有健康检查；`admin-api` / `admin-web` / `nginx` **没有** ⇒
    进程僵死（线程池耗尽 / 死锁）时容器仍 `Up`，`restart` 不会重启它。
+3. **宿主挂载缺失**（issue #8969，2026-11-21 生产 `api.cytda.com` 502 约 3min）：`.env.admin-api` 用
+   **文件式** JWT 私钥（`JWT_PRIVATE_KEY=file:/opt/migao-deploy/jwt/private.pem`），而 compose 的
+   admin-api **没有 `volumes:`** ⇒ 容器里那个路径不存在 ⇒ RS256 fail-closed 把进程打死。生产旧容器
+   **看起来**有挂载，只因那份挂载来自**历史手工创建** ⇒「按仓库 compose 重建容器」必然炸。
 
 ## 判据（每条都能单独变红）
 
@@ -25,7 +29,10 @@
 | 8 | green ↔ 正式服务的 `logging` / `healthcheck` 逐字一致（抗漂移红线的延伸） | 只在正式服务加 ⇒ 红 |
 | 9 | `deploy.sh` 有 **只读** 的容器日志水位读数：函数存在、**无删除动作**、在主流里**被调用**、输出 `MIGAO-DISK-WATERMARK` 且带上界对账 | 删调用 / 加 `rm` / 把读数段删掉 ⇒ 红 |
 | 10 | 执行式：`container_log_footprint_mb()` 在替身 `docker` 上算出「MB + 容器数」 | 改成按容器名硬编码 ⇒ 红 |
-| 11 | 判据 1~9 的注入式自证（在内存里变异文本，必须被检出并指名） | 任一注入**没被检出** ⇒ 红（判据自己空转） |
+| 11 | `docker-compose.yml` 的 admin-api **逐字**带 `/opt/migao-deploy/jwt:/opt/migao-deploy/jwt:ro` 与 `/opt/migao-deploy/uploads:/app/uploads`（issue #8969） | 删一条 / 去掉 `:ro` / 改容器目标 ⇒ 红（容器起来即崩 / 上传数据丢） |
+| 12 | **类级**：`.env.*` 里每个 `file:<路径>` 都必须被该服务某个卷的**容器目标**覆盖（issue #8969） | env 指了容器内某路径而 volumes 没覆盖 ⇒ 红；**取不到 env 文件 ⇒ SKIPPED 不可判定（不判绿）** |
+| 12b | **类级**：compose 的 `environment:` 值里出现 `file:<路径>` 时，同样必须被卷覆盖（issue #8976） | `JWT_PUBLIC_KEY: file:/…` 而该服务没挂那个目录 ⇒ 红（起来即崩 / 与 `.env` 侧不同源）；相对路径 ⇒ 红 |
+| 13 | 判据 1~9 / 11~12 的注入式自证（在内存里变异文本，必须被检出并指名） | 任一注入**没被检出** ⇒ 红（判据自己空转） |
 
 ## 红证（改前，逐条可复算）
 
@@ -49,12 +56,18 @@ grep -c 'MIGAO-DISK-WATERMARK' deploy/swas/deploy.sh  # 改前 0
 """
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 from pathlib import Path
 
 import pytest
 import yaml
+
+# ── 发布线自检的 `git` 桩（issue #9086）────────────────────────────────────
+# 本文件跑的是**真实 deploy.sh**：1.0.1 段现在会问 git「目标提交是不是 origin/release 的祖先」。
+# 桩补的是沙箱本来就该模拟的那一面（口径与该模块 docstring 一致），既有断言一字未改。
+from unit_ci_workflows import deploy_release_line_stub as rl_stub  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 BASE_COMPOSE = REPO_ROOT / "deploy" / "swas" / "docker-compose.yml"
@@ -227,6 +240,167 @@ def judge_green_parity(base_text: str, bg_text: str) -> list[str]:
     return v
 
 
+# ══════════════════════════════════════════════════════════════════════════
+# 判据 11 / 12：**宿主挂载**（issue #8969）
+#
+# 病（实测）：`.env.admin-api` 用**文件式** JWT 私钥（`file:/opt/migao-deploy/jwt/private.pem`），
+# 而 `docker-compose.yml` 的 admin-api **没有 `volumes:`** ⇒ 容器里那个路径不存在 ⇒
+# `JwtTokenProvider` 的 RS256 fail-closed 分支把进程打死（「JWT RSA 密钥加载失败，无法启用 RS256 签名」）
+# ⇒ 起来即崩（502）。生产旧容器**看起来**有挂载，只因那份挂载来自**历史手工创建**；
+# 仓库 compose 从来没有 ⇒「按仓库 compose 重建容器」必然炸。
+# 同族第二条（green 从不挂卷 ⇒ 蓝绿对这类服务永久失效）的 parity 判据在
+# tests/unit_ci_workflows/test_swas_deploy_blue_green.py。
+# ══════════════════════════════════════════════════════════════════════════
+
+#: 判据 11 的真值表（**逐字**）。依据不是拍的：
+#: ① `.env.admin-api` 的 `JWT_PRIVATE_KEY=file:/opt/migao-deploy/jwt/private.pem`；
+#: ② `LocalFileStorageService.UPLOAD_DIR = "uploads"`（相对路径）+ Dockerfile `WORKDIR /app` ⇒ `/app/uploads`。
+REQUIRED_VOLUMES: dict[str, tuple[str, ...]] = {
+    "admin-api": (
+        "/opt/migao-deploy/jwt:/opt/migao-deploy/jwt:ro",
+        "/opt/migao-deploy/uploads:/app/uploads",
+    ),
+    # 🔴 issue #8976（2026-11-21 生产 AI 接口全 401）：ai-agent 的 `JWT_PUBLIC_KEY` 改成
+    # **文件式**取值（`file:/opt/migao-deploy/jwt/public.pem`，与 admin-api 签名密钥同一份）
+    # ⇒ 容器里必须真有那个路径。删掉/改成 `:rw`/改容器目标 ⇒ 红（起不来，或凭空多出一个可写密钥面）。
+    "ai-agent": (
+        "/opt/migao-deploy/jwt:/opt/migao-deploy/jwt:ro",
+    ),
+}
+
+#: 取 `.env.*` 的目录：默认 = compose 所在目录（`env_file: .env.admin-api` 是**相对 compose 文件**的）。
+#: 在服务器上复核真 env 时指向部署目录：`MIGAO_SWAS_ENV_DIR=/opt/migao-deploy`。
+ENV_DIR_ENV_VAR = "MIGAO_SWAS_ENV_DIR"
+FILE_PATH_RE = re.compile(r"^file:(.+)$")
+
+
+def _volume_triplets(svc: dict) -> list[tuple[str, str, str]]:
+    """把 `volumes:` 解析成 (source, target, mode)；短语法 `src:dst[:mode]` 与长语法 dict 都认。"""
+    out: list[tuple[str, str, str]] = []
+    for entry in svc.get("volumes") or []:
+        if isinstance(entry, dict):
+            out.append(
+                (
+                    str(entry.get("source") or ""),
+                    str(entry.get("target") or ""),
+                    "ro" if entry.get("read_only") else "rw",
+                )
+            )
+            continue
+        parts = str(entry).split(":")
+        if len(parts) == 2:
+            out.append((parts[0], parts[1], "rw"))
+        elif len(parts) >= 3:
+            out.append((parts[0], parts[1], parts[2]))
+    return out
+
+
+def judge_host_mounts(compose_text: str) -> list[str]:
+    """判据 11：`REQUIRED_VOLUMES` 的卷必须**逐字**在位（删一条 / 去 `:ro` / 改容器目标 ⇒ 红）。"""
+    v: list[str] = []
+    services = _services(compose_text)
+    for name, wanted in REQUIRED_VOLUMES.items():
+        svc = services.get(name)
+        if svc is None:
+            v.append(f"docker-compose.yml 里找不到服务 {name}（判据坐标没了）")
+            continue
+        entries = [str(e) for e in (svc.get("volumes") or [])]
+        for want in wanted:
+            if want not in entries:
+                v.append(
+                    f"{name} 的 volumes 缺少 `{want}`（`.env` 里的文件式路径在容器内不存在 ⇒ 起来即崩 / "
+                    f"上传数据丢）；当前 = {entries}"
+                )
+    return v
+
+
+def judge_env_file_paths_covered(compose_text: str, env_texts: dict[str, str]) -> list[str]:
+    """判据 12（**类级**）：`.env.*` 里每个 `file:<路径>` 都必须被该服务某个卷的**容器目标**覆盖。
+
+    为什么判容器目标而不是宿主源：`file:` 的值是**应用在容器内**打开的那个路径；只有某条卷的容器目标
+    是它的前缀，文件才真的在容器里（本仓的 jwt / uploads 是 identity 映射，宿主路径 == 容器路径；
+    remap 形态 `/srv/keys:/opt/migao-deploy/jwt` 同样应当放行 —— 那是对的挂载，只是宿主侧换了位置）。
+    一条 `file:` 都没有 ⇒ 没有可判对象（真阴性）；**判据逻辑本身**由注入式红证保证有判别力。
+    """
+    v: list[str] = []
+    services = _services(compose_text)
+    for name, text in env_texts.items():
+        svc = services.get(name)
+        if svc is None:
+            v.append(f"env 文件属于 {name}，但 compose 里没有这个服务（判据坐标没了）")
+            continue
+        targets = [t.rstrip("/") or "/" for _, t, _ in _volume_triplets(svc)]
+        for line in text.splitlines():
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, value = line.partition("=")
+            m = FILE_PATH_RE.match(value.strip().strip('"').strip("'"))
+            if not m:
+                continue
+            path = m.group(1).strip()
+            if not path.startswith("/"):
+                v.append(f"{name} 的 {key} 用了**相对**路径 `file:{path}` ⇒ 宿主前缀无从判定（不接受）")
+                continue
+            if not any(path == t or path.startswith(t + "/") for t in targets):
+                v.append(
+                    f"{name} 的 {key} 指向容器内 `{path}`，但 {name}.volumes 的容器目标 {targets} 都没覆盖它"
+                    "（env 指的宿主路径没被挂进容器 ⇒ 起来就崩）"
+                )
+    return v
+
+
+def judge_compose_env_file_paths_covered(compose_text: str) -> list[str]:
+    """判据 12b（**类级**）：compose `environment:` 的值里出现 `file:<路径>` 时，同样必须被卷覆盖。
+
+    为什么这条必须有（issue #8976）：判据 12 只扫 **env 文件**（`.env.*`），而「密钥单一来源」的
+    落法是把 `JWT_PUBLIC_KEY` 直接写在 compose 的 `environment:` 里（`file:/opt/migao-deploy/jwt/public.pem`，
+    **只给路径不给内容**）⇒ 只扫 env 文件的判据**看不到**它：漏挂卷时 ai-agent 起来即崩，
+    而判据全绿。⇒ 同一份口径扩到 `environment:`，把「指了没挂的路径」这个形态**整体**关掉。
+
+    取不到对象不算通过：`environment:` 里没有 `file:` 值 ⇒ 本判据无对象（真阴性）；
+    判据逻辑本身由注入式红证保证有判别力（`test_injection_compose_env_file_path_not_covered_is_caught`）。
+    """
+    v: list[str] = []
+    for name, svc in _services(compose_text).items():
+        env = (svc or {}).get("environment") or {}
+        if not isinstance(env, dict):
+            # 列表形态（`- K=V`）也支持：规范化成 dict
+            env = dict(str(item).split("=", 1) for item in env if "=" in str(item))
+        targets = [t.rstrip("/") or "/" for _, t, _ in _volume_triplets(svc or {})]
+        for key, value in env.items():
+            m = FILE_PATH_RE.match(str(value).strip().strip('"').strip("'"))
+            if not m:
+                continue
+            path = m.group(1).strip()
+            if not path.startswith("/"):
+                v.append(f"{name}.environment.{key} 用了**相对**路径 `file:{path}` ⇒ 宿主前缀无从判定（不接受）")
+                continue
+            if not any(path == tgt or path.startswith(tgt + "/") for tgt in targets):
+                v.append(
+                    f"{name}.environment.{key} 指向容器内 `{path}`，但 {name}.volumes 的容器目标 {targets} "
+                    "都没覆盖它（compose 里指了路径却没挂进容器 ⇒ 起来就崩，且与 `.env` 那一侧不同源）"
+                )
+    return v
+
+
+def _read_env_files(compose_text: str) -> tuple[dict[str, str], list[str]]:
+    """按 compose 的 `env_file:` **现取** env 文件（不硬编码文件名 ⇒ 新增服务自动纳入判据）。"""
+    env_dir = Path(os.environ.get(ENV_DIR_ENV_VAR) or (REPO_ROOT / "deploy" / "swas"))
+    texts: dict[str, str] = {}
+    missing: list[str] = []
+    for name, svc in _services(compose_text).items():
+        raw = (svc or {}).get("env_file")
+        files = [raw] if isinstance(raw, str) else list(raw or [])
+        for ef in files:
+            path = env_dir / str(ef)
+            if not path.is_file():
+                missing.append(f"{name}:{ef}")
+                continue
+            texts[name] = texts.get(name, "") + path.read_text(encoding="utf-8", errors="replace") + "\n"
+    return texts, missing
+
+
 def _function_body(text: str, name: str) -> str:
     m = re.search(rf"^{re.escape(name)}\(\)\s*\{{(.*?)^\}}", text, re.S | re.M)
     return m.group(1) if m else ""
@@ -276,6 +450,8 @@ def all_violations(base_text: str, bg_text: str, deploy_text: str, nginx_text: s
         + judge_logging(bg_text, file_label="docker-compose.bluegreen.yml")
         + judge_healthchecks(base_text, deploy_text, nginx_text)
         + judge_green_parity(base_text, bg_text)
+        + judge_host_mounts(base_text)
+        + judge_compose_env_file_paths_covered(base_text)
         + judge_watermark_reading(deploy_text)
     )
 
@@ -294,6 +470,31 @@ def test_container_runtime_invariants_hold():
         _read(BASE_COMPOSE), _read(BG_COMPOSE), _read(DEPLOY_SH), _read(NGINX_CONF)
     )
     assert not v, "容器运行面判据未通过：\n- " + "\n- ".join(v)
+
+
+def test_admin_api_host_mounts_are_present():
+    """判据 11 的静态面：admin-api 的 jwt / uploads 卷必须在位（删一条即红）。"""
+    v = judge_host_mounts(_read(BASE_COMPOSE))
+    assert not v, "宿主挂载判据未满足：\n- " + "\n- ".join(v)
+
+
+def test_env_file_referenced_paths_are_mounted():
+    """判据 12 的静态面：真 env 文件可得 ⇒ 判；**一个都取不到 ⇒ SKIPPED（不可判定，不判绿）**。
+
+    服务器侧复核（只读、不改任何 `.env*`）：
+    `MIGAO_SWAS_ENV_DIR=/opt/migao-deploy python3 -m pytest tests/unit_ci_workflows/test_swas_container_runtime.py -q -k env_file`
+    """
+    base_text = _read(BASE_COMPOSE)
+    env_texts, missing = _read_env_files(base_text)
+    if not env_texts:
+        pytest.skip(
+            "取不到任何 .env 文件（"
+            + "、".join(missing)
+            + "）⇒ 不可判定，**不判绿**（判据逻辑由 test_injection_env_* 覆盖；"
+            "服务器上按 docstring 的命令复跑）"
+        )
+    v = judge_env_file_paths_covered(base_text, env_texts)
+    assert not v, "env 里的 `file:` 路径没被 compose 卷覆盖：\n- " + "\n- ".join(v)
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -327,6 +528,7 @@ def test_log_footprint_reading_is_executable_and_counts_project_containers(tmp_p
 
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
+    rl_stub.install(bin_dir)  # 发布线自检要问 git（issue #9086）：补桩，既有断言不受影响
     stub = bin_dir / "docker"
     stub.write_text(
         "#!/bin/sh\n"
@@ -449,6 +651,81 @@ def test_injection_nginx_health_location_removed_is_caught():
     mutated = _inject(nginx, "    location = /healthz {", "    location = /healthz-renamed {")
     v = judge_healthchecks(_read(BASE_COMPOSE), _read(DEPLOY_SH), mutated)
     assert any("/healthz" in x for x in v), v
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# 五、判据 11 / 12 的红证（issue #8969：删卷 / 去 `:ro` / env 指了没挂的路径都必须红）
+# ══════════════════════════════════════════════════════════════════════════
+
+
+def test_injection_admin_api_volume_removed_is_caught():
+    mutated = _inject(_read(BASE_COMPOSE), "      - /opt/migao-deploy/uploads:/app/uploads\n", "")
+    v = judge_host_mounts(mutated)
+    assert any("uploads" in x for x in v), v
+
+
+def test_injection_admin_api_jwt_volume_ro_flag_drift_is_caught():
+    mutated = _inject(
+        _read(BASE_COMPOSE),
+        "/opt/migao-deploy/jwt:/opt/migao-deploy/jwt:ro",
+        "/opt/migao-deploy/jwt:/opt/migao-deploy/jwt",
+    )
+    assert judge_host_mounts(mutated), "去掉 `:ro` 后判据没红（判据无判别力）"
+
+
+def test_injection_env_file_path_not_covered_is_caught():
+    """判据 12 的判别力：同一份 env（jwt 私钥）在**改前**形态（没有卷）上必红、改后必绿。"""
+    base = _read(BASE_COMPOSE)
+    env = {"admin-api": "JWT_PRIVATE_KEY=file:/opt/migao-deploy/jwt/private.pem\n"}
+    assert not judge_env_file_paths_covered(base, env), "反空跑锚点：当前 compose 应当能覆盖该路径"
+    mutated = _inject(base, "      - /opt/migao-deploy/jwt:/opt/migao-deploy/jwt:ro\n", "")
+    assert judge_env_file_paths_covered(mutated, env), "删掉 jwt 卷后判据没红（判据无判别力）"
+
+
+def test_injection_env_file_path_outside_volumes_is_caught():
+    env = {"admin-api": "KMS_KEY_FILE=file:/opt/migao-deploy/secrets/kms.pem\n"}
+    assert judge_env_file_paths_covered(_read(BASE_COMPOSE), env), "env 指了没挂载的宿主路径却没红"
+
+
+def test_injection_env_file_relative_path_is_not_green():
+    env = {"admin-api": "JWT_PRIVATE_KEY=file:private.pem\n"}
+    assert judge_env_file_paths_covered(_read(BASE_COMPOSE), env), "相对路径被当成可判定（假绿）"
+
+
+def test_ai_agent_jwt_volume_is_present():
+    """判据 11（issue #8976）：ai-agent 必须有 jwt 卷（`file:` 取值的宿主面）。"""
+    svc = _services(_read(BASE_COMPOSE))["ai-agent"]
+    entries = [str(e) for e in (svc.get("volumes") or [])]
+    assert "/opt/migao-deploy/jwt:/opt/migao-deploy/jwt:ro" in entries, (
+        f"ai-agent 缺 jwt 卷：{entries} ⇒ `JWT_PUBLIC_KEY=file:/opt/migao-deploy/jwt/public.pem` "
+        "在容器里不存在，ai-agent 起不来（或验签用的是别的钥匙）"
+    )
+
+
+def test_injection_compose_env_file_path_not_covered_is_caught():
+    """判据 12b 的判别力：删掉 ai-agent 的 jwt 卷 ⇒ `environment: file:` 覆盖判据必红。"""
+    base = _read(BASE_COMPOSE)
+    assert not judge_compose_env_file_paths_covered(base), "反空跑锚点：当前 compose 应当覆盖 `environment:` 的 file: 值"
+    mutated = _inject(
+        base,
+        "    # 与 admin-api **同一份**卷源（同目录、同样 `:ro`）—— 这就是「单一来源」的唯一实体面。\n"
+        "    # ⚠️ 判据（会红）：tests/unit_ci_workflows/test_swas_jwt_same_source.py（值 = file: + 卷在位）；\n"
+        "    # 同目录 test_swas_container_runtime.py 的类级判据另扫 `environment:` 里的 `file:` 路径。\n"
+        "    volumes:\n"
+        "      - /opt/migao-deploy/jwt:/opt/migao-deploy/jwt:ro\n",
+        "    # （注入：删掉 volumes）\n",
+    )
+    assert judge_compose_env_file_paths_covered(mutated), "删掉 ai-agent 的 jwt 卷后判据没红（判据无判别力）"
+
+
+def test_injection_compose_env_file_relative_path_is_not_green():
+    """判据 12b：`environment:` 里用相对路径 ⇒ 不可判定（不许当通过）。"""
+    mutated = _inject(
+        _read(BASE_COMPOSE),
+        "JWT_PUBLIC_KEY: file:/opt/migao-deploy/jwt/public.pem",
+        "JWT_PUBLIC_KEY: file:public.pem",
+    )
+    assert judge_compose_env_file_paths_covered(mutated), "相对路径被当成可判定（假绿）"
 
 
 if __name__ == "__main__":  # pragma: no cover - 手工复算入口

@@ -38,9 +38,9 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 LOGIN_RESPONSE_JAVA = (REPO_ROOT / "backend" / "admin-api" / "src" / "main" / "java"
                        / "com" / "migao" / "admin" / "dto" / "LoginResponse.java")
 
-# 消费端（两端各自一份同名类型；B 端为 mini-app 的对称复制）
+# 消费端（2026-11-26 / issue #9233：C 端小程序 `frontend/mini-app` 整目录删除 ⇒ 只剩 B 端一份消费端类型；
+# 删掉的不是断言而是「对象不在了」：B 端这一份仍被逐字段核对）
 USER_TYPE_FILES = {
-    "C 端 mini-app": REPO_ROOT / "frontend" / "mini-app" / "src" / "types" / "index.ts",
     "B 端 bmini-app": REPO_ROOT / "frontend" / "bmini-app" / "src" / "types" / "index.ts",
 }
 

@@ -67,7 +67,6 @@ BASH = "/bin/bash"
 STEP_NAME = "腿级失败反应（workflow_run ⇒ 出声 + 首次自动重跑一次）"
 RUN_ID = "999"        # `React` 固定的桩 run id（重跑读数一律断言 `run rerun 999 …`）
 STATE_SCRIPT = "scripts/deploy_reconcile_state.sh"
-C_END_LEG = "Publish C-end H5 (app.migaozn.com 根)"
 
 # gh 桩：**接口尽量贴近真 gh**（行为完全由环境变量 / 桩状态文件决定）——
 #  `.issue` 写成的行 = `编号<TAB>标题<TAB>状态`，`issue list` 据此答，`issue create` 据此记
@@ -287,9 +286,9 @@ def test_ledger_matches_workflow_run_legs_bidirectionally():
 
 
 def test_ledger_is_all_rerun_false_by_default():
-    """用户 2026-10-08 裁定：**六条腿全部 `rerun:false`**（只通知、不自动重跑）。"""
+    """用户 2026-10-08 裁定：**五条腿全部 `rerun:false`**（只通知、不自动重跑；第六条 C 端腿已随 issue #9233 删除）。"""
     pairs = [(l["name"], l["rerun"]) for l in ledger()["legs"]]
-    assert len(pairs) == 6, f"台账应登记六条腿（现取 {len(pairs)}）"
+    assert len(pairs) == 5, f"台账应登记五条腿（现取 {len(pairs)}）"
     assert all(r is False for _n, r in pairs), (
         "台账里有腿的 `rerun` 不是 `false` —— 用户 2026-10-08 裁定为**关掉自动重跑臂、只保留通知**"
         f"（现取 {pairs}）。要放开某条腿 ⇔ 改它那一行数据为 `true`（见台账 `rerun_default_off`）。"
@@ -616,9 +615,9 @@ def test_unregistered_leg_is_red(tmp_path):
 
 
 def test_rerun_false_leg_notifies_without_rerun(tmp_path):
-    """台账 `rerun=false` 的腿（c-end-h5）⇒ 通知但**不**重跑（发布由人手动）。"""
+    """台账 `rerun=false` 的腿（现取全部五条都是 false）⇒ 通知但**不**重跑。"""
     r = React(tmp_path, conclusion="failure", attempt="1", log_text="Manual gate 判红\n",
-              leg=C_END_LEG)
+              leg="Publish worker-h5 (app.migaozn.com/w/)")
     assert r.proc.returncode == 0, f"→ {r.proc.returncode}"
     assert not r.ran("run rerun 999"), f"rerun=false 的腿不许自动重跑 → {r.gh_calls}"
     assert r.ran("issue create"), f"仍必须通知 → {r.gh_calls}"
@@ -950,7 +949,6 @@ SVC_TO_WORKFLOW_NAME = {
     "admin-web": LEG_ADMIN_WEB,
     "worker-h5": "Publish worker-h5 (app.migaozn.com/w/)",
     "bmini-h5-hosting": "Publish bmini h5 (app.migaozn.com/b/)",
-    "c-end-h5": "Publish C-end H5 (app.migaozn.com 根)",
 }
 
 
