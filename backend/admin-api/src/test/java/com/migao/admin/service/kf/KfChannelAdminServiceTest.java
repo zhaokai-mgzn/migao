@@ -30,7 +30,8 @@ class KfChannelAdminServiceTest {
         mapper = mock(KfChannelMapper.class);
         cipher = mock(SecretCipher.class);
         client = mock(WechatKfClient.class);
-        service = new KfChannelAdminService(mapper, cipher, client);
+        service = new KfChannelAdminService(mapper, cipher, client,
+                "https://api.example/api/kf/callback", "tok", "aes", "1.1.1.1, 2.2.2.2");
     }
 
     @Test
@@ -126,5 +127,15 @@ class KfChannelAdminServiceTest {
         var views = service.list(1L);
         assertThat(views).hasSize(1);
         assertThat(views.get(0).toString()).doesNotContain("enc");
+    }
+
+    @Test
+    @DisplayName("接入页配置：部署级回调值 + 可信 IP 拆分（不含商户 Secret）")
+    void setupInfo() {
+        var info = service.setupInfo();
+        assertThat(info.callbackUrl()).isEqualTo("https://api.example/api/kf/callback");
+        assertThat(info.callbackToken()).isEqualTo("tok");
+        assertThat(info.encodingAesKey()).isEqualTo("aes");
+        assertThat(info.trustedIps()).containsExactly("1.1.1.1", "2.2.2.2");
     }
 }

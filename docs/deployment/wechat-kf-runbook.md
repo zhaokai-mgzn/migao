@@ -33,16 +33,18 @@ WECHAT_KF_OUTBOX_STALE_SECONDS=120
 - 主密钥轮换：新 key 加密新凭据；旧密文用旧 key 解密（`SecretCipher` 密文内带 keyId；当前实现默认 keyId=`default`，轮换需同批迁移）。
 - 回调 Token/AESKey 与企微后台**逐字一致**；不一致表现为 URL 验证 400/签名失败。
 
-## 2.5 产品内自助接入（2026-11-26，issue #9230）
+## 2.5 产品内自助接入（2026-11-26，issue #9230 / #9238）
 
-管理后台 → 设置 → 微信客服接入（`/settings/wechat-kf`，需 `system:manage`）：
+管理后台 → 设置 → 微信客服接入（`/settings/wechat-kf`，需 `system:manage`）。客户在企微后台**手动配置**，页面按四步引导：
 
-1. 填企业微信 `corp_id`、微信客服账号 `open_kfid`、应用 `Secret`（只提交一次，加密落库）；
-2. 保存即自检：`gettoken` + 客服账号列表必须包含该 `open_kfid`；失败会保留渠道并显示原因；
-3. 接通后「生成客服链接」得到 URL/二维码（可带 `scene_param` 做一店一码）；
-4. 停用 = `status=revoked`，不再接收新会话。
+1. **准备企业微信**：企业认证（我的企业 → 企业信息 → 企业认证）+ 开通微信客服（应用管理 → 微信客服）；
+2. **建自建应用**：应用管理 → 应用 → 自建 → 创建应用；复制企业 ID（我的企业 → 企业信息）与应用 Secret；
+3. **开权限 + 配回调 + 可信 IP**：把应用加入「微信客服 → 可调用接口的应用」并勾选微信客服权限；「API 接收事件」填页面给出的回调 URL / Token / EncodingAESKey；「企业可信IP」加入页面给出的出口 IP；
+4. **建客服账号**：微信客服 → 客服账号 → 添加，复制 `open_kfid`（以 wk 开头）；确保至少一名接待人员登录过企微。
 
-> 回调 Token / EncodingAESKey 仍是部署级配置（下方第 4 节）；页面只显示回调 URL，值向平台管理员索取后填到企微后台。手工 SQL 仅作为排障兜底。
+最后把 `corp_id` / `open_kfid` / `Secret` 填回本页，保存即自检：`gettoken` + 客服账号列表必须包含该 `open_kfid`；失败保留渠道并显示可执行原因；接通后可生成客服链接/二维码（可带 `scene_param` 做一店一码）；停用 = `status=revoked`。
+
+> 页面值来自部署级配置：`WECHAT_KF_CALLBACK_URL`（默认 `https://api.migaozn.com/api/kf/callback`）、`WECHAT_KF_TOKEN`、`WECHAT_KF_ENCODING_AES_KEY`、`WECHAT_KF_TRUSTED_IPS`（逗号分隔）。`GET /api/admin/kf/channels/setup-info` 只回这些部署级值，**不回任何商户 Secret**。手工 SQL 仅作为排障兜底。
 
 ## 3. 数据库
 

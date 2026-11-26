@@ -12,6 +12,13 @@
 - **required 检查**：分支保护的 `mini-app typecheck + unit tests` **保留同名 no-op**（`.github/workflows/mini-app.yml` 只 echo 说明并 success）——直接删 workflow 会让该 context 永不上报、所有 PR 永久 BLOCKED；重启条件写在该文件头。
 - **判据**：`tests/unit_ci_workflows/test_c_end_removed_guard.py`（目录/跟踪文件为零 + 机器面零引用 + 用例 `traces` 零幽灵引用 + 同名 required 仍上报 + 发布链成员不许长回来）；历史叙述（design / acceptance / 用例 merge_log）逐文件登记在 `c_end_history_refs_allowlist.json`（未登记即红、空豁免即红、只许缩短）。
 - **历史**：`acceptance/**`、`.github/cases/**` 的 `merge_log` 与旧 CHANGELOG 归档里的相关记录按「不删历史」保留。
+### 微信客服接入页补成四步手动配置引导，回调 URL / Token / AESKey / 可信 IP 可直接复制（2026-11-26，issue #9238）
+
+- **形态**：`设置 → 微信客服接入` 从「一个表单」补成四步流程 —— 准备企业微信 / 建自建应用 / 开权限+配回调+可信 IP / 建客服账号；每步写清在企微后台点哪里、要复制什么。最后一步把企业 ID、Secret、`open_kfid` 填回本页，保存即自检。
+- **省事**：页面直接给出并支持一键复制回调 URL、Token、EncodingAESKey 与可信 IP（来自部署级配置），客户不用再向平台管理员逐个索取；平台配置读不到时明确提示「联系平台管理员」，不谎报已配置。
+- **接口**：新增 `GET /api/admin/kf/channels/setup-info`（`system:manage`），只回部署级回调值，**不回任何商户 Secret**；页面仍不依赖服务商资质。
+- **判据**：`frontend/admin-web/tests/unit/components/WechatKfOnboarding.test.tsx`（四步引导 / 配置复制 / 读不到回退）、`KfChannelAdminServiceTest` / `KfChannelAdminControllerTest`（setup-info 不含 secret）；用例 KF-030。
+
 ### 微信客服可在产品内自助接入：填 corp_id / open_kfid / secret → 自检 → 生成客服链接（2026-11-26，issue #9230）
 
 - **形态**：设置新增「微信客服接入」子页（`/settings/wechat-kf`，仅 `system:manage` 可见）。商户填写企业微信 corp_id、客服账号 open_kfid 与应用 Secret，保存即自检（gettoken + 客服账号列表必须命中该 open_kfid）；命中 ⇒ 已接通，不命中 ⇒ 待自检 + 可执行原因。接通后可生成客服链接/二维码（`add_contact_way`，支持 scene_param），可停用（revoked）。

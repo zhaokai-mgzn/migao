@@ -638,23 +638,24 @@ cases:
 
   - id: KF-030
     legacy_id: ""
-    title: "微信客服自助接入 — 渠道加密登记 / 自检 / 客服链接 / 停用（issue #9230）"
+    title: "微信客服自助接入 — 四步引导 / 渠道加密登记 / 自检 / 客服链接 / 停用（issue #9230）"
     domains: [kf]
     tier: normal
     tags: [kf, onboarding, admin-web]
-    truths_ref: [kf.decision]
+    truths_ref: [kf.onboarding]
     user_inputs:
       - "商户在「设置 → 微信客服接入」填入 corp_id / open_kfid / secret，保存并自检"
     expectations:
       - tool: direct_reply
     data_checks:
-      - "secret 只提交一次：服务端用 SecretCipher 加密落库；列表/详情/自检响应都不得回传 secret/cipher/callback token"
+      - "接入页按四步给出企微后台路径（准备企业微信 / 建自建应用 / 开权限+配回调+可信IP / 建客服账号）；回调 URL/Token/AESKey/可信 IP 可一键复制，平台配置读不到时回退本页地址并提示联系管理员"
+      - "secret 只提交一次：服务端用 SecretCipher 加密落库；列表/详情/自检/setup-info 响应都不得回传商户 secret"
       - "自检 = gettoken + 客服账号列表必须包含该 open_kfid；命中 ⇒ status=active，不命中 ⇒ unauthorized + 可执行原因（不谎报已接通）"
       - "接入成功后可生成客服链接（add_contact_way，scene_param ≤128B）；链接返回 url 供二维码/复制"
       - "停用 ⇒ status=revoked，渠道不再接收新会话；历史会话保留"
-      - "端点权限 = system:manage；租户隔离 = 只查/只改当前租户的渠道"
+      - "端点权限 = system:manage；租户隔离 = 只查/只改当前租户的渠道；setup-info 只回部署级回调值（不含商户 secret）"
     skip_reason: "[backend-contract] 确定性契约/前端渲染判据（MockMvc + Mockito + jsdom），非 LLM 行为，不进入 agent-eval 冒烟"
-    merge_log: "2026-11-26 新增（issue #9230）：微信客服产品侧自助接入 MVP —— 后端渠道管理 + 官网/设置页表单 + 自检/客服链接/停用；把原先只能手工 SQL 的接入变成商户可操作流程。"
+    merge_log: "2026-11-26 新增（issue #9230）：微信客服产品侧自助接入 MVP —— 后端渠道管理 + 官网/设置页表单 + 自检/客服链接/停用；把原先只能手工 SQL 的接入变成商户可操作流程。2026-11-26 增强（issue #9238）：接入页补四步手动配置引导 + 回调 URL/Token/AESKey/可信 IP 可复制（setup-info 端点）。"
     traces:
       tests:
         - "backend/admin-api/src/test/java/com/migao/admin/service/kf/KfChannelAdminServiceTest.java"

@@ -78,4 +78,18 @@ class KfChannelAdminControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.url").value("https://kf.example/q"));
     }
+
+    @Test
+    @DisplayName("接入页配置：回调 URL/Token/AESKey/可信 IP（不含 secret）")
+    void setupInfo() throws Exception {
+        when(service.setupInfo()).thenReturn(new KfChannelAdminService.SetupInfo(
+                "https://api.example/api/kf/callback", "tok", "aes", List.of("1.1.1.1", "2.2.2.2")));
+
+        mvc.perform(get("/api/admin/kf/channels/setup-info"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.callbackUrl").value("https://api.example/api/kf/callback"))
+                .andExpect(jsonPath("$.data.callbackToken").value("tok"))
+                .andExpect(jsonPath("$.data.trustedIps[1]").value("2.2.2.2"))
+                .andExpect(jsonPath("$.data.secret").doesNotExist());
+    }
 }
