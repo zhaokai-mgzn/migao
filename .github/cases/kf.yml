@@ -635,3 +635,30 @@ cases:
         - "frontend/admin-web/tests/unit/pages/human-sessions-kf.test.tsx"
       ci: [pr-check.yml]
       verifies: []
+
+  - id: KF-030
+    legacy_id: ""
+    title: "微信客服自助接入 — 渠道加密登记 / 自检 / 客服链接 / 停用（issue #9230）"
+    domains: [kf]
+    tier: normal
+    tags: [kf, onboarding, admin-web]
+    truths_ref: [kf.decision]
+    user_inputs:
+      - "商户在「设置 → 微信客服接入」填入 corp_id / open_kfid / secret，保存并自检"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "secret 只提交一次：服务端用 SecretCipher 加密落库；列表/详情/自检响应都不得回传 secret/cipher/callback token"
+      - "自检 = gettoken + 客服账号列表必须包含该 open_kfid；命中 ⇒ status=active，不命中 ⇒ unauthorized + 可执行原因（不谎报已接通）"
+      - "接入成功后可生成客服链接（add_contact_way，scene_param ≤128B）；链接返回 url 供二维码/复制"
+      - "停用 ⇒ status=revoked，渠道不再接收新会话；历史会话保留"
+      - "端点权限 = system:manage；租户隔离 = 只查/只改当前租户的渠道"
+    skip_reason: "[backend-contract] 确定性契约/前端渲染判据（MockMvc + Mockito + jsdom），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-11-26 新增（issue #9230）：微信客服产品侧自助接入 MVP —— 后端渠道管理 + 官网/设置页表单 + 自检/客服链接/停用；把原先只能手工 SQL 的接入变成商户可操作流程。"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/kf/KfChannelAdminServiceTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/controller/KfChannelAdminControllerTest.java"
+        - "frontend/admin-web/tests/unit/components/WechatKfOnboarding.test.tsx"
+      ci: [pr-check.yml]
+      verifies: []

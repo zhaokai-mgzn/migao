@@ -62,4 +62,27 @@ class WechatKfClientTest {
                 .isInstanceOfSatisfying(KfApiException.class, e -> assertThat(e.getErrcode()).isEqualTo(95014));
         server.verify();
     }
+
+    @Test
+    @DisplayName("接入自检：账号列表 + 生成客服链接")
+    void onboardingApis() {
+        RestTemplate rt = new RestTemplate();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(rt).build();
+        WechatKfClient client = new WechatKfClient(rt, new ObjectMapper(), BASE);
+
+        server.expect(requestTo(BASE + "/cgi-bin/kf/account/list?access_token=tok"))
+                .andRespond(withSuccess("{\"errcode\":0,\"account_list\":[{\"open_kfid\":\"wk-1\"}]}",
+                        MediaType.APPLICATION_JSON));
+        server.expect(requestTo(BASE + "/cgi-bin/kf/add_contact_way?access_token=tok"))
+                .andExpect(content().string(containsString("\"scene_param\":\"tenant:1\"")))
+                .andRespond(withSuccess("{\"errcode\":0,\"url\":\"https://kf.example/q\"}",
+                        MediaType.APPLICATION_JSON));
+
+        assertThat(client.listAccounts("tok").path("account_list").get(0).path("open_kfid").asText())
+                .isEqualTo("wk-1");
+        assertThat(client.createContactWay("tok", "wk-1", "tenant:1"))
+                .isEqualTo("https://kf.example/q");
+        server.verify();
+    }
+
 }

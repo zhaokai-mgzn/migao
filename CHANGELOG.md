@@ -5,6 +5,13 @@
 > 原因 = 单文件涨到 512KB 越过扫描上限，详见存档文件头与 issue #6404。
 > **后续条目继续在本文件 `## [Unreleased]
 
+### 微信客服可在产品内自助接入：填 corp_id / open_kfid / secret → 自检 → 生成客服链接（2026-11-26，issue #9230）
+
+- **形态**：设置新增「微信客服接入」子页（`/settings/wechat-kf`，仅 `system:manage` 可见）。商户填写企业微信 corp_id、客服账号 open_kfid 与应用 Secret，保存即自检（gettoken + 客服账号列表必须命中该 open_kfid）；命中 ⇒ 已接通，不命中 ⇒ 待自检 + 可执行原因。接通后可生成客服链接/二维码（`add_contact_way`，支持 scene_param），可停用（revoked）。
+- **安全**：Secret 只提交一次，服务端 `SecretCipher` 加密落库；所有读面不回传 secret/cipher/callback token；渠道按租户隔离。
+- **边界**：回调 Token / EncodingAESKey 仍是部署级配置，页面给出回调 URL 与「向平台管理员索取」说明；第三方应用扫码授权不在本版（需服务商资质），自建应用先跑通。
+- **判据**：`KfChannelAdminServiceTest` / `KfChannelAdminControllerTest` / `WechatKfOnboarding.test.tsx`（KF-030）；密钥不回显、自检不命中不置 active、链接与停用均有断言。
+
 ### B 端「停用」能力边界不再自相矛盾：停用仅限加工项（2026-11-25，issue #9215）
 
 - **病**：能力边界段同一段里既有「✅ 改加工项（含启用 / 停用）」，又有「❌ 删除 / 停用 / 作废」⇒ 模型对「把打孔加工项停用」可能误拒。
