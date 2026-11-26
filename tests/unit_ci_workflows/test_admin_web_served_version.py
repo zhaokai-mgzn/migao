@@ -545,10 +545,12 @@ def test_static_landing_legs_identity_debt_is_ledgered():
             f"身份探针里找不到回落守卫片段 {marker!r} ⇒ 它可能在「拿到 HTML 时也算通过」"
             "（那正是 issue #6611 的旧形态：把转义后的页面当身份）"
         )
-    # 陷阱二的形态也要在 nginx 侧登记：`location /` 若出现 `try_files … /index.html`，
-    # 那么「200 + HTML」这种回落形态就是**可达的**（探针必须显式处理它 —— 见判据 3/4）
+    # 陷阱二的形态也要在 nginx 侧登记：**带前端路由的静态面**若出现 `try_files … <index>.html`，
+    # 那么「200 + HTML」这种回落形态就是**可达的**（探针必须显式处理它 —— 见判据 3/4）。
+    # ⚠️ issue #9249：根面 `/` 已收成 `=404`（C 端 H5 下线），回落面现在是 `/b/`（bmini SPA）
+    #    与 `/w/`（工人报工）—— 前提没消失，只是换了承载体，所以仍必须能在这里看到它。
     nginx = read(NGINX_CONF)
-    assert re.search(r"try_files \$uri \$uri/ /index\.html;", nginx), (
+    assert re.search(r"try_files \$uri \$uri/ /[bw]/index\.html;", nginx), (
         "nginx 的静态落地腿回落形态不见了 ⇒ 本判据的前提（200 可能配 HTML）变了，停下来复核"
     )
 

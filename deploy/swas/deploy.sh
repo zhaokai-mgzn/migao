@@ -960,6 +960,19 @@ else
     cp src/deploy/scripts/tls-renew.sh ./tls-renew.sh
     chmod +x ./tls-renew.sh
   fi
+  # 根面退役占位页（issue #9249）：C 端米宝 H5 已于 2026-11-26 随 #9233 下线，而 `location /`
+  # 也不再做 SPA 回落（`try_files … =404`）⇒ 根面 `/` 只剩「真实存在的文件」这一个来源。
+  # 本步把仓库里那页纯静态占位落到盘上，**只在目标文件缺失时写**：
+  #   · 绝不覆盖既有 index.html（那是别人的落地面，也可能是将来的着陆页）；
+  #   · 幂等：连跑两次盘面逐字节一致；
+  #   · 只走「取了整仓 tarball」这条路径（复用配置时 src/ 不存在 ⇒ 盘上那份本来就在）。
+  if [ -f src/deploy/swas/h5-root/index.html ]; then
+    mkdir -p ./h5
+    if [ ! -f ./h5/index.html ]; then
+      install -m 644 src/deploy/swas/h5-root/index.html ./h5/index.html
+      echo "  ✅ 根面退役占位页已落地（./h5/index.html）"
+    fi
+  fi
   # 记下「盘上这套配置物化自哪个 ref」（#6551 ②）：下次目标 ref 相同（含**回滚回同一 tag**）
   # ⇒ 直接复用、不再下一次 66.5MB 整仓。三份文件**都落到盘上之后**才写标记 ⇒ 标记不会先于配置落地。
   printf '%s\n' "$CONFIG_REF_RESOLVED" > "$CONFIG_REF_MARKER_FILE"

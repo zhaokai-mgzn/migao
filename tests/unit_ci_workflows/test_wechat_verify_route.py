@@ -41,6 +41,8 @@ from pathlib import Path
 
 import pytest
 
+from unit_ci_workflows.injection import inject  # noqa: E402
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 NGINX_CONF = REPO_ROOT / "deploy" / "swas" / "nginx.conf"
 DEPLOY_SH = REPO_ROOT / "deploy" / "swas" / "deploy.sh"
@@ -137,7 +139,10 @@ def _apply_try_files(loc: dict, files: set[str], uri: str) -> tuple[int, str | N
         candidate = token.replace("$uri", uri)
         if token.endswith("/"):
             # 目录：本仓的静态面全是 `index` 兜底，目录里有 index.html 才算命中
-            name = candidate.strip("/") + "/index.html"
+            # ⚠️ 归一化必须 strip 掉**前导**斜杠：`/` 这个请求的 `$uri/` 会算成 `/index.html`，
+            #    而 files 里的键是 `index.html`（无前导斜杠）⇒ 不归一化会把「根面能命中 index」
+            #    算成 404（实测踩到：`/` 在模拟器里 404，线上却是 200）。
+            name = (candidate.strip("/") + "/index.html").lstrip("/")
             if name in files:
                 return 200, name
             continue
@@ -206,13 +211,19 @@ def test_wechat_txt_face_is_exactly_one_narrow_regex_location():
     assert not loc["rewrite"], "根下 .txt 不该被 rewrite（会掩盖「文件不在」）"
 
 
-def test_root_spa_fallback_still_intact():
-    """反向钉住：`location /` 仍是 SPA fallback —— 上面那条 404 是**新面**带来的，不是把全站改成 404。"""
+def test_root_has_no_spa_fallback():
+    """反向钉住：`location /` **不再是** SPA 回落（issue #9249，2026-11-26）。
+
+    原先它回落 `/index.html`（C 端米宝）；C 端产物清走之后，那个末位目标不存在 ⇒ nginx 内部重定向
+    又落回本块 ⇒ `internal redirection cycle` ⇒ **任意缺失路径 500**（实测 `/` 403、`/js/app.js` 500）。
+    ⇒ 现在必须是 `=404`：缺失就是缺失，**绝不**把请求重定向到别的文件。
+    """
     block = _app_block(_read(NGINX_CONF))
     root = [loc for loc in _locations(block) if loc["spec"] == "/" and not loc["mod"]]
     assert root, "app 段缺 `location /`"
-    assert root[0]["try_files"] == ["$uri", "$uri/", "/index.html"], (
-        f"`location /` 的 SPA fallback 变了（现取 {root[0]['try_files']}）—— 那会波及 C 端整站"
+    assert root[0]["try_files"] == ["$uri", "$uri/", "=404"], (
+        f"`location /` 的 try_files 变了（现取 {root[0]['try_files']}）—— 末位指向文件会重新制造 "
+        "internal redirection cycle（issue #9249）"
     )
 
 
@@ -228,12 +239,13 @@ def test_serve_root_txt_present_and_missing():
 
 
 def test_serve_does_not_hijack_namespaces():
-    """判据 2：正则只吃根下单段 ⇒ `/b/…` `/w/…` `/terminal/…` 与根级 SPA 路由都不变。"""
+    """判据 2：正则只吃根下单段 ⇒ `/b/…` `/w/…` `/terminal/…` 的语义不因这条面而变。"""
     block = _app_block(_read(NGINX_CONF))
     files = _static_fs()
 
-    # 根级 SPA 路由仍是 C 端 index.html（正则不匹配多段路径）
-    assert _serve(block, files, "/some/c-end/route") == (200, "index.html")
+    # 根级子路由**不再**回落任何 HTML（C 端下线 + issue #9249）⇒ 正则没劫持，根面也没兜底
+    assert _serve(block, files, "/some/c-end/route") == (404, None)
+    # 根面 `/` 仍由 `index index.html` 兜住（剩下那一页是退役占位，不是应用入口）
     assert _serve(block, files, "/") == (200, "index.html")
     # `/b/` 里的 .txt 仍按 bmini 自己的 fallback（不是根 index.html，也不是 404）
     assert _serve(block, files, "/b/orders/x.txt") == (200, "b/index.html")
@@ -248,14 +260,20 @@ def test_nginx_mutations_are_all_detected():
     block = _app_block(conf)
     files = _static_fs() | {"a1b2c3d4e5.txt"}
 
-    # ① 删掉整条 txt 面 ⇒ 缺失文件回落 index.html
-    removed = re.sub(
-        rf"\n    location ~ {re.escape(WECHAT_TXT_RE)} \{{\n        try_files \$uri =404;\n    \}}\n",
-        "\n",
+    # ① 把根面兜底写回去（`=404` → `/index.html`）⇒ 任意缺失路径变 200 HTML（issue #9249 的病灶）
+    #    ⚠️ 原先这里注入的是「删掉整条 txt 面 ⇒ 缺失 .txt 回落 index.html」—— 根面改成 `=404` 之后
+    #    那条变异**不再可观察**（删不删都得 404），留着就是一条恒绿的假判据。
+    root_fallback = inject(
         block,
+        "try_files $uri $uri/ =404;",
+        "try_files $uri $uri/ /index.html;",
+        where="deploy/swas/nginx.conf::location / try_files",
     )
-    assert removed != block, "变异注入没生效（找不到要删的那段）—— 判据会变成空断言"
-    assert _serve(removed, files, "/__missing__.txt") == (200, "index.html")
+    # 非 .txt 的缺失路径立刻暴露根面回归（200 HTML = 又回到「什么都像存在」）
+    assert _serve(root_fallback, files, "/some/c-end/route") == (200, "index.html")
+    # 而 `.txt` 仍被**本面**的 `=404` 拦住 ⇒ 这也正是这条 txt 面不能删的理由：
+    # 它对「根面兜底被写回去」这种回归是**独立**的一道闸（删了它，微信校验文件的 404 就只剩根面一条命）
+    assert _serve(root_fallback, files, "/__missing__.txt") == (404, None)
 
     # ② 把 =404 换成 index.html ⇒ 缺失也 200 HTML
     fallback = block.replace("try_files $uri =404;", "try_files $uri /index.html;", 1)
