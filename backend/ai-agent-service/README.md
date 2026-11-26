@@ -1,6 +1,6 @@
 # AI Agent Service
 
-观星台 — 布艺行业 AI 经营平台 · Python AI 服务（米宝 + 黄金策双 Agent）
+生意管家 — 布艺行业 AI 经营平台 · Python AI 服务（米宝 + 黄金策双 Agent）
 
 ## 技术栈
 

@@ -18,12 +18,6 @@
       "issue": "#6306",
       "owner": "bmini-h5 owner（+ CI 门禁 owner）",
       "restart_condition": "bmini 的 h5 产物改成**零构建 ESM 目录**（同 worker-h5 形态），或引入一份「构建产物清单」可作发布集真值时 ⇒ 销掉本条豁免、把同一套判据接进该腿。"
-    },
-    "c-end-h5-verify-served.sh": {
-      "reason": "同 bmini：C 端（`frontend/mini-app`）也是 Taro h5 打包产物、仓内无 `dist/` ⇒ 静态闭包不可从仓库状态导出。该腿已有入口脚本 MIME 判据（⑤）与身份 / 不串端判据。",
-      "issue": "#6306",
-      "owner": "C 端 H5 owner（+ CI 门禁 owner）",
-      "restart_condition": "同 bmini（改成零构建 ESM 目录，或给出可作真值的产物清单）。"
     }
   },
   "_boundary": "本册机械保证的是「**每条现取腿都被显式裁定**」+「豁免条目双向活着（不陈旧、也不与已落判据冲突）」+「worker-h5 腿的四组结构锚逐字在位」。它**不保证**判据在真环境里跑得对（那是 `test_worker_h5_hosting.py` 真跑腿的活体读数 + 线上 CI 的面），也**不保证**豁免的判据面不复存在（那是各自 restart_condition 与 owner 的事）。本册**不改**任何门禁的通过条件、不新增豁免以外的放宽。"

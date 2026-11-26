@@ -325,12 +325,13 @@ def check_document(main_text: str, blocks: Sequence[Block], result_text: str) ->
     dups = sorted({c for c in result_ids if result_ids.count(c) > 1})
     if dups:
         problems.append(f"结果含重复 id：{', '.join(dups)} ⇒ 重号必须**让号**"
-                        "（`python3 scripts/next_case_id.py <前缀>`）后再重建")
+                        "（`python3 scripts/case_id_lease.py reserve <前缀>` —— **离线独占**取一个新号；"
+                        "`python3 scripts/next_case_id.py <前缀>` 只给**候选**、不保证独占）后再重建")
 
     clash = [c for c in block_ids if c in set(main_ids)]
     if clash:
         problems.append(f"追加块的 id 已在 main 里：{', '.join(clash)} ⇒ 这是**重号**，不是新用例；"
-                        "别让工具猜、去让号（`python3 scripts/next_case_id.py <前缀>`）")
+                        "别让工具猜、去让号（`python3 scripts/case_id_lease.py reserve <前缀>`）")
 
     expected = len(main_ids) + len(block_ids)
     if len(result_ids) != expected:

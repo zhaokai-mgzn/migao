@@ -170,10 +170,7 @@ DEPLOY_WF = {
     # bmini-h5-hosting（issue #5668）：第二条静态落地面腿（`frontend/bmini-app/**` 的 h5 产物 → 静态根 `b/`）。
     # 有意的「腿名 ≠ 传输镜像名」：同名会让判据 ① 在「镜像已推、发布失败」时命中 ⇒ 静默不补发布。
     "bmini-h5-hosting": "bmini-h5-publish.yml",
-    # c-end-h5（issue #4184）：**第三条静态落地面腿**（`frontend/mini-app/**` 的 h5 产物 → 静态根**本身**）。
-    # 同样无镜像（判据 ① 对它恒不成立 ⇒ 走漂移判据 ②）；它的发布步骤只在手动 `publish=true` 时执行
-    # （用户裁定 B）⇒ 本对账的兜底 dispatch **只报告、不发布**。
-    "c-end-h5": "c-end-h5-publish.yml",
+    # 2026-11-26（issue #9233）：原第三条静态落地面腿 `c-end-h5` 随 C 端小程序整目录删除而退场。
 }
 
 
@@ -185,7 +182,7 @@ def git(repo: Path, *args: str) -> str:
     out = subprocess.run(
         ["git", "-c", "user.email=ci@example.com", "-c", "user.name=ci",
          "-c", "commit.gpgsign=false", *args],
-        cwd=repo, capture_output=True, text=True, check=True,
+        cwd=repo, capture_output=True, text=True, check=True, timeout=GIT_CALL_TIMEOUT,
     )
     return out.stdout.strip()
 
@@ -307,7 +304,7 @@ def run_reconcile(tmp_path: Path, repo: Path, runs_by_wf: dict, *,
         env["STUB_GH_LIST_FAIL"] = "1"
     env["STUB_HEAD7"] = head7  # 供桩/断言侧引用（HEAD7 由被测脚本自己算，这里只做旁证）
     proc = subprocess.run(BASH_SHELL + [str(script)], cwd=repo, env=env,
-                          capture_output=True, text=True)
+                          capture_output=True, text=True, timeout=WORKFLOW_BODY_TIMEOUT)
     summary = summary_path.read_text(encoding="utf-8") if summary_path.exists() else ""
     dispatches = dispatch_log.read_text(encoding="utf-8").split() if dispatch_log.exists() else []
     return proc, summary, dispatches
@@ -344,6 +341,16 @@ PRE_FIX_PIPELINE = 'git log --oneline -10 --name-only origin/main | grep -qE "^b
 #     consumer 侧仍是 `grep -q` 本体；且它不碰磁盘、不依赖 git 输出量。
 #     反面（consumer 不早退）由 `test_pre_fix_sigpipe_reading_is_not_vacuous` 的 `grep -c` 夹住 ——
 #     那条**不在**本垫片下跑（用真 git），故不会被无限 producer 挂死。
+# 🔴 **无界等待是构造出来的**（issue #9105 家族 / 2026-11-24 分片挂死诊断）：本文件的 pipe 里
+# producer 是 `yes`（无限流），它**只**在 consumer 早退（`grep -q` 命中即退 ⇒ SIGPIPE）时才结束。
+# 命中一旦不成立，双方都不退 ⇒ `subprocess.run` 会**永久挂住**（CI 上表现为 3/4 片烧满 20 分钟被 cancel，
+# 日志因为 cancelled 而不上传 ⇒ 归因不出来）。所以每条 pipe 都必须带**有界**看门狗：
+# 到点没结束 ⇒ 判据红（带读数），而不是让整片挂死。
+PRE_FIX_PIPELINE_TIMEOUT = 60
+# 普通 git 调用与「workflow `run:` 正文」的看门狗：它们本身不该慢，给足余量只为**不挂死**
+# （2026-11-24：本文件的 pipe 曾因无限 producer 无界等待 ⇒ 3/4 片在 CI 上烧满 20 分钟被 cancel）。
+GIT_CALL_TIMEOUT = 120
+WORKFLOW_BODY_TIMEOUT = 300
 KEEPALIVE_INFINITE = "yes"             # 无限 producer ⇒ 「写不完」是构造性事实，不是概率
 KEEPALIVE_TAIL_LINES = 300000          # 有限尾巴（`tail="finite"`）：给「consumer 不早退」
                                        # 的两条用 —— 那里需要 producer 能自然收尾，无限流会挂住。
@@ -410,7 +417,7 @@ def make_shallow_repo(tmp_path: Path) -> Path:
 
     dst = tmp_path / "shallow"
     subprocess.run(["git", "clone", "-q", "--depth=1", f"file://{src}", str(dst)],
-                   capture_output=True, text=True, check=True)
+                   capture_output=True, text=True, check=True, timeout=GIT_CALL_TIMEOUT)
     return dst
 
 
@@ -433,8 +440,15 @@ def run_pre_fix(repo: Path, set_line: str, tmp_path: Path, *,
     github_env = tmp_path / f"github_env-{name}"
     run_env = dict(env) if env is not None else os.environ.copy()
     run_env["GITHUB_ENV"] = str(github_env)
-    proc = subprocess.run([*shell, str(script)], cwd=repo, env=run_env,
-                          capture_output=True, text=True)
+    try:
+        proc = subprocess.run([*shell, str(script)], cwd=repo, env=run_env,
+                              capture_output=True, text=True, timeout=PRE_FIX_PIPELINE_TIMEOUT)
+    except subprocess.TimeoutExpired as exc:
+        pytest.fail(
+            f"[{tag or 'default'}] 改前正文在 {PRE_FIX_PIPELINE_TIMEOUT}s 内没跑完 ⇒ pipe 挂死"
+            f"（producer 是无限流、consumer 没早退）。这不是「慢」，是不能再用挂钟判读："
+            f"stdout 前 200 字节={ (exc.stdout or b'')[:200]!r}（issue #9105 家族）"
+        )
     marker = github_env.read_text(encoding="utf-8") if github_env.exists() else ""
     return proc, marker
 
@@ -449,7 +463,8 @@ def test_pre_fix_shallow_repo_premises_hold(shallow_repo):
     repo = shallow_repo
     assert git(repo, "rev-parse", "--is-shallow-repository") == "true", "fixture 不是浅克隆 ⇒ 红证无效"
     log = subprocess.run(["git", "log", "--oneline", "-10", "--name-only", "origin/main"],
-                         cwd=repo, capture_output=True, text=True, check=True).stdout
+                         cwd=repo, capture_output=True, text=True, check=True,
+                         timeout=GIT_CALL_TIMEOUT).stdout
     assert "backend/admin-api/a.py" in log, "fixture 前提不成立：窗口里没有代码路径文件"
 
 
@@ -486,10 +501,17 @@ def test_pre_fix_pipeline_dies_with_sigpipe_under_pipefail(shallow_repo, tmp_pat
     producer 必然还有数据要写），**不是**「夹具历史恰好很大」—— 后者是环境常量：本机 30/30 = 141，
     CI run `37101030830` 两次都是 0（issue #6202）。
     """
-    pipe = subprocess.run(
-        BASH_SHELL + ["-c", PRE_FIX_PIPELINE],
-        cwd=shallow_repo, env=keepalive_git_env(tmp_path), capture_output=True, text=True,
-    )
+    try:
+        pipe = subprocess.run(
+            BASH_SHELL + ["-c", PRE_FIX_PIPELINE],
+            cwd=shallow_repo, env=keepalive_git_env(tmp_path), capture_output=True, text=True,
+            timeout=PRE_FIX_PIPELINE_TIMEOUT,
+        )
+    except subprocess.TimeoutExpired:
+        pytest.fail(
+            f"pipeline 在 {PRE_FIX_PIPELINE_TIMEOUT}s 内没结束 ⇒ consumer 没有早退"
+            f"（无限的 producer 一直在写）⇒ 141 这个读数**取不到**，判据不能挂死（issue #9105 家族）"
+        )
     assert pipe.returncode == 141, (
         f"期望 SIGPIPE(141)，实得 {pipe.returncode} —— 前提已构造化仍非 141 ⇒ 被测机制变了"
     )
@@ -504,12 +526,14 @@ def test_pre_fix_sigpipe_reading_is_not_vacuous(shallow_repo, tmp_path):
     """
     env = keepalive_git_env(tmp_path, tail="finite")
     no_pf = subprocess.run(["bash", "--noprofile", "--norc", "-e", "-c", PRE_FIX_PIPELINE],
-                           cwd=shallow_repo, env=env, capture_output=True, text=True)
+                           cwd=shallow_repo, env=env, capture_output=True, text=True,
+                           timeout=PRE_FIX_PIPELINE_TIMEOUT)
     assert no_pf.returncode != 141, "去掉 pipefail 仍得 141 ⇒ 该断言与 pipefail 无关（假红证）"
     assert no_pf.returncode == 0, f"去掉 pipefail 后状态应由 `grep` 决定(=0)，实得 {no_pf.returncode}"
     counted = subprocess.run(
         BASH_SHELL + ["-c", 'git log --oneline -10 --name-only origin/main | grep -cE "^backend/"'],
         cwd=shallow_repo, env=env, capture_output=True, text=True,
+        timeout=PRE_FIX_PIPELINE_TIMEOUT,
     )
     assert counted.returncode != 141, (
         f"consumer 不早退（`grep -c` 读到 EOF）时 producer 不该丢 SIGPIPE → {counted.returncode}"
@@ -633,21 +657,21 @@ def test_incident_shape_now_dispatches(tmp_path):
     assert dispatches == ["deploy-admin-api.yml"], (
         f"应只 dispatch 被吞的那条腿（事故里一条都没动）→ 实得 {dispatches}\n{proc.stdout}"
     )
-    assert "**结论**：dispatch=1 · 无漂移=5" in summary, f"summary 结论行不对 → {summary!r}"
+    assert "**结论**：dispatch=1 · 无漂移=4" in summary, f"summary 结论行不对 → {summary!r}"
     assert "已 dispatch 补部署" in summary and "backend/admin-api 有代码改动" in summary, (
         f"summary 没写清「为什么补」（判定依据）→ {summary!r}"
     )
 
 
 def test_all_reconciled_legs_dispatch_when_code_changed(tmp_path):
-    """六条对账腿都有代码改动（+ 镜像缺失）⇒ 六条都补（事故里 3 个服务的镜像都没构建）。"""
+    """五条对账腿都有代码改动（+ 镜像缺失）⇒ 五条都补（事故里 3 个服务的镜像都没构建）。"""
     fx = commit_repos(tmp_path, drift_paths=ALL_DRIFT_PATHS)
     proc, summary, dispatches = run_reconcile(
         tmp_path, fx["repo"], runs_all(fx["C1"], "success"), head7=fx["head7"],
     )
     assert proc.returncode == 0, f"{proc.stderr}"
     assert sorted(dispatches) == sorted(DEPLOY_WF.values()), f"→ {dispatches}\n{proc.stdout}"
-    assert "**结论**：dispatch=6" in summary, f"{summary!r}"
+    assert "**结论**：dispatch=5" in summary, f"{summary!r}"
 
 
 def test_docs_head_without_drift_does_not_dispatch_but_explains(tmp_path):
@@ -658,32 +682,32 @@ def test_docs_head_without_drift_does_not_dispatch_but_explains(tmp_path):
     )
     assert proc.returncode == 0, f"{proc.stderr}"
     assert dispatches == [], f"无漂移不该 dispatch（否则每个 docs 提交都空转重建）→ {dispatches}"
-    assert "**结论**：dispatch=0 · 无漂移=6" in summary, f"{summary!r}"
-    assert summary.count("无漂移：自") == 6, f"六条「无漂移」依据都要落表 → {summary!r}"
+    assert "**结论**：dispatch=0 · 无漂移=5" in summary, f"{summary!r}"
+    assert summary.count("无漂移：自") == 5, f"五条「无漂移」依据都要落表 → {summary!r}"
     assert "::notice::" in proc.stdout, "零 dispatch 时必须给一条 notice（可观测）"
 
 
 def test_head_image_present_does_not_dispatch(tmp_path):
     """HEAD 的镜像已存在 ⇒ 零 dispatch + 记明依据（镜像名）。
 
-    ⚠️ 三条**静态落地面腿**（worker-h5 / bmini-h5-hosting / c-end-h5，issue #5001 / #5668 / #4184）
+    ⚠️ 两条**静态落地面腿**（worker-h5 / bmini-h5-hosting，issue #5001 / #5668）
     **没有镜像** ⇒ 判据 ① 对它们恒不成立，它们这一轮的「无漂移」来自**漂移判据 ②**——
     这是这些腿的结构事实，不是本测试的偶然。
     """
     fx = commit_repos(tmp_path)
     proc, summary, dispatches = run_reconcile(
         tmp_path, fx["repo"], runs_all(fx["D1"], "success"),
-        # 只让**有镜像**的三条腿的镜像存在（三条静态落地面腿无镜像 —— 这正是 #5001/#5668/#4184 的结构事实）
+        # 只让**有镜像**的三条腿的镜像存在（两条静态落地面腿无镜像 —— 这正是 #5001/#5668 的结构事实）
         image_tags=",".join(image_ref(svc, fx["head7"]) for svc in IMAGE_LEGS),
         head7=fx["head7"],
     )
     assert proc.returncode == 0, f"{proc.stderr}"
     assert dispatches == []
-    assert "**结论**：dispatch=0 · 无漂移=6" in summary
+    assert "**结论**：dispatch=0 · 无漂移=5" in summary
     assert summary.count("镜像已存在") == 3 and f"sha-{fx['head7']}" in summary, f"{summary!r}"
-    assert summary.count("无漂移：自") == 3 and "| worker-h5 |" in summary \
-        and "| bmini-h5-hosting |" in summary and "| c-end-h5 |" in summary, (
-        f"三条无镜像的静态落地面腿（worker-h5 / bmini-h5-hosting / c-end-h5）必须落到漂移判据"
+    assert summary.count("无漂移：自") == 2 and "| worker-h5 |" in summary \
+        and "| bmini-h5-hosting |" in summary, (
+        f"两条无镜像的静态落地面腿（worker-h5 / bmini-h5-hosting）必须落到漂移判据"
         f"（而不是「镜像已存在」）→ {summary!r}"
     )
 
@@ -705,8 +729,8 @@ def test_breaker_skips_and_records_reason(tmp_path):
     )
     assert proc.returncode == 0, f"{proc.stderr}"
     assert dispatches == [], f"断路器命中后不该 dispatch → {dispatches}"
-    assert "**结论**：dispatch=0 · 无漂移=0 · 断路器跳过=6" in summary, f"{summary!r}"
-    assert summary.count("断路器：") == 6 and "不可恢复的终态" in proc.stdout, f"{summary!r}"
+    assert "**结论**：dispatch=0 · 无漂移=0 · 断路器跳过=5" in summary, f"{summary!r}"
+    assert summary.count("断路器：") == 5 and "不可恢复的终态" in proc.stdout, f"{summary!r}"
     assert "gh workflow run" in proc.stdout and "gh workflow run" in summary, (
         "跳闸必须给出**人工出口**（跳闸而不给出路 = 把机制变成黑箱）"
     )
@@ -741,7 +765,7 @@ def test_cancelled_conclusion_trips_the_breaker(tmp_path):
     assert dispatches == [], (
         f"`cancelled` 结论必须跳闸（#5814：挂死的 run 报的就是 cancelled）→ {dispatches}"
     )
-    assert "**结论**：dispatch=0 · 无漂移=0 · 断路器跳过=6" in summary, f"{summary!r}"
+    assert "**结论**：dispatch=0 · 无漂移=0 · 断路器跳过=5" in summary, f"{summary!r}"
     assert "conclusion=cancelled" in summary, f"跳闸原因必须点名结论 → {summary!r}"
     assert "gh workflow run" in summary, f"跳闸必须给人工出口 → {summary!r}"
 
@@ -760,7 +784,7 @@ def test_still_running_same_commit_is_skipped_as_churn(tmp_path):
     )
     assert proc.returncode == 0, f"{proc.stderr}"
     assert dispatches == [], f"同 commit 有 run 在跑时不该再 dispatch（纯 churn）→ {dispatches}"
-    assert "**结论**：dispatch=0 · 无漂移=0 · 断路器跳过=6" in summary, f"{summary!r}"
+    assert "**结论**：dispatch=0 · 无漂移=0 · 断路器跳过=5" in summary, f"{summary!r}"
     assert "在跑/排队" in proc.stdout and "status=in_progress" in proc.stdout, (
         f"跳过必须显式打印「已有同 commit 的 run 在跑/排队」+ 状态 → {proc.stdout}"
     )
@@ -778,7 +802,7 @@ def test_query_failure_fails_open_with_warning(tmp_path):
         f"查询失败必须 fail-open 照旧补部署（本检查出错绝不停掉对账）→ {dispatches}"
     )
     assert "::warning::" in proc.stdout, "判据不可用必须出声（warning），不许静默"
-    assert "判定失败=6" in summary, f"{summary!r}"
+    assert "判定失败=5" in summary, f"{summary!r}"
 
 
 def test_git_history_loss_fails_open_not_silent(tmp_path):
@@ -792,7 +816,7 @@ def test_git_history_loss_fails_open_not_silent(tmp_path):
     assert sorted(dispatches) == sorted(DEPLOY_WF.values()), (
         f"git 判不了时必须 fail-open（按兜底补部署）→ {dispatches}\n{proc.stdout}"
     )
-    assert "判定失败=6" in summary and "::warning::" in proc.stdout, f"{summary!r}"
+    assert "判定失败=5" in summary and "::warning::" in proc.stdout, f"{summary!r}"
 
 
 # ══════════════════════════════════════════════════════════════════════════

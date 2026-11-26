@@ -3,13 +3,19 @@
 """
 
 # case_ids: API-010
-from typing import Dict
+import os
+from typing import Any, Dict
 
 import pytest
 
 from .config import EnvConfig, get_config
 from .helpers import SmokeTestClient
 from .retry_policy import SESSION_LEDGER
+
+#: 生产复跑用的**注入 token**（issue #8977）：非空 ⇒ 直接用它，**不发码、不登录**。
+#: 生产未配 `SMS_BYPASS_CODE`（= 短信码**单次消费**）⇒ `pytest -m p0` 整档只允许**一次**登录：
+#: 首次按原逻辑发码登录一次（session 级 `auth_token` 复用），复跑/补跑用上次拿到的 access token 注入。
+SMOKE_ADMIN_TOKEN_ENV = "SMOKE_ADMIN_TOKEN"
 
 
 def pytest_sessionfinish(session, exitstatus):
@@ -51,8 +57,23 @@ def ai_client(config: EnvConfig) -> SmokeTestClient:
 
 
 @pytest.fixture(scope="session")
-def auth_token(admin_client: SmokeTestClient, config: EnvConfig) -> Dict[str, str]:
-    """获取认证 Token（session 级别复用）"""
+def auth_token(admin_client: SmokeTestClient, config: EnvConfig) -> Dict[str, Any]:
+    """获取认证 Token（session 级别复用）。
+
+    两种取法（issue #8977；`SMS_BYPASS_CODE` 逻辑**不动**）：
+    - `SMOKE_ADMIN_TOKEN` 非空 ⇒ **注入**：直接用它，不调用登录接口、不消耗短信码；
+    - 否则 ⇒ 按原逻辑发码登录**一次**（`test_login_success` 复用这同一次登录的响应，
+      不再自己发第二次码 —— 短信码单次消费，第二次必 401）。
+
+    返回值：`access_token` / `refresh_token`（可能为空串）；登录发生时另带 `login_body`
+    （登录响应体的 `data`）与 `login_response`（供 `test_login_success` 做响应级断言）。
+    """
+    injected = (os.getenv(SMOKE_ADMIN_TOKEN_ENV) or "").strip()
+    if injected:
+        admin_client.set_token(injected)
+        return {"access_token": injected, "refresh_token": "", "login_body": {},
+                "login_response": None}
+
     resp = admin_client.post("/api/auth/sms/login", json={
         "phone": config.admin_phone,
         "code": config.admin_sms_code,
@@ -74,7 +95,8 @@ def auth_token(admin_client: SmokeTestClient, config: EnvConfig) -> Dict[str, st
         pytest.fail("SMS 登录响应缺少 access token，认证链路异常")
 
     admin_client.set_token(access_token, refresh_token)
-    return {"access_token": access_token, "refresh_token": refresh_token}
+    return {"access_token": access_token, "refresh_token": refresh_token,
+            "login_body": token_data, "login_response": resp}
 
 
 @pytest.fixture(scope="session")

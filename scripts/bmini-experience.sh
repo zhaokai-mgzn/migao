@@ -48,7 +48,7 @@ APP_DIR="${ROOT}/frontend/bmini-app"
 DIST="${APP_DIR}/dist"
 ASSERT="${ROOT}/deploy/scripts/bmini-assert-dist.sh"
 
-# 小程序 AppID（与 frontend/mini-app/project.private.config.json 同一主体；appid 不是密钥）
+# 小程序 AppID（同一微信主体；appid 不是密钥）
 APPID="wx6ee2f682c1b4822c"
 DEVTOOLS_CLI="/Applications/wechatwebdevtools.app/Contents/MacOS/cli"
 

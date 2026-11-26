@@ -1,0 +1,6 @@
+{
+  "id": "MC-348",
+  "pr": 9087,
+  "title": "零停机发布 ADR 守卫：M1 六项 / M2 五项关键字必须在各自小节，事实断言（端口 / proxy_pass / uploads / redis / graceful「未配置」）与真实部署配置一致，删项或改端口即红（issue #9084）",
+  "claimed_at": "2026-11-23"
+}

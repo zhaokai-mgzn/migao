@@ -1,0 +1,6 @@
+{
+  "id": "MC-350",
+  "pr": 9094,
+  "title": "云助手返回形态解析（真机 InvocationStatus / 两种形态 / 超时打印返回体 / Failed 无 ExitCode 不许读成 0）+ 盘点 nginx 从容器读（issue #9085）",
+  "claimed_at": "2026-11-23"
+}

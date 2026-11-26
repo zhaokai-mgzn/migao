@@ -530,7 +530,7 @@ class TestFullnessActualPassthrough:
         """字段名单点：响应键必须被报价卡消费 —— 否则「后端透传了」与「卡片渲染了」各自绿，
         合起来仍是「算了就丢」（跨模块契约，issue #4118 ④ 的前端半边）。"""
         card = (
-            REPO_ROOT / "frontend" / "mini-app" / "src" / "components" / "cards" / "QuotationCard.tsx"
+            REPO_ROOT / "frontend" / "bmini-app" / "src" / "components" / "cards" / "QuotationCard.tsx"
         )
         assert card.is_file(), f"报价卡路径不存在：{card}（路径变更须同步本锚点）"
         assert "fullness_actual" in card.read_text(encoding="utf-8"), (

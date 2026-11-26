@@ -431,11 +431,11 @@ def test_red_proof_ceiling_is_pinned_to_the_lowered_reading():
     readings = MANIFEST.load_generator().build_readings()
     counts = readings["ledger_counts"]
     ledger_len = len(PARITY.UNANNOTATED_ENDPOINTS)
-    assert counts["UNANNOTATED_ENDPOINTS"] == ledger_len == 24, (
-        f"台账现值不是 24（读数 {counts['UNANNOTATED_ENDPOINTS']} / 条数 {ledger_len}）"
+    assert counts["UNANNOTATED_ENDPOINTS"] == ledger_len == 30, (
+        f"台账现值不是 30（读数 {counts['UNANNOTATED_ENDPOINTS']} / 条数 {ledger_len}）"
         "—— 若这是有意的，请同批把本判据与上限一起更新"
     )
-    assert MANIFEST.LEDGER_CEILINGS["UNANNOTATED_ENDPOINTS"] == 24, "上限没跟着降到现值"
+    assert MANIFEST.LEDGER_CEILINGS["UNANNOTATED_ENDPOINTS"] == 30, "上限没跟着更新到现值"
     for pattern in ("POST /api/admin/image-recognition", "POST /api/admin/image-recognition/interpret"):
         assert pattern not in PARITY.UNANNOTATED_ENDPOINTS, f"`{pattern}` 还在台账里（识别没落地）"
 
@@ -447,7 +447,7 @@ def test_red_proof_ceiling_is_pinned_to_the_lowered_reading():
     assert any("UNANNOTATED_ENDPOINTS" in p and "只许缩短" in p for p in hit), (
         f"回涨 2 条没被现上限拦住：{hit}"
     )
-    old_ceilings = dict(MANIFEST.LEDGER_CEILINGS, UNANNOTATED_ENDPOINTS=26)
+    old_ceilings = dict(MANIFEST.LEDGER_CEILINGS, UNANNOTATED_ENDPOINTS=32)
     assert MANIFEST.ledger_growth_problems(regressed, old_ceilings) == [], (
         "旧的 26 竟然也能拦住同一次回涨 ⇒ 本红证没有判别力（上限收紧是假的）"
     )

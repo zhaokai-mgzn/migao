@@ -80,6 +80,7 @@ SKILL_MAP = {
     "ui": "GENERAL",
     "utils": "GENERAL",
     "migration": "GENERAL",   # issue #8295 客户主数据迁移：后端/单测契约域，不属 LLM skill
+    "kf": "GENERAL",          # issue #9171 微信客服通道层：后端单测契约域，不属 LLM skill
 }
 
 TIER_MAP = {"smoke": "SMOKE", "normal": "NORMAL", "edge": "EDGE", "adversarial": "ADVERSARIAL"}
@@ -99,6 +100,7 @@ DOMAIN_TITLES = {
     "utils": "跨切面工具域", "auth": "登录认证域",
     "migration": "客户主数据迁移域",
     "smoke": "生产冒烟套件域",
+    "kf": "微信客服域",
 }
 
 

@@ -110,8 +110,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: frontend/bmini-app
-        run: npm ci
-
+        run: npm ci --prefer-offline --no-audit --no-fund
       # `TARO_APP_H5_PUBLIC_PATH=/b/` 由 workflow 级 env 注入；漏了它 ⇒ 下面的发布脚本
       # 会在**发起任何云调用之前**判红（本地产物命名空间断言），不会把串端产物发上线。
       - name: Build H5 (publicPath=/b/)

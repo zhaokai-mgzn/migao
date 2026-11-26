@@ -19,7 +19,7 @@ P3 做三件事，**都不改行为**（零 delta）：
 |---|---|---|
 | `pages[]`（**新进清单**） | 27 页：`gate` 菜单可见码 + `units` 第一屏读码 → 端点 + 逐页 `visibility_rule` | 四跳现取（菜单节点 → 页面锚点 → `lib/api.ts` → Java 生效码） |
 | C1 / C3 码列 | `menu_node_codes`（35 节点）/ `auth_menu_codes`（26 条） | `parse_menu_ts_nodes` / `parse_menus()['auth']` |
-| C4 守卫码列 | `route_guard_codes`（每页 `path → gate`） | `parse_route_guard`（36 条前缀） |
+| C4 守卫码列 | `route_guard_codes`（每页 `path → gate`） | `parse_route_guard`（37 条前缀） |
 | 页面面两张台账 | `multi_code_pages`（一页多码）/ `parity_residual_pages`（节点码 ≠ 页面读码） | `MULTI_READ_ENDPOINT_PAGES`（0）/ `MENU_READ_PARITY_RESIDUALS`（0） |
 | 可见性 | `visibility`（按 `visibility_rule` 把 units 投影成「看得见该菜单的岗位集」） | 现值岗位集（`seed` ∪ `fallback` 的持码者） |
 
@@ -180,6 +180,11 @@ ROUTE_PREFIX_EXCEPTIONS = {
     "/settings/params": (
         "「参数总览」一级项已撤掉（issue #6580：内容回到 `/settings` 页内的配置域）⇒ 本前缀只作旧链兼容"
         "（重定向 `/settings`），不属「页面 → 码」面；守卫码 = `production:view`"
+    ),
+    "/settings/wechat-kf": (
+        "微信客服接入（issue #9230）是设置子页，从 `/settings` 进入、无独立侧边栏节点"
+        "（同 `ROUTE_WITHOUT_MENU_NODE['/settings/wechat-kf']` 的理由）；守卫码 = `system:manage`"
+        "（与页面写面 = 渠道 secret 登记同源）"
     ),
     # 🔴 2026-10-17（issue #7087）：「每日简报」**菜单项已删除** ⇒ 它不再是任何在册页面的
     # `path`（`pages[]` 已销账），而守卫前缀 `/briefing` **仍在** `ROUTE_PERMISSION_MAP` 里
@@ -467,11 +472,11 @@ FROZEN_CEILINGS: tuple[dict, ...] = (
         # 只能走例外台账。**同样是具名、不是放宽**：不登记就会变成「地址栏直达不被拦」的静默形态。
         # 🔴 2026-11-09（issue #8852）10 → 11：新增 `/reports`（报表中心并入经营报表 ⇒ 只剩重定向薄壳、
         # 不再是任何在册页面的 `path`；守卫前缀保留）—— 同 PR 显式抬界，不是放宽门禁。
-        "ceiling": 11,
+        "ceiling": 12,
         "grew_by": "`route_guard_problems`（『既不是某页 `path`、也没有别名 / 例外登记 ⇒ 新增页面守卫必须先登记』具名报出）",
         "reason": (
             "C4 面里**不以页面 `path` 出现**的前缀（入口在别的页面里 / 旧深链兼容 / 子树父前缀）："
-            "逐条具名 + 理由，只许缩短。落地值 = 8。"
+            "逐条具名 + 理由，只许缩短。落地值 = 8。 ｜ 2026-11-26（issue #9230）：11 → 12，新增 `/settings/wechat-kf`（设置子页无侧边栏节点，同 PR 显式抬界）。"
             "🔴 2026-10-17（issue #7087）7 → 8：新增 `/briefing` —— 「每日简报」菜单项已删除、"
             "页面成了重定向薄壳（第一屏零读端点）⇒ 它不再是任何在册页面的 `path`，而守卫前缀仍在"
             "`ROUTE_PERMISSION_MAP` 里。**不是放宽门禁**：台账机制就是「非派生前缀必须具名」，"

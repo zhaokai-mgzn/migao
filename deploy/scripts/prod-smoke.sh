@@ -7,6 +7,10 @@
 #   REL_SHA=... SMOKE_SERVICES=admin-api bash deploy/scripts/prod-smoke.sh
 #     ⇒ **只校验本次部署模块的身份**（按模块发布时，没发的模块必然还是旧 sha；
 #        无条件比全部模块会把「部分发布」判成假红）。不传 = 校验全部模块。
+#   SMOKE_ONLY=leak bash deploy/scripts/prod-smoke.sh
+#     ⇒ **只跑某一段**（`faces` / `identity` / `leak`，逗号可多选；缺省 `all` = 三段全跑）。
+#        为什么要有它：`scripts/bmini-golive-watch.sh`（B 端上线值守）**复用**本脚本的域名泄漏判据，
+#        而不是抄第二份；缺省 `all` ⇒ 部署腿 `.github/workflows/deploy-prod.yml` 行为**逐字不变**。
 #
 # 退出码：0 = 全通过；1 = 有面失败；3 = 无法判定（如版本身份取不到）——**3 不得当 0 读**。
 #
@@ -23,6 +27,18 @@ REL_SHA="${REL_SHA:-}"
 FAILED=0
 UNKNOWN=0
 
+#: 只跑某一段（缺省 `all` = 三段全跑；`faces`/`identity`/`leak`，逗号可多选）。
+#: 缺省值就是部署腿的行为 ⇒ 加这一段**不改**任何既有调用方的语义（判据 = 本仓
+#: `tests/unit_ci_workflows/test_bmini_golive_watch.py` 的「缺省仍是三段全跑」用例）。
+ONLY="${SMOKE_ONLY:-all}"
+wanted() {
+  [ "$ONLY" = 'all' ] && return 0
+  case ",${ONLY}," in
+    *",$1,"*) return 0 ;;
+  esac
+  return 1
+}
+
 say() { printf '%-46s %s\n' "$1" "$2"; }
 
 # 面清单：路径|期望（允许 200；www 归一化允许 308/301 → 跟随后必须 200）
@@ -37,6 +53,7 @@ https://app.${BASE}/b/|200
 https://app.${BASE}/w/|200
 "
 
+if wanted faces; then
 echo "== ① 八面（跟随重定向）=="
 while IFS='|' read -r url expect; do
   [ -n "$url" ] || continue
@@ -50,7 +67,9 @@ while IFS='|' read -r url expect; do
 done <<EOF
 $FACES
 EOF
+fi
 
+if wanted identity; then
 echo
 echo "== ② 版本身份（必须 == 发布身份）=="
 SERVICES="${SMOKE_SERVICES:-admin-api,ai-agent}"
@@ -76,7 +95,9 @@ else
     fi
   done
 fi
+fi
 
+if wanted leak; then
 echo
 echo "== ③ 域名泄漏（生产页面不得出现 migaozn）=="
 for url in "https://${BASE}/" "https://www.${BASE}/sitemap.xml" "https://www.${BASE}/robots.txt" "https://app.${BASE}/b/js/app.js"; do
@@ -94,6 +115,7 @@ for url in "https://${BASE}/" "https://www.${BASE}/sitemap.xml" "https://www.${B
     FAILED=$((FAILED + 1))
   fi
 done
+fi
 
 echo
 echo "合计：失败 ${FAILED} 项 / 不可判定 ${UNKNOWN} 项"

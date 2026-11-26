@@ -60,6 +60,11 @@ services:
       - /opt/migao-deploy/uploads:/app/uploads
     mem_limit: 1536m
     cpus: 1.0
+    # 优雅退出（M1-b，issue #9098）：docker 从 SIGTERM 起算等到本值就 SIGKILL。
+    # 必须 > application.yml 的 `spring.lifecycle.timeout-per-shutdown-phase`（30s）
+    # —— 45s = 30s 应用预算 + 15s 给 JVM/连接池收尾与 docker 的观测误差。
+    # 判据（会红）：tests/unit_ci_workflows/test_zero_downtime_m1_cutover.py
+    stop_grace_period: 45s
     logging: *migao-logging
     # 与 docker-compose.yml 的 admin-api **逐字一致**（抗漂移红线，issue #8197 P1-12 +
     # tests/unit_ci_workflows/test_swas_deploy_blue_green.py 的 parity 判据比对 healthcheck）。
@@ -89,6 +94,10 @@ services:
       - /opt/migao-deploy/jwt:/opt/migao-deploy/jwt:ro
     mem_limit: 1024m
     cpus: 1.0
+    # 优雅退出（M1-b，issue #9098）：uvicorn 的 `--timeout-graceful-shutdown 200`（SSE 最长流
+    # 180s + 余量）必须 **≤** 本值 ⇒ 210s；否则 docker 会把还没收尾的长流 SIGKILL。
+    # 判据（会红）：tests/unit_ci_workflows/test_zero_downtime_m1_cutover.py
+    stop_grace_period: 210s
     logging: *migao-logging
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/ready', timeout=3)"]

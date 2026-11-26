@@ -1,4 +1,4 @@
-// case_ids: UI-082
+// case_ids: UI-082, OB-008
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 
@@ -13,173 +13,83 @@ import {
   findQuantifierRhetoric,
 } from './copy-voice-banlist'
 
-describe('ServicesPage（官网产品与服务 v4：双 AI + 四终端 + 八能力域，issue #6291 / #6326）', () => {
-  // ── 页头 ──
-
+describe('ServicesPage（官网产品能力：浅色页头 + 场景分节 + 能力域，issue #9121）', () => {
   it('renders page title 与定位副标', () => {
     render(<ServicesPage />)
-    expect(
-      screen.getByRole('heading', {
-        level: 1,
-        name: '从顾客咨询，到经营决策',
-      })
-    ).toBeInTheDocument()
-    expect(screen.getByText(/四个终端共用数据底座/)).toBeInTheDocument()
+    expect(screen.getByText(/两条 AI/)).toBeInTheDocument()
+    expect(screen.getByText('共用业务底座')).toBeInTheDocument()
+    expect(screen.getByText(/管理后台、微信客服、商家小程序与员工端 H5 共用数据/)).toBeInTheDocument()
   })
 
-  it('renders 页头事实标签（AI 数 / 能力域数 / 终端数 / 行业纵深）', () => {
+  it('renders 页头能力标签（六个经营动作）', () => {
     render(<ServicesPage />)
-    expect(screen.getByText('2 个 AI：米宝与黄金策')).toBeInTheDocument()
-    expect(screen.getByText(/8 个能力域 · \d+ 项功能/)).toBeInTheDocument()
-    expect(screen.getByText('八个能力域，落到功能入口')).toBeInTheDocument()
-    expect(screen.getByText('4 个终端')).toBeInTheDocument()
-    expect(screen.getByText('算料 · 工序 · 批次 · 计件')).toBeInTheDocument()
-  })
-
-  // ── 米宝与黄金策 ──
-
-  it('renders 米宝与黄金策的产品卡', () => {
-    render(<ServicesPage />)
-    expect(screen.getByText('米宝 · 企业智能客服')).toBeInTheDocument()
-    expect(screen.getByText('黄金策 · 企业智能生产管家')).toBeInTheDocument()
-    expect(screen.getByText('顾客侧：从规格咨询到下单、物流查询与售后受理')).toBeInTheDocument()
-    expect(screen.getByText('经营侧：以自然语言查询账目、订单与进度')).toBeInTheDocument()
-  })
-
-  it('renders 米宝的能力点（含算料报价与售后受理）', () => {
-    render(<ServicesPage />)
-    expect(
-      screen.getByText('按尺寸与工艺计算用料并给出估算报价，明确说明为估算而非成交价')
-    ).toBeInTheDocument()
-    expect(
-      screen.getByText('售后咨询与申请受理，工单恒为「待商家审核」')
-    ).toBeInTheDocument()
-    expect(screen.getByText('订单进度、物流轨迹、收货地址查询')).toBeInTheDocument()
-  })
-
-  it('renders 黄金策的能力点（含生产计件与财务对账）', () => {
-    render(<ServicesPage />)
-    expect(
-      screen.getByText('生产与计件：工序库、工艺路线、计件工资与报工明细')
-    ).toBeInTheDocument()
-    expect(
-      screen.getByText('财务与客户：资金流水 / 收支汇总 / 应收对账问答，客户档案与售后工单')
-    ).toBeInTheDocument()
-    expect(screen.getByText('库存与入库：批次库存、库存台账、入库单与批次成本')).toBeInTheDocument()
-  })
-
-  it('renders 能力边界（旧版「批量操作库存 / 退换货处理」等已过期表述不得残留）', () => {
-    render(<ServicesPage />)
-    expect(screen.getByText(/可写的动作：改价、商品改名、批量改价与批量库存调整、通知标记已读、定时提醒/)).toBeInTheDocument()
-    expect(screen.getByText(/不做：改价、取消订单、退款、承诺优惠折扣、报库存数量/)).toBeInTheDocument()
-    expect(screen.queryByText(/批量操作库存/)).not.toBeInTheDocument()
-    expect(screen.queryByText(/智能工单流转/)).not.toBeInTheDocument()
-  })
-
-  // ── 四个终端 ──
-
-  it('renders 四个终端（管理后台 / 顾客小程序 / 商家小程序 / 员工端 H5）', () => {
-    render(<ServicesPage />)
-    for (const name of ['管理后台', '顾客小程序', '商家小程序', '员工端 H5']) {
-      expect(screen.getByText(name)).toBeInTheDocument()
+    for (const chip of ['智能接待', '算料报价', '订单生产', '库存批次', '计件对账', '经营决策']) {
+      expect(screen.getAllByText(chip).length).toBeGreaterThanOrEqual(1)
     }
-    expect(screen.getByText('扫码报工（合格 / 返工 / 报废）')).toBeInTheDocument()
-    expect(screen.getByText('工人登录、拍照入库、补打标签')).toBeInTheDocument()
   })
 
-  it('商家小程序受众 = 老板 / 员工 / 工人（不含「店长」，issue #8868）', () => {
+  it('hero 右侧：工作台示意', () => {
     render(<ServicesPage />)
-    expect(screen.getByText('老板 / 员工 / 工人（移动端）')).toBeInTheDocument()
-    expect(screen.queryByText(/店长/)).not.toBeInTheDocument()
+    expect(screen.getByText('生意管家 · 工作台')).toBeInTheDocument()
+    expect(screen.getAllByText('界面示意').length).toBeGreaterThanOrEqual(1)
   })
 
-  // ── 八个能力域 ──
-
-  it('renders 八个能力域与独立入口的全部菜单名', () => {
+  it('四个场景分节：标题 / 标签 / 产品示意', () => {
     render(<ServicesPage />)
-    for (const domain of [
-      '客户服务',
-      '订单/商品',
-      '生产管理',
-      '质量管理',
-      '仓储/物料',
-      '财务',
-      '供应链',
-      '组织管理',
+    for (const title of [
+      '从顾客开口，到订单成交',
+      '问经营，不用等报表',
+      '订单到交付，进度在同一链路',
+      '批次、库存、计件与收支，逐笔可查',
     ]) {
-      expect(screen.getByText(domain)).toBeInTheDocument()
+      expect(screen.getAllByText(title).length).toBeGreaterThanOrEqual(1)
     }
-    // 24 个组内项 + 4 个一级独立项，逐项点名（漏讲 / 多讲 ⇒ 红）
-    for (const item of [
-      '在线接待',
-      '售后工单',
-      '知识库',
-      '销售订单',
-      '商品管理',
-      '价格本',
-      '客户列表',
-      '作业单',
-      '智能派单',
-      '质检记录',
-      '返工单',
-      '入库单',
-      '盘点单',
-      '出库单',
-      '发货单',
-      '库存明细',
-      '余料台账',
-      '省料分析',
-      '财务对账',
-      '计件工资',
-      '采购单',
-      '供应商',
-      '员工管理',
-      '岗位权限',
-      // 一级独立项
-      '经营报表',
-      '企业基础设置',
-      '通知中心',
-    ]) {
-      expect(screen.getByText(item)).toBeInTheDocument()
-    }
+    expect(screen.getAllByText('界面示意').length).toBeGreaterThanOrEqual(5)
+    expect(screen.getByText('微信客服 · 米宝')).toBeInTheDocument()
+    expect(screen.getByText('管理后台 · 经营报表')).toBeInTheDocument()
+    expect(screen.getByText('加工单 · 生产进度')).toBeInTheDocument()
+    expect(screen.getByText('库存台账 · 批次')).toBeInTheDocument()
   })
 
-  it('renders 能力域明细（抽样断言细节文本）', () => {
+  it('八个能力域：只列域与解决的问题，不展开内部菜单', () => {
     render(<ServicesPage />)
-    expect(
-      screen.getByText(/只有已发布的卡片会被 AI 检索到/)
-    ).toBeInTheDocument()
-    expect(screen.getByText(/过账自动生成批次号、增加库存并按移动加权平均记成本/)).toBeInTheDocument()
-    expect(screen.getByText(/返工与报废不计件，系统会自动排除/)).toBeInTheDocument()
+    for (const domain of ['客户服务', '订单/商品', '生产管理', '质量管理', '仓储/物料', '财务', '供应链', '组织管理']) {
+      expect(screen.getAllByText(domain).length).toBeGreaterThanOrEqual(1)
+    }
+    for (const internalItem of ['在线接待', '售后工单', '价格本', '智能派单', '余料台账']) {
+      expect(screen.queryByText(internalItem)).not.toBeInTheDocument()
+    }
   })
 
-  // ── 行业纵深 ──
-
-  it('renders 行业纵深四块', () => {
+  it('行业纵深四块', () => {
     render(<ServicesPage />)
     expect(screen.getByText('布艺经营的四项核心能力')).toBeInTheDocument()
     for (const title of ['算料与报价', '多规格 SKU', '工序与计件', '批次与余料']) {
-      expect(screen.getByText(title)).toBeInTheDocument()
+      expect(screen.getAllByText(title).length).toBeGreaterThanOrEqual(1)
     }
   })
 
-  // ── 交付与开通 ──
-
-  it('renders 交付与开通（AI 秒级开通 / 模板 / 权限 / 价格口径）', () => {
+  it('四个终端', () => {
     render(<ServicesPage />)
-    expect(screen.getByText('AI 自动甄别，秒级开通')).toBeInTheDocument()
-    expect(screen.getByText('行业模板预置')).toBeInTheDocument()
-    expect(screen.getByText('价格与合同另行沟通')).toBeInTheDocument()
-    expect(screen.getByText(/本页面不公示价格/)).toBeInTheDocument()
+    for (const name of ['管理后台', '微信客服', '商家小程序', '员工端 H5']) {
+      expect(screen.getByText(name)).toBeInTheDocument()
+    }
+    expect(screen.getByText('老板 / 员工 / 工人')).toBeInTheDocument()
   })
 
-  it('renders 底部 CTA', () => {
+  it('交付与开通（模板 / 权限 / 交付口径）', () => {
     render(<ServicesPage />)
-    expect(screen.getByText('立即入驻')).toBeInTheDocument()
+    expect(screen.getByText('行业模板预置')).toBeInTheDocument()
+    expect(screen.getByText('岗位权限预置可调')).toBeInTheDocument()
+    expect(screen.getByText('按场景确认交付')).toBeInTheDocument()
+    expect(screen.getByText(/价格与合同另行沟通/)).toBeInTheDocument()
+  })
+
+  it('底部 CTA（内测期不露出立即入驻，OB-008）', () => {
+    render(<ServicesPage />)
+    expect(screen.queryByText('立即入驻')).not.toBeInTheDocument()
     expect(screen.getByText('联系我们')).toBeInTheDocument()
   })
-
-  // ── 视觉与真实性 ──
 
   it('视觉口径：不再使用通用蓝色渐变模板', () => {
     const { container } = render(<ServicesPage />)
@@ -197,32 +107,20 @@ describe('ServicesPage（官网产品与服务 v4：双 AI + 四终端 + 八能�
     expect(screen.queryByText(/自动学习/)).not.toBeInTheDocument()
   })
 
-  // ── 文案口吻（issue #6326：去 AI 口语，改「能力陈述型」书面语）──
-
-  it('文案口吻：产品与服务页渲染文本不含 AI 口语词表', () => {
+  it('文案口吻：产品能力页渲染文本不含 AI 口语词表', () => {
     const { container } = render(<ServicesPage />)
     const hits = findColloquialMarkers(container.textContent ?? '')
-    expect(hits, `产品与服务页渲染文本出现 AI 口语词：${hits.join(' / ')}`).toEqual([])
+    expect(hits, `产品能力页渲染文本出现 AI 口语词：${hits.join(' / ')}`).toEqual([])
   })
-  // ── 文案质感：量化排比与拟人量词（issue #6366）──
 
-  it('文案质感：产品与服务页渲染文本无量化排比、无拟人量词', () => {
+  it('文案质感：产品能力页渲染文本无量化排比、无拟人量词', () => {
     const { container } = render(<ServicesPage />)
     const text = container.textContent ?? ''
-
-    // 判别力自证：病症样本必须被检出、合规样本必须零命中（否则本判据是空断言）
     expect(findQuantifierRhetoric('一套经营平台，一次咨询，一张订单')).toEqual(['一套', '一次', '一张'])
     expect(findPersonifiedAi('两位 AI 助手')).toEqual(['两位 AI'])
     expect(findQuantifierRhetoric('六个能力域 · 4 个终端 · 至少10个字符')).toEqual([])
     expect(findPersonifiedAi('米宝与黄金策')).toEqual([])
-
-    // 真实语料
-    const quantifiers = findQuantifierRhetoric(text)
-    expect(
-      quantifiers,
-      `产品与服务页渲染文本出现量化排比：${quantifiers.join(' / ')}`,
-    ).toEqual([])
-    const personified = findPersonifiedAi(text)
-    expect(personified, `产品与服务页渲染文本出现拟人量词：${personified.join(' / ')}`).toEqual([])
+    expect(findQuantifierRhetoric(text)).toEqual([])
+    expect(findPersonifiedAi(text)).toEqual([])
   })
 })
