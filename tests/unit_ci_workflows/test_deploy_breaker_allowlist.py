@@ -353,7 +353,7 @@ def make_repo(tmp_path: Path) -> dict:
     git(repo, "init", "-q", "-b", "main")
     for rel in ("backend/admin-api/a.py", "backend/ai-agent-service/a.py",
                 "frontend/admin-web/a.ts", "frontend/worker-h5/a.mjs",
-                "frontend/bmini-app/a.ts", "frontend/mini-app/a.ts"):
+                "frontend/bmini-app/a.ts"):
         p = repo / rel
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(rel, encoding="utf-8")
@@ -380,7 +380,7 @@ def make_repo(tmp_path: Path) -> dict:
 
 
 RECONCILE_WF_NAMES = ("deploy-admin-api.yml", "deploy-ai-agent-service.yml", "deploy-frontend.yml",
-                      "worker-h5-publish.yml", "bmini-h5-publish.yml", "c-end-h5-publish.yml")
+                      "worker-h5-publish.yml", "bmini-h5-publish.yml")
 RECONCILE_STATE_SCRIPT = REPO_ROOT / "scripts" / "deploy_reconcile_state.sh"
 
 
@@ -430,7 +430,7 @@ def run_reconcile(tmp_path: Path, repo: Path, *, head_sha: str, baseline: str | 
 def audit_still_running_is_skipped(proc, summary, dispatches) -> None:
     assert proc.returncode == 0, f"对账正文非零退出 → {proc.stderr}\n{proc.stdout}"
     assert dispatches == [], f"同 commit 还在跑/排队时不该 dispatch（纯 churn）→ {dispatches}"
-    assert "断路器跳过=6" in summary, f"应记入「跳过」而不是「补部署」→ {summary!r}"
+    assert "断路器跳过=5" in summary, f"应记入「跳过」而不是「补部署」→ {summary!r}"
     assert "在跑/排队" in proc.stdout and "status=in_progress" in proc.stdout, (
         f"跳过必须显式打印「已有同 commit 的 run 在跑/排队」+ 状态 → {proc.stdout}"
     )
@@ -439,7 +439,7 @@ def audit_still_running_is_skipped(proc, summary, dispatches) -> None:
 def audit_unrecoverable_conclusion_is_skipped(proc, summary, dispatches) -> None:
     assert proc.returncode == 0, f"对账正文非零退出 → {proc.stderr}\n{proc.stdout}"
     assert dispatches == [], f"不可恢复终态不该 dispatch → {dispatches}"
-    assert "断路器跳过=6" in summary, f"{summary!r}"
+    assert "断路器跳过=5" in summary, f"{summary!r}"
     assert "不可恢复的终态" in proc.stdout and "gh workflow run" in proc.stdout, (
         f"跳闸必须显式落 reason + **人工出口** → {proc.stdout}"
     )
@@ -1057,7 +1057,7 @@ def test_break_criterion_has_discriminating_power(tmp_path):
     assert sorted(dispatches) == sorted(RECONCILE_WF_NAMES), (
         f"改回「只认 failure」后 `cancelled` 竟然没补部署 ⇒ 注入失效（红证无效）→ {dispatches}"
     )
-    assert "断路器跳过=6" not in summary, f"改前形态不该记「跳过」→ {summary!r}"
+    assert "断路器跳过=5" not in summary, f"改前形态不该记「跳过」→ {summary!r}"
     with pytest.raises(AssertionError):
         audit_unrecoverable_conclusion_is_skipped(proc, summary, dispatches)
 

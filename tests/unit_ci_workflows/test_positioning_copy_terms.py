@@ -64,7 +64,6 @@ SCAN_ROOTS = (
     "frontend/admin-web/src",
     "frontend/bmini-app/src",
     "frontend/worker-h5/src",
-    "frontend/mini-app/src",
 )
 SCAN_EXTS = (".ts", ".tsx", ".js", ".jsx", ".mjs")
 
@@ -253,9 +252,7 @@ NEW_NAME_ANCHORS = (
     ("frontend/admin-web/src/app/(corporate)/page.tsx", ("生意管家", "米宝", "黄金策")),
     ("frontend/admin-web/src/app/login/page.tsx", ("生意管家",)),
     ("frontend/bmini-app/src/pages/auth/login/index.tsx", ("生意管家",)),
-    ("frontend/mini-app/src/pages/auth/login/index.tsx", ("生意管家",)),
     ("frontend/bmini-app/src/utils/brand.ts", ("黄金策",)),
-    ("frontend/mini-app/src/utils/brand.ts", ("米宝",)),
     ("backend/ai-agent-service/app/agents/agents/xiaobu.py", ('display_name="米宝"', 'DEFAULT_BOT_NAME = "米宝"')),
     ("backend/ai-agent-service/app/agents/agents/mibao.py", ('display_name="黄金策"',)),
     ("backend/ai-agent-service/app/agents/channel_config.py", ('bot_name: str = "米宝"', "生意管家")),
@@ -432,7 +429,6 @@ DOC_POSITIONING_FILES: dict[str, tuple[str, ...]] = {
     "backend/admin-api/README.md": ("生意管家", "布艺", "AI 经营平台"),
     "backend/ai-agent-service/README.md": ("生意管家", "布艺", "AI 经营平台"),
     "frontend/admin-web/README.md": ("生意管家", "布艺", "AI 经营平台"),
-    "frontend/mini-app/README.md": ("生意管家", "布艺", "AI 经营平台"),
     "frontend/bmini-app/README.md": ("生意管家", "布艺", "AI 经营平台"),
 }
 
