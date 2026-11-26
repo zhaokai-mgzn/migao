@@ -36,11 +36,12 @@ import pytest
 ROOT = Path(__file__).resolve().parents[2]
 CONF = ROOT / "deploy" / "swas" / "nginx.conf"
 
-#: 承载可执行产物的静态 location —— (前缀, 该块必须有的 SPA fallback)。
-#: fallback 用来**认领正确的那个块**（配置里有**两个** `location /`，:80 那个只 `return 301`）。
+#: 承载可执行产物的静态 location —— (前缀, 该块必然出现的那条 try_files)。
+#: 该串用来**认领正确的那个块**（配置里有**两个** `location /`，:80 那个只 `return 301`）。
+#: ⚠️ 根面的值 = `=404`（issue #9249：C 端下线之后末位不能再指向文件，否则内部重定向成环 ⇒ 500）。
 #: 🔴 前缀变了 / 新增静态面 ⇒ 改这张表（`test_no_static_location_is_uncovered` 会逼你改）。
 STATIC_LOCATIONS = (
-    ("/", "try_files $uri $uri/ /index.html"),
+    ("/", "try_files $uri $uri/ =404"),
     ("/w/", "try_files $uri $uri/ /w/index.html"),
     ("/b/", "try_files $uri $uri/ /b/index.html"),
 )

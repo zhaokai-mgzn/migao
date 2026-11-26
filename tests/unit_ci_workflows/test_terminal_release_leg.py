@@ -220,9 +220,12 @@ def _apply_location(loc: dict, path: str, files: set[str], block: str) -> str:
         if arg == "$uri" and path.lstrip("/") in files:
             return path.lstrip("/")
         if arg == "$uri/":
+            # 目录分支必须落到 `index index.html`：原先这里只判「目录本身在 files 里」（永远不成立），
+            # 之所以历史判据一直绿，是因为根面当时还有 `/index.html` 兜底把结果兜住了 ——
+            # issue #9249 把兜底收成 `=404` 之后，这个埋着的空分支才暴露出来（模拟器 ≠ nginx 语义）。
             cand = (path.rstrip("/") + "/").lstrip("/")
-            if cand in files:
-                return cand
+            if cand + "index.html" in files:
+                return cand + "index.html"
     last = tf[-1]
     if last.startswith("="):
         return last[1:] if last == "=404" else last
@@ -366,11 +369,13 @@ def _nginx_problems(conf: str) -> list[str]:
             f"`/{SUBDIR}/` 落到 `{dir_served}` —— 下载面的目录请求不许回落成页面/跳转（缺文件就是 404）"
         )
 
-    # 零回归：根 / 根级子路由 / 工人端 `/w/` 不变
+    # 零回归：根 / 根级子路由 / 工人端 `/w/`
+    # ⚠️ 根面自 issue #9249 起**不再**做 SPA 回落（C 端 2026-11-26 随 #9233 下线）：
+    #    `/` 仍由 `index index.html` 兜住那页退役占位；根级子路由必须是 404。
     if _serve(block, files, "/") != "index.html":
-        problems.append("根 `/` 不再由 C 端 index.html 承担")
-    if _serve(block, files, "/some/c-end/route") != "index.html":
-        problems.append("根级子路由不再回落到 C 端 index.html（C 端 SPA fallback 被改坏）")
+        problems.append("根 `/` 不再落到 `index.html`（退役占位页没了 / 根面 index 指令被改）")
+    if _serve(block, files, "/some/c-end/route") != "404":
+        problems.append("根级子路由又回落成页面了（issue #9249：兜底被写回去 ⇒ 任意缺失路径会变 500）")
     if _serve(block, files, "/w/") != "w/index.html":
         problems.append("`/w/` 不再落到 `w/index.html`（工人端报工面零回归判据）")
 
