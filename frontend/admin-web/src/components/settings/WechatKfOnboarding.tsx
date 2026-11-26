@@ -4,8 +4,9 @@ import { useCallback, useEffect, useState } from 'react'
 import { QRCodeSVG } from 'qrcode.react'
 import { CheckCircle2, Copy, ExternalLink, ShieldCheck } from 'lucide-react'
 import { kfApi, type KfChannelView } from '@/lib/api'
+import { displayEnum } from '@/lib/enum-display'
 
-const STATUS_LABEL: Record<KfChannelView['status'], string> = {
+const STATUS_LABEL: Record<string, string | undefined> = {
   active: '已接通',
   unauthorized: '待自检',
   expired: '已过期',
@@ -247,7 +248,7 @@ export function WechatKfOnboarding() {
                               : 'bg-neutral-100 text-neutral-600'
                         }`}
                       >
-                        {STATUS_LABEL[channel.status] || channel.status}
+                        {displayEnum(STATUS_LABEL, channel.status)}
                       </span>
                     </div>
                     <p className="mt-1 break-all text-xs text-neutral-500">企业 ID：{channel.corpId}</p>
