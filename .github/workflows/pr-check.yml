@@ -852,7 +852,7 @@ jobs:
       # ⚡ Playwright 浏览器暖缓存：未命中时每次都要下载 chromium（实测数十秒且吃网络）
       - name: Cache Playwright browsers
         if: steps.detect_e2e.outputs.run_tests == 'true'
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.cache/ms-playwright
           key: ${{ runner.os }}-playwright-${{ hashFiles('tests/package-lock.json') }}
@@ -1341,7 +1341,7 @@ jobs:
       # 命中后免掉每 PR 一次的 GitHub Release 下载（实测下载+解包是这条腿除 checkout 外唯一开销）。
       - name: Cache gitleaks binary
         id: gitleaks-cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ./gitleaks
           key: ${{ runner.os }}-gitleaks-8.30.1
