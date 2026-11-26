@@ -413,6 +413,8 @@ APP_LEVEL_PROBES = {
     "/internal/llm-health": "LLM 主凭据（401 / 402 ⇒ ok=false + 503；60s 缓存一次最小真实调用）",
     "/version": "构建身份 sha / builtAt（空串 = 探不到，issue #8203）",
     "/api/version": "同上（与 /version 同一响应，运维只有一条命名口径）",
+    "/internal/stream-probe": "只读心跳流（每秒一条 `event: ping`，不碰 DB / 不调 LLM / 不落库；"
+                             "用途 = 发布期 SSE 是否被切断的可重复读数，issue #9098）",
 }
 
 

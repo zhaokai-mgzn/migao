@@ -57,6 +57,8 @@ def _stock_precision_rejected(value: Any) -> ToolResult:
     )
 
 
+# 未绑定任何 skill（capability_boundary 的 write-boundary 保留清单）：模型不可达，
+# 不要据此认为 B/C 端能办；如要恢复绑定，先过 capability_boundary 的探针与用例。
 class ProductManageTool(BaseTool):
     """商品管理 Tool"""
 

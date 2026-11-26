@@ -151,8 +151,7 @@ LEG_KEYS="admin-api:deploy-admin-api.yml \
 ai-agent-service:deploy-ai-agent-service.yml \
 admin-web:deploy-frontend.yml \
 worker-h5:worker-h5-publish.yml \
-bmini-h5-hosting:bmini-h5-publish.yml \
-c-end-h5:c-end-h5-publish.yml"
+bmini-h5-hosting:bmini-h5-publish.yml"
 
 LEG_TITLE_PREFIX="[deploy-leg]"
 WATCHDOG_TITLE_PREFIX="[deploy-watchdog]"

@@ -74,14 +74,10 @@ MUTABLE_REF = re.compile(r"\borigin/[A-Za-z0-9._/-]+:")
 
 # ── 台账（**只许缩短**：条目必须逐字等于现取命中集合）────────────────────────────
 # 现取（`python3 -m pytest tests/unit_ci_workflows/test_guard_no_mutable_ref_baseline.py -q -s`）：
-# 射程内命中 **1** 个文件。每条的 `why` 必须说明「为什么那个局部是安全的」。
+# 射程内命中 **2** 个文件（issue #9090 删掉了 `test_batch_merge_tool.py` 那条：
+# 它原来唯一命中的 `git show origin/main:<anchor>` 已随「批次合并不再重锚」删除 ⇒ 台账只许缩短）。
+# 每条的 `why` 必须说明「为什么那个局部是安全的」。
 MUTABLE_REF_BASELINE = {
-    "test_batch_merge_tool.py": (
-        "`_sh([\"git\", \"-C\", <fixture worktree>, \"show\", f\"origin/main:{lib.ANCHOR}\"])` 里的 "
-        "`origin/main` 属于 `build(tmp_path)` **自建的 bare origin + clone + worktree**"
-        "（夹具自己 `git push` 上去的那条 main）⇒ 该 ref 与 CI 的浅克隆无关、永远可达。"
-        "**不是**「读主仓的 origin/main」：本判据不碰真仓库（只从主仓 `copy` 实现文件）。"
-    ),
     "test_resolve_cases_conflict.py": (
         "`_git(repo, \"show\", \"origin/main:.github/cases/misc.yml\")` 里的 `repo` 是 "
         "`_build_conflict(tmp_path)` **自建的临时仓库**（`_init_repo()` 里 `git init --bare` 出 "

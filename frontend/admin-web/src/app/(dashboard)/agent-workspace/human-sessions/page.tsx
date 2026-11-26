@@ -28,6 +28,12 @@ import Button from '@/components/ui/Button'
 import EmptyState from '@/components/ui/EmptyState'
 import DateTimeCell from '@/components/common/DateTimeCell'
 import type { AgentMessageItem, AgentSession, AgentSessionDetail } from '@/lib/api'
+import {
+  KF_CHANNEL,
+  isKfBudgetExhausted,
+  kfBudgetLabel,
+  kfSendStatusLabel,
+} from '@/lib/kf-session-status'
 
 const STATUS_LABEL: Record<string, string> = {
   waiting: '待接待',
@@ -145,6 +151,11 @@ export default function HumanAgentSessionsPage() {
     }
   }, [detail?.messages?.length])
 
+  // 选中会话的 48h 额度（issue #9202）：额度用尽 ⇒ 微信侧发不出去，必须在输入区就拦住，
+  // 不能让坐席写完一大段才看到失败
+  const selectedSession = sessions.find(s => s.id === selectedId) ?? null
+  const kfBudgetExhausted = isKfBudgetExhausted(selectedSession)
+
   return (
     <div className="h-[calc(100vh-180px)] flex flex-col">
       {/* 顶部 */}
@@ -220,6 +231,24 @@ export default function HumanAgentSessionsPage() {
                 <DateTimeCell value={s.createdAt} />
                 {s.messageCount ? <span>· {s.messageCount}条</span> : null}
               </div>
+              {/* 微信客服状态（issue #9202）：只在服务端给了 channel 时出现 —— 普通人工会话
+                  一个标识都不画（伪造渠道会让坐席等错地方） */}
+              {s.channel === KF_CHANNEL && (
+                <div
+                  className="mt-1 flex items-center gap-1.5 text-[11px]"
+                  data-testid={`kf-badge-${s.id}`}
+                >
+                  <span className="px-1 py-0.5 rounded bg-emerald-50 text-emerald-700">
+                    微信客服
+                  </span>
+                  <span className="text-neutral-500" data-testid={`kf-send-status-${s.id}`}>
+                    {kfSendStatusLabel(s.sendStatus)}
+                  </span>
+                  <span className="text-neutral-500" data-testid={`kf-budget-${s.id}`}>
+                    额度 {kfBudgetLabel(s)}
+                  </span>
+                </div>
+              )}
             </button>
           ))}
         </div>
@@ -358,12 +387,29 @@ export default function HumanAgentSessionsPage() {
                     </Button>
                   </div>
                 )}
+                {/* 48h 额度用尽（issue #9202）：微信客服只允许 48 小时内 5 条 ⇒ 额度没了就等于
+                    发不出去，直接在输入区说明，而不是让坐席写完再失败 */}
+                {kfBudgetExhausted && (
+                  <div
+                    role="status"
+                    data-testid="kf-budget-exhausted"
+                    className="mb-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700"
+                  >
+                    微信客服 48 小时额度已用完（{kfBudgetLabel(selectedSession)}），
+                    客户下条消息后可重新计算；如需现在回复，请改用其他方式联系客户。
+                  </div>
+                )}
                 <div className="flex items-center gap-2">
                   <textarea
                     className="flex-1 h-10 px-3 py-2 text-sm border border-neutral-200 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-primary-200"
-                    placeholder="输入回复内容，Enter 发送，Shift+Enter 换行"
+                    placeholder={
+                      kfBudgetExhausted
+                        ? '微信客服 48 小时额度已用完，暂时无法发送'
+                        : '输入回复内容，Enter 发送，Shift+Enter 换行'
+                    }
                     value={input}
                     onChange={e => setInput(e.target.value)}
+                    disabled={kfBudgetExhausted}
                     onKeyDown={e => {
                       if (e.key === 'Enter' && !e.shiftKey) {
                         e.preventDefault()
@@ -373,7 +419,7 @@ export default function HumanAgentSessionsPage() {
                   />
                   <button
                     onClick={() => handleSend()}
-                    disabled={!input.trim() || loading}
+                    disabled={!input.trim() || loading || kfBudgetExhausted}
                     className="h-10 px-4 rounded-lg bg-primary-500 text-white text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5"
                   >
                     <Send className="w-4 h-4" />

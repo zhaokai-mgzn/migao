@@ -66,6 +66,7 @@ import { AlertCircle, Bell, Bot, Building2, Newspaper, QrCode } from 'lucide-rea
 import Image from 'next/image'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { toast } from 'sonner'
+import Link from 'next/link'
 import { Button, PageHeader } from '@/components/ui'
 import { settingsApi, uploadApi, briefingApi, productionApi } from '@/lib/api'
 import { CalcCaliberPanel } from '@/components/settings/CalcCaliberPanel'
@@ -504,6 +505,7 @@ export default function SettingsPage() {
 const EMPTY_BRIEFING: BriefingConfig = { enabled: true, generateTime: '06:00' }
 
 function EnterpriseDomainPanel() {
+  const { has } = usePermission()
   // ============ 基本设置（企业信息）============
   // #3103: notificationEmail 为僵尸字段（站内信无需邮箱，后端无邮件消费逻辑），已从 UI/类型移除
   const [settings, setSettings] = useState<SystemSettings>({
@@ -723,7 +725,14 @@ function EnterpriseDomainPanel() {
   return (
     <div className="space-y-6">
       {/* #5899：把「没有保存按钮」这件事**说出来** —— 否则商家会去找按钮 */}
-      <p className="text-xs text-neutral-400 -mt-2">修改后自动保存，无需手动提交</p>
+      <div className="flex flex-wrap items-center justify-between gap-2 -mt-2">
+        <p className="text-xs text-neutral-400">修改后自动保存，无需手动提交</p>
+        {has('system:manage') ? (
+          <Link href="/settings/wechat-kf" className="text-xs font-medium text-primary-700 hover:underline">
+            微信客服接入 →
+          </Link>
+        ) : null}
+      </div>
       {loadingSettings ? (
         <div className="text-sm text-neutral-500 py-8 text-center">加载中…</div>
       ) : (
@@ -757,13 +766,13 @@ function EnterpriseDomainPanel() {
             <input
               type="text"
               className="w-full h-9 px-3 rounded border border-neutral-300 text-sm placeholder:text-neutral-400 focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
-              placeholder="如 migao"
+              placeholder="如 caiyuan"
               value={settings.code || ''}
               onChange={(e) => setSettings({ ...settings, code: e.target.value })}
               onBlur={commitCode}
             />
             <p className="text-xs text-neutral-400 mt-1">
-              员工用它登录：<span className="text-neutral-500">用户名@企业编码</span>（例如 zhangsan@{settings.code || 'migao'}）。
+              员工用它登录：<span className="text-neutral-500">用户名@企业编码</span>（例如 zhangsan@{settings.code || 'caiyuan'}）。
               全平台唯一，只能用 2~32 位小写字母、数字、连字符与下划线；格式或占用不合规时会提示原因。
             </p>
             <p className="text-xs text-amber-600 mt-1">
@@ -809,7 +818,7 @@ function EnterpriseDomainPanel() {
                 </div>
                 <input ref={fileInputRef} type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={handleLogoUpload} />
                 <p className="text-xs text-neutral-400 mt-1.5">
-                  未设置时展示观星台默认 Logo；上传或移除后自动保存，将展示在后台侧边栏企业名旁
+                  未设置时展示生意管家默认 Logo；上传或移除后自动保存，将展示在后台侧边栏企业名旁
                 </p>
               </div>
             </div>

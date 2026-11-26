@@ -130,7 +130,7 @@ export default function ProductionProgressTable({ positions, className }: Produc
                       <th className="px-4 py-2.5 text-left font-medium whitespace-nowrap">状态</th>
                       <th className="px-4 py-2.5 text-left font-medium whitespace-nowrap">已完成数量</th>
                       {/* 报工三态（issue #7140，**只加不改**）：合格 / 返工 / 报废 —— 这三列此前只出现在
-                          米宝的读面（agent worklog）⇒ 商家在观星台上看不到「返工了多少、报废了多少」。
+                          米宝的读面（agent worklog）⇒ 商家在生意管家上看不到「返工了多少、报废了多少」。
                           🔴 返工 / 报废**既不推进进度也不计件**（既有口径）⇒ 它们与「已完成数量」不同列、
                           也不参与任何合计（避免被读成「已完成 = 合格 + 返工 + 报废」）。 */}
                       <th className="px-4 py-2.5 text-left font-medium whitespace-nowrap">合格</th>

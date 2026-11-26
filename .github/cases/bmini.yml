@@ -674,7 +674,7 @@ cases:
       - inbound-order-flow.worker-recognize-decoding-first
       - inbound-label-flow.worker-detail-read-and-photo-upload
     user_inputs:
-      - "工人登录 B 端（H5 / 小程序）后打开「拍照补打标签」→ 拍一张观星台入库标签 → 本机解码优先（jsQR，**0 次 LLM**）→ 解出短码后按短码读单据详情"
+      - "工人登录 B 端（H5 / 小程序）后打开「拍照补打标签」→ 拍一张生意管家入库标签 → 本机解码优先（jsQR，**0 次 LLM**）→ 解出短码后按短码读单据详情"
     expectations:
       - tool: direct_reply
     data_checks:
@@ -693,7 +693,7 @@ cases:
       verifies: []
   - id: BM-021
     legacy_id: ""
-    title: "码空间分清 - /s/ 洗水码绝不当入库标签查（给报工入口）；非观星台二维码明确告知"
+    title: "码空间分清 - /s/ 洗水码绝不当入库标签查（给报工入口）；非生意管家二维码明确告知"
     domains:
       - bmini
       - inbound
@@ -711,7 +711,7 @@ cases:
       - tool: direct_reply
     data_checks:
       - "判据 1·🔴 **`/s/` ⇒ 洗水码空间**：判定为 `wash-code`、文案点明「水洗唛上的报工码」并给出**报工页入口**（路由已登记进 `src/app.config.ts`），且**不查入库详情**（页面判据：`getInboundLabel` 0 次调用）。红证（变异注入实跑退出码 1）：不看码空间、拿 URL 末段直接查 ⇒ 判据红。证据：frontend/bmini-app/tests/inbound-reprint-code-space.test.ts + tests/worker-reprint-page.test.tsx"
-      - "判据 2·**非观星台二维码明确告知**：别的域名的 `/i/<码>`、纯文本二维码 ⇒ `foreign` + 「这不是观星台的标签」+ 引导手输；**绝不**拿去查入库接口（红证：变异注入「认路径不认主机」⇒ 判据红，退出码 1）。"
+      - "判据 2·**非生意管家二维码明确告知**：别的域名的 `/i/<码>`、纯文本二维码 ⇒ `foreign` + 「这不是生意管家的标签」+ 引导手输；**绝不**拿去查入库接口（红证：变异注入「认路径不认主机」⇒ 判据红，退出码 1）。"
       - "判据 3·**前缀单一来源**：`/s/` 在端侧只出现一处（`src/utils/inbound/codeSpace.ts`），且与后端控制器 `@GetMapping('/s/{shortCode}')`、`@GetMapping('/i/{shortCode}')` **逐值一致**（红证：客户端另抄一份前缀 / 后端换前缀 ⇒ 判据红）。"
       - "判据 4·**类级元守卫（两套码空间被当成一套用）**：「谁可以查入库详情」有台账（`LABEL_DETAIL_CALLERS`）—— 未登记即红、条目必须活着、受门禁的调用点必须引用码空间判定。证据同上（同文件的 G1/G2）。"
     skip_reason: "[backend-contract] 确定性码空间判据（jest: frontend/bmini-app/tests/inbound-reprint-code-space.test.ts 等），非 LLM 行为，不进入 agent-eval 冒烟"
@@ -923,13 +923,13 @@ cases:
     truths_ref:
       - inbound-label-flow.short-code-and-public-entry
     user_inputs:
-      - "工人扫观星台入库标签上的码（`https://app.migaozn.com/i/<短码>`）→ 服务端 302 到 `/b/?code=<短码>&tenant_id=…` → h5 启动器读到该参数并按码空间分流；小程序侧走页面参数（`router.params.code`）"
+      - "工人扫生意管家入库标签上的码（`https://app.migaozn.com/i/<短码>`）→ 服务端 302 到 `/b/?code=<短码>&tenant_id=…` → h5 启动器读到该参数并按码空间分流；小程序侧走页面参数（`router.params.code`）"
     expectations:
       - tool: direct_reply
     data_checks:
       - "判据 1·🔴 **参数真的被读到**（修复前全仓 `params.code`/`query.code`/`searchParams` 零命中 ⇒ 工人扫了自家标签却停在商家首页，且没有任何东西会变红）：`/b/?code=<合法入库短码>` ⇒ 启动器 `Taro.redirectTo` 到补打页并把短码**原样**带走（不归一化，归一化在服务端 `WorkerShortLinkService.normalize`）。红证：删掉 app.tsx 里那两行消费逻辑 ⇒ frontend/bmini-app/tests/inbound-landing-deeplink.test.tsx 的 D5 判红"
       - "判据 2·🔴 **按码空间分流（复用 `codeSpace.ts`，不新造判定）**：`/s/<短码>` 洗水码 ⇒ 洗水码文案 + 报工入口，**一次都不查入库详情**（页面测：`getInboundLabel` 调用数 = 0）。红证：不看码空间直接取路径段（`treatAsInboundShortCode` 形态）⇒ 判红"
-      - "判据 3·🔴 **失败方向不静默**：别域名 / 纯文本 ⇒ 「这不是观星台的标签」；**出现但为空**（`/b/?code=`）⇒ 「8 位短码」提示（`present` 与 `raw === ''` 必须可区分）。红证：读不到就 `return`（静默当没有参数）或把两者合并 ⇒ 判红"
+      - "判据 3·🔴 **失败方向不静默**：别域名 / 纯文本 ⇒ 「这不是生意管家的标签」；**出现但为空**（`/b/?code=`）⇒ 「8 位短码」提示（`present` 与 `raw === ''` 必须可区分）。红证：读不到就 `return`（静默当没有参数）或把两者合并 ⇒ 判红"
       - "判据 4·**两侧都给得出路径**：h5 读 URL query（`landingCodeFromSearch`），小程序读页面参数（`landingCodeFromParams`）—— 共用同一个下游页面与同一处码空间判定；小程序侧的形态差异登记在 `WORKER_SURFACE_PLATFORM_GAPS`（h5 专有形态 ⇒ 显式登记，不留白）"
       - "判据 5·**商家首页不抢路由**：URL 上带 `?code=` 时，商家首页不再排「未登录 ⇒ 600ms 后去商家登录页」的定时器（该定时器在页面卸载后照样触发，会把工人从他自己的落地页踢走，而**没有任何东西会变红**）。红证：删掉那道闸 ⇒ 行为面判据红（工人被送到 `/pages/auth/login/index`）"
     skip_reason: "[backend-contract] 确定性深链/分流判据（jest: frontend/bmini-app/tests/inbound-landing-deeplink.test.tsx + tests/worker-reprint-page.test.tsx 的 R1~R4），非 LLM 行为，不进入 agent-eval 冒烟"
@@ -2212,7 +2212,7 @@ cases:
 
   - id: BM-064
     legacy_id: ""
-    title: "观星台品牌标（C1：取景角=扫码入口 + 星芒=AI 中枢）落进 bmini 登录页；素材规格 / 配色令牌 / 占位字清除三面钉住"
+    title: "生意管家品牌标（旦字方印：日圆 + 地平线）落进 bmini 登录页；素材规格 / 配色令牌 / 占位字清除三面钉住（issue #9121）"
     domains:
       - bmini
     tier: normal
@@ -2223,7 +2223,7 @@ cases:
     truths_ref:
       - frontend-fix.no-api-change
     user_inputs:
-      - "打开小程序登录页：顶部是观星台品牌标（深靛圆角底 + 四个取景角 + 中间金色星芒），下面是「词元观星台」与副标题；原来的文字占位「米」不再出现。"
+      - "打开小程序登录页：顶部是生意管家品牌标（深靛圆角底 + 织金日圆 + 地平线），下面是「生意管家」与副标题；原来的文字占位「米」不再出现。"
     expectations:
       - tool: direct_reply
     data_checks:
@@ -2233,7 +2233,7 @@ cases:
       - "判据 4·🔴 占位字已清除（换图最常见的回归是「只加图没删占位」⇒ 两个标并排）：`index.tsx` 不再包含 `login-brand__icon-text` / `<Text ...>米</Text>`。红证：把占位块加回去 ⇒ 该条红"
       - "判据 5·🔴 样式里有对应尺寸：`index.scss` 的 `&__icon-img` 声明 width/height 128px（缺了高度 ⇒ 真机上按 0 高渲染成白块）。红证：删掉 height ⇒ 该条红"
     skip_reason: "[frontend-contract] 确定性资源/文案判据（jest + 读 PNG 头），非 LLM 行为，不进入 agent-eval 冒烟"
-    merge_log: "2026-11-04 新增（用户逐字「我们还需要给观星台设计一个 logo」→ 选定 C1；同日用户纠正方向「不要根据字面意思设计，要根据我们的系统能力去设计」，故图形 = 扫码取景角 + AI 星芒，不是天文台）。"
+    merge_log: "2026-11-04 新增（用户逐字「我们还需要给观星台设计一个 logo」→ 选定 C1；同日用户纠正方向「不要根据字面意思设计，要根据我们的系统能力去设计」，故图形 = 扫码取景角 + AI 星芒，不是天文台）。 ｜ 2026-11-24 续（issue #9121）：产品更名「生意管家」+ 重新设计 logo；同日按用户「简洁 / 有设计感 / 立意深远」二次收敛为「旦」字方印（金圆 = 日 / 词元，金线 = 地平线 / 基座）。素材规格 / 配色令牌 / 占位字清除三条判据不变。"
     traces:
       tests:
         - "frontend/bmini-app/tests/brand-logo.test.ts"
@@ -2321,7 +2321,7 @@ cases:
       - "判据 1·验证码输入框必须覆盖父级宽度：`.login-field__input--code` 内含 `width: auto`（否则 weapp 原生 input 按 `width:100%` 铺满整行、压住右侧按钮）。执行点 = frontend/bmini-app/tests/login-code-row-layout.test.ts#①"
       - "判据 2·按钮与输入框同盒模型：`.login-code-btn` 内含 `box-sizing: border-box`（否则总高 96+2rpx，比输入框高一条）。执行点 = 同文件#②"
       - "判据 3·父级 `width:100%` 必须保留（防「为修判据 1 而删父级宽度」污染其它输入面）。执行点 = 同文件#③"
-    skip_reason: "[ui-structural] 判的是 SCSS 源码结构（非渲染像素）；像素级复核在真机体验版人工确认，不进 agent-eval 冒烟"
+    skip_reason: "[frontend-contract] 判的是 SCSS 源码结构（非渲染像素）；像素级复核在真机体验版人工确认，不进 agent-eval 冒烟"
     merge_log: "2026-11-21 新增（issue #8983，用户逐字「获取验证码的按钮有点问题吧，被遮住了」）。生产体验版 1.0.0 iPhone 实测：按钮左边框不可见、左侧被输入框盖住 ⇒ 推测 weapp 原生 input 按 CSS width 铺开。"
     traces:
       tests:
@@ -2354,3 +2354,32 @@ cases:
       ci:
         - bmini-app.yml
       verifies: []
+
+  # ── issue #9072：B 端上线值守（一条只读命令看全 5 个面；C 端面一个都不探）───────────────
+  - id: BM-069
+    legacy_id: ""
+    title: "B 端上线值守：一条只读命令看全健康 / 版本身份 / 域名泄漏 / 包体预算 / 客户端错误（判不了就说判不了，不当绿）"
+    domains:
+      - bmini
+      - ci
+      - red-proof
+    tier: normal
+    tags: [bmini, golive, read-only, no-schedule, fail-closed]
+    truths_ref: []
+    user_inputs:
+      - "不碰C端，先把B端做夯实"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "判据 1·五个面各自一行 PASS/FAIL/SKIP：健康（5 个 B 端面 200）/ 版本身份（线上 sha == origin/release）/ 域名泄漏（migaozn 0 命中）/ 包体预算（最近生产域 dist 读数 ≤ 主包预算）/ 客户端错误（载体缺失 ⇒ SKIP）。执行点 = tests/unit_ci_workflows/test_bmini_golive_watch.py::test_full_run_is_honest_about_the_missing_client_error_carrier"
+      - "判据 2·网络失败 ⇒ SKIP 不是 PASS：桩表摘掉 https://app.cytda.com/b/ ⇒ 该行 SKIP、无 PASS、rc=3。执行点 = 同文件::test_network_failure_is_skip_not_pass"
+      - "判据 3·三态退出码：全绿子集 ⇒ 0 / 有 FAIL（优先于 SKIP）⇒ 1 / 只有 SKIP ⇒ 3；空面清单 / 未知面 ⇒ 3 + ::error::（空跑 = 假绿）。执行点 = 同文件::test_subset_four_faces_all_green_exits_zero / ::test_unknown_face_is_red_not_green"
+      - "判据 4·无 C 端面：脚本正文的 URL 字面量不得含 app.* 的 h5 根 / `/w/` / 测试域；行为侧 faces=health|leak 实际请求的 URL 集合逐值等于五个健康面 / 四个泄漏面。执行点 = 同文件::test_script_contains_no_c_end_url / ::test_behaviour_probes_only_b_end_faces"
+      - "判据 5·复用既有判据本体（身份 = served-version-verify.sh + admin-web-version-probe.sh；泄漏 = prod-smoke.sh 的 SMOKE_ONLY=leak；预算 = bmini-dist-budget.json），脚本里不得出现第二份上限常量。执行点 = 同文件::test_reuses_existing_carriers_and_has_no_second_cap_constant"
+      - "判据 6·改既有载体不许改部署腿语义：SMOKE_ONLY 缺省 = all（不传时身份段仍跑，缺 REL_SHA ⇒ 仍报不可判定 + rc=3）。执行点 = 同文件::test_prod_smoke_section_filter_keeps_default_semantics"
+      - "判据 7·只读：静态禁令（无写盘工具 / 无定时排程 / 不变更 git / 不触发部署）+ 实跑后工作树逐字节不变。执行点 = 同文件::test_script_is_read_only_and_unscheduled"
+    skip_reason: "[backend-contract] 只读值守脚本的确定性 CLI 判据（pytest 真跑脚本 + 桩 curl、不触网）；非 LLM 行为，不进 agent-eval 冒烟"
+    merge_log: "2026-11-23 新增（issue #9072，用户 2026-11-23 逐字「不碰C端，先把B端做夯实」）。v1.0.2 上线（2026-11-23 10:49:54）后没有「一眼看全」的 B 端只读读数：要分别跑冒烟 / 两个身份探针 / 域名泄漏段 / 包体台账，漏一面就以为没事。本单把它们编排成一条命令，判据本体全部复用。2026-11-23 16:0x 本机实测：五面 200 全绿；api sha == origin/release 26ff9f7 而 merchant 仍是 caf01e4（2026-11-21T05:11:25Z 构建）⇒ 线上落后发布线（正是本命令要暴露的形态）；域名泄漏 0 命中；dist 1,465,245 ≤ 主包预算 1,789,952（余量 324,707）；客户端错误面载体缺失 ⇒ 常态 rc=3。"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_bmini_golive_watch.py"

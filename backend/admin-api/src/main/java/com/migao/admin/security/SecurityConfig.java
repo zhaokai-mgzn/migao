@@ -237,6 +237,10 @@ public class SecurityConfig {
                                 // 写面只有一行 SLF4J（不建表 / 不落库 / 不存 PII），
                                 // 判据 = ClientErrorControllerTest 的 logLineCarriesNoSecrets。
                                 "/api/client-errors",
+                                // 企业微信「微信客服」回调（issue #9171）：企业微信服务器不带任何
+                                // 登录态；准入靠 msg_signature + AES 解密 + receiveid 校验，
+                                // 端点自身 fail-closed（未配置 token/aesKey ⇒ 503）。
+                                "/api/kf/callback",
                                 // 健康检查和文档
                                 "/actuator/health",
                                 "/actuator/info",

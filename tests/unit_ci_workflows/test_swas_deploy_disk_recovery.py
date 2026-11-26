@@ -70,6 +70,11 @@ from pathlib import Path
 
 import pytest
 
+# ── 发布线自检的 `git` 桩（issue #9086）────────────────────────────────────
+# 本文件跑的是**真实 deploy.sh**：1.0.1 段现在会问 git「目标提交是不是 origin/release 的祖先」。
+# 桩补的是沙箱本来就该模拟的那一面（口径与该模块 docstring 一致），既有断言一字未改。
+from unit_ci_workflows import deploy_release_line_stub as rl_stub  # noqa: E402
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEPLOY_SH = REPO_ROOT / "deploy" / "swas" / "deploy.sh"
 CI_SH = REPO_ROOT / "deploy" / "scripts" / "swas-deploy-ci.sh"
@@ -953,7 +958,10 @@ def make_src_tar(dest: Path, deploy_text: str | None = None) -> None:
     stage = dest.parent / "stage" / "migao-main"
     for rel in ("deploy/swas/docker-compose.yml",):
         (stage / rel).parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy(REPO_ROOT / rel, stage / rel)
+        # 沙箱一致性：脚本副本已把 `/opt/migao-deploy` 改写成 tmp 路径（本文件的沙箱根），
+        # 打包的 compose 也同步改写 —— 否则 JWT `file:` 预检读到的仍是宿主绝对路径（必判不存在）。
+        _txt = (REPO_ROOT / rel).read_text(encoding="utf-8")
+        (stage / rel).write_text(_txt.replace("/opt/migao-deploy", str(dest.parent / "opt-migao-deploy")), encoding="utf-8")
     script = stage / "deploy/swas/deploy.sh"
     script.parent.mkdir(parents=True, exist_ok=True)
     if deploy_text is None:
@@ -990,8 +998,18 @@ def _run_deploy(tmp_path: Path, *, df_seq: str, cache_size: str = "",
     # `src/` 里那份 deploy.sh == **正在执行的这份文本**（同 ref 同源：真实部署里 bootstrap
     # 就是拿同 ref 的 tarball 装盘再执行 ⇒ 自同步段比对相等、不动作；issue #8966）
     make_src_tar(tar_path, deploy_text=text)
+    # 1.6c/1.6d（issue #8989 ④）：JWT 文件式取值预检要求 pem 真存在且两侧同源 ⇒ 沙箱同构造出，
+    # 否则所有执行式判据都停在预检（表现为「健康部署不该失败」）。
+    _jwt_dir = work / "jwt"
+    _jwt_dir.mkdir(exist_ok=True)
+    (_jwt_dir / "public.pem").write_text("-----BEGIN PUBLIC KEY-----\nstub\n-----END PUBLIC KEY-----\n", encoding="utf-8")
+    (_jwt_dir / "private.pem").write_text("-----BEGIN PRIVATE KEY-----\nstub\n-----END PRIVATE KEY-----\n", encoding="utf-8")
+    _jwt_env = (
+        f"SMS_BYPASS_CODE=1\nJWT_PRIVATE_KEY=file:{work}/jwt/private.pem\n"
+        f"JWT_PUBLIC_KEY=file:{work}/jwt/public.pem\n"
+    )
     for env_file in (".env.admin-api", ".env.ai-agent", ".env.registry"):
-        (work / env_file).write_text("SMS_BYPASS_CODE=1\n", encoding="utf-8")
+        (work / env_file).write_text(_jwt_env, encoding="utf-8")
     state = tmp_path / "state"
     state.mkdir(exist_ok=True)
     (state / "pulls").write_text("", encoding="utf-8")
@@ -999,6 +1017,7 @@ def _run_deploy(tmp_path: Path, *, df_seq: str, cache_size: str = "",
     (state / "cache-prunes").write_text("", encoding="utf-8")
     (state / "docker-other").write_text("", encoding="utf-8")
     bin_dir = tmp_path / "bin"
+    rl_stub.install(bin_dir)  # 发布线自检要问 git（issue #9086）：补桩，既有断言不受影响
     bin_dir.mkdir(exist_ok=True)
     for name, body in (("df", DF_STUB), ("docker", DOCKER_STUB), ("curl", CURL_STUB),
                        ("flock", FLOCK_STUB), ("timeout", TIMEOUT_STUB)):
@@ -1309,6 +1328,7 @@ def _run_ci(tmp_path: Path, responses, *, script_text: str | None = None):
     summary = tmp_path / "summary.md"
     summary.write_text("", encoding="utf-8")
     bin_dir = tmp_path / "bin"
+    rl_stub.install(bin_dir)  # 发布线自检要问 git（issue #9086）：补桩，既有断言不受影响
     bin_dir.mkdir(exist_ok=True)
     for name, body in (("aliyun", ALIYUN_STUB), ("curl", FAKE_CURL_STUB),
                        ("file", REAL_FILE_STUB),

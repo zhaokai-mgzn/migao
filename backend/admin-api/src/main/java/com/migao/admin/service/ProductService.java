@@ -751,7 +751,7 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
                         + "，而建品不会建立库存（库存只由真实入库/出库单据产生）",
                 null,
                 "去掉 stock 字段（或传 0）后重试；需要初始库存请先用入库单过账"
-                        + "（管理端「入库单」/ POST /api/admin/inbound-orders），库存由单据推导、不手填。");
+                        + "（管理端「入库单 → 新建入库单」过账），库存由单据推导、不手填。");
     }
 
     /**

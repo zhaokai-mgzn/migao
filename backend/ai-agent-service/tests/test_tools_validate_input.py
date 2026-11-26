@@ -596,7 +596,7 @@ class TestValidateInputGateContractAudit:
         真实参数 name/industry）→ 合法写路径 100% 被闸门拦住。"""
         result = await tool.execute(
             context=admin_tool_context, target_tool="settings_manage",
-            target_action="update_settings", params={"name": "观星台布艺旗舰店"},
+            target_action="update_settings", params={"name": "生意管家布艺旗舰店"},
         )
         assert result.success is True, result.message
 
@@ -605,7 +605,7 @@ class TestValidateInputGateContractAudit:
         result = await tool.execute(
             context=admin_tool_context, target_tool="settings_manage",
             target_action="update_ai_config",
-            params={"greeting_template": "您好，欢迎咨询观星台布艺"},
+            params={"greeting_template": "您好，欢迎咨询生意管家布艺"},
         )
         assert result.success is True, result.message
 

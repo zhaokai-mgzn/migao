@@ -2631,7 +2631,7 @@ def prunable_zeroed(rep: dict, baseline: dict, *,
     **为什么需要一条命令**：有一族基线条目是**运行态**的（`heartbeat` 判据的
     `<wf>|paused` / `<wf>|never-succeeded` / `<wf>|stale`）—— 某个 workflow 首次成功 /
     被解停 / 恢复心跳 ⇒ 条目**归零**，而**没有任何提交**会去删它 ⇒ `--check` 此后每次 run
-    都红、每次都往值班 issue 追一条评论（实测：`c-end-h5-publish.yml|never-succeeded`
+    都红、每次都往值班 issue 追一条评论（实测：已随 issue #9233 删除的 C 端 H5 发布腿的 `|never-succeeded`
     归零后近 40 次 run 里 **39 红**）。**归零是外部事件的结果，不该靠人记得删。**
 
     **为什么不能用 `--regen-baseline` 交差**（#5151 治过的形态）：那是**全量重建**，

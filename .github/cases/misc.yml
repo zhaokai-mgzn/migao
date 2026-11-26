@@ -376,7 +376,7 @@ cases:
       - "**生成物新鲜度（零 diff 自证）**：`.github/cases/*.yml` 或 `.github/templates/*.yml` 改后必须跑 `python3 .github/render_cases.py --cases .github/cases --out-eval tests/agent_eval/eval_cases --out-md docs/testing/mibao-verification-cases.md` 重渲染；**同参数再跑一次必须零 diff**（生成物是派生物，手改生成物一律判红）"
       - "**重活锁 `--wait`（issue #5863，2026-10-01）**：`machine-heavy-lock.sh acquire --wait <秒>` 是「排队等待」的合规入口（脚本内部轮询，间隔 **2~5 秒随机抖动**，到上限即止并**具名**拒绝）；`verify-all.sh` 用 `MIGAO_HEAVY_WAIT=<秒>` 显式开启，**未设置时拒绝语义一字不改**（拿不到锁仍立即出声拒绝）。判据 = `tests/unit_ci_workflows/test_machine_heavy_lock.py::TestWaitOption`（**真跑脚本**：空闲时不得变慢 / 被占则等到释放并出声「排队等待…后取得」/ 超时具名且不偷锁 / `--wait 0` 与不传等价 / 参数错误 rc=2 / 退避落在 [2,5] 且**非常数** / **变异红证**：把「可等待」那行拿掉 ⇒ 判据当场红）"
       - "**重活锁**的**射程**（issue #5863，2026-10-01 改判）：`verify-all.sh` 的 `heavy_lock_wanted` 覆盖**所有会跑全量测试的档**（`quick` / `full` / `frontend` / `backend` / `agent` / `redproof` / `gate`），**未知 / 空档位不拿**。病史 = 原判据断言「只有 `gate` 拿锁」（理由「其余档不是同一台机器上的重活」）**与事实不符** —— `full` 按脚本自己的档位说明就是三模块全量 ~10-15 分钟，`redproof` 机具实跑单机具 2~30 分钟；实测 `gate` 持锁期间 `load average` 16.71 / 28.71 / 20.14（8 核）而单份档最多打满 ~8 核 ⇒ 锁外确有重活。判据 = `tests/unit_ci_workflows/test_machine_heavy_lock.py::TestVerifyAllWiring::test_every_tier_that_runs_tests_takes_the_lock`（正向七档全 WANT + 反向空/未知档 NONE）"
-      - "**双引号内的裸反引号 = bash 命令替换**（issue #6095 第四层同批扫出；判据 6）：报错文案里写行内代码标记（`die \"…（`refs/heads/*`、`main`）…\"`）⇒ bash 去**执行**它们 ⇒ 走到那个失败分支的人拿到 `refs/heads/*: No such file or directory` / `main: command not found`，**且原文案里的行内代码被吃掉** —— 而那句正是「参数传错时唯一可读的出口」。判据体 = `tests/unit_ci_workflows/test_scripts_bash32_var_brace.py` 判据 6（**全仓受控 `*.sh` 射程**，沿用同一 `GUARD_SCOPE`/`scanned_shell_files`）：只判「双引号内 + **未转义**」这一种形态 —— 已转义的 ``、单引号字面量、注释、**heredoc 正文**（本仓 `.sh` 里的内联 Python/JS 载荷）都不算（不做 heredoc 预处理时真语料上有 **35 处假红**）。红证 = 在真语料上注入同族形态 ⇒ 报出文件 + 行号；负例 = 上述四种形态必须不命中。行为面 = `test_c_end_h5_hosting.py::TestCiSideInjectedValuesAndMessages`：坏长度 `DIST_SHA` 必须**具名且文案干净**（不含 `command not found`），注入式红证 = 撤掉转义 ⇒ 噪音当场出现。⚠️ **这条类级判据在第五层真的抓到过一次**（本轮回放）：`deploy/scripts/c-end-h5-publish-ci.sh` 里那句『执行体 ref 为空：请给 `H5_PUBLISHED_COMMIT`』的文案中那对反引号忘了转义 ⇒ 空执行体 ref 时凭空多一行 `command not found`、文案被吃掉一块；**抓到它的是「全仓 `*.sh` 类级判据 6」，不是任何单点判据**（典型：窄跑看不见、全目录跑才红）⇒ 已修 + 补行为判据 `test_empty_executor_ref_dies_with_a_clean_named_message`，并按 `guard_scope_ledger.json` 的 exit ② 把本判据文件以 `kind=mentions` 入册（它只**点名**该语料、不扫描它）"
+      - "**双引号内的裸反引号 = bash 命令替换**（issue #6095 第四层同批扫出；判据 6）：报错文案里写行内代码标记（`die \"…（`refs/heads/*`、`main`）…\"`）⇒ bash 去**执行**它们 ⇒ 走到那个失败分支的人拿到 `refs/heads/*: No such file or directory` / `main: command not found`，**且原文案里的行内代码被吃掉** —— 而那句正是「参数传错时唯一可读的出口」。判据体 = `tests/unit_ci_workflows/test_scripts_bash32_var_brace.py` 判据 6（**全仓受控 `*.sh` 射程**，沿用同一 `GUARD_SCOPE`/`scanned_shell_files`）：只判「双引号内 + **未转义**」这一种形态 —— 已转义的 ``、单引号字面量、注释、**heredoc 正文**（本仓 `.sh` 里的内联 Python/JS 载荷）都不算（不做 heredoc 预处理时真语料上有 **35 处假红**）。红证 = 在真语料上注入同族形态 ⇒ 报出文件 + 行号；负例 = 上述四种形态必须不命中。行为面（2026-11-26 更新，issue #9233：原行为样本 `c-end-h5-publish` 脚本已整批删除）⇒ 由判据 6 自己的**注入式红证**承担：在真语料上撤掉转义 ⇒ 噪音（`command not found`）当场出现。⚠️ **这条类级判据在第五层真的抓到过一次**（本轮回放）：`deploy/scripts/c-end-h5-publish-ci.sh` 里那句『执行体 ref 为空：请给 `H5_PUBLISHED_COMMIT`』的文案中那对反引号忘了转义 ⇒ 空执行体 ref 时凭空多一行 `command not found`、文案被吃掉一块；**抓到它的是「全仓 `*.sh` 类级判据 6」，不是任何单点判据**（典型：窄跑看不见、全目录跑才红）⇒ 已修 + 补行为判据 `test_empty_executor_ref_dies_with_a_clean_named_message`，并按 `guard_scope_ledger.json` 的 exit ② 把本判据文件以 `kind=mentions` 入册（它只**点名**该语料、不扫描它）"
       - "**非 git 目录 / `git` 不可用 ⇒ `unknown` ⇒ 拒绝（fail-closed）**（issue #6084 的未固化项，本包固化）：`verify-all.sh` 的角色守卫必须**先于「禁空跑」判定**（否则非 git 目录里`origin/main` 也不存在 ⇒ 变更集为空 ⇒ 先 `exit 3` 早退，**永远走不到拒绝分支**），且角色取值必须把「退出码 / 空输出」收进**同一条**判据（两次独立 `git rev-parse` 失败都返回空串 ⇒ `[ \"\" = \"\" ]` 判真 ⇒ 非 git 目录被算成 `primary` = **放行**）。判据 = `tests/unit_ci_workflows/test_package_heavy_entry_ban.py::TestNonGitFailsClosed`（真脚本落在**非 git 目录**里跑 / `PATH` 桩驱动「`git` 不在 PATH」）+ `TestUnknownRoleInjectionIsCaught`（注入式红证：把 `unknown` 当 `primary` ⇒ 必红）"
     skip_reason: "[backend-contract] CI workflow 结构由 pytest 单测验证（tests/unit_ci_workflows/test_issue_dedup_guard.py），非 LLM 行为，不进入 agent-eval 冒烟"
     merge_log: "2026-09-02 新增：CI 自动失败报告去重守卫（issue #2746）。2026-10-01 追补（issue #5863）：本用例同时承载「机器级重活锁」的判据面 —— 新增 `TestWaitOption`（`--wait` 排队等待 + 抖动退避 + 变异红证）；背景 = 默认 `acquire` **不排队**，客户端各自自旋时用固定长间隔重试的一方被系统性饿死（实测：30s 间隔 × 56 次探测 / 约 34 分钟一次未中，而释放瞬间总被重试更勤的一方接走）。2026-10-03 追加（issue #6085 的后续）：① **沙箱夹具抽成共享 harness** —— `tests/unit_ci_workflows/heavy_entry_sandbox.py`（`test_package_heavy_entry_ban.py` 的自足临时仓夹具 + `test_batch_gate.py` 手搓的第二份 ⇒ 收成一份；血泪教训写在模块 docstring：**仓根那份 `verify-all.sh` 必须是桩**，否则每次 `batch-gate.sh` 都真跑一次 gate ⇒ 互等机器级锁 ⇒ 180s 超时）；② **补掉 #6084 body §8.2 登记的未固化项**：非 git 目录 / `git` 不可用 ⇒ `unknown` ⇒ 拒绝，原只有**纯函数面**判据（`cwd=/tmp` 实测 rc=5），本包补**行为面**（真脚本落在非 git 目录里跑 / `PATH` 桩）+ 注入式红证 —— 过程中**发现并修掉一个真实缺陷**：该形态实测是 rc=**3**（不是文档承诺的 rc=5），因为 ① 两次独立 `git rev-parse` 失败都返回空串 ⇒ `[ \"\" = \"\" ]` 判真 ⇒ 算成 `primary`（放行）；② 角色守卫排在「禁空跑」判定**之后** ⇒ 非 git 目录里变更集也为空 ⇒ 先 `exit 3` 早退 ⇒ 走不到拒绝分支。修法 = 取值口 `_git_rev_parse`（退出码/空输出同一判据）+ 守卫**前移**；③ **隔离集中化**：`hs.clean_env` 把锁 / 台账收口到 `tmp_path`（显式路径先过 `unscoped_tmp_root`）⇒ 「判据不碰真锁 / 真台账」成为结构保证，并由判据 21 钉读数（跑完真跑形态后真 `~/.migao-heavy.lock` 与真台账 mtime/size/inode 逐项未变）。2026-10-03 再收口（issue #6101 复核发现）：`unknown`（非 git 仓库 / `git` 不可用）原先**共用 `package` 的措辞与台账 why** ⇒ 行为对（rc=5）但**归因错**，而这条台账正是角色读数的仪表 ⇒ 两种角色的「为什么」与 `why` 各自独立（两条路径都保持三点齐全），`--allow-package-heavy` 对两种角色**都放行**；判据 = `TestRefusalAttributionIsSplit`（package 措辞不得出现在 unknown 场景、反之亦然；两条 `why` 各自钉住；注入式红证 = 把两者合并回一套措辞 ⇒ 必红）。"
@@ -1762,6 +1762,8 @@ cases:
   # 工人端 `w/`（#4837，线上有工人在用）与商家端 `b/`（#5668）⇒ 本腿是第一条「拥有静态根本身」的腿。
   # ==========================================================================
   - id: MC-046
+    # 2026-11-26（issue #9233）：C 端小程序 frontend/mini-app 整目录删除 ⇒ 原承载体失联；
+    # 本条按「承载体删除」退役（条目不删、判据改指 C 端保持下线的类级守卫 tests/unit_ci_workflows/test_c_end_removed_guard.py）。
     legacy_id: ""
     title: "C 端 H5 静态根落地面：通路建好且只手动发布（合并不触发布）+ 发布绝不碰 w/ 与 b/ + 新鲜度判据默认判红"
     domains:
@@ -1785,30 +1787,13 @@ cases:
     expectations:
       - tool: direct_reply
     data_checks:
-      - "**合并不发布**（用户 2026-09-27 裁定 B）：`on.push.paths` **恰好**只有 `frontend/mini-app/**`（不含 `deploy/**`、不含 workflow 自身）**且**「模式判定」步（唯一决定会不会发布的地方）逐字读 `github.event_name` 与 `inputs.publish`、双向写 `mode=publish|notify`；`publish` 输入默认 `false` ⇒ 对账面的兜底 dispatch（`workflow_dispatch` 不带 input）也**不会**发布。红证 = 加 `deploy/**` / 加 workflow 自身 / 把默认改成 true / 把模式判定改成恒 publish / 删掉模式判定步，各自必红"
-      - "**三种触发形态只有一种会发布**：`push` / `schedule` / 不带 `publish=true` 的 dispatch ⇒ `notify`（只报告）；`publish=true` ⇒ `publish`（写盘）。写盘步 / `build:h5` / 落地面断言三步必须逐字 `if: steps.mode.outputs.mode == 'publish'`（纵深防线：判定步与 if 两处都要过）"
-      - "**兜底面必须在位且不是空转**（`FM-E17` 收口口径）：`push` 在本仓会被 `GITHUB_TOKEN` 合并吞掉 ⇒ 本腿必须有 `schedule`（cron 与 `tests/unit_ci_workflows/publish_leg_fallback_ledger.json` 的声明**逐字一致**），且 notify 步要真的会因「线上落后」判红（判据本体 = `scripts/h5_freshness_guard.py`，**不写第二份口径**）并给出可复制命令。红证 = 删 schedule / 改 cron / 把 notify 改成恒绿 / 把 notify 的 `::error::` 摘掉，各自必红。⚠️ **为什么 notify 不比 `dist/index.html`**：`dist/` 在 `.gitignore` 里 ⇒ CI 检出里没有它，那样写会**恒走「没跑」分支** = 空转的兜底面（本包初版踩过）"
-      - "🔴 **红线：绝不删/覆盖静态根**：删除集 = 上一次发布写下的托管清单 ∩ 磁盘现值（首次发布无清单 ⇒ 空集）；根上有**无人认领**的条目时判 `TAKEOVER_REQUIRED`（exit 2）并打印将要替换的计划。沙箱红证 = 预置根内容 ⇒ 不接管、逐字节不变"
-      - "🔴 **红线：不碰 `w/` 与 `b/`**：三层判据 —— ① 保留前缀（产物顶层/托管清单出现即 die）② 根 index.html 不许引用 `/<保留前缀>/…` ③ 发布前后逐子树的**规范化摘要**（路径+内容，不吃 mtime/顺序）与各自 `index.html` 哈希**逐字相等**（CI 侧四条读数缺一即判红）。沙箱红证 = 预置 `w/` `b/` ⇒ 发布后哈希不变；模拟器红证 = `/w/`（或 `/b/`）被覆盖成 C 端产物 ⇒ 落地面断言判红并指名"
-      - "**发布真的生效**有判据（不是「/ 返回 200 就算过」—— 修复前 `/` 一直是 200 的旧产物）：线上 body 哈希 == **本次构建**的 `dist/index.html`（陈旧 ⇒ 判红）；根级深层路径仍回 C 端自己的 index（路由面不串端）"
-      - "**新鲜度判据翻成 gate**（同批，用户裁定 B）：陈旧 ⇒ 默认 `::error::` + exit 2（`--no-gate` 仅人工诊断），且 **⛔ 无 cron** 不变、`workflow_run` 清单新增本腿；三态分离保持（取不到读数 = exit **3**，不得当新鲜、也不得与「确实陈旧」的 2 混在一起）"
-      - "**对账面同批接线**（FM-E3）：`deploy-reconcile.yml` 新增 `c-end-h5` 腿（走漂移判据 ②）+ 进 `SVC_TO_DEPLOY_WORKFLOW` 登记册 + 存活读数 `--seen` 随腿数改 6；触发面 ≠ 对账面那两条发布链路文件逐条登记进 `reconcile_trigger_paths_ledger.json` 并标 `never_in_trigger`（明文禁止「加进触发面消账」这条出路）"
-      - "**类级元守卫**：`h5_freshness_guard.py` 的默认口径与 workflow 的输入语义、三态、无 cron 由常驻判据钉住（改回 warning / 加 cron / 把反向开关改回 `gate` ⇒ 红）"
-      - "🔴 **远端执行体不进 SWAS 命令内容**（#6095；病 = run 37075737625 / sha f3e49752f 的 `400 CmdContent.ExceedLimit`）：命令内容只做「按**不可变 sha** 从 codeload 取回执行体并执行」，组装后**本机**前置断言字节数 < 上限（出处 = SWAS Open RunCommand 官方文档的 base64 综合 ≤ 16 KB；与 ECS 侧 64 KB 口径及本仓实测 43.8~50.7 KB 的冲突在脚本注释里照实登记，取最保守值）⇒ 超限在**本机**具名判红 + 给出「命令内容 N 字节 / 上限 M 字节」。红证 = ① 注入式：把上限压到 200 字节 ⇒ 判红并给读数 ② 把 20 KB 的远端脚本换进夹具 ⇒ 命令内容读数**不变**（解耦成立）③ 取不到执行体（坏 sha，真 404）⇒ 非零退出 + 「未做任何发布动作」具名原因（**实测教训**：`curl … | tar xz` 的管道会吞掉 curl 失败 ⇒ 引导必须用 `curl -o` + `-f` + 显式 `||` 判红）④ 把内联远端脚本的旧写法放回可执行行 ⇒ 结构判据判红（注释里**提及**不算 ⇒ 判据走 `_live_lines` 注释感知扫描）。取回通路与远端脚本自己取源码**同一条**（codeload；raw 在杭州机房超时）"
-      - "🔴 **CI 构建的 dist 必须真的到得了服务器**（#6095 第三层；病 = run 37078030820 / sha `d4babbf17`：远端报 `❌ 发布源里没有 index.html` —— `frontend/mini-app/dist/**` 是构建产物（`git ls-tree -r origin/main --name-only frontend/mini-app/dist` = **0 个文件**，`.gitignore` 有 `dist/`），而远端唯一的取回通道是「按不可变 sha 从 codeload 取 tarball」⇒ 源码 tarball 里永远没有 dist）：治法 = CI 用**孤儿单提交**（`git commit-tree` **不给 `-p`** ⇒ 无父 ⇒ 不胀历史；临时 `GIT_INDEX_FILE` ⇒ 不碰工作区/索引/HEAD）把 `dist/**` 推成专用分支 `h5-dist`，远端按**该提交的 sha** 取回（`H5_SRC_SUBPATH=frontend/mini-app/dist`）⇒ 改动面最小（远端 `stage_product()` 一行不改）。判据 = ① 链路存在且**被接线**（workflow 里 `build:h5` 之后有 1 个 step 真跑 `deploy/scripts/c-end-h5-dist-push.sh`，发布步逐字消费 `steps.dist.outputs.sha`，且**不许**出现 `${{ github.sha }}`）② 取回 ref **是不可变 sha**（发布腿只接受 40 位十六进制 ⇒ `refs/heads/main` / `h5-dist` 连格式都过不去）③ **注入式红证**：摘掉推送步 / 把 ref 改成 `refs/heads/main` / 把孤儿提交改成普通提交（`-p`）⇒ 各自必红 ④ identity 断言（`[ \"$REMOTE_INDEX_SHA\" = \"$LOCAL_SHA\" ]`）仍在 ⑤ 命令内容**仍 < 16 KB**（dist 是 MB 级 ⇒ 绝不塞进命令内容）。**端到端桩演练**（本地假 origin + 真 `git commit-tree`/`push`/`archive`）证明「推上去 → 按 sha 取回 → 真有 dist/index.html」这条链在对象层是通的"
-      - "🔴 **推送步骤不许继承运行环境**（#6095 第四层；病 = run **37081920188** / sha `aedc51ffb`：第三步（我新加的「Prepare dist ref」）在真 CI 上挂 —— `git commit-tree` 需要作者/提交者身份，而 CI runner 上没有身份源、系统 GECOS 为空 ⇒ `fatal: empty ident name (for <runner@…>) not allowed`（exit 128）；而**开发机会用 GECOS 自动兜一个非空身份** ⇒ 同一脚本**本机 rc=0 / runner rc=128**，即旧版桩演练「继承了环境」⇒ **证明不了 CI 会过**。同族：#6113（剔除继承来的 `MIGAO_HEAVY_L*`）。修法 = 造孤儿提交时**显式给身份**（`GIT_AUTHOR_NAME/EMAIL` + `GIT_COMMITTER_NAME/EMAIL` 四个**环境变量前缀** —— 取环境变量而不是 `-c user.name`，因为**环境变量优先于 config**：调用方环境里一个**空**的 `GIT_AUTHOR_NAME` 会把 `-c` 盖掉、仍然 `empty ident name`（实测）；身份 = `github-actions[bot]`（ID 41898282）⇒ 提交**可追溯**，承载的源码 commit 写在提交信息与托管清单的 `published_commit` 里）+ 清掉「我在哪个仓」的环境（`unset GIT_DIR GIT_WORK_TREE GIT_COMMON_DIR` ⇒ 否则 `GIT_DIR` 指向另一个仓时「往哪推」由环境决定）。判据 = `TestDistPushIdentityIndependence`（4 条）+ **桩演练改为在「无 ambient 身份」下跑**：空 `HOME` + `GIT_CONFIG_GLOBAL/SYSTEM=/dev/null` + `GIT_AUTHOR_NAME`/`GIT_COMMITTER_NAME` **显式置空**（把开发机的自动兜底也堵掉）；注入式红证 = ① 摘掉显式身份 ⇒ 复现 CI 那条 `empty ident name` ② 摘掉 `unset` 行 + 敌意 `GIT_DIR` ⇒ 具名判红（`dist 目录不在检出内`）"
-      - "**新加的注入值必须过同一道白名单**（#6095 第四层同批扫出的**同类继承面**）：`H5_PUBLISHED_COMMIT`（本包新加、会被**拼进 SWAS 命令内容**）此前**没有**字符集校验，而该文件对 `SHA` / `STATIC_ROOT` / `MANIFEST` / `RESERVED_PREFIXES` 每个注入值都有白名单 ⇒ 新值不豁免同一道闸：只接受**空**（人工排障）或 **40 位十六进制**。判据 = `TestCiSideInjectedValuesAndMessages::test_published_commit_must_be_a_commit_sha_or_empty`（真跑组装段：坏值 / 短值判红，空值放行）"
-      - "🔴🔴 **两个 ref 各司其职：引导取执行体 ≠ 远端取产物**（#6095 第五层；run **37084280991** / sha `c22514360`）：第三层把命令内容第 5 参数换成**产物 ref**（`h5-dist` 上只含 17 个 dist 文件的孤儿单提交）之后，**引导也按它取 codeload tarball** ⇒ 取回的执行体目录里**没有** `deploy/swas/c-end-h5-publish-remote.sh` ⇒ 远端 `bash: /tmp/tmp.XXXX/deploy/swas/c-end-h5-publish-remote.sh: No such file or directory`（`InvocationStatus=Failed`，线上产物照旧陈旧）。**为什么前四层都放它过去了**：第三层的桩演练把「远端执行」**打桩**了（从不真取回并执行执行体），第二层的桩演练当时还没有「产物 ref ≠ 源码 commit」这个形态 ⇒ **两侧各自的假设都成立、组合不成立**（与第三/四层同族：每块判据都绿，拼起来错）。修法 = `DIST_SHA`（产物 ref，第 5 参数 / `H5_DIST_SHA`，**不再回落到 `$GITHUB_SHA`**）与 `SCRIPT_SHA`（执行体 ref = `H5_PUBLISHED_COMMIT` / `GITHUB_SHA`）分离：命令内容里 `export H5_PUBLISH_SHA=$SHA`（远端 `stage_product()` 按它取产物）、引导 URL 用 `$SCRIPT_SHA`；CLI 侧对执行体 ref 同等做白名单 + 40 位断言。判据 = `TestTwoRefsCombination`（**组合层**：真造两个提交 —— 一个含脚本、一个由**真** `c-end-h5-dist-push.sh` 产出只含 dist；真跑组装段；真 `git archive` 取回两棵 tarball；真执行取回的执行体 + 取回的产物 ⇒ rc=0 且清单里两个字段各就各位）4 条 + 静态接线判据两条（`BOOT_SCRIPT_REF_FORM` 必须在、`BOOT_PRODUCT_REF_FORM` 必须不在）+ `TestRedProofs` 两条混用形态变异；注入式红证 = ① 引导改回按产物 ref 取（**用合并后 main 上那份脚本喂进同一夹具 ⇒ 真复现 `No such file or directory` rc=127**）② 远端产物 ref 漂成执行体 ref（源码 tarball 里没有 dist）。审计面同族修：远端清单原先写 `published_commit or sha`（`sha` = 产物 ref）⇒ 没给源码 commit 时会把**产物 ref** 标成「源码 commit」，已改为 `published_commit or \"\"`（判据 = `test_audit_fields_never_conflate_the_two_refs`）"
-      - "**没跑 ≠ 通过**（如实登记）：本单**没有**真实发布过一次；线上 `/` 的 `last-modified` 是否变化、`RunCommand` 那一段能否跑通、`nginx -t`，本机都没有取证（没有 aliyun CLI / docker / nginx），属「没跑」"
-    skip_reason: "[backend-contract] CI/deploy 的结构与行为判据（真 YAML 的触发面与 if 闸 + 沙箱真跑远端执行体 + 本地 http server 上的落地面断言红绿两面）由 tests/unit_ci_workflows/test_c_end_h5_hosting.py 的离线判据（48 条，含 `TestCommandContentLimit` 的 5 条读数判据、`TestDistDeliveryWiring` 5 条、`TestCiSideInjectedValuesAndMessages` 4 条、`TestTwoRefsCombination` 4 条 + 两个端到端桩演练；零 LLM、秒级）验证，非 LLM 行为，不进入 agent-eval 冒烟"
-    merge_log: "2026-09-27 新增（issue #4184；用户逐字裁定 B = 「通路建好并自证（含新鲜度判据从 warning 翻成 gate），但首次发布由人手动触发」）：C 端 H5 此前**没有任何部署通路**（线上落后源码 28 天而无人知道），而它的落地面是 nginx 静态根**本身**（同根下住着工人端 w/ 与商家端 b/）⇒ 本腿是第一条「拥有静态根本身」的发布腿。落码 = 远端执行体（单一出处）+ CI 包装 + 落地面断言 + workflow（**手动面才发布**：paths 恰好只有 frontend/mini-app/**、写盘步 if 逐字要求 workflow_dispatch+inputs.publish=='true'、默认 false）+ 新鲜度判据默认翻红 + 对账面同批接线与缺口台账（never_in_trigger）+ 26 条注入式红证（含「只改注释 ⇒ 不红」对照、6 种坏形态的落地面判红、4 条模式/兜底面红证）。⚠️ **首次发布尚未发生** ⇒ h5-freshness 这条腿在 main 上**会红**（真实且可操作，不许用「先 warning 一段时间」藏起来）。取号 MC-046：main 上 MC-001~MC-038 已占用（现取）。**2026-10-03 同案追加（issue #6095）**：首次人工发布（run 37075737625 / sha f3e49752f）在 `Publish c-end h5 to SWAS` 步失败 —— 整份远端执行体被内联进 `RunCommand` 的 `--command-content`（20377 字节）⇒ `400 CmdContent.ExceedLimit` ⇒ 发布通路**从未成功过一次**，线上 `app.migaozn.com/js/app.js` 的 `Last-Modified` 停在 2026-08-30T06:54Z（陈旧 33 天）。治法 = 命令内容改成**极小的引导**（按不可变 sha 从 codeload 取回执行体并执行，796 字节）+ 组装后**本机**字节数前置断言；本节补上第 10 条 data_check（含 4 条注入式红证）与 `TestCommandContentLimit` 的 5 条读数判据。⚠️ 线上是否已恢复**仍未取证**（真发布权在人手里）⇒ 与上一条同口径，属「没跑」不是「通过」。**2026-10-03 同案第三层（issue #6095，本轮）**：第二层修完后人工发布（run 37078030820 / sha `d4babbf17`）走到远端仍失败 —— `❌ 发布源里没有 index.html`：远端取回的 tarball 是**源码**（`frontend/mini-app/`），而 `dist/` 是构建产物、**不在 git 里**（现取 0 个文件）⇒ 「CI 构建的那份 dist」与「远端能取到的东西」之间没有通路（**设计层缺陷**）。治法 = 取 `B1`（孤儿单提交 → 专用分支 `h5-dist`，远端按该提交的 sha 取回；B2 会胀历史 / B3 需新增 OSS 凭据与基础设施（现取仓内 0 命中）⇒ 停下不造 / B4 无 SWAS 装 node 的证据），远端 `stage_product()` **一行不改**；`permissions` 从 `contents: read` 抬到 `contents: write`（推分支），触发面与人工门**逐字未动**（`on.push.paths` 仍恰好只有 `frontend/mini-app/**`、`publish` 默认仍 false、写盘步 if 仍逐字要求 publish）；推送目标分支现取**不会触发任何 workflow**（全部带 `push` 的 workflow 其 `on.push.branches` 一律 `['main']`，判据从真 YAML 现取）。⚠️ **仍未真发布过**：本层只证明「引导 / 接线 / 对象层通路」正确 + 端到端桩演练绿，线上 `Last-Modified` 是否变化属「没跑」。**2026-10-03 同案第四层（issue #6095，本轮；上级 agent 授权后真发布实测）**：第三层合入后人工发布 run **37081920188**（sha `aedc51ffb`）在**我新加的那一步**挂掉 —— `Prepare dist ref` ⇒ `fatal: empty ident name (for <runner@…>) not allowed`（exit 128），后面三步 skip ⇒ 连 `RunCommand` 都没走到。判因 = **脚本继承了运行环境**（`git commit-tree` 需要身份，runner 上没有；开发机用 GECOS 自动兜一个 ⇒ 本机绿）。本机**确定性复现**：空 `HOME` + `GIT_CONFIG_GLOBAL/SYSTEM=/dev/null` + `GIT_AUTHOR_NAME`/`GIT_COMMITTER_NAME` 置空 ⇒ 同一脚本 rc=**128** + 同一条报文；去掉「name 置空」这个条件就变回 rc=0（= 旧桩演练漏掉的那一半）。修法见上一条 data_check；同批扫出的**同类继承面**：① `H5_PUBLISHED_COMMIT` 无白名单（已补）② 报错文案里双引号内的**裸反引号**被 bash 当命令替换执行（`c-end-h5-publish-ci.sh` 的 DIST_SHA 文案是**我第三层引入的** + `c-end-h5-publish-remote.sh` 的清单名文案是存量）⇒ 已转义 + 新增**类级判据 6**（全仓 `*.sh` 射程）。⚠️ 本轮**仍未真发布过**（真发布由上级 agent 执行）⇒ 「CI 会过」由「无 ambient 身份下真跑通 + 身份可追溯」举证，线上是否恢复仍属「没跑」。**2026-10-03 同案第五层（issue #6095，本轮；上级 agent 真发布实测）**：第四层合入后真发布 run **37084280991**（sha `c22514360`）前三步全绿（`Prepare dist ref` 真跑通了、远端 `refs/heads/h5-dist` 已存在），第四步 `Publish c-end h5 to SWAS` 挂：远端 `No such file or directory`（执行体没取到）。判因 = **第三层的引导与第二层的引导组合起来错了**：第三层把第 5 参数换成**产物 ref** 之后，引导**也**按它取执行体 ⇒ 那个 tarball 里只有 17 个 dist 文件。本机**用合并后 main 上那份脚本 + 双 ref 夹具**真复现：引导 ref == 产物 ref、执行体缺、`bash` rc=**127** + 同一句 `No such file or directory`。修法见上一条 data_check；同批复核并修掉审计面同族（`published_commit or sha`）。⚠️ 线上是否恢复仍属「没跑」（真发布由上级 agent 执行）。"
+      - "**本用例已退役（issue #9233，2026-11-26）**：C 端顾客小程序 frontend/mini-app 整目录删除 ⇒ 它发布的唯一产物消失，发布腿（c-end-h5-publish / h5-freshness-guard + deploy/scripts/c-end-h5-* + deploy/swas/c-end-h5-publish-remote.sh + scripts/h5_freshness_guard.py）同批删除。现存判据 = tests/unit_ci_workflows/test_c_end_removed_guard.py：断言该腿的成员文件不再存在、且没有任何 workflow/脚本/台账再指向它（复活即红）；发布链路的历史与故障复盘保留在本条 merge_log 里，不删条目。"
+    skip_reason: "[backend-contract] 本用例的承载体（C 端 H5 发布腿）已随 issue #9233 整批删除 ⇒ 退役；现存判据 = tests/unit_ci_workflows/test_c_end_removed_guard.py（判据 2/5：机器面零引用 + 发布链成员不许长回来），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-27 新增（issue #4184；用户逐字裁定 B = 「通路建好并自证（含新鲜度判据从 warning 翻成 gate），但首次发布由人手动触发」）：C 端 H5 此前**没有任何部署通路**（线上落后源码 28 天而无人知道），而它的落地面是 nginx 静态根**本身**（同根下住着工人端 w/ 与商家端 b/）⇒ 本腿是第一条「拥有静态根本身」的发布腿。落码 = 远端执行体（单一出处）+ CI 包装 + 落地面断言 + workflow（**手动面才发布**：paths 恰好只有 frontend/mini-app/**、写盘步 if 逐字要求 workflow_dispatch+inputs.publish=='true'、默认 false）+ 新鲜度判据默认翻红 + 对账面同批接线与缺口台账（never_in_trigger）+ 26 条注入式红证（含「只改注释 ⇒ 不红」对照、6 种坏形态的落地面判红、4 条模式/兜底面红证）。⚠️ **首次发布尚未发生** ⇒ h5-freshness 这条腿在 main 上**会红**（真实且可操作，不许用「先 warning 一段时间」藏起来）。取号 MC-046：main 上 MC-001~MC-038 已占用（现取）。**2026-10-03 同案追加（issue #6095）**：首次人工发布（run 37075737625 / sha f3e49752f）在 `Publish c-end h5 to SWAS` 步失败 —— 整份远端执行体被内联进 `RunCommand` 的 `--command-content`（20377 字节）⇒ `400 CmdContent.ExceedLimit` ⇒ 发布通路**从未成功过一次**，线上 `app.migaozn.com/js/app.js` 的 `Last-Modified` 停在 2026-08-30T06:54Z（陈旧 33 天）。治法 = 命令内容改成**极小的引导**（按不可变 sha 从 codeload 取回执行体并执行，796 字节）+ 组装后**本机**字节数前置断言；本节补上第 10 条 data_check（含 4 条注入式红证）与 `TestCommandContentLimit` 的 5 条读数判据。⚠️ 线上是否已恢复**仍未取证**（真发布权在人手里）⇒ 与上一条同口径，属「没跑」不是「通过」。**2026-10-03 同案第三层（issue #6095，本轮）**：第二层修完后人工发布（run 37078030820 / sha `d4babbf17`）走到远端仍失败 —— `❌ 发布源里没有 index.html`：远端取回的 tarball 是**源码**（`frontend/mini-app/`），而 `dist/` 是构建产物、**不在 git 里**（现取 0 个文件）⇒ 「CI 构建的那份 dist」与「远端能取到的东西」之间没有通路（**设计层缺陷**）。治法 = 取 `B1`（孤儿单提交 → 专用分支 `h5-dist`，远端按该提交的 sha 取回；B2 会胀历史 / B3 需新增 OSS 凭据与基础设施（现取仓内 0 命中）⇒ 停下不造 / B4 无 SWAS 装 node 的证据），远端 `stage_product()` **一行不改**；`permissions` 从 `contents: read` 抬到 `contents: write`（推分支），触发面与人工门**逐字未动**（`on.push.paths` 仍恰好只有 `frontend/mini-app/**`、`publish` 默认仍 false、写盘步 if 仍逐字要求 publish）；推送目标分支现取**不会触发任何 workflow**（全部带 `push` 的 workflow 其 `on.push.branches` 一律 `['main']`，判据从真 YAML 现取）。⚠️ **仍未真发布过**：本层只证明「引导 / 接线 / 对象层通路」正确 + 端到端桩演练绿，线上 `Last-Modified` 是否变化属「没跑」。**2026-10-03 同案第四层（issue #6095，本轮；上级 agent 授权后真发布实测）**：第三层合入后人工发布 run **37081920188**（sha `aedc51ffb`）在**我新加的那一步**挂掉 —— `Prepare dist ref` ⇒ `fatal: empty ident name (for <runner@…>) not allowed`（exit 128），后面三步 skip ⇒ 连 `RunCommand` 都没走到。判因 = **脚本继承了运行环境**（`git commit-tree` 需要身份，runner 上没有；开发机用 GECOS 自动兜一个 ⇒ 本机绿）。本机**确定性复现**：空 `HOME` + `GIT_CONFIG_GLOBAL/SYSTEM=/dev/null` + `GIT_AUTHOR_NAME`/`GIT_COMMITTER_NAME` 置空 ⇒ 同一脚本 rc=**128** + 同一条报文；去掉「name 置空」这个条件就变回 rc=0（= 旧桩演练漏掉的那一半）。修法见上一条 data_check；同批扫出的**同类继承面**：① `H5_PUBLISHED_COMMIT` 无白名单（已补）② 报错文案里双引号内的**裸反引号**被 bash 当命令替换执行（`c-end-h5-publish-ci.sh` 的 DIST_SHA 文案是**我第三层引入的** + `c-end-h5-publish-remote.sh` 的清单名文案是存量）⇒ 已转义 + 新增**类级判据 6**（全仓 `*.sh` 射程）。⚠️ 本轮**仍未真发布过**（真发布由上级 agent 执行）⇒ 「CI 会过」由「无 ambient 身份下真跑通 + 身份可追溯」举证，线上是否恢复仍属「没跑」。**2026-10-03 同案第五层（issue #6095，本轮；上级 agent 真发布实测）**：第四层合入后真发布 run **37084280991**（sha `c22514360`）前三步全绿（`Prepare dist ref` 真跑通了、远端 `refs/heads/h5-dist` 已存在），第四步 `Publish c-end h5 to SWAS` 挂：远端 `No such file or directory`（执行体没取到）。判因 = **第三层的引导与第二层的引导组合起来错了**：第三层把第 5 参数换成**产物 ref** 之后，引导**也**按它取执行体 ⇒ 那个 tarball 里只有 17 个 dist 文件。本机**用合并后 main 上那份脚本 + 双 ref 夹具**真复现：引导 ref == 产物 ref、执行体缺、`bash` rc=**127** + 同一句 `No such file or directory`。修法见上一条 data_check；同批复核并修掉审计面同族（`published_commit or sha`）。⚠️ 线上是否恢复仍属「没跑」（真发布由上级 agent 执行）。 ｜ 2026-11-26（issue #9233，用户裁定「frontend/mini-app 这个可以彻底删除了」）：C 端小程序整目录删除 ⇒ 本用例**退役**（条目不删）：发布腿成员文件已全部删除，原 15 条 data_check 的判定对象随之消失；现存判据 = `tests/unit_ci_workflows/test_c_end_removed_guard.py`（机器面零引用 + 发布链成员不许长回来 + required check 名仍上报）。之前的「首次发布尚未发生」等历史缺口随腿删除一并关闭（不再有「线上产物是否落后」这个面）。"
     traces:
       tests:
-        - "tests/unit_ci_workflows/test_c_end_h5_hosting.py"
-        - "tests/unit_ci_workflows/test_h5_freshness_guard.py"
+        - "tests/unit_ci_workflows/test_c_end_removed_guard.py"
       ci:
-        - c-end-h5-publish.yml
-        - h5-freshness-guard.yml
         - deploy-reconcile.yml
       verifies: []
 
@@ -4274,6 +4259,8 @@ cases:
         - pr-check.yml
       verifies: []
   - id: MC-113
+    # 2026-11-26（issue #9233）：C 端小程序 frontend/mini-app 整目录删除 ⇒ 原承载体失联；
+    # 本条按「承载体删除」退役（条目不删、判据改指 C 端保持下线的类级守卫 tests/unit_ci_workflows/test_c_end_removed_guard.py）。
     legacy_id: ""
     title: "**「跑需要真实历史的脚本 ⇒ checkout 必须 `fetch-depth: 0`」的类级判据**：凡 workflow 的 job 里跑 `scripts/h5_freshness_guard.py`（登记在 `h5_script_checkout_depth_ledger.json::canonical_scripts`）的，该 job 的 checkout 必须 `fetch-depth: 0`，否则必须在豁免台账里逐字登记（现取 0 条 ⇒ 只许缩短）；未登记 ⇒ 判红并具名 workflow + job"
     domains:
@@ -4294,23 +4281,14 @@ cases:
     expectations:
       - tool: direct_reply
     data_checks:
-      - "🔴 **判据 A（实例面，会红）**：`.github/workflows/c-end-h5-publish.yml` 的 `publish` job（notify 步跑 `scripts/h5_freshness_guard.py`）的 checkout 必须 `fetch-depth: 0`。红证（实跑）= 摘掉该 `with.fetch-depth` ⇒ 判据红并具名「c-end-h5-publish.yml / publish / 现取 None」。执行点 = tests/unit_ci_workflows/test_h5_freshness_needs_full_history.py::test_c_end_h5_publish_checkout_has_full_history。"
-      - "🔴 **判据 B（类级面，让同类进不来）**：全仓 workflow 逐 job 扫「是否跑登记脚本」⇒ 跑而没有 `fetch-depth: 0` 且未登记豁免 ⇒ 判红（红证②：在另一条腿加一个跑该判据的 job 而不给 depth ⇒ 红并具名 `a-new-leg`）。执行点 = test_all_workflows_running_the_guard_have_full_history。"
-      - "🔴 **判据 C（台账只许缩短 + fail-closed）**：`exemptions` 现取 **0 条**（`EXEMPTION_CAP_FROZEN = 0`）⇒ 加一条豁免即红（报出条数与上限）；空转的豁免（那条腿不跑该判据）/ 指向已不存在 workflow 的豁免 / 缺 `why` 的豁免 ⇒ 各自判红；把台账清空（`canonical_scripts` 空 / 整份为空对象 / 缺 `_` 自述）⇒ 判红（红证③）。执行点 = test_ledger_shape_is_fail_closed / test_exemption_table_only_shrinks / TestDiscriminatingPower::test_clearing_the_ledger_turns_it_red。"
-      - "🔴 **判据 D（三态不许塌，根因面）**：`scripts/h5_freshness_guard.py` 在浅克隆里必须判「读不到历史」⇒ `rc=3`（无法判定，具名点名「浅克隆」，`::error::` 上报），**不得**塌成 `rc=2`（确实陈旧）。红证（实跑，可复制）：`cd /tmp && rm -rf h5shallow && git clone --quiet --depth 1 --branch main \"file://<本仓绝对路径>\" h5shallow && cd h5shallow && git log -1 --format='%cI %h' origin/main -- frontend/mini-app` ⇒ `2026-10-16T16:18:47Z 2f4b8b8`（= HEAD 自己的提交时间，即 CI 的假红读数）；修后同一命令链跑判据 ⇒ `rc=3` + stderr 具名「浅克隆」；全 history 面 ⇒ `2026-10-08T03:20:02Z`（`9ebdf73d8`）⇒ `rc=0 新鲜`。执行点 = tests/unit_ci_workflows/test_h5_freshness_guard.py::test_shallow_clone_is_unknown_not_stale。"
-      - "🔴 **判据 E（负控）**：只改注释 / 加一条不跑该判据的腿 ⇒ 不红；同一份「源代码里出现 `subprocess` 字样」的 AST 判据证明本文件不跑 git。执行点 = TestDiscriminatingPower::test_comment_only_change_stays_green / test_judgement_is_pure_static_and_never_imports_git_or_network。"
-      - "📌 **病根（逐字读数，不是推断）**：CI run 38971606256（`schedule` / sha `2f4b8b84b` / 2026-10-16T21:46Z）判「线上产物陈旧：2026-10-09T14:15Z 早于 frontend/mini-app 最近改动 2026-10-16T16:18Z（落后 7.1 天）」+ `::error::`；而 `2026-10-16T16:18Z` = `2f4b8b84b` 自己的提交时间（`git log -1 --format=%cI 2f4b8b84b`）—— 浅克隆里 `git log -1 <ref> -- <path>` **不判路径**（只有 1 个提交可取）的签名。真值（全 history 复算）= `2026-10-08T03:20:02Z`（`9ebdf73d8`）⇒ 线上**新鲜**（差 34.9h > 宽限 6h）。同一条腿近期连续 6 次 failure（38971606256 / 38941653472 / 38922020408 / 38917201131 / 38912912032 / 38908569922）。"
-      - "📌 **对照面**：`.github/workflows/h5-freshness-guard.yml` 跑**同一份**判据、一直有 `fetch-depth: 0` ⇒ 它不红。⇒ 同一个判据、两个调用面、其中一个面**结构性恒红**。判据 E 的对照读数把这一点钉住（另一条腿 ① 现有 depth 必须在 ② 摘掉它必须红）。"
-      - "📌 **边界（照实登记）**：① 本判据只判**结构**（checkout 步的 `with.fetch-depth`），不判「CI 上那个 job 真的检出了全 history」—— 运行时那一半由脚本自己的 `_is_shallow` 自证；② 只裁**登记进** `canonical_scripts` 的脚本（不做「扫全部脚本调 git」的语义一刀切）⇒ 新脚本要有它自己的登记，未登记即「本判据看不见它」；③ 本单**不改**发布语义（`publish=true` 人工授权 / `w`、`b` 保留前缀 / 首次接管需人工）、**不新增 schedule/cron**、**不降**任何门禁、不给存量开豁免。"
-    skip_reason: "[backend-contract] 纯静态 workflow 判据（YAML 解析 + 结构比较）+ 一个真浅克隆的本地 git 夹具，零网络、零时钟、非 LLM 行为，不进入 agent-eval 冒烟"
-    merge_log: "2026-10-17 新增（issue #7073）。取号 = `python3 scripts/next_case_id.py MC` ⇒ `MC → main:001-112 → 取 MC-113`（候选 = main 777 号 ∪ 全部 open PR 的语料 ∪ 本工作区，工具 script 自己断言「返回号 ∉ 候选集」）。**红证均在真实语料上实跑**：摘 `c-end-h5-publish.yml` 的 `fetch-depth: 0` ⇒ 判据红并具名；真造 `--depth 1` 克隆跑判据 ⇒ 修前 `rc=2 陈旧`（复现 CI 假红）/ 修后 `rc=3 无法判定` 且 stderr 具名「浅克隆」；全 history 面 ⇒ `rc=0` 且读数 `2026-10-08T03:20:02Z` 与 issue 冻结真值逐字一致。"
+      - "**本用例已退役（issue #9233，2026-11-26）**：本条的 `canonical_scripts` 现取只有 `scripts/h5_freshness_guard.py` 一个，而它随 C 端 H5 发布腿整批删除 ⇒ 「跑需要真实历史的脚本 ⇒ checkout 必须 fetch-depth: 0」在仓里**已无 canonical 对象**，判据退化为恒绿（不许留空断言）。现存判据 = tests/unit_ci_workflows/test_c_end_removed_guard.py：断言该脚本与发布腿成员不再存在（复活即红，届时必须同批恢复本类级判据）。判据实现若将来有新的 canonical 脚本，按本条 merge_log 的原始口径重建。"
+    skip_reason: "[backend-contract] 本用例的 canonical 对象（scripts/h5_freshness_guard.py）已随 issue #9233 删除 ⇒ 退役（不留恒真空断言）；现存判据 = tests/unit_ci_workflows/test_c_end_removed_guard.py，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-10-17 新增（issue #7073）。取号 = `python3 scripts/next_case_id.py MC` ⇒ `MC → main:001-112 → 取 MC-113`（候选 = main 777 号 ∪ 全部 open PR 的语料 ∪ 本工作区，工具 script 自己断言「返回号 ∉ 候选集」）。**红证均在真实语料上实跑**：摘 `c-end-h5-publish.yml` 的 `fetch-depth: 0` ⇒ 判据红并具名；真造 `--depth 1` 克隆跑判据 ⇒ 修前 `rc=2 陈旧`（复现 CI 假红）/ 修后 `rc=3 无法判定` 且 stderr 具名「浅克隆」；全 history 面 ⇒ `rc=0` 且读数 `2026-10-08T03:20:02Z` 与 issue 冻结真值逐字一致。 ｜ 2026-11-26（issue #9233）：`scripts/h5_freshness_guard.py` 随 C 端 H5 发布腿整批删除 ⇒ canonical_scripts 归零、类级判据退化为恒真（空断言）⇒ 本条**退役**（条目不删）；台账 `tests/unit_ci_workflows/h5_script_checkout_depth_ledger.json` 与判据 `tests/unit_ci_workflows/test_h5_freshness_needs_full_history.py` 同批删除。重启条件：出现新的「需要真实 git 历史」的 canonical 脚本时，按本条原口径重建判据并恢复本用例。"
     traces:
       tests:
-        - "tests/unit_ci_workflows/test_h5_freshness_needs_full_history.py"
-        - "tests/unit_ci_workflows/test_h5_freshness_guard.py"
+        - "tests/unit_ci_workflows/test_c_end_removed_guard.py"
       ci:
         - pr-check.yml
-        - c-end-h5-publish.yml
       verifies: []
 
   - id: MC-114
@@ -7797,6 +7775,8 @@ cases:
         - pr-check.yml
       verifies: []
   - id: MC-184
+    # 2026-11-26（issue #9233）：C 端小程序 frontend/mini-app 整目录删除 ⇒ 原承载体失联；
+    # 本条按「承载体删除」退役（条目不删、判据改指 C 端保持下线的类级守卫 tests/unit_ci_workflows/test_c_end_removed_guard.py）。
     legacy_id: ""
     title: "C 端 H5 输入面字体族 / 占位符收口（issue #8575）：共享层给内层原生控件继承字体、textarea 补 font-size: inherit、::placeholder 唯一来源且不写字号"
     domains:
@@ -7813,16 +7793,16 @@ cases:
       - "C 端 H5（app.migaozn.com 根）的聊天输入框里，字不是页面正文那套字体（输入框跑的是浏览器默认），占位符也是默认灰；希望输入面的字体 / 字号 / 占位符色与页面正文一致，而且以后新增输入面不用逐页再写一遍。"
     expectations: []
     data_checks:
-      - "**判据 1（会红）**：共享层 `frontend/mini-app/src/styles/input-center.scss` 在位、被 `src/app.scss` 真的 `@use`，且 `.weui-input, .taro-textarea` 块里写了 `font-family: inherit`。执行点 = frontend/mini-app/tests/input-typography-guard.test.ts::①。"
+      - "**判据 1（会红）**：共享层 `tests/unit_ci_workflows/test_c_end_removed_guard.py` 在位、被 `src/app.scss` 真的 `@use`，且 `.weui-input, .taro-textarea` 块里写了 `font-family: inherit`。执行点 = frontend/bmini-app/tests/input-typography-guard.test.ts::①。"
       - "**判据 2（会红）**：共享层**不许**写具体字体族（把 `inherit` 改成 `Arial` ⇒ 红）—— 具体字体族属 `src/app.scss`，本层只跟随。执行点 = ::②。"
       - "**判据 3（会红）**：`.taro-textarea` 必须有 `font-size: inherit`（UA 默认 13.33px monospace，外层字号到不了内层）。执行点 = ::③。"
       - "**判据 4（会红）**：`::placeholder` 只在共享层、同时覆盖 `.weui-input::placeholder` 与 `.taro-textarea::placeholder`、色值取 `$text-secondary`、**不写** `font-size`（继承控件自身，一处口径）。执行点 = ::④。"
       - "**判据 5（会红·类级）**：共享层**之外**任何 scss 出现 `.taro-textarea` / `.weui-input` ⇒ 具名报红（防逐页各写一份、改了这页忘那页）。执行点 = ::⑤。"
-    skip_reason: "[backend-contract] 纯静态样式面判据（读 scss 文本 + 剥注释的引号感知扫描，零浏览器、零真实构建），由 frontend/mini-app/tests/input-typography-guard.test.ts 验证，非 LLM 行为，不进入 agent-eval 冒烟"
+    skip_reason: "[backend-contract] 纯静态样式面判据（读 scss 文本 + 剥注释的引号感知扫描，零浏览器、零真实构建），由 frontend/bmini-app/tests/input-typography-guard.test.ts 验证，非 LLM 行为，不进入 agent-eval 冒烟"
     merge_log: "2026-11-03 新增（issue #8575，承 #6480 的同一根因：brother 客户端 bmini 已在 PR #8574 落地）。取号 MC-184（集成侧指定，避开当晚 8 次撞号）。"
     traces:
       tests:
-        - "frontend/mini-app/tests/input-typography-guard.test.ts"
+        - "tests/unit_ci_workflows/test_c_end_removed_guard.py"
       ci:
         - pr-check.yml
       verifies: []
@@ -7943,6 +7923,40 @@ cases:
     traces:
       tests:
         - "tests/unit_ci_workflows/test_smoke_data_quality.py"
+      ci:
+        - pr-check.yml
+      verifies: []
+  - id: MC-345
+    legacy_id: ''
+    title: "冒烟套件「一次登录」契约（issue #8977）：短信码单次消费 ⇒ P0 整档只许 fixture 登录一次，注入 token 复跑不再发码"
+    domains:
+      - misc
+      - ci
+    tier: normal
+    tags:
+      - smoke
+      - auth
+      - one-login
+      - red-proof
+    truths_ref: []
+    # 真值缺省说明：这是「冒烟套件自身」的行为契约（不是 LLM/业务真值）—— 判据落在桩化 transport
+    # 与源码面，零网络、零真短信、零 LLM。
+    user_inputs:
+      - "生产（未配 SMS_BYPASS_CODE）`SMOKE_ENV=production pytest -m p0` 整跑：test_login_success 自己发一次短信码，session fixture 再用同一个码登录 ⇒ 401，依赖它的 10 条全 ERROR；现行规避是手工 --deselect。"
+    expectations: []
+    data_checks:
+      - "判据 ①：设置 SMOKE_ADMIN_TOKEN ⇒ auth_token fixture **一条登录请求都不发**（桩化 transport 记录请求集合，断言不含 /api/auth/sms/login），并直接把注入 token 装进 client。执行点 = tests/unit_ci_workflows/test_smoke_single_login.py::test_injected_token_never_posts_sms_login"
+      - "判据 ②：未设置 SMOKE_ADMIN_TOKEN ⇒ 仍按原逻辑发码登录**恰好一次**（防止「为了绿而永远不登录」），请求体 = 配置里的手机号 + 短信码。执行点 = ::test_without_injected_token_logs_in_exactly_once"
+      - "判据 ③：test_login_success **复用** auth_token 的同一次登录 —— 行为：总登录数仍为 1；静态：入参无 admin_client/config、函数体无 /api/auth/sms/login 字面量。执行点 = ::test_login_success_reuses_fixture_login / ::test_login_success_has_no_own_login_call"
+      - "判据 ④（类级元守卫）：tests/smoke/test_*.py 里任何标了 p0 的用例，函数体不得同时出现 /api/auth/sms/login 与 admin_sms_code（= 有效码消费者）⇒ 新增同类用例即红。执行点 = ::test_p0_has_no_valid_code_consumer_outside_fixture"
+      - "判据 ⑤（台账）：P0 之外的有效码消费者必须逐条登记在 tests/unit_ci_workflows/smoke_login_consumers.json —— 未登记即红、多登记也红（只许缩短）；现役仅 tests/smoke/test_06_perf.py::test_login_latency（P1/performance 档，`-m p0` 不收集）。执行点 = ::test_valid_code_consumer_ledger_is_exact"
+      - "判据 ⑥：SMOKE_ADMIN_TOKEN 注入模式没有 refresh cookie ⇒ refresh 用例**显式 skip**（不可判定，不是通过），且 skip 只以 login_response 为条件（真登录的跑法里仍覆盖 refresh）。执行点 = ::test_refresh_skips_only_in_injected_token_mode"
+      - "判据 ⑦：fixture 不许读 bypass 环境变量弱化登录（SMS_BYPASS_CODE 逻辑不动）。执行点 = ::test_fixture_does_not_introduce_sms_bypass"
+    skip_reason: "[backend-contract] 纯静态 + 桩化 transport 判据（零网络、零真短信、零 LLM），不进入 agent-eval 冒烟；真机真短信的一次整跑需在部署机执行（命令与判据见 tests/smoke/README.md「生产复跑」节）"
+    merge_log: "2026-11-23 新增（issue #8977）。取号 = python3 scripts/next_case_id.py MC 现取（main ∪ 全部 open PR ∪ 本工作区）⇒ MC-345（原取 MC-344，与已合入 #9074 撞号 ⇒ 按「后合入者让号」让号；18:07 重新现取）。修前红：带「短信码单次消费」的本地 stub API 真跑 tests/smoke/test_02_auth.py -m p0 ⇒ 7 passed, 2 errors（fixture 第二次登录 401）；修后绿：9 passed，有效码只登录一次；注入 token 模式 8 passed, 1 skipped、登录请求 0 次。新判据自身首次跑 = 7 failed, 1 passed（插桩式红），实现后 8 passed。"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_smoke_single_login.py"
       ci:
         - pr-check.yml
       verifies: []
@@ -8144,6 +8158,7 @@ cases:
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_bend_write_tools_8618.py"
+        - "backend/ai-agent-service/tests/test_capability_boundary.py"
         - "backend/ai-agent-service/tests/test_tools_processing_item_manage.py"
         - "backend/ai-agent-service/tests/test_tools_category_manage.py"
         - "backend/ai-agent-service/tests/test_customer_manage.py"
@@ -10414,14 +10429,14 @@ cases:
     data_checks:
       - "判据 1·**结构**：`app.json` 的 `pages` 非空、`app.js` 在、每页 `.js` / `.wxml` / `.json` 齐备（`.wxss` **允许缺省** —— Taro 对不含样式的页面本就不产出）。红证 = 删掉某页的任一页文件 ⇒ 退 1；整个拿掉 `app.json` ⇒ 退 1；`pages` 为空数组 ⇒ 退 1。执行点 = tests/unit_ci_workflows/test_bmini_dist_assert.py::test_missing_page_file_is_red / ::test_missing_app_json_is_red / ::test_empty_pages_list_is_red"
       - "判据 2·**域名策略**（本单核心）：`--env prod` ⇒ 产物内 `migaozn.com` 出现 **0** 次、`cytda.com` **≥1** 次、且**不得残留 `localhost`**；`--env test` ⇒ 反向。红证 = prod 模式喂含 `migaozn.com` 的同形树 ⇒ 退 1；只给了 label origin 而 API 仍是 `http://localhost:8080` ⇒ 退 1（**前两条在这一形态上都会绿**，故 localhost 是独立判据）；test 模式喂含 `cytda.com` 的树 ⇒ 退 1。执行点 = 同文件 ::test_prod_rejects_test_domain_leak / ::test_prod_rejects_missing_prod_domain / ::test_prod_rejects_localhost_leftover / ::test_test_env_rejects_prod_domain_leak"
-      - "判据 3·**体积闸门**：全部文件合计 < 微信上限 `2097152` 的 **90% = 1887436** 字节（bash 无浮点 ⇒ 整数运算 `2097152*90/100`），超限即红并打印顶层条目占比 top5；边界从严（`= 闸门` 也红）。红证 = 塞一个把总量顶过闸门的文件 ⇒ 退 1 且输出含闸门数字与 `top5`；恰好等于闸门 ⇒ 退 1。执行点 = 同文件 ::test_oversized_package_is_red_and_prints_top_entries / ::test_at_the_gate_is_red_not_green"
+      - "判据 3·**体积闸门**（issue #8979 / #8981 起改口径）：常量**唯一来源** = `deploy/scripts/bmini-dist-budget.json`（本文件不再写死 2097152 / 90%）；主包 ≤ 单包上限 − 主包预留，超限即红并打印归因（哪个包 / 超多少字节 / 该包最大文件 top5 / 复算命令 + 常量文件）。边界 = 「主包 + 预留 ≤ 上限」⇒ 恰好等于预算仍绿（#8979 要的是 **≥**300KB），+1 字节即红。红证 = 把主包顶到预算 +1 ⇒ 退 1 且输出含「主包」「超预算」「padding.bin」「复算」；恰好等于预算 ⇒ 退 0。执行点 = 同文件 ::test_oversized_package_is_red_and_prints_top_entries / ::test_at_the_gate_is_green_and_one_byte_over_is_red（体积预算的完整判据并入 MC-342）"
       - "判据 4·**不可判定 ≠ 通过**：dist 不存在 / 空目录 / 不是目录 ⇒ 退 **3**（`0` 不许冒充；「没构建」与「产物合格」是两件事），且原因出声。执行点 = 同文件 ::test_undecidable_shapes_exit_3；用法错误（缺参数 / `--env` 非法 / 未知参数）⇒ 退 2 = ::test_usage_errors_exit_2"
       - "判据 5·**顺序即安全顺序**：`scripts/bmini-experience.sh upload` **先跑产物断言、后上传**；断言红 ⇒ **一次上传都不发生**（沙箱里 `npx` 桩的标记文件不存在）。对照臂：产物合规 ⇒ 真走到 `miniprogram-ci`（桩被调用）。执行点 = 同文件 ::test_upload_refuses_when_the_assert_fails / ::test_upload_reaches_miniprogram_ci_with_the_verified_flags"
       - "判据 6·**注入的常量是哪一个**（不读源码、只看行为）：桩掉 `npm` 读三个 `TARO_APP_*` ⇒ `--env prod` 三个都是 `https://app.cytda.com`、`--env test` 三个都是 `https://app.migaozn.com`；且 `build` 不许上传。执行点 = 同文件 ::test_build_injects_the_three_constants"
       - "判据 7·**上传命令的形态**：`miniprogram-ci` 通道必须用 `--upload-version`（该 CLI 的 `--version` 是「显示版本号」的**布尔开关**，写成 `--version 1.0.0` 会被吞掉、版本号不上传），四件参数（`--appid` / `--project-path` / `--private-key-path` / `--upload-version`）逐件断言；版本号必须显式给（缺 ⇒ 退 2，不自动递增）。执行点 = 同文件 ::test_upload_reaches_miniprogram_ci_with_the_verified_flags / ::test_upload_requires_an_explicit_version"
       - "判据 8·**CI 接线 + 判别力自证**：`.github/workflows/bmini-app.yml` 里真的有一个 step 调 `deploy/scripts/bmini-assert-dist.sh`，且 `--env test`（CI 构建不注入生产常量）、排在 `npm run build:weapp` **之后**、与构建步同一个 `if:`（否则构建被跳过时拿不存在的 dist 判红）、不带 `continue-on-error` / `|| true`。注入式红证 = 摘掉 step / 改成 `--env prod` / 挪到构建前 / 加 `continue-on-error` / 摘掉 `if`，五种各自判红。执行点 = 同文件 ::test_workflow_runs_the_assert_after_the_weapp_build / ::test_wiring_judge_has_teeth"
-      - "判据 3′·**体积口径的边界读数**（本单实测出来的缺陷，另开 #8981）：dist 字节与微信后台报的包体**不是同一个数**（2026-11-21 同一份产物 dist 1,459,140 → 微信 2,079,753，≈ ×1.425）⇒ 「闸门绿」不等于「微信还有余量」（那次闸门还剩 428,296 字节，真实余量只有 17KB）。体积段因此额外交代一行**参考折算**读数（**不是判据**，不改变退出码）；判据 = 折算超上限时必须有 ⚠️ 提示且退出码仍为 0。执行点 = tests/unit_ci_workflows/test_bmini_dist_assert.py::test_wechat_folded_readout_warns_without_faking_the_gate"
-      - "**边界（照实登记）**：判的是本仓 dist 的字节，不是微信后台的包体读数（无分包时二者同向，分包（#8979）落地后须按 `subPackages[].root` 剔除）；判不了「产物能否跑起来」（要真机/模拟器）与微信后台「服务器域名」白名单（仓库侧无从取证 ⇒ 写在 docs/deployment/bmini-experience-release.md 的前置条件里）。「对真实构建产物判绿」由 CI 那条腿自己承担（同一条命令、同一份实现），单测用同形 fixture 覆盖绿/红两侧。"
+      - "判据 3′·**体积口径**（本单实测出来的缺陷，另开 #8981，已由 MC-342 收口）：dist 字节与微信上传读数**等价**（2026-11-23 部署机实测 dist 1,465,245 → TOTAL 1,461,748，比值 0.998）；原先按 11-21 那个 `2,079,753`（≈×1.425）写的「参考折算」读数已被整块删除 —— 该读数在部署机四份产物与 devtool 日志里都复现不出来，据它收紧闸门会制造假红。判据 = 脚本打印等价读数与其出处、且**不含** ×1.425 折算行。执行点 = tests/unit_ci_workflows/test_bmini_dist_assert.py::test_wechat_readout_is_equivalence_not_a_fold_factor + tests/unit_ci_workflows/test_bmini_dist_budget.py::test_calibration_proves_dist_and_wechat_readings_are_equivalent"
+      - "**边界（照实登记）**：判的是本仓 dist 的字节（与微信上传读数等价，比值由预算文件的 calibration 台账现算，见 MC-342）；判不了「产物能否跑起来」（要真机/模拟器）与微信后台「服务器域名」白名单（仓库侧无从取证 ⇒ 写在 docs/deployment/bmini-experience-release.md 的前置条件里）。「对真实构建产物判绿」由 CI 那条腿自己承担（同一条命令、同一份实现），单测用同形 fixture 覆盖绿/红两侧。"
     skip_reason: "[backend-contract] 部署 / CI 契约判据（真实脚本 + 同形 fixture + npm/npx 桩）：零网络、零真构建、零真上传、零 LLM，不进 agent-eval 冒烟"
     merge_log: "2026-11-21 新增（issue #8980）。取号 = `python3 scripts/next_case_id.py MC` 现取（main ∪ 全部 open PR ∪ 本工作区）⇒ MC-341。同批落地：deploy/scripts/bmini-assert-dist.sh（断言本体）、scripts/bmini-experience.sh（build/upload/all 唯一入口）、.github/workflows/bmini-app.yml 的 weapp 产物断言步、docs/deployment/bmini-experience-release.md。"
     traces:
@@ -10430,3 +10445,814 @@ cases:
       ci:
         - bmini-app.yml
       verifies: []
+
+  - id: MC-342
+    legacy_id: ""
+    title: "B 端小程序包体预算判据（微信口径**等价**、常量单一来源）：主包 ≤ 单包上限 − 300KB 预留 / 每个分包各自 ≤ 单包上限 / 总包 ≤ 20MB，第二把尺子判红"
+    domains:
+      - misc
+      - deploy
+    tier: normal
+    tags:
+      - ci
+      - bmini
+      - weapp
+      - dist-assert
+      - package-size-budget
+      - single-source
+      - meta-guard
+    truths_ref: []
+    # 真值缺省说明：这是**部署 / CI 契约**（不是 LLM / 业务真值）—— 判据落在真实脚本 + 同形夹具 +
+    # 真实构建产物的读数台账上，零网络、零真上传、零 LLM。
+    precondition:
+      - "包体预算的**唯一来源** = `deploy/scripts/bmini-dist-budget.json`（`wechatPackageCapBytes` / `wechatTotalCapBytes` / `mainPackageReserveBytes` + `calibration` / `unreproducibleReadings` / `measurements` 台账）。脚本（python3 读）与判据（`tests/unit_ci_workflows/_bmini_dist.py` 读）都只读它；第二份上限常量（代码位置）即判红。"
+      - "口径证据 = 2026-11-23 部署机实测（`ssh migao-deploy`，`~/prod/migao-bmini-main`，HEAD = `origin/release` `f78dff52c`）：`frontend/bmini-app/dist` 1,465,245 字节 ↔ `scripts/bmini-experience.sh all --version 1.0.2 --env prod` 上传后开发者工具报的 TOTAL 1,461,748（比值 0.998）⇒ 两套口径**等价**，用 dist 判即偏严。旁证 = `~/migao-bmini-experience/dist.bak-11222310`（生产域备份）1,459,203 字节，与 #8981 记的 dist 1,459,140 只差 63 字节。"
+      - "`2,079,753`（#8981 记的「微信后台主包」）在部署机四份产物（1,459,203 / 1,465,247 / 1,840,656 / 1,465,245）与开发者工具日志里**都复现不出来** ⇒ 登记为不可复现读数（`unreproducibleReadings`），**不据此叠折算系数**（叠了会把闸门压到 ≈1.47MB、制造假红）。"
+    user_inputs:
+      - "B 端小程序首次体验版（2026-11-21，AppID wx6ee2f682c1b4822c）报「主包 2,079,753 / 上限 2,097,152，余量 17KB」，而仓库当时的体积闸门（dist 字节 < 2097152×90%）还剩 43 万字节 —— 闸门绿、上传却会爆。怎么让体积判据真的判「会不会因超限失败」，并且主包 / 分包 / 总包各判各的？"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "判据 1·**主包按预算判且可归因**：主包（dist 全量剔除 `subPackages[].root`）≤ 单包上限 − 主包预留；恰好等于预算 ⇒ 绿（余量恰好 300KB）；+1 字节 ⇒ 退 1，且输出**具名**「主包 / 超多少字节 / 该包最大文件 top5 / 复算命令 + 常量文件路径」。实测注入（真实 dist 复制后加 400,000 字节）⇒ 主包 1,865,251 字节 / 超预算 75,299 / 退 1。执行点 = tests/unit_ci_workflows/test_bmini_dist_budget.py::test_main_package_budget_is_enforced_and_attributable + tests/unit_ci_workflows/test_bmini_dist_assert.py::test_oversized_package_is_red_and_prints_top_entries / ::test_at_the_gate_is_green_and_one_byte_over_is_red"
+      - "判据 2·**分包各自判（不折进主包）**：`app.json` 的 `subPackages[].root` 覆盖的字节从主包剔除，每包各自 ≤ 单包上限；某分包 = 上限 +1 ⇒ 退 1 且**点名那个分包**（主包读数仍在，不许把分包超限说成主包超限）。真实形状：把真实 dist 的 `pages/admin` 声明成分包 ⇒ 主包 1,434,587 / 分包[pages/admin] 30,866，拆开判仍绿。执行点 = 同文件 ::test_subpackage_is_judged_separately_from_the_main_package"
+      - "判据 3·**总包上限**：主包 + 全部分包合计 ≤ 20,971,520 字节；每个分包都在单包上限内但合计越线 ⇒ 退 1 且点名「总包」+ 超多少字节 + 复算命令。执行点 = 同文件 ::test_total_package_budget_caps_the_sum"
+      - "判据 4·**余量地板（#8979 的 ≥300KB）**：主包预留 ≥ 300×1024 字节，且台账里**最近一次实测产物**按预算判完仍留 ≥300KB（实测 1,465,251 ⇒ 预算内余量 324,701；对 2MB 上限余量 631,901 ≥ 307,200）；改小预留或改大台账读数 ⇒ 红。执行点 = 同文件 ::test_reserve_floor_meets_8979_and_the_last_real_reading"
+      - "判据 5·**口径等价（不许回流 ×1.425）**：`calibration` 每条必须有 `date` / `distBytes` / `wechatBytes` / `source`，且 `wechatBytes / distBytes` 落在 0.97~1.03；脚本输出必须打印该出处的等价读数，且**不得**再出现 ×1.425 折算行。执行点 = 同文件 ::test_calibration_proves_dist_and_wechat_readings_are_equivalent + test_bmini_dist_assert.py::test_wechat_readout_is_equivalence_not_a_fold_factor"
+      - "判据 6·**类级元守卫（单一来源）**：任何执行载体（`deploy/scripts` / `scripts` / `.github/workflows` / `tests/unit_ci_workflows` / `frontend/bmini-app` 的 config·scripts）在**代码位置**出现上限常量（第二把尺子）⇒ 红并点名 `file: literal`；`.py` 走 `ast`（跳过注释与文档字符串 —— 引用历史读数是该留的证据，参与判定的常量才是病灶）。豁免台账 `tests/unit_ci_workflows/bmini_dist_budget_allowlist.json` 每条必须**仍命中**（失效即红 ⇒ 只许缩短）。注入式红证（实测）：往 `scripts/bmini-experience.sh` 追加 `LIMIT_SECOND_RULER=1887436` ⇒ 判红并点名该文件。执行点 = 同文件 ::test_no_second_ruler_and_the_allowlist_only_shrinks / ::test_single_source_is_really_the_only_reader_of_the_numbers"
+      - "**边界（照实登记）**：判的是本仓 dist 的字节（与微信上传读数等价，比值由台账现算）；判不了「产物能否跑起来」与后台域名白名单。**分包（#8979）本次未拆**（实测余量 631,901 字节 ⇒ 不为拆分而拆分；拆 4 个管理页只挪走 30,866 字节，主体是 940,308 字节的 JS），判据侧已就绪，重启条件 = 主包余量 < 300KB（那时闸门先红）。"
+    skip_reason: "[backend-contract] 部署 / CI 契约判据（真实脚本 + 同形 fixture + ast 词法走查）：零网络、零真构建、零上传、零 LLM，不进 agent-eval 冒烟"
+    merge_log: "2026-11-23 新增（issue #8979 + #8981，**部分交付**：#8979 的分包降级为「只钉判据 + 留重启条件」，不写关闭关键词）。取号 = `python3 scripts/next_case_id.py MC` 现取 MC-342。同批落地：deploy/scripts/bmini-dist-budget.json（单一来源）、deploy/scripts/bmini-assert-dist.sh（体积段重写：主包 / 分包 / 总包 + 归因）、tests/unit_ci_workflows/_bmini_dist.py（夹具与读口）、tests/unit_ci_workflows/test_bmini_dist_budget.py、tests/unit_ci_workflows/bmini_dist_budget_allowlist.json、docs/deployment/bmini-experience-release.md（口径证据链 + 体积读数表）。"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_bmini_dist_budget.py"
+        - "tests/unit_ci_workflows/test_bmini_dist_assert.py"
+      ci:
+        - bmini-app.yml
+        - pr-check.yml
+      verifies: []
+  - id: MC-343
+    legacy_id: ""
+    title: "冒烟面不许绝对导入 `tests` 包：`cd tests/smoke && pytest -m p0` 下会 ModuleNotFoundError，整条部署腿判红"
+    domains:
+      - misc
+      - smoke
+    tier: normal
+    tags:
+      - smoke
+      - import-form
+      - deploy-leg
+      - meta-guard
+    truths_ref: []
+    # 真值缺省说明：这是「冒烟套件自身的导入形态」元判据（不是 LLM / 业务真值）—— 纯静态扫描 + 判别力自证，零网络。
+    precondition:
+      - "冒烟腿的执行形态 = `cd tests/smoke && pytest -m \"p0\" …`（`.github/workflows/smoke-test.yml` 的 `P0 Smoke Test` 步）；仓库里 `tests/__init__.py` **不存在**（只有 `tests/smoke/__init__.py`）⇒ `tests` 不是包，绝对导入 `from tests.smoke.…` 在采集阶段即 `ModuleNotFoundError: No module named 'tests'`。"
+      - "现场（2026-11-23 实测）：run 45120925452 部署本体成功（`JWT_KEY_SAME_SOURCE=OK`、`✅ SWAS 部署成功 admin-api=sha-4ca4f19`），但 `Post-Deploy Smoke Test` 因采集错误 exit 2 ⇒ 整条腿 `failure`。该绝对导入由 #8993（2026-11-22）引入，被上游 JWT 红（#9051/#9059）遮了 24 小时以上。"
+    user_inputs:
+      - "部署后冒烟一直红在 `ModuleNotFoundError: No module named 'tests'`，而部署本体已经成功 —— 怎么断定是「冒烟面的导入形态」而不是环境/依赖问题？"
+    data_checks:
+      - "判据 1·**禁止绝对导入**：`tests/smoke/**/*.py` 出现 `^\\s*(from|import)\\s+tests\\.` ⇒ 判红，输出**具名**「文件:行: 原文」。注入式红证（实测）：把 `tests/smoke/test_config_production_urls.py` 改回 `from tests.smoke.config import get_config` ⇒ 1 failed；改回 `from .config import get_config` ⇒ 2 passed。执行点 = tests/unit_ci_workflows/test_smoke_import_form.py::test_no_absolute_tests_import_in_smoke_face"
+      - "判据 2·**判别力自证**：扫描面必须非空（≥5 个 .py）且包含现场文件 `tests/smoke/test_config_production_urls.py` ⇒ 否则「绿」是零命中假绿。执行点 = 同文件 ::test_the_scanner_actually_sees_the_face"
+      - "绿证（人工/CI 复核，不在判据里跑子进程）：`cd tests/smoke && python3 -m pytest -m p0 --collect-only -q` 必须 `0 error`（修前实测 `21/105 tests collected (84 deselected), 1 error`；修后 `21/107 tests collected, 0 error`）。"
+    skip_reason: "[backend-contract] 冒烟面导入形态的元判据（纯静态扫描 + 判别力自证）：零网络、零真跑冒烟、零 LLM，不进 agent-eval 冒烟"
+    merge_log: "2026-11-23 新增（issue #9062）。取号 = `python3 scripts/next_case_id.py MC` 现取 MC-343。同批落地：tests/smoke/test_config_production_urls.py（绝对 ⇒ 相对导入）、tests/unit_ci_workflows/test_smoke_import_form.py（类级元守卫）。"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_smoke_import_form.py"
+        - "tests/smoke/test_config_production_urls.py"
+      ci:
+        - pr-check.yml
+      verifies: []
+  - id: MC-344
+    legacy_id: ""
+    title: "B 端小程序「发一版 = 一条命令」：机器闸门 / 顺序闸门 / 上传前断言 / 上传后回读记录行（编排层不复刻判据）"
+    domains:
+      - misc
+      - ci
+      - bmini
+      - deploy
+    tier: normal
+    tags:
+      - ci
+      - bmini
+      - deploy
+      - release
+      - one-command
+      - host-gate
+      - release-line
+      - red-proof
+    truths_ref: []
+    # 真值缺省说明：这是**部署契约**（不是 LLM / 业务真值）—— 判据落在**真 git 沙箱**（bare origin + 检出，
+    # 发布线/主线的相对关系按用例摆位）、桩掉的 `npm`/`npx`、以及**经代理转发到真实现**的产物断言脚本上：
+    # 零网络、零真构建、零真上传、零 LLM。
+    precondition:
+      - "部署机的**唯一标识** = SSH 别名（`~/.ssh/config` 的 `Host migao-deploy` → `HostName guangzhenzkdeMacBook-Pro.local`）：那台机器走 DHCP、地址会变 ⇒ 命令 / 文档 / 判据都**只认别名，禁写死 IP**。机器闸门 = 本机身份（缺省 `scutil --get LocalHostName` / `hostname -s`，可被 `MIGAO_BMINI_HOST_ID` 注入**读数**）与 `ssh -G <别名>` 解析出的 `HostName` 归一（小写 / 去尾点 / 去 `.local`）后相等。"
+      - "2026-11-23 用户裁定：**生产包只在部署机构建 + 上传**（本机误跑产出指向 `localhost` 的漂移包 ⇒ 真机 `request:fail errcode:-102`，1.0.1 即此形态；见 `docs/deployment/bmini-experience-release.md` §一）。"
+      - "发布线口径**不变**：`origin/release ⊆ origin/main`，复算 = `scripts/cut-release.sh --check`（`0` 合规 / `2` 旁路 / `3` 取不到远端）；**cut 是显式动作**，一条命令只许调 `--check`。"
+      - "「从 release 构建」的机械条件 = 本检出 `HEAD == origin/release` **且** 工作区无未提交改动（2026-11-21 差点用「停在旧特性分支的工作区」构建）。"
+      - "口径单一来源：包体上限 / 域名常量 / `dist↔TOTAL` 等价比值**都不在**本脚本里 —— 前两者分别住在 `deploy/scripts/bmini-dist-budget.json` 与 `scripts/bmini-experience.sh`，比值带**现读**预算文件的 `calibration` 台账 ±3‰（容差）。"
+    user_inputs:
+      - "B 端小程序已上线 v1.0.2，但发一版仍是三步手打（cut-release → `build --env prod` → `upload --version X.Y.Z`）＋三处人肉记忆（顺序 / 只在部署机 / 上传后把 `TOTAL` 抄进发布记录表）。怎么让「顺序即安全顺序」与「机器闸门」变成会红的判据，并让上传后那一行记录不用手抄？"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "判据 1·**机器闸门**：非部署机 ⇒ 退 **1** 且**一步都不往下走**（`npm` / `assert` / `npx` 桩全未被调用），stderr 必须同时给出本机读数 + 部署机 `HostName` + 三个出口（`ssh migao-deploy` 去部署机 / 改 ssh 别名 / 只构建不发布 `bmini-experience.sh build --env prod`）；身份相等 ⇒ `--host-assert` 退 0 且零副作用；**读数拿不到**（`MIGAO_BMINI_SSH_CONFIG` 指向不存在的文件）⇒ 退 **3**（不可判定，不许冒充 1 也不许当 0）。执行点 = tests/unit_ci_workflows/test_bmini_release_one_command.py::test_machine_gate_refuses_before_doing_anything / ::test_machine_gate_passes_when_the_identity_matches / ::test_machine_gate_is_undecidable_when_the_reading_is_unavailable"
+      - "判据 2·**顺序闸门（发布线）**：`origin/release` 上有 `origin/main` 没有的提交 ⇒ `cut-release.sh --check` 退 2 ⇒ 本脚本退 **1** 具名「发布线被旁路」，**且远端 release ref 逐字不变**（cut 是显式动作）；`origin/release` 不存在 ⇒ 退 1；远端不可达 ⇒ 退 **3**。执行点 = 同文件 ::test_bypassed_release_line_is_a_named_refusal_and_never_cuts / ::test_missing_release_branch_is_refused / ::test_unreachable_origin_is_undecidable / ::test_cut_release_reports_a_missing_release_line_instead_of_a_fake_bypass"
+      - "判据 3·**「从 release 构建」的机械条件**：发布线合规但本检出 `HEAD ≠ origin/release` ⇒ 退 1「本检出不是发布线」；工作区有未提交改动 ⇒ 退 1；两种情况 `npm` 桩都未被调用。执行点 = 同文件 ::test_checkout_not_on_the_release_line_is_refused / ::test_dirty_worktree_is_refused"
+      - "判据 4·**上传前断言真的会拦**（复用 `deploy/scripts/bmini-assert-dist.sh`，探针 = 只多记一行日志的代理、判据本体仍是真脚本）：① 产物是测试域却按 prod ⇒ 退 1 且 `npx` 未被调用；② 构建产物干净、但在**第 2 次**断言调用前被注入 `localhost` ⇒ 上传前断言当场判红、上传不发生。执行点 = 同文件 ::test_assert_failure_blocks_the_upload / ::test_a_drifted_dist_detected_by_the_pre_upload_assert_blocks_the_upload"
+      - "判据 5·**顺序实测**（三条判据写同一份 marker 日志）：`npm → assert → assert → assert → npx`（构建内断言 / 本脚本的上传前断言 / upload 自己的断言）—— 少一次 ⇒ 「上传前断言」被摘掉 ⇒ 红。执行点 = 同文件 ::test_ordering_is_build_then_asserts_then_upload"
+      - "判据 6·**版本号必须显式给**（不自动递增、不从 package.json 猜）：`--upload` 缺 `--version` / 形态非 `X.Y.Z` / 给了版本号却没 `--upload`：三种都退 **2**（用法错误）且**不构建、不上传**（`calls == []`）。执行点 = 同文件 ::test_upload_requires_an_explicit_version（三个参数面）"
+      - "判据 7·**上传后回读 + 可粘贴行**：从上传日志抓 `TOTAL`（取**最后一行**含 `TOTAL` 的——前面几道断言的口径交代行里也有 `TOTAL 1,461,748` 这种读数，取首行实测会抓到年份 2026），打印**恰好一行** 6 列 Markdown（版本 / 时间 / 部署机 alias + `origin/release` sha / `TOTAL` 字节 / dist 字节 / 比值），读数逐值可复算；抓不到 `TOTAL`（如 `--key` 走 miniprogram-ci 通道）⇒ 退 **3** 且**不产出**记录行（不猜）。执行点 = 同文件 ::test_upload_prints_a_pasteable_record_row / ::test_missing_total_in_the_log_is_undecidable"
+      - "判据 8·**比值三态**：`dist ÷ TOTAL` 必须落在预算文件 `calibration` 台账比值 ±3‰ 内；越界 ⇒ **警告 + 退 3**，且可疑行只进 stderr（不进 stdout，避免被直接粘进台账）；把台账的 `wechatBytes` 改成 `distBytes//2`（中心比值 2.0）⇒ 同一份产物改判「越界退 3」——证明比值带**现读**单一来源，不是另存一份尺子。执行点 = 同文件 ::test_ratio_out_of_band_exits_3 / ::test_ratio_band_is_read_from_the_budget_not_hardcoded"
+      - "判据 9·**默认安全**：不带 `--upload` ⇒ 只做 ①~④（`calls == [npm, assert, assert]`），明确打「未上传」，且**不产出**记录行。执行点 = 同文件 ::test_default_run_builds_and_asserts_but_never_uploads"
+      - "判据 10·**编排层不复刻判据（第二把尺子的实例面）**：脚本里**不得**出现域名常量（`cytda` / `migaozn`）/ 包体上限常量（读预算文件的 `wechatPackageCapBytes` 现算比对）/ `build:weapp` / `TARO_APP_`（按**代码行**判，注释里引用历史形态不算）；`cut-release.sh` 的唯一执行形态是 `--check`。红证 = 往脚本里抄一行生产域常量 ⇒ 红。执行点 = 同文件 ::test_script_reuses_instead_of_reimplementing"
+      - "判据 11·**文档接线**：`docs/deployment/bmini-experience-release.md` 必须指向这条命令，且**底层三步仍在**（`./scripts/cut-release.sh` / `bmini-experience.sh build  --env prod` / `bmini-experience.sh upload --version` 三条命令 + 「提审前检查清单」+「发布记录」表 + 部署机裁定段都不得被删）。执行点 = 同文件 ::test_docs_point_at_the_one_command_and_keep_the_three_steps / ::test_script_parses（`bash -n`）"
+      - "**注入式红证（实跑，PR body 有全表）**：11 个变异各摘掉一条闸门 ⇒ 对应判据全红（例：删 `gate_machine` ⇒ 机器闸门那条红；删 `gate_release` ⇒ 5 条红；删 `gate_assert` ⇒ 3 条红；比值带写死 970~1030 ⇒ 单一来源那条红；把 `cut-release` 的 ref 读取退回裸 `rev-parse` ⇒ 顺带修的两条红；TOTAL 取首行 ⇒ 回读两条红；docs 删掉三步之一 ⇒ 文档那条红）。"
+      - "**边界（照实登记）**：没有执行任何真实上传 / 发布（部署机登录态不在研发机手上）：真通道行为（devtools 打印 `TOTAL` 的真实形态、`--key` 通道不打印 `TOTAL`）由**日志桩**覆盖；判不了「产物能不能跑起来」与微信后台的域名白名单 / 提审状态。机器闸门是**防误跑**、不是权限边界（它读的是人用的同一份 ssh 配置）。**类级元守卫未固化**：`git rev-parse <ref>` 缺 `--verify` 这一形态的跨仓扫描没做 ⇒ 登记为缺口（重启条件 = 再出现一次同族假读数）。"
+    skip_reason: "[backend-contract] 部署 / 发布契约判据（真 git 沙箱 + 桩 npm/npx + 真断言脚本经代理）：零网络、零真构建、零真上传、零 LLM，不进 agent-eval 冒烟"
+    merge_log: "2026-11-23 新增（issue #9069，用户 2026-11-23「不碰C端，先把B端做夯实」）。取号 = `python3 scripts/next_case_id.py MC` 现取（main ∪ 全部 open PR ∪ 本工作区）⇒ MC-344（原取 MC-343 与同日已合并的冒烟面用例撞号 ⇒ 重取）。同批落地：scripts/bmini-release.sh（编排层）、tests/unit_ci_workflows/test_bmini_release_one_command.py（23 条判据）、docs/deployment/bmini-experience-release.md（「三行命令」→「一条命令 + 底层三步仍在」）。顺带链内修：scripts/cut-release.sh 的 `git rev-parse <ref>` 缺 `--verify` ⇒ ref 不存在时把 **ref 名本身**打到 stdout（退出码 128 被 `|| true` 吞掉）⇒「发布线尚不存在」分支不可达、被误报成「发布线被旁路（origin/）」并再退 128。"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_bmini_release_one_command.py"
+      ci:
+        - pr-check.yml
+        - bmini-app.yml
+      verifies: []
+
+  - id: MC-346
+    legacy_id: ''
+    title: "冒烟双档「日常 → 测试机完整档；发版前 → 生产只读档一次」（issue #9082）：生产只跑只读子集、凭据只从环境变量读、判不了退 3"
+    domains:
+      - misc
+      - ci
+    tier: normal
+    tags:
+      - smoke
+      - production
+      - readonly-profile
+      - credential-hygiene
+      - red-proof
+    truths_ref: []
+    user_inputs:
+      # 单条（不是多轮对话用例）：本用例是**静态契约**判据，`user_inputs` 只承载需求出处。
+      # ⚠️ 拆成两条会被 `needs_precondition_assertion`（n_rounds>=2）读成「多轮用例」而要求前置断言
+      #    —— 本用例没有 agent 轮次，前置不成立这件事由判据自己的语义承担（见 data_checks）。
+      - "用户 2026-11-23（逐字）「我们是 ai native 公司，冒烟都需要 AI 跑」+「以后还是需要先在测试机器上做充分验证，只有要发布生产的时候才在发布前走一次生产环境的冒烟」⇒ `scripts/smoke-prod-ai.sh --env prod` 跑只读子集：缺 MIGAO_SMOKE_IDENTIFIER / MIGAO_SMOKE_PASSWORD ⇒ 退 3 并点名变量；假凭据 ⇒ 退 1 且只打 HTTP 状态与 message（不打印密码/token）"
+    expectations: []
+    data_checks:
+      - "判据 ①·**profile 每条 node id 真实存在**：AST 解 tests/smoke/** 的函数表；改名/删除后具名红（防只读档静默少跑）。执行点 = tests/unit_ci_workflows/test_smoke_prod_readonly_profile.py::test_profile_is_read_only_and_every_node_id_exists / ::test_renamed_node_id_turns_red"
+      - "判据 ②·**只读性（含 fixture 链）**：每条用例的函数体 + 它递归依赖的 fixture 里，不得对**非 auth 端点**发 post/put/delete/patch（`/api/auth/**` 放行）；路径非字面量一律判红（判不了不许当绿）。执行点 = 同文件 ::test_profile_is_read_only_and_every_node_id_exists"
+      - "判据 ③·**判别力自证（塞入必红）**：把 tests/smoke/test_04_ai_chat.py::TestAIChatSSE::test_create_session（POST /api/chat/sessions）塞进 profile 副本 ⇒ 判红且点名该用例与路径；现行 profile ⇒ 绿。执行点 = 同文件 ::test_injecting_a_write_case_turns_red"
+      - "判据 ④·**每条必须写 why / excluded 条目也必须存在 / P0 只读基线不许被静默删条目**。执行点 = 同文件 ::test_why_is_required / ::test_baseline_read_only_cases_are_not_silently_dropped"
+      - "判据 ⑤·**`--env prod` 不许挂 schedule**：静态扫 .github/workflows/**，凡带 `on.schedule` 且引用 `scripts/smoke-prod-ai.sh` / `--env prod` 的 ⇒ 具名红（「只在发版前跑一次」不能被定时器接管）。执行点 = 同文件 ::test_prod_gate_is_not_on_any_schedule"
+      - "判据 ⑥·**脚本三态 + 不泄漏凭据**：`bash -n` 通过且可执行；`--env prod` 缺凭据 ⇒ rc=3 且点名两个变量并指向 secret/export 出口；假凭据打本机 401 stub ⇒ rc=1、打印 HTTP 401 与 message、**密码与 token 一次都不出现**（零外网）。执行点 = 同文件 ::test_script_syntax_passes / ::test_prod_without_credentials_exits_3_and_names_the_variables / ::test_prod_login_failure_exits_1_and_never_leaks_password"
+      - "判据 ⑦·**单一来源 + 无默认凭据**：脚本必须引用 prod_readonly_profile.json（不许内联第二份清单）、可执行行里不许出现 `-m p0` 整档、MIGAO_SMOKE_* 不许有非空默认值、生产横幅文案必须在。执行点 = 同文件 ::test_script_uses_the_profile_as_the_single_source"
+    skip_reason: "[backend-contract] 纯静态 AST + 本机 stub 判据（零外网、零生产流量、零真短信、零 LLM），不进入 agent-eval 冒烟；真实生产只读整跑的读数写在 PR body（账号密码不入库）"
+    merge_log: "2026-11-23 新增（issue #9082）。取号 = python3 scripts/next_case_id.py MC 现取（main ∪ 全部 open PR ∪ 本工作区）⇒ MC-346。同批落地：scripts/smoke-prod-ai.sh（双档入口）、tests/smoke/prod_readonly_profile.json（只读档单一来源，19 条 = 17 passed + 2 skipped）、tests/smoke/README.md「生产只读冒烟（仅发版前一次）」节。红证：塞入 test_create_session ⇒ 具名红（/api/chat/sessions）；改名 node id ⇒ 红；缺凭据 ⇒ rc=3；401 stub ⇒ rc=1 且无密码泄漏。"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_smoke_prod_readonly_profile.py"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  # ==========================================================================
+  # MC-347（issue #9086，2026-11-23 用户批准）：「部署只认 release」此前只钉在 CI 侧
+  # （`deploy-prod.yml` 的「发布线纪律」步骤），主机上手工跑 `deploy/swas/deploy.sh` 能**整段绕过**它
+  # —— 实测 2026-11-23 11:32–11:39 那次绕过只更新了 admin-api（admin-web 还是两天前的镜像），
+  # 脚本自己的结论却是绿的。缺陷形态 = **闸门没覆盖到手敲那条路径**，而它不会自己变红。
+  # ==========================================================================
+  - id: MC-347
+    legacy_id: ""
+    title: "主机 deploy.sh 的发布线自检（手工路径也拦得住 release 之外的目标；判不了即拒绝 + 明面逃生口记账）"
+    domains:
+      - misc
+      - ci
+    tier: normal
+    tags:
+      - deploy
+      - release-line
+      - fail-closed
+      - nightly
+    truths_ref: []
+    # ⚠️ 真值暂缺：部署脚本的结构/编排不变式（非 LLM/业务真值），由 tests/unit_ci_workflows/ 单测验证。
+    user_inputs:
+      - "部署生产不要用 main 分支（只认 release）。但这个口径此前只有 CI 那条腿在判：有人在主机上直接敲 ./deploy.sh sha-xxxxxxx 就绕过去了（只更新了一半服务、零报错）。能不能让脚本自己也拦？"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "判据 1·**段存在且可静态定位**：`deploy/swas/deploy.sh` 必须有 `# >>> release-line-assert` / `# <<< release-line-assert` 成对标记（与 nginx 段的 `# >>> nginx-domain-assert` 同族）⇒ 判据据此精确切段。执行点 = tests/unit_ci_workflows/test_swas_deploy_release_line.py::test_section_exists_with_static_markers"
+      - "判据 2·**该段必须真的判**：段内必须有 `git merge-base --is-ancestor`（提交图祖先关系，不是字符串前缀/时间戳）、`git fetch` 取 `+refs/heads/release:refs/remotes/origin/release`、非祖先 `exit 2`、判不了 `exit 3`、逃生口 `ALLOW_UNVERIFIABLE_RELEASE` + `::warning::RELEASE-LINE=UNVERIFIED` + 追加 `release-ledger.jsonl`（`decision=unverified-release`，含 at/target/reason 三键）+ `git rev-list --count` 差多少提交 + `cut-release.sh` 指引。执行点 = 同文件 ::test_required_calls_present"
+      - "判据 3·**顺序（本单核心）**：该段的结束行号必须**小于**第一处**真实**部署动作（`registry_login` 调用 / `docker compose pull` / `docker compose up` / `docker build`）的行号 —— 检查晚于部署 = 没检查（那时容器已被换掉，日志里那句「拦住了」是假的）；锚点必须跳过注释与 `echo` 说明文字（脚本里确有 `echo \"恢复：… docker compose pull …\"` 这种文案，吃进去会让顺序判据恒真）。执行点 = 同文件 ::test_section_runs_before_any_deploy_action / ::test_order_anchor_really_skips_echo_and_comment_lines"
+      - "判据 4·**行为（抽段真跑，桩化 git/docker；不给脚本加测试专用钩子）**：① 目标 commit 是 release 祖先 ⇒ rc=0 + `RELEASE-LINE=OK target=<sha7> release=<sha7>` + 后续部署动作照常发生、不写台账；② 非祖先 ⇒ rc=2 + 打印两个 40 位 sha + 「N 个提交」+ `cut-release.sh` 指引 + **零** docker 写调用；③ 判不了（fetch 连续 3 次失败 / fetch 成功但拿不到 release ref / 追不到 target commit）⇒ rc=3 + **零** docker 写调用、不落账；④ 判不了 + `ALLOW_UNVERIFIABLE_RELEASE=1` ⇒ rc=0 + `::warning::` + 台账**恰好一行**且可 JSON 解析（`at` 是 UTC ISO8601）。另有参数面判据：`merge-base --is-ancestor` 收到的 target 是**完整 40 位 sha**、release 侧是 `refs/remotes/origin/release`（不许错位）。执行点 = 同文件 ::test_ancestor_passes_and_deploy_proceeds / ::test_non_ancestor_refuses_with_exit_2_and_no_docker_write / ::test_fetch_retries_three_times_then_refuses_with_exit_3 / ::test_unresolvable_release_ref_is_unverifiable / ::test_unresolvable_target_is_unverifiable / ::test_escape_hatch_continues_and_writes_ledger / ::test_merge_base_receives_target_and_release_ref"
+      - "判据 5·**注入式红证（实跑，四条，每次复原后必绿）**：① 把该段挪到 `docker compose up` 之后 ⇒ 顺序判据红；② 删掉 `exit 2` ⇒ 必填项判据红**且**非祖先场景实测 rc≠2、继续部署（正是要拦的形态）；③ 去掉逃生口的 `>> \"$RELEASE_LEDGER_FILE\"` ⇒ 必填项判据红**且**逃生口场景台账为空；④ `merge-base --is-ancestor` 换成 `git rev-parse` ⇒ 必填项判据红**且**非祖先被误放行（rc=0）。执行点 = 同文件 ::test_red_proof_1_section_after_deploy_is_red / ::test_red_proof_2_dropping_exit_2_is_red / ::test_red_proof_3_dropping_ledger_append_is_red / ::test_red_proof_4_is_ancestor_replaced_by_rev_parse_is_red"
+      - "**边界（照实登记）**：① **新检查从「下一次部署」起生效** —— 主机盘上跑的是旧脚本，脚本自同步（`# >>> deploy-selfsync`）先把同源脚本落到盘上再 `exec` 重入，才执行得到本段；手工跑旧脚本那一轮不受保护；② 生产机到 github.com:443 时通时不通（#4852 实测 `git clone --filter=tree:0` 超时 32s）⇒ 本段判不了就 **exit 3**（有意 fail-closed，不接受静默放行）；逃生口必须显式给且会落账；③ 不验「release 上的提交都过了 CI」也不验镜像是否存在（那是别的闸门/步骤的对象）；④ 既有执行式守卫（blue-green / no-downgrade / disk-recovery 等）通过共享桩 tests/unit_ci_workflows/deploy_release_line_stub.py 模拟「目标提交是 release 祖先」的正常形态 —— 桩补的是沙箱本来就该模拟的那一面，既有断言一字未改。"
+    skip_reason: "[backend-contract] 部署脚本结构/编排判据（抽段真跑 + 桩化 git/docker）：零网络、零真部署、零 LLM，不进 agent-eval 冒烟"
+    merge_log: "2026-11-23 新增（issue #9086，用户 2026-11-23 20:45 批准「即使有人绕过 prod-release.sh 直接敲 deploy.sh 也拦得住」）。取号 = `python3 scripts/next_case_id.py MC` 现取 ⇒ MC-347。同批落地：deploy/swas/deploy.sh 的 1.0.1 段（发布线自检 + 三态 + 逃生口台账）、tests/unit_ci_workflows/test_swas_deploy_release_line.py（15 条判据，含 4 条注入式红证）、tests/unit_ci_workflows/deploy_release_line_stub.py（既有 8 个执行式沙箱的 git 桩）、docs/deployment/release-branch.md 的「手工路径也有判据」一节。"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_swas_deploy_release_line.py"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  - id: MC-349
+    legacy_id: ""
+    title: "生产发布唯一入口在部署机（与 GitHub 解耦）：只读盘点 / 默认 dry-run / 发后同源自检 / 切换盲区度量"
+    domains:
+      - misc
+      - deploy
+      - ci
+    tier: normal
+    tags:
+      - deploy
+      - release
+      - prod
+      - one-command
+      - host-gate
+      - release-line
+      - blindspot
+      - red-proof
+    truths_ref: []
+    # 真值缺省说明：这是**部署契约**（不是 LLM / 业务真值）—— 判据落在**真 git 沙箱**（本地 bare origin +
+      # 检出，发布线/侧分支的相对关系按用例摆位）、`aliyun` 云助手桩（记录每次 argv、按命令内容回放输出）、
+      # 443 `curl` 桩上：零网络、零真发布、零云调用、零 LLM。
+    precondition:
+      - "2026-11-23 用户裁定逐字：「为什么部署生产环境还要依赖 github 的 ci？不可以直接走部署机吗？**生产环境需要和 github 的能力解耦**」；追加裁定：「另外要考虑未来做集群部署时如何不影响用户，让用户无感」「磁盘先不用管，未来要考虑做集群的磁盘告警，可以依赖阿里云的能力」。"
+      - "通道事实：生产实例（SWAS 轻量 `c0080f77c8e24ad99f3eb3ebff753c18` / `8.136.134.44` / `cn-hangzhou`）**22 端口只对办公出口开放**（部署机连不上）、**443 通**；凭证只在**部署机本地** `~/.aliyun/config.json` 的 `prod` profile ⇒ 运维通道 = OpenAPI 云助手 `swas-open run-command` / `describe-invocation-result`（部署机已装 `~/bin/aliyun` v3.5.4 arm64 + `aliyun-cli-swas-open`）。GitHub runner 拿不到现场。"
+      - "通道三坑（写进 `scripts/lib/prod-swas-run.sh` 头部）：`--command-content` 是**明文**（给 base64 会被当成一个超长文件名 ⇒ 远端 `exit 127`）；回读 `Output` 是 **base64**；返回结构有 `InvocationResult` / `InvocationResults.InvocationResult` 两种形态。"
+      - "远端执行体是**盘上既有** `/opt/migao-deploy/deploy.sh`（严格蓝绿，issue #4785：green 到第二端口 → 同一份健康判据 → 通过才替换正式容器；有意不走 nginx upstream 切换，切换 = 重建正式容器 + `nginx -s reload`）。本仓**不重写**部署逻辑、**不复制**内存预检。"
+      - "发布线口径不变：目标版本必须是 `origin/release` 的祖先（`release` 上有 `main` 没有的提交**允许**并记账；`main` 领先 `release` 的部分**报数**、本次不发）。"
+    user_inputs:
+      - "生产今天刚**发成半截**（11:32–11:39 只更新 admin-api：`sha-26ff9f7` 起于 11-23 11:39，而 `admin-web=sha-caf01e4` 停在 11-21 22:52、`ai-agent=sha-0dced39` 停在 11-22 18:25）；而 GitHub 那条腿先天拿不到现场。怎么把「生产发布」收敛成**部署机上的唯一入口**，并把「同源」与「切换无感」变成会红 / 会量的判据？"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "判据 1·**只读白名单**：`prod-inspect.sh` 的远端载荷逐条拆开（`sec <名字> '<命令>'`，落在 `# READONLY-PAYLOAD-BEGIN/END` 之间），每个管道段**首词必须在白名单**内，`docker` 只许 `ps` / `system`，载荷里不许出现重定向（写面）。执行点 = tests/unit_ci_workflows/test_prod_release_decoupled.py::test_inspect_payload_is_readonly_whitelisted"
+      - "判据 2·**发布脚本不得自带写面**：`prod-release.sh` 里不许出现 `docker restart/rm/stop/kill/prune`、`systemctl start/stop/restart/reload`、`rm -rf`、`nginx -s reload`、`docker compose up/down`、`docker build` —— 发布只能通过盘上 `deploy.sh`；出现 ⇒ 判红**并点名行号**。执行点 = 同文件 ::test_release_script_has_no_write_verbs"
+      - "判据 3·**`--apply` 闸门（静态 + 行为）**：dry-run 的出口（`DRY-RUN=OK`）必须排在真发入口之前（照行号判）＋ 有 `$APPLY` 守卫；行为桩 = `aliyun` 桩记录每次 argv，实跑 `--dry-run` ⇒ **0 次 run-command**、不写台账、不出现 `SWITCH-BLINDSPOT`。执行点 = 同文件 ::test_apply_gate_is_static / ::test_dry_run_never_calls_run_command / ::test_dry_run_does_not_start_the_blindspot_probe"
+      - "判据 4·**机器闸门**：本机身份 == `ssh -G migao-deploy` 的 `HostName`（**禁写死 IP**）；非部署机 ⇒ 退 **1** + 三出口 + **0 次 run-command**；读数拿不到 ⇒ 退 **3**；身份相等 ⇒ `--host-assert` 退 0 且零副作用。执行点 = 同文件 ::test_machine_gate_refuses_off_the_deploy_box / ::test_machine_gate_is_undecidable_when_the_reading_is_unavailable / ::test_host_assert_passes_on_the_deploy_box"
+      - "判据 5·**版本闸门（三态，本地 bare 仓不真连网）**：侧分支上的提交（不是 `origin/release` 祖先）⇒ 退 **1** 具名 + 打印 `release..target` 的提交；`origin/release` 上的提交 ⇒ 通过并报「main 领先 N 个提交（本次不发）」；取不到 origin ⇒ 退 **3**。执行点 = 同文件 ::test_version_gate_refuses_a_sha_not_on_the_release_line / ::test_version_gate_accepts_a_commit_on_the_release_line / ::test_version_gate_is_undecidable_when_origin_is_unreachable"
+      - "判据 6·**发后同源自检 + 台账**：全桩 happy path ⇒ 退 0、三服务同源、`SWITCH-BLINDSPOT failures=0 max_gap_ms=<n>`、恰好一行可粘贴 `PROD-RELEASE rc=0 version=… api=… web=… ai=… at=… operator=…`、台账**恰好追加一次**（`>>`，不是覆写）；自检不同源（admin-web 停在 `caf01e4`）⇒ 退 **1**、**点名 web**、写「≠ 目标」、台账**0 次**。执行点 = 同文件 ::test_apply_happy_path_reports_blindspot_and_appends_the_ledger_once / ::test_self_check_names_the_mismatched_service_and_skips_the_ledger"
+      - "判据 7·**切换盲区（无感发布的度量）**：`curl` 桩每 2 次给一次 `000` ⇒ 打印 `SWITCH-BLINDSPOT failures>0` + `::warning::`，**但**发布整体仍退 0（改造 `deploy.sh` 不在本包范围）；未配置 `MIGAO_PROD_SSE_PROBE_URL` ⇒ 必须打印 `SSE-PROBE=SKIPPED`（不假装在探）。执行点 = 同文件 ::test_blindspot_reports_failures_without_failing_the_release"
+      - "判据 8·**`deploy.sh --help` 现读**：`--help` 里没有版本参数 ⇒ 退 **3** + 打印原文片段（不猜）；`--help` 给 `--ref` ⇒ 真发命令里就用 `--ref`（证明跟随而非写死）。执行点 = 同文件 ::test_missing_help_is_undecidable / ::test_version_flag_is_read_from_help_not_hardcoded"
+      - "判据 9·**只读盘点三态**：全段 rc=0 ⇒ `READONLY-INSPECT=OK` 退 0；某段失败 ⇒ `INCOMPLETE failed=[…]` 退 1；某段**缺失**（回读被截断）⇒ `INCOMPLETE missing=[…]` 退 1；CLI 缺 ⇒ 退 **3** + 出口。容量读数（`df`/`free`/`docker system df`/`uptime`）**只作信息**、不参与 rc。执行点 = 同文件 ::test_inspect_reports_ok / ::test_inspect_reports_a_failed_section / ::test_inspect_reports_a_missing_section / ::test_inspect_is_undecidable_without_the_cli"
+      - "判据 10·**文档接线**：`docs/deployment/production-release.md` 必须写清「为什么与 GitHub 解耦（22 / 443 / 凭证在部署机）」「inspect / dry-run / apply 怎么跑」「闸门与自检含义」「失败怎么读」「无感发布的现状与缺口（四条：nginx 服务名解析 + 优雅退出未验证 + DB expand/contract + 集群还需要的东西）」「资源告警走阿里云云监控」「`deploy-prod.yml` 降级为备用」。执行点 = 同文件 ::test_docs_cover_decoupling_gates_and_the_seamless_boundary / ::test_scripts_are_executable_and_parse"
+      - "**注入式红证（实跑，PR body 有全表）**：12 个变异各摘掉一道闸门 ⇒ 对应判据全红（机器闸门放行 / 发布线闸门恒真 / dry-run 继续真发 / 版本参数写死 / 自检不同源也往下走 / 盲区读数不打印 / 成功时不打印记录行 / 台账追加两次 / 发布脚本加 `docker restart` / 盘点载荷加 `rm -rf` / 缺失段不报 / 通道判不了当 0（3 写成 1） / dry-run 偷发 run-command）。"
+      - "**边界（照实登记）**：没有执行任何真实 `--apply`（云凭证与生产现场都在部署机上）；`InvocationResults.InvocationResult` 那种返回形态由库的解析分支承担、本文件只覆盖 `InvocationResult`；判不了盘上 `deploy.sh --help` 的真实参数面（脚本**现读**，读不到退 3）；`SWITCH-BLINDSPOT` 是**度量**不是承诺；SSE 探针需显式端点（不给 ⇒ `SKIPPED` 登记为缺口）。"
+    skip_reason: "[backend-contract] 部署 / 发布契约判据（真 git 沙箱 + 云助手指令桩 + 443 读数桩）：零网络、零真发布、零云调用、零 LLM，不进 agent-eval 冒烟"
+    merge_log: "2026-11-23 新增（issue #9085，用户 2026-11-23「生产环境需要和 github 的能力解耦」「现在开工」「集群无感」「磁盘先不用管」）。取号 = `python3 scripts/next_case_id.py MC` 现取（main ∪ 全部 open PR ∪ 本工作区）⇒ **MC-349**（取号撞号史：MC-346 与 #9083 撞、MC-347 与 #9089 撞、MC-348 被在飞 #9087 占；每次都用 `scripts/next_case_id.py MC` 重取）。同批落地：scripts/prod-inspect.sh（只读盘点）、scripts/prod-release.sh（生产发布唯一入口）、scripts/lib/prod-swas-run.sh（云助手通道唯一实现）、docs/deployment/production-release.md、tests/unit_ci_workflows/test_prod_release_decoupled.py（22 条判据）。现场证据：2026-11-23 11:32–11:39 的「只更新 admin-api 的手工发布」⇒ 三服务身份不自洽（关联 #9075）。"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_prod_release_decoupled.py"
+      ci:
+        - pr-check.yml
+      verifies: []
+  - id: MC-348
+    legacy_id: ""
+    title: "零停机发布 ADR 守卫：M1 六项 / M2 五项关键字必须在各自小节，事实断言（端口 / proxy_pass / uploads / redis / graceful「未配置」）与真实部署配置一致，删项或改端口即红"
+    domains:
+      - misc
+      - ci
+      - deploy
+    tier: normal
+    tags:
+      - deploy
+      - zero-downtime
+      - adr
+      - doc-contract
+      - red-proof
+    truths_ref: []
+    # 真值缺省说明：这是**部署契约 + 设计文档一致性**（不是 LLM / 业务真值）—— 纯静态读文本，
+    # 零网络、零部署、零 LLM。
+    precondition:
+      - "docs/deployment/zero-downtime-release.md 是本单交付的设计 ADR；事实侧来源 = deploy/swas/docker-compose.yml（uploads 卷、4 个服务键、无 redis）、deploy/swas/docker-compose.bluegreen.yml（第二端口默认值）、deploy/swas/deploy.sh（BG_*_PORT 默认值、切换动作）、deploy/swas/nginx.conf（proxy_pass 服务名、无 upstream 块）、backend/admin-api/src/main/resources/application.yml 与 backend/ai-agent-service/Dockerfile（优雅退出当前未配置）。"
+      - "用户裁定（2026-11-23 20:39）「另外要考虑未来做集群部署时如何不影响用户，让用户无感」；20:43 追加「磁盘先不用管，未来要考虑做集群的磁盘告警，可以依赖阿里云的能力」⇒ ADR 的资源面告警写「交给阿里云云监控、不自建采集」，且指标名未核对到即标「待核对」。"
+    user_inputs:
+      - "未来做集群部署时，怎么保证加机器 / 滚动升级期间用户无感？现在的蓝绿只是「先验证新镜像能起」，成功路径仍然是重建正式容器 + reload，用户仍会撞上秒级窗口；而 2026-11-23 还出现过「只更新了 admin-api、admin-web 停在两天前」的半截发布。"
+    expectations: []
+    data_checks:
+      - "判据 1·**M1 六项各自小节 + 关键字**（缺一项即红、点名是哪一项哪个关键字）：M1-a 含 upstream / nginx -s reload / `proxy_pass http://admin-api:8080` / 「nginx.conf 没有 upstream 块」；M1-b 含 `server.shutdown=graceful` / `spring.lifecycle.timeout-per-shutdown-phase=30s` / `--timeout-graceful-shutdown` / 「未配置」；M1-c 含 `/actuator/health/readiness` 与 `/actuator/health/liveness`；M1-d 含 `Last-Event-ID` 与 drain；M1-e 含 expand / contract / 「不得与发版同批」；M1-f 含 `EFFECTIVE_TAG` / `/api/version` / 「同源」。执行点 = tests/unit_ci_workflows/test_zero_downtime_release_adr.py::test_each_milestone_item_has_its_keywords（参数化 6+5 项）+ ::test_all_items_are_green_together"
+      - "判据 2·**M2 五项各自小节 + 关键字**：M2-a 含 uploads / OSS / redis / 本机容器 / 「compose 未定义 redis」/ 会话 / JWT / 单例锁；M2-b 含 SLB / 健康检查 / 灰度 / connection-drain；M2-c 含 `max_connections` / `maximum-pool-size` / 算式；M2-d 含 CloudMonitor / 待核对 / 不自建采集；M2-e 含 影子 / 灰度 / 回退点。执行点 = 同文件 ::test_each_milestone_item_has_its_keywords[M2-*]"
+      - "判据 3·**端口三方一致**：第二端口 18080 / 18000 / 13001 必须同时等于 compose.bluegreen 的 `${BG_*_PORT:-…}` 默认值、deploy.sh 的 `BG_*_PORT=${BG_*_PORT:-…}` 默认值、ADR 的 M1-a 读数 —— 任一漂移即红并点名「配置=… / 文档=… / 多出哪一项」。执行点 = 同文件 ::test_second_ports_match_compose_and_deploy_defaults + ::test_reverse_drift_config_port_change_without_doc_update_goes_red（反向：只改配置不改文档 ⇒ 红）"
+      - "判据 4·**proxy_pass / upstream 事实**：nginx.conf 里存在逐字 `proxy_pass http://admin-api:8080` 且全文件无 `upstream`；ADR 两处断言都写了 ⇒ 三面同时成立才绿；nginx 一旦改成 upstream 而 ADR 未同步 ⇒ 红并指名「ADR 的 M1-a 现状断言已过期」。执行点 = 同文件 ::test_proxy_pass_and_no_upstream_claims_match_nginx"
+      - "判据 5·**uploads 宿主路径**：compose 的 volumes 里存在逐字 `/opt/migao-deploy/uploads:/app/uploads`，且 ADR 的 M2-a 点明该路径（外置对象）。执行点 = 同文件 ::test_uploads_host_path_claim_matches_compose"
+      - "判据 6·**redis 承载面**：仓库 compose 的顶层服务键恰好 {admin-api, ai-agent, admin-web, nginx}（redis 不在其中），且 ADR 写明「redis 是本机容器」+「compose 未定义 redis」；compose 里出现 redis 服务 ⇒ 红（ADR 的现状断言过期）。执行点 = 同文件 ::test_redis_is_a_host_container_and_not_in_repo_compose"
+      - "判据 7·**「未配置」是机械事实**：ADR 的 M1-b 标注「未配置」，且 application.yml 无 server.shutdown / timeout-per-shutdown-phase、ai-agent Dockerfile 无 --timeout-graceful-shutdown；一旦仓内真的配上而 ADR 不同步 ⇒ 红并列出漂移点（配置好后把 ADR 改成「已配置 + 位置 + 实测」即转绿）。执行点 = 同文件 ::test_graceful_shutdown_is_still_unconfigured_as_the_adr_claims"
+      - "**注入式红证（实跑，PR body 有全表）**：① 删 M1 任一小节 ⇒ 对应项红（6 项各自可单独红）；② 把 ADR 的 18080 改成 18081 ⇒ 端口判据红且点名 18080/18081；③ 删 M2 任一小节 ⇒ 对应项红；④ 反向漂移：只把 compose 的 BG_ADMIN_API_PORT 默认值改 18081、ADR 不动 ⇒ 红。注入前都自证 `mutated != original`（否则显式失败，防「注入没落上 ⇒ 判据空转」）。执行点 = 同文件 ::test_injection_dropping_any_m1_item_goes_red / ::test_injection_port_18081_goes_red / ::test_injection_dropping_any_m2_item_goes_red / ::test_reverse_drift_config_port_change_without_doc_update_goes_red"
+      - "**边界（照实登记）**：判据只读文本 —— 证「设计文档与仓库配置一致」，**不证**线上零停机（要 M1 演练 + M2 灰度读数）；ADR 里的一次性现场读数（磁盘/内存/Swap/11-23 半截发布事故）无 durable 交叉载体，不在判据射程内。"
+    skip_reason: "[backend-contract] 部署契约 / 设计文档一致性判据（纯静态文本 + 注入式红证）：零网络、零部署、零 LLM，不进 agent-eval 冒烟"
+    merge_log: "2026-11-23 新增（issue #9084，用户 20:39 裁定「另外要考虑未来做集群部署时如何不影响用户，让用户无感」）。取号：原取 MC-346，与已合入的 #9083（冒烟双档）撞号；MC-347 已被在飞 PR #9088/#9089 占用 ⇒ 按 #6017 / 后合入者让号口径**让号到 MC-348**，并落 claim（.github/cases/claims/9087-MC-348.json）。同批落地：docs/deployment/zero-downtime-release.md（M1 六项 / M2 五项 / 取舍与不做什么 / 未固化清单）、tests/unit_ci_workflows/test_zero_downtime_release_adr.py（22 条判据）。增量口径：只做「零停机切换模型 + 单机→集群迁移路径」，不重复 docs/deployment/cluster-readiness-audit.md 的代码级 P0/P1 取证。"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_zero_downtime_release_adr.py"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  - id: MC-350
+    legacy_id: ""
+    title: "生产发布唯一入口在部署机（与 GitHub 解耦）：只读盘点 / 默认 dry-run / 发后同源自检 / 切换盲区度量"
+    domains:
+      - misc
+      - deploy
+      - ci
+    tier: normal
+    tags:
+      - deploy
+      - release
+      - prod
+      - one-command
+      - host-gate
+      - release-line
+      - blindspot
+      - red-proof
+    truths_ref: []
+    # 真值缺省说明：这是**部署契约**（不是 LLM / 业务真值）—— 判据落在**真 git 沙箱**（本地 bare origin +
+      # 检出，发布线/侧分支的相对关系按用例摆位）、`aliyun` 云助手桩（记录每次 argv、按命令内容回放输出）、
+      # 443 `curl` 桩上：零网络、零真发布、零云调用、零 LLM。
+    precondition:
+      - "2026-11-23 用户裁定逐字：「为什么部署生产环境还要依赖 github 的 ci？不可以直接走部署机吗？**生产环境需要和 github 的能力解耦**」；追加裁定：「另外要考虑未来做集群部署时如何不影响用户，让用户无感」「磁盘先不用管，未来要考虑做集群的磁盘告警，可以依赖阿里云的能力」。"
+      - "通道事实：生产实例（SWAS 轻量 `c0080f77c8e24ad99f3eb3ebff753c18` / `8.136.134.44` / `cn-hangzhou`）**22 端口只对办公出口开放**（部署机连不上）、**443 通**；凭证只在**部署机本地** `~/.aliyun/config.json` 的 `prod` profile ⇒ 运维通道 = OpenAPI 云助手 `swas-open run-command` / `describe-invocation-result`（部署机已装 `~/bin/aliyun` v3.5.4 arm64 + `aliyun-cli-swas-open`）。GitHub runner 拿不到现场。"
+      - "通道三坑（写进 `scripts/lib/prod-swas-run.sh` 头部）：`--command-content` 是**明文**（给 base64 会被当成一个超长文件名 ⇒ 远端 `exit 127`）；回读 `Output` 是 **base64**；返回结构有 `InvocationResult` / `InvocationResults.InvocationResult` 两种形态。"
+      - "远端执行体是**盘上既有** `/opt/migao-deploy/deploy.sh`（严格蓝绿，issue #4785：green 到第二端口 → 同一份健康判据 → 通过才替换正式容器；有意不走 nginx upstream 切换，切换 = 重建正式容器 + `nginx -s reload`）。本仓**不重写**部署逻辑、**不复制**内存预检。"
+      - "发布线口径不变：目标版本必须是 `origin/release` 的祖先（`release` 上有 `main` 没有的提交**允许**并记账；`main` 领先 `release` 的部分**报数**、本次不发）。"
+    user_inputs:
+      - "生产今天刚**发成半截**（11:32–11:39 只更新 admin-api：`sha-26ff9f7` 起于 11-23 11:39，而 `admin-web=sha-caf01e4` 停在 11-21 22:52、`ai-agent=sha-0dced39` 停在 11-22 18:25）；而 GitHub 那条腿先天拿不到现场。怎么把「生产发布」收敛成**部署机上的唯一入口**，并把「同源」与「切换无感」变成会红 / 会量的判据？"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "判据 1·**只读白名单**：`prod-inspect.sh` 的远端载荷逐条拆开（`sec <名字> '<命令>'`，落在 `# READONLY-PAYLOAD-BEGIN/END` 之间），每个管道段**首词必须在白名单**内，`docker` 只许 `ps` / `system`，载荷里不许出现重定向（写面）。执行点 = tests/unit_ci_workflows/test_prod_release_decoupled.py::test_inspect_payload_is_readonly_whitelisted"
+      - "判据 2·**发布脚本不得自带写面**：`prod-release.sh` 里不许出现 `docker restart/rm/stop/kill/prune`、`systemctl start/stop/restart/reload`、`rm -rf`、`nginx -s reload`、`docker compose up/down`、`docker build` —— 发布只能通过盘上 `deploy.sh`；出现 ⇒ 判红**并点名行号**。执行点 = 同文件 ::test_release_script_has_no_write_verbs"
+      - "判据 3·**`--apply` 闸门（静态 + 行为）**：dry-run 的出口（`DRY-RUN=OK`）必须排在真发入口之前（照行号判）＋ 有 `$APPLY` 守卫；行为桩 = `aliyun` 桩记录每次 argv，实跑 `--dry-run` ⇒ **0 次 run-command**、不写台账、不出现 `SWITCH-BLINDSPOT`。执行点 = 同文件 ::test_apply_gate_is_static / ::test_dry_run_never_calls_run_command / ::test_dry_run_does_not_start_the_blindspot_probe"
+      - "判据 4·**机器闸门**：本机身份 == `ssh -G migao-deploy` 的 `HostName`（**禁写死 IP**）；非部署机 ⇒ 退 **1** + 三出口 + **0 次 run-command**；读数拿不到 ⇒ 退 **3**；身份相等 ⇒ `--host-assert` 退 0 且零副作用。执行点 = 同文件 ::test_machine_gate_refuses_off_the_deploy_box / ::test_machine_gate_is_undecidable_when_the_reading_is_unavailable / ::test_host_assert_passes_on_the_deploy_box"
+      - "判据 5·**版本闸门（三态，本地 bare 仓不真连网）**：侧分支上的提交（不是 `origin/release` 祖先）⇒ 退 **1** 具名 + 打印 `release..target` 的提交；`origin/release` 上的提交 ⇒ 通过并报「main 领先 N 个提交（本次不发）」；取不到 origin ⇒ 退 **3**。执行点 = 同文件 ::test_version_gate_refuses_a_sha_not_on_the_release_line / ::test_version_gate_accepts_a_commit_on_the_release_line / ::test_version_gate_is_undecidable_when_origin_is_unreachable"
+      - "判据 6·**发后同源自检 + 台账**：全桩 happy path ⇒ 退 0、三服务同源、`SWITCH-BLINDSPOT failures=0 max_gap_ms=<n>`、恰好一行可粘贴 `PROD-RELEASE rc=0 version=… api=… web=… ai=… at=… operator=…`、台账**恰好追加一次**（`>>`，不是覆写）；自检不同源（admin-web 停在 `caf01e4`）⇒ 退 **1**、**点名 web**、写「≠ 目标」、台账**0 次**。执行点 = 同文件 ::test_apply_happy_path_reports_blindspot_and_appends_the_ledger_once / ::test_self_check_names_the_mismatched_service_and_skips_the_ledger"
+      - "判据 7·**切换盲区（无感发布的度量）**：`curl` 桩每 2 次给一次 `000` ⇒ 打印 `SWITCH-BLINDSPOT failures>0` + `::warning::`，**但**发布整体仍退 0（改造 `deploy.sh` 不在本包范围）；未配置 `MIGAO_PROD_SSE_PROBE_URL` ⇒ 必须打印 `SSE-PROBE=SKIPPED`（不假装在探）。执行点 = 同文件 ::test_blindspot_reports_failures_without_failing_the_release"
+      - "判据 8·**`deploy.sh --help` 现读**：`--help` 里没有版本参数 ⇒ 退 **3** + 打印原文片段（不猜）；`--help` 给 `--ref` ⇒ 真发命令里就用 `--ref`（证明跟随而非写死）。执行点 = 同文件 ::test_missing_help_is_undecidable / ::test_version_flag_is_read_from_help_not_hardcoded"
+      - "判据 9·**只读盘点三态**：全段 rc=0 ⇒ `READONLY-INSPECT=OK` 退 0；某段失败 ⇒ `INCOMPLETE failed=[…]` 退 1；某段**缺失**（回读被截断）⇒ `INCOMPLETE missing=[…]` 退 1；CLI 缺 ⇒ 退 **3** + 出口。容量读数（`df`/`free`/`docker system df`/`uptime`）**只作信息**、不参与 rc。执行点 = 同文件 ::test_inspect_reports_ok / ::test_inspect_reports_a_failed_section / ::test_inspect_reports_a_missing_section / ::test_inspect_is_undecidable_without_the_cli"
+      - "判据 10·**文档接线**：`docs/deployment/production-release.md` 必须写清「为什么与 GitHub 解耦（22 / 443 / 凭证在部署机）」「inspect / dry-run / apply 怎么跑」「闸门与自检含义」「失败怎么读」「无感发布的现状与缺口（四条：nginx 服务名解析 + 优雅退出未验证 + DB expand/contract + 集群还需要的东西）」「资源告警走阿里云云监控」「`deploy-prod.yml` 降级为备用」。执行点 = 同文件 ::test_docs_cover_decoupling_gates_and_the_seamless_boundary / ::test_scripts_are_executable_and_parse"
+      - "**注入式红证（实跑，PR body 有全表）**：12 个变异各摘掉一道闸门 ⇒ 对应判据全红（机器闸门放行 / 发布线闸门恒真 / dry-run 继续真发 / 版本参数写死 / 自检不同源也往下走 / 盲区读数不打印 / 成功时不打印记录行 / 台账追加两次 / 发布脚本加 `docker restart` / 盘点载荷加 `rm -rf` / 缺失段不报 / 通道判不了当 0（3 写成 1） / dry-run 偷发 run-command）。"
+      - "**边界（照实登记）**：没有执行任何真实 `--apply`（云凭证与生产现场都在部署机上）；`InvocationResults.InvocationResult` 那种返回形态由库的解析分支承担、本文件只覆盖 `InvocationResult`；判不了盘上 `deploy.sh --help` 的真实参数面（脚本**现读**，读不到退 3）；`SWITCH-BLINDSPOT` 是**度量**不是承诺；SSE 探针需显式端点（不给 ⇒ `SKIPPED` 登记为缺口）。"
+      - "判据 11·**云助手返回形态必须读成成功**（2026-11-23 22:45 部署机真跑出来的缺陷）：真机形态 = 单数 `InvocationResult` dict + 状态键 **`InvocationStatus`**；另一种 = `InvocationResults.InvocationResult` list；两种都必须判**成功**（`Success` / `Success(inferred)`）。红因实证：只认 `InvokeStatus`/`Status` ⇒ 明明 `InvocationStatus=Success` 却读成「未知」⇒ 轮询到超时退 3。执行点 = tests/unit_ci_workflows/test_prod_release_decoupled.py::test_poll_reads_the_real_shapes_as_success（singular / plural / inferred 三面）"
+      - "判据 12·**判不了必须说清为什么**：轮询超时 ⇒ 退 **3** 且打印**最后一轮返回体前 400 字节**；返回体里既无状态键也无输出 ⇒ 同样退 3 + 片段；`InvocationStatus=Failed` 但没给 `ExitCode` ⇒ **不许读成 0**（失败判成成功比判不了更坏）。执行点 = 同文件 ::test_poll_timeout_prints_the_response_body_excerpt / ::test_missing_status_fields_is_undecidable_and_prints_the_body / ::test_failed_status_without_exit_code_is_not_read_as_success"
+      - "判据 13·**端到端真机**：部署机（`ssh migao-deploy`）实跑 `scripts/prod-inspect.sh` ⇒ `READONLY-INSPECT=OK sections=12`，并把 `docker ps` 三服务与 `df -h /` 读数贴进 PR body（这条是本交付的**门面**，桩全绿不能替代它）。"
+    skip_reason: "[backend-contract] 部署 / 发布契约判据（真 git 沙箱 + 云助手指令桩 + 443 读数桩）：零网络、零真发布、零云调用、零 LLM，不进 agent-eval 冒烟"
+    merge_log: "2026-11-23 新增（issue #9085，用户 2026-11-23「生产环境需要和 github 的能力解耦」「现在开工」「集群无感」「磁盘先不用管」）。取号 = `python3 scripts/next_case_id.py MC` 现取（main ∪ 全部 open PR ∪ 本工作区）⇒ **MC-350**（#9088 落地时是 MC-349；本轮修复是**新 PR**的新用例 id，重取 = `scripts/next_case_id.py MC`）。同批落地：scripts/prod-inspect.sh（只读盘点）、scripts/prod-release.sh（生产发布唯一入口）、scripts/lib/prod-swas-run.sh（云助手通道唯一实现）、docs/deployment/production-release.md、tests/unit_ci_workflows/test_prod_release_decoupled.py（22 条判据）。现场证据：2026-11-23 11:32–11:39 的「只更新 admin-api 的手工发布」⇒ 三服务身份不自洽（关联 #9075）。"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_prod_release_decoupled.py"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  - id: MC-351
+    legacy_id: ""
+    title: "M1 零停机切换：nginx upstream 摘挂（成员=容器名:容器内端口、稳态只写一条、发布期只改成员+nginx -t+reload、drain 后才重建正式容器）+ 应用优雅退出（Spring graceful/30s、uvicorn 200s、stop_grace_period 45s/210s）"
+    domains:
+      - misc
+      - deploy
+      - ci
+    tier: normal
+    tags:
+      - deploy
+      - zero-downtime
+      - nginx
+      - upstream
+      - graceful-shutdown
+      - red-proof
+      - m1
+    truths_ref: []
+    # 真值缺省说明：这是**部署契约**（不是 LLM / 业务真值）—— 判据落在仓库文本 + 真跑改写器上：
+      # 零网络、零 docker、零真发布、零 LLM。
+    precondition:
+      - "issue #9098 标题「M1 零停机：nginx upstream 摘挂 + 应用优雅退出」；ADR = docs/deployment/zero-downtime-release.md（M1-a / M1-b，MC-348 的守卫）。"
+      - "改动前的形态（已实测）：`deploy/swas/nginx.conf` 的 `proxy_pass http://admin-api:8080` 直连 compose DNS 服务名（全文件 upstream 0 次）⇒ 发布期 `docker compose up -d --no-deps <svc>` 重建容器 = 换 IP ⇒ 实测 502 窗口 90s；严格蓝绿（#4785）只把**失败路径**打到 0。"
+      - "真机事实：生产/测试的 nginx 跑在容器 `migao-deploy-nginx-1` 里，宿主没有 nginx 二进制、没有 `/etc/nginx` ⇒ 一切 `nginx -t` / `nginx -s reload` 必须经 `docker compose exec -T nginx`。"
+      - "nginx 的硬约束（ADR 未写、实测常识）：配置**解析期**就对 upstream 里的服务名做 DNS 解析，green 容器没在跑时写它的名字 ⇒ `[emerg] host not found in upstream` ⇒ 全站起不来 ⇒ **稳态只能写现行实例一条成员**，green 成员只在发布期写入并由行为判据证明「切换后恰两个后端」。"
+    user_inputs:
+      - "把生产发布从「有 502 窗口」做到「用户无感」：M1-a（nginx 改 upstream 摘挂，正式容器不在窗口期重建）+ M1-b（admin-api / ai-agent 优雅退出）必须**同批**交付，并给出会红的判据与红证。"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "判据 1·**upstream 形态**：`deploy/swas/nginx.conf` 有三个 upstream（`migao_admin_api` / `migao_ai_agent` / `migao_admin_web`），非 backup 成员恰 1 个且是**容器名:容器内端口**（8080/8000/3001，不是宿主 18080/18000/13001）；`proxy_pass` 8 处全部指 upstream 名；upstream 段在第一个 `server {` 之前（http 上下文）；`worker_shutdown_timeout` ≥ 180s。执行点 = tests/unit_ci_workflows/test_zero_downtime_m1_cutover.py::test_upstream_shape_is_add_remove_not_direct_dns"
+      - "判据 2·**渲染不退化**：`MIGAO_PUBLIC_DOMAIN` 的整文件 `sed` 渲染后 `server_name api.<站点域>;` 仍在、无 `migaozn.com` 残留、upstream 块与成员逐字不变（渲染语义 = deploy.sh 里那条 sed，判据先确认它还在）。执行点 = 同文件 ::test_domain_rendering_keeps_server_name_and_upstreams"
+      - "判据 3·**切换顺序（点名行号）**：green 起 → green 健康 → 只切 upstream → 入口 200 断言 → drain → **现在才**重建正式容器 → 切回正式容器；`up -d --no-deps \"$svc\"` 在切换循环里恰 1 次；切换失败分支 `exit 1` 且**不重建**；切回失败分支 `exit 1` 且**不删 green**；回落路径必须喊「不是零停机」。执行点 = 同文件 ::test_cutover_sequence_switches_upstream_before_recreating_the_formal_container"
+      - "判据 3b·**切换面不许重建/restart**：`nginx_upstream_switch()` 必须含 `nginx -t` / `nginx -s reload` / `cp -f` 备份 / `docker compose ps -q nginx` 三态出口，且出现 `up -d` 或 `restart` 即红。执行点 = 同文件 ::test_switch_function_only_reloads_and_restores_on_failure"
+      - "判据 4·**改写器行为式**（真跑 deploy.sh 里那段 python）：三个服务切换后各**恰两个后端**（green 主 + 正式 backup）、其它 upstream 一字未动；切回后与原文**逐字节一致**且幂等；未知 upstream / 标记缺失 / 空成员 ⇒ 非零退出且**文件不动**。执行点 = 同文件 ::test_rewriter_switches_each_service_to_two_backends / ::test_rewriter_restores_byte_identical_and_is_idempotent / ::test_rewriter_refuses_unknown_upstream_and_missing_markers"
+      - "判据 5·**优雅退出在生效位置**：`application.yml` 的 `server.shutdown: graceful` + `spring.lifecycle.timeout-per-shutdown-phase: 30s`；ai-agent Dockerfile CMD 含 `--timeout-graceful-shutdown 200`（≥ SSE 最长流 180s）且 compose **没有** `command:` 覆盖；compose 两侧 `stop_grace_period`：admin-api 45s（≥30s 预算）、ai-agent 210s（≥200s），green 与正式同值。执行点 = 同文件 ::test_graceful_shutdown_is_configured_where_it_actually_takes_effect"
+      - "判据 6·**文档已实施 + 怎么验证 + 读数占位**：ADR 的 M1-a/M1-b 必须标「已实施」、点名真实 upstream 名与配置键、给出容器侧验证命令（`docker exec migao-deploy-nginx-1 nginx -t`）、留「真机读数（**待填**）」表，并显式写「未实测」。执行点 = 同文件 ::test_doc_moved_m1a_m1b_from_gap_to_implemented_with_verification"
+      - "**注入式红证（实跑）**：把切换改回「`docker compose up -d` 重建 + reload」⇒ 判据红（点名「切换面消失 / 重建出现两次」）；成员写宿主 18080 ⇒ 红；proxy_pass 改回服务名 ⇒ 红；删 `worker_shutdown_timeout` / `server.shutdown` / `--timeout-graceful-shutdown` / `stop_grace_period` ⇒ 各自红；文档「已实施」整体降级 ⇒ 红；渲染丢站点域 ⇒ 红。执行点 = 同文件 8 条 `test_injection_*`"
+      - "**边界（照实登记）**：本用例**不执行** `deploy.sh`、不连 docker、不连测试/生产 ⇒ 证的是「配置与顺序是零停机形态」，**不证**「线上这次发布真的零 5xx」；后者是 ADR 的「真机读数」表（本 PR **未填**，待测试环境通道）。ai-agent 的 SSE 长流收尾**当前不可判定**：没有只读流式端点（`/api/chat/send` 要鉴权且落库）⇒ 出口 = ① 测试租户写面演练，或 ② 另开单加只读心跳流端点。"
+    skip_reason: "[backend-contract] 部署 / 发布契约判据（静态文本 + 行为式改写器 + 注入式红证）：零网络、零 docker、零真发布、零 LLM，不进 agent-eval 冒烟"
+    merge_log: "2026-11-24 新增（issue #9098，用户裁定「生产发布要做到用户无感」「M1-a/M1-b 必须同批」）。取号 = `python3 scripts/next_case_id.py MC` 现取（main ∪ 全部 open PR ∪ 本工作区）⇒ **MC-351**。同批落地：deploy/swas/nginx.conf（三个 upstream + 标记块 + 8 处 proxy_pass + worker_shutdown_timeout 200s）、deploy/swas/deploy.sh（upstream_name_of / upstream_members_for / rewrite_upstream_members / nginx_upstream_switch / upstream_drain_wait + 2.5 段切换循环重排）、backend/admin-api/.../application.yml（server.shutdown: graceful + spring.lifecycle.timeout-per-shutdown-phase: 30s）、backend/ai-agent-service/Dockerfile（--timeout-graceful-shutdown 200）、deploy/swas/docker-compose*.yml（stop_grace_period 45s/210s）、docs/deployment/zero-downtime-release.md（M1-a/M1-b 从缺口改「已实施 + 怎么验证 + 读数占位」）、tests/unit_ci_workflows/test_zero_downtime_m1_cutover.py（19 条判据，含 8 条红证）。顺带同步的两条既有事实断言：`test_zero_downtime_release_adr.py`（无 upstream/graceful 未配置 → 已实施，判据语义保持「文档 ⇄ 配置双向一致不松」）与 `test_public_code_spaces_are_disjoint.py`（upstream 名 → 主成员 host:port 解析，登记表语义不变）。"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_zero_downtime_m1_cutover.py"
+  - id: MC-352
+    legacy_id: ""
+    title: "「加用例」在并行包里不再人肉让号、也不再冲同一个数字：号段租约（离线原子占位）+ 台账派生读数"
+    domains:
+      - misc
+      - ci
+    tier: normal
+    tags:
+      - case-id
+      - concurrency
+      - exclusion
+      - ledger
+      - derived-reading
+      - offline
+      - red-proof
+    truths_ref: []
+    precondition:
+      - "2026-11-23 一晚实测：多个并行包同时加用例 ⇒ ① `python3 scripts/next_case_id.py MC` **不保证独占**（两个包同时拿到 MC-346 之类），必须人肉让号；② `case_machine_fail_channel_baseline.json` 的 `entries.backend_contract_scoring_zero` 是**硬编码入库读数**，每加一条 `[backend-contract]` 用例就得改这个数字并追加 `history` 行 ⇒ 并行包 100% 冲突。合计一晚上 **5 次 rebase**，每次都要「按本地报错原文重锚」。"
+      - "工具自己早就登记了这条缺口：`scripts/next_case_id.py` 文件头「覆盖面」写「❌ **不是互斥锁**：两个包在**同一瞬间**调用仍会拿到同一个号」——缺的是**独占动作**，不是更聪明的启发式。"
+    user_inputs:
+      - "怎么让「加用例」在并行包里不再需要人肉让号、不再冲同一个数字，并且**判据能红**（模拟两个并行包 ⇒ 撞号/撞锚点就判红）？"
+    expectations: []
+    data_checks:
+      - "判据 1·**离线独占取号**：`scripts/case_id_lease.py reserve MC` 在 `NCI_GH_BIN=<不存在>` 时也给出一个号（rc=0）；同一环境下只读分配器必须 `exit 3`（三态一点没松）。执行点 = tests/unit_ci_workflows/test_case_id_exclusive_ledger.py::test_reserve_works_offline_while_the_readonly_allocator_refuses"
+      - "判据 2·**并发必不撞（核心牙齿）**：6 个 `reserve` 同时起来 ⇒ 6 个**互不相同**的号、都不在语料里、租约文件数恰 6；红证 = 把原子占位换成不排他的写（注入 `create=no-op`）⇒ 两个 racer **同号**。执行点 = 同文件 ::test_concurrent_reservations_are_mutually_distinct / ::test_red_proof_without_the_atomic_lease_two_racers_share_one_number"
+      - "判据 3·**旧路径的撞号现场**（判别力基线）：只读分配器**单独**跑两次 ⇒ 同一份候选集两次都答同一个号（= 人肉让号的成因）。执行点 = 同文件 ::test_red_proof_the_compute_only_allocator_answers_the_same_number_twice"
+      - "判据 4·**分配器读租约**：租约占掉的号不得再被 `next_case_id.py` 发出去，且证据行点出租约来源。执行点 = 同文件 ::test_allocator_never_hands_out_a_reserved_number"
+      - "判据 5·**台账只放不变量**：`entries` == `{no_channel_total: 0}`；把派生读数写回 `entries`（改动前的形态）⇒ 锚点判据 `anchor_drift()` **必红**。执行点 = 同文件 ::test_anchor_stores_only_the_invariant_not_the_reading / ::test_red_proof_restoring_the_stored_reading_reds_the_judge + tests/unit_ci_workflows/test_case_machine_fail_channel.py::TestInjectionRedProofs::test_i3_injection_stored_reading_reds"
+      - "判据 6·**加一条用例不动台账**：语料 +1 条 `[backend-contract]` 用例 ⇒ 锚点**一字不用改**；对照臂 = 旧口径（entries 存读数）在同一场景下必然「实测 ≠ 锚点」。执行点 = 同文件 ::test_adding_a_case_no_longer_touches_the_anchor + test_case_machine_fail_channel.py::test_i3_adding_a_case_no_longer_needs_a_reanchor"
+      - "判据 7·🔴 **两个并行包不再相撞（真 git，两个临时分支）**：旧形态（两分支各改 `entries` 里同一个数字）⇒ 真 `git merge` **冲突**；新形态（锚点零改动、语料落在不同文件）⇒ **零冲突**。执行点 = 同文件 ::test_red_proof_two_parallel_branches_collide_on_the_stored_reading / ::test_two_parallel_branches_no_longer_touch_a_shared_number"
+      - "判据 8·**归档只增不改**：`history` 的 234 行既有历史不许清空（地板现取比对）、首行仍是 #5079 的 53、`no_channel_total` 恒 0。执行点 = 同文件 ::test_history_archive_is_preserved_and_stays_zero"
+      - "判据 9·**`--pr` 一次性动作 + 幂等**：`reserve MC --pr N --title …` 一次落租约 + claim（字段最小集齐全）；同一 PR 重跑**不新占号**。执行点 = 同文件 ::test_reserve_with_pr_writes_a_claim_and_is_idempotent"
+      - "判据 10·🔴 **跨机互斥 = git ref 唯一性**：本地 bare origin + 两个独立克隆（= 两台机器）各跑 `reserve MC` ⇒ 第一个发布 `refs/tags/case-lease/MC-351`；同号**第二次 push 必被服务器拒**（non-FF）；第二个包被拒后**自动顺延**到下一个号，且把被拒号的本地租约撤回。⚠️ `= [up to date]` 也算「被占」（同提交的两台机器不许同时认领一个号）；**时间序**：A 先成功、B 后被拒之后，**A 的租约与 351 ref 都必须还在**（撤回只许撤自己）。执行点 = tests/unit_ci_workflows/test_case_id_exclusive_ledger.py::test_cross_machine_second_publish_of_the_same_number_is_rejected"
+      - "判据 11·**离线仍可跑但要出声**：本仓没有 `origin` 远端 ⇒ `reserve` 照常给号（rc=0），但输出**必须**含「跨机互斥不保证」（离线不冒充已发布）。执行点 = 同文件 ::test_offline_reserve_still_works_but_says_cross_machine_is_not_guaranteed"
+      - "**兼容性**：既有用例、既有 claim 继续有效（`test_case_id_claims.py` 的判据 1~7 全绿）；`history` 既有 234 行逐字节未改（本 PR diff 里该文件只动 `entries` 与四个 `_note` 键）。"
+      - "**边界（照实登记）**：租约台账是**机器级**的（`MIGAO_CASE_ID_LEASE_DIR`，默认 `~/.migao-case-id-leases`）⇒ 只覆盖**同一台机器**上的并行包（多 worktree / 多克隆）；**跨机器**仍靠 `.github/cases/claims/**` + `test_case_id_claims.py` 的判据 2/7。不清理陈旧租约（放弃的号只让尾部前进一位）。同一语料文件**尾部追加**仍可能文本冲突（issue #6255 的面，不在本单射程）。"
+    skip_reason: "[backend-contract] 研发工具链契约判据（真子进程并发 + 真 git 合并 + 隔离租约目录）：零网络、零 LLM，不进 agent-eval 冒烟"
+    merge_log: "2026-11-24 新增（issue #9090）。取号 = `python3 scripts/next_case_id.py MC`（main ∪ 全部 open PR ∪ 本工作区 ∪ 租约）先取 **MC-351**，与在飞 PR #9100 撞号 ⇒ 按「后合入者让号」用 `python3 scripts/case_id_lease.py reserve MC` 让到 **MC-352**（本单自己的工具：离线原子占位）。同批落地：scripts/case_id_lease.py（号段预占写面，`O_CREAT|O_EXCL` 原子占位 + 撞车顺延）、scripts/next_case_id.py（新增只读的 `read_leases()` 来源）、case_machine_fail_channel_baseline.json（`entries.backend_contract_scoring_zero` 退役；`history` 转只增归档）、test_case_machine_fail_channel.py（I3 改为「只放不变量」+ 红证）、scripts/batch_merge_lib.py（批次合并**不再重锚**：取 main 版 + 复核）、docs/testing/test-engineering-standards.md §14。"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_case_id_exclusive_ledger.py"
+        - "tests/unit_ci_workflows/test_case_machine_fail_channel.py"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  - id: MC-354
+    legacy_id: ""
+    title: "CI 分片预算台账：required 腿 `ci workflow helper unit tests` 三片重切 + 每片预算 80% 判红 + timeout 只许缩短"
+    domains:
+      - misc
+      - ci
+    tier: normal
+    tags:
+      - ci
+      - shard
+      - budget
+      - timeout
+      - red-proof
+    truths_ref: []
+    # 真值缺省说明：这是**CI 执行形态契约**（不是 LLM / 业务真值）—— 判据全部落在仓内文件上
+      # （`pr-check.yml` 的 matrix / `timeout-minutes`、`shard_budget_ledger.json`、`conftest.shard_of`）：
+      # 零网络、零 LLM、零 DB。
+    precondition:
+      - "现场读数（2026-11-24）：required job `ci workflow helper unit tests`（`pr-check.yml` 的 `ci-workflow-tests`，matrix `shard: 1/2 | 2/2`）的**后半片连续两次跑满上限被 cancel** —— run `45291734491` / job `138117410585`，GitHub 注释逐字 `The job has exceeded the maximum execution time of 20m0s`（`started_at=00:20:04Z` / `completed_at=00:45:04Z`，含排队）；同一 run 的第一片 `success` 8m15s。required ⇒ **所有在飞 PR 卡死**。"
+      - "同一批对照：拆腿刚上线时（2026-10-03）全量档两片 step 中位 316s；2026-11-23 多轮的**后半片** job 已到 525~790s（`gh api …/runs/<id>/jobs` 逐条现取），而判据文件从当时的 ~400 涨到 **536** 份 ⇒ 权重在涨、分片规则（`crc32` 哈希）成员关系稳定但**不等重**。"
+      - "既有口径（`pr-check.yml` 该 job 上方 + #5203 / #5365）：⛔ **不许拿抬 `timeout-minutes` 交差**（上限是值班判据、不是成本成绩单）；⛔ 不许把 required 改成非 required；⛔ 不许把判据移出 `tests/unit_ci_workflows` 绕过。"
+    user_inputs:
+      - "2026-11-24 用户/issue #9102 要求逐字：① **先量**（`pytest --durations` 按分片跑，列出最重的 3~5 个文件，读数贴 issue）② **再切**（2 片 → 3 片，或按文件耗时手工分桶，要求**最重片的上界 ≤ 现在的 60%**）③ **判据**（分片预算台账：每片测得的最长耗时 + 预算上限，**超过预算 80% ⇒ 判红或开单**，不许靠「这次运气好」过）④ 第一片名字 `ci workflow helper unit tests`（不带后缀）**逐字不变**。"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "**判据 1·台账形态**：`tests/unit_ci_workflows/shard_budget_ledger.json` 的 schema / issue / judged_by / unit / policy 四项 / `shards` 非空 / 每片正数实测与预算齐备 ⇒ 缺任一即红（台账被删空 = 成本面无对象可判）。执行点 = tests/unit_ci_workflows/test_shard_budget.py::test_ledger_shape_is_complete_and_non_vacuous"
+      - "**判据 2·片名三方一致**：台账 `shards` 的键 == 现取 `pr-check.yml::jobs.ci-workflow-tests.strategy.matrix.include[].shard` == `verify-all.sh::ci_helper_leg()` 的 `MIGAO_CI_HELPER_SHARD=` 取值。执行点 = test_shard_budget.py::test_shard_names_are_the_live_matrix + test_helper_leg_execution_shape.py::test_shards_are_declared_consistently_everywhere"
+      - "**判据 3·`timeout-minutes` 只许缩短**（issue #9102 的「不许调大超时」落成判据）：现取 `timeout-minutes × 60` 逐值等于台账 `hard_kill_seconds`，且 `hard_kill_seconds ≤ HARD_KILL_FROZEN_SECONDS`（1200）⇒ **只抬 workflow** 或 **连台账一起抬** 都红（两条独立锁）。执行点 = test_shard_budget.py::test_timeout_may_only_shrink + ::test_red_proof_raising_the_timeout_turns_red"
+      - "**判据 4·每片预算只许缩短且 ≤ 拆片前最重片的 60%**：`budget_seconds ≤ BUDGET_FROZEN_SECONDS` 且 `≤ 0.6 × pre_split.heaviest_seconds` ⇒ 手抬预算 / 重切没切够 各能单独红。执行点 = ::test_red_proof_raising_a_budget_past_the_frozen_ceiling_turns_red"
+      - "**判据 5·实测与预测都不得越过预算的 80%**：`max(measured_seconds, predicted_seconds) > 0.8 × budget_seconds` ⇒ 红并**点名该片最重的 3 个文件**；`predicted` 由现取语料 + `conftest.shard_of` + 冻结的逐文件读数聚合（与负载无关的工作量读数，§23 G6：不钉挂钟）。执行点 = ::test_ledger_shape_is_complete_and_non_vacuous"
+      - "**判据 6·判别力自证（注入式红证 + 对照）**：① 重文件落进**最重片** ⇒ 红；② **同一个**重文件落进**最轻片** ⇒ 不红（单变量差分，证明判的是「分配」不是「重就红」）；③ 台账/matrix 片名对不上、台账 `shards` 被删空、某片缺实测 ⇒ 各能单独红；④ 真读数 ⇒ 绿。执行点 = ::test_red_proof_a_heavy_file_landing_in_the_heaviest_shard_turns_red / ::test_red_proof_a_stale_matrix_or_a_vacuous_ledger_turns_red"
+      - "**重切本体**：`conftest.SHARD_SALT` 与片数改为三片（`shard_of` 仍是 `crc32(\"salt<salt>:\" + 文件名) % 片数 + 1` 的**确定性全函数**，不随机）；`pr-check.yml` matrix 三片且**名字逐字稳定**（`\"\"` 与 `\"（后半）\"` 都保留 —— 分支保护里已有的两条 required 名不受影响，新片 `\"（中段）\"` 合并后再登记）；`verify-all.sh` 逐片显式三行。执行点 = test_helper_leg_execution_shape.py::test_shard_partition_is_recomputed_from_the_live_corpus"
+      - "**权重选法（可复算）**：`MIGAO_CI_HELPER_SHARD=N/2 python3 -m pytest tests/unit_ci_workflows -q -n 4 --durations=0` ⇒ 按文件聚合**逐用例自耗秒数**，在盐 1~4000 上按「最重片工作量最小、其次片间用例数最平」搜出盐；读数与新盐一起冻结进台账 `balance_measured`。"
+    skip_reason: "[backend-contract] 纯静态 CI 结构判据（零 LLM / 零网络 / 零 DB）：不进 agent-eval 冒烟；机器判红通道 = traces.tests 的 pytest（pr-check 的 ci workflow helper unit tests 全量跑 tests/unit_ci_workflows）"
+    merge_log: "2026-11-24 新增（issue #9102，用户要求「先量再切」「不许调大超时」「超过预算 80% ⇒ 红或开单」）。取号 = `python3 scripts/next_case_id.py MC` 现取（main ∪ 全部 open PR ∪ 本工作区）⇒ **MC-354**；`scripts/case_id_lease.py`（issue #9090 的取号工具）**尚未合并**，故未走 lease 流程。同批落地：pr-check.yml（matrix 四片 + 口径注释）、conftest.py（`SHARD_SALT`）、verify-all.sh（四片逐片显式）、helper_leg_shape_ledger.json（片名/冻结基线/平衡读数）、shard_budget_ledger.json（新台账）、test_shard_budget.py（新判据）、scripts/post_merge_verify.py + 合并后守护腿的上限（片数派生式 2 → 4 ⇒ 45 → 80 分）。⚠️ 顺带发现并**另开单**（不在本 PR 修，避免写面扩大）：`pytest … -n 4` 直连整目录时**不拿机器级准入锁**（`conftest.pytest_collection` 在 xdist 控制器上不触发 / worker 早退）⇒ issue #9105。"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_shard_budget.py"
+        - "tests/unit_ci_workflows/test_helper_leg_execution_shape.py"
+      ci:
+        - pr-check.yml
+      verifies: []
+  - id: MC-355
+    legacy_id: ""
+    title: "CI helper 分片挂死：无界等待（无限 producer 的 pipe）+ 内部看门狗 > job 上限 ⇒ 类级判据「看门狗 ≤ 600s」"
+    domains:
+      - misc
+      - ci
+    tier: normal
+    tags:
+      - ci
+    skip_reason: "[backend-contract] 纯静态 CI 结构判据（零 LLM / 零网络 / 零 DB）：不进 agent-eval 冒烟；机器判红通道 = traces.tests 的 pytest（pr-check 的 ci workflow helper unit tests 全量跑 tests/unit_ci_workflows）；2026-11-25 run 45647252503 实测：缺本字段会被 normal 档当行为用例跑并必然红（#9220）"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "**判据 1·看门狗不得越过 job 上限的一半**：现取 `tests/unit_ci_workflows/**` 的 AST ⇒ 任何 `subprocess.<run|call|check_call|check_output|Popen>(timeout=<int>)` 的常量必须 `≤ 600`（`pr-check.yml` 的 `timeout-minutes: 20` 的一半）；否则具名打 `文件:N timeout=X > 600`。这一层是**纯静态**的：不执行任何被测命令，`subprocess` 侧的工具/args 一律 `未被调用`。执行点 = `test_ci_helper_timeouts_are_bounded.py::test_no_inner_watchdog_exceeds_half_of_the_ci_job_cap`"
+      - "**判据 2·无限 producer 的 pipe 必须带看门狗**：`tests/unit_ci_workflows/test_reconcile_no_silent_skip.py` 里每个 `subprocess.run(...)` 的关键字必须含 `timeout=`（该文件的 producer 是 `yes` 无限流，只在 consumer 早退时结束）；缺失即具名红 `文件:N 无 timeout`。同样纯静态：`未被调用`。执行点 = `::test_the_infinite_producer_pipe_always_has_a_timeout`"
+      - "**判据 3·上限本身有出处、且不随 job 上限漂移**：用例正文必须同时写清 `1200s` 与「一半」；且现取 `pr-check.yml` 仍含 `timeout-minutes: 20`、`600 × 2 ≤ 1200` ⇒ job 上限一改，本判据自己红（防止 600 变魔法数字）。执行点 = `::test_the_cap_is_documented_and_below_the_real_job_cap`"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_ci_helper_timeouts_are_bounded.py"
+        - "tests/unit_ci_workflows/test_reconcile_no_silent_skip.py"
+    merge_log: "2026-11-24 新增（issue #9105 家族）。现场：`ci workflow helper unit tests（中后段）`(3/4) 在 CI 上 4 次烧满 20 分钟被 cancel，同日诊断（只读、判据式）确认**不是 runner 卡死**：job 前 6 步全 success、step 7 有 started_at 无 completed_at、三次挂死分布三台不同 runner、CI/local≈0.96 ⇒ 纯慢做不到 4.5× 中位。病灶两处：① `test_reconcile_no_silent_skip.py` 的 `yes | grep -q`（无限 producer，`subprocess.run` 无 timeout）——consumer 不早退就永久挂死；② 全包 >600s 的内部看门狗**全落在 3/4**（1800/900×4/600，其它片最大 300s）⇒ 挂住先被 job 掐死，而 cancelled job 不上传日志（#9114）⇒ 不可归因。修法：补 timeout（60/120/300）、6 处 900/1800 → 600、加类级判据（看门狗 ≤ job 上限一半 + 该文件每个 subprocess 必带 timeout），并改判 `shard_budget_ledger.json` 里原先「判为 runner 卡死」的结论。取号 = `next_case_id.py MC` ⇒ **MC-355**。"
+  - id: MC-356
+    legacy_id: ""
+    title: "CI 装 pytest-timeout 并给分片腿传 `--timeout=300 --timeout-method=signal`：单条用例挂住 ⇒ 具名红（不再靠 job cancel）"
+    domains:
+      - misc
+      - ci
+    tier: normal
+    tags:
+      - ci
+    skip_reason: "[backend-contract] 纯静态 CI 结构判据（零 LLM / 零网络 / 零 DB）：不进 agent-eval 冒烟；机器判红通道 = traces.tests 的 pytest（pr-check 的 ci workflow helper unit tests 全量跑 tests/unit_ci_workflows）；2026-11-25 run 45647252503 实测：缺本字段会被 normal 档当行为用例跑并必然红（#9220）"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "**判据 1·CI 必须装插件**：现取 `pr-check.yml` 所有 `pip install` 行，以 `pytest-xdist` 为锚定位分片腿的安装行，必须含 `pytest-timeout`；缺失即红并打出实际安装行。理由：没有插件时单条用例挂住只能靠 job 的 `timeout-minutes: 20`，而 cancelled job **不上传日志**（#9114）⇒ 归因不出来（#9141 的 3/4 片曾 4 次如此）。这一层是纯静态的：`subprocess` 侧一律 `未被调用`。执行点 = `test_pytest_timeout_is_installed_and_passed.py::test_ci_installs_pytest_timeout`"
+      - "**判据 2·三个入口逐一同源**：`scripts/ci_helper_scope.py::CANONICAL_ARGV`（单一来源）+ CI 分片腿命令行（`-n 4` 全量档）+ `verify-all.sh` 的**四片**命令行，都必须带 `--timeout=<N>` 与 `--timeout-method=thread`，且 N 一致；任一处漏/不一致即具名红（续行 `\\` 先合并再判，避免「看见半条命令」的假红）。纯静态：`未被调用`。执行点 = `::test_every_pytest_entrypoint_passes_the_timeout_flag`"
+      - "**判据 3·N 的上下界**：`120 ≤ N ≤ 600`。下界理由：合法最慢用例（真库族起 `initdb`）实测 < 60s、CI/local ≈ 1 ⇒ 120 以下会假红；上界理由与 MC-355 同一口径（= job 上限的一半，否则挂住先被 job 掐死）。执行点 = `::test_the_timeout_is_not_a_magic_number` + `::test_every_pytest_entrypoint_passes_the_timeout_flag` 的范围断言"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_pytest_timeout_is_installed_and_passed.py"
+        - "tests/unit_ci_workflows/test_ci_helper_leg.py"
+    merge_log: "2026-11-24 新增（issue #9144）。现场：helper 腿只装 `pytest pytest-xdist pyyaml` ⇒ 单条用例挂住时唯一兜底是 job 的 20 分钟上限，而 cancelled job 不上传日志（#9114）⇒ 3/4 片 4 次烧满却查不出是哪条（#9141 诊断）。修法：装 `pytest-timeout`、给单一来源常量 + CI 全量档 + 本地四片统一加 `--timeout=300 --timeout-method=signal`。实测（本机 3/4 片，带新参数）：**2263 passed / 13 skipped / 303.48s**，最慢单测 39.25s ⇒ 7.6× 余量，无合法慢用例被假红。取号 = `next_case_id.py MC` ⇒ **MC-356**。"
+  - id: MC-357
+    legacy_id: ""
+    title: "`UI Regression Check` 腿不许全史克隆（`fetch-depth: 0` 白花 10–14s，已超该腿 12s 预算）"
+    domains:
+      - misc
+      - ci
+    tier: normal
+    tags:
+      - ci
+    skip_reason: "[backend-contract] 纯静态 CI 结构判据（零 LLM / 零网络 / 零 DB）：不进 agent-eval 冒烟；机器判红通道 = traces.tests 的 pytest（pr-check 的 ci workflow helper unit tests 全量跑 tests/unit_ci_workflows）；2026-11-25 run 45647252503 实测：缺本字段会被 normal 档当行为用例跑并必然红（#9220）"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "**判据 1·job 不得全史克隆**：现取 `pr-check.yml` 里 `name: UI Regression Check` 那个 job 块（到下一个顶层 `name:` 为止），**去掉注释行后**不得出现 `fetch-depth: 0`；命即红并给出「该腿只 `git show` 两个 tip」的理由与代价。注释里写「不要 fetch-depth: 0」不算违规（本 job 就有这样一段说明）。纯静态：`未被调用`。执行点 = `test_ui_regression_leg_stays_shallow.py::test_ui_regression_checkout_is_not_full_history`"
+      - "**判据 2·浅克隆的前提**：`check-ui-regression.sh` 不得出现 `git log|rev-list|blame|describe|shortlog`（需要历史的命令）；出现即红（浅克隆下会静默读不到，逼改动方显式把 fetch-depth 加回并说明代价）。纯静态：`未被调用`。执行点 = `::test_ui_regression_script_needs_no_history`"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_ui_regression_leg_stays_shallow.py"
+    merge_log: "2026-11-24 新增（issue #9120 成本追因）。实测构成：该腿整腿 p90 21–30s，其中 **checkout 17s**（`fetch-depth: 0` 全史克隆 401 MiB）、判据步仅 **1s**，而冻结预算只有 12s ⇒ 光是拿代码就超预算。脚本只用 `git show HEAD:<f>` / `git show origin/main:<f>` 且自己 `git fetch origin main`（L54）⇒ 默认浅克隆足够。红证实跑：把 `fetch-depth: 0` 加回 ⇒ 判据 1 FAILED；还原 ⇒ 2 passed；脚本本地 `--head` 仍绿（`✅ UI 无回退`）。取号 = `next_case_id.py MC` ⇒ **MC-357**。"
+  - id: MC-358
+    legacy_id: ""
+    title: "`check-ui-regression.sh` 的 origin/main fetch 必须 depth-aware（否则浅仓库拉全史，减负变增负）"
+    domains:
+      - misc
+      - ci
+    tier: normal
+    tags:
+      - ci
+    skip_reason: "[backend-contract] 纯静态 CI 结构判据（零 LLM / 零网络 / 零 DB）：不进 agent-eval 冒烟；机器判红通道 = traces.tests 的 pytest（pr-check 的 ci workflow helper unit tests 全量跑 tests/unit_ci_workflows）；2026-11-25 run 45647252503 实测：缺本字段会被 normal 档当行为用例跑并必然红（#9220）"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "**判据 1·浅仓库取 tip 要 depth=1**：脚本必须按 `git rev-parse --is-shallow-repository` **分支**——浅仓库 `git fetch --depth=1 origin main`、全史仓库普通 fetch（不许无条件 depth，会把本地全史仓库变浅）。命即通过、缺即红。纯静态：`未被调用`。执行点 = `test_ui_regression_fetch_is_shallow_aware.py::test_script_fetches_the_tip_with_depth_when_shallow`"
+      - "**判据 2·job 里不许第二次全史 fetch**：`UI Regression Check` job 块（去注释后）不得出现裸的 `git fetch origin main`（脚本自己会取）。这样才不会把「checkout 减负 10–14s」被「fetch 全史 +25s」吃掉。纯静态：`未被调用`。执行点 = `::test_job_does_not_do_a_second_full_fetch`"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_ui_regression_fetch_is_shallow_aware.py"
+        - "tests/unit_ci_workflows/test_ui_regression_leg_stays_shallow.py"
+    merge_log: "2026-11-24 新增（issue #9120）。实测（CI run 45398756938，去掉 fetch-depth: 0 之后）：checkout **6s**（原 16–20s）、判据步 **26s**（原 1s，其中就是 bash 里那次不带 depth 的 `git fetch origin main` 拉了全史）、整腿 **36s**（原 21–30s ⇒ 反而更慢）。修法：脚本按仓库形态分支 depth=1，并删掉 job 里那次重复 fetch。红证：把脚本改回裸 fetch ⇒ 判据 1 FAILED。取号 = `next_case_id.py MC` ⇒ **MC-358**。"
+  - id: MC-359
+    legacy_id: ""
+    title: "成本台账 `--measure --allow-partial`：合规腿照常刷新、超预算腿原封不动且仍非零退出（不再整仓拒写）"
+    domains:
+      - misc
+      - ci
+    tier: normal
+    tags:
+      - ci
+    skip_reason: "[backend-contract] 纯静态 CI 结构判据（零 LLM / 零网络 / 零 DB）：不进 agent-eval 冒烟；机器判红通道 = traces.tests 的 pytest（pr-check 的 ci workflow helper unit tests 全量跑 tests/unit_ci_workflows）；2026-11-25 run 45647252503 实测：缺本字段会被 normal 档当行为用例跑并必然红（#9220）"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "**判据 1·超预算腿一个字段都不动**：构造「alpha 合规、beta 超预算」的合成读数后调用 `main(--allow-partial)` ⇒ 台账里 **beta 的 `budget_seconds` / `budget_basis` / `measured` 与上一版逐字相同**，`alpha` 被刷新为现取 p90。这是「红不许消失」与「不许悄悄抬预算」两条口径同时成立的唯一形态。执行点 = `test_ci_cost_ledger.py::TestAllowPartialWritesOnlyCompliantLegs::test_partial_keeps_breaching_leg_frozen_and_exits_nonzero`"
+      - "**判据 2·默认行为不变**：不带开关 ⇒ **一个都不写**（仍整仓拒写、exit 1）。执行点 = `::test_default_still_refuses_to_write_anything`"
+      - "**判据 3·显式 --accept-raise 仍是合法出口**：exit 0 且预算重冻结为现取 p90。执行点 = `::test_accept_raise_still_refreezes_everything`"
+      - "**判据 4·退出码极性**：有腿仍超预算时**写了盘也必须非零退出**（否则「写了盘」会被读成「全绿」）；判据 1 的 `rc == 1` 断言即此项。执行点同上"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_ci_cost_ledger.py"
+    merge_log: "2026-11-24 新增（issue #9120）。病根不在那几条腿，而在工具形状：`--measure` 是全量重写 ⇒ **一条超预算就整仓拒写** ⇒ 任何新增腿都无法合法登记（只能留白）。修法：加 `--allow-partial`——超预算腿整条沿用上一版（预算/实测/basis 都不动）、合规腿照常刷新、**仍非零退出**；默认与 `--accept-raise` 行为不变。实证：本机以 30 次窗口现取，`--allow-partial` 写入 35 条腿（34 条有实测），刷新 12 条合规腿，落 22 条超预算腿并 exit 1。取号 = `next_case_id.py MC` ⇒ **MC-359**。"
+  - id: MC-360
+    legacy_id: ""
+    title: "贵腿给「按次下载」上暖缓存：e2e 的 npm（两份 lockfile）+ Playwright 浏览器 + gitleaks 二进制（键钉版本）"
+    domains:
+      - misc
+      - ci
+    tier: normal
+    tags:
+      - ci
+    skip_reason: "[backend-contract] 纯静态 CI 结构判据（零 LLM / 零网络 / 零 DB）：不进 agent-eval 冒烟；机器判红通道 = traces.tests 的 pytest（pr-check 的 ci workflow helper unit tests 全量跑 tests/unit_ci_workflows）；2026-11-25 run 45647252503 实测：缺本字段会被 normal 档当行为用例跑并必然红（#9220）"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "**判据 1·npm 缓存覆盖两份 lockfile**：现取 `e2e-quality-gate` 的 `Setup Node.js` 步骤 ⇒ `with.cache == npm` 且 `cache-dependency-path` 同时含 `tests/package-lock.json` 与 `frontend/admin-web/package-lock.json`；缺任一即红。理由：该腿两次 `npm ci` 实测合计 ~56s（admin-web 55s），是本腿最大单项。纯静态：`未被调用`。执行点 = `test_costly_legs_warm_their_caches.py::test_e2e_npm_cache_covers_both_lockfiles`"
+      - "**判据 2·Playwright 浏览器缓存**：e2e 腿必须有 `actions/cache` 且 `path` 含 `ms-playwright`；缺即红（未命中时每次重下 chromium）。纯静态：`未被调用`。执行点 = `::test_e2e_caches_playwright_browsers`"
+      - "**判据 3·gitleaks 二进制缓存 + 版本钉进键 + 未命中才下载**：缓存 `path` 含 gitleaks、`key` 含 `8.30.1`（版本升级不得命中旧二进制）、下载体必须有 `if [ ! -x ./gitleaks ]` 守卫（否则缓存在也照下）。纯静态：`未被调用`。执行点 = `::test_gitleaks_binary_is_cached_and_keyed_by_version`"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_costly_legs_warm_their_caches.py"
+    merge_log: "2026-11-25 新增（issue #9120 三刀减负之二）。追因读数：e2e 腿 `npm ci` 两次合计 ~56s（`tests` 1s + `frontend/admin-web` **55s**）、Playwright chromium 未缓存、gitleaks 每 PR 一次 Release 下载（版本钉死 8.30.1）。修法：setup-node 开 `cache: npm` + 双 lockfile 路径；`actions/cache` 缓存 `~/.cache/ms-playwright`；`actions/cache` 缓存 `./gitleaks`（key 钉 8.30.1）+ 未命中才 curl。红证实跑：精确删掉 e2e 的 `cache: npm` ⇒ 判据 1 FAILED；还原 ⇒ 3 passed。⚠️ 第一次红证因 `cache: npm` 在文件里有**两处**（admin-web-test 也有）而误删了别处 —— 已按块精确定位重做。取号 = `next_case_id.py MC` ⇒ **MC-360**。"
+  - id: MC-361
+    legacy_id: ""
+    title: "CI 里的 `npm ci` 统一带 `--prefer-offline --no-audit --no-fund`（admin-web 实测 54s，npm 缓存已命中仍慢）"
+    domains:
+      - misc
+      - ci
+    tier: normal
+    tags:
+      - ci
+    skip_reason: "[backend-contract] 纯静态 CI 结构判据（零 LLM / 零网络 / 零 DB）：不进 agent-eval 冒烟；机器判红通道 = traces.tests 的 pytest（pr-check 的 ci workflow helper unit tests 全量跑 tests/unit_ci_workflows）；2026-11-25 run 45647252503 实测：缺本字段会被 normal 档当行为用例跑并必然红（#9220）"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "**判据 1·每条 npm ci 都带三个参数**：现取 `pr-check.yml` 所有以 `npm ci` 开头的 `run:` ⇒ 必须同时含 `--prefer-offline` / `--no-audit` / `--no-fund`；缺失即**具名**打出 `job::step 缺 [...]`。纯静态：`未被调用`。执行点 = `test_npm_install_uses_offline_flags.py::test_every_npm_ci_pins_the_offline_flags`"
+      - "**判据 2·理由可查**：判据正文必须写清 `54s` 的实测与参数含义，且 workflow 里确实出现这些参数（否则判据在「一处都没有」时空跑成绿）。执行点 = `::test_the_reason_is_recorded_next_to_the_flags`"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_npm_install_uses_offline_flags.py"
+    merge_log: "2026-11-25 扩面（issue #9120）：判据原来只扫 `pr-check.yml`（第一次改的场景），而全仓另有 16 处 `npm ci`（bmini/mini-app 的 Taro 依赖树、h5 发布、demo-evidence、nightly、redproof 巡检）。实测 `bmini-app`/`mini-app` 的 `npm ci` 59–124s 且双峰（缓存命中率不稳）⇒ 同一把参数对它们成立。现取口径 = 全仓 20 条 / 10 个文件，floor 钉 20 防口径回退。原记录：2026-11-25 新增（issue #9153 ①）。现场：`admin-web-test` 的 `Install dependencies`（`npm ci`）实测 **54s**，而 `setup-node` 已配 `cache: npm` + 正确 `cache-dependency-path` ⇒ 省不下来的不是下载，是网络探测/audit 解析这些每次固定动作。本仓 `scripts/batch_gate.py --install-deps` 早有 `--prefer-offline` 先例（`test_batch_gate.py` 判据 23 钉着）。改法：pr-check.yml 三处 `npm ci` 统一加 `--prefer-offline --no-audit --no-fund`。红证实跑：去掉一处参数 ⇒ 判据 1 FAILED；恢复 ⇒ 2 passed。取号 = `next_case_id.py MC` ⇒ **MC-361**。"
+  - id: MC-362
+    legacy_id: ""
+    title: "断言**比较右侧**不得写死「第 N 行」（行号不是稳定标识；2026-11-25 曾因此让 4/4 片整片假红）"
+    domains:
+      - misc
+      - ci
+    tier: normal
+    tags:
+      - ci
+    skip_reason: "[backend-contract] 纯静态 CI 结构判据（零 LLM / 零网络 / 零 DB）：不进 agent-eval 冒烟；机器判红通道 = traces.tests 的 pytest（pr-check 的 ci workflow helper unit tests 全量跑 tests/unit_ci_workflows）；2026-11-25 run 45647252503 实测：缺本字段会被 normal 档当行为用例跑并必然红（#9220）"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "**判据 1·比较右侧无行号常量**：AST 扫 `tests/unit_ci_workflows/test_*.py` 的每个 `ast.Compare`，其 **comparators 子树**不得出现匹配 `第 N 行` 的字符串常量；命中即具名红 `文件:行`。纯静态：`未被调用`。执行点 = `test_hardcoded_line_numbers_burn_down.py::test_no_assert_compares_against_a_hardcoded_line_number`"
+      - "**判据 2·判别力（合成 AST 红证）**：历史真实形态（扫描器读数 == 含行号前缀的列表）必须被判出；而**左侧入参**里的行号字面量（夹具）与**错误消息**里的行号（给人读）**不得**被判红。执行点 = `::test_guard_has_teeth`"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_hardcoded_line_numbers_burn_down.py"
+    merge_log: "2026-11-25 新增（issue #9150）。现场：`check-ui-regression.sh` 加 8 行注释 ⇒ `test_scripts_bash32_var_brace.py` 里那条「扫描器读数 == 含行号前缀的列表」立刻红、4/4 片整片失败（本机复算 2242 passed 证明不是 infra 抖动）。**逐条分类 40 处后的口径修正**：全仓「第 N 行」字面量绝大多数是文档串/报错文案/夹具文本，**不是**对仓内文件行号的期望 ⇒ 不做全量 burn-down（那会把无害文案也当成债），只拦危险那一类 = **比较右侧**。同批把唯一一条夹具里的行号字面量改写成 len==1 + endswith（原意不变，「行号可定位」仍由下一条 startswith 覆盖）。取号 = next_case_id.py MC ⇒ MC-362。"
+  - id: MC-363
+    legacy_id: ""
+    title: "admin-web 单测按 vitest --shard 拆两片（455s 且还在涨；两片互补 + 谓词同源 + 无 job 级门控）"
+    domains:
+      - misc
+      - ci
+    tier: normal
+    tags:
+      - ci
+    skip_reason: "[backend-contract] 纯静态 CI 结构判据（零 LLM / 零网络 / 零 DB）：不进 agent-eval 冒烟；机器判红通道 = traces.tests 的 pytest（pr-check 的 ci workflow helper unit tests 全量跑 tests/unit_ci_workflows）；2026-11-25 run 45647252503 实测：缺本字段会被 normal 档当行为用例跑并必然红（#9220）"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "**判据 1·两片必须互补**：`admin-web-test` 的 `vitest run --shard=1/2` 与 `admin-web-tests-2` 的 `--shard=2/2` 逐条现取比对；两片写同一半即红（否则另一半永远没人跑，而两条腿都绿）。纯静态：`未被调用`。执行点 = `test_admin_web_tests_are_sharded.py::test_two_shards_are_complementary`"
+      - "**判据 2·触发谓词逐字同源**：两片的 `Detect admin-web changes` 步里 `grep -E '<谓词>'` 必须完全一致；不同则「只改某一面」的 PR 上另一片整段跳过、仍绿（未跑 ≠ 通过）。执行点 = `::test_both_shards_share_one_detect_predicate`"
+      - "**判据 3·第 2 片不得有 job 级门控**：required 腿带 `needs:`/`if:` ⇒ 检查永久悬空且**不会变红**；只许把 `if:` 放在步骤上。执行点 = `::test_second_shard_has_no_job_level_gate`"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_admin_web_tests_are_sharded.py"
+    merge_log: "2026-11-25 新增（issue #9153 ②）。现场：`admin-web typecheck + unit tests` 635s，其中 `Run unit tests` **455s**（三轮 295→426→455，现取 518 个测试文件），预算 295s。修法：`vitest --shard=1/2` 留在原腿、`--shard=2/2` 单开一条 required 腿（required 18→19：分支保护 + `required_status_snapshot.json` + 台账腿 + 门禁登记册四处同批）。判据钉三种假绿：两片跑同一半 / 两片谓词不同 / 第 2 片带 job 级门控。红证实跑：把第 2 片也写成 `--shard=1/2` ⇒ 判据 1 FAILED。⚠️ 途中 `git checkout -- .github/workflows/pr-check.yml` 把**未提交**的 workflow 改动冲掉（今晚第二次踩同款），已重放并复算。取号 = next_case_id.py MC ⇒ MC-363。"
+  - id: MC-364
+    legacy_id: ""
+    title: "成本台账采样剔除「门控跳过」的跑次（job 成功但工作步骤被 if 跳过 ≠ 这条腿跑得快）"
+    domains:
+      - misc
+      - ci
+    tier: normal
+    tags:
+      - ci
+    skip_reason: "[backend-contract] 纯静态 CI 结构判据（零 LLM / 零网络 / 零 DB）：不进 agent-eval 冒烟；机器判红通道 = traces.tests 的 pytest（pr-check 的 ci workflow helper unit tests 全量跑 tests/unit_ci_workflows）；2026-11-25 run 45647252503 实测：缺本字段会被 normal 档当行为用例跑并必然红（#9220）"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "**判据 1·门控跳过被识别**：job 成功但工作步骤 `conclusion == skipped` ⇒ `_is_gated_off` 必须为 True。纯静态（合成 job 字典）：`未被调用`。执行点 = `test_ci_cost_ledger.py::TestGatedOffRunsAreNotSamples::test_gated_off_job_is_detected`"
+      - "**判据 2·真实跑不被误剔**：只有 `Post …` 步骤被跳过时**不得**判成门控跳过（否则误删真实样本 ⇒ 预算被抬高 = 假绿）。执行点 = `::test_real_run_is_not_mistaken_for_gated`"
+      - "**判据 3·混样取真实那一档**：3 次真实跑（600s）+ 7 次门控跳过（27s）⇒ 样本只能是 `[600,600,600]`。执行点 = `::test_mixed_samples_drop_the_fast_gated_ones`"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_ci_cost_ledger.py"
+    merge_log: "2026-11-25 新增（issue #9153 的读数缺陷）。现场：`pr-check.yml::admin-web-test` 台账 p90 = 600s，而最近一次真实跑 = 237s —— 同一批样本里混着「job 成功但工作步骤被 `if:` 跳过」的跑次（27s，只有 checkout）。真实跑占比低的腿，p90 会落到门控档 ⇒ 预算钉在几十秒、永远红。修法：`_is_gated_off()`（除 Set up/Post/Complete 外的步骤有任何 skipped 即判门控）+ 剔除时逐腿打印次数。红证：把过滤器短路成 `if False and …` ⇒ 判据 3 FAILED；还原 ⇒ 16 passed。取号 = next_case_id.py MC ⇒ MC-364。"
+  - id: MC-365
+    legacy_id: ""
+    title: "成本台账：现取 n<3 不得清空已冻结预算（清空 = 丢掉值班判据，比预算过期更糟）"
+    domains:
+      - misc
+      - ci
+    tier: normal
+    tags:
+      - ci
+    skip_reason: "[backend-contract] 纯静态 CI 结构判据（零 LLM / 零网络 / 零 DB）：不进 agent-eval 冒烟；机器判红通道 = traces.tests 的 pytest（pr-check 的 ci workflow helper unit tests 全量跑 tests/unit_ci_workflows）；2026-11-25 run 45647252503 实测：缺本字段会被 normal 档当行为用例跑并必然红（#9220）"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "**判据·样本不足不清空预算**：现取 n<3 且上一版已有 `budget_seconds` ⇒ 必须**整条沿用上一版**（预算与 `budget_basis` 都不动）；清成 null 即红。理由：剔除门控样本后 n 会掉档，清空等于丢掉「超了红」的值班判据。合成夹具：`未被调用`。执行点 = `test_ci_cost_ledger.py::TestLowSampleKeepsFrozenBudget::test_low_sample_keeps_previous_budget`"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_ci_cost_ledger.py"
+    merge_log: "2026-11-25 新增（#9159 的连带发现）。现场：MC-364 剔除门控跳过跑次后，10 条腿 n 掉到 3 以下，`--measure --allow-partial` 把它们的 `budget_seconds` 写成 null ⇒ 那些腿从此没有「超了红」的口径。修法：n<3 且上一版有预算 ⇒ 整条沿用（并逐腿打印「保留」），留白只给从未有过读数的腿。红证：把保留分支短路成 `elif False:` ⇒ 判据 FAILED；还原 ⇒ 17 passed。取号 = next_case_id.py MC ⇒ MC-365。"
+  - id: MC-366
+    legacy_id: ""
+    title: "xdist 控制器也必须拿机器级准入锁（-n N 曾能绕过「重活串行」）"
+    domains:
+      - misc
+      - ci
+    tier: normal
+    tags:
+      - ci
+    skip_reason: "[backend-contract] 纯静态 CI 结构判据（零 LLM / 零网络 / 零 DB）：不进 agent-eval 冒烟；机器判红通道 = traces.tests 的 pytest（pr-check 的 ci workflow helper unit tests 全量跑 tests/unit_ci_workflows）；2026-11-25 run 45647252503 实测：缺本字段会被 normal 档当行为用例跑并必然红（#9220）"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "**判据 1·控制器拿锁**：直接驱动 `pytest_configure`（伪造 `numprocesses=2`、无 `workerinput`）⇒ 必须调 `acquire_suite_lock`；不调即红。理由：`-n` 下收集由 worker 做，控制器**不调用** `pytest_collection` ⇒ 挂在那里的拿锁点不触发。合成 config：`未被调用`。执行点 = `test_suite_self_lock.py::TestXdistControllerTakesTheLock::test_configure_hook_acquires_on_the_controller`"
+      - "**判据 2·worker 不抢锁**：`PYTEST_XDIST_WORKER` 已设 ⇒ 不得调 `acquire_suite_lock`（N 个 worker 互抢 = 互相拒绝）。执行点 = `::test_worker_never_acquires`"
+      - "**判据 3·同进程幂等**：连续两次 `acquire_suite_lock` ⇒ 锁脚本只能被调 **1 次**（第二次走幂等短路）。否则真机上 `pytest_configure` 与 `pytest_collection` 各 acquire 一次 ⇒ 锁脚本把「自己」当活持有者 ⇒ 自锁。执行点 = `::test_acquire_is_idempotent_within_one_process`"
+      - "**判据 4·真子进程拒绝**：活持有者 + `-n 2 --collect-only` ⇒ rc≠0 且报文含 `6019`/`准入被拒`。执行点 = `::test_xdist_controller_is_refused_before_any_collection`"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_suite_self_lock.py"
+    merge_log: "2026-11-25 新增（issue #9105）。现场：`pytest tests/unit_ci_workflows -q -n 4` 全程无锁文件、无排队、无拒绝报文，而同刻在跑 536 个判据文件 ⇒ 加 `-n` 即可绕过「重活串行」（#6019 射程洞）。根因：拿锁钩子挂在 `pytest_collection`，`-n` 下收集由 worker 执行、控制器不调用它。修法：新增 `pytest_configure` 拿锁点（控制器一定触发、早于收集）+ `PYTEST_XDIST_WORKER` 跳过 worker + `acquire_suite_lock` 同进程幂等（`_SUITE_LOCK_HELD`），`pytest_collection` 保留作兜底。红证实跑：摘掉 configure 里的 acquire ⇒ 判据 1 FAILED；删掉幂等短路 ⇒ 判据 3 FAILED（锁脚本被调 2 次）。取号 = next_case_id.py MC ⇒ MC-366。"
+  - id: MC-368
+    legacy_id: ""
+    title: "ai-agent 单测必须真开 xdist（-n 4 --dist loadfile）：单步曾 459s，全仓最大一笔"
+    domains:
+      - misc
+      - ci
+    tier: normal
+    tags:
+      - ci
+    skip_reason: "[backend-contract] 纯静态 CI 结构判据（零 LLM / 零网络 / 零 DB）：不进 agent-eval 冒烟；机器判红通道 = traces.tests 的 pytest（pr-check 的 ci workflow helper unit tests 全量跑 tests/unit_ci_workflows）；2026-11-25 run 45647252503 实测：缺本字段会被 normal 档当行为用例跑并必然红（#9220）"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "**判据 1·两处调用都带 `-n N`（N∈[2,8]）**：现取 `ai-agent-tests.yml` 与 `deploy-ai-agent-service.yml` 的运行 `tests/` 的 pytest 行；缺 `-n` 或 N 越界即具名红。纯静态：`未被调用`。执行点 = `test_ai_agent_tests_run_in_parallel.py::test_both_invocations_use_xdist`"
+      - "**判据 2·必须 `--dist loadfile`**：`load` 会把同一文件摊到多个 worker（模块级状态会串）。执行点 = `::test_dist_is_loadfile`"
+      - "**判据 3·两处命令逐字同源 + xdist 已安装**：PR 腿与部署腿的 pytest 行必须完全相同；`requirements.txt` 里必须有 `pytest-xdist`。执行点 = `::test_both_legs_use_the_same_command` 与 `::test_xdist_is_installed_by_requirements`"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_ai_agent_tests_run_in_parallel.py"
+    merge_log: "2026-11-25 新增（issue #9153 逐腿裁决的第一大项）。现场：PR 腿与部署腿都是 `python -m pytest tests/ -v --tb=short -q -m \"not integration\"`，**没有 `-n`** ⇒ 8210 条用例单进程跑，CI step 实测 **459s**；而 `pytest-xdist==3.8.0` 早在 `backend/ai-agent-service/requirements.txt`（注释「#2957 本地并行提速」）⇒ CI 只是没用。修法：两处命令统一加 `-n 4 --dist loadfile`（同文件落同 worker）。本机实测对照：串行 **282.7s** / 并行 **164.2s**（1.72×，8210 passed 一致）。红证：去掉 `-n` ⇒ 3 failed；把 `--dist loadfile` 改成 `--dist load` ⇒ 2 failed。取号 = next_case_id.py MC ⇒ MC-368。"
+  - id: MC-367
+    legacy_id: ""
+    title: "成本台账：门控判定只认工作步骤（修 #9159 误剔 required 腿）+ hard_kill_source 数字自洽"
+    domains:
+      - misc
+      - ci
+    tier: normal
+    tags:
+      - ci
+    skip_reason: "[backend-contract] 纯静态 CI 结构判据（零 LLM / 零网络 / 零 DB）：不进 agent-eval 冒烟；机器判红通道 = traces.tests 的 pytest（pr-check 的 ci workflow helper unit tests 全量跑 tests/unit_ci_workflows）；2026-11-25 run 45647252503 实测：缺本字段会被 normal 档当行为用例跑并必然红（#9220）"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "**判据 1·门控判定只认「工作步骤」**：除 `Set up job`/`Complete job`/`Post …`/`Run actions/checkout…`/`Detect …` 之外的步骤**全被 skip** ⇒ 判门控；其中任一真跑过 ⇒ 不是门控。合成 job 字典：`未被调用`。执行点 = `test_ci_cost_ledger.py::TestGatedOffRunsAreNotSamples::test_gated_off_job_is_detected`"
+      - "**判据 2·`if: failure()` 类步骤不得误剔（回归）**：工作步骤真跑过、而 `Fail on blocking violations`（`if: BLOCKERS != '0'`）与 `Label needs-changes on failure`（`if: failure()`）被 skip ⇒ **不得**判门控。实测受害：`Case Coverage Gate` / `QA Growth Gate` / `Secret Scan` 三条 required 腿 n=0。执行点 = `::test_failure_only_steps_are_not_mistaken_for_gating`"
+      - "**判据 3·`hard_kill_source` 的数字必须自洽**：source 里 `timeout-minutes: N` × 60 必须等于 `hard_kill_seconds`；不等即红（现取曾出现 600s 对 `timeout-minutes: 2`、900s 对 `2`）。执行点 = `test_hard_kill_source_number_matches_the_value`"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_ci_cost_ledger.py"
+    merge_log: "2026-11-25 新增（MC-364 的回归修复 + #9120 裁决发现）。① 回归：`_is_gated_off` 第一版按「任一步骤 skipped 即门控」判，而 `if: failure()` / `if: always() && <条件>` 步骤在成功跑次**必然** skipped ⇒ 10 条腿 n=0，其中 Case Coverage Gate / QA Growth Gate / Secret Scan 三条是 required；叠加「n<3 保留冻结预算」= 永久不可测。修法：只有「除 setup/complete/post/checkout/detect 外的步骤**全被 skip**」才算门控。② 数据面：`hard_kill_source` 写着 `timeout-minutes: 2` 而值是 600/900（真值来自 0ce83cee74 的上限调整）⇒ 新增判据 3 把 source 数字与值对齐，否则 policy「不得靠抬 timeout-minutes 交差」在数据面失效。红证：把规则退回旧版 ⇒ 判据 2 FAILED；还原 ⇒ 19 passed。取号 = next_case_id.py MC ⇒ MC-367。"
+  - id: MC-369
+    legacy_id: ""
+    title: "只要 tree 的 CI 腿不得拉全史 blob（filter: blob:none）；要内容的腿反而不得抽 blob"
+    domains:
+      - misc
+      - ci
+    tier: normal
+    tags:
+      - ci
+    skip_reason: "[backend-contract] 纯静态 CI 结构判据（零 LLM / 零网络 / 零 DB）：不进 agent-eval 冒烟；机器判红通道 = traces.tests 的 pytest（pr-check 的 ci workflow helper unit tests 全量跑 tests/unit_ci_workflows）；2026-11-25 run 45647252503 实测：缺本字段会被 normal 档当行为用例跑并必然红（#9220）"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "**判据 1·只读 tree 的腿必须 `filter: blob:none`**：现取所有 job，凡 body 里出现 `git diff --name-only` / `--diff-filter`（tree 级）且不在 `NEEDS_BLOB_JOBS` 清单里的，`fetch-depth: 0` 必须配 `filter: blob:none`；缺即具名红。纯静态：`未被调用`。执行点 = `test_checkout_does_not_pull_history_blobs.py::test_tree_only_jobs_use_blobless_partial_clone`"
+      - "**判据 2·需要内容的腿不得抽 blob**：`NEEDS_BLOB_JOBS`（现取 = `gitleaks-scan`，要逐 commit 的 diff 内容）若用了 `blob:none`，partial clone 会把每次读变成懒拉取 ⇒ 具名红。执行点 = `::test_content_reading_jobs_never_use_blobless`"
+      - "**判据 3·清单不腐烂**：`NEEDS_BLOB_JOBS` 里的腿必须**真的**跑内容级 git（`gitleaks detect` / `git log -p` / `git grep`），否则要从清单删掉。执行点 = `::test_the_needs_blob_list_is_not_stale`；另有 `::test_the_known_content_leg_is_still_full_blob` 直接钉 gitleaks 保持全 blob。"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_checkout_does_not_pull_history_blobs.py"
+    merge_log: "2026-11-25 扩面（issue #9120）：判据原来只扫 `pr-check.yml`；现取口径改成**全仓工作流** —— bmini-app/mini-app 的 7 个 job（PR 路径，checkout 实测 17–21s）与 ai-agent 腿同样是 `git diff --name-only`（tree 级）。原记录：2026-11-25 新增（issue #9120 A 类减负）。现场：8 条 A 类腿预算（8–26s）低于固定成本，大头是 `actions/checkout@v7` 的 `fetch-depth: 0`（实测 14–24s，`.git` 462 MiB），而它们的 git 用法只有 `git diff --name-only`（tree 级，不需要历史 blob）。修法：给 10 条只读 tree 的腿加 `filter: blob:none`；`gitleaks-scan` **保持全 blob**（`gitleaks detect --log-opts` 要逐 commit diff 内容，抽 blob 会变逐对象懒拉取）。红证：去掉 `block-env-files` 的 filter ⇒ 判据 1 红；给 gitleaks 加 filter ⇒ 判据 2/3 红。取号 = next_case_id.py MC ⇒ MC-369。"
+  - id: MC-370
+    legacy_id: ""
+    title: "case-trust-gate 的 L0 退化守卫并行（-n 4，且单文件目标不许 -dist loadfile）"
+    domains:
+      - misc
+      - ci
+    tier: normal
+    tags:
+      - ci
+    skip_reason: "[backend-contract] 纯静态 CI 结构判据（零 LLM / 零网络 / 零 DB）：不进 agent-eval 冒烟；机器判红通道 = traces.tests 的 pytest（pr-check 的 ci workflow helper unit tests 全量跑 tests/unit_ci_workflows）；2026-11-25 run 45647252503 实测：缺本字段会被 normal 档当行为用例跑并必然红（#9220）"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "**判据 1·L0 守卫必须并行**：跑 `test_case_trust_gate.py` 的步骤必须含 `-n N`（N∈[2,8]）；缺即红（CI 单步实测 70s）。纯静态：`未被调用`。执行点 = `test_case_trust_l0_steps_run_in_parallel.py::test_l0_guards_use_xdist`"
+      - "**判据 2·xdist 与 pytest 同装**：该步的 `pip install` 行必须含 `pytest-xdist`，否则 `-n` 只会 fail 成 unrecognized arguments。执行点 = `::test_pytest_xdist_is_installed_in_the_same_step`"
+      - "**判据 3·单文件目标不得用 `--dist loadfile`**：该步只指定一个文件，`loadfile` 会把整文件压到同一 worker ⇒ 等于串行 + xdist 开销（实测 loadfile 50.8s > 串行 43.6s > load 29.6s）。判据**剥注释行**后再判，避免被「为什么不许用」的说明文字误触。执行点 = `::test_distribution_is_load_not_loadfile_for_a_single_file_target`"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_case_trust_l0_steps_run_in_parallel.py"
+    merge_log: "2026-11-25 新增（issue #9120）。现场：Case Trust Gate 的 `L0 degenerate guards` 步跑 180 条判据，CI 单步实测 **70s**（该腿共 98s），慢的是几条端到端驱动门禁脚本的用例（10.6s / 9.1s / 3.4s）。修法：`pytest -n 4`（默认 `load` 分布）+ 同装 `pytest-xdist`。**关键实测**：`--dist loadfile` 在本步反而更慢（50.8s > 串行 43.6s），因为该步只指定一个文件、loadfile 会把整文件压到同一 worker ⇒ 判据 3 专门钉这条。红证：去掉 `-n` ⇒ 1 failed；去掉 `pytest-xdist` ⇒ 1 failed（第一次变异打偏到 helper 腿的同名字符串，已按 L0 那行精确重做）；改成 `--dist loadfile` ⇒ 1 failed。取号 = next_case_id.py MC ⇒ MC-370。"

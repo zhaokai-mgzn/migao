@@ -40,6 +40,9 @@ TESTS_DIR = SERVICE / "tests"
 
 #: 切片单元登记表（`单元文件名` → `它必须定义的符号全集`）。**未登记的新单元 ⇒ 判据 1 红。**
 UNITS = {
+    "persona_identity.py": [
+        "IDENTITY_FILES", "identity_rel_for",
+    ],
     "capability_denial.py": [
         "_ORDER_ACTION_WORDS", "_ORDER_UNABLE_RE", "ORDER_WRITE_TOOL", "_INABILITY_STEMS",
         "_ABILITY_WORDS", "_PERMISSION_NEGATIONS", "_SCOPE_HANDOFF_MARKERS",

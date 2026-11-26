@@ -124,7 +124,7 @@ CLAIMS: tuple[Claim, ...] = (
         id="taro-version",
         paths=("README.md",),
         pattern=r"Taro\s+\d+(?:\.\d+)+",
-        truth_source="frontend/mini-app/package.json",
+        truth_source="frontend/bmini-app/package.json",
         truth_hint="package.json",
         bad_samples=(
             "Taro 4.2.1",

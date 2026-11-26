@@ -43,7 +43,6 @@ REPO = Path(__file__).resolve().parent.parent.parent
 SETUPS = [
     "frontend/admin-web/tests/setup.ts",
     "frontend/bmini-app/tests/setup.ts",
-    "frontend/mini-app/tests/setup.ts",
 ]
 MIN_MS = 3000
 

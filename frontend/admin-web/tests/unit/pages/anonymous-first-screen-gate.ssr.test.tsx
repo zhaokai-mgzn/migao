@@ -68,7 +68,7 @@ function ssr(pathname: string): string {
 }
 
 describe('首屏门控：匿名可见面在 SSR 阶段就要有正文（issue #6665）', () => {
-  it('六条匿名可见路由在**水合前**就有正文（无 useEffect、无 JS 执行）', () => {
+  it('七条匿名可见路由在**水合前**就有正文（无 useEffect、无 JS 执行）', () => {
     // 面自证：被测对象不能是空集（清单改名 / 被搬走时"零命中"会伪装成绿）
     expect(
       PUBLIC_ROUTES.length,

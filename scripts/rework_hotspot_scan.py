@@ -76,7 +76,6 @@ DEFAULT_PATHS: tuple[str, ...] = (
     "backend/ai-agent-service/app",
     "backend/admin-api/src/main",
     "frontend/admin-web/src",
-    "frontend/mini-app/src",
     "scripts",
     ".github",
 )

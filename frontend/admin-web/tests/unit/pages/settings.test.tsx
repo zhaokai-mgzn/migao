@@ -785,12 +785,12 @@ describe('判据 7：原四个 tab 的能力迁入域后零回归', () => {
         expect.objectContaining({ companyName: '观星台布艺' }),
       ),
     )
-    const code = screen.getByPlaceholderText('如 migao')
-    fireEvent.change(code, { target: { value: 'migao_home' } })
+    const code = screen.getByPlaceholderText('如 caiyuan')
+    fireEvent.change(code, { target: { value: 'caiyuan_home' } })
     fireEvent.blur(code)
     await waitFor(() =>
       expect(mockUpdateSettings).toHaveBeenCalledWith(
-        expect.objectContaining({ code: 'migao_home' }),
+        expect.objectContaining({ code: 'caiyuan_home' }),
       ),
     )
   })

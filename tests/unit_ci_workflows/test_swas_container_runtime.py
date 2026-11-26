@@ -64,6 +64,11 @@ from pathlib import Path
 import pytest
 import yaml
 
+# ── 发布线自检的 `git` 桩（issue #9086）────────────────────────────────────
+# 本文件跑的是**真实 deploy.sh**：1.0.1 段现在会问 git「目标提交是不是 origin/release 的祖先」。
+# 桩补的是沙箱本来就该模拟的那一面（口径与该模块 docstring 一致），既有断言一字未改。
+from unit_ci_workflows import deploy_release_line_stub as rl_stub  # noqa: E402
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 BASE_COMPOSE = REPO_ROOT / "deploy" / "swas" / "docker-compose.yml"
 BG_COMPOSE = REPO_ROOT / "deploy" / "swas" / "docker-compose.bluegreen.yml"
@@ -523,6 +528,7 @@ def test_log_footprint_reading_is_executable_and_counts_project_containers(tmp_p
 
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
+    rl_stub.install(bin_dir)  # 发布线自检要问 git（issue #9086）：补桩，既有断言不受影响
     stub = bin_dir / "docker"
     stub.write_text(
         "#!/bin/sh\n"

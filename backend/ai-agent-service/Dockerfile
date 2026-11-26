@@ -73,4 +73,11 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')" || exit 1
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1", "--timeout-keep-alive", "65"]
+# ── 优雅退出（M1-b，issue #9098）──────────────────────────────────────────────
+# `--timeout-graceful-shutdown 200`：SIGTERM 后**先不再接新连接**，再把在途请求（含正在
+# 生成的 SSE 流）做完，最多等 200s。取值 = SSE 最长流 180s
+# （app/api/chat.py 的 `stream_timeout=180`）+ 20s 余量；必须 **≤** compose 的
+# `stop_grace_period: 210s`（docker 从 SIGTERM 起算到那个值就 SIGKILL）。
+# ⚠️ 本行是**唯一**生效位置：compose 里**没有** `command:` 覆盖它（覆盖了这里的参数就是死配置）。
+# 判据（会红）：tests/unit_ci_workflows/test_zero_downtime_m1_cutover.py
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1", "--timeout-keep-alive", "65", "--timeout-graceful-shutdown", "200"]

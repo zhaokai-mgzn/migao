@@ -6,7 +6,7 @@ r"""B 端小程序 weapp 产物断言 + 体验版发布入口 + CI 接线的判�
 | # | 形态 | 当时为什么没红 |
 |---|---|---|
 | 1 | **生产常量靠人手记**：`TARO_APP_API_URL` / `TARO_APP_AI_API_URL` / `TARO_APP_PUBLIC_APP_ORIGIN` 少给一个，产物静默烘进测试域（或 `http://localhost:8080`） | 上传照样成功、微信照样收包；只有真机**运行时**连不上，而开发者工具勾了「不校验合法域名」时连那个错都看不见 |
-| 2 | **体积没有闸门**：主包 2,079,753 / 上限 2,097,152（余量 17KB） | 本地构建不报，只在上传那一刻由微信报错 |
+| 2 | **体积没有闸门**：本地构建不报，只在上传那一刻由微信报错（当时记的「主包 2,079,753 / 上限 2,097,152」后来复现不出来 ⇒ 见 `test_bmini_dist_budget.py` 的口径证据链，#8981） | 判据只认 dist 字节，且当时没人钉口径 |
 | 3 | **上传命令靠临时拼**：项目目录 / appid / 版本号 / 通道每次现敲 | 换机器、换人就得重来；顺序（先构建、`assert`、再上传）全靠人记得 |
 
 ## 本文件锁什么（每条都能单独变红；判据本体 = `deploy/scripts/bmini-assert-dist.sh`）
@@ -15,7 +15,7 @@ r"""B 端小程序 weapp 产物断言 + 体验版发布入口 + CI 接线的判�
 |---|---|---|
 | 1 | **结构**：`app.json` 的 `pages` 非空、`app.js` 在、每页 `.js`/`.wxml`/`.json` 齐备（`.wxss` **允许缺省**） | 删掉某页的 `.wxml` ⇒ 退 1；`app.json` 整个拿掉 ⇒ 退 1 |
 | 2 | **域名策略**：`prod` ⇒ `migaozn.com` 0 次、`cytda.com` ≥1、**无 `localhost`**；`test` ⇒ 反向 | prod 模式喂含 `migaozn.com` 的树 ⇒ 退 1；只给了 label origin 而 API 仍 localhost ⇒ 退 1（**前两条抓不住这一形态**，故单列） |
-| 3 | **体积**：合计 < 2097152 × 90% = **1887436** 字节（整数运算） | 塞一个把总量顶过闸门的文件 ⇒ 退 1 且打印顶层条目占比 |
+| 3 | **体积**：主包 ≤ 单包上限 − 主包预留、每个分包 ≤ 单包上限、总包 ≤ 总包上限；常量**唯一来源** = `deploy/scripts/bmini-dist-budget.json`（issue #8979 / #8981） | 主包顶过预算 1 字节 ⇒ 退 1 且打印归因（哪个包 / 超多少 / 最大文件 / 复算命令） |
 | 4 | **不可判定 ≠ 通过**：dist 不存在 / 空目录 ⇒ 退 **3**（`0` 不许冒充） | 对不存在的目录跑 ⇒ 退 3 |
 | 5 | **发布入口的顺序即安全顺序**：`scripts/bmini-experience.sh upload` **先断言、后上传**；断言红 ⇒ 一次上传都不发生（`npx` / 开发者工具 CLI 的桩**没被调用**） | 沙箱里给一份测试域产物 + `--env prod` ⇒ 退 1 且 `npx` 桩的标记文件不存在 |
 | 6 | **注入的常量是哪一个**（不靠读源码）：`build --env prod` ⇒ 三个 `TARO_APP_*` 全是 `https://app.cytda.com`；`--env test` ⇒ 全是 `https://app.migaozn.com` | 沙箱里桩掉 `npm`，把三个环境变量写进标记文件后逐值断言（改错一个 ⇒ 红） |
@@ -37,20 +37,29 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
 import yaml
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-ASSERT_SCRIPT = REPO_ROOT / "deploy" / "scripts" / "bmini-assert-dist.sh"
-EXPERIENCE_SCRIPT = REPO_ROOT / "scripts" / "bmini-experience.sh"
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _bmini_dist import (  # noqa: E402  （预算常量 + 夹具的唯一来源，issue #8981）
+    ASSERT_SCRIPT,
+    BUDGET_JSON,
+    CAP_BYTES,
+    EXPERIENCE_SCRIPT,
+    MAIN_LIMIT_BYTES,
+    REPO_ROOT,
+    build_dist,
+    pad_dist_to,
+    run_assert,
+)
+
 WORKFLOW = REPO_ROOT / ".github" / "workflows" / "bmini-app.yml"
 
-#: 与脚本里的整数运算逐值相等（微信上限 2MB，闸门 = 90%）—— 独立写一遍：脚本被改宽 ⇒ 这里立刻红。
-CAP_BYTES = 2097152
-LIMIT_BYTES = CAP_BYTES * 90 // 100
-
+# 🔴 上限常量**只**来自 `deploy/scripts/bmini-dist-budget.json`（issue #8981：以前这里抄了一遍
+# `2097152` / 90% 闸门，于是脚本被改宽时判据跟着假绿）。读口令 = `_bmini_dist.py`。
 ASSERT_CALL = "deploy/scripts/bmini-assert-dist.sh"
 WEAPP_BUILD_CMD = "npm run build:weapp"
 APPID = "wx6ee2f682c1b4822c"
@@ -61,42 +70,8 @@ TEST_ORIGIN = "https://app.migaozn.com"
 DEFAULT_PAGE = "pages/home/index"
 
 
-# ── 夹具：造一棵**形状像 weapp 产物**的树 ──────────────────────────────────────
-# 刻意**不写** `.wxss`：Taro 对不含样式的页面本就不产出它（真实产物 25 页里有 4 页没有），
-# 断言它「允许缺省」就是这一条。
-def build_dist(
-    root: Path,
-    *,
-    body: str = TEST_ORIGIN,
-    pages: tuple[str, ...] = (DEFAULT_PAGE,),
-    omit: tuple[str, ...] = (),
-    extra_bytes: int = 0,
-) -> Path:
-    """造 dist 树：app.json(pages) + app.js(body) + 每页 js/wxml/json。"""
-    root = Path(root)
-    root.mkdir(parents=True, exist_ok=True)
-    (root / "app.json").write_text(json.dumps({"pages": list(pages)}), encoding="utf-8")
-    (root / "app.js").write_text(
-        '// compiled entry\nconst ORIGIN = "%s";\n' % body, encoding="utf-8"
-    )
-    for page in pages:
-        for ext, content in (("js", "// page\n"), ("wxml", "<view/>\n"), ("json", "{}\n")):
-            if f"{page}.{ext}" in omit:
-                continue
-            target = root / f"{page}.{ext}"
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(content, encoding="utf-8")
-    if extra_bytes:
-        (root / "padding.bin").write_bytes(b"x" * extra_bytes)
-    return root
-
-
-def run_assert(dist: Path, env: str | None = None, extra: tuple[str, ...] = ()):
-    cmd = ["bash", str(ASSERT_SCRIPT), str(dist)]
-    if env is not None:
-        cmd += ["--env", env]
-    cmd += list(extra)
-    return subprocess.run(cmd, capture_output=True, text=True, timeout=180)
+# ── 夹具（`build_dist` / `run_assert` / `pad_dist_to`）住在 `_bmini_dist.py` ─────────
+# 与判据 `test_bmini_dist_budget.py` 共用同一份：两处各造一份 ⇒ 迟早各判一件事。
 
 
 # ── 判据 1~4：断言本体（绿 / 红 / 不可判定 三态分开）──────────────────────────
@@ -176,24 +151,30 @@ def test_empty_pages_list_is_red(tmp_path: Path):
 
 
 def test_oversized_package_is_red_and_prints_top_entries(tmp_path: Path):
-    """红证③：把总量顶过 90% 闸门 ⇒ 红，且必须打印顶层条目占比（可归因）。"""
-    dist = build_dist(tmp_path / "dist", extra_bytes=LIMIT_BYTES)
+    """红证③：把主包顶过预算 ⇒ 红，且必须**可归因**（哪个包 / 超多少字节 / 最大的文件 / 复算命令）。"""
+    dist = build_dist(tmp_path / "dist", extra_bytes=MAIN_LIMIT_BYTES)
     proc = run_assert(dist, "test")
     assert proc.returncode == 1, proc.stdout + proc.stderr
-    # 归因读数：闸门数字与被撑爆的顶层条目都要在输出里
-    assert str(LIMIT_BYTES) in proc.stdout
-    assert "top5" in proc.stdout
-    assert "padding.bin" in proc.stdout
+    out = proc.stdout
+    assert "主包" in out, out
+    assert "超预算" in out, "没说出超了多少字节"
+    assert str(MAIN_LIMIT_BYTES) not in out  # 读数带千分位（人读）；机器可复算的是常量文件
+    assert "padding.bin" in out, "没指出主包里最大的文件（无从下手）"
+    assert "复算" in out and "bmini-dist-budget.json" in out, "没给出常量出处 / 复算命令"
 
 
-def test_at_the_gate_is_red_not_green(tmp_path: Path):
-    """边界从严：恰好等于闸门（= 90%）就红 —— 判据是 `< 闸门`，不是 `<= 闸门`。"""
-    base = sum(p.stat().st_size for p in build_dist(tmp_path / "probe").rglob("*") if p.is_file())
-    dist = build_dist(tmp_path / "dist", extra_bytes=LIMIT_BYTES - base)
-    total = sum(p.stat().st_size for p in dist.rglob("*") if p.is_file())
-    assert total >= LIMIT_BYTES  # 自证夹具真的到了闸门
-    proc = run_assert(dist, "test")
-    assert proc.returncode == 1, proc.stdout + proc.stderr
+def test_at_the_gate_is_green_and_one_byte_over_is_red(tmp_path: Path):
+    """边界语义 = 「主包 + 预留 ≤ 上限」（#8979 要的是 **≥**300KB 余量）：
+
+    恰好等于预算 ⇒ 绿（余量恰好等于预留）；再多 1 字节 ⇒ 红。
+    """
+    at_limit = pad_dist_to(build_dist(tmp_path / "dist"), MAIN_LIMIT_BYTES)
+    proc = run_assert(at_limit, "test")
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+
+    over = pad_dist_to(build_dist(tmp_path / "dist-over"), MAIN_LIMIT_BYTES + 1)
+    proc = run_assert(over, "test")
+    assert proc.returncode == 1, "边界没有从严：比预算多 1 字节仍判绿"
 
 
 @pytest.mark.parametrize("shape", ["absent", "empty", "not_a_dir"])
@@ -240,24 +221,19 @@ def test_both_scripts_parse():
         assert proc.returncode == 0, f"{script}: {proc.stderr}"
 
 
-def test_wechat_folded_readout_warns_without_faking_the_gate(tmp_path: Path):
-    """体积段的**折算读数**（实测边界，本单的核心发现）：
+def test_wechat_readout_is_equivalence_not_a_fold_factor(tmp_path: Path):
+    """体积段的**口径交代**（#8981 的收口）：把等价读数与出处照实打出来，**不**再按 ×1.425 折算。
 
-    微信后台报的包体和 dist 字节**不是同一个数**（2026-11-21 同一份产物：dist 1,459,140 → 微信
-    2,079,753，≈ ×1.425）⇒ 真实余量只有 17KB 时，闸门（90% × 2MB = 1887436）**还有 43 万字节余量**。
-    因此体积段额外交代一行折算读数 —— 但它是**读数不是判据**：
-
-    * 折算读数已经超微信上限（本例：1.5MB × 1.425 ≈ 2.14MB > 2097152）⇒ 打 ⚠️；
-    * 而 dist 字节仍在闸门内 ⇒ **退出码仍是 0**（不许拿一个只实测过一版的折算比当门禁）。
+    #8981 当初的结论（dist 1,459,140 ↔ 微信后台 2,079,753 ≈ ×1.425）在本仓与部署机上都找不到
+    可复算的产物（部署机四份产物 + devtool 日志全量核对过）⇒ 登记为**不可复现读数**。
+    实测等价（2026-11-23 部署机：dist 1,465,245 → devtools TOTAL 1,461,748，比值 **0.998**）
+    ⇒ 判据直接判 dist 字节（偏严方向），**不叠系数**：叠了会把闸门压到 ≈1.47MB、制造假红。
     """
-    dist = build_dist(tmp_path / "dist", extra_bytes=1_500_000)
-    total = sum(p.stat().st_size for p in dist.rglob("*") if p.is_file())
-    assert LIMIT_BYTES > total > CAP_BYTES * 1000 // 1425, total  # 自证：闸门内、但折算后超上限
+    dist = build_dist(tmp_path / "dist")
     proc = run_assert(dist, "test")
     assert proc.returncode == 0, proc.stdout + proc.stderr
-    assert "⚠️" in proc.stdout, "折算读数超上限却没有任何提示"
-    assert str(CAP_BYTES) in proc.stdout
-    assert "1.425" in proc.stdout, "折算比的出处没打出来（读数不可复算）"
+    assert "微信口径" in proc.stdout, "口径交代没打出来（读数不可复算）"
+    assert "1.425" not in proc.stdout, "按 ×1.425 折算的假读数回流了（它凭空算出 9,170 字节余量）"
 
 
 # ── 判据 5~7：发布入口的行为（沙箱里桩掉 npm / npx，零网络、零真构建）──────────
@@ -295,6 +271,9 @@ class Sandbox:
         (self.root / "deploy" / "scripts").mkdir(parents=True)
         (self.root / "scripts").mkdir()
         shutil.copy2(ASSERT_SCRIPT, self.root / ASSERT_CALL)
+        # 包体预算的**唯一来源**也必须在沙箱里（脚本按 BASH_SOURCE 找同级目录，issue #8981）：
+        # 少了它，体积判据当场判红 —— 那正是「没有常量就没有闸门」该有的行为。
+        shutil.copy2(BUDGET_JSON, self.root / "deploy" / "scripts" / BUDGET_JSON.name)
         shutil.copy2(EXPERIENCE_SCRIPT, self.root / "scripts" / "bmini-experience.sh")
         self.app_dir = self.root / "frontend" / "bmini-app"
         (self.app_dir / "node_modules").mkdir(parents=True)

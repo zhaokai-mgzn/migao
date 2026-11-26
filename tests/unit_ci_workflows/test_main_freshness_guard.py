@@ -361,7 +361,7 @@ def _run(repo: Path, *extra: str) -> tuple[int, str, dict]:
     proc = subprocess.run(
         [sys.executable, str(SCRIPT), "--repo", str(repo), "--window", "5",
          "--json", str(report_path), *extra],
-        capture_output=True, text=True, cwd=str(repo), timeout=900,
+        capture_output=True, text=True, cwd=str(repo), timeout=600,
     )
     out = (proc.stdout or "") + (proc.stderr or "")
     report = json.loads(report_path.read_text(encoding="utf-8")) if report_path.exists() else {}
@@ -1028,7 +1028,7 @@ def _run_yaml_command(cmd_text: str, repo: Path) -> tuple[int, str, dict]:
     line = f'{cmd_text} --repo "{repo}" --json "{report_path}"'
     env = dict(os.environ, WINDOW="5")
     proc = subprocess.run(["bash", "-c", line], capture_output=True, text=True,
-                          cwd=str(REPO), env=env, timeout=900)
+                          cwd=str(REPO), env=env, timeout=600)
     out = (proc.stdout or "") + (proc.stderr or "")
     report = json.loads(report_path.read_text(encoding="utf-8")) if report_path.exists() else {}
     return proc.returncode, out, report
@@ -1494,7 +1494,7 @@ def nondeterministic_branches(tmp_path_factory) -> Path:
 def _probe_rc(repo: Path, ref: str) -> int:
     """跑一次 CLI 的合并探测，只取退出码（三态 0/1/3）。"""
     proc = subprocess.run([sys.executable, str(SCRIPT), "--repo", str(repo), "--merge-probe", ref],
-                          capture_output=True, text=True, timeout=900)
+                          capture_output=True, text=True, timeout=600)
     return proc.returncode
 
 
@@ -1533,7 +1533,7 @@ class TestMergeProbe:
         out = tmp_path / "probe.json"
         proc = subprocess.run([sys.executable, str(SCRIPT), "--repo", str(nondeterministic_branches),
                                "--merge-probe", "main", "--json", str(out)],
-                              capture_output=True, text=True, timeout=900)
+                              capture_output=True, text=True, timeout=600)
         assert proc.returncode == 1, proc.stdout[-600:]
         payload = json.loads(out.read_text(encoding="utf-8"))
         assert "verdict" in payload, "机读面缺本树的 `verdict`（向后兼容的那一格）"

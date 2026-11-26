@@ -79,6 +79,11 @@ import yaml
 
 from unit_ci_workflows.injection import inject
 
+# ── 发布线自检的 `git` 桩（issue #9086）────────────────────────────────────
+# 本文件跑的是**真实 deploy.sh**：1.0.1 段现在会问 git「目标提交是不是 origin/release 的祖先」。
+# 桩补的是沙箱本来就该模拟的那一面（口径与该模块 docstring 一致），既有断言一字未改。
+from unit_ci_workflows import deploy_release_line_stub as rl_stub  # noqa: E402
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEPLOY_SH = REPO_ROOT / "deploy" / "swas" / "deploy.sh"
 BASE_COMPOSE = REPO_ROOT / "deploy" / "swas" / "docker-compose.yml"
@@ -489,7 +494,10 @@ def test_injection_preflight_moved_after_up_goes_red():
     """注入⑪（issue #8989 ④）：把前置校验挪到第一处 `up -d` 之后 ⇒ 判据必红（挡不住破坏形态）。"""
     text = read_deploy_sh()
     start = text.find(PREFLIGHT_MARK)
-    end = text.find("# 1.7 模型名 canonical 自愈", start)
+    # 结构锚（issue #6802 同族）：原用中文注释标题 `# 1.7 模型名 canonical 自愈` 当块边界，
+    # 被判据判为「中文/注释级文案当结构位置」，且台账已冻结在上限 42/42 无法再登记 ⇒
+    # 改取 1.7 段**代码首行**（全脚本唯一）。语义不变：仍是从 PREFLIGHT_MARK 到 1.7 段起点。
+    end = text.find("if [ -f .env.ai-agent ]; then", start)
     assert start > 0 and end > start
     block = text[start:end]
     mutated = text[:start] + text[end:]
@@ -666,7 +674,7 @@ _UNSET = object()
 COMPOSE_AGENT_KEY_LINE = "      JWT_PUBLIC_KEY: file:/opt/migao-deploy/jwt/public.pem\n"
 
 
-def _make_src_tar(dest: Path, agent_compose_raw=_UNSET) -> None:
+def _make_src_tar(dest: Path, agent_compose_raw=_UNSET, classpath_pem: str = "") -> None:
     stage = dest.parent / "stage" / "migao-main" / "deploy" / "swas"
     stage.mkdir(parents=True, exist_ok=True)
     work = dest.parent / "opt-migao-deploy"
@@ -683,11 +691,17 @@ def _make_src_tar(dest: Path, agent_compose_raw=_UNSET) -> None:
     for name in ("docker-compose.bluegreen.yml", "nginx.conf"):
         text = (REPO_ROOT / "deploy" / "swas" / name).read_text(encoding="utf-8")
         (stage / name).write_text(text.replace("/opt/migao-deploy", str(work)), encoding="utf-8")
+    if classpath_pem:
+        repo_tree = dest.parent / "stage" / "migao-main"
+        pub = repo_tree / "backend" / "admin-api" / "src" / "main" / "resources" / "rsa"
+        pub.mkdir(parents=True, exist_ok=True)
+        (pub / "public.pem").write_text(classpath_pem, encoding="utf-8")
     with tarfile.open(dest, "w:gz") as tf:
         tf.add(dest.parent / "stage" / "migao-main", arcname="migao-main")
 
 
-def _prepare(tmp_path: Path, *, agent_compose_raw=_UNSET) -> tuple:
+def _prepare(tmp_path: Path, *, agent_compose_raw=_UNSET, classpath_pem: str = "",
+             cache_pem: str = "") -> tuple:
     work = tmp_path / "opt-migao-deploy"
     work.mkdir(exist_ok=True)
     text = DEPLOY_SH.read_text(encoding="utf-8")
@@ -698,9 +712,18 @@ def _prepare(tmp_path: Path, *, agent_compose_raw=_UNSET) -> tuple:
     script.write_text(text, encoding="utf-8")
     (work / ".env.admin-api").write_text("SMS_BYPASS_CODE=123456\n", encoding="utf-8")
     (work / ".env.ai-agent").write_text("SMS_BYPASS_CODE=123456\n", encoding="utf-8")
+    if classpath_pem:
+        # 部署树里的 admin-api classpath 公钥（1.3c 在 1.4 构建前读取它；构建成功后 `src/` 被删）
+        pub = work / "src" / "backend" / "admin-api" / "src" / "main" / "resources" / "rsa"
+        pub.mkdir(parents=True, exist_ok=True)
+        (pub / "public.pem").write_text(classpath_pem, encoding="utf-8")
+    if cache_pem:
+        # 「配置复用 / 回滚」档：盘上没有 `src/`，只有 1.3c 落盘的持久缓存（issue #9059）
+        (work / ".migao-admin-api-classpath-public.pem").write_text(cache_pem, encoding="utf-8")
     tar_path = tmp_path / "src.tar.gz"
-    _make_src_tar(tar_path, agent_compose_raw=agent_compose_raw)
+    _make_src_tar(tar_path, agent_compose_raw=agent_compose_raw, classpath_pem=classpath_pem)
     bin_dir = tmp_path / "bin"
+    rl_stub.install(bin_dir)  # 发布线自检要问 git（issue #9086）：补桩，既有断言不受影响
     bin_dir.mkdir(exist_ok=True)
     _write_exe(bin_dir / "curl", CURL_STUB)
     _write_exe(bin_dir / "docker", DOCKER_STUB)
@@ -715,8 +738,10 @@ def _prepare(tmp_path: Path, *, agent_compose_raw=_UNSET) -> tuple:
 
 def _run(tmp_path: Path, *, admin_raw: str, agent_raw: str, admin_pem: str = "",
          agent_pem: str = "", probe_code: int = 200, extra_env: dict | None = None,
-         agent_compose_raw=_UNSET):
-    work, script, bin_dir, state, tar_path, keys = _prepare(tmp_path, agent_compose_raw=agent_compose_raw)
+         agent_compose_raw=_UNSET, classpath_pem: str = "", cache_pem: str = ""):
+    work, script, bin_dir, state, tar_path, keys = _prepare(
+        tmp_path, agent_compose_raw=agent_compose_raw, classpath_pem=classpath_pem,
+        cache_pem=cache_pem)
     # 生产根 `/opt/migao-deploy` → 本用例 work（与 deploy.sh / compose 的文本替换同口径）
     admin_raw = admin_raw.replace("/opt/migao-deploy", str(work))
     agent_raw = agent_raw.replace("/opt/migao-deploy", str(work))
@@ -880,6 +905,262 @@ def test_exec_nginx_upstream_200_is_green(tmp_path, committed_pem):
     assert NGINX_OK in proc.stdout, proc.stdout
     assert log.count("up -d --no-deps nginx") >= 1, log
     assert "compose exec -T nginx nginx -s reload" in log, "nginx 没有走优雅重载"
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# 五、宿主公钥**物化**（issue #9051）：引入宿主文件依赖必须同时回答「谁创建它」
+# ══════════════════════════════════════════════════════════════════════════
+#
+# 现场（2026-11-23，测试环境 api.migaozn.com；run 45106135656）：
+#   `❌ JWT 文件式取值指向的宿主路径**不存在**：/opt/migao-deploy/jwt/public.pem`
+#   两次尝试同一读数；同 sha 在 17:55 / 23:32 的 schedule「success」是 `skip=true`（Deploy 步 skipped，
+#   **没有部署**）的档 ⇒ 那不是「瞬时抖动后恢复」，是「从未部署成功」。
+# 改前：这条宿主路径**没有任何一步负责创建** ⇒ 1.6c 自 2026-11-22T08:48Z 起每次都红（部署腿恒红）。
+
+def test_exec_missing_host_pubkey_is_materialized_from_inline_env_pem(tmp_path, committed_pem):
+    """内联 PEM 是宿主权威源 ⇒ 缺失的 `file:` 公钥由它**物化**，部署继续（1.6c + 2.5.9 仍然复核）。
+
+    红证：摘掉 `deploy.sh` 的 1.6d 段 ⇒ 本用例当场红（`JWT_FILE_SELFHEAL=created` 不出现 +
+    1.6c 判「不存在」）。
+    """
+    work = tmp_path / "opt-migao-deploy"
+    proc, docker_log = _run(
+        tmp_path,
+        admin_raw=committed_pem.replace("\n", "\\n"),   # `.env` 的单行 + 字面 \n 形态（真实宿主形态）
+        agent_raw="",
+    )
+    assert proc.returncode == 0, f"宿主权威源（内联 PEM）在，却仍然部署失败：\n{proc.stdout}\n{proc.stderr}"
+    written = work / "jwt" / "public.pem"
+    assert written.is_file(), f"缺失的公钥没有被物化：\n{proc.stdout}"
+    assert written.read_text(encoding="utf-8").strip() == committed_pem.strip(), "物化出来的不是权威源那一份"
+    assert f"JWT_FILE_SELFHEAL=created path={work}/jwt/public.pem" in proc.stdout, proc.stdout
+    assert PREFLIGHT_OK in proc.stdout, "物化之后 1.6c 仍应逐条校验并给出 OK"
+    assert STATE_OK in proc.stdout, "2.5.9 必须复核两侧同源（物化不是放宽）"
+    assert "up -d" in docker_log, "物化之后部署必须继续（否则等于把红换成了静默不部署）"
+
+
+def test_exec_missing_host_pubkey_is_materialized_from_deploy_tree_classpath(tmp_path, committed_pem):
+    """`.env.admin-api` **没配**公钥时，权威源 = 部署树里 admin-api 的 classpath 公钥。
+
+    ⇒ 物化该文件 **并且**把 `.env.admin-api` 钉成同一条 `file:` 路径 —— 否则 2.5.9 只能报 INCOMPLETE
+    （一侧有值、另一侧「未配置」），部署腿会以另一个红收场。
+    """
+    work = tmp_path / "opt-migao-deploy"
+    proc, docker_log = _run(
+        tmp_path,
+        admin_raw="",
+        agent_raw="",
+        classpath_pem=committed_pem,
+    )
+    assert proc.returncode == 0, f"部署树里有 classpath 公钥，却仍然部署失败：\n{proc.stdout}\n{proc.stderr}"
+    written = work / "jwt" / "public.pem"
+    assert written.is_file() and written.read_text(encoding="utf-8").strip() == committed_pem.strip()
+    assert f"JWT_FILE_SELFHEAL=created path={work}/jwt/public.pem" in proc.stdout, proc.stdout
+    env_admin = (work / ".env.admin-api").read_text(encoding="utf-8")
+    assert f"JWT_PUBLIC_KEY=file:{work}/jwt/public.pem" in env_admin, (
+        f"没有把 .env.admin-api 钉到同一份文件 ⇒ 2.5.9 无法判定两侧同源：\n{env_admin}"
+    )
+    assert STATE_OK in proc.stdout, proc.stdout
+    assert "up -d" in docker_log
+
+
+def test_exec_missing_host_pubkey_without_authority_still_fails_closed(tmp_path):
+    """**真缺失仍然是红**：三条权威源都没有 ⇒ 一个字节都不写，1.6c 前置校验 exit 1、零 `up -d`。
+
+    这是「物化」不降低判别力的承重用例（红证：把 1.6d 的失败分支改成放行 ⇒ 本用例红）。
+    """
+    proc, docker_log = _run(tmp_path, admin_raw="", agent_raw="")
+    assert proc.returncode != 0, f"没有任何权威源却部署成功（假绿）：\n{proc.stdout}"
+    assert "public.pem" in proc.stdout and "不存在" in proc.stdout, proc.stdout
+    assert "JWT_FILE_SELFHEAL=created" not in proc.stdout, "没有权威源却报了「已物化」"
+    assert PREFLIGHT_OK not in proc.stdout
+    assert "up -d" not in docker_log
+    assert "JWT_KEY_SAME_SOURCE" not in proc.stdout, "前置校验就该中止，不该走到同源断言"
+
+
+HOST_FILE_LEDGER = REPO_ROOT / "deploy" / "swas" / "host-file-provisioning.json"
+
+
+def test_every_compose_file_style_host_path_is_registered():
+    """**类级元守卫**（issue #9051）：compose 里每个 `file:` 宿主路径都必须登记「谁创建它」。
+
+    口径（让**这一类**进不来，不是只修这一处）：
+      - 新加一条 `X: file:/…`（= 又引入一个宿主文件依赖）却没登记 ⇒ 本判据红，逼作者回答
+        「谁物化它 / 缺失时哪条判据兜住 / 人怎么处置」；
+      - 登记的 `provisioned_by` 指向 `deploy.sh::1.6d` 时，deploy.sh 里必须真有那个锚点
+        （`JWT_FILE_SELFHEAL=created`）⇒ 表与实现不许漂；
+      - 私钥类只能登记为「人工」，**不许**由仓库物化。
+
+    红证（实跑）：往 `deploy/swas/docker-compose.yml` 加一行 `JWT_PUBLIC_KEY: file:/opt/x/absent.pem` ⇒ 本判据红。
+    """
+    import json
+    ledger = json.loads(HOST_FILE_LEDGER.read_text(encoding="utf-8"))
+    registered = {e["path"]: e for e in ledger["paths"]}
+    referenced: set[str] = set()
+    for name in ("docker-compose.yml", "docker-compose.bluegreen.yml"):
+        text = (REPO_ROOT / "deploy" / "swas" / name).read_text(encoding="utf-8")
+        for line in text.splitlines():
+            stripped = line.strip()
+            if stripped.startswith("#"):
+                continue
+            key, _, value = stripped.partition(":")
+            if key.strip() in ("JWT_PUBLIC_KEY", "JWT_PRIVATE_KEY") and value.strip().startswith("file:"):
+                referenced.add(value.strip()[len("file:"):].strip())
+    assert referenced, "反空跑锚点：compose 里一条 file: 取值都没扫到（判据扫描面漂了）"
+    unregistered = sorted(referenced - set(registered))
+    assert not unregistered, (
+        "compose 引用了未登记的宿主文件路径（引入宿主依赖必须同时回答「谁创建它」）："
+        f"{unregistered} ⇒ 到 deploy/swas/host-file-provisioning.json 登记 provisioned_by / fail_closed_by / remediation"
+    )
+    deploy_sh = DEPLOY_SH.read_text(encoding="utf-8")
+    for path, entry in registered.items():
+        anchor = entry.get("evidence_anchor", "")
+        if "::1.6d" in entry.get("provisioned_by", ""):
+            assert anchor in deploy_sh, (
+                f"登记表说 {path} 由 1.6d 物化，但 deploy.sh 里找不到锚点 {anchor!r}（表与实现漂了）"
+            )
+        if entry.get("kind") == "secret":
+            assert "manual" in entry.get("provisioned_by", ""), (
+                f"{path} 是私钥 ⇒ 只能登记为人工提供（仓库不许物化私钥）"
+            )
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# 六、`JWT_PUBLIC_KEY` 的**取值形态**（issue #9059）：`classpath:` 不许再塌成 unjudgeable
+# ══════════════════════════════════════════════════════════════════════════
+#
+# 现场（run 45116137752，sha `d38b335`，2026-11-23）：
+#   admin-api（签发）: 指纹=<不可判定> 来源=.env.admin-api 的 JWT_PUBLIC_KEY
+#                     （提取指纹失败：读到了 非 PEM 文本（24 字节，首 40 字：classpath:rsa/public.pem））
+#   ai-agent（验签）: 指纹=ba01a29fc44661b9
+#   JWT_KEY_SAME_SOURCE=INCOMPLETE ⇒ 中止部署 ⇒ 回滚 sha-1099156
+# ⇒ 两侧本该同源（宿主那份就是 1.6d 从**同一份** classpath 资源物化的），只是断言不会解析 `classpath:`。
+
+def test_exec_classpath_admin_key_is_judged_same_source(tmp_path, committed_pem):
+    """`classpath:rsa/public.pem` 必须解析成**同一份**公钥再比指纹 ⇒ `JWT_KEY_SAME_SOURCE=OK`、exit 0。
+
+    红证：摘掉 `jwt_key_fingerprint_of` 的 `classpath:*` 分支 ⇒ 本用例当场红（退回 unjudgeable）。
+    """
+    proc, _ = _run(
+        tmp_path,
+        admin_raw="classpath:rsa/public.pem",
+        agent_raw="",
+        admin_pem=committed_pem,          # ai-agent 读的宿主文件（1.6d 物化的那一份）
+        classpath_pem=committed_pem,      # 部署树里的 classpath 资源（admin-api 默认签发公钥）
+    )
+    assert proc.returncode == 0, f"classpath: 形态被当成不可判定 ⇒ 部署恒定中止：\n{proc.stdout}\n{proc.stderr}"
+    assert STATE_OK in proc.stdout, proc.stdout
+    assert "（classpath 资源" in proc.stdout, f"读数必须点名解析来源（可归因）：\n{proc.stdout}"
+    assert _python_fingerprint(committed_pem) in proc.stdout
+
+
+def test_exec_classpath_resolves_from_persistent_cache_when_src_gone(tmp_path, committed_pem):
+    """配置复用 / 回滚档（盘上没有 `src/`）⇒ 从 1.3c 的**持久缓存**解析（issue #9059 的第二个面）。"""
+    proc, _ = _run(
+        tmp_path,
+        admin_raw="classpath:rsa/public.pem",
+        agent_raw="",
+        cache_pem=committed_pem,          # 只有缓存，没有 src/
+    )
+    assert proc.returncode == 0, f"持久缓存没被用上 ⇒ 复用档永远 unjudgeable：\n{proc.stdout}"
+    assert STATE_OK in proc.stdout, proc.stdout
+    assert "（classpath 资源" in proc.stdout, proc.stdout
+
+
+def test_exec_unresolvable_classpath_stays_unjudgeable_and_fails(tmp_path, committed_pem):
+    """**解析不到仍然红**：`classpath:` 指向不存在的资源 ⇒ `INCOMPLETE` + exit 1（不许判绿）。"""
+    proc, _ = _run(
+        tmp_path,
+        admin_raw="classpath:rsa/absent.pem",
+        agent_raw="",
+        admin_pem=committed_pem,
+    )
+    assert proc.returncode != 0, f"解析不到的 classpath 却部署成功（假绿）：\n{proc.stdout}"
+    assert STATE_INCOMPLETE in proc.stdout, proc.stdout
+    assert STATE_OK not in proc.stdout, "解析不到却印了 OK"
+    assert "classpath" in proc.stdout and "不可判定" in proc.stdout, f"读数必须可归因：\n{proc.stdout}"
+
+
+JWT_FORMS_LEDGER = REPO_ROOT / "deploy" / "swas" / "jwt-value-forms.json"
+
+
+def _case_patterns_of_raw(body: str) -> set:
+    """从 `jwt_key_fingerprint_of` 的 `case "${raw}" in` 块里取出**全部**分支模式。"""
+    start = body.index('case "${raw}" in')
+    block = body[start:]
+    end = block.index("\n  esac")
+    patterns = set()
+    for line in block[:end].splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or stripped.startswith("case "):
+            continue
+        if stripped.endswith(")") and " " not in stripped.split(")")[0].strip():
+            patterns.add(stripped[:-1].strip('"'))
+    return patterns
+
+
+def test_every_jwt_value_form_is_registered():
+    """**类级元守卫**（issue #9059）：取值形态**双向**登记，未登记即红。
+
+    口径（让这一类进不来）：
+      - `deploy/swas/deploy.sh::jwt_key_fingerprint_of` 的 `case "${raw}" in` 分支
+        ⇄ `deploy/swas/jwt-value-forms.json` 的 `pattern` **双向相等**：
+        新增一种写法却不登记（⇒ 下一种写法又会静默变成 unjudgeable）⇒ 红；
+        登记了而代码里没有（⇒ 登记表成了假承诺）⇒ 红；
+      - 每种形态的 `on_unresolvable` **不得**是判绿（fail-closed 是硬口径）；
+      - 每个 `anchor` 必须真的出现在 deploy.sh 里（登记与实现不许漂）。
+
+    红证（实跑）：把 `classpath:*` 分支摘掉 ⇒ 本判据红（登记了但代码里没有）。
+    """
+    import json
+    ledger = json.loads(JWT_FORMS_LEDGER.read_text(encoding="utf-8"))
+    forms = {f["pattern"]: f for f in ledger["forms"]}
+    body = function_body(read_deploy_sh(), "jwt_key_fingerprint_of")
+    code = _case_patterns_of_raw(body)
+    assert code, "反空跑锚点：没从 jwt_key_fingerprint_of 里扫到任何 case 分支（扫描面漂了）"
+    assert sorted(code) == sorted(forms), (
+        "取值形态与登记表不一致 ⇒ 要么有新写法没登记（会静默变成 unjudgeable 恒定中止），"
+        f"要么登记了代码里没有。代码={sorted(code)} / 登记={sorted(forms)}"
+    )
+    deploy_sh = read_deploy_sh()
+    for pattern, form in forms.items():
+        assert form.get("on_unresolvable"), f"{pattern}: 缺 on_unresolvable（解析不到时算什么没写）"
+        assert "判绿" not in form["on_unresolvable"].replace("不得判绿", ""), (
+            f"{pattern}: on_unresolvable 不许是判绿（fail-closed 是硬口径）：{form['on_unresolvable']!r}"
+        )
+        assert form["anchor"] in deploy_sh, (
+            f"{pattern}: 登记表说它有 {form['anchor']!r} 的读数/实现，deploy.sh 里找不到 ⇒ 表与实现漂了"
+        )
+
+
+def test_no_bare_cjk_command_lines_in_deploy_sh():
+    """**类级元守卫**：`deploy.sh` 里不许出现「中文提示被当成命令」的裸行。
+
+    实证（issue #9059 附带发现，run 45116137752）：
+      `/opt/migao-deploy/deploy.sh: line 1653: JWT_*: command not found`
+      —— **旧版**脚本里一句含 `JWT_*` 的中文提示没有引号包裹，被 bash 当成命令执行。
+      回滚档跑的是旧镜像里的旧脚本 ⇒ 现行代码修不了它；但**这一类**必须挡住：
+      提示文案只能出现在 `echo` / `printf` / 注释 / 变量赋值里。
+
+    红证（实跑）：在 deploy.sh 里加一行 `JWT_*：两侧必须同源`（无 echo）⇒ 本判据红并具名行号。
+    """
+    import re as _re
+    cjk = _re.compile(r"[\u4e00-\u9fff]")
+    allowed = ("echo", "printf", ":", "cat", "exit", "#")
+    offenders = []
+    for lineno, line in enumerate(read_deploy_sh().splitlines(), 1):
+        stripped = line.strip()
+        if not stripped or stripped.startswith(allowed):
+            continue
+        if "=" in stripped.split()[0]:        # 变量赋值（`_jwt_src="…"` / `CACHE_RECOVER_MSG="…"`）
+            continue
+        first = stripped.split()[0]
+        if cjk.search(first):
+            offenders.append(f"L{lineno}: {stripped[:100]}")
+    assert offenders == [], (
+        "这些行把**中文提示**放在了命令位置（bash 会当成命令执行 ⇒ `command not found`，"
+        "issue #9059 的回滚档实证）：\n" + "\n".join(offenders) + "\n⇒ 用 echo/printf 包裹或改成注释"
+    )
 
 
 if __name__ == "__main__":  # pragma: no cover - 手工复算入口

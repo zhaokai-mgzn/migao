@@ -65,6 +65,11 @@ from pathlib import Path
 import pytest
 import yaml
 
+# ── 发布线自检的 `git` 桩（issue #9086）────────────────────────────────────
+# 本文件跑的是**真实 deploy.sh**：1.0.1 段现在会问 git「目标提交是不是 origin/release 的祖先」。
+# 桩补的是沙箱本来就该模拟的那一面（口径与该模块 docstring 一致），既有断言一字未改。
+from unit_ci_workflows import deploy_release_line_stub as rl_stub  # noqa: E402
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEPLOY_SH = REPO_ROOT / "deploy" / "swas" / "deploy.sh"
 CI_SCRIPT = REPO_ROOT / "deploy" / "scripts" / "swas-deploy-ci.sh"
@@ -452,7 +457,10 @@ MIG_GATE_PRE = "# 迁移失败闸门（issue #5792）"
 #: 收尾兜底门的标记
 MIG_GATE_POST = "# 迁移失败闸门兜底（issue #5792）"
 #: 切流量那一步的注释锚点（顺序判据用）
-SWITCH_ANCHOR = "# ── ② 切换：替换正式容器"
+#: 切流量那一步的注释锚点（顺序判据用）。
+#: ⚠️ M1-a（issue #9098）起「切流量」= **只切 nginx upstream**（不再重建正式容器）
+#:    ⇒ 锚点跟着换到 ② 的 upstream 切换步；判据语义不变：迁移失败必须拦在**流量切走之前**。
+SWITCH_ANCHOR = "# ── ② M1-a："
 
 
 def judge_migration_failure_gate(text: str) -> list:
@@ -835,7 +843,9 @@ def _make_src_tar(dest: Path) -> None:
     stage = dest.parent / "stage" / "migao-main" / "deploy" / "swas"
     stage.mkdir(parents=True, exist_ok=True)
     for name in ("docker-compose.yml", "docker-compose.bluegreen.yml", "nginx.conf"):
-        shutil.copy(REPO_ROOT / "deploy" / "swas" / name, stage / name)
+        # 沙箱一致性：脚本副本已把 `/opt/migao-deploy` 改写成 tmp 路径，打包的 compose/nginx 同步改写
+        _txt = (REPO_ROOT / "deploy" / "swas" / name).read_text(encoding="utf-8")
+        (stage / name).write_text(_txt.replace("/opt/migao-deploy", str(dest.parent / "opt-migao-deploy")), encoding="utf-8")
     with tarfile.open(dest, "w:gz") as tf:
         tf.add(dest.parent / "stage" / "migao-main", arcname="migao-main")
 
@@ -853,11 +863,23 @@ def _prepare(tmp_path: Path, script_text: str) -> tuple:
     script = work / "deploy.sh"
     script.write_text(text, encoding="utf-8")
     # 配置 fail-closed 前置：显式声明 SMS_BYPASS_CODE（否则脚本按设计中止）
-    (work / ".env.admin-api").write_text("SMS_BYPASS_CODE=123456\n", encoding="utf-8")
-    (work / ".env.ai-agent").write_text("SMS_BYPASS_CODE=123456\n", encoding="utf-8")
+    # 1.6c/1.6d（issue #8989 ④）：脚本在任何 up 之前校验 JWT `file:` 宿主路径并要求两侧同源
+    # ⇒ 沙箱必须同构地造出 pem 并在两侧 .env 都声明（否则执行式判据全部停在预检）。
+    _jwt_dir = work / "jwt"
+    _jwt_dir.mkdir(exist_ok=True)
+    (_jwt_dir / "public.pem").write_text("-----BEGIN PUBLIC KEY-----\nstub\n-----END PUBLIC KEY-----\n", encoding="utf-8")
+    (_jwt_dir / "private.pem").write_text("-----BEGIN PRIVATE KEY-----\nstub\n-----END PRIVATE KEY-----\n", encoding="utf-8")
+    _jwt_env = (
+        "SMS_BYPASS_CODE=123456\n"
+        f"JWT_PRIVATE_KEY=file:{work}/jwt/private.pem\n"
+        f"JWT_PUBLIC_KEY=file:{work}/jwt/public.pem\n"
+    )
+    (work / ".env.admin-api").write_text(_jwt_env, encoding="utf-8")
+    (work / ".env.ai-agent").write_text(_jwt_env, encoding="utf-8")
     tar_path = tmp_path / "src.tar.gz"
     _make_src_tar(tar_path)
     bin_dir = tmp_path / "bin"
+    rl_stub.install(bin_dir)  # 发布线自检要问 git（issue #9086）：补桩，既有断言不受影响
     bin_dir.mkdir(exist_ok=True)
     _write_exe(bin_dir / "curl", CURL_STUB)
     _write_exe(bin_dir / "docker", DOCKER_STUB)

@@ -39,6 +39,8 @@ from __future__ import annotations
 import importlib.util
 import json
 import math
+import re
+import sys
 from pathlib import Path
 
 import yaml
@@ -102,6 +104,34 @@ def test_ledger_is_wellformed_and_non_empty() -> None:
           f"{sum(1 for leg in legs if leg.get('budget_seconds'))} 条）/ "
           f"required={sum(1 for leg in legs if leg.get('required'))} 条 / measured.at={measured.get('at')}")
     assert len(with_readings) > 0, "一条实测读数都没有 ⇒ 台账没有承担'实测'这件事"
+
+
+def test_hard_kill_source_number_matches_the_value() -> None:
+    """**数据面**也要拦「抬上限」痕迹：`hard_kill_source` 里写的 `timeout-minutes: N` 必须 ×60 == 值。
+
+    病（2026-11-25 现取，issue #9120 裁决时发现）：`block-env-files` 的值是 **600s**、source 却写
+    `timeout-minutes: 2`（=120s）；`case-truth-check` 是 **900s** 对 `2`（=120s）—— 真值是 2026-11-04
+    的 `0ce83cee74`（issue #8605）把这两条 required 腿从 2 分钟抬到 10/15 分钟。
+    判据 2 只核「值 == 现取 YAML×60」+「source 非空」，**不核 source 里的数字** ⇒
+    `attribution_policy` 想堵的「靠抬 `timeout-minutes` 交差」就在数据面失效（只能靠人去点开 commit 才看得见）。
+    """
+    problems: list[str] = []
+    checked = 0
+    for leg in _legs():
+        src = str(leg.get("hard_kill_source") or "")
+        m = re.search(r"timeout-minutes:\s*(\d+)", src)
+        if not m:
+            continue
+        checked += 1
+        want = int(m.group(1)) * 60
+        got = leg.get("hard_kill_seconds")
+        if got != want:
+            problems.append(
+                f"{leg.get('id')}：`hard_kill_source` 写 `timeout-minutes: {m.group(1)}`（={want}s）"
+                f"但 `hard_kill_seconds` = {got}s ⇒ 台账在**掩盖一次上限调整**"
+            )
+    assert checked > 0, "台账里没有任何 `timeout-minutes: N` 形态的 source ⇒ 本判据会空跑成绿"
+    assert not problems, "「抬上限」痕迹必须自洽（policy：不得靠抬 timeout-minutes 交差）：\n  " + "\n  ".join(problems)
 
 
 def test_hard_kill_ceiling_matches_workflow_verbatim() -> None:
@@ -294,6 +324,13 @@ def test_external_blockers_are_registered_with_command_and_restart_condition() -
     assert not problems, "外部阻塞登记不完整：\n" + "\n".join("  " + p for p in problems)
 
 
+def _live_shard_values() -> list[str]:
+    """现取 `pr-check.yml::ci-workflow-tests` 的 matrix `shard` 取值（重切后本判据自动跟随）。"""
+    doc = yaml.safe_load((WORKFLOWS_DIR / "pr-check.yml").read_text(encoding="utf-8")) or {}
+    matrix = (((doc.get("jobs") or {}).get("ci-workflow-tests") or {}).get("strategy") or {}).get("matrix") or {}
+    return [str(entry["shard"]) for entry in (matrix.get("include") or [])
+            if isinstance(entry, dict) and entry.get("shard")]
+
 def test_skeleton_lists_every_rendered_check_name() -> None:
     """判据 7（issue #6164）：骨架必须按**渲染后的检查名**逐条登记（matrix 展开）。
 
@@ -325,14 +362,215 @@ def test_skeleton_lists_every_rendered_check_name() -> None:
 
     skeleton = mod._legs_skeleton()
     helper = {lid: leg for lid, leg in skeleton.items() if leg.get("job") == "ci-workflow-tests"}
-    assert len(helper) == 2, (
-        f"现取骨架里 `ci-workflow-tests` 只登记了 {len(helper)} 条腿（拆腿后应为 2 片）：{sorted(helper)}"
-        " ⇒ 第二片进分支保护后，判据 3 必红且无法修对"
+    # 片数**现取**（issue #9102 切到四片）：不写死数字 —— 否则每次重切都要回来改这条。
+    # 现取 YAML 的**渲染结果**（GitHub 会按 matrix 每个取值各渲染一次 `name:`）——
+    # 不写死名字，重切后本判据自动跟随；`ci_shard_values()` 给出与它独立的第二根轴（matrix 条目数）。
+    doc = yaml.safe_load((WORKFLOWS_DIR / "pr-check.yml").read_text(encoding="utf-8")) or {}
+    declared_shards = mod.check_names(
+        ((doc.get("jobs") or {}).get("ci-workflow-tests") or {}), "ci-workflow-tests")
+    assert len(helper) == len(_live_shard_values()), (
+        f"现取骨架里 `ci-workflow-tests` 只登记了 {len(helper)} 条腿，而现取 matrix 有 "
+        f"{len(declared_shards)} 片：{sorted(helper)} ⇒ 新片进分支保护后，判据 3 必红且无法修对"
     )
-    assert sorted(leg["check_name"] for leg in helper.values()) == [
-        "ci workflow helper unit tests",
-        "ci workflow helper unit tests（后半）",
-    ], "骨架登记下来的检查名与现取 YAML 的渲染结果不一致"
+    assert sorted(leg["check_name"] for leg in helper.values()) == sorted(declared_shards), (
+        "骨架登记下来的检查名与现取 YAML 的渲染结果不一致")
     assert not [lid for lid, leg in skeleton.items() if not str(leg.get("check_name") or "").strip()], (
         "骨架里有检查名为空的腿 ⇒ 采样与 required 口径都会对不上"
     )
+
+
+# ────────────────────────────────────────────── 判据 6：`--allow-partial`（issue #9120）
+
+class TestAllowPartialWritesOnlyCompliantLegs:
+    """一条超预算就**整仓拒写** ⇒ 任何新腿都无法合法登记（issue #9120 的病根在工具，不在那 9 条腿）。
+
+    `--allow-partial` 的口径：**合规腿照常刷新**；超预算的腿在台账里**原封不动**（预算 / 实测 / basis
+    一个字段都不动）；**退出码仍是 1**（红不许消失）。默认（不带该开关）行为不变：拒绝写盘。
+    """
+
+    def _run(self, monkeypatch, tmp_path, argv: list[str], legs_skeleton: dict, samples: dict):
+        mod = _script()
+        ledger_file = tmp_path / "ledger.json"
+        previous = {
+            "alpha": {"id": "alpha", "workflow": "pr-check.yml", "check_name": "alpha",
+                      "budget_seconds": 10, "measured": {"p90_seconds": 10.0, "n": 8},
+                      "budget_basis": "frozen-before", "required": True,
+                      "hard_kill_seconds": 1200, "status": "measured"},
+            "beta": {"id": "beta", "workflow": "pr-check.yml", "check_name": "beta",
+                     "budget_seconds": 10, "measured": {"p90_seconds": 10.0, "n": 8},
+                     "budget_basis": "frozen-before", "required": True,
+                     "hard_kill_seconds": 1200, "status": "measured"},
+        }
+        ledger_file.write_text(json.dumps({"legs": list(previous.values())}, ensure_ascii=False), encoding="utf-8")
+        monkeypatch.setattr(mod, "LEDGER_PATH", ledger_file)
+        # 脚本收尾要 `LEDGER_PATH.relative_to(REPO)` 打路径 ⇒ REPO 也指到 tmp（否则 ValueError）
+        monkeypatch.setattr(mod, "REPO", tmp_path)
+        monkeypatch.setattr(mod, "_required_names", lambda: {"alpha", "beta"})
+        monkeypatch.setattr(mod, "_legs_skeleton", lambda: legs_skeleton)
+        monkeypatch.setattr(mod, "_previous_legs", lambda: previous)
+        monkeypatch.setattr(mod, "_sample_legs", lambda n: (samples, {}))
+        monkeypatch.setattr(sys, "argv", ["ci_cost_ledger.py", "--measure", *argv])
+        rc = mod.main()
+        return rc, json.loads(ledger_file.read_text(encoding="utf-8"))
+
+    def _skeleton(self):
+        return {
+            "alpha": {"workflow": "pr-check.yml", "check_name": "alpha", "required": True, "hard_kill_seconds": 1200},
+            "beta": {"workflow": "pr-check.yml", "check_name": "beta", "required": True, "hard_kill_seconds": 1200},
+        }
+
+    def test_partial_keeps_breaching_leg_frozen_and_exits_nonzero(self, monkeypatch, tmp_path):
+        # alpha 变快（合规：p90 6s ≤ 预算 10s）；beta 变慢（超预算：p90 40s > 10s）
+        samples = {
+            ("pr-check.yml", "alpha"): [6.0, 6.0, 6.0, 6.0],
+            ("pr-check.yml", "beta"): [40.0, 40.0, 40.0, 40.0],
+        }
+        rc, ledger = self._run(monkeypatch, tmp_path, ["--allow-partial"], self._skeleton(), samples)
+        assert rc == 1, "有腿仍超预算 ⇒ 必须非零退出（红不许因为「写了盘」而消失）"
+        by_id = {leg["id"]: leg for leg in ledger["legs"]}
+        assert by_id["beta"]["budget_seconds"] == 10, "超预算腿的预算被悄悄抬了 —— 这正是 fail-closed 要防的"
+        assert by_id["beta"]["budget_basis"] == "frozen-before", "超预算腿的 basis 被改写了"
+        assert by_id["beta"]["measured"]["p90_seconds"] == 10.0, "超预算腿的实测被覆盖了（应原封不动）"
+        assert by_id["alpha"]["budget_seconds"] == 6, "合规腿应被刷新为现取 p90（6s）"
+
+    def test_default_still_refuses_to_write_anything(self, monkeypatch, tmp_path):
+        samples = {
+            ("pr-check.yml", "alpha"): [6.0, 6.0, 6.0, 6.0],
+            ("pr-check.yml", "beta"): [40.0, 40.0, 40.0, 40.0],
+        }
+        rc, ledger = self._run(monkeypatch, tmp_path, [], self._skeleton(), samples)
+        assert rc == 1
+        by_id = {leg["id"]: leg for leg in ledger["legs"]}
+        assert by_id["alpha"]["budget_seconds"] == 10, "不带 --allow-partial 时必须**一个都不写**（行为不变）"
+
+    def test_accept_raise_still_refreezes_everything(self, monkeypatch, tmp_path):
+        samples = {
+            ("pr-check.yml", "alpha"): [6.0, 6.0, 6.0, 6.0],
+            ("pr-check.yml", "beta"): [40.0, 40.0, 40.0, 40.0],
+        }
+        rc, ledger = self._run(monkeypatch, tmp_path, ["--accept-raise"], self._skeleton(), samples)
+        assert rc == 0, "显式 --accept-raise 是合法出口 ⇒ 应成功"
+        by_id = {leg["id"]: leg for leg in ledger["legs"]}
+        assert by_id["beta"]["budget_seconds"] == 40, "--accept-raise 应把预算重冻结为现取 p90"
+
+
+# ────────────────────────────────────────────── 判据 7：门控跳过不算样本（issue #9153 读数缺陷）
+
+class TestGatedOffRunsAreNotSamples:
+    """「job 成功、但核心步骤被 `if:` 跳过」的跑次**不是**「这条腿跑得快」，必须剔除。
+
+    ## 病（2026-11-25 现取）
+
+    `pr-check.yml::admin-web-test` 的台账 p90 = **600s**，而它最近一次真实跑是 **237s**；
+    原因是同一批样本里混着「门控跳过」的跑次（约 27s，只有 checkout）。混样会让 p90 在
+    「真实跑」与「只用 checkout」两档之间随机取一档 ⇒ 真实跑占比低的腿，预算被钉到几十秒，**永远红**。
+    """
+
+    def test_gated_off_job_is_detected(self):
+        mod = _script()
+        gated = {"name": "x", "steps": [
+            {"name": "Set up job", "conclusion": "success"},
+            {"name": "Run actions/checkout@v7", "conclusion": "success"},
+            {"name": "Detect admin-web changes", "conclusion": "success"},
+            {"name": "Set up Node.js 22", "conclusion": "skipped"},
+            {"name": "Install dependencies", "conclusion": "skipped"},
+            {"name": "Run unit tests", "conclusion": "skipped"},
+            {"name": "Post Run actions/checkout@v7", "conclusion": "success"},
+            {"name": "Complete job", "conclusion": "success"},
+        ]}
+        assert mod._is_gated_off(gated) is True, (
+            "承载工作的步骤（Node/Install/tests）全被 skip、只剩 setup+checkout+detect ⇒ 必须判成门控跳过"
+        )
+
+    def test_failure_only_steps_are_not_mistaken_for_gating(self):
+        """**回归判据（issue #9159 的真红）**：`if: failure()` 类步骤在成功跑次**必然** skipped。
+
+        实测受害：`Case Coverage Gate`（`Print/Label on failure` 30/30 全剔）、`QA Growth Gate`
+        （`if: BLOCKERS != '0'` 30/30）、`Secret Scan`（`if: always() && outcome == 'failure'` 30/30）——
+        **三条都是 required**，被剔后 n=0 ⇒ 再叠加「n<3 保留冻结预算」= 永久不可测、超预算永久不可见。
+        """
+        mod = _script()
+        real = {"name": "x", "steps": [
+            {"name": "Set up job", "conclusion": "success"},
+            {"name": "Run actions/checkout@v7", "conclusion": "success"},
+            {"name": "Check test coverage in diff (data-driven)", "conclusion": "success"},
+            {"name": "Fail on blocking violations", "conclusion": "skipped"},      # if: BLOCKERS != '0'
+            {"name": "Label needs-changes on failure", "conclusion": "skipped"},   # if: failure()
+            {"name": "Post Run actions/checkout@v7", "conclusion": "success"},
+            {"name": "Complete job", "conclusion": "success"},
+        ]}
+        assert mod._is_gated_off(real) is False, (
+            "工作步骤（Check test coverage）**真的跑过** ⇒ 不得因为 failure-only 步骤被 skip 就整次剔除"
+            "（这正是 #9159 的回归：10 条腿 n=0，其中 3 条 required）"
+        )
+
+    def test_real_run_is_not_mistaken_for_gated(self):
+        mod = _script()
+        real = {"name": "x", "steps": [
+            {"name": "Set up job", "conclusion": "success"},
+            {"name": "Run unit tests", "conclusion": "success"},
+            {"name": "Post Run actions/checkout@v7", "conclusion": "skipped"},
+            {"name": "Complete job", "conclusion": "success"},
+        ]}
+        assert mod._is_gated_off(real) is False, (
+            "只有 `Post …` 步骤被跳过时**不得**判成门控跳过 —— 那会误删真实样本（预算被抬高 = 假绿）"
+        )
+
+    def test_mixed_samples_drop_the_fast_gated_ones(self, monkeypatch):
+        """混样场景：3 次真实跑（600s）+ 7 次门控跳过（27s）⇒ 预算必须按 600s 取，不能是 27s。"""
+        mod = _script()
+        real = {"name": "leg", "started_at": "2026-11-25T00:00:00Z", "completed_at": "2026-11-25T00:10:00Z",
+                "conclusion": "success", "steps": [{"name": "Run tests", "conclusion": "success"}]}
+        gated = {"name": "leg", "started_at": "2026-11-25T00:00:00Z", "completed_at": "2026-11-25T00:00:27Z",
+                 "conclusion": "success", "steps": [{"name": "Run tests", "conclusion": "skipped"}]}
+        runs = [{"id": i, "path": ".github/workflows/pr-check.yml", "created_at": "2026-11-25T00:00:00Z"}
+                for i in range(10)]
+        payloads = {i: {"jobs": [real if i < 3 else gated]} for i in range(10)}
+        def fake_gh_json(args):
+            path = args[0]
+            if "/jobs" in path:
+                return payloads[int(path.split("/runs/")[1].split("/")[0])]
+            return {"workflow_runs": [dict(r, head_branch="x") for r in runs]}
+
+        monkeypatch.setattr(mod, "gh_json", fake_gh_json)
+        per_leg, _ = mod._sample_legs(10)
+        samples = per_leg[("pr-check.yml", "leg")]
+        assert samples == [600.0, 600.0, 600.0], f"门控跳过的 27s 样本必须被剔除，实得 {samples}"
+
+
+# ──────────────── 判据 8：样本不足**不得**清空已冻结预算（#9159 的连带发现）
+
+class TestLowSampleKeepsFrozenBudget:
+    """剔除「门控跳过」样本后，很多腿的 n 会掉到 3 以下 —— 此时**必须保留**上一版冻结预算。
+
+    病（2026-11-25 实测）：`--measure --allow-partial` 在 n<3 时把 `budget_seconds` 写成 **null**，
+    10 条腿的冻结预算一夜清空 ⇒ 那些腿从此**没有「超了红」的口径**（比预算过期更糟：过期还能查，清空等于放弃值班）。
+    留白只适用于**从未有过读数**的腿。
+    """
+
+    def test_low_sample_keeps_previous_budget(self, monkeypatch, tmp_path):
+        mod = _script()
+        prev = {"alpha": {"id": "alpha", "workflow": "pr-check.yml", "check_name": "alpha",
+                          "budget_seconds": 42, "measured": {"p90_seconds": 42.0, "n": 8},
+                          "budget_basis": "frozen-before", "required": True,
+                          "hard_kill_seconds": 1200, "status": "measured"}}
+        skeleton = {"alpha": {"workflow": "pr-check.yml", "check_name": "alpha", "required": True,
+                              "hard_kill_seconds": 1200}}
+
+        def fake_gh(args):
+            return {"workflow_runs": []}
+
+        monkeypatch.setattr(mod, "gh_json", fake_gh)
+        monkeypatch.setattr(mod, "_required_names", lambda: {"alpha"})
+        monkeypatch.setattr(mod, "_legs_skeleton", lambda: skeleton)
+        monkeypatch.setattr(mod, "_previous_legs", lambda: prev)
+        monkeypatch.setattr(mod, "_sample_legs", lambda n: ({}, {}))
+        monkeypatch.setattr(mod, "REPO", tmp_path)
+        out = tmp_path / "ledger.json"
+        out.write_text(json.dumps({"legs": list(prev.values())}), encoding="utf-8")
+        monkeypatch.setattr(mod, "LEDGER_PATH", out)
+        monkeypatch.setattr(sys, "argv", ["ci_cost_ledger.py", "--measure"])
+        assert mod.main() == 0
+        leg = {l["id"]: l for l in json.loads(out.read_text(encoding="utf-8"))["legs"]}["alpha"]
+        assert leg["budget_seconds"] == 42, "n<3 时预算被清成 null —— 值班判据被丢掉（比预算过期更糟）"
+        assert leg["budget_basis"] == "frozen-before", "保留时 basis 也必须原样（否则读不出「这是旧读数」）"

@@ -58,6 +58,11 @@ from pathlib import Path
 
 import pytest
 
+# ── 发布线自检的 `git` 桩（issue #9086）────────────────────────────────────
+# 本文件跑的是**真实 deploy.sh**：1.0.1 段现在会问 git「目标提交是不是 origin/release 的祖先」。
+# 桩补的是沙箱本来就该模拟的那一面（口径与该模块 docstring 一致），既有断言一字未改。
+from unit_ci_workflows import deploy_release_line_stub as rl_stub  # noqa: E402
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEPLOY_SH = REPO_ROOT / "deploy" / "swas" / "deploy.sh"
 
@@ -471,8 +476,10 @@ def _write_exe(path: Path, body: str) -> None:
 def _make_src_tar(dest: Path) -> None:
     stage = dest.parent / "stage" / "migao-main" / "deploy" / "swas"
     stage.mkdir(parents=True, exist_ok=True)
+    _root = dest.parent / "opt-migao-deploy"
     for name in ("docker-compose.yml", "docker-compose.bluegreen.yml", "nginx.conf"):
-        shutil.copy(REPO_ROOT / "deploy" / "swas" / name, stage / name)
+        _txt = (REPO_ROOT / "deploy" / "swas" / name).read_text(encoding="utf-8")
+        (stage / name).write_text(_txt.replace("/opt/migao-deploy", str(_root)), encoding="utf-8")
     with tarfile.open(dest, "w:gz") as tf:
         tf.add(dest.parent / "stage" / "migao-main", arcname="migao-main")
 
@@ -501,8 +508,19 @@ def _run(tmp_path: Path, script_text: str, *, images: str, running_tag: str,
     text = text.replace("/tmp/hc_", f"{work}/hc_")
     script = work / "deploy.sh"
     script.write_text(text, encoding="utf-8")
-    (work / ".env.admin-api").write_text("SMS_BYPASS_CODE=123456\n", encoding="utf-8")
-    (work / ".env.ai-agent").write_text("SMS_BYPASS_CODE=123456\n", encoding="utf-8")
+    # 1.6c/1.6d（issue #8989 ④）：脚本在**任何 up 之前**校验 JWT `file:` 宿主路径，并要求两侧同源
+    # ⇒ 沙箱必须同构地造出 pem 并在两侧 .env 都声明（否则所有执行式判据都停在预检）。
+    _jwt_dir = work / "jwt"
+    _jwt_dir.mkdir(exist_ok=True)
+    (_jwt_dir / "public.pem").write_text("-----BEGIN PUBLIC KEY-----\nstub\n-----END PUBLIC KEY-----\n", encoding="utf-8")
+    (_jwt_dir / "private.pem").write_text("-----BEGIN PRIVATE KEY-----\nstub\n-----END PRIVATE KEY-----\n", encoding="utf-8")
+    _jwt_env = (
+        "SMS_BYPASS_CODE=123456\n"
+        f"JWT_PRIVATE_KEY=file:{work}/jwt/private.pem\n"
+        f"JWT_PUBLIC_KEY=file:{work}/jwt/public.pem\n"
+    )
+    (work / ".env.admin-api").write_text(_jwt_env, encoding="utf-8")
+    (work / ".env.ai-agent").write_text(_jwt_env, encoding="utf-8")
     (work / ".env.registry").write_text("ACR_USERNAME=u\nACR_PASSWORD=p\n", encoding="utf-8")
     tar_path = tmp_path / "src.tar.gz"
     _make_src_tar(tar_path)
@@ -516,6 +534,7 @@ def _run(tmp_path: Path, script_text: str, *, images: str, running_tag: str,
     (state / "pulls").write_text("", encoding="utf-8")
     (state / "removed").write_text("", encoding="utf-8")
     bin_dir = tmp_path / "bin"
+    rl_stub.install(bin_dir)  # 发布线自检要问 git（issue #9086）：补桩，既有断言不受影响
     bin_dir.mkdir(exist_ok=True)
     _write_exe(bin_dir / "curl", CURL_STUB)
     _write_exe(bin_dir / "docker", DOCKER_STUB)

@@ -50,7 +50,7 @@ describe('RegisterPage', () => {
   it('should render subtitle', async () => {
     render(<RegisterPage />)
     await waitFor(() => {
-      expect(screen.getByText('观星台 · AI智能管理平台')).toBeInTheDocument()
+      expect(screen.getByText('生意管家 · AI智能管理平台')).toBeInTheDocument()
     })
   })
 
@@ -175,7 +175,7 @@ describe('RegisterPage', () => {
     const user = userEvent.setup()
     mockSubmitRegistration.mockResolvedValue({
       data: {
-        data: { applicationId: 100, status: 'approved', message: 'AI 甄别通过，欢迎入驻观星台平台' },
+        data: { applicationId: 100, status: 'approved', message: 'AI 甄别通过，欢迎入驻生意管家平台' },
       },
     })
     render(<RegisterPage />)

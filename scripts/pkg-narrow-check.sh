@@ -9,7 +9,7 @@
 #   | 触发改动 | 会红的判据 | 逐字红因（实例） |
 #   |---|---|---|
 #   | 新增 / 修改 Java 测试 | `BusinessClockTestSourceGuardTest.outOfScopeSpellingsPresenceIsFrozen` | `Expecting empty but was: ["覆盖外拼写 \`System.nanoTime(\` 登记 presentInTree=false 而现取=true"]`（#6237） |
-#   | 新增 `[backend-contract]` 用例且 `expectations: []` | `test_case_machine_fail_channel.py::test_i3_anchor_matches_reality_and_is_only_shrinking` | `实测 backend_contract_scoring_zero=117 与锚点 116 不一致`（#6231 / #6226 / #6224 / #6237 各一次） |
+#   | 新增 / 修改 `.github/cases/**`（新用例**没有机器判红通道**，或 `[backend-contract]` 豁免不健全） | `test_case_machine_fail_channel.py`（I1/I2/I3） | 具名报出用例号 + 缺的通道（`traces.tests` 为空 / 不像测试 / 文件不存在 / `traces.ci` 缺失）。⚠️ issue #9090 起「`backend_contract_scoring_zero` 读数 +1 而锚点没动」**不再**是红因（读数已改为**从语料现算、不入库**） |
 #
 # 而并行修复包按「只跑定点」的纪律（`https://github.com/zhaokai-mgzn/migao/wiki/Development`「批次统一验证」节 / D 口径）
 # **必然漏掉**这两条 ⇒ 直到 CI 才红，且红因指向**包自己的 diff**（看起来像本包引入的缺陷）。
@@ -180,10 +180,10 @@ if [ "$NO_AUTO" -eq 1 ]; then RUN_JAVA=0; RUN_CASES=0; fi
 
 # ── 腿（命令逐字；判据注入替身时只换 runner / 解释器，不换参数）────────────────────
 JAVA_LABEL="必然项① Java 测试墙钟拼写台账（outOfScopeSpellingsPresenceIsFrozen）"
-CASES_LABEL="必然项② 用例锚点（test_i3_anchor_matches_reality_and_is_only_shrinking）"
+CASES_LABEL="必然项② 用例机器判红通道 / 豁免健全性（test_case_machine_fail_channel.py 的 I1/I2/I3）"
 JAVA_WHY="两条必然项①：Java 测试树里新增/改写了一个「覆盖外墙钟入口」（如 System.nanoTime(）而台账没裁定 ⇒ outOfScopeSpellingsPresenceIsFrozen 判红（#6237 实例）"
 JAVA_CMD="cd backend/admin-api && MIGAO_REQUIRE_REALDB=1 $JAVA_RUNNER_Q -q -Dtest=BusinessClockTestSourceGuardTest test"
-CASES_WHY="两条必然项②：新增 [backend-contract] 用例且 expectations: [] ⇒ backend_contract_scoring_zero 读数 +1 而锚点没动 ⇒ I3 判红（#6231/#6226/#6224/#6237 实例）"
+CASES_WHY="两条必然项②：新增/改写用例若没有任何机器判红通道（I1）或 [backend-contract] 豁免不健全（traces.tests 为空/不像测试/文件不存在、traces.ci 缺失）⇒ 判红（#6231/#6226/#6224/#6237 实例）。⚠️ issue #9090 起「读数 +1 未重锚」不再红：读数从语料现算、不入库"
 CASES_CMD="MIGAO_REQUIRE_REALDB=1 $PY_Q -m pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py -q -p no:cacheprovider"
 
 run_leg() {  # run_leg <标签> <为什么> <命令>

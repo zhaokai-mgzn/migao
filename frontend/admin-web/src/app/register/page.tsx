@@ -180,7 +180,7 @@ export default function RegisterPage() {
             企业入驻申请
           </h1>
           <p className="mt-1.5 text-sm text-neutral-500">
-            观星台 · AI智能管理平台
+            生意管家 · AI智能管理平台
           </p>
         </div>
 
@@ -544,7 +544,7 @@ export default function RegisterPage() {
                   </h2>
                   <p className="text-sm text-neutral-500 mb-6 leading-relaxed">
                     AI 甄别已通过，企业账号已自动开通，<br />
-                    您现在即可登录使用观星台智能管理平台。
+                    您现在即可登录使用生意管家智能管理平台。
                   </p>
 
                   {/* 入驻后获得的能力 */}
@@ -667,7 +667,7 @@ export default function RegisterPage() {
         )}
 
         <p className="mt-8 text-center text-xs text-neutral-400">
-          © 2026 杭州词元通达科技有限公司 · 观星台
+          © 2026 杭州词元通达科技有限公司 · 生意管家
         </p>
       </div>
     </div>

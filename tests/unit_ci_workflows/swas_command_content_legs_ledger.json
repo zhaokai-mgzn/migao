@@ -37,15 +37,6 @@
       "ref_kind": "`SCRIPT_SHA` = `H5_PUBLISHED_COMMIT`（CI 里 = `github.sha`）；产物是 ACR 镜像（不是 git ref）⇒ git 侧只有这一个 ref。"
     },
     {
-      "id": "c-end-h5",
-      "path": "deploy/scripts/c-end-h5-publish-ci.sh",
-      "what": "C 端米宝 H5 发布腿（静态根**本身**）。",
-      "command_content_source": "$COMMAND_CONTENT（env 前缀 + `$REMOTE_FETCH --apply`）",
-      "bootstrap_mode": "fetch-by-ref（codeload `tar.gz/$SCRIPT_SHA` ⇒ `deploy/swas/c-end-h5-publish-remote.sh`）",
-      "byte_guard_since": "#6095（本单之前已修）",
-      "ref_kind": "**两个 ref**：产物 ref（`h5-dist` 孤儿单提交的 sha）≠ 执行体 ref（含远端脚本的源码 commit）—— 混用即 #6095 第五层。"
-    },
-    {
       "id": "running-tag-probe",
       "path": "deploy/scripts/swas_deploy_running_tag.sh",
       "what": "「跳过部署」的**运行面自证**（issue #6294）：`Skip if already built` 判「已部署」只看 run 结论 ⇒ 跳过路径上 `Deploy to SWAS` 整段 skipped 而 run 报 success ⇒ 对账侧断路器把 success 放进允许名单 ⇒ 环境停摆而台账全绿。本腿只读取回远端**在跑 tag** 并与目标 tag 比较（不一致 ⇒ 具名判红；探不到 ⇒ fail-closed 退 3）。",

@@ -28,7 +28,7 @@ from app.agents.channel_config import resolve_greeting
 
 DEFAULT_BOT_NAME = "米宝"
 DEFAULT_GREETING = (
-    "您好！我是米宝，观星台窗帘的智能客服。"
+    "您好！我是米宝，生意管家的智能客服。"
     "我可以为您介绍商品、查询订单、追踪物流，"
     "还能解答窗帘相关的各种问题，请问有什么可以帮您的吗？"
 )
@@ -51,7 +51,7 @@ XIAOBU_CONFIG = AgentConfig(
         "greeting": DEFAULT_GREETING,
         "farewell": "感谢您的咨询，祝您生活愉快！有需要随时找我哦~ 😊",
         "capabilities": (
-            "您好！我是米宝，观星台窗帘的智能客服。我可以帮您：\n"
+            "您好！我是米宝，生意管家的智能客服。我可以帮您：\n"
             "🔍 **商品咨询** - 搜索商品、查看详情、面料推荐\n"
             "📦 **订单查询** - 查询订单状态、物流追踪\n"
             "🛠️ **售后申请** - 提交售后工单\n"

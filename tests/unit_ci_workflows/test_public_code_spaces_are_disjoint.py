@@ -503,6 +503,23 @@ def proxy_target_of(block: Block) -> str | None:
     return None
 
 
+def _resolve_upstream(conf: str, host: str) -> str:
+    """`migao_admin_api` → 该 upstream 的**主成员** `admin-api:8080`（M1-a / issue #9098）。
+
+    登记表登记的是「真正伺候这个前缀的是谁」（`admin-api:8080`）；nginx 侧从 M1-a 起写的是
+    **upstream 名**（`proxy_pass http://migao_admin_api;`），这是有意的间接层（发布期只改成员、不重建容器）。
+    ⇒ 判据把 upstream 名解析回**主成员**再比对登记表（登记表语义不变、判据不放松）：
+      · upstream 不存在 / 成员读不出 ⇒ **原样返回**（下面的断言会点名「上游是 'migao_xxx'，登记的是 …」）；
+      · 只有一个成员 ⇒ 就是它；多个成员 ⇒ 取**不带 `backup`** 的第一个（发布期的主成员）。
+    """
+    block = re.search(rf"^upstream\s+{re.escape(host)}\s*\{{(.*?)^\}}", conf, re.MULTILINE | re.DOTALL)
+    if not block:
+        return host
+    members = re.findall(r"^\s*server\s+([A-Za-z0-9_.-]+:[0-9]+)\b([^;]*);", block.group(1), re.MULTILINE)
+    primary = [m[0] for m in members if "backup" not in m[1].split()]
+    return primary[0] if primary else host
+
+
 def _proxy_parts(target: str) -> tuple[str, str]:
     """`http://admin-api:8080/i` → `('admin-api:8080', '/i')`；无 URI 后缀 ⇒ `('admin-api:8080', '')`。"""
     rest = target.split("://", 1)[1] if "://" in target else target
@@ -555,6 +572,8 @@ def route(conf: str, path: str, files: frozenset[str] = _STATIC_ROOT_FILES,
     target = proxy_target_of(block)
     if target is not None:
         host, suffix = _proxy_parts(target)
+        # M1-a（issue #9098）：nginx 写的是 upstream 名 ⇒ 解析回**主成员**再与登记表比（语义不变）
+        host = _resolve_upstream(conf, host)
         forwarded = path if not suffix else suffix + path[len(matched):]
         return (FACE_PROXY, host, forwarded)
     for statement in block.directives:
@@ -613,6 +632,7 @@ def prefix_wiring_problems(conf: str, java_prefixes: set[str], h5_prefixes: set[
                 bad.append(f"`location {prefix}` 没有 proxy_pass（登记为代理面：{face.owner}）")
                 continue
             host, suffix = _proxy_parts(target)
+            host = _resolve_upstream(conf, host)
             if host != face.upstream:
                 bad.append(f"`location {prefix}` 的代理上游是 {host!r}，登记的是 {face.upstream!r}")
             if suffix:
@@ -739,10 +759,24 @@ def _inject(conf: str, needle: str, replacement: str) -> str:
 
 
 def _location_span(conf: str, prefix: str) -> tuple[int, int]:
-    """`location <prefix> { … }` 的 `[start, end)` 区间（引号 / 注释感知的花括号配平）。"""
-    match = re.search(rf"^[ \t]*location\s+{re.escape(prefix)}\s*\{{", conf, re.M)
+    """`location <prefix> { … }` 的 `[start, end)` 区间（引号 / 注释感知的花括号配平）。
+
+    ⚠️ **只在 `app.migaozn.com` 的 server 段内**定位（2026-11-23 修）：同一份 nginx.conf 里
+    `migaozn.com/www/merchant` 那个 server 也有一条 `location /terminal/`（#8999 加的），
+    全文件 `re.search` 会先命中它 ⇒ 变异注入了**别的 server**，判据对象（app server）纹丝不动，
+    红证变成空断言。
+    """
+    server = app_server(conf)
+    head = conf.find("server_name", 0)
+    # 取 app server 在原文里的位置：以 `server_name APP_DOMAIN;` 的 443 段为准
+    anchor = re.search(rf"^[ \t]*server_name\s+{re.escape(APP_DOMAIN)};\s*$", conf, re.M)
+    assert anchor, f"nginx.conf 里找不到 `server_name {APP_DOMAIN};`"
+    scope = conf[anchor.start():]
+    match = re.search(rf"^[ \t]*location\s+{re.escape(prefix)}\s*\{{", scope, re.M)
+    if match:
+        match_start = anchor.start() + match.start()
     assert match, f"注入点定位失败（fail-closed）：配置里没有 `location {prefix} {{`"
-    start = match.start()
+    start = match_start
     index = conf.index("{", start)
     depth = 0
     quote = ""
@@ -802,7 +836,7 @@ def test_red_proof_proxy_pass_uri_suffix_rewrites_the_path() -> None:
     """红证 F2：`proxy_pass` 带 URI 后缀 ⇒ 路径被改写（`/i/<码>` 到不了控制器）⇒ 必须判红。"""
     conf = _read(NGINX_CONF)
     mutated = _replace_in_location(
-        conf, "/i/", "proxy_pass http://admin-api:8080;", "proxy_pass http://admin-api:8080/i;"
+        conf, "/i/", "proxy_pass http://migao_admin_api;", "proxy_pass http://migao_admin_api/i;"
     )
     assert route(mutated, "/i/7K3M9QP2")[2] == "/i7K3M9QP2", "URI 后缀没触发路径改写 ⇒ 本红证是空断言"
     bad = _nginx_problems(mutated)

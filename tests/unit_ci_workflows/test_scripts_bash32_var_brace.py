@@ -330,7 +330,11 @@ def test_scanner_discriminates_code_from_comment_and_literal_only():
     红证：代码面（含双引号内部 —— 病灶正在双引号里）出现该形态 ⇒ 必须命中；
     负例（防假红）：整行注释、行内注释、单引号字面量 ⇒ 必须零命中。
     """
-    assert find_unbraced_var_before_non_ascii('echo "❌ 未知参数: $arg（支持）" >&2') == ["第 1 行 $arg（"]
+    # 不写死行号（issue #9150：行号不是稳定标识）：判「恰好命中 1 处、且命中片段以病灶结尾」；
+    # 「行号可定位」由本文件最后那条 `.startswith("第 2 行 ")` 覆盖（它比的是偏移、不是常量）。
+    hits = find_unbraced_var_before_non_ascii('echo "❌ 未知参数: $arg（支持）" >&2')
+    assert len(hits) == 1, f"单行夹具应恰好命中 1 处，实得 {hits}"
+    assert hits[0].endswith("$arg（"), f"命中片段的尾巴不对（应止于病灶），实得 {hits}"
     # 同形态写成 ${arg} ⇒ 合法（#5241 修法 / 本 PR 形态）
     assert find_unbraced_var_before_non_ascii('echo "❌ 未知参数: ${arg}（支持）" >&2') == []
     # 负例 ①整行注释 ②行内注释 ③单引号字面量（后者 `$` 不展开，是纯文本）
@@ -348,7 +352,7 @@ def test_repo_root_face_is_inside_range_and_mutation_is_detected():
 
     红证：把 `GUARD_SCOPE['roots']` 从 `["."]` 收窄成 `["scripts"]` ⇒
     「仓库根在射程内」这半条立即红（元守卫 `test_guard_scope_declaration.py` 另有独立一条钉死同一形态）。
-    变异自证：注入 `$f（` 后必须 `mutated != src`，且扫描器报出的正是第 73 行。
+    变异自证：注入 `$f（` 后必须 `mutated != src`，且扫描器报出的行号**与现取源文件一致**（行号现算，不写死）。
     """
     rel = {p.relative_to(REPO_ROOT).as_posix() for p in scanned_shell_files()}
     root_face = {p.name for p in REPO_ROOT.glob("*.sh")}
@@ -363,7 +367,11 @@ def test_repo_root_face_is_inside_range_and_mutation_is_detected():
     assert needle in src, f"定位告警分支失败（fail-closed，别静默跳过）：找不到 {needle!r}"
     mutated = src.replace(needle, 'echo "⚠️ UI token 减少: $f（')
     assert mutated != src, "变异注入未生效（自证失败 ⇒ 本判据的红证是空断言）"
-    assert find_unbraced_var_before_non_ascii(mutated) == ["第 73 行 $f（"], (
+    # 期望行号**现算**，不写死（2026-11-24：`check-ui-regression.sh` 加了 8 行注释后，
+    # 写死的 `第 73 行` 让这条判据在 4/4 片红 —— 而它判的是「扫描器能不能定位到那一行」，
+    # 与「那一行排第几」无关；写死行号等于把「文件行数」这条无关变量钉进判据）。
+    expected_line = src[: src.index(needle)].count("\n") + 1
+    assert find_unbraced_var_before_non_ascii(mutated) == [f"第 {expected_line} 行 $f（"], (
         "把告警分支改回坏形态后扫描器没抓到 ⇒ 判据 1 对「仓库根」这一面没有判别力"
     )
 
@@ -571,7 +579,7 @@ def test_backtick_scanner_discriminates_code_from_comment_literal_and_heredoc():
 
 def test_backtick_defect_mutation_on_real_corpus_is_detected():
     """判据 6 的**注入式红证**（在**真语料**上注入 ⇒ 必红，报出文件 + 行号）。"""
-    victim = REPO_ROOT / "deploy" / "scripts" / "c-end-h5-dist-push.sh"
+    victim = REPO_ROOT / "deploy" / "scripts" / "worker-h5-verify-served.sh"
     src = victim.read_text(encoding="utf-8")
     assert find_bare_backtick_inside_double_quotes(src) == [], "真语料基线不该命中（否则先修它）"
     base = src.rstrip("\n")
