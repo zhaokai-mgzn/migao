@@ -7,6 +7,7 @@ import com.migao.admin.exception.BusinessException;
 import com.migao.admin.mapper.KfChannelMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -58,9 +59,14 @@ public class KfChannelAdminService {
                 .authMode("self_built")
                 .secretEnc(secretCipher.encrypt(secret))
                 .secretKeyId("default")
-                .status("unauthorized")
+                .status(KfChannel.STATUS_UNAUTHORIZED)
                 .build();
-        channelMapper.insert(channel);
+        try {
+            channelMapper.insert(channel);
+        } catch (DuplicateKeyException e) {
+            throw BusinessException.conflict("该企业微信客服账号已接入",
+                    "同一 corp_id + open_kfid 只能有一条渠道；刷新列表确认");
+        }
         try {
             return new CreateResult(verify(tenantId, channel.getId()), true, "接入成功，客服账号已在线");
         } catch (BusinessException e) {
@@ -82,7 +88,7 @@ public class KfChannelAdminService {
                         "自检失败：这个 open_kfid 不在该企业微信的客服账号列表里", 422,
                         "确认 corp_id / open_kfid 属于同一个企业微信；并确认应用已获「微信客服」API 权限");
             }
-            channel.setStatus("active");
+            channel.setStatus(KfChannel.STATUS_ACTIVE);
             channelMapper.updateById(channel);
             return view(channel);
         } catch (BusinessException e) {
@@ -98,7 +104,7 @@ public class KfChannelAdminService {
 
     public ChannelView disable(Long tenantId, String id) {
         KfChannel channel = require(tenantId, id);
-        channel.setStatus("revoked");
+        channel.setStatus(KfChannel.STATUS_REVOKED);
         channelMapper.updateById(channel);
         return view(channel);
     }
@@ -125,7 +131,7 @@ public class KfChannelAdminService {
     }
 
     private void markUnauthorized(KfChannel channel) {
-        channel.setStatus("unauthorized");
+        channel.setStatus(KfChannel.STATUS_UNAUTHORIZED);
         channelMapper.updateById(channel);
     }
 

@@ -8,7 +8,7 @@ const verifyChannel = vi.fn()
 const disableChannel = vi.fn()
 const createLink = vi.fn()
 
-vi.mock('@/lib/api', () => ({
+vi.mock('@/lib/kf-api', () => ({
   kfApi: {
     listChannels: (...args: unknown[]) => listChannels(...args),
     createChannel: (...args: unknown[]) => createChannel(...args),

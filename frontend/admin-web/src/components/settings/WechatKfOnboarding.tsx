@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { QRCodeSVG } from 'qrcode.react'
 import { CheckCircle2, Copy, ExternalLink, ShieldCheck } from 'lucide-react'
-import { kfApi, type KfChannelView } from '@/lib/api'
+import { kfApi, type KfChannelView } from '@/lib/kf-api'
 import { displayEnum } from '@/lib/enum-display'
 
 const STATUS_LABEL: Record<string, string | undefined> = {
@@ -64,7 +64,7 @@ export function WechatKfOnboarding() {
     try {
       const res = await kfApi.createChannel(form)
       const result = res.data.data
-      if (!result) throw new Error('服务端未返回接入结果')
+      if (!result) throw new Error('没有拿到接入结果，请重试')
       setForm({ corpId: '', openKfid: '', secret: '' })
       setNotice(result.verified
         ? { kind: 'ok', text: '接入成功：客服账号已在线，可以生成客服链接了' }
@@ -113,7 +113,7 @@ export function WechatKfOnboarding() {
     try {
       const res = await kfApi.createLink(id)
       const url = res.data.data?.url
-      if (!url) throw new Error('服务端未返回客服链接')
+      if (!url) throw new Error('没有生成客服链接，请重试')
       setLink({ channelId: id, url })
     } catch (error) {
       setNotice({ kind: 'error', text: errorMessage(error) })
@@ -169,11 +169,11 @@ export function WechatKfOnboarding() {
       <section className="rounded-lg border border-neutral-200">
         <div className="border-b border-neutral-100 px-4 py-3">
           <h2 className="text-base font-semibold text-neutral-900">接入新的微信客服账号</h2>
-          <p className="mt-1 text-sm text-neutral-500">填写企业微信的 corp_id 与微信客服账号 open_kfid；保存后立即自检，通过后即为「已接通」。</p>
+          <p className="mt-1 text-sm text-neutral-500">填写企业微信的企业 ID 与客服账号 ID；保存后立即自检，通过后即为「已接通」。</p>
         </div>
         <div className="grid gap-4 px-4 py-4 sm:grid-cols-2">
           <label className="block text-sm">
-            <span className="mb-1.5 block font-medium text-neutral-700">企业 ID（corp_id）</span>
+            <span className="mb-1.5 block font-medium text-neutral-700">企业 ID</span>
             <input
               data-testid="kf-corp-id"
               className="h-9 w-full rounded border border-neutral-300 px-3 text-sm"
@@ -183,7 +183,7 @@ export function WechatKfOnboarding() {
             />
           </label>
           <label className="block text-sm">
-            <span className="mb-1.5 block font-medium text-neutral-700">客服账号 ID（open_kfid）</span>
+            <span className="mb-1.5 block font-medium text-neutral-700">客服账号 ID</span>
             <input
               data-testid="kf-open-kfid"
               className="h-9 w-full rounded border border-neutral-300 px-3 text-sm"
@@ -199,7 +199,7 @@ export function WechatKfOnboarding() {
               type="password"
               autoComplete="new-password"
               className="h-9 w-full rounded border border-neutral-300 px-3 text-sm"
-              placeholder="只提交一次，服务端加密保存，不会回显"
+              placeholder="只提交一次，保存后不会回显"
               value={form.secret}
               onChange={(e) => setForm({ ...form, secret: e.target.value })}
             />
