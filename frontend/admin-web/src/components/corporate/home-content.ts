@@ -162,7 +162,7 @@ export const supportItems = [
   {
     icon: Layers,
     title: '四端数据同源',
-    description: '管理后台、顾客小程序、商家小程序与员工端 H5 共用数据底座。',
+    description: '管理后台、微信客服、商家小程序与员工端 H5 共用数据底座。',
   },
   {
     icon: Headphones,
@@ -280,9 +280,9 @@ export const terminals = [
   },
   {
     icon: MessageSquare,
-    title: '顾客小程序',
+    title: '微信客服',
     audience: '终端消费者',
-    description: '在微信内咨询米宝、下单、查询物流与提交售后。',
+    description: '在微信里直接咨询米宝，不加好友、不下载；也可嵌入商家自有小程序或公众号。',
   },
   {
     icon: Headphones,

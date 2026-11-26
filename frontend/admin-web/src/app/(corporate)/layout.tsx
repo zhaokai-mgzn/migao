@@ -41,10 +41,10 @@ export const metadata: Metadata = {
   openGraph: {
     type: 'website',
     locale: 'zh_CN',
-    siteName: '生意管家 MIGAO',
+    siteName: '生意管家',
     title: '生意管家 — 布艺行业的 AI 经营平台',
     description:
-      '布艺行业的 AI 客服与经营平台：米宝承接顾客服务，黄金策承接生产管理，四个终端共用数据底座。',
+      '布艺行业的 AI 客服与经营平台：米宝承接顾客服务，黄金策承接生产管理，管理后台、微信客服、商家小程序与员工端 H5 共用数据底座。',
     // 相对路径 ⇒ 由 metadataBase 解析；不再硬编码 www（那是第二个真值源）
     images: [
       {
@@ -59,7 +59,7 @@ export const metadata: Metadata = {
     card: 'summary_large_image',
     title: '生意管家 — 布艺行业的 AI 经营平台',
     description:
-      '布艺行业的 AI 客服与经营平台：米宝承接顾客服务，黄金策承接生产管理，四个终端共用数据底座。',
+      '布艺行业的 AI 客服与经营平台：米宝承接顾客服务，黄金策承接生产管理，管理后台、微信客服、商家小程序与员工端 H5 共用数据底座。',
   },
   robots: {
     index: true,
