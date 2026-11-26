@@ -41,6 +41,8 @@ from pathlib import Path
 
 import pytest
 
+from unit_ci_workflows.injection import inject  # noqa: E402
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 NGINX_CONF = REPO_ROOT / "deploy" / "swas" / "nginx.conf"
 DEPLOY_SH = REPO_ROOT / "deploy" / "swas" / "deploy.sh"
@@ -261,8 +263,12 @@ def test_nginx_mutations_are_all_detected():
     # ① 把根面兜底写回去（`=404` → `/index.html`）⇒ 任意缺失路径变 200 HTML（issue #9249 的病灶）
     #    ⚠️ 原先这里注入的是「删掉整条 txt 面 ⇒ 缺失 .txt 回落 index.html」—— 根面改成 `=404` 之后
     #    那条变异**不再可观察**（删不删都得 404），留着就是一条恒绿的假判据。
-    root_fallback = block.replace("try_files $uri $uri/ =404;", "try_files $uri $uri/ /index.html;", 1)
-    assert root_fallback != block, "变异注入没生效（找不到根面 try_files）—— 判据会变成空断言"
+    root_fallback = inject(
+        block,
+        "try_files $uri $uri/ =404;",
+        "try_files $uri $uri/ /index.html;",
+        where="deploy/swas/nginx.conf::location / try_files",
+    )
     # 非 .txt 的缺失路径立刻暴露根面回归（200 HTML = 又回到「什么都像存在」）
     assert _serve(root_fallback, files, "/some/c-end/route") == (200, "index.html")
     # 而 `.txt` 仍被**本面**的 `=404` 拦住 ⇒ 这也正是这条 txt 面不能删的理由：
