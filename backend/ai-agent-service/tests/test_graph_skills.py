@@ -3395,6 +3395,50 @@ class TestMaskedPhoneWriteGuard:
     def test_write_without_phone_arg_passes(self):
         assert self._run({"customer_name": "张三"}) is None
 
+    # ── 改写：掩码值**唯一**对应「顾客本人给过的真号」⇒ 就地改写成真号并放行（issue #9224）──
+    #
+    # 病灶（run 45647252503）：HR-010 顾客 R1 给了 `13800009999`，模型 R2 交回确认卡上的
+    # `138****9999` ⇒ 守卫拦下并「回放真号」⇒ 模型又交一遍掩码 ⇒ **员工建号永远失败**。
+    # 拦截本身不能放宽（放宽 = 掩码值真的落库），但「顾客自己给过、且唯一匹配」时可以**改写**。
+    # 反向约束：真号来自**读工具**（顾客没说）时不许改写 —— 那会把「改号」静默写回旧号（CU-004）。
+
+    def test_mask_shaped_value_rewritten_to_user_provided_raw(self):
+        """顾客本轮给过真号 ⇒ 掩码值就地改写成真号，不拦（改号/建号是合法业务）。"""
+        args = {"phone": "138****9999"}
+        assert self._run(args, last_user_msg="员工手机号 13800009999", known=(), tool_name="employee_manage") is None
+        assert args["phone"] == "13800009999", f"必须改写成顾客给过的真号，现取 {args['phone']!r}"
+
+    def test_nested_mask_shaped_value_rewritten(self):
+        """嵌套载荷（`receiver.phone`）同样改写 —— 与拦截面的覆盖范围一致。"""
+        args = {"receiver": {"phone": "138****9999"}}
+        assert self._run(args, last_user_msg="手机号 13800009999", known=()) is None
+        assert args["receiver"]["phone"] == "13800009999"
+
+    def test_read_only_known_raw_is_not_rewritten(self):
+        """真号只来自**读工具**（顾客本轮没说）⇒ 仍然拦 —— 否则「改号」会静默写回旧号。"""
+        code, msg = self._blocked_code(self._run({"phone": "138****8000"}, known=(self.KNOWN,)))
+        assert code == "write_blocked_masked_phone"
+        assert self.KNOWN in msg
+
+    def test_ambiguous_mask_keeps_blocking(self):
+        """两个真号同前 3 后 4 ⇒ 无法判定该写哪个 ⇒ **不许猜**，仍拦。"""
+        import asyncio
+
+        class _Store:
+            async def load(self, sid):
+                return {}
+
+            async def commit(self, sid, new_full):
+                return None
+
+        with patch("app.memory.session_state_store.SessionStateStore",
+                   side_effect=lambda *a, **k: _Store()):
+            out = asyncio.run(_masked_phone_write_block(
+                "employee_manage", {"phone": "138****9999"},
+                {"name": "employee_manage", "args": {}, "id": "c1"},
+                "sess_1", "employee_manage", "手机号 13800009999 或 13811119999"))
+        assert out is not None, "歧义时不许猜 —— 必须保持拦截（否则可能写错人的号码）"
+
     def test_non_phone_value_in_phone_key_passes(self):
         """字段名以 `phone` 结尾 ≠ 值就是号码：分机备注 `分机#12` 含 `#` 但数字不足 → 不拦。
 
@@ -3407,7 +3451,8 @@ class TestMaskedPhoneWriteGuard:
 class TestMaskedPhoneWriteGuardWiring:
     """守卫必须**真的接在写路径上**（M68 教训：只测辅助函数 = 假守卫）。
 
-    断言以"工具没被执行"为准 —— 拦下后 `order_create` 不得真的发出去。
+    断言口径（issue #9224 改判）：**掩码值不得作为参数到达工具** —— 拦下就一次都不许发出去；
+    若「顾客亲口给过且唯一匹配」则按真号**改写**后放行（见 `test_masked_phone_never_reaches_tool`）。
     """
 
     def _run(self, args, user_msg="确认下单", store_extra=None, tool_name="order_create",
@@ -3481,12 +3526,20 @@ class TestMaskedPhoneWriteGuardWiring:
         return seen
 
     def test_masked_phone_never_reaches_tool(self):
+        """掩码**值**不得到达工具；但「顾客亲口给过且唯一匹配」时改写成真号后放行（issue #9224）。
+
+        历史口径：原先断言「工具一次都不许调用」。改判理由（run 45647252503 实证）：
+        「拦下 + 回放真号让模型重试」在 HR-010 上**死循环**（模型连续两轮交回同一张掩码卡）
+        ⇒ 员工建号永远失败。判红力不变：只要掩码值本身进了参数，这条就红。
+        """
         seen = self._run({"customer_name": "张三", "customer_phone": "13800008000"},
                          user_msg="我的手机号是 13800138000",
                          store_extra={KNOWN_RAW_PHONES_KEY: ["13800138000"]})
-        assert seen["calls"] == [], "掩码变体号码不得真的调用 order_create（否则脏数据落库）"
-        assert "write_blocked_masked_phone" in seen["tool_content"]
-        assert "13800138000" in seen["tool_content"], "拦截后必须把真实号码回放给模型"
+        assert len(seen["calls"]) == 1, "顾客给过的真号可唯一匹配 ⇒ 应按真号改写并放行"
+        _, passed_args = seen["calls"][0]
+        assert passed_args["customer_phone"] == "13800138000", (
+            f"到达工具的参数必须已改写成真号，现取 {passed_args['customer_phone']!r}")
+        assert "write_blocked_masked_phone" not in seen["tool_content"], "改写后不该再报拦截"
 
     def test_read_only_tool_not_blocked(self):
         """只读工具不拦：脏数据风险来自"用掩码值建单"，查询用掩码值只是查不到。

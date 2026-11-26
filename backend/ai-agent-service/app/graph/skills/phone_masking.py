@@ -120,6 +120,54 @@ def _phone_args(args) -> list:
     return out
 
 
+def user_provided_phones(state: dict | None = None, last_user_msg: str = "") -> set:
+    """**顾客本人说过**的真号（本轮消息 ∪ 历史 user 消息）。
+
+    ⚠️ 与 `_known_raw_phones` 的区别是本函数存在的全部理由：后者还并进**读工具**
+    （`customer_address_query` 等）返回的号码 —— 那些号**不是顾客本轮的选择**。
+    改写掩码值时只许用本函数的集合：否则「顾客要把手机号从 A 改成 B」而模型交回 A 的掩码，
+    就会被静默改写成 A（= 改号失败但界面显示成功，issue #9224 的 CU-004）。
+    """
+    known = raw_phones_in(last_user_msg)
+    for msg in (state or {}).get("messages") or []:
+        try:
+            role = str(getattr(msg, "type", "") or getattr(msg, "role", ""))
+        except Exception:
+            role = ""
+        if role in ("human", "user"):
+            known |= raw_phones_in(getattr(msg, "content", ""))
+    return known
+
+
+def rewrite_phone_args(args, mapping: dict) -> list:
+    """把参数里「手机号字段」的值按 `mapping{旧值: 真号}` **就地改写**；返回 `[(路径, 旧值, 新值)]`。
+
+    遍历口径与 `_phone_args` 逐字一致（同一个「什么算手机号字段」的判定），否则会出现
+    「拦得住、改不到」的分裂：守卫看得到这个字段，改写却漏掉它 ⇒ 拦截后的重试永远失败。
+    """
+    out = []
+
+    def _walk(node, path, depth):
+        if depth > 3 or not isinstance(node, dict):
+            return
+        for k, v in list(node.items()):
+            key = str(k)
+            here = f"{path}.{key}" if path else key
+            if isinstance(v, dict):
+                _walk(v, here, depth + 1)
+            elif isinstance(v, (list, tuple)):
+                for i, item in enumerate(v):
+                    _walk(item, f"{here}[{i}]", depth + 1)
+            elif key.lower().endswith("phone") and isinstance(v, str):
+                new = mapping.get(v.strip())
+                if new:
+                    node[k] = new
+                    out.append((here, v.strip(), new))
+
+    _walk(args or {}, "", 0)
+    return out
+
+
 async def _remember_known_value(session_id: str, key: str, value: str) -> None:
     """把一个**已知真值**（地址等）记进会话状态（只增不减；失败不致命）。"""
 

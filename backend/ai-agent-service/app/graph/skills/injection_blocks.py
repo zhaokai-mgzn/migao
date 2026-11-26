@@ -34,7 +34,7 @@ import json
 from app.graph.skills.phone_masking import (
     KNOWN_ADDRESS_KEY, KNOWN_RAW_PHONES_KEY,
     _is_customer_role, _is_mask_shaped, _known_raw_phones, _norm_ws, _phone_args,
-    mask_variants, raw_phones_in,
+    mask_variants, raw_phones_in, rewrite_phone_args, user_provided_phones,
 )
 
 
@@ -377,24 +377,38 @@ async def _masked_phone_write_block(tool_name: str, args: dict, tool_call: dict,
         raw_phones_in(last_user_msg)
     # 顾客本人本轮明确给出的号码 = 权威来源（哪怕它长得像掩码变体也不拦）
     user_said = raw_phones_in(last_user_msg)
+    # 🔴 只有「顾客本人说过的号」才允许用来**改写**（issue #9224）：读工具返回的号不是顾客本轮的选择，
+    #    拿它改写会把「改号」静默写回旧号（CU-004 的病灶）。
+    user_scope = user_provided_phones(state, last_user_msg)
+    rewrites: dict = {}
     for path, value in pairs:
         if _is_mask_shaped(value):
-            raw = ""
-            for k in known:
-                if k[:3] == value[:3] and k[-4:] == value[-4:]:
-                    raw = k
-                    break
+            candidates = [k for k in known if k[:3] == value[:3] and k[-4:] == value[-4:]]
+            if len(candidates) == 1 and candidates[0] in user_scope:
+                rewrites[value] = candidates[0]
+                continue
             return _masked_phone_block_result(
-                tool_name, path, value, raw, session_id, skill_name,
+                tool_name, path, value, candidates[0] if len(candidates) == 1 else "",
+                session_id, skill_name,
                 because="含掩码字符", tool_call=tool_call)
         if value in user_said:
             continue
-        for k in known:
-            if value in mask_variants(k):
-                return _masked_phone_block_result(
-                    tool_name, path, value, k, session_id, skill_name,
-                    because=f"是本会话真实号码（{k}）的掩码填充形态",
-                    tool_call=tool_call)
+        matched = [k for k in known if value in mask_variants(k)]
+        if not matched:
+            continue
+        if len(matched) == 1 and matched[0] in user_scope:
+            rewrites[value] = matched[0]
+            continue
+        return _masked_phone_block_result(
+            tool_name, path, value, matched[0], session_id, skill_name,
+            because=f"是本会话真实号码（{matched[0]}）的掩码填充形态",
+            tool_call=tool_call)
+    if rewrites:
+        applied = rewrite_phone_args(args, rewrites)
+        from app.graph.skills import base_skill as _base
+        _base.logger.warning(
+            f"[{skill_name}] 掩码手机号已按顾客亲口给的号码改写 tool={tool_name} "
+            f"rewrites={applied} | session={session_id}")
     return None
 
 
