@@ -169,7 +169,7 @@ UNITS: Tuple[CapabilityUnit, ...] = (
         next_step="对应业务页面（提交永远在页面）",
     ),
     CapabilityUnit(
-        "delete_object", "删除 / 停用 / 作废",
+        "delete_object", "删除 / 停用 / 作废（整对象；停用仅限加工项）",
         decided_off=True,
         next_step="对应业务页面",
     ),

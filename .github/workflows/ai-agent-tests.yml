@@ -31,6 +31,8 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+          # ⚡ 只取 tree（issue #9120）：detect 步只用 `git diff --name-only`（tree 级）
+          filter: blob:none
 
       - name: Detect ai-agent-related changes
         id: detect
@@ -94,4 +96,8 @@ jobs:
           DASHVECTOR_COLLECTION: ci
           # 其余无默认值字段由 tests/conftest.py setdefault 兜底
         run: |
-          python -m pytest tests/ -v --tb=short -q -m "not integration"
+          # ⚡ 并行（issue #9153 读数：本步单跑实测 459s，是本腿唯一大头；`pytest-xdist` 早已在
+          #   requirements.txt 里（#2957 本地并行提速），CI 只是没用）。`--dist loadfile` 保证
+          #   **同一文件的用例落在同一 worker**（夹具/模块级状态不被跨 worker 打散）。
+          # CI 不消费 coverage（pytest.ini 的 --cov=app 是纯开销）⇒ --no-cov 再省 20–40s。
+          python -m pytest tests/ -v --tb=short -q -m "not integration" -n 4 --dist loadfile --no-cov

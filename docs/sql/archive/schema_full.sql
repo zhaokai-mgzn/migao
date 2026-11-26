@@ -4,7 +4,12 @@
 -- 本文件是 **2026-05-30 的一次性快照**，此后未随迁移链更新，**两个方向都已失真**
 -- （2026-09-11 实测，逐表比对 backend/admin-api/src/main/resources/db/init/schema.sql）：
 --
---   本文件缺失（schema.sql 已有，共 65 张）：
+--   本文件缺失（schema.sql 已有，共 77 张）：
+--     kf_suites, kf_channels, kf_inbox, kf_sync_cursor, kf_session_remote,
+--     kf_send_budget, kf_outbox, kf_policies, kf_agents, kf_media,
+--     kf_customer_link, kf_handoff
+--      微信客服 AI 智能客服（V217，issue #9161 —— 通道/会话镜像/预算/发件箱；
+--      复用 sessions/agent_sessions，不另起会话真相）。
 --     playbooks
 --      口径卡（V210，issue #8175 —— 企业级可执行口径：trigger / counter 是**结构化条件语言 JSON**
 --      （不是自然语言）、state 三态 draft / active / retired。缺这张表，「纠正一次 → 全企业受益」

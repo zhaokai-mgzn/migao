@@ -4,7 +4,25 @@
     "title": "纯图找同款（无文字）— 应出澄清卡或找相似",
     "domain": "product",
     "rounds": [
-      {"text": "", "images": ["https://ai-customer-service-admin-dev.oss-cn-hangzhou.aliyuncs.com/images/2026/09/04/e5a68d1a02f844c6a45846784765a737.jpg"]}
+      {
+        "text": "",
+        "images": [
+          "https://ai-customer-service-admin-dev.oss-cn-hangzhou.aliyuncs.com/images/2026/09/04/e5a68d1a02f844c6a45846784765a737.jpg"
+        ]
+      }
+    ],
+    "checks": [
+      {
+        "level": "L1",
+        "ref": "*",
+        "type": "no_error"
+      },
+      {
+        "level": "L2",
+        "ref": "*",
+        "type": "ai_text_not_contains",
+        "expect": "已为您"
+      }
     ]
   },
   {
@@ -12,7 +30,25 @@
     "title": "图片+口语短句『这个』— 应澄清候选意图",
     "domain": "product",
     "rounds": [
-      {"text": "这个", "images": ["https://ai-customer-service-admin-dev.oss-cn-hangzhou.aliyuncs.com/images/2026/09/04/006a4983bb81488fa008ab1d96765087.jpg"]}
+      {
+        "text": "这个",
+        "images": [
+          "https://ai-customer-service-admin-dev.oss-cn-hangzhou.aliyuncs.com/images/2026/09/04/006a4983bb81488fa008ab1d96765087.jpg"
+        ]
+      }
+    ],
+    "checks": [
+      {
+        "level": "L1",
+        "ref": "*",
+        "type": "no_error"
+      },
+      {
+        "level": "L1",
+        "ref": "R1",
+        "type": "card_shown",
+        "expect": "choice"
+      }
     ]
   },
   {
@@ -20,7 +56,25 @@
     "title": "图片+明确意图『有这款卖吗』— 应检索真实商品",
     "domain": "product",
     "rounds": [
-      {"text": "有这款卖吗", "images": ["https://ai-customer-service-admin-dev.oss-cn-hangzhou.aliyuncs.com/images/2026/09/04/e5a68d1a02f844c6a45846784765a737.jpg"]}
+      {
+        "text": "有这款卖吗",
+        "images": [
+          "https://ai-customer-service-admin-dev.oss-cn-hangzhou.aliyuncs.com/images/2026/09/04/e5a68d1a02f844c6a45846784765a737.jpg"
+        ]
+      }
+    ],
+    "checks": [
+      {
+        "level": "L1",
+        "ref": "*",
+        "type": "no_error"
+      },
+      {
+        "level": "L1",
+        "ref": "*",
+        "type": "tool_called",
+        "expect": "product_search"
+      }
     ]
   },
   {
@@ -28,7 +82,23 @@
     "title": "文字找商品（遮光窗帘）",
     "domain": "product",
     "rounds": [
-      {"text": "有没有遮光窗帘", "images": []}
+      {
+        "text": "有没有遮光窗帘",
+        "images": []
+      }
+    ],
+    "checks": [
+      {
+        "level": "L1",
+        "ref": "*",
+        "type": "no_error"
+      },
+      {
+        "level": "L1",
+        "ref": "*",
+        "type": "tool_called",
+        "expect": "product_search"
+      }
     ]
   },
   {
@@ -36,8 +106,27 @@
     "title": "算料报价（3米窗户）",
     "domain": "quote",
     "rounds": [
-      {"text": "我家窗户3米宽，想做个窗帘要多少布", "images": []},
-      {"text": "客厅，2.8米高", "images": []}
+      {
+        "text": "我家窗户3米宽，想做个窗帘要多少布",
+        "images": []
+      },
+      {
+        "text": "客厅，2.8米高",
+        "images": []
+      }
+    ],
+    "checks": [
+      {
+        "level": "L1",
+        "ref": "*",
+        "type": "no_error"
+      },
+      {
+        "level": "L1",
+        "ref": "*",
+        "type": "tool_called",
+        "expect": "curtain_calc"
+      }
     ]
   },
   {
@@ -45,7 +134,23 @@
     "title": "查我的订单",
     "domain": "order",
     "rounds": [
-      {"text": "查一下我的订单", "images": []}
+      {
+        "text": "查一下我的订单",
+        "images": []
+      }
+    ],
+    "checks": [
+      {
+        "level": "L1",
+        "ref": "*",
+        "type": "no_error"
+      },
+      {
+        "level": "L1",
+        "ref": "*",
+        "type": "tool_called",
+        "expect": "customer_order_query"
+      }
     ]
   },
   {
@@ -53,7 +158,23 @@
     "title": "物流追踪",
     "domain": "order",
     "rounds": [
-      {"text": "我的窗帘发货了没，到哪了", "images": []}
+      {
+        "text": "我的窗帘发货了没，到哪了",
+        "images": []
+      }
+    ],
+    "checks": [
+      {
+        "level": "L1",
+        "ref": "*",
+        "type": "no_error"
+      },
+      {
+        "level": "L1",
+        "ref": "*",
+        "type": "tool_called",
+        "expect": "customer_logistics_track"
+      }
     ]
   },
   {
@@ -61,16 +182,69 @@
     "title": "售后申请（要退货）",
     "domain": "aftersales",
     "rounds": [
-      {"text": "我买的窗帘要退货", "images": []},
-      {"text": "颜色不对，想要换一个颜色", "images": []}
+      {
+        "text": "我买的窗帘要退货",
+        "images": []
+      },
+      {
+        "text": "颜色不对，想要换一个颜色",
+        "images": []
+      }
+    ],
+    "checks": [
+      {
+        "level": "L1",
+        "ref": "*",
+        "type": "no_error"
+      },
+      {
+        "level": "L1",
+        "ref": "*",
+        "type": "tool_called",
+        "expect": "aftersale_create"
+      },
+      {
+        "level": "L1",
+        "ref": "*",
+        "type": "card_shown",
+        "expect": "confirm"
+      }
     ]
   },
   {
     "id": "C-09",
-    "title": "转人工",
+    "title": "转人工（已退场）：如实告知无人工通道，不得假承诺",
     "domain": "handoff",
     "rounds": [
-      {"text": "转人工", "images": []}
+      {
+        "text": "转人工",
+        "images": []
+      }
+    ],
+    "checks": [
+      {
+        "level": "L1",
+        "ref": "*",
+        "type": "no_error"
+      },
+      {
+        "level": "L1",
+        "ref": "*",
+        "type": "tool_not_called",
+        "expect": "human_handoff"
+      },
+      {
+        "level": "L2",
+        "ref": "*",
+        "type": "ai_text_contains",
+        "expect": "人工"
+      },
+      {
+        "level": "L2",
+        "ref": "*",
+        "type": "ai_text_not_contains",
+        "expect": "已为您转接"
+      }
     ]
   },
   {
@@ -78,9 +252,37 @@
     "title": "连续模糊意图（帮我看看×2）— 澄清轮护栏",
     "domain": "clarify_guard",
     "rounds": [
-      {"text": "帮我看看", "images": []},
-      {"text": "就是那个", "images": []},
-      {"text": "你懂的", "images": []}
+      {
+        "text": "帮我看看",
+        "images": []
+      },
+      {
+        "text": "就是那个",
+        "images": []
+      },
+      {
+        "text": "你懂的",
+        "images": []
+      }
+    ],
+    "checks": [
+      {
+        "level": "L1",
+        "ref": "*",
+        "type": "no_error"
+      },
+      {
+        "level": "L1",
+        "ref": "R1",
+        "type": "card_shown",
+        "expect": "choice"
+      },
+      {
+        "level": "L2",
+        "ref": "*",
+        "type": "ai_text_not_contains",
+        "expect": "已为您"
+      }
     ]
   }
 ]

@@ -7,7 +7,7 @@ import { defineConfig, devices } from '@playwright/test'
  *
  * ## 为什么要有它
  *
- * C 端（米宝）早在 `mini-app.yml` 里有 `xiaobu-h5-visual`；**B 端一条 e2e 都没有** ⇒
+ * **B 端一条 e2e 都没有**（C 端小程序已于 2026-11-26 删除，issue #9233）⇒
  * #5754 的「底部 tabBar 是否真的居中」只能靠人眼 + 手工量（那次连着踩了两条 tabbar 病灶 + 一次构建陷阱）。
  * 本腿把「底栏几何」变成机器判据：`tests/e2e/specs/bmini/bmini-tabbar.spec.ts`。
  *
@@ -20,7 +20,7 @@ import { defineConfig, devices } from '@playwright/test'
  *
  * ## 产物新鲜度（沿用 C 端 #4249 的教训，**不重写第二份实现**）
  *
- * 复用 `tests/xiaobu_dist_freshness.py`（它按 `--project <dir>` 参数化，是本仓唯一的 H5 产物指纹实现）：
+ * 复用 `tests/h5_dist_freshness.py`（它按 `--project <dir>` 参数化，是本仓唯一的 H5 产物指纹实现；原名 xiaobu_*，C 端下线后改为通用名）：
  * · 本地 `ensure`：产物不新鲜就**先构建**再跑，构建失败 fail-closed（绝不服务旧 dist）；
  * · CI `check`：只校验（构建由 workflow 步骤单独完成）⇒ 无指纹 exit 3 只告警不阻塞，行为与 C 端一致。
  *
@@ -28,7 +28,7 @@ import { defineConfig, devices } from '@playwright/test'
  *   cd tests && npx playwright test specs/bmini/ --config=playwright.bmini.config.ts
  */
 const BMINI_DIR = path.resolve(__dirname, '../frontend/bmini-app')
-const DIST_GUARD = path.resolve(__dirname, 'xiaobu_dist_freshness.py')
+const DIST_GUARD = path.resolve(__dirname, 'h5_dist_freshness.py')
 
 // CI 也走 `ensure`（与 C 端那条腿不同，**有意为之**）：本腿自建自证 ——
 // 新鲜 runner 上没有 dist，`check` 会 exit 3「未判定」而被容忍 ⇒ 服务一个不存在的 dist；

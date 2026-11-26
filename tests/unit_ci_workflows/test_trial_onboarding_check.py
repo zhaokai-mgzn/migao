@@ -89,7 +89,7 @@ class _Stub(BaseHTTPRequestHandler):
     cfg: dict = {}
 
     DEFAULTS = {
-        "download_body": "<html><title>下载中心 — 观星台终端</title>观星台终端安装包</html>",
+        "download_body": "<html><title>下载中心 — 生意管家终端</title>生意管家终端安装包</html>",
         "terminal_status": 301,
         "manifest_status": 200,
         "android_status": 200,

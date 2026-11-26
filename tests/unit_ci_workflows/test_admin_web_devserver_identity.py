@@ -133,10 +133,40 @@ sys.path.insert(0, str(TESTS_DIR))
 import admin_web_devserver_identity as identity_guard  # noqa: E402
 DEV_LOCK_RELATIVE = Path(identity_guard.DEV_LOCK_RELATIVE)
 
-# 复用 #4249 的判据实现（`_slice_block` / `find_reuse_setting`），**不复制第二份**
-# —— 同族文件同口径，避免两套解析各自漂移。
-sys.path.append(str(Path(__file__).resolve().parent))
-from test_xiaobu_h5_dist_freshness import find_reuse_setting  # noqa: E402
+# 2026-11-26（issue #9233）：原先这两个小工具与 #4249 的 H5 视觉腿判据共用（当时为避免两套解析
+# 各自漂移而 import）。该判据的承载体（C 端 `frontend/mini-app` + `tests/playwright.xiaobu.config.ts`）
+# 已随 C 端小程序下线整批删除 ⇒ **唯一消费者就是本文件**，工具落在这里（不再有第二份，也就无处漂移）。
+def _slice_block(text: str, key: str) -> str:
+    """取 `key: { … }` 括号配平的一段（跳过字符串字面量，避免被字符串里的括号带偏）。"""
+    m = re.search(r"\b" + re.escape(key) + r"\s*:\s*\{", text)
+    if not m:
+        return ""
+    depth = 0
+    i = m.end() - 1
+    while i < len(text):
+        ch = text[i]
+        if ch in "\"'`":
+            quote = ch
+            i += 1
+            while i < len(text) and text[i] != quote:
+                i += 2 if text[i] == "\\" else 1
+        elif ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                return text[m.start(): i + 1]
+        i += 1
+    raise AssertionError(f"配置里 `{key}` 的括号未配平：{text[m.start():m.start() + 40]!r}")
+
+
+def find_reuse_setting(text: str) -> str:
+    """`reuseExistingServer` 的右值原文（空字符串 = 配置里没有这一项）。"""
+    block = _slice_block(text, "webServer")
+    m = re.search(r"reuseExistingServer\s*:\s*([^,\n]+)", block)
+    return m.group(1).strip() if m else ""
+
+
 
 
 # ── 静态判据（纯文本，可对任意版本的配置文本跑 —— 红证靠它跑内联的修复前片段）──

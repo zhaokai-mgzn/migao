@@ -79,28 +79,9 @@ REGISTRY = (
         "fact": "工艺规格展示映射（craft spec display）",
         "source": "frontend/admin-web/src/lib/craft-display.ts",
         "copies": (
-            "frontend/mini-app/src/utils/craft-display.ts",
             "frontend/bmini-app/src/utils/craft-display.ts",
         ),
         "why": "文件头自称「单一真值定义，多处渲染共用」，实际是逐字节复制到两个小程序端",
-    },
-    {
-        "fact": "SSE 流式客户端（小程序端）",
-        "source": "frontend/mini-app/src/utils/sse.ts",
-        "copies": ("frontend/bmini-app/src/utils/sse.ts",),
-        "why": "小程序与 bmini 两端各一份实现，需保持同一份事件解析口径",
-    },
-    {
-        "fact": "敏感信息脱敏（mask）",
-        "source": "frontend/mini-app/src/utils/mask.ts",
-        "copies": ("frontend/bmini-app/src/utils/mask.ts",),
-        "why": "脱敏口径是合规面，两端逐字节复制",
-    },
-    {
-        "fact": "确认卡（ConfirmCard）",
-        "source": "frontend/mini-app/src/components/cards/ConfirmCard.tsx",
-        "copies": ("frontend/bmini-app/src/components/cards/ConfirmCard.tsx",),
-        "why": "端上交互卡逐字节复制",
     },
 )
 

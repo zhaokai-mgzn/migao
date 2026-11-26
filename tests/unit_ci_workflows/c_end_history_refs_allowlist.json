@@ -1,0 +1,107 @@
+{
+  "_what": "C 端顾客小程序（frontend/mini-app）与 C 端 H5 发布腿删除后，**允许继续提到已删对象**的文件台账（issue #9233）。判据 = tests/unit_ci_workflows/test_c_end_removed_guard.py 判据 2/6。",
+  "_rules": [
+    "`kind=keep` = 机器面上的**退役声明 / 墓碑**（点名是必要的：读者要知道删了什么、重启条件是什么）",
+    "`kind=history` = 历史留档（append-only：design / acceptance / 用例 merge_log / flaky 台账 / CHANGELOG）",
+    "**未登记即红**（新文件提到已删对象 ⇒ 必须显式登记并写理由）；**登记了却已无命中 ⇒ 红**（空豁免只许缩短）；条数上限冻结在 `frozen_max`"
+  ],
+  "frozen_max": 24,
+  "entries": {
+    ".github/cases/api.yml": {
+      "kind": "history",
+      "why": "用例的 `merge_log` / `data_checks` 是 append-only 的历史记录（不删历史条目）；机器可读的 `traces` 由判据 3 单独钉住 = 0 幽灵引用"
+    },
+    ".github/cases/chat.yml": {
+      "kind": "history",
+      "why": "用例的 `merge_log` / `data_checks` 是 append-only 的历史记录（不删历史条目）；机器可读的 `traces` 由判据 3 单独钉住 = 0 幽灵引用"
+    },
+    ".github/cases/misc.yml": {
+      "kind": "history",
+      "why": "用例的 `merge_log` / `data_checks` 是 append-only 的历史记录（不删历史条目）；机器可读的 `traces` 由判据 3 单独钉住 = 0 幽灵引用"
+    },
+    ".github/cases/product.yml": {
+      "kind": "history",
+      "why": "用例的 `merge_log` / `data_checks` 是 append-only 的历史记录（不删历史条目）；机器可读的 `traces` 由判据 3 单独钉住 = 0 幽灵引用"
+    },
+    ".github/cases/settings.yml": {
+      "kind": "history",
+      "why": "用例的 `merge_log` / `data_checks` 是 append-only 的历史记录（不删历史条目）；机器可读的 `traces` 由判据 3 单独钉住 = 0 幽灵引用"
+    },
+    ".github/cases/ui.yml": {
+      "kind": "history",
+      "why": "用例的 `merge_log` / `data_checks` 是 append-only 的历史记录（不删历史条目）；机器可读的 `traces` 由判据 3 单独钉住 = 0 幽灵引用"
+    },
+    ".github/flaky-ledger.json": {
+      "kind": "history",
+      "why": "append-only 的 flake 历史台账：条目引用的是当年的 dependabot 分支名（`dependabot/npm_and_yarn/frontend/mini-app/…`），删掉等于篡改历史读数"
+    },
+    ".github/workflows/mini-app.yml": {
+      "kind": "keep",
+      "why": "**墓碑文件**：重启条件必须点名该工程目录与 required 检查名 —— 这是它保留的唯一理由"
+    },
+    "AGENTS.md": {
+      "kind": "keep",
+      "why": "C 端下线的**退役声明**（点名被删目录，否则读者不知道删了什么）"
+    },
+    "CHANGELOG.md": {
+      "kind": "history",
+      "why": "CHANGELOG 历史条目（本轮新增的退役说明也在此列：C 端下线的用户可见口径必须写进 CHANGELOG）"
+    },
+    "CONTRIBUTING.md": {
+      "kind": "keep",
+      "why": "同上（产品形态一句话里必须点名被删的目录）"
+    },
+    "README.md": {
+      "kind": "keep",
+      "why": "同上（四端 → 三端的退役说明）"
+    },
+    "acceptance/2026-09-14/mini-app-e2e/REPORT.md": {
+      "kind": "history",
+      "why": "验收归档（历史证据，不可改写）"
+    },
+    "acceptance/2026-10-06-changelog-rotation/CHANGELOG-archive.md": {
+      "kind": "history",
+      "why": "验收归档（历史证据，不可改写）"
+    },
+    "docs/design/agent-input-bar-unified-design.md": {
+      "kind": "history",
+      "why": "设计 / 验收历史留档：描述的是当时的两端/三端形态，改写会抹掉判断依据"
+    },
+    "docs/design/c-end-tenant-domain-routing.md": {
+      "kind": "history",
+      "why": "设计 / 验收历史留档：描述的是当时的两端/三端形态，改写会抹掉判断依据"
+    },
+    "docs/design/logo-redesign/README.md": {
+      "kind": "history",
+      "why": "设计 / 验收历史留档：描述的是当时的两端/三端形态，改写会抹掉判断依据"
+    },
+    "docs/design/operation-name-unification.md": {
+      "kind": "history",
+      "why": "设计 / 验收历史留档：描述的是当时的两端/三端形态，改写会抹掉判断依据"
+    },
+    "docs/design/order-craft-spec-design.md": {
+      "kind": "history",
+      "why": "设计 / 验收历史留档：描述的是当时的两端/三端形态，改写会抹掉判断依据"
+    },
+    "docs/design/ui-button-standard.md": {
+      "kind": "history",
+      "why": "设计 / 验收历史留档：描述的是当时的两端/三端形态，改写会抹掉判断依据"
+    },
+    "docs/design/xiaobu-c-end-redesign.md": {
+      "kind": "history",
+      "why": "设计 / 验收历史留档：描述的是当时的两端/三端形态，改写会抹掉判断依据"
+    },
+    "docs/testing/acceptance-5740-section1.5.md": {
+      "kind": "history",
+      "why": "设计 / 验收历史留档：描述的是当时的两端/三端形态，改写会抹掉判断依据"
+    },
+    "docs/testing/demo-readiness.md": {
+      "kind": "history",
+      "why": "设计 / 验收历史留档：描述的是当时的两端/三端形态，改写会抹掉判断依据"
+    },
+    "docs/testing/production-readonly-verification-pack.md": {
+      "kind": "history",
+      "why": "设计 / 验收历史留档：描述的是当时的两端/三端形态，改写会抹掉判断依据"
+    }
+  }
+}

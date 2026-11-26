@@ -246,7 +246,7 @@ class SmsServiceTest {
         ReflectionTestUtils.setField(smsService, "bypassCode", "");
         when(smsConfig.getAccessKeyId()).thenReturn("ak");
         when(smsConfig.getAccessKeySecret()).thenReturn("sk");
-        when(smsConfig.getSignName()).thenReturn("观星台");
+        when(smsConfig.getSignName()).thenReturn("生意管家");
         when(smsConfig.getTemplateCode()).thenReturn("SMS_123456");
         when(smsClient.sendSms(any(SendSmsRequest.class))).thenReturn(
                 new SendSmsResponse().setBody(new SendSmsResponseBody().setCode("OK").setMessage("OK")));
@@ -257,7 +257,7 @@ class SmsServiceTest {
         verify(smsClient).sendSms(captor.capture());
         SendSmsRequest req = captor.getValue();
         assertThat(req.getPhoneNumbers()).isEqualTo(phone);
-        assertThat(req.getSignName()).isEqualTo("观星台");
+        assertThat(req.getSignName()).isEqualTo("生意管家");
         assertThat(req.getTemplateCode()).isEqualTo("SMS_123456");
         assertThat(req.getTemplateParam()).matches("\\{\"code\":\"\\d{6}\"}");
     }
@@ -269,7 +269,7 @@ class SmsServiceTest {
         ReflectionTestUtils.setField(smsService, "bypassCode", "");
         when(smsConfig.getAccessKeyId()).thenReturn("ak");
         when(smsConfig.getAccessKeySecret()).thenReturn("sk");
-        when(smsConfig.getSignName()).thenReturn("观星台");
+        when(smsConfig.getSignName()).thenReturn("生意管家");
         when(smsConfig.getTemplateCode()).thenReturn("SMS_123456");
         when(smsClient.sendSms(any(SendSmsRequest.class))).thenReturn(
                 new SendSmsResponse().setBody(new SendSmsResponseBody()

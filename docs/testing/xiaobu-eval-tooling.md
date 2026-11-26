@@ -16,8 +16,8 @@ C 端米宝与 B 端黄金策是**两个 Agent、两套工具集**，但共用�
 |---|---|---|---|
 | ① 行为评测（**主力**） | `tests/agent_eval/local_runner.py` + `PERSONA=xiaobu` | ❌ 不需要（纯 HTTP/SSE） | ✅ `xiaobu-acceptance.yml` |
 | ② H5 视觉回归 | `tests/playwright.xiaobu.config.ts` | ❌ 不需要（静态托管 Taro H5 产物 + 本地 Chrome） | ✅ `mini-app.yml::xiaobu-h5-visual` |
-| ③ 组件单测 | `frontend/mini-app/tests/*.tsx` | ❌ 不需要（jest + jsdom，Taro 全 mock） | ✅ `mini-app.yml::typecheck-and-test` |
-| ④ 真机小程序 E2E | `frontend/mini-app/e2e/run.js` | ✅ **唯一依赖** | ❌ 未接入 |
+| ③ 组件单测 | **已随 C 端小程序工程删除**（issue #9233） | — | ⛔ 该腿已改 no-op（只保 required 名） |
+| ④ 真机小程序 E2E | **已随 C 端小程序工程删除**（issue #9233） | — | ⛔ 不再存在 |
 
 **④ 不作为评测骨架**：`miniprogram-automator` 需本机已登录的微信开发者工具
 （`CLI_PATH` 硬编码 `/Applications/wechatwebdevtools.app/...`，还需在设置里开服务端口），

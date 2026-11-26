@@ -65,6 +65,11 @@ from pathlib import Path
 import pytest
 import yaml
 
+# ── 发布线自检的 `git` 桩（issue #9086）────────────────────────────────────
+# 本文件跑的是**真实 deploy.sh**：1.0.1 段现在会问 git「目标提交是不是 origin/release 的祖先」。
+# 桩补的是沙箱本来就该模拟的那一面（口径与该模块 docstring 一致），既有断言一字未改。
+from unit_ci_workflows import deploy_release_line_stub as rl_stub  # noqa: E402
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEPLOY_SH = REPO_ROOT / "deploy" / "swas" / "deploy.sh"
 CI_SCRIPT = REPO_ROOT / "deploy" / "scripts" / "swas-deploy-ci.sh"
@@ -452,7 +457,10 @@ MIG_GATE_PRE = "# 迁移失败闸门（issue #5792）"
 #: 收尾兜底门的标记
 MIG_GATE_POST = "# 迁移失败闸门兜底（issue #5792）"
 #: 切流量那一步的注释锚点（顺序判据用）
-SWITCH_ANCHOR = "# ── ② 切换：替换正式容器"
+#: 切流量那一步的注释锚点（顺序判据用）。
+#: ⚠️ M1-a（issue #9098）起「切流量」= **只切 nginx upstream**（不再重建正式容器）
+#:    ⇒ 锚点跟着换到 ② 的 upstream 切换步；判据语义不变：迁移失败必须拦在**流量切走之前**。
+SWITCH_ANCHOR = "# ── ② M1-a："
 
 
 def judge_migration_failure_gate(text: str) -> list:
@@ -871,6 +879,7 @@ def _prepare(tmp_path: Path, script_text: str) -> tuple:
     tar_path = tmp_path / "src.tar.gz"
     _make_src_tar(tar_path)
     bin_dir = tmp_path / "bin"
+    rl_stub.install(bin_dir)  # 发布线自检要问 git（issue #9086）：补桩，既有断言不受影响
     bin_dir.mkdir(exist_ok=True)
     _write_exe(bin_dir / "curl", CURL_STUB)
     _write_exe(bin_dir / "docker", DOCKER_STUB)

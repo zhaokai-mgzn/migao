@@ -1,0 +1,6 @@
+{
+  "id": "MC-351",
+  "pr": 9100,
+  "title": "M1 零停机切换：nginx upstream 摘挂（成员=容器名:容器内端口、稳态只写一条、发布期只改成员+nginx -t+reload、drain 后才重建正式容器）+ 应用优雅退出（Spring graceful/30s、uvicorn 200s、stop_grace_period 45s/210s）+ 只读长流探针 /internal/stream-probe",
+  "claimed_at": "2026-11-24"
+}

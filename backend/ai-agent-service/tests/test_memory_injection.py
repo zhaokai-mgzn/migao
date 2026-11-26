@@ -28,7 +28,7 @@ class TestInjectUserMemories:
     @pytest.mark.asyncio
     async def test_xiaobu_injects_memories(self):
         """xiaobu + 有记忆 → 消毒后的记忆块前置注入 system prompt"""
-        base_prompt = "你是米宝，观星台窗帘的智能客服。"
+        base_prompt = "你是米宝，生意管家的智能客服。"
         with patch(
             "app.graph.skills.base_skill.UserMemoryManager"
         ) as mock_cls:

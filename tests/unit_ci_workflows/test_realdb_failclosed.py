@@ -221,6 +221,9 @@ REALDB_FILES: dict[str, str] = {
     # ④ **补写必须发生在 `updateById` 之前**：顺序写反时实体里的非 null 旧值会把结果盖回去
     #    （判据 ③ 直接复刻坏顺序）。
     _SVC + "OrderLogisticsShippedAtBackfillRealDbTest.java": "direct",
+    # issue #9208：微信客服**并发安全**的真库判据 —— 预算 `WHERE used < 5` / outbox `SKIP LOCKED` /
+    # 当前段**部分唯一索引**都是运行时语义；既有 Kf*MapperTest 只断言注解文本（删掉谓词仍是绿的）。
+    _SVC + "KfConcurrencyRealDbTest.java": "direct",
     # issue #6318：**端点级**（真 MockMvc 栈）的同 run id 并发判据 —— 只真 PG 能证的两条：
     # ① TOCTOU 窗口在**端点路径**上同样存在（6 个请求全部越过「查已记批次」后争抢
     #    `uk_batch_consumption_stocktake`）⇒ 「服务级绿、端点级红」这条差只有真库 + 真栈能照出来；

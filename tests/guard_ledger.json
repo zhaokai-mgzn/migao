@@ -260,12 +260,6 @@
       "owner": "#5284"
     },
     {
-      "path": "tests/unit_ci_workflows/test_h5_freshness_guard.py",
-      "guards": "C 端 H5 线上产物的 Last-Modified 必须新于源码最近改动（含宽限窗口）；取不到头 / 源码缺失 ⇒ unknown 不可判定，不许当绿；CLI 默认在 stale 时判红",
-      "red_proof": "让本地服务的 Last-Modified 落后源码超过宽限 ⇒ test_cli_defaults_to_red_when_stale 红；让 handler 不回 Last-Modified ⇒ test_fetch_fails_closed_without_header 红",
-      "owner": "#4184"
-    },
-    {
       "path": "tests/unit_ci_workflows/test_idempotent_unique_write_guard.py",
       "guards": "每个唯一键/幂等键写入点必须登记，且必须用原子冲突处理（ON CONFLICT / 捕获 duplicate-key）而不是先查后写；未登记站点即红",
       "red_proof": "把 StockBatchConsumptionMapper.java 的 INSERT ... ON CONFLICT 改成裸 INSERT ⇒ test_the_stocktake_write_point_uses_an_atomic_conflict_handler 红；新增一个唯一键写入点不登记 ⇒ test_every_unique_write_site_is_registered 红",
@@ -516,6 +510,12 @@
       "guards": "「墙钟期望值」守卫的实现体（本文件不是测试，pytest 收集为 0）：墙钟污点传播 + 冻结/停表豁免 + `--check` 三态退出码（0/1/3），由兄弟文件 test_time_flaky_guard.py 驱动",
       "red_proof": "删掉 analyze_taint 里的停表豁免（_has_stopwatch_operand 分支）⇒ 合法的时长断言被误判 ⇒ test_time_flaky_guard.py::test_stopwatch_duration_is_not_red 红；把 main 的不可判定分支返回 0 ⇒ test_time_flaky_guard.py 的 CLI 三态判据红",
       "owner": "#4717"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_c_end_removed_guard.py",
+      "guards": "C 端顾客小程序下线后的类级锁：frontend/mini-app 不许长回来；机器面（workflow/脚本/台账/依赖/根文档）不许再指向已删路径；用例 traces 不许留幽灵引用；同名 required check 必须仍上报",
+      "red_proof": "mkdir -p frontend/mini-app && git add frontend/mini-app/README.md ⇒ test_directory_and_tracked_files_stay_empty 红；在任意 MACHINE_GLOBS 文件里写 frontend/mini-app ⇒ test_machine_faces_have_zero_references 红",
+      "owner": "#9233"
     }
   ]
 }
