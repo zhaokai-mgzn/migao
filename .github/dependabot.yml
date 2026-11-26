@@ -81,41 +81,6 @@ updates:
         versions: [">=6.0.0"]
 
   - package-ecosystem: "npm"
-    directory: "/frontend/mini-app"
-    schedule:
-      interval: "weekly"
-    open-pull-requests-limit: 5
-    labels:
-      - "type/chore"
-      - "role/frontend"
-    # Taro 全家桶（@tarojs/* + babel-preset-taro + eslint-config-taro）必须整组同版本升级：
-    # 各包 peer 依赖互指精确版本（如 @tarojs/plugin-platform-* peer @tarojs/service@x.y.z），
-    # 单包升级必现 peer 冲突（曾关闭 #2644/#2645/#2634 等「半套升级」PR）。
-    # 升级路径：整组升版本 + 跑 mini-app CI 与视觉回归，作为一次工程级 PR 提交。
-    ignore:
-      - dependency-name: "@tarojs/*"
-      - dependency-name: "babel-preset-taro"
-      - dependency-name: "eslint-config-taro"
-      # Babel 8 与现有 Babel 7 工具链（babel-jest/预设）不兼容（曾关闭 #2642/#2838）；
-      # eslint-plugin-react-hooks 7 与当前 eslint 8 不兼容（曾关闭 #2831）。均需工程级整组升级。
-      - dependency-name: "@babel/core"
-        versions: [">=8.0.0"]
-      - dependency-name: "@babel/runtime"
-        versions: [">=8.0.0"]
-      - dependency-name: "eslint-plugin-react-hooks"
-        versions: [">=7.0.0"]
-      # Taro 4.2.1 的 @tarojs/react peer 写死 `react: ^18`（现取：npm view @tarojs/react@4.2.1
-      # peerDependencies ⇒ { react: '^18' }）⇒ react-dom 19 在依赖层面就不成立（#8225 曾关闭，
-      # CI 报 Conflicting peer dependency: react@19.3.1）。而且 dependabot 只升 react-dom、
-      # 不升 react，「半套升级」必现 peer 冲突。
-      # 升级路径：先升 Taro 到支持 React 19 的版本（整组升，见上面 @tarojs/* 那条），
-      # 再同步升 react + react-dom，作为一次工程级 PR。
-      - dependency-name: "react"
-        update-types: ["version-update:semver-major"]
-      - dependency-name: "react-dom"
-        update-types: ["version-update:semver-major"]
-
-  - package-ecosystem: "npm"
     directory: "/tests"
     schedule:
       interval: "weekly"

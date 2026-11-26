@@ -50,7 +50,7 @@
 | favicon（简化版） | `frontend/admin-web/public/favicon.svg` | 浏览器标签 |
 | 分享图 | `frontend/admin-web/public/og-image.png`（1200×630，生成器 `scripts/gen-og-image.mjs`） | 微信 / 钉钉分享 |
 | 小程序素材 | `frontend/bmini-app/src/assets/brand/logo.svg` / `logo-144.png` / `logo-288.png` | 商家小程序登录页与微信头像 |
-| 顾客侧小程序素材（可选承载页，不再作为 C 端主入口） | `frontend/mini-app/src/assets/brand/logo.svg` / `logo-144.png` / `logo-288.png` | 该承载页登录页 |
+| 顾客侧小程序素材 | **已随 C 端小程序整目录删除**（issue #9233，2026-11-26）：该承载页不再是 C 端入口 | — |
 | 文档资产 | `docs/brand/logo-*.png`、`docs/brand/lockup-2026-11.svg` | 对外物料与评审 |
 
 ## 4. 判据

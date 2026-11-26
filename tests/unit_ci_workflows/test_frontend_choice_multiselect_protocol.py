@@ -54,7 +54,8 @@ STORE_REL = "src/store/chatStore.ts"
 CARD_GLOB = f"*/{CARD_REL}"
 
 #: 冻结的普查集合（**两边一起收窄也逃不掉**：现取必须等于本常量，新包须连同本判据一起登记）
-EXPECTED_PACKAGES = ("bmini-app", "mini-app")
+#: 2026-11-26（issue #9233）：C 端 `mini-app` 整目录删除 ⇒ 收窄为 1 项（等号口径不变）。
+EXPECTED_PACKAGES = ("bmini-app",)
 
 #: 四个协议字段（`interact.py` 在 multiSelect=true 时**必然**下发；缺一个就是断线）
 PROTOCOL_FIELDS = (

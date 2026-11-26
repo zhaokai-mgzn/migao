@@ -5,7 +5,7 @@
   "_how_to": "本文件是**数据**，人工/`--write-weak-baseline` 维护；判据在 `.github/growth_gate.py`。复核：`python3 -m pytest tests/unit_ci_workflows/test_weak_assert_blindspots.py -q`，或 `python3 .github/growth_gate.py --check-weak-baseline`。",
   "anchor_sha": "70b3b507f4fa0a02c1690fa3c0da0ce2dd59e6c1",
   "anchored_at": "2026-10-27",
-  "weak_total": 230,
+  "weak_total": 222,
   "legacy_weak_counts": {
     "backend/ai-agent-service/tests/test_acceptance_case_checks.py": 1,
     "backend/ai-agent-service/tests/test_agent_eval_runner.py": 1,
@@ -61,7 +61,6 @@
     "frontend/admin-web/tests/unit/store/auth.test.ts": 1,
     "frontend/admin-web/tests/unit/store/chat-multi-session.test.ts": 4,
     "frontend/admin-web/tests/unit/store/chat-store.test.ts": 1,
-    "frontend/mini-app/tests/message-input.test.tsx": 8,
     "tests/e2e/specs/admin/employees.spec.ts": 1,
     "tests/e2e/specs/admin/roles.spec.ts": 1,
     "tests/e2e/specs/chat/chat-panel-resize.spec.ts": 2,
@@ -146,6 +145,12 @@
       "anchor_sha": "70b3b507f4fa0a02c1690fa3c0da0ce2dd59e6c1",
       "weak_total": 230,
       "note": "重锚定（只许缩）：234 → 230"
+    },
+    {
+      "anchored_at": "2026-11-26",
+      "anchor_sha": "70b3b507f4fa0a02c1690fa3c0da0ce2dd59e6c1",
+      "weak_total": 222,
+      "note": "精确销账（只许缩）：230 → 222 处（issue #9233）。C 端小程序工程整目录删除（issue #9233）⇒ 它的 message-input 组件单测整文件删除（8 处弱断言随之移出明细）。**只动这一格 + weak_total + 本行**，其余文件锚点值原样保留。"
     }
   ]
 }

@@ -170,10 +170,7 @@ DEPLOY_WF = {
     # bmini-h5-hosting（issue #5668）：第二条静态落地面腿（`frontend/bmini-app/**` 的 h5 产物 → 静态根 `b/`）。
     # 有意的「腿名 ≠ 传输镜像名」：同名会让判据 ① 在「镜像已推、发布失败」时命中 ⇒ 静默不补发布。
     "bmini-h5-hosting": "bmini-h5-publish.yml",
-    # c-end-h5（issue #4184）：**第三条静态落地面腿**（`frontend/mini-app/**` 的 h5 产物 → 静态根**本身**）。
-    # 同样无镜像（判据 ① 对它恒不成立 ⇒ 走漂移判据 ②）；它的发布步骤只在手动 `publish=true` 时执行
-    # （用户裁定 B）⇒ 本对账的兜底 dispatch **只报告、不发布**。
-    "c-end-h5": "c-end-h5-publish.yml",
+    # 2026-11-26（issue #9233）：原第三条静态落地面腿 `c-end-h5` 随 C 端小程序整目录删除而退场。
 }
 
 
@@ -660,21 +657,21 @@ def test_incident_shape_now_dispatches(tmp_path):
     assert dispatches == ["deploy-admin-api.yml"], (
         f"应只 dispatch 被吞的那条腿（事故里一条都没动）→ 实得 {dispatches}\n{proc.stdout}"
     )
-    assert "**结论**：dispatch=1 · 无漂移=5" in summary, f"summary 结论行不对 → {summary!r}"
+    assert "**结论**：dispatch=1 · 无漂移=4" in summary, f"summary 结论行不对 → {summary!r}"
     assert "已 dispatch 补部署" in summary and "backend/admin-api 有代码改动" in summary, (
         f"summary 没写清「为什么补」（判定依据）→ {summary!r}"
     )
 
 
 def test_all_reconciled_legs_dispatch_when_code_changed(tmp_path):
-    """六条对账腿都有代码改动（+ 镜像缺失）⇒ 六条都补（事故里 3 个服务的镜像都没构建）。"""
+    """五条对账腿都有代码改动（+ 镜像缺失）⇒ 五条都补（事故里 3 个服务的镜像都没构建）。"""
     fx = commit_repos(tmp_path, drift_paths=ALL_DRIFT_PATHS)
     proc, summary, dispatches = run_reconcile(
         tmp_path, fx["repo"], runs_all(fx["C1"], "success"), head7=fx["head7"],
     )
     assert proc.returncode == 0, f"{proc.stderr}"
     assert sorted(dispatches) == sorted(DEPLOY_WF.values()), f"→ {dispatches}\n{proc.stdout}"
-    assert "**结论**：dispatch=6" in summary, f"{summary!r}"
+    assert "**结论**：dispatch=5" in summary, f"{summary!r}"
 
 
 def test_docs_head_without_drift_does_not_dispatch_but_explains(tmp_path):
@@ -685,32 +682,32 @@ def test_docs_head_without_drift_does_not_dispatch_but_explains(tmp_path):
     )
     assert proc.returncode == 0, f"{proc.stderr}"
     assert dispatches == [], f"无漂移不该 dispatch（否则每个 docs 提交都空转重建）→ {dispatches}"
-    assert "**结论**：dispatch=0 · 无漂移=6" in summary, f"{summary!r}"
-    assert summary.count("无漂移：自") == 6, f"六条「无漂移」依据都要落表 → {summary!r}"
+    assert "**结论**：dispatch=0 · 无漂移=5" in summary, f"{summary!r}"
+    assert summary.count("无漂移：自") == 5, f"五条「无漂移」依据都要落表 → {summary!r}"
     assert "::notice::" in proc.stdout, "零 dispatch 时必须给一条 notice（可观测）"
 
 
 def test_head_image_present_does_not_dispatch(tmp_path):
     """HEAD 的镜像已存在 ⇒ 零 dispatch + 记明依据（镜像名）。
 
-    ⚠️ 三条**静态落地面腿**（worker-h5 / bmini-h5-hosting / c-end-h5，issue #5001 / #5668 / #4184）
+    ⚠️ 两条**静态落地面腿**（worker-h5 / bmini-h5-hosting，issue #5001 / #5668）
     **没有镜像** ⇒ 判据 ① 对它们恒不成立，它们这一轮的「无漂移」来自**漂移判据 ②**——
     这是这些腿的结构事实，不是本测试的偶然。
     """
     fx = commit_repos(tmp_path)
     proc, summary, dispatches = run_reconcile(
         tmp_path, fx["repo"], runs_all(fx["D1"], "success"),
-        # 只让**有镜像**的三条腿的镜像存在（三条静态落地面腿无镜像 —— 这正是 #5001/#5668/#4184 的结构事实）
+        # 只让**有镜像**的三条腿的镜像存在（两条静态落地面腿无镜像 —— 这正是 #5001/#5668 的结构事实）
         image_tags=",".join(image_ref(svc, fx["head7"]) for svc in IMAGE_LEGS),
         head7=fx["head7"],
     )
     assert proc.returncode == 0, f"{proc.stderr}"
     assert dispatches == []
-    assert "**结论**：dispatch=0 · 无漂移=6" in summary
+    assert "**结论**：dispatch=0 · 无漂移=5" in summary
     assert summary.count("镜像已存在") == 3 and f"sha-{fx['head7']}" in summary, f"{summary!r}"
-    assert summary.count("无漂移：自") == 3 and "| worker-h5 |" in summary \
-        and "| bmini-h5-hosting |" in summary and "| c-end-h5 |" in summary, (
-        f"三条无镜像的静态落地面腿（worker-h5 / bmini-h5-hosting / c-end-h5）必须落到漂移判据"
+    assert summary.count("无漂移：自") == 2 and "| worker-h5 |" in summary \
+        and "| bmini-h5-hosting |" in summary, (
+        f"两条无镜像的静态落地面腿（worker-h5 / bmini-h5-hosting）必须落到漂移判据"
         f"（而不是「镜像已存在」）→ {summary!r}"
     )
 
@@ -732,8 +729,8 @@ def test_breaker_skips_and_records_reason(tmp_path):
     )
     assert proc.returncode == 0, f"{proc.stderr}"
     assert dispatches == [], f"断路器命中后不该 dispatch → {dispatches}"
-    assert "**结论**：dispatch=0 · 无漂移=0 · 断路器跳过=6" in summary, f"{summary!r}"
-    assert summary.count("断路器：") == 6 and "不可恢复的终态" in proc.stdout, f"{summary!r}"
+    assert "**结论**：dispatch=0 · 无漂移=0 · 断路器跳过=5" in summary, f"{summary!r}"
+    assert summary.count("断路器：") == 5 and "不可恢复的终态" in proc.stdout, f"{summary!r}"
     assert "gh workflow run" in proc.stdout and "gh workflow run" in summary, (
         "跳闸必须给出**人工出口**（跳闸而不给出路 = 把机制变成黑箱）"
     )
@@ -768,7 +765,7 @@ def test_cancelled_conclusion_trips_the_breaker(tmp_path):
     assert dispatches == [], (
         f"`cancelled` 结论必须跳闸（#5814：挂死的 run 报的就是 cancelled）→ {dispatches}"
     )
-    assert "**结论**：dispatch=0 · 无漂移=0 · 断路器跳过=6" in summary, f"{summary!r}"
+    assert "**结论**：dispatch=0 · 无漂移=0 · 断路器跳过=5" in summary, f"{summary!r}"
     assert "conclusion=cancelled" in summary, f"跳闸原因必须点名结论 → {summary!r}"
     assert "gh workflow run" in summary, f"跳闸必须给人工出口 → {summary!r}"
 
@@ -787,7 +784,7 @@ def test_still_running_same_commit_is_skipped_as_churn(tmp_path):
     )
     assert proc.returncode == 0, f"{proc.stderr}"
     assert dispatches == [], f"同 commit 有 run 在跑时不该再 dispatch（纯 churn）→ {dispatches}"
-    assert "**结论**：dispatch=0 · 无漂移=0 · 断路器跳过=6" in summary, f"{summary!r}"
+    assert "**结论**：dispatch=0 · 无漂移=0 · 断路器跳过=5" in summary, f"{summary!r}"
     assert "在跑/排队" in proc.stdout and "status=in_progress" in proc.stdout, (
         f"跳过必须显式打印「已有同 commit 的 run 在跑/排队」+ 状态 → {proc.stdout}"
     )
@@ -805,7 +802,7 @@ def test_query_failure_fails_open_with_warning(tmp_path):
         f"查询失败必须 fail-open 照旧补部署（本检查出错绝不停掉对账）→ {dispatches}"
     )
     assert "::warning::" in proc.stdout, "判据不可用必须出声（warning），不许静默"
-    assert "判定失败=6" in summary, f"{summary!r}"
+    assert "判定失败=5" in summary, f"{summary!r}"
 
 
 def test_git_history_loss_fails_open_not_silent(tmp_path):
@@ -819,7 +816,7 @@ def test_git_history_loss_fails_open_not_silent(tmp_path):
     assert sorted(dispatches) == sorted(DEPLOY_WF.values()), (
         f"git 判不了时必须 fail-open（按兜底补部署）→ {dispatches}\n{proc.stdout}"
     )
-    assert "判定失败=6" in summary and "::warning::" in proc.stdout, f"{summary!r}"
+    assert "判定失败=5" in summary and "::warning::" in proc.stdout, f"{summary!r}"
 
 
 # ══════════════════════════════════════════════════════════════════════════

@@ -1,4 +1,27 @@
 name: Mini-App CI
+
+# ── 为什么这份 workflow 还在（issue #9233，2026-11-26 用户裁定）─────────────────
+# ⚠️ `name: Mini-App CI` 与 job 名都**逐字不变**：deploy-reconcile.yml 的 `workflow_run` 上游按
+#    workflow **name** 匹配（改名 = 兜底面静默脱钩，`publish_leg_fallback_ledger.json` 会判红）。
+# 用户逐字：「frontend/mini-app 这个可以彻底删除了，以后不需要用到 c 端小程序。」
+# ⇒ C 端顾客小程序工程 `frontend/mini-app/**` 已**整目录删除**：typecheck / 单测 / build:h5 /
+#   H5 视觉回归**都没有对象可跑**。
+# 但分支保护的 required 集合里**有** `mini-app typecheck + unit tests`：
+#   直接删掉本 workflow ⇒ 该 context **永远不会被上报** ⇒ **所有 PR 永久 `BLOCKED`**，
+#   而且**没有任何检查会变红**（「全绿却合不了」）。同族实证：#3507 / #4786 / #5101。
+#   类级锁 = tests/unit_ci_workflows/test_required_check_no_paths_filter.py（判据 1/2/5/6）。
+# 本机 / agent token **无 `workflow` scope** ⇒ 不能走 `gh api` 改分支保护（不是「懒得改」）。
+# ⇒ 处置 = **保留 workflow 与 job 名（逐字不变）**，内容改成**显式 no-op success**：
+#   只打印一行说明并成功退出，让 required check 继续有上报面（止血），等有 scope 的人收口。
+#
+# ── 重启条件（要恢复真腿，先逐条满足，缺一条就保持 no-op）─────────────────────
+#   ① 分支保护 required 集合里**移除** `mini-app typecheck + unit tests`
+#      （需要网页操作或带 `workflow` scope 的凭据；本仓 agent 默认没有）；
+#   ② 仓里**重新出现** C 端小程序工程（`frontend/mini-app/package.json` 存在）；
+#   ③ 该工程重新有 owner 与真实判据（`npm test` + `tsc --noEmit`），不是「先占个名」。
+# ⛔ 不许用「把 job 改成 skip / 加 job 级 `if`」来图省事：被跳过的 job **不上报** context
+#    ⇒ 等于把 required 悬空（这正是本文件存在的理由）。
+
 permissions:
   contents: read
 
@@ -8,209 +31,23 @@ on:
   push:
     branches:
       - main
-    paths:
-      - 'frontend/mini-app/**'
 
-# CI 队列治理（v1.3）：同 PR 新 push 自动取消旧 run
+# CI 队列治理（v1.3）：同 PR 新 push 自动取消旧 run（保留原口径，no-op 也一视同仁）
 concurrency:
   group: ci-miniapp-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-  NODE_VERSION: '20'
-  WORKING_DIR: frontend/mini-app
-
 jobs:
-  # ── 共用的面判定（本 workflow 的**单一来源**）────────────────────────────────────
-  # 为什么单独一个 job（issue #6051）：非 required 腿此前各自内联一份同样的 diff 判定
-  #   ⇒ 每个 PR 仍白拉起 runner、各空转 11~13s 才决定「不跑重活」
-  #   （实测 run 36998459786 / 36998459788 / 36998459851，2026-10-02T10:58Z：11s / 11s / 13s，重活全 skipped）。
-  #   现在判定收到**一处**，腿用 job 级 `needs` + `if:` 整层跳过 ⇒ runner 不再空转。
-  # ⛔ 本 job **不**替 required 腿做门控：GitHub 对**被 job 级 `if` 跳过**的 job **不上报**该 context
-  #   ⇒ 分支保护会永久等一条不会到来的状态（#5101 / #4786 的形态）。required 腿一律保持**步骤级**门控
-  #   —— 它永远会创建 job 并上报结论，required 检查因此永不悬空。
-  # 面口径 = 与各腿既有内联判定**同一份面**（变更路径的**首段** ∈ { frontend tests .github }，
-  #   与既有锚定正则的交替逐值等价）。⚠️ 刻意不用 `grep -E` 把交替写进命令行：管道库存判据
-  #   （tests/unit_ci_workflows/test_step_exit_code_propagation.py）把**引号内的裸竖线**也保守计成管道，
-  #   在 28+10 零余量下会把新步骤误判成「新增真管道」；首段比对避开这层误报且行为等价（含 frontend/mini-app 与 frontend/bmini-app 两类改动均命中 → 更保守）。
-  # 登记册 = tests/unit_ci_workflows/declaration_gate_registry.json（未登记即红）。
-  detect:
-    name: mini-app 面判定（决定哪些腿跑）
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    outputs:
-      run: ${{ steps.face.outputs.run }}
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-          # ⚡ 只取 tree（issue #9120）：本腿 git 用法只有 `git diff --name-only`（tree 级）
-          filter: blob:none
-
-      - name: Detect mini-app face
-        id: face
-        run: |
-          # 仅 PR 事件用 diff 门控；push main / workflow_dispatch 全量跑
-          if [ "$GITHUB_EVENT_NAME" != "pull_request" ]; then
-            echo "run=true" >> "$GITHUB_OUTPUT"
-            echo "✅ 非 PR 事件（push/workflow_dispatch），面门控开放 ⇒ 腿照常跑"
-            exit 0
-          fi
-          git fetch origin main --quiet
-          CHANGED=$(git diff --name-only origin/main...HEAD)
-          # 面 = 变更路径的**首段**落在 frontend tests .github（与既有锚定正则的交替逐值等价）
-          HITS=""
-          while IFS= read -r f; do
-            [ -n "$f" ] || continue
-            rest="/$f"
-            HIT=""
-            case "$f" in frontend) HIT=1 ;; esac
-            case "$f" in tests) HIT=1 ;; esac
-            case "$f" in .github) HIT=1 ;; esac
-            case "$rest" in */*/*) rest="${rest#*/}" ;; *) rest="" ;; esac
-            case "$rest" in frontend/*) HIT=1 ;; esac
-            case "$rest" in tests/*) HIT=1 ;; esac
-            case "$rest" in .github/*) HIT=1 ;; esac
-            if [ -n "$HIT" ]; then HITS="$HITS$f"$'\n'; fi
-          done <<< "$CHANGED"
-          if [ -n "$HITS" ]; then
-            echo "run=true" >> "$GITHUB_OUTPUT"
-            echo "✅ 命中面 frontend tests .github ⇒ 跑腿"
-          else
-            echo "run=false" >> "$GITHUB_OUTPUT"
-            echo "⏭️ xiaobu H5 visual regression 未跑：未命中面 frontend tests .github（这不是「通过」）"
-          fi
-  # v1.3 门控（2026-09-04）：job 保持运行（required check 永不悬空），
-  # 仅当 mini-app 相关路径有变更才执行实际构建/测试 —— 纯依赖升级（dependabot）跳过空跑。
-  # 与 pr-check/ai-agent-tests 同款 bash 变更检测（不加第三方 action）。
+  # ⛔ `name:` 逐字 = 分支保护 required 的那一条，改一个字 = 所有 PR 永久 BLOCKED。
+  # ⛔ 不许加 job 级 `needs:` / 非恒真 `if:`（判据 5/6：同样让 required context 永不到来）。
   typecheck-and-test:
     name: mini-app typecheck + unit tests
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-          # ⚡ 只取 tree（issue #9120）：本腿 git 用法只有 `git diff --name-only`（tree 级）
-          filter: blob:none
-
-      - name: Detect mini-app changes
-        id: detect
+      - name: C 端小程序已下线（显式 no-op success）
         run: |
-          # 仅 PR 事件用 diff 门控；push main / workflow_dispatch 全量跑（origin/main 与 HEAD 相同，diff 无意义）
-          if [ "$GITHUB_EVENT_NAME" != "pull_request" ]; then
-            echo "run_tests=true" >> "$GITHUB_OUTPUT"
-            echo "✅ 非 PR 事件（push/workflow_dispatch），全量执行 typecheck/单测"
-            exit 0
-          fi
-          git fetch origin main --quiet
-          CHANGED=$(git diff --name-only origin/main...HEAD)
-          HITS=$(echo "$CHANGED" | grep -E '^(frontend/mini-app/|tests/|\.github/)' || true)
-          if [ -n "$HITS" ]; then
-            echo "run_tests=true" >> "$GITHUB_OUTPUT"
-            echo "✅ 检测到 mini-app 相关变更，执行 typecheck/单测"
-          else
-            echo "run_tests=false" >> "$GITHUB_OUTPUT"
-            echo "⏭️ 无 mini-app 相关变更（其他模块 PR），跳过 typecheck/单测空跑"
-          fi
-
-      - name: Setup Node.js
-        if: steps.detect.outputs.run_tests == 'true'
-        uses: actions/setup-node@v7
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
-          cache-dependency-path: ${{ env.WORKING_DIR }}/package-lock.json
-
-      - name: Install dependencies
-        if: steps.detect.outputs.run_tests == 'true'
-        working-directory: ${{ env.WORKING_DIR }}
-        run: npm ci --prefer-offline --no-audit --no-fund
-      - name: TypeScript type check
-        if: steps.detect.outputs.run_tests == 'true'
-        working-directory: ${{ env.WORKING_DIR }}
-        run: npx tsc --noEmit
-
-      - name: Run unit tests
-        if: steps.detect.outputs.run_tests == 'true'
-        working-directory: ${{ env.WORKING_DIR }}
-        run: npm test
-
-  # 米宝 H5 视觉回归：build:h5（测试 env 覆盖生产 URL）→ Playwright mock 数据 → 基线比对。
-  # 覆盖无会话 UX（2 tab）/新品推荐/OrderCard 渲染，验证 C 端视觉/布局回归（API 层测不到）。
-  # issue #2693 跟进：恢复实验（2026-09-01）——重新启用该 job，观察最新 CI 失败日志定位环境差异
-  xiaobu-h5-visual:
-    name: xiaobu H5 visual regression
-    # 面门控（issue #6051）：非 required 腿 ⇒ 整层跳过（runner 不再空转）。
-    needs: detect
-    if: needs.detect.outputs.run == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-          # ⚡ 只取 tree（issue #9120）：本腿 git 用法只有 `git diff --name-only`（tree 级）
-          filter: blob:none
-
-      - name: Detect mini-app changes
-        id: detect
-        run: |
-          # 仅 PR 事件用 diff 门控；push main / workflow_dispatch 全量跑（origin/main 与 HEAD 相同，diff 无意义）
-          if [ "$GITHUB_EVENT_NAME" != "pull_request" ]; then
-            echo "run_tests=true" >> "$GITHUB_OUTPUT"
-            echo "✅ 非 PR 事件（push/workflow_dispatch），全量执行视觉回归"
-            exit 0
-          fi
-          git fetch origin main --quiet
-          CHANGED=$(git diff --name-only origin/main...HEAD)
-          HITS=$(echo "$CHANGED" | grep -E '^(frontend/mini-app/|tests/|\.github/)' || true)
-          if [ -n "$HITS" ]; then
-            echo "run_tests=true" >> "$GITHUB_OUTPUT"
-            echo "✅ 检测到 mini-app 相关变更，执行视觉回归"
-          else
-            echo "run_tests=false" >> "$GITHUB_OUTPUT"
-            echo "⏭️ 无 mini-app 相关变更（其他模块 PR），跳过视觉回归空跑"
-          fi
-
-      - name: Setup Node.js
-        if: steps.detect.outputs.run_tests == 'true'
-        uses: actions/setup-node@v7
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
-          cache-dependency-path: ${{ env.WORKING_DIR }}/package-lock.json
-
-      - name: Install mini-app deps
-        if: steps.detect.outputs.run_tests == 'true'
-        working-directory: ${{ env.WORKING_DIR }}
-        run: npm ci --prefer-offline --no-audit --no-fund
-      - name: Install Playwright deps
-        if: steps.detect.outputs.run_tests == 'true'
-        working-directory: tests
-        run: |
-          npm ci --prefer-offline --no-audit --no-fund
-          npx playwright install chromium --with-deps
-
-      - name: Build H5 (test env overrides prod URL)
-        if: steps.detect.outputs.run_tests == 'true'
-        working-directory: ${{ env.WORKING_DIR }}
-        env:
-          TARO_APP_API_URL: http://localhost:8080
-          TARO_APP_AI_API_URL: http://localhost:8001
-        run: npm run build:h5
-
-      - name: Run visual regression
-        if: steps.detect.outputs.run_tests == 'true'
-        working-directory: tests
-        env:
-          CI: 'true'
-        run: npx playwright test specs/xiaobu/xiaobu-h5.spec.ts --config=playwright.xiaobu.config.ts
-
-      - name: Upload visual diff artifacts (failure)
-        if: failure() && steps.detect.outputs.run_tests == 'true'
-        uses: actions/upload-artifact@v7
-        with:
-          name: xiaobu-visual-diffs
-          path: tests/test-results/xiaobu/
+          echo "ℹ️ C 端顾客小程序 frontend/mini-app 已于 2026-11-26 整目录删除（issue #9233，用户裁定）。"
+          echo "   本 job 保留**同名 required check** 为止血：删掉它 ⇒ 所有 PR 永久 BLOCKED 且无红信号。"
+          echo "   重启条件见本文件头注释（须先移除 required 名 + 工程真回来 + 有真实判据）。"
+          echo "✅ no-op success —— 没有 typecheck / 单测 / build:h5 / 视觉回归可跑"

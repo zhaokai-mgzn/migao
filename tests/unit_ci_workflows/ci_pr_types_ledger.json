@@ -18,7 +18,7 @@
     },
     {
       "file": "demo-evidence.yml",
-      "reason": "非 required，但已用**更窄的 `paths`** 按改动面门控（`frontend/admin-web/**` / `frontend/mini-app/**` / `tests/e2e/**` / 自己的 workflow）⇒ 再叠 `types` 只会让「改了前端却不重跑证据」的风险上升，而 `paths` 已经把它挡在绝大多数 PR 之外。本包**有意不动**它（不在 9 条授权面内）。",
+      "reason": "非 required，但已用**更窄的 `paths`** 按改动面门控（`frontend/admin-web/**` / `tests/e2e/**` / 自己的 workflow）⇒ 再叠 `types` 只会让「改了前端却不重跑证据」的风险上升，而 `paths` 已经把它挡在绝大多数 PR 之外。本包**有意不动**它（不在 9 条授权面内）。",
       "evidence": "git show origin/main:.github/workflows/demo-evidence.yml | sed -n '/^on:/,/^permissions:/p'"
     },
     {

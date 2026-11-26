@@ -5,6 +5,14 @@
 > 原因 = 单文件涨到 512KB 越过扫描上限，详见存档文件头与 issue #6404。
 > **后续条目继续在本文件 `## [Unreleased]
 
+### C 端顾客小程序下线：`frontend/mini-app` 与 C 端 H5 发布腿整体删除（2026-11-26，issue #9233）
+
+- **形态**：用户逐字「`frontend/mini-app` 这个可以彻底删除了，以后不需要用到 c 端小程序」⇒ 该 Taro 工程 138 个跟踪文件整体删除；C 端主入口改为**微信客服**（issue #9229）。商家小程序 / 工人端 H5（`frontend/bmini-app`）与兼容期旧工人页（`frontend/worker-h5`）**不动**。
+- **发布腿**：C 端 H5 发布链（`c-end-h5-publish` / `h5-freshness-guard` + `deploy/scripts/c-end-h5-*` / `deploy/swas/c-end-h5-publish-remote.sh` / `scripts/h5_freshness_guard.py`）同批删除 —— 它发布的唯一产物就是该工程的 `build:h5` 输出；对账腿里对应的 `c-end-h5` 一并摘除。静态根下的 `w/`（工人端）与 `b/`（商家端）产物**未受影响**。
+- **required 检查**：分支保护的 `mini-app typecheck + unit tests` **保留同名 no-op**（`.github/workflows/mini-app.yml` 只 echo 说明并 success）——直接删 workflow 会让该 context 永不上报、所有 PR 永久 BLOCKED；重启条件写在该文件头。
+- **判据**：`tests/unit_ci_workflows/test_c_end_removed_guard.py`（目录/跟踪文件为零 + 机器面零引用 + 用例 `traces` 零幽灵引用 + 同名 required 仍上报 + 发布链成员不许长回来）；历史叙述（design / acceptance / 用例 merge_log）逐文件登记在 `c_end_history_refs_allowlist.json`（未登记即红、空豁免即红、只许缩短）。
+- **历史**：`acceptance/**`、`.github/cases/**` 的 `merge_log` 与旧 CHANGELOG 归档里的相关记录按「不删历史」保留。
+
 ### B 端「停用」能力边界不再自相矛盾：停用仅限加工项（2026-11-25，issue #9215）
 
 - **病**：能力边界段同一段里既有「✅ 改加工项（含启用 / 停用）」，又有「❌ 删除 / 停用 / 作废」⇒ 模型对「把打孔加工项停用」可能误拒。

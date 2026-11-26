@@ -35,12 +35,6 @@
       "p90_seconds": 16.0,
       "max_seconds": 20.0
     },
-    "mini-app.yml": {
-      "n": 30,
-      "median_seconds": 164.5,
-      "p90_seconds": 193.0,
-      "max_seconds": 201.0
-    },
     "pr-check.yml": {
       "n": 30,
       "median_seconds": 1827.0,
@@ -170,25 +164,6 @@
       "budget_basis": "budget = ceil(measured.p90_seconds=151.0) @ 2026-09-26T04:16:13Z"
     },
     {
-      "id": "demo-evidence.yml::mini-app-e2e-preflight",
-      "workflow": "demo-evidence.yml",
-      "job": "mini-app-e2e-preflight",
-      "check_name": "Mini-app e2e static contract preflight",
-      "hard_kill_seconds": 300,
-      "hard_kill_source": "workflow `timeout-minutes: 5`",
-      "required": false,
-      "measured": {
-        "n": 6,
-        "median_seconds": 10.5,
-        "p90_seconds": 12.0,
-        "max_seconds": 12.0
-      },
-      "measure_status": "ok",
-      "budget_seconds": 12,
-      "budget_status": "已裁定：预算 = 实测 p90（向上取整）",
-      "budget_basis": "budget = ceil(measured.p90_seconds=12.0) @ 2026-09-26T04:16:13Z"
-    },
-    {
       "id": "deploy-reconcile.yml::reconcile",
       "workflow": "deploy-reconcile.yml",
       "job": "reconcile",
@@ -227,31 +202,12 @@
       "budget_basis": "budget = ceil(measured.p90_seconds=26.0) @ 2026-09-26T04:16:13Z"
     },
     {
-      "id": "mini-app.yml::detect",
-      "workflow": "mini-app.yml",
-      "job": "detect",
-      "check_name": "mini-app 面判定（决定哪些腿跑）",
-      "hard_kill_seconds": 300,
-      "hard_kill_source": "workflow `timeout-minutes: 5`",
-      "required": false,
-      "measured": {
-        "n": 30,
-        "median_seconds": 21.0,
-        "p90_seconds": 25.0,
-        "max_seconds": 36.0
-      },
-      "measure_status": "ok",
-      "budget_seconds": 25,
-      "budget_status": "已裁定：预算 = 实测 p90（向上取整）",
-      "budget_basis": "budget = ceil(measured.p90_seconds=25.0) @ 2026-11-25T02:15:45Z"
-    },
-    {
       "id": "mini-app.yml::typecheck-and-test",
       "workflow": "mini-app.yml",
       "job": "typecheck-and-test",
       "check_name": "mini-app typecheck + unit tests",
-      "hard_kill_seconds": 600,
-      "hard_kill_source": "workflow `timeout-minutes: 10`",
+      "hard_kill_seconds": 300,
+      "hard_kill_source": "workflow `timeout-minutes: 5`",
       "required": true,
       "measured": {
         "n": 8,
@@ -262,26 +218,7 @@
       "measure_status": "ok",
       "budget_seconds": 124,
       "budget_status": "已裁定：预算 = 实测 p90（向上取整）",
-      "budget_basis": "budget = ceil(measured.p90_seconds=124.0) @ 2026-09-26T04:16:13Z"
-    },
-    {
-      "id": "mini-app.yml::xiaobu-h5-visual",
-      "workflow": "mini-app.yml",
-      "job": "xiaobu-h5-visual",
-      "check_name": "xiaobu H5 visual regression",
-      "hard_kill_seconds": 900,
-      "hard_kill_source": "workflow `timeout-minutes: 15`",
-      "required": false,
-      "measured": {
-        "n": 8,
-        "median_seconds": 155.0,
-        "p90_seconds": 157.0,
-        "max_seconds": 159.0
-      },
-      "measure_status": "ok",
-      "budget_seconds": 157,
-      "budget_status": "已裁定：预算 = 实测 p90（向上取整）",
-      "budget_basis": "budget = ceil(measured.p90_seconds=157.0) @ 2026-09-26T04:16:13Z"
+      "budget_basis": "budget = ceil(measured.p90_seconds=124.0) @ 2026-09-26T04:16:13Z（读数为该腿**真跑**时期的历史锚点；2026-11-26 起 body 已删成 no-op，见 issue #9233）"
     },
     {
       "id": "post-merge-verify.yml::verify",
