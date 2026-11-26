@@ -342,19 +342,13 @@ def _root_location_block() -> str:
     return "\n".join(lead) + "\n" + block
 
 
-def _directives(block: str) -> list:
-    """去掉注释行后的指令行（nginx 注释以 `#` 起；本块内没有把 `#` 放进引号值的形态）。"""
-    out = []
-    for line in block.splitlines():
-        code = line.split("#", 1)[0].strip()
-        if code and code != "location / {":
-            out.append(code)
-    return out
-
-
 def test_root_location_has_no_retired_spa_fallback():
     block = _root_location_block()
-    tries = [d for d in _directives(block) if d.startswith("try_files")]
+    # 🔴 **不要**用「按 `#` 截断」去找指令：字符串字面量里的 `#` 会把行尾吃掉，属**假绿**
+    # （判据 = tests/unit_ci_workflows/test_guard_parsing_is_comment_aware.py）。
+    # 正确姿势 = **行首锚定**：nginx 注释行以 `#` 开头，`^\s*try_files` 天然够不着它。
+    tries = re.findall(r"(?m)^\s*try_files\s+[^;]+;", block)
+    tries = [t.strip() for t in tries]
     assert tries == ["try_files $uri $uri/ =404;"], (
         "根面 `location /` 的 try_files 必须是 `$uri $uri/ =404`（issue #9249）："
         "末位指向已删对象（如 `/index.html`）时，nginx 会内部重定向回本块 ⇒ **任意缺失路径 500**。"

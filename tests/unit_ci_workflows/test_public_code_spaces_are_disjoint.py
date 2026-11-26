@@ -20,7 +20,7 @@
 | B | **公开入口必须在 `SecurityConfig` 放行**：每个登记前缀都要出现在 `permitAll` 名单里 | 删掉 `"/i/**"` ⇒ 红（扫码只会拿到 401，纸上的码等于没用） |
 | C | **跨空间互斥**：每个码空间的解析文件不得出现**另一个空间**的持久化符号 | 把入库标签接到 `processing_set_part_tokens` ⇒ 红 |
 | D | **字母表单一来源**：Crockford 字母表字面量在 admin-api 主源码里**恰好出现一次** | 复制第二份字母表（含 `I/L/O/U`）⇒ 红 |
-| **F1~F3** | **边缘归属登记**（§F）：公开前缀在 nginx 上的落地面必须登记、与配置逐项相符，且**语义模拟**证明它落到自己那一面 | 删掉 `location /i/` ⇒ 红，且**指名**「落到了 `location /` 的 SPA fallback」 |
+| **F1~F3** | **边缘归属登记**（§F）：公开前缀在 nginx 上的落地面必须登记、与配置逐项相符，且**语义模拟**证明它落到自己那一面 | 删掉 `location /i/` ⇒ 红，且**指名**该前缀 / 该探针落点不对（`location /` 自 #9249 起已无 SPA 回落 ⇒ 现形态是 404，不再是「200 + 别人的页面」） |
 
 外加两条载体判据：**落地页地址不得硬编码域名**（必须来自配置）、**两个空间不得共用一个入口类**。
 
@@ -314,7 +314,7 @@ def test_the_real_files_are_readable_at_all() -> None:
 # |---|---|---|
 # | F1 | **未登记即红**：代码里的码空间 ∪ nginx 的公开前缀 ∪ 发布腿声明的 h5 子目录 == 登记表键集 | 新开 `/l/` / 新发一个 h5 子目录而不登记 ⇒ 红 |
 # | F2 | **归属逐项相符**：代理面必须 `proxy_pass http://<登记的上游>;`（**不带 URI 后缀**）；静态面不得有 proxy_pass，且 fallback 不跨出自己命名空间 | `proxy_pass http://admin-api:8080/i;` ⇒ 红（路径被改写成 `/i7K3M9QP2`） |
-# | F3 | **语义模拟**（端到端离线）：每个探针请求落到**它自己的**落地面 | 删掉 `location /i/` ⇒ 红，且**指名**「落到了 `location /` 的 SPA fallback（→ index.html = C 端米宝）」 |
+# | F3 | **语义模拟**（端到端离线）：每个探针请求落到**它自己的**落地面 | 删掉 `location /i/` ⇒ 红，且**指名**该前缀 / 该探针落点不对（`location /` 自 #9249 起已无 SPA 回落 ⇒ 现形态是 404） |
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
@@ -451,7 +451,8 @@ ROUTE_PROBES: tuple[tuple[str, str, str], ...] = (
     ("/b/orders/2026/detail", FACE_STATIC, "b/index.html"),
     ("/w/index.html", FACE_STATIC, "w/index.html"),
     ("/", FACE_STATIC, "index.html"),
-    ("/customer/service", FACE_STATIC, "index.html"),
+    # 根面按 issue #9249 已收成 `=404`（C 端下线）⇒ 未登记的根级路径就是 404，不再静默配一页 HTML
+    ("/customer/service", FACE_STATIC, "404"),
     # 终端下载面（issue #8195）：文件由自己的命名空间伺候，缺失文件必须是 404（不是 SPA 页）
     ("/terminal/latest.json", FACE_STATIC, "terminal/latest.json"),
     ("/terminal/GuanxingtaiSetup.exe", FACE_STATIC, "terminal/GuanxingtaiSetup.exe"),
@@ -624,7 +625,7 @@ def prefix_wiring_problems(conf: str, java_prefixes: set[str], h5_prefixes: set[
             if block is None:
                 bad.append(
                     f"{prefix} 登记为代理面（{face.owner}）但 nginx 里**没有** `location {prefix}` "
-                    "⇒ 该前缀的请求会落到 `location /` 的 SPA fallback"
+                    "⇒ 该前缀的请求会落到 `location /`（根面已无 SPA 回落 ⇒ 现在直接 404）"
                 )
                 continue
             target = proxy_target_of(block)
@@ -818,18 +819,24 @@ def _replace_in_location(conf: str, prefix: str, old: str, new: str) -> str:
     return mutated
 
 
-def test_red_proof_missing_i_location_falls_back_to_the_spa() -> None:
-    """红证 F3（本单的**红证本体**）：删掉 `location /i/` 整块 ⇒ 必须指名「落到了 SPA fallback」。"""
+def test_red_proof_missing_i_location_is_named() -> None:
+    """红证 F3（本单的**红证本体**）：删掉 `location /i/` 整块 ⇒ 必须**指名**该前缀 / 该探针落点不对。
+
+    ⚠️ issue #9249 之后形态变了：根面不再回落 `/index.html` ⇒ 该探针现在是 **404**，
+    而不是「静默落到 C 端那一页（200 + HTML）」。**判红力不变**（少一条面就必须被指名），
+    但期望值必须跟真值走 —— 否则这条红证自己会变成假证据。
+    """
     conf = _read(NGINX_CONF)
     mutated = _drop_location(conf, "/i/")
     assert "/i/" not in public_nginx_prefixes(mutated), "变异注入未生效（自证失败 ⇒ 下面的红证是空断言）"
-    assert route(mutated, "/i/7K3M9QP2") == (FACE_STATIC, "index.html", "/i/7K3M9QP2"), (
-        "删掉 `location /i/` 后语义模拟没落到根 index.html ⇒ 模拟器与 nginx 语义对不上（判据会假绿）"
+    assert route(mutated, "/i/7K3M9QP2") == (FACE_STATIC, "404", "/i/7K3M9QP2"), (
+        "删掉 `location /i/` 后语义模拟没落到 404 ⇒ 模拟器与 nginx 语义对不上（判据会假绿）"
     )
     bad = _nginx_problems(mutated)
-    named = [item for item in bad if "落到了 `location /` 的 SPA fallback" in item]
-    assert named, f"删掉 `location /i/` 后判据没指名「落到了 SPA fallback」：{bad}"
+    named = [item for item in bad if "落点不对" in item]
+    assert named, f"删掉 `location /i/` 后判据没指名落点不对：{bad}"
     assert any("/i/7K3M9QP2" in item for item in named), f"红证没指到具体探针：{named}"
+    assert any("没有** `location /i/`" in item for item in bad), f"红证没指名缺的那条面：{bad}"
 
 
 def test_red_proof_proxy_pass_uri_suffix_rewrites_the_path() -> None:
@@ -866,23 +873,23 @@ def test_red_proof_a_new_h5_subdir_is_detected() -> None:
 # ── 注入式红证（#6867 / B2 的 `/o/` 面，与 `/i/` 同族）────────────────────────────
 
 
-def test_red_proof_missing_o_location_falls_back_to_the_spa() -> None:
-    """红证 F3（#6867 / B2）：删掉 `location /o/` 整块 ⇒ 必须指名「落到了 SPA fallback」。
+def test_red_proof_missing_o_location_is_named() -> None:
+    """红证 F3（#6867 / B2）：删掉 `location /o/` 整块 ⇒ 必须**指名**该前缀 / 该探针落点不对。
 
-    这就是本单要治的形态：**加工单纸上的码扫出来是别人的页面**（`location /` 的
-    `try_files … /index.html` ⇒ 200 + C 端米宝首页），而 200 不是错误码
-    ⇒ 监控不红、只有真机扫码才发现（同 #5668 / #5052 §7.1 的静默串端）。
+    本单要治的形态：**加工单纸上的码扫出来是别人的页面**（历史上 `location /` 的
+    `try_files … /index.html` ⇒ 200 + C 端米宝首页）。issue #9249 之后根面已无 SPA 回落 ⇒
+    同一变异的现形态是 **404**（不再是「200 + 别人的页面」），但「少一条面必须被指名」这条**判红力不变**。
     """
     conf = _read(NGINX_CONF)
     mutated = _drop_location(conf, "/o/")
     assert "/o/" not in public_nginx_prefixes(mutated), "变异注入未生效（自证失败 ⇒ 下面的红证是空断言）"
-    assert route(mutated, "/o/7K3M9QP2") == (FACE_STATIC, "index.html", "/o/7K3M9QP2"), (
-        "删掉 `location /o/` 后语义模拟没落到根 index.html ⇒ 模拟器与 nginx 语义对不上（判据会假绿）"
+    assert route(mutated, "/o/7K3M9QP2") == (FACE_STATIC, "404", "/o/7K3M9QP2"), (
+        "删掉 `location /o/` 后语义模拟没落到 404 ⇒ 模拟器与 nginx 语义对不上（判据会假绿）"
     )
     bad = _nginx_problems(mutated)
-    named = [item for item in bad if "落到了 `location /` 的 SPA fallback" in item]
-    assert named, f"删掉 `location /o/` 后判据没指名「落到了 SPA fallback」：{bad}"
-    assert any("/o/7K3M9QP2" in item for item in named), f"红证没指到具体探针：{named}"
+    named = [item for item in bad if "/o/7K3M9QP2" in item and "落点不对" in item]
+    assert named, f"删掉 `location /o/` 后判据没指名落点不对：{bad}"
+    assert any("没有** `location /o/`" in item for item in bad), f"红证没指名缺的那条面：{bad}"
 
 
 def test_red_proof_unregistering_the_order_code_space_is_detected() -> None:
