@@ -115,13 +115,13 @@ _CHAT_DIR = Path("src", "components", "chat")
 # persona → 该 persona 的渲染端（**架构事实，不是卡型清单**）。
 # 新增渲染端/新增 persona 时必须登记：未登记 persona 有卡型可达 → 判据红（见 test_every_persona_has_a_registered_end）。
 PERSONA_ENDS: dict[str, tuple[str, ...]] = {
-    "xiaobu": ("C端 mini-app MessageBubble",),
+    # C 端小程序已下线（issue #9233）：xiaobu persona 仍在后端，但暂无前端渲染端
+    "xiaobu": (),
     "mibao": ("B端移动 bmini-app MessageBubble", "B端桌面 admin-web ToolResultCard"),
 }
 
 # 渲染端：名称 → 源文件。**加新渲染端只改这一处**（漏掉一个渲染端 = 重建一条无人守卫的接缝）。
 RENDERERS = {
-    "C端 mini-app MessageBubble": REPO_ROOT / "frontend" / "mini-app" / _CHAT_DIR / "MessageBubble.tsx",
     "B端移动 bmini-app MessageBubble": REPO_ROOT / "frontend" / "bmini-app" / _CHAT_DIR / "MessageBubble.tsx",
     "B端桌面 admin-web ToolResultCard": REPO_ROOT / "frontend" / "admin-web" / _CHAT_DIR / "ToolResultCard.tsx",
 }
@@ -274,7 +274,7 @@ class TestExtractorsAndTruthSources:
     """提取器自断言：提取坏了（空集/多算/扫注释）必须在这里红，而不是让契约断言真空通过。"""
 
     def test_message_bubble_extractors_are_scoped_to_render_card(self):
-        for name in ("C端 mini-app MessageBubble", "B端移动 bmini-app MessageBubble"):
+        for name in ("B端移动 bmini-app MessageBubble",):
             types = _renderer_card_types(RENDERERS[name])
             assert {"product_list", "product_detail", "logistics", "order", "quotation"} <= types, (
                 f"{name} 的 renderCard 应渲染全部真实卡型，实际提取到 {sorted(types)}"
@@ -352,6 +352,8 @@ class TestCrossEndCardTypeContract:
     def test_no_card_type_is_unrenderable_everywhere(self):
         """全局判据：`_detect_card_type` 的任一取值都必须至少被一个渲染端渲染。"""
         all_types = set(_all_backend_card_tools().values())
+        # C 端小程序已下线（issue #9233）：只服务 C 端的卡型没有前端渲染端可断言。
+        all_types -= {"payment"}
         renderable = set().union(*_current_renderer_types().values())
         assert all_types - renderable == set(), (
             f"这些卡型没有任何渲染端实现（后端发出去必然落成兜底占位）：{sorted(all_types - renderable)}"
@@ -526,13 +528,13 @@ class TestNoOrphanRendererBranches:
 
     def test_violation_reported_when_a_renderer_case_is_deleted(self):
         """变异红证：文本删掉 C 端 `case 'quotation':` 后，xiaobu 可达性判据必须报出 quotation。"""
-        path = RENDERERS["C端 mini-app MessageBubble"]
+        path = RENDERERS["B端移动 bmini-app MessageBubble"]
         original = _read(path)
         mutated = re.sub(r"^\s*case\s+'quotation':\s*\{?\s*$", "", original, flags=re.MULTILINE)
-        assert mutated != original, "变异未生效（C 端源码里找不到 `case 'quotation':` 行）—— 红证实验无效"
+        assert mutated != original, "变异未生效（bmini 源码里找不到 `case 'quotation':` 行）—— 红证实验无效"
 
         renderer_types = _current_renderer_types()
-        mutated_end = "C端 mini-app MessageBubble（变异：删 quotation 分支）"
+        mutated_end = "B端移动 bmini-app MessageBubble（变异：删 quotation 分支）"
         renderer_types[mutated_end] = _cases_in(_function_body(mutated, "renderCard"))
 
         violations = reachability_violations(

@@ -70,12 +70,10 @@ jobs:
 
       - name: Install test deps
         working-directory: tests
-        run: npm ci
-
+        run: npm ci --prefer-offline --no-audit --no-fund
       - name: Install admin-web deps (for Playwright webServer)
         working-directory: frontend/admin-web
-        run: npm ci
-
+        run: npm ci --prefer-offline --no-audit --no-fund
       - name: Run all fixture specs (--project=web, mock auth)
         working-directory: tests
         env:

@@ -1,5 +1,5 @@
 # case_ids: AU-013
-r"""商家手机端登录态「1 个月」的**单一真值** + **续期接线**守卫（issue #7249）。
+r"""商家手机端登录态「7 天」的**单一真值** + **续期接线**守卫（issue #7249；用户 2026-11-24 改为 7 天）。
 
 ## 病灶（2026-10-18 现场，读码非推断）
 
@@ -7,15 +7,15 @@ r"""商家手机端登录态「1 个月」的**单一真值** + **续期接线**
 三处叠加：
 
 1. `application.yml` 的 `jwt.access-token-expiration: 7200`（2 小时）、
-   `jwt.refresh-token-expiration: 604800`（7 天）⇒ 登录态实际寿命 = **2 小时**；
+   `jwt.refresh-token-expiration: 604800`（7 天；2026-10-18 曾改 30 天）⇒ 登录态实际寿命 = **2 小时**；
 2. `frontend/bmini-app` 全仓**零** `/api/auth/refresh` 调用（PC 端 `admin-web` 早就有了）
    ⇒ 401 只能「清 token + 跳登录页」；
 3. `authStore` 的 `initialize` / `checkAuth` 在 JWT `exp` 过期时直接 `logout()`
    ⇒ 即使只在请求层补续期，**页面装载**仍会先把人踢走。
 
-## 冻结口径（用户 2026-10-18 逐字「是/b，方案选择A，但是登录态改为1个月」）
+## 冻结口径（用户 2026-11-24 逐字「把小程序和PC端的登录有效期都改为7天」；此前 #7249 为 30 天）
 
-- refresh token / cookie = **2592000s（30 天）**；access token 仍 7200s（短凭据面不延长）；
+- refresh token / cookie = **604800s（7 天）**；access token 仍 7200s（短凭据面不延长）；
 - cookie 有效期**只有一个来源**（`JwtTokenProvider.getRefreshTokenExpiration()`）——
   `AuthService` 不许再抄一份字面量（改一处漏一处 = 一类缺陷，不是一处笔误）；
 - 手机端必须有续期：`request.ts` 的 `refreshAccessToken()` + 401 重放一次（单飞），
@@ -23,13 +23,13 @@ r"""商家手机端登录态「1 个月」的**单一真值** + **续期接线**
 
 ## 判据
 
-1. `application.yml` 的 `jwt.refresh-token-expiration` == 2592000 **且**
-   `JwtTokenProvider` 的 `@Value` 兜底是同一个数（两处漂移 ⇒ 缺省环境静默回到 7 天）；
+1. `application.yml` 的 `jwt.refresh-token-expiration` == 604800 **且**
+   `JwtTokenProvider` 的 `@Value` 兜底是同一个数（两处漂移 ⇒ 缺省环境静默回到旧值）；
 2. `AuthService` 不得声明 `REFRESH_TOKEN_COOKIE_MAX_AGE` 字面量常量；
    `setRefreshTokenCookie` 必须取自 `jwtTokenProvider.getRefreshTokenExpiration()`；
 3. 手机端续期面存在：`request.ts` 导出 `refreshAccessToken`、401 分支调用它且**排除**工人端点与
    `skipAuth`（登录面）；`authStore` 的 `initialize` / `checkAuth` 均调用它；
-4. **判别力自证**：把 yml 改回 604800 / 把 AuthService 常量加回 / 删掉 401 分支的续期调用
+4. **判别力自证**：把 yml 改回 2592000 / 把 AuthService 常量加回 / 删掉 401 分支的续期调用
    ⇒ 上面的判据各自必红（注入在内存里做，不改工作树）。
 """
 from __future__ import annotations
@@ -47,8 +47,8 @@ AUTH_SERVICE = REPO_ROOT / "backend/admin-api/src/main/java/com/migao/admin/serv
 BMINI_REQUEST = REPO_ROOT / "frontend/bmini-app/src/utils/request.ts"
 BMINI_STORE = REPO_ROOT / "frontend/bmini-app/src/store/authStore.ts"
 
-#: 30 天（用户 2026-10-18 裁定「登录态改为 1 个月」）
-ONE_MONTH_SECONDS = 2_592_000
+#: 7 天（用户 2026-11-24 裁定「小程序和PC端的登录有效期都改为7天」）
+ONE_WEEK_SECONDS = 604_800
 
 
 def _read(path: Path) -> str:
@@ -133,16 +133,16 @@ def bmini_violations(request_src: str, store_src: str) -> list[str]:
     return violations
 
 
-def test_refresh_token_is_one_month_and_fallback_matches() -> None:
+def test_refresh_token_is_one_week_and_fallback_matches() -> None:
     seconds = yml_refresh_seconds(_read(APP_YML))
-    assert seconds == ONE_MONTH_SECONDS, (
+    assert seconds == ONE_WEEK_SECONDS, (
         f"application.yml: jwt.refresh-token-expiration = {seconds!r}"
-        f"（期望 {ONE_MONTH_SECONDS} = 30 天；用户 2026-10-18 裁定「登录态改为 1 个月」）"
+        f"（期望 {ONE_WEEK_SECONDS} = 7 天；用户 2026-11-24 裁定「小程序和PC端的登录有效期都改为7天」）"
     )
     fallback = provider_default_seconds(_read(PROVIDER))
-    assert fallback == ONE_MONTH_SECONDS, (
-        f"JwtTokenProvider 的 @Value 兜底 = {fallback!r}（期望 {ONE_MONTH_SECONDS}）"
-        "—— 两处漂移会让缺省配置的环境静默回到 7 天"
+    assert fallback == ONE_WEEK_SECONDS, (
+        f"JwtTokenProvider 的 @Value 兜底 = {fallback!r}（期望 {ONE_WEEK_SECONDS}）"
+        "—— 两处漂移会让缺省配置的环境静默回到旧值"
     )
 
 
@@ -159,24 +159,24 @@ def test_mobile_refresh_wiring_exists() -> None:
 def test_guard_has_discriminative_power() -> None:
     """注入式自证：三种回归形态各自必红（注入只在内存里做）。"""
     yml_text = _read(APP_YML)
-    assert yml_refresh_seconds(yml_text) == ONE_MONTH_SECONDS, "自证前提：当前树 yml 应已是 30 天"
+    assert yml_refresh_seconds(yml_text) == ONE_WEEK_SECONDS, "自证前提：当前树 yml 应已是 7 天"
     reverted_yml = yml_text.replace(
-        f"refresh-token-expiration: {ONE_MONTH_SECONDS}",
-        "refresh-token-expiration: 604800",
+        f"refresh-token-expiration: {ONE_WEEK_SECONDS}",
+        "refresh-token-expiration: 2592000",
     )
-    assert yml_refresh_seconds(reverted_yml) == 604800, "注入未生效（yml 文本形态变了）"
+    assert yml_refresh_seconds(reverted_yml) == 2_592_000, "注入未生效（yml 文本形态变了）"
 
     provider_text = _read(PROVIDER)
     reverted_provider = provider_text.replace(
-        f"${{jwt.refresh-token-expiration:{ONE_MONTH_SECONDS}}}",
-        "${jwt.refresh-token-expiration:604800}",
+        f"${{jwt.refresh-token-expiration:{ONE_WEEK_SECONDS}}}",
+        "${jwt.refresh-token-expiration:2592000}",
     )
-    assert provider_default_seconds(reverted_provider) == 604800, "注入未生效（@Value 文本形态变了）"
+    assert provider_default_seconds(reverted_provider) == 2_592_000, "注入未生效（@Value 文本形态变了）"
 
     auth_text = _read(AUTH_SERVICE)
     assert auth_service_violations(auth_text) == [], "自证前提：当前树 AuthService 应是单源"
-    with_constant = auth_text + "\n    private static final int REFRESH_TOKEN_COOKIE_MAX_AGE = 604800;\n"
-    assert auth_service_violations(with_constant), "把 7 天常量加回去 ⇒ 判据必须红（否则这条守卫是空断言）"
+    with_constant = auth_text + "\n    private static final int REFRESH_TOKEN_COOKIE_MAX_AGE = 2592000;\n"
+    assert auth_service_violations(with_constant), "把 30 天常量加回去 ⇒ 判据必须红（否则这条守卫是空断言）"
 
     request_text = _read(BMINI_REQUEST)
     store_text = _read(BMINI_STORE)

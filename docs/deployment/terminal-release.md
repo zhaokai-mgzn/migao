@@ -84,8 +84,13 @@ gh run watch $(gh run list --workflow terminal-publish.yml --limit 1 --json data
 
 - **Windows 未签名**：已购的 `migaozn.com` 是 TLS 域名证书（DV，EKU=Server Authentication），
   **不能**用于 Authenticode；代码签名需另买 OV/EV 且要云签名/HSM 形态（否则 CI 无法自动出包）。
-- 因此 Windows 首次运行会出现 **SmartScreen** 提示（「Windows 已保护你的电脑」）⇒ 官网下载页写明
-  「更多信息 → 仍要运行」，并公布 **SHA256**；安装程序启动时也会把自己的 SHA-256 写进日志/界面（终端仓实现）。
+- 因此 Windows 首次运行会出现 **SmartScreen** 提示（「Windows 已保护你的电脑」）⇒ 官网下载页只写**商家要做的动作**
+  （「更多信息 → 仍要运行」）并公布 **SHA256**；安装程序启动时也会把自己的 SHA-256 写进日志/界面（终端仓实现）。
+- 🔴 **本节是采购现状的唯一留档处，不上官网**（2026-11-24 用户裁定：「这种信息不适合放到官网」）：
+  「尚未购买代码签名证书 / 不签名 / 由安装程序自证哈希」属于**采购进度 + 风控现状**，
+  商家读不出要做什么，反而把内部资质现状摆到对外页面。判据 = `corporate-visual-copy-guards.test.ts` 的
+  「不摆运营内部事实与内部路由」（`代码签名证书` / `未购买` / `证书补齐` / `自证哈希` / `发布清单` /
+  `latest.json` / `/terminal/` 出现在官网对外面即红）。证书补齐后**改本节**，官网无需同步说明。
 - **Android 签名**：keystore 只存终端仓 Secrets（`ANDROID_KEYSTORE_BASE64` 等）。**换 key = 已装机器无法升级**
   （必须卸载重装）⇒ 这把 key 是长期资产，不随发布流程变动。
 - **不上架应用市场**：终端只从官网下载页面直发（企业内部工具、无市场审核流程）；

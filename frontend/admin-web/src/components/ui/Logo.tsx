@@ -12,7 +12,16 @@ interface LogoProps {
   className?: string
 }
 
-/** 米高品牌 Logo — 帘成 M：织金暖底 + 窗帘杆 + 垂帘 M + 波浪底摆 */
+/**
+ * 生意管家品牌标 ——「旦」字方印。
+ *
+ * 为什么是「旦」：日（金圆）出地平线（金线），是「天明 / 日复一日 / 生意如日初升」。
+ * 日 = 词元与每一天的经营数据；一 = 经营的地平线、管家的基座、一以贯之；
+ * 方印 = 可托付。两笔，缩到 28px 仍能读，16px 下是「一点一线」。
+ *
+ * 视觉：深靛方印 + 织金两笔（金只从 brand-palette 取色）。
+ * 旧「帘成 M」「管家铃」与五笔「生」都不再使用（用户 2026-11-24 要求简洁 / 有设计感 / 立意深远）。
+ */
 export default function Logo({ size = 'medium', className }: LogoProps) {
   const s = sizeMap[size]
   return (
@@ -23,24 +32,21 @@ export default function Logo({ size = 'medium', className }: LogoProps) {
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
       className={cn('flex-shrink-0', className)}
+      aria-hidden="true"
     >
       <defs>
-        <linearGradient id="logo-grad" x1="2" y1="2" x2="46" y2="46" gradientUnits="userSpaceOnUse">
-          <stop offset="0%" stopColor={gold[400]} />
+        <linearGradient id="logo-bg" x1="3" y1="3" x2="45" y2="45" gradientUnits="userSpaceOnUse">
+          <stop offset="0" stopColor="#48618f" />
+          <stop offset="1" stopColor="#2e3d5c" />
+        </linearGradient>
+        <linearGradient id="logo-gold" x1="12" y1="10" x2="36" y2="38" gradientUnits="userSpaceOnUse">
+          <stop offset="0%" stopColor={gold[300]} />
           <stop offset="100%" stopColor={gold[600]} />
         </linearGradient>
       </defs>
-      {/* 织金暖底 */}
-      <rect x="2" y="2" width="44" height="44" rx="13.5" fill="url(#logo-grad)" />
-      {/* 窗帘杆 + 吊环 */}
-      <rect x="11" y="8.6" width="26" height="2.4" rx="1.2" fill="white" fillOpacity="0.35" />
-      <circle cx="12.8" cy="9.8" r="1.8" stroke="white" strokeOpacity="0.55" strokeWidth="1.1" fill="none" />
-      <circle cx="35.2" cy="9.8" r="1.8" stroke="white" strokeOpacity="0.55" strokeWidth="1.1" fill="none" />
-      {/* 垂帘 M — 波浪底摆如窗帘下缘 */}
-      <path
-        fill="white"
-        d="M10.8 31.8 L10.8 15.8 Q10.8 13.6 13 13.6 L18.2 13.6 L21.6 27.2 L24 13.6 L26.4 27.2 L29.8 13.6 L35 13.6 Q37.2 13.6 37.2 15.8 L37.2 31.8 C35.2 33.4 32.8 29.8 30.2 30.4 C27.6 31 25.6 33.4 23 32.8 C20.4 32.2 18 29.8 15.2 30.4 C13 30.8 11.6 31.6 10.8 31.8 Z"
-      />
+      <rect x="2" y="2" width="44" height="44" rx="13.5" fill="url(#logo-bg)" />
+      <circle cx="24" cy="20.5" r="7.6" fill="url(#logo-gold)" />
+      <path d="M10 34.5 H38" stroke="url(#logo-gold)" strokeWidth="4.2" strokeLinecap="round" />
     </svg>
   )
 }

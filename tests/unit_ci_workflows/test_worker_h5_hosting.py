@@ -93,7 +93,7 @@ SUBDIR = "w"
 # 内容按实测特征构造：含 `window.TARO_ENV` 与 C 端标题，**不含** `src/app.mjs`。
 C_END_PAGE = (
     '<!doctype html><html lang="zh-CN"><head><meta charset="UTF-8"/>'
-    "<title>观星台窗帘 · 米宝智能助手</title>"
+    "<title>生意管家 · 米宝智能助手</title>"
     "<script>window.TARO_ENV = 'h5'</script>"
     '<script defer="defer" src="/js/app.js"></script></head>'
     '<body><div id="app"></div></body></html>'

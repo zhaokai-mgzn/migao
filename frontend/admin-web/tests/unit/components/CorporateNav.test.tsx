@@ -1,4 +1,4 @@
-// case_ids: UI-003
+// case_ids: UI-003, OB-008
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, act } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -52,21 +52,21 @@ describe('CorporateNav', () => {
   it('should render logo and brand name', () => {
     render(<CorporateNav />)
     expect(screen.getByTestId('logo')).toBeInTheDocument()
-    expect(screen.getByText('观星台')).toBeInTheDocument()
+    expect(screen.getByText('生意管家')).toBeInTheDocument()
   })
 
   it('should render logo link pointing to root', () => {
     render(<CorporateNav />)
-    const brandLink = screen.getByText('观星台').closest('a')
+    const brandLink = screen.getByText('生意管家').closest('a')
     expect(brandLink).toHaveAttribute('href', '/')
   })
 
   it('should render all 4 desktop navigation links', () => {
     render(<CorporateNav />)
-    // Note: 观星台 appears in both logo area and nav — use getAllByText for nav items
+    // Note: 生意管家 appears in both logo area and nav — use getAllByText for nav items
     // Desktop nav is rendered inside md:flex hidden container
     const homeLinks = screen.getAllByText('首页')
-    const servicesLinks = screen.getAllByText('产品服务')
+    const servicesLinks = screen.getAllByText('产品能力')
     const aboutLinks = screen.getAllByText('关于我们')
     const contactLinks = screen.getAllByText('联系方式')
 
@@ -77,19 +77,16 @@ describe('CorporateNav', () => {
     expect(contactLinks.length).toBeGreaterThanOrEqual(1)
   })
 
-  it('should render CTA buttons: 商家登录 and 商家入驻', () => {
+  it('should render 商家登录 CTA，内测期不露出商家入驻入口（OB-008）', () => {
     render(<CorporateNav />)
-    // These appear in both desktop and (conditionally) mobile; ensure at least one
     expect(screen.getAllByText('商家登录').length).toBeGreaterThanOrEqual(1)
-    expect(screen.getAllByText('商家入驻').length).toBeGreaterThanOrEqual(1)
+    expect(screen.queryByText('商家入驻')).not.toBeInTheDocument()
   })
 
-  it('should have 商家入驻 link pointing to /register', () => {
+  it('内测期导航不出现 /register 链接（OB-008）', () => {
     render(<CorporateNav />)
-    // Desktop CTA: Link component for /register
-    const registerLinks = screen.getAllByRole('link', { name: '商家入驻' })
-    const registerLink = registerLinks.find(l => l.getAttribute('href') === '/register')
-    expect(registerLink).toBeTruthy()
+    const registerLinks = screen.getAllByRole('link').filter(l => l.getAttribute('href') === '/register')
+    expect(registerLinks).toHaveLength(0)
   })
 
   it('should have 商家登录 link pointing to merchant login', () => {
@@ -133,10 +130,10 @@ describe('CorporateNav', () => {
     expect(activeLink).toBeTruthy()
   })
 
-  it('should highlight 产品服务 when on /services', () => {
+  it('should highlight 产品能力 when on /services', () => {
     mockUsePathname.mockReturnValue('/services')
     render(<CorporateNav />)
-    const servicesLinks = screen.getAllByText('产品服务')
+    const servicesLinks = screen.getAllByText('产品能力')
     const activeLink = servicesLinks.find(
       el => el.closest('a')?.className.includes('text-primary-600')
     )
@@ -176,7 +173,7 @@ describe('CorporateNav', () => {
   it('should highlight 产品服务 for nested route /services/curtains', () => {
     mockUsePathname.mockReturnValue('/services/curtains')
     render(<CorporateNav />)
-    const servicesLinks = screen.getAllByText('产品服务')
+    const servicesLinks = screen.getAllByText('产品能力')
     const activeLink = servicesLinks.find(
       el => el.closest('a')?.className.includes('text-primary-600')
     )
@@ -223,7 +220,7 @@ describe('CorporateNav', () => {
     // All nav items appear in mobile menu (getAllByText since desktop versions also exist)
     const homeItems = screen.getAllByText('首页')
     expect(homeItems.length).toBeGreaterThanOrEqual(1) // at least desktop + mobile
-    const servicesItems = screen.getAllByText('产品服务')
+    const servicesItems = screen.getAllByText('产品能力')
     expect(servicesItems.length).toBeGreaterThanOrEqual(1)
   })
 
@@ -231,11 +228,10 @@ describe('CorporateNav', () => {
     render(<CorporateNav />)
     await user.click(screen.getByRole('button', { name: '打开菜单' }))
 
-    // Both CTAs exist in mobile menu — should have 2 of each now (desktop + mobile)
+    // 内测期只保留商家登录（自助入驻入口已隐藏，OB-008）
     const loginButtons = screen.getAllByText('商家登录')
-    const registerButtons = screen.getAllByText('商家入驻')
     expect(loginButtons.length).toBeGreaterThanOrEqual(2)
-    expect(registerButtons.length).toBeGreaterThanOrEqual(2)
+    expect(screen.queryByText('商家入驻')).not.toBeInTheDocument()
   })
 
   // ── 导航链接 href ──
@@ -250,7 +246,7 @@ describe('CorporateNav', () => {
     expect(hrefs).toContain('/services')
     expect(hrefs).toContain('/about')
     expect(hrefs).toContain('/contact')
-    expect(hrefs).toContain('/register')
+    expect(hrefs).not.toContain('/register')
     expect(hrefs).toContain('https://merchant.migaozn.com/login')
   })
 
@@ -274,13 +270,13 @@ describe('CorporateNav', () => {
 
   // ── 移动端 CTA 点击后关闭 ──
 
-  it('should close mobile menu when 商家入驻 CTA is clicked', async () => {
+  it('should close mobile menu when 商家登录 CTA is clicked', async () => {
     render(<CorporateNav />)
     await user.click(screen.getByRole('button', { name: '打开菜单' }))
     expect(screen.getByRole('button', { name: '关闭菜单' })).toBeInTheDocument()
 
-    const registerButtons = screen.getAllByText('商家入驻')
-    await user.click(registerButtons[registerButtons.length - 1])
+    const loginButtons = screen.getAllByText('商家登录')
+    await user.click(loginButtons[loginButtons.length - 1])
 
     expect(screen.getByRole('button', { name: '打开菜单' })).toBeInTheDocument()
   })

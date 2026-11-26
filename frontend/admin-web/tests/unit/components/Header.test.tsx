@@ -369,7 +369,7 @@ describe('Header', () => {
     expect(screen.getByText('观星台布艺')).toBeInTheDocument()
   })
 
-  it('用户菜单里有「关于观星台」：新标签页打开官网关于页（issue #7491）', async () => {
+  it('用户菜单里有「关于生意管家」：新标签页打开官网关于页（issue #7491）', async () => {
     mockUseAuthStore.mockReturnValue({
       user: { id: '1', username: '13800138000', nickname: '张老板', tenantName: '观星台布艺' },
       logout: mockLogout,
@@ -378,7 +378,7 @@ describe('Header', () => {
       render(<Header />)
     })
     await user.click(screen.getByRole('button', { name: '用户菜单' }))
-    const about = screen.getByRole('link', { name: /关于观星台/ })
+    const about = screen.getByRole('link', { name: /关于生意管家/ })
     expect(about).toHaveAttribute('href', '/about')
     expect(about).toHaveAttribute('target', '_blank')
     expect(about.getAttribute('rel')).toContain('noopener')

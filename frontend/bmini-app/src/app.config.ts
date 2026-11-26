@@ -121,7 +121,7 @@ export default defineAppConfig({
   window: {
     backgroundTextStyle: 'light',
     navigationBarBackgroundColor: '#2e3d5c',
-    navigationBarTitleText: '黄金策商家助手',
+    navigationBarTitleText: '生意管家',
     navigationBarTextStyle: 'white',
     backgroundColor: '#faf7f2',
   },

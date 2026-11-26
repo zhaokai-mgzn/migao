@@ -22,7 +22,7 @@
       ],
       "gate": "github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'failure'",
       "why": "本腿只对「上游**判红**」这一半有信息增量：上游 success ⇒ `drift_audit.py --check` 没有归零条目要销 ⇒ 消费一次纯属放大（它会把 main 全量审计再跑一遍）。`workflow_dispatch` 是值班复算入口，不受结论门控。",
-      "evidence": "上游判定逐字见 `.github/workflows/post-merge-verify.yml` 的 `main 侧漂移兜底（漂移审计；全历史检出下真判）` 步（`--check` 非 0 一律带出退出码）；上游 `on:` 含 `pull_request: [opened, reopened]` ⇒ 它落在 PR 面（本表口径）。真实归零样本：`c-end-h5-publish.yml|never-succeeded` 在 2026-10-17 06:57 +08 首次发布成功后归零 ⇒ 上游近 40 次 run 里 39 红（复算：gh run list --workflow=post-merge-verify.yml --limit 40 --json conclusion）。"
+      "evidence": "上游判定逐字见 `.github/workflows/post-merge-verify.yml` 的 `main 侧漂移兜底（漂移审计；全历史检出下真判）` 步（`--check` 非 0 一律带出退出码）；上游 `on:` 含 `pull_request: [opened, reopened]` ⇒ 它落在 PR 面（本表口径）。真实归零样本：`C 端 H5 发布腿（已随 issue #9233 删除）|never-succeeded` 在 2026-10-17 06:57 +08 首次发布成功后归零 ⇒ 上游近 40 次 run 里 39 红（复算：gh run list --workflow=post-merge-verify.yml --limit 40 --json conclusion）。"
     },
     {
       "file": "flaky-triage.yml",
@@ -63,20 +63,8 @@
       "face": "`pull_request_target` 与 `push` 面上的浪费不在本表射程",
       "reason": "守卫 A 只覆盖 `workflow_run` 消费面（本包实测的最大族）。`push` 面在本仓**基本不跑**（被 `GITHUB_TOKEN` 合并吞掉，见 `tests/unit_ci_workflows/publish_leg_fallback_ledger.json` 的 `why`）；`pull_request_target`（automerge）的周期面由另一条实例判据承接。⇒ 「没进本表」≠「没问题」。",
       "recompute": "gh run list --branch main --event push --limit 200 --json headSha"
-    },
-    {
-      "face": "「收窄上游」是否漏判（去掉的 `Mini-App CI` 与判定对象有无因果关系）",
-      "reason": "本判据只核**静态形态**；因果性由**判定本体**回答：`scripts/h5_freshness_guard.py::judge()` 的两侧输入 = 线上 `Last-Modified`（HTTP）与 `git log -1 -- frontend/mini-app`（本地历史）—— **都不经过任何上游 run** ⇒ 去掉 `Mini-App CI` 不改变判定结果，只改变「多久判一次」。若将来判定本体改成消费上游结论，本登记必须同批更新。",
-      "recompute": "python3 -m pytest tests/unit_ci_workflows/test_c_end_h5_hosting.py -q -k freshness"
     }
   ],
-  "narrowed_in_this_package": [
-    {
-      "file": "h5-freshness-guard.yml",
-      "what": "上游面由 3 条收窄到 2 条（去掉 PR 面的 `Mini-App CI`）",
-      "why": "本腿判定的是「**线上产物** vs `origin/main` 上 `frontend/mini-app/**` 的最近改动」，与上游 CI 的**结论**无关 —— 上游 success 恰恰是它要判的那一半（发布成功 ≠ 线上新鲜）。⇒ 不能对它加「上游结论门控」（会把本腿判成永远不跑）；能做的是**收窄上游到发布腿**（+ `push: main` + `workflow_dispatch`，各自独立触发）。收窄后它的上游里不再有 PR 面腿 ⇒ 它**自然退出**守卫 A 的射程，不需要（也不应该）当「豁免」登记。",
-      "evidence": "改前 on.workflow_run.workflows = ['Mini-App CI', 'Publish worker-h5 …', 'Publish C-end H5 …']（`git show origin/main:.github/workflows/h5-freshness-guard.yml`）；`Mini-App CI` = PR 面腿（每个 PR 至少跑一次）⇒ 实测 09-27~09-29 本腿 210 次 run 里绝大多数是这一半。"
-    }
-  ],
+  "narrowed_in_this_package": [],
   "ungated_ok_note": "本表**允许为空**（空洞 = 当前没有需要登记的豁免）；「未登记即红」的牙齿长在 `consumers_frozen` 的**逐项相等**上（新造一条 PR 面消费腿 ⇒ 集合不等 ⇒ 红），不靠「表非空」。"
 }

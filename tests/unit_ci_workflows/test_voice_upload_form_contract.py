@@ -46,9 +46,8 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
-#: 两端语音工具（`transcribeFile()` 的 `formData` 唯一真相源）
+#: 语音工具（C 端小程序已下线，剩 bmini-app）（`transcribeFile()` 的 `formData` 唯一真相源）
 VOICE_TS: tuple[str, ...] = (
-    "frontend/mini-app/src/utils/voice.ts",
     "frontend/bmini-app/src/utils/voice.ts",
 )
 
@@ -178,7 +177,7 @@ class TestInjectedRedProofs:
 
     def test_unknown_key_injection_turns_red(self) -> None:
         """任意未在签名里的键 ⇒ C1 必红（类级：不只盯 `tenant_id` 这一个名字）。"""
-        rel = VOICE_TS[1]
+        rel = VOICE_TS[0]
         source = _read(rel).replace("formData: {", "formData: {\n      shop_id: '1',", 1)
         violations = subset_violations(source, _read(ASR_PY), rel)
         assert violations, "注入未登记键 `shop_id` 后判据仍绿 ⇒ C1 只做了形状匹配"

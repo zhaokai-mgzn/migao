@@ -239,7 +239,7 @@ describe('首屏（服务端渲染）：标题与安装说明在初始 HTML 里'
     const { container } = render(<DownloadPage />)
     const html = container.innerHTML
 
-    expect(container.querySelector('h1')?.textContent).toContain('下载观星台终端')
+    expect(container.querySelector('h1')?.textContent).toContain('下载生意管家终端')
     expect(html).not.toContain('加载中...')
     expect(html).toContain('未知来源')
     expect(html).toContain('SmartScreen')

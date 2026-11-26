@@ -16,7 +16,8 @@
    ⇒ 本工具**不解冲突**，而是**从 `origin/main` 重建再重放**：
       · 只追加型台账 = 取 main 版 + 按序并上各分支相对 merge-base 的**新增块**；
       · 两个生成物 = **一律重渲染**（源改了就该重渲染，逐行合并没有意义）；
-      · 锚点 = **取 main 版**，跑判据拿**实测读数**，再追加一行 `history` + 把 `entries` 对齐实测。
+      · 锚点 = **取 main 版**即可（issue #9090：派生读数已退役、不入库 ⇒ **不再重锚**），
+        跑判据做**复核**（非零 ⇒ 不许推送）；分支若曾按旧口径改过锚点，收尾时单独提一次。
    未知冲突面（既不是追加型台账也不是生成物）⇒ **fail-closed**：报出文件清单与出口，**不猜**。
 
 2. **用例号必然互撞**（堆叠 PR 常同占一个号）⇒ 检测重复 `id`，对**后合入者让号**
@@ -270,9 +271,9 @@ def resolve_conflicts(repo, paths) -> "list[str]":
             (Path(repo) / path).write_text(text, encoding="utf-8")
             notes.append(f"{path}: 生成物 ⇒ 保留 ours 占位，最后**重渲染**")
         elif path == ANCHOR:
-            text = stage_text(repo, 2, path)                # main 侧；稍后按**实测**重锚
+            text = stage_text(repo, 2, path)                # main 侧；最后**取 main 版**（不重锚）
             (Path(repo) / path).write_text(text, encoding="utf-8")
-            notes.append(f"{path}: 锚点 ⇒ 取 main 版占位，最后按**实测读数**重锚")
+            notes.append(f"{path}: 锚点 ⇒ 取 main 版占位（派生读数已退役：不重锚）")
         else:
             unknown.append(path)
     if unknown:
@@ -424,7 +425,7 @@ def sync_declarations(repo, renames, files) -> "list[str]":
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 5. 生成物重渲染 + 锚点按**实测**重锚
+# 5. 生成物重渲染 + 锚点**取 main 版**（派生读数已退役：不重锚）+ 跑判据复核
 # ══════════════════════════════════════════════════════════════════════════════
 
 def render(repo) -> str:
@@ -479,9 +480,10 @@ def _load_module(path: Path, name: str):
 
 
 def measure_anchor(repo) -> dict:
-    """**实测读数** —— 直接调判据文件自己的测量函数（不另写一份实现）。
+    """**实测读数**（派生量，**不入库**）—— 直接调判据文件自己的测量函数，不另写一份实现。
 
-    「以实测为准」：锚点写什么由**跑出来的读数**决定，不抄任何 PR 里写的数字。
+    issue #9090 起「读数」不再是锚点里的一份存根：它随语料每加一条用例就 +1，
+    入库就等于让所有并行包改同一个 key。⇒ 本函数只用于**打印证据**与**复核**。
     """
     test = Path(repo) / ANCHOR_TEST
     if not test.is_file():
@@ -495,31 +497,24 @@ def measure_anchor(repo) -> dict:
         }
 
 
-def reanchor(anchor: dict, measured: dict, note: str, sha: str, day: str) -> dict:
-    """`entries` 对齐实测 + **追加一行** `history`（`anchor_drift` 的规则 ②④）。"""
-    out = dict(anchor)
-    history = list(anchor.get("history") or [])
-    row = {"sha": sha[:12], "date": day, **measured,
-           "note": (note or "").strip() or "批次合并：读数由实测重锚（无 note —— 属缺省文案）"}
-    out["history"] = history + [row]
-    out["entries"] = dict(measured)
-    return out
+def take_anchor_from_main(repo) -> bool:
+    """锚点**取 main 版**（不再写任何读数）⇒ 返回「工作树里的锚点是否真的被换掉」。
 
-
-def write_anchor(repo, measured: dict, note: str) -> dict:
+    为什么不再重锚（issue #9090）：`entries` 只放不变量，派生读数由判据现算 ⇒ main 版**就是**对的；
+    而「按实测重锚」正是并行包撞同一个数字的那一步。分支若曾按旧口径改过锚点，
+    `checkout` 会把它换回 main 版 ⇒ 返回 `True`，调用方据此补一次收尾提交。
+    """
     path = Path(repo) / ANCHOR
-    anchor = json.loads(path.read_text(encoding="utf-8"))
-    sha = git_out(repo, "rev-parse", "origin/main")
-    new = reanchor(anchor, measured, note, sha, _today())
-    path.write_text(json.dumps(new, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    return {"before": (anchor.get("entries") or {}), "after": measured}
+    before = path.read_text(encoding="utf-8") if path.is_file() else ""
+    git(repo, "checkout", "origin/main", "--", ANCHOR)
+    return path.read_text(encoding="utf-8") != before
 
 
 def verify_anchor(repo) -> str:
     """以**实测为准**的收口断言：跑锚点判据（非零 ⇒ 不许推送）。"""
     p = run([sys.executable, "-m", "pytest", ANCHOR_TEST, "-q"], cwd=repo, check=False)
     if p.returncode != 0:
-        raise BatchError("锚点判据复核失败（实测与重锚结果对不上）：\n"
+        raise BatchError("锚点判据复核失败（锚点与语料的真值对不上）：\n"
                          f"{p.stdout[-4000:]}{p.stderr[-2000:]}")
     return p.stdout.strip().splitlines()[-1] if p.stdout.strip() else "ok"
 
@@ -541,7 +536,7 @@ def find_close_keywords(text: str):
     return _guard().find_close_keywords(text)
 
 
-def build_pr_body(infos, branch: str, renames, anchor_delta, measured, rendered: bool) -> str:
+def build_pr_body(infos, branch: str, renames, measured, rendered: bool) -> str:
     """批次 PR 的 body —— **零关闭词**（issue / 原 PR 由值守面在合并后按证据关闭）。"""
     lines = [f"批次合并：{len(infos)} 个 PR 一次进 main（分支 `{branch}`）", ""]
     lines += ["## 合入清单（按合入顺序）", ""]
@@ -553,7 +548,7 @@ def build_pr_body(infos, branch: str, renames, anchor_delta, measured, rendered:
               "只追加型台账（`.github/cases/*.yml`）取 main 版并按序并上各分支的新增块；"
               "两个生成物（`tests/agent_eval/eval_cases/**`、`docs/testing/mibao-verification-cases.md`）"
               "**一律重渲染**；锚点 `tests/unit_ci_workflows/case_machine_fail_channel_baseline.json` "
-              "取 main 版后按**实测读数**重锚。", ""]
+              "**取 main 版即可** —— 派生读数已退役（issue #9090），锚点里只放不变量，不再重锚。", ""]
     if renames:
         who = "；".join(f"#{pr} `{old}` → `{new}`" for pr, old, new in renames)
         lines.append(f"2. **用例号让号**（后合入者让号）：{who}。claim 文件名/内容、声明该号的测试文件头 "
@@ -561,9 +556,10 @@ def build_pr_body(infos, branch: str, renames, anchor_delta, measured, rendered:
     else:
         lines.append("2. **用例号**：本批无重复 `id`（检测过，无需让号）。")
     lines.append(
-        f"3. **生成物重渲染 + 锚点实测重锚**：`no_channel_total` = {measured.get('no_channel_total')} / "
-        f"`backend_contract_scoring_zero` {anchor_delta.get('before', {}).get('backend_contract_scoring_zero')}"
-        f" → {anchor_delta.get('after', {}).get('backend_contract_scoring_zero')}；复核 = "
+        f"3. **生成物重渲染 + 锚点复核（不重锚）**：`no_channel_total` = "
+        f"{measured.get('no_channel_total')}（不变量，恒 0）；派生读数 "
+        f"`backend_contract_scoring_zero` = {measured.get('backend_contract_scoring_zero')}"
+        f"（**现算**，不入库 ⇒ 并行包不必再改它）；复核 = "
         f"`python3 -m pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py -q`"
         f"{'（已通过）' if rendered else ''}。")
     lines += ["", "## 为什么走批次（而不是逐个合）", "",
@@ -620,7 +616,7 @@ def dry_run(infos, branch: str, repo) -> int:
         print(f"  {i}. 合 #{info['number']} → merge --no-ff --no-commit → 冲突按「重建重放」处置 → "
               f"提交（每支都必须成功提交）")
     print("\n  4. 重复用例号检测 + 后合入者让号（claim / 文件头 / 渲染同步）")
-    print("  5. 重渲染生成物 + 锚点按实测重锚 + 跑锚点判据复核")
+    print("  5. 重渲染生成物 + 锚点取 main 版（不再重锚）+ 跑锚点判据复核")
     print("  6. push 分支 + `gh pr create --draft`（body 零关闭词）")
     print("\n本次**没有**创建分支、没有提交、没有推送、没有动远端。")
     return 0
@@ -716,22 +712,22 @@ def main(argv=None, cwd=None) -> int:
         print("\n── 重渲染生成物 ──")
         print("   " + render(repo).replace("\n", "\n   "))
 
-        print("\n── 锚点：取 main 版 + 按**实测**重锚 ──")
-        git(repo, "checkout", "origin/main", "--", ANCHOR)
+        print("\n── 锚点：取 main 版（派生读数已退役 ⇒ **不再重锚**，issue #9090）──")
+        moved = take_anchor_from_main(repo)
         measured = measure_anchor(repo)
-        print(f"   实测：{measured}")
-        delta = write_anchor(repo, measured, note=_anchor_note(infos, measured))
-        print(f"   锚点：{delta['before']} → {delta['after']}")
+        print(f"   实测（派生读数，**不入库**）：{measured}")
         print("   复核：" + verify_anchor(repo))
-        # 出库形态（issue #8167 P1-1）：两个生成物**不入库** ⇒ 只提交锚点；重渲染（上面那步）
-        # 仍然做，作用是把**本机**副本刷新到最新（`git add` 它们会被 .gitignore 拒，也会把出库白做）。
-        git(repo, "add", "--", ANCHOR)
-        git(repo, "commit", "-m",
-            f"chore(batch): 锚点按实测重锚（{len(infos)} 个 PR 的批次合并；生成物已出库）")
+        # 出库形态（issue #8167 P1-1）：两个生成物**不入库** ⇒ 只可能有锚点需要收尾提交；
+        # 重渲染（上面那步）仍然做，作用是把**本机**副本刷新到最新。
+        # 正常批次里锚点**一个字都不该动**（分支没写过它）⇒ 没有收尾提交（改动前这里是必有一次）。
+        if moved:
+            git(repo, "add", "--", ANCHOR)
+            git(repo, "commit", "-m",
+                f"chore(batch): 锚点取 main 版（{len(infos)} 个 PR 的批次；派生读数已退役）")
         if in_merge_progress(repo):
             raise BatchError("清理提交之后仍处于合并中 —— 现场脏了，拒绝推送")
 
-        body = build_pr_body(infos, branch, renames_all, delta, measured, rendered=True)
+        body = build_pr_body(infos, branch, renames_all, measured, rendered=True)
         assert_zero_close_keywords(body)
         git_dir = Path(git_out(repo, "rev-parse", "--absolute-git-dir"))
         body_file = git_dir / "batch-merge-pr-body.md"
@@ -755,15 +751,6 @@ def main(argv=None, cwd=None) -> int:
     except BatchError as e:
         print(f"❌ {e}", file=sys.stderr)
         return 1
-
-
-def _anchor_note(infos, measured) -> str:
-    prs = " / ".join("#" + str(i["number"]) for i in infos)
-    return (f"批次合并（{len(infos)} 个 PR：{prs}）：合并前从 `origin/main` 重建集成分支，"
-            f"锚点取 main 版后**按实测重锚**（不抄任何单支 PR 里写的数字）。"
-            f"实测 `no_channel_total` = {measured.get('no_channel_total')}、"
-            f"`backend_contract_scoring_zero` = {measured.get('backend_contract_scoring_zero')}。"
-            f"复核 = `python3 -m pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py -q`。")
 
 
 if __name__ == "__main__":

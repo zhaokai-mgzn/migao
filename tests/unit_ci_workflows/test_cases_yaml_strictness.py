@@ -93,7 +93,7 @@ _BAD_QUOTE_BODY = (
 )
 
 #: 登记：模板面两条已登记缺口（**现取**，涨跌都红 ⇒ 逼登记更新）。
-_TEMPLATES_NOT_STANDARD_YAML = 26        # `- [真值 ID] 说明` 约定 ⇒ 标准 YAML 全拒
+_TEMPLATES_NOT_STANDARD_YAML = 27        # `- [真值 ID] 说明` 约定 ⇒ 标准 YAML 全拒
 _TEMPLATE_ASSERTIONS_COMMENT_TRUNCATED = 3   # ` #NNNN` 被当行内注释 ⇒ 断言原文被截断
 
 

@@ -101,7 +101,6 @@ safe_exc_message = _err_inc.safe_exc_message
 _current_request_id = _err_inc.current_request_id
 
 
-
 def _strip_think_tags(text: str) -> str:
     """移除 <think>...</think> 标签及其内容"""
     if not isinstance(text, str):
@@ -429,6 +428,7 @@ _CAPABILITY_INDEX_HEADER_TRIMMED = (
 # `app/graph/skills/tool_selection.py`（issue #8174：本文件受 LOC 棘轮 4356 行约束，裁剪逻辑
 # 只能搬出去再加）。下方 import 是**re-export** —— 既有调用点与 `patch(...base_skill.X)` 接缝
 # 逐字保持可用（`prepare_turn` 仍按 `_base.create_skill_registry` 取值）。
+from app.graph.skills.persona_identity import IDENTITY_FILES, identity_rel_for  # noqa: E402,F401
 from app.graph.skills.tool_selection import (  # noqa: E402,F401 — re-export（#8174）
     _all_skill_configs,
     _family_personas,
@@ -576,7 +576,7 @@ _PROMPT_CACHE: dict = {}
 # 磁盘存在性由 L0 用例 `tests/unit_ci_workflows/test_ai_agent_prompt_reference_guard.py` 锁
 # （删文件 ⇒ CI 红），本处的清单必须与它逐字一致。
 _REQUIRED_PROMPT_FILES = (
-    "base/identity.md",     # Layer 1 公共身份
+    "base/identity.md",     # Layer 1 公共身份（mibao）
     "base/principles.md",   # Layer 2 公共行为准则
     "PROMPT-rules.md",      # Layer 2.5 共享 Prompt 规则（Certainty Tagging / P&E / 确认卡铁律）
 )
@@ -702,7 +702,7 @@ def _build_system_prompt(skill_name: str, inline_prompt: str = "",
     """分层组装 System Prompt
 
     层级（从底到顶）：
-      1. base/identity.md     — 公共身份描述（所有 Skill 共享）
+      1. base/identity.md     — 身份描述（按 persona 分流：mibao / xiaobu，issue #7292）
       2. base/principles.md   — 公共行为准则（所有 Skill 共享）
       2.5 PROMPT-rules.md     — 公共 Prompt 规则（所有 Skill 共享）
       2.6 能力索引            — 域 → 该域可执行的写工具（**事实 derive**，见 #4125）
@@ -727,8 +727,8 @@ def _build_system_prompt(skill_name: str, inline_prompt: str = "",
     parts = []
 
     # Layer 1+2+2.5: 公共基础（身份 + 原则 + 共享 Prompt 规则）—— **必需层**，缺失即响亮失败
-    identity_rel, principles_rel, prompt_rules_rel = _REQUIRED_PROMPT_FILES
-    identity = _read_cached(_os.path.join(_ref_dir, identity_rel), required=True)
+    _, principles_rel, prompt_rules_rel = _REQUIRED_PROMPT_FILES
+    identity = _read_cached(_os.path.join(_ref_dir, identity_rel_for(getattr(_skill_config(skill_name), "system_prompts", None))), required=True)
     if identity:
         parts.append(identity)
 
@@ -1716,7 +1716,7 @@ def normalize_draft_state_reply(text: str) -> tuple:
 # 判据：会话里**出现过窗户尺寸措辞**才允许算料。为什么这样不卡死：模型缺尺寸时会先问，
 # 问过之后会话里自然出现「窗宽/窗高」→ 下一轮放行（自愈）；而顾客直接报"要 3 米"时，
 # 会话里永远不会有尺寸措辞 → 一直被拦，逼模型走"按米数下单"而不是"按窗宽算料"。
-_DIMENSION_HINTS = ("窗宽", "窗高", "宽度", "高度", "尺寸", "多宽", "多高", "米宽", "观星台")
+_DIMENSION_HINTS = ("窗宽", "窗高", "宽度", "高度", "尺寸", "多宽", "多高", "米宽", "生意管家")
 
 
 def _conversation_mentions_dimensions(messages) -> bool:

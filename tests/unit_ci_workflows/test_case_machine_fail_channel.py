@@ -23,15 +23,18 @@
   · **I1（绝对不变量，无锚点）**：每条用例都至少有**一个**机器判红通道。
   · **I2（组成不变量）**：`scoring_assertion_count == 0` 的用例**必须**是豁免通道用例
     —— 这条正是 #5079 缺的那一步，也是让「53」这个读数**可解释**的那一步。
-  · **I3（锚点，只许非增）**：`no_channel_total` 是**绝对下界 0**，history 链单调非增；
-    `backend_contract_scoring_zero`（= 53）是**读数**，记进链里让漂移在 diff 里可见。
+  · **I3（锚点 = 不变量；读数现算）**：`no_channel_total` 是**绝对下界 0**，`history` 链上恒为 0；
+    `backend_contract_scoring_zero` 是**派生量**（从语料现算），🔴 **不许入库** ——
+    它每加一条 `[backend-contract]` 用例就 +1，入库就等于让所有并行包改**同一个 key**
+    ⇒ issue #9090 现场（2026-11-23 一晚 5 次 rebase，每次按本地报错原文重锚）。
 
-## I3 为什么不把 53 当天花板（有意取舍，写清楚）
+## I3 为什么把读数**从锚点里拿掉**（而不是设成天花板）
 
-把 53 设成「只许非增」的天花板会**误伤合法新增**：`[backend-contract]` 用例是设计上
-不进 agent-eval 的一类（`skip-exemption-baseline.json` 的 `history` 已逐条记录过这种摩擦
-——「每新增一条此类用例都要重锚 ⇒ 摩擦力归零」）。⇒ 真债务（`no_channel_total`）锁死为 0，
-读数只锁「变更必须留 `note`」。
+「只许非增」会误伤合法新增（`[backend-contract]` 用例设计上不进 agent-eval），
+「必须重锚」又会把并行包钉在同一个数字上 —— 两条都试过，两个都不是办法。
+读数**不是**安全属性：真债务度量是 `no_channel_total`（恒 0），逐条判据是 I1/I2。
+⇒ 只保留「**能算**」（判据每次现算），不保留「**存一份**」（那份存根就是冲突源）。
+`history` 退化为**只增不改的归档**：新增用例不再追加行；口径/结构变更才写一行（必须带 `note`）。
 """
 import json
 import re
@@ -49,8 +52,12 @@ ANCHOR = Path(__file__).with_name("case_machine_fail_channel_baseline.json")
 
 CHANNEL_SCORING = "runner-scoring"
 CHANNEL_TRACES = "backend-contract-traces"
-#: 锚点里受管的度量名（history 每行都要有）。
-ANCHOR_METRICS = ("no_channel_total", "backend_contract_scoring_zero")
+#: `entries` 里**允许**出现的键 —— 只放**不变量**（不随语料漂移的量）。
+ANCHOR_INVARIANTS = ("no_channel_total",)
+#: 🔴 已**退役**的入库读数（issue #9090）：它随语料每加一条用例就 +1 ⇒ 那是冲突源本身。
+RETIRED_STORED_METRICS = ("backend_contract_scoring_zero",)
+#: `history` 归档行里出现的度量（只作**归档完整性**：任一度量变了必须写 `note`）。
+HISTORY_METRICS = ("no_channel_total", "backend_contract_scoring_zero")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -160,20 +167,29 @@ def exempt_channel_problems(cases, repo_root):
 def anchor_drift(entries, history):
     """锚点链一致性 → 违规列表（空 = 一致）。
 
-    规则：① `history` 非空；② `entries` 的两个度量 == `history` 末行同名键
-    （改读数必须同时追加一行，让变更在 diff 里可见）；
-    ③ `no_channel_total` 链上**恒为 0** 且单调非增（真债务只许清零，不许抬高）；
-    ④ 相邻两行度量有变却无 `note` ⇒ 红（漂移必须写明理由）。
+    规则（issue #9090 改口径）：
+    ① `history` 非空 —— 归档不许清空（既有 234 行是审计链）；
+    ② `entries` **只许放不变量**：出现派生读数（`RETIRED_STORED_METRICS`）⇒ 红 ——
+       那是「每加一条用例就改同一个数字」的冲突源本身；
+    ③ `entries.no_channel_total` == `history` 末行同名键，且**恒为 0**（真债务只许清零，不许抬高）；
+    ④ `history` 相邻两行任一度量（含当年归档读数）有变却无 `note` ⇒ 红（漂移必须写明理由）。
     """
     out = []
     if not history:
-        return ["锚点 `history` 为空 —— 「只许非增的锚点」没有链可判"]
+        return ["锚点 `history` 为空 —— 「只许非增的不变量」没有链可判"]
+    for m in RETIRED_STORED_METRICS:
+        if m in entries:
+            out.append(
+                f"`entries.{m}` 是**派生读数**，不许入库 —— 它随语料每加一条用例就 +1 ⇒ "
+                f"所有并行包被迫改同一个 key（issue #9090）；读数由判据**现算**"
+                f"（`scoring_zero_total`），`history` 只作归档"
+            )
     tail = history[-1]
-    for m in ANCHOR_METRICS:
+    for m in ANCHOR_INVARIANTS:
         if entries.get(m) != tail.get(m):
             out.append(
                 f"`entries.{m}`={entries.get(m)!r} ≠ history 末行 {tail.get(m)!r} —— "
-                f"改读数必须**同时**追加一行 history（否则读数变化在 diff 里无声）"
+                f"不变量必须与归档末行一致（变化必须同时在 history 里留档）"
             )
     prev = None
     for i, row in enumerate(history):
@@ -186,7 +202,7 @@ def anchor_drift(entries, history):
         if prev is not None and isinstance(v, int) and v > prev:
             out.append(f"history[{i}].no_channel_total 上升（{prev} → {v}）—— 只许非增")
         if prev is not None:
-            changed = [m for m in ANCHOR_METRICS if row.get(m) != history[i - 1].get(m)]
+            changed = [m for m in HISTORY_METRICS if row.get(m) != history[i - 1].get(m)]
             if changed and not str(row.get("note") or "").strip():
                 out.append(f"history[{i}] 改了 {changed} 却无 `note` —— 读数漂移必须写明理由")
         if isinstance(v, int):
@@ -247,27 +263,25 @@ def test_i2_exempt_channel_is_actually_complete():
     )
 
 
-def test_i3_anchor_matches_reality_and_is_only_shrinking():
-    """I3：锚点与实测一致，且 `history` 链单调非增（`no_channel_total` 恒 0）。"""
+def test_i3_anchor_stores_only_invariants():
+    """I3：`entries` 只放不变量；派生读数**从语料现算、不入库**（issue #9090）。"""
     anchor = json.loads(ANCHOR.read_text(encoding="utf-8"))
     entries, history = anchor.get("entries") or {}, anchor.get("history") or []
 
     drift = anchor_drift(entries, history)
     assert not drift, "锚点链自身不一致：\n  " + "\n  ".join(drift)
 
-    cases = _real_cases()
-    actual = {
-        "no_channel_total": len(no_channel_cases(cases, REPO_ROOT)),
-        "backend_contract_scoring_zero": scoring_zero_total(cases),
-    }
-    assert actual == entries, (
-        f"实测读数 {actual} 与锚点 `entries` {entries} 不一致 ⇒ 必须在**同一 PR** 里重锚："
-        f"追加一行 history（`no_channel_total` 只许为 0；`backend_contract_scoring_zero` 变化"
-        f"须写 `note` 说明来由），并把 `entries` 对齐到新末行"
+    extra_keys = sorted(set(entries) - set(ANCHOR_INVARIANTS))
+    assert not extra_keys, (
+        f"`entries` 里出现不变量之外的 key：{extra_keys} —— 派生读数入库 = 所有并行包改同一个数字"
+        f"（issue #9090 的病根）。读数由本文件**现算**（`scoring_zero_total`），不入库"
     )
     assert entries["no_channel_total"] == 0, (
         "`no_channel_total` 必须为 0 —— 它是本判据真正的债务度量（#5079 的 53 是**读数**不是债务）"
     )
+    # 读数面仍然活着（只是不再存一份）：现算必须有命中（0 命中会是假绿）
+    assert scoring_zero_total(_real_cases()) > 0, "读数面失效（`scoring_assertion_count == 0` 的用例 0 条）"
+
 
 
 def test_i3_anchor_records_the_issue_premise_provenance():
@@ -428,25 +442,48 @@ class TestInjectionRedProofs:
         )
 
     def test_i3_injection_history_increase_reds(self):
-        """锚点红证 ②：`history` 链出现上升 ⇒ 判红（只许非增）。"""
+        """锚点红证 ②：归档行改了度量却无 `note` ⇒ 判红（归档完整性；新行只在口径/结构变更时写）。"""
         hist = [
             {"no_channel_total": 0, "backend_contract_scoring_zero": 53},
-            {"no_channel_total": 0, "backend_contract_scoring_zero": 54, "note": "新增 backend-contract 用例"},
+            {"no_channel_total": 0, "backend_contract_scoring_zero": 54, "note": "口径变更：重算分流规则"},
         ]
-        # 读数**允许**增长（有 note）；此处验证 note 规则生效、且无 note 时必红
-        assert not anchor_drift({"no_channel_total": 0, "backend_contract_scoring_zero": 54}, hist)
+        assert not anchor_drift({"no_channel_total": 0}, hist), (
+            "归档行有 note 却被判红 ⇒ 判据把「归档」当成了「必须对齐」"
+        )
         hist[1].pop("note")
-        assert any("无 `note`" in d for d in anchor_drift(
-            {"no_channel_total": 0, "backend_contract_scoring_zero": 54}, hist)), (
-            "读数漂移且无 `note` 却没判红 ⇒ 漂移会在 diff 里无声"
+        assert any("无 `note`" in d for d in anchor_drift({"no_channel_total": 0}, hist)), (
+            "归档行改了度量且无 `note` 却没判红 ⇒ 漂移会在 diff 里无声"
+        )
+
+    def test_i3_injection_stored_reading_reds(self):
+        """锚点红证 ②b（issue #9090）：把派生读数写回 `entries` ⇒ **必红**。"""
+        hist = [{"no_channel_total": 0, "backend_contract_scoring_zero": 53, "note": "基线"}]
+        drift = anchor_drift({"no_channel_total": 0, "backend_contract_scoring_zero": 53}, hist)
+        assert any("不许入库" in d for d in drift), (
+            f"派生读数入库却没判红 ⇒ 并行包撞同一个数字的形态会原样回来：{drift}"
         )
 
     def test_i3_injection_entries_out_of_sync_reds(self):
-        """锚点红证 ③：`entries` 与 history 末行不一致 ⇒ 判红。"""
-        hist = [{"no_channel_total": 0, "backend_contract_scoring_zero": 53}]
-        drift = anchor_drift({"no_channel_total": 0, "backend_contract_scoring_zero": 52}, hist)
+        """锚点红证 ③：`entries` 的不变量与 history 末行不一致 ⇒ 判红。"""
+        hist = [{"no_channel_total": 1, "backend_contract_scoring_zero": 53, "note": "夹具"}]
+        drift = anchor_drift({"no_channel_total": 0}, hist)
         assert any("≠ history 末行" in d for d in drift)
 
     def test_i3_injection_empty_history_reds(self):
-        """锚点红证 ④：空 `history` ⇒ 判红（没有链就没有「只许非增」）。"""
-        assert anchor_drift({"no_channel_total": 0, "backend_contract_scoring_zero": 53}, [])
+        """锚点红证 ④：空 `history` ⇒ 判红（归档清空 = 审计链断了）。"""
+        assert anchor_drift({"no_channel_total": 0}, [])
+
+    def test_i3_adding_a_case_no_longer_needs_a_reanchor(self):
+        """I3 的核心性质（issue #9090）：语料 +1 条 `[backend-contract]` 用例 ⇒ 锚点**一字不用改**。"""
+        anchor = json.loads(ANCHOR.read_text(encoding="utf-8"))
+        entries, history = anchor.get("entries") or {}, anchor.get("history") or []
+        before = anchor_drift(entries, history)
+        assert before == [], "前置：真锚点必须先是自洽的"
+        cases = _real_cases()
+        extra = _case("ZZ-011", skip_reason="[backend-contract] 由某测试验证")
+        assert scoring_zero_total([*cases, extra]) == scoring_zero_total(cases) + 1
+        assert anchor_drift(entries, history) == before == [], (
+            "加了一条用例，锚点就必须改 ⇒ 「加用例」在并行包里仍会撞同一个数字")
+        # 对照臂：旧口径（entries 存读数）在同一场景下**必然**与实测不一致
+        old_entries = {**entries, "backend_contract_scoring_zero": scoring_zero_total(cases)}
+        assert old_entries["backend_contract_scoring_zero"] != scoring_zero_total([*cases, extra])

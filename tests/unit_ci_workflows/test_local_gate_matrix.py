@@ -116,7 +116,7 @@ CI_LEG_COMMANDS = (
     # 几何 e2e 腿（issue #5759）：装依赖（含 chromium 安装）→ 跑 spec（构建由腿自己完成）。
     # issue #6478 起跑**整个 `specs/bmini/` 目录**（腿的 testMatch 本来就是该目录）：
     # 逐文件点名会让新加的 spec 静默不跑（「登记了但从不执行」）。
-    "npm ci\nnpx playwright install chromium --with-deps",
+    "npm ci --prefer-offline --no-audit --no-fund\nnpx playwright install chromium --with-deps",
     "npx playwright test specs/bmini/ --config=playwright.bmini.config.ts",
 )
 
@@ -682,7 +682,10 @@ def _ci_leg_commands() -> tuple[str, ...]:
     for job in (data.get("jobs") or {}).values():
         for step in (job.get("steps") or []):
             run = (step.get("run") or "").strip()
-            if re.match(r"^(npx|npm) ", run) and run != "npm ci":
+            # 排除「纯装依赖」步：口径按**前缀 + 单行**判 —— `npm ci` 现在带离线参数（逐字相等会漏），
+            # 但「装依赖 + 后续命令」的多行步（几何 e2e 的 `npm ci && playwright install`）是腿命令，必须保留。
+            is_install_only = bool(re.match(r"^npm ci(\s|$)", run.strip())) and "\n" not in run.strip()
+            if re.match(r"^(npx|npm) ", run) and not is_install_only:
                 out.append(run)
     return tuple(out)
 

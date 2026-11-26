@@ -39,14 +39,6 @@
       "watchdog": true,
       "why": "第二条静态落地面腿（`frontend/bmini-app/**` → 静态根 `b/`）。同 worker-h5：dispatch 即发布（无人工闸）⇒ 一并值守。",
       "clearing_event": true
-    },
-    {
-      "svc": "c-end-h5",
-      "wf": "c-end-h5-publish.yml",
-      "watchdog": false,
-      "exempt_why": "**具名豁免**：本腿的发布步骤只在 `workflow_dispatch` **且** `inputs.publish == 'true'` 时执行（用户 2026-09-27 裁定 B：首次发布由人手动触发）⇒ 对账 dispatch 出去的 run 走「Manual gate」判红且**不会发布**。也就是说「未发布」是本腿的**设计态**、不是缺陷 ⇒ 把它计入告警面 = 每轮都开单的噪声判据（缺陷）。它的新鲜度另有值守：`.github/workflows/h5-freshness-guard.yml`（判红 + 自动重判），本值守面**不重复报警**。若将来给它接上自动发布，本条目必须删掉（豁免只许缩短）。",
-      "anchor": "本腿的方向是安全的（#4184 用户裁定 B：首次发布由人手动触发）",
-      "clearing_event": true
     }
   ],
   "event_trigger_contract": {

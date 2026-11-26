@@ -1,7 +1,7 @@
 // case_ids: OR-034
 /**
- * 跨端同源守卫：报价卡 `QuotationCard.tsx` 在 mini-app（C 端米宝）/ bmini-app（B 端黄金策）
- * **两份逐字节相同**。
+ * 报价卡语义守卫：C 端小程序已下线（issue #9233），原「mini-app / bmini-app 两份逐字节相同」
+ * 的跨端同源前提消失；保留 **B 端 bmini-app 的渲染语义** 判据（防文件被清空/改写后没人发现）。
  *
  * 病根（issue #4292，实测级）：两份文件改动前**逐字节相同**（`diff` 无输出），而 #4283 只修了
  * mini-app 那一份 ⇒ B 端报价卡仍只渲染理论褶倍（#4118 ④：客户自报 48 折时卡片显示
@@ -27,7 +27,6 @@ const REPO_ROOT = join(__dirname, '..', '..', '..')
 
 /** 两份副本（唯一真相源 = 本守卫 + 上述文件头同步纪律） */
 const COPIES = [
-  'frontend/mini-app/src/components/cards/QuotationCard.tsx',
   'frontend/bmini-app/src/components/cards/QuotationCard.tsx',
 ] as const
 
@@ -51,12 +50,7 @@ function readCopy(rel: string): string {
 }
 
 describe('QuotationCard 跨端同源（issue #4292）', () => {
-  it('C1：mini-app / bmini-app 两份 QuotationCard.tsx 逐字节相等', () => {
-    const [cSide, bSide] = COPIES.map(readCopy)
-    expect(bSide).toBe(cSide)
-  })
-
-  it('C2：两份都含实际褶倍的渲染语义关键片段（防两份一起被清空后 C1 空跑）', () => {
+  it('C2：B 端含实际褶倍的渲染语义关键片段（防文件被清空/改写后判据空跑）', () => {
     for (const rel of COPIES) {
       const src = readCopy(rel)
       const missing = SEMANTIC_ANCHORS.filter((anchor) => !src.includes(anchor))

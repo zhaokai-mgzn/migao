@@ -66,11 +66,13 @@ describe('shouldRedirectToLogin（401 跳转守卫 — 防死循环核心）', (
 })
 
 describe('PUBLIC_ROUTES（公开面单一源，防漏配 / 防顺手放宽）', () => {
-  it('恰好是「首页 + 认证页 + 官网公开页」六项', () => {
+  it('恰好是「首页 + 认证页 + 官网公开页」七项', () => {
     expect([...PUBLIC_ROUTES].sort()).toEqual([
       '/',
       '/about',
       '/contact',
+      // 官网终端下载页（2026-11-24，issue #9136）：漏了它 ⇒ 匿名访客打开下载页会被弹去登录页（浏览器实测）。
+      '/download',
       '/login',
       '/register',
       '/services',
