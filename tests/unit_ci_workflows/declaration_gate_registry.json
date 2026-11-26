@@ -54,12 +54,6 @@
           "reason": "同上（跨端卡片契约读它的源码）；扩面代价相同 ⇒ 登记为缺口，不静默"
         },
         {
-          "path": "frontend/mini-app",
-          "issue": "#4177",
-          "owner": "CI 门禁 owner（pr-check 面）",
-          "reason": "同上（跨端卡片契约读它的源码，另有算料判据读它的常量）"
-        },
-        {
           "path": "docs",
           "issue": "#4177",
           "owner": "CI 门禁 owner（pr-check 面）",
@@ -148,67 +142,6 @@
         "needs": "detect",
         "output": "run",
         "emit_step": "Detect bmini-app face",
-        "if": "needs.detect.outputs.run == 'true'"
-      },
-      "job_gate_note": "issue #6051：本腿是**非 required** ⇒ 加 job 级面门控（`needs: detect` + `if: needs.detect.outputs.run == 'true'`），非命中面的 PR 上**整层不创建**（runner 不再空转）。「未跑」由判定 job 的 else 分支具名打印（见各 workflow 的 `detect` job）；⛔ required 腿**禁止**用这条形态：job 级跳过不上报 context ⇒ required 检查永久悬空。"
-    },
-    {
-      "id": "mini-app-typecheck-and-test",
-      "workflow": "mini-app.yml",
-      "job": "typecheck-and-test",
-      "trigger": {
-        "kind": "step-detect-regex",
-        "step": "Detect mini-app changes",
-        "emit_id": "detect",
-        "predicate": "^(frontend/mini-app/|tests/|\\.github/)"
-      },
-      "must_cover": [
-        {
-          "path": "frontend/mini-app",
-          "reason": "门禁自己住的模块（typecheck + 单测的对象）"
-        }
-      ],
-      "uncovered": [],
-      "auto_discover_root": null,
-      "check_name": "mini-app typecheck + unit tests",
-      "gated_steps": [
-        "Setup Node.js",
-        "Install dependencies",
-        "TypeScript type check",
-        "Run unit tests"
-      ]
-    },
-    {
-      "id": "mini-app-xiaobu-h5-visual",
-      "workflow": "mini-app.yml",
-      "job": "xiaobu-h5-visual",
-      "trigger": {
-        "kind": "step-detect-regex",
-        "step": "Detect mini-app changes",
-        "emit_id": "detect",
-        "predicate": "^(frontend/mini-app/|tests/|\\.github/)"
-      },
-      "must_cover": [
-        {
-          "path": "frontend/mini-app",
-          "reason": "视觉回归跑的就是它的 H5 构建产物"
-        }
-      ],
-      "uncovered": [],
-      "auto_discover_root": null,
-      "check_name": "xiaobu H5 visual regression",
-      "gated_steps": [
-        "Setup Node.js",
-        "Install mini-app deps",
-        "Install Playwright deps",
-        "Build H5 (test env overrides prod URL)",
-        "Run visual regression",
-        "Upload visual diff artifacts (failure)"
-      ],
-      "job_gate": {
-        "needs": "detect",
-        "output": "run",
-        "emit_step": "Detect mini-app face",
         "if": "needs.detect.outputs.run == 'true'"
       },
       "job_gate_note": "issue #6051：本腿是**非 required** ⇒ 加 job 级面门控（`needs: detect` + `if: needs.detect.outputs.run == 'true'`），非命中面的 PR 上**整层不创建**（runner 不再空转）。「未跑」由判定 job 的 else 分支具名打印（见各 workflow 的 `detect` job）；⛔ required 腿**禁止**用这条形态：job 级跳过不上报 context ⇒ required 检查永久悬空。"
@@ -322,7 +255,6 @@
         "where": "on.pull_request.paths",
         "paths": [
           "frontend/admin-web/**",
-          "frontend/mini-app/**",
           "tests/e2e/**",
           "tests/playwright.config.ts",
           ".github/workflows/demo-evidence.yml"
@@ -341,36 +273,6 @@
       "uncovered": [],
       "auto_discover_root": null,
       "check_name": "Demo path specs (admin-web, fixture mode)",
-      "gated_steps": []
-    },
-    {
-      "id": "demo-evidence-mini-app-e2e-preflight",
-      "workflow": "demo-evidence.yml",
-      "job": "mini-app-e2e-preflight",
-      "trigger": {
-        "kind": "pull_request_paths",
-        "where": "on.pull_request.paths",
-        "paths": [
-          "frontend/admin-web/**",
-          "frontend/mini-app/**",
-          "tests/e2e/**",
-          "tests/playwright.config.ts",
-          ".github/workflows/demo-evidence.yml"
-        ]
-      },
-      "must_cover": [
-        {
-          "path": "frontend/mini-app",
-          "reason": "静态契约校验断言的是它的选择器与 storage 注入键"
-        },
-        {
-          "path": "tests/e2e",
-          "reason": "校验脚本与红证夹具所在面"
-        }
-      ],
-      "uncovered": [],
-      "auto_discover_root": null,
-      "check_name": "Mini-app e2e static contract preflight",
       "gated_steps": []
     },
     {
@@ -712,15 +614,14 @@
     {
       "file": "tests/unit_ci_workflows/test_operation_display_name_guard.py",
       "symbol": "IMPLEMENTATIONS",
-      "bound": 4,
+      "bound": 3,
       "members": [
         "frontend/admin-web/src/lib/operation-display.ts",
         "frontend/worker-h5/src/shared/operation-display.mjs",
-        "frontend/bmini-app/src/utils/operationDisplayName.ts",
-        "frontend/mini-app/src/components/cards/operationDisplayName.ts"
+        "frontend/bmini-app/src/utils/operationDisplayName.ts"
       ],
       "issue": "#5007",
-      "note": "该处只写 `assert len(...) >= N`（只防清空、不防删一项）⇒ 由逐项冻结承担「多一个/少一个都红」；下界断言本身按文件所有权留在原文件"
+      "note": "该处只写 `assert len(...) >= N`（只防清空、不防删一项）⇒ 由逐项冻结承担「多一个/少一个都红」；下界断言本身按文件所有权留在原文件；2026-11-26（issue #9233）：C 端小程序工程整目录删除 ⇒ 成员 4 → 3，下界同步。"
     },
     {
       "file": "tests/unit_ci_workflows/test_print_doc_convention_guard.py",

@@ -33,7 +33,7 @@ jobs:
   # 面口径 = 与各腿既有内联判定**同一份面**（变更路径的**首段** ∈ { frontend tests .github }，
   #   与既有锚定正则的交替逐值等价）。⚠️ 刻意不用 `grep -E` 把交替写进命令行：管道库存判据
   #   （tests/unit_ci_workflows/test_step_exit_code_propagation.py）把**引号内的裸竖线**也保守计成管道，
-  #   在 28+10 零余量下会把新步骤误判成「新增真管道」；首段比对避开这层误报且行为等价（含 frontend/bmini-app 与 frontend/mini-app 两类改动均命中 → 更保守）。
+  #   在 28+10 零余量下会把新步骤误判成「新增真管道」；首段比对避开这层误报且行为等价（含 frontend/bmini-app 与前端其它包的改动均命中 → 更保守）。
   # 登记册 = tests/unit_ci_workflows/declaration_gate_registry.json（未登记即红）。
   detect:
     name: bmini H5 面判定（决定哪些腿跑）
@@ -139,7 +139,7 @@ jobs:
   # ── 构建腿（issue #5650）──────────────────────────────────────────────────────────
   # 为什么必须有：用户 2026-09-26 裁定「暂时只做 H5 浏览器访问，小程序链路先搁置」
   #   ⇒ **h5 编译产物 = 唯一用户可达形态**，而本 workflow 此前**两端都不构建**
-  #   （全仓唯一 `build:h5` 在 `frontend/mini-app`，与本端无关）⇒ 编译坏了没有任何东西会红。
+  #   （C 端小程序的 `build:h5` 已随 issue #9233 删除，与本端无关）⇒ 编译坏了没有任何东西会红。
   # 为什么两端都构建：h5 的平台分支改动会同时压到 weapp 侧（本次改的就是 `utils/platform.ts` 的判别），
   #   只构建 h5 会让「h5 绿、weapp 编译坏了」这种形态溜过去。
   # 为什么合成**一个** job 而不是两条：`npm ci`（bmini-app 依赖树重）的成本远大于一次 `taro build`，

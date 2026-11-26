@@ -646,7 +646,7 @@ cmd_add() {
   echo "   ⚠️  worktree 是独立目录，首次使用需自行安装依赖："
   echo "      cd ${path}"
   [ -f "$REPO_ROOT/package.json" ] && echo "      npm ci"
-  [ -d "$REPO_ROOT/frontend/mini-app" ] && echo "      cd frontend/mini-app && npm ci"
+  [ -d "$REPO_ROOT/frontend/bmini-app" ] && echo "      cd frontend/bmini-app && npm ci"
   echo "   ⚠️  build 产物（dist/）不入库，worktree 之间互不影响。"
   echo "   🔴 依赖一律在本工作区内安装（npm ci）；禁止把 node_modules 软链到主工作区或其他工作区"
   echo "      软链（${path}/tests/node_modules → 主仓库同名目录）会在「删/重建 node_modules」的动作下**打穿目标**："

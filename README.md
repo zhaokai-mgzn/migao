@@ -41,12 +41,14 @@
 | 端 | 代码 | 使用者 | 主要能力 |
 |----|------|--------|----------|
 | **生意管家管理后台** | `frontend/admin-web` | 商家管理员 / 员工 | 经营概览、报表、客户服务、订单商品、生产、质量、仓储、财务、供应链、组织 |
-| **顾客微信小程序** | `frontend/mini-app` | 终端顾客 | 米宝对话、算料报价、下单、订单与物流、售后、知识卡片、图片识别 |
 | **商家小程序** | `frontend/bmini-app` | 商家 / 员工 | 黄金策移动版、经营一屏、移动坐席、工人工作台（H5 `/b/` 与小程序双编译） |
 | **员工端 H5 / 安卓终端** | `frontend/bmini-app` 的 H5 编译 | 车间工人 | 扫码报工、入库、发货、返工、计件；安卓一体机 / 手持标签机 |
 
 > `frontend/worker-h5`（线上 `/w/`）只服务**已印出的纸码**，处于兼容期、不再新增功能；
 > 新的工人面统一做在 `frontend/bmini-app`。
+>
+> ⚠️ **C 端顾客小程序已下线**（2026-11-26 用户裁定，issue #9233）：`frontend/mini-app` 已整目录删除，
+> 顾客侧主入口改为**微信客服**（issue #9229）。上表所列三端 = 商家后台 / 商家小程序 / 工人端。
 
 ### 米宝 — C 端顾客服务
 
@@ -122,7 +124,6 @@ graph TB
 | **管理 API** | Java + Spring Boot + MyBatis-Plus + Spring Security | 见 `backend/admin-api/pom.xml` |
 | **AI 服务** | Python + FastAPI + LangChain Core + LangGraph | 见 `backend/ai-agent-service/requirements.txt` |
 | **管理后台 / 官网** | Next.js（App Router）+ React + TypeScript + Tailwind CSS | 见 `frontend/admin-web/package.json` |
-| **顾客小程序** | Taro + React + TypeScript + Sass | 见 `frontend/mini-app/package.json` |
 | **商家小程序 / 员工端** | Taro + React + TypeScript（H5 与小程序双编译） | 见 `frontend/bmini-app/package.json` |
 | **数据库 / 缓存** | PostgreSQL + Redis | PG 15 / Redis 7 |
 | **知识库** | PostgreSQL `knowledge_cards` 词条模型（结构化检索，无向量库） | — |
@@ -134,7 +135,7 @@ graph TB
 >
 > - Java / Spring Boot / MyBatis-Plus：`backend/admin-api/pom.xml`
 > - AI 服务依赖：`backend/ai-agent-service/requirements.txt`
-> - 前端依赖：`frontend/admin-web/package.json` / `frontend/mini-app/package.json` / `frontend/bmini-app/package.json`
+> - 前端依赖：`frontend/admin-web/package.json` / `frontend/bmini-app/package.json`
 > - **业务工具**：以 `backend/ai-agent-service/app/tools/registry.py` 的注册表为单一源
 >   —— 复算 `grep -cE '^[[:space:]]*registry\.register\(' backend/ai-agent-service/app/tools/registry.py`
 > - **workflow 数量**：`ls .github/workflows/*.yml .github/workflows/*.yaml 2>/dev/null | wc -l`
@@ -179,7 +180,6 @@ migao/
 │       └── tests/
 ├── frontend/
 │   ├── admin-web/                 # 生意管家后台 + 官网（Next.js）
-│   ├── mini-app/                  # 顾客微信小程序（Taro）
 │   ├── bmini-app/                 # 商家小程序 + 员工端 H5（Taro 双编译）
 │   └── worker-h5/                 # 兼容期旧工人端静态页（/w/，不再新增功能）
 ├── deploy/                        # SWAS 部署脚本 / compose / nginx
@@ -240,9 +240,6 @@ npm run dev
 ### 其它端
 
 ```bash
-# 顾客小程序（微信开发者工具打开 dist/）
-cd frontend/mini-app && npm install && npm run dev:weapp
-
 # 商家小程序 / 员工端 H5
 cd frontend/bmini-app && npm install
 npm run dev:weapp     # 小程序
@@ -281,7 +278,6 @@ CI 只跑测试与部署编排。
 | `deploy-admin-api` | push main（`backend/admin-api/**`、`deploy/swas/**`）/ tag | 测试 → 服务器侧构建 → 部署 → post-deploy 冒烟 |
 | `deploy-ai-agent-service` | push main（`backend/ai-agent-service/**`）/ tag | 同上 |
 | `deploy-frontend` | push main（`frontend/admin-web/**`）/ tag | tsc + vitest → 构建 → 部署 + 域名探测 |
-| `c-end-h5-publish` | push main（`frontend/mini-app/**`）/ 定时 / 手动 | C 端 H5 静态发布（定时只报告，写盘需 `publish=true`） |
 | `worker-h5-publish` / `bmini-h5-publish` | 定时 / 手动 | 静态 H5 发布腿（`/w/` 兼容期旧页、`/b/` 员工端） |
 | `terminal-publish` | 手动（需 Release tag） | 安卓终端安装包发布 |
 | `release` | 手动 | 打 semver tag + Release notes |

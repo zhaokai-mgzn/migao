@@ -5,7 +5,8 @@
 ## 这是什么
 
 面向布艺 / 窗帘商家的多租户 AI 经营平台：顾客侧米宝 + 经营侧黄金策双 Agent（LangGraph），
-Java admin-api + Python ai-agent-service + Next.js admin-web + Taro mini-app / bmini-app。
+Java admin-api + Python ai-agent-service + Next.js admin-web + Taro bmini-app（商家小程序 / 工人端 H5）。
+C 端顾客小程序 `frontend/mini-app` 已于 2026-11-26 整目录删除（issue #9233），顾客侧主入口改为微信客服。
 「智能客服」只是客户服务能力域的一部分，不是系统定位（详见 https://github.com/zhaokai-mgzn/migao/wiki/Product）。
 
 ## 改代码前（铁律）
@@ -45,7 +46,7 @@ Java admin-api + Python ai-agent-service + Next.js admin-web + Taro mini-app / b
     🔻 **适用范围已于 2026-09-27 收窄**（用户裁定「按你建议的执行即可」；**只收窄，不取消**禁令）：禁令的**对象**是
     **无人值守的删除 / 破坏性动作**；**非破坏性 · 幂等 · 带自证断言**的**重发布 / 只读心跳**类周期任务**可以**新增，
     四条**同时**成立才算：① **远端执行体不做删除**（有**机械自证**：拒绝在静态根上清理 + 发布前后父目录
-    `index.html` 哈希一致）——🔻（**由 PR #5733 的实例校准**：① 的**加强形态**，**不是**原裁定另立的第五条）
+    `index.html` 哈希一致）——🔻（**由 C 端 H5 只读心跳实例校准**（该腿已于 2026-11-26 随 C 端小程序下线）：① 的**加强形态**，**不是**原裁定另立的第五条）
     **周期档自身不得是写盘档**：只读 / 通知档与写盘档必须是**显式两态**，默认档**不写盘**，写盘要人显式输入
     ② **幂等**（同一输入连跑两次结果逐字节一致）③ **失败可见**（判红有承接面，不许静默半成品）
     ④ **在本 PR body 显式声明「这是新增 schedule，判据 = 上述四条」**。
@@ -56,8 +57,7 @@ Java admin-api + Python ai-agent-service + Next.js admin-web + Taro mini-app / b
     凡"每天都要看"的必须有**值守面**（判红**自己开单** + 清零判据）—— 靠"记得去看"不算机制。
     📌 已批准具名实例（`schedule` 窄例外）：PR #5731（2026-09-27，批准人 = 用户）—— **重发布**两条：
     `.github/workflows/worker-h5-publish.yml` 的 `23 18 * * *` · `.github/workflows/bmini-h5-publish.yml` 的 `43 18 * * *`；
-    PR #5733（2026-09-27，**在飞**）—— 第三条：C 端 H5 发布腿的 `53 18 * * *`（**只读心跳**：该腿的 cron 只走
-    `notify`「只报告、绝不写盘」，写盘档要 `workflow_dispatch` + 显式 `publish=true`）。
+    （C 端 H5 发布腿已于 2026-11-26 随 C 端小程序下线，不再作为实例。）
     全文见 `migao-dev-flow` §23.9（C1~C4）。
 
 11. **转述即未核实 · 声明存在 ≠ 可达**（2026-09-27 用户裁定「**发现容易犯的问题就应该固化到研发模式中避免再犯，

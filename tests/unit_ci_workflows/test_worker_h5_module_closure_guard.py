@@ -144,7 +144,7 @@ def test_real_repo_has_no_problems():
 def test_coordinates_are_live_not_scanning_air():
     """坐标自证：腿集合、worker 腿、四组锚点、台账都**真的**取到了（防「扫空气」恒绿）。"""
     files = leg_files()
-    assert len(files) >= 3, f"只取到 {len(files)} 条发布自检腿（worker / bmini / c-end 三端）"
+    assert len(files) >= 2, f"只取到 {len(files)} 条发布自检腿（worker / bmini 两端；C 端已随 issue #9233 删除）"
     assert any(p.name == WORKER_LEG for p in files), f"现取腿集合里没有 {WORKER_LEG}"
     data = ledger()
     markers = data.get("criteria_markers") or {}
@@ -157,10 +157,10 @@ def test_coordinates_are_live_not_scanning_air():
     )
 
 
-def test_exemptions_name_the_two_bundled_legs():
-    """豁免面**具名**：bmini / c-end 两条腿（打包产物）—— 别的腿不许出现在豁免册里。"""
+def test_exemptions_name_the_bundled_leg():
+    """豁免面**具名**：bmini 腿（打包产物）—— 别的腿不许出现在豁免册里（C 端腿已随 issue #9233 删除）。"""
     exemptions = ledger().get("exemptions") or {}
-    assert set(exemptions) == {"bmini-h5-verify-served.sh", "c-end-h5-verify-served.sh"}, (
+    assert set(exemptions) == {"bmini-h5-verify-served.sh"}, (
         "豁免册的成员变了（现取 "
         f"{sorted(exemptions)}）—— 豁免只许缩短，扩面必须在 PR 里显式说明并改本判据"
     )

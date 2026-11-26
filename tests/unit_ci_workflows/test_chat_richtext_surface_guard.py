@@ -59,7 +59,9 @@ RICH_TEXT_REL = "src/utils/richText.ts"
 ADMIN_WEB_MESSAGE_LIST = "frontend/admin-web/src/components/chat/MessageList.tsx"
 
 #: 冻结的普查集合（现取必须与它**逐项相等** —— 判据 1 用的是等号，不是下界）
-FROZEN_BUBBLE_PACKAGES = ("bmini-app", "mini-app")
+#: 2026-11-26（issue #9233）：C 端 `mini-app` 整目录删除 ⇒ 集合收窄为 1 项（收窄不是放宽：
+#: 现取仍必须**逐项相等**，新前端包带气泡面照样进不来）。
+FROZEN_BUBBLE_PACKAGES = ("bmini-app",)
 
 #: 行为判据（判据 4 保证它们还在 —— 守卫绿而行为判据被删 = 空守）
 BEHAVIOUR_TESTS = (
@@ -70,8 +72,6 @@ BEHAVIOUR_TESTS = (
     "frontend/admin-web/tests/unit/components/chat-markdown-table.test.tsx",
     "frontend/bmini-app/tests/chat-rich-text-table.test.ts",
     "frontend/bmini-app/tests/chat-table-render.test.tsx",
-    "frontend/mini-app/tests/message-bubble-table.test.tsx",
-    "frontend/mini-app/tests/chat-rich-text-parity.test.ts",
 )
 
 

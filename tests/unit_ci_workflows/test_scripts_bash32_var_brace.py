@@ -579,7 +579,7 @@ def test_backtick_scanner_discriminates_code_from_comment_literal_and_heredoc():
 
 def test_backtick_defect_mutation_on_real_corpus_is_detected():
     """判据 6 的**注入式红证**（在**真语料**上注入 ⇒ 必红，报出文件 + 行号）。"""
-    victim = REPO_ROOT / "deploy" / "scripts" / "c-end-h5-dist-push.sh"
+    victim = REPO_ROOT / "deploy" / "scripts" / "worker-h5-verify-served.sh"
     src = victim.read_text(encoding="utf-8")
     assert find_bare_backtick_inside_double_quotes(src) == [], "真语料基线不该命中（否则先修它）"
     base = src.rstrip("\n")

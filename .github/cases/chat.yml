@@ -522,6 +522,8 @@ cases:
       verifies: []
 
   - id: CH-009
+    # 2026-11-26（issue #9233）：C 端小程序 frontend/mini-app 整目录删除 ⇒ 原承载体失联；
+    # 本条按「承载体删除」退役（条目不删、判据改指 C 端保持下线的类级守卫 tests/unit_ci_workflows/test_c_end_removed_guard.py）。
     legacy_id: ""
     title: "interact form 表单提交注入上下文（__FORM__ 协议）"
     domains:
@@ -611,12 +613,13 @@ cases:
     merge_log: "C 端表单化交互（miniapp-multiturn-form-scenarios.md）M1+M2 ｜ 2026-09-25（issue #3778 第一批）：补 `must_succeed[order_create, only_if_called=true]`（条件效果层，「去下单了就必须成了」；合格行为「只发文本」不受影响）+ `namespaces[customer_phone:13800138000]`（写分支落单的并行互斥/重试前置等价）。`user_inputs` / `expectations` / `data_checks` / `traces` 一字未动、**无放宽**（只增不减）。 ｜ 2026-10-16（issue #7048 P1 · 项 C）：`expectations` 由 [`direct_reply or order_create or interact`] 改为 [`direct_reply or interact`] —— 按用户 2026-10-16「能力边界 终版」（创建订单 ❌，射程 = B 端）**不再把「直接下单」写成合格分支**；`must_succeed[order_create, only_if_called=true]` / `namespaces` / `precondition` 原样保留（C 端腿的写效果层判别力一字未丢）；写类身份改由 `write_expectations` 的**效果层扩展**（issue #7048）现算 ⇒ 规则 a2/b/f 继续生效。"
     traces:
       tests:
-        - "frontend/mini-app/tests/form-card.test.tsx"
         - "backend/ai-agent-service/tests/test_chat.py"
       ci: []
       verifies: []
 
   - id: CH-010
+    # 2026-11-26（issue #9233）：C 端小程序 frontend/mini-app 整目录删除 ⇒ 原承载体失联；
+    # 本条按「承载体删除」退役（条目不删、判据改指 C 端保持下线的类级守卫 tests/unit_ci_workflows/test_c_end_removed_guard.py）。
     legacy_id: ""
     title: "选购下单表单化交互（choice 选品→form 收参→confirm 确认→下单）"
     domains:
@@ -756,12 +759,14 @@ cases:
     merge_log: "C 端表单化交互方案 S1（miniapp-multiturn-form-scenarios.md）；2026-09-19（issue #4384 A1 的 burn-down 缴费 —— 本用例命中的唯一一条存量违规是 CASE-TRUST-NO-PRECONDITION-ASSERTION，metric=entries ⇒ 必须整条销账）：补 `precondition[product_count_for_keyword: 北欧风窗帘, expect: 1]` —— R2 按**商品名**定位下单目标，「该名字唯一」是它真正依赖且**只读**的前置（同名副本会让 agent 合理地要求澄清 ⇒ `order_create` 永不发生，而报告上只表现为 `unmatched expectation` = 看起来像 agent 不干活，归因全错）。口径与 `pre_clean` 的商品定位同一份（`_list_products_matching`），先例 = OR-014 / CH-019 / CR-001。**有意不给 `order_count_for_phone`**：本用例自己会建单 ⇒ 漂移判据（缺省 `max_growth: 0`）必然判红，那是「硬写一条注定红的守卫」；商品维只读 ⇒ 漂移恒为 0。断言（user_inputs / expectations / data_checks / namespaces / pre_clean）原样未动、无放宽。"
     traces:
       tests:
-        - "frontend/mini-app/e2e/scenarios/multiturn-scenario.js"
+        - "tests/unit_ci_workflows/test_c_end_removed_guard.py"
       ci:
         - agent-eval.yml
       verifies: []
 
   - id: CH-011
+    # 2026-11-26（issue #9233）：C 端小程序 frontend/mini-app 整目录删除 ⇒ 原承载体失联；
+    # 本条按「承载体删除」退役（条目不删、判据改指 C 端保持下线的类级守卫 tests/unit_ci_workflows/test_c_end_removed_guard.py）。
     legacy_id: ""
     title: "数据安全 - 跨用户订单查询拒绝 + 订单卡片手机号脱敏"
     domains:
@@ -809,13 +814,14 @@ cases:
     merge_log: "C 端表单化交互方案 S5（miniapp-multiturn-form-scenarios.md）；2026-09-18（issue #4200 的 burn-down 缴费 —— 本用例命中的唯一一条存量违规是 CASE-TRUST-NO-PRECONDITION-ASSERTION）：补 `precondition[order_count_for_phone: 13800138000]` —— 创建/查询前提 = 本顾客名下确有历史订单（「订单卡片手机号脱敏」与 R1 的「跨用户拒绝」都要有订单对象才可判；0 单时前者是空断言、后者会因「本来就没有」而假绿）。**有意不给 `expect`**：计数随栈而变（叠加 B 端种子后同一号码 5 笔）⇒ 写死基线 = 依赖栈的恒红判据；漂移格（缺省 `max_growth: 0`）仍生效且本用例只读、同 tier 无建单方（口径同 AS-003 / OR-012）。断言（user_inputs / expectations / forbidden_args / data_checks）原样未动、无放宽。"
     traces:
       tests:
-        - "frontend/mini-app/tests/order-card.test.tsx"
-        - "frontend/mini-app/e2e/scenarios/multiturn-scenario.js"
+        - "tests/unit_ci_workflows/test_c_end_removed_guard.py"
       ci:
         - agent-eval.yml
       verifies: []
 
   - id: CH-012
+    # 2026-11-26（issue #9233）：C 端小程序 frontend/mini-app 整目录删除 ⇒ 原承载体失联；
+    # 本条按「承载体删除」退役（条目不删、判据改指 C 端保持下线的类级守卫 tests/unit_ci_workflows/test_c_end_removed_guard.py）。
     legacy_id: ""
     title: "退换货申请（订单定位→原因选择→confirm 确认→售后单）"
     domains:
@@ -876,7 +882,7 @@ cases:
     merge_log: "2026-09-12（issue #3361）顾客改点名订单号 EVAL-ORD-0002（fixture 已发货单）——原「第一笔订单」依赖列表倒序，会被同跑的下单用例新建的「待付款」单顶到首位而按业务规则必被拒。C 端表单化交互方案 S3（miniapp-multiturn-form-scenarios.md）"
     traces:
       tests:
-        - "frontend/mini-app/e2e/scenarios/multiturn-scenario.js"
+        - "tests/unit_ci_workflows/test_c_end_removed_guard.py"
       ci:
         - agent-eval.yml
       verifies: []
@@ -1830,6 +1836,8 @@ cases:
       verifies: []
 
   - id: CH-030
+    # 2026-11-26（issue #9233）：C 端小程序 frontend/mini-app 整目录删除 ⇒ 原承载体失联；
+    # 本条按「承载体删除」退役（条目不删、判据改指 C 端保持下线的类级守卫 tests/unit_ci_workflows/test_c_end_removed_guard.py）。
     legacy_id: ""
     title: "C 端交互组件提交锁（防重复提交）—— confirm/choice/form 点选/提交后本地锁卡，已答消息携带 interactiveAnswered，历史回放后不复活"
     domains:
@@ -1848,30 +1856,25 @@ cases:
     expectations:
       - "点在响应中的应用：用户回复后 sendMessage 把最后一条未答 interactive 消息标记 interactiveAnswered（本地即时锁），后端已由 #3037 持久化"
     data_checks:
-      - "frontend/mini-app 与 frontend/bmini-app 的 ConfirmCard/ChoiceCard/FormCard 点确认/选项/提交后锁卡（submitted 本地锁 + disabled 视觉），第二次点击不再触发 onAction"
+      - "C 端小程序（已随 issue #9233 删除） 与 frontend/bmini-app 的 ConfirmCard/ChoiceCard/FormCard 点确认/选项/提交后锁卡（submitted 本地锁 + disabled 视觉），第二次点击不再触发 onAction"
       - "mini-app/bmini-app types Message 含 interactiveAnswered 字段；chatStore sendMessage 发送时把最后一条未答 interactive 消息标记 interactiveAnswered"
       - "历史回放（getSessionMessages 透传 interactive_answered）后已答卡片保持只读不可点"
       - "翻页等同答复：#3037 后端 __PAGE__ 路径已 mark_last_interactive_answered，前端翻页后旧页卡片不再可交互"
       - "下单入口按钮防连点（issue #3040 收尾）：ProductFormList 去下单 / QuotationCard 确认下单 / ProductCard 下单按钮点击后本地锁（第二次点击不触发 onOrder/onConfirm/onInteract），按钮置灰（--locked）"
       - "多选卡（issue #3947）与提交锁共存：mini-app/bmini-app 的 ChoiceCard 在 card.multiSelect=true 时点选项**不提交、不锁卡**（仅本地勾选累积），点「完成选择（N）」一次性提交后锁卡（第二次提交/再点选项不再触发 onAction）；单选卡仍是「点即提交即锁卡」"
-      - "多选协议字段不被 store 白名单吞掉（issue #3947 真实病根）：frontend/mini-app/src/store/chatStore.ts 与 frontend/bmini-app/src/store/chatStore.ts 的 SSE onInteractive 原样透传 multiSelect/multiSelectSubmitPrefix/multiSelectSubmitLabel/multiSelectSkipLabel，普查 = tests/unit_ci_workflows/test_frontend_choice_multiselect_protocol.py（未登记的新前端包带 ChoiceCard ⇒ 判红）"
+      - "多选协议字段不被 store 白名单吞掉（issue #3947 真实病根）：tests/unit_ci_workflows/test_c_end_removed_guard.py 与 frontend/bmini-app/src/store/chatStore.ts 的 SSE onInteractive 原样透传 multiSelect/multiSelectSubmitPrefix/multiSelectSubmitLabel/multiSelectSkipLabel，普查 = tests/unit_ci_workflows/test_frontend_choice_multiselect_protocol.py（未登记的新前端包带 ChoiceCard ⇒ 判红）"
     skip_reason: "[backend-contract] 纯前端行为由 jest 单测（confirm-card/choice-card/form-card/quotation-card/product-card/product-form-list/chatStore）验证，非 LLM 行为，不进入 agent-eval 冒烟"
     merge_log: "2026-09-08 新增：C 端交互组件提交锁与只读变体（issue #3038）；2026-09-08 补：下单入口按钮防连点锁（issue #3040）；2026-09-25 补：多选卡（multiSelect=true）勾选积累 +「完成选择（N）」一次性提交与锁卡共存（issue #3947）"
     traces:
       tests:
-        - "frontend/mini-app/tests/confirm-card.test.tsx"
-        - "frontend/mini-app/tests/choice-card.test.tsx"
-        - "frontend/mini-app/tests/form-card.test.tsx"
-        - "frontend/mini-app/tests/quotation-card.test.tsx"
-        - "frontend/mini-app/tests/product-card.test.tsx"
-        - "frontend/mini-app/tests/product-form-list.test.tsx"
-        - "frontend/mini-app/tests/store-chat.test.ts"
         - "frontend/bmini-app/tests/choice-card.test.tsx"
         - "tests/unit_ci_workflows/test_frontend_choice_multiselect_protocol.py"
       ci: []
       verifies: []
 
   - id: CH-031
+    # 2026-11-26（issue #9233）：C 端小程序 frontend/mini-app 整目录删除 ⇒ 原承载体失联；
+    # 本条按「承载体删除」退役（条目不删、判据改指 C 端保持下线的类级守卫 tests/unit_ci_workflows/test_c_end_removed_guard.py）。
     legacy_id: ""
     title: "C 端交互组件历史回放透传—— getSessionMessages 映射透传 interactive/interactive_answered，刷新/切会话后已答卡片只读呈现而非消失"
     domains:
@@ -1891,18 +1894,20 @@ cases:
     expectations:
       - "历史回放后 interactive 组件按三态渲染：未答 → 可交互；已答 → 只读变体"
     data_checks:
-      - "frontend/mini-app 与 frontend/bmini-app 的 getSessionMessages 映射返回 message 包含 interactive（原样）与 interactiveAnswered（由 interactive_answered 转换）"
+      - "C 端小程序（已随 issue #9233 删除） 与 frontend/bmini-app 的 getSessionMessages 映射返回 message 包含 interactive（原样）与 interactiveAnswered（由 interactive_answered 转换）"
       - "loadMessages 落库后交互组件不消失：未答交互历史回放后仍可点击"
       - "detectPendingInteraction 能力对齐：历史回放后未答交互可被识别（模型透传 interactive 字段）"
     skip_reason: "[backend-contract] 纯前端映射由 jest 单测（chatService/chatStore）验证，非 LLM 行为，不进入 agent-eval 冒烟"
     merge_log: "2026-09-08 新增：C 端交互组件历史回放透传（issue #3038）"
     traces:
       tests:
-        - "frontend/mini-app/tests/store-chat.test.ts"
+        - "tests/unit_ci_workflows/test_c_end_removed_guard.py"
       ci: []
       verifies: []
 
   - id: CH-032
+    # 2026-11-26（issue #9233）：C 端小程序 frontend/mini-app 整目录删除 ⇒ 原承载体失联；
+    # 本条按「承载体删除」退役（条目不删、判据改指 C 端保持下线的类级守卫 tests/unit_ci_workflows/test_c_end_removed_guard.py）。
     legacy_id: ""
     title: "C 端交互组件流式门控 + XML 伪代码兜底剥离—— 流式期间交互组件隐藏（防闪烁/防误点），历史残留 <interact>/```tool_call 伪代码块不展示"
     domains:
@@ -1922,14 +1927,14 @@ cases:
     expectations:
       - "渲染固定：流式中隐藏、结束后按 interactiveAnswered 三态渲染；原始伪代码永远不展示"
     data_checks:
-      - "frontend/mini-app 与 frontend/bmini-app 的 MessageBubble 渲染交互组件前检查 isStreaming（流式中不渲染交互组件，避免闪烁与误点）"
+      - "C 端小程序（已随 issue #9233 删除） 与 frontend/bmini-app 的 MessageBubble 渲染交互组件前检查 isStreaming（流式中不渲染交互组件，避免闪烁与误点）"
       - "MessageBubble 文本内容剥离 <interact>…</interact> 与 ```tool_call 伪代码块（与 admin-web cleanContent 对齐）"
       - "正常路径（SSE interactive 事件）不回退：choice/confirm/form 仍渲染为对应交互组件"
     skip_reason: "[backend-contract] 纯前端渲染由 jest 单测（message-bubble）验证，非 LLM 行为，不进入 agent-eval 冒烟"
     merge_log: "2026-09-08 新增：C 端交互组件流式门控 + XML 兜底剥离（issue #3038）"
     traces:
       tests:
-        - "frontend/mini-app/tests/message-bubble.test.tsx"
+        - "tests/unit_ci_workflows/test_c_end_removed_guard.py"
       ci: []
       verifies: []
   - id: CH-033
