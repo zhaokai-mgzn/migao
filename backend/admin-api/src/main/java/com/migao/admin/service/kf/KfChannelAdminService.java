@@ -5,11 +5,12 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.migao.admin.entity.KfChannel;
 import com.migao.admin.exception.BusinessException;
 import com.migao.admin.mapper.KfChannelMapper;
-import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 
+import java.util.Arrays;
 import java.util.List;
 import java.util.stream.StreamSupport;
 
@@ -21,16 +22,43 @@ import java.util.stream.StreamSupport;
  * 必须包含该 open_kfid（把「填错账号」与「消息发送失败」分开）。</p>
  *
  * <p>回调 Token / EncodingAESKey 仍是部署级配置（`wechat.kf.token` / `encoding-aes-key`），
- * 本服务不伪造每租户独立回调密钥；页面给出回调 URL 与部署侧配置说明。</p>
+ * 本服务不伪造每租户独立回调密钥；{@link #setupInfo()} 把它们只读地提供给接入页复制
+ * （权限 = `system:manage`，且不返回任何商户 Secret）。</p>
  */
 @Service
-@RequiredArgsConstructor
 @ConditionalOnProperty(prefix = "wechat.kf", name = "enabled", havingValue = "true")
 public class KfChannelAdminService {
 
     private final KfChannelMapper channelMapper;
     private final SecretCipher secretCipher;
     private final WechatKfClient client;
+    private final String callbackUrl;
+    private final String callbackToken;
+    private final String encodingAesKey;
+    private final String trustedIps;
+
+    public KfChannelAdminService(
+            KfChannelMapper channelMapper,
+            SecretCipher secretCipher,
+            WechatKfClient client,
+            @Value("${wechat.kf.callback-url:https://api.migaozn.com/api/kf/callback}") String callbackUrl,
+            @Value("${wechat.kf.token:}") String callbackToken,
+            @Value("${wechat.kf.encoding-aes-key:}") String encodingAesKey,
+            @Value("${wechat.kf.trusted-ips:}") String trustedIps) {
+        this.channelMapper = channelMapper;
+        this.secretCipher = secretCipher;
+        this.client = client;
+        this.callbackUrl = callbackUrl;
+        this.callbackToken = callbackToken;
+        this.encodingAesKey = encodingAesKey;
+        this.trustedIps = trustedIps;
+    }
+
+    /** 接入页要客户粘到企微后台的值（部署级；不含任何商户 Secret）。 */
+    public SetupInfo setupInfo() {
+        return new SetupInfo(callbackUrl, blankToNull(callbackToken), blankToNull(encodingAesKey),
+                parseIps(trustedIps));
+    }
 
     public List<ChannelView> list(Long tenantId) {
         return channelMapper.selectList(new LambdaQueryWrapper<KfChannel>()
@@ -145,6 +173,21 @@ public class KfChannelAdminService {
         return value == null ? "" : value.trim();
     }
 
+    private static String blankToNull(String value) {
+        String v = trim(value);
+        return v.isEmpty() ? null : v;
+    }
+
+    private static List<String> parseIps(String value) {
+        if (value == null || value.isBlank()) {
+            return List.of();
+        }
+        return Arrays.stream(value.split(","))
+                .map(String::trim)
+                .filter(s -> !s.isEmpty())
+                .toList();
+    }
+
     public record CreateCommand(String corpId, String openKfid, String secret) {
     }
 
@@ -153,5 +196,10 @@ public class KfChannelAdminService {
 
     public record ChannelView(String id, String corpId, String openKfid, String authMode,
                               String status, String createdAt, String updatedAt) {
+    }
+
+    /** 接入页的部署级配置（客户复制到企微后台；不含商户 Secret）。 */
+    public record SetupInfo(String callbackUrl, String callbackToken, String encodingAesKey,
+                            List<String> trustedIps) {
     }
 }

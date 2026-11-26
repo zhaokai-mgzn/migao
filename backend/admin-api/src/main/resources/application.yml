@@ -213,6 +213,9 @@ wechat:
     receive-id: ${WECHAT_KF_RECEIVE_ID:}
     # 凭据信封加密主密钥（SecretCipher；必填，未配置则启用时启动失败 = fail-closed）
     secret-master-key: ${WECHAT_KF_SECRET_MASTER_KEY:}
+    # 接入页展示给客户复制（客户在企微后台「API 接收事件」/「企业可信IP」里手动填）
+    callback-url: ${WECHAT_KF_CALLBACK_URL:https://api.migaozn.com/api/kf/callback}
+    trusted-ips: ${WECHAT_KF_TRUSTED_IPS:}
     sync:
       claim-stale-seconds: ${WECHAT_KF_CLAIM_STALE_SECONDS:300}
     sync-interval-ms: ${WECHAT_KF_SYNC_INTERVAL_MS:30000}

@@ -27,6 +27,12 @@ public class KfChannelAdminController {
         return ApiResponse.success(service.list(TenantContext.getTenantId()));
     }
 
+    /** 接入页要客户复制到企微后台的部署级值（回调 URL/Token/AESKey + 可信 IP）。 */
+    @GetMapping("/setup-info")
+    public ApiResponse<KfChannelAdminService.SetupInfo> setupInfo() {
+        return ApiResponse.success(service.setupInfo());
+    }
+
     @PostMapping
     public ApiResponse<KfChannelAdminService.CreateResult> create(@RequestBody CreateRequest request) {
         return ApiResponse.success(service.create(TenantContext.getTenantId(),

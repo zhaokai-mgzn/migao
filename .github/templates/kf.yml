@@ -24,6 +24,7 @@ business_truths:
   - [kf.mapper-contract] KF Mapper 的注解 SQL 必须含目标表、幂等冲突键，并显式 tenantLine 豁免（回调无租户上下文）
   - [kf.callback-controller] 回调控制器未配置时 503（fail-closed）；GET 返回 echostr 明文；POST 回 200 空串并转交 service
   - [kf.callback-inbox] 合法回调落 kf_inbox（msg_signature 唯一）并置 kf_sync_cursor.dirty_at；重复回调仍置 dirty；坏签名拒绝；未登记渠道 200 受理但不落库
+  - [kf.onboarding] 接入页四步引导：客户在企微后台手动完成认证/建自建应用/开权限+配回调+可信IP/建客服账号；平台只读提供回调 URL/Token/AESKey/可信 IP 供复制，保存时用 gettoken + 客服账号列表自检
 
 reviewer_asserts:
   - mvn: cd backend/admin-api && ./mvnw -Dtest=SecretCipherTest,WeChatKfCryptoTest,WechatKfClientTest,KfCallbackServiceTest test

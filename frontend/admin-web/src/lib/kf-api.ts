@@ -12,6 +12,13 @@ export interface KfChannelView {
   updatedAt?: string
 }
 
+export interface KfSetupInfo {
+  callbackUrl: string
+  callbackToken: string | null
+  encodingAesKey: string | null
+  trustedIps: string[]
+}
+
 export interface KfChannelCreateResult {
   channel: KfChannelView
   verified: boolean
@@ -19,6 +26,10 @@ export interface KfChannelCreateResult {
 }
 
 export const kfApi = {
+  /** 接入页要客户复制到企微后台的部署级值（issue #9238）。 */
+  getSetupInfo: () =>
+    request.get<ApiResponse<KfSetupInfo>>('/api/admin/kf/channels/setup-info'),
+
   listChannels: () =>
     request.get<ApiResponse<KfChannelView[]>>('/api/admin/kf/channels'),
 

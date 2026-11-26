@@ -1,9 +1,9 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import { QRCodeSVG } from 'qrcode.react'
-import { CheckCircle2, Copy, ExternalLink, ShieldCheck } from 'lucide-react'
-import { kfApi, type KfChannelView } from '@/lib/kf-api'
+import { CheckCircle2, Copy, ExternalLink } from 'lucide-react'
+import { kfApi, type KfChannelView, type KfSetupInfo } from '@/lib/kf-api'
 import { displayEnum } from '@/lib/enum-display'
 
 const STATUS_LABEL: Record<string, string | undefined> = {
@@ -31,11 +31,26 @@ export function WechatKfOnboarding() {
   const [busyId, setBusyId] = useState<string | null>(null)
   const [notice, setNotice] = useState<{ kind: 'ok' | 'warn' | 'error'; text: string } | null>(null)
   const [form, setForm] = useState({ corpId: '', openKfid: '', secret: '' })
-  const [callbackUrl, setCallbackUrl] = useState('')
+  const [setup, setSetup] = useState<KfSetupInfo>({
+    callbackUrl: '',
+    callbackToken: null,
+    encodingAesKey: null,
+    trustedIps: [],
+  })
   const [link, setLink] = useState<{ channelId: string; url: string } | null>(null)
 
   useEffect(() => {
-    setCallbackUrl(`${window.location.origin}/api/kf/callback`)
+    // 回退值：老部署没有 setup-info 端点时，至少给出本页回调地址
+    setSetup((prev) => ({ ...prev, callbackUrl: `${window.location.origin}/api/kf/callback` }))
+    void (async () => {
+      try {
+        const res = await kfApi.getSetupInfo()
+        const data = res.data.data
+        if (data) setSetup(data)
+      } catch {
+        // 读不到就保留回退地址与「联系平台管理员」提示 —— 不谎报已配置
+      }
+    })()
   }, [])
 
   const load = useCallback(async () => {
@@ -133,23 +148,56 @@ export function WechatKfOnboarding() {
 
   return (
     <div className="space-y-6" data-testid="kf-onboarding">
-      <div className="rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm text-neutral-600">
-        <div className="flex items-start gap-2">
-          <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-primary-600" />
-          <div className="space-y-1">
-            <p>接入前请在企业微信后台确认：已开通「微信客服」、应用有「通过 API 管理微信客服账号」权限、至少一名接待人员已激活企业微信。</p>
-            <p>
-              回调地址：<code className="rounded bg-white px-1.5 py-0.5 text-xs" data-testid="kf-callback-url">{callbackUrl || '加载中…'}</code>
-              {callbackUrl ? (
-                <button type="button" className="ml-2 inline-flex items-center gap-1 text-primary-700 underline" onClick={() => void copy(callbackUrl)}>
-                  <Copy className="h-3 w-3" />复制
-                </button>
-              ) : null}
-            </p>
-            <p className="text-xs text-neutral-500">回调 Token / EncodingAESKey 由平台部署配置，请向平台管理员索取后在企微后台填入同一组值。</p>
-          </div>
+      <section className="rounded-lg border border-neutral-200" data-testid="kf-guide">
+        <div className="border-b border-neutral-100 px-4 py-3">
+          <h2 className="text-base font-semibold text-neutral-900">接入流程</h2>
+          <p className="mt-1 text-sm text-neutral-500">
+            下面四步都在企业微信后台完成；最后回到本页把三个值填上，保存后会自动自检。约 10 分钟。
+          </p>
         </div>
-      </div>
+        <ol className="divide-y divide-neutral-100">
+          <Step n={1} title="准备企业微信">
+            <p>
+              先到
+              <a className="mx-1 text-primary-700 underline" href="https://work.weixin.qq.com" target="_blank" rel="noreferrer">
+                企业微信管理后台
+              </a>
+              完成企业认证，再开通微信客服。
+            </p>
+            <p className="text-neutral-500">
+              我的企业 → 企业信息 → 企业认证；应用管理 → 微信客服 → 开通。认证通常要 1–3 个工作日，可先继续配下面的技术步骤。
+            </p>
+          </Step>
+          <Step n={2} title="创建一个自建应用">
+            <p>
+              应用管理 → 应用 → 自建 → 创建应用（名称建议「米宝客服」）。创建后到应用详情复制 <b>Secret</b>（只显示一次）。
+            </p>
+            <p className="text-neutral-500">企业 ID 在「我的企业 → 企业信息」；这个 ID 和 Secret 最后一步要用。</p>
+          </Step>
+          <Step n={3} title="开通权限、配回调与可信 IP">
+            <p>把刚建的应用加入「微信客服 → 可调用接口的应用」，并在应用详情勾选「微信客服」权限。</p>
+            <p>微信客服 → API 接收事件，填下面三个值（保存时企微会校验，平台会自动应答）：</p>
+            <div className="space-y-1.5">
+              <CopyRow label="回调 URL" value={setup.callbackUrl} testId="kf-callback-url" onCopy={copy} />
+              <CopyRow label="Token" value={setup.callbackToken ?? ''} testId="kf-callback-token" onCopy={copy} />
+              <CopyRow label="EncodingAESKey" value={setup.encodingAesKey ?? ''} testId="kf-callback-aeskey" onCopy={copy} />
+            </div>
+            <p className="mt-2">应用详情 → 企业可信IP，加入平台出口 IP：</p>
+            <CopyRow label="可信 IP" value={setup.trustedIps.join(', ')} testId="kf-trusted-ips" onCopy={copy} />
+            {!setup.callbackToken || !setup.encodingAesKey || setup.trustedIps.length === 0 ? (
+              <p className="text-xs text-amber-700" data-testid="kf-setup-missing">
+                回调 Token / EncodingAESKey / 可信 IP 还没下发，请联系平台管理员。
+              </p>
+            ) : null}
+          </Step>
+          <Step n={4} title="建客服账号，拿到客服账号 ID">
+            <p>微信客服 → 客服账号 → 添加客服账号；在账号详情复制 <b>客服账号 ID</b>（以 wk 开头）。</p>
+            <p className="text-neutral-500">
+              给这个账号加接待人员，并确保至少一名接待人员登录过企业微信 —— 否则客户消息发不出去。
+            </p>
+          </Step>
+        </ol>
+      </section>
 
       {notice ? (
         <div
@@ -168,8 +216,8 @@ export function WechatKfOnboarding() {
 
       <section className="rounded-lg border border-neutral-200">
         <div className="border-b border-neutral-100 px-4 py-3">
-          <h2 className="text-base font-semibold text-neutral-900">接入新的微信客服账号</h2>
-          <p className="mt-1 text-sm text-neutral-500">填写企业微信的企业 ID 与客服账号 ID；保存后立即自检，通过后即为「已接通」。</p>
+          <h2 className="text-base font-semibold text-neutral-900">最后一步：把三个值填回来</h2>
+          <p className="mt-1 text-sm text-neutral-500">企业 ID、应用 Secret、客服账号 ID；保存后立即自检，通过后即为「已接通」。</p>
         </div>
         <div className="grid gap-4 px-4 py-4 sm:grid-cols-2">
           <label className="block text-sm">
@@ -318,6 +366,36 @@ export function WechatKfOnboarding() {
         <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-600" />
         接入成功后，顾客消息会进入「在线接待」工作台；48 小时内最多回复 5 条，超出后请让顾客继续发消息或转人工。
       </div>
+    </div>
+  )
+}
+
+function Step({ n, title, children }: { n: number; title: string; children: ReactNode }) {
+  return (
+    <li className="flex gap-3 px-4 py-4">
+      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary-50 text-xs font-semibold text-primary-700">
+        {n}
+      </span>
+      <div className="min-w-0 space-y-1.5 text-sm text-neutral-700">
+        <h3 className="font-medium text-neutral-900">{title}</h3>
+        {children}
+      </div>
+    </li>
+  )
+}
+
+function CopyRow({ label, value, testId, onCopy }: { label: string; value: string; testId: string; onCopy: (text: string) => void }) {
+  return (
+    <div className="flex items-center gap-2 text-xs">
+      <span className="w-28 shrink-0 text-neutral-500">{label}</span>
+      <code data-testid={testId} className="min-w-0 flex-1 truncate rounded bg-neutral-50 px-1.5 py-0.5 text-neutral-700">
+        {value || '平台未配置'}
+      </code>
+      {value ? (
+        <button type="button" className="inline-flex shrink-0 items-center gap-1 text-primary-700 underline" onClick={() => onCopy(value)}>
+          <Copy className="h-3 w-3" />复制
+        </button>
+      ) : null}
     </div>
   )
 }
