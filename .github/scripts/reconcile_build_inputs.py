@@ -157,24 +157,6 @@ BUILD_INPUTS: dict[str, tuple[tuple[str, str], ...]] = {
             "线上产物身份 + 不串端自证",
         ),
     ),
-    "c-end-h5": (
-        (
-            ".github/workflows/c-end-h5-publish.yml",
-            "本腿的定义（手动发布 gate + `scripts/h5_freshness_guard.py` 的调用面）",
-        ),
-        (
-            "deploy/scripts/c-end-h5-dist-push.sh",
-            "发布链路第一层：把 CI 构建的 dist 推成不可变 sha（远端按 sha 取回）",
-        ),
-        (
-            "deploy/scripts/c-end-h5-publish-ci.sh",
-            "CI 侧发布驱动：对账 dispatch 出去的 run 走这条（只报告、不发布）",
-        ),
-        (
-            "deploy/scripts/c-end-h5-verify-served.sh",
-            "线上产物身份自证",
-        ),
-    ),
 }
 
 #: **有意不算构建输入**的路径 → 理由。判据会要求：① 每条确实被某条腿引用 ② 每条确实**没**被覆盖
@@ -183,11 +165,6 @@ NOT_BUILD_INPUTS: dict[str, str] = {
     "scripts/acr_login.sh": (
         "纯凭据登录辅助（`docker login --password-stdin`）：既不进产物、也不出线上读数，"
         "且它坏了是部署腿**当场红** —— 不属于本单要治的「静默假绿」"
-    ),
-    "scripts/h5_freshness_guard.py": (
-        "线上产物新鲜度的旁观判据：它有**自己的常驻触发面**（`.github/workflows/h5-freshness-guard.yml` "
-        "每天跑同一份实现）⇒ 不需要靠 c-end-h5 那条腿兑现；而该腿是**手动发布**腿，"
-        "为它 dispatch 只会产生一条「不发布任何东西」的红"
     ),
 }
 

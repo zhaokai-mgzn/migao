@@ -31,11 +31,9 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 
 # ── 登记表（唯一事实源；加端 / 改形态必须改这里，否则下面的「双向自洽」判据红）──
 ADMIN_WEB = "frontend/admin-web/src/components/chat/InteractiveMessage.tsx"
-MINI_APP = "frontend/mini-app/src/components/cards/FormCard.tsx"
 BMINI_APP = "frontend/bmini-app/src/components/cards/FormCard.tsx"
 _END_SHAPES = {
     "admin-web": (ADMIN_WEB, "structured"),
-    "mini-app": (MINI_APP, "prefix"),
     "bmini-app": (BMINI_APP, "prefix"),
 }
 
@@ -82,12 +80,12 @@ class TestRegisteredSubmitShapes:
 
     def test_c_ends_submit_prefix_protocol(self):
         """C 端**零改动**硬边界：两端仍以 `__FORM__|{json}` 提交。"""
-        for rel in (MINI_APP, BMINI_APP):
+        for rel in (BMINI_APP,):
             assert _shape_ok(_read(rel), "prefix") is True, f"{rel} 不再是 `__FORM__|` 形态"
 
     def test_registry_covers_every_renderer_end(self):
         """登记表不许空转：三端都在，且形态取值只有登记过的那两种。"""
-        assert set(_END_SHAPES) == {"admin-web", "mini-app", "bmini-app"}
+        assert set(_END_SHAPES) == {"admin-web", "bmini-app"}
         assert {k for _, k in _END_SHAPES.values()} == {"structured", "prefix"}
 
     def test_admin_web_card_id_rule_matches_backend(self):
@@ -146,8 +144,8 @@ class TestJudgeDiscriminativePower:
         admin_src = _read(ADMIN_WEB)
         assert _shape_ok(admin_src.replace("cardAnswer", "freeText"), "structured") is False
 
-        mini_src = _read(MINI_APP)
-        assert _shape_ok(mini_src.replace("__FORM__|", ""), "prefix") is False
+        bmini_src = _read(BMINI_APP)
+        assert _shape_ok(bmini_src.replace("__FORM__|", ""), "prefix") is False
 
     def test_prefix_judge_does_not_fire_on_plain_text(self):
         """只改注释 / 普通文本不得判红（防判据被自己的文案喂红）。"""

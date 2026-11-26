@@ -56,7 +56,7 @@
   ② 判不了「`docker build` 真的把 `public/version.json` 打进了镜像」（需要一次真构建；静态判据
   只能钉住 Dockerfile 里那段 `RUN` 的形态与默认值）；
   ③ 判不了「Next.js 会把这个文件按原样发出去」（那是框架行为；真机复探才看得见）；
-  ④ **另三条静态落地面腿**（`worker-h5` / `bmini-h5` / `c-end-h5`）的身份面**不在本单射程**，
+  ④ **另两条静态落地面腿**（`worker-h5` / `bmini-h5`；C 端 c-end-h5 已随 issue #9233 下线）的身份面**不在本单射程**，
   逐腿清单见本文件末尾的 `test_static_landing_legs_identity_debt_is_ledgered`。
 
 ## 实测的线上形态（本包现取，2026-10-16）
@@ -91,7 +91,6 @@ NGINX_CONF = REPO_ROOT / "deploy" / "swas" / "nginx.conf"
 STATIC_LEGS = {
     "worker-h5": REPO_ROOT / "deploy" / "scripts" / "worker-h5-verify-served.sh",
     "bmini-h5": REPO_ROOT / "deploy" / "scripts" / "bmini-h5-verify-served.sh",
-    "c-end-h5": REPO_ROOT / "deploy" / "scripts" / "c-end-h5-verify-served.sh",
 }
 
 # 与 CI 的 shell 同形
@@ -505,22 +504,21 @@ def test_build_identity_wiring_is_same_source_across_five_hops():
 
 
 # ══════════════════════════════════════════════════════════════════════════
-# 类级（§23）：另三条静态落地面腿的身份面债务必须**登记在案**（会红）
+# 类级（§23）：另两条静态落地面腿的身份面债务必须**登记在案**（会红）
 # ══════════════════════════════════════════════════════════════════════════
 
 def test_static_landing_legs_identity_debt_is_ledgered():
-    """类级判据：另三条静态落地面腿（`worker-h5` / `bmini-h5` / `c-end-h5`）用的仍是
+    """类级判据：另两条静态落地面腿（`worker-h5` / `bmini-h5`）用的仍是
     「线上字节 == 本仓产物」的身份判据 —— issue #6611 已逐条核过它们的**判别力**：
 
     | 腿 | 身份判据比的对象 | 判别力 |
     |---|---|---|
     | `bmini-h5` | `index.html` 的 sha256 | ❌ 跨版本相同（#6611 实测 `b1f3a2ef2929ec66` 前后一致）|
-    | `c-end-h5` | `index.html` 的 sha256 | ❌ 同形态 |
     | `worker-h5` | `index.html` + `app.js` 的 sha256 | ⚠️ 略强（多比 `app.js`），按需加载的分块仍不覆盖 |
 
-    🔴 本单**只修 admin-web 一条腿**（写面与验收面都在 `deploy-frontend.yml`）；另三条腿
-    **不在本单射程**。本判据的作用 = **让「还有三条腿同形」这件事进不了「已解决」的错觉**：
-    三条腿的脚本必须**仍然存在且确实比对字节哈希** ⇒ 哪天有人把它们改成有判别力的身份面，
+    🔴 本单**只修 admin-web 一条腿**（写面与验收面都在 `deploy-frontend.yml`）；另两条腿
+    **不在本单射程**。本判据的作用 = **让「还有两条腿同形」这件事进不了「已解决」的错觉**：
+    两条腿的脚本必须**仍然存在且确实比对字节哈希** ⇒ 哪天有人把它们改成有判别力的身份面，
     本判据当场判红、逼一次「三类清单/PR body 要同步更新」的复核。
     （它们各自的修法是独立单，见 PR body 的「未固化项」。）
     """

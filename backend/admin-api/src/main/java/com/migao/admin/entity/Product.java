@@ -21,6 +21,12 @@ import java.util.List;
 @TableName(value = "products", autoResultMap = true)
 public class Product {
 
+    // ⚠️ 这三个字段**不再有 Java 侧初始值**（issue #9045）：给定初始值后，任何
+    // `new Product()` + `updateById`（部分更新）都会把「自己没打算改」的列写成默认值
+    // —— 实测：建品后 SKU 同步走 `syncProductStock()`，把用户设的 stockWarningThreshold=7
+    // 覆写成 10。DB 三列都有 DEFAULT（stock=0 / threshold=10 / mode='on_order'），
+    // 建品路径由 `BeanUtils.copyProperties(request, …)` 提供值 ⇒ 去掉初始值不改变建品行为。
+
     @TableId(type = IdType.ASSIGN_UUID)
     private String id;
 
@@ -68,18 +74,18 @@ public class Product {
      * 库存数量
      */
     @TableField("stock")
-    private BigDecimal stock = BigDecimal.ZERO;
+    private BigDecimal stock;
 
     /**
      * 库存预警阈值
      */
     @TableField("stock_warning_threshold")
-    private Integer stockWarningThreshold = 10;
+    private Integer stockWarningThreshold;
 
     /**
      * 库存扣减模式：sku/product
      */
-    private String stockDeductionMode = "on_order";
+    private String stockDeductionMode;
 
     /**
      * 累计销量
@@ -121,6 +127,18 @@ public class Product {
      */
     @TableField(typeHandler = com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler.class)
     private List<String> sellingMethods;
+
+    /**
+     * 门幅（规格尺寸）清单 —— 商家声明的**可售门幅**，JSONB 数组存库（V214，issue #9005）。
+     *
+     * <p>⚠️ 与 {@link #sellingMethods} 不同：门幅**是** SKU 组合维度（用户裁定 2026-09-21：
+     * 「商品的 SKU 由颜色+门幅组成即可」）⇒ **有 SKU 时读面仍以 {@code product_skus.door_width}
+     * 的派生值为准**（{@code ProductService.getProductById} 用派生值覆盖本字段）；
+     * 本列承载的是「**还没有 SKU**」时（先填门幅、后配颜色的草稿态）的同一份声明 ——
+     * 否则建品收下的门幅会被无声丢弃，且 {@code GET /{id}} 读不回来（issue #9005 的病灶）。</p>
+     */
+    @TableField(typeHandler = com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler.class)
+    private List<String> doorWidths;
 
     /**
      * 1 卷 = 多少米（**商品货号级基础参数**，V111 迁移）。

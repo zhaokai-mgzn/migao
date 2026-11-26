@@ -4,7 +4,23 @@
     "title": "低置信意图澄清（帮我看看）— 应弹澄清卡 choice",
     "domain": "clarify",
     "rounds": [
-      {"text": "帮我看看", "images": []}
+      {
+        "text": "帮我看看",
+        "images": []
+      }
+    ],
+    "checks": [
+      {
+        "level": "L1",
+        "ref": "*",
+        "type": "no_error"
+      },
+      {
+        "level": "L1",
+        "ref": "R1",
+        "type": "card_shown",
+        "expect": "choice"
+      }
     ]
   },
   {
@@ -12,18 +28,79 @@
     "title": "连续模糊意图澄清护栏（≥2轮→兜底示例话术）",
     "domain": "clarify_guard",
     "rounds": [
-      {"text": "帮我看看", "images": []},
-      {"text": "就是那个", "images": []},
-      {"text": "你懂的", "images": []}
+      {
+        "text": "帮我看看",
+        "images": []
+      },
+      {
+        "text": "就是那个",
+        "images": []
+      },
+      {
+        "text": "你懂的",
+        "images": []
+      }
+    ],
+    "checks": [
+      {
+        "level": "L1",
+        "ref": "*",
+        "type": "no_error"
+      },
+      {
+        "level": "L1",
+        "ref": "R1",
+        "type": "card_shown",
+        "expect": "choice"
+      },
+      {
+        "level": "L2",
+        "ref": "*",
+        "type": "ai_text_not_contains",
+        "expect": "已为您"
+      }
     ]
   },
   {
     "id": "B-03",
-    "title": "图片建品（真实业务图+明确意图）— 应识别→预填→确认",
+    "title": "图片建品（产品裁定 ❌）：识别属性 + 引导后台，不得承诺代建",
     "domain": "product",
     "rounds": [
-      {"text": "创建这个商品", "images": ["https://ai-customer-service-admin-dev.oss-cn-hangzhou.aliyuncs.com/images/2026/09/04/e5a68d1a02f844c6a45846784765a737.jpg"]},
-      {"text": "确认", "images": []}
+      {
+        "text": "创建这个商品",
+        "images": [
+          "https://ai-customer-service-admin-dev.oss-cn-hangzhou.aliyuncs.com/images/2026/09/04/e5a68d1a02f844c6a45846784765a737.jpg"
+        ]
+      },
+      {
+        "text": "确认",
+        "images": []
+      }
+    ],
+    "checks": [
+      {
+        "level": "L1",
+        "ref": "*",
+        "type": "no_error"
+      },
+      {
+        "level": "L1",
+        "ref": "*",
+        "type": "ai_text_contains",
+        "expect": "后台"
+      },
+      {
+        "level": "L2",
+        "ref": "*",
+        "type": "ai_text_not_contains",
+        "expect": "已为您创建"
+      },
+      {
+        "level": "L1",
+        "ref": "*",
+        "type": "tool_not_called",
+        "expect": "product_manage"
+      }
     ]
   },
   {
@@ -31,7 +108,25 @@
     "title": "图片 grounded 检索（发商户已有商品图→应命中真实商品）",
     "domain": "product",
     "rounds": [
-      {"text": "店里有没有这个商品", "images": ["https://ai-customer-service-admin-dev.oss-cn-hangzhou.aliyuncs.com/products/2026/09/03/242067da19ce423383bdb7f7149b2085.png"]}
+      {
+        "text": "店里有没有这个商品",
+        "images": [
+          "https://ai-customer-service-admin-dev.oss-cn-hangzhou.aliyuncs.com/products/2026/09/03/242067da19ce423383bdb7f7149b2085.png"
+        ]
+      }
+    ],
+    "checks": [
+      {
+        "level": "L1",
+        "ref": "*",
+        "type": "no_error"
+      },
+      {
+        "level": "L1",
+        "ref": "*",
+        "type": "tool_called",
+        "expect": "product_search"
+      }
     ]
   },
   {
@@ -39,7 +134,23 @@
     "title": "商品搜索（遮光窗帘）",
     "domain": "product",
     "rounds": [
-      {"text": "搜一下遮光窗帘", "images": []}
+      {
+        "text": "搜一下遮光窗帘",
+        "images": []
+      }
+    ],
+    "checks": [
+      {
+        "level": "L1",
+        "ref": "*",
+        "type": "no_error"
+      },
+      {
+        "level": "L1",
+        "ref": "*",
+        "type": "tool_called",
+        "expect": "product_search"
+      }
     ]
   },
   {
@@ -47,8 +158,33 @@
     "title": "商品改价（requires_confirmation 确认流程）",
     "domain": "product",
     "rounds": [
-      {"text": "把夏日清风窗帘的价格改成 199", "images": []},
-      {"text": "确认", "images": []}
+      {
+        "text": "把夏日清风窗帘的价格改成 199",
+        "images": []
+      },
+      {
+        "text": "确认",
+        "images": []
+      }
+    ],
+    "checks": [
+      {
+        "level": "L1",
+        "ref": "*",
+        "type": "no_error"
+      },
+      {
+        "level": "L1",
+        "ref": "*",
+        "type": "card_shown",
+        "expect": "confirm"
+      },
+      {
+        "level": "L1",
+        "ref": "*",
+        "type": "tool_called",
+        "expect": "product_update"
+      }
     ]
   },
   {
@@ -56,7 +192,23 @@
     "title": "订单查询",
     "domain": "order",
     "rounds": [
-      {"text": "查一下最近的订单", "images": []}
+      {
+        "text": "查一下最近的订单",
+        "images": []
+      }
+    ],
+    "checks": [
+      {
+        "level": "L1",
+        "ref": "*",
+        "type": "no_error"
+      },
+      {
+        "level": "L1",
+        "ref": "*",
+        "type": "tool_called",
+        "expect": "order_query"
+      }
     ]
   },
   {
@@ -64,7 +216,23 @@
     "title": "客户查询",
     "domain": "customer",
     "rounds": [
-      {"text": "查一下客户列表", "images": []}
+      {
+        "text": "查一下客户列表",
+        "images": []
+      }
+    ],
+    "checks": [
+      {
+        "level": "L1",
+        "ref": "*",
+        "type": "no_error"
+      },
+      {
+        "level": "L1",
+        "ref": "*",
+        "type": "tool_called",
+        "expect": "customer_manage"
+      }
     ]
   },
   {
@@ -72,7 +240,23 @@
     "title": "数据看板（经营数据）",
     "domain": "data",
     "rounds": [
-      {"text": "今天经营数据怎么样", "images": []}
+      {
+        "text": "今天经营数据怎么样",
+        "images": []
+      }
+    ],
+    "checks": [
+      {
+        "level": "L1",
+        "ref": "*",
+        "type": "no_error"
+      },
+      {
+        "level": "L1",
+        "ref": "*",
+        "type": "tool_called",
+        "expect": "dashboard"
+      }
     ]
   },
   {
@@ -80,7 +264,23 @@
     "title": "售后工单查询",
     "domain": "aftersales",
     "rounds": [
-      {"text": "看看售后工单", "images": []}
+      {
+        "text": "看看售后工单",
+        "images": []
+      }
+    ],
+    "checks": [
+      {
+        "level": "L1",
+        "ref": "*",
+        "type": "no_error"
+      },
+      {
+        "level": "L1",
+        "ref": "*",
+        "type": "tool_called",
+        "expect": "after_sales_manage"
+      }
     ]
   }
 ]

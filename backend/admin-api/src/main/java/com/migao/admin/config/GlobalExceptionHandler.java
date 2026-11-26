@@ -245,7 +245,7 @@ public class GlobalExceptionHandler {
     }
 
     /**
-     * 处理数据库**外键违例**（客户端引用了库里不存在的行）
+     * 处理数据库**完整性约束违例**里属于「客户端入参不合法」的两类：**外键**与**非空**
      *
      * <p>issue #6210：本仓此前**没有**这一族分支 ⇒ PG 的外键违例（Spring 包成
      * {@link DataIntegrityViolationException}）落兜底 {@code Exception} ⇒ 客户端引用了不存在的行
@@ -253,36 +253,45 @@ public class GlobalExceptionHandler {
      * ⇒ 约束名 {@code agent_sessions_ai_session_id_fkey} / 表名进日志。实证路径：转人工端点
      * {@code POST /api/admin/agent-sessions} 传不存在的 {@code aiSessionId}。</p>
      *
-     * <p><b>射程刻意收窄 = 只认外键</b>：外键违例 = **请求里的引用**不存在 ⇒ 客户端错误，按本仓
-     * {@code VALIDATION_ERROR} 语义返 <b>422</b>（与 {@code IllegalArgumentException} 同档；
-     * 选它而不选 404 的理由见 PR body）。**其余约束违例（唯一 / 非空 / 检查 / 不可判）刻意不拦、
-     * 交回 {@link #handleException} 的兜底 500** —— 本仓已有判据把「基础设施级失败 ⇒ 5xx」钉住
-     * （{@code MerchantShipmentAtomicityTest}：建单写面注入唯一键失败 ⇒ **必须仍 5xx**，
-     * 该判据更关心回滚；那是既有契约，不能由本单顺手改口径）。
-     * ⇒ 本分支的射程 = 外键；所有非外键路径与原行为**逐字节相同**。</p>
+     * <p>issue #9012（同一类，第二个实例）：商品颜色入参把字段名写成 {@code name} / {@code code}
+     * （正确是 {@code colorName} / {@code mainColorHex}）⇒ Jackson 静默丢弃未知字段 ⇒
+     * {@code colorName} 为 null ⇒ 撞 {@code product_colors.color_name} 的 NOT NULL ⇒ 同样是 500。
+     * ⇒ 非空违例 = **请求里的必填值没传** = 入参不合法，与「引用不存在」同类，一并归口 422。</p>
      *
-     * <p><b>日志面</b>：外键违例这一类 <b>不打异常本体与堆栈</b> —— 原始异常消息里带着**约束名 / 表名 /
-     * schema**；只记请求坐标 + 约束**类别**（类别来自 {@code SQLState} 短枚举，不含标识符）。
-     * 响应体也只给固定文案（不回声 {@code e.getMessage()}）。{@code request} 允许为 null
+     * <p><b>射程 = 外键 + 非空</b>：两类都按本仓 {@code VALIDATION_ERROR} 语义返 <b>422</b>
+     * （与 {@code IllegalArgumentException} 同档；选它而不选 404 的理由见 PR body）。
+     * **其余约束违例（唯一 / 检查 / 不可判）刻意不拦、交回 {@link #handleException} 的兜底 500**
+     * —— 本仓已有判据把「基础设施级失败 ⇒ 5xx」钉住（{@code MerchantShipmentAtomicityTest}：
+     * 建单写面注入唯一键失败 ⇒ **必须仍 5xx**，该判据更关心回滚；那是既有契约，不能由本单顺手改口径）。
+     * ⇒ 唯一 / 检查 / 不可判路径与原行为**逐字节相同**。</p>
+     *
+     * <p><b>日志面</b>：这两类 <b>不打异常本体与堆栈</b> —— 原始异常消息里带着**约束名 / 表名 /
+     * 列名 / schema**；只记请求坐标 + 约束**类别**（类别来自 {@code SQLState} 短枚举，不含标识符）
+     * + {@code requestId}（与响应体 / 响应头逐字相同，issue #6957 口径）。
+     * 响应体也只给固定中文文案（不回声 {@code e.getMessage()}）。{@code request} 允许为 null
      * （非 HTTP 面直接调用本处理器时坐标记 {@code ?}）。</p>
      */
     @ExceptionHandler(DataIntegrityViolationException.class)
     public ResponseEntity<ApiResponse<Void>> handleDataIntegrityViolationException(
             DataIntegrityViolationException e, HttpServletRequest request) {
         ConstraintKind kind = ConstraintKind.of(firstSqlException(e));
-        if (kind != ConstraintKind.FOREIGN_KEY) {
-            // 非外键 ⇒ **不劫持**：交回既有兜底（唯一键冲突等仍是 500，且仍带堆栈、状态码零变化）。
+        if (kind != ConstraintKind.FOREIGN_KEY && kind != ConstraintKind.NOT_NULL) {
+            // 唯一 / 检查 / 不可判 ⇒ **不劫持**：交回既有兜底（唯一键冲突等仍是 500，且仍带堆栈、状态码零变化）。
             // DEBUG 只记「类别」这一格（短枚举、不含标识符）⇒ 运营侧仍可数「哪一类约束在打人」，
             // 而 INFO/WARN 形态与改前**逐字节相同**（不打破既有日志形状契约）。
-            log.debug("非外键完整性约束违例（交兜底）: kind={}", kind);
+            log.debug("非客户端类完整性约束违例（交兜底）: kind={}", kind);
             return handleException(e, request);
         }
         // 🔴 不打异常本体 / 堆栈：约束名与表名就在原始消息里（改前落兜底 ⇒ log.error(…, e) 泄漏）。
-        log.warn("外键违例（已脱敏）: method={}, uri={}, tenant={}, kind={}",
+        // requestId 与响应体逐字相同（issue #6957）⇒ 商家截图里的编号能反查到这一行。
+        log.warn("完整性约束违例（已脱敏）: method={}, uri={}, tenant={}, kind={}, requestId={}",
                 request == null ? "?" : request.getMethod(),
                 request == null ? "?" : request.getRequestURI(),
-                TenantContext.getTenantId(), kind);
-        ApiResponse<Void> response = ApiResponse.error("VALIDATION_ERROR", "请求引用的数据不存在或已被删除");
+                TenantContext.getTenantId(), kind, RequestId.current());
+        String message = kind == ConstraintKind.FOREIGN_KEY
+                ? "请求引用的数据不存在或已被删除"
+                : "参数不合法：必填字段为空，请检查请求体里是否漏传了必填项";
+        ApiResponse<Void> response = ApiResponse.error("VALIDATION_ERROR", message);
         return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY).body(response);
     }
 

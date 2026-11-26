@@ -45,10 +45,10 @@ const CUSTOM = CUSTOM_OPTION_VALUE
 const BRAND_OPTIONS = [
   { value: '', label: '请选择' },
   { value: '无品牌', label: '无品牌' },
-  { value: '观星台', label: '观星台' },
+  { value: '生意管家', label: '生意管家' },
   { value: CUSTOM, label: '其他（自定义输入）' },
 ]
-const BRAND_BUILTIN = new Set(['无品牌', '观星台'])
+const BRAND_BUILTIN = new Set(['无品牌', '生意管家'])
 
 const UNIT_OPTIONS = [
   { value: '', label: '请选择' },

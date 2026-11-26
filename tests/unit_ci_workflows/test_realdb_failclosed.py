@@ -94,6 +94,9 @@ REALDB_FILES: dict[str, str] = {
     # `#{createdBy} IS NULL` 的**主语位**（issue #5975 形态）：NULL 实参在 PG 上推不出类型 ⇒ 500。
     # 单元测试把 Mapper 全 mock 掉，这类故障只有真 PG 能现形 ⇒ 必须留在真库族（不许退化）。
     _SVC + "ReceivableAgingScopeRealDbTest.java": "direct",
+    _SVC + "ScheduledTaskMultiInstanceClaimRealDbTest.java": "direct",
+    _SVC + "ProductDoorWidthsRoundTripRealDbTest.java": "direct",
+    _SVC + "ProcessingOrderNoConflictRealDbTest.java": "direct",
     # issue #5939：发货单**列表**读面（GET /api/admin/shipments）的真库判据 —— 只真 PG 能证的四条：
     # 跨租户不可见（+ 反向自证对方租户自己读得到）/ 软删明细不计进 itemCount / 客户名取自 orders 连接 /
     # 未发货按 packed_at 参与排序，以及 LIMIT 生效。
@@ -218,6 +221,9 @@ REALDB_FILES: dict[str, str] = {
     # ④ **补写必须发生在 `updateById` 之前**：顺序写反时实体里的非 null 旧值会把结果盖回去
     #    （判据 ③ 直接复刻坏顺序）。
     _SVC + "OrderLogisticsShippedAtBackfillRealDbTest.java": "direct",
+    # issue #9208：微信客服**并发安全**的真库判据 —— 预算 `WHERE used < 5` / outbox `SKIP LOCKED` /
+    # 当前段**部分唯一索引**都是运行时语义；既有 Kf*MapperTest 只断言注解文本（删掉谓词仍是绿的）。
+    _SVC + "KfConcurrencyRealDbTest.java": "direct",
     # issue #6318：**端点级**（真 MockMvc 栈）的同 run id 并发判据 —— 只真 PG 能证的两条：
     # ① TOCTOU 窗口在**端点路径**上同样存在（6 个请求全部越过「查已记批次」后争抢
     #    `uk_batch_consumption_stocktake`）⇒ 「服务级绿、端点级红」这条差只有真库 + 真栈能照出来；

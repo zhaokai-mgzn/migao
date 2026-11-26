@@ -583,22 +583,23 @@ def test_shard_criteria_are_not_vacuous_injected_red_proofs() -> None:
     assert shard_problems(_LEDGER, ci_text, verify_text) == [], "真读数被判红 ⇒ 谓词恒真，不是判据"
 
     # ① 台账只登记一片（而 CI / 本地跑两片）⇒ 必红：三方一致没有被钉住
+    names = [str(n) for n in _LEDGER["shape"]["shards"]["names"]]
     one_shard_ledger = json.loads(json.dumps(_LEDGER))
-    one_shard_ledger["shape"]["shards"]["names"] = ["1/2"]
+    one_shard_ledger["shape"]["shards"]["names"] = names[:1]
     one_shard_ledger["shape"]["shards"]["count"] = 1
     assert shard_problems(one_shard_ledger, ci_text, verify_text) != [], (
         "台账只登记一片（而 CI/本地跑两片）⇒ 不报 ⇒ 三方一致没有被钉住"
     )
 
     # ② 本地腿少一片（把 2/2 那条改成 1/2）⇒ 必红
-    one_local = verify_text.replace(f"{SHARD_ENV}=2/2", f"{SHARD_ENV}=1/2")
+    one_local = verify_text.replace(f"{SHARD_ENV}={names[-1]}", f"{SHARD_ENV}={names[0]}")
     assert local_shard_names(one_local) != local_shard_names(verify_text), "变异点没命中 ⇒ 本红证会退化成空跑"
     assert shard_problems(_LEDGER, ci_text, one_local) != [], (
         "本地腿少了 2/2 那一片 ⇒ 不报 ⇒ 本地覆盖缩水（CI 两片、本地一片）会溜过去"
     )
 
     # ③ CI 少一片 ⇒ 必红（去掉 matrix 的第二条 include）
-    one_ci = ci_text.replace('          - shard: "2/2"\n            shard_suffix: "（后半）"\n', "")
+    one_ci = ci_text.replace(f'- shard: "{names[-1]}"', '- shard: ""')
     assert ci_shard_names(one_ci) != ci_shard_names(ci_text), "变异点没命中 ⇒ 本红证会退化成空跑"
     assert shard_problems(_LEDGER, one_ci, verify_text) != [], (
         "CI matrix 少一片 ⇒ 不报 ⇒ 「只加一片」的形态（关键路径没减半）会溜过去"
@@ -613,7 +614,7 @@ def test_shard_criteria_are_not_vacuous_injected_red_proofs() -> None:
 
     # ⑤ 某片没有冻结基线 ⇒ 必红（那一片的库存牙齿会失效）
     no_floor = json.loads(json.dumps(_LEDGER))
-    del no_floor["frozen_inventory"]["shards"]["2/2"]
+    del no_floor["frozen_inventory"]["shards"][names[0]]
     assert shard_problems(no_floor, ci_text, verify_text) != [], (
         "少了某片的冻结基线 ⇒ 不报 ⇒ 那一半「少跑」没有任何读数"
     )
@@ -632,17 +633,21 @@ def test_shard_criteria_are_not_vacuous_injected_red_proofs() -> None:
         f"片名与规则值域对不上 ⇒ 必须报「不是全划分」，实际：{holes_problems}"
     )
 
-    # ⑧ **只改第二片**那行的 `-n` ⇒ 必红（#6164 补的真退化：只比第一条 ⇒ 放走它）
+    # ⑧ **只改某一片**那行的 `-n` ⇒ 必红（#6164 补的真退化：只比第一条 ⇒ 放走它）。
+    #    片数**现取**（issue #9102 切成三片）：不写死数字 —— 否则「切到 N 片」还得回来改这条红证。
     idx = verify_text.find("ci_helper_leg()")
     assert idx >= 0, "找不到本地腿函数（注入点漂移）"
     body = verify_text[idx:]
     matches = list(re.finditer(rf"-m\s+pytest\s+{re.escape(PYTEST_TARGET)}[^\n]*", body))
-    assert len(matches) == 2, f"本地腿里现取到 {len(matches)} 条 pytest 行（应为 2）"
-    second = matches[1]
-    at = second.start() + second.group(0).rfind("-n 4")
-    assert at > second.start(), f"第二条 pytest 行里找不到 `-n 4`：{second.group(0)!r}"
-    second_only = verify_text[:idx] + body[:at] + "-n 8" + body[at + len("-n 4"):]
-    assert pytest_argv_lines(second_only)[1] != pytest_argv_lines(verify_text)[1], "变异没命中第二片"
-    assert any("第 2 条" in p or "条 pytest" in p for p in shard_problems(_LEDGER, ci_text, second_only)), (
-        "只改第二片的 `-n` ⇒ 不报 ⇒ 并行度契约只钉住了两片中的一片（本包实测过的真退化）"
+    expected_lines = len(names)
+    assert len(matches) == expected_lines, (
+        f"本地腿里现取到 {len(matches)} 条 pytest 行（应为 {expected_lines} 条 = 台账片数）")
+    last = matches[-1]
+    at = last.start() + last.group(0).rfind("-n 4")
+    assert at > last.start(), f"最后一条 pytest 行里找不到 `-n 4`：{last.group(0)!r}"
+    last_only = verify_text[:idx] + body[:at] + "-n 8" + body[at + len("-n 4"):]
+    assert pytest_argv_lines(last_only)[-1] != pytest_argv_lines(verify_text)[-1], "变异没命中最后一片"
+    assert any(f"第 {expected_lines} 条" in p or "条 pytest" in p
+               for p in shard_problems(_LEDGER, ci_text, last_only)), (
+        "只改最后一片的 `-n` ⇒ 不报 ⇒ 并行度契约只钉住了前几片（本包实测过的真退化）"
     )

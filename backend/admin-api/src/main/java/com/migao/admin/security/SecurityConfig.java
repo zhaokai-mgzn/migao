@@ -220,6 +220,16 @@ public class SecurityConfig {
                                 // 判据 = tests/unit_ci_workflows/test_served_version_verify.py 的字段白名单判据。
                                 "/api/version",
                                 "/api/version/migrations",
+                                // 上传存储形态读面（issue #9026 · 集群 P0-3）：`StorageStatusController`
+                                // 回答「这台实例的图片写在哪」——`storage=oss` 多实例安全、`storage=local`
+                                // 只写本机磁盘（多实例下写 A 读 B 必 404）。
+                                // ⚠️ 与 `/api/version*` 同源同性质：只读、无鉴权（运维排障时手上没有凭据；
+                                // 401 = 读不到 = 这道护栏在**生产**不可观测）。为什么不用 `/actuator/health`：
+                                // 部署形态下 nginx 把 actuator 面整段 `return 404`（见上一条注释）。
+                                // 泄露面 = **恰好 4 个**非敏感值（storage/multiInstance/replicas/ossConfigured），
+                                // 不含 endpoint / AccessKey / bucket / 本地路径 / 主机名，
+                                // 判据 = backend/admin-api 的 StorageStatusControllerTest（字段白名单 + 不泄露凭据）。
+                                "/api/version/storage",
                                 // 浏览器错误上报（issue #8203 · P0-03）：**必须 permitAll** ——
                                 // 登录页/白屏时用户还没有会话，401 就等于「白屏永远不上报」。
                                 // 公开面 = 攻击面 ⇒ 三道闸全在端点自己身上：体积上限 8 KiB（413）+
@@ -227,6 +237,10 @@ public class SecurityConfig {
                                 // 写面只有一行 SLF4J（不建表 / 不落库 / 不存 PII），
                                 // 判据 = ClientErrorControllerTest 的 logLineCarriesNoSecrets。
                                 "/api/client-errors",
+                                // 企业微信「微信客服」回调（issue #9171）：企业微信服务器不带任何
+                                // 登录态；准入靠 msg_signature + AES 解密 + receiveid 校验，
+                                // 端点自身 fail-closed（未配置 token/aesKey ⇒ 503）。
+                                "/api/kf/callback",
                                 // 健康检查和文档
                                 "/actuator/health",
                                 "/actuator/info",

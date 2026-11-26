@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next'
 import CorporateNav from '@/components/corporate/CorporateNav'
 import CorporateFooter from '@/components/corporate/CorporateFooter'
+import { siteOrigin } from '@/lib/site-domain'
 
 export const viewport: Viewport = {
   width: 'device-width',
@@ -12,18 +13,20 @@ export const metadata: Metadata = {
   // 站点级绝对地址的**唯一真值源**（issue #6665 第 4 条）：
   // 在此之前全仓 `metadataBase` 命中数为 0，而 `www.migaozn.com` 与裸域都能 200 ⇒ 两份内容。
   // 归一动作在 next.config.mjs 的 `redirects()`（www → 裸域 301）。
-  metadataBase: new URL('https://www.migaozn.com'),
+  // 域名来源 = `src/lib/site-domain.ts`（issue #8941）：写死 www.migaozn.com 会让生产页
+  // 的 canonical / og:image 全部落在**测试域**（SEO 把生产页登记成另一个站）。
+  metadataBase: new URL(siteOrigin()),
   title: {
-    default: '观星台 — 布艺行业的 AI 经营平台',
-    template: '%s — 观星台',
+    default: '生意管家 — 布艺行业的 AI 经营平台',
+    template: '%s — 生意管家',
   },
   alternates: {
     canonical: '/',
   },
   description:
-    '杭州词元通达科技有限公司出品的观星台平台：面向布艺 / 窗帘商家的多租户 AI 经营平台。顾客侧米宝 7×24 小时接待咨询、算料报价、下单与售后；经营侧黄金策覆盖商品、订单、生产、库存与财务。',
+    '杭州词元通达科技有限公司出品的生意管家平台：面向布艺 / 窗帘企业的 AI 经营平台。顾客侧米宝 7×24 小时接待咨询、算料报价、下单与售后；经营侧黄金策覆盖商品、订单、生产、库存与财务。',
   keywords: [
-    '观星台',
+    '生意管家',
     'AI 智能客服',
     '布艺 SaaS',
     '窗帘',
@@ -38,25 +41,25 @@ export const metadata: Metadata = {
   openGraph: {
     type: 'website',
     locale: 'zh_CN',
-    siteName: '观星台 MIGAO',
-    title: '观星台 — 布艺行业的 AI 经营平台',
+    siteName: '生意管家',
+    title: '生意管家 — 布艺行业的 AI 经营平台',
     description:
-      '布艺行业的 AI 客服与经营平台：米宝承接顾客服务，黄金策承接生产管理，四个终端共用数据底座。',
+      '布艺行业的 AI 客服与经营平台：米宝承接顾客服务，黄金策承接生产管理，管理后台、微信客服、商家小程序与员工端 H5 共用数据底座。',
     // 相对路径 ⇒ 由 metadataBase 解析；不再硬编码 www（那是第二个真值源）
     images: [
       {
         url: '/og-image.png',
         width: 1200,
         height: 630,
-        alt: '观星台 AI 经营平台',
+        alt: '生意管家 AI 经营平台',
       },
     ],
   },
   twitter: {
     card: 'summary_large_image',
-    title: '观星台 — 布艺行业的 AI 经营平台',
+    title: '生意管家 — 布艺行业的 AI 经营平台',
     description:
-      '布艺行业的 AI 客服与经营平台：米宝承接顾客服务，黄金策承接生产管理，四个终端共用数据底座。',
+      '布艺行业的 AI 客服与经营平台：米宝承接顾客服务，黄金策承接生产管理，管理后台、微信客服、商家小程序与员工端 H5 共用数据底座。',
   },
   robots: {
     index: true,

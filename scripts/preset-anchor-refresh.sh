@@ -73,10 +73,11 @@ bootstrap_hint() {
     if [ -d "\$HOME/.dsh/.agent-presets/migao" ] && [ ! -L "\$HOME/.dsh/.agent-presets/migao" ]; then
       mv "\$HOME/.dsh/.agent-presets/migao" "\$HOME/.dsh/.agent-presets/migao.bak-\$(date +%Y%m%d-%H%M%S)"
     fi
-    ln -sfn "\$HOME/migao-dev-preset-anchor" "\$HOME/.dsh/.agent-presets/migao"
+    ln -sfn "\$HOME/migao-dev-preset-anchor/presets/migao-dev" "\$HOME/.dsh/.agent-presets/migao"
 
-  注意：S4 起预设内容在**预设仓仓根**（\`preset.yml\` 直接在仓根），软链指向**仓根**，
-  不再有 \`.agent-presets/migao\` 这一层。详见根 AGENTS.md「开发环境准备」与预设仓 README.md。
+  注意：预设仓改成 `presets/<name>/` 布局（#8959）—— 软链目标 = **某个 preset 目录**
+  （`$MIRROR/presets/migao-dev`），不再是仓根、更不是 `.agent-presets/migao` 那一层。
+  详见根 AGENTS.md「开发环境准备」与预设仓 README.md。
 EOF
 }
 

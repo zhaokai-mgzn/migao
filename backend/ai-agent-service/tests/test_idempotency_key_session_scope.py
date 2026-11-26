@@ -42,7 +42,6 @@ from __future__ import annotations
 import ast
 import re
 import uuid
-from functools import lru_cache
 from pathlib import Path
 from typing import Optional
 from unittest.mock import AsyncMock, patch
@@ -101,14 +100,6 @@ def _keys_of(*contexts: ToolContext, op: str = order_create.ORDER_CREATE_OP) -> 
     """在**同一个窗口**里为每个 context 各取一次键（差异只可能来自作用域 / 操作维度）。"""
     with _at():
         return [order_create._request_window_id(ctx, op=op) for ctx in contexts]
-
-
-@pytest.fixture(autouse=True)
-def _fresh_window_cache():
-    """每个用例从空缓存开始：`(窗口, 作用域, 操作)` 进缓存键 ⇒ 跨用例残留会让"同键/异键"断言失真。"""
-    order_create._window_id.cache_clear()
-    yield
-    order_create._window_id.cache_clear()
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -310,56 +301,46 @@ class TestKeyStaysAWireSafeHeaderValue:
         assert len(key) <= 128, f"op={hostile_op!r} 时键长 {len(key)} 超过服务端 VARCHAR(128)"
 
 
-class TestF19SurvivesConcurrency:
-    """作用域/操作进缓存键后，条目数 ≈ 一个窗口内的活跃会话数 × 操作数 —— 容量不足会**静默**毁掉 F19。"""
+class TestTheKeyNeedsNoCache:
+    """#9017 起键是**纯函数**：并发 / 容量不再能毁掉 F19。
 
-    #: 缓存键的**调用形态**必须唯一：`lru_cache` 把 `f(1,2,3)` 与 `f(1,2,op=3)` 当成两条不同条目
-    #: ⇒ 一处按位置传、一处按关键字传 = 同一次重试取到两把键（F19 静默失效）。故本文件的判据
-    #: 一律用与生产同一形态（`op=` 关键字）调用。
+    改前（`@lru_cache(maxsize=12288)` 承担正确性）：同窗活跃写请求超过容量 ⇒ 旧条目被 LRU
+    挤出 ⇒ 重试取到**新键** ⇒ 服务端无从去重（注释自己承认「容量不足 ⇒ F19 静默失效」）。
+    现在没有缓存可挤出，故本类只需钉住「纯函数 ⇒ 多作用域/多操作互不影响」。
+
+    ⚠️ 调用形态仍必须唯一：`op` / `intent` 都是关键字限定，位置传参直接 TypeError
+    （`lru_cache` 时代 `f(w, s, op)` 与 `f(w, s, op=op)` 会被当成两条不同条目）。
+    """
+
     OP = "order"
 
-    @classmethod
-    def _keys_stay_stable(cls, key_of, window: int, scopes: list) -> bool:
-        """同窗内先取一轮（制造多作用域），再回取第一个 —— 值必须没变（= 没被挤出缓存）。"""
-        first = {s: key_of(window, s, op=cls.OP) for s in scopes}
-        return key_of(window, scopes[0], op=cls.OP) == first[scopes[0]]
-
     def test_many_sessions_in_one_window_keep_their_keys(self):
-        scopes = [f"sess_{i:03d}" for i in range(64)]
-        assert self._keys_stay_stable(order_create._window_id, _WINDOW, scopes), (
-            "同窗内 64 个会话把先前的条目挤出缓存 ⇒ 重试取到**新键** ⇒ 服务端无从去重"
-            "（F19 在并发下静默失效，而单线程小规模测试看不出来）")
+        scopes = [f"sess_{i:03d}" for i in range(128)]
+        first = {s: order_create._window_id(_WINDOW, s, op=self.OP) for s in scopes}
+        drift = [s for s, v in first.items()
+                 if order_create._window_id(_WINDOW, s, op=self.OP) != v]
+        assert drift == [], (
+            f"同窗内 {len(drift)} 个会话的键在回取时变了（{drift[:3]}）⇒ 键依赖了进程内状态/容量"
+            "（F19 会在并发下静默失效）")
 
-    def test_three_operations_do_not_evict_each_other(self):
-        """操作维度把条目数**×3** ⇒ 缓存容量必须同步扩容（沿用旧值 = F19 余量静默缩到 1/3）。
-
-        判据 = 64 会话 × 3 操作全取一遍后，最早那条仍在（没被挤出）。这条在容量退回
-        #4195 时的 4096 下**也会通过**（192 < 4096），故它钉的是"实现把三份都算进容量"，
-        扩容本身由常量注释与 `_IDEMPOTENCY_CACHE_SIZE` 的取值承担。
-        """
+    def test_three_operations_do_not_interfere(self):
+        """三个操作 × 128 会话全取一遍后，最早那条仍不变（纯函数 ⇒ 不互相挤出）。"""
         key_of = order_create._window_id
         ops = (order_create.ORDER_CREATE_OP, order_create.AFTERSALE_CREATE_OP,
                order_create.HUMAN_HANDOFF_OP)
         first = key_of(_WINDOW, "sess_000", op=ops[0])
         for op in ops:
-            for s in [f"sess_{i:03d}" for i in range(64)]:
+            for s in [f"sess_{i:03d}" for i in range(128)]:
                 key_of(_WINDOW, s, op=op)
         assert key_of(_WINDOW, "sess_000", op=ops[0]) == first, (
-            "三个操作的条目互相挤出 ⇒ 同一次重试取到新键（F19 静默失效）")
-
-    def test_the_stability_predicate_can_go_red_on_a_small_cache(self):
-        """:red_circle: 判据自身可红：容量退回 8（改动前的 `maxsize`）⇒ 同一判据必须报「不稳定」。"""
-        tiny = lru_cache(maxsize=8)(order_create._window_id.__wrapped__)
-        assert self._keys_stay_stable(tiny, _WINDOW, [f"sess_{i:03d}" for i in range(64)]) is False, (
-            "小容量缓存下判据仍然「稳定」 ⇒ 上一条断言是空的（它抓不到缓存挤出的形态）")
+            "取过其它操作/会话之后同一个键变了 ⇒ 取值依赖进程内状态（F19 静默失效）")
 
     def test_the_operation_cannot_be_passed_positionally(self):
         """:red_circle: 结构性护栏：`op` 必须是**关键字限定**参数（位置传参直接 TypeError）。
 
-        为什么这条是行为判据而不是实现洁癖：`lru_cache` 把 `f(w, s, op)` 与 `f(w, s, op=op)`
-        当成**两条不同条目** ⇒ 两种形态并存时，同一次重试会取到两把键（F19 静默失效，
-        而且只在"有的调用点按位置传"时出现 —— 单点调用的小规模测试看不出来）。
-        关键字限定让这个形态**不可表达**（改前：位置传参合法 ⇒ 本判据红）。
+        为什么这条是行为判据而不是实现洁癖：同一入口一旦出现「按位置传 op」的调用形态，
+        两处调用点就可能各自算出一把键（同一次重试取到两把键 ⇒ F19 静默失效）。
+        关键字限定让这个形态**不可表达**。
         """
         with pytest.raises(TypeError):
             order_create._window_id(_WINDOW, "sess_A", self.OP)
@@ -756,7 +737,7 @@ class TestTheTwoRedProofsCanGoRed:
     def test_the_retry_predicate_reports_a_key_that_stops_being_cached(self, monkeypatch):
         """处方 = 去掉缓存（每次新键，等价于"不去重"）⇒ 同一会话的重试必不同键（红证 2 因此会红）。"""
         monkeypatch.setattr(order_create, "_window_id",
-                            lambda window, scope, *, op: f"{window}-{uuid.uuid4().hex[:12]}")
+                            lambda window, scope, *, op, intent="": f"{window}-{uuid.uuid4().hex[:12]}")
         first, retry = _keys_of(_ctx("sess_A", "u1"), _ctx("sess_A", "u1"))
         assert first != retry, (
             "处方（每次新键）下同会话重试竟然仍同键 ⇒ 红证 2 抓的不是这个形态，判据是空的")
@@ -766,12 +747,16 @@ class TestTheTwoRedProofsCanGoRed:
 
         这正是本单要修的形态，也正是红证 3 在改前的红：那时无论哪个端点，键都相同。
         """
-        @lru_cache(maxsize=order_create._IDEMPOTENCY_CACHE_SIZE)
+        # 改前形态的替身：**每 (窗口, 作用域) 只算一次**（`lru_cache` 的语义）且键里没有 op。
+        seen: dict = {}
+
         def pre_change(window, scope):
-            return f"{window}-{order_create._scope_token(scope)}-{uuid.uuid4().hex[:12]}"
+            return seen.setdefault(
+                (window, scope),
+                f"{window}-{order_create._scope_token(scope)}-{uuid.uuid4().hex[:12]}")
 
         monkeypatch.setattr(order_create, "_window_id",
-                            lambda window, scope, *, op: pre_change(window, scope))
+                            lambda window, scope, *, op, intent="": pre_change(window, scope))
         ctx = _ctx("sess_A", "u1")
         order_key = _keys_of(ctx, op=order_create.ORDER_CREATE_OP)[0]
         aftersale_key = _keys_of(ctx, op=order_create.AFTERSALE_CREATE_OP)[0]

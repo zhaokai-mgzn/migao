@@ -92,9 +92,9 @@ describe('LoginPage', () => {
 
   it('页脚版权行用公司法定全称（issue #7493）', () => {
     render(<LoginPage />)
-    expect(screen.getByText('© 2026 杭州词元通达科技有限公司 · 观星台')).toBeInTheDocument()
+    expect(screen.getByText('© 2026 杭州词元通达科技有限公司 · 生意管家')).toBeInTheDocument()
     // 旧短名不得残留（出现即红）—— 与官网页脚 / 注册页同源同文
-    expect(screen.queryByText('© 2026 词元通达 · 观星台')).toBeNull()
+    expect(screen.queryByText('© 2026 词元通达 · 生意管家')).toBeNull()
   })
 
   // ── 两个入口：谁用哪个要一眼看懂（#5485）──
@@ -127,7 +127,7 @@ describe('LoginPage', () => {
 
   it('渲染系统标题与 Logo', () => {
     render(<LoginPage />)
-    expect(screen.getByText('观星台')).toBeInTheDocument()
+    expect(screen.getByText('生意管家')).toBeInTheDocument()
     expect(screen.getByText('企业级AI经营管理平台')).toBeInTheDocument()
     expect(screen.getByTestId('logo')).toBeInTheDocument()
   })

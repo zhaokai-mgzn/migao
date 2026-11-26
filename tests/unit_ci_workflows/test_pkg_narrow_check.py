@@ -8,7 +8,7 @@
 | 触发改动 | 会红的判据 | 逐字红因（实例） |
 |---|---|---|
 | 新增 / 修改 Java 测试 | `BusinessClockTestSourceGuardTest.outOfScopeSpellingsPresenceIsFrozen` | `Expecting empty but was: ["覆盖外拼写 \\`System.nanoTime(\\` 登记 presentInTree=false 而现取=true"]`（#6237） |
-| 新增 `[backend-contract]` 用例且 `expectations: []` | `test_case_machine_fail_channel.py::test_i3_anchor_matches_reality_and_is_only_shrinking` | `实测 backend_contract_scoring_zero=117 与锚点 116 不一致`（#6231/#6226/#6224/#6237） |
+| 新增 / 修改 `.github/cases/**` | `test_case_machine_fail_channel.py`（I1/I2/I3） | 新用例没有任何机器判红通道 / `[backend-contract]` 豁免不健全（具名报出用例号）。⚠️ issue #9090 起「`backend_contract_scoring_zero` 读数 +1 未重锚」**不再**是红因（读数已改为从语料现算、不入库） |
 
 并行修复包按「只跑定点」的纪律（D 口径）**必然漏掉**这两条 ⇒ 直到 CI 才红。
 

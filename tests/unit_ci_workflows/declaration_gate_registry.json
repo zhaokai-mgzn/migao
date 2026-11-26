@@ -54,12 +54,6 @@
           "reason": "同上（跨端卡片契约读它的源码）；扩面代价相同 ⇒ 登记为缺口，不静默"
         },
         {
-          "path": "frontend/mini-app",
-          "issue": "#4177",
-          "owner": "CI 门禁 owner（pr-check 面）",
-          "reason": "同上（跨端卡片契约读它的源码，另有算料判据读它的常量）"
-        },
-        {
           "path": "docs",
           "issue": "#4177",
           "owner": "CI 门禁 owner（pr-check 面）",
@@ -141,73 +135,13 @@
         "Setup Node.js",
         "Install dependencies",
         "Build H5",
-        "Build weapp"
+        "Build weapp",
+        "Assert weapp dist (domain / structure / size)"
       ],
       "job_gate": {
         "needs": "detect",
         "output": "run",
         "emit_step": "Detect bmini-app face",
-        "if": "needs.detect.outputs.run == 'true'"
-      },
-      "job_gate_note": "issue #6051：本腿是**非 required** ⇒ 加 job 级面门控（`needs: detect` + `if: needs.detect.outputs.run == 'true'`），非命中面的 PR 上**整层不创建**（runner 不再空转）。「未跑」由判定 job 的 else 分支具名打印（见各 workflow 的 `detect` job）；⛔ required 腿**禁止**用这条形态：job 级跳过不上报 context ⇒ required 检查永久悬空。"
-    },
-    {
-      "id": "mini-app-typecheck-and-test",
-      "workflow": "mini-app.yml",
-      "job": "typecheck-and-test",
-      "trigger": {
-        "kind": "step-detect-regex",
-        "step": "Detect mini-app changes",
-        "emit_id": "detect",
-        "predicate": "^(frontend/mini-app/|tests/|\\.github/)"
-      },
-      "must_cover": [
-        {
-          "path": "frontend/mini-app",
-          "reason": "门禁自己住的模块（typecheck + 单测的对象）"
-        }
-      ],
-      "uncovered": [],
-      "auto_discover_root": null,
-      "check_name": "mini-app typecheck + unit tests",
-      "gated_steps": [
-        "Setup Node.js",
-        "Install dependencies",
-        "TypeScript type check",
-        "Run unit tests"
-      ]
-    },
-    {
-      "id": "mini-app-xiaobu-h5-visual",
-      "workflow": "mini-app.yml",
-      "job": "xiaobu-h5-visual",
-      "trigger": {
-        "kind": "step-detect-regex",
-        "step": "Detect mini-app changes",
-        "emit_id": "detect",
-        "predicate": "^(frontend/mini-app/|tests/|\\.github/)"
-      },
-      "must_cover": [
-        {
-          "path": "frontend/mini-app",
-          "reason": "视觉回归跑的就是它的 H5 构建产物"
-        }
-      ],
-      "uncovered": [],
-      "auto_discover_root": null,
-      "check_name": "xiaobu H5 visual regression",
-      "gated_steps": [
-        "Setup Node.js",
-        "Install mini-app deps",
-        "Install Playwright deps",
-        "Build H5 (test env overrides prod URL)",
-        "Run visual regression",
-        "Upload visual diff artifacts (failure)"
-      ],
-      "job_gate": {
-        "needs": "detect",
-        "output": "run",
-        "emit_step": "Detect mini-app face",
         "if": "needs.detect.outputs.run == 'true'"
       },
       "job_gate_note": "issue #6051：本腿是**非 required** ⇒ 加 job 级面门控（`needs: detect` + `if: needs.detect.outputs.run == 'true'`），非命中面的 PR 上**整层不创建**（runner 不再空转）。「未跑」由判定 job 的 else 分支具名打印（见各 workflow 的 `detect` job）；⛔ required 腿**禁止**用这条形态：job 级跳过不上报 context ⇒ required 检查永久悬空。"
@@ -260,7 +194,56 @@
         "TypeScript type check",
         "ESLint",
         "Production build (Next-only checks)",
-        "Run unit tests"
+        "Run unit tests (shard 1/2)"
+      ]
+    },
+    {
+      "id": "pr-check-admin-web-tests-2",
+      "workflow": "pr-check.yml",
+      "job": "admin-web-tests-2",
+      "trigger": {
+        "kind": "step-detect-regex",
+        "step": "Detect admin-web changes",
+        "emit_id": "detect_aw2",
+        "predicate": "^(frontend/admin-web/|frontend/worker-h5/src/|\\.github/workflows/pr-check\\.yml$)",
+        "note": "与第 1 片**同一谓词**（两片必须同进同出，否则「只跑一半」会成为假绿）"
+      },
+      "must_cover": [
+        {
+          "path": "frontend/admin-web",
+          "reason": "本腿的 `npm ci` / `tsc --noEmit` / `eslint` / `next build` / `vitest` **全部**以 `frontend/admin-web` 为根（vitest root = 该目录，`setupFiles: ./tests/setup.ts` 亦在其内；依赖全是 npm 公共包，无仓内 workspace 依赖）"
+        },
+        {
+          "path": "frontend/worker-h5/src",
+          "reason": "本腿有**跨包断言**读它：`frontend/admin-web/tests/unit/lib/copy-no-markdown-emphasis.test.ts` 的 `SRC_DIRS` 同时扫 `../worker-h5/src`（商家可见文案的 markdown 强调必须经渲染器上屏，issue #5194）。**原谓词只覆盖本包**（issue #6684 实测：#6675 只改 `frontend/worker-h5/**` ⇒ 本腿整段跳过 ⇒ 该守卫在 PR 上绿、合并后 main 上红，红只交给下一个碰 admin-web 的 PR）。覆盖判据 = tests/unit_ci_workflows/test_admin_web_gate_reads_worker_h5.py（从守卫源码现取 `SRC_DIRS` ⇄ 谓词覆盖率，漏一条即红；面变窄/解析变形也红）"
+        }
+      ],
+      "uncovered": [
+        {
+          "path": "backend/admin-api/src/main/java/com/migao/admin/dto/SavingMetricViews.java",
+          "issue": "#6461",
+          "owner": "CI 门禁 owner（pr-check 面）",
+          "reason": "本腿的 `tests/unit/lib/cohort-groups.test.ts` 读它的 `COHORT_*` 枚举做「来源组映射表覆盖全集」比对（服务端加一组而前端没跟上 ⇒ 该判据红）。**未纳入 CI 触发面**：扩到 backend 会让每个后端 PR 都跑本腿约 250s 全量（同 #4177 对 ai-agent 腿的成本裁定）；改由**本地** `./verify-all.sh` 的 `admin_web_face_paths` 兜（已含该 Java 文件，实测 C5 闭包绿）+ 评审。服务端单独改这个 DTO 的 PR 在 CI 上**不会**跑本条判据 —— 照实登记，不静默。"
+        },
+        {
+          "path": "frontend/bmini-app/src/utils/cohort-groups.ts",
+          "issue": "#6461",
+          "owner": "CI 门禁 owner（pr-check 面）",
+          "reason": "bmini 是独立 npm 工程（不许 import admin-web 的 TS）⇒ 来源组文案是副本，本腿的判据 ⑤ 读它做**两端同源**逐项比对（只改一侧 ⇒ 红）。未纳入 CI 触发面同上（成本裁定）；本地 `admin_web_face_paths` 已含该文件。"
+        },
+        {
+          "path": "frontend/bmini-app/src/components/cards/BatchStockCard.tsx",
+          "issue": "#6461",
+          "owner": "CI 门禁 owner（pr-check 面）",
+          "reason": "本腿判据 ④ 读**两端会话卡的渲染面**（去注释后 `cohortLabel` 必须零出现）—— 只改 bmini 把内部标签渲染回来也必须红。未纳入 CI 触发面同上；本地 `admin_web_face_paths` 已含该文件。"
+        }
+      ],
+      "auto_discover_root": null,
+      "check_name": "admin-web unit tests (2/2)",
+      "gated_steps": [
+        "Set up Node.js 22",
+        "Install dependencies",
+        "Run unit tests (shard 2/2)"
       ]
     },
     {
@@ -272,7 +255,6 @@
         "where": "on.pull_request.paths",
         "paths": [
           "frontend/admin-web/**",
-          "frontend/mini-app/**",
           "tests/e2e/**",
           "tests/playwright.config.ts",
           ".github/workflows/demo-evidence.yml"
@@ -291,36 +273,6 @@
       "uncovered": [],
       "auto_discover_root": null,
       "check_name": "Demo path specs (admin-web, fixture mode)",
-      "gated_steps": []
-    },
-    {
-      "id": "demo-evidence-mini-app-e2e-preflight",
-      "workflow": "demo-evidence.yml",
-      "job": "mini-app-e2e-preflight",
-      "trigger": {
-        "kind": "pull_request_paths",
-        "where": "on.pull_request.paths",
-        "paths": [
-          "frontend/admin-web/**",
-          "frontend/mini-app/**",
-          "tests/e2e/**",
-          "tests/playwright.config.ts",
-          ".github/workflows/demo-evidence.yml"
-        ]
-      },
-      "must_cover": [
-        {
-          "path": "frontend/mini-app",
-          "reason": "静态契约校验断言的是它的选择器与 storage 注入键"
-        },
-        {
-          "path": "tests/e2e",
-          "reason": "校验脚本与红证夹具所在面"
-        }
-      ],
-      "uncovered": [],
-      "auto_discover_root": null,
-      "check_name": "Mini-app e2e static contract preflight",
       "gated_steps": []
     },
     {
@@ -402,6 +354,7 @@
         "Setup Node.js",
         "Install test deps",
         "Install admin-web deps (for Playwright webServer)",
+        "Cache Playwright browsers",
         "Run quality specs (fixture-only)"
       ],
       "job_gate": {
@@ -633,6 +586,13 @@
       "issue": "#6968",
       "criterion": "tests/unit_ci_workflows/test_post_merge_verify_credential_probe.py::test_negative_control_probe_is_green_on_the_real_tree",
       "note": "注释声称与 `tests/unit_ci_workflows/test_case_id_claims.py::TOKEN_ENVS` 同源（driver 交给判据解释器的凭据键 ⟺ 判据自己取凭据的键）⇒ 由该判据的 ④ 腿**真读两侧模块**逐字比对（判据改成读第三个键 / 驱动侧少一个键 ⇒ 当场红）；同腿另判「凭据键 ⊆ JUDGING_ENV_KEYS」⇒ 读数不会看不见它们"
+    },
+    {
+      "file": "tests/unit_ci_workflows/test_bmini_dist_budget.py",
+      "symbol": "SHELL_CORPUS_EXCLUDE_DIRS",
+      "issue": "#8981",
+      "criterion": "tests/unit_ci_workflows/test_guard_scope_declaration.py::test_declared_range_equals_actually_scanned_path_set",
+      "note": "注释声称 `.sh` 语料的剪枝与 `test_guard_scope_declaration.py` 的冻结值逐字一致（#5284 的射程口径）⇒ 由该判据钉住：它要求 `declaration.exclude_dirs` == 该文件冻结的 `CENSUS_EXCLUDE_DIRS`、被测模块的 `GUARD_SCOPE` 与台账 `declaration` 逐字相同、枚举结果集必须相等。收窄射程或扩大剪枝 ⇒ 两边同时红。"
     }
   ],
   "frozen_declarations": [
@@ -654,15 +614,14 @@
     {
       "file": "tests/unit_ci_workflows/test_operation_display_name_guard.py",
       "symbol": "IMPLEMENTATIONS",
-      "bound": 4,
+      "bound": 3,
       "members": [
         "frontend/admin-web/src/lib/operation-display.ts",
         "frontend/worker-h5/src/shared/operation-display.mjs",
-        "frontend/bmini-app/src/utils/operationDisplayName.ts",
-        "frontend/mini-app/src/components/cards/operationDisplayName.ts"
+        "frontend/bmini-app/src/utils/operationDisplayName.ts"
       ],
       "issue": "#5007",
-      "note": "该处只写 `assert len(...) >= N`（只防清空、不防删一项）⇒ 由逐项冻结承担「多一个/少一个都红」；下界断言本身按文件所有权留在原文件"
+      "note": "该处只写 `assert len(...) >= N`（只防清空、不防删一项）⇒ 由逐项冻结承担「多一个/少一个都红」；下界断言本身按文件所有权留在原文件；2026-11-26（issue #9233）：C 端小程序工程整目录删除 ⇒ 成员 4 → 3，下界同步。"
     },
     {
       "file": "tests/unit_ci_workflows/test_print_doc_convention_guard.py",

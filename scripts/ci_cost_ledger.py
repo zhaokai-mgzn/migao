@@ -163,6 +163,7 @@ def _sample_legs(runs_per_workflow: int) -> tuple[dict[tuple[str, str], list[flo
             bucket.append(run)
     per_leg: dict[tuple[str, str], list[float]] = {}
     per_flow: dict[str, list[float]] = {}
+    gated_off: dict[tuple[str, str], int] = {}
     for path, bucket in seen.items():
         for run in bucket:
             payload = gh_json([f"repos/{REPO_SLUG}/actions/runs/{run['id']}/jobs?per_page=100"])
@@ -171,13 +172,61 @@ def _sample_legs(runs_per_workflow: int) -> tuple[dict[tuple[str, str], list[flo
                 started, done, conclusion = job.get("started_at"), job.get("completed_at"), job.get("conclusion")
                 if not started or not done or conclusion == "skipped":
                     continue
+                if _is_gated_off(job):
+                    # **门控跳过**的跑次不是「这条腿跑得快」，而是「这条腿没跑」（issue #9153 的读数缺陷）。
+                    # 混进来会让 p90 在「真实跑」与「只用 checkout」两档之间随机取一档 ⇒ 预算要么虚高、要么永远红。
+                    gated_off[(Path(path).name, str(job["name"]))] = gated_off.get((Path(path).name, str(job["name"])), 0) + 1
+                    continue
                 seconds = (datetime.strptime(done, "%Y-%m-%dT%H:%M:%SZ")
                            - datetime.strptime(started, "%Y-%m-%dT%H:%M:%SZ")).total_seconds()
                 total += seconds
                 per_leg.setdefault((Path(path).name, str(job["name"])), []).append(seconds)
             if total > 0:
                 per_flow.setdefault(Path(path).name, []).append(total)
+    if gated_off:
+        print("ℹ️ 已剔除**门控跳过**的跑次（job 成功但核心步骤被 `if:` 跳过）——它们不是「这条腿跑得快」：",
+              file=sys.stderr)
+        for (wf, name), count in sorted(gated_off.items()):
+            print(f"   · {wf}::{name}：剔除 {count} 次", file=sys.stderr)
     return per_leg, per_flow
+
+
+#: 这些步骤名（或其前缀）在**每一次跑次**里都会执行 —— 只有它们执行过，才可能是「门控跳过」。
+_WORK_NEUTRAL_STEP_NAMES = frozenset({
+    "Set up job", "Complete job", "Post Run actions/checkout@v7",
+})
+_WORK_NEUTRAL_PREFIXES = ("Post ", "Run actions/checkout", "Detect ")
+
+
+def _is_gated_off(job: dict) -> bool:
+    """这条 job 是**门控跳过**吗（job 成功、但**承载工作**的步骤全被 `if:` 挡掉）？
+
+    ## 判据：除「每次都会执行」的步骤外，**没有任何**步骤跑过
+
+    「每次都会执行」= `Set up job` / `Complete job` / `Post …` / `Run actions/checkout…` / `Detect …`
+    （检测步总是跑，正因为它要算触发面）。剩下的步骤（跑测试 / 构建 / 扫描）只要**有一个**成功执行过，
+    这条跑次就是**真跑**。
+
+    ## 为什么不能像第一版那样「任一步骤 skipped 就算门控」（issue #9159 的回归，实测）
+
+    `if: failure()` / `if: always() && <条件>` 这类步骤在**成功跑次里必然 skipped**
+    （例：`Label on failure`、`Secret Scan` 的 `Classify … outcome`、`QA Growth Gate` 的 `Fail on blocking violations`）。
+    按「任一步骤 skipped」判，会把这些腿的**真跑样本整批剔掉**：实测 10 条腿 n=0，其中
+    `Case Coverage Gate` / `QA Growth Gate` / `Secret Scan` **三条是 required** ⇒
+    再叠加「n<3 保留冻结预算」，这些腿就**永久不可测、预算永久冻结、超预算永久不可见**。
+    """
+    saw_work_step = False
+    for step in job.get("steps") or []:
+        name = str(step.get("name") or "")
+        if name in _WORK_NEUTRAL_STEP_NAMES or name.startswith(_WORK_NEUTRAL_PREFIXES):
+            continue
+        if step.get("conclusion") != "skipped":
+            saw_work_step = True
+            break
+    if saw_work_step:
+        return False
+    # 没有任何工作步骤跑过 ⇒ 再看是不是真的「有步骤被跳过」（否则是空 job，按门控处理同样是错的）
+    return any(step.get("conclusion") == "skipped" for step in job.get("steps") or [])
 
 
 def _stats(values: list[float]) -> dict:
@@ -260,6 +309,9 @@ def main() -> int:
     parser.add_argument("--runs-per-workflow", type=int, default=8)
     parser.add_argument("--accept-raise", action="store_true",
                         help="超预算时**显式**同意把预算重冻结为现取 p90（默认拒绝并退出 1）")
+    parser.add_argument("--allow-partial", action="store_true",
+                        help=("超预算时**只刷新合规腿**：超预算的腿在台账里**原封不动**（预算/实测都不动），"
+                              "仍然非零退出（红不许消失）。用途：让新腿能合法登记，而超预算腿继续红（issue #9120）"))
     args = parser.parse_args()
     if not args.measure:
         parser.print_help()
@@ -280,7 +332,7 @@ def main() -> int:
     frozen_budgets = {lid: leg["budget_seconds"] for lid, leg in previous.items()
                       if isinstance(leg.get("budget_seconds"), int)}
     breaches = budget_breaches(frozen_budgets, {lid: st["p90_seconds"] for lid, st in fresh.items()})
-    if breaches and not args.accept_raise:
+    if breaches and not args.accept_raise and not args.allow_partial:
         print("❌ 超预算（预算 = 台账里已冻结的实测 p90 上取整）—— 本命令**不写台账**：", file=sys.stderr)
         for row in breaches:
             print(f"   · {row['id']}：预算 {row['budget_seconds']}s / 现取 p90 {row['new_p90_seconds']}s"
@@ -290,13 +342,32 @@ def main() -> int:
               file=sys.stderr)
         return 1
 
+    breach_ids = {row["id"] for row in breaches}
+    if breach_ids:
+        print("⚠️ 超预算腿在台账里**原封不动**（--allow-partial：只刷新合规腿，红不消失）：", file=sys.stderr)
+        for row in breaches:
+            print(f"   · {row['id']}：预算 {row['budget_seconds']}s / 现取 p90 {row['new_p90_ceil']}s", file=sys.stderr)
+
     legs = []
     for leg_id, base in sorted(skeleton.items()):
         samples = per_leg.get((base["workflow"], base["check_name"])) or []
         stats = fresh.get(leg_id)
+        if leg_id in breach_ids and args.allow_partial:
+            # 超预算腿：**整条沿用上一版**（预算、measured、budget_basis 全不动）⇒ 台账里看不到任何「悄悄抬预算」
+            if leg_id in previous:
+                legs.append(previous[leg_id])
+                continue
         if stats:
             budget, status = ceil_budget(stats["p90_seconds"]), BUDGET_STATUS_MEASURED
             basis = f"budget = ceil(measured.p90_seconds={stats['p90_seconds']}) @ {now}"
+        elif leg_id in previous and previous[leg_id].get("budget_seconds"):
+            # 样本不足 **但已有冻结预算** ⇒ **原样保留**（issue #9159 的连带发现）。
+            # 早先的 n 是被「门控跳过」的跑次灌水的；剔除后若把预算清成 null，等于**丢掉值班判据**
+            # （这条腿从此不再有「超了红」的口径，比预算过期更糟）。留白只适用于**从未有过读数**的腿。
+            legs.append(previous[leg_id])
+            print(f"ℹ️ {leg_id}：现取 n={len(samples)} < 3 ⇒ **保留上一版冻结预算**"
+                  f"（{previous[leg_id]['budget_seconds']}s），不清空", file=sys.stderr)
+            continue
         else:
             budget, status = None, BUDGET_STATUS_NO_READING
             basis = (f"现取 n={len(samples)} < 3（本腿多为 skipped/未触发）⇒ **不编预算**，"
@@ -395,11 +466,15 @@ def main() -> int:
         ],
     }
     LEDGER_PATH.write_text(json.dumps(ledger, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    partial_exit = bool(breach_ids) and not args.accept_raise
+    if partial_exit:
+        print(f"❌ 仍有 {len(breach_ids)} 条腿超预算（**已写入合规腿**；超预算腿原封不动）⇒ 退出 1（红不消失）",
+              file=sys.stderr)
     with_measure = sum(1 for leg in legs if leg["measured"])
     print(f"✅ 已重写 {LEDGER_PATH.relative_to(REPO)}：腿 {len(legs)} 条"
           f"（其中有实测读数 {with_measure} 条 / 有预算 {sum(1 for x in legs if x['budget_seconds'])} 条）"
           f"/ required {sum(1 for leg in legs if leg['required'])} 条 @ {now}")
-    return 0
+    return 1 if partial_exit else 0
 
 
 if __name__ == "__main__":

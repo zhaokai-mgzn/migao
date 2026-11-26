@@ -188,7 +188,7 @@
     "keys",
     "source_before"
    ],
-   "source_sha256": "a29b6ab1b2fb7c24cd75527bab3793906f3879cb0087f6f7226973018f48b026"
+   "source_sha256": "23e2f38f3ff7755875cfceeb0584d406bec18fd28dac19e2961d2b79b15f2890"
   },
   "craft_config_query": {
    "actions": null,
@@ -888,7 +888,7 @@
     "data=response.get('data', {})",
     "order_data ← response.get('data', {})"
    ],
-   "source_sha256": "965c47647ac30d5c77503f463ecf6b4e3f392e37143f4801076e5434f6706894"
+   "source_sha256": "0e3ad64e20c7b7bd5dcb61450fac0a0234c553458ced7caa06a487324b165ab3"
   },
   "order_manage": {
    "actions": null,
@@ -911,7 +911,7 @@
     "order_id",
     "result"
    ],
-   "source_sha256": "761f13d75498c32a5693a2d0bdac59cacdb34d5da39600c34ac566a77746969a"
+   "source_sha256": "bcb66e6ed03574d46a41d9bd062de1ed7284831c920ff40dd0e3a312f92b8cb0"
   },
   "order_query": {
    "actions": {
@@ -1067,7 +1067,7 @@
    "literal_keys": [
     "results"
    ],
-   "source_sha256": "3f54a1e58edef8feccb417b348e456ee57de6e92cd9f2f71ca3ca5fc1404f4c0"
+   "source_sha256": "973fb7b0400ab2494e928596315d96df2d508290030fd9cd4b13b293fea64c0b"
   },
   "processing_order_query": {
    "actions": {
@@ -1135,7 +1135,7 @@
     "processingOrderNo",
     "result"
    ],
-   "source_sha256": "be1ecc6e039234915b755093ad0aec845c1aa14187454772b2d6259168ba94ef"
+   "source_sha256": "7b193f43a47c0d262d901ab54c1cb940dbeae22f7ec0a555201f15af1853c2b8"
   },
   "product_batch_update": {
    "actions": {
@@ -1217,7 +1217,7 @@
     "model",
     "product"
    ],
-   "source_sha256": "942dc680b1a13334c57139b56007a92397c5bdbfd7ea5ad66f22ed2480c4c89b"
+   "source_sha256": "6e7c79ebec0ee11dd9507e8c6d0ecf65283d68db5a44a8f32754eb8a84c4273c"
   },
   "product_manage": {
    "actions": {
@@ -1257,7 +1257,7 @@
     "status",
     "updated_fields"
    ],
-   "source_sha256": "0a7d9edbf73d693b6c59e2d6f5db59bc564eed270f05f082c6775338d624a880"
+   "source_sha256": "659055db6ac569e73f0b2abafab9fa84d79df331de4f2458ca73db078b44af57"
   },
   "product_search": {
    "actions": null,

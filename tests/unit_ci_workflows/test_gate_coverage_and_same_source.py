@@ -1110,7 +1110,7 @@ class TestRedProofs:
     def test_glob_coverage_is_not_vacuous(self) -> None:
         paths = ["frontend/admin-web/**", "tests/e2e/**"]
         assert _globs_cover(paths, "frontend/admin-web")
-        assert not _globs_cover(paths, "frontend/mini-app"), "`*` 不得跨越 `/`（宽松锚会遮蔽缺口）"
+        assert not _globs_cover(paths, "backend/admin-api"), "`*` 不得跨越 `/`（宽松锚会遮蔽缺口）"
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1122,14 +1122,12 @@ class TestRedProofs:
 JOB_GATED_LEGS_FROZEN: dict[str, str] = {
     "bmini-app.yml::build": "bmini-app build (h5 + weapp)",
     "bmini-app.yml::tabbar-geometry": "bmini H5 tabBar geometry (e2e)",
-    "mini-app.yml::xiaobu-h5-visual": "xiaobu H5 visual regression",
     "pr-check.yml::e2e-quality-gate": "E2E quality gate",
 }
 
 #: 面门控的判定 job（每条 workflow 一个 = 面口径的**单一来源**）。
 FACE_DETECT_JOBS: dict[str, str] = {
     "bmini-app.yml": "detect",
-    "mini-app.yml": "detect",
     "pr-check.yml": "detect",
 }
 

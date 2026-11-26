@@ -68,7 +68,15 @@ def test_scan_step_keeps_its_red_and_is_identifiable(job):
     assert "continue-on-error" not in scan or scan.get("continue-on-error") is False, (
         "扫描步骤**不得** continue-on-error —— 那会把红吞掉（等价于不装这条 required 腿）；"
         "失败后的归因/上传改用 `if: always()` 实现，而不是放行失败")
-    assert scan.get("uses", "").startswith("gitleaks/gitleaks-action"), "扫描本体仍是官方 action（不另造判定）"
+    # 扫描本体：**必须有真的 gitleaks 在跑**（2026-11-23 起允许官方二进制：
+    # gitleaks-action@v3 缺 license 会 1 秒早退且无报告 ⇒ PR #9036 换成二进制）。
+    uses = str(scan.get("uses") or "")
+    run = str(scan.get("run") or "")
+    is_action = uses.startswith("gitleaks/gitleaks-action")
+    is_binary = ("gitleaks" in run) and ("detect" in run or "version" in run)
+    assert is_action or is_binary, (
+        f"扫描本体里没有真的 gitleaks（uses={uses!r}，run 头={run[:60]!r}）—— "
+        f"不许用「腿名在、扫描没了」的替身充数")
 
 
 def test_report_uploaded_always(job):

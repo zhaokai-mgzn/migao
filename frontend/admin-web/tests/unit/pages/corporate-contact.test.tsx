@@ -1,4 +1,4 @@
-// case_ids: UI-082
+// case_ids: UI-082, OB-008
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { readFileSync } from 'fs'
@@ -35,11 +35,10 @@ describe('CorporateContactPage（官网联系页 v5：按用户裁定隐藏留�
     expect(screen.getByText('合作与代理')).toBeInTheDocument()
   })
 
-  it('renders 入驻通道（不必等回信，直接提交入驻申请）', () => {
-    render(<ContactPage />)
-    const registerLink = screen.getByText('提交入驻申请').closest('a')
-    expect(registerLink).toHaveAttribute('href', '/register')
-    expect(screen.getAllByText(/通过即自动开通账号/).length).toBeGreaterThanOrEqual(1)
+  it('内测期不露出入驻通道（OB-008）', () => {
+    const { container } = render(<ContactPage />)
+    expect(screen.queryByText('提交入驻申请')).not.toBeInTheDocument()
+    expect(container.querySelector('a[href="/register"]')).toBeNull()
   })
 
   it('renders 常见问题四条（含 AI 边界与价格口径）', () => {

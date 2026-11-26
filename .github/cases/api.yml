@@ -250,6 +250,8 @@ cases:
       verifies: []
 
   - id: API-010
+    # 2026-11-26（issue #9233）：C 端小程序 frontend/mini-app 整目录删除 ⇒ 原承载体失联；
+    # 本条按「承载体删除」退役（条目不删、判据改指 C 端保持下线的类级守卫 tests/unit_ci_workflows/test_c_end_removed_guard.py）。
     legacy_id: ""
     title: "微信小程序 mock 登录链路（无 appid 时自动 mock）"
     domains:
@@ -269,12 +271,12 @@ cases:
     data_checks:
       - "mock 登录成功返回 accessToken + user"
       - "登录参数 tenantId(camelCase) 与后端一致"
-    precondition: "本用例是 [backend-contract] 的**接口契约**用例（不进 agent-eval 冒烟）：前置 = 部署的 `wechat.mini.appid` **未配置** ⇒ `POST /api/auth/mini/login` 走 **mock 模式**（两轮 `user_inputs` 是对**同一个接口**的两条断言，不是两次会话）。该前置由 `frontend/mini-app/tests/auth.test.ts` 在 mock 下直接构造并断言 ⇒ 前置不成立（appid 被配上、mock 分支被摘掉）时单测直接红，不会表现为「agent 不干活」"
-    skip_reason: "[backend-contract] 判据在 `frontend/mini-app/tests/auth.test.ts`（mock 登录返回 accessToken+user / tenantId 口径），**非 LLM 行为**；本用例的 `expectations: direct_reply` 只是占位，agent 面对「接口实现细节」这类问题合法地可能去查设置（基线 run 40895378323：模型调了 settings_manage(get_settings/login_logs) 但给了正确解释 ⇒ 按行为计分是**假红**）⇒ 不进 agent-eval（同 `api.yml` 其余 20 条的契约标记口径）"
+    precondition: "本用例是 [backend-contract] 的**接口契约**用例（不进 agent-eval 冒烟）：前置 = 部署的 `wechat.mini.appid` **未配置** ⇒ `POST /api/auth/mini/login` 走 **mock 模式**（两轮 `user_inputs` 是对**同一个接口**的两条断言，不是两次会话）。该前置由 `frontend/bmini-app/tests/auth.test.ts` 在 mock 下直接构造并断言 ⇒ 前置不成立（appid 被配上、mock 分支被摘掉）时单测直接红，不会表现为「agent 不干活」"
+    skip_reason: "[backend-contract] 判据在 `frontend/bmini-app/tests/auth.test.ts`（mock 登录返回 accessToken+user / tenantId 口径），**非 LLM 行为**；本用例的 `expectations: direct_reply` 只是占位，agent 面对「接口实现细节」这类问题合法地可能去查设置（基线 run 40895378323：模型调了 settings_manage(get_settings/login_logs) 但给了正确解释 ⇒ 按行为计分是**假红**）⇒ 不进 agent-eval（同 `api.yml` 其余 20 条的契约标记口径）"
     merge_log: "POC mock 登录集成测试新增；2026-09-20（issue #4721）补**声明层前置自断言**（`precondition` 散文形态，与 UI-019/CH-018/CH-027 同款）：本用例是 2 轮 `user_inputs` 的 [backend-contract] 接口契约用例，前置（mock 模式）由单测自建 ⇒ 补上后 Case Trust 的 `CASE-TRUST-NO-PRECONDITION-ASSERTION` 整条销账（断言内容一字未改）；**2026-10-29（issue #8136）**：补 `skip_reason` 契约标记 —— 此前它是 `api.yml` 21 条里**唯一**没标记的一条，于是被 agent-eval 按 `direct_reply` 计分（run 40895378323 判出假红：模型调了 settings_manage 但回答正确）。判据 = `tests/unit_ci_workflows/test_api_cases_are_contract_marked.py`（api.yml 全量必须带契约标记，新增未标记即红）"
     traces:
       tests:
-        - "frontend/mini-app/tests/auth.test.ts"
+        - "tests/unit_ci_workflows/test_c_end_removed_guard.py"
       ci:
         - mini-app.yml
       verifies: []
@@ -657,6 +659,76 @@ cases:
         - "backend/admin-api/src/test/java/com/migao/admin/service/EmployeeGrantDefaultRoleMetaGuardTest.java"
         - "backend/admin-api/src/test/java/com/migao/admin/controller/AdminUserControllerTest.java"
         - "backend/admin-api/src/test/java/com/migao/admin/service/UserServiceTest.java"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  - id: API-024
+    legacy_id: ""
+    title: "语音识别 Token Plan 非实时通道（HTTP 多模态端点，parameters.format 必填）（#8987）"
+    domains:
+      - api
+      - chat
+    tier: normal
+    tags:
+      - asr
+      - voice
+      - token-plan
+      - http
+      - error-handling
+    truths_ref: []
+      # ⚠️ 真值缺口：Token Plan 语音契约暂未写入模板，由 data_checks 承载
+    user_inputs:
+      - "生产用 Token Plan 订阅（sk-sp- key）时，语音转写走报错过的非实时模型 qwen-audio-3.0-asr-flash"
+    expectations: []
+    data_checks:
+      - "实例：mock 200 + output.text ⇒ 返回该文本（模型 ASR_HTTP_MODEL、端点 ASR_HTTP_URL、Bearer ASR_API_KEY、data:audio/wav;base64 前缀齐全）"
+      - "🔴 注入式红证：发出去的请求体必须带 parameters.format=wav（缺 ⇒ 网关回 400 空 body，实测 ~90ms 拒单）；删掉实现里的 parameters 块 ⇒ 本判据必须红"
+      - "output.text 为空白 ⇒ ASRNoSpeechError「未识别到语音内容」，端点层仍映射 400（沿用既有语义）"
+      - "错误映射：401/403 ⇒ ASRAuthError、429 ⇒ ASRQuotaError、5xx/网络/非 JSON ⇒ ASRUnavailableError（端点层 503），各是各的下一个动作"
+      - "日志不泄漏：失败路径的日志既不含 API key，也不含响应体"
+      - "默认值：ASR_MODE 缺省 = realtime，且 realtime 模式不构造 HTTP 客户端（既有部署行为不变、回滚口仍在）"
+    skip_reason: "[backend-contract] HTTP 通道契约由 ai-agent 单测（tests/test_asr_http_mode.py）验证，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-11-21 新增（issue #8987）：生产实测 Token Plan 订阅唯一可用语音模型 qwen-audio-3.0-asr-flash 是非实时多模态端点（与生图同一个），既有 asr.py 只有 WebSocket 实时通道 ⇒ 语音不通；落 ASR_MODE 分派 + parameters.format 必填的注入式红证"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_asr_http_mode.py"
+        - "backend/ai-agent-service/tests/test_config.py"
+      ci:
+        - ai-agent-tests.yml
+      verifies: []
+
+  - id: API-025
+    legacy_id: ""
+    title: "微信 access_token 跨实例共享（Redis 单令牌 + 刷新串行化 + 40001 自愈）"
+    domains:
+      - api
+      - auth
+    tier: normal
+    tags:
+      - wechat
+      - access-token
+      - redis
+      - cluster
+    truths_ref: []
+      # ⚠️ 真值缺口：微信侧「旧 token 过渡期秒数」属供应商行为、仓内无证据，由 data_checks 承载
+    user_inputs:
+      - "多实例部署时微信小程序 access_token 全实例共用一把，实例之间不再互相作废（集群就绪审计 P0-1）"
+    expectations: []
+    data_checks:
+      - "两实例共享同一 Redis：只有抢到锁的实例真正刷新（供应商侧 cgi-bin/token 只被调 1 次），另一实例复用同一把 token"
+      - "改前形态可复算：两实例各自进程内缓存 ⇒ 供应商侧被调 2 次（红证 = 同一判据在修复前 expected 1 but was 2）"
+      - "共享存储口径：key = wechat:access_token:{appid}，TTL = expires_in - 300；本地短缓存 ≤ 60s（显著小于真实有效期 7200s）"
+      - "刷新串行化：抢不到锁的实例短轮询复用别人的新 token；超时回落本地旧 token 直接尝试并记 WARN"
+      - "失效自愈：换号被判定 40001/42001 ⇒ 清本地缓存 + 删掉共享存储里的坏 token ⇒ 重取新 token 重试成功"
+      - "降级：Redis 不可用 ⇒ 退回进程内缓存并记 WARN，登录仍成功（不把 Redis 故障放大成登录失败）"
+      - "类级元守卫：admin-api 主代码再出现进程内 access_token 缓存字段 ⇒ 判红"
+    precondition: "本用例是 [backend-contract] 的接口契约用例（不进 agent-eval 冒烟）：前置 = 两个 WechatService 实例共享同一个 StringRedisTemplate 替身（生产 = 部署侧 Redis）；该前置由判据自建，前置被摘掉时判据报的是**行为读数**（供应商侧 2 次）而不是反射异常"
+    skip_reason: "[backend-contract] 多实例 token 语义由 Java 单测验证（WechatAccessTokenProviderTest，离线 mock 微信侧 + Redis 替身），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-11-22 新增（集群就绪审计 P0-1）：access_token 原为进程内单例缓存 ⇒ 多实例互踢、一半流量间歇性 40001 且无读数变红；落 Redis 单令牌 + SET NX 刷新串行化 + 40001 自愈 + Redis 故障降级"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/WechatAccessTokenProviderTest.java"
       ci:
         - pr-check.yml
       verifies: []

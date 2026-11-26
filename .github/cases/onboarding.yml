@@ -271,3 +271,44 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+
+  - id: OB-008
+    legacy_id: ""
+    title: "内测期官网隐藏自助入驻入口（/register 保留为内部入口）"
+    domains:
+      - onboarding
+      - ui
+    tier: normal
+    tags:
+      - onboarding
+      - internal-beta
+      - entry-hidden
+      - feature-switch
+    truths_ref:
+      - registration-approval.self-service-entry-hidden
+    user_inputs:
+      - "内测阶段，访客浏览官网（导航 / 页脚 / 首页 / 关于 / 产品服务 / 联系页）时看不到任何自助入驻入口，只看到「预约演示 / 联系我们」。"
+      - "内部同事仍可直接访问 /register 自助开通测试租户（页面与提交接口保持可用）。"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "6 个官网面（导航 / 页脚 / 首页 / 关于 / 产品服务 / 联系页）渲染结果不含 `href=\"/register\"` 链接，也不含「商家入驻 / 免费开通 / 立即入驻 / 提交入驻申请」入口文案。判据 = frontend/admin-web/tests/unit/onboarding-entry-hidden.test.tsx（逐面断言）。"
+      - "开关单一来源 = frontend/admin-web/src/config/onboarding.ts 的 SELF_SERVICE_ONBOARDING_OPEN（内测期 false）；内测结束改回 true 即恢复官网入口（届时判据会红，需同步断言）。"
+      - "内部入口保留：/register 页面与 authApi.submitRegistration 未被删改（隐藏的是入口，不是能力；POST /api/auth/register 与超管兜底接口未改）。判据 = 同文件「内部入口保留」用例。"
+      - "类级元守卫：官网面（frontend/admin-web/src/app/(corporate)/** 与 frontend/admin-web/src/components/corporate/**）任何 `/register` 出处必须引用开关；未引用即红，含注入式红证（未守卫样本判红、已守卫样本判绿，防空断言）。判据 = 同文件「类级元守卫」用例。"
+      - "既有各页断言同步：CorporateNav / CorporateFooter / corporate-home / corporate-about / services / corporate-contact 均改为断言入口不出现、且不留指向 /register 的链接。"
+    skip_reason: "[backend-contract] 由前端单测验证（tests/unit/onboarding-entry-hidden.test.tsx + CorporateNav / CorporateFooter / corporate-home / corporate-about / services / corporate-contact 单测），非 LLM 冒烟"
+    precondition: "本用例是 [backend-contract] 纯前端用例：前置 = 官网 corporate 页面与 components/corporate 源文件存在，且 admin-web vitest 正常收集 tests/unit/onboarding-entry-hidden.test.tsx；前置由测试自身持有（文件缺失 / 链接方式被摘 ⇒ 单测直接红），不依赖共享夹具与远端环境；agent-eval 栈不跑它"
+    merge_log: "2026-11-23 新增（issue #9066，内测期隐藏官网自助入驻入口；用户裁定「只隐藏官网入口」「保留内部入口」）。取号 OB-008：main 上 onboarding 域为 OB-001~OB-007 ⇒ 取 OB-008。"
+    traces:
+      tests:
+        - "frontend/admin-web/tests/unit/onboarding-entry-hidden.test.tsx"
+        - "frontend/admin-web/tests/unit/components/CorporateNav.test.tsx"
+        - "frontend/admin-web/tests/unit/components/CorporateFooter.test.tsx"
+        - "frontend/admin-web/tests/unit/pages/corporate-home.test.tsx"
+        - "frontend/admin-web/tests/unit/pages/corporate-about.test.tsx"
+        - "frontend/admin-web/tests/unit/pages/services.test.tsx"
+        - "frontend/admin-web/tests/unit/pages/corporate-contact.test.tsx"
+      ci:
+        - pr-check.yml
+      verifies: []

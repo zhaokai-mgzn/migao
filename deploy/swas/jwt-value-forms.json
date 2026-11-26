@@ -1,0 +1,44 @@
+{
+  "schema": "jwt-value-forms/v1",
+  "what": "`JWT_PUBLIC_KEY`（`.env.admin-api` / `.env.ai-agent` / compose 的 `environment`）**取值形态**登记表（issue #9059）。指纹提取器只认这里登记过的形态；新增一种写法必须同时登记「怎么解析 / 解析不到时算什么」，**未登记即红** —— 判据 = tests/unit_ci_workflows/test_swas_jwt_same_source.py::test_every_jwt_value_form_is_registered",
+  "why": "2026-11-23 实测（run 45116137752，sha `d38b335`）：`.env.admin-api` 的取值是 `classpath:rsa/public.pem`，而指纹提取器只处理 `file:` 与内联 PEM ⇒ 落到 `unjudgeable` ⇒ `JWT_KEY_SAME_SOURCE=INCOMPLETE` ⇒ 部署**恒定中止**并回滚（第 1/2 次尝试逐字相同）。而两侧本来是**同一份**公钥：ai-agent 读的宿主文件就是 1.6d 从同一份 classpath 资源物化出来的。⇒ 「取值形态」必须有一条可解析的映射，否则下一种写法又会静默变成 unjudgeable 恒定中止。",
+  "invariants": [
+    "每种形态都必须有 `on_unresolvable`，且**不得**是「判绿」：解析不到只允许 unjudgeable ⇒ INCOMPLETE ⇒ exit 1",
+    "`pattern` 与 `deploy/swas/deploy.sh::jwt_key_fingerprint_of` 的 `case \"${raw}\" in` 分支**双向**相等（多一条 / 少一条都红）",
+    "每个形态的 `anchor` 必须能在 deploy.sh 里找到（登记与实现不许漂）"
+  ],
+  "forms": [
+    {
+      "form": "unset",
+      "pattern": "",
+      "meaning": "宿主未设置 ⇒ 下次重建走镜像的 classpath 默认",
+      "resolution": "不动手：两侧都未设置才允许 SKIPPED",
+      "on_unresolvable": "SKIPPED（唯一允许形态；一侧有值时是 INCOMPLETE ⇒ exit 1）",
+      "anchor": "|absent|"
+    },
+    {
+      "form": "file",
+      "pattern": "file:*",
+      "meaning": "宿主文件（`/opt/migao-deploy/jwt/*.pem`）",
+      "resolution": "`jwt_host_path` 映射到部署根后读文件内容",
+      "on_unresolvable": "unjudgeable ⇒ INCOMPLETE ⇒ exit 1",
+      "anchor": "（宿主文件）"
+    },
+    {
+      "form": "classpath",
+      "pattern": "classpath:*",
+      "meaning": "镜像 / 部署树的 classpath 资源（admin-api 的默认取值形态）",
+      "resolution": "`jwt_classpath_resource_of`：本次部署树 → 仓检出 → 1.3c 落盘的持久缓存（配置复用 / 回滚档）",
+      "on_unresolvable": "unjudgeable ⇒ INCOMPLETE ⇒ exit 1",
+      "anchor": "（classpath 资源"
+    },
+    {
+      "form": "inline-pem",
+      "pattern": "*",
+      "meaning": "内联 PEM（含单行 + 字面 `\\n` 形态）",
+      "resolution": "`jwt_pubkey_fingerprint` 归一化后取公钥体指纹",
+      "on_unresolvable": "unjudgeable ⇒ INCOMPLETE ⇒ exit 1",
+      "anchor": "（内联 PEM 内容）"
+    }
+  ]
+}

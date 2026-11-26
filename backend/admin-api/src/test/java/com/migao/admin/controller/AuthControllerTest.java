@@ -10,6 +10,7 @@ import com.migao.admin.service.AuthService;
 import com.migao.admin.service.MiniPhoneBindService;
 import com.migao.admin.service.QrLoginTicketService;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -57,6 +58,17 @@ class AuthControllerTest {
         mockMvc = MockMvcBuilders.standaloneSetup(authController)
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .build();
+    }
+
+    /**
+     * 本类的用例会往 {@link SecurityContextHolder} 放「小程序 customer / 商家员工」两种认证，
+     * 但只在个别用例里显式 clear。Surefire {@code forkCount=2} 会改变类顺序 ⇒ 留下的上下文
+     * 会污染同一 fork 的下一个类（实证：{@code OutboundOrderControllerTest} 读到「微信用户」
+     * 而不是它断言的 {@code system}）。清理放在 {@code @AfterEach}，与用例内是否 clear 无关。
+     */
+    @AfterEach
+    void clearSecurityContext() {
+        SecurityContextHolder.clearContext();
     }
 
     /** 模拟 JWT 认证用户（小程序 customer） */

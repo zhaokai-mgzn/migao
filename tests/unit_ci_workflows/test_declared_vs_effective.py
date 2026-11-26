@@ -607,11 +607,14 @@ def _effective_template_of(config: Path) -> tuple[str, str]:
 
 
 def test_playwright_config_surface_is_not_empty() -> None:
-    """判据面必须取得到（取空 ⇒ 本守卫会静默空跑成绿）。"""
+    """判据面必须取得到（取空 ⇒ 本守卫会静默空跑成绿）。
+
+    C 端小程序下线（issue #9233）后仓内已无像素基线目录：bmini 是几何腿、admin-web 是
+    页面判据腿 ⇒ 不再要求 `*-snapshots` 非空（否则守卫会把「已无可比基线」误判成失效）。
+    """
     configs = _playwright_configs()
     print(f"判据面（现取）：{len(configs)} 个 playwright 配置 —— {[p.relative_to(REPO_ROOT).as_posix() for p in configs]}")
     assert configs, "取不到任何 `playwright*.config.ts` ⇒ 判据面失效（会静默空跑成绿）"
-    assert _baseline_dirs(), "取不到任何视觉基线目录（`*-snapshots` / `__screenshots__`）⇒ 判据面失效"
 
 
 def test_use_block_has_no_silently_ignored_keys() -> None:
