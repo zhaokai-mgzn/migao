@@ -66,6 +66,7 @@ import { AlertCircle, Bell, Bot, Building2, Newspaper, QrCode } from 'lucide-rea
 import Image from 'next/image'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { toast } from 'sonner'
+import Link from 'next/link'
 import { Button, PageHeader } from '@/components/ui'
 import { settingsApi, uploadApi, briefingApi, productionApi } from '@/lib/api'
 import { CalcCaliberPanel } from '@/components/settings/CalcCaliberPanel'
@@ -504,6 +505,7 @@ export default function SettingsPage() {
 const EMPTY_BRIEFING: BriefingConfig = { enabled: true, generateTime: '06:00' }
 
 function EnterpriseDomainPanel() {
+  const { has } = usePermission()
   // ============ 基本设置（企业信息）============
   // #3103: notificationEmail 为僵尸字段（站内信无需邮箱，后端无邮件消费逻辑），已从 UI/类型移除
   const [settings, setSettings] = useState<SystemSettings>({
@@ -723,7 +725,14 @@ function EnterpriseDomainPanel() {
   return (
     <div className="space-y-6">
       {/* #5899：把「没有保存按钮」这件事**说出来** —— 否则商家会去找按钮 */}
-      <p className="text-xs text-neutral-400 -mt-2">修改后自动保存，无需手动提交</p>
+      <div className="flex flex-wrap items-center justify-between gap-2 -mt-2">
+        <p className="text-xs text-neutral-400">修改后自动保存，无需手动提交</p>
+        {has('system:manage') ? (
+          <Link href="/settings/wechat-kf" className="text-xs font-medium text-primary-700 hover:underline">
+            微信客服接入 →
+          </Link>
+        ) : null}
+      </div>
       {loadingSettings ? (
         <div className="text-sm text-neutral-500 py-8 text-center">加载中…</div>
       ) : (

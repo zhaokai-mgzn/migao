@@ -221,6 +221,11 @@
       "table": "session_messages",
       "handling": "backend/admin-api/src/main/java/com/migao/admin/service/kf/KfSessionIngestService.java",
       "note": "issue #9176：微信 msgid 幂等。session_messages.external_msg_id 部分唯一索引 + try/catch DuplicateKeyException → 返回 false（重复回调/重放不重复落库）。"
+    },
+    "backend/admin-api/src/main/java/com/migao/admin/service/kf/KfChannelAdminService.java::channelMapper": {
+      "table": "kf_channels",
+      "handling": "backend/admin-api/src/main/java/com/migao/admin/service/kf/KfChannelAdminService.java",
+      "note": "issue #9230：insert 前有 corp_id+open_kfid 预检，insert 捕获 DuplicateKeyException ⇒ 409（唯一索引 uq_kf_channels_corp_open_kfid 兜底）"
     }
   }
 }

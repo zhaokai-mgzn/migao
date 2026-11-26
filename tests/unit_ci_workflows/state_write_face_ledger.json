@@ -1121,6 +1121,38 @@
       "form": "sql",
       "params": "",
       "anchor": "\"UPDATE scheduled_tasks SET status = 'pending', claimed_by = NULL, claimed_at = NULL, \" + \"updated_at = #{now} \" + \"WHERE status = 'firing' AND deleted = 0 \" + "
+    },
+    {
+      "table": "kf_channels",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/kf/KfChannelAdminService.java",
+      "symbol": "create",
+      "form": "builder",
+      "params": "Long tenantId, CreateCommand command",
+      "anchor": "KfChannel.builder() .tenantId(tenantId) .corpId(corpId) .openKf"
+    },
+    {
+      "table": "kf_channels",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/kf/KfChannelAdminService.java",
+      "symbol": "disable",
+      "form": "setStatus",
+      "params": "Long tenantId, String id",
+      "anchor": ".setStatus(KfChannel.STATUS_REVOKED); channelMapper.updateById(channel); return view(channel); }"
+    },
+    {
+      "table": "kf_channels",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/kf/KfChannelAdminService.java",
+      "symbol": "markUnauthorized",
+      "form": "setStatus",
+      "params": "KfChannel channel",
+      "anchor": ".setStatus(KfChannel.STATUS_UNAUTHORIZED); channelMapper.updateById(channel); } private static ChannelV"
+    },
+    {
+      "table": "kf_channels",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/kf/KfChannelAdminService.java",
+      "symbol": "verify",
+      "form": "setStatus",
+      "params": "Long tenantId, String id",
+      "anchor": ".setStatus(KfChannel.STATUS_ACTIVE); channelMapper.updateById(channel); return view(channel);"
     }
   ],
   "bare_literal_baseline": {
