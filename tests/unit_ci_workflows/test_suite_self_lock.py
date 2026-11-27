@@ -425,6 +425,10 @@ class TestReleaseFace:
 _HANG_BUDGET_SECONDS = 60
 #: 用了就不再等（墙钟读数比它大 ⇒ 这条判据没有牙）。
 _HANG_FAIL_SECONDS = 30
+#: 「注入预算」那条的墙钟上界（issue #9078）：预算 2s ⇒ 上界给 30s（15 倍），**不贴着预算写** ——
+#: 贴着写（旧形态 `assert 5 <= elapsed < 73` / 预算 61s）就把「解释器启动 / `ps` / runner 调度」
+#: 这些**与预算无关、没有上界**的开销也算进判据里 ⇒ 负载一高就假红。
+_BOUNDED_CEILING_SECONDS = 30
 
 
 def _probe_child(mode: str, tmp_path: Path, extra_env: dict | None = None) -> subprocess.Popen:
@@ -551,6 +555,16 @@ class TestNeverHangsWhenAnAncestorHoldsTheLock:
         assert suite_conftest._suite_lock_timeout_seconds({}) == 60, (
             "未设置 MIGAO_HEAVY_WAIT 时也必须有一个墙钟预算（锁脚本自己卡住时唯一的出口）"
         )
+        # 🔴 预算**可注入**（issue #9078）：判据要能只等 2s，否则上界只能贴着 61s 写 ⇒ 负载一高就假红。
+        assert suite_conftest._suite_lock_timeout_seconds(
+            {suite_conftest._SUITE_LOCK_BUDGET_ENV: "2", "MIGAO_HEAVY_WAIT": "2700"}) == 2, (
+            "注入的预算没有生效 ⇒ 「锁脚本永不返回」那条判据只能真等满 61s，"
+            "上界又必须贴着预算写 ⇒ 与预算无关的开销（解释器启动 / `ps` / 调度）一顶就假红"
+        )
+        assert suite_conftest._suite_lock_timeout_seconds(
+            {suite_conftest._SUITE_LOCK_BUDGET_ENV: "not-a-number", "MIGAO_HEAVY_WAIT": "2700"}) == 2760, (
+            "注入值非法时必须退回既有口径（WAIT + 缓冲），**不得**退化成无界等待"
+        )
 
     def test_acquire_is_bounded_and_attributable_with_an_ancestor_holder(self, tmp_path):
         """祖先持锁 + `MIGAO_HEAVY_WAIT=2700` ⇒ `acquire_suite_lock` 必须**立即**返回拒绝。"""
@@ -595,9 +609,16 @@ class TestNeverHangsWhenAnAncestorHoldsTheLock:
     def test_lock_script_that_never_returns_still_yields_a_bounded_refusal(self, tmp_path):
         """**反向**：锁脚本自己永不返回 ⇒ 仍必须在预算内 fail-closed（不得空等）。
 
-        形态：`MIGAO_HEAVY_LOCK_SCRIPT` 指向一个 `sleep 3600` 的假脚本 + `MIGAO_HEAVY_WAIT=2`
-        ⇒ 真预算 = 2 + 60 = 62s。判据自己是**硬超时**的：把 `subprocess` 的 `timeout` 去掉（或把预算
-        写成无界）⇒ 这一条真跑 75s 硬超时 ⇒ 判红。这就是「有界」的牙。
+        形态：`MIGAO_HEAVY_LOCK_SCRIPT` 指向一个永不返回的假脚本，预算**注入**成 2s
+        （`MIGAO_HEAVY_LOCK_BUDGET_SECONDS=2`）⇒ 真预算 = 2s。判据自己是**硬超时**的：把
+        `subprocess` 的 `timeout` 去掉（或把注入的预算写成无界）⇒ 这一条真跑
+        `_HANG_BUDGET_SECONDS` 硬超时 ⇒ 判红。这就是「有界」的牙。
+
+        ⚠️ 上界**不贴着预算写**（issue #9078 的形态；2026-11-23 attempt-1 实测）：那一版真等满
+        61s、上界只能写 73s，而「解释器启动 / `ps` 取进程表 / runner 调度」这些**与预算无关、
+        没有上界**的开销也被算进 `elapsed` ⇒ 实测 `elapsed=73.7s` 撞破上界判红，同一 SHA 重跑就绿
+        （台账 `kind=flaky`）。⇒ 断言改成两件**与负载无关**的事：
+        ① 报文**自报的预算** == 注入值；② 墙钟远小于硬超时（2s 预算给 30s 上界）。
         """
         stub = tmp_path / "never-returns.sh"
         stub.write_text(
@@ -607,17 +628,23 @@ class TestNeverHangsWhenAnAncestorHoldsTheLock:
             encoding="utf-8",
         )
         stub.chmod(0o755)
-        # `MIGAO_HEAVY_WAIT=1` ⇒ 真预算 = 1 + 60 = 61s（本判据硬超时 75s，留 14s 余量）
+        # 预算是**注入**的（2s）⇒ 判据只等 2s，上界因此能远离预算（`_BOUNDED_CEILING_SECONDS`）。
         proc = _probe_child("no-holder", tmp_path,
                             extra_env={"MIGAO_HEAVY_LOCK_SCRIPT": str(stub),
-                                       "MIGAO_HEAVY_WAIT": "1"})
+                                       "MIGAO_HEAVY_WAIT": "1",
+                                       suite_conftest._SUITE_LOCK_BUDGET_ENV: "2"})
         try:
-            out, elapsed = _completed_within(proc, 75)
+            out, elapsed = _completed_within(proc, _HANG_BUDGET_SECONDS)
         finally:
             _finish(proc)
         assert "OK False" in out, f"假锁脚本永不返回时必须判「拿不到」（fail-closed）：\n{out[-1500:]}"
-        assert 5 <= elapsed < 73, (
-            f"墙钟 {elapsed:.1f}s ⇒ 既不能秒回（那就没走超时路径）、也不能越过预算（有界失效）：\n{out[-1500:]}"
+        assert "有界预算 2s" in out, (
+            "报文没有自报**注入的**预算（`有界预算 2s`）⇒ 判据读的数与它声称的预算不是同一个"
+            f"（issue #9078 的归因面；这条与负载无关）：\n{out[-1500:]}"
+        )
+        assert 2 <= elapsed < _BOUNDED_CEILING_SECONDS, (
+            f"墙钟 {elapsed:.1f}s ⇒ 既不能秒回（那就没走超时路径）、也不能越过注入预算的 15 倍"
+            f"（有界失效）；「挂死」形态由 {_HANG_BUDGET_SECONDS}s 硬超时判红：\n{out[-1500:]}"
         )
         for needle in ("有界预算", "没有退出"):
             assert needle in out, f"拒绝报文缺 {needle!r}（说清是「锁脚本没退出」而不是「锁被占」）：\n{out[-1500:]}"
