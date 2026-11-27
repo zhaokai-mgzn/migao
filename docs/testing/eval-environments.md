@@ -455,6 +455,13 @@ gh workflow run <isolated-mode-workflow>.yml -f concurrency=6 -f persona=mibao
 3. **看 summary 的桶，不要只看红**：`precondition_not_applied(declared:…)` 族 ⇒ 前置没被应用，
    **该用例红/绿不可归因于 agent**（`case_asset_failures` 桶）；`blocked` 与 `failed` 是两件事
    （见 §16.7 的两组阻塞条目口径）。把它们算成"业务缺陷"是本条要防的误判。
+   🔵 **`env_missing`（issue #9280）= 环境前置缺失**：用例在 `.github/cases/*.yml` 里**显式声明**
+   `requires_env`（当前唯一登记值 `IMAGE_GEN_API_KEY` ⟶ 工具码 `IMAGE_GEN_UNAVAILABLE`
+   = 未配置 Key / 开关关闭），且 `must_succeed` 只因该前置的已知环境码失败、**没有别的失败**
+   ⇒ 该用例**本轮未验证**：既不是产品缺陷、也不是用例缺陷（别去查 agent 行为，去配凭证）。
+   ⚠️ 它是**非阻塞**键（不要求谁改代码），但**必须**出现在 `completion.reason`（`ok=true` 时也写
+   「环境前置缺失 N 条…未验证」）与 closeout 的桶分解里，逐条状态是「环境缺失（未验证）」——
+   「非阻塞」不等于「可以静默消失」；**没声明 `requires_env` 的用例不享受该归类**（照旧判红）。
 4. **最后才谈波动**：同一用例在同并发度下**重跑**从红转绿、且首跑指纹在**跨 run 台账**
    （`AGENT_EVAL_FLAKE_LOG` artifact）里**复发** ⇒ 按波动处理；**只出现一次**才可暂判 `llm-noise`。
    ⚠️ 「重试到过」**不许**用来掩盖隔离缺陷 —— 第 2 步一旦命中，必须先修写方。

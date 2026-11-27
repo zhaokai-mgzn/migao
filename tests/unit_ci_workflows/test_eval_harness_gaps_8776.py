@@ -248,7 +248,10 @@ class TestVerdictBucketsStayApart:
     def test_blocking_keys_and_return_points_agree(self):
         """声明 / 早退分支 / 正常分支三处键集必须一致（`_BLOCKING_VERDICT_KEYS` 同源）。"""
         expected = set(lr._BLOCKING_VERDICT_KEYS) | {
-            "ok", "reason", "flake_released", "total", "passed"}
+            "ok", "reason", "flake_released", "total", "passed",
+            # 非阻塞桶（issue #9280）：环境前置缺失**不阻塞** `ok`，但必须出现在两处 return 点
+            # 与 summary 里 —— 同 `flake_released` 的位置，不是"又一个阻塞桶"。
+            "env_missing"}
         assert "write_not_persisted_failures" in lr._BLOCKING_VERDICT_KEYS
         assert set(lr.completion_verdict([])) == expected, sorted(lr.completion_verdict([]))
         assert set(_verdict(score=1.0)) == expected, sorted(_verdict(score=1.0))

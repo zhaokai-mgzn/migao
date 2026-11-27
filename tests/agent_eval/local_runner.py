@@ -4020,6 +4020,76 @@ def check_must_succeed(results: list, must_succeed: list,
     return issues
 
 
+# ── 环境前置缺失（issue #9280）─────────────────────────────────────────────────
+#: 「环境前置」的**唯一登记处**：键 = 用例 `requires_env` 里写的字面量，
+#: 值 = 该前置缺失时**工具层会返回的对外错误码**（逐字取自工具实现；不模糊匹配、不按前缀推断）。
+#:
+#: ⚠️ 只登记**已被工具实现逐字确认**的码；没登记的前置名 ⇒ 声明无效（该用例照旧判产品红）。
+#: ⚠️ 这张表**不是豁免清单**：它只把「本栈缺外部凭证」从「产品缺陷」里分出来，
+#: 声明了 `requires_env` 的用例**门槛一字不动**（有凭证时 `must_succeed` 仍必须真成功）。
+ENV_PREREQUISITE_CODES = {
+    # `backend/ai-agent-service/app/tools/product_image_generate.py` 模块 docstring 逐字：
+    # 「`ImageGenerationUnavailable`（未配置 Key / 开关关闭 / 模型接不了这类图生图请求）」
+    # ⇒ 对外码 `IMAGE_GEN_UNAVAILABLE`（凭证失效的 `IMAGE_GEN_CREDENTIAL` 话术不同、码相同）。
+    "IMAGE_GEN_API_KEY": ("IMAGE_GEN_UNAVAILABLE",),
+}
+
+#: `check_must_succeed` 的 detail 形态：`R1:IMAGE_GEN_UNAVAILABLE, R2:…`（轮次:错误码）
+_MUST_SUCCEED_CODE_RE = re.compile(r"R\d+:([^,，()（）\s]+)")
+
+
+def env_prerequisite_missing(case_id: str, requires_env, must_succeed_issues, other_issues) -> str:
+    """「环境前置缺失」判定（issue #9280）—— 返回**具名**串；`""` = 不归此族（照旧判红）。
+
+    为什么需要（run 46002922920 @16cdb5bcc 的逐字读数）：`PR-135` 的失败原文是
+    `must_succeed: product_image_generate 共 1 次调用**无一成功**（R1:IMAGE_GEN_UNAVAILABLE）`，
+    而该码的语义是「**未配置 Key / 开关关闭**」⇒ 卡点是**评测栈缺外部凭证**，
+    既不是产品缺陷、也不是用例缺陷；但旧实现把它记进 `deterministic_failures`
+    （"必须处理的失败"）⇒ 每轮都假红，把判定结论污染成"agent 又坏了一条"。
+
+    ## 为什么必须「**显式声明**才享受」（本类唯一的防滥用闸门）
+
+    「工具报了个错」**不等于**「环境没配」：同一批错误码里也可能混着真产品缺陷
+    （参数校验 / 上游 5xx / agent 传错参）。若只要错误码命中就把红降级成"环境问题"，
+    本仓最忌讳的形态立刻复活：**一切失败都可以赖环境**，而且没有任何东西会变红。
+    ⇒ 判据是**用例侧先声明** `requires_env: [...]`（"我这条用例依赖某个外部前置"），
+    runner 才按该前置的**已知环境码集合**去比；没声明 ⇒ 一律走原路径判红。
+
+    ## 五条边界（任一不成立 ⇒ `""`，fail-closed）
+
+      ① 用例**显式声明**了 `requires_env`（未声明 ⇒ 不归此族，哪怕错误码一模一样）；
+      ② 该前置名在 `ENV_PREREQUISITE_CODES` 里**已登记**（没登记 = 无已知环境码可判，不猜）；
+      ③ 失败来自 **`must_succeed`** 且原文里能解析出错误码（配置错 / 从未调用 ⇒ 无码 ⇒ 判红）；
+      ④ 解析出的**每一个**码都属于该前置的环境码集合
+         （`failed` / `无结果事件` 这类无码尝试同样不满足 ⇒ 判红）；
+      ⑤ **除 `must_succeed` 外没有别的失败**（环境缺失不得连带洗白无关的产品缺陷）。
+
+    Args:
+        case_id: 用例 id（进具名串 ⇒ summary / 日志里一眼定位）。
+        requires_env: 用例声明的环境前置名列表（`EvalCase.requires_env`）。
+        must_succeed_issues: `check_must_succeed` 产出的失败原文（`must_succeed:` 前缀）。
+        other_issues: 该用例**其余**全部失败原文（期望断言 / harness / db_verify …）。
+    """
+    names = [str(n).strip() for n in (requires_env or []) if str(n or "").strip()]
+    if not names:
+        return ""                       # ① 没声明 ⇒ 照旧判红（防「一切失败都赖环境」）
+    if not must_succeed_issues or other_issues:
+        return ""                       # ③⑤ 没有 must_succeed 失败 / 还有别的失败
+    codes = set()
+    for msg in must_succeed_issues:
+        found = _MUST_SUCCEED_CODE_RE.findall(str(msg))
+        if not found:
+            return ""                   # ③ 原文里没有可识别的错误码 ⇒ 不能断言是环境码
+        codes.update(found)
+    for name in names:
+        env_codes = set(ENV_PREREQUISITE_CODES.get(name) or ())
+        if env_codes and codes <= env_codes:          # ②④
+            return (f"ENV_PREREQUISITE_MISSING: {case_id} 依赖 {name}，本栈未配置"
+                    f"（工具错误码 {'/'.join(sorted(codes))}）—— 该用例本轮**未验证**，"
+                    f"不计入「必须处理的失败」；声明 = 用例的 requires_env")
+    return ""
+
+
 def _args_value_matches(got, want) -> bool:
     """`must_fail.args` 的值比较（容错数字/字符串同值 + 首尾空白，其余按严格相等）。
 
@@ -9612,6 +9682,17 @@ async def run_case(case, token: str, session_id: str) -> dict:
             f"{_inc.get('case_fields')} 与待答 form 卡字段 {_inc.get('card_fields')} "
             f"**零匹配** —— 本次红是 harness/用例形状不兼容，不代表 agent 行为失败"
             f"（改法：用例声明 case 级 auto_fill，或把卡字段写进 FORM_FIELD_ALIASES）")
+    # ── 环境前置缺失（issue #9280）：**显式声明才享此归类**，见 `env_prerequisite_missing` ──
+    # 位置：全部断言跑完之后 —— 判据 ⑤（"除 must_succeed 外没有别的失败"）要求此时已知全集。
+    # 只做**归因**：`score` 仍为 0（它确实没通过），改的是「这条红该谁修」。
+    _env_missing = env_prerequisite_missing(
+        case.id, getattr(case, "requires_env", None),
+        [str(_i) for _i in case_issues if str(_i).startswith("must_succeed:")],
+        [str(_i) for _i in case_issues if not str(_i).startswith("must_succeed:")]
+        + [str(_e[0] if isinstance(_e, (list, tuple)) else _e)
+           for _e in failed_expectations])
+    if _env_missing:
+        print(f"  🌐 {_env_missing}")
     if case_issues:
         for ci in case_issues:
             failed_expectations.append((ci, "case-level check"))
@@ -9630,6 +9711,10 @@ async def run_case(case, token: str, session_id: str) -> dict:
 
     return {
         "case_id": case.id,
+        # 环境前置缺失（issue #9280）：**具名**事实随结果落盘 —— 判定层据此把它从
+        # 「产品缺陷」里分出来单列（`completion_verdict.env_missing`，非阻塞但必须可见）。
+        # 空串 = 不归此族（默认形态，与旧版逐字等价）。
+        "env_prerequisite_missing": _env_missing,
         # 形状不兼容的事实随结果落盘（issue #3803）：判定层据此把它从"agent 行为失败"
         # 里分出来单列（`harness_incompatible_failures`），而不是混进确定性回归清单。
         "harness_incompatible": list(harness_incompat),
@@ -10672,6 +10757,13 @@ def completion_verdict(results: list, key_journey_ids: tuple = ()) -> dict:
         agent 行为"）⇒ 独立进 `case_asset_failures` 并阻塞，**不**进 `deterministic_failures`
         / `systemic_recurrence` / `journey_failures`（那三桶都在指名 agent/产品，
         实测 PR-016 落 deterministic、PR-008 落 systemic ⇒ 读的人去查 agent 行为）。
+      - **环境前置缺失**（#9280）：`r["env_prerequisite_missing"]` 非空（**用例显式声明**
+        `requires_env` + `must_succeed` 失败的错误码 ∈ 该前置的已知环境码 + 无其它失败）
+        ⇒ 独立进 `env_missing` 并**不阻塞** `ok`：本栈缺外部凭证时该用例**根本没被验证**，
+        记进"必须处理的失败"就是每轮假红（run 46002922920 的 PR-135 实证）。
+        ⚠️ **非阻塞 ≠ 静默**：`env_missing` 必须出现在 `reason`（`ok=true` 时同样要写
+        「环境前置缺失 N 条…未验证」），且不得从 `total`/`passed` 里消失；
+        `ok` 表达式**一个字没改**（它本来就不含该桶），判定口径的收紧/放宽均不涉及。
 
     ⚠️ **放行条目为什么不能只看 `score<1`**（issue #3781，真实 run 34856561459 实证）：
     放行档的语义前提就是"重试**通过**" ⇒ 该用例的最终 `score == 1.0`。旧实现的断言
@@ -10703,7 +10795,7 @@ def completion_verdict(results: list, key_journey_ids: tuple = ()) -> dict:
         {"ok", "reason", "deterministic_failures", "journey_failures",
          "flake_released", "systemic_recurrence", "restore_failures",
          "harness_incompatible_failures", "case_asset_failures",
-         "write_not_persisted_failures", "total", "passed"}
+         "write_not_persisted_failures", "env_missing", "total", "passed"}
         （`must_fix_failures` / `blocked_but_passed` **不在**这里 —— 它们是**序列化层**的
         附加字段，由 `write_summary_json` 经 `blocking_groups` 落盘，见该函数 docstring）
     """
@@ -10712,12 +10804,13 @@ def completion_verdict(results: list, key_journey_ids: tuple = ()) -> dict:
                 "deterministic_failures": [], "journey_failures": [],
                 "flake_released": [], "systemic_recurrence": [], "restore_failures": [],
                 "harness_incompatible_failures": [], "case_asset_failures": [],
-                "write_not_persisted_failures": [],
+                "write_not_persisted_failures": [], "env_missing": [],
                 "total": 0, "passed": 0}
     journey_set = set(key_journey_ids or ())
     deterministic, journey_fail, flake_released = [], [], []
     systemic, restore_fail, harness_bad, case_asset = [], [], [], []
     write_bad: list = []
+    env_missing: list = []
 
     def _is_recurring(r) -> bool:
         return bool(r.get("cross_run_recurrence"))
@@ -10744,6 +10837,12 @@ def completion_verdict(results: list, key_journey_ids: tuple = ()) -> dict:
         # 仍然阻塞 `ok`（见下方 ok 表达式）：结论不可用，只是"该谁修"不同。
         if r.get("precondition_not_applied"):
             case_asset.append(cid)
+            continue
+        # 环境前置缺失（#9280）：**先于**复发/旅程/分类判定 —— 该用例根本没被验证，
+        # 记进任何"agent/产品"桶都会每轮假红（PR-135 的形状：同一环境码每轮都复发）。
+        # 与 `case_asset` 同位置的理由也一致：归因该指"谁来配环境"，不是"谁改坏了代码"。
+        if r.get("env_prerequisite_missing"):
+            env_missing.append(cid)
             continue
         if r.get("score", 0) >= 1.0:
             # 重试通过的放行条目（score==1.0）在这里被捞出来——见 docstring 的 #3781 说明
@@ -10795,6 +10894,11 @@ def completion_verdict(results: list, key_journey_ids: tuple = ()) -> dict:
         parts = ["必须处理的失败=0，关键旅程全过"]
         if flake_released:
             parts.append(f"放行波动 {len(flake_released)} 条（台账，仅随机波动）")
+        if env_missing:
+            # 非阻塞 ≠ 静默（#9280）：`ok=true` 时也必须显式写出「本轮有 N 条未验证」，
+            # 否则"绿"会被读成"全都验过了"。
+            parts.append(f"环境前置缺失 {len(env_missing)} 条（本轮**未验证**，"
+                         f"不计入必须处理的失败）: {', '.join(env_missing)}")
         reason = "，".join(parts) + f"（{total} 条，{passed} 通过）"
     else:
         # 两**组**先行（#4207）：读者要的"哪些必须修、哪些只是被 fail-closed 拦住"。
@@ -10824,6 +10928,11 @@ def completion_verdict(results: list, key_journey_ids: tuple = ()) -> dict:
             bucket_parts.append(f"跨 run 复发的系统性缺口 {len(systemic)} 条"
                                 f"（同一首跑指纹在历史 run 反复出现，不按波动放行）: "
                                 f"{', '.join(systemic)}")
+        if env_missing:
+            bucket_parts.append(f"环境前置缺失 {len(env_missing)} 条"
+                                f"（**环境**：用例声明的前置在本栈未配置 ⇒ 本轮未验证；"
+                                f"不是产品缺陷、也不是用例缺陷，别去查 agent 行为）: "
+                                f"{', '.join(env_missing)}")
         if case_asset:
             bucket_parts.append(f"用例资产缺陷 {len(case_asset)} 条"
                                 f"（前置未成立/期间漂移 ⇒ 该用例本次红/绿无判别力，"
@@ -10854,6 +10963,9 @@ def completion_verdict(results: list, key_journey_ids: tuple = ()) -> dict:
         "harness_incompatible_failures": harness_bad,
         "case_asset_failures": case_asset,
         "write_not_persisted_failures": write_bad,
+        # 非阻塞（`_BLOCKING_VERDICT_KEYS` **不含**它）：环境缺失不要求"谁去修代码"，
+        # 但必须可见 —— 判定层/报告层都从这里取，不另造第二套口径。
+        "env_missing": env_missing,
         "total": total, "passed": passed,
     }
 
@@ -10880,6 +10992,10 @@ def _failure_texts(result: dict) -> list:
     反向同样成立 ⇒ **通过用例天然是空列表**，不产生噪音。
     """
     out = []
+    # 环境前置缺失（#9280）：具名原文**置顶** —— 否则 summary 里只剩
+    # `must_succeed: … 无一成功（R1:IMAGE_GEN_UNAVAILABLE）`，读的人仍要去猜"这码是什么意思"。
+    if result.get("env_prerequisite_missing"):
+        out.append(str(result["env_prerequisite_missing"]))
     for item in (result.get("failed") or []):
         if isinstance(item, (list, tuple)) and len(item) >= 2:
             exp, detail = str(item[0]), str(item[1] or "")
@@ -11078,6 +11194,10 @@ def _summary_case(result: dict, failures: list) -> dict:
         entry["assertions_fired"] = result["assertions_fired"]
     if result.get("unfailable_green"):
         entry["unfailable_green"] = True
+    # 环境前置缺失（#9280）：条目级留痕 —— 顶层 `completion.env_missing` 给 ID 列表，
+    # 这里给**具名**原文（哪条用例依赖哪个前置、缺的是哪个码），缺省不带该键。
+    if result.get("env_prerequisite_missing"):
+        entry["env_prerequisite_missing"] = result["env_prerequisite_missing"]
     if failures:
         entry["failures"] = failures
     return entry
@@ -11267,7 +11387,8 @@ def write_summary_json(path: str, label: str, shard: str, results: list,
     _verdict["failure_reasons"] = {
         cid: (_reasons.get(cid) or [""])[0]
         for cid in (_verdict["deterministic_failures"] + _verdict["journey_failures"]
-                    + _verdict["case_asset_failures"] + _verdict["flake_released"])
+                    + _verdict["case_asset_failures"] + _verdict["flake_released"]
+                    + _verdict["env_missing"])
     }
     # #4207：阻塞条目的**两类分组**落成结构化字段 —— 下游（issue body 渲染器 /
     # `.github/workflows/post-deploy-eval.yml` 的"未通过"清单）据此分组，**不必再推导**。
@@ -11458,6 +11579,11 @@ def load_cases_from_yaml(cases_dir: str) -> list:
             # 漏映射 = 值级断言在 CI 上静默不跑（存在性断言顶替值级 = #3823 的病灶本身）。
             arg_values=c.get("arg_values") or [],
             must_succeed=c.get("must_succeed") or [],
+            # 环境前置声明（issue #9280）：**必须在这里映射** —— CI 走的是本 YAML 装载路径
+            # （`--cases .github/cases`），不是生成物 `eval_cases` 包；漏映射 = 用例声明了
+            # 「我依赖这个外部前置」却被**静默**当成没声明 ⇒ 它的红继续冒充产品缺陷
+            # （#3391/#3417 同款假绿，由 test_eval_env_prerequisite.py 与 PROBES 逐字段守住）。
+            requires_env=c.get("requires_env") or [],
             must_fail=c.get("must_fail") or [],
             amount_verify=c.get("amount_verify") or [],
             db_verify=c.get("db_verify") or [],

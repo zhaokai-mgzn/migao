@@ -5502,6 +5502,10 @@ class TestAssertionVocabularyIsMappedByLoader:
         "required_args": ('    required_args:\n      - tool: t\n        fields: [x]\n', None),
         "forbidden_args": ('    forbidden_args:\n      - tool: t\n        fields: [x]\n', None),
         "must_succeed": ('    must_succeed:\n      - tool: t\n', None),
+        # 环境前置声明（issue #9280）：漏映射 = 用例声明了「本用例依赖某个外部前置」
+        # 却被**静默**当作没声明 ⇒ 它的红继续冒充产品缺陷（防滥用闸门在 CI 形状下失守，
+        # 而本地读生成物路径看不出问题 = #3391/#3417 同款假绿）。
+        "requires_env": ('    requires_env:\n      - "IMAGE_GEN_API_KEY"\n', ["IMAGE_GEN_API_KEY"]),
         "must_fail": ('    must_fail:\n      - tool: t\n', None),
         "amount_verify": ('    amount_verify:\n      - tool: t\n        checks: [total]\n', None),
         "db_verify": ('    db_verify:\n      - fetch: order_items\n        source: order_create\n', None),

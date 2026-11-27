@@ -5796,6 +5796,12 @@ cases:
       - tool: product_image_generate
     must_succeed:
       - tool: product_image_generate
+    # 环境前置声明（issue #9280）：本用例**依赖评测栈里配好图生成凭证**。
+    # 声明后，若 `must_succeed` 只因该前置的已知环境码失败（`IMAGE_GEN_UNAVAILABLE`
+    # = 未配置 Key / 开关关闭），runner 判「环境前置缺失（本轮未验证）」，不再冒充产品缺陷。
+    # ⚠️ 声明**不放宽门槛**：凭证配好时 `must_succeed` 仍必须真成功（断言一字未动）。
+    requires_env:
+      - "IMAGE_GEN_API_KEY"
     required_args:
       - tool: product_image_generate
         fields: [product_id]
@@ -5805,7 +5811,7 @@ cases:
       - "本工具只读：不写库、不改商品主图（商家要换主图到后台「商品管理」自行上传）"
       - "商品不明确时应先澄清/发 choice 卡，不得随机挑一个商品生成"
     skip_reason: ""
-    merge_log: "2026-11-26 新增（issue #9227，审计 goal ③ 薄覆盖优先）：`product_image_generate` 原只有 1 条用例，且「按商品名定位 → 生成主图」的 read-only 正向链路没有覆盖；本用例补该链路（种子商品 夏日清风窗帘）。纯只读，无前置复位。"
+    merge_log: "2026-11-26 新增（issue #9227，审计 goal ③ 薄覆盖优先）：`product_image_generate` 原只有 1 条用例，且「按商品名定位 → 生成主图」的 read-only 正向链路没有覆盖；本用例补该链路（种子商品 夏日清风窗帘）。纯只读，无前置复位。 ｜ 2026-11-27（issue #9280）：**只加归因、不动门槛** —— 声明 `requires_env: [IMAGE_GEN_API_KEY]`。现场：run 46002922920 @16cdb5bcc 的失败原文 = `must_succeed: product_image_generate 共 1 次调用**无一成功**（R1:IMAGE_GEN_UNAVAILABLE）`，而该码语义逐字是「未配置 Key / 开关关闭 / 模型接不了这类图生图请求」（上一轮同用例是 `IMAGE_SOURCE_MISSING`，补主图后前移成该码 ⇒ 链路前半段已通、卡点在**栈里没配凭证**）；旧实现把它记进 `deterministic_failures`（必须处理的失败）⇒ 每轮假红、污染判定结论。现有声明的用例判「环境前置缺失（本轮未验证）」，`must_succeed` / `required_args` / `data_checks` / `expectations` 一字未动（有凭证时仍必须真成功）。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_product_image_generate.py"

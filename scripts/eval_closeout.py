@@ -70,10 +70,16 @@ from pathlib import Path
 #: `completion` 里的**非阻塞**键：ok/reason 是元信息；`flake_released` 是**放行集**
 #: （门禁口径 `_COMPLETION_RELEASED_CLASSES` = `llm-noise`，只放行随机波动）；
 #: total/passed 是计数；`failure_reasons` 是 #3708 附加的 ID→首要原因映射（**不是桶**）。
+#: `env_missing`（issue #9280）= **环境前置缺失**：本栈缺外部凭证时这些用例**根本没被验证**
+#: ⇒ 不要求谁去改代码（非阻塞），但**必须**在结论里单列（见 `_leg_view` / `render`），
+#: 且逐条状态是「环境缺失（未验证）」而不是"已收口"。
 #: ⚠️ **其余一切都是阻塞桶** —— 由 `blocking_buckets()` 动态枚举，**故意不写桶名清单**。
 NON_BLOCKING_VERDICT_KEYS = frozenset({
-    "ok", "reason", "flake_released", "total", "passed", "failure_reasons",
+    "ok", "reason", "flake_released", "total", "passed", "failure_reasons", "env_missing",
 })
+
+#: 环境前置缺失的**逐条状态名**（`_case_states` 产出、`closeout` 判定、`render` 呈现同源）。
+ENV_MISSING_STATE = "环境缺失（未验证）"
 
 REPLAYED_RE = re.compile(r"replayed\s*=\s*true", re.I)
 SUPPRESS_MARKER_RE = re.compile(r"被抑制(记录|留档)")
@@ -230,6 +236,9 @@ def _leg_view(summary: dict) -> dict:
         "blocking": blocking,
         "failed": failed,
         "released": list(completion.get("flake_released") or []),
+        # 环境前置缺失（issue #9280）：**非阻塞但必须可见** —— `blocking_buckets()` 按
+        # 动态枚举会把它排除在外（不阻塞），所以这里显式取一次，否则它在本档里会**静默消失**。
+        "env_missing": list(completion.get("env_missing") or []),
         "sha": str(rk.get("sha") or ""),
         "tier": rk.get("tier"), "policy_version": rk.get("policy_version"),
         "executed_count": rk.get("executed_count"),
@@ -251,6 +260,11 @@ def _legs_of(summaries, label) -> dict:
 def _case_states(legs: dict, cid: str) -> dict:
     out = {}
     for persona, leg in legs.items():
+        # 环境前置缺失（#9280）：**先于**"阻塞/未通过"两档 —— 它既不在阻塞桶里
+        # （不要求谁改代码），也不该被读成"未收口"（那会把"缺凭证"记成"还没修完"）。
+        if cid in (leg.get("env_missing") or []):
+            out[persona] = {"state": ENV_MISSING_STATE, "buckets": []}
+            continue
         if cid in leg["blocking"]:
             out[persona] = {"state": "未收口",
                             "buckets": [k for k, ids in leg["buckets"].items() if cid in ids]}
@@ -295,9 +309,14 @@ def closeout(summaries, steps, baseline=None, case_ids=None) -> dict:
         now = _case_states(legs, cid)
         was = _case_states(baseline_legs, cid)
         unclosed = [p for p, v in now.items() if v["state"] == "未收口"]
+        env_unverified = [p for p, v in now.items() if v["state"] == ENV_MISSING_STATE]
         if not unclosed:
-            verdict = ("本批已收口" if any(v["state"] == "未收口" for v in was.values())
-                       else "已收口")
+            if env_unverified:
+                # 环境缺失（#9280）：没有阻塞，但也**没有被验证** ⇒ 不许读成"已收口"。
+                verdict = ENV_MISSING_STATE
+            else:
+                verdict = ("本批已收口" if any(v["state"] == "未收口" for v in was.values())
+                           else "已收口")
         elif not baseline_legs:
             verdict = "未收口（无基线参照）"
         elif any(v["state"] == "未收口" for v in was.values()):
@@ -373,6 +392,10 @@ def render(res: dict) -> str:
             out.append(f"      · {key}={len(ids)} {ids}")
         out.append(f"      · 放行（非阻塞）flake_released={len(leg['released'])} "
                    f"{leg['released']}")
+        if leg.get("env_missing"):
+            # 非阻塞 ≠ 静默（#9280）：`ok=true` 的腿也要把"本轮有 N 条没被验证"写出来。
+            out.append(f"      · 环境前置缺失（非阻塞，**未验证** —— 不等于“全都验过了”）"
+                       f"env_missing={len(leg['env_missing'])} {leg['env_missing']}")
     out.append("")
 
     out.append("── ③ 逐条收口判据（本批用例清单 × 两腿 × 基线对照）──")

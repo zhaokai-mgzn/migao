@@ -310,6 +310,7 @@ _SCHEMA_LINES = [
     '    required_args: List[dict] = field(default_factory=list) # 必填参数断言（create 缺 specifications/加工项价格即失败，§3.2）',
     '    forbidden_args: List[dict] = field(default_factory=list) # 禁止参数断言（隔离/越权下限：如物流工具不得接受快递单号，issue #3270）',
     '    must_succeed: List[dict] = field(default_factory=list) # 写工具成功断言（至少成功一次；"调了≠成了"，§3.2/issue #3361）',
+    "    requires_env: List[str] = field(default_factory=list) # 环境前置声明（本栈缺该前置时该用例的红归「环境」而非产品缺陷，issue #9280）",
     '    must_fail: List[dict] = field(default_factory=list) # 必须失败断言（零成功调用；must_succeed 的镜像，issue #3544 收口批）',
     '    amount_verify: List[dict] = field(default_factory=list) # 金额正确性断言（单价接地/小计/总额，§3.2/issue #3365）',
     '    db_verify: List[dict] = field(default_factory=list) # 落库层验证（创建后查 admin-api 断言价格=确认价，§3.2/issue #3056）',
@@ -451,6 +452,11 @@ def _case_literal_lines(c) -> list[str]:
         out.append(f"    forbidden_args={c.get('forbidden_args')!r},")
     if c.get("must_succeed"):
         out.append(f"    must_succeed={c.get('must_succeed')!r},")
+    # 环境前置声明（issue #9280）：只在**声明时**落字面量，未声明的用例走 dataclass 默认
+    # （缺省 = 不享受「环境缺失」归类，行为与旧版逐字等价）。必须渲染：不渲染 = 用例在 yml 里
+    # 声明了却在生成物里静默丢掉（"声明无消费" = #3836/#3391 的同款假绿）。
+    if c.get("requires_env"):
+        out.append(f"    requires_env={c.get('requires_env')!r},")
     if c.get("must_fail"):
         out.append(f"    must_fail={c.get('must_fail')!r},")
     if c.get("amount_verify"):
