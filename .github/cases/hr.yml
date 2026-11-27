@@ -1007,13 +1007,13 @@ cases:
     #   HR-010 = 用真实可分配岗位（客服 `customer_service`）证明能力不误拒；
     #   本条   = 钉住保留集本身（逐码 + 具名错误码 + 落库前抛出）。
     user_inputs:
-      - "后台员工管理里把岗位设成 agent（B2C 客服用角色）建个员工账号，姓名赵六，手机号 13800009998，密码 Test123456"
+      - "后台员工管理里把岗位设成 agent（B2C 客服用角色）开个员工账号，姓名赵六，手机号 13800009998，密码 Test123456"
     expectations:
       # 本条是**服务层契约**用例（`skip_reason` = backend-contract）：判定面 = `traces.tests` 里的
       # 执行点，不是 LLM 措辞（推理见 merge_log 的「为什么不是 LLM 用例」）。
       - tool: direct_reply
     data_checks:
-      - "判据 1·🔴 **保留角色被拒且具名**：`POST /api/admin/users` 与 `PUT /api/admin/users/{id}` 的 `role` 命中 `UserService.FORBIDDEN_USER_ROLES`（super_admin / service / customer / agent / tenant_admin）⇒ HTTP **422** + `error.code=VALIDATION_ERROR` + message 含「为系统保留角色，禁止在员工管理中分配」；不得 200、不得吞成通用失败、不得改写成别的错误码。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/UserServiceTest.java（创建/更新各一条具名断言）+ backend/admin-api/src/test/java/com/migao/admin/service/EmployeePermissionGrantGateTest.java（「既有护栏不回退」用例同时断言 code=VALIDATION_ERROR 与 httpStatus=422）。"
+      - "判据 1·🔴 **保留角色被拒且具名**：`POST /api/admin/users` 与 `PUT /api/admin/users/{id}` 的 `role` 命中 `UserService.FORBIDDEN_USER_ROLES`（super_admin / service / customer / agent / tenant_admin）⇒ HTTP **422** + 业务错误码 `VALIDATION_ERROR` + message 含「为系统保留角色，禁止在员工管理中分配」；不得 200、不得吞成通用失败、不得改写成别的错误码。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/UserServiceTest.java（创建/更新各一条具名断言）+ backend/admin-api/src/test/java/com/migao/admin/service/EmployeePermissionGrantGateTest.java（「既有护栏不回退」用例同时断言 code=VALIDATION_ERROR 与 httpStatus=422）。"
       - "判据 2·🔴 **拒绝在写库之前**：命中保留角色时 `users` / `user_roles` 都不得出现新行 —— 校验先于落库（先查后写），不是「先建再回滚」。执行点 = tests/unit_ci_workflows/test_case_hr010_pp002_truth.py（源码顺序判据：校验调用必须早于 userMapper.insert）。"
       - "判据 3·🔴 **保留集不得吃掉商户侧可分配岗位**：`FORBIDDEN_USER_ROLES` ∩ bootstrap `schema.sql` 的 `roles` 种子（管理员 admin / 运营 operator / 客服 customer_service / 超管 super_admin）只允许平台侧角色 —— 把 customer_service 之类塞进保留集 = **过度拦截**（「客服」岗位再也开不出来），HR-010 的正向对照同时失效。执行点 = 同文件（交集判据）。"
       - "判据 4·🔴 **真值三处一致**：源码常量 `FORBIDDEN_USER_ROLES` ⇄ 真值模板 `.github/templates/employee-role.yml` 的 `employee-role.reserved-role-blocked` ⇄ 本条 data_checks 的码清单，任一侧增删改而未同步 ⇒ 具名红。执行点 = 同文件（真值模板 ⇄ 源码 ⇄ 用例三向比对）。"
