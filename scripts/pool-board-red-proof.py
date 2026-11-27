@@ -5,10 +5,10 @@
 「全绿」本身不构成证据 —— 不会红的断言 = 空断言。本脚本把 issue #5177 每条判据的
 **判别力**变成可复算的：
 
-    ① 对**被守卫的四个文件**（门面 `ProcessingOrderService.java` + 派单池单元
+    ① 对**被守卫的五个文件**（门面 `ProcessingOrderService.java` + 派单池单元
        `ProcessingOrderDispatchPool.java` + 快照构建单元 `ProcessingOrderSnapshotBuilder.java` +
-       订单级事实盖章单元 `ProcessingOrderHeaderStamp.java`，
-       见每条变异的 `src_rel`）逐条注入一个**语义缺陷**（不是改文案）；
+       订单级事实盖章单元 `ProcessingOrderHeaderStamp.java` + 派单生成链单元
+       `ProcessingOrderGeneration.java`，见每条变异的 `src_rel`）逐条注入一个**语义缺陷**（不是改文案）；
     ② 跑**整类** `PoolBoardUrgencyTest`，从 surefire XML 读**逐方法**结果；
     ③ 期望 = **目标判据方法 FAIL**（= 这条判据确实抓得住这个缺陷，不是空断言）；
        同时**逐条打印**还有哪些判据一起红了 —— 那是「共享覆盖面」，**如实登记、不当失败**
@@ -58,6 +58,12 @@ SNAP_SRC = REPO / "backend/admin-api/src/main/java/com/migao/admin/service/Proce
 #: （让订单级字段不再进快照）的锚点随方法体搬进本单元，`src_rel` 必须跟着改
 #: （否则 `--check` 判腐烂，而「腐烂」是**对的**：它说明机具的注入面已经不在源码里了）。
 HEADER_SRC = REPO / "backend/admin-api/src/main/java/com/migao/admin/service/ProcessingOrderHeaderStamp.java"
+#: issue #8770（**生成族一档**）：`generatePooled`（含「加急不进池」的成批闸调用点）从门面**逐字节搬出** ⇒
+#: `urgent_guard` 变异（摘掉那道闸）的锚点随方法体搬进本单元，`src_rel` 必须跟着改
+#: （否则 `--check` 判腐烂，而「腐烂」是**对的**：它说明机具的注入面已经不在源码里了）。
+#: ⚠️ 注意**只搬了调用点**：闸的本体 `assertNoUrgentInPooledBatch` 仍在 `ProcessingOrderDispatchPool`
+#: （`urgent_not_in_pool` 守它，别把两条变异的住址搞混）。
+GEN_SRC = REPO / "backend/admin-api/src/main/java/com/migao/admin/service/ProcessingOrderGeneration.java"
 MODULE = REPO / "backend/admin-api"
 TEST_CLASS = "PoolBoardUrgencyTest"
 TEST_FQN = f"com.migao.admin.service.{TEST_CLASS}"
@@ -66,6 +72,7 @@ SRC_REL = SRC.relative_to(REPO).as_posix()
 POOL_SRC_REL = POOL_SRC.relative_to(REPO).as_posix()
 SNAP_SRC_REL = SNAP_SRC.relative_to(REPO).as_posix()
 HEADER_SRC_REL = HEADER_SRC.relative_to(REPO).as_posix()
+GEN_SRC_REL = GEN_SRC.relative_to(REPO).as_posix()
 TEST_REL = "backend/admin-api/src/test/java/com/migao/admin/service/PoolBoardUrgencyTest.java"
 
 #: 判据方法 → 它钉的那一格（打印用）
@@ -156,8 +163,9 @@ def mutation_pi_null_guard(src: str) -> str:
 
 
 MUTATIONS = [
+    # issue #8770（生成族一档）：闸的**调用点**随 generatePooled 搬到 ProcessingOrderGeneration ⇒ 锚点跟着搬家
     ("urgent_guard", "摘掉「加急单不进池」的成批闸", mutation_urgent_guard,
-     "pooledBatchContainingUrgentOrderIsRejectedFailClosed", SRC_REL),
+     "pooledBatchContainingUrgentOrderIsRejectedFailClosed", GEN_SRC_REL),
     # issue #8770：闸的**本体**已搬到 ProcessingOrderDispatchPool ⇒ 这条变异跟着搬家
     ("urgent_not_in_pool", "忽略加急标记（加急单照旧进池）", mutation_urgent_not_in_pool,
      "urgentOrderStaysOutOfPoolAndAppearsInQueueJumpSection", POOL_SRC_REL),
@@ -281,7 +289,8 @@ def main() -> int:
             if path.read_text(encoding="utf-8") != text:
                 path.write_text(text, encoding="utf-8")
             restored_ok = restored_ok and sha256(path.read_text(encoding="utf-8")) == hashes[rel]
-        print(f"\n还原：{'✅ 与注入前逐字节相同' if restored_ok else '❌ 不一致 —— 人工核对 ' + SRC_REL}")
+        guarded = " + ".join(sorted(originals))
+        print(f"\n还原：{'✅ 与注入前逐字节相同（' + guarded + '）' if restored_ok else '❌ 不一致 —— 人工核对 ' + guarded}")
 
     if failures:
         print(f"\n❌ 有 {len(failures)} 个变异没被对应判据抓到：{failures}", file=sys.stderr)

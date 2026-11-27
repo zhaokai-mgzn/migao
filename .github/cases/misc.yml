@@ -11300,3 +11300,43 @@ cases:
       tests:
         - "tests/unit_ci_workflows/test_shallow_repo_guard.py"
     merge_log: "2026-11-27 新增（issue #9081）。现场（2026-11-23 实测）：并行子包窗口里有人做过一次 `git fetch --depth` / `--shallow-since` ⇒ 共享 `.git/shallow` 被写 ⇒ 整个 clone 变浅，而浅仓下 `merge-base` / `rev-list --is-ancestor` / `git cherry` **静默给出错误答案**（`git rev-list --count origin/main` = 9，正常 4800+；`git merge` 报 `fatal: refusing to merge unrelated histories`），并实际误导过一次归因。修法 = 两道闸：① `scripts/dev-worktree.sh doctor` 增「浅仓自检」（`.git/shallow` 在 ⇒ 退出码 1 + 点名 + 出口 `git fetch --unshallow origin`；读不到 ⇒ 3），**不**挂进开工前置断言（issue 要的是开工自检，不是 fail-closed 阻断）；② 仓库执行面里任何形状改变型拉取必须登记进 `tests/unit_ci_workflows/shallow_fetch_ledger.json`（未登记即红 + 台账只许缩短）。现取台账 = **1 条**（`check-ui-regression.sh` 的 shallow-aware `--depth=1` 分支，issue #9120 的既有合法用途，登记而非删除）。红证（本机现取）：浅仓夹具上 doctor `rc=1` 且打印「🔴 命中浅仓（issue #9081）：…/.git/shallow 存在（shallow 边界提交 1 个）」+ 出口行；把 `wt_shallow_doctor` 调用摘掉后**同一夹具 `rc=0`、输出无 `.git/shallow`**；注入未登记的 `git fetch --depth=1` 到 `scripts/parallel-subpackage.sh` ⇒ 守卫打印「未登记的深度拉取：scripts/parallel-subpackage.sh（1 处）」。取号 = next_case_id.py MC ⇒ 先取 MC-371，合并 main 时发现该号已被 main 的另一条占用（CI 成本台账 p90）⇒ 按只追加纪律顺延 **MC-372**。"
+  - id: MC-390
+    legacy_id: ""
+    title: "ProcessingOrderService 派单生成链搬出（LOC 冻结面 2,316 → 1,809）：5 个 generate 重载 + 直派/预览/承接方下拉留门面同名委托，生成链只住一个 package-private 单元"
+    domains:
+      - processing-order
+      - backend
+    tier: normal
+    tags:
+      - refactor
+      - backend
+      - slice
+      - loc-freeze
+      - carrier-guard
+    truths_ref: []
+    precondition:
+      - "切片前的真实结构按**顶层声明边界**现取（`git show origin/main:backend/admin-api/src/main/java/com/migao/admin/service/ProcessingOrderService.java`，2,316 行），切段器逐段断言「每个 chunk 花括号配平到成员真实结束行」且区间两两不重叠；不是人工抄写"
+      - "等价性自证 = 拿 `git show origin/main:` 的原文逐段与切片后的新单元比对：20 条被搬成员的正文里，除 9 行「字段引用 → Owner 回调」外**逐字节相同**（可见性 0 处改动 —— 载体类本身 package-private，原 public/private 相对声明跨类不变）"
+      - "门面 `@Transactional` 计数切片前后都是 8（5 个 generate 重载 + generateDirect + 既有 2 处）；事务边界仍在门面（Spring 代理只对门面公开方法生效）"
+    user_inputs:
+      - "对切片后的门面跑三条入口（订单不存在 / 直派闸 / 承接方下拉未装配），并读门面与新单元的源码结构（入口委托条数、生成链成员归属、载体可见性）"
+    expectations: []
+    data_checks:
+      - "**判据 1·🔴 门面入口各只有一条委托**：`return generation().generate(` 恰好 5 条、`generateDirect` / `preview` / `processorOptions` 各 1 条；任一入口被写回实现（哪怕只加一行校验）⇒ 计数不符即红。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/ProcessingOrderGenerationTest.java"
+      - "**判据 2·🔴 生成链只住一个载体**：`prepare` ×2 / `commit` / `buildDesignations` / `instantiateOperations` / `generatePooled` / `generateOne` / `resolveConsignee` / `assignmentsByOrder` 在新单元**各恰好一份**，且其中四道核心工序在门面**签名已不存在**（回流门面 = 同一份口径两处 ⇒ 红）。执行点 = 同判据 1 的文件"
+      - "**判据 3·🔴 载体不进公开 API**：新单元是 `class`（非 `public class`），门面只有 `private ProcessingOrderGeneration generation;` 一个引用点、`new ProcessingOrderGeneration(` 一处构造（暴露实例 ⇒ 调用方绕过门面入口，事务边界失效）。执行点 = 同判据 1 的文件"
+      - "**判据 4·🔴 委托确实接到实现（不是空壳）**：订单不存在 ⇒ `ORDER_NOT_FOUND` + 原文案「无法找到订单：<id>」且 `processingOrderMapper` **零交互**；直派入口对可解析订单 ⇒ `DIRECT_DISPATCH_POOL_REQUIRED` 的码 / 文案 / 建议**逐字**；承接方下拉未装配 ⇒ 空集（fail-closed）。执行点 = 同判据 1 的文件"
+      - "**判据 6·🔴 机具注入面同批搬家（不是放宽判据）**：`scripts/pool-board-red-proof.py` 的 `urgent_guard` 注入面从门面改指新单元（闸的**调用点**随 `generatePooled` 搬家；闸本体仍在 `ProcessingOrderDispatchPool`，两条变异的住址不许混）；`scripts/red_proof_harness.py` 的 `impl`（= 夹具拷贝面）同批 +1 文件；`scripts/redproof_registry.json` 的 `pool-board/urgent_guard.guarded` 重取到新住址；`tests/unit_ci_workflows/state_write_face_ledger.json` 的 `prepare` 写点与其裸字面量基线条目同条改到新住址（表/写形/状态值一概不变）。判据 = `python3 scripts/pool-board-red-proof.py --check`（6/6、退出 0）+ `tests/unit_ci_workflows/test_redproof_harness_gate.py` + `tests/unit_ci_workflows/test_redproof_live_sweep.py` + `tests/unit_ci_workflows/test_state_write_face_metaguard.py`"
+      - "**判据 5·🔴 行为面不重复造第二份**：生成链的行为矩阵仍由既有判据承担（`ProcessingOrderServiceTest` 生成链、`ProcessingOrderPoolCharacterizationTest` 池化 golden、`ProcessingOrderGenerationTransactionRealDbTest` 真库事务回滚、`ProcessingOrderStatusCasMetaGuardTest` 状态写面）——本档**一条不删、一条不弱化**，只补载体边界与入口接线这两件之前无人看守的事。执行点 = 上述四个既有文件 + `loc_freeze_ledger.json` 的 `lines` 实测下调（只许降）"
+    skip_reason: "[backend-contract] Java 服务层结构 + 入口行为判据（零 LLM / 零网络 / 零 DB）：不进 agent-eval 冒烟；机器判红通道 = traces.tests 的 JUnit（pr-check 的 admin-api unit tests 全量跑 backend/admin-api）"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ProcessingOrderGenerationTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ProcessingOrderServiceTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ProcessingOrderPoolCharacterizationTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ProcessingOrderGenerationTransactionRealDbTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ProcessingOrderStatusCasMetaGuardTest.java"
+      ci:
+        - pr-check.yml
+      verifies: []
+    merge_log: "2026-11-27 新增（issue #8770 生成族一档）。门面 2,316 → 1,809 行（−507）；新单元 743 行（`wc -l`，< 800 ⇒ 不进 loc_ratchet_exemptions）。搬的是**派单生成链**：5 个 `generate` 重载 + `generateDirect` + `preview`（成批预览跑同一条 prepare 链）+ `processorOptions` 的**方法体**，以及 `assignmentsByOrder` / `generateOne` / `generatePooled` / `deductionsByItemId` / `deductionsOf` / `Prepared` / `resolveConsignee` / `Consignee` / 两个 `prepare` / `commit` / `buildDesignations` / `instantiateOperations` 的**整块**（含 javadoc）。**有意不搬**（逐条理由）：常量表（公共 API / 判据取用面）· `STATUS_TRANSITIONS` 与状态机（`OrderStatusTransitionsTest` 按**单实现**核对，删字段 = 删掉被断言的对象）· `updateStatus`（`ProcessingOrderStatusCasMetaGuardTest` 按源码文本核对写路径与 CAS 台账锚点）· 4 个盖章委托 / `snapshotSkuCode` / `str` / `craftHintOf`（被既有判据与 `ProcessingOrderDispatchPool` / `ProcessingRouteResolver` 直接取用）。行为 diff = 0 的证据：同一份 `git show origin/main:` 原文逐段比对（20 段正文只有 9 行不同 = 字段引用改 Owner 回调；可见性 0 处改动），且 `-Dtest='*ProcessingOrder*'` 全绿。指向面：另有 4 个**机具/台账**面同批改到新住址（红证注入面 / 夹具拷贝面 / 红证登记册 / 状态写面台账），读数见 data_checks 判据 6；同批修了 `test_state_write_face_metaguard.py` 的 `_fmt` 报错面（缺 `line` 时不再 `KeyError`，只影响判红的**可归因性**，判定强度不变）。取号 = `next_case_id.py MC` 本轮**不可用**（读在飞 PR 时 `gh` 返回 HTTP 403 限流，读数不可复算）⇒ 按「main 最大号 + 远号段」取 **MC-390**（现取 main 最大 = MC-372 / claims 台账最大 = MC-354，2026-11-27；限流这件事照实登记，不拿「我看到的最大号 + 1」冒充可复算读数）。"

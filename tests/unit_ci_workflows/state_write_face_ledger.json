@@ -1092,7 +1092,7 @@
     },
     {
       "table": "processing_orders",
-      "file": "backend/admin-api/src/main/java/com/migao/admin/service/ProcessingOrderService.java",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/ProcessingOrderGeneration.java",
       "symbol": "prepare",
       "form": "builder",
       "params": "String rawId, List<BatchAssignment> assignments, Long tenantId, String operator, String rule, Consignee consignee",
@@ -1441,7 +1441,7 @@
       },
       {
         "table": "processing_orders",
-        "file": "backend/admin-api/src/main/java/com/migao/admin/service/ProcessingOrderService.java",
+        "file": "backend/admin-api/src/main/java/com/migao/admin/service/ProcessingOrderGeneration.java",
         "symbol": "prepare",
         "form": "builder",
         "values": [

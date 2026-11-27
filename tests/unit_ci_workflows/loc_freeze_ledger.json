@@ -22,11 +22,6 @@
       "frozen_at": "2026-10-30"
     },
     {
-      "path": "backend/admin-api/src/main/java/com/migao/admin/service/ProcessingOrderService.java",
-      "lines": 2327,
-      "frozen_at": "2026-11-06"
-    },
-    {
       "path": "backend/ai-agent-service/app/graph/skills/base_skill.py",
       "lines": 2750,
       "frozen_at": "2026-11-06"

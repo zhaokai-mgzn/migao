@@ -477,8 +477,11 @@ def _key(point: dict) -> tuple:
 
 
 def _fmt(point: dict) -> str:
+    # 台账条目**不带** `line`（行号会随无关改动漂移，故只存锚点文本）⇒ 这里必须容忍缺席：
+    # 否则「写点搬家（载体改名）⇒ 台账陈旧」这条**最需要可归因**的判红会退化成 `KeyError: 'line'`
+    # （issue #8770 生成族一档实测踩到：具名清单还没打印出来就崩在格式化里）。
     return (f"{point['table']}::{point['file']}::{point['symbol']}({point['params']})"
-            f"[{point['form']}] @{point['line']}")
+            f"[{point['form']}] @{point.get('line', '?')}")
 
 
 def unregistered(current: list[dict], ledger: dict) -> list[str]:
