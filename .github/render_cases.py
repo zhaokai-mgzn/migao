@@ -731,7 +731,11 @@ def to_md(cases):
                 # 风格与同函数的 `必填: … 字段 …` / `禁参: … 不得含 …` 一致（限定词接在同行）。
                 _mf_scope = ", ".join(
                     f"{k}={v}" for k, v in ((mf.get("args") or {}) if isinstance(mf, dict) else {}).items())
-                lines.append(f"{_mf_head} 值级作用域: {_mf_scope}" if _mf_scope else _mf_head)
+                # 具名拒绝理由（issue #9220）：不印出来，账本上「被拒」与「因缺权限被拒」同形 ——
+                # 读者会把 HR-009 的判别力读高一级（值级 / 码级证据不得互相顶替，issue #3823）。
+                _mf_code = (mf.get("error_code") or "") if isinstance(mf, dict) else ""
+                _mf_line = f"{_mf_head} 值级作用域: {_mf_scope}" if _mf_scope else _mf_head
+                lines.append(f"{_mf_line} 拒绝码: {_mf_code}" if _mf_code else _mf_line)
             for av in (c.get("amount_verify") or []):
                 lines.append(f"金额: {av.get('tool', 'order_create')} 「{av.get('product_name', '')}」 → {'; '.join(av.get('checks') or [])}")
             for dv in (c.get("db_verify") or []):

@@ -1,0 +1,28 @@
+{
+  "_note": "issue #9220（HR-009 假绿）的**只许缩短**台账：全库 `must_fail` 条目里**没有具名拒绝理由**（`error_code`）的存量。基线读数 3 = 本 PR 落地时 `python3 -m pytest tests/unit_ci_workflows/test_case_must_fail_named_code.py -q` 现取（判据 = `test_ledger_is_shrink_only`：`baseline` 冻结、`len(entries) <= baseline`），之后**只许缩短**：修好一条就删一行，不许加行、不许抬 `baseline`（抬数即红）。新增 `must_fail` 必须写 `error_code`（未登记即红，判据 = 同文件 `test_every_must_fail_is_named_or_in_the_ledger`）。\n\n**为什么这 3 条留基线（逐条，各有「不具名」的硬理由，不是懒）**：\n1. CH-001：该条守的是「不存在的商品不得被查出结果」，拒绝面来自 admin-api 的查询失败（码随服务端应答），且**合法路径会改用真实商品 id 成功**（值级作用域不成立）⇒ 单值具名会把合格行为判红。收敛方向 = 值级 + 具名两维作用域（runner 未实现）。\n2. OR-030：该条是**值级**作用域（`args.customer_phone`），而具名码当前只实现 `tool`(+`action`) 作用域（`args` 与 `error_code` 同时声明由 runner **报配置错误**，不静默只核一半）。收敛方向 = 实现「值级 × 具名」两维后接 `validation_failed_write_blocked`（真值已在它自己的 data_checks 与 `tests/test_validation_failure_write_gate.py`）。\n3. PR-053：`marketing_poster` 的拒绝有**两个**合法码（`COPY_REQUIRED` 缺文案 / `COPY_INVALID` 文案非法），单值具名会把另一条合法拒绝判红。收敛方向 = 具名码支持码集合（any_of）；本 PR 只做单值（YAGNI）。\n\n**不得进本台账的族**（判据 = `test_restricted_identity_cases_never_sit_in_the_ledger`）：以受限身份跑（用例带 `debug_permissions`）的 `must_fail` —— HR-009 的假绿就是这一格：`PERMISSION_DENIED`（缺权限，工具层）与 `VALIDATION_ERROR`（保留角色，服务端）同形，只写「失败即可」分不清测的是哪一条。",
+  "schema": "case-must-fail-named-code-ledger/1",
+  "baseline": 3,
+  "entries": [
+    {
+      "case": "CH-001",
+      "tool": "product_detail",
+      "action": "",
+      "why_baseline": "拒绝面是「服务端查不到该商品」（码随 admin-api 应答），且合法路径会改用真实商品 id 成功 ⇒ 单值具名会把合格行为判红；本条要守的是「空结果不得被吞掉」，已由工具级零成功调用承担。",
+      "unblock": "runner 支持「值级 args × 具名码」两维作用域后，改成 args 作用域 + 具名码。"
+    },
+    {
+      "case": "OR-030",
+      "tool": "order_create",
+      "action": "",
+      "why_baseline": "该条是参数**值级**作用域（`args.customer_phone=05718886666`）；具名码只实现 tool(+action) 作用域，`args`+`error_code` 同时声明会被 runner 判**配置错误**（不静默只核一半）。",
+      "unblock": "实现「值级 × 具名」两维作用域后接 `validation_failed_write_blocked`（真值见 `tests/test_validation_failure_write_gate.py`）。"
+    },
+    {
+      "case": "PR-053",
+      "tool": "marketing_poster",
+      "action": "",
+      "why_baseline": "拒绝有两个**合法**码（`COPY_REQUIRED` 缺文案 / `COPY_INVALID` 文案非法），当前 `error_code` 只支持单值 ⇒ 具名会把另一条合法拒绝判红。",
+      "unblock": "`error_code` 支持码集合（any_of）后接两码；本 PR 只做单值（YAGNI）。"
+    }
+  ]
+}
