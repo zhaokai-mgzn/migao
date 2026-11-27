@@ -13,13 +13,13 @@ import com.migao.admin.mapper.NotificationTemplateMapper;
 import com.migao.admin.mapper.TenantMapper;
 import com.migao.admin.mapper.UserMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
-import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -44,6 +44,14 @@ public class NotificationService {
     private final NotificationRuleMapper notificationRuleMapper;
     private final UserMapper userMapper;
     private final TenantMapper tenantMapper;
+
+    /**
+     * 通知主键（自定义 {@code @Insert} 不经过 MyBatis-Plus 的 {@code IdType.ASSIGN_UUID} 填充，
+     * 所以原子写路径必须自己生成 id；取号口径与 MP 的 ASSIGN_UUID 逐字相同 = 32 位无连字符）。
+     */
+    private static String newNotificationId() {
+        return IdWorker.get32UUID();
+    }
 
     /**
      * 租户系统通知总开关（#3003）：企业基础设置「启用系统通知」。
@@ -79,9 +87,11 @@ public class NotificationService {
      * 捕获 {@link DuplicateKeyException} 当**成功**返回 {@code null}（不抛 500）。语义与
      * 「先查后插」的幂等命中完全一致：这件事已经通知过了。</p>
      *
-     * <p>⚠️ 边界（如实登记）：捕获唯一冲突后本事务的语句已失败（PG 会把事务标成 aborted），
-     * 因此<b>本重载只用于「单条投递 = 本方法自己的事务」的调用方</b>，不要塞进一个更大的事务里
-     * （那样外层后续语句会失败）。当前唯一调用方 = {@code ScheduledTaskService#deliver}。</p>
+     * <p>🔴 幂等（issue #9025）：带 {@code dedupeKey} 时走 mapper 的**原子写**
+     * （{@code NotificationMapper#insertIfDedupeAbsent} = {@code INSERT … ON CONFLICT … DO NOTHING}），
+     * 影响行数 {@code 0} = 该键已存在 ⇒ 返回 {@code null}（已发）。冲突在**语句内部**消解，
+     * 事务不会进 aborted 状态 ⇒ 本重载可以安全地嵌在更大的业务事务里（改前的
+     * {@code catch DuplicateKeyException} 形态做不到这一点：catch 之后事务已坏）。</p>
      *
      * @param tenantId  租户ID
      * @param request   创建请求
@@ -92,6 +102,7 @@ public class NotificationService {
     @Transactional(rollbackFor = Exception.class)
     public NotificationDTO createNotification(Long tenantId, CreateNotificationRequest request,
                                               String dedupeKey) {
+        String key = StringUtils.hasText(dedupeKey) ? dedupeKey : null;
         Notification notification = Notification.builder()
                 .tenantId(tenantId)
                 .recipientId(request.getRecipientId())
@@ -100,24 +111,24 @@ public class NotificationService {
                 .content(request.getContent())
                 .channel(request.getChannel())
                 .templateId(request.getTemplateId())
-                .dedupeKey(StringUtils.hasText(dedupeKey) ? dedupeKey : null)
+                .dedupeKey(key)
                 .status("sent")
                 .sentAt(OffsetDateTime.now())
                 .retryCount(0)
                 .build();
 
-        try {
-            notificationMapper.insert(notification);
-        } catch (DuplicateKeyException e) {
-            // 并发/重放：唯一索引是**最终保证**（预检查在并发下必然有窗口，故不做预检查）。
-            // 映射成「已发」—— 重复投递不是业务错误，不能冒泡成 500。
-            // 判据：NotificationServiceTest / ScheduledTaskMultiInstanceClaimRealDbTest 的幂等用例。
-            if (StringUtils.hasText(dedupeKey)) {
-                log.info("通知幂等命中（撞唯一索引），视为已发: tenantId={}, dedupeKey={}",
-                        tenantId, dedupeKey);
+        if (key != null) {
+            // 原子写：0 行 = 该 (tenant_id, dedupe_key) 已存在 ⇒ 「已发」，不抛异常（事务不 aborted）。
+            // 判据：NotificationServiceTest / ScheduledTaskMultiInstanceClaimRealDbTest /
+            //       NotificationDedupeRaceRealDbTest（真库并发）。
+            notification.setId(newNotificationId());
+            if (notificationMapper.insertIfDedupeAbsent(notification) == 0) {
+                log.info("通知幂等命中（dedupeKey 已存在），视为已发: tenantId={}, dedupeKey={}",
+                        tenantId, key);
                 return null;
             }
-            throw e;
+        } else {
+            notificationMapper.insert(notification);
         }
         log.info("创建通知成功: id={}, recipientId={}, title={}", notification.getId(), request.getRecipientId(), request.getTitle());
 
@@ -372,17 +383,14 @@ public class NotificationService {
             // 使用规则中的 recipientType（如果 contextData 中未提供）
             String finalRecipientType = recipientType != null ? recipientType : rule.getRecipientType();
 
-            // 幂等（issue #7524）：同一事件 × 同一业务对象 × 同一收件人只落一条。
-            // 先查一次而不是直接撞索引 —— PG 事务里撞唯一索引会让整条事务 aborted（多管理员循环会连带失败）。
+            // 幂等（issue #7524 / #9025）：同一事件 × 同一业务对象 × 同一收件人只落一条。
+            // 🔴 不用「先查后写」：先查是非原子读（TOCTOU），两个实例/两个并发事件同时判定「未发」
+            // 之后争抢部分唯一索引 uk_notifications_dedupe ⇒ 后写者抛 DuplicateKeyException，
+            // 而本方法的调用方多在业务事务里 ⇒ 整条事务 aborted、业务写（改状态/过账）一起回滚（issue #9025）。
+            // 改走 mapper 原子写：冲突在语句内部消解，影响行数 0 = 已发 ⇒ continue，事务不进 aborted。
             String dedupeKey = null;
             if (event != null && event.getBizId() != null && recipientId != null) {
                 dedupeKey = eventType + ":" + event.getBizId() + ":" + recipientId;
-                Long existing = notificationMapper.countByDedupeKey(tenantId, dedupeKey);
-                if (existing != null && existing > 0) {
-                    log.debug("事件已通知过，跳过重复落库: eventType={}, bizId={}, recipientId={}",
-                            eventType, event.getBizId(), recipientId);
-                    continue;
-                }
             }
 
             // 创建站内通知
@@ -408,7 +416,16 @@ public class NotificationService {
                     .retryCount(0)
                     .build();
 
-            notificationMapper.insert(notification);
+            if (dedupeKey != null) {
+                notification.setId(newNotificationId());
+                if (notificationMapper.insertIfDedupeAbsent(notification) == 0) {
+                    log.debug("事件已通知过，跳过重复落库: eventType={}, bizId={}, recipientId={}",
+                            eventType, event.getBizId(), recipientId);
+                    continue;
+                }
+            } else {
+                notificationMapper.insert(notification);
+            }
             log.info("事件触发通知成功: ruleId={}, templateId={}, recipientId={}, eventType={}",
                     rule.getId(), template.getId(), recipientId, eventType);
         }

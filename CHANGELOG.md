@@ -11,6 +11,12 @@
 - **不变**：拦截口径一个字没放宽（掩码值依旧绝不落库）；「顾客亲口给过且唯一匹配 ⇒ 改写放行」与「顾客没说 ⇒ 回放本会话真号」两条现状路径原样保留。
 - **判据**：`backend/ai-agent-service/tests/test_graph_skills.py` 的 `TestMaskedPhoneWriteGuard` 新增 5 条行为判据（旧号掩码只指向顾客新号 / 填 `0` 形态同款 / 多个候选全列出 / 无候选仍回放本会话真号 / 改写放行防回归）+ 1 条「文案只拼一份」的结构判据；golden `base_skill_slice_golden.json` **逐字节未变**（`test_injection_face_is_byte_identical_after_slice`）。
 - **边界**：不改脱敏面与确认卡字段（`app/api/chat_outbound.py` 的手机号脱敏 / 卡面 `fields[].value`）——「卡面是否展示完整手机号」属产品口径裁定，不在本单。
+
+### 通知去重在多实例并发下不再「先查后写」：业务写不再被连带回滚（2026-11-27，issue #9025）
+
+- **形态**：`triggerByEvent`（多管理员循环）与 `createNotification(…dedupeKey)` 的幂等从「`countByDedupeKey` 先查 → `notificationMapper.insert` 后写」改成 mapper 上的**原子写** `INSERT … ON CONFLICT (tenant_id, dedupe_key) WHERE dedupe_key IS NOT NULL DO NOTHING`（影响行数 `0` = 已发 ⇒ 跳过）。改前的 TOCTOU 窗口里，后写者撞部分唯一索引 `uk_notifications_dedupe` ⇒ `DuplicateKeyException` 从 `@Transactional` 方法冒泡 ⇒ **调用方的业务写（改状态 / 过账）跟着回滚**（`AfterSalesTicketService` / `OrderLifecycleService` / `AutoCompleteShippedScanService` 多数在业务事务里）。
+- **DDL 幂等**：`backend/admin-api/src/main/resources/db/init/schema.sql` 那条唯一索引补 `IF NOT EXISTS`（只改关键字，索引定义逐字不变）。它同时是「唯一写元守卫对 `notifications` 整张表失明」的真因（解析只认带 `IF NOT EXISTS` 的形态）⇒ 该表的写入点现已进入 `tests/unit_ci_workflows/unique_write_ledger.json` 的登记面。
+- **判据**：`NotificationDedupeRaceRealDbTest`（真 PG 4 条：两线程并发只落 1 条 + 两笔业务写都提交 / 注入朴素 insert ⇒ 一票撞唯一索引且其业务事务回滚（常驻红证）/ 顺序重放 0 行 = 已发 / 测试内 DDL 与 schema.sql 逐列一致）；`NotificationServiceTest`（已发分支返回 null、不抛异常）；元守卫 `tests/unit_ci_workflows/test_idempotent_unique_write_guard.py` 现取报出 `NotificationService::notificationMapper`。
 ### 公开面 host 收敛到 apex：sitemap / robots / canonical 不再声明 www（2026-11-27，issue #8968）
 
 - **形态**：`www.<域>` → `<域>` 的 **308** 由 `frontend/admin-web/next.config.mjs` 的 `redirects()` 产生（规则 `permanent: true`，Next 把它映射成 `RedirectStatusCode.PermanentRedirect` = 308；改前注释写的「301」与实现不符，已订正），且规则按 `NEXT_PUBLIC_SITE_DOMAIN` 参数化 ⇒ **任意域都跳**（测试域 `migaozn.com` 与生产域 `cytda.com` 实测一致）。而 sitemap 的 5 条 `<loc>`、`robots.txt` 的 `Sitemap:`、canonical 与 `metadataBase` 都写 `https://www.<域>` ⇒ 爬虫每条先吃一次 308，canonical 与真实落点不一致。现在 `siteOrigin()` = **apex**（`https://<域>`），四个消费面全部从它派生；`wwwHost()` 只留给跳转判定（`next.config.mjs` 的规则 / `src/proxy.ts` 的 host 分支）。

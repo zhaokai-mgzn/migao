@@ -577,3 +577,33 @@ cases:
       ci:
         - agent-eval.yml
       verifies: []
+
+  - id: ST-014
+    legacy_id: ""
+    title: "通知去重并发（多实例）：triggerByEvent 走原子写 —— 同 tenant+dedupeKey 并发只落 1 条、业务事务不被连带回滚（#9025）"
+    domains:
+      - settings
+      - notification
+    tier: normal
+    tags:
+      - notification
+      - concurrency
+    truths_ref:
+      - agent-notification.notification-no-api
+    user_inputs:
+      - "两个实例同时处理同一张入库单过账，商家会不会收到两条「入库单已过账」站内信？业务过账会不会因为通知撞重而回滚？"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "同一 (tenant_id, dedupe_key) 只落 1 条通知：写入走 NotificationMapper#insertIfDedupeAbsent（INSERT … ON CONFLICT (tenant_id, dedupe_key) WHERE dedupe_key IS NOT NULL DO NOTHING），影响行数 0 = 已发 ⇒ 跳过（不抛异常）"
+      - "通知撞重不得连带回滚业务写：真库判据把 triggerByEvent 放进 TransactionTemplate 模拟调用方业务事务，断言两票业务写都提交（业务探针 2 行）且无异常；注入朴素 insert（修前形态）⇒ 一票撞 uk_notifications_dedupe、其业务事务回滚（业务探针 1 行）—— 这条注入式红证常驻"
+      - "backend/admin-api/src/main/resources/db/init/schema.sql 的 uk_notifications_dedupe 带 IF NOT EXISTS，且 notifications 因此进入唯一写元守卫的扫描面（tests/unit_ci_workflows/test_idempotent_unique_write_guard.py 报出 NotificationService::notificationMapper）"
+    skip_reason: "[backend-contract] 并发 / 事务 / 部分唯一索引语义只能由真 PG 判据证明（NotificationDedupeRaceRealDbTest），非 LLM 工具行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-11-27 新增（issue #9025）：通知去重从「countByDedupeKey 先查 → insert 后写」改成 mapper 原子写 ON CONFLICT DO NOTHING（0 行 = 已发），并把 notifications 拉进唯一写元守卫的扫描面（schema.sql 的 uk_notifications_dedupe 补 IF NOT EXISTS）。"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/NotificationDedupeRaceRealDbTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/NotificationServiceTest.java"
+      ci:
+        - pr-check.yml
+      verifies: []

@@ -226,6 +226,11 @@
       "table": "kf_channels",
       "handling": "backend/admin-api/src/main/java/com/migao/admin/service/kf/KfChannelAdminService.java",
       "note": "issue #9230：insert 前有 corp_id+open_kfid 预检，insert 捕获 DuplicateKeyException ⇒ 409（唯一索引 uq_kf_channels_corp_open_kfid 兜底）"
+    },
+    "backend/admin-api/src/main/java/com/migao/admin/service/NotificationService.java::notificationMapper": {
+      "table": "notifications",
+      "handling": "backend/admin-api/src/main/java/com/migao/admin/mapper/NotificationMapper.java",
+      "note": "issue #9025：triggerByEvent（多管理员循环）与 createNotification(…dedupeKey) 的「先查后写」改成 NotificationMapper#insertIfDedupeAbsent（INSERT … ON CONFLICT (tenant_id, dedupe_key) WHERE dedupe_key IS NOT NULL DO NOTHING —— 部分唯一索引 uk_notifications_dedupe 作冲突目标时，ON CONFLICT 的谓词必须与索引逐字一致）；影响行数 0 = 已发 ⇒ 调用方跳过，不再抛 DuplicateKeyException ⇒ 外层业务事务不会被打成 aborted（AfterSalesTicketService / OrderLifecycleService / AutoCompleteShippedScanService 多在业务事务里）。同文件里仍留一处朴素 insert = createFromTemplate，它不带 dedupeKey（dedupe_key IS NULL ⇒ 不进该部分唯一索引），唯一可能冲突的只有主键（32 位 UUID）。证据 = backend/admin-api/src/test/java/com/migao/admin/service/NotificationDedupeRaceRealDbTest.java（真 PG 4 条：并发只落 1 条 / 注入朴素 insert ⇒ 业务事务回滚 / 顺序重放 0 行=已发 / 测试内 DDL 与 schema.sql 逐列一致）。"
     }
   }
 }
