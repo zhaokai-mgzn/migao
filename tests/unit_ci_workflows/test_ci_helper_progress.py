@@ -340,6 +340,12 @@ def test_nested_pytest_under_the_wrapper_does_not_inherit_the_plugin(tmp_path: P
     首版把插件走 `PYTEST_PLUGINS` 注入 ⇒ 孙进程仍被要求 import ⇒
     `ImportError: Error importing plugin "ci_helper_progress"` ⇒ 「干净检出必须能跑」这条守卫被判红。
     """
+    # 把「模拟」钉到真实现上：真 helper 必须**同时**清掉那两个变量（只清一半时它就是新的泄漏源）。
+    helper = REPO / "tests/unit_ci_workflows/test_generated_artifacts_clean_checkout.py"
+    assert '"PYTHONPATH", "PYTEST_ADDOPTS"' in helper.read_text(encoding="utf-8"), (
+        f"{helper.name} 的嵌套 env 过滤不再同时清 `PYTHONPATH` + `PYTEST_ADDOPTS` ⇒ 本判据的模拟与真实现脱钩"
+        "（要么更新本判据，要么那条 helper 会变成新的泄漏源）"
+    )
     case_file = _nested_case(tmp_path)
     summary = tmp_path / "summary-nested.md"
     summary.write_text("", encoding="utf-8")
