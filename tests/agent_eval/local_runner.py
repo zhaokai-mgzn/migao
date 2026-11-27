@@ -4082,7 +4082,21 @@ def check_must_fail(results: list, must_fail: list) -> list:
         由 `expectations: tool` 表达）；
       · 任一成功调用 → **违规**，并把轮次+错误码之外的尝试列出来便于归因。
     条目形态：`- order_create` / `- {tool: order_create, action: create}` /
-    `- {tool: order_create, args: {customer_phone: "05718886666"}}`。
+    `- {tool: order_create, args: {customer_phone: "05718886666"}}` /
+    `- {tool: employee_manage, action: create, error_code: PERMISSION_DENIED}`。
+
+    `error_code`（issue #9220，**具名拒绝理由**）：只写「失败了就行」分不清**为什么**被拒 ——
+    HR-009 的假绿正是这一格：`employee_manage(action=create)` 可能因**缺 `employee:create`**
+    被拒（`PERMISSION_DENIED`，工具层，零 HTTP），也可能因**岗位是系统保留角色**被拒
+    （`VALIDATION_ERROR`，服务端 422）；两者对 `must_fail` 同形 ⇒ 用例要钉的「缺权限被拒」
+    可能**整条没被执行**却仍然判绿。声明本键后：
+      · 本次调用的失败码 ≠ 声明值 → **违规**（把实际码逐条列出，便于归因「拒绝理由错位」）；
+      · 失败结果**没带**码 / 轨迹对不齐（无法核对）→ **违规**（fail-closed，不静默跳过）；
+      · 成功 → 仍是违规（成功判据不因本键改变）；
+      · **从未调用 → 仍然通过**（`must_fail` 的既定镜像语义不变；「必须尝试」由 `expectations`
+        表达，本键只收严「凡尝试了，理由必须是它」）。
+    作用域 = `tool`(+`action`)；与 `args` **同时声明**报配置错误（值级 × 具名两维作用域未实现，
+    静默只核一半比不核更糟）。
 
     声明 `action` 时（issue #3681）：只有**该 action 那次调用**自己的成败才算数（同轮对齐，
     见 `_round_action_result`）——同轮别的 action 成功/失败都不得顶替（假绿/假红同源）。
@@ -4118,18 +4132,25 @@ def check_must_fail(results: list, must_fail: list) -> list:
         if not tool:
             issues.append(f"must_fail: 配置缺 tool: {spec!r}（该断言会静默跳过）")
             continue
-        unknown = sorted(set(spec) - {"tool", "action", "args"})
+        unknown = sorted(set(spec) - {"tool", "action", "args", "error_code"})
         if unknown:
             issues.append(
                 f"must_fail: 条目含未支持的键 {unknown}（会被静默忽略 → 断言降级/空转）: {spec!r}"
-                f"—— 支持 tool/action/args；轮次作用域未实现（值级作用域见 issue #3689）")
+                f"—— 支持 tool/action/args/error_code；轮次作用域未实现（值级作用域见 issue #3689）")
             continue
         want_args = spec.get("args")
         if want_args is not None and (not isinstance(want_args, dict) or not want_args):
             issues.append(
                 f"must_fail: args 必须是非空映射（拿不到作用域 → 断言会空转）: {spec!r}")
             continue
+        want_code = str(spec.get("error_code") or "").strip()
+        if want_code and want_args is not None:
+            issues.append(
+                f"must_fail: 配置 `args` 与 `error_code` 不能同时声明"
+                f"（error_code 的作用域 = tool/action，值级 × 具名两维未实现）: {spec!r}")
+            continue
         succeeded: list = []
+        code_mismatches: list = []
         attempts = 0
         for r in results or []:
             rnd = r.get("__round")
@@ -4157,6 +4178,18 @@ def check_must_fail(results: list, must_fail: list) -> list:
                        if aligned is not None else bool(legacy))
                 if _ok:
                     succeeded.append(rnd)
+                elif want_code:
+                    if aligned is None:
+                        code_mismatches.append(
+                            f"must_fail: {tool}(action={action}) 在 R{rnd} 的结果对不齐该次调用"
+                            f"（调用与结果条数不等）⇒ 无法核对失败码 {want_code}（fail-closed）")
+                    else:
+                        _got = str((_res or {}).get("error_code") or "")
+                        if _got != want_code:
+                            code_mismatches.append(
+                                f"must_fail: {tool}(action={action}) 在 R{rnd} 的失败码为 "
+                                f"{_got or '（空）'}，但声明必须是 {want_code}"
+                                f" —— 拒绝理由不可替换（只写「失败即可」= 假绿）")
                 continue
             called = any(_tool_name_matches(tc.get("name"), tool)
                          for tc in r.get("tool_calls") or [])
@@ -4164,6 +4197,19 @@ def check_must_fail(results: list, must_fail: list) -> list:
                 continue
             attempts += len(matched)
             succeeded += [rnd for st in matched if st.get("ok")]
+            if want_code:
+                if called and not matched:
+                    code_mismatches.append(
+                        f"must_fail: {tool} 在 R{rnd} 被调用了但没有结果事件"
+                        f" ⇒ 无法核对失败码 {want_code}（fail-closed）")
+                for st in matched:
+                    if st.get("ok"):
+                        continue
+                    _got = str(st.get("error_code") or "")
+                    if _got != want_code:
+                        code_mismatches.append(
+                            f"must_fail: {tool} 在 R{rnd} 的失败码为 {_got or '（空）'}"
+                            f"，但声明必须是 {want_code} —— 拒绝理由不可替换（只写「失败即可」= 假绿）")
         if succeeded:
             _scope = f"(action={action})" if action else ""
             if want_args:
@@ -4173,6 +4219,7 @@ def check_must_fail(results: list, must_fail: list) -> list:
             issues.append(
                 f"must_fail: {tool}{_scope} 在 {_rounds} **成功**了 —— 该操作必须被拒绝/不成立"
                 f"（脏数据落库形态；共 {attempts} 次尝试）")
+        issues.extend(code_mismatches)
     return issues
 
 
