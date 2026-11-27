@@ -185,11 +185,20 @@ class TestXiaobuCapabilityCoverage:
         # 评测器支持的语义 token（见 local_runner.check_expectation）：
         #   direct_reply → 该轮无工具调用且有文本；success=true → 该轮无 error
         semantic = {"direct_reply", "success"}
+        # kf 判定面（微信客服通道的 LLM 级断言面，2026-11-27 新增）：期望形态是
+        # `{kf_judge: {escalate: …, intent: …}}`（**没有** `tool` 键）⇒ 本词汇表若不认识它，
+        # 会被读成"空条目"（假红：明明是结构化断言，却报成 YAML 写坏）。
+        # 面本体 = `tests/agent_eval/kf_judge_face.py`（接真端点，判定逻辑零复制），
+        # 它自己的判据 = `tests/unit_ci_workflows/test_kf_judge_face.py`（含 4 条注入式红证）。
+        semantic |= {"kf_judge"}
         bad = []
         for c in self._measured_cases():
             for key in ("expectations", "must_succeed"):
                 for e in c.get(key) or []:
                     text = e.get("tool") if isinstance(e, dict) else str(e)
+                    if not text and isinstance(e, dict):
+                        # 结构化断言面（如 `kf_judge`）：取它的**面名**当 token 校验
+                        text = next((k for k in e if k in semantic), "")
                     if not text:
                         bad.append(f"{c['id']}.{key}: 空条目")
                         continue

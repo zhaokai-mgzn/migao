@@ -23,6 +23,7 @@ render_cases.py — 用例契约渲染器（case-contract 单一源的两端）
 """
 import argparse
 import importlib.util
+import json
 import os
 import re
 import sys
@@ -218,19 +219,17 @@ def _one_line(v) -> str:
 
 
 def _kf_face_render(spec):
-    """kf 判定面期望的规范串 —— **唯一实现点**在 `tests/agent_eval/kf_judge_face.py`。
+    """kf 判定面期望的规范串（`kf_judge({...json...})`）。
 
-    为什么渲染器不另写一份 `kf_judge({...})` 格式：渲染（本文件）/ 装载（`local_runner`
-    的 `--cases` 路径）/ runner 的判定面**三处共用同一份格式**，各写一份必然漂移；
-    漂移的后果是断言永不满足 —— 用例永远红或永远绿，而两种都长得像「跑过了」。
+    ⚠️ **为什么这里不 import `tests/agent_eval/kf_judge_face.py` 的实现**（曾这么写过，实测踩红）：
+    渲染器会在**只复制了 `.github/` 的树**里跑（`tests/unit_ci_workflows/test_generated_artifacts_*`
+    的沙箱、以及 README 说的 `.github` seed 副本）⇒ `tests/` 不在场 ⇒ `ModuleNotFoundError`
+    ⇒ 整条渲染腿 fail-closed 挂掉（本 PR 首版实测 5 条判红）。渲染器必须**自包含**。
+    ⇒ 规范串的格式在本文件与面模块各有一份，**由判据钉住逐字相等**
+    （`tests/unit_ci_workflows/test_kf_judge_face.py::TestExpectationShape`：渲染 ==
+    `kf_judge_face.render_expectation(spec)` 且可逆）；漂移即红，不会静默只改一处。
     """
-    face_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                            "tests", "agent_eval")
-    if face_dir not in sys.path:
-        sys.path.append(face_dir)
-    from kf_judge_face import render_expectation
-
-    return render_expectation(spec)
+    return "%s(%s)" % ("kf_judge", json.dumps(spec, ensure_ascii=False, sort_keys=True))
 
 
 def exp_to_str(e):
