@@ -60,7 +60,10 @@ XIAOBU_TOOLS = frozenset({
 })
 
 # 评测 runner 侧的「非真实工具」伪期望（不计入工具集校验）
-PSEUDO_TOOLS = frozenset({"direct_reply"})
+#   · `direct_reply` → 该轮无 tool_calls 且有 final_text；
+#   · `reply`（issue #9280）→ 该轮**只要有 final_text**（工具调用不限）。
+# 二者都不是工具名：留在工具集校验里会被读成「用例挂错端 / 声明了不存在的工具」。
+PSEUDO_TOOLS = frozenset({"direct_reply", "reply"})
 
 # ── B 端（黄金策）工具集真值 ──
 # 单一真值来源 = 黄金策声明的 skill 源码里的 `*_TOOLS` 常量并集，此处内联文件名是为了让

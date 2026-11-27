@@ -184,7 +184,8 @@ class TestXiaobuCapabilityCoverage:
         known = _customer_tools() | _all_tool_constants()
         # 评测器支持的语义 token（见 local_runner.check_expectation）：
         #   direct_reply → 该轮无工具调用且有文本；success=true → 该轮无 error
-        semantic = {"direct_reply", "success"}
+        #   reply（issue #9280）→ 该轮**只要有文本**（工具调用不限）
+        semantic = {"direct_reply", "reply", "success"}
         # kf 判定面（微信客服通道的 LLM 级断言面，2026-11-27 新增）：期望形态是
         # `{kf_judge: {escalate: …, intent: …}}`（**没有** `tool` 键）⇒ 本词汇表若不认识它，
         # 会被读成"空条目"（假红：明明是结构化断言，却报成 YAML 写坏）。

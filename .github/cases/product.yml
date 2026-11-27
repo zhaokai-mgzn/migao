@@ -158,17 +158,38 @@ cases:
       - product-sku-stock.realtime
     user_inputs:
       - "遮光窗帘还有多少库存"
+    # ── 2026-11-27 改判（issue #9280，run 46002922920 逐字归因）：两条路线**同源等价** ──
+    # 读数（artifacts `post-deploy-eval-mibao`，sha 16cdb5bcc）：
+    #   `tools=['product_search','product_detail']` ·
+    #   `product_detail(id=prod_eval_blackout … stock=1000.0)` ·
+    #   `ai=📦 商品「遮光窗帘」库存合计 **1000.0 米**，按规格拆分如下：| 颜色 | 门幅 | 价格 | 库存 |`
+    # 它**绕过的不是口径**（三条现取事实）：
+    #   ① `product_detail` 与 `inventory_manage(action=query)` 打的是**同一个端点**
+    #      `GET /api/admin/products/{id}`（两处调用点字面量逐字相同）；
+    #   ② 库存数字都由 `app/tools/stock_semantics.py::product_stock_summary(skus)` 从
+    #      **SKU 明细**现算（同一函数、同一 `STOCK_AUTHORITY = "sku"` 口径），两处都**不**采信
+    #      后端商品级 `products.stock`（该列实测 311/497 与 SKU 汇总不一致 ⇒ 派生冗余列）；
+    #   ③ 本用例那条 data_check「库存数量 = SUM(SKU 库存)」在两条路线下**同时成立**，
+    #      且 `product_detail` 还多给了「颜色 × 门幅」的逐 SKU 拆分（信息更全，不是更少）。
+    # ⇒ 二者**等价**：把「合格路线」写死成其中一个 = 期望绑实现。实测旁证：前一次跑
+    #   45979067843 对该用例的分类就是 `llm-noise`（首跑同样没走 `inventory_manage`，只是重试
+    #   时蒙对）⇒ 这条期望一直在刀刃上，本次（连跑两次都走 detail）才露出来。
+    # 🔴 放宽的**边界**（不是"随便放宽"）：只许放宽到**同源**路线 ——
+    #   `batch_stock_query`（批次余量/省料分布）与 `inventory_manage(action=low_stock_alert)`
+    #   （阈值 ≤100 的 SKU 清单）都**不是**「该商品 SKU 库存合计」，不在合格集里。
+    #   这条边界 + 上面 ①② 的"同源"事实由
+    #   `tests/unit_ci_workflows/test_pr004_stock_route_equivalence.py` 机械钉住
+    #   （换端点 / 换掉 `product_stock_summary` / 塞第三条不同源分支 ⇒ 当场红）。
     expectations:
-      - tool: inventory_manage
-        args:
-          action: query
+      - "product_detail or inventory_manage(action=query)"
     data_checks:
-      - "库存数量 = SUM(SKU 库存)"
+      - "库存数量 = SUM(SKU 库存)（两条合格路线都由 product_stock_summary 现算，见上）"
     skip_reason: ""
-    merge_log: "verification 2.4 独有"
+    merge_log: "verification 2.4 独有 ｜ 2026-11-27（issue #9280）：`expectations` 由 [`inventory_manage(action=query)`] 改为 [`product_detail or inventory_manage(action=query)`]，并保留 data_check 口径。归因 = run 46002922920 走 `product_search + product_detail` 得到 1000.0 米（与 SUM(SKU 库存) 同源：同端点 `GET /api/admin/products/{id}` + 同函数 `product_stock_summary`）；**不放宽到非同源路线**（批次/阈值清单不在合格集，判据见 tests/unit_ci_workflows/test_pr004_stock_route_equivalence.py）。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_inventory_manage.py"
+        - "tests/unit_ci_workflows/test_pr004_stock_route_equivalence.py"
       ci:
         - agent-eval.yml
       verifies: []

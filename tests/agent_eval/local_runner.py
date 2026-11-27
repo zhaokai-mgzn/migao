@@ -2633,6 +2633,7 @@ def check_expectation(result: dict, expectation: str) -> tuple[bool, str]:
 
     支持 OR 逻辑（'A or B'）：任一满足即通过。
     direct_reply 语义（澄清/引导形态）：该轮无 tool_calls 且有 final_text。
+    reply 语义（**产出侧、与工具选择无关**）：该轮有 final_text（工具调用不限）。
     组合形态如 'direct_reply or interact'（模糊意图澄清：文本引导或澄清卡均可）。
     'tool(k=v, ...)' 形态 → args 关键字段校验（issue #2854 P0-3 弱断言加固）。
     """
@@ -2641,6 +2642,24 @@ def check_expectation(result: dict, expectation: str) -> tuple[bool, str]:
     # 拆 OR 分支（保持向后兼容：无 or 时等价于单分支）
     parts = [p.strip() for p in expectation.split(" or ") if p.strip()]
     parts_lower = [p.lower() for p in parts]
+
+    # `reply`（issue #9280）：**本轮只要产出了最终文本**就算通过 —— 与 `direct_reply` 的
+    # 唯一差别是**不要求零工具调用**。
+    # 为什么要这个 token：有一批用例的被测行为是「本轮**必须有产出**」（实例 = CH-009 的
+    # `__FORM__` 负载注入：表单没被静默丢掉），而旧写法只能把「合格路径」逐条枚举成**工具名**
+    # （`direct_reply or interact` → 补 `customer_manage(action=list)` → 模型换走 `order_query`
+    # 又红，run 46002922920 实测，六周内腐坏两次）。工具选择属**实现细节**，写进期望就必然随
+    # 模型漂移而腐坏。
+    # ⚠️ 判别力**不靠**这条 token 独自撑：用例仍须配 `want_text` / `must_succeed` 等产出侧断言
+    # （本 token 只保证「有产出」，不保证「产出对」）。
+    if any(p == "reply" for p in parts_lower):
+        if result.get("final_text"):
+            return True, "reply (final_text present; tool calls allowed)"
+        if len(parts) == 1:
+            return False, "expected reply (final_text) but got none"
+        # 含 or：本分支未命中，继续尝试其它分支
+        parts = [p for i, p in enumerate(parts) if parts_lower[i] != "reply"]
+
     has_direct_part = any("direct_reply" in p for p in parts_lower)
 
     if has_direct_part:
@@ -4766,6 +4785,10 @@ def _expectation_atom(exp: str, detail: str) -> str:
         return "arg_mismatch(%s,?)" % name
     if d.startswith("expected direct_reply"):
         return "direct_reply_expected_but_tool_calls"
+    if d.startswith("expected reply"):
+        # `reply`（issue #9280）：**本轮一个字都没产出** —— 与 `direct_reply` 的红族
+        # （"有文本但多调了工具"）方向相反，故单列一个 token（台账里可区分）。
+        return "no_output(reply)"
     if d.startswith("expected success but got error"):
         return "success_expected_but_error"
     m = re.match(r"expected error (\S+) but got", d)
