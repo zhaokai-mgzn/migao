@@ -274,3 +274,119 @@ def _is_customer_role(state: dict | None) -> bool:
 def _norm_ws(v) -> str:
     """比对前去掉所有空白（地址/号码里的空格差异不算改写）。"""
     return "".join(str(v or "").split())
+
+
+# ══════════ 确认卡展示面：手机号一律掩码化（issue #9224 产品口径，2026-11-27 裁定）══════════
+# 裁定原文（用户逐字）：「确认卡是否允许展示完整手机号，这个裁定是**展示脱敏后的手机号**，
+# 不能完整展示」。两个**被否决**的出口（不要再回去动它们）：
+#   ① 让 `interact` 的工具结果豁免脱敏（卡面直接显示完整号，等价于静默改变聊天的隐私面）；
+#   ② 卡面携带 `rawValue` 真值字段（真值进模型上下文 / SSE，等价于 ① 只是显式化）。
+# 正确出口 = **只改展示面**：点卡路由读 `last_confirm_value` / `pending_validated_input` 取写参数，
+# **从不**从卡面 `fields` 拼参数（判据 `tests/test_card_phone_masking_9224.py`）。
+#
+# 为什么不能「照模型交上来的值就地打码」：模型读到的是**被脱敏过的**工具结果 ⇒ 它会把**旧号**的
+# 掩码（`138****8000`）抄进卡片，而本轮真正要写的是顾客刚给的新号（`13900001111`）⇒
+# 卡面展示的号与落库的号不是同一个（CU-004 现场）。故掩码以 `pending_validated_input` 的真号为锚。
+
+#: 号码「token」字符集 = 数字 + 掩码占位符。只用于**就地替换**（保住标签与前后文），
+#: **不是**第二份手机号正则 —— 形态判定一律走 `raw_phones_in` / `_is_mask_shaped`。
+_PHONE_TOKEN_CHARS = frozenset("0123456789") | frozenset(_MASK_PLACEHOLDER_CHARS)
+
+
+def _mask_of(raw: str) -> str:
+    """真号 → 掩码形态（前 3 + `****` + 后 4）。
+
+    与出站脱敏 `app.utils.pii_mask.mask_phone` **同形**（同一产品的掩码长相）；
+    这里按字符切片，不引第三方正则。
+    """
+    raw = str(raw or "")
+    return raw[:3] + "****" + raw[-4:] if len(raw) >= 7 else raw
+
+
+def _phone_tokens(text: str) -> list:
+    """把文本切成「号码字符」连续片段（数字 + 掩码占位符），用于就地替换而不吃掉前后文。"""
+    out, buf = [], ""
+    for ch in text:
+        if ch in _PHONE_TOKEN_CHARS:
+            buf += ch
+        elif buf:
+            out.append(buf)
+            buf = ""
+    if buf:
+        out.append(buf)
+    return out
+
+
+def mask_phone_value(value, raw_phones=()) -> tuple:
+    """把一个**值**里的手机号改写成掩码形态；返回 `(新值, 是否改写)`。
+
+    判据**只看值**（与字段名无关 —— 模型会把号放进「备注」「联系方式」这类字段）：
+      · 号码形态 = `raw_phones_in(token)` 非空（完整真号）**或** `_is_mask_shaped(token)`（掩码形态）；
+      · 有**唯一**「本次真正要写入的真号」（`pending_validated_input` 的号码字段）⇒ 一律改写成
+        `_mask_of(该真号)`：卡面写的号必须与本轮要落库的号是**同一个**（issue #9224 的核心语义）；
+      · 没有真号锚 ⇒ 完整号就地掩码，已是掩码形态的**原样保留**（幂等：掩码再掩码 = 同一串）；
+      · 订单号 / 验证码等 11 位数字片段不被误伤（`1[3-9]\\d{9}` + 数字边界即 `raw_phones_in` 的口径）。
+    """
+    text = "" if value is None else str(value)
+    if not text:
+        return value, False
+    truths = [p for p in dict.fromkeys(str(p) for p in (raw_phones or ()) if str(p))
+              if len(p) == 11 and p.isdigit()]
+    target = _mask_of(truths[0]) if len(truths) == 1 else ""
+    out, changed = text, False
+    for token in _phone_tokens(text):
+        found = sorted(raw_phones_in(token))
+        if not found and not _is_mask_shaped(token):
+            continue
+        new = target or (_mask_of(found[0]) if found else token)
+        if new != token:
+            out = out.replace(token, new)
+            changed = True
+    return out, changed
+
+
+def pending_write_phones(full: dict | None = None) -> list:
+    """会话状态里「**本次真正要写入**的真号」（`pending_validated_input.params` 的号码字段）。
+
+    只认它：读工具返回的历史号码**不是**本轮的选择 —— 拿它当锚就会把卡面写成旧号
+    （「展示旧号、写入新号」= CU-004 的病灶）。掩码形态的值不算真号（无从还原）。
+    """
+    pending = (full or {}).get("pending_validated_input") or {}
+    out: list = []
+    for _path, value in _phone_args(pending.get("params") or {}):
+        if _is_mask_shaped(value):
+            continue
+        for phone in sorted(raw_phones_in(value)):
+            if phone not in out:
+                out.append(phone)
+    return out
+
+
+def mask_confirm_card_fields(fields, raw_phones=()) -> list:
+    """确认卡 `fields[].value` 的手机号统一掩码化（issue #9224）；返回**新的**字段结构（不改入参）。
+
+    覆盖每个 `value`（含**嵌套** dict / list —— 模型偶尔把整块收货信息塞进一个 value，
+    故 `value` 子树内的**所有**字符串叶子都过一遍掩码）。
+    只动展示面：`label` 与其它键原样保留，`options[].value` 这类协议值不归本函数管。
+    """
+    truths = tuple(raw_phones or ())
+
+    def _mask_whole_value(node):
+        """`value` 子树内部：所有字符串叶子都掩码（含嵌在 dict / list 里的号码）。"""
+        if isinstance(node, dict):
+            return {k: _mask_whole_value(v) for k, v in node.items()}
+        if isinstance(node, (list, tuple)):
+            return [_mask_whole_value(item) for item in node]
+        if isinstance(node, str):
+            return mask_phone_value(node, truths)[0]
+        return node
+
+    def _walk(node):
+        if isinstance(node, dict):
+            return {k: (_mask_whole_value(v) if str(k) == "value" else _walk(v))
+                    for k, v in node.items()}
+        if isinstance(node, (list, tuple)):
+            return [_walk(item) for item in node]
+        return node
+
+    return _walk(list(fields or []))

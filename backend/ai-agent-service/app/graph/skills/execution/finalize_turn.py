@@ -86,6 +86,11 @@ async def finalize_turn(
             and not _confirm_card_seen(new_messages)):
         _bfields = confirm_card_fields(_no_card_blocked_args)
         if _bfields:
+            # 卡面只许展示**掩码**手机号（issue #9224 产品口径）：字段来自**被拦的写调用参数**
+            # （= 将要写入的真值）⇒ 就地自掩码即与落库同号；`_bvalue` 由掩码后字段派生，
+            # 与落库的 `last_confirm_value` 同源（点卡才过得了确认门禁）。
+            from app.graph.skills.phone_masking import mask_confirm_card_fields
+            _bfields = mask_confirm_card_fields(_bfields)
             _bvalue = confirm_value_for_fields(_bfields)
             # 标题按端适配（issue #3882）：C 端保持既有「请确认订单信息」；
             # B 端写技能（product/general 等）用通用标题 —— 下架/删加工项弹一张

@@ -218,6 +218,11 @@ async def _reissue_confirm_card(
     fields = confirm_card_fields(pending.get("params") or {})
     if not fields:
         return None
+    # 卡面只许展示**掩码**手机号（issue #9224 产品口径）。字段来自**将要写入的参数**（真值）
+    # ⇒ 就地自掩码即「与本次真正要写入的号一致」；confirmValue 必须由**掩码后**的字段派生，
+    # 否则顾客点卡回传的仍是含真号的那一版、与落库的 `last_confirm_value` 不同源。
+    from app.graph.skills.phone_masking import mask_confirm_card_fields
+    fields = mask_confirm_card_fields(fields)
     confirm_value = confirm_value_for_fields(fields)
     if not confirm_value:
         return None
