@@ -205,13 +205,66 @@ class TestConstraintIsWiredEndToEnd:
     """**红证③**：用例声明 → CI 装载路径 → 运行时消费点，三段都要真的接上。"""
 
     def test_or014_declares_the_constraint_on_the_card_emission_round(self):
+        """OR-014 的声明必须**收窄到 choice 卡**（issue #9280，2026-11-27）。
+
+        判定跑 46002922920 的两轮尝试里 R2 分别是 `form`（「确认收货信息（可直接修改）」）与
+        `confirm`（「请确认订单信息」）—— 都不是 choice 卡，而是本用例自己的
+        `order_before: interact[confirm] before order_create` **要求存在**的落单链路卡
+        （`order_create` 在确认卡未被点击时返回 `confirmation_required_card_not_clicked`）。
+        旧声明「R2 不得出现**任何** interact 卡」因此与业务契约自相矛盾 ⇒ 只要模型先问颜色
+        （R1 就发 choice 卡），R2 轮到信息卡就必红，而该 run 的实质断言（must_succeed /
+        amount_verify / required_args / arg_values 数量=3）**全绿**。
+        收窄后仍钉住 #3789 的绕过路径：**choice 卡**会被 `choice_card_answer` 直接选第一个
+        选项 = harness 替顾客回答「选有打孔的那件 / 不需要其他加工项」。
+        """
         cases = {c.id: c for c in lr.load_cases_from_yaml(str(REPO_ROOT / ".github" / "cases"))}
         or014 = cases.get("OR-014")
         if or014 is None:
             pytest.fail("OR-014 不在用例库（本判据的前提不成立）")
-        assert or014.forbidden_interact == [{"round": 2}], (
+        assert or014.forbidden_interact == [{"round": 2, "type": "choice"}], (
             f"OR-014 的按轮禁卡约束被改掉/丢了：{or014.forbidden_interact!r} —— "
-            f"它钉的是 R2「加工项提问」必须纯文本（本用例判别性红路径的形状）")
+            f"它钉的是 R2「加工项提问」不得由 harness 用 choice 卡代答"
+            f"（本用例判别性红路径的形状，issue #3789 / #9280）")
+
+    def test_or014_constraint_is_choice_scoped_on_the_observed_shapes(self):
+        """**判据 ↔ 用例**对齐：用判定跑**逐字复刻**的三种 R2 形状喂真实声明。
+
+        · R2 = `form`（4 轮清单 / 收货信息）⇒ **不**得判红（落单链路卡，harness 用用例声明的
+          `auto_fill` 载荷作答 = 顾客已给的信息，不存在替顾客做选择）；
+        · R2 = `confirm`（订单明细确认）⇒ **不**得判红（同上，`order_before` 要求它存在）；
+        · R2 = `choice`（加工项选择题）⇒ **必须**判红（`choice_card_answer` 选第一个选项 =
+          harness 替顾客做选择 —— #3789 的绕过路径）。
+
+        红证：把用例声明改回 `[{"round": 2}]` ⇒ 前两条当场变红（约束射程过宽，
+        与 `order_before` 打架）。
+        """
+        cases = {c.id: c for c in lr.load_cases_from_yaml(str(REPO_ROOT / ".github" / "cases"))}
+        spec = cases["OR-014"].forbidden_interact
+
+        def _shape(r2_card):
+            return [
+                _round(1, text="帮我下单，遮光窗帘 3 米，要打孔加工",
+                       cards=[_card("choice", "遮光窗帘 有米白和浅灰两个颜色，您要哪一款呢？")],
+                       tools=["product_search"]),
+                _round(2, text="亲，收货信息已经帮您带出来了，请确认或修改后提交～",
+                       cards=[r2_card], tools=["product_detail"]),
+                _round(3, text="请确认订单信息", cards=[_card("confirm", "请确认订单信息")],
+                       tools=["interact"]),
+                _round(4, text="✅ 订单已经帮您提交好啦", tools=["order_create"], args=ORDER_ARGS),
+            ]
+
+        form_card = {"type": "form", "component": "form", "title": "确认收货信息（可直接修改）",
+                     "formFields": [{"key": "customer_name"}, {"key": "customer_phone"},
+                                    {"key": "customer_address"}]}
+        assert lr.check_forbidden_interact(_shape(form_card), spec) == [], (
+            "R2 的**收货信息 form 卡**被按轮禁卡判红 —— 该卡是落单链路的一部分，"
+            "旧声明（不限卡型）会与 order_before 打架（issue #9280）")
+        assert lr.check_forbidden_interact(
+            _shape(_card("confirm", "请确认订单信息")), spec) == [], (
+            "R2 的**订单确认卡**被按轮禁卡判红 —— order_before 要求它存在（issue #9280）")
+        hits = lr.check_forbidden_interact(_shape(_card("choice", "请选择加工项")), spec)
+        assert len(hits) == 1 and "R2 出现了 interact 卡" in hits[0] and "choice" in hits[0], (
+            f"R2 的 choice 卡没有被判红 —— 收窄过头，本用例的判别性守卫成了空断言：{hits}")
 
     def test_loader_maps_the_field_from_yaml(self, tmp_path):
         """**CI 走的是 YAML 装载路径**（不是生成物 `eval_cases.py`）：漏映射 = 静默不检查。"""
@@ -243,3 +296,61 @@ class TestConstraintIsWiredEndToEnd:
                        "check_forbidden_interact", "check_forbidden_card_text"):
             assert re.search(rf"case_issues \+= {family}\(", body), (
                 f"`{family}` 没有出现在 case-level 断言装配处 ⇒ 声明了也不会被判（假绿）")
+
+
+# ── 类级元守卫（issue #9280）：按轮禁卡**必须限定卡型** ──────────────────────────
+# 教训（判定跑 46002922920 的两轮尝试各撞一次）：按轮禁卡是**位置**语义，而「那一轮会不会
+# 发卡」由模型的提问顺序决定 —— runner 的 `resolve_auto_respond` 文档逐字写着「agent 实际的
+# 提问顺序与卡片类型随模型而变」。不限卡型的声明因此必然与落单链路**自己**要发的卡相撞：
+# 该 run 的 R2 一次是 form（确认收货信息）、一次是 confirm（请确认订单信息），而这两张卡正是
+# 本用例 `order_before: interact[confirm] before order_create` 与 `order_create` 的
+# `confirmation_required_card_not_clicked` 门禁**要求存在**的 ⇒ 判据与业务契约自相矛盾。
+#
+# 要守「harness 不得替顾客做选择」，声明 `type: choice` 就够：只有 choice 卡会被
+# `choice_card_answer` **选第一个选项**（= 代答「选有打孔的那件 / 不需要其他加工项」）；
+# form 卡的作答来自用例自己声明的 `auto_fill` 载荷、confirm 卡来自卡自带的 `confirmValue`，
+# 都不是"替顾客做选择"。⇒ 把「用例不得写不限卡型的按轮禁卡」固化成元守卫，让同类进不来。
+
+def _cases_from_repo():
+    return lr.load_cases_from_yaml(str(REPO_ROOT / ".github" / "cases"))
+
+
+def test_no_case_declares_a_card_type_agnostic_round_ban():
+    """**类级元守卫**：`.github/cases/**` 里不得出现「本轮不得出现任何卡」（缺 `type`）的声明。
+
+    红证：把 OR-014 的声明改回 `[{round: 2}]` ⇒ 本条具名判红（给出用例 id 与那一条声明）。
+    """
+    offenders = []
+    for c in _cases_from_repo():
+        for item in (getattr(c, "forbidden_interact", None) or []):
+            if not isinstance(item, dict):
+                continue
+            if item.get("round") is None:
+                continue
+            if str(item.get("type") or item.get("component") or "").strip():
+                continue
+            offenders.append((str(getattr(c, "id", "")), item))
+    assert offenders == [], (
+        "以下用例声明了**不限卡型**的按轮禁卡（缺 `type`）—— 按轮是位置语义、卡型随模型漂移，"
+        "这种声明必然与本用例自己要发的 form/confirm 卡相撞（判据与 order_before 自相矛盾，"
+        "issue #9280）：\n  " + "\n  ".join(repr(o) for o in offenders)
+        + "\n\n修法：声明你真正要禁的卡型（如 `type: choice` —— 只有它会被 harness 选首项代答）。")
+
+
+def test_every_forbidden_interact_declaration_is_locked_by_a_test():
+    """**接线守卫**：用例真用到的 `forbidden_interact` 声明必须被某条判据**逐字锁住**。
+
+    为什么需要：这个断言族最容易悄无声息地被"改回去"（issue #9280 的形态）—— 只要有人把
+    `type: choice` 删成 `{round: 2}`，上面那条元守卫会红；但若有人把整条声明删掉，元守卫
+    扫不到任何东西、**什么也不会红**。故本条要求：每个声明了该族的用例，其 id 必须出现在
+    本目录的判据源码里（否则"声明了没人锁"）。
+    """
+    declared = {str(getattr(c, "id", "")) for c in _cases_from_repo()
+                if getattr(c, "forbidden_interact", None)}
+    assert declared, ("用例库里没有任何用例声明 `forbidden_interact` —— 该断言族变成死码，"
+                      "接线红证（用例声明 → 装载 → 消费）随之失效")
+    sources = "".join(p.read_text(encoding="utf-8")
+                      for p in (REPO_ROOT / "tests" / "unit_ci_workflows").glob("*.py"))
+    unlocked = sorted(cid for cid in declared if f'"{cid}"' not in sources)
+    assert unlocked == [], (
+        f"以下用例声明了 `forbidden_interact`，但没有任何判据引用它（声明没人锁 ⇒ 被改掉也不会红）：{unlocked}")

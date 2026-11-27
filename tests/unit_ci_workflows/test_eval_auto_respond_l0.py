@@ -1,4 +1,4 @@
-# case_ids: OR-014, OR-022, OR-024, CR-003, PR-019, OR-023, OR-026, OR-029
+# case_ids: OR-014, OR-018, OR-022, OR-024, CR-003, PR-019, OR-023, OR-026, OR-029
 """**L0** 守卫：`resolve_auto_respond` 的载荷窗口 + `resolve_repeat_turn` 的载荷饿死 + 形状不兼容签名。
 
 ## 为什么单列一个 L0 文件（issue #3804 验收标准 2）
@@ -10,7 +10,7 @@
 把这个函数的**载荷窗口语义**锁在 L0，才能在"改用例资产的那一次 PR"上立刻变红
 （L2 那层跑的是另一套 fixture，看不到 `.github/cases/` 的真实形状）。
 
-## 本文件锁七件事
+## 本文件锁八件事
 
 | # | 断言 | 红证（改回修前形态即红） |
 |---|---|---|
@@ -21,6 +21,7 @@
 | ⑤ | `repeat_until` 轮的**载荷饿死**：文字提到"验证码"不得挤掉**可回填的 form 卡**（`#3829` / OR-026） | 恢复旧优先级 ⇒ `test_soft_code_mention_no_longer_starves_fillable_form_card` 得到 `'123456'` ⇒ 红 |
 | ⑥ | **S1 全族**（`repeat_until` 同时声明 `code` + 载荷）的离线重放台账：窗口内必须交付载荷 | 同上 ⇒ 全族 `__FORM__` 命中 0（`0/7,0/8×5`）⇒ 红 |
 | ⑦ | **有卡可答、却无载荷可填**（`#3862`）：本轮 `auto_respond` 只声明了文本而 agent 发了 form/confirm/choice 卡 ⇒ 独立 kind `no_fillable_payload`（**不许静默降级**）；另加**类级元守卫**：`resolve_auto_respond` 里每个 `return fallback` 出口都必须标记 | 删掉任一签名出口 ⇒ `test_no_payload_form_card_is_signed_not_silent` 得到 `'确认下单'` ⇒ 红；抹掉任一 `# SILENT-OK:` 标记 ⇒ `test_every_card_branch_fallback_exit_is_marked` ⇒ 红 |
+| ⑧ | **OR-018 的 form 卡可作答**（`#9280`）：判定跑 46002922920 的 `no_fillable_payload`（卡字段取自产物）⇒ 补用例级 `auto_fill` 后必须拼出 `__FORM__` | 把 `auto_fill` 摘掉 ⇒ `test_or018_payload_removal_reproduces_the_exact_signature` 复现同一条 `no_fillable_payload`（含同样三个卡字段）⇒ 红 |
 ⚠️ 本目录在 CI 只 `pip install pytest pytest-xdist pyyaml`（`.github/workflows/pr-check.yml`），
 而 `local_runner` 有模块级 `import httpx` ⇒ 用下方最小替身（与
 `test_eval_summary_attribution.py` / `test_eval_runner_same_round_scope.py` 同形）。
@@ -114,6 +115,48 @@ def test_ci_yaml_loader_carries_case_level_auto_fill():
     assert af, (f"OR-014 经 `load_cases_from_yaml` 装载后 `auto_fill` 为空（{af!r}）—— "
                 f"CI 的装载路径没映射该字段 ⇒ 用例级载荷形同不存在（#3804 复发）")
     assert {"customer_name", "customer_phone", "customer_address"} <= set(af), af
+
+
+def test_or018_form_card_is_answerable_after_payload_declared():
+    """判定跑 46002922920 的 form 卡（字段名**取自产物**，不是猜的）⇒ 有载荷就得答上。
+
+    失败原文逐字：`harness_incompatible(no_fillable_payload): 待答 form 卡而本轮用例没有
+    可填载荷`；同一份产物里的具名读数 `card_fields=["customer_name","customer_phone",
+    "customer_address"]`（agent 那张「请确认收货信息（可直接修改）」就这三个键）。
+    本用例 2026-11-27 补了**用例级** `auto_fill`（#3804 的机制）⇒ 同一张卡必须拼出
+    `__FORM__|{…}`（harness 真作答），而不是退回 fallback 文本让卡悬着。
+    """
+    case = _case("OR-018")
+    card = {"type": "form",
+            "formFields": [{"key": "customer_name"}, {"key": "customer_phone"},
+                           {"key": "customer_address"}]}
+    got = lr.resolve_auto_respond(
+        _last_card(card),
+        fallback="我是张三，手机13800138000，地址杭州市西湖区文三路1号",
+        form_values=dict(getattr(case, "auto_fill", None) or {}))
+    inc = lr.parse_harness_incompatible(got)
+    assert inc is None, f"OR-018 的 form 卡仍然答不上（形状不兼容签名）：{got!r} / {inc!r}"
+    assert got == ('__FORM__|{"customer_name": "张三", "customer_phone": "13800138000", '
+                   '"customer_address": "浙江省杭州市西湖区文三路1号"}'), got
+
+
+def test_or018_payload_removal_reproduces_the_exact_signature():
+    """**红证**：把 OR-018 的用例级 `auto_fill` 摘掉 ⇒ 同一产物里的 `no_fillable_payload` 具名复现。
+
+    这不是"改判据变绿"：护栏（`resolve_auto_respond` 的签名出口）一字未动，去掉载荷就当场回到
+    失败原文（**同样的三个卡字段**）⇒ 上面那条绿的来源就是载荷本身。
+    """
+    card = {"type": "form",
+            "formFields": [{"key": "customer_name"}, {"key": "customer_phone"},
+                           {"key": "customer_address"}]}
+    got = lr.resolve_auto_respond(
+        _last_card(card), fallback="我是张三，手机13800138000，地址杭州市西湖区文三路1号",
+        form_values={})
+    inc = lr.parse_harness_incompatible(got)
+    assert isinstance(inc, dict), f"摘掉载荷后没有复现形状不兼容签名（静默降级回来了）：{got!r}"
+    assert inc.get("kind") == "no_fillable_payload", inc
+    assert inc.get("card") == "form", inc
+    assert inc.get("card_fields") == ["customer_name", "customer_phone", "customer_address"], inc
 
 
 def test_generated_eval_cases_also_carry_it():

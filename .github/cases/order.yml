@@ -1131,9 +1131,22 @@ cases:
     #     `auto_respond` **答了那张卡** ⇒ 答卡轮 ⇒ 留在订单流程 ⇒ 正常落单 ⇒ 判绿。
     # ⇒「修复 #3785 的行为侧判别性验证」**永远可能**走绿路径（一次绿不能证明修法有效），
     #   反向也无法稳定复现红（run 34856561459 红 / 34864608826 绿，分流形态不同）。
-    # 声明「R2 不得抽卡」= 把红路径的**形状前提**变成机器判据（命中即判红，进 case_issues）。
+    # 声明「R2 不得抽**选择题**卡」= 把红路径的**形状前提**变成机器判据（命中即判红，进 case_issues）。
+    #
+    # 2026-11-27 收窄为 `type: choice`（判定跑 46002922920，issue #9280）。旧声明是「R2 不得出现
+    # **任何** interact 卡」，它与本用例自己的 `order_before: interact[confirm] before order_create`
+    # **互相打架**：当前产品把「选颜色」做成 choice 卡（R1）、R2 依次是「确认收货信息」form 卡
+    # 或「请确认订单信息」confirm 卡（同一次 run 的两次尝试各一种），而这两种卡是落单链路**必须**
+    # 发出的（`order_create` 在确认卡未被点击时返回 confirmation_required_card_not_clicked），
+    # 且 harness 作答时用的是**用例自己声明的载荷**（`auto_fill` 的张三/手机/地址）与**卡自带的
+    # confirmValue** —— 不存在「替顾客做选择」。被钉住的假绿形态只有一种：**choice 卡** ⇒
+    # `choice_card_answer` 直接选**第一个选项**，等于 harness 替顾客回答「选有打孔的那件 /
+    # 不需要其他加工项」（#3718 的答卡轮豁免就此成立）—— 这才是 #3789 要钉住的那条绕过路径。
+    # ⇒ 本判据**保留原意**（题库不得让 harness 代答顾客的选择），只对 choice 卡生效；
+    #    落单业务结果由 must_succeed / amount_verify / required_args / arg_values / order_before 守。
     forbidden_interact:
       - round: 2
+        type: choice
     # 金额正确性断言（issue #3365）：本用例历史实证"没查商品就报 ¥95.4"（真实 ¥168/米）
     amount_verify:
       - tool: order_create
@@ -1198,7 +1211,7 @@ cases:
         source: "遮光窗帘"
         expect: 1
     skip_reason: ""
-    merge_log: "2026-09-07 改写（issue #3005，回滚 #2986）：行业加工费按米计价、辅料（罗马圈/四爪钩等）含在按米加工费中——回滚 per_piece 与「每米数量」密度（数量=ceil(面料米数×密度) 与实际车间工艺不符、数量隐藏导致 B 端无法对账），数量改为按计价方式派生且展示（per_meter=面料米数、per_set/fixed=1）；2026-09-14 校准（#3538）：pre_clean 去 price 过滤（关键词去重，原 price 过滤限 100 元、在种子遮光窗帘 ¥168 的独立栈上恒不匹配 = 没去重）；2026-09-15（issue #3835）补 `precondition[product_count_for_keyword: 遮光窗帘, expect: 1]`：本用例按名定位下单对象、`amount_verify` 也按名取接地真值，故「该名字唯一」是可判定的前置 —— 判定跑 run 34908262839 首跑 R1 `product_search(products=2)` + R2 把 PR-016 造的 ¥100 副本选成目标，6 轮被岔路吃掉。声明前置后这类污染折成 `precondition_not_applied(declared:product_count_for_keyword)`，不再伪装成「agent 不下单」；断言（expectations/must_succeed/amount_verify/data_checks）原样未动；2026-09-15（B 端免验证码产品变更，窄跑 34930597539）：四个「123456」轮去掉 `prefer_text: true` —— 该开关会让 harness 无视待答 confirm 卡、把「点确认」轮硬发成验证码文本，而 B 端代客下单已免短信验证码、落单前必须点击确认卡（order_create 在确认卡未被点击时返回 confirmation_required_card_not_clicked，窄跑 R9~R11 逐字复现）。去掉后按 runner 既有 `resolve_auto_respond` 语义：有待答卡就答卡（confirm→点击 confirmValue / form→回填客户信息），无卡且 C 端 customer 角色被索码时才发 123456 兜底（C 端仍需验证码，见 order_create `_needs_sms_verification` role==customer 分支）；断言（expectations/must_succeed/amount_verify/data_checks/precondition）原样未动；2026-09-18 **假红归因**（issue #4042，LLM 红例 run 35243351675 @67db87ae）：本例在 mibao 腿判红（`amount_verify: 单价 150 ≠ 商品库 168`）而 **xiaobu 腿同一条断言判绿**，差异不在 agent —— 同栈的 PR-021（输入「把遮光窗帘的米白色散剪规格改成 150 元」）把**共享夹具** `prod_eval_blackout` 的米白/散剪 SKU 价改成 150 且**无复位**，而本例 `amount_verify` 的接地真值取的是**商品级价**（168，`_fetch_product_price`）⇒ 按所选规格下单（150 = 该 SKU 库价，工具层接地闸门同样放行）反被判成「凭记忆报价」。两层修法：① 断言语义对齐工具闸门（真值按所选规格取 SKU 价，见本 PR 对 `local_runner.check_amount_verify` 的改动）；② 写方无复位属独立缺陷，另开单跟踪（本 PR 不改夹具写入方）**2026-09-21 改写（issue #4882，用户裁定「彻底删除加工项单价与计价方式」）**：加工项目录与订单快照都不再有 `unitPrice` / `pricingMethod` / `subtotal`（V101 删列 + `ProcessingOrderService.isMeterBasedLine` 判据改写），且 `processing_item_manage(action=calculate_price)` 端点与计价方式枚举一并退场 ⇒ 原 data_checks 里「按计价方式派生数量」「逐项含 pricingMethod」「加工费 = 单价 × 数量」三条口径**失去对象**。按「断言只增不减」原则改写为：数量 = 订单行面料米数；快照键族收缩为 `{id, name, quantity, unit}`；并**新增**一条「加工费真值源 = 加工费组合、不得把逐项单价×数量当加工费」的负向口径。本用例的**内核**（数量可见可对账、禁止虚构每米密度）与 expectations / must_succeed / amount_verify / pre_clean / precondition / user_inputs **一字未动**。 ｜ 2026-09-25（issue #3881 缺陷二 / #4025 F11，用户裁定 A①）：**服务端取价守卫从 fail-open 改 422 fail-closed** —— `OrderService.validateAgentItemUnitPrice` 原在「明细无 SKU 标识」时直接 return（单价零核对落库，#3881 原文的口子），现改为：按商品级唯一权威价核对（唯一 SKU 价，或无 SKU 记录商品的商品级价），权威价无从唯一确定（多规格多价而未声明规格 / 商品查不到 / 无价）即 422 并给可行动话术；顺带让守卫识别工具层声明的首选键 `processingInfo.skuId`（与 `matchSkuId` 同键族）。**本用例断言一字未动**（C 端合法下单链路本就带规格键 / 商品名可唯一解析 ⇒ 逐值为同价核对）；新增判据落在 Java 面：`OrderNoSkuIdentityFailClosedTest`（9 条）与 `OrderNoSkuIdentityRealDbTest`（5 条，真库）。 ｜ 2026-09-26（issue #3789，本单 A 半边）：**把红色形态钉进用例 + 给 processingItems 加字段级断言**。① 新增 `forbidden_interact[round=2]`（负向按轮卡片约束，runner 本单最小扩展）：本用例的红/绿此前**不由 agent 能力决定、而由 R2 是否抽卡决定** —— R2 纯文本提问 ⇒ R3「不需要其他加工项」是**非答卡轮** ⇒ L1 域逃逸清锁（#3784 窗口）⇒ product skill（无 order_create）⇒ 判红；R2 发 choice 卡 ⇒ harness 答卡 ⇒ 答卡轮豁免 ⇒ 留在订单流程 ⇒ 判绿（run 34856561459 红 / 34864608826 绿，分流形态不同）⇒ 判据声明「R2 不得出现 interact 卡」，让判别性红路径不再可能被绕过。② 新增 `required_args[order_create]`（`items[].processing_info.processingItems[].{id,name,quantity,unit}` 四键**逐项存在性**）+ `arg_values[order_create]`（`items[].processing_info.processingItems[].quantity == 3` = **值级**，对应 R1 台词「遮光窗帘 3 米」的面料米数）；配套 runner 侧两处：证据压缩深度上限 `_ARG_MAX_DEPTH` 3 → 5（旧值恰好停在 `items[].processing_info`，`processingItems` 落在深度 0 ⇒ 条目**一个字段都读不到**，这正是「args 只是摘要形态、不展开该字段」的机制），以及 `arg_values` **声明面接线**（该断言家族与证据通道 #3823 早已落码，但 `.github/cases/*.yml` 的声明面未接线 —— 接线后 loader/renderer/生成物/probe 四处同步，见 PR 说明）。③ 原**散文** data_check「processing_info.processingItems 逐项含 `{id, name, quantity, unit}` —— `unitPrice` / `pricingMethod` / `subtotal` 三键已随 issue #4882 退场（订单快照不再承载加工项价与计价方式）」由 ② 的两条机器判据**取代**（散文不计分，按 `MACHINE_DATA_CHECK_MARKERS` 不是断言）—— 原文逐字留档于本行，属**散文 → 机器判据**的升级（「断言只增不减」：判据强度增加，无放宽）。expectations / must_succeed / order_before / amount_verify / pre_clean / precondition / user_inputs / auto_fill 一字未动。"
+    merge_log: "2026-09-07 改写（issue #3005，回滚 #2986）：行业加工费按米计价、辅料（罗马圈/四爪钩等）含在按米加工费中——回滚 per_piece 与「每米数量」密度（数量=ceil(面料米数×密度) 与实际车间工艺不符、数量隐藏导致 B 端无法对账），数量改为按计价方式派生且展示（per_meter=面料米数、per_set/fixed=1）；2026-09-14 校准（#3538）：pre_clean 去 price 过滤（关键词去重，原 price 过滤限 100 元、在种子遮光窗帘 ¥168 的独立栈上恒不匹配 = 没去重）；2026-09-15（issue #3835）补 `precondition[product_count_for_keyword: 遮光窗帘, expect: 1]`：本用例按名定位下单对象、`amount_verify` 也按名取接地真值，故「该名字唯一」是可判定的前置 —— 判定跑 run 34908262839 首跑 R1 `product_search(products=2)` + R2 把 PR-016 造的 ¥100 副本选成目标，6 轮被岔路吃掉。声明前置后这类污染折成 `precondition_not_applied(declared:product_count_for_keyword)`，不再伪装成「agent 不下单」；断言（expectations/must_succeed/amount_verify/data_checks）原样未动；2026-09-15（B 端免验证码产品变更，窄跑 34930597539）：四个「123456」轮去掉 `prefer_text: true` —— 该开关会让 harness 无视待答 confirm 卡、把「点确认」轮硬发成验证码文本，而 B 端代客下单已免短信验证码、落单前必须点击确认卡（order_create 在确认卡未被点击时返回 confirmation_required_card_not_clicked，窄跑 R9~R11 逐字复现）。去掉后按 runner 既有 `resolve_auto_respond` 语义：有待答卡就答卡（confirm→点击 confirmValue / form→回填客户信息），无卡且 C 端 customer 角色被索码时才发 123456 兜底（C 端仍需验证码，见 order_create `_needs_sms_verification` role==customer 分支）；断言（expectations/must_succeed/amount_verify/data_checks/precondition）原样未动；2026-09-18 **假红归因**（issue #4042，LLM 红例 run 35243351675 @67db87ae）：本例在 mibao 腿判红（`amount_verify: 单价 150 ≠ 商品库 168`）而 **xiaobu 腿同一条断言判绿**，差异不在 agent —— 同栈的 PR-021（输入「把遮光窗帘的米白色散剪规格改成 150 元」）把**共享夹具** `prod_eval_blackout` 的米白/散剪 SKU 价改成 150 且**无复位**，而本例 `amount_verify` 的接地真值取的是**商品级价**（168，`_fetch_product_price`）⇒ 按所选规格下单（150 = 该 SKU 库价，工具层接地闸门同样放行）反被判成「凭记忆报价」。两层修法：① 断言语义对齐工具闸门（真值按所选规格取 SKU 价，见本 PR 对 `local_runner.check_amount_verify` 的改动）；② 写方无复位属独立缺陷，另开单跟踪（本 PR 不改夹具写入方）**2026-09-21 改写（issue #4882，用户裁定「彻底删除加工项单价与计价方式」）**：加工项目录与订单快照都不再有 `unitPrice` / `pricingMethod` / `subtotal`（V101 删列 + `ProcessingOrderService.isMeterBasedLine` 判据改写），且 `processing_item_manage(action=calculate_price)` 端点与计价方式枚举一并退场 ⇒ 原 data_checks 里「按计价方式派生数量」「逐项含 pricingMethod」「加工费 = 单价 × 数量」三条口径**失去对象**。按「断言只增不减」原则改写为：数量 = 订单行面料米数；快照键族收缩为 `{id, name, quantity, unit}`；并**新增**一条「加工费真值源 = 加工费组合、不得把逐项单价×数量当加工费」的负向口径。本用例的**内核**（数量可见可对账、禁止虚构每米密度）与 expectations / must_succeed / amount_verify / pre_clean / precondition / user_inputs **一字未动**。 ｜ 2026-09-25（issue #3881 缺陷二 / #4025 F11，用户裁定 A①）：**服务端取价守卫从 fail-open 改 422 fail-closed** —— `OrderService.validateAgentItemUnitPrice` 原在「明细无 SKU 标识」时直接 return（单价零核对落库，#3881 原文的口子），现改为：按商品级唯一权威价核对（唯一 SKU 价，或无 SKU 记录商品的商品级价），权威价无从唯一确定（多规格多价而未声明规格 / 商品查不到 / 无价）即 422 并给可行动话术；顺带让守卫识别工具层声明的首选键 `processingInfo.skuId`（与 `matchSkuId` 同键族）。**本用例断言一字未动**（C 端合法下单链路本就带规格键 / 商品名可唯一解析 ⇒ 逐值为同价核对）；新增判据落在 Java 面：`OrderNoSkuIdentityFailClosedTest`（9 条）与 `OrderNoSkuIdentityRealDbTest`（5 条，真库）。 ｜ 2026-09-26（issue #3789，本单 A 半边）：**把红色形态钉进用例 + 给 processingItems 加字段级断言**。① 新增 `forbidden_interact[round=2]`（负向按轮卡片约束，runner 本单最小扩展）：本用例的红/绿此前**不由 agent 能力决定、而由 R2 是否抽卡决定** —— R2 纯文本提问 ⇒ R3「不需要其他加工项」是**非答卡轮** ⇒ L1 域逃逸清锁（#3784 窗口）⇒ product skill（无 order_create）⇒ 判红；R2 发 choice 卡 ⇒ harness 答卡 ⇒ 答卡轮豁免 ⇒ 留在订单流程 ⇒ 判绿（run 34856561459 红 / 34864608826 绿，分流形态不同）⇒ 判据声明「R2 不得出现 interact 卡」，让判别性红路径不再可能被绕过。② 新增 `required_args[order_create]`（`items[].processing_info.processingItems[].{id,name,quantity,unit}` 四键**逐项存在性**）+ `arg_values[order_create]`（`items[].processing_info.processingItems[].quantity == 3` = **值级**，对应 R1 台词「遮光窗帘 3 米」的面料米数）；配套 runner 侧两处：证据压缩深度上限 `_ARG_MAX_DEPTH` 3 → 5（旧值恰好停在 `items[].processing_info`，`processingItems` 落在深度 0 ⇒ 条目**一个字段都读不到**，这正是「args 只是摘要形态、不展开该字段」的机制），以及 `arg_values` **声明面接线**（该断言家族与证据通道 #3823 早已落码，但 `.github/cases/*.yml` 的声明面未接线 —— 接线后 loader/renderer/生成物/probe 四处同步，见 PR 说明）。③ 原**散文** data_check「processing_info.processingItems 逐项含 `{id, name, quantity, unit}` —— `unitPrice` / `pricingMethod` / `subtotal` 三键已随 issue #4882 退场（订单快照不再承载加工项价与计价方式）」由 ② 的两条机器判据**取代**（散文不计分，按 `MACHINE_DATA_CHECK_MARKERS` 不是断言）—— 原文逐字留档于本行，属**散文 → 机器判据**的升级（「断言只增不减」：判据强度增加，无放宽）。expectations / must_succeed / order_before / amount_verify / pre_clean / precondition / user_inputs / auto_fill 一字未动。 ｜ 2026-11-27（判定跑 46002922920 / issue #9280，**收窄而非删除**）：`forbidden_interact` 由「R2 不得出现任何 interact 卡」收窄为「R2 不得出现 **choice** 卡」。判定链：① 失败原文 `forbidden_interact: R2 出现了 interact 卡（type=confirm「请确认订单信息」）`（同一次 run 的另一轮尝试是 `type=form「确认收货信息（可直接修改）」`）—— 两次都不是 choice 卡，而是落单链路**必须**发出的确认/收货信息卡；② 本用例自己的 `order_before: interact[confirm] before order_create` 与 `order_create` 的 `confirmation_required_card_not_clicked` 门禁**要求**这两张卡存在 ⇒ 旧声明与业务契约自相矛盾（只要模型先问颜色、R2 恰好轮到信息卡就必红）；③ 该 run 的实质断言全绿（must_succeed / amount_verify / required_args / arg_values 数量=3 全过、订单真建出来）⇒ 红只来自形状判据，不是 agent 行为失败；④ 近两周与卡片构造相关的改动（#9274 确认卡只展示掩码手机号、#9277 C 端转人工口径）都只改**卡内文字**、不改**发卡时机**（`git show` 逐行读过），且 runner 的 `resolve_auto_respond` 文档本就写明「agent 实际的提问顺序与卡片类型随模型而变」⇒ 不是产品回归。保留的原意：只有 **choice 卡**会被 `choice_card_answer` 直接选**第一个选项**（= harness 替顾客回答「选有打孔的那件 / 不需要其他加工项」），这才是 #3789 要钉住的绕过路径；form/confirm 卡的作答用的是用例自己声明的 `auto_fill` 载荷与卡自带的 `confirmValue`，不存在替顾客做选择。配套判据 `tests/unit_ci_workflows/test_eval_forbidden_interact.py`（L0）同步锁新形态；**未删除该断言族、未放宽任何业务断言**。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_order_create_processing_quantity.py"
@@ -1559,6 +1572,22 @@ cases:
     #   + db_verify order_items（明细真的按行落库 —— 本次同时补的评测能力）
     # 期望金额（fixture 真值）：夏日清风 3m×158=474、遮光 2m×168=336、打孔 8/m → 24+16=40
     #   → 小计 810 + 加工费 40 = **850**
+    # ── 用例级表单载荷（issue #3804 的既有机制，2026-11-27 补；判定跑 46002922920 / issue #9280）──
+    # 失败原文逐字：`harness_incompatible(no_fillable_payload): 待答 **form** 卡而本轮用例**没有
+    # 可填载荷**`；同一份产物里的具名读数 `card_fields=["customer_name","customer_phone",
+    # "customer_address"]` —— 这三个键取自该 run 里 form 卡**真实声明的字段名**（"请确认收货信息
+    # （可直接修改）"），不是猜的。
+    # 为什么这是 harness/用例形状问题而不是 agent 行为失败：本用例 R2 的台词本来就是把
+    # 姓名/手机/地址**用文字**说给客服；agent 有时把同一件事做成 **form 卡** ⇒ 而 runner 的回填
+    # 需要「本轮有载荷」×「上一轮待答卡是 form」**同时**成立 ⇒ 没载荷时 harness 只能发 fallback
+    # 文本，卡没人答、流程可能就此卡死，红却记在 harness 形状上（#3862 / #3803 的同族）。
+    # 为什么声明在**用例级**而不是"补在那一轮"：那次失败所在轮次随模型提问顺序漂移（同一次 run
+    # 的两次尝试卡序不同），把载荷绑在某个 `auto_respond.form_values` 上又是一次位置依赖 ——
+    # 这正是 #3804 把载荷从轮级提到用例级要解决的问题（runner 侧 `case_form_values` 已支持）。
+    auto_fill:
+      customer_name: "张三"
+      customer_phone: "13800138000"
+      customer_address: "浙江省杭州市西湖区文三路1号"
     user_inputs:
       - "我要买两款：夏日清风窗帘 米白色 3 米，遮光窗帘 米白 2 米，都要打孔加工"
       - auto_respond:
@@ -1582,7 +1611,21 @@ cases:
       - auto_respond:
           fallback: "确认"
     expectations:
-      - tool: product_search
+      # 2026-11-27（判定跑 46002922920，issue #9280）：原 `- tool: product_search` 改为**路径无关**
+      # 的同义组。商品接地仍由 `product_detail`（+ amount_verify 的单价真值 + db_verify 的逐行
+      # 明细）守，不再钉死"模型必须调 search 这一个工具"。
+      # 现取判据：`backend/ai-agent-service/app/tools/product_detail.py` 的参数描述逐字写着
+      # 「商品 ID（UUID / 序号 / 商品名均可，**名称无需先调 product_search**）」（#8787 接线
+      # `resolve_product_id` 时的产品契约）；本 run 的 agent 正是照描述用
+      # `product_detail{product_id: "夏日清风窗帘"}` 直接接地（两次尝试都如此），而上一跑
+      # （45979067843）走的是 search→detail —— 两条都是产品给的合法路径，旧声明会按"模型选了
+      # 哪条路"随机判红（`unmatched expectation` 读起来像 agent 不干活 = 归因错人）。
+      # 同形先例：`.github/cases/chat.yml` / `.github/cases/product.yml` 的
+      # `product_detail or product_search`；本文件 OR-014 的 `expectations` 注释同一口径
+      # （「断言**业务结果**而不是模型调了哪个工具」，issue #3365）。
+      # 未放宽者：`product_detail` / `interact` / `order_create` 仍逐条要求，
+      # must_succeed / amount_verify / db_verify / order_before / precondition 逐字未动。
+      - tool: product_detail or product_search
       - tool: product_detail
       - tool: interact
       - tool: order_create
@@ -1643,7 +1686,7 @@ cases:
       - "加工费按各自米数分别计算（3 米→24、2 米→16），总额 = Σ小计 810 + Σ加工费 40 = 850"
       - "两款商品的单价都必须来自商品库（158/168），不得凭记忆报价"
     skip_reason: ""
-    merge_log: "2026-09-13 新增（issue #3367）：C 端能力上限用例（多商品/多加工项/逐行金额）。2026-09-19（issue #4421 的 burn-down 缴费 —— 改用例文件的 PR 须净缩 ≥1 条存量违规，本用例命中的两条是 CASE-TRUST-NO-SELF-CLEAN + CASE-TRUST-NO-PRECONDITION-ASSERTION，metric=entries ⇒ 必须**整条**销账）：补 `namespaces[product_name:夏日清风窗帘, product_name:遮光窗帘, customer_phone:13800138000]` + `precondition[product_count_for_keyword × 2, expect: 1]` —— 多商品下单按商品名定位两行明细，「每个名字唯一」是它真正依赖且只读的前置（先例 = OR-014 / OR-017 / CH-019）。**有意不给 `order_count_for_phone`**：本用例自己会建单 ⇒ 漂移判据（缺省 `max_growth: 0`）必然判红。断言（user_inputs / expectations / must_succeed / amount_verify / db_verify / order_before / data_checks）原样未动、无放宽。"
+    merge_log: "2026-09-13 新增（issue #3367）：C 端能力上限用例（多商品/多加工项/逐行金额）。2026-09-19（issue #4421 的 burn-down 缴费 —— 改用例文件的 PR 须净缩 ≥1 条存量违规，本用例命中的两条是 CASE-TRUST-NO-SELF-CLEAN + CASE-TRUST-NO-PRECONDITION-ASSERTION，metric=entries ⇒ 必须**整条**销账）：补 `namespaces[product_name:夏日清风窗帘, product_name:遮光窗帘, customer_phone:13800138000]` + `precondition[product_count_for_keyword × 2, expect: 1]` —— 多商品下单按商品名定位两行明细，「每个名字唯一」是它真正依赖且只读的前置（先例 = OR-014 / OR-017 / CH-019）。**有意不给 `order_count_for_phone`**：本用例自己会建单 ⇒ 漂移判据（缺省 `max_growth: 0`）必然判红。断言（user_inputs / expectations / must_succeed / amount_verify / db_verify / order_before / data_checks）原样未动、无放宽。 ｜ 2026-11-27（判定跑 46002922920 / issue #9280）：**补用例级表单载荷 + 期望面改路径无关**，两处都是「harness/用例形状」而不是业务断言。① 补 `auto_fill`（customer_name / customer_phone / customer_address —— 三个键取自该 run 里 form 卡**真实声明的**字段，见失败原文的 `card_fields`）：原文 `harness_incompatible(no_fillable_payload): 待答 form 卡而本轮用例没有可填载荷` ⇒ agent 把「姓名/手机/地址」做成了 form 卡（「请确认收货信息（可直接修改）」）而用例没有载荷可回填，卡没人答、流程可能卡死（#3862 / #3803 同族）；声明在**用例级**（#3804 的机制）而不是补在某一轮，因为失败轮次随模型提问顺序漂移（同 run 两次尝试卡序不同）。② `expectations` 的 `product_search` 改为 `product_detail or product_search`：`product_detail` 的参数描述逐字写着「名称无需先调 product_search」（#8787 的产品契约），本 run 的 agent 正是按描述用 `product_detail{product_id: 商品名}` 直接接地（上一跑走 search→detail）—— 两条都是合法路径，旧声明会按「模型走了哪条路」随机判红且归因成「agent 不干活」；商品接地仍由 `product_detail` + amount_verify（158/168 单价真值）+ db_verify（逐行明细）守。**未删除任何断言、未放宽任何业务判据**（order_create / interact / must_succeed / amount_verify / db_verify / order_before / precondition 逐字未动），配套 L0 判据见 `tests/unit_ci_workflows/test_eval_auto_respond_l0.py`。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_acceptance_case_checks.py"
