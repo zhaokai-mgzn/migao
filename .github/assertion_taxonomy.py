@@ -545,6 +545,39 @@ def expectation_tools(case: dict) -> list[tuple[str, dict]]:
     return out
 
 
+# ── 非工具断言面（由 runner 计分，但**不是**工具调用）──────────────────────────────
+#: `expectations` 里以**结构化面名**出现的断言（现取只有一个，2026-11-27 新增）：
+#:   · `kf_judge` = 微信客服（kf）判定 JSON 面 —— 喂顾客消息 → 断言
+#:     `intent / risk / emotion / confidence / escalate`（面本体 `tests/agent_eval/kf_judge_face.py`，
+#:     接 ai-agent 真端点 `POST /api/internal/kf/judge`）。
+#:
+#: 为什么必须在**本模块**（单一判据源）里登记、而不是各门禁各写一份：`expectation_tools()`
+#: 只认 `{tool: …}` / `"tool(...)"` 形态 ⇒ 这类期望在它眼里是"取不到工具名"，于是
+#: 「无可计分断言 ⇒ 该是静态 CI 用例」的结构判据会把它误判成静态用例（假红：明明由 runner 计分）。
+#: 现取消费者：`tests/unit_ci_workflows/test_code_criteria_cases_are_contract_marked.py`（信号 B）
+#: 与 `tests/unit_ci_workflows/test_static_ci_cases_are_skipped.py`（条件 2）。
+#: ⚠️ 键名必须与 `.github/render_cases.py::exp_to_str` 消费的键一致（判据 = 
+#: `tests/unit_ci_workflows/test_kf_judge_face.py::TestExpectationShape`）。
+NON_TOOL_ASSERTION_FACES: tuple = ("kf_judge",)
+
+
+def expectation_faces(case: dict) -> list:
+    """`expectations` 里出现的**结构化断言面**名（由 runner 计分、但不是工具调用）。
+
+    纯函数、零依赖（与 `expectation_tools` 同一层）。现取只认 `NON_TOOL_ASSERTION_FACES`
+    里登记过的面名 —— **未登记的面名不会被当成断言**（fail-closed：宁可要求补登记，
+    也不让一个打错字的面名静默变成"有断言"）。
+    """
+    out: list = []
+    for exp in (case.get("expectations") if isinstance(case, dict) else None) or []:
+        if not isinstance(exp, dict):
+            continue
+        for key in exp:
+            if key in NON_TOOL_ASSERTION_FACES and key not in out:
+                out.append(key)
+    return out
+
+
 def is_write_expectation(tool: str, args: dict | None = None) -> bool:
     """该 (工具, args) 期望是否**写**操作。
 

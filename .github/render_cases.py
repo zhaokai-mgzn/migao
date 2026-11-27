@@ -23,6 +23,7 @@ render_cases.py — 用例契约渲染器（case-contract 单一源的两端）
 """
 import argparse
 import importlib.util
+import json
 import os
 import re
 import sys
@@ -217,9 +218,25 @@ def _one_line(v) -> str:
     return " ".join(str(v).split())
 
 
+def _kf_face_render(spec):
+    """kf 判定面期望的规范串（`kf_judge({...json...})`）。
+
+    ⚠️ **为什么这里不 import `tests/agent_eval/kf_judge_face.py` 的实现**（曾这么写过，实测踩红）：
+    渲染器会在**只复制了 `.github/` 的树**里跑（`tests/unit_ci_workflows/test_generated_artifacts_*`
+    的沙箱、以及 README 说的 `.github` seed 副本）⇒ `tests/` 不在场 ⇒ `ModuleNotFoundError`
+    ⇒ 整条渲染腿 fail-closed 挂掉（本 PR 首版实测 5 条判红）。渲染器必须**自包含**。
+    ⇒ 规范串的格式在本文件与面模块各有一份，**由判据钉住逐字相等**
+    （`tests/unit_ci_workflows/test_kf_judge_face.py::TestExpectationShape`：渲染 ==
+    `kf_judge_face.render_expectation(spec)` 且可逆）；漂移即红，不会静默只改一处。
+    """
+    return "%s(%s)" % ("kf_judge", json.dumps(spec, ensure_ascii=False, sort_keys=True))
+
+
 def exp_to_str(e):
     if isinstance(e, str):
         return e
+    if isinstance(e.get("kf_judge"), dict):
+        return _kf_face_render(e.get("kf_judge"))
     tool = e.get("tool", "")
     args = e.get("args") or {}
     if not args:

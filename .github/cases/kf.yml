@@ -663,3 +663,138 @@ cases:
         - "frontend/admin-web/tests/unit/components/WechatKfOnboarding.test.tsx"
       ci: [pr-check.yml]
       verifies: []
+
+  # ── LLM 级判据面（2026-11-27 新增，关联 #9224 / CASE-AUDIT §四）───────────────────────
+  # 为什么单开这一族：kf 是 C 端**唯一主入口**（C 端 mini-app 已于 2026-11-26 删除），
+  # 而本文件此前 30 条**全部** `skip_reason` 非空 ⇒ kf 的「这句话该不该转真人」零 LLM 级覆盖。
+  # 判据面 = `tests/agent_eval/kf_judge_face.py`（喂顾客消息 → 断言判定 JSON 字段），
+  # 接的是**真实现**：`POST /api/internal/kf/judge`（`app/api/kf_judge.py` 的 `judge_text`），
+  # 与 admin-api 的 `KfJudgeClient` 同一端点 / 同一函数 / 同一 Service Token 契约。
+  # 红证（不会红的断言=空断言）：`tests/unit_ci_workflows/test_kf_judge_face.py`。
+
+  - id: KF-031
+    legacy_id: ""
+    title: "微信客服判定 — 顾客明确要人工（「我要人工，叫你们老板来」）⇒ escalate=true"
+    domains: [kf]
+    tier: normal
+    persona: xiaobu
+    tags: [kf, judge, escalate, human-request]
+    truths_ref: [kf.judge, kf.decision]
+    user_inputs:
+      - "我要人工，叫你们老板来跟我说"
+    expectations:
+      - kf_judge:
+          escalate: true
+    data_checks:
+      - "期望接地①（规则层，先于语义）：`backend/admin-api/src/main/java/com/migao/admin/service/kf/KfDecisionService.java` 的 `HUMAN_WORDS` 含「人工」⇒ `decide()` 命中即 `ESCALATE_HUMAN`，且**不发起**语义判定（省钱省延迟、要人工永不漏）⇒ 生产链路上这句话必然转人工"
+      - "期望接地②（语义层 = 本用例的真被测面）：`backend/ai-agent-service/app/api/kf_judge.py` 的 `_JUDGE_PROMPT` 第 5 项逐字要求「客户明确要人工 ⇒ escalate=true」⇒ 规则腿与语义腿**同向**，故 escalate=true 是现实现口径（不是凭空断言）"
+      - "⚠️ 本用例**不派发真实 LLM 评测**（用户裁定 #4262）：只登记用例，等人工集中跑一次时验证"
+    skip_reason: ""
+    merge_log: "2026-11-27 新增（关联 #9224，依据 CASE-AUDIT §四）：微信客服通道 **LLM 级判据零覆盖**补齐 —— 本条锁「明确要人工」的介入判定（escalate=true），判据面 = tests/agent_eval/kf_judge_face.py（接真端点 /api/internal/kf/judge），红证 = tests/unit_ci_workflows/test_kf_judge_face.py"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_kf_judge_face.py"
+      ci: [pr-check.yml]
+      verifies: []
+
+  - id: KF-032
+    legacy_id: ""
+    title: "微信客服判定 — 高风险/法律威胁（「投诉到 12315 / 去起诉你们」）⇒ escalate=true"
+    domains: [kf]
+    tier: normal
+    persona: xiaobu
+    tags: [kf, judge, escalate, risk]
+    truths_ref: [kf.judge, kf.decision]
+    user_inputs:
+      - "这事我不接受，我要投诉到 12315，必要时我去起诉你们"
+    expectations:
+      - kf_judge:
+          escalate: true
+    data_checks:
+      - "期望接地①（规则层）：`backend/admin-api/src/main/java/com/migao/admin/service/kf/KfDecisionService.java` 的 `RISK_WORDS` 含「投诉」「起诉」⇒ 命中即 `ESCALATE_HUMAN`、不发起语义判定（高风险永不漏）"
+      - "期望接地②（语义层）：`backend/ai-agent-service/app/api/kf_judge.py` 的 `_JUDGE_PROMPT` 把「法律威胁 / 质量投诉」定义为 `risk=high`；同文件 `judge_text()` 的 `escalate=bool(data.get(\"escalate\")) or risk == \"high\"` 是**保守侧**（模型即使给 escalate=false，risk=high 也强制升级）⇒ escalate=true 有代码级接地"
+      - "⚠️ 本用例**不派发真实 LLM 评测**（用户裁定 #4262）：只登记用例，等人工集中跑一次时验证"
+    skip_reason: ""
+    merge_log: "2026-11-27 新增（关联 #9224，依据 CASE-AUDIT §四）：kf 通道 LLM 级判据补齐 —— 本条锁「高风险/法律威胁」的保守侧升级（规则风险词 + 语义 risk=high 双接地），判据面 = tests/agent_eval/kf_judge_face.py，红证 = tests/unit_ci_workflows/test_kf_judge_face.py"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_kf_judge_face.py"
+      ci: [pr-check.yml]
+      verifies: []
+
+  - id: KF-033
+    legacy_id: ""
+    title: "微信客服判定 — 普通问价（「这个雪尼尔多少钱一米」）⇒ escalate=false 且 intent=price"
+    domains: [kf]
+    tier: normal
+    persona: xiaobu
+    tags: [kf, judge, no-escalate, price]
+    truths_ref: [kf.judge, kf.decision]
+    user_inputs:
+      - "这个雪尼尔多少钱一米"
+    expectations:
+      - kf_judge:
+          escalate: false
+          intent: price
+    data_checks:
+      - "期望接地①（为什么这句话会走到语义判定）：`backend/admin-api/src/main/java/com/migao/admin/service/kf/KfDecisionService.java` 的 `decide()` 只在规则**未命中**时才调 `KfJudgeClient.judge(...)`；本句不含 `HUMAN_WORDS`（人工/真人/客服/转人工）、也不含 `RISK_WORDS`（投诉/退款/赔偿/起诉/律师/曝光/差评）⇒ 被测面正是本用例断言的判定 JSON"
+      - "期望接地②（为什么 escalate=false 且 intent=price）：`backend/ai-agent-service/app/api/kf_judge.py` 的 `_JUDGE_PROMPT` 第 1 项把「询价」定义为 `intent=price`，第 5 项只在「明确要人工 / 投诉退款赔偿 / 情绪 angry / risk=high / 意图不清且涉及承诺」时 escalate ⇒ 普通问价落 `AI_REPLY` 路径（`KfDecisionService` 的默认分支）"
+      - "⚠️ 本用例**不派发真实 LLM 评测**（用户裁定 #4262）：只登记用例，等人工集中跑一次时验证"
+    skip_reason: ""
+    merge_log: "2026-11-27 新增（关联 #9224，依据 CASE-AUDIT §四）：kf 通道 LLM 级判据补齐 —— 本条锁「普通问价不升级」的默认路径（escalate=false + intent=price），防「一律转人工」的反向缺陷（过度升级 = 顾客问价被踢给人工），判据面 = tests/agent_eval/kf_judge_face.py"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_kf_judge_face.py"
+      ci: [pr-check.yml]
+      verifies: []
+
+  - id: KF-034
+    legacy_id: ""
+    title: "微信客服判定 — 不满情绪但不要求人工（「什么破质量，气死我了」）⇒ 负面情绪 + 保守侧升级"
+    domains: [kf]
+    tier: normal
+    persona: xiaobu
+    tags: [kf, judge, emotion, escalate]
+    truths_ref: [kf.judge, kf.decision]
+    user_inputs:
+      - "你们这什么破质量，气死我了，这批布跟样布完全不一样"
+    expectations:
+      - kf_judge:
+          escalate: true
+          emotion: [upset, angry]
+    data_checks:
+      - "情绪面：`backend/ai-agent-service/app/api/kf_judge.py` 的 `_JUDGE_PROMPT` 第 3 项 emotion 三值 = calm|upset|angry ⇒ 本断言取 **one-of（upset/angry）**：模型对「气死我了」可能给 upset 或 angry，逐字锁死一个值会造 flake（两者都是负面情绪，业务口径等价）"
+      - "escalate 的现实现口径（**不是**凭空断言 true）：同文件 `_JUDGE_PROMPT` 第 2 项把「**质量投诉**」定义为 `risk=high`；`judge_text()` 的 `escalate=bool(data.get(\"escalate\")) or risk == \"high\"` ⇒ 质量投诉落在 risk=high 时**代码强制升级**（与 admin-api 的「永不漏」同口径）。本条刻意不含 `RISK_WORDS` 的任何字面（投诉/退款/赔偿/起诉/律师/曝光/差评）与 `HUMAN_WORDS`（人工/真人/客服/转人工）⇒ 规则不短路，语义判定面才是真被测对象（规则短路由 KF-031/KF-032 覆盖）"
+      - "⚠️ 本用例**不派发真实 LLM 评测**（用户裁定 #4262）：只登记用例，等人工集中跑一次时验证"
+    skip_reason: ""
+    merge_log: "2026-11-27 新增（关联 #9224，依据 CASE-AUDIT §四）：kf 通道 LLM 级判据补齐 —— 本条锁「情绪激动/质量投诉」的补召回形态（规则抓不到、由语义判定升级），emotion 用 one-of 防 flake、escalate 由 risk=high 保守侧接地"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_kf_judge_face.py"
+      ci: [pr-check.yml]
+      verifies: []
+
+  - id: KF-035
+    legacy_id: ""
+    title: "微信客服判定 — 售后诉求（「这批布有瑕疵，我要退」）⇒ intent=after_sales"
+    domains: [kf]
+    tier: normal
+    persona: xiaobu
+    tags: [kf, judge, after-sales, intent]
+    truths_ref: [kf.judge, kf.decision]
+    user_inputs:
+      - "上次买的这批布有瑕疵，我要退，怎么弄"
+    expectations:
+      - kf_judge:
+          intent: after_sales
+    data_checks:
+      - "期望接地：`backend/ai-agent-service/app/api/kf_judge.py` 的 `_JUDGE_PROMPT` 第 1 项把「售后」定义为 `intent=after_sales`；本句诉求 = 瑕疵商品要退货处理 ⇒ 判定面应给 after_sales（即 `KfDecisionService` 规则未命中后由 `KfJudgeClient` 取到的语义意图，决定工单路由而不必升级人工）"
+      - "为什么本条**只**断言 intent 而不断言 escalate：`RISK_WORDS` 是「退款」不是「退」，本句不含规则词；但「瑕疵 + 要退」在 prompt 里接近「退款/赔偿」⇒ escalate 期望会随模型口径抖动。本用例锁最稳的意图面（escalate 面由 KF-032 / KF-034 覆盖），避免造 flake"
+      - "⚠️ 本用例**不派发真实 LLM 评测**（用户裁定 #4262）：只登记用例，等人工集中跑一次时验证"
+    skip_reason: ""
+    merge_log: "2026-11-27 新增（关联 #9224，依据 CASE-AUDIT §四）：kf 通道 LLM 级判据补齐 —— 本条锁售后诉求的意图分类（intent=after_sales），判据面 = tests/agent_eval/kf_judge_face.py，红证 = tests/unit_ci_workflows/test_kf_judge_face.py"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_kf_judge_face.py"
+      ci: [pr-check.yml]
+      verifies: []

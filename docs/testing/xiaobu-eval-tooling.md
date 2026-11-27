@@ -699,6 +699,7 @@ EVAL_CONCURRENCY=6 python tests/agent_eval/local_runner.py normal --cases .githu
 | **文案反模式（禁词）** | `forbidden_text` / `want_text` | ✅ |
 | **状态宣告必须有工具落地** | `check_unbacked_state_claim` | ✅ |
 | **能力误宣（能做说做不了）** | `check_false_inability`（含转人工理由文本） | ✅ |
+| **微信客服（kf）介入判定：这句话该不该转真人** | `expectations[].kf_judge`（字段级：`escalate` / `intent` / `risk` / `emotion` / `confidence_min`；面 = `tests/agent_eval/kf_judge_face.py`，**接真端点** `POST /api/internal/kf/judge` ⇒ 返回 `intent/risk/emotion/confidence/escalate`，不是 mock/常量）。**失败关闭**：端点不可达 / `success=false` / 空输入 ⇒ 具名 `kf_judge_unavailable` 判红，不静默 pass | ✅（2026-11-27 新增，用例 KF-031~KF-035；kf = C 端唯一主入口，此前该面**零** LLM 级判据） |
 | **假成功（报错却说成功）** | `check_false_success`（细化：报错后有写成功则不算谎报） | ✅ |
 | **隐私（完整手机号回显）** | `check_no_full_phone`（C 端全局） | ✅ |
 | **金额/数量正确性** | `amount_verify`（与商品库真值比）、`output_verify`（工具 payload 真值，**支持点号路径** `result.status`，issue #3667）、`db_verify`（落库明细/号码，见下行） | ✅ |

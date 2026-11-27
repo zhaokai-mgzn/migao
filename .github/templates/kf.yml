@@ -8,6 +8,7 @@ business_truths:
   - [kf.card-renderer] 米宝卡片在微信客服降级：业务卡→标题/摘要/链接；支付→扫码 URL；按钮→编号选项；表单→直接回复文字
   - [kf.end-human] 人工结束：trans(4) + kf_session_remote.closed_at；下条客户消息建新 epoch 会话
   - [kf.decision] 判定短路：state 非 0/1 → SILENT；人工/投诉退款等 → ESCALATE_HUMAN；默认 AI_REPLY
+  - [kf.judge] 语义判定（ai-agent 内部端点 /api/internal/kf/judge）：intent（询价 price / 下单 order / 售后 after_sales / 物流 logistics / 转人工 human_request / 闲聊 chitchat / 其他 other）、risk（none|low|high）、emotion（calm|upset|angry）、confidence 0~1、escalate；模型输出不可解析/调用失败 ⇒ success=false（admin-api 按规则回退，绝不拒答）；risk=high 一律 escalate（保守侧，不因模型自相矛盾漏升级）
   - [kf.transfer] 转人工先建 agent_sessions(waiting) 再 trans(2)；trans 失败回滚工作台会话、不更新 remote
   - [kf.decision-controller] /api/internal/kf/decide|transfer 返回 decision/agent_session_id
   - [kf.send] 回复入队：校验 wechat_kf 会话 → 48h/5 条预算原子扣减 → 写 kf_outbox；预算耗尽抛异常

@@ -91,6 +91,7 @@ sys.path.insert(0, str(REPO_ROOT / ".github"))
 
 from assertion_taxonomy import (  # noqa: E402
     CONTRACT_MARKERS,
+    expectation_faces,
     expectation_tools,
     is_backend_contract_case,
 )
@@ -156,14 +157,19 @@ def _expectation_texts(case: dict) -> list:
 
 
 def signal_b_no_behavior_assertion(case: dict) -> bool:
-    """信号 B：`expectations` 非空，却取不到任何工具名（= 没有可计分的 agent 行为断言）。
+    """信号 B：`expectations` 非空，却取不到任何**可计分**断言（工具名 或 结构化断言面）。
 
     ⚠️ `expectations` **为空**时返回 False（不表态）——`CH-049` / `PR-073` 走
     `forbidden_text` / `forbidden_tools` 通道，是合法的非 expectations 断言形态。
+
+    ⚠️ **结构化断言面**（`assertion_taxonomy.NON_TOOL_ASSERTION_FACES`，现取 = `kf_judge`）
+    也算「可计分断言」：它由 runner 的判定面计分（`tests/agent_eval/kf_judge_face.py`），
+    只是不带 `tool` 键。不认它 ⇒ 真 LLM 行为用例会被误判成静态 CI 用例（假红，2026-11-27 实测
+    KF-031~035 命中本信号）。**未登记的面名不算**（见 `expectation_faces` 的 fail-closed 口径）。
     """
     if not case.get("expectations"):
         return False
-    return not expectation_tools(case)
+    return not expectation_tools(case) and not expectation_faces(case)
 
 
 def signal_a_code_criterion_wording(case: dict) -> bool:
@@ -291,6 +297,22 @@ def test_negative_control_forbidden_channel_is_green() -> None:
         {"id": "FX-906", "user_inputs": ["帮我写张海报文案"],
          "expectations": [], "forbidden_tools": ["marketing_poster"]},
     ]
+    assert undeclared_code_criteria(fake) == []
+
+
+def test_negative_control_structured_face_is_green() -> None:
+    """负控 6：断言**结构化面**（`kf_judge`，无 `tool` 键）的真 LLM 用例 ⇒ 不许红。
+
+    语料现取真实形态 = `KF-031`~`KF-035`（微信客服判定 JSON 面，2026-11-27 新增）：
+    它们由 runner 的判定面计分（`tests/agent_eval/kf_judge_face.py`），**不是**静态 CI 用例。
+    判据 = `assertion_taxonomy.expectation_faces`（未登记的面名仍按"没有断言"处理）。
+    """
+    fake = [{
+        "id": "FX-908",
+        "user_inputs": ["我要人工，叫你们老板来跟我说"],
+        "expectations": [{"kf_judge": {"escalate": True}}],
+        "skip_reason": "",
+    }]
     assert undeclared_code_criteria(fake) == []
 
 
