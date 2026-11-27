@@ -2019,13 +2019,9 @@ async def _execute_tool_safe(tool, tool_args: dict, tool_context, state: dict) -
     """
     from app.tools.langchain_adapter import LangChainToolAdapter
 
-    # 1. 规范化参数：LLM 可能把 array/object 序列化为 JSON 字符串
-    # 兜底：MiniMax 可能把所有参数包在 data 键下
-    if "data" in tool_args and isinstance(tool_args.get("data"), dict):
-        nested = tool_args["data"]
-        if any(k not in tool_args for k in nested):
-            logger.info(f"[tool-exec] Flattened nested data for {tool.name}: keys={list(nested.keys())[:8]}")
-            tool_args = {**nested, **{k: v for k, v in tool_args.items() if k != "data"}}
+    # 1. 规范化参数：LLM 可能把 array/object 序列化为 JSON 字符串；`data` 包裹的调用见
+    #    `LangChainToolAdapter._unwrap_wrapped_data`（工具**自己声明**了 data 参数时不许拆，issue #9224）
+    tool_args = LangChainToolAdapter._unwrap_wrapped_data(tool, tool_args)
     tool_args = LangChainToolAdapter._normalize_args(tool, tool_args)
     # 幻觉参数净化（见 _sanitize_tool_args 注释：order_create 收到 action → TypeError → 抖动）
     _raw_args = dict(tool_args)

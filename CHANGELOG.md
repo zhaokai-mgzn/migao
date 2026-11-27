@@ -5,6 +5,12 @@
 > 原因 = 单文件涨到 512KB 越过扫描上限，详见存档文件头与 issue #6404。
 > **后续条目继续在本文件 `## [Unreleased]
 
+### 改客户手机号不再「系统一直返回缺少更新数据」：`data` 参数不再被 MiniMax 兜底解包拆散（2026-11-27，issue #9224）
+
+- **形态**（评测 run 45979067843 的 CU-004 现取）：`customer_manage(action=update, data={phone: 新号})` 的 `data` 在共享执行入口 `_execute_tool_safe` 被「MiniMax 把所有参数包在 `data` 键下」的兜底**无条件**解包 ⇒ `{action, customer_id, data:{phone}}` 变成 `{phone, action, customer_id}` ⇒ 工具收到 `data=None`、报「缺少更新数据」，而拆出来的那个 `phone` 又被 `execute(**kwargs)` 静默吞掉 ⇒ **写调用一次都没到 HTTP 层**（库里的号一直没变，评测同时报 `WRITE_NOT_PERSISTED`）。修法 = 解包前先看**工具自己是否声明了 `data` 参数**（声明了就是业务参数，一律不动；没声明才按 MiniMax 形态摊平）。同批给 `validate_input(params=…)` 补上掩码守卫：它的 `params` 是**写参数**（会落进 `pending_validated_input`，点卡后的代码收口照它执行）⇒ 掩码形态的号码就地改写成顾客给的**真号**（只改写、不拦）。
+- **不变**：`_masked_phone_write_block` 的拦截口径一个字没放宽（掩码值绝不落库）；确认卡面仍只展示掩码手机号（2026-11-27 产品裁定）；MiniMax 包裹兜底对**没有** `data` 参数的工具原样保留。
+- **判据**：`backend/ai-agent-service/tests/test_cu004_write_path_params_9224.py`（5 条：`data` 必须原样到达工具 / 没声明 `data` 的工具仍要解包 / `validate_input` 掩码改写真号 / 真号幂等 / 真工具发出的 `PUT` body 带新号）+ 真库 `backend/admin-api/src/test/java/com/migao/admin/service/CustomerPhoneUpdateRealDbTest.java`（真 PG：库里是新号、旧号不在，且只改给出的字段）。
+
 ### 确认卡只许展示掩码手机号：卡面 `fields[].value` 由服务端统一改写，掩码对齐「本轮真正要写入的号」（2026-11-27，issue #9224）
 
 - **形态**（用户 2026-11-27 产品口径裁定，逐字：「确认卡是否允许展示完整手机号，这个裁定是**展示脱敏后的手机号**，不能完整展示」）：`interact(component=confirm)` 的卡片在**工具结果进上下文/出站之前**统一整形（`app/graph/skills/execution/react_turn.py` 的调用点 + `app/graph/skills/phone_masking.py::mask_confirm_card_result`）—— `fields[].value` 里凡是手机号形态的值（完整 11 位号 / 已是掩码形态 / 嵌在嵌套 dict 与列表里）一律改写成掩码，且**以 `pending_validated_input` 的真号为锚**：模型抄来的旧号掩码（`138****8000`）会被改写成「本轮真正要写入的那个号」的掩码（`139****1111`）⇒ 卡面展示的号与落库的号终于同一个（CU-004：改前展示旧号、写入新号）。`confirmValue` 由掩码后的字段**同一次**重算（顾客点卡回传的就是它，与落库的 `last_confirm_value` 同源）。
