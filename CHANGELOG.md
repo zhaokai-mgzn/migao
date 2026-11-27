@@ -11,6 +11,11 @@
 - **不变**：拦截口径一个字没放宽（掩码值依旧绝不落库）；「顾客亲口给过且唯一匹配 ⇒ 改写放行」与「顾客没说 ⇒ 回放本会话真号」两条现状路径原样保留。
 - **判据**：`backend/ai-agent-service/tests/test_graph_skills.py` 的 `TestMaskedPhoneWriteGuard` 新增 5 条行为判据（旧号掩码只指向顾客新号 / 填 `0` 形态同款 / 多个候选全列出 / 无候选仍回放本会话真号 / 改写放行防回归）+ 1 条「文案只拼一份」的结构判据；golden `base_skill_slice_golden.json` **逐字节未变**（`test_injection_face_is_byte_identical_after_slice`）。
 - **边界**：不改脱敏面与确认卡字段（`app/api/chat_outbound.py` 的手机号脱敏 / 卡面 `fields[].value`）——「卡面是否展示完整手机号」属产品口径裁定，不在本单。
+### 公开面 host 收敛到 apex：sitemap / robots / canonical 不再声明 www（2026-11-27，issue #8968）
+
+- **形态**：`www.<域>` → `<域>` 的 **308** 由 `frontend/admin-web/next.config.mjs` 的 `redirects()` 产生（规则 `permanent: true`，Next 把它映射成 `RedirectStatusCode.PermanentRedirect` = 308；改前注释写的「301」与实现不符，已订正），且规则按 `NEXT_PUBLIC_SITE_DOMAIN` 参数化 ⇒ **任意域都跳**（测试域 `migaozn.com` 与生产域 `cytda.com` 实测一致）。而 sitemap 的 5 条 `<loc>`、`robots.txt` 的 `Sitemap:`、canonical 与 `metadataBase` 都写 `https://www.<域>` ⇒ 爬虫每条先吃一次 308，canonical 与真实落点不一致。现在 `siteOrigin()` = **apex**（`https://<域>`），四个消费面全部从它派生；`wwwHost()` 只留给跳转判定（`next.config.mjs` 的规则 / `src/proxy.ts` 的 host 分支）。
+- **可见行为变更**（缺省域与生产域同形）：`https://www.migaozn.com/` → `https://migaozn.com/`（`cytda.com` 同理），涉及 sitemap 的 5 条 `<loc>`、`robots.txt` 的 `Sitemap:`、`metadataBase`、canonical 与 `og:image` 的绝对地址。www 仍然 308 到 apex，旧链接不断。
+- **判据**：`frontend/admin-web/tests/unit/pages/public-surface-host.test.ts`（用例 UI-155，5 条：公开面不在跳转集合 / sitemap 逐条同源 / robots 同源 / metadataBase+canonical 同源 / 判别力自证）；同批更新 `frontend/admin-web/tests/unit/lib/site-domain.test.ts`、`frontend/admin-web/tests/unit/pages/site-domain.test.ts`、`frontend/admin-web/tests/unit/pages/corporate-metadata-single-source.test.ts` 的期望锚点。红证：消费者改回 www ⇒ 具名红（读数见用例 merge_log）。
 
 ### 掩码手机号：顾客亲口给过的真号可唯一匹配时自动改写，写路径不再死循环（2026-11-26，issue #9224）
 

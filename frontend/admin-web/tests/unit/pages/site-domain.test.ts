@@ -7,8 +7,8 @@
 // sitemap 把生产页登记成测试域 ③ `merchant.cytda.com/` 不跳登录页、`cytda.com/dashboard`
 // 不跳商家域（`src/proxy.ts` 的 host 分支不认识该域名，未知域直接 `next()`）。
 //
-// 本文件钉三层：
-//   ① **缺省值**（不设 env）⇒ 全部派生值与改前**逐字相同**（测试环境在跑，不许有行为变化）；
+// 本文件钉三层（issue #8968 起公开面 = **apex**：www 会 308，写进 sitemap / canonical 就是假落点）：
+//   ① **缺省值**（不设 env）⇒ 全部派生值与改前**逐字相同**，唯一例外是公开面 origin 收成 apex；
 //   ② **显式 `NEXT_PUBLIC_SITE_DOMAIN=cytda.com`** ⇒ 五个落点（含 `next.config.mjs` / proxy）全部跟着走；
 //   ③ **类级元守卫**：`src/**` 与 `next.config.mjs` 里不许再出现新的硬编码域名（只许留在唯一来源）。
 import { describe, it, expect, vi, afterEach } from 'vitest'
@@ -52,30 +52,31 @@ afterEach(() => {
 })
 
 /**
- * 改前的站点 origin（逐字锚点：缺省值下产物必须与它一模一样）。
+ * 站点**公开面** origin（缺省域）：issue #8968 起 = **apex** —— www 会 308 跳到这里，
+ * 所以声明 www 就是声明一个会跳走的落点（爬虫每条 `<loc>` 都先吃一次 308）。
  * 派生值本身（apex / www / merchant / 登录地址 / 归一化）在 `tests/unit/lib/site-domain.test.ts`；
- * 本文件钉的是**落点**：next.config 301 / proxy 分流 / metadataBase / sitemap / robots。
+ * 本文件钉的是**落点**：next.config 的 www→apex 308 / proxy 分流 / metadataBase / sitemap / robots。
  */
-const PRE_CHANGE_ORIGIN = 'https://www.migaozn.com'
+const PUBLIC_ORIGIN = 'https://migaozn.com'
 
 describe('缺省值（不配置 NEXT_PUBLIC_SITE_DOMAIN）⇒ 与改前逐字相同', () => {
-  it('sitemap / robots 的落点仍是 www.migaozn.com', () => {
+  it('sitemap / robots 的落点 = 公开面 apex（issue #8968）', () => {
     vi.stubEnv('NEXT_PUBLIC_SITE_DOMAIN', '')
     expect(sitemap().map((entry) => entry.url)).toEqual([
-      `${PRE_CHANGE_ORIGIN}/`,
-      `${PRE_CHANGE_ORIGIN}/about/`,
-      `${PRE_CHANGE_ORIGIN}/services/`,
-      `${PRE_CHANGE_ORIGIN}/contact/`,
-      `${PRE_CHANGE_ORIGIN}/download/`,
+      `${PUBLIC_ORIGIN}/`,
+      `${PUBLIC_ORIGIN}/about/`,
+      `${PUBLIC_ORIGIN}/services/`,
+      `${PUBLIC_ORIGIN}/contact/`,
+      `${PUBLIC_ORIGIN}/download/`,
     ])
-    expect(robots().sitemap).toBe(`${PRE_CHANGE_ORIGIN}/sitemap.xml`)
+    expect(robots().sitemap).toBe(`${PUBLIC_ORIGIN}/sitemap.xml`)
   })
 
-  it('(corporate) metadataBase 仍是 www.migaozn.com（导入期求值 ⇒ 默认 env）', () => {
-    expect(corporateMetadata.metadataBase?.toString()).toBe(`${PRE_CHANGE_ORIGIN}/`)
+  it('(corporate) metadataBase 落在公开面 apex（导入期求值 ⇒ 默认 env）', () => {
+    expect(corporateMetadata.metadataBase?.toString()).toBe(`${PUBLIC_ORIGIN}/`)
   })
 
-  it('next.config.mjs 的 www→裸域 301 仍指向 migaozn.com（且默认字面量与 TS 侧同源）', async () => {
+  it('next.config.mjs 的 www→裸域 308（permanent）仍指向 migaozn.com（且默认字面量与 TS 侧同源）', async () => {
     vi.stubEnv('NEXT_PUBLIC_SITE_DOMAIN', '')
     const [rule] = await redirectRules()
     expect(rule.source).toBe('/:path*')
@@ -102,26 +103,26 @@ describe('缺省值（不配置 NEXT_PUBLIC_SITE_DOMAIN）⇒ 与改前逐字相
 })
 
 describe('NEXT_PUBLIC_SITE_DOMAIN=cytda.com ⇒ 生产域五个落点全部跟着走（issue #8941）', () => {
-  it('sitemap / robots 的绝对地址落在 cytda.com', () => {
+  it('sitemap / robots 的绝对地址落在 cytda.com 的 apex（issue #8968）', () => {
     vi.stubEnv('NEXT_PUBLIC_SITE_DOMAIN', 'cytda.com')
     expect(sitemap().map((entry) => entry.url)).toEqual([
-      'https://www.cytda.com/',
-      'https://www.cytda.com/about/',
-      'https://www.cytda.com/services/',
-      'https://www.cytda.com/contact/',
-      'https://www.cytda.com/download/',
+      'https://cytda.com/',
+      'https://cytda.com/about/',
+      'https://cytda.com/services/',
+      'https://cytda.com/contact/',
+      'https://cytda.com/download/',
     ])
-    expect(robots().sitemap).toBe('https://www.cytda.com/sitemap.xml')
+    expect(robots().sitemap).toBe('https://cytda.com/sitemap.xml')
   })
 
   it('(corporate) metadataBase 落在 cytda.com（模块级常量 ⇒ resetModules 后重新求值）', async () => {
     vi.stubEnv('NEXT_PUBLIC_SITE_DOMAIN', 'cytda.com')
     vi.resetModules()
     const { metadata } = await import('@/app/(corporate)/layout')
-    expect(metadata.metadataBase?.toString()).toBe('https://www.cytda.com/')
+    expect(metadata.metadataBase?.toString()).toBe('https://cytda.com/')
   })
 
-  it('next.config.mjs 的 www→裸域 301 跟着域名走', async () => {
+  it('next.config.mjs 的 www→裸域 308（permanent）跟着域名走', async () => {
     vi.stubEnv('NEXT_PUBLIC_SITE_DOMAIN', 'cytda.com')
     const [rule] = await redirectRules()
     expect(rule.has).toEqual([{ type: 'host', value: 'www.cytda.com' }])

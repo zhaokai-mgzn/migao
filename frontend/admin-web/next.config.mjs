@@ -55,8 +55,13 @@ const nextConfig = {
   // 生产环境可通过 NEXT_PUBLIC_ASSET_PREFIX 配置 CDN 前缀
   assetPrefix: process.env.NEXT_PUBLIC_ASSET_PREFIX || undefined,
 
-  // `www` → 裸域 301 归一（issue #6665 第 4 条）：两个主机名都能 200 ⇒ 同一份内容两个地址。
-  // 301（而非 308）是长期规范：让浏览器与搜索引擎把这层归一缓存下来。
+  // `www` → 裸域归一（issue #6665 第 4 条；issue #8968 订正状态码与落点口径）：
+  // 两个主机名都能 200 ⇒ 同一份内容两个地址，故把 www 永久归一到一个 host。
+  // 🔴 实际状态码是 **308**（不是 301）：Next 把 `permanent: true` 映射成
+  //   `RedirectStatusCode.PermanentRedirect` = 308（`next/dist/lib/redirect-status.js` 现取），
+  //   生产实测（www.cytda.com / www.migaozn.com）读到的也正是 308。
+  // ⇒ 公开面（sitemap / robots / metadataBase / canonical）一律取**裸域** ——
+  //   `src/lib/site-domain.ts` 的 `siteOrigin()`；写 www 会让爬虫每条 `<loc>` 先吃一次 308（issue #8968）。
   async redirects() {
     const apex = siteDomain()
     return [
