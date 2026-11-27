@@ -996,7 +996,7 @@ cases:
 
   - id: CH-015
     legacy_id: ""
-    title: "用户显式『转人工』→ 如实告知无人工通道并继续服务（不得假承诺转接）"
+    title: "用户显式『转人工』→ 说明微信客服通道的转接方式、不编造 AI 无权执行的动作"
     domains:
       - chat
       - handoff
@@ -1020,30 +1020,38 @@ cases:
     # 改判**退场后的正确行为** = 如实告知 + 不假承诺 + 不放弃服务。
     # 「不得调用已退场工具」由 L0 结构判据锁定（tests/unit_ci_workflows/
     # test_human_handoff_retired.py），此处不写恒真的 forbidden_tools。
+    # ── 2026-11-27 改判（用户裁定：微信客服落地后「转人工」真的会转给真人）──────
+    # C 端主入口已改为微信客服：`KfDecisionService` 的规则短路把「人工 / 真人 / 客服 /
+    # 转人工」判成 `ESCALATE_HUMAN`，由 `KfTransferService` 真的转接真人（这是**通道能力**，
+    # 不是 human_handoff 工具复活）。⇒ 原断言「AI 如实说明系统已无人工转接通道」已失效
+    # （它把新能力判成缺陷）；`forbidden_text` 里的「客服马上联系您」在 kf 转接之后是
+    # **正确行为**（会误杀）⇒ 收窄成「AI 自己无权承诺的动作」。
     forbidden_text:
       - "已为您转接人工"
       - "已帮您转接人工"
       - "已转接人工"
       - "已提交转人工申请"
-      - "客服马上联系您"
       - "已通知人工客服"
     want_text:
-      # 正向：必须**谈到人工通道这件事**（如实告知），而不是对"我要转人工"视而不见。
+      # 正向：必须**谈到人工这件事与该通道的落点**（不得否认存在人工），
+      # 而不是对"我要转人工"视而不见。
       # 与 forbidden_text 构成正反双轨（§3.4）：只说"好的"、或直接换个话题都算失败。
       - "人工"
+      - "微信客服"
     data_checks:
-      - "显式转人工请求 → intent_router 仍短路到 complaint（source=explicit_handoff，路由层判据见 tests/test_intent_router.py）"
-      - "AI 如实说明系统已无人工转接通道（不承诺转接、不指引不存在的入口）"
-      - "AI 不因『要人工』就停止服务：给出可执行的下一步（继续查/引导售后咨询走工单）"
-      - "整场不出现假承诺话术 —— 机器断言见 forbidden_text"
-      - "human_handoff 未被调用（该工具已退场、模型不可达 —— 结构性判据：tests/unit_ci_workflows/test_human_handoff_retired.py；此处登记为计分面）"
+      - "「转人工」在**微信客服通道**由 `KfDecisionService` 的规则短路承接：人工词（人工 / 真人 / 客服 / 转人工）命中即 `ESCALATE_HUMAN`、**不经** AI 语义判定，随后由 `KfTransferService` 落成转接（判据 = backend/admin-api/src/test/java/com/migao/admin/service/kf/KfDecisionServiceTest.java 与同目录 KfTransferServiceTest.java）"
+      - "AI 侧**不得否认存在人工**，要给出该通道下的可执行落点（在微信客服里发送「人工」即转接真人），不指引不存在的入口"
+      - "AI **不得编造自己无权执行的动作**（「已提交转接申请」「已通知人工客服」「已为您转接人工」这类它没做过的事）—— 机器断言见 forbidden_text；`human_handoff` 未被调用（该工具已退场、模型不可达，结构性判据见 tests/unit_ci_workflows/test_human_handoff_retired.py）"
     skip_reason: ""
-    merge_log: "xiaobu-ai-handoff-guidance.md D1 显式直转（UI-010 能力不退化）；2026-09-19 **退场改造**（用户裁定「不应该存在 human_handoff 这种东西，以后全是 AI 来判断」）：原断言（显式请求 → 直转工具）随工具退场永久不可满足，改判「如实告知 + 不得假承诺 + 继续服务」——用例保留为 live 回归（顾客仍会说『转人工』）"
+    merge_log: "xiaobu-ai-handoff-guidance.md D1 显式直转（UI-010 能力不退化）；2026-09-19 **退场改造**（用户裁定「不应该存在 human_handoff 这种东西，以后全是 AI 来判断」）：原断言（显式请求 → 直转工具）随工具退场永久不可满足，改判「如实告知 + 不得假承诺 + 继续服务」——用例保留为 live 回归（顾客仍会说『转人工』）；2026-11-27 改判（用户裁定）：微信客服落地后『转人工』由 kf 通道承接 ⇒ 原『无人工通道』断言失效，改为不得否认人工 + 不得编造无权动作；`forbidden_text` 去掉『客服马上联系您』"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_xiaobu_handoff_offer.py"
         - "backend/ai-agent-service/tests/test_intent_router.py"
         - "tests/unit_ci_workflows/test_human_handoff_retired.py"
+        - "tests/unit_ci_workflows/test_ch015_handoff_recast.py"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/kf/KfDecisionServiceTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/kf/KfTransferServiceTest.java"
       ci:
         - agent-eval.yml
       verifies: []
