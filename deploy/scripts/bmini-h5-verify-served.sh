@@ -192,22 +192,32 @@ else
 fi
 echo ""
 
-# ── ③ 不劫持根：/ 与根级子路由仍是 C 端页面 ──────────────────────────────────
-echo "③ GET $BASE/ 与 ${ROOT_PROBE}（根仍必须是 C 端米宝，不能被 /${SUBDIR}/ 规则吃掉）"
-for path in "/" "$ROOT_PROBE"; do
-  out="$TMPDIR_RUN/root.html"
-  CODE=$(fetch "$BASE$path" "$out")
-  if [ "$CODE" != "200" ] || [ ! -s "$out" ]; then
-    bad "GET $path → HTTP ${CODE}（期望 200：根是 C 端 SPA 的落地面）"
-    continue
-  fi
+# ── ③ 不劫持根：根面只承一页退役占位，**且不再有 SPA 回落**（issue #9249）──────────
+# 口径变更（2026-11-26，C 端随 #9233 下线）：根面从「C 端米宝 SPA」变成「一页退役占位」，
+# `location /` 的 try_files 收成 `=404`（末位指向已删文件会把任意缺失路径变成 500）。
+# ⇒ 本步拆成两条独立判据：
+#   · `GET /`            → **200**，且 body 不是 bmini 产物（根被 /b/ 规则劫持 ⇒ 红）；
+#   · `GET $ROOT_PROBE`  → **404**（根面无回落；若回 200 说明兜底被写回去了 ⇒ 红）。
+echo "③ GET $BASE/（200，且不是 bmini）与 ${ROOT_PROBE}（404：根面无 SPA 回落）"
+out="$TMPDIR_RUN/root.html"
+CODE=$(fetch "$BASE/" "$out")
+if [ "$CODE" != "200" ] || [ ! -s "$out" ]; then
+  bad "GET / → HTTP ${CODE}（期望 200：根面是退役占位页；空白 = 静态根被人清空了）"
+else
   GOT_SHA=$(file_sha256 "$out")
   if [ "$GOT_SHA" = "$EXPECTED_INDEX_SHA" ]; then
-    bad "GET $path 返回的是 **bmini 产物**（哈希 = ${EXPECTED_INDEX_SHA}）—— 根被 /${SUBDIR}/ 规则劫持了"
+    bad "GET / 返回的是 **bmini 产物**（哈希 = ${EXPECTED_INDEX_SHA}）—— 根被 /${SUBDIR}/ 规则劫持了"
   else
-    ok "GET $path → 200，body 不是 bmini 产物（根仍是 C 端）"
+    ok "GET / → 200，body 不是 bmini 产物（根面是退役占位）"
   fi
-done
+fi
+CODE=$(fetch "$BASE$ROOT_PROBE" "$TMPDIR_RUN/root_probe.html" || true)
+if [ "$CODE" != "404" ]; then
+  bad "GET $ROOT_PROBE → HTTP ${CODE}（期望 **404**：根面已按 issue #9249 收掉 SPA 回落；"\
+"回 200/500 说明兜底又被写回去了 ⇒ 任意缺失路径会变 500）"
+else
+  ok "GET $ROOT_PROBE → 404（根面无 SPA 回落）"
+fi
 echo ""
 
 # ── ③b `/b/report/` 身份（issue #7906：手机端只留 /b 命名空间，页面仍是 /w 那份）──────────
