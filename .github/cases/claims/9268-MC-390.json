@@ -1,0 +1,6 @@
+{
+  "id": "MC-390",
+  "pr": 9268,
+  "title": "ProcessingOrderService 派单生成链搬出（LOC 冻结面 2,316 → 1,809）：5 个 generate 重载 + 直派/预览/承接方下拉留门面同名委托，生成链只住一个 package-private 单元",
+  "claimed_at": "2026-11-27"
+}
