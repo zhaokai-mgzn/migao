@@ -11256,3 +11256,25 @@ cases:
       tests:
         - "tests/unit_ci_workflows/test_case_trust_l0_steps_run_in_parallel.py"
     merge_log: "2026-11-25 新增（issue #9120）。现场：Case Trust Gate 的 `L0 degenerate guards` 步跑 180 条判据，CI 单步实测 **70s**（该腿共 98s），慢的是几条端到端驱动门禁脚本的用例（10.6s / 9.1s / 3.4s）。修法：`pytest -n 4`（默认 `load` 分布）+ 同装 `pytest-xdist`。**关键实测**：`--dist loadfile` 在本步反而更慢（50.8s > 串行 43.6s），因为该步只指定一个文件、loadfile 会把整文件压到同一 worker ⇒ 判据 3 专门钉这条。红证：去掉 `-n` ⇒ 1 failed；去掉 `pytest-xdist` ⇒ 1 failed（第一次变异打偏到 helper 腿的同名字符串，已按 L0 那行精确重做）；改成 `--dist loadfile` ⇒ 1 failed。取号 = next_case_id.py MC ⇒ MC-370。"
+  - id: MC-371
+    legacy_id: ""
+    title: "被 cancel 的 CI 腿也要可归因：进度包装器（trap + step summary + annotation）"
+    domains:
+      - misc
+      - ci
+    tier: normal
+    tags:
+      - ci
+    skip_reason: "[backend-contract] 纯静态 / 子进程判据（零 LLM / 零网络 / 零 DB）：不进 agent-eval 冒烟；机器判红通道 = traces.tests 的 pytest（pr-check 的 ci workflow helper unit tests 全量跑 tests/unit_ci_workflows）"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "**判据 1·预算耗尽面（本地可跑，不等 CI 超时）**：故意挂住的假用例 + 极小预算跑 `scripts/ci_helper_progress.py` ⇒ 注入的 step summary 必须含 `stuck_file=<当前文件>`，stdout 必须有具名 `::error::`。执行点 = `test_ci_helper_progress.py::test_budget_exhaustion_names_the_stuck_file`"
+      - "**判据 2·trap 面**：向包装器发 SIGTERM（= runner cancel 的形态）⇒ 退出前仍写完归因段且退出码 1。执行点 = `::test_sigterm_trap_finalizes_with_the_running_file`"
+      - "**判据 3·4·注入式红证**：清空 `HANDLED_SIGNALS` ⇒ SIGTERM 场景不再有归因段；摘掉 `finalize()` 的 summary 写入 ⇒ summary 里不再有文件名（注解仍在 = 单变量对照）。两者都先自证注入真的落下。执行点 = `::test_red_proof_removing_the_trap_stops_the_attribution` / `::test_red_proof_removing_the_summary_write_breaks_the_summary_face`"
+      - "**判据 5·结构面（防后人删掉）**：`pr-check.yml` 该腿的全量档与 narrow 档都必须走包装器；脚本必须同时具备 trap 收尾（SIGTERM + SIGINT 都装上且真落到进程）与 step summary 写入两个面。执行点 = `::test_ci_leg_wraps_both_branches_through_the_progress_wrapper` / `::test_script_has_both_faces_trap_and_step_summary`"
+      - "**判据 6·对照（防假红）**：正常结束 ⇒ 退出码 0、summary 只有完成段、零 `::error::`。执行点 = `::test_success_path_is_green_and_emits_no_error_annotation`"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_ci_helper_progress.py"
+    merge_log: "2026-11-27 新增（issue #9114）。现场：被 cancel 的 job 拿不到日志 —— job 138101912467 / 138155419427 的 logs 接口都返回 BlobNotFound，两者的 steps 都停在「本步有 started_at、无 completed_at」⇒ 超时类事故只剩 run 级一句 exceeded the maximum execution time（#9102 / #9097 / #9111 同形态）。修法：`scripts/ci_helper_progress.py` 包装 pytest（不改 pytest argv，只给子进程注入 PYTEST_PLUGINS），被掐死之前把「当前文件 + 已完成 N/M」写到 step summary + `::error::` annotation + stdout 进度行，五条出口共用同一个 finalize。红证：清空 HANDLED_SIGNALS ⇒ 判据 2 不再出现归因段；摘掉 finalize 的 summary 写入 ⇒ 判据 1 的 summary 断言失牙（两条都先自证注入落下）。取号 = case_id_lease.py reserve MC ⇒ MC-371。"

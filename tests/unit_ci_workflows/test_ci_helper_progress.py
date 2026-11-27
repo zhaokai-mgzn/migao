@@ -1,0 +1,302 @@
+# case_ids: MC-371
+"""`ci workflow helper unit tests` 被 cancel 之后的**归因判据**（issue #9114）。
+
+## 病（durable 现场）
+
+被 cancel 的 job **拿不到日志** —— `gh api …/actions/jobs/<id>/logs` 返回
+`<Error><Code>BlobNotFound</Code>`（HTTP 404），`gh run view <run> --log-failed` / `--log` 都空。
+实测两个样本（job `138101912467` / `138155419427`）的 `steps[]` 都停在
+「`Run ci workflow helper tests` 有 `started_at`、**无** `completed_at`」⇒ 逐文件读数在 cancel 那一刻就断了。
+于是「超时类事故」只剩 run 级一句 `exceeded the maximum execution time`（#9102 分片吃顶、
+#9097 / #9111 两次 cancel 都是这个形态）。
+
+## 兜底（`scripts/ci_helper_progress.py`）
+
+包装器在**被掐死之前**把「当前跑到哪个文件」写到**不依赖 job 日志**的面上：
+`$GITHUB_STEP_SUMMARY` + `::error::` annotation + stdout 进度行；SIGTERM / SIGINT / 预算耗尽 /
+子进程非零退出 / 正常退出**五条出口共用同一个 `finalize()`**。
+
+## 判据（每条都能单独变红）
+
+| # | 断言 | 回归时会怎么红 |
+|---|---|---|
+| 1 | **预算耗尽**（本地可跑、不等 CI 超时）：故意挂住的假用例 + 极小预算 ⇒ summary 里含**具名的当前文件名**（`stuck_file=…`），stdout 里有具名 `::error::` | 摘掉 `finalize()` 的 summary 写入 / 注解 ⇒ 红（红证见判据 4） |
+| 2 | **SIGTERM trap**：向包装器发 SIGTERM（= runner cancel 的形态）⇒ 仍在退出前写完归因，且退出码 1 | 摘掉 trap（`HANDLED_SIGNALS` 清空）⇒ 进程被默认动作杀掉 ⇒ summary 没有归因段 ⇒ 红（红证见判据 3） |
+| 3 | **红证（trap 面）**：变异体 `HANDLED_SIGNALS = ()` **先自证注入落下**，再跑同一场景 ⇒ 必须**不再**出现归因 ⇒ 证明判据 2 不是恒绿 | 判据对「有没有 trap」不敏感 ⇒ 红 |
+| 4 | **红证（summary 面）**：变异体摘掉 `finalize()` 里的 `_append(summary, …)` ⇒ summary 不含文件名 ⇒ 证明判据 1 的 summary 断言有牙 | 同上 |
+| 5 | **结构面（防后人删掉）**：`pr-check.yml` 该腿的**全量档与 narrow 档都必须走包装器**；`scripts/ci_helper_progress.py` 必须**同时**具备「trap 收尾」（SIGTERM/SIGINT 装上且 `finalize` 会写 summary）与「step summary 写入」两个面 | 少任一面 ⇒ 具名红（不会静默退化成「只有进度行」） |
+| 6 | **对照（防假红）**：正常结束 ⇒ 退出码 0、summary 只有 `✅` 段、**零** `::error::` | 包装器把每次绿跑都标成中断 ⇒ 红 |
+
+## 边界（照实登记）
+
+- 「cancel 之后 `$GITHUB_STEP_SUMMARY` / annotation 是否仍可读」**本机无法验证**（要真 cancel 一次才知道）
+  ⇒ 本判据只证明**三个面确实被写了**，**不**证明它们在 cancel 后还在；这一点写在 PR body 的「边界」节。
+- 判据 1/2 用**极小预算 + 短挂住**复现，**不**等 CI 的 20 分钟；也**不**改任何 `timeout-minutes`。
+"""
+
+from __future__ import annotations
+
+import importlib.util
+import os
+import signal
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+import yaml
+
+from unit_ci_workflows.injection import inject
+
+REPO = Path(__file__).resolve().parents[2]
+WRAPPER_REL = "scripts/ci_helper_progress.py"
+WRAPPER = REPO / WRAPPER_REL
+CI_REL = ".github/workflows/pr-check.yml"
+JOB_ID = "ci-workflow-tests"
+STEP_NAME = "Run ci workflow helper tests"
+HANG_FILE = "test_zz_hangs_9114.py"
+
+#: 假用例：一条挂住（远超预算）的用例 —— 判据不依赖真实 CI 时长。
+HANG_SOURCE = "import time\n\n\ndef test_hangs_9114():\n    time.sleep(30)\n"
+#: 对照：一条立刻通过的用例（不写弱断言，也不用恒真比较）。
+PASS_SOURCE = "def test_passes_9114():\n    pass\n"
+
+
+def _write_case(directory: Path, name: str, source: str) -> Path:
+    path = directory / name
+    path.write_text(source, encoding="utf-8")
+    return path
+
+
+def _wrapper_argv(wrapper: Path, summary: Path, case_file: Path, extra: list[str] | None = None,
+                  parallel: bool = True) -> list[str]:
+    """包装器 argv（`--` 之后才是真实命令；`-n 2` 复现 CI 的 xdist 形态）。"""
+    cmd = [sys.executable, str(wrapper), "--label", "unit-9114", "--summary", str(summary),
+           "--heartbeat-seconds", "1", "--suspect-seconds", "600"]
+    cmd += list(extra or [])
+    cmd += ["--", sys.executable, "-m", "pytest", str(case_file), "-q", "-p", "no:cacheprovider"]
+    if parallel:
+        cmd += ["-n", "2"]
+    return cmd
+
+
+def _read(path: Path) -> str:
+    try:
+        return path.read_text(encoding="utf-8")
+    except OSError:
+        return ""
+
+
+def _run_budget(wrapper: Path, tmp_path: Path, budget: str = "4") -> tuple[subprocess.CompletedProcess, str]:
+    """预算耗尽面：本地就能跑完（不真等 CI 超时）。"""
+    case_file = _write_case(tmp_path, HANG_FILE, HANG_SOURCE)
+    summary = tmp_path / "summary-budget.md"
+    summary.write_text("", encoding="utf-8")
+    proc = subprocess.run(_wrapper_argv(wrapper, summary, case_file, ["--max-runtime-seconds", budget]),
+                          capture_output=True, text=True, timeout=180, cwd=str(tmp_path))
+    return proc, _read(summary)
+
+
+def _run_sigterm(wrapper: Path, tmp_path: Path) -> tuple[int, str, str]:
+    """trap 面：向包装器发 SIGTERM（runner cancel 时对 step 进程就是这个信号）。"""
+    case_file = _write_case(tmp_path, HANG_FILE, HANG_SOURCE)
+    summary = tmp_path / "summary-sigterm.md"
+    summary.write_text("", encoding="utf-8")
+    out_path = tmp_path / "out-sigterm.txt"
+    with out_path.open("w", encoding="utf-8") as sink:
+        # ⚠️ 输出**落文件**而不是 PIPE：摘掉 trap 的变异体会留下孤儿 pytest（它继承了管道）⇒
+        #    `communicate()` 会一直等到孤儿 30s 的 sleep 结束（实测把这条判据拖到 121s）。
+        proc = subprocess.Popen(_wrapper_argv(wrapper, summary, case_file), stdout=sink,
+                                stderr=subprocess.STDOUT, text=True, cwd=str(tmp_path))
+        try:
+            deadline = time.time() + 120
+            while time.time() < deadline:
+                # 等「真的有用例在跑」——不要拿 summary 里的命令行命中当前文件名（那会假等）。
+                if "进行中 1 个文件" in _read(summary):
+                    break
+                if proc.poll() is not None:
+                    break
+                time.sleep(0.2)
+            else:
+                raise AssertionError("SIGTERM 场景准备超时：120s 内包装器没有进入「进行中」状态")
+            proc.send_signal(signal.SIGTERM)
+            rc = proc.wait(timeout=180)
+        finally:
+            if proc.poll() is None:
+                proc.kill()
+                proc.wait(timeout=30)
+    return rc, _read(out_path), _read(summary)
+
+
+def _mutant(tmp_path: Path, old: str, new: str, note: str) -> Path:
+    """把包装器复制成变异体（模块名必须仍是 `ci_helper_progress` ⇒ 插件注入照旧生效）。"""
+    source = WRAPPER.read_text(encoding="utf-8")
+    mutated = inject(source, old, new, where=WRAPPER_REL)
+    # 自证注入真的落上了（§34.18.3：否则「判据没红」分不清是判据没牙还是注入没生效）。
+    assert mutated != source and new in mutated and old not in mutated, (
+        f"变异注入没生效（{note}）：锚点 {old[:50]!r} 仍在/替换后内容不一致 —— 后续「判据没红」不可采信"
+    )
+    target = tmp_path / "mutant" / WRAPPER.name
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(mutated, encoding="utf-8")
+    return target
+
+
+def _error_lines(output: str) -> list[str]:
+    return [line for line in output.splitlines() if line.startswith("::error::")]
+
+
+# ══════════════════════════════════════════════════════════════════════════════════
+# 判据 1：预算耗尽 ⇒ summary + annotation 都点名当前文件
+# ══════════════════════════════════════════════════════════════════════════════════
+
+def test_budget_exhaustion_names_the_stuck_file(tmp_path: Path) -> None:
+    proc, summary = _run_budget(WRAPPER, tmp_path)
+    assert proc.returncode == 1, (
+        f"预算耗尽后包装器应以 1 退出（而不是被 cancel 成 124/143），实际 {proc.returncode}；"
+        f"stdout 尾部：{proc.stdout[-600:]}"
+    )
+    assert f"stuck_file={HANG_FILE}" in summary, (
+        f"step summary 里没有具名的当前文件（断言找 `stuck_file={HANG_FILE}`）⇒ cancel 后仍无从归因。"
+        f"现取 summary：\n{summary}"
+    )
+    assert "## ⛔ 中断归因" in summary, f"summary 缺「中断归因」段：\n{summary}"
+    errors = _error_lines(proc.stdout)
+    assert errors, f"stdout 里没有任何 `::error::` annotation ⇒ 注解面没写：{proc.stdout[-800:]}"
+    assert any(HANG_FILE in line for line in errors), (
+        f"`::error::` annotation 没有点名当前文件（{HANG_FILE}）⇒ 归因不具名。现取：{errors}"
+    )
+
+
+# ══════════════════════════════════════════════════════════════════════════════════
+# 判据 2：SIGTERM（trap 面）
+# ══════════════════════════════════════════════════════════════════════════════════
+
+def test_sigterm_trap_finalizes_with_the_running_file(tmp_path: Path) -> None:
+    rc, output, summary = _run_sigterm(WRAPPER, tmp_path)
+    assert rc == 1, f"SIGTERM 后包装器应主动收尾并以 1 退出（不是被默认动作杀掉成 -15），实际 {rc}"
+    assert "信号 SIGTERM" in summary, f"归因段没记下中断形态（应为「信号 SIGTERM」）：\n{summary}"
+    assert f"stuck_file={HANG_FILE}" in summary, f"trap 收尾没点名当前文件：\n{summary}"
+    assert any(HANG_FILE in line for line in _error_lines(output)), (
+        f"SIGTERM 收尾没有打出具名 `::error::`（{HANG_FILE}）。现取输出：{output[-800:]}"
+    )
+
+
+# ══════════════════════════════════════════════════════════════════════════════════
+# 判据 3 / 4：注入式红证（trap 面 / summary 面）
+# ══════════════════════════════════════════════════════════════════════════════════
+
+def test_red_proof_removing_the_trap_stops_the_attribution(tmp_path: Path) -> None:
+    """摘掉 trap ⇒ SIGTERM 变成默认动作（进程直接死）⇒ summary 里**不再**有归因段。"""
+    mutant = _mutant(tmp_path, "HANDLED_SIGNALS = (signal.SIGTERM, signal.SIGINT)",
+                     "HANDLED_SIGNALS = ()  # 变异：摘掉 trap", note="摘掉 trap（SIGTERM/SIGINT）")
+    rc, output, summary = _run_sigterm(mutant, tmp_path)
+    assert "## ⛔ 中断归因" not in summary, (
+        "摘掉 trap 之后 summary 里**仍然**出现了归因段 ⇒ 那条断言对「有没有 trap」不敏感（判据 2 无牙）：\n"
+        f"{summary}"
+    )
+    assert rc != 1, f"摘掉 trap 后包装器不应再能「主动收尾 exit 1」，实际 rc={rc}；输出：{output[-400:]}"
+
+
+def test_red_proof_removing_the_summary_write_breaks_the_summary_face(tmp_path: Path) -> None:
+    """摘掉 `finalize()` 里的 summary 写入 ⇒ annotation 仍在，但 summary 面**空了**。"""
+    mutant = _mutant(tmp_path, '_append(summary, "\\n".join(lines) + "\\n\\n")',
+                     'pass  # 变异：摘掉 summary 写入', note="摘掉 summary 写入")
+    proc, summary = _run_budget(mutant, tmp_path)
+    assert f"stuck_file={HANG_FILE}" not in summary, (
+        "摘掉 summary 写入之后 summary 里**仍然**有 `stuck_file=` ⇒ 判据 1 的 summary 断言没有牙：\n"
+        f"{summary}"
+    )
+    # 单变量对照：同一个变异体仍会打 annotation（证明「变的是 summary 面，不是整个 finalize」）。
+    assert any(HANG_FILE in line for line in _error_lines(proc.stdout)), (
+        f"变异体应只丢 summary、annotation 仍具名 ⇒ 否则变异打偏了：{proc.stdout[-600:]}"
+    )
+
+
+# ══════════════════════════════════════════════════════════════════════════════════
+# 判据 5：结构面（workflow 接线 + 脚本两个面）
+# ══════════════════════════════════════════════════════════════════════════════════
+
+def _load_wrapper_module():
+    spec = importlib.util.spec_from_file_location("ci_helper_progress_under_test", WRAPPER)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _helper_step_run() -> str:
+    doc = yaml.safe_load((REPO / CI_REL).read_text(encoding="utf-8")) or {}
+    steps = ((doc.get("jobs") or {}).get(JOB_ID) or {}).get("steps") or []
+    bodies = [s.get("run", "") for s in steps if isinstance(s, dict) and s.get("name") == STEP_NAME]
+    assert bodies, f"现取不到 `{CI_REL}` 的 `{JOB_ID}` 里名为 `{STEP_NAME}` 的步骤 ⇒ 判据会空跑"
+    return bodies[0]
+
+
+def test_ci_leg_wraps_both_branches_through_the_progress_wrapper() -> None:
+    """workflow 面：全量档与 narrow 档**都必须**走包装器（少一条 = 那条路径被 cancel 时零归因）。"""
+    run_text = _helper_step_run()
+    wrapper_lines = [line for line in run_text.splitlines() if WRAPPER_REL in line]
+    assert wrapper_lines, (
+        f"`{CI_REL}` 的 `{STEP_NAME}` 没有调用 `{WRAPPER_REL}` ⇒ 被人删掉了：被 cancel 时只剩 run 级"
+        "「exceeded the maximum execution time」，逐文件读数全丢（issue #9114 的病灶本身）"
+    )
+    full = [line for line in wrapper_lines if "-m pytest tests/unit_ci_workflows" in line]
+    narrow = [line for line in wrapper_lines if "--run-narrow" in line]
+    assert full, (
+        "全量档没走包装器（`-m pytest tests/unit_ci_workflows …` 那一行前面没有包装器）⇒ "
+        "本 job 的主要执行面没有归因"
+    )
+    assert narrow, "narrow 档没走包装器（`--run-narrow` 那一行）⇒ 让出档被 cancel 时没有归因面"
+
+
+def test_script_has_both_faces_trap_and_step_summary(tmp_path: Path) -> None:
+    """脚本面：**trap 收尾** 与 **step summary 写入** 两个面必须都在（少一个即红）。"""
+    module = _load_wrapper_module()
+
+    # 面 A：trap —— 装上 SIGTERM + SIGINT，且装上的确实是我们的 handler。
+    previous = {sig: signal.getsignal(sig) for sig in (signal.SIGTERM, signal.SIGINT)}
+    try:
+        installed = module.install_signal_handlers(lambda *_args: None)
+        assert installed == [signal.SIGTERM, signal.SIGINT], (
+            f"trap 面缺信号：装上的是 {installed}，期望 {[signal.SIGTERM, signal.SIGINT]} ⇒ "
+            "cancel（SIGTERM）或本地 Ctrl-C（SIGINT）时会直接死掉、不写归因"
+        )
+        assert signal.getsignal(signal.SIGTERM) is not signal.SIG_DFL, (
+            "SIGTERM 仍是默认动作 ⇒ 装 handler 没有真的落到进程上（trap 面形同虚设）"
+        )
+    finally:
+        for sig, handler in previous.items():
+            signal.signal(sig, handler)
+
+    # 面 B：step summary —— `finalize()` 必须把「进行中的文件」写进 summary（且注解具名）。
+    state = tmp_path / "state.log"
+    state.write_text("K 2\nS 1000.0 tests/unit_ci_workflows/test_example_9114.py::test_x\n", encoding="utf-8")
+    summary = tmp_path / "summary-structural.md"
+    summary.write_text("", encoding="utf-8")
+    annotation = module.finalize(summary=str(summary), state_path=str(state), label="结构面",
+                                reason="单测", elapsed=12.0)
+    text = _read(summary)
+    assert "stuck_file=tests/unit_ci_workflows/test_example_9114.py" in text, (
+        f"step summary 写入面失效：`finalize()` 没把当前文件写进 summary ⇒ cancel 后无归因。现取：\n{text}"
+    )
+    assert "当前文件 = tests/unit_ci_workflows/test_example_9114.py" in annotation, (
+        f"annotation 面没点名当前文件：{annotation!r}"
+    )
+
+
+# ══════════════════════════════════════════════════════════════════════════════════
+# 判据 6：对照（正常结束不产生假红）
+# ══════════════════════════════════════════════════════════════════════════════════
+
+def test_success_path_is_green_and_emits_no_error_annotation(tmp_path: Path) -> None:
+    case_file = _write_case(tmp_path, "test_passes_9114.py", PASS_SOURCE)
+    summary = tmp_path / "summary-ok.md"
+    summary.write_text("", encoding="utf-8")
+    proc = subprocess.run(_wrapper_argv(WRAPPER, summary, case_file, parallel=False),
+                          capture_output=True, text=True, timeout=180, cwd=str(tmp_path))
+    assert proc.returncode == 0, f"正常结束应以 0 退出，实际 {proc.returncode}：{proc.stdout[-600:]}"
+    text = _read(summary)
+    assert "## ✅" in text and "## ⛔" not in text, f"正常结束的 summary 形状不对（应只有 ✅ 段）：\n{text}"
+    assert _error_lines(proc.stdout) == [], (
+        f"绿跑被打上了 `::error::`（会把真红淹没）⇒ 包装器在正常路径上误报：{_error_lines(proc.stdout)}"
+    )

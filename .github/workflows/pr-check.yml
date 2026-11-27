@@ -447,11 +447,21 @@ jobs:
           #   **未登记的一律照跑**（默认 always-run ⇒ 新增判据不会因漏登记而少跑）；
           #   拿不到变更集 / 台账判不过 ⇒ **跑全量**（fail-closed）；判定实现 = scripts/ci_helper_scope.py。
           # ⛔ 不许用「少跑」换快而不出声：让出时必须打印**未跑条数**（「没跑」必须长得像「没跑」）。
+          # ── cancel 归因兜底（issue #9114）：被掐死之前就把「当前文件 + 已完成 N/M」落盘 ──────────
+          # 病（durable）：被 cancel 的 job **拿不到日志** —— `gh api …/jobs/<id>/logs` 返回
+          #   `<Error><Code>BlobNotFound</Code>`（实测 job 138101912467 / 138155419427，两者的
+          #   `steps[]` 都停在「本步有 started_at、无 completed_at」）⇒ 超时类事故只剩 run 级一句
+          #   `exceeded the maximum execution time`，逐文件读数全丢（#9102 / #9097 / #9111 同形态）。
+          # 修法：**两个档都套** `scripts/ci_helper_progress.py`：trap（SIGTERM/SIGINT）+ 每心跳一次
+          #   `$GITHUB_STEP_SUMMARY` + `::error::` annotation（两者都不走 job 日志 blob）+ stdout 进度行；
+          #   五条出口（信号 / 预算 / 子进程退出 / 正常结束 / 异常）共用同一个 `finalize()`。
+          # 🔴 包装器**只给子进程**注入 `PYTEST_PLUGINS`（不改 pytest argv ⇒ 同源契约 test_ci_helper_leg.py 照旧）；
+          #    判据 = tests/unit_ci_workflows/test_ci_helper_progress.py（两条注入式红证 + 结构面）。
           if [ "$(python3 scripts/ci_helper_scope.py --decide 2>/dev/null || echo full)" = "narrow" ]; then
             echo "⏭️ 未命中研发面 ⇒ 只跑 always-run 判据；**dev-only 判据未跑**：$(python3 scripts/ci_helper_scope.py --count) 条（这不是「通过」）"
-            python3 scripts/ci_helper_scope.py --run-narrow
+            python3 scripts/ci_helper_progress.py --label "helper narrow ${{ matrix.shard }}" -- python3 scripts/ci_helper_scope.py --run-narrow
           else
-            python -m pytest tests/unit_ci_workflows -q --tb=short -p no:cacheprovider -n 4 --timeout=300 --timeout-method=signal
+            python3 scripts/ci_helper_progress.py --label "helper ${{ matrix.shard }}" -- python -m pytest tests/unit_ci_workflows -q --tb=short -p no:cacheprovider -n 4 --timeout=300 --timeout-method=signal
           fi
 
       # ── `[deploy-leg]` 清零声明的**类级元守卫**（issue #7075）──────────────────────
