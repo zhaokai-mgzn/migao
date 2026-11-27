@@ -2,10 +2,11 @@
 //
 // 判据：**站点域名的唯一读取点**（issue #8941）—— `src/lib/site-domain.ts` 的同名单测。
 //
-// 缺省值（不配置 `NEXT_PUBLIC_SITE_DOMAIN`）必须与改前**逐字相同**（测试环境在跑）；
+// 缺省值（不配置 `NEXT_PUBLIC_SITE_DOMAIN`）下派生值与改前**逐字相同** —— 唯一例外是**公开面
+// origin**，按 issue #8968 收成 **apex**（www 会 308 跳 apex，写进 sitemap / canonical 就是假落点）；
 // 生产值（`cytda.com`）必须让五个派生值全部跟着走（商家登录 / canonical / sitemap /
 // robots / proxy 的 host 分流都从这里取）。
-// 端到端落点（next.config 301 / proxy 分流 / metadata / route 形式）在
+// 端到端落点（next.config 的 www→apex 308 / proxy 分流 / metadata / route 形式）在
 // `tests/unit/pages/site-domain.test.ts`，本文件只钉派生值这一层。
 import { describe, it, expect, vi, afterEach } from 'vitest'
 
@@ -22,14 +23,14 @@ afterEach(() => {
   vi.unstubAllEnvs()
 })
 
-describe('缺省值（不配置 NEXT_PUBLIC_SITE_DOMAIN）⇒ 与改前逐字相同', () => {
-  it('apex / www / merchant / origin / 商家登录地址 = 改前取值', () => {
+describe('缺省值（不配置 NEXT_PUBLIC_SITE_DOMAIN）⇒ 与改前逐字相同（公开面 origin 除外，issue #8968 收成 apex）', () => {
+  it('apex / www / merchant / 公开面 origin(apex) / 商家登录地址', () => {
     vi.stubEnv('NEXT_PUBLIC_SITE_DOMAIN', '')
     expect(DEFAULT_SITE_DOMAIN).toBe('migaozn.com')
     expect(siteDomain()).toBe('migaozn.com')
     expect(wwwHost()).toBe('www.migaozn.com')
     expect(merchantHost()).toBe('merchant.migaozn.com')
-    expect(siteOrigin()).toBe('https://www.migaozn.com')
+    expect(siteOrigin()).toBe('https://migaozn.com')
     expect(merchantLoginUrl()).toBe('https://merchant.migaozn.com/login')
   })
 
@@ -45,7 +46,7 @@ describe('NEXT_PUBLIC_SITE_DOMAIN=cytda.com ⇒ 全部派生值跟着走', () =>
     expect(siteDomain()).toBe('cytda.com')
     expect(wwwHost()).toBe('www.cytda.com')
     expect(merchantHost()).toBe('merchant.cytda.com')
-    expect(siteOrigin()).toBe('https://www.cytda.com')
+    expect(siteOrigin()).toBe('https://cytda.com')
     expect(merchantLoginUrl()).toBe('https://merchant.cytda.com/login')
   })
 
