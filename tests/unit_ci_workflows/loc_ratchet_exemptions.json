@@ -20,8 +20,8 @@
     },
     {
       "path": "backend/admin-api/src/main/java/com/migao/admin/service/ProcessingOrderService.java",
-      "reason": "已进冻结清单（> 2000 行）—— 本表登记仅为保证「删掉冻结条目 ⇒ 绿」不会退化成「文件变未登记大文件 ⇒ 红」；逐行上限见 loc_freeze_ledger.json::frozen",
-      "date": "2026-10-30"
+      "reason": "已拆到 2,000 行以下（2026-11-27，issue #8770「生成族」一档：派单生成链搬出到 ProcessingOrderGeneration，2,316 → 1,809 行）⇒ 冻结条目同批销账；本表保留登记（1,809 仍 > 800 线），理由 = 门面余下为常量表 / 状态机 / 状态更新 / 读面委托 / 盖章委托等被既有判据直接核对的载体",
+      "date": "2026-11-27"
     },
     {
       "path": "backend/ai-agent-service/app/graph/skills/base_skill.py",
