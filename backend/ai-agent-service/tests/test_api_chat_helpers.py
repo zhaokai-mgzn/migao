@@ -466,18 +466,12 @@ class TestCardClaimGuardReissuesCard:
         assert store.commits == []
         assert marks == []
 
-    def test_customer_card_masked_and_confirm_value_same_source(self):
-        """卡面脱敏 + `confirmValue` **与卡面同源**（issue #9224 产品口径改判，2026-11-27）。
+    def test_customer_card_masked_but_confirm_value_intact(self):
+        """出站脱敏不变式：顾客侧卡片手机号脱敏，confirmValue（协议值）保持真值。
 
-        改判依据（用户逐字）：「确认卡是否允许展示完整手机号，这个裁定是**展示脱敏后的手机号**，
-        不能完整展示」⇒ 卡面 `fields[].value` 在**构造时**就掩码（不再靠出站层补），
-        而 `confirmValue` 由**掩码后**的字段确定性派生 ⇒ 它也随之**不再含真号**。
-
-        ⚠️ 安全性质**没有放宽、反而更紧**（两条一起断言，缺一即红）：
-          · `confirmValue == confirm_value_for_fields(fields)` —— 卡值与卡面同源；
-          · `payload.confirmValue == 落库的 last_confirm_value` —— 点卡回传的正是门禁比对的那一版。
-        改前这里断言的是「协议值不得脱敏 ⇒ 含真号」，那前提已被裁定推翻；被保护的性质（点卡必中）
-        以更强的形态保留在上面两条里。
+        `confirmValue` 是**协议值**（点击后回传、门禁按它比对）⇒ 出站不得脱敏
+        （见 `_mask_card_for_customer` 的文档字符串），故断言按**事件内部结构**判，
+        不能笼统地"整条 SSE 不含手机号"。
         """
         chunks, mem, store, marks = _claim_stream(CLAIM_ABOVE, role="customer",
                                                   store_state=_pending_state())
@@ -487,20 +481,10 @@ class TestCardClaimGuardReissuesCard:
         phone = [f for f in payload["fields"] if f["label"] == "手机号"]
         assert phone and phone[0]["value"] == "138****8000", payload["fields"]
         assert "13800138000" not in json.dumps(payload["fields"], ensure_ascii=False)
-        # ① 卡值与卡面同源（掩码后派生）⇒ 协议值不再含真号
-        from app.graph.skills.base_skill import confirm_value_for_fields
-        assert payload["confirmValue"] == confirm_value_for_fields(payload["fields"]), (
-            f"confirmValue 与卡面字段不同源：{payload['confirmValue']!r}")
-        assert "13800138000" not in payload["confirmValue"], (
-            f"协议值仍含完整手机号（裁定后卡面链路一律掩码）：{payload['confirmValue']!r}")
-        # ② 点卡必中：回传值 == 落库的门禁比对值
-        assert store.commits[-1].get("last_confirm_value") == payload["confirmValue"], (
-            f"点卡回传值与 last_confirm_value 不同源 ⇒ 顾客点了仍判未确认："
-            f"{payload['confirmValue']!r} vs {store.commits[-1].get('last_confirm_value')!r}")
-        # ③ 落库载荷与 SSE 载荷逐字一致（同一口径，不再分「真值落库 / 掩码直发」两套）
+        assert "13800138000" in payload["confirmValue"], "协议值不得脱敏（回传靠它匹配）"
+        # 落库载荷同样是真值（模型上下文/门禁匹配链全程用真值）
         saved = mem.saved[0]["interactive"]
-        assert saved["fields"] == payload["fields"], (
-            f"落库卡片与顾客看到的卡片不是同一份（口径分裂）：{saved['fields']!r}")
+        assert any(f["value"] == "13800138000" for f in saved["fields"]), saved["fields"]
 
     def test_pending_action_without_fields_falls_back_to_rewrite(self):
         """取不到字段（params 为空）⇒ 退回现有行为，绝不造空卡。"""

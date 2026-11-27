@@ -2012,45 +2012,6 @@ def tool_timeout_s(tool_name: str) -> float:
     return float(getattr(settings, "TOOL_TIMEOUT_S", 30.0) or 30.0)
 
 
-async def _masked_confirm_card_data(data, session_id: str):
-    """确认卡载荷 → **掩码后**的新载荷；无需改动（或不是 confirm 卡）返回 `None`。
-
-    为什么落在这**一跳**：confirm 卡载荷只有这一个产出点 —— `_execute_tool_safe` 的
-    `result_dict`，而它的三个消费面（模型上下文的 `ToolMessage`、SSE 交互载荷、落库的
-    `last_card` / `last_confirm_value`）读的都是它 ⇒ 一处改写、三处同形。写在
-    `app/tools/interact.py` 里会撞分层守卫（`app/tools/**` 不得 import `app.graph.*`，
-    见 `tests/test_utils_sku_price.py::test_tools_layer_does_not_import_skill_layer`）。
-
-    只动**展示面**（`fields[].value`）与由它确定性派生的 `confirmValue`（本路径下两者同源，
-    点卡回传的与落库的 `last_confirm_value` 是同一个字符串）；
-    `pending_validated_input`（写参数真值）**一个字都不碰** ⇒ 写入照旧拿真号
-    （结构判据：`tests/test_card_phone_masking_9224.py::TestWritePathBoundary`）。
-    """
-    if not isinstance(data, dict) or data.get("component") != "confirm":
-        return None
-    fields = data.get("fields")
-    if not isinstance(fields, list) or not fields:
-        return None
-    from app.graph.skills.phone_masking import (
-        mask_confirm_card_fields, pending_write_phones)
-    full = {}
-    if session_id:
-        from app.memory.session_state_store import SessionStateStore
-        full = await SessionStateStore().load(session_id) or {}
-    masked = mask_confirm_card_fields(fields, pending_write_phones(full))
-    if masked == fields:
-        return None
-    new_data = dict(data)
-    new_data["fields"] = masked
-    # `confirmValue` 由字段**确定性派生**（单一派生平 `app.tools.confirm_value`，issue #4054）：
-    # 字段变了必须**同一次**重算 —— 否则顾客点卡回传的仍是含真号/旧掩码的那一版，而门禁比对的
-    # 是落库的 `last_confirm_value`；两处不同源就会「点了卡仍判未确认」（确认死循环）。
-    _cv = confirm_value_for_fields(masked)
-    if _cv:
-        new_data["confirmValue"] = _cv
-    return new_data
-
-
 async def _execute_tool_safe(tool, tool_args: dict, tool_context, state: dict) -> tuple:
     """统一 Tool 执行入口 — normalize + cache + execute + error handling.
 
@@ -2246,21 +2207,6 @@ async def _execute_tool_safe(tool, tool_args: dict, tool_context, state: dict) -
         error_code=_error_code,
         missing_params=list(getattr(result, "missing_params", None) or []),
     )
-    # 展示面掩码（issue #9224 产品口径）：确认卡的 `fields[].value` 里凡是手机号形态的值，
-    # 一律改写成掩码形态、并与「本次真正要写入的真号」对齐。放在 `json.dumps` 之前 ⇒
-    # 模型上下文 / SSE / 落库的 `last_card` 三处拿到同一份掩码后载荷。
-    # 失败**非致命**（卡照发），但必须留痕 —— 不许静默退化成「卡面显示真号」。
-    if result.success and tool_name == "interact":
-        try:
-            _card = await _masked_confirm_card_data(result_dict.get("data"), session_id)
-            if _card is not None:
-                # ⚠️ **就地替换 data**、不重建/重绑 `result_dict`：出口字典仍是上面那一个
-                # 单点构造的字面量（`tests/test_contract_wiring.py` 的结构判据靠它）。
-                result_dict["data"] = _card
-        except Exception as e:
-            logger.warning(
-                f"[card-mask] 确认卡手机号掩码化失败（非致命，卡面可能未脱敏）"
-                f" | tool={tool_name} session={session_id} error={e}")
     result_str = json.dumps(result_dict, ensure_ascii=False, default=str)
 
     # 5. 缓存（带锁）— 仅只读工具

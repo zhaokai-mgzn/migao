@@ -390,3 +390,46 @@ def mask_confirm_card_fields(fields, raw_phones=()) -> list:
         return node
 
     return _walk(list(fields or []))
+
+
+async def mask_confirm_card_result(tool_name: str, result_dict: dict, session_id: str) -> bool:
+    """工具执行出口的确认卡整形：`fields[].value` 的手机号一律掩码（issue #9224 产品口径）。
+
+    **就地**改 `result_dict["data"]`，并返回「是否真的改动了」——调用方据此重算 `result_str`
+    （模型上下文、SSE 交互载荷、落库的 `last_card` 读的都是这一份，见
+    `app/graph/skills/execution/react_turn.py` 的调用点）。只对 `interact` 的 confirm 卡生效。
+
+    为什么不做在 `app/tools/interact.py`：`app/tools/**` 不得 import `app.graph.*`（分层守卫
+    `tests/test_utils_sku_price.py::test_tools_layer_does_not_import_skill_layer`）；
+    为什么不做在 `app/graph/skills/base_skill.py`：该文件是**冻结棘轮**文件（逐行只许下降，
+    `tests/unit_ci_workflows/test_loc_ratchet.py`）——实现体下沉到本模块（复用件）即可，零新增行。
+    失败**非致命**（卡照发），但必须留痕 —— 不许静默退化成「卡面显示真号」。
+    """
+    try:
+        data = (result_dict or {}).get("data")
+        if str(tool_name) != "interact" or not isinstance(data, dict) \
+                or data.get("component") != "confirm":
+            return False
+        fields = data.get("fields")
+        if not isinstance(fields, list) or not fields:
+            return False
+        full = {}
+        if session_id:
+            from app.memory.session_state_store import SessionStateStore
+            full = await SessionStateStore().load(session_id) or {}
+        masked = mask_confirm_card_fields(fields, pending_write_phones(full))
+        if masked == fields:
+            return False
+        data["fields"] = masked
+        # `confirmValue` 由字段**确定性派生**（单一派生平 `app.tools.confirm_value`，issue #4054）：
+        # 字段变了必须**同一次**重算 —— 否则顾客点卡回传的仍是含真号/旧掩码的那一版，而门禁比对的
+        # 是落库的 `last_confirm_value`；两处不同源就会「点了卡仍判未确认」（确认死循环）。
+        from app.tools.confirm_value import confirm_value_for_fields
+        _cv = confirm_value_for_fields(masked)
+        if _cv:
+            data["confirmValue"] = _cv
+        return True
+    except Exception as e:  # pragma: no cover - 整形失败不得打断主流程
+        from app.graph.skills import base_skill as _base
+        _base.logger.warning(f"[card-mask] 确认卡手机号掩码化失败（非致命，卡面可能未脱敏）: {e}")
+        return False

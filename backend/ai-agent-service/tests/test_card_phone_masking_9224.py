@@ -26,7 +26,7 @@ import ast
 import asyncio
 import json
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import patch
 
 from app.graph.skills.base_skill import confirm_value_for_fields
 from app.graph.skills.phone_masking import (
@@ -35,7 +35,6 @@ from app.graph.skills.phone_masking import (
     pending_write_phones,
     raw_phones_in,
 )
-from app.tools.base import ToolResult
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 
@@ -96,12 +95,14 @@ class _Store:
 
 
 async def _run_interact(fields, pending_params=None):
-    """走**真实**的 `_execute_tool_safe` 出口跑一张 confirm 卡，返回 `(payload, store)`。
+    """走**真实**的整形入口（`phone_masking.mask_confirm_card_result`）跑一张 confirm 卡。
 
-    为什么不在单测里直接调掩码函数：判据要钉的是「掩码化**长在卡片载荷那一跳**上」——
-    函数单测绿而没接线，是本仓库反复批判的假绿形态（`tests/golden/` 的接线锁同源）。
+    为什么不在单测里直接调 `mask_confirm_card_fields`：判据要钉的是「掩码化**长在卡片载荷那一跳**上」
+    —— 实现在 `phone_masking.mask_confirm_card_result`，接线在
+    `app/graph/skills/execution/react_turn.py`（追加 `ToolMessage` 之前调用并重算 `result_str`，
+    见 `TestWiring`）。只测纯函数会漏掉这条接线，是本仓库反复批判的假绿形态。
     """
-    from app.graph.skills.base_skill import _execute_tool_safe
+    from app.graph.skills.phone_masking import mask_confirm_card_result
 
     full = {}
     if pending_params is not None:
@@ -111,32 +112,12 @@ async def _run_interact(fields, pending_params=None):
             "params": pending_params,
         }
     store = _Store(full)
-
-    class _InteractTool:
-        name = "interact"
-        read_only = True          # 真实 interact 工具就是只读（`read_only = True`）
-        destructive = False
-        requires_confirmation = False
-
-        async def execute(self, context, component: str, title: str, fields: list = None):
-            return ToolResult(success=True, data=_confirm_payload(fields or []),
-                              message=f"已展示{title}交互组件，等待用户操作")
-
-    # 只读工具带 60s 结果缓存（同名同参会串味）⇒ 每测清空，并保证锁已就位
-    _execute_tool_safe._cache = {}
-    _execute_tool_safe._cache_lock = asyncio.Lock()
-    with patch("app.graph.skills.base_skill._auto_resolve_ids",
-               new=AsyncMock(side_effect=lambda tool, args, state: args)), \
-            patch("app.tools.langchain_adapter.LangChainToolAdapter._normalize_args",
-                  staticmethod(lambda tool, args: args)), \
-            patch("app.memory.session_state_store.SessionStateStore",
-                  side_effect=lambda *a, **k: store):
-        _result_str, result_dict = await _execute_tool_safe(
-            _InteractTool(),
-            {"component": "confirm", "title": "请确认客户资料", "fields": fields},
-            MagicMock(),
-            {"session_id": "sess_9224"},
-        )
+    result_dict = {"success": True, "data": _confirm_payload(fields),
+                   "error": None, "message": "已展示", "summary": "", "suggestion": "",
+                   "terminal": False, "error_code": None, "missing_params": []}
+    with patch("app.memory.session_state_store.SessionStateStore",
+               side_effect=lambda *a, **k: store):
+        await mask_confirm_card_result("interact", result_dict, "sess_9224")
     return result_dict["data"], store
 
 
@@ -241,6 +222,32 @@ class TestNestedAndBoundary:
                          "value": {"receiver": "张三", "phone": NEW_NUMBER}}])
         assert card["fields"][0]["value"] == {"receiver": "张三", "phone": MASK_OF_NEW}, (
             f"嵌套 value 里的手机号未掩码（或把收货人一起吃掉）：{card['fields']!r}")
+
+
+class TestWiring:
+    """接线判据：整形必须发生在**追加 `ToolMessage` 之前**，并重算 `result_str`。
+
+    `customer_service_agent` 的 `tool_result` 事件正是从 `ToolMessage.content` 反序列化出来的
+    ⇒ 晚一步改，顾客侧看到的仍是真号（掩码函数单测全绿也照样漏）。
+    """
+
+    def test_hop_runs_before_the_tool_message_is_appended(self):
+        lines = (BACKEND_ROOT / "app/graph/skills/execution/react_turn.py").read_text(
+            encoding="utf-8").splitlines()
+
+        def _line(needle, after=-1):
+            for index, line in enumerate(lines):
+                if index > after and needle in line:
+                    return index
+            raise AssertionError(f"`react_turn.py` 里找不到 {needle!r}（掩码接线被拆掉了？）")
+
+        call = _line("await mask_confirm_card_result(tool_name, result_dict, session_id)")
+        reserialize = _line(
+            "result_str = json.dumps(result_dict, ensure_ascii=False, default=str)", call)
+        append = _line("new_messages.append(ToolMessage(content=result_str", reserialize)
+        assert call < reserialize < append, (
+            f"顺序不对（整形 {call} / 重算 {reserialize} / 追加 {append}）："
+            f"必须在追加 ToolMessage 之前整形并重算 result_str")
 
 
 class TestWritePathBoundary:
