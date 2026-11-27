@@ -11364,3 +11364,36 @@ cases:
       tests:
         - "tests/unit_ci_workflows/test_ci_helper_progress.py"
     merge_log: "2026-11-27 新增（issue #9114）。现场：被 cancel 的 job 拿不到日志 —— job 138101912467 / 138155419427 的 logs 接口都返回 BlobNotFound，两者的 steps 都停在「本步有 started_at、无 completed_at」⇒ 超时类事故只剩 run 级一句 exceeded the maximum execution time（#9102 / #9097 / #9111 同形态）。修法：`scripts/ci_helper_progress.py` 包装 pytest（不改 pytest argv，只给子进程注入 PYTEST_PLUGINS），被掐死之前把「当前文件 + 已完成 N/M」写到 step summary + `::error::` annotation + stdout 进度行，五条出口共用同一个 finalize。红证：清空 HANDLED_SIGNALS ⇒ 判据 2 不再出现归因段；摘掉 finalize 的 summary 写入 ⇒ 判据 1 的 summary 断言失牙（两条都先自证注入落下）。取号 = case_id_lease.py reserve MC ⇒ 连续让号两次：先占 MC-371（被 #9258 在 main 上占用）→ 改 MC-373（又被 #9081 的浅仓守卫块占用）→ 定 **MC-373**（两次都由「同号两块」的追加冲突 fail-closed 暴露；`case-lease/MC-373` 已重发布）。**2026-11-27 第二轮（第一轮 CI 真红后修）**：首版把插件走 `PYTEST_PLUGINS` 注入 ⇒ 该变量被**孙进程**继承，`test_generated_artifacts_clean_checkout.py` 的嵌套 pytest（已清 `PYTHONPATH`/`PYTEST_ADDOPTS`/`MIGAO_*`）仍被要求 import 插件 ⇒ `ImportError` ⇒ `（中后段）` 整片判红（job 140299508024）—— 与 `MIGAO_CI_HELPER_SHARD` 泄漏进嵌套 clean 检出同族（migao-dev-flow §34.14 踩坑第 2 条）。修法：通道换成 `PYTEST_ADDOPTS=-p ci_helper_progress`（本仓嵌套 pytest 会显式清掉它），并补判据 7/8（嵌套泄漏面行为式 + **继承面结构式红证**）。**2026-11-27 第三轮（第一轮红证在 CI 变绿后修）**：判据 9（行为式红证）在 CI 里判红 —— 修泄漏时给直接子进程加了 `PYTHONPATH`，且判据本身被 CI 的包装器包着跑 ⇒ 变异体那行所在的条件分支因继承来的 `PYTEST_ADDOPTS` 为真而不执行（本地裸跑红、CI 形状不红）⇒ 行为式重演的前提被修法消除。改法 = 红证换成**继承面**结构判据（导出集合不许含 `PYTEST_PLUGINS` + `PYTEST_ADDOPTS` 必须带 `-p` + helper 过滤须同时清两变量），4 个变异各自具名红；判据强度不变、未放宽判据 7。"
+
+  - id: MC-391
+    legacy_id: ""
+    title: "评测结论档新增「环境前置缺失」判定类（requires_env 显式声明才享受）：评测栈缺外部凭证的红不再冒充产品缺陷，且不许静默 pass"
+    domains:
+      - misc
+      - ci
+    tier: normal
+    tags:
+      - ci
+      - eval
+    truths_ref: []
+    user_inputs: []
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "**判据 1·显式声明 + 环境码 ⇒ 具名归「环境」**：用例声明 `requires_env: [IMAGE_GEN_API_KEY]` 且 `must_succeed` 失败原文里的错误码 ∈ 该前置的已知环境码集合（`IMAGE_GEN_UNAVAILABLE`）⇒ `env_prerequisite_missing` 返回具名串（用例 id + 前置名 + 错误码 + 「本轮未验证」），`completion_verdict` 把它记进 `env_missing` 而**不是** `deterministic_failures`。执行点 = `tests/unit_ci_workflows/test_eval_env_prerequisite.py::TestDetection::test_declared_case_with_env_code_is_named_env_missing`"
+      - "**判据 2·未声明 + 同一环境码 ⇒ 仍判产品红（防滥用主闸门）**：`requires_env` 为空的用例，哪怕失败原文一模一样，也必须落 `deterministic_failures`。执行点 = `::TestDetection::test_undeclared_case_is_never_classified` + `::TestVerdict::test_red_proof_only_declared_cases_enjoy_the_class`"
+      - "**判据 3·声明了但换成非环境码（`VALIDATION_ERROR`）⇒ 仍判红**；**无码形态**（配置错 / `从未被调用` / `无结果事件`）同样不归类（fail-closed，不猜）。执行点 = `::TestDetection::test_declared_but_non_env_code_still_red` + `::TestDetection::test_env_code_without_a_recognisable_code_stays_red`"
+      - "**判据 4·环境缺失不许连带洗白别的失败**：环境码在场但该用例还有别的失败（如 `forbidden_text`）⇒ 不归类、照旧判红。执行点 = `::TestDetection::test_other_failures_block_the_env_classification`"
+      - "**判据 5·跨 run 复发仍是环境缺失**：环境码每轮都缺 ⇒ 若被 `systemic_recurrence` 接管就永远假红（PR-135 的形状）⇒ 该分支必须**先于**复发判定。执行点 = `::TestVerdict::test_env_missing_survives_cross_run_recurrence`"
+      - "**判据 6·结论口径**：全部失败都是环境缺失 ⇒ `completion.ok` 可为 true，但 `reason` 必须显式写出「环境前置缺失 N 条（本轮未验证…）」；有真失败时同样单列一节；`total/passed` 不许把该用例吞掉。执行点 = `::TestVerdict::test_env_missing_is_not_a_must_fix_failure` + `::TestVerdict::test_env_missing_does_not_hide_a_real_failure`"
+      - "**判据 7·消费侧不阻塞但不静默**：`scripts/eval_closeout.py` 的 `NON_BLOCKING_VERDICT_KEYS` 含 `env_missing`（不计阻塞），且结论档有独立一行、逐条状态是「环境缺失（未验证）」而非「已收口」。执行点 = `::TestVerdict::test_env_key_is_not_a_blocking_bucket` + `::test_closeout_is_not_blocking_but_never_silent`"
+      - "**判据 8·声明面接线**：`requires_env` 经 CI 的 YAML 装载路径（`load_cases_from_yaml`）与生成物渲染器（`_case_literal_lines` / `EvalCase` schema）都要活下来；漏映射 = 声明形同虚设、用例照旧判产品红。执行点 = `::test_yaml_loader_maps_requires_env` + `::test_renderer_emits_requires_env`"
+      - "**判据 9·真实用例用上了且门槛不动**：`PR-135` 声明 `requires_env: [IMAGE_GEN_API_KEY]`，且 `must_succeed == [{'tool': 'product_image_generate'}]` **一字未动**；全库声明面现取 = 恰恰这一条（不是恒定量，删了就红）。执行点 = `::test_pr135_declares_requires_env_and_keeps_its_must_succeed`"
+    skip_reason: "[backend-contract] 纯静态 / 纯函数判据（零 LLM / 零网络 / 零 DB）：不进 agent-eval 冒烟；机器判红通道 = traces.tests 的 pytest（pr-check 的 ci workflow helper unit tests 全量跑 tests/unit_ci_workflows）"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_eval_env_prerequisite.py"
+      ci:
+        - pr-check.yml
+      verifies: []
+    merge_log: "2026-11-27 新增（issue #9280）。现场（run 46002922920 @16cdb5bcc 的逐字读数）：`mibao: ❌ PR-135 score=0.0` / `must_succeed: product_image_generate 共 1 次调用**无一成功**（R1:IMAGE_GEN_UNAVAILABLE）`；上一轮同用例是 `IMAGE_SOURCE_MISSING`（种子主图没配），补了主图后**前移**成 `IMAGE_GEN_UNAVAILABLE` ⇒ 链路前半段已通，卡点是**评测栈里没配图生成凭证**（该码语义逐字 =「未配置 Key / 开关关闭 / 模型接不了这类图生图请求」）⇒ 是**环境前置**，既不是产品缺陷、也不是用例缺陷，却被记进 `deterministic_failures` ⇒ 每轮假红、污染判定结论。修法 = 新判定类（照抄 `_PRECONDITION_NOT_APPLIED` / `missing_target_verdict` 的分族范式）：用例可显式声明 `requires_env`，runner 在 `must_succeed` 失败且错误码 ∈ 该前置**已登记**环境码集合、且**没有别的失败**时判 `ENV_PREREQUISITE_MISSING`（具名串：用例 id + 前置名 + 错误码），进 `completion.env_missing`（**非阻塞**但必须出现在 `reason`；`ok=true` 时同样显式写「本轮有 N 条未验证」），并**先于**跨-run 复发/旅程/分类判定（否则每轮复发成 systemic 又变假红）。边界（防「一切失败都赖环境」）：**只有显式声明 `requires_env` 的用例**才享受该归类，未声明的一律照旧判红（判据 2 的注入式红证 = 只放开「声明」这一个变量，同一条失败原文即从红变成环境缺失）。CI 的 `_ci_verdict`（PR 门禁口径）**一字未动**（与既有各归因桶同口径：结论档与门禁各司其职）。取号 = `python3 scripts/case_id_lease.py reserve MC` ⇒ **MC-391**（离线独占租约 + `case-lease/MC-391` ref 跨机仲裁）。"

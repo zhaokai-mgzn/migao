@@ -394,6 +394,7 @@ class TestCompletionCarriesReasons:
             "harness_incompatible_failures": [],
             "case_asset_failures": [],
             "write_not_persisted_failures": [],
+            "env_missing": [],   # 非阻塞桶（issue #9280）：本夹具没有声明 requires_env 的用例
             "total": 4, "passed": 1,
         }
         # ② 口径锚点：同样是"两次皆败"，`unstable` 必须进阻塞桶（旧口径会放行）
@@ -411,6 +412,7 @@ class TestCompletionCarriesReasons:
             "harness_incompatible_failures": [],
             "case_asset_failures": [],
             "write_not_persisted_failures": [],
+            "env_missing": [],   # 非阻塞桶（issue #9280）：本夹具没有声明 requires_env 的用例
             "total": 1, "passed": 0,
         }
         # ③ #4207 反向锚点：`score==1.0` 的阻塞条目（跨 run 复发）⇒ 落**第二组**，

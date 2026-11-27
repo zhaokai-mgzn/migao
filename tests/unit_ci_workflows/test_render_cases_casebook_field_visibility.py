@@ -114,6 +114,13 @@ NOT_RENDERED: dict[str, str] = {
     "debug_permissions": "夹具层身份注入旗标（服务端 DEBUG-only 的 `X-Debug-Permissions`）；"
                          "行为语义由该用例的 `merge_log` 与 `你:` 轮说明",
     "debug_user": "同 `debug_permissions`（夹具层多身份注入）",
+    "requires_env": "环境前置声明（issue #9280）：**机器面已逐条渲染** —— `.github/render_cases.py` 的 "
+                    "`_case_literal_lines` 会把它写进生成物 `eval_cases/*.py` 的字面量（不渲染 = 在 yml 里声明了"
+                    "却在生成物里静默丢掉，正是 #3836/#3391 的假绿形态）；但人读 casebook **不占行** —— 它是"
+                    "运行期「本栈缺什么前置」的分类依据（缺 ⇒ 该用例的红归环境而非产品缺陷），读者关心的是用例"
+                    "**要测什么**（`你:` 轮 + `数据:` 行 + `merge_log`），把 `IMAGE_GEN_API_KEY` 这类栈侧前置"
+                    "逐条印进账本是运维噪声。缺口（照实）：casebook 读者看不到「该用例依赖哪些环境前置」，"
+                    "需查 yml 或生成物。",
 }
 #: ④ 本包（issue #3968）新补字段的**行数契约**（必须是 ① 桶的子集 ⇒ 同时受「逐条可见」约束）：
 #: · 一条声明 = 一行（行数 == 声明项数）；
