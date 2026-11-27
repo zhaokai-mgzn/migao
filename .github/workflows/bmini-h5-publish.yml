@@ -78,6 +78,10 @@ env:
   IMAGE_NAME: bmini-h5
   # 构建期变量（见 frontend/bmini-app/config/index.ts）：落在 /b/ ⇒ 资源前缀必须也是 /b/
   TARO_APP_H5_PUBLIC_PATH: /b/
+  # ⚠️ **本腿只发测试域**（issue #8963）：落地面锚死在 `app.migaozn.com/b/`（`H5_STATIC_ROOT` 是
+  #    测试实例的静态根，`bmini-h5-verify-served.sh` 的 BASE_URL 也是它）⇒ 上面的三个 `TARO_APP_*`
+  #    **必须**跟着测试域走，改成生产域只会得到「产物指生产、字节落测试」的更坏形态。
+  #    生产 h5 产物走生产部署面，不经过本腿；判据 = 本文件不出现生产域名（test_bmini_h5_delivery_contract）。
   # 🔴 API 面必须与**落地面同源**（issue #5721，实测踩过）：
   #    app.migaozn.com 的 nginx 已把 `/api/` 代理到 admin-api、`/api/chat/` 代理到 ai-agent
   #    （deploy/swas/nginx.conf），工人端 `/w/` 正是靠这个同源面工作 —— 同源 ⇒ **完全不经过 CORS**。
@@ -91,6 +95,11 @@ env:
   # AI 面同理：chat 走 `/api/chat/*`（nginx 里前缀比 `/api/` 长 ⇒ 命中 ai-agent），
   # 而未配置时产物里 baked 的是 `http://localhost:8001`（真机上必然失败 + 混合内容）。
   TARO_APP_AI_API_URL: https://app.migaozn.com
+  # 入库标签二维码的 origin（issue #8963 / #8942）：`INBOUND_LABEL_CODE_ORIGIN` 的构建期覆盖面。
+  # 缺它 ⇒ 产物里 baked 的是源码兜底值 `https://app.migaozn.com`（**今天恰好对**，但它不再与
+  # 「本腿发到哪」同源）—— 换落地面时标签二维码会**印着旧域名**，工人扫码跳错站且无任何报错。
+  # 判据 = tests/unit_ci_workflows/test_bmini_h5_delivery_contract.py（三个 origin 都钉「与落地面同源」）。
+  TARO_APP_PUBLIC_APP_ORIGIN: https://app.migaozn.com
 
 jobs:
   publish:
