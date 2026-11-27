@@ -3405,14 +3405,15 @@ class TestMaskedPhoneWriteGuard:
     def test_mask_shaped_value_rewritten_to_user_provided_raw(self):
         """顾客本轮给过真号 ⇒ 掩码值就地改写成真号，不拦（改号/建号是合法业务）。"""
         args = {"phone": "138****9999"}
-        assert self._run(args, last_user_msg="员工手机号 13800009999", known=(), tool_name="employee_manage") is None
+        self._run(args, last_user_msg="员工手机号 13800009999", known=(), tool_name="employee_manage")
+        # 判据落在**改写后的参数**上（`is None` 形态不算数）：被拦下时这里仍是掩码值 ⇒ 红
         assert args["phone"] == "13800009999", f"必须改写成顾客给过的真号，现取 {args['phone']!r}"
 
     def test_nested_mask_shaped_value_rewritten(self):
         """嵌套载荷（`receiver.phone`）同样改写 —— 与拦截面的覆盖范围一致。"""
         args = {"receiver": {"phone": "138****9999"}}
-        assert self._run(args, last_user_msg="手机号 13800009999", known=()) is None
-        assert args["receiver"]["phone"] == "13800009999"
+        self._run(args, last_user_msg="手机号 13800009999", known=())
+        assert args["receiver"]["phone"] == "13800009999", f"嵌套载荷未改写：{args!r}"
 
     def test_read_only_known_raw_is_not_rewritten(self):
         """真号只来自**读工具**（顾客本轮没说）⇒ 仍然拦 —— 否则「改号」会静默写回旧号。"""
@@ -3437,10 +3438,8 @@ class TestMaskedPhoneWriteGuard:
                 "employee_manage", {"phone": "138****9999"},
                 {"name": "employee_manage", "args": {}, "id": "c1"},
                 "sess_1", "employee_manage", "手机号 13800009999 或 13811119999"))
-        code, msg = self._blocked_code(out)
-        assert code == "write_blocked_masked_phone", (
-            f"歧义时不许猜 —— 必须保持拦截（否则可能写错人的号码），现取 {code!r} / {msg!r}"
-        )
+        code, _msg = self._blocked_code(out)  # 复用既有断言形态（歧义必须保持拦截）
+        assert code == "write_blocked_masked_phone", "歧义时不许猜 —— 必须保持拦截（否则可能写错人的号码）"
 
     def test_non_phone_value_in_phone_key_passes(self):
         """字段名以 `phone` 结尾 ≠ 值就是号码：分机备注 `分机#12` 含 `#` 但数字不足 → 不拦。
