@@ -131,13 +131,22 @@ jobs:
           set -euo pipefail
           EXPECTED_TAG="sha-${GITHUB_SHA::7}"
           IMAGE="${{ env.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/${{ env.IMAGE_NAME }}:${EXPECTED_TAG}"
+          # issue #9056：skip 命中时的**具名读数** —— `DEPLOY_SKIPPED=<原因码>` 落 `$GITHUB_OUTPUT`，
+          # 「部署步结论 + 跳过原因 + 复算命令」落 `$GITHUB_STEP_SUMMARY`。实现体**外置**
+          # （`.github/scripts/deploy_skip_attest.sh`）：本步正文已 ~9.7K 字符，而单个 `run` 正文
+          # 超 ~13.3K ⇒ GitHub 把**整份 workflow** 判 invalid ⇒ 该腿静默永不跑。
+          # 四条 skip 臂共用**一个**写点：多写点 = 迟早漏一个不读数。
+          skip_hit() {   # $1=原因码（必须登记在 .github/scripts/deploy_skip_attest.sh 的 case 里）
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            bash .github/scripts/deploy_skip_attest.sh "$1" || echo "::warning::skip 读数实现体不可用（旧检出 / 夹具里没有它）—— 跳过本身仍然有效"
+          }
           # ⚠️ **先去重、后判定镜像**的顺序很重要：`image_tag` 非空 = 人工回滚（MODE=rollback），
           # 回滚目标镜像**必然已存在** ⇒ 若先判镜像存在就 `exit 0`，会把 #4852 的显式回滚接口
           # **整条砍掉**（守卫挡死它自己的逃生口）。故回滚路径**根本不进**镜像判定。
           if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ -z "$INPUT_IMAGE_TAG" ] \
              && docker manifest inspect "$IMAGE" >/dev/null 2>&1; then
             echo "✅ 镜像 ${IMAGE} 已存在——main 当前 commit 已构建过"
-            echo "skip=true" >> "$GITHUB_OUTPUT"
+            skip_hit duplicate_dispatch
             # workflow_dispatch + 无 image_tag + 镜像已在 ⇒ **重复 dispatch**（对账每 20min
             # 补一次，或前一个 run 已构建完）⇒ 当场退出，把并发锁让给真正要做事的 run（#5078）。
             echo "⏭️ 跳过原因（显式，非静默）：本次是 workflow_dispatch 且未指定 image_tag，"
@@ -152,7 +161,7 @@ jobs:
             echo "skip=false" >> "$GITHUB_OUTPUT"
           elif docker manifest inspect "$IMAGE" >/dev/null 2>&1; then
             echo "✅ 镜像 ${IMAGE} 已存在——main 当前 commit 已构建过，跳过构建部署"
-            echo "skip=true" >> "$GITHUB_OUTPUT"
+            skip_hit image_exists
           else
             # ── 不可恢复终态闸门（issue #5814 B/C）────────────────────────────────
             # 镜像缺失**不等于**「该补一次构建」：这个 commit 最近一次部署如果是**不可恢复的
@@ -258,7 +267,7 @@ jobs:
               echo "✅ ${LAST7} 的部署**已成功**——该 commit 已构建部署过，跳过本轮构建部署"
               echo "   判据来源（issue #5814 C′）：C′ 不推 ACR ⇒ 镜像必然不在 ACR，故改看「同 sha 的 run 结论」"
               echo "   需要**强制重新部署**同一 commit：gh workflow run <本腿>.yml -f image_tag=sha-${LAST7}"
-              echo "skip=true" >> "$GITHUB_OUTPUT"
+              skip_hit same_sha_deployed
               {
                 echo "## ✅ 部署腿跳过（C′ 已部署判据，issue #5814）"
                 echo ""
@@ -277,7 +286,7 @@ jobs:
               echo "   gh workflow run <本腿>.yml --ref main"
               echo "   · 该 commit 的代码有问题 ⇒ 先修或回滚；只是镜像推送抖动 ⇒ 用上面的命令复跑"
               echo "   · 在 run 页面点 Re-run 同样放行（本判据只看「最近一次 run 的结论」）"
-              echo "skip=true" >> "$GITHUB_OUTPUT"
+              skip_hit unrecoverable_conclusion
               {
                 echo "## ⛔ 部署腿跳过（issue #5814 不可恢复终态闸门）"
                 echo ""

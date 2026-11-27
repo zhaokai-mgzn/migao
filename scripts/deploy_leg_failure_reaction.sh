@@ -265,6 +265,57 @@ open_issue_of_title() {   # $1=标题 ⇒ 该标题下**开放**单的编号（�
   open_issue_numbers_by_title "$1" | awk '{print $1}'
 }
 
+# ── 「这一次**真的发生了部署**」的自证（issue #9056）──────────────────────────────
+# 病（现场 run 45010592767，`schedule`）：`Skip if already built` 命中 ⇒ `Deploy to SWAS` 整段
+# **skipped**，而 **job / run 结论 = success** ⇒ 「该腿下一次 `conclusion=success`」这个清零判据
+# 被**一次没部署的空转 run** 满足，而线上仍是旧镜像（实证：据此把 #9051 误判成「瞬时/环境抖动」）。
+# 出口：关单前读 **run 的部署步结论**（`.github/scripts/deploy_leg_deploy_attest.py`，三态
+# `0` 已部署 / `1` 未部署 / `3` 判不了）—— **只有 0 才关单**：
+#   · `1`（部署步 = skipped，或部署步没有全部成功）⇒ 具名「skip 非 deployed」+ **复算命令**；
+#   · `3`（读不到 jobs / 没有可识别的部署步）⇒ 具名「判不了」——`3` **不得当 0 读**
+#     （「没查」≠「已确认未部署」），**也不得当 1 读**（「判不了」≠「已部署」）。
+# 判据 = tests/unit_ci_workflows/test_deploy_leg_failure_reaction.py
+#        ::test_skip_hit_run_never_closes_on_the_state_face / _on_the_event_face（两条入口）
+#        ::test_unjudgeable_attestation_is_fail_closed（三态）
+#        ::test_mutation_treating_skip_as_deployed_closes_the_issue（注入式红证）
+# 类级元守卫 = `scripts/deploy_leg_close_claim_audit.py check-skip-close`（本函数是它的判据对象：
+# 凡「异常关闭 `[deploy-leg]` 单」的路径都必须带这条自证，未带 ⇒ 红）。
+ATTEST_IMPL="$REPO_ROOT/.github/scripts/deploy_leg_deploy_attest.py"
+deploy_attested() {   # $1=服务键（空=事件面，用 $RUN_ID） $2=清零依据
+  local key="$1" why="$2" out rc sha
+  local -a args
+  if [ ! -f "$ATTEST_IMPL" ]; then
+    echo "::warning::关单前置「本次真的发生了部署」判不了：\`${ATTEST_IMPL#"$REPO_ROOT"/}\` 不在检出里（多为「引入它的 PR 还没合并」）⇒ **本轮不关单**（skip 非 deployed，issue #9056）"
+    return 1
+  fi
+  args=()
+  if [ -z "$key" ] && [ -n "$RUN_ID" ]; then
+    # 事件面：`workflow_run` 载荷带着 run id ⇒ 直接读**那一条** run 的部署步。
+    args=(--run-id "$RUN_ID")
+  else
+    # 状态面：依据形如 `无漂移：自 <7 位 sha>（上次成功部署）起 …` ⇒ 它点名的正是「那次部署」；
+    # 读它的部署步，才知道那次「成功」到底是真部署还是 skip 空转（issue #9056 的现场形态）。
+    sha="$(printf '%s' "$why" | sed -n 's/.*无漂移：自 \([0-9a-f]\{7\}\).*/\1/p')"
+    if [ -n "$sha" ]; then args=(--workflow "$(leg_workflow_file "$key")" --sha "$sha"); fi
+  fi
+  if [ "${#args[@]}" = "0" ]; then
+    echo "::warning::关单前置「本次真的发生了部署」判不了（依据里取不到 run / 基准 commit：\`${why}\`）⇒ **本轮不关单**（skip 非 deployed，issue #9056）"
+    return 1
+  fi
+  if [ "${DRY_RUN:-}" = "1" ]; then
+    # 离线驱动（守卫测试 / 人工 dry-run）**不许**去打 GitHub：只打印，且按「判不了」处理（不关单）。
+    echo "   [dry-run] python3 ${ATTEST_IMPL#"$REPO_ROOT"/} ${args[*]} ⇒ 本轮不关单（只打印）"
+    return 1
+  fi
+  out="$(python3 "$ATTEST_IMPL" "${args[@]}" 2>&1)"; rc=$?
+  printf '%s\n' "$out"
+  if [ "$rc" = "0" ] && printf '%s' "$out" | grep -qF 'DEPLOY_EXECUTED=1'; then
+    return 0
+  fi
+  echo "::warning::腿 ${key:-$LEG} 的值守单**本轮不关**：本次没有自证「真的发生了部署」（rc=${rc}，skip 非 deployed）。复算：\`python3 ${ATTEST_IMPL#"$REPO_ROOT"/} ${args[*]}\`"
+  return 1
+}
+
 # 把一条腿的单**清零**（状态驱动，issue #6556）。只关**本出口**那一族（`[deploy-leg]`）——
 # `[deploy-watchdog]` 的单归值守面自己关（**并存 + 去重，不代关**，见文件头的分工）。
 clear_leg() {   # $1=服务键（可空=事件快路径） $2=清零依据（写进评论）
@@ -275,6 +326,8 @@ clear_leg() {   # $1=服务键（可空=事件快路径） $2=清零依据（写
     echo "✅ 腿 ${key:-$LEG} 已收敛 ⇒ 无开放的 \`${LEG_TITLE_PREFIX}\` 单需要清零"
     return 0
   fi
+  # 🔴 issue #9056：**关单前必须自证「本次真的发生了部署」**（理由与三态见上面 `deploy_attested`）。
+  if ! deploy_attested "$key" "$why"; then return 0; fi
   # 🔴 清零声明句**只对真的关单成功**的那一次写（issue #7075，见下 `if ghc issue close` 块）：
   #    先写声明、再关单的旧形态会把「留了声明却没关」变成**不可区分**的常态（实测 #6661/#7025/#7032）。
   case "$why" in

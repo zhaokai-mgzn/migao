@@ -373,6 +373,214 @@ def check_static(script: Path = ACTION_SCRIPT, gh: str = "gh") -> int:
     return 0
 
 
+# ── 判据 4（issue #9056）：「异常关闭 `[deploy-leg]` 单」必须带「本次真的发生了部署」的自证 ──
+# 病（现场 run 45010592767，`schedule`）：`Skip if already built` 命中 ⇒ `Deploy to SWAS` 整段
+# **skipped**，而 **job / run 结论 = success** ⇒ 清零判据「该腿下一次 `conclusion=success`」被
+# **一次没部署的空转 run** 满足，而线上仍是旧镜像。⇒ 本判据判两件事，两件都会红：
+#   ① **静态结构**：动作脚本里**每一个** `ghc issue close` 调用，都必须落在带了
+#      「自证调用 + `if ! … ; then return …` 拒绝分支」的函数里，且脚本里有具名读数
+#      `skip 非 deployed`；实现体必须把 `DEPLOY_EXECUTED=1` 当**唯一**放行依据（不许只看 rc）。
+#   ② **行为夹具**（这条才是「skip 不许冒充 deployed」的真正判别力）：拿两份 jobs 语料跑实现体 ——
+#      部署步 `success` ⇒ rc 0 + `DEPLOY_EXECUTED=1`；部署步 `skipped` ⇒ rc 1 + `DEPLOY_EXECUTED=0`。
+#      静态读文本分不清「`skipped` 出现在匹配里」与「`skipped` 被当成已部署」，所以必须真跑。
+# 三态：`0` 合规 / `1` 违规（具名） / `3` 判不了（动作脚本或实现体不在场 / 夹具跑不起来）。
+ATTEST_IMPL = REPO_ROOT / ".github" / "scripts" / "deploy_leg_deploy_attest.py"
+#: 关单前置的**具名读数**（调用方必须真的打出来 —— 否则「拒绝关单」在日志里不可见）。
+SKIP_NOT_DEPLOYED = "skip 非 deployed"
+#: 自证调用面的两种形态（助手函数名 / 实现体文件名）。
+ATTEST_CALL_HINTS = ("deploy_attested", "deploy_leg_deploy_attest")
+#: 助手函数必须出现的**强度**锚点：只有 `DEPLOY_EXECUTED=1` 才放行（rc=0 单独不算）。
+ATTEST_PASS_MARK = "DEPLOY_EXECUTED=1"
+
+
+def shell_functions(text: str) -> dict[str, tuple[int, int]]:
+    """bash **顶层**函数 → `(起行, 止行)`（1-based，`name() {` … 首个列首 `}`）。
+
+    ⚠️ 只用手写扫描 + **不含引号捕获组**的正则：本仓类级守卫
+    `tests/unit_ci_workflows/test_guard_parsing_is_comment_aware.py` 的 RULE_QUOTE 禁止
+    「按引号扫源码原文取值」的形态（那种写法会被注释/字符串里的引号喂中）。
+    """
+    out: dict[str, tuple[int, int]] = {}
+    lines = text.splitlines()
+    start_re = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)\(\)[ \t]*\{")
+    name, start = "", 0
+    for no, line in enumerate(lines, 1):
+        if not name:
+            m = start_re.match(line)
+            if m:
+                name, start = m.group(1), no
+            continue
+        if line.rstrip() == "}":
+            out[name] = (start, no)
+            name = ""
+    if name:                                   # 花括号没闭合：按到文件尾算（fail-closed 由调用方判）
+        out[name] = (start, len(lines))
+    return out
+
+
+def _attest_gate_is_wired(body: str) -> bool:
+    """函数体里是否有「自证不成立 ⇒ 提前 return」的分支（单行守卫或短块两种形态都收）。"""
+    lines = body.splitlines()
+    for i, line in enumerate(lines):
+        if line.lstrip().startswith("#"):
+            continue
+        if not any(h in line for h in ATTEST_CALL_HINTS):
+            continue
+        if "!" not in line:
+            continue
+        window = lines[i:i + 4]
+        if any("return" in w and not w.lstrip().startswith("#") for w in window):
+            return True
+    return False
+
+
+def skip_close_problems(text: str) -> list[str]:
+    """**纯函数**：给定动作脚本正文，返回「关单路径漏带部署自证」的违规清单（issue #9056）。"""
+    problems: list[str] = []
+    funcs = shell_functions(text)
+    lines = text.splitlines()
+    closes = [(no, line) for no, line in enumerate(lines, 1)
+              if "issue close" in line and not line.lstrip().startswith("#")]
+    #: 🔴 豁免面（**唯一**一条，且是语义上不成立的那类）：以 `duplicate` 关单 = 关掉**重复**单、
+    #: 保留主单（`converge_duplicate_issues`）⇒ 它**不**宣称「已收敛/已部署」，因此不要求部署自证。
+    #: 除它以外的每一条关闭路径都必须自证（宁可判红，也不许为「省一条豁免」把收敛声明面放宽）。
+    exempt = "duplicate"
+    scoped = [(no, line) for no, line in closes if f"--reason {exempt}" not in line]
+    if not scoped:
+        return [f"动作脚本里找不到**会宣称收敛**的 `ghc issue close` 调用（只有 `--reason {exempt}` 的重复单收敛）"
+                " ⇒ 判据对象没了（fail-closed）"]
+    for no, line in closes:
+        if f"--reason {exempt}" in line:
+            continue
+        owner = ""
+        for name, (start, end) in funcs.items():
+            if start <= no <= end:
+                owner = name
+                break
+        if not owner:
+            problems.append(
+                f"第 {no} 行的 `issue close` 不在任何顶层函数里 ⇒ 无法判定它带没带自证（fail-closed）"
+            )
+            continue
+        start, end = funcs[owner]
+        body = "\n".join(lines[start - 1:end])
+        if not any(h in body for h in ATTEST_CALL_HINTS):
+            problems.append(
+                f"`{owner}` 会关 `[deploy-leg]` 单，但没有「本次真的发生了部署」的自证调用"
+                f"（{ATTEST_CALL_HINTS[0]} / {ATTEST_CALL_HINTS[1]}.py）⇒ skip 空转可冒充已部署（issue #9056）"
+            )
+            continue
+        if not _attest_gate_is_wired(body):
+            problems.append(
+                f"`{owner}` 调了自证，但没有「自证不成立 ⇒ **不关单**」的分支"
+                f"（需要 `if ! {ATTEST_CALL_HINTS[0]} …; then return …`）"
+            )
+    helper = funcs.get(ATTEST_CALL_HINTS[0])
+    if not helper:
+        problems.append(
+            f"找不到自证助手 `{ATTEST_CALL_HINTS[0]}()` ⇒ 关单前的自证没有承载面"
+        )
+    else:
+        helper_body = "\n".join(lines[helper[0] - 1:helper[1]])
+        if ATTEST_PASS_MARK not in helper_body:
+            problems.append(
+                f"`{ATTEST_CALL_HINTS[0]}` 没有把 `{ATTEST_PASS_MARK}` 当放行依据"
+                f"（只看 rc 时，实现体把 skip 判成 0 也照样关单）"
+            )
+        if "return 1" not in helper_body:
+            problems.append(
+                f"`{ATTEST_CALL_HINTS[0]}` 没有失败出口（`return 1`）⇒ 自证不成立时无从拒绝关单"
+            )
+    if SKIP_NOT_DEPLOYED not in text:
+        problems.append(
+            f"动作脚本里没有具名读数 `{SKIP_NOT_DEPLOYED}` ⇒ 拒绝关单在日志里不可见"
+            "（读者会以为它没跑，而不是「被自证挡住了」）"
+        )
+    return problems
+
+
+def attest_verdict(attest: Path, conclusion: str, workdir: Path) -> tuple[int, str]:
+    """跑实现体的 CLI 拿 `(rc, 输出)`（离线：`ATTEST_JOBS_FILE` 夹具 ⇒ **一次 gh 都不调**）。"""
+    jobs = {"jobs": [{"name": "build-and-deploy", "steps": [
+        {"name": "Skip if already built (schedule reconcile)", "conclusion": "success"},
+        {"name": "Deploy to SWAS (测试环境)", "conclusion": conclusion}]}]}
+    fixture = workdir / f"jobs-{conclusion or 'none'}.json"
+    workdir.mkdir(parents=True, exist_ok=True)
+    fixture.write_text(json.dumps(jobs, ensure_ascii=False), encoding="utf-8")
+    env = {k: v for k, v in os.environ.items() if k not in TOKEN_ENVS}
+    env["ATTEST_JOBS_FILE"] = str(fixture)
+    try:
+        proc = subprocess.run([sys.executable, str(attest), "--run-id", "0"],
+                              capture_output=True, text=True, timeout=120, env=env,
+                              encoding="utf-8", errors="replace")
+    except (OSError, subprocess.SubprocessError) as exc:
+        return -1, f"实现体起不来：{exc}"
+    return proc.returncode, (proc.stdout or "") + (proc.stderr or "")
+
+
+def other_close_paths(script: Path = ACTION_SCRIPT) -> list[str]:
+    """**类级**：任何**别的**脚本里也出现「关 `[deploy-leg]` 单」⇒ 它也得带同一条自证。
+
+    扫描面 = `scripts/**/*.sh` 与 `.github/scripts/**/*.sh`（**关单动作在本仓只由 bash 发起**；
+    Python 侧唯一的 `gh issue close` 文本在**本判据自己的**文档里 ⇒ 扫 `.py` 只会命中自己）。
+    边界（照实登记）：若将来出现 shell 之外的第二条关闭路径，本函数看不见 ⇒ 那条由评审兜。
+    """
+    problems: list[str] = []
+    roots = [REPO_ROOT / "scripts", REPO_ROOT / ".github" / "scripts"]
+    for root in roots:
+        for path in sorted(root.glob("*.sh")):
+            if path.resolve() == script.resolve():
+                continue
+            try:
+                text = path.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                continue
+            if "issue close" not in _strip_comments(text):
+                continue
+            if "[deploy-leg]" not in text and "LEG_TITLE_PREFIX" not in text:
+                continue
+            problems.append(
+                f"`{path.relative_to(REPO_ROOT)}` 也关 `[deploy-leg]` 单，但不在自证面里 ⇒ 第二条关闭路径"
+                f"（类级：新关闭面必须同批接自证，issue #9056）"
+            )
+    return problems
+
+
+def check_skip_close(script: Path = ACTION_SCRIPT, attest: Path = ATTEST_IMPL) -> int:
+    """三态：`0` 合规 / `1` 违规（具名） / `3` 判不了（脚本或实现体不在场）。"""
+    if not script.is_file():
+        _cant(f"动作脚本不在场（{script}）⇒ 「关单前自证」没有判据对象")
+        return 3
+    if not attest.is_file():
+        _cant(f"自证实现体不在场（{attest}）⇒ 判不了「skip 会不会冒充 deployed」")
+        return 3
+    problems = skip_close_problems(script.read_text(encoding="utf-8"))
+    problems += other_close_paths(script)
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as td:
+        ok_rc, ok_out = attest_verdict(attest, "success", Path(td))
+        skip_rc, skip_out = attest_verdict(attest, "skipped", Path(td))
+    if ok_rc != 0 or ATTEST_PASS_MARK not in ok_out:
+        problems.append(
+            f"行为夹具：部署步 `success` 应判已部署（rc=0 且含 `{ATTEST_PASS_MARK}`），"
+            f"现取 rc={ok_rc} ⇒ 自证在「真部署」上也会拒绝关单（会把值守单永久挂住）"
+        )
+    if skip_rc != 1 or "DEPLOY_EXECUTED=0" not in skip_out:
+        problems.append(
+            f"行为夹具：部署步 `skipped` 必须判**未部署**（rc=1 且含 `DEPLOY_EXECUTED=0`），"
+            f"现取 rc={skip_rc} ⇒ **skip 冒充 deployed**（issue #9056 本单要治的形态）"
+        )
+    if problems:
+        _fail(f"关单自证面违规（{len(problems)} 条）：")
+        for p in problems:
+            _fail(f"  {p}")
+        return 1
+    print(f"✅ 每条关闭路径都带部署自证（{SKIP_NOT_DEPLOYED}），且实现体把 "
+          f"`skipped` 判成未部署、`success` 判成已部署（行为夹具 rc=0/1 双向）")
+    return 0
+
+
 def show_ledger(as_json: bool = False) -> int:
     if not LEDGER.is_file():
         _cant(f"存量台账不在场（{LEDGER}）")
@@ -393,6 +601,8 @@ def main(argv: list[str] | None = None) -> int:
     sub = ap.add_subparsers(dest="cmd", required=True)
     sub.add_parser("check-claims", help="声明与状态一致性（需只读凭据；无凭据 ⇒ rc=3）")
     sub.add_parser("check-static", help="离线结构判据（取值枚举 + 具名失败出口）")
+    sub.add_parser("check-skip-close",
+                   help="关单前的「本次真的发生了部署」自证（静态结构 + 行为夹具，issue #9056）")
     p = sub.add_parser("show-ledger", help="打印存量清单")
     p.add_argument("--json", action="store_true")
     ns = ap.parse_args(argv)
@@ -400,6 +610,8 @@ def main(argv: list[str] | None = None) -> int:
         return check_claims()
     if ns.cmd == "check-static":
         return check_static()
+    if ns.cmd == "check-skip-close":
+        return check_skip_close()
     return show_ledger(ns.json)
 
 
