@@ -4,6 +4,7 @@ package com.migao.admin.service;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -345,6 +346,65 @@ class StockDeductionAndLedgerAtomicityMetaGuardTest {
                 .as("坏形态 ④：before/after 读自快照 ⇒ 必须红").isNotEmpty();
     }
 
+    // ────────────────────────── 判据 7+8：守卫**自己**不许爆栈（#9269 缺陷 2）
+
+    /**
+     * 判据 7·<b>输入规模上界</b>：20 000 字符的字面量必须稳定出结论。
+     *
+     * <p>规模取 20k 的理由（现取，不是拍脑袋）：仓里 mapper 目录当前最长字面量 = <b>1728</b> 字符
+     * （复算：<code>grep -oE '"([^"\\]|\\.)*"' backend/admin-api/src/main/java/com/migao/admin/mapper/*.java | awk '{print length}' | sort -n | tail -1</code>）
+     * ⇒ 本夹具 = 现取最大值的 <b>11.6 倍</b>。改前实现在 ~3.5k 就爆栈（默认栈）/ ~800 就爆栈（-Xss512k），
+     * 即「离悬崖」只有 1.8k 量级 —— 这条判据把「换一个 PR 就可能红」变成「必须先长到 20k」。</p>
+     *
+     * <p>{@link Timeout} 是**第二条**保护：回溯型实现在超长输入上不是抛 SOE 就是**指数级慢**
+     * （同族实测：`(?:\\w+\\s+)*` 在 32k 空白上直接卡死）⇒ 只判「没抛异常」不够，必须同时钉住
+     * 「10 秒内出结论」。</p>
+     */
+    @Test
+    @Timeout(10)
+    @DisplayName("判据 7·规模上界：20k 字面量不许 StackOverflowError、且 10s 内出结论")
+    void oversizeAnnotationLiteralDoesNotOverflowTheStack() {
+        int n = 20_000;
+        String literal = "x".repeat(n);
+        String sql = literalsOf("@Update(\"" + literal + "\")");
+        assertThat(sql)
+                .as("超长字面量必须被**完整**取出（改前：捕获组 + `*` ⇒ GroupCurly 每次重复一层栈 ⇒ "
+                        + "StackOverflowError，栈顶 Pattern$GroupHead.match）")
+                .hasSize(n);
+        assertThat(sql.chars().distinct().count())
+                .as("取出的必须是那串字面量本身，不是别的东西（20k 个同一字符 ⇒ 去重后只有 1 种）")
+                .isEqualTo(1L);
+    }
+
+    /**
+     * 判据 8·<b>语义等价</b>：新扫描器与原正则逐字同解（期望值是**旧正则现算的**，硬编码在这里）。
+     *
+     * <p>没有这条，「改成正则之外的东西」与「改坏了判定语义」在结果列上长得一样：判据 1~6 扫的是
+     * 仓里真实 SQL，而真实 SQL 只覆盖「普通字面量」一种形态。下面 7 个夹具覆盖：转义引号
+     * （{@code \"}）、转义反斜杠（{@code \\}）、多段拼接、字面量前后有杂字符、未闭合引号
+     * （含「块尾恰是转义反斜杠」这一种最刁的），以及空块。</p>
+     */
+    @Test
+    @DisplayName("判据 8·语义等价：转义/多段/未闭合 7 个夹具与原正则逐字同解")
+    void annotationLiteralsAreParsedExactlyLikeTheOldRegex() {
+        //: 每条 = {注解块原文, 旧正则 `"((?:[^"\\]|\\.)*)"` 在该块上的**现算**结果}
+        String[][] corpus = {
+                {"\"a\"", "a"},
+                {"\"a\\\"b\"", "a\\\"b"},
+                {"\"a\\\\\"", "a\\\\"},
+                {"\"a\" + \"b\"", "a b"},
+                {"x\"a\"y\"b\"", "a b"},
+                {"\"unterminated", ""},
+                {"\"a\\", ""},
+                {"", ""},
+        };
+        for (String[] fixture : corpus) {
+            assertThat(literalsOf(fixture[0]))
+                    .as("块=%s 的取字面量结果必须与旧正则逐字相同", fixture[0])
+                    .isEqualTo(fixture[1]);
+        }
+    }
+
     // ────────────────────────────────────────────── 判定本体（真语料与合成语料**同一套**）
 
     /** 扣减写面的两条纪律（真语料给整条 SQL，合成语料给片段 —— 同一套判定）。 */
@@ -448,11 +508,54 @@ class StockDeductionAndLedgerAtomicityMetaGuardTest {
         return methods;
     }
 
+    /**
+     * 从注解块里取出所有**字符串字面量**并拼接（= 注解里那条 SQL 的文本）。
+     *
+     * <p>🔴 <b>#9269 缺陷 2（本文件第三处、也是最隐蔽的一处爆栈）</b>：原实现是正则
+     * {@code "((?:[^"\\\\]|\\\\.)*)"} —— 外层是**捕获组 + {@code *}**，{@code java.util.regex}
+     * 用 {@code GroupCurly} 实现它，<b>每一次重复都是一层 Java 栈</b> ⇒ 递归深度 = 字面量长度。
+     * 超过 ~3.5k 字符就抛 {@link StackOverflowError}（栈顶 {@code Pattern$GroupHead.match}），
+     * 而这条路径扫的是<b>仓里真实 SQL</b> ⇒ <b>红不红由「哪个 PR 把 SQL 写长了」决定</b>，
+     * 与那个 PR 的改动毫无关系（#9269 的现取读数：mapper 目录最长字面量 = 1728 字符
+     * （{@code InboundOrderQueryMapper.java}）、其后 1603 / 1404 ⇒ <b>离悬崖只剩 ~1.8k</b>）。
+     *
+     * <p>改成<b>确定性字符扫描</b>（无回溯、无递归，O(n)）：找 {@code "}，然后逐字符前进
+     * —— {@code \} 连同下一个字符一起吞掉（等价于正则的 {@code \\.}），遇到未转义的 {@code "} 收尾；
+     * 扫到块尾仍未闭合 ⇒ 该开引号**不是字面量起点**，从下一个字符继续找（逐字等价于 {@code find()}
+     * 的「失败就右移一位重试」）。字面量内容<b>逐字保留</b>（转义序列不做反转义，与原实现一致）。</p>
+     *
+     * <p>语义等价性由 {@link #annotationLiteralsAreParsedExactlyLikeTheOldRegex} 用「原正则算出的期望值」
+     * 钉住；规模上界由 {@link #oversizeAnnotationLiteralDoesNotOverflowTheStack} 钉住。</p>
+     */
     private static String literalsOf(String block) {
         StringBuilder sql = new StringBuilder();
-        Matcher literals = Pattern.compile("\"((?:[^\"\\\\]|\\\\.)*)\"").matcher(block);
-        while (literals.find()) {
-            sql.append(literals.group(1)).append(' ');
+        int i = 0;
+        while (i < block.length()) {
+            if (block.charAt(i) != '"') {
+                i++;
+                continue;
+            }
+            int start = i + 1;
+            int end = -1;
+            for (int j = start; j < block.length(); ) {
+                char c = block.charAt(j);
+                if (c == '\\') {
+                    // 转义对整体跳过（`\\.`）：注意紧跟的 `"` 因此**不**算收尾引号
+                    j += 2;
+                } else if (c == '"') {
+                    end = j;
+                    break;
+                } else {
+                    j++;
+                }
+            }
+            if (end < 0) {
+                // 未闭合：原文在这一点不匹配 ⇒ 右移一位继续找（同 find() 口径），**不**整块放弃
+                i++;
+                continue;
+            }
+            sql.append(block, start, end).append(' ');
+            i = end + 1;
         }
         return sql.toString().trim();
     }
