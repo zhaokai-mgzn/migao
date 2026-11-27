@@ -737,6 +737,9 @@ cases:
     truths_ref:
       - ai-chat.permission-layers
       - employee-role.write-require-admin
+      # 2026-11-27 补（issue #9220）：本条的正向对照**依赖**「保留角色不得分配」这条规则 ——
+      # 「客服」只能用真实可分配岗位码表达（旧写法让模型自选 `agent` ⇒ 必红）。
+      - employee-role.reserved-role-blocked
     # ── 正向对照（issue #4108 / 父 #4103 Pkg D 判据「有能力时不得误拒」）──
     # HR-009 是**拒绝半**；本条是**允许半**。两者请求逐字同构、差异只有权限码：
     #   HR-009: debug_permissions="employee:list" → create 必须被拒（不得自旋/不得谎称不支持）
@@ -767,7 +770,15 @@ cases:
     user_inputs:
       # 与 HR-009 同构（姓名/手机号/密码齐全 ⇒ 无需澄清即可执行）；姓名/手机号与 HR-002、
       # HD-003 均不同，避免目标不唯一（§13.5 点名陷阱）。
-      - "帮我开个客服账号，姓名李四，手机号 13800009999，密码 Test123456"
+      # 2026-11-27 改判（issue #9220；现取证据 = 集中评测 run 45979067843 的 R2：
+      # `failed=employee_manage{action=create}!角色 agent 为系统保留角色，禁止在员工管理中分配[VALIDATION_ERROR]`）：
+      # 原文案只说「客服账号」⇒ 模型自选 `role: agent`，而 `agent` 属系统保留角色
+      # （`UserService.FORBIDDEN_USER_ROLES`）⇒ 服务端必返 422 ⇒ 本条必红。
+      # 商户侧「客服」岗位的真实角色码 = `customer_service`（`roles` 种子行：name=客服 / code=customer_service；
+      # 不在保留集内）。岗位码**直接给**（先例 = PP-006 直给分类 ID、#3658）⇒ 消掉「客服→agent」的猜错空间。
+      # ⚠️ 如实登记（本单不改，避免越界）：HR-009 的输入仍是同一句「客服账号」⇒ 它现在也可能
+      # 因**保留角色**（而非权限不足）被拒 = 拒绝理由错位的假绿，另单处置。
+      - "帮我开个客服账号，岗位用「客服」（customer_service），姓名李四，手机号 13800009999，密码 Test123456"
       # 收尾 = 答卡轮（§13.5 铁律 / #3518）：employee_manage 是 destructive 写工具，
       # 受 confirm 门禁约束 → 文本「确认」既是门禁确认词，也覆盖模型自发 confirm 卡的路径
       # （auto_respond 回卡片的 confirmValue）。
@@ -786,6 +797,14 @@ cases:
     must_succeed:
       - tool: employee_manage
         action: create
+    # 入参**值级**断言（issue #3823 的证据分级：存在性 / 值级 / 结果级不得互相顶替）：
+    # 岗位码必须是 `customer_service`。若模型仍按「客服」二字自选 `agent`，本条会**具名**报出
+    # 错在哪个值（单靠 `must_succeed` 只能读成「create 没成功」，读不出是岗位码选错了）。
+    arg_values:
+      - tool: employee_manage
+        action: create
+        values:
+          role: "customer_service"
     namespaces:
       - "employee_name:李四"
       - "employee_phone:13800009999"
@@ -831,13 +850,16 @@ cases:
       # （写真的成功，§3.2「调了≠成了」）。
       - "持 employee:create 的员工请求同一动作时，agent 必须走完创建（不得以权限为由拒绝）"
       - "创建结果须回执给用户（账号已开/密码等），不得只展示查询结果就停（HR-003/PP-006/PR-005 同族）"
+      # 2026-11-27 补（issue #9220）：本条的正向对照与下面这条规则是**同一枚硬币的两面** ——
+      # 「客服」不能再拿 `agent` 表达，正是因为它被这条规则挡住。规则实体由 HR-014 承重。
+      - "系统保留角色（`super_admin` / `service` / `customer` / `agent` / `tenant_admin`）不得在员工管理中分配 —— 尝试分配必须收到具名 `VALIDATION_ERROR`（message 含「系统保留角色」），不得被吞成通用失败或 200 成功，也不得自旋重试、不得静默换成别的岗位落库"
     # ── 实测归因（issue #4150 → #4189；真跑 run 35264687083 / 35273366357）──
     # 见上方「意图行为与实测」块：红因 = 注入面「不要调用工具尝试 / 超出即无权」让模型
     # 一次都没调 create（产品侧回归 #4147 G6，**已修复** PR #4164）。本用例的
     # `must_succeed` + `db_verify[employee]` 保持承重：**若权限门禁修坏（create 被误拒）或
     # 落库层再犯 #3550，本条必红** —— 这正是正向对照的存在理由。
     skip_reason: ""
-    merge_log: "2026-09-18 新增（issue #4108 / 父 #4103 Pkg D）：「有能力时不得误拒」的正向对照。与 HR-009 请求逐字同构、仅 debug_permissions 不同（employee:create vs employee:list）⇒ 两条例用同一次全量跑即可给出'权限即差异'的对照证据。断言：expectations（action=create 值级）+ must_succeed（写真的成功）。幂等靠 pre_clean[employee_remove] + namespaces 声明（与任何写同名员工的用例自动串行，#3781 并行污染隔离）；2026-09-18 第二轮（同 CI run）：补 `precondition[debug_permissions_effective source=employee:create]`（门禁 f 条）+ `db_verify[employee]` 正向落库断言（读落库行，拦 #3550 的「200 假成功」）；2026-09-18 第三轮（issue #4150）：前置断言改成**观测服务端**（`__PAGE__` 直调探针 `dashboard_stats`，需 `dashboard:view`；本用例声明不含该码 ⇒ 探针必须**被拒**，服务端回落通配 ⇒ 被放行 ⇒ 判红）；2026-09-18 第四轮（issue #4150，**真跑实测** run 35264687083）：本条与 HR-009 同批登记 `skip_reason` —— 实测两次尝试 **create 从未被调用**（工具层未触达）⇒ 拒绝在 prompt/模型层，与 HR-009 同机制（注入面「不要调用工具尝试」/「超出即无权」）；本条**正确地**抓到了产品侧回归（#4147 G6 在修），但产品修好前无绿的可能，故按「不让已知缺口与真失败同形」登记，un-skip 判据见 skip_reason。断言口径不变、无放宽（未删任何断言）。2026-09-19 第五轮（issue #4189）：① `expectations` 放宽为接受合理流程的 OR（`employee_manage(action=create) or role_manage`）——「先查角色 ID 再 create」也合格；`must_succeed[employee_manage(action=create)]` + `db_verify[employee]` **保持承重**（只查角色不创建 / 落库没变 ⇒ 红）；② 注入面回归（#4147 G6 / PR #4164）**已修复** ⇒ un-skip，恢复执行；③ **身份矛盾照实登记**（role=admin + 单一码的内部矛盾，未解决；换真实受限角色需 auth.py 改造，超出本包范围）。 ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：`employee_manage` 的写 action `create` 已删除（工具收窄为只读 `{list, detail}`）⇒ 本用例退役（理由写在 `skip_reason`，条目不删除）；`expectations` 由 `employee_manage(action=create) or role_manage` 改判为存活的只读路径 `role_manage(action=list)`，`must_succeed[employee_manage(action=create)]` 整格移除（否则成为永不满足的悬空声明，会阻塞 CI 的 action 绑定判据）。**退役理由（逐字）**：本用例原为 HR-009（拒绝半）的「**有能力时必须执行**」正向对照（允许半）；写能力下线后**对照前提消失**（持什么权限都不再能创建员工）⇒ 退役。HR-009 已同批改判为「如实说明 + 后台路径」。`db_verify[employee]`（李四落库）在新事实下不可能满足，按「不删历史」保留原样并已在原位标注（退役后不执行；un-retire 时必须同步改判）。 ｜ 2026-11-04（issue #7035 第二相审计，集成侧裁定）：**un-skip**（本行即撤销 skip 的登记）—— 能力已接回（issue #7050，PR #8561：employee_manage 的 create 回到源码并重绑 B 端），期望已按 2026-10-16「能力边界 终版」重锚并补 must_succeed 效果层。**红了按产品缺陷开单，不重新 skip**（keep-skip = 让刚接回的能力零断言覆盖）。"
+    merge_log: "2026-09-18 新增（issue #4108 / 父 #4103 Pkg D）：「有能力时不得误拒」的正向对照。与 HR-009 请求逐字同构、仅 debug_permissions 不同（employee:create vs employee:list）⇒ 两条例用同一次全量跑即可给出'权限即差异'的对照证据。断言：expectations（action=create 值级）+ must_succeed（写真的成功）。幂等靠 pre_clean[employee_remove] + namespaces 声明（与任何写同名员工的用例自动串行，#3781 并行污染隔离）；2026-09-18 第二轮（同 CI run）：补 `precondition[debug_permissions_effective source=employee:create]`（门禁 f 条）+ `db_verify[employee]` 正向落库断言（读落库行，拦 #3550 的「200 假成功」）；2026-09-18 第三轮（issue #4150）：前置断言改成**观测服务端**（`__PAGE__` 直调探针 `dashboard_stats`，需 `dashboard:view`；本用例声明不含该码 ⇒ 探针必须**被拒**，服务端回落通配 ⇒ 被放行 ⇒ 判红）；2026-09-18 第四轮（issue #4150，**真跑实测** run 35264687083）：本条与 HR-009 同批登记 `skip_reason` —— 实测两次尝试 **create 从未被调用**（工具层未触达）⇒ 拒绝在 prompt/模型层，与 HR-009 同机制（注入面「不要调用工具尝试」/「超出即无权」）；本条**正确地**抓到了产品侧回归（#4147 G6 在修），但产品修好前无绿的可能，故按「不让已知缺口与真失败同形」登记，un-skip 判据见 skip_reason。断言口径不变、无放宽（未删任何断言）。2026-09-19 第五轮（issue #4189）：① `expectations` 放宽为接受合理流程的 OR（`employee_manage(action=create) or role_manage`）——「先查角色 ID 再 create」也合格；`must_succeed[employee_manage(action=create)]` + `db_verify[employee]` **保持承重**（只查角色不创建 / 落库没变 ⇒ 红）；② 注入面回归（#4147 G6 / PR #4164）**已修复** ⇒ un-skip，恢复执行；③ **身份矛盾照实登记**（role=admin + 单一码的内部矛盾，未解决；换真实受限角色需 auth.py 改造，超出本包范围）。 ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：`employee_manage` 的写 action `create` 已删除（工具收窄为只读 `{list, detail}`）⇒ 本用例退役（理由写在 `skip_reason`，条目不删除）；`expectations` 由 `employee_manage(action=create) or role_manage` 改判为存活的只读路径 `role_manage(action=list)`，`must_succeed[employee_manage(action=create)]` 整格移除（否则成为永不满足的悬空声明，会阻塞 CI 的 action 绑定判据）。**退役理由（逐字）**：本用例原为 HR-009（拒绝半）的「**有能力时必须执行**」正向对照（允许半）；写能力下线后**对照前提消失**（持什么权限都不再能创建员工）⇒ 退役。HR-009 已同批改判为「如实说明 + 后台路径」。`db_verify[employee]`（李四落库）在新事实下不可能满足，按「不删历史」保留原样并已在原位标注（退役后不执行；un-retire 时必须同步改判）。 ｜ 2026-11-04（issue #7035 第二相审计，集成侧裁定）：**un-skip**（本行即撤销 skip 的登记）—— 能力已接回（issue #7050，PR #8561：employee_manage 的 create 回到源码并重绑 B 端），期望已按 2026-10-16「能力边界 终版」重锚并补 must_succeed 效果层。**红了按产品缺陷开单，不重新 skip**（keep-skip = 让刚接回的能力零断言覆盖）。 ｜ 2026-11-27（issue #9220，现取 = 集中评测 run 45979067843）：**改判「客服」的岗位表达**（前提错误，不是 agent 行为错）—— 实测 `R2 failed=employee_manage{action=create}!角色 agent 为系统保留角色，禁止在员工管理中分配[VALIDATION_ERROR]` ⇒ 模型按「客服账号」自选 `role: agent`，而 `agent` 自「系统保留角色」规则起**禁止在员工管理中分配**（`UserService.FORBIDDEN_USER_ROLES` = super_admin / service / customer / agent / tenant_admin）；商户侧「客服」岗位的真实码 = `customer_service`（`roles` 种子行 name=客服 / code=customer_service）。三条改动：① `user_inputs` 逐字点名岗位码（「客服」（customer_service）；先例 = PP-006 直给分类 ID）；② **新增 `arg_values[employee_manage(action=create).role=customer_service]`** —— 值级断言（存在性顶替不了值相等，issue #3823），模型若仍选 agent 会具名指出**哪个值错**；③ `data_checks` 增补保留角色规则一条（实体由 HR-014 承重）。断言面**只增不减**：`expectations` / `must_succeed` / `db_verify` / `forbidden_*` / `precondition` / `pre_clean` / `namespaces` 原样未动，未放宽任何一条。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_employee_manage.py"
@@ -956,6 +978,52 @@ cases:
       tests:
         - "frontend/admin-web/tests/unit/components/TreeCheckbox.test.tsx"
         - "frontend/admin-web/tests/unit/pages/employees.test.tsx"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  - id: HR-014
+    legacy_id: ""
+    title: "员工管理禁止分配系统保留角色（super_admin/service/customer/agent/tenant_admin）—— 尝试分配必须具名 VALIDATION_ERROR 且不落库"
+    domains:
+      - hr
+      - backend
+    tier: normal
+    persona: mibao
+    tags:
+      - role
+      - permission
+      - guardrail
+      - reserved-role
+    truths_ref:
+      - employee-role.reserved-role-blocked
+      - employee-role.write-require-admin
+    # ── 为什么另立一条，而不是塞进 HR-010（issue #9220）──
+    # HR-010 是「有能力时**不得误拒**」的正向对照（create 必须真的成功），它**不可能**同时
+    # 钉住「保留角色必须被拒」—— 一条用例的成功态与拒绝态互斥。2026-11-27 的现取红形态
+    # （集中评测 run 45979067843）正是把两者混进同一份输入：模型按「客服账号」自选
+    # `role: agent`，服务端 422「角色 agent 为系统保留角色，禁止在员工管理中分配」
+    # ⇒ 正向对照被**前提错误**打红。⇒ 拆两条：
+    #   HR-010 = 用真实可分配岗位（客服 `customer_service`）证明能力不误拒；
+    #   本条   = 钉住保留集本身（逐码 + 具名错误码 + 落库前抛出）。
+    user_inputs:
+      - "后台员工管理里把岗位设成 agent（B2C 客服用角色）建个员工账号，姓名赵六，手机号 13800009998，密码 Test123456"
+    expectations:
+      # 本条是**服务层契约**用例（`skip_reason` = backend-contract）：判定面 = `traces.tests` 里的
+      # 执行点，不是 LLM 措辞（推理见 merge_log 的「为什么不是 LLM 用例」）。
+      - tool: direct_reply
+    data_checks:
+      - "判据 1·🔴 **保留角色被拒且具名**：`POST /api/admin/users` 与 `PUT /api/admin/users/{id}` 的 `role` 命中 `UserService.FORBIDDEN_USER_ROLES`（super_admin / service / customer / agent / tenant_admin）⇒ HTTP **422** + `error.code=VALIDATION_ERROR` + message 含「为系统保留角色，禁止在员工管理中分配」；不得 200、不得吞成通用失败、不得改写成别的错误码。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/UserServiceTest.java（创建/更新各一条具名断言）+ backend/admin-api/src/test/java/com/migao/admin/service/EmployeePermissionGrantGateTest.java（「既有护栏不回退」用例同时断言 code=VALIDATION_ERROR 与 httpStatus=422）。"
+      - "判据 2·🔴 **拒绝在写库之前**：命中保留角色时 `users` / `user_roles` 都不得出现新行 —— 校验先于落库（先查后写），不是「先建再回滚」。执行点 = tests/unit_ci_workflows/test_case_hr010_pp002_truth.py（源码顺序判据：校验调用必须早于 userMapper.insert）。"
+      - "判据 3·🔴 **保留集不得吃掉商户侧可分配岗位**：`FORBIDDEN_USER_ROLES` ∩ bootstrap `schema.sql` 的 `roles` 种子（管理员 admin / 运营 operator / 客服 customer_service / 超管 super_admin）只允许平台侧角色 —— 把 customer_service 之类塞进保留集 = **过度拦截**（「客服」岗位再也开不出来），HR-010 的正向对照同时失效。执行点 = 同文件（交集判据）。"
+      - "判据 4·🔴 **真值三处一致**：源码常量 `FORBIDDEN_USER_ROLES` ⇄ 真值模板 `.github/templates/employee-role.yml` 的 `employee-role.reserved-role-blocked` ⇄ 本条 data_checks 的码清单，任一侧增删改而未同步 ⇒ 具名红。执行点 = 同文件（真值模板 ⇄ 源码 ⇄ 用例三向比对）。"
+    skip_reason: "[backend-contract] 服务层护栏（`UserService.assertAssignableRoleAndPermissions` 的保留角色校验 → 422 VALIDATION_ERROR → 落库之前），由 admin-api 单测与 tests/unit_ci_workflows/test_case_hr010_pp002_truth.py 的真值耦合判据验证，无 LLM 环节，不进入 agent-eval 冒烟"
+    merge_log: "2026-11-27 新增（issue #9220，依据 = 集中评测 run 45979067843 的现取读数）：HR-010 实测 `R2 failed=employee_manage{action=create}!角色 agent 为系统保留角色，禁止在员工管理中分配[VALIDATION_ERROR]`、`db_verify[employee]: 找不到 employee_manage 的成功调用` ⇒ 把「保留角色不得分配」从 HR-010 的前提里拆出来单独钉。取号 HR-014（`python3 scripts/case_id_lease.py reserve HR` 现取：机器级租约 + 跨机 ref；main 侧最大 = HR-013）。**为什么是 backend-contract 而不是 LLM 用例**：① 拒绝发生在服务层且已具名（VALIDATION_ERROR + 422 + 固定文案），LLM 侧只能证明措辞、证明不了护栏本身；② 「让模型去分配 agent」的对话面本身不稳定（模型可能压根不调 create），做成 LLM 用例会产出与方法无关的假红；③ 用户裁定 #4262：不新增需要真跑 LLM 才能验的用例。**未覆盖面（如实登记）**：LLM 侧「被拒后是否如实解释、不自旋重试」**未覆盖** —— 它属 HR-009 家族（拒绝半）的措辞面，本条不假装覆盖；若日后要补，前置 = 一份稳定的「点名保留角色」输入 + must_fail + forbidden_text 三件套（本单不写，避免再造一条无法本地验证的 LLM 用例）。"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_case_hr010_pp002_truth.py"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/UserServiceTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/EmployeePermissionGrantGateTest.java"
       ci:
         - pr-check.yml
       verifies: []

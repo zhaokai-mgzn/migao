@@ -8,6 +8,7 @@ business_truths:
   - [employee-role.permissions] permissions 为 User.permissions 个人菜单权限 JSON 数组；"全权限折叠为全部权限"是前端渲染逻辑，后端不折叠、不返回 "*"
   - [employee-role.admin-role-star] admin 角色后端计算权限为 ["*"]（全部权限）；operator/product_manager/knowledge_editor 有硬编码权限码映射
   - [employee-role.write-require-admin] 员工增删改（POST/PUT/DELETE /api/admin/users/*）需当前用户为 admin 角色（requireAdmin）
+  - [employee-role.reserved-role-blocked] 员工管理**禁止分配系统保留角色**（防垂直越权，审计 07 P0-2，issue #9220）：`UserService.FORBIDDEN_USER_ROLES` = super_admin / service / customer / agent / tenant_admin；`POST /api/admin/users` 与 `PUT /api/admin/users/{id}` 的 `role` 命中 ⇒ **422 + error.code=VALIDATION_ERROR**、message 含「为系统保留角色，禁止在员工管理中分配」，且**在落库之前**抛出（`assertAssignableRoleAndPermissions` 早于 `userMapper.insert`，不落半条）。商户侧可分配岗位 = `roles` 表里的非保留角色（bootstrap `schema.sql` 种子：管理员 admin / 运营 operator / 客服 customer_service / 超管 super_admin）；「客服账号」的真实岗位码是 `customer_service`，**不是** `agent`（agent 是 B2C 客服用角色，已被保留集挡住）。三处必须一致：源码常量 ⇄ 本条真值 ⇄ 用例 HR-014 的 data_checks 码清单
   - [employee-role.update-field-consumption] 更新员工 PUT /api/admin/users/{id} 接收 name/avatar/phone/role/roleIds/position/permissions 七个字段（issue #3550）：roleIds 按 createUser 同语义取首个角色表主键经 getRoleById 解析 code（显式 role 优先；两者都没传时按 position 解析岗位角色）；phone 变更写 users.phone 并按租户内唯一校验（同号/空白视为不修改）。修复前 updateUser 无 phone/roleIds 读取点 → Jackson 静默忽略 → HTTP 200 + success=true 的假成功（库里 role/user_roles/phone 均未变）
   - [employee-role.api-auth] /api/admin/** 由 Spring Security 限定 hasAnyRole(ADMIN, SUPER_ADMIN, SERVICE)，普通 customer/agent 无法访问；@RequirePermission 注解为预留、当前未被使用
   - [employee-role.tenant-isolation] 租户隔离：MyBatis TenantLineInnerInterceptor 按 JWT tenantId 自动注入 tenant_id 过滤（tenants/tenant_applications/platform_admins 豁免；super_admin 即 tenantId=-1 跳过过滤）
@@ -35,6 +36,8 @@ reviewer_asserts:
     expect: items 中 position 为空时其值等于 role
   - API: POST /api/admin/users
     expect: 需 admin 角色；成功 HTTP 200 返回新用户且 passwordHash 为 null
+  - API: POST /api/admin/users（role=agent / super_admin / customer / service / tenant_admin）
+    expect: HTTP 422，error.code=VALIDATION_ERROR，message 含"为系统保留角色"；users/user_roles 均不新增行（校验先于落库）
   - API: PUT /api/admin/users/{id}
     expect: 需 admin 角色；body 带 phone 时更新 users.phone（同租户内重复号码 → 422 VALIDATION_ERROR 且不落库）；body 带 roleIds 时按角色表主键解析 code 写入 user.role，并与 user_roles 联动；未传 role/roleIds 时按 position 解析岗位角色（issue #3550）
   - API: PUT /api/admin/users/{id}/status
