@@ -455,8 +455,11 @@ jobs:
           # 修法：**两个档都套** `scripts/ci_helper_progress.py`：trap（SIGTERM/SIGINT）+ 每心跳一次
           #   `$GITHUB_STEP_SUMMARY` + `::error::` annotation（两者都不走 job 日志 blob）+ stdout 进度行；
           #   五条出口（信号 / 预算 / 子进程退出 / 正常结束 / 异常）共用同一个 `finalize()`。
-          # 🔴 包装器**只给子进程**注入 `PYTEST_PLUGINS`（不改 pytest argv ⇒ 同源契约 test_ci_helper_leg.py 照旧）；
-          #    判据 = tests/unit_ci_workflows/test_ci_helper_progress.py（两条注入式红证 + 结构面）。
+          # 🔴 包装器**只给子进程**注入 `PYTHONPATH` + `PYTEST_ADDOPTS=-p ci_helper_progress`（不改 pytest argv ⇒
+          #    同源契约 test_ci_helper_leg.py 照旧）。⛔ **不许改回 `PYTEST_PLUGINS`**：该变量会被**孙进程**继承 ——
+          #    test_generated_artifacts_clean_checkout.py 会把 HEAD 解成干净树再起嵌套 pytest（清掉 PYTHONPATH /
+          #    PYTEST_ADDOPTS / MIGAO_*）⇒ 嵌套跑 import 不到插件而整片判红（本包第一轮真红，job 140299508024）。
+          #    判据 = tests/unit_ci_workflows/test_ci_helper_progress.py（2 条注入式红证 + 2 条结构面 + 嵌套泄漏面）。
           if [ "$(python3 scripts/ci_helper_scope.py --decide 2>/dev/null || echo full)" = "narrow" ]; then
             echo "⏭️ 未命中研发面 ⇒ 只跑 always-run 判据；**dev-only 判据未跑**：$(python3 scripts/ci_helper_scope.py --count) 条（这不是「通过」）"
             python3 scripts/ci_helper_progress.py --label "helper narrow ${{ matrix.shard }}" -- python3 scripts/ci_helper_scope.py --run-narrow

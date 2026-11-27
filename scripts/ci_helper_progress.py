@@ -32,10 +32,22 @@ required job 被 cancel 之后 **job 日志拿不到** —— `gh api …/action
 - 子进程在**独立进程组**里跑（`start_new_session=True`）⇒ 收尾时能整组送走（不给 runner 留孤儿 pytest）；
 - **五个出口都走同一个 `finalize()`**：SIGTERM / SIGINT / `--max-runtime-seconds` 预算耗尽 /
   子进程非零退出 / 子进程正常退出 ⇒ 「被掐死」不再是唯一结局；
-- 进度读数由 **pytest 插件**（本文件同时是插件，`PYTEST_PLUGINS=ci_helper_progress`）写进
-  `--state-file`：`K <n>`（收集数）/ `S <epoch> <nodeid>` / `E <outcome> <nodeid>`。
-  插件由本包装器**只注入给子进程**（`PYTHONPATH` + `PYTEST_PLUGINS`），**不改 pytest argv** ——
+- 进度读数由 **pytest 插件**（本文件同时是插件）写进 `--state-file`：
+  `K <n>`（收集数）/ `S <epoch> <nodeid>` / `E <outcome> <nodeid>`。
+  插件由本包装器**只注入给子进程**（`PYTHONPATH` + `PYTEST_ADDOPTS="-p <本模块>"`），**不改 pytest argv** ——
   同源契约 `tests/unit_ci_workflows/test_ci_helper_leg.py` 要求 CI 与 `verify-all.sh` 的 argv 逐字相同。
+
+## 🔴 为什么走 `PYTEST_ADDOPTS` 而不是 `PYTEST_PLUGINS`（本包第一轮真红）
+
+首版用 `PYTEST_PLUGINS=ci_helper_progress` 注入，`（中后段）` 整片判红（job `140299508024`）：
+该变量会被**孙进程**继承 —— `tests/unit_ci_workflows/test_generated_artifacts_clean_checkout.py`
+会把 `HEAD` 用 `git archive` 解成干净树再起**嵌套 pytest**，而它按既有惯例清掉
+`PYTHONPATH` / `PYTEST_ADDOPTS` / `MIGAO_*`（`migao-dev-flow` §34.14「`MIGAO_CI_HELPER_SHARD` 泄漏进
+嵌套 clean 检出 ⇒ 假红」同族）⇒ 嵌套 pytest 拿不到 `scripts/`，却仍被要求 import 插件 ⇒
+`ImportError: Error importing plugin "ci_helper_progress"`，把「干净检出能不能跑」这条守卫判红。
+⇒ 走**本仓已明确清理**的那条通道（`PYTEST_ADDOPTS`）：嵌套跑既不 import、也就不污染外层读数。
+判据 = `tests/unit_ci_workflows/test_ci_helper_progress.py` 的
+`test_nested_pytest_under_the_wrapper_does_not_inherit_the_plugin`（含「换回 `PYTEST_PLUGINS` ⇒ 红」的红证）。
 
 ## 判据
 
@@ -60,7 +72,8 @@ CST = timezone(timedelta(hours=8))
 #: 插件 ⇄ 包装器之间的事件流（子进程环境变量；未设 ⇒ 插件不产生任何写入/打印）。
 STATE_ENV = "MIGAO_CI_PROGRESS_STATE"
 
-#: 插件模块名（= 本文件名）⇒ 包装器给子进程注入 `PYTEST_PLUGINS=ci_helper_progress`。
+#: 插件模块名（= 本文件名）⇒ 包装器给子进程注入 `PYTEST_ADDOPTS="-p ci_helper_progress"`。
+#: 🔴 **不要改回 `PYTEST_PLUGINS`**：那个变量会被嵌套 pytest 继承（见模块 docstring 的「第一轮真红」）。
 PLUGIN_MODULE = Path(__file__).stem
 
 #: trap 覆盖的信号：cancel / 超时在 runner 侧表现为 SIGTERM，本地 Ctrl-C 是 SIGINT。
@@ -255,15 +268,20 @@ def pytest_runtest_logreport(report):
 # ══════════════════════════════════════════════════════════════════════════════════
 
 def _child_env(state_path: str) -> dict:
-    """给**子进程**注入插件接线（不污染 workflow 的 step 级环境，不改 pytest argv）。"""
+    """给**子进程**注入插件接线（不污染 workflow 的 step 级环境，不改 pytest argv）。
+
+    🔴 通道选择见模块 docstring：`PYTEST_ADDOPTS` 是**本仓嵌套 pytest 会显式清掉**的变量
+    （`tests/unit_ci_workflows/test_generated_artifacts_clean_checkout.py` 清 `PYTHONPATH` /
+    `PYTEST_ADDOPTS` / `MIGAO_*`）⇒ 孙进程不会被迫 import 本模块。`PYTEST_PLUGINS` 不满足这一点。
+    """
     env = dict(os.environ)
     scripts_dir = str(Path(__file__).resolve().parent)
     existing = env.get("PYTHONPATH", "")
     env["PYTHONPATH"] = scripts_dir + (os.pathsep + existing if existing else "")
-    plugins = [p for p in env.get("PYTEST_PLUGINS", "").split(",") if p.strip()]
-    if PLUGIN_MODULE not in plugins:
-        plugins.append(PLUGIN_MODULE)
-    env["PYTEST_PLUGINS"] = ",".join(plugins)
+    addopts = env.get("PYTEST_ADDOPTS", "").strip()
+    plugin_arg = f"-p {PLUGIN_MODULE}"
+    if plugin_arg not in addopts:
+        env["PYTEST_ADDOPTS"] = (addopts + " " + plugin_arg).strip()
     env[STATE_ENV] = state_path
     return env
 

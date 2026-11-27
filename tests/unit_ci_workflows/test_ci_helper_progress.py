@@ -61,11 +61,37 @@ HANG_SOURCE = "import time\n\n\ndef test_hangs_9114():\n    time.sleep(30)\n"
 #: 对照：一条立刻通过的用例（不写弱断言，也不用恒真比较）。
 PASS_SOURCE = "def test_passes_9114():\n    pass\n"
 
+#: 复现「嵌套 pytest」的同族形态：外层在自己的进程里再起一个 pytest，并按本仓既有惯例清掉
+#: `PYTHONPATH` / `PYTEST_ADDOPTS` / `MIGAO_*`（与 `tests/unit_ci_workflows/test_generated_artifacts_clean_checkout.py`
+#: 的 `_pytest_in()` 逐条同款）——首版把插件走 `PYTEST_PLUGINS` 注入时，这里会 `ImportError` ⇒ 判红。
+NESTED_SOURCE = """
+import os
+import subprocess
+import sys
+
+
+def test_inner_pytest_never_inherits_our_progress_plugin():
+    env = {k: v for k, v in os.environ.items()
+           if k not in ("PYTHONPATH", "PYTEST_ADDOPTS") and not k.startswith("MIGAO_")}
+    proc = subprocess.run([sys.executable, "-m", "pytest", "test_inner_ok.py", "-q", "-p", "no:cacheprovider"],
+                          cwd=os.path.dirname(os.path.abspath(__file__)),
+                          capture_output=True, text=True, env=env, timeout=300)
+    out = proc.stdout + proc.stderr
+    assert proc.returncode == 0, out[-800:]
+    assert "ci_helper_progress" not in out, out[-800:]
+"""
+
 
 def _write_case(directory: Path, name: str, source: str) -> Path:
     path = directory / name
     path.write_text(source, encoding="utf-8")
     return path
+
+
+def _nested_case(directory: Path) -> Path:
+    """外层用例 + 一个立刻通过的内层用例（内层由外层自己起 pytest，env 已按本仓惯例清过）。"""
+    _write_case(directory, "test_inner_ok.py", "def test_inner_passes():\n    return\n")
+    return _write_case(directory, "test_nested_pytest_env_leak.py", NESTED_SOURCE)
 
 
 def _wrapper_argv(wrapper: Path, summary: Path, case_file: Path, extra: list[str] | None = None,
@@ -299,4 +325,47 @@ def test_success_path_is_green_and_emits_no_error_annotation(tmp_path: Path) -> 
     assert "## ✅" in text and "## ⛔" not in text, f"正常结束的 summary 形状不对（应只有 ✅ 段）：\n{text}"
     assert _error_lines(proc.stdout) == [], (
         f"绿跑被打上了 `::error::`（会把真红淹没）⇒ 包装器在正常路径上误报：{_error_lines(proc.stdout)}"
+    )
+
+
+# ══════════════════════════════════════════════════════════════════════════════════
+# 判据 8 / 9：环境变量**不许泄漏进嵌套 pytest**（本包第一轮真红：job 140299508024）
+# ══════════════════════════════════════════════════════════════════════════════════
+
+def test_nested_pytest_under_the_wrapper_does_not_inherit_the_plugin(tmp_path: Path) -> None:
+    """包装器注入的插件通道**不得**被孙进程继承。
+
+    真实现场（issue #9114 第一轮 CI 全红）：`tests/unit_ci_workflows/test_generated_artifacts_clean_checkout.py`
+    用 `git archive` 解出干净树再起嵌套 pytest，并清掉 `PYTHONPATH` / `PYTEST_ADDOPTS` / `MIGAO_*`；
+    首版把插件走 `PYTEST_PLUGINS` 注入 ⇒ 孙进程仍被要求 import ⇒
+    `ImportError: Error importing plugin "ci_helper_progress"` ⇒ 「干净检出必须能跑」这条守卫被判红。
+    """
+    case_file = _nested_case(tmp_path)
+    summary = tmp_path / "summary-nested.md"
+    summary.write_text("", encoding="utf-8")
+    proc = subprocess.run(_wrapper_argv(WRAPPER, summary, case_file, parallel=False),
+                          capture_output=True, text=True, timeout=600, cwd=str(tmp_path))
+    assert proc.returncode == 0, (
+        "包在包装器里的嵌套 pytest 判红了 ⇒ 插件通道被孙进程继承（环境变量泄漏，issue #9114 第一轮真红形态）。"
+        f"\n输出尾部：{(proc.stdout or '')[-1200:]}"
+    )
+    assert "ImportError" not in proc.stdout, f"嵌套 pytest 里出现 ImportError：{proc.stdout[-1200:]}"
+
+
+def test_red_proof_reinheriting_the_plugin_env_turns_the_nested_case_red(tmp_path: Path) -> None:
+    """红证：把通道改回 `PYTEST_PLUGINS`（会被孙进程继承的那条）⇒ 同一个嵌套场景当场判红。"""
+    mutant = _mutant(tmp_path, 'env["PYTEST_ADDOPTS"] = (addopts + " " + plugin_arg).strip()',
+                     'env["PYTEST_PLUGINS"] = PLUGIN_MODULE  # 变异：改回会被孙进程继承的通道',
+                     note="改回 PYTEST_PLUGINS 通道")
+    case_file = _nested_case(tmp_path)
+    summary = tmp_path / "summary-nested-mutant.md"
+    summary.write_text("", encoding="utf-8")
+    proc = subprocess.run(_wrapper_argv(mutant, summary, case_file, parallel=False),
+                          capture_output=True, text=True, timeout=600, cwd=str(tmp_path))
+    assert proc.returncode != 0, (
+        "把通道改回 `PYTEST_PLUGINS` 之后嵌套 pytest 竟然还是绿的 ⇒ 判据对「通道是否会被继承」不敏感"
+        f"（判据 8 无牙）。\n输出尾部：{(proc.stdout or '')[-1200:]}"
+    )
+    assert "ImportError" in proc.stdout, (
+        f"变异体的红因不是 ImportError（归因要指向病因）：{(proc.stdout or '')[-1200:]}"
     )
