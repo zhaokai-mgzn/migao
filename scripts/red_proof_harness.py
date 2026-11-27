@@ -99,10 +99,13 @@ TOOLS: dict[str, ToolSpec] = {
         # 机具的注入面多一个文件（漏登记 ⇒ 夹具里没有该文件 ⇒ `--check` 判「被守卫的文件不存在」）。
         # issue #8770（生成族一档）：`stampOrderUrgency` 搬到 ProcessingOrderHeaderStamp ⇒ 注入面再 +1
         # （同上：漏登记 ⇒ 夹具缺文件 ⇒ `--check` 在 CI 上判「被守卫的文件不存在」）。
+        # issue #8770（**派单生成链一档**）：`generatePooled` 里的「加急不进池」成批闸调用点搬到
+        # ProcessingOrderGeneration ⇒ `urgent_guard` 的注入面再 +1（同上：漏登记 ⇒ 夹具缺文件 ⇒ 红）。
         impl=(_AAPI_MAIN + "service/ProcessingOrderService.java",
               _AAPI_MAIN + "service/ProcessingOrderDispatchPool.java",
               _AAPI_MAIN + "service/ProcessingOrderSnapshotBuilder.java",
-              _AAPI_MAIN + "service/ProcessingOrderHeaderStamp.java"),
+              _AAPI_MAIN + "service/ProcessingOrderHeaderStamp.java",
+              _AAPI_MAIN + "service/ProcessingOrderGeneration.java"),
         criteria=(_AAPI_TEST + "service/PoolBoardUrgencyTest.java",),
     ),
     "scripts/cutting-plan-red-proof.py": ToolSpec(
