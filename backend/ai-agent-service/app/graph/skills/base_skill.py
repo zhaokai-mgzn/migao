@@ -2012,8 +2012,8 @@ def tool_timeout_s(tool_name: str) -> float:
     return float(getattr(settings, "TOOL_TIMEOUT_S", 30.0) or 30.0)
 
 
-async def _mask_confirm_card_payload(result_dict: dict, session_id: str) -> dict:
-    """确认卡载荷里的手机号统一掩码化（issue #9224 产品口径：卡面只许展示**掩码**手机号）。
+async def _masked_confirm_card_data(data, session_id: str):
+    """确认卡载荷 → **掩码后**的新载荷；无需改动（或不是 confirm 卡）返回 `None`。
 
     为什么落在这**一跳**：confirm 卡载荷只有这一个产出点 —— `_execute_tool_safe` 的
     `result_dict`，而它的三个消费面（模型上下文的 `ToolMessage`、SSE 交互载荷、落库的
@@ -2021,16 +2021,16 @@ async def _mask_confirm_card_payload(result_dict: dict, session_id: str) -> dict
     `app/tools/interact.py` 里会撞分层守卫（`app/tools/**` 不得 import `app.graph.*`，
     见 `tests/test_utils_sku_price.py::test_tools_layer_does_not_import_skill_layer`）。
 
-    只动**展示面**（`fields[].value`）与由它确定性派生的 `confirmValue`；
+    只动**展示面**（`fields[].value`）与由它确定性派生的 `confirmValue`（本路径下两者同源，
+    点卡回传的与落库的 `last_confirm_value` 是同一个字符串）；
     `pending_validated_input`（写参数真值）**一个字都不碰** ⇒ 写入照旧拿真号
     （结构判据：`tests/test_card_phone_masking_9224.py::TestWritePathBoundary`）。
     """
-    data = (result_dict or {}).get("data")
     if not isinstance(data, dict) or data.get("component") != "confirm":
-        return result_dict
+        return None
     fields = data.get("fields")
     if not isinstance(fields, list) or not fields:
-        return result_dict
+        return None
     from app.graph.skills.phone_masking import (
         mask_confirm_card_fields, pending_write_phones)
     full = {}
@@ -2039,7 +2039,7 @@ async def _mask_confirm_card_payload(result_dict: dict, session_id: str) -> dict
         full = await SessionStateStore().load(session_id) or {}
     masked = mask_confirm_card_fields(fields, pending_write_phones(full))
     if masked == fields:
-        return result_dict
+        return None
     new_data = dict(data)
     new_data["fields"] = masked
     # `confirmValue` 由字段**确定性派生**（单一派生平 `app.tools.confirm_value`，issue #4054）：
@@ -2048,7 +2048,7 @@ async def _mask_confirm_card_payload(result_dict: dict, session_id: str) -> dict
     _cv = confirm_value_for_fields(masked)
     if _cv:
         new_data["confirmValue"] = _cv
-    return {**result_dict, "data": new_data}
+    return new_data
 
 
 async def _execute_tool_safe(tool, tool_args: dict, tool_context, state: dict) -> tuple:
@@ -2252,7 +2252,11 @@ async def _execute_tool_safe(tool, tool_args: dict, tool_context, state: dict) -
     # 失败**非致命**（卡照发），但必须留痕 —— 不许静默退化成「卡面显示真号」。
     if result.success and tool_name == "interact":
         try:
-            result_dict = await _mask_confirm_card_payload(result_dict, session_id)
+            _card = await _masked_confirm_card_data(result_dict.get("data"), session_id)
+            if _card is not None:
+                # ⚠️ **就地替换 data**、不重建/重绑 `result_dict`：出口字典仍是上面那一个
+                # 单点构造的字面量（`tests/test_contract_wiring.py` 的结构判据靠它）。
+                result_dict["data"] = _card
         except Exception as e:
             logger.warning(
                 f"[card-mask] 确认卡手机号掩码化失败（非致命，卡面可能未脱敏）"

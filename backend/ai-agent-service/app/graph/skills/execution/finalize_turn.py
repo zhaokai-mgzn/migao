@@ -87,8 +87,9 @@ async def finalize_turn(
         _bfields = confirm_card_fields(_no_card_blocked_args)
         if _bfields:
             # 卡面只许展示**掩码**手机号（issue #9224 产品口径）：字段来自**被拦的写调用参数**
-            # （= 将要写入的真值）⇒ 就地自掩码即与落库同号；`_bvalue` 由掩码后字段派生，
-            # 与落库的 `last_confirm_value` 同源（点卡才过得了确认门禁）。
+            # （= 将要写入的真值）⇒ 就地自掩码即与落库同号。`_bvalue` 由**掩码后**的字段派生
+            # （卡值与卡面同源的既有不变式），它同时是下面落库的 `last_confirm_value`
+            # ⇒ 顾客点卡回传的就是门禁比对的那一版。
             from app.graph.skills.phone_masking import mask_confirm_card_fields
             _bfields = mask_confirm_card_fields(_bfields)
             _bvalue = confirm_value_for_fields(_bfields)
