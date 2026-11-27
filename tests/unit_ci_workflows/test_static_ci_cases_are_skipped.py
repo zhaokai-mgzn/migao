@@ -16,7 +16,8 @@ pytest 承担。它们却缺 `skip_reason` ⇒ 真实 LLM 的 normal 档把它�
 一条用例同时满足下列全部条件 ⇒ 视为「静态 CI 结构用例」，必须有非空 `skip_reason`：
 
 1. `traces.tests` 非空，且**每一条**都在 `tests/unit_ci_workflows/` 下；
-2. `expectations` 只含 `direct_reply`（或为空）；
+2. `expectations` 只含 `direct_reply`（或为空），且**没有**结构化断言面
+   （`assertion_taxonomy.NON_TOOL_ASSERTION_FACES`，现取 = `kf_judge`）；
 3. 没有 `must_succeed` / `db_verify` / `forbidden_tools` / `required_args` / `order_before`
    这些只对真实 LLM 跑有意义的断言。
 
@@ -26,11 +27,15 @@ pytest 承担。它们却缺 `skip_reason` ⇒ 真实 LLM 的 normal 档把它�
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 import yaml
 
 REPO = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO / ".github"))
+
+from assertion_taxonomy import expectation_faces  # noqa: E402
 CASES = REPO / ".github" / "cases"
 
 #: 只对真实 LLM 跑有意义的断言键；出现任一 ⇒ 不属「纯静态」用例。
@@ -59,6 +64,11 @@ def test_static_ci_structure_cases_are_skipped():
         tools = [str(e.get("tool") or "") for e in (case.get("expectations") or [])
                  if isinstance(e, dict)]
         if any(t and t != "direct_reply" for t in tools):
+            continue
+        # 结构化断言面（现取 = `kf_judge`，微信客服判定 JSON 面）同样**只对真实 LLM 跑有意义**
+        # ⇒ 有它就不是"纯静态 CI 结构用例"（否则真行为用例会被逼着标 skip = 把评测面越缩越小；
+        # 2026-11-27 实测 KF-031~035 命中本条件）。未登记的面名不算（fail-closed）。
+        if expectation_faces(case):
             continue
         if any(case.get(key) for key in LLM_ONLY_KEYS):
             continue
