@@ -1953,6 +1953,20 @@ cases:
         expect_products: ["遮光窗帘"]
         expect_quantities:
           遮光窗帘: 3
+        # ── 更强判据：明细**行数** + **金额合计**（run 45979067843 暴露的判据侧缺陷）──
+        # 为什么加：`amount_verify` 核的是**模型传参**（args）—— 它一旦读错对象
+        # （同轮两次 order_create 的 args/result 配对错位），"钱对不对"就整层失去证据，
+        # 而本用例原判据里「汇总数量 = 3」把「1 行 3 米」与「3 行各 1 米」看成同一个数
+        # （重复行是另一种缺陷）。⇒ 落库面自己把「行数 + 钱」说完：
+        #   · expect_row_count = 1：这单只有 1 行明细（遮光窗帘 ×3 米）；
+        #   · expect_amounts = 504：面料金额 = 3 米 × ¥168/米（`prod_eval_blackout` 库价，
+        #     种子见 tests/agent_eval/fixtures/xiaobu_eval_seed.sql）。
+        #     ⚠️ 口径 = Σ(数量 × 单价)，**不含加工费**：打孔（`pi_eval_punch` ¥8/米）
+        #     是否随单计价取决于模型是否把 processingItems 写进 payload，两种都合法
+        #     （#3511 同款变体），故金额只钉面料部分，加工费另有 processingFee 通道。
+        expect_row_count: 1
+        expect_amounts:
+          遮光窗帘: 504
       - fetch: order_phone
         source: order_create
         expect_phone: "13800138000"
@@ -1961,7 +1975,7 @@ cases:
       - "任何一轮回复都不得出现「我无法提交订单 / 没法帮您下单」这类能力误宣"
       - "参数补齐后必须真实落单（order_create 成功 + 明细/数量/手机号正确）"
     skip_reason: ""
-    merge_log: "2026-09-13 新增（issue #3389）：能力下限用例（缺信息时收集而非拒单 + 能力误宣反模式）；2026-09-19（issue #4490 的 burn-down 缴费，metric=entries ⇒ 整条销账）：补 precondition[product_count_for_keyword: 遮光窗帘, expect: 1] + namespaces[product_name:遮光窗帘, customer_phone:13800138000]（R1 按商品名下单 ⇒ 名字唯一是本用例真正依赖且只读的前置；刻意不声明 order_count_for_phone —— 本用例自己建单，漂移判据必然判红）。断言面（user_inputs / expectations / must_succeed / db_verify / order_before / forbidden_text / data_checks）原样未动、无放宽。"
+    merge_log: "2026-09-13 新增（issue #3389）：能力下限用例（缺信息时收集而非拒单 + 能力误宣反模式）；2026-09-19（issue #4490 的 burn-down 缴费，metric=entries ⇒ 整条销账）：补 precondition[product_count_for_keyword: 遮光窗帘, expect: 1] + namespaces[product_name:遮光窗帘, customer_phone:13800138000]（R1 按商品名下单 ⇒ 名字唯一是本用例真正依赖且只读的前置；刻意不声明 order_count_for_phone —— 本用例自己建单，漂移判据必然判红）。断言面（user_inputs / expectations / must_succeed / db_verify / order_before / forbidden_text / data_checks）原样未动、无放宽。2026-11-27（run 45979067843 的 OR-021 归因）：判据侧缺陷（amount_verify 取错了同轮第一次 order_create 的 args，把成功订单读成「items 为空」）修在 runner 的配对口径上；本用例的 db_verify 同时**收强**—— 加 expect_row_count: 1（明细行数，区分「1 行 3 米」与「3 行各 1 米」）与 expect_amounts: {遮光窗帘: 504}（面料金额 = 3 米 × ¥168 库价，不含加工费）。原断言一条未删、无放宽。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_acceptance_case_checks.py"
