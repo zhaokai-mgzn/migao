@@ -1276,8 +1276,17 @@ def build_entries(run, failed_jobs, rerun_result: str, prior_failed_jobs=None,
         facts = attempt_facts(job, facts_attempt)
         # 上一次尝试的同一 job（用于把**两次的原始事实**都记下来 —— 供读者自己复核）
         prev_job = next((j for j in prior if j.get("name") == name), None)
+        # 🔴 #9269 缺陷 3：**只有严格更早的尝试才算「上一次」**。
+        # 「重跑第二次绿」这条路径上，`prior_jobs`（= 本次取的 attempt-1 job）与被记账的
+        # `failed_jobs`（`first_failed`，由 `prior_jobs` 过滤而来）**都来自同一次尝试**，而
+        # `failed_attempt=max(attempt-1, 1)` 会把 `prev_attempt` 也压成同一个号
+        # ⇒ 旧实现把**同一次**尝试记两遍：两条 `attempt: 1`、`timestamp` 逐字相同
+        # （现取：存量 1377 条里 **40 条**是这个形态，且 `rerun_result` 全是 `success`；
+        #  现场 run 40497531264 / job `admin-api unit tests`）。
+        # 后果不是「少一条事实」，而是**多一条根本不存在的事实**：`attest` 要拿两次断言比对，
+        # 读到两条同源事实会把「只有一次尝试」读成「两次都红且逐字相同」⇒ 假确定性。
         prev_facts = (attempt_facts(prev_job, prev_attempt)
-                      if prev_job is not None else None)
+                      if prev_job is not None and prev_attempt < facts_attempt else None)
         attempts = [prev_facts, facts] if prev_facts is not None else [facts]
         unknown_reason = None
         #: #5687：本条**为什么**是这个 kind（不是「同桶已证」时必须逐字写明 —— 否则读的人
@@ -1982,6 +1991,20 @@ def ledger_violations(ledger: dict) -> list:
                     elif not (fact.get("timestamp") is None or isinstance(fact.get("timestamp"), str)):
                         bad.append(f"entries[{i}].attempts[{k}].timestamp 应为 UTC ISO8601 字符串"
                                    f"或 null（#5687 的「失败时刻 / 重跑时刻」取数面）")
+        # 🔴 #9269 缺陷 3：`attempts` 的语义 = **一次尝试一条事实** ⇒ attempt 序号必须互不相同。
+        # 写入侧的根因修在 `build_entries`（只有**严格更早**的尝试才算 prev）；本判据是**读侧**
+        # 的承重面：任何回退（或旧版本写回的存量）都会在这里**具名**红，而不是靠人眼发现
+        # 「两条事实其实是同一次」。现取存量：1377 条里 40 条曾是 `[1, 1]`（rerun_result 全是 success）。
+        # 为什么这不只是「难看」：`attest` 靠两条事实做断言比对 ⇒ 同源两条会被读成
+        # 「两次都红且逐字相同」= **假确定性**（把「只有一次尝试」升级成「确定性失败」）。
+        recorded = entry.get("attempts")
+        if isinstance(recorded, list) and recorded:
+            numbers = [f.get("attempt") for f in recorded if isinstance(f, dict)]
+            repeated = sorted({n for n in numbers if numbers.count(n) > 1})
+            if repeated:
+                bad.append(f"entries[{i}].attempts 把同一次尝试记了多遍（attempt={repeated}）："
+                           f"一次尝试只能有一条事实 —— 同源两条事实会被 `attest` 读成"
+                           f"「两次都红且逐字相同」= 假确定性（#9269）")
         # 🔴 #5687 判据③：`suspect-window-deterministic` **强制跟踪** —— 必须落跟踪单。
         # 机械形态（不是「文档要求人记得填」）：`append` / `selftest` / `reconcile` 都先跑本函数，
         # ⇒ 没有跟踪单的该类条目**根本写不进台账**（fail-closed），而不是「写进去之后靠人发现」。

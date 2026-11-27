@@ -3663,13 +3663,6 @@
           "step": "Run unit tests",
           "assertion": null,
           "timestamp": "2026-09-29T14:00:44Z"
-        },
-        {
-          "attempt": 1,
-          "job": "admin-web typecheck + unit tests",
-          "step": "Run unit tests",
-          "assertion": null,
-          "timestamp": "2026-09-29T14:00:44Z"
         }
       ],
       "failed_at": "2026-09-29T14:00:44Z",
@@ -5303,13 +5296,6 @@
       "rerun_result": "success",
       "kind": "flaky",
       "attempts": [
-        {
-          "attempt": 1,
-          "job": "ci workflow helper unit tests",
-          "step": "Run ci workflow helper tests",
-          "assertion": null,
-          "timestamp": "2026-10-02T01:37:52Z"
-        },
         {
           "attempt": 1,
           "job": "ci workflow helper unit tests",
@@ -31716,13 +31702,6 @@
           "step": "Run unit tests",
           "assertion": null,
           "timestamp": "2026-10-24T16:38:32Z"
-        },
-        {
-          "attempt": 1,
-          "job": "admin-web typecheck + unit tests",
-          "step": "Run unit tests",
-          "assertion": null,
-          "timestamp": "2026-10-24T16:38:32Z"
         }
       ],
       "failed_at": "2026-10-24T16:38:32Z",
@@ -31761,13 +31740,6 @@
       "rerun_result": "success",
       "kind": "flaky",
       "attempts": [
-        {
-          "attempt": 1,
-          "job": "ci workflow helper unit tests（后半）",
-          "step": "Run ci workflow helper tests",
-          "assertion": null,
-          "timestamp": "2026-10-24T16:30:40Z"
-        },
         {
           "attempt": 1,
           "job": "ci workflow helper unit tests（后半）",
@@ -32060,13 +32032,6 @@
       "rerun_result": "success",
       "kind": "flaky",
       "attempts": [
-        {
-          "attempt": 1,
-          "job": "admin-web typecheck + unit tests",
-          "step": "Run unit tests",
-          "assertion": null,
-          "timestamp": "2026-10-24T18:15:31Z"
-        },
         {
           "attempt": 1,
           "job": "admin-web typecheck + unit tests",
@@ -33669,13 +33634,6 @@
           "step": "Run ci workflow helper tests",
           "assertion": null,
           "timestamp": "2026-10-26T01:32:34Z"
-        },
-        {
-          "attempt": 1,
-          "job": "ci workflow helper unit tests（后半）",
-          "step": "Run ci workflow helper tests",
-          "assertion": null,
-          "timestamp": "2026-10-26T01:32:34Z"
         }
       ],
       "failed_at": "2026-10-26T01:32:34Z",
@@ -35227,13 +35185,6 @@
           "step": "Run unit tests",
           "assertion": null,
           "timestamp": "2026-10-27T10:42:01Z"
-        },
-        {
-          "attempt": 1,
-          "job": "bmini-app typecheck + unit tests",
-          "step": "Run unit tests",
-          "assertion": null,
-          "timestamp": "2026-10-27T10:42:01Z"
         }
       ],
       "failed_at": "2026-10-27T10:42:01Z",
@@ -35496,13 +35447,6 @@
           "step": "Run ci workflow helper tests",
           "assertion": null,
           "timestamp": "2026-10-27T11:26:50Z"
-        },
-        {
-          "attempt": 1,
-          "job": "ci workflow helper unit tests（后半）",
-          "step": "Run ci workflow helper tests",
-          "assertion": null,
-          "timestamp": "2026-10-27T11:26:50Z"
         }
       ],
       "failed_at": "2026-10-27T11:26:50Z",
@@ -35543,13 +35487,6 @@
       "rerun_result": "success",
       "kind": "flaky",
       "attempts": [
-        {
-          "attempt": 1,
-          "job": "admin-api unit tests",
-          "step": "Run unit tests",
-          "assertion": null,
-          "timestamp": "2026-10-27T11:43:31Z"
-        },
         {
           "attempt": 1,
           "job": "admin-api unit tests",
@@ -35637,13 +35574,6 @@
       "rerun_result": "success",
       "kind": "flaky",
       "attempts": [
-        {
-          "attempt": 1,
-          "job": "ci workflow helper unit tests（后半）",
-          "step": "Run ci workflow helper tests",
-          "assertion": null,
-          "timestamp": "2026-10-27T15:34:04Z"
-        },
         {
           "attempt": 1,
           "job": "ci workflow helper unit tests（后半）",
@@ -35915,13 +35845,6 @@
       "rerun_result": "success",
       "kind": "suspect-window-deterministic",
       "attempts": [
-        {
-          "attempt": 1,
-          "job": "admin-web typecheck + unit tests",
-          "step": "Run unit tests",
-          "assertion": null,
-          "timestamp": "2026-10-28T15:51:22Z"
-        },
         {
           "attempt": 1,
           "job": "admin-web typecheck + unit tests",
@@ -37016,13 +36939,6 @@
           "step": "Post PR comment",
           "assertion": null,
           "timestamp": "2026-10-29T15:54:46Z"
-        },
-        {
-          "attempt": 1,
-          "job": "QA Growth Gate",
-          "step": "Post PR comment",
-          "assertion": null,
-          "timestamp": "2026-10-29T15:54:46Z"
         }
       ],
       "failed_at": "2026-10-29T15:54:46Z",
@@ -37760,13 +37676,6 @@
           "step": "Run gitleaks secret scan",
           "assertion": null,
           "timestamp": "2026-10-31T02:40:24Z"
-        },
-        {
-          "attempt": 1,
-          "job": "Secret Scan (gitleaks)",
-          "step": "Run gitleaks secret scan",
-          "assertion": null,
-          "timestamp": "2026-10-31T02:40:24Z"
         }
       ],
       "failed_at": "2026-10-31T02:40:24Z",
@@ -37897,13 +37806,6 @@
           "step": "Post PR comment",
           "assertion": null,
           "timestamp": "2026-10-31T02:32:38Z"
-        },
-        {
-          "attempt": 1,
-          "job": "QA Growth Gate",
-          "step": "Post PR comment",
-          "assertion": null,
-          "timestamp": "2026-10-31T02:32:38Z"
         }
       ],
       "failed_at": "2026-10-31T02:32:38Z",
@@ -37942,13 +37844,6 @@
       "rerun_result": "success",
       "kind": "flaky",
       "attempts": [
-        {
-          "attempt": 1,
-          "job": "Danger Scan (破坏性变更检测)",
-          "step": "Post danger-scan comment",
-          "assertion": null,
-          "timestamp": "2026-10-31T02:35:42Z"
-        },
         {
           "attempt": 1,
           "job": "Danger Scan (破坏性变更检测)",
@@ -37999,13 +37894,6 @@
           "step": "Run gitleaks secret scan",
           "assertion": null,
           "timestamp": "2026-10-31T02:37:28Z"
-        },
-        {
-          "attempt": 1,
-          "job": "Secret Scan (gitleaks)",
-          "step": "Run gitleaks secret scan",
-          "assertion": null,
-          "timestamp": "2026-10-31T02:37:28Z"
         }
       ],
       "failed_at": "2026-10-31T02:37:28Z",
@@ -38044,13 +37932,6 @@
       "rerun_result": "success",
       "kind": "suspect-window-deterministic",
       "attempts": [
-        {
-          "attempt": 1,
-          "job": "ci workflow helper unit tests",
-          "step": "Run ci workflow helper tests",
-          "assertion": null,
-          "timestamp": "2026-10-31T02:37:13Z"
-        },
         {
           "attempt": 1,
           "job": "ci workflow helper unit tests",
@@ -38760,13 +38641,6 @@
       "rerun_result": "success",
       "kind": "flaky",
       "attempts": [
-        {
-          "attempt": 1,
-          "job": "admin-api unit tests",
-          "step": "Run unit tests",
-          "assertion": null,
-          "timestamp": "2026-10-31T08:32:38Z"
-        },
         {
           "attempt": 1,
           "job": "admin-api unit tests",
@@ -39665,13 +39539,6 @@
           "step": "Post danger-scan comment",
           "assertion": null,
           "timestamp": "2026-11-01T09:24:51Z"
-        },
-        {
-          "attempt": 1,
-          "job": "Danger Scan (破坏性变更检测)",
-          "step": "Post danger-scan comment",
-          "assertion": null,
-          "timestamp": "2026-11-01T09:24:51Z"
         }
       ],
       "failed_at": "2026-11-01T09:24:51Z",
@@ -39716,13 +39583,6 @@
           "step": "Run gitleaks secret scan",
           "assertion": null,
           "timestamp": "2026-11-01T09:25:20Z"
-        },
-        {
-          "attempt": 1,
-          "job": "Secret Scan (gitleaks)",
-          "step": "Run gitleaks secret scan",
-          "assertion": null,
-          "timestamp": "2026-11-01T09:25:20Z"
         }
       ],
       "failed_at": "2026-11-01T09:25:20Z",
@@ -39761,13 +39621,6 @@
       "rerun_result": "success",
       "kind": "flaky",
       "attempts": [
-        {
-          "attempt": 1,
-          "job": "QA Growth Gate",
-          "step": "Post PR comment",
-          "assertion": null,
-          "timestamp": "2026-11-01T09:25:36Z"
-        },
         {
           "attempt": 1,
           "job": "QA Growth Gate",
@@ -40619,13 +40472,6 @@
           "step": "Post danger-scan comment",
           "assertion": null,
           "timestamp": "2026-11-01T10:08:08Z"
-        },
-        {
-          "attempt": 1,
-          "job": "Danger Scan (破坏性变更检测)",
-          "step": "Post danger-scan comment",
-          "assertion": null,
-          "timestamp": "2026-11-01T10:08:08Z"
         }
       ],
       "failed_at": "2026-11-01T10:08:08Z",
@@ -40664,13 +40510,6 @@
       "rerun_result": "success",
       "kind": "flaky",
       "attempts": [
-        {
-          "attempt": 1,
-          "job": "Secret Scan (gitleaks)",
-          "step": "Run gitleaks secret scan",
-          "assertion": null,
-          "timestamp": "2026-11-01T10:08:52Z"
-        },
         {
           "attempt": 1,
           "job": "Secret Scan (gitleaks)",
@@ -40721,13 +40560,6 @@
           "step": "Run ci workflow helper tests",
           "assertion": null,
           "timestamp": "2026-11-01T10:16:30Z"
-        },
-        {
-          "attempt": 1,
-          "job": "ci workflow helper unit tests",
-          "step": "Run ci workflow helper tests",
-          "assertion": null,
-          "timestamp": "2026-11-01T10:16:30Z"
         }
       ],
       "failed_at": "2026-11-01T10:16:30Z",
@@ -40769,13 +40601,6 @@
       "rerun_result": "success",
       "kind": "flaky",
       "attempts": [
-        {
-          "attempt": 1,
-          "job": "QA Growth Gate",
-          "step": "Post PR comment",
-          "assertion": null,
-          "timestamp": "2026-11-01T10:09:07Z"
-        },
         {
           "attempt": 1,
           "job": "QA Growth Gate",
@@ -41638,13 +41463,6 @@
           "step": "Run unit tests",
           "assertion": null,
           "timestamp": "2026-11-01T13:03:56Z"
-        },
-        {
-          "attempt": 1,
-          "job": "admin-api unit tests",
-          "step": "Run unit tests",
-          "assertion": null,
-          "timestamp": "2026-11-01T13:03:56Z"
         }
       ],
       "failed_at": "2026-11-01T13:03:56Z",
@@ -41726,13 +41544,6 @@
       "rerun_result": "success",
       "kind": "flaky",
       "attempts": [
-        {
-          "attempt": 1,
-          "job": "admin-api unit tests",
-          "step": "Run unit tests",
-          "assertion": null,
-          "timestamp": "2026-11-01T16:02:59Z"
-        },
         {
           "attempt": 1,
           "job": "admin-api unit tests",
@@ -46641,13 +46452,6 @@
           "step": "Run ci workflow helper tests",
           "assertion": null,
           "timestamp": "2026-11-05T01:57:32Z"
-        },
-        {
-          "attempt": 1,
-          "job": "ci workflow helper unit tests",
-          "step": "Run ci workflow helper tests",
-          "assertion": null,
-          "timestamp": "2026-11-05T01:57:32Z"
         }
       ],
       "failed_at": "2026-11-05T01:57:32Z",
@@ -46830,13 +46634,6 @@
           "step": "Run ci workflow helper tests",
           "assertion": null,
           "timestamp": "2026-11-05T02:40:21Z"
-        },
-        {
-          "attempt": 1,
-          "job": "ci workflow helper unit tests",
-          "step": "Run ci workflow helper tests",
-          "assertion": null,
-          "timestamp": "2026-11-05T02:40:21Z"
         }
       ],
       "failed_at": "2026-11-05T02:40:21Z",
@@ -46878,13 +46675,6 @@
       "rerun_result": "success",
       "kind": "flaky",
       "attempts": [
-        {
-          "attempt": 1,
-          "job": "Secret Scan (gitleaks)",
-          "step": "Run gitleaks secret scan",
-          "assertion": null,
-          "timestamp": "2026-11-05T02:32:37Z"
-        },
         {
           "attempt": 1,
           "job": "Secret Scan (gitleaks)",
@@ -46935,13 +46725,6 @@
           "step": "Post PR comment",
           "assertion": null,
           "timestamp": "2026-11-05T02:32:45Z"
-        },
-        {
-          "attempt": 1,
-          "job": "QA Growth Gate",
-          "step": "Post PR comment",
-          "assertion": null,
-          "timestamp": "2026-11-05T02:32:45Z"
         }
       ],
       "failed_at": "2026-11-05T02:32:45Z",
@@ -46980,13 +46763,6 @@
       "rerun_result": "success",
       "kind": "flaky",
       "attempts": [
-        {
-          "attempt": 1,
-          "job": "Danger Scan (破坏性变更检测)",
-          "step": "Resolve workflow-deletion acks (owner 显式确认 → DANGER_ACK_DELETE)",
-          "assertion": null,
-          "timestamp": "2026-11-05T02:33:22Z"
-        },
         {
           "attempt": 1,
           "job": "Danger Scan (破坏性变更检测)",
@@ -47127,13 +46903,6 @@
           "step": "Run ci workflow helper tests",
           "assertion": null,
           "timestamp": "2026-11-05T07:49:23Z"
-        },
-        {
-          "attempt": 1,
-          "job": "ci workflow helper unit tests",
-          "step": "Run ci workflow helper tests",
-          "assertion": null,
-          "timestamp": "2026-11-05T07:49:23Z"
         }
       ],
       "failed_at": "2026-11-05T07:49:23Z",
@@ -47176,13 +46945,6 @@
       "rerun_result": "success",
       "kind": "flaky",
       "attempts": [
-        {
-          "attempt": 1,
-          "job": "External Authorship Guard",
-          "step": "拦截陌生账号 / fork 来源的 PR",
-          "assertion": null,
-          "timestamp": "2026-11-05T07:38:23Z"
-        },
         {
           "attempt": 1,
           "job": "External Authorship Guard",
@@ -47234,13 +46996,6 @@
           "step": "Run gitleaks secret scan",
           "assertion": null,
           "timestamp": "2026-11-05T07:38:39Z"
-        },
-        {
-          "attempt": 1,
-          "job": "Secret Scan (gitleaks)",
-          "step": "Run gitleaks secret scan",
-          "assertion": null,
-          "timestamp": "2026-11-05T07:38:39Z"
         }
       ],
       "failed_at": "2026-11-05T07:38:39Z",
@@ -47280,13 +47035,6 @@
       "rerun_result": "success",
       "kind": "suspect-window-deterministic",
       "attempts": [
-        {
-          "attempt": 1,
-          "job": "ci workflow helper unit tests（后半）",
-          "step": "Run ci workflow helper tests",
-          "assertion": null,
-          "timestamp": "2026-11-05T07:47:48Z"
-        },
         {
           "attempt": 1,
           "job": "ci workflow helper unit tests（后半）",
@@ -47340,13 +47088,6 @@
           "step": "Post PR comment",
           "assertion": null,
           "timestamp": "2026-11-05T07:39:01Z"
-        },
-        {
-          "attempt": 1,
-          "job": "QA Growth Gate",
-          "step": "Post PR comment",
-          "assertion": null,
-          "timestamp": "2026-11-05T07:39:01Z"
         }
       ],
       "failed_at": "2026-11-05T07:39:01Z",
@@ -47386,13 +47127,6 @@
       "rerun_result": "success",
       "kind": "flaky",
       "attempts": [
-        {
-          "attempt": 1,
-          "job": "Danger Scan (破坏性变更检测)",
-          "step": "Resolve workflow-deletion acks (owner 显式确认 → DANGER_ACK_DELETE)",
-          "assertion": null,
-          "timestamp": "2026-11-05T07:39:25Z"
-        },
         {
           "attempt": 1,
           "job": "Danger Scan (破坏性变更检测)",
@@ -47573,13 +47307,6 @@
       "rerun_result": "success",
       "kind": "flaky",
       "attempts": [
-        {
-          "attempt": 1,
-          "job": "E2E quality gate",
-          "step": "Run quality specs (fixture-only)",
-          "assertion": null,
-          "timestamp": "2026-11-05T15:07:56Z"
-        },
         {
           "attempt": 1,
           "job": "E2E quality gate",
@@ -55580,13 +55307,6 @@
       "rerun_result": "success",
       "kind": "flaky",
       "attempts": [
-        {
-          "attempt": 1,
-          "job": "ci workflow helper unit tests（后半）",
-          "step": "Run ci workflow helper tests",
-          "assertion": null,
-          "timestamp": "2026-11-23T10:02:55Z"
-        },
         {
           "attempt": 1,
           "job": "ci workflow helper unit tests（后半）",
