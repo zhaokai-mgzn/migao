@@ -18,7 +18,17 @@ cases:
       - processing-manage.category-sort
       - processing-manage.crud
     user_inputs:
-      - "基础加工分类下有哪些"
+      # 2026-11-27 改判（issue #9220，现取证据 = 集中评测 run 45979067843 的 R1：
+      # `you=基础加工分类下有哪些 tools=processing_item_manage(action=list_categories)`
+      # `ai=本店加工分类里没有叫「基础加工」的分类，目前只有两个：…`）：
+      # 「基础加工」**不是**种子里存在的加工分类 —— 评测栈 tenant 1 的 `processing_categories`
+      # 只有两个：`加工费`（bootstrap `schema.sql` / V83 的 ERP 目录分类，16 项）与
+      # `窗帘加工`（`tests/agent_eval/fixtures/xiaobu_eval_seed.sql` 的 `pcat_eval_curtain`，
+      # 打孔 / 韩褶 / 定型 3 项，正是本条 `precondition` 点名的「打孔」所在分类）。
+      # 前提不成立时模型只能答「没有这个分类」⇒ 期望工具永远不会被调用 = 与「agent 不干活」
+      # 同形的假红 ⇒ 按真实种子改成 `窗帘加工`，并把问句补全成「有哪些加工项」（意图本就是
+      # 分类下的加工项，不是分类树本身）。
+      - "窗帘加工分类下有哪些加工项？"
       - "工序库里有哪些工序？"
     expectations:
       # 用户问「分类下有哪些」是想看分类下的加工项，正确工具是 processing_item_query
@@ -31,6 +41,22 @@ cases:
       # （上述判读说明保留、用例条目保留不删除）。
       # 同时补问「工序库里有哪些工序」以覆盖 #5247 新接入的只读工具 operation_catalog_query
       # （action 枚举只有 operations / routings；本用例取 operations = 工序库目录）。
+      # ── 2026-11-27（issue #9220，现取 run 45979067843）：期望工具**保持** processing_item_query，
+      # 并逐条登记「为什么不是 `processing_item_manage(action=list_categories)`」（不是放宽，也不是
+      # 为了让用例变绿而换靶）：
+      #   ① 工具面真值（描述层）：`processing_item_query` 的 description 触发词逐字含
+      #      「用户问『有哪些加工项』『加工项列表/分类』时」；而 `processing_item_manage` 的 description
+      #      反例段写「仅查看加工项目录用 processing_item_query，不要混淆」「【不要用于】加工项目录查询」。
+      #   ② 工具面真值（实现层）：`processing_item_query` 返回 `items[]`（每条含 `category_name`）且
+      #      支持 `category_id` 过滤 ⇒ 能回答「某分类下有哪些加工项」；`processing_item_manage` 的
+      #      `list_categories` 只返回 `data={'categories': [...]}` —— **分类行里没有加工项**，
+      #      它答不了这个问题（实测它把「分类有哪些」答成了答案，正是本轮的错位形态）。
+      #   ③ 覆盖面归属：`list_categories` 是**管理面 CRUD 的只读动作**，其覆盖面由 `misc.yml` 里
+      #      B 端写工具 action 面的 backend-contract 用例承担（不做 LLM 行为面断言）；
+      #      `processing_item_query` 的 LLM 行为面由本条（分类下加工项）+ 下单链路（OR-016/OR-017
+      #      的加工项目录来源）+ 知识域加工计价问答共同承担。
+      #   ④ 轮 1 的错位已被**前提修复**消掉：问句现在点名真实存在的分类并要求「加工项」，
+      #      只调 `list_categories` 无法作答（没有加工项数据）⇒ 期望面不需要放宽成「任一工具即可」。
       - tool: processing_item_query
       - tool: operation_catalog_query
         args:
@@ -40,9 +66,9 @@ cases:
       # processing_item_query 出加工项目录、operation_catalog_query(action=operations) 出工序库目录，
       # 均不得编造；两者都是只读工具 ⇒ 回复里不得出现「已新增/已修改/已停用」类表述
       # （B 端已无任何写入能力，出现即为编造）。
-      - "两份目录逐条来自服务端（processing_item_query 加工项目录 / operation_catalog_query(action=operations) 工序库目录），不得编造；均为只读，回复里不得出现「已新增/已修改/已停用」类表述"
+      - "两份目录逐条来自服务端（processing_item_query 加工项目录 / operation_catalog_query(action=operations) 工序库目录），不得编造；R1 的「窗帘加工」分类下逐项名称与单位必须与目录一致（不得把「分类列表」当成「分类下的加工项」作答）；均为只读，回复里不得出现「已新增/已修改/已停用」类表述"
     # 前置自断言（case-trust 规则 f：**多轮**用例必须对自己的前置给出可判定断言）：
-    # R1「基础加工分类下有哪些」的正解依赖「种子加工项目录真的非空」——目录为空时 agent
+    # R1「窗帘加工分类下有哪些加工项？」的正解依赖「种子加工项目录真的非空」——目录为空时 agent
     # 会合理地答「暂无」，报告上却只表现为 `unmatched expectation` = 看着像「agent 不干活」。
     # 取数走既有已登记类型 `processing_item_count_for_keyword`（复用 PP-008 的同一份口径，
     # 不新增 type/探针）；`打孔` = 种子里的唯一名（PP-008 同源），`expect: 1` 判基线。
@@ -54,7 +80,7 @@ cases:
         source: "打孔"
         expect: 1
     skip_reason: ""
-    merge_log: "verification 2.14 独有；2026-09-09 校准：期望工具 processing_item_manage(list_categories) 与工具 description 矛盾（查询加工项应走 processing_item_query），改为 processing_item_query ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：processing_item_manage 从 B 端解绑 ⇒ 本用例按新机制改判：expectations 由 [processing_item_query or processing_item_manage] 改判为 [processing_item_query, operation_catalog_query(action=operations)]（不是放宽：删掉的 `or` 分支是已从 B 端解绑的写工具，同时**新增** #5247 只读工具 operation_catalog_query 的工序库覆盖面，判据从「两分支任一命中」收紧为「两条都必须命中」）；title / user_inputs（补「工序库里有哪些工序？」）/ data_checks 同步改判（由「返回分类列表」改判为「两份目录逐条来自服务端、不得编造；均为只读，不得出现已新增/已修改/已停用类表述」）；must_succeed / required_args / output_verify / precondition / pre_clean 原本就没有写声明，无需改动。"
+    merge_log: "verification 2.14 独有；2026-09-09 校准：期望工具 processing_item_manage(list_categories) 与工具 description 矛盾（查询加工项应走 processing_item_query），改为 processing_item_query ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：processing_item_manage 从 B 端解绑 ⇒ 本用例按新机制改判：expectations 由 [processing_item_query or processing_item_manage] 改判为 [processing_item_query, operation_catalog_query(action=operations)]（不是放宽：删掉的 `or` 分支是已从 B 端解绑的写工具，同时**新增** #5247 只读工具 operation_catalog_query 的工序库覆盖面，判据从「两分支任一命中」收紧为「两条都必须命中」）；title / user_inputs（补「工序库里有哪些工序？」）/ data_checks 同步改判（由「返回分类列表」改判为「两份目录逐条来自服务端、不得编造；均为只读，不得出现已新增/已修改/已停用类表述」）；must_succeed / required_args / output_verify / precondition / pre_clean 原本就没有写声明，无需改动。 ｜ 2026-11-27（issue #9220，现取 = 集中评测 run 45979067843）：**修前提，不换靶** —— 本轮 R1 红形态是 `you=基础加工分类下有哪些 tools=processing_item_manage(action=list_categories)` + `ai=本店加工分类里没有叫「基础加工」的分类，目前只有两个：…` ⇒ **用例输入的前提与种子数据不符**（评测栈 tenant 1 只有 `加工费` 与 `窗帘加工` 两个分类；`git grep 基础加工` 在 `*.sql` 里 0 命中），模型只能答「没有这个分类」⇒ `processing_item_query` 永远不被调用，与「agent 不干活」同形。改动：① `user_inputs[0]` 由「基础加工分类下有哪些」改为「窗帘加工分类下有哪些加工项？」（真实分类 = `xiaobu_eval_seed.sql` 的 `pcat_eval_curtain`，即 `precondition` 点名的「打孔」所在分类；问句补全「加工项」以消除「分类树 vs 分类下加工项」的歧义）；② `expectations` **一字未改**（仍是 `processing_item_query` + `operation_catalog_query(action=operations)`）—— 不是为了让用例变绿而放宽成「任一工具即可」，理由逐条写在 expectations 上方注释（工具 description 的触发词/反例 + `list_categories` 只返回分类行、没有加工项字段 = 答不了本题）；③ `data_checks` 补一句「不得把分类列表当分类下的加工项作答」；`precondition` / `namespace` / 只读断言原样未动。`processing_item_manage(action=list_categories)` 的覆盖面属管理面 CRUD 只读动作，由 `misc.yml` 的 B 端工具 action 面 backend-contract 用例承担。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_processing_item_manage.py"
