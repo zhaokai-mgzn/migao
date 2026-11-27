@@ -291,11 +291,25 @@ class RuleMatcher:
                 matched_keywords=_hit_customer,
             )
 
-        # --- 优先匹配「尺寸数字 + 褶皱/算料/报价」→ quote（算料报价） ---
+        # --- 优先匹配「尺寸数字 + 褶皱/算料/报价/布量」→ quote（算料报价） ---
         # 否则"3米窗 2倍褶皱 多少钱"会被"多少钱"(3字) 压过"褶皱"(2字) 误路由到商品咨询。
         # 尺寸 + 褶皱/倍数 是算料意图的强信号，前置拦截。
+        #
+        # 🔴 「多少布 / 几米布」必须在这张信号表里（同批用例 CH-043，2026-11-27 run 45979067843
+        #   逐字归因）：顾客说「我家窗户 3 米宽、2.7 米高，帮我算算要多少布、多少钱？」时，
+        #   话术里既没有「褶皱/倍数」也没有「算料/报价/用布/打孔」⇒ 改前 L1 只命中
+        #   PRODUCT_INQUIRY 的「多少钱」⇒ 路由到 **customer_product**，而它的工具集是
+        #   `CUSTOMER_PRODUCT_TOOLS = ["product_search", "product_detail", "interact"]`
+        #   （`app/graph/skills/customer_product_skill.py`）—— **没有 `curtain_calc`** ⇒
+        #   模型**物理上**算不出来，只能自己口算（实测 trace：`tools=product_detail`，
+        #   随后直接报米数与总价）。
+        #   ⚠️ 所以这**不是「提示不够」**：`curtain_calc` 只挂在 `customer_quote`
+        #   （`CUSTOMER_QUOTE_TOOLS`），域外工具名会被 skill 工具集拦成 `Tool not found`
+        #   ⇒ 改 prompt 救不回来，必须修**路由**（工具不可达 ≠ 模型不听话）。
+        #   收词刻意只用**布料数量问法**（不收裸「多少」/「算算」）：负控 =
+        #   「这款窗帘 3 米宽 2.7 米高多少钱」（只有价、没有布量口径）⇒ 仍 product_inquiry。
         _quote_dim = re.compile(
-            r"\d+(?:\.\d+)?\s*米?.{0,10}(?:褶皱|倍数|算料|报价|用布|打孔|韩式褶|四爪钩)"
+            r"\d+(?:\.\d+)?\s*米?.{0,10}(?:褶皱|倍数|算料|报价|用布|打孔|韩式褶|四爪钩|多少布|几米布)"
         )
         if _quote_dim.search(text):
             return IntentResult(

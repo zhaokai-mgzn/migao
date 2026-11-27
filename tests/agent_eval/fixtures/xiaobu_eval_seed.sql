@@ -107,7 +107,13 @@ VALUES
    'on_order', 0, 0, FALSE, '["bulk_cut", "full_roll"]'::jsonb, 60.00),
   ('prod_eval_summer', 1, '夏日清风窗帘', 'cat_eval_curtain', 158.00,
    '轻薄透气夏日清风系列，支持散剪 2.8 米门幅与打孔/折边加工',
-   '[]'::jsonb, '[]'::jsonb, 600, 10, 'on_sale', '米', 'per_meter', 'EVAL-SMB-28',
+   -- 🔴 PR-135（关联 issue #9220）：本商品是「给「夏日清风窗帘」生成一张主图」这条用例的
+   --    **取样对象**。原值 `'[]'` ⇒ `product_image_generate` 必然 `IMAGE_SOURCE_MISSING`
+   --    （2026-11-27 run 45979067843 逐字：R1 唯一一次调用无一成功），而用例的 data_checks 写的是
+   --    「图 URL 取自商品档案主图」—— 用例默认档案里有主图，种子却没给 ⇒ 「档案有主图 ⇒ 能生成」
+   --    这条链路从来没被真正测过。样式与上方遮光窗帘（issue #7541 / PR-074）**完全同形**：
+   --    一张可达的公开静态样图，成功路径才跑得起来。
+   '["https://dummyimage.com/1024x1024/e8e8e8/333333.png&text=summer"]'::jsonb, '[]'::jsonb, 600, 10, 'on_sale', '米', 'per_meter', 'EVAL-SMB-28',
    'on_order', 0, 0, FALSE, '["bulk_cut", "full_roll"]'::jsonb, 60.00)
 ON CONFLICT (id) DO NOTHING;
 

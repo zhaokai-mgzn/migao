@@ -1,8 +1,10 @@
-# case_ids: MC-010, MC-011, AS-003, AS-004, AS-005, HR-002, DA-004, PR-013, DA-003, PP-002, OR-014, CH-010, PG-017, PG-064, DA-025, CU-008, CU-001, CU-002, ST-002, ST-001, HR-009
+# case_ids: MC-010, MC-011, AS-003, AS-004, AS-005, HR-002, DA-004, PR-013, DA-003, PP-002, OR-014, CH-010, PG-017, PG-064, DA-025, CU-008, CU-001, CU-002, ST-002, ST-001, HR-009, CH-043
 """规则匹配器单元测试（app/router/rule_matcher.py）
 
 覆盖：_extract_text / RuleMatcher.match 关键词优先级 / 正则规则 / 未命中。
 """
+from pathlib import Path
+
 from app.router.rule_matcher import REGEX_RULES, RuleMatcher, _extract_text
 from app.router.intent_config import IntentType
 
@@ -256,6 +258,59 @@ class TestMatch:
         result = self._match("打孔帘 2.7米高 报价")
         assert result is not None
         assert result.intent == IntentType.QUOTE
+
+    # ── CH-043：报了窗宽/窗高 + 问「多少布」⇒ 必须进算料域（2026-11-27 run 45979067843）──
+    def test_quote_window_dimensions_with_fabric_quantity_routes_to_quote(self):
+        """「窗户 3 米宽 + 要多少布」必须路由 quote —— 否则 `curtain_calc` **物理不可达**。
+
+        改前实测（run 45979067843 的 CH-043 R1）：这句话术里没有「褶皱/倍数/算料/报价/用布/
+        打孔」，L1 只命中 PRODUCT_INQUIRY 的「多少钱」⇒ 路由到 `customer_product`，而它的
+        工具集 `CUSTOMER_PRODUCT_TOOLS` 里**没有 `curtain_calc`** ⇒ 模型只能口算
+        （trace 逐字：`tools=product_detail`，随后直接报用布量与总价），用例的
+        `must_succeed: curtain_calc` 恒红。⇒ 这是**工具不可达**，不是「模型选择口算」。
+        """
+        result = self._match("夏日清风窗帘这款，我家窗户 3 米宽、2.7 米高，帮我算算要多少布、多少钱？")
+        assert result is not None
+        assert result.intent == IntentType.QUOTE
+        assert result.matched_keywords == ["尺寸+褶皱"]
+
+    def test_quote_fabric_quantity_without_buffer_words(self):
+        """更短的同类话术（无「窗帘」上下文词）也进算料域。"""
+        result = self._match("窗户 3 米宽 2.75 米高，帮我算下要多少布多少钱")
+        assert result is not None
+        assert result.intent == IntentType.QUOTE
+        assert result.confidence == 0.95
+
+    def test_dimensions_with_plain_price_question_stay_product_inquiry(self):
+        """负控：只有尺寸 + 价格、**没有布量口径** ⇒ 仍是商品咨询（新词不得抢走商品域）。"""
+        result = self._match("这款窗帘 3 米宽 2.7 米高多少钱")
+        assert result is not None
+        assert result.intent == IntentType.PRODUCT_INQUIRY
+        assert result.matched_keywords == ["多少钱"]
+
+    def test_order_verb_still_wins_over_fabric_quantity(self):
+        """负控：交易动作仍比手段权威 —— 「下单 + 要多少布」⇒ ORDER_CREATE，不是 quote。"""
+        result = self._match("帮我下单，遮光窗帘 3 米，要多少布")
+        assert result is not None
+        assert result.intent == IntentType.ORDER_CREATE
+
+    def test_customer_product_skill_cannot_reach_curtain_calc(self):
+        """前提见证：算料工具只属 `customer_quote` ⇒ 路由错了它就是**不可达**（改 prompt 无效）。
+
+        静态读两个 skill 的 `tool_names` 清单（不 import graph，避免把整条 graph 栈拖进本单测）。
+        一旦有人把 `curtain_calc` 也挂进 `customer_product`，本判据红 —— 那时该重新评估的是
+        「上面那条路由改判还有没有必要」，而不是让这条理由在无人知晓的情况下变成假的。
+        """
+        skills = Path(__file__).resolve().parents[1] / "app" / "graph" / "skills"
+
+        def tool_names(filename: str, var: str) -> list[str]:
+            for line in (skills / filename).read_text(encoding="utf-8").splitlines():
+                if line.startswith(f"{var} = ["):
+                    return [name.strip().strip('"').strip("'") for name in line[len(var) + 3:].strip("[]").split(",") if name.strip()]
+            raise AssertionError(f"fail-closed：{filename} 里读不到 `{var}` —— 判据会空转成假绿")
+
+        assert "curtain_calc" in tool_names("customer_quote_skill.py", "CUSTOMER_QUOTE_TOOLS")
+        assert "curtain_calc" not in tool_names("customer_product_skill.py", "CUSTOMER_PRODUCT_TOOLS")
 
     # ── 售后政策类知识咨询（issue #3064 验收 P1-2：双端「退换货政策」未走知识卡片）──
     def test_return_policy_inquiry_routes_to_knowledge_faq(self):
