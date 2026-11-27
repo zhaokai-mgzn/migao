@@ -166,6 +166,14 @@ head -3 "$HOME/.dsh/.agent-presets/migao/skills/migao-dev-flow/SKILL.md"
 ./scripts/preset-anchor-refresh.sh     # 刷新镜像并复检（改预设的 PR 合并后必跑一次）
 ```
 
+- **⚠️ 并行子包禁止深度拉取**（issue #9081）：`git fetch --depth` / `--shallow-since` 会写**共享** `.git/shallow`
+  （它是**整个 clone** 的属性，不在任何 worktree 里，所有 worktree 共用同一个 common git dir）⇒ 一次就把大家的仓
+  变浅，而浅仓下 `git merge-base` / `git rev-list --is-ancestor` / `git cherry` **静默给出错误答案**（不报错）：
+  2026-11-23 实测 `git rev-list --count origin/main` 只剩 **9**（正常 4800+）、`git merge` 报
+  `fatal: refusing to merge unrelated histories`，并因此误导过一次归因。
+  开工自检：`./scripts/dev-worktree.sh doctor`（浅仓 ⇒ **非零退出**并点名 `.git/shallow`；读不到 ⇒ `3` 无法判定）；
+  恢复出口：`git fetch --unshallow origin`。仓库脚本里新增任何深度拉取必须先登记
+  `tests/unit_ci_workflows/shallow_fetch_ledger.json`（**未登记即红**），判据 = `tests/unit_ci_workflows/test_shallow_repo_guard.py`。
 - **为什么锚点不能指向工作区**（两条实测，别把锚点当"另一个工作区"）：
   ① 工作区会**落后 main**：实测活锚曾指向落后 `origin/main` **42 个提交**的主工作区 —— 内容当时恰好一致
   （无害），但**下一次改预设的改进就到不了加载点**，后续所有会话按旧模式干活且**无任何东西变红**（`#4026`）；

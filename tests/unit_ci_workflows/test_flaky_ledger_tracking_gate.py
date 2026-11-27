@@ -150,6 +150,82 @@ class TestFailingTestExtraction:
         assert len(FL.extract_failing_tests(log)) == FL.MAX_FAILING_TESTS
 
 
+#: **真语料**（issue #8937）：`admin-api unit tests` 的 attempt-1 日志逐字（run 40497531264 /
+#: job 122166655399，`2026-10-27T11:40:57Z`）。这两行正是「重跑通过却不可归因」的那两条。
+MAVEN_REAL_LOG = (
+    "2026-10-27T11:40:57.1674118Z [ERROR] Tests run: 2, Failures: 1, Errors: 0, Skipped: 0, "
+    "Time elapsed: 2.148 s <<< FAILURE! -- in 🔴 真库并发判据（#6954）：入驻审批并发双 approve ⇒ "
+    "租户数恰好 +1 + 恰好 1 次成功\n"
+    "2026-10-27T11:40:57.1676712Z [ERROR] com.migao.admin.service."
+    "TenantApplicationReviewCasRaceRealDbTest.concurrentApprovalsCreateExactlyOneTenant -- "
+    "Time elapsed: 0.344 s <<< FAILURE!\n"
+    "2026-10-27T11:40:57.1679114Z java.lang.AssertionError: \n"
+    "2026-10-27T11:43:28.6861348Z [ERROR] Tests run: 5439, Failures: 1, Errors: 1, Skipped: 1\n"
+)
+
+
+class TestMavenSurefireExtraction:
+    """Java 腿（Maven/surefire）的失败身份提取（issue #8937）：pytest 面之外**原本一行都提不到**。
+
+    病灶读数：`admin-api unit tests` 的四条 flaky 条目 `failing_tests=[]` —— 不是「没有测试名」，
+    而是提取器只认 pytest 的 `FAILED <node id>`，而 surefire 的逐方法行长得完全不一样。
+    """
+
+    def test_逐方法行必须吐出具名测试(self):
+        got = FL.extract_failing_tests(MAVEN_REAL_LOG)
+        assert got == ["com.migao.admin.service.TenantApplicationReviewCasRaceRealDbTest."
+                       "concurrentApprovalsCreateExactlyOneTenant"], got
+
+    def test_逐类汇总行不算(self):
+        """`… <<< FAILURE! -- in <描述>` 只有描述、没有方法名 ⇒ **不得**被当成测试身份。"""
+        summary_only = (
+            "2026-10-27T11:40:57.1674118Z [ERROR] Tests run: 2, Failures: 1, Errors: 0, "
+            "Skipped: 0, Time elapsed: 2.148 s <<< FAILURE! -- in 🔴 真库并发判据（#6954）\n"
+        )
+        assert FL.extract_failing_tests(summary_only) == []
+        assert FL.extract_maven_failing_tests(summary_only) == []
+
+    def test_没有_尖括号判词的行不算(self):
+        """只有 `-- Time elapsed:` 而没有 `<<< FAILURE!` / `<<< ERROR!` ⇒ 不是失败行。"""
+        for line in (
+            "[ERROR] com.migao.admin.service.FooTest.bar -- Time elapsed: 0.3 s\n",
+            "[INFO] com.migao.admin.service.FooTest.bar -- Time elapsed: 0.3 s <<< FAILURE!\n",
+            "[ERROR] com.migao.admin.service.FooTest.bar -- Time elapsed: 0.3 s <<< SKIPPED!\n",
+        ):
+            assert FL.extract_maven_failing_tests(line) == [], line
+
+    def test_错误态与失败态都收且去重保序(self):
+        log = (
+            "[ERROR] com.migao.admin.service.StockDeductionAndLedgerAtomicityMetaGuardTest."
+            "everyStockDeductionHasLowerBoundPredicate -- Time elapsed: 0.012 s <<< ERROR!\n"
+            "[ERROR] com.migao.admin.service.A.b -- Time elapsed: 1 s <<< FAILURE!\n"
+            "[ERROR] com.migao.admin.service.A.b -- Time elapsed: 1 s <<< FAILURE!\n"
+        )
+        assert FL.extract_maven_failing_tests(log) == [
+            "com.migao.admin.service.StockDeductionAndLedgerAtomicityMetaGuardTest."
+            "everyStockDeductionHasLowerBoundPredicate",
+            "com.migao.admin.service.A.b",
+        ]
+
+    def test_pytest_面不受影响(self):
+        """两个面互不吞并：只有 pytest 行的日志 ⇒ 结果里**没有** Java 形态。"""
+        assert FL.extract_failing_tests(real_log()) == [REAL_FAILING_TEST]
+
+    def test_红证_掐掉_surefire_分支必须吐空(self):
+        """注入式红证：把 surefire 面**短路成空**（= 回到「只有 pytest 面」的旧形态）⇒ 真语料必须提不出东西。"""
+        anchor = (
+            '    found: list = []\n'
+            '    for line in log_text.split("\\n"):\n'
+            '        match = MAVEN_SUREFIRE_FAILED_LINE_RE.match(strip_log_prefix(line))\n')
+        mutated = REAL_SCRIPT_SOURCE.replace(anchor, "    return []  # 红证：掐掉 surefire 面\n" + anchor, 1)
+        assert mutated != REAL_SCRIPT_SOURCE, "注入锚点失效（先修本测试）"
+        namespace = {"__name__": "m_no_surefire", "__file__": str(SCRIPTS / "flaky_ledger.py")}
+        exec(compile(mutated, "<mutant:m_no_surefire>", "exec"), namespace)
+        assert namespace["extract_failing_tests"](MAVEN_REAL_LOG) == [], (
+            "掐掉 surefire 面后仍提取到内容 ⇒ 这条红证是空断言"
+        )
+
+
 class TestFailingTestExtractionRedProofs:
     """注入式红证：把「不剥 ANSI / 不剥时间戳 / 不认段头」的坏形态注回 ⇒ 必红。"""
 

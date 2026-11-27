@@ -649,7 +649,8 @@ def collection_floor_problems(session, ledger: dict | None = None) -> list[str]:
 # ⇒ 两条出口把「豁免失效」从**挂死**降级成**立即红**：
 #   ① **祖先已持锁 ⇒ 不排队**（`_lock_holder_is_an_ancestor`）：持有者要等本进程结束才释放 ⇒ 排队
 #      是**结构性死等**，不是"可能等到"；
-#   ② **墙钟预算**（`_suite_lock_timeout_seconds` = `MIGAO_HEAVY_WAIT` + 60 / 未设置时 60）⇒ 锁脚本
+#   ② **墙钟预算**（`_suite_lock_timeout_seconds` = `MIGAO_HEAVY_WAIT` + 60 / 未设置时 60；
+#      判据可注入更小的值 `MIGAO_HEAVY_LOCK_BUDGET_SECONDS`，issue #9078）⇒ 锁脚本
 #      自己卡住也走不出去。
 # 两条都走**同一个** fail-closed 出口（`pytest.exit.Exception(returncode=1)` + 可归因报文）。
 #
@@ -669,6 +670,13 @@ _SUITE_ARG_RE = re.compile(r"(?:^|\s)" + re.escape(SUITE_DIR) + r"(?=\s|$)")
 _SUITE_LOCK_BASE_BUDGET_SECONDS = 60
 #: 设置 `MIGAO_HEAVY_WAIT=<秒>` 时，在**它之上**再加的缓冲（给锁脚本打印具名超时报文）。
 _SUITE_LOCK_BUDGET_GRACE_SECONDS = 60
+#: **只给判据注入**的墙钟预算覆盖（秒）：`MIGAO_HEAVY_LOCK_BUDGET_SECONDS`（缺省不设 = 行为一字不改）。
+#: 为什么必须可注入（issue #9078）：判据若真等满预算（`MIGAO_HEAVY_WAIT=1` ⇒ 61s），它的墙钟上界
+#: 就只能比 61 略大；而「解释器启动 / `ps` 取进程表 / runner 调度」这些**与预算无关、没有上界**的
+#: 开销也计入读数 ⇒ 2026-11-23 attempt-1 实测 `elapsed=73.7s` 顶破 `assert 5 <= elapsed < 73`
+#: 判红、同一 SHA 重跑就绿（台账 `kind=flaky`）。注入 2s ⇒ 判据只等 2s，上界可给足几十秒，
+#: 而「有界 vs 挂死」的判别力**不变**（挂死仍撞判据自己的硬超时）。
+_SUITE_LOCK_BUDGET_ENV = "MIGAO_HEAVY_LOCK_BUDGET_SECONDS"
 #: `_ancestors_of` 的默认递归上限（PID 环 / 病态进程树兜底）。
 _MAX_ANCESTOR_DEPTH = 64
 
@@ -737,9 +745,15 @@ def _suite_lock_timeout_seconds(env=None) -> int:
 
     `MIGAO_HEAVY_WAIT` 存在时 = 它 + `_SUITE_LOCK_BUDGET_GRACE_SECONDS`（真等满再看锁脚本自己的
     具名超时报文）；未设置时 = `_SUITE_LOCK_BASE_BUDGET_SECONDS`（其实秒级就够 —— 那一路锁脚本
-    只试一次）。
+    只试一次）。`_SUITE_LOCK_BUDGET_ENV` 存在且合法 ⇒ **直接用它**（判据注入；见上面的常量注释）。
     """
     env = os.environ if env is None else env
+    override = str(env.get(_SUITE_LOCK_BUDGET_ENV) or "").strip()
+    if override:
+        try:
+            return max(1, int(override))
+        except ValueError:
+            pass        # 注入值非法 ⇒ 退回既有口径（不是「无界」，也不是用法错误）
     base = _SUITE_LOCK_BASE_BUDGET_SECONDS
     raw = str(env.get("MIGAO_HEAVY_WAIT") or "").strip()
     if raw:

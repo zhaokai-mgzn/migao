@@ -1,0 +1,31 @@
+{
+  "_what": "会**改写 clone 形状**的拉取（`git fetch` / `git pull` + `--depth` / `--shallow-since` / `--shallow-exclude` / `--filter`）的登记台账 —— 未登记即红（issue #9081）。",
+  "_why": "`.git/shallow` 是**整个 clone** 的属性（不在任何 worktree 里，所有 worktree 共享同一个 common git dir）⇒ 一次深度拉取就把**所有人**的仓变浅，而浅仓下 `git merge-base` / `git rev-list --is-ancestor` / `git cherry` 会**静默给出错误答案**（不报错）。2026-11-23 实测：`git rev-list --count origin/main` = 9（正常 4800+）、`git merge` 报 `fatal: refusing to merge unrelated histories`，并据此差点得出「main 历史被重写」的错误结论。⇒ 把「唯一入口」变成必须**登记用途**的显式动作。",
+  "_enforced_by": "tests/unit_ci_workflows/test_shallow_repo_guard.py（未登记即红 / 命中数变了即红 / 0 命中的条目即红 —— 台账**只许缩短**）",
+  "_scope": {
+    "roots": [
+      "scripts/**（仓库脚本）",
+      "仓库根 *.sh（check-ui-regression.sh / verify-all.sh / contract-check.sh …）",
+      ".github/workflows/**（run 正文）",
+      ".github/scripts/**"
+    ],
+    "suffixes": [".sh", ".bash", ".py", ".yml", ".yaml", ".js", ".mjs"],
+    "comment_policy": "整行注释（`#` / `//`）不算拉取 —— 说明文字可以与真执行区分；行尾注释仍算（它挂在真命令上）",
+    "excluded": {
+      "tests/**": "判据夹具只跑 tmp 临时仓（`file://` 深克隆建的是**新**仓，不写共享 `.git`）；其中出现的命令串是样本 / 断言引用，不是对共享 clone 的拉取",
+      ".github/cases/**": "纯数据用例文本，从不执行",
+      "actions/checkout 的 fetch-depth / filter": "临时 CI 检出，藏在 runner 里回收，不写任何人的共享 `.git`",
+      "git clone --depth / --filter": "建的是**新**仓，不写共享 `.git/shallow`（病只在 fetch/pull 改既有 clone 形状）"
+    },
+    "not_covered": "人类 / agent 在终端里临时手敲的深度拉取不在任何静态面上 —— 那一段靠 `./scripts/dev-worktree.sh doctor` 的浅仓哨兵**事后**发现"
+  },
+  "entries": [
+    {
+      "file": "check-ui-regression.sh",
+      "hits": 1,
+      "purpose": "取 `origin/main` 的 tip 做 UI 回退比对（`git show origin/main:<f>` vs 工作树），只需要两个 tip、不需要任何历史",
+      "why_unavoidable": "本脚本**只在 clone 已经是浅仓时**才走 `--depth=1`（分支条件是 `git rev-parse --is-shallow-repository` = true），因此它**不会**把全史仓库变浅；而反过来，浅仓里不带 `--depth` 的 `git fetch origin main` 会把 main 的**全史**拉下来（issue #9120 去掉 `fetch-depth: 0` 之后，这一步实测 26s，把整腿从 ~21s 抬到 36s）。两头都只有这一种写法",
+      "evidence_anchor": "tests/unit_ci_workflows/test_ui_regression_fetch_is_shallow_aware.py（钉住「浅仓才 depth=1 / 全史仓库不许带 depth」两面）+ issue #9120"
+    }
+  ]
+}

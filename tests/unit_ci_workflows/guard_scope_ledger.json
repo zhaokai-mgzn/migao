@@ -141,6 +141,11 @@
       "kind": "mentions",
       "issue": "#9233",
       "reason": "C 端下线类级锁：只按 MACHINE_GLOBS 点名/扫描 workflow、deploy/**/*.sh、台账等机器面，不枚举全仓 *.sh 语料 ⇒ 按 mentions 入册；全仓 *.sh 的射程守卫 = test_scripts_bash32_var_brace.py"
+    },
+    "tests/unit_ci_workflows/test_shallow_repo_guard.py": {
+      "kind": "mentions",
+      "issue": "#9081",
+      "reason": "浅仓类级锁：枚举器是 `git ls-files` 的**执行面**过滤器（scripts/** + 仓库根 shell + .github/workflows/** + .github/scripts/**），**不**走本台账冻结的全仓 `*.sh` 语料普查；docstring 里提到 `*.sh` 只为说明扫描面边界（为什么把 tests/** 的夹具排除在外）。按 mentions 入册；全仓 shell 语料的射程守卫 = test_scripts_bash32_var_brace.py"
     }
   }
 }

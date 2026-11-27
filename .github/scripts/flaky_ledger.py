@@ -411,9 +411,10 @@ ATTRIBUTABLE_KINDS = frozenset({"flaky", "deterministic", "infra_suspect"})
 #: 必须带**原始事实**（`attempts`）的新口径 kind；`deterministic` 另需 `attested_evidence`（凭据）。
 FACT_BACKED_KINDS = frozenset({"deterministic", "unknown"})
 
-#: 🔴 **#5960 判据①：失败测试身份进台账** —— 从**失败 job 的日志**里机械提取出来的 pytest node id
-#: （`FAILED tests/…/test_x.py::TestC::test_y - AssertionError: …` ⇒ 只留
-#: `tests/…/test_x.py::TestC::test_y`；**不是**断言文本）。
+#: 🔴 **#5960 判据①：失败测试身份进台账** —— 从**失败 job 的日志**里机械提取出来的测试身份
+#: （pytest：`FAILED tests/…/test_x.py::TestC::test_y - AssertionError: …` ⇒ 只留
+#: `tests/…/test_x.py::TestC::test_y`；Maven/surefire（issue #8937）：`[ERROR] <全限定类>.<方法>
+#: -- Time elapsed: … <<< FAILURE!` ⇒ 只留 `<全限定类>.<方法>`；**都不是**断言文本）。
 #:
 #: 为什么需要一个**独立字段**（不许污染 `attempts[].assertion` 的既有语义）：
 #:   · `attempts[].assertion` 是 `attest` 的**凭据面** —— `classify_both_red()` 靠它判
@@ -743,6 +744,16 @@ PYTEST_SHORT_SUMMARY_MARKER = "short test summary info"
 PYTEST_FAILED_LINE_RE = re.compile(
     r"^\s*FAILED\s+(?P<node>[\w./\\+-]*\.py::[A-Za-z0-9_][\w.:\[\]-]*)(?:\s*-\s|$)")
 
+#: Maven / surefire 的**逐方法**失败行（Java 腿，如 `admin-api unit tests`）：
+#: `[ERROR] com.migao.admin.service.FooTest.bar -- Time elapsed: 0.344 s <<< FAILURE!`（`<<< ERROR!` 同理）。
+#: 🔴 为什么必须有这一面（issue #8937）：pytest 之外**没有任何** `FAILED <node id>` 行 ⇒ 提取器吐
+#: `[]` ⇒ 台账里四条 `admin-api unit tests` 失败挂了整整一个月都**不可归因**（「重跑通过」成了唯一
+#: 读数；实测原文见 issue #8937 的评论）。**不收** `… <<< FAILURE! -- in <描述>` 那种**逐类汇总**行 ——
+#: 它只有描述、没有方法名，提取到也没人能拿它复现。
+MAVEN_SUREFIRE_FAILED_LINE_RE = re.compile(
+    r"^\s*\[ERROR\]\s+(?P<node>[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)+)"
+    r"\s+--\s+Time elapsed:.*?<<<\s*(?:FAILURE|ERROR)!\s*$")
+
 
 def strip_log_prefix(line: str) -> str:
     """剥掉 GitHub 日志的**行首时间戳前缀**与 **ANSI 转义**（其余逐字保留）。"""
@@ -792,19 +803,54 @@ def _failing_lines(log_text) -> list:
     return [(node, "\n".join(parts).strip()) for node, parts in out]
 
 
+def extract_maven_failing_tests(log_text) -> list:
+    """**纯函数**：从一份 job 日志里提取 Maven / surefire 的失败方法（`<全限定类>.<方法>`）。
+
+    只认**逐方法**那一行（`-- Time elapsed: … <<< FAILURE!` / `<<< ERROR!`）；逐类汇总行
+    （`… <<< FAILURE! -- in <描述>`）没有方法名 ⇒ **有意不收**（宁缺勿滥：写进台账的东西要能
+    被人逐字复制成 `./mvnw -Dtest=<类>#<方法> test` 去复现）。去重保序、上限同 `MAX_FAILING_TESTS`。
+    """
+    if isinstance(log_text, bytes):
+        log_text = log_text.decode("utf-8", errors="replace")
+    if not isinstance(log_text, str) or not log_text.strip():
+        return []
+    found: list = []
+    for line in log_text.split("\n"):
+        match = MAVEN_SUREFIRE_FAILED_LINE_RE.match(strip_log_prefix(line))
+        if match is None:
+            continue
+        node = match.group("node").strip()
+        if node and node not in found:
+            found.append(node)
+        if len(found) >= MAX_FAILING_TESTS:
+            break
+    return found
+
+
 def extract_failing_tests(log_text) -> list:
-    """**纯函数**：从一份 job 日志里提取失败的 pytest node id（去重、保序、上限 `MAX_FAILING_TESTS`）。
+    """**纯函数**：从一份 job 日志里提取失败测试身份（去重、保序、上限 `MAX_FAILING_TESTS`）。
+
+    **两个面**（同一份日志可以只有其中一个）：
+      · pytest：`FAILED <node id> - …` ⇒ `tests/x.py::TestC::test_y`；
+      · Maven/surefire（issue #8937）：`[ERROR] <全限定类>.<方法> -- Time elapsed: … <<< FAILURE!`
+        ⇒ `<全限定类>.<方法>`（Java 腿原本**一行都提不到** ⇒ 台账 `failing_tests=[]` ⇒ 不可归因）。
 
     取数纪律（**三条**，每条都对着一个已发生的形态）：
       · **优先只读 `short test summary info` 段之后** —— 该段之前的正文里可能**回显**测试输出
         （`pytest -q` / `tee` / 嵌套调用都会把 `FAILED …` 重新打一遍，`-vv` 下还带缩进），
         只在段后取能一次性把它们挡掉；段头**没出现**（日志被截断 / 非 pytest）⇒ 退回**全文**扫，
         但此时**只认行首**形态（`^\\s*FAILED `），不认正文中间的引用；
-      · 只留 **node id**（`FAILED` 与错误文本都不要）⇒ 读的人能直接 `pytest <node id>` 复现；
+      · 只留 **身份**（`FAILED` 与错误文本都不要）⇒ 读的人能直接复现（pytest 用 node id、
+        Java 用 `-Dtest=<类>#<方法>`）；
       · **去重保序**（同一条测试被回显多次只算一次），并截断到 `MAX_FAILING_TESTS`。
     """
     found: list = []
     for node, _ in _failing_lines(log_text):
+        if node not in found:
+            found.append(node)
+        if len(found) >= MAX_FAILING_TESTS:
+            break
+    for node in extract_maven_failing_tests(log_text):
         if node not in found:
             found.append(node)
         if len(found) >= MAX_FAILING_TESTS:

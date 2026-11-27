@@ -11278,6 +11278,30 @@ cases:
     merge_log: "2026-11-27 新增（issue #9120）。现场：`python3 scripts/ci_cost_ledger.py --measure` 因「超预算」整体拒写 ⇒ 任何腿都无法合法登记成本；现取 13 条腿超预算，而台账读数显示 median / max 都没长、长的只有 p90。根因 = 样本量：旧默认 `--runs-per-workflow 8` 让 `int(0.9*(8-1)) = 6` ⇒ p90 取到的是第 7 小（次大值），窗口里两条慢跑（2/8）就把预算钉在 277s，此后单次抖动（现取 p90 282s，+1.8%）即永久判超预算。修法：默认抬到 20（p90 = 第 18 小，真能表达分布）+ 判据三处同锁。红证：把 `DEFAULT_RUNS_PER_WORKFLOW` 与 `add_argument(default=)` 同时改回 8 ⇒ `test_default_sample_size_is_at_least_20` 具名红（`assert 8 >= 20`）。取号 = next_case_id.py MC ⇒ MC-371。"
   - id: MC-372
     legacy_id: ""
+    title: "浅仓污染的两道闸：doctor 的浅仓自检（.git/shallow 在 ⇒ 红）与深度拉取的登记台账（未登记即红）"
+    domains:
+      - misc
+      - ci
+    tier: normal
+    tags:
+      - ci
+    skip_reason: "[backend-contract] 纯静态 CI 结构判据（零 LLM / 零网络 / 零 DB）：不进 agent-eval 冒烟；机器判红通道 = traces.tests 的 pytest（pr-check 的 ci workflow helper unit tests 全量跑 tests/unit_ci_workflows）；2026-11-25 run 45647252503 实测：缺本字段会被 normal 档当行为用例跑并必然红（#9220）"
+    user_inputs: []
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "**判据 1·浅仓 ⇒ doctor 具名红**：夹具在**临时目录自造裸仓** + `git clone --depth=1 file://<裸仓>`（不依赖本仓任何对象），`doctor` 必须**非零退出**、点名 `.git/shallow`、并给出口 `git fetch --unshallow origin`；`--unshallow` 之后必须**转绿**（恒红的判据同样没用）。纯静态：`未被调用`。执行点 = `test_shallow_repo_guard.py::test_a_shallow_clone_makes_doctor_red_and_names_the_shallow_file`"
+      - "**判据 2·红证归因**：把 doctor 里 `wt_shallow_doctor` 那一行摘掉 ⇒ **同一浅仓夹具转绿**且输出里不再有 `.git/shallow`（证明判据 1 的红来自这条检查本身，不是别的副作用）。执行点 = `::test_the_doctor_check_is_what_makes_it_red`"
+      - "**判据 3·三态**：非 git 目录下跑 `doctor` ⇒ 退出码 **3 无法判定**且出声「不当成通过」（读不到浅仓状态**不得当 0 读**）。执行点 = `::test_unreadable_shallow_state_is_indeterminate_not_green`"
+      - "**判据 4·不阻断开工**：浅仓判定不得出现在开工前置断言 `wt_registry_assert_for_entry` 的可执行行里（issue 要的是「开工自检」，不是 fail-closed 拦住 add / rm / rebase）。执行点 = `::test_the_shallow_check_is_not_on_the_startup_assertion_path`"
+      - "**判据 5·未登记即红（类级元守卫）**：仓库执行面（`scripts/**`、仓库根 shell 脚本、`.github/workflows/**`、`.github/scripts/**`）里任何形状改变型拉取（`git fetch` / `pull` + `--depth` / `--shallow-since` / `--shallow-exclude` / `--filter`）必须登记进 `tests/unit_ci_workflows/shallow_fetch_ledger.json`；注入一条未登记的（临时副本）⇒ **具名**红；台账**只许缩短**（0 命中 / 命中数变了 / 缺「为什么不可避免」都红）。执行点 = `::test_unregistered_shape_changing_fetch_is_named_red` + `::test_the_repo_ledger_covers_the_live_script_surface`"
+      - "**判据 6·文档面**：`AGENTS.md` 的「开发环境准备」必须同时写「禁止深度拉取」+ 出口 `git fetch --unshallow origin` + 台账路径。执行点 = `::test_agents_md_documents_the_prohibition_and_the_exit`"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_shallow_repo_guard.py"
+    merge_log: "2026-11-27 新增（issue #9081）。现场（2026-11-23 实测）：并行子包窗口里有人做过一次 `git fetch --depth` / `--shallow-since` ⇒ 共享 `.git/shallow` 被写 ⇒ 整个 clone 变浅，而浅仓下 `merge-base` / `rev-list --is-ancestor` / `git cherry` **静默给出错误答案**（`git rev-list --count origin/main` = 9，正常 4800+；`git merge` 报 `fatal: refusing to merge unrelated histories`），并实际误导过一次归因。修法 = 两道闸：① `scripts/dev-worktree.sh doctor` 增「浅仓自检」（`.git/shallow` 在 ⇒ 退出码 1 + 点名 + 出口 `git fetch --unshallow origin`；读不到 ⇒ 3），**不**挂进开工前置断言（issue 要的是开工自检，不是 fail-closed 阻断）；② 仓库执行面里任何形状改变型拉取必须登记进 `tests/unit_ci_workflows/shallow_fetch_ledger.json`（未登记即红 + 台账只许缩短）。现取台账 = **1 条**（`check-ui-regression.sh` 的 shallow-aware `--depth=1` 分支，issue #9120 的既有合法用途，登记而非删除）。红证（本机现取）：浅仓夹具上 doctor `rc=1` 且打印「🔴 命中浅仓（issue #9081）：…/.git/shallow 存在（shallow 边界提交 1 个）」+ 出口行；把 `wt_shallow_doctor` 调用摘掉后**同一夹具 `rc=0`、输出无 `.git/shallow`**；注入未登记的 `git fetch --depth=1` 到 `scripts/parallel-subpackage.sh` ⇒ 守卫打印「未登记的深度拉取：scripts/parallel-subpackage.sh（1 处）」。取号 = next_case_id.py MC ⇒ 先取 MC-371，合并 main 时发现该号已被 main 的另一条占用（CI 成本台账 p90）⇒ 按只追加纪律顺延 **MC-372**。"
+  - id: MC-373
+    legacy_id: ""
     title: "被 cancel 的 CI 腿也要可归因：进度包装器（trap + step summary + annotation）"
     domains:
       - misc
@@ -11297,4 +11321,4 @@ cases:
     traces:
       tests:
         - "tests/unit_ci_workflows/test_ci_helper_progress.py"
-    merge_log: "2026-11-27 新增（issue #9114）。现场：被 cancel 的 job 拿不到日志 —— job 138101912467 / 138155419427 的 logs 接口都返回 BlobNotFound，两者的 steps 都停在「本步有 started_at、无 completed_at」⇒ 超时类事故只剩 run 级一句 exceeded the maximum execution time（#9102 / #9097 / #9111 同形态）。修法：`scripts/ci_helper_progress.py` 包装 pytest（不改 pytest argv，只给子进程注入 PYTEST_PLUGINS），被掐死之前把「当前文件 + 已完成 N/M」写到 step summary + `::error::` annotation + stdout 进度行，五条出口共用同一个 finalize。红证：清空 HANDLED_SIGNALS ⇒ 判据 2 不再出现归因段；摘掉 finalize 的 summary 写入 ⇒ 判据 1 的 summary 断言失牙（两条都先自证注入落下）。取号 = case_id_lease.py reserve MC ⇒ 先占 MC-371，合并 main 时发现它已被 #9258 在 main 上占用（同号两块的冲突由解冲突脚本拒收暴露）⇒ 按「后合入者让号」改为 MC-372 并重发布 case-lease/MC-372。"
+    merge_log: "2026-11-27 新增（issue #9114）。现场：被 cancel 的 job 拿不到日志 —— job 138101912467 / 138155419427 的 logs 接口都返回 BlobNotFound，两者的 steps 都停在「本步有 started_at、无 completed_at」⇒ 超时类事故只剩 run 级一句 exceeded the maximum execution time（#9102 / #9097 / #9111 同形态）。修法：`scripts/ci_helper_progress.py` 包装 pytest（不改 pytest argv，只给子进程注入 PYTEST_PLUGINS），被掐死之前把「当前文件 + 已完成 N/M」写到 step summary + `::error::` annotation + stdout 进度行，五条出口共用同一个 finalize。红证：清空 HANDLED_SIGNALS ⇒ 判据 2 不再出现归因段；摘掉 finalize 的 summary 写入 ⇒ 判据 1 的 summary 断言失牙（两条都先自证注入落下）。取号 = case_id_lease.py reserve MC ⇒ 连续让号两次：先占 MC-371（被 #9258 在 main 上占用）→ 改 MC-373（又被 #9081 的浅仓守卫块占用）→ 定 **MC-373**（两次都由「同号两块」的追加冲突 fail-closed 暴露；`case-lease/MC-373` 已重发布）。"
