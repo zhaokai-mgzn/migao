@@ -5133,16 +5133,29 @@ def _first_successful_call(results: list, tool: str) -> tuple:
     """返回该工具**首个成功调用**的 (轮次, args, result_data)；找不到返回 (None, None, None)。
 
     成功判定用 tool_result 的 success（与 must_succeed 同源），避免把被门禁拦下的调用当成功。
+
+    **参数必须与「成功的那一次调用」配对**（run 45979067843 @ 2026-11-27 的 OR-021 实测）：
+    一轮里同名工具可能被调用**多次** —— 模型先把 `order_create` 套进 `validate_input` 的壳
+    （`{target_tool, target_action, params}`）失败（`missing_required_args`），再按正确形态
+    提交并成功。旧实现只判「本轮**有**一次 ok」，参数却取 `calls[0]` ⇒ 拿到的正是**失败那次**
+    的参数（顶层没有 `items`）⇒ 成功订单的明细被读成空、`amount_verify` 报
+    `order_create,no_items` 而 score=0（同跑 `db_verify[order_items]` 通过 = 真明细在库里）。
+    配对复用 `_round_call_success`（与 `_round_action_result` 对齐到「那一次调用」的修法同源，
+    也同服务端 `_pending_calls` 的队列队首口径），不另写一套尺子；数量对不齐（合成轨迹 /
+    节点重放）时**不猜**，退回旧的工具级语义。
     """
     for r in results or []:
         calls = [tc for tc in (r.get("tool_calls") or []) if _tool_name_matches(tc.get("name"), tool)]
         if not calls:
             continue
-        oks = [st for st in _tool_result_status(r.get("tool_results") or [])
-               if _tool_name_matches(st.get("tool"), tool) and st.get("ok")]
-        if not oks:
+        flags = _round_call_success(r, tool)
+        if not flags:
             continue
-        return r.get("__round"), (calls[0].get("args") or {}), None
+        if len(flags) != len(calls):
+            return r.get("__round"), (calls[0].get("args") or {}), None
+        for i, ok in enumerate(flags):
+            if ok:
+                return r.get("__round"), (calls[i].get("args") or {}), None
     return None, None, None
 
 
@@ -7824,6 +7837,67 @@ async def check_db_verify(token: str, db_verify: list, results: list | None = No
                         f"db_verify[order_items]: 「{hit}」数量 {by_name[hit]} ≠ 期望 {want_q}"
                         f"（订单明细共 {_line_count} 行: {_lines}）"
                         f"—— 行数与逐行数量能区分「数量值算错」与「重复行累加」")
+            # ── 更强判据：明细**行数** + **金额合计**（OR-021 补强，与上一条同源）──────
+            # 为什么补（run 45979067843 的 OR-021）：`amount_verify` 核的是**模型传参** ——
+            # 它一旦读错对象（args 侧配对错位），"钱对不对"就整层失去证据；而
+            # `expect_quantities` 把「1 行 3 米」与「3 行各 1 米」看成同一个数字（**重复行**
+            # 是另一种缺陷、修法不同）。⇒ 落库面必须自己把「行数 + 钱」说完。
+            _want_rows = spec.get("expect_row_count")
+            if _want_rows is not None:
+                try:
+                    _want_n = int(_want_rows)
+                except (TypeError, ValueError):
+                    _want_n = -1
+                if _want_n < 1:
+                    issues.append(
+                        f"db_verify[order_items]: expect_row_count={_want_rows!r} 非法"
+                        f"（必须是 ≥1 的整数 —— 0/非数字 = 空断言或恒红）")
+                elif _line_count != _want_n:
+                    issues.append(
+                        f"db_verify[order_items]: 订单 {ref} 明细 {_line_count} 行 ≠ 期望 {_want_n} 行"
+                        f"（明细: {_lines}）—— 汇总数量相同也可能是**重复行**")
+            _want_amounts = spec.get("expect_amounts")
+            if _want_amounts is not None:
+                if not isinstance(_want_amounts, dict) or not _want_amounts:
+                    issues.append(
+                        "db_verify[order_items]: expect_amounts 必须是非空 dict（商品名 → 金额）"
+                        "—— 空形态 = 声称核了钱却什么都没核")
+                else:
+                    # 金额口径 = Σ(数量 × 单价) = **面料金额**（不含加工费）：加工费另有
+                    # `processingFee` 通道，而「小计含/不含加工费」两种约定都合法（#3511）
+                    # ⇒ 用 q×p 才不把合法变体判成钱算错。
+                    _amt: dict = {}
+                    for it in items:
+                        _nm = str((it or {}).get("productName") or "")
+                        if not _nm:
+                            continue
+                        try:
+                            _q = float((it or {}).get("quantity") or 0)
+                            _p = float((it or {}).get("unitPrice") or 0)
+                        except (TypeError, ValueError):
+                            continue
+                        _amt[_nm] = _amt.get(_nm, 0.0) + _q * _p
+                    for _w, _want_amt in _want_amounts.items():
+                        _w = str(_w)
+                        _hits = [n for n in _amt if _w in n or n in _w]
+                        if not _hits:
+                            issues.append(
+                                f"db_verify[order_items]: 订单 {ref} 明细里没有「{_w}」，"
+                                f"金额合计无从核对（实际明细: {_lines}）—— 判失败而非跳过")
+                            continue
+                        try:
+                            _want_f = float(_want_amt)
+                        except (TypeError, ValueError):
+                            issues.append(
+                                f"db_verify[order_items]: expect_amounts[{_w}]={_want_amt!r} 非数值"
+                                f"（配置错误 → 不核对金额）")
+                            continue
+                        _got = sum(_amt[n] for n in _hits)
+                        if abs(_got - _want_f) > 0.01:
+                            issues.append(
+                                f"db_verify[order_items]: 订单 {ref} 「{_w}」金额合计 {_got} ≠ "
+                                f"期望 {_want_f}（Σ 数量×单价；明细: {_lines}）"
+                                f"—— 落库的钱与手工算的值不符")
             # ── 下单行要素（部位/工艺）**落库值**断言（issue #4454）────────────────────
             # 为什么必须读落库值而不是只看工具传参：`processing_info` 是 AI 采集的**自由文本**
             # 入口（`OrderLineCraftFields` 只搬运、不做枚举校验）⇒ 顾客说「韩式褶」「纳米圈」

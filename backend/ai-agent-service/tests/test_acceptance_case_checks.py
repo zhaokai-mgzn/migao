@@ -4166,6 +4166,99 @@ class TestAmountVerifyChecksRobustness:
         assert issues and "无法识别" in issues[0], "解析不出检查项时必须失败关闭，不能静默通过"
 
 
+class TestFirstSuccessfulCallPairsByArrival:
+    """`_first_successful_call` 必须把「成功的那次调用」自己的参数交出来（OR-021 实证）。
+
+    证据（run 45979067843 @ 2026-11-27 18:05 +08，C 端腿 OR-021 的 R5）：
+      `tools=[order_create, order_create, customer_order_query]`
+        · 第 1 次 args = `{target_tool: order_create, target_action: create, params: {…}}`
+          （模型套了 `validate_input` 的壳）→ 结果 `order_create(missing_required_args)`
+        · 第 2 次 args = `{customer_name: …, items: [遮光窗帘 ×3 @168]}` → 结果成功
+          （订单号 `20261127286630007`）
+      旧实现只看「本轮**有**一次 ok」，参数却取 `calls[0]` —— 正好是**失败**的第 1 次
+      ⇒ `amount_verify` 读到顶层没有 `items` ⇒ `amount_verify(order_create,no_items)`、
+      score=0。同一跑里 `db_verify[order_items]` / `db_verify[order_phone]` 都通过
+      （真明细 3 米在库里）⇒ 是**判据读错对象**，不是「空明细订单」缺陷。
+
+    （`_tool_result_status` 早就用「同名调用**队列队首**」配对结果与调用 —— 本类把
+    `_first_successful_call` 拉回同一条配对口径，两处不再各说各话。）
+    """
+
+    OK_ARGS = {
+        "customer_name": "张三",
+        "customer_phone": "13800138000",
+        "customer_address": "浙江省杭州市西湖区文三路1号1幢101室",
+        "items": [{
+            "product_name": "遮光窗帘", "quantity": 3, "unit_price": 168.0,
+            "subtotal": 504.0,
+            "processing_info": {"colorName": "米白", "craft": "打孔"},
+        }],
+    }
+    # 模型套错壳的那一次（`validate_input` 形态）：顶层没有 items ⇒ 什么都没下单
+    WRAPPER_ARGS = {"target_tool": "order_create", "target_action": "create",
+                    "params": dict(OK_ARGS)}
+
+    def _round(self):
+        return {
+            "__round": 5,
+            "tool_calls": [
+                {"name": "order_create", "args": self.WRAPPER_ARGS},
+                {"name": "order_create", "args": self.OK_ARGS},
+                {"name": "customer_order_query", "args": {"action": "list"}},
+            ],
+            "tool_results": [
+                {"tool": "order_create",
+                 "result": {"success": False, "error": "missing_required_args"}},
+                {"tool": "order_create",
+                 "result": {"success": True, "data": {"id": "1678cf",
+                                                      "orderNo": "20261127286630007",
+                                                      "totalAmount": 504.0}}},
+                {"tool": "customer_order_query",
+                 "result": {"success": True, "data": {"orders": 3}}},
+            ],
+            "final_text": "",
+        }
+
+    def test_pairs_success_with_its_own_args(self):
+        rnd, args, _ = lr._first_successful_call([self._round()], "order_create")
+        # 取参必须来自**成功的那次**：失败壳的 args 顶层没有 items ⇒ 这里的值级读数会当场对不上
+        # （不用存在性断言 —— 那种断言读不出"取错了哪一次"）。
+        got = [(i.get("product_name"), i.get("quantity")) for i in (args or {}).get("items") or []]
+        assert got == [("遮光窗帘", 3)], (
+            f"成功的是第 2 次调用 ⇒ 必须取它的 args（实际取到 {got}）；"
+            f"取 calls[0] 会把失败壳的参数当成下单明细")
+
+    def test_amount_verify_sees_items_of_the_ok_call(self):
+        """OR-021 形态端到端：金额断言必须真的核到钱（旧口径读失败壳 ⇒ items 为空）。"""
+        import unittest.mock as mock
+
+        async def fake_price(token, name):
+            return {"price": 168.0, "skus": []}
+
+        spec = [{"tool": "order_create", "product_name": "遮光窗帘",
+                 "checks": ["unit_price", "subtotal", "total"]}]
+        with mock.patch.object(lr, "_fetch_product_price_truth", new=fake_price):
+            issues = asyncio.run(lr.check_amount_verify("tok", [self._round()], spec))
+        assert issues == [], f"金额断言读错了调用 ⇒ 误报「items 为空」: {issues}"
+
+    def test_pairing_agrees_with_tool_result_status(self):
+        """类级自证：配对必须与 `_tool_result_status` 的 action 取数**同一口径**。
+
+        `_tool_result_status` 早就按「同名调用队列队首」配对（`action` 就是从配对到的那次
+        调用取的），而 `_first_successful_call` 曾单方面用 `calls[0]` ⇒ 两处各一把尺子。
+        这条把两侧钉在一起：ok 的那条 result 用的 args，必须正是本函数返回的 args。
+        """
+        rnd = self._round()
+        rnd["tool_calls"][0]["args"] = dict(self.WRAPPER_ARGS, action="wrong_shape")
+        rnd["tool_calls"][1]["args"] = dict(self.OK_ARGS, action="create")
+        _, args, _ = lr._first_successful_call([rnd], "order_create")
+        ok_action = next(st["action"] for st in
+                         lr._tool_result_status(rnd["tool_results"], rnd["tool_calls"])
+                         if st["tool"] == "order_create" and st["ok"])
+        # 两侧必须指向**同一次调用**：失败壳那次 action=wrong_shape、成功那次 action=create。
+        assert (lr._call_action(args or {}), ok_action) == ("create", "create")
+
+
 class TestDbVerifyOrderItems:
     """订单明细落库断言（issue #3367 上限用例基建）。
 
@@ -4224,6 +4317,55 @@ class TestDbVerifyOrderItems:
     def test_order_not_found_fails(self):
         issues = self._run(self._spec(), lookup_ok=False)
         assert issues and "查不到" in issues[0], "查不到订单不得静默当通过"
+
+    # ── 更强判据：明细**行数** + **金额合计**（OR-021 补强）──────────────────────────
+    # 为什么必须补：`expect_quantities` 把「1 行 3 米」与「3 行各 1 米」看成同一个数字
+    # （重复行是另一种缺陷，修法完全不同）；而**金额**此前没有落库面断言 ——
+    # `amount_verify` 核的是**模型传参**（args），不是库里真值。OR-021 的判据读错对象
+    # 暴露之后，落库面必须自己能把「钱对不对」说完，不能指望 args 侧顺带证明。
+    def _line_spec(self, **kw):
+        base = {"fetch": "order_items", "source": "order_create",
+                "expect_products": ["遮光窗帘"], "expect_quantities": {"遮光窗帘": 3}}
+        base.update(kw)
+        return base
+
+    @staticmethod
+    def _order(lines):
+        return {"data": {"orderNo": "20260101000000001", "totalAmount": 504.0, "items": lines}}
+
+    def test_row_count_mismatch_fails(self):
+        """重复行必须判红：汇总数量相同（1.5 + 1.5 = 3）但明细行数不同。"""
+        order = self._order([
+            {"productName": "遮光窗帘", "quantity": 1.5, "unitPrice": 168.0},
+            {"productName": "遮光窗帘", "quantity": 1.5, "unitPrice": 168.0}])
+        issues = self._run(self._line_spec(expect_row_count=1), order=order)
+        hit = next((i for i in issues if "明细 2 行" in i), "")
+        assert hit and "期望 1 行" in hit, issues
+
+    def test_amount_mismatch_fails(self):
+        """金额合计必须是手工算的值（3 米 × ¥168 = 504）：单价落成 150 ⇒ 判红且报两侧读数。"""
+        order = self._order([{"productName": "遮光窗帘", "quantity": 3, "unitPrice": 150.0}])
+        issues = self._run(self._line_spec(expect_amounts={"遮光窗帘": 504.0}), order=order)
+        hit = next((i for i in issues if "金额合计" in i), "")
+        assert hit, issues
+        assert "450.0" in hit and "504.0" in hit, f"必须报两侧读数（实际 / 期望）: {hit}"
+
+    def test_row_count_and_amount_match_passes(self):
+        order = self._order([{"productName": "遮光窗帘", "quantity": 3, "unitPrice": 168.0}])
+        assert self._run(self._line_spec(expect_row_count=1,
+                                        expect_amounts={"遮光窗帘": 504.0}), order=order) == []
+
+    def test_amount_of_absent_product_fails_closed(self):
+        """期望商品不在明细里 ⇒ 金额无从核对 ⇒ 判失败而非跳过（与 order_phone 同口径）。"""
+        order = self._order([{"productName": "遮光窗帘", "quantity": 3, "unitPrice": 168.0}])
+        issues = self._run(self._line_spec(expect_amounts={"夏日清风窗帘": 474.0}), order=order)
+        assert any("夏日清风窗帘" in i and "金额" in i for i in issues), issues
+
+    def test_empty_row_count_and_amounts_fail_closed(self):
+        """空期望（`expect_row_count: 0` / `expect_amounts: {}`）不得空转通过。"""
+        issues = self._run(self._line_spec(expect_row_count=0, expect_amounts={}))
+        assert any("expect_row_count" in i for i in issues), issues
+        assert any("expect_amounts" in i for i in issues), issues
 
     def test_no_source_order_fails_closed(self):
         """没有可追溯的 order_create 结果 → 不得静默跳过（宁可红，不可假绿）。"""
