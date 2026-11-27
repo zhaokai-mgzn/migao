@@ -173,8 +173,9 @@ def test_masked_phone_in_validation_params_is_rewritten_to_the_real_number():
             "validate_input", args, {"name": "validate_input", "args": args},
             "sess-cu004", "customer", "", state, block_unresolvable=False))
 
-    assert out is None, "校验参数不是写工具，不该被拦死（只许就地改写真号）"
-    assert args["params"]["data"]["phone"] == NEW_PHONE
+    # 一次比两件事：没被拦死（`out = None`）+ 值真的换成了真号 —— 分开写会退化成
+    # 「只证明没拦」的弱形态（`.github/growth_gate.py::_WEAK_PATTERNS` 认 `assert x is None`）
+    assert (out, args["params"]["data"]["phone"]) == (None, NEW_PHONE)
 
 
 def test_validation_params_already_real_are_left_untouched():
@@ -186,8 +187,7 @@ def test_validation_params_already_real_are_left_untouched():
         "validate_input", args, {"name": "validate_input", "args": args},
         "", "customer", "", {"role": "admin"}, block_unresolvable=False))
 
-    assert out is None
-    assert args["params"]["data"]["phone"] == NEW_PHONE
+    assert (out, args["params"]["data"]["phone"]) == (None, NEW_PHONE)
 
 
 # ── D. 真工具 + 假 admin-api：写请求的 body 必须带新号（不是掩码、不是旧号）────
