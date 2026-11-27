@@ -12,7 +12,8 @@ export const viewport: Viewport = {
 export const metadata: Metadata = {
   // 站点级绝对地址的**唯一真值源**（issue #6665 第 4 条）：
   // 在此之前全仓 `metadataBase` 命中数为 0，而 `www.migaozn.com` 与裸域都能 200 ⇒ 两份内容。
-  // 归一动作在 next.config.mjs 的 `redirects()`（www → 裸域 301）。
+  // 归一动作在 next.config.mjs 的 `redirects()`（www → 裸域，Next 的 `permanent: true` ⇒ **308**）。
+  // 故公开面取**裸域**（issue #8968）：canonical / og:image 与 sitemap / robots 同源，都不吃这次跳转。
   // 域名来源 = `src/lib/site-domain.ts`（issue #8941）：写死 www.migaozn.com 会让生产页
   // 的 canonical / og:image 全部落在**测试域**（SEO 把生产页登记成另一个站）。
   metadataBase: new URL(siteOrigin()),
