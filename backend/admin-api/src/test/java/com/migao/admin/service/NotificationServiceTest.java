@@ -84,6 +84,30 @@ class NotificationServiceTest {
     }
 
     @Test
+    @DisplayName("createNotification(带 dedupeKey) — 原子写返回 0 行 = 已发：返回 null 且不抛异常（#9025）")
+    void createNotification_dedupeKeyAlreadySent_returnsNullWithoutException() {
+        // 原子写（ON CONFLICT DO NOTHING）的「已发」读数就是影响行数 0 —— 不是异常。
+        when(notificationMapper.insertIfDedupeAbsent(any(Notification.class))).thenReturn(0);
+
+        CreateNotificationRequest request = new CreateNotificationRequest();
+        request.setRecipientId("user-1");
+        request.setRecipientType("employee");
+        request.setTitle("测试通知");
+        request.setContent("通知内容");
+
+        NotificationDTO result = notificationService.createNotification(
+                1L, request, "scheduled_task:st-1");
+
+        verify(notificationMapper).insertIfDedupeAbsent(argThat((Notification n) ->
+                "scheduled_task:st-1".equals(n.getDedupeKey())
+                        // 自定义 @Insert 不走 MP 的 ASSIGN_UUID ⇒ 主键必须由服务层生成（32 位）
+                        && n.getId() != null && n.getId().length() == 32
+                        && "sent".equals(n.getStatus())));
+        verify(notificationMapper, never()).insert(any(Notification.class));
+        assertThat(result).isNull();
+    }
+
+    @Test
     @DisplayName("queryNotifications — 返回分页通知列表")
     void queryNotifications_returnsPageResponse() {
         Notification n = new Notification();
@@ -550,8 +574,7 @@ class NotificationServiceTest {
     void triggerByEvent_withEvent_persistsStructuredBizFields() {
         when(notificationRuleMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(inboundRule()));
         when(notificationTemplateMapper.selectById("tpl-sys-inbound-posted")).thenReturn(inboundTemplate());
-        when(notificationMapper.countByDedupeKey(anyLong(), anyString())).thenReturn(0L);
-        when(notificationMapper.insert(any(Notification.class))).thenReturn(1);
+        when(notificationMapper.insertIfDedupeAbsent(any(Notification.class))).thenReturn(1);
 
         java.time.OffsetDateTime occurredAt = java.time.OffsetDateTime.now().minusMinutes(5);
         notificationService.triggerByEvent(9L, "inbound_posted", inboundVars(), NotificationEvent.builder()
@@ -563,7 +586,7 @@ class NotificationServiceTest {
                 .occurredAt(occurredAt)
                 .build());
 
-        verify(notificationMapper).insert(argThat((Notification n) ->
+        verify(notificationMapper).insertIfDedupeAbsent(argThat((Notification n) ->
                 "入库单 RK-20261023-0001 已过账".equals(n.getTitle())
                         && "供应商 柯桥××布行，共 2 行、入库 60.5 米，金额 756.25 元；操作人 13800000000。".equals(n.getContent())
                         && "inbound_order".equals(n.getBizType())
@@ -580,7 +603,8 @@ class NotificationServiceTest {
     void triggerByEvent_duplicateEvent_skipsInsert() {
         when(notificationRuleMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(inboundRule()));
         when(notificationTemplateMapper.selectById("tpl-sys-inbound-posted")).thenReturn(inboundTemplate());
-        when(notificationMapper.countByDedupeKey(anyLong(), anyString())).thenReturn(1L);
+        // 原子写返回 0 行 = 该 (tenant_id, dedupe_key) 已存在 ⇒ 「已发」，不是失败（也不抛异常）。
+        when(notificationMapper.insertIfDedupeAbsent(any(Notification.class))).thenReturn(0);
 
         notificationService.triggerByEvent(9L, "inbound_posted", inboundVars(), NotificationEvent.builder()
                 .bizType("inbound_order")
@@ -599,7 +623,7 @@ class NotificationServiceTest {
 
         notificationService.triggerByEvent(9L, "inbound_posted", inboundVars());
 
-        verify(notificationMapper, never()).countByDedupeKey(anyLong(), anyString());
+        verify(notificationMapper, never()).insertIfDedupeAbsent(any(Notification.class));
         verify(notificationMapper).insert(argThat((Notification n) ->
                 n.getBizType() == null && n.getBizId() == null && n.getDedupeKey() == null
                         // severity/occurredAt 有默认值（不改前端读法：老行按 info 渲染）
