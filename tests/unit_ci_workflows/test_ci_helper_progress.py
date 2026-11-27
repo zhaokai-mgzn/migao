@@ -26,12 +26,20 @@
 | 4 | **红证（summary 面）**：变异体摘掉 `finalize()` 里的 `_append(summary, …)` ⇒ summary 不含文件名 ⇒ 证明判据 1 的 summary 断言有牙 | 同上 |
 | 5 | **结构面（防后人删掉）**：`pr-check.yml` 该腿的**全量档与 narrow 档都必须走包装器**；`scripts/ci_helper_progress.py` 必须**同时**具备「trap 收尾」（SIGTERM/SIGINT 装上且 `finalize` 会写 summary）与「step summary 写入」两个面 | 少任一面 ⇒ 具名红（不会静默退化成「只有进度行」） |
 | 6 | **对照（防假红）**：正常结束 ⇒ 退出码 0、summary 只有 `✅` 段、**零** `::error::` | 包装器把每次绿跑都标成中断 ⇒ 红 |
+| 7 | **嵌套 pytest 泄漏面（行为式）**：包在包装器里的外层再起一个 pytest，并按本仓惯例清 `PYTHONPATH`/`PYTEST_ADDOPTS`/`MIGAO_*` ⇒ 必须仍绿、不出现 `ImportError` | 插件通道被孙进程继承（首版 `PYTEST_PLUGINS`，job `140299508024`）⇒ 红 |
+| 8 | **红证（继承面，结构式）**：包装器导出集合**不许**含 `PYTEST_PLUGINS`、`PYTEST_ADDOPTS` 必须带 `-p`、真 helper 的过滤元组必须**同时**清两个变量 —— 三处任一被改坏都具名红（4 个变异各自具名） | 谓词恒真 / 看不见「读数面空壳」⇒ 红 |
 
 ## 边界（照实登记）
 
 - 「cancel 之后 `$GITHUB_STEP_SUMMARY` / annotation 是否仍可读」**本机无法验证**（要真 cancel 一次才知道）
   ⇒ 本判据只证明**三个面确实被写了**，**不**证明它们在 cancel 后还在；这一点写在 PR body 的「边界」节。
 - 判据 1/2 用**极小预算 + 短挂住**复现，**不**等 CI 的 20 分钟；也**不**改任何 `timeout-minutes`。
+- ⚠️ **红证形态变过一次（照实登记，不是放宽）**：判据 8 原本是**行为式**重演（把通道改回 `PYTEST_PLUGINS`
+  再跑嵌套 pytest，期待 `No module named 'ci_helper_progress'`）。修泄漏时给直接子进程加了 `PYTHONPATH`，
+  且判据本身会被 CI 的包装器包着跑 ⇒ 变异体那行所在的条件分支因继承来的 `PYTEST_ADDOPTS` 为真而不执行
+  （本地裸跑会红、CI 形状下不红 = 环境相关）⇒ 「行为式重演已不可复现（前提被修法消除）」。
+  ⇒ 改成**继承面**的结构判据（断言「导出集合」与「清理面覆盖」两处），仍能单独变红。
+  判据强度不变：要防的那件事（孙进程被要求 import 一个它 import 不到的插件）仍然是同一个。
 """
 
 from __future__ import annotations
@@ -55,6 +63,11 @@ CI_REL = ".github/workflows/pr-check.yml"
 JOB_ID = "ci-workflow-tests"
 STEP_NAME = "Run ci workflow helper tests"
 HANG_FILE = "test_zz_hangs_9114.py"
+
+#: 嵌套 pytest 的**真** helper（它的 env 过滤元组长什么样，是本判据的现取对象）。
+NESTED_HELPER_REL = "tests/unit_ci_workflows/test_generated_artifacts_clean_checkout.py"
+#: helper 必须**同时**清掉的两个变量（少一个 = 泄漏面重新打开）。
+FILTER_TUPLE = '"PYTHONPATH", "PYTEST_ADDOPTS"'
 
 #: 假用例：一条挂住（远超预算）的用例 —— 判据不依赖真实 CI 时长。
 HANG_SOURCE = "import time\n\n\ndef test_hangs_9114():\n    time.sleep(30)\n"
@@ -329,7 +342,7 @@ def test_success_path_is_green_and_emits_no_error_annotation(tmp_path: Path) -> 
 
 
 # ══════════════════════════════════════════════════════════════════════════════════
-# 判据 8 / 9：环境变量**不许泄漏进嵌套 pytest**（本包第一轮真红：job 140299508024）
+# 判据 7 / 8：环境变量**不许泄漏进嵌套 pytest**（本包第一轮真红：job 140299508024）
 # ══════════════════════════════════════════════════════════════════════════════════
 
 def test_nested_pytest_under_the_wrapper_does_not_inherit_the_plugin(tmp_path: Path) -> None:
@@ -358,20 +371,66 @@ def test_nested_pytest_under_the_wrapper_does_not_inherit_the_plugin(tmp_path: P
     assert "ImportError" not in proc.stdout, f"嵌套 pytest 里出现 ImportError：{proc.stdout[-1200:]}"
 
 
-def test_red_proof_reinheriting_the_plugin_env_turns_the_nested_case_red(tmp_path: Path) -> None:
-    """红证：把通道改回 `PYTEST_PLUGINS`（会被孙进程继承的那条）⇒ 同一个嵌套场景当场判红。"""
-    mutant = _mutant(tmp_path, 'env["PYTEST_ADDOPTS"] = (addopts + " " + plugin_arg).strip()',
-                     'env["PYTEST_PLUGINS"] = PLUGIN_MODULE  # 变异：改回会被孙进程继承的通道',
-                     note="改回 PYTEST_PLUGINS 通道")
-    case_file = _nested_case(tmp_path)
-    summary = tmp_path / "summary-nested-mutant.md"
-    summary.write_text("", encoding="utf-8")
-    proc = subprocess.run(_wrapper_argv(mutant, summary, case_file, parallel=False),
-                          capture_output=True, text=True, timeout=600, cwd=str(tmp_path))
-    assert proc.returncode != 0, (
-        "把通道改回 `PYTEST_PLUGINS` 之后嵌套 pytest 竟然还是绿的 ⇒ 判据对「通道是否会被继承」不敏感"
-        f"（判据 8 无牙）。\n输出尾部：{(proc.stdout or '')[-1200:]}"
+def inheritance_face_problems(child_env: dict, helper_src: str,
+                              plugin_module: str = "ci_helper_progress") -> list:
+    """**继承面**的纯谓词（红证可在内存里构造，不必改真文件）。
+
+    三件事缺一条就是「归因面又会被 cancel 吃掉」或「泄漏面又打开」：
+    ① 包装器**不许**导出 `PYTEST_PLUGINS`（它会被孙进程继承 ⇒ issue #9114 第一轮真红）；
+    ② `PYTEST_ADDOPTS` 里必须有插件加载参数（否则进度读数面根本没接上）；
+    ③ 嵌套 helper 的 env 过滤必须**同时**清 `PYTHONPATH` 与 `PYTEST_ADDOPTS`。
+    """
+    bad: list = []
+    if "PYTEST_PLUGINS" in child_env:
+        bad.append("包装器导出了 `PYTEST_PLUGINS` —— 该变量会被**孙进程**继承（issue #9114 第一轮真红，"
+                   "job 140299508024 的 `ImportError: Error importing plugin`）")
+    if f"-p {plugin_module}" not in (child_env.get("PYTEST_ADDOPTS") or ""):
+        bad.append(f"`PYTEST_ADDOPTS` 里没有 `-p {plugin_module}` ⇒ 进度读数面没接上（包装器静默变成空壳）")
+    if FILTER_TUPLE not in helper_src:
+        bad.append(f"`{NESTED_HELPER_REL}` 的嵌套 env 过滤不再同时清 `PYTHONPATH` + `PYTEST_ADDOPTS` "
+                   "⇒ 泄漏面重新打开（只清一半等于没清）")
+    return bad
+
+
+def test_red_proof_inheritance_face_is_structural(tmp_path: Path) -> None:
+    """**红证（结构式）**：继承面三处任一被改坏 ⇒ 覆盖谓词具名红。
+
+    ⚠️ 形态变更，照实登记（**不是放宽**）：本判据原本是**行为式**重演 —— 把通道改回 `PYTEST_PLUGINS`
+    再跑嵌套 pytest，期待 `No module named 'ci_helper_progress'`。**该前提已被修法本身消除**：
+    修泄漏时给直接子进程加了 `PYTHONPATH`，而这里又被包在 CI 的包装器里跑 ⇒ 变异体那行的
+    条件分支因继承来的 `PYTEST_ADDOPTS` 为真而不执行（本地裸跑与 CI 形状下行为不一致）⇒
+    「行为式重演不可复现」。⇒ 改成**继承面**的结构判据：断言的是「导出集合里没有会被继承的通道」
+    与「清理面同时覆盖两个变量」，仍能单独变红（下面 4 个变异各自具名红）。
+    """
+    module = _load_wrapper_module()
+    real_env = module._child_env(str(tmp_path / "state.log"))
+    helper_src = (REPO / NESTED_HELPER_REL).read_text(encoding="utf-8")
+    real_problems = inheritance_face_problems(real_env, helper_src)
+    assert real_problems == [], (
+        "现取的继承面已经是坏的（这正是本判据要抓的形态，不是空断言）：" + "；".join(real_problems)
     )
-    assert "ImportError" in proc.stdout, (
-        f"变异体的红因不是 ImportError（归因要指向病因）：{(proc.stdout or '')[-1200:]}"
+
+    # 红证 ①：包装器导出 `PYTEST_PLUGINS`（= 第一轮真红的形态）
+    leaked = dict(real_env, PYTEST_PLUGINS=module.PLUGIN_MODULE)
+    problems = inheritance_face_problems(leaked, helper_src)
+    assert any("PYTEST_PLUGINS" in item for item in problems), (
+        f"导出 `PYTEST_PLUGINS` 竟然没被判红 ⇒ 判据对「泄漏通道」不敏感：{problems}"
     )
+
+    # 红证 ②：`PYTEST_ADDOPTS` 退出通道（插件不再被加载）
+    silent = {key: value for key, value in real_env.items() if key != "PYTEST_ADDOPTS"}
+    problems = inheritance_face_problems(silent, helper_src)
+    assert any("PYTEST_ADDOPTS" in item and "进度读数面" in item for item in problems), (
+        f"摘掉 `PYTEST_ADDOPTS` 竟然没被判红 ⇒ 谓词看不见「读数面空壳」：{problems}"
+    )
+
+    # 红证 ③④：真 helper 的过滤元组少一项（各自具名红；注入先自证落下）
+    for keep in ('"PYTHONPATH"', '"PYTEST_ADDOPTS"'):
+        broken = inject(helper_src, FILTER_TUPLE, keep, where=NESTED_HELPER_REL)
+        assert broken != helper_src and FILTER_TUPLE not in broken, (
+            f"变异注入没生效（过滤元组只留 {keep}）⇒ 后续「没判红」不可采信"
+        )
+        problems = inheritance_face_problems(real_env, broken)
+        assert any("过滤" in item for item in problems), (
+            f"helper 的过滤只剩 {keep} 竟然没被判红 ⇒ 泄漏面会静默重开：{problems}"
+        )
