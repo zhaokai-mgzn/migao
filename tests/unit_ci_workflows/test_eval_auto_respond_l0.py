@@ -135,9 +135,11 @@ def test_or018_form_card_is_answerable_after_payload_declared():
         fallback="我是张三，手机13800138000，地址杭州市西湖区文三路1号",
         form_values=dict(getattr(case, "auto_fill", None) or {}))
     inc = lr.parse_harness_incompatible(got)
-    assert inc is None, f"OR-018 的 form 卡仍然答不上（形状不兼容签名）：{got!r} / {inc!r}"
+    # 值级断言（唯一判据）：形状不兼容时 `got` 会退回 fallback 文本 ⇒ 下面逐字比对必红；
+    # `inc` 只进报错消息（不单列 `is None` 那种无判别力的弱断言，见弱断言守卫）。
     assert got == ('__FORM__|{"customer_name": "张三", "customer_phone": "13800138000", '
-                   '"customer_address": "浙江省杭州市西湖区文三路1号"}'), got
+                   '"customer_address": "浙江省杭州市西湖区文三路1号"}'), (
+        f"OR-018 的 form 卡仍然答不上（形状不兼容签名 inc={inc!r}）：{got!r}")
 
 
 def test_or018_payload_removal_reproduces_the_exact_signature():
