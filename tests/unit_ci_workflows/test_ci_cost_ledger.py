@@ -1,4 +1,4 @@
-# case_ids: MC-012
+# case_ids: MC-012, MC-371
 # （沿用 tests/unit_ci_workflows/** 的既有惯例：CI/流程结构类 L0 不变式统一挂 MC-012。）
 r"""CI 成本台账的常驻判据（issue #3507 ②）。
 
@@ -22,6 +22,7 @@ r"""CI 成本台账的常驻判据（issue #3507 ②）。
 | 4 | **预算 == ceil(实测 p90)**（文件不变式） | 手改任一 `budget_seconds`（或填一个人手凑的整数）⇒ 红；无读数的腿必须 `null` + `budget_status` 逐字等于留白口径 |
 | 5 | **超预算会红 + 归因口径在案** | 见 `TestBudgetBreachRedProof`：预算 100s / 新实测 p90 150s ⇒ **必须命中**；上取整 == 预算 ⇒ 必须不命中（边界）；读数下降 ⇒ 不命中。政策文本必须同时含「新增开销」与「`timeout-minutes`」（把"先查新增开销、不许抬 timeout"钉进数据） |
 | 6 | **策略项已裁定就要带裁定人与重开条件** | 非「待裁定」⇒ 必须有 `decided_by` 与 `reopen_condition`；频率上限那条的裁定内容还必须写出依据（两者都只有 `workflow_dispatch`） |
+| 8 | **p90 的判据强度由样本量决定**（issue #9120） | 同一分布下 n=8 的 p90 = **次大值**（277，而 max 280）；n=20 回落 266 ⇒ 两者差 ≥ 10s；默认 `--runs-per-workflow` < 20 ⇒ 红。见 `TestP90StrengthDependsOnSampleSize` |
 | 7 | **③ 外部阻塞必须登记在案** | `external_blockers` 里 GHCR 那条必须带 `owner_action`（含**可复制的命令**）/ `restart_condition` / `carrier`，且 `grant_verified` 是布尔（未验证就写 `false`，**不许含混过去**） |
 
 ## 边界（照实登记，别把"登记了"读成"治住了"）
@@ -574,3 +575,110 @@ class TestLowSampleKeepsFrozenBudget:
         leg = {l["id"]: l for l in json.loads(out.read_text(encoding="utf-8"))["legs"]}["alpha"]
         assert leg["budget_seconds"] == 42, "n<3 时预算被清成 null —— 值班判据被丢掉（比预算过期更糟）"
         assert leg["budget_basis"] == "frozen-before", "保留时 basis 也必须原样（否则读不出「这是旧读数」）"
+
+
+# ──────────────── 判据 9：p90 的判据强度由**样本量**决定（issue #9120 的机制根因）
+
+class TestP90StrengthDependsOnSampleSize:
+    """`_stats()` 的 p90 = `ordered[int(0.9 * (n - 1))]` ⇒ **n 越小，p90 越贴近 `max`**。
+
+    ## 病（2026-11-27 现取，`python3 scripts/ci_cost_ledger.py --measure`）
+
+    13 条腿被判超预算，而台账读数逐条显示 `median` / `max` 都没长 —— 长的是 p90。
+    根因是**样本量**，不是负载：旧默认 `--runs-per-workflow 8` 让 `int(0.9 * 7) = 6` ⇒
+    p90 取到的是**第 7 小 = 次大值**（"次大值"不是分位数，它只由**最慢的两条**决定）。
+    台账实证 `ai-agent-tests.yml::ai-agent-service-test`：`n=8 / median 265.5 / p90 277 / max 280`
+    —— p90 距 max 只有 **3s（1.1%）**，于是窗口里**两条慢跑（2/8 = 25%）**就把预算钉在 277s，
+    此后任何一次抖动（现取 p90 282s）都判超预算，而 `--measure` 整体拒写 ⇒ 谁都无法合法登记成本。
+
+    ## 判据
+
+    ① 同一分布（`n=8` 的**真实**读数 + 12 条同样快的样本 = 20 条）下，n=8 的 p90 **必须**等于次大值、
+       距 max ≤ 3s；n=20 的 p90 **必须**回落到 265–267；两者差 **≥ 10s**。
+    ② 默认样本量 **≥ 20**（argparse 真实默认值 + 常量 + 台账记录值三处同锁）——
+       **防回退**：把默认改回 8，② 立刻具名红，① 也随 8 的读数一起红（红证见 PR body）。
+
+    ## 为什么样本构造是「两条慢跑」而不是「一条 282」
+
+    `int(0.9 * (n-1))` 在 n=8 时是**次大值** ⇒ 只有**一条**离群值时它取到的是第 7 小（= 第 6 条的正常值），
+    p90 反而不动；真实现场恰恰是**两条**（277 / 280 都在尾部）。⇒ 本判据用**台账里的真实读数**作夹具，
+    不另编一组"更好看"的合成数（否则会证明一个与现场不符的机制）。
+    """
+
+    #: 台账 `ai-agent-tests.yml::ai-agent-service-test` 的**真实** n=8 读数：
+    #: median = (265 + 266) / 2 = 265.5 / p90 = ordered[6] = 277 / max = 280（逐字可复算）
+    LEDGER_N8 = [265.0, 265.0, 265.0, 265.0, 266.0, 266.0, 277.0, 280.0]
+    #: 同一分布 + 12 条同样快的样本 ⇒ n=20（尾部仍是那两条慢跑，占 2/20 = 10%）
+    WIDE_N20 = [265.0] * 16 + [266.0, 266.0, 277.0, 280.0]
+
+    def test_eight_samples_make_p90_the_second_largest(self) -> None:
+        """n=8 ⇒ p90 **就是次大值**（`ordered[6]`），距 `max` 只有 3s。"""
+        mod = _script()
+        stats = mod._stats(self.LEDGER_N8)
+        ordered = sorted(self.LEDGER_N8)
+        assert stats == {"n": 8, "median_seconds": 265.5, "p90_seconds": 277.0, "max_seconds": 280.0}, (
+            f"台账那条腿的 n=8 读数复算不出（现取 {stats!r}）⇒ 本判据的夹具与现场脱节，"
+            "证明的将不是真实现场"
+        )
+        assert stats["p90_seconds"] == ordered[-2], (
+            f"n=8 时 p90 应取 `ordered[int(0.9*(n-1))] = ordered[6]` = 次大值 {ordered[-2]}，"
+            f"实得 {stats['p90_seconds']}"
+        )
+        assert stats["max_seconds"] - stats["p90_seconds"] <= 3.0, (
+            "n=8 的 p90 必须紧贴 max（实测差 3s）—— 若这条不成立，说明机制描述与实现不符"
+        )
+
+    def test_twenty_samples_pull_p90_back_into_the_distribution(self) -> None:
+        """同一分布下 n=20 ⇒ p90 回落到 266（≈median），与 n=8 的差 **≥ 10s**。"""
+        mod = _script()
+        narrow, wide = mod._stats(self.LEDGER_N8), mod._stats(self.WIDE_N20)
+        assert wide["n"] == 20 and wide["max_seconds"] == 280.0 and wide["median_seconds"] == 265.0, (
+            f"20 条样本的读数形态漂移：{wide!r}（分布应与 n=8 那条腿一致，只是窗口更宽）"
+        )
+        assert 265.0 <= wide["p90_seconds"] <= 267.0, (
+            f"n=20 时 p90 应落回 265–267（实得 {wide['p90_seconds']}）—— 落到 277 说明"
+            "「样本量决定判据强度」这条在实现里不成立"
+        )
+        gap = narrow["p90_seconds"] - wide["p90_seconds"]
+        assert gap >= 10.0, (
+            f"n=8 与 n=20 的 p90 只差 {gap}s（< 10s）⇒ 抬样本量换不来判据强度，"
+            f"issue #9120 的修法无效：n=8 {narrow['p90_seconds']}s / n=20 {wide['p90_seconds']}s"
+        )
+
+    def test_default_sample_size_is_at_least_20(self) -> None:
+        """**防回退**：argparse 真实默认值 / 模块常量 / 台账记录值 三处都必须 ≥ 20。
+
+        只锁常量不锁 argparse ⇒ 「常量改了、`add_argument` 还写着 8」会静默通过（判据空转）；
+        只锁 argparse 不锁台账 ⇒ 台账可能被一次 `--runs-per-workflow 8` 重写而没人发现。
+        """
+        mod = _script()
+        assert mod.DEFAULT_RUNS_PER_WORKFLOW >= 20, (
+            f"`DEFAULT_RUNS_PER_WORKFLOW` = {mod.DEFAULT_RUNS_PER_WORKFLOW} < 20 ⇒ "
+            "p90 会退化成「次大值」（n≈8 时单次抖动即判超预算，issue #9120）"
+        )
+        parsed = mod.build_parser().parse_args([])
+        assert parsed.runs_per_workflow >= 20, (
+            f"`--runs-per-workflow` 的 argparse 默认值 = {parsed.runs_per_workflow} < 20 ⇒ "
+            "默认档仍是弱判据（`--help` 里写的 20 与真实默认值不一致）"
+        )
+        recorded = (_ledger().get("measured") or {}).get("runs_per_workflow")
+        assert isinstance(recorded, int) and recorded >= 20, (
+            f"台账 `measured.runs_per_workflow` = {recorded!r} < 20 ⇒ 现有读数是弱判据下取的，"
+            "复算：python3 scripts/ci_cost_ledger.py --measure"
+        )
+        assert "次大" in mod.build_parser().format_help(), (
+            "`--help` 必须写清「n≈8 时 p90 ≈ 次大值」这条机制缺陷（否则下一个人会为了跑得快又调回 8）"
+        )
+        assert "为什么默认样本量是 20" in (mod.__doc__ or ""), (
+            "脚本文件头必须写清默认样本量的由来（机制缺陷 + 实证读数），否则默认值没有可评审的依据"
+        )
+
+    def test_without_measure_the_cli_prints_help_and_exits_two(self, monkeypatch, capsys) -> None:
+        """不带 `--measure` ⇒ 打印帮助并退出 2（`build_parser()` 抽出后 `main()` 仍必须拿到 parser）。"""
+        mod = _script()
+        monkeypatch.setattr(sys, "argv", ["ci_cost_ledger.py"])
+        assert mod.main() == 2, "不带 --measure 时应打印帮助并退出 2"
+        printed = capsys.readouterr().out
+        assert "--runs-per-workflow" in printed and "--allow-partial" in printed, (
+            "帮助里必须列出 --runs-per-workflow 与 --allow-partial（否则读者不知道有这两个出口）"
+        )

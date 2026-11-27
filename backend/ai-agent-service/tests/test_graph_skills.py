@@ -3421,6 +3421,77 @@ class TestMaskedPhoneWriteGuard:
         assert code == "write_blocked_masked_phone"
         assert self.KNOWN in msg
 
+    # ── 纠正提示必须指向「顾客这次给的号」，不能指向读工具返回的旧号（issue #9224 的 CU-004）──
+    #
+    # 现场（CU-004）：顾客给 `13900001111`，模型交回旧号 `13800008000` 的掩码 `138****8000`
+    # ⇒ 旧实现回放「顾客的真实号码是 **13800008000**」⇒ 模型要么再被拦（建单永远失败），
+    # 要么把**旧号**写进库（顾客要改号却静默写回旧号）。
+    # 拦截**照旧**（掩码值绝不落库），只改「纠正提示指向哪个号」。
+
+    OLD_NUMBER = "13800008000"
+    NEW_NUMBER = "13900001111"
+
+    def test_old_number_mask_hint_points_to_customer_number_only(self):
+        """命中旧号的掩码 + 顾客本轮给了新号 ⇒ message 含新号、**不含旧号**（CU-004 的红证）。
+
+        改前 message 里有「顾客的真实号码是 **13800008000**」⇒ 此条红。
+        """
+        code, msg = self._blocked_code(self._run(
+            {"phone": "138****8000"}, last_user_msg=f"手机号改成 {self.NEW_NUMBER}",
+            known=(self.OLD_NUMBER,)))
+        assert code == "write_blocked_masked_phone", "顾客没说要用旧号 ⇒ 不得放宽拦截（掩码值不许落库）"
+        assert self.NEW_NUMBER in msg, f"提示必须指向顾客这次给的号: {msg!r}"
+        assert self.OLD_NUMBER not in msg, f"提示不许出现旧号（模型会照着它重试/落库）: {msg!r}"
+
+    def test_filled_mask_of_old_number_hint_points_to_customer_number(self):
+        """「把 `****` 填成 0」的旧号形态同样只指向顾客给的号（掩码变体分支，非 `*` 分支）。"""
+        old = "13800138000"
+        code, msg = self._blocked_code(self._run(
+            {"phone": "13800008000"}, last_user_msg=f"手机号改成 {self.NEW_NUMBER}",
+            known=(old,)))
+        assert code == "write_blocked_masked_phone"
+        assert self.NEW_NUMBER in msg, f"提示必须指向顾客这次给的号: {msg!r}"
+        assert old not in msg, f"旧号回放会引导模型写错号: {msg!r}"
+
+    def test_multiple_customer_numbers_hint_lists_all_without_old_number(self):
+        """顾客本轮给了多个号 ⇒ **全部列出**（让模型用「刚说的那个」），仍不回放旧号。"""
+        other = "13700002222"
+        code, msg = self._blocked_code(self._run(
+            {"phone": "138****8000"},
+            last_user_msg=f"手机号 {self.NEW_NUMBER} 或 {other}", known=(self.OLD_NUMBER,)))
+        assert code == "write_blocked_masked_phone"
+        assert self.NEW_NUMBER in msg and other in msg, f"多个候选都要列出: {msg!r}"
+        assert self.OLD_NUMBER not in msg, f"旧号不在候选里，不该出现: {msg!r}"
+
+    def test_hint_still_replays_known_number_when_customer_said_nothing(self):
+        """顾客本轮没给号 ⇒ 维持现状：回放本会话真号（防本次改动误删回放路径）。"""
+        old = "13800138000"
+        code, msg = self._blocked_code(self._run({"phone": "13800008000"}, known=(old,)))
+        assert code == "write_blocked_masked_phone"
+        assert old in msg, f"无顾客候选时必须回放本会话真号: {msg!r}"
+
+    def test_rewrite_still_passes_when_customer_gave_the_matched_number(self):
+        """掩码唯一匹配「顾客本轮给过的号」⇒ 仍走**改写放行**（防本次改动把放行改回拦截）。"""
+        args = {"phone": "138xxx8000"}
+        out = self._run(args, last_user_msg="手机号 13800138000", known=("13800138000",))
+        assert args["phone"] == "13800138000", f"必须改写成顾客给的真号: {args!r}"
+        assert not out, f"改写后必须放行（不拦）: {out!r}"
+
+    def test_block_result_hint_text_has_single_source(self):
+        """「回放哪个号」的文案只许在 `_masked_phone_block_result` 里拼**一份**（防后人再拼第二份）。"""
+        from pathlib import Path
+
+        import app.graph.skills.injection_blocks as injection_blocks
+
+        src = Path(injection_blocks.__file__).read_text(encoding="utf-8")
+        marker = "顾客的真实号码是"
+        assert src.count(marker) == 1, f"提示文案必须单一真值源，现取 {src.count(marker)} 处"
+        def_start = src.index("def _masked_phone_block_result(")
+        next_def = src.find("\ndef ", def_start + 1)
+        hit = src.index(marker)
+        assert def_start < hit < (next_def if next_def != -1 else len(src)), (
+            "提示文案必须落在 `_masked_phone_block_result` 函数体内（不许在调用处另拼一份）")
+
     def test_ambiguous_mask_keeps_blocking(self):
         """两个真号同前 3 后 4 ⇒ 无法判定该写哪个 ⇒ **不许猜**，仍拦。"""
         import asyncio

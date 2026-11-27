@@ -583,6 +583,24 @@ def test_root_serves_no_spa_and_is_not_hijacked():
     )
 
 
+def test_verify_script_root_probe_expects_404():
+    """发布腿的根面探针必须期望 **404**（issue #9249）：根面已无 SPA 回落。
+
+    历史：本步原先期望 `200`（原文「根是 C 端 SPA 的落地面」）—— C 端随 #9233 下线、
+    根面按 #9249 收成 `=404` 之后，它**每天**都把发布腿判红（实测 run 45919267319：
+    `❌ GET /__c_end_spa_probe__ → HTTP 404（期望 200）`）⇒ 发布腿的绿灯不再可信。
+    红证：把脚本里的期望改回 200 / 删掉 404 分支 ⇒ 本条红。
+    """
+    script = (REPO_ROOT / "deploy" / "scripts" / "bmini-h5-verify-served.sh").read_text(encoding="utf-8")
+    assert "C 端 SPA 的落地面" not in script, (
+        "根面探针的期望值还停在「C 端 SPA 落地面」口径 —— C 端已于 2026-11-26 退役（#9233/#9249）"
+    )
+    assert 'if [ "$CODE" != "404" ]; then' in script, (
+        "根面探针必须**显式期望 404**（缺失就是缺失）：期望 200 会让「兜底被写回去」也判绿"
+    )
+    assert 'ROOT_PROBE="/__c_end_spa_probe__"' in script, "探针路径名丢了 ⇒ 判据锚点漂移"
+
+
 def test_worker_h5_landing_unchanged_by_the_new_location():
     """零回归（结构层）：`/w/` 仍靠 `location /` 的目录索引落地，`/s/` 仍走 admin-api 代理。"""
     files = _static_fs()
@@ -903,7 +921,11 @@ class _NginxishServer:
             return None  # admin-api 的 404（未知短码按设计不存在；形态合法但查不到，同 §11.6）
         if self.mode == "root_hijacked":
             return bmini
-        return c_end
+        # 根面：`/` 由 `index index.html` 兜住那页退役占位；**其余根级路径 = 404**
+        # （issue #9249：`try_files $uri $uri/ =404` —— 不再回落 SPA，缺失就是缺失）
+        if path in ("/", "/index.html"):
+            return c_end
+        return None
 
     class _Handler(http.server.BaseHTTPRequestHandler):
         server_version = "NginxishTest/1.0"

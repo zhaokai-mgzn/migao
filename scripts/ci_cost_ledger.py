@@ -5,7 +5,7 @@
 
 它**只测量与搬运读数**，不发明策略数字：
 
-- **测量**：按 workflow 采样最近 `--runs-per-workflow`（默认 8）次 **completed `pull_request`**
+- **测量**：按 workflow 采样最近 `--runs-per-workflow`（默认 20）次 **completed `pull_request`**
   run 的每个 job，算 `n` / `median` / `p90` / `max`（秒）——来源
   `gh api repos/<owner>/<repo>/actions/runs?event=pull_request&status=completed` +
   `…/runs/<id>/jobs`（**逐次现取**，不引二手数字）。
@@ -18,6 +18,23 @@
   **不得**靠抬 `timeout-minutes` 交差（与 #5365 同源口径）；
   确有必要抬 ⇒ 显式 `--accept-raise`（重冻结为现取 p90，改动在 diff 里可见）。
 - **required 口径**：取 `required_status_snapshot.json`（分支保护快照），**不猜**。
+
+## 为什么默认样本量是 20，而不是 8（issue #9120）
+
+`_stats()` 的 p90 取 `ordered[int(0.9 * (n - 1))]`（0 基）。这个下标在 **n 小**时**不是分位数**：
+
+| n | 下标 `int(0.9*(n-1))` | 实际取到的是 | 含义 |
+|---|---|---|---|
+| 8 | `6` | **第 7 小 = 次大值** | 一次抖动就能把它顶到接近 `max` |
+| 20 | `17` | 第 18 小 | 同样的分布下 p90 落回中位附近 |
+
+**实证（台账读数，逐字可复算）**：`ai-agent-tests.yml::ai-agent-service-test` 的
+`measured = n=8 / median 265.5 / p90 277 / max 280` —— p90 只比 max 低 **3s（1.1%）**，
+它读起来像"分位数"、实际是"次大值"；于是同一批样本里**两次慢跑**就把预算钉到上限附近，
+之后单次负载抖动（现取 p90 282s，+1.8%）就让它**永久判超预算**、而 `--measure` 整体拒绝写盘
+（⇒ 任何腿都无法合法登记成本）。**判据强度由样本量决定** ⇒ 默认值必须抬到 p90 真能表达分布的档位；
+判据 = `tests/unit_ci_workflows/test_ci_cost_ledger.py::TestP90StrengthDependsOnSampleSize`（默认值 < 20 即红）。
+`_sample_legs()` 的 3 页 ×100 run 上限装得下 20，无需改动。
 
     python3 scripts/ci_cost_ledger.py --measure                  # 现取 → 重写台账（超预算则退出 1 且不写）
     python3 scripts/ci_cost_ledger.py --measure --accept-raise   # 显式同意把超预算的腿重冻结为现取 p90
@@ -49,6 +66,11 @@ EVAL_WORKFLOWS = ("agent-eval.yml", "agent-eval-adversarial.yml", "xiaobu-accept
 #: 预算口径的两个取值（owner 裁定 2026-09-26；判据按**逐字相等**核对，改动必须两边同改）。
 BUDGET_STATUS_MEASURED = "已裁定：预算 = 实测 p90（向上取整）"
 BUDGET_STATUS_NO_READING = "无读数：不编预算（显式留白）"
+
+#: 每个 workflow 采样的**已完成 PR run** 条数（默认值）。
+#: **别往下调**：`_stats()` 的 p90 下标是 `int(0.9*(n-1))` ⇒ n=8 时取到的是**第 7 小（次大值）**，
+#: 单次负载抖动就等于「永久超预算」（见文件头「为什么默认样本量是 20」，判据锁它 ≥ 20）。
+DEFAULT_RUNS_PER_WORKFLOW = 20
 
 
 def gh_json(args: list[str]):
@@ -303,15 +325,23 @@ ATTRIBUTION_POLICY = {
 }
 
 
-def main() -> int:
+def build_parser() -> argparse.ArgumentParser:
+    """命令行（抽成函数是为了让判据能**直接读 argparse 的真实默认值**，不必猜源码文本）。"""
     parser = argparse.ArgumentParser()
     parser.add_argument("--measure", action="store_true", help="现取 gh API 并重写台账")
-    parser.add_argument("--runs-per-workflow", type=int, default=8)
+    parser.add_argument("--runs-per-workflow", type=int, default=DEFAULT_RUNS_PER_WORKFLOW,
+                        help=("每个 workflow 采样最近 N 次已完成 PR run（默认 %(default)s）。"
+                              "⚠️ 别往下调：n≈8 时 p90 退化成「次大值」（单次抖动即判超预算，issue #9120）"))
     parser.add_argument("--accept-raise", action="store_true",
                         help="超预算时**显式**同意把预算重冻结为现取 p90（默认拒绝并退出 1）")
     parser.add_argument("--allow-partial", action="store_true",
                         help=("超预算时**只刷新合规腿**：超预算的腿在台账里**原封不动**（预算/实测都不动），"
                               "仍然非零退出（红不许消失）。用途：让新腿能合法登记，而超预算腿继续红（issue #9120）"))
+    return parser
+
+
+def main() -> int:
+    parser = build_parser()
     args = parser.parse_args()
     if not args.measure:
         parser.print_help()
@@ -335,8 +365,13 @@ def main() -> int:
     if breaches and not args.accept_raise and not args.allow_partial:
         print("❌ 超预算（预算 = 台账里已冻结的实测 p90 上取整）—— 本命令**不写台账**：", file=sys.stderr)
         for row in breaches:
+            # 超预算行**必须自带 median / max**：只有它们能把「抖动（只有 p90 长）」与
+            # 「真实增长（median 与 max 一起长）」分开（issue #9120 的逐腿裁决口径）。
+            stats = fresh.get(str(row["id"])) or {}
             print(f"   · {row['id']}：预算 {row['budget_seconds']}s / 现取 p90 {row['new_p90_seconds']}s"
-                  f"（上取整 {row['new_p90_ceil']}s）⇒ 超 {row['new_p90_ceil'] - row['budget_seconds']}s",
+                  f"（上取整 {row['new_p90_ceil']}s）⇒ 超 {row['new_p90_ceil'] - row['budget_seconds']}s"
+                  f" ｜ 现取 n={stats.get('n')} median={stats.get('median_seconds')}s"
+                  f" max={stats.get('max_seconds')}s",
                   file=sys.stderr)
         print(f"\n{ATTRIBUTION_POLICY['what_to_check_first']}\n{ATTRIBUTION_POLICY['how_to_raise']}",
               file=sys.stderr)
