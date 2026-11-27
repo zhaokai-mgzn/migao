@@ -1045,7 +1045,12 @@ def problems_change_tools_reachable(w: World) -> list[str]:
 
 #: 判据 12 的**伪工具名**：`expectations` 里用来表达「该轮不要工具调用」等的形态词，
 #: 不是真工具（真值源 = `tests/agent_eval/local_runner.py::check_expectation` 的语义）。
-PSEUDO_EXPECTATIONS: frozenset = frozenset({"direct_reply"})
+PSEUDO_EXPECTATIONS: frozenset = frozenset({
+    "direct_reply",
+    # `reply`（issue #9280）：该轮**只要有 final_text**（工具调用不限）—— 与 `direct_reply`
+    # 同族，都不是工具名。CH-009 改判后用它（B 端 order 域只读，模型选哪个只读工具属实现细节）。
+    "reply",
+})
 
 
 def _expectation_branches(exp):

@@ -577,7 +577,36 @@ cases:
       #   属另一包射程；本包只按**本用例观测到的真行为**补等价分支。
       # 🔴 2026-11-04（issue #8618）：`customer_manage` 接回写 action 后成为「部分写」工具，
       # bare 工具名按 taxonomy **保守判写** ⇒ 本分支显式写清只读 action，判定面才与事实一致。
-      - "direct_reply or interact or customer_manage(action=list)"
+      #
+      # ── 2026-11-27 改判（issue #9280，run 46002922920 逐字归因）：枚举工具名的路子到头了 ──
+      # 读数（artifacts `post-deploy-eval-mibao`，sha 16cdb5bcc，`rounds=1`）：
+      #   `tools=['order_query']` · `callargs=order_query{action=list, keyword=138****8000, page_size=10}`
+      #   · `data=order_query(orders=5 total=5 …)`
+      #   · `ai=📋 收到张三的下单信息了，但**建单不在我的能力内**——黄金策在订单域现在只做查询与分析，
+      #     下单得请您在后台操作：…`
+      # 三件事逐条核实（**这次不是能力误宣，也不是拿掩码号查库**）：
+      #   ① 「建单不在我的能力内」是**真话** —— B 端 order skill 按用户裁定（2026-09-23，#5247）
+      #      **整域只读**：`ORDER_TOOLS` 里没有任何 `read_only != True` 的工具，prompt 逐字要求
+      #      「如实说明 + 给出后台页面路径，不得承诺代办」。⇒ 这是**真能力缺失**，
+      #      `capability_denial.py` **不该**纠正它；实测 `capability_denial_text_hit(该回复) == ''`
+      #      ⇒ 守卫既没有该拦却没拦，也没有误拦。
+      #   ② `138****8000` 是**日志侧掩码**（`local_runner._arg_scalar` → `_mask_pii_in_arg_text`），
+      #      真实入参是表单里的 `13800138000`；旁证 = 同一跑的 `precondition_baseline:
+      #      capture: 13800138000=5` 与工具返回 `orders=5` 一致 ⇒ **不是**「拿掩码号去查库」。
+      #   ③ 表单确实被消费（回复里有「张三」）。
+      # ⇒ 红的只是**期望把合格路径逐条枚举成工具名**：六周内腐坏两次（2026-10-16 之前漏只读查询
+      #   ⇒ 补 `customer_manage(action=list)`；现在模型换走 `order_query`）。再补一个工具名 =
+      #   下次换个只读工具还要再来一遍（与 §23「类级固化」反向）。
+      # 改成与工具选择**无关**的产出侧语义 token `reply` = 「本轮产出了最终文本」（工具调用不限）。
+      #   被测行为（一字未变）= 「`__FORM__` 负载注入后本轮**必须有产出**（表单没被静默丢掉）」。
+      #   ⚠️ 判别力是**加强**不是放宽：旧 `direct_reply` 分支在「零工具调用 + 一句『您好，有什么
+      #   可以帮您』」时会判绿（表单被丢掉也过）—— 现在由下面 `want_text` 兜住：
+      #   回复必须点到表单里的**客户身份**，否则红。
+      - "reply"
+    # 表单**真被消费**的产出侧判据（2026-11-27，issue #9280）：客户名 / 手机号（真号或掩码形态）
+    # 至少出现一个 ⇒ 纯客套话、或把负载静默丢掉，都判红（机器面 = `check_want_text`）。
+    want_text:
+      - any_of: ["张三", "13800138000", "138****8000"]
     # ── 效果层断言 + 自清理（2026-09-25，issue #3778 第一批）──
     # 本条的写分支（`order_create`）是**可选**的（C 端合格落地形态之一）⇒ 不能用无条件的
     # `must_succeed`：只发文本（`direct_reply`）是合格行为，无条件声明会把合格行为判红。
@@ -609,11 +638,13 @@ cases:
       - "日志中手机号脱敏（138****8000）"
       - "payload 超限/非法 JSON 回退为普通文本处理"
       - "不得走创建订单写路径（B 端射程内创建订单 ❌；机器面见 must_succeed 的条件档 + traces）"
+      - "回复必须点到表单里的客户身份（姓名/手机号）—— 机器面 = 上面那条 `want_text`（2026-11-27，issue #9280）"
     skip_reason: ""
-    merge_log: "C 端表单化交互（miniapp-multiturn-form-scenarios.md）M1+M2 ｜ 2026-09-25（issue #3778 第一批）：补 `must_succeed[order_create, only_if_called=true]`（条件效果层，「去下单了就必须成了」；合格行为「只发文本」不受影响）+ `namespaces[customer_phone:13800138000]`（写分支落单的并行互斥/重试前置等价）。`user_inputs` / `expectations` / `data_checks` / `traces` 一字未动、**无放宽**（只增不减）。 ｜ 2026-10-16（issue #7048 P1 · 项 C）：`expectations` 由 [`direct_reply or order_create or interact`] 改为 [`direct_reply or interact`] —— 按用户 2026-10-16「能力边界 终版」（创建订单 ❌，射程 = B 端）**不再把「直接下单」写成合格分支**；`must_succeed[order_create, only_if_called=true]` / `namespaces` / `precondition` 原样保留（C 端腿的写效果层判别力一字未丢）；写类身份改由 `write_expectations` 的**效果层扩展**（issue #7048）现算 ⇒ 规则 a2/b/f 继续生效。"
+    merge_log: "C 端表单化交互（miniapp-multiturn-form-scenarios.md）M1+M2 ｜ 2026-09-25（issue #3778 第一批）：补 `must_succeed[order_create, only_if_called=true]`（条件效果层，「去下单了就必须成了」；合格行为「只发文本」不受影响）+ `namespaces[customer_phone:13800138000]`（写分支落单的并行互斥/重试前置等价）。`user_inputs` / `expectations` / `data_checks` / `traces` 一字未动、**无放宽**（只增不减）。 ｜ 2026-10-16（issue #7048 P1 · 项 C）：`expectations` 由 [`direct_reply or order_create or interact`] 改为 [`direct_reply or interact`] —— 按用户 2026-10-16「能力边界 终版」（创建订单 ❌，射程 = B 端）**不再把「直接下单」写成合格分支**；`must_succeed[order_create, only_if_called=true]` / `namespaces` / `precondition` 原样保留（C 端腿的写效果层判别力一字未丢）；写类身份改由 `write_expectations` 的**效果层扩展**（issue #7048）现算 ⇒ 规则 a2/b/f 继续生效。 ｜ 2026-11-27（issue #9280）：`expectations` 由 [`direct_reply or interact or customer_manage(action=list)`] 改为 [`reply`]（= 本轮有 final_text，工具调用不限）+ 新增 `want_text[{any_of: 张三/13800138000/138****8000}]`。归因 = run 46002922920 的 `tools=['order_query']` + 真·B 端只读边界话术（#5247 用户裁定，`capability_denial_text_hit` 实测不命中 ⇒ 非能力误宣；`138****8000` 是日志掩码，真入参 `13800138000`，工具返回 `orders=5` 与前置基线一致）。判别力**加强**（旧 `direct_reply` 在「零工具调用 + 客套话」时判绿，现在 `want_text` 要求回复点到表单里的客户身份）；`must_succeed` / `namespaces` / `precondition` / `user_inputs` 一字未动。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_chat.py"
+        - "tests/unit_ci_workflows/test_eval_expectation_reply_token.py"
       ci: []
       verifies: []
 
