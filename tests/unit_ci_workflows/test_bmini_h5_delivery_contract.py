@@ -100,7 +100,7 @@ def _serving_origin() -> str:
     return match.group(1)
 
 
-@pytest.mark.parametrize("var", ["TARO_APP_API_URL", "TARO_APP_AI_API_URL"])
+@pytest.mark.parametrize("var", ["TARO_APP_API_URL", "TARO_APP_AI_API_URL", "TARO_APP_PUBLIC_APP_ORIGIN"])
 def test_h5_api_base_is_same_origin_as_landing_surface(var: str) -> None:
     """API 基址必须与落地面同源。
 
@@ -127,6 +127,22 @@ def test_h5_api_base_is_same_origin_as_landing_surface(var: str) -> None:
         "只列了 admin-web 的几个 origin —— 2026-09-27 线上实测就是被它 403 `Invalid CORS request` 拒掉、"
         "登录页只显示 `Load failed`。落地面自己的 nginx 已代理 /api/ 与 /api/chat/ ⇒ 同源是唯一正确形态。"
     )
+
+
+def test_publish_leg_is_staging_only() -> None:
+    """这条腿**只发测试域**（issue #8963）：不含生产域名，落地面锚在测试实例。
+
+    为什么需要（issue #8963 的真实风险）：三个 `TARO_APP_*` 若被改成生产域，产物里 baked 的是
+    生产 API / 标签 origin，而字节仍落在**测试**静态根 ⇒ 比"指向测试域"更坏（生产用户被引到测试产物）。
+    把"它只发测试域"写成判据，比"记得别改"可靠。
+    红证（实跑过）：把任一 `TARO_APP_*` 改成 `https://app.cytda.com` ⇒ 本条红。
+    """
+    text = WORKFLOW_PATH.read_text(encoding="utf-8")
+    assert "cytda.com" not in text, (
+        f"{WORKFLOW_PATH} 出现了生产域名 —— 本腿的静态根与身份断言都锚在**测试实例**，"
+        "产物指生产而字节落测试是最坏形态。生产 h5 请走生产部署面（见本文件 workflow env 的注释）。"
+    )
+    assert "app.migaozn.com" in _serving_origin(), f"落地面不是测试域：{_serving_origin()!r}"
 
 
 # ══════════════════════════════════════════════════════════════════════════════
