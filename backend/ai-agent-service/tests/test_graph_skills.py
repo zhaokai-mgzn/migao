@@ -3437,7 +3437,10 @@ class TestMaskedPhoneWriteGuard:
                 "employee_manage", {"phone": "138****9999"},
                 {"name": "employee_manage", "args": {}, "id": "c1"},
                 "sess_1", "employee_manage", "手机号 13800009999 或 13811119999"))
-        assert out is not None, "歧义时不许猜 —— 必须保持拦截（否则可能写错人的号码）"
+        code, msg = self._blocked_code(out)
+        assert code == "write_blocked_masked_phone", (
+            f"歧义时不许猜 —— 必须保持拦截（否则可能写错人的号码），现取 {code!r} / {msg!r}"
+        )
 
     def test_non_phone_value_in_phone_key_passes(self):
         """字段名以 `phone` 结尾 ≠ 值就是号码：分机备注 `分机#12` 含 `#` 但数字不足 → 不拦。
