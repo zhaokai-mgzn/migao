@@ -4221,10 +4221,12 @@ class TestFirstSuccessfulCallPairsByArrival:
 
     def test_pairs_success_with_its_own_args(self):
         rnd, args, _ = lr._first_successful_call([self._round()], "order_create")
-        assert args is not None
-        assert args["items"][0]["product_name"] == "遮光窗帘", (
-            "成功的是第 2 次调用 ⇒ 必须取它的 args；取 calls[0] 会把失败壳的参数当成下单明细")
-        assert args["items"][0]["quantity"] == 3
+        # 取参必须来自**成功的那次**：失败壳的 args 顶层没有 items ⇒ 这里的值级读数会当场对不上
+        # （不用存在性断言 —— 那种断言读不出"取错了哪一次"）。
+        got = [(i.get("product_name"), i.get("quantity")) for i in (args or {}).get("items") or []]
+        assert got == [("遮光窗帘", 3)], (
+            f"成功的是第 2 次调用 ⇒ 必须取它的 args（实际取到 {got}）；"
+            f"取 calls[0] 会把失败壳的参数当成下单明细")
 
     def test_amount_verify_sees_items_of_the_ok_call(self):
         """OR-021 形态端到端：金额断言必须真的核到钱（旧口径读失败壳 ⇒ items 为空）。"""
@@ -4250,11 +4252,11 @@ class TestFirstSuccessfulCallPairsByArrival:
         rnd["tool_calls"][0]["args"] = dict(self.WRAPPER_ARGS, action="wrong_shape")
         rnd["tool_calls"][1]["args"] = dict(self.OK_ARGS, action="create")
         _, args, _ = lr._first_successful_call([rnd], "order_create")
-        assert args is not None
         ok_action = next(st["action"] for st in
                          lr._tool_result_status(rnd["tool_results"], rnd["tool_calls"])
                          if st["tool"] == "order_create" and st["ok"])
-        assert lr._call_action(args) == ok_action == "create"
+        # 两侧必须指向**同一次调用**：失败壳那次 action=wrong_shape、成功那次 action=create。
+        assert (lr._call_action(args or {}), ok_action) == ("create", "create")
 
 
 class TestDbVerifyOrderItems:
