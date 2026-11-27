@@ -8,7 +8,7 @@
 |---|---|
 | 判据词表 | 下单动作锚点 / 自我能力否定词干 / 归属错位标记 / 图片域锚点（全是常量 + 正则） |
 | 判据本体 | `_normalize_clause` → `_negation_positions` → `_self_scoped_clause`（否定位置 × 最近主体）<br>`_scope_misattribution_hit`（把下单判给别人）· `_product_image_denial_hit`（**另一条域**） |
-| 事实面 | `_registry_has_tool` / `_tool_registered_globally` / `_order_capability_available` /<br>`_product_image_capability_available` / `_registry_has_confirm_write_tool` / `_handoff_guard_applies` |
+| 事实面 | `_registry_has_tool` / `_tool_registered_globally` / `_order_capability_available` /<br>`_order_capability_reachable_for_persona` /<br>`_product_image_capability_available` / `_registry_has_confirm_write_tool` / `_handoff_guard_applies` |
 | 话术 | `_STALL_CORRECTIVE` / `_TEXT_DENIAL_CORRECTIVE*` / `_LOGISTICS_CHAIN_CORRECTIVE` |
 
 ## 依赖方向（单向，别「整理」）
@@ -483,19 +483,51 @@ def _tool_registered_globally(name: str) -> bool:
         return False
 
 
-def _order_capability_available(registry=None, *, order_in_progress: bool = False) -> bool:
+def _order_capability_reachable_for_persona(state: dict | None = None) -> bool:
+    """**会话被锁回订单流程之后**，order_create 是否真的在这个 persona 的工具集里（现取解析）。
+
+    真值来源 = skill 声明（`SkillConfig.tool_names`，谁**声明**了该写工具）
+    × persona 绑定面（`AgentConfig.skill_names`，该 persona 的图里有没有那个 skill）。
+    解析复用 `order_flow_guard._flow_owner_skill` —— 那是**回锁目标**的同一个判据点，
+    「注入里宣称下一轮能落单」与「下一轮真的能不能落单」因此不可能各说一套
+    （两份实现 = 改一侧另一侧不变，正是本单要消灭的形态）。
+
+    典型读数（现取）：B 端 `order_skill.ORDER_TOOLS` **无** `order_create`
+    （用户裁定 2026-09-23 / issue #5247 整域只读）⇒ False；C 端
+    `customer_order_skill.CUSTOMER_ORDER_TOOLS` **有**它 ⇒ True。
+    ⚠️ 不写死任何 persona 名 / 「哪端能写」的名单：那两张表一变，这里必须跟着变。
+    ⚠️ 解析不出（异常）⇒ False（fail-closed：证明不了可达就不许宣称可达）。
+    """
+    try:
+        from app.graph.skills.order_flow_guard import _flow_owner_skill
+        return bool(_flow_owner_skill(state, ORDER_WRITE_TOOL))
+    except Exception:
+        return False
+
+
+def _order_capability_available(registry=None, *, order_in_progress: bool = False,
+                                state: dict | None = None) -> bool:
     """下单能力是否**可达**（=「我做不了下单」这句话是否为**假**）。
 
     · 本 skill 直接可写（工具就在手上）→ 可达，与 skill 名无关；
-    · 本 skill 子集没有该工具、但**顾客在办下单流程**且**全局具备该能力**
-      → 会话会被锁回下单流程（`_relock_order_skill`），能力在**会话层可达**。
+    · 本 skill 子集没有该工具、但**顾客在办下单流程**、**产品确有该工具**，且
+      **它在当前 persona 的工具集里** → 会话会被锁回下单流程（`_relock_order_skill`），
+      下一轮**真的**能把单落下来。
 
-    两条缺一不可（防过度纠正）：只按全局判（生产里几乎恒真）会把越权/真不可达的诉求也放过；
-    只按状态判会在工具根本没注册的环境里声称"你可以下单"。
+    三条缺一不可（防过度纠正 / 防假承诺）：
+    · 只按全局注册表判（生产里几乎恒真）会把越权/真不可达的诉求也放过；
+    · 只按状态判会在工具根本没注册的环境里声称"你可以下单"；
+    · 不看 persona 工具集会**在 B 端说假话**（issue #9291）：B 端 order 域按 #5247 整域只读，
+      全局有 `order_create` 与「本会话下一轮能落单」是两件事 —— 旧实现只判前者，
+      于是给 B 端注入「order_create 在全局工具表里，下一轮就能真正落单」（下一轮兑现不了）。
+
+    `state` = 会话状态（`agent_type` 定 persona；缺它时由 `AgentConfig.allowed_roles` 定）。
+    **生产调用点必须传**（判据：`test_capability_guard_invariants.py` 的接线扫描）。
     """
     if _order_write_tool_here(registry):
         return True
-    return bool(order_in_progress) and _tool_registered_globally(ORDER_WRITE_TOOL)
+    return (bool(order_in_progress) and _tool_registered_globally(ORDER_WRITE_TOOL)
+            and _order_capability_reachable_for_persona(state))
 
 
 # 图片写入能力**曾经**的工具名（issue #3931）。⚠️ #5318：自 #5247（PR #5285）起它已从

@@ -5,6 +5,13 @@
 > 原因 = 单文件涨到 512KB 越过扫描上限，详见存档文件头与 issue #6404。
 > **后续条目继续在本文件 `## [Unreleased]
 
+### B 端（黄金策）不再被注入「你可以真实落单」：下单能力可达性改判为「当前 persona 的 skill 工具集」（2026-11-27，issue #9291）
+
+- **形态**（现取）：`capability_denial._order_capability_available()` 的「全局具备即可达」分支只看 `_tool_registered_globally("order_create")`（生产恒真）⇒ 在 `_order_flow_in_progress` 为真的 **B 端**会话里，任何命中「落单要走订单工作台」这类措辞的回复都会被注入「`order_create` 在全局工具表里，会话已锁回负责订单的流程，下一轮就能真正落单」—— 而 B 端 order 域按用户裁定 2026-09-23（#5247）**整域只读**（`order_skill.ORDER_TOOLS` 无任何写工具）⇒ 那是**系统主动写下的假承诺**，下一轮必然兑现不了。同一轮评测（run 46002922920）的 CH-009 是这条双刃的另一面：真话被判成假话（已由 PR #9290 改用例收口）。
+- **改法**：可达性增加 **persona 维度** —— `order_create` 必须真的在**当前会话身份**的 skill 工具集里（skill 声明 `tool_names` × `AgentConfig.skill_names`），解析复用 `order_flow_guard._flow_owner_skill`（= 会话回锁目标的同一判据点 ⇒「宣称下一轮能落单」与「下一轮真的能不能落单」不可能各说一套）。B 端 ⇒ 不可达 ⇒ **不注入**；C 端 `customer_order` 声明了它 ⇒ mid-order 纠正原样保留。
+- **不变**：#5247「B 端 order 域只读」一个字没动（不复活任何写工具）；措辞判据（`capability_denial_text_hit`）、C 端纠正话术、回锁逻辑均未改。
+- **判据**：`backend/ai-agent-service/tests/test_capability_denial_guard.py` 的 `TestBEndReadonlyDomainNotClaimedCapable`（B 端不得被注入「你可以真实落单」，失败时具名打出注入点 / C 端仍必须注入，防改没）+ `TestReachabilitySharesOneTruthSourceWithSkillToolSets`（改 skill 声明 ⇒ 可达性与回锁目标**同时**翻转；禁 persona 字面量）+ `tests/unit_ci_workflows/test_capability_guard_invariants.py` 的接线判据（所有可达性调用点必须带 `state`）。红证：可达性改回「全局注册即可达」⇒ B 端那条红（同源那条同批红）；persona 可达性恒判为假 ⇒ C 端那条红。
+
 ### 改客户手机号不再「系统一直返回缺少更新数据」：`data` 参数不再被 MiniMax 兜底解包拆散（2026-11-27，issue #9224）
 
 - **形态**（评测 run 45979067843 的 CU-004 现取）：`customer_manage(action=update, data={phone: 新号})` 的 `data` 在共享执行入口 `_execute_tool_safe` 被「MiniMax 把所有参数包在 `data` 键下」的兜底**无条件**解包 ⇒ `{action, customer_id, data:{phone}}` 变成 `{phone, action, customer_id}` ⇒ 工具收到 `data=None`、报「缺少更新数据」，而拆出来的那个 `phone` 又被 `execute(**kwargs)` 静默吞掉 ⇒ **写调用一次都没到 HTTP 层**（库里的号一直没变，评测同时报 `WRITE_NOT_PERSISTED`）。修法 = 解包前先看**工具自己是否声明了 `data` 参数**（声明了就是业务参数，一律不动；没声明才按 MiniMax 形态摊平）。同批给 `validate_input(params=…)` 补上掩码守卫：它的 `params` 是**写参数**（会落进 `pending_validated_input`，点卡后的代码收口照它执行）⇒ 掩码形态的号码就地改写成顾客给的**真号**（只改写、不拦）。

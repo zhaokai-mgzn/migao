@@ -27,8 +27,8 @@
     },
     {
       "path": "backend/ai-agent-service/tests/test_capability_denial_guard.py",
-      "guards": "「能力自我否定该不该纠正」必须由「在办下单流程状态（跨轮 pending 锁 / 已接地商品 / 已校验下单参数）× 工具注册表事实」决定，禁止读 skill 名字面量；并锁住执行族源码里不得出现 skill 名常量",
-      "red_proof": "① 把 customer_order 流程的就绪判定改成「本轮消息含下单关键词才算 in_progress」⇒ test_pending_lock_plus_grounded_is_in_progress_without_keywords 红；② 在任一守卫判定函数里写 `if skill_name == \"product\":` ⇒ test_no_guard_predicate_takes_a_skill_name 红",
+      "guards": "「能力自我否定该不该纠正」必须由「在办下单流程状态（跨轮 pending 锁 / 已接地商品 / 已校验下单参数）× 工具注册表事实 × **当前 persona 的 skill 工具集**（issue #9291：全局注册表里有 ≠ 本会话拿得到；B 端 order 域 #5247 整域只读 ⇒ 不可达 ⇒ 不注入假承诺）」决定，禁止读 skill 名字面量 / 禁止写死 persona 名单；并锁住执行族源码里不得出现 skill 名常量",
+      "red_proof": "① 把 customer_order 流程的就绪判定改成「本轮消息含下单关键词才算 in_progress」⇒ test_pending_lock_plus_grounded_is_in_progress_without_keywords 红；② 在任一守卫判定函数里写 `if skill_name == \"product\":` ⇒ test_no_guard_predicate_takes_a_skill_name 红；③ 把 `_order_capability_available` 的可达性改回「全局注册即可达」⇒ test_b_end_session_gets_no_capability_claim_injected 红（B 端被注入「order_create 在全局工具表里」且同源判据同批红）；④ 把 persona 可达性恒判为假 ⇒ test_c_end_session_still_gets_the_corrective 红",
       "owner": "#3389"
     },
     {
