@@ -719,6 +719,11 @@ FROZEN_GATE_LITERALS = frozenset({
     'tool_not_found',
     'tool_not_found_relocked',
     'unit_price_not_grounded',
+    # 112 条（issue #9224 的 CU-004 起）：本包给门禁 7 补了 `validate_input` 适用面 ——
+    # 它的 `params` 就是**写参数**（落进 `pending_validated_input`，点卡后的代码收口照它执行），
+    # 故掩码守卫要过一遍它（只改写真号、不拦）。新增的**唯一**字面量就是这个工具名；
+    # 门禁话术一个字未改（其余 111 条逐字不变）。
+    'validate_input',
     'validation_failed_write_blocked',
     '⚠️ 本次是**涉钱面（改价）**：确认形态**只认卡片点击** —— 判据 = 顾客消息**逐字等于**那张确认卡的 confirmValue（点卡回传的原文）；其它文本（含「确认」二字）都不算（改价门禁只认卡值，issue #5317）。',
     '。',

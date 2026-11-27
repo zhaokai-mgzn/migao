@@ -368,8 +368,16 @@ async def _form_prefill_fidelity_block(tool_name: str, args: dict, tool_call: di
 
 async def _masked_phone_write_block(tool_name: str, args: dict, tool_call: dict,
                                     session_id: str, skill_name: str,
-                                    last_user_msg: str = "", state: dict | None = None):
-    """写工具参数里是「掩码形态」手机号时拦下（返回 3 元组），否则放行（None）。"""
+                                    last_user_msg: str = "", state: dict | None = None,
+                                    block_unresolvable: bool = True):
+    """写工具参数里是「掩码形态」手机号时拦下（返回 3 元组），否则放行（None）。
+
+    `block_unresolvable=False`（issue #9224 的 CU-004 第二处）：**只把掩码改写成真号、不拦**。
+    使用者只有 `validate_input` —— 它的 `params` 就是**写参数**（会落进 `pending_validated_input`，
+    点卡后的代码收口 `finalize_turn` 直接照它执行）⇒ 掩码不得进账；但 `params` 也可能承载**只读**
+    目标的查询词（例如「按手机号搜客户」），拦下来会把合法校验锁死。真号无从判定时保持原样，
+    写工具那一刻的 fail-closed 守卫仍是最后一道。
+    """
     pairs = _phone_args(args or {})
     if not pairs:
         return None
@@ -387,6 +395,8 @@ async def _masked_phone_write_block(tool_name: str, args: dict, tool_call: dict,
             if len(candidates) == 1 and candidates[0] in user_scope:
                 rewrites[value] = candidates[0]
                 continue
+            if not block_unresolvable:
+                return None
             return _masked_phone_block_result(
                 tool_name, path, value, candidates[0] if len(candidates) == 1 else "",
                 session_id, skill_name,
@@ -399,6 +409,8 @@ async def _masked_phone_write_block(tool_name: str, args: dict, tool_call: dict,
         if len(matched) == 1 and matched[0] in user_scope:
             rewrites[value] = matched[0]
             continue
+        if not block_unresolvable:
+            return None
         return _masked_phone_block_result(
             tool_name, path, value, matched[0], session_id, skill_name,
             because="是本会话真实号码的掩码填充形态",

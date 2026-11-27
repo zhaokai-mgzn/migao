@@ -37,6 +37,31 @@ class LangChainToolAdapter:
         return build_args_schema(tool.name, tool.parameters)
 
     @staticmethod
+    def _unwrap_wrapped_data(tool: BaseTool, kwargs: dict) -> dict:
+        """解包「把所有参数塞进 `data` 键」的调用（MiniMax 形态）；**工具自己声明了 `data` 参数时不动**。
+
+        病灶（issue #9224 的 CU-004，评测 run 45979067843）：`customer_manage(action=update)` 的
+        `data` 是**业务参数**（要改的档案字段）。旧实现在共享执行入口 `_execute_tool_safe` 里
+        **无条件**解包 ⇒ `{action, customer_id, data:{phone}}` 变成 `{phone, action, customer_id}`
+        ⇒ 工具收到 `data=None` ⇒ 报「缺少更新数据」，而拆出来的 `phone` 又被 `execute(**kwargs)`
+        静默吞掉 ⇒ **写调用一次都没到 HTTP 层**（库里自然没有新号，评测报 `WRITE_NOT_PERSISTED`）。
+
+        判据（会不会红）：`backend/ai-agent-service/tests/test_cu004_write_path_params_9224.py`
+        的两条 —— ① 声明了 `data` 的工具必须原样收到 `data`；② **没声明** `data` 的工具仍要解包
+        （MiniMax 兜底不能跟着一起被删）。
+        """
+        if not ("data" in kwargs and isinstance(kwargs.get("data"), dict)):
+            return kwargs
+        declared = (getattr(tool, "parameters", None) or {}).get("properties") or {}
+        if "data" in declared:
+            return kwargs
+        nested = kwargs["data"]
+        if not any(k not in kwargs for k in nested):
+            return kwargs
+        logger.info(f"[tool-exec] Flattened nested data for {tool.name}: keys={list(nested.keys())[:8]}")
+        return {**nested, **{k: v for k, v in kwargs.items() if k != "data"}}
+
+    @staticmethod
     def _normalize_args(tool: BaseTool, kwargs: dict) -> dict:
         """根据 Tool 的 JSON Schema 规范化参数类型
 

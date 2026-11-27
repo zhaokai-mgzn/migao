@@ -94,6 +94,12 @@ REALDB_FILES: dict[str, str] = {
     # `#{createdBy} IS NULL` 的**主语位**（issue #5975 形态）：NULL 实参在 PG 上推不出类型 ⇒ 500。
     # 单元测试把 Mapper 全 mock 掉，这类故障只有真 PG 能现形 ⇒ 必须留在真库族（不许退化）。
     _SVC + "ReceivableAgingScopeRealDbTest.java": "direct",
+    # issue #9224 的 CU-004：**改客户手机号**的落库判据 —— 「新号在库里、旧号不再挂在该客户上」
+    # 与「只改给出的字段」这两条只能真库看：mapper 全 mock 时服务层的非空拷贝白名单**恒真**，
+    # 删掉整段拷贝逻辑它照样绿（评测侧同时报 `WRITE_NOT_PERSISTED`，只有真库能区分
+    # 「工具没成功」与「工具说成功但库里没改」）。`uk_customer_profiles_phone` 的唯一约束
+    # 也只在真库上生效 ⇒ 夹具必须各用一号。
+    _SVC + "CustomerPhoneUpdateRealDbTest.java": "direct",
     _SVC + "ScheduledTaskMultiInstanceClaimRealDbTest.java": "direct",
     _SVC + "ProductDoorWidthsRoundTripRealDbTest.java": "direct",
     _SVC + "ProcessingOrderNoConflictRealDbTest.java": "direct",

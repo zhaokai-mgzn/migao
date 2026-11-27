@@ -617,12 +617,17 @@ async def react_turn(
 
                     # 门禁 7/11 `masked_phone_write`：掩码形态手机号拦截（issue #3386）：必须在 tool 解析之后（守卫内不再查 registry）
                     async def _gate_masked_phone_write():
-                        if getattr(tool, "read_only", False):
+                        # `validate_input` 是只读工具，但它的 `params` 就是**写参数**（落进
+                        # `pending_validated_input`，点卡后的代码收口照它执行，issue #9224 的 CU-004）
+                        # ⇒ 同口径过一遍，**只改写真号、不拦**（params 也可能承载只读查询词）。
+                        _validation_params = str(tool_name) == "validate_input"
+                        if getattr(tool, "read_only", False) and not _validation_params:
                             # 只拦**写**工具：脏数据风险来自「用掩码值建单」（读工具用掩码值只是查不到）
                             return None
                         _blocked3 = await _masked_phone_write_block(
                             tool_name, args, tool_call, session_id, skill_name,
-                            last_user_msg, state)
+                            last_user_msg, state,
+                            block_unresolvable=not _validation_params)
                         if _blocked3 is not None:
                             return _blocked3
 
