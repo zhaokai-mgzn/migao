@@ -5959,3 +5959,41 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+  - id: UI-155
+    legacy_id: ""
+    title: "公开面 host 收敛到「不产生跳转」的 apex：sitemap / robots / canonical / metadataBase 不再声明 www（issue #8968）"
+    domains:
+      - ui
+      - frontend
+    tier: normal
+    tags:
+      - ui
+      - seo
+      - sitemap
+      - canonical
+      - site-domain
+      - admin-web
+    truths_ref:
+      - frontend-fix.vitest
+      - frontend-fix.no-api-change
+    user_inputs:
+      - "生产验收实测（2026-11-21 cytda.com、2026-11-26 复核两个域）：`https://www.<域>/` 一律 308 到 `https://<域>/`，而 sitemap 的 5 条 <loc>、robots 的 Sitemap:、canonical / metadataBase 全写 `https://www.<域>` ⇒ 爬虫每条先吃一次 308，canonical 与真实落点不一致。要求：公开面的唯一真值 = 不产生跳转的那个 host。"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "判据 1·公开面不落在跳转集合里（本单核心）：从 frontend/admin-web/next.config.mjs 的 redirects() **现取**「会整站跳转的 host」，公开面 host（siteOrigin() 的 host）不得在其中；且跳转落点 host == 公开面 host、规则 permanent: true（Next 把 permanent 映射成 308，不是 301）。执行点 = frontend/admin-web/tests/unit/pages/public-surface-host.test.ts「www→apex 跳转规则真实存在；会整站跳转的 host 里不含公开面，且跳转落点 == 公开面 host」"
+      - "判据 2·sitemap 与公开面同源（与 siteOrigin() 输出比，不比字面量）：sitemap() 每条 <loc> 的 host == siteOrigin() 的 host，且全部条目只有一个 host。执行点 = public-surface-host.test.ts「sitemap() 每条 <loc> 的 host == 公开面 host（与 siteOrigin() 输出比，不比字面量）」"
+      - "判据 3·robots 与公开面同源：robots().sitemap == `${siteOrigin()}/sitemap.xml`。执行点 = public-surface-host.test.ts「robots() 的 Sitemap: 与 siteOrigin() 同源」"
+      - "判据 4·canonical / metadataBase 与上面同源（缺省域 + 生产域两格）：new URL(canonical, metadataBase) 的 host == siteOrigin() 的 host。执行点 = public-surface-host.test.ts「metadataBase / canonical 与 sitemap / robots 同源（缺省域；生产域用 resetModules 重新求值）」"
+      - "判据 5·判别力自证：判据内核拿 www 当公开面必须出声违规（否则上面的判据是空断言）。执行点 = public-surface-host.test.ts「判别力自证：拿 www 当公开面必须出声违规（否则上面的判据是空断言）」"
+    skip_reason: "[backend-contract] 纯前端公开面（SEO）host 口径收敛：只改 host 派生与 route 输出，无接口 / 字段 / 权限码变更，由 vitest 判据覆盖，不进入 agent-eval 冒烟"
+    merge_log: "2026-11-27 新增（issue #8968）：取号 UI-155（`python3 scripts/next_case_id.py UI` 现取 main 001-154）。308 的产出点现取 = frontend/admin-web/next.config.mjs 的 redirects()（permanent: true ⇒ Next 的 RedirectStatusCode.PermanentRedirect = 308），按 NEXT_PUBLIC_SITE_DOMAIN 参数化 ⇒ 对任意域通用（故公开面收成 apex）。🔴 红证（改后实测）：① 把 src/app/sitemap.ts 的 origin 临时改回 `https://${wwwHost()}` ⇒ 判据 2 具名红（5 条 <loc> 全落 www，报错原文逐条列出）；② 把 siteOrigin() 临时改回 `https://${wwwHost()}` ⇒ 四个测试文件合计 9 条具名红（含判据 1「公开面 https://www.migaozn.com 与跳转规则冲突」）；两次注入均先自证「变异已落上」再跑，恢复后 27 passed。"
+    traces:
+      tests:
+        - "frontend/admin-web/tests/unit/pages/public-surface-host.test.ts"
+        - "frontend/admin-web/tests/unit/pages/site-domain.test.ts"
+        - "frontend/admin-web/tests/unit/lib/site-domain.test.ts"
+        - "frontend/admin-web/tests/unit/pages/corporate-metadata-single-source.test.ts"
+      ci:
+        - pr-check.yml
+      verifies: []

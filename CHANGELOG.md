@@ -5,6 +5,12 @@
 > 原因 = 单文件涨到 512KB 越过扫描上限，详见存档文件头与 issue #6404。
 > **后续条目继续在本文件 `## [Unreleased]
 
+### 公开面 host 收敛到 apex：sitemap / robots / canonical 不再声明 www（2026-11-27，issue #8968）
+
+- **形态**：`www.<域>` → `<域>` 的 **308** 由 `frontend/admin-web/next.config.mjs` 的 `redirects()` 产生（规则 `permanent: true`，Next 把它映射成 `RedirectStatusCode.PermanentRedirect` = 308；改前注释写的「301」与实现不符，已订正），且规则按 `NEXT_PUBLIC_SITE_DOMAIN` 参数化 ⇒ **任意域都跳**（测试域 `migaozn.com` 与生产域 `cytda.com` 实测一致）。而 sitemap 的 5 条 `<loc>`、`robots.txt` 的 `Sitemap:`、canonical 与 `metadataBase` 都写 `https://www.<域>` ⇒ 爬虫每条先吃一次 308，canonical 与真实落点不一致。现在 `siteOrigin()` = **apex**（`https://<域>`），四个消费面全部从它派生；`wwwHost()` 只留给跳转判定（`next.config.mjs` 的规则 / `src/proxy.ts` 的 host 分支）。
+- **可见行为变更**（缺省域与生产域同形）：`https://www.migaozn.com/` → `https://migaozn.com/`（`cytda.com` 同理），涉及 sitemap 的 5 条 `<loc>`、`robots.txt` 的 `Sitemap:`、`metadataBase`、canonical 与 `og:image` 的绝对地址。www 仍然 308 到 apex，旧链接不断。
+- **判据**：`frontend/admin-web/tests/unit/pages/public-surface-host.test.ts`（用例 UI-155，5 条：公开面不在跳转集合 / sitemap 逐条同源 / robots 同源 / metadataBase+canonical 同源 / 判别力自证）；同批更新 `frontend/admin-web/tests/unit/lib/site-domain.test.ts`、`frontend/admin-web/tests/unit/pages/site-domain.test.ts`、`frontend/admin-web/tests/unit/pages/corporate-metadata-single-source.test.ts` 的期望锚点。红证：消费者改回 www ⇒ 具名红（读数见用例 merge_log）。
+
 ### 掩码手机号：顾客亲口给过的真号可唯一匹配时自动改写，写路径不再死循环（2026-11-26，issue #9224）
 
 - **形态**：写工具参数里出现**掩码形态**手机号（`138****9999`，或把星号填成数字的 `13800009999`）时，若它**唯一**对应「顾客本人说过」的真号 ⇒ **就地改写成真号再执行**（员工建号/客户改号不再必然失败）。匹配不唯一，或真号只来自**读工具**返回（顾客本轮没说）⇒ 照旧拦下并回放真号 —— 拦截口径不放宽，否则「改号」会被静默写回旧号。

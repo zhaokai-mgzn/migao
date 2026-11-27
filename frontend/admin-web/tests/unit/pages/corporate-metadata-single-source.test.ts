@@ -23,10 +23,10 @@ import robots from '@/app/robots'
 
 /**
  * 站点真值源（唯一：`(corporate)/layout.tsx`；本测试文件是它的判据，不是第二份真值）。
- * 字面量 = **缺省域名**下的取值（issue #8941：域名由 `NEXT_PUBLIC_SITE_DOMAIN` 参数化，
- * 缺省 `migaozn.com` ⇒ 这里逐字钉住「缺省值下产物与改前一致」）。
+ * 字面量 = **缺省域名**下的**公开面**取值：issue #8968 起 = **apex**（`https://migaozn.com`）——
+ * www 会 308 跳到 apex，把 www 写进 canonical / sitemap 就是「声明一个会跳走的落点」。
  */
-const SITE_ORIGIN = 'https://www.migaozn.com'
+const SITE_ORIGIN = 'https://migaozn.com'
 
 const APP_DIR = join(process.cwd(), 'src/app')
 const CORPORATE_DIR = join(APP_DIR, '(corporate)')
