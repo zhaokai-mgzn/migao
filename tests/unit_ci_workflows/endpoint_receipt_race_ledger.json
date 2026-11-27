@@ -75,6 +75,12 @@
       "reason": "issue #9022（P0-5 加工单号并发重复）：mapper 内已是原子闸（INSERT … ON CONFLICT (processing_order_no) DO NOTHING 按影响行数判首次）。**端点级**并发判据尚未建 —— 缺的是「同一端点并发两次派单 ⇒ 两个不同单号且都成功」这条真库赛道（现有 ProcessingOrderNoAllocatorTest 是服务级，替不了端点契约）。同单重复派单的 409 回执口径由既有活跃单闸负责，与本闸正交。",
       "restart_condition": "在 realdb 端点赛道里补 `POST /api/admin/processing-orders` 并发两条 ⇒ 断言两张单号互不相同、HTTP 均 2xx（红证：把 insertWithFresh 换回「查最大号+1」⇒ 撞号 409/500）",
       "case_ids": ""
+    },
+    "backend/admin-api/src/main/java/com/migao/admin/service/NotificationService.java::notificationMapper": {
+      "table": "notifications",
+      "reason": "issue #9025：闸 = NotificationMapper#insertIfDedupeAbsent（INSERT … ON CONFLICT (tenant_id, dedupe_key) WHERE dedupe_key IS NOT NULL DO NOTHING）。本写入点**没有属于它的写端点**：① `POST /api/admin/notifications` 走的是两参 `createNotification(tenantId, request)`（**不带 dedupeKey**，根本不进本闸 —— 该端点写了也无从触发它）；② 带 dedupeKey 的两条路径 = `triggerByEvent`（由**业务端点**间接触发：入库过账 / 售后状态变更 / 订单状态变更 / 建单 / 返工建单）与 `ScheduledTaskService#deliver` 里的 `createNotification(…dedupeKey)`（deliver 是 **private**、只有定时扫描调用 ⇒ 无端点）。③ 这些业务端点对通知一律**旁路容错**（`notifyXxx` 内 `catch (Exception) { log.warn }`）⇒ 唯一冲突在 HTTP 回执上**不可观测**（catch 之后端点照样 2xx）；真正可观测的伤害是 PG 把**外层业务事务**打成 aborted （后续语句/提交失败 ⇒ 改状态/过账一起回滚）—— 这一面已由真库判据在**事务边界**上钉住，并带注入式红证：criterion = backend/admin-api/src/test/java/com/migao/admin/service/NotificationDedupeRaceRealDbTest.java::concurrentTriggerByEventInsertsExactlyOneNotification；红证 = 同文件 ::naiveInsertInjectionReproducesTheAbortedBusinessTransaction（朴素 insert 注入 ⇒ 败方业务探针消失 = 真实回滚）。端点级（真 MockMvc + 真业务服务 + 真 PG）赛道属独立包：承载体端点要先建整套夹具面（入库过账 = 库存/批次/台账/单证全套；售后状态 = 工单/订单/时间线/退款链），体量超本单，且与「通知去重」这条语义正交（本单只改写入形态）。",
+      "restart_condition": "选定承载体端点后补端点级真库赛道（两条候选建议：① `POST /api/admin/inbound-orders/{id}/post` —— 同一单据并发两次过账 ⇒ 一方 2xx / 一方具名 409、站内信恰 1 行、过账业务写不回滚；② 售后状态两连改 ⇒ 两次均 2xx、工单终态 = 第二次、站内信恰 1 行），criterion 必须含 MockMvc 且能注入朴素 insert 打成 5xx/回滚，届时把本条从 deferred 移入 sites。",
+      "case_ids": "ST-014"
     }
   }
 }

@@ -2830,7 +2830,7 @@ CREATE INDEX idx_notifications_recipient ON notifications(recipient_id);
 CREATE INDEX idx_notifications_status ON notifications(status);
 CREATE INDEX idx_notifications_created ON notifications(created_at DESC);
 -- 通知幂等 + 按业务类型筛（issue #7524）
-CREATE UNIQUE INDEX uk_notifications_dedupe ON notifications(tenant_id, dedupe_key) WHERE dedupe_key IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS uk_notifications_dedupe ON notifications(tenant_id, dedupe_key) WHERE dedupe_key IS NOT NULL;
 CREATE INDEX idx_notifications_biz ON notifications(recipient_id, biz_type, created_at DESC) WHERE biz_type IS NOT NULL;
 
 -- tenant_applications 索引

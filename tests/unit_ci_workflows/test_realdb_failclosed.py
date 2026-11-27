@@ -403,6 +403,16 @@ REALDB_FILES: dict[str, str] = {
     # 只真 PG 能证的两条：① 实体列集与 V157 的列名**逐列一致**（mock 面上列名写错也恒绿）；
     # ② 租户谓词由 `TenantLineInnerInterceptor` 注入（换租户上下文后 `selectById` 必须读不到）。
     _SVC + "QualityCheckMapperTest.java": "direct",
+    # issue #9025：**通知去重**（同一事件 × 同一业务对象 × 同一收件人只落一条）的**真库并发**判据 ——
+    # 只真 PG 能证的三件：① 部分唯一索引 `uk_notifications_dedupe` 在**插入那一刻**的原子判定 +
+    # 未提交行对并发事务的不可见，共同构成「先查后写」的 TOCTOU 窗口（mock 的计数恒 0、insert 恒成功
+    # ⇒ 窗口**结构上不存在**）；② `INSERT … ON CONFLICT (tenant_id, dedupe_key)
+    # WHERE dedupe_key IS NOT NULL DO NOTHING` 的**影响行数**（1 = 本次落库 / 0 = 已发）是「谁先到」的
+    # 唯一依据，且冲突目标的谓词必须与部分索引逐字匹配（不匹配时 PG 直接报「没有匹配 ON CONFLICT
+    # 说明的唯一或者排除约束」）；③ 「通知撞重会不会把**调用方业务事务**打成 aborted」只能从
+    # **同一事务**里的业务探针行读出来（注入朴素 insert ⇒ 败方业务探针消失 = 真实回滚；
+    # mock 面没有事务，本仓已实证同类读数只能落在这里）。
+    _SVC + "NotificationDedupeRaceRealDbTest.java": "direct",
 }
 
 # 共用夹具（不是判据本身，但同样必须走收口方法 —— 它是上述三个类的 PG 入口）
