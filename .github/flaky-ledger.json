@@ -35576,10 +35576,11 @@
       "observed_at": "2026-10-27T11:53:10Z",
       "reason": "失败（2026-10-27T11:43:31Z）与重跑通过（2026-10-27T11:53:03Z）落在**同一时间桶**⇒ 「重跑通过」仍是 flaky 的合法证据",
       "remedy": "按 `migao-acceptance`「随机红 = 归因层失效」**定位机制**（不许只加 waitFor/sleep）：时间相关 ⇒ 冻结时钟（`jest.setSystemTime` / 注入时钟）；并行或共享状态 ⇒ 显式隔离或独立 fixture；修后**必须给红证**（把机制注回 ⇒ 必红）",
-      "status": "open",
-      "follow_up": 7931,
+      "status": "fixed",
+      "follow_up": 8937,
       "requires_follow_up": true,
-      "failing_tests": []
+      "failing_tests": [],
+      "fixed_by": "PR #9264（提取器补 Maven/surefire 面）。attempt-1 真凶 = com.migao.admin.service.TenantApplicationReviewCasRaceRealDbTest.concurrentApprovalsCreateExactlyOneTenant（AssertionError：响应 [422,422,422,422,422] 无 409）；非窗口型（19:43 +08）"
     },
     {
       "workflow": "PR Check",
@@ -38792,10 +38793,11 @@
       "observed_at": "2026-10-31T08:47:59Z",
       "reason": "失败（2026-10-31T08:32:38Z）与重跑通过（2026-10-31T08:47:53Z）落在**同一时间桶**⇒ 「重跑通过」仍是 flaky 的合法证据",
       "remedy": "按 `migao-acceptance`「随机红 = 归因层失效」**定位机制**（不许只加 waitFor/sleep）：时间相关 ⇒ 冻结时钟（`jest.setSystemTime` / 注入时钟）；并行或共享状态 ⇒ 显式隔离或独立 fixture；修后**必须给红证**（把机制注回 ⇒ 必红）",
-      "status": "open",
-      "follow_up": 8274,
+      "status": "fixed",
+      "follow_up": 8937,
       "requires_follow_up": true,
-      "failing_tests": []
+      "failing_tests": [],
+      "fixed_by": "PR #9264（提取器补 Maven/surefire 面）。attempt-1 真凶 = com.migao.admin.service.TenantApplicationReviewCasRaceRealDbTest.concurrentApprovalsCreateExactlyOneTenant（同上）；非窗口型（16:32 +08）"
     },
     {
       "workflow": "PR Check",
@@ -41663,10 +41665,11 @@
       "observed_at": "2026-11-01T13:13:24Z",
       "reason": "失败（2026-11-01T13:03:56Z）与重跑通过（2026-11-01T13:13:14Z）落在**同一时间桶**⇒ 「重跑通过」仍是 flaky 的合法证据",
       "remedy": "按 `migao-acceptance`「随机红 = 归因层失效」**定位机制**（不许只加 waitFor/sleep）：时间相关 ⇒ 冻结时钟（`jest.setSystemTime` / 注入时钟）；并行或共享状态 ⇒ 显式隔离或独立 fixture；修后**必须给红证**（把机制注回 ⇒ 必红）",
-      "status": "open",
-      "follow_up": 8369,
+      "status": "fixed",
+      "follow_up": 8937,
       "requires_follow_up": true,
-      "failing_tests": []
+      "failing_tests": [],
+      "fixed_by": "PR #9264（提取器补 Maven/surefire 面）。attempt-1 真凶 = com.migao.admin.service.StockDeductionAndLedgerAtomicityMetaGuardTest.everyStockDeductionHasLowerBoundPredicate（java.lang.StackOverflowError in java.util.regex.Pattern$match）；非窗口型（21:03 +08）"
     },
     {
       "workflow": "Bmini-App CI",
@@ -41756,10 +41759,11 @@
       "observed_at": "2026-11-01T16:11:59Z",
       "reason": "失败（2026-11-01T16:02:59Z）与重跑通过（2026-11-01T16:11:51Z）落在**同一时间桶**⇒ 「重跑通过」仍是 flaky 的合法证据",
       "remedy": "按 `migao-acceptance`「随机红 = 归因层失效」**定位机制**（不许只加 waitFor/sleep）：时间相关 ⇒ 冻结时钟（`jest.setSystemTime` / 注入时钟）；并行或共享状态 ⇒ 显式隔离或独立 fixture；修后**必须给红证**（把机制注回 ⇒ 必红）",
-      "status": "open",
-      "follow_up": 8388,
+      "status": "fixed",
+      "follow_up": 8937,
       "requires_follow_up": true,
-      "failing_tests": []
+      "failing_tests": [],
+      "fixed_by": "PR #9264（提取器补 Maven/surefire 面）。attempt-1 真凶 = com.migao.admin.service.StockDeductionAndLedgerAtomicityMetaGuardTest.everyStockDeductionHasLowerBoundPredicate（同上）；非窗口型（次日 00:02 +08）"
     },
     {
       "workflow": "PR Check",
@@ -55609,12 +55613,13 @@
       "observed_at": "2026-11-23T10:15:56Z",
       "reason": "失败（2026-11-23T10:02:55Z）与重跑通过（2026-11-23T10:15:48Z）落在**同一时间桶**⇒ 「重跑通过」仍是 flaky 的合法证据",
       "remedy": "按 `migao-acceptance`「随机红 = 归因层失效」**定位机制**（不许只加 waitFor/sleep）：时间相关 ⇒ 冻结时钟（`jest.setSystemTime` / 注入时钟）；并行或共享状态 ⇒ 显式隔离或独立 fixture；修后**必须给红证**（把机制注回 ⇒ 必红）",
-      "status": "open",
+      "status": "fixed",
       "follow_up": 9078,
       "requires_follow_up": true,
       "failing_tests": [
         "tests/unit_ci_workflows/test_suite_self_lock.py::TestNeverHangsWhenAnAncestorHoldsTheLock::test_lock_script_that_never_returns_still_yields_a_bounded_refusal"
-      ]
+      ],
+      "fixed_by": "PR #9264（判据改成「注入预算 2s + 断言报文自报预算 + 墙钟 15x 上界」；红证：删 subprocess timeout / 把预算改无界 => 60s 硬超时判红）。attempt-1 原文：assert 5 <= elapsed < 73 => AssertionError: 墙钟 73.7s（run 45150439630 / job 137610185169）"
     },
     {
       "workflow": "PR Check",
