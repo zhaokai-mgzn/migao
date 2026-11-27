@@ -270,29 +270,31 @@ class TestMatch:
         `must_succeed: curtain_calc` 恒红。⇒ 这是**工具不可达**，不是「模型选择口算」。
         """
         result = self._match("夏日清风窗帘这款，我家窗户 3 米宽、2.7 米高，帮我算算要多少布、多少钱？")
-        assert result is not None
-        assert result.intent == IntentType.QUOTE
+        assert result is not None and result.intent == IntentType.QUOTE, (
+            "「窗户 3 米宽 + 要多少布」必须进算料域：路由到 product_inquiry ⇒ curtain_calc 物理不可达"
+        )
         assert result.matched_keywords == ["尺寸+褶皱"]
 
     def test_quote_fabric_quantity_without_buffer_words(self):
         """更短的同类话术（无「窗帘」上下文词）也进算料域。"""
         result = self._match("窗户 3 米宽 2.75 米高，帮我算下要多少布多少钱")
-        assert result is not None
-        assert result.intent == IntentType.QUOTE
+        assert result is not None and result.intent == IntentType.QUOTE, "短话术（无「窗帘」上下文词）也要进算料域"
         assert result.confidence == 0.95
 
     def test_dimensions_with_plain_price_question_stay_product_inquiry(self):
         """负控：只有尺寸 + 价格、**没有布量口径** ⇒ 仍是商品咨询（新词不得抢走商品域）。"""
         result = self._match("这款窗帘 3 米宽 2.7 米高多少钱")
-        assert result is not None
-        assert result.intent == IntentType.PRODUCT_INQUIRY
+        assert result is not None and result.intent == IntentType.PRODUCT_INQUIRY, (
+            "只有价、没有布量口径 ⇒ 仍商品域（新词不得抢走商品咨询）"
+        )
         assert result.matched_keywords == ["多少钱"]
 
     def test_order_verb_still_wins_over_fabric_quantity(self):
         """负控：交易动作仍比手段权威 —— 「下单 + 要多少布」⇒ ORDER_CREATE，不是 quote。"""
         result = self._match("帮我下单，遮光窗帘 3 米，要多少布")
-        assert result is not None
-        assert result.intent == IntentType.ORDER_CREATE
+        assert result is not None and result.intent == IntentType.ORDER_CREATE, (
+            "交易动作（下单）仍比手段权威：不得被算料前置改判抢走"
+        )
 
     def test_customer_product_skill_cannot_reach_curtain_calc(self):
         """前提见证：算料工具只属 `customer_quote` ⇒ 路由错了它就是**不可达**（改 prompt 无效）。
