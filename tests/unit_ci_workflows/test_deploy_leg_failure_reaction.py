@@ -1836,7 +1836,7 @@ def test_meta_guard_step_does_not_red_unrelated_prs_on_rc3(tmp_path, audit_rc, w
 
 from unit_ci_workflows.injection import inject  # noqa: E402
 
-ATTEST_SCRIPT = REPO_ROOT / ".github" / "scripts" / "deploy_leg_deploy_attest.py"
+ATTEST_SCRIPT = REPO_ROOT / ".github" / "scripts" / "deploy_leg_deploy_evidence.py"
 SKIP_READOUT = REPO_ROOT / ".github" / "scripts" / "deploy_skip_attest.sh"
 #: 状态面「已收敛」的**同一条**依据（`reconcile_one` 判据 ② 逐字形态）—— 正负例只差「部署步结论」一个变量。
 CONVERGED_ROW = ("deployed", "无漂移：自 abc1234（上次成功部署）起 frontend/admin-web 无代码改动")

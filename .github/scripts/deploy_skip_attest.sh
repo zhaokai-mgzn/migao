@@ -18,7 +18,7 @@
 #   跳过原因（码 + 中文）+ **复算命令**（白天自己核，不靠跑一次 CI）。
 #
 # rc **恒 0**：它是读数面，不是闸门 —— 闸门在值守面（`scripts/deploy_leg_failure_reaction.sh`
-# 关单前必须自证 `DEPLOY_EXECUTED=1`，实现在 `.github/scripts/deploy_leg_deploy_attest.py`）。
+# 关单前必须自证 `DEPLOY_EXECUTED=1`，实现在 `.github/scripts/deploy_leg_deploy_evidence.py`）。
 # 读数面把一条部署腿判红 = 让「跳过」这条**正常**路径变成失败（那是本单要治的假绿的反面）。
 #
 # ## 调用面（各腿 skip 步一行）

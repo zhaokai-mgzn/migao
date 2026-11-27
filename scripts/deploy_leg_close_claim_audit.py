@@ -384,11 +384,13 @@ def check_static(script: Path = ACTION_SCRIPT, gh: str = "gh") -> int:
 #      部署步 `success` ⇒ rc 0 + `DEPLOY_EXECUTED=1`；部署步 `skipped` ⇒ rc 1 + `DEPLOY_EXECUTED=0`。
 #      静态读文本分不清「`skipped` 出现在匹配里」与「`skipped` 被当成已部署」，所以必须真跑。
 # 三态：`0` 合规 / `1` 违规（具名） / `3` 判不了（动作脚本或实现体不在场 / 夹具跑不起来）。
-ATTEST_IMPL = REPO_ROOT / ".github" / "scripts" / "deploy_leg_deploy_attest.py"
+ATTEST_IMPL = REPO_ROOT / ".github" / "scripts" / "deploy_leg_deploy_evidence.py"
 #: 关单前置的**具名读数**（调用方必须真的打出来 —— 否则「拒绝关单」在日志里不可见）。
 SKIP_NOT_DEPLOYED = "skip 非 deployed"
-#: 自证调用面的两种形态（助手函数名 / 实现体文件名）。
-ATTEST_CALL_HINTS = ("deploy_attested", "deploy_leg_deploy_attest")
+#: 自证调用面的两种形态（助手函数名 / 实现体文件名前缀）。
+#: ⚠️ 实现体文件名**不得**含 `test` / `spec` 子串（否则 `QA Growth Gate` 把源码当测试文件，
+#: 出口只有改名 —— 见 `tests/unit_ci_workflows/test_growth_gate_source_filename_trap.py`）。
+ATTEST_CALL_HINTS = ("deploy_attested", "deploy_leg_deploy_evidence")
 #: 助手函数必须出现的**强度**锚点：只有 `DEPLOY_EXECUTED=1` 才放行（rc=0 单独不算）。
 ATTEST_PASS_MARK = "DEPLOY_EXECUTED=1"
 

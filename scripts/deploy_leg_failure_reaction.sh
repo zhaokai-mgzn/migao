@@ -269,7 +269,7 @@ open_issue_of_title() {   # $1=标题 ⇒ 该标题下**开放**单的编号（�
 # 病（现场 run 45010592767，`schedule`）：`Skip if already built` 命中 ⇒ `Deploy to SWAS` 整段
 # **skipped**，而 **job / run 结论 = success** ⇒ 「该腿下一次 `conclusion=success`」这个清零判据
 # 被**一次没部署的空转 run** 满足，而线上仍是旧镜像（实证：据此把 #9051 误判成「瞬时/环境抖动」）。
-# 出口：关单前读 **run 的部署步结论**（`.github/scripts/deploy_leg_deploy_attest.py`，三态
+# 出口：关单前读 **run 的部署步结论**（`.github/scripts/deploy_leg_deploy_evidence.py`，三态
 # `0` 已部署 / `1` 未部署 / `3` 判不了）—— **只有 0 才关单**：
 #   · `1`（部署步 = skipped，或部署步没有全部成功）⇒ 具名「skip 非 deployed」+ **复算命令**；
 #   · `3`（读不到 jobs / 没有可识别的部署步）⇒ 具名「判不了」——`3` **不得当 0 读**
@@ -280,7 +280,7 @@ open_issue_of_title() {   # $1=标题 ⇒ 该标题下**开放**单的编号（�
 #        ::test_mutation_treating_skip_as_deployed_closes_the_issue（注入式红证）
 # 类级元守卫 = `scripts/deploy_leg_close_claim_audit.py check-skip-close`（本函数是它的判据对象：
 # 凡「异常关闭 `[deploy-leg]` 单」的路径都必须带这条自证，未带 ⇒ 红）。
-ATTEST_IMPL="$REPO_ROOT/.github/scripts/deploy_leg_deploy_attest.py"
+ATTEST_IMPL="$REPO_ROOT/.github/scripts/deploy_leg_deploy_evidence.py"
 deploy_attested() {   # $1=服务键（空=事件面，用 $RUN_ID） $2=清零依据
   local key="$1" why="$2" out rc sha
   local -a args
