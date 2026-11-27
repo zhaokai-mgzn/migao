@@ -140,6 +140,20 @@ case "$cmd" in
     last=""; prev=""
     for a in "$@"; do [ "$prev" = "" ] && last="$a"; prev="$a"; done
     exit 0 ;;
+  # issue #9056：部署自证的**两个读面** —— 状态面用 `gh run list` 找「该 commit 的那次部署」，
+  # 两条入口都用 `gh run view --json jobs` 读**部署步**的结论（job/run 结论 ≠ 部署步结论）。
+  # 桩的默认值 = 「部署步 success」⇒ 既有清零用例的语义一字不变；
+  # `STUB_DEPLOY_STEP=skipped` 复刻 `Skip if already built` 命中的真实形态
+  # （现场 run 45010592767：skip 步 success · Deploy 步 **skipped** · job 结论 success）。
+  "run list")
+    if [ -n "${STUB_RUNS_JSON:-}" ]; then printf '%s\n' "$STUB_RUNS_JSON"
+    else printf '%s\n' '[{"databaseId":901,"headSha":"abc1234deadbeef","conclusion":"success"},{"databaseId":902,"headSha":"deadbeefcafe00","conclusion":"success"}]'; fi ;;
+  "run view")
+    case " $* " in
+      *" --json jobs "*)
+        printf '{"jobs":[{"name":"build-and-deploy","steps":[{"name":"Skip if already built (schedule reconcile)","conclusion":"success"},{"name":"Deploy to SWAS (测试环境)","conclusion":"%s"}]}]}\n' "${STUB_DEPLOY_STEP:-success}" ;;
+      *) : ;;
+    esac ;;
   "run rerun")
     if [ -n "${STUB_RERUN_FAIL:-}" ]; then echo "cannot rerun" >&2; exit 1; fi
     exit 0 ;;
@@ -384,7 +398,8 @@ class React:
                  log_text: str | None = None, ledger_path: Path | None = None,
                  rerun_fail: bool = False, extra_env: dict | None = None,
                  script: Path | None = None, issues_file: Path | None = None,
-                 close_reasons: str | None = None):
+                 close_reasons: str | None = None,
+                 deploy_step: str = "success", runs_json: str | None = None):
         self.tmp = tmp_path
         self.bin_dir, _ = make_stub(tmp_path)
         self.calls = tmp_path / "gh-calls.log"
@@ -416,7 +431,12 @@ class React:
             # ⚠️ 别 `setdefault` 成空串：空串在真实 workflow 里表示「非 workflow_run 事件」，
             #    而那是**状态兜底**入口的形态（它不带腿载荷），两者混同会让事件面用例假绿。
             "LEG_RUN_EVENT": "push",
+            # issue #9056：部署步结论的默认值 = `success`（= 真的发生了部署）⇒ 既有用例语义不变；
+            # 负例把它改成 `skipped`（复刻 skip 命中的真实形态）。
+            "STUB_DEPLOY_STEP": deploy_step,
         })
+        if runs_json is not None:
+            env["STUB_RUNS_JSON"] = runs_json
         # issue #6556：两条新入口（状态兜底 / 判别阀）与红证注入面都靠它驱动。
         if extra_env:
             env.update(extra_env)
@@ -982,7 +1002,8 @@ def seed_issues(tmp_path: Path, lines: list) -> Path:
 def run_fallback(tmp_path: Path, *, state_rows: dict, issues: list, leg: str = "",
                  script: Path | None = None, sha: str = "deadbeefcafe",
                  event: str = "schedule", ledger_path: Path | None = None,
-                 close_reasons: str | None = None) -> "React":
+                 close_reasons: str | None = None,
+                 deploy_step: str = "success", runs_json: str | None = None) -> "React":
     """跑一次**状态兜底**入口（`event_name != workflow_run`，`LEG_NAME` 为空）。
 
     ⚠️ 桩单必须**先种**（见 `seed_issues`）：种在 `React(...)` 之后 = 「跑完再喂输入」
@@ -993,7 +1014,8 @@ def run_fallback(tmp_path: Path, *, state_rows: dict, issues: list, leg: str = "
     seeded = seed_issues(tmp_path, issues)
     return React(tmp_path / "run", conclusion="", attempt="", leg=leg,
                  ledger_path=ledger_path, extra_env=fallback_env(st, sha=sha, event=event),
-                 script=script, issues_file=seeded, close_reasons=close_reasons)
+                 script=script, issues_file=seeded, close_reasons=close_reasons,
+                 deploy_step=deploy_step, runs_json=runs_json)
 
 
 # ── 判据 ① 非 `workflow_run` 事件下也能清零（**核心**）───────────────────────────
@@ -1791,3 +1813,295 @@ def test_meta_guard_step_does_not_red_unrelated_prs_on_rc3(tmp_path, audit_rc, w
         assert "判定不了" in out, f"rc=3 必须**出声**（不许静默判绿）→ {out!r}"
     if audit_rc == 1:
         assert "::error::" in out, f"rc=1 必须打 `::error::`（判红要有读数面）→ {out!r}"
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# issue #9056：`Skip if already built` 命中 ⇒ `Deploy` 步 **skipped** 而 job/run 结论 = **success**
+#   ⇒ `[deploy-leg]` 值守单的清零判据（「该腿下一次 `conclusion=success`」）被**一次没部署的空转
+#   run** 满足，而线上仍是旧镜像（实证误导过一次归因）。
+#
+# 现场（durable，可复算）：run `45010592767`（`schedule`）——
+#   `Skip if already built (schedule reconcile)` = success · `Deploy to SWAS (测试环境)` = **skipped**
+#   · job 结论 = success；日志逐字「镜像缺失，但 0dced39 最近一次部署是**不可恢复的终态**（结论=failure）
+#   ——跳过本轮构建部署」。
+#
+# 修法两层（判据在下面逐条落）：
+#   ① **读数面**：skip 命中时由 `.github/scripts/deploy_skip_attest.sh` 输出具名
+#      `DEPLOY_SKIPPED=<原因>`（`$GITHUB_OUTPUT` + `$GITHUB_STEP_SUMMARY`，含部署步结论 + 复算命令）；
+#   ② **闸门**：关单前必须自证 `DEPLOY_EXECUTED=1`（读**部署步**结论，三态 0/1/3）——
+#      `skipped` ⇒ **不关单**，并具名打印「skip 非 deployed」+ 复算命令；`3`（判不了）同样不关。
+#   ③ **类级元守卫**：`deploy_leg_close_claim_audit.py check-skip-close`（静态结构 + **行为夹具**：
+#      `skipped ⇒ DEPLOY_EXECUTED=0`）—— 任何「异常关闭 `[deploy-leg]` 单」的路径漏带自证 ⇒ 红。
+# ══════════════════════════════════════════════════════════════════════════════
+
+from unit_ci_workflows.injection import inject  # noqa: E402
+
+ATTEST_SCRIPT = REPO_ROOT / ".github" / "scripts" / "deploy_leg_deploy_evidence.py"
+SKIP_READOUT = REPO_ROOT / ".github" / "scripts" / "deploy_skip_attest.sh"
+#: 状态面「已收敛」的**同一条**依据（`reconcile_one` 判据 ② 逐字形态）—— 正负例只差「部署步结论」一个变量。
+CONVERGED_ROW = ("deployed", "无漂移：自 abc1234（上次成功部署）起 frontend/admin-web 无代码改动")
+#: 现场那条空转 run 的部署步结论（issue #9056）。
+SKIPPED = "skipped"
+
+
+def _jobs_json(step_conclusion: str) -> str:
+    """造一份 `gh run view --json jobs` 的读数（部署步结论 = 参数）—— 与真响应同形。"""
+    return json.dumps({"jobs": [{"name": "build-and-deploy", "steps": [
+        {"name": "Skip if already built (schedule reconcile)", "conclusion": "success"},
+        {"name": "Deploy to SWAS (测试环境)", "conclusion": step_conclusion},
+    ]}]}, ensure_ascii=False)
+
+
+# ── 判据 1：部署步 = skipped ⇒ 两条清零入口都**不关单** + 具名出声 ────────────────
+
+def test_skip_hit_run_never_closes_on_the_state_face(tmp_path):
+    """判据 1（状态面）：状态判 `deployed`（无漂移）但**那次部署的部署步 = skipped** ⇒ **不许关单**。
+
+    这就是现场形态：`skip=true` 的 run 结论是 success，`reconcile_one` 把它当「上次成功部署」的基准
+    ⇒ 落 `deployed`；而它**一次都没部署**。清理闸门读**部署步**，不读 run/job 结论。
+    """
+    r = run_fallback(tmp_path, state_rows={"admin-web": CONVERGED_ROW},
+                     issues=[leg_issue(7, LEG_ADMIN_WEB)], deploy_step=SKIPPED)
+    assert r.proc.returncode == 0, f"反应步不许判红 → {r.proc.returncode}\n{r.out}"
+    assert not r.ran("issue close"), (
+        f"部署步 = skipped 的空转 run **不许**关掉 `[deploy-leg]` 单（issue #9056）→ {r.gh_calls}"
+    )
+    assert "skip 非 deployed" in r.out, f"拒绝必须**具名**（否则读者以为它没跑）：{r.out!r}"
+    assert "DEPLOY_EXECUTED=0" in r.out, f"读数必须给出部署步的判定：{r.out!r}"
+    assert "gh run view" in r.out, f"必须给可复算命令（白天能自己核）：{r.out!r}"
+
+
+def test_skip_hit_run_never_closes_on_the_event_face(tmp_path):
+    """判据 1（事件面）：`conclusion=success` 的 run，其**部署步 skipped** ⇒ 同样不许关单。"""
+    r = React(tmp_path / "run", conclusion="success", attempt="1", leg=LEG_ADMIN_WEB,
+              deploy_step=SKIPPED,
+              issues_file=seed_issues(tmp_path, [leg_issue(9, LEG_ADMIN_WEB)]))
+    assert r.proc.returncode == 0, f"→ {r.proc.returncode}\n{r.out}"
+    assert not r.ran("issue close"), (
+        f"事件面仍按 run 结论清零 ⇒ skip 非 deployed（issue #9056）→ {r.gh_calls}"
+    )
+    assert "skip 非 deployed" in r.out, f"→ {r.out!r}"
+    assert "DEPLOY_EXECUTED=0" in r.out, f"→ {r.out!r}"
+
+
+def test_executed_deploy_still_closes_both_faces(tmp_path):
+    """判据 1（**正例，只差一个变量**）：部署步 = success ⇒ 两条入口都照旧关单。
+
+    与上面两条的差别**只有** `deploy_step` 一个变量 —— 否则「不关单」可能是别的原因造成的（假红证）。
+    """
+    r_fb = run_fallback(tmp_path / "fb", state_rows={"admin-web": CONVERGED_ROW},
+                        issues=[leg_issue(7, LEG_ADMIN_WEB)], deploy_step="success")
+    assert r_fb.ran("issue close 7"), f"部署步 success ⇒ 状态面应照旧关单 → {r_fb.gh_calls}"
+    assert "DEPLOY_EXECUTED=1" in r_fb.out, f"读数必须自证「已部署」：{r_fb.out!r}"
+    r_ev = React(tmp_path / "ev", conclusion="success", attempt="1", leg=LEG_ADMIN_WEB,
+                 deploy_step="success",
+                 issues_file=seed_issues(tmp_path / "ev", [leg_issue(9, LEG_ADMIN_WEB)]))
+    assert r_ev.ran("issue close 9"), f"部署步 success ⇒ 事件面应照旧关单 → {r_ev.gh_calls}"
+
+
+def test_unjudgeable_attestation_is_fail_closed(tmp_path):
+    """判据 1（三态 `3`）：拿不到「那次部署」的读面 ⇒ **判不了 ⇒ 不关单**（`3` 不当 `0`/`1` 读）。"""
+    r = run_fallback(tmp_path, state_rows={"admin-web": CONVERGED_ROW},
+                     issues=[leg_issue(7, LEG_ADMIN_WEB)], runs_json="[]")
+    assert r.proc.returncode == 0, f"→ {r.proc.returncode}\n{r.out}"
+    assert not r.ran("issue close"), (
+        f"查不到那次部署 ⇒ 判不了 ⇒ **不许**关单（「没查」≠「已部署」）→ {r.gh_calls}"
+    )
+    assert "判不了" in r.out, f"判不了必须具名（不许当成一致/已部署）：{r.out!r}"
+
+
+def test_state_row_without_a_baseline_commit_is_not_closable(tmp_path):
+    """判据 1（三态 `3`，另一种形态）：状态依据里**没有可比对的 commit**（`镜像已存在：<image>`）⇒ 不关。
+
+    边界（照实登记）：`镜像已存在` 这条判据在 C′（服务器侧构建、CI 不推 ACR）下**恒不成立**
+    ⇒ 本形态目前只可能由 `watchdog_note` 的历史行产生；这里判的是「拿不到自证时**不关**」这个方向。
+    """
+    r = run_fallback(tmp_path, state_rows={"admin-web": ("deployed", "镜像已存在：reg.example.com/ns/admin-web:sha-abc1234")},
+                     issues=[leg_issue(7, LEG_ADMIN_WEB)])
+    assert r.proc.returncode == 0, f"→ {r.proc.returncode}\n{r.out}"
+    assert not r.ran("issue close"), f"没有基准 commit ⇒ 无法自证 ⇒ 不许关单 → {r.gh_calls}"
+    assert "判不了" in r.out, f"→ {r.out!r}"
+
+
+# ── 判据 2：自证实现体的三态（部署步结论是**唯一**判据面）────────────────────────
+
+def _run_attest(tmp_path: Path, *, jobs: str | None, extra: list | None = None) -> subprocess.CompletedProcess:
+    """跑自证实现体的 CLI（离线：`ATTEST_JOBS_FILE` 夹具 ⇒ **一次 gh 都不调**）。"""
+    env = {k: v for k, v in os.environ.items() if k not in ("GH_TOKEN", "GITHUB_TOKEN")}
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    fixture = tmp_path / "jobs.json"
+    if jobs is not None:
+        fixture.write_text(jobs, encoding="utf-8")
+    env["ATTEST_JOBS_FILE"] = str(fixture)
+    return subprocess.run([sys.executable, str(ATTEST_SCRIPT), *(extra or ["--run-id", "45010592767"])],
+                          env=env, capture_output=True, text=True, timeout=120,
+                          encoding="utf-8", errors="replace")
+
+
+def test_attestation_reads_the_deploy_step_not_the_run_conclusion(tmp_path):
+    """判据 2：同一个 run 结论（success）下，**部署步 success ⇒ 1 / skipped ⇒ 0**（只差那一个字段）。"""
+    ok = _run_attest(tmp_path / "ok", jobs=_jobs_json("success"))
+    assert ok.returncode == 0, f"部署步 success ⇒ rc=0（已部署）→ {ok.returncode}\n{ok.stdout}{ok.stderr}"
+    assert "DEPLOY_EXECUTED=1" in ok.stdout, f"→ {ok.stdout!r}"
+    assert "DEPLOY_STEP=" in ok.stdout and "success" in ok.stdout, f"读数必须点名部署步：{ok.stdout!r}"
+
+    skip = _run_attest(tmp_path / "skip", jobs=_jobs_json(SKIPPED))
+    assert skip.returncode == 1, f"部署步 skipped ⇒ rc=1（未部署）→ {skip.returncode}\n{skip.stdout}{skip.stderr}"
+    assert "DEPLOY_EXECUTED=0" in skip.stdout, f"→ {skip.stdout!r}"
+    assert "skip 非 deployed" in skip.stdout, f"必须具名：{skip.stdout!r}"
+    assert "gh run view" in skip.stdout, f"必须给复算命令：{skip.stdout!r}"
+
+
+def test_attestation_cannot_judge_without_the_jobs_readout(tmp_path):
+    """判据 2（三态 `3`）：读不到 jobs ⇒ `DEPLOY_EXECUTED=unknown` + rc=3（**不得**当 0 或 1）。"""
+    r = _run_attest(tmp_path, jobs=None)          # 夹具文件不存在
+    assert r.returncode == 3, f"读不到部署步 ⇒ rc=3（判不了）→ {r.returncode}\n{r.stdout}{r.stderr}"
+    assert "DEPLOY_EXECUTED=unknown" in r.stdout, (
+        f"判不了必须显式写 unknown（写成 0 会被读成「确认未部署」、写成 1 会被读成「已部署」）→ {r.stdout!r}"
+    )
+
+
+def test_attestation_uses_the_workflow_sha_lookup_on_the_state_face(tmp_path):
+    """判据 2（状态面入口）：`--workflow … --sha <7>` 走 `gh run list` 找「该 commit 的那次部署」。"""
+    ok = _run_attest(tmp_path / "ok", jobs=_jobs_json("success"),
+                     extra=["--workflow", "deploy-frontend.yml", "--sha", "abc1234"])
+    assert ok.returncode == 0, f"→ {ok.returncode}\n{ok.stdout}{ok.stderr}"
+    assert "DEPLOY_EXECUTED=1" in ok.stdout, f"→ {ok.stdout!r}"
+    skip = _run_attest(tmp_path / "skip", jobs=_jobs_json(SKIPPED),
+                       extra=["--workflow", "deploy-frontend.yml", "--sha", "abc1234"])
+    assert skip.returncode == 1 and "DEPLOY_EXECUTED=0" in skip.stdout, f"→ {skip.stdout!r}"
+
+
+# ── 判据 2b：**注入式红证** —— 把 skip 当 deployed ⇒ 清零路径当场失信 ──────────────
+
+def test_mutation_treating_skip_as_deployed_closes_the_issue(tmp_path):
+    """判据 2b：把自证闸门**短路**（`deploy_attested()` 恒真）⇒ 同一条 skip 场景**会关单**
+    ⇒ 上面判据 1 当场红。注入先自证落上（`inject()` 命中数 ≠ 1 会抛），再跑变异体。
+    """
+    body = SCRIPT.read_text(encoding="utf-8")
+    anchor = "deploy_attested() {"
+    broken = inject(body, anchor,
+                    anchor + "\n  return 0   # 红证注入：skip 一律当 deployed",
+                    where=str(SCRIPT))
+    assert "红证注入：skip 一律当 deployed" in broken, "注入未生效（变异没落上）"
+    variant = tmp_path / "always-attested.sh"
+    variant.write_text(broken, encoding="utf-8")
+    r = run_fallback(tmp_path / "mut", state_rows={"admin-web": CONVERGED_ROW},
+                     issues=[leg_issue(7, LEG_ADMIN_WEB)], deploy_step=SKIPPED, script=variant)
+    assert r.ran("issue close 7"), (
+        "自证闸门被短路后仍没关单 ⇒ 变异没打中清零路径（红证在证明别的东西）"
+        f" → {r.gh_calls}"
+    )
+
+
+def test_mutation_removing_the_attestation_gate_reds_the_meta_guard():
+    """判据 2b（**元守卫侧**）：把 `clear_leg` 里的自证闸门摘掉 ⇒ `skip_close_problems` 具名判红。"""
+    audit = _load_audit()
+    body = SCRIPT.read_text(encoding="utf-8")
+    assert audit.skip_close_problems(body) == [], "（前置）真脚本上元守卫必须判绿"
+    anchor = '  if ! deploy_attested "$key" "$why"; then return 0; fi'
+    broken = inject(body, anchor, "  : # 红证注入：摘掉「本次真的发生了部署」的自证",
+                    where=str(SCRIPT))
+    problems = audit.skip_close_problems(broken)
+    assert problems, "清零点漏带自证后元守卫没红 ⇒ 它没在判那段接线（装饰）"
+    assert any("自证" in p for p in problems), f"判红未点到自证：{problems}"
+    assert any("clear_leg" in p for p in problems), f"判红必须具名到函数：{problems}"
+
+
+def test_meta_guard_catches_an_attestation_that_reads_skip_as_deployed(tmp_path):
+    """判据 2b（元守卫的**行为夹具**）：把实现体改成「skipped 也算已部署」⇒ 元守卫当场红。
+
+    为什么必须**行为**判：静态读文本分不清「`skipped` 出现在部署步匹配里」与「`skipped` 被当成 success」
+    —— 那正是本单要治的形态（skip 冒充 deployed）。
+    """
+    audit = _load_audit()
+    assert audit.check_skip_close() == 0, "（前置）真实现体上元守卫必须判绿"
+    src = ATTEST_SCRIPT.read_text(encoding="utf-8")
+    # 变异 = 把「skipped ⇒ 未部署」这条判定的**返回值翻过来**（rc 0 + `DEPLOY_EXECUTED=1`）
+    # —— 这正是「skip 冒充 deployed」的形态；改常量/改注释都不算（那种改动判据仍然绿是对的）。
+    broken = inject(src, '    if skipped:\n        return 1, "0", (',
+                    '    if skipped:\n        return 0, "1", (',
+                    where=str(ATTEST_SCRIPT))
+    variant = tmp_path / "attest_skip_is_deployed.py"
+    variant.write_text(broken, encoding="utf-8")
+    rc = audit.check_skip_close(attest=variant)
+    assert rc == 1, f"把 skipped 读成已部署后元守卫仍绿 ⇒ 行为夹具没牙 ⇒ rc={rc}"
+
+
+def test_meta_guard_is_wired_and_judges_three_states():
+    """判据 3（接线 + 三态）：`check-skip-close` 必须挂进 PR 检查，且 `3`（判不了）**不许**当 0 读。"""
+    audit = _load_audit()
+    assert audit.check_skip_close() == 0, "（现行态）元守卫必须判绿"
+    doc = yaml.safe_load(PR_CHECK.read_text(encoding="utf-8")) or {}
+    steps = [s for job in (doc.get("jobs") or {}).values() for s in (job.get("steps") or [])]
+    hit = [s for s in steps if "check-skip-close" in str(s.get("run", ""))]
+    assert hit, (
+        "pr-check.yml 里没有跑 `check-skip-close` 的步骤 ⇒ 类级元守卫没人跑（只是本地脚本）"
+    )
+    # 判不了（文件不在场）⇒ 3，且**不是** 0（铁律：3 不得当 0 读）
+    rc_missing = audit.check_skip_close(script=SCRIPT.parent / "no-such-script.sh")
+    assert rc_missing == 3, f"实现体/动作脚本不在场 ⇒ 必须 rc=3（判不了），现取 {rc_missing}"
+
+
+# ── 判据 4：skip 命中时的**具名读数**（每条腿都接线，且真的落到两个面上）─────────
+
+def _skip_step_body(path: Path) -> str:
+    doc = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    for job in (doc.get("jobs") or {}).values():
+        for step in job.get("steps") or []:
+            if step.get("name") == "Skip if already built (schedule reconcile)":
+                return str(step.get("run") or "")
+    raise AssertionError(f"反空跑锚点：{path.name} 里找不到 `Skip if already built` 步（判据已过期）")
+
+
+def test_every_skip_capable_leg_emits_the_named_skip_readout():
+    """判据 4（接线，类级）：凡带 `Skip if already built` 的腿，skip 命中都必须走同一个外置读数。"""
+    legs = sorted(p for p in (REPO_ROOT / ".github" / "workflows").glob("deploy-*.yml")
+                  if "Skip if already built (schedule reconcile)" in p.read_text(encoding="utf-8"))
+    assert len(legs) >= 3, f"反空跑锚点：带 skip 步的腿只剩 {len(legs)} 条（判据已过期）"
+    for path in legs:
+        body = _skip_step_body(path)
+        assert "deploy_skip_attest.sh" in body, (
+            f"{path.name}：skip 命中时没有具名读数（`DEPLOY_SKIPPED=<原因>`）⇒ 空转 run 与真部署"
+            f"在读数上仍不可区分（issue #9056）"
+        )
+        write_marker_count = body.count('echo "skip=true" >> "$GITHUB_OUTPUT"')
+        assert write_marker_count == 1, (
+            f"{path.name}：`skip=true` 的写点必须**收敛到一处**助手函数（现取 "
+            f"{write_marker_count} 处）—— 多写点 = 迟早漏一个不读数"
+        )
+        for code in ("same_sha_deployed", "unrecoverable_conclusion"):
+            assert code in body, (
+                f"{path.name}：skip 原因码 `{code}` 没传进读数 ⇒ 事后分不清「同 sha 已部署」与"
+                f"「终态闸门拒绝」（这两种在运维上处置相反）"
+            )
+
+
+def test_skip_readout_lands_in_output_and_step_summary(tmp_path):
+    """判据 4（**执行式**）：读数真的落到 `$GITHUB_OUTPUT` 与 `$GITHUB_STEP_SUMMARY` 两个面上。"""
+    out_file = tmp_path / "out.txt"
+    summary = tmp_path / "summary.md"
+    env = {**os.environ, "GITHUB_OUTPUT": str(out_file), "GITHUB_STEP_SUMMARY": str(summary),
+           "GITHUB_RUN_ID": "45010592767", "GITHUB_SHA": "0dced39abcdef", "GITHUB_WORKFLOW": "deploy-admin-api"}
+    proc = subprocess.run(["bash", str(SKIP_READOUT), "unrecoverable_conclusion"],
+                          env=env, capture_output=True, text=True, timeout=60,
+                          encoding="utf-8", errors="replace")
+    assert proc.returncode == 0, f"读数面**永不判红**（它是读数，不是闸门）→ {proc.returncode}\n{proc.stdout}{proc.stderr}"
+    assert "DEPLOY_SKIPPED=unrecoverable_conclusion" in out_file.read_text(encoding="utf-8"), (
+        f"`$GITHUB_OUTPUT` 里必须落具名读数 → {out_file.read_text(encoding='utf-8')!r}"
+    )
+    text = summary.read_text(encoding="utf-8")
+    assert "DEPLOY_SKIPPED=unrecoverable_conclusion" in text, f"summary 缺原因码 → {text!r}"
+    assert "skipped" in text, f"summary 必须写明**部署步的结论**（skipped）→ {text!r}"
+    assert "gh run view 45010592767" in text, f"summary 必须给复算命令 → {text!r}"
+    assert "skip 非 deployed" in text, f"summary 必须点明「这不是已部署」→ {text!r}"
+
+
+def test_skip_readout_never_breaks_the_step_for_an_unregistered_reason(tmp_path):
+    """判据 4（负控）：未登记的原因码 ⇒ 仍然 rc=0（读数面不许把部署腿判红）+ 具名告警。"""
+    env = {k: v for k, v in os.environ.items() if k not in ("GITHUB_OUTPUT", "GITHUB_STEP_SUMMARY")}
+    proc = subprocess.run(["bash", str(SKIP_READOUT), "some_new_arm"],
+                          env=env, capture_output=True, text=True, timeout=60,
+                          encoding="utf-8", errors="replace")
+    assert proc.returncode == 0, f"未登记原因码不许把腿判红 → {proc.returncode}\n{proc.stdout}{proc.stderr}"
+    assert "some_new_arm" in proc.stdout, f"读数必须带出原因码（便于登记）→ {proc.stdout!r}"

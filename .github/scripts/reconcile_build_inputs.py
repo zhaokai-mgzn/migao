@@ -71,6 +71,18 @@ _IMAGE_DRIVER = (
     ),
 )
 
+# ── 三条镜像腿 `Skip if already built` 步的**具名读数**实现体（issue #9056）──
+# 为什么算构建输入：它是「这一轮到底跳没跳过、跳过原因是什么」的**唯一读数面**，而三条镜像腿的
+# skip 步都调它 ⇒ 改它等于改「我们对线上形态说的那句话」（与 `deploy/scripts/*-verify*.sh` 同族）。
+# 漏登记的代价是**假绿**：修好了读数、合入 main，而对账判「无漂移」⇒ 不重跑部署腿 ⇒ 线上仍是旧读数。
+_SKIP_READOUT = (
+    (
+        ".github/scripts/deploy_skip_attest.sh",
+        "`Skip if already built` 命中时的具名读数（`DEPLOY_SKIPPED=<原因码>` + summary 的部署步结论/复算命令，"
+        "issue #9056）：三条镜像腿的 skip 步都调它 —— 改它就得真跑一次部署腿才算兑现",
+    ),
+)
+
 #: 腿名 → 构建输入清单（逐条带理由）。腿名 = `deploy-reconcile.yml` 里 `reconcile_one` 的第一个参数。
 BUILD_INPUTS: dict[str, tuple[tuple[str, str], ...]] = {
     "admin-api": (
@@ -84,6 +96,7 @@ BUILD_INPUTS: dict[str, tuple[tuple[str, str], ...]] = {
             "本腿 post-deploy 的 P0 验收腿（`uses:`）：改验收断言，只有真跑一次部署腿才被兑现",
         ),
         *_IMAGE_DRIVER,
+        *_SKIP_READOUT,
         (
             "deploy/scripts/served-version-verify.sh",
             "线上身份自证（GET /api/version 的 sha + builtAt）：改判据本体后旧部署的绿不再成立，"
@@ -104,6 +117,7 @@ BUILD_INPUTS: dict[str, tuple[tuple[str, str], ...]] = {
             "本腿 post-deploy 的 P0 验收腿（`uses:`），同上",
         ),
         *_IMAGE_DRIVER,
+        *_SKIP_READOUT,
     ),
     "admin-web": (
         (
@@ -111,6 +125,7 @@ BUILD_INPUTS: dict[str, tuple[tuple[str, str], ...]] = {
             "本腿的定义：Resolve build identity / --build-arg / 线上自证步骤",
         ),
         *_IMAGE_DRIVER,
+        *_SKIP_READOUT,
         (
             "deploy/scripts/admin-web-version-probe.sh",
             "线上身份自证（GET /version.json 的 sha + builtAt；前端腿的 builtAt 现为 \"unknown\"，"
