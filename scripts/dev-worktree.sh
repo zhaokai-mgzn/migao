@@ -15,7 +15,8 @@
 #   ./scripts/dev-worktree.sh rebase <分支|路径>    # rebase origin/main（+ 顺带把活锚镜像带到预设仓 main）
 #   ./scripts/dev-worktree.sh preset-guard [--source both|index|worktree]  # 提交路径守卫（版本下降 / 同号不同内容撞车 / 活锚落后即非零退出）
 #   ./scripts/dev-worktree.sh prune --dry-run       # worktree 存量体检（只打印清单，不删除）
-#   ./scripts/dev-worktree.sh doctor [--heal]       # 登记表 × 磁盘一致性自检（--heal：显式修复；默认只读）
+#   ./scripts/dev-worktree.sh doctor [--heal]       # 登记表 × 磁盘一致性自检 + 浅仓自检（--heal：显式修复；默认只读）
+#                                                   # 浅仓（`.git/shallow` 在）⇒ 红 + 出口 `git fetch --unshallow origin`（issue #9081）
 #   ./scripts/preset-anchor-check.sh                # 活锚新鲜度自检（红就停；开工第一件事）
 #   ./scripts/preset-anchor-refresh.sh              # 活锚自愈：只读镜像（预设仓）→ 预设仓 main（自检转绿）
 #
@@ -348,6 +349,44 @@ EOF
   fi
   echo "✅ 登记表 × 磁盘已一致（复检绿）—— 分支不再被判「被该 worktree 占用」（issue #6235）。"
   return 0
+}
+
+# ── 浅仓自检（issue #9081）：`.git/shallow` 是**整个 clone** 的属性，**不在任何 worktree 里** ──
+# 病（2026-11-23 实测）：某个并行子包/会话跑过一次 `git fetch --depth` / `--shallow-since` ⇒ 共享
+#   `.git/shallow` 被写 ⇒ **所有** worktree 与**后续**会话一起变浅；而浅仓下
+#   `git merge-base` / `git rev-list --is-ancestor` / `git cherry` 会**静默给出错误答案**（不报错）：
+#   当天 `git rev-list --count origin/main` = 9（正常 4800+）、`git merge` 报
+#   `fatal: refusing to merge unrelated histories`，并据此差点得出「main 历史被重写」的错误结论。
+#   修法：`git fetch --unshallow origin`（实测恢复 4873 个提交）。
+# 三态（与 `scripts/preset-anchor-check.sh` / `scripts/drift_audit.py` 同口径）：
+#   0 = 全史仓库；1 = **红**（`.git/shallow` 存在）；3 = **无法判定**（读不到 ⇒ 不得当 0 读）。
+# ⚠️ 本判定**只**挂在 `doctor` 这个只读入口上，**不**进 `wt_registry_assert_for_entry`：
+#   那条断言在 `add` / `rm` / `rebase` 的开工路径上，浅仓不该阻断开工（issue #9081 要的是「开工自检」）。
+# ⚠️ `--heal` **不**自动跑 `--unshallow`：那是网络重活（会重新下载全史），出口命令必须显式执行。
+wt_shallow_doctor() {
+  local verdict="" prc=0 shallow_path="" boundaries=""
+  verdict="$(git -C "$REPO_ROOT" rev-parse --is-shallow-repository 2>/dev/null)" || prc=$?
+  shallow_path="$(git -C "$REPO_ROOT" rev-parse --path-format=absolute --git-path shallow 2>/dev/null || true)"
+  [ -n "${shallow_path}" ] || shallow_path="${GIT_COMMON_DIR}/shallow"
+  case "${verdict}" in
+    false)
+      echo "✅ 全史仓库（无 ${shallow_path}）：merge-base / rev-list --is-ancestor / git cherry 可信（issue #9081）"
+      return 0
+      ;;
+    true)
+      boundaries="$(wc -l < "${shallow_path}" 2>/dev/null | tr -d ' ' || true)"
+      echo "🔴 命中浅仓（issue #9081）：${shallow_path} 存在（shallow 边界提交 ${boundaries:-?} 个）"
+      echo "   · 它是**整个 clone** 的属性（不在任何 worktree 里）⇒ 所有 worktree + 后续会话都受影响；"
+      echo "   · 浅仓下 merge-base / rev-list --is-ancestor / git cherry **会给出错误答案而不报错**"
+      echo "     ⇒ 任何「已合入 origin/main」/「谁是谁的祖先」的判定都不可信。"
+      echo "   出口：git fetch --unshallow origin    # 恢复全史后再做合并/祖先判定"
+      return 1
+      ;;
+    *)
+      echo "⚠️ 读不到浅仓状态（git rev-parse --is-shallow-repository，exit ${prc}）—— 无法判定，不当成通过（issue #9081）"
+      return 3
+      ;;
+  esac
 }
 
 # ── 各入口的前置断言（地雷 D；issue #6235 要求「所有入口路径都过这道断言」）──────
@@ -820,12 +859,23 @@ case "${1:-}" in
     #   （只允许 `<common git dir>/worktrees/<name>`；落点在白名单外 ⇒ **拒绝并打印原因**）；
     #   ③ 修完**复检**，仍红则非零退出（不许"删了就算修好了"）。
     # 「删除类动作不做无人值守」在这里的落法 = **显式入参** `--heal`（没有默认修复、没有后台修复）。
+    # 🆕 issue #9081：同一入口再跑一条**浅仓自检**（`.git/shallow` 存在 ⇒ 红 + 出口
+    #   `git fetch --unshallow origin`；读不到 ⇒ 3 无法判定）。两条判定**各自独立**，退出码取**最坏**
+    #   （红 1 > 无法判定 3 > 绿 0）—— 「登记表一致」绝不能把浅仓掩盖成「无漂移」（那是本单要治的静默失真）。
     shift
     case "${1:-}" in
-      --heal)  wt_registry_doctor --heal ;;
-      --dry-run|"") wt_registry_doctor --dry-run ;;
+      --heal)      doctor_mode="--heal" ;;
+      --dry-run|"") doctor_mode="--dry-run" ;;
       *) echo "用法：./scripts/dev-worktree.sh doctor [--heal|--dry-run]"; exit 2 ;;
     esac
+    rc_registry=0; wt_registry_doctor "${doctor_mode}" || rc_registry=$?
+    rc_shallow=0;  wt_shallow_doctor || rc_shallow=$?
+    if [ "${rc_registry}" = "1" ] || [ "${rc_shallow}" = "1" ]; then exit 1; fi
+    if [ "${rc_registry}" != "0" ] || [ "${rc_shallow}" != "0" ]; then
+      echo "⚠️  doctor 有判定跑不完（登记表 ${rc_registry} / 浅仓 ${rc_shallow}）—— 无法判定，不当成通过（issue #9081）"
+      exit 3
+    fi
+    exit 0
     ;;
   lock)
     shift
