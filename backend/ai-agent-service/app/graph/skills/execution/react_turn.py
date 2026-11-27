@@ -41,6 +41,9 @@ from app.graph.skills.base_skill import (
     resolve_sms_code, safe_exc_message, unit_price_grounding_error,
 )
 from app.graph.pending_validated import VALIDATION_FAILURE_KEY
+# 确认卡展示面掩码（issue #9224）：实现体在 `phone_masking.py`（单一真值源），
+# 本模块只取入口 —— `base_skill` 是冻结棘轮文件（逐行只许下降），不能在那里长实现体。
+from app.graph.skills.phone_masking import mask_confirm_card_result
 from app.utils.remedy_registry import remedy_for
 
 
@@ -1647,6 +1650,12 @@ async def react_turn(
                                 logger.warning(f"[{skill_name}] 校验失败账清除失败（非致命）: {_e8}")
                         except Exception as e:
                             logger.warning(f"[{skill_name}] Terminal reset failed | session={session_id} error={e}")
+                    # 展示面掩码（issue #9224 产品口径，用户 2026-11-27 裁定）：确认卡只许展示
+                    # **掩码**手机号。必须在**追加 ToolMessage 之前**改并重算 `result_str`：模型上下文、
+                    # SSE 交互载荷（`customer_service_agent` 正是从 `ToolMessage.content` 反序列化）、
+                    # 落库的 `last_card` / `last_confirm_value` 读的都是这一份。失败非致命（helper 内留痕）。
+                    if await mask_confirm_card_result(tool_name, result_dict, session_id):
+                        result_str = json.dumps(result_dict, ensure_ascii=False, default=str)
                     new_messages.append(ToolMessage(content=result_str, tool_call_id=tool_call["id"], name=tool_name))
                     if tool_name == "interact" and result_dict.get("success"):
                         try:

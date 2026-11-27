@@ -5,6 +5,13 @@
 > 原因 = 单文件涨到 512KB 越过扫描上限，详见存档文件头与 issue #6404。
 > **后续条目继续在本文件 `## [Unreleased]
 
+### 确认卡只许展示掩码手机号：卡面 `fields[].value` 由服务端统一改写，掩码对齐「本轮真正要写入的号」（2026-11-27，issue #9224）
+
+- **形态**（用户 2026-11-27 产品口径裁定，逐字：「确认卡是否允许展示完整手机号，这个裁定是**展示脱敏后的手机号**，不能完整展示」）：`interact(component=confirm)` 的卡片在**工具结果进上下文/出站之前**统一整形（`app/graph/skills/execution/react_turn.py` 的调用点 + `app/graph/skills/phone_masking.py::mask_confirm_card_result`）—— `fields[].value` 里凡是手机号形态的值（完整 11 位号 / 已是掩码形态 / 嵌在嵌套 dict 与列表里）一律改写成掩码，且**以 `pending_validated_input` 的真号为锚**：模型抄来的旧号掩码（`138****8000`）会被改写成「本轮真正要写入的那个号」的掩码（`139****1111`）⇒ 卡面展示的号与落库的号终于同一个（CU-004：改前展示旧号、写入新号）。`confirmValue` 由掩码后的字段**同一次**重算（顾客点卡回传的就是它，与落库的 `last_confirm_value` 同源）。
+- **不变（边界）**：点卡**不**从卡面 `fields` 拼写参数（路由读 `last_confirm_value` / `pending_validated_input`）⇒ 本次**只动展示面**，写路径仍用真号；`app/api/chat_outbound.py` 的脱敏面未动，卡上没有新增 `rawValue` / `submitValue` 字段，`_masked_phone_write_block` 一个字没放宽。
+- **判据**：`backend/ai-agent-service/tests/test_card_phone_masking_9224.py`（14 条：载荷不得出现完整 11 位号（具名来源 key）/ 掩码必须等于本轮要写的号（真号 A + 旧掩码 B ⇒ 出现 mask(A)、不得出现 B）/ 幂等 / 嵌套 value / 订单号不误伤 / 接线顺序（整形在追加 `ToolMessage` 之前）/ 写路径边界（路由层源码零 `"fields"` 字面量 + 掩码后真值仍可读））。红证：摘掉接线 ⇒ 接线判据红；摘掉掩码实现 ⇒ 7 条红；只摘「真号锚」⇒ 恰好 3 条（B + 边界）红、A 仍绿。
+- **未纳入（照实）**：代码**兜底补卡**的两条路径（`app/api/chat.py::_reissue_confirm_card` / `finalize_turn` 的 8.3b 补卡）本轮**未改** —— `app/api/chat.py` 是冻结棘轮文件（逐行只许下降，`tests/unit_ci_workflows/test_loc_ratchet.py`），要纳入需先拆分该文件；C 端该卡面本来就有出站层脱敏兜底，B 端仍是现状。已登记为后续项。
+
 ### C 端「转人工」口径改判：不再否认人工客服存在，改指路微信客服发「人工」（2026-11-27，issue #9224）
 
 - **形态**：C 端（米宝）三个 skill 的 prompt 与参考层不再写「系统已无人工转接通道 / 不要把人推给一个不存在的入口」。商家开通微信客服后，顾客在微信客服里发送「人工」会被 `KfDecisionService` 的 `HUMAN_WORDS` 规则**直接**判 `ESCALATE_HUMAN`（不经 AI 判定；转接实现见 `KfTransferService`）⇒ 新口径 = **不得否认人工客服的存在**，并给出可执行落点「在微信客服里发送「人工」即可转接真人客服」。
