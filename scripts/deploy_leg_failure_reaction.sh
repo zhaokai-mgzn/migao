@@ -283,36 +283,38 @@ open_issue_of_title() {   # $1=标题 ⇒ 该标题下**开放**单的编号（�
 ATTEST_IMPL="$REPO_ROOT/.github/scripts/deploy_leg_deploy_evidence.py"
 deploy_attested() {   # $1=服务键（空=事件面，用 $RUN_ID） $2=清零依据
   local key="$1" why="$2" out rc sha
-  local -a args
   if [ ! -f "$ATTEST_IMPL" ]; then
     echo "::warning::关单前置「本次真的发生了部署」判不了：\`${ATTEST_IMPL#"$REPO_ROOT"/}\` 不在检出里（多为「引入它的 PR 还没合并」）⇒ **本轮不关单**（skip 非 deployed，issue #9056）"
     return 1
   fi
-  args=()
+  # ⚠️ 用**位置参数**（`set --` / `"$@"`）而不是命名数组：`set -u` 下展开空的命名数组在 macOS bash 3.2
+  #    会 unbound variable 直接打死整脚本（同族范式见 `scripts/batch-gate.sh` 的 `${_still[@]+"${_still[@]}"}`）。
+  #    `"$@"` / `$*` 是 bash 的特例：空时不报错 ⇒ 不需要空值护栏。
+  set --
   if [ -z "$key" ] && [ -n "$RUN_ID" ]; then
     # 事件面：`workflow_run` 载荷带着 run id ⇒ 直接读**那一条** run 的部署步。
-    args=(--run-id "$RUN_ID")
+    set -- --run-id "$RUN_ID"
   else
     # 状态面：依据形如 `无漂移：自 <7 位 sha>（上次成功部署）起 …` ⇒ 它点名的正是「那次部署」；
     # 读它的部署步，才知道那次「成功」到底是真部署还是 skip 空转（issue #9056 的现场形态）。
     sha="$(printf '%s' "$why" | sed -n 's/.*无漂移：自 \([0-9a-f]\{7\}\).*/\1/p')"
-    if [ -n "$sha" ]; then args=(--workflow "$(leg_workflow_file "$key")" --sha "$sha"); fi
+    if [ -n "$sha" ]; then set -- --workflow "$(leg_workflow_file "$key")" --sha "$sha"; fi
   fi
-  if [ "${#args[@]}" = "0" ]; then
+  if [ "$#" = "0" ]; then
     echo "::warning::关单前置「本次真的发生了部署」判不了（依据里取不到 run / 基准 commit：\`${why}\`）⇒ **本轮不关单**（skip 非 deployed，issue #9056）"
     return 1
   fi
   if [ "${DRY_RUN:-}" = "1" ]; then
     # 离线驱动（守卫测试 / 人工 dry-run）**不许**去打 GitHub：只打印，且按「判不了」处理（不关单）。
-    echo "   [dry-run] python3 ${ATTEST_IMPL#"$REPO_ROOT"/} ${args[*]} ⇒ 本轮不关单（只打印）"
+    echo "   [dry-run] python3 ${ATTEST_IMPL#"$REPO_ROOT"/} $* ⇒ 本轮不关单（只打印）"
     return 1
   fi
-  out="$(python3 "$ATTEST_IMPL" "${args[@]}" 2>&1)"; rc=$?
+  out="$(python3 "$ATTEST_IMPL" "$@" 2>&1)"; rc=$?
   printf '%s\n' "$out"
   if [ "$rc" = "0" ] && printf '%s' "$out" | grep -qF 'DEPLOY_EXECUTED=1'; then
     return 0
   fi
-  echo "::warning::腿 ${key:-$LEG} 的值守单**本轮不关**：本次没有自证「真的发生了部署」（rc=${rc}，skip 非 deployed）。复算：\`python3 ${ATTEST_IMPL#"$REPO_ROOT"/} ${args[*]}\`"
+  echo "::warning::腿 ${key:-$LEG} 的值守单**本轮不关**：本次没有自证「真的发生了部署」（rc=${rc}，skip 非 deployed）。复算：\`python3 ${ATTEST_IMPL#"$REPO_ROOT"/} $*\`"
   return 1
 }
 
