@@ -390,7 +390,7 @@ async def _masked_phone_write_block(tool_name: str, args: dict, tool_call: dict,
             return _masked_phone_block_result(
                 tool_name, path, value, candidates[0] if len(candidates) == 1 else "",
                 session_id, skill_name,
-                because="含掩码字符", tool_call=tool_call)
+                because="含掩码字符", tool_call=tool_call, user_scope=user_scope)
         if value in user_said:
             continue
         matched = [k for k in known if value in mask_variants(k)]
@@ -401,8 +401,8 @@ async def _masked_phone_write_block(tool_name: str, args: dict, tool_call: dict,
             continue
         return _masked_phone_block_result(
             tool_name, path, value, matched[0], session_id, skill_name,
-            because=f"是本会话真实号码（{matched[0]}）的掩码填充形态",
-            tool_call=tool_call)
+            because="是本会话真实号码的掩码填充形态",
+            tool_call=tool_call, user_scope=user_scope)
     if rewrites:
         applied = rewrite_phone_args(args, rewrites)
         from app.graph.skills import base_skill as _base
@@ -414,13 +414,38 @@ async def _masked_phone_write_block(tool_name: str, args: dict, tool_call: dict,
 
 def _masked_phone_block_result(tool_name: str, path: str, value: str, known_raw: str,
                                session_id: str, skill_name: str, because: str,
-                               tool_call: dict | None = None):
-    """构造拦截返回值（3 元组：tool_call, result_str, result_dict）。"""
+                               tool_call: dict | None = None,
+                               user_scope: set | None = None):
+    """构造拦截返回值（3 元组：tool_call, result_str, result_dict）。
+
+    `user_scope` = **顾客本人亲口说过的号**（`user_provided_phones`）。「纠正提示指向哪个号」
+    **只在函数内这一处决定**（issue #9224 的 CU-004）：
+
+    | 情形 | `tail` |
+    |---|---|
+    | `known_raw` 在 `user_scope` 里，或 `user_scope` 为空 | 回放 `known_raw`（本会话真号，现状）|
+    | `known_raw` **不在** `user_scope`（命中的是读工具返回的**旧号**）且 `user_scope` 非空 | 指向顾客给的号：唯一 ⇒ 直接给出；多个 ⇒ 全部列出并让模型用「顾客刚说的那个」|
+
+    为什么不能继续回放旧号：模型会照着「本会话真号」那一句重试 ⇒ 要么再被拦（员工建号
+    永远失败），要么把**旧号**写进库（顾客要改号却静默写回旧号 —— CU-004 的现场）。
+    故命中旧号时**提示里一个字都不出现旧号**（只出现顾客给的号）。
+    """
 
     from app.graph.skills import base_skill as _base
     logger = _base.logger
     import json as _json
-    if known_raw:
+    user_scope = set(user_scope or ())
+    if known_raw and user_scope and known_raw not in user_scope:
+        if len(user_scope) == 1:
+            target = sorted(user_scope)[0]
+            tail = (f"顾客这次给的号码是 **{target}**（顾客亲口给过的）—— 你交回的是"
+                    f"**会话里旧号**的掩码，不是顾客这次要的号；请用 `{target}` 重新调用 "
+                    f"`{tool_name}`，**不要**用掩码值、也不要用会话里读到的旧号。")
+        else:
+            listed = "、".join(f"**{p}**" for p in sorted(user_scope))
+            tail = (f"顾客亲口给过这些号码：{listed} —— 请用**顾客刚说的那个**重新调用 "
+                    f"`{tool_name}`；你交回的是**会话里旧号**的掩码，不要用它。")
+    elif known_raw:
         tail = (f"顾客的真实号码是 **{known_raw}** —— 请直接用这个完整号码重新调用 "
                 f"`{tool_name}`；**不要**把 `****` 填成数字。")
     else:
