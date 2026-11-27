@@ -440,6 +440,12 @@
       "owner": "#7229"
     },
     {
+      "path": "tests/unit_ci_workflows/test_shallow_repo_guard.py",
+      "guards": "浅仓污染的两道闸（issue #9081）：① `.git/shallow` 存在 ⇒ dev-worktree.sh 的 doctor 必须非零退出（红）、点名该文件并给出口 `git fetch --unshallow origin`，读不到浅仓状态 ⇒ 3 无法判定，且这条检查不得挂进开工前置断言；② 仓库执行面里任何形状改变型拉取（`git fetch`/`pull` + `--depth` / `--shallow-since` / `--shallow-exclude` / `--filter`）必须在 shallow_fetch_ledger.json 登记，台账只许缩短（0 命中 / 命中数变了 / 缺理由都红）",
+      "red_proof": "摘掉 doctor 里 `wt_shallow_doctor` 那一行 ⇒ test_the_doctor_check_is_what_makes_it_red 红（同一浅仓夹具转绿 = 判据 1 归因错误）；在临时副本里加一条未登记的 `git fetch --depth` ⇒ test_unregistered_shape_changing_fetch_is_named_red 红并具名该文件",
+      "owner": "#9081"
+    },
+    {
       "path": "tests/unit_ci_workflows/test_shipment_read_surface_guard.py",
       "guards": "同一真值的两个读面必须都落地：真值视图键只能有一处投影、桌面面必须消费 admin 面、且绝不把「读不到」渲染成 0",
       "red_proof": "把桌面读面改成直接渲染 0 而不是用 admin 面 ⇒ test_c4_desktop_consumes_the_admin_face_and_never_renders_missing_as_zero 红；给同一真值键加第二处投影 ⇒ test_c3_truth_view_key_has_exactly_one_projection 红",
