@@ -217,9 +217,27 @@ def _one_line(v) -> str:
     return " ".join(str(v).split())
 
 
+def _kf_face_render(spec):
+    """kf 判定面期望的规范串 —— **唯一实现点**在 `tests/agent_eval/kf_judge_face.py`。
+
+    为什么渲染器不另写一份 `kf_judge({...})` 格式：渲染（本文件）/ 装载（`local_runner`
+    的 `--cases` 路径）/ runner 的判定面**三处共用同一份格式**，各写一份必然漂移；
+    漂移的后果是断言永不满足 —— 用例永远红或永远绿，而两种都长得像「跑过了」。
+    """
+    face_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                            "tests", "agent_eval")
+    if face_dir not in sys.path:
+        sys.path.append(face_dir)
+    from kf_judge_face import render_expectation
+
+    return render_expectation(spec)
+
+
 def exp_to_str(e):
     if isinstance(e, str):
         return e
+    if isinstance(e.get("kf_judge"), dict):
+        return _kf_face_render(e.get("kf_judge"))
     tool = e.get("tool", "")
     args = e.get("args") or {}
     if not args:

@@ -115,6 +115,8 @@ from eval_case_filter import (  # noqa: E402
     judge_case_ids_leg_parity,
     select_cases_for_persona,
 )
+# 微信客服「判定 JSON 面」（零第三方依赖；本文件的 httpx 依赖不进它 —— 见其模块头）
+import kf_judge_face  # noqa: E402
 
 
 def _validate_service_token(token: str) -> str | None:
@@ -9334,10 +9336,31 @@ async def run_case(case, token: str, session_id: str) -> dict:
         if "success=true" in dcs or "error.code=" in dcs or "未被调用" in dc or "not called" in dcs:
             scoring_checks.append(str(dc))
 
+    # ── 微信客服（kf）「判定 JSON 面」（新能力面）──────────────────────────────────
+    # kf = C 端**唯一主入口**（mini-app 已于 2026-11-26 删除），而 chat 面判据看不见它的
+    # 介入判定（`KfDecisionService` → `KfJudgeClient` → `POST /api/internal/kf/judge`）。
+    # 面本体 = `tests/agent_eval/kf_judge_face.py`（接**真端点**、判定逻辑零复制）。
+    # 失败关闭：缺前置（端点不可达 / success=false / 空输入）⇒ 该条期望**判红并具名**，
+    # 绝不静默 pass（`migao-acceptance`：「没跑」必须长得像「没跑」）。
+    kf_judge_outcome = None
+    kf_judge_passed = {}
+    if any(kf_judge_face.is_face_expectation(c) for c in scoring_checks):
+        kf_judge_outcome = await kf_judge_face.judge_case_inputs_async(
+            getattr(case, "user_inputs", []) or [])
+
     # 检查 expectations + 机器可判定 data_checks
     passed_expectations = 0
     failed_expectations = []
     for exp in scoring_checks:
+        if kf_judge_face.is_face_expectation(exp):
+            # 判定面期望不走 chat 面匹配（否则恒红/空断言）；断言字段级、具名到字段。
+            ok, detail = kf_judge_face.check(kf_judge_face.parse_expectation(exp), kf_judge_outcome)
+            kf_judge_passed[str(exp)] = ok
+            if ok:
+                passed_expectations += 1
+            else:
+                failed_expectations.append((exp, detail))
+            continue
         passed = False
         detail = ""
         # 在每一轮的结果中检查
@@ -9481,7 +9504,8 @@ async def run_case(case, token: str, session_id: str) -> dict:
 
     # 通过用例的断言证据（盲审缺陷三）：在返回处计算一次，随结果进 summary。
     # 失败用例同样带上（evidence 是审计材料，不因红而缺）。
-    _assertions_fired = _assertions_fired_summary(case, scoring_checks, results, score)
+    _assertions_fired = _assertions_fired_summary(case, scoring_checks, results, score,
+                                                 face_passed=kf_judge_passed)
 
     return {
         "case_id": case.id,
@@ -10777,15 +10801,24 @@ def _scoring_check_is_failable(check: object) -> bool:
     return False
 
 
-def _assertions_fired_summary(case, scoring_checks: list, results: list, score: float) -> dict:
+def _assertions_fired_summary(case, scoring_checks: list, results: list, score: float,
+                              face_passed: dict | None = None) -> dict:
     """每条用例的**断言证据摘要**：哪些计分断言命中、是否可失败、效果层是否真触发。
 
     在 `_run_one_case` 里计算（吃 case 对象与当轮 results），随结果序列化进 summary。
     通过路径（score>=1.0 ⇒ 所有 case 级检查零 issue）下，声明过的效果层字段即
     「真触发且通过」；失败路径保守标记 False（不冒充「触发过」）。
+
+    `face_passed` = kf 判定面（`tests/agent_eval/kf_judge_face.py`）逐条结果（issue 见该模块头）。
+    判定面期望**不走** `check_expectation`（那是 chat 面匹配器），否则证据摘要把"面断言通过"
+    记成 `passed=False` —— 报告面与计分面自相矛盾。
     """
     fired = []
     for exp in scoring_checks:
+        if kf_judge_face.is_face_expectation(exp):
+            fired.append({"check": str(exp)[:120], "failable": True,
+                          "passed": bool((face_passed or {}).get(str(exp)))})
+            continue
         passed = any(check_expectation(r, exp)[0] for r in results)
         fired.append({"check": str(exp)[:120], "failable": _scoring_check_is_failable(exp),
                       "passed": passed})
