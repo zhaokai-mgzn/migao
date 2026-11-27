@@ -1,0 +1,6 @@
+{
+  "id": "MC-371",
+  "pr": 9266,
+  "title": "被 cancel 的 CI 腿也要可归因：进度包装器（trap + step summary + annotation）（issue #9114）",
+  "claimed_at": "2026-11-27"
+}
