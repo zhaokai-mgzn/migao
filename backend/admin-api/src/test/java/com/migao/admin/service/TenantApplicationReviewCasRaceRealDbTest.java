@@ -120,6 +120,21 @@ class TenantApplicationReviewCasRaceRealDbTest {
     /** 并发线程数（判据口径 N=5~10；取中位 6：足够稳定命中，又不把开租链路压成长尾）。 */
     private static final int CONCURRENCY = 6;
 
+    /**
+     * 并发轮数（issue #9269 缺陷 1）。
+     *
+     * <p>🔴 <b>一轮不够，且这一轮的不足恰好与缺陷本身的形态同构</b>：落败方走「读判快速路径」还是走
+     * 「CAS 落空」是<b>时序决定的</b> ⇒ 单轮里如果 6 个线程都在赢家提交**之前**读判，全走 CAS
+     * ⇒ 单轮也全绿；只有那些「读判落在赢家提交之后」的轮次才走快速路径。改前（快速路径给 422）
+     * 同一个提交**重跑一次绿一次红**，机制就在这条时序上（#7931 / #8408 的现场读数是
+     * {@code [200,409,409,409,422,422]}）。⇒ 判据必须跑够轮数，「随机变绿」才不可能藏住
+     * （issue #9269 的判完成口径逐字：<b>并发 N 次（N≥20 轮）稳定</b>）。
+     *
+     * <p>成本：一轮 = 6 线程 × 一条开租链路 ≈ 0.5s（本机实测），20 轮 ≈ 10s；相比「随机红的 CI
+     * 重跑一整轮（8~10min）」是划算的。</p>
+     */
+    private static final int ROUNDS = 20;
+
     private static final String COMPANY = "ta-6954-观星台布艺有限公司";
 
     /**
@@ -199,48 +214,62 @@ class TenantApplicationReviewCasRaceRealDbTest {
     // ────────────────────────────────────────────── 判据 1~3：并发双 approve
 
     @Test
-    @DisplayName("并发 N 次 approve 同一申请单 ⇒ 成功数恰 1 + 租户恰 1 行 + 管理员恰 1 个 + 终态 approved")
+    @DisplayName("并发 N 次 approve 同一申请单 × 20 轮 ⇒ 每轮成功数恰 1 + 租户恰 1 行 + 落败方全 409")
     void concurrentApprovalsCreateExactlyOneTenant() throws Exception {
-        long appId = insertPendingApplication(COMPANY, "13900006954");
+        //: 每轮的状态码读数（失败时逐轮可归因；20 轮全绿时它同时是「不是靠运气」的证据）
+        List<String> perRound = new ArrayList<>();
+        for (int round = 1; round <= ROUNDS; round++) {
+            String company = COMPANY + "-r" + round;
+            long appId = insertPendingApplication(company, phoneForRound(round));
 
-        List<Verdict> outcomes = runConcurrently(appId, CONCURRENCY);
-        long successes = outcomes.stream().filter(v -> v.status() == 200).count();
-        List<Integer> failures = outcomes.stream().filter(v -> v.status() != 200).map(Verdict::status).sorted().toList();
-        long tenantRows = count("SELECT count(*) FROM tenants WHERE name = '" + COMPANY + "'");
-        long adminRows = count("SELECT count(*) FROM users u JOIN tenants t ON u.tenant_id = t.id"
-                + " WHERE t.name = '" + COMPANY + "' AND u.role = 'admin'");
-        String finalStatus = string("SELECT status FROM tenant_applications WHERE id = " + appId);
-        String reviewedBy = string("SELECT reviewed_by FROM tenant_applications WHERE id = " + appId);
+            List<Verdict> outcomes = runConcurrently(appId, CONCURRENCY);
+            List<Integer> codes = outcomes.stream().map(Verdict::status).sorted().toList();
+            long successes = codes.stream().filter(s -> s == 200).count();
+            List<Integer> failures = codes.stream().filter(s -> s != 200).toList();
+            List<String> details = outcomes.stream().filter(v -> v.status() != 200)
+                    .map(Verdict::detail).toList();
+            long tenantRows = count("SELECT count(*) FROM tenants WHERE name = '" + company + "'");
+            long adminRows = count("SELECT count(*) FROM users u JOIN tenants t ON u.tenant_id = t.id"
+                    + " WHERE t.name = '" + company + "' AND u.role = 'admin'");
+            String finalStatus = string("SELECT status FROM tenant_applications WHERE id = " + appId);
+            String reviewedBy = string("SELECT reviewed_by FROM tenant_applications WHERE id = " + appId);
+            String codesReading = "第 " + round + "/" + ROUNDS + " 轮 appId=" + appId
+                    + " 各状态码=" + codes
+                    + " 成功数=" + successes
+                    + " 失败状态码=" + failures
+                    + " 租户行=" + tenantRows
+                    + " 管理员行=" + adminRows
+                    + " 单据终态=" + finalStatus
+                    + " reviewed_by=" + reviewedBy;
+            perRound.add(codesReading);
+            System.out.println("[READING #6954 并发] " + codesReading + " 失败文案=" + details);
 
-        System.out.println("[READING #6954 并发] appId=" + appId
-                + " 线程数=" + CONCURRENCY
-                + " 各状态码=" + outcomes.stream().map(Verdict::status).sorted().toList()
-                + " 成功数=" + successes
-                + " 失败状态码=" + failures
-                + " 租户行=" + tenantRows
-                + " 管理员行=" + adminRows
-                + " 单据终态=" + finalStatus
-                + " reviewed_by=" + reviewedBy
-                + " 失败文案=" + outcomes.stream().filter(v -> v.status() != 200).map(Verdict::detail).toList());
-
-        assertThat(successes)
-                .as("并发审批同一申请单 ⇒ 恰 1 次成功（修前实测 2 次 —— 两个租户都建出来了）")
-                .isEqualTo(1L);
-        assertThat(tenantRows)
-                .as("🔴 不可逆副作用的独立算式：以该企业名建出的租户数必须恰好 1（修前实测 2）")
-                .isEqualTo(1L);
-        assertThat(adminRows)
-                .as("该租户下的管理员恰好 1 个（修前实测 2 —— 第二个管理员挂在无主租户上）")
-                .isEqualTo(1L);
-        assertThat(finalStatus).as("申请单终态必须与赢家一致").isEqualTo("approved");
-        assertThat(reviewedBy).as("审结事实（reviewed_by）必须落库").isNotBlank();
-        assertThat(failures).as("落败方必须全部是显式 4xx，不许出现 500").isNotEmpty();
-        assertThat(failures).as("落败方不得有 5xx").allMatch(s -> s >= 400 && s < 500);
-        assertThat(failures)
-                .as("落败方**全部**必须是 409 CONFLICT —— 快速路径读判与 CAS 落空说的是**同一个终态**"
-                        + "（「该申请已审结」）⇒ 只有一种状态码。改前快速路径给 422，于是落败方拿到哪个码"
-                        + "取决于时序 ⇒ 本断言随机红（#7931 / #8408 的 flaky 机制）")
-                .allMatch(s -> s == 409);
+            // 归因口径：每条断言的 as() 都带**轮次**（否则 20 轮里红一次，读的人不知道是哪一轮的哪件事）
+            String roundTag = "第 " + round + "/" + ROUNDS + " 轮：";
+            assertThat(successes).as(roundTag + "并发审批同一申请单 ⇒ 恰 1 次成功（修前实测 2 次 —— "
+                            + "两个租户都建出来了）").isEqualTo(1L);
+            assertThat(tenantRows).as(roundTag + "🔴 不可逆副作用的独立算式：以该企业名建出的租户数必须恰好 1")
+                    .isEqualTo(1L);
+            assertThat(adminRows).as(roundTag + "该租户下的管理员恰好 1 个（第二个会挂在无主租户上）")
+                    .isEqualTo(1L);
+            assertThat(finalStatus).as(roundTag + "申请单终态必须与赢家一致").isEqualTo("approved");
+            assertThat(reviewedBy).as(roundTag + "审结事实（reviewed_by）必须落库").isNotBlank();
+            assertThat(failures).as(roundTag + "落败方必须全部是显式 4xx，不许出现 500").isNotEmpty();
+            assertThat(failures).as(roundTag + "落败方不得有 5xx").allMatch(s -> s >= 400 && s < 500);
+            assertThat(failures)
+                    .as(roundTag + "落败方**全部**必须是 409 CONFLICT —— 快速路径读判与 CAS 落空说的是"
+                            + "**同一个终态**（「该申请已审结」）⇒ 只有一种状态码。改前快速路径给 422，"
+                            + "于是落败方拿到哪个码取决于时序 ⇒ 本断言随机红（#7931 / #8408）")
+                    .allMatch(s -> s == 409);
+            // 「其余语义明确」：落败方的 409 必须**说得出实际终态**（不是裸 409，也不是 500/422）
+            assertThat(details)
+                    .as(roundTag + "落败方的 409 必须可归因（文案点明当前终态 approved）")
+                    .hasSize(CONCURRENCY - 1)
+                    .allMatch(d -> d.startsWith("CONFLICT") && d.contains("当前状态: approved"));
+        }
+        System.out.println("[READING #6954 并发汇总] 轮数=" + ROUNDS
+                + " 每轮状态码集=" + perRound.stream().map(s -> s.substring(s.indexOf("各状态码="),
+                        s.indexOf(" 成功数"))).toList());
     }
 
     // ────────────────────────────────────────────── 判据 4：串行正对照（护栏不误杀）
@@ -425,6 +454,17 @@ class TenantApplicationReviewCasRaceRealDbTest {
                         session.getMapper(ProcessingItemMapper.class)),
                 // #7592：开租默认主仓（本判据只关心审批权 CAS，仓播种走真实现即可）
                 new WarehouseSeedService(session.getMapper(WarehouseMapper.class)));
+    }
+
+    /**
+     * 每轮一条**不同**的联系手机号（探针全部自建、随集群销毁）。
+     *
+     * <p>为什么必须逐轮不同：开租链路会用申请单的 phone 建管理员用户；同一号码在多轮里反复出现
+     * 只能证明「号码可复用」，却把「一轮一条单据」的独立性交给了 schema 的索引形态 ——
+     * 逐轮换号让「每轮是一个独立事实」成立，且不依赖任何唯一约束的现状。</p>
+     */
+    private static String phoneForRound(int round) {
+        return String.format("139000%05d", 69540 + round);
     }
 
     /** 落一条 pending 入驻申请（= 真实链路里 AI 放行前的那一行）。 */
