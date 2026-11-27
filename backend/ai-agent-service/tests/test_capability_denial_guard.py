@@ -31,6 +31,7 @@ from unittest.mock import patch, AsyncMock, MagicMock
 import pytest
 from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
 
+from app.graph.skills.capability_denial import _order_capability_reachable_for_persona
 from app.graph.skills.base_skill import (
     capability_denial_text_hit,
     _capability_denial_reason,
@@ -423,6 +424,192 @@ class TestTextDenialCorrectionCrossSkill:
             state_overrides={"pending_interact_skill": "customer_product"})
         assert out["final_answer"] == refusal
         assert llm.ainvoke.await_count == 1
+
+
+# ────────────────────── 行为面：B 端（只读域）不得被注入「你可以真实落单」──────────────────────
+# 注入点 = `execution/react_turn.py` 的「文本级能力误宣纠正」：命中后往 `new_messages` 里塞一条
+# SystemMessage（`_TEXT_DENIAL_CORRECTIVE_MIDORDER` / `_TEXT_DENIAL_CORRECTIVE_BIZ`）并 `continue` 重答。
+# 该分支的门 = `capability_denial._order_capability_available(...)`。旧实现把「可达」判成
+# 「全局注册表里有就算」（`_tool_registered_globally(ORDER_WRITE_TOOL)`，生产恒真）⇒ 在
+# `_order_flow_in_progress` 为真的 **B 端**会话里注入**假**承诺「order_create 在全局工具表里，
+# 下一轮就能真正落单」—— 而 B 端 order 域按用户裁定 2026-09-23（issue #5247）**整域只读**，
+# `order_skill.ORDER_TOOLS` 里没有任何写工具 ⇒ 下一轮根本兑现不了。
+_ORDER_CAPABILITY_CLAIMS = (
+    "可以真实落单", "可以真实下单", "在全局工具表里", "下一轮就能真正落单",
+    "就是本流程的写工具", "就在本流程的工具表里",
+)
+
+
+def _llm_texts(message_list):
+    return [str(getattr(m, "content", "") or "") for m in (message_list or [])]
+
+
+def _injected_between_iterations(llm) -> list:
+    """第 2 次及以后的 LLM 调用里**新出现**的消息 = 守卫注入的纠正文本（注入点证据）。"""
+    calls = list(getattr(llm.ainvoke, "call_args_list", []) or [])
+    if not calls:
+        return []
+    first = _llm_texts(calls[0].args[0])
+    injected: list = []
+    for call in calls[1:]:
+        for text in _llm_texts(call.args[0]):
+            if text and text not in first and text not in injected:
+                injected.append(text)
+    return injected
+
+
+def _capability_claims(texts) -> list:
+    return [t for t in texts if any(c in t for c in _ORDER_CAPABILITY_CLAIMS)]
+
+
+class TestBEndReadonlyDomainNotClaimedCapable:
+    """B 端 order 域只读（用户裁定 2026-09-23，issue #5247）⇒「落单要走订单工作台」是**真话**。
+
+    本族守卫的射程是「**能**做到却说自己做不到」。B 端**真的**不能建单 ⇒ 不得纠正；
+    更不得反过来注入「你可以真实落单」—— 那会逼模型说出下一轮兑现不了的承诺，
+    正是本族缺陷的**反向**形态。
+    """
+
+    B_DENIAL = "这单要落单，要走订单工作台，我这条线负责的是商品侧"
+    C_DENIAL = "亲，米宝这边没有帮您下单的权限哦，需要您在小程序里操作"
+    OK = "好嘞，我这就把商品加进订单，请稍等～"
+
+    def test_b_end_session_gets_no_capability_claim_injected(self):
+        """判据 ①（本单主判据）：B 端 + 在办下单 ⇒ 不得出现「你可以真实落单」类注入。"""
+        out, llm, _, pending = _run_text_guard(
+            [self.B_DENIAL], skill="order", has_order_tool=False,
+            facts={"grounded_product_detail": {"product_id": "p1"}},
+            state_overrides={"agent_type": "mibao", "role": "admin",
+                             "pending_interact_skill": "order"})
+        injected = _injected_between_iterations(llm)
+        claims = _capability_claims(injected)
+        assert not claims, (
+            "B 端（黄金策）在办下单会话被注入了「你可以真实落单」类**假承诺**。\n"
+            "注入点 = backend/ai-agent-service/app/graph/skills/execution/react_turn.py 的"
+            "「文本级能力误宣纠正」分支（`_TEXT_DENIAL_CORRECTIVE_MIDORDER` / `_BIZ`）；\n"
+            "门 = backend/ai-agent-service/app/graph/skills/capability_denial.py 的"
+            "`_order_capability_available` —— B 端 `order_skill.ORDER_TOOLS` 无 order_create"
+            "（#5247 整域只读）。本轮注入内容：\n" + "\n".join(claims))
+        assert out["final_answer"] == self.B_DENIAL, (
+            f"B 端的**真**能力边界被改写成别的话：{out['final_answer']!r}")
+        assert llm.ainvoke.await_count == 1, (
+            f"B 端被无谓重答（实得 {llm.ainvoke.await_count} 次）—— 守卫把真话判成了假话")
+        # 轮末的跨轮持久化每轮都会把「当前 skill」写一次（finalize_turn），故这里只判
+        # 「不得被**回锁到 C 端下单流程**」—— 那才是「会话能落单」的实际恢复路径。
+        assert ("sess_001", "customer_order") not in pending, (
+            f"B 端被回锁到 C 端下单流程（实得 {pending!r}）—— 回锁目标不该存在于 B 端图里")
+
+    def test_c_end_session_still_gets_the_corrective(self):
+        """判据 ②（防改没）：C 端 `CUSTOMER_ORDER_TOOLS` 里**真有** order_create ⇒ 纠正逐字不退。"""
+        out, llm, _, pending = _run_text_guard(
+            [self.C_DENIAL, self.OK], skill="customer_product", has_order_tool=False,
+            facts={"grounded_product_detail": {"product_id": "p1"}},
+            state_overrides={"agent_type": "xiaobu", "role": "customer",
+                             "pending_interact_skill": "customer_product"})
+        injected = _injected_between_iterations(llm)
+        claims = _capability_claims(injected)
+        assert claims, (
+            "C 端在办下单会话**不再**被纠正「我下不了单」—— 功能被改没了。\n"
+            f"实得注入：{injected}")
+        assert ("sess_001", "customer_order") in pending, (
+            "C 端纠正后未回锁下单流程 → 下一轮无法真正落单（恢复路径缺失）")
+        assert out["final_answer"] == self.OK
+
+
+def _guard_source_without_docstring(fn) -> str:
+    tree = ast.parse(inspect.getsource(fn))
+    body = tree.body[0].body
+    if body and isinstance(body[0], ast.Expr) and isinstance(body[0].value, ast.Constant) \
+            and isinstance(body[0].value.value, str):
+        tree.body[0].body = body[1:]
+    return ast.unparse(tree)
+
+
+class TestReachabilitySharesOneTruthSourceWithSkillToolSets:
+    """判据 ③：判「可达」的那处必须与 skill 工具集（`*_TOOLS` × 绑定面）**同源**。
+
+    真值源 = `SkillConfig.tool_names`（谁**声明**了 order_create）× `AgentConfig.skill_names`
+    （该 persona 的图里有没有那个 skill）。同一个事实也决定「回锁目标」（`_flow_owner_skill`）——
+    两侧若各写一份，改一侧另一侧不变 ⇒ 本类判据红。
+    """
+
+    @staticmethod
+    def _registry_stub(configs, calls):
+        class _Stub:
+            def get_all(self_inner):
+                calls.append("get_all")
+                return list(configs)
+
+            def get(self_inner, name):
+                calls.append(name)
+                return next((c for c in configs if c.name == name), None)
+
+        return _Stub()
+
+    def test_answers_follow_the_skill_declarations_per_persona(self):
+        from app.graph.skills.order_flow_guard import _flow_owner_skill
+        for persona, expected in (("mibao", False), ("xiaobu", True)):
+            state = {"agent_type": persona}
+            owner = _flow_owner_skill(state)
+            avail = _order_capability_available(None, order_in_progress=True, state=state)
+            assert bool(owner) is expected, (
+                f"回锁目标解析与 persona 绑定面不符：persona={persona} owner={owner!r}")
+            assert avail is expected, (
+                f"可达性与 skill 工具集不符：persona={persona} expected={expected} got={avail}")
+        owner = _flow_owner_skill({"agent_type": "xiaobu"})
+        from app.graph.skills.skill_registry import get_skill_registry
+        assert "order_create" in (get_skill_registry().get(owner).tool_names or ()), (
+            f"C 端回锁目标 {owner!r} 并未声明 order_create —— 回锁与可达不同源")
+
+    def test_mutating_the_declaration_flips_both_answers_together(self, monkeypatch):
+        """注入式对照：只改 skill 声明 ⇒ 「可达」与「回锁目标」**同时**翻转（只翻一侧 = 两份实现）。"""
+        from dataclasses import replace
+        from app.graph.skills.order_flow_guard import _flow_owner_skill
+        from app.graph.skills.skill_registry import get_skill_registry
+
+        real = get_skill_registry().get_all()
+
+        # ── 方向 1：让 B 端 order skill 声明 order_create ⇒ 两侧一起变 True ──
+        calls: list = []
+        mutated_b = [replace(c, tool_names=[*c.tool_names, "order_create"])
+                     if c.name == "order" else c for c in real]
+        monkeypatch.setattr("app.graph.skills.skill_registry.get_skill_registry",
+                            lambda: self._registry_stub(mutated_b, calls))
+        owner_b = _flow_owner_skill({"agent_type": "mibao"})
+        avail_b = _order_capability_available(None, order_in_progress=True,
+                                              state={"agent_type": "mibao"})
+        assert calls, "注入未生效：桩一次都没被查询（判据在静默空跑）"
+        assert (bool(owner_b), avail_b) == (True, True), (
+            f"B 端 order skill 声明了 order_create，但「可达={avail_b} / 回锁={owner_b!r}」没跟上"
+            f" —— 两侧不是同一份事实源")
+
+        # ── 方向 2：让 C 端 customer_order 不再声明它 ⇒ 两侧一起变 False ──
+        calls.clear()
+        mutated_c = [replace(c, tool_names=[t for t in c.tool_names if t != "order_create"])
+                     if c.name == "customer_order" else c for c in real]
+        monkeypatch.setattr("app.graph.skills.skill_registry.get_skill_registry",
+                            lambda: self._registry_stub(mutated_c, calls))
+        owner_c = _flow_owner_skill({"agent_type": "xiaobu"})
+        avail_c = _order_capability_available(None, order_in_progress=True,
+                                              state={"agent_type": "xiaobu"})
+        assert calls, "注入未生效：桩一次都没被查询（判据在静默空跑）"
+        assert (bool(owner_c), avail_c) == (False, False), (
+            f"C 端 customer_order 去掉 order_create 后，「可达={avail_c} / 回锁={owner_c!r}」没跟上"
+            f" —— 两侧不是同一份事实源")
+
+    def test_predicate_hardcodes_no_persona_name(self):
+        """判据本身不得写死 persona 名单（「哪端能写」只能由 skill 声明 × 绑定面现取解析）。"""
+        src = _guard_source_without_docstring(_order_capability_available)
+        for persona in ("mibao", "xiaobu"):
+            assert persona not in src, (
+                f"`_order_capability_available` 里出现了 persona 字面量 {persona!r} —— "
+                f"「哪端能写」被写死了（#5247 一类裁定一变，这里就会说假话）")
+        assert "_order_capability_reachable_for_persona" in src, (
+            "可达性不再走 persona 工具集解析（`_order_capability_reachable_for_persona` 消失）"
+            "—— 会退回「全局注册即可达」（issue #9291 的缺陷形态）")
+        resolver_src = _guard_source_without_docstring(_order_capability_reachable_for_persona)
+        assert "_flow_owner_skill" in resolver_src, (
+            "persona 可达性不再与「回锁目标」同源（`_flow_owner_skill` 消失）—— 两侧会各说一套")
 
 
 # ────────────────────── 行为面：跨 skill 的转人工拦截 ──────────────────────

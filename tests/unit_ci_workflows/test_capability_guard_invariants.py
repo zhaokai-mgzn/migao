@@ -48,6 +48,9 @@ NEW_UNITS = (
 GUARD_PREDICATES = (
     "_order_write_tool_here",
     "_order_capability_available",
+    # issue #9291：可达性的 **persona 维度**（全局有 ≠ 本会话拿得到）。必须与上面几条同受
+    # L0 锁（看不到 skill 名 / 不写死名单），否则「哪端能写」会被写成一张会腐烂的名字表。
+    "_order_capability_reachable_for_persona",
     "_registry_has_confirm_write_tool",
     "_handoff_guard_applies",
     "_order_flow_in_progress",
@@ -206,16 +209,60 @@ def test_write_flow_coverage_derives_from_tool_attributes():
 
 
 def test_order_capability_derives_from_tool_registry_facts():
-    """下单能力可达性必须读**注册表事实**（本 skill 子集 / 全局注册表），不读 skill 名。"""
+    """下单能力可达性必须读**注册表事实**（本 skill 子集 / 全局 / persona 工具集），不读 skill 名。
+
+    issue #9291：**全局注册表里有 ≠ 本会话拿得到**。B 端 order 域按 #5247 整域只读，
+    旧实现只判「全局注册即有」⇒ 给 B 端注入「下一轮就能真正落单」（兑现不了）。
+    故这里同时锁**persona 维度**必须与「回锁目标」同源（`_flow_owner_skill`），
+    而不是另写一张「哪端能写」的名字表。
+    """
     funcs = _functions(_module())
     assert "ORDER_WRITE_TOOL" in ast.unparse(funcs["_order_write_tool_here"])
     avail = ast.unparse(funcs["_order_capability_available"])
     assert "_order_write_tool_here" in avail and "_tool_registered_globally" in avail, (
-        "可达性判据不再是「本 skill 工具事实 ∨（在办流程状态 × 全局工具事实）」"
+        "可达性判据不再是「本 skill 工具事实 ∨（在办流程状态 × 全局工具事实 × …）」"
+    )
+    assert "_order_capability_reachable_for_persona" in avail, (
+        "可达性丢了 persona 维度（工具**声明在谁的图里**）—— 退回「全局注册即可达」，"
+        "B 端（#5247 只读域）会被注入兑现不了的「你可以真实落单」（issue #9291）"
+    )
+    persona = ast.unparse(funcs["_order_capability_reachable_for_persona"])
+    assert "_flow_owner_skill" in persona, (
+        "persona 可达性与「回锁目标」不再同源（`_flow_owner_skill`）—— 两份实现会各说一套"
+    )
+    literals = ["mibao", "xiaobu"]
+    body = ast.unparse(_body_without_docstring(
+        funcs["_order_capability_reachable_for_persona"]))
+    offenders = [p for p in literals if p in body]
+    assert not offenders, (
+        f"persona 可达性里写死了 persona 名 {offenders} —— 「哪端能写」必须是现取解析，"
+        f"否则 #5247 一类裁定一变这里就说假话"
     )
     flow = ast.unparse(funcs["_order_flow_in_progress"])
     assert "pending_interact_skill" in flow or "_flow_state_in_progress" in flow, (
         "「在办下单」判据不再读跨轮状态（回落成措辞关键词驱动，正是 #3477 的漏网机制）"
+    )
+
+
+def test_order_capability_call_sites_pass_the_session_state():
+    """**接线判据（类级）**：所有可达性调用点都必须带上会话状态（persona 维度）。
+
+    不传 `state` = 退回「全局注册即可达」—— 正是 issue #9291 的缺陷形态，且**不会报错**：
+    判据会静默按"认不出 persona"的兜底路径作答（那条兜底只为兼容既有测试而留）。
+    """
+    located = []
+    for path, tree in _family_sources():
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) \
+                    and node.func.id == "_order_capability_available":
+                located.append((path, node))
+    assert located, (
+        "未定位到 `_order_capability_available` 的调用点（结构变了 → 本判据需同步更新）")
+    missing = [f"{path.name} L{node.lineno}" for path, node in located
+               if not any(k.arg == "state" for k in node.keywords)]
+    assert not missing, (
+        "这些调用点没把会话状态（persona）带进可达性判据 ⇒ 会退回「全局注册即可达」"
+        "（B 端被注入假承诺）：\n" + "\n".join(missing)
     )
 
 

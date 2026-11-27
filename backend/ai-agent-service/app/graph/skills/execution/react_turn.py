@@ -311,13 +311,17 @@ async def react_turn(
                     _denial_hit = capability_denial_text_hit(new_text)
                     # 判据 = **在办下单流程状态 × 工具能力事实**（与 skill 名无关，#3477 根治）：
                     #   · `_has_write_now`：下单写工具就在**本 skill** 手上（注册表事实）；
-                    #   · `_order_in_progress`：顾客处于在办下单流程（跨轮状态事实，不靠本轮措辞）。
+                    #   · `_order_in_progress`：顾客处于在办下单流程（跨轮状态事实，不靠本轮措辞）；
+                    #   · `state`：**persona 维度**（issue #9291）—— 全局注册表里有 `order_create`
+                    #     不等于本会话拿到它：B 端 order 域按 #5247 整域只读 ⇒ 回锁目标解析为空
+                    #     ⇒ 不可达 ⇒ **不注入**「你可以真实落单」（否则是系统主动写下的假承诺）。
                     _order_in_progress = await _order_flow_in_progress(
                         session_id, state, last_user_msg)
                     _has_write_now = _order_write_tool_here(skill_registry)
                     if (_denial_hit and not _denial_corrected
                             and _order_capability_available(
-                                skill_registry, order_in_progress=_order_in_progress)):
+                                skill_registry, order_in_progress=_order_in_progress,
+                                state=state)):
                         # issue #3477：顾客在办下单时，即使当前 skill 没有写工具
                         # （如会话被 choice 卡锁在 customer_product），也不许"我下不了单"。
                         # 无写工具时用 MIDORDER 版话术（不声称"order_create 就是本流程的工具"），
