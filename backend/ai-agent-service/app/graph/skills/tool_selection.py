@@ -360,54 +360,57 @@ def plan_read_tools_for_state(state: Any, tool_names: List[str],
     )
 
 
-# ── C 端模糊意图轮的工具面（issue #9280 / CH-003）──────────────────────────
-#: 「怎么做」疑问（知识/指引类问法）：用户在问**做法**，不是"说不清自己要什么" ⇒ 不算模糊轮。
-#: 缺它时「怎么付款 / 收款码在哪」这类**不含业务名词**的问法会被当成模糊轮 ⇒ 收款码查不到
-#: （#4085 的反向回归：顾客在最常见的问法下拿不到那张卡）。
-_HOWTO_RE = re.compile(r"怎么|如何|怎样|咋")
+# ── C 端「纯看」轮的工具面（issue #9280 / CH-003）──────────────────────────
+#: 「纯看」= 整句话只有一个「看」类动作 + 礼貌/语气填充词，**没有任何对象名词**。
+#: 这是"说不清自己要什么"的最小可判形态（CH-003 的原文「帮我看看」就是它）：
+#: 顾客没说看什么 ⇒ 任何业务查询的参数都只能由模型**自己编**（实测编出「遮光」「奶油风」）。
+_VAGUE_FILLER_RE = re.compile(
+    r"[请麻烦帮我给你您那个嗯额先就再也都随便儿吧啊呀呢哦嘛呗喽啦。，,、！!？?～~\s]")
+#: 「看」类动词（去掉填充词后**逐字等于**其中之一才算纯看）。
+_VAGUE_LOOK_VERBS = ("看看", "看一看", "看一下", "看下", "瞧瞧", "瞅瞅",
+                     "瞧一瞧", "瞅一瞅", "看")
 
 
-def is_vague_intent_round(state: Any) -> bool:
-    """本轮是否**模糊意图轮**（C 端：意图落到兜底 general 且输入没有任何业务领域信号）。
+def _is_pure_look_message(text: str) -> bool:
+    """整条消息是否只剩「看」这个动作（去掉填充词后逐字等于某个看动词）。"""
+    return _VAGUE_FILLER_RE.sub("", str(text or "")) in _VAGUE_LOOK_VERBS
 
-    三条都是**运行时已有的事实**（不新造分类器、不加状态键）：
-    ① `intent == "general"` —— L1 规则与 L2 分类器都没定到具体业务意图；
-    ② 最后一条用户消息**不含业务领域关键词/句式** —— 复用 `graph.nodes._msg_has_domain_keyword`
-       （与澄清轮护栏 `intent_router_node` 同一口径，不另造一份词表）；
-    ③ 不是「怎么做」疑问（`_HOWTO_RE`）—— 问做法属知识/指引问答。
-    非 C 端不算（B 端模糊轮走 #5329 的「可点击猜测」），答卡轮（`pending_interact_skill`）也不算。
+
+def is_vague_round(state: Any) -> bool:
+    """本轮是否「纯看」轮（C 端顾客只说了「看看」，没给任何对象）。
+
+    两条都是运行时既有事实（不新造分类器、不加状态键）：
+    ① C 端（`agent_type == "xiaobu"`）—— B 端同形走 #5329 的「可点击猜测」，本档不碰；
+    ② 最后一条用户消息是**纯看**（`_is_pure_look_message`）；答卡轮
+       （`pending_interact_skill`）不算 —— 那一轮用户是在回答上一张卡，不是"说不清"。
+
+    ⚠️ 刻意**不看 `intent`**：模糊输入恰恰是分类器最容易猜错的地方（历史实测「帮我看看」
+    被判 `general` conf 0.30，换一轮又会判成 `product_inquiry`）—— 按意图设门就等于
+    "猜对了才拦"，而它猜错时才是必须拦的那一刻。
     """
     state = state or {}
     if str(state.get("agent_type") or "") != "xiaobu":
         return False
     if state.get("pending_interact_skill"):
         return False
-    if _intent_text(state) != "general":
-        return False
-    text = _last_user_text(state.get("messages") or ())
-    if not text.strip() or _HOWTO_RE.search(text):
-        return False
-    # 函数内导入：`graph.nodes` 是**上层**模块（nodes → skills），顶层导入会成环。
-    from app.graph.nodes import _msg_has_domain_keyword
-
-    return not _msg_has_domain_keyword(text)
+    return _is_pure_look_message(_last_user_text(state.get("messages") or ()))
 
 
 def plan_vague_round_read_tools(state: Any,
                                 tool_names: List[str]) -> Optional[List[str]]:
-    """C 端**模糊轮**的只读工具白名单；`None` = 不动（非模糊轮 / 本域没有可裁的读工具）。
+    """C 端「纯看」轮的只读工具白名单；`None` = 不动（非纯看轮 / 本域没有可裁的读工具）。
 
     白名单 = `ALWAYS_KEEP_TOOL_NAMES`（交互卡 / 知识 / 校验 / 导航）—— **复用**保底集合，
     不新造清单；业务查询工具（`product_search` / `customer_order_query` …）一个都不投影。
 
     为什么落在这一层而不是只写进 prompt：prompt 是**建议**，工具面是**硬闸** —— 不在
     本轮注册表里的工具，模型连调用都发不出去（`Tool not found`）。CH-003 的失败形态正是
-    模型自编偏好（遮光 / 奶油风）直接 `product_search`；模糊轮不给它这把工具，
+    模型自编偏好（遮光 / 奶油风）直接 `product_search`；这一轮不给它这把工具，
     「猜测性业务查询」就没有可执行路径（`create_skill_registry` 是唯一造工具子集的工厂）。
 
     判据：`tests/test_vague_round_tool_scope.py`（case_ids: CH-003）。
     """
-    if not is_vague_intent_round(state):
+    if not is_vague_round(state):
         return None
     declared = list(tool_names)
     read_only = _read_only_tool_names()
