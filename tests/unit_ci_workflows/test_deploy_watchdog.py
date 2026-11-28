@@ -31,7 +31,10 @@ issue 正文的判据写作「main HEAD 的 `sha-<head7>` 镜像**仍不存在**
 | `inflight` | 同 sha 的 run 还没跑完（queued / in_progress） | ✅ 不报（在途） |
 | `terminal` | 断路器：不可恢复终态 ⇒ **不会**再有自动部署 | 🔴 超期即报 |
 | `dispatched` | 本轮才补 dispatch（= 对账开始时确实没部署） | 🔴 超期即报 |
-| 缺失 / `notarget` | 判不了（状态文件没写出来 / 目标 workflow 不在 main 上） | 🔴 **fail-closed**（退出码 3） |
+| `notarget` | 目标 workflow 还没在 main 上（新增腿的那个 PR） | ⏳ 尚未轮到，不报 |
+| `ratelimited` | 本轮 `gh workflow run` 被 **HTTP 403 限流**（issue #9310）⇒ 本轮没对账成功 | 🔶 **不报机制故障**，但**必须出声**；本轮**不清零** |
+| `aborted` | 该腿对账中止（**非**限流的失败，issue #9310）⇒ 判不了 | 🔴 **fail-closed**（机制故障，具名到中止原因） |
+| 缺失 / `unrecorded` | 状态文件没写出来 / 种子位没被替换 | 🔴 **fail-closed**（退出码 3） |
 
 ## N 的出处（现取复算，不写死别人的数字）
 
@@ -151,6 +154,18 @@ if args[:2] == ["workflow", "view"]:
     sys.exit(1 if (args[2] if len(args) > 2 else "") in absent else 0)
 
 if args[:2] == ["workflow", "run"]:
+    # 逐腿兜底的**注入面**（issue #9310）：只让**指定那一条腿**的 dispatch 失败。
+    # `STUB_WORKFLOW_RUN_FAIL_WF` = workflow 文件名；`STUB_WORKFLOW_RUN_FAIL_MODE` = ratelimit | fail。
+    # 两种失败的 stderr 形态与真实 gh 同形（限流 = HTTP 403 + `rate limit` 文案）。
+    if args[2] == env("STUB_WORKFLOW_RUN_FAIL_WF"):
+        mode = env("STUB_WORKFLOW_RUN_FAIL_MODE")
+        if mode == "ratelimit":
+            sys.stderr.write("HTTP 403: You have exceeded a secondary rate limit "
+                             "(installation access token). Please retry after 42 minutes.\n")
+            sys.exit(1)
+        if mode == "fail":
+            sys.stderr.write("HTTP 500: Internal Server Error\n")
+            sys.exit(1)
     sys.exit(0)
 
 if args[:2] == ["issue", "list"]:
@@ -830,6 +845,167 @@ def test_reconcile_step_is_red_and_named_when_a_leg_is_left_unrecorded(tmp_path)
     assert "机制故障" in blob, f"缺状态属**机制故障**类（判据 3）→\n{blob}"
 
 
+# ── issue #9310：**一条腿被限流打掉不许打死整步**，且「限流中止」≠「机制故障」─────────────
+# 病（现取读数）：run `46094064167` 的 `Reconcile and dispatch missing deploys` 步是 `set -euo pipefail`，
+# 而 `reconcile_one admin-api` 里的 `gh workflow run` 被 **HTTP 403 installation rate limit** 打掉
+# ⇒ **整步在第 1 条腿退出** ⇒ 后 4 条腿的种子位 `unrecorded` 没被替换 ⇒ 值守面 fail-closed 报
+# 「5 条腿读不到对账状态（机制故障）」。
+# ⇒ 下面四条：① 限流只中止该腿、其余腿照跑、状态落 `ratelimited`、出声但**不**说机制故障
+#   ② 非限流的失败落 `aborted` 且具名 ③ `ratelimited` 是**已落**的合法态（不报机制故障，但**必须**出声）
+#   ④ **红证**：把逐腿兜底摘掉 ⇒ 复现「1 腿失败 ⇒ 5 腿 unrecorded」的原始形态（证明 ① 有牙）。
+
+
+def _dispatch_calls(ex: "Exec") -> list:
+    """`gh workflow run` 的调用记录（一次 = 一条腿被真的尝试补部署）。"""
+    return [c for c in ex.gh_calls if c.startswith("workflow run")]
+
+
+def _state_map(ex: "Exec") -> dict:
+    return {r[0]: r[1] for r in _state_rows(ex)}
+
+
+def _fail_one_leg(ex: "Exec", wf: str, mode: str) -> None:
+    ex.env["STUB_WORKFLOW_RUN_FAIL_WF"] = wf
+    ex.env["STUB_WORKFLOW_RUN_FAIL_MODE"] = mode
+
+
+def test_rate_limited_leg_does_not_kill_the_round_and_is_not_a_mechanism_failure(tmp_path):
+    """**判据 1（#9310，会红）**：第 1 条腿的 `gh workflow run` 被 403 限流 ⇒
+    ① 其余 4 条腿**仍被对账**（`gh workflow run` 调用次数 = 5 = 腿数）② 该腿落 `ratelimited`
+    ③ 退出码/告警明确「本轮被限流」而**不是**「机制故障」。"""
+    fx = make_repo(tmp_path, head_age_secs=60, drift=True)
+    ex = Exec(tmp_path, fx, NO_RUNS)
+    _fail_one_leg(ex, "deploy-admin-api.yml", "ratelimit")
+    rc = ex.reconcile()
+    blob = rc.stdout + rc.stderr + ex.summary_text
+    assert rc.returncode == 0, (
+        f"限流**不许**打死整步（退出码 0，不是 3 / 1）→ rc={rc.returncode}\n{blob}")
+    assert len(DEPLOY_WF) == 5, f"反空跑锚点：腿数变了（现取 {len(DEPLOY_WF)}）⇒ 下面的 5 次断言要重算"
+    assert len(_dispatch_calls(ex)) == 5, (
+        f"其余 4 条腿必须仍被对账（一条腿失败不许中断后续腿）→ 调用={_dispatch_calls(ex)}")
+    rows = _state_map(ex)
+    assert rows["admin-api"] == "ratelimited", f"被限流的腿必须落 `ratelimited`（不留 unrecorded）→ {rows}"
+    assert {rows[s] for s in DEPLOY_WF if s != "admin-api"} == {"dispatched"}, (
+        f"其余腿必须照常走完判定并落自己的状态 → {rows}")
+    assert "被限流" in blob and "非机制故障" in blob, f"限流必须**出声**并说清它不是什么 →\n{blob}"
+    assert "::warning::" in rc.stdout + rc.stderr, f"限流必须给 ::warning::（不许静默）→\n{blob}"
+    assert "::error::" not in rc.stdout + rc.stderr, f"限流轮不得给 ::error::（那是机制故障才有的）→\n{blob}"
+    assert "机制故障（" not in blob and "机制故障=" not in blob, (
+        f"限流**不得**被说成机制故障（只许以「非机制故障」的否定式出现）→\n{blob}")
+
+
+def test_leg_failure_other_than_rate_limit_is_aborted_and_named(tmp_path):
+    """**判据 2（#9310，会红）**：第 1 条腿真失败（**非** 403 限流）⇒ 其余腿仍跑、该腿落 `aborted`
+    且**具名**（腿名出现在告警里）—— 且**不得**被归成「限流」（两桶不许互相污染）。"""
+    fx = make_repo(tmp_path, head_age_secs=60, drift=True)
+    ex = Exec(tmp_path, fx, NO_RUNS)
+    _fail_one_leg(ex, "deploy-admin-api.yml", "fail")
+    rc = ex.reconcile()
+    blob = rc.stdout + rc.stderr + ex.summary_text
+    assert rc.returncode == 3, (
+        f"非限流的失败 = 机制故障 ⇒ 末道闸仍必须判红（退出码 3）；"
+        f"但**所有**腿都要先跑完（fail-closed 只细化分类，不放宽）→ rc={rc.returncode}\n{blob}")
+    assert len(_dispatch_calls(ex)) == 5, f"其余 4 条腿必须仍被对账 → {_dispatch_calls(ex)}"
+    rows = _state_map(ex)
+    assert rows["admin-api"] == "aborted", f"非限流的失败必须落 `aborted` → {rows}"
+    assert {rows[s] for s in DEPLOY_WF if s != "admin-api"} == {"dispatched"}, f"其余腿必须照常跑完 → {rows}"
+    assert "::warning::admin-api" in rc.stdout + rc.stderr, f"中止必须**具名到腿** →\n{blob}"
+    assert "被限流" not in blob, f"非限流的失败**不得**被说成限流（识别面双判据）→\n{blob}"
+    assert "限流中止=0" in blob and "对账中止=1" in blob, f"两个桶必须各自可见 →\n{blob}"
+
+
+def test_all_legs_rate_limited_is_not_mechanism_failure_but_is_loud(tmp_path):
+    """**判据 3（#9310，会红）**：`watchdog_missing` 面对**全 `ratelimited`** ⇒
+    **不报机制故障**（`MISS_COUNT=0`、末道闸 rc=0、无 `::error::`）**但必须出声**
+    （`::warning::` + summary 行「本轮被限流，未对账」）—— 两条都断言，防它被改成静默。"""
+    import shlex
+    fx = make_repo(tmp_path, head_age_secs=60, drift=True)
+    ex = Exec(tmp_path, fx, NO_RUNS)
+    rows = "".join(f"{svc}\tratelimited\tgh workflow run 被限流（rc=1）\n" for svc in DEPLOY_WF)
+    # ⚠️ `set +e`：探针的 `$0` 不是 workflow 文件 ⇒ 状态机 source 时的腿清单现取会 grep 不到（rc=1），
+    #    而执行式 harness 的 bash 带 `-e`（与 CI 同形）⇒ 不关 `-e` 的话探针在 source 处就死了（空读数）。
+    probe = (
+        "set +e -uo pipefail\n"
+        "source scripts/deploy_reconcile_state.sh\n"
+        'SUMMARY="${GITHUB_STEP_SUMMARY:-/dev/null}"\n'   # 与对账步正文同形（状态机只认 $SUMMARY）
+        f"printf '%s' {shlex.quote(rows)} > \"$WATCHDOG_STATE\"\n"
+        "watchdog_missing\n"
+        'echo "MISS_COUNT=$MISS_COUNT RATE_COUNT=$RATE_COUNT"\n'
+        "watchdog_missing_gate; echo \"gate_rc=$?\"\n"
+    )
+    rc = ex.reconcile_with_body(probe)
+    out = rc.stdout + rc.stderr
+    assert "MISS_COUNT=0 RATE_COUNT=5" in out, (
+        f"全 `ratelimited` **不得**算成「没落状态」（它是已落的合法态）→\n{out}")
+    assert "gate_rc=0" in out, f"末道闸不得因此判红 →\n{out}"
+    assert "::error::" not in out, f"限流轮不得给 ::error::（那是机制故障才有的）→\n{out}"
+    assert "机制故障（" not in out, f"限流**不是**机制故障（只许以「非机制故障」的否定式出现）→\n{out}"
+    assert out.count("::warning::本轮被限流") == 1, (
+        f"必须**恰好一次**出声（幂等：`watchdog_missing` 在正文里被调两次）→\n{out}")
+    assert "非机制故障" in out and "本轮被限流，未对账" in ex.summary_text, (
+        f"summary 必须有「本轮被限流，未对账」行 →\n{out}\n--- summary ---\n{ex.summary_text}")
+
+
+def test_watchdog_step_reports_a_throttled_round_without_false_clearing(tmp_path):
+    """**判据 3 的消费面（#9310）**：值守面遇到全 `ratelimited` ⇒ 结论说「被限流中止=N（非机制故障）」、
+    **不**开/不清机制故障单（本轮根本没判定过任何腿 ⇒ 「清零条件已满足」是没根据的话）。"""
+    fx = make_repo(tmp_path, head_age_secs=2700 + 600, drift=True)
+    state = tmp_path / "watchdog-state.tsv"
+    state.write_text("".join(f"{svc}\tratelimited\tgh workflow run 被限流（rc=1）\n" for svc in DEPLOY_WF),
+                     encoding="utf-8")
+    ex = Exec(tmp_path, fx, NO_RUNS, state=str(state))
+    ex.seed_open_issue("seed", number=9)          # 已有机制故障单 ⇒ EXIST 命中
+    wd = ex.watchdog()
+    blob = wd.stdout + wd.stderr + ex.summary_text
+    assert wd.returncode == 0, f"限流**不是**机制故障（不得 RC=3 / 1）→ rc={wd.returncode}\n{blob}"
+    assert "::warning::" in wd.stdout + wd.stderr, f"必须出声 →\n{blob}"
+    assert "机制故障=0" in blob and "被限流=5" in blob, f"计数必须各自可见 →\n{blob}"
+    assert "被限流中止=5" in blob and "非机制故障" in blob, f"结论必须给新归因 →\n{blob}"
+    assert "::error::值守面机制故障" not in blob, f"限流不得报机制故障 →\n{blob}"
+    assert [i for i in ex.issues if i["state"] == "open"], f"机制故障单**不得**被清零 → {ex.issues}"
+    assert not any("清零" in c for i in ex.issues for c in i.get("comments", [])), (
+        f"本轮根本没判定过任何腿 ⇒ 不许写「清零条件已满足」→ {ex.issues}")
+
+
+def test_red_proof_without_per_leg_fallback_one_leg_kills_the_whole_round(tmp_path):
+    """**判据 4（#9310 的红证，会红）**：把逐腿兜底**摘掉**（调用处的 `|| watchdog_abort` 去掉 +
+    把外置的 `watchdog_dispatch` 换回改前的裸 `gh workflow run`）⇒ **复现原始形态**：
+    整步在第 1 条腿退出、只派出 1 次、**5 条腿全是 `unrecorded`**。
+    ⇒ 「1 腿失败 ⇒ 5 腿 unrecorded」不是判据自己编的，而是摘掉修法后必然出现的形状。"""
+    from unit_ci_workflows.injection import inject
+
+    body = step_body(RECONCILE_STEP)
+    broken = body
+    # ① 摘掉 5 条腿的调用处兜底（连行继续符一起摘，避免留下悬空 `\`）
+    for leg in DEPLOY_WF:
+        broken = inject(
+            broken,
+            f' || watchdog_abort {leg} aborted "对账中止（未预期失败，具名）"',
+            "",
+            where=".github/workflows/deploy-reconcile.yml",
+        )
+    # ② 把「显式判 rc 的 dispatch」换回改前的裸调用（`set -e` 会在函数体内生效 ⇒ 整步退出）
+    broken = inject(
+        broken,
+        'watchdog_dispatch "$svc" "$wf" || return 0',
+        'gh workflow run "$wf" --ref main --repo "$GITHUB_REPOSITORY"',
+        where=".github/workflows/deploy-reconcile.yml",
+    )
+    assert "watchdog_abort" not in broken and "watchdog_dispatch" not in broken, (
+        "变异注入自证：兜底与守卫必须都已被摘掉（否则本红证什么都没证明）")
+
+    fx = make_repo(tmp_path, head_age_secs=60, drift=True)
+    ex = Exec(tmp_path, fx, NO_RUNS)
+    _fail_one_leg(ex, "deploy-admin-api.yml", "ratelimit")
+    rc = ex.reconcile_with_body(broken)
+    rows = _state_map(ex)
+    assert rc.returncode != 0, f"摘掉兜底 ⇒ 必须复现「整步退出」→ rc={rc.returncode}\n{rc.stdout}{rc.stderr}"
+    assert len(_dispatch_calls(ex)) == 1, (
+        f"摘掉兜底 ⇒ 后 4 条腿**根本没被对账**（原始形态：只有第 1 次派发被尝试）→ {_dispatch_calls(ex)}")
+    assert sum(1 for s in DEPLOY_WF if rows.get(s) == "unrecorded") == 5, (
+        f"原始形态 = 5 条腿全是 `unrecorded`（种子位没被替换）→ {rows}")
+
+
 # ── 判据 2：`seen=N acted=0` 且原因桶全 0 ⇒ 必须归因（不留「说不出为什么」）──────────────
 
 def test_liveness_why_accounts_for_every_leg_when_acted_is_zero(tmp_path):
@@ -1041,7 +1217,8 @@ def test_watchdog_ledger_records_the_event_trigger_contract():
 # ⇒ 阈值取 **13,250**（**低于**已知有效读数 13,303，留 53 字符差）。
 #   🔴 **现取读数（2026-10-02）**：`Reconcile deploys` —— **改前**（`origin/main` 3fa84ab89）= **13,125**
 #   （距本上限只剩 **125 字符**，**不是** ~2.3K；订正「12,524」那一处转述：它是 PR #5931 **合并前**的
-#   起草读数）；**本包（issue #5935）外置状态机之后** = **12,847**（仍全仓最长）。
+#   起草读数）；**issue #5935 外置状态机之后** = **12,847**；**issue #9310 再把 dispatch 守卫外置之后**
+#   = **12,136**（仍全仓最长；余量 1,114）。
 #   全仓 **238** 条 `run` 正文，次长 = `.github/workflows/automerge.yml` 的 `Classify bot PR … and arm on` **10,975**。
 #   复算 = `python3 -m pytest tests/unit_ci_workflows/test_deploy_watchdog.py -q -k run_body`（或直接调 `run_bodies()`）。
 #   ⚠️ 出口：真要往这条正文里加东西 ⇒ **先把实现体外置**（`source scripts/deploy_reconcile_state.sh` ——
