@@ -128,9 +128,8 @@ def test_vague_round_registry_has_no_business_query_tool():
 def test_vague_round_keep_set_is_the_always_keep_set():
     """白名单 ⊆ 保底集合（复用既有集合，不新造清单）—— 新增业务工具自动被挡在门外。"""
     keep = ts.plan_vague_round_read_tools(_state(), CUSTOMER_GENERAL_TOOLS)
-    assert keep is not None
-    assert set(keep) <= set(ts.ALWAYS_KEEP_TOOL_NAMES), (
-        f"模糊轮白名单引入了保底集合之外的工具: {sorted(set(keep) - set(ts.ALWAYS_KEEP_TOOL_NAMES))}")
+    assert list(keep) == list(ts.ALWAYS_KEEP_TOOL_NAMES), (
+        f"模糊轮白名单必须逐名等于保底集合，实际 {keep}")
 
 
 # ── 2. 类级元守卫：每个 C 端 skill 都掉光业务读工具 ─────────────────────────
@@ -141,7 +140,8 @@ def test_every_c_side_skill_loses_its_business_read_tools(skill):
     business = _business_read_tools(tool_names)
     keep = ts.plan_vague_round_read_tools(_state(), tool_names)
     if not business:
-        assert keep is None, f"{skill}: 本域没有业务读工具却仍裁剪（会无谓翻 prompt 裁剪态抬头）"
+        assert _bound(tool_names, keep) == _bound(tool_names, None), (
+            f"{skill}: 本域没有业务读工具却仍裁剪（绑定面变了，且会无谓翻 prompt 裁剪态抬头）")
         return
     bound = _bound(tool_names, keep)
     leaked = bound & business
@@ -210,7 +210,8 @@ def test_two_runs_are_identical():
     """同一输入连跑两次，顺序逐字一致（白名单是常量，不靠 set 迭代序）。"""
     first = ts.plan_vague_round_read_tools(_state(), CUSTOMER_GENERAL_TOOLS)
     second = ts.plan_vague_round_read_tools(_state(), CUSTOMER_GENERAL_TOOLS)
-    assert first == second and first is not None
+    assert first == second == ["nav_guide", "knowledge_search", "interact",
+                              "validate_input", "confirm_value"]
 
 
 def test_prepare_turn_actually_wires_the_vague_projection():
