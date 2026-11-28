@@ -11451,3 +11451,28 @@ cases:
         - deploy-admin-api.yml
       verifies: []
     merge_log: "2026-11-28 新增（issue #9355）。现场：用户拿到企微微信客服测试账号问「怎么接入」，查下来代码侧整条腿做完（回调 `/api/kf/callback`、`KfSyncWorker` 30s 轮询、`KfOutboxSender`、商户自助接入页 `#9230`、AI 回复闭环 `#9307`）但**部署面 0 命中**（`grep -rn WECHAT_KF deploy/ .github/workflows/`）= 对外表现为「功能不存在」：回调 **404**、接入页 Token/AESKey 全空、轮询腿因 `@ConditionalOnProperty` 未注册根本跑。修法 = 照 `AI_AGENT_SERVICE_TOKEN` 的既有范式做部署自愈（缺则生成并追加、幂等）：一次性生成 Token(32) / EncodingAESKey(43) / 主密钥(64 hex)，长度校验全过才原子追加 ENABLED + 三键 + 回调 URL。两侧坑：① 单独追加 ENABLED ⇒ admin-api 启动崩（SecretCipher fail-closed）；② 覆盖已有键 ⇒ 企微校验失败 / 商户 Secret 解不开。红证（本机现取）：生成器改短 ⇒ 段 `exit 1` 且 `.env.admin-api` 里 `WECHAT_KF_*` 一行都没有。"
+  - id: MC-394
+    legacy_id: ""
+    title: "企微「可信域名」校验用一条通用 nginx 规则服务所有商户（内容恒等于文件名里的随机串）——不许按商户逐个构建部署"
+    domains:
+      - misc
+      - ci
+    tier: normal
+    tags:
+      - ci
+    skip_reason: "[backend-contract] 纯静态 nginx 配置判据（零 LLM / 零网络 / 零 DB）：不进 agent-eval 冒烟；机器判红通道 = traces.tests 的 pytest（pr-check 的 ci workflow helper unit tests 全量跑 tests/unit_ci_workflows）"
+    user_inputs: []
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "**判据 1·通用规则在场**：`migaozn.com`（apex）443 段有 `location ~ ^/WW_verify_([A-Za-z0-9]{8,64})\\.txt$`，且 `default_type text/plain` + `return 200 $1`（body = 文件名里的串）。执行点 = `test_ww_verify_generic_route.py::test_apex_serves_any_ww_verify_code`"
+      - "**判据 2·边界不许放宽成通配**：禁 `^/.*\\.txt$`（会劫持 apex 段其它 `.txt` 面）。执行点 = `::test_pattern_is_not_a_wildcard`"
+      - "**判据 3·不伤既有面**：`app.migaozn.com` 段的「根下单段 `.txt` → `try_files … =404`」（MC-125 的判据）一字不动。执行点 = `::test_app_block_rule_is_untouched`"
+      - "**判据 4·红证**：按花括号配平把该 location 整段摘掉 ⇒ 判据 1 具名红（证明判的是现取配置）。执行点 = `::test_red_proof_removing_the_rule_is_named`"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_ww_verify_generic_route.py"
+      ci:
+        - deploy-admin-api.yml
+      verifies: []
+    merge_log: "2026-11-28 新增（issue #9358）。现场：为让测试商户的企微自建应用能配「企业可信IP」，先得完成「可信域名」归属校验；第一版把企微给的 `WW_verify_mRPj5ZGvHWQrpeer.txt` 塞进 `frontend/admin-web/public/` 并部署 ⇒ 用户当场问「难道未来每个客户的证书我都需要构建后部署？」——是的，那是把 O(商户数) 的人工塞进交付链，产品级错误。实测事实：**校验文件 body 恒等于文件名里的随机串** ⇒ nginx 一条正则捕获即返回，任意商户零操作。落地 = apex 443 段新增该 location（边界收紧 8–64 位字母数字，禁通配）；`public/` 里的静态件保留作本机/直连 Next 的兜底。红证（本机现取）：配平摘掉该 location ⇒ 判据 1 红。长期正解另立单 = 走第三方应用（ISV），届时商户只扫码授权，可信域名/可信IP 都是套件级一次性配置。"
