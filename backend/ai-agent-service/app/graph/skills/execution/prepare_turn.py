@@ -119,6 +119,12 @@ async def prepare_turn(
     # 会参与 `tests/unit/test_execute_skill_split.py` 的 patch 接缝扫描，别加进去。
     from app.graph.skills.tool_selection import plan_read_tools_for_state
     read_keep = plan_read_tools_for_state(state, tool_names)
+    # C 端**模糊意图轮**（issue #9280 / CH-003）：只投影「问 + 展示」工具面 ⇒ 猜测性业务查询
+    # 没有可执行路径。B 端裁剪（上一行）返回 None 时才有意义；C 端原本恒 None，
+    # 本档是它唯一的裁剪来源。
+    if read_keep is None:
+        from app.graph.skills.tool_selection import plan_vague_round_read_tools
+        read_keep = plan_vague_round_read_tools(state, tool_names)
     skill_registry = create_skill_registry(tool_names, read_keep=read_keep)
     langchain_tools = skill_registry.get_langchain_tools()
     intent_name = _extract_intent_name(state)

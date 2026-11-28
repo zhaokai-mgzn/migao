@@ -360,6 +360,65 @@ def plan_read_tools_for_state(state: Any, tool_names: List[str],
     )
 
 
+# ── C 端模糊意图轮的工具面（issue #9280 / CH-003）──────────────────────────
+#: 「怎么做」疑问（知识/指引类问法）：用户在问**做法**，不是"说不清自己要什么" ⇒ 不算模糊轮。
+#: 缺它时「怎么付款 / 收款码在哪」这类**不含业务名词**的问法会被当成模糊轮 ⇒ 收款码查不到
+#: （#4085 的反向回归：顾客在最常见的问法下拿不到那张卡）。
+_HOWTO_RE = re.compile(r"怎么|如何|怎样|咋")
+
+
+def is_vague_intent_round(state: Any) -> bool:
+    """本轮是否**模糊意图轮**（C 端：意图落到兜底 general 且输入没有任何业务领域信号）。
+
+    三条都是**运行时已有的事实**（不新造分类器、不加状态键）：
+    ① `intent == "general"` —— L1 规则与 L2 分类器都没定到具体业务意图；
+    ② 最后一条用户消息**不含业务领域关键词/句式** —— 复用 `graph.nodes._msg_has_domain_keyword`
+       （与澄清轮护栏 `intent_router_node` 同一口径，不另造一份词表）；
+    ③ 不是「怎么做」疑问（`_HOWTO_RE`）—— 问做法属知识/指引问答。
+    非 C 端不算（B 端模糊轮走 #5329 的「可点击猜测」），答卡轮（`pending_interact_skill`）也不算。
+    """
+    state = state or {}
+    if str(state.get("agent_type") or "") != "xiaobu":
+        return False
+    if state.get("pending_interact_skill"):
+        return False
+    if _intent_text(state) != "general":
+        return False
+    text = _last_user_text(state.get("messages") or ())
+    if not text.strip() or _HOWTO_RE.search(text):
+        return False
+    # 函数内导入：`graph.nodes` 是**上层**模块（nodes → skills），顶层导入会成环。
+    from app.graph.nodes import _msg_has_domain_keyword
+
+    return not _msg_has_domain_keyword(text)
+
+
+def plan_vague_round_read_tools(state: Any,
+                                tool_names: List[str]) -> Optional[List[str]]:
+    """C 端**模糊轮**的只读工具白名单；`None` = 不动（非模糊轮 / 本域没有可裁的读工具）。
+
+    白名单 = `ALWAYS_KEEP_TOOL_NAMES`（交互卡 / 知识 / 校验 / 导航）—— **复用**保底集合，
+    不新造清单；业务查询工具（`product_search` / `customer_order_query` …）一个都不投影。
+
+    为什么落在这一层而不是只写进 prompt：prompt 是**建议**，工具面是**硬闸** —— 不在
+    本轮注册表里的工具，模型连调用都发不出去（`Tool not found`）。CH-003 的失败形态正是
+    模型自编偏好（遮光 / 奶油风）直接 `product_search`；模糊轮不给它这把工具，
+    「猜测性业务查询」就没有可执行路径（`create_skill_registry` 是唯一造工具子集的工厂）。
+
+    判据：`tests/test_vague_round_tool_scope.py`（case_ids: CH-003）。
+    """
+    if not is_vague_intent_round(state):
+        return None
+    declared = list(tool_names)
+    read_only = _read_only_tool_names()
+    candidates = set(declared) | set(_family_read_only_tool_names(declared))
+    business = [n for n in candidates
+                if n in read_only and n not in ALWAYS_KEEP_TOOL_NAMES]
+    if not business:
+        return None               # 没有业务查询工具 ⇒ 不必裁剪（也不翻 prompt 的裁剪态抬头）
+    return [n for n in ALWAYS_KEEP_TOOL_NAMES]
+
+
 # ── 工厂（唯一造 skill 工具子集的地方，#4017）──────────────────────────────
 def create_skill_registry(tool_names: List[str],
                           read_keep: Optional[Sequence[str]] = None) -> ToolRegistry:

@@ -5,6 +5,14 @@
 > 原因 = 单文件涨到 512KB 越过扫描上限，详见存档文件头与 issue #6404。
 > **后续条目继续在本文件 `## [Unreleased]
 
+### C 端顾客「帮我看看」不再被猜着查商品：模糊意图轮只投影「问 + 展示」工具面（2026-11-28，issue #9280）
+
+- **形态**（评测 run 46086496186 的 CH-003 现取）：顾客只说了「帮我看看」（没说哪个商品 / 哪张订单 / 什么风格），C 端兜底 `customer_general` 仍把**全套业务查询工具**（`product_search` / `product_detail` / `customer_order_query` …）绑给模型 ⇒ 它自编了两个偏好（遮光 / 奶油风）直接 `product_search`、再 `product_detail`，把"猜"当成了"看"（首跑 `direct_reply or interact` 判不中）。
+- **改法**：`tool_selection.plan_vague_round_read_tools` 给 C 端补一档**模糊轮白名单**（= 既有保底集合 `ALWAYS_KEEP_TOOL_NAMES`：交互卡 / 知识 / 校验 / 导航），`prepare_turn` 在 B 端裁剪返回 `None` 时接这一档 ⇒ 业务查询工具**不在本轮注册表里**（模型连调用都发不出去）。「模糊轮」的判据全部复用运行时既有事实：意图落 `general` + 输入无任何业务领域关键词/句式（与澄清轮护栏同一个 `_msg_has_domain_keyword`）+ 不是「怎么做」疑问 + 非答卡轮。`customer_general` 的 prompt 同步补一条「意图不明先问、不猜」。
+- **不变**：B 端一字未动（B 端模糊轮仍走 #5329 的可点击猜测、读面仍由 #8174 裁剪）；C 端**正常轮**的工具面逐名不变；写面不裁、`interact` / `knowledge_search` 保留；不改任何用例期望与判分口径。
+- **判据**：`backend/ai-agent-service/tests/test_vague_round_tool_scope.py`（18 条 L0 / 零 LLM：真实注册表里不得含业务查询工具 / 白名单 ⊆ 保底集合 / 每个 C 端 skill 都掉光业务读工具（类级元守卫）/ 领域信号·「怎么做」·具体意图·B 端·答卡轮五个对照 / `prepare_turn` 接线守卫 / prompt 禁令源码级）。红证：`is_vague_intent_round` 恒 `False` ⇒ 8 条红；白名单改回声明面 ⇒ 8 条红；摘掉 `prepare_turn` 接线 ⇒ 8 条红。
+- **未纳入（照实）**：C 端「模糊轮 ⇒ 可点击猜测卡」（#5329 目前硬门在 B 端，`nodes._vague_guess_route` 对非 mibao 直接返回 None）未开；本单只保证「不能猜」，澄清形态由 prompt + eval（CH-003）兜底。
+
 ### B 端（黄金策）不再被注入「你可以真实落单」：下单能力可达性改判为「当前 persona 的 skill 工具集」（2026-11-27，issue #9291）
 
 - **形态**（现取）：`capability_denial._order_capability_available()` 的「全局具备即可达」分支只看 `_tool_registered_globally("order_create")`（生产恒真）⇒ 在 `_order_flow_in_progress` 为真的 **B 端**会话里，任何命中「落单要走订单工作台」这类措辞的回复都会被注入「`order_create` 在全局工具表里，会话已锁回负责订单的流程，下一轮就能真正落单」—— 而 B 端 order 域按用户裁定 2026-09-23（#5247）**整域只读**（`order_skill.ORDER_TOOLS` 无任何写工具）⇒ 那是**系统主动写下的假承诺**，下一轮必然兑现不了。同一轮评测（run 46002922920）的 CH-009 是这条双刃的另一面：真话被判成假话（已由 PR #9290 改用例收口）。
