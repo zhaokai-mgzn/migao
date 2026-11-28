@@ -5,7 +5,10 @@
 ② **品牌称呼**（issue #6525 / #8881 / #9121）：旧称呼（元元 / 小布 / 米高 / 观星台）不得在用户可见面回流，
    新称呼（生意管家 / 黄金策 / 米宝）必须在关键落点**正向存在** —— 见文末「品牌称呼」一节。
    ⚠️ 沿革：「米宝」在 2026-10-08 的改名里是旧 B 端称呼（→黄金策），2026-11-10 起是**新 C 端称呼**
-   （元元→米宝）⇒ 同一字面量在两次改名里先旧后新，旧名集合**按最近一次改名现取**。
+   （元元→米宝）；2026-11-28 起 C 端**不再有人格名**（统一称「智能客服」，用户裁定「C 端不提供 agent
+   形态，只提供技术能力」）⇒ 正向锚已改为「智能客服」。旧名集合仍**不含**「米宝」：它作为
+   `[米宝解读]` 协议值与前端文案仍在面外（另包承接），本文件只判「最近一次改名」的回流。
+   C 端不得再自称「米宝」的**独立判据** = `tests/unit_ci_workflows/test_agent_naming_source_of_truth.py`。
 
 ── ① 的正文 ────────────────────────────────────────────────────────────────
 
@@ -253,11 +256,12 @@ NEW_NAME_ANCHORS = (
     ("frontend/admin-web/src/app/login/page.tsx", ("生意管家",)),
     ("frontend/bmini-app/src/pages/auth/login/index.tsx", ("生意管家",)),
     ("frontend/bmini-app/src/utils/brand.ts", ("黄金策",)),
-    ("backend/ai-agent-service/app/agents/agents/xiaobu.py", ('display_name="米宝"', 'DEFAULT_BOT_NAME = "米宝"')),
+    ("backend/ai-agent-service/app/agents/naming.py", ('"display_name": "智能客服"', '"display_name": "黄金策"')),
+    ("backend/ai-agent-service/app/agents/agents/xiaobu.py", ('display_name="智能客服"', 'DEFAULT_BOT_NAME = "智能客服"')),
     ("backend/ai-agent-service/app/agents/agents/mibao.py", ('display_name="黄金策"',)),
-    ("backend/ai-agent-service/app/agents/channel_config.py", ('bot_name: str = "米宝"', "生意管家")),
-    ("backend/ai-agent-service/app/graph/skills/customer_order_skill.py", ('你是"米宝"', "生意管家")),
-    ("backend/ai-agent-service/app/graph/handoff_offer.py", ("继续咨询米宝",)),
+    ("backend/ai-agent-service/app/agents/channel_config.py", ("bot_name: str = C_END_DISPLAY_NAME", "智能客服")),
+    ("backend/ai-agent-service/app/graph/skills/customer_order_skill.py", ("你是生意管家的智能客服", "生意管家")),
+    ("backend/ai-agent-service/app/graph/handoff_offer.py", ('"label": "继续咨询"',)),
     ("backend/admin-api/src/main/java/com/migao/admin/service/RegistrationService.java", ("欢迎入驻生意管家平台",)),
 )
 

@@ -552,9 +552,10 @@ def test_customer_aftersales_fewshot_guides_aftersale_create():
 
 
 def test_customer_aftersales_prompt_loaded_with_identity():
-    """米宝售后 prompt 组装包含**自己的**身份与公共原则（issue #7292 身份分流）"""
+    """C 端（智能客服）售后 prompt 组装包含**自己的**身份与公共原则（issue #7292 身份分流）"""
     prompt = _build_system_prompt("customer_aftersales")
-    assert "米宝" in prompt, "缺少 C 端身份"
+    assert "智能客服" in prompt, "缺少 C 端身份"
+    assert "米宝" not in prompt, "C 端 prompt 仍自称米宝（2026-11-28 裁定已改称智能客服）"
     assert "词元通达商家管理后台" not in prompt, "C 端 prompt 仍带 B 端身份（#7292 回归）"
     assert "不编造数据" in prompt, "缺少公共原则"
 

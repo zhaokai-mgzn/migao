@@ -190,8 +190,8 @@ class TestOfferToDirectHandoffE2E:
     async def test_continue_value_not_explicit(self):
         from app.graph.handoff_judge import is_explicit_handoff_request
 
-        # '继续咨询米宝' 不能误判为转人工请求
-        assert is_explicit_handoff_request("继续咨询米宝") is False
+        # '继续咨询'（建议卡第二个选项）不能误判为转人工请求
+        assert is_explicit_handoff_request("继续咨询") is False
 
     async def test_refused_then_no_repeat_offer(self):
         """用户拒绝（继续咨询）后，再次不满不再自动建议（冷却生效）"""

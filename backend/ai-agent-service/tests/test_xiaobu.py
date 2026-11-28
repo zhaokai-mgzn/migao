@@ -3,7 +3,7 @@
 覆盖（issue #2431，ai-chat 域 C 端客服）：
 - XIAOBU_CONFIG 声明：name/display_name/persona/skill_names/fallback_skill/
   allowed_roles（customer 允许、admin 拒绝）/direct_replies 三键
-- 常量：DEFAULT_BOT_NAME=米宝、DEFAULT_GREETING 非空且含「米宝」
+- 常量：DEFAULT_BOT_NAME=智能客服、DEFAULT_GREETING 非空且含「智能客服」
 - resolve_xiaobu_bot_name：定制名 strip / 无配置 / 空白 botName / 异常 → 默认
 - resolve_xiaobu_greeting：greetingTemplate > channelConfigs(渠道) > channel 默认 > DEFAULT_GREETING
 - get_xiaobu_greeting：纯委托 resolve_xiaobu_greeting 并原样返回
@@ -31,12 +31,13 @@ class TestConstants:
 
     def test_default_bot_name(self):
         from app.agents.agents.xiaobu import DEFAULT_BOT_NAME
-        assert DEFAULT_BOT_NAME == "米宝"
+        assert DEFAULT_BOT_NAME == "智能客服"
 
     def test_default_greeting_non_empty_and_contains_bot_name(self):
         from app.agents.agents.xiaobu import DEFAULT_GREETING
         assert len(DEFAULT_GREETING) > 0
-        assert "米宝" in DEFAULT_GREETING
+        assert "智能客服" in DEFAULT_GREETING
+        assert "米宝" not in DEFAULT_GREETING, "C 端开场白仍在自称米宝（2026-11-28 裁定已改称智能客服）"
 
 
 class TestXiaobuConfig:
@@ -49,7 +50,7 @@ class TestXiaobuConfig:
     def test_name_display_name_persona(self):
         from app.agents.agents.xiaobu import XIAOBU_CONFIG
         assert XIAOBU_CONFIG.name == "xiaobu"
-        assert XIAOBU_CONFIG.display_name == "米宝"
+        assert XIAOBU_CONFIG.display_name == "智能客服"
         assert XIAOBU_CONFIG.persona == "xiaobu"
 
     def test_skill_names_exact_five(self):
@@ -182,7 +183,8 @@ class TestResolveXiaobuGreeting:
             }
         ):
             result = await resolve_xiaobu_greeting(tenant_id=1)
-        assert result == "欢迎 米宝 光临"
+        # 租户没配 botName ⇒ 用系统默认名（默认值 = 智能客服，商家自定义能力不受影响）
+        assert result == "欢迎 智能客服 光临"
 
     @pytest.mark.asyncio
     async def test_channel_configs_dict_priority(self):
@@ -203,7 +205,7 @@ class TestResolveXiaobuGreeting:
 
     @pytest.mark.asyncio
     async def test_channel_configs_str_falls_back_to_channel_default(self):
-        from app.agents.agents.xiaobu import resolve_xiaobu_greeting
+        from app.agents.agents.xiaobu import resolve_xiaobu_greeting, DEFAULT_BOT_NAME
         with _mock_client(
             {
                 "success": True,
@@ -216,24 +218,24 @@ class TestResolveXiaobuGreeting:
             }
         ):
             result = await resolve_xiaobu_greeting(tenant_id=1, channel="web")
-        assert result == resolve_greeting("web", bot_name="米宝")
+        assert result == resolve_greeting("web", bot_name=DEFAULT_BOT_NAME)
 
     @pytest.mark.asyncio
     async def test_no_config_with_channel_uses_channel_default(self):
-        from app.agents.agents.xiaobu import resolve_xiaobu_greeting
+        from app.agents.agents.xiaobu import resolve_xiaobu_greeting, DEFAULT_BOT_NAME
         with _mock_client({"success": False}):
             result = await resolve_xiaobu_greeting(tenant_id=1, channel="web")
-        assert result == resolve_greeting("web", bot_name="米宝")
+        assert result == resolve_greeting("web", bot_name=DEFAULT_BOT_NAME)
 
     @pytest.mark.asyncio
     async def test_exception_with_channel_uses_channel_default(self):
-        from app.agents.agents.xiaobu import resolve_xiaobu_greeting
+        from app.agents.agents.xiaobu import resolve_xiaobu_greeting, DEFAULT_BOT_NAME
         with patch(
             "app.utils.http_client.get_admin_api_client",
             side_effect=Exception("network down"),
         ):
             result = await resolve_xiaobu_greeting(tenant_id=1, channel="web")
-        assert result == resolve_greeting("web", bot_name="米宝")
+        assert result == resolve_greeting("web", bot_name=DEFAULT_BOT_NAME)
 
     @pytest.mark.asyncio
     async def test_no_config_no_channel_returns_default_greeting(self):
