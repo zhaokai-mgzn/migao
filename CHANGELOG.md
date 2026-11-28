@@ -6,6 +6,13 @@
 
 > **后续条目继续在本文件 `## [Unreleased]
 
+### 修复：admin-web 镜像的 node 基线与工具链同源（2026-11-28，issue #9343 的漏网）
+
+- **现场**：`#9344` 把 CI 腿与 `engines` 抬到 Node 24 / npm 11 后 CI 全绿，但**合并即部署失败**：`deploy-frontend` 逐字报 `服务器侧构建失败（rc=1，上界 2400s）—— 镜像 …/admin-web:sha-fcd9d50 未产出`。
+- **根因**：`frontend/admin-web/Dockerfile` 还是 `FROM node:20-alpine`（npm 10）⇒ 镜像内 `npm ci` 读不了 npm 11 重算的 `package-lock.json`（同一条 `Missing: msw@2.15.0 from lock file`）。**交付面（服务器侧构建）没跟工具链同源**，CI 腿面同源了也没用。
+- **修法**：Dockerfile → `FROM node:24-alpine`（顺带清掉那条已过期的注释「@types/node 同步锁在 ^20」——实际是 `^26.6.6`）；判据 `MC-392` 补两条：**构建 admin-web 的 Dockerfile 必须与 `.nvmrc` 同 major** + 注入 `FROM node:20-alpine` 必须具名红。
+- **教训**：钉工具链不能只钉 CI，**得钉「谁在跑 `npm ci`」**——CI 腿、服务器侧 Docker 构建、开发机三处都要同源。
+
 ### 依赖批量升级 + 工具链钉住（Node 24 / npm 11，2026-11-28，issue #9343）
 
 - **依赖**：`pdfplumber` 0.11.10→0.11.11、`python-multipart` 0.0.33→0.0.34、`dashscope` >=2.1.0→>=2.1.1（后端 `requirements.txt`）；`tailwind-merge` 3.7.0→3.7.1、`@testing-library/user-event` 14.6.8→14.6.13、`autoprefixer` 10.6.2→10.7.0、`@types/react` 19.3.0→19.3.1（`frontend/admin-web`）。

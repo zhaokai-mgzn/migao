@@ -118,3 +118,47 @@ def test_red_proof_a_stale_leg_is_named(tmp_path):
     hits = _jobs_running_npm_ci_on_admin_web(tmp_path)
     assert hits == [("fake.yml", "build", "22")], f"解析面没抓到这条腿: {hits}"
     assert hits[0][2] != _nvmrc_major(), "红证前提不成立：注入的旧版本恰好等于 .nvmrc"
+
+def _dockerfiles_building_admin_web(root: Path | None = None) -> list[tuple[str, str]]:
+    """返回 [(Dockerfile 相对路径, FROM node:<major>)] —— 只挑真装 admin-web 依赖的镜像。
+
+    ⚠️ 为什么要单独判这一条（2026-11-28 血的教训）：把 CI 腿抬到 Node 24 时**漏了 Dockerfile**，
+    而 `deploy-frontend.yml` 是**服务器侧构建**（`FROM node:20-alpine` ⇒ npm 10）⇒ 镜像内的
+    `npm ci` 读不了 npm 11 重算的 lock ⇒ `admin-web:sha-<7>` 镜像**未产出** ⇒ 部署整腿失败
+    （逐字：`服务器侧构建失败（rc=1）—— 镜像 … 未产出`）。CI 全绿但**交付断了**，
+    所以这条必须和腿面一样进判据，否则同类漏网还会发生。
+    """
+    hits: list[tuple[str, str]] = []
+    base = root or REPO
+    for df in sorted(base.rglob("Dockerfile")):
+        if "node_modules" in df.parts:
+            continue
+        text = df.read_text(encoding="utf-8")
+        if "frontend/admin-web" not in text and df.parent.name != "admin-web":
+            continue
+        m = re.search(r"^FROM\s+node:([0-9]+)", text, re.MULTILINE)
+        if m:
+            hits.append((str(df.relative_to(base)), m.group(1)))
+    return hits
+
+
+def test_admin_web_dockerfile_uses_the_pinned_node():
+    """判据 6：**服务器侧构建**的镜像也必须跟 `.nvmrc` 同 major（否则镜像产不出 = 交付断）。"""
+    major = _nvmrc_major()
+    hits = _dockerfiles_building_admin_web()
+    assert hits, "没找到构建 admin-web 的 Dockerfile ⇒ 判据面缩水了（服务器侧构建是本仓的交付路径）"
+    drifted = [(f, v) for f, v in hits if v != major]
+    assert not drifted, (
+        f"这些 Dockerfile 的 node 与 .nvmrc={major} 不一致，其中的 `npm ci` 会拒收当前 lock（issue #9343）: "
+        + ", ".join(f"{f}=node{v}" for f, v in drifted)
+    )
+
+
+def test_red_proof_a_stale_dockerfile_is_named(tmp_path):
+    """判据 6 的红证：把 admin-web 的 Dockerfile 注入成 `FROM node:20-alpine` ⇒ 必须**具名**红。"""
+    d = tmp_path / "frontend" / "admin-web"
+    d.mkdir(parents=True)
+    (d / "Dockerfile").write_text("FROM node:20-alpine\nRUN npm ci\n", encoding="utf-8")
+    hits = _dockerfiles_building_admin_web(tmp_path)
+    assert hits == [("frontend/admin-web/Dockerfile", "20")], f"解析面没抓到: {hits}"
+    assert hits[0][1] != _nvmrc_major(), "红证前提不成立：注入的版本恰好等于 .nvmrc"
