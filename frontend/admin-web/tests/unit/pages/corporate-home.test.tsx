@@ -267,6 +267,9 @@ describe('CorporateHomePage（官网首页：产品页版式 + 场景分节，is
       /^frontend\/admin-web\/src\/config\/ai-roles\.ts$/,
       /^frontend\/admin-web\/tests\/unit\/pages\/corporate-home\.test\.tsx$/,
       /^acceptance\//,
+      // 残余台账**必须逐字点名**旧标签（那是它的数据，不是回流；issue #9306）——
+      // 它由 tests/unit_ci_workflows/test_frontend_retired_brand_residue.py 反向看管（空豁免即红）。
+      /^tests\/unit_ci_workflows\/frontend_retired_brand_residue_ledger\.json$/,
     ]
     const patterns = OLD.map((o) => `-e '${o}'`).join(' ')
     let out = ''
