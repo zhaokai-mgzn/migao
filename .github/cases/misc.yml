@@ -11424,3 +11424,30 @@ cases:
         - pr-check.yml
       verifies: []
     merge_log: "2026-11-28 新增（issue #9343）。现场（实测，不是理论风险）：仓库零钉（无 .nvmrc / engines / .npmrc），而 CI 的 admin-web 腿在 Node 22（npm 10）、开发机与子代理在 Node 24（npm 11）⇒ 两端重算 `package-lock.json` 结果不同：`node_modules/vitest/node_modules/@vitest/mocker` 声明 `msw: ^2.4.9`，**npm 10 要求 lock 里有嵌套 `msw@2.15.0` 条目，npm 11 会把它删掉**（解析口径变了）。后果：8 个 dependabot PR 全部卡死 2 小时（0/8 合并），`npm ci` 逐字报 `Missing: msw@2.15.0 from lock file`，而它们的 lock 正是 dependabot（较新 npm）重算的 —— 即「谁用新 npm 重算 lock，谁就合并不了」。修法取 **B（把 CI 抬到 Node 24 / npm 11，与开发机与 dependabot 对齐）**而非 A（钉死 22/10）：A 治不了 dependabot 用自己 npm 重算 lock 这件事，B 才是让三方同源的解。落地 = `.nvmrc`(24) + `engines`(node >=24 <25 / npm >=11 <12) + `.npmrc`(engine-strict=true) + 5 个 workflow 的 7 条 admin-web 腿全部 node-version 24，并重算 lock（npm 11 下 `npm ci` 通过、752 包）。红证（本机现取）：把任一腿注入回 `node-version: '22'` ⇒ 判据 3 具名报「fake.yml:build=node22」；`.npmrc` 去掉 engine-strict ⇒ 判据 2 红；Dockerfile 注入 `FROM node:20-alpine` ⇒ 判据 5 红。**补记（同日实测的漏网）**：第一版只钉了 CI 腿与 engines，**漏了 `frontend/admin-web/Dockerfile`**（`FROM node:20-alpine`）⇒ 合并后 `deploy-frontend` 的服务器侧构建 `rc=1`、`admin-web:sha-fcd9d50` 镜像未产出 ⇒ 部署整腿失败。即「CI 全绿 ≠ 交付成功」：交付面（Dockerfile / 服务器侧 npm）必须与腿面同源，故补判据 5/6。"
+  - id: MC-393
+    legacy_id: ""
+    title: "微信客服部署级配置自愈：ENABLED 与 Token/AESKey/主密钥必须原子写入（单独追加 ENABLED = admin-api 启动崩），且幂等不覆盖"
+    domains:
+      - misc
+      - ci
+    tier: normal
+    tags:
+      - ci
+    skip_reason: "[backend-contract] 纯静态 + 行为级 shell 判据（零 LLM / 零网络 / 零 DB）：不进 agent-eval 冒烟；机器判红通道 = traces.tests 的 pytest（pr-check 的 ci workflow helper unit tests 全量跑 tests/unit_ci_workflows）"
+    user_inputs: []
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "**判据 1·原子写入**：`WECHAT_KF_ENABLED` 与 Token/EncodingAESKey/主密钥必须在**同一个** `{ … } >> .env.admin-api` 组里。执行点 = `test_kf_env_selfheal.py::test_enabled_and_keys_are_written_atomically`"
+      - "**判据 2·禁单独追加 ENABLED**：`wechat.kf.enabled=true` + 空主密钥 ⇒ `SecretCipher` 初始化失败 ⇒ admin-api **启动即崩**；该事故形态必须静态可拦。执行点 = `::test_no_standalone_enabled_append`"
+      - "**判据 3·不依赖 openssl**：SWAS 镜像里没有 openssl（实测本仓 deploy.sh 0 处引用）⇒ 生成器必须用 `/dev/urandom`（只看可执行行，别被注释咬到）。执行点 = `::test_generator_does_not_depend_on_openssl`"
+      - "**判据 4·行为级真跑**：抽段在临时目录真执行 ⇒ 四行齐，长度分别 **32 / 43 / 64**（企微对 EncodingAESKey 恰好 43 位有硬要求）。执行点 = `::test_block_generates_all_three_with_required_lengths`"
+      - "**判据 5·幂等**：再跑一次不许新增任何行（换 Token = 企微校验失败；换主密钥 = 已加密的商户 Secret 全部解不开）。执行点 = `::test_block_is_idempotent`"
+      - "**判据 6·红证**：把生成器改成短值 ⇒ 段必须 `exit 1` 且 **不写半个键**（证明长度校验不是摆设）。执行点 = `::test_red_proof_length_guard_blocks_a_partial_write`"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_kf_env_selfheal.py"
+      ci:
+        - deploy-admin-api.yml
+      verifies: []
+    merge_log: "2026-11-28 新增（issue #9355）。现场：用户拿到企微微信客服测试账号问「怎么接入」，查下来代码侧整条腿做完（回调 `/api/kf/callback`、`KfSyncWorker` 30s 轮询、`KfOutboxSender`、商户自助接入页 `#9230`、AI 回复闭环 `#9307`）但**部署面 0 命中**（`grep -rn WECHAT_KF deploy/ .github/workflows/`）= 对外表现为「功能不存在」：回调 **404**、接入页 Token/AESKey 全空、轮询腿因 `@ConditionalOnProperty` 未注册根本跑。修法 = 照 `AI_AGENT_SERVICE_TOKEN` 的既有范式做部署自愈（缺则生成并追加、幂等）：一次性生成 Token(32) / EncodingAESKey(43) / 主密钥(64 hex)，长度校验全过才原子追加 ENABLED + 三键 + 回调 URL。两侧坑：① 单独追加 ENABLED ⇒ admin-api 启动崩（SecretCipher fail-closed）；② 覆盖已有键 ⇒ 企微校验失败 / 商户 Secret 解不开。红证（本机现取）：生成器改短 ⇒ 段 `exit 1` 且 `.env.admin-api` 里 `WECHAT_KF_*` 一行都没有。"

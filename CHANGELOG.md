@@ -6,6 +6,14 @@
 
 > **后续条目继续在本文件 `## [Unreleased]
 
+### 微信客服：部署级配置自愈（2026-11-28，issue #9355）
+
+- **病灶**：代码侧整条微信客服腿已做完（回调 `/api/kf/callback`、`KfSyncWorker` 30s 轮询 `sync_msg`、`KfOutboxSender`、商户自助接入页、AI 回复闭环），但**部署面一个键都没配**（`grep -rn WECHAT_KF deploy/ .github/workflows/` = 0 命中）⇒ 对外表现为「功能不存在」：`GET https://api.migaozn.com/api/kf/callback` **404**、接入页 Token/EncodingAESKey 全空、两个定时器因 `@ConditionalOnProperty` 未注册。
+- **修法**：`deploy/swas/deploy.sh` 新增 1.5b 段 —— 缺 `WECHAT_KF_TOKEN` 时一次性生成 Token(32 位字母数字) / EncodingAESKey(**恰好 43 位** base62) / 主密钥(64 hex)，**长度校验全过**才在同一个 `{ … } >>` 组里原子追加 `WECHAT_KF_ENABLED=true` + 三键 + 回调 URL；生成器用 `/dev/urandom`（SWAS 镜像无 openssl）。
+- **两侧坑（都进了判据）**：① **单独追加 ENABLED** ⇒ `SecretCipher` 初始化失败 ⇒ admin-api **启动即崩**；② **覆盖已有键** ⇒ 换 Token 让已配好的企微后台校验失败、换主密钥让已加密落库的商户 Secret 全部解不开 ⇒ 段必须幂等。
+- **判据**：`tests/unit_ci_workflows/test_kf_env_selfheal.py`（用例 `MC-393`）6 条 —— 原子组、禁单独追加、不依赖 openssl、**行为级真跑**（四行齐 + 长度 32/43/64）、再跑幂等、短值生成器 ⇒ `exit 1` 且不写半个键。
+- **接入不必等回调**：`KfSyncWorker` 每 30s 轮询可独立跑通，回调只影响实时性。
+
 ### 修复：admin-web 镜像的 node 基线与工具链同源（2026-11-28，issue #9343 的漏网）
 
 - **现场**：`#9344` 把 CI 腿与 `engines` 抬到 Node 24 / npm 11 后 CI 全绿，但**合并即部署失败**：`deploy-frontend` 逐字报 `服务器侧构建失败（rc=1，上界 2400s）—— 镜像 …/admin-web:sha-fcd9d50 未产出`。
