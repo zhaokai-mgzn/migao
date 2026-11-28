@@ -168,12 +168,27 @@ cases:
       - "帮我看看"
     expectations:
       # 不猜测执行任何业务工具；澄清 = interact(choice) 候选卡 或 文本引导（话术需具体，如「请说'创建商品'」）
-      - tool: direct_reply or interact
+      # ── 2026-11-28 改判（issue #9280，run 46086496186 的 xiaobu 腿逐字归因）──
+      # 由 `direct_reply or interact` 改为**产出侧** `reply or interact`：
+      #   `direct_reply` 要求「该轮零 tool_calls」= **形状判据**，而模型换一种形态（猜完关键词再补一张
+      #   choice 卡）就判绿 ⇒ 判别力被形态吃掉。`reply`（#9290 的产出侧 token）= 本轮只要有最终文本
+      #   就成立（工具调用不限）。⚠️ 它**只保证有产出**，判别力由下面的 `forbidden_tools` 承担。
+      - tool: reply or interact
+    # 意图不明（「帮我看看」）时**不得臆断关键词直接检索**（2026-11-28，issue #9280）。
+    # 病灶读数（run 46086496186）：R1 从这句话猜出「遮光窗帘」「奶油风」两个顾客**从未提过**的关键词，
+    # 连发两次 product_search 再 product_detail ⇒ 违反 C 端兜底 prompt 逐字
+    # 「意图不明 → 用 choice 候选卡 … 不要默认直接搜相似」「不确定的细节不要臆断」。
+    # 旧判据（`direct_reply or interact`）只测形状 ⇒ 这一形态**会判绿**；本字段让它具名红
+    # （`forbidden_tools: product_search 在 R1 被调用`）。
+    forbidden_tools:
+      - tool: product_search
+      - tool: product_detail
+      - tool: customer_order_query
     data_checks:
       - "无猜测性业务 tool 调用（product_search/order_query 等不得在澄清轮误触发）"
       - "澄清卡选项 2-4 个、可点选；文本引导须给具体话术示例"
     skip_reason: ""
-    merge_log: "verification 8.4 独有；2026-09-03 Phase 2 (#2789)：general 澄清承载升级为 choice 卡或文本，期望放宽为 direct_reply or interact"
+    merge_log: "verification 8.4 独有；2026-09-03 Phase 2 (#2789)：general 澄清承载升级为 choice 卡或文本，期望放宽为 direct_reply or interact ｜ 2026-11-28（issue #9280，run 46086496186 的 xiaobu 腿）：**收强** —— `expectations` 由 `direct_reply or interact` 改为产出侧 `reply or interact`（旧写法只测形状：模型猜完关键词再补一张 choice 卡就判绿），并新增 `forbidden_tools[product_search, product_detail, customer_order_query]`（意图不明时不得臆断检索；run 里该形态从「判绿」变「具名红」）。`data_checks` / `user_inputs` / `traces` 一字未动、**无放宽**（只增不减）。产品侧同批把这条 prompt 铁律落成代码闸门（`app/graph/clarify_guard.py::judge_speculative_search` + C 端执行链门禁 `speculative_search`）。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_intent_router.py"
