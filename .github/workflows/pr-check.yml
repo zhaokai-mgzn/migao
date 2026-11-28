@@ -598,11 +598,11 @@ jobs:
       # Dockerfile 的 node:20-alpine 与 `@types/node ^20` 保持原样（无 engine-strict ⇒ `npm ci` 只告警）。
       # ⚠️ 改这个步骤名要同改 `tests/unit_ci_workflows/declaration_gate_registry.json` 的
       #    `pr-check-admin-web-tests.gated_steps`（`test_gate_coverage_and_same_source.py` 按步骤名逐字校验）。
-      - name: Set up Node.js 22
+      - name: Set up Node.js 24
         if: steps.detect_aw2.outputs.run_web == 'true'
         uses: actions/setup-node@v7
         with:
-          node-version: '22'
+          node-version: '24'
           cache: npm
           cache-dependency-path: frontend/admin-web/package-lock.json
 
@@ -686,11 +686,11 @@ jobs:
       # Dockerfile 的 node:20-alpine 与 `@types/node ^20` 保持原样（无 engine-strict ⇒ `npm ci` 只告警）。
       # ⚠️ 改这个步骤名要同改 `tests/unit_ci_workflows/declaration_gate_registry.json` 的
       #    `pr-check-admin-web-tests.gated_steps`（`test_gate_coverage_and_same_source.py` 按步骤名逐字校验）。
-      - name: Set up Node.js 22
+      - name: Set up Node.js 24
         if: steps.detect_aw.outputs.run_web == 'true'
         uses: actions/setup-node@v7
         with:
-          node-version: '22'
+          node-version: '24'
           cache: npm
           cache-dependency-path: frontend/admin-web/package-lock.json
 
@@ -860,11 +860,11 @@ jobs:
             echo "⏭️ 无 e2e 相关变更 —— 质量门禁**未跑**（「没跑」不是「通过」）"
           fi
 
-      - name: Setup Node.js
+      - name: Setup Node.js 24
         if: steps.detect_e2e.outputs.run_tests == 'true'
         uses: actions/setup-node@v7
         with:
-          node-version: '20'
+          node-version: '24'
           # ⚡ 依赖暖缓存（2026-11-25，issue #9120 成本追因）：本腿两次 `npm ci` 实测合计 ~56s
           # （`tests` 1s + `frontend/admin-web` **55s**），是本腿最大单项；命中缓存后 `npm ci` 走离线包。
           cache: npm

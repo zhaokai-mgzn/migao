@@ -6,6 +6,14 @@
 
 > **后续条目继续在本文件 `## [Unreleased]
 
+### 依赖批量升级 + 工具链钉住（Node 24 / npm 11，2026-11-28，issue #9343）
+
+- **依赖**：`pdfplumber` 0.11.10→0.11.11、`python-multipart` 0.0.33→0.0.34、`dashscope` >=2.1.0→>=2.1.1（后端 `requirements.txt`）；`tailwind-merge` 3.7.0→3.7.1、`@testing-library/user-event` 14.6.8→14.6.13、`autoprefixer` 10.6.2→10.7.0、`@types/react` 19.3.0→19.3.1（`frontend/admin-web`）。
+- **不能升的**：`@testing-library/jest-dom` 7.0.1→8.0.0 **拒绝**——它要求 `peerOptional vitest ">=5 <6"`，本仓是 `vitest@3.2.7`，属「先跨 vitest 5」的独立工程，不在依赖批量范围内（dependabot PR 已按此关闭）。
+- **工具链钉住（真因）**：仓库原先**零钉**（无 `.nvmrc` / `engines` / `.npmrc`），CI 的 admin-web 腿在 Node 22（npm 10）、开发机在 Node 24（npm 11）⇒ 两端重算 `package-lock.json` 结果不同（npm 10 要求嵌套 `msw@2.15.0` 条目，npm 11 会删掉）⇒ 8 个 dependabot PR 全部卡死（`npm ci` 报 `Missing: msw@2.15.0 from lock file`）。本次取 **B 方案**：CI 抬到 Node 24 / npm 11 与开发机、dependabot 三方同源；新增 `.nvmrc`(24)、`engines`(node >=24 <25 / npm >=11 <12)、`.npmrc` 的 `engine-strict=true`（用错版本当场失败），并把 5 个 workflow 的 7 条 admin-web 腿统一到 24。
+- **判据**：`tests/unit_ci_workflows/test_node_toolchain_pinned.py`（用例 `MC-392`）——`.nvmrc`/`engines` 同源、`engine-strict` 在场、装 admin-web 的每条腿必须同 major、注入旧版本腿 ⇒ 具名红。
+- **读数**：`npm ci`（npm 11）通过（752 包）；前端 `vitest` **524 文件 / 6232 passed / 1 skipped**；`test_case_trust_gate` + 本守卫 **184 passed**。
+
 ### 前端旧称收口：官网 / 后台 / 商家小程序统一「黄金策 · 智能客服」（2026-11-28，issue #9306）
 
 - **形态**（用户 2026-11-28 裁定：「C 端也不叫米宝了，C 端现在不提供 agent 形态，只提供技术能力，直接叫智能客服」）：前端 live 面 `git grep -c "米宝" -- frontend` **122 行 / 58 文件 → 10 行 / 6 文件**（−92%），余量**全部**是必须点名的东西 —— 2 处 `GB/T 47746-2026` 声称与免责小字（合规文本，逐字不动）、1 处用户裁定原话引用、6 处反回滚判据锚 + 1 处负断言常量，逐条登记在 `tests/unit_ci_workflows/frontend_retired_brand_residue_ledger.json`。

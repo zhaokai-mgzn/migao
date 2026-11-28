@@ -90,7 +90,7 @@ jobs:
       - name: Setup Node 22（web 面：admin-web 的 vitest 判据）
         uses: actions/setup-node@v7
         with:
-          node-version: '22'
+          node-version: '24'
           cache: npm
           cache-dependency-path: frontend/admin-web/package-lock.json
 

@@ -11397,3 +11397,28 @@ cases:
         - pr-check.yml
       verifies: []
     merge_log: "2026-11-27 新增（issue #9280）。现场（run 46002922920 @16cdb5bcc 的逐字读数）：`mibao: ❌ PR-135 score=0.0` / `must_succeed: product_image_generate 共 1 次调用**无一成功**（R1:IMAGE_GEN_UNAVAILABLE）`；上一轮同用例是 `IMAGE_SOURCE_MISSING`（种子主图没配），补了主图后**前移**成 `IMAGE_GEN_UNAVAILABLE` ⇒ 链路前半段已通，卡点是**评测栈里没配图生成凭证**（该码语义逐字 =「未配置 Key / 开关关闭 / 模型接不了这类图生图请求」）⇒ 是**环境前置**，既不是产品缺陷、也不是用例缺陷，却被记进 `deterministic_failures` ⇒ 每轮假红、污染判定结论。修法 = 新判定类（照抄 `_PRECONDITION_NOT_APPLIED` / `missing_target_verdict` 的分族范式）：用例可显式声明 `requires_env`，runner 在 `must_succeed` 失败且错误码 ∈ 该前置**已登记**环境码集合、且**没有别的失败**时判 `ENV_PREREQUISITE_MISSING`（具名串：用例 id + 前置名 + 错误码），进 `completion.env_missing`（**非阻塞**但必须出现在 `reason`；`ok=true` 时同样显式写「本轮有 N 条未验证」），并**先于**跨-run 复发/旅程/分类判定（否则每轮复发成 systemic 又变假红）。边界（防「一切失败都赖环境」）：**只有显式声明 `requires_env` 的用例**才享受该归类，未声明的一律照旧判红（判据 2 的注入式红证 = 只放开「声明」这一个变量，同一条失败原文即从红变成环境缺失）。CI 的 `_ci_verdict`（PR 门禁口径）**一字未动**（与既有各归因桶同口径：结论档与门禁各司其职）。取号 = `python3 scripts/case_id_lease.py reserve MC` ⇒ **MC-391**（离线独占租约 + `case-lease/MC-391` ref 跨机仲裁）。"
+  - id: MC-392
+    legacy_id: ""
+    title: "依赖工具链钉住：.nvmrc/engines/engine-strict 三者同源 + 装 admin-web 的每条 CI 腿必须同 major（npm 10 vs 11 会算出不同 lock）"
+    domains:
+      - misc
+      - ci
+    tier: normal
+    tags:
+      - ci
+    skip_reason: "[backend-contract] 纯静态 CI 结构判据（零 LLM / 零网络 / 零 DB）：不进 agent-eval 冒烟；机器判红通道 = traces.tests 的 pytest（pr-check 的 ci workflow helper unit tests 全量跑 tests/unit_ci_workflows）"
+    user_inputs: []
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "**判据 1·版本钉同源**：`.nvmrc` 的 major 必须与 `frontend/admin-web/package.json` 的 `engines.node` 同 major，`engines.npm` 必须是该 Node 自带的 npm major（Node 24 ⇒ 11）。执行点 = `test_node_toolchain_pinned.py::test_nvmrc_pins_the_ci_major_and_engines_agree`"
+      - "**判据 2·错版本必须当场失败**：`.npmrc` 必须含 `engine-strict=true` —— 否则用错 npm 版本只出一条警告，坏 lock 照样进库（本单的真因）。执行点 = `::test_npmrc_makes_a_wrong_toolchain_fail_loudly`"
+      - "**判据 3·腿面一致**：凡是用 `npm ci` 装 `frontend/admin-web` 的 workflow job，`node-version` 必须等于 `.nvmrc`；腿数少于现取的 5 条 ⇒ 判据面缩水，同样红。执行点 = `::test_every_admin_web_npm_ci_leg_uses_the_pinned_node`"
+      - "**判据 4·红证**：把一条腿注入成旧版本 ⇒ 判据 3 必须**具名**红（文件 + job），证明它不是恒绿。执行点 = `::test_red_proof_a_stale_leg_is_named`"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_node_toolchain_pinned.py"
+      ci:
+        - pr-check.yml
+      verifies: []
+    merge_log: "2026-11-28 新增（issue #9343）。现场（实测，不是理论风险）：仓库零钉（无 .nvmrc / engines / .npmrc），而 CI 的 admin-web 腿在 Node 22（npm 10）、开发机与子代理在 Node 24（npm 11）⇒ 两端重算 `package-lock.json` 结果不同：`node_modules/vitest/node_modules/@vitest/mocker` 声明 `msw: ^2.4.9`，**npm 10 要求 lock 里有嵌套 `msw@2.15.0` 条目，npm 11 会把它删掉**（解析口径变了）。后果：8 个 dependabot PR 全部卡死 2 小时（0/8 合并），`npm ci` 逐字报 `Missing: msw@2.15.0 from lock file`，而它们的 lock 正是 dependabot（较新 npm）重算的 —— 即「谁用新 npm 重算 lock，谁就合并不了」。修法取 **B（把 CI 抬到 Node 24 / npm 11，与开发机与 dependabot 对齐）**而非 A（钉死 22/10）：A 治不了 dependabot 用自己 npm 重算 lock 这件事，B 才是让三方同源的解。落地 = `.nvmrc`(24) + `engines`(node >=24 <25 / npm >=11 <12) + `.npmrc`(engine-strict=true) + 5 个 workflow 的 7 条 admin-web 腿全部 node-version 24，并重算 lock（npm 11 下 `npm ci` 通过、752 包）。红证（本机现取）：把任一腿注入回 `node-version: '22'` ⇒ 判据 3 具名报「fake.yml:build=node22」；`.npmrc` 去掉 engine-strict ⇒ 判据 2 红。"
