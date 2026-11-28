@@ -55,6 +55,7 @@ import {
 } from '../src/utils/inbound/gaps'
 import { LANDING_CODE_PARAM } from '../src/utils/inbound/deepLink'
 import { PAGE_ENTRY_LEDGER, type EntryNav, type PageEntry } from '../src/utils/pageEntries'
+import { parseAppConfigPages } from './helpers/appConfigPages'
 import { BMINI_ROOT, stripComments, stripHtmlComments } from './helpers/h5PlatformLists'
 import { callSites, reachableFromSpan } from './helpers/inboundCallSites'
 
@@ -101,13 +102,11 @@ function normalise(route: string): string {
 }
 
 function appConfigPages(read: Reader): string[] {
+  // 解析口径只有一份实现（issue #8979 拆分包后抽出）：主包 `pages` + 各分包 `root`/`pages` 合成。
   // ⚠️ 先**去注释**再解析：`app.config.ts` 的注释里出现过 `ADMIN_SURFACES[].route` ——
-  // 按原文解析会在那个 `]` 上截断（"判据把原文当代码读"那一族，见 `migao-dev-flow` §17.3）
-  const block = /pages:\s*\[([\s\S]*?)\]/.exec(stripComments(read(APP_CONFIG)))
-  if (!block) throw new Error(`${APP_CONFIG} 里读不出 pages 数组 ⇒ 判红而不是判绿（解析口径漂移了）`)
-  const pages = Array.from(block[1].matchAll(/'([^']+)'/g)).map((m) => normalise(m[1]))
-  if (pages.length < 8) throw new Error(`${APP_CONFIG} 的 pages 只解析出 ${pages.length} 条 ⇒ 解析口径已漂移`)
-  return pages
+  // 按原文解析会在那个 `]` 上截断（"判据把原文当代码读"那一族，见 `migao-dev-flow` §17.3）。
+  // 拆包**不得**让分包页逃出 L0/L2：所以这里取的是合成后的**全部**路由，不是只有主包。
+  return parseAppConfigPages(read(APP_CONFIG))
 }
 
 function tabBarPages(read: Reader): string[] {
