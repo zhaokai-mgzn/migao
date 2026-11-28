@@ -97,7 +97,7 @@ class TestExtractFieldsProduct:
     def test_product_fixture_maps_to_an_exact_field_table(self):
         fields = extract_fields("product", PRODUCT_VISION_FIXTURE)
         # 🔴 issue #6386：`name` / `description` **不再**出现在识别字段表里
-        #（它们是文案、不是图上的事实 ⇒ 改由 `[米宝解读]` 给；真正的守卫在
+        #（它们是文案、不是图上的事实 ⇒ 改由 `[黄金策解读]` 给；真正的守卫在
         # tests/test_vision/test_copy_vs_infer.py）——所以这张表从 7 格缩到 5 格。
         assert [(f["key"], f["label"], f["value"], f["source"]) for f in fields] == [
             ("color", "颜色", "3610-28 奶茶色", FIELD_MARKER),

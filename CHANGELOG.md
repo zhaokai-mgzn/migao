@@ -6,6 +6,15 @@
 
 > **后续条目继续在本文件 `## [Unreleased]
 
+### 图片识别的解读来源标记改「黄金策解读」：跨语言字面量同批改名 + 逐字相等判据（2026-11-28，issue #9306）
+
+- **形态**：页面深通道的**来源标记** `[米宝解读]` 改名 **`[黄金策解读]`** —— 后端 `backend/ai-agent-service/app/vision/deep_channel.py` 的 `SOURCE_INTERPRETED`、工具展示文案「↳ 黄金策解读：」（`app/tools/image_recognize.py`）、前端 `frontend/admin-web/src/lib/agent-page-fill.ts` 的 `PAGE_FILL_SOURCE_INTERPRETED`、`admin-api` 的 `PageFillPlan` / `ImageRecognitionClient` 契约注释同批改；`source ∈ {"[图片识别]", "[黄金策解读]"}` 的**来源可分辨**口径不变。
+- **为什么不保留旧 token**：它是内存 DTO 值、**不落库**（`backend/admin-api/src/main/resources/db` 对 `page_fill` 零命中）⇒ 不需要数据迁移、不需要双读；保留旧 token 只会让退役品牌名在这个面上永远存活。
+- **用户可见变化**：建品页 / 建单页的解读徽标与「↳ …解读：」提示由「米宝」改「黄金策」；前端角色名单一源（`frontend/admin-web/src/config/ai-roles.ts`）新增产品名常量 `AI_NAMES`，与 `backend/ai-agent-service/app/agents/naming.py` 的 `display_name` 逐字同源。
+- **判据**：`backend/ai-agent-service/tests/test_vision/test_source_token_cross_language.py`（后端常量 ↔ 前端常量**逐字相等**，任一侧单独改 ⇒ 具名红；token 不得含退役品牌名、且必须仍与 `[图片识别]` 可区分）+ `tests/unit_ci_workflows/test_agent_naming_source_of_truth.py` 的判据 4（`ai-roles.ts` 的 `AI_NAME_*` ↔ 映射表逐字一致）。冻结夹具（`ImageRecognitionInterpretControllerTest` / `ImageRecognitionInterpretTest` / `InterpretedBadge.test.tsx` 等）断言值随契约同步改，**未删任何断言**。
+- **不变**：`.github/cases/**` 一个字未动；C 端能力 / kf 通道 / `customer_general` prompt 未动；`source` 两值结构与「歧义格不填 / 不落库」口径未变。
+- **未固化（照实）**：`.github/cases/product.yml` 的 PR-124/125/126/131 仍引用旧字面量（本单按边界不碰用例面）⇒ 用例侧待承接单同步，已登记进 `tests/unit_ci_workflows/c_end_persona_name_residue_ledger.json` 的规则。
+
 ### 新租户的客服名默认值改「智能客服」：新建配置行的顾客不再被「米宝」问候（2026-11-28，issue #9328）
 
 - **形态**：`tenant_ai_configs.bot_name` 的**列默认值**由 V213 设的 `'米宝'` 改为 `'智能客服'`（新增迁移 `V220__set_tenant_bot_name_column_default_smart_service.sql`，一条 `ALTER … SET DEFAULT`）。这是 #9308 登记的第 ① 条边界：V219 只回填**存量行**，改不动**将来插入**的行 —— 读取侧 `data.get("botName") or DEFAULT_BOT_NAME` 是租户配置优先，行里非空就照用。

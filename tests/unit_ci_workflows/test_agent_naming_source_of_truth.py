@@ -21,6 +21,10 @@
 | 1 | 每个 agent 声明的 `name` / `display_name` / `persona` 与 `AGENT_NAMING` **逐字一致**；`DEFAULT_BOT_NAME` 与映射表一致 | 改一侧另一侧不变 ⇒ 具名打出 `文件:行 + 两个值` |
 | 2 | C 端身份面（`xiaobu.py` 的**全部字符串**，含 docstring / `direct_replies`）+ C 端 prompt 面（`identity-xiaobu.md`、`customer_*_skill.py` 的 system prompt、`EXAMPLES-customer_*.md`）**不得出现「米宝」** | 出现即红，点名 `文件:行` |
 | 3 | 映射表每条都带 `note`，且说清**为什么 id 与产品名不同**（`side` / `form` 必须合法） | 缺 note / note 太短 / 枚举外 ⇒ 红 |
+| 4 | **前端角色名单一源**（`frontend/admin-web/src/config/ai-roles.ts` 的 `AI_NAME_<ID>`）与映射表的 `display_name` 逐字一致 | 改一侧另一侧不变 ⇒ 具名打出两侧的值 |
+
+判据 4 的来源（issue #9306）：前端把「产品名」另写了一份（`AI_NAMES`），而**真值在后端映射表**。
+两份都从本文件派生就会退化成恒真断言 ⇒ 前端那侧**独立写字面量**，由本条逐字比对。
 
 ## 红证（读数见 PR body）
 
@@ -35,7 +39,10 @@
   ⇒ 代价是它只认 `AgentConfig(...)` 的关键字字面量；写成变量 / 拼接 ⇒ 判据 **fail-loud**（不静默通过）。
 - 判据 2 的 prompt 面是**静态面**；模型真正拿到的组装 prompt 由
   `backend/ai-agent-service/tests/test_persona_identity_split.py` 的行为判据覆盖 —— 两条互补。
-- 不在面内：B 端 prompt 里对 C 端的旁称（`references/EXAMPLES-aftersales.md` 等）、前端文案、
+- 判据 4 只读前端的**产品名常量**（`AI_NAME_*`），不读页面文案：文案措辞归各页面的口吻判据
+  （`frontend/admin-web/tests/unit/pages/copy-voice-banlist.ts` 等），这里只钉「名字是谁」。
+  读法同样是**纯字符串操作**（`startswith` + 切片），不用正则捕获引号（同 §34.9-B 的教训）。
+- 不在面内：B 端 prompt 里对 C 端的旁称（`references/EXAMPLES-aftersales.md` 等）、页面文案、
   存量 DB 数据（边界见 issue #9301）。
 """
 from __future__ import annotations
@@ -62,6 +69,9 @@ C_END_PROMPT_MD = (
 
 #: C 端 skill 的 system prompt 载体。
 C_END_SKILL_FILES = tuple(sorted(SKILLS_DIR.glob("customer_*_skill.py")))
+
+#: 前端「角色名单一源」：产品名常量在这里（`AI_NAME_<内部 id 大写>`）。
+AI_ROLES_TS = REPO_ROOT / "frontend" / "admin-web" / "src" / "config" / "ai-roles.ts"
 
 
 def _module_tree(path: Path) -> ast.Module:
@@ -246,3 +256,57 @@ def test_every_naming_entry_explains_why_id_differs():
             f"AGENT_NAMING[{agent_id!r}] 的 form={entry.get('form')!r} 不是 agent / capability "
             "—— 形态本身就是产品口径（C 端无 agent 形态）"
         )
+
+
+def ts_string_const(text: str, name: str) -> str:
+    """从 TS 源码里取 `export const <name> = '…'` 的字面量（纯字符串操作，不用正则捕获引号）。"""
+    prefix = f"export const {name} ="
+    lines = [line.strip() for line in text.split("\n") if line.startswith(prefix)]
+    assert len(lines) == 1, (
+        f"{AI_ROLES_TS} 里 `{prefix}` 命中 {len(lines)} 行（应恰好 1 行）—— 判据读不到真值，拒绝静默通过"
+    )
+    raw = lines[0][len(prefix) :].strip().rstrip(";").strip()
+    quote = raw[:1]
+    assert quote in {"'", '"'} and len(raw) >= 2 and raw[-1] == quote and quote not in raw[1:-1], (
+        f"`{name}` 的字面量形态不是单层引号（现取 {raw!r}）—— 改成模板 / 拼接后本判据读不到真值"
+    )
+    return raw[1:-1]
+
+
+def naming_mismatches(table: dict, frontend_names: dict) -> list:
+    """`{内部 id: 前端产品名}` vs 映射表 ⇒ 具名差异清单（空 = 一致）。纯函数（红证直接喂 dict）。"""
+    problems = []
+    for agent_id, entry in table.items():
+        expected = entry["display_name"]
+        got = frontend_names.get(agent_id)
+        if got != expected:
+            problems.append(
+                f"{AI_ROLES_TS.name} 的 AI_NAME_{agent_id.upper()}={got!r} 与 "
+                f"{NAMING_PATH.name} 的 AGENT_NAMING[{agent_id!r}]['display_name']={expected!r} 不一致"
+            )
+    return problems
+
+
+def test_frontend_role_names_match_the_naming_table():
+    """判据 4：前端角色名单一源与映射表**逐字同源**（两侧独立写，改一侧另一侧没跟 ⇒ 红）。"""
+    table = _naming_table()
+    ts_text = AI_ROLES_TS.read_text(encoding="utf-8")
+    frontend_names = {
+        agent_id: ts_string_const(ts_text, f"AI_NAME_{agent_id.upper()}") for agent_id in table
+    }
+    problems = naming_mismatches(table, frontend_names)
+    assert problems == [], (
+        "前端产品名与映射表不一致（改一侧必须同批改另一侧）：\n  " + "\n  ".join(problems)
+    )
+
+
+def test_red_proof_frontend_name_drift_is_detected():
+    """红证：只改前端一侧 ⇒ 判据 4 的纯函数具名红（且两侧同改时转绿，不是恒真）。"""
+    table = _naming_table()
+    drifted = {agent_id: f"{entry['display_name']}（旧）" for agent_id, entry in table.items()}
+    problems = naming_mismatches(table, drifted)
+    assert len(problems) == len(table), f"前端整体漂移没被逐条点名：{problems}"
+    assert all("AI_NAME_" in problem for problem in problems), problems
+
+    aligned = {agent_id: entry["display_name"] for agent_id, entry in table.items()}
+    assert naming_mismatches(table, aligned) == []

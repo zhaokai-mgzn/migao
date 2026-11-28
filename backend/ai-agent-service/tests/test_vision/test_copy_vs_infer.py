@@ -22,7 +22,7 @@
 
 ## 判据分两层
 
-- **实例**：`name` / `description` 必须来自 `[米宝解读]`、vision 的字段表里不得有这两键；
+- **实例**：`name` / `description` 必须来自 `[黄金策解读]`、vision 的字段表里不得有这两键；
 - **类级元守卫**：**凡 `recognizable=False` 的字段，`[图片识别]` 直填路径永不许产出它的值**
   —— 将来新增同类字段（例如「卖点文案」）自动受约束，不必再想起这条。
 """
@@ -159,7 +159,7 @@ def test_generic_old_blanket_reason_is_not_used_for_generated_fields():
         assert "图片未给出该字段" not in reason, (
             f"`{key}` 的理由与它的定义自相矛盾（它是文案、不是识别没看清）：{reason!r}"
         )
-        assert "米宝解读" in reason, f"`{key}` 的理由应指向米宝解读：{reason!r}"
+        assert "黄金策解读" in reason, f"`{key}` 的理由应指向黄金策解读：{reason!r}"
 
 
 # ══════════════════════════════════════════════════════════════════════════════

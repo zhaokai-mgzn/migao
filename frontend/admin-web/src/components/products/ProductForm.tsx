@@ -43,8 +43,8 @@ interface ProductFormProps {
    */
   recognizedFields?: string[]
   /**
-   * 已被**米宝解读 / 推荐**预填的字段键（issue #5368 包 2 · Agent 深通道）—— **可选**，
-   * 只影响渲染：在对应字段旁显示 `[米宝解读]` 徽标。
+   * 已被**黄金策解读 / 推荐**预填的字段键（issue #5368 包 2 · Agent 深通道）—— **可选**，
+   * 只影响渲染：在对应字段旁显示 `[黄金策解读]` 徽标。
    *
    * 🔴 与 {@link ProductFormProps.recognizedFields} **必须是两枚不同的徽标**：
    * 「图上抄下来的」与「黄金策推的」可信度不同，标注相同 ⇒ 商家无从判断该信哪一格
@@ -156,7 +156,7 @@ export default function ProductForm({
   // 图片识别预填的字段键（issue #5321）——只驱动 `[图片识别]` 徽标；规格属性用表单内部的英文 key
   const recognized = recognizedFields || []
   const recognizedSpecKeys = Object.keys(SPEC_EN_TO_CN).filter((k) => recognized.includes(k))
-  // 米宝解读来源的键（issue #5368 包 2）：另一枚徽标、另一套配色 —— 与识别徽标不可混同
+  // 黄金策解读来源的键（issue #5368 包 2）：另一枚徽标、另一套配色 —— 与识别徽标不可混同
   const interpreted = interpretedFields || []
   const interpretedSpecKeys = Object.keys(SPEC_EN_TO_CN).filter((k) => interpreted.includes(k))
 
@@ -716,7 +716,7 @@ export default function ProductForm({
             </div>
           </FieldRow>
 
-          {/* 商品属性（材质 / 工艺 可由图片识别预填；米宝解读来源用另一枚徽标） */}
+          {/* 商品属性（材质 / 工艺 可由图片识别预填；黄金策解读来源用另一枚徽标） */}
           <FieldRow
             label="商品属性"
             alignTop
@@ -885,7 +885,7 @@ export default function ProductForm({
 
       {/* ============ 图文描述 ============ */}
       <Section title="图文描述">
-        {/* 商品描述（issue #6362）：米宝解读产生的**文案**（不是图上抄下来的事实）⇒ 挂 `[米宝解读]`
+        {/* 商品描述（issue #6362）：黄金策解读产生的**文案**（不是图上抄下来的事实）⇒ 挂 `[黄金策解读]`
             徽标提醒复核；空值时不预填、键不出现 ⇒ 商家自己写的描述一个字都不会动。 */}
         <FieldRow
           label="商品描述"

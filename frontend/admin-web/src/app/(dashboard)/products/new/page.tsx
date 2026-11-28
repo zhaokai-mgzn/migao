@@ -31,7 +31,7 @@ export default function NewProductPage() {
    * （只有一处映射表，不存在「两处必须一致」这种要靠人记的约定）。
    *
    * `interpretedKeys` = 黄金策**解读/推荐**来源的键：它们进的是同一份 `initialData`，
-   * 但**徽标不同**（`[米宝解读]`）—— 同一格只挂一枚，故从识别清单里摘掉。
+   * 但**徽标不同**（`[黄金策解读]`）—— 同一格只挂一枚，故从识别清单里摘掉。
    */
   const applyFields = useCallback((all: RecognizedField[], interpretedKeys: string[]) => {
     const next = buildProductPrefill(all)
