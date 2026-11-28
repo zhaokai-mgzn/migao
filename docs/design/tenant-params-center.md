@@ -95,6 +95,11 @@
 | AI 客服 | `greeting_template` / `business_hours` / `timezone` / `auto_handoff_keywords` / `emotion_handoff` / `ai_fallback_handoff` / `ai_fallback_threshold` / `after_hours_mode` / `after_hours_message` / `recommend_strategy` / `recommend_count` / `recommend_trigger` / `quick_replies` / `bot_name` | `tenant_ai_configs` | 本单补（同款三件套） |
 | 加工费组合 / 工序路线 / 工序库 / 特殊选项价 / 计件 | **行式配置**（不是标量键） | 各自表 | 本增量**只做「去配置」跳转**，不逐项搬运文案 |
 
+> **存量回填（`bot_name`）**：`tenant_ai_configs.bot_name` 里的历史默认值「米宝」已由
+> `backend/admin-api/src/main/resources/db/migration/V219__backfill_tenant_bot_name_to_smart_service.sql`
+> 回填为「智能客服」—— 只匹配**逐字等于**旧默认值的行（商户自定义名一个字不动），
+> 判据 = `tests/unit_ci_workflows/test_v219_bot_name_backfill.py`。列默认值不在该迁移范围内（见迁移头注「边界」）。
+
 ⚠️ **行式配置与标量参数不是一类**（同 §22 P1 的分组理由）：前者是**列表编辑**（组合价、工序库），
 后者是**标量表单**。把列表塞进「参数中心」会让页面变成两套交互的杂糅 ——
 故本增量对前者**只给入口与一句话说明**。

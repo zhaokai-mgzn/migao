@@ -213,6 +213,7 @@
     "V216__rename_product_brand_display_value.sql": "sha256:7f9a4c1b7554c2940064ee589ce0bb72fa631f16e49a82d923eb8bc8bccb8131",
     "V217__create_wechat_kf_tables.sql": "sha256:1513a10da6fe9338f12ecd5ef6ce44c6c2f8acbd3cc956f8ac4ee7d45a4a7990",
     "V218__kf_sync_claim_and_external_msg_id.sql": "sha256:b53e7c0b83951fd844793978178ab2bf172242c8bcda538877b3aa2c434c9698",
+    "V219__backfill_tenant_bot_name_to_smart_service.sql": "sha256:a0c5260e5a0609e4a5589f4009609da5b6216a3700bf78008ebe935bc549335b",
     "schema.sql": "sha256:7a2c2d7a87d9aa6bbebcc2a23c997f5e53cab43bd7f6dd87012a9806c3067ffc"
   }
 }
