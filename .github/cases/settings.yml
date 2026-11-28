@@ -476,7 +476,7 @@ cases:
       # 已在两个 run 复发（prior_runs=[45979067843]、streak=2）⇒ 判定层按 fail-closed 阻塞 `ok`。
       # 归因：期望集**漏了本用例自己记录过的两条真实路径** —— 本块 2026-11-01 的注释逐字写着
       # 「全档 run 41285244288 走 `nav_guide(how_to)`」，而 11-01 那次只补了 `knowledge_search`；
-      # 另 `payment_qrcode_query` 是下面 data_checks 点名的**发射点工具**（米宝腿可达）。
+      # 另 `payment_qrcode_query` 是下面 data_checks 点名的**发射点工具**（智能客服腿可达）。
       # 补法与 #4007/#8300 同型（补真实解空间，**不放宽成空断言**：仍要求至少命中其一，
       # data_checks 继续钉合规展示事实；`direct_reply` 分支语义不变）。
       - tool: direct_reply or order_query or knowledge_search or nav_guide or payment_qrcode_query
