@@ -1754,7 +1754,7 @@ cases:
       verifies: []
 
   # ==========================================================================
-  # MC-046（issue #4184）：C 端米宝 H5（`frontend/mini-app` 的 `build:h5` 产物）**没有部署通路**。
+  # MC-046（issue #4184）：C 端智能客服 H5（`frontend/mini-app` 的 `build:h5` 产物）**没有部署通路**。
   # 病（现取复算，2026-09-27）：线上 `app.migaozn.com/js/app.js` 的 `Last-Modified` = 08-30 06:54 GMT，
   # 而 `frontend/mini-app` 最近改动 = 09-26 ⇒ 落后 ~28 天；而建腿前 `grep -rln '/opt/migao-deploy' .github/workflows/`
   # **0 命中** ⇒ **没有任何东西会因此变红**（「C 端已部署」一直被当真）。
@@ -6095,7 +6095,7 @@ cases:
   # MC-122（issue #8195）：观星台终端（工人端 APK / Windows 一体机 EXE）的**正式发布链路**。
   # 病：终端的更新检查地址早就写死在程序里（app.migaozn.com/terminal/latest.json），
   #     而 nginx 里 `/terminal` 0 命中 ⇒ 请求落进 `location /` 的 SPA fallback：
-  #     200 + 一页 C 端米宝 HTML（缺失文件也是 200）；官网 `/download` 404；产物没有任何发布通路。
+  #     200 + 一页 C 端智能客服 HTML（缺失文件也是 200）；官网 `/download` 404；产物没有任何发布通路。
   # ==========================================================================
   - id: MC-122
     legacy_id: ""
@@ -6370,7 +6370,7 @@ cases:
     # 由 backend/ai-agent-service/tests/test_llm_health.py 验证；线上「主凭据真的失效」的
     # 真机读数在 issue #8084 正文（2026-10-29 15:29 容器日志逐字）。
     user_inputs:
-      - "DeepSeek 主凭据在供应商侧失效时，黄金策 / 米宝每一轮都只回一句兜底话术，而 `/ready`、`/health`、`docker ps` 全绿 —— 凭什么能提前发现，而不是靠用户投诉？"
+      - "DeepSeek 主凭据在供应商侧失效时，黄金策 / 智能客服每一轮都只回一句兜底话术，而 `/ready`、`/health`、`docker ps` 全绿 —— 凭什么能提前发现，而不是靠用户投诉？"
     expectations: []
     data_checks:
       - "🔴 **判据 1·失败是可观测事件（会红）**：LLM 调用抛 401（`AuthenticationError` 形态，带 `status_code`）⇒ 进程级 `broken` 标志置位，日志**恰好 1 条** `[llm_health]` ERROR，且带 `error_class=authentication_error` / `status=401` / `PRIMARY_API_KEY` 可行动提示；**连续 3 次**失败仍只有 1 条（跃变语义，不是逐轮刷屏）。402 额度类同口径（`error_class=quota_exceeded`）；超时 / 5xx **不**置标志。执行点 = backend/ai-agent-service/tests/test_llm_health.py::TestCredentialFailureBecomesOneObservableEvent"
@@ -7135,7 +7135,7 @@ cases:
     # ⚠️ 真值暂缺：本判据是「文案 × 枚举覆盖 × 源码渲染面」的**结构性**事实（纯前端 + 只读 Java 源码），
     # 由 frontend/admin-web/tests/unit/lib/cohort-groups.test.ts 验证；真实会话里的读图判定不在此面。
     user_inputs:
-      - "在米宝会话里问「这个月省了多少布」，卡片上的来源组写着「切换后（采购入库）」「存量导入（切换前历史包袱）」—— 这两个词是什么意思？"
+      - "在智能客服会话里问「这个月省了多少布」，卡片上的来源组写着「切换后（采购入库）」「存量导入（切换前历史包袱）」—— 这两个词是什么意思？"
     expectations: []
     data_checks:
       - "🔴 **判据 ①（已知值 ⇒ 商家话术）**：`purchase` / `opening` / `unknown` 三个服务端来源组各自映射出一句商家话术，且文案**不含**英文、下划线（内部标识形态）与内部口径词（切换后 / 存量导入 / 来源未知），三句互不相同。执行点 = frontend/admin-web/tests/unit/lib/cohort-groups.test.ts::① 已知服务端值"
@@ -7177,7 +7177,7 @@ cases:
     truths_ref: []
     # ⚠️ 真值暂缺：bmini 独立 npm 工程内的确定性渲染/源码判据（jest + jsdom），零网络、零真实 LLM。
     user_inputs:
-      - "工人/商家在手机上打开米宝会话卡，来源组那一行写着「存量导入（切换前历史包袱）」—— 他看不懂这是什么。"
+      - "工人/商家在手机上打开智能客服会话卡，来源组那一行写着「存量导入（切换前历史包袱）」—— 他看不懂这是什么。"
     expectations: []
     data_checks:
       - "🔴 **判据 1（渲染：说商家的话）**：三个已知来源组在移动端会话卡上分别显示映射文案，且屏上**零出现**「切换后 / 存量导入 / 来源未知」—— 夹具里 `cohortLabel` **故意**保留内部标签，证明页面拿到却不渲染。红证：卡片改回渲染 `cohortLabel` ⇒ 红。执行点 = frontend/bmini-app/tests/cohort-groups-no-jargon.test.tsx::判据 1"
@@ -9157,7 +9157,7 @@ cases:
     user_inputs:
       - "商家问「这单的加工单到哪了」「库存还有多少」「员工和岗位分别找谁查」时，模型按生成的小抄选工具，而不是靠 9 处手写速查表"
     expectations:
-      - "小抄由工具注册表 + 本体投影而来，按**本轮 skill 的声明面**渲染；每个 B 端 skill 的组装 system prompt 里都有该段，C 端（米宝）prompt 逐字节不含它。"
+      - "小抄由工具注册表 + 本体投影而来，按**本轮 skill 的声明面**渲染；每个 B 端 skill 的组装 system prompt 里都有该段，C 端（智能客服）prompt 逐字节不含它。"
       - "小抄条目与声明面**双向一致**：声明面里有而小抄没有 ⇒ 判红并具名该工具；小抄写出未注册的工具名 ⇒ 判红。"
       - "删掉的 5 条手写「不要用 A 做 B」规则，其真值必须落在工具的「不要用于」元数据里、并在小抄行里可见；对应负例仍须留在用例库。"
       - "9 处手写速查表（6 个领域 prompt + 2 处内联 prompt + 财务规则表）全部清零；表里点名过的工具必须仍被渲染（真值不随表消失）。"
@@ -9307,7 +9307,7 @@ cases:
       - "**判据 4（会红）：租户隔离**。把别的租户的卡混进读面返回行（模拟「SQL 漏了租户条件」）⇒ 本租户的读面与 prompt 里一条都不许有；缺租户时读面返回空列表而不是退化成查全表；岗位口径只对命中岗位的会话生效、不知道岗位时只走全企业口径。"
       - "**判据 5（会红）：退役立即生效**。同一个读面实例上，库内状态改成 retired 后**下一次读**必须读不到（退役是一次库内变更，进程无从感知 ⇒ 任何进程内缓存都会让这条红）；同时核 prompt 段里该卡的正解随之消失。"
       - "**判据 6（会红）：反例不是注释**。反例存在但不可执行 ⇒ 写面 422、读面整卡不用、生成器拒绝生成（拒不降级成「少一条断言」）；反例可执行时，负向断言的语境必须**触发仍成立 + 反例命中**（否则「本卡不生效」有两个原因，坏引擎照样能绿）—— 互斥时拒绝生成并具名。"
-      - "**接线判据（会红）**：口径卡注入必须排在 _build_system_prompt 之后；删掉那行调用 ⇒ 红。C 端（米宝）传入即原样返回同一个对象（逐字节零回归）。"
+      - "**接线判据（会红）**：口径卡注入必须排在 _build_system_prompt 之后；删掉那行调用 ⇒ 红。C 端（智能客服）传入即原样返回同一个对象（逐字节零回归）。"
       - "**状态机与审计（Java 面）**：写面**只**落 draft（请求里写 active 也没用）；draft→active 与 active→retired 用 CAS（影响 0 行 = 冲突，不许静默成功）；每次迁移留一条审计（谁 / 什么动作 / 哪张卡）。"
       - "**未做项（照实登记）**：出口②知识卡（knowledge_search 命中）与出口④工具默认参数**本期不做**；B 端会话的自动落卡管道（P1b）不做（本期允许手工建卡）。重启条件写在 PR body。"
     skip_reason: "[backend-contract] 纯函数 + 结构判据（零网络、零 LLM、零真库），计分通道 = traces.tests；真实 B 端会话的自动落卡管道（P1b）与真库端到端迁移不在本面，不进入 agent-eval 冒烟"

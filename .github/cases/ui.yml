@@ -224,7 +224,7 @@ cases:
     # 2026-11-26（issue #9233）：C 端小程序 frontend/mini-app 整目录删除 ⇒ 原承载体失联；
     # 本条按「承载体删除」退役（条目不删、判据改指 C 端保持下线的类级守卫 tests/unit_ci_workflows/test_c_end_removed_guard.py）。
     legacy_id: ""
-    title: "米宝 C 端输入条 - 单容器语音优先（textarea 常驻 + 带文字标签的宽胶囊「按住 说话」松开发送）"
+    title: "智能客服 C 端输入条 - 单容器语音优先（textarea 常驻 + 带文字标签的宽胶囊「按住 说话」松开发送）"
     domains:
       - ui
       - frontend
@@ -237,7 +237,7 @@ cases:
     truths_ref:
       - frontend-fix.xiaobu-voice-holdtalk
     user_inputs:
-      - "米宝 C 端（小程序/H5 同源）输入条为单容器语音优先布局：textarea 常驻（语音优先 placeholder「按住说话，也可以打字」），空草稿时右侧主键是带文字标签的宽胶囊「按住 说话」，有草稿时该键位变为发送；上滑取消录音；首访给一条一次性可关闭的语音引导"
+      - "智能客服 C 端（小程序/H5 同源）输入条为单容器语音优先布局：textarea 常驻（语音优先 placeholder「按住说话，也可以打字」），空草稿时右侧主键是带文字标签的宽胶囊「按住 说话」，有草稿时该键位变为发送；上滑取消录音；首访给一条一次性可关闭的语音引导"
     expectations:
       - tool: direct_reply
     data_checks:
@@ -326,7 +326,7 @@ cases:
     # 2026-11-26（issue #9233）：C 端小程序 frontend/mini-app 整目录删除 ⇒ 原承载体失联；
     # 本条按「承载体删除」退役（条目不删、判据改指 C 端保持下线的类级守卫 tests/unit_ci_workflows/test_c_end_removed_guard.py）。
     legacy_id: ""
-    title: "米宝聊天主页快捷入口改版 - 转人工→查物流、退换货→售后咨询"
+    title: "智能客服聊天主页快捷入口改版 - 转人工→查物流、退换货→售后咨询"
     domains:
       - ui
       - frontend
@@ -339,7 +339,7 @@ cases:
     truths_ref:
       - frontend-fix.xiaobu-quick-actions
     user_inputs:
-      - "米宝聊天主页四个快捷对话入口：查订单/找产品/售后咨询/查物流"
+      - "智能客服聊天主页四个快捷对话入口：查订单/找产品/售后咨询/查物流"
     expectations:
       - tool: direct_reply
     data_checks:
@@ -428,7 +428,7 @@ cases:
     # 2026-11-26（issue #9233）：C 端小程序 frontend/mini-app 整目录删除 ⇒ 原承载体失联；
     # 本条按「承载体删除」退役（条目不删、判据改指 C 端保持下线的类级守卫 tests/unit_ci_workflows/test_c_end_removed_guard.py）。
     legacy_id: ""
-    title: "米宝 C 端支持纯图消息发送（拍照识别：无文本仅图片 → 后端 vision 理解）"
+    title: "智能客服 C 端支持纯图消息发送（拍照识别：无文本仅图片 → 后端 vision 理解）"
     domains:
       - ui
       - frontend
@@ -443,7 +443,7 @@ cases:
       - frontend-fix.no-api-change
       - frontend-fix.vitest
     user_inputs:
-      - "顾客拍一张窗帘照片直接发送（不带文字），米宝应能收到并走视觉理解推荐相似商品"
+      - "顾客拍一张窗帘照片直接发送（不带文字），智能客服应能收到并走视觉理解推荐相似商品"
     expectations:
       - tool: direct_reply
     data_checks:
@@ -464,7 +464,7 @@ cases:
     # 2026-11-26（issue #9233）：C 端小程序 frontend/mini-app 整目录删除 ⇒ 原承载体失联；
     # 本条按「承载体删除」退役（条目不删、判据改指 C 端保持下线的类级守卫 tests/unit_ci_workflows/test_c_end_removed_guard.py）。
     legacy_id: ""
-    title: "米宝聊天主页快捷入口六格化 - 算料报价与推荐热门商品并列（取消全宽）"
+    title: "智能客服聊天主页快捷入口六格化 - 算料报价与推荐热门商品并列（取消全宽）"
     domains:
       - ui
       - frontend
@@ -477,7 +477,7 @@ cases:
     truths_ref:
       - frontend-fix.xiaobu-quick-actions
     user_inputs:
-      - "顾客打开米宝聊天主页，快捷入口区六个入口等权排列：算料报价/推荐热门商品/查订单/找产品/售后咨询/查物流"
+      - "顾客打开智能客服聊天主页，快捷入口区六个入口等权排列：算料报价/推荐热门商品/查订单/找产品/售后咨询/查物流"
     expectations:
       - tool: direct_reply
     data_checks:
@@ -500,7 +500,7 @@ cases:
     # 2026-11-26（issue #9233）：C 端小程序 frontend/mini-app 整目录删除 ⇒ 原承载体失联；
     # 本条按「承载体删除」退役（条目不删、判据改指 C 端保持下线的类级守卫 tests/unit_ci_workflows/test_c_end_removed_guard.py）。
     legacy_id: ""
-    title: "米宝聊天主页空态移除商品推荐卡（NewArrivals），推荐改由文字胶囊/快捷对话入口承载"
+    title: "智能客服聊天主页空态移除商品推荐卡（NewArrivals），推荐改由文字胶囊/快捷对话入口承载"
     domains:
       - ui
       - frontend
@@ -513,7 +513,7 @@ cases:
     truths_ref:
       - frontend-fix.xiaobu-quick-actions
     user_inputs:
-      - "顾客打开米宝聊天主页空态：顶部三条居中的推荐胶囊（如「📐 按窗尺寸测算用布量与报价」），不再展示热销商品图片与名称"
+      - "顾客打开智能客服聊天主页空态：顶部三条居中的推荐胶囊（如「📐 按窗尺寸测算用布量与报价」），不再展示热销商品图片与名称"
     expectations:
       - tool: direct_reply
     data_checks:
@@ -631,7 +631,7 @@ cases:
     # 2026-11-26（issue #9233）：C 端小程序 frontend/mini-app 整目录删除 ⇒ 原承载体失联；
     # 本条按「承载体删除」退役（条目不删、判据改指 C 端保持下线的类级守卫 tests/unit_ci_workflows/test_c_end_removed_guard.py）。
     legacy_id: ""
-    title: "C 端智能客服名称取 botName 配置 — 思考中/空态/导航名去硬编码（默认米宝）"
+    title: "C 端智能客服名称取 botName 配置 — 思考中/空态/导航名去硬编码（未配置时用内置默认名）"
     domains:
       - ui
       - frontend
@@ -891,7 +891,7 @@ cases:
       - frontend-fix.no-api-change
       - frontend-fix.vitest
     user_inputs:
-      - "黄金策聊天输入条图标与状态呈现和米宝同形：发送键 ↑（ArrowUp）、停止键 ■（Square）、语音键音波线稿（AudioLines 弃用 Mic），录音状态在容器内状态条展示而不占用 placeholder，图片预览缩略图收进输入容器内"
+      - "黄金策聊天输入条图标与状态呈现和智能客服同形：发送键 ↑（ArrowUp）、停止键 ■（Square）、语音键音波线稿（AudioLines 弃用 Mic），录音状态在容器内状态条展示而不占用 placeholder，图片预览缩略图收进输入容器内"
     expectations:
       - tool: direct_reply
     data_checks:
@@ -1455,7 +1455,7 @@ cases:
     # 2026-11-26（issue #9233）：C 端小程序 frontend/mini-app 整目录删除 ⇒ 原承载体失联；
     # 本条按「承载体删除」退役（条目不删、判据改指 C 端保持下线的类级守卫 tests/unit_ci_workflows/test_c_end_removed_guard.py）。
     legacy_id: ""
-    title: "米宝选择卡片回传人话 — 点击选项发 label 而非内部编码（proc_item_* 用户看不懂）"
+    title: "智能客服选择卡片回传人话 — 点击选项发 label 而非内部编码（proc_item_* 用户看不懂）"
     domains:
       - ui
       - frontend
@@ -1505,7 +1505,7 @@ cases:
     truths_ref:
       - frontend-fix.no-api-change
     user_inputs:
-      - "真机预览实测：米宝回复含 **9231 遮光窗帘**、**几米** 等 markdown 加粗符与 - 列表，气泡里原样显示星号与短横线"
+      - "真机预览实测：智能客服回复含 **9231 遮光窗帘**、**几米** 等 markdown 加粗符与 - 列表，气泡里原样显示星号与短横线"
     expectations:
       - tool: direct_reply
     data_checks:
@@ -1539,7 +1539,7 @@ cases:
     truths_ref:
       - frontend-fix.no-api-change
     user_inputs:
-      - "顾客在米宝对话里收到生产进度卡：显示加工单做到哪一步了（进度百分比）、当前在做哪道工序、还剩几道工序、预计什么时候交付"
+      - "顾客在智能客服对话里收到生产进度卡：显示加工单做到哪一步了（进度百分比）、当前在做哪道工序、还剩几道工序、预计什么时候交付"
     expectations:
       - tool: direct_reply
     data_checks:
@@ -3221,7 +3221,7 @@ cases:
     # 2026-11-26（issue #9233）：C 端小程序 frontend/mini-app 整目录删除 ⇒ 原承载体失联；
     # 本条按「承载体删除」退役（条目不删、判据改指 C 端保持下线的类级守卫 tests/unit_ci_workflows/test_c_end_removed_guard.py）。
     legacy_id: ""
-    title: "手机端（B 端黄金策 / C 端米宝）助手消息的 **GFM 表格**渲染 —— 表格成组件（窄屏可横滑 / 表头-数据行逐格 / 列数按分隔行）+ PC 端同族回归判据（用户 2026-10-18 手机端实测：一排 `|---|`）"
+    title: "手机端（B 端黄金策 / C 端智能客服）助手消息的 **GFM 表格**渲染 —— 表格成组件（窄屏可横滑 / 表头-数据行逐格 / 列数按分隔行）+ PC 端同族回归判据（用户 2026-10-18 手机端实测：一排 `|---|`）"
     domains:
       - ui
       - frontend
@@ -4526,7 +4526,7 @@ cases:
   #
   # 病根（用户逐字）：「之前让你做过质检流程，我看在观星台上没有任何地方体现出来了」。
   # 实测证据：`grep -rIn "quality|质检" frontend/admin-web/src` ⇒ **0 处**；
-  # `grep -rIn "rework_qty|scrap_qty" frontend/admin-web` ⇒ **0 处**（只有米宝的 agent 读面消费）。
+  # `grep -rIn "rework_qty|scrap_qty" frontend/admin-web` ⇒ **0 处**（只有智能客服的 agent 读面消费）。
   #
   # 用户 2026-10-17 三项裁定：① 落位 = 生产管理组新增「质检记录」菜单 **+** 作业单生产明细内嵌质检区；
   # ② 范围 = 一起补（生产明细显示 合格/返工/报废 三列）；③ 读权限**保持现状**
@@ -4626,7 +4626,7 @@ cases:
     expectations:
       - tool: direct_reply
     data_checks:
-      - "判据 1·**三列表头都在**（合格 / 返工 / 报废）—— 此前 `rework_qty` / `scrap_qty` 在 admin-web **零消费者**（只有米宝读面能看到）。证据：frontend/admin-web/tests/unit/components/ProductionProgressTable-worktype.test.tsx"
+      - "判据 1·**三列表头都在**（合格 / 返工 / 报废）—— 此前 `rework_qty` / `scrap_qty` 在 admin-web **零消费者**（只有智能客服读面能看到）。证据：frontend/admin-web/tests/unit/components/ProductionProgressTable-worktype.test.tsx"
       - "判据 2·**逐工序渲染服务端下发的三态数量（含单位）**；缺报工 ⇒ 服务端给 0 ⇒ 渲染 `0`（不是空白、不是 `undefined`）。证据：同文件（② 用例）"
       - "判据 3·🔴 **合格与「已完成数量」是两列**（见证行：`done_qty=10` / `qualified_qty=7` 故意不等）—— 返工 / 报废**既不推进进度也不计件**（既有口径），本表**不为它们做合计**（避免被读成「已完成 = 合格 + 返工 + 报废」）。三天不做合计这件事**不在**本用例的机器断言里（它是「没有写」的事实）⇒ 靠本条的方案注释 + 代码评审承担。"
     skip_reason: "[backend-contract] 纯前端渲染（vitest 单测覆盖），非 LLM 行为，不进入 agent-eval 冒烟"

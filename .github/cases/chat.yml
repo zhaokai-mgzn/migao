@@ -97,7 +97,7 @@ cases:
       # ⚠️ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：原首条
       # `- tool: product_manage` 已移除 —— 建品写工具已从 B 端全部 skill 解绑（工具类与
       # C 端绑定未动）⇒ 保留它 = 永不满足的悬空声明（静态判据还会把本用例判成
-      # 「只能跑米宝却未标注 persona」）。断言面按 A 类模板改判为**存活的只读路径** order_query。
+      # 「只能跑智能客服却未标注 persona」）。断言面按 A 类模板改判为**存活的只读路径** order_query。
       # 第二句含「订单」触发词 → 允许切换出 pending 创建流程
       - tool: order_query
     # 效果层断言（issue #4517 的 burn-down 缴费；门禁 a2 条 / #3778「调用了 ≠ 成了」）：
@@ -965,7 +965,7 @@ cases:
       # 前置不成立（意图白名单收窄 / 建议节点被摘掉）时，`interact` 期望 unmatched ⇒
       # 判红会伪装成「agent 不会建议」，归因错人。⇒ 写成机器计分型自断言（含 success=true）。
       # **断言面（user_inputs / expectations / forbidden_text）一字未动、无放宽。**
-      - "前置（precondition）：米宝对**单轮负面情绪**会走「主动建议」确定性节点（真值 = `backend/ai-agent-service/app/graph/handoff_offer.py` 的 `judge_handoff`：意图 ∈ `_OFFER_ALLOWED_INTENTS`（general / after_sales / complaint）且命中 S1 负面情绪词表 ⇒ 下发 `interact` choice 建议卡，与转人工工具是否可达无关）（success=true）；前置不成立时 `interact` 期望 unmatched，判红会伪装成「agent 不会建议」"
+      - "前置（precondition）：智能客服对**单轮负面情绪**会走「主动建议」确定性节点（真值 = `backend/ai-agent-service/app/graph/handoff_offer.py` 的 `judge_handoff`：意图 ∈ `_OFFER_ALLOWED_INTENTS`（general / after_sales / complaint）且命中 S1 负面情绪词表 ⇒ 下发 `interact` choice 建议卡，与转人工工具是否可达无关）（success=true）；前置不成立时 `interact` 期望 unmatched，判红会伪装成「agent 不会建议」"
       - "不满情绪（general 意图）命中后 AI 先发建议卡片（interact choice），不直接转"
       - "interact 卡片选项含『整理成售后工单』与『继续咨询米宝』，且**不含**任何邀约人工转接的措辞（卡片文案判据见 tests/unit_ci_workflows/test_human_handoff_retired.py）"
       - "用户点『整理成售后工单』后进入售后受理链路（确定性路由 after_sales, source=rule；判据见 tests/test_xiaobu_handoff_offer.py::TestOfferToDirectHandoffE2E）"
@@ -1011,7 +1011,7 @@ cases:
       # 口径：`assertion_taxonomy.declares_precondition` 认「`data_checks` 里含前置关键词
       # **且**是机器计分型」，故本条带 `success=true`（= 计分标记，**不新增断言强度**）。
       # **断言面（user_inputs / expectations / forbidden_text）一字未动、无放宽。**
-      - "前置（precondition）：米宝「主动建议转人工」的冷却**处于启用状态**且**每会话上限 = 1 次**（真值 = `backend/ai-agent-service/app/graph/handoff_judge.py` 的 `DEFAULT_HANDOFF_MAX_OFFERS = 1`，判据 = `_cooldown_blocked` 的 `offer_count >= DEFAULT_HANDOFF_MAX_OFFERS`；`handoff_offer.py` 在每次建议后把 `offer_count` +1）—— 本用例第 3 轮「冷却生效不再弹卡」正是按该上限校准的（success=true）；上限被改大或冷却判据被摘掉时，第 3 轮不会按预期收敛，判红会伪装成「agent 不弹建议卡」"
+      - "前置（precondition）：智能客服「主动建议转人工」的冷却**处于启用状态**且**每会话上限 = 1 次**（真值 = `backend/ai-agent-service/app/graph/handoff_judge.py` 的 `DEFAULT_HANDOFF_MAX_OFFERS = 1`，判据 = `_cooldown_blocked` 的 `offer_count >= DEFAULT_HANDOFF_MAX_OFFERS`；`handoff_offer.py` 在每次建议后把 `offer_count` +1）—— 本用例第 3 轮「冷却生效不再弹卡」正是按该上限校准的（success=true）；上限被改大或冷却判据被摘掉时，第 3 轮不会按预期收敛，判红会伪装成「agent 不弹建议卡」"
       - "首次不满 → 建议卡片（offer_count 记为 1）"
       - "用户点『继续咨询米宝』→ 消息正常路由（general），不创建工单"
       - "再次不满 → 冷却生效不再弹建议卡（handoff.offer_count >= 1）"
@@ -1259,7 +1259,7 @@ cases:
       - order
     tier: normal
     # persona 标 mibao（#3961）：本用例的触发语与断言全落在 B 端写操作链路上（建品/下单/
-    # 售后/客户），而 C 端米宝没有 product_manage / after_sales_manage / customer_manage
+    # 售后/客户），而 C 端智能客服没有 product_manage / after_sales_manage / customer_manage
     # 等管理端工具 —— 显式标注后它不再进入 C 端可选集，杜绝「跑在错误 Agent 上还计分」
     # （静态侧同时消掉 CASE-TRUST-SINGLE-LEG-NO-PERSONA 的跨腿泄漏隐患：#3266 的
     #  `is_customer_facing_case` 语义过滤今天已把它挡在 C 端之外，但那是**语义**判据，
@@ -1572,7 +1572,7 @@ cases:
 
   - id: CH-024
     legacy_id: ""
-    title: "C 端长期记忆端到端 — 表达偏好→会话关闭落库→跨会话注入→个性化推荐（米宝）"
+    title: "C 端长期记忆端到端 — 表达偏好→会话关闭落库→跨会话注入→个性化推荐（智能客服）"
     domains:
       - chat
       - customer
@@ -1891,7 +1891,7 @@ cases:
     persona: xiaobu
     truths_ref: []
     user_inputs:
-      - "C 端米宝（mini-app/bmini-app）interact 交互组件（confirm/choice/form）点选后无任何提交锁：ConfirmCard/ChoiceCard/FormCard 点几次就触发几次 onAction（可重复下单/重复确认），与 B 端 #3036 同源不固化"
+      - "C 端智能客服（mini-app/bmini-app）interact 交互组件（confirm/choice/form）点选后无任何提交锁：ConfirmCard/ChoiceCard/FormCard 点几次就触发几次 onAction（可重复下单/重复确认），与 B 端 #3036 同源不固化"
     expectations:
       - "点在响应中的应用：用户回复后 sendMessage 把最后一条未答 interactive 消息标记 interactiveAnswered（本地即时锁），后端已由 #3037 持久化"
     data_checks:
@@ -1929,7 +1929,7 @@ cases:
     persona: xiaobu
     truths_ref: []
     user_inputs:
-      - "C 端米宝历史消息映射（mini-app/bmini-app services/chatService.ts getSessionMessages）丢弃 interactive 与 interactive_answered → 刷新后交互组件整体消失只剩文本（#3036 同源；后端 #3037 已返回 interactive 字段，仅前端映射未透传）"
+      - "C 端智能客服历史消息映射（mini-app/bmini-app services/chatService.ts getSessionMessages）丢弃 interactive 与 interactive_answered → 刷新后交互组件整体消失只剩文本（#3036 同源；后端 #3037 已返回 interactive 字段，仅前端映射未透传）"
     expectations:
       - "历史回放后 interactive 组件按三态渲染：未答 → 可交互；已答 → 只读变体"
     data_checks:
@@ -2018,7 +2018,7 @@ cases:
     # 【真前置是什么】R1「帮我查一下我的订单」与 R2「算了，先看看你们有什么窗帘」是**同一条
     #   在办语境的两半** —— R2 之所以是「顾客改主意」而不是「顾客要取消」，前提正是 R1 真的
     #   查到了**该顾客的订单**（集合为空时 R2 的「算了」没有对象，本用例判的就不是它要判的
-    #   那件事，而红的表现只是 `unmatched expectation`，看起来像「米宝不会查单」，归因全错）。
+    #   那件事，而红的表现只是 `unmatched expectation`，看起来像「智能客服不会查单」，归因全错）。
     #   订单集合的不可变键 = 顾客手机号 `13800138000`（C 端种子 `xiaobu_eval_seed.sql` 的
     #   `debug_customer_1` /「张三」/ `EVAL-ORD-0001`+`0002`）；取数走
     #   `local_runner._probe_phone_order_count` → `GET /api/admin/orders?receiver=<手机号>`，
@@ -2059,7 +2059,7 @@ cases:
 
   - id: CH-034
     legacy_id: ""
-    title: "图片内容驱动业务动作 - 发图后米宝看懂画面并据此检索（vision 正向能力）"
+    title: "图片内容驱动业务动作 - 发图后智能客服看懂画面并据此检索（vision 正向能力）"
     domains:
       - chat
       - product
@@ -2154,7 +2154,7 @@ cases:
     #   ① post_session（落库）：会话关闭后 user_memories 必须有 key=curtain_style /
     #      value 含「奶油风」（GET /api/chat/memories）—— 记忆真的存下来了；
     #   ② forbidden_text（注入失效的**行为指纹**）：R2 顾客没重述风格，若注入失效，
-    #      米宝只能反问顾客偏好（「您喜欢什么风格」类话术）→ 命中即红；
+    #      智能客服只能反问顾客偏好（「您喜欢什么风格」类话术）→ 命中即红；
     #   ③ must_succeed + required_args（推荐真的可用）：R2 必须发出**有据**的检索
     #      （keyword 非空）且调用成功 —— 防「记忆注入了但检索全失败」这种半绿。
     #   ⚠️ 边界（诚实标注）：`want_text` 是全程断言，R1 回显即满足 → 不能单独证明 R2
@@ -2337,7 +2337,7 @@ cases:
 
   - id: CH-039
     legacy_id: ""
-    title: "米宝答顾客查生产进度（订单做到哪道工序/还要多久）"
+    title: "智能客服答顾客查生产进度（订单做到哪道工序/还要多久）"
     domains:
       - chat
       - order
@@ -2351,7 +2351,7 @@ cases:
       - ai-chat.intent-tool-map
       - ai-chat.tool-classes
     # ── 覆盖说明（issue #3996，M4-I；2026-09-17 issue #4007 改为点名单号）──
-    # 顾客问「我的订单做到哪道工序了」→ 米宝调 production_progress_query(order_no=…) 取进度%/
+    # 顾客问「我的订单做到哪道工序了」→ 智能客服调 production_progress_query(order_no=…) 取进度%/
     # 当前工序/待完工序/预计交期；数量与状态语义见冻结契约（M4-G-2 端点）。
     # ⚠️ 为何**点名 fixture 订单号**（EVAL-ORD-0002）：原输入「我的订单做到哪了」要求 agent
     #   先链式取号（customer_order_query → 从列表里挑一笔），同跑的下单用例会新建「待付款」单、
@@ -2450,7 +2450,7 @@ cases:
     # ── 覆盖说明（issue #3996，M4-I）──
     # 商家问「王师傅这个月计件多少」→ 黄金策调 piecework_query(worker_name=…, period=…) 取
     # 合计 + 逐工序明细。计件工资只对 B 端开放（工具 allowed_roles 排除 customer，
-    # C 端米宝工具集不含本工具）—— 本用例是 mibao 侧该工具的唯一覆盖证据。
+    # C 端智能客服工具集不含本工具）—— 本用例是 mibao 侧该工具的唯一覆盖证据。
     user_inputs:
       - "王师傅这个月计件做了多少？顺便看下明细"
     expectations:
@@ -2752,7 +2752,7 @@ cases:
 
   - id: CH-046
     legacy_id: ""
-    title: "渠道欢迎语解析（米宝）：四渠道默认文案 + 租户 botName 优先 + {bot_name} 占位符"
+    title: "渠道欢迎语解析（智能客服）：四渠道默认文案 + 租户 botName 优先 + {bot_name} 占位符"
     domains:
       - chat
       - settings
