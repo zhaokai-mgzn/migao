@@ -104,4 +104,40 @@ class KfDecisionServiceTest {
                 new CountingJudgeClient(new IllegalStateException("timeout")));
         assertThat(failingJudge.decide(1L, "s-1", 0, "这款多少钱").decision()).isEqualTo("AI_REPLY");
     }
+
+    @Test
+    @DisplayName("「客服」单独出现不算要人工（称呼/寒暄/询问）⇒ 交给语义判定，不升级")
+    void bareCustomerServiceWordDoesNotEscalate() {
+        CountingJudgeClient judge = new CountingJudgeClient(Optional.of(verdict(false)));
+        KfDecisionService service = new KfDecisionService(judge);
+
+        for (String text : new String[]{"客服你好", "你们客服在吗", "客服电话多少"}) {
+            assertThat(service.decide(1L, "s-1", 0, text).decision())
+                    .as("「%s」是寒暄/询问，不该被推给人工（裁定 A：默认 AI）", text)
+                    .isEqualTo("AI_REPLY");
+        }
+        // 规则未命中 ⇒ 确实走了语义判定补召回（不是被规则直接放行）
+        assertThat(judge.calls.get()).isEqualTo(3);
+    }
+
+    @Test
+    @DisplayName("明确索取人工（我要人工/转人工/找客服处理/人工客服）⇒ ESCALATE_HUMAN，且不发起语义判定")
+    void explicitHumanRequestEscalates() {
+        CountingJudgeClient judge = new CountingJudgeClient(Optional.of(verdict(false)));
+        KfDecisionService service = new KfDecisionService(judge);
+
+        for (String text : new String[]{"我要人工", "转人工", "找客服处理", "人工客服"}) {
+            assertThat(service.decide(1L, "s-1", 0, text).decision())
+                    .as("「%s」是明确索取人工，永不漏", text)
+                    .isEqualTo("ESCALATE_HUMAN");
+        }
+        assertThat(judge.calls.get()).isZero();
+    }
+
+    @Test
+    @DisplayName("风险词表逐字未变（产业口径：投诉/退款/赔偿/起诉/律师/曝光/差评）")
+    void riskWordsUnchanged() {
+        assertThat(KfDecisionService.RISK_WORDS)
+                .containsExactly("投诉", "退款", "赔偿", "起诉", "律师", "曝光", "差评");
+    }
 }

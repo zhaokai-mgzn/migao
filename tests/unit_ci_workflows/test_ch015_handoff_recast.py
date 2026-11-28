@@ -8,7 +8,8 @@
 微信客服（C 端唯一主入口）落地后，「转人工」**真的会转给真人**：
 
 * `backend/admin-api/src/main/java/com/migao/admin/service/kf/KfDecisionService.java` 的
-  `HUMAN_WORDS`（人工 / 真人 / 客服 / 转人工）命中即 `ESCALATE_HUMAN` —— **规则短路**，不经 AI 语义判定；
+  `HUMAN_REQUEST`（`人工` / `真人` 单独出现，或 动作词 + `人工`/`真人`/`客服`）命中即
+  `ESCALATE_HUMAN` —— **规则短路**，不经 AI 语义判定（issue #9302 起 `客服` **单独**出现不再升级：那是称呼/询问）；
 * `backend/admin-api/src/main/java/com/migao/admin/service/kf/KfTransferService.java` 的类注释逐字
   「这里不是 human_handoff 工具复活——是通道能力」。
 

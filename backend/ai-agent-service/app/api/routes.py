@@ -10,6 +10,7 @@ from app.api.asr import router as asr_router
 from app.api.chat import router as chat_router
 from app.api.internal import router as internal_router
 from app.api.kf_judge import router as kf_judge_router
+from app.api.kf_reply import router as kf_reply_router
 from app.api.migration import router as migration_router
 from app.api.payments import router as payments_router
 from app.api.products import router as products_router
@@ -46,6 +47,14 @@ router.include_router(
 # 规则未命中时调用它补召回；失败即回退规则（本端点不抛 500）。
 router.include_router(
     kf_judge_router,
+    prefix="/internal/kf",
+    tags=["internal"],
+)
+
+# 微信客服 AI 回复生成（issue #9302）：判定为 AI_REPLY 后由 admin-api 取**一条**客户可见正文，
+# 再经 KfSendService 入 outbox。失败即判不可用（admin-api 转人工），本端点不发半成品。
+router.include_router(
+    kf_reply_router,
     prefix="/internal/kf",
     tags=["internal"],
 )
