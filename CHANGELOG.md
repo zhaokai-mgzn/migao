@@ -6,13 +6,20 @@
 
 > **后续条目继续在本文件 `## [Unreleased]
 
+### 存量商户的客服名回填「米宝」→「智能客服」（2026-11-28，issue #9308）
+
+- **形态**（用户 2026-11-28 逐字：「C 端也不叫米宝了…直接叫智能客服」）：上一条只改了**代码默认值**，而 `tenant_ai_configs.bot_name` 里 V213 当年物化进去的 `'米宝'` 是**行值**（取值逻辑 `data.get("botName") or DEFAULT_BOT_NAME` ⇒ 租户配置优先于新默认值）⇒ 存量商户的顾客照旧被退役品牌名问候。新增迁移 `V219__backfill_tenant_bot_name_to_smart_service.sql`：只把**逐字等于 `'米宝'`** 的行改成 `'智能客服'`（幂等：带旧值谓词，第二遍 `UPDATE 0`）。
+- **用户可见变化**：存量商户的 C 端客服名 / 欢迎语不再出现「米宝」；**商家自定义的名字一个字不动**（匹配面是逐字相等、不是 `LIKE` —— 「米宝小助手」这类含旧名子串的自定义名必须被保护）。
+- **不变**：`bot_name` 的**列定义与列默认值未改**（列默认值仍是 V213 设的 `'米宝'` ⇒ 新建配置若没显式给 `botName` 仍会落旧名 —— 缺口照实登记，见迁移头注「边界」）；`greeting_template` / `channel_configs` 里商户自己写的「米宝」属商户数据、不回填；前端兜底名归 #9306。
+- **判据**：`tests/unit_ci_workflows/test_v219_bot_name_backfill.py`（真库四行夹具 `'米宝'` / `'小美'` / `'米宝小助手'` / NULL ⇒ 只有第一行变；两遍幂等 = `UPDATE 1` → `UPDATE 0`；L0 静态：`WHERE` 必须逐字相等 + 只写 `bot_name`/`updated_at` + 显式事务）。红证：把 `WHERE` 物理改成 `LIKE '%米宝%'` ⇒ 静态判据具名红 **+** 真库判据具名红（`cfg-decoy` 被改、`cfg-custom` 不受影响）。
+
 ### C 端顾客侧统一称「智能客服」（2026-11-28，issue #9301）
 
 - **形态**（用户 2026-11-28 逐字：「C 端也不叫米宝了，C 端现在不提供 agent 形态，只提供技术能力，直接叫智能客服」）：C 端对外不再使用人格名，一律称**智能客服**；对话内核**不退役**（主入口 = 微信客服通道：通道 + 判定 + 回复内核，内核复用 C 端工具集）。改的是**身份面**：`xiaobu.py` 的 `display_name` / `DEFAULT_BOT_NAME` / `DEFAULT_GREETING` / `direct_replies`、C 端身份层（`references/base/identity-xiaobu.md`）与 6 个 `customer_*` skill 的 system prompt、`EXAMPLES-customer_*.md`、四个渠道默认欢迎语、转人工建议卡的「继续咨询」选项。
 - **用户可见变化**：商家未在「机器人设置」里自定义名字时，租户默认 `botName` 由「米宝」变「智能客服」，开场白与渠道欢迎语不再自称「米宝」；商家自定义 `botName` 的能力**原样保留**（只改默认值）。
 - **不变**：B 端黄金策的措辞与能力一个字未改；C 端工具集 / 判定 / 路由未动；`name=` / `persona=` / 文件名等技术标识**不改**（映射表见 `backend/ai-agent-service/app/agents/naming.py`）。
 - **判据**：`tests/unit_ci_workflows/test_agent_naming_source_of_truth.py`（映射表 ↔ agent 声明逐字一致 / C 端身份面与 C 端 prompt 面不得再出现「米宝」/ 映射表条目必须带 `note` 说明 id 与产品名为何不同）+ 既有 `backend/ai-agent-service/tests/{test_xiaobu,test_channel_greeting,test_dual_agent,test_persona_identity_split,test_prompt_snapshots}.py` 的口径更新。红证：`xiaobu.py` 的 `display_name` 改回「米宝」⇒ 具名红；映射表 `xiaobu` 条目改成「米宝」⇒ 具名红。
-- **未固化（照实登记）**：① 存量数据 `tenant_ai_configs.bot_name = '米宝'`（V213 回填的系统默认行）**未回填**，需要同款迁移；② `frontend/admin-web` 官网 / 设置页 / 工作台文案仍称「米宝」（前端包承接）；③ `.github/cases/agents.yml` 的 AG-014 `want_text` 与 B 端 prompt 里对 C 端的旁称归 cases / 后续包。
+- **未固化（照实登记）**：① 存量数据 `tenant_ai_configs.bot_name = '米宝'`（V213 回填的系统默认行）**未回填** ⇒ ✅ **已由迁移 `V219__backfill_tenant_bot_name_to_smart_service.sql` 回填**（见上方 issue #9308 条目）；② `frontend/admin-web` 官网 / 设置页 / 工作台文案仍称「米宝」（前端包承接）；③ `.github/cases/agents.yml` 的 AG-014 `want_text` 与 B 端 prompt 里对 C 端的旁称归 cases / 后续包。
 
 ### C 端顾客「帮我看看」不再被猜着查商品：「纯看」轮只投影「问 + 展示」工具面（2026-11-28，issue #9280）
 
