@@ -383,7 +383,10 @@ def test_workflow_runs_the_new_issues_check():
     text = wf.read_text(encoding="utf-8")
     assert "check-new-issues" in text, "main 侧腿没有接线 `check-new-issues` ⇒ 零新开政策无人核验"
     steps = yaml.safe_load(text)["jobs"]["verify"]["steps"]
-    hit = [s for s in steps if "check-new-issues" in str(s.get("run") or "")]
+    # ⚠️ **排除失败钩子**（issue #9324）：判红出口的正文会逐条列出各判红步**自己的复算命令**
+    #    （含本命令串），但它是 `if: failure()` 的承接步、不是「跑这条命令的步」⇒ 不排除会数到 2。
+    hit = [s for s in steps
+           if "check-new-issues" in str(s.get("run") or "") and "failure()" not in str(s.get("if", ""))]
     assert len(hit) == 1, f"「零新开核验」步必须恰好一个（实得 {len(hit)}）"
     run = str(hit[0]["run"])
     assert "exit ${RC}" in run or "exit $RC" in run, "该步必须把退出码带出去（**取不到数据 ⇒ 腿红**；清单本身不再判红）"
