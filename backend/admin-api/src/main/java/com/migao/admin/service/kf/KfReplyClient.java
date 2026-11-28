@@ -80,7 +80,7 @@ public class KfReplyClient {
         return new RestTemplate(factory);
     }
 
-    /** 供测试注入 MockRestTemplate 之外的唯一入口。 */
+    /** 仅供测试注入 MockRestTemplate（生产路径用无参构造 + {@code @Value} 装配）。 */
     public record Generated(String text, int toolCalls) {
     }
 

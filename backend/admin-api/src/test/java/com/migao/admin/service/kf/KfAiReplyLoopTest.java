@@ -19,6 +19,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -211,8 +212,8 @@ class KfAiReplyLoopTest {
         givenSessionReady();
         givenDecision(KfAiReplyLoop.AI_REPLY);
         when(replyClient.generate(1L, "s1", "这款雪尼尔多少钱")).thenReturn(Optional.empty());
-        when(transferService.transferToHuman(1L, "s1", "AI 回复不可投递（生成失败/空文本/中间过程/无权承诺/无工具支撑的数值）"))
-                .thenThrow(new IllegalStateException("渠道 secret 不可用"));
+        doThrow(new IllegalStateException("渠道 secret 不可用"))
+                .when(transferService).transferToHuman(eq(1L), eq("s1"), anyString());
 
         assertThat(loop.onCustomerMessage(1L, "s1", 0, "这款雪尼尔多少钱").decision())
                 .isEqualTo(KfAiReplyLoop.ESCALATE_HUMAN);
