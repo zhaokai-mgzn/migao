@@ -979,7 +979,7 @@ cases:
       # **断言面（user_inputs / expectations / forbidden_text）一字未动、无放宽。**
       - "前置（precondition）：智能客服对**单轮负面情绪**会走「主动建议」确定性节点（真值 = `backend/ai-agent-service/app/graph/handoff_offer.py` 的 `judge_handoff`：意图 ∈ `_OFFER_ALLOWED_INTENTS`（general / after_sales / complaint）且命中 S1 负面情绪词表 ⇒ 下发 `interact` choice 建议卡，与转人工工具是否可达无关）（success=true）；前置不成立时 `interact` 期望 unmatched，判红会伪装成「agent 不会建议」"
       - "不满情绪（general 意图）命中后 AI 先发建议卡片（interact choice），不直接转"
-      - "interact 卡片选项含『整理成售后工单』与『继续咨询米宝』，且**不含**任何邀约人工转接的措辞（卡片文案判据见 tests/unit_ci_workflows/test_human_handoff_retired.py）"
+      - "interact 卡片选项含『整理成售后工单』与『继续咨询』，且**不含**任何邀约人工转接的措辞（卡片文案判据见 tests/unit_ci_workflows/test_human_handoff_retired.py）"
       - "用户点『整理成售后工单』后进入售后受理链路（确定性路由 after_sales, source=rule；判据见 tests/test_xiaobu_handoff_offer.py::TestOfferToDirectHandoffE2E）"
       - "整场不出现假承诺话术（机器断言见 forbidden_text）—— 系统已无人工转接通道"
     skip_reason: ""
@@ -1008,7 +1008,7 @@ cases:
       - ai-chat.handoff-offer
     user_inputs:
       - "你们太坑了，再也不买了"
-      - "继续咨询米宝"
+      - "继续咨询"
       - "你们又没解决，气死我了"
     expectations:
       - tool: interact
@@ -1025,7 +1025,7 @@ cases:
       # **断言面（user_inputs / expectations / forbidden_text）一字未动、无放宽。**
       - "前置（precondition）：智能客服「主动建议转人工」的冷却**处于启用状态**且**每会话上限 = 1 次**（真值 = `backend/ai-agent-service/app/graph/handoff_judge.py` 的 `DEFAULT_HANDOFF_MAX_OFFERS = 1`，判据 = `_cooldown_blocked` 的 `offer_count >= DEFAULT_HANDOFF_MAX_OFFERS`；`handoff_offer.py` 在每次建议后把 `offer_count` +1）—— 本用例第 3 轮「冷却生效不再弹卡」正是按该上限校准的（success=true）；上限被改大或冷却判据被摘掉时，第 3 轮不会按预期收敛，判红会伪装成「agent 不弹建议卡」"
       - "首次不满 → 建议卡片（offer_count 记为 1）"
-      - "用户点『继续咨询米宝』→ 消息正常路由（general），不创建工单"
+      - "用户点『继续咨询』→ 消息正常路由（general），不创建工单"
       - "再次不满 → 冷却生效不再弹建议卡（handoff.offer_count >= 1）"
     skip_reason: ""
     merge_log: "xiaobu-ai-handoff-guidance.md 冷却/防骚扰。2026-09-19（#4592 的 burn-down 缴费 —— 本用例命中的**唯一**一条存量违规是 CASE-TRUST-NO-PRECONDITION-ASSERTION，metric=entries ⇒ 必须**整条销账**）：补**机器计分型**前置自断言（冷却启用 + `DEFAULT_HANDOFF_MAX_OFFERS = 1`，真值逐行核过 handoff_judge.py / handoff_offer.py），把「上限漂移 ⇒ 第 3 轮不收敛、判红却伪装成 agent 不弹卡」这条形态挡在门口；user_inputs / expectations / forbidden_text 原样未动、无放宽。"
@@ -2782,7 +2782,7 @@ cases:
     data_checks:
       - "判据 1·四渠道默认配置齐备：`ALL_CHANNELS` 每一条都有非空 `greeting`。执行点 = backend/ai-agent-service/tests/test_channel_greeting.py 的 `TestChannelGreetingDefaults::test_four_channels_have_default_config`"
       - "判据 2·渠道文案确实不同：微信与抖音的默认 welcome 不相等（同一条文案通吃四渠道即红）。执行点 = 同 class 的 `test_douyin_greeting_differs_from_wechat`"
-      - "判据 3·租户配置优先 + 占位符替换：`resolve_greeting(channel, tenant_config=…, bot_name=…)` 的 `{bot_name}` 被真实客服名替换；系统默认名 = `DEFAULT_BOT_NAME`（issue #8881 改名后 = 「米宝」）。执行点 = `TestChannelGreetingResolution`"
+      - "判据 3·租户配置优先 + 占位符替换：`resolve_greeting(channel, tenant_config=…, bot_name=…)` 的 `{bot_name}` 被真实客服名替换；系统默认名 = `DEFAULT_BOT_NAME`（2026-11-28 起 = 「智能客服」，真值 = app/agents/agents/xiaobu.py 的 `DEFAULT_BOT_NAME`）。执行点 = `TestChannelGreetingResolution`"
       - "⚠️ 真值缺口（照实登记）：四渠道欢迎语没有对口的 `business_truths` id（只在代码与测试里钉值）⇒ `truths_ref: []`，按既有口径只告警不阻塞（同 knowledge.yml 的 KN-001~003）"
     skip_reason: "[backend-contract] 纯配置解析（dict → 文案），**零 LLM**：判定在 `app.agents.channel_config` 的纯函数层（由 ai-agent-service pytest 执行），不进 agent-eval 冒烟"
     precondition: "前置 = `app.agents.channel_config` 可导入且四渠道常量齐备；缺渠道 / 多渠道即直接红（不会表现成「agent 不会打招呼」）"
