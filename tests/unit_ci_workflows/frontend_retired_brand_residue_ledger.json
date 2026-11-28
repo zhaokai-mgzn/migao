@@ -6,9 +6,10 @@
     "`kind=negative_anchor` = 反回流负断言 / 禁令清单：必须**点名**「这里不许出现什么」才有判别力；摘掉这几个字 = 放宽断言（本仓明令禁止，`#9280` 台账同口径）。",
     "**未登记即红**（live 面出现「米宝」且不在本台账 ⇒ 具名 `文件:行` + 原文）· **登记了却已无命中 ⇒ 红**（空豁免只许缩短，删条目的同批必须下调 `frozen_max`）· `frozen_max` 与 `entries` 条数必须相等。",
     "`merge_log` / 审计记录不在本扫描面（`frontend/**` 没有这类记录）；用例面（`.github/cases/**`）的同类台账是 `c_end_persona_name_residue_ledger.json`，两份台账**各管一面、不互相引用计数**。",
-    "2026-11-28 收口读数（issue #9306，两批合计）：`git grep -c \"米宝\" -- frontend` = **122 行 / 58 文件** → **8 行 / 6 文件**，其余 114 行改为「黄金策 / 智能客服」或按上下文重写。"
+    "2026-11-28 收口读数（issue #9306，两批合计）：`git grep -c \"米宝\" -- frontend` = **122 行 / 58 文件** → **10 行 / 6 文件**（余量 = 2 处合规小字 + 1 处裁定原话 + 6 处判据锚 + 1 处负断言常量）",
+    "`kind=verbatim_quote` = **用户裁定原话 / 审计记录的引用**：原话里含旧品牌名，改写原话 = 篡改裁定依据 ⇒ 原样保留。"
   ],
-  "frozen_max": 8,
+  "frozen_max": 9,
   "entries": [
     {
       "path": "frontend/admin-web/src/app/(corporate)/page.tsx",
@@ -57,6 +58,12 @@
       "anchor": "const C_END_AGENT_NAME = '米宝'",
       "kind": "negative_anchor",
       "why": "B 端空态的串味负断言：C 端旧称不得出现在 `/b/` 聊天面；被禁的串本身就是判据的数据（issue #5747）"
+    },
+    {
+      "path": "frontend/admin-web/src/config/ai-roles.ts",
+      "anchor": "C 端也不叫米宝了",
+      "kind": "verbatim_quote",
+      "why": "用户 2026-11-28 裁定的**原话引用**（本条就是「为什么 id 与产品名不同」的依据）；改写原话等于篡改裁定依据"
     }
   ]
 }

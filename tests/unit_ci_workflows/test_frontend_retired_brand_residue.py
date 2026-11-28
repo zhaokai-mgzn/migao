@@ -44,7 +44,7 @@ SKIP_DIRS = {"node_modules", ".next", "dist", "out", "coverage", "build", "targe
 #: 扫描面下限：低于它说明路径写错 / 扫描空转（现取 1405 个文件；只许变多，取整到千位留余量）
 MIN_SCANNED_FILES = 1000
 
-KINDS = {"compliance_frozen", "negative_anchor"}
+KINDS = {"compliance_frozen", "negative_anchor", "verbatim_quote"}
 
 
 def ledger() -> dict:
