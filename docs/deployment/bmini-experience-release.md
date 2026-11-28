@@ -111,7 +111,7 @@ deploy/scripts/bmini-assert-dist.sh frontend/bmini-app/dist --env prod   # 也�
 按它推出来的「×1.425」若当成口径，会把闸门错误压到 ≈1.47MB、**制造假红** ⇒ 已整块删掉，
 原来那行「参考折算」读数也一并删除（它曾在 1,465,251 字节的产物上报出「余量 9,170 字节」这种假读数）。
 
-### 体积读数（2026-11-23 实跑，用于判断「要不要分包」）
+### 体积读数（2026-11-23 实跑，拆包前基线）
 
 `./scripts/bmini-experience.sh build --env test` → `frontend/bmini-app/dist`，合计 **1,465,251 字节**（25 页 / 122 文件）：
 
@@ -129,11 +129,27 @@ deploy/scripts/bmini-assert-dist.sh frontend/bmini-app/dist --env prod   # 也�
 `pages/worker/inbound` 24,291 · `pages/worker/shipment` 23,614。
 被 #8979 点名的**四个管理页**（`pages/admin/{pool,inbound,after-sales,piecework}`）合计 **30,866 字节（2.1%）**。
 
-⇒ **余量**：对 2MB 上限还有 **631,901 字节（30.1%）**，扣掉 300KB 预留后仍余 **324,701 字节**。
-⇒ 按「不为拆分而拆分」：**本次不拆分包**。拆 4 个管理页只挪走 31KB（对 940KB 的 JS 主体无影响），
-而主包离上限还有 30% —— 真正会撞线的是 JS 主体，那是「加依赖 / 加页」时才会发生的事。
-分包判据**已就绪**（`subPackages[].root` 已实现并有真实形状红证），重启条件 = 主包余量 < 300KB
-（判据会在那一刻先红，见 [#8979](https://github.com/zhaokai-mgzn/migao/issues/8979)）。
+### 体积读数（2026-11-28 实跑，分包后；issue #8979）
+
+`npm run build:weapp`（worktree `fix/8979-bmini-subpackages`，测试域）→ **127 文件**：
+
+| 组成 | 字节 | 占比 |
+|---|---|---|
+| **主包** | **1,436,257** | 97.8% |
+| 分包 `pages/admin`（4 个管理页） | 32,330 | 2.2% |
+| **总包** | **1,468,587** | 100% |
+
+主包 top 5：`vendors.js` 519,832 · `common.js` 181,998 · `taro.js` 133,091 · `app.js` 101,893 ·
+`pages/chat/index/index.js` 78,180（**JS 主体 ≈ 93%** —— 拆页面动不了它，真正会撞线的是「加依赖 / 加页」）。
+
+⇒ **余量**：对 2MB 上限还有 **660,895 字节（31.5%）**；对判据预算（2MB − 300KB = 1,789,952）余
+**353,695 字节**（≥300KB 地板）。
+⇒ 拆分包**已落地**：4 个低频管理面移入 `subPackages`（Taro 口径 `root='pages/admin'` + 相对 `pages`）。
+主包 **1,468,381 → 1,436,257（−32,124）**、分包 32,330（Taro 额外产出分包内 `sub-vendors.js` 1,328
+⇒ 总包 +206）。**路由字符串逐字不变**（`root + '/' + page` = `/pages/admin/xxx/index`），
+跳转 / 台账 / `ADMIN_SURFACES[].route` 零改动。
+判据 = `deploy/scripts/bmini-assert-dist.sh` 判据 ③（唯一常量源 = `deploy/scripts/bmini-dist-budget.json`），
+已接在 `.github/workflows/bmini-app.yml` 的 `build` job（Build weapp 之后，`--env test`）。
 
 ## CI 侧接线
 
@@ -170,10 +186,14 @@ bash -n scripts/cut-release.sh
   （[#8981](https://github.com/zhaokai-mgzn/migao/issues/8981) 的缺陷面 = 当时没人钉口径；现由预算文件的
   `calibration` 台账 + 元守卫（第二把尺子判红）承接）。判据 = `tests/unit_ci_workflows/test_bmini_dist_budget.py`。
 - 判不了「产物能不能跑起来」（要真机/模拟器），也判不了微信后台的域名白名单。
-- **分包（[#8979](https://github.com/zhaokai-mgzn/migao/issues/8979)）本次不拆**（照实登记）：实测主包余量
-  631,901 字节（≥300KB 地板）、拆 4 个管理页只挪走 30,866 字节 ⇒ 不为拆分而拆分。
-  判据侧**已就绪**（`app.json` 的 `subPackages[].root` 已实现：主包剔除子包、每包各自判、总包判，
-  真实形状红证见上）；重启条件 = 主包余量 < 300KB（那时闸门会先红，读数与拆法都在本节）。
+- **分包（[#8979](https://github.com/zhaokai-mgzn/migao/issues/8979)）已于 2026-11-28 落地**：4 个低频管理面
+  （`pages/admin/{pool,inbound,after-sales,piecework}`）入 `subPackages`（root = `pages/admin`），
+  主包 1,468,381 → **1,436,257**、分包 32,330（读数见上文「体积读数（2026-11-28 实跑，分包后）」）。
+  **路由字符串逐字不变**；「页面在册」的解析口径同步收成**唯一实现**
+  （`frontend/bmini-app/tests/helpers/appConfigPages.ts`：主包 `pages` + 分包合成；
+  判据 = `frontend/bmini-app/tests/app-config-pages.test.ts`，两个既有守卫共用）。
+  闸门 = `deploy/scripts/bmini-assert-dist.sh` 判据 ③（主包 ≤ 2MB − 300KB 预留；常量唯一来源 = 预算文件）
+  ⇒ 下一次主包顶线会在 PR 的 `bmini-app build` 腿先红，而不是上传那一刻。
 
 ## 提审前检查清单（2026-11-23 实战沉淀）
 
