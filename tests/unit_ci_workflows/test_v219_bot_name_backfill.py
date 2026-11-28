@@ -93,8 +93,11 @@ def test_migration_exists_with_a_unique_and_highest_version():
     versions = [int(m.group(1)) for p in _migration_files("V*.sql")
                if (m := re.match(r"^V(\d+)__", p.name))]
     assert versions.count(219) == 1, f"V219 版本号重复（{versions.count(219)} 份）"
-    assert max(versions) == 219, (
-        f"V219 不是最大版本号（当前最大 V{max(versions)}）—— 同步 main 时若被并行包占号，"
+    # ⚠️ 只许 `>=`，**不许** `== 219`：主张「我是当前最高迁移版本号」是**自毁式真值主张** ——
+    # 下一个迁移一落地它必然变红，且报错文案把人指向「新迁移写错了」这个错误行动
+    # （守卫 = `tests/unit_ci_workflows/test_self_destruct_assert_guard.py`，issue #5166/#5493）。
+    assert max(versions) >= 219, (
+        f"V219 不在迁移链上（当前最大 V{max(versions)}）—— 同步 main 时若被并行包占号，"
         f"按 `test_migration_version_uniqueness.py` 的「后合入者让号」改名")
 
 
