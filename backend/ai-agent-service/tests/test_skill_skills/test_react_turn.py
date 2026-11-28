@@ -69,6 +69,7 @@ EXPECTED_GATES = (
     "quantity_choice",           # 产出层：顾客已报数量 → 不得给"用量/褶皱倍数"选项
     "form_prefill_fidelity",     # 产出层：收货信息预填保真（interact 是只读工具，单独接）
     "curtain_calc_dimension",    # 产出层：算料前提（只读工具，读写分流之前）
+    "speculative_search",        # 产出层：意图不明时不得臆断检索（CH-003 / issue #9280）
     "masked_phone_write",        # 写侧：掩码形态手机号（必须在 tool 解析之后 —— 见链表注释）
     "validation_failed_write",   # 写侧：校验失败禁止写（**故意在确认门禁之外、之前**）
     "handoff_guard",             # 兜底：在办流程中禁止"无信号误转人工"
