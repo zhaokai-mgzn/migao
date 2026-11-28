@@ -1412,6 +1412,35 @@ if [ -f .env.admin-api ] && ! grep -q '^AI_AGENT_SERVICE_TOKEN=' .env.admin-api;
   fi
 fi
 
+# 1.5b 微信客服（qyapi kf）配置自愈：`WECHAT_KF_ENABLED=true` 才会注册回调端点
+# /api/kf/callback 并启动 KfSyncWorker（30s 轮询 sync_msg）/ KfOutboxSender 两个定时器。
+# 未配置时整条腿**静默不存在**（回调 404、商户接入页拿不到 Token/AESKey）——
+# 2026-11-28 实测就是如此（GET /api/kf/callback ⇒ 404）。
+# 🔴 **三者必须原子写入**：`wechat.kf.enabled=true` 而 `secret-master-key` 缺失时
+#    `SecretCipher` 初始化失败 ⇒ **admin-api 启动即崩**（fail-closed）。所以先全部算好、
+#    校验非空再一次性追加，绝不单独追加 `WECHAT_KF_ENABLED=true`（那会把测试环境打成 crash-loop）。
+# 生成口径：openssl 在 SWAS 镜像里没有（实测），用 /dev/urandom；Token ≤32 位字母数字、
+#    EncodingAESKey 恰好 43 位 base62（企微要求）、主密钥 64 位 hex（SecretCipher 的 KDF 输入）。
+# 幂等：任一键已在 .env.admin-api 里 ⇒ 不再生成/覆盖（换掉 Token 会让已配好的企微后台校验失败，
+#    换掉主密钥会让已加密落库的商户 Secret **全部解不开**）。
+if [ -f .env.admin-api ] && ! grep -q '^WECHAT_KF_TOKEN=' .env.admin-api; then
+  _kf_token=$(head -c 64 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | cut -c1-32)
+  _kf_aeskey=$(head -c 64 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | cut -c1-43)
+  _kf_master=$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')
+  if [ "${#_kf_token}" -ne 32 ] || [ "${#_kf_aeskey}" -ne 43 ] || [ "${#_kf_master}" -ne 64 ]; then
+    echo "  ❌ 微信客服密钥生成长度不符（token=${#_kf_token} aeskey=${#_kf_aeskey} master=${#_kf_master}）⇒ 中止，不写半个键"
+    exit 1
+  fi
+  {
+    grep -q '^WECHAT_KF_ENABLED=' .env.admin-api || echo 'WECHAT_KF_ENABLED=true'
+    echo "WECHAT_KF_TOKEN=${_kf_token}"
+    echo "WECHAT_KF_ENCODING_AES_KEY=${_kf_aeskey}"
+    echo "WECHAT_KF_SECRET_MASTER_KEY=${_kf_master}"
+    grep -q '^WECHAT_KF_CALLBACK_URL=' .env.admin-api || echo 'WECHAT_KF_CALLBACK_URL=https://api.migaozn.com/api/kf/callback'
+  } >> .env.admin-api
+  echo "  ✅ 自动补齐微信客服配置（ENABLED + Token + EncodingAESKey + 主密钥）——商户接入页即可复制"
+fi
+
 # 1.6 SMS 万能码 fail-closed（决策 D2 修正 + 审计 07 P0-1 + audit-2026-09 P1）：
 # sms.bypass-code 默认已改空（生产 fail-closed）。此前"自动补齐 123456"违反
 # fail-closed 原则——生产首次部署若未显式配置即自动启用万能码登录（越权入口）。
