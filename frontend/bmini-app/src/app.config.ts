@@ -102,13 +102,14 @@ export default defineAppConfig({
     // （守卫 tests/page-entry-reachability.test.ts 的 L2：没登记进这里 = 死链 ⇒ 红）
     'pages/worker/stock/index',
     // ── 管理面 4 项（issue #5654）：管理员离店后也要能办的事 ──
-    // 路由字面量是**单一真值**：`src/utils/adminPermission.ts` 的 `ADMIN_SURFACES[].route`
-    // 必须逐字等于这里的字符串（守卫 tests/admin-surfaces-platform-guard.test.ts 核验：
-    // 页面没登记进这里 = 死链 ⇒ 红）。4 项都走 `/api/admin/**`（商家会话），不是工人面。
-    'pages/admin/pool/index',
-    'pages/admin/inbound/index',
-    'pages/admin/after-sales/index',
-    'pages/admin/piecework/index',
+    // 🔴 2026-11-28（issue #8979）：这 4 页是**低频管理面**，已移入下方 `subPackages`
+    // （主包只留每日要用的 tabBar / 工人面 / 登录态）。**路由字符串一个字节都没变**：
+    // `root='pages/admin'` + `pages[i]='pool/index'` 合成 `/pages/admin/pool/index` ⇒
+    // `src/utils/adminPermission.ts` 的 `ADMIN_SURFACES[].route`、入口台账、各处跳转字面量
+    // 全部不动。判据（登记即可达）= `tests/admin-surfaces-guard.test.ts` 的判据 1 +
+    // `tests/page-entry-reachability.test.ts` 的 L0/L2，两侧共用
+    // `tests/helpers/appConfigPages.ts` 的**唯一解析口径**（主包 pages + 分包合成）。
+    // 4 项都走 `/api/admin/**`（商家会话），不是工人面。
     // 加工单**详情**（商家只读面，issue #6567）：「数据」页三类待办（待排产 / 卡在哪 / 待发货）的落脚点。
     // 此前它们一律落到报工页（工人面：扫一扫 + 手输单号 + 「去登录工人身份」）⇒ 商家点一张待办卡片
     // 看到的是「请先登录工人身份」（用户 2026-10-08 反馈）。本页**纯只读**：不扫码、不报工、不发货，
@@ -117,6 +118,19 @@ export default defineAppConfig({
     // `backend/admin-api/src/main/java/com/migao/admin/service/ProductionTodoService.java` 里
     // `processingOrderDetailPage()` 拼的路径必须逐字等于它（入口台账 pageEntries.ts 双向钉住）。
     'pages/production/order-detail/index',
+  ],
+  // 分包（issue #8979）：低频管理面移出主包。Taro / 微信口径 = `pages` 是**相对 root** 的
+  // 路径（不带前导斜杠、不带扩展名），合成后的路由与拆分前**逐字相同**
+  // （`pages/admin` + `pool/index` = `/pages/admin/pool/index`）。
+  // 为什么是这 4 页：4 页合计 ≈30KB，而主包大头是 JS 主体（vendors / taro / app），拆高频页没有收益；
+  // 这 4 页是「管理员离店后才用」的低频面，拆走不改变任何动线。
+  // 判据 = `deploy/scripts/bmini-assert-dist.sh` 判据 ③（主包剔除分包字节后 ≤ 2MB − 300KB 预留），
+  // 已接在 `.github/workflows/bmini-app.yml` 的 `build` job（Build weapp 之后）。
+  subPackages: [
+    {
+      root: 'pages/admin',
+      pages: ['pool/index', 'inbound/index', 'after-sales/index', 'piecework/index'],
+    },
   ],
   window: {
     backgroundTextStyle: 'light',

@@ -2383,3 +2383,32 @@ cases:
     traces:
       tests:
         - "tests/unit_ci_workflows/test_bmini_golive_watch.py"
+
+  # ── issue #8979：主包 2MB 红线的「量 / 拆 / 判据」三件 ────────────────────────────────
+  - id: BM-070
+    legacy_id: ""
+    title: "B 端小程序主包不再贴着 2MB 红线：低频管理面移入 subPackages + CI 主包预算判据会红（带实际字节与 top5）"
+    domains:
+      - bmini
+      - ci
+      - performance
+    tier: normal
+    tags: [bmini, weapp, subpackages, no-llm]
+    truths_ref: []
+    user_inputs:
+      - "bmini 小程序主包已到 2MB 红线（原读数余量 17KB），需要「量 + 拆分包 + CI 判据」：低频管理类页面移入 subPackages，跳转路由不能断，CI 在 build:weapp 之后断言主包体积、超了直接红。"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "判据 1·主包预算判据会红且能归因：deploy/scripts/bmini-assert-dist.sh 判据 ③ 读唯一常量源 deploy/scripts/bmini-dist-budget.json；主包 > 2,097,152 − 307,200 = 1,789,952 字节 ⇒ 非零退出，打印主包实际字节 + 主包 top5 文件 + 复算命令；接在 .github/workflows/bmini-app.yml 的 build job「Build weapp」之后（--env test），不新增 required 检查名。执行点 = tests/unit_ci_workflows/test_bmini_dist_assert.py::test_workflow_runs_the_assert_after_the_weapp_build / ::test_oversized_package_is_red_and_prints_top_entries"
+      - "判据 2·拆分包后主包算法：app.json 的 subPackages[].root 覆盖的字节不计入主包、每个分包各自 ≤ 单包上限、总包 ≤ 20MB；真实产物读数见 PR body。执行点 = tests/unit_ci_workflows/test_bmini_dist_budget.py::test_subpackage_is_judged_separately_from_the_main_package / ::test_main_package_budget_is_enforced_and_attributable"
+      - "判据 3·「在册」口径 = 主包 pages + 分包 root/pages 合成（拆分前 25 条逐值不变、反空跑现取）：合成解析唯一实现 tests/helpers/appConfigPages.ts；摘掉 subPackages 段 ⇒ 4 个管理面从清单消失，空 pages / 无 root / 重复登记一律抛错。执行点 = frontend/bmini-app/tests/app-config-pages.test.ts"
+      - "判据 4·拆包不降低既有两个守卫的覆盖面：管理面仍「登记即可达」（ADMIN_SURFACES[].route ∈ 合成清单）且入口台账每条 route 仍活着（L0/L2 现取 25 条）。执行点 = frontend/bmini-app/tests/admin-surfaces-guard.test.ts::判据 1 / frontend/bmini-app/tests/page-entry-reachability.test.ts::L0"
+    skip_reason: "[frontend-contract] 判据 = 构建产物字节摊算 + app.config 解析（node/jest + pytest 可复算）；真机体感 / 微信上传回执属发布面读数"
+    merge_log: "2026-11-28 新增（issue #8979）。原单「主包 2,079,753 字节」读数已由 #8981 登记为不可复现（部署机四份产物 1.459~1.84MB 都对不上、devtool 日志无回执）；本机现取 build:weapp（测试域）主包 1,468,381 字节 ⇒ 距 2MB 余 628,771。本单仍完成「拆」：4 个低频管理面（admin/pool|inbound|after-sales|piecework）移入 subPackages[pages/admin]，主包 1,468,381 → 1,436,257（−32,124）、分包 32,330；路由字符串逐字不变（root+page 合成）。判据与唯一常量源沿用 #8980/#8981 已接好的 bmini-assert-dist.sh（不新造第二把尺子），本次把它的 subPackages 分支在真实产物上跑通。"
+    traces:
+      tests:
+        - "frontend/bmini-app/tests/app-config-pages.test.ts"
+      ci:
+        - bmini-app.yml
+      verifies: []

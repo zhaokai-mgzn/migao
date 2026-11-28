@@ -37,6 +37,7 @@ import {
   AFTER_SALES_STATUS_LABELS,
   AFTER_SALES_STATUS_TRANSITIONS,
 } from '../src/utils/afterSalesFlow'
+import { parseAppConfigPages } from './helpers/appConfigPages'
 import {
   BMINI_ROOT,
   jsSdkOnlyApis,
@@ -157,10 +158,14 @@ describe('管理面手机端类级守卫（issue #5654）', () => {
 
   it('判据 1·每个管理面的路由都登记在 app.config.ts，且页面文件存在', () => {
     const appConfig = fs.readFileSync(path.join(BMINI_ROOT, 'src', 'app.config.ts'), 'utf8')
+    // 解析口径唯一实现：主包 `pages` + `subPackages` 合成（issue #8979 拆包后，
+    // 4 个管理页在分包里、字面量不再是 `'pages/admin/…'` ⇒ 不能再用裸文本包含判）。
+    const appConfigPages = parseAppConfigPages(appConfig)
     const missing: string[] = []
     for (const surface of ADMIN_SURFACES) {
-      const routeLiteral = `'${surface.route.replace(/^\//, '')}'`
-      if (!appConfig.includes(routeLiteral)) missing.push(`${surface.key}: app.config 未登记 ${routeLiteral}`)
+      if (!appConfigPages.includes(surface.route)) {
+        missing.push(`${surface.key}: app.config 未登记 ${surface.route}（主包 pages 与 subPackages 都没有）`)
+      }
       if (!fs.existsSync(path.join(BMINI_ROOT, surface.pageFile))) {
         missing.push(`${surface.key}: 页面文件不存在 ${surface.pageFile}`)
       }
@@ -321,14 +326,15 @@ describe('判据 8·手机端菜单 = 服务端投影（issue #6570）', () => {
   it('有路由的面 ⇒ 逐字在 `app.config.ts` 的 pages 里 + 入口台账里登记过', () => {
     const appConfig = fs.readFileSync(path.join(BMINI_ROOT, 'src/app.config.ts'), 'utf8')
     const ledger = fs.readFileSync(path.join(BMINI_ROOT, 'src/utils/pageEntries.ts'), 'utf8')
+    // 唯一解析口径（主包 pages + subPackages 合成）：拆包后分包页的绝对路由不在裸文本里
+    const appConfigPages = parseAppConfigPages(appConfig)
 
     catalog
       .filter((row) => row.route)
       .forEach((row) => {
-        // app.config 的 pages 清单不带前导 `/`
         expect({
           route: row.route,
-          inAppConfig: appConfig.includes(`'${row.route!.slice(1)}'`),
+          inAppConfig: appConfigPages.includes(row.route!),
         }).toEqual({ route: row.route, inAppConfig: true })
         expect({ route: row.route, inLedger: ledger.includes(`'${row.route}'`) }).toEqual({
           route: row.route,
