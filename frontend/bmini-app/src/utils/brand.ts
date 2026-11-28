@@ -6,7 +6,7 @@
  *  - buildBotName: B 端智能客服名称（TenantAiConfig.botName，思考中/空态/导航名展示；未配置默认「黄金策」）
  *
  * B 端语义：面向商家员工（老板/运营/客服），导航副标题企业名取自租户名，
- * 智能客服名默认「黄金策」（与 C 端默认「米宝」区分）。
+ * 智能客服名默认「黄金策」（C 端不提供 agent 形态，不设名字）。
  */
 export function buildBrandSubtitle(tenantName?: string | null): string {
   if (tenantName && tenantName.trim()) {

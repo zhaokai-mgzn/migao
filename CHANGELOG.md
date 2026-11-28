@@ -6,6 +6,15 @@
 
 > **后续条目继续在本文件 `## [Unreleased]
 
+### 前端旧称收口：官网 / 后台 / 商家小程序统一「黄金策 · 智能客服」（2026-11-28，issue #9306）
+
+- **形态**（用户 2026-11-28 裁定：「C 端也不叫米宝了，C 端现在不提供 agent 形态，只提供技术能力，直接叫智能客服」）：前端 live 面 `git grep -c "米宝" -- frontend` **122 行 / 58 文件 → 10 行 / 6 文件**（−92%），余量**全部**是必须点名的东西 —— 2 处 `GB/T 47746-2026` 声称与免责小字（合规文本，逐字不动）、1 处用户裁定原话引用、6 处反回滚判据锚 + 1 处负断言常量，逐条登记在 `tests/unit_ci_workflows/frontend_retired_brand_residue_ledger.json`。
+- **改名口径**：B 端经营侧统一「**黄金策**」、C 端统一「**智能客服**」（不拟人、不自称名字）—— 官网 about / layout（SEO·OG·keywords）/ 首页 / 产品服务页 / 页脚 / 产品示意标题 / 首页四屏文案；后台设置页「AI 客服名称」默认值与欢迎语示例、微信客服接入引导、建品页「设为推荐」说明、人工会话页（标题 / 会话名 / 说话人）、引导卡（「不会操作就问黄金策」）、生产进度与报工说明；商家小程序 README / 空态注释 / 品牌注释与对应测试。
+- **用户可见变化**：设置页 AI 客服默认名 `米宝` → `智能客服`（欢迎语示例同步）；官网 SEO / OG / 正文不再出现退役品牌名；人工会话页说话人由「米宝 · 企业智能客服」变「企业智能客服」。
+- **合规小字未动（`#6330` 硬约束）**：`GB/T 47746-2026` 的「遵循 / 对标」声称与免责小字**逐字未改**，两处（首页 + 页脚）**不在本 PR 的 diff 里**；它们含旧名的处置已登记为 `kind=compliance_frozen`（重启条件 = 用户在合规面显式裁定随品牌改名同步）。
+- **判据**：新增 `tests/unit_ci_workflows/test_frontend_retired_brand_residue.py` —— ① live 面零**未登记**旧称（具名 `文件:行`）；② 台账诚实（空豁免红 + `frozen_max` 只许缩短 + `why` 在场 + `kind` 合法）；③ 扫描面自证（≥1000 文件，现取 1405；并点名必须扫到的三个文件）；④ 两条注入式红证（未登记命中要具名 / 空豁免要具名）。配套既有判据：`copy-voice-banlist.ts` 口吻判据、`tests/unit_ci_workflows/test_positioning_copy_terms.py`、`test_c_end_naming_no_persona.py` 全绿；冻结测试断言随文案同步改，**无删除、无跳过**。
+- **未固化（照实）**：① `MibaoLogo.tsx` **文件名**未改（组件名属技术标识，重命名会引发大面积 import 变更；只改注释文案）；② `.github/cases/ui.yml` 的 UI-018 / UI-036 字面量待跟踪单 **#9326** 同步（本单按派单边界不碰 `.github/cases/**`）。
+
 ### 图片识别的解读来源标记改「黄金策解读」：跨语言字面量同批改名 + 逐字相等判据（2026-11-28，issue #9306）
 
 - **形态**：页面深通道的**来源标记** `[米宝解读]` 改名 **`[黄金策解读]`** —— 后端 `backend/ai-agent-service/app/vision/deep_channel.py` 的 `SOURCE_INTERPRETED`、工具展示文案「↳ 黄金策解读：」（`app/tools/image_recognize.py`）、前端 `frontend/admin-web/src/lib/agent-page-fill.ts` 的 `PAGE_FILL_SOURCE_INTERPRETED`、`admin-api` 的 `PageFillPlan` / `ImageRecognitionClient` 契约注释同批改；`source ∈ {"[图片识别]", "[黄金策解读]"}` 的**来源可分辨**口径不变。

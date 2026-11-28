@@ -37,7 +37,7 @@ export default function NewProductPage() {
     const next = buildProductPrefill(all)
     const interpreted = new Set(interpretedKeys)
     // 「商家填写」的格子（issue #7528：货号 / 门幅 / 规格属性）**不挂徽标** ——
-    // 它们不是从图上抄的、也不是米宝推的，商人自己刚写的，不需要再提醒他复核自己（§31 信息不重复）。
+    // 它们不是从图上抄的、也不是黄金策推的，商人自己刚写的，不需要再提醒他复核自己（§31 信息不重复）。
     const declared = new Set(
       all.filter((field) => field.source === PAGE_FILL_SOURCE_DECLARED).map((field) => field.key),
     )

@@ -14,7 +14,7 @@ export default function WechatKfSettingsPage() {
       </Link>
       <PageHeader
         title="微信客服接入"
-        subtitle="把企业微信的客服账号接到生意管家，顾客在微信里发消息即可由米宝接待；接入后可在「在线接待」工作台查看会话。"
+        subtitle="把企业微信的客服账号接到生意管家，顾客在微信里发消息即可由智能客服接待；接入后可在「在线接待」工作台查看会话。"
       />
       <WechatKfOnboarding />
     </div>

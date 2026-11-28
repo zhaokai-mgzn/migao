@@ -32,7 +32,7 @@ describe('CorporateHomePage（官网首页：产品页版式 + 场景分节，is
   it('hero 副标：生意管家定位 + 双 AI 分工 + 数据同源', () => {
     render(<HomePage />)
     expect(screen.getByText(/生意管家是词元通达面向布艺 \/ 窗帘企业的 AI 经营平台/)).toBeInTheDocument()
-    expect(screen.getByText(/米宝接待顾客、算料报价、下单与售后/)).toBeInTheDocument()
+    expect(screen.getByText(/智能客服接待顾客、算料报价、下单与售后/)).toBeInTheDocument()
     expect(screen.getByText(/黄金策看经营、跟进度、处理商品与财务/)).toBeInTheDocument()
     expect(screen.getByText(/两侧读取同源经营数据/)).toBeInTheDocument()
   })
@@ -97,7 +97,7 @@ describe('CorporateHomePage（官网首页：产品页版式 + 场景分节，is
     }
     // 每节的标签与产品示意（4 节 + hero = 至少 5 处「界面示意」）
     expect(screen.getAllByText('界面示意').length).toBeGreaterThanOrEqual(5)
-    expect(screen.getByText('微信客服 · 米宝')).toBeInTheDocument()
+    expect(screen.getByText('微信客服 · 智能客服')).toBeInTheDocument()
     expect(screen.getByText('管理后台 · 经营报表')).toBeInTheDocument()
     expect(screen.getByText('加工单 · 生产进度')).toBeInTheDocument()
     expect(screen.getByText('库存台账 · 批次')).toBeInTheDocument()
@@ -267,6 +267,9 @@ describe('CorporateHomePage（官网首页：产品页版式 + 场景分节，is
       /^frontend\/admin-web\/src\/config\/ai-roles\.ts$/,
       /^frontend\/admin-web\/tests\/unit\/pages\/corporate-home\.test\.tsx$/,
       /^acceptance\//,
+      // 残余台账**必须逐字点名**旧标签（那是它的数据，不是回流；issue #9306）——
+      // 它由 tests/unit_ci_workflows/test_frontend_retired_brand_residue.py 反向看管（空豁免即红）。
+      /^tests\/unit_ci_workflows\/frontend_retired_brand_residue_ledger\.json$/,
     ]
     const patterns = OLD.map((o) => `-e '${o}'`).join(' ')
     let out = ''

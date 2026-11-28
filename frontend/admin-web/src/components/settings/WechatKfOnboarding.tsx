@@ -170,7 +170,7 @@ export function WechatKfOnboarding() {
           </Step>
           <Step n={2} title="创建一个自建应用">
             <p>
-              应用管理 → 应用 → 自建 → 创建应用（名称建议「米宝客服」）。创建后到应用详情复制 <b>Secret</b>（只显示一次）。
+              应用管理 → 应用 → 自建 → 创建应用（名称建议「智能客服」）。创建后到应用详情复制 <b>Secret</b>（只显示一次）。
             </p>
             <p className="text-neutral-500">企业 ID 在「我的企业 → 企业信息」；这个 ID 和 Secret 最后一步要用。</p>
           </Step>
@@ -276,7 +276,7 @@ export function WechatKfOnboarding() {
           <div className="px-4 py-8 text-center text-sm text-neutral-500">加载中…</div>
         ) : channels.length === 0 ? (
           <div className="px-4 py-8 text-center text-sm text-neutral-500" data-testid="kf-empty">
-            还没有接入微信客服。接入后，顾客在微信里发消息就会进入米宝的接待队列。
+            还没有接入微信客服。接入后，顾客在微信里发消息就会进入智能客服的接待队列。
           </div>
         ) : (
           <ul className="divide-y divide-neutral-100">

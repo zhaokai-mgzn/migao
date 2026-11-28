@@ -45,7 +45,7 @@ describe('ServicesPage（官网产品能力：浅色页头 + 场景分节 + 能�
       expect(screen.getAllByText(title).length).toBeGreaterThanOrEqual(1)
     }
     expect(screen.getAllByText('界面示意').length).toBeGreaterThanOrEqual(5)
-    expect(screen.getByText('微信客服 · 米宝')).toBeInTheDocument()
+    expect(screen.getByText('微信客服 · 智能客服')).toBeInTheDocument()
     expect(screen.getByText('管理后台 · 经营报表')).toBeInTheDocument()
     expect(screen.getByText('加工单 · 生产进度')).toBeInTheDocument()
     expect(screen.getByText('库存台账 · 批次')).toBeInTheDocument()
@@ -119,7 +119,7 @@ describe('ServicesPage（官网产品能力：浅色页头 + 场景分节 + 能�
     expect(findQuantifierRhetoric('一套经营平台，一次咨询，一张订单')).toEqual(['一套', '一次', '一张'])
     expect(findPersonifiedAi('两位 AI 助手')).toEqual(['两位 AI'])
     expect(findQuantifierRhetoric('六个能力域 · 4 个终端 · 至少10个字符')).toEqual([])
-    expect(findPersonifiedAi('米宝与黄金策')).toEqual([])
+    expect(findPersonifiedAi('智能客服与黄金策')).toEqual([])
     expect(findQuantifierRhetoric(text)).toEqual([])
     expect(findPersonifiedAi(text)).toEqual([])
   })
