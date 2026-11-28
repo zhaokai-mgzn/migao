@@ -72,8 +72,11 @@ def token_mismatch(backend: str, frontend: str) -> str | None:
 def test_frontend_and_backend_tokens_are_identical():
     """判据 1：跨语言字面量逐字相等（两侧独立写，不同源复制）。"""
     frontend = ts_token(FRONTEND_TS.read_text(encoding="utf-8"))
-    problem = token_mismatch(SOURCE_INTERPRETED, frontend)
-    assert problem is None, problem
+    assert frontend == SOURCE_INTERPRETED, (
+        f"来源标记两侧不一致：后端 deep_channel.SOURCE_INTERPRETED={SOURCE_INTERPRETED!r} ≠ "
+        f"前端 agent-page-fill.{TS_CONST_NAME}={frontend!r} —— "
+        "前端按值逐字比较，改一侧不同批改另一侧 ⇒ 解读格静默不挂徽标"
+    )
 
 
 def test_token_is_not_the_retired_brand():
@@ -97,7 +100,7 @@ def test_red_proof_each_side_alone_goes_red():
     only_frontend = token_mismatch(SOURCE_INTERPRETED, f"{frontend}（旧）")
     assert only_backend and "后端" in only_backend, f"改后端一侧没红：{only_backend}"
     assert only_frontend and "前端" in only_frontend, f"改前端一侧没红：{only_frontend}"
-    assert token_mismatch(SOURCE_INTERPRETED, frontend) is None, "两侧一致时应为绿"
+    assert frontend == SOURCE_INTERPRETED, "两侧一致时应为绿（现取两侧不同）"
 
 
 def test_red_proof_parser_has_teeth():
