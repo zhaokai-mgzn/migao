@@ -9,14 +9,12 @@ AI 反复「您想做什么？A/B/C」追问会令用户放弃——达到上限
 纯函数设计（可单测、无 IO）：
 - judge_clarify: 澄清轮次是否已达上限
 - tick_clarify: 更新澄清轮计数（澄清轮 +1；用户给出实质意图的轮清零）
-- judge_speculative_search: 「意图不明却臆断检索」判据（issue #9280 / CH-003）
 - CLARIFY_FORCE_EXAMPLE_TEXT: 面向低学历的兜底话术常量
 """
 
 from __future__ import annotations
 
-import re
-from typing import Any, Dict, Iterable, Sequence
+from typing import Any, Dict
 
 from loguru import logger
 
@@ -92,114 +90,6 @@ def should_force_example(state: Dict[str, Any]) -> bool:
     if not state:
         return False
     return bool(state.get("force_example"))
-
-
-# ── 「意图不明 ⇒ 不得臆断检索」（issue #9280 / CH-003）────────────────────────
-#
-# 缺陷（run 46086496186 的 xiaobu 腿逐字）：顾客只说了「帮我看看」，模型**猜出两个
-# 顾客从未提过的关键词**（「遮光窗帘」「奶油风」）并直接 product_search / product_detail。
-# C 端兜底 prompt 逐字写着「意图不明 → 用 choice 候选卡 … **不要默认直接搜相似**」
-# 「不确定的细节不要臆断」—— 模型不守（同族：算料前提 / 下单接地都是「prompt 铁律
-# 落成代码闸门」），故把这条铁律也落成**确定性判据**。
-#
-# 为什么 b 端（mibao）不受影响：B 端的模糊轮由 `app/graph/nodes.py::_vague_guess_route`
-# 的猜测卡承接（`agent_type != "mibao"` 直接返回 None），且检索词来自**商家自己**的输入；
-# 本判据的调用点按 `_is_customer_role` 限定 C 端，B 端语义一字未动。
-
-#: 意图不明时**不得**调用的检索类工具：它们的共同前提是「顾客已经说出要查什么」。
-SPECULATIVE_SEARCH_TOOLS = frozenset(
-    {"product_search", "product_detail", "customer_order_query"})
-
-#: L1 命中这些意图 = 这句话没有实质诉求（「说清了要什么」的反面）。
-_VAGUE_L1_INTENTS = frozenset({"general", "greeting", "farewell", "capabilities"})
-
-#: 顾客给了**具体数字**（订单号 / 手机号 / 尺寸 / 金额）= 已经说清了要查什么。
-_DIGITS_RE = re.compile(r"\d{4,}")
-
-#: 检索参数里**可能来自顾客原话**的字段（`product_id` / `action` 不是用户语言，不参与接地）。
-_GROUNDABLE_ARG_KEYS = ("keyword", "query", "name", "product_name", "category", "order_no")
-
-#: 检索词的切分（「奶油风 遮光窗帘」里只要有一个词是顾客说过的，就算接地）。
-_TERM_SPLIT_RE = re.compile(r"[\s,，/、]+")
-
-
-def _text_is_substantive(text: str) -> bool:
-    """这一句顾客话是否给出了实质意图（三条**事实**信号，任一成立即可）。
-
-    判据全部**复用既有实现**、不新造词表：
-    ① 商品品类词 —— `#3365` 的 `extract_product_keyword`（窗帘/窗纱/面料/布艺/遮光帘）；
-    ② 具体数字 —— 订单号 / 手机号 / 尺寸 / 金额；
-    ③ L1 规则命中非兜底意图 —— `RuleMatcher`（退款/物流/算料…都在这条线上）。
-    """
-    if not text:
-        return False
-    from app.graph.skills.base_skill import extract_product_keyword
-
-    if extract_product_keyword(text):
-        return True
-    if _DIGITS_RE.search(text):
-        return True
-    from app.router.rule_matcher import RuleMatcher
-
-    hit = RuleMatcher().match(text)
-    intent = getattr(hit, "intent", None) if hit else None
-    return intent is not None and intent.value not in _VAGUE_L1_INTENTS
-
-
-def _has_grounded_term(args: Dict[str, Any], user_text: str) -> bool:
-    """本次检索的词是不是顾客**自己说过的**（整词，或切分后任一 ≥2 字的词命中）。"""
-    for key in _GROUNDABLE_ARG_KEYS:
-        value = args.get(key)
-        if not isinstance(value, str) or not value.strip():
-            continue
-        whole = value.strip()
-        terms = [whole] + [t for t in _TERM_SPLIT_RE.split(whole) if len(t) >= 2]
-        if any(t in user_text for t in terms):
-            return True
-    return False
-
-
-def judge_speculative_search(
-    tool_name: str,
-    args: Dict[str, Any] | None,
-    user_texts: Sequence[str] | None,
-    executed_tools: Iterable[str] = (),
-) -> str:
-    """「意图不明 + 模型想直接检索」判据：返回拦截话术（**空串 = 放行**）。
-
-    放行（任一成立；每一条都对应一种**不该拦**的正常路径）：
-      · 不是检索类工具（只读目录 / 写工具都不在本判据射程内）；
-      · 顾客说过实质诉求（`_text_is_substantive`）—— 明确输入必须允许检索；
-      · 本次检索的词是顾客自己说过的（`_has_grounded_term`）—— 照着原话搜不算臆断；
-      · `product_detail` 且本回合已跑过 `product_search` —— 商品 id 来自真实结果，不是猜的。
-    其余 ⇒ 臆断式检索：返回给模型的纠正话术（**发候选卡或追问**，不要默认搜）。
-    """
-    if tool_name not in SPECULATIVE_SEARCH_TOOLS:
-        return ""
-    texts = [str(t) for t in (user_texts or []) if str(t or "").strip()]
-    executed = set(executed_tools or ())
-    if tool_name == "product_detail" and "product_search" in executed:
-        return ""
-    if any(_text_is_substantive(t) for t in texts):
-        return ""
-    haystack = "".join(texts)
-    if _has_grounded_term(args or {}, haystack):
-        return ""
-
-    filled = "、".join(
-        f"{k}={str((args or {}).get(k))[:40]}" for k in _GROUNDABLE_ARG_KEYS
-        if (args or {}).get(k)
-    ) or "（无关键词）"
-    return (
-        "顾客这句话里**没有任何可直接检索的实质信息**，而你填的检索条件"
-        f"（{filled}）是**你自己猜的** —— 顾客从没提过这些词。"
-        "意图不明时**不要默认直接搜**（更不要先搜再补一张卡）："
-        "① 用 `interact(component=choice)` 发一张候选卡"
-        "（选项用顾客嘴里的说法，如「找窗帘 / 查订单 / 售后咨询」）；"
-        "② 或者直接用一句口语追问顾客想看哪个方向。"
-        "等顾客说出**商品名 / 品类 / 订单号**之后再检索。"
-        "（本次调用已被拦下，未执行。）"
-    )
 
 
 # ── 异步守卫（含 SessionStateStore 读写，供 intent_router_node 调用）──

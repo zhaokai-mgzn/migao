@@ -33,7 +33,7 @@ from app.graph.skills.base_skill import (
     _processing_items_already_asked, _product_image_capability_available, _product_image_denial_hit, _quantity_choice_block,
     _relock_order_skill, _remember_known_value, _remember_raw_phones, _remember_sms_code,
     _registry_has_confirm_write_tool, _registry_has_tool,
-    _requires_confirmation, _self_correct_retry, _speculative_search_block, _stall_has_progress, _stored_sms_code,
+    _requires_confirmation, _self_correct_retry, _stall_has_progress, _stored_sms_code,
     _card_only_confirmation,
     _track_llm_cost, _write_input_recovery_block, capability_denial_text_hit, card_fingerprint,
     extract_pending, extract_product_keyword, extract_sms_code, is_pending_for,
@@ -535,7 +535,7 @@ async def react_turn(
                     # 的 `nonlocal` 目标守卫。
                     tool = skill_registry.get_tool(tool_name)
 
-                    # 门禁 1/12 `write_input_recovery`：缺参等待期拦截（issue #3365，OR-017）：不放行注定失败的写、不放行逐字重发的同一张卡
+                    # 门禁 1/11 `write_input_recovery`：缺参等待期拦截（issue #3365，OR-017）：不放行注定失败的写、不放行逐字重发的同一张卡
                     async def _gate_write_input_recovery():
                         # ── 缺参等待期拦截（issue #3365，OR-017）──
                         # 顾客欠参数期间：不放行同一个写工具（注定失败）、不放行逐字重发的同一张
@@ -545,14 +545,14 @@ async def react_turn(
                         if _blocked is not None:
                             return _blocked
 
-                    # 门禁 2/12 `card_loop`：同一张卡重复下发（死循环）
+                    # 门禁 2/11 `card_loop`：同一张卡重复下发（死循环）
                     async def _gate_card_loop():
                         _blocked2 = await _card_loop_block(
                             tool_name, args, tool_call, session_id, skill_name)
                         if _blocked2 is not None:
                             return _blocked2
 
-                    # 门禁 3/12 `tool_available`：工具不可用 ⇒ 拦（并给可执行的恢复路径）
+                    # 门禁 3/11 `tool_available`：工具不可用 ⇒ 拦（并给可执行的恢复路径）
                     async def _gate_tool_available():
                         # `_relocked_this_round` 是本门禁里唯一的跨函数状态（回锁必须同时置位，
                         # issue #4126）：**漏了 nonlocal 就会创建一个新局部 ⇒ 置位静默丢失**，
@@ -594,7 +594,7 @@ async def react_turn(
                                  "message": f"{_unavailable.reason}。{_unavailable.remedy}"},
                                 ensure_ascii=False), {"success": False}
 
-                    # 门禁 4/12 `quantity_choice`：数量口径产出层守卫（issue #3402）
+                    # 门禁 4/11 `quantity_choice`：数量口径产出层守卫（issue #3402）
                     async def _gate_quantity_choice():
                         # 数量口径产出层守卫（issue #3402）：顾客已报数量时不得给"用量/褶皱倍数"选项
                         _blocked_q = await _quantity_choice_block(
@@ -602,7 +602,7 @@ async def react_turn(
                         if _blocked_q is not None:
                             return _blocked_q
 
-                    # 门禁 5/12 `form_prefill_fidelity`：收货信息预填保真守卫（issue #3397）—— interact 是只读工具，单独接
+                    # 门禁 5/11 `form_prefill_fidelity`：收货信息预填保真守卫（issue #3397）—— interact 是只读工具，单独接
                     async def _gate_form_prefill_fidelity():
                         # 收货信息预填保真守卫（issue #3397）：interact 是只读工具，单独接。
                         _blocked_prefill = await _form_prefill_fidelity_block(
@@ -611,7 +611,7 @@ async def react_turn(
                         if _blocked_prefill is not None:
                             return _blocked_prefill
 
-                    # 门禁 6/12 `curtain_calc_dimension`：算料前提守卫（issue #3395）—— 只读工具，故在读写分流之前单独接
+                    # 门禁 6/11 `curtain_calc_dimension`：算料前提守卫（issue #3395）—— 只读工具，故在读写分流之前单独接
                     async def _gate_curtain_calc_dimension():
                         # 算料前提守卫（issue #3395）：只读工具，故在读写分流之前单独接。
                         _blocked_calc = await _curtain_calc_dimension_block(
@@ -619,21 +619,7 @@ async def react_turn(
                         if _blocked_calc is not None:
                             return _blocked_calc
 
-                    # 门禁 7/12 `speculative_search`：意图不明时不得「臆断式检索」（issue #9280 / CH-003）
-                    async def _gate_speculative_search():
-                        # 实证（run 46086496186 的 xiaobu 腿）：顾客只说「帮我看看」，模型猜出
-                        # 「遮光窗帘」「奶油风」两个顾客从未提过的关键词直接搜 + 查详情。
-                        # C 端 prompt 逐字要求「意图不明 → 用 choice 候选卡 … 不要默认直接搜相似」，
-                        # 模型不守 ⇒ 与算料前提 / 下单接地同一条产线：prompt 铁律落成代码闸门。
-                        # 判据（含「明确输入必须放行」那一半）在
-                        # `app/graph/clarify_guard.py::judge_speculative_search`，本闸门只接线。
-                        _blocked_ss = _speculative_search_block(
-                            tool_name, args, tool_call, session_id, skill_name,
-                            state, _executed_tools)
-                        if _blocked_ss is not None:
-                            return _blocked_ss
-
-                    # 门禁 8/12 `masked_phone_write`：掩码形态手机号拦截（issue #3386）：必须在 tool 解析之后（守卫内不再查 registry）
+                    # 门禁 7/11 `masked_phone_write`：掩码形态手机号拦截（issue #3386）：必须在 tool 解析之后（守卫内不再查 registry）
                     async def _gate_masked_phone_write():
                         # `validate_input` 是只读工具，但它的 `params` 就是**写参数**（落进
                         # `pending_validated_input`，点卡后的代码收口照它执行，issue #9224 的 CU-004）
@@ -649,7 +635,7 @@ async def react_turn(
                         if _blocked3 is not None:
                             return _blocked3
 
-                    # 门禁 9/12 `validation_failed_write`：校验失败禁止写（issue #4073，S2）：**故意在确认门禁之外、之前**（点卡也不得放行）
+                    # 门禁 8/11 `validation_failed_write`：校验失败禁止写（issue #4073，S2）：**故意在确认门禁之外、之前**（点卡也不得放行）
                     async def _gate_validation_failed_write():
                         if getattr(tool, "read_only", False):
                             return None
@@ -703,7 +689,7 @@ async def react_turn(
                                                    ensure_ascii=False),
                                         {"success": False, "error": _err7})
 
-                    # 门禁 10/12 `handoff_guard`：兜底：在办流程中禁止「无信号误转人工」（CH-012 / issue #3361/#3477）
+                    # 门禁 9/11 `handoff_guard`：兜底：在办流程中禁止「无信号误转人工」（CH-012 / issue #3361/#3477）
                     async def _gate_handoff_guard():
                         nonlocal _relocked_this_round
                         # ── 兜底：C 端在办流程中禁止「无信号误转人工」（CH-012 实证）──
@@ -857,7 +843,7 @@ async def react_turn(
                                     "message": _msg,
                                 }, ensure_ascii=False), {"success": False, "error": "handoff_blocked_inflight"}
 
-                    # 门禁 11/12 `order_grounding`：下单接地闸门（issue #3361，OR-014 复现型红灯）：本会话没查过商品详情不许下单
+                    # 门禁 10/11 `order_grounding`：下单接地闸门（issue #3361，OR-014 复现型红灯）：本会话没查过商品详情不许下单
                     async def _gate_order_grounding():
                         # ── 下单接地闸门（issue #3361，OR-014 复现型红灯）──
                         # 实证：C 端「帮我下单，遮光窗帘 3 米，要打孔加工」时模型**一次都没查商品**
@@ -1005,7 +991,7 @@ async def react_turn(
                                 except Exception as _pe2:
                                     logger.debug(f"[{skill_name}] 单价接地校验失败（非致命）: {_pe2}")
 
-                    # 门禁 12/12 `write_confirmation`：确认门禁：写操作必须经顾客确认卡放行（审计 07 P0-L1 / issue #5414）
+                    # 门禁 11/11 `write_confirmation`：确认门禁：写操作必须经顾客确认卡放行（审计 07 P0-L1 / issue #5414）
                     async def _gate_write_confirmation():
                         nonlocal _no_card_blocked_args
                         nonlocal _no_card_blocked_tool
@@ -1236,14 +1222,14 @@ async def react_turn(
                     #   ② 工具解析 `tool_available`：注册表里没有 ⇒ 拦（并给可执行恢复路径）。
                     #      ⚠️ **掩码手机号门禁必须在它之后** —— 守卫内不再查 registry，避免
                     #      「注册表拿不到工具 → 静默放行」的假守卫（原注释见该门禁上方）；
-                    #   ③ 四条产出层守卫（数量口径 / 收货信息预填 / 算料前提 / 意图不明的臆断检索）：
-                    #      作用于**只读**工具（interact / product_search 等），故在读写分流之前单独接；
-                    #   ⑤ 写侧两条（掩码手机号 → 校验失败禁止写）：`validation_failed_write`
+                    #   ③ 三条产出层守卫（数量口径 / 收货信息预填 / 算料前提）：作用于**只读**
+                    #      工具（interact 等），故在读写分流之前单独接；
+                    #   ④ 写侧两条（掩码手机号 → 校验失败禁止写）：`validation_failed_write`
                     #      的位置纪律是**故意在确认门禁之外、之前** —— 顾客点了确认卡也
                     #      **不得**放行（确认只解决「要不要做」，不解决「参数对不对」）；
-                    #   ⑥ 转人工兜底：在办流程里「无信号误转人工」是模型放弃流程，不是顾客诉求；
-                    #   ⑦ 下单接地：本会话没查过商品详情就下单 ⇒ 金额/加工项都不可信；
-                    #   ⑧ 确认门禁放**链尾**：它要在链上落 pending 状态、并把「唯一可执行的
+                    #   ⑤ 转人工兜底：在办流程里「无信号误转人工」是模型放弃流程，不是顾客诉求；
+                    #   ⑥ 下单接地：本会话没查过商品详情就下单 ⇒ 金额/加工项都不可信；
+                    #   ⑦ 确认门禁放**链尾**：它要在链上落 pending 状态、并把「唯一可执行的
                     #      下一步」（发确认卡）写回给模型；前面任何一条拦下来都轮不到它。
                     #
                     # ⚠️ 同组件卡片判重（`card_already_emitted_this_turn`）**不在链上**：它的结论
@@ -1256,7 +1242,6 @@ async def react_turn(
                         ("quantity_choice", _gate_quantity_choice),
                         ("form_prefill_fidelity", _gate_form_prefill_fidelity),
                         ("curtain_calc_dimension", _gate_curtain_calc_dimension),
-                        ("speculative_search", _gate_speculative_search),
                         ("masked_phone_write", _gate_masked_phone_write),
                         ("validation_failed_write", _gate_validation_failed_write),
                         ("handoff_guard", _gate_handoff_guard),

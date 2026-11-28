@@ -1762,57 +1762,6 @@ async def _curtain_calc_dimension_block(tool_name: str, args: dict, tool_call: d
             {"success": False, "error": code, "message": msg})
 
 
-# ── 意图不明 ⇒ 不得「臆断式检索」（issue #9280 / CH-003）──────────────────────
-# 判据本体在 `app/graph/clarify_guard.py::judge_speculative_search`（与澄清轮护栏同一模块，
-# 纯函数、可单测）；这里只做「从 state 取顾客原话 + 落成 tool result」的接线，**不复制判据**。
-def _customer_user_texts(state: dict | None) -> List[str]:
-    """C 端会话里**顾客自己说过的话**（判据只看用户侧：模型自己写的不算证据）。"""
-    texts: List[str] = []
-    for m in (state or {}).get("messages") or []:
-        if not isinstance(m, HumanMessage):
-            continue
-        t = _extract_content(m) or ""
-        if t.strip():
-            texts.append(t)
-    return texts
-
-
-def _speculative_search_block(tool_name: str, args: dict, tool_call: dict,
-                              session_id: str, skill_name: str,
-                              state: dict | None = None,
-                              executed_tools=()) -> tuple | None:
-    """无实质意图却臆断检索 ⇒ 拦下（返回 3 元组），否则放行（None）。
-
-    C 端专属（`_is_customer_role`）：B 端黄金策的检索由商家自己发起，本判据不在它的射程内
-    （语义一字未动）。
-    """
-    from app.graph.clarify_guard import (
-        SPECULATIVE_SEARCH_TOOLS,
-        judge_speculative_search,
-    )
-
-    if tool_name not in SPECULATIVE_SEARCH_TOOLS:
-        return None
-    if not _is_customer_role(state):
-        return None
-    # 在办卡流程（卡片已下发）= 方向已经澄清过：顾客点过的值就是它的落点，
-    # 不再按「意图不明」拦（否则图片→找同款那条正常路径会被误伤）。
-    if (state or {}).get("pending_interact_skill"):
-        return None
-    reason = judge_speculative_search(
-        tool_name, args or {}, _customer_user_texts(state), executed_tools)
-    if not reason:
-        return None
-    code = "speculative_search_without_intent"
-    logger.warning(
-        f"[{skill_name}] 拦截意图不明时的臆断检索 {tool_name} "
-        f"args={str(args)[:160]} | session={session_id}")
-    return (tool_call,
-            json.dumps({"success": False, "error": code, "message": reason},
-                       ensure_ascii=False),
-            {"success": False, "error": code, "message": reason})
-
-
 # ── B 端权限范围注入（issue #4107 / 父单 #4103 的 F8）──────────────────────────
 # 权限码 → 产品能力名：**权威源是 admin-api 的权限目录**（两张 code→name 表：
 # `RegistrationService.initializeDefaultRolesAndPermissions` 的 `defaultPermissions`
