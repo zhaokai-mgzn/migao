@@ -269,6 +269,18 @@ def test_clear_input_allows_the_same_search():
         "product_search", {"keyword": "遮光窗帘"}, ["遮光窗帘多少钱"]) == ""
 
 
+def test_substantive_intent_allows_search_with_model_added_attribute():
+    """顾客说了品类（「我要买窗帘」）⇒ 允许按品类检索 —— 即使定语是模型补的。
+
+    「明确度判据」与「检索词接地」是**两条独立放行线**：本条只有前者成立
+    （「遮光窗帘」不是顾客原话），删掉前者本条即红。
+    """
+    from app.graph.clarify_guard import judge_speculative_search
+
+    assert judge_speculative_search(
+        "product_search", {"keyword": "遮光窗帘"}, ["我要买窗帘"]) == ""
+
+
 def test_user_worded_attribute_allows_search():
     """顾客自己说过「奶油风」⇒ 照着原话搜不算臆断（接地判据）。"""
     from app.graph.clarify_guard import judge_speculative_search
