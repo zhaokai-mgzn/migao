@@ -6,6 +6,14 @@
 
 > **后续条目继续在本文件 `## [Unreleased]
 
+### 企微「可信域名」校验：一条通用规则服务所有商户（2026-11-28，issue #9358）
+
+- **问题（用户当场提问）**：为让测试商户的企微自建应用能配「企业可信IP」，得先过「可信域名」归属校验。第一版把企微给的 `WW_verify_mRPj5ZGvHWQrpeer.txt` 塞进 `frontend/admin-web/public/` 再部署 —— **每加一个商户 = 一次构建 + 部署**。用户问「难道未来每个客户的证书我都需要构建后部署？」：是的，那是把 O(商户数) 的人工塞进交付链，属产品级错误。
+- **实测事实**：企微校验文件的 **body 恒等于文件名里的随机串**（`WW_verify_mRPj5ZGvHWQrpeer.txt` 的 body 逐字节 = `mRPj5ZGvHWQrpeer`）⇒ 不需要任何文件：`deploy/swas/nginx.conf` 的 apex 段加一条 `location ~ ^/WW_verify_([A-Za-z0-9]{8,64})\.txt$ { default_type text/plain; return 200 $1; }`，**任意商户零操作**。边界收紧到 `WW_verify_` + 8–64 位字母数字（禁 `^/.*\.txt$`，否则劫持同段其它 `.txt` 面）。
+- **判据**：`tests/unit_ci_workflows/test_ww_verify_generic_route.py`（用例 `MC-394`）4 条 —— 通用规则在场、禁通配、不伤 `app.migaozn.com` 既有面（MC-125）、按配平摘掉该 location 的注入式红证。
+- **保留**：`public/` 里的静态件留作本机 / 直连 Next 时的兜底（生产由 nginx 正则接管）。
+- **长期正解另立单**：走**第三方应用（ISV）** —— 商户只扫码授权，可信域名/可信IP 都是套件级一次性配置。代码已留口子（`wechat.kf.receive-id` = suiteid、`WeChatKfCrypto` 双模式），但 `suite_access_token` / `permanent_code` 兑换链未实现。
+
 ### 微信客服：部署级配置自愈（2026-11-28，issue #9355）
 
 - **病灶**：代码侧整条微信客服腿已做完（回调 `/api/kf/callback`、`KfSyncWorker` 30s 轮询 `sync_msg`、`KfOutboxSender`、商户自助接入页、AI 回复闭环），但**部署面一个键都没配**（`grep -rn WECHAT_KF deploy/ .github/workflows/` = 0 命中）⇒ 对外表现为「功能不存在」：`GET https://api.migaozn.com/api/kf/callback` **404**、接入页 Token/EncodingAESKey 全空、两个定时器因 `@ConditionalOnProperty` 未注册。
