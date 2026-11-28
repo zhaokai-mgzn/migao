@@ -927,7 +927,11 @@ class TestUpperBoundIsDerivedFromWorkload:
         assert upper_bound_problems(doc, script_text) == [], "基线本身应当绿"
 
     def test_runtime_declared_timeout_self_check_goes_red(self, tmp_path):
-        """**行为级红证**：给腿**真传**一个病态上限（15）⇒ `rc=1` + 具名归因；正常值 ⇒ 照旧跑。
+        """**行为级红证**：给腿**真传**一个病态上限（15）⇒ `rc=4` + 具名归因；正常值 ⇒ 照旧跑。
+
+        🔴 为什么是 `4` 而不是 `1`（issue #9324）：这一支**在出结论之前就退出** ⇒ 它属
+        **报告产出失败**（`4`），与「有判据判红」（`1`）必须是**两个码** —— 共用 `1` 时
+        承接单 / 值班人会拿着一份**不存在**的失败判据清单去排查（不可归因）。
 
         为什么还要这一层：上面几条只判**结构**（YAML 的值 + 脚本里的派生式）。这一条证明
         「声明值**真的**流到判定本体、且真的会拦」—— 否则「上限 ≥ 上界」只是一句纸面约定
@@ -946,12 +950,15 @@ class TestUpperBoundIsDerivedFromWorkload:
                 capture_output=True, text=True, cwd=str(repo), env=env)
             return proc.returncode, (proc.stdout or "") + (proc.stderr or ""), {}
 
-        # ① 注入病态上限 15 ⇒ 必须 rc=1 且具名（点名病态值与上界）
+        # ① 注入病态上限 15 ⇒ 必须 rc=4（**报告产出失败**，不是 1）且具名（点名病态值与上界）
         rc_bad, out_bad, _ = run_with("15")
-        assert rc_bad == 1, f"注入 `timeout-minutes: 15` 后 rc={rc_bad}（应 1）—— 自证没接线：{out_bad[:300]!r}"
+        assert rc_bad == 4, (
+            f"注入 `timeout-minutes: 15` 后 rc={rc_bad}（应 4=报告产出失败）—— 自证没接线：{out_bad[:300]!r}")
         upper = str(_leg().MIN_TIMEOUT_MINUTES)
         assert "15" in out_bad and upper in out_bad, \
             f"归因串没点名病态值与上界 {upper}（不可行动）：{out_bad[:300]!r}"
+        assert "报告产出失败" in out_bad, (
+            f"没写出「报告产出失败」⇒ 读者会把「没跑出报告」当成「某条判据红了」：{out_bad[:300]!r}")
         # ② 对照读数：正常上限 ⇒ 不拦（`--list-only` 便宜，不真跑判据）
         rc_ok, out_ok, _ = run_with(upper)
         assert rc_ok == 0, f"正常上限下 `--list-only` rc={rc_ok}（应 0）：{out_ok[:300]!r}"
@@ -1158,7 +1165,9 @@ def test_red_proof_dropping_check_makes_it_red():
     hit = 0
     for s in steps:
         run = str(s.get("run") or "")
-        if "scripts/drift_audit.py --check" in run:
+        # 只钉「漂移兜底」那一步（`_drift_backstop_problems` 的收窄口径是同一条）：
+        # 承接单的「复算命令表」里也写着 `drift_audit.py --check`（那是**给人抄的命令**，不是判定面）
+        if "漂移" in str(s.get("name") or "") and "scripts/drift_audit.py --check" in run:
             s["run"] = run.replace("scripts/drift_audit.py --check", "scripts/drift_audit.py")
             hit += 1
     assert hit == 1, f"注入点命中 {hit} 处（应为 1）—— 变异没生效，红证失效"
@@ -1174,7 +1183,8 @@ def test_red_proof_dropping_exit_rc_makes_it_red():
     hit = 0
     for s in doc["jobs"]["verify"]["steps"]:
         run = str(s.get("run") or "")
-        if "scripts/drift_audit.py" in run:  # 只钉漂移兜底那一步（别的步也有 exit ${RC}）
+        # 只钉漂移兜底那一步（别的步也有 exit ${RC}；承接单的复算命令表里也有漂移命令）
+        if "漂移" in str(s.get("name") or "") and "scripts/drift_audit.py" in run:
             s["run"] = run.replace("exit ${RC}", "exit 0")
             hit += 1
     assert hit == 1, f"注入点命中 {hit} 处（应为 1）—— 变异没生效，红证失效"
@@ -1276,6 +1286,9 @@ FAILURE_LIST_NEEDLE = "grep -E '^(FAILED|ERROR) |^❌ '"
 UNESCAPED_BACKTICK_RE = re.compile(r"(?<!\\)`")
 EXCERPT_FILE = "/tmp/post-merge-verify-excerpt.txt"
 ISSUE_EXCERPT_FILE = "/tmp/post-merge-verify-issue-excerpt.txt"
+#: 承接单的**证据候选清单**首行（issue #9324：判红步不止判定步 ⇒ 证据必须一个以上来源）+ 统一限长
+EVIDENCE_CANDIDATE_LINE = "for cand in /tmp/post-merge-verify-issue-excerpt.txt"
+EVIDENCE_TAIL_LINE = 'tail -c "${ISSUE_EXCERPT_BYTES:-30000}" "$EVIDENCE"'
 BUDGET_RE = re.compile(r"^\s*(SUMMARY_EXCERPT_BYTES|ISSUE_EXCERPT_BYTES|FAILED_MAX)=(\d+)\s*$", re.MULTILINE)
 BUDGET_STEP_MARKER = "GITHUB_STEP_SUMMARY"
 HOOK_STEP_MARKER = "gh issue list --state open --search"
@@ -1346,11 +1359,20 @@ def summary_budget_problems(doc: dict) -> list[str]:
         problems.append("承接单仍在读**完整**输出（`cat /tmp/post-merge-verify.txt`）⇒ 超 issue body 上限、开不出单")
     elif ISSUE_EXCERPT_FILE not in hook:
         problems.append(f"承接单没有用限长摘录文件（{ISSUE_EXCERPT_FILE}）")
-    # 🔴 验收 P2-2：**兜底路径也必须限长** —— 原兜底直接 `cat` 摘录（200000 B）⇒ 仍会超 65536
-    if "cat /tmp/post-merge-verify-excerpt.txt" in hook:
-        problems.append("承接单的**兜底**路径仍直接 `cat` 摘录（200000 B > issue body 上限 65536）")
-    elif 'tail -c "${ISSUE_EXCERPT_BYTES:-30000}" /tmp/post-merge-verify-excerpt.txt' not in hook:
-        problems.append("承接单兜底路径没有限长（缺 `tail -c \"${ISSUE_EXCERPT_BYTES:-30000}\"`）")
+    # 🔴 验收 P2-2 + issue #9324：**兜底路径也必须限长**，且「读哪个文件」必须是一份**显式候选清单**
+    #    （清单外的一律不许读 —— 尤其完整输出 `post-merge-verify.txt`）。
+    #    #9324 的病灶就在「只认判定步那一个文件」：漂移兜底判红时判定步被 skip ⇒ 文件不存在
+    #    ⇒ 承接单只能写占位「(报告缺失)」。候选清单 = 让每一类判红**自己**落证据。
+    if EVIDENCE_CANDIDATE_LINE not in hook:
+        problems.append(
+            "承接单没有显式的**证据候选清单**（issue #9324：判红步不止判定步，"
+            "只认一个文件 ⇒ 另一类判红只能写占位，不可归因）")
+    elif "/tmp/post-merge-verify.txt" in EVIDENCE_CANDIDATE_LINE:
+        problems.append("证据候选清单里含**完整输出** `/tmp/post-merge-verify.txt` ⇒ 会超 issue body 上限")
+    if 'cat "$EVIDENCE"' in hook:
+        problems.append("承接单的**兜底**路径直接 `cat` 证据（未限长）⇒ 仍会超 65536")
+    elif EVIDENCE_TAIL_LINE not in hook:
+        problems.append("承接单兜底路径没有限长（缺 `tail -c \"${ISSUE_EXCERPT_BYTES:-30000}\" \"$EVIDENCE\"`）")
     return problems
 
 
@@ -1387,10 +1409,8 @@ class TestVolumeBudgets:
         "drop_failure_list": (FAILURE_LIST_NEEDLE + " /tmp/post-merge-verify.txt", "true  # 清单被删"),
         "drop_failure_cap": ('head -n "$FAILED_MAX" \\\n            > /tmp/post-merge-verify-failed.txt',
                              '> /tmp/post-merge-verify-failed.txt'),
-        "hook_fallback_uncapped": ('tail -c "${ISSUE_EXCERPT_BYTES:-30000}" /tmp/post-merge-verify-excerpt.txt',
-                                   "cat /tmp/post-merge-verify-excerpt.txt"),
-        "hook_reads_full_output": ("cat /tmp/post-merge-verify-issue-excerpt.txt 2>/dev/null \\",
-                                   "cat /tmp/post-merge-verify.txt 2>/dev/null \\"),
+        "hook_fallback_uncapped": (EVIDENCE_TAIL_LINE, 'cat "$EVIDENCE"'),
+        "hook_reads_full_output": (EVIDENCE_CANDIDATE_LINE, "for cand in /tmp/post-merge-verify.txt"),
     }
 
     @pytest.mark.parametrize("mutation", sorted(BUDGET_MUTATIONS))
@@ -1549,3 +1569,190 @@ class TestHookBodyBehaviour:
         body = (tmp / "body.txt").stat().st_size
         assert body > ISSUE_BODY_HARD_LIMIT, (
             f"换回 `cat` 兜底后 body 仍只有 {body} B ⇒ 上面那条限长不是兜底挣来的（空断言）")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 判据 23~26（issue #9324 / #9309，2026-11-28）：**判红必须可归因** + 判定对象 = 合并结果
+#
+# 现场（现取，不是推演）：
+#   · #9324（run `46098235161`，push `d529d3591`）：job `Post-Merge Verify (定向跑判据面)`
+#     `failure`，而承接单正文只有 `(报告缺失 —— 见本 run 的 step summary)`。真凶 = **「main 侧
+#     漂移兜底」步**（`基线条目已归零但未删：fixture-record.yml|never-succeeded`）⇒ **判定步被 skip**
+#     ⇒ 摘录文件根本不存在 ⇒ 承接单说的是「判据与它约束的数据不同刻落地」：
+#     **红的对象与报的对象不是同一个** = 不可归因（同型第 3 次）。
+#   · #9309：红在 `.github/cases/settings.yml` 的 ST-011 行，而那一行**正是该 PR 要修的**
+#     ⇒ 判定对象取的是 **main 基线**（PR 自带修复不计）= 构造性假红。
+#
+# 四条判据各配**注入式**红证（`inject()`：0 命中/不唯一/空操作一律抛错 ⇒ 红证不得空跑）。
+# ══════════════════════════════════════════════════════════════════════════════
+
+sys.path.append(str(REPO / "tests"))
+from unit_ci_workflows.injection import inject  # noqa: E402
+
+#: 可能判红的步 = `steps.<id>` ⇒ (承接单里的 env 键, 它**自己**的复算命令)
+#: ⚠️ env 键**不能**由 id 机械大写推出来（`five_xx` → `OUTCOME_5XX`）⇒ 显式登记，防两处漂移。
+JUDGING_STEP_IDS = {
+    "drift": ("OUTCOME_DRIFT", "python3 scripts/drift_audit.py --check"),
+    "verify": ("OUTCOME_VERIFY", "python3 scripts/post_merge_verify.py"),
+    "tls": ("OUTCOME_TLS", "bash deploy/scripts/tls-expiry-check.sh"),
+    "five_xx": ("OUTCOME_5XX", "bash deploy/scripts/prod-5xx-window.sh"),
+    "probe": ("OUTCOME_PROBE", "python3 scripts/synthetic_probe.py"),
+}
+
+
+def _hook_step(doc: dict) -> dict | None:
+    for step in _steps(doc):
+        if HOOK_STEP_MARKER in str(step.get("run") or ""):
+            return step
+    return None
+
+
+def attribution_problems(doc: dict) -> list[str]:
+    """判据 23：**任一**判红步都必须能在承接单里被具名 + 带它自己的复算命令。
+
+    病灶（#9324）：承接单只读**判定步**的摘录文件，而判红步可能是漂移兜底 / TLS / 5xx / 探针
+    ⇒ 摘录不存在时只能写占位，读者拿到的对象与真凶不是同一个。
+    """
+    problems: list[str] = []
+    hook = _hook_step(doc)
+    if hook is None:
+        return ["找不到判红出口（P1 值班钩子）step（结构变了 ⇒ 本判据需同批改）"]
+    env = {str(k): str(v) for k, v in (hook.get("env") or {}).items()}
+    for sid, (key, _cmd) in JUDGING_STEP_IDS.items():
+        if f"steps.{sid}.outcome" not in env.get(key, ""):
+            problems.append(
+                f"承接单拿不到 `{sid}` 步的结论（缺 env `{key}: ${{{{ steps.{sid}.outcome }}}}`）"
+                "⇒ 该类判红只能写占位（#9324 的形态）")
+    run = _marker_run(doc, HOOK_STEP_MARKER)   # 剥整行注释：注释里的提及不算实现（§23.8 B1）
+    if not any("判红步" in ln and "FAILED_STEPS" in ln for ln in run.splitlines()):
+        problems.append("承接单正文没有把**判红步清单**渲染出来"
+                        "（缺同时含 `判红步` 与 `FAILED_STEPS` 的行）⇒ 读者看不到红的对象")
+    if "FAILED_STEPS" not in run:
+        problems.append("承接单没有做判红步具名清单（缺 `FAILED_STEPS`）")
+    for sid, (_key, cmd) in JUDGING_STEP_IDS.items():
+        if cmd not in run:
+            problems.append(f"判红步 `{sid}` 没登记**它自己**的复算命令（未见 `{cmd}`）")
+    if "报告缺失" in run:
+        problems.append("承接单仍在用「报告缺失」占位话术（#9324 的形态）—— 缺证据必须具名说缺什么")
+    if "没有任何证据文件" not in run:
+        problems.append("证据缺失时没有具名措辞（缺「本轮没有任何证据文件」）⇒ 与「没有失败判据」不可区分")
+    return problems
+
+
+def judged_revision_problems(doc: dict) -> list[str]:
+    """判据 24：PR 事件下**判定对象 = 合并结果**（`refs/pull/<N>/merge`）；取不到 ⇒ 明写基线复算。
+
+    #9309 的病：checkout 固定 `ref: main` ⇒ PR 自带修复**不在**判定树里 ⇒ 任何「修好某条判据所
+    约束的数据」的 PR 在**打开的那一刻**必然把本腿判红。修法是**换判定对象**（更强：判合并结果），
+    **不是**放宽判据。
+    """
+    problems: list[str] = []
+    rev = [s for s in _steps(doc) if str(s.get("id") or "") == "revision"]
+    if len(rev) != 1:
+        return [f"必须有且仅有一个 `id: revision` 的判定基准步（实测 {len(rev)} 个）"]
+    run = _bash_code_lines(str(rev[0].get("run") or ""))
+    if "pull_request" not in run:
+        problems.append("判定基准步没有区分 `pull_request` 事件 ⇒ PR 事件仍判 main 基线（#9309 的构造性假红）")
+    fetch = " ".join(ln for ln in run.splitlines() if "git fetch" in ln)
+    if "pull/" not in fetch or "/merge" not in fetch:
+        problems.append("判定基准步没有取合并结果（缺 `git fetch … pull/<N>/merge`）"
+                        "⇒ PR 自带修复不计入判定对象")
+    if "基线复算" not in run:
+        problems.append("取不到合并结果时没有明写「基线复算 / PR 自带修复不计」⇒ 静默换了判定对象")
+    if 'echo "JUDGED_LABEL=${LABEL}" >> "$GITHUB_ENV"' not in run:
+        problems.append("判定对象标签没有经 `$GITHUB_ENV` 传给承接单 ⇒ 承接单仍会把合并提交说成 main")
+    if "JUDGED_LABEL" not in _marker_run(doc, HOOK_STEP_MARKER):
+        problems.append("承接单没有用 `JUDGED_LABEL` 说明判定对象"
+                        "（PR 事件下 `github.sha` 是**合并提交**，不是 main）")
+    return problems
+
+
+def exit_code_problems(script_text: str) -> list[str]:
+    """判据 25：**「跑不出报告」必须与「有判据红了」用两个码**（`#9324` 的机制缺陷本体）。
+
+    病灶：未捕获异常在 Python 里就是 `rc=1`，而 `1` 同时也是「有判据判红」⇒ 下游无法分辨
+    「某条判据红了」与「本腿根本没跑完」（承接单因此只能写占位）。
+    """
+    problems: list[str] = []
+    if "EXIT_REPORT_FAILURE = 4" not in script_text:
+        problems.append("没有独立的「报告产出失败」码（缺 `EXIT_REPORT_FAILURE = 4`）⇒ 与判红共用 1")
+    if "EXIT_CRITERIA_RED = 1" not in script_text:
+        problems.append("没有 `EXIT_CRITERIA_RED = 1` ⇒ 无法自证「1 只用于判红」")
+    if "except Exception" not in script_text:
+        problems.append("没有兜底 `except Exception` ⇒ 崩溃仍以 rc=1 冒充「有判据红了」")
+    if "write_report_failure" not in script_text:
+        problems.append("失败时没有落机器可读清单（缺 `write_report_failure`）")
+    if '"report_failure"' not in script_text:
+        problems.append("失败产物里没有 `report_failure` 键 ⇒ 下游取不到具名错误串")
+    return problems
+
+
+class TestRedIsAttributable:
+    """判据 23~25 + 各自注入式红证（`inject()` 自带「注入是否生效」自证）。"""
+
+    def test_baseline_is_green(self):
+        doc = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+        problems = attribution_problems(doc) + judged_revision_problems(doc)
+        problems += exit_code_problems(SCRIPT.read_text(encoding="utf-8"))
+        assert problems == [], "\n".join(problems)
+
+    @pytest.mark.parametrize("old,new", [
+        ("OUTCOME_DRIFT: ${{ steps.drift.outcome }}", 'OUTCOME_DRIFT: ""'),
+        ('            echo "- **判红步**：${FAILED_STEPS}"\n', '            echo "- （已变异）"\n'),
+        ('note_step "只读合成探针" "${OUTCOME_PROBE:-}" "python3 scripts/synthetic_probe.py"',
+         'note_step "只读合成探针" "${OUTCOME_PROBE:-}" "（未登记）"'),
+    ])
+    def test_attribution_mutations_turn_it_red(self, old, new):
+        text = WORKFLOW.read_text(encoding="utf-8")
+        mutated = inject(text, old, new, where=WORKFLOW_REL)
+        assert attribution_problems(yaml.safe_load(mutated)) != [], \
+            f"注入 {old[:40]!r} 之后判据没红 ⇒ 空断言"
+
+    def test_placeholder_comes_back_as_red(self):
+        """红证：把「具名」换回**占位话术**（#9324 的真形态）⇒ 必红。"""
+        text = WORKFLOW.read_text(encoding="utf-8")
+        mutated = inject(text, 'EVIDENCE_WHY="❌ **本轮没有任何证据文件**', 'EVIDENCE_WHY="(报告缺失',
+                         where=WORKFLOW_REL)
+        problems = attribution_problems(yaml.safe_load(mutated))
+        assert any("报告缺失" in p for p in problems), f"占位话术回来之后判据没红：{problems!r}"
+
+    @pytest.mark.parametrize("old,new", [
+        ('git fetch --quiet --no-tags origin "pull/${PR_NUMBER}/merge"',
+         "git fetch --quiet --no-tags origin main"),
+        ('LABEL="**基线复算**（取不到 refs/pull/${PR_NUMBER}/merge',
+         'LABEL="（取不到 refs/pull/${PR_NUMBER}/merge'),
+        ("（${JUDGED_LABEL:-main 基线}）", "（main 基线）"),
+    ])
+    def test_revision_mutations_turn_it_red(self, old, new):
+        text = WORKFLOW.read_text(encoding="utf-8")
+        mutated = inject(text, old, new, where=WORKFLOW_REL)
+        assert judged_revision_problems(yaml.safe_load(mutated)) != [], \
+            f"注入 {old[:40]!r} 之后判据没红 ⇒ 空断言"
+
+    @pytest.mark.parametrize("old,new", [
+        ("EXIT_REPORT_FAILURE = 4", "EXIT_REPORT_FAILURE = 1"),
+        ("    except Exception as exc:", "    except ArithmeticError as exc:"),
+        ('"report_failure": {', '"report_fail": {'),
+    ])
+    def test_exit_code_mutations_turn_it_red(self, old, new):
+        text = SCRIPT.read_text(encoding="utf-8")
+        mutated = inject(text, old, new, where=SCRIPT_REL)
+        assert exit_code_problems(mutated) != [], f"注入 {old!r} 之后判据没红 ⇒ 空断言"
+
+    def test_report_write_failure_gets_its_own_exit_code(self, tmp_path):
+        """**注入式行为红证**（#9324 的本体）：让报告**写不出去** ⇒ 独立错误码 `4` + 具名提示。
+
+        这不是纸面约定：真跑腿，把 `--json` 指到一个**不存在的目录** ⇒ 报告落不了盘
+        ⇒ 必须 `rc=4`（而不是 `1`），并且输出里明写「报告产出失败」+「与 rc=1 不是同一件事」。
+        """
+        repo = _fixture(tmp_path)
+        bad = tmp_path / "no-such-directory" / "leg-report.json"
+        proc = subprocess.run(
+            [sys.executable, str(SCRIPT), "--repo", str(repo), "--lookback", "1", "--json", str(bad)],
+            capture_output=True, text=True, cwd=str(repo))
+        text = (proc.stdout or "") + (proc.stderr or "")
+        assert proc.returncode == 4, (
+            f"报告写不出去时 rc={proc.returncode}（应 4=报告产出失败）—— 与「有判据判红」同码=不可归因："
+            f"{text[-400:]!r}")
+        assert "报告产出失败" in text, f"没有具名提示（读者会把「没跑出报告」当「某条判据红了」）：{text[-400:]!r}"
+        assert "rc=4" in text, f"没有把独立错误码写出来（不可归因）：{text[-400:]!r}"

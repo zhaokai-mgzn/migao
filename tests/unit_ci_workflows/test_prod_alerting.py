@@ -398,8 +398,11 @@ def _wiring_problems(steps: list[dict]) -> list[str]:
     runs = [str(s.get("run", "")) for s in steps]
     # 5xx / TLS 各自的那一步必须**自己**把「判据 + 投递」都跑起来：只有判据 ⇒ 只红不响；
     # 只有投递 ⇒ 没有事件可发。
-    probe_idx = [i for i, r in enumerate(runs) if "prod-5xx-window.sh" in r]
-    tls_idx = [i for i, r in enumerate(runs) if "tls-expiry-check.sh" in r]
+    # ⚠️ **排除失败钩子**（issue #9324）：钩子正文会列出各判红步的复算命令（含这两个脚本名），
+    #    但它是 `if: failure()` 的承接步、不是跑判据的那一步 ⇒ 不能拿它判「告警接线」。
+    carrier_idx = [i for i, s in enumerate(steps) if "failure()" in str(s.get("if", ""))]
+    probe_idx = [i for i, r in enumerate(runs) if "prod-5xx-window.sh" in r and i not in carrier_idx]
+    tls_idx = [i for i, r in enumerate(runs) if "tls-expiry-check.sh" in r and i not in carrier_idx]
     hook_idx = [i for i, s in enumerate(steps) if "failure()" in str(s.get("if", ""))]
 
     if not probe_idx:
