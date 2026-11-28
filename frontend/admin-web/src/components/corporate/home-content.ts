@@ -38,10 +38,10 @@ export const heroFacts = [
 export const featureBlocks = [
   {
     id: 'customer',
-    kicker: '顾客经营 · 米宝',
+    kicker: '顾客经营 · 智能客服',
     title: '从顾客开口，到订单成交',
     cardTitle: '接待、算料与下单，走同一链路',
-    lead: '咨询、算料、报价、下单与售后在同一链路上完成；米宝按店内真实商品与价格作答。',
+    lead: '咨询、算料、报价、下单与售后在同一链路上完成；智能客服按店内真实商品与价格作答。',
     tabs: ['智能接待', '算料报价', '下单转化'],
     tabDetails: [
       '按已上架商品回答颜色、门幅与加工项，不展示未上架商品。',
@@ -128,7 +128,7 @@ export const advantages = [
   {
     icon: Bot,
     title: '双 AI 分工',
-    description: '米宝与黄金策独立配置，能做什么、不能做什么逐项标注，不让 AI 越界。',
+    description: '智能客服与黄金策独立配置，能做什么、不能做什么逐项标注，不让 AI 越界。',
   },
   {
     icon: PackageOpen,
@@ -282,7 +282,7 @@ export const terminals = [
     icon: MessageSquare,
     title: '微信客服',
     audience: '终端消费者',
-    description: '在微信里直接咨询米宝，不加好友、不下载；也可嵌入商家自有小程序或公众号。',
+    description: '在微信里直接咨询智能客服，不加好友、不下载；也可嵌入商家自有小程序或公众号。',
   },
   {
     icon: Headphones,

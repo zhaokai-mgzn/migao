@@ -80,7 +80,7 @@ class ImageRecognitionInterpretControllerTest extends BaseControllerTest {
                 .thenReturn(frozenPlan());
     }
 
-    /** 冻结夹具：一格识别来的 + 一格**米宝解读**来的（两种来源必须可分辨）。 */
+    /** 冻结夹具：一格识别来的 + 一格**黄金策解读**来的（两种来源必须可分辨）。 */
     private static ImageRecognitionClient.PageFillResult frozenPlan() {
         Map<String, Object> recognized = new LinkedHashMap<>();
         recognized.put("key", "color");
@@ -96,11 +96,11 @@ class ImageRecognitionInterpretControllerTest extends BaseControllerTest {
         interpreted.put("key", "material");
         interpreted.put("label", "材质");
         interpreted.put("value", "雪尼尔");
-        interpreted.put("source", "[米宝解读]");
+        interpreted.put("source", "[黄金策解读]");
         interpreted.put("reason", null);
         interpreted.put("candidates", null);
         interpreted.put("note", "雪尼尔通常用于客厅遮光帘");
-        interpreted.put("note_source", "[米宝解读]");
+        interpreted.put("note_source", "[黄金策解读]");
 
         return new ImageRecognitionClient.PageFillResult("page_fill", "product", List.of(recognized, interpreted));
     }
@@ -149,8 +149,8 @@ class ImageRecognitionInterpretControllerTest extends BaseControllerTest {
                 .andExpect(jsonPath("$.data.target_type").value("product"))
                 .andExpect(jsonPath("$.data.fields[0].key").value("color"))
                 .andExpect(jsonPath("$.data.fields[0].source").value("[图片识别]"))
-                .andExpect(jsonPath("$.data.fields[1].source").value("[米宝解读]"))
-                .andExpect(jsonPath("$.data.fields[1].note_source").value("[米宝解读]"))
+                .andExpect(jsonPath("$.data.fields[1].source").value("[黄金策解读]"))
+                .andExpect(jsonPath("$.data.fields[1].note_source").value("[黄金策解读]"))
                 // 不是 recognize 的形状（键名不得漂成 camelCase）
                 .andExpect(jsonPath("$.data.targetType").doesNotExist())
                 .andExpect(jsonPath("$.data.degraded").doesNotExist())

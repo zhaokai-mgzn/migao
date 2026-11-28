@@ -1052,7 +1052,7 @@ export interface ProductionOperation {
    * 报工三态数量（issue #7140，**只加不改**）：合格 / 返工 / 报废。
    *
    * 🔴 返工 / 报废**既不推进进度也不计件**（既有口径，一字未改）—— 但它们是**质量读数**：
-   * 加这三个键之前它们只出现在米宝的 agent 读面（`GET /api/admin/agent/production/worklog`）
+   * 加这三个键之前它们只出现在黄金策的 agent 读面（`GET /api/admin/agent/production/worklog`）
    * ⇒ 商家在观星台的生产明细上**看不到**（前端 0 消费者）。缺报工 ⇒ `0`（「没有这一笔」是真事实）。
    */
   qualified_qty?: number

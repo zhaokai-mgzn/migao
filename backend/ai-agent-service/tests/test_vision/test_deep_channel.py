@@ -109,7 +109,7 @@ class TestSourceMarkersAreDistinguishable:
         assert SOURCE_RECOGNIZED == "[图片识别]"
 
     def test_interpreted_marker_is_a_different_non_empty_string(self):
-        assert SOURCE_INTERPRETED == "[米宝解读]"
+        assert SOURCE_INTERPRETED == "[黄金策解读]"
         assert SOURCE_INTERPRETED != SOURCE_RECOGNIZED
         assert SOURCE_RECOGNIZED not in SOURCE_INTERPRETED
         assert SOURCE_INTERPRETED not in SOURCE_RECOGNIZED
@@ -228,7 +228,7 @@ class TestInterpretationIsMarkedAndAsymmetric:
     def test_description_is_an_interpretable_cell_of_product(self):
         """商品描述文案（issue #6362）：用户逐字「然后把商品描述的文案也要生成一份」。
 
-        描述是**文案**不是事实 ⇒ 与材质 / 工艺同族：走 `[米宝解读]`，一格都不进识别直填
+        描述是**文案**不是事实 ⇒ 与材质 / 工艺同族：走 `[黄金策解读]`，一格都不进识别直填
         （`product_fields()` 里没有这一格 ⇒ 内核不给值，只有解读能把它填上）。
         """
         description = "<p>雪尼尔遮光窗帘，面料厚实、垂感好，适合客厅与卧室；可选配韩式褶工艺。</p>"
@@ -376,7 +376,7 @@ class TestInterpretableScopeIsWidened:
         assert (color["value"], color["source"]) == ("雾霾蓝", SOURCE_RECOGNIZED)
         assert color["note_source"] == SOURCE_INTERPRETED
         # `name` 是**生成类**字段（issue #6386）：识别面给的值不落地 ⇒ 解读值**应当**落地、
-        # 来源标 `[米宝解读]`（这正是用户 2026-10-05 裁定「B」要的形态）。
+        # 来源标 `[黄金策解读]`（这正是用户 2026-10-05 裁定「B」要的形态）。
         # 同时它也证明「不覆盖」规则的**前提**：识别面根本没给 `name` 值，所以谈不上覆盖。
         assert (name["value"], name["source"]) == ("被覆盖的名字", SOURCE_INTERPRETED)
         # 真正被「不覆盖」规则挡住的仍是识别面给了值的格子（`color`，上面已断言）

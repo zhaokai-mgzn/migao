@@ -59066,6 +59066,596 @@
         "tests/unit_ci_workflows/test_realdb_failclosed.py::test_realdb_class_set_is_frozen"
       ],
       "unknown_reason": "两次尝试都红、且落在同一个步骤，但**只有步骤级事实**（GitHub 的 jobs API 只给步骤名，不给断言文本）⇒ 不足以判断是否同一断言（同一 SHA 两跑都红也可能是宽窗口竞态），**不归因**。要归因：取证（#5088 口径）：`gh api repos/<owner>/<repo>/actions/runs/<run_id>/attempts/<n>/jobs` 取失败 job 的 id，再 `gh api repos/<owner>/<repo>/actions/jobs/<job_id>/logs` 拉**两次尝试**的日志，比对是否**同一断言同一错误**；然后回填（**字段级**，不新增/删除/重排条目）：`python3 .github/scripts/flaky_ledger.py attest --ledger .github/flaky-ledger.json --run-id <run_id> --job '<job>' --attempt1-assertion '<断言+错误>' --attempt2-assertion '<断言+错误>' --evidence '<凭据：run/attempt 与日志取法>'`；两次同一 ⇒ `deterministic`；不同 ⇒ 仍 `unknown`（**不许**凭 `kind` 归因）。"
+    },
+    {
+      "workflow": "PR Check",
+      "job": "ci workflow helper unit tests（中前段）",
+      "run_id": 46015946606,
+      "run_attempt": 2,
+      "run_url": "https://github.com/zhaokai-mgzn/migao/actions/runs/46015946606",
+      "pr": 9287,
+      "head_sha": "d8cfd3b1085fe75f041afce249b1996018b1ad38",
+      "head_branch": "feat/eval-env-prerequisite",
+      "first_failure_step": "Run ci workflow helper tests",
+      "rerun_result": "failure",
+      "kind": "unknown",
+      "attempts": [
+        {
+          "attempt": 1,
+          "job": "ci workflow helper unit tests（中前段）",
+          "step": "Run ci workflow helper tests",
+          "assertion": null,
+          "timestamp": "2026-11-27T14:32:25Z"
+        },
+        {
+          "attempt": 2,
+          "job": "ci workflow helper unit tests（中前段）",
+          "step": "Run ci workflow helper tests",
+          "assertion": null,
+          "timestamp": "2026-11-27T14:43:50Z"
+        }
+      ],
+      "failed_at": "",
+      "rerun_at": "",
+      "failed_bucket": null,
+      "rerun_bucket": null,
+      "rerun_bucket_verdict": null,
+      "observed_at": "2026-11-27T14:44:01Z",
+      "reason": "两次尝试都失败，但**事实不足以归因** ⇒ fail-closed：**既不判 flaky、也不判确定性**（同一 SHA 两跑都红也可能是宽窗口竞态；见条目的 `unknown_reason` 与 `attempts`）",
+      "remedy": "取证（#5088 口径）：`gh api repos/<owner>/<repo>/actions/runs/<run_id>/attempts/<n>/jobs` 取失败 job 的 id，再 `gh api repos/<owner>/<repo>/actions/jobs/<job_id>/logs` 拉**两次尝试**的日志，比对是否**同一断言同一错误**；然后回填（**字段级**，不新增/删除/重排条目）：`python3 .github/scripts/flaky_ledger.py attest --ledger .github/flaky-ledger.json --run-id <run_id> --job '<job>' --attempt1-assertion '<断言+错误>' --attempt2-assertion '<断言+错误>' --evidence '<凭据：run/attempt 与日志取法>'`；两次同一 ⇒ `deterministic`；不同 ⇒ 仍 `unknown`（**不许**凭 `kind` 归因）。",
+      "status": "open",
+      "follow_up": null,
+      "requires_follow_up": null,
+      "failing_tests": [
+        "tests/unit_ci_workflows/test_render_cases_casebook_field_visibility.py::TestFieldLedgerIsClosed::test_every_declared_field_is_registered"
+      ],
+      "unknown_reason": "两次尝试都红、且落在同一个步骤，但**只有步骤级事实**（GitHub 的 jobs API 只给步骤名，不给断言文本）⇒ 不足以判断是否同一断言（同一 SHA 两跑都红也可能是宽窗口竞态），**不归因**。要归因：取证（#5088 口径）：`gh api repos/<owner>/<repo>/actions/runs/<run_id>/attempts/<n>/jobs` 取失败 job 的 id，再 `gh api repos/<owner>/<repo>/actions/jobs/<job_id>/logs` 拉**两次尝试**的日志，比对是否**同一断言同一错误**；然后回填（**字段级**，不新增/删除/重排条目）：`python3 .github/scripts/flaky_ledger.py attest --ledger .github/flaky-ledger.json --run-id <run_id> --job '<job>' --attempt1-assertion '<断言+错误>' --attempt2-assertion '<断言+错误>' --evidence '<凭据：run/attempt 与日志取法>'`；两次同一 ⇒ `deterministic`；不同 ⇒ 仍 `unknown`（**不许**凭 `kind` 归因）。"
+    },
+    {
+      "workflow": "PR Check",
+      "job": "ci workflow helper unit tests（中后段）",
+      "run_id": 46089725908,
+      "run_attempt": 2,
+      "run_url": "https://github.com/zhaokai-mgzn/migao/actions/runs/46089725908",
+      "pr": 9295,
+      "head_sha": "0800dc7275f9fa42e6208bfde5db36ce30f43180",
+      "head_branch": "fix/9280-case-retirement-guard",
+      "first_failure_step": "Run ci workflow helper tests",
+      "rerun_result": "failure",
+      "kind": "unknown",
+      "attempts": [
+        {
+          "attempt": 1,
+          "job": "ci workflow helper unit tests（中后段）",
+          "step": "Run ci workflow helper tests",
+          "assertion": null,
+          "timestamp": "2026-11-28T00:52:54Z"
+        },
+        {
+          "attempt": 2,
+          "job": "ci workflow helper unit tests（中后段）",
+          "step": "Run ci workflow helper tests",
+          "assertion": null,
+          "timestamp": "2026-11-28T01:01:40Z"
+        }
+      ],
+      "failed_at": "",
+      "rerun_at": "",
+      "failed_bucket": null,
+      "rerun_bucket": null,
+      "rerun_bucket_verdict": null,
+      "observed_at": "2026-11-28T01:01:49Z",
+      "reason": "两次尝试都失败，但**事实不足以归因** ⇒ fail-closed：**既不判 flaky、也不判确定性**（同一 SHA 两跑都红也可能是宽窗口竞态；见条目的 `unknown_reason` 与 `attempts`）",
+      "remedy": "取证（#5088 口径）：`gh api repos/<owner>/<repo>/actions/runs/<run_id>/attempts/<n>/jobs` 取失败 job 的 id，再 `gh api repos/<owner>/<repo>/actions/jobs/<job_id>/logs` 拉**两次尝试**的日志，比对是否**同一断言同一错误**；然后回填（**字段级**，不新增/删除/重排条目）：`python3 .github/scripts/flaky_ledger.py attest --ledger .github/flaky-ledger.json --run-id <run_id> --job '<job>' --attempt1-assertion '<断言+错误>' --attempt2-assertion '<断言+错误>' --evidence '<凭据：run/attempt 与日志取法>'`；两次同一 ⇒ `deterministic`；不同 ⇒ 仍 `unknown`（**不许**凭 `kind` 归因）。",
+      "status": "open",
+      "follow_up": null,
+      "requires_follow_up": null,
+      "failing_tests": [
+        "tests/unit_ci_workflows/test_eval_expectation_or_group.py::TestObserverGuard::test_live_corpus_is_clean"
+      ],
+      "unknown_reason": "两次尝试都红、且落在同一个步骤，但**只有步骤级事实**（GitHub 的 jobs API 只给步骤名，不给断言文本）⇒ 不足以判断是否同一断言（同一 SHA 两跑都红也可能是宽窗口竞态），**不归因**。要归因：取证（#5088 口径）：`gh api repos/<owner>/<repo>/actions/runs/<run_id>/attempts/<n>/jobs` 取失败 job 的 id，再 `gh api repos/<owner>/<repo>/actions/jobs/<job_id>/logs` 拉**两次尝试**的日志，比对是否**同一断言同一错误**；然后回填（**字段级**，不新增/删除/重排条目）：`python3 .github/scripts/flaky_ledger.py attest --ledger .github/flaky-ledger.json --run-id <run_id> --job '<job>' --attempt1-assertion '<断言+错误>' --attempt2-assertion '<断言+错误>' --evidence '<凭据：run/attempt 与日志取法>'`；两次同一 ⇒ `deterministic`；不同 ⇒ 仍 `unknown`（**不许**凭 `kind` 归因）。"
+    },
+    {
+      "workflow": "PR Check",
+      "job": "ci workflow helper unit tests",
+      "run_id": 46099008499,
+      "run_attempt": 2,
+      "run_url": "https://github.com/zhaokai-mgzn/migao/actions/runs/46099008499",
+      "pr": 9325,
+      "head_sha": "29bbd308f3d57eea8db840f46fda45897a5a5177",
+      "head_branch": "refactor/frontend-smart-service-naming",
+      "first_failure_step": "Run ci workflow helper tests",
+      "rerun_result": "failure",
+      "kind": "unknown",
+      "attempts": [
+        {
+          "attempt": 1,
+          "job": "ci workflow helper unit tests",
+          "step": "Run ci workflow helper tests",
+          "assertion": null,
+          "timestamp": "2026-11-28T02:42:47Z"
+        },
+        {
+          "attempt": 2,
+          "job": "ci workflow helper unit tests",
+          "step": "Run ci workflow helper tests",
+          "assertion": null,
+          "timestamp": "2026-11-28T03:12:36Z"
+        }
+      ],
+      "failed_at": "",
+      "rerun_at": "",
+      "failed_bucket": null,
+      "rerun_bucket": null,
+      "rerun_bucket_verdict": null,
+      "observed_at": "2026-11-28T03:12:46Z",
+      "reason": "两次尝试都失败，但**事实不足以归因** ⇒ fail-closed：**既不判 flaky、也不判确定性**（同一 SHA 两跑都红也可能是宽窗口竞态；见条目的 `unknown_reason` 与 `attempts`）",
+      "remedy": "取证（#5088 口径）：`gh api repos/<owner>/<repo>/actions/runs/<run_id>/attempts/<n>/jobs` 取失败 job 的 id，再 `gh api repos/<owner>/<repo>/actions/jobs/<job_id>/logs` 拉**两次尝试**的日志，比对是否**同一断言同一错误**；然后回填（**字段级**，不新增/删除/重排条目）：`python3 .github/scripts/flaky_ledger.py attest --ledger .github/flaky-ledger.json --run-id <run_id> --job '<job>' --attempt1-assertion '<断言+错误>' --attempt2-assertion '<断言+错误>' --evidence '<凭据：run/attempt 与日志取法>'`；两次同一 ⇒ `deterministic`；不同 ⇒ 仍 `unknown`（**不许**凭 `kind` 归因）。",
+      "status": "open",
+      "follow_up": null,
+      "requires_follow_up": null,
+      "failing_tests": [
+        "tests/unit_ci_workflows/test_weak_assert_blindspots.py::test_ledger_total_is_not_ts_blind",
+        "tests/unit_ci_workflows/test_weak_assert_blindspots.py::test_current_repo_is_within_baseline"
+      ],
+      "unknown_reason": "两次尝试都红、且落在同一个步骤，但**只有步骤级事实**（GitHub 的 jobs API 只给步骤名，不给断言文本）⇒ 不足以判断是否同一断言（同一 SHA 两跑都红也可能是宽窗口竞态），**不归因**。要归因：取证（#5088 口径）：`gh api repos/<owner>/<repo>/actions/runs/<run_id>/attempts/<n>/jobs` 取失败 job 的 id，再 `gh api repos/<owner>/<repo>/actions/jobs/<job_id>/logs` 拉**两次尝试**的日志，比对是否**同一断言同一错误**；然后回填（**字段级**，不新增/删除/重排条目）：`python3 .github/scripts/flaky_ledger.py attest --ledger .github/flaky-ledger.json --run-id <run_id> --job '<job>' --attempt1-assertion '<断言+错误>' --attempt2-assertion '<断言+错误>' --evidence '<凭据：run/attempt 与日志取法>'`；两次同一 ⇒ `deterministic`；不同 ⇒ 仍 `unknown`（**不许**凭 `kind` 归因）。"
+    },
+    {
+      "workflow": "PR Check",
+      "job": "ci workflow helper unit tests（后半）",
+      "run_id": 46099008499,
+      "run_attempt": 2,
+      "run_url": "https://github.com/zhaokai-mgzn/migao/actions/runs/46099008499",
+      "pr": 9325,
+      "head_sha": "29bbd308f3d57eea8db840f46fda45897a5a5177",
+      "head_branch": "refactor/frontend-smart-service-naming",
+      "first_failure_step": "Run ci workflow helper tests",
+      "rerun_result": "failure",
+      "kind": "unknown",
+      "attempts": [
+        {
+          "attempt": 1,
+          "job": "ci workflow helper unit tests（后半）",
+          "step": "Run ci workflow helper tests",
+          "assertion": null,
+          "timestamp": "2026-11-28T02:43:50Z"
+        },
+        {
+          "attempt": 2,
+          "job": "ci workflow helper unit tests（后半）",
+          "step": "Run ci workflow helper tests",
+          "assertion": null,
+          "timestamp": "2026-11-28T03:10:29Z"
+        }
+      ],
+      "failed_at": "",
+      "rerun_at": "",
+      "failed_bucket": null,
+      "rerun_bucket": null,
+      "rerun_bucket_verdict": null,
+      "observed_at": "2026-11-28T03:12:46Z",
+      "reason": "两次尝试都失败，但**事实不足以归因** ⇒ fail-closed：**既不判 flaky、也不判确定性**（同一 SHA 两跑都红也可能是宽窗口竞态；见条目的 `unknown_reason` 与 `attempts`）",
+      "remedy": "取证（#5088 口径）：`gh api repos/<owner>/<repo>/actions/runs/<run_id>/attempts/<n>/jobs` 取失败 job 的 id，再 `gh api repos/<owner>/<repo>/actions/jobs/<job_id>/logs` 拉**两次尝试**的日志，比对是否**同一断言同一错误**；然后回填（**字段级**，不新增/删除/重排条目）：`python3 .github/scripts/flaky_ledger.py attest --ledger .github/flaky-ledger.json --run-id <run_id> --job '<job>' --attempt1-assertion '<断言+错误>' --attempt2-assertion '<断言+错误>' --evidence '<凭据：run/attempt 与日志取法>'`；两次同一 ⇒ `deterministic`；不同 ⇒ 仍 `unknown`（**不许**凭 `kind` 归因）。",
+      "status": "open",
+      "follow_up": null,
+      "requires_follow_up": null,
+      "failing_tests": [
+        "tests/unit_ci_workflows/test_assertion_specs_wellformed.py::TestOutputKeysAreProducible::test_snapshot_is_fresh"
+      ],
+      "unknown_reason": "两次尝试都红、且落在同一个步骤，但**只有步骤级事实**（GitHub 的 jobs API 只给步骤名，不给断言文本）⇒ 不足以判断是否同一断言（同一 SHA 两跑都红也可能是宽窗口竞态），**不归因**。要归因：取证（#5088 口径）：`gh api repos/<owner>/<repo>/actions/runs/<run_id>/attempts/<n>/jobs` 取失败 job 的 id，再 `gh api repos/<owner>/<repo>/actions/jobs/<job_id>/logs` 拉**两次尝试**的日志，比对是否**同一断言同一错误**；然后回填（**字段级**，不新增/删除/重排条目）：`python3 .github/scripts/flaky_ledger.py attest --ledger .github/flaky-ledger.json --run-id <run_id> --job '<job>' --attempt1-assertion '<断言+错误>' --attempt2-assertion '<断言+错误>' --evidence '<凭据：run/attempt 与日志取法>'`；两次同一 ⇒ `deterministic`；不同 ⇒ 仍 `unknown`（**不许**凭 `kind` 归因）。"
+    },
+    {
+      "workflow": "PR Check",
+      "job": "ci workflow helper unit tests",
+      "run_id": 46104350578,
+      "run_attempt": 2,
+      "run_url": "https://github.com/zhaokai-mgzn/migao/actions/runs/46104350578",
+      "pr": 9330,
+      "head_sha": "add413ed7e3d9efb37f60d6642119d42638178c9",
+      "head_branch": "fix/post-merge-verify-attribution",
+      "first_failure_step": "Run ci workflow helper tests",
+      "rerun_result": "failure",
+      "kind": "unknown",
+      "attempts": [
+        {
+          "attempt": 1,
+          "job": "ci workflow helper unit tests",
+          "step": "Run ci workflow helper tests",
+          "assertion": null,
+          "timestamp": "2026-11-28T03:51:35Z"
+        },
+        {
+          "attempt": 2,
+          "job": "ci workflow helper unit tests",
+          "step": "Run ci workflow helper tests",
+          "assertion": null,
+          "timestamp": "2026-11-28T03:59:49Z"
+        }
+      ],
+      "failed_at": "",
+      "rerun_at": "",
+      "failed_bucket": null,
+      "rerun_bucket": null,
+      "rerun_bucket_verdict": null,
+      "observed_at": "2026-11-28T03:59:59Z",
+      "reason": "两次尝试都失败，但**事实不足以归因** ⇒ fail-closed：**既不判 flaky、也不判确定性**（同一 SHA 两跑都红也可能是宽窗口竞态；见条目的 `unknown_reason` 与 `attempts`）",
+      "remedy": "取证（#5088 口径）：`gh api repos/<owner>/<repo>/actions/runs/<run_id>/attempts/<n>/jobs` 取失败 job 的 id，再 `gh api repos/<owner>/<repo>/actions/jobs/<job_id>/logs` 拉**两次尝试**的日志，比对是否**同一断言同一错误**；然后回填（**字段级**，不新增/删除/重排条目）：`python3 .github/scripts/flaky_ledger.py attest --ledger .github/flaky-ledger.json --run-id <run_id> --job '<job>' --attempt1-assertion '<断言+错误>' --attempt2-assertion '<断言+错误>' --evidence '<凭据：run/attempt 与日志取法>'`；两次同一 ⇒ `deterministic`；不同 ⇒ 仍 `unknown`（**不许**凭 `kind` 归因）。",
+      "status": "open",
+      "follow_up": null,
+      "requires_follow_up": null,
+      "failing_tests": [
+        "tests/unit_ci_workflows/test_drift_audit_contract.py::test_real_repo_audit_is_green_on_current_tree"
+      ],
+      "unknown_reason": "两次尝试都红、且落在同一个步骤，但**只有步骤级事实**（GitHub 的 jobs API 只给步骤名，不给断言文本）⇒ 不足以判断是否同一断言（同一 SHA 两跑都红也可能是宽窗口竞态），**不归因**。要归因：取证（#5088 口径）：`gh api repos/<owner>/<repo>/actions/runs/<run_id>/attempts/<n>/jobs` 取失败 job 的 id，再 `gh api repos/<owner>/<repo>/actions/jobs/<job_id>/logs` 拉**两次尝试**的日志，比对是否**同一断言同一错误**；然后回填（**字段级**，不新增/删除/重排条目）：`python3 .github/scripts/flaky_ledger.py attest --ledger .github/flaky-ledger.json --run-id <run_id> --job '<job>' --attempt1-assertion '<断言+错误>' --attempt2-assertion '<断言+错误>' --evidence '<凭据：run/attempt 与日志取法>'`；两次同一 ⇒ `deterministic`；不同 ⇒ 仍 `unknown`（**不许**凭 `kind` 归因）。"
+    },
+    {
+      "workflow": "PR Check",
+      "job": "admin-web unit tests (2/2)",
+      "run_id": 46094658321,
+      "run_attempt": 2,
+      "run_url": "https://github.com/zhaokai-mgzn/migao/actions/runs/46094658321",
+      "pr": 9322,
+      "head_sha": "5dabaca775eda9f51b81e7512537fedca282e9ff",
+      "head_branch": "dependabot/npm_and_yarn/frontend/admin-web/testing-library/user-event-14.6.13",
+      "first_failure_step": "Install dependencies",
+      "rerun_result": "failure",
+      "kind": "infra_suspect",
+      "attempts": [
+        {
+          "attempt": 1,
+          "job": "admin-web unit tests (2/2)",
+          "step": "Install dependencies",
+          "assertion": null,
+          "timestamp": "2026-11-28T02:11:14Z"
+        },
+        {
+          "attempt": 2,
+          "job": "admin-web unit tests (2/2)",
+          "step": "Install dependencies",
+          "assertion": null,
+          "timestamp": "2026-11-28T05:00:31Z"
+        }
+      ],
+      "failed_at": "",
+      "rerun_at": "",
+      "failed_bucket": null,
+      "rerun_bucket": null,
+      "rerun_bucket_verdict": null,
+      "observed_at": "2026-11-28T05:05:40Z",
+      "reason": "失败落在「取代码 · 装依赖 · 配环境」步骤（或 job 从未跑起来）⇒ 环境/基础设施问题",
+      "remedy": "**先区分「环境抖动」与「确定性不可解析」**（#5088 实证：dependabot 的 `npm ERESOLVE` 两次尝试逐字同一个错误 ⇒ 是依赖冲突，不是环境抖动）：两次报错逐字相同 ⇒ 查依赖锁定 / peer 冲突；偶发一次 ⇒ runner 容量 / 依赖源 / 网络",
+      "status": "open",
+      "follow_up": null,
+      "requires_follow_up": null,
+      "failing_tests": []
+    },
+    {
+      "workflow": "PR Check",
+      "job": "admin-web typecheck + unit tests",
+      "run_id": 46094658321,
+      "run_attempt": 2,
+      "run_url": "https://github.com/zhaokai-mgzn/migao/actions/runs/46094658321",
+      "pr": 9322,
+      "head_sha": "5dabaca775eda9f51b81e7512537fedca282e9ff",
+      "head_branch": "dependabot/npm_and_yarn/frontend/admin-web/testing-library/user-event-14.6.13",
+      "first_failure_step": "Install dependencies",
+      "rerun_result": "failure",
+      "kind": "infra_suspect",
+      "attempts": [
+        {
+          "attempt": 1,
+          "job": "admin-web typecheck + unit tests",
+          "step": "Install dependencies",
+          "assertion": null,
+          "timestamp": "2026-11-28T02:03:50Z"
+        },
+        {
+          "attempt": 2,
+          "job": "admin-web typecheck + unit tests",
+          "step": "Install dependencies",
+          "assertion": null,
+          "timestamp": "2026-11-28T05:00:31Z"
+        }
+      ],
+      "failed_at": "",
+      "rerun_at": "",
+      "failed_bucket": null,
+      "rerun_bucket": null,
+      "rerun_bucket_verdict": null,
+      "observed_at": "2026-11-28T05:05:40Z",
+      "reason": "失败落在「取代码 · 装依赖 · 配环境」步骤（或 job 从未跑起来）⇒ 环境/基础设施问题",
+      "remedy": "**先区分「环境抖动」与「确定性不可解析」**（#5088 实证：dependabot 的 `npm ERESOLVE` 两次尝试逐字同一个错误 ⇒ 是依赖冲突，不是环境抖动）：两次报错逐字相同 ⇒ 查依赖锁定 / peer 冲突；偶发一次 ⇒ runner 容量 / 依赖源 / 网络",
+      "status": "open",
+      "follow_up": null,
+      "requires_follow_up": null,
+      "failing_tests": []
+    },
+    {
+      "workflow": "PR Check",
+      "job": "E2E quality gate",
+      "run_id": 46094658321,
+      "run_attempt": 2,
+      "run_url": "https://github.com/zhaokai-mgzn/migao/actions/runs/46094658321",
+      "pr": 9322,
+      "head_sha": "5dabaca775eda9f51b81e7512537fedca282e9ff",
+      "head_branch": "dependabot/npm_and_yarn/frontend/admin-web/testing-library/user-event-14.6.13",
+      "first_failure_step": "Install admin-web deps (for Playwright webServer)",
+      "rerun_result": "failure",
+      "kind": "infra_suspect",
+      "attempts": [
+        {
+          "attempt": 1,
+          "job": "E2E quality gate",
+          "step": "Install admin-web deps (for Playwright webServer)",
+          "assertion": null,
+          "timestamp": "2026-11-28T02:12:03Z"
+        },
+        {
+          "attempt": 2,
+          "job": "E2E quality gate",
+          "step": "Install admin-web deps (for Playwright webServer)",
+          "assertion": null,
+          "timestamp": "2026-11-28T05:00:36Z"
+        }
+      ],
+      "failed_at": "",
+      "rerun_at": "",
+      "failed_bucket": null,
+      "rerun_bucket": null,
+      "rerun_bucket_verdict": null,
+      "observed_at": "2026-11-28T05:05:40Z",
+      "reason": "失败落在「取代码 · 装依赖 · 配环境」步骤（或 job 从未跑起来）⇒ 环境/基础设施问题",
+      "remedy": "**先区分「环境抖动」与「确定性不可解析」**（#5088 实证：dependabot 的 `npm ERESOLVE` 两次尝试逐字同一个错误 ⇒ 是依赖冲突，不是环境抖动）：两次报错逐字相同 ⇒ 查依赖锁定 / peer 冲突；偶发一次 ⇒ runner 容量 / 依赖源 / 网络",
+      "status": "open",
+      "follow_up": null,
+      "requires_follow_up": null,
+      "failing_tests": []
+    },
+    {
+      "workflow": "PR Check",
+      "job": "admin-web typecheck + unit tests",
+      "run_id": 46094672069,
+      "run_attempt": 2,
+      "run_url": "https://github.com/zhaokai-mgzn/migao/actions/runs/46094672069",
+      "pr": 9323,
+      "head_sha": "31648cec09fbcb54ee0f24d3264afee3a9a57c70",
+      "head_branch": "dependabot/npm_and_yarn/frontend/admin-web/tailwind-merge-3.7.1",
+      "first_failure_step": "Install dependencies",
+      "rerun_result": "failure",
+      "kind": "infra_suspect",
+      "attempts": [
+        {
+          "attempt": 1,
+          "job": "admin-web typecheck + unit tests",
+          "step": "Install dependencies",
+          "assertion": null,
+          "timestamp": "2026-11-28T02:05:26Z"
+        },
+        {
+          "attempt": 2,
+          "job": "admin-web typecheck + unit tests",
+          "step": "Install dependencies",
+          "assertion": null,
+          "timestamp": "2026-11-28T05:00:25Z"
+        }
+      ],
+      "failed_at": "",
+      "rerun_at": "",
+      "failed_bucket": null,
+      "rerun_bucket": null,
+      "rerun_bucket_verdict": null,
+      "observed_at": "2026-11-28T05:08:00Z",
+      "reason": "失败落在「取代码 · 装依赖 · 配环境」步骤（或 job 从未跑起来）⇒ 环境/基础设施问题",
+      "remedy": "**先区分「环境抖动」与「确定性不可解析」**（#5088 实证：dependabot 的 `npm ERESOLVE` 两次尝试逐字同一个错误 ⇒ 是依赖冲突，不是环境抖动）：两次报错逐字相同 ⇒ 查依赖锁定 / peer 冲突；偶发一次 ⇒ runner 容量 / 依赖源 / 网络",
+      "status": "open",
+      "follow_up": null,
+      "requires_follow_up": null,
+      "failing_tests": []
+    },
+    {
+      "workflow": "PR Check",
+      "job": "admin-web unit tests (2/2)",
+      "run_id": 46094672069,
+      "run_attempt": 2,
+      "run_url": "https://github.com/zhaokai-mgzn/migao/actions/runs/46094672069",
+      "pr": 9323,
+      "head_sha": "31648cec09fbcb54ee0f24d3264afee3a9a57c70",
+      "head_branch": "dependabot/npm_and_yarn/frontend/admin-web/tailwind-merge-3.7.1",
+      "first_failure_step": "Install dependencies",
+      "rerun_result": "failure",
+      "kind": "infra_suspect",
+      "attempts": [
+        {
+          "attempt": 1,
+          "job": "admin-web unit tests (2/2)",
+          "step": "Install dependencies",
+          "assertion": null,
+          "timestamp": "2026-11-28T02:01:19Z"
+        },
+        {
+          "attempt": 2,
+          "job": "admin-web unit tests (2/2)",
+          "step": "Install dependencies",
+          "assertion": null,
+          "timestamp": "2026-11-28T05:00:25Z"
+        }
+      ],
+      "failed_at": "",
+      "rerun_at": "",
+      "failed_bucket": null,
+      "rerun_bucket": null,
+      "rerun_bucket_verdict": null,
+      "observed_at": "2026-11-28T05:08:00Z",
+      "reason": "失败落在「取代码 · 装依赖 · 配环境」步骤（或 job 从未跑起来）⇒ 环境/基础设施问题",
+      "remedy": "**先区分「环境抖动」与「确定性不可解析」**（#5088 实证：dependabot 的 `npm ERESOLVE` 两次尝试逐字同一个错误 ⇒ 是依赖冲突，不是环境抖动）：两次报错逐字相同 ⇒ 查依赖锁定 / peer 冲突；偶发一次 ⇒ runner 容量 / 依赖源 / 网络",
+      "status": "open",
+      "follow_up": null,
+      "requires_follow_up": null,
+      "failing_tests": []
+    },
+    {
+      "workflow": "PR Check",
+      "job": "E2E quality gate",
+      "run_id": 46094672069,
+      "run_attempt": 2,
+      "run_url": "https://github.com/zhaokai-mgzn/migao/actions/runs/46094672069",
+      "pr": 9323,
+      "head_sha": "31648cec09fbcb54ee0f24d3264afee3a9a57c70",
+      "head_branch": "dependabot/npm_and_yarn/frontend/admin-web/tailwind-merge-3.7.1",
+      "first_failure_step": "Install admin-web deps (for Playwright webServer)",
+      "rerun_result": "failure",
+      "kind": "infra_suspect",
+      "attempts": [
+        {
+          "attempt": 1,
+          "job": "E2E quality gate",
+          "step": "Install admin-web deps (for Playwright webServer)",
+          "assertion": null,
+          "timestamp": "2026-11-28T02:11:51Z"
+        },
+        {
+          "attempt": 2,
+          "job": "E2E quality gate",
+          "step": "Install admin-web deps (for Playwright webServer)",
+          "assertion": null,
+          "timestamp": "2026-11-28T05:00:26Z"
+        }
+      ],
+      "failed_at": "",
+      "rerun_at": "",
+      "failed_bucket": null,
+      "rerun_bucket": null,
+      "rerun_bucket_verdict": null,
+      "observed_at": "2026-11-28T05:08:00Z",
+      "reason": "失败落在「取代码 · 装依赖 · 配环境」步骤（或 job 从未跑起来）⇒ 环境/基础设施问题",
+      "remedy": "**先区分「环境抖动」与「确定性不可解析」**（#5088 实证：dependabot 的 `npm ERESOLVE` 两次尝试逐字同一个错误 ⇒ 是依赖冲突，不是环境抖动）：两次报错逐字相同 ⇒ 查依赖锁定 / peer 冲突；偶发一次 ⇒ runner 容量 / 依赖源 / 网络",
+      "status": "open",
+      "follow_up": null,
+      "requires_follow_up": null,
+      "failing_tests": []
+    },
+    {
+      "workflow": "PR Check",
+      "job": "admin-web typecheck + unit tests",
+      "run_id": 46094638892,
+      "run_attempt": 2,
+      "run_url": "https://github.com/zhaokai-mgzn/migao/actions/runs/46094638892",
+      "pr": 9320,
+      "head_sha": "343f08610eafc3729b96a2f3b54d99cc2e73bd4c",
+      "head_branch": "dependabot/npm_and_yarn/frontend/admin-web/autoprefixer-10.7.0",
+      "first_failure_step": "Install dependencies",
+      "rerun_result": "failure",
+      "kind": "infra_suspect",
+      "attempts": [
+        {
+          "attempt": 1,
+          "job": "admin-web typecheck + unit tests",
+          "step": "Install dependencies",
+          "assertion": null,
+          "timestamp": "2026-11-28T01:58:07Z"
+        },
+        {
+          "attempt": 2,
+          "job": "admin-web typecheck + unit tests",
+          "step": "Install dependencies",
+          "assertion": null,
+          "timestamp": "2026-11-28T05:00:48Z"
+        }
+      ],
+      "failed_at": "",
+      "rerun_at": "",
+      "failed_bucket": null,
+      "rerun_bucket": null,
+      "rerun_bucket_verdict": null,
+      "observed_at": "2026-11-28T05:08:35Z",
+      "reason": "失败落在「取代码 · 装依赖 · 配环境」步骤（或 job 从未跑起来）⇒ 环境/基础设施问题",
+      "remedy": "**先区分「环境抖动」与「确定性不可解析」**（#5088 实证：dependabot 的 `npm ERESOLVE` 两次尝试逐字同一个错误 ⇒ 是依赖冲突，不是环境抖动）：两次报错逐字相同 ⇒ 查依赖锁定 / peer 冲突；偶发一次 ⇒ runner 容量 / 依赖源 / 网络",
+      "status": "open",
+      "follow_up": null,
+      "requires_follow_up": null,
+      "failing_tests": []
+    },
+    {
+      "workflow": "PR Check",
+      "job": "admin-web unit tests (2/2)",
+      "run_id": 46094638892,
+      "run_attempt": 2,
+      "run_url": "https://github.com/zhaokai-mgzn/migao/actions/runs/46094638892",
+      "pr": 9320,
+      "head_sha": "343f08610eafc3729b96a2f3b54d99cc2e73bd4c",
+      "head_branch": "dependabot/npm_and_yarn/frontend/admin-web/autoprefixer-10.7.0",
+      "first_failure_step": "Install dependencies",
+      "rerun_result": "failure",
+      "kind": "infra_suspect",
+      "attempts": [
+        {
+          "attempt": 1,
+          "job": "admin-web unit tests (2/2)",
+          "step": "Install dependencies",
+          "assertion": null,
+          "timestamp": "2026-11-28T02:06:25Z"
+        },
+        {
+          "attempt": 2,
+          "job": "admin-web unit tests (2/2)",
+          "step": "Install dependencies",
+          "assertion": null,
+          "timestamp": "2026-11-28T05:00:49Z"
+        }
+      ],
+      "failed_at": "",
+      "rerun_at": "",
+      "failed_bucket": null,
+      "rerun_bucket": null,
+      "rerun_bucket_verdict": null,
+      "observed_at": "2026-11-28T05:08:35Z",
+      "reason": "失败落在「取代码 · 装依赖 · 配环境」步骤（或 job 从未跑起来）⇒ 环境/基础设施问题",
+      "remedy": "**先区分「环境抖动」与「确定性不可解析」**（#5088 实证：dependabot 的 `npm ERESOLVE` 两次尝试逐字同一个错误 ⇒ 是依赖冲突，不是环境抖动）：两次报错逐字相同 ⇒ 查依赖锁定 / peer 冲突；偶发一次 ⇒ runner 容量 / 依赖源 / 网络",
+      "status": "open",
+      "follow_up": null,
+      "requires_follow_up": null,
+      "failing_tests": []
+    },
+    {
+      "workflow": "PR Check",
+      "job": "E2E quality gate",
+      "run_id": 46094638892,
+      "run_attempt": 2,
+      "run_url": "https://github.com/zhaokai-mgzn/migao/actions/runs/46094638892",
+      "pr": 9320,
+      "head_sha": "343f08610eafc3729b96a2f3b54d99cc2e73bd4c",
+      "head_branch": "dependabot/npm_and_yarn/frontend/admin-web/autoprefixer-10.7.0",
+      "first_failure_step": "Install admin-web deps (for Playwright webServer)",
+      "rerun_result": "failure",
+      "kind": "infra_suspect",
+      "attempts": [
+        {
+          "attempt": 1,
+          "job": "E2E quality gate",
+          "step": "Install admin-web deps (for Playwright webServer)",
+          "assertion": null,
+          "timestamp": "2026-11-28T02:09:09Z"
+        },
+        {
+          "attempt": 2,
+          "job": "E2E quality gate",
+          "step": "Install admin-web deps (for Playwright webServer)",
+          "assertion": null,
+          "timestamp": "2026-11-28T05:00:59Z"
+        }
+      ],
+      "failed_at": "",
+      "rerun_at": "",
+      "failed_bucket": null,
+      "rerun_bucket": null,
+      "rerun_bucket_verdict": null,
+      "observed_at": "2026-11-28T05:08:35Z",
+      "reason": "失败落在「取代码 · 装依赖 · 配环境」步骤（或 job 从未跑起来）⇒ 环境/基础设施问题",
+      "remedy": "**先区分「环境抖动」与「确定性不可解析」**（#5088 实证：dependabot 的 `npm ERESOLVE` 两次尝试逐字同一个错误 ⇒ 是依赖冲突，不是环境抖动）：两次报错逐字相同 ⇒ 查依赖锁定 / peer 冲突；偶发一次 ⇒ runner 容量 / 依赖源 / 网络",
+      "status": "open",
+      "follow_up": null,
+      "requires_follow_up": null,
+      "failing_tests": []
     }
   ]
 }

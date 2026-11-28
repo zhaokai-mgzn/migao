@@ -37,6 +37,7 @@ class KfSyncWorkerTest {
     private KfSessionIngestService ingestService;
     private KfOutboxMapper outboxMapper;
     private KfMediaService mediaService;
+    private KfAiReplyLoop replyLoop;
     private KfSyncWorker worker;
 
     @BeforeEach
@@ -48,8 +49,9 @@ class KfSyncWorkerTest {
         ingestService = mock(KfSessionIngestService.class);
         outboxMapper = mock(KfOutboxMapper.class);
         mediaService = mock(KfMediaService.class);
+        replyLoop = mock(KfAiReplyLoop.class);
         worker = new KfSyncWorker(cursorMapper, channelMapper, tokenService, client, ingestService,
-                outboxMapper, mediaService, 300);
+                outboxMapper, mediaService, replyLoop, 300);
     }
 
     @Test
@@ -72,6 +74,64 @@ class KfSyncWorkerTest {
     }
 
     @Test
+    @DisplayName("新消息落库 ⇒ 触发 AI_REPLY 一跳（session/正文/状态全来自 ingest，issue #9302）")
+    void triggersAiReplyLoopForNewMessage() throws Exception {
+        when(cursorMapper.claimDue(any(), anyInt(), anyString()))
+                .thenReturn(List.of(KfSyncCursor.builder().tenantId(1L).openKfid("wk").cursor("c0").build()));
+        when(channelMapper.selectByOpenKfid("wk"))
+                .thenReturn(KfChannel.builder().tenantId(1L).openKfid("wk").corpId("corp").build());
+        when(tokenService.token(any(KfChannel.class))).thenReturn("tok");
+        when(client.syncMsg("tok", "wk", "c0", null, 100)).thenReturn(mapper.readTree("""
+                {"has_more":0,"next_cursor":"c1","msg_list":[
+                  {"origin":3,"msgid":"m1","external_userid":"wm","msgtype":"text","text":{"content":"多少钱"}}]}
+                """));
+        when(ingestService.ingest(eq(1L), eq("wk"), any(JsonNode.class)))
+                .thenReturn(new KfSessionIngestService.Ingested("s1", "多少钱", 0));
+
+        assertThat(worker.syncOnce()).isEqualTo(1);
+        verify(replyLoop).onCustomerMessage(1L, "s1", 0, "多少钱");
+    }
+
+    @Test
+    @DisplayName("重复消息（ingest 返回 null）⇒ 不触发 AI_REPLY 一跳（同一条消息不重复打扰客户）")
+    void skipsAiReplyLoopForDuplicateMessage() throws Exception {
+        when(cursorMapper.claimDue(any(), anyInt(), anyString()))
+                .thenReturn(List.of(KfSyncCursor.builder().tenantId(1L).openKfid("wk").cursor("c0").build()));
+        when(channelMapper.selectByOpenKfid("wk"))
+                .thenReturn(KfChannel.builder().tenantId(1L).openKfid("wk").corpId("corp").build());
+        when(tokenService.token(any(KfChannel.class))).thenReturn("tok");
+        when(client.syncMsg("tok", "wk", "c0", null, 100)).thenReturn(mapper.readTree("""
+                {"has_more":0,"next_cursor":"c1","msg_list":[
+                  {"origin":3,"msgid":"m1","external_userid":"wm","msgtype":"text","text":{"content":"多少钱"}}]}
+                """));
+        when(ingestService.ingest(eq(1L), eq("wk"), any(JsonNode.class))).thenReturn(null);
+
+        assertThat(worker.syncOnce()).isEqualTo(1);
+        verify(replyLoop, never()).onCustomerMessage(anyLong(), anyString(), anyInt(), anyString());
+    }
+
+    @Test
+    @DisplayName("AI_REPLY 一跳抛错 ⇒ 消息不回滚、游标照常前进（消息优先）")
+    void replyLoopFailureDoesNotBlockSync() throws Exception {
+        when(cursorMapper.claimDue(any(), anyInt(), anyString()))
+                .thenReturn(List.of(KfSyncCursor.builder().tenantId(1L).openKfid("wk").cursor("c0").build()));
+        when(channelMapper.selectByOpenKfid("wk"))
+                .thenReturn(KfChannel.builder().tenantId(1L).openKfid("wk").corpId("corp").build());
+        when(tokenService.token(any(KfChannel.class))).thenReturn("tok");
+        when(client.syncMsg("tok", "wk", "c0", null, 100)).thenReturn(mapper.readTree("""
+                {"has_more":0,"next_cursor":"c1","msg_list":[
+                  {"origin":3,"msgid":"m1","external_userid":"wm","msgtype":"text","text":{"content":"多少钱"}}]}
+                """));
+        when(ingestService.ingest(eq(1L), eq("wk"), any(JsonNode.class)))
+                .thenReturn(new KfSessionIngestService.Ingested("s1", "多少钱", 0));
+        doThrow(new IllegalStateException("回复一跳内部异常"))
+                .when(replyLoop).onCustomerMessage(1L, "s1", 0, "多少钱");
+
+        assertThat(worker.syncOnce()).isEqualTo(1);
+        verify(cursorMapper).clearDirty(1L, "wk", "c1");
+    }
+
+    @Test
     @DisplayName("图片消息落库后归档媒体（issue #9200）")
     void archivesMediaAfterIngest() throws Exception {
         when(cursorMapper.claimDue(any(), anyInt(), anyString()))
@@ -83,7 +143,8 @@ class KfSyncWorkerTest {
                 {"has_more":0,"next_cursor":"c1","msg_list":[
                   {"origin":3,"msgid":"m1","external_userid":"wm","msgtype":"image","image":{"media_id":"mid-1"}}]}
                 """));
-        when(ingestService.ingest(eq(1L), eq("wk"), any(JsonNode.class))).thenReturn(true);
+        when(ingestService.ingest(eq(1L), eq("wk"), any(JsonNode.class)))
+                .thenReturn(new KfSessionIngestService.Ingested("s1", "hi", 0));
 
         assertThat(worker.syncOnce()).isEqualTo(1);
         verify(mediaService).archiveInbound(1L, "wk", "mid-1", "tok");
@@ -101,7 +162,8 @@ class KfSyncWorkerTest {
                 {"has_more":0,"next_cursor":"c1","msg_list":[
                   {"origin":3,"msgid":"m1","external_userid":"wm","msgtype":"file","file":{"media_id":"mid-2"}}]}
                 """));
-        when(ingestService.ingest(eq(1L), eq("wk"), any(JsonNode.class))).thenReturn(true);
+        when(ingestService.ingest(eq(1L), eq("wk"), any(JsonNode.class)))
+                .thenReturn(new KfSessionIngestService.Ingested("s1", "hi", 0));
         doThrow(new KfMediaException("媒体下载失败"))
                 .when(mediaService).archiveInbound(1L, "wk", "mid-2", "tok");
 

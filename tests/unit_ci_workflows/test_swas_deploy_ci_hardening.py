@@ -924,7 +924,12 @@ def check_reconcile_drift_criterion(text: str) -> None:
 
 
 # 逐服务调用的形态：`reconcile_one <svc> <deploy workflow> <代码路径> <排除项或 "">`
-RECONCILE_CALL = re.compile(r'^reconcile_one\s+(\S+)\s+(\S+)\s+(\S+)\s+(?:"([^"]*)"|(\S+))\s*$', re.M)
+# ⚠️ 行尾允许一个**逐腿兜底**子句（`|| watchdog_abort <腿> <状态> "<原因>"`，issue #9310：
+#    一条腿失败**只中止它自己**，不许打死整步）。它**不是**新的参数位 ⇒ 解析仍只取前 4 个参数；
+#    兜底子句里的腿名用**反向引用**约束成同一个 `$1`（抄错一条腿 ⇒ 这里直接红，不是静默容忍）。
+RECONCILE_CALL = re.compile(
+    r'^reconcile_one\s+(\S+)\s+(\S+)\s+(\S+)\s+(?:"([^"]*)"|(\S+))'
+    r'(?:\s*\|\|\s*watchdog_abort\s+\1\s+\w+\s+"[^"]*")?\s*$', re.M)
 
 
 def parse_reconcile_calls(text: str) -> dict:

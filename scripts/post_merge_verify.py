@@ -58,10 +58,16 @@
   写成仓库相对全路径**（或写成 `REPO / "a" / "b"` 这类可静态解析的链）。否则本腿**看不见**它
   —— 因此 `--list-only` 会打印「**未命中（无判据引用）**」清单：看不见 ≠ 没问题，它每次都会出声。
 
-## 三态退出码（`3` = 无法判定，**不得当** `0` 读）
+## 四态退出码（`3` = 无法判定、`4` = **报告产出失败**，两个都**不得当** `0` 读）
 
-`0` = 选中判据全绿（含**零动作**）；`1` = 有判据判红；`3` = 无法判定（git 不可用 / 窗口不可解析 /
-pytest 不可运行）。零动作**必须出声**（§23 G6）：打印「零动作 + 原因」并 exit 0。
+`0` = 选中判据全绿（含**零动作**）；`1` = **有判据判红**（报告在）；
+`3` = 无法判定（git 不可用 / 窗口不可解析 / pytest 不可运行）；
+`4` = **报告产出失败**（判定本体崩了 / 报告写不出去 / 声明的上限不足 ⇒ 本轮**没有结论**）。
+
+🔴 `1` 与 `4` **必须分开**（issue #9324）：共用 `1` 时读者无法区分「**某条判据红了**」与
+「**本腿根本没跑出报告**」。实测 run `46098235161`：承接单只写 `(报告缺失 —— 见本 run 的
+step summary)`，而那轮真凶是**漂移兜底步**（判定步被 skip）—— 红的对象与报的对象不是同一个，
+这就是「不可归因」的本体。零动作**必须出声**（§23 G6）：打印「零动作 + 原因」并 exit 0。
 
 ## 读数（§23 G8：禁挂钟当判据）
 
@@ -93,6 +99,7 @@ import os
 import re
 import subprocess
 import sys
+import traceback
 import warnings
 from pathlib import Path
 
@@ -113,6 +120,16 @@ PARALLEL_WORKERS = 4
 #: 缺 xdist 时的**出声**降级说明（不静默慢回去；装它由 workflow 的 Install deps 步负责）。
 XDIST_MISSING_NOTE = (f"⚠️ 没有 pytest-xdist ⇒ 退回**串行**跑（本腿可能因此撞上限被 SIGTERM，issue #6312）："
                       f"装它 = workflow 的 Install deps 步（`pip install pytest-xdist`）")
+
+# ── 退出码（**四态**；issue #9324：「没跑出报告」不许与「有判据红了」共用一个码）──────────
+EXIT_PASS = 0
+#: 有判据判红（报告**在**，失败清单可 grep）。
+EXIT_CRITERIA_RED = 1
+#: 无法判定（git / 窗口 / pytest 不可用）—— 不得当 `0` 读。
+EXIT_UNDECIDABLE = 3
+#: **报告产出失败**（判定本体崩溃 / 报告写不出去 / 声明上限不足）—— 本轮**没有结论**。
+#: 与 `EXIT_CRITERIA_RED` 分开的理由见模块 docstring「四态退出码」。
+EXIT_REPORT_FAILURE = 4
 
 # ── 上限的**派生式**（issue #6312）────────────────────────────────────────────────────
 # 口径：上限不许是口味 —— 它 = 本腿**自己的工作量的上界**。工作量的口径是结构性的：本腿在**一个**
@@ -479,6 +496,31 @@ def render(report: dict) -> str:
     return "\n".join(lines)
 
 
+def write_report_failure(args: argparse.Namespace, rc: int, kind: str, detail: str,
+                         tb: str = "") -> None:
+    """「报告产出失败」也要落**机器可读产物**（缺产物 = 又一种「与没跑不可区分」）。
+
+    ⚠️ 本函数处在**失败路径**上：它自己**绝不许**再抛（写不进去就只打一行 warning，
+    因为此刻已经没有任何兜底面了）。
+    """
+    if not getattr(args, "json", None):
+        return
+    payload = {
+        "report_failure": {
+            "exit_code": rc,
+            "kind": kind,
+            "error": detail[-4000:],
+            "traceback": tb[-8000:],
+            # 读者拿到报告时要能**自己复算**（§23 G1「可复制命令」）—— 窗口起点由调用方补。
+            "recompute": "python3 scripts/post_merge_verify.py --base <窗口起点> --head <跑红时的 sha>",
+        }
+    }
+    try:
+        args.json.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    except OSError as exc:  # noqa: BLE001 —— 失败路径的失败只许降级，不许再崩
+        print(f"::warning::报告产出失败时连失败产物都写不进去（{exc}）", file=sys.stderr)
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="合并后 main 侧守护腿（定向跑判据面）")
     ap.add_argument("--repo", type=Path, default=None, help="仓库根（默认 = 本脚本的上一级）")
@@ -492,19 +534,41 @@ def main(argv: list[str] | None = None) -> int:
 
     # ── 运行期自证：本腿自己声明的上限必须 ≥ 它自己的工作量上界（issue #6312）──────────────
     # workflow 的判定步经 `MIGAO_JOB_TIMEOUT_MINUTES` 把**job 那一行**传进来 ⇒ 两边不可能各说各话。
+    # ⚠️ 这一支**在出结论之前**就退出 ⇒ 它属 `EXIT_REPORT_FAILURE`（报告产出失败），**不是** `1`：
+    #    读者按「哪条判据红了」去排查一条**根本没跑**的腿，正是 issue #9324 的形态。
     problem = _check_declared_timeout()
     if problem:
-        print(f"❌ {problem}", file=sys.stderr)
-        return 1
+        print(f"❌ 报告产出失败（rc={EXIT_REPORT_FAILURE}）：{problem}", file=sys.stderr)
+        print(f"   这与「有判据判红」（rc={EXIT_CRITERIA_RED}）**不是同一件事**：本腿连结论都产不出来。",
+              file=sys.stderr)
+        write_report_failure(args, EXIT_REPORT_FAILURE, "declared-timeout", problem)
+        return EXIT_REPORT_FAILURE
 
-    repo = (args.repo or Path(__file__).resolve().parents[1]).resolve()
     try:
-        base, head, span, base_source = _window(repo, args.base, args.head, args.lookback)
-        changed = _changed_files(repo, base, head)
-        criteria = collect_criteria(repo)
+        return _judge(args)
     except Undecidable as exc:
-        print(f"❌ 无法判定：{exc}", file=sys.stderr)
-        return 3
+        print(f"❌ 无法判定（rc={EXIT_UNDECIDABLE}）：{exc}", file=sys.stderr)
+        write_report_failure(args, EXIT_UNDECIDABLE, "undecidable", str(exc))
+        return EXIT_UNDECIDABLE
+    except Exception as exc:  # noqa: BLE001 —— **兜底就是本单的判据**：未捕获异常原本会以 rc=1 冒充「有判据红了」
+        tb = traceback.format_exc()
+        detail = f"{type(exc).__name__}: {exc}"
+        print(f"❌ 报告产出失败（rc={EXIT_REPORT_FAILURE}）：{detail}", file=sys.stderr)
+        print(f"   这与「有判据判红」（rc={EXIT_CRITERIA_RED}）**不是同一件事**：本腿**没跑完** ⇒ "
+              "报告不存在 / 不完整；排查方向 = 下方崩溃点，不是「哪条判据红了」。", file=sys.stderr)
+        print("   复算：python3 scripts/post_merge_verify.py --base <窗口起点> --head <跑红时的 sha>",
+              file=sys.stderr)
+        print(tb, file=sys.stderr)
+        write_report_failure(args, EXIT_REPORT_FAILURE, "crash", detail, tb)
+        return EXIT_REPORT_FAILURE
+
+
+def _judge(args: argparse.Namespace) -> int:
+    """判定本体（`main()` 的受控部分：任何异常都由 `main()` 归到 `EXIT_REPORT_FAILURE`）。"""
+    repo = (args.repo or Path(__file__).resolve().parents[1]).resolve()
+    base, head, span, base_source = _window(repo, args.base, args.head, args.lookback)
+    changed = _changed_files(repo, base, head)
+    criteria = collect_criteria(repo)
 
     selected, unmatched = select(changed, criteria)
     report: dict = {
@@ -541,13 +605,15 @@ def main(argv: list[str] | None = None) -> int:
 
     print(render(report))
     if args.json:
+        # ⚠️ 这里**故意不吞**写盘异常：写不出去 ⇒ 下游（workflow / 承接单 / artifact）拿到的是
+        #    「报告不存在」，必须落 `EXIT_REPORT_FAILURE`（由 `main()` 的兜底给码），而不是悄悄 rc=0。
         args.json.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
 
     if report["undecidable"]:
-        return 3
+        return EXIT_UNDECIDABLE
     if args.list_only or report["zero_action"]:
-        return 0
-    return 0 if report["rc"] == 0 else 1
+        return EXIT_PASS
+    return EXIT_PASS if report["rc"] == 0 else EXIT_CRITERIA_RED
 
 
 if __name__ == "__main__":

@@ -5,6 +5,8 @@
 # 用法（在被 source 的 shell 里，取 `$0` = 那份 workflow 文件）：
 #   source scripts/deploy_reconcile_state.sh
 #   watchdog_note <腿> <状态> <依据>            # 每条腿**至少**调一次（整行替换，不追加）
+#   watchdog_abort <腿> ratelimited|aborted <原因>   # 单腿失败**只中止它自己**（issue #9310）
+#   watchdog_is_ratelimited <rc> <输出>         # 限流识别面（rc≠0 **且** 输出含 rate limit/403）
 #
 # ## 病（现取读数，不是推断）
 # run `36911070357`（2026-10-01T19:00:20Z，main HEAD `3fa84ab`）的对账步**六条腿全部**报
@@ -97,6 +99,58 @@ watchdog_note() {
   return 0
 }
 
+# ── 单腿中止（issue #9310）：`ratelimited` / `aborted` 两态 —— **一条腿失败不许打死整步** ──────
+# 病（现取读数）：run `46094064167` 的 `Reconcile and dispatch missing deploys` 步是 `set -euo pipefail`，
+# 而循环里的 `gh workflow run` 被 **HTTP 403 installation rate limit** 打掉 ⇒ **整步在第 1 条腿退出**
+# ⇒ 后 4 条腿的种子位仍是 `unrecorded` ⇒ 值守面 fail-closed 报「5 条腿读不到对账状态（机制故障）」。
+# ⇒ 逐腿兜底：一条腿失败**只中止它自己**，且**必须落一个具名状态**（再也不许留 `unrecorded` 当结论）。
+#
+# 识别面（**只有这两条**；未覆盖的情形落 `aborted`，**不是** `ratelimited`）：
+#   退出码非 0 **且** 输出含 `rate limit` / `Rate limit` / `RATE_LIMIT` / `rate-limit` **或** `403`。
+# 为什么是双判据（而不是只认退出码 / 只认文案）：gh 的 stderr 文案**不稳定**（版本 / 语言 /
+# primary vs secondary rate limit）；只认退出码会把「凡 dispatch 失败都叫限流」—— 那会让**真机制故障**
+# 静默落进「本轮被限流」，比原缺陷更糟。
+watchdog_is_ratelimited() {   # $1=退出码 $2=输出（stdout+stderr）⇒ 0=限流
+  [ "${1:-0}" != "0" ] || return 1
+  case "${2:-}" in
+    *"rate limit"* | *"Rate limit"* | *"RATE_LIMIT"* | *"rate-limit"* | *403*) return 0 ;;
+  esac
+  return 1
+}
+
+# 落「这条腿本轮被中止」+ **出声**（限流与真失败都必须有人看得见，**不许静默**）。
+# ⚠️ 只在**还没落过状态**（仍是种子 `unrecorded`）时写：具名状态（`ratelimited` / `aborted`）不许被
+#    调用处的兜底覆盖（否则「限流」会被改写成「其它失败」，两个桶当场互相污染）。
+watchdog_abort() {   # $1=腿 $2=状态（ratelimited|aborted）$3=原因
+  local st="${2:-aborted}" why="${3:-本轮未对账}" cur
+  # 原因会进 TSV 的**一列** ⇒ 换行 / 制表符必须折平（否则一条腿变成两行，下游读到错的行）
+  why="${why//$'\n'/ }" why="${why//$'\t'/ }" why="${why:0:300}"
+  cur="$(awk -F'\t' -v s="$1" '$1 == s { print $2; exit }' "$WATCHDOG_STATE" 2>/dev/null || true)"
+  if [ -n "$cur" ] && [ "$cur" != "unrecorded" ]; then return 0; fi
+  echo "::warning::$1：本轮未对账（${st}）——${why}"
+  echo "| $1 | ⚠️ 本轮未对账（\`${st}\`） | **不补**（${why}） |" >> "${SUMMARY:-/dev/null}"
+  watchdog_note "$1" "$st" "$why"
+  return 0
+}
+
+# 派一次补部署；失败**只中止这一条腿**（issue #9310），并把桶计数加到调用方的全局。
+# 返回 0 = 派出去了 / 1 = 已落中止态（调用方 `|| return 0` 收下，接着跑**下一条腿**）。
+# ⚠️ 成败**必须显式判 rc**，不能靠 `set -e`：本函数在调用处 `|| 兜底` 的**条件位**上运行，
+#    bash 会把 `-e` 在整个函数体内抑制（实测）⇒ 裸命令失败会继续往后走、把这条腿误记成 `dispatched`。
+watchdog_dispatch() {   # $1=腿 $2=workflow
+  local wf_out wf_rc
+  wf_out="$(gh workflow run "$2" --ref main --repo "${GITHUB_REPOSITORY:-}" 2>&1)" && wf_rc=0 || wf_rc=$?
+  [ "$wf_rc" = "0" ] && return 0
+  if watchdog_is_ratelimited "$wf_rc" "$wf_out"; then
+    watchdog_abort "$1" ratelimited "gh workflow run 被限流（rc=${wf_rc}）：${wf_out}"
+    RATELIMITED=$((${RATELIMITED:-0} + 1))
+  else
+    watchdog_abort "$1" aborted "gh workflow run 失败（rc=${wf_rc}，非限流）：${wf_out}"
+    ABORTED=$((${ABORTED:-0} + 1))
+  fi
+  return 1
+}
+
 # ── 判据 1 / 2（issue #5935）：「落状态」本身有判据 + 零动作必须归因 ─────────────────────
 # `seen=6 acted=0` 且原因桶全 0 之所以出现过（run `36911070357`），是因为**状态落了、但落的是错的**
 # （六条腿 100% 命中同一条坏分支）—— 形态学判据看不见「落了错的状态」。⇒ 读**状态文件的实际内容**：
@@ -104,18 +158,43 @@ watchdog_note() {
 # 不许把「缺状态」甩给下游 fail-closed 兜（判据 1）；具名清单同时进存活读数（判据 2）。
 watchdog_missing() {   # 把「没落状态」的腿具名写进两个全局（调用方用 $MISS / $MISS_COUNT）
   # ⚠️ 判据面**只**是 `unrecorded`（种子位没被替换）与空：`notarget` / `deployed` / `inflight` /
-  # `terminal` / `dispatched` 都是**已落**的合法状态 ⇒ 一条腿只要落过其中任一条就不算「没落」。
+  # `terminal` / `dispatched` / `ratelimited` / `aborted` 都是**已落**的合法状态 ⇒ 一条腿只要落过其中
+  # 任一条就不算「没落」（`ratelimited` 另有单列 RATE：它不是机制故障，见下面那段）。
   # （把 `notarget` 也算成机制故障 = 让「新增腿的那个 PR」每轮判红 —— 那是 #5929 明确避开的噪声。）
   MISS="$(awk -F'\t' '$2 == "unrecorded" || $2 == "" { printf "%s ", $1 }' "$WATCHDOG_STATE" 2>/dev/null || true)"
   MISS="${MISS% }"; MISS_COUNT=0; for _m in $MISS; do MISS_COUNT=$((MISS_COUNT + 1)); done
+  # 被限流的腿（issue #9310）：`ratelimited` 是**已落**的合法态（「本轮没对账成功」≠「状态机没记它」）
+  # ⇒ **不算机制故障**，但**必须出声**（`::warning::` + summary 行）—— 静默的「本轮没对账」会被读成「没事」。
+  # 判据 = tests/unit_ci_workflows/test_deploy_watchdog.py::test_all_legs_rate_limited_is_not_mechanism_failure_but_is_loud
+  RATE="$(awk -F'\t' '$2 == "ratelimited" { printf "%s ", $1 }' "$WATCHDOG_STATE" 2>/dev/null || true)"
+  RATE="${RATE% }"; RATE_COUNT=0; for _m in $RATE; do RATE_COUNT=$((RATE_COUNT + 1)); done
+  if [ "$RATE_COUNT" -gt 0 ] && [ -z "${RATE_WARNED:-}" ]; then
+    RATE_WARNED=1
+    echo "::warning::本轮被限流：${RATE_COUNT} 条腿未对账（**非机制故障**）——${RATE}；下一轮对账会自然重试"
+    echo "| — | ⚠️ 本轮被限流，未对账 | 🔶 \`${RATE}\`（**非机制故障**：本轮没对账成功，不是状态机没记它） |" >> "${SUMMARY:-/dev/null}"
+  fi
 }
 # 对账步的**最后一道闸**：任一腿**没落状态**（= 种子位 `unrecorded` 没被替换）⇒ 本步判红
 # （退出码 3）并**具名到腿** —— 判据 1：不许把「缺状态」甩给下游 fail-closed 兜。
 # 调用点在对账步正文里、**存活读数之后** —— 先让读数（含具名清单）出去，再判红。
 watchdog_missing_gate() {
   watchdog_missing
-  [ "$MISS_COUNT" -gt 0 ] || return 0
-  echo "::error::对账步没为 ${MISS_COUNT} 条腿落状态：${MISS}（机制故障，具名到腿）"
-  echo "| — | ⚠️ 对账状态缺失 | 🔴 \`${MISS}\`（机制故障，具名到腿） |" >> "${SUMMARY:-/dev/null}"
-  return 3
+  local rc=0
+  if [ "$MISS_COUNT" -gt 0 ]; then
+    echo "::error::对账步没为 ${MISS_COUNT} 条腿落状态：${MISS}（机制故障，具名到腿）"
+    echo "| — | ⚠️ 对账状态缺失 | 🔴 \`${MISS}\`（机制故障，具名到腿） |" >> "${SUMMARY:-/dev/null}"
+    rc=3
+  fi
+  # 对账**中止**（`aborted`，**非**限流）⇒ 这条腿判不了 ⇒ 与本函数上面那类同属机制故障
+  # （issue #9310）：逐腿兜底让**其它腿照样跑完**，但本步**最终仍必须判红** ——
+  # 兜底治的是「一条腿不许打死整步」，**不是**「失败可以被放过」（fail-closed 只细化分类，不放宽）。
+  ABORTED_LEGS="$(awk -F'\t' '$2 == "aborted" { printf "%s ", $1 }' "$WATCHDOG_STATE" 2>/dev/null || true)"
+  ABORTED_LEGS="${ABORTED_LEGS% }"; ABORTED_COUNT=0
+  for _m in $ABORTED_LEGS; do ABORTED_COUNT=$((ABORTED_COUNT + 1)); done
+  if [ "$ABORTED_COUNT" -gt 0 ]; then
+    echo "::error::对账步有 ${ABORTED_COUNT} 条腿**中止**（aborted，非限流）：${ABORTED_LEGS}（机制故障，具名到腿）"
+    echo "| — | ⚠️ 对账中止 | 🔴 \`${ABORTED_LEGS}\`（机制故障：非限流的失败，具名到腿） |" >> "${SUMMARY:-/dev/null}"
+    rc=3
+  fi
+  return "$rc"
 }

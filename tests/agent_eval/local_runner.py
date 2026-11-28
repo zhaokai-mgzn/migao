@@ -2996,23 +2996,34 @@ def check_order_before(results: list, order_before: list) -> list:
 def confirm_card_content_key(args: dict) -> str:
     """confirm 卡的**内容键**（判"同一张卡"用事实，不用措辞）。
 
-    与运行时守卫同源语义（`interact` 的 confirmValue 已由字段事实确定性派生，issue #3406）：
-    同样的事实 ⇒ 同一个键 —— 换措辞/换标题不算新卡；事实变了（改数量 3→4）⇒ 新键。
-    为什么判定层也要这样（issue #3412 实证）：旧实现按 **title** 计数，
+    **事实源 = `fields`（`label=value` 排序集合）；`confirmValue` 只是无字段卡的兜底。**
+
+    ⚠️ **不能优先用 `confirmValue`**（issue #9280 实证，OR-022 run 46086496186）：
+    它是**模型写的措辞** —— `interact` 是在**工具层执行时**才用
+    `confirm_value_for_fields(fields)` 的派生值把它覆盖掉（`app/tools/interact.py` 的
+    confirm 分支），而落进 trace 的 `tool_calls[].args` **永远是覆盖前的原值**。
+    订单确认卡的措辞高度收敛 ⇒ 实测三张事实**各不相同**的卡（`fields` 项数与内容各不相同、
+    7~9 项；顾客点卡回传的派生值也各不相同）在 args 里全是「确认下单」⇒ 塌成同一个键 ⇒
+    被判"同样的事实 ×3"**假红**，而运行时从头到尾按**不同的派生值**在判定。
+    判据的刻度必须与运行时刻度一致：运行时按 `fields` 派生值判定，判据也必须按 `fields` 计。
+    （权威派生实现单点 = `backend/ai-agent-service/app/tools/confirm_value.py`；判定侧
+    不 import 服务端代码，只复刻同一刻度 —— `label=value` 排序集合。）
+
+    为什么判定层要按内容而不是标题（issue #3412 实证）：旧实现按 **title** 计数，
       · OR-019「中途改数量」在 R4(3米) / R6(4米) / R7(4米) 三张卡 → 标题相同被当成"死循环"**假红**，
         而其中两张是同一批事实的确认、另一张是顾客**改了数量**后的合法重新确认；
       · 反过来，换个措辞重发的同一批事实又会**漏判**。
     """
     if not isinstance(args, dict):
         return ""
-    cv = str(args.get("confirmValue") or "").strip()
-    if cv:
-        return cv
     facts = []
     for f in args.get("fields") or []:
         if isinstance(f, dict):
             facts.append(f"{f.get('label') or ''}={f.get('value') or ''}")
-    return "；".join(sorted(facts))
+    if facts:
+        return "；".join(sorted(facts))
+    # 无字段卡（历史形态 / 空字段的 interact 尝试）才退回模型措辞；仍空 ⇒ 调用方按标题近似
+    return str(args.get("confirmValue") or "").strip()
 
 
 def _confirm_card_excerpt(args: dict, rnd) -> str:
@@ -3021,22 +3032,26 @@ def _confirm_card_excerpt(args: dict, rnd) -> str:
     附在失败信息里，使「同样的事实 ×N」可逐卡核对 —— 只报轮次/标题却看不到卡内容，
     复核者无法独立判定（实测 run 34916256903 的 PR-016 红证：trace 里 R5 用户输入
     已变，判"同样的事实"只能靠猜）。
+
+    ⚠️ `confirmValue` 在场时**也必须打印 `fields`**（issue #9280）：`confirmValue` 是**模型
+    措辞**（工具层执行时会被字段派生值覆盖），只打它会让复核者把"三张卡都写了「确认下单」"
+    读成"三张卡事实相同" —— OR-022 的归因正是这样被误导的（真实三张卡 fields 各不相同）。
+    **事实在 `fields` 里**，摘要必须带着它。
     """
     a = args or {}
     parts = [f"R{rnd}"]
     if a.get("title"):
         parts.append(f"title={a.get('title')}")
-    cv = str(a.get("confirmValue") or "").strip()
-    if cv:
-        parts.append(f"confirmValue={cv[:80]}")
-        return " ".join(parts)
     fields = []
     for f in a.get("fields") or []:
         if isinstance(f, dict):
             fields.append(f"{f.get('label') or ''}={f.get('value') or ''}")
+    cv = str(a.get("confirmValue") or "").strip()
+    if cv:
+        parts.append(f"confirmValue={cv[:40]}")
     if fields:
-        parts.append("fields=" + "；".join(fields)[:120])
-    else:
+        parts.append("fields=" + "；".join(sorted(fields))[:160])
+    elif not cv:
         parts.append("(无 confirmValue/fields —— 事实不可判)")
     return " ".join(parts)
 
@@ -3048,10 +3063,12 @@ def check_confirm_loop(results: list, limit: int = 3) -> list:
     >=3 次 = 死循环。**按内容而非标题**计数（issue #3412，见 `confirm_card_content_key`）。
 
     **「同事实」的判据**（盲审缺陷四要求写清楚）：事实键 = `confirm_card_content_key`
-    —— confirmValue（与字段事实确定性同源，issue #3406），或 fields 的 `label=value`
-    排序集合。两卡事实键相同 = 同一批事实（换措辞/换标题不算新卡）；事实键不同 = 不同事实
+    —— **fields 的 `label=value` 排序集合**（与运行时 `confirm_value_for_fields` **同刻度**，
+    issue #9280），只有无字段卡才退回 confirmValue。两卡事实键相同 = 同一批事实
+    （换措辞/换标题不算新卡）；事实键不同 = 不同事实
     （OR-019 实证：改数量 3→4 的三张卡标题相同、事实键不同，其中一张是合法重新确认 ⇒
-    不判死循环 —— 这就是 #3412 修掉的按标题计数假红）。
+    不判死循环 —— 这就是 #3412 修掉的按标题计数假红。**OR-022 实证**：三张卡措辞都是
+    「确认下单」但 fields 各不相同 ⇒ 事实键不同 ⇒ 不判死循环，issue #9280）。
     **confirmValue 与 fields 皆空（无内容卡）⇒ 退回按标题计数**（历史契约，见
     `backend/ai-agent-service/tests/test_acceptance_case_checks.py::TestConfirmLoop`
     「同标题 confirm 卡 >=3 次未收敛」）：无内容的两张卡无法区分事实，**宁可拦下

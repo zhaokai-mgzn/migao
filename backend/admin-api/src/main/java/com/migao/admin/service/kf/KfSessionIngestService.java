@@ -5,6 +5,7 @@ import com.migao.admin.config.TenantContext;
 import com.migao.admin.entity.KfSessionRemote;
 import com.migao.admin.entity.Session;
 import com.migao.admin.entity.SessionMessage;
+import com.migao.admin.mapper.KfSendBudgetMapper;
 import com.migao.admin.mapper.KfSessionRemoteMapper;
 import com.migao.admin.mapper.SessionMapper;
 import com.migao.admin.mapper.SessionMessageMapper;
@@ -34,23 +35,33 @@ public class KfSessionIngestService {
     private final SessionMapper sessionMapper;
     private final SessionMessageMapper sessionMessageMapper;
     private final KfSessionRemoteMapper remoteMapper;
+    private final KfSendBudgetMapper budgetMapper;
 
-    /** @return true = 新消息已落库；false = 重复/忽略 */
-    public boolean ingest(Long tenantId, String openKfid, JsonNode msg) {
+    /**
+     * 已落库的客户消息 —— {@code AI_REPLY} 一跳（issue #9302）的入参。
+     *
+     * <p>{@code state} 取自本方法已加载的 {@code kf_session_remote.state}（新建段恒 0），
+     * 避免判定前再查一次库。</p>
+     */
+    public record Ingested(String sessionId, String text, int state) {
+    }
+
+    /** @return 新消息（含会话/正文/状态）；重复 / 忽略 / 非客户消息 ⇒ {@code null} */
+    public Ingested ingest(Long tenantId, String openKfid, JsonNode msg) {
         if (msg.path("origin").asInt(0) != 3) {
-            return false;
+            return null;
         }
         String externalUserid = msg.path("external_userid").asText("");
         String msgid = msg.path("msgid").asText("");
         if (externalUserid.isBlank() || msgid.isBlank()) {
-            return false;
+            return null;
         }
         TenantContext.setTenantId(tenantId);
         try {
             KfSessionRemote remote = remoteMapper.selectCurrent(tenantId, openKfid, externalUserid);
             String sessionId = remote != null ? remote.getSessionId() : createSession(tenantId, openKfid, externalUserid);
             if (sessionId == null) {
-                return false;
+                return null;
             }
 
             Map<String, Object> meta = new LinkedHashMap<>();
@@ -71,12 +82,29 @@ public class KfSessionIngestService {
             try {
                 sessionMessageMapper.insert(message);
             } catch (DuplicateKeyException e) {
-                return false;
+                return null;
             }
             remoteMapper.touch(sessionId);
-            return true;
+            resetBudgetWindow(sessionId, tenantId);
+            int state = remote == null || remote.getState() == null ? 0 : remote.getState();
+            return new Ingested(sessionId, message.getContent(), state);
         } finally {
             TenantContext.clear();
+        }
+    }
+
+    /**
+     * 客户新消息 ⇒ 预算窗口重置（issue #9302）：窗口起点 = <b>客户最后一条消息</b>。
+     *
+     * <p>失败<b>只记日志</b>：消息已经落库，不能因为预算表写失败把收下的消息判成失败（消息优先）；
+     * 代价是该会话可能少一次额度（退回旧行为），绝不会多发。</p>
+     */
+    private void resetBudgetWindow(String sessionId, Long tenantId) {
+        try {
+            budgetMapper.resetWindow(sessionId, tenantId);
+        } catch (RuntimeException e) {
+            log.warn("[kf-ingest] 预算窗口重置失败（消息已落库）session={} err={}",
+                    sessionId, e.getMessage());
         }
     }
 

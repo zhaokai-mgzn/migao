@@ -18,7 +18,7 @@
  * | # | 判据 | 断言 |
  * |---|---|---|
  * | 1 | **同页填充不改 URL、不落日志** | 静态扫描：`agent-page-fill.ts` 与 store 的 `page_fill` 分支里没有 `location` / `history` / `localStorage` / `sessionStorage` / `console.` / `URLSearchParams`（+ 扫描器判别力红证） |
- * | 2 | **来源标注可区分** | `[米宝解读]` ≠ `[图片识别]`；两侧各自只收自己来源的格子 |
+ * | 2 | **来源标注可区分** | `[黄金策解读]` ≠ `[图片识别]`；两侧各自只收自己来源的格子 |
  * | 3 | **歧义给候选不擅自填** | 歧义格（`value: null` + `candidates`）**两侧都不收** ⇒ 一个格子都填不进去 |
  * | 5 | 🔴 **页面快通道仍独立可用** | 快通道两个文件**零引用**深通道（防后人把两个入口耦合成一条） |
  */
@@ -92,7 +92,7 @@ const PRODUCT_PLAN: PageFillPlan = {
 
 describe('判据 2 · 来源标注可区分', () => {
   it('「解读」标记与「识别」标记是两个不同的串（同值 = 商家无从判断该信哪一格）', () => {
-    expect(PAGE_FILL_SOURCE_INTERPRETED).toBe('[米宝解读]')
+    expect(PAGE_FILL_SOURCE_INTERPRETED).toBe('[黄金策解读]')
     expect(RECOGNIZE_SOURCE_TAG).toBe('[图片识别]')
     expect(PAGE_FILL_SOURCE_INTERPRETED).not.toBe(RECOGNIZE_SOURCE_TAG)
   })
@@ -224,7 +224,7 @@ const DEEP_CHANNEL_TOKENS = [
   'emitPageFill',
   'subscribePageFill',
   'store/chat',
-  '米宝解读',
+  '黄金策解读',
 ]
 
 function deepRefs(src: string): string[] {

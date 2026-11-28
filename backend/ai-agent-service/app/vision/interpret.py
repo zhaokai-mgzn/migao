@@ -87,7 +87,7 @@ async def interpret_page_fill(
     # ⚠️ 这里**保持**「识别失败 / 一格都没认出来 ⇒ 降级不推理」的原口径（issue #6367 判据 4）：
     # 在**零命中**的空基底上让黄金策开写，等于凭空生成「商品名 + 描述」（没有任何图上锚点）。
     # 真跑里正常路径不是这个形态：色卡图至少能认出色号（`color`）⇒ 非零命中 ⇒ 照常推理，
-    # `name` / `description` 由 `[米宝解读]` 给（issue #6386）。
+    # `name` / `description` 由 `[黄金策解读]` 给（issue #6386）。
     if result.get("degraded") or not any(f.get("value") for f in fields):
         return _degraded(target_type)
 
