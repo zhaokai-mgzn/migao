@@ -22,4 +22,20 @@ class KfSendBudgetMapperTest {
                 .contains("kf_send_budget.used < 5");
         assertThat(m.getAnnotation(InterceptorIgnore.class).tenantLine()).isEqualTo("true");
     }
+
+    @Test
+    @DisplayName("客户新消息 ⇒ 预算窗口重置（used=0 / window_start=NOW()），used<5 硬上限不许放宽")
+    void resetWindowOnInboundMessage() throws Exception {
+        Method m = KfSendBudgetMapper.class.getMethod("resetWindow", String.class, Long.class);
+        String sql = String.join(" ", m.getAnnotation(Insert.class).value());
+        assertThat(sql).contains("ON CONFLICT (session_id) DO UPDATE")
+                .contains("used = 0")
+                .contains("window_start = NOW()");
+        assertThat(m.getAnnotation(InterceptorIgnore.class).tenantLine()).isEqualTo("true");
+
+        // 重置窗口 ≠ 放宽上限：每条客户消息仍然最多 5 条
+        String tryConsumeSql = String.join(" ", KfSendBudgetMapper.class
+                .getMethod("tryConsume", String.class, Long.class).getAnnotation(Insert.class).value());
+        assertThat(tryConsumeSql).contains("kf_send_budget.used < 5");
+    }
 }

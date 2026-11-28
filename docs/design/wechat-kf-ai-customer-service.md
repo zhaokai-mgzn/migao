@@ -1,6 +1,13 @@
-# 企业微信「微信客服」AI 智能客服 —— 详细设计（v1.1，2026-11-25）
+# 企业微信「微信客服」智能客服 —— 详细设计（v1.2，2026-11-28）
 
-> **定位**：生意管家 C 端 = 企业智能客服。客户在微信里通过商户的**微信客服**会话与米宝对话；
+> **定位（2026-11-28 用户裁定，逐字）**：「C 端也不叫米宝了，C 端现在**不提供 agent 形态，只提供技术能力**，
+> 直接叫**智能客服**」「务必结合我们最新的整体方案去更正和改造，特别是 C 端智能客服那块」。
+> 同日再裁定（逐字）：「A，**大部分客服工作都要由我们的智能客服完成，只有 AI 搞不定的事情才转人工**」。
+>
+> ⇒ **智能客服 = 通道（微信客服 kf）+ 判定 + 回复**，节奏是 **AI 主力 / 人工兜底**（不是「AI 兜底」）。
+> C 端对话内核（`agent_type="xiaobu"`，工具集原样保留）**降级为内核**：只被通道内部调用来产文，
+> **不再对外提供 agent 服务**（无 persona 人设 / 开场白 / 悬浮助手 / 独立聊天面板）。
+> 本文 v1.1 里凡是把 C 端写成「与米宝对话 / 米宝 AI 接待 / 米宝 Agent」的措辞，一律按此口径读作「内核产文」。
 > 我们不做店铺、不碰交易、不碰资金。
 >
 > **本文回答**：怎么接、怎么判、怎么发、怎么不重复、怎么不串租户、怎么失败、怎么验收。
@@ -10,6 +17,12 @@
 > `send_msg` 有 `msgid` 幂等键、`change_type` 不是状态、state 4 含「未开始」且不可 API 变更、
 > 本仓 RLS 实际不生效、已有 `sessions/session_messages/agent_sessions` 不应另起一套。
 > 另修正：事件响应消息 20s/48h TTL、suite 级凭证、access_token 与 event token 混用、调度池单线程。
+>
+> **v1.2 修订说明**（issue #9302）：① 形态定稿为「通道 + 判定 + 回复，无 agent 形态」，见 §1.1.1；
+> ② 接通 `AI_REPLY` 一跳（判定 → 内核产文 → outbox → 发送 / 转人工），见 §1.1.2~§1.1.3；
+> ③ 落定三条闸门（一次入站至多 1 条 / 写工具不上通道 / 数值只能来自工具），见 §1.1.4；
+> ④ 修两个对抗「AI 主力」口径的现存缺陷：`HUMAN_WORDS` 里「客服」单独出现就升级（§1.1.5）、
+> 预算窗口不随客户新消息重置（§1.1.6）。
 >
 > **设计原则**（冲突时按此裁决）：
 > 1. **fail-closed**：状态不明、事件乱序、接口报错 → 不发，落待人工；
@@ -41,13 +54,194 @@
 | 做 | 不做 |
 |---|---|
 | 微信客服会话接入（回调 + `sync_msg` + `send_msg`） | 店铺/商品列表/下单/支付 |
-| 米宝 AI 接待 + 知识库 + 行业工具（算料/查单/售后） | 微信小店/抖店代运营 |
+| 智能客服内核接待（**无 agent 形态**）+ 知识库 + 行业工具（算料/查单/售后） | 微信小店/抖店代运营 |
 | 介入策略（AI/人工/静默/转接） | 个人微信 Hook |
 | 坐席工作台（复用 `agent_sessions`）+ 质检 + 报表 | 平台代收/分账 |
 | Web SDK / 商户自有小程序（后续） | 抖音私信 AI 接管（准入已关） |
+| 微信客服通道（唯一 C 端入口） | **C 端 agent 形态**：persona 人设 / 开场白 / 悬浮助手 / 独立聊天面板 |
 
 **SLO**：回调 P99 < 500ms（实测口径，不拍 200ms）；入队到首响 P95 < 10s；发送成功率 > 99%；
 `unknown` 率 < 0.5%；跨租户泄漏 = 0；重复发送 = 0。
+
+---
+
+## 1.1 形态定稿与 `AI_REPLY` 一跳（v1.2 落地，2026-11-28，issue #9302）
+
+> **用户裁定（2026-11-28，逐字）**：「C 端也不叫米宝了，C 端现在**不提供 agent 形态，只提供技术能力**，
+> 直接叫**智能客服**」/「A，**大部分客服工作都要由我们的智能客服完成，只有 AI 搞不定的事情才转人工**」。
+
+### 1.1.1 形态：智能客服 = 通道 + 判定 + 回复（无 agent 形态）
+
+| 提供 | 结构性不做（不是"还没做"） |
+|---|---|
+| 微信客服通道（回调 / `sync_msg` / `send_msg` / 预算 / 幂等） | **agent 形态**：persona 人设、开场白、悬浮助手、独立聊天面板 |
+| 判定（默认 AI → 规则短路明确索取/高风险 → 语义判定补召回 → 升级取并集） | 客户侧「对话 UI」（C 端小程序已于 2026-11-26 整目录下线，issue #9233） |
+| 回复（C 端内核产**一条**文本 → `kf_outbox` → 发送 / 转人工） | 通道上的卡片 / 菜单 / 表单交互（`kf_outbox` 只收 `parts=[{type:text}]`） |
+| 内核能力（知识库 / 算料 / 查单 / 售后；工具集原样保留，**只读工具是必需项**） | 把内核当「可独立对外服务的 agent」（**内核降级为内核**） |
+
+**「内核降级为内核」的判据（现取，不是口号）**：
+
+```bash
+# 没有任何客户端以 persona 调 chat（0 命中）
+git grep -rn "persona" origin/main -- frontend | grep -i "xiaobu"
+# 内核标识只活在文案常量里（6 处，值即「企业智能客服」）
+git grep -rn "xiaobu" origin/main -- frontend | wc -l
+```
+
+⇒ 内核只是被通道调用的一个函数（`agent_type="xiaobu"` 沿用旧标识，工具/路由口径不动），
+不是一个对外产品形态。
+
+### 1.1.2 现取现场（v1.2 之前缺的那一环）
+
+| 面 | 现取（`git show origin/main:`） |
+|---|---|
+| 入站 | `KfSyncWorker` → `KfSessionIngestService` 建 kf 会话 + `session_messages`；**不建 AgentSession** |
+| 判定 | `KfDecisionService.decide()` ⇒ `SILENT` / `ESCALATE_HUMAN` / `AI_REPLY` |
+| `AI_REPLY` 消费者 | **0 处**：`git grep -n "AI_REPLY" origin/main -- backend` 只命中 `KfDecisionService` 与其单测 |
+| 发送 | `KfSendService.enqueueReply(...)`（预算 / 长度 / 会话校验 → `kf_outbox`）+ `KfOutboxSender`（异步 `send_msg`） |
+| 判定端点 | `POST /api/internal/kf/decide` —— 仓内无调用方 |
+
+⇒ 通道与判定都齐了，**唯一缺的是「判定说 AI 可以答」之后那一跳**：客户在微信里发消息，永远等不到回复。
+
+### 1.1.3 一跳一跳的时序（AI 主力 / 人工兜底）
+
+```
+微信客户发消息
+  │
+  ▼ ① 入站（KfSyncWorker.poll → syncCursor；30s 固定节奏 + 回调 dirty 加速）
+sync_msg → 逐条 origin=3 客户消息
+  │   └─ KfSessionIngestService.ingest()：建/取当前段会话 + 落 session_messages（msgid 幂等）
+  │        · 落库成功 ⇒ 该会话 kf_send_budget 窗口重置（used=0 / window_start=NOW()，见 §1.1.6）
+  │        · 返回 Ingested{sessionId, text, state}；重复/忽略 ⇒ null（不触发后续任何一跳）
+  ▼ ② 判定（KfDecisionService.decide：默认 AI，例外升级）
+state ∉ {0,1}（人工接待中/已结束）⇒ SILENT —— 不抢话，也不转人工
+明确索取人工 / 风险词 ⇒ ESCALATE_HUMAN（规则短路，**不发起**语义判定）
+规则未命中 ⇒ 语义判定补召回：它要升级则升级（并集），否则 AI_REPLY
+语义判定不可用/超时 ⇒ fail-open 回退规则 AI_REPLY   ← 判定侧既有口径（#9196），本包不改
+  ▼ ③ 只有 AI_REPLY 才继续（KfAiReplyLoop.onCustomerMessage）
+POST ai-agent /api/internal/kf/reply（Service Token；连接 300ms / 读 8s）
+  │   └─ C 端对话内核（agent_type=xiaobu，工具集原样保留，**只读工具真查**）
+  │        · 只保留**最后一条**正文（中间过程「正在查询…」丢弃）
+  │        · 单轮工具调用 ≤3；总超时 ≤8s；同时回报本轮 tool_calls 次数
+  ▼ ④ 可投递判定（KfAiReplyLoop.deliverable：确定性、零 LLM；见 §1.1.7）
+空/过短 ✗ 中间过程话术 ✗ 无权承诺（已为您转接/已通知人工）✗ 0 次工具却报金额 ✗ ⇒ 转人工
+  ▼ ⑤ 入队（唯一写手：KfSendService.enqueueReply；本类不碰 kf_outbox）
+预算（每条客户消息 ≤5 条 / 窗口 48h）→ 正文 ≤2048 字节 → 会话当前段有效 → 生成 msgid → kf_outbox(pending)
+  ▼ ⑥ 发送（KfOutboxSender，异步；不在本跳）
+claim(pending / sending 超时) → send_msg(msgid 幂等) → accepted / failed / unknown
+  │   └─ msg_send_fail 事件 → markFailedBySentMsgid（fail_type 按 FMEA 处置）
+  ▼ ⑦ 兜底（唯一例外路径：转人工）
+生成失败/超时/空/不可投递/入队被护栏拒绝 ⇒ 0 条 outbox + KfTransferService.transferToHuman（trans(2) + 工作台 waiting）
+转人工自身失败 ⇒ 只记日志（消息已落库、游标照常前进），绝不因此重放同一条消息
+```
+
+**为什么这一跳放在 `KfSyncWorker` 的同一轮里**（而不是独立 dispatch worker）：本仓现状没有
+`KfDispatchWorker`（那只是本文件 v1.1 的构想名），而同步轮已有「消息优先 / 失败不阻塞游标」的成熟口径；
+独立 worker 需要新的 claim/租约/重放语义 —— 属**未固化项**（§1.1.8 #3），不在这一包里扩。
+
+### 1.1.4 决策记录：通道稀有度决定的三条闸门（2026-11-28 母单裁定）
+
+**依据（现取命令 + 读数）**：
+
+```bash
+# ① 发送预算：48h 内最多 5 条
+git show origin/main:backend/admin-api/src/main/java/com/migao/admin/service/kf/KfSessionStatusProvider.java \
+  | grep -n "48h 内最多 5 条"
+# ② 单条正文硬上限：2048 字节（微信客服硬上限）
+git show origin/main:backend/admin-api/src/main/java/com/migao/admin/service/kf/KfSendService.java \
+  | grep -n "MAX_TEXT_BYTES ="
+# ③ 预算在 DB 里原子扣减（不是内存计数，也不能"先发再补"）
+git show origin/main:backend/admin-api/src/main/java/com/migao/admin/mapper/KfSendBudgetMapper.java \
+  | grep -n "used < 5"
+```
+
+⇒ 每一条自动回复都是**稀缺资源**（一条客户消息只值 5 条里的一格），所以真正的核心不是"带不带工具"，
+而是**「绝不在通道上暴露中间过程、绝不发没有工具支撑的数」**。
+
+| # | 闸门 | 落地位置 | 为什么 |
+|---|---|---|---|
+| 1 | **只读工具要带（而且是必需）**：查商品/价格/库存/订单/物流/算料必须真查；但**全部在服务端串行完成，只发一条最终答复**。**禁止**「正在查询…」「稍等」「我看看」这类中间气泡 | ai-agent `_stream_reply` 只留最后一条文本；admin-api `KfAiReplyLoop.deliverable` 再按话术兜一层；一次入站只调一次 `enqueueReply` | AI 要承担大部分对话，答不了就等于把活推回人工；而中间气泡会烧掉 5 条预算、且异步通道里客户看到一半更困惑 |
+| 2 | **写工具一律不带**（建单/改单/退款/发券/改价）⇒ 需要写动作的诉求**转人工** | 通道只发文本；卡片/确认卡不上通道；判定升级即转人工 | 微信客服是**异步通道、无可靠二次确认 UI**，客户可能只看到「已下单」；错一次即不可逆的真实经济损失（与 B 端 order 域只读 #5247 同口径） |
+| 3 | **数值只能来自工具**：价格/库存/金额/运费拿不到 ⇒ 转人工，**不许模型编** | ai-agent 回报本轮 `tool_calls`；admin-api：0 次工具调用却出现金额形态 ⇒ 转人工 | 假价格发给客户 = 真实商业损失（与 #9287「环境前置缺失」、`stock_semantics` 的「商品级 stock 列不一致」同口径：数据面读不到 ⇒ 不可判定，不许猜） |
+
+**配套上限（同一裁定）**：一次入站**至多 1 条**自动回复；单轮工具调用 **≤3** 次；总超时 **≤8s**
+（Java 读超时 `wechat.kf.reply-timeout-ms` 默认 8000ms，Python `REPLY_TIMEOUT_SECONDS = 8.0` —— 两处同源，改一处必改另一处）；
+超限 / 超时 / 工具失败 / 空文本 ⇒ **fail-closed 转人工**。
+
+### 1.1.5 何时升级：默认 AI、例外升级（判据清单）
+
+**升级（`ESCALATE_HUMAN`）只认两类形态**（`KfDecisionService` 的 `HUMAN_REQUEST` + `RISK_WORDS`）：
+
+| 形态 | 例子 | 为什么升级 |
+|---|---|---|
+| `人工` / `真人` **单独出现** | 我要人工 · 转人工 · 找人工 · 真人吗 | 中文里几乎专指人工服务；「明确索取必须永不漏」（宁可多升级） |
+| **动作词 + 对象词**（找/要/叫/联系/转/需要/请 + 人工/真人/**客服**） | 找客服处理 · 联系客服 · 叫客服来 · 要客服 | 有动作词的「客服」= 索取人工服务的动作短语 |
+| 风险词（**一个字都不许动**） | 投诉 · 退款 · 赔偿 · 起诉 · 律师 · 曝光 · 差评 | 涉钱/涉法/涉名誉，AI 无权承诺 |
+| 语义判定要升级（并集） | 情绪激动、模糊不满、要求承诺 | 规则抓不到的形态靠语义补召回 |
+
+**不升级（继续 AI 处理）**：`客服` **单独**出现 —— 「客服你好」「你们客服在吗」「客服电话多少」
+「刚才那个客服说的」。这些是称呼 / 寒暄 / 询问，不是要人工。
+
+> **为什么这条要单独写进设计文档**：v1.2 之前 `HUMAN_WORDS = List.of("人工","真人","客服","转人工")`
+> —— **「客服」单独出现就升级**。微信客服场景里客户张口就是「客服在吗」，于是大量本该 AI 接住的对话被
+> 推给人工，与「大部分客服工作由智能客服完成」的裁定**正相反**。⇒ 改成「动作词 + 对象词」的组合判据，
+> 并在代码里留注释说明**不许改回只匹配「客服」**（issue #9302）。
+>
+> **一处登记（母单文案自相矛盾）**：裁定里既列「`客服电话`/`客服在吗` ⇒ 升级」，又把同两句列进
+> 「⇒ 不升级」的判据 ①。本包按**可执行、会红的那份（判据 ①）**落地：这两句**不升级**（AI 用知识库答电话/招呼），
+> 并在此点名冲突供后续裁定；安全侧不受影响（`人工`/`真人`/动作短语/风险词全覆盖）。
+
+### 1.1.6 预算：窗口 = 客户最后一条消息起的 48h（每条客户消息给 5 条额度）
+
+**微信侧规则**（`docs/wechat-store-and-kefu-research.md`）：「仅当微信客户在**主动发送消息**后的 **48 小时**内，
+企业可发送消息，最多 **5 条**；**若用户继续发送消息，企业可再次下发**」。
+
+**v1.2 之前的实现与规则的偏差**：`KfSendBudgetMapper.tryConsume` 只在**窗口过期 48h** 时重置
+（`window_start < NOW() - INTERVAL '48 hours'`）⇒ 整个会话**总共 5 条**，聊到第 6 句 AI 再也发不出去，
+「AI 主力」在算术上不成立。
+
+**修法（保守，不放宽上限）**：
+1. **入站新消息 ⇒ 重置窗口**：`KfSessionIngestService` 在客户消息落库成功后调
+   `KfSendBudgetMapper.resetWindow`（`used=0` / `window_start=NOW()`，upsert）；
+2. **上限不动**：`tryConsume` 的 `used < 5` 与表约束 `ck_kf_send_budget_used CHECK (used <= 5)` 原样保留
+   ⇒ 每条客户消息仍然最多 5 条；
+3. **重复消息（`msgid` 幂等）不重置** —— 否则一次重放能给同一条消息白送 5 条额度；
+4. **撞额度 ⇒ 转人工**（现行为 `KfBudgetExhaustedException` ⇒ `KfAiReplyLoop` 落 `ESCALATE_HUMAN`，
+   **不许静默丢消息**）。
+
+**一句话**：预算窗口 = **客户最后一条消息起的 48h**，每条客户消息给 5 条额度；AI 默认一入站一回一条 ⇒
+正常对话不撞额度；撞额度 ⇒ 转人工。
+
+**与「AI 主力」的张力（登记，不擅自放宽）**：5 条/48h 对「大部分对话由 AI 完成」是否够，**需产品确认**；
+另有一条读数待登记：工作台人工回复（`AgentSessionService.sendMessage`）每条坐席消息**恰 1 次**
+`enqueueReply`（同一事务内），不按 turn 扇出 —— 但同一 turn 里坐席连发多条消息仍会各自吃额度。
+
+### 1.1.7 fail-closed 矩阵（触发 → 后果）
+
+| 触发 | outbox | 判定结果 | 客户看到 |
+|---|---|---|---|
+| 生成失败 / 超时（>8s） / 内核报错 | **0 条** | `ESCALATE_HUMAN` | 无（转入人工接待池） |
+| 空正文 / 只有空白 / 短于 2 字 | **0 条** | `ESCALATE_HUMAN` | 无 |
+| 中间过程话术（正在查询/稍等/我看看） | **0 条** | `ESCALATE_HUMAN` | 无 |
+| 无权承诺（已为您转接 / 已通知人工 / 已提交转人工） | **0 条** | `ESCALATE_HUMAN` | 无 |
+| 0 次工具调用却报金额 | **0 条** | `ESCALATE_HUMAN` | 无 |
+| 单轮工具调用 >3 | **0 条** | `ESCALATE_HUMAN` | 无 |
+| 预算耗尽 / 48h 窗口过期 / 会话已结束（`KfSendService` 拒绝） | **0 条** | `ESCALATE_HUMAN` | 无 |
+| 判定 `ESCALATE_HUMAN`（明确索取/风险词/语义升级） | **0 条** | `ESCALATE_HUMAN` | 无 |
+| 判定 `SILENT`（人工接待中） | **0 条** | `SILENT` | 无（不抢话） |
+| 全部通过 | **恰 1 条** | `AI_REPLY` | 一条最终答复 |
+
+### 1.1.8 边界与未固化项（照实登记）
+
+| # | 项 | 现状 | 为什么本包不做 |
+|---|---|---|---|
+| 1 | 回复质量不设 LLM 判据 | 「低置信」用**确定性代理**（空 / 过短 / 中间过程 / 无权承诺 / 无数值支撑） | 每题多一次模型调用，且判据自身要长红证；阈值应由产品定 |
+| 2 | 多轮上下文 | 单轮（只传客户最新一条） | kf 历史在 `session_messages`，取几条 / 是否取 AI 侧口径未定 |
+| 3 | 独立 dispatch worker / 重放 | 同步轮内一跳；崩溃窗口内「已落库未回复」的消息**不会自动重放** | 需要 claim / 租约 / 重放语义（另起一张待办面） |
+| 4 | 写工具在通道下的可达性 | 工具集原样保留，但**通道只发文本**；内核若想发卡片/确认卡，本通道渲染不出来 | 写动作按 §1.1.4 一律转人工；真要上通道需先定卡片降级（§18.5.1）与二次确认方案 |
+| 5 | `sessions.ai_enabled` 未接 | kf 建会话恒 `true`，判定只看 `kf_session_remote.state` | 商户级 AI 开关注解与 UI 未定 |
+| 6 | 「每条客户消息 5 条」这一读法的真机验证 | 依据 = 官方文档转述（`docs/wechat-store-and-kefu-research.md`），本机无真机/无线上凭据 | **需一次真实通道验证**（另开单，不在本包伪造读数） |
+| 7 | 工作台人工回复的额度扇出 | 现取：每条坐席消息恰 1 次 `enqueueReply`，不按 turn 扇出 | 只登记读数，归工作台包 |
 
 ---
 
@@ -80,6 +274,10 @@ ai-agent-service（Python）
   ├─ LangGraph Agent + Tools（知识/算料/查单/售后）
   └─ 回复编排（1–2 条：文本 / 小程序卡片 / 图片）
 ```
+
+> **落地形态（v1.2 现取）**：本仓**没有**独立的 `KfDispatchWorker` —— 判定与 `AI_REPLY` 一跳在
+> `KfSyncWorker` 的同一轮内同步执行（`KfAiReplyLoop`），发送仍由 `KfOutboxSender` 异步做；
+> 完整时序见 §1.1.3。
 
 **线程与连接池（本仓实测约束）**：
 - Spring Boot 默认 `spring.task.scheduling.pool.size = 1`，现有 5 条定时腿共用；kf 必须建**独立**
@@ -336,7 +534,7 @@ accepted → 等 msg_send_fail 事件 → 若失败置 failed
 | 3 | 返回 **200 + 空串**（5s 内；超时平台重试 3 次，且不保证 100% 送达） | — |
 | 4 | `KfSyncWorker`：固定 30–60s + dirty 触发；`sync_msg(cursor, token?)` | 退避；cursor 不前进 |
 | 5 | `has_more` 循环：**空 `msg_list` 也推进/退避**，最大轮次 20 | 防死循环 |
-| 6 | 消息归档 + 会话归并 + 介入判定 + Agent | 降级/转人工 |
+| 6 | 消息归档 + 会话归并 + 介入判定 + **`AI_REPLY` 一跳**（`KfAiReplyLoop`：内核产文 → 入 outbox，见 §1.1.3） | fail-closed 转人工（矩阵见 §1.1.7） |
 | 7 | 预算扣减 → `msgid` 发送 → 回写 | 按 §4.3 |
 
 **单写者（不跨 LLM 持锁）**：
@@ -401,14 +599,16 @@ POST /internal/kf/reply
 ```
 客户点客服链接 → enter_session（state=4「未开始」，不要 trans）
   → 若有 welcome_code：20 秒内发欢迎语（1 条，不占 5 条）
-  → 客户首条消息 → state=0 → 预算窗口开启 → 米宝回复
+  → 客户首条消息 → state=0 → 预算窗口开启（= 客户最后一条消息起 48h）→ 内核回复（§1.1.3）
 ```
 
-### 6.2 普通问答
+### 6.2 普通问答（v1.2 现取）
 
 ```
-消息 → sync_msg → 去重 → 介入判定(AI_REPLY) → Agent → 回复编排
-     → 预算扣减 → send_msg(msgid) → accepted → 等 msg_send_fail
+消息 → sync_msg → 去重 → ingest（落 session_messages + 重置预算窗口）
+     → 判定 AI_REPLY → 内核产文（/api/internal/kf/reply，≤3 次工具调用 / ≤8s）
+     → 可投递判定 → 预算扣减 → kf_outbox → send_msg(msgid) → accepted → 等 msg_send_fail
+     任一环节不可用 ⇒ 0 条 outbox + 转人工（§1.1.7）
 ```
 
 ### 6.3 转人工
@@ -555,6 +755,13 @@ change_type=3 → state=4, close_reason=human_end
 | 可追溯 | 带 `knowledge_id` / `tool_call_id` |
 | 事件响应消息 | 见下表，**严格 TTL** |
 
+**落地闸门（v1.2，issue #9302；推理链见 §1.1.4）**：
+
+- **先产一条最终正文**：中间过程（「正在查询…」「稍等」）内核侧丢弃、发送边界再兜一层；一次入站至多入队 **1 条**；
+- **写动作不上通道**：卡片/确认卡/表单不发；需要写动作的诉求 ⇒ 转人工；
+- **数值只能来自工具**：0 次工具调用却报金额 ⇒ 转人工（不许模型编价格/库存/运费）；
+- **fail-closed**：生成失败/超时/空/不可投递 ⇒ **0 条 outbox** + 转人工（绝不发半成品或空话）。
+
 **事件响应消息约束（官方）**：
 
 | 场景 | 条数 | code 有效期 | 类型 |
@@ -647,6 +854,17 @@ change_type=3 → state=4, close_reason=human_end
 | 混沌 | 重复/乱序/超时/断网/cursor 丢失/media 过期/has_more 空列表 |
 | E2E | 1 家真实商户全链路 |
 
+**`AI_REPLY` 一跳的判据（v1.2，issue #9302；每条都带红证）**：
+
+| # | 判据 | 执行点 | 红证（改坏 ⇒ 具名红） |
+|---|---|---|---|
+| 1 | `AI_REPLY` ⇒ `kf_outbox` **恰 1 条**、正文非空、tenant/session 对得上 | `KfAiReplyLoopTest`（真 `KfSendService` + 假 mapper，断言 `enqueue` 调用次数与 parts 文本） | 把 outbox 写入挪出 `KfSendService`（直接调 `outboxMapper.enqueue`）⇒ 该条红 |
+| 2 | 生成失败 / 超时 / 空正文 / 中间过程话术 / 无权承诺 / 无工具支撑的金额 ⇒ **0 条 outbox** + `ESCALATE_HUMAN` | 同上 | 把「不可投递 ⇒ 转人工」改成「失败也发兜底话术」⇒ 具名红 |
+| 3 | 「客服」单独出现**不升级**；明确索取（人工/真人/动作短语）**必升级**；风险词集合**逐字未变** | `KfDecisionServiceTest` | 把 `HUMAN_REQUEST` 改回 `List.of("人工","真人","客服","转人工")` ⇒ 判据 ① 具名红 |
+| 4 | 入站新消息**重置预算窗口**、重放**不重置**、`used<5` 硬上限未放宽 | `KfSessionIngestServiceTest` + `KfSendBudgetMapperTest` | 摘掉「入站重置」⇒ 具名红 |
+| 5 | 内核侧 fail-closed：错误事件 / 空正文 / 工具调用 >3 / 超时 ⇒ 判不可用（不产半成品） | `backend/ai-agent-service/tests/test_kf_reply.py` | 让端点在 `type="error"` 时仍返回 text ⇒ 具名红 |
+| 6 | worker 侧接线：新消息触发一跳、重复消息不触发、一跳抛错不阻塞游标 | `KfSyncWorkerTest` | 去掉 `replySafely` 的 try/catch ⇒ 游标不前进 ⇒ 具名红 |
+
 **必测 24 条**：1 重复回调只回一次；2 `change_type=4 → state 3` 且 AI 0 发送；3 人工接管 0 发送；
 4 生成中被接管 0 发送；5 5 条用尽；6 48h 过期；7 `fail_type=8/11` 告警；8 `fail_type=1/2` 停渠道；
 9 图片 2MB 边界；10 AMR 转码失败降级；11 空 `msg_list` 不死循环；12 文本 2048 字节截断；
@@ -705,6 +923,11 @@ change_type=3 → state=4, close_reason=human_end
 
 ## 17. 实施拆分（PR 计划）
 
+**落地进度（v1.2 现取）**：通道层（`WeChatKfClient` / 回调 / 媒体）、发送层（`KfSendService` / `KfOutboxSender`）、
+判定层（`KfDecisionService` + `KfJudgeClient` + 语义判定端点）**均已合并**；**P4 = `AI_REPLY` 一跳**由
+issue #9302 落地（`KfAiReplyLoop` + `POST /api/internal/kf/reply` + 判定精确化 + 预算窗口重置）。
+剩余：灰度/shadow 档、工作台改造（§18.4）、卡片降级（§18.5.1）。
+
 **PR1 — 契约矫正 + 最小 schema（先不改业务代码）**
 - 落 `V217__create_wechat_kf_tables.sql` + `schema.sql`（12 张 kf 表，含 `kf_customer_link/kf_handoff`），
   全部 `tenant_id` + 索引；**不启用 FORCE RLS**（理由见 §11.1），隔离靠拦截器 + 显式 `tenant_id`；
@@ -750,7 +973,7 @@ change_type=3 → state=4, close_reason=human_end
   → KF 回调 / sync_msg
   → sessions(channel=wechat_kf) + kf_session_remote
   → session_messages(role=user)
-  → 介入判定 → 米宝 Agent（knowledge_search / 算料 / 查单）
+  → 介入判定 → C 端对话内核（knowledge_search / 算料 / 查单；无 agent 形态）
   → session_messages(role=assistant, metadata.cards=[knowledge_id])
   → kf_outbox → send_msg（msgid 幂等）
 
@@ -805,12 +1028,16 @@ change_type=3 → state=4, close_reason=human_end
 - **点击追踪**：link 可加参数；miniprogram 无回传 → 用「发送后是否追问/转人工」估效果；
 - **禁止**：卡片 answer 原样超长、承诺类内容未过滤、把「通用建议」标成「本店知识」。
 
-### 18.5.1 米宝现有卡片的降级矩阵（重要）
+### 18.5.1 C 端对话内核现有卡片的降级矩阵（重要）
+
+> 原名「米宝现有卡片」；C 端已不叫米宝、也没有 agent 形态（§1.1.1），卡片是**内核产物**。
+> v1.2 现取：`kf_outbox` 只收 `parts=[{type:text}]`（`KfSendService` 只发文本）⇒ 下表是**将来**要上
+> 通道时的降级目标，**当前通道一条卡片都发不出去**（写动作按 §1.1.4 一律转人工）。
 
 微信客服 `send_msg` 只支持 10 种消息：**文本、图片、语音、视频、文件、图文链接、小程序、菜单、地理位置、获客链接**。
-米宝的富交互卡片**不能原样渲染**，但不是「全废」——按下面降级：
+C 端内核的富交互卡片**不能原样渲染**，但不是「全废」——按下面降级：
 
-| 米宝卡片 | KF 形态 | 保真度 | 说明 |
+| 内核卡片 | KF 形态 | 保真度 | 说明 |
 |---|---|---|---|
 | `ProductCard` 商品卡 | 图文链接 / 小程序卡 | 中 | 一条一个商品；横滑多卡 → 文本列表或菜单选类目 |
 | `QuotationCard` 报价卡 | 文本明细 + 链接 | 中 | 明细压到 ≤2048 字节；「确认」用菜单消息 |
@@ -913,7 +1140,7 @@ change_type=3 → state=4, close_reason=human_end
 
 | 场景 | 客户感受 | 处理 |
 |---|---|---|
-| 首次进入 | 不知道对面是 AI 还是人 | 欢迎语明示「我是米宝 AI 助手，随时可转人工」+ 3 个高频问题菜单（20s 内） |
+| 首次进入 | 不知道对面是 AI 还是人 | 欢迎语明示「我是本店智能客服，随时可转人工」+ 3 个高频问题菜单（20s 内，走 `send_msg_on_event` 不占 5 条） |
 | 发了消息没反应 | 以为没人 | 2s 内先回一句「收到，正在为您查询」；仅当工具耗时 >3s 且预算 ≥2 时发，避免浪费 5 条 |
 | AI 答非所问 | 烦躁、重复说 | 连续 2 轮未解决 → 主动给菜单「换个说法 / 转人工」，不硬撑 |
 | 发图片 | 不知道收到没 | 回「图片收到，正在识别」；>2MB 提示重发；识别失败请描述 |
