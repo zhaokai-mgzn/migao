@@ -46,6 +46,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from unit_ci_workflows._migration_paths import LIVE_DIR as _LIVE_DIR  # noqa: E402
 from unit_ci_workflows._migration_paths import migration_files as _migration_files  # noqa: E402
 from unit_ci_workflows import pg_cluster  # noqa: E402  （起/停集群的唯一收口，issue #5263）
+from unit_ci_workflows.injection import inject  # noqa: E402  （注入的唯一原语：锚点漂移 / 不唯一 / 空操作都会抛错，不用裸 str.replace —— issue #7017）
 
 MIGRATION = _LIVE_DIR / "V219__backfill_tenant_bot_name_to_smart_service.sql"
 LEDGER = Path(__file__).resolve().parent / "migration_fingerprints.json"
@@ -314,11 +315,16 @@ def test_like_injection_would_clobber_a_name_containing_the_old_brand(psql):
     匹配面一旦变成模糊匹配，上一条测试会**具名**报出 `cfg-decoy` 被改。
     """
     psql(_DDL + _SEED)
-    sql = _read(MIGRATION)
-    anchor = f"WHERE {COLUMN} = '{OLD_NAME}'"
-    assert anchor in _code(), "注入锚点没匹配上（迁移的 WHERE 被改过？）⇒ 本红证是空断言"
-    injected = sql.replace(anchor, f"WHERE {COLUMN} LIKE '%{OLD_NAME}%'", 1)
-    assert injected != sql and "LIKE" in _strip_comments(injected), "注入没生效 ⇒ 本红证是空断言"
+    # 注入原语 = `inject()`（不是裸 `str.replace`）：锚点漂移 / 命中不唯一 / 空操作**当场抛错**，
+    # 否则「注入没生效」会被读成「判据没牙」（issue #7017；判据 =
+    # `tests/unit_ci_workflows/test_red_proof_anchor_liveness.py`）。
+    injected = inject(
+        _read(MIGRATION),
+        f"WHERE {COLUMN} = '{OLD_NAME}'",
+        f"WHERE {COLUMN} LIKE '%{OLD_NAME}%'",
+        where=MIGRATION.name,
+    )
+    assert "LIKE" in _strip_comments(injected), "注入没生效 ⇒ 本红证是空断言"
 
     psql(_as_runner_would(injected))
     after = _values(psql)
