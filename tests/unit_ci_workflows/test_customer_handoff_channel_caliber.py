@@ -8,7 +8,7 @@
    结构性反回退判据 = `tests/unit_ci_workflows/test_human_handoff_retired.py`，**本文件不复制**。
 2. **2026-11-24~27 事实变更**（通道面，**新增**）：商家开通微信客服后，顾客在微信客服里发送
    「人工」会被 `backend/admin-api/src/main/java/com/migao/admin/service/kf/KfDecisionService.java`
-   的 `HUMAN_WORDS` 规则**直接**判 `ESCALATE_HUMAN`（**不经 AI 判定**）；转接实现见
+   的 `HUMAN_REQUEST` 规则**直接**判 `ESCALATE_HUMAN`（**不经 AI 判定**；issue #9302 起 `客服` 单独出现不升级）；转接实现见
    `backend/admin-api/src/main/java/com/migao/admin/service/kf/KfTransferService.java`
    （类注释逐字：「这里不是 human_handoff 工具复活——是**通道能力**」）。
 

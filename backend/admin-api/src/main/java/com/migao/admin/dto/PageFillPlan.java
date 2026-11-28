@@ -37,7 +37,7 @@ public record PageFillPlan(
          * 逐格计划，**原样搬运** ai-agent 的字段表：
          * {@code {key, label, value, source, reason, candidates, note, note_source}}。
          *
-         * <p>{@code value} 非空 ⇒ {@code source ∈ {"[图片识别]", "[米宝解读]"}}（来源可区分）；
+         * <p>{@code value} 非空 ⇒ {@code source ∈ {"[图片识别]", "[黄金策解读]"}}（来源可区分）；
          * {@code value == null} ⇒ 该格**故意留空**、{@code reason} 说明原因；歧义格带 {@code candidates}。</p>
          */
         @JsonInclude(JsonInclude.Include.ALWAYS) List<Map<String, Object>> fields) {

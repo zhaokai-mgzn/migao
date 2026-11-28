@@ -121,6 +121,14 @@ REALDB_TEST_MODULES: frozenset[str] = frozenset({
     # `docs/deployment/demo-seed.sql`（ON_ERROR_STOP=1 ⇒ exit 0 + 零 ERROR + 行数 == 语句数），
     # 外加一条把病灶段喂进同一批 psql 调用的红证。缺 PG ⇒ CI 判红（不是静默跳过）。
     "test_psql_vars_outside_dollar_quotes.py",
+    # issue #9308：存量租户 `tenant_ai_configs.bot_name` 回填（V219，'米宝' → '智能客服'）——
+    # 「逐字相等 vs 模糊匹配」的差别只有在**真行**上才看得见（'米宝小助手' 这类含旧名子串的
+    # 商户自定义名必须被保护），故它是真库判据；缺 PG ⇒ CI 判红（不是静默跳过）。
+    "test_v219_bot_name_backfill.py",
+    # issue #9328（#9308 的第 ① 条边界）：`tenant_ai_configs.bot_name` 的**列默认值** '米宝' → '智能客服'（V220）——
+    # 「新建一行到底落哪个名字」只有在**真插入**之后才读得到（`INSERT … RETURNING bot_name`），
+    # 静态文本判据看不出默认值是否真的生效；缺 PG ⇒ CI 判红（不是静默跳过）。
+    "test_v220_bot_name_column_default.py",
     # issue #4945（处 2）：加工单过程明细三段夹具（`production_work_logs`）—— 在**全新库**上按
     # 评测栈的建库顺序跑 schema + 两个 seed（`ON_ERROR_STOP=1`，含幂等二跑），再核 PG-057 声明的
     # 数值与真库读数逐值相等。缺 PG ⇒ CI 判红（不是静默跳过）——「本机无 docker」不构成理由：

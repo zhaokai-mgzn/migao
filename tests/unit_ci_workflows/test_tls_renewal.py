@@ -522,7 +522,10 @@ def _steps(doc: dict) -> list[dict]:
 def tls_wiring_problems(doc: dict) -> list[str]:
     """判据 8 的单一实现（红证 = 在内存里变异本函数的输入）。"""
     steps = _steps(doc)
-    idx = [i for i, s in enumerate(steps) if "tls-expiry-check.sh" in str(s.get("run", ""))]
+    # ⚠️ **排除失败钩子**（issue #9324）：判红出口的正文会**列出**各判红步的复算命令（含本脚本名），
+    #    但它是 `if: failure()` 的承接步，不是「跑判据的那一步」—— 混进来会让本判据读错对象。
+    idx = [i for i, s in enumerate(steps)
+           if "tls-expiry-check.sh" in str(s.get("run", "")) and "failure()" not in str(s.get("if", ""))]
     if not idx:
         return ["没有一步调用 `deploy/scripts/tls-expiry-check.sh` ⇒ TLS 到期判红**脱钩**"
                 "（判据本体再全，也不会有人被叫醒）"]
@@ -569,10 +572,12 @@ def test_wiring_removal_turns_it_red(mutation):
         for job in (doc.get("jobs") or {}).values():
             if not isinstance(job, dict) or not job.get("steps"):
                 continue
-            tls = [s for s in job["steps"] if "tls-expiry-check.sh" in str(s.get("run", ""))]
+            # ⚠️ 只搬「跑判据的那一步」（排除失败钩子 —— 它的正文也含该脚本名，issue #9324）
+            tls = [s for s in job["steps"]
+                   if "tls-expiry-check.sh" in str(s.get("run", "")) and "failure()" not in str(s.get("if", ""))]
             if not tls:
                 continue
-            rest = [s for s in job["steps"] if "tls-expiry-check.sh" not in str(s.get("run", ""))]
+            rest = [s for s in job["steps"] if not any(s is t for t in tls)]
             job["steps"] = rest + tls
     elif mutation == "normalize_exit_3":
         for s in _steps(doc):

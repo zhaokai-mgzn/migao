@@ -72,8 +72,8 @@ export default function FeatureGuide({ enabled = true }: FeatureGuideProps) {
     ...(canUseMibao
       ? [{
           icon: Bot,
-          title: '不会操作就问米宝',
-          body: '右下角米宝助手会结合当前页面回答操作问题；找不到入口时也可以直接问它。',
+          title: '不会操作就问黄金策',
+          body: '右下角黄金策会结合当前页面回答操作问题；找不到入口时也可以直接问它。',
         }]
       : []),
   ]

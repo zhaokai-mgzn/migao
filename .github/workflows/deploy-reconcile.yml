@@ -203,7 +203,7 @@ jobs:
           HEAD_SHA=$(git rev-parse HEAD)
           HEAD7="${HEAD_SHA::7}"
           SUMMARY="${GITHUB_STEP_SUMMARY:-/dev/null}"
-          MISSING=0; NODRIFT=0; SKIPPED=0; UNKNOWN=0; NOTARGET=0
+          MISSING=0; NODRIFT=0; SKIPPED=0; UNKNOWN=0; NOTARGET=0; RATELIMITED=0; ABORTED=0
           # 值守面状态机（种子 + 恰好一行/腿）**外置**（issue #5935）：本步正文已顶到 13.3K 的硬约束
           # （>13,250 ⇒ 整份 workflow invalid ⇒ 该腿完全不跑，阈值/守卫 = test_deploy_watchdog.py 的
           # `RUN_BODY_LIMIT`）⇒ 出口是外置，不是「再加一点点应该没事」。
@@ -340,7 +340,11 @@ jobs:
               reason="${reason} · 判定 pathspec：${pathspec[*]}"
             fi
             echo "⚠️ ${svc} 镜像 ${image} 缺失且 HEAD 的代码状态未部署——${reason} ⇒ dispatch 补部署"
-            gh workflow run "$wf" --ref main --repo "$GITHUB_REPOSITORY"
+            # 逐腿兜底（issue #9310）：dispatch 失败**只中止这一条腿**（实现体外置，本步正文有 13.25K 硬限）。
+            # 改前是裸 `gh workflow run` ⇒ 一条腿吃 **HTTP 403 installation rate limit** 就整步退出
+            # （run `46094064167`）⇒ 后 4 条腿留 `unrecorded`。⚠️ 成败**显式判**，不靠 `set -e`：
+            # 本函数在调用处 `|| 兜底` 的条件位上运行，bash 会把 `-e` 在函数体内整体抑制（实测）。
+            watchdog_dispatch "$svc" "$wf" || return 0
             echo "| ${svc} | ⚠️ 镜像缺失 + ${reason} | **已 dispatch 补部署**（\`${wf}\`） |" >> "$SUMMARY"
             watchdog_note "$svc" dispatched "本轮才补 dispatch（对账开始时该 commit 尚无可用部署）"
             MISSING=$((MISSING + 1))
@@ -354,19 +358,19 @@ jobs:
           # （#5668 的 `/b/`、#5676 的 `/i/` 都靠人工 dispatch 才生效）⇒ 触发面与对账面必须同批。
           # 判据（两处不许脱钩、且不许窄化成不覆盖 nginx.conf 的形态）：
           # `tests/unit_ci_workflows/test_config_change_triggers_deploy.py`
-          reconcile_one admin-api deploy-admin-api.yml backend/admin-api "deploy/swas"
-          reconcile_one ai-agent-service deploy-ai-agent-service.yml backend/ai-agent-service ":(exclude)backend/ai-agent-service/tests"
-          reconcile_one admin-web deploy-frontend.yml frontend/admin-web ""
+          reconcile_one admin-api deploy-admin-api.yml backend/admin-api "deploy/swas" || watchdog_abort admin-api aborted "对账中止（未预期失败，具名）"
+          reconcile_one ai-agent-service deploy-ai-agent-service.yml backend/ai-agent-service ":(exclude)backend/ai-agent-service/tests" || watchdog_abort ai-agent-service aborted "对账中止（未预期失败，具名）"
+          reconcile_one admin-web deploy-frontend.yml frontend/admin-web "" || watchdog_abort admin-web aborted "对账中止（未预期失败，具名）"
           # worker-h5（issue #5001）—— **静态落地面腿**：发布到 `app.migaozn.com` 静态根的 `w/`，**没有镜像**
           # ⇒ 判据 ① 对它恒不成立，判定只来自漂移判据 ②。必有的理由：该 workflow 的 `push: main` 触发会被
           # auto-merge 的 `GITHUB_TOKEN` 抑制（#3113）⇒ 改了 `frontend/worker-h5/**` 合并后**静默不发布**
           # （实测 #4973）。本对账走 `schedule` ⇒ 免疫该抑制。该腿的构建输入逐条见
           # `.github/scripts/reconcile_build_inputs.py`。
-          reconcile_one worker-h5 worker-h5-publish.yml frontend/worker-h5 ""
+          reconcile_one worker-h5 worker-h5-publish.yml frontend/worker-h5 "" || watchdog_abort worker-h5 aborted "对账中止（未预期失败，具名）"
           # bmini-h5-hosting（issue #5668）—— 第二条静态落地面腿（`frontend/bmini-app/**` → 静态根下的 `b/`），
           # 与 worker-h5 同形：同一条 `GITHUB_TOKEN` 抑制 ⇒ 不补发布就**静默停在旧产物**。
           # ⚠️ 腿名**有意**不叫 `bmini-h5`：同名会让判据 ① 在「镜像已推、`b/` 未更新」时命中 ⇒ 静默不补发布。
-          reconcile_one bmini-h5-hosting bmini-h5-publish.yml frontend/bmini-app ""
+          reconcile_one bmini-h5-hosting bmini-h5-publish.yml frontend/bmini-app "" || watchdog_abort bmini-h5-hosting aborted "对账中止（未预期失败，具名）"
           # C 端小程序已下线（issue #9233，2026-11-26）：原第三条静态落地面腿 `c-end-h5`
           # （C 端小程序工程的 h5 产物 → 静态根本身）随工程整目录删除而**退场**，
           # 连同 `workflow_run` 上游 `Publish C-end H5 (app.migaozn.com 根)` 一起摘掉
@@ -380,12 +384,12 @@ jobs:
           fi
           {
             echo ""
-            echo "**结论**：dispatch=${MISSING} · 无漂移=${NODRIFT} · 断路器跳过=${SKIPPED} · 判定失败=${UNKNOWN} · 不在 main=${NOTARGET}"
+            echo "**结论**：dispatch=${MISSING} · 无漂移=${NODRIFT} · 断路器跳过=${SKIPPED} · 判定失败=${UNKNOWN} · 不在 main=${NOTARGET} · 限流中止=${RATELIMITED} · 对账中止=${ABORTED}"
             echo ""
             echo "> 没有任何 dispatch 时，上表逐服务给出**判定依据**（镜像名 / 上次成功部署的 commit /"
             echo "> 断路器结论）——不再出现「run 报 success 但看不出它为什么没动」（issue #4827）。"
           } >> "$SUMMARY"
-          echo "🧭 结论：dispatch=${MISSING} · 无漂移=${NODRIFT} · 断路器跳过=${SKIPPED} · 判定失败=${UNKNOWN}"
+          echo "🧭 结论：dispatch=${MISSING} · 无漂移=${NODRIFT} · 断路器跳过=${SKIPPED} · 判定失败=${UNKNOWN} · 限流中止=${RATELIMITED} · 对账中止=${ABORTED}"
           # 存活读数（issue #5326 判据 1）：计数类读数（补 dispatch / 无漂移 / 断路器 / 判定失败），
           # **非挂钟时长**。零动作（NODRIFT=4、MISSING=0）走的是同一条读数，`acted=0` + `why` 说明原因。
           # `--seen` = 本轮对账腿数，由状态机从 `reconcile_one` 调用**现取**（`$SEEN`）；写死就是
@@ -395,7 +399,7 @@ jobs:
           if [ -f .github/scripts/mechanism_liveness.sh ]; then
             source .github/scripts/mechanism_liveness.sh
             mechanism_liveness_declare --seen "${SEEN:-0}" --acted "${MISSING}" \
-              --why "dispatch=${MISSING} · 无漂移=${NODRIFT} · 断路器跳过=${SKIPPED} · 判定失败=${UNKNOWN} · 不在main=${NOTARGET} · 未落状态=${MISS:-0}${MISS:+ 具名:$MISS}（基准 main HEAD=${HEAD7}）"
+              --why "dispatch=${MISSING} · 无漂移=${NODRIFT} · 断路器跳过=${SKIPPED} · 判定失败=${UNKNOWN} · 不在main=${NOTARGET} · 未落状态=${MISS:-0}${MISS:+ 具名:$MISS} · 被限流=${RATE_COUNT:-0}${RATE:+ 具名:$RATE}（基准 main HEAD=${HEAD7}）"
 
           fi
           if [ "$UNKNOWN" -gt 0 ]; then
@@ -462,7 +466,7 @@ jobs:
           echo "🧭 值守面判定：main HEAD=${HEAD7:-未知} · 合并至今=${AGE:-未知}s · N=${N}s · 豁免腿=${EXEMPT_LEGS}"
           {
             echo ""
-            echo "## 值守面（issue #5929：合并了但没上线）\n\n> 判定桶：\`deployed\`/\`inflight\` ⇒ 不报 · \`terminal\`/\`dispatched\` ⇒ 业务告警 · \`notarget\` ⇒ 尚未轮到 · \`unrecorded\`/缺失 ⇒ **机制故障**"
+            echo "## 值守面（issue #5929：合并了但没上线）\n\n> 判定桶：\`deployed\`/\`inflight\` ⇒ 不报 · \`terminal\`/\`dispatched\` ⇒ 业务告警 · \`notarget\` ⇒ 尚未轮到 · \`ratelimited\` ⇒ 本轮被限流（**非机制故障**，出声不判红）· \`aborted\`/\`unrecorded\`/缺失 ⇒ **机制故障**"
             echo ""
             echo "- 判定基准：main HEAD \`${HEAD7:-未知}\` · 合并至今 \`${AGE:-未知}\`s · 宽限期 \`N=${N}\`s"
             echo "- 豁免腿（发布由人手动 —— 用户裁定 B；本对账的 dispatch 不会发布）：\`${EXEMPT_LEGS}\`"
@@ -471,7 +475,7 @@ jobs:
             echo "|---|---|---|"
           } >> "$SUMMARY"
 
-          OVERDUE=""; JUDGED=0; SUSPECT=0; NA=0; PLANNED=0
+          OVERDUE=""; JUDGED=0; SUSPECT=0; NA=0; PLANNED=0; THROTTLED=0
           for svc in $WATCHED_LEGS; do
             # 状态**现取**自对账步落的状态文件：判定本体只此一份（不在这里重算镜像/漂移/断路器）
             state="$(awk -F'\t' -v s="$svc" '$1 == s { print $2; exit }' "$STATE" 2>/dev/null || true)"
@@ -497,6 +501,20 @@ jobs:
                 echo "⏳ ${svc}：不在 main 上（${why:-无依据}）——尚未轮到这个腿，不报警"
                 echo "| ${svc} | \`notarget\` | ⏳ 尚未轮到这个腿（不报警） |" >> "$SUMMARY"
                 ;;
+              ratelimited)
+                # 本轮被限流（issue #9310）：**已落**的合法态 —— 不是「状态机没记它」⇒ **不算机制故障**；
+                # 但也不是「已部署 / 在途」⇒ 必须**出声**（否则「本轮没对账」会被静默读成「没事」）。
+                THROTTLED=$((THROTTLED + 1))
+                echo "::warning::值守面：${svc} 本轮被限流未对账（非机制故障）——${why:-无依据}"
+                echo "| ${svc} | \`ratelimited\` | 🔶 本轮被限流，未对账（**非机制故障**；下一轮重试） |" >> "$SUMMARY"
+                ;;
+              aborted)
+                # 对账**中止**（非限流的真失败，issue #9310）：状态落了、但这条腿**判不了**
+                # ⇒ 与「读不到状态」同属 fail-closed（机制故障），只是归因**具名到中止原因**。
+                NA=$((NA + 1)); MECH="${MECH:-} ${svc}"
+                echo "::error::值守面机制故障 ${svc}：对账中止（aborted，非限流；${why:-无依据}）"
+                echo "| ${svc} | \`aborted\` | 🔴 **机制故障**（对账中止，具名） |" >> "$SUMMARY"
+                ;;
               unrecorded | "")
                 # **机制故障**：对账步**没为这条腿落状态**（`unrecorded` = 种子位没被替换 / `""` = 状态文件
                 # 缺失或写不进去）。**它与「确认未部署」必须是两种东西**（判据 3）——
@@ -515,7 +533,7 @@ jobs:
 
           RC=0; VERDICT=""
           if [ "$NA" -gt 0 ]; then
-            RC=3; VERDICT="机制故障（${NA} 条腿读不到对账状态：对账步没为它落状态）"
+            RC=3; VERDICT="机制故障（${NA} 条腿判不了：未落状态或对账中止 ——${MECH}）"
           elif [ -z "$AGE" ]; then
             RC=3; VERDICT="判定不可用（取不到 main HEAD 的提交时间）"
           elif [ "$AGE" -le "$N" ]; then
@@ -525,10 +543,15 @@ jobs:
           else
             VERDICT="全部腿已部署或部署在途"
           fi
-          echo "🧭 值守面结论：${VERDICT} · 已判定=${JUDGED} · 计入告警=${SUSPECT} · 机制故障=${NA} · 尚未轮到=${PLANNED} · RC=${RC}"
+          # 限流是**并列读数**（issue #9310）：不进机制故障桶，但**必须**出现在结论里 ——
+          # 「N 条腿被限流中止（非机制故障）」就是本单要求的新归因。
+          if [ "$THROTTLED" -gt 0 ]; then
+            VERDICT="${VERDICT} · 被限流中止=${THROTTLED}（非机制故障：本轮没对账成功）"
+          fi
+          echo "🧭 值守面结论：${VERDICT} · 已判定=${JUDGED} · 计入告警=${SUSPECT} · 机制故障=${NA} · 尚未轮到=${PLANNED} · 被限流=${THROTTLED} · RC=${RC}"
           {
             echo ""
-            echo "**结论**：${VERDICT} · 已判定=${JUDGED} · 计入告警=${SUSPECT} · 机制故障=${NA} · 尚未轮到=${PLANNED} · RC=${RC}"
+            echo "**结论**：${VERDICT} · 已判定=${JUDGED} · 计入告警=${SUSPECT} · 机制故障=${NA} · 尚未轮到=${PLANNED} · 被限流=${THROTTLED} · RC=${RC}"
             echo ""
             echo "> N=${N}s 的出处（现取复算）：冷构建上界 **2400s** + 余量 **300s** = 2700s（45min），"
             echo "> 原文 = \`deploy/scripts/swas-deploy-ci.sh\` 的「默认抬到 4500s（= 远端锁等待上限 1800s"
@@ -560,7 +583,9 @@ jobs:
               echo "  终态 / 补出去的 run 一直没落地 / 目标 workflow 不在 main 上）。"
               echo "- 判据本体 = 对账步落的每条腿状态：\`deployed\`（镜像在 / 同 sha 结论 success / 无漂移）"
               echo "  与 \`inflight\`（同 sha 的 run 还没跑完）**不报**；\`terminal\` / \`dispatched\` 超期即报；"
-              echo "  读不到 ⇒ fail-closed 判红。"
+              echo "  \`ratelimited\`（HTTP 403 限流）= 「本轮没对账成功」⇒ **出声但不报机制故障**；"
+              echo "  \`aborted\`（非限流的失败）/ \`unrecorded\` / 缺失 ⇒ fail-closed 判红。（issue #9310："
+              echo "  「对账步没为某条腿落状态」**不再**是限流轮的归因 —— 那种轮次说「N 条腿被限流中止」。）"
               echo "- ⚠️ 「镜像不在 ACR」**不是**判据：\`#5814\` 的 C′ 之后 CI 不推 ACR（服务器侧构建）"
               echo "  ⇒ 那条判据恒为真，照它实现就是每轮都报警（噪声判据是缺陷）。"
               echo ""
@@ -600,6 +625,11 @@ jobs:
                 || echo "::warning::无法创建「机制故障」issue（限流/权限）——请人工按本 run 的 step summary 建单"
             fi
             rm -f "$BODY"
+          elif [ -n "$EXIST" ] && [ "$THROTTLED" -gt 0 ]; then
+            # **不许假清零**（issue #9310）：本轮被限流 ⇒ 对账没跑完（有腿根本没被判定过）
+            # ⇒「清零条件已满足」是没根据的话。单子保持开着，只留一条可见说明。
+            echo "::warning::值守单 #${EXIST} 本轮**不关闭**：${THROTTLED} 条腿被限流未对账（非机制故障）——下一轮重试"
+            echo "| — | ⚠️ 未清零 | 🔶 本轮被限流，对账没跑完（单 #${EXIST} 保持开着） |" >> "$SUMMARY"
           elif [ -n "$EXIST" ]; then
             # 清零判据：部署成功后**自动**关闭告警单（不依赖人记得 —— issue #5929 的验收判据 4）
             gh issue comment "$EXIST" --body "值守面清零：${VERDICT}（main HEAD=${HEAD7:-未知}）。**清零条件已满足**（本轮对账判定该 commit 的部署已到位 / 无漂移）——事件驱动（部署完成触发本工作流）与下一轮 \`*/20\` 任一到达即关；本单由 deploy-reconcile.yml 的值守面自动关闭。" \

@@ -37,6 +37,8 @@ public class KfSyncWorker {
     private final KfSessionIngestService ingestService;
     private final KfOutboxMapper outboxMapper;
     private final KfMediaService mediaService;
+    /** AI_REPLY 一跳（issue #9302）：判定 → 内核产文 → 入队 / 转人工。 */
+    private final KfAiReplyLoop replyLoop;
     private final String instanceId;
     private final int claimStaleSeconds;
 
@@ -47,6 +49,7 @@ public class KfSyncWorker {
                         KfSessionIngestService ingestService,
                         KfOutboxMapper outboxMapper,
                         KfMediaService mediaService,
+                        KfAiReplyLoop replyLoop,
                         @Value("${wechat.kf.sync.claim-stale-seconds:300}") int claimStaleSeconds) {
         this.cursorMapper = cursorMapper;
         this.channelMapper = channelMapper;
@@ -55,6 +58,7 @@ public class KfSyncWorker {
         this.ingestService = ingestService;
         this.outboxMapper = outboxMapper;
         this.mediaService = mediaService;
+        this.replyLoop = replyLoop;
         this.instanceId = "kf-" + UUID.randomUUID().toString().substring(0, 8);
         this.claimStaleSeconds = claimStaleSeconds;
     }
@@ -114,6 +118,21 @@ public class KfSyncWorker {
         }
     }
 
+    /**
+     * AI_REPLY 一跳（issue #9302）：判定 → 内核产文 → 入队 / 转人工。
+     *
+     * <p><b>失败只记日志</b>：客户消息已落库，同步轮必须继续推进游标（消息优先）——
+     * 生成/转人工的任何异常都不得把整轮 sync 打死（否则同一条消息会被反复重放）。</p>
+     */
+    private void replySafely(Long tenantId, KfSessionIngestService.Ingested ingested) {
+        try {
+            replyLoop.onCustomerMessage(tenantId, ingested.sessionId(), ingested.state(), ingested.text());
+        } catch (RuntimeException e) {
+            log.error("[kf-sync] AI_REPLY 一跳失败（消息已落库，游标照常前进）session={}",
+                    ingested.sessionId(), e);
+        }
+    }
+
     private boolean syncCursor(KfSyncCursor cursor) {
         Long tenantId = cursor.getTenantId();
         String openKfid = cursor.getOpenKfid();
@@ -141,8 +160,11 @@ public class KfSyncWorker {
                                 handleEvent(msg);
                                 continue;
                             }
-                            if (ingestService.ingest(tenantId, openKfid, msg)) {
+                            KfSessionIngestService.Ingested ingested =
+                                    ingestService.ingest(tenantId, openKfid, msg);
+                            if (ingested != null) {
                                 archiveMedia(tenantId, openKfid, msg, accessToken);
+                                replySafely(tenantId, ingested);
                             }
                         } catch (Exception e) {
                             log.error("[kf-sync] 单条消息落库失败 msgid={}", msg.path("msgid").asText(""), e);

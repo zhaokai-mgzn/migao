@@ -141,9 +141,9 @@ describe('FeatureGuide 首次登录引导（issue #8925，UI-153）', () => {
     // 无权限的不在（不是灰显，是不渲染）
     expect(screen.queryByTestId('feature-guide-module-finance-center')).not.toBeInTheDocument()
     expect(screen.queryByText('销售订单')).not.toBeInTheDocument()
-    // 无 dashboard:view ⇒ 不教用户先看经营报表；无 mibaoChat ⇒ 不承诺米宝
+    // 无 dashboard:view ⇒ 不教用户先看经营报表；无 mibaoChat ⇒ 不承诺黄金策（悬浮助手不可用时别教用户去问）
     expect(screen.queryByText('先看经营报表')).not.toBeInTheDocument()
-    expect(screen.queryByText('不会操作就问米宝')).not.toBeInTheDocument()
+    expect(screen.queryByText('不会操作就问黄金策')).not.toBeInTheDocument()
     expect(screen.getByText('从左侧菜单进入业务')).toBeVisible()
   })
 

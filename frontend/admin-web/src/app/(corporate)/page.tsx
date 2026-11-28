@@ -25,7 +25,7 @@ export const metadata: Metadata = {
     absolute: '生意管家 — 布艺行业 AI 经营平台｜让经营有据可依',
   },
   description:
-    '生意管家是杭州词元通达科技有限公司面向布艺 / 窗帘企业的 AI 经营平台。米宝承接顾客咨询、算料报价、下单与售后；黄金策承接商品、订单、生产、库存与财务。双 AI 分工，四端数据同源。',
+    '生意管家是杭州词元通达科技有限公司面向布艺 / 窗帘企业的 AI 经营平台。智能客服承接顾客咨询、算料报价、下单与售后；黄金策承接商品、订单、生产、库存与财务。双 AI 分工，四端数据同源。',
 }
 
 export default function HomePage() {
@@ -54,7 +54,7 @@ export default function HomePage() {
               </h1>
 
               <p className="mt-5 max-w-2xl text-base leading-relaxed text-neutral-600 sm:text-lg">
-                生意管家是词元通达面向布艺 / 窗帘企业的 AI 经营平台。米宝接待顾客、算料报价、下单与售后；
+                生意管家是词元通达面向布艺 / 窗帘企业的 AI 经营平台。智能客服接待顾客、算料报价、下单与售后；
                 黄金策看经营、跟进度、处理商品与财务。两侧读取同源经营数据。
               </p>
 

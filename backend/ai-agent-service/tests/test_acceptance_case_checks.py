@@ -404,20 +404,20 @@ class TestConfirmLoop:
         issues = lr.check_confirm_loop(results)
         assert issues and "死循环" in issues[0], issues
 
-    def _card_cv(self, cv, title):
-        """生产形态：confirm 卡的 confirmValue 已由字段事实确定性派生（issue #3406）。"""
+    def _card_cv(self, cv, title, qty=3):
+        """生产形态：`confirmValue` 由 `interact` 工具层从 fields 派生（issue #3406），
+        但**落进 trace 的 `args` 永远是覆盖前的模型措辞**（issue #9280）。
+
+        故夹具里两个字段都在场，且**事实（数量）载在 `fields` 里**：运行时按 fields 派生值
+        放行/拦，判据也必须按 fields 计 —— 事实放在 cv 里而 fields 不动的夹具是**非生产形态**。
+        """
         return ("interact", {"component": "confirm", "title": title,
                              "confirmValue": cv,
-                             "fields": [{"label": "商品", "value": "遮光窗帘"}]})
+                             "fields": [{"label": "商品", "value": "遮光窗帘"},
+                                        {"label": "数量", "value": f"{qty}米"}]})
 
     def test_confirm_value_is_the_primary_key(self):
-        """标题各不相同、但 confirmValue 相同（= 同一批事实）→ 必须判死循环。
-
-        为什么单列（变异 M212 抓出）：把内容键的 confirmValue 分支去掉后，测试**照样全绿** ——
-        因为旧用例的卡都没带 confirmValue，走的是 fields 回退分支；
-        而**生产形态**下 confirmValue 一定存在（issue #3406 之后由字段事实派生），
-        故必须有用例专门钉住这条主路径。
-        """
+        """同事实 + 同派生值、标题各不相同 → 必须判死循环。"""
         cv = "确认：商品=遮光窗帘；数量=3米"
         results = _rounds_with_args([
             (1, [self._card_cv(cv, "请确认订单信息")], "x"),
@@ -425,14 +425,31 @@ class TestConfirmLoop:
             (3, [self._card_cv(cv, "订单确认")], "z"),
         ])
         issues = lr.check_confirm_loop(results)
-        assert issues and "死循环" in issues[0], f"同一 confirmValue 连发 3 次必须判死循环: {issues}"
+        assert issues and "死循环" in issues[0], f"同一批事实连发 3 次必须判死循环: {issues}"
+
+    def test_confirm_value_still_keys_fieldless_cards(self):
+        """无 fields 的卡仍按 `confirmValue` 计（变异 M212 的意图：该回退分支不得被删）。
+
+        为什么必须留着：判据数的是**模型发起的 interact 调用**（被拦/失败的调用不产生卡事件，
+        issue #3365），这类调用可能**没有字段** —— 只剩 `confirmValue` 可判。
+        """
+        results = _rounds_with_args([
+            (1, [("interact", {"component": "confirm", "title": "请确认订单信息",
+                              "confirmValue": "确认补充商品属性"})], "x"),
+            (2, [("interact", {"component": "confirm", "title": "请核对订单明细",
+                              "confirmValue": "确认补充商品属性"})], "y"),
+            (3, [("interact", {"component": "confirm", "title": "订单确认",
+                              "confirmValue": "确认补充商品属性"})], "z"),
+        ])
+        issues = lr.check_confirm_loop(results)
+        assert issues and "死循环" in issues[0], issues
 
     def test_different_confirm_values_not_a_loop(self):
         """事实变了（数量 3→4）→ confirmValue 变 → 不是死循环（OR-019 形态）。"""
         results = _rounds_with_args([
-            (4, [self._card_cv("确认：商品=遮光窗帘；数量=3米", "请确认订单信息")], "x"),
-            (6, [self._card_cv("确认：商品=遮光窗帘；数量=4米", "请确认订单信息")], "y"),
-            (7, [self._card_cv("确认：商品=遮光窗帘；数量=4米", "请确认订单信息")], "z"),
+            (4, [self._card_cv("确认：商品=遮光窗帘；数量=3米", "请确认订单信息", qty=3)], "x"),
+            (6, [self._card_cv("确认：商品=遮光窗帘；数量=4米", "请确认订单信息", qty=4)], "y"),
+            (7, [self._card_cv("确认：商品=遮光窗帘；数量=4米", "请确认订单信息", qty=4)], "z"),
         ])
         assert lr.check_confirm_loop(results) == []
 
@@ -441,6 +458,91 @@ class TestConfirmLoop:
             (1, [self._card(3)], "x"), (2, [self._card(3)], "y"), (3, [self._card(3)], "z"),
         ])
         assert lr.check_confirm_loop(results), "同一批事实连发 3 次必须判死循环"
+
+    # ── OR-022 真实形态（issue #9280，run 46086496186）：三张卡措辞逐字相同、事实各不相同 ──
+    # 证据来源：artifact `eval-summary-xiaobu.json` 的 OR-022 `call_args`（R4/R5 的 fields
+    # 在摘要里被截断成「…+2/+3」，此处只取**可见字段**，不臆造）+ R6 由 R7 顾客点卡回传的
+    # **派生值**逐字段还原（`确认：单价=…；合计=¥504（打孔加工费按加工单另计）…`）。
+    # 派生值三张各不相同 ⇒ 运行时从来把它们当**不同事实**；旧判据按 args 里的模型措辞
+    # （全是「确认下单」）计数 ⇒ 假红。
+    _OR022_CARD_FIELDS = (
+        [("商品", "遮光窗帘（米白·门幅2.8米）"), ("数量", "3 米（散剪）"), ("单价", "¥168/米"),
+         ("面料小计", "¥504"), ("加工项", "打孔（顶部打孔）3 米"), ("收货人", "张三")],
+        [("商品", "遮光窗帘（米白 · 门幅2.8米）"), ("工艺", "布帘 · 打孔"), ("数量", "3 米"),
+         ("单价", "¥168/米"), ("小计", "¥504"), ("合计", "¥504（加工费另计）")],
+        [("商品", "遮光窗帘（米白 · 门幅2.8米）"), ("工艺", "打孔（顶部打孔）"), ("数量", "3 米"),
+         ("单价", "¥168/米"), ("面料小计", "¥504"), ("合计", "¥504（打孔加工费按加工单另计）"),
+         ("收货人", "张三")],
+    )
+
+    def _or022_card(self, fields, title="请确认订单信息"):
+        """模型措辞固定为「确认下单」（args 原值），事实由 fields 承载。"""
+        return ("interact", {"component": "confirm", "title": title,
+                             "confirmValue": "确认下单",
+                             "fields": [{"label": k, "value": v} for k, v in fields]})
+
+    def test_model_wording_alone_is_not_same_facts(self):
+        """**issue #9280 主判据**：`confirmValue` 相同（模型措辞）、fields 各不相同 ⇒ 不是死循环。
+
+        OR-022 现场：R4 title=请核对订单信息 / R5、R6 title=请确认订单信息，args 里的
+        `confirmValue` 逐字都是「确认下单」—— 旧判据据此判"同样的事实 ×3"。
+        但三张卡 `fields` 内容各不相同，运行时派生值也各不相同（真实 run 里 7~9 项；
+        摘要里被截断的字段未在此展开，只取可见字段）。
+        """
+        results = _rounds_with_args([
+            (4, [self._or022_card(self._OR022_CARD_FIELDS[0], "请核对订单信息")], "123456"),
+            (5, [self._or022_card(self._OR022_CARD_FIELDS[1])], "123456"),
+            (6, [self._or022_card(self._OR022_CARD_FIELDS[2])], "123456"),
+        ])
+        assert lr.check_confirm_loop(results) == [], (
+            "三张事实不同的卡被按模型措辞判成死循环（OR-022 假红，issue #9280）"
+        )
+
+    def test_model_wording_alone_same_facts_still_detected(self):
+        """**防退化**（反向）：措辞相同 **且** fields 完全相同 ×3 ⇒ 仍必须判死循环。
+
+        缺这条，「一律不判」也能让上面那条绿（空断言）。
+        """
+        card = self._or022_card(self._OR022_CARD_FIELDS[1])
+        issues = lr.check_confirm_loop(
+            _rounds_with_args([(4, [card], "x"), (5, [card], "y"), (6, [card], "z")]))
+        assert issues and "死循环" in issues[0], f"同事实连发 3 次必须判死循环: {issues}"
+
+    def test_excerpt_shows_fields_even_when_confirm_value_present(self):
+        """复核证据：`confirmValue` 在场时摘要**仍须带 fields**（issue #9280 归因误导的病灶）。
+
+        旧摘要在 cv 在场时 `return`，把 fields 全部藏起来 ⇒ 复核者只看得到"三张卡都写了
+        确认下单"，无法独立判断"是不是同样的事实"（盲审缺陷四的原文要求）。
+        """
+        excerpt = lr._confirm_card_excerpt(
+            {"component": "confirm", "title": "请核对订单信息", "confirmValue": "确认下单",
+             "fields": [{"label": "数量", "value": "3 米（散剪）"}]}, 4)
+        assert "数量=3 米（散剪）" in excerpt, f"摘要藏了事实字段，复核无从判断: {excerpt}"
+        assert "确认下单" in excerpt, excerpt
+
+    def test_content_key_matches_runtime_derivation_granularity(self):
+        """**类级守卫**（铁律 8）：判据的内容键必须与**运行时派生值**同增同异。
+
+        运行时（`app/tools/confirm_value.py::confirm_value_for_fields`）是唯一权威；
+        判据侧不 import 服务端代码（跨进程评测），但**刻度必须一致** ——
+        否则"运行时认定两张卡不同、判据认定相同"这类假红会在别的用例上复发（issue #9280）。
+        """
+        from app.tools.confirm_value import confirm_value_for_fields
+
+        facts_a = [{"label": "商品", "value": "遮光窗帘"}, {"label": "数量", "value": "3米"}]
+        facts_b = [{"label": "商品", "value": "遮光窗帘"}, {"label": "数量", "value": "4米"}]
+
+        def key(fields):
+            return lr.confirm_card_content_key(
+                {"component": "confirm", "title": "请核对订单信息",
+                 "confirmValue": "确认下单", "fields": fields})
+
+        assert confirm_value_for_fields(facts_a) != confirm_value_for_fields(facts_b)
+        assert key(facts_a) != key(facts_b), "运行时不同的事实被判据合成同一个键（假红复活）"
+        assert confirm_value_for_fields(list(reversed(facts_a))) == confirm_value_for_fields(facts_a)
+        assert key(list(reversed(facts_a))) == key(facts_a), (
+            "字段顺序影响了内容键 —— 运行时刻度与判据刻度不一致（issue #3406 的排序口径）"
+        )
 
 
 class TestFalseSuccess:

@@ -6,13 +6,45 @@
 
 > **后续条目继续在本文件 `## [Unreleased]
 
+### 前端旧称收口：官网 / 后台 / 商家小程序统一「黄金策 · 智能客服」（2026-11-28，issue #9306）
+
+- **形态**（用户 2026-11-28 裁定：「C 端也不叫米宝了，C 端现在不提供 agent 形态，只提供技术能力，直接叫智能客服」）：前端 live 面 `git grep -c "米宝" -- frontend` **122 行 / 58 文件 → 10 行 / 6 文件**（−92%），余量**全部**是必须点名的东西 —— 2 处 `GB/T 47746-2026` 声称与免责小字（合规文本，逐字不动）、1 处用户裁定原话引用、6 处反回滚判据锚 + 1 处负断言常量，逐条登记在 `tests/unit_ci_workflows/frontend_retired_brand_residue_ledger.json`。
+- **改名口径**：B 端经营侧统一「**黄金策**」、C 端统一「**智能客服**」（不拟人、不自称名字）—— 官网 about / layout（SEO·OG·keywords）/ 首页 / 产品服务页 / 页脚 / 产品示意标题 / 首页四屏文案；后台设置页「AI 客服名称」默认值与欢迎语示例、微信客服接入引导、建品页「设为推荐」说明、人工会话页（标题 / 会话名 / 说话人）、引导卡（「不会操作就问黄金策」）、生产进度与报工说明；商家小程序 README / 空态注释 / 品牌注释与对应测试。
+- **用户可见变化**：设置页 AI 客服默认名 `米宝` → `智能客服`（欢迎语示例同步）；官网 SEO / OG / 正文不再出现退役品牌名；人工会话页说话人由「米宝 · 企业智能客服」变「企业智能客服」。
+- **合规小字未动（`#6330` 硬约束）**：`GB/T 47746-2026` 的「遵循 / 对标」声称与免责小字**逐字未改**，两处（首页 + 页脚）**不在本 PR 的 diff 里**；它们含旧名的处置已登记为 `kind=compliance_frozen`（重启条件 = 用户在合规面显式裁定随品牌改名同步）。
+- **判据**：新增 `tests/unit_ci_workflows/test_frontend_retired_brand_residue.py` —— ① live 面零**未登记**旧称（具名 `文件:行`）；② 台账诚实（空豁免红 + `frozen_max` 只许缩短 + `why` 在场 + `kind` 合法）；③ 扫描面自证（≥1000 文件，现取 1405；并点名必须扫到的三个文件）；④ 两条注入式红证（未登记命中要具名 / 空豁免要具名）。配套既有判据：`copy-voice-banlist.ts` 口吻判据、`tests/unit_ci_workflows/test_positioning_copy_terms.py`、`test_c_end_naming_no_persona.py` 全绿；冻结测试断言随文案同步改，**无删除、无跳过**。
+- **未固化（照实）**：① `MibaoLogo.tsx` **文件名**未改（组件名属技术标识，重命名会引发大面积 import 变更；只改注释文案）；② `.github/cases/ui.yml` 的 UI-018 / UI-036 字面量待跟踪单 **#9326** 同步（本单按派单边界不碰 `.github/cases/**`）。
+
+### 图片识别的解读来源标记改「黄金策解读」：跨语言字面量同批改名 + 逐字相等判据（2026-11-28，issue #9306）
+
+- **形态**：页面深通道的**来源标记** `[米宝解读]` 改名 **`[黄金策解读]`** —— 后端 `backend/ai-agent-service/app/vision/deep_channel.py` 的 `SOURCE_INTERPRETED`、工具展示文案「↳ 黄金策解读：」（`app/tools/image_recognize.py`）、前端 `frontend/admin-web/src/lib/agent-page-fill.ts` 的 `PAGE_FILL_SOURCE_INTERPRETED`、`admin-api` 的 `PageFillPlan` / `ImageRecognitionClient` 契约注释同批改；`source ∈ {"[图片识别]", "[黄金策解读]"}` 的**来源可分辨**口径不变。
+- **为什么不保留旧 token**：它是内存 DTO 值、**不落库**（`backend/admin-api/src/main/resources/db` 对 `page_fill` 零命中）⇒ 不需要数据迁移、不需要双读；保留旧 token 只会让退役品牌名在这个面上永远存活。
+- **用户可见变化**：建品页 / 建单页的解读徽标与「↳ …解读：」提示由「米宝」改「黄金策」；前端角色名单一源（`frontend/admin-web/src/config/ai-roles.ts`）新增产品名常量 `AI_NAMES`，与 `backend/ai-agent-service/app/agents/naming.py` 的 `display_name` 逐字同源。
+- **判据**：`backend/ai-agent-service/tests/test_vision/test_source_token_cross_language.py`（后端常量 ↔ 前端常量**逐字相等**，任一侧单独改 ⇒ 具名红；token 不得含退役品牌名、且必须仍与 `[图片识别]` 可区分）+ `tests/unit_ci_workflows/test_agent_naming_source_of_truth.py` 的判据 4（`ai-roles.ts` 的 `AI_NAME_*` ↔ 映射表逐字一致）。冻结夹具（`ImageRecognitionInterpretControllerTest` / `ImageRecognitionInterpretTest` / `InterpretedBadge.test.tsx` 等）断言值随契约同步改，**未删任何断言**。
+- **不变**：`.github/cases/**` 一个字未动；C 端能力 / kf 通道 / `customer_general` prompt 未动；`source` 两值结构与「歧义格不填 / 不落库」口径未变。
+- **未固化（照实）**：`.github/cases/product.yml` 的 PR-124/125/126/131 仍引用旧字面量（本单按边界不碰用例面）⇒ 用例侧待承接单同步，已登记进 `tests/unit_ci_workflows/c_end_persona_name_residue_ledger.json` 的规则。
+
+### 新租户的客服名默认值改「智能客服」：新建配置行的顾客不再被「米宝」问候（2026-11-28，issue #9328）
+
+- **形态**：`tenant_ai_configs.bot_name` 的**列默认值**由 V213 设的 `'米宝'` 改为 `'智能客服'`（新增迁移 `V220__set_tenant_bot_name_column_default_smart_service.sql`，一条 `ALTER … SET DEFAULT`）。这是 #9308 登记的第 ① 条边界：V219 只回填**存量行**，改不动**将来插入**的行 —— 读取侧 `data.get("botName") or DEFAULT_BOT_NAME` 是租户配置优先，行里非空就照用。
+- **用户可见变化**：新建的租户配置若**没显式给** `botName`，落库即「智能客服」⇒ 该租户的 C 端开场白不再自称退役品牌名；商家自定义过名字的不受影响。
+- **不变**：`db/init/schema.sql` 的初始 `DEFAULT '小布'` 一字未改（已发布内容、sha256 冻结；迁移链是现行真值）；`greeting_template` / `channel_configs` 里商户自己写的「米宝」属商户数据、不回填。
+- **判据**：`tests/unit_ci_workflows/test_v220_bot_name_column_default.py`（真库：迁移前 `INSERT … RETURNING bot_name` = `'米宝'`、迁移后 = `'智能客服'`，存量行零改动；两遍幂等；静态**链尾守卫** = 迁移链里最后一条设置该默认值的迁移必须是「智能客服」）。红证：把迁移里的默认值物理改回 `'米宝'` ⇒ 真库判据具名红（`expected '智能客服' but was '米宝'`）。
+
+### 存量商户的客服名回填「米宝」→「智能客服」（2026-11-28，issue #9308）
+
+- **形态**（用户 2026-11-28 逐字：「C 端也不叫米宝了…直接叫智能客服」）：上一条只改了**代码默认值**，而 `tenant_ai_configs.bot_name` 里 V213 当年物化进去的 `'米宝'` 是**行值**（取值逻辑 `data.get("botName") or DEFAULT_BOT_NAME` ⇒ 租户配置优先于新默认值）⇒ 存量商户的顾客照旧被退役品牌名问候。新增迁移 `V219__backfill_tenant_bot_name_to_smart_service.sql`：只把**逐字等于 `'米宝'`** 的行改成 `'智能客服'`（幂等：带旧值谓词，第二遍 `UPDATE 0`）。
+- **用户可见变化**：存量商户的 C 端客服名 / 欢迎语不再出现「米宝」；**商家自定义的名字一个字不动**（匹配面是逐字相等、不是 `LIKE` —— 「米宝小助手」这类含旧名子串的自定义名必须被保护）。
+- **不变（缺口已由 V220 收口）**：本迁移不动列定义 / 列默认值（列默认值仍是 V213 设的 `'米宝'` ⇒ 新建配置若没显式给 `botName` 会落旧名）—— 该缺口由 issue #9328 的迁移 `V220__set_tenant_bot_name_column_default_smart_service.sql` 堵上（见上方 #9328 条目）；`greeting_template` / `channel_configs` 里商户自己写的「米宝」属商户数据、不回填；前端兜底名归 #9306。
+- **判据**：`tests/unit_ci_workflows/test_v219_bot_name_backfill.py`（真库四行夹具 `'米宝'` / `'小美'` / `'米宝小助手'` / NULL ⇒ 只有第一行变；两遍幂等 = `UPDATE 1` → `UPDATE 0`；L0 静态：`WHERE` 必须逐字相等 + 只写 `bot_name`/`updated_at` + 显式事务）。红证：把 `WHERE` 物理改成 `LIKE '%米宝%'` ⇒ 静态判据具名红 **+** 真库判据具名红（`cfg-decoy` 被改、`cfg-custom` 不受影响）。
+
 ### C 端顾客侧统一称「智能客服」（2026-11-28，issue #9301）
 
 - **形态**（用户 2026-11-28 逐字：「C 端也不叫米宝了，C 端现在不提供 agent 形态，只提供技术能力，直接叫智能客服」）：C 端对外不再使用人格名，一律称**智能客服**；对话内核**不退役**（主入口 = 微信客服通道：通道 + 判定 + 回复内核，内核复用 C 端工具集）。改的是**身份面**：`xiaobu.py` 的 `display_name` / `DEFAULT_BOT_NAME` / `DEFAULT_GREETING` / `direct_replies`、C 端身份层（`references/base/identity-xiaobu.md`）与 6 个 `customer_*` skill 的 system prompt、`EXAMPLES-customer_*.md`、四个渠道默认欢迎语、转人工建议卡的「继续咨询」选项。
 - **用户可见变化**：商家未在「机器人设置」里自定义名字时，租户默认 `botName` 由「米宝」变「智能客服」，开场白与渠道欢迎语不再自称「米宝」；商家自定义 `botName` 的能力**原样保留**（只改默认值）。
 - **不变**：B 端黄金策的措辞与能力一个字未改；C 端工具集 / 判定 / 路由未动；`name=` / `persona=` / 文件名等技术标识**不改**（映射表见 `backend/ai-agent-service/app/agents/naming.py`）。
 - **判据**：`tests/unit_ci_workflows/test_agent_naming_source_of_truth.py`（映射表 ↔ agent 声明逐字一致 / C 端身份面与 C 端 prompt 面不得再出现「米宝」/ 映射表条目必须带 `note` 说明 id 与产品名为何不同）+ 既有 `backend/ai-agent-service/tests/{test_xiaobu,test_channel_greeting,test_dual_agent,test_persona_identity_split,test_prompt_snapshots}.py` 的口径更新。红证：`xiaobu.py` 的 `display_name` 改回「米宝」⇒ 具名红；映射表 `xiaobu` 条目改成「米宝」⇒ 具名红。
-- **未固化（照实登记）**：① 存量数据 `tenant_ai_configs.bot_name = '米宝'`（V213 回填的系统默认行）**未回填**，需要同款迁移；② `frontend/admin-web` 官网 / 设置页 / 工作台文案仍称「米宝」（前端包承接）；③ `.github/cases/agents.yml` 的 AG-014 `want_text` 与 B 端 prompt 里对 C 端的旁称归 cases / 后续包。
+- **未固化（照实登记）**：① 存量数据 `tenant_ai_configs.bot_name = '米宝'`（V213 回填的系统默认行）**未回填** ⇒ ✅ **已由迁移 `V219__backfill_tenant_bot_name_to_smart_service.sql` 回填**（见上方 issue #9308 条目）；② `frontend/admin-web` 官网 / 设置页 / 工作台文案仍称「米宝」（前端包承接）；③ `.github/cases/agents.yml` 的 AG-014 `want_text` 与 B 端 prompt 里对 C 端的旁称归 cases / 后续包。
 
 ### C 端顾客「帮我看看」不再被猜着查商品：「纯看」轮只投影「问 + 展示」工具面（2026-11-28，issue #9280）
 
@@ -1900,6 +1932,17 @@ worker-h5 纯函数、承运商 4 条 × 两处入口 + 类级单一真值守卫
 
 
 ## [Unreleased]
+
+### 微信客服接通 AI 自动回复：C 端智能客服「AI 主力、人工兜底」（2026-11-28，issue #9302）
+
+- **形态**（用户 2026-11-28 裁定，逐字：「C 端也不叫米宝了，C 端现在**不提供 agent 形态，只提供技术能力**，直接叫**智能客服**」/「A，**大部分客服工作都要由我们的智能客服完成，只有 AI 搞不定的事情才转人工**」）：C 端 = **智能客服 = 通道（微信客服）+ 判定 + 回复**，**没有 agent 形态**（无 persona 人设 / 开场白 / 悬浮助手 / 独立聊天面板）；C 端对话内核（`agent_type="xiaobu"`，工具集原样保留）**降级为内核**，只被通道内部调用产文。
+- **补上唯一缺的一环**：此前 `KfDecisionService` 会判 `AI_REPLY`，但**全仓没有消费者** ⇒ 客户在微信客服里发消息永远等不到回复。现在 `KfSyncWorker` 在同一轮里跑 `KfAiReplyLoop`：`AI_REPLY` ⇒ 调 ai-agent 新内部端点 `POST /api/internal/kf/reply`（内核产**一条**客户可见正文）⇒ `KfSendService.enqueueReply` 入 `kf_outbox`（预算 / 48h 窗口 / `msgid` 幂等 / 2048 字节上限全复用，不绕开）。
+- **三条闸门**（依据：48h 内 ≤5 条 + 单条 ≤2048 字节 ⇒ 每条自动回复都是稀缺资源）：① 只读工具必需，但**全部服务端串行、只发一条最终答复**，禁止「正在查询…/稍等」这类中间气泡；② **写工具不上通道**（建单/改单/退款/发券/改价一律转人工；微信客服是异步通道、无可靠二次确认 UI，与 B 端 order 域只读 #5247 同口径）；③ **数值只能来自工具**（0 次工具调用却报金额 ⇒ 转人工，不许模型编价格/库存/运费）。配套上限：一次入站至多 1 条、单轮工具调用 ≤3、总超时 ≤8s。
+- **fail-closed**：生成失败 / 超时 / 空正文 / 中间过程话术 / 无权承诺（「已为您转接」「已通知人工」）/ 无工具支撑的金额 / 预算耗尽 ⇒ **0 条 outbox** + 转人工（`ESCALATE_HUMAN`）；绝不发半成品或空话。
+- **同批修两个对抗「AI 主力」的现存缺陷**：① `KfDecisionService` 的 `HUMAN_WORDS` 里「客服」**单独出现就升级**（「客服你好」「你们客服在吗」「客服电话多少」全被判要人工）⇒ 改成「`人工`/`真人` 单独出现 + 动作词（找/要/叫/联系/转/需要/请）+ 对象词（人工/真人/客服）」的组合判据，风险词（投诉/退款/赔偿/起诉/律师/曝光/差评）**逐字未动**；② 发送预算窗口**不随客户新消息重置**（整个会话总共 5 条、聊到第 6 句 AI 再也发不出去，而工作台提示早就写着「客户下条消息后可重新计算」）⇒ 客户新消息落库后重置窗口（`used=0` / `window_start=NOW()`），**上限仍是每条客户消息 ≤5 条**（`used < 5` 与 `ck_kf_send_budget_used` 护栏保留；重复消息不重置，防重放白送额度）。
+- **判据**：`backend/admin-api/src/test/java/com/migao/admin/service/kf/KfAiReplyLoopTest.java`（outbox 恰 1 条 / 失败 0 条 + 转人工 / 无权承诺 / 中间过程 / 无工具支撑金额 ⇒ 转人工）、`KfReplyClientTest.java`（fail-closed 解析）、`KfDecisionServiceTest.java`（客服单独出现不升级 / 明确索取必升级 / 风险词集合逐字未变）、`KfSessionIngestServiceTest.java` + `KfSendBudgetMapperTest.java`（入站重置 / 重放不重置 / 上限未放宽）、`KfSyncWorkerTest.java`（接线 / 重复不触发 / 一跳抛错不阻塞游标）、`backend/ai-agent-service/tests/test_kf_reply.py`（内核错误 / 空正文 / 工具调用 >3 / 超时 ⇒ 判不可用；中间过程丢弃）。红证读数见 PR body。
+- **不变**：判定顺序与阈值（#9185/#9196）、`KfJudgeClient` 的 fail-open、AI 侧仍**没有** `human_handoff` 工具（2026-09-19 裁定）、5 条/48h 预算上限、`.github/cases/**`。
+- **未固化（照实）**：回复质量不设 LLM 判据（用确定性代理）、多轮上下文未取、崩溃窗口内「已落库未回复」不自动重放、「每条客户消息 5 条」需一次真机验证、「5 条/48h 对 AI 主力够不够」待产品确认。
 
 ### 微信客服：工作台看得见渠道、发送状态与 48h 余量（2026-11-25，issue #9202）
 

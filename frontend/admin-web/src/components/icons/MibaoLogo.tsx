@@ -5,7 +5,7 @@ interface MibaoLogoProps {
   className?: string;
 }
 
-/** 米宝 AI 助手 Logo — 简洁几何机器人头像 */
+/** 黄金策 AI 助手 Logo — 简洁几何机器人头像 */
 export function MibaoLogo({ size = 32, className }: MibaoLogoProps) {
   return (
     <svg

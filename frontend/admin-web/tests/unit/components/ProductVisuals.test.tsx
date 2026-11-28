@@ -21,7 +21,7 @@ describe('ProductVisuals（官网产品界面示意）', () => {
 
   it('顾客对话示意：估算报价 + 估算标记', () => {
     render(<CustomerChatMock />)
-    expect(screen.getByText('微信客服 · 米宝')).toBeInTheDocument()
+    expect(screen.getByText('微信客服 · 智能客服')).toBeInTheDocument()
     expect(screen.getByText('估算报价')).toBeInTheDocument()
     expect(screen.getByText('估算')).toBeInTheDocument()
     expect(screen.getByText(/成交单价以商品库权威价为准/)).toBeInTheDocument()

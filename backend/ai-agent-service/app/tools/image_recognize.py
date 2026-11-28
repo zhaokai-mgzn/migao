@@ -91,7 +91,7 @@ class ImageRecognizeTool(BaseTool):
                 "type": "object",
                 "description": "可选的领域解读：{字段键: {value, note}}。"
                                "商品侧**可落值**的键：name / material / craft / color / description"
-                               "（看图 + 品牌常见品类给贴近结论，来源标 [米宝解读]；"
+                               "（看图 + 品牌常见品类给贴近结论，来源标 [黄金策解读]；"
                                "只在图上未写明那一格时才落值，不覆盖已识别 / 歧义格）；"
                                "description 是**商品描述文案**（HTML 片段，贴近图上信息 + 行业常识，"
                                "不得编造图上没有的硬事实）⇒ 由你生成一份；"
@@ -214,7 +214,7 @@ def _model_message(plan: Dict[str, Any]) -> str:
             options = "、".join(c["value"] for c in field["candidates"])
             lines.append(f"  ↳ 目录里最接近的是：{options} —— 请**贴给商家挑**，不要替他选")
         if field.get("note"):
-            lines.append(f"  ↳ 米宝解读：{field['note']}（{SOURCE_INTERPRETED}，不是图上抄的）")
+            lines.append(f"  ↳ 黄金策解读：{field['note']}（{SOURCE_INTERPRETED}，不是图上抄的）")
     lines += [
         "",
         "口径：",

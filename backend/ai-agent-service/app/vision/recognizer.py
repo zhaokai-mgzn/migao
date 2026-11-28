@@ -229,7 +229,7 @@ def _schema_for(target_type: str):
     真跑实测「光在提示词里求它只抄图上写明的」**无效** —— 模型照样编出
     `name="常青藤系列窗帘面料色卡"` 与一整段 `description`，还顶 `[图片识别]` 标
     （把「猜的」标成「抄的」，比留空更危险）。
-    ⇒ **不给它这一格**，比「要求它别编」可靠。这两格的值改由 `[米宝解读]` 给
+    ⇒ **不给它这一格**，比「要求它别编」可靠。这两格的值改由 `[黄金策解读]` 给
     （`deep_channel.INTERPRETABLE_KEYS`）。
 
     注意：`deep_channel.build_page_fill` 用的是**未过滤**的 `TARGET_FIELDS`

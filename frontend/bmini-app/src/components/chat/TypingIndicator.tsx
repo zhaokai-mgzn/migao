@@ -5,7 +5,7 @@ interface TypingIndicatorProps {
   text?: string
 }
 
-/** 默认文案用 **B 端** agent 名（「黄金策」；C 端才默认「米宝」，见 `src/utils/brand.ts`）—— issue #5747 */
+/** 默认文案用 **B 端** agent 名（「黄金策」；C 端不提供 agent 形态、不称名字，见 `src/utils/brand.ts`）—— issue #5747 */
 export default function TypingIndicator({ text = '黄金策正在思考...' }: TypingIndicatorProps) {
   return (
     <View className='typing-indicator'>

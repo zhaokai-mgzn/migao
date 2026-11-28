@@ -6,17 +6,12 @@
     "`kind=negative_anchor` = 反回流负断言：必须点名「这里不许出现什么」，换名会让断言失去判别力",
     "`kind=boundary` = 派单边界：该用例块由别的 PR 收口，本包不动（改名留给承接方）",
     "**未登记即红**（live 面出现「米宝」且不在本台账 ⇒ 具名红）· **登记了却已无命中 ⇒ 红**（空豁免只许缩短）· `frozen_max` 与 `entries` 条数必须相等（删条目必须同批下调上限）",
-    "**`merge_log` 不在扫描面**：审计记录 append-only，历史旧称一律照旧（判据 5 钉住这条排除是真的）"
+    "**`merge_log` 不在扫描面**：审计记录 append-only，历史旧称一律照旧（判据 5 钉住这条排除是真的）",
+    "**`code_literal` 的代码侧已由 issue #9306 改名**（`[米宝解读]`→`[黄金策解读]`；设置页默认 `botName` / 副文案 → 智能客服）⇒ `product.yml` / `ui.yml` 里这几条的**用例侧字面量**待承接单同步；本单按边界不碰 `.github/cases/**`，条目原样保留、`frozen_max` 不动",
+    "2026-11-28 收口（PR #9304 代码侧同批改名完成后）**删掉 5 条**：AG-012 的 `display_name`、CH-013 / CH-014 的建议卡 label、CH-046 的 `DEFAULT_BOT_NAME`、UI-082 的品牌正向锚 —— 真值已改为「智能客服」⇒ 用例同步改口，豁免不再需要（`frozen_max` 同批 18→13）"
   ],
-  "frozen_max": 18,
+  "frozen_max": 7,
   "entries": [
-    {
-      "path": ".github/cases/agents.yml",
-      "case_id": "AG-012",
-      "anchor": "display_name == '米宝'",
-      "kind": "code_literal",
-      "why": "`get_agent_config('xiaobu').display_name` 是代码侧声明字面量（backend/ai-agent-service/tests/test_dual_agent.py）；本包不改代码 ⇒ 只有它跟着改，这条断言才不会假红"
-    },
     {
       "path": ".github/cases/agents.yml",
       "case_id": "AG-014",
@@ -46,27 +41,6 @@
       "why": "派单边界：CH-009 由 PR #9290 收口，本包按边界不动该用例块（残称留待承接方同批改名）"
     },
     {
-      "path": ".github/cases/chat.yml",
-      "case_id": "CH-013",
-      "anchor": "继续咨询米宝",
-      "kind": "code_literal",
-      "why": "interact 卡片选项文案真值 = backend/ai-agent-service/app/graph/handoff_offer.py 的 `{\"label\": \"继续咨询米宝\"}`；本包不改代码侧文案"
-    },
-    {
-      "path": ".github/cases/chat.yml",
-      "case_id": "CH-014",
-      "anchor": "继续咨询米宝",
-      "kind": "code_literal",
-      "why": "同 CH-013：点击的正是后端卡片下发的 label，用例文本必须与代码侧文案逐字一致"
-    },
-    {
-      "path": ".github/cases/chat.yml",
-      "case_id": "CH-046",
-      "anchor": "= 「米宝」）",
-      "kind": "code_literal",
-      "why": "`DEFAULT_BOT_NAME` 的默认值真值在代码侧（渠道欢迎语解析）；本包不改代码 ⇒ 默认名仍是「米宝」"
-    },
-    {
       "path": ".github/cases/misc.yml",
       "case_id": "MC-016",
       "anchor": "米宝智能助手",
@@ -81,60 +55,11 @@
       "why": "`forbidden_text` 里点名了一句真实发生过的能力自我否定输出「米宝没法提交」；摘掉这几个字 = 放宽断言（本包明令禁止）"
     },
     {
-      "path": ".github/cases/product.yml",
-      "case_id": "PR-124",
-      "anchor": "[米宝解读]",
-      "kind": "code_literal",
-      "why": "`[米宝解读]` 是前端落值徽标的**代码字面量**（frontend/admin-web/src/app/(dashboard)/products/new/page.tsx），本包不改代码"
-    },
-    {
-      "path": ".github/cases/product.yml",
-      "case_id": "PR-125",
-      "anchor": "[米宝解读]",
-      "kind": "code_literal",
-      "why": "同 PR-124：`source == \"[米宝解读]\"` 是逐字比较的落值来源标记"
-    },
-    {
-      "path": ".github/cases/product.yml",
-      "case_id": "PR-126",
-      "anchor": "[米宝解读]",
-      "kind": "code_literal",
-      "why": "同 PR-124：识别 vs 推理的分工按该来源标记判定"
-    },
-    {
-      "path": ".github/cases/product.yml",
-      "case_id": "PR-131",
-      "anchor": "[米宝解读]",
-      "kind": "code_literal",
-      "why": "同 PR-124：不覆盖/可覆盖判据按来源标记区分"
-    },
-    {
-      "path": ".github/cases/ui.yml",
-      "case_id": "UI-018",
-      "anchor": "「米宝」",
-      "kind": "code_literal",
-      "why": "botName 的内置默认名真值在代码侧（frontend/admin-web 的 `defaultAiConfig.botName` 与 bmini `buildBotName` 兜底值），本包不改代码"
-    },
-    {
-      "path": ".github/cases/ui.yml",
-      "case_id": "UI-036",
-      "anchor": "AI 客服助手（米宝）",
-      "kind": "code_literal",
-      "why": "引用的是设置页副文案原文（frontend/admin-web/src/app/(dashboard)/settings/page.tsx），逐字比对才有判别力"
-    },
-    {
       "path": ".github/cases/ui.yml",
       "case_id": "UI-079",
       "anchor": "米宝走 SSE",
       "kind": "negative_anchor",
       "why": "用户 2026-10-02 **原话**记录（流式体验裁定的依据）；改写原话等于篡改审计记录"
-    },
-    {
-      "path": ".github/cases/ui.yml",
-      "case_id": "UI-082",
-      "anchor": "米宝",
-      "kind": "code_literal",
-      "why": "品牌称呼反回流判据的**判据面在代码侧**（tests/unit_ci_workflows/test_positioning_copy_terms.py 的「新称呼正向存在」仍把「米宝」当新称呼）⇒ 只改用例措辞会让用例与判据脱节，须与代码侧同批"
     }
   ]
 }

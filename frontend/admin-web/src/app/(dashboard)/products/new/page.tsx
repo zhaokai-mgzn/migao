@@ -31,13 +31,13 @@ export default function NewProductPage() {
    * （只有一处映射表，不存在「两处必须一致」这种要靠人记的约定）。
    *
    * `interpretedKeys` = 黄金策**解读/推荐**来源的键：它们进的是同一份 `initialData`，
-   * 但**徽标不同**（`[米宝解读]`）—— 同一格只挂一枚，故从识别清单里摘掉。
+   * 但**徽标不同**（`[黄金策解读]`）—— 同一格只挂一枚，故从识别清单里摘掉。
    */
   const applyFields = useCallback((all: RecognizedField[], interpretedKeys: string[]) => {
     const next = buildProductPrefill(all)
     const interpreted = new Set(interpretedKeys)
     // 「商家填写」的格子（issue #7528：货号 / 门幅 / 规格属性）**不挂徽标** ——
-    // 它们不是从图上抄的、也不是米宝推的，商人自己刚写的，不需要再提醒他复核自己（§31 信息不重复）。
+    // 它们不是从图上抄的、也不是黄金策推的，商人自己刚写的，不需要再提醒他复核自己（§31 信息不重复）。
     const declared = new Set(
       all.filter((field) => field.source === PAGE_FILL_SOURCE_DECLARED).map((field) => field.key),
     )

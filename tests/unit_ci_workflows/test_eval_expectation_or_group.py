@@ -80,7 +80,11 @@ lr = _load_runner()
 
 # 文本可满足的分支（runner 语义：`direct_reply` = 「本轮无 tool_calls 且有 final_text」）。
 # 与**具名写规则**同组时，纯文本就能顶替「真去改」= 假绿通道。
-_TEXT_SATISFIABLE_BRANCHES = frozenset({"direct_reply"})
+# 2026-11-28（issue #9280）：`reply` 属于**同一面且更宽** —— runner 语义是「本轮只要有
+# final_text 就成立」（**工具调用不限**，见 `local_runner.check_expectation`）。它比
+# `direct_reply` 更容易被满足 ⇒ 与具名写规则同组时同样是假绿通道，必须一并入表
+# （否则 `x(action=mark_read) or reply` 这条更宽的通道**不被本判据看见**）。
+_TEXT_SATISFIABLE_BRANCHES = frozenset({"direct_reply", "reply"})
 
 # ── 只许缩短的分支登记表（`migao-dev-flow` §23：未登记即红 / 台账只许缩短 / 条数现取）──────
 # 语义 = 「**裸工具名分支**」（该分支后面**没有** `(...)`）的允许集。两条判据：
@@ -95,6 +99,13 @@ BARE_BRANCH_LEDGER = frozenset({
     # （台账只许缩短：销账即删，留着会腐烂成噪音）。
     "direct_reply", "interact", "nav_guide",
     "order_query", "product_detail", "product_search", "validate_input",
+    # 2026-11-28（issue #9280）：CH-003 的 OR 面新增**产出侧**分支 `reply`
+    # （= `#9290` 引入的 runner token「本轮只要产出了最终文本」，与 `direct_reply` 的唯一差别是
+    # 工具调用不限）。登记理由：CH-003 的被测行为是「意图不明时**不许猜着检索**」，
+    # 旧写法把合格形态枚举成 `direct_reply`（要求零 tool_calls）⇒ 模型换一种形态
+    # （猜完关键词再补一张 choice 卡）就判绿；改判产出侧后判别力交给 `forbidden_tools`。
+    # 登记的是**分支写法**，不是能力背书（只读面：`reply` 本身不是工具）。
+    "reply",
     # 2026-11-01（issue #8300）：ST-011 的 OR 面补入「知识库检索」这一条真实路径 ——
     # 实测两次（全档 41285244288 / 定点 41286316979）模型分别走 nav_guide(how_to) 与 knowledge_search，
     # 答复都正确却不在期望集里。登记的是**分支写法**，不是能力背书；只读工具、无写面。
