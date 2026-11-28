@@ -143,6 +143,38 @@ jobs:
           # 取水位要 diff 历史（`git diff <水位>..HEAD`）；浅检出会让窗口不可解析 ⇒ 本腿无法判定
           fetch-depth: 0
 
+      # ── 判定基准 = **合并结果**（PR 事件）／main（push / schedule / dispatch）────────────────────
+      # 🔴 issue #9309（同型第 3 次）：本腿在 `pull_request: [opened]` 上也会跑，而 checkout 固定
+      #    `ref: main` ⇒ **PR 自己带来的修复不在判定树里** ⇒ 任何「修好某条判据所约束的数据」的 PR
+      #    在**打开的那一刻**必然把本腿判红（构造性假红；#9309 实测 = `.github/cases/settings.yml:479`
+      #    正是该 PR 要修的那一行）。⇒ 修法**只改判定对象、不改任何判据**：
+      #    PR 事件 ⇒ 取 `refs/pull/N/merge`（= **合并后会是什么样**，PR 自带修复**计入**）；
+      #    取不到该 ref（PR 冲突 / GitHub 没生成）⇒ **留在 main 基线**并把「PR 自带修复不计」**写明**
+      #    （不许静默换对象）；push / schedule / dispatch ⇒ main（本腿的原始语义，一字不变）。
+      #    判据（会红）= `tests/unit_ci_workflows/test_post_merge_verify_leg.py` 的 `_judged_revision_problems`。
+      - name: 判定基准（PR 事件 ⇒ 合并结果；取不到 ⇒ main 基线并**明写**不计 PR 自带修复）
+        id: revision
+        env:
+          EVENT: ${{ github.event_name }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -uo pipefail
+          REV="$(git rev-parse HEAD)"
+          LABEL="main 基线（push/schedule/dispatch：判定基准 = main 的当前状态）"
+          if [ "${EVENT}" = "pull_request" ] && [ -n "${PR_NUMBER:-}" ]; then
+            if git fetch --quiet --no-tags origin "pull/${PR_NUMBER}/merge" 2>/dev/null; then
+              git checkout --quiet --detach FETCH_HEAD
+              REV="$(git rev-parse HEAD)"
+              LABEL="合并结果 refs/pull/${PR_NUMBER}/merge（PR 自带修复**计入**）"
+            else
+              LABEL="**基线复算**（取不到 refs/pull/${PR_NUMBER}/merge：PR 冲突或 GitHub 未生成）⇒ 判 main 基线，PR 自带修复**不计**"
+              echo "::warning::${LABEL} —— 本轮的红只对 main 基线成立，不等于「合并结果会红」"
+            fi
+          fi
+          echo "JUDGED_REV=${REV}" >> "$GITHUB_ENV"
+          echo "JUDGED_LABEL=${LABEL}" >> "$GITHUB_ENV"
+          echo "判定基准 = ${REV}（${LABEL}）"
+
       - uses: actions/setup-python@v7
         with:
           python-version: '3.11'
@@ -230,6 +262,10 @@ jobs:
           OUT="$(python3 scripts/drift_audit.py --check 2>&1)"
           RC=$?
           printf '%s\n' "${OUT}" | tail -30
+          # 🔴 本步的**证据必须落文件**（issue #9324）：本步判红时，下面的判定步**会被跳过**
+          #    （它没有 `if: always()`）⇒ `/tmp/post-merge-verify-issue-excerpt.txt` **根本不存在**
+          #    ⇒ 承接单只能写占位「(报告缺失)」（实测 run 46098235161：真凶就是本步，承接单读不到它）。
+          printf '%s\n' "${OUT}" | tail -c 30000 > /tmp/post-merge-drift-excerpt.txt
           echo "漂移审计退出码 = ${RC}（0 通过 / 1 判红 / 3 不可判 —— 非 0 都不得当 0 读）"
           exit ${RC}
 
@@ -437,6 +473,15 @@ jobs:
           set -e
           cat /tmp/post-merge-verify.txt
 
+          # 🔴 `rc=4` = **报告产出失败**（issue #9324）：它与 `rc=1`（有判据红了）**必须分开出声** ——
+          #    共用 `1` 时读者会拿着「哪条判据红了」去找一条**根本不存在**的判据（本轮压根没跑完）。
+          #    具名串取自失败产物 `report_failure.error`（判定本体自己落的机器可读清单）。
+          if [ "$RC" = "4" ]; then
+            RF="$(python3 -c 'import json;d=json.load(open("post-merge-verify-report.json"));print((d.get("report_failure") or {}).get("error",""))' 2>/dev/null || true)"
+            echo "::error::判定本体**报告产出失败**（rc=4）：${RF:-见上方 traceback}"
+            echo "::error::这与「有判据判红」（rc=1）**不是同一件事** —— 本轮**没有结论**；复算：python3 scripts/post_merge_verify.py --head $(git rev-parse HEAD)"
+          fi
+
           # 机制体交出自己的读数（`seen`/`acted` = 与负载无关的量，§23 G8）+ 摊到 step summary
           SEEN="$(python3 -c 'import json;print(json.load(open("post-merge-verify-report.json"))["changed_count"])' 2>/dev/null || echo unknown)"
           ACTED="$(python3 -c 'import json;print(json.load(open("post-merge-verify-report.json"))["selected_count"])' 2>/dev/null || echo unknown)"
@@ -509,6 +554,7 @@ jobs:
       #    不该因为**生产证书临期**把业务 PR 判红（归因会指向错误对象）。
       # ⚠️ 必须排在下面 `if: failure()` 的 P1 出口**之前** —— 放在之后 ⇒ 判红不产生值班单 = 静默。
       - name: TLS 证书到期判红（issue #8201：四域共用一张证书）
+        id: tls
         if: github.event_name != 'pull_request'
         env:
           TLS_WARN_DAYS: '21'
@@ -590,6 +636,7 @@ jobs:
       # ⛔ 不新增 schedule（铁律 10）：挂在既有腿的 push / 每日 / 手动三个触发面上。
       # 判据 / 接线守卫 = tests/unit_ci_workflows/test_prod_alerting.py
       - name: 5xx 计数窗口判红（审计 P0-04：生产 5xx 涨了要能惊动人）
+        id: five_xx
         if: always() && github.event_name != 'pull_request'
         env:
           PROD_5XX_THRESHOLD: '3'   # 窗口内 5xx 条数阈值（≈15s 窗口：4 轮 × 4 面 = 16 次请求）
@@ -660,6 +707,7 @@ jobs:
       # 反证（会红）：把 `--api-base` 指到一个必然 404 的地址 ⇒ 退出码 1 并有具名输出；
       #    判据 = `tests/unit_ci_workflows/test_synthetic_probe.py`（含「摘掉本步 ⇒ 红」的接线判据）。
       - name: 只读合成探针（issue #8203：/api/version + /b/ + /w/ 失败即判红）
+        id: probe
         if: github.event_name != 'pull_request'
         run: |
           set -uo pipefail
@@ -695,25 +743,74 @@ jobs:
         if: failure()
         env:
           GH_TOKEN: ${{ github.token }}
+          # 🔴 判红**归因**（issue #9324）：本 job 的判红面**不止判定步** —— 漂移兜底 / TLS / 5xx /
+          #    合成探针任一判红，`if: failure()` 都会走到本步；而本步原来**只读判定步的摘录文件** ⇒
+          #    实测 run 46098235161 只会打出占位 `(报告缺失)`：真凶是**漂移兜底**，而判定步被 skip、
+          #    摘录文件根本不存在 ⇒ 承接单说的对象与真凶不是同一个 = **不可归因**。
+          #    ⇒ 把每一步的结论带进来，正文按「哪一步判红」给出**它自己**的复算命令。
+          OUTCOME_REVISION: ${{ steps.revision.outcome }}
+          OUTCOME_DRIFT: ${{ steps.drift.outcome }}
+          OUTCOME_NEW_ISSUES: ${{ steps.new_issues.outcome }}
+          OUTCOME_VERIFY: ${{ steps.verify.outcome }}
+          OUTCOME_TLS: ${{ steps.tls.outcome }}
+          OUTCOME_5XX: ${{ steps.five_xx.outcome }}
+          OUTCOME_PROBE: ${{ steps.probe.outcome }}
         run: |
           set +e
-          TITLE="[post-merge] main 上的判据与它约束的数据不同刻落地（合并后守护腿未通过）"
+          TITLE="[post-merge] main 侧守护腿未通过（判红步具名 · 复算命令见正文）"
           EXIST=$(gh issue list --state open --search "$TITLE in:title" --json number --jq '.[0].number // empty')
           BODY=$(mktemp)
+          # ── 判红步具名清单（**唯一来源** = 这张表；新增判红步必须登记，漏登记会被显式写成「未登记」）──
+          FAILED_STEPS=""; STEP_CMDS=""
+          note_step() {  # $1=步名 $2=outcome $3=该步**自己**的复算命令
+            [ "${2:-}" = "failure" ] || return 0
+            FAILED_STEPS="${FAILED_STEPS}${FAILED_STEPS:+, }$1"
+            STEP_CMDS="${STEP_CMDS}- \`$1\` ⇒ \`$3\`"$'\n'
+          }
+          note_step "判定（定向跑判据面）" "${OUTCOME_VERIFY:-}" "python3 scripts/post_merge_verify.py --head <跑红时的 sha>"
+          note_step "main 侧漂移兜底" "${OUTCOME_DRIFT:-}" "python3 scripts/drift_audit.py --check"
+          note_step "零新开核验" "${OUTCOME_NEW_ISSUES:-}" "python3 scripts/issue_lifecycle.py check-new-issues --since $(date -u +%F)"
+          note_step "TLS 证书到期" "${OUTCOME_TLS:-}" "bash deploy/scripts/tls-expiry-check.sh"
+          note_step "5xx 计数窗口" "${OUTCOME_5XX:-}" "bash deploy/scripts/prod-5xx-window.sh"
+          note_step "只读合成探针" "${OUTCOME_PROBE:-}" "python3 scripts/synthetic_probe.py"
+          note_step "判定基准（取合并结果）" "${OUTCOME_REVISION:-}" "git fetch origin pull/<PR>/merge && git checkout --detach FETCH_HEAD"
+          [ -n "$FAILED_STEPS" ] || FAILED_STEPS="未登记（本步只见 job 结论 —— 见 run 页面的「失败步骤」）"
+          # 证据文件：**谁的失败谁自己的输出**（判定步优先：它的摘录最完整；再退摘要摘录）。
+          # ⚠️ 候选清单**只许列限长摘录**，绝不许列完整输出 `/tmp/post-merge-verify.txt`
+          #    （200000 B+ 会撞 issue body 65536 上限 ⇒ 还是开不出单，验收 P2-2）。
+          EVIDENCE=""
+          for cand in /tmp/post-merge-verify-issue-excerpt.txt /tmp/post-merge-drift-excerpt.txt \
+                      /tmp/post-merge-verify-excerpt.txt; do
+            if [ -s "$cand" ]; then EVIDENCE="$cand"; break; fi
+          done
+          if [ -z "$EVIDENCE" ]; then
+            EVIDENCE_WHY="❌ **本轮没有任何证据文件** —— 这不是「没有失败判据」，是**该步没跑 / 没落证据**；按下面那一步自己的复算命令验，**不要**去判 \`post_merge_verify.py\`。"
+          else
+            EVIDENCE_WHY="证据文件 = \`${EVIDENCE}\`"
+          fi
           {
             echo "合并后 main 侧守护腿未通过。run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
             echo ''
-            echo "触发事件：\`${{ github.event_name }}\`；判定基准：main \`${{ github.sha }}\`"
+            echo "触发事件：\`${{ github.event_name }}\`；判定基准：\`${JUDGED_REV:-${{ github.sha }}}\`（${JUDGED_LABEL:-main 基线}）"
+            echo ''
+            echo "- **判红步**：${FAILED_STEPS}"
+            echo "- **证据**：${EVIDENCE_WHY}"
             echo ''
             echo '```'
-            cat /tmp/post-merge-verify-issue-excerpt.txt 2>/dev/null \
-              || tail -c "${ISSUE_EXCERPT_BYTES:-30000}" /tmp/post-merge-verify-excerpt.txt 2>/dev/null \
-              || echo "(报告缺失 —— 见本 run 的 step summary)"
+            if [ -n "$EVIDENCE" ]; then
+              tail -c "${ISSUE_EXCERPT_BYTES:-30000}" "$EVIDENCE"
+            else
+              printf '%s\n' "${EVIDENCE_WHY}"
+            fi
             # 🔴 兜底**也必须限长**：`ISSUE_EXCERPT_BYTES` 由判定步经 `$GITHUB_ENV` 传进来；
             #    原来兜底直接 `cat` 摘录（200000 B）⇒ 撞 issue body 上限 65536 ⇒ **还是开不出单**（验收 P2-2）
             echo ''
             echo "（仅附**尾部**摘录 —— 全文见 run 日志；\`FM-E21\`：承接单 body 也有体积上限，超了会**开不出单**）"
             echo '```'
+            echo ''
+            echo "### 判红步与**它自己**的复算命令（不是所有判红都归判定面）"
+            echo ''
+            printf '%s' "${STEP_CMDS}"
             echo ''
             echo "### 这一类是什么（别读成「某个 PR 没写好」）"
             echo ''
@@ -725,16 +822,16 @@ jobs:
             echo ''
             echo "### 清零判据（怎么算好）"
             echo ''
-            echo "- 本机复算（零成本、可复制）："
-            echo "  \`python3 scripts/post_merge_verify.py --base <窗口起点> --head <跑红时的 main sha>\` 退出 0；"
+            echo "- 判红步 = \`判定（定向跑判据面）\` ⇒ \`python3 scripts/post_merge_verify.py --base <窗口起点> --head <跑红时的 sha>\` 退出 0；"
+            echo "- 判红步**不是**判定步 ⇒ 按上面**那一步**的复算命令验（判定步的命令对漂移 / TLS / 5xx / 探针**不适用**）；"
             echo "- 或在 Actions 上手动复跑本 workflow（\`workflow_dispatch\`，可带 \`base\` 输入）⇒ 绿；"
-            echo "- **退出码 3 = 无法判定**（git / 窗口 / pytest 不可用）——\`3\` **不得当 0 读**，先修环境再判。"
+            echo "- **退出码 3 = 无法判定 / 4 = 报告产出失败** —— 两个都**不是**「有判据红了」，都**不得当 0 读**。"
             echo ''
             echo "### 谁看"
             echo ''
-            echo "- 按判红判据的**文件归属**分流：输出里逐条点名了被选中的 \`tests/unit_ci_workflows/test_*.py\`"
+            echo "- 按判红步的**文件归属**分流：判定步的输出里逐条点名了被选中的 \`tests/unit_ci_workflows/test_*.py\`"
             echo "  ⇒ 归该判据与它引用的数据的维护者（未固化的归属登记见 \`scripts/mechanism-registry.json\`"
-            echo "  的 \`post-merge-verify\` 条目）；"
+            echo "  的 \`post-merge-verify\` 条目）；漂移兜底 ⇒ \`scripts/drift_audit_baseline.json\` 的维护者；"
             echo "- 集成侧兜底（本通道是**报告型**：它不拦合并，只负责让 main 的破坏**当场可见**）。"
           } > "$BODY"
           if [ -n "$EXIST" ]; then
