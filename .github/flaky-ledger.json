@@ -61015,6 +61015,164 @@
       "follow_up": null,
       "requires_follow_up": null,
       "failing_tests": []
+    },
+    {
+      "workflow": "PR Check",
+      "job": "admin-web unit tests (2/2)",
+      "run_id": 46128966891,
+      "run_attempt": 2,
+      "run_url": "https://github.com/zhaokai-mgzn/migao/actions/runs/46128966891",
+      "pr": null,
+      "head_sha": "28cbab88e35e4d3cd3af4db88f04d1a8399c4ca5",
+      "head_branch": "dependabot/npm_and_yarn/frontend/admin-web/autoprefixer-10.7.0",
+      "first_failure_step": "Install dependencies",
+      "rerun_result": "failure",
+      "kind": "infra_suspect",
+      "attempts": [
+        {
+          "attempt": 1,
+          "job": "admin-web unit tests (2/2)",
+          "step": "Install dependencies",
+          "assertion": null,
+          "timestamp": "2026-11-28T09:07:53Z"
+        },
+        {
+          "attempt": 2,
+          "job": "admin-web unit tests (2/2)",
+          "step": "Install dependencies",
+          "assertion": null,
+          "timestamp": "2026-11-28T09:15:22Z"
+        }
+      ],
+      "failed_at": "",
+      "rerun_at": "",
+      "failed_bucket": null,
+      "rerun_bucket": null,
+      "rerun_bucket_verdict": null,
+      "observed_at": "2026-11-28T09:20:35Z",
+      "reason": "失败落在「取代码 · 装依赖 · 配环境」步骤（或 job 从未跑起来）⇒ 环境/基础设施问题",
+      "remedy": "**先区分「环境抖动」与「确定性不可解析」**（#5088 实证：dependabot 的 `npm ERESOLVE` 两次尝试逐字同一个错误 ⇒ 是依赖冲突，不是环境抖动）：两次报错逐字相同 ⇒ 查依赖锁定 / peer 冲突；偶发一次 ⇒ runner 容量 / 依赖源 / 网络",
+      "status": "open",
+      "follow_up": null,
+      "requires_follow_up": null,
+      "failing_tests": []
+    },
+    {
+      "workflow": "PR Check",
+      "job": "admin-web typecheck + unit tests",
+      "run_id": 46128966891,
+      "run_attempt": 2,
+      "run_url": "https://github.com/zhaokai-mgzn/migao/actions/runs/46128966891",
+      "pr": null,
+      "head_sha": "28cbab88e35e4d3cd3af4db88f04d1a8399c4ca5",
+      "head_branch": "dependabot/npm_and_yarn/frontend/admin-web/autoprefixer-10.7.0",
+      "first_failure_step": "Install dependencies",
+      "rerun_result": "failure",
+      "kind": "infra_suspect",
+      "attempts": [
+        {
+          "attempt": 1,
+          "job": "admin-web typecheck + unit tests",
+          "step": "Install dependencies",
+          "assertion": null,
+          "timestamp": "2026-11-28T09:07:37Z"
+        },
+        {
+          "attempt": 2,
+          "job": "admin-web typecheck + unit tests",
+          "step": "Install dependencies",
+          "assertion": null,
+          "timestamp": "2026-11-28T09:15:24Z"
+        }
+      ],
+      "failed_at": "",
+      "rerun_at": "",
+      "failed_bucket": null,
+      "rerun_bucket": null,
+      "rerun_bucket_verdict": null,
+      "observed_at": "2026-11-28T09:20:35Z",
+      "reason": "失败落在「取代码 · 装依赖 · 配环境」步骤（或 job 从未跑起来）⇒ 环境/基础设施问题",
+      "remedy": "**先区分「环境抖动」与「确定性不可解析」**（#5088 实证：dependabot 的 `npm ERESOLVE` 两次尝试逐字同一个错误 ⇒ 是依赖冲突，不是环境抖动）：两次报错逐字相同 ⇒ 查依赖锁定 / peer 冲突；偶发一次 ⇒ runner 容量 / 依赖源 / 网络",
+      "status": "open",
+      "follow_up": null,
+      "requires_follow_up": null,
+      "failing_tests": []
+    },
+    {
+      "workflow": "PR Check",
+      "job": "E2E quality gate",
+      "run_id": 46128966891,
+      "run_attempt": 2,
+      "run_url": "https://github.com/zhaokai-mgzn/migao/actions/runs/46128966891",
+      "pr": null,
+      "head_sha": "28cbab88e35e4d3cd3af4db88f04d1a8399c4ca5",
+      "head_branch": "dependabot/npm_and_yarn/frontend/admin-web/autoprefixer-10.7.0",
+      "first_failure_step": "Install admin-web deps (for Playwright webServer)",
+      "rerun_result": "failure",
+      "kind": "infra_suspect",
+      "attempts": [
+        {
+          "attempt": 1,
+          "job": "E2E quality gate",
+          "step": "Install admin-web deps (for Playwright webServer)",
+          "assertion": null,
+          "timestamp": "2026-11-28T09:08:17Z"
+        },
+        {
+          "attempt": 2,
+          "job": "E2E quality gate",
+          "step": "Install admin-web deps (for Playwright webServer)",
+          "assertion": null,
+          "timestamp": "2026-11-28T09:15:25Z"
+        }
+      ],
+      "failed_at": "",
+      "rerun_at": "",
+      "failed_bucket": null,
+      "rerun_bucket": null,
+      "rerun_bucket_verdict": null,
+      "observed_at": "2026-11-28T09:20:35Z",
+      "reason": "失败落在「取代码 · 装依赖 · 配环境」步骤（或 job 从未跑起来）⇒ 环境/基础设施问题",
+      "remedy": "**先区分「环境抖动」与「确定性不可解析」**（#5088 实证：dependabot 的 `npm ERESOLVE` 两次尝试逐字同一个错误 ⇒ 是依赖冲突，不是环境抖动）：两次报错逐字相同 ⇒ 查依赖锁定 / peer 冲突；偶发一次 ⇒ runner 容量 / 依赖源 / 网络",
+      "status": "open",
+      "follow_up": null,
+      "requires_follow_up": null,
+      "failing_tests": []
+    },
+    {
+      "workflow": "Build and Deploy frontend (admin-web)",
+      "job": "build-and-deploy",
+      "run_id": 46129347960,
+      "run_attempt": 1,
+      "run_url": "https://github.com/zhaokai-mgzn/migao/actions/runs/46129347960",
+      "pr": null,
+      "head_sha": "fcd9d50f1837bfada44898597fa67c9330058ef8",
+      "head_branch": "main",
+      "first_failure_step": "Deploy to SWAS (测试环境)",
+      "rerun_result": "not_rerun",
+      "kind": "unknown",
+      "attempts": [
+        {
+          "attempt": 1,
+          "job": "build-and-deploy",
+          "step": "Deploy to SWAS (测试环境)",
+          "assertion": null,
+          "timestamp": "2026-11-28T09:21:03Z"
+        }
+      ],
+      "failed_at": "",
+      "rerun_at": "",
+      "failed_bucket": null,
+      "rerun_bucket": null,
+      "rerun_bucket_verdict": null,
+      "observed_at": "2026-11-28T09:21:04Z",
+      "reason": "**部署腿不重跑**（重跑会真的部署 ⇒ 既有裁定的红线）⇒ 这条失败**没有第二次尝试**：「同 SHA 重跑绿」这条 flaky 判据**结构上取不到**，infra 也没有凭据 ⇒ 按 #5088 的 fail-closed 口径记 `kind=unknown`（**不归因**），只记录事实（哪条腿 · 哪个 job · 哪个失败步骤 · 哪次 run）",
+      "remedy": "按条目的 `first_failure_step` / `failing_tests` 定位机制：同一 SHA 的 PR 腿是否**同一条用例**失败？本机复跑是否复现？确认后给红证并修根因。本条**不会**自动重跑、**不会**放行任何 PR —— 它的全部作用是把「部署腿的偶发失败」写进台账，让次数**可数**（此前 365 条里一条都没有）",
+      "status": "open",
+      "follow_up": null,
+      "requires_follow_up": null,
+      "failing_tests": [],
+      "unknown_reason": "**部署腿不重跑**（重跑会真的部署 ⇒ 既有裁定的红线）⇒ 这条失败**没有第二次尝试**：「同 SHA 重跑绿」这条 flaky 判据**结构上取不到**，infra 也没有凭据 ⇒ 按 #5088 的 fail-closed 口径记 `kind=unknown`（**不归因**），只记录事实（哪条腿 · 哪个 job · 哪个失败步骤 · 哪次 run）"
     }
   ]
 }
