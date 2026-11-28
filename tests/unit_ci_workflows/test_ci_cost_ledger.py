@@ -721,6 +721,12 @@ class TestP90StrengthDependsOnSampleSize:
             f"`measured.recompute` = {recompute!r} 没有钉住当次窗口（应含 "
             f"`--runs-per-workflow {recorded}`）⇒ 读者照抄就跑错窗口、复现不出这些读数"
         )
+        # 🔴 还要证明**生成侧**（不只是这份历史数据）：台账是脚本的产物，只断言台账的话，
+        # 把 `recompute_command()` 改坏也照样绿 —— 红证实测过（第一版判据在这里没牙）。
+        assert mod.recompute_command(recorded) == recompute, (
+            f"脚本生成的 recompute = {mod.recompute_command(recorded)!r}，台账里是 {recompute!r} ⇒ "
+            "生成侧与台账不一致（下次 `--measure` 会写回一条不钉窗口的命令）"
+        )
 
     def test_without_measure_the_cli_prints_help_and_exits_two(self, monkeypatch, capsys) -> None:
         """不带 `--measure` ⇒ 打印帮助并退出 2（`build_parser()` 抽出后 `main()` 仍必须拿到 parser）。"""

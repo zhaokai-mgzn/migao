@@ -268,6 +268,17 @@ def _is_gated_off(job: dict) -> bool:
     return any(step.get("conclusion") == "skipped" for step in job.get("steps") or [])
 
 
+def recompute_command(runs_per_workflow: int) -> str:
+    """台账 `measured.recompute` 的**唯一**来源 —— 必须钉住当次窗口（`--runs-per-workflow`）。
+
+    不钉窗口的后果（issue #9120 实测）：台账记 30 条窗口、而命令跑默认窗口 ⇒ 读者照抄得到的
+    p90 与台账里的不是同一个读数（按 20 条复算时有 5 条腿再判超预算）。抽成函数是为了让判据
+    能在**不读 Actions API** 的前提下直接证明「生成侧钉住了窗口」（只断言台账数据的话，
+    脚本被改坏也照样绿 —— 台账只是历史产物）。
+    """
+    return f"python3 scripts/ci_cost_ledger.py --measure --runs-per-workflow {runs_per_workflow}"
+
+
 def _stats(values: list[float]) -> dict:
     ordered = sorted(values)
     return {
@@ -463,9 +474,9 @@ def main() -> int:
             "event": "pull_request",
             "runs_per_workflow": args.runs_per_workflow,
             # 显式写全 `--runs-per-workflow`：不写它跑的是**默认窗口**，复现不出台账里的读数
-            # （issue #9120 的「读数不可复现」形态；判据锁 `recorded` 出现在本字段里）。
-            "recompute": (f"python3 scripts/ci_cost_ledger.py --measure"
-                          f" --runs-per-workflow {args.runs_per_workflow}"),
+            # （issue #9120 的「读数不可复现」形态；判据锁 `recorded` 出现在本字段里，
+            #   并直接调 `recompute_command()` 复核生成侧）。
+            "recompute": recompute_command(args.runs_per_workflow),
         },
         "attribution_policy": ATTRIBUTION_POLICY,
         "workflow_totals": {
