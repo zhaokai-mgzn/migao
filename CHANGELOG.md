@@ -6,6 +6,13 @@
 
 > **后续条目继续在本文件 `## [Unreleased]
 
+### 修复：nginx 正则未加引号导致部署腿整腿失败（2026-11-29，issue #9361）
+
+- **现象**：`Deploy to SWAS` 失败并自动回滚（run 46161586321）：`[emerg] pcre2_compile() failed: missing closing parenthesis in "^/WW_verify_([A-Za-z0-9]"` ⇒ `nginx -t` 不通过 ⇒ 入口未 reload、旧容器继续服务（**线上未坏，但部署被阻断**）。
+- **根因**：nginx 配置解析器把**未加引号**正则里的 `{` 当成块起始 ⇒ `^/WW_verify_([A-Za-z0-9]{8,64})\.txt$` 在 `{8,64}` 处被截断。
+- **修法**：`location ~ "^/WW_verify_([A-Za-z0-9]{8,64})\.txt$" {`（**加引号**）。
+- **为什么 CI 没拦**：PR 的 19 条 required checks **都不跑 `nginx -t`**，语病只在部署腿显形 ⇒ 新增判据 5（部署阻断类）静态兜住：`test_regex_is_quoted_so_nginx_can_parse` + 去引号红证 `test_red_proof_unquoted_regex_is_named`（用例 `MC-394` 同步补第 5 条）。
+
 ### 企微「可信域名」校验：一条通用规则服务所有商户（2026-11-28，issue #9358）
 
 - **问题（用户当场提问）**：为让测试商户的企微自建应用能配「企业可信IP」，得先过「可信域名」归属校验。第一版把企微给的 `WW_verify_mRPj5ZGvHWQrpeer.txt` 塞进 `frontend/admin-web/public/` 再部署 —— **每加一个商户 = 一次构建 + 部署**。用户问「难道未来每个客户的证书我都需要构建后部署？」：是的，那是把 O(商户数) 的人工塞进交付链，属产品级错误。

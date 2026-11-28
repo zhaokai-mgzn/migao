@@ -11469,10 +11469,11 @@ cases:
       - "**判据 2·边界不许放宽成通配**：禁 `^/.*\\.txt$`（会劫持 apex 段其它 `.txt` 面）。执行点 = `::test_pattern_is_not_a_wildcard`"
       - "**判据 3·不伤既有面**：`app.migaozn.com` 段的「根下单段 `.txt` → `try_files … =404`」（MC-125 的判据）一字不动。执行点 = `::test_app_block_rule_is_untouched`"
       - "**判据 4·红证**：按花括号配平把该 location 整段摘掉 ⇒ 判据 1 具名红（证明判的是现取配置）。执行点 = `::test_red_proof_removing_the_rule_is_named`"
+      - "**判据 5·部署阻断类·正则必须加引号**：含 `{`/`}` 的正则若不加引号，nginx 把 `{` 当块起始 ⇒ 正则在 `{8,64}` 处截断，报 `pcre2_compile() failed: missing closing parenthesis` ⇒ `Deploy to SWAS` 整腿失败并自动回滚（2026-11-29 00:00 实测 run 46161586321）。**PR 的 CI 全绿**（CI 不跑 `nginx -t`），只在部署腿炸 ⇒ 必须静态兜住。执行点 = `::test_regex_is_quoted_so_nginx_can_parse`；红证 = `::test_red_proof_unquoted_regex_is_named`（去掉引号 ⇒ `quoted` 变假）"
     traces:
       tests:
         - "tests/unit_ci_workflows/test_ww_verify_generic_route.py"
       ci:
         - deploy-admin-api.yml
       verifies: []
-    merge_log: "2026-11-28 新增（issue #9358）。现场：为让测试商户的企微自建应用能配「企业可信IP」，先得完成「可信域名」归属校验；第一版把企微给的 `WW_verify_mRPj5ZGvHWQrpeer.txt` 塞进 `frontend/admin-web/public/` 并部署 ⇒ 用户当场问「难道未来每个客户的证书我都需要构建后部署？」——是的，那是把 O(商户数) 的人工塞进交付链，产品级错误。实测事实：**校验文件 body 恒等于文件名里的随机串** ⇒ nginx 一条正则捕获即返回，任意商户零操作。落地 = apex 443 段新增该 location（边界收紧 8–64 位字母数字，禁通配）；`public/` 里的静态件保留作本机/直连 Next 的兜底。红证（本机现取）：配平摘掉该 location ⇒ 判据 1 红。长期正解另立单 = 走第三方应用（ISV），届时商户只扫码授权，可信域名/可信IP 都是套件级一次性配置。"
+    merge_log: "2026-11-28 新增（issue #9358）。现场：为让测试商户的企微自建应用能配「企业可信IP」，先得完成「可信域名」归属校验；第一版把企微给的 `WW_verify_mRPj5ZGvHWQrpeer.txt` 塞进 `frontend/admin-web/public/` 并部署 ⇒ 用户当场问「难道未来每个客户的证书我都需要构建后部署？」——是的，那是把 O(商户数) 的人工塞进交付链，产品级错误。实测事实：**校验文件 body 恒等于文件名里的随机串** ⇒ nginx 一条正则捕获即返回，任意商户零操作。落地 = apex 443 段新增该 location（边界收紧 8–64 位字母数字，禁通配）；`public/` 里的静态件保留作本机/直连 Next 的兜底。红证（本机现取）：配平摘掉该 location ⇒ 判据 1 红。长期正解另立单 = 走第三方应用（ISV），届时商户只扫码授权，可信域名/可信IP 都是套件级一次性配置。**2026-11-29 00:00 补判据 5（部署阻断类）**：首版正则未加引号 ⇒ nginx 在 `{8,64}` 处截断、`nginx -t` 不通过 ⇒ `Deploy to SWAS` 整腿失败并自动回滚（run 46161586321）。CI 不跑 `nginx -t` 所以 PR 全绿，病只在部署腿显形 ⇒ 由 `test_regex_is_quoted_so_nginx_can_parse` + 去引号红证静态兜住。"
