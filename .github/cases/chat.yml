@@ -522,8 +522,11 @@ cases:
       verifies: []
 
   - id: CH-009
-    # 2026-11-26（issue #9233）：C 端小程序 frontend/mini-app 整目录删除 ⇒ 原承载体失联；
-    # 本条按「承载体删除」退役（条目不删、判据改指 C 端保持下线的类级守卫 tests/unit_ci_workflows/test_c_end_removed_guard.py）。
+    # 2026-11-28（关联 #9280 复核）：上一版在这里写了「退役」，但 `skip_reason` 一直为空
+    # ⇒ 本用例**从未真正退役**（仍在评测里跑、仍占分母）。复核判定**保持 active**：
+    # 被测行为在会话侧（不依赖被删的 C 端小程序 UI），承载体见本块 `traces.tests`。
+    # 真正的退役形态只有一种 = 非空 `skip_reason`（判据 =
+    # tests/unit_ci_workflows/test_case_retirement_marker_requires_skip_reason.py）。
     legacy_id: ""
     title: "interact form 表单提交注入上下文（__FORM__ 协议）"
     domains:
@@ -649,8 +652,11 @@ cases:
       verifies: []
 
   - id: CH-010
-    # 2026-11-26（issue #9233）：C 端小程序 frontend/mini-app 整目录删除 ⇒ 原承载体失联；
-    # 本条按「承载体删除」退役（条目不删、判据改指 C 端保持下线的类级守卫 tests/unit_ci_workflows/test_c_end_removed_guard.py）。
+    # 2026-11-28（关联 #9280 复核）：上一版在这里写了「退役」，但 `skip_reason` 一直为空
+    # ⇒ 本用例**从未真正退役**（仍在评测里跑、仍占分母）。复核判定**保持 active**：
+    # 被测行为在会话侧（不依赖被删的 C 端小程序 UI），承载体见本块 `traces.tests`。
+    # 真正的退役形态只有一种 = 非空 `skip_reason`（判据 =
+    # tests/unit_ci_workflows/test_case_retirement_marker_requires_skip_reason.py）。
     legacy_id: ""
     title: "选购下单表单化交互（choice 选品→form 收参→confirm 确认→下单）"
     domains:
@@ -796,8 +802,11 @@ cases:
       verifies: []
 
   - id: CH-011
-    # 2026-11-26（issue #9233）：C 端小程序 frontend/mini-app 整目录删除 ⇒ 原承载体失联；
-    # 本条按「承载体删除」退役（条目不删、判据改指 C 端保持下线的类级守卫 tests/unit_ci_workflows/test_c_end_removed_guard.py）。
+    # 2026-11-28（关联 #9280 复核）：上一版在这里写了「退役」，但 `skip_reason` 一直为空
+    # ⇒ 本用例**从未真正退役**（仍在评测里跑、仍占分母）。复核判定**保持 active**：
+    # 被测行为在会话侧（不依赖被删的 C 端小程序 UI），承载体见本块 `traces.tests`。
+    # 真正的退役形态只有一种 = 非空 `skip_reason`（判据 =
+    # tests/unit_ci_workflows/test_case_retirement_marker_requires_skip_reason.py）。
     legacy_id: ""
     title: "数据安全 - 跨用户订单查询拒绝 + 订单卡片手机号脱敏"
     domains:
@@ -851,8 +860,11 @@ cases:
       verifies: []
 
   - id: CH-012
-    # 2026-11-26（issue #9233）：C 端小程序 frontend/mini-app 整目录删除 ⇒ 原承载体失联；
-    # 本条按「承载体删除」退役（条目不删、判据改指 C 端保持下线的类级守卫 tests/unit_ci_workflows/test_c_end_removed_guard.py）。
+    # 2026-11-28（关联 #9280 复核）：上一版在这里写了「退役」，但 `skip_reason` 一直为空
+    # ⇒ 本用例**从未真正退役**（仍在评测里跑、仍占分母）。复核判定**保持 active**：
+    # 被测行为在会话侧（不依赖被删的 C 端小程序 UI），承载体见本块 `traces.tests`。
+    # 真正的退役形态只有一种 = 非空 `skip_reason`（判据 =
+    # tests/unit_ci_workflows/test_case_retirement_marker_requires_skip_reason.py）。
     legacy_id: ""
     title: "退换货申请（订单定位→原因选择→confirm 确认→售后单）"
     domains:

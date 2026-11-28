@@ -427,8 +427,11 @@ cases:
       verifies: []
 
   - id: ST-011
-    # 2026-11-26（issue #9233）：C 端小程序 frontend/mini-app 整目录删除 ⇒ 原承载体失联；
-    # 本条按「承载体删除」退役（条目不删、判据改指 C 端保持下线的类级守卫 tests/unit_ci_workflows/test_c_end_removed_guard.py）。
+    # 2026-11-28（关联 #9280 复核）：上一版在这里写了「退役」，但 `skip_reason` 一直为空
+    # ⇒ 本用例**从未真正退役**（仍在评测里跑、仍占分母）。复核判定**保持 active**：
+    # 被测行为在会话侧（不依赖被删的 C 端小程序 UI），承载体见本块 `traces.tests`。
+    # 真正的退役形态只有一种 = 非空 `skip_reason`（判据 =
+    # tests/unit_ci_workflows/test_case_retirement_marker_requires_skip_reason.py）。
     legacy_id: ""
     title: "企业收款二维码（微信/支付宝）C 端支付页展示与平台不经手资金（二清规避）"
     domains:
@@ -469,7 +472,14 @@ cases:
       # 两次都给对了指引却没被任何一条放行（同一句话每轮选不同工具 = 期望集没覆盖真实解空间）。
       # 补齐方式与 2026-09-17 那次放宽同型（#4007：direct_reply → direct_reply or order_query），
       # **不放宽成空断言**：仍要求至少命中其中之一，data_checks 继续钉「合规展示」事实。
-      - tool: direct_reply or order_query or knowledge_search
+      # 2026-11-28（关联 #9280，run 46086496186 实测）：首跑指纹 `no_success(direct_reply)`
+      # 已在两个 run 复发（prior_runs=[45979067843]、streak=2）⇒ 判定层按 fail-closed 阻塞 `ok`。
+      # 归因：期望集**漏了本用例自己记录过的两条真实路径** —— 本块 2026-11-01 的注释逐字写着
+      # 「全档 run 41285244288 走 `nav_guide(how_to)`」，而 11-01 那次只补了 `knowledge_search`；
+      # 另 `payment_qrcode_query` 是下面 data_checks 点名的**发射点工具**（米宝腿可达）。
+      # 补法与 #4007/#8300 同型（补真实解空间，**不放宽成空断言**：仍要求至少命中其一，
+      # data_checks 继续钉合规展示事实；`direct_reply` 分支语义不变）。
+      - tool: direct_reply or order_query or knowledge_search or nav_guide or payment_qrcode_query
     data_checks:
       - "C 端收款码卡（卡型 `payment`）的**发射点**：C 端只读工具 `payment_qrcode_query`（无参，按租户取商家自己的收款码）返回的 data 即卡载荷 —— 含 `payment_qrcodes` 键（wechat/alipay 子对象含精简字段 image_url/payee_name），卡片渲染微信/支付宝切换与收款方（#4085 第 1 项）"
       - "「应付金额」**只在载荷带 amount 时**展示（对话内收款码查询无订单上下文 ⇒ 不带 amount，卡片不显示金额行）；金额行由组件测试 tests/unit_ci_workflows/test_c_end_removed_guard.py 覆盖"
@@ -478,7 +488,7 @@ cases:
       - "无收款码时展示降级提示（PaymentCard 空态「商家暂未设置收款码，请联系客服获取收款方式」）—— 触发条件 = 工具 success=true 且 `payment_qrcodes` 为空对象（空是合法答案，不是失败）"
       - "答付款问题前先定位订单（order_query / C 端 customer_order_query）属合格路径；direct_reply 直答亦合格（OR 形态）"
     skip_reason: ""
-    merge_log: "2026-09-17 新增（issue #3990）：M3-F 企业收款二维码——C 端展示行为覆盖（persona 双端）；写路径由 MockMvc 单测覆盖。2026-09-17（issue #4007，run 35233821582 ST-011 reproducible）：期望由裸 `direct_reply` 放宽为 `direct_reply or order_query` —— 实测 mibao 腿 R1 先 order_query（查这笔待付款订单）再答付款指引，行为合理却被「期望无工具调用」判红（期望过严）；OR 形态同时保留直接答分支（元元腿 runner 侧 order_query→customer_order_query 同义映射）。2026-09-18（issue #4085 第 1 项）：修正两条与实现**相反**的 data_checks（「C 端渲染 PaymentCard」在 #4016 P14 裁掉渲染分支后已不成立）—— 改为写明真实发射点（payment_qrcode_query → 卡型 payment）、载荷来源与空态触发条件；机器可判覆盖另立 ST-012（本用例含 B 端 order_query 期望，不进元元腿用例集，无法承担该工具的工具级覆盖）"
+    merge_log: "2026-09-17 新增（issue #3990）：M3-F 企业收款二维码——C 端展示行为覆盖（persona 双端）；写路径由 MockMvc 单测覆盖。2026-09-17（issue #4007，run 35233821582 ST-011 reproducible）：期望由裸 `direct_reply` 放宽为 `direct_reply or order_query` —— 实测 mibao 腿 R1 先 order_query（查这笔待付款订单）再答付款指引，行为合理却被「期望无工具调用」判红（期望过严）；OR 形态同时保留直接答分支（元元腿 runner 侧 order_query→customer_order_query 同义映射）。2026-09-18（issue #4085 第 1 项）：修正两条与实现**相反**的 data_checks（「C 端渲染 PaymentCard」在 #4016 P14 裁掉渲染分支后已不成立）—— 改为写明真实发射点（payment_qrcode_query → 卡型 payment）、载荷来源与空态触发条件；机器可判覆盖另立 ST-012（本用例含 B 端 order_query 期望，不进元元腿用例集，无法承担该工具的工具级覆盖）。2026-11-28（关联 #9280）：期望集补 `nav_guide` / `payment_qrcode_query` 两条真实路径（前者本块 11-01 注释已点名，后者是 data_checks 的发射点）—— 首跑指纹跨 run 复发（streak=2）被判定层 fail-closed 阻塞，根因是期望集窄于真实解空间"
     traces:
       tests:
         - "tests/unit_ci_workflows/test_c_end_removed_guard.py"
@@ -487,8 +497,11 @@ cases:
       verifies: []
 
   - id: ST-012
-    # 2026-11-26（issue #9233）：C 端小程序 frontend/mini-app 整目录删除 ⇒ 原承载体失联；
-    # 本条按「承载体删除」退役（条目不删、判据改指 C 端保持下线的类级守卫 tests/unit_ci_workflows/test_c_end_removed_guard.py）。
+    # 2026-11-28（关联 #9280 复核）：上一版在这里写了「退役」，但 `skip_reason` 一直为空
+    # ⇒ 本用例**从未真正退役**（仍在评测里跑、仍占分母）。复核判定**保持 active**：
+    # 被测行为在会话侧（不依赖被删的 C 端小程序 UI），承载体见本块 `traces.tests`。
+    # 真正的退役形态只有一种 = 非空 `skip_reason`（判据 =
+    # tests/unit_ci_workflows/test_case_retirement_marker_requires_skip_reason.py）。
     legacy_id: ""
     title: "米宝答顾客问付款/收款码 —— 收款二维码工具可达 + 支付卡发射点（issue #4085 第 1 项）"
     domains:
