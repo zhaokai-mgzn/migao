@@ -1497,7 +1497,12 @@ cases:
       - auto_respond:
           fallback: "确认"
     expectations:
-      - tool: product_search
+      # 2026-11-28（关联 #9280，run 46086496186 实测）：R1「我想买夏日清风窗帘，米白色，3米，门幅2.8米散剪」
+      # 已给**精确商品名**，模型直接 `product_detail(product_id="夏日清风")` 取详情（合理路径），
+      # 于是原「必须出现 product_search」判红（score 0.8 / 5 项中 1 项），而**下一条
+      # `product_detail` 仍硬性要求**「必须查详情」—— 判别力不变，只是不再强制先走搜索列表。
+      # 红证：把 OR 拆回裸 `product_search` ⇒ 本 run 的轨迹当场 0.8（实测）。
+      - tool: product_search or product_detail
       - tool: product_detail
       # ⚠️ 2026-09-19（#4371 商品↔加工项解耦）：**必须**先查店铺加工项目录再发多选卡 ——
       # `product_detail` 不再返回 `processing_items`（商品不持有加工项），
