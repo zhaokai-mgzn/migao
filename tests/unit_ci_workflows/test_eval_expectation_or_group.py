@@ -99,6 +99,11 @@ BARE_BRANCH_LEDGER = frozenset({
     # 实测两次（全档 41285244288 / 定点 41286316979）模型分别走 nav_guide(how_to) 与 knowledge_search，
     # 答复都正确却不在期望集里。登记的是**分支写法**，不是能力背书；只读工具、无写面。
     "knowledge_search",
+    # 2026-11-28（关联 #9280，run 46086496186 / 46002922920）：ST-011 的 OR 面再补「收款码查询」——
+    # 它是本用例 `data_checks` 逐字点名的**发射点工具**（"C 端只读工具 `payment_qrcode_query`（无参…）"），
+    # 且是首跑里模型给出的正确路径（重试换成 `direct_reply` 才过 ⇒ 首跑指纹 `no_success(direct_reply)`
+    # 跨 run 复发）。登记的是**分支写法**，不是能力背书：只读工具（无写 action）、无写面。
+    "payment_qrcode_query",
 })
 
 # 现取读数（语料规模）：防「把语料清空 ⇒ 循环体不执行 ⇒ 恒真（vacuous）」（§19.1）。
