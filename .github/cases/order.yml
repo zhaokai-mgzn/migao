@@ -2018,7 +2018,7 @@ cases:
       - "任何一轮回复都不得出现「我无法提交订单 / 没法帮您下单」这类能力误宣"
       - "参数补齐后必须真实落单（order_create 成功 + 明细/数量/手机号正确）"
     skip_reason: ""
-    merge_log: "2026-09-13 新增（issue #3389）：能力下限用例（缺信息时收集而非拒单 + 能力误宣反模式）；2026-09-19（issue #4490 的 burn-down 缴费，metric=entries ⇒ 整条销账）：补 precondition[product_count_for_keyword: 遮光窗帘, expect: 1] + namespaces[product_name:遮光窗帘, customer_phone:13800138000]（R1 按商品名下单 ⇒ 名字唯一是本用例真正依赖且只读的前置；刻意不声明 order_count_for_phone —— 本用例自己建单，漂移判据必然判红）。断言面（user_inputs / expectations / must_succeed / db_verify / order_before / forbidden_text / data_checks）原样未动、无放宽。2026-11-27（run 45979067843 的 OR-021 归因）：判据侧缺陷（amount_verify 取错了同轮第一次 order_create 的 args，把成功订单读成「items 为空」）修在 runner 的配对口径上；本用例的 db_verify 同时**收强**—— 加 expect_row_count: 1（明细行数，区分「1 行 3 米」与「3 行各 1 米」）与 expect_amounts: {遮光窗帘: 504}（面料金额 = 3 米 × ¥168 库价，不含加工费）。原断言一条未删、无放宽。"
+    merge_log: "2026-09-13 新增（issue #3389）：能力下限用例（缺信息时收集而非拒单 + 能力误宣反模式）；2026-09-19（issue #4490 的 burn-down 缴费，metric=entries ⇒ 整条销账）：补 precondition[product_count_for_keyword: 遮光窗帘, expect: 1] + namespaces[product_name:遮光窗帘, customer_phone:13800138000]（R1 按商品名下单 ⇒ 名字唯一是本用例真正依赖且只读的前置；刻意不声明 order_count_for_phone —— 本用例自己建单，漂移判据必然判红）。断言面（user_inputs / expectations / must_succeed / db_verify / order_before / forbidden_text / data_checks）原样未动、无放宽。2026-11-27（run 45979067843 的 OR-021 归因）：判据侧缺陷（amount_verify 取错了同轮第一次 order_create 的 args，把成功订单读成「items 为空」）修在 runner 的配对口径上；本用例的 db_verify 同时**收强**—— 加 expect_row_count: 1（明细行数，区分「1 行 3 米」与「3 行各 1 米」）与 expect_amounts: {遮光窗帘: 504}（面料金额 = 3 米 × ¥168 库价，不含加工费）。原断言一条未删、无放宽。 ｜ 2026-11-28（判定跑 46086496186 @be827c3d4，issue #9280）：**码轮去掉 `prefer_text: true`**（R5/R6）。归因链：① 失败原文 `确认死循环: confirm 卡「请核对订单信息…」同样的事实共出现 3 次（R4/R5/R6）`，而 same run 的 trace 显示 **R7 点卡后 order_create 成功**（orderNo=20261128157620009）⇒ 流程收敛了，不是模型层死循环；② R5/R6 是声明的「验证码轮」，`prefer_text: true` 让 harness 无视 R4 刚发出的确认卡、硬发 123456 ⇒ 两次 order_create 被 `confirmation_required_card_not_clicked` 挡回、模型只能重发同一张卡（内容键同为「确认下单」）⇒ 被 `check_confirm_loop` 判死循环；③ 本条与本文件 OR-014 的四个 123456 轮**同款**（2026-09-15 窄跑 34930597539 已按同一理由改回默认并留档）。**只改 harness 的作答策略（不是断言）**：改后「有待答卡就答卡、无卡才发码」。断言面（user_inputs 的**文本内容** / expectations / must_succeed / amount_verify / db_verify / order_before / forbidden_text / data_checks / precondition / namespaces）一字未动、无放宽；轮数仍为 9（未删轮）。判据 = tests/unit_ci_workflows/test_or022_confirm_click_not_starved.py。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_acceptance_case_checks.py"
@@ -2084,12 +2084,23 @@ cases:
             customer_address: "浙江省杭州市西湖区文三路1号1幢101室"
             color: "米白"
             colorName: "米白"
+      # ⚠️ 码轮**不声明** `prefer_text`（2026-11-28 判定跑 46086496186 @be827c3d4 / issue #9280）：
+      # 与本文件 OR-014 的四个 123456 轮**同款实证**（那里 2026-09-15 已按同一理由改回默认）。
+      # `prefer_text=true` 的语义是「无视待答卡片、本轮硬发这句文本」⇒ 模型**先**发了确认卡时，
+      # 点卡轮被硬发成 123456、卡永远没人点，而 `order_create` 在确认卡未被点击时返回
+      # `confirmation_required_card_not_clicked`。该 run 的逐字读数：R5/R6 两次 order_create
+      # 都被这一条挡回（模型只能第三次发同一张确认卡 ⇒ 被 `check_confirm_loop` 判「确认死循环」），
+      # 而 R7 一点卡订单**真的建成了**（orderNo=20261128157620009，same run 的 trace）
+      # ⇒ 不是模型不收敛，是 harness 把两次点卡机会吃掉了。
+      # 不声明 prefer_text 后按 runner 既有语义（`resolve_auto_respond`）：**有待答卡就答卡**
+      # （confirm→点 confirmValue / choice→点首项 / form→按声明键回填），**无卡才发 123456 兜底**
+      # （C 端仍需验证码，见 order_create `_needs_sms_verification` 的 role==customer 分支）。
+      # 判据（纯 L0、零 LLM、零网络）：
+      #   tests/unit_ci_workflows/test_or022_confirm_click_not_starved.py
       - auto_respond:
           fallback: "123456"
-          prefer_text: true
       - auto_respond:
           fallback: "123456"
-          prefer_text: true
       - auto_respond:
           fallback: "确认"
       - auto_respond:
