@@ -1,7 +1,11 @@
 """
-米宝（Xiaobu）Agent 声明 v2
+C 端智能客服（技术标识 xiaobu）声明 v2
 
-C 端智能客服，面向微信小程序/H5/抖音小程序/Web 等多渠道终端消费者。
+**对外没有 agent 形态**：C 端不拟人、不对外自称名字（用户 2026-11-28 裁定）。本文件声明的是
+「智能客服」的**对话内核**（主入口 = 微信客服通道：通道 + 判定 + 回复内核；内核复用 C 端工具集，
+**不退役**），面向微信小程序/H5/抖音小程序/Web 等多渠道终端消费者。
+产品面向客户一律称「智能客服」；id ↔ 产品名的映射见 `app/agents/naming.py` —— `xiaobu` 是技术
+标识，改它要连带改路由键与评测用例的 persona 字段，**不要「顺手改回对齐」**。
 提供商品咨询、订单查询/创建、物流追踪、售后申请、知识问答等服务（**AI 侧无转人工工具**：
 所有问题由 AI 自行判断处理，见 2026-09-19 用户裁定；**通道侧有真人客服** —— 顾客在微信客服里
 发送「人工」由客服通道的规则直接转接，见 2026-11-27 口径）。
@@ -26,17 +30,19 @@ from app.agents.agent_config import AgentConfig
 from app.agents.channel_config import resolve_greeting
 
 # ── 系统默认值（租户未配置时使用）──
+# ⚠️ 默认名是「智能客服」而不是某个人格名：C 端不拟人、不自称名字（用户 2026-11-28 裁定）。
+#    商家可在「机器人设置」里自定义 botName（能力保留），这里只改**默认值**。
 
-DEFAULT_BOT_NAME = "米宝"
+DEFAULT_BOT_NAME = "智能客服"
 DEFAULT_GREETING = (
-    "您好！我是米宝，生意管家的智能客服。"
+    "您好！我是生意管家的智能客服。"
     "我可以为您介绍商品、查询订单、追踪物流，"
     "还能解答窗帘相关的各种问题，请问有什么可以帮您的吗？"
 )
 
 XIAOBU_CONFIG = AgentConfig(
     name="xiaobu",
-    display_name="米宝",
+    display_name="智能客服",
     persona="xiaobu",
     skill_names=[
         "customer_order",       # 订单查询+物流+创建
@@ -52,7 +58,7 @@ XIAOBU_CONFIG = AgentConfig(
         "greeting": DEFAULT_GREETING,
         "farewell": "感谢您的咨询，祝您生活愉快！有需要随时找我哦~ 😊",
         "capabilities": (
-            "您好！我是米宝，生意管家的智能客服。我可以帮您：\n"
+            "您好！我是生意管家的智能客服。我可以帮您：\n"
             "🔍 **商品咨询** - 搜索商品、查看详情、面料推荐\n"
             "📦 **订单查询** - 查询订单状态、物流追踪\n"
             "🛠️ **售后申请** - 提交售后工单\n"
@@ -111,7 +117,7 @@ async def resolve_xiaobu_greeting(
     tenant_id: int,
     channel: Optional[str] = None,
 ) -> str:
-    """获取米宝欢迎语，优先使用租户 TenantAiConfig。
+    """获取智能客服欢迎语，优先使用租户 TenantAiConfig。
 
     优先级: 租户 TenantAiConfig.greetingTemplate
            → 渠道定制欢迎语（如果 channel 参数提供）
@@ -181,7 +187,7 @@ async def get_xiaobu_greeting(
     tenant_id: int,
     channel: Optional[str] = None,
 ) -> str:
-    """获取米宝欢迎语——整合 TenantAiConfig + channel_config 的首选入口。
+    """获取智能客服欢迎语——整合 TenantAiConfig + channel_config 的首选入口。
 
     Args:
         tenant_id: 租户ID

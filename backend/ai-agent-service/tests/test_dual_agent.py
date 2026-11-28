@@ -62,7 +62,7 @@ class TestAgentConfigs:
         """xiaobu AgentConfig 已注册"""
         config = get_agent_config("xiaobu")
         assert config.name == "xiaobu"
-        assert config.display_name == "米宝"
+        assert config.display_name == "智能客服"
         assert config.persona == "xiaobu"
 
     def test_mibao_skills(self):
@@ -178,13 +178,14 @@ class TestGreetings:
     @patch("app.graph.builder.build_agent_graph")
     @patch("app.agents.customer_service_agent.create_default_registry")
     async def test_xiaobu_greeting(self, mock_create_registry, mock_build_graph, agent_context):
-        """米宝的 greeting 包含'米宝'和'客服'"""
+        """C 端 greeting 含「智能客服」且不自称名字（2026-11-28 裁定）"""
         mock_create_registry.return_value = MagicMock()
         mock_build_graph.return_value = MagicMock()
 
         agent = get_agent(agent_type="xiaobu")
         greeting = await agent.get_greeting(agent_context)
-        assert "米宝" in greeting
+        assert "智能客服" in greeting
+        assert "米宝" not in greeting, "C 端 greeting 仍在自称米宝"
         assert "客服" in greeting
 
 

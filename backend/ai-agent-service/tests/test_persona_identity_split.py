@@ -54,7 +54,8 @@ def test_identity_files_do_not_cross_personas():
     xiaobu = _read_identity("identity-xiaobu.md")
     assert "黄金策" in mibao, "mibao 身份文件未点名自己"
     assert "米宝" not in mibao, "mibao 身份文件混入了 C 端身份"
-    assert "米宝" in xiaobu, "xiaobu 身份文件未点名自己"
+    assert "智能客服" in xiaobu, "xiaobu 身份文件缺 C 端身份（智能客服）"
+    assert "米宝" not in xiaobu, "C 端身份文件仍自称米宝（2026-11-28 裁定已改称智能客服）"
     assert "黄金策" not in xiaobu, "xiaobu 身份文件仍带 B 端身份（#7292 回归）"
     assert "商家后台" not in xiaobu, "xiaobu 身份文件仍带商家后台口径"
 
@@ -63,6 +64,7 @@ def test_identity_files_do_not_cross_personas():
 def test_xiaobu_prompt_carries_only_customer_identity(skill):
     """C 端每个 skill 的组装 prompt 只带米宝身份，不带黄金策 / 商家后台。"""
     prompt = _assembled(skill)
-    assert "米宝" in prompt, f"{skill}: 组装 prompt 缺 C 端身份"
+    assert "智能客服" in prompt, f"{skill}: 组装 prompt 缺 C 端身份（智能客服）"
+    assert "米宝" not in prompt, f"{skill}: 组装 prompt 仍在自称米宝（2026-11-28 裁定）"
     assert "黄金策" not in prompt, f"{skill}: 组装 prompt 仍带 B 端身份"
     assert "商家后台" not in prompt, f"{skill}: 组装 prompt 仍带商家后台口径"

@@ -4,10 +4,12 @@
 
 ## 这是什么
 
-面向布艺 / 窗帘商家的多租户 AI 经营平台：顾客侧米宝 + 经营侧黄金策双 Agent（LangGraph），
+面向布艺 / 窗帘商家的多租户 AI 经营平台：**B 端经营侧 = 黄金策（agent 形态）**；
+**C 端 = 智能客服，只提供技术能力**（微信客服通道 + 判定 + 回复内核，**不经 agent 拟人形态**：不拟人、不自称名字）。
 Java admin-api + Python ai-agent-service + Next.js admin-web + Taro bmini-app（商家小程序 / 工人端 H5）。
 C 端顾客小程序 `frontend/mini-app` 已于 2026-11-26 整目录删除（issue #9233），顾客侧主入口改为微信客服。
-「智能客服」只是客户服务能力域的一部分，不是系统定位（详见 https://github.com/zhaokai-mgzn/migao/wiki/Product）。
+「智能客服」是 C 端对客称谓（对话内核复用 C 端工具集、**不退役**），不是平台的系统定位
+（平台 = 生意管家；详见 https://github.com/zhaokai-mgzn/migao/wiki/Product）。
 
 ## 改代码前（铁律）
 

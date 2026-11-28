@@ -1,5 +1,5 @@
 """
-渠道配置 — 米宝多渠道路由
+渠道配置 — C 端智能客服的多渠道欢迎语路由
 
 支持渠道: wechat_mini / wechat_h5 / douyin_mini / web
 新增渠道只需加配置，不改代码。
@@ -7,6 +7,8 @@
 
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional
+
+from app.agents.naming import C_END_DISPLAY_NAME
 
 # ── 渠道标识 ──
 CHANNEL_WECHAT_MINI = "wechat_mini"
@@ -31,7 +33,7 @@ class ChannelConfig:
 
 DEFAULT_CHANNEL_CONFIGS: Dict[str, ChannelConfig] = {
     CHANNEL_WECHAT_MINI: ChannelConfig(
-        greeting="您好！我是{bot_name}，生意管家的智能客服。我可以为您查订单、看物流、了解商品，有什么可以帮您的吗？",
+        greeting="您好！我是{bot_name}。我可以为您查订单、看物流、了解商品，有什么可以帮您的吗？",
         capabilities=(
             "🔍 **商品咨询** - 搜索商品、查看详情\n"
             "📦 **订单查询** - 查订单、追踪物流\n"
@@ -40,13 +42,13 @@ DEFAULT_CHANNEL_CONFIGS: Dict[str, ChannelConfig] = {
         ),
     ),
     CHANNEL_WECHAT_H5: ChannelConfig(
-        greeting="您好！我是{bot_name}，生意管家的智能客服。有什么可以帮您的吗？",
+        greeting="您好！我是{bot_name}。有什么可以帮您的吗？",
     ),
     CHANNEL_DOUYIN_MINI: ChannelConfig(
-        greeting="您好！我是{bot_name}，生意管家的智能客服。有什么可以帮您的吗？",
+        greeting="您好！我是{bot_name}。有什么可以帮您的吗？",
     ),
     CHANNEL_WEB: ChannelConfig(
-        greeting="您好！我是{bot_name}，生意管家在线客服。有什么可以帮您的吗？",
+        greeting="您好！我是{bot_name}。有什么可以帮您的吗？",
     ),
 }
 
@@ -83,8 +85,8 @@ def get_channel_config(channel: str, tenant_config: Optional[dict] = None) -> Ch
     )
 
 
-def resolve_greeting(channel: str, tenant_config: Optional[dict] = None, bot_name: str = "米宝") -> str:
-    """解析最终欢迎语，替换 {bot_name} 占位符"""
+def resolve_greeting(channel: str, tenant_config: Optional[dict] = None, bot_name: str = C_END_DISPLAY_NAME) -> str:
+    """解析最终欢迎语，替换 {bot_name} 占位符（默认名 = 智能客服，见 app/agents/naming.py）"""
     ch = get_channel_config(channel, tenant_config)
     greeting = ch.greeting or "您好！我是{bot_name}，有什么可以帮您的吗？"
     return greeting.replace("{bot_name}", bot_name)
