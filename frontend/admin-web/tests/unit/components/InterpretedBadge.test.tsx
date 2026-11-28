@@ -5,7 +5,7 @@
  * 为什么必须与 `RecognizedBadge`（`[图片识别]`）**长得不一样**：
  * 同一个表单里，「图上抄下来的」与「黄金策推的」是两种可信度完全不同的东西 ——
  * 标注相同 ⇒ 商家无从判断该信哪一格（issue 原文）。
- * 故本组件：文案不同（`[米宝解读]`）、testid 前缀不同（`interpreted-marker-*`）、配色不同（amber）。
+ * 故本组件：文案不同（`[黄金策解读]`）、testid 前缀不同（`interpreted-marker-*`）、配色不同（amber）。
  */
 import { describe, it, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
@@ -16,7 +16,7 @@ import { PAGE_FILL_SOURCE_INTERPRETED } from '@/lib/agent-page-fill'
 import { RECOGNIZE_SOURCE_TAG } from '@/lib/image-recognize'
 
 describe('InterpretedBadge（Agent 解读来源标注）', () => {
-  it('渲染 [米宝解读] 文案，并带可定位的 interpreted-marker-* testid', () => {
+  it('渲染 [黄金策解读] 文案，并带可定位的 interpreted-marker-* testid', () => {
     render(<InterpretedBadge fieldKey="material" />)
     const badge = screen.getByTestId('interpreted-marker-material')
     expect(badge.textContent).toBe(PAGE_FILL_SOURCE_INTERPRETED)

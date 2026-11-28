@@ -56,7 +56,7 @@ describe('落值口径未变（issue #6403 缺陷 2 的反向守卫）', () => {
   it('判据 5：buildProductPrefill 落给表单的 description 仍是**原始 HTML**', () => {
     const html = '<p>常青藤系列纯色遮光窗帘</p><p>色号包含：2699-01</p>'
     const { initialData } = buildProductPrefill([
-      { key: 'description', label: '商品描述', value: html, source: '[米宝解读]', reason: null },
+      { key: 'description', label: '商品描述', value: html, source: '[黄金策解读]', reason: null },
     ])
 
     expect(initialData.description).toBe(html)

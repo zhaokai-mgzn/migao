@@ -34,7 +34,7 @@ import { RECOGNIZE_SOURCE_TAG } from './image-recognize'
 export const PAGE_FILL_COMPONENT = 'page_fill'
 
 /** **Agent 解读/推荐**的来源标记（与 `[图片识别]` 必须不同：否则商家无从判断该信哪一格） */
-export const PAGE_FILL_SOURCE_INTERPRETED = '[米宝解读]'
+export const PAGE_FILL_SOURCE_INTERPRETED = '[黄金策解读]'
 
 /**
  * **商家在文字框里明说的字面事实**的来源标记（issue #7528）。

@@ -33,7 +33,7 @@ interface FormInterpretCardProps {
    * 商家在「补充一句」里写下的**字面事实**（issue #7528，`lib/declared-facts.ts` 解析）。
    *
    * 给了就多出第三段 `[商家填写]`（货号 / 门幅 / 规格属性），并把颜色按命名规则改名 ——
-   * 这些都是**确定性解析**的结果（零 LLM），与另外两枚来源（`[图片识别]` / `[米宝解读]`）可分辨。
+   * 这些都是**确定性解析**的结果（零 LLM），与另外两枚来源（`[图片识别]` / `[黄金策解读]`）可分辨。
    */
   facts?: DeclaredFacts
   /** 「一键填入」：把**选中的、有值的**格子交回页面（沿用页面既有的 `onRecognized` 回调） */
@@ -91,7 +91,7 @@ function isWideField(field: PageFillField): boolean {
  * 1. **颜色改名**：有命名规则且 `color` 格有值 ⇒ 按 `货号-序号+颜色名` 改写（来源仍是
  *    `[图片识别]`：颜色内容是图上抄的，只有**命名格式**是商家写的 —— 在 `note` 里说清）；
  * 2. **空格才填**：`[图片识别]` 已有值的格**一律不动**（图是事实源，错也是他看得见的）；
- * 3. **可覆盖模型推断**：`[米宝解读]` 的值是人推的，商家明说的字面事实优先。
+ * 3. **可覆盖模型推断**：`[黄金策解读]` 的值是人推的，商家明说的字面事实优先。
  */
 export function mergeDeclaredFacts(
   fields: FormInterpretFields,
@@ -154,7 +154,7 @@ export function mergeDeclaredFacts(
  * 用户口径（逐字）：**不是**弹窗 / 对话 / 气泡；分段展示，各带 `note` 依据；
  * 每格可勾选/取消，「一键填入」把选中的格子交回页面。
  *
- * 段：`[图片识别]` 从图上抄的 / `[米宝解读]` 黄金策推的 / `[商家填写]` 按他写的那句话
+ * 段：`[图片识别]` 从图上抄的 / `[黄金策解读]` 黄金策推的 / `[商家填写]` 按他写的那句话
  * （第三段是 issue #7528：货号 / 门幅 / 规格属性 —— 由 `lib/declared-facts.ts` 确定性解析）。
  *
  * 🔴 **版式 = 横版整行**（用户 2026-11-06 反馈：改前是 `w-72` 的竖版窄条，字段一行一个，
@@ -210,7 +210,7 @@ export default function FormInterpretCard({
           className="h-14 w-14 shrink-0 rounded border border-neutral-200 object-cover"
         />
         <p className="min-w-0 flex-1 text-xs leading-5 text-neutral-600">
-          识别 + 米宝解读（一次性，不留上下文）。勾选要填的格子，再点「一键填入」；不勾的一律不动。
+          识别 + 黄金策解读（一次性，不留上下文）。勾选要填的格子，再点「一键填入」；不勾的一律不动。
         </p>
         {/* `type="button"`：本卡片就渲染在**表单里**，缺省 type 会提交表单 */}
         <Button

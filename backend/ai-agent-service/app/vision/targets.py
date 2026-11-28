@@ -56,7 +56,7 @@ class TargetField:
     #:    光靠提示词求它「只抄图上写明的」，实测**无效**：模型照样编出
     #:    `name="常青藤系列窗帘面料色卡"` 与一整段 `description`，还自己给出
     #:    `reason="图片未给出该字段"` —— 自相矛盾的值）；
-    #: ② 该格的值**只能**由 `[米宝解读]` 给（`deep_channel.INTERPRETABLE_KEYS`），
+    #: ② 该格的值**只能**由 `[黄金策解读]` 给（`deep_channel.INTERPRETABLE_KEYS`），
     #:    绝不允许 `[图片识别]` 直填（那会把「猜的」标成「抄的」）。
     #:
     #: 判据 = `tests/test_vision/test_copy_vs_infer.py`（实例 + 类级元守卫）。
@@ -66,7 +66,7 @@ class TargetField:
 TARGET_FIELDS: Dict[str, Tuple[TargetField, ...]] = {
     "product": (
         # 商品名是**文案**不是图上的事实（真跑实测：模型会编出「常青藤系列窗帘面料色卡」这种
-        # 看起来很合理的标题并顶 `[图片识别]` 标）⇒ 用户 2026-10-05 裁定「B：让黄金策推、标 `[米宝解读]`」。
+        # 看起来很合理的标题并顶 `[图片识别]` 标）⇒ 用户 2026-10-05 裁定「B：让黄金策推、标 `[黄金策解读]`」。
         TargetField("name", "商品名称", "商品标题；图上有多个名称时取最完整的一个",
                     recognizable=False),
         TargetField("color", "颜色", "色号 + 颜色名，多个用顿号分隔；只抄图上写明的"),
@@ -76,7 +76,7 @@ TARGET_FIELDS: Dict[str, Tuple[TargetField, ...]] = {
         TargetField("price", "售价", "售价（元）；只抄图上写明的数字，不推算"),
         # 2026-10-05（issue #6362）：**商品描述文案** —— 用户逐字「然后把商品描述的文案也要生成一份」。
         # 落点是建品页**既有**富文本区（`ProductFormData.description`，提交链路已通）⇒ **不新增落库字段**。
-        # 🔴 它是**推理产物**、不是图上的事实：本格**不参与**识别直填，只由 `[米宝解读]` 填值
+        # 🔴 它是**推理产物**、不是图上的事实：本格**不参与**识别直填，只由 `[黄金策解读]` 填值
         #（见 `deep_channel.INTERPRETABLE_KEYS`）—— hint 据此要求「不得编造图上没有的硬事实」，
         # 推测性表述必须带「约 / 可选」这类措辞（与 issue #6362 的内容口径同一处）。
         TargetField(

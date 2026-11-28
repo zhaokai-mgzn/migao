@@ -11,7 +11,7 @@
 
 | # | 判据 | 会怎么红 |
 |---|---|---|
-| 1 | 正常路径（hint 有 / 无）：`name/material/craft/color/description` 来源 = `[米宝解读]`，`door_width/price` 值仍为空 | `interpret_page_fill` 不存在 / 白名单写错 / hint 没进提示词 |
+| 1 | 正常路径（hint 有 / 无）：`name/material/craft/color/description` 来源 = `[黄金策解读]`，`door_width/price` 值仍为空 | `interpret_page_fill` 不存在 / 白名单写错 / hint 没进提示词 |
 | 2 | **注入式**：文本 LLM 返回 `price.value=199` ⇒ 输出 `price.value` 仍为 `None` | 白名单在链路上失效（或白名单被删） |
 | 3 | 一次调用 = 一次推理：vision 恰好 1 次、文本 LLM 恰好 1 次；`interpret_page_fill` 签名里**没有** session / 记忆参数 | 多调一次 / 多一次 LLM / 有人把会话塞进签名 |
 | 4 | 降级不编造：识别 `degraded` 或零命中 ⇒ **不调推理**、`fields: []`、`degraded: True` | 降级时仍调 LLM（白花钱 + 可能编造） |
@@ -161,13 +161,13 @@ class TestInterpretHappyPath:
         return plan, vision, llm
 
     async def test_interpretation_fills_only_the_whitelisted_keys(self):
-        """`name/material/craft/color/description` 由 `[米宝解读]` 填；已识别格不被覆盖。"""
+        """`name/material/craft/color/description` 由 `[黄金策解读]` 填；已识别格不被覆盖。"""
         plan, _, _ = await self._run()
         cells = _cells(plan)
 
         # 🔴 issue #6386 契约变更：`name` / `description` 是**文案不是图上的事实**，
         # vision 的字段表里已经没有它们（真跑实测：给它就是让它编，且会顶 `[图片识别]` 标）
-        # ⇒ 这两格的值**只能**由解读给，来源必须是 `[米宝解读]`。
+        # ⇒ 这两格的值**只能**由解读给，来源必须是 `[黄金策解读]`。
         for key in ("name", "description"):
             assert cells[key]["value"], f"{key} 应由解读填值（它是生成类字段）"
             assert cells[key]["source"] == SOURCE_INTERPRETED, (
@@ -222,7 +222,7 @@ class TestInterpretHappyPath:
         assert cells["material"]["value"] is None
         assert cells["material"]["reason"] == "图片未给出该字段"
         # 🔴 issue #6386：`name` 是**生成类**字段，识别路径不得填它
-        #（它现在的值只能来自 `[米宝解读]`；推理产出非法 JSON ⇒ 整格留空）
+        #（它现在的值只能来自 `[黄金策解读]`；推理产出非法 JSON ⇒ 整格留空）
         assert cells["name"]["value"] is None
         assert cells["name"]["source"] is None
 

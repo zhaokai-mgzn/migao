@@ -37,7 +37,7 @@ import static org.mockito.Mockito.when;
  *       （与 {@code recognize} 同一套范式，不另立约定）；</li>
  *   <li>{@code hint} 可选：**空/缺省 ⇒ 请求体里不出现该键**（不发送空串 —— 上游会把它当成一次
  *       真实的文本提示）；有值 ⇒ 原样带；</li>
- *   <li>返回体 <b>page_fill 计划原样搬运</b>（含 {@code [米宝解读]} 来源与 {@code note_source}）；
+ *   <li>返回体 <b>page_fill 计划原样搬运</b>（含 {@code [黄金策解读]} 来源与 {@code note_source}）；
  *       {@code degraded=true} / 空 fields 是<b>合法结果</b>，如实透传；</li>
  *   <li>不可达 / 外壳失败 / 缺 {@code data.fields} / {@code component != page_fill} ⇒ 422 fail-closed
  *       （可行动 suggestion，不 500 裸抛、不静默空计划）；</li>
@@ -48,15 +48,15 @@ import static org.mockito.Mockito.when;
 @DisplayName("ImageRecognitionClient interpret 客户端（issue #6367 包 P2）")
 class ImageRecognitionInterpretTest {
 
-    /** 冻结夹具：ai-agent 的 page_fill 形状（含 `[米宝解读]` 一格 + 歧义候选一格）。 */
+    /** 冻结夹具：ai-agent 的 page_fill 形状（含 `[黄金策解读]` 一格 + 歧义候选一格）。 */
     private static final String FROZEN_BODY = """
             {"success":true,"data":{"component":"page_fill","target_type":"product","fields":[
               {"key":"color","label":"颜色","value":"雾霾蓝","source":"[图片识别]","reason":null,
                "candidates":null,"note":null,"note_source":null},
-              {"key":"material","label":"材质","value":"雪尼尔","source":"[米宝解读]","reason":null,
-               "candidates":null,"note":"雪尼尔常用于客厅遮光帘","note_source":"[米宝解读]"},
+              {"key":"material","label":"材质","value":"雪尼尔","source":"[黄金策解读]","reason":null,
+               "candidates":null,"note":"雪尼尔常用于客厅遮光帘","note_source":"[黄金策解读]"},
               {"key":"craft","label":"工艺","value":null,"source":null,"reason":"目录里没有「韩褶双层」⇒ 宁可不填",
-               "candidates":["韩褶","双层"],"note":"建议先确认是不是「韩褶」","note_source":"[米宝解读]"}
+               "candidates":["韩褶","双层"],"note":"建议先确认是不是「韩褶」","note_source":"[黄金策解读]"}
             ]}}
             """;
 
@@ -83,7 +83,7 @@ class ImageRecognitionInterpretTest {
     }
 
     @Test
-    @DisplayName("冻结夹具：page_fill 计划原样搬运（含 [米宝解读] 来源、note、candidates）")
+    @DisplayName("冻结夹具：page_fill 计划原样搬运（含 [黄金策解读] 来源、note、candidates）")
     void interpret_passesPageFillThroughVerbatim() {
         stub(FROZEN_BODY);
 
@@ -95,10 +95,10 @@ class ImageRecognitionInterpretTest {
         assertThat(result.fields()).hasSize(3);
         assertThat(result.fields().get(0)).containsEntry("source", "[图片识别]");
         assertThat(result.fields().get(1))
-                .containsEntry("source", "[米宝解读]")
+                .containsEntry("source", "[黄金策解读]")
                 .containsEntry("value", "雪尼尔")
                 .containsEntry("note", "雪尼尔常用于客厅遮光帘")
-                .containsEntry("note_source", "[米宝解读]");
+                .containsEntry("note_source", "[黄金策解读]");
         // 歧义格：值留空 + 候选 + 理由，一个字都不许被 Java 侧改写
         assertThat(result.fields().get(2).get("value")).isNull();
         assertThat(result.fields().get(2).get("candidates")).isEqualTo(List.of("韩褶", "双层"));

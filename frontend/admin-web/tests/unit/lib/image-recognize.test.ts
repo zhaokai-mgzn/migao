@@ -165,7 +165,7 @@ describe('图片识别 · 字段 key 契约同步 (#5321)', () => {
     expect(keys.product).toEqual([
       'name', 'color', 'material', 'craft', 'door_width', 'price',
       // 2026-10-05（issue #6362）：「商品描述」文案 —— 识别的**第 7 格**，
-      // 落点是建品页既有富文本区（`description`），只允许由 `[米宝解读]` 填值。
+      // 落点是建品页既有富文本区（`description`），只允许由 `[黄金策解读]` 填值。
       'description',
     ])
     expect(keys.order).toEqual([

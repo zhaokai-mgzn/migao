@@ -191,7 +191,7 @@ public class ImageRecognitionClient {
      * @param images     已上传的图片 URL 列表（原样透传，口径同 recognize）
      * @param hint       商家补充提示（**可选**）。空/空白 ⇒ <b>请求体里不出现 {@code hint} 键</b>：
      *                   上游把 {@code hint} 当一次真实文本提示，发空串会白烧一次推理且污染输入。
-     * @return page_fill 计划（<b>原样搬运</b>：字段表、{@code [米宝解读]} 标注、候选、note 都由 ai-agent 给）
+     * @return page_fill 计划（<b>原样搬运</b>：字段表、{@code [黄金策解读]} 标注、候选、note 都由 ai-agent 给）
      * @throws BusinessException 422：端点不可达 / 未配置 token / 外壳失败 / 缺 {@code data.fields}
      *                           / {@code component != page_fill}
      */
@@ -293,7 +293,7 @@ public class ImageRecognitionClient {
      * @param component  恒 {@code page_fill}（形状守卫：不认得的组件名 ⇒ 422，不当成计划用）
      * @param targetType 识别 target（回显 ai-agent 的值；缺省回落为请求值）
      * @param fields     字段表：每项 {@code {key, label, value, source, reason, candidates, note, note_source}}。
-     *                   {@code source} ∈ {@code {"[图片识别]", "[米宝解读]"}}（来源可区分是硬要求）；
+     *                   {@code source} ∈ {@code {"[图片识别]", "[黄金策解读]"}}（来源可区分是硬要求）；
      *                   空列表 = 一格都没推理出来（**合法结果**，前端提示手工填写）。
      */
     public record PageFillResult(String component,

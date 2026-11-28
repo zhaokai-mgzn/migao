@@ -10,7 +10,7 @@
  * ④ **尺寸（帘宽 / 帘高）进的是行状态**（issue #5349：推导链的原始输入）——
  *    只收能直接进数字框的数，落点由 `sizeTargetLineIndex` 定（**空行**才填）。
  * ⑤ **商品描述文案**（issue #6362）—— 预填到既有富文本区 `description`（**不新增落库字段**）；
- *    它是**推理产物**（`source` = `[米宝解读]`）⇒ 空值 / 缺失时**键不出现**（绝不写成空串：
+ *    它是**推理产物**（`source` = `[黄金策解读]`）⇒ 空值 / 缺失时**键不出现**（绝不写成空串：
  *    那会覆盖商家自己写的描述）。不覆盖的机制 = 「有值才写键」+ 表单合并式预填
  *    （`setForm(prev => ({...prev, ...initialData}))`，见本文件「不覆盖」用例）。
  */
@@ -139,8 +139,8 @@ describe('图片识别 · 商品侧预填 (#5321)', () => {
 })
 
 describe('图片识别 · 商品描述文案预填 (#6362)', () => {
-  /** 米宝解读产出的描述（HTML 片段，来源恒为 `[米宝解读]`）—— 落点是既有的富文本区 */
-  const INTERPRETED_TAG = '[米宝解读]'
+  /** 黄金策解读产出的描述（HTML 片段，来源恒为 `[黄金策解读]`）—— 落点是既有的富文本区 */
+  const INTERPRETED_TAG = '[黄金策解读]'
   const DESCRIPTION_HTML =
     '<p>雪尼尔遮光窗帘，面料厚实、垂感好，适合客厅与卧室；可选配韩式褶工艺，支持机洗。</p>'
   const DESCRIPTION_FIELD: RecognizedField = {
@@ -224,7 +224,7 @@ describe('图片识别 · 商品描述文案预填 (#6362)', () => {
     expect(screen.getByText('商家自己写的描述')).toBeTruthy()
   })
 
-  it('米宝解读来源的描述在富文本区挂 `[米宝解读]` 徽标（另一枚徽标，不可与 [图片识别] 混同）', async () => {
+  it('黄金策解读来源的描述在富文本区挂 `[黄金策解读]` 徽标（另一枚徽标，不可与 [图片识别] 混同）', async () => {
     render(
       <ProductForm
         initialData={{ name: '雪尼尔遮光窗帘', description: DESCRIPTION_HTML }}
@@ -234,7 +234,7 @@ describe('图片识别 · 商品描述文案预填 (#6362)', () => {
     )
     await act(async () => {})
 
-    // 徽标文案 = `[米宝解读]`（与 `[图片识别]` 是两枚不同的徽标：可信度不同，不可混同）
+    // 徽标文案 = `[黄金策解读]`（与 `[图片识别]` 是两枚不同的徽标：可信度不同，不可混同）
     expect(screen.getByTestId('interpreted-marker-description').textContent).toBe(INTERPRETED_TAG)
     expect(screen.getByTestId('interpreted-marker-description').textContent).not.toBe(TAG)
   })
@@ -397,9 +397,9 @@ describe('ProductForm 的 [图片识别] 徽标 (#5321)', () => {
     expect(badgeKeys).toEqual(['name', 'material', 'craft', 'color', 'door_width'])
   })
 
-  it('描述格在解读清单里 ⇒ 挂的是 `[米宝解读]` 徽标（两枚徽标各认各的键，不互相静默漏掉）', async () => {
+  it('描述格在解读清单里 ⇒ 挂的是 `[黄金策解读]` 徽标（两枚徽标各认各的键，不互相静默漏掉）', async () => {
     // 这条把「预填了描述却一枚徽标都不渲染」这条**静默漏标**钉死：`description` 只可能来自
-    // `[米宝解读]`（内核不产这一格）⇒ 它进的是解读清单，渲染的必须是 `interpreted-marker-*`。
+    // `[黄金策解读]`（内核不产这一格）⇒ 它进的是解读清单，渲染的必须是 `interpreted-marker-*`。
     render(
       <ProductForm
         initialData={{ description: '<p>黄金策生成的描述</p>' }}
