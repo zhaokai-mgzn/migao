@@ -73,10 +73,9 @@ def _apex_block(conf: str) -> str:
 
 def _verify_location(block: str) -> dict | None:
     m = re.search(r"location\s+~\s+\^/WW_verify_\(\[A-Za-z0-9\]\{8,64\}\)\\\.txt\$\s*\{(.*?)\}", block, re.DOTALL)
-    if not m:
-        return None
-    body = m.group(1)
+    body = m.group(1) if m else ""
     return {
+        "found": bool(m),
         "body": body,
         "content_type": "text/plain" in body,
         "returns_capture": bool(re.search(r"return\s+200\s+\$1\s*;", body)),
@@ -86,7 +85,7 @@ def _verify_location(block: str) -> dict | None:
 def test_apex_serves_any_ww_verify_code():
     """判据 1：apex 段有通用规则，返回体 = 文件名里的串。"""
     loc = _verify_location(_apex_block(_conf()))
-    assert loc is not None, (
+    assert loc["found"], (
         "migaozn.com 段缺 `WW_verify_<随机串>.txt` 的通用 location ⇒ "
         "每个商户的校验文件都得手工放进镜像再部署（issue #9358 的原始形态）"
     )
@@ -108,16 +107,16 @@ def test_pattern_is_not_a_wildcard():
 def test_app_block_rule_is_untouched():
     """判据 3：`app.migaozn.com` 段既有语义不受影响（两段各管各的）。"""
     conf = _conf()
-    app = None
+    found = ""
     for b in _server_blocks(conf):
         m = re.search(r"server_name\s+([^;]+);", b)
         if m and "app.migaozn.com" in m.group(1).split() and "listen 443" in b:
-            app = b
+            found = b
             break
-    assert app is not None, "app.migaozn.com 段找不到"
-    assert "try_files" in app and "=404" in app, (
-        "app 段既有的 `try_files … =404`（缺失必须 404，不许回落 SPA）不见了 —— 那是 MC-125 的判据"
-    )
+    assert found.count("server_name") >= 1 and "app.migaozn.com" in found, (
+        "取不到 app.migaozn.com 的 443 server 段 ⇒ 判据面本身就错了")
+    assert "try_files" in found and "=404" in found, (
+        "app 段既有的 `try_files … =404`（缺失必须 404，不许回落 SPA）不见了 —— 那是 MC-125 的判据")
 
 
 def test_red_proof_removing_the_rule_is_named():
@@ -137,4 +136,4 @@ def test_red_proof_removing_the_rule_is_named():
     mutated = conf[:start] + conf[j + 1:]
     assert mutated != conf, "红证前提不成立：没能把该 location 摘掉"
     loc = _verify_location(_apex_block(mutated))
-    assert loc is None, "摘掉之后仍然解析到了该 location ⇒ 解析面不可信（判据会是恒真）"
+    assert not loc["found"], "摘掉之后仍然解析到了该 location ⇒ 解析面不可信（判据会是恒真）"
