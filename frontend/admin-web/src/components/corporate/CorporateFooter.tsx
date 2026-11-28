@@ -35,7 +35,7 @@ export default function CorporateFooter() {
             </div>
             <p className="max-w-xs text-sm leading-relaxed text-neutral-400">
               杭州词元通达科技有限公司出品的生意管家平台：面向布艺 / 窗帘企业的 AI 经营平台，
-              顾客侧米宝、经营侧黄金策，共用数据底座。
+              顾客侧智能客服、经营侧黄金策，共用数据底座。
             </p>
           </div>
 
@@ -79,7 +79,7 @@ export default function CorporateFooter() {
                   : '联系平台顾问确认开通范围与交付内容'}
               </li>
               <li>确认开通模块、岗位权限与流程衔接</li>
-              <li>完成基础配置后，米宝与黄金策同步上线</li>
+              <li>完成基础配置后，智能客服与黄金策同步上线</li>
             </ul>
             {SELF_SERVICE_ONBOARDING_OPEN && (
               <Link

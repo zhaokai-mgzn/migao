@@ -1,0 +1,62 @@
+{
+  "_what": "退役品牌名「米宝」在 `frontend/**` 的**残余台账**（issue #9306）。判据 = `tests/unit_ci_workflows/test_frontend_retired_brand_residue.py`（判据 1 未登记即红 / 判据 2 空豁免红 + `frozen_max` 只许缩短 + 扫描面自证 / 判据 3~4 红证）。",
+  "_rules": [
+    "扫描面 = `frontend/**`（admin-web 的 src 与 tests、bmini-app 的 src / tests / config / README；排除 `node_modules` / `.next` / `dist` / `out` / `coverage` / `build` / `target`）—— 它覆盖用户可见面与钉住用户可见面的测试。",
+    "`kind=compliance_frozen` = GB/T 47746-2026 宣称与免责小字（`#6330` 硬约束：**逐字不动**）。退役品牌名留在这句合规文本里没有随本次改名同步：改它等于改写合规口径 ⇒ 需人工裁定。**重启条件** = 用户在合规面显式裁定「随品牌改名同步」，届时两处同批改并删除本条。",
+    "`kind=negative_anchor` = 反回流负断言 / 禁令清单：必须**点名**「这里不许出现什么」才有判别力；摘掉这几个字 = 放宽断言（本仓明令禁止，`#9280` 台账同口径）。",
+    "**未登记即红**（live 面出现「米宝」且不在本台账 ⇒ 具名 `文件:行` + 原文）· **登记了却已无命中 ⇒ 红**（空豁免只许缩短，删条目的同批必须下调 `frozen_max`）· `frozen_max` 与 `entries` 条数必须相等。",
+    "`merge_log` / 审计记录不在本扫描面（`frontend/**` 没有这类记录）；用例面（`.github/cases/**`）的同类台账是 `c_end_persona_name_residue_ledger.json`，两份台账**各管一面、不互相引用计数**。",
+    "2026-11-28 收口读数（issue #9306，两批合计）：`git grep -c \"米宝\" -- frontend` = **122 行 / 58 文件** → **8 行 / 6 文件**，其余 114 行改为「黄金策 / 智能客服」或按上下文重写。"
+  ],
+  "frozen_max": 8,
+  "entries": [
+    {
+      "path": "frontend/admin-web/src/app/(corporate)/page.tsx",
+      "anchor": "指米宝智能客服的人机协同机制功能设计参考",
+      "kind": "compliance_frozen",
+      "why": "GB/T 47746-2026 宣称 + 免责小字（`#6330` 硬约束逐字不动）；改名需用户在合规面显式裁定，重启条件见 _rules"
+    },
+    {
+      "path": "frontend/admin-web/src/components/corporate/CorporateFooter.tsx",
+      "anchor": "指米宝智能客服的人机协同机制功能设计参考",
+      "kind": "compliance_frozen",
+      "why": "同上：页脚那份 GB/T 47746-2026 宣称与免责小字与首页逐字同源，两处必须同时改或同时不改"
+    },
+    {
+      "path": "frontend/admin-web/tests/unit/components/WelcomePanel.test.ts",
+      "anchor": "queryByText(/米宝|小布/)",
+      "kind": "negative_anchor",
+      "why": "B 端面板的**反回流负断言**：必须点名「C 端旧称呼不得出现」，否则断言失去判别力（issue #6525）"
+    },
+    {
+      "path": "frontend/admin-web/tests/unit/pages/corporate-home.test.tsx",
+      "anchor": "米宝 · 智能助手",
+      "kind": "negative_anchor",
+      "why": "官网「旧定位标签回流」禁令清单 + 其判别力红证：必须点名历史错误标签，否则扫描器无法证明自己抓得住"
+    },
+    {
+      "path": "frontend/admin-web/tests/unit/pages/corporate-home.test.tsx",
+      "anchor": "米宝 · B端工作助手",
+      "kind": "negative_anchor",
+      "why": "同上：`#6330` 统一前的四套写法之一，禁令清单必须逐条点名（改写成新词就等于删掉一条禁令）"
+    },
+    {
+      "path": "frontend/admin-web/tests/unit/pages/corporate-home.test.tsx",
+      "anchor": "米宝 · 商家助手",
+      "kind": "negative_anchor",
+      "why": "同上：全仓残留扫描（`#6335`）的历史标签清单条目，摘掉即放宽断言"
+    },
+    {
+      "path": "frontend/admin-web/tests/unit/pages/corporate-home.test.tsx",
+      "anchor": "旧标签回流「米宝 · 智能助手」",
+      "kind": "negative_anchor",
+      "why": "同文件判别力红证：注入一条旧标签后必须**具名**报出，红证文本本身要含被禁的串"
+    },
+    {
+      "path": "frontend/bmini-app/tests/chat-empty-state.test.tsx",
+      "anchor": "const C_END_AGENT_NAME = '米宝'",
+      "kind": "negative_anchor",
+      "why": "B 端空态的串味负断言：C 端旧称不得出现在 `/b/` 聊天面；被禁的串本身就是判据的数据（issue #5747）"
+    }
+  ]
+}

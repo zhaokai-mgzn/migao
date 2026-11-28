@@ -24,7 +24,7 @@ describe('CorporateAboutPage（官网关于页：主体事实 + 产品原则，i
     render(<AboutPage />)
     expect(screen.getByText(/布艺经营的多数知识，至今仍存放在人身上/)).toBeInTheDocument()
     expect(screen.getByText(/系统里留下的，往往只有开单与记账/)).toBeInTheDocument()
-    expect(screen.getByText(/米宝在顾客侧、黄金策在经营侧/)).toBeInTheDocument()
+    expect(screen.getByText(/智能客服在顾客侧、黄金策在经营侧/)).toBeInTheDocument()
     expect(screen.getByText(/都要能落回系统里的真实记录/)).toBeInTheDocument()
     expect(screen.getByText(/词元是 AI 的底座，通达是把能力送到经营现场/)).toBeInTheDocument()
   })
@@ -94,7 +94,7 @@ describe('CorporateAboutPage（官网关于页：主体事实 + 产品原则，i
     expect(findQuantifierRhetoric('一套经营平台，一次咨询，一张订单')).toEqual(['一套', '一次', '一张'])
     expect(findPersonifiedAi('两位 AI 助手')).toEqual(['两位 AI'])
     expect(findQuantifierRhetoric('六个能力域 · 4 个终端 · 至少10个字符')).toEqual([])
-    expect(findPersonifiedAi('米宝与黄金策')).toEqual([])
+    expect(findPersonifiedAi('智能客服与黄金策')).toEqual([])
 
     expect(findQuantifierRhetoric(text)).toEqual([])
     expect(findPersonifiedAi(text)).toEqual([])

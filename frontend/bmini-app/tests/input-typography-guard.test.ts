@@ -11,7 +11,7 @@
  * | 面 | 内层元素 | `font-family` | `::placeholder` |
  * |---|---|---|---|
  * | 登录页 | `input.weui-input` | **`Arial`**（浏览器默认） | **`rgb(117,117,117)`**（默认灰） |
- * | 问米宝输入条（#6476 修前） | `textarea.taro-textarea` | **`monospace`** + 13.33px | 默认灰 |
+ * | 问 AI 输入条（#6476 修前） | `textarea.taro-textarea` | **`monospace`** + 13.33px | 默认灰 |
  *
  * 而且 `placeholderClass` **只在 weapp 生效** ⇒ H5 那行小字必须给**真规则**，
  * 否则每个输入面各写一份、改了这页忘那页。
