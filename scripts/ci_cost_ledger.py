@@ -5,7 +5,7 @@
 
 它**只测量与搬运读数**，不发明策略数字：
 
-- **测量**：按 workflow 采样最近 `--runs-per-workflow`（默认 20）次 **completed `pull_request`**
+- **测量**：按 workflow 采样最近 `--runs-per-workflow`（默认 30）次 **completed `pull_request`**
   run 的每个 job，算 `n` / `median` / `p90` / `max`（秒）——来源
   `gh api repos/<owner>/<repo>/actions/runs?event=pull_request&status=completed` +
   `…/runs/<id>/jobs`（**逐次现取**，不引二手数字）。
@@ -19,7 +19,7 @@
   确有必要抬 ⇒ 显式 `--accept-raise`（重冻结为现取 p90，改动在 diff 里可见）。
 - **required 口径**：取 `required_status_snapshot.json`（分支保护快照），**不猜**。
 
-## 为什么默认样本量是 20，而不是 8（issue #9120）
+## 为什么默认样本量是 30，而不是 8（issue #9120）
 
 `_stats()` 的 p90 取 `ordered[int(0.9 * (n - 1))]`（0 基）。这个下标在 **n 小**时**不是分位数**：
 
@@ -27,6 +27,7 @@
 |---|---|---|---|
 | 8 | `6` | **第 7 小 = 次大值** | 一次抖动就能把它顶到接近 `max` |
 | 20 | `17` | 第 18 小 | 同样的分布下 p90 落回中位附近 |
+| 30 | `26` | **第 27 小 = 第 4 大** | 由**最慢的 4 条**样本决定（判据强度的上限就在这里） |
 
 **实证（台账读数，逐字可复算）**：`ai-agent-tests.yml::ai-agent-service-test` 的
 `measured = n=8 / median 265.5 / p90 277 / max 280` —— p90 只比 max 低 **3s（1.1%）**，
@@ -34,7 +35,21 @@
 之后单次负载抖动（现取 p90 282s，+1.8%）就让它**永久判超预算**、而 `--measure` 整体拒绝写盘
 （⇒ 任何腿都无法合法登记成本）。**判据强度由样本量决定** ⇒ 默认值必须抬到 p90 真能表达分布的档位；
 判据 = `tests/unit_ci_workflows/test_ci_cost_ledger.py::TestP90StrengthDependsOnSampleSize`（默认值 < 20 即红）。
-`_sample_legs()` 的 3 页 ×100 run 上限装得下 20，无需改动。
+
+**默认值必须等于台账记下的样本量**，否则 `measured.recompute` 复现不出台账里的读数（issue #9120 的
+另一条「读数不可复现」形态）：`measured.runs_per_workflow` 由 `args.runs_per_workflow` 写入，
+先前默认 20、台账记 30 ⇒ 照着 `recompute` 抄的那条命令**跑的是另一个窗口**，p90 不同、甚至再判超预算
+⇒ 又一次整体拒写。⇒ 默认值取 30，且 `recompute` 把 `--runs-per-workflow` 显式写全；
+判据 = `TestP90StrengthDependsOnSampleSize::test_default_sample_size_matches_recorded_and_is_in_recompute`。
+
+## 窗口跨度取不到「≥3 天」——别把它当可满足的目标（issue #9120 实测）
+
+`_sample_legs()` 一次最多取 **3 页 ×100 = 300 条** completed PR run（**全仓合计**）。2026-11-28 实测：
+这 300 条只覆盖 **13.5 小时**，单个 workflow 的 30 条窗口只跨 **10.7–13.5 小时**（≈ 一个傍晚）。
+⇒ **`--runs-per-workflow` 怎么抬都换不来「跨 ≥3 天」的窗口**（受页数上限约束）；要跨多天必须同时抬
+页数上限，那是另一个改动，本单不做。写在这里是为了让下一个人别再把「等 3 天」当 freshness 判据 ——
+**真正可判的是「窗口最旧一条 run 晚于最后一条减负合并时刻」**（`_measure` 读数的窗口新鲜度，
+见 issue #9120 的逐 workflow 核对记录）。
 
     python3 scripts/ci_cost_ledger.py --measure                  # 现取 → 重写台账（超预算则退出 1 且不写）
     python3 scripts/ci_cost_ledger.py --measure --accept-raise   # 显式同意把超预算的腿重冻结为现取 p90
@@ -69,8 +84,10 @@ BUDGET_STATUS_NO_READING = "无读数：不编预算（显式留白）"
 
 #: 每个 workflow 采样的**已完成 PR run** 条数（默认值）。
 #: **别往下调**：`_stats()` 的 p90 下标是 `int(0.9*(n-1))` ⇒ n=8 时取到的是**第 7 小（次大值）**，
-#: 单次负载抖动就等于「永久超预算」（见文件头「为什么默认样本量是 20」，判据锁它 ≥ 20）。
-DEFAULT_RUNS_PER_WORKFLOW = 20
+#: 单次负载抖动就等于「永久超预算」（见文件头「为什么默认样本量是 30」，判据锁它 ≥ 20）。
+#: **也必须等于台账 `measured.runs_per_workflow`** —— 否则 `measured.recompute` 那条命令跑的是
+#: 另一个窗口、复现不出台账里的读数（issue #9120 的「读数不可复现」形态）。
+DEFAULT_RUNS_PER_WORKFLOW = 30
 
 
 def gh_json(args: list[str]):
@@ -379,9 +396,21 @@ def main() -> int:
 
     breach_ids = {row["id"] for row in breaches}
     if breach_ids:
-        print("⚠️ 超预算腿在台账里**原封不动**（--allow-partial：只刷新合规腿，红不消失）：", file=sys.stderr)
-        for row in breaches:
-            print(f"   · {row['id']}：预算 {row['budget_seconds']}s / 现取 p90 {row['new_p90_ceil']}s", file=sys.stderr)
+        # 两种出口的**行为不同，报告就必须不同**（issue #9120 实测：`--accept-raise` 曾打印
+        # 「原封不动（--allow-partial）」⇒ 操作者会以为预算没抬，而它其实已经抬了 ——
+        # 「读数与它声称的对象不是同一个」的形态，见 migao-dev-flow §25）。
+        if args.allow_partial:
+            print("⚠️ 超预算腿在台账里**原封不动**（--allow-partial：只刷新合规腿，红不消失）：",
+                  file=sys.stderr)
+            for row in breaches:
+                print(f"   · {row['id']}：预算 {row['budget_seconds']}s / 现取 p90 {row['new_p90_ceil']}s",
+                      file=sys.stderr)
+        else:
+            print("⚠️ 超预算腿按 `--accept-raise` **重冻结为现取 p90**"
+                  "（预算有变动 ⇒ 必须在 PR / 追踪单里逐条写明为什么）：", file=sys.stderr)
+            for row in breaches:
+                print(f"   · {row['id']}：预算 {row['budget_seconds']}s → {row['new_p90_ceil']}s"
+                      f"（+{row['new_p90_ceil'] - row['budget_seconds']}s）", file=sys.stderr)
 
     legs = []
     for leg_id, base in sorted(skeleton.items()):
@@ -433,7 +462,10 @@ def main() -> int:
             "source": f"gh api repos/{REPO_SLUG}/actions/runs?event=pull_request&status=completed",
             "event": "pull_request",
             "runs_per_workflow": args.runs_per_workflow,
-            "recompute": "python3 scripts/ci_cost_ledger.py --measure",
+            # 显式写全 `--runs-per-workflow`：不写它跑的是**默认窗口**，复现不出台账里的读数
+            # （issue #9120 的「读数不可复现」形态；判据锁 `recorded` 出现在本字段里）。
+            "recompute": (f"python3 scripts/ci_cost_ledger.py --measure"
+                          f" --runs-per-workflow {args.runs_per_workflow}"),
         },
         "attribution_policy": ATTRIBUTION_POLICY,
         "workflow_totals": {

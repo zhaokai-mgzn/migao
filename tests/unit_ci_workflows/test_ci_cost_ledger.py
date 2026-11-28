@@ -22,7 +22,7 @@ r"""CI 成本台账的常驻判据（issue #3507 ②）。
 | 4 | **预算 == ceil(实测 p90)**（文件不变式） | 手改任一 `budget_seconds`（或填一个人手凑的整数）⇒ 红；无读数的腿必须 `null` + `budget_status` 逐字等于留白口径 |
 | 5 | **超预算会红 + 归因口径在案** | 见 `TestBudgetBreachRedProof`：预算 100s / 新实测 p90 150s ⇒ **必须命中**；上取整 == 预算 ⇒ 必须不命中（边界）；读数下降 ⇒ 不命中。政策文本必须同时含「新增开销」与「`timeout-minutes`」（把"先查新增开销、不许抬 timeout"钉进数据） |
 | 6 | **策略项已裁定就要带裁定人与重开条件** | 非「待裁定」⇒ 必须有 `decided_by` 与 `reopen_condition`；频率上限那条的裁定内容还必须写出依据（两者都只有 `workflow_dispatch`） |
-| 8 | **p90 的判据强度由样本量决定**（issue #9120） | 同一分布下 n=8 的 p90 = **次大值**（277，而 max 280）；n=20 回落 266 ⇒ 两者差 ≥ 10s；默认 `--runs-per-workflow` < 20 ⇒ 红。见 `TestP90StrengthDependsOnSampleSize` |
+| 8 | **p90 的判据强度由样本量决定**（issue #9120） | 同一分布下 n=8 的 p90 = **次大值**（277，而 max 280）；n=20 回落 266 ⇒ 两者差 ≥ 10s；默认 `--runs-per-workflow` < 20 ⇒ 红；且默认值**必须等于台账 `measured.runs_per_workflow`**（否则 `measured.recompute` 跑的是另一个窗口、复现不出台账读数）。见 `TestP90StrengthDependsOnSampleSize` |
 | 7 | **③ 外部阻塞必须登记在案** | `external_blockers` 里 GHCR 那条必须带 `owner_action`（含**可复制的命令**）/ `restart_condition` / `carrier`，且 `grant_verified` 是布尔（未验证就写 `false`，**不许含混过去**） |
 
 ## 边界（照实登记，别把"登记了"读成"治住了"）
@@ -420,7 +420,7 @@ class TestAllowPartialWritesOnlyCompliantLegs:
             "beta": {"workflow": "pr-check.yml", "check_name": "beta", "required": True, "hard_kill_seconds": 1200},
         }
 
-    def test_partial_keeps_breaching_leg_frozen_and_exits_nonzero(self, monkeypatch, tmp_path):
+    def test_partial_keeps_breaching_leg_frozen_and_exits_nonzero(self, monkeypatch, tmp_path, capsys):
         # alpha 变快（合规：p90 6s ≤ 预算 10s）；beta 变慢（超预算：p90 40s > 10s）
         samples = {
             ("pr-check.yml", "alpha"): [6.0, 6.0, 6.0, 6.0],
@@ -433,6 +433,10 @@ class TestAllowPartialWritesOnlyCompliantLegs:
         assert by_id["beta"]["budget_basis"] == "frozen-before", "超预算腿的 basis 被改写了"
         assert by_id["beta"]["measured"]["p90_seconds"] == 10.0, "超预算腿的实测被覆盖了（应原封不动）"
         assert by_id["alpha"]["budget_seconds"] == 6, "合规腿应被刷新为现取 p90（6s）"
+        # 与 `--accept-raise` 分支成对：本出口**确实**原封不动，就该说「原封不动」。
+        assert "原封不动" in capsys.readouterr().err, (
+            "`--allow-partial` 保留冻结预算，报告必须点明「原封不动」（否则与 --accept-raise 不可区分）"
+        )
 
     def test_default_still_refuses_to_write_anything(self, monkeypatch, tmp_path):
         samples = {
@@ -444,7 +448,7 @@ class TestAllowPartialWritesOnlyCompliantLegs:
         by_id = {leg["id"]: leg for leg in ledger["legs"]}
         assert by_id["alpha"]["budget_seconds"] == 10, "不带 --allow-partial 时必须**一个都不写**（行为不变）"
 
-    def test_accept_raise_still_refreezes_everything(self, monkeypatch, tmp_path):
+    def test_accept_raise_still_refreezes_everything(self, monkeypatch, tmp_path, capsys):
         samples = {
             ("pr-check.yml", "alpha"): [6.0, 6.0, 6.0, 6.0],
             ("pr-check.yml", "beta"): [40.0, 40.0, 40.0, 40.0],
@@ -453,6 +457,17 @@ class TestAllowPartialWritesOnlyCompliantLegs:
         assert rc == 0, "显式 --accept-raise 是合法出口 ⇒ 应成功"
         by_id = {leg["id"]: leg for leg in ledger["legs"]}
         assert by_id["beta"]["budget_seconds"] == 40, "--accept-raise 应把预算重冻结为现取 p90"
+        # 🔴 红证（issue #9120 实测的读数缺陷）：报告必须与它**做**的事一致 ——
+        # 旧实现两个出口共用一句「原封不动（--allow-partial）」，于是 `--accept-raise` 明明抬了预算，
+        # 控制台却说没抬（「读数与它声称的对象不是同一个」，migao-dev-flow §25）。
+        err = capsys.readouterr().err
+        assert "原封不动" not in err, (
+            "`--accept-raise` 确实重冻结了预算，报告却说「原封不动（--allow-partial）」⇒ "
+            f"操作者会以为预算没抬（现取 stderr={err!r}）"
+        )
+        assert "重冻结" in err and "beta：预算 10s → 40s" in err, (
+            f"`--accept-raise` 必须报出「哪条腿从多少抬到多少」（现取 stderr={err!r}）"
+        )
 
 
 # ────────────────────────────────────────────── 判据 7：门控跳过不算样本（issue #9153 读数缺陷）
@@ -595,7 +610,8 @@ class TestP90StrengthDependsOnSampleSize:
 
     ① 同一分布（`n=8` 的**真实**读数 + 12 条同样快的样本 = 20 条）下，n=8 的 p90 **必须**等于次大值、
        距 max ≤ 3s；n=20 的 p90 **必须**回落到 265–267；两者差 **≥ 10s**。
-    ② 默认样本量 **≥ 20**（argparse 真实默认值 + 常量 + 台账记录值三处同锁）——
+    ② 默认样本量 **≥ 20**，且**必须 == 台账 `measured.runs_per_workflow`**（argparse 真实默认值 +
+       常量 + 台账记录值三处同锁）—— 前半防「判据强度退化」，后半防「`recompute` 复现不出台账读数」。
        **防回退**：把默认改回 8，② 立刻具名红，① 也随 8 的读数一起红（红证见 PR body）。
 
     ## 为什么样本构造是「两条慢跑」而不是「一条 282」
@@ -669,8 +685,41 @@ class TestP90StrengthDependsOnSampleSize:
         assert "次大" in mod.build_parser().format_help(), (
             "`--help` 必须写清「n≈8 时 p90 ≈ 次大值」这条机制缺陷（否则下一个人会为了跑得快又调回 8）"
         )
-        assert "为什么默认样本量是 20" in (mod.__doc__ or ""), (
+        assert "为什么默认样本量是 30" in (mod.__doc__ or ""), (
             "脚本文件头必须写清默认样本量的由来（机制缺陷 + 实证读数），否则默认值没有可评审的依据"
+        )
+
+    def test_default_sample_size_matches_recorded_and_is_in_recompute(self) -> None:
+        """**复算可复现**：默认样本量必须 == 台账记下的样本量，且 `recompute` 里显式写全。
+
+        ## 病（2026-11-28 现取，issue #9120 的另一半）
+
+        `measured.recompute` 逐字写着 `python3 scripts/ci_cost_ledger.py --measure`（**无参数**），
+        而当时默认是 **20**、台账 `measured.runs_per_workflow` 是 **30** ⇒ 照台账抄的那条命令
+        **跑的是另一个窗口**（p90 不同；按 2026-11-27 的样本复算，有 5 条腿会因此再判超预算 ⇒ 又一次整体拒写）。
+        「读数必须可复现」在这条腿上失效，而**没有任何东西会因此变红**。
+
+        ## 判据
+
+        ① 默认值 == 台账记录值（同窗口）；② `recompute` 里出现 `--runs-per-workflow <记录值>`
+        —— 即使日后默认值又被调整，那条命令本身仍钉住当次窗口。
+        """
+        mod = _script()
+        measured = _ledger().get("measured") or {}
+        recorded = measured.get("runs_per_workflow")
+        assert isinstance(recorded, int), (
+            f"台账缺 `measured.runs_per_workflow`（{recorded!r}）⇒ 读数取自多大的窗口不可知"
+        )
+        default = mod.build_parser().parse_args([]).runs_per_workflow
+        assert default == recorded, (
+            f"默认 `--runs-per-workflow` = {default}，而台账记的是 {recorded} ⇒ "
+            "`measured.recompute` 跑的是**另一个窗口**，复现不出台账里的 p90"
+            "（issue #9120 实测：按 20 条窗口复算有 5 条腿再判超预算）"
+        )
+        recompute = str(measured.get("recompute") or "")
+        assert f"--runs-per-workflow {recorded}" in recompute, (
+            f"`measured.recompute` = {recompute!r} 没有钉住当次窗口（应含 "
+            f"`--runs-per-workflow {recorded}`）⇒ 读者照抄就跑错窗口、复现不出这些读数"
         )
 
     def test_without_measure_the_cli_prints_help_and_exits_two(self, monkeypatch, capsys) -> None:
