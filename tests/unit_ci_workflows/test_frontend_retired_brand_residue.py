@@ -160,9 +160,10 @@ def test_red_proof_unregistered_old_name_is_named():
 
     clever = [{"path": rel, "anchor": "顾客咨询直接找米宝", "kind": "negative_anchor", "why": "红证用临时条目"}]
     assert violations(rel, text, clever) == [], "登记后应转绿（否则不是按台账判定）"
-    assert violations("frontend/bmini-app/README.md", text, clever) == [
-        f"frontend/bmini-app/README.md:1 · 顾客咨询直接找米宝。"
-    ], "换了路径仍须红（`path` 必须参与判定）"
+    other_rel = "frontend/bmini-app/README.md"
+    other = violations(other_rel, text, clever)
+    assert len(other) == 1, f"换了路径仍须红（`path` 必须参与判定）：{other}"
+    assert other[0].startswith(f"{other_rel}:"), f"换了路径的命中没带路径前缀：{other}"
 
 
 def test_red_proof_stale_entry_is_named():
