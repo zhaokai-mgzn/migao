@@ -6,11 +6,18 @@
 
 > **后续条目继续在本文件 `## [Unreleased]
 
+### 新租户的客服名默认值改「智能客服」：新建配置行的顾客不再被「米宝」问候（2026-11-28，issue #9328）
+
+- **形态**：`tenant_ai_configs.bot_name` 的**列默认值**由 V213 设的 `'米宝'` 改为 `'智能客服'`（新增迁移 `V220__set_tenant_bot_name_column_default_smart_service.sql`，一条 `ALTER … SET DEFAULT`）。这是 #9308 登记的第 ① 条边界：V219 只回填**存量行**，改不动**将来插入**的行 —— 读取侧 `data.get("botName") or DEFAULT_BOT_NAME` 是租户配置优先，行里非空就照用。
+- **用户可见变化**：新建的租户配置若**没显式给** `botName`，落库即「智能客服」⇒ 该租户的 C 端开场白不再自称退役品牌名；商家自定义过名字的不受影响。
+- **不变**：`db/init/schema.sql` 的初始 `DEFAULT '小布'` 一字未改（已发布内容、sha256 冻结；迁移链是现行真值）；`greeting_template` / `channel_configs` 里商户自己写的「米宝」属商户数据、不回填。
+- **判据**：`tests/unit_ci_workflows/test_v220_bot_name_column_default.py`（真库：迁移前 `INSERT … RETURNING bot_name` = `'米宝'`、迁移后 = `'智能客服'`，存量行零改动；两遍幂等；静态**链尾守卫** = 迁移链里最后一条设置该默认值的迁移必须是「智能客服」）。红证：把迁移里的默认值物理改回 `'米宝'` ⇒ 真库判据具名红（`expected '智能客服' but was '米宝'`）。
+
 ### 存量商户的客服名回填「米宝」→「智能客服」（2026-11-28，issue #9308）
 
 - **形态**（用户 2026-11-28 逐字：「C 端也不叫米宝了…直接叫智能客服」）：上一条只改了**代码默认值**，而 `tenant_ai_configs.bot_name` 里 V213 当年物化进去的 `'米宝'` 是**行值**（取值逻辑 `data.get("botName") or DEFAULT_BOT_NAME` ⇒ 租户配置优先于新默认值）⇒ 存量商户的顾客照旧被退役品牌名问候。新增迁移 `V219__backfill_tenant_bot_name_to_smart_service.sql`：只把**逐字等于 `'米宝'`** 的行改成 `'智能客服'`（幂等：带旧值谓词，第二遍 `UPDATE 0`）。
 - **用户可见变化**：存量商户的 C 端客服名 / 欢迎语不再出现「米宝」；**商家自定义的名字一个字不动**（匹配面是逐字相等、不是 `LIKE` —— 「米宝小助手」这类含旧名子串的自定义名必须被保护）。
-- **不变**：`bot_name` 的**列定义与列默认值未改**（列默认值仍是 V213 设的 `'米宝'` ⇒ 新建配置若没显式给 `botName` 仍会落旧名 —— 缺口照实登记，见迁移头注「边界」）；`greeting_template` / `channel_configs` 里商户自己写的「米宝」属商户数据、不回填；前端兜底名归 #9306。
+- **不变（缺口已由 V220 收口）**：本迁移不动列定义 / 列默认值（列默认值仍是 V213 设的 `'米宝'` ⇒ 新建配置若没显式给 `botName` 会落旧名）—— 该缺口由 issue #9328 的迁移 `V220__set_tenant_bot_name_column_default_smart_service.sql` 堵上（见上方 #9328 条目）；`greeting_template` / `channel_configs` 里商户自己写的「米宝」属商户数据、不回填；前端兜底名归 #9306。
 - **判据**：`tests/unit_ci_workflows/test_v219_bot_name_backfill.py`（真库四行夹具 `'米宝'` / `'小美'` / `'米宝小助手'` / NULL ⇒ 只有第一行变；两遍幂等 = `UPDATE 1` → `UPDATE 0`；L0 静态：`WHERE` 必须逐字相等 + 只写 `bot_name`/`updated_at` + 显式事务）。红证：把 `WHERE` 物理改成 `LIKE '%米宝%'` ⇒ 静态判据具名红 **+** 真库判据具名红（`cfg-decoy` 被改、`cfg-custom` 不受影响）。
 
 ### C 端顾客侧统一称「智能客服」（2026-11-28，issue #9301）
