@@ -1,6 +1,7 @@
 # admin-web Dockerfile
-# Next.js 16 App Router 生产部署（运行时 node:20-alpine ⇒ @types/node 同步锁在 ^20）
-FROM node:20-alpine
+# Next.js 16 App Router 生产部署（运行时 node:24-alpine —— 必须与 .nvmrc 同 major，见 tests/unit_ci_workflows/test_node_toolchain_pinned.py；
+# 锁口径：本镜像内的 `npm ci` 要读 CI 重算的 package-lock.json，npm 大版本不同会被拒收（issue #9343））
+FROM node:24-alpine
 
 WORKDIR /app
 
