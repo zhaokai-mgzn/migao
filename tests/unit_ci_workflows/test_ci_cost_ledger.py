@@ -488,7 +488,7 @@ class TestGatedOffRunsAreNotSamples:
             {"name": "Set up job", "conclusion": "success"},
             {"name": "Run actions/checkout@v7", "conclusion": "success"},
             {"name": "Detect admin-web changes", "conclusion": "success"},
-            {"name": "Set up Node.js 22", "conclusion": "skipped"},
+            {"name": "Set up Node.js 24", "conclusion": "skipped"},
             {"name": "Install dependencies", "conclusion": "skipped"},
             {"name": "Run unit tests", "conclusion": "skipped"},
             {"name": "Post Run actions/checkout@v7", "conclusion": "success"},

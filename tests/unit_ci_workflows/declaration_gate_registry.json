@@ -189,7 +189,7 @@
       "auto_discover_root": null,
       "check_name": "admin-web typecheck + unit tests",
       "gated_steps": [
-        "Set up Node.js 22",
+        "Set up Node.js 24",
         "Install dependencies",
         "TypeScript type check",
         "ESLint",
@@ -241,7 +241,7 @@
       "auto_discover_root": null,
       "check_name": "admin-web unit tests (2/2)",
       "gated_steps": [
-        "Set up Node.js 22",
+        "Set up Node.js 24",
         "Install dependencies",
         "Run unit tests (shard 2/2)"
       ]
